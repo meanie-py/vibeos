@@ -77,7 +77,14 @@ impl Rule for DroppedAsserts {
             let code = f.rust_noise();
             let lines = masked_lines(code);
             for c in rf.captures_iter(code) {
-                if !cs.contains_key(&c[1]) {
+                // `X` forwarding to `XSited(.., site)` is ntkrnl-sys's lockdep
+                // convention: the export shims call the Sited body with their return
+                // address, so the C's asserts live there and count for `X`.
+                let key = match c[1].strip_suffix("Sited") {
+                    Some(k) if cs.contains_key(k) => k,
+                    _ => &c[1],
+                };
+                if !cs.contains_key(key) {
                     continue;
                 }
                 let m = c.get(0).unwrap();
@@ -88,7 +95,7 @@ impl Rule for DroppedAsserts {
                 }
                 if let Some(end) = brace_end(code, op) {
                     let n = ar.find_iter(&code[op..end]).count();
-                    rs.entry(c[1].into()).or_default().push((
+                    rs.entry(key.into()).or_default().push((
                         f.path.to_string_lossy().into_owned(),
                         masked_line(&lines, m.start()),
                         n,
@@ -244,6 +251,11 @@ mod tests {
             ("ntoskrnl/include/internal/a.h", C_GUARDED),
             ("sdk/lib/rust/foo.rs", "pub fn unrelated() {}"),
         ]);
+        assert!(DroppedAsserts.run(&x).unwrap().is_empty());
+    }
+    #[test]
+    fn a_wrapper_inherits_its_sited_body() {
+        let x=c(&[("ntoskrnl/include/internal/a.h",C_GUARDED),("sdk/lib/rust/foo.rs","fn MI_MAKE_HARDWARE_PTE_USER(){ MI_MAKE_HARDWARE_PTE_USERSited(0); } fn MI_MAKE_HARDWARE_PTE_USERSited(s: usize){ ASSERT(a); ASSERT(b); }")]);
         assert!(DroppedAsserts.run(&x).unwrap().is_empty());
     }
     #[test]

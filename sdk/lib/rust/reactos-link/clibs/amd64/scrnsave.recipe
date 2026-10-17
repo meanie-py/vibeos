@@ -1,0 +1,2 @@
+# scrnsave (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	sdk/lib/scrnsave/scrnsave.c	@build/sdk/lib/scrnsave sdk/lib/scrnsave @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	UNICODE WINVER=0x502 _UNICODE _WIN32_WINNT=0x502

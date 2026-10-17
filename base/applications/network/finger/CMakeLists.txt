@@ -8,14 +8,8 @@ add_definitions(-D__USE_W32_SOCKETS)
 # err.c  # replaced by Rust (sdk/lib/rust/finger-rust/src/finger/err.rs)
 # getopt.c  # replaced by Rust (sdk/lib/rust/finger-rust/src/finger/getopt.rs)
 # net.c  # replaced by Rust (sdk/lib/rust/finger-rust/src/finger/net.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(finger_shims OBJECT rust_varargs_shim.c)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(finger_res OBJECT finger.rc)
-target_include_directories(finger_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(finger finger-cargo finger.exe
     KIND win32exe
     BODY_CRATE finger-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS finger_shims finger_res)
+    EXTRA_DEPENDS psdk)

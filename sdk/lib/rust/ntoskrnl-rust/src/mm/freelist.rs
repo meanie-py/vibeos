@@ -58,7 +58,7 @@ pub unsafe extern "system" fn MmGetLRUFirstUserPage() -> PFN_NUMBER {
     page
 }
 
-unsafe fn MmInsertLRULastUserPage(page: PFN_NUMBER) {
+pub(crate) unsafe fn MmInsertLRULastUserPage(page: PFN_NUMBER) {
     let pfn = MiGetPfnEntry(page);
 
     if FirstUserLRUPfn.is_null() {
@@ -73,7 +73,7 @@ unsafe fn MmInsertLRULastUserPage(page: PFN_NUMBER) {
     LastUserLRUPfn = pfn;
 }
 
-unsafe fn MmRemoveLRUUserPage(page: PFN_NUMBER) {
+pub(crate) unsafe fn MmRemoveLRUUserPage(page: PFN_NUMBER) {
     let pfn = MiGetPfnEntry(page);
 
     let prev = (*pfn).previous_lru();
@@ -443,6 +443,16 @@ pub unsafe extern "system" fn MmDereferencePage(pfn: PFN_NUMBER) {
             }
         }
 
+        if !(*pfn1).pte_address().is_null() && (*pfn1).awe_allocation() {
+            // Freeing a page that is still on the ROS standby list would leave it linked
+            // there and handed out twice. Every path to a standby page claims it first.
+            mm_guard_trip!(
+                "freelist.MmDereferencePage page-on-standby", 4,
+                "pfn" => pfn,
+                "slot" => (*pfn1).pte_address() as ULONG_PTR,
+            );
+            ntkrnl_sys::ddk::KeBugCheck(ntkrnl_sys::bugcodes::MEMORY_MANAGEMENT);
+        }
         if (*pfn1).must_be_cached() {
             MmRemoveLRUUserPage(pfn);
             (*pfn1).set_must_be_cached(false);
@@ -486,6 +496,10 @@ pub unsafe extern "system" fn MmAllocPage(typ: ULONG) -> PFN_NUMBER {
 
     (*pfn1).set_next_lru(core::ptr::null_mut());
     (*pfn1).set_previous_lru(core::ptr::null_mut());
+    // The ROS Mm has no use for PteAddress, and a page off the free list still carries
+    // its last ARM3 owner's. Clear it: on a ROS page, non-null means "on the standby
+    // list, and this is its segment slot" (mm/standby.rs).
+    (*pfn1).set_pte_address(core::ptr::null_mut());
 
     if typ == MC_USER {
         (*pfn1).set_must_be_cached(true);

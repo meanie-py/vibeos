@@ -14,13 +14,9 @@ spec2def(hidclass.sys hidclass.spec ADD_IMPORTLIB)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # replaced by Rust (sdk/lib/rust/hidclass-rust): fdo.c hidclass.c pdo.c guid.c
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(hidclass_res OBJECT hidclass.rc)
-target_include_directories(hidclass_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(hidclass hidclass-cargo hidclass.sys
     KIND kernelmodedriver
     BODY_CRATE hidclass-rust
     DESTINATION reactos/system32/drivers
     NO_CAB
-    EXTRA_DEPENDS hidclass_res psdk)
+    EXTRA_DEPENDS psdk)

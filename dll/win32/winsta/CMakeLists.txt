@@ -13,12 +13,8 @@ include_directories(BEFORE ${REACTOS_SOURCE_DIR}/sdk/include/wine)
 # security.c  # replaced by Rust (sdk/lib/rust/winsta-rust/src/winsta/security.rs)
 # server.c  # replaced by Rust (sdk/lib/rust/winsta-rust/src/winsta/server.rs)
 # ws.c  # replaced by Rust (sdk/lib/rust/winsta-rust/src/winsta/ws.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(winsta_res OBJECT winsta.rc)
-target_include_directories(winsta_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(winsta winsta-cargo winsta.dll
     KIND win32dll
     BODY_CRATE winsta-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS winsta_res psdk)
+    EXTRA_DEPENDS psdk)

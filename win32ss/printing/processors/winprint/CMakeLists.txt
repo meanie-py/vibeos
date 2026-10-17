@@ -6,11 +6,6 @@ spec2def(winprint.dll winprint.spec ADD_IMPORTLIB)
 # The translated C, kept on disk:
 # main.c  # replaced by Rust (sdk/lib/rust/winprint-rust/src/winprint/main.rs)
 # raw.c  # replaced by Rust (sdk/lib/rust/winprint-rust/src/winprint/raw.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(winprint_res OBJECT winprint.rc)
-target_compile_definitions(winprint_res PRIVATE UNICODE _UNICODE)
-target_include_directories(winprint_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if(ARCH STREQUAL "i386")
     set(WINPRINT_DESTINATION reactos/system32/spool/prtprocs/w32x86)
 elseif(ARCH STREQUAL "amd64")
@@ -22,4 +17,4 @@ add_cargo_module(winprint winprint-cargo winprint.dll
     KIND win32dll
     BODY_CRATE winprint-rust
     DESTINATION ${WINPRINT_DESTINATION}
-    EXTRA_DEPENDS winprint_res psdk)
+    EXTRA_DEPENDS psdk)

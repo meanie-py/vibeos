@@ -9,17 +9,8 @@ spec2def(schedsvc.dll schedsvc.spec ADD_IMPORTLIB)
 # job.c  # replaced by Rust (sdk/lib/rust/schedsvc-rust/src/schedsvc/job.rs)
 # rpcserver.c  # replaced by Rust (sdk/lib/rust/schedsvc-rust/src/schedsvc/rpcserver.rs)
 # schedsvc.c  # replaced by Rust (sdk/lib/rust/schedsvc-rust/src/schedsvc/schedsvc.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(schedsvc_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/atsvc_s.c)
-target_link_libraries(schedsvc_shims PRIVATE wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll)
-target_compile_definitions(schedsvc_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(schedsvc_res OBJECT schedsvc.rc)
-target_compile_definitions(schedsvc_res PRIVATE UNICODE _UNICODE)
-target_include_directories(schedsvc_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(schedsvc schedsvc-cargo schedsvc.dll
     KIND win32dll
     BODY_CRATE schedsvc-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS schedsvc_shims schedsvc_res psdk)
+    EXTRA_DEPENDS psdk wine libadvapi32 librpcrt4 libmsvcrt libkernel32 libntdll ${REACTOS_BINARY_DIR}/base/services/schedsvc/atsvc_s.c)

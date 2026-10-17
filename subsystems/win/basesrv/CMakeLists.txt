@@ -1,4 +1,3 @@
-
 include_directories(${REACTOS_SOURCE_DIR}/sdk/include/reactos/subsys)
 
 spec2def(basesrv.dll basesrv.spec ADD_IMPORTLIB)
@@ -23,9 +22,6 @@ spec2def(basesrv.dll basesrv.spec ADD_IMPORTLIB)
 # basesrv.rc is compiled IN-cargo (resource_from_rc replays the basesrv_res
 # windres command). This resource-only OBJECT lib stays only to populate
 # compile_commands.json; its .res is not linked.
-add_library(basesrv_res OBJECT basesrv.rc)
-target_compile_definitions(basesrv_res PRIVATE UNICODE _UNICODE)
-target_include_directories(basesrv_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
 # ZERO cmake .a: libchkstk.a + libpseh.a dropped from the cargo link (probe
 # confirmed the Rust body references neither — no >4KB-frame __chkstk and no
@@ -36,7 +32,7 @@ add_cargo_module(basesrv basesrv-cargo basesrv.dll
     KIND win32dll
     BODY_CRATE smss-csrss-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS basesrv_res)
+    EXTRA_DEPENDS psdk)
 
 # Cohabitation flip deferred (task #18). 2026-05-26 debug session
 # uncovered:

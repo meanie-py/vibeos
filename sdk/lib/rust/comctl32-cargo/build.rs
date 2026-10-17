@@ -7,6 +7,31 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/dll/win32/comctl32",
+        "dll/win32/comctl32",
+        "@build/sdk/include/wine",
+        "sdk/include/wine",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &[
+        "UNICODE",
+        "WINVER=0x600",
+        "_COMCTL32_",
+        "_UNICODE",
+        "_WIN32_WINNT=0x600",
+        "_WINE",
+        "__ROS_LONG64__",
+        "__WINESRC__",
+    ];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DllMainCRTStartup@12", Some(0x7b850000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMainCRTStartup", Some(0x7ffa9000000u64)),
@@ -23,7 +48,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("comctl32-rust")
-        .resource_from_rc("dll/win32/comctl32/rsrc.rc", "comctl32_res")
+        .rc("dll/win32/comctl32/rsrc.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("dll/win32/comctl32/comctl32.spec", "comctl32.dll")
         .delay_import_lib("dll/win32/winmm/winmm.spec", "winmm.dll", "winmm")
         .delay_import_lib("dll/win32/uxtheme/uxtheme.spec", "uxtheme.dll", "uxtheme")

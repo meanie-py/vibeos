@@ -10,6 +10,7 @@ pub mod pagefile;
 pub mod region;
 pub mod rmap;
 pub mod shutdown;
+pub mod standby;
 // Tier 3b
 pub mod section;
 pub mod section_pe;

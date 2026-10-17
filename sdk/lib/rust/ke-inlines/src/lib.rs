@@ -882,7 +882,8 @@ pub unsafe extern "C" fn _rs_KxAcquireSpinLock(spin_lock: *mut ULONG_PTR) {
     use core::sync::atomic::{AtomicI32, Ordering};
     let low_dword = &*(spin_lock as *const AtomicI32);
     while low_dword.fetch_or(1, Ordering::SeqCst) & 1 != 0 {
-        while core::ptr::read_volatile(spin_lock) & 1 != 0 {
+        // Any alignment, as Windows takes a driver's lock: see spin_lock_word.
+        while ntkrnl_sys::inline::ke::spin_lock_word(spin_lock) & 1 != 0 {
             core::hint::spin_loop();
         }
     }

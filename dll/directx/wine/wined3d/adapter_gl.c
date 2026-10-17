@@ -5196,6 +5196,14 @@ struct wined3d_adapter *wined3d_adapter_gl_create(unsigned int ordinal, unsigned
 
     if (!wined3d_adapter_gl_init(adapter, ordinal, wined3d_creation_flags))
     {
+        /* Every failure after wined3d_adapter_init() (no GL context, a missing required
+         * extension) used to return without wined3d_adapter_cleanup(), leaking the KMT
+         * adapter and one KMT device per output. gdi32's emulated D3DKMT has 16 adapter
+         * slots, so after 16 failed device creations in one process every later
+         * D3DKMTOpenAdapterFromGdiDisplayName failed and each output init returned
+         * E_INVALIDARG. Upstream Wine has the same leak. */
+        if (adapter->a.kmt_adapter)
+            wined3d_adapter_cleanup(&adapter->a);
         free(adapter);
         return NULL;
     }

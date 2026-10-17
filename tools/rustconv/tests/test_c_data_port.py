@@ -508,3 +508,59 @@ def test_header_statics_offsetof_and_per_arch_variants(tmp_path):
     assert "&raw const SM as *const M" in m
     assert m.count("pub struct M_x4") == 1  # the layout twin is arch-free: written once
     assert "pub static mut SM: M_x4" in m and "pub(super)" not in m
+
+
+def test_an_unevaluated_enum_constant_fails_only_where_a_table_uses_it():
+    # cdrom data.c/guid.c: iotypes.h's `ContinueCompletion = STATUS_CONTINUE_COMPLETION` (a
+    # cast clang leaves unevaluated) refused both TUs though neither reads it.
+    cast = {"kind": "CStyleCastExpr"}  # an initializer with no "value"
+    ast = {
+        "inner": [
+            {
+                "kind": "EnumDecl",
+                "name": "_IO_COMPLETION_ROUTINE_RESULT",
+                "inner": [
+                    {
+                        "kind": "EnumConstantDecl",
+                        "id": "0x1",
+                        "name": "ContinueCompletion",
+                        "inner": [cast],
+                    },
+                    {"kind": "EnumConstantDecl", "id": "0x2", "name": "StopCompletion"},
+                    {
+                        "kind": "EnumConstantDecl",
+                        "id": "0x3",
+                        "name": "Fixed",
+                        "inner": [{"kind": "ConstantExpr", "value": "7"}],
+                    },
+                    {"kind": "EnumConstantDecl", "id": "0x4", "name": "AfterFixed"},
+                ],
+            }
+        ]
+    }
+    table = cdp.enum_constants(ast)
+    assert table["ContinueCompletion"][0] is None
+    assert table["StopCompletion"][0] is None, "an implicit successor of an unknown is unknown"
+    assert table["Fixed"][0] == 7 and table["AfterFixed"][0] == 8
+    cdp._ENUMS.clear()
+    cdp._ENUMS.update(table)
+    ref = {
+        "kind": "DeclRefExpr",
+        "referencedDecl": {"kind": "EnumConstantDecl", "id": "0x1", "name": "ContinueCompletion"},
+    }
+    fixed = {
+        "kind": "DeclRefExpr",
+        "referencedDecl": {"kind": "EnumConstantDecl", "id": "0x3", "name": "Fixed"},
+    }
+    assert cdp.clang_int(fixed) == 7
+    with pytest.raises(cdp.DataPortError, match="ContinueCompletion: no evaluated value"):
+        cdp.clang_int(ref)
+
+
+def test_an_incomplete_island_array_does_not_contradict_the_definition():
+    # cdrom.h: `extern CDROM_SCAN_FOR_SPECIAL_INFO CdromHackItems[];` is `[T; 0usize]` in the
+    # island, and data.c defines 15.
+    assert not cdp._island_length_disagrees(0, 15)
+    assert not cdp._island_length_disagrees(None, 15)
+    assert not cdp._island_length_disagrees(15, 15)
+    assert cdp._island_length_disagrees(14, 15)

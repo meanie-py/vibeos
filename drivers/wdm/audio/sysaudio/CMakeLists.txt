@@ -8,12 +8,8 @@ add_definitions(-D_COMDDK_)
 # pilot, sysaudio/{control,deviface,dispatcher,main}.rs from the A' batch) and stay on disk,
 # uncompiled. The MODULE link needs one C source, the placeholder stub.
 #   control.c deviface.c dispatcher.c main.c pin.c
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(sysaudio_res OBJECT sysaudio.rc)
-target_include_directories(sysaudio_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(sysaudio sysaudio-cargo sysaudio.sys
     KIND kernelmodedriver
     BODY_CRATE sysaudio-rust
     DESTINATION reactos/system32/drivers
-    EXTRA_DEPENDS sysaudio_res asm psdk)
+    EXTRA_DEPENDS asm psdk)
