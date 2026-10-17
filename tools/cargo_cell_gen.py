@@ -2007,7 +2007,7 @@ def remap(crates: list[str] | None = None, repo: Path = REPO) -> list[str]:
         if crates and crate not in crates:
             continue
         text = build_rs_path.read_text()
-        raw = sorted(set(re.findall(r'"([^"]+\.a)"', text)))
+        raw = sorted(set(re.findall(r'"([^"]+\.a)"', re.sub(r"//[^\n]*", "", text))))
         mapping = {lib: engine_lib(lib, repo) for lib in raw}
         mapping = {lib: m for lib, m in mapping.items() if m}
         if not mapping:

@@ -365,9 +365,11 @@ extends it from the boot spine to every fully-Rust module.
      (libsamplerate's binary dir is not its source dir). `--remap` moved the seven cells
      still on cmake archives (autochk, dcomp, kmixer, mfplat, ndfapi, sndblst, wdmaud):
      all 21 PEs **byte-identical** after the rebuild. `scan_cmake_linked_rust` reports any
-     cell that names a cmake-built archive; only the loader cells' (freeldr's
-     `freeldr_bios_asm`, rosload's and uefildr's `mini_hal`/`libcntpr`/`chkstk`) are left,
-     and they are not `add_cargo_module` cells.
+     cell that names a cmake-built archive (in code, not in comments). One is left in all
+     273 cells: freeldr-cargo's `libfreeldr_bios_asm.a` (pcat.cmake), the BIOS loader's
+     entry/int386/pnpbios asm, which needs freeldr's own include set; reactos-link's
+     `asm_archive` knows only the kernel chain. rosload and uefildr already build
+     `mini_hal`, `libcntpr` and `chkstk` themselves.
 4. **Resources without cmake.** Cells replay cmake's `windres` command today
    (`resource_from_rc`), so they still need cmake configured. The June fallback was a
    committed `.res` per arch; for 189 modules that is a lot of binary in git. Better: the

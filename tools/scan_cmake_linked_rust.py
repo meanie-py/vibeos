@@ -46,7 +46,10 @@ def main() -> int:
     # (`cargo_cell_gen.engine_lib`); `--remap` moves a cell onto them.
     raw = []
     for build_rs in sorted((cargo_cell_gen.REPO / "sdk/lib/rust").glob("*-cargo/build.rs")):
-        for lib in sorted(set(re.findall(r'"([^"]+\.a)"', build_rs.read_text()))):
+        # Comments name archives a cell USED to link (the loader cells keep the cmake
+        # path beside the engine call that replaced it); only live code counts.
+        code = re.sub(r"//[^\n]*", "", build_rs.read_text())
+        for lib in sorted(set(re.findall(r'"([^"]+\.a)"', code))):
             label = "engine-buildable" if cargo_cell_gen.engine_lib(lib) else "not engine-buildable"
             raw.append(f"{build_rs.parent.name}: links cmake-built {lib} ({label})")
     for line in raw:
