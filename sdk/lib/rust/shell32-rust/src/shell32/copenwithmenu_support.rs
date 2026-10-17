@@ -10,6 +10,8 @@
 //!   `SApp *m_pApp`, a pointer, so the type is referenced everywhere and defined nowhere.
 
 use crate::prelude::*;
+// One declaration per external symbol: island.rs.
+pub use crate::island::DialogBoxParamW;
 
 /// `COpenWithList::SApp` — COpenWithMenu.cpp:154.
 ///
@@ -78,13 +80,6 @@ pub unsafe fn StringCbCopyW(dst: LPWSTR, bytes: usize, src: LPCWSTR) -> HRESULT 
 // `*mut c_void` rather than the island's `*mut HWND__`, which just moves the mismatch from
 // the callback slot to every handle argument.
 extern "system" {
-    pub fn DialogBoxParamW(
-        hInstance: HINSTANCE,
-        lpTemplateName: LPCWSTR,
-        hWndParent: HWND,
-        lpDialogFunc: DLGPROC,
-        dwInitParam: LPARAM,
-    ) -> INT_PTR;
 }
 
 // ── notification codes the island does not carry ──────────────────────────────────────────

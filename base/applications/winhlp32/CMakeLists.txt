@@ -11,8 +11,6 @@ list(APPEND SOURCE
 
 FLEX_TARGET(macro_scanner macro.lex.l ${CMAKE_CURRENT_BINARY_DIR}/macro.lex.yy.c)
 
-add_rc_deps(rsrc.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/winhelp.ico)
-
  # CORE-5743: No ARRAY_SIZE macro
 
 # winhlp32.exe is all Rust (winhlp32-rust) and cargo links it:
@@ -20,18 +18,8 @@ add_rc_deps(rsrc.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/winhelp.ico)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # string.c  # replaced by Rust (sdk/lib/rust/winhlp32-rust/src/winhlp32/string/mod.rs, generated: port data)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(winhlp32_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/macro.lex.yy.c)
-target_link_libraries(winhlp32_shims PRIVATE wine oldnames libuser32 libgdi32 libshell32 libcomctl32 libcomdlg32 libmsvcrt libkernel32 libntdll)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(winhlp32_res OBJECT rsrc.rc)
-target_include_directories(winhlp32_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-set_wine_module_fixme(winhlp32_shims)
-set_wine_module_fixme(winhlp32_res)
 add_cargo_module(winhlp32 winhlp32-cargo winhlp32.exe
     KIND win32exe
     BODY_CRATE winhlp32-rust
     DESTINATION reactos
-    EXTRA_DEPENDS winhlp32_shims winhlp32_res psdk)
+    EXTRA_DEPENDS psdk wine oldnames libuser32 libgdi32 libshell32 libcomctl32 libcomdlg32 libmsvcrt libkernel32 libntdll ${REACTOS_BINARY_DIR}/base/applications/winhlp32/macro.lex.yy.c)

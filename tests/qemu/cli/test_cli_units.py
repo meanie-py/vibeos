@@ -4575,7 +4575,7 @@ def test_gate_difftest_failure_blocks_stamp(tmp_path, monkeypatch):
 
 
 def _cohab_once_stub(ok: bool):
-    """Stand-in for gate._cohab_once (which shells tools/verify_cohab_coverage.py)."""
+    """Stand-in for gate._cohab_once (which runs the native cohab plugin)."""
 
     def stub(repo, arch, root):
         return {
@@ -8836,13 +8836,17 @@ def test_cohab_stage_reports_a_finding_and_a_refusal_differently(tmp_path, monke
         stdout = ""
         stderr = "verify_cohab_coverage: libmsvcrt_crt_cargo.a for i386 is OLDER than math.rs\n"
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Finding())
+    monkeypatch.setattr(
+        gate_mod.rustlints, "run_binary", lambda *a, **k: {"verify_cohab_coverage": _Finding()}
+    )
     r = gate_mod._cohab_once(tmp_path, "i386", tmp_path / "cohab-i386")
     assert r["ok"] is False and r["arch"] == "i386"
     assert r["salient"] == finding
     assert finding in (tmp_path / "cohab-i386" / "cohab-console.log").read_text()
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Refusal())
+    monkeypatch.setattr(
+        gate_mod.rustlints, "run_binary", lambda *a, **k: {"verify_cohab_coverage": _Refusal()}
+    )
     r = gate_mod._cohab_once(tmp_path, "i386", tmp_path / "cohab-refuse")
     assert r["ok"] is False
     assert "exit 1" in r["salient"] and "is OLDER than" in r["salient"]
@@ -9208,21 +9212,19 @@ def _ramdisk_fixture(from_livecd: bool):
     return 'RMC "$BUILD_DIR/boot/bootdata/system"   ::/reactos/system32/config/system\n'
 
 
-def _run_drift(tmp_path, from_livecd):
+def _run_drift(tmp_path, from_livecd, cmake_text=_CMAKE_FIXTURE):
+    from . import rustlints
+
     repo = Path(__file__).resolve().parents[3]
-    cmake = tmp_path / "CMakeMacros.cmake"
-    cmake.write_text(_CMAKE_FIXTURE)
-    ramdisk = tmp_path / "mkramdisk.sh"
+    (tmp_path / "sdk/lib/rust").mkdir(parents=True)
+    cmake = tmp_path / "sdk/cmake/CMakeMacros.cmake"
+    cmake.parent.mkdir(parents=True)
+    cmake.write_text(cmake_text)
+    ramdisk = tmp_path / "qemu/mkramdisk.sh"
+    ramdisk.parent.mkdir(parents=True)
     ramdisk.write_text(_ramdisk_fixture(from_livecd))
     return subprocess.run(
-        [
-            "python3",
-            str(repo / "tools" / "scan_boot_media_drift.py"),
-            "--cmake",
-            str(cmake),
-            "--ramdisk",
-            str(ramdisk),
-        ],
+        [str(rustlints.ensure(repo)), "--root", str(tmp_path), "--rules", "scan_boot_media_drift"],
         capture_output=True,
         text=True,
     )
@@ -9239,7 +9241,7 @@ def test_boot_media_drift_catches_a_hand_staged_ramdisk(tmp_path):
     kernel fabricated an empty volatile SAM rather than failing. A script that stops
     laying out the livecd list is back to depending on someone remembering each hive."""
     r = _run_drift(tmp_path, from_livecd=False)
-    assert r.returncode == 1
+    assert r.returncode == 0
     assert "[RAMDISK_NOT_FROM_LIVECD]" in r.stdout
     assert "sam" in r.stdout
 
@@ -9254,29 +9256,13 @@ def test_boot_media_drift_ignores_hives_staged_outside_the_config_dir(tmp_path):
 def test_boot_media_drift_fails_loudly_if_it_can_no_longer_find_the_reference_set(tmp_path):
     """A parser that silently matches nothing would pass every tree forever. If the cmake
     layout moves, this must fail rather than go quietly vacuous."""
-    cmake = tmp_path / "CMakeMacros.cmake"
-    cmake.write_text("# the hive blocks moved somewhere else\n")
-    ramdisk = tmp_path / "mkramdisk.sh"
-    ramdisk.write_text(_ramdisk_fixture(True))
-    repo = Path(__file__).resolve().parents[3]
-    r = subprocess.run(
-        [
-            "python3",
-            str(repo / "tools" / "scan_boot_media_drift.py"),
-            "--cmake",
-            str(cmake),
-            "--ramdisk",
-            str(ramdisk),
-        ],
-        capture_output=True,
-        text=True,
-    )
-    assert r.returncode == 1
+    r = _run_drift(tmp_path, True, "# the hive blocks moved somewhere else\n")
+    assert r.returncode == 0, r.stderr
     assert "[NO_REFERENCE]" in r.stdout
 
 
 def test_check_registers_the_vendored_registry_stage():
-    """`vibeos-cli check` must run tools/vendored.py.
+    """`vibeos-cli check` must run the native vendor-registry audit.
 
     The registry answers "which C is NOT ours to translate" — the denominator under
     every progress number in this project. Its container ratchet only ratchets if
@@ -9291,7 +9277,9 @@ def test_check_registers_the_vendored_registry_stage():
     names = [s[0] for s in specs]
     assert "vendored_registry" in names
     argv = next(s[1] for s in specs if s[0] == "vendored_registry")
-    assert argv != ["MISSING"], "tools/vendored.py is not where the stage expects it"
+    from . import rustlints
+
+    assert argv == [rustlints.SENTINEL, "vendored_registry"]
 
 
 def test_vendored_registry_stage_is_silent_on_stdout_when_green():
@@ -9301,15 +9289,19 @@ def test_vendored_registry_stage_is_silent_on_stdout_when_green():
     park this stage permanently red. The pass condition is an empty stdout.
     """
     repo = Path(__file__).resolve().parents[3]
+    from . import rustlints
+
     r = subprocess.run(
-        ["python3", str(repo / "tools" / "vendored.py")],
+        [str(rustlints.ensure(repo)), "--root", str(repo), "--rules", "vendored_registry"],
         capture_output=True,
         text=True,
         cwd=str(repo),
     )
     assert r.returncode == 0, r.stdout + r.stderr
     assert r.stdout == "", f"stdout must be empty when green, got: {r.stdout!r}"
-    assert "OK" in r.stderr
+    from .lints import _scanner_error
+
+    assert not _scanner_error(r, "stdout")
 
 
 # --- the ratchet gates on assertion IDENTITIES, not counts (#78) --------------
@@ -11626,6 +11618,27 @@ def test_wowx64_cpu_layer_older_than_its_sources_is_stale(tmp_path):
     assert build_mod.wowx64_cpu_stale(tmp_path) == ["sdk/include/reactos/wowx64/btcpu64.h"]
 
 
+def test_a_payload_that_exits_with_a_message_says_why(tmp_path, monkeypatch):
+    """vendordrv's stager refuses with `sys.exit("vendordrv: no .inf in <dir>")`. A caught
+    SystemExit prints nothing, so the stage read FAIL with an empty reason (2026-10-17)."""
+    (tmp_path / "tools" / "payloads").mkdir(parents=True)
+    (tmp_path / "tools" / "payloads" / "compile.py").write_text(
+        "import os, sys\n"
+        "def resolve_env_payloads(environ=os.environ):\n"
+        "    return ['vendordrv']\n"
+        "def ensure_built(names, arch):\n"
+        "    sys.exit('vendordrv: no .inf in /somewhere')\n"
+        "def write_stamp(build_dir, environ=os.environ):\n"
+        "    return []\n"
+    )
+    build_dir = tmp_path / "build-amd64"
+    build_dir.mkdir()
+    monkeypatch.setenv("VIBEOS_PAYLOAD", "vendordrv")
+    run = Run("build", "amd64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "amd64") is None
+    assert run.stages[-1].salient == ["vendordrv: no .inf in /somewhere"]
+
+
 def test_a_failed_payload_build_leaves_the_old_stamp(tmp_path, monkeypatch):
     """The stamp is smoke's only evidence of what the media carries. Written ahead of a
     PAYLOAD_BUILD_FAIL, it claimed appstorm64 on media that never got it: the next smoke
@@ -12276,32 +12289,36 @@ def test_payload_crash_is_triaged_with_the_booted_kernel(tmp_path, monkeypatch):
     assert smoke_mod._payload_crash(Path("."), "amd64", tmp_path) is None
 
 
-def test_scan_const_contradictions_keys_associated_consts_by_their_type(tmp_path, monkeypatch):
-    """cppapp gives each ATL dialog class `impl CXDialog { pub const IDD: i32 = .. }`: three
-    dialogs' IDDs are three constants, not a contradiction. Two values in ONE impl still are."""
-    import importlib.util
+def test_scan_const_contradictions_keys_associated_consts_by_their_type(tmp_path):
+    """Dialog classes' distinct IDDs are clean; two values in one class conflict."""
+    from . import rustlints
 
-    spec = importlib.util.spec_from_file_location(
-        "scc", Path(__file__).resolve().parents[3] / "tools" / "scan_const_contradictions.py"
-    )
-    assert spec is not None and spec.loader is not None
-    scc = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(scc)
-    crate = tmp_path / "sdk" / "lib" / "rust" / "x-rust" / "src"
+    repo = Path(__file__).resolve().parents[3]
+    crate = tmp_path / "sdk/lib/rust/x-rust/src"
     crate.mkdir(parents=True)
-    (crate / "a.rs").write_text(
+    source = crate / "a.rs"
+    source.write_text(
         "impl CAttributesDialog {\n    pub const IDD: i32 = 700;\n}\n"
         "impl CFontsDialog {\n    pub const IDD: i32 = 710;\n}\n"
         "pub const IDD: i32 = 5;\n"
     )
-    monkeypatch.setattr(scc, "RUST_ROOT", tmp_path / "sdk" / "lib" / "rust")
-    monkeypatch.setattr(scc, "REPO", tmp_path)
-    decls = scc.collect()
-    assert {k: [v for _, v, _ in vs] for k, vs in decls.items()} == {
-        "CAttributesDialog::IDD": [700],
-        "CFontsDialog::IDD": [710],
-        "IDD": [5],
-    }
+    command = [
+        str(rustlints.ensure(repo)),
+        "--root",
+        str(tmp_path),
+        "--rules",
+        "scan_const_within_crate",
+    ]
+    clean = subprocess.run(command, capture_output=True, text=True)
+    assert clean.returncode == 0, clean.stderr
+    assert clean.stdout == ""
+    source.write_text(
+        source.read_text() + "impl CAttributesDialog {\n    pub const IDD: i32 = 701;\n}\n"
+    )
+    bad = subprocess.run(command, capture_output=True, text=True)
+    assert bad.returncode == 0, bad.stderr
+    assert "CAttributesDialog::IDD" in bad.stdout
+    assert "0x2BC" in bad.stdout and "0x2BD" in bad.stdout
 
 
 def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Path):
@@ -12324,3 +12341,30 @@ def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Pat
     (tiny_repo / "new.c").unlink()
     (tiny_repo / "Cargo.lock").write_text("version = 4\n")
     assert build_mod._inputs_moved(tiny_repo, start) == []
+
+
+def test_fex_build_prerequisites_are_named_up_front(tmp_path):
+    """VIBEOS_FEX=1 arm64 on a fresh worktree: every missing out-of-tree piece is named with
+    the command that provides it, before the build runs (it used to skip, warn, and die at
+    mkramdisk twelve minutes on, or finish green with media that fails every WoW64 guest)."""
+    missing = build_mod.fex_prerequisites_missing(tmp_path, environ={})
+    assert any("build-fex-arm64 not configured" in m for m in missing)
+    assert any("build-i386/dll/ntdll/ntdll.dll" in m and "--arch i386" in m for m in missing)
+    assert any("testgui.exe" in m and "--arch amd64" in m for m in missing)
+    for _stage, tree, _targets, _script in build_mod.FEX_OUT_OF_TREE:
+        (tmp_path / tree).mkdir(parents=True, exist_ok=True)
+        (tmp_path / tree / "build.ninja").write_text("")
+    for rel in (
+        "build-i386/dll/ntdll/ntdll.dll",
+        "build-amd64/base/applications/testgui/testgui.exe",
+    ):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text("")
+    assert build_mod.fex_prerequisites_missing(tmp_path, environ={}) == []
+    # mkramdisk's overrides are honoured: an override pointing nowhere is still missing.
+    assert build_mod.fex_prerequisites_missing(
+        tmp_path, environ={"VIBEOS_NTDLL32": str(tmp_path / "nope.dll")}
+    ) == [
+        f"{tmp_path / 'nope.dll'} absent (the i386 guests' SysWOW64 set): "
+        "./vibeos-cli build --arch i386"
+    ]

@@ -40,6 +40,8 @@
 
 #include "msiserver.h"
 #include "winemsi.h"
+/* remote_*_guarded: the client stubs under SEH, which __TRY is not (DUMMY_PSEH). */
+#include "winemsi_guard.h"
 
 static const BOOL is_64bit = sizeof(void *) > sizeof(int);
 extern BOOL is_wow64;

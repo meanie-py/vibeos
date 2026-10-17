@@ -51,15 +51,8 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # setid.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/setid.rs)
 # shrink.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/shrink.rs)
 # uniqueid.c  # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/uniqueid.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(diskpart_res OBJECT diskpart.rc)
-target_compile_definitions(diskpart_res PRIVATE UNICODE _UNICODE)
-target_include_directories(diskpart_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# Generated inputs those compiles read, ordered before them.
-add_dependencies(diskpart_res diskpart_msg)
 add_cargo_module(diskpart diskpart-cargo diskpart.exe
     KIND win32exe
     BODY_CRATE diskpart-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS diskpart_res xdk)
+    EXTRA_DEPENDS xdk diskpart_msg psdk)

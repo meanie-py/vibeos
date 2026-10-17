@@ -11,13 +11,9 @@
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # replaced by Rust (sdk/lib/rust/hidusb-rust): hidusb.c
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(hidusb_res OBJECT hidusb.rc)
-target_include_directories(hidusb_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(hidusb hidusb-cargo hidusb.sys
     KIND kernelmodedriver
     BODY_CRATE hidusb-rust
     DESTINATION reactos/system32/drivers
     NO_CAB
-    EXTRA_DEPENDS hidusb_res psdk)
+    EXTRA_DEPENDS psdk)

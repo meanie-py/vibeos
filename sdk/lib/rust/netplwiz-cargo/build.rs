@@ -7,6 +7,20 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/dll/shellext/netplwiz",
+        "dll/shellext/netplwiz",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DllMainCRTStartup@12", Some(0x6ff50000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMainCRTStartup", Some(0x7feb8000000u64)),
@@ -23,7 +37,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("netplwiz-rust")
-        .resource_from_rc("dll/shellext/netplwiz/netplwiz.rc", "netplwiz_res")
+        .rc("dll/shellext/netplwiz/netplwiz.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("dll/shellext/netplwiz/netplwiz.spec", "netplwiz.dll")
         .spec_stubs()
         .import_lib("dll/win32/comctl32/comctl32.spec", "comctl32.dll", "comctl32")

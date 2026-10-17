@@ -512,26 +512,9 @@ pub const SHCONTF_NONFOLDERS: DWORD = 64;
 
 pub const SW_SHOW: DWORD = 5;
 
-#[repr(C)]
-pub struct EXTRASEARCH {
-    pub guidSearch: GUID,
-    pub wszFriendlyName: [WCHAR; 80],
-    pub wszUrl: [WCHAR; 2084],
-}
+pub use crate::island::EXTRASEARCH;
 
-#[repr(C)]
-pub struct WIN32_FIND_DATAW {
-    pub dwFileAttributes: DWORD,
-    pub ftCreationTime: FILETIME,
-    pub ftLastAccessTime: FILETIME,
-    pub ftLastWriteTime: FILETIME,
-    pub nFileSizeHigh: DWORD,
-    pub nFileSizeLow: DWORD,
-    pub dwReserved0: DWORD,
-    pub dwReserved1: DWORD,
-    pub cFileName: [WCHAR; 260],
-    pub cAlternateFileName: [WCHAR; 14],
-}
+pub use crate::island::WIN32_FIND_DATAW;
 
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -711,11 +694,7 @@ pub struct SHELLEXECUTEINFOW {
     pub dwHotKey: DWORD, pub icon_or_monitor: HANDLE, pub hProcess: HANDLE,
 }
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: WORD, pub colstate: WORD,
-    pub fmt: WORD, pub cxChar: WORD,
-}
+pub use crate::island::shvheader;
 pub static ControlPanelSFHeader: [shvheader; 2] = [
     shvheader { colnameid: (IDS_SHV_COLUMN_NAME) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (20) as WORD },
     shvheader { colnameid: (IDS_SHV_COLUMN_COMMENTS) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (80) as WORD },
@@ -723,27 +702,13 @@ pub static ControlPanelSFHeader: [shvheader; 2] = [
 
 extern "system" {
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    fn RegCloseKey(key: HKEY) -> LONG;
-    fn RegEnumKeyW(key: HKEY, index: DWORD, name: LPWSTR, capacity: DWORD) -> LONG;
-    fn RegGetValueW(key: HKEY, subkey: LPCWSTR, value: LPCWSTR, flags: DWORD, kind: LPDWORD, data: LPVOID, bytes: LPDWORD) -> LONG;
-    fn RegOpenKeyExW(key: HKEY, subkey: LPCWSTR, options: DWORD, access: REGSAM, result: PHKEY) -> LONG;
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
     fn SHGetNameFromIDList(pidl: PCIDLIST_ABSOLUTE, sigdn: SIGDN, name: *mut PWSTR) -> HRESULT;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
-    fn SHGetSpecialFolderLocation(owner: HWND, csidl: INT, pidl: *mut LPITEMIDLIST) -> HRESULT;
-    fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;
-    fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
 }
 
 extern "C" {
     fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;
-    fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
 
@@ -779,7 +744,7 @@ unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRESULT 
 unsafe fn cpp_com_SHSetStrRetW(out: *mut STRRET, value: LPCWSTR) -> HRESULT {
     let len = lstrlenW(value) as usize;
     let bytes = (len + 1) * core::mem::size_of::<WCHAR>();
-    let buffer = CoTaskMemAlloc(bytes) as LPWSTR;
+    let buffer = CoTaskMemAlloc((bytes) as SIZE_T) as LPWSTR;
     if buffer.is_null() { return E_OUTOFMEMORY; }
     let _ = memcpy(buffer, value, bytes);
     (*out).uType = STRRET_WSTR; (*out).u.pOleStr = buffer; S_OK
@@ -812,6 +777,23 @@ extern "C" {
 }
 
 use crate::island::{GetVersion, CLSID_ShellSearchExt};
+// The crate's own functions: the definition is the declaration.
+use crate::shell32::cidldataobj_free::IDataObject_Constructor;
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILFree;
+use crate::def_view::SHCreateShellFolderView;
+use crate::shell32::shlfolder::SHELL32_CompareDetails;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::wine::shellpath::SHGetSpecialFolderLocation;
+use crate::shell32::shlexec::ShellExecuteExW;
+use crate::wine::pidl::_ILGetDataPointer;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::LoadStringW;
+use crate::island::RegCloseKey;
+use crate::island::RegEnumKeyW;
+use crate::island::RegGetValueW;
+use crate::island::RegOpenKeyExW;
 use crate::prelude::LOBYTE;
 use core::ffi::c_void;
 use crate::shellcom::*;
@@ -871,7 +853,6 @@ extern "C" {
 
 // IDataObject_Constructor — cdecl C companion (drives_folder.rs:1392 / CIDLDataObj.cpp:395)
 extern "C" {
-    fn IDataObject_Constructor(hwndOwner: HWND, pMyPidl: PCIDLIST_ABSOLUTE, apidl: PCUITEMID_CHILD_ARRAY, cidl: UINT, bExtendedObject: BOOL, dataObject: *mut *mut IDataObject) -> HRESULT;
 }
 
 // ── Bridges to retained C++ companions (implemented C++-side as EXTERN_C ... WINAPI) ────
@@ -967,7 +948,7 @@ pub unsafe fn CControlPanelFolder_BindToStorage_body(this: *mut CControlPanelFol
 
 pub unsafe fn CControlPanelFolder_CompareIDs_body(this: *mut CControlPanelFolder, lParam: LPARAM, pidl1: PCUIDLIST_RELATIVE, pidl2: PCUIDLIST_RELATIVE) -> HRESULT {
     if _ILIsSpecialFolder(pidl1) != 0 || _ILIsSpecialFolder(pidl2) != 0 {
-        return SHELL32_CompareDetails(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), lParam, pidl1, pidl2);
+        return SHELL32_CompareDetails((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), lParam, pidl1, pidl2);
     }
     let pData1 = _ILGetCPanelPointer_body(pidl1);
     let pData2 = _ILGetCPanelPointer_body(pidl2);
@@ -1023,8 +1004,8 @@ pub unsafe fn CControlPanelFolder_CreateViewObject_body(this: *mut CControlPanel
             psfvcb: core::ptr::addr_of_mut!((*this).IShellFolderViewCB_iface) as *mut core::ffi::c_void,
         };
         hr = SHCreateShellFolderView(
-            &sfvparams as *const SFV_CREATE,
-            ppvOut as *mut *mut IShellView,
+            (&sfvparams as *const SFV_CREATE).cast(),
+            (ppvOut as *mut *mut IShellView).cast(),
         );
     }
 

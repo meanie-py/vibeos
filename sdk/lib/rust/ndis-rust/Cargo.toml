@@ -16,3 +16,4 @@ panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 win32macros-rust = { path = "../win32macros-rust" }
 wpa-rust = { path = "../wpa-rust" }
+ndis6-sys = { path = "../ndis6-sys" }

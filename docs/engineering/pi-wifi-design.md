@@ -4,7 +4,8 @@ Status (2026-10-17): protocol, SDIO, chip, firmware-load and frame layers host-t
 against a simulated controller and firmware; on the Pi 5, bwfm.sys loads the firmware and
 the firmware answers `ver`, takes the CLM blob, scans, and joins the bench's hidden
 WPA2-PSK network with the host's own 4-way handshake (run `20261017-074933-gupdzsjz`, see 6).
-Next: the data path into netstack.
+bwfm.sys is an NDIS 6 miniport and carries netstack's traffic: DHCP lease, gateway ping
+and DNS over Wi-Fi, and the host pings the board back (run `20261017-105240-4fzlm0y6`, see 7).
 
 ## Why our own
 
@@ -180,5 +181,32 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
        [BWFM] 4-way handshake complete in 2789 ms: link up, keys installed (2 EAPOL in, 2 out)
 
    `pi5 boot --until TEXT` keeps reading serial past the desktop: the join finishes after it.
-7. Data path: frames to and from netstack (NDIS miniport or a netstack backend), DHCP,
-   group rekeys. Then the Pi 4 (host and power differ).
+7. Data path: an NDIS 6 miniport (`miniport.rs`, `link.rs`). One path to netstack for
+   every Wi-Fi adapter: netstack binds an NDIS 802.3 miniport when it drives no NIC itself
+   (`/NETSTACK=NDIS` on the Pi 5, whose GEM it would otherwise take), as it binds the
+   OptiPlex's Realtek. PnP installs bwfm from `netbwfm.inf` on `VIBEOS\CYW43455` (a Net
+   class key is what ndis.sys's AddDevice needs, so the critical-device entry is gone).
+   Initialize runs the bring-up to a running firmware and its MAC (the general attributes
+   need it) and starts a worker, which owns the bus from then on: scan, join, link up to
+   the protocols, then frames both ways; when the link fails or the AP leaves, `leave`,
+   link down, and join again (5 s, doubling to a minute after failures). The send handler
+   may run at DISPATCH_LEVEL and the SDIO bus waits, so it only copies frames into a ring
+   (`net::TxRing`) for the worker. Receives are indicated at DISPATCH_LEVEL with
+   RESOURCES (NDIS copies; the one NBL is never returned). The worker polls the chip every
+   4 ms when idle: the card interrupt is still owed. The join hands back its `Station`,
+   whose supplicant answers the AP's group rekeys for as long as the link lasts. The NDIS 6
+   layouts are one crate, `ndis6-sys`, shared with ndis.sys's NDIS 6 shim.
+   On the Pi 5 (`pi5 boot --options /NETSTACK=NDIS`, run `20261017-105240-4fzlm0y6`), PnP
+   installed it about 1.5 minutes into boot and netstack bound it before the join finished:
+
+       [BWFM] NDIS adapter ready
+        [NETSTACK] NDIS: bound adapter MAC b8:27:eb:74:f2:6c
+       [BWFM] 4-way handshake complete in 2788 ms: link up, keys installed (2 EAPOL in, 2 out)
+       [BWFM] link up at 72 Mb/s: carrying traffic
+        [NETSTACK] dhcp lease 192.168.1.150
+        [NETSTACK] ping gateway OK
+        [NETSTACK] dns OK (example.com resolved)
+
+   The host pinged 192.168.1.150 back, 5 of 5. Still owed: a soak through the AP's group
+   rekeys on the board (host-tested only), the card interrupt in place of the 4 ms poll,
+   high-speed SDIO, and the Pi 4 (host and power differ).

@@ -323,6 +323,11 @@ typedef struct _WAVEHDR_EXTENSION
 {
     DWORD BytesCommitted;
     DWORD BytesCompleted;
+    /* Repeats of a WHDR_BEGINLOOP|WHDR_ENDLOOP header still to commit / still to
+       complete (INFINITE = forever). Per header, because the commit side runs ahead of
+       the completion side and can reach the next looped header first. */
+    DWORD LoopsToCommit;
+    DWORD LoopsToComplete;
 } WAVEHDR_EXTENSION, *PWAVEHDR_EXTENSION;
 
 

@@ -545,15 +545,12 @@ UINT WINAPI MsiGetSummaryInformationW( MSIHANDLE hDatabase, const WCHAR *szDatab
             if (!(remote = msi_get_remote(hDatabase)))
                 return ERROR_INVALID_HANDLE;
 
-            __TRY
             {
-                ret = remote_DatabaseGetSummaryInformation(remote, uiUpdateCount, &remote_suminfo);
+                DWORD code;
+
+                if (!remote_DatabaseGetSummaryInformation_guarded(rpc_filter, &code, &ret, remote, uiUpdateCount, &remote_suminfo))
+                    ret = code;
             }
-            __EXCEPT(rpc_filter)
-            {
-                ret = GetExceptionCode();
-            }
-            __ENDTRY
 
             if (!ret)
                 *pHandle = alloc_msi_remote_handle(remote_suminfo);
@@ -622,15 +619,12 @@ UINT WINAPI MsiSummaryInfoGetPropertyCount( MSIHANDLE hSummaryInfo, UINT *pCount
         if (!(remote = msi_get_remote( hSummaryInfo )))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            ret = remote_SummaryInfoGetPropertyCount( remote, pCount );
+            DWORD code;
+
+            if (!remote_SummaryInfoGetPropertyCount_guarded(rpc_filter, &code, &ret, remote, pCount))
+                ret = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            ret = GetExceptionCode();
-        }
-        __ENDTRY
 
         return ret;
     }
@@ -762,15 +756,12 @@ UINT WINAPI MsiSummaryInfoGetPropertyA( MSIHANDLE handle, UINT uiProperty, UINT 
         if (!(remote = msi_get_remote( handle )))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            r = remote_SummaryInfoGetProperty( remote, uiProperty, puiDataType, piValue, pftValue, &buf );
+            DWORD code;
+
+            if (!remote_SummaryInfoGetProperty_guarded(rpc_filter, &code, &r, remote, uiProperty, puiDataType, piValue, pftValue, &buf))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!r && buf)
         {
@@ -813,15 +804,12 @@ UINT WINAPI MsiSummaryInfoGetPropertyW( MSIHANDLE handle, UINT uiProperty, UINT 
         if (!(remote = msi_get_remote( handle )))
             return ERROR_INVALID_HANDLE;
 
-        __TRY
         {
-            r = remote_SummaryInfoGetProperty( remote, uiProperty, puiDataType, piValue, pftValue, &buf );
+            DWORD code;
+
+            if (!remote_SummaryInfoGetProperty_guarded(rpc_filter, &code, &r, remote, uiProperty, puiDataType, piValue, pftValue, &buf))
+                r = code;
         }
-        __EXCEPT(rpc_filter)
-        {
-            r = GetExceptionCode();
-        }
-        __ENDTRY
 
         if (!r && buf)
             r = msi_strncpyW( buf, -1, szValueBuf, pcchValueBuf );

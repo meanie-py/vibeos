@@ -567,12 +567,7 @@ pub const SHCOLSTATE_TYPE_INT: DWORD = 2;
 
 pub const SHCONTF_NONFOLDERS: DWORD = 64;
 
-#[repr(C)]
-pub struct EXTRASEARCH {
-    pub guidSearch: GUID,
-    pub wszFriendlyName: [WCHAR; 80],
-    pub wszUrl: [WCHAR; 2084],
-}
+pub use crate::island::EXTRASEARCH;
 
 #[repr(C)]
 pub struct PRINTER_INFO_4W {
@@ -674,11 +669,7 @@ pub type LPTBBUTTONSB = *mut core::ffi::c_void;
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: WORD, pub colstate: WORD,
-    pub fmt: WORD, pub cxChar: WORD,
-}
+pub use crate::island::shvheader;
 pub static PrinterSFHeader: [shvheader; 6] = [
     shvheader { colnameid: (IDS_SHV_COLUMN_NAME) as WORD, colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (15) as WORD },
     shvheader { colnameid: (IDS_SHV_COLUMN_DOCUMENTS) as WORD, colstate: (SHCOLSTATE_TYPE_INT | SHCOLSTATE_ONBYDEFAULT) as WORD, fmt: (LVCFMT_LEFT) as WORD, cxChar: (15) as WORD },
@@ -690,17 +681,11 @@ pub static PrinterSFHeader: [shvheader; 6] = [
 
 extern "system" {
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CPrintersEnum_CreateInstance(owner: HWND, flags: DWORD, out: *mut *mut IEnumIDList) -> HRESULT;
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
     fn SHCreateDefaultExtractIcon(riid: REFIID, out: *mut LPVOID) -> HRESULT;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
-    fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
 }
 
 extern "C" {
-    fn _ILGetDataPointer(pidl: LPCITEMIDLIST) -> *mut PIDLDATA;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
 
@@ -727,7 +712,7 @@ extern "C" {
 unsafe fn cpp_com_SHSetStrRetW(out: *mut STRRET, value: LPCWSTR) -> HRESULT {
     let len = lstrlenW(value) as usize;
     let bytes = (len + 1) * core::mem::size_of::<WCHAR>();
-    let buffer = CoTaskMemAlloc(bytes) as LPWSTR;
+    let buffer = CoTaskMemAlloc((bytes) as SIZE_T) as LPWSTR;
     if buffer.is_null() { return E_OUTOFMEMORY; }
     let _ = memcpy(buffer, value, bytes);
     (*out).uType = STRRET_WSTR; (*out).u.pOleStr = buffer; S_OK
@@ -760,6 +745,14 @@ extern "C" {
 }
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::def_view::SHCreateShellFolderView;
+use crate::shell32::shlfolder::SHELL32_CompareDetails;
+use crate::wine::pidl::_ILGetDataPointer;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::LoadStringW;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -823,7 +816,7 @@ pub unsafe fn CPrinterFolder_BindToObject_body(this: *mut CPrinterFolder, pidl: 
 pub unsafe fn CPrinterFolder_BindToStorage_body(this: *mut CPrinterFolder, pidl: PCUIDLIST_RELATIVE, pbcReserved: LPBC, riid: REFIID, ppvOut: *mut *mut core::ffi::c_void) -> HRESULT { *ppvOut = NULL; E_NOTIMPL }
 
 pub unsafe fn CPrinterFolder_CompareIDs_body(this: *mut CPrinterFolder, lParam: LPARAM, pidl1: PCUIDLIST_RELATIVE, pidl2: PCUIDLIST_RELATIVE) -> HRESULT {
-    SHELL32_CompareDetails(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), lParam, pidl1, pidl2)
+    SHELL32_CompareDetails((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), lParam, pidl1, pidl2)
 }
 
 pub unsafe fn CPrinterFolder_CreateViewObject_body(this: *mut CPrinterFolder, hwndOwner: HWND, riid: REFIID, ppvOut: *mut *mut core::ffi::c_void) -> HRESULT {
@@ -848,8 +841,8 @@ pub unsafe fn CPrinterFolder_CreateViewObject_body(this: *mut CPrinterFolder, hw
     }; // this implements IShellFolder
 
         hr = SHCreateShellFolderView(
-            &sfvparams as *const SFV_CREATE,
-            ppvOut as *mut *mut IShellView,
+            (&sfvparams as *const SFV_CREATE).cast(),
+            (ppvOut as *mut *mut IShellView).cast(),
         );
     }
 

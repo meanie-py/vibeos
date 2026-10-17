@@ -161,7 +161,7 @@ pub unsafe extern "system" fn Shell_NotifyIconW(dwMessage: u32, pnid: *mut NOTIF
     }
 
     let mut data: COPYDATASTRUCT = core::mem::zeroed();
-    data.dwData = (TABDMC_NOTIFY) as usize;
+    data.dwData = ((TABDMC_NOTIFY) as usize) as _;
     data.cbData = core::mem::size_of::<TRAYNOTIFYDATAW>() as u32;
     data.lpData = &raw const tnid as *const TRAYNOTIFYDATAW as *mut core::ffi::c_void;
 

@@ -2,6 +2,19 @@
 //! settings helpers.
 
 use crate::shellcom::*;
+// The crate's own functions: the definition is the declaration.
+use crate::dialogs_filetypes_tu::FolderOptionsFileTypesDlg;
+use crate::dialogs_general::FolderOptionsGeneralDlg;
+use crate::dialogs_view::FolderOptionsViewDlg;
+use crate::def_view::SHCreateShellFolderView;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::propsheet::SH_CreatePropertySheetPage;
+use crate::propsheet::SH_CreatePropertySheetPageEx;
+// One declaration per external symbol: island.rs.
+use crate::island::CoCreateInstance;
+use crate::island::DestroyPropertySheetPage;
+use crate::island::IUnknown_Exec;
+use crate::island::IUnknown_QueryService;
 use crate::types::*;
 use core::ffi::c_void;
 
@@ -12,22 +25,7 @@ pub type DLGPROC = unsafe extern "system" fn(HWND, UINT, WPARAM, LPARAM) -> INT_
 pub type LPFNPSPCALLBACKW =
     unsafe extern "system" fn(HWND, UINT, *mut PROPSHEETPAGEW) -> UINT;
 
-#[repr(C)]
-pub struct PROPSHEETPAGEW {
-    pub dwSize: DWORD,
-    pub dwFlags: DWORD,
-    pub hInstance: HINSTANCE,
-    pub pszTemplate: LPCWSTR,
-    pub hIcon: HANDLE,
-    pub pszTitle: LPCWSTR,
-    pub pfnDlgProc: Option<DLGPROC>,
-    pub lParam: LPARAM,
-    pub pfnCallback: Option<LPFNPSPCALLBACKW>,
-    pub pcRefParent: *mut UINT,
-    pub pszHeaderTitle: LPCWSTR,
-    pub pszHeaderSubTitle: LPCWSTR,
-    pub hActCtx: HANDLE,
-}
+pub use crate::island::PROPSHEETPAGEW;
 
 #[repr(C)]
 struct IGlobalFolderSettings {
@@ -151,19 +149,6 @@ extern "C" {
     static IID_IShellBrowser: IID;
     static CGID_DefView: GUID;
 
-    fn SH_CreatePropertySheetPageEx(
-        dialog_id: WORD,
-        dlgproc: DLGPROC,
-        parameter: LPARAM,
-        title: LPCWSTR,
-        callback: Option<LPFNPSPCALLBACKW>,
-    ) -> HPROPSHEETPAGE;
-    fn SH_CreatePropertySheetPage(
-        dialog_id: WORD,
-        dlgproc: DLGPROC,
-        parameter: LPARAM,
-        title: LPCWSTR,
-    ) -> HPROPSHEETPAGE;
 }
 
 extern "system" {
@@ -174,33 +159,6 @@ extern "system" {
     fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
-    fn CoCreateInstance(
-        clsid: REFCLSID,
-        outer: *mut IUnknown,
-        context: DWORD,
-        riid: REFIID,
-        out: *mut *mut c_void,
-    ) -> HRESULT;
-    fn IUnknown_QueryService(
-        object: *mut IUnknown,
-        service: REFGUID,
-        riid: REFIID,
-        out: *mut *mut c_void,
-    ) -> HRESULT;
-    fn IUnknown_Exec(
-        object: *mut IUnknown,
-        command_group: REFGUID,
-        command: DWORD,
-        options: DWORD,
-        input: *mut c_void,
-        output: *mut c_void,
-    ) -> HRESULT;
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IUnknown) -> HRESULT;
-    fn DestroyPropertySheetPage(page: HPROPSHEETPAGE) -> BOOL;
-    fn FolderOptionsGeneralDlg(_: HWND, _: UINT, _: WPARAM, _: LPARAM) -> INT_PTR;
-    fn FolderOptionsViewDlg(_: HWND, _: UINT, _: WPARAM, _: LPARAM) -> INT_PTR;
-    fn FolderOptionsFileTypesDlg(_: HWND, _: UINT, _: WPARAM, _: LPARAM) -> INT_PTR;
 }
 
 #[repr(C)]
@@ -338,7 +296,7 @@ unsafe extern "system" fn prop_add_pages(
         if add_page.unwrap_unchecked()(page, parameter) != FALSE {
             return S_OK;
         }
-        DestroyPropertySheetPage(page);
+        DestroyPropertySheetPage((page).cast());
         E_FAIL
     }
 
@@ -346,7 +304,7 @@ unsafe extern "system" fn prop_add_pages(
     let sheet_parameter = object as LPARAM;
     let page = SH_CreatePropertySheetPageEx(
         IDD_FOLDER_OPTIONS_GENERAL,
-        FolderOptionsGeneralDlg,
+        Some(FolderOptionsGeneralDlg),
         sheet_parameter,
         core::ptr::null(),
         Some(lifetime_callback),
@@ -361,7 +319,7 @@ unsafe extern "system" fn prop_add_pages(
 
     let page = SH_CreatePropertySheetPage(
         IDD_FOLDER_OPTIONS_VIEW,
-        FolderOptionsViewDlg,
+        Some(FolderOptionsViewDlg),
         sheet_parameter,
         core::ptr::null(),
     );
@@ -371,7 +329,7 @@ unsafe extern "system" fn prop_add_pages(
 
     let page = SH_CreatePropertySheetPage(
         IDD_FOLDER_OPTIONS_FILETYPES,
-        FolderOptionsFileTypesDlg,
+        Some(FolderOptionsFileTypesDlg),
         sheet_parameter,
         core::ptr::null(),
     );
@@ -536,7 +494,7 @@ unsafe fn reset_global_folder_settings() -> HRESULT {
 #[inline]
 unsafe fn exec_reset_def_view_folder_settings(object: *mut IUnknown) -> HRESULT {
     IUnknown_Exec(
-        object,
+        (object).cast(),
         core::ptr::addr_of!(CGID_DefView),
         DVCMDID_RESET_DEFAULTFOLDER_SETTINGS,
         0,
@@ -556,7 +514,7 @@ unsafe fn reset_def_view_folder_settings() -> HRESULT {
             psfvcb: core::ptr::null_mut(),
         };
         let mut view = core::ptr::null_mut::<IUnknown>();
-        hr = SHCreateShellFolderView(core::ptr::addr_of!(create), core::ptr::addr_of_mut!(view));
+        hr = SHCreateShellFolderView((core::ptr::addr_of!(create)).cast(), (core::ptr::addr_of_mut!(view)).cast());
         if hr >= 0 {
             hr = exec_reset_def_view_folder_settings(view);
             if !view.is_null() {
@@ -579,7 +537,7 @@ unsafe fn reset_global_and_def_view_folder_settings() -> HRESULT {
 unsafe fn handle_def_folder_settings(site: *mut IUnknown, action: i32) -> HRESULT {
     let mut browser = core::ptr::null_mut::<IBrowserService2>();
     let mut hr = IUnknown_QueryService(
-        site,
+        (site).cast(),
         core::ptr::addr_of!(IID_IShellBrowser),
         core::ptr::addr_of!(IID_IBrowserService2),
         core::ptr::addr_of_mut!(browser).cast(),

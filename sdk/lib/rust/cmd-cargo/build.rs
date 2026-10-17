@@ -7,6 +7,95 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["base/shell/cmd/rust_varargs_shim.c"];
+    let c_includes: &[&str] = &[
+        "@build/base/shell/cmd",
+        "base/shell/cmd",
+        "@std",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+        "sdk/lib/conutils",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-std=gnu99",
+            "@core",
+        ],
+        "x86_64" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-std=gnu99",
+            "-U_X86_",
+            "-UWIN32",
+            "@core",
+        ],
+        "aarch64" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-std=gnu99",
+            "@core",
+        ],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &[
+        "UNICODE",
+        "WINVER=0x502",
+        "_CRT_DECLARE_NONSTDC_NAMES=1",
+        "_CRT_NONSTDC_NO_DEPRECATE",
+        "_DLL",
+        "_UNICODE",
+        "_WIN32_WINNT=0x502",
+        "__USE_CRTIMP",
+    ];
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/shell/cmd",
+        "base/shell/cmd",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["UNICODE", "WINVER=0x502", "_UNICODE", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_wmainCRTStartup"),
         "x86_64" => ("x86_64-pc-windows-gnu", "wmainCRTStartup"),
@@ -23,8 +112,8 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("cmd-rust")
-        .c_from_compile_db("cmd_shims", &["base/shell/cmd/rust_varargs_shim.c"])
-        .resource_from_rc("base/shell/cmd/cmd.rc", "cmd_res")
+        .c_compiled("cmd_shims", c_sources, c_includes, c_flags, c_defines)
+        .rc("base/shell/cmd/cmd.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("dll/win32/advapi32/advapi32.spec", "advapi32.dll", "advapi32")
         .import_lib("dll/win32/msvcrt/msvcrt.spec", "msvcrt.dll", "msvcrt")
         .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")

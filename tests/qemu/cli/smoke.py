@@ -1700,6 +1700,32 @@ def smoke(args, repo: Path) -> int:
     else:
         run.add(Stage("staleness", status="ok", detail="current"))
 
+    # --- ladder media preflight (hard boundary) ---
+    # Guests staged without the ntdll they load fail every rung for a reason that is not
+    # in the OS (ladder.media_missing_runtime). Refuse before booting, naming the build.
+    if getattr(args, "ladder", False):
+        absent = ladder_mod.media_missing_runtime(repo, arch)
+        if absent:
+            run.classification = "LADDER_MEDIA_INCOMPLETE"
+            run.add(
+                Stage(
+                    "ladder-media",
+                    status="fail",
+                    detail=f"{len(absent)} guest runtime file(s) not on the media",
+                    salient=[
+                        *absent,
+                        "build i386 and amd64 first, then the arch: "
+                        "./vibeos-cli build --arch i386 && ./vibeos-cli build --arch amd64"
+                        + (
+                            " && VIBEOS_FEX=1 ./vibeos-cli build --arch arm64"
+                            if arch == "arm64"
+                            else ""
+                        ),
+                    ],
+                )
+            )
+            return run.finalize(repo)
+
     # --- probe preflight (hard boundary) ---
     # An instrumented run whose probe is not in the media is worse than no run:
     # it spends the boots AND reads as evidence of absence. Fail before booting.

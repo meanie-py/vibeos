@@ -999,28 +999,12 @@ def check_export_imports(repo: Path | None = None) -> tuple[list[str], list[str]
 
 
 def main() -> int:
-    findings = (
-        check_structure()
-        + check_extern_crates()
-        + check_rebuild_lists()
-        + check_archive()
-        + check_force_includes()
-        + check_win32_abi()
+    print(
+        "verify_ucrtbase_cohab: audit moved to ./vibeos-cli check "
+        "(Rust rule: verify_ucrtbase_cohab); reporting APIs remain available",
+        file=sys.stderr,
     )
-    bd_fails, bd_notes = check_burndown()
-    findings += bd_fails
-    ei_fails, ei_notes = check_export_imports()
-    findings += ei_fails
-    bd_notes += ei_notes
-    for f in findings:
-        print(f)
-    # Notes last, so a green run ends on the number going down -- which is the
-    # one line anyone actually wants to see from this tool. On STDERR: the lint
-    # harness counts stdout lines as findings against a baseline, so a note there
-    # ("not measured, build is stale") failed `check --strict` and blocked a land.
-    for n in bd_notes:
-        print(n, file=sys.stderr)
-    return 1 if findings else 0
+    return 2
 
 
 if __name__ == "__main__":

@@ -309,11 +309,7 @@ extern "C" {
 
 pub type WPARAM = UINT_PTR;
 pub type LRESULT = LONG_PTR;
-#[repr(C)]
-pub struct MSG {
-    pub hwnd: HWND, pub message: UINT, pub wParam: WPARAM,
-    pub lParam: LPARAM, pub time: DWORD, pub pt: POINT,
-}
+pub use crate::island::MSG;
 pub type WNDPROC = Option<unsafe extern "system" fn(
     HWND, UINT, WPARAM, LPARAM,
 ) -> LRESULT>;
@@ -341,25 +337,15 @@ unsafe extern "system" fn CUserNotification_WorkerWndProc(
 }
 
 extern "system" {
-    fn DestroyIcon(icon: HICON) -> BOOL;
     fn CopyIcon(icon: HICON) -> HICON;
-    fn DestroyWindow(window: HWND) -> BOOL;
-    fn DefWindowProcW(window: HWND, message: UINT, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
-    fn DispatchMessageW(message: *const MSG) -> LRESULT;
-    fn GetMessageW(message: *mut MSG, window: HWND, first: UINT, last: UINT) -> BOOL;
     #[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")]
     fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
-    fn KillTimer(window: HWND, id: UINT_PTR) -> BOOL;
     #[link_name = "LoadIconW"] fn LoadIcon(instance: HINSTANCE, name: LPCWSTR) -> HICON;
-    fn LoadIconW(instance: HINSTANCE, name: LPCWSTR) -> HICON;
     fn PlaySoundW(sound: LPCWSTR, module: HANDLE, flags: DWORD) -> BOOL;
     fn PostQuitMessage(exit_code: INT);
-    fn SetTimer(window: HWND, id: UINT_PTR, timeout: UINT, callback: Option<unsafe extern "system" fn(HWND, UINT, UINT_PTR, DWORD)>) -> UINT_PTR;
     #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")]
     fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
-    fn SHCreateWorkerWindowW(callback: WNDPROC, parent: HWND, ex_style: DWORD, style: DWORD, menu: HMENU, extra: LONG_PTR) -> HWND;
     fn Shell_NotifyIconW(message: DWORD, data: *mut NOTIFYICONDATAW) -> BOOL;
-    fn TranslateMessage(message: *const MSG) -> BOOL;
     fn lstrlenW(text: LPCWSTR) -> INT;
 }
 
@@ -432,9 +418,6 @@ unsafe fn StringCchCopyW(dst: LPWSTR, capacity: usize, src: LPCWSTR) -> HRESULT 
 }
 
 extern "system" {
-    fn HeapReAlloc(heap: HANDLE, flags: DWORD, memory: LPVOID, bytes: usize) -> LPVOID;
-    fn GetModuleHandleW(name: LPCWSTR) -> HINSTANCE;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
 }
 
 pub struct CStringW { buffer: LPWSTR, len: usize, capacity: usize }
@@ -464,7 +447,7 @@ impl CStringW {
         let next = if self.buffer.is_null() {
             HeapAlloc(GetProcessHeap(), 0, bytes)
         } else {
-            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), bytes)
+            HeapReAlloc(GetProcessHeap(), 0, self.buffer.cast(), (bytes) as SIZE_T)
         } as LPWSTR;
         if next.is_null() { return false; }
         self.buffer = next; self.capacity = capacity; true
@@ -524,6 +507,20 @@ impl Drop for CStringW {
 static CPP_COM_EMPTY_WSTR: [WCHAR; 1] = [0];
 
 use core::ffi::c_void;
+// One declaration per external symbol: island.rs.
+use crate::island::DefWindowProcW;
+use crate::island::DestroyIcon;
+use crate::island::DestroyWindow;
+use crate::island::DispatchMessageW;
+use crate::island::GetMessageW;
+use crate::island::GetModuleHandleW;
+use crate::island::HeapReAlloc;
+use crate::island::KillTimer;
+use crate::island::LoadIconW;
+use crate::island::LoadStringW;
+use crate::island::SHCreateWorkerWindowW;
+use crate::island::SetTimer;
+use crate::island::TranslateMessage;
 use crate::shellcom::*;
 use crate::types::*;
 
@@ -547,7 +544,7 @@ pub unsafe fn CUserNotification_dtor_body(this: *mut CUserNotification) -> () {
         (*this).m_hWorkerWnd = core::ptr::null_mut();
     }
     if !(*this).m_hIcon.is_null() {
-        DestroyIcon((*this).m_hIcon);
+        DestroyIcon(((*this).m_hIcon).cast());
     }
 }
 
@@ -660,7 +657,7 @@ pub unsafe fn CUserNotification_SetIconInfo_body(this: *mut CUserNotification, h
 
     // Destroy our local icon copy
     if !(*this).m_hIcon.is_null() {
-        DestroyIcon((*this).m_hIcon);
+        DestroyIcon(((*this).m_hIcon).cast());
     }
 
     if !hIcon.is_null() {
@@ -681,7 +678,7 @@ pub unsafe fn CUserNotification_SetIconInfo_body(this: *mut CUserNotification, h
         }
 
         (*this).m_hIcon = if !pIcon.is_null() {
-            LoadIconW(core::ptr::null_mut(), pIcon)
+            (LoadIconW(core::ptr::null_mut(), pIcon)).cast()
         } else {
             core::ptr::null_mut()
         };
@@ -718,7 +715,7 @@ pub unsafe fn CUserNotification_WorkerWndProc_body(this: *mut CUserNotification,
         }
 
         WM_NCDESTROY => {
-            SetWindowLongPtrW(hWnd, 0, 0 as isize);
+            SetWindowLongPtrW(hWnd, 0, (0 as isize) as _);
             (*this).m_hWorkerWnd = core::ptr::null_mut();
             return 0 as LRESULT;
         }

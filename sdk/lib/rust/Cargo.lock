@@ -533,6 +533,7 @@ dependencies = [
 name = "bwfm-rust"
 version = "0.1.0"
 dependencies = [
+ "ndis6-sys",
  "ntkrnl-sys",
  "panic-common",
  "sdhci-rust",
@@ -3338,6 +3339,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmcshext-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "mmdrv-cargo"
 version = "0.1.0"
 dependencies = [
@@ -3354,6 +3367,15 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "mmebuddy-difftest"
+version = "0.1.0"
+dependencies = [
+ "cc",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -3893,11 +3915,19 @@ dependencies = [
 name = "ndis-rust"
 version = "0.1.0"
 dependencies = [
+ "ndis6-sys",
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
  "wpa-rust",
+]
+
+[[package]]
+name = "ndis6-sys"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
 ]
 
 [[package]]
@@ -5605,6 +5635,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "setupapi-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "setuplib-rust"
 version = "0.1.0"
 dependencies = [
@@ -6226,6 +6267,17 @@ dependencies = [
 
 [[package]]
 name = "tdi-rust"
+version = "0.1.0"
+dependencies = [
+ "ddk-macros-rust",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "tdihelpers-rust"
 version = "0.1.0"
 dependencies = [
  "ddk-macros-rust",

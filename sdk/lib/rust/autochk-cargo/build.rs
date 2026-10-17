@@ -7,6 +7,39 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["base/system/autochk/rust_varargs_shim.c"];
+    let c_includes: &[&str] = &[
+        "@build/base/system/autochk",
+        "base/system/autochk",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &["-std=gnu99", "@core"],
+        "x86_64" => &["-std=gnu99", "-U_X86_", "-UWIN32", "@core"],
+        "aarch64" => &["-std=gnu99", "@core"],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
+    // The module's part of cmake's windres command; reactos-link adds what every
+    // module shares from reactos-link/cflags/rc.<arch>.flags (Linker::rc).
+    let rc_includes: &[&str] = &[
+        "@build/base/system/autochk",
+        "base/system/autochk",
+        "@std",
+        "sdk/lib/pseh/include",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let rc_flags: &[&str] = &[];
+    let rc_defines: &[&str] = &["WINVER=0x502", "_WIN32_WINNT=0x502"];
+
     let (target_json, entry) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_NtProcessStartup@4"),
         "x86_64" => ("x86_64-pc-windows-gnu", "NtProcessStartup"),
@@ -23,8 +56,8 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("autochk-rust")
-        .c_from_compile_db("autochk_shims", &["base/system/autochk/rust_varargs_shim.c"])
-        .resource_from_rc("base/system/autochk/autochk.rc", "autochk_res")
+        .c_compiled("autochk_shims", c_sources, c_includes, c_flags, c_defines)
+        .rc("base/system/autochk/autochk.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
         // ...and those cmake linked after the body, in the same order.
         .static_libs_after_body(late_libs)

@@ -16,13 +16,9 @@ add_registry_inf(buslogic_reg.inf)
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # C body replaced by Rust (BusLogic958.c) — kept on disk per the never-delete rule.
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(buslogic_res OBJECT BusLogic958.rc)
-target_include_directories(buslogic_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(buslogic buslogic-cargo buslogic.sys
     KIND kernelmodedriver
     BODY_CRATE buslogic-rust
     DESTINATION reactos/system32/drivers
     NO_CAB
-    EXTRA_DEPENDS buslogic_res asm psdk)
+    EXTRA_DEPENDS asm psdk)

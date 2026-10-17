@@ -11,19 +11,8 @@ spec2def(acgenral.dll genral.spec)
 # main.c  # replaced by Rust (sdk/lib/rust/acgenral-rust/src/acgenral/main.rs)
 # shimtest.c  # replaced by Rust (sdk/lib/rust/acgenral-rust/src/acgenral/shimtest.rs)
 # themes.c  # replaced by Rust (sdk/lib/rust/acgenral-rust/src/acgenral/themes.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-set(ACGENRAL_SHIMS rust_cohab_stub.c)
-if(ARCH STREQUAL "amd64")
-    list(APPEND ACGENRAL_SHIMS msys2.c)
-endif()
-set(ACGENRAL_SHIMS_TARGET)
-if(ACGENRAL_SHIMS)
-    add_library(acgenral_shims OBJECT ${ACGENRAL_SHIMS})
-    set(ACGENRAL_SHIMS_TARGET acgenral_shims)
-    target_link_libraries(acgenral_shims PRIVATE shimlib libuxtheme libkernel32 libntdll)
-endif()
 add_cargo_module(acgenral acgenral-cargo acgenral.dll
     KIND win32dll
     BODY_CRATE acgenral-rust
     DESTINATION reactos/AppPatch
-    EXTRA_DEPENDS ${ACGENRAL_SHIMS_TARGET} xdk)
+    EXTRA_DEPENDS xdk psdk shimlib libuxtheme libkernel32 libntdll)

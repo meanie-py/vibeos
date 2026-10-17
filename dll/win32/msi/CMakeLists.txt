@@ -52,6 +52,9 @@ BISON_TARGET(sql sql.y ${CMAKE_CURRENT_BINARY_DIR}/sql.tab.c)
 set(OLD_IDL_FLAGS ${IDL_FLAGS})
 set(IDL_FLAGS ${IDL_FLAGS} --prefix-server=s_)
 add_rpc_files(client winemsi.idl)
+# The guarded client stubs (remote_*_guarded, winemsi_guard.c) run under RtlSehTryExcept, since
+# __TRY/__EXCEPT(rpc_filter) is a no-op under DUMMY_PSEH on every arch.
+add_rpc_guards(winemsi windef.h winbase.h)
 add_rpc_files(server winemsi.idl)
 add_idl_headers(msi_idlheader msiserver.idl winemsi.idl)
 set(IDL_FLAGS ${OLD_IDL_FLAGS})
@@ -64,6 +67,7 @@ list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/msiserver_i.c
     ${CMAKE_CURRENT_BINARY_DIR}/winemsi_c.c
     ${CMAKE_CURRENT_BINARY_DIR}/winemsi_s.c
+    ${winemsi_GUARD_SOURCE}
     ${CMAKE_CURRENT_BINARY_DIR}/msi_stubs.c)
 
 add_library(msi MODULE

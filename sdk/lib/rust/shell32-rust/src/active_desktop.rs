@@ -151,7 +151,6 @@ extern "C" {
 // Deterministic COM scaffold for CActiveDesktop; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    fn HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
     fn HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
@@ -510,7 +509,7 @@ pub unsafe extern "system" fn CActiveDesktop_CreateInstance(
     let this = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<CActiveDesktop>(),
+        (core::mem::size_of::<CActiveDesktop>()) as _,
     ) as *mut CActiveDesktop;
     if this.is_null() {
         return E_OUTOFMEMORY;
@@ -535,6 +534,8 @@ pub unsafe extern "system" fn CActiveDesktop_CreateInstance(
 }
 
 use crate::shellcom::*;
+// One declaration per external symbol: island.rs.
+use crate::island::HeapAlloc;
 use crate::types::*;
 use core::ffi::c_void;
 

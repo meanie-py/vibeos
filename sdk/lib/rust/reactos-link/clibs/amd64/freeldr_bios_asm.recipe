@@ -1,0 +1,6 @@
+# freeldr_bios_asm (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+asm	boot/freeldr/freeldr/arch/i386/multiboot.S	sdk/include/asm @build/sdk/include/asm @build/boot/freeldr/freeldr boot/freeldr/freeldr boot/freeldr/freeldr/include/arch/uefi boot/freeldr/freeldr/include vendor/edk2 @std	@core	_BLDR_ _NTHAL_ _NTSYSTEM_
+asm	boot/freeldr/freeldr/arch/amd64/entry.S	sdk/include/asm @build/sdk/include/asm @build/boot/freeldr/freeldr boot/freeldr/freeldr boot/freeldr/freeldr/include/arch/uefi boot/freeldr/freeldr/include vendor/edk2 @std	@core	_BLDR_ _NTHAL_ _NTSYSTEM_
+asm	boot/freeldr/freeldr/arch/amd64/int386.S	sdk/include/asm @build/sdk/include/asm @build/boot/freeldr/freeldr boot/freeldr/freeldr boot/freeldr/freeldr/include/arch/uefi boot/freeldr/freeldr/include vendor/edk2 @std	@core	_BLDR_ _NTHAL_ _NTSYSTEM_
+asm	boot/freeldr/freeldr/arch/amd64/pnpbios.S	sdk/include/asm @build/sdk/include/asm @build/boot/freeldr/freeldr boot/freeldr/freeldr boot/freeldr/freeldr/include/arch/uefi boot/freeldr/freeldr/include vendor/edk2 @std	@core	_BLDR_ _NTHAL_ _NTSYSTEM_
+asm	boot/freeldr/freeldr/arch/amd64/bss_markers.S	sdk/include/asm @build/sdk/include/asm @build/boot/freeldr/freeldr boot/freeldr/freeldr boot/freeldr/freeldr/include/arch/uefi boot/freeldr/freeldr/include vendor/edk2 @std	@core	_BLDR_ _NTHAL_ _NTSYSTEM_

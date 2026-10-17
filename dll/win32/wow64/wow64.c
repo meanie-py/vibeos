@@ -564,6 +564,21 @@ typedef struct _WOW64_EXCEPTION_RECORD32 {
 } WOW64_EXCEPTION_RECORD32;
 
 /*
+ * Guest faults redirected into guest SEH, and whether this one is logged. The
+ * first 16 print in full, then every 1024th: a guest that faults on purpose
+ * (fault32's rung 3b takes thousands) otherwise writes two serial lines per
+ * fault, and under FEX the output alone is a measurable share of each one.
+ * The running number in the line says how many went unprinted.
+ */
+static ULONG Wow64pGuestFaults;
+
+static BOOLEAN Wow64pLogGuestFault(VOID)
+{
+    ULONG N = (ULONG)InterlockedIncrement((LONG *)&Wow64pGuestFaults);
+    return N <= 16 || (N & 0x3FF) == 0;
+}
+
+/*
  * E5 — build an i386 KiUserExceptionDispatcher frame on the guest stack:
  *   [Esp+0] = EXCEPTION_RECORD32*   [Esp+4] = CONTEXT32*
  * with both structs copied immediately above, everything below `Below`.
@@ -670,12 +685,15 @@ static VOID WINAPI Wow64pPrepareForExceptionHook(EXCEPTION_RECORD *R, CONTEXT *C
         return;
     }
 
-    DbgPrint("[FEX-WOW64C] guest fault %08lx eip=%08lx -> 32-bit SEH dispatch (esp=%08lx)\n",
-             Rec32.ExceptionCode, C->Eip, Esp);
-    if (Rec32.ExceptionCode == 0xc0000005)
-        DbgPrint("[FEX-WOW64C]   AV rw=%lx addr=%08lx | eax=%08lx ebx=%08lx ecx=%08lx edx=%08lx esi=%08lx edi=%08lx ebp=%08lx\n",
-                 (ULONG)Rec32.ExceptionInformation[0], (ULONG)Rec32.ExceptionInformation[1],
-                 C->Eax, C->Ebx, C->Ecx, C->Edx, C->Esi, C->Edi, C->Ebp);
+    if (Wow64pLogGuestFault())
+    {
+        DbgPrint("[FEX-WOW64C] guest fault %08lx eip=%08lx -> 32-bit SEH dispatch (esp=%08lx) #%lu\n",
+                 Rec32.ExceptionCode, C->Eip, Esp, (ULONG)Wow64pGuestFaults);
+        if (Rec32.ExceptionCode == 0xc0000005)
+            DbgPrint("[FEX-WOW64C]   AV rw=%lx addr=%08lx | eax=%08lx ebx=%08lx ecx=%08lx edx=%08lx esi=%08lx edi=%08lx ebp=%08lx\n",
+                     (ULONG)Rec32.ExceptionInformation[0], (ULONG)Rec32.ExceptionInformation[1],
+                     C->Eax, C->Ebx, C->Ecx, C->Edx, C->Esi, C->Edi, C->Ebp);
+    }
     Ctx->Rip = (ULONG_PTR)Wow64pKiUserExceptionDispatcher32;
     Ctx->Rsp = Esp;
     Ctx->EFlags &= ~0x400u; /* cld — fault may have been mid-rep-movs */
@@ -756,12 +774,15 @@ static BOOLEAN Wow64pRedirectGuestFault(EXCEPTION_POINTERS *Info)
         return FALSE;
     }
 
-    DbgPrint("[FEX-WOW64C] guest fault %08lx eip=%08lx -> 32-bit SEH dispatch (esp=%08lx)\n",
-             Rec32.ExceptionCode, C->Eip, Esp);
-    if (Rec32.ExceptionCode == 0xc0000005)
-        DbgPrint("[FEX-WOW64C]   AV rw=%lx addr=%08lx | eax=%08lx ebx=%08lx ecx=%08lx edx=%08lx esi=%08lx edi=%08lx ebp=%08lx\n",
-                 Rec32.ExceptionInformation[0], Rec32.ExceptionInformation[1],
-                 C->Eax, C->Ebx, C->Ecx, C->Edx, C->Esi, C->Edi, C->Ebp);
+    if (Wow64pLogGuestFault())
+    {
+        DbgPrint("[FEX-WOW64C] guest fault %08lx eip=%08lx -> 32-bit SEH dispatch (esp=%08lx) #%lu\n",
+                 Rec32.ExceptionCode, C->Eip, Esp, (ULONG)Wow64pGuestFaults);
+        if (Rec32.ExceptionCode == 0xc0000005)
+            DbgPrint("[FEX-WOW64C]   AV rw=%lx addr=%08lx | eax=%08lx ebx=%08lx ecx=%08lx edx=%08lx esi=%08lx edi=%08lx ebp=%08lx\n",
+                     Rec32.ExceptionInformation[0], Rec32.ExceptionInformation[1],
+                     C->Eax, C->Ebx, C->Ecx, C->Edx, C->Esi, C->Edi, C->Ebp);
+    }
 
     C->Eip = (ULONG)(ULONG_PTR)Wow64pKiUserExceptionDispatcher32;
     C->Esp = Esp;

@@ -232,36 +232,13 @@ pub struct DEFCONTEXTMENU {
     pub aKeys: *const HKEY,
 }
 
-#[repr(C)]
-pub struct PARSEDURLW {
-    pub cbSize: DWORD,
-    pub pszProtocol: LPCWSTR,
-    pub cchProtocol: UINT,
-    pub pszSuffix: LPCWSTR,
-    pub cchSuffix: UINT,
-    pub nScheme: UINT,
-}
+pub use crate::island::PARSEDURLW;
 
-#[repr(C)]
-pub struct QCMINFO {
-    pub hmenu: HMENU,
-    pub indexMenu: UINT,
-    pub idCmdFirst: UINT,
-    pub idCmdLast: UINT,
-    pub pIdMap: *const QCMINFO_IDMAP,
-}
+pub use crate::island::QCMINFO;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP {
-    pub nMaxIds: UINT,
-    pub pIdList: [QCMINFO_IDMAP_PLACEMENT; 1],
-}
+pub use crate::island::QCMINFO_IDMAP;
 
-#[repr(C)]
-pub struct QCMINFO_IDMAP_PLACEMENT {
-    pub id: UINT,
-    pub fFlags: UINT,
-}
+pub use crate::island::QCMINFO_IDMAP_PLACEMENT;
 
 // Deterministic from shobjidl.h
 #[repr(C)]
@@ -354,21 +331,12 @@ pub type LPTBBUTTONSB = *mut core::ffi::c_void;
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
 extern "system" {
-    fn DestroyMenu(menu: HMENU) -> BOOL;
-    fn ILCombine(parent: PCIDLIST_ABSOLUTE, child: PCUITEMID_CHILD) -> PIDLIST_ABSOLUTE;
     fn lstrlenW(text: LPCWSTR) -> INT;
-    fn CoTaskMemAlloc(bytes: SIZE_T) -> LPVOID;
-    fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    fn ILClone(pidl: LPCITEMIDLIST) -> LPITEMIDLIST;
-    fn ILFree(pidl: LPITEMIDLIST);
-    fn SHGetDesktopFolder(folder: *mut *mut IShellFolder) -> HRESULT;
-    fn SHCreateShellFolderView(create: *const SFV_CREATE, view: *mut *mut IShellView) -> HRESULT;
     #[link_name = "Shell32RustCoCreateInitSF"] fn SHELL32_CoCreateInitSFWithCsidl(root: LPCITEMIDLIST, clsid: *const GUID, csidl: INT, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
 }
 
 extern "C" {
-    fn _ILIsDesktop(pidl: LPCITEMIDLIST) -> BOOL;
     fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
@@ -466,6 +434,17 @@ extern "C" {
 }
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::ILClone;
+use crate::wine::pidl::ILCombine;
+use crate::wine::pidl::ILFree;
+use crate::def_view::SHCreateShellFolderView;
+use crate::desktop_folder_tu::SHGetDesktopFolder;
+use crate::wine::pidl::_ILIsDesktop;
+// One declaration per external symbol: island.rs.
+use crate::island::CoTaskMemAlloc;
+use crate::island::DestroyMenu;
+use crate::island::LoadStringW;
 // Substrate comes from the bindgen island via `prelude`, and from nowhere else.
 // Re-importing the same names through shellcom/types/win32 does not add anything the
 // prelude lacks -- it supplies them by a second path, and every one becomes ambiguous

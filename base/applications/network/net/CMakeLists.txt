@@ -21,19 +21,8 @@ add_definitions(-D__USE_W32_SOCKETS)
 # cmdStop.c  # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdStop.rs)
 # cmdUse.c  # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdUse.rs)
 # cmdUser.c  # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdUser.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(net_shims OBJECT rust_varargs_shim.c)
-target_compile_definitions(net_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(net_res OBJECT net.rc)
-target_compile_definitions(net_res PRIVATE UNICODE _UNICODE)
-target_include_directories(net_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# Generated inputs those compiles read, ordered before them.
-add_dependencies(net_shims net_msg)
-add_dependencies(net_res net_msg)
 add_cargo_module(net net-cargo net.exe
     KIND win32exe
     BODY_CRATE net-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS net_shims net_res xdk)
+    EXTRA_DEPENDS xdk net_msg psdk)

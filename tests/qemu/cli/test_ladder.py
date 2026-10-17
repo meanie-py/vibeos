@@ -1192,3 +1192,25 @@ def test_build_stage_skips_loudly_without_an_i386_tree(tmp_path):
     run = _FakeRun()
     assert build._refresh_wow64_guests(run, repo) is True
     assert run.stages[-1].status == "skip" and "toolchain" in run.stages[-1].detail
+
+
+def test_media_missing_runtime_names_the_unbuilt_closure(monkeypatch):
+    """A fresh worktree's VIBEOS_FEX=1 arm64 media: guests staged, no syswow64/sysamd64
+    ntdll (no build-i386/build-amd64). The ladder must say so instead of booting into
+    every 32-bit guest failing c0000034."""
+    present: dict[str, set[str]] = {"syswow64": {"hello32.exe"}, "system32": {"hello64.exe"}}
+
+    def fake_read(repo, arch, subdir, names):
+        return {n for n in names if n.lower() in present.get(subdir, set())}
+
+    monkeypatch.setattr(ladder, "_read_media", fake_read)
+    monkeypatch.setattr(ladder, "_guest_names", lambda: {"hello32.exe"})
+    monkeypatch.setattr(ladder, "STAGED_LADDER", {"hello64": 0x600D})
+    missing = ladder.media_missing_runtime(Path("."), "arm64")
+    assert missing == ["syswow64\\ntdll.dll (build-i386)", "sysamd64\\ntdll.dll (build-amd64)"]
+    present["syswow64"].add("ntdll.dll")
+    present["sysamd64"] = {"ntdll.dll"}
+    assert ladder.media_missing_runtime(Path("."), "arm64") == []
+    # amd64 runs its x86-64 guests natively: no sysamd64 is owed there.
+    present.pop("sysamd64")
+    assert ladder.media_missing_runtime(Path("."), "amd64") == []

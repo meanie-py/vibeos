@@ -19,6 +19,9 @@
 //     for why a second re-derivation is a latent HKEY leak — two earlier ones both dropped the
 //     destructor).
 use crate::prelude::*;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::shellord::SHRunControlPanel;
+use crate::wine::shlmenu::Shell_MergeMenus;
 use crate::net_folder_enum::{
     CNetFolderEnum_CreateInstance, IDefaultExtractIconInit, IID_IDefaultExtractIconInit, QCMINFO,
 };
@@ -40,37 +43,31 @@ pub const COLUMN_NETLOCATION: u32 = 3;
 
 pub const NETWORKPLACESSHELLVIEWCOLUMNS: u32 = 4;
 
-#[repr(C)]
-pub struct shvheader {
-    pub colnameid: u32,
-    pub colstate: u32,
-    pub fmt: i32,
-    pub cxChar: i32,
-}
+pub use crate::island::shvheader;
 
 pub static NetworkPlacesSFHeader: [shvheader; 4] = [
     shvheader {
-        colnameid: IDS_SHV_COLUMN_NAME,
-        colstate: SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT,
-        fmt: LVCFMT_RIGHT as i32,
+        colnameid: (IDS_SHV_COLUMN_NAME as u16),
+        colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as u16,
+        fmt: (LVCFMT_RIGHT as i32) as u16,
         cxChar: 15,
     },
     shvheader {
-        colnameid: IDS_SHV_COLUMN_CATEGORY,
-        colstate: SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT,
-        fmt: LVCFMT_RIGHT as i32,
+        colnameid: (IDS_SHV_COLUMN_CATEGORY as u16),
+        colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as u16,
+        fmt: (LVCFMT_RIGHT as i32) as u16,
         cxChar: 10,
     },
     shvheader {
-        colnameid: IDS_SHV_COLUMN_WORKGROUP,
-        colstate: SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT,
-        fmt: LVCFMT_RIGHT as i32,
+        colnameid: (IDS_SHV_COLUMN_WORKGROUP as u16),
+        colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as u16,
+        fmt: (LVCFMT_RIGHT as i32) as u16,
         cxChar: 15,
     },
     shvheader {
-        colnameid: IDS_SHV_COLUMN_NETLOCATION,
-        colstate: SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT,
-        fmt: LVCFMT_RIGHT as i32,
+        colnameid: (IDS_SHV_COLUMN_NETLOCATION as u16),
+        colstate: (SHCOLSTATE_TYPE_STR | SHCOLSTATE_ONBYDEFAULT) as u16,
+        fmt: (LVCFMT_RIGHT as i32) as u16,
         cxChar: 15,
     },
 ];
@@ -147,12 +144,10 @@ pub unsafe extern "system" fn CNetFolderExtractIcon_RustBridge(
 extern "system" {
     #[link_name = "SHELL32_DefaultContextMenuCallBack_RustBridge"]
     fn SHELL32_DefaultContextMenuCallBack(psf: *mut IShellFolder, pdo: *mut IDataObject, msg: UINT) -> HRESULT;
-    fn Shell_MergeMenus(hmDst: HMENU, hmSrc: HMENU, uInsert: UINT, uIDAdjust: UINT, uIDAdjustMax: UINT, uFlags: ULONG) -> UINT;
     #[link_name = "AddClassKeyToArray_RustBridge"]
     fn AddClassKeyToArray(szClass: LPCWSTR, array: *mut crate::types::HKEY, cKeys: *mut UINT) -> LONG;
     #[link_name = "SHELL32_BindToSF_RustBridge"]
     fn SHELL32_BindToSF(pidlRoot: LPCITEMIDLIST, ppfti: *mut PERSIST_FOLDER_TARGET_INFO, pidl: LPCITEMIDLIST, clsid: *const CLSID, riid: REFIID, ppvOut: *mut LPVOID) -> HRESULT;
-    fn SHRunControlPanel(commandLine: LPCWSTR, parent: HWND) -> BOOL;
 }
 
 /// shellutils.h:218 `#define SHELL_ExecuteControlPanelCPL(hwnd, cpl) SHRunControlPanel(cpl, hwnd)`

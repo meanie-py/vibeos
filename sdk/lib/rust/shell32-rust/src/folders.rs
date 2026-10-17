@@ -2,12 +2,13 @@
 pub static CPP_COM_WSTR_19319FD29DD2: [WCHAR; 79] = [0x0053, 0x004F, 0x0046, 0x0054, 0x0057, 0x0041, 0x0052, 0x0045, 0x005C, 0x004D, 0x0069, 0x0063, 0x0072, 0x006F, 0x0073, 0x006F, 0x0066, 0x0074, 0x005C, 0x0057, 0x0069, 0x006E, 0x0064, 0x006F, 0x0077, 0x0073, 0x005C, 0x0043, 0x0075, 0x0072, 0x0072, 0x0065, 0x006E, 0x0074, 0x0056, 0x0065, 0x0072, 0x0073, 0x0069, 0x006F, 0x006E, 0x005C, 0x0045, 0x0078, 0x0070, 0x006C, 0x006F, 0x0072, 0x0065, 0x0072, 0x005C, 0x0053, 0x0068, 0x0065, 0x006C, 0x006C, 0x0049, 0x0063, 0x006F, 0x006E, 0x004F, 0x0076, 0x0065, 0x0072, 0x006C, 0x0061, 0x0079, 0x0049, 0x0064, 0x0065, 0x006E, 0x0074, 0x0069, 0x0066, 0x0069, 0x0065, 0x0072, 0x0073, 0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::pidl::SHGetPathFromIDListW;
 use crate::shellcom::*;
 use crate::types::*;
 use crate::win32::*;
 
 extern "system" {
-    fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, pszPath: *mut u16) -> i32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -59,7 +60,7 @@ unsafe extern "C" fn InitIconOverlays() {
     Handlers = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        (dwResult as usize) * core::mem::size_of::<*mut IShellIconOverlayIdentifier>(),
+        ((dwResult as usize) * core::mem::size_of::<*mut IShellIconOverlayIdentifier>()) as _,
     ) as *mut *mut IShellIconOverlayIdentifier;
     if Handlers.is_null() {
         RegCloseKey(hKey);
@@ -135,7 +136,7 @@ pub unsafe extern "C" fn GetIconOverlay(pidl: LPCITEMIDLIST, wTemp: *mut u16, pI
     let mut Flags: u32 = 0;
     let mut szPath: [u16; MAX_PATH] = [0u16; MAX_PATH];
 
-    if SHGetPathFromIDListW(pidl, szPath.as_mut_ptr()) == 0 {
+    if SHGetPathFromIDListW((pidl).cast(), szPath.as_mut_ptr()) == 0 {
         return FALSE;
     }
 

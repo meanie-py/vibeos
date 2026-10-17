@@ -29,18 +29,9 @@ list(APPEND HEADERS
 # sdbstringtable.c  # replaced by Rust (sdk/lib/rust/apphelp-rust/src/apphelp/sdbstringtable.rs)
 # sdbwrite.c  # replaced by Rust (sdk/lib/rust/apphelp-rust/src/apphelp/sdbwrite.rs)
 # shimeng.c  # replaced by Rust (sdk/lib/rust/apphelp-rust/src/apphelp/shimeng.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-add_library(apphelp_shims OBJECT rust_varargs_shim.c)
-target_link_libraries(apphelp_shims PRIVATE libkernel32 libntdll)
-target_compile_definitions(apphelp_shims PRIVATE UNICODE _UNICODE)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(apphelp_res OBJECT apphelp.rc)
-target_compile_definitions(apphelp_res PRIVATE UNICODE _UNICODE)
-target_include_directories(apphelp_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(apphelp apphelp-cargo apphelp.dll
     KIND win32dll
     BODY_CRATE apphelp-rust
     DESTINATION reactos/system32
     DELAY_IMPORTS
-    EXTRA_DEPENDS apphelp_shims apphelp_res)
+    EXTRA_DEPENDS psdk libkernel32 libntdll)

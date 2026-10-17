@@ -256,9 +256,11 @@ add_library(acpi MODULE
     acpi.rc)
 
 set_module_type(acpi kernelmodedriver)
-target_link_libraries(acpi wdmguid acpica memcmp strtol ${PSEH_LIB} ${ACPI_RUST_LIB})
+# The only CRT acpica takes is isprint/isspace/isxdigit/toupper; they come from the Rust
+# kernel CRT (cnt-rust's libcntpr_rust.a, as hal.dll links it), not the C `strtol` library.
+target_link_libraries(acpi wdmguid acpica memcmp ${CMAKE_BINARY_DIR}/sdk/lib/crt/libcntpr_rust.a ${PSEH_LIB} ${ACPI_RUST_LIB})
 add_importlibs(acpi ntoskrnl hal)
-add_dependencies(acpi rust_acpi)
+add_dependencies(acpi rust_acpi rust_cnt)
 add_pch(acpi precomp.h ACPI_SOURCE)
 add_cd_file(TARGET acpi DESTINATION reactos/system32/drivers NO_CAB FOR all)
 add_driver_inf(acpi acpi.inf)

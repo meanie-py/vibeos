@@ -932,11 +932,8 @@ pub struct SHELLEXECUTEINFOW {
 }
 
 extern "system" {
-    fn SHILCreateFromPathW(path: LPCWSTR, pidl: *mut LPITEMIDLIST, attributes: LPDWORD) -> HRESULT;
     fn GetLastError() -> DWORD;
     fn CoTaskMemFree(memory: LPVOID);
-    fn SHGetSpecialFolderLocation(owner: HWND, csidl: INT, pidl: *mut LPITEMIDLIST) -> HRESULT;
-    fn ShellExecuteExW(info: *mut SHELLEXECUTEINFOW) -> BOOL;
 }
 
 #[repr(transparent)]
@@ -998,6 +995,19 @@ pub static CPP_COM_WSTR_D53D8378BAB8: [WCHAR; 18] = [0x0049, 0x0073, 0x004F, 0x0
 pub static CPP_COM_WSTR_FF4270D7D5C0: [WCHAR; 22] = [0x0050, 0x0072, 0x006F, 0x0063, 0x0065, 0x0073, 0x0073, 0x006F, 0x0072, 0x0041, 0x0072, 0x0063, 0x0068, 0x0069, 0x0074, 0x0065, 0x0063, 0x0074, 0x0075, 0x0072, 0x0065, 0x0000];
 
 use core::ffi::c_void;
+// The crate's own functions: the definition is the declaration.
+use crate::wine::shellord::SHGetSetSettings;
+use crate::wine::shellpath::SHGetSpecialFolderLocation;
+use crate::wine::pidl::SHILCreateFromPathW;
+use crate::wine::shellord::SHRunControlPanel;
+use crate::shell32::shlexec::ShellExecuteExW;
+use crate::shell32::shlexec::ShellExecuteW;
+// One declaration per external symbol: island.rs.
+use crate::island::CoCreateInstance;
+use crate::island::FindWindowW;
+use crate::island::GetSystemInfo;
+use crate::island::OutputDebugStringA;
+use crate::island::PostMessageW;
 use crate::shellcom::*;
 use crate::types::*;
 use com_sys::{
@@ -1014,17 +1024,7 @@ pub struct FolderItem { _opaque: [u8; 0] }
 #[repr(C)]
 pub struct FolderItems { _opaque: [u8; 0] }
 
-#[repr(C)]
-pub struct BROWSEINFOW {
-    pub hwndOwner: HWND,
-    pub pidlRoot: LPCITEMIDLIST,
-    pub pszDisplayName: LPWSTR,
-    pub lpszTitle: LPCWSTR,
-    pub ulFlags: UINT,
-    pub lpfn: BFFCALLBACK,
-    pub lParam: LPARAM,
-    pub iImage: INT,
-}
+pub use crate::island::BROWSEINFOW;
 
 #[repr(C)]
 pub struct SYSTEM_INFO {
@@ -1071,22 +1071,15 @@ extern "C" {
 }
 
 extern "system" {
-    fn OutputDebugStringA(text: *const u8);
     fn LoadRegTypeLib(libid: REFGUID, major: WORD, minor: WORD, lcid: LCID, out: *mut *mut ITypeLib) -> HRESULT;
-    fn FindWindowW(class_name: LPCWSTR, window_name: LPCWSTR) -> HWND;
-    fn PostMessageW(hwnd: HWND, message: UINT, wparam: WPARAM, lparam: LPARAM) -> BOOL;
     fn VariantChangeType(dst: *mut VARIANT, src: *const VARIANT, flags: USHORT, vt: VARTYPE) -> HRESULT;
     fn VariantInit(value: *mut VARIANT);
     fn VariantClear(value: *mut VARIANT) -> HRESULT;
     fn SHBrowseForFolderW(info: *mut BROWSEINFOW) -> LPITEMIDLIST;
-    fn CoCreateInstance(clsid: REFCLSID, outer: *mut IUnknown, context: DWORD, riid: REFIID, out: *mut *mut c_void) -> HRESULT;
     fn CFolder_CreateFromPidl(pidl: LPCITEMIDLIST, riid: REFIID, out: *mut *mut c_void) -> HRESULT;
     fn ExitWindowsDialog(hwnd: HWND);
-    fn SHRunControlPanel(command: LPCWSTR, hwnd: HWND) -> BOOL;
     fn SHGetRestriction(subkey: LPCWSTR, subname: LPCWSTR, value: LPCWSTR) -> DWORD;
-    fn ShellExecuteW(hwnd: HWND, operation: LPCWSTR, file: LPCWSTR, parameters: LPCWSTR, directory: LPCWSTR, show: INT) -> HINSTANCE;
     fn lstrcmpiW(left: LPCWSTR, right: LPCWSTR) -> INT;
-    fn GetSystemInfo(info: *mut SYSTEM_INFO);
     fn IsOS(os: UINT) -> BOOL;
     fn OpenSCManagerW(machine: LPCWSTR, database: LPCWSTR, access: DWORD) -> SC_HANDLE;
     fn OpenServiceW(manager: SC_HANDLE, name: LPCWSTR, access: DWORD) -> SC_HANDLE;
@@ -1096,7 +1089,6 @@ extern "system" {
     fn ChangeServiceConfigW(service: SC_HANDLE, service_type: DWORD, start_type: DWORD, error_control: DWORD, binary_path: LPCWSTR, load_group: LPCWSTR, tag: LPDWORD, dependencies: LPCWSTR, account: LPCWSTR, password: LPCWSTR, display_name: LPCWSTR) -> BOOL;
     fn QueryServiceStatusEx(service: SC_HANDLE, info_level: INT, buffer: *mut BYTE, size: DWORD, needed: LPDWORD) -> BOOL;
     fn SHAddToRecentDocs(flags: UINT, item: *const c_void);
-    fn SHGetSetSettings(state: *mut SHELLSTATE, mask: DWORD, set: BOOL);
 }
 
 // oaidl.h's V_* macros. VARIANT is the island's `tagVARIANT`, so every member sits under
@@ -1129,7 +1121,7 @@ pub unsafe fn CShellDispatch_EnsureTILoaded_body(this: *mut CShellDispatch, lcid
 
     if cpp_com_iid_equal(&CLSID_NULL, &LIBID_Shell32) {
         OutputDebugStringA(
-            b"IDispatchImpl: plibid is CLSID_NULL!\r\n\0".as_ptr() as *const u8,
+            (b"IDispatchImpl: plibid is CLSID_NULL!\r\n\0".as_ptr() as *const u8).cast(),
         );
     }
 
@@ -1336,7 +1328,7 @@ pub unsafe fn SHELL_OpenFolder_body(pidl: LPCITEMIDLIST, verb: LPCWSTR) -> HRESU
     sei.lpDirectory = core::ptr::null_mut();
     sei.nShow = SW_SHOW;
     sei.lpIDList = pidl as LPVOID;
-    if ShellExecuteExW(&mut sei) != 0 {
+    if ShellExecuteExW((&raw mut sei).cast()) != 0 {
         return S_OK;
     }
     let error = GetLastError();
@@ -1521,7 +1513,7 @@ pub unsafe fn CShellDispatch_FindPrinter_body(this: *mut CShellDispatch, name: B
 pub unsafe fn CShellDispatch_GetSystemInformation_body(this: *mut CShellDispatch, name: BSTR, ret: *mut VARIANT) -> HRESULT {
     if lstrcmpiW(name, CPP_COM_WSTR_FF4270D7D5C0.as_ptr()) == 0 {
         let mut si: SYSTEM_INFO = core::mem::zeroed();
-        GetSystemInfo(&mut si as *mut SYSTEM_INFO);
+        GetSystemInfo((&mut si as *mut SYSTEM_INFO).cast());
         (*ret).n1.n2.vt = VT_I4;
         (*ret).n1.n2.n3.lVal = si.wProcessorArchitecture as LONG;
         return S_OK;
@@ -1727,7 +1719,7 @@ pub unsafe fn CShellDispatch_ExplorerPolicy_body(this: *mut CShellDispatch, poli
 pub unsafe fn CShellDispatch_GetSetting_body(this: *mut CShellDispatch, setting: LONG, result: *mut VARIANT_BOOL) -> HRESULT {
     let mut flag: i32 = -1;
     let mut ss: SHELLSTATE = core::mem::zeroed();
-    SHGetSetSettings((&raw mut ss) as *mut SHELLSTATE, setting as DWORD, FALSE);
+    SHGetSetSettings(((&raw mut ss) as *mut SHELLSTATE).cast(), setting as DWORD, FALSE);
     match setting {
         x if x == SSF_SHOWALLOBJECTS as LONG => flag = ((ss.w0 >> 0) & 1) as i32,
         x if x == SSF_SHOWEXTENSIONS as LONG => flag = ((ss.w0 >> 1) & 1) as i32,

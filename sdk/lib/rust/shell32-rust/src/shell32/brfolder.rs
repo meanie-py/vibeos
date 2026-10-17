@@ -184,7 +184,7 @@ unsafe extern "C" fn BrFolder_InitTreeView(info: *mut BrFolder) {
     let pidlChild: PCIDLIST_RELATIVE = ILFindLastID(pidlRoot);
 
     let mut lpsfParent = CComPtr::<IShellFolder>::new();
-    hr = SHBindToObject(core::ptr::null_mut(), pidlParent.m_pData, core::ptr::addr_of!(IID_IShellFolder), core::ptr::addr_of_mut!(lpsfParent).cast());
+    hr = SHBindToObject(core::ptr::null_mut(), pidlParent.m_pData, (core::ptr::addr_of!(IID_IShellFolder)).cast(), core::ptr::addr_of_mut!(lpsfParent).cast());
     if FAILED_UNEXPECTEDLY!(hr) {
         return;
     }
@@ -246,7 +246,7 @@ unsafe extern "C" fn BrFolder_GetName(
     let mut bSuccess: i32 = FALSE;
     let mut str: STRRET = core::mem::zeroed();
     if !FAILED_UNEXPECTEDLY!(((*(*lpsf).lpVtbl).GetDisplayNameOf)(lpsf, pidlChild.cast(), dwFlags, core::ptr::addr_of_mut!(str).cast())) {
-        bSuccess = StrRetToStrNW(lpFriendlyName, (MAX_PATH) as u32, &mut str, pidlChild);
+        bSuccess = StrRetToStrNW(lpFriendlyName, (MAX_PATH) as u32, (&raw mut str).cast(), (pidlChild).cast());
     }
     bSuccess
 }

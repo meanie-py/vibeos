@@ -13,14 +13,8 @@ include_directories(
 # fltlib.c  # replaced by Rust (sdk/lib/rust/fltlib-rust/src/fltlib/fltlib.rs)
 # message.c  # replaced by Rust (sdk/lib/rust/fltlib-rust/src/fltlib/message.rs)
 # stubs.c  # replaced by Rust (sdk/lib/rust/fltlib-rust/src/fltlib/stubs.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(fltlib_res OBJECT rsrc.rc)
-target_include_directories(fltlib_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-target_compile_definitions(fltlib_res PRIVATE NTDDI_VERSION=NTDDI_WS03SP1)
 add_cargo_module(fltlib fltlib-cargo fltlib.dll
     KIND win32dll
     BODY_CRATE fltlib-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS fltlib_res psdk)
+    EXTRA_DEPENDS psdk)

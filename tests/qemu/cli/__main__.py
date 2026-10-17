@@ -24,6 +24,7 @@ from . import (
     maintenance,
     pi4,
     pi5,
+    rustlints,
     symbolize,
     tooling,
     winref,
@@ -315,6 +316,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--update-baseline lint_kernel",
     )
     c.set_defaults(fn=debugcmd.check)
+
+    native = sub.add_parser("lint", help="run a native artifact or standalone diagnostic check")
+    native.add_argument("--arch", choices=ACCEPTED_ARCHES)
+    native.add_argument(
+        "--rules", help="comma-separated check names; use check for source baselines"
+    )
+    native.add_argument("--list-rules", action="store_true")
+    native.add_argument("--path", action="append", default=[], help="input file or directory")
+    native.add_argument("--build-dir", help="override this worktree's build directory or image")
+    native.add_argument("--explain", help="show flexible-array panic location and disassembly")
+    native.add_argument("--target", help="bind-all cargo target triple")
+    native.add_argument("--package", action="append", default=[])
+    native.add_argument("--include-declarations", action="store_true")
+    native.add_argument("--crates", help="comma-separated IR crate filter")
+    native.add_argument("--lint", action="store_true", help=argparse.SUPPRESS)
+    native.set_defaults(fn=rustlints.standalone)
 
     s = sub.add_parser("smoke", help="staleness-gated boot verdict (front door)")
     arch_arg(s)

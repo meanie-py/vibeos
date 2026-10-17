@@ -203,7 +203,11 @@ unsafe fn MI_IS_MAPPED_PTE(pte: *const MMPTE) -> bool {
 
 #[inline]
 unsafe fn MI_GET_PROTOTYPE_PTE_FOR_VPN(Vad: PMMVAD, Vpn: ULONG_PTR) -> PMMPTE {
-    (*Vad).FirstPrototypePte.add(Vpn.wrapping_sub((*Vad).StartingVpn as usize)) as PMMPTE
+    let ProtoPte =
+        (*Vad).FirstPrototypePte.add(Vpn.wrapping_sub((*Vad).StartingVpn as usize)) as PMMPTE;
+    // miarm.h's ASSERT, restored; ntkrnl_sys::ASSERT! prints and continues as the C does.
+    ntkrnl_sys::ASSERT!(ProtoPte as usize <= (*Vad).LastContiguousPte as usize);
+    ProtoPte
 }
 
 #[no_mangle]

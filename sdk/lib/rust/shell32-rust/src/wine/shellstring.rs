@@ -6,31 +6,21 @@
 //! `#[no_mangle] extern "system"`). TRACE/FIXME/debugstr machinery dropped.
 
 use crate::types::*;
+use ntdll_sys::nt::SIZE_T;
+// One declaration per external symbol: island.rs.
+use crate::island::LocalAlloc;
 use core::ptr::{self, write_volatile};
 
 // ── STRRET / ITEMIDLIST layout (shtypes.idl) — file-local, hoist candidates ────────────
 const MAX_PATH: usize = 260; // shtypes.idl
 
 /// STRRET union (NONAMELESSUNION → named `u`).
-#[repr(C)]
-pub union STRRET_u {
-    pub pOleStr: LPWSTR,         // STRRET_WSTR
-    pub uOffset: UINT,           // STRRET_OFFSET
-    pub cStr: [CHAR; MAX_PATH],  // STRRET_CSTR
-}
 
-#[repr(C)]
-pub struct STRRET {
-    pub uType: UINT, // STRRET_xxx
-    pub u: STRRET_u,
-}
+
+pub use crate::shellcom::{STRRET, STRRET_u};
 pub type LPSTRRET = *mut STRRET;
 
-#[repr(C)]
-pub struct SHITEMID {
-    pub cb: WORD,
-    pub abID: [BYTE; 1],
-}
+pub use crate::island::SHITEMID;
 
 #[repr(C)]
 pub struct ITEMIDLIST {
@@ -67,7 +57,6 @@ extern "system" {
         lpDefaultChar: LPCSTR,
         lpUsedDefaultChar: *mut BOOL,
     ) -> INT;
-    fn LocalAlloc(uFlags: UINT, uBytes: usize) -> HANDLE;
     fn LocalFree(hMem: HANDLE) -> HANDLE;
     fn lstrcpynA(lpString1: LPSTR, lpString2: LPCSTR, iMaxLength: INT) -> LPSTR;
     fn lstrcpynW(lpString1: LPWSTR, lpString2: LPCWSTR, iMaxLength: INT) -> LPWSTR;
@@ -285,7 +274,7 @@ pub unsafe extern "system" fn CheckEscapesA(string: LPSTR, len: DWORD) {
         return;
     }
 
-    let wString = LocalAlloc(LPTR, (len as usize).wrapping_mul(2)) as LPWSTR;
+    let wString = LocalAlloc(LPTR, ((len as usize).wrapping_mul(2)) as SIZE_T) as LPWSTR;
     if wString.is_null() {
         return;
     }

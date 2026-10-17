@@ -1864,6 +1864,8 @@ def main() -> int:
     cp.add_argument("--out-header", default="dll/win32/wow64/wow64_cb_automarshal.h")
     cp.set_defaults(func=cmd_gen_callback)
     args = ap.parse_args()
+    if args.cmd == "audit":
+        ap.error("marshal audit moved to ./vibeos-cli check (Rust rule: marshalgen_audit)")
     return args.func(args)
 
 

@@ -1,4 +1,3 @@
-
 list(APPEND _keyboard_layouts
     kbd101
     kbd101a
@@ -102,14 +101,7 @@ list(APPEND _keyboard_layouts
 # cargo links all 95 DLLs from one FAMILY cell: sdk/lib/rust/kbdlayouts-cargo, one bin
 # per layout. Each layout's .spec exports `<layout>_KbdLayerDescriptor` from the shared
 # body under the real name, and the linker takes only that layout's objects from it.
-# The resources are the one thing cmake still compiles, in this OBJECT library whose
-# windres commands the cargo links replay.
-set(_keyboard_rcs)
-foreach(_keyboard_layout ${_keyboard_layouts})
-    list(APPEND _keyboard_rcs ${_keyboard_layout}/${_keyboard_layout}.rc)
-endforeach()
-add_library(kbdlayouts_res OBJECT ${_keyboard_rcs})
-add_dependencies(kbdlayouts_res xdk)
+# Each layout's .rc is compiled by the engine with cmake's windres rule (Linker::rc).
 
 # The layouts' C compile environment, kept for `python -m rustconv.kbd_layouts`: it ports a
 # layout from clang's AST of its .c, which no target compiles any more, so it borrows this
@@ -122,4 +114,4 @@ add_cargo_module(kbdlayouts kbdlayouts-cargo .dll
     BINS ${_keyboard_layouts}
     BODY_CRATE kbdlayouts-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS kbdlayouts_res)
+    EXTRA_DEPENDS xdk psdk)

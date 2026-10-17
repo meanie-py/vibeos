@@ -53,6 +53,8 @@ pub unsafe fn ObpValidateAttributes(
 /// ObpAcquireObjectLock — acquire exclusive ERESOURCE lock on object type.
 #[inline]
 pub unsafe fn ObpAcquireObjectLock(header: ddk::POBJECT_HEADER) {
+    // ob_x.h's ASSERTs, restored (scan_dropped_asserts): RtlAssert prints and continues.
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
     let object_type = (*header).Type;
     let slot = ObpSelectObjectLockSlot(header) as usize;
     ddk::KeEnterCriticalRegion();
@@ -69,11 +71,13 @@ pub unsafe fn ObpReleaseObjectLock(header: ddk::POBJECT_HEADER) {
     let slot = ObpSelectObjectLockSlot(header) as usize;
     ddk::ExReleaseResourceLite(&mut (*object_type).ObjectLocks[slot]);
     ddk::KeLeaveCriticalRegion();
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
 }
 
 /// ObpAcquireObjectLockShared — acquire shared ERESOURCE lock on object type.
 #[inline]
 pub unsafe fn ObpAcquireObjectLockShared(header: ddk::POBJECT_HEADER) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
     let object_type = (*header).Type;
     let slot = ObpSelectObjectLockSlot(header) as usize;
     ddk::KeEnterCriticalRegion();
@@ -90,6 +94,7 @@ pub unsafe fn ObpAcquireObjectLockShared(header: ddk::POBJECT_HEADER) {
 /// ObpEnterObjectTypeMutex — acquire exclusive ERESOURCE on ObjectType.Mutex.
 #[inline]
 pub unsafe fn ObpEnterObjectTypeMutex(object_type: ddk::POBJECT_TYPE) {
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
     ddk::KeEnterCriticalRegion();
     ddk::ExAcquireResourceExclusiveLite(&mut (*object_type).Mutex, 1);
 }
@@ -99,6 +104,7 @@ pub unsafe fn ObpEnterObjectTypeMutex(object_type: ddk::POBJECT_TYPE) {
 pub unsafe fn ObpLeaveObjectTypeMutex(object_type: ddk::POBJECT_TYPE) {
     ddk::ExReleaseResourceLite(&mut (*object_type).Mutex);
     ddk::KeLeaveCriticalRegion();
+    crate::ASSERT!(crate::ke::KeGetCurrentIrql() <= crate::base::APC_LEVEL);
 }
 
 // ============================================================================
@@ -156,6 +162,12 @@ pub unsafe fn ObpReferenceNameInfo(
             Ok(_) => break,
             Err(actual) => references = actual as u32,
         }
+    }
+
+    // C: the 0x80000000 "magic" flag is an unhandled path.
+    if (*refs_ptr).load(Ordering::Relaxed) as u32 & 0x8000_0000 != 0 {
+        crate::driver_ddk::DbgPrint(b"OB: Unhandled path\n\0".as_ptr() as *const i8);
+        crate::ASSERT!(false);
     }
 
     name_info

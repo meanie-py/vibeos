@@ -19,13 +19,8 @@ spec2def(spoolss.dll spoolss.spec ADD_IMPORTLIB)
 # printproviders.c  # replaced by Rust (sdk/lib/rust/spoolss-rust/src/spoolss/printproviders.rs)
 # spoolfile.c  # replaced by Rust (sdk/lib/rust/spoolss-rust/src/spoolss/spoolfile.rs)
 # tools.c  # replaced by Rust (sdk/lib/rust/spoolss-rust/src/spoolss/tools.rs)
-# The resources are the one thing cmake still compiles, in this OBJECT library
-# whose windres command the cargo link replays.
-add_library(spoolss_res OBJECT spoolss.rc)
-target_compile_definitions(spoolss_res PRIVATE UNICODE _UNICODE)
-target_include_directories(spoolss_res PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 add_cargo_module(spoolss spoolss-cargo spoolss.dll
     KIND win32dll
     BODY_CRATE spoolss-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS spoolss_res psdk)
+    EXTRA_DEPENDS psdk)

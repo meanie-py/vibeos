@@ -123,7 +123,7 @@ def _bitor_case_patterns(c_body: str, rust: str) -> list[str]:
     repo = str(Path(__file__).resolve().parents[3])
     if repo not in sys.path:
         sys.path.insert(0, repo)
-    from tools.scan_case_bitor_pattern import c_bitor_labels, scan_text
+    from tools.case_patterns import c_bitor_labels, scan_text
 
     return [
         f"`{alts}` is an or-pattern matching EITHER constant, but the C `case` is their "
@@ -133,11 +133,11 @@ def _bitor_case_patterns(c_body: str, rust: str) -> list[str]:
 
 
 def _rust_skipped_conditions(rust: str) -> int:
-    """Loops the do-while lint (tools/scan_dowhile_continue.py) would flag, by its own code."""
+    """Loops the do-while lint (tools/loop_patterns.py) would flag, by its own code."""
     repo = str(Path(__file__).resolve().parents[3])
     if repo not in sys.path:
         sys.path.insert(0, repo)
-    from tools.scan_dowhile_continue import scan_text
+    from tools.loop_patterns import scan_text
 
     return len(scan_text(rust))
 
