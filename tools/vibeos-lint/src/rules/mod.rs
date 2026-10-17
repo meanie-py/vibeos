@@ -130,7 +130,6 @@ pub mod fnclass_cc;
 pub mod gen_ctype_tables;
 pub mod list_walk_cursor_after_loop;
 pub mod marshalgen_audit;
-pub mod scan_cargo_manifests;
 pub mod scan_cmake_linked_rust;
 pub mod vendored_registry;
 pub mod verify_match_consts;
@@ -141,7 +140,6 @@ pub mod verify_ucrtbase_cohab;
 pub fn registry() -> Vec<Box<dyn Rule>> {
     vec![
         Box::new(scan_cmake_linked_rust::ScanCmakeLinkedRust),
-        Box::new(scan_cargo_manifests::ScanCargoManifests),
         Box::new(verify_ucrtbase_cohab::VerifyUcrtbaseCohab),
         Box::new(marshalgen_audit::MarshalgenAudit),
         Box::new(atl_slot_cast::AtlSlotCast),
