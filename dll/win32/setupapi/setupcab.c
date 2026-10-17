@@ -653,8 +653,16 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
     case DLL_PROCESS_ATTACH:
         DisableThreadLibraryCalls(hinstDLL);
         OsVersionInfo.dwOSVersionInfoSize = sizeof(OsVersionInfo);
+#ifdef __REACTOS__
+        /* The real version, as Windows' setupapi uses for INF [Manufacturer] decorations:
+           GetVersionExW answers an unmanifested host (umpnpmgr, newdev, rundll32) with the
+           manifest-rule 6.2, and a driver decorated only NTamd64.10.0 would be rejected. */
+        if (!NT_SUCCESS(RtlGetVersion((PRTL_OSVERSIONINFOW)&OsVersionInfo)))
+            return FALSE;
+#else
         if (!GetVersionExW((POSVERSIONINFOW)&OsVersionInfo))
             return FALSE;
+#endif
         hInstance = (HINSTANCE)hinstDLL;
         break;
     case DLL_PROCESS_DETACH:

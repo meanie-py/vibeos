@@ -372,6 +372,9 @@ struct ReactOS_ShimData {
     dwMagic: DWORD,
     dwReserved2: [DWORD; 242],
     dwRosProcessCompatVersion: DWORD,
+    // compat_undoc.h has this on amd64; without it `dwSize` never matched there.
+    #[cfg(target_arch = "x86_64")]
+    RtlGetCurrentDirectory_U_RtlpMsysDecoy: *mut core::ffi::c_void,
 }
 
 const REACTOS_SHIMDATA_MAGIC: DWORD = 0xAC0D_EDAB;

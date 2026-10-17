@@ -2470,7 +2470,12 @@ BOOL WINAPI IsOS(DWORD feature)
         ISOS_RETURN(platform == VER_PLATFORM_WIN32_NT && majorv >= 5 && minorv >= 1);
 #endif /* __REACTOS__ */
     case OS_HOME:
+#ifdef __REACTOS__
+        /* "5.1 or later": the Wine test is FALSE at 10.0 (minor 0) */
+        ISOS_RETURN(platform == VER_PLATFORM_WIN32_NT && (majorv > 5 || (majorv == 5 && minorv >= 1)));
+#else
         ISOS_RETURN(platform == VER_PLATFORM_WIN32_NT && majorv >= 5 && minorv >= 1);
+#endif
     case OS_PROFESSIONAL:
         ISOS_RETURN(platform == VER_PLATFORM_WIN32_NT);
     case OS_DATACENTER:
@@ -2482,7 +2487,12 @@ BOOL WINAPI IsOS(DWORD feature)
     case OS_TERMINALSERVER:
         ISOS_RETURN(platform == VER_PLATFORM_WIN32_NT);
     case OS_PERSONALTERMINALSERVER:
+#ifdef __REACTOS__
+        /* "5.1 or later": the Wine test is FALSE at 10.0 (minor 0) */
+        ISOS_RETURN(platform == VER_PLATFORM_WIN32_NT && (majorv > 5 || (majorv == 5 && minorv >= 1)));
+#else
         ISOS_RETURN(platform == VER_PLATFORM_WIN32_NT && minorv >= 1 && majorv >= 5);
+#endif
     case OS_FASTUSERSWITCHING:
         FIXME("(OS_FASTUSERSWITCHING) What should we return here?\n");
         return TRUE;

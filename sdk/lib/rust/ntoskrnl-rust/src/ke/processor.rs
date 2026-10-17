@@ -22,6 +22,26 @@ pub unsafe extern "system" fn KeQueryActiveProcessors() -> KAFFINITY {
     KeActiveProcessors
 }
 
+/// The most processors the system can have. With no processor hot-add, that is the count
+/// started at boot. Exported at every version because KMDF's driver tracker probes for it
+/// (or the Ex form) and, finding neither, falls back to a version test that accepts only
+/// XP and Vista (`fxbugcheckcallback.cpp`), which fails with `ASSERT(FALSE)` at 10.0.
+#[no_mangle]
+pub unsafe extern "system" fn KeQueryMaximumProcessorCount() -> ULONG {
+    KeNumberProcessors as ULONG
+}
+
+/// One processor group here: group 0 or ALL_PROCESSOR_GROUPS (0xFFFF) is every processor,
+/// any other group has none.
+#[no_mangle]
+pub unsafe extern "system" fn KeQueryMaximumProcessorCountEx(GroupNumber: USHORT) -> ULONG {
+    if GroupNumber == 0 || GroupNumber == 0xFFFF {
+        KeNumberProcessors as ULONG
+    } else {
+        0
+    }
+}
+
 
 // ============================================================================
 // ORIGINAL C SOURCE

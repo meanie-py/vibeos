@@ -112,7 +112,9 @@ pub unsafe extern "C" fn cicGetOSInfo(puACP: LPUINT, pdwOSInfo: LPDWORD) {
         *pdwOSInfo |= CIC_OSINFO_NT;
         if VerInfo.dwMajorVersion >= 5 {
             *pdwOSInfo |= CIC_OSINFO_2KPLUS;
-            if VerInfo.dwMinorVersion > 0 {
+            // XP or later. The C's `dwMinorVersion > 0` alone is FALSE at 10.0 (and at 6.0),
+            // which turned the language-bar desk band and msctf's XPPLUS paths off.
+            if VerInfo.dwMajorVersion > 5 || VerInfo.dwMinorVersion > 0 {
                 *pdwOSInfo |= CIC_OSINFO_XPPLUS;
             }
         }

@@ -520,7 +520,11 @@ runs it.
   XP fallback. The audit is done (`version-flip-audit.md`, 2026-10-17): we report 5.2 build
   3790 today; 11 checks break at 10.0, starting with three `& 0x3FFF` build masks that turn
   22000 into 5616, and ntdll records the LOWEST supportedOS GUID, which cannot answer the
-  manifest rule.
+  manifest rule. **Phases 1-2 done 2026-10-17** (inert at 5.2): the version-independent
+  breaks are fixed (status in the audit doc's header), ntdll records the HIGHEST declared OS,
+  and kernel32's GetVersion/GetVersionEx/VerifyVersionInfo apply the manifest rule
+  (`min(real, max(6.2, declared))`, 6.2 reports build 9200, 6.3 build 9600; RtlGetVersion
+  stays truthful). Next: phase 3, the flip itself (the D-rows).
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
   applet): exactly one stub is reached, the SEH smoke probe's deliberate
