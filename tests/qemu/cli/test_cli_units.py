@@ -3390,6 +3390,24 @@ def test_backend_windows_qemu_bin():
     )
 
 
+def test_backend_windows_qemu_version_reads_and_rereads_a_replaced_binary(tmp_path):
+    exe = tmp_path / "qemu-system-i386.exe"
+    exe.write_text("#!/bin/sh\necho 'QEMU emulator version 11.1.0 (v11.1.0-12130-ge470268ff4)'\n")
+    exe.chmod(0o755)
+    assert be_mod.windows_qemu_version(str(exe)) == "11.1.0 (v11.1.0-12130-ge470268ff4)"
+    exe.write_text("#!/bin/sh\necho 'QEMU emulator version 11.0.50 (v11.0.0-12631-g54e84cdc7a)'\n")
+    os.utime(exe, (1, 1))  # a new (size, mtime): the cache must not answer with the old build
+    assert be_mod.windows_qemu_version(str(exe)) == "11.0.50 (v11.0.0-12631-g54e84cdc7a)"
+    assert be_mod.windows_qemu_version(str(tmp_path / "missing.exe")) == ""
+
+
+def test_backend_known_bad_windows_qemu():
+    """The 11.0.50 snapshot whose SAHF broke i386 float compares is refused; 11.1.0 is not."""
+    assert "SAHF" in be_mod.known_bad_windows_qemu("11.0.50 (v11.0.0-12631-g54e84cdc7a)")
+    assert be_mod.known_bad_windows_qemu("11.1.0 (v11.1.0-12130-ge470268ff4)") is None
+    assert be_mod.known_bad_windows_qemu("") is None
+
+
 def test_backend_rewrite_accel():
     base = ["-M", "pc", "-accel", "kvm", "-cpu", "host", "-m", "512M"]
     # tcg: kvm->tcg AND drop the paired -cpu host
