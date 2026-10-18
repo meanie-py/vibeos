@@ -226,3 +226,17 @@ def test_an_untouched_list_the_oracle_names_is_carried_into_it():
         "set(PCH_SKIP_SOURCE_C_ORACLE\n    ${CMAKE_CURRENT_BINARY_DIR}/imagehlp_stubs.c\n)" in out
     )
     assert "${SOURCE_C_ORACLE} ${PCH_SKIP_SOURCE_C_ORACLE} imagehlp.rc" in out
+
+
+def test_the_oracle_links_the_modules_registry_object_instead_of_regenerating_it():
+    """sti: a second add_idl_reg_scripts declares sti_wia_r.res again and CMake refuses."""
+    cml = (
+        "list(APPEND SOURCE\n    # sti.c  # replaced by Rust (x)\n)\n"
+        "add_library(sti MODULE ${SOURCE} sti.rc)\n"
+        "set_module_type(sti win32dll)\n"
+        "add_idl_reg_scripts(sti registry sti_wia.idl)\n"
+    )
+    out = co.generate(cml)
+    assert "add_idl_reg_scripts" not in out
+    assert "target_sources(sti_c PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/sti_wia_r.o)" in out
+    assert "add_dependencies(sti_c sti_r)" in out

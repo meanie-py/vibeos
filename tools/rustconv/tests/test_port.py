@@ -522,6 +522,23 @@ def test_an_initguid_tu_finds_a_quoted_header_beside_it(tmp_path, monkeypatch):
     assert out is not None and "Data1: 0x725588AC" in out and "0x8B, 0x73]" in out
 
 
+def test_a_wine_initguid_include_tu_is_a_stub(tmp_path):
+    """sti's guid.c: <initguid.h> then SDK headers; resolve's GUID block holds the storage."""
+    tu_text = (
+        "/* DO NOT USE THE PRECOMPILED HEADER FOR THIS FILE! */\n#include <stdarg.h>\n"
+        "#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#include <windef.h>\n"
+        "#include <initguid.h>\n#include <sti.h>\n/* NO CODE HERE */\n"
+    )
+    tu = tmp_path / "guid.c"
+    tu.write_text(tu_text)
+    out = port.initguid_module(tu)
+    assert out is not None and "INITGUID block" in out and "pub static" not in out
+    tu.write_text(tu_text + "#define FOO 1\n")
+    assert port.initguid_module(tu) is None, "a valued define is real code"
+    tu.write_text(tu_text.replace("#include <initguid.h>\n", ""))
+    assert port.initguid_module(tu) is None, "no initguid, no storage TU"
+
+
 def test_split_top_keeps_fn_pointer_types_whole():
     got = port._split_top(
         'a: u32, cb: Option<unsafe extern "C" fn(x: i32, y: u8) -> u32>, z: *mut u16'
@@ -1649,3 +1666,24 @@ def test_flipping_a_static_library_repoints_the_cargo_cells_that_replay_it(tmp_p
     text = (cells / "a-cargo" / "build.rs").read_text()
     assert '"engine:crate:tzlib-rust::TRUE"' in text and '"engine:c:tzlibx"' in text
     assert port._repoint_cargo_cells("tzlib", "tzlib-rust") == [], "idempotent"
+
+
+def test_c2rust_unnamed_named_member_takes_bindgen_type(tmp_path):
+    """inetmib1: `u: C2RustUnnamed_6 { dwForwarding: 0 }`; four island structs have a `u`."""
+    island = (
+        "pub struct _MIB_IPSTATS {\n    pub u: _MIB_IPSTATS__bindgen_ty_1,\n}\n"
+        "pub union _MIB_IPSTATS__bindgen_ty_1 {\n    pub dwForwarding: DWORD,\n}\n"
+        "pub struct _MIB_TCPSTATS {\n    pub u: _MIB_TCPSTATS__bindgen_ty_1,\n}\n"
+        "pub union _MIB_TCPSTATS__bindgen_ty_1 {\n    pub dwRtoAlgorithm: DWORD,\n}\n"
+    )
+    f = tmp_path / "m.rs"
+    f.write_text(
+        "static A: X = X { u: C2RustUnnamed_6 { dwForwarding: 0 } };\n"
+        "static B: Y = Y { u: C2RustUnnamed_2 { dwRtoAlgorithm: 0 } };\n"
+        "static C: Z = Z { u: C2RustUnnamed_9 { nobody: 0 } };\n"
+    )
+    port._c2rust_unnamed(f, island)
+    out = f.read_text()
+    assert "u: _MIB_IPSTATS__bindgen_ty_1 { dwForwarding:" in out
+    assert "u: _MIB_TCPSTATS__bindgen_ty_1 { dwRtoAlgorithm:" in out
+    assert "C2RustUnnamed_9 { nobody" in out, "no owning type: left alone"

@@ -2541,6 +2541,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "inetmib1-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "inetmib1-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "inflib-rust"
 version = "0.1.0"
 dependencies = [
@@ -2639,6 +2658,25 @@ name = "jscript-rust"
 version = "0.1.0"
 dependencies = [
  "panic-common",
+]
+
+[[package]]
+name = "jsproxy-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "jsproxy-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -4279,6 +4317,25 @@ version = "0.1.0"
 dependencies = [
  "panic-common",
  "reactos-link",
+]
+
+[[package]]
+name = "ntdsapi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "ntdsapi-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -6048,6 +6105,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "sti-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "sti-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "storahci-cargo"
 version = "0.1.0"
 dependencies = [
@@ -6185,6 +6261,26 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "sxs-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "sxs-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -7728,6 +7824,25 @@ dependencies = [
 
 [[package]]
 name = "wmisvc-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "wmiutils-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "wmiutils-rust"
 version = "0.1.0"
 dependencies = [
  "conutils-h",

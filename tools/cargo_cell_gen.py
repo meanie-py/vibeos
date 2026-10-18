@@ -157,6 +157,9 @@ KERNEL_KINDS = ("kernelmodedriver", "kerneldll")
 # argument only names the `<m>_inf_files` target it makes for the INF.
 KEPT = ("project", "add_driver_inf")
 
+# add_idl_reg_scripts' TYPE -> the suffix widl-support.cmake gives its .o and custom target.
+REG_SUFFIX = {"registry": "_r", "regtypelib": "_t", "winrt": "_w"}
+
 # cmake's build configurations, as they suffix a ninja link rule name.
 CONFIGS = "(?:Debug|Release|RelWithDebInfo|MinSizeRel)"
 
@@ -695,6 +698,7 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
         "body": None,
         "body_var": "",
         "transfer": [],
+        "reg_objects": [],
         "unknown": [],
         "unicode": False,
         "body_rustflags": {},
@@ -746,6 +750,10 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
             pass  # the output name comes from the link edge
         elif cmd == "target_link_options" and _subsystem_only(a):
             pass  # the subsystem comes from each arch's link edge
+        elif cmd == "add_idl_reg_scripts" and len(a) > 2 and a[1] in REG_SUFFIX:
+            # sti's registry resource (`REGINST`, read by DllRegisterServer): the rewrite
+            # makes the object alone (add_idl_reg_objects) and the cell links it.
+            facts["reg_objects"] += [f"{Path(i).stem}{REG_SUFFIX[a[1]]}.o" for i in a[2:]]
         elif cmd == "target_sources" and _ssp_objects(a):
             # atapi's `if(STACK_PROTECTOR) target_sources(atapi ... gcc_ssp_nt)`: the
             # rewrite makes the option a configure error for this module.
@@ -995,6 +1003,13 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             # The engine compiles the .rc; a generated input it embeds orders the cell.
             drop = True
             rc_gen_deps += [d for d in rc_deps if "CMAKE_CURRENT_BINARY_DIR" in d]
+        if a[:1] == [cell.target] and cmd == "add_idl_reg_scripts" and a[1:2][0] in REG_SUFFIX:
+            # The objects alone; the cell links them (static_libs) and builds after them.
+            keep.append(text[pos:s])
+            keep.append(text[s:e].replace("add_idl_reg_scripts", "add_idl_reg_objects", 1))
+            rc_gen_deps.append(f"{cell.target}{REG_SUFFIX[a[1]]}")
+            pos = e
+            continue
         if a and a[0] == cell.target and cmd.lower() in TRANSFERRED:
             drop = True  # re-emitted below, on the OBJECT libraries
             transferred.append((cmd, raw))
@@ -1577,6 +1592,12 @@ def model(target: str, repo: Path = REPO) -> Cell:
             rc_obj = obj
         elif nm.endswith("_stubs.rs.obj") or nm.endswith("_stubs.c.obj"):
             stubs = True
+        elif nm in facts["reg_objects"]:
+            # add_idl_reg_objects' resource object: a plain .o on lld's command line is
+            # always linked, so it rides with the reused libraries, first as in cmake's link.
+            for a in ARCHES:
+                static_by_arch[a].insert(0, obj)
+                orders[a].insert(0, obj)
         elif nm.endswith(".def"):
             m = re.search(r"spec2def\(\s*(\S+)\s+(\S+\.spec)", cmake.read_text())
             if not m:
