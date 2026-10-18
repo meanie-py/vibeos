@@ -41,6 +41,7 @@ from pathlib import Path
 
 from . import (
     bank_import,
+    cohab_stub,
     crate_integrate,
     dead_regions,
     default_arm,
@@ -779,6 +780,12 @@ def _resolve_island_types(state: dict, names: set[str]) -> set[str]:
         if ref.kind in ("crt", "toolchain") or ref.name.startswith(("ndk/", "wine/")):
             print(f"resolve: type {n} is in {ref.name}, a base header -- the -sys crate's job")
             continue
+        if "sdk/lib/atl/" in ref.path.as_posix():
+            # ATL's own headers (CComModule, CComObject, CString, a template's `Base`): what a
+            # C++ module takes from them is atl_rust's or cppapp's, never bindgen's. acppage's
+            # island grew opaque copies of all four and stopped compiling.
+            print(f"resolve: type {n} is ATL's ({ref.name}) -- atl_rust/cppapp, not the island")
+            continue
         rx = pd._hdr_regex(ref.name)
         if rx in dp.allow_files and rx in extra:
             continue  # already there: the island does not define it for another reason
@@ -1257,6 +1264,9 @@ def stage_cppapp(stem: str) -> None:
     ] + [f"{f.name}: {u}" for f in model.functions for u in f.unplaced]
     for u in unplaced:
         print(f"cppapp: UNLOWERED (inside a macro expansion): {u}")
+    folded = cpp_app.fold_module_subclasses(model)
+    if folded:
+        print(f"cppapp: CComModule subclass(es) folded into the module: {', '.join(folded)}")
     dropped = cpp_app.prune_unused_external(model)
     if dropped:
         print(f"cppapp: external class(es) nothing names, not rendered: {', '.join(dropped)}")
@@ -1269,8 +1279,18 @@ def stage_cppapp(stem: str) -> None:
     island_i386 = _crate_dir(state) / "src" / "types_i386.rs"
     island_text = island_i386.read_text(errors="replace") if island_i386.is_file() else ""
     hand_methods, hand_names = _hand_definitions(_crate_dir(state) / "src", stem)
+    sys_src = prelude_resolve.island_substrate(
+        _crate_dir(state) / "src", REPO / "sdk" / "lib" / "rust"
+    )
+    sys_i386 = sys_src / "bindgen_i386.rs" if sys_src is not None else None
+    substrate = sys_i386.read_text(errors="replace") if sys_i386 and sys_i386.is_file() else ""
     generated = cpp_app.render_classes(
-        model, island_structs, island_text, hand_methods=hand_methods, hand_names=hand_names
+        model,
+        island_structs,
+        island_text,
+        hand_methods=hand_methods,
+        hand_names=hand_names,
+        substrate=substrate,
     )
     (crate_src / "cpp_classes.rs").write_text(generated)
     deferred = _defer_island_classes(_crate_dir(state) / "src", stem, generated)
@@ -1876,6 +1896,13 @@ def stage_translate(
             )
             break
         out = _tu_output(state, tu)
+        if replay_only and out.name in _whole_module_banks(stem):
+            # The hand stage writes this whole module from its bank (`port hand <stem> f.rs:*`),
+            # so nothing translate could assemble here survives it. acppage's class unit had a
+            # constructor whose prologue changed after the bank was taken, and the replay
+            # refused the TU for want of a cached body nobody needed.
+            print(f"translate: {Path(tu).name}: whole module hand-banked, not reassembled")
+            continue
         cmd = [
             sys.executable,
             "-m",
@@ -1959,15 +1986,19 @@ def stage_translate(
         proc = subprocess.run(
             cmd, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True, env=env
         )
-        refused = set(_NO_REPLAY.findall(proc.stdout + proc.stderr)) & _hand_covered(stem)
-        if refused:
+        covered = _hand_covered(stem)
+        hand_skipped: set[str] = set()
+        # The synthetic path refuses one body per run, so ask again until nothing new is
+        # refused that a hand bank covers; each round skips one more name, so it ends.
+        while new := (_no_replay_names(proc.stdout + proc.stderr) & covered) - hand_skipped:
             # A body the bank cannot replay because its C changed under it (wscript's
             # print_resource, bought from cscript's preprocess) but that a HAND bank replaces
             # anyway: nothing is owed, so assemble the TU without it rather than refuse it.
-            cmd += ["--skip-fn", *sorted(refused - set(skipped))]
+            hand_skipped |= new
+            cmd += ["--skip-fn", *sorted(new - set(skipped))]
             # Recorded like any --skip-fn, so apply_hand knows the hand item has no bought
             # counterpart left in the file to replace.
-            state["skip_fn"] = sorted(set(state.get("skip_fn", [])) | refused)
+            state["skip_fn"] = sorted(set(state.get("skip_fn", [])) | new)
             proc = subprocess.run(
                 cmd, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True, env=env
             )
@@ -2452,11 +2483,10 @@ def stage_flip(stem: str) -> None:
     cml = module / "CMakeLists.txt"
     new = flip_cmake(cml.read_text(), state)
     stub = module / _stub_name(state)
-    if not stub.exists():
-        stub.write_text(
-            f"/* {stem} is Rust (sdk/lib/rust/{state['crate']}); a CMake target needs one TU. */\n"
-            f"typedef int {stem}_rust_cohab_placeholder;\n"
-        )
+    # Rewritten while it is still only what a flip writes (an older flip's placeholder, or
+    # a stale anchor list); a stub somebody edited by hand is theirs.
+    if not stub.exists() or cohab_stub.is_generated(stub.read_text(), stem, state["crate"]):
+        stub.write_text(cohab_stub.stub_text(stem, state["crate"], cohab_stub.module_spec(module)))
     changed = new != cml.read_text()
     if changed:
         cml.write_text(new)
@@ -6840,7 +6870,29 @@ def _hand_dir(stem: str) -> Path:
 
 
 #: response_cache's refusal to re-buy a body whose purchase no longer replays.
-_NO_REPLAY = re.compile(r": (\w+) already has purchased output which did not replay")
+# Both refusals: the plain path's, and the C++ synthetic path's (acppage's DllMain after a
+# cppapp fix changed its unit's text), which stops at the FIRST body it lacks.
+_NO_REPLAY = re.compile(
+    r": (\w+) already has purchased output which did not replay"
+    r"|--replay-only: no accepted cached body for (\w+)"
+)
+
+
+def _no_replay_names(text: str) -> set[str]:
+    return {a or b for a, b in _NO_REPLAY.findall(text)}
+
+
+def _whole_module_banks(stem: str) -> set[str]:
+    """Module file names a whole-module hand bank (`f.rs:*`) holds."""
+    out: set[str] = set()
+    for entry in _hand_dir(stem).glob("*.json"):
+        try:
+            banked = json.loads(entry.read_text())
+        except (OSError, ValueError):
+            continue
+        if banked.get("name") == "*" and banked.get("file"):
+            out.add(banked["file"])
+    return out
 
 
 def _hand_covered(stem: str) -> set[str]:

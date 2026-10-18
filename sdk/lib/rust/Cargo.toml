@@ -904,6 +904,7 @@ members = [
     "tdihelpers-rust",
     "spapisup-rust",
     "setupapi-rust",
+    "acppage-rust",
 ]
 resolver = "2"
 

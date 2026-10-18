@@ -5109,6 +5109,20 @@ a decision to take deliberately, not to reach for because a module will not tran
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### An anonymous C struct table comes back with fields the model named
+
+**Symptom:** a table-driven lookup that compiles but matches the wrong column. acppage's
+mode list showed the right text and stored the display string where the layer id belongs.
+
+**Cause:** `static struct { const PCWSTR Display; const PCWSTR Name; } g_CompatModes[]` has no
+type name, so the model invented one (`CompatModeEntry`) and invented the fields too:
+`{ name, layer }`. Its `name` held the C's `Display` and its `layer` the C's `Name`, so every
+body written against the C (`g_CompatModes[n].Name`) failed to compile only by luck of the
+spelling. A model that had kept `name` for the C's `Name` would have compiled and been wrong.
+
+**Fix:** keep the C's field names for an anonymous struct (rename the type only), and check
+each table row's strings against the C. acppage's are fixed and banked.
+
 ### A string macro beside a literal: the model kept the macro and dropped the literal
 **Symptom.** Report output loses its text but compiles and runs: every drwtsn32 line built as
 `xfprintf(output, "%5d: %ls" NEWLINE, ...)` came back `xfprintf(output, NEWLINE, ...)`, so
@@ -12328,6 +12342,21 @@ lld ever looked for the module's real one, which in shell32 sits in `libshell32_
 an object file. **Fix:** a defaults crate may hold ONLY symbols that should be pulled for
 themselves: the default `DllEntryPoint` moved into crt-startup-rust beside its caller. To check
 any module: relink it with `-Wl,-Map=` and see which input defines `DllMain`/`main`.
+The same codegen-unit bundling breaks a shared crate's UNUSED helper: making atl_rust's
+`create_property_page` non-generic put its `CreatePropertySheetPageW` call in atl_rust's own
+object, which came along with live code into certmgr, a module that never links comctl32
+(`undefined symbol: CreatePropertySheetPageW`, amd64 LINK_FAIL). A generic or `#[inline]` fn
+is instantiated only in a crate that calls it, so a shared-crate helper that imports a DLL
+not every user links must be one of those.
+And lazy pulling can lose a fully flipped module its own EXPORTS: link_guard's "an import was
+kept over a local definition" for `DllGetClassObject` (acppage, i386 then amd64). A DELAY
+import library is ONE object holding every thunk of its DLL, ole32's own `DllGetClassObject`
+included, so the first Rust call into ole32 loads them all; the module's real export arrives
+later and is the duplicate `--allow-multiple-definition` drops. Codegen-unit order decided it,
+so the same module linked on one edit and failed on the next. **Fix:** the flipped module's
+`rust_cohab_stub` references every `.spec` export by its raw per-arch symbol (asm labels, so
+the PCH's prototypes cannot clash), and an object's undefined symbol is taken from the first
+archive defining it: the module's own. `port flip` writes it (`rustconv/cohab_stub.py`).
 
 ### A Rust archive behind an INTERFACE wrapper links AFTER the import libraries, which then answer
 **Symptom:** a DLL's export is silently satisfied by another DLL's import: ucrtbase and

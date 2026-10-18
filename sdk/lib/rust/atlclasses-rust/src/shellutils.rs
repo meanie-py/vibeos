@@ -66,6 +66,54 @@ pub unsafe fn HIDA_GetPIDLItem<C, R, I: TryInto<usize>>(pida: *const C, i: I) ->
     cida_offset(pida, i.try_into().unwrap_or(usize::MAX) + 1)
 }
 
+/// shellutils.h `CCoInitBase<InitFunc, UninitFunc>`: initializes on construction, and
+/// uninitializes on destruction only when that succeeded. `CCoInit` is the CoInitialize
+/// instance, `COleInit` the OleInitialize one. ole32: feature `com`.
+#[cfg(feature = "com")]
+pub struct CCoInitBase<const OLE: bool> {
+    pub hr: i32,
+}
+
+#[cfg(feature = "com")]
+extern "system" {
+    fn CoInitialize(reserved: *mut core::ffi::c_void) -> i32;
+    fn CoUninitialize();
+    fn OleInitialize(reserved: *mut core::ffi::c_void) -> i32;
+    fn OleUninitialize();
+}
+
+#[cfg(feature = "com")]
+impl<const OLE: bool> CCoInitBase<OLE> {
+    /// `CCoInitBase() : hr(InitFunc(NULL))`.
+    pub unsafe fn new() -> Self {
+        let p = core::ptr::null_mut();
+        CCoInitBase { hr: if OLE { OleInitialize(p) } else { CoInitialize(p) } }
+    }
+}
+
+#[cfg(feature = "com")]
+impl<const OLE: bool> Drop for CCoInitBase<OLE> {
+    /// `~CCoInitBase() { if (SUCCEEDED(hr)) UninitFunc(); }`.
+    fn drop(&mut self) {
+        if self.hr >= 0 {
+            unsafe {
+                if OLE {
+                    OleUninitialize()
+                } else {
+                    CoUninitialize()
+                }
+            }
+        }
+    }
+}
+
+/// `typedef CCoInitBase<CoInitialize, CoUninitialize> CCoInit;`
+#[cfg(feature = "com")]
+pub type CCoInit = CCoInitBase<false>;
+/// `typedef CCoInitBase<OleInitialize, OleUninitialize> COleInit;`
+#[cfg(feature = "com")]
+pub type COleInit = CCoInitBase<true>;
+
 #[cfg(test)]
 mod tests {
     #[no_mangle]

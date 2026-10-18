@@ -196,6 +196,16 @@ def test_an_external_class_nothing_names_is_pruned():
     assert "ATL::CWindow" in m.classes and "ATL::CRegKey" not in m.classes
 
 
+def test_a_window_template_base_keeps_cwindow():
+    # acppage: `class CLayerUIPropPage : public CPropertyPageImpl<CLayerUIPropPage>, ..` never
+    # spells CWindow, but the template IS it (cpp_app.short), and its layout is CWindow's.
+    m = _model(extra_bases=(Base("CPropertyPageImpl<CX>", "public"),))
+    win = ClassModel("CWindow", "ATL::CWindow", "class", "atlwin.h", external=True)
+    m.classes["ATL::CWindow"] = win
+    assert cpp_app.prune_unused_external(m) == []
+    assert "ATL::CWindow" in m.classes
+
+
 def test_the_island_allowlists_the_classes_interface_bases(tmp_path):
     tu = tmp_path / "x.cpp"
     tu.write_text(
@@ -246,3 +256,56 @@ def test_an_ambiguous_interface_ancestor_is_refused():
     island = _ISLAND + _IBASE + ifoo2.replace("IFoo", "IFoo2")
     with pytest.raises(cpp_app.CppAppError, match="IBase is an ambiguous base"):
         cpp_app.render_classes(m, frozenset(), island)
+
+
+def test_a_brace_list_static_renders_against_the_substrate_struct():
+    # ATL's `RECT CWindow::rcDefault = { CW_USEDEFAULT, CW_USEDEFAULT, 0, 0 };`. RECT is the
+    # substrate's (`pub type RECT = tagRECT;` in ntdll-sys), not the crate island's.
+    substrate = (
+        "pub type RECT = tagRECT;\n#[repr(C)]\npub struct tagRECT {\n    pub left: LONG,\n"
+        "    pub top: LONG,\n    pub right: LONG,\n    pub bottom: LONG,\n}\n"
+    )
+    fields = cpp_app.island_struct_fields(substrate)
+    assert fields["RECT"] == ["left", "top", "right", "bottom"]
+    f = Field("rcDefault", "RECT", static=True)
+    f.default_init = "{ CW_USEDEFAULT, CW_USEDEFAULT, 0, 0 }"
+    cls = ClassModel("CWindow", "ATL::CWindow", "class", "atlwin.h", external=True)
+    out = cpp_app._static_member_init(cls, f, "RECT", ModuleModel(), fields)
+    assert out == (
+        "RECT { left: CW_USEDEFAULT as _, top: CW_USEDEFAULT as _, right: 0 as _, bottom: 0 as _ }"
+    )
+
+
+def test_a_brace_list_that_does_not_fit_the_struct_is_refused():
+    fields = {"RECT": ["left", "top", "right", "bottom"]}
+    f = Field("rc", "RECT", static=True)
+    f.default_init = "{ 1, 2, 3 }"
+    cls = ClassModel("CX", "CX", "class", "x.h")
+    with pytest.raises(cpp_app.CppAppError, match="cannot render"):
+        cpp_app._static_member_init(cls, f, "RECT", ModuleModel(), fields)
+    f.default_init = "{ f(), 2, 3, 4 }"
+    with pytest.raises(cpp_app.CppAppError, match="cannot render"):
+        cpp_app._static_member_init(cls, f, "RECT", ModuleModel(), fields)
+
+
+def test_an_empty_ccommodule_subclass_is_the_module():
+    # acppage: `class CLayerUIPropPageModule : public CComModule {}; CLayerUIPropPageModule gModule;`
+    m = _model()
+    sub = ClassModel("CMyModule", "CMyModule", "class", "x.cpp", polymorphic=True)
+    sub.bases = [Base("CComModule", "public")]
+    m.classes["CMyModule"] = sub
+    m.globals[1].c_type = "CMyModule"
+    assert cpp_app.fold_module_subclasses(m) == ["CMyModule"]
+    assert "CMyModule" not in m.classes and m.globals[1].c_type == "CComModule"
+    rs = cpp_app.render_classes(m, frozenset(), _ISLAND)
+    assert "pub static mut g_Module: atl_rust::dll::CComModule" in rs
+
+
+def test_a_ccommodule_subclass_with_members_is_refused():
+    m = _model()
+    sub = ClassModel("CMyModule", "CMyModule", "class", "x.cpp")
+    sub.bases = [Base("CComModule", "public")]
+    sub.fields = [Field("m_extra", "int")]
+    m.classes["CMyModule"] = sub
+    with pytest.raises(cpp_app.CppAppError, match="CComModule subclass with members"):
+        cpp_app.fold_module_subclasses(m)

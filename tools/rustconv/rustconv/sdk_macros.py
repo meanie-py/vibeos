@@ -87,6 +87,13 @@ _TOKEN = re.compile(
 )
 
 
+def cxx_ref_alias(name: str, expansion: str) -> str | None:
+    """A type macro's C++ spelling, `const IID &` (REFIID/REFCLSID in a C++ unit, acppage's
+    DllGetClassObject): a reference is a pointer at the C ABI these exports have."""
+    m = re.fullmatch(r"\s*const\s+([A-Za-z_]\w*)\s*&\s*", expansion)
+    return f"pub type {name} = *const {m.group(1)};" if m else None
+
+
 def tokenize(text: str) -> list[str]:
     out, pos = [], 0
     text = text.strip()
@@ -1170,6 +1177,10 @@ def object_items(
                 and (as_type or expansion in island)
             ):
                 out[n] = f"pub type {n} = {expansion};"
+                continue
+            ref = cxx_ref_alias(n, expansion)
+            if as_type and ref is not None:
+                out[n] = ref
                 continue
             if as_type:
                 # `#define REFIID const IID* const` -- a C type NAME, not a single identifier.

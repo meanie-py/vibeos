@@ -245,7 +245,11 @@ def test_a_hand_twin_over_a_skipped_body_goes_in_like_an_added_item(tmp_path, mo
 
 def test_the_replay_refusal_names_the_function():
     out = "x/.responses/m__main: print_resource already has purchased output which did not replay."
-    assert port._NO_REPLAY.findall(out) == ["print_resource"]
+    assert port._no_replay_names(out) == {"print_resource"}
+    # The C++ synthetic path's refusal (acppage's DllMain after its unit text changed).
+    assert port._no_replay_names(
+        "ValueError: --replay-only: no accepted cached body for DllMain"
+    ) == {"DllMain"}
 
 
 def test_a_whole_module_is_banked_and_replayed_verbatim(tmp_path, monkeypatch):
@@ -1575,3 +1579,12 @@ def test_flipping_a_static_library_repoints_the_cargo_cells_that_replay_it(tmp_p
     text = (cells / "a-cargo" / "build.rs").read_text()
     assert '"engine:crate:tzlib-rust::TRUE"' in text and '"engine:c:tzlibx"' in text
     assert port._repoint_cargo_cells("tzlib", "tzlib-rust") == [], "idempotent"
+
+
+def test_whole_module_banks_name_their_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path)
+    hand = tmp_path / "m" / "hand"
+    hand.mkdir(parents=True)
+    (hand / "a.json").write_text(json.dumps({"file": "a_cpp_h.rs", "name": "*", "text": ""}))
+    (hand / "b.json").write_text(json.dumps({"file": "b_cpp_h.rs", "name": "F", "text": ""}))
+    assert port._whole_module_banks("m") == {"a_cpp_h.rs"}

@@ -908,12 +908,18 @@ def test_a_property_page_gets_rosdlgs_glue_and_its_overrides():
     )
     rs = cpp_app.render_classes(_atl_model(page))
     assert "pub __base0: CWindow," in rs
-    assert "atl_rust::win::create_property_page(self as *mut Self, 101 as u16" in rs
+    # m_psp is a member the constructor fills (acppage edits its title), and Create uses it.
+    assert "pub m_psp: atl_rust::win::PropSheetPage," in rs
+    assert "atl_rust::win::property_page_init(this_, 101 as u16, core::ptr::null())" in rs
+    assert "atl_rust::win::create_property_page_from(&self.m_psp)" in rs
     assert "impl atl_rust::win::PropertyPage for P {" in rs
     assert "unsafe fn on_apply(&mut self) -> i32 { self.OnApply() as i32 }" in rs
     # A hook the class does not declare keeps the C++ base's default (the trait's).
     assert "on_set_active" not in rs
     assert "atl_rust::win::property_page_map(self as *mut Self, hwnd, msg, l, result)" in rs
+    # ...and the implicit constructor stores it before anything else could read it.
+    tus = cpp_app.synthetic_tus(_atl_model(page), "")
+    assert any("this_->m_psp = P::__psp_init(this_);" in t for t in tus.values())
 
 
 def test_hand_written_window_glue_and_aliases_win_over_the_generic_ones():

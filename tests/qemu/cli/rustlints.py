@@ -137,6 +137,7 @@ PORTED = frozenset(
         "scan_misaligned_cast",
         "scan_fnptr_abi_transmute",
         "scan_entry_point_cc",
+        "scan_uncalled_ctor_hook",
         "scan_shadowed_c_define",
         "scan_hkey_zero_extend",
     }

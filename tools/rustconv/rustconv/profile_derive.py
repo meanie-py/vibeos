@@ -4582,6 +4582,8 @@ def _kernel_panic(m: CMakeModule) -> str:
 
 
 _SHELLUTILS_SHARED = {
+    "CCoInit": "CCoInit",
+    "COleInit": "COleInit",
     "CDataObjectHIDA": "hida_clipformat",
     "HIDA_GetPIDLFolder": "HIDA_GetPIDLFolder",
     "HIDA_GetPIDLItem": "HIDA_GetPIDLItem",
@@ -4669,7 +4671,8 @@ def scaffold_crate(
         # The ATL types a C++ worker is told are in scope (atl_contract.py). Named, not a
         # glob: atl-rust's primitive aliases (WCHAR, BOOL) would collide with the island's.
         texts = [tu.read_text(errors="replace") for tu in m.compiled_tus if tu.is_file()]
-        com = any(re.search(r"\bCComHeapPtr\b", t) for t in texts)
+        # CComHeapPtr (the task allocator) and shellutils.h's CCoInit/COleInit: ole32.
+        com = any(re.search(r"\b(?:CComHeapPtr|CCoInit|COleInit)\b", t) for t in texts)
         # atlpath.h's typedefs: CPath is CPathT<CString>, CPathW CPathT<CStringW> (rapps).
         path = any(re.search(r"\bCPathW?\b", t) for t in texts)
         # The C++ standard library containers (atl_rust::stl). drwtsn32 declares its
@@ -4682,9 +4685,11 @@ def scaffold_crate(
         # An in-process COM server (BEGIN_OBJECT_MAP): atl_rust::dll's CComModule and the
         # .rgs registrar, which import advapi32.
         dll = any(re.search(r"\bBEGIN_OBJECT_MAP\b", t) for t in texts)
+        # CComBSTR (atl_rust::bstr): oleaut32's Sys*String.
+        bstr = any(re.search(r"\bCComBSTR\b", t) for t in texts)
         # CComHeapPtr is the COM task allocator (ole32), CPath is shlwapi's
         # PathCompactPathExW: only a module that uses one imports its DLL.
-        feats = [f for f, on in (("com", com), ("dll", dll), ("path", path)) if on]
+        feats = [f for f, on in (("bstr", bstr), ("com", com), ("dll", dll), ("path", path)) if on]
         deps += (
             'atlclasses-rust = { path = "../atlclasses-rust", features = ['
             + ", ".join(f'"{f}"' for f in feats)
@@ -4702,7 +4707,10 @@ def scaffold_crate(
             # atlsimpstr.h's CSimpleStringT<WCHAR> is CStringW's base: every `CSimpleString&`
             # parameter (CWindow::GetWindowText) is handed a CStringW in a UNICODE module.
             "pub use atl_rust::CStringW as CSimpleString;\n"
+            # atlstr.h's TCHAR `CString` is CStringW in a UNICODE module (acppage's fields).
+            "pub use atl_rust::CStringW as CString;\n"
             + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
+            + ("pub use atl_rust::bstr::CComBSTR;\n" if bstr else "")
             + ("pub use atl_rust::CPath;\npub use atl_rust::CPath as CPathW;\n" if path else "")
             # shellutils.h's shared half (g_cfHIDA, which the CDataObjectHIDA lowering calls;
             # the HIDA accessors), by what the module names.
