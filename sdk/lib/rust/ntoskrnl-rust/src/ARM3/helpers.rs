@@ -131,7 +131,11 @@ pub const PXE_TOP: usize = PXE_BASE + PXE_PER_PAGE * 8 - 1;
 #[cfg(target_arch = "x86")]
 pub const PDE_TOP: usize = PDE_BASE + ntkrnl_sys::mm::PDE_PER_PAGE * 4 - 1;
 #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
-pub const PDE_TOP: usize = PDE_BASE + ntkrnl_sys::mm::PDE_PER_PAGE * ntkrnl_sys::mm::PDE_PER_PAGE * 8 - 1;
+// The PDE region spans all 512 PML4 slots: 512^3 entries of 8 bytes, 1 GiB
+// (xdk/amd64/mm.h 0xFFFFF6FB7FFFFFFF). The port had 512^2, one slot's worth.
+pub const PDE_TOP: usize = PDE_BASE
+    + ntkrnl_sys::mm::PDE_PER_PAGE * ntkrnl_sys::mm::PDE_PER_PAGE * ntkrnl_sys::mm::PDE_PER_PAGE * 8
+    - 1;
 
 // USER_SHARED_DATA
 pub const USER_SHARED_DATA: ULONG_PTR = 0x7FFE0000;
@@ -410,7 +414,7 @@ pub const KERNEL_LARGE_STACK_SIZE: usize = 60 * 1024; // 60KB — matches xdk/x8
 // previous (buggy-on-amd64) Rust constant happened to produce on i386 and
 // what shipped working in test_smoke for i386 prior to the amd64 fix.
 #[cfg(target_arch = "x86")]
-pub const KERNEL_LARGE_STACK_COMMIT: usize = 16 * 1024; // 16KB — Rust-port margin
+pub const KERNEL_LARGE_STACK_COMMIT: usize = 16 * 1024; // nolint: shadowed-c-define (Rust-port margin, above)
 
 // arm64 is a 64-bit arch and must use amd64's stack sizing, NOT i386's. The
 // original port copied i386's 12KB value into xdk/arm64/ke.h, but the Rust port

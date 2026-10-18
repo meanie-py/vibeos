@@ -323,7 +323,7 @@ pub unsafe fn KiRestoreXState(buffer: PVOID, component_mask: u64) {
 // ============================================================================
 
 const APIC_BASE: u64 = 0xFFFFFFFFFFFE0000u64;
-const APIC_EOI_REGISTER: u64 = 0xB0; // nolint: const-contradiction (OFFSET from APIC_BASE; APIC_BASE+0xB0 == ke.h:87's absolute 0xFFFFFFFFFFFE00B0)
+const APIC_EOI_REGISTER: u64 = 0xB0; // nolint: const-contradiction, shadowed-c-define (OFFSET from APIC_BASE; APIC_BASE+0xB0 == ke.h:87's absolute 0xFFFFFFFFFFFE00B0)
 
 /// KiSendEOI — write 0 to APIC EOI register.
 #[inline]
