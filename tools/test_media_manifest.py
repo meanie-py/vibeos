@@ -39,3 +39,31 @@ def test_the_rendered_manifest_is_json_one_entry_per_line():
     text = m.render(man)
     assert json.loads(text) == man
     assert '   ["a", "repo:b"]' in text.splitlines()
+
+
+def test_a_build_carrying_payload_rostests_is_refused_not_filtered():
+    """A payload build leaves ENABLE_ROSTESTS[_APITESTS] on; its lists carry test exes AND
+    their import closures (amd64's SysWOW64 got i386's hid.dll), so they cannot be committed."""
+    clean = {
+        "config": "Debug",
+        "cds": {
+            "livecd": {
+                "command": "",
+                "entries": [
+                    ["reactos/bin/kmtest.exe", "build:modules/rostests/kmtests/kmtest/kmtest.exe"],
+                    ["reactos/bin/testdata/x", "repo:modules/rostests/testdata/x"],
+                    ["reactos/system32/pdh.dll", "cell:dll/win32/pdh/pdh.dll"],
+                ],
+            }
+        },
+    }
+    assert m.committed(clean, "amd64") is clean
+    dirty = json.loads(json.dumps(clean))
+    dirty["cds"]["livecd"]["entries"].append(
+        [
+            "reactos/syswow64/user32_winetest.exe",
+            "repo:build-i386/modules/rostests/winetests/user32/user32_winetest.exe",
+        ]
+    )
+    with pytest.raises(m.MediaError, match=r"winetests.*ENABLE_ROSTESTS_APITESTS=OFF"):
+        m.committed(dirty, "amd64")
