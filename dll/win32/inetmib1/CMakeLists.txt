@@ -14,3 +14,5 @@ add_cargo_module(inetmib1 inetmib1-cargo inetmib1.dll
     DESTINATION reactos/system32
     DELAY_IMPORTS
     EXTRA_DEPENDS psdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

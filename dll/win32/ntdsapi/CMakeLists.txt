@@ -10,3 +10,5 @@ add_cargo_module(ntdsapi ntdsapi-cargo ntdsapi.dll
     BODY_CRATE ntdsapi-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS psdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

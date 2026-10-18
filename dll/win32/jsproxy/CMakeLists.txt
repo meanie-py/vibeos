@@ -12,3 +12,5 @@ add_cargo_module(jsproxy jsproxy-cargo jsproxy.dll
     BODY_CRATE jsproxy-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS psdk uuid_sources)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle
