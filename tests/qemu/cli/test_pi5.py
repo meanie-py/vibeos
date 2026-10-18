@@ -152,6 +152,88 @@ def test_a_lost_image_server_is_the_verdict_not_a_stortest_hang(tmp_path: Path) 
     assert "image server exited 1" in run.stages[-1].detail
 
 
+def _drop_medium_run(tmp_path: Path, serial_text: str):
+    """`_await_stortest` under --drop-medium, over a serial log that already holds
+    `serial_text`, with a live stand-in image server that the drop stops."""
+    import subprocess
+    import sys
+
+    class FakeRun:
+        def __init__(self) -> None:
+            self.dir = tmp_path
+            self.extra: dict = {}
+            self.stages: list = []
+            self.classification = ""
+
+        def add(self, stage) -> None:
+            self.stages.append(stage)
+
+    log = tmp_path / "serve-image.log"
+    log.write_text("Serving media.\n")
+    server = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    watch = pi5.ImageServerWatch(server, log)
+    serial = tmp_path / "live.log"
+    serial.write_text(serial_text)
+    run = FakeRun()
+    try:
+        pi5._await_stortest(run, serial, 0, watch, server.terminate)  # type: ignore[arg-type]
+    finally:
+        server.kill()
+    return run, server
+
+
+def test_drop_medium_passes_on_the_inline_hard_error_and_a_finished_stortest(
+    tmp_path: Path,
+) -> None:
+    """The 2026-10-16 deadlock's hardware check: the medium goes as stortest starts, its
+    mount raises a hard error on a thread with APCs disabled, iomgr completes the IRP
+    inline, and stortest gives up on the volume instead of hanging in the open."""
+    run, server = _drop_medium_run(
+        tmp_path,
+        "[STORTEST] start\n"
+        "[IO] hard error 0xc0000013 completed inline: the requester has APCs disabled\n"
+        "[STORTEST] FAIL: no VIBEUSB volume found after 120s\n",
+    )
+    assert server.wait(timeout=10) is not None  # the drop stopped the server
+    assert run.classification == "", run.stages
+    assert run.stages[-1].name == "drop-medium"
+    assert "completed inline" in run.stages[-1].detail
+
+
+def test_drop_medium_without_the_inline_trace_is_not_exercised(tmp_path: Path) -> None:
+    """stortest finishing proves nothing about the fix if the hard error never fired."""
+    run, _ = _drop_medium_run(
+        tmp_path, "[STORTEST] start\n[STORTEST] FAIL: no VIBEUSB volume found after 120s\n"
+    )
+    assert run.classification == "NOT_EXERCISED"
+
+
+def test_a_server_lost_before_the_drop_is_the_bench_not_the_fix(tmp_path: Path) -> None:
+    import subprocess
+    import sys
+
+    class FakeRun:
+        def __init__(self) -> None:
+            self.dir = tmp_path
+            self.extra: dict = {}
+            self.stages: list = []
+            self.classification = ""
+
+        def add(self, stage) -> None:
+            self.stages.append(stage)
+
+    log = tmp_path / "serve-image.log"
+    log.write_text('{"ok": false, "exit_code": 1}\n')
+    server = subprocess.Popen([sys.executable, "-c", "import sys; sys.exit(1)"])
+    watch = pi5.ImageServerWatch(server, log)
+    serial = tmp_path / "live.log"
+    serial.write_text("[FLDR] still booting\n")
+    run = FakeRun()
+    pi5._await_stortest(run, serial, 0, watch, server.terminate)  # type: ignore[arg-type]
+    assert run.classification == "BENCH_UNHEALTHY"
+    assert run.stages[-1].name == "serve-image"
+
+
 def test_until_reads_on_past_the_desktop_and_says_when_the_line_never_comes(tmp_path: Path) -> None:
     class FakeRun:
         def __init__(self) -> None:
