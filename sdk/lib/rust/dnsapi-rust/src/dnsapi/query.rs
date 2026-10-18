@@ -798,14 +798,14 @@ pub unsafe extern "system" fn DnsQuery_W(
     // RpcTryExcept, as the C: before the DNS Client service is up the stub raises
     // RPC_S_SERVER_UNAVAILABLE, and that is this call's answer, not the caller's death.
     Status = rpc_try(|| {
-        R_ResolverQuery(
+        rpc_try(|| R_ResolverQuery(
             core::ptr::null_mut(),
             Name,
             Type,
             Options,
             &mut dwRecords as *mut DWORD,
             QueryResultSet as *mut *mut DNS_RECORDW,
-        )
+        )).unwrap_or_else(|code| code as _)
     })
     .unwrap_or_else(|code| code);
 

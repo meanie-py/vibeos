@@ -149,16 +149,12 @@ pub unsafe extern "C" fn get_context(hglrc: HGLRC) -> *mut wgl_context {
         return core::ptr::null_mut();
     }
 
-    // _SEH2_TRY / _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) / _SEH2_END. This tree builds C with
-    // DUMMY_PSEH on every arch (sdk/cmake/gcc.cmake), where the try block runs unguarded and the
-    // except block is `if (_SEH2_Volatile0 || ...)` -- a runtime-false guard. Kept as written so
-    // the handler still says what the C does on a fault.
-    {
-        if (*context).magic != 1196184131u32 /* 'GLRC' */ {
-            context = core::ptr::null_mut();
-        }
-    }
-    if _SEH2_Volatile0 != 0 {
+    // _SEH2_TRY / _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): a garbage HGLRC that faults on
+    // the magic read is "no context". DUMMY_PSEH compiled the guard out of the C (the handler
+    // was a runtime-false `if (_SEH2_Volatile0 || ...)`); rpc_try catches everything, as the
+    // C's filter does.
+    let magic = ntdll_sys::seh::rpc_try(|| core::ptr::read_volatile(core::ptr::addr_of!((*context).magic)));
+    if magic != Ok(1196184131u32 /* 'GLRC' */) {
         context = core::ptr::null_mut();
     }
 

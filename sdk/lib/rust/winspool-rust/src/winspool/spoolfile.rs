@@ -54,30 +54,6 @@ pub unsafe extern "system" fn GetSpoolFileHandle(mut hPrinter: HANDLE) -> HANDLE
                 &raw mut FileInfoContainer,
             )).unwrap_or_else(|code| code as _);
             // RpcExcept(EXCEPTION_EXECUTE_HANDLER) body.
-            if _SEH2_Volatile0 != 0 || 0 as ::core::ffi::c_int != 0 && 1 as ::core::ffi::c_int != 0
-            {
-                dwErrorCode = RpcExceptionCode!() as DWORD;
-                _SEH2_VolatileExceptionCode = dwErrorCode as ::core::ffi::c_int;
-                if (*__wine_dbch___default).flags as ::core::ffi::c_int
-                    & (1 as ::core::ffi::c_int) << __WINE_DBCL_ERR as ::core::ffi::c_int
-                    != 0
-                {
-                    let __dbch_0: *mut __wine_debug_channel = __wine_dbch___default;
-                    let __dbcl_0: __wine_debug_class = __WINE_DBCL_ERR;
-                    ros_dbg_log(
-                        __dbcl_0,
-                        __dbch_0,
-                        b"win32ss/printing/base/winspool/spoolfile.c\0"
-                            as *const u8 as *const ::core::ffi::c_char,
-                        b"GetSpoolFileHandle\0" as *const u8
-                            as *const ::core::ffi::c_char,
-                        47 as ::core::ffi::c_int,
-                        b"_RpcGetSpoolFileInfo failed with exception code %lu!\n\0"
-                            as *const u8 as *const ::core::ffi::c_char,
-                        dwErrorCode,
-                    );
-                }
-            }
             if dwErrorCode == ERROR_SUCCESS as DWORD {
                 (*pHandle).hSpoolFileHandle = wsplfi.hSpoolFileHandle as HANDLE;
                 (*pHandle).dwOptions = wsplfi.dwOptions;
@@ -121,9 +97,6 @@ pub unsafe extern "system" fn CommitSpoolData(hPrinter: HANDLE, hSpoolFile: HAND
             core::ptr::addr_of_mut!(FileInfoContainer),
         )).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-        if _SEH2_Volatile0 != 0 {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
 
         if dwErrorCode == ERROR_SUCCESS as DWORD {
@@ -173,27 +146,6 @@ pub unsafe extern "system" fn CloseSpoolFileHandle(hPrinter: HANDLE, hSpoolFile:
         dwErrorCode = rpc_try(|| _RpcCloseSpoolFileHandle(
             core::ptr::addr_of_mut!((*pHandle).hPrinter) as WINSPOOL_PRINTER_HANDLE,
         )).unwrap_or_else(|code| code as _);
-        if _SEH2_Volatile0 != 0 {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-            if (*__wine_dbch___default).flags as ::core::ffi::c_int
-                & (1 as ::core::ffi::c_int) << __WINE_DBCL_ERR as ::core::ffi::c_int
-                != 0
-            {
-                let __dbch_0: *mut __wine_debug_channel = __wine_dbch___default;
-                let __dbcl_0: __wine_debug_class = __WINE_DBCL_ERR;
-                ros_dbg_log(
-                    __dbcl_0,
-                    __dbch_0,
-                    b"win32ss/printing/base/winspool/spoolfile.c\0"
-                        as *const u8 as *const ::core::ffi::c_char,
-                    b"CloseSpoolFileHandle\0" as *const u8 as *const ::core::ffi::c_char,
-                    143 as ::core::ffi::c_int,
-                    b"_RpcloseSpoolFileHandle failed with exception code %lu!\n\0"
-                        as *const u8 as *const ::core::ffi::c_char,
-                    dwErrorCode,
-                );
-            }
-        }
     } else {
         dwErrorCode = ERROR_INVALID_HANDLE as DWORD;
     }

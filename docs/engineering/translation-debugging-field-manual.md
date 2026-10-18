@@ -6254,9 +6254,12 @@ preamble does not have. Both spellings are masked now, and `preamble_audit` mask
 its own parse without the mask or `_strip_sal`, so it called the same file "does not parse at
 top level" and skipped every file-scope check. **The scanner and every audit that re-parses
 the C must apply the same normalizers, or they disagree about what the file contains.** The
-old scanner gives different bodies for 248 functions in 31 files, including shipped ports
-(advapi32 scm.c/lsa.c/crypt.c, samlib, netapi32, winspool, kernel32 res.c). Which of those
-were bought truncated is owed (conformance-ratchet-quest.md).
+old scanner gives different bodies for 248 functions in 31 files. Audited against every bank
+in the fleet by body hash (`python -m rustconv.bank_drift --fleet` is the general form): 7
+were bought from the cut body, and only winspool's `GetMonitorUI` shipped without its tail
+(no MONITORUIDATA, no monitor UI DLL, leaked handle); the other six came out whole because
+c2rust anchors on the whole TU. **Check what was bought, not what the scanner says now: the
+bank's per-function C hash is the record.**
 
 The two fixes compose, and the order matters: expanding is what lets `--seal-facts` see the arms
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
