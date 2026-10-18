@@ -602,13 +602,6 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **i386: a PAC script's `url.substring(0, 4) === 'test'` branch is never taken (open, found
-  2026-10-18, upstream-sync).** jsproxy's winetest line 168: `InternetGetProxyInfo("testa", 4, ...)`
-  with `FindProxyForURL` returning `url + ' ' + host` when the URL starts with "test" gets
-  "DIRECT" back on i386. amd64 passes it. The pre-flip C jsproxy (jsproxy_c.dll staged app-dir;
-  jsproxy is not a KnownDLL) fails it identically, so the fault is below jsproxy: most likely
-  jscript (also Rust) on i386, not yet chased. Repro: `portwinetest` payload on i386, suite
-  `jsproxy_winetest.exe jsproxy`.
 - **Directory change notification: 19 Wine `change` failures left after the fsrtl fix (open,
   found 2026-10-17, smp-bringup).** `FsRtlNotifyFilterReportChange` was an empty placeholder,
   so no watch ever completed with data. It is now translated, along with the lost-IRP
