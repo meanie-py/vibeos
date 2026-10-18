@@ -11,7 +11,7 @@
 //! per-arch `#ifdef` variants and a `MAX_CPUS` in some unrelated Wine DLL. The Rust value
 //! is compared at the width of its declared type; a type this rule cannot size is
 //! skipped rather than guessed.
-use crate::{Corpus, Rule};
+use crate::{line_cursor::LineCursor, Corpus, Rule};
 use rayon::prelude::*;
 use regex::Regex;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -91,8 +91,9 @@ impl CDefines {
                     .map(|ch| if ch == '\n' { '\n' } else { ' ' })
                     .collect::<String>()
             });
+            let mut lines = LineCursor::new(&code);
             for c in DEFINE.captures_iter(&code) {
-                let line = code[..c.get(0).unwrap().start()].matches('\n').count() + 1;
+                let line = lines.line(c.get(0).unwrap().start());
                 raw.entry(c[1].to_string()).or_default().push((
                     path.to_string(),
                     line,
@@ -196,9 +197,10 @@ fn scan_rust(text: &str, defines: &CDefines, scope: Option<&str>) -> Vec<String>
     let code = crate::lexical::strip_noise(text);
     let mut locals: HashMap<String, String> = HashMap::new();
     let mut sites = Vec::new();
+    let mut lines = LineCursor::new(&code);
     for c in RUST_CONST.captures_iter(&code) {
         locals.insert(c[1].to_string(), c[3].to_string());
-        let line = code[..c.get(0).unwrap().start()].matches('\n').count() + 1;
+        let line = lines.line(c.get(0).unwrap().start());
         sites.push((c[1].to_string(), c[2].to_string(), c[3].to_string(), line));
     }
     let mut out = Vec::new();

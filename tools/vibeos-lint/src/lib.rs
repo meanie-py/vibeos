@@ -15,6 +15,7 @@ pub use history::VersionHistory;
 mod inventory;
 pub use inventory::SourceSet;
 pub mod lexical;
+mod line_cursor;
 pub mod link_model;
 pub mod module_inputs;
 pub mod modules;
