@@ -1,0 +1,25 @@
+# acppage (dll/shellext/acppage -> acppage-rust, `port cppapp`): the Compatibility property
+# page of an .exe's Properties. Explorer shows it only on a file's Properties, so smoke reaches
+# none of this. probes/acppage.c, staged twice: as acppage_c.exe it loads the pre-flip C
+# (acppage_c.dll, from c_oracle.cmake) beside it, as acppage_probe.exe the system acppage.dll.
+# Both print only values, so the outputs must match byte for byte.
+module: acppage
+variants:
+  c: '%SystemRoot%\bin\modrun\acppage_c.exe'
+  rust: '%SystemRoot%\bin\modrun\acppage_probe.exe'
+ninja: [acppage_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/acppage-{arch}.exe', dest: bin/modrun/acppage_c.exe}
+  - {src: 'tools/payloads/modrun/probes/acppage-{arch}.exe', dest: bin/modrun/acppage_probe.exe}
+  - {src: 'build-{arch}/dll/shellext/acppage/acppage_c.dll', dest: bin/modrun/acppage_c.dll}
+cases:
+  - id: page
+    expect: ['unload at start 00000000', 'create 1', 'qi propsheetext 00000000',
+             'initialize two files 80004005', 'initialize txt 80004005',
+             'initialize system32 80004005', 'initialize lnk 00000000',
+             'initialize policy-disabled 80070005', "getexefromlnk 1 'app.exe'",
+             'initialize exe 00000000', 'addpages 00000000 pages=1', 'page window 1',
+             "selected 1 'Windows 98/ME'", 'run in compatibility mode: checked=1',
+             '256 colors: checked=1', "custom layers 'MYCUSTOM'", 'layers after apply: present',
+             'register 00000000', 'unregister 00000000', 'probe done']
+    timeout: 120

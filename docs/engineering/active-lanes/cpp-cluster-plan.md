@@ -58,14 +58,14 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
 
 ## Shell extensions (from 2026-10-17)
 
-**RESUME HERE (2026-10-17, later):** mmcshext, sendmail and mydocs are flipped, all on
-`atl_rust::dll` (CComModule, object map, class factory, `.rgs` registrar; pipeline doc), with
-modrun suites `mmcshext`, `sendmail`, `mydocs` against their C. $0.06 on Haiku for the three;
-`port replay <stem>` rebuilds each at $0. Next in the queue: acppage, cabview, stobject,
-fontext, ntobjshex, netshell, zipfldr. Landing is a merge request to `vibeos-integration-30`
-(the integrator was `-f2` before a restart). New linters are Rust rules in
-`tools/vibeos-lint`, never `tools/*.py`. The named stash
-`6298017a93468426bae860a6887d8112086980cf` (whitespace churn) is safe to drop.
+**RESUME HERE (2026-10-17, evening):** mmcshext, sendmail, mydocs and acppage are flipped on
+`atl_rust::dll`, each with a modrun suite against its C; $0.13 on Haiku for the four, and
+`port replay <stem>` rebuilds each at $0. Next in the queue: cabview, stobject, fontext,
+ntobjshex, netshell, zipfldr (cabview/fontext/zipfldr use CDataObjectHIDA and
+ShellObjectCreator, both now supplied). Landing is a merge request to the integrator
+(`vibeos-integration-30` at last contact; find it by role). New linters are Rust rules in
+`tools/vibeos-lint`. Run `check` after a gate's builds, not beside them: vibeos-lint peaks near
+10 GB. The named stash `6298017a93468426bae860a6887d8112086980cf` is safe to drop.
 
 ## rapps (FLIPPED 2026-10-15)
 
@@ -105,6 +105,11 @@ Rust — don't requeue it.)
 
 ## Owed
 
+- rapps and cleanmgr carry `CWindow__rcDefault` ZEROED (generated before cppapp refused an
+  initializer it cannot render); ATL's is `{ CW_USEDEFAULT, CW_USEDEFAULT, 0, 0 }`. Nothing
+  reads it today (atl_rust::win sizes windows itself), so it is latent. cppapp now renders
+  brace-list statics against the island and substrate structs: a `port cppapp` + replay of
+  each fixes it, alongside the regens already owed below.
 - cppapp worker bodies drop the C++'s wine debug prints: 88 `ERR`/`FIXME`/`WARN` calls came
   back as `// ERR(...)` comments across msctf (11 files), msctfime, sendmail, mydocs. Only the
   debug channel loses them, but it is the cluster's whole debug surface. Lower them in

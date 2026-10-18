@@ -5076,6 +5076,20 @@ a decision to take deliberately, not to reach for because a module will not tran
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### An anonymous C struct table comes back with fields the model named
+
+**Symptom:** a table-driven lookup that compiles but matches the wrong column. acppage's
+mode list showed the right text and stored the display string where the layer id belongs.
+
+**Cause:** `static struct { const PCWSTR Display; const PCWSTR Name; } g_CompatModes[]` has no
+type name, so the model invented one (`CompatModeEntry`) and invented the fields too:
+`{ name, layer }`. Its `name` held the C's `Display` and its `layer` the C's `Name`, so every
+body written against the C (`g_CompatModes[n].Name`) failed to compile only by luck of the
+spelling. A model that had kept `name` for the C's `Name` would have compiled and been wrong.
+
+**Fix:** keep the C's field names for an anonymous struct (rename the type only), and check
+each table row's strings against the C. acppage's are fixed and banked.
+
 ### A string macro beside a literal: the model kept the macro and dropped the literal
 **Symptom.** Report output loses its text but compiles and runs: every drwtsn32 line built as
 `xfprintf(output, "%5d: %ls" NEWLINE, ...)` came back `xfprintf(output, NEWLINE, ...)`, so

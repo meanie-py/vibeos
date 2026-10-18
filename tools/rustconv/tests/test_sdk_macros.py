@@ -327,3 +327,11 @@ def test_offsetof_is_refused_not_read_as_a_call():
     """FIELD_OFFSET(REPARSE_DATA_BUFFER, GenericReparseBuffer): a type and a member path."""
     with pytest.raises(LowerError, match="offsetof"):
         low("((LONG)__builtin_offsetof(REPARSE_DATA_BUFFER, GenericReparseBuffer))")
+
+
+def test_a_cxx_reference_type_macro_is_a_pointer_alias():
+    from rustconv.sdk_macros import cxx_ref_alias
+
+    assert cxx_ref_alias("REFIID", "const IID &") == "pub type REFIID = *const IID;"
+    assert cxx_ref_alias("REFCLSID", "const CLSID&") == "pub type REFCLSID = *const CLSID;"
+    assert cxx_ref_alias("X", "const IID * const") is None

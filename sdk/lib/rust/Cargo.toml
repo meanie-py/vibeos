@@ -901,6 +901,7 @@ members = [
     "mydocs-rust",
     "tdihelpers-rust",
     "setupapi-rust",
+    "acppage-rust",
 ]
 resolver = "2"
 
