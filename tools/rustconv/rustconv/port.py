@@ -1986,14 +1986,14 @@ def stage_translate(
             cmd, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True, env=env
         )
         covered = _hand_covered(stem)
-        refused: set[str] = set()
+        hand_skipped: set[str] = set()
         # The synthetic path refuses one body per run, so ask again until nothing new is
         # refused that a hand bank covers; each round skips one more name, so it ends.
-        while new := (_no_replay_names(proc.stdout + proc.stderr) & covered) - refused:
+        while new := (_no_replay_names(proc.stdout + proc.stderr) & covered) - hand_skipped:
             # A body the bank cannot replay because its C changed under it (wscript's
             # print_resource, bought from cscript's preprocess) but that a HAND bank replaces
             # anyway: nothing is owed, so assemble the TU without it rather than refuse it.
-            refused |= new
+            hand_skipped |= new
             cmd += ["--skip-fn", *sorted(new - set(skipped))]
             # Recorded like any --skip-fn, so apply_hand knows the hand item has no bought
             # counterpart left in the file to replace.
