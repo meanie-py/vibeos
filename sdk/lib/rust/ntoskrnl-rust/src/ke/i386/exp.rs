@@ -185,9 +185,8 @@ const DR_MASK_1: ULONG = 1 << 1;
 const DR_MASK_2: ULONG = 1 << 2;
 const DR_MASK_3: ULONG = 1 << 3;
 const DR_MASK_6: ULONG = 1 << 6;
-const DR_MASK_7: ULONG = 1 << 7;
 const DR_MASK_DR7_OVERRIDE_V: ULONG = 1 << 8;
-const DR_REG_MASK: ULONG = DR_MASK_0 | DR_MASK_1 | DR_MASK_2 | DR_MASK_3 | DR_MASK_6 | DR_MASK_7;
+const DR_REG_MASK: ULONG = DR_MASK_0 | DR_MASK_1 | DR_MASK_2 | DR_MASK_3 | DR_MASK_6; // 0x4F, i386/ke.h
 
 const DR7_RESERVED_MASK: ULONG = 0x0000DC00;
 const DR7_OVERRIDE_MASK: ULONG = 0x000F0000;
@@ -775,7 +774,9 @@ pub unsafe extern "system" fn KiDispatchException(
         0x80000003 => {
             context.Eip = context.Eip.wrapping_sub(1);
         }
-        0xC0000005 => {
+        // C: case KI_EXCEPTION_ACCESS_VIOLATION. The port tested 0xC0000005, a
+        // no-op that only worked because traphdlr raised the public code directly.
+        x if x == KI_EXCEPTION_ACCESS_VIOLATION as u32 => {
             (*ExceptionRecord).ExceptionCode = STATUS_ACCESS_VIOLATION;
             if PreviousMode == 1i8 {
                 // FIXME: Handle no execute

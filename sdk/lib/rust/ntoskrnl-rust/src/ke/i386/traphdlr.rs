@@ -128,7 +128,10 @@ const CR0_MP: ULONG = 0x2;
 // 0xDC00, ndk/i386/asm.h:515 -- the DR7 bits the CPU requires fixed. exp.rs in this
 // same crate has it right; 0x400 masks one bit of the eleven.
 const DR7_RESERVED_MASK: ULONG = 0xDC00;
-const NPX_STATE_NOT_LOADED: ULONG = CR0_TS;
+// ndk/i386/asm.h: 0xA = TS|MP, the same byte thrdini.rs and cpu.rs store. This
+// copy had TS alone, so a thread whose state was dropped here lost CR0.MP (FWAIT
+// stopped faulting) and carried NpxState 8 that no 0xA comparison matched.
+const NPX_STATE_NOT_LOADED: ULONG = CR0_TS | CR0_MP;
 const NPX_STATE_LOADED: UCHAR = 0;
 const FSW_INVALID_OPERATION: USHORT = 0x1;
 const FSW_DENORMAL: USHORT = 0x2;
@@ -166,7 +169,9 @@ const EXCEPTION_ALIGNMENT_CHECK: ULONG = 0x11;
 const EXCEPTION_NONCONTINUABLE: ULONG = 0x1;
 const BREAKPOINT_BREAK: ULONG = 0;
 const MUTANT_INCREMENT: LONG = 1;
-const KI_EXCEPTION_ACCESS_VIOLATION: NTSTATUS = STATUS_ACCESS_VIOLATION;
+// The internal code (ndk/ketypes.h); KiDispatchException turns it into
+// STATUS_ACCESS_VIOLATION.
+const KI_EXCEPTION_ACCESS_VIOLATION: NTSTATUS = 0x10000004_u32 as NTSTATUS;
 
 unsafe fn KiVdmTrap(TrapFrame: PKTRAP_FRAME) -> BOOLEAN {
     if ((*TrapFrame).EFlags & EFLAGS_V86_MASK) != 0 {

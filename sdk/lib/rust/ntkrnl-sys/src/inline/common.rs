@@ -20,15 +20,24 @@ pub unsafe fn CONTAINING_RECORD_typed<T>(address: PVOID, field_offset: usize) ->
 use crate::probe::probe_user_range;
 
 // ============================================================================
-// ICIF flags for DefaultQueryInfoBufferCheck / DefaultSetInfoBufferCheck
+// ICIF flags for DefaultQueryInfoBufferCheck / DefaultSetInfoBufferCheck (icif.h)
 // ============================================================================
 
+// INFORMATION_CLASS_INFO.Flags: what a class table entry allows.
+pub const ICIF_NONE: u16 = 0x0;
 pub const ICIF_QUERY: u16 = 0x1;
 pub const ICIF_SET: u16 = 0x2;
 pub const ICIF_QUERY_SIZE_VARIABLE: u16 = 0x4;
 pub const ICIF_SET_SIZE_VARIABLE: u16 = 0x8;
-pub const ICIF_PROBE_READ_U16: u16 = 0x10;
-pub const ICIF_FORCE_RETURN_LENGTH_PROBE: u16 = 0x20;
+pub const ICIF_SIZE_VARIABLE: u16 = ICIF_QUERY_SIZE_VARIABLE | ICIF_SET_SIZE_VARIABLE;
+
+// The `Flags` ARGUMENT of DefaultQueryInfoBufferCheck: a second namespace that
+// reuses 0x1/0x2. Every caller takes these from here. The translations had each
+// invented their own (3, 0x10, 0x200|0x400) while this consumer tested 0x20, so
+// NtQueryInformationToken's forced ReturnLength probe never fired.
+pub const ICIF_PROBE_READ_WRITE: ULONG = 0x0;
+pub const ICIF_PROBE_READ: ULONG = 0x1;
+pub const ICIF_FORCE_RETURN_LENGTH_PROBE: ULONG = 0x2;
 
 // Pool tag 'USTR' in little-endian byte order
 const TAG_USTR: u32 = u32::from_le_bytes(*b"USTR");
@@ -212,7 +221,7 @@ pub unsafe fn DefaultQueryInfoBufferCheck(
             }
         }
 
-        if (flags & (ICIF_FORCE_RETURN_LENGTH_PROBE as ULONG) != 0)
+        if (flags & ICIF_FORCE_RETURN_LENGTH_PROBE != 0)
             || !return_length.is_null()
         {
             if let Err(status) = crate::probe::probe_write_generic(return_length, 1, previous_mode) {

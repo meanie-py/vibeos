@@ -3358,7 +3358,14 @@ crate can hold both values: `ke/i386/cpu.rs` has `NPX_STATE_NOT_LOADED = 0xA` an
 `traphdlr.rs` `= CR0_TS` (8). `scan_shadowed_c_define` (native Rust rule) evaluates every
 object-like `#define` visible to the crate (shared headers plus its own module's C tree) and
 flags a Rust `const` of the same name whose value differs at the declared width; its baseline
-is the triage queue, and some entries are deliberate self-consistent re-encodings.
+is the triage queue, and some entries are deliberate self-consistent re-encodings. The worst
+shape is a FLAG SET re-invented per caller against a consumer in another crate: each crate's
+values agree with themselves and nothing compiles wrong. kd64 had `MMDBG_COPY_UNSAFE = 1`,
+which `MmDbgCopyMemory` reads as WRITE, so every debugger read wrote; the ICIF probe flags were
+3, 0x10 and 0x200|0x400 at the call sites against a consumer testing 0x20, and se's
+`ICIF_SIZE_VARIABLE = 0x08` made `GetTokenInformation(TokenOwner)`'s size probe fail. Give the
+set ONE definition beside its consumer and import it; a deliberate divergence takes
+`// nolint: shadowed-c-define (why)` on the const's line.
 - **Fix deterministically:** `ntkrnl_sys::bugcodes::NAME` from `tools/gen_bugcodes.py`;
   `tools/rustconv/rustconv/verify_constants.py` (`--enums`, `--fix`) against a header catalog;
   `tools/scan_bugcheck_codes.py` (empty baseline, gate-wired).

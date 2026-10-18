@@ -47,7 +47,7 @@ extern "C" {
 #[no_mangle]
 pub static mut ExEventObjectType: POBJECT_TYPE = core::ptr::null_mut();
 
-const ICIF_PROBE_READ_WRITE: ULONG = 0x0003;
+use ntkrnl_sys::inline::common::ICIF_PROBE_READ_WRITE;
 const ICIF_QUERY: ULONG = 0x0001;
 
 const EVENT_QUERY_STATE: ACCESS_MASK = 0x0001;

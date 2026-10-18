@@ -690,7 +690,7 @@ pub const SEM_NOALIGNMENTFAULTEXCEPT: ULONG = 0x0004;
 pub const SYSTEM_THREAD_EXCEPTION_NOT_HANDLED: ULONG = 0x7E;
 pub const QUOTA_UNDERFLOW: ULONG = 0x21;
 
-pub const ICIF_PROBE_READ: ULONG = 0x0010;
+pub use crate::inline::common::ICIF_PROBE_READ;
 
 // ============================================================================
 // PS pool tags (from ps.h)

@@ -94,13 +94,14 @@ extern "C" {
 
 const TAG_SE: ULONG = 0x20206553;
 
-const ICIF_QUERY: ULONG = 0x01;
-const ICIF_SET: ULONG = 0x02;
-const ICIF_QUERY_SIZE_VARIABLE: ULONG = 0x04;
-const ICIF_SIZE_VARIABLE: ULONG = 0x08;
-const ICIF_SET_SIZE_VARIABLE: ULONG = ntkrnl_sys::inline::common::ICIF_SET_SIZE_VARIABLE as ULONG;
-const ICIF_PROBE_READ_WRITE: ULONG = 0x200;
-const ICIF_FORCE_RETURN_LENGTH_PROBE: ULONG = 0x400;
+// The translation had ICIF_SIZE_VARIABLE = 0x08 (SET only), so TokenOwner,
+// TokenPrimaryGroup and TokenDefaultDacl refused any query length but
+// sizeof(TOKEN_OWNER) with STATUS_INFO_LENGTH_MISMATCH, breaking the two-call
+// GetTokenInformation size probe.
+use ntkrnl_sys::inline::common::{
+    ICIF_FORCE_RETURN_LENGTH_PROBE, ICIF_PROBE_READ_WRITE, ICIF_QUERY, ICIF_QUERY_SIZE_VARIABLE,
+    ICIF_SET, ICIF_SET_SIZE_VARIABLE, ICIF_SIZE_VARIABLE,
+};
 
 const IQS_NONE: INFORMATION_CLASS_INFO = INFORMATION_CLASS_INFO {
     RequiredSizeQUERY: 0,
