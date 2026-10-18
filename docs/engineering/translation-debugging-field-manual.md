@@ -12376,6 +12376,19 @@ configured before `sdk/lib/`, so such a variable is empty on a fresh configure a
 in only on the next one. To check: `grep` the module's `LINK_LIBRARIES` in build.ninja for
 where the archive actually sits, and relink with `-Wl,-Map=` to see who defines the symbol.
 
+### A C++ helper a header macro renamed overloads an import, and in Rust replaces it
+**Symptom:** a translated C++ module defines `#[no_mangle] fn InsertMenuItemW` with the module
+helper's six parameters, and the user32 call inside it binds to itself: infinite recursion,
+and the DLL's every other `InsertMenuItemW` call reaches the helper (cabview).
+**Cause:** winuser.h's UNICODE `#define InsertMenuItem InsertMenuItemW` renames the module's
+own `inline HRESULT InsertMenuItem(QCMINFO &, ..)` too, so to C++ it is an OVERLOAD of
+user32's, told apart by its parameters. clang reports the expanded name; Rust has no
+overloads, and a crate-defined symbol beats the import.
+**Fix:** automatic: cpp_model names a module function by its WRITTEN spelling when the name
+token is a macro's expansion (clang's `expansionLoc`, not a macro argument), which is also
+what the module's call sites say. When a translated module defines an SDK function's name,
+check whether the C defines it or overloads it.
+
 ### A module translated down to Rust + `.rc` links with the RC driver, and `LINKER:` flags break
 **Symptom:** `clang: error: unknown argument: '--allow-multiple-definition'` from a module's
 link, after a change elsewhere (msvcrtex becoming Rust). **Cause:** CMake picks a target's link

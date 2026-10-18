@@ -58,14 +58,25 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
 
 ## Shell extensions (from 2026-10-17)
 
-**RESUME HERE (2026-10-17, evening):** mmcshext, sendmail, mydocs and acppage are flipped on
-`atl_rust::dll`, each with a modrun suite against its C; $0.13 on Haiku for the four, and
-`port replay <stem>` rebuilds each at $0. Next in the queue: cabview, stobject, fontext,
-ntobjshex, netshell, zipfldr (cabview/fontext/zipfldr use CDataObjectHIDA and
-ShellObjectCreator, both now supplied). Landing is a merge request to the integrator
-(`vibeos-integration-30` at last contact; find it by role). New linters are Rust rules in
-`tools/vibeos-lint`. Run `check` after a gate's builds, not beside them: vibeos-lint peaks near
-10 GB. The named stash `6298017a93468426bae860a6887d8112086980cf` is safe to drop.
+**RESUME HERE (2026-10-18):** mmcshext, sendmail, mydocs, acppage and cabview are flipped on
+`atl_rust::dll`, each with a modrun suite against its C; $0.23 on Haiku for the five, and
+`port replay <stem>` rebuilds each at $0. acppage landed (master 5ee41e4da7c); cabview is the
+next merge request. Next in the queue: stobject, fontext, ntobjshex, netshell, zipfldr.
+Landing is a merge request to the integrator (`vibeos-integration-4e` at last contact; find it
+by role). New linters are Rust rules in `tools/vibeos-lint`. Run `check` after a gate's
+builds, not beside them.
+
+Owed from cabview (tracked, not done):
+- **Function-local enums.** `enum { IDC_EXTRACT, IDC_EXTRACTALL };` inside a function body
+  came back as `let _ = (IDC_EXTRACT, IDC_EXTRACTALL);` with the names undefined, a catch-all
+  `match` pattern that `port check`'s CATCH-ALL guard caught. Hand-fixed; cppapp should lower
+  a body's local enum to consts before translation.
+- **Island header promotion for functions.** derive allowlists only SDK headers the module's
+  own code names, so commctrl.h's `DPA_DestroyCallback` (called, declared only there) was
+  missing and hand-declared. Promote a header that declares a function the module calls and
+  no allowlisted header declares.
+- **Dropped failure traces.** `FAILED_UNEXPECTEDLY!` is a bare `< 0`; shellutils.h's
+  `_ROS_FAILED_HELPER` also prints in this DBG=1 tree. Same class as the 88 dropped ERR prints.
 
 ## rapps (FLIPPED 2026-10-15)
 
