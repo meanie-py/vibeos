@@ -1316,7 +1316,10 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
 
     // Setup the boot video driver
     InbvEnableBootDriver(if NoGuiBoot == 0 { 1 } else { 0 });
-    InbvDriverInitialize(LoaderBlock, 5);
+    // ntoskrnl/include/resource.h: load every boot bitmap (the port passed 5, so
+    // the logo, bars and copyright ids above 5 were never loaded).
+    const IDB_MAX_RESOURCES: ULONG = 22;
+    InbvDriverInitialize(LoaderBlock, IDB_MAX_RESOURCES);
 
     if NoGuiBoot == 0 {
         InbvEnableDisplayString(SosEnabled);
