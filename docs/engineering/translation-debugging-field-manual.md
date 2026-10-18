@@ -12318,6 +12318,12 @@ lld ever looked for the module's real one, which in shell32 sits in `libshell32_
 an object file. **Fix:** a defaults crate may hold ONLY symbols that should be pulled for
 themselves: the default `DllEntryPoint` moved into crt-startup-rust beside its caller. To check
 any module: relink it with `-Wl,-Map=` and see which input defines `DllMain`/`main`.
+The same codegen-unit bundling breaks a shared crate's UNUSED helper: making atl_rust's
+`create_property_page` non-generic put its `CreatePropertySheetPageW` call in atl_rust's own
+object, which came along with live code into certmgr, a module that never links comctl32
+(`undefined symbol: CreatePropertySheetPageW`, amd64 LINK_FAIL). A generic or `#[inline]` fn
+is instantiated only in a crate that calls it, so a shared-crate helper that imports a DLL
+not every user links must be one of those.
 
 ### A Rust archive behind an INTERFACE wrapper links AFTER the import libraries, which then answer
 **Symptom:** a DLL's export is silently satisfied by another DLL's import: ucrtbase and

@@ -15,9 +15,9 @@ stage:
 cases:
   - id: page
     expect: ['unload at start 00000000', 'create 1', 'qi propsheetext 00000000',
-             'initialize two files 80004005', 'initialize txt 80004005',
-             'initialize system32 80004005', 'initialize lnk 00000000',
-             'initialize policy-disabled 80070005', "getexefromlnk 1 'app.exe'",
+             'initialize two files: 80004005', 'initialize txt: 80004005',
+             'initialize system32: 80004005', 'initialize lnk: 00000000',
+             'initialize policy-disabled: 80070005', "getexefromlnk 1 'app.exe'",
              'initialize exe 00000000', 'addpages 00000000 pages=1', 'page window 1',
              "selected 1 'Windows 98/ME'", 'run in compatibility mode: checked=1',
              '256 colors: checked=1', "custom layers 'MYCUSTOM'", 'layers after apply: present',

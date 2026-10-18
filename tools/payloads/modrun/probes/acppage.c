@@ -204,8 +204,12 @@ int main(void)
     CoInitialize(NULL);
     InitCommonControls();
 
-    /* The subject: a copy of this probe on a local fixed disk (AllowPermLayer refuses the CD). */
-    lstrcpyW(dir, L"C:\\modrun_acp");
+    /* The subject: a copy of this probe on a local fixed disk (AllowPermLayer refuses the CD).
+       One directory per variant: both copy themselves to app.exe, and the second copy over
+       the first's failed, so the variants did not even start from the same fixture. */
+    lstrcpyW(dir, L"C:\\modrun_acp_");
+    lstrcatW(dir, PathFindFileNameW(self));
+    PathRemoveExtensionW(dir);
     CreateDirectoryW(dir, NULL);
     lstrcpyW(exe, dir);
     PathAppendW(exe, L"app.exe");

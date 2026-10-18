@@ -718,6 +718,11 @@ pub unsafe fn property_page_init<T: PropertyPage>(
 }
 
 /// `CPropertyPageImpl::Create` over a kept `m_psp`: `::CreatePropertySheetPage(&m_psp)`.
+/// `#[inline]` is load-bearing: a non-generic fn is codegen'd into atl_rust's own object for
+/// every crate with feature `win`, and one sharing a codegen unit with something live drags
+/// a comctl32 import into modules that never link comctl32 (certmgr: LINK_FAIL). Inline, it
+/// is instantiated only where a caller uses it, as the generic form always was.
+#[inline]
 pub unsafe fn create_property_page_from(page: *const PropSheetPage) -> *mut c_void {
     CreatePropertySheetPageW(page)
 }

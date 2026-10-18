@@ -285,6 +285,7 @@ impl CLayerUIPropPage {
         let this_: *mut Self = self;
         (*this_).__base0.__ctor_0(core::ptr::null_mut());
         (*this_).__init_vtables();
+        (*this_).m_psp = CLayerUIPropPage::__psp_init(this_);
         (*this_).m_IsSfcProtected = (FALSE as i32);
         (*this_).m_AllowPermLayer = (FALSE as i32);
         (*this_).m_LayerQueryFlags = (GPLK_USER as u32);
