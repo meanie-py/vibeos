@@ -831,7 +831,9 @@ impl CPage {
     }
 }
 """
-_CTORHOOK_BAD = _CTORHOOK_HOOK + """\
+_CTORHOOK_BAD = (
+    _CTORHOOK_HOOK
+    + """\
 impl CPage {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
@@ -839,7 +841,10 @@ impl CPage {
     }
 }
 """
-_CTORHOOK_GOOD = _CTORHOOK_HOOK + """\
+)
+_CTORHOOK_GOOD = (
+    _CTORHOOK_HOOK
+    + """\
 impl CPage {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
@@ -848,6 +853,7 @@ impl CPage {
     }
 }
 """
+)
 
 _FNABI_GOOD = """\
 pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
