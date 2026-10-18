@@ -602,6 +602,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 FEX: a guest dies when a commit is refused; appstorm64 at 1024M is 53/54 (open,
+  found 2026-10-17, human-only).** On 1G `VIBEOS_PAYLOAD=appstorm64` media, the ramdisk leaves
+  a 129 MB commit limit. Since copy-on-write and paged pool were charged (`203a6c64d51`, a
+  steady ~15 MB), FEX's peaks reach it. iexplore under FEX is refused 16 pages, faults in the
+  CPU layer and never closes (`20261017-141001-or20qi28`). A ladder run on that media loses
+  apc32 the same way (`20261017-141001-lz2_v41g`). Cause: rpmalloc's `span_allocate_page`
+  calls the VIBEOS `memory_commit` hook (FEXCore `AllocatorHooks.cpp`
+  `FEX_rp_memory_commit`), which returns `void`, and then writes into memory that was never
+  committed. The fix belongs in `vendor/fex`, whose CLAUDE.md forbids AI-written code. Plain
+  `VIBEOS_FEX=1` media (the gate's ladder) and appstorm64 at 1088M and 2G are clean. Details:
+  `docs/engineering/wow64-x64-guest-design.md`, resume item 2.
+
 - **`SHFileOperationW(FO_COPY)` with progress UI crashes on i386 (open, found 2026-10-17,
   cpp-cluster).** mydocs' drop handler copies the dropped files with `FOF_ALLOWUNDO |
   FOF_FILESONLY | FOF_MULTIDESTFILES | FOF_NOCONFIRMMKDIR`, so no `FOF_SILENT`, and that makes
@@ -639,15 +651,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   and passed 6/6 on the fixed one. Field manual: "A per-CPU register read after `sti` belongs to
   whoever faulted last".
 
-- **ws2_32: `getservbyname("ftp", "tcp")` fails INTERMITTENTLY on amd64 (FLAKE, open, found
-  2026-10-14).** In one of two identical amd64 modrun runs, both the C ftp (`ftp_c`) and the Rust
-  one printed `ftp: ftp/tcp: unknown service` and exited 1
-  (`/tmp/vibeos-cli/20261014-194635-5y1gb4y3-smoke-amd64`); the next run looked it up fine
-  (`/tmp/vibeos-cli/20261014-195513-7n1vo6ki-smoke-amd64`). Not seen on i386 or arm64. ws2_32-rust's
-  `getservbyname`/`getxyDataEnt` mirror the C, so suspect what is below them (the RNR/namespace
-  provider, the services file read). amd64 is also the only arch whose smoke boots with a NIC.
-  modrun's ftp suite is i386/arm64-only until this is fixed. Repro: `VIBEOS_PAYLOAD=modrun
-  ./vibeos-cli build --arch amd64 && ./vibeos-cli smoke --arch amd64 --payload modrun --repeat 4`.
+- **ws2_32: `getservbyname("ftp", "tcp")` failed INTERMITTENTLY on amd64 (FIXED 2026-10-17).**
+  In one of two identical amd64 modrun runs both the C and the Rust ftp printed `ftp: ftp/tcp:
+  unknown service` (`/tmp/vibeos-cli/20261014-194635-5y1gb4y3-smoke-amd64`). Cause, from the
+  code: mswsock's `OpenNetworkDatabase` (and ws2_32's `GetProtoOpenNetworkDatabase`, dnsrslvr's
+  `OpenHostsFile`) read `Tcpip\Parameters\DatabasePath`, which nothing in our hives sets. Until a
+  NIC's TCP/IP settings create that key they fall back to `system32\drivers\etc`; once it exists,
+  `RegSize` stays 0 and the C expanded an uninitialised zero-byte block as the directory (dnsrslvr
+  returned no hosts file at all). amd64 is the only arch whose smoke boots with a NIC, so it
+  depended on whether the NIC had been configured yet. Any failure now falls back to the default
+  directory; ftp's suite runs on amd64 again and passed 8/8 in 4/4 amd64 modrun runs
+  (`/tmp/vibeos-cli/20261017-132346-vwy2z0pe-smoke-amd64`). Not directly observed: the key's
+  presence in a failing guest.
 
 - **MM: finding free user address space is linear in the VAD count (open, found 2026-10-12).**
   `MiFindEmptyAddressRangeInTree` (`ARM3/vadnode.rs`, as ReactOS's C) walks every VAD in

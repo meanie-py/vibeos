@@ -3282,6 +3282,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "mi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "midl-rt"
 version = "0.1.0"
 
@@ -4859,6 +4875,7 @@ dependencies = [
  "conutils-h",
  "ntdll-sys",
  "panic-common",
+ "spapisup-rust",
  "strsafe-rust",
  "varargs-rust",
  "win32macros-rust",
@@ -5890,6 +5907,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "spapisup-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "spider-rust"
 version = "0.1.0"
 dependencies = [
@@ -6884,6 +6910,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "spapisup-rust",
  "strsafe-rust",
  "varargs-rust",
  "win32macros-rust",

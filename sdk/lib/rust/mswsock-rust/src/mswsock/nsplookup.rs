@@ -599,6 +599,14 @@ pub unsafe extern "system" fn OpenNetworkDatabase(Name: LPCWSTR) -> HANDLE {
         &mut DatabaseKey,
     ) as i32;
 
+    // Divergence from the C, which trusted the key to carry the value: nothing in our hives
+    // sets DatabasePath, and Tcpip\Parameters only appears once a NIC's TCP/IP settings are
+    // written. With the key present and the value absent, the C took RegSize = 0, made a
+    // zero-byte block, ignored the failed read and expanded that uninitialised block as the
+    // path -- so getservbyname() worked or failed depending on whether the NIC had been
+    // configured yet (the amd64-only `ftp/tcp: unknown service` flake, 2026-10-14). Any
+    // failure here now falls back to the default directory.
+    let mut have_path = false;
     if ErrorCode == NO_ERROR as i32 {
         ErrorCode = RegQueryValueExW(
             DatabaseKey,
@@ -609,27 +617,39 @@ pub unsafe extern "system" fn OpenNetworkDatabase(Name: LPCWSTR) -> HANDLE {
             &mut RegSize,
         ) as i32;
 
-        DatabasePath = HeapAlloc(GetProcessHeap(), 0, (RegSize) as SIZE_T) as PWSTR;
-        if DatabasePath.is_null() {
-            HeapFree(GetProcessHeap(), 0, ExpandedPath as LPVOID);
-            return INVALID_HANDLE_VALUE;
+        if ErrorCode == NO_ERROR as i32 && RegSize as usize >= core::mem::size_of::<u16>() {
+            // One WCHAR more than the value, for a terminator the registry need not store.
+            DatabasePath = HeapAlloc(
+                GetProcessHeap(),
+                0,
+                (RegSize as usize + core::mem::size_of::<u16>()) as SIZE_T,
+            ) as PWSTR;
+            if DatabasePath.is_null() {
+                RegCloseKey(DatabaseKey);
+                HeapFree(GetProcessHeap(), 0, ExpandedPath as LPVOID);
+                return INVALID_HANDLE_VALUE;
+            }
+
+            ErrorCode = RegQueryValueExW(
+                DatabaseKey,
+                w!("DatabasePath") as LPCWSTR,
+                core::ptr::null_mut(),
+                &mut RegType,
+                DatabasePath as LPBYTE,
+                &mut RegSize,
+            ) as i32;
+            if ErrorCode == NO_ERROR as i32 {
+                *DatabasePath.add(RegSize as usize / core::mem::size_of::<u16>()) = 0;
+                let n = ExpandEnvironmentStringsW(DatabasePath, ExpandedPath, MAX_PATH);
+                have_path = n != 0 && n <= MAX_PATH as _ && *ExpandedPath != 0;
+            }
+
+            HeapFree(GetProcessHeap(), 0, DatabasePath as LPVOID);
         }
 
-        ErrorCode = RegQueryValueExW(
-            DatabaseKey,
-            w!("DatabasePath") as LPCWSTR,
-            core::ptr::null_mut(),
-            &mut RegType,
-            DatabasePath as LPBYTE,
-            &mut RegSize,
-        ) as i32;
-
         RegCloseKey(DatabaseKey);
-
-        ExpandEnvironmentStringsW(DatabasePath, ExpandedPath, MAX_PATH);
-
-        HeapFree(GetProcessHeap(), 0, DatabasePath as LPVOID);
-    } else {
+    }
+    if !have_path {
         GetSystemDirectoryW(ExpandedPath, MAX_PATH);
         StringCchLength(ExpandedPath, MAX_PATH as usize, &mut StringLength);
         if *ExpandedPath.offset((StringLength - 1) as isize) != b'\\' as u16 {

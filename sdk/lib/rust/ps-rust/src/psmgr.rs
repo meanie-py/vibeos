@@ -745,7 +745,8 @@ pub unsafe extern "system" fn PsGetVersion(
         *minor_version = NtMinorVersion;
     }
     if !build_number.is_null() {
-        *build_number = NtBuildNumber & 0x3FFF;
+        // Windows 10+ masks the build with 0xFFFF; the old 0x3FFF turns build 22000 (0x55F0) into 5616.
+        *build_number = NtBuildNumber & 0xFFFF;
     }
 
     if !csd_version.is_null() {

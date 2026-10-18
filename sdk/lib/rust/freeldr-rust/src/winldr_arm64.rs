@@ -844,7 +844,7 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
     ERR!("<<< WinLdrSetupMachineDependent done\n");
 }
 
-unsafe fn MempDump() {
+pub(crate) unsafe fn MempDump() {
 
     let mut i: u32;
 

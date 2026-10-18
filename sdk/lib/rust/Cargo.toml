@@ -29,6 +29,7 @@ members = [
     "icuuc-cargo",
     "devmgmt-cargo",
     "dcomp-cargo",
+    "mi-cargo",
     "cscript-cargo",
     "wdfldr-cargo",
     "watchdog-cargo",
@@ -864,6 +865,7 @@ members = [
     "ndfapi-rust",
     "dcomp-rust",
     "qwave-rust",
+    "mi-rust",
     "icuuc-rust",
     "virtdisk-rust",
     "wer-rust",
@@ -900,6 +902,7 @@ members = [
     "sendmail-rust",
     "mydocs-rust",
     "tdihelpers-rust",
+    "spapisup-rust",
     "setupapi-rust",
     "acppage-rust",
 ]

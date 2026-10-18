@@ -2630,6 +2630,28 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/reactos/drivers" -I"${SRC}/sdk/lib/inflib" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/vendor/zlib/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DLANGUAGE_AF_ZA -DLANGUAGE_AR_AE -DLANGUAGE_AR_BH -DLANGUAGE_AR_DZ -DLANGUAGE_AR_EG -DLANGUAGE_AR_IQ -DLANGUAGE_AR_JO -DLANGUAGE_AR_KW -DLANGUAGE_AR_LB -DLANGUAGE_AR_LY -DLANGUAGE_AR_MA -DLANGUAGE_AR_OM -DLANGUAGE_AR_QA -DLANGUAGE_AR_SA -DLANGUAGE_AR_SY -DLANGUAGE_AR_TN -DLANGUAGE_AR_YE -DLANGUAGE_AZ_AZ -DLANGUAGE_BE_BY -DLANGUAGE_BG_BG -DLANGUAGE_BN_BD -DLANGUAGE_BN_IN -DLANGUAGE_CA_ES -DLANGUAGE_CS_CZ -DLANGUAGE_DA_DK -DLANGUAGE_DE_AT -DLANGUAGE_DE_CH -DLANGUAGE_DE_DE -DLANGUAGE_DE_LI -DLANGUAGE_DE_LU -DLANGUAGE_DV_MV -DLANGUAGE_EL_GR -DLANGUAGE_EN_AU -DLANGUAGE_EN_BZ -DLANGUAGE_EN_CA -DLANGUAGE_EN_CB -DLANGUAGE_EN_GB -DLANGUAGE_EN_IE -DLANGUAGE_EN_JM -DLANGUAGE_EN_NZ -DLANGUAGE_EN_PH -DLANGUAGE_EN_TT -DLANGUAGE_EN_US -DLANGUAGE_EN_ZA -DLANGUAGE_EN_ZW -DLANGUAGE_EO_AA -DLANGUAGE_ES_AR -DLANGUAGE_ES_BO -DLANGUAGE_ES_CL -DLANGUAGE_ES_CO -DLANGUAGE_ES_CR -DLANGUAGE_ES_DO -DLANGUAGE_ES_EC -DLANGUAGE_ES_ES -DLANGUAGE_ES_GT -DLANGUAGE_ES_HN -DLANGUAGE_ES_MX -DLANGUAGE_ES_NI -DLANGUAGE_ES_PA -DLANGUAGE_ES_PE -DLANGUAGE_ES_PR -DLANGUAGE_ES_PY -DLANGUAGE_ES_SV -DLANGUAGE_ES_UY -DLANGUAGE_ES_VE -DLANGUAGE_ET_EE -DLANGUAGE_EU_ES -DLANGUAGE_FA_IR -DLANGUAGE_FI_FI -DLANGUAGE_FO_FO -DLANGUAGE_FR_BE -DLANGUAGE_FR_CA -DLANGUAGE_FR_CH -DLANGUAGE_FR_FR -DLANGUAGE_FR_LU -DLANGUAGE_FR_MC -DLANGUAGE_GL_ES -DLANGUAGE_GU_IN -DLANGUAGE_HE_IL -DLANGUAGE_HI_IN -DLANGUAGE_HR_HR -DLANGUAGE_HU_HU -DLANGUAGE_HY_AM -DLANGUAGE_ID_ID -DLANGUAGE_IS_IS -DLANGUAGE_IT_CH -DLANGUAGE_IT_IT -DLANGUAGE_JA_JP -DLANGUAGE_KA_GE -DLANGUAGE_KK_KZ -DLANGUAGE_KN_IN -DLANGUAGE_KOK_IN -DLANGUAGE_KO_KR -DLANGUAGE_KY_KG -DLANGUAGE_LT_LT -DLANGUAGE_LV_LV -DLANGUAGE_MK_MK -DLANGUAGE_MN_MN -DLANGUAGE_MR_IN -DLANGUAGE_MS_BN -DLANGUAGE_MS_MY -DLANGUAGE_MY_MM -DLANGUAGE_NL_BE -DLANGUAGE_NL_NL -DLANGUAGE_NN_NO -DLANGUAGE_PA_IN -DLANGUAGE_PL_PL -DLANGUAGE_PT_BR -DLANGUAGE_PT_PT -DLANGUAGE_RM_CH -DLANGUAGE_RO_RO -DLANGUAGE_RU_RU -DLANGUAGE_SA_IN -DLANGUAGE_SK_SK -DLANGUAGE_SL_SI -DLANGUAGE_SQ_AL -DLANGUAGE_SR_SP -DLANGUAGE_SV_FI -DLANGUAGE_SV_SE -DLANGUAGE_SW_KE -DLANGUAGE_SYR_SY -DLANGUAGE_TA_IN -DLANGUAGE_TE_IN -DLANGUAGE_TH_TH -DLANGUAGE_TR_TR -DLANGUAGE_TT_TA -DLANGUAGE_UK_UA -DLANGUAGE_UR_PK -DLANGUAGE_UZ_UZ -DLANGUAGE_VI_VN -DLANGUAGE_WA_BE -DLANGUAGE_ZH_CN -DLANGUAGE_ZH_HK -DLANGUAGE_ZH_MO -DLANGUAGE_ZH_SG -DLANGUAGE_ZH_TW -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  spapisup)
+    # HAND-WRITTEN (2026-10-17), not derived: usetup's cabinet.c + fileqsup.c, which
+    # usetup.exe compiles and reactos.exe #includes (base/setup/reactos/spapisup/fileqsup.c),
+    # as ONE crate both link (spapisup-rust). Islanded the way reactos's entry does it --
+    # the wrapper includes the two .c, whose file-scope structs (QUEUEENTRY, the codecs) the
+    # bodies need -- but under usetup.h, the headers usetup.exe compiles them with.
+    USERMODE=1
+    REAL_UNIONS=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/base/setup/usetup"
+    WRAPPER_INC=$'#include "usetup.h"\n#include "spapisup/cabinet.c"\n#include "spapisup/fileqsup.c"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]spapisup[/\\]cabinet\.[ch]'
+                  --allowlist-file '.*usetup[/\\]spapisup[/\\]fileqsup\.c'
+                  --allowlist-file '.*[/\\]lib[/\\]spapisup[/\\]fileqsup\.h'
+                  --allowlist-file '.*[/\\]\.\.[/\\]lib[/\\]setuplib\.h'
+                  --allowlist-file '.*[/\\]ntstrsafe\.h'
+                  --allowlist-file '.*[/\\]zlib\.h'
+                  --allowlist-file '.*usetup[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/base/setup/usetup" -I"${SRC}/build-i386/base/setup/usetup" )
+    LATE_INC=( -I"${SRC}/sdk/include/reactos/drivers" -I"${SRC}/sdk/lib/inflib" -I"${SRC}/vendor/zlib/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   diskpart)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-07 from base/system/diskpart/CMakeLists.txt
     # (43 compiled TU(s), 141 headers in the include closure, 10 switch constant(s)).
@@ -8137,6 +8159,21 @@ case "$DRIVER" in
     # after them, and hoisting one ahead swaps which header an include resolves to.
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x0A00 -DNTDDI_VERSION=0x0A000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D__WINESRC__ -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  mi)
+    # mi.dll, the Management Infrastructure client, written fresh in Rust over wbemprox (no C
+    # to translate). The island is OMI's MI.h (the ABI; table layouts measured on Windows 11)
+    # plus wbemcli.h for the IWbem* vtables the sessions call. MI_CHAR_TYPE 2 and the V1 API
+    # are mi.h's defaults here.
+    USERMODE=1
+    REAL_UNIONS=1
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/mi"
+    WRAPPER_INC=$'#include <stdarg.h>\n#include "windef.h"\n#include "winbase.h"\n#include "objbase.h"\n#include "oleauto.h"\n#include "wbemcli.h"\n#include "mi.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]mi\.h' --allowlist-file '.*[/\\]wbemcli\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/mi" )
+    LATE_INC=( -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x0A00 -DNTDDI_VERSION=0x0A000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_DLL -D__USE_CRTIMP -DCOBJMACROS )
     ;;
   tbs)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-15 from dll/win32/tbs/CMakeLists.txt

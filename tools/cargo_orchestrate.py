@@ -649,7 +649,7 @@ def manifest_build(
     sys.path.insert(0, str(root / "tools"))
     import cell_manifest
 
-    cells = cell_manifest.load(arch, root)
+    cells = cell_manifest.current(arch, root)
     if crates:
         unknown = set(crates) - {c["crate"] for c in cells}
         if unknown:

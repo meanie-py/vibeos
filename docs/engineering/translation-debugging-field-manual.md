@@ -1500,6 +1500,22 @@ allocation used the real element size, so nothing looked wrong until index 1.
 **Fix.** Cast first: `(field as PREAL).add(i)`, ideally through one helper
 (`consrv/handle.rs::handle_at`). `scan_opaque_ptr_arith` gates it (baseline empty).
 
+### A WMI client that works in the guest gets ACCESS_DENIED on Windows
+**Symptom.** Every query a WMI client makes fails with WBEM_E_ACCESS_DENIED (MI: result 2)
+on Windows. The same binary works in the guest, and its error paths still behave
+(an invalid namespace is reported correctly), because ConnectServer itself succeeds.
+**Cause.** Windows' winmgmt is out of process, so IWbemServices is a DCOM proxy, and a proxy
+at the default IDENTIFY impersonation level is refused. Our wbemprox is in-process with no
+proxy, so the guest can never show this.
+**Fix.** `CoSetProxyBlanket(svc, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, NULL,
+RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE)` on the services and
+enumerator proxies (`mi-rust` `sys::impersonate`). In the guest it fails harmlessly.
+Run a new WMI client on the Windows host too, not only in the guest.
+
+A related link trap from the same DLL: a DATA export (mi.dll's `mi_clientFT_V1`)
+declared as a plain `extern` is "undefined symbol" in a client, because the tree links with
+`--disable-auto-import`. Declare it `__declspec(dllimport)` in the header.
+
 ### A COM interface the -sys crate carries opaque has no methods and no fields
 **Symptom.** `cannot find function IStream_Seek` (every widl wrapper but the ones some other
 path generated) and `no field cbSize on type ntdll_sys::nt::tagSTATSTG`, though the module's

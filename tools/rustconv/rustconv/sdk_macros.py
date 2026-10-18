@@ -28,6 +28,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import generated_items
 from .macro_authority import _ARCHES, _without_outputs, compile_argv
 
 
@@ -917,15 +918,61 @@ BEGIN = (
 END = "// ==== end SDK header macros ===="
 
 
+def render_items(macros: dict[str, str], items: dict[str, str] | None = None) -> dict[str, str]:
+    """Each item as it stands in the block, `gen:`-stamped (generated_items.py)."""
+    return {n: generated_items.stamp(t) for n, t in {**(items or {}), **macros}.items()}
+
+
 def render_block(macros: dict[str, str], items: dict[str, str] | None = None) -> str:
     items = items or {}
     if not macros and not items:
         return ""
-    lines = [BEGIN, *(macros[n] for n in sorted(macros)), *(items[n] for n in sorted(items))]
+    stamped = render_items(macros, items)
+    lines = [BEGIN, *(stamped[n] for n in sorted(macros)), *(stamped[n] for n in sorted(items))]
     if macros:
         lines.append(f"pub use crate::{{{', '.join(sorted(macros))}}};")
     lines.append(END)
     return "\n".join(lines) + "\n"
+
+
+_BLOCK_ITEM = re.compile(
+    r"macro_rules!\s+(\w+)|^pub\s+(?:unsafe\s+)?(?:fn|const|type|static(?:\s+mut)?)\s+(\w+)", re.M
+)
+
+
+# `#[inline]`, `#[cfg(target_arch = "x86")]` -- possibly carrying the item's `gen:` stamp.
+_BARE_ATTR = re.compile(r"#\[[^\]]*\]\s*(?://.*)?")
+
+
+def split_block(body: str) -> dict[str, str]:
+    """A block body back into {name: item text}, the inverse of render_items.
+
+    An item starts at a line opening with `#[` or `pub ` unless the line before is a bare
+    attribute; a COM wrapper's per-arch `#[cfg]` copies share a name and are one item. The
+    trailing `pub use crate::{...}` is the block's own, not an item.
+    """
+    chunks: list[list[str]] = []
+    for line in body.split("\n"):
+        if not line.strip() or line.startswith("pub use crate::{"):
+            continue
+        bare_attr = bool(chunks) and _BARE_ATTR.fullmatch(chunks[-1][-1]) is not None
+        if chunks and (bare_attr or not line.startswith(("#[", "pub "))):
+            chunks[-1].append(line)
+        else:
+            chunks.append([line])
+    out: dict[str, str] = {}
+    for chunk in chunks:
+        item = "\n".join(chunk)
+        m = _BLOCK_ITEM.search(item)
+        if m:
+            name = m.group(1) or m.group(2)
+            out[name] = f"{out[name]}\n{item}" if name in out else item
+    return out
+
+
+def reexport(name: str, item: str) -> str:
+    """What a `#[macro_export]` item moved out of the block needs: its own `pub use`."""
+    return f"pub use crate::{name};\n" if "macro_rules!" in item else ""
 
 
 def write_block(prelude: Path, block: str) -> bool:

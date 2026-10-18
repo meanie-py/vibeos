@@ -77,7 +77,7 @@ pub const INVALID_SOCKET: SOCKET = !0;
 // winbase.h INVALID_HANDLE_VALUE = ((HANDLE)(LONG_PTR)-1) — all-ones pointer.
 pub const INVALID_HANDLE_VALUE: HANDLE = usize::MAX as HANDLE;
 // winreg.h HKEY_LOCAL_MACHINE = ((HKEY)(ULONG_PTR)0x80000002).
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 // winnls.h:245 CP_ACP = 0 (the ANSI code page); MultiByteToWideChar/WideCharToMultiByte take UINT.
 pub const CP_ACP: UINT = 0;
 // winsock.h — IP protocol number; the one use casts `as INT`. u32 to match the bindgen IPPROTO

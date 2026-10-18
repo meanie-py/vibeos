@@ -51,10 +51,10 @@ macro_rules! wstr_arr {
 }
 
 // Predefined registry roots (winreg.h #defines — not bindgen-visible).
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY;
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY;
-pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000usize as HKEY;
-pub const HKEY_USERS: HKEY = 0x8000_0003usize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
+pub const HKEY_USERS: HKEY = 0x8000_0003u32 as i32 as isize as HKEY;
 
 // The session state + module instance + heap-strdup, now owned by the (Rust)
 // winlogon core (winlogon.rs, flipped from winlogon.c). Re-exported here so the

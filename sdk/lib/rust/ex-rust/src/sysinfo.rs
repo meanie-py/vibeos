@@ -632,19 +632,32 @@ unsafe fn ExpGetRawSMBiosTable(
     }
 
     let mut FinalStatus = STATUS_SUCCESS;
-    // WNODE_ALL_DATA layout: WNODE_HEADER then DataBlockOffset/InstanceCount/.../FixedInstanceSize.
-    // Cast to u32 array and pull FixedInstanceSize. To avoid binding to WNODE_ALL_DATA bindgen type
-    // (variable depending on build), we read the field at the standard offset.
-    // Fall back: use WMIBufSize if structural read fails.
-    // Layout: WNODE_HEADER is 48 bytes; FixedInstanceSize is at offset 48 + 4*5 = 68 on amd64,
-    // and 4*8 + 4*5 = 52 on i386. Safer to just emit WMIBufSize directly.
-    let TableSize = WMIBufSize.saturating_sub(48 + 16); // approximate header strip
+    // wmistr.h's WNODE_ALL_DATA up to FixedInstanceSize (the provider fills the
+    // fixed-instance arm of its union). The C copies FixedInstanceSize bytes from the
+    // data block; this used to strip a guessed 64-byte header and take the rest of the
+    // buffer as the table.
+    #[repr(C)]
+    struct WnodeAllData {
+        BufferSize: ULONG,
+        ProviderId: ULONG,
+        HistoricalContext: u64,
+        TimeStamp: i64,
+        Guid: ntkrnl_sys::ddk::GUID,
+        ClientContext: ULONG,
+        Flags: ULONG,
+        DataBlockOffset: ULONG,
+        InstanceCount: ULONG,
+        OffsetInstanceNameOffsets: ULONG,
+        FixedInstanceSize: ULONG,
+    }
+    let Wnode = AllData as *const WnodeAllData;
+    let DataOffset = (*Wnode).DataBlockOffset;
+    let TableSize = (*Wnode).FixedInstanceSize;
     *OutSize = TableSize;
 
     if !Buffer.is_null() {
         if BufferSize >= TableSize {
-            // Copy data after the WNODE_ALL_DATA header
-            let src = (AllData as *const u8).add(48 + 16); // nolint: magic-offset (WNODE_ALL_DATA header strip, self-consistent with TableSize)
+            let src = (AllData as *const u8).add(DataOffset as usize);
             RtlMoveMemory(Buffer, src as PVOID, TableSize as usize);
         } else {
             FinalStatus = STATUS_BUFFER_TOO_SMALL;

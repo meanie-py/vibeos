@@ -69,7 +69,8 @@ pub unsafe extern "system" fn RtlGetVersion(
 ) -> NTSTATUS {
     (*lpVersionInformation).dwMajorVersion = NtMajorVersion;
     (*lpVersionInformation).dwMinorVersion = NtMinorVersion;
-    (*lpVersionInformation).dwBuildNumber = NtBuildNumber & 0x3FFF;
+    // Windows 10+ masks the build with 0xFFFF; the old 0x3FFF turns build 22000 (0x55F0) into 5616.
+    (*lpVersionInformation).dwBuildNumber = NtBuildNumber & 0xFFFF;
     (*lpVersionInformation).dwPlatformId = 2;
 
     if (*lpVersionInformation).dwOSVersionInfoSize

@@ -373,8 +373,8 @@ pub const MIB_IF_TYPE_ETHERNET: DWORD = 6; // ipifcons.h — #define MIB_IF_TYPE
 pub const MAX_COMPUTERNAME_LENGTH: usize = 15; // winbase.h — #define MAX_COMPUTERNAME_LENGTH 15
 
 // HKEY predefined keys (winreg.h). HKEY is bindgen-supplied (a raw pointer handle).
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY; // winreg.h
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY; // winreg.h
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // winreg.h
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY; // winreg.h
 
 // ================= 6. types bindgen skipped (declared, per the dnsapi/iphlpapi pattern) =========
 // NOTE: `time_t` deliberately NOT redefined here — ntdll_sys::nt (globbed via `types`)

@@ -15,7 +15,9 @@ pub const CON_PAGER_EXPAND_TABS: u32 = 1 << 0;
 pub const CON_PAGER_EXPAND_FF: u32 = 1 << 1;
 pub const CON_PAGER_CACHE_INCOMPLETE_LINE: u32 = 1 << 2;
 
-pub type CON_PAGER_LINE_FN = Option<unsafe extern "system" fn(Pager: *mut CON_PAGER, line: *const u16, cch: u32) -> i32>;
+// `cch` is SIZE_T (pager.h): declared u32 here, the 64-bit callers left the upper half of the
+// register undefined for a callee (more's MorePagerLine) that reads all of it.
+pub type CON_PAGER_LINE_FN = Option<unsafe extern "system" fn(Pager: *mut CON_PAGER, line: *const u16, cch: usize) -> i32>;
 pub type PAGE_PROMPT = Option<unsafe extern "system" fn(Pager: *mut CON_PAGER, Done: u32, Total: u32) -> i32>;
 
 #[repr(C)]
@@ -262,7 +264,7 @@ unsafe fn ConPagerWorker(
         {
             let pager_line_fn = (*pager).PagerLine;
             if let Some(f) = pager_line_fn {
-                if f(pager, line.add(ich_start) as *const u16, (i_end_line - ich_start) as u32) != 0 {
+                if f(pager, line.add(ich_start) as *const u16, (i_end_line - ich_start) as usize) != 0 {
                     i_column = (*pager).iColumn;
                     (*pager).nSpacePending = 0;
                     ich_start = i_end_line;

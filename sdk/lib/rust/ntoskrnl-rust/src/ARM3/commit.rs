@@ -15,9 +15,12 @@
 //!
 //!   * PEB and TEB pages (procsup.rs `MiCreatePebOrTebCapped`); a TEB's charge comes back in
 //!     `MmDeleteTeb`, a PEB's with the process's ledger.
-//!
-//! Not charged yet (owed): copy-on-write pages of image and file views, and kernel pool. The
-//! limit leaves headroom for them (mminit.rs).
+//!   * Copy-on-write pages of image and file views, one page at a time as the copy is made
+//!     (mm/section.rs `MmAccessFaultSectionView`), returned when `MmFreeSectionPage` frees the
+//!     private page. Windows reserves this when the view is mapped instead.
+//!   * Paged pool pages, when the pool hands them out (ex-rust pool.rs `MiAllocatePoolPages`),
+//!     returned when it frees them, also counted in `MmPagedPoolCommit`, as Windows keeps it.
+//!     Nonpaged pool is resident memory, not commit, in Windows too.
 
 use core::ptr::addr_of_mut;
 use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
@@ -133,4 +136,26 @@ pub unsafe fn MiReturnCommitment(Pages: usize, Process: PEPROCESS) {
 pub unsafe fn MiReturnProcessCommitment(Process: PEPROCESS) {
     let Remaining = ProcessCharge(Process).load(Ordering::Relaxed);
     MiReturnCommitment(Remaining, Process);
+}
+
+/// Paged pool's charge, from ex-rust's `MiAllocatePoolPages`. False, with nothing charged,
+/// past the limit; the allocation then fails as pool exhaustion does. Before mminit sets the
+/// limit there is nothing to check against, and the pages are only counted.
+#[no_mangle]
+pub unsafe extern "system" fn MiChargePagedPoolCommitment(Pages: usize) -> u8 {
+    let Limit = core::ptr::read_volatile(addr_of_mut!(super::mminit::MmTotalCommitLimit)) as usize;
+    if Limit == 0 {
+        Total().fetch_add(Pages, Ordering::Relaxed);
+    } else if !MiChargeCommitment(Pages, core::ptr::null_mut()) {
+        return 0;
+    }
+    AtomicUsize::from_ptr(addr_of_mut!(crate::mm::freelist::MmPagedPoolCommit)).fetch_add(Pages, Ordering::Relaxed);
+    1
+}
+
+/// Paged pool's pages coming back, from ex-rust's `MiFreePoolPages`.
+#[no_mangle]
+pub unsafe extern "system" fn MiReturnPagedPoolCommitment(Pages: usize) {
+    AtomicUsize::from_ptr(addr_of_mut!(crate::mm::freelist::MmPagedPoolCommit)).fetch_sub(Pages, Ordering::Relaxed);
+    MiReturnCommitment(Pages, core::ptr::null_mut());
 }
