@@ -759,3 +759,35 @@ at 6.81 GiB peak RSS / 121.22s including bootstrap, alongside 692 Rust tests and
 tooling checks. That is about 25% less peak RSS than the observed merged baseline, with
 similar elapsed time. Inspection of ELF symbols confirms the executable overrides malloc,
 calloc, realloc and free; the library test executable has no allocator override symbols.
+
+
+## Performance checkpoint 8: declaration lines and lexer scratch (2026-10-17)
+
+Reconciled master `d8202e706bd`. The shadowed-C-define rule previously recounted every
+newline before every C macro and Rust constant. A constant-space forward cursor now
+counts each prefix segment once, including the rule's transformed continuation/comment
+text. Backward queries restart the cursor and retain the old line-number semantics.
+Its standalone run observed 22.25s / 89.69s user CPU before and 6.98s / 7.86s afterward,
+with byte-identical findings. These observations also include the lexer change below;
+they do not isolate every component's cost.
+
+The lexer uses one shared generic scanner: ASCII input masks a byte vector in place,
+while Unicode keeps the character-vector path and its character-count masking semantics.
+The ASCII scratch buffer uses one byte per input character instead of four, and becomes
+the returned String without allocating another output buffer. Extern type normalization
+avoids a split/join buffer when the input contains no whitespace.
+
+All 40,000 generated lexer cases (including 20,000 constrained to ASCII) and 20,000
+normalization cases match the previous Git implementation byte for byte. Native tests
+also cover ordered, repeated and backward line-cursor queries with Unicode, CRLF and
+empty input. `parity/performance-07.json` records full-suite comparisons and final gates;
+host load and generated inventory entries are not controlled. The single-digit latency
+target and further memory reduction remain open.
+
+The final source gate passed all 123 stages with the baseline's 5,840 finding lines and
+hash; all 693 Rust tests and 106 tooling checks passed. Full-suite user+system CPU was
+658.15s / 593.90s before/after. Observed wall time was 177.85s / 156.35s, but parallel rule
+execution itself was 140.08s / 138.28s: differing shared initialization/cache conditions
+account for much of that elapsed difference. Shadowed-define time within the full run
+fell from 80.08s to 13.61s. Peak RSS was 6.79 / 7.08 GiB; this checkpoint demonstrates no
+full-suite memory reduction. Extern drift and macro-shadow AST work remain substantial.

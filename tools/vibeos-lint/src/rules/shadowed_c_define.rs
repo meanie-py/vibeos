@@ -14,7 +14,7 @@
 //! sees, not C: ndk/i386/asm.h carries `KMODE_EXCEPTION_NOT_HANDLED 0x13` there while C
 //! gets 0x1E from the generated bugcodes.h. The Rust value is compared at the width of
 //! its declared type; a type this rule cannot size is skipped rather than guessed.
-use crate::{Corpus, Rule};
+use crate::{line_cursor::LineCursor, Corpus, Rule};
 use rayon::prelude::*;
 use regex::Regex;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -331,8 +331,9 @@ fn scan_rust(text: &str, defines: &CDefines, scope: Option<&Scope>) -> Vec<Strin
     let raw: Vec<&str> = text.lines().collect();
     let mut locals: Locals = HashMap::new();
     let mut sites = Vec::new();
+    let mut lines = LineCursor::new(&code);
     for c in RUST_CONST.captures_iter(&code) {
-        let line = code[..c.get(0).unwrap().start()].matches('\n').count() + 1;
+        let line = lines.line(c.get(0).unwrap().start());
         let (arches, deliberate) = annotations(&raw, line);
         locals
             .entry(c[1].to_string())
