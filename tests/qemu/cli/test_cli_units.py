@@ -5847,23 +5847,28 @@ def test_staleness_lint_baseline_change_is_not_stale(staleness_repo: Path):
 
 
 def test_staleness_pytest_module_edit_is_not_stale(staleness_repo: Path):
-    """A pytest module only consumes the media; editing one must not void it.
-    The harness's own modules (vm.py, archcfg) stay build-relevant."""
+    """A pytest module only consumes the media; editing one must not void it. Nor
+    does vm.py, the QEMU launcher: it decides how media boot, never what they hold
+    (pinning EHCI's PCI slot there voided three arches' fresh media). archcfg, which
+    picks the ramdisk's targets, stays build-relevant."""
     t = staleness_repo / "tests" / "qemu" / "test_rig.py"
     t.parent.mkdir(parents=True, exist_ok=True)
     t.write_text("def test_a(): pass\n")
     (t.parent / "vm.py").write_text("X = 1\n")
+    (t.parent / "cli").mkdir()
+    (t.parent / "cli" / "archcfg.py").write_text("X = 1\n")
     _git(staleness_repo, "add", "-A")
     _git(staleness_repo, "commit", "-qm", "tests")
     provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
         staleness_repo / "build-i386"
     )
     t.write_text("def test_a(): pass\ndef test_b(): pass\n")
-    v = provenance.check_staleness(staleness_repo, "i386")
-    assert v.fresh and not v.stale, v.reasons
     (t.parent / "vm.py").write_text("X = 2\n")
     v = provenance.check_staleness(staleness_repo, "i386")
-    assert v.stale, "vm.py is harness code, not a test module"
+    assert v.fresh and not v.stale, v.reasons
+    (t.parent / "cli" / "archcfg.py").write_text("X = 2\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, "archcfg is harness code that shapes the media, not a test module"
 
 
 def test_staleness_cohab_census_rerecord_is_not_stale(staleness_repo: Path):
