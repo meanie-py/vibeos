@@ -472,10 +472,12 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   samples, kernel `wait4` peak RSS, CPU time, and host memory PSI before/after.
   RSS samples may miss short peaks and double-count shared pages; `wait4` is
   the largest-process high-water mark, not a simultaneous tree peak. Local sccache
-  workers are matched through an exact per-request environment marker and included
+  workers are discovered on the configured sccache endpoint, matched through an
+  exact per-request environment marker and included
   once alongside the client tree. The shared server itself and remote workers are
   excluded. `cache_worker_pids` reports how many worker PIDs were observed;
-  `cache_scan_denied` reports denied environment reads. Zero observed workers may
+  `cache_scan_denied` reports denied environment reads (including transient exec
+  restrictions and inaccessible workers). Zero observed workers may
   mean a short invocation, not necessarily a cache hit. Discovery starts after
   100 ms so short cache hits avoid scanning the process table. All observations can raise reservations
   (peak plus 25% and 64 MiB), never lower the conservative defaults.

@@ -123,9 +123,13 @@ def test_sampler_read_failure_is_not_reported_as_success(tmp_path, monkeypatch):
         sampler.stop()
 
 
-def test_matrix_restages_amd64_after_i386_and_detects_input_change(tmp_path, monkeypatch):
-    states = iter([{"head": "abc", "dirty": False}, {"head": "def", "dirty": False}])
-    monkeypatch.setattr(buildbench, "_git_state", lambda repo: next(states, {"head": "def"}))
+@pytest.mark.parametrize("changed_inputs", [False, True])
+def test_matrix_restages_amd64_after_i386_and_detects_input_change(
+    tmp_path, monkeypatch, changed_inputs
+):
+    final_state = {"head": "def" if changed_inputs else "abc", "dirty": False}
+    states = iter([{"head": "abc", "dirty": False}, final_state])
+    monkeypatch.setattr(buildbench, "_git_state", lambda repo: next(states, final_state))
     monkeypatch.setattr(buildbench.buildpolicy, "read", lambda path: {})
     monkeypatch.setattr(buildbench.hostjobs, "status", lambda repo: {})
     phases = []
@@ -137,15 +141,21 @@ def test_matrix_restages_amd64_after_i386_and_detects_input_change(tmp_path, mon
                 artifact = tmp_path / f"build-{arch}/livecd.iso"
                 artifact.parent.mkdir()
                 artifact.write_bytes(b"media")
+        elif len(phases) == 2:
+            (tmp_path / "build-amd64/livecd.iso").write_bytes(b"restaged media")
         return [{"name": name, "exit_code": 0} for name, _ in commands]
 
     monkeypatch.setattr(buildbench, "_run_children", children)
     out = tmp_path / "report.json"
     args = SimpleNamespace(repeat=1, arches=["amd64", "i386"], clean=True, output=out)
-    assert buildbench.run(args, tmp_path) == 1
+    assert buildbench.run(args, tmp_path) == int(changed_inputs)
     assert "--no-wow64-stage" in phases[0][0][1]
     assert phases[1][0][0] == "build-amd64-restage"
     assert "--clean" not in phases[1][0][1]
     report = json.loads(out.read_text())
-    assert report["status"] == "FAILED"
-    assert "git state changed" in report["repeats"][0]["error"]
+    if changed_inputs:
+        assert report["status"] == "FAILED"
+        assert "git state changed" in report["repeats"][0]["error"]
+    else:
+        assert report["status"] == "OK"
+        assert report["repeats"][0]["artifacts"]["amd64"]["size_bytes"] == len(b"restaged media")

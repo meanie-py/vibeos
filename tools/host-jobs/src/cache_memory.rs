@@ -15,6 +15,7 @@ pub struct Workers {
     discovery: Instant,
     pub matched: HashSet<u32>,
     pub unreadable: usize,
+    endpoint: Option<Vec<u8>>,
 }
 
 impl Workers {
@@ -25,6 +26,14 @@ impl Workers {
             discovery: Instant::now() - Duration::from_secs(1),
             matched: HashSet::new(),
             unreadable: 0,
+            endpoint: ["SCCACHE_SERVER_UDS", "SCCACHE_SERVER_PORT"]
+                .iter()
+                .find_map(|key| {
+                    std::env::var(key)
+                        .ok()
+                        .filter(|v| !v.is_empty())
+                        .map(|value| format!("{key}={value}").into_bytes())
+                }),
         }
     }
 
@@ -37,6 +46,18 @@ impl Workers {
                         continue;
                     };
                     if fs::read(entry.path().join("comm")).is_ok_and(|s| s == b"sccache\n") {
+                        // Canonical builds select a worktree server endpoint.
+                        // Avoid inspecting workers on every other lane's daemon.
+                        if let Some(endpoint) = &self.endpoint {
+                            match fs::read(entry.path().join("environ")) {
+                                Ok(env) if matches_marker(&env, endpoint) => (),
+                                Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
+                                    self.unreadable += 1;
+                                    continue;
+                                }
+                                _ => continue,
+                            }
+                        }
                         self.servers.push(pid);
                     }
                 }
@@ -96,28 +117,48 @@ mod tests {
         // Different request environments must not be conflated even when both
         // workers coexist under the same server.
         let token = format!("test-{}", std::process::id());
-        let mut server = Command::new("python3").args(["-c", r#"
+        let mut server = Command::new("python3")
+            .args([
+                "-c",
+                r#"
 import ctypes, os, subprocess, sys
 ctypes.CDLL(None).prctl(15, b'sccache', 0, 0, 0)
-body = 'import os,time; data=bytearray(64*1024*1024); print(os.getpid(),flush=True); time.sleep(1.5)'
+body = '''import os,sys,ctypes
+data=bytearray(64*1024*1024)
+if os.environ['VIBEOS_HOST_MEMORY_REQUEST'] == 'another-request':
+    ctypes.CDLL(None).prctl(4, 0, 0, 0, 0)
+print(os.getpid(),flush=True)
+sys.stdin.read()
+'''
 children=[]
-for token in (sys.argv[1], 'another-request'):
+for token in (sys.argv[1], 'another-request', 'readable-other-request'):
     env=dict(os.environ, VIBEOS_HOST_MEMORY_REQUEST=token)
     c=subprocess.Popen([sys.executable,'-c',body],env=env,stdout=subprocess.PIPE,text=True)
     print(c.stdout.readline().strip(),flush=True)
     children.append(c)
 for c in children: c.wait()
-"#, &token]).stdout(Stdio::piped()).spawn().unwrap();
+"#,
+                &token,
+            ])
+            .stdout(Stdio::piped())
+            .stdin(Stdio::piped())
+            .spawn()
+            .unwrap();
         let mut lines = BufReader::new(server.stdout.take().unwrap()).lines();
         let own: u32 = lines.next().unwrap().unwrap().parse().unwrap();
         let other: u32 = lines.next().unwrap().unwrap().parse().unwrap();
+        let readable_other: u32 = lines.next().unwrap().unwrap().parse().unwrap();
         let mut workers = super::Workers::new(&token);
         let mut pids = HashSet::from([server.id()]);
         workers.extend(&mut pids, 0);
+        let rss = crate::memory::process_rss_kib(&pids);
+        drop(server.stdin.take());
+        assert!(server.wait().unwrap().success());
         assert!(pids.contains(&own));
         assert!(!pids.contains(&other));
+        assert!(!pids.contains(&readable_other));
         assert!(!pids.contains(&server.id()));
-        assert!(crate::memory::process_rss_kib(&pids) >= 64 * 1024);
-        assert!(server.wait().unwrap().success());
+        assert!(rss >= 64 * 1024);
+        assert!(workers.unreadable > 0);
     }
 }

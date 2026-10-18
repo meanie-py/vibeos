@@ -367,7 +367,10 @@ def run(args, repo: Path) -> int:
                     run_dir,
                 )
                 children.extend(restage)
-                builds_ok = all(row["exit_code"] == 0 for row in restage)
+                artifacts = _check_build_artifacts(repo, arches, build_children)
+                builds_ok = all(row["exit_code"] == 0 for row in restage) and all(
+                    not row.get("artifact_error") for row in build_children
+                )
             if builds_ok:
                 followups = [
                     (
