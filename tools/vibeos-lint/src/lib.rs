@@ -164,6 +164,17 @@ impl SourceFile {
     /// offsets count UTF-8 bytes or Unicode characters. Cache each exact view;
     /// equivalent users share its allocation and never tokenize it again.
     pub fn masked(&self, regex: &Regex, cutoff: Option<&str>, characters: bool) -> Arc<str> {
+        // Absent cutoff markers leave the entire input intact. On ASCII input,
+        // character and byte masking also produce exactly the same view. Reuse
+        // one allocation for these equivalent legacy scanner configurations.
+        let (raw, cutoff) = cutoff
+            .and_then(|marker| {
+                self.text
+                    .split_once(marker)
+                    .map(|(raw, _)| (raw, Some(marker)))
+            })
+            .unwrap_or((&self.text, None));
+        let characters = characters && !raw.is_ascii();
         let key = (
             regex.as_str().to_owned(),
             cutoff.map(str::to_owned),
@@ -177,9 +188,6 @@ impl SourceFile {
                 .clone()
         };
         slot.get_or_init(|| {
-            let raw = cutoff
-                .and_then(|marker| self.text.split_once(marker).map(|p| p.0))
-                .unwrap_or(&self.text);
             regex
                 .replace_all(raw, |caps: &regex::Captures<'_>| {
                     let text = caps.get(0).unwrap().as_str();
@@ -1034,6 +1042,24 @@ pub fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn equivalent_ascii_mask_views_share_the_same_allocation() {
+        let file = SourceFile::new("a.rs".into(), "/* comment */ fn item() {}".into());
+        let regex = Regex::new(r"/\*.*?\*/").unwrap();
+        let bytes = file.masked(&regex, None, false);
+        let characters = file.masked(&regex, Some("ABSENT"), true);
+        let other_marker = file.masked(&regex, Some("ALSO_ABSENT"), false);
+        assert!(Arc::ptr_eq(&bytes, &characters));
+        assert!(Arc::ptr_eq(&bytes, &other_marker));
+        assert_eq!(bytes.as_ref(), "              fn item() {}");
+        // A real cutoff and non-ASCII masked text must keep their semantics.
+        let unicode = SourceFile::new("u.rs".into(), "/*é*/ END tail".into());
+        let bytes = unicode.masked(&regex, None, false);
+        let characters = unicode.masked(&regex, None, true);
+        assert_ne!(bytes.as_ref(), characters.as_ref());
+        assert_eq!(unicode.masked(&regex, Some("END"), true).as_ref(), "      ");
+    }
+
     #[test]
     fn indexed_source_lines_match_str_lines_including_unterminated_cr() {
         for text in ["", "a", "a\n", "\n", "\r", "a\r\nb\r\r\nc\r", "é\n猫"] {

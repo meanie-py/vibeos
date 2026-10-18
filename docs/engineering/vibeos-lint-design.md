@@ -728,3 +728,34 @@ shared initialization and 97.26s parallel rules. Host activity was not controlle
 paired results establish a memory improvement and similar observed latency, not a universal
 speedup. Extern drift remains the largest rule (80.81s in that final gate). The single-digit
 whole-suite target remains owed; further CPU and scheduling work follows this checkpoint.
+
+
+## Performance checkpoint 7: transient allocations (2026-10-17)
+
+Merged master `50c7c7907f2`, including the compile-command cache, unsupported-regex,
+dangling-symlink and formatting fixes. Raw-user-access now borrows cached function facts
+and source lines instead of copying their bodies and raw line strings. Masked views share
+an allocation when an absent cutoff marker and ASCII character/byte masking give identical
+input and output; Unicode and real cutoffs retain their distinct behavior.
+
+The CLI uses `mimalloc` 0.1.52. Its Linux C allocator override covers tree-sitter too;
+the global allocator declaration lives only in the executable. `--no-default-features`
+builds retain the system allocator for comparisons. The new dependency is authorized by
+the user's general dependency approval. Usage and override support come from the
+[allocator crate](https://docs.rs/mimalloc/0.1.52/mimalloc/).
+
+The merged baseline observed 9.02 GiB maximum RSS / 121.30s. Rust allocations alone with
+mimalloc observed 8.22 GiB / 106.72s. With borrowing/view sharing, the system-allocator
+source gate observed 8.08 GiB (169s including compilation); the native full-override
+experiment observed 6.97 GiB / 110.83s. Every completed scan emitted the same 5,840 tagged
+finding lines. A two-arena glibc experiment was rejected: 7.83 GiB / 487.46s.
+Host activity and build caches were not controlled; these are observations, not a universal
+speedup or a complete allocation attribution. The retained corpus and live rule working
+sets still consume several GiB. `parity/performance-06.json` records methods and evidence;
+the single-digit latency target and further memory reduction remain open.
+
+The final default-allocator source gate passed all 123 stages with the same finding hash
+at 6.81 GiB peak RSS / 121.22s including bootstrap, alongside 692 Rust tests and all 106
+tooling checks. That is about 25% less peak RSS than the observed merged baseline, with
+similar elapsed time. Inspection of ELF symbols confirms the executable overrides malloc,
+calloc, realloc and free; the library test executable has no allocator override symbols.

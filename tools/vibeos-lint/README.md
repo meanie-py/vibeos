@@ -54,3 +54,22 @@ retention). Library callers can use `Corpus::with_ast_cache_nodes`.
 Set `VIBEOS_LINT_TIMINGS=1` for snapshot, shared-index and rule timings. Optional
 `VIBEOS_LINT_CACHE_STATS=1` reports initialized payload sizes and syntax cache counters
 to stderr without forcing new parses or views; these counts exclude allocator overhead.
+
+The CLI uses pinned `mimalloc` by default. Linux builds also enable its C malloc override,
+covering tree-sitter allocations. The library declares no global allocator. For allocator
+comparisons, restore the system allocator without changing rules or worker limits:
+
+```sh
+cargo build --offline --locked --release --no-default-features \
+  --manifest-path tools/vibeos-lint/Cargo.toml \
+  --target-dir .cache/vibeos-lint/system-target
+```
+
+Run `.cache/vibeos-lint/system-target/release/vibeos-lint` directly for that control;
+`vibeos-cli check` continues to build and use the default allocator.
+
+On a fresh machine, fetch the allocator crates before the normal offline bootstrap:
+
+```sh
+cargo fetch --locked --manifest-path tools/vibeos-lint/Cargo.toml
+```
