@@ -115,6 +115,14 @@ def render_status(state: dict) -> str:
         lines.append(
             f"  old-lane reservations leave {state['legacy_adjusted_cpu_slots']} job slots"
         )
+    if "memory_budget_kib" in state:
+        lines.append(
+            f"  memory: {state['memory_reserved_kib'] / 1048576:.1f}/"
+            f"{state['memory_budget_kib'] / 1048576:.1f} GiB reserved; "
+            f"{state['memory_available_kib'] / 1048576:.1f} GiB available, "
+            f"{state['memory_headroom_kib'] / 1048576:.1f} GiB headroom"
+        )
+        lines.append(f"  job observations: {state['metrics_path']}")
     for row in rows[:12]:
         lines.append(
             f"  {row['state']} {row['kind']} pid={row['pid']} "

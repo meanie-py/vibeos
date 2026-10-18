@@ -442,6 +442,43 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   never starved. Before 2026-10-09 the order was the reverse, and a gate that took
   530 s on a quiet host took 1500-2100 s whenever 15-20 lane builds overlapped it —
   which the whole queue then paid per landing (submit-to-verdict median 39 min).
+- **Builds and source lint share memory admission.** The same broker reserves
+  estimated memory before granting a CPU slot: C/C++ compilation starts at
+  512 MiB, Rust compilation (including artifact-store executors) at 4 GiB, links
+  at 2 GiB (Rust compiler links retain 4 GiB), and source lint at 6 GiB.
+  Linter bootstrap also reserves 6 GiB and runs Cargo with one job. Standalone
+  direct binary invocations and artifact-only checks are outside this source-lint
+  admission path.
+  The default budget is host RAM minus headroom (one eighth of RAM, capped at
+  8 GiB); finite cgroup v2 ancestor limits reduce usable RAM and availability.
+  Cgroup availability credits clean inactive file pages as reclaimable cache,
+  excluding dirty/writeback pages; host availability remains an upper bound.
+  Admission requires both space in the reservation budget and current available
+  memory for outstanding, not-yet-consumed reservations plus headroom. These are
+  soft estimates, not allocation limits; running processes are never suspended
+  or killed. Other programs can still consume memory after admission.
+  Use the same policy across lanes: `VIBEOS_HOST_MEMORY_MIB` sets the total
+  budget, `VIBEOS_HOST_MEMORY_HEADROOM_MIB` sets headroom, and
+  `VIBEOS_HOST_JOB_MEMORY_MIB` overrides the current command's estimate.
+  The strictest queued policy applies. A request larger than its own budget
+  fails before execution. After 120 seconds a memory-blocked job stops smaller
+  jobs backfilling behind it, allowing active reservations to drain.
+  Older brokers cannot enforce this policy for their own commands; new brokers
+  conservatively account for old tickets and recheck grants before execution.
+- **Memory observations live beside the shared job queue.** `host-status` shows
+  reservations, availability, headroom and the `job-metrics.jsonl` path under
+  `VIBEOS_HOSTLOCK_DIR` (default `/tmp/vibeos-qemu-locks/host`). The log records
+  command/owner, queue and execution duration, exit code, 100 ms process-tree RSS
+  samples, kernel `wait4` peak RSS, CPU time, and host memory PSI before/after.
+  RSS samples may miss short peaks and double-count shared pages; `wait4` is
+  the largest-process high-water mark, not a simultaneous tree peak. Cache-client
+  measurements are explicitly partial: persistent cache-daemon compiler memory
+  is not attributed to the client. All observations can raise future reservations
+  (peak plus 25% and 64 MiB), never lower the conservative defaults.
+  Profiles use command arguments and working directory with repository roots
+  normalized; memory history is advisory, not a build artifact. Metrics rotate
+  at 64 MiB, retaining one previous file. Compiler exit wakes the sampler
+  immediately, so short jobs do not wait for the next 100 ms sample.
 - **Concurrency is safe to over-submit.** Each smoke is a `vibeos-cli smoke`
   subprocess that self-throttles on the host boot-CPU pool (`hostlock` `bootcpu`,
   capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap
