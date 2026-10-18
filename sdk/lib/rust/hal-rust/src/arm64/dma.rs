@@ -129,6 +129,14 @@ unsafe fn new_adapter(
     DeviceDescription: ddk::PDEVICE_DESCRIPTION,
     NumberOfMapRegisters: ddk::PULONG,
 ) -> ddk::PADAPTER_OBJECT {
+    // A version 3 description (Windows 8's) asks for the version 3 DMA operations -
+    // GetDmaTransferInfo, GetScatterGatherListEx and the rest - which arm64_dma_ops leaves
+    // NULL; KMDF calls them unchecked once it holds a v3 adapter. Refuse it as x86/dma.rs
+    // does (dma.c: Version > DEVICE_DESCRIPTION_VERSION2), so the driver fails to get an
+    // adapter instead of calling through a null slot.
+    if (*DeviceDescription).Version > 2 {
+        return core::ptr::null_mut();
+    }
     let adapter = ddk::ExAllocatePoolWithTag(
         ddk::_POOL_TYPE_NonPagedPool,
         core::mem::size_of::<Arm64AdapterObject>() as ddk::SIZE_T,

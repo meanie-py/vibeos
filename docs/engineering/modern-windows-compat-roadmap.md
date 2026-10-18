@@ -524,6 +524,19 @@ runs it.
   the base arch to amd64-uefi), so the "BIOS" view was a UEFI machine's, which has no
   anchors there. Fixed in smoke.py; before 2026-10-17 no amd64-bios payload verdict, the
   kernel32 version.c one included, was a BIOS boot.
+- **KMDF at 6.2+ (from version-flip-audit "Could not determine"):** two paths open up.
+  *Passive-level interrupts* (`WdfInterruptCreate(PassiveHandling)`, refused by KMDF below
+  6.2) arrive as `CONNECT_FULLY_SPECIFIED` with `Irql = PASSIVE_LEVEL`; iomgr-rust routes them
+  to the passive-connection machinery CONNECT_MESSAGE_BASED_PASSIVE already uses for its line
+  fallback (ISR masks the line, a worker thread runs the routine), taking the DIRQL from the
+  PDO's assigned interrupt at that vector. No in-tree driver exercises it yet. *DMA v3*
+  (`DEVICE_DESCRIPTION_VERSION3`: KMDF's AddressWidthOverride at 6.2+, and the system-DMA
+  profiles at any version): both HALs refuse it, so the driver fails to get an adapter.
+  **Owed (upstream-sync lane):** the v3 DMA operations (`GetDmaTransferInfo`,
+  `InitializeDmaTransferContext`, `GetScatterGatherListEx`, `BuildScatterGatherListEx`,
+  `AllocateAdapterChannelEx`, `MapTransferEx`, `FlushAdapterBuffersEx`, `FreeAdapterObject`,
+  ...), which every slot of both HALs' tables leaves NULL; until then accepting v3 would hand
+  KMDF null calls. No in-tree KMDF driver uses DMA; the risk is third-party ones.
 - **Bodies that answer honestly but not fully:** `GetNamedPipeServerProcessId` (npfs has
   no attribute FSCTL); `GetProcessInformation(ProcessMachineTypeInfo)` (no
   NtQuerySystemInformationEx); Get/SetRestrictedErrorInfo stay E_NOTIMPL as in Wine.
