@@ -87,6 +87,49 @@ def derive(arch: str, repo: Path = REPO) -> dict:
     return out
 
 
+#: The rostests a committed manifest carries: the kmtest corpus (`conformance` sweeps it,
+#: so every build turns it on) and the shared testdata. apitests and winetests are payload
+#: grading -- ENABLE_ROSTESTS[_APITESTS] is sticky in a build dir once a payload run sets
+#: it, so a lane that graded anything wrote ~100 test binaries onto the media lists (the
+#: 2026-10-18 portwinetest run did, through cargo_cell_gen --convert, silently).
+COMMITTED_ROSTESTS = ("kmtests", "testdata")
+_ROSTEST_SRC = re.compile(r"(?:^|/)modules/rostests/([^/]+)/")
+
+
+def committed(m: dict, arch: str = "") -> dict:
+    """`m` as it may be committed, or MediaError when the build dir it came from carries
+    payload rostests. Not filtered: their import closures come along too (amd64's SysWOW64
+    gained i386's hid.dll beside user32_winetest.exe), and nothing in a list says which
+    DLL came for a test, so a filtered manifest would be quietly wrong."""
+    hits = sorted(
+        {
+            h.group(1)
+            for spec in m["cds"].values()
+            for e in spec["entries"]
+            if (h := _ROSTEST_SRC.search(e[1].partition(":")[2]))
+            and h.group(1) not in COMMITTED_ROSTESTS
+        }
+    )
+    if hits:
+        raise MediaError(
+            f"build-{arch or '<arch>'} carries payload rostests ({', '.join(hits)}): the "
+            "committed lists carry kmtests and testdata only, and these options stay on once a "
+            "payload build sets them. Reset them (at the canonical mount, as every build runs), "
+            f"rebuild, then write: (cd build-{arch or '<arch>'} && bash ../tools/canon-run.sh "
+            "cmake -DENABLE_ROSTESTS=OFF -DENABLE_ROSTESTS_APITESTS=OFF .) && "
+            f"./vibeos-cli build --arch {arch or '<arch>'}"
+            + (
+                ". The winetest A/B control (boot/bootdata/CMakeLists.txt) also stages "
+                "build-i386's user32_winetest.exe onto i386 livecd and amd64 syswow64 whenever "
+                "that file exists, so remove build-i386/modules/rostests/winetests and rebuild "
+                "i386 and amd64 too"
+                if "winetests" in hits
+                else ""
+            )
+        )
+    return m
+
+
 def render(m: dict) -> str:
     """One entry per line, so a module's placement changes one line of the diff."""
     out = ['{"config": ' + json.dumps(m["config"]) + ', "cds": {']
@@ -207,7 +250,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     rc = 0
     for arch in args.arch or ARCHES:
-        text = render(derive(arch))
+        want = committed(derive(arch), arch)
+        text = render(want)
         path = manifest_path(arch)
         if args.write:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -215,7 +259,6 @@ def main(argv: list[str] | None = None) -> int:
             print(f"wrote {path.relative_to(REPO)}")
         elif not path.exists() or path.read_text() != text:
             have = load(arch) if path.exists() else {"cds": {}}
-            want = derive(arch)
             parts = []
             for cd in CDS:
                 h = {tuple(e) for e in have["cds"].get(cd, {}).get("entries", [])}
@@ -231,4 +274,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except MediaError as e:
+        print(f"media_manifest: {e}", file=sys.stderr)
+        raise SystemExit(2) from None
