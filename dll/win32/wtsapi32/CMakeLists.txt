@@ -11,3 +11,5 @@ add_cargo_module(wtsapi32 wtsapi32-cargo wtsapi32.dll
     BODY_CRATE wtsapi32-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS psdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

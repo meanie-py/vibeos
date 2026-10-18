@@ -71,10 +71,14 @@ DEAD_IMPORTS = {
     # The engine archives the shim objects, so whether lld keeps it varies by arch.
     "sndvol32": {"kernel32.dll!FormatMessageW"},
 }
-_SPEC_IMPORT_ENTRY = re.compile(r"^\s*(?:\d+|@)\s+\w+\s+(?:-\S+\s+)*?-import\b(?:\s+-\S+)*\s+(\w+)", re.M)
+_SPEC_IMPORT_ENTRY = re.compile(
+    r"^\s*(?:\d+|@)\s+\w+\s+(?:-\S+\s+)*?-import\b(?:\s+-\S+)*\s+(\w+)", re.M
+)
 
 
-_SPEC_SELF_TARGET = re.compile(r"^\s*(?:\d+|@)\s+\w+\s+(?:-\S+\s+)*(\w+)\([^)]*\)\s+(\w+)\s*$", re.M)
+_SPEC_SELF_TARGET = re.compile(
+    r"^\s*(?:\d+|@)\s+\w+\s+(?:-\S+\s+)*(\w+)\([^)]*\)\s+(\w+)\s*$", re.M
+)
 
 
 def _spec_imported_exports(spec: Path) -> set[str]:

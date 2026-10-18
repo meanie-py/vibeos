@@ -12,3 +12,5 @@ add_cargo_module(credui credui-cargo credui.dll
     BODY_CRATE credui-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS psdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle
