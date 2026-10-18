@@ -70,7 +70,7 @@ impl Rule for PtrHighwordMask {
         true
     }
     fn run(&self, c: &Corpus) -> Result<Vec<String>, String> {
-        Ok(c.sdk_rust_files().flat_map(|f|scan_code(f.rust_noise()).into_iter().map(move |(n,e)|format!("{}:{}: PTR_HIGHWORD_MASK `{}` tests bits 16-31 only; on 64-bit a real pointer at ...0000_xxxx passes. Write `p & !0xFFFF == 0`.",f.path.display(),n,e))).collect())
+        Ok(c.sdk_rust_files().flat_map(|f|scan_code(&f.rust_noise()).into_iter().map(move |(n,e)|format!("{}:{}: PTR_HIGHWORD_MASK `{}` tests bits 16-31 only; on 64-bit a real pointer at ...0000_xxxx passes. Write `p & !0xFFFF == 0`.",f.path.display(),n,e))).collect())
     }
 }
 #[cfg(test)]

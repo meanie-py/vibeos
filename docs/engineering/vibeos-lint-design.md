@@ -791,3 +791,48 @@ execution itself was 140.08s / 138.28s: differing shared initialization/cache co
 account for much of that elapsed difference. Shadowed-define time within the full run
 fell from 80.08s to 13.61s. Peak RSS was 6.79 / 7.08 GiB; this checkpoint demonstrates no
 full-suite memory reduction. Extern drift and macro-shadow AST work remain substantial.
+
+### Bounded derived-text retention and compact line indexes
+
+The source snapshot's comment-masked and lexer-cleaned views previously retained
+1,448,293,754 bytes until exit. They now share a 128 MiB LRU budget, charged by string
+buffer capacity. Active rules hold strong references independently of retention;
+eviction preserves their views and later requests rebuild expired entries. Per-view
+locks share concurrent requests. Weak slots use `Arc<String>`: an expired `Weak<str>`
+would still pin the inline string allocation, defeating eviction.
+
+Line indexes are now initialized on demand, stored in boxed `u32` slices for files up
+to `u32::MAX` bytes, with full-width offsets for larger files. The full suite retained
+54,567,924 bytes of indexes versus 301,616,712 before. Offset/line semantics, including
+Unicode and CRLF, remain covered by tests.
+
+Sequential default-worker measurements observed 6.92 → 5.58 GiB peak RSS (19.5% less),
+97.65 → 98.05 seconds elapsed, and 465.57 → 527.73 seconds user+system CPU. The final
+normal source gate observed 5.41 GiB / 95.50 seconds / 485.56 CPU seconds. Recomputing
+evicted views can cost CPU; scheduling and host activity vary. No throughput improvement
+is claimed. Two workers used 4.72 GiB but took 292.49 seconds, so eight remains the default.
+
+All runs produced the same 5,840 tagged finding lines. The 123-rule source gate, 697 Rust
+tests and 106 tooling checks passed. `parity/performance-08.json` records measurements
+and comparison methods. The budget covers retained text buffers, not active rule working
+sets, source snapshots, syntax trees or compiler facts. A further candidate is replacing
+the retained Clang JSON AST with the signature/typedef facts its sole consumer extracts;
+that potential saving has not been measured here.
+
+### Retain signature facts instead of Clang JSON
+
+The runner now fulfills `needs_c_signature_facts` by extracting the existing prototype
+and typedef maps during initialization. It releases the parsed JSON tree and captured
+stdout before parallel rules run; `verify_signatures` borrows the retained maps. The
+extraction traversal and overwrite order are preserved. Tests cover nested declarations,
+redeclarations, missing types, variadic signatures, and malformed JSON.
+
+The captured JSON contained 164,978,356 bytes; retained fact strings occupy 890,266 bytes
+of capacity, plus map/vector storage. Serialized JSON size is not AST heap usage. A fresh
+paired full-suite measurement observed 5.20 → 4.62 GiB peak RSS (11.0% less), with the
+same 5,840 tagged findings. Elapsed time was 91.25 → 101.46 seconds and user+system CPU
+454.41 → 504.38 seconds. Initialization took 2.205 → 2.496 seconds; the parallel rule
+phase varied from 79.144 to 90.409 seconds. This pair establishes no stable latency change.
+
+`parity/performance-09.json` records the measurements and validation. The remaining
+transient parser allocation is unchanged: this checkpoint reduces whole-run retention.
