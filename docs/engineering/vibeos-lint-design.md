@@ -818,3 +818,21 @@ and comparison methods. The budget covers retained text buffers, not active rule
 sets, source snapshots, syntax trees or compiler facts. A further candidate is replacing
 the retained Clang JSON AST with the signature/typedef facts its sole consumer extracts;
 that potential saving has not been measured here.
+
+### Retain signature facts instead of Clang JSON
+
+The runner now fulfills `needs_c_signature_facts` by extracting the existing prototype
+and typedef maps during initialization. It releases the parsed JSON tree and captured
+stdout before parallel rules run; `verify_signatures` borrows the retained maps. The
+extraction traversal and overwrite order are preserved. Tests cover nested declarations,
+redeclarations, missing types, variadic signatures, and malformed JSON.
+
+The captured JSON contained 164,978,356 bytes; retained fact strings occupy 890,266 bytes
+of capacity, plus map/vector storage. Serialized JSON size is not AST heap usage. A fresh
+paired full-suite measurement observed 5.20 → 4.62 GiB peak RSS (11.0% less), with the
+same 5,840 tagged findings. Elapsed time was 91.25 → 101.46 seconds and user+system CPU
+454.41 → 504.38 seconds. Initialization took 2.205 → 2.496 seconds; the parallel rule
+phase varied from 79.144 to 90.409 seconds. This pair establishes no stable latency change.
+
+`parity/performance-09.json` records the measurements and validation. The remaining
+transient parser allocation is unchanged: this checkpoint reduces whole-run retention.

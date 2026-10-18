@@ -59,6 +59,9 @@ retention). Library callers can use `Corpus::with_ast_cache_nodes`.
 Set `VIBEOS_LINT_TIMINGS=1` for snapshot, shared-index and rule timings. Optional
 `VIBEOS_LINT_CACHE_STATS=1` reports initialized payload sizes and syntax/text cache counters
 to stderr without forcing new parses or views; these counts exclude allocator overhead.
+Shared Clang signature facts retain prototype and typedef maps only; captured JSON and
+the parsed AST are released during initialization. Cache statistics distinguish captured
+JSON input bytes from retained fact string capacity (excluding map/vector storage).
 
 The CLI uses pinned `mimalloc` by default. Linux builds also enable its C malloc override,
 covering tree-sitter allocations. The library declares no global allocator. For allocator

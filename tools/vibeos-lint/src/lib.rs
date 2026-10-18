@@ -44,7 +44,7 @@ pub trait Rule: Sync {
     fn source_sets(&self) -> &'static [SourceSet] {
         &[]
     }
-    fn needs_c_signature_asts(&self) -> &'static [&'static str] {
+    fn needs_c_signature_facts(&self) -> &'static [&'static str] {
         &[]
     }
     fn needs_module_inputs(&self) -> bool {
@@ -266,7 +266,7 @@ pub struct Corpus {
     syntax_cache: Arc<syntax_cache::Cache>,
     text_cache: Arc<text_cache::Cache>,
     explicit_paths: Vec<PathBuf>,
-    c_signature_asts: OnceLock<BTreeMap<String, Result<serde_json::Value, String>>>,
+    c_signature_facts: OnceLock<BTreeMap<String, Result<ast_facts::Signatures, String>>>,
     twins: OnceLock<twins::CIndex>,
     modules: OnceLock<modules::ModuleTree>,
     version_history: OnceLock<Result<VersionHistory, String>>,
@@ -356,7 +356,7 @@ impl Corpus {
         let cache = self.syntax_cache.stats();
         tree_count += cache["retained_trees"].as_u64().unwrap() as usize;
         tree_nodes += cache["retained_nodes"].as_u64().unwrap() as usize;
-        serde_json::json!({"source_text_bytes": text_bytes, "additional_raw_bytes": raw_bytes, "line_index_capacity_bytes": line_bytes, "noise_bytes": noise_bytes, "rust_twin_payload_bytes": twin_bytes, "retained_rust_trees": tree_count, "retained_rust_tree_nodes": tree_nodes, "masked_view_bytes": views, "c_signature_arches": self.c_signature_asts.get().map_or(0, |asts| asts.len()), "syntax_cache": cache, "text_cache": self.text_cache.stats()})
+        serde_json::json!({"source_text_bytes": text_bytes, "additional_raw_bytes": raw_bytes, "line_index_capacity_bytes": line_bytes, "noise_bytes": noise_bytes, "rust_twin_payload_bytes": twin_bytes, "retained_rust_trees": tree_count, "retained_rust_tree_nodes": tree_nodes, "masked_view_bytes": views, "c_signature_fact_string_bytes": self.c_signature_facts.get().map_or(0, |all| all.values().filter_map(|v| v.as_ref().ok()).map(|facts| facts.string_bytes()).sum::<usize>()), "c_signature_json_input_bytes": self.c_signature_facts.get().map_or(0, |all| all.values().filter_map(|v| v.as_ref().ok()).map(|facts| facts.json_bytes).sum::<usize>()), "c_signature_arches": self.c_signature_facts.get().map_or(0, |asts| asts.len()), "syntax_cache": cache, "text_cache": self.text_cache.stats()})
     }
     pub fn new(root: PathBuf, mut files: Vec<SourceFile>) -> Self {
         let syntax_cache = Arc::new(syntax_cache::Cache::new(syntax_cache::DEFAULT_NODE_LIMIT));
@@ -378,7 +378,7 @@ impl Corpus {
             syntax_cache,
             text_cache,
             explicit_paths: Vec::new(),
-            c_signature_asts: OnceLock::new(),
+            c_signature_facts: OnceLock::new(),
             twins: OnceLock::new(),
             modules: OnceLock::new(),
             version_history: OnceLock::new(),
@@ -394,8 +394,8 @@ impl Corpus {
         self.syntax_cache.set_limit(nodes);
         self
     }
-    pub fn c_signature_ast(&self, arch: &str) -> Result<&serde_json::Value, String> {
-        self.c_signature_asts
+    pub(crate) fn c_signature_facts(&self, arch: &str) -> Result<&ast_facts::Signatures, String> {
+        self.c_signature_facts
             .get()
             .and_then(|all| all.get(arch))
             .ok_or_else(|| format!("C signature AST {arch} was not requested"))?
@@ -970,18 +970,18 @@ pub fn execute(
     // from nested Rayon jobs can exhaust the pool with workers waiting on it.
     let ast_arches: std::collections::BTreeSet<_> = selected
         .iter()
-        .flat_map(|r| r.needs_c_signature_asts().iter().copied())
+        .flat_map(|r| r.needs_c_signature_facts().iter().copied())
         .collect();
     if !ast_arches.is_empty() {
-        timed("c_signature_asts", || {
-            corpus.c_signature_asts.get_or_init(|| {
+        timed("c_signature_facts", || {
+            corpus.c_signature_facts.get_or_init(|| {
                 ast_arches
                     .iter()
-                    .map(|a| (a.to_string(), ast_facts::c_signature_ast(&corpus.root, a)))
+                    .map(|a| (a.to_string(), ast_facts::c_signature_facts(&corpus.root, a)))
                     .collect()
             });
             for arch in ast_arches {
-                corpus.c_signature_ast(arch)?;
+                corpus.c_signature_facts(arch)?;
             }
             Ok::<(), String>(())
         })?;
