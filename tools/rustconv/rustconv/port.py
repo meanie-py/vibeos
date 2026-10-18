@@ -41,6 +41,7 @@ from pathlib import Path
 
 from . import (
     bank_import,
+    cohab_stub,
     crate_integrate,
     dead_regions,
     default_arm,
@@ -2482,11 +2483,10 @@ def stage_flip(stem: str) -> None:
     cml = module / "CMakeLists.txt"
     new = flip_cmake(cml.read_text(), state)
     stub = module / _stub_name(state)
-    if not stub.exists():
-        stub.write_text(
-            f"/* {stem} is Rust (sdk/lib/rust/{state['crate']}); a CMake target needs one TU. */\n"
-            f"typedef int {stem}_rust_cohab_placeholder;\n"
-        )
+    # Rewritten while it is still only what a flip writes (an older flip's placeholder, or
+    # a stale anchor list); a stub somebody edited by hand is theirs.
+    if not stub.exists() or cohab_stub.is_generated(stub.read_text(), stem, state["crate"]):
+        stub.write_text(cohab_stub.stub_text(stem, state["crate"], cohab_stub.module_spec(module)))
     changed = new != cml.read_text()
     if changed:
         cml.write_text(new)

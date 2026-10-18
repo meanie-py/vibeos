@@ -12324,6 +12324,15 @@ object, which came along with live code into certmgr, a module that never links 
 (`undefined symbol: CreatePropertySheetPageW`, amd64 LINK_FAIL). A generic or `#[inline]` fn
 is instantiated only in a crate that calls it, so a shared-crate helper that imports a DLL
 not every user links must be one of those.
+And lazy pulling can lose a fully flipped module its own EXPORTS: link_guard's "an import was
+kept over a local definition" for `DllGetClassObject` (acppage, i386 then amd64). A DELAY
+import library is ONE object holding every thunk of its DLL, ole32's own `DllGetClassObject`
+included, so the first Rust call into ole32 loads them all; the module's real export arrives
+later and is the duplicate `--allow-multiple-definition` drops. Codegen-unit order decided it,
+so the same module linked on one edit and failed on the next. **Fix:** the flipped module's
+`rust_cohab_stub` references every `.spec` export by its raw per-arch symbol (asm labels, so
+the PCH's prototypes cannot clash), and an object's undefined symbol is taken from the first
+archive defining it: the module's own. `port flip` writes it (`rustconv/cohab_stub.py`).
 
 ### A Rust archive behind an INTERFACE wrapper links AFTER the import libraries, which then answer
 **Symptom:** a DLL's export is silently satisfied by another DLL's import: ucrtbase and
