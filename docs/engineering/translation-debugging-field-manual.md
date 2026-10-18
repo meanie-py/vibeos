@@ -9550,6 +9550,11 @@ doubles 2^63 ulps apart. Every logged `_atodbl` result was the correctly rounded
 The i386 tree builds with `-march=pentium` (no `fcomi`), so EVERY compiled x87 comparison is
 `fucom; fnstsw %ax; sahf; jcc`, and the `x |= 1ULL << 63` before the second sign test is an
 `orl`. Pure integer code reproduces it, so it is not the kernel's FPU context handling.
+ZF goes wrong too, not only CF: clang's `is_int32` block in jscript ends `fucompp; fnstsw;
+orb %dh,%dl; sahf; setp; setne`, so `1.0 == 1.0` read unequal and every JS integer reached COM
+as `VT_R8`. Seen as jsproxy's winetest 168-169 (`'test'.substring(0, 4)` returned `""`) and
+the i386-only `V_VT(...) = 5` failures of jscript's `run` suite (2026-10-18). The same guest
+under `VIBEOS_QEMU_WINDOWS_ACCEL=whpx` (the real CPU) gets all of them right.
 
 **Fix:** none in our tree; it is the emulator. `tools/payloads/atodbl` is the check: it runs
 SAHF after each op class, the exact compiled `compare_double` from its raw bytes, and the
