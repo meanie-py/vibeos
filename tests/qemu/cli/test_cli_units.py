@@ -12401,3 +12401,16 @@ def test_fex_build_prerequisites_are_named_up_front(tmp_path):
         f"{tmp_path / 'nope.dll'} absent (the i386 guests' SysWOW64 set): "
         "./vibeos-cli build --arch i386"
     ]
+
+
+def test_payload_not_in_media_advice_keeps_rostests_for_a_winetest_payload(tmp_path):
+    """portwinetest stages build-*/modules/rostests/winetests/... binaries."""
+    d = tmp_path / "tools" / "payloads"
+    (d / "wt").mkdir(parents=True)
+    (d / "wt" / "payload.yaml").write_text(
+        "binaries:\n  - src: build-{arch}/modules/rostests/winetests/pdh/pdh_winetest.exe\n"
+    )
+    (d / "plain").mkdir()
+    (d / "plain" / "payload.yaml").write_text("binaries:\n  - src: tools/payloads/plain/x.exe\n")
+    assert smoke_mod._payload_build_flags(tmp_path, ["wt"]) == " --rostests --keep-going"
+    assert smoke_mod._payload_build_flags(tmp_path, ["plain"]) == ""

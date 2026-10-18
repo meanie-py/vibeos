@@ -602,6 +602,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **i386: a PAC script's `url.substring(0, 4) === 'test'` branch is never taken (open, found
+  2026-10-18, upstream-sync).** jsproxy's winetest line 168: `InternetGetProxyInfo("testa", 4, ...)`
+  with `FindProxyForURL` returning `url + ' ' + host` when the URL starts with "test" gets
+  "DIRECT" back on i386. amd64 passes it. The pre-flip C jsproxy (jsproxy_c.dll staged app-dir;
+  jsproxy is not a KnownDLL) fails it identically, so the fault is below jsproxy: most likely
+  jscript (also Rust) on i386, not yet chased. Repro: `portwinetest` payload on i386, suite
+  `jsproxy_winetest.exe jsproxy`.
+
 - **arm64 FEX: a guest dies when a commit is refused; appstorm64 at 1024M is 53/54 (open,
   found 2026-10-17, human-only).** On 1G `VIBEOS_PAYLOAD=appstorm64` media, the ramdisk leaves
   a 129 MB commit limit. Since copy-on-write and paged pool were charged (`203a6c64d51`, a

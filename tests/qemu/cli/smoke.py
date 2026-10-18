@@ -721,6 +721,21 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
         )
 
 
+def _payload_build_flags(repo: Path, names: list[str]) -> str:
+    """The build flags a payload's staged binaries need: ` --rostests --keep-going` when
+    it stages a winetest or apitest. A plain build turns ENABLE_ROSTESTS back off and
+    cleandead then deletes those binaries, so following the bare
+    `VIBEOS_PAYLOAD=x ./vibeos-cli build` advice failed portwinetest's media build with
+    "src missing: .../pdh_winetest.exe" right after a --rostests build had made it."""
+    for name in names:
+        spec = repo / "tools" / "payloads" / name / "payload.yaml"
+        if spec.is_file() and re.search(
+            r"modules/rostests/(?:winetests|apitests)/", spec.read_text(errors="replace")
+        ):
+            return " --rostests --keep-going"
+    return ""
+
+
 def _staged_payloads(repo: Path, arch: str) -> list[str]:
     """The payload names the last build of this arch stamped into its build dir."""
     import importlib.util
@@ -1785,7 +1800,8 @@ def smoke(args, repo: Path) -> int:
                     status="fail",
                     detail=f"media carries {','.join(staged) or '<none>'}, not {','.join(absent)}",
                     salient=[
-                        f"VIBEOS_PAYLOAD={','.join(wanted)} ./vibeos-cli build --arch {arch}",
+                        f"VIBEOS_PAYLOAD={','.join(wanted)} ./vibeos-cli build --arch {arch}"
+                        + _payload_build_flags(repo, wanted),
                         "then re-run this smoke",
                     ],
                 )
