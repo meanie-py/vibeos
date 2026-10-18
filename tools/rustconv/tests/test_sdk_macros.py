@@ -335,3 +335,20 @@ def test_a_cxx_reference_type_macro_is_a_pointer_alias():
     assert cxx_ref_alias("REFIID", "const IID &") == "pub type REFIID = *const IID;"
     assert cxx_ref_alias("REFCLSID", "const CLSID&") == "pub type REFCLSID = *const CLSID;"
     assert cxx_ref_alias("X", "const IID * const") is None
+
+
+def test_a_parameter_used_as_a_member_name_is_an_ident_fragment():
+    """oleaut32's `V_UNION(A,B) ((A)->n1.n2.n3.B)`: B is a field name, never an expression."""
+    body = low("((__rcv_p0__)->n1.n2.n3.__rcv_p1__)")
+    assert body.endswith(".n1.n2.n3.$p1")
+    assert "$p0:expr, $p1:ident" in render_macro("V_UNION", 2, body)
+    with pytest.raises(LowerError, match="both a field name"):
+        render_macro("X", 1, "(*$p0).$p0")
+
+
+def test_a_subscript_on_a_pointer_is_pointer_arithmetic():
+    """commctrl's DPA_FastGetPtr: `DPA_GetPtrPtr(hdpa)[i]`, a pointer read through `**`."""
+    out = low("(*((void * **)(((BYTE*)(__rcv_p0__)) + sizeof(void *))))[__rcv_p1__]")
+    assert out.startswith("(*((*(") and out.endswith(
+        " as *mut *mut *mut c_void))).add(($p1) as usize))"
+    )

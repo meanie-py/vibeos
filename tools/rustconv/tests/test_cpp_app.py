@@ -1155,6 +1155,26 @@ def test_a_reference_member_of_an_aggregate_static_takes_the_address():
     assert "m_dwBias: (0) as _" in rs
 
 
+def test_an_elaborated_const_table_of_pointers_renders_by_declared_fields():
+    """cabview's `static const struct FOLDERCOLUMN {..} g_Columns[] = {..}`: the `struct`
+    keyword hid it from the zip and the model invented every field name. A raw pointer is
+    not Sync, so the never-written const table is a `static mut`."""
+    m = ModuleModel()
+    fc = ClassModel("FOLDERCOLUMN", "FOLDERCOLUMN", "struct", "f.cpp")
+    fc.fields = [Field("TextId", "BYTE"), Field("pkg", "const GUID *"), Field("pki", "BYTE")]
+    m.classes[fc.qualified] = fc
+    g = GlobalVar(
+        "g_Columns",
+        "const struct FOLDERCOLUMN [2]",
+        "f.cpp",
+        "{ { IDS_A, &FMTID_Storage, PID_STG_NAME }, { IDS_B, &CLSID_X, 0 } }",
+    )
+    rs = cpp_app.aggregate_static(g, cpp_app.Hierarchy(m), m)
+    assert rs is not None and rs.startswith("pub static mut g_Columns: [FOLDERCOLUMN; 2]")
+    assert "TextId: (IDS_A) as _, pkg: core::ptr::addr_of!(FMTID_Storage) as _" in rs
+    assert "pkg: core::ptr::addr_of!(CLSID_X) as _, pki: (0) as _" in rs
+
+
 def test_a_constructor_parameter_named_like_a_rust_keyword_is_escaped():
     """certmgr's CStoreList(StoreType type): the __make/__new wrappers took `type` bare."""
     c = ClassModel("CStoreList", "CStoreList", "class", "s.hpp")

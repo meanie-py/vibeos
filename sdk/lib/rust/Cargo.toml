@@ -905,6 +905,7 @@ members = [
     "spapisup-rust",
     "setupapi-rust",
     "acppage-rust",
+    "cabview-rust",
 ]
 resolver = "2"
 

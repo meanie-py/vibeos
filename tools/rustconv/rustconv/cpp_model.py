@@ -1418,7 +1418,7 @@ class _Extractor:
         `cxx_operator_new[_array]`: `operator new` is no name a C function can have, and
         translate could not extract the body (cicbase.cpp went unbought three times)."""
         sigs = self._overloads.get(n["name"], [])
-        base = n["name"]
+        base = _spelled_name(self, n) or n["name"]
         if base.startswith("operator "):
             base = "cxx_" + base.replace("operator ", "operator_").replace("[]", "_array")
         if len(sigs) < 2:
@@ -1574,7 +1574,14 @@ class _Extractor:
         init = None
         if n.get("inner"):
             init = _ctor_args(self.src.node_text(n["inner"][0]), (name,))
-        if any(g.name == name for g in self.model.globals):
+        seen = next((g for g in self.model.globals if g.name == name), None)
+        if seen is not None:
+            if seen.init is None and init is not None:
+                # The DEFINITION after its declaration: cabview.h's `EXTERN_C const GUID
+                # CLSID_CabFolder;` (no `extern` storage class inside a linkage spec) was seen
+                # first, and keeping it dropped cabview.cpp's DEFINE_GUID value, so the
+                # crate declared the CLSID and defined it nowhere.
+                seen.init, seen.file = init, self.rel(_file_of(n) or "")
             return
         self.model.globals.append(
             GlobalVar(
@@ -1585,6 +1592,26 @@ class _Extractor:
                 n.get("storageClass") == "static",
             )
         )
+
+
+def _spelled_name(ex, n: dict) -> str | None:
+    """The name a module function is WRITTEN with when a header macro renames it.
+    cabview's `inline HRESULT InsertMenuItem(QCMINFO &, ..)` is `InsertMenuItemW` to clang
+    (winuser.h's UNICODE `#define`), a C++ OVERLOAD of user32's. Rust has no overloads:
+    under the clang name it shadowed the import, and its own user32 call bound to itself.
+    Its written spelling is what the module's call sites say, and collides with nothing.
+    A name passed as a macro ARGUMENT (`FNCLOSE(fnFileClose)`) is spelled as written."""
+    loc = n.get("loc") or {}
+    exp = loc.get("expansionLoc")
+    if not exp or "spellingLoc" not in loc or exp.get("isMacroArgExpansion"):
+        return None
+    f, off, tl = exp.get("_file"), exp.get("offset"), exp.get("tokLen")
+    if not f or off is None or not tl or not ex.mine(f):
+        return None
+    word = ex.src.text((f, off, off + tl))
+    if word is None or not re.fullmatch(r"[A-Za-z_]\w*", word) or word == n["name"]:
+        return None
+    return word
 
 
 def _cache_key(argv: list[str], tu: Path) -> str:

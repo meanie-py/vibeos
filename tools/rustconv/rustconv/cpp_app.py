@@ -2119,7 +2119,9 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
         return f"{cls.name} {{ {', '.join(parts)} }}"
 
     body = g.init.strip()
-    mut = "" if const else "mut "
+    # A `static` must be Sync, and a raw pointer is not: cabview's const g_Columns holds
+    # `const GUID *pkg` (E0277). C's const table is never written, so `static mut` is exact.
+    mut = "" if const and not any("*" in f.c_type for f in fields) else "mut "
     if arr:
         items = [v for v in split(body[1:-1]) if v.strip()]
         rendered = [one(v) for v in items]
