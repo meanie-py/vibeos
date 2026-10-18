@@ -1,3 +1,10 @@
+// Keep the allocator in the executable: embedding the library must not select
+// an allocator for its host. Linux also enables mimalloc's C malloc override so
+// transient tree-sitter allocations do not accumulate in separate libc arenas.
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::io::{self, Write};
 use std::path::PathBuf;
 use vibeos_lint::{rules, Corpus, Rule, SourceNeeds};

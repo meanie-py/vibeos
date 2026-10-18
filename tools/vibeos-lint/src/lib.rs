@@ -164,6 +164,17 @@ impl SourceFile {
     /// offsets count UTF-8 bytes or Unicode characters. Cache each exact view;
     /// equivalent users share its allocation and never tokenize it again.
     pub fn masked(&self, regex: &Regex, cutoff: Option<&str>, characters: bool) -> Arc<str> {
+        // Absent cutoff markers leave the entire input intact. On ASCII input,
+        // character and byte masking also produce exactly the same view. Reuse
+        // one allocation for these equivalent legacy scanner configurations.
+        let (raw, cutoff) = cutoff
+            .and_then(|marker| {
+                self.text
+                    .split_once(marker)
+                    .map(|(raw, _)| (raw, Some(marker)))
+            })
+            .unwrap_or((&self.text, None));
+        let characters = characters && !raw.is_ascii();
         let key = (
             regex.as_str().to_owned(),
             cutoff.map(str::to_owned),
@@ -177,9 +188,6 @@ impl SourceFile {
                 .clone()
         };
         slot.get_or_init(|| {
-            let raw = cutoff
-                .and_then(|marker| self.text.split_once(marker).map(|p| p.0))
-                .unwrap_or(&self.text);
             regex
                 .replace_all(raw, |caps: &regex::Captures<'_>| {
                     let text = caps.get(0).unwrap().as_str();
@@ -830,7 +838,10 @@ fn collect_scopes_with_sets(
         let entry = entry?;
         let path = entry.path();
         let kind = entry.file_type()?;
-        if kind.is_symlink() && fs::metadata(&path)?.is_dir() {
+        // A link to a directory is not followed, and a dangling link (a ramdisk
+        // stage's link to a deleted payload under build-<arch>/) has nothing to
+        // read: skip both rather than fail the whole traversal on its ENOENT.
+        if kind.is_symlink() && fs::metadata(&path).map_or(true, |m| m.is_dir()) {
             continue;
         }
         let file_relative = path.strip_prefix(base).unwrap();
@@ -890,7 +901,7 @@ fn collect_scopes_with_sets(
             selected |= CDECL;
         }
         if selected != 0 {
-            if kind.is_symlink() && fs::metadata(&path)?.is_dir() {
+            if kind.is_symlink() && fs::metadata(&path).map_or(true, |m| m.is_dir()) {
                 continue;
             }
             *paths.entry(path).or_default() |= selected;
@@ -1031,6 +1042,24 @@ pub fn execute(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn equivalent_ascii_mask_views_share_the_same_allocation() {
+        let file = SourceFile::new("a.rs".into(), "/* comment */ fn item() {}".into());
+        let regex = Regex::new(r"/\*.*?\*/").unwrap();
+        let bytes = file.masked(&regex, None, false);
+        let characters = file.masked(&regex, Some("ABSENT"), true);
+        let other_marker = file.masked(&regex, Some("ALSO_ABSENT"), false);
+        assert!(Arc::ptr_eq(&bytes, &characters));
+        assert!(Arc::ptr_eq(&bytes, &other_marker));
+        assert_eq!(bytes.as_ref(), "              fn item() {}");
+        // A real cutoff and non-ASCII masked text must keep their semantics.
+        let unicode = SourceFile::new("u.rs".into(), "/*é*/ END tail".into());
+        let bytes = unicode.masked(&regex, None, false);
+        let characters = unicode.masked(&regex, None, true);
+        assert_ne!(bytes.as_ref(), characters.as_ref());
+        assert_eq!(unicode.masked(&regex, Some("END"), true).as_ref(), "      ");
+    }
+
     #[test]
     fn indexed_source_lines_match_str_lines_including_unterminated_cr() {
         for text in ["", "a", "a\n", "\n", "\r", "a\r\nb\r\r\nc\r", "é\n猫"] {
@@ -1290,6 +1319,14 @@ mod tests {
             std::os::unix::fs::symlink(&rust, rust.join("cycle")).unwrap();
             std::os::unix::fs::symlink(rust.join("crate/src/lib.rs"), rust.join("alias.rs"))
                 .unwrap();
+            // Dangling links, in scope and under a build tree, are skipped.
+            std::os::unix::fs::symlink(rust.join("deleted.rs"), rust.join("dangling.rs")).unwrap();
+            fs::create_dir_all(temp.join("build-arm64/boot/ramdisk")).unwrap();
+            std::os::unix::fs::symlink(
+                temp.join("gone/payload.exe"),
+                temp.join("build-arm64/boot/ramdisk/payload.exe"),
+            )
+            .unwrap();
         }
         let corpus = Corpus::load(&temp).unwrap();
         assert!(corpus

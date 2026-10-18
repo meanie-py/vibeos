@@ -7,13 +7,13 @@ pub mod entry_point_cc;
 pub mod fnptr_abi_transmute;
 pub mod hkey_zero_extend;
 pub mod hresult_literals;
-pub mod shadowed_c_define;
 pub mod info_class_literals;
 pub mod init_then_move;
 pub mod let_shadow;
 pub mod list_walk_from_head;
 pub mod misaligned_cast;
 pub mod read_after_clear;
+pub mod shadowed_c_define;
 pub mod variadic_array_arg;
 
 pub mod assert_to_ub;
