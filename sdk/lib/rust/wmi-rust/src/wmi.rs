@@ -94,6 +94,8 @@ pub unsafe extern "system" fn WmiInitialize() -> BOOLEAN {
     driver_name.MaximumLength = 34;
     driver_name.Buffer = DRIVER_NAME_STR.as_ptr() as *mut u16;
 
+    crate::smbios::WmipCaptureLoaderSmbios();
+
     let status = WmipInitializeGuidObjectType();
     if status < 0 {
         return 0u8;
