@@ -2173,11 +2173,21 @@ body) reached from csrss. The sweep after it was clean and identical to the firs
    (payloads `setupapiwinetest` / `setupapiwinetestc`; 461 lines, devinst 481/197 on both).
    The C payload has to import the C as setupapc.dll, because setupapi is a KnownDLL; its
    build.sh says why. STILL OWED from that work: (a) the same before/after on i386, where
-   rpc_try takes the fs:[0] path. (b) The scanner bug the port found (field manual,
-   "an SEH block under another name"): the old scanner gives different bodies for 248 functions
-   in 31 files. Settle which SHIPPED ports were bought truncated, by diffing each one's banked
-   C input (`.responses`) against the new scanner's body. A naive call-coverage audit was all
-   noise (crypt.rs inlines its handle helpers). (c) rpc_epmap.c's RpcEpUnregister calls
+   rpc_try takes the fs:[0] path. (b) DONE 2026-10-17: the scanner-cut audit. 7 functions were bought from a cut body;
+   winspool's GetMonitorUI really shipped without its tail and is hand-completed, and the
+   other six were whole. The same pass found 15 RPC calls the 2026-10-17 sweep missed
+   (dhcpcsvc 4, advapi32 shutdown 3, netapi32 misc/schedule/wksta_new 7, dnsapi 1), now
+   under rpc_try, and made five dead page-fault guards real via ntdll_sys::seh::
+   page_fault_try / rpc_try: comctl32 is_valid/is_valid2, listbox LB_GETTEXT (the C's
+   "Delphi bug" read-only buffer), opengl32 get_context, winspool IntProtectHandle. Not
+   touched: crt-shared's C++ runtime filters (__RTtypeid, rethrow, SE translation), which
+   are documented as deliberate there. `rustconv.bank_drift --fleet` reports 1347 of
+   19714 banked functions whose C moved since purchase, in 214 files. That is a review
+   queue with mixed causes (upstream syncs into dead C, scanner normalizer changes), not a
+   bug list. One found on the way is upstream drift, not a cut: dhcpcsvc-rust's
+   DhcpRequestParams is a faithful port of the C's old `UNIMPLEMENTED; return 0;`, and
+   upstream's c00b0a40358 implementation (client, IDL and the dhcp server's api.c) is in
+   `tools/flipped_upstream_drift.py`'s queue. (c) rpc_epmap.c's RpcEpUnregister calls
    `ept_insert(.., TRUE, ..)`, where Wine calls `ept_delete`. Upstream ReactOS has the same
    line; left as is.
 3. HidPDescription's preparsed-data layout, only if something needs Windows' bytes.

@@ -112,6 +112,8 @@ extern "C" {
 
 // ================= 4. Win32 (stdcall, extern "system" → `_Name@N` on i386) =======================
 extern "system" {
+    // rpcrt4: maps an RPC exception code to a Win32 one, as the C's RpcExcept handlers do.
+    pub fn I_RpcMapWin32Status(Status: c_long) -> c_long;
     pub fn GetProcessHeap() -> HANDLE;
     pub fn HeapAlloc(hHeap: HANDLE, dwFlags: DWORD, dwBytes: usize) -> *mut c_void;
     pub fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: *mut c_void) -> BOOL;

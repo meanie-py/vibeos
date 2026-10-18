@@ -305,13 +305,6 @@ pub unsafe extern "system" fn GetJobW(hPrinter: HANDLE, JobId: DWORD, Level: DWO
         {
             dwErrorCode = rpc_try(|| _RpcGetJob((*pHandle).hPrinter, JobId, Level, pJob, cbBuf, pcbNeeded)).unwrap_or_else(|code| code as _);
         }
-        // RpcExcept(EXCEPTION_EXECUTE_HANDLER): structured exception handling has no Rust
-        // equivalent; the handler is kept, guarded so it is never entered.
-        let rpc_faulted: bool = false;
-        if rpc_faulted {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
-        // RpcEndExcept;
 
         if dwErrorCode == ERROR_SUCCESS {
             // Replace relative offset addresses in the output by absolute pointers.
@@ -341,10 +334,6 @@ pub unsafe extern "system" fn ScheduleJob(hPrinter: HANDLE, dwJobID: DWORD) -> W
             dwErrorCode = rpc_try(|| _RpcScheduleJob((*pHandle).hPrinter, dwJobID)).unwrap_or_else(|code| code as _);
         }
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-        let rpc_exception_raised: bool = false;
-        if rpc_exception_raised {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
 
         if dwErrorCode == ERROR_SUCCESS {
@@ -489,16 +478,8 @@ pub unsafe extern "system" fn SetJobW(hPrinter: HANDLE, JobId: DWORD, Level: DWO
         JobContainer.Level = Level;
         JobContainer.JobInfo.Level1 = pJobInfo as *mut WINSPOOL_JOB_INFO_1;
 
-        // Do the RPC call (RpcTryExcept block; the exception flag is set by the RPC
-        // exception mechanism, which is owned by the integration layer)
-        let rpc_faulted: bool = false;
-        if !rpc_faulted {
-            dwErrorCode = rpc_try(|| _RpcSetJob((*pHandle).hPrinter, JobId, core::ptr::addr_of_mut!(JobContainer), Command)).unwrap_or_else(|code| code as _);
-        } else {
-            // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
-        // RpcEndExcept
+        // Do the RPC call
+        dwErrorCode = rpc_try(|| _RpcSetJob((*pHandle).hPrinter, JobId, core::ptr::addr_of_mut!(JobContainer), Command)).unwrap_or_else(|code| code as _);
     }
 
     SetLastError(dwErrorCode);
