@@ -1,5 +1,5 @@
 //! Per-command observations: sampled simultaneous tree RSS plus kernel-reported
-//! largest-process high-water RSS. Cache-daemon execution is explicitly partial.
+//! largest-process high-water RSS. Local cache workers are request-tagged.
 use super::{code, lock, memory, now, open, profiles, quote, Ticket};
 use std::{
     fs,
@@ -42,6 +42,15 @@ pub fn execute(
         .join(ticket.path.file_name().unwrap());
     let started = Instant::now();
     let start_ms = now();
+    let token = format!(
+        "{}-{}-{}",
+        std::process::id(),
+        start_ms,
+        ticket.path.file_name().unwrap().to_string_lossy()
+    );
+    if cached {
+        cmd.env(crate::cache_memory::MARKER, &token);
+    }
     let child = cmd.spawn()?;
     let mut usage = Usage::default();
     let mut status = 0;
@@ -55,9 +64,23 @@ pub fn execute(
         .name("memory-sampler".into())
         .spawn(move || {
             let mut peak = 0;
+            let mut workers = crate::cache_memory::Workers::new(&token);
+            let mut samples = 0;
             let mut error = None;
             loop {
-                let rss = memory::process_tree_rss_kib(pid);
+                let rss = if cached && samples > 0 {
+                    let mut pids = memory::process_tree_pids(pid);
+                    workers.extend(&mut pids, pid);
+                    memory::process_rss_kib(&pids)
+                } else if cached {
+                    // Delay daemon discovery until 100ms: short cache hits do
+                    // not need a process-table scan. Avoid charging a server
+                    // which has not yet detached from its startup client.
+                    memory::process_rss_kib(&std::collections::HashSet::from([pid]))
+                } else {
+                    memory::process_tree_rss_kib(pid)
+                };
+                samples += 1;
                 peak = peak.max(rss);
                 if error.is_none() {
                     let contents = format!(
@@ -77,7 +100,7 @@ pub fn execute(
                     break;
                 }
             }
-            (peak, error)
+            (peak, error, workers.matched.len(), workers.unreadable)
         });
     let waited = loop {
         let result = unsafe { wait4(child.id() as i32, &mut status, 0, &mut usage) };
@@ -93,7 +116,7 @@ pub fn execute(
     stop.1.notify_one();
     // Even if the OS refused the sampler thread, reap the command above
     // before releasing its leases or returning the telemetry error.
-    let (peak, error) = sampler?
+    let (peak, error, cache_worker_pids, cache_scan_denied) = sampler?
         .join()
         .map_err(|_| io::Error::other("memory sampler panicked"))?;
     waited?;
@@ -110,7 +133,7 @@ pub fn execute(
     let after = memory::snapshot()?;
     let pressure_after = pressure()?;
     let attribution = if cached {
-        "cache-client-tree-only"
+        "request-tagged-local-cache-workers-and-client"
     } else {
         "process-tree-samples-and-wait4"
     };
@@ -120,7 +143,7 @@ pub fn execute(
     );
     let cpu_user_us = usage.user.seconds as i128 * 1_000_000 + usage.user.micros as i128;
     let cpu_system_us = usage.system.seconds as i128 * 1_000_000 + usage.system.micros as i128;
-    let record = format!("{{{},\"profile\":{},\"attribution\":{},\"exit\":{exit},\"queue_ms\":{queued},\"elapsed_ms\":{elapsed},\"sampled_tree_peak_kib\":{peak},\"wait4_maxrss_kib\":{child_peak},\"cpu_user_us\":{cpu_user_us},\"cpu_system_us\":{cpu_system_us},\"memory_pressure_before\":{},\"memory_pressure_after\":{},\"available_before_kib\":{},\"available_after_kib\":{}}}\n", ticket.meta, quote(key), quote(attribution), quote(&pressure_before), quote(&pressure_after), before.available_kib, after.available_kib);
+    let record = format!("{{{},\"profile\":{},\"attribution\":{},\"exit\":{exit},\"queue_ms\":{queued},\"elapsed_ms\":{elapsed},\"sampled_tree_peak_kib\":{peak},\"wait4_maxrss_kib\":{child_peak},\"cache_worker_pids\":{cache_worker_pids},\"cache_scan_denied\":{cache_scan_denied},\"cpu_user_us\":{cpu_user_us},\"cpu_system_us\":{cpu_system_us},\"memory_pressure_before\":{},\"memory_pressure_after\":{},\"available_before_kib\":{},\"available_after_kib\":{}}}\n", ticket.meta, quote(key), quote(attribution), quote(&pressure_before), quote(&pressure_after), before.available_kib, after.available_kib);
     append(root, &record)?;
     Ok(exit)
 }

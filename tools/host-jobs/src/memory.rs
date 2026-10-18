@@ -263,17 +263,24 @@ fn invalid_data(message: impl Into<String>) -> io::Error {
 /// Processes that disappear during the walk are skipped. This is a current
 /// sample and does not claim to capture the tree's peak RSS.
 pub fn process_tree_rss_kib(pid: u32) -> usize {
+    process_rss_kib(&process_tree_pids(pid))
+}
+
+pub fn process_rss_kib(pids: &std::collections::HashSet<u32>) -> usize {
+    pids.iter()
+        .filter_map(|pid| fs::read_to_string(format!("/proc/{pid}/status")).ok())
+        .filter_map(|status| parse_vm_rss_kib(&status))
+        .sum()
+}
+
+pub fn process_tree_pids(pid: u32) -> std::collections::HashSet<u32> {
     let mut pending = vec![pid];
     let mut seen = std::collections::HashSet::new();
-    let mut total = 0usize;
     while let Some(pid) = pending.pop() {
         if !seen.insert(pid) {
             continue;
         }
         let proc_dir = PathBuf::from("/proc").join(pid.to_string());
-        if let Ok(status) = fs::read_to_string(proc_dir.join("status")) {
-            total = total.saturating_add(parse_vm_rss_kib(&status).unwrap_or(0));
-        }
         let task_dir = proc_dir.join("task");
         let Ok(tasks) = fs::read_dir(task_dir) else {
             continue;
@@ -288,7 +295,7 @@ pub fn process_tree_rss_kib(pid: u32) -> usize {
             }
         }
     }
-    total
+    seen
 }
 
 fn parse_vm_rss_kib(text: &str) -> Option<usize> {

@@ -1,5 +1,6 @@
 //! Process-scoped compiler admission. Locks, not PID existence, are authoritative.
 mod admission;
+mod cache_memory;
 mod memory;
 mod profiles;
 mod telemetry;
