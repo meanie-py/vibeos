@@ -1,4 +1,8 @@
 //! Process-scoped compiler admission. Locks, not PID existence, are authoritative.
+mod admission;
+mod memory;
+mod profiles;
+mod telemetry;
 use std::{
     env,
     fs::{self, File, OpenOptions},
@@ -210,6 +214,7 @@ struct Broker {
     root: PathBuf,
     slots: usize,
     links: usize,
+    memory: admission::Policy,
     wakeup: Rc<Wakeup>,
 }
 /// Wake after releasing the mutex. Waking while locked lets a recipient lose
@@ -294,6 +299,7 @@ impl Broker {
             root,
             slots,
             links,
+            memory: admission::Policy::read()?,
             wakeup,
         })
     }
@@ -301,6 +307,11 @@ impl Broker {
         Ok(JobGuard::take(&self.root.join("jobs.lock"), &self.wakeup, false)?.unwrap())
     }
     fn ticket(&self, kind: &str, args: &[std::ffi::OsString]) -> io::Result<Ticket> {
+        let key = profiles::identity(kind, args);
+        let estimate = admission::estimate(kind, args, &self.root, &key)?;
+        if estimate > self.memory.budget {
+            return Err(io::Error::other(format!("job requests {} MiB but memory budget is {} MiB; adjust VIBEOS_HOST_JOB_MEMORY_MIB or VIBEOS_HOST_MEMORY_MIB", estimate / 1024, self.memory.budget / 1024)));
+        }
         let _guard = self.mutex()?;
         let class = env::var("VIBEOS_JOB_CLASS").unwrap_or_else(|_| "interactive".into());
         let rank = rank_of(&class).ok_or_else(|| {
@@ -319,6 +330,10 @@ impl Broker {
             .open(&path)?;
         lock(&file, false)?;
         let meta=format!("\"pid\":{pid},\"created_ms\":{born},\"job_class\":{},\"kind\":{},\"cwd\":{},\"repo\":{},\"owner_pid\":{},\"launcher_pid\":{},\"run_dir\":{},\"cpu_limit\":{},\"link_limit\":{},\"argv\":[{}]",quote(&class),quote(kind),quote(&env::current_dir()?.to_string_lossy()),quote(&env::var("VIBEOS_JOB_REPO").unwrap_or_default()),quote(&env::var("VIBEOS_JOB_OWNER_PID").unwrap_or_default()),quote(&env::var("VIBEOS_JOB_LAUNCHER_PID").unwrap_or_default()),quote(&env::var("VIBEOS_JOB_RUN").unwrap_or_default()),self.slots,self.links,args.iter().map(|s|quote(&s.to_string_lossy())).collect::<Vec<_>>().join(","));
+        let meta = format!(
+            "{meta},\"memory_kib\":{estimate},\"memory_budget_kib\":{},\"memory_headroom_kib\":{}",
+            self.memory.budget, self.memory.headroom
+        );
         write!(file, "{{{meta},\"state\":\"waiting\"}}")?;
         self.wakeup.request();
         Ok(Ticket {
@@ -346,6 +361,12 @@ impl Broker {
             if lock(&f, true)? {
                 match fs::remove_file(&p) {
                     Ok(()) => self.wakeup.request(),
+                    Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(e),
+                }
+                let live = self.root.join("memory-live").join(p.file_name().unwrap());
+                match fs::remove_file(live) {
+                    Ok(()) => {}
                     Err(e) if e.kind() == io::ErrorKind::NotFound => {}
                     Err(e) => return Err(e),
                 }
@@ -387,9 +408,39 @@ impl Broker {
             Ok(None)
         }
     }
+    fn memory_usage(
+        &self,
+        rows: &[(PathBuf, u64, u8, String, String)],
+        exclude: Option<&Path>,
+    ) -> (admission::Policy, usize, usize) {
+        let mut policy = self.memory;
+        let mut reserved = 0usize;
+        let mut unconsumed = 0usize;
+        for (path, _, _, _, body) in rows {
+            policy.budget = policy
+                .budget
+                .min(number(body, "memory_budget_kib").unwrap_or(policy.budget));
+            policy.headroom = policy
+                .headroom
+                .max(number(body, "memory_headroom_kib").unwrap_or(0));
+            if exclude == Some(path.as_path())
+                || !(body.contains("\"state\":\"active\"")
+                    || body.contains("\"state\":\"granted\""))
+            {
+                continue;
+            }
+            let (rss, peak) = admission::live(&self.root, path);
+            let weight = admission::requested(body).max(peak);
+            reserved = reserved.saturating_add(weight);
+            unconsumed = unconsumed.saturating_add(weight.saturating_sub(rss));
+        }
+        (policy, reserved, unconsumed)
+    }
     fn dispatch(&self) -> io::Result<()> {
         let requested = self.wakeup.state().dirty.load(Ordering::Acquire);
         let mut rows = self.rows()?;
+        let (policy, mut reserved, mut unconsumed) = self.memory_usage(&rows, None);
+        let available = memory::snapshot()?.available_kib;
         let occupied = |body: &str| {
             body.contains("\"state\":\"active\"") || body.contains("\"state\":\"granted\"")
         };
@@ -447,7 +498,7 @@ impl Broker {
             .count();
         let reserve = non_negative("VIBEOS_HOST_JOB_LAND_RESERVE", self.slots / 2)?;
         rows.sort_by_key(|r| (effective_rank(r.2, r.1, now()), r.1, r.0.clone()));
-        for (path, _, _, kind, body) in rows {
+        for (path, born, _, kind, body) in rows {
             if !body.contains("\"state\":\"waiting\"") {
                 continue;
             }
@@ -472,6 +523,16 @@ impl Broker {
             } else {
                 None
             };
+            let weight = admission::requested(&body);
+            if !admission::fits(weight, reserved, unconsumed, policy, available) {
+                // An aged large job must eventually drain smaller backfill jobs.
+                if now().saturating_sub(born) >= 120_000 {
+                    break;
+                }
+                continue;
+            }
+            reserved = reserved.saturating_add(weight);
+            unconsumed = unconsumed.saturating_add(weight);
             let cpu = cpus.remove(cpu_pos);
             let mut grant = body.replace("\"state\":\"waiting\"", "\"state\":\"granted\"");
             if grant.pop() != Some('}') {
@@ -512,26 +573,53 @@ impl Broker {
                     }
                     let body = fs::read_to_string(&t.path)?;
                     if body.contains("\"state\":\"granted\"") {
-                        let cpu = number(&body, "cpu_slot")
-                            .ok_or_else(|| io::Error::other("grant missing CPU slot"))?;
-                        if let Some(cpu_lock) = self.slot_at("cpu", cpu)? {
-                            let mut locks = vec![cpu_lock];
-                            if t.kind == "link" {
-                                let link = number(&body, "link_slot")
-                                    .ok_or_else(|| io::Error::other("grant missing link slot"))?;
-                                locks.push(self.slot_at("link", link)?.ok_or_else(|| {
-                                    io::Error::other("reserved link slot occupied")
-                                })?);
+                        // Older dispatchers share this queue and may grant without
+                        // memory checks. Revalidate under the same lock before exec.
+                        // Grants are promises, not running allocations. An old
+                        // dispatcher can over-grant the entire queue. Counting
+                        // those promises here makes every grantee reject every
+                        // other one. Starts are serialized by this mutex: count
+                        // active jobs plus this candidate, then mark it active
+                        // before another candidate can claim memory.
+                        let rows: Vec<_> = self
+                            .rows()?
+                            .into_iter()
+                            .filter(|r| r.0 == t.path || r.4.contains("\"state\":\"active\""))
+                            .collect();
+                        let (policy, reserved, unconsumed) =
+                            self.memory_usage(&rows, Some(&t.path));
+                        if !admission::fits(
+                            admission::requested(&body),
+                            reserved,
+                            unconsumed,
+                            policy,
+                            memory::snapshot()?.available_kib,
+                        ) {
+                            fs::write(&t.path, format!("{{{},\"state\":\"waiting\"}}", t.meta))?;
+                            self.wakeup.request();
+                        } else {
+                            let cpu = number(&body, "cpu_slot")
+                                .ok_or_else(|| io::Error::other("grant missing CPU slot"))?;
+                            if let Some(cpu_lock) = self.slot_at("cpu", cpu)? {
+                                let mut locks = vec![cpu_lock];
+                                if t.kind == "link" {
+                                    let link = number(&body, "link_slot").ok_or_else(|| {
+                                        io::Error::other("grant missing link slot")
+                                    })?;
+                                    locks.push(self.slot_at("link", link)?.ok_or_else(|| {
+                                        io::Error::other("reserved link slot occupied")
+                                    })?);
+                                }
+                                let active =
+                                    body.replace("\"state\":\"granted\"", "\"state\":\"active\"");
+                                fs::write(&t.path, &active)?;
+                                // The cached-command guardian preserves slot metadata.
+                                t.meta = active
+                                    .trim_start_matches('{')
+                                    .trim_end_matches('}')
+                                    .replace(",\"state\":\"active\"", "");
+                                return Ok(locks);
                             }
-                            let active =
-                                body.replace("\"state\":\"granted\"", "\"state\":\"active\"");
-                            fs::write(&t.path, &active)?;
-                            // The cached-command guardian preserves slot metadata.
-                            t.meta = active
-                                .trim_start_matches('{')
-                                .trim_end_matches('}')
-                                .replace(",\"state\":\"active\"", "");
-                            return Ok(locks);
                         }
                     }
                 }
@@ -542,11 +630,14 @@ impl Broker {
     fn status(&self) -> io::Result<()> {
         let _guard = self.mutex()?;
         let rows = self.rows()?;
+        let (policy, reserved, unconsumed) = self.memory_usage(&rows, None);
+        let available = memory::snapshot()?.available_kib;
         println!(
-            "{{\"cpu_slots\":{},\"link_slots\":{},\"legacy_adjusted_cpu_slots\":{},\"jobs\":[{}]}}",
+            "{{\"cpu_slots\":{},\"link_slots\":{},\"legacy_adjusted_cpu_slots\":{},\"memory_budget_kib\":{},\"memory_reserved_kib\":{},\"memory_unconsumed_kib\":{},\"memory_available_kib\":{},\"memory_headroom_kib\":{},\"metrics_path\":{},\"jobs\":[{}]}}",
             self.slots,
             self.links,
             self.legacy_budget()?,
+            policy.budget, reserved, unconsumed, available, policy.headroom, quote(&self.root.join("job-metrics.jsonl").to_string_lossy()),
             rows.iter()
                 .map(|r| r.4.clone())
                 .collect::<Vec<_>>()
@@ -613,7 +704,7 @@ fn run() -> io::Result<i32> {
     let kind = if args.first().is_some_and(|s| s == "--kind") {
         if args.len() < 4 || args[2] != "--" {
             return Err(io::Error::other(
-                "usage: host-jobs --kind compile|link -- command [args]",
+                "usage: host-jobs --kind compile|link|lint -- command [args]",
             ));
         }
         let k = args[1].to_string_lossy().into_owned();
@@ -626,8 +717,10 @@ fn run() -> io::Result<i32> {
         }
         rust_kind(&args).into()
     };
-    if !matches!(kind.as_str(), "compile" | "link") || args.is_empty() {
-        return Err(io::Error::other("expected compile/link kind and command"));
+    if !matches!(kind.as_str(), "compile" | "link" | "lint") || args.is_empty() {
+        return Err(io::Error::other(
+            "expected compile/link/lint kind and command",
+        ));
     }
     cached |= Path::new(&args[0])
         .file_name()
@@ -638,6 +731,7 @@ fn run() -> io::Result<i32> {
         return Ok(code(cmd.status()?));
     }
     let b = Broker::new()?;
+    let key = profiles::identity(&kind, &args);
     let mut ticket = b.ticket(&kind, &args)?;
     let locks = b.admit(&mut ticket)?;
     cmd.env("VIBEOS_HOST_JOB_HELD", "1");
@@ -662,7 +756,7 @@ fn run() -> io::Result<i32> {
                     std::process::id()
                 )?;
                 drop(_guard);
-                Ok(code(cmd.status()?))
+                telemetry::execute(&mut cmd, &b.root, &ticket, &key, cached)
             })();
             let exit = match result {
                 Ok(c) => c,
@@ -692,7 +786,7 @@ fn run() -> io::Result<i32> {
         for f in locks.iter().chain(std::iter::once(&ticket.file)) {
             inherit(f.as_raw_fd())?;
         }
-        Ok(code(cmd.status()?))
+        telemetry::execute(&mut cmd, &b.root, &ticket, &key, cached)
     }
 }
 fn rust_kind(args: &[std::ffi::OsString]) -> &'static str {
