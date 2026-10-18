@@ -3373,7 +3373,9 @@ which `MmDbgCopyMemory` reads as WRITE, so every debugger read wrote; the ICIF p
 3, 0x10 and 0x200|0x400 at the call sites against a consumer testing 0x20, and se's
 `ICIF_SIZE_VARIABLE = 0x08` made `GetTokenInformation(TokenOwner)`'s size probe fail. Give the
 set ONE definition beside its consumer and import it; a deliberate divergence takes
-`// nolint: shadowed-c-define (why)` on the const's line.
+`// nolint: shadowed-c-define (why)` on the const's line. A generated bindgen island goes STALE the same
+way when upstream renumbers a header after generation: syssetup's showed swapped icons for
+two months. The rule checks islands against their module's own tree for exactly that.
 - **Fix deterministically:** `ntkrnl_sys::bugcodes::NAME` from `tools/gen_bugcodes.py`;
   `tools/rustconv/rustconv/verify_constants.py` (`--enums`, `--fix`) against a header catalog;
   `tools/scan_bugcheck_codes.py` (empty baseline, gate-wired).

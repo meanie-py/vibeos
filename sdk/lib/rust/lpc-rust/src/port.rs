@@ -89,7 +89,9 @@ const LPCP_MAX_MESSAGE_SIZE: ULONG = {
 const LPCP_PORT_TYPE_MASK: ULONG = 0x0000000F;
 const LPCP_COMMUNICATION_PORT: ULONG = 0x00000003;
 const LPCP_SECURITY_DYNAMIC: ULONG = 0x80000000;
-const LPCP_THREAD_FLAG_NO_IMPERSONATION: usize = 0x00000001;
+// lpc.h. The port had 1, which is LPCP_THREAD_FLAG_IS_PORT: a client blocked with
+// its port tagged into LpcReplyMessage could not be impersonated.
+const LPCP_THREAD_FLAG_NO_IMPERSONATION: usize = 0x00000002;
 
 #[no_mangle]
 pub static mut LpcPortObjectType: POBJECT_TYPE = core::ptr::null_mut();

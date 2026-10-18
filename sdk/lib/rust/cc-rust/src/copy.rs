@@ -61,12 +61,14 @@ const EXCEPTION_CONTINUE_SEARCH: i32 = 0;
 const EXCEPTION_EXECUTE_HANDLER: i32 = 1;
 const MDL_PAGES_LOCKED: i16 = 0x0002;
 const MDL_MAPPED_TO_SYSTEM_VA: i16 = 0x0001;
-const PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE: u32 = 0x0001;
+// cctypes.h (1 << 16), the bit Flags.ReadAheadActive() reads. The port had 0x1
+// (DontUse), so the flag was never seen set and every read posted another read-ahead.
+const PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE: u32 = 1 << 16;
 const VACB_MAPPING_GRANULARITY: ULONG = 262144;
 const STATUS_ACCESS_VIOLATION: NTSTATUS = 0xC0000005u32 as NTSTATUS;
 const STATUS_PENDING: NTSTATUS = 0x00000103;
 const MI_USAGE_CACHE: u32 = ntkrnl_sys::ddk::_MI_PFN_USAGES_MI_USAGE_CACHE as u32; // was 7
-const MC_SYSTEM: u32 = 0;
+const MC_SYSTEM: u32 = 1; // mm.h; 0 is MC_USER
 const CACHE_MANAGER: u32 = 0x00000034;
 
 const FirstTry: u8 = 0;

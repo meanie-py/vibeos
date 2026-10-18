@@ -602,6 +602,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Directory change notification: 19 Wine `change` failures left after the fsrtl fix (open,
+  found 2026-10-17, smp-bringup).** `FsRtlNotifyFilterReportChange` was an empty placeholder,
+  so no watch ever completed with data. It is now translated, along with the lost-IRP
+  `goto HandleIRP` in FilterChangeDirectory and the NOTIFY_IMMEDIATELY/WATCH_TREE bit
+  collision. Payload `changewinetest` (amd64, `20261017-222313-pck9pxts`): kernel32:change
+  333 checks / 12 failures, ntdll:change 82 / 7, no hangs. Whether the C shares them is
+  UNVERIFIED. A C-oracle swap of notify.c does not link, because the kernel's cargo cell does
+  not take ntos.cmake objects. At least ntdll 279-280 is the C's own behaviour:
+  NotifyChange->BufferLength is fixed at the first watch, which had length 0.
+- **syssetup's bindgen island needs a real regeneration (owed, 2026-10-17).** It predates
+  upstream 5653298fed6 renumbering `resource.h`. The 11 stale ids (swapped check/arrow icons,
+  off-by-one task bitmaps and checkboxes, IDS_DEFAULT) are hand-corrected in `types_*.rs`.
+  `gen_driver_types.sh syssetup` regenerates the island but leaves 33 errors per arch. That
+  output is parked in stash "smp-bringup: syssetup island full regen (33 errors/arch),
+  2026-10-17".
+
 - **arm64 FEX: a guest dies when a commit is refused; appstorm64 at 1024M is 53/54 (open,
   found 2026-10-17, human-only).** On 1G `VIBEOS_PAYLOAD=appstorm64` media, the ramdisk leaves
   a 129 MB commit limit. Since copy-on-write and paged pool were charged (`203a6c64d51`, a

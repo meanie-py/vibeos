@@ -270,7 +270,7 @@ pub const SYNCH_LEVEL: u8 = 0x1D - 2; // 27
 #[cfg(all(feature = "smp", target_arch = "x86_64"))]
 pub const SYNCH_LEVEL: u8 = 14 - 2; // 12
 #[cfg(all(feature = "smp", target_arch = "aarch64"))]
-pub const SYNCH_LEVEL: u8 = 14 - 2; // 12
+pub const SYNCH_LEVEL: u8 = 14 - 2; // 12; nolint: shadowed-c-define (internal/arm64/ke.h's is the UP value)
 
 // Exported for ke_rust_shims.c's amd64 KeRaiseIrqlToSynchLevel CR8 shim (the
 // only out-of-line provider of that export on amd64) so the C side raises to
