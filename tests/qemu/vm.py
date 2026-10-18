@@ -2341,7 +2341,11 @@ class QemuVM:
         on its own EHCI controller. A stick is a 64M MBR disk with one FAT
         partition (the SuperSpeed one FAT32) holding USB_STICK_FILE, so a guest
         that mounts it has something known to read back. The image lives beside
-        scratch_path so the windows-host backend stages it like any other media."""
+        scratch_path so the windows-host backend stages it like any other media.
+        EHCI is pinned to PCI slot 0xb, next to xHCI's 8, NVMe's 9 and AHCI's 0xa:
+        auto-assigned, it takes slot 2 from arm64's boot disk, whose `Pci(0x2,0x0)`
+        path is saved in efivars, and UEFI falls through to PXE (the first arm64
+        stortest run)."""
         if not self._usb_disk_enabled():
             return []
         usb_disk = self.scratch_path.parent / "usbdisk.qcow2"
@@ -2362,7 +2366,7 @@ class QemuVM:
             return [*drive, "-drive", f"file={ss_disk},format=qcow2,if=none,id=usbstor1"]
         return [
             "-device",
-            "usb-ehci,id=xehci",
+            "usb-ehci,id=xehci,addr=0xb",
             *drive,
             "-device",
             "usb-storage,bus=xehci.0,drive=usbstor0",
