@@ -126,6 +126,12 @@ pub unsafe extern "system" fn GetProtoOpenNetworkDatabase(Name: PCHAR) -> HANDLE
         core::ptr::addr_of_mut!(DatabaseKey),
     ) as INT;
 
+    // Divergence from the C: with Tcpip\Parameters present (a configured NIC) but no
+    // DatabasePath value (nothing in our hives sets one), it expanded an uninitialised
+    // zero-byte block as the directory, so getprotobyname() depended on whether the NIC had
+    // been configured yet. Any failure falls back to the default directory, as in mswsock's
+    // OpenNetworkDatabase.
+    let mut have_path = false;
     if ErrorCode == (NO_ERROR as i32) {
         ErrorCode = RegQueryValueExA(
             DatabaseKey,
@@ -136,31 +142,39 @@ pub unsafe extern "system" fn GetProtoOpenNetworkDatabase(Name: PCHAR) -> HANDLE
             core::ptr::addr_of_mut!(RegSize),
         ) as INT;
 
-        let DatabasePath = HeapAlloc(WsSockHeap, 0, RegSize as SIZE_T) as PCHAR;
-        if DatabasePath.is_null() {
-            HeapFree(WsSockHeap, 0, ExpandedPath as PVOID);
-            return INVALID_HANDLE_VALUE;
+        if ErrorCode == (NO_ERROR as i32) && RegSize != 0 {
+            // One byte more than the value, for a terminator the registry need not store.
+            let DatabasePath = HeapAlloc(WsSockHeap, 0, (RegSize + 1) as SIZE_T) as PCHAR;
+            if DatabasePath.is_null() {
+                RegCloseKey(DatabaseKey);
+                HeapFree(WsSockHeap, 0, ExpandedPath as PVOID);
+                return INVALID_HANDLE_VALUE;
+            }
+
+            ErrorCode = RegQueryValueExA(
+                DatabaseKey,
+                b"DatabasePath\0".as_ptr() as LPCSTR,
+                core::ptr::null_mut(),
+                core::ptr::addr_of_mut!(RegType),
+                DatabasePath as LPBYTE,
+                core::ptr::addr_of_mut!(RegSize),
+            ) as INT;
+            if ErrorCode == (NO_ERROR as i32) {
+                *DatabasePath.add(RegSize as usize) = 0;
+                let n = ExpandEnvironmentStringsA(
+                    DatabasePath as LPCSTR,
+                    ExpandedPath as LPSTR,
+                    MAX_PATH as DWORD,
+                );
+                have_path = n != 0 && n <= MAX_PATH as DWORD && *ExpandedPath != 0;
+            }
+
+            HeapFree(WsSockHeap, 0, DatabasePath as PVOID);
         }
 
-        ErrorCode = RegQueryValueExA(
-            DatabaseKey,
-            b"DatabasePath\0".as_ptr() as LPCSTR,
-            core::ptr::null_mut(),
-            core::ptr::addr_of_mut!(RegType),
-            DatabasePath as LPBYTE,
-            core::ptr::addr_of_mut!(RegSize),
-        ) as INT;
-
         RegCloseKey(DatabaseKey);
-
-        ExpandEnvironmentStringsA(
-            DatabasePath as LPCSTR,
-            ExpandedPath as LPSTR,
-            MAX_PATH as DWORD,
-        );
-
-        HeapFree(WsSockHeap, 0, DatabasePath as PVOID);
-    } else {
+    }
+    if !have_path {
         GetSystemDirectoryA(ExpandedPath as LPSTR, MAX_PATH as UINT);
         if *ExpandedPath.offset(
             (strlen(ExpandedPath as *const core::ffi::c_char) as core::ffi::c_ulonglong)

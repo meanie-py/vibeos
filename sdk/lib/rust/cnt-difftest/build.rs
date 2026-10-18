@@ -112,13 +112,13 @@ fn main() {
         // _memicmp. memicmp.c pulls <precomp.h> (refstub: CDECL, EINVAL,
         // MSVCRT_INVALID_PMT no-op, host <ctype.h> toupper == ASCII fold
         // in the C locale == mem::icmp::up). Supply NtCurrentPeb() with
-        // OSMajorVersion=5 (the NT 5.x kernel) so the Vista NULL/
-        // _NLSCMPERROR guard is dead — pinning the deployed behavior;
-        // NULL is never validly passed (UB in C, not fuzzed).
+        // OSMajorVersion=10 (the Windows 10/11 version the tree reports
+        // after the flip) so the Vista NULL/_NLSCMPERROR guard is LIVE and
+        // graded: NULL with n!=0 → _NLSCMPERROR, NULL with n==0 → 0.
         ("memccpy", format!("#define __cdecl\n#define _memccpy ref_memccpy\n{}", inc(s("mem/memccpy.c")))),
         ("memicmp", format!(
             "struct cnt_peb {{ unsigned long OSMajorVersion; }};\n\
-             static struct cnt_peb cnt_peb_v = {{ 5 }};\n\
+             static struct cnt_peb cnt_peb_v = {{ 10 }};\n\
              #define NtCurrentPeb() (&cnt_peb_v)\n\
              #define _NLSCMPERROR 0x7fffffff\n\
              #define _memicmp ref_memicmp\n{}",

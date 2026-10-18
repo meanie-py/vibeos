@@ -1,0 +1,36 @@
+# mydocs (dll/shellext/mydocs -> mydocs-rust, `port cppapp`): the drop handler behind SendTo's
+# "My Documents". The live CD never drops on it, so smoke reaches none of this.
+# probes/droptarget.c, staged twice: as mydocs_c.exe it loads the pre-flip C (mydocs_c.dll,
+# from c_oracle.cmake) beside it, as mydocs_probe.exe the system mydocs.dll. Both print only
+# values, so the outputs must match byte for byte.
+module: mydocs
+variants:
+  c: '%SystemRoot%\bin\modrun\mydocs_c.exe'
+  rust: '%SystemRoot%\bin\modrun\mydocs_probe.exe'
+ninja: [mydocs_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/droptarget-{arch}.exe', dest: bin/modrun/mydocs_c.exe}
+  - {src: 'tools/payloads/modrun/probes/droptarget-{arch}.exe', dest: bin/modrun/mydocs_probe.exe}
+  - {src: 'build-{arch}/dll/shellext/mydocs/mydocs_c.dll', dest: bin/modrun/mydocs_c.dll}
+cases:
+  - id: drop
+    arches: [amd64, arm64]
+    expect: ['module mydocs', 'class object 00000000', 'create 00000000',
+             'qi persist 00000000', 'persist is persistfile 1', 'class id 00000000 match=1',
+             'dragenter 00000000 effect=1', 'drop null 80004003 effect=0', 'drop 00000000',
+             'alpha.txt: present', 'beta.txt: present',
+             'register 00000000', 'probe done']
+    timeout: 120
+  # i386: the C and the Rust crash identically inside the handler's SHFileOperationW (FO_COPY
+  # with progress UI), jumping to EIP 0x7f right after winmm loads its drivers. Not the port:
+  # it is in the copy UI below it (roadmap, known bugs). sendmail's drop, which makes no
+  # SHFileOperation call, passes there.
+  - id: drop-copyui
+    arches: [i386]
+    xfail: 'SHFileOperationW with progress UI crashes in the i386 guest (EIP 0x7f)'
+    expect: ['module mydocs', 'class object 00000000', 'create 00000000',
+             'qi persist 00000000', 'persist is persistfile 1', 'class id 00000000 match=1',
+             'dragenter 00000000 effect=1', 'drop null 80004003 effect=0', 'drop 00000000',
+             'alpha.txt: present', 'beta.txt: present',
+             'register 00000000', 'probe done']
+    timeout: 30

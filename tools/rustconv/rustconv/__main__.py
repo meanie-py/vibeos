@@ -365,7 +365,7 @@ def resolve_c_path(path_str: str) -> Path:
     sys.exit(1)
 
 
-def _exports_lost_to_unextracted(scan) -> set[str]:
+def _exports_lost_to_unextracted(scan, target=None) -> set[str]:
     """Names the module's .spec EXPORTS that the scanner failed to extract.
 
     `scan.unextracted` entries are free text ("* cp @ L69", "Cls::m @ L120") because the
@@ -373,7 +373,11 @@ def _exports_lost_to_unextracted(scan) -> set[str]:
     have. Recover it from the C instead: any spec export whose definition is present in
     the source but absent from `scan.functions` was lost in the parse.
     """
-    target = detect_target(scan.path)
+    # The caller's RESOLVED target, never a re-detection from the path: `port headers`
+    # translates sdk/include/reactos/shellutils.h for sendmail with --target, and
+    # detect_target raised on the header's path before a single body was bought.
+    if target is None:
+        target = detect_target(scan.path)
     if target is None or not target.spec_file or not target.spec_file.is_file():
         return set()
     try:
@@ -410,7 +414,7 @@ def _exports_lost_to_unextracted(scan) -> set[str]:
     return lost
 
 
-def _gate_unextracted(scan, allow_partial: bool):
+def _gate_unextracted(scan, allow_partial: bool, target=None):
     """Fail-loud gate: refuse to run a paid per-function translation over a
     file whose bodies the scanner could only PARTIALLY extract (C++ methods —
     explorer tier-B/C files surface 1-6 of dozens). AGENTS.md fail-loud rule:
@@ -441,7 +445,7 @@ def _gate_unextracted(scan, allow_partial: bool):
         # actually calls — would have been dropped from a paid run with a warning nobody
         # reads. A lost export is never an artifact. Cross-check the drop against the
         # module's .spec and HARD FAIL on a hit, per the fail-loud rule.
-        lost = sorted(_exports_lost_to_unextracted(scan))
+        lost = sorted(_exports_lost_to_unextracted(scan, target))
         if lost:
             print(
                 f"\n✗ {scan.path.name}: {len(lost)} SPEC-EXPORTED function(s) are in the "
@@ -1587,7 +1591,7 @@ def cmd_submit(args):
         else parse_spec()
     )
     scan = scan_file(path)
-    _gate_unextracted(scan, getattr(args, "allow_partial", False))
+    _gate_unextracted(scan, getattr(args, "allow_partial", False), target)
     res = resolve(scan, catalog, spec)
 
     model = resolve_model(args.model)
@@ -1730,7 +1734,7 @@ def cmd_batch(args):
     resolves = {}
     for cf in c_files:
         scan = scan_file(cf)
-        _gate_unextracted(scan, getattr(args, "allow_partial", False))
+        _gate_unextracted(scan, getattr(args, "allow_partial", False), target)
         scans[cf.name] = scan
         res = resolve(scan, catalog, spec)
         resolves[cf.name] = res
@@ -2279,7 +2283,7 @@ def cmd_probe_migrate(args):
         print("\nRun `python -m rustconv check` to verify compilation.", file=sys.stderr)
 
 
-def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
+def _module_pinned_macros(c_file: Path, args, *, bare_as_one: bool = False) -> dict[str, int]:
     """`-DNAME=<int>` the build puts on EVERY compile of `c_file`, from its CMakeLists.
 
     Feeds `never_compiled_lines`, so it decides what is on the bill: msvcrt pins
@@ -2292,6 +2296,10 @@ def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
 
     Best-effort by design — an unparseable or absent CMakeLists yields `{}`, which is
     exactly the pre-existing behaviour (more paid calls, never a dropped body).
+
+    `bare_as_one` also counts a bare `-DNAME` (and a UNICODE module's UNICODE/_UNICODE) as
+    `NAME=1`, as C does -- the call seal's view, where deciding an arm LIVE only makes its
+    calls required. Off for the bill: deciding a body dead on it would drop the body.
     """
     cmake = c_file.resolve().parent / "CMakeLists.txt"
     # A TU can live one directory down from the CMakeLists that lists it
@@ -2320,7 +2328,12 @@ def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
                 continue
             if wanted not in {p.resolve() for p in module.compiled_tus}:
                 continue
-            here = pinned_int_macros(module.definitions)
+            defs = list(module.definitions)
+            if bare_as_one:
+                defs = [d if "=" in d else f"{d}=1" for d in defs]
+                if module.unicode:
+                    defs += ["-DUNICODE=1", "-D_UNICODE=1"]
+            here = pinned_int_macros(defs)
             if agreed is None:
                 agreed = here
             else:
@@ -3011,7 +3024,7 @@ def cmd_translate(args):
                 "attempt_id": getattr(result, "attempt_id", None),
             }
 
-        _gate_unextracted(scan, getattr(args, "allow_partial", False))
+        _gate_unextracted(scan, getattr(args, "allow_partial", False), rustconv_target)
         file_res = file_resolve(scan, catalog, spec)
         subsystem = c_file.parent.name
 
@@ -3299,6 +3312,13 @@ def cmd_translate(args):
             for dep in sorted_deps
         }
 
+        # The TU's own defines settle some `#if` arms LIVE, and those arms' calls are then
+        # required (rundll32's `#ifdef UNICODE WideCharToMultiByte`). Measured before it was
+        # turned on: `python -m rustconv.live_arm_audit` over every flipped TU found no
+        # shipped body that drops a live-arm call the seal would require.
+        seal_pinned = (
+            _module_pinned_macros(c_file, args, bare_as_one=True) if call_seal_enabled else None
+        )
         call_seals = (
             {
                 dep.name: seal_calls(
@@ -3309,6 +3329,7 @@ def cmd_translate(args):
                     receiver_callees=receivers_by_dep[dep.name],
                     callee_cpp_names=callee_cpp_names,
                     hwnd_receiver_callees=hwnd_by_dep[dep.name],
+                    pinned=seal_pinned,
                 )
                 for dep in sorted_deps
             }
@@ -4203,7 +4224,7 @@ def cmd_translate(args):
                         )
                         print(
                             f"  [{fi}] {dp.name} OK ({r.input_tokens}/{r.output_tokens})"
-                            f"  [running ${running_cost:.2f}]",
+                            f"  [running ${running_cost:.4f}]",
                             file=sys.stderr,
                         )
                         if cost_cap is not None and running_cost >= cost_cap:
@@ -4231,7 +4252,13 @@ def cmd_translate(args):
                             r.cache_read_tokens,
                             cache_write_tokens=r.cache_write_tokens,
                         )
-                        print(f"  [{fi}] {dp.name} FAIL: {r.error}", file=sys.stderr)
+                        # The running figure on a FAIL line too: `port translate` bills a
+                        # run by the last one printed, and a run ending in failures (Batch
+                        # H's DriveDlgProc, two 32K-token truncations) read as $0.0000.
+                        print(
+                            f"  [{fi}] {dp.name} FAIL: {r.error}  [running ${running_cost:.4f}]",
+                            file=sys.stderr,
+                        )
                         parallel_errors.append(f"{dp.name}: {r.error}")
             if parallel_errors:
                 raise CppComError(
@@ -4489,7 +4516,7 @@ def cmd_translate(args):
                     )
                     print(
                         f"OK ({result.input_tokens} in / {result.output_tokens} out)"
-                        f"  [running ${running_cost:.2f}]",
+                        f"  [running ${running_cost:.4f}]",
                         file=sys.stderr,
                     )
                 else:
@@ -4520,7 +4547,7 @@ def cmd_translate(args):
                     error=result.error,
                     **_result_fields(result, elapsed_ms),
                 )
-                print(f"FAIL: {result.error}", file=sys.stderr)
+                print(f"FAIL: {result.error}  [running ${running_cost:.4f}]", file=sys.stderr)
 
             # Hard cost cap — stop before the next (paid) call if we've crossed it.
             if cost_cap is not None and running_cost >= cost_cap:
@@ -4736,7 +4763,8 @@ def cmd_translate(args):
                 # "Stitching without preamble" silently ships a crate missing all
                 # of them, so this is a hard failure, not a warning.
                 raise RuntimeError(
-                    f"preamble translation FAILED for {c_file.name}: {pre_res.error}\n"
+                    f"preamble translation FAILED for {c_file.name}: {pre_res.error}"
+                    f"  [running ${running_cost:.4f}]\n"
                     "  Refusing to stitch without it — the result would be missing every\n"
                     "  file-scope struct/typedef/table. Re-run (the per-function work is\n"
                     "  cached in .responses/, so the retry only re-pays for the preamble)."

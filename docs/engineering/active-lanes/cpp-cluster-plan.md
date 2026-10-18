@@ -58,13 +58,14 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
 
 ## Shell extensions (from 2026-10-17)
 
-**RESUME HERE (2026-10-17):** mmcshext is the first shell extension and the first module on
-`atl_rust::dll` (CComModule, object map, class factory, `.rgs` registrar; pipeline doc).
-$0.01 on Haiku, 0 errors x3, `port replay mmcshext` rebuilds it at $0, and
-`tools/payloads/modrun/suites/mmcshext.yaml` grades it against its C. Next in the queue:
-sendmail, mydocs (same shape, one class each), then acppage, cabview, stobject, fontext,
-ntobjshex, netshell, zipfldr. Landing is a merge request to `vibeos-integration-f2`. The
-named stash `6298017a93468426bae860a6887d8112086980cf` (whitespace churn) is safe to drop.
+**RESUME HERE (2026-10-17, later):** mmcshext, sendmail and mydocs are flipped, all on
+`atl_rust::dll` (CComModule, object map, class factory, `.rgs` registrar; pipeline doc), with
+modrun suites `mmcshext`, `sendmail`, `mydocs` against their C. $0.06 on Haiku for the three;
+`port replay <stem>` rebuilds each at $0. Next in the queue: acppage, cabview, stobject,
+fontext, ntobjshex, netshell, zipfldr. Landing is a merge request to `vibeos-integration-30`
+(the integrator was `-f2` before a restart). New linters are Rust rules in
+`tools/vibeos-lint`, never `tools/*.py`. The named stash
+`6298017a93468426bae860a6887d8112086980cf` (whitespace churn) is safe to drop.
 
 ## rapps (FLIPPED 2026-10-15)
 
@@ -104,6 +105,15 @@ Rust — don't requeue it.)
 
 ## Owed
 
+- cppapp worker bodies drop the C++'s wine debug prints: 88 `ERR`/`FIXME`/`WARN` calls came
+  back as `// ERR(...)` comments across msctf (11 files), msctfime, sendmail, mydocs. Only the
+  debug channel loses them, but it is the cluster's whole debug surface. Lower them in
+  cpp_lower to `WINE_ERR!`/`WINE_FIXME!` (win32macros-rust) before the model sees the body.
+- The worker contract's `T__zeroed()` / `x.__ctor_N()` rule is read as covering ATL types too:
+  sendmail came back with `CStringW__zeroed()` + `__ctor_1(p)` for `CStringW s(p)` (hand-fixed
+  and banked). Saying in the contract that ATL types use their atl_rust API changes prompt
+  text, so do it when a re-buy is planned anyway, or lower ATL locals deterministically in
+  cpp_lower (`CStringW x(p)` -> `CStringW::from_ptr(p)`), which costs nothing.
 - Deterministic lowering of per-arch `#if` chains in C++ synthetic units (drwtsn32's
   CONTEXT access was hand-written as `cfg` blocks instead).
 - certmgr's hand-ported `src/rosctrls.rs`: rosctrls.h is now modeled by cppapp (rapps), so

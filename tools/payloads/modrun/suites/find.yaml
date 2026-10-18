@@ -20,6 +20,12 @@ cases:
   - apple pie
 - id: ignorecase
   args: /I "apple" %SystemRoot%\bin\modrun\data\lines.txt
+  diverge:
+  - why: "the C's unsigned cch1 - cch2 let the empty line match: it compared past the line"
+    # Both variants also print a blank line before the file header; the pattern drops every
+    # blank line on both sides, so only the C's extra one differs.
+    c: '^$'
+    rust: '^$'
 - id: count
   args: /C "an" %SystemRoot%\bin\modrun\data\lines.txt
 - id: invert-number
@@ -36,3 +42,10 @@ cases:
   args: '"x" %SystemRoot%\bin\modrun\data\nosuch.txt'
 - id: usage
   args: /?
+# /I with a search string longer than every line: the C's unsigned `cch1 - cch2` wrapped and
+# CompareStringW was handed offsets far past the line, so this case runs the Rust alone.
+- id: ignorecase_long_needle
+  variants:
+    rust: '%SystemRoot%\system32\find.exe'
+  args: /I /C "a search string longer than any line in this little file" %SystemRoot%\bin\modrun\data\lines.txt
+  expect: [': 0']

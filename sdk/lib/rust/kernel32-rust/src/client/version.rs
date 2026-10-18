@@ -7,15 +7,80 @@ use crate::substrate::SetLastError;
 #[inline]
 fn NT_SUCCESS(s: NTSTATUS) -> bool { s >= 0 }
 
+// RtlVerifyVersionInfo's comparison, compiled in here without its #[no_mangle] exports
+// (they are behind rtl-version's "exports" feature, which this crate does not have).
+#[allow(unused_attributes, dead_code)]
+#[path = "../../../rtl-version/src/lib.rs"]
+mod rtlver;
+
+// ---- Windows' manifest rule -------------------------------------------------------------
+//
+// GetVersion, GetVersionEx and VerifyVersionInfo report the real version capped at the
+// highest OS the process manifest declares support for (its supportedOS GUIDs), and never
+// below 6.2: an undeclared process on Windows 10 or 11 is told Windows 8 (6.2.9200), one
+// declaring 8.1 is told 6.3.9600, one declaring 10 gets the truth. RtlGetVersion is never
+// capped. While the real version is 6.2 or less nothing changes.
+
+/// compat_undoc.h's ReactOS_ShimData, where ntdll records the highest declared OS.
+#[repr(C)]
+struct ReactOS_ShimData {
+    dwReserved1: [u32; 130],
+    dwSize: u32,
+    dwMagic: u32,
+    dwReserved2: [u32; 242],
+    dwRosProcessCompatVersion: u32,
+    #[cfg(target_arch = "x86_64")]
+    RtlGetCurrentDirectory_U_RtlpMsysDecoy: *mut c_void,
+}
+const REACTOS_SHIMDATA_MAGIC: u32 = 0xAC0D_EDAB;
+const REACTOS_COMPATVERSION_IGNOREMANIFEST: u32 = 0xFFFF_FFFF;
+const WIN32_WINNT_WIN8: u32 = 0x0602;
+
+/// The (major, minor, build) these APIs must report instead of the real one, or None when
+/// the real version is what they report.
+unsafe fn capped_version() -> Option<(u32, u32, u32)> {
+    let Peb: PPEB = (*NtCurrentTeb()).ProcessEnvironmentBlock;
+    let real = (((*Peb).OSMajorVersion as u32) << 8) | (*Peb).OSMinorVersion as u32;
+    if real <= WIN32_WINNT_WIN8 {
+        return None;
+    }
+    let mut declared = 0u32;
+    let sd = (*Peb).pShimData as *const ReactOS_ShimData;
+    if !sd.is_null()
+        && (*sd).dwMagic == REACTOS_SHIMDATA_MAGIC
+        && (*sd).dwSize as usize == core::mem::size_of::<ReactOS_ShimData>()
+    {
+        declared = (*sd).dwRosProcessCompatVersion;
+        if declared == REACTOS_COMPATVERSION_IGNOREMANIFEST {
+            return None;
+        }
+    }
+    let cap = declared.max(WIN32_WINNT_WIN8);
+    if real <= cap {
+        return None;
+    }
+    let build = match cap {
+        0x0602 => 9200,
+        0x0603 => 9600,
+        _ => (*Peb).OSBuildNumber as u32,
+    };
+    Some((cap >> 8, cap & 0xFF, build))
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn GetVersion() -> DWORD {
     let Peb: PPEB = (*NtCurrentTeb()).ProcessEnvironmentBlock;
+    let (major, minor, build) = capped_version().unwrap_or((
+        (*Peb).OSMajorVersion as u32,
+        (*Peb).OSMinorVersion as u32,
+        (*Peb).OSBuildNumber as u32,
+    ));
     // C promotes each field to int/DWORD before shifting; do the shifts in DWORD so
     // OSMinorVersion << 8 (and OSBuildNumber << 16) don't wrap in the narrow field type.
     return (((*Peb).OSPlatformId ^ 2) << 30)
-        | (((*Peb).OSBuildNumber as DWORD) << 16)
-        | (((*Peb).OSMinorVersion as DWORD) << 8)
-        | ((*Peb).OSMajorVersion as DWORD);
+        | ((build & 0xFFFF) << 16)
+        | (minor << 8)
+        | major;
 }
 
 #[no_mangle]
@@ -36,6 +101,11 @@ pub unsafe extern "system" fn GetVersionExW(
 
     Status = RtlGetVersion(lpVersionInformation as PRTL_OSVERSIONINFOW);
     if Status == STATUS_SUCCESS {
+        if let Some((major, minor, build)) = capped_version() {
+            (*lpVersionInformation).dwMajorVersion = major;
+            (*lpVersionInformation).dwMinorVersion = minor;
+            (*lpVersionInformation).dwBuildNumber = build;
+        }
         if (*lpVersionInformation).dwOSVersionInfoSize as usize
             == core::mem::size_of::<OSVERSIONINFOEXW>() as usize
         {
@@ -120,12 +190,32 @@ pub unsafe extern "system" fn VerifyVersionInfoW(
     dwTypeMask: DWORD,
     dwlConditionMask: DWORDLONG,
 ) -> BOOL {
-    let Status: NTSTATUS;
-    Status = RtlVerifyVersionInfo(
-        lpVersionInformation as PRTL_OSVERSIONINFOEXW,
-        dwTypeMask,
-        dwlConditionMask,
-    );
+    let Status: NTSTATUS = match capped_version() {
+        None => RtlVerifyVersionInfo(
+            lpVersionInformation as PRTL_OSVERSIONINFOEXW,
+            dwTypeMask,
+            dwlConditionMask,
+        ),
+        // Compare against the version GetVersionEx reports, as Windows does.
+        Some((major, minor, build)) => {
+            let mut current: rtlver::OSVERSIONINFOEXW = core::mem::zeroed();
+            current.dwOSVersionInfoSize = core::mem::size_of::<rtlver::OSVERSIONINFOEXW>() as u32;
+            let st = RtlGetVersion(core::ptr::addr_of_mut!(current) as PRTL_OSVERSIONINFOW);
+            if st != STATUS_SUCCESS {
+                st
+            } else {
+                current.dwMajorVersion = major;
+                current.dwMinorVersion = minor;
+                current.dwBuildNumber = build;
+                rtlver::verify_against(
+                    &current,
+                    lpVersionInformation as *mut rtlver::OSVERSIONINFOEXW,
+                    dwTypeMask,
+                    dwlConditionMask,
+                )
+            }
+        }
+    };
     match Status {
         STATUS_INVALID_PARAMETER => {
             SetLastError(ERROR_BAD_ARGUMENTS as DWORD);

@@ -412,8 +412,7 @@ extends it from the boot spine to every fully-Rust module.
      relinked by the i386 build twelve minutes after cmake mastered its ISO).
    - About 365 entries per CD are cells; the rest are the C tail's modules, configure
      products and source files, still made by cmake.
-   - **Owed:** `--check` as a Rust rule in tools/vibeos-lint (for cell_manifest too);
-     self-hosting mkisofs/isohybrid/cabman (`--assemble` uses build-<arch>/host-tools and
+   - **Owed:** self-hosting mkisofs/isohybrid/cabman (`--assemble` uses build-<arch>/host-tools and
      fails without them); re-cabbing reactos.cab from `--cells` for bootcd; and a smoke
      that boots media mastered outside build-<arch> (`smoke` reads only
      build-<arch>/livecd.iso, with its staleness checks).
@@ -472,7 +471,19 @@ extends it from the boot spine to every fully-Rust module.
    - **What still needs cmake for a whole image:** the C tail's own modules (about 1000 of
      livecd's 1364 entries are not cells), the host tools that master the media
      (mkisofs/isohybrid/cabman), bootcd's reactos.cab, and a smoke that boots media
-     mastered outside build-<arch>. i386 and arm64 runs of the no-cmake build are owed.
+     mastered outside build-<arch>.
+   - **i386 and arm64, measured 2026-10-17.** The same fresh worktree builds all 271 i386
+     cells (after rosload's 16-bit drvmap object joined the SDK recipe and opengl32's i386
+     asm shims got a recipe) and all 276 arm64 cells. Against cmake's links: i386 358
+     byte-identical, 7 `pe_equiv --code` equivalent, 1 different; arm64 368 byte-identical,
+     3 code-equivalent, 0 different. The i386 difference was not cmake's: the cmake-side
+     usetup.exe had been linked by a raw `ninja usetup` (no build supervisor), whose body
+     crates were built privately, and a private build left rustc's raw-dylib import members
+     to the host's GNU dlltool while the artifact store's worker uses the pinned
+     llvm-dlltool. GNU dlltool's members differ (and carry rustc's random temp prefix, so
+     they also differed run to run); the link pulled an extra 8-byte ntdll thunk from one
+     of them. Private body builds now take the pinned llvm-dlltool too, after the store's
+     audited-flags check: usetup.exe is byte-identical either way.
 
 ## How a wave goes (the default for every new module)
 
@@ -491,6 +502,16 @@ placeholder stub, as `(convertible)` or `(refused)`; the baseline holds only ref
 so a newly flipped module or a refusal the generator has learned to handle is a NEW
 finding until it is converted. Teaching the generator a refused shape shrinks the
 baseline.
+
+`--convert` ends by regenerating what a build with no cmake reads: the cell and media
+manifests and the shared C libraries' recipes. They are deliberately NOT gated: they are
+derived from the build graph while cmake still owns cells and CD placement, so a merge
+that adds a cell is stale only once the merged tree is configured, inside the gate itself
+(a lint, `scan_cargo_manifests`, did exactly that and bounced a cold gate for a generated
+file; retired the same day). Instead every consumer reads the live graph when there is
+one (`cell_manifest.current`, `media_manifest.current`), and the committed copies serve a
+build with no graph. `cell_manifest.py --check` / `media_manifest.py --check` report drift
+as added/removed entries.
 
 The manual steps, still there for a wave: build ×3, `--survey`, `--save-baseline DIR`,
 `--apply`, build ×3, `--check DIR`.

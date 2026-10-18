@@ -104,11 +104,12 @@ unsafe extern "C" fn get_item_path(hwndTV: HWND, hItem: HTREEITEM, phKey: *mut H
             *pPathLen += len as core::ffi::c_int;
             break;
         }
+        // `*pMaxLen` counts WCHARs (see GetItemPath); the C doubled it as bytes.
         newStr = HeapReAlloc(
             GetProcessHeap(),
             0,
             *pKeyPath as *mut core::ffi::c_void,
-            (*pMaxLen * 2) as SIZE_T,
+            (*pMaxLen as SIZE_T * 2).wrapping_mul(core::mem::size_of::<WCHAR>() as SIZE_T),
         ) as LPWSTR;
         if newStr.is_null() {
             return (FALSE) as BOOL;
@@ -138,7 +139,13 @@ pub unsafe extern "C" fn GetItemPath(hwndTV: HWND, mut hItem: HTREEITEM, phRootK
 
     *(*core::ptr::addr_of!(pathBuffer)) = UNICODE_NULL;
 
+    // In WCHARs. Divergence from the C, which passed HeapSize's BYTE count on as the WCHAR
+    // capacity get_item_path hands TreeView as cchTextMax: a long key path overran the buffer
+    // by up to half its size before the doubling kicked in.
     maxLen = HeapSize(GetProcessHeap(), 0, *core::ptr::addr_of!(pathBuffer) as LPCVOID) as ::core::ffi::c_int;
+    if maxLen != -1 {
+        maxLen /= core::mem::size_of::<WCHAR>() as ::core::ffi::c_int;
+    }
 
     if hItem.is_null() {
         hItem = TreeView_GetSelection!(hwndTV);
@@ -253,7 +260,6 @@ pub unsafe extern "C" fn RefreshTreeItem(hwndTV: HWND, hItem: HTREEITEM) -> BOOL
 
         /* We don't have to bother with the rest if it's not expanded. */
         if TreeView_GetItemState!(hwndTV, hItem, TVIS_EXPANDED) == 0 {
-            RegCloseKey(hKey);
             bSuccess = (TRUE) as i32;
             break 'done;
         }
@@ -363,7 +369,6 @@ pub unsafe extern "C" fn RefreshTreeItem(hwndTV: HWND, hItem: HTREEITEM) -> BOOL
             }
             dwIndex = dwIndex.wrapping_add(1);
         }
-        RegCloseKey(hKey);
 
         if bAddedAny != 0 {
             SendMessageW(hwndTV, TVM_SORTCHILDREN, 0, hItem as LPARAM);
@@ -373,6 +378,13 @@ pub unsafe extern "C" fn RefreshTreeItem(hwndTV: HWND, hItem: HTREEITEM) -> BOOL
     }
 
     /* done: */
+    // Divergence from the C: it closed hKey on the two success paths only, so every failure
+    // after the open leaked it, and it closed it even when it WAS hRoot -- the tree item's own
+    // root handle, which for a remote registry (RegConnectRegistryW) is a real key the tree
+    // goes on using. Closed here, once, and only when this function opened it.
+    if !hKey.is_null() && hKey != hRoot {
+        RegCloseKey(hKey);
+    }
     if !pszNodes.is_null() {
         HeapFree(GetProcessHeap(), 0, pszNodes as LPVOID);
     }

@@ -1038,6 +1038,12 @@ function(add_cargo_module _target _crate _output)
     else()
         message(FATAL_ERROR "add_cargo_module: unknown KIND ${_acm_KIND}")
     endif()
+    # FIRST for every kind, so a kernel image's checksum covers it: lld names the export
+    # directory after its -o path, which for a cell is the bin's hashed
+    # `dcomp-4d1aeb251b7d5eac.exe`, and ignores the .def's NAME. Forwarders and dbghelp read
+    # that name; pefixup rewrites it to the file cmake copies the bin to, or fails the build.
+    list(PREPEND _postlink COMMAND $<TARGET_FILE:native-pefixup> --dllname:__ACM_NAME__ __ACM_OUT__)
+    set(_postdep native-pefixup)
     # DELAY_IMPORTS: the cell links gen-delaylib.py libs (Linker::delay_import_lib).
     # lld leaves their DELAY_IMPORT directory empty; add_delay_importlibs' POST_BUILD
     # points it at the bracketed table, after set_module_type's own post-link.
@@ -1109,6 +1115,8 @@ function(add_cargo_module _target _crate _output)
     set(_per_out)
     foreach(_b _o IN ZIP_LISTS _bins _outs)
         string(REPLACE "__ACM_OUT__" "${_o}" _o_postlink "${_postlink}")
+        get_filename_component(_o_name "${_o}" NAME)
+        string(REPLACE "__ACM_NAME__" "${_o_name}" _o_postlink "${_o_postlink}")
         list(APPEND _per_out
             COMMAND ${CMAKE_COMMAND} -E copy "${_cargo_target_dir}/${_stem}/release/${_b}.exe" ${_o}
             ${_o_postlink})

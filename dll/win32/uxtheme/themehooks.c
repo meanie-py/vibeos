@@ -743,6 +743,14 @@ ThemeHooksInstall()
     ZeroMemory(&osvi, sizeof(OSVERSIONINFO));
     osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFO);
     GetVersionEx(&osvi);
+#ifdef __REACTOS__
+    /* The calling form is our user32's, not the reported Windows version's: user32-rust's
+       RegisterUserApiHook takes the 2003 USERAPIHOOKINFO at every version. Picking it by
+       GetVersionEx left the hook uninstalled at any version but 5.2 (and under an XP
+       version-lie shim, called it with the XP form). */
+    osvi.dwMajorVersion = 5;
+    osvi.dwMinorVersion = 2;
+#endif
 
     if ( osvi.dwMajorVersion == 5 && osvi.dwMinorVersion == 1)
     {

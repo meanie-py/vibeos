@@ -611,7 +611,7 @@ pub type REGSAM = u32;
 pub type LSTATUS = i32;
 pub type ACCESS_MASK = u32;
 
-pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as usize as HKEY;
+pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
 pub const KEY_READ: REGSAM = 0x2_0019;
 pub const KEY_WRITE: REGSAM = 0x2_0006;
 pub const KEY_WOW64_64KEY: REGSAM = 0x0100;

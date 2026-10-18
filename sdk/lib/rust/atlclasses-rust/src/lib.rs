@@ -38,6 +38,7 @@ pub mod com;
 pub mod dll;
 pub mod exe;
 pub mod registrar;
+pub mod shellutils;
 pub mod stl;
 pub mod win;
 
@@ -1987,6 +1988,14 @@ impl core::ops::AddAssign<*mut WCHAR> for CStringW {
     /// The same `operator+=`, for the `LPWSTR` returns the C++ passes to it unchanged.
     fn add_assign(&mut self, rhs: *mut WCHAR) {
         unsafe { self.Append(rhs) }
+    }
+}
+
+impl core::ops::AddAssign<WCHAR> for CStringW {
+    /// `CSimpleStringT::operator+=(XCHAR)` — atlsimpstr.h, i.e. `AppendChar`
+    /// (mydocs: `strSrcList += L'|'`).
+    fn add_assign(&mut self, ch: WCHAR) {
+        unsafe { self.AppendChar(ch) }
     }
 }
 

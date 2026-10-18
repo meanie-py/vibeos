@@ -107,6 +107,17 @@ impl<'a> Pe<'a> {
         }
         Ok(names)
     }
+    /// The export directory's own module name; None for an image that exports nothing.
+    fn module_name(&self) -> Result<Option<String>, String> {
+        let Some(&(rva, _)) = self.dirs.first() else {
+            return Ok(None);
+        };
+        if rva == 0 {
+            return Ok(None);
+        }
+        let o = self.off(rva)?;
+        self.cstr(u32_at(self.data, o + 12)?).map(Some)
+    }
     fn imports(&self) -> Result<Imports, String> {
         let Some(&(rva, _)) = self.dirs.get(1) else {
             return Ok(Imports::new());
@@ -232,15 +243,39 @@ fn resolve(
     }
     findings
 }
+/// Shipped under another name on purpose: the redirection test copies redirtest1.dll to
+/// kernel32test_versioned.dll (add_rostests_file RENAME), and its export table keeps the
+/// name it was built as -- as a renamed DLL on Windows does.
+const RENAMED_ON_MEDIUM: &[&str] = &["kernel32test_versioned.dll"];
+
+/// EXPORT_NAME: an image whose export directory names a module other than its own file.
+/// Forwarders, dbghelp and anything resolving exports by module read that name. lld takes it
+/// from its -o path, and a cargo cell links to the bin's hashed name before cmake copies it,
+/// so ~199 cells per arch shipped `dcomp-4d1aeb251b7d5eac.exe` as dcomp.dll's own name until
+/// add_cargo_module ran `pefixup --dllname` on every output (2026-10-17).
+fn misnamed(names: &BTreeMap<String, Option<String>>) -> Vec<String> {
+    names
+        .iter()
+        .filter_map(|(name, own)| {
+            let own = own.as_ref()?;
+            (own.to_lowercase() != *name && !RENAMED_ON_MEDIUM.contains(&name.as_str()))
+                .then(|| format!("EXPORT_NAME {name}: export directory names {own}"))
+        })
+        .collect()
+}
+
 pub fn run(ctx: &BinaryContext) -> Result<CheckOutput, String> {
     let build = fs::canonicalize(&ctx.build_dir).map_err(|e| e.to_string())?;
     let mut imports = BTreeMap::new();
     let mut exports = BTreeMap::new();
+    let mut names = BTreeMap::new();
     for (name, path) in corpus(&build)? {
         let data = fs::read(path).map_err(|e| e.to_string())?;
         match Pe::new(&data) {
             Ok(pe) => {
                 imports.insert(name.clone(), pe.imports().ok());
+                // An unreadable export table is already reported UNREADABLE by resolve.
+                names.insert(name.clone(), pe.module_name().ok().flatten());
                 exports.insert(name, pe.exports().ok());
             }
             Err(_) => {
@@ -249,7 +284,8 @@ pub fn run(ctx: &BinaryContext) -> Result<CheckOutput, String> {
             }
         }
     }
-    let findings = resolve(&imports, &exports);
+    let mut findings = resolve(&imports, &exports);
+    findings.extend(misnamed(&names));
     let mut out = String::new();
     for f in &findings {
         out += f;
@@ -327,6 +363,7 @@ mod tests {
                 .collect();
             let pe = Pe::new(&bytes).unwrap();
             assert_eq!(pe.exports().unwrap(), Names::from(["A".into(), "B".into()]));
+            assert_eq!(pe.module_name().unwrap().as_deref(), Some("x.dll"));
             assert_eq!(
                 pe.imports().unwrap(),
                 BTreeMap::from([(
@@ -340,8 +377,29 @@ mod tests {
                 };
                 let _ = short.exports();
                 let _ = short.imports();
+                let _ = short.module_name();
             }
         }
+    }
+    #[test]
+    fn a_cargo_cells_hashed_export_name_is_a_finding() {
+        let names = BTreeMap::from([
+            (
+                "dcomp.dll".into(),
+                Some("dcomp-4d1aeb251b7d5eac.exe".into()),
+            ),
+            ("ntdll.dll".into(), Some("NTDLL.dll".into())), // case is not a mismatch
+            ("lsass.exe".into(), None),                     // exports nothing
+            // renamed on the medium on purpose
+            (
+                "kernel32test_versioned.dll".into(),
+                Some("redirtest1.dll".into()),
+            ),
+        ]);
+        assert_eq!(
+            misnamed(&names),
+            vec!["EXPORT_NAME dcomp.dll: export directory names dcomp-4d1aeb251b7d5eac.exe"]
+        );
     }
     #[test]
     fn truncated_headers_are_errors() {
