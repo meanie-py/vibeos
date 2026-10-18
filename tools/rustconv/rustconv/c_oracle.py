@@ -148,6 +148,10 @@ def inline_sources(text: str) -> dict[str, list[str]]:
     return out
 
 
+# add_idl_reg_scripts' TYPE -> the suffix widl-support.cmake gives its .o and custom target.
+_REG_SUFFIX = {"registry": "_r", "regtypelib": "_t", "winrt": "_w"}
+
+
 def generate(cml: str) -> str:
     """The `c_oracle.cmake` text for a module's CMakeLists (refuses an unflipped one)."""
     lists = source_lists(cml)
@@ -205,6 +209,17 @@ def generate(cml: str) -> str:
         if cmd.name in _SKIP or cmd.name.startswith("rust_") or target not in oracle:
             continue
         raw = _words(cmd.args)
+        if cmd.name == "add_idl_reg_scripts" and len(raw) > 2 and raw[1] in _REG_SUFFIX:
+            # The module's own call already generates <idl><suffix>.o under the custom target
+            # <module><suffix>; a second call declares the same OUTPUT and CMake refuses the
+            # whole configure (sti, wmiutils). The oracle links the object the module made.
+            suffix = _REG_SUFFIX[raw[1]]
+            objs = " ".join(
+                f"${{CMAKE_CURRENT_BINARY_DIR}}/{Path(i).stem}{suffix}.o" for i in raw[2:]
+            )
+            body.append(f"target_sources({oracle[target]} PRIVATE {objs})")
+            body.append(f"add_dependencies({oracle[target]} {target}{suffix})")
+            continue
         words = [r for w in raw if (r := rewrite(w)) is not None]
         if cmd.name in ("add_executable", "add_library"):
             at = 2 if len(words) > 1 and words[1] in ("STATIC", "SHARED", "MODULE", "OBJECT") else 1

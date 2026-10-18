@@ -1122,6 +1122,7 @@ dll/win32/imagehlp/CMakeLists.txt	1	# access.c # replaced by Rust (sdk/lib/rust/
 dll/win32/imagehlp/CMakeLists.txt	1	# imagehlp_main.c # replaced by Rust (sdk/lib/rust/imagehlp-rust/src/imagehlp/imagehlp_main.rs)
 dll/win32/imagehlp/CMakeLists.txt	1	# integrity.c # replaced by Rust (sdk/lib/rust/imagehlp-rust/src/imagehlp/integrity.rs)
 dll/win32/imagehlp/CMakeLists.txt	1	# modify.c # replaced by Rust (sdk/lib/rust/imagehlp-rust/src/imagehlp/modify.rs)
+dll/win32/inetmib1/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/inetmib1-rust/src/inetmib1/main.rs)
 dll/win32/iphlpapi/CMakeLists.txt	1	# (DeepSeek V4-pro), except iphlpapi_fakestubs.c whose 16 Pf* bodies are byte-identical stubs
 dll/win32/iphlpapi/CMakeLists.txt	1	# STILL C (correctly): only the generated iphlpapi_stubs.c. `wine` stays linked for
 dll/win32/iphlpapi/CMakeLists.txt	1	# add_pch kept for the remaining C files; iphlpapi_rust_shims.c is SKIPPED (freestanding, and the
@@ -1139,6 +1140,7 @@ dll/win32/iphlpapi/CMakeLists.txt	1	# registry.c (→ iphlpapi-rust src/iphlpapi
 dll/win32/iphlpapi/CMakeLists.txt	1	# resinfo_reactos.c (→ iphlpapi-rust src/iphlpapi/resinfo_reactos.rs)
 dll/win32/iphlpapi/CMakeLists.txt	1	# route_reactos.c (→ iphlpapi-rust src/iphlpapi/route_reactos.rs)
 dll/win32/jscript/CMakeLists.txt	1	# decode.c (compiler-translated into jscript-rust/src/decode.rs)
+dll/win32/jsproxy/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/jsproxy-rust/src/jsproxy/main.rs)
 dll/win32/kernel32/CMakeLists.txt	1	# --allow-multiple-definition needed since every proc.c symbol was removed).
 dll/win32/kernel32/CMakeLists.txt	1	# The *ansi.c files are upstream splitting the ANSI wrappers out of TUs we have
 dll/win32/kernel32/CMakeLists.txt	1	# client/actctx.c — replaced by Rust
@@ -1380,6 +1382,7 @@ dll/win32/netid/CMakeLists.txt	1	# the generated types_<arch>.rs. netid.c is com
 dll/win32/newdev/CMakeLists.txt	1	# newdev.c # replaced by Rust (sdk/lib/rust/newdev-rust/src/newdev/newdev.rs)
 dll/win32/newdev/CMakeLists.txt	1	# stubs.c # replaced by Rust (sdk/lib/rust/newdev-rust/src/newdev/stubs.rs)
 dll/win32/newdev/CMakeLists.txt	1	# wizard.c # replaced by Rust (sdk/lib/rust/newdev-rust/src/newdev/wizard.rs)
+dll/win32/ntdsapi/CMakeLists.txt	1	# ntdsapi.c # replaced by Rust (sdk/lib/rust/ntdsapi-rust/src/ntdsapi/ntdsapi.rs)
 dll/win32/ntmarta/CMakeLists.txt	1	# ntmarta.c → ntmarta-rust
 dll/win32/ntmarta/CMakeLists.txt	1	# ntmarta.c)
 dll/win32/ole32/CMakeLists.txt	1	# antimoniker.c — replaced by Rust (ole32-rust ring/antimoniker.rs — IMoniker/IPersistStream/IROTData)
@@ -1640,10 +1643,17 @@ dll/win32/sndblst/CMakeLists.txt	1	# sndblst.c # replaced by Rust (sdk/lib/rust/
 dll/win32/snmpapi/CMakeLists.txt	1	# (field manual §9.112). main.c is commented out below and kept on disk per the
 dll/win32/snmpapi/CMakeLists.txt	1	# main.c → snmpapi-rust
 dll/win32/snmpapi/CMakeLists.txt	1	# main.c)
+dll/win32/sti/CMakeLists.txt	1	# guid.c # replaced by Rust (sdk/lib/rust/sti-rust/src/sti/guid.rs)
+dll/win32/sti/CMakeLists.txt	1	# sti.c # replaced by Rust (sdk/lib/rust/sti-rust/src/sti/sti.rs)
+dll/win32/sti/CMakeLists.txt	1	# sti_main.c # replaced by Rust (sdk/lib/rust/sti-rust/src/sti/sti_main.rs)
 dll/win32/storprop/CMakeLists.txt	1	# disk.c # replaced by Rust (sdk/lib/rust/storprop-rust/src/storprop/disk.rs)
 dll/win32/storprop/CMakeLists.txt	1	# dvd.c # replaced by Rust (sdk/lib/rust/storprop-rust/src/storprop/dvd.rs)
 dll/win32/storprop/CMakeLists.txt	1	# ide.c # replaced by Rust (sdk/lib/rust/storprop-rust/src/storprop/ide.rs)
 dll/win32/storprop/CMakeLists.txt	1	# storprop.c # replaced by Rust (sdk/lib/rust/storprop-rust/src/storprop/storprop.rs)
+dll/win32/sxs/CMakeLists.txt	1	# cache.c # replaced by Rust (sdk/lib/rust/sxs-rust/src/sxs/cache.rs)
+dll/win32/sxs/CMakeLists.txt	1	# guid.c # replaced by Rust (sdk/lib/rust/sxs-rust/src/sxs/guid.rs)
+dll/win32/sxs/CMakeLists.txt	1	# name.c # replaced by Rust (sdk/lib/rust/sxs-rust/src/sxs/name.rs)
+dll/win32/sxs/CMakeLists.txt	1	# sxs.c # replaced by Rust (sdk/lib/rust/sxs-rust/src/sxs/sxs.rs)
 dll/win32/syssetup/CMakeLists.txt	1	# addons.c — NEW upstream TU since the fork (setup-time addon installation). Not built:
 dll/win32/syssetup/CMakeLists.txt	1	# classinst.c
 dll/win32/syssetup/CMakeLists.txt	1	# classinst.c dllmain.c install.c logfile.c netinstall.c proppage.c security.c wizard.c
@@ -1744,6 +1754,9 @@ dll/win32/wlnotify/CMakeLists.txt	1	# senssvc.c # replaced by Rust (sdk/lib/rust
 dll/win32/wlnotify/CMakeLists.txt	1	# termserv.c # replaced by Rust (sdk/lib/rust/wlnotify-rust/src/wlnotify/termserv.rs)
 dll/win32/wlnotify/CMakeLists.txt	1	# wlballoon.c # replaced by Rust (sdk/lib/rust/wlnotify-rust/src/wlnotify/wlballoon.rs)
 dll/win32/wlnotify/CMakeLists.txt	1	# wlnotify.c # replaced by Rust (sdk/lib/rust/wlnotify-rust/src/wlnotify/wlnotify.rs)
+dll/win32/wmiutils/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/wmiutils-rust/src/wmiutils/main.rs)
+dll/win32/wmiutils/CMakeLists.txt	1	# path.c # replaced by Rust (sdk/lib/rust/wmiutils-rust/src/wmiutils/path.rs)
+dll/win32/wmiutils/CMakeLists.txt	1	# statuscode.c # replaced by Rust (sdk/lib/rust/wmiutils-rust/src/wmiutils/statuscode.rs)
 dll/win32/wow64/CMakeLists.txt	1	# contributes argument types only. wow64.c #includes the output.
 dll/win32/ws2_32/CMakeLists.txt	1	# never-delete rule. (src/scihlpr.c was already not compiled — it stays that way.)
 dll/win32/ws2_32/CMakeLists.txt	1	# src/addrconv.c src/addrinfo.c src/async.c src/bhook.c src/dcatalog.c src/dcatitem.c

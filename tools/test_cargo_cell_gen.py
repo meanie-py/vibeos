@@ -75,6 +75,15 @@ def test_an_unknown_statement_on_the_target_is_reported(tmp_path):
     assert g.cmake_facts(f, "m")["unknown"] == ["set_target_properties"]
 
 
+def test_a_registry_script_is_a_resource_object_the_cell_links(tmp_path):
+    """sti: add_idl_reg_scripts attaches sti_wia_r.o (its REGINST resource) to the target."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "add_idl_reg_scripts(m registry m_wia.idl)\n")
+    facts = g.cmake_facts(f, "m")
+    assert facts["unknown"] == []
+    assert facts["reg_objects"] == ["m_wia_r.o"]
+
+
 def test_a_second_target_built_from_the_source_list_is_refused(tmp_path):
     f = tmp_path / "CMakeLists.txt"
     f.write_text(CMAKE + "add_library(m_static ${SOURCE})\n")

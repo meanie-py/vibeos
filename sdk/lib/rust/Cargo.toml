@@ -1,5 +1,11 @@
 [workspace]
 members = [
+    "wmiutils-cargo",
+    "sti-cargo",
+    "inetmib1-cargo",
+    "sxs-cargo",
+    "jsproxy-cargo",
+    "ntdsapi-cargo",
     "imagehlp-cargo",
     "credui-cargo",
     "wtsapi32-cargo",
@@ -914,6 +920,12 @@ members = [
     "wtsapi32-rust",
     "imagehlp-rust",
     "credui-rust",
+    "ntdsapi-rust",
+    "jsproxy-rust",
+    "sti-rust",
+    "wmiutils-rust",
+    "sxs-rust",
+    "inetmib1-rust",
 ]
 resolver = "2"
 

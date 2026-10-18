@@ -5,9 +5,9 @@
 # The list is olewinetest's gen_suites.py pointed at these suites; see that payload for why
 # children start on C:.
 name: portwinetest
-description: Wine conformance suites for the Rust-ported pdh, wtsapi32, imagehlp and credui
+description: Wine conformance suites for the Rust-ported Wine DLLs (pdh, wtsapi32, imagehlp, credui, ntdsapi, jsproxy, sti, wmiutils, sxs, inetmib1)
 
-build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites pdh,wtsapi32,imagehlp,credui --register '' --out-dir tools/payloads/portwinetest"
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites pdh,wtsapi32,imagehlp,credui,ntdsapi,jsproxy,sti,wmiutils,sxs,inetmib1 --register '' --out-dir tools/payloads/portwinetest"
 
 binaries:
   - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
@@ -27,6 +27,18 @@ binaries:
     dest: bin/imagehlp_winetest.exe
   - src: build-{arch}/modules/rostests/winetests/credui/credui_winetest.exe
     dest: bin/credui_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/ntdsapi/ntdsapi_winetest.exe
+    dest: bin/ntdsapi_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/jsproxy/jsproxy_winetest.exe
+    dest: bin/jsproxy_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/sti/sti_winetest.exe
+    dest: bin/sti_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/wmiutils/wmiutils_winetest.exe
+    dest: bin/wmiutils_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/sxs/sxs_winetest.exe
+    dest: bin/sxs_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/inetmib1/inetmib1_winetest.exe
+    dest: bin/inetmib1_winetest.exe
 
 test:
   launch_marker: "[APITEST-SWEEP] done"
