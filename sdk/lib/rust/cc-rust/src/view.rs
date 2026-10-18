@@ -113,8 +113,9 @@ const _: () = assert!(core::mem::size_of::<ROS_SHARED_CACHE_MAP>() == 240);
 const _VACB_SIZE: () = assert!(core::mem::size_of::<ROS_VACB>() == 56);
 
 const VACB_MAPPING_GRANULARITY: ULONG = 262144;
-const NODE_TYPE_SHARED_MAP: USHORT = 0x2DD;
-const NODE_TYPE_PRIVATE_MAP: USHORT = 0x2EE;
+// cc.h, as ntkrnl_sys::constants has them; the port had invented 0x2DD/0x2EE.
+const NODE_TYPE_SHARED_MAP: USHORT = 0x2FF;
+const NODE_TYPE_PRIVATE_MAP: USHORT = 0x2FE;
 const READAHEAD_DISABLED: ULONG = 0x01;
 const WRITEBEHIND_DISABLED: ULONG = 0x02;
 const SHARED_CACHE_MAP_IN_CREATION: ULONG = 0x04;

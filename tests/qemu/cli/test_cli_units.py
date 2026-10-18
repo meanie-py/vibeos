@@ -12289,6 +12289,39 @@ def test_smoke_vm_memory_beats_the_payloads_declaration(tmp_path, monkeypatch):
     assert seen == ["768M", "2G"]
 
 
+def test_smoke_payload_boots_the_smokes_firmware_variant(tmp_path, monkeypatch):
+    """`smoke --arch amd64-bios --payload X` must run X under SeaBIOS: the payload stage used to
+    map the base arch to amd64-uefi, so every BIOS payload verdict was a UEFI one."""
+    spec = tmp_path / "tools" / "payloads" / "p" / "payload.yaml"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("test:\n  launch_drain_secs: 10\n")
+    seen: list[str] = []
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd[cmd.index("--arch") + 1])
+        raise subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(smoke_mod.subprocess, "run", fake_run)
+    run = Run("smoke", "amd64-bios", ts=1700000000)
+    smoke_mod._payload_stage(run, tmp_path, "amd64", "p", boot_arch="amd64-bios")
+    smoke_mod._payload_stage(run, tmp_path, "amd64", "p", boot_arch="amd64-uefi")
+    smoke_mod._payload_stage(run, tmp_path, "i386", "p")
+    assert seen == ["amd64-bios", "amd64-uefi", "i386-uefi"]
+
+
+def test_smoke_net_payload_refuses_the_bios_boot(tmp_path, monkeypatch):
+    """There is no amd64-bios-net config: a net payload on the BIOS boot fails loud instead of
+    falling back to the UEFI net boot."""
+    spec = tmp_path / "tools" / "payloads" / "n" / "payload.yaml"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("test:\n  net: true\n")
+    monkeypatch.setattr(smoke_mod.subprocess, "run", lambda *a, **k: pytest.fail("must not boot"))
+    run = Run("smoke", "amd64-bios", ts=1700000000)
+    smoke_mod._payload_stage(run, tmp_path, "amd64", "n", boot_arch="amd64-bios")
+    assert run.stages[-1].status == "fail"
+    assert "amd64-bios-net" in run.stages[-1].detail
+
+
 def test_qemu_memory_override_is_validated(monkeypatch):
     from tests.qemu import vm as vm_mod
 

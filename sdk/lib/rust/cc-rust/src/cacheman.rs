@@ -60,7 +60,9 @@ const READAHEAD_DISABLED: ULONG = 0x0001;
 const WRITEBEHIND_DISABLED: ULONG = 0x0002;
 const FO_SEQUENTIAL_ONLY: ULONG = 0x20;
 const FSRTL_FLAG_LIMIT_MODIFIED_PAGES: ULONG = 0x4;
-const PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE: ULONG = 0x0001;
+// cctypes.h (1 << 16), the bit Flags.ReadAheadActive() reads. The port had 0x1
+// (DontUse), so the flag was never seen set and every read posted another read-ahead.
+const PRIVATE_CACHE_MAP_READ_AHEAD_ACTIVE: ULONG = 1 << 16;
 
 const MmSmallSystem: MM_SYSTEMSIZE = 0;
 const MmMediumSystem: MM_SYSTEMSIZE = 1;

@@ -1,0 +1,20 @@
+# fwprobe — does GetSystemFirmwareTable answer for every provider Windows has?
+#   tools/payloads/fwprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=fwprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload fwprobe
+# 'RSMB': one table (ID 0) holding the raw SMBIOS structures behind the 8-byte header.
+# 'ACPI': every table the XSDT/RSDT lists plus the DSDT, each fetched whole with a zero checksum.
+name: fwprobe
+description: enumerate and fetch the RSMB and ACPI firmware tables, checking each
+
+build_hint: "tools/payloads/fwprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/fwprobe/fwprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/fwprobe.exe
+
+test:
+  launch_marker: "[FWPROBE] done"
+  pass_marker: "[FWPROBE] done VERDICT=PASS"
+  launch_drain_secs: 120

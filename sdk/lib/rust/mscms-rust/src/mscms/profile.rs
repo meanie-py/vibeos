@@ -78,30 +78,29 @@ const ET_DEVICENAME: u32 = 0x00000001;
 const ET_MEDIATYPE: u32 = 0x00000002;
 const ET_DITHERMODE: u32 = 0x00000004;
 const ET_RESOLUTION: u32 = 0x00000008;
-const ET_DEVICECLASS: u32 = 0x00000010;
-const ET_CMMTYPE: u32 = 0x00000020;
-const ET_CLASS: u32 = 0x00000040;
-const ET_DATACOLORSPACE: u32 = 0x00000080;
-const ET_CONNECTIONSPACE: u32 = 0x00000100;
-const ET_SIGNATURE: u32 = 0x00000200;
-const ET_PLATFORM: u32 = 0x00000400;
-const ET_PROFILEFLAGS: u32 = 0x00000800;
-const ET_MANUFACTURER: u32 = 0x00001000;
-const ET_MODEL: u32 = 0x00002000;
-const ET_ATTRIBUTES: u32 = 0x00004000;
-const ET_RENDERINGINTENT: u32 = 0x00008000;
-const ET_CREATOR: u32 = 0x00010000;
+const ET_CMMTYPE: u32 = 0x00000010;
+const ET_CLASS: u32 = 0x00000020;
+const ET_DATACOLORSPACE: u32 = 0x00000040;
+const ET_CONNECTIONSPACE: u32 = 0x00000080;
+const ET_SIGNATURE: u32 = 0x00000100;
+const ET_PLATFORM: u32 = 0x00000200;
+const ET_PROFILEFLAGS: u32 = 0x00000400;
+const ET_MANUFACTURER: u32 = 0x00000800;
+const ET_MODEL: u32 = 0x00001000;
+const ET_ATTRIBUTES: u32 = 0x00002000;
+const ET_RENDERINGINTENT: u32 = 0x00004000;
+const ET_CREATOR: u32 = 0x00008000;
+const ET_DEVICECLASS: u32 = 0x00010000; // icm.h puts DEVICECLASS last; the port had it at 0x10
 
 // Forward declarations for unknown functions
 
-// Constants assumed typical values
 const LCS_SRGB: u32 = 0x73524742;            // 'sRGB'
 const LCS_WINDOWS_COLOR_SPACE: u32 = 0x57696E20; // 'Win '
 
 const PROFILE_FILENAME: u32 = 1;
 const PROFILE_READ: u32 = 1;
 
-const PROFILE_MEMBUFFER: u32 = 4;
+const PROFILE_MEMBUFFER: u32 = 2; // icm.h
 
 unsafe extern "C" {
     unsafe fn header_from_file(filename: *const u16, header: *mut PROFILEHEADER) -> i32;
@@ -110,7 +109,7 @@ unsafe extern "C" {
     unsafe fn match_profile(record: *const ENUMTYPEW, header: *const PROFILEHEADER) -> i32;
 }
 
-const ENUM_TYPE_VERSION: u32 = 0x0201;
+const ENUM_TYPE_VERSION: u32 = 0x0300; // icm.h; callers pass this, and 0x201 refused them all
 
 unsafe fn strdupW(str: LPCSTR) -> LPWSTR {
     let mut ret: LPWSTR = core::ptr::null_mut();

@@ -101,7 +101,7 @@ const CM_KCB_READ_ONLY_KEY: u32 = 0x80;
 const TAG_CM: ULONG = u32::from_be_bytes(*b"  MC");
 
 // Misc
-const PRODUCT_ACTIVATION_VERSION: ULONG = 0x0000;
+const PRODUCT_ACTIVATION_VERSION: ULONG = 7749; // ntapi.c
 const FILE_WRITE_DATA: ACCESS_MASK = 0x00000002;
 
 // Stub macros (DUMMY_PSEH builds — these compile-out)
