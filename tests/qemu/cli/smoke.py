@@ -753,6 +753,7 @@ def _payload_stage(
     idx: int = 0,
     total: int = 1,
     vm_memory_override: str = "",
+    boot_arch: str | None = None,
 ) -> None:
     """Opt-in payload gate (--payload <names> / legacy --doom): run
     tests/qemu/test_payload.py (launch marker + frame-delta render gate +
@@ -761,7 +762,10 @@ def _payload_stage(
     loud with the build recipe if the app never launches. Design doc:
     docs/engineering/payload-harness-design.md."""
     test_file = repo / "tests" / "qemu" / "test_payload.py"
-    pytest_arch = {"i386": "i386-uefi", "amd64": "amd64-uefi"}.get(arch, arch)
+    # The payload boots the same firmware variant the smoke did: mapping from the base arch
+    # alone ran `smoke --arch amd64-bios --payload X` under OVMF, so every "BIOS" payload
+    # verdict was a UEFI one (and the BIOS F-segment looked empty to the kernel).
+    pytest_arch = boot_arch or archcfg.vm_arch(arch)
     # Payloads that declare `net: true` (e.g. httpd) need the -net arch variant
     # (NIC + payload hostfwd). Sniff the specs; one net payload upgrades the boot.
     # The pytest timeout covers the boot AND each payload's launch drain. A fixed 600s let a
@@ -788,6 +792,16 @@ def _payload_stage(
                 if _test.get("qemu_extra_args"):
                     extra_args.append(str(_test["qemu_extra_args"]))
                 if _test.get("net") and not pytest_arch.endswith("-net"):
+                    if pytest_arch == "amd64-bios":
+                        run.add(
+                            Stage(
+                                "payload" if total == 1 else f"payload{idx + 1}",
+                                status="fail",
+                                detail=f"payload {_name.strip()} declares net: true and there "
+                                "is no amd64-bios-net boot config; run it with --arch amd64",
+                            )
+                        )
+                        return
                     pytest_arch += "-net"
     except ImportError:
         pass  # no pyyaml -> test_payload itself will fail loud on the guard
@@ -2004,7 +2018,14 @@ def smoke(args, repo: Path) -> int:
     if payloads and _guest_reached_desktop(results):
         for i in range(total):
             _payload_stage(
-                run, repo, arch, payloads, idx=i, total=total, vm_memory_override=vm_memory
+                run,
+                repo,
+                arch,
+                payloads,
+                idx=i,
+                total=total,
+                vm_memory_override=vm_memory,
+                boot_arch=boot_arch,
             )
 
     if total > 1:

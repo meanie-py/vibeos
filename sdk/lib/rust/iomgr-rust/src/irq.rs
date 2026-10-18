@@ -213,6 +213,37 @@ pub unsafe extern "system" fn IoDisconnectInterrupt(InterruptObject: PKINTERRUPT
 unsafe fn IopConnectInterruptExFullySpecific(
     Parameters: PIO_CONNECT_INTERRUPT_PARAMETERS,
 ) -> NTSTATUS {
+    // Irql == PASSIVE_LEVEL is Windows 8's passive-level line interrupt: KMDF asks for it this
+    // way for WdfInterruptCreate(PassiveHandling) once it sees 6.2 or later. Handed to
+    // IoConnectInterrupt it would be a DIRQL connection at IRQL 0. It is the line fallback of
+    // CONNECT_MESSAGE_BASED_PASSIVE instead; the line's real DIRQL is the PDO's assigned
+    // interrupt at that vector, since the caller replaced it with PASSIVE_LEVEL.
+    let f = &(*Parameters).__bindgen_anon_1.FullySpecified;
+    if f.Irql == 0 {
+        if !f.SpinLock.is_null() || f.SynchronizeIrql != 0 || f.ServiceRoutine.is_none() {
+            return STATUS_INVALID_PARAMETER;
+        }
+        let Some(line) = assigned_interrupts(f.PhysicalDeviceObject)
+            .iter()
+            .find(|d| is_interrupt(d, false) && d.u.Interrupt.Vector == f.Vector)
+        else {
+            return STATUS_INVALID_PARAMETER;
+        };
+        let source = (
+            f.Vector,
+            line.u.Interrupt.Level as KIRQL,
+            f.ProcessorEnableMask,
+            f.InterruptMode,
+            f.ShareVector != 0,
+        );
+        return match IopConnectPassive([source].into_iter(), None, f.ServiceRoutine, f.ServiceContext, f.FloatingSave) {
+            Ok(passive) => {
+                *f.InterruptObject = (*(*passive).trampolines).interrupt;
+                STATUS_SUCCESS
+            }
+            Err(status) => status,
+        };
+    }
     let Status = IoConnectInterrupt(
         (*Parameters).__bindgen_anon_1.FullySpecified.InterruptObject,
         (*Parameters).__bindgen_anon_1.FullySpecified.ServiceRoutine,

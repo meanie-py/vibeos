@@ -822,6 +822,56 @@ unsafe fn ExpForEachAcpiTable(mut f: impl FnMut(ULONG, u64) -> bool) {
     ntkrnl_sys::ddk::MmUnmapIoSpace(root as PVOID, root_len as _);
 }
 
+// The 'FIRM' provider: the two legacy BIOS regions below 1 MB, as raw memory. Windows
+// enumerates their physical addresses as the table IDs and returns 128 KB for each. The
+// regions only exist on x86; elsewhere the provider lists nothing.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+const FIRM_REGIONS: &[ULONG] = &[0xC0000, 0xE0000];
+#[cfg(not(any(target_arch = "x86", target_arch = "x86_64")))]
+const FIRM_REGIONS: &[ULONG] = &[];
+const FIRM_REGION_SIZE: ULONG = 0x20000;
+
+unsafe fn ExpGetFirmwareRegion(
+    Info: PSYSTEM_FIRMWARE_TABLE_INFORMATION,
+    DataBufSize: ULONG,
+    DataSize: *mut ULONG,
+) -> NTSTATUS {
+    let out = (*Info).TableBuffer.as_mut_ptr();
+    *DataSize = 0;
+    if (*Info).Action == SystemFirmwareTable_Enumerate {
+        *DataSize = (FIRM_REGIONS.len() * core::mem::size_of::<ULONG>()) as ULONG;
+        if *DataSize <= DataBufSize {
+            for (i, id) in FIRM_REGIONS.iter().enumerate() {
+                core::ptr::write_unaligned((out as *mut ULONG).add(i), *id);
+            }
+        }
+        return STATUS_SUCCESS;
+    }
+    if (*Info).Action != SystemFirmwareTable_Get {
+        return STATUS_SUCCESS; // the caller turns an unknown action into ILLEGAL_FUNCTION
+    }
+    let id = (*Info).TableID;
+    if !FIRM_REGIONS.contains(&id) {
+        return STATUS_NOT_FOUND;
+    }
+    *DataSize = FIRM_REGION_SIZE;
+    if FIRM_REGION_SIZE <= DataBufSize {
+        let mut phys: ntkrnl_sys::ddk::PHYSICAL_ADDRESS = core::mem::zeroed();
+        phys.QuadPart = id as i64;
+        let m = ntkrnl_sys::ddk::MmMapIoSpace(
+            phys,
+            FIRM_REGION_SIZE as _,
+            ntkrnl_sys::ddk::_MEMORY_CACHING_TYPE_MmCached as _,
+        );
+        if m.is_null() {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RtlMoveMemory(out as PVOID, m, FIRM_REGION_SIZE as usize);
+        ntkrnl_sys::ddk::MmUnmapIoSpace(m, FIRM_REGION_SIZE as _);
+    }
+    STATUS_SUCCESS
+}
+
 /// Enumerate: the signature list. Get: the first table named `TableID`.
 unsafe fn ExpGetAcpiTable(
     Info: PSYSTEM_FIRMWARE_TABLE_INFORMATION,
@@ -2672,7 +2722,9 @@ unsafe extern "C" fn QSI_SystemFirmwareTableInformation(Buffer: PVOID, Size: ULO
             *ReqSize += DataSize;
         }
         SIG_FIRM => {
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = ExpGetFirmwareRegion(SysFirmwareInfo, DataBufSize, &mut DataSize);
+            (*SysFirmwareInfo).TableBufferLength = DataSize;
+            *ReqSize += DataSize;
         }
         SIG_RSMB => {
             Status = ExpGetRawSMBiosTable(core::ptr::null_mut(), &mut DataSize, 0);
