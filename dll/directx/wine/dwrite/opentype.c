@@ -1960,9 +1960,44 @@ HRESULT opentype_cmap_get_unicode_ranges(const struct dwrite_cmap *cmap, unsigne
     if (!cmap->data)
         return E_FAIL;
 
+#ifdef __REACTOS__
+    /* Windows merges a range into the previous one when it starts right after it ends, and
+       leaves out format 4's closing 0xffff segment (measured: Windows 11 passes font.c's
+       test_GetUnicodeRanges for every system font that has a format 4 or 12 cmap). */
+    {
+        unsigned int n = cmap->get_ranges(cmap, 0, NULL), i, j;
+        DWRITE_UNICODE_RANGE *all;
+
+        if (!n)
+        {
+            *count = 0;
+            return S_OK;
+        }
+        if (!(all = malloc(n * sizeof(*all))))
+            return E_OUTOFMEMORY;
+        cmap->get_ranges(cmap, n, all);
+        if (cmap->get_ranges == opentype_cmap_format4_get_ranges && all[n - 1].last == 0xffff)
+            n--;
+        for (i = 0, j = 0; i < n; ++i)
+        {
+            if (j && all[i].first == all[j - 1].last + 1)
+            {
+                all[j - 1].last = all[i].last;
+                continue;
+            }
+            all[j++] = all[i];
+        }
+        *count = j;
+        if (ranges)
+            memcpy(ranges, all, min(j, max_count) * sizeof(*ranges));
+        free(all);
+        return j > max_count ? E_NOT_SUFFICIENT_BUFFER : S_OK;
+    }
+#else
     *count = cmap->get_ranges(cmap, max_count, ranges);
 
     return *count > max_count ? E_NOT_SUFFICIENT_BUFFER : S_OK;
+#endif
 }
 
 void opentype_get_font_typo_metrics(struct file_stream_desc *stream_desc, unsigned int *ascent, unsigned int *descent)
