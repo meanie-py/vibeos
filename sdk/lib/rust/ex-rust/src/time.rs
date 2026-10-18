@@ -419,14 +419,20 @@ pub unsafe extern "system" fn NtSetSystemTime(
         }
     }
 
-    Status = RtlQueryTimeZoneInformation(core::ptr::addr_of_mut!(TimeZoneInformation));
-    if Status < 0 {
+    // The C assigns this to Status and returns it, so a boot without the
+    // TimeZoneInformation key (the live CD has none) reported failure for a clock it
+    // had just set, and netstack's SNTP logged its successful sync as an error. The
+    // time is set by now; a missing zone only leaves the bias at zero.
+    let ZoneStatus = RtlQueryTimeZoneInformation(core::ptr::addr_of_mut!(TimeZoneInformation));
+    if ZoneStatus < 0 {
+        ntkrnl_sys::driver_ddk::DbgPrint(b"NtSetSystemTime: RtlQueryTimeZoneInformation failed (Status 0x%08lx)\n\0".as_ptr() as _, ZoneStatus);
     }
 
     TimeZoneIdSave = ExpTimeZoneId;
     ExpSetTimeZoneInformation(core::ptr::addr_of_mut!(TimeZoneInformation));
 
     if ExpTimeZoneId != TimeZoneIdSave {
+        ntkrnl_sys::driver_ddk::DbgPrint(b"NtSetSystemTime: Daylight Time and Standard Time are switching\n\0".as_ptr() as _);
         KeSetSystemTime(
             core::ptr::addr_of_mut!(NewSystemTime),
             core::ptr::addr_of_mut!(OldSystemTime),
