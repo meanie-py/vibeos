@@ -1,4 +1,5 @@
 use crate::prelude_rpc::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (standard netapi32 wine-debug channel; TRACE/FIXME reference it) ----
@@ -76,7 +77,7 @@ pub unsafe extern "system" fn NetScheduleJobAdd(
     Buffer: LPBYTE,
     JobId: LPDWORD,
 ) -> NET_API_STATUS {
-    NetrJobAdd(ServerName, Buffer as *mut _AT_INFO, JobId)
+    rpc_try(|| NetrJobAdd(ServerName, Buffer as *mut _AT_INFO, JobId)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }
 
 // ---- NetScheduleJobDel ----
@@ -86,7 +87,7 @@ pub unsafe extern "system" fn NetScheduleJobDel(
     MinJobId: DWORD,
     MaxJobId: DWORD,
 ) -> NET_API_STATUS {
-    NetrJobDel(ServerName, MinJobId, MaxJobId)
+    rpc_try(|| NetrJobDel(ServerName, MinJobId, MaxJobId)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }
 
 // ---- NetScheduleJobEnum ----
@@ -108,13 +109,13 @@ pub unsafe extern "system" fn NetScheduleJobEnum(
         Buffer: core::ptr::null_mut(),
     };
 
-    let status = NetrJobEnum(
+    let status = rpc_try(|| NetrJobEnum(
         ServerName,
         &mut enum_container as *mut AT_ENUM_CONTAINER,
         PreferredMaximumLength,
         TotalEntries,
         ResumeHandle,
-    );
+    )).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
 
     if status == NERR_Success || status == ERROR_MORE_DATA {
         *PointerToBuffer = enum_container.Buffer as LPBYTE;
@@ -132,5 +133,5 @@ pub unsafe extern "system" fn NetScheduleJobGetInfo(
     PointerToBuffer: *mut LPBYTE,
 ) -> NET_API_STATUS {
     // schedule.c:187 casts the OUT buffer through: `(LPAT_INFO *)PointerToBuffer`.
-    NetrJobGetInfo(ServerName, JobId, PointerToBuffer as *mut LPAT_INFO)
+    rpc_try(|| NetrJobGetInfo(ServerName, JobId, PointerToBuffer as *mut LPAT_INFO)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _)
 }

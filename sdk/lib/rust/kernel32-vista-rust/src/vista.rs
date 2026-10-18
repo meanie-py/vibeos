@@ -595,8 +595,10 @@ pub unsafe extern "system" fn GetThreadPreferredUILanguages(
 }
 #[no_mangle]
 pub unsafe extern "system" fn GetThreadUILanguage() -> LANGID {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    0
+    // No per-thread UI language is ever set here (SetThreadUILanguage keeps none), so the
+    // thread's is the user's, as Windows and Wine answer in that case. Returning 0 made every
+    // caller that asks "is the UI English?" (pdh's whole winetest, among others) skip.
+    GetUserDefaultUILanguage()
 }
 #[no_mangle]
 pub unsafe extern "system" fn GetUILanguageInfo(

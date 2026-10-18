@@ -368,10 +368,11 @@ const FileStandardInformation: ULONG = 5;
 const DBG_STATUS_CONTROL_C: ULONG = 1;
 
 // Terminal scan codes (kd_term private)
-const KEYSC_END: u32 = 0x4F00;
-const KEYSC_PAGEUP: u32 = 0x4900;
-const KEYSC_ARROWUP: u32 = 0x4800;
-const KEYSC_HOME: u32 = 0x4700;
+// kdterminal.h: KdpReadTermKey reports the bare scan code (72 for up), not << 8.
+const KEYSC_END: u32 = 0x004F;
+const KEYSC_PAGEUP: u32 = 0x0049;
+const KEYSC_ARROWUP: u32 = 0x0048;
+const KEYSC_HOME: u32 = 0x0047;
 extern "system" {
     fn RtlLookupFunctionEntry( ControlPc: DWORD64, ImageBase: *mut DWORD64, HistoryTable: PVOID ) -> PRUNTIME_FUNCTION;
     fn RtlVirtualUnwind( HandlerType: DWORD, ImageBase: DWORD64, ControlPc: DWORD64, FunctionEntry: PRUNTIME_FUNCTION, ContextRecord: PCONTEXT, HandlerData: *mut PVOID, EstablisherFrame: *mut ULONG64, ContextPointers: PVOID ) -> PVOID;

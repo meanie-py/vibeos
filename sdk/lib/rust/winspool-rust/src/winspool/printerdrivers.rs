@@ -640,14 +640,10 @@ pub unsafe extern "system" fn EnumPrinterDriversW(pName: PWSTR, mut pEnvironment
 
         // Do the RPC call
         // RpcTryExcept
-        let RpcExceptionOccurred: bool = false;
         {
             dwErrorCode = rpc_try(|| _RpcEnumPrinterDrivers(pName, pEnvironment, Level, pDriverInfo, cbBuf, pcbNeeded, pcReturned)).unwrap_or_else(|code| code as _);
         }
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-        if RpcExceptionOccurred {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
 
         if dwErrorCode == ERROR_SUCCESS {

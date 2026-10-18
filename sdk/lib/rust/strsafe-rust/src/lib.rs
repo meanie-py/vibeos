@@ -1135,6 +1135,34 @@ pub unsafe extern "system" fn StringCchVPrintfW(
     )
 }
 
+/// strsafe.h:661 `StringCchVPrintfExW`: the `Ex` form, `va_list` by value (acppage's
+/// ACDBG_FN), so no trampoline either.
+#[allow(clippy::too_many_arguments)]
+#[no_mangle]
+pub unsafe extern "system" fn StringCchVPrintfExW(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcchRemaining: *mut usize,
+    dwFlags: DWORD,
+    pszFormat: *const WCHAR,
+    ap: *mut c_void,
+) -> HRESULT {
+    if cchDest > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringVPrintfExWorkerW(
+        pszDest,
+        cchDest,
+        cchDest * core::mem::size_of::<WCHAR>(),
+        ppszDestEnd,
+        pcchRemaining,
+        dwFlags,
+        pszFormat,
+        ap,
+    )
+}
+
 /// strsafe.h `StringCbVPrintfW`: the byte-counted `StringCchVPrintfW`, `va_list` by value.
 #[no_mangle]
 pub unsafe extern "system" fn StringCbVPrintfW(

@@ -28,6 +28,7 @@ use ntkrnl_sys::ddk::{
     PCHECK_FOR_TRAVERSE_ACCESS,
     PDEVICE_OBJECT,
     PDRIVER_CANCEL,
+    PEPROCESS,
     PFILE_NOTIFY_INFORMATION,
     PFILTER_REPORT_CHANGE,
     PIO_STACK_LOCATION,
@@ -38,7 +39,6 @@ use ntkrnl_sys::ddk::{
     PSECURITY_SUBJECT_CONTEXT,
     PSTR,
     PSTRING,
-    PsChargePoolQuota,
     PsReturnProcessPagedPoolQuota,
     REAL_NOTIFY_SYNC,
     RtlOemToUnicodeN,
@@ -51,10 +51,14 @@ extern "system" {
 }
 
 const TAG_FS_NOTIFICATIONS: u32 = 0x4E725346;
-const NOTIFY_IMMEDIATELY: u32 = 1;
-const NOTIFY_LATER: u32 = 2;
-const CLEANUP_IN_PROCESS: u32 = 4;
-const DELETE_IN_PROCESS: u32 = 8;
+// fsrtl.h. The port numbered these 1/2/4/8, so NOTIFY_IMMEDIATELY shared bit 0x01
+// with WATCH_TREE: every watch-tree notification started out "immediate".
+const WATCH_TREE: u32 = 0x01;
+const NOTIFY_IMMEDIATELY: u32 = 0x02;
+const CLEANUP_IN_PROCESS: u32 = 0x04;
+const NOTIFY_LATER: u32 = 0x08;
+const WATCH_ROOT: u32 = 0x10;
+const DELETE_IN_PROCESS: u32 = 0x20;
 
 const IO_DISK_INCREMENT: i8 = 1;
 const FO_CLEANUP_COMPLETE: u32 = 0x4000;
@@ -62,7 +66,8 @@ const IRP_BUFFERED_IO: u32 = 0x00000010;
 const IRP_DEALLOCATE_BUFFER: u32 = 0x00000020;
 const IRP_SYNCHRONOUS_PAGING_IO: u32 = 0x00000040;
 const SL_PENDING_RETURNED: u8 = 0x01;
-const WatchTree: u16 = 0x0001;
+const FILE_ACTION_RENAMED_OLD_NAME: ULONG = 4;
+const TAG_NOTIFY_SYNC: u32 = u32::from_le_bytes(*b"FSNS"); // 'SNSF'
 
 #[cfg(target_arch = "x86")]
 extern "fastcall" {
@@ -79,8 +84,8 @@ unsafe fn IoCompleteRequest(irp: PIRP, priority_boost: i8) {
 }
 
 extern "system" {
-    fn RtlOemStringToCountedUnicodeSize(string: PSTRING) -> u32;
-    fn RtlEqualMemory(source1: PVOID, source2: PVOID, length: usize) -> BOOLEAN;
+    fn RtlxOemStringToUnicodeSize(string: PSTRING) -> u32;
+    fn PsChargeProcessPoolQuota(process: PEPROCESS, pool_type: POOL_TYPE, amount: SIZE_T) -> NTSTATUS;
 }
 extern "C" {
     fn MmGetSystemAddressForMdl(mdl: PVOID) -> PVOID;
@@ -117,7 +122,6 @@ pub unsafe extern "system" fn FsRtlCancelNotify(
     let stack: PIO_STACK_LOCATION;
     let notify_change: PNOTIFY_CHANGE;
     let real_notify_sync: PREAL_NOTIFY_SYNC;
-    let mut pool_quota_charged: BOOLEAN;
     let mut subject_context: PSECURITY_SUBJECT_CONTEXT = core::ptr::null_mut();
 
     notify_change = (*irp).IoStatus.Information as PNOTIFY_CHANGE;
@@ -166,23 +170,21 @@ pub unsafe extern "system" fn FsRtlCancelNotify(
             (*notify_change).Flags |= NOTIFY_IMMEDIATELY as u16;
         } else {
             if buffer.is_null() {
-                pool_quota_charged = 0;
-
-                PsChargePoolQuota((*notify_change).OwningProcess, PagedPool, buffer_length as _);
-                pool_quota_charged = 1;
-
-                buffer = ExAllocatePoolWithTag(PagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE, buffer_length as usize, TAG_FS_NOTIFICATIONS);
-                (*notify_change).AllocatedBuffer = buffer;
-
-                core::ptr::copy_nonoverlapping((*notify_change).Buffer as *const u8, buffer as *mut u8, (*notify_change).DataLength as usize);
-                (*notify_change).ThisBufferLength = buffer_length;
-                (*notify_change).Buffer = buffer;
-
-                if buffer.is_null() {
-                    if pool_quota_charged != 0 {
-                        PsReturnProcessPagedPoolQuota((*notify_change).OwningProcess, buffer_length as _);
-                    }
+                // The C's _SEH2_TRY: a failed charge or allocation means notify
+                // immediately (see notify_charge_paged_quota).
+                if !notify_charge_paged_quota((*notify_change).OwningProcess, buffer_length) {
                     (*notify_change).Flags |= NOTIFY_IMMEDIATELY as u16;
+                } else {
+                    buffer = ExAllocatePoolWithTag(PagedPool, buffer_length as usize, TAG_FS_NOTIFICATIONS);
+                    if buffer.is_null() {
+                        PsReturnProcessPagedPoolQuota((*notify_change).OwningProcess, buffer_length as _);
+                        (*notify_change).Flags |= NOTIFY_IMMEDIATELY as u16;
+                    } else {
+                        (*notify_change).AllocatedBuffer = buffer;
+                        core::ptr::copy_nonoverlapping((*notify_change).Buffer as *const u8, buffer as *mut u8, (*notify_change).DataLength as usize);
+                        (*notify_change).ThisBufferLength = buffer_length;
+                        (*notify_change).Buffer = buffer;
+                    }
                 }
             }
         }
@@ -339,7 +341,7 @@ unsafe fn FsRtlNotifyCompleteIrpList(notify_change: PNOTIFY_CHANGE, status: NTST
 
     data_length = (*notify_change).DataLength;
 
-    (*notify_change).Flags &= NOTIFY_IMMEDIATELY as u16 | WatchTree ;
+    (*notify_change).Flags &= (NOTIFY_IMMEDIATELY | WATCH_TREE) as u16;
     (*notify_change).DataLength = 0;
     (*notify_change).LastEntry = 0;
 
@@ -495,7 +497,7 @@ pub unsafe extern "system" fn FsRtlNotifyCleanup(
                 subject_context = (*notify_change).SubjectContext;
             }
 
-            ExFreePoolWithTag(notify_change as PVOID, u32::from_le_bytes(*b"FsrN"));
+            ExFreePoolWithTag(notify_change as PVOID, TAG_FS_NOTIFICATIONS);
         }
     }
 
@@ -525,135 +527,143 @@ pub unsafe extern "system" fn FsRtlNotifyFilterChangeDirectory(
     let fs_context = opaque_ptr(fs_context);
     let notify_irp = opaque_ptr(notify_irp);
     let subject_context = opaque_ptr(subject_context);
-    let mut saved_length: ULONG;
-    let stack: PIO_STACK_LOCATION;
     let mut notify_change: PNOTIFY_CHANGE = core::ptr::null_mut();
-    let real_notify_sync: PREAL_NOTIFY_SYNC;
-
-    real_notify_sync = notify_sync as PREAL_NOTIFY_SYNC;
+    let real_notify_sync: PREAL_NOTIFY_SYNC = notify_sync as PREAL_NOTIFY_SYNC;
 
     FsRtlNotifyAcquireFastMutex(real_notify_sync);
 
-    if notify_irp.is_null() {
-        FsRtlCheckNotifyForDelete(notify_list, fs_context);
-        FsRtlNotifyReleaseFastMutex(real_notify_sync);
-        if !subject_context.is_null() && (notify_change.is_null() || !(*notify_change).FullDirectoryName.is_null()) {
-            SeReleaseSubjectContext(subject_context);
-            ExFreePool(subject_context as PVOID);
+    // The C's _SEH2_TRY body; `break 'body` is its _SEH2_LEAVE, the end of the
+    // block its _SEH2_FINALLY.
+    'body: {
+        // No IRP: the FSD is cleaning up, so complete for delete.
+        if notify_irp.is_null() {
+            FsRtlCheckNotifyForDelete(notify_list, fs_context);
+            break 'body;
         }
-        return;
-    }
 
-    (*notify_irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-    (*notify_irp).IoStatus.Information = 0;
+        (*notify_irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+        (*notify_irp).IoStatus.Information = 0;
 
-    stack = IoGetCurrentIrpStackLocation(notify_irp);
-    if ((*(*stack).FileObject).Flags & FO_CLEANUP_COMPLETE) != 0 {
-        IoMarkIrpPending(notify_irp);
-        (*notify_irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOTIFY_CLEANUP;
-        IoCompleteRequest(notify_irp, IO_DISK_INCREMENT);
-        FsRtlNotifyReleaseFastMutex(real_notify_sync);
-        if !subject_context.is_null() && (notify_change.is_null() || !(*notify_change).FullDirectoryName.is_null()) {
-            SeReleaseSubjectContext(subject_context);
-            ExFreePool(subject_context as PVOID);
-        }
-        return;
-    }
-
-    notify_change = FsRtlIsNotifyOnList(notify_list, fs_context);
-    if !notify_change.is_null() {
-        if ((*notify_change).Flags & CLEANUP_IN_PROCESS as u16) != 0 {
+        let stack = IoGetCurrentIrpStackLocation(notify_irp);
+        if ((*(*stack).FileObject).Flags & FO_CLEANUP_COMPLETE) != 0 {
             IoMarkIrpPending(notify_irp);
             (*notify_irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOTIFY_CLEANUP;
             IoCompleteRequest(notify_irp, IO_DISK_INCREMENT);
-        } else if ((*notify_change).Flags & DELETE_IN_PROCESS as u16) != 0 {
-            IoMarkIrpPending(notify_irp);
-            (*notify_irp).IoStatus.__bindgen_anon_1.Status = STATUS_DELETE_PENDING;
-            IoCompleteRequest(notify_irp, IO_DISK_INCREMENT);
+            break 'body;
         }
-        if (((*notify_change).Flags & NOTIFY_IMMEDIATELY as u16) != 0) && (((*notify_change).Flags & NOTIFY_LATER as u16) == 0) {
-            (*notify_change).Flags &= !NOTIFY_IMMEDIATELY as u16;
-            IoMarkIrpPending(notify_irp);
-            (*notify_irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOTIFY_ENUM_DIR;
-            IoCompleteRequest(notify_irp, IO_DISK_INCREMENT);
-        } else if (*notify_change).DataLength == 0 || (((*notify_change).Flags & NOTIFY_LATER as u16) != 0) {
-            // goto HandleIRP
-        } else {
-            saved_length = (*notify_change).DataLength;
-            (*notify_change).DataLength = 0;
-            FsRtlNotifyCompleteIrp(notify_irp, notify_change, saved_length, STATUS_SUCCESS, 0);
 
-            FsRtlNotifyReleaseFastMutex(real_notify_sync);
-            if !subject_context.is_null() && (notify_change.is_null() || !(*notify_change).FullDirectoryName.is_null()) {
-                SeReleaseSubjectContext(subject_context);
-                ExFreePool(subject_context as PVOID);
+        notify_change = FsRtlIsNotifyOnList(notify_list, fs_context);
+        if !notify_change.is_null() {
+            if ((*notify_change).Flags & CLEANUP_IN_PROCESS as u16) != 0 {
+                IoMarkIrpPending(notify_irp);
+                (*notify_irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOTIFY_CLEANUP;
+                IoCompleteRequest(notify_irp, IO_DISK_INCREMENT);
+            } else if ((*notify_change).Flags & DELETE_IN_PROCESS as u16) != 0 {
+                IoMarkIrpPending(notify_irp);
+                (*notify_irp).IoStatus.__bindgen_anon_1.Status = STATUS_DELETE_PENDING;
+                IoCompleteRequest(notify_irp, IO_DISK_INCREMENT);
             }
-            return;
-        }
-
-        FsRtlNotifyReleaseFastMutex(real_notify_sync);
-        if !subject_context.is_null() && (notify_change.is_null() || !(*notify_change).FullDirectoryName.is_null()) {
-            SeReleaseSubjectContext(subject_context);
-            ExFreePool(subject_context as PVOID);
-        }
-        return;
-    }
-
-    notify_change = ExAllocatePoolWithTag(PagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE, core::mem::size_of::<_NOTIFY_CHANGE>(), u32::from_le_bytes(*b"FsrN")) as PNOTIFY_CHANGE;
-    core::ptr::write_bytes(notify_change as *mut u8, 0, core::mem::size_of::<_NOTIFY_CHANGE>());
-
-    (*notify_change).NotifySync = notify_sync as PREAL_NOTIFY_SYNC;
-    (*notify_change).FsContext = fs_context;
-    (*notify_change).StreamID = (*(*stack).FileObject).FsContext;
-    (*notify_change).TraverseCallback = traverse_callback;
-    (*notify_change).SubjectContext = subject_context;
-    (*notify_change).FullDirectoryName = full_directory_name;
-    (*notify_change).FilterCallback = filter_callback;
-    InitializeListHead(core::ptr::addr_of_mut!((*notify_change).NotifyIrps) as PLIST_ENTRY);
-
-    if watch_tree != 0 {
-        (*notify_change).Flags |= WatchTree;
-    }
-
-    if (*full_directory_name).Length == 0 {
-        (*notify_change).CharacterSize = 1;
-    } else {
-        if (*full_directory_name).Length < 2 || (*((*full_directory_name).Buffer as *const i8).add(1)) != 0 {
-            (*notify_change).CharacterSize = 1;
+            if ((*notify_change).Flags & NOTIFY_IMMEDIATELY as u16) != 0
+                && ((*notify_change).Flags & NOTIFY_LATER as u16) == 0
+            {
+                (*notify_change).Flags &= !(NOTIFY_IMMEDIATELY as u16);
+                IoMarkIrpPending(notify_irp);
+                (*notify_irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOTIFY_ENUM_DIR;
+                IoCompleteRequest(notify_irp, IO_DISK_INCREMENT);
+                break 'body;
+            } else if (*notify_change).DataLength == 0
+                || ((*notify_change).Flags & NOTIFY_LATER as u16) != 0
+            {
+                // C: goto HandleIRP. The port left this a comment and returned, so a
+                // second watch on a handle with nothing reported yet left its IRP
+                // pending on no list and with no cancel routine.
+            } else {
+                let saved_length = (*notify_change).DataLength;
+                (*notify_change).DataLength = 0;
+                FsRtlNotifyCompleteIrp(notify_irp, notify_change, saved_length, STATUS_SUCCESS, 0);
+                break 'body;
+            }
         } else {
-            (*notify_change).CharacterSize = 2;
+            notify_change = ExAllocatePoolWithTag(
+                PagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE,
+                core::mem::size_of::<_NOTIFY_CHANGE>(),
+                TAG_FS_NOTIFICATIONS,
+            ) as PNOTIFY_CHANGE;
+            core::ptr::write_bytes(notify_change as *mut u8, 0, core::mem::size_of::<_NOTIFY_CHANGE>());
+
+            (*notify_change).NotifySync = notify_sync as PREAL_NOTIFY_SYNC;
+            (*notify_change).FsContext = fs_context;
+            (*notify_change).StreamID = (*(*stack).FileObject).FsContext;
+            (*notify_change).TraverseCallback = traverse_callback;
+            (*notify_change).SubjectContext = subject_context;
+            (*notify_change).FullDirectoryName = full_directory_name;
+            (*notify_change).FilterCallback = filter_callback;
+            InitializeListHead(core::ptr::addr_of_mut!((*notify_change).NotifyIrps) as PLIST_ENTRY);
+
+            if watch_tree != 0 {
+                (*notify_change).Flags |= WATCH_TREE as u16;
+            }
+
+            // An empty name counts as ANSI; one that cannot hold a WCHAR, or whose
+            // second byte is set, is ANSI too.
+            if (*full_directory_name).Length == 0 {
+                (*notify_change).CharacterSize = 1;
+            } else {
+                if (*full_directory_name).Length < 2 || *((*full_directory_name).Buffer as *const i8).add(1) != 0 {
+                    (*notify_change).CharacterSize = 1;
+                } else {
+                    (*notify_change).CharacterSize = 2;
+                }
+                if (*full_directory_name).Length == (*notify_change).CharacterSize as u16 {
+                    (*notify_change).Flags |= WATCH_ROOT as u16;
+                }
+            }
+
+            (*notify_change).CompletionFilter = completion_filter;
+            if ignore_buffer == 0 {
+                (*notify_change).BufferLength = (*stack).Parameters.NotifyDirectory.Length;
+            }
+            (*notify_change).OwningProcess = (*(*notify_irp).Tail.Overlay.Thread).ThreadsProcess;
+            InsertTailList(notify_list, core::ptr::addr_of_mut!((*notify_change).NotifyList) as PLIST_ENTRY);
+            (*notify_change).ReferenceCount = 1;
         }
 
-        if (*full_directory_name).Length == (*notify_change).CharacterSize as u16 {
-            (*notify_change).Flags |= 0x10; // WATCH_ROOT
-        }
+        // HandleIRP:
+        (*notify_irp).IoStatus.Information = notify_change as _;
+        IoMarkIrpPending(notify_irp);
+        InsertTailList(
+            core::ptr::addr_of_mut!((*notify_change).NotifyIrps) as PLIST_ENTRY,
+            core::ptr::addr_of_mut!((*notify_irp).Tail.Overlay.__bindgen_anon_2.ListEntry) as PLIST_ENTRY,
+        );
+        InterlockedIncrement(core::ptr::addr_of_mut!((*notify_change).ReferenceCount) as *mut LONG);
+        FsRtlNotifySetCancelRoutine(notify_irp, core::ptr::null_mut());
     }
-
-    (*notify_change).CompletionFilter = completion_filter;
-
-    if ignore_buffer == 0 {
-        (*notify_change).BufferLength = (*stack).Parameters.NotifyDirectory.Length;
-    }
-
-    (*notify_change).OwningProcess = (*(*notify_irp).Tail.Overlay.Thread).ThreadsProcess;
-
-    InsertTailList(notify_list, core::ptr::addr_of_mut!((*notify_change).NotifyList) as PLIST_ENTRY);
-
-    (*notify_change).ReferenceCount = 1;
-
-    // HandleIRP:
-    (*notify_irp).IoStatus.Information = notify_change as _;
-    IoMarkIrpPending(notify_irp);
-    InsertTailList(core::ptr::addr_of_mut!((*notify_change).NotifyIrps) as PLIST_ENTRY, core::ptr::addr_of_mut!((*notify_irp).Tail.Overlay.__bindgen_anon_2.ListEntry) as PLIST_ENTRY);
-    InterlockedIncrement(core::ptr::addr_of_mut!((*notify_change).ReferenceCount) as *mut LONG);
-    FsRtlNotifySetCancelRoutine(notify_irp, core::ptr::null_mut());
 
     FsRtlNotifyReleaseFastMutex(real_notify_sync);
 
+    // A captured subject context is ours to free unless a new notification kept it.
     if !subject_context.is_null() && (notify_change.is_null() || !(*notify_change).FullDirectoryName.is_null()) {
         SeReleaseSubjectContext(subject_context);
         ExFreePool(subject_context as PVOID);
     }
+}
+
+/// C: `RtlOemStringToCountedUnicodeSize`, a macro over `NLS_MB_OEM_CODE_PAGE_TAG`.
+unsafe fn oem_string_to_counted_unicode_size(string: PSTRING) -> ULONG {
+    let size = if NlsMbOemCodePageTag != 0 {
+        RtlxOemStringToUnicodeSize(string)
+    } else {
+        ((*string).Length as ULONG + 1) * 2
+    };
+    size - 2
+}
+
+/// The C charges with `PsChargePoolQuota`, which raises, inside an `_SEH2_TRY`
+/// whose handler treats a failure as "notify immediately". This kernel has no
+/// SEH, so take the status instead; the system process is exempt as there.
+unsafe fn notify_charge_paged_quota(process: PEPROCESS, amount: ULONG) -> bool {
+    process as PVOID == PsInitialSystemProcess as PVOID
+        || PsChargeProcessPoolQuota(process, PagedPool, amount as _) >= 0
 }
 
 #[no_mangle]
@@ -667,17 +677,310 @@ pub unsafe extern "system" fn FsRtlNotifyFilterReportChange(
     filter_match: ULONG,
     action: ULONG,
     target_context: PVOID,
-    _filter_context: PVOID,
+    filter_context: PVOID,
 ) {
     let notify_list = opaque_ptr(notify_list);
     let target_context = opaque_ptr(target_context);
-    let _filter_context = opaque_ptr(_filter_context);
-    let real_notify_sync: PREAL_NOTIFY_SYNC = notify_sync as PREAL_NOTIFY_SYNC;
+    let filter_context = opaque_ptr(filter_context);
+    let empty = STRING { Length: 0, MaximumLength: 0, Buffer: core::ptr::null_mut() };
+    let mut target_directory = empty;
+    let mut target_name = empty;
+    let mut parent_name = empty;
+    let mut int_normalized_parent_name = empty;
+    let mut normalized_parent_name = normalized_parent_name;
+    let mut is_stream = false;
 
+    // A full name needs the offset of its last part.
+    if target_name_offset == 0 && !full_target_name.is_null() {
+        return;
+    }
+
+    let real_notify_sync = notify_sync as PREAL_NOTIFY_SYNC;
     FsRtlNotifyAcquireFastMutex(real_notify_sync);
 
-    // Simplified implementation - actual implementation would be much more complex
-    // This is a placeholder that maintains the structure
+    let mut next_entry = (*notify_list).Flink;
+    while next_entry != notify_list {
+        let notify_change = (next_entry as *mut u8)
+            .sub(core::mem::offset_of!(_NOTIFY_CHANGE, NotifyList)) as PNOTIFY_CHANGE;
+        next_entry = (*next_entry).Flink;
+        let flags = move |f: u32| (*notify_change).Flags & f as u16 != 0;
+        let char_size = (*notify_change).CharacterSize as u32;
+        let is_parent: bool;
+
+        if !full_target_name.is_null() {
+            let full_dir = (*notify_change).FullDirectoryName;
+            ntkrnl_sys::ASSERT!(!full_dir.is_null());
+            if (*full_dir).Length == 0 || filter_match & (*notify_change).CompletionFilter == 0 {
+                continue;
+            }
+
+            // Without a normalized parent name, take the directory part of the target.
+            if normalized_parent_name.is_null() {
+                int_normalized_parent_name.Buffer = (*full_target_name).Buffer;
+                let len = if target_name_offset as u32 != char_size {
+                    target_name_offset - char_size as u16
+                } else {
+                    target_name_offset
+                };
+                int_normalized_parent_name.Length = len;
+                int_normalized_parent_name.MaximumLength = len;
+                normalized_parent_name = &mut int_normalized_parent_name;
+            }
+
+            // A watched directory longer than the changed file's parent cannot match.
+            if (*normalized_parent_name).Length < (*full_dir).Length {
+                continue;
+            }
+            if (*normalized_parent_name).Length == (*full_dir).Length {
+                is_parent = true;
+            } else if !flags(WATCH_TREE) {
+                continue;
+            } else {
+                // Deeper changes must sit under a `\` right after the watched name.
+                if !flags(WATCH_ROOT) {
+                    let sep = if char_size == 1 {
+                        *((*normalized_parent_name).Buffer as *const u8).add((*full_dir).Length as usize) as u16
+                    } else {
+                        *((*normalized_parent_name).Buffer as *const u16).add((*full_dir).Length as usize / 2)
+                    };
+                    if sep != b'\\' as u16 {
+                        continue;
+                    }
+                }
+                is_parent = false;
+            }
+
+            // C: RtlEqualMemory, a macro.
+            let len = (*full_dir).Length as usize;
+            if ntkrnl_sys::ddk::RtlCompareMemory(
+                (*normalized_parent_name).Buffer as PVOID,
+                (*full_dir).Buffer as PVOID,
+                len as _,
+            ) != len as _
+            {
+                continue;
+            }
+
+            if !is_parent {
+                if let Some(traverse) = (*notify_change).TraverseCallback {
+                    if traverse((*notify_change).FsContext, target_context, (*notify_change).SubjectContext) == 0 {
+                        continue;
+                    }
+                }
+            }
+            if let Some(filter) = (*notify_change).FilterCallback {
+                if !filter_context.is_null() && filter((*notify_change).FsContext, filter_context) == 0 {
+                    continue;
+                }
+            }
+        } else {
+            // A stream notification: matched by context, no directory name.
+            ntkrnl_sys::ASSERT!((*notify_change).FullDirectoryName.is_null());
+            if target_context != (*notify_change).SubjectContext as PVOID {
+                continue;
+            }
+            parent_name.Buffer = core::ptr::null_mut();
+            parent_name.Length = 0;
+            is_stream = true;
+            is_parent = false;
+        }
+
+        if !flags(NOTIFY_IMMEDIATELY) && (*notify_change).BufferLength != 0 {
+            // How much room the output has: this buffer, an IRP's, or the default.
+            let mut irp: PIRP = core::ptr::null_mut();
+            let number_of_bytes: ULONG = if (*notify_change).ThisBufferLength == 0 {
+                if IsListEmpty(core::ptr::addr_of_mut!((*notify_change).NotifyIrps) as PLIST_ENTRY) {
+                    (*notify_change).BufferLength
+                } else {
+                    irp = ((*notify_change).NotifyIrps.Flink as *mut u8)
+                        .sub(core::mem::offset_of!(_IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
+                    (*IoGetCurrentIrpStackLocation(irp)).Parameters.NotifyDirectory.Length
+                }
+            } else {
+                (*notify_change).ThisBufferLength
+            };
+
+            if is_parent {
+                // The watched directory itself changed: no parent part to report.
+                parent_name.Length = 0;
+            } else if !is_stream {
+                let full_dir = (*notify_change).FullDirectoryName;
+                let parent_name_offset: ULONG;
+                let mut parent_name_length: ULONG;
+                if flags(WATCH_ROOT) || (*normalized_parent_name).Buffer != (*full_target_name).Buffer {
+                    if target_directory.Buffer.is_null() {
+                        target_directory.Buffer = (*full_target_name).Buffer;
+                        target_directory.Length = target_name_offset;
+                        if target_name_offset as u32 != char_size {
+                            target_directory.Length = target_name_offset - char_size as u16;
+                        }
+                        target_directory.MaximumLength = target_directory.Length;
+                    }
+                    // Find where the target directory passes the watched name's last
+                    // part, by counting separators (FsRtlNotifyGetLastPartOffset).
+                    // The C leaves LastPartOffset unset when watching the root;
+                    // there the parent starts right after the leading `\`, offset 0.
+                    let mut last_part_offset: ULONG = 0;
+                    if !flags(WATCH_ROOT) {
+                        let mut full_parts: ULONG = 1;
+                        let mut target_parts: ULONG = 0;
+                        let (full_len, targ_len) = if char_size == 1 {
+                            ((*full_dir).Length as ULONG, target_directory.Length as ULONG)
+                        } else {
+                            ((*full_dir).Length as ULONG / 2, target_directory.Length as ULONG / 2)
+                        };
+                        let at = |buf: PCHAR, i: ULONG| -> u16 {
+                            if char_size == 1 {
+                                *(buf as *const u8).add(i as usize) as u16
+                            } else {
+                                *(buf as *const u16).add(i as usize)
+                            }
+                        };
+                        for pos in 0..full_len {
+                            if at((*full_dir).Buffer, pos) == b'\\' as u16 {
+                                full_parts += 1;
+                            }
+                        }
+                        while last_part_offset < targ_len {
+                            if at(target_directory.Buffer, last_part_offset) == b'\\' as u16 {
+                                target_parts += 1;
+                                if target_parts == full_parts {
+                                    break;
+                                }
+                            }
+                            last_part_offset += 1;
+                        }
+                        last_part_offset *= char_size;
+                    }
+                    parent_name_offset = char_size + last_part_offset;
+                    parent_name.Buffer = target_directory.Buffer.add(parent_name_offset as usize);
+                    parent_name_length = target_directory.Length as ULONG;
+                } else {
+                    parent_name.Buffer = (*normalized_parent_name).Buffer.add((*full_dir).Length as usize + char_size as usize);
+                    parent_name_length = ((*normalized_parent_name).Length - (*full_dir).Length) as ULONG;
+                    parent_name_offset = char_size;
+                }
+                parent_name_length -= parent_name_offset;
+                parent_name.Length = parent_name_length as USHORT;
+                parent_name.MaximumLength = parent_name_length as USHORT;
+            }
+
+            // Size of the record: header, then parent `\` target `:` stream, in WCHARs.
+            let mut data_length = core::mem::offset_of!(_FILE_NOTIFY_INFORMATION, FileName) as ULONG;
+            if is_stream {
+                ntkrnl_sys::ASSERT!(!stream_name.is_null());
+                data_length += (*stream_name).Length as ULONG;
+            } else {
+                if !is_parent {
+                    data_length += if char_size == 1 {
+                        oem_string_to_counted_unicode_size(&mut parent_name)
+                    } else {
+                        parent_name.Length as ULONG
+                    };
+                    data_length += 2;
+                }
+                if target_name.Buffer.is_null() {
+                    target_name.Buffer = (*full_target_name).Buffer.add(target_name_offset as usize);
+                    target_name.Length = (*full_target_name).Length - target_name_offset;
+                    target_name.MaximumLength = target_name.Length;
+                }
+                data_length += if char_size == 1 {
+                    oem_string_to_counted_unicode_size(&mut target_name)
+                } else {
+                    target_name.Length as ULONG
+                };
+                if !stream_name.is_null() {
+                    // The C sizes an OEM stream by TargetName plus a CHAR, but
+                    // FsRtlNotifyUpdateBuffer writes the converted stream after a
+                    // WCHAR ':'; size what is written.
+                    data_length += if char_size == 2 {
+                        (*stream_name).Length as ULONG
+                    } else {
+                        oem_string_to_counted_unicode_size(stream_name)
+                    } + 2;
+                }
+            }
+
+            // Records are ULONG-aligned; one that does not fit means re-enumerate.
+            let aligned_data_length = ((*notify_change).DataLength + 3) & !3;
+            if data_length > number_of_bytes || aligned_data_length + data_length > number_of_bytes {
+                (*notify_change).Flags |= NOTIFY_IMMEDIATELY as u16;
+            } else {
+                let mut output_buffer: PVOID = core::ptr::null_mut();
+                if !(*notify_change).Buffer.is_null() {
+                    // Chain the previous record to the one about to be written.
+                    let last = ((*notify_change).Buffer as *mut u8).add((*notify_change).LastEntry as usize)
+                        as PFILE_NOTIFY_INFORMATION;
+                    (*last).NextEntryOffset = aligned_data_length - (*notify_change).LastEntry;
+                    (*notify_change).LastEntry = aligned_data_length;
+                    output_buffer = ((*notify_change).Buffer as *mut u8).add(aligned_data_length as usize) as PVOID;
+                } else if !irp.is_null() {
+                    if !(*irp).AssociatedIrp.SystemBuffer.is_null() {
+                        output_buffer = (*irp).AssociatedIrp.SystemBuffer;
+                    } else if !(*irp).MdlAddress.is_null() {
+                        output_buffer = MmGetSystemAddressForMdl((*irp).MdlAddress as PVOID);
+                    }
+                    (*notify_change).Buffer = output_buffer;
+                    (*notify_change).ThisBufferLength = number_of_bytes;
+                }
+
+                if (*notify_change).Buffer.is_null() {
+                    (*notify_change).ThisBufferLength = number_of_bytes;
+                    if notify_charge_paged_quota((*notify_change).OwningProcess, number_of_bytes) {
+                        output_buffer = ExAllocatePoolWithTag(PagedPool, number_of_bytes as usize, TAG_FS_NOTIFICATIONS);
+                        if output_buffer.is_null() {
+                            PsReturnProcessPagedPoolQuota((*notify_change).OwningProcess, number_of_bytes as _);
+                            (*notify_change).Flags |= NOTIFY_IMMEDIATELY as u16;
+                        }
+                        (*notify_change).Buffer = output_buffer;
+                        (*notify_change).AllocatedBuffer = output_buffer;
+                    } else {
+                        (*notify_change).Flags |= NOTIFY_IMMEDIATELY as u16;
+                    }
+                }
+
+                if !output_buffer.is_null() {
+                    if FsRtlNotifyUpdateBuffer(
+                        output_buffer as PFILE_NOTIFY_INFORMATION,
+                        action,
+                        &mut parent_name,
+                        &mut target_name,
+                        stream_name,
+                        (char_size == 2) as BOOLEAN,
+                        data_length,
+                    ) != 0
+                    {
+                        (*notify_change).DataLength = data_length + aligned_data_length;
+                    } else {
+                        (*notify_change).Flags |= NOTIFY_IMMEDIATELY as u16;
+                    }
+                }
+            }
+
+            // Notifying immediately means re-enumerate: drop whatever was buffered.
+            if flags(NOTIFY_IMMEDIATELY) && !(*notify_change).Buffer.is_null() {
+                if !(*notify_change).AllocatedBuffer.is_null() {
+                    PsReturnProcessPagedPoolQuota((*notify_change).OwningProcess, (*notify_change).ThisBufferLength as _);
+                    ExFreePoolWithTag((*notify_change).AllocatedBuffer, TAG_FS_NOTIFICATIONS);
+                }
+                (*notify_change).Buffer = core::ptr::null_mut();
+                (*notify_change).AllocatedBuffer = core::ptr::null_mut();
+                (*notify_change).LastEntry = 0;
+                (*notify_change).DataLength = 0;
+                (*notify_change).ThisBufferLength = 0;
+            }
+        }
+
+        // An old name waits for its new name before anything completes.
+        if action == FILE_ACTION_RENAMED_OLD_NAME {
+            (*notify_change).Flags |= NOTIFY_LATER as u16;
+        } else {
+            (*notify_change).Flags &= !(NOTIFY_LATER as u16);
+            if !IsListEmpty(core::ptr::addr_of_mut!((*notify_change).NotifyIrps) as PLIST_ENTRY) {
+                FsRtlNotifyCompleteIrpList(notify_change, STATUS_SUCCESS);
+            }
+        }
+    }
 
     FsRtlNotifyReleaseFastMutex(real_notify_sync);
 }
@@ -749,7 +1052,7 @@ pub unsafe extern "system" fn FsRtlNotifyInitializeSync(notify_sync: *mut PNOTIF
 
     *notify_sync = core::ptr::null_mut();
 
-    real_notify_sync = ExAllocatePoolWithTag(NonPagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE, core::mem::size_of::<_REAL_NOTIFY_SYNC>(), u32::from_le_bytes(*b"FSNR")) as PREAL_NOTIFY_SYNC;
+    real_notify_sync = ExAllocatePoolWithTag(NonPagedPool | POOL_RAISE_IF_ALLOCATION_FAILURE, core::mem::size_of::<_REAL_NOTIFY_SYNC>(), TAG_NOTIFY_SYNC) as PREAL_NOTIFY_SYNC;
     ExInitializeFastMutex(core::ptr::addr_of_mut!((*real_notify_sync).FastMutex));
     (*real_notify_sync).OwningThread = 0;
     (*real_notify_sync).OwnerCount = 0;
@@ -785,7 +1088,7 @@ pub unsafe extern "system" fn FsRtlNotifyReportChange(
 pub unsafe extern "system" fn FsRtlNotifyUninitializeSync(notify_sync: *mut PNOTIFY_SYNC) {
     let notify_sync = opaque_ptr(notify_sync);
     if !(*notify_sync).is_null() {
-        ExFreePoolWithTag(*notify_sync, u32::from_le_bytes(*b"FSNR"));
+        ExFreePoolWithTag(*notify_sync, TAG_NOTIFY_SYNC);
         *notify_sync = core::ptr::null_mut();
     }
 }

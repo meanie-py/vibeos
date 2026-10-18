@@ -1,0 +1,31 @@
+# Wine's directory change-notification tests, run by the apitest sweep runner.
+#
+# kernel32:change (FindFirstChangeNotification, ReadDirectoryChangesW) and ntdll:change
+# (NtNotifyChangeDirectoryFile) drive FsRtlNotifyFilterChangeDirectory and
+# FsRtlNotifyFilterReportChange end to end, through fastfat. Smoke never waits on a
+# notification, so nothing else exercises them. Written 2026-10-17 when the Rust report
+# function was found to be an empty placeholder: every watch pended until cancelled.
+name: changewinetest
+description: Wine kernel32/ntdll change-notification tests under the apitest sweep runner
+
+build_hint: "tools/payloads/apitest/build.sh {arch} && python3 tools/payloads/apitest/gen_suites.py --arch {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites kernel32,ntdll --only kernel32:change --only ntdll:change --register '' --out-dir tools/payloads/changewinetest"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/changewinetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/changewinetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/changewinetest/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: build-{arch}/modules/rostests/winetests/kernel32/kernel32_winetest.exe
+    dest: bin/kernel32_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/ntdll/ntdll_winetest.exe
+    dest: bin/ntdll_winetest.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 900
+  launch_idle_secs: 300

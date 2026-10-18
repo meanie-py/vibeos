@@ -27,6 +27,8 @@ ATL_RUST = Path(__file__).resolve().parents[3] / "sdk" / "lib" / "rust" / "atlcl
 _STRING_SPELLINGS = ("CAtlStringW", "CStringW", "CAtlString", "CString")
 _TCHAR_SPELLINGS = frozenset({"CAtlString", "CString"})
 _DIRECT = ("CComPtr", "CHeapPtr", "CComHeapPtr", "CSimpleArray", "CSimpleMap", "CAtlList")
+# Non-template atl_rust types, named bare (`CComBSTR title;`, acppage).
+_PLAIN = ("CComBSTR",)
 # C++ standard library spelling -> atl_rust::stl type (drwtsn32, ksproxy).
 _STL = {
     "std::string": "StdBasicString",
@@ -39,7 +41,9 @@ _STL = {
 @cache
 def _api() -> dict[str, list[str]]:
     """atl_rust type -> its public method signatures, bodies and docs stripped."""
-    text = "\n".join((ATL_RUST / "src" / f).read_text() for f in ("lib.rs", "stl.rs", "dll.rs"))
+    text = "\n".join(
+        (ATL_RUST / "src" / f).read_text() for f in ("lib.rs", "stl.rs", "dll.rs", "bstr.rs")
+    )
     out: dict[str, list[str]] = {}
     for m in re.finditer(r"^impl(?:<[^>]*>)?\s+(\w+)(?:<[^>]*>)?\s*\{", text, re.M):
         depth, i = 1, m.end()
@@ -62,6 +66,7 @@ def types_used(body: str) -> list[str]:
     if any(re.search(rf"\b{s}\b", body) for s in _STRING_SPELLINGS):
         used.append("CStringW")
     used += [t for t in _DIRECT if re.search(rf"\b{t}\s*<", body)]
+    used += [t for t in _PLAIN if re.search(rf"\b{t}\b", body)]
     if "CComHeapPtr" in used and "CHeapPtr" not in used:
         used.append("CHeapPtr")  # the alias's methods live on CHeapPtr
     for spelling, t in _STL.items():

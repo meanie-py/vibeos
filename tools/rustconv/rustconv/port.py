@@ -41,6 +41,7 @@ from pathlib import Path
 
 from . import (
     bank_import,
+    cohab_stub,
     crate_integrate,
     dead_regions,
     default_arm,
@@ -779,6 +780,12 @@ def _resolve_island_types(state: dict, names: set[str]) -> set[str]:
         if ref.kind in ("crt", "toolchain") or ref.name.startswith(("ndk/", "wine/")):
             print(f"resolve: type {n} is in {ref.name}, a base header -- the -sys crate's job")
             continue
+        if "sdk/lib/atl/" in ref.path.as_posix():
+            # ATL's own headers (CComModule, CComObject, CString, a template's `Base`): what a
+            # C++ module takes from them is atl_rust's or cppapp's, never bindgen's. acppage's
+            # island grew opaque copies of all four and stopped compiling.
+            print(f"resolve: type {n} is ATL's ({ref.name}) -- atl_rust/cppapp, not the island")
+            continue
         rx = pd._hdr_regex(ref.name)
         if rx in dp.allow_files and rx in extra:
             continue  # already there: the island does not define it for another reason
@@ -1257,6 +1264,9 @@ def stage_cppapp(stem: str) -> None:
     ] + [f"{f.name}: {u}" for f in model.functions for u in f.unplaced]
     for u in unplaced:
         print(f"cppapp: UNLOWERED (inside a macro expansion): {u}")
+    folded = cpp_app.fold_module_subclasses(model)
+    if folded:
+        print(f"cppapp: CComModule subclass(es) folded into the module: {', '.join(folded)}")
     dropped = cpp_app.prune_unused_external(model)
     if dropped:
         print(f"cppapp: external class(es) nothing names, not rendered: {', '.join(dropped)}")
@@ -1269,8 +1279,18 @@ def stage_cppapp(stem: str) -> None:
     island_i386 = _crate_dir(state) / "src" / "types_i386.rs"
     island_text = island_i386.read_text(errors="replace") if island_i386.is_file() else ""
     hand_methods, hand_names = _hand_definitions(_crate_dir(state) / "src", stem)
+    sys_src = prelude_resolve.island_substrate(
+        _crate_dir(state) / "src", REPO / "sdk" / "lib" / "rust"
+    )
+    sys_i386 = sys_src / "bindgen_i386.rs" if sys_src is not None else None
+    substrate = sys_i386.read_text(errors="replace") if sys_i386 and sys_i386.is_file() else ""
     generated = cpp_app.render_classes(
-        model, island_structs, island_text, hand_methods=hand_methods, hand_names=hand_names
+        model,
+        island_structs,
+        island_text,
+        hand_methods=hand_methods,
+        hand_names=hand_names,
+        substrate=substrate,
     )
     (crate_src / "cpp_classes.rs").write_text(generated)
     deferred = _defer_island_classes(_crate_dir(state) / "src", stem, generated)
@@ -1593,6 +1613,7 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
     Returns (block, refused names).
     """
     module_dir = REPO / state["module_dir"]
+    # Quoted too: wmiutils's main.c has `#include "initguid.h"` (3 IIDs undefined at link).
     # C++ sources too: mmcshext.cpp includes <initguid.h> before <msxml2.h>, so the C++ TU
     # defined CLSID_DOMDocument30, and the cppapp crate failed to link without it.
     c_texts = [
@@ -1601,7 +1622,7 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
         if p.suffix.lower() in (".c", ".h", ".hpp", *CPP_SUFFIXES)
     ]
     if not any(
-        re.search(r"#\s*include\s*<initguid\.h>|#\s*define\s+INITGUID\b", t) for t in c_texts
+        re.search(r'#\s*include\s*[<"]initguid\.h[>"]|#\s*define\s+INITGUID\b', t) for t in c_texts
     ):
         return "", []
     declared: set[str] = set()
@@ -1611,6 +1632,13 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
         )
     body = "\n".join(p.read_text(errors="replace") for p in sorted(modules_dir.glob("*.rs")))
     own = set(re.findall(r"\bstatic\s+(?:mut\s+)?(\w+)\s*:", body))
+    # The prelude's SDK aliases count as references: sxs names `CLSID_DOMDocument`, which
+    # msxml2.h defines as CLSID_DOMDocument2 -- the GUID guid.c gave storage under that name.
+    prelude = crate / "src" / "prelude.rs"
+    if prelude.is_file():
+        body += "\n" + "\n".join(
+            re.findall(r"^pub use crate::types::(\w+) as \w+;", prelude.read_text(), re.M)
+        )
     want = {n for n in declared if re.search(rf"\b{n}\b", body)} - own
     # A GUID uuid.lib already defines is that library's, when the target links it: the C's
     # INITGUID copy is DECLSPEC_SELECTANY and folds into uuid's at link, but a Rust
@@ -1652,8 +1680,15 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
                     break
         values = set()
         for f in files:
-            for m in _DEFINE_GUID_RE.finditer((REPO / f).read_text(errors="replace")):
-                if m.group(1) == name:
+            text = (REPO / f).read_text(errors="replace")
+            # msxml2.h defines no CLSID_DOMDocument2 by that name: `#define CLSID_DOMDocument
+            # CLSID_DOMDocument2` comes first, so its later DEFINE_GUID(CLSID_DOMDocument, ...)
+            # is CLSID_DOMDocument2's storage (sxs failed to link without it).
+            spelled = {name} | set(
+                re.findall(rf"^\s*#\s*define\s+(\w+)\s+{re.escape(name)}\s*$", text, re.M)
+            )
+            for m in _DEFINE_GUID_RE.finditer(text):
+                if m.group(1) in spelled:
                     d4 = ", ".join(re.findall(r"0x[0-9A-Fa-f]+", m.group(5)))
                     values.add((m.group(2), m.group(3), m.group(4), d4))
         if len(values) != 1:
@@ -1694,7 +1729,7 @@ def initguid_module(c_path: Path) -> str | None:
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", c_path.read_text(errors="replace"), flags=re.S)
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     if "#define INITGUID" not in lines:
-        return None
+        return _initguid_include_module(c_path, lines)
     includes: list[tuple[str, bool]] = []  # (name, quoted)
     for ln in lines:
         m = re.match(r"#\s*include\s*([<\"])([^>\"]+)[>\"]", ln)
@@ -1735,6 +1770,30 @@ def initguid_module(c_path: Path) -> str | None:
         "use crate::prelude::*;\n\n"
     )
     return head + "\n".join(guids[n] for n in guids) + "\n"
+
+
+def _initguid_include_module(c_path: Path, lines: list[str]) -> str | None:
+    """The stub module for Wine's guid.c: `#include <initguid.h>` and headers, no code.
+
+    sti's and sxs's guid.c include <initguid.h> and then <objbase.h> and friends, so the C
+    defines (DECLSPEC_SELECTANY) every GUID in that whole include closure. That closure is
+    not lowered here: `port resolve`'s INITGUID block already gives storage to exactly the
+    GUIDs the crate references and its GUID libraries do not define, which is everything the
+    C's copies were for. The module stays so the crate mirrors the CMake source list.
+    """
+    seen = False
+    for ln in lines:
+        if re.match(r'#\s*include\s*[<"]initguid\.h[>"]', ln):
+            seen = True
+        elif not re.match(r"#\s*(include\s*[<\"]|define\s+\w+\s*$)", ln):
+            return None  # real code, or a define with a value: translate it
+    if not seen:
+        return None
+    return (
+        f"// {c_path.name}: only `#include <initguid.h>` and headers. The GUID storage it gave\n"
+        "// the C lives in the prelude's INITGUID block (`rustconv port resolve`), limited to\n"
+        "// the GUIDs this crate references.\n"
+    )
 
 
 def failing_audit_tus(state: dict) -> list[str]:
@@ -1876,6 +1935,13 @@ def stage_translate(
             )
             break
         out = _tu_output(state, tu)
+        if replay_only and out.name in _whole_module_banks(stem):
+            # The hand stage writes this whole module from its bank (`port hand <stem> f.rs:*`),
+            # so nothing translate could assemble here survives it. acppage's class unit had a
+            # constructor whose prologue changed after the bank was taken, and the replay
+            # refused the TU for want of a cached body nobody needed.
+            print(f"translate: {Path(tu).name}: whole module hand-banked, not reassembled")
+            continue
         cmd = [
             sys.executable,
             "-m",
@@ -1959,15 +2025,19 @@ def stage_translate(
         proc = subprocess.run(
             cmd, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True, env=env
         )
-        refused = set(_NO_REPLAY.findall(proc.stdout + proc.stderr)) & _hand_covered(stem)
-        if refused:
+        covered = _hand_covered(stem)
+        hand_skipped: set[str] = set()
+        # The synthetic path refuses one body per run, so ask again until nothing new is
+        # refused that a hand bank covers; each round skips one more name, so it ends.
+        while new := (_no_replay_names(proc.stdout + proc.stderr) & covered) - hand_skipped:
             # A body the bank cannot replay because its C changed under it (wscript's
             # print_resource, bought from cscript's preprocess) but that a HAND bank replaces
             # anyway: nothing is owed, so assemble the TU without it rather than refuse it.
-            cmd += ["--skip-fn", *sorted(refused - set(skipped))]
+            hand_skipped |= new
+            cmd += ["--skip-fn", *sorted(new - set(skipped))]
             # Recorded like any --skip-fn, so apply_hand knows the hand item has no bought
             # counterpart left in the file to replace.
-            state["skip_fn"] = sorted(set(state.get("skip_fn", [])) | refused)
+            state["skip_fn"] = sorted(set(state.get("skip_fn", [])) | new)
             proc = subprocess.run(
                 cmd, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True, env=env
             )
@@ -2452,11 +2522,10 @@ def stage_flip(stem: str) -> None:
     cml = module / "CMakeLists.txt"
     new = flip_cmake(cml.read_text(), state)
     stub = module / _stub_name(state)
-    if not stub.exists():
-        stub.write_text(
-            f"/* {stem} is Rust (sdk/lib/rust/{state['crate']}); a CMake target needs one TU. */\n"
-            f"typedef int {stem}_rust_cohab_placeholder;\n"
-        )
+    # Rewritten while it is still only what a flip writes (an older flip's placeholder, or
+    # a stale anchor list); a stub somebody edited by hand is theirs.
+    if not stub.exists() or cohab_stub.is_generated(stub.read_text(), stem, state["crate"]):
+        stub.write_text(cohab_stub.stub_text(stem, state["crate"], cohab_stub.module_spec(module)))
     changed = new != cml.read_text()
     if changed:
         cml.write_text(new)
@@ -3424,7 +3493,15 @@ def _drop_dead_arms(path: Path, c_file: Path) -> list[str]:
 
 
 _WINE_DBCH_ITEM = re.compile(
-    r"^(?:#\[no_mangle\]\n)?pub\s+static\s+(?:mut\s+)?(__wine_dbch_\w+)\s*:[^\n]*;\n", re.M
+    r"^(?:#\[no_mangle\]\n)?pub\s+static\s+(?:mut\s+)?(__wine_dbch_\w+)\s*:"
+    r"(?:[^\n]*;\n|[^\n]*\{\n(?:[^\n]*\n)*?\};\n)",
+    re.M,
+)
+#: wine/debug.h's own types, which resolve writes into the prelude beside the statics.
+_WINE_DBCH_TYPES = re.compile(
+    r"^(?:#\[repr\(C\)\]\n)?pub\s+struct\s+(__wine_debug_channel)\s*\{\n(?:[^\n]*\n)*?\}\n"
+    r"|^pub\s+type\s+(__wine_debug_class)\s*=[^\n]*;\n",
+    re.M,
 )
 
 
@@ -3459,10 +3536,16 @@ def _wine_list_entry(path: Path, module_dir: Path, crate: Path) -> int:
         n += k
         return out
 
+    # A struct LITERAL with Flink/Blink is the NT type whatever the module's C says: Wine's
+    # critical-section initializer expands to one (pdh's `ProcessLocksList: _LIST_ENTRY {
+    # Flink: .., Blink: .. }` in a CRITICAL_SECTION_DEBUG), and `list` has no such fields.
+    nt_literal = re.compile(r"\b_?LIST_ENTRY(\s*\{\s*Flink\s*:)")
+    text = nt_literal.sub(r"__NT_LIST_ENTRY_LITERAL\1", text)
     text = sub(r"\bLIST_ENTRY\s*\(", "LIST_ENTRY!(", text)
     text = sub(r"\bPLIST_ENTRY\b", "*mut list", text)
     text = sub(r"\b_LIST_ENTRY\b", "list", text)  # mf: bindgen's tag spelling
     text = sub(r"\bLIST_ENTRY\b(?!\s*!)", "list", text)
+    text = text.replace("__NT_LIST_ENTRY_LITERAL", "_LIST_ENTRY")
     if n:
         path.write_text(text)
     return n
@@ -3496,16 +3579,58 @@ def _c_struct_tag_names(path: Path, crate_src: Path) -> list[str]:
     return done
 
 
+_CRITSEC_DEBUG_STATIC = re.compile(
+    r"^(static\s+mut\s+(\w+)\s*:\s*CRITICAL_SECTION_DEBUG\s*=\s*)(_RTL_CRITICAL_SECTION_DEBUG\s*\{\n.*?\n\s*\};)\n",
+    re.M | re.S,
+)
+_CRITSEC_DEBUG_STRING = re.compile(
+    r"WineDebugString:\s*b\"[^\"]*\"\s*as\s*\*const\s+u8\s+as\s+\*const\s+::core::ffi::c_char"
+    r"\s+as\s+DWORD_PTR,?\s*"
+)
+
+
+def _wine_critsec_debug(path: Path) -> list[str]:
+    """Wine's static critical section, `{ 0, 0, &cs, { &cs_debug.ProcessLocksList, ... }, 0, 0,
+    { (DWORD_PTR)(__FILE__ ": cs") } }`, as a const initializer Rust can evaluate.
+
+    It came back (pdh, credui) with the label's address cast to DWORD_PTR, which const
+    evaluation refuses (a pointer is not an integer there), and `&raw mut` of the statics it
+    names outside `unsafe`. The label only names the lock for a debugger, so the slot is
+    zeroed (`Spare: [0; 1]`, the union's other arm) and the initializer goes in `unsafe`.
+    Returns the statics rewritten."""
+    text = path.read_text()
+    done: list[str] = []
+
+    def fix(m: re.Match[str]) -> str:
+        body = m.group(3)
+        new_body = _CRITSEC_DEBUG_STRING.sub("Spare: [0; 1] ", body)
+        if new_body == body and "unsafe" in m.group(1):
+            return m.group(0)
+        done.append(m.group(2))
+        return f"{m.group(1)}unsafe {{ {new_body[:-1]}}};\n"
+
+    new = _CRITSEC_DEBUG_STATIC.sub(fix, text)
+    if new != text:
+        path.write_text(new)
+    return done
+
+
 def _wine_debug_storage(path: Path) -> list[str]:
     """`WINE_DEFAULT_DEBUG_CHANNEL(ch)` is two statics in a HEADER macro, and resolve writes
     them once in the prelude (`_wine_debug_channels`). A translation that spells its own --
     inetcpl's security.c came back with `pub static __wine_dbch___default: [u8; 8] =
     *b"inetcpl\0"`, two TUs each with a different invented type -- shadows the real
     `*mut __wine_debug_channel`, so it is dropped, and the bodies that then indexed it as
-    bytes (`__wine_dbch___default[0]`, the struct's first field) read `.flags`."""
+    bytes (`__wine_dbch___default[0]`, the struct's first field) read `.flags`. A TU-local
+    copy of the struct or the class enum goes too: there is one, the prelude's."""
     text = path.read_text()
     names = _WINE_DBCH_ITEM.findall(text)
     new = _WINE_DBCH_ITEM.sub("", text)
+    # pdh_main.c came back with the channel static as a multi-line literal (flags: 0, where
+    # the macro says (unsigned char)~0, i.e. every class off) and its own copy of the struct,
+    # which then disagreed with the prelude's at every TRACE: drop both, resolve writes them.
+    names += [a or b for a, b in _WINE_DBCH_TYPES.findall(new)]
+    new = _WINE_DBCH_TYPES.sub("", new)
     new, n = re.subn(r"\b(__wine_dbch_\w+)\[0\]", r"(*\1).flags", new)
     # `TRACE_ON(extrac32)` pastes `&__wine_dbch_##ch`, which macro_rules cannot: name the
     # channel static for win32macros-rust's `TRACE_ON!`.
@@ -3659,6 +3784,37 @@ def _c2rust_unnamed(path: Path, island: str) -> list[str]:
         return m.group(0)
 
     new = _C2RUST_UNNAMED_LIT.sub(lit, text)
+    # A NAMED member of anonymous type keeps its name in both, only the type differs:
+    # inetmib1's `u: C2RustUnnamed_6 { dwForwarding: 0 }` is MIB_IPSTATS's
+    # `u: _MIB_IPSTATS__bindgen_ty_1`. Four island structs have a `u`, so the type is the one
+    # whose member also owns the literal's first field -- exactly one, or left alone.
+    member_types: dict[str, set[str]] = {}
+    for m in re.finditer(r"^\s*pub (\w+): (\w+__bindgen_ty_\d+),", island, re.M):
+        member_types.setdefault(m.group(1), set()).add(m.group(2))
+    fields_of = {
+        m.group(1): set(re.findall(r"^\s*pub (\w+):", m.group(2), re.M))
+        for m in re.finditer(
+            r"^pub (?:union|struct) (\w+__bindgen_ty_\d+) \{(.*?)^\}", island, re.M | re.S
+        )
+    }
+
+    def named(m: re.Match[str]) -> str:
+        hits = [
+            t
+            for t in member_types.get(m.group("member"), ())
+            if m.group("field") in fields_of.get(t, ())
+        ]
+        if len(hits) != 1:
+            return m.group(0)
+        done.append(f"{m.group('member')}: {hits[0]}")
+        return f"{m.group('member')}: {hits[0]} {{ {m.group('field')}:"
+
+    new = re.sub(
+        r"\b(?P<member>(?!c2rust_unnamed)[A-Za-z_]\w*)\s*:\s*C2RustUnnamed(?:_\d+)?\s*\{\s*"
+        r"(?P<field>[A-Za-z_]\w*)\s*:",
+        named,
+        new,
+    )
     new, k = re.subn(r"\.c2rust_unnamed(?:_\d+)?\b(?!\s*:)", "", new)
     if k:
         done.append(f".c2rust_unnamed x{k}")
@@ -4352,6 +4508,13 @@ def stage_integrate(stem: str) -> None:
         if wl:
             changed += 1
             print(f"integrate: {path.stem}: {wl} NT LIST_ENTRY(s) as wine/list.h's `list`")
+        critsec = _wine_critsec_debug(path)
+        if critsec:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: Wine critical-section debug static(s) made const: "
+                + ", ".join(critsec)
+            )
         wine = _wine_debug_storage(path)
         if wine:
             changed += 1
@@ -5276,6 +5439,9 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
                 and exported_anywhere is not None
                 and name not in exported_anywhere
             ):
+                if _links_oldnames(REPO / state["module_dir"]) and f"_{name}" in exported_anywhere:
+                    res.undefined.append(name)  # the extern pass aliases it to `_{name}`
+                    continue
                 res.conflicting[name] = (
                     "no import library this module links exports it -- a header inline "
                     "(port it, or import it from a shared crate), not an extern"
@@ -5550,6 +5716,14 @@ def _prelude_declared_fns(prelude: Path) -> set[str]:
     )
 
 
+def _links_oldnames(module_dir: Path) -> bool:
+    """True when the module's C links oldnames.lib (`wcsdup` -> msvcrt's `_wcsdup`)."""
+    cmake = module_dir / "CMakeLists.txt"
+    return cmake.is_file() and bool(
+        re.search(r"target_link_libraries\([^)]*\boldnames\b", cmake.read_text())
+    )
+
+
 def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     """Functions the module's C calls and no Rust declares, two ways, both exact:
 
@@ -5657,6 +5831,23 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
                 "sdk alias",
             )
     sdk_alias = {n: t for n, t in sdk_alias.items() if t not in shared_paths}
+    # Same rule as the consensus pass: a user-mode extern must be something an import library
+    # this module links exports. pdh and credui got `RtlSecureZeroMemory` here -- winnt.h's
+    # FORCEINLINE, which bindgen declares and no DLL exports -- and failed to link on every
+    # arch. Kernel crates are left to the substrate's link check, as there.
+    crate = _crate_dir(state)
+    island_sys = prelude_resolve.island_substrate(crate / "src", REPO / "sdk" / "lib" / "rust")
+    user_mode = island_sys is None or island_sys.parent.name != "ntkrnl-sys"
+    exported_anywhere = (
+        prelude_resolve.module_exports(module_dir, REPO, every_arch=False) if user_mode else None
+    )
+    # oldnames.lib is the C's alias table, not a DLL: sxs's and wmiutils's `wcsdup` and
+    # `wcslwr` link to msvcrt's `_wcsdup`/`_wcslwr` through it. Declare the export and
+    # re-export it under the old name, as an SDK alias.
+    if exported_anywhere is not None and _links_oldnames(module_dir):
+        for name in sorted(todo - set(sdk_alias)):
+            if name not in exported_anywhere and f"_{name}" in exported_anywhere:
+                sdk_alias[name] = f"_{name}"
     # A target already declared (hand-written or consensus) is aliased, not declared again.
     todo = (todo - set(sdk_alias) - set(sigs)) | {
         t for t in sdk_alias.values() if t not in declared
@@ -5685,6 +5876,13 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
                 )
                 todo.discard(name)
                 continue
+            if exported_anywhere is not None and name not in exported_anywhere:
+                print(
+                    f"resolve: {name}: no import library this module links exports it -- a "
+                    "header inline: port it, or import it from a shared crate"
+                )
+                todo.discard(name)
+                continue
             abi = "C" if "..." in sig else abis[name]
             sigs[name] = (abi, sig, Path(tu).name)
             todo.discard(name)
@@ -5702,9 +5900,13 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
                 text = re.sub(r"^.*?\bfn\b", "fn", item.text)
                 sigs[target] = (item.abi.strip('"'), text, item.path)
                 todo.discard(target)
+    island = "\n".join(_island_texts(crate))
     for name, target in sorted(sdk_alias.items()):
         if target in sigs or re.search(rf"\bfn {re.escape(target)}\b", prelude.read_text()):
             sigs[name] = ("use", f"pub use crate::prelude::{target} as {name};", "sdk alias")
+        elif re.search(rf"^\s*pub static {re.escape(target)}:", island, re.M):
+            # A data alias: msxml2.h's `#define CLSID_DOMDocument CLSID_DOMDocument2` (sxs).
+            sigs[name] = ("use", f"pub use crate::types::{target} as {name};", "sdk alias")
     lost = sorted(f"{n} -> {t}" for n, t in sdk_alias.items() if n not in sigs)
     if lost:
         print(f"resolve: SDK alias target declared nowhere, hand-declare it: {', '.join(lost)}")
@@ -6840,7 +7042,29 @@ def _hand_dir(stem: str) -> Path:
 
 
 #: response_cache's refusal to re-buy a body whose purchase no longer replays.
-_NO_REPLAY = re.compile(r": (\w+) already has purchased output which did not replay")
+# Both refusals: the plain path's, and the C++ synthetic path's (acppage's DllMain after a
+# cppapp fix changed its unit's text), which stops at the FIRST body it lacks.
+_NO_REPLAY = re.compile(
+    r": (\w+) already has purchased output which did not replay"
+    r"|--replay-only: no accepted cached body for (\w+)"
+)
+
+
+def _no_replay_names(text: str) -> set[str]:
+    return {a or b for a, b in _NO_REPLAY.findall(text)}
+
+
+def _whole_module_banks(stem: str) -> set[str]:
+    """Module file names a whole-module hand bank (`f.rs:*`) holds."""
+    out: set[str] = set()
+    for entry in _hand_dir(stem).glob("*.json"):
+        try:
+            banked = json.loads(entry.read_text())
+        except (OSError, ValueError):
+            continue
+        if banked.get("name") == "*" and banked.get("file"):
+            out.add(banked["file"])
+    return out
 
 
 def _hand_covered(stem: str) -> set[str]:

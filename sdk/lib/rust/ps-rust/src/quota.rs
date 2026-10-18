@@ -47,8 +47,9 @@ const VALID_QUOTA_FLAGS: ULONG = QUOTA_LIMITS_HARDWS_MIN_ENABLE
     | QUOTA_LIMITS_HARDWS_MAX_ENABLE
     | QUOTA_LIMITS_HARDWS_MAX_DISABLE;
 
-const PSP_NON_PAGED_POOL_QUOTA_THRESHOLD: SIZE_T = 2048;
-const PSP_PAGED_POOL_QUOTA_THRESHOLD: SIZE_T = 8192;
+// ps.h. The port had 2048/8192, which returned quota to Mm 32-64x as often.
+const PSP_NON_PAGED_POOL_QUOTA_THRESHOLD: SIZE_T = 0x10000;
+const PSP_PAGED_POOL_QUOTA_THRESHOLD: SIZE_T = 0x80000;
 
 const TAG_QUOTA_BLOCK: ULONG = 0x62517350;
 
@@ -265,8 +266,10 @@ unsafe fn PspReturnProcessQuotaSpecifiedPool(
 
         if (*quota_block).QuotaEntry[quota_type].Return > return_threshold {
             MmReturnPoolQuota(quota_type as POOL_TYPE, (*quota_block).QuotaEntry[quota_type].Return);
+            // quota.c passes the Return VALUE as the target pointer, a wild write of
+            // 0 to address==Return; zero the field itself.
             InterlockedExchangeSizeT(
-                (*quota_block).QuotaEntry[quota_type].Return as *mut isize,
+                core::ptr::addr_of_mut!((*quota_block).QuotaEntry[quota_type].Return) as *mut isize,
                 0,
             );
         }

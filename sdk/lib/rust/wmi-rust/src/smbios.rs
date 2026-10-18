@@ -183,6 +183,30 @@ pub unsafe extern "system" fn GetEntryPointData(
 }
 
 #[no_mangle]
+/// Physical address of the SMBIOS entry point the loader copied into firmware-permanent
+/// memory (`LOADER_PARAMETER_EXTENSION.SMBiosEPSHeader`), or 0. Recorded by
+/// `WmipCaptureLoaderSmbios` while the loader block is still mapped; the copy outlives it.
+static mut WmipLoaderSmbiosEps: u64 = 0;
+
+/// Called from WmiInitialize (IoInitSystem, phase 1): KeLoaderBlock is still valid there.
+pub unsafe fn WmipCaptureLoaderSmbios() {
+    extern "system" {
+        static mut KeLoaderBlock: *mut ntkrnl_sys::ddk::_LOADER_PARAMETER_BLOCK;
+        fn MmGetPhysicalAddress(BaseAddress: PVOID) -> PHYSICAL_ADDRESS;
+    }
+    let lb = KeLoaderBlock;
+    if lb.is_null() || (*lb).Extension.is_null() {
+        return;
+    }
+    let ext = (*lb).Extension;
+    let need = core::mem::offset_of!(ntkrnl_sys::ddk::_LOADER_PARAMETER_EXTENSION, SMBiosEPSHeader)
+        + core::mem::size_of::<PVOID>();
+    if ((*ext).Size as usize) < need || (*ext).SMBiosEPSHeader.is_null() {
+        return;
+    }
+    WmipLoaderSmbiosEps = MmGetPhysicalAddress((*ext).SMBiosEPSHeader as PVOID).QuadPart as u64;
+}
+
 pub unsafe extern "system" fn WmipGetRawSMBiosTableData(
     OutTableData: *mut PVOID,
     OutDataSize: *mut ULONG,
@@ -190,7 +214,9 @@ pub unsafe extern "system" fn WmipGetRawSMBiosTableData(
     let OutTableData = opaque_ptr(OutTableData);
     let OutDataSize = opaque_ptr(OutDataSize);
     const SearchSize: SIZE_T = 0x10000;
-    const HeaderSize: ULONG = core::mem::size_of::<MSSmBios_RawSMBiosTables>() as ULONG;
+    // FIELD_OFFSET(..., SMBiosData) in the C, not sizeof: the [UCHAR; 1] tail pads the struct to
+    // 12, which put four stray bytes between the 8-byte header and the first SMBIOS structure.
+    const HeaderSize: ULONG = core::mem::offset_of!(MSSmBios_RawSMBiosTables, SMBiosData) as ULONG;
     let mut PhysicalAddress: PHYSICAL_ADDRESS = core::mem::zeroed();
     let EntryPointMapping: *mut UCHAR;
     let mut BiosTablesHeader: MSSmBios_RawSMBiosTables = core::mem::zeroed();
@@ -207,8 +233,20 @@ pub unsafe extern "system" fn WmipGetRawSMBiosTableData(
         return 0xC0000001u32 as NTSTATUS;
     }
 
+    // The loader's copy first: the F-segment below holds nothing after boot on the smoke
+    // VMs, and UEFI machines (all of arm64) have no F-segment table at all.
+    if WmipLoaderSmbiosEps != 0 {
+        let mut eps: PHYSICAL_ADDRESS = core::mem::zeroed();
+        eps.QuadPart = WmipLoaderSmbiosEps as i64;
+        let m = MmMapIoSpace(eps, 32, ntkrnl_sys::ddk::_MEMORY_CACHING_TYPE_MmCached as _) as *mut UCHAR;
+        if !m.is_null() {
+            GetEntryPointData(m, &mut TableAddress, &mut TableSize, &mut BiosTablesHeader);
+            MmUnmapIoSpace(m as PVOID, 32);
+        }
+    }
+
     Offset = 0;
-    while Offset <= (0x10000 - 32) {
+    while TableAddress == 0 && Offset <= (0x10000 - 32) {
         if GetEntryPointData(
             EntryPointMapping.add(Offset as usize),
             &mut TableAddress,

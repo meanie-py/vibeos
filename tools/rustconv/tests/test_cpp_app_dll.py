@@ -196,6 +196,16 @@ def test_an_external_class_nothing_names_is_pruned():
     assert "ATL::CWindow" in m.classes and "ATL::CRegKey" not in m.classes
 
 
+def test_a_window_template_base_keeps_cwindow():
+    # acppage: `class CLayerUIPropPage : public CPropertyPageImpl<CLayerUIPropPage>, ..` never
+    # spells CWindow, but the template IS it (cpp_app.short), and its layout is CWindow's.
+    m = _model(extra_bases=(Base("CPropertyPageImpl<CX>", "public"),))
+    win = ClassModel("CWindow", "ATL::CWindow", "class", "atlwin.h", external=True)
+    m.classes["ATL::CWindow"] = win
+    assert cpp_app.prune_unused_external(m) == []
+    assert "ATL::CWindow" in m.classes
+
+
 def test_the_island_allowlists_the_classes_interface_bases(tmp_path):
     tu = tmp_path / "x.cpp"
     tu.write_text(
@@ -246,3 +256,104 @@ def test_an_ambiguous_interface_ancestor_is_refused():
     island = _ISLAND + _IBASE + ifoo2.replace("IFoo", "IFoo2")
     with pytest.raises(cpp_app.CppAppError, match="IBase is an ambiguous base"):
         cpp_app.render_classes(m, frozenset(), island)
+
+
+def test_a_brace_list_static_renders_against_the_substrate_struct():
+    # ATL's `RECT CWindow::rcDefault = { CW_USEDEFAULT, CW_USEDEFAULT, 0, 0 };`. RECT is the
+    # substrate's (`pub type RECT = tagRECT;` in ntdll-sys), not the crate island's.
+    substrate = (
+        "pub type RECT = tagRECT;\n#[repr(C)]\npub struct tagRECT {\n    pub left: LONG,\n"
+        "    pub top: LONG,\n    pub right: LONG,\n    pub bottom: LONG,\n}\n"
+    )
+    fields = cpp_app.island_struct_fields(substrate)
+    assert fields["RECT"] == ["left", "top", "right", "bottom"]
+    f = Field("rcDefault", "RECT", static=True)
+    f.default_init = "{ CW_USEDEFAULT, CW_USEDEFAULT, 0, 0 }"
+    cls = ClassModel("CWindow", "ATL::CWindow", "class", "atlwin.h", external=True)
+    out = cpp_app._static_member_init(cls, f, "RECT", ModuleModel(), fields)
+    assert out == (
+        "RECT { left: CW_USEDEFAULT as _, top: CW_USEDEFAULT as _, right: 0 as _, bottom: 0 as _ }"
+    )
+
+
+def test_a_brace_list_that_does_not_fit_the_struct_is_refused():
+    fields = {"RECT": ["left", "top", "right", "bottom"]}
+    f = Field("rc", "RECT", static=True)
+    f.default_init = "{ 1, 2, 3 }"
+    cls = ClassModel("CX", "CX", "class", "x.h")
+    with pytest.raises(cpp_app.CppAppError, match="cannot render"):
+        cpp_app._static_member_init(cls, f, "RECT", ModuleModel(), fields)
+    f.default_init = "{ f(), 2, 3, 4 }"
+    with pytest.raises(cpp_app.CppAppError, match="cannot render"):
+        cpp_app._static_member_init(cls, f, "RECT", ModuleModel(), fields)
+
+
+def test_an_empty_ccommodule_subclass_is_the_module():
+    # acppage: `class CLayerUIPropPageModule : public CComModule {}; CLayerUIPropPageModule gModule;`
+    m = _model()
+    sub = ClassModel("CMyModule", "CMyModule", "class", "x.cpp", polymorphic=True)
+    sub.bases = [Base("CComModule", "public")]
+    m.classes["CMyModule"] = sub
+    m.globals[1].c_type = "CMyModule"
+    assert cpp_app.fold_module_subclasses(m) == ["CMyModule"]
+    assert "CMyModule" not in m.classes and m.globals[1].c_type == "CComModule"
+    rs = cpp_app.render_classes(m, frozenset(), _ISLAND)
+    assert "pub static mut g_Module: atl_rust::dll::CComModule" in rs
+
+
+def test_a_ccommodule_subclass_with_members_is_refused():
+    m = _model()
+    sub = ClassModel("CMyModule", "CMyModule", "class", "x.cpp")
+    sub.bases = [Base("CComModule", "public")]
+    sub.fields = [Field("m_extra", "int")]
+    m.classes["CMyModule"] = sub
+    with pytest.raises(cpp_app.CppAppError, match="CComModule subclass with members"):
+        cpp_app.fold_module_subclasses(m)
+
+
+def _with_virtual_dtor(m):
+    c = m.classes["CX"]
+    c.methods.append(
+        Method("~CX", "dtor", [], "", virtual=True, body=("x.cpp", 0, 1), lowered="{ f(); }")
+    )
+    _assign_names(c)
+    return m
+
+
+def test_a_com_class_virtual_dtor_without_a_vtable_of_ours_deletes_statically():
+    # cabview's CEnumIDList: every other virtual is an IEnumIDList method, so the interface's
+    # lpVtbl is the only vptr, and nothing in the module derives from it.
+    rs = cpp_app.render_classes(_with_virtual_dtor(_model()), frozenset(), _ISLAND)
+    delete = next(ln for ln in rs.splitlines() if ln.startswith("pub unsafe fn CX__delete"))
+    assert "drop_in_place(p)" in delete and "__vtbl" not in delete
+
+
+def test_the_same_dtor_with_a_module_subclass_still_fails_loud():
+    m = _with_virtual_dtor(_model())
+    d = ClassModel("CY", "CY", "class", "x.cpp", polymorphic=True)
+    d.bases = [Base("CX", "public")]
+    _assign_names(d)
+    m.classes[d.qualified] = d
+    with pytest.raises(cpp_app.CppAppError, match="virtual destructor but no vtable"):
+        cpp_app.render_classes(m, frozenset(), _ISLAND)
+
+
+def test_pragma_pack_follows_pshpack_and_pragma_stacks():
+    from rustconv.cpp_model import pragma_pack_at
+
+    assert pragma_pack_at("struct A {};") is None
+    assert pragma_pack_at("#include <pshpack1.h>\nstruct CABITEM") == 1
+    assert pragma_pack_at("#include <pshpack1.h>\n#include <poppack.h>\nstruct B") is None
+    assert pragma_pack_at("#pragma pack(push, 2)\n#include <pshpack4.h>\n#include <poppack.h>") == 2
+    assert pragma_pack_at("#pragma pack(push, 8)\n#pragma pack(pop)\n") is None
+
+
+def test_a_packed_struct_and_its_class_constants_render():
+    # cabview's CABITEM: under pshpack1.h, with `enum { FSATTS = .. };` in its scope.
+    c = ClassModel("CABITEM", "CABITEM", "struct", "x.cpp", pack=1, constants=[("FSATTS", 55)])
+    c.fields = [Field("cb", "WORD"), Field("Size", "UINT")]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = cpp_app.render_classes(m, frozenset(), _ISLAND)
+    assert "#[repr(C, packed)]\npub struct CABITEM" in rs
+    assert "pub const FSATTS: i32 = 55;" in rs

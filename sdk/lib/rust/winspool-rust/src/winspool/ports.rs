@@ -325,47 +325,18 @@ pub unsafe extern "system" fn GetMonitorUI(pName: PWSTR, pMonitorPortName: PWSTR
         return GetLastError();
     }
 
-    if OpenPrinterW(pDevice as LPWSTR, core::ptr::addr_of_mut!(hPrinter), core::ptr::addr_of_mut!(wDefault)) != 0 {
-        pHandle = hPrinter as PSPOOLER_HANDLE;
+ else {
+        dwErrorCode = GetLastError();
+    }
 
-        // RpcTryExcept
-        {
-            dwErrorCode = rpc_try(|| _RpcXcvData(
-                (*pHandle).hPrinter,
-                RUSTCONV_WSTR_657B9E92C1BA.as_ptr(),
-                core::ptr::addr_of_mut!(InputData) as PBYTE,
-                0,
-                core::ptr::addr_of_mut!(OutputData) as PBYTE,
-                1024,
-                core::ptr::addr_of_mut!(cbOutputNeeded),
-                core::ptr::addr_of_mut!(dwStatus),
-            )).unwrap_or_else(|code| code as _);
-        }
-        // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler is
-        //     dwErrorCode = RpcExceptionCode();
-        // Structured exception handling is not modeled in Rust; the
-        // protected body above is the only executed path.
-
-        if dwErrorCode == ERROR_INSUFFICIENT_BUFFER {
-            pOutputString = DllAllocSplMem(cbOutputNeeded) as PWSTR;
-
-            // RpcTryExcept
-            {
-                dwErrorCode = rpc_try(|| _RpcXcvData(
-                    (*pHandle).hPrinter,
-                    RUSTCONV_WSTR_657B9E92C1BA.as_ptr(),
-                    core::ptr::addr_of_mut!(InputData) as PBYTE,
-                    0,
-                    pOutputString as PBYTE,
-                    cbOutputNeeded,
-                    core::ptr::addr_of_mut!(cbOutputNeeded),
-                    core::ptr::addr_of_mut!(dwStatus),
-                )).unwrap_or_else(|code| code as _);
-            }
-            // RpcExcept(EXCEPTION_EXECUTE_HANDLER): handler is
-            //     dwErrorCode = RpcExceptionCode();
-            // Not modeled (see above).
-        }
+    if !hPrinter.is_null() {
+        ClosePrinter(hPrinter);
+    }
+    if !pOutputString.is_null() {
+        DllFreeSplMem(pOutputString as PVOID);
+    }
+    if !pDevice.is_null() {
+        DllFreeSplMem(pDevice as PVOID);
     }
 
     dwErrorCode

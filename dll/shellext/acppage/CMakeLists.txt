@@ -6,11 +6,16 @@ include_directories(${REACTOS_SOURCE_DIR}/dll/appcompat/apphelp)
 spec2def(acppage.dll acppage.spec ADD_IMPORTLIB)
 
 list(APPEND SOURCE
-    ACPPage.cpp
-    CEditCompatModes.cpp
-    CLayerUIPropPage.cpp
+    # ACPPage.cpp  # replaced by Rust (sdk/lib/rust/acppage-rust/src/acppage/ACPPage_cpp_h.rs)
+    # CEditCompatModes.cpp  # replaced by Rust (sdk/lib/rust/acppage-rust/src/acppage/CEditCompatModes_cpp_h.rs)
+    # CLayerUIPropPage.cpp  # replaced by Rust (sdk/lib/rust/acppage-rust/src/acppage/CLayerUIPropPage_cpp_h.rs)
+    rust_cohab_stub.cpp
+    rust_varargs_shim.c
     precomp.h)
 
+# Every translation unit is Rust now (acppage-rust, `rustconv port`); the C stays on
+# disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(acppage_rust acppage-rust "" TRUE)
 add_library(acppage MODULE
     ${SOURCE}
     acppage.spec
@@ -19,6 +24,8 @@ add_library(acppage MODULE
     CLayerStringList.hpp
     resource.h
     ${CMAKE_CURRENT_BINARY_DIR}/acppage.def)
+add_dependencies(acppage rust_acppage_rust)
+target_link_libraries(acppage ${acppage_rust_LIB})
 add_pch(acppage precomp.h SOURCE)
 
 set_module_type(acppage win32dll UNICODE)
@@ -26,3 +33,5 @@ target_link_libraries(acppage wine uuid cpprt atl_classes)
 add_delay_importlibs(acppage apphelp ole32 oleaut32 shlwapi comctl32 sfc_os)
 add_importlibs(acppage shell32 user32 advapi32 msvcrt kernel32)
 add_cd_file(TARGET acppage DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

@@ -3920,6 +3920,15 @@ unsafe fn IntGetOutlineTextMetrics_impl(
             PANOSE_COUNT as usize,
         );
         (*Otm).otmfsSelection = (*pOS2).fsSelection as UINT;
+        // Divergence from the C, which reports the face file's bits only: Windows (and Wine's
+        // freetype.c) also set ITALIC (bit 0) and BOLD (bit 5) for a style GDI synthesizes, so
+        // Tahoma requested italic reads as italic here, as tmItalic already does.
+        if (*FontGDI).RequestItalic != 0 && (*FontGDI).OriginalItalic == 0 {
+            (*Otm).otmfsSelection |= 1;
+        }
+        if EMUBOLD_NEEDED((*FontGDI).OriginalWeight, (*FontGDI).RequestWeight) {
+            (*Otm).otmfsSelection |= 1 << 5;
+        }
         (*Otm).otmfsType = (*pOS2).fsType as UINT;
         (*Otm).otmsCharSlopeRise = (*pHori).caret_Slope_Rise as INT;
         (*Otm).otmsCharSlopeRun = (*pHori).caret_Slope_Run as INT;

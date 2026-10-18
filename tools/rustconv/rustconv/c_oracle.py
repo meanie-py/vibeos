@@ -100,8 +100,9 @@ def _words(args: str) -> list[str]:
     return re.findall(r'"[^"]*"|[^\s"]+', re.sub(r"#[^\n]*", "", args))
 
 
-def source_lists(text: str) -> dict[str, list[str]]:
-    """Each `list(APPEND V ..)` / `set(V ..)` holding a flipped TU -> its pre-flip entries."""
+def source_lists(text: str, *, all_lists: bool = False) -> dict[str, list[str]]:
+    """Each `list(APPEND V ..)` / `set(V ..)` holding a flipped TU -> its pre-flip entries
+    (every such list with `all_lists`)."""
     lists: dict[str, list[str]] = {}
     flipped: set[str] = set()
     for cmd in commands(text):
@@ -122,7 +123,7 @@ def source_lists(text: str) -> dict[str, list[str]]:
             # rust_varargs_shim.c, whose trampolines redefine netsh.c's own variadics.
             entries += [w for w in _words(line) if not Path(w).name.startswith("rust_")]
         lists.setdefault(var, []).extend(entries)
-    return {v: lists[v] for v in lists if v in flipped}
+    return {v: lists[v] for v in lists if v in flipped or all_lists}
 
 
 def _target_of(cmd: Command) -> str | None:
@@ -145,6 +146,10 @@ def inline_sources(text: str) -> dict[str, list[str]]:
         if entries and target:
             out[target] = entries
     return out
+
+
+# add_idl_reg_scripts' TYPE -> the suffix widl-support.cmake gives its .o and custom target.
+_REG_SUFFIX = {"registry": "_r", "regtypelib": "_t", "winrt": "_w"}
 
 
 def generate(cml: str) -> str:
@@ -175,6 +180,19 @@ def generate(cml: str) -> str:
                 oracle[words[0]] = f"{words[0]}_c"
                 grew = True
 
+    # A list the oracle names that the flip did NOT touch is copied too: the cargo flip
+    # deletes `list(APPEND PCH_SKIP_SOURCE .._stubs.c)` along with the sources, so imagehlp_c
+    # read an empty ${PCH_SKIP_SOURCE}, lost spec2def's stubs, and failed to link.
+    every = source_lists(cml, all_lists=True)
+    used = {
+        v
+        for cmd in cmds
+        if _target_of(cmd) in oracle
+        for v in re.findall(r"\$\{(\w+)\}", cmd.args)
+        if v in every and v not in lists
+    }
+    lists = {**lists, **{v: every[v] for v in used}}
+
     def rewrite(word: str) -> str | None:
         if _RUST_WORD.search(word):
             return None
@@ -191,6 +209,17 @@ def generate(cml: str) -> str:
         if cmd.name in _SKIP or cmd.name.startswith("rust_") or target not in oracle:
             continue
         raw = _words(cmd.args)
+        if cmd.name == "add_idl_reg_scripts" and len(raw) > 2 and raw[1] in _REG_SUFFIX:
+            # The module's own call already generates <idl><suffix>.o under the custom target
+            # <module><suffix>; a second call declares the same OUTPUT and CMake refuses the
+            # whole configure (sti, wmiutils). The oracle links the object the module made.
+            suffix = _REG_SUFFIX[raw[1]]
+            objs = " ".join(
+                f"${{CMAKE_CURRENT_BINARY_DIR}}/{Path(i).stem}{suffix}.o" for i in raw[2:]
+            )
+            body.append(f"target_sources({oracle[target]} PRIVATE {objs})")
+            body.append(f"add_dependencies({oracle[target]} {target}{suffix})")
+            continue
         words = [r for w in raw if (r := rewrite(w)) is not None]
         if cmd.name in ("add_executable", "add_library"):
             at = 2 if len(words) > 1 and words[1] in ("STATIC", "SHARED", "MODULE", "OBJECT") else 1
@@ -285,9 +314,13 @@ def reflip(old: str, cml: str) -> str:
         entry = line.strip().rstrip(")").strip()
         if entry in flipped and not line.lstrip().startswith("#"):
             indent = line[: len(line) - len(line.lstrip())]
-            line = f"{indent}# {entry}  # replaced by Rust" + (
-                ")" if line.rstrip().endswith(")") else ""
-            )
+            closes = line.rstrip().endswith(")")
+            line = f"{indent}# {entry}  # replaced by Rust"
+            if closes:
+                # The list's `)` on a line of its own: after the comment it would be part of
+                # it, and the list never closes (imagehlp's `modify.c)`, its last entry).
+                out.append(line)
+                line = f"{indent})"
         out.append(line)
     return "\n".join(out) + "\n"
 

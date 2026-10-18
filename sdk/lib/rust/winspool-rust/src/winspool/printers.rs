@@ -205,14 +205,7 @@ pub unsafe extern "system" fn AbortPrinter(hPrinter: HANDLE) -> BOOL {
         }
 
         // Do the RPC call.
-        // RpcTryExcept / RpcExcept: exception path is never taken on the normal flow.
-        let __rpc_exc: bool = false;
-        if !__rpc_exc {
-            dwErrorCode = rpc_try(|| _RpcAbortPrinter(core::ptr::addr_of_mut!((*pHandle).hPrinter) as WINSPOOL_PRINTER_HANDLE)).unwrap_or_else(|code| code as _);
-        } else {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
-        // RpcEndExcept;
+        dwErrorCode = rpc_try(|| _RpcAbortPrinter(core::ptr::addr_of_mut!((*pHandle).hPrinter) as WINSPOOL_PRINTER_HANDLE)).unwrap_or_else(|code| code as _);
     }
 
     // Cleanup:
@@ -440,7 +433,6 @@ pub unsafe extern "system" fn AddPrinterW(pName: PWSTR, Level: DWORD, pPrinter: 
 pub unsafe extern "system" fn ClosePrinter(hPrinter: HANDLE) -> BOOL {
     let mut dwErrorCode: DWORD;
     let mut pHandle: PSPOOLER_HANDLE = hPrinter as PSPOOLER_HANDLE;
-    let mut rpc_exc: bool = false;
 
     'Cleanup: {
         // Sanity checks.
@@ -453,9 +445,6 @@ pub unsafe extern "system" fn ClosePrinter(hPrinter: HANDLE) -> BOOL {
         // RpcTryExcept body
         dwErrorCode = rpc_try(|| _RpcClosePrinter(core::ptr::addr_of_mut!((*pHandle).hPrinter) as HANDLE)).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER) body
-        if rpc_exc {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept
 
         // Close any open file handle.
@@ -1396,20 +1385,15 @@ pub unsafe extern "system" fn EndDocPrinter(hPrinter: HANDLE) -> BOOL {
 
         if (*pHandle).hSPLFile != INVALID_HANDLE_VALUE {
             // For spooled jobs, the document is finished by calling _RpcScheduleJob.
-            let mut rpc_raised: bool = false;
             // RpcTryExcept
             dwErrorCode = rpc_try(|| _RpcScheduleJob((*pHandle).hPrinter, (*pHandle).dwJobID)).unwrap_or_else(|code| code as _);
             // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-            if rpc_raised {
-                dwErrorCode = RpcExceptionCode!() as DWORD;
-            }
             // RpcEndExcept;
 
             // Close the spool file handle.
             CloseHandle((*pHandle).hSPLFile);
         } else {
             // In all other cases, just call _RpcEndDocPrinter.
-            let mut rpc_raised: bool = false;
             // RpcTryExcept
             dwErrorCode = rpc_try(|| _RpcEndDocPrinter((*pHandle).hPrinter)).unwrap_or_else(|code| code as _);
             // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
@@ -2516,10 +2500,6 @@ pub unsafe extern "system" fn GetPrinterW(hPrinter: HANDLE, Level: DWORD, pPrint
         dwErrorCode = rpc_try(|| _RpcGetPrinter((*pHandle).hPrinter, Level, pPrinter, cbBuf, pcbNeeded)).unwrap_or_else(|code| code as _);
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER): structured exception handling has no
         // Rust equivalent; the handler is kept as a branch that is never taken.
-        let _rpc_exception_raised: bool = false;
-        if _rpc_exception_raised {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
 
         if dwErrorCode == ERROR_SUCCESS {

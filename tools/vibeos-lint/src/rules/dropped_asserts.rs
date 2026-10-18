@@ -74,7 +74,8 @@ impl Rule for DroppedAsserts {
             if f.path.components().any(|p| p.as_os_str() == "target") {
                 continue;
             }
-            let code = f.rust_noise();
+            let noise = f.rust_noise();
+            let code = noise.as_str();
             let lines = masked_lines(code);
             for c in rf.captures_iter(code) {
                 // `X` forwarding to `XSited(.., site)` is ntkrnl-sys's lockdep

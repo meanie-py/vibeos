@@ -510,23 +510,33 @@ runs it.
   reported by `port island` but still not generated.
 - **New partials from the third batch:** iphlpapi change notifications after the
   initial one, IPv6 tables; IDN nameprep without NFKC.
-- **Firmware tables beyond SMBIOS (owed, upstream-sync lane):** `SystemFirmwareTableInformation`
-  (class 76) answers only the `'RSMB'` provider; `'ACPI'` and `'FIRM'` return
-  STATUS_NOT_IMPLEMENTED in ex-rust `QSI_SystemFirmwareTableInformation`. kernel32's
-  version.c does not exercise them, but `GetSystemFirmwareTable('ACPI')` is how programs
-  find the TPM, the battery and whether they run in a VM. RSMB itself returned
-  STATUS_NOT_SUPPORTED until 2026-10-17 (wmi-rust compared the SMBIOS GUID against a
-  guid object declared without its leading KEVENT); it now reaches the provider and
-  answers STATUS_NOT_FOUND, because the kernel never finds an entry point. Measured
-  2026-10-17: SeaBIOS (`-M pc`) leaves a valid `_SM3_` at 0xF52D0, but the kernel's
-  MmMapIoSpace view of 0xF0000-0xFFFFF holds no `_SM`/`RSD PTR` anchor at all (2411
-  non-0xFF bytes in 64 KB) -- the shadowed F-segment is not what reads there after boot,
-  which the HAL never notices because freeldr finds ACPI first. And on UEFI (amd64-uefi,
-  arm64) SMBIOS is only in the EFI configuration table, which nothing passes on:
-  `LOADER_PARAMETER_EXTENSION.SMBiosEPSHeader` (arc.h) is never filled. Owed: have
-  freeldr (pc: real-mode scan, as for ACPI; uefi: SMBIOS/SMBIOS3 config-table GUIDs)
-  record the entry point and copy the table, and WmipGetRawSMBiosTableData use it first.
-  Then kernel32 version.c:741-785 (RSMB) is the check.
+- **Firmware tables (`SystemFirmwareTableInformation`, class 76):** all three providers
+  Windows has. `'ACPI'` lists every table the XSDT/RSDT names plus the DSDT and fetches the
+  first table with a given signature, reached through the loader's "ACPI BIOS" configuration
+  node; it is how programs find the TPM, the battery and whether they run in a VM. `'RSMB'`
+  works on every arch since 2026-10-17: the loader hands the kernel a copy of the SMBIOS entry
+  point and table in `LOADER_PARAMETER_EXTENSION.SMBiosEPSHeader`, as Windows' does. `'FIRM'`
+  returns the 0xC0000 and 0xE0000 legacy regions (128 KB each) on x86 and lists nothing on
+  arm64. `tools/payloads/fwprobe` checks all three on every boot, including a true SeaBIOS
+  one: RSDP and `_SM_` found in the E/F segment, reset vector `ea 5b e0 00 f0`.
+- **Resolved: "the kernel sees an empty F-segment after boot."** It was never the kernel.
+  `smoke --arch amd64-bios --payload X` ran the payload under OVMF (the payload stage mapped
+  the base arch to amd64-uefi), so the "BIOS" view was a UEFI machine's, which has no
+  anchors there. Fixed in smoke.py; before 2026-10-17 no amd64-bios payload verdict, the
+  kernel32 version.c one included, was a BIOS boot.
+- **KMDF at 6.2+ (from version-flip-audit "Could not determine"):** two paths open up.
+  *Passive-level interrupts* (`WdfInterruptCreate(PassiveHandling)`, refused by KMDF below
+  6.2) arrive as `CONNECT_FULLY_SPECIFIED` with `Irql = PASSIVE_LEVEL`; iomgr-rust routes them
+  to the passive-connection machinery CONNECT_MESSAGE_BASED_PASSIVE already uses for its line
+  fallback (ISR masks the line, a worker thread runs the routine), taking the DIRQL from the
+  PDO's assigned interrupt at that vector. No in-tree driver exercises it yet. *DMA v3*
+  (`DEVICE_DESCRIPTION_VERSION3`: KMDF's AddressWidthOverride at 6.2+, and the system-DMA
+  profiles at any version): both HALs refuse it, so the driver fails to get an adapter.
+  **Owed (upstream-sync lane):** the v3 DMA operations (`GetDmaTransferInfo`,
+  `InitializeDmaTransferContext`, `GetScatterGatherListEx`, `BuildScatterGatherListEx`,
+  `AllocateAdapterChannelEx`, `MapTransferEx`, `FlushAdapterBuffersEx`, `FreeAdapterObject`,
+  ...), which every slot of both HALs' tables leaves NULL; until then accepting v3 would hand
+  KMDF null calls. No in-tree KMDF driver uses DMA; the risk is third-party ones.
 - **Bodies that answer honestly but not fully:** `GetNamedPipeServerProcessId` (npfs has
   no attribute FSCTL); `GetProcessInformation(ProcessMachineTypeInfo)` (no
   NtQuerySystemInformationEx); Get/SetRestrictedErrorInfo stay E_NOTIMPL as in Wine.

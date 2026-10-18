@@ -816,11 +816,15 @@ macro_rules! ASSERT {
     }};
 }
 
-/// `ntdef.h` — `C_ASSERT(e)`: a compile-time assertion, usable as a statement in a body.
+/// `ntdef.h` — `C_ASSERT(e)`: a compile-time assertion, usable as a statement in a body. C
+/// asserts the value is NONZERO, so any constant scalar is accepted, as `ASSERT!` accepts
+/// one: cabview's `C_ASSERT(FLATFOLDER)` is a `UINT`. With `assert!($e)` alone rustc blamed
+/// the call site for the `bool`, and crate-repair's c_truthiness wrapped the whole statement
+/// in `(.. != 0)`, which no longer parses.
 #[macro_export]
 macro_rules! C_ASSERT {
     ($e:expr $(,)?) => {
-        const _: () = assert!($e);
+        const _: () = assert!(($e) as i64 != 0);
     };
 }
 

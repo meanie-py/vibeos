@@ -205,6 +205,33 @@ def test_smp_iso_patch_is_equal_length_and_selects_the_mp_entry(tmp_path: Path):
     assert b"LiveCD_Debug" not in patched
 
 
+def test_stortest_patch_swaps_the_baud_option_at_equal_length(tmp_path: Path):
+    """VIBEOS_QEMU_STORTEST: /BAUDRATE=115200 becomes /STORTEST on every line-initial
+    Options= line, same length; prose mentioning the option is left alone."""
+    src = tmp_path / "livecd.iso"
+    body = (
+        b"\x00" * 64
+        + b"[LiveCD_Debug]\r\nOptions=/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS /MININT\r\n"
+        + b"[LiveCD_SMP]\r\nOptions=/KERNEL=ntkrnlmp.exe /BAUDRATE=115200 /MININT\r\n"
+        + b"; prose: Options= /BAUDRATE=115200\r\n"
+        + b"\x00" * 64
+    )
+    src.write_bytes(body)
+    (tmp_path / "work").mkdir()
+    out = vm_mod.stortest_selected_iso(src, tmp_path / "work")
+    patched = out.read_bytes()
+    assert out != src and src.read_bytes() == body, "must not patch the build tree's media"
+    assert len(patched) == len(body)
+    assert patched.count(b"/STORTEST       ") == 2
+    assert b"; prose: Options= /BAUDRATE=115200" in patched
+    # Already-patched media is accepted as is; media with nothing to patch refuses.
+    vm_mod.stortest_selected_iso(out, tmp_path / "work")
+    bare = tmp_path / "bare.iso"
+    bare.write_bytes(b"[LiveCD]\r\nOptions=/MININT\r\n")
+    with pytest.raises(RuntimeError, match="STORTEST cannot be added"):
+        vm_mod.stortest_selected_iso(bare, tmp_path / "work")
+
+
 def test_smp_patch_picks_freeldr_ini_when_the_fat_image_embeds_another_ini(tmp_path: Path):
     """arm64 boot.img embeds ramdisk.img, which carries the livecd file set and so an
     x86 livecd.ini with its own line-initial DefaultOS=. The raw scan finds two; the
@@ -12262,6 +12289,39 @@ def test_smoke_vm_memory_beats_the_payloads_declaration(tmp_path, monkeypatch):
     assert seen == ["768M", "2G"]
 
 
+def test_smoke_payload_boots_the_smokes_firmware_variant(tmp_path, monkeypatch):
+    """`smoke --arch amd64-bios --payload X` must run X under SeaBIOS: the payload stage used to
+    map the base arch to amd64-uefi, so every BIOS payload verdict was a UEFI one."""
+    spec = tmp_path / "tools" / "payloads" / "p" / "payload.yaml"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("test:\n  launch_drain_secs: 10\n")
+    seen: list[str] = []
+
+    def fake_run(cmd, **kw):
+        seen.append(cmd[cmd.index("--arch") + 1])
+        raise subprocess.TimeoutExpired(cmd, 1)
+
+    monkeypatch.setattr(smoke_mod.subprocess, "run", fake_run)
+    run = Run("smoke", "amd64-bios", ts=1700000000)
+    smoke_mod._payload_stage(run, tmp_path, "amd64", "p", boot_arch="amd64-bios")
+    smoke_mod._payload_stage(run, tmp_path, "amd64", "p", boot_arch="amd64-uefi")
+    smoke_mod._payload_stage(run, tmp_path, "i386", "p")
+    assert seen == ["amd64-bios", "amd64-uefi", "i386-uefi"]
+
+
+def test_smoke_net_payload_refuses_the_bios_boot(tmp_path, monkeypatch):
+    """There is no amd64-bios-net config: a net payload on the BIOS boot fails loud instead of
+    falling back to the UEFI net boot."""
+    spec = tmp_path / "tools" / "payloads" / "n" / "payload.yaml"
+    spec.parent.mkdir(parents=True)
+    spec.write_text("test:\n  net: true\n")
+    monkeypatch.setattr(smoke_mod.subprocess, "run", lambda *a, **k: pytest.fail("must not boot"))
+    run = Run("smoke", "amd64-bios", ts=1700000000)
+    smoke_mod._payload_stage(run, tmp_path, "amd64", "n", boot_arch="amd64-bios")
+    assert run.stages[-1].status == "fail"
+    assert "amd64-bios-net" in run.stages[-1].detail
+
+
 def test_qemu_memory_override_is_validated(monkeypatch):
     from tests.qemu import vm as vm_mod
 
@@ -12368,3 +12428,16 @@ def test_fex_build_prerequisites_are_named_up_front(tmp_path):
         f"{tmp_path / 'nope.dll'} absent (the i386 guests' SysWOW64 set): "
         "./vibeos-cli build --arch i386"
     ]
+
+
+def test_payload_not_in_media_advice_keeps_rostests_for_a_winetest_payload(tmp_path):
+    """portwinetest stages build-*/modules/rostests/winetests/... binaries."""
+    d = tmp_path / "tools" / "payloads"
+    (d / "wt").mkdir(parents=True)
+    (d / "wt" / "payload.yaml").write_text(
+        "binaries:\n  - src: build-{arch}/modules/rostests/winetests/pdh/pdh_winetest.exe\n"
+    )
+    (d / "plain").mkdir()
+    (d / "plain" / "payload.yaml").write_text("binaries:\n  - src: tools/payloads/plain/x.exe\n")
+    assert smoke_mod._payload_build_flags(tmp_path, ["wt"]) == " --rostests --keep-going"
+    assert smoke_mod._payload_build_flags(tmp_path, ["plain"]) == ""

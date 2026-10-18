@@ -94,9 +94,11 @@ struct PspWorkingSetChangeHeadStruct {
     Lock: KGUARDED_MUTEX,
 }
 
-const PSP_MAX_CREATE_THREAD_NOTIFY: usize = 64;
-const PSP_MAX_CREATE_PROCESS_NOTIFY: usize = 64;
-const PSP_MAX_LOAD_IMAGE_NOTIFY: usize = 64;
+// 64 slots as Windows has, not ps.h's 8; every reader of these arrays is Rust,
+// and both copies agree.
+const PSP_MAX_CREATE_THREAD_NOTIFY: usize = 64; // nolint: shadowed-c-define
+const PSP_MAX_CREATE_PROCESS_NOTIFY: usize = 64; // nolint: shadowed-c-define
+const PSP_MAX_LOAD_IMAGE_NOTIFY: usize = 64; // nolint: shadowed-c-define
 
 const KF_FAST_SYSCALL: ULONG = 0x00001000;
 

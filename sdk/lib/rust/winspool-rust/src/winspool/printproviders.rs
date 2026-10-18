@@ -116,26 +116,6 @@ pub unsafe extern "system" fn AddPrintProvidorW(pName: PWSTR, Level: DWORD, pPro
         pName as WINSPOOL_HANDLE,
         core::ptr::addr_of_mut!(ProvidorContainer),
     )).unwrap_or_else(|code| code as _);
-    if _SEH2_Volatile0 != 0 {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-        if (*__wine_dbch___default).flags as i32
-            & (1 as i32) << __WINE_DBCL_ERR as i32
-            != 0
-        {
-            let __dbch_0: *mut __wine_debug_channel = __wine_dbch___default;
-            let __dbcl_0: __wine_debug_class = __WINE_DBCL_ERR;
-            ros_dbg_log(
-                __dbcl_0,
-                __dbch_0,
-                b"win32ss/printing/base/winspool/printproviders.c\0"
-                    as *const u8 as *const i8,
-                b"AddPrintProvidorW\0" as *const u8 as *const i8,
-                112 as i32,
-                b"_RpcEnumPorts failed with exception code %lu!\n\0" as *const u8 as *const i8,
-                dwErrorCode,
-            );
-        }
-    }
     SetLastError(dwErrorCode);
     return (dwErrorCode == ERROR_SUCCESS) as i32;
 }
@@ -220,27 +200,6 @@ pub unsafe extern "system" fn DeletePrintProvidorW(mut pName: PWSTR, mut pEnviro
         pEnvironment as *mut WCHAR,
         pPrintProviderName as *mut WCHAR,
     )).unwrap_or_else(|code| code as _);
-    if _SEH2_Volatile0 != 0 || 0 as ::core::ffi::c_int != 0 && 1 as ::core::ffi::c_int != 0 {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-        if (*__wine_dbch___default).flags as ::core::ffi::c_int
-            & (1 as ::core::ffi::c_int) << __WINE_DBCL_ERR as ::core::ffi::c_int
-            != 0
-        {
-            let __dbch_0: *mut __wine_debug_channel = __wine_dbch___default;
-            let __dbcl_0: __wine_debug_class = __WINE_DBCL_ERR;
-            ros_dbg_log(
-                __dbcl_0,
-                __dbch_0,
-                b"win32ss/printing/base/winspool/printproviders.c\0"
-                    as *const u8 as *const ::core::ffi::c_char,
-                b"DeletePrintProvidorW\0" as *const u8 as *const ::core::ffi::c_char,
-                155 as ::core::ffi::c_int,
-                b"_RpcEnumPorts failed with exception code %lu!\n\0" as *const u8
-                    as *const ::core::ffi::c_char,
-                dwErrorCode,
-            );
-        }
-    }
     SetLastError(dwErrorCode);
     return (dwErrorCode == (ERROR_SUCCESS as DWORD)) as BOOL;
 }

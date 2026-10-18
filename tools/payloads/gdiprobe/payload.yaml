@@ -1,0 +1,19 @@
+# gdiprobe — is a memory DC's world transform identity, as dwrite's bitmap render target expects?
+# (dwrite font.c:1397/1411/1420 read a non-identity GetWorldTransform on that DC.)
+#   tools/payloads/gdiprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=gdiprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload gdiprobe
+name: gdiprobe
+description: read a memory DC's world transform through dwrite's render-target setup steps
+
+build_hint: "tools/payloads/gdiprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/gdiprobe/gdiprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/gdiprobe.exe
+
+test:
+  launch_marker: "[GDIPROBE] done"
+  pass_marker: "[GDIPROBE] done VERDICT=PASS"
+  launch_drain_secs: 120

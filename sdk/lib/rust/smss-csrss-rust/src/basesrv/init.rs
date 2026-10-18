@@ -925,6 +925,14 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     );
     (*BaseStaticServerData).NamedObjectDirectory.Buffer = HeapBuffer;
 
+    // Divergence from the C, which never assigns these three: Windows' basesrv copies the
+    // version csrss itself was given (the PEB's, from the kernel's NtMajorVersion and
+    // NtBuildNumber). Nothing in this tree reads them, but they are the public shape of the
+    // shared section and were left zero.
+    let Peb = NtCurrentPeb();
+    (*BaseStaticServerData).WindowsMajorVersion = (*Peb).OSMajorVersion as USHORT;
+    (*BaseStaticServerData).WindowsMinorVersion = (*Peb).OSMinorVersion as USHORT;
+    (*BaseStaticServerData).BuildNumber = (*Peb).OSBuildNumber;
     (*BaseStaticServerData).CSDNumber = 0;
     (*BaseStaticServerData).RCNumber = 0;
 

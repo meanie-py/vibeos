@@ -71,7 +71,7 @@ impl Rule for RawUartWrites {
             if f.path.to_string_lossy() == SANCTIONED || !f.text.contains(BASE) {
                 continue;
             }
-            for (n, name) in scan_code(f.rust_noise()) {
+            for (n, name) in scan_code(&f.rust_noise()) {
                 out.push(format!("{}:{}: RAW_UART_STORE through `{}` — a bare store to the PL011 data register drops bytes once the FIFO is full; use Arm64UartPutChar / crate::arm64_dbg::uart_putc",f.path.display(),n,name));
             }
         }

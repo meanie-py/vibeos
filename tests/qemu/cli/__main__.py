@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import (
     artifact_store,
+    buildbench,
     cargoswap,
     checkpoint,
     debugcmd,
@@ -95,6 +96,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="vibeos-cli", description="VibeOS build/check/smoke/debug control plane"
     )
     sub = p.add_subparsers(dest="cmd", required=True)
+    buildbench.add_parser(sub)
     checkpoint.add_parser(sub)
     artifact_store.add_parser(sub)
     host_clock.add_parser(sub)

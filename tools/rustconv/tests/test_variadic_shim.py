@@ -165,8 +165,13 @@ pub unsafe extern "C" fn warning(hwnd: HWND, resId: INT, mut args: ...) {
 
 def test_a_static_variadics_twin_is_still_exported():
     # regedit's `static void txt_fprintf(FILE *, LPCWSTR, ...)`: the shim calls the twin by name.
-    r = v.rewrite('unsafe extern "C" fn txt(fp: *mut FILE, mut args: ...) {\n    g(args.clone());\n}\n'.replace("g(args.clone())", "let mut ap: ::core::ffi::VaListImpl; ap = args.clone(); ap.arg::<i32>()"))
-    assert "#[no_mangle]\nunsafe extern \"C\" fn txt_v(" in r.text
+    r = v.rewrite(
+        'unsafe extern "C" fn txt(fp: *mut FILE, mut args: ...) {\n    g(args.clone());\n}\n'.replace(
+            "g(args.clone())",
+            "let mut ap: ::core::ffi::VaListImpl; ap = args.clone(); ap.arg::<i32>()",
+        )
+    )
+    assert '#[no_mangle]\nunsafe extern "C" fn txt_v(' in r.text
 
 
 def test_a_wrapped_list_passed_by_address_is_the_callers_va_list_pointer():

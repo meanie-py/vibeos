@@ -151,6 +151,8 @@ const LOW_LEVEL_ENTRIES: u32 = PAGE_SIZE as u32 / core::mem::size_of::<_HANDLE_T
 const MID_LEVEL_ENTRIES: u32 = PAGE_SIZE as u32 / core::mem::size_of::<PHANDLE_TABLE_ENTRY>() as u32;
 const HIGH_LEVEL_ENTRIES: u32 = PAGE_SIZE as u32 / core::mem::size_of::<*mut PHANDLE_TABLE_ENTRY>() as u32;
 const MAX_MID_INDEX: u32 = LOW_LEVEL_ENTRIES * MID_LEVEL_ENTRIES;
+// ex.h has -1; free-list links are handle values with clear tag bits, so masking
+// them is a no-op. nolint: shadowed-c-define
 const FREE_HANDLE_MASK: u32 = !((1 << HANDLE_TAG_BITS) - 1);
 const EXHANDLE_TABLE_ENTRY_LOCK_BIT: LONG_PTR = 1;
 

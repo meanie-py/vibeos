@@ -52,9 +52,10 @@ extern "C" {
     fn InterlockedCompareExchange(Destination: *mut LONG, Exchange: LONG, Comparand: LONG) -> LONG;
 }
 
-const EX_HYPERCRITICAL_WORK_THREADS: ULONG = 1;
-const EX_DELAYED_WORK_THREADS: ULONG = 3;
-const EX_CRITICAL_WORK_THREADS: ULONG = 5;
+// Upstream e182f26cab3 (2026-08-16) raised these from 3/5 and the registry cap
+// below from 16 to 100; this port predated it.
+const EX_DELAYED_WORK_THREADS: ULONG = 12;
+const EX_CRITICAL_WORK_THREADS: ULONG = 8;
 
 const EX_DYNAMIC_WORK_THREAD: ULONG = 0x80000000;
 
@@ -413,11 +414,11 @@ pub unsafe extern "system" fn ExpInitializeWorkerThreads() {
     DelayedThreads = EX_DELAYED_WORK_THREADS;
     CriticalThreads = EX_CRITICAL_WORK_THREADS;
 
-    if ExpAdditionalDelayedWorkerThreads > 16 {
-        ExpAdditionalDelayedWorkerThreads = 16;
+    if ExpAdditionalDelayedWorkerThreads > 100 {
+        ExpAdditionalDelayedWorkerThreads = 100;
     }
-    if ExpAdditionalCriticalWorkerThreads > 16 {
-        ExpAdditionalCriticalWorkerThreads = 16;
+    if ExpAdditionalCriticalWorkerThreads > 100 {
+        ExpAdditionalCriticalWorkerThreads = 100;
     }
 
     DelayedThreads = DelayedThreads.wrapping_add(ExpAdditionalDelayedWorkerThreads);

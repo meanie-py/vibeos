@@ -202,13 +202,13 @@ const IMAGE_FILE_MACHINE_NATIVE: u16 = 0x014C;
 const PACKET_TYPE_MAX: u8 = 12;
 
 #[cfg(target_arch = "x86")]
-const IMAGE_FILE_MACHINE_VALUE: u16 = 0x014C;
+const IMAGE_FILE_MACHINE_VALUE: u16 = 0x014C; // nolint: shadowed-c-define (winnt_old.h reuses the name for a Mips id)
 #[cfg(target_arch = "x86_64")]
-const IMAGE_FILE_MACHINE_VALUE: u16 = 0x8664;
+const IMAGE_FILE_MACHINE_VALUE: u16 = 0x8664; // nolint: shadowed-c-define (winnt_old.h reuses the name for a Mips id)
 #[cfg(target_arch = "arm")]
-const IMAGE_FILE_MACHINE_VALUE: u16 = 0x01C0;
+const IMAGE_FILE_MACHINE_VALUE: u16 = 0x01C0; // nolint: shadowed-c-define (winnt_old.h reuses the name for a Mips id)
 #[cfg(target_arch = "aarch64")]
-const IMAGE_FILE_MACHINE_VALUE: u16 = 0xAA64;
+const IMAGE_FILE_MACHINE_VALUE: u16 = 0xAA64; // nolint: shadowed-c-define (winnt_old.h reuses the name for a Mips id)
 
 #[repr(C)]
 struct KDDEBUGGER_DATA64 {

@@ -6,9 +6,9 @@ from rustconv.stitcher import comment_preamble_prose
 def test_a_narrating_line_is_commented_and_items_survive():
     body = (
         "The only file-scope declaration is a function-pointer typedef. Since it is a typedef of "
-        "a function type (not a struct), it maps to a type alias for an `extern \"system\"` pointer.\n"
+        'a function type (not a struct), it maps to a type alias for an `extern "system"` pointer.\n'
         "\n"
-        "pub type DOWINMAIN = unsafe extern \"system\" fn(hMod: HMODULE, cmdline: LPSTR) -> i32;\n"
+        'pub type DOWINMAIN = unsafe extern "system" fn(hMod: HMODULE, cmdline: LPSTR) -> i32;\n'
         "static T: [u8; 2] = [\n    1, 2,\n];\n"
         "Static tables follow below.\n"
     )

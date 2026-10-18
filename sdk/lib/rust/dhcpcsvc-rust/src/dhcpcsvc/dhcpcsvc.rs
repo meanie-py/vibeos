@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // ---- winsvc.h control code; the crate's substrate does not carry it, so this arm
@@ -106,7 +107,7 @@ pub unsafe extern "system" fn DhcpCApiCleanup() {
 #[no_mangle]
 pub unsafe extern "system" fn DhcpAcquireParameters(AdapterName: PWSTR) -> DWORD {
     DbgPrint(b"DhcpAcquireParameters(%S)\n\0".as_ptr() as *const _, AdapterName);
-    let ret = Client_AcquireParameters(core::ptr::null_mut(), AdapterName);
+    let ret = rpc_try(|| Client_AcquireParameters(core::ptr::null_mut(), AdapterName)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     ret
 }
 
@@ -202,7 +203,7 @@ pub unsafe extern "system" fn DhcpQueryHWInfo(
 // ---- DhcpReleaseParameters ----
 #[no_mangle]
 pub unsafe extern "system" fn DhcpReleaseParameters(AdapterName: PWSTR) -> u32 {
-    let ret = Client_ReleaseParameters(core::ptr::null_mut(), AdapterName);
+    let ret = rpc_try(|| Client_ReleaseParameters(core::ptr::null_mut(), AdapterName)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     ret
 }
 
@@ -211,7 +212,7 @@ pub unsafe extern "system" fn DhcpReleaseParameters(AdapterName: PWSTR) -> u32 {
 pub unsafe extern "system" fn DhcpRemoveDNSRegistrations() -> DWORD
 {
     DbgPrint(b"DhcpRemoveDNSRegistrations()\n\0".as_ptr() as PCHAR);
-    let ret = Client_RemoveDNSRegistrations(core::ptr::null_mut());
+    let ret = rpc_try(|| Client_RemoveDNSRegistrations(core::ptr::null_mut())).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     ret
 }
 
@@ -223,7 +224,7 @@ pub unsafe extern "system" fn DhcpStaticRefreshParams(
     Netmask: DWORD,
 ) -> DWORD {
     DbgPrint((b"DhcpStaticRefreshParams()\n\0".as_ptr() as *const u8) as *const i8);
-    let ret = Client_StaticRefreshParams(core::ptr::null_mut(), AdapterIndex, Address, Netmask);
+    let ret = rpc_try(|| Client_StaticRefreshParams(core::ptr::null_mut(), AdapterIndex, Address, Netmask)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if ret == ERROR_SUCCESS { 1 } else { 0 }
 }
 

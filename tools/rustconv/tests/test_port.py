@@ -79,6 +79,60 @@ def test_a_translations_own_wine_debug_channel_storage_is_dropped(tmp_path):
     assert port._wine_debug_storage(rs) == []
 
 
+def test_a_translations_multiline_channel_and_own_struct_are_dropped(tmp_path):
+    """pdh_main.c: the channel as a struct literal over four lines (flags 0, every class off)
+    plus a TU copy of the struct that then disagreed with the prelude's at each TRACE."""
+    rs = tmp_path / "pdh_main.rs"
+    rs.write_text(
+        "use crate::prelude::*;\n"
+        "pub static mut __wine_dbch_pdh: __wine_debug_channel = __wine_debug_channel {\n"
+        "    flags: 0,\n"
+        "    name: [b'p', b'd', b'h', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],\n"
+        "};\n"
+        "\n"
+        "#[repr(C)]\n"
+        "pub struct __wine_debug_channel {\n"
+        "    pub flags: u8,\n"
+        "    pub name: [u8; 15],\n"
+        "}\n"
+        "pub type __wine_debug_class = c_int;\n"
+        "#[repr(C)]\npub union value {\n    pub longvalue: LONG,\n}\n"
+    )
+    assert port._wine_debug_storage(rs) == [
+        "__wine_dbch_pdh",
+        "__wine_debug_channel",
+        "__wine_debug_class",
+    ]
+    out = rs.read_text()
+    assert "__wine_debug" not in out and "__wine_dbch" not in out
+    assert "pub union value {" in out
+    assert port._wine_debug_storage(rs) == []
+
+
+def test_a_wine_critical_section_debug_static_becomes_const(tmp_path):
+    # credui/pdh: the label's address cast to DWORD_PTR (refused by const eval) and `&raw mut`
+    # of statics outside unsafe.
+    rs = tmp_path / "credui_main.rs"
+    rs.write_text(
+        "static mut critsect_debug: CRITICAL_SECTION_DEBUG = _RTL_CRITICAL_SECTION_DEBUG {\n"
+        "        CriticalSection: &raw mut cs,\n"
+        "        ProcessLocksList: _LIST_ENTRY {\n"
+        "            Flink: &raw mut critsect_debug.ProcessLocksList,\n"
+        "        },\n"
+        '        __bindgen_anon_1: _RTL_CRITICAL_SECTION_DEBUG__bindgen_ty_1 { WineDebugString: b"x.c: cs\\0"\n'
+        "                as *const u8 as *const ::core::ffi::c_char as DWORD_PTR,\n"
+        "        },\n"
+        "    };\n"
+        "static mut cs: CRITICAL_SECTION = unsafe { zeroed() };\n"
+    )
+    assert port._wine_critsec_debug(rs) == ["critsect_debug"]
+    out = rs.read_text()
+    assert "= unsafe { _RTL_CRITICAL_SECTION_DEBUG {" in out
+    assert "WineDebugString" not in out and "{ Spare: [0; 1] }" in out
+    assert "    }};\nstatic mut cs:" in out
+    assert port._wine_critsec_debug(rs) == []
+
+
 def test_script_without_a_default_arm_is_refused():
     with pytest.raises(port.PortError):
         port.upsert_profile_arm("case x in\nesac\n", ARM, "beta")
@@ -245,7 +299,11 @@ def test_a_hand_twin_over_a_skipped_body_goes_in_like_an_added_item(tmp_path, mo
 
 def test_the_replay_refusal_names_the_function():
     out = "x/.responses/m__main: print_resource already has purchased output which did not replay."
-    assert port._NO_REPLAY.findall(out) == ["print_resource"]
+    assert port._no_replay_names(out) == {"print_resource"}
+    # The C++ synthetic path's refusal (acppage's DllMain after its unit text changed).
+    assert port._no_replay_names(
+        "ValueError: --replay-only: no accepted cached body for DllMain"
+    ) == {"DllMain"}
 
 
 def test_a_whole_module_is_banked_and_replayed_verbatim(tmp_path, monkeypatch):
@@ -466,6 +524,23 @@ def test_an_initguid_tu_finds_a_quoted_header_beside_it(tmp_path, monkeypatch):
     tu.write_text('#define INITGUID\n#include <guiddef.h>\n\n#include "guid.h"\n')
     out = port.initguid_module(tu)
     assert out is not None and "Data1: 0x725588AC" in out and "0x8B, 0x73]" in out
+
+
+def test_a_wine_initguid_include_tu_is_a_stub(tmp_path):
+    """sti's guid.c: <initguid.h> then SDK headers; resolve's GUID block holds the storage."""
+    tu_text = (
+        "/* DO NOT USE THE PRECOMPILED HEADER FOR THIS FILE! */\n#include <stdarg.h>\n"
+        "#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#include <windef.h>\n"
+        "#include <initguid.h>\n#include <sti.h>\n/* NO CODE HERE */\n"
+    )
+    tu = tmp_path / "guid.c"
+    tu.write_text(tu_text)
+    out = port.initguid_module(tu)
+    assert out is not None and "INITGUID block" in out and "pub static" not in out
+    tu.write_text(tu_text + "#define FOO 1\n")
+    assert port.initguid_module(tu) is None, "a valued define is real code"
+    tu.write_text(tu_text.replace("#include <initguid.h>\n", ""))
+    assert port.initguid_module(tu) is None, "no initguid, no storage TU"
 
 
 def test_split_top_keeps_fn_pointer_types_whole():
@@ -1357,6 +1432,26 @@ def test_wine_list_fields_typed_as_nt_list_entry_are_rewritten(tmp_path):
     assert port._wine_list_entry(rs, mod, crate) == 0
 
 
+def test_an_nt_list_entry_literal_survives_the_wine_list_rewrite(tmp_path):
+    # pdh: Wine's critical-section initializer expands to a CRITICAL_SECTION_DEBUG whose
+    # ProcessLocksList is an NT `_LIST_ENTRY { Flink, Blink }`; `list` has no such fields.
+    crate = tmp_path / "m-rust"
+    crate.mkdir()
+    (crate / "Cargo.toml").write_text('[dependencies]\nwinelist-rust = { path = "../w" }\n')
+    mod = tmp_path / "m"
+    mod.mkdir()
+    (mod / "a.c").write_text('#include "wine/list.h"\nstruct t { struct list entry; };\n')
+    rs = tmp_path / "a.rs"
+    rs.write_text(
+        "pub struct t { pub entry: LIST_ENTRY }\n"
+        "static mut d: CRITICAL_SECTION_DEBUG = _RTL_CRITICAL_SECTION_DEBUG {\n"
+        "    ProcessLocksList: _LIST_ENTRY {\n        Flink: &raw mut x,\n        Blink: &raw mut x,\n    },\n};\n"
+    )
+    assert port._wine_list_entry(rs, mod, crate) == 1
+    out = rs.read_text()
+    assert "entry: list }" in out and "ProcessLocksList: _LIST_ENTRY {" in out
+
+
 def test_nt_list_entry_is_left_alone_where_the_c_uses_it(tmp_path):
     crate = tmp_path / "m-rust"
     crate.mkdir()
@@ -1575,3 +1670,33 @@ def test_flipping_a_static_library_repoints_the_cargo_cells_that_replay_it(tmp_p
     text = (cells / "a-cargo" / "build.rs").read_text()
     assert '"engine:crate:tzlib-rust::TRUE"' in text and '"engine:c:tzlibx"' in text
     assert port._repoint_cargo_cells("tzlib", "tzlib-rust") == [], "idempotent"
+
+
+def test_whole_module_banks_name_their_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path)
+    hand = tmp_path / "m" / "hand"
+    hand.mkdir(parents=True)
+    (hand / "a.json").write_text(json.dumps({"file": "a_cpp_h.rs", "name": "*", "text": ""}))
+    (hand / "b.json").write_text(json.dumps({"file": "b_cpp_h.rs", "name": "F", "text": ""}))
+    assert port._whole_module_banks("m") == {"a_cpp_h.rs"}
+
+
+def test_c2rust_unnamed_named_member_takes_bindgen_type(tmp_path):
+    """inetmib1: `u: C2RustUnnamed_6 { dwForwarding: 0 }`; four island structs have a `u`."""
+    island = (
+        "pub struct _MIB_IPSTATS {\n    pub u: _MIB_IPSTATS__bindgen_ty_1,\n}\n"
+        "pub union _MIB_IPSTATS__bindgen_ty_1 {\n    pub dwForwarding: DWORD,\n}\n"
+        "pub struct _MIB_TCPSTATS {\n    pub u: _MIB_TCPSTATS__bindgen_ty_1,\n}\n"
+        "pub union _MIB_TCPSTATS__bindgen_ty_1 {\n    pub dwRtoAlgorithm: DWORD,\n}\n"
+    )
+    f = tmp_path / "m.rs"
+    f.write_text(
+        "static A: X = X { u: C2RustUnnamed_6 { dwForwarding: 0 } };\n"
+        "static B: Y = Y { u: C2RustUnnamed_2 { dwRtoAlgorithm: 0 } };\n"
+        "static C: Z = Z { u: C2RustUnnamed_9 { nobody: 0 } };\n"
+    )
+    port._c2rust_unnamed(f, island)
+    out = f.read_text()
+    assert "u: _MIB_IPSTATS__bindgen_ty_1 { dwForwarding:" in out
+    assert "u: _MIB_TCPSTATS__bindgen_ty_1 { dwRtoAlgorithm:" in out
+    assert "C2RustUnnamed_9 { nobody" in out, "no owning type: left alone"

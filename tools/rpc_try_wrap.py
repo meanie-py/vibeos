@@ -131,25 +131,46 @@ def brace_end(text: str, open_idx: int) -> int:
 # sets: `if _SEH2_Volatile0 != 0 { ret = Map(RpcExceptionCode()); }`. Once the call is
 # wrapped, rpc_try owns that mapping; the arm is dead, and RpcExceptionCode does not
 # exist in Rust, so it also keeps the crate from compiling.
-# The flag is spelled however the model chose (`_SEH2_Volatile0`, `__seh_raised`) and may
-# carry the filter's folded remains (`|| 0 != 0 && 1 != 0`); the arm reads the code as
-# RpcExceptionCode() or as the `_SEH2_VolatileExceptionCode` local.
-_FLAG = r"(?:_SEH2_Volatile\w*|__seh_raised|__rpc_raised)"
-DEAD_ARM_RE = re.compile(r"^[ \t]*if\s+(?:" + _FLAG + r"\s*!=\s*0\b[^{\n]*|false\s*)\{", re.M)
-_CODE_READ = re.compile(r"\bRpcExceptionCode\b|\b_SEH2_VolatileExceptionCode\b")
-SEH_LOCAL_RE = re.compile(
-    r"^[ \t]*(?:let\s+(?:mut\s+)?" + _FLAG + r"\b[^;\n]*"
-    r"|let\s+_\s*=\s*" + _FLAG + r"|" + _FLAG + r"\s*=[^;\n]*);[ \t]*\n",
-    re.M,
+# The arm is guarded by a flag nothing ever raises. The model spelled it however it chose
+# (`_SEH2_Volatile0`, `__seh_raised`, `rpc_faulted`, `rpc_exception_raised`), possibly with
+# the filter's folded remains (`|| 0 != 0 && 1 != 0`) and the `{` on the next line; the arm
+# reads the code as RpcExceptionCode()/RpcExceptionCode!() or the
+# `_SEH2_VolatileExceptionCode` local. A flag counts as dead only when every assignment to
+# it in the file is `false` or `0`, so no spelling is trusted by its name.
+DEAD_ARM_RE = re.compile(
+    r"^[ \t]*if\s+(?:(?P<flag>[A-Za-z_]\w*)\b(?:\s*!=\s*0\b)?[^{;]*?|false\s*)\{", re.M
 )
+_CODE_READ = re.compile(r"\bRpcExceptionCode\b|\b_SEH2_VolatileExceptionCode\b")
+
+
+def _never_raised(text: str, flag: str) -> bool:
+    sets = re.findall(r"\b" + re.escape(flag) + r"\b(?:\s*:\s*[\w:]+)?\s*=(?!=)\s*([^;\n]*)", text)
+    return all(re.fullmatch(r"\s*(?:false|0|0\s+as\s+[\w:]+)\s*", v) for v in sets)
+
+
+def _local_re(flag: str) -> re.Pattern[str]:
+    f = re.escape(flag)
+    return re.compile(
+        r"^[ \t]*(?:let\s+(?:mut\s+)?"
+        + f
+        + r"\b[^;\n]*|let\s+_\s*=\s*"
+        + f
+        + r"|"
+        + f
+        + r"\s*=[^;\n]*);[ \t]*\n",
+        re.M,
+    )
 
 
 def drop_dead_arms(text: str) -> tuple[str, int]:
-    """Remove the dead except arms whose body reads RpcExceptionCode, then the
-    `_SEH2_Volatile*` locals once nothing reads them."""
-    out, pos, dropped = [], 0, 0
+    """Remove the dead except arms whose body reads the exception code, then each flag's
+    locals once nothing reads it."""
+    out, pos, dropped, flags = [], 0, 0, set()
     for m in DEAD_ARM_RE.finditer(text):
         if m.start() < pos:
+            continue
+        flag = m.group("flag")
+        if flag and (flag in {"let", "true"} or not _never_raised(text, flag)):
             continue
         end = brace_end(text, m.end() - 1)
         if end < 0 or not _CODE_READ.search(text[m.end() : end]):
@@ -159,11 +180,14 @@ def drop_dead_arms(text: str) -> tuple[str, int]:
         out.append(text[pos : m.start()])
         pos = end
         dropped += 1
+        if flag:
+            flags.add(flag)
     out.append(text[pos:])
     new = "".join(out)
-    stripped = SEH_LOCAL_RE.sub("", new)
-    if not re.search(r"\b" + _FLAG + r"\b", stripped):
-        new = stripped
+    for flag in flags | {"_SEH2_VolatileExceptionCode"}:
+        stripped = _local_re(flag).sub("", new)
+        if not re.search(r"\b" + re.escape(flag) + r"\b", stripped):
+            new = stripped
     return new, dropped
 
 
@@ -221,10 +245,11 @@ def rewrite(
             continue
         if len(re.findall(r'(?<!\\)"', new[line_start : m.start()])) % 2:
             continue  # the name inside a log string
-        if (
-            "rpc_try(|| " + m.group("stub") in line
-            or new[max(0, m.start() - 11) : m.start()] == "rpc_try(|| "
-        ):
+        # Already guarded: `rpc_try(|| Stub(`, also with the stub path-qualified
+        # (`advapi32_sys::ElfrReportEventW`), inside a block closure (`rpc_try(|| {`), or
+        # on the line after `rpc_try(||`.
+        before = re.sub(r"(?:\w+::)*$", "", new[max(0, m.start() - 200) : m.start()]).rstrip()
+        if re.search(r"rpc_try\(\|\|\s*\{?$", before):
             continue
         lineno = new.count("\n", 0, m.start()) + 1
         leftovers.append(f"{lineno}: {line.strip()[:110]}")

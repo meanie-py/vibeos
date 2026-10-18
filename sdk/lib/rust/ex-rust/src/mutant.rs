@@ -224,7 +224,7 @@ pub unsafe extern "system" fn NtQueryMutant(
         MutantInformationClass,
         ExMutantInfoClass.as_ptr(),
         (core::mem::size_of_val(&ExMutantInfoClass) / core::mem::size_of::<INFORMATION_CLASS_INFO>()) as ULONG,
-        3,
+        ntkrnl_sys::inline::common::ICIF_PROBE_READ_WRITE,
         MutantInformation,
         MutantInformationLength,
         ResultLength,

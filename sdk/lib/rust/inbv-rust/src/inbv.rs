@@ -102,7 +102,7 @@ const LANG_NEUTRAL: USHORT = 0x00;
 const SUBLANG_NEUTRAL: USHORT = 0x00;
 const RESOURCE_DATA_LEVEL: ULONG = 0x3;
 
-const IDB_MAX_RESOURCES: usize = 5;
+pub const IDB_MAX_RESOURCES: usize = 22; // resource.h: IDB_COPYRIGHT
 
 const HeadlessCmdPutString: ULONG = 3; // header value; the hand copy said 1
 const HeadlessCmdClearDisplay: ULONG = 4; // header value; the hand copy said 3

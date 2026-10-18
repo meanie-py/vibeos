@@ -1,5 +1,15 @@
 [workspace]
 members = [
+    "wmiutils-cargo",
+    "sti-cargo",
+    "inetmib1-cargo",
+    "sxs-cargo",
+    "jsproxy-cargo",
+    "ntdsapi-cargo",
+    "imagehlp-cargo",
+    "credui-cargo",
+    "wtsapi32-cargo",
+    "pdh-cargo",
     "reactos-cargo",
     "tdi-cargo",
     "rtl8139-cargo",
@@ -904,6 +914,18 @@ members = [
     "tdihelpers-rust",
     "spapisup-rust",
     "setupapi-rust",
+    "acppage-rust",
+    "cabview-rust",
+    "pdh-rust",
+    "wtsapi32-rust",
+    "imagehlp-rust",
+    "credui-rust",
+    "ntdsapi-rust",
+    "jsproxy-rust",
+    "sti-rust",
+    "wmiutils-rust",
+    "sxs-rust",
+    "inetmib1-rust",
 ]
 resolver = "2"
 

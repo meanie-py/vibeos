@@ -47,13 +47,21 @@ Coverage controls and failure cases live in Rust tests and `tests/qemu/cli/test_
 Source execution defaults to at most eight workers and four million retained syntax nodes.
 Trees are admitted after a second request; sources above 256 KiB remain weakly cached.
 Active consumers and other fact caches are outside that node budget.
+Masked comment views and lexer-cleaned text share a 128 MiB LRU retention budget, measured by
+string buffer capacity. Active readers can exceed this budget; evicted views
+are rebuilt on demand. Weak references share active views without retaining
+their text buffers after eviction. Line indexes are lazy, with compact 32-bit
+offsets for files up to 4 GiB and full-width offsets for larger inputs.
 `VIBEOS_LINT_JOBS` overrides worker count with a positive integer;
 `VIBEOS_LINT_AST_CACHE_NODES` overrides retention with a nonnegative integer (zero disables
 retention). Library callers can use `Corpus::with_ast_cache_nodes`.
 
 Set `VIBEOS_LINT_TIMINGS=1` for snapshot, shared-index and rule timings. Optional
-`VIBEOS_LINT_CACHE_STATS=1` reports initialized payload sizes and syntax cache counters
+`VIBEOS_LINT_CACHE_STATS=1` reports initialized payload sizes and syntax/text cache counters
 to stderr without forcing new parses or views; these counts exclude allocator overhead.
+Shared Clang signature facts retain prototype and typedef maps only; captured JSON and
+the parsed AST are released during initialization. Cache statistics distinguish captured
+JSON input bytes from retained fact string capacity (excluding map/vector storage).
 
 The CLI uses pinned `mimalloc` by default. Linux builds also enable its C malloc override,
 covering tree-sitter allocations. The library declares no global allocator. For allocator

@@ -1,7 +1,9 @@
 //! ABI-shape verifier over Rust exports and the centrally captured clang AST.
+#[cfg(test)]
+use crate::ast_facts::extract;
+use crate::ast_facts::Proto;
 use crate::{Corpus, Rule, SourceSet};
 use regex::Regex;
-use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
@@ -46,12 +48,12 @@ impl Rule for VerifySignatures {
     fn source_sets(&self) -> &'static [SourceSet] {
         INPUTS
     }
-    fn needs_c_signature_asts(&self) -> &'static [&'static str] {
+    fn needs_c_signature_facts(&self) -> &'static [&'static str] {
         &["amd64"]
     }
     fn run(&self, c: &Corpus) -> Result<Vec<String>, String> {
-        let ast = c.c_signature_ast("amd64")?;
-        let (protos, ctypes) = extract(ast);
+        let facts = c.c_signature_facts("amd64")?;
+        let (protos, ctypes) = (&facts.protos, &facts.ctypes);
         let mut rust = Vec::new();
         for root in KERNEL_ROOTS {
             let dir = c.root.join(root);
@@ -70,7 +72,7 @@ impl Rule for VerifySignatures {
                 rust.extend(scan_rust_with_seen(&f.text, &f.path, &mut seen));
             }
         }
-        let (findings, stats) = compare(&rust, &protos, &ctypes);
+        let (findings, stats) = compare(&rust, protos, ctypes);
         let shown: Vec<_> = findings.iter().filter(|f| !f.suppressed).collect();
         let mut out = vec![
             "=== verify_signatures — arch=amd64 ===".into(),
@@ -125,82 +127,6 @@ impl Rule for VerifySignatures {
         }
         Ok(out)
     }
-}
-#[derive(Clone)]
-struct Proto {
-    ret: (String, String),
-    params: Vec<(String, String)>,
-    variadic: bool,
-}
-fn type_pair(v: &Value) -> (String, String) {
-    let q = v
-        .get("qualType")
-        .and_then(Value::as_str)
-        .unwrap_or("")
-        .to_owned();
-    let d = v
-        .get("desugaredQualType")
-        .and_then(Value::as_str)
-        .unwrap_or(&q)
-        .to_owned();
-    (q, d)
-}
-fn extract(ast: &Value) -> (BTreeMap<String, Proto>, BTreeMap<String, (String, String)>) {
-    fn walk(
-        v: &Value,
-        ps: &mut BTreeMap<String, Proto>,
-        ts: &mut BTreeMap<String, (String, String)>,
-    ) {
-        let Some(o) = v.as_object() else { return };
-        match o.get("kind").and_then(Value::as_str).unwrap_or("") {
-            "TypedefDecl" => {
-                if let Some(n) = o.get("name").and_then(Value::as_str) {
-                    ts.insert(n.into(), type_pair(o.get("type").unwrap_or(&Value::Null)));
-                }
-            }
-            "FunctionDecl" => {
-                if let Some(n) = o.get("name").and_then(Value::as_str) {
-                    let qt = o
-                        .get("type")
-                        .and_then(|x| x.get("qualType"))
-                        .and_then(Value::as_str)
-                        .unwrap_or("");
-                    let ret = (
-                        qt.split('(').next().unwrap_or(qt).trim().to_string(),
-                        qt.split('(').next().unwrap_or(qt).trim().to_string(),
-                    );
-                    let params = o
-                        .get("inner")
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                        .filter(|x| x.get("kind").and_then(Value::as_str) == Some("ParmVarDecl"))
-                        .map(|x| type_pair(x.get("type").unwrap_or(&Value::Null)))
-                        .collect();
-                    ps.insert(
-                        n.into(),
-                        Proto {
-                            ret,
-                            params,
-                            variadic: qt.contains("..."),
-                        },
-                    );
-                }
-            }
-            _ => {}
-        }
-        for c in o
-            .get("inner")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            walk(c, ps, ts)
-        }
-    }
-    let (mut p, mut t) = (BTreeMap::new(), BTreeMap::new());
-    walk(ast, &mut p, &mut t);
-    (p, t)
 }
 #[derive(Clone)]
 struct RF {

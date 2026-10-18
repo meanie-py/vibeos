@@ -1,0 +1,31 @@
+# cabview (dll/shellext/cabview -> cabview-rust, `port cppapp`): the shell folder that shows a
+# .cab's contents. Explorer opens it only when someone browses a cabinet, so smoke reaches
+# none of this. probes/cabview.c, staged twice: as cabview_c.exe it loads the pre-flip C
+# (cabview_c.dll, from c_oracle.cmake) beside it, as cabview_probe.exe the system cabview.dll.
+# Both read fixtures/cabview/test.cab (make_cab.py) and print only values, so the outputs must
+# match byte for byte.
+module: cabview
+variants:
+  c: '%SystemRoot%\bin\modrun\cabview_c.exe'
+  rust: '%SystemRoot%\bin\modrun\cabview_probe.exe'
+ninja: [cabview_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/cabview-{arch}.exe', dest: bin/modrun/cabview_c.exe}
+  - {src: 'tools/payloads/modrun/probes/cabview-{arch}.exe', dest: bin/modrun/cabview_probe.exe}
+  - {src: 'build-{arch}/dll/shellext/cabview/cabview_c.dll', dest: bin/modrun/cabview_c.dll}
+  - {src: 'tools/payloads/modrun/fixtures/cabview/test.cab', dest: bin/modrun/test.cab}
+cases:
+  - id: folder
+    expect: ['fixture 1', 'classobject 00000000', 'create 00000000', 'qi persistfolder2 00000000',
+             'classid 00000000 1', 'initialize 00000000', 'curfolder 00000000 same=1',
+             'enum 00000000', 'items 4', "name normal 00000000 'readme.txt'",
+             'compare allfields self 0', 'contextmenu 00000000', 'register 00000000',
+             'unregister 00000000', 'probe done']
+    timeout: 120
+    diverge:
+      # folder.cpp's SHCIDS_ALLFIELDS loop runs only while its result is nonzero and forces
+      # COL_NAME to 0, so two items with different paths compare EQUAL. The Rust orders them
+      # by the first other column that differs (readme.txt is the smaller).
+      - why: 'SHCIDS_ALLFIELDS compares different items as different'
+        c: '^compare allfields 0$'
+        rust: '^compare allfields -1$'

@@ -1124,31 +1124,35 @@ unsafe extern "C" fn LISTBOX_GetText(
                 debugstr_w(str),
             );
         }
-        lstrcpyW(buffer, str as LPCWSTR);
-        len = lstrlenW(buffer as LPCWSTR) as DWORD;
-        if _SEH2_Volatile0 != 0
-            || 0 as ::core::ffi::c_int != 0
-                && _SEH2_VolatileExceptionCode as DWORD == 0xc0000005 as ::core::ffi::c_uint
-        {
-            if (*__wine_dbch___default).flags as ::core::ffi::c_int
-                & (1 as ::core::ffi::c_int) << __WINE_DBCL_WARN as ::core::ffi::c_int
-                != 0
-            {
-                let __dbch_0: *mut __wine_debug_channel = __wine_dbch___default;
-                let __dbcl_0: __wine_debug_class = __WINE_DBCL_WARN;
-                ros_dbg_log(
-                    __dbcl_0,
-                    __dbch_0,
-                    b"dll/win32/comctl32/listbox.c\0"
-                        as *const u8 as *const ::core::ffi::c_char,
-                    b"LISTBOX_GetText\0" as *const u8 as *const ::core::ffi::c_char,
-                    895 as ::core::ffi::c_int,
-                    b"got an invalid buffer (Delphi bug?)\n\0" as *const u8
-                        as *const ::core::ffi::c_char,
-                );
+        // __TRY { .. } __EXCEPT_PAGE_FAULT: "hide a Delphi bug that passes a read-only
+        // buffer" (the C's own comment). DUMMY_PSEH compiled the guard out of the C, so
+        // such an app crashed in LB_GETTEXT; page_fault_try makes it LB_ERR again.
+        match ntdll_sys::seh::page_fault_try(|| {
+            lstrcpyW(buffer, str as LPCWSTR);
+            lstrlenW(buffer as LPCWSTR) as DWORD
+        }) {
+            Some(n) => len = n,
+            None => {
+                if (*__wine_dbch___default).flags as ::core::ffi::c_int
+                    & (1 as ::core::ffi::c_int) << __WINE_DBCL_WARN as ::core::ffi::c_int
+                    != 0
+                {
+                    let __dbch_0: *mut __wine_debug_channel = __wine_dbch___default;
+                    let __dbcl_0: __wine_debug_class = __WINE_DBCL_WARN;
+                    ros_dbg_log(
+                        __dbcl_0,
+                        __dbch_0,
+                        b"dll/win32/comctl32/listbox.c\0"
+                            as *const u8 as *const ::core::ffi::c_char,
+                        b"LISTBOX_GetText\0" as *const u8 as *const ::core::ffi::c_char,
+                        895 as ::core::ffi::c_int,
+                        b"got an invalid buffer (Delphi bug?)\n\0" as *const u8
+                            as *const ::core::ffi::c_char,
+                    );
+                }
+                SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+                return LB_ERR as LRESULT;
             }
-            SetLastError(ERROR_INVALID_PARAMETER as DWORD);
-            return LB_ERR as LRESULT;
         }
     } else {
         if !buffer.is_null() {

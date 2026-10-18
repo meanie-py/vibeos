@@ -13,6 +13,8 @@ from pathlib import Path
 
 from tools.source_walk import source_files
 
+from . import hostjobs
+
 # Only parity-proven plugins belong here. The original registry owns stage ordering.
 PORTED = frozenset(
     {
@@ -137,6 +139,7 @@ PORTED = frozenset(
         "scan_misaligned_cast",
         "scan_fnptr_abi_transmute",
         "scan_entry_point_cc",
+        "scan_uncalled_ctor_hook",
         "scan_shadowed_c_define",
         "scan_hkey_zero_extend",
     }
@@ -186,11 +189,17 @@ def ensure(repo: Path) -> Path:
         }
         build = target.parent / "target"
         cmd = [
+            str(hostjobs.ensure(repo)),
+            "--kind",
+            "lint",
+            "--",
             "cargo",
             "build",
             "--offline",
             "--locked",
             "--release",
+            "--jobs",
+            "1",
             "--manifest-path",
             str(source / "Cargo.toml"),
             "--target-dir",
@@ -259,7 +268,7 @@ def run_many(
             if shellcheck is None:
                 raise RuntimeError("shellcheck is unavailable")
             command.extend(["--shellcheck", shellcheck])
-        cp = invoke(command)
+        cp = invoke([str(hostjobs.ensure(repo)), "--kind", "lint", "--", *command])
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         cp = subprocess.CompletedProcess([], 2, "", f"FATAL: {error}")
     return split_output(cp, names)

@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use ntdll_sys::seh::rpc_try;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -26,7 +27,7 @@ pub unsafe extern "system" fn AbortSystemShutdownA(lpMachineName: LPCSTR) -> BOO
 
 #[no_mangle]
 pub unsafe extern "system" fn AbortSystemShutdownW(lpMachineName: LPCWSTR) -> BOOL {
-    let dwError: DWORD = BaseAbortSystemShutdown(lpMachineName as PREGISTRY_SERVER_NAME);
+    let dwError: DWORD = rpc_try(|| BaseAbortSystemShutdown(lpMachineName as PREGISTRY_SERVER_NAME)).unwrap_or_else(|code| RtlNtStatusToDosError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -112,13 +113,13 @@ pub unsafe extern "system" fn InitiateSystemShutdownW(
 
     RtlInitUnicodeString(&mut Message, lpMessage);
 
-    dwError = BaseInitiateSystemShutdown(
+    dwError = rpc_try(|| BaseInitiateSystemShutdown(
         lpMachineName as PREGISTRY_SERVER_NAME,
         &mut Message as *mut _UNICODE_STRING as PRPC_UNICODE_STRING,
         dwTimeout,
         bForceAppsClosed as BOOLEAN,
         bRebootAfterShutdown as BOOLEAN,
-    );
+    )).unwrap_or_else(|code| RtlNtStatusToDosError(code as _) as _);
 
     if dwError != ERROR_SUCCESS {
         SetLastError(dwError);
@@ -204,14 +205,14 @@ pub unsafe extern "system" fn InitiateSystemShutdownExW(
 
     RtlInitUnicodeString(&mut Message, lpMessage);
 
-    dwError = BaseInitiateSystemShutdownEx(
+    dwError = rpc_try(|| BaseInitiateSystemShutdownEx(
         lpMachineName as PREGISTRY_SERVER_NAME,
         core::ptr::addr_of_mut!(Message) as PRPC_UNICODE_STRING,
         dwTimeout,
         bForceAppsClosed as BOOLEAN,
         bRebootAfterShutdown as BOOLEAN,
         dwReason,
-    );
+    )).unwrap_or_else(|code| code as _);
 
     if dwError != ERROR_SUCCESS {
         TRACE!(b"BaseInitiateSystemShutdownEx() failed (Error %lu)\n\0".as_ptr() as LPCSTR, dwError);

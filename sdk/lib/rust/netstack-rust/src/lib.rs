@@ -35,6 +35,7 @@ pub mod ndis;
 pub mod ndisphy;
 pub mod netcfg;
 pub mod selftest;
+pub mod sntp;
 pub mod engine;
 pub mod tdi;
 pub mod tditrans;

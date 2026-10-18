@@ -531,7 +531,7 @@ unsafe extern "system" fn page_dialog_proc<T: PropertyPage>(
     // A property page's WM_INITDIALOG lParam is comctl32's COPY of the PROPSHEETPAGE; the
     // object is that copy's lParam, which `create_property_page` set.
     let init = if msg == WM_INITDIALOG && l != 0 {
-        (*(l as *const PropSheetPageV1)).l_param as *mut T
+        (*(l as *const PropSheetPageV1)).lParam as *mut T
     } else {
         core::ptr::null_mut()
     };
@@ -603,21 +603,26 @@ pub unsafe fn create_dialog<T: MessageMap>(this: *mut T, idd: u16, parent: HWND)
 /// accepts. The C++ passes `sizeof(PROPSHEETPAGE)` of whatever `_WIN32_IE` it compiled
 /// against; none of the later fields (header titles, activation context, header bitmap) are
 /// set by `CPropertyPageImpl`, so the V1 size says exactly what the C says.
+///
+/// `CPropertyPageImpl::m_psp`, with the Win32 field names: the C++ derived class writes it
+/// directly (acppage's constructor sets `m_psp.pszTitle` and `m_psp.dwFlags |= PSP_USETITLE`).
 #[repr(C)]
-struct PropSheetPageV1 {
-    dw_size: u32,
-    dw_flags: u32,
-    h_instance: *mut c_void,
-    psz_template: *const u16,
-    h_icon: *mut c_void,
-    psz_title: *const u16,
-    pfn_dlg_proc: Option<DlgProc>,
-    l_param: LPARAM,
-    pfn_callback: Option<PageCallback>,
-    pc_ref_parent: *mut u32,
+#[derive(Clone, Copy)]
+pub struct PropSheetPage {
+    pub dwSize: u32,
+    pub dwFlags: u32,
+    pub hInstance: *mut c_void,
+    pub pszTemplate: *const u16,
+    pub hIcon: *mut c_void,
+    pub pszTitle: *const u16,
+    pub pfnDlgProc: Option<DlgProc>,
+    pub lParam: LPARAM,
+    pub pfnCallback: Option<PageCallback>,
+    pub pcRefParent: *mut u32,
 }
+type PropSheetPageV1 = PropSheetPage;
 
-type PageCallback = unsafe extern "system" fn(HWND, u32, *mut PropSheetPageV1) -> u32;
+pub type PageCallback = unsafe extern "system" fn(HWND, u32, *mut PropSheetPageV1) -> u32;
 
 const PSP_USETITLE: u32 = 0x0008;
 const PSP_USECALLBACK: u32 = 0x0080;
@@ -688,19 +693,38 @@ pub unsafe fn create_property_page<T: PropertyPage>(
     idd: u16,
     title: *const u16,
 ) -> *mut c_void {
-    let page = PropSheetPageV1 {
-        dw_size: core::mem::size_of::<PropSheetPageV1>() as u32,
-        dw_flags: PSP_USECALLBACK | if title.is_null() { 0 } else { PSP_USETITLE },
-        h_instance: crate::resource_instance(),
-        psz_template: idd as usize as *const u16,
-        h_icon: core::ptr::null_mut(),
-        psz_title: title,
-        pfn_dlg_proc: Some(page_dialog_proc::<T>),
-        l_param: this as LPARAM,
-        pfn_callback: Some(page_callback::<T>),
-        pc_ref_parent: core::ptr::null_mut(),
-    };
-    CreatePropertySheetPageW(&page)
+    create_property_page_from(&property_page_init(this, idd, title))
+}
+
+/// What `CPropertyPageImpl(LPCTSTR lpszTitle)` puts in `m_psp`, for a class that keeps it as
+/// a member (cpp_app gives every CPropertyPageImpl class one) and edits it before `Create`.
+pub unsafe fn property_page_init<T: PropertyPage>(
+    this: *mut T,
+    idd: u16,
+    title: *const u16,
+) -> PropSheetPage {
+    PropSheetPage {
+        dwSize: core::mem::size_of::<PropSheetPage>() as u32,
+        dwFlags: PSP_USECALLBACK | if title.is_null() { 0 } else { PSP_USETITLE },
+        hInstance: crate::resource_instance(),
+        pszTemplate: idd as usize as *const u16,
+        hIcon: core::ptr::null_mut(),
+        pszTitle: title,
+        pfnDlgProc: Some(page_dialog_proc::<T>),
+        lParam: this as LPARAM,
+        pfnCallback: Some(page_callback::<T>),
+        pcRefParent: core::ptr::null_mut(),
+    }
+}
+
+/// `CPropertyPageImpl::Create` over a kept `m_psp`: `::CreatePropertySheetPage(&m_psp)`.
+/// `#[inline]` is load-bearing: a non-generic fn is codegen'd into atl_rust's own object for
+/// every crate with feature `win`, and one sharing a codegen unit with something live drags
+/// a comctl32 import into modules that never link comctl32 (certmgr: LINK_FAIL). Inline, it
+/// is instantiated only where a caller uses it, as the generic form always was.
+#[inline]
+pub unsafe fn create_property_page_from(page: *const PropSheetPage) -> *mut c_void {
+    CreatePropertySheetPageW(page)
 }
 
 unsafe extern "system" fn page_callback<T: PropertyPage>(
@@ -708,7 +732,7 @@ unsafe extern "system" fn page_callback<T: PropertyPage>(
     msg: u32,
     page: *mut PropSheetPageV1,
 ) -> u32 {
-    let this = (*page).l_param as *mut T;
+    let this = (*page).lParam as *mut T;
     match msg {
         PSPCB_CREATE => return (*this).on_page_create() as u32,
         PSPCB_ADDREF => (*this).on_page_add_ref(),

@@ -86,7 +86,7 @@ extern "system" {
 }
 
 const IO_NO_INCREMENT: u8 = 0;
-const ICIF_PROBE_READ_WRITE: ULONG = 0x00000003;
+use ntkrnl_sys::inline::common::ICIF_PROBE_READ_WRITE;
 
 #[no_mangle]
 pub unsafe extern "system" fn ExTimerRundown() {

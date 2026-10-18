@@ -24,6 +24,9 @@ impl Fixture {
         c.env("VIBEOS_HOSTLOCK_DIR", &self.0)
             .env("VIBEOS_HOST_JOB_SLOTS", "2")
             .env("VIBEOS_HOST_LINK_SLOTS", "1")
+            .env("VIBEOS_HOST_MEMORY_MIB", "1024")
+            .env("VIBEOS_HOST_JOB_MEMORY_MIB", "4")
+            .env("VIBEOS_HOST_MEMORY_HEADROOM_MIB", "0")
             .env_remove("VIBEOS_HOST_JOB_HELD")
             .env_remove("VIBEOS_INNER_RUSTC_WRAPPER")
             // Hermetic class: the gate runs this suite with VIBEOS_JOB_CLASS=integration,
@@ -533,4 +536,267 @@ fn killed_unclaimed_grant_is_reclaimed_by_ticket_lock() {
     stopped.wait().unwrap();
     f.wait("next");
     assert!(next.wait().unwrap().success());
+}
+
+#[test]
+fn memory_waiters_leave_cpu_for_small_jobs_and_survive_owner_death() {
+    let f = Fixture::new();
+    let spawn = |name: &str, kind: &str, mib: &str| {
+        f.command()
+            .env("VIBEOS_HOST_MEMORY_MIB", "128")
+            .env("VIBEOS_HOST_JOB_MEMORY_MIB", mib)
+            .args([
+                "--kind",
+                kind,
+                "--",
+                "sh",
+                "-c",
+                &format!(
+                    "touch '{}'; while test ! -f '{}'; do sleep .02; done",
+                    f.0.join(name).display(),
+                    f.0.join(format!("release-{name}")).display()
+                ),
+            ])
+            .spawn()
+            .unwrap()
+    };
+    let mut large = spawn("large", "compile", "96");
+    f.wait("large");
+    let mut lint = spawn("lint", "lint", "96");
+    thread::sleep(Duration::from_millis(100));
+    assert!(!f.0.join("lint").exists());
+    let mut small = spawn("small", "compile", "16");
+    f.wait("small");
+    large.kill().unwrap();
+    large.wait().unwrap();
+    f.release("small", &mut small);
+    thread::sleep(Duration::from_millis(150));
+    assert!(
+        !f.0.join("lint").exists(),
+        "child must retain memory reservation"
+    );
+    fs::write(f.0.join("release-large"), "").unwrap();
+    f.wait("lint");
+    f.release("lint", &mut lint);
+}
+
+#[test]
+fn impossible_reservation_fails_before_command_and_metrics_preserve_exit() {
+    let f = Fixture::new();
+    let result = f
+        .command()
+        .env("VIBEOS_HOST_MEMORY_MIB", "16")
+        .env("VIBEOS_HOST_JOB_MEMORY_MIB", "32")
+        .args([
+            "--kind",
+            "lint",
+            "--",
+            "touch",
+            f.0.join("unexpected").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(result.status.code(), Some(125));
+    assert!(String::from_utf8(result.stderr)
+        .unwrap()
+        .contains("job requests"));
+    assert!(!f.0.join("unexpected").exists());
+
+    let result = f
+        .command()
+        .args([
+            "--kind",
+            "lint",
+            "--",
+            "python3",
+            "-c",
+            "x=bytearray(32*1024*1024); raise SystemExit(42)",
+        ])
+        .status()
+        .unwrap();
+    assert_eq!(result.code(), Some(42));
+    let log = fs::read_to_string(f.0.join("job-metrics.jsonl")).unwrap();
+    assert_eq!(log.lines().count(), 1);
+    assert!(log.contains("\"exit\":42"));
+    let peak: usize = log
+        .split("\"wait4_maxrss_kib\":")
+        .nth(1)
+        .unwrap()
+        .split(',')
+        .next()
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(
+        peak >= 32 * 1024,
+        "kernel high-water measurement missed short allocation: {log}"
+    );
+    assert!(log.contains("\"kind\":\"lint\""));
+}
+
+#[test]
+fn old_dispatcher_grant_is_rechecked_before_execution() {
+    let f = Fixture::new();
+    let mut a = f
+        .command()
+        .env("VIBEOS_HOST_MEMORY_MIB", "128")
+        .env("VIBEOS_HOST_JOB_MEMORY_MIB", "96")
+        .args([
+            "--kind",
+            "compile",
+            "--",
+            "sh",
+            "-c",
+            &format!(
+                "touch '{}'; while test ! -f '{}'; do sleep .02; done",
+                f.0.join("a").display(),
+                f.0.join("release-a").display()
+            ),
+        ])
+        .spawn()
+        .unwrap();
+    f.wait("a");
+    let mut b = f
+        .command()
+        .env("VIBEOS_HOST_MEMORY_MIB", "128")
+        .env("VIBEOS_HOST_JOB_MEMORY_MIB", "96")
+        .args([
+            "--kind",
+            "lint",
+            "--",
+            "touch",
+            f.0.join("b").to_str().unwrap(),
+        ])
+        .spawn()
+        .unwrap();
+    thread::sleep(Duration::from_millis(100));
+    // Simulate an older broker granting the spare CPU without memory checks.
+    use std::os::fd::AsRawFd;
+    unsafe extern "C" {
+        fn flock(fd: i32, op: i32) -> i32;
+    }
+    let mutex = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(f.0.join("jobs.lock"))
+        .unwrap();
+    assert_eq!(unsafe { flock(mutex.as_raw_fd(), 2) }, 0);
+    let path = fs::read_dir(f.0.join("jobs"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| {
+            p.to_string_lossy()
+                .ends_with(&format!("-lint-{}.json", b.id()))
+        })
+        .unwrap();
+    let body = fs::read_to_string(&path).unwrap();
+    assert!(body.contains("\"state\":\"waiting\""));
+    fs::write(
+        path,
+        body.replace(
+            "\"state\":\"waiting\"}",
+            "\"state\":\"granted\",\"cpu_slot\":1}",
+        ),
+    )
+    .unwrap();
+    drop(mutex);
+    thread::sleep(Duration::from_millis(1200));
+    assert!(!f.0.join("b").exists());
+    f.release("a", &mut a);
+    assert!(b.wait().unwrap().success());
+    assert!(f.0.join("b").exists());
+}
+
+#[test]
+fn excessive_old_grants_do_not_deadlock_new_claimants() {
+    let f = Fixture::new();
+    // Hold both CPU slots while two memory-heavy jobs enqueue.
+    let mut a = f.spawn("compile", "a");
+    let mut b = f.spawn("compile", "b");
+    f.wait("a");
+    f.wait("b");
+    let spawn = |name: &str| {
+        f.command()
+            .env("VIBEOS_HOST_MEMORY_MIB", "128")
+            .env("VIBEOS_HOST_JOB_MEMORY_MIB", "96")
+            .args([
+                "--kind",
+                "lint",
+                "--",
+                "sh",
+                "-c",
+                &format!(
+                    "touch '{}'; while test ! -f '{}'; do sleep .02; done",
+                    f.0.join(name).display(),
+                    f.0.join(format!("release-{name}")).display()
+                ),
+            ])
+            .spawn()
+            .unwrap()
+    };
+    let mut c = spawn("c");
+    let mut d = spawn("d");
+    thread::sleep(Duration::from_millis(100));
+    // Freeze claimants, release holders, and install two simultaneous old-style
+    // grants whose total exceeds memory capacity. Neither is actually running.
+    unsafe extern "C" {
+        fn kill(pid: i32, signal: i32) -> i32;
+        fn waitpid(pid: i32, status: *mut i32, options: i32) -> i32;
+        fn flock(fd: i32, op: i32) -> i32;
+    }
+    use std::os::fd::AsRawFd;
+    // Never stop a broker while it owns the queue mutex.
+    let freeze_lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(f.0.join("jobs.lock"))
+        .unwrap();
+    assert_eq!(unsafe { flock(freeze_lock.as_raw_fd(), 2) }, 0);
+    for child in [&c, &d] {
+        assert_eq!(unsafe { kill(child.id() as i32, 19) }, 0);
+        let mut status = 0;
+        assert_eq!(
+            unsafe { waitpid(child.id() as i32, &mut status, 2) },
+            child.id() as i32
+        );
+        assert_eq!(status & 0xff, 0x7f);
+    }
+    drop(freeze_lock);
+    f.release("a", &mut a);
+    f.release("b", &mut b);
+    let mutex = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(f.0.join("jobs.lock"))
+        .unwrap();
+    assert_eq!(unsafe { flock(mutex.as_raw_fd(), 2) }, 0);
+    for (slot, child) in [&c, &d].iter().enumerate() {
+        let path = fs::read_dir(f.0.join("jobs"))
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .find(|p| {
+                p.to_string_lossy()
+                    .ends_with(&format!("-lint-{}.json", child.id()))
+            })
+            .unwrap();
+        let mut body = fs::read_to_string(&path).unwrap();
+        // A new dispatcher may already have granted one job after a holder exited.
+        if body.contains("\"state\":\"waiting\"") {
+            body = body.replace(
+                "\"state\":\"waiting\"}",
+                &format!("\"state\":\"granted\",\"cpu_slot\":{slot}}}"),
+            );
+        }
+        fs::write(path, body).unwrap();
+    }
+    drop(mutex);
+    // Resume C alone: it must start even though D has an excessive promise.
+    assert_eq!(unsafe { kill(c.id() as i32, 18) }, 0);
+    f.wait("c");
+    assert_eq!(unsafe { kill(d.id() as i32, 18) }, 0);
+    thread::sleep(Duration::from_millis(100));
+    assert!(!f.0.join("d").exists());
+    f.release("c", &mut c);
+    f.wait("d");
+    f.release("d", &mut d);
 }

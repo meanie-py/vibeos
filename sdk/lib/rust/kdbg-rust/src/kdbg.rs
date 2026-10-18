@@ -34,12 +34,14 @@ const PACKET_TYPE_KD_STATE_CHANGE64: ULONG = 7;
 const PACKET_TYPE_KD_STATE_MANIPULATE: ULONG = 2;
 const PACKET_TYPE_KD_POLL_BREAKIN: ULONG = 0x8;
 
-const DbgKdContinueApi: ULONG = 0x3130;
-const DbgKdGetContextApi: ULONG = 0x3131;
-const DbgKdSetContextApi: ULONG = 0x3132;
+// windbgkd.h. The port's 0x3130.. and the state changes 3/4 below never matched
+// what kd64 sends, so KDBG never saw an exception or a symbol load.
+const DbgKdContinueApi: ULONG = 0x3136;
+const DbgKdGetContextApi: ULONG = 0x3132;
+const DbgKdSetContextApi: ULONG = 0x3133;
 
-const DbgKdLoadSymbolsStateChange: ULONG = 0x00000004;
-const DbgKdExceptionStateChange: ULONG = 0x00000003;
+const DbgKdLoadSymbolsStateChange: ULONG = 0x00003031;
+const DbgKdExceptionStateChange: ULONG = 0x00003030;
 
 const STATUS_ASSERTION_FAILURE: NTSTATUS = 0xC0000420u32 as NTSTATUS;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001u32 as NTSTATUS;

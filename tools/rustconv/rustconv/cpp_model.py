@@ -137,6 +137,9 @@ class ClassModel:
     # (`DECLARE_REGISTRY_RESOURCEID` -> `IDR_EXTRACTICON`). The methods they generate are
     # dropped from `methods` (macro-generated, see _method); cpp_app renders their effect.
     atl_declares: dict[str, str] = field(default_factory=dict)
+    # `#pragma pack` in force at the definition (pshpack1.h -> 1), or None for natural
+    # alignment. cabview's CABITEM (a PIDL item, read at 2-byte-aligned addresses) is packed.
+    pack: int | None = None
 
     def method(self, name: str) -> list[Method]:
         return [m for m in self.methods if m.name == name]
@@ -356,6 +359,38 @@ def _file_of(node: dict, key: str = "loc") -> str | None:
     if key == "range":
         loc = loc.get("begin", {})
     return cdp._loc(loc).get("_file")
+
+
+_PACK_RE = re.compile(
+    r"^[ \t]*#[ \t]*(?:include[ \t]*[<\"](?P<inc>pshpack(?P<incn>\d+)|poppack)\.h[>\"]"
+    r"|pragma[ \t]+pack[ \t]*\((?P<args>[^)]*)\))",
+    re.M,
+)
+
+
+def pragma_pack_at(text: str) -> int | None:
+    """The `#pragma pack` value in force at the end of `text` (pshpackN.h pushes N,
+    poppack.h pops), or None when natural alignment is."""
+    stack: list[int | None] = []
+    cur: int | None = None
+    for m in _PACK_RE.finditer(text):
+        if m.group("inc"):
+            if m.group("incn"):
+                stack.append(cur)
+                cur = int(m.group("incn"))
+            else:
+                cur = stack.pop() if stack else None
+            continue
+        args = [a.strip() for a in m.group("args").split(",") if a.strip()]
+        nums = [int(a) for a in args if a.isdigit()]
+        if args and args[0] == "push":
+            stack.append(cur)
+            cur = nums[0] if nums else cur
+        elif args and args[0] == "pop":
+            cur = stack.pop() if stack else None
+        else:
+            cur = nums[0] if nums else None  # `pack()` restores the default
+    return cur
 
 
 def _span(node: dict) -> tuple[str, int, int] | None:
@@ -1031,6 +1066,16 @@ class _Extractor:
             template=template,
         )
         text = self.src.text(span) or ""
+        if any(c.get("kind") == "MaxFieldAlignmentAttr" for c in n.get("inner", [])):
+            # clang's JSON marks a packed record but not by how much: read the directives
+            # in force at it. Refused rather than guessed: a wrong pack is a wrong layout.
+            before = self.src.text((span[0], 0, span[1])) if span else None
+            cls.pack = pragma_pack_at(before or "")
+            if cls.pack is None:
+                raise CppModelError(
+                    f"{qualified}: packed (MaxFieldAlignmentAttr) but no #pragma pack / "
+                    "pshpackN.h before it says how much"
+                )
         cls.msg_map = parse_msg_map(text)
         cls.com_map = parse_com_map(text)
         cls.atl_declares = parse_atl_declares(text)
@@ -1373,7 +1418,7 @@ class _Extractor:
         `cxx_operator_new[_array]`: `operator new` is no name a C function can have, and
         translate could not extract the body (cicbase.cpp went unbought three times)."""
         sigs = self._overloads.get(n["name"], [])
-        base = n["name"]
+        base = _spelled_name(self, n) or n["name"]
         if base.startswith("operator "):
             base = "cxx_" + base.replace("operator ", "operator_").replace("[]", "_array")
         if len(sigs) < 2:
@@ -1529,7 +1574,14 @@ class _Extractor:
         init = None
         if n.get("inner"):
             init = _ctor_args(self.src.node_text(n["inner"][0]), (name,))
-        if any(g.name == name for g in self.model.globals):
+        seen = next((g for g in self.model.globals if g.name == name), None)
+        if seen is not None:
+            if seen.init is None and init is not None:
+                # The DEFINITION after its declaration: cabview.h's `EXTERN_C const GUID
+                # CLSID_CabFolder;` (no `extern` storage class inside a linkage spec) was seen
+                # first, and keeping it dropped cabview.cpp's DEFINE_GUID value, so the
+                # crate declared the CLSID and defined it nowhere.
+                seen.init, seen.file = init, self.rel(_file_of(n) or "")
             return
         self.model.globals.append(
             GlobalVar(
@@ -1540,6 +1592,26 @@ class _Extractor:
                 n.get("storageClass") == "static",
             )
         )
+
+
+def _spelled_name(ex, n: dict) -> str | None:
+    """The name a module function is WRITTEN with when a header macro renames it.
+    cabview's `inline HRESULT InsertMenuItem(QCMINFO &, ..)` is `InsertMenuItemW` to clang
+    (winuser.h's UNICODE `#define`), a C++ OVERLOAD of user32's. Rust has no overloads:
+    under the clang name it shadowed the import, and its own user32 call bound to itself.
+    Its written spelling is what the module's call sites say, and collides with nothing.
+    A name passed as a macro ARGUMENT (`FNCLOSE(fnFileClose)`) is spelled as written."""
+    loc = n.get("loc") or {}
+    exp = loc.get("expansionLoc")
+    if not exp or "spellingLoc" not in loc or exp.get("isMacroArgExpansion"):
+        return None
+    f, off, tl = exp.get("_file"), exp.get("offset"), exp.get("tokLen")
+    if not f or off is None or not tl or not ex.mine(f):
+        return None
+    word = ex.src.text((f, off, off + tl))
+    if word is None or not re.fullmatch(r"[A-Za-z_]\w*", word) or word == n["name"]:
+        return None
+    return word
 
 
 def _cache_key(argv: list[str], tu: Path) -> str:

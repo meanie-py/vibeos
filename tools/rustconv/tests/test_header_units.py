@@ -33,7 +33,7 @@ def test_name_restore_takes_no_other_freedom():
 
 def test_a_tchar_entry_answered_as_its_expansion_is_respelled():
     """reactos.exe: `_tWinMain` came back as `fn wWinMain`, and the stitch refused it."""
-    body = "pub unsafe extern \"system\" fn wWinMain(h: u32) -> i32 {\n    wWinMain_helper(h)\n}\n"
+    body = 'pub unsafe extern "system" fn wWinMain(h: u32) -> i32 {\n    wWinMain_helper(h)\n}\n'
     out = restore_requested_name(body, "_tWinMain")
     assert "fn _tWinMain(" in out and "wWinMain_helper(h)" in out
     both = "fn wmain() {}\nfn main() {}\n"

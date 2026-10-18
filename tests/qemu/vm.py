@@ -127,11 +127,23 @@ USB_STICK_FILE = "VIBEOS.TXT"
 USB_STICK_TEXT = b"hello from the usb stick\r\n"
 _USB_STICK_MIB = 64
 
+# stortest.exe's stick (VIBEOS_QEMU_STORTEST=1): the volume it hunts for by label, and
+# the marker it reads before writing WRITETST.TXT (base/applications/stortest).
+STORTEST_LABEL = "VIBEUSB"
+STORTEST_MARKER = b"vibeos usb e2e marker\r\n"
 
-def make_usb_stick_image(path: Path, fat: int = 16, mib: int = _USB_STICK_MIB) -> None:
+
+def make_usb_stick_image(
+    path: Path,
+    fat: int = 16,
+    mib: int = _USB_STICK_MIB,
+    label: str = USB_STICK_LABEL,
+    files: dict[str, bytes] | None = None,
+) -> None:
     """Build the usbstor rig's stick image at `path`, as qcow2 (host sfdisk + mkfs.fat + mcopy).
 
-    `fat` is 16 or 32; `mib` the stick's size. The file system is made in place
+    `fat` is 16 or 32; `mib` the stick's size; `label` and `files` (name -> bytes,
+    default the rig's one USB_STICK_FILE) what the volume carries. The file system is made in place
     on a sparse disk image, so a multi-GiB stick costs no memory or disk. A
     FAT32 volume of the default 64 MiB needs one-sector clusters to reach
     FAT32's 65525-cluster minimum, so mkfs.fat is told `-s 1` below 512 MiB.
@@ -139,8 +151,13 @@ def make_usb_stick_image(path: Path, fat: int = 16, mib: int = _USB_STICK_MIB) -
     part_offset = 1 << 20
     part_bytes = (mib << 20) - part_offset
     with tempfile.TemporaryDirectory() as td:
-        payload = Path(td) / USB_STICK_FILE
-        payload.write_bytes(USB_STICK_TEXT)
+        payloads = []
+        for name, content in (
+            files if files is not None else {USB_STICK_FILE: USB_STICK_TEXT}
+        ).items():
+            payload = Path(td) / name
+            payload.write_bytes(content)
+            payloads.append(payload)
         tmp = path.with_suffix(".tmp")
         with tmp.open("wb") as f:
             f.truncate(mib << 20)
@@ -151,17 +168,18 @@ def make_usb_stick_image(path: Path, fat: int = 16, mib: int = _USB_STICK_MIB) -
             capture_output=True,
         )
         cluster = ["-s", "1"] if fat == 32 and mib < 512 else []
-        mkfs = ["mkfs.fat", "-F", str(fat), *cluster, "-n", USB_STICK_LABEL]
+        mkfs = ["mkfs.fat", "-F", str(fat), *cluster, "-n", label]
         subprocess.run(
             [*mkfs, "--offset", str(part_offset >> 9), str(tmp), str(part_bytes >> 10)],
             check=True,
             capture_output=True,
         )
-        subprocess.run(
-            ["mcopy", "-i", f"{tmp}@@{part_offset}", str(payload), f"::/{USB_STICK_FILE}"],
-            check=True,
-            capture_output=True,
-        )
+        for payload in payloads:
+            subprocess.run(
+                ["mcopy", "-i", f"{tmp}@@{part_offset}", str(payload), f"::/{payload.name}"],
+                check=True,
+                capture_output=True,
+            )
         # qcow2, not raw: the rigs snapshot the VM (savevm), and QEMU refuses
         # while any writable drive lacks snapshot support.
         subprocess.run(
@@ -500,9 +518,63 @@ def testkernel_boot_img(src: Path, work_dir: Path) -> Path:
     return cached
 
 
+def stortest_enabled() -> bool:
+    """`VIBEOS_QEMU_STORTEST=1`: boot with the STORTEST loader option and stortest's stick."""
+    return os.environ.get("VIBEOS_QEMU_STORTEST", "").strip() in ("1", "true", "yes")
+
+
+# The equal-length swap that puts STORTEST on freeldr's command line. /BAUDRATE=115200
+# is on every debug entry of livecd.ini and qemu/freeldr.ini, and QEMU's emulated UART
+# ignores the divisor, so dropping it changes nothing else; /FASTDETECT, the other
+# candidate, would let x86 freeldr probe the COM ports -- the debug port among them --
+# for serial mice. winlogon starts stortest.exe only when the kernel's published options
+# hold the word STORTEST (winlogon-rust StorTestBootEnabled).
+_BAUD_OPTION = b"/BAUDRATE=115200"
+_STORTEST_OPTION = b"/STORTEST".ljust(len(_BAUD_OPTION))
+
+
+def stortest_selected_iso(iso: Path, work_dir: Path) -> Path:
+    """A copy of `iso` whose loader entries carry /STORTEST, WITHOUT rebuilding it.
+
+    The same in-place write as smp_selected_iso: ISO9660 and arm64's FAT boot.img store
+    the ini's bytes literally, so every line-initial `Options=` line holding
+    /BAUDRATE=115200 gets /STORTEST in its place. That includes ini copies freeldr does
+    not read (arm64's embedded ramdisk carries an x86 livecd.ini), which is harmless.
+    Raises when no line was patched: a stortest run on media that cannot ask for the
+    test would only ever time out."""
+    data = bytearray(iso.read_bytes())
+    patched = 0
+    i = data.find(b"Options=")
+    while i != -1:
+        end = i
+        while end < len(data) and data[end] not in (0x0D, 0x0A):
+            end += 1
+        line = bytes(data[i:end])
+        if (i == 0 or data[i - 1] == 0x0A) and _STORTEST_OPTION.rstrip() in line:
+            patched += 1
+        elif (i == 0 or data[i - 1] == 0x0A) and _BAUD_OPTION in line:
+            at = i + line.index(_BAUD_OPTION)
+            data[at : at + len(_BAUD_OPTION)] = _STORTEST_OPTION
+            patched += 1
+        i = data.find(b"Options=", end)
+    if not patched:
+        raise RuntimeError(
+            f"{iso}: no line-initial Options= line holds {_BAUD_OPTION.decode()}, so "
+            "STORTEST cannot be added in place; stage the loader option some other way"
+        )
+    out = work_dir / f"stortest-{iso.name}"
+    _write_sparse_image(out, data)
+    return out
+
+
 def _maybe_smp_iso(iso: Path, work_dir: Path) -> Path:
-    """`smp_selected_iso` when this run asked for SMP, else the media untouched."""
-    return smp_selected_iso(iso, work_dir) if smp_count() else iso
+    """The boot media this run asked for: `smp_selected_iso` for SMP, then
+    `stortest_selected_iso` for VIBEOS_QEMU_STORTEST, else the media untouched."""
+    if smp_count():
+        iso = smp_selected_iso(iso, work_dir)
+    if stortest_enabled():
+        iso = stortest_selected_iso(iso, work_dir)
+    return iso
 
 
 def writable_root() -> bool:
@@ -2239,6 +2311,8 @@ class QemuVM:
         return out
 
     def _usb_disk_enabled(self) -> bool:
+        if stortest_enabled():
+            return True
         return os.environ.get("VIBEOS_QEMU_USB_DISK", "").strip() in ("1", "true", "yes")
 
     def _temp_disk_args(self) -> list[str]:
@@ -2272,7 +2346,12 @@ class QemuVM:
             return []
         usb_disk = self.scratch_path.parent / "usbdisk.qcow2"
         if not usb_disk.exists():
-            make_usb_stick_image(usb_disk)
+            if stortest_enabled():
+                make_usb_stick_image(
+                    usb_disk, label=STORTEST_LABEL, files={"MARKER.TXT": STORTEST_MARKER}
+                )
+            else:
+                make_usb_stick_image(usb_disk)
         drive = ["-drive", f"file={usb_disk},format=qcow2,if=none,id=usbstor0"]
         if self._xhci_enabled():
             ss_disk = self.scratch_path.parent / "usbdisk-ss.qcow2"

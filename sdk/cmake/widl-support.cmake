@@ -190,7 +190,11 @@ function(add_iid_library TARGET)
 endfunction()
 
 # Generates Wine .rgs registry files for DllRegisterServer. Automatically adds dependency and generated res files to target.
-function(add_idl_reg_scripts TARGET TYPE)
+# The registry/typelib resource objects alone: <idl><suffix>.o for each IDL, under the custom
+# target <TARGET><suffix>, attached to nothing. add_idl_reg_scripts attaches them to a cmake
+# target; a cargo cell (add_cargo_module) links ${CMAKE_CURRENT_BINARY_DIR}/<idl><suffix>.o
+# itself and lists <TARGET><suffix> in its EXTRA_DEPENDS.
+function(add_idl_reg_objects TARGET TYPE)
     get_includes(INCLUDES)
     get_defines(DEFINES)
     get_includes(LIBS)
@@ -232,6 +236,12 @@ function(add_idl_reg_scripts TARGET TYPE)
         
     add_custom_target(${IDL_REGTARGETNAME} DEPENDS ${RCFILES})
     add_dependencies(${IDL_REGTARGETNAME} stdole2)
-    add_dependencies(${TARGET} ${IDL_REGTARGETNAME})
-    target_sources(${TARGET} PRIVATE ${RCFILES})
+    set(IDL_REG_OBJECTS ${RCFILES} PARENT_SCOPE)
+    set(IDL_REG_TARGET ${IDL_REGTARGETNAME} PARENT_SCOPE)
+endfunction()
+
+function(add_idl_reg_scripts TARGET TYPE)
+    add_idl_reg_objects(${TARGET} ${TYPE} ${ARGN})
+    add_dependencies(${TARGET} ${IDL_REG_TARGET})
+    target_sources(${TARGET} PRIVATE ${IDL_REG_OBJECTS})
 endfunction()

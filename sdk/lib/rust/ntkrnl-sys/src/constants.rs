@@ -690,7 +690,14 @@ pub const SEM_NOALIGNMENTFAULTEXCEPT: ULONG = 0x0004;
 pub const SYSTEM_THREAD_EXCEPTION_NOT_HANDLED: ULONG = 0x7E;
 pub const QUOTA_UNDERFLOW: ULONG = 0x21;
 
-pub const ICIF_PROBE_READ: ULONG = 0x0010;
+// The `Flags` ARGUMENT of DefaultQueryInfoBufferCheck (icif.h), a second namespace
+// that reuses 0x1/0x2. Defined here, the module every build has, and re-exported by
+// inline::common beside their consumer. The translations had each invented their
+// own (3, 0x10, 0x200|0x400) while the consumer tested 0x20, so
+// NtQueryInformationToken's forced ReturnLength probe never fired.
+pub const ICIF_PROBE_READ_WRITE: ULONG = 0x0;
+pub const ICIF_PROBE_READ: ULONG = 0x1;
+pub const ICIF_FORCE_RETURN_LENGTH_PROBE: ULONG = 0x2;
 
 // ============================================================================
 // PS pool tags (from ps.h)

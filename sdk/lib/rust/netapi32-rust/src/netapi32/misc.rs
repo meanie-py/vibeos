@@ -1,4 +1,5 @@
 use crate::prelude_rpc::*;
+use ntdll_sys::seh::rpc_try;
 // One declaration per external symbol: the variant matching the C prototype.
 use crate::rpc_stubs::NetrServerStatisticsGet;
 use crate::rpc_stubs::NetrWorkstationStatisticsGet;
@@ -60,7 +61,7 @@ pub unsafe extern "system" fn NetStatisticsGet(
         if options != 0 {
             return ERROR_INVALID_PARAMETER;
         }
-        status = NetrWorkstationStatisticsGet(server, LANMAN_WORKSTATION.as_ptr().cast_mut(), level, options, (bufptr).cast());
+        status = rpc_try(|| NetrWorkstationStatisticsGet(server, LANMAN_WORKSTATION.as_ptr().cast_mut(), level, options, (bufptr).cast())).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     } else if _wcsicmp(service, LANMAN_SERVER.as_ptr()) == 0 {
         if level != 0 {
             return ERROR_INVALID_LEVEL;
@@ -68,7 +69,7 @@ pub unsafe extern "system" fn NetStatisticsGet(
         if options != 0 {
             return ERROR_INVALID_PARAMETER;
         }
-        status = NetrServerStatisticsGet(server, LANMAN_SERVER.as_ptr().cast_mut(), level, options, (bufptr).cast());
+        status = rpc_try(|| NetrServerStatisticsGet(server, LANMAN_SERVER.as_ptr().cast_mut(), level, options, (bufptr).cast())).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     }
 
     status

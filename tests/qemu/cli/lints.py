@@ -1468,6 +1468,14 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # Baseline is EMPTY.
     # A Rust rule (tools/vibeos-lint/src/rules/entry_point_cc.rs).
     specs.append(("scan_entry_point_cc", [rustlints.SENTINEL, "scan_entry_point_cc"], "stdout"))
+    # A cpp_app constructor hook (`__psp_init`, a storing `__init_vtables`) that no constructor
+    # of its class calls: a hand-banked constructor that bypassed the generated prologue.
+    # acppage's banked CLayerUIPropPage constructor predated `__psp_init`, so m_psp stayed
+    # zeroed and AddPages added no page while returning S_OK; only modrun saw it.
+    # Baseline is EMPTY. A Rust rule (tools/vibeos-lint/src/rules/uncalled_ctor_hook.rs).
+    specs.append(
+        ("scan_uncalled_ctor_hook", [rustlints.SENTINEL, "scan_uncalled_ctor_hook"], "stdout")
+    )
     # The OTHER half of that pair: a cross-MODULE extern declaration, checked against the
     # .spec of the DLL that exports it. `cargo check` never links, so nothing in `check`,
     # `check-tooling` or `difftest` can see a wrong-ABI import — it survives to the PE link,

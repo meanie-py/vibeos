@@ -21,8 +21,8 @@ const REPORT_INCLUDES_SEGS: USHORT = 0x0001;
 const REPORT_STANDARD_CS: USHORT = 0x0002;
 const KGDT_R0_CODE: USHORT = 0x08;
 
-const MMDBG_COPY_UNSAFE: ULONG = 0x00000001;
-const MMDBG_COPY_WRITE: ULONG = 0x00000002;
+// mm.h's encoding, the one MmDbgCopyMemory reads (see kdapi.rs).
+use ntkrnl_sys::mm::{MMDBG_COPY_UNSAFE, MMDBG_COPY_WRITE};
 
 const Isa: INTERFACE_TYPE = _INTERFACE_TYPE_Isa as INTERFACE_TYPE;
 

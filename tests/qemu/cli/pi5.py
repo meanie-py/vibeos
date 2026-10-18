@@ -113,9 +113,17 @@ def stortest_verdict(text: str) -> tuple[str | None, list[str]]:
 
 def stortest_readback(image: Path) -> bytes | None:
     """WRITETST.TXT as it landed on the served image: the medium's own account of the
-    write, read on the host rather than by the guest that did it."""
+    write, read on the host rather than by the guest that did it.
+
+    MTOOLS_SKIP_CHECK: the board loses power with the volume still mounted, so fastfat's
+    FAT16 dirty flag (entry 1 = 0x7FFF) is still set, and mtools refuses such a volume
+    with "Error reading FAT". The 2026-10-17 Pi 5 run graded STORTEST_FAIL "WRITETST.TXT
+    missing" over an image holding exactly the 43 bytes stortest wrote."""
     cp = subprocess.run(
-        ["mtype", "-i", str(image), "::WRITETST.TXT"], capture_output=True, timeout=30
+        ["mtype", "-i", str(image), "::WRITETST.TXT"],
+        capture_output=True,
+        timeout=30,
+        env={**os.environ, "MTOOLS_SKIP_CHECK": "1"},
     )
     return cp.stdout if cp.returncode == 0 else None
 

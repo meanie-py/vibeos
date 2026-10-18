@@ -66,7 +66,7 @@ extern "system" {
 
 const TAG_CANCEL: ULONG = u32::from_le_bytes(*b"IoCx");
 const NON_PAGED_POOL: ULONG = 0;
-const NOTIFICATION_EVENT: u32 = 0;
+const NOTIFICATION_EVENT: u32 = 0; // EVENT_TYPE; nolint: shadowed-c-define (video.h's is VIDEO_EVENT's 1)
 const ORIGINAL_APC_ENVIRONMENT: u32 = 0;
 const EXECUTIVE: u32 = 0;
 const THREAD_TERMINATE: ACCESS_MASK = 0x0001;

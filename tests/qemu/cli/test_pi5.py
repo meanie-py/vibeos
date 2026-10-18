@@ -56,6 +56,32 @@ def test_stortest_image_is_the_volume_stortest_looks_for(tmp_path: Path) -> None
     assert pi5.stortest_readback(img) is None  # stortest has not written yet
 
 
+def test_stortest_readback_reads_a_volume_left_dirty(tmp_path: Path) -> None:
+    """The board is power-cut with the volume mounted, so fastfat's FAT16 dirty flag is
+    still set (entry 1 = 0x7FFF in both FATs) and plain mtools refuses the image. The
+    2026-10-17 Pi 5 run failed its readback exactly so, over the right 43 bytes."""
+    import shutil
+    import subprocess
+
+    if not (shutil.which("mkfs.fat") and shutil.which("mtype")):
+        pytest.skip("dosfstools/mtools not installed")
+    img = tmp_path / "vibeusb.img"
+    pi5.stortest_image(img)
+    wrote = tmp_path / "WRITETST.TXT"
+    wrote.write_bytes(pi5.STORTEST_WROTE)
+    subprocess.run(["mcopy", "-i", str(img), str(wrote), "::WRITETST.TXT"], check=True)
+    data = bytearray(img.read_bytes())
+    reserved = int.from_bytes(data[14:16], "little")
+    per_fat = int.from_bytes(data[22:24], "little")
+    for fat in range(data[16]):
+        at = (reserved + fat * per_fat) * 512 + 2
+        data[at : at + 2] = b"\xff\x7f"
+    img.write_bytes(data)
+    plain = subprocess.run(["mtype", "-i", str(img), "::WRITETST.TXT"], capture_output=True)
+    assert plain.returncode != 0, "fixture no longer reproduces mtools' refusal"
+    assert pi5.stortest_readback(img) == pi5.STORTEST_WROTE
+
+
 def test_stortest_verdict() -> None:
     running = "[STORTEST] start\n[STORTEST] found VIBEUSB at E:\n"
     assert pi5.stortest_verdict(running)[0] is None

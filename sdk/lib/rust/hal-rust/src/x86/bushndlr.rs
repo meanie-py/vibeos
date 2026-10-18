@@ -66,7 +66,7 @@ const STATUS_SUCCESS: NTSTATUS = 0;
 const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC0000001_u32 as NTSTATUS;
 const STATUS_NOT_SUPPORTED: NTSTATUS = 0xC00000BB_u32 as NTSTATUS;
 const NON_PAGED_POOL: i32 = 0; // POOL_TYPE::NonPagedPool
-const SYNCHRONIZATION_EVENT: i32 = 1; // EVENT_TYPE::SynchronizationEvent
+const SYNCHRONIZATION_EVENT: i32 = 1; // EVENT_TYPE::SynchronizationEvent; nolint: shadowed-c-define (video.h's is VIDEO_EVENT's 0)
 const KERNEL_MODE: i8 = 0; // MODE::KernelMode
 const WR_EXECUTIVE: i32 = 0; // KWAIT_REASON::WrExecutive
 

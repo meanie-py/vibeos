@@ -22,6 +22,9 @@ crate-type = ["rlib"]
 # CComAllocator / CComHeapPtr: ole32's task allocator. Off by default so a module with no COM
 # never imports ole32.
 com = []
+# CComBSTR (atlcomcli.h): oleaut32's Sys*String. Off by default so a module without BSTRs
+# never imports oleaut32.
+bstr = []
 # CPath (atlpath.h's CPathT<CStringW>): shlwapi's PathCompactPathExW. Off by default so a
 # module that never builds a CPath never imports shlwapi.
 path = []

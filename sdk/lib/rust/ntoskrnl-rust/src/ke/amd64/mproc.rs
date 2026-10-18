@@ -61,6 +61,7 @@ mod smp_impl {
     use crate::ke::processor::{KeMaximumProcessors, KeNumprocSpecified, KeBootprocSpecified};
 
     // Size of the shared double-fault / NMI IST stack per AP.
+    // nolint: shadowed-c-define (i386's 0x3000, above amd64 ketypes.h's 0x2000; larger is safe)
     const DOUBLE_FAULT_STACK_SIZE: usize = 0x3000;
 
     // amd64 GDT selectors (sdk/include/ndk/amd64/ketypes.h — KGDT64_*).

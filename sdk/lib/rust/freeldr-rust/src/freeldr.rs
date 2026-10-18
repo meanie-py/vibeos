@@ -298,3 +298,73 @@ pub unsafe extern "C" fn FrldrGetBootPartition() -> ULONG {
 pub unsafe extern "C" fn FrLdrIsUefiBoot() -> BOOLEAN {
     cfg!(feature = "uefi") as BOOLEAN
 }
+
+/// A valid SMBIOS entry point at `p`: the anchor (`_SM3_` for 3.x, `_SM_` for 2.1), a
+/// length that fits, and a byte sum of zero over it.
+unsafe fn smbios_entry_point_valid(p: *const u8) -> bool {
+    let len = if core::slice::from_raw_parts(p, 5) == b"_SM3_" {
+        *p.add(6) as usize
+    } else if core::slice::from_raw_parts(p, 4) == b"_SM_" {
+        *p.add(5) as usize
+    } else {
+        return false;
+    };
+    (16..=32).contains(&len)
+        && core::slice::from_raw_parts(p, len).iter().fold(0u8, |s, b| s.wrapping_add(*b)) == 0
+}
+
+/// Physical address of the firmware's SMBIOS entry point, or 0. rosload asks, to hand
+/// the kernel `LOADER_PARAMETER_EXTENSION.SMBiosEPSHeader`: after boot the kernel's view
+/// of the BIOS F-segment holds no tables on the smoke VMs, and under UEFI (all of arm64)
+/// SMBIOS is only in the EFI configuration table, which nothing else passes on -- so
+/// GetSystemFirmwareTable('RSMB') found nothing.
+#[no_mangle]
+pub unsafe extern "C" fn FrLdrFindSmbiosEntryPoint() -> ULONG_PTR {
+    #[cfg(feature = "uefi")]
+    {
+        use crate::frldr::{EFI_GUID, EFI_SYSTEM_TABLE};
+        extern "C" {
+            static mut GlobalSystemTable: *mut EFI_SYSTEM_TABLE;
+        }
+        // SMBIOS3_TABLE_GUID first: a 3.x entry point is the only one arm64 firmware has.
+        const GUIDS: [EFI_GUID; 2] = [
+            EFI_GUID { Data1: 0xf2fd1544, Data2: 0x9794, Data3: 0x4a2c,
+                       Data4: [0x99, 0x2e, 0xe5, 0xbb, 0xcf, 0x20, 0xe3, 0x94] },
+            EFI_GUID { Data1: 0xeb9d2d31, Data2: 0x2d88, Data3: 0x11d3,
+                       Data4: [0x9a, 0x16, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d] },
+        ];
+        let st = GlobalSystemTable;
+        for want in &GUIDS {
+            for i in 0..(*st).NumberOfTableEntries as usize {
+                let e = (*st).ConfigurationTable.add(i);
+                let g = &(*e).VendorGuid;
+                if g.Data1 == want.Data1 && g.Data2 == want.Data2 && g.Data3 == want.Data3
+                    && g.Data4 == want.Data4
+                {
+                    let p = (*e).VendorTable as *const u8;
+                    if !p.is_null() && smbios_entry_point_valid(p) {
+                        return p as ULONG_PTR;
+                    }
+                }
+            }
+        }
+        0
+    }
+    #[cfg(all(not(feature = "uefi"), any(target_arch = "x86", target_arch = "x86_64")))]
+    {
+        // The spec's legacy search: 16-byte boundaries in 0xF0000-0xFFFFF, which the
+        // loader still sees as the BIOS left it.
+        let mut a = 0xF0000usize;
+        while a <= 0x100000 - 32 {
+            if smbios_entry_point_valid(a as *const u8) {
+                return a as ULONG_PTR;
+            }
+            a += 16;
+        }
+        0
+    }
+    #[cfg(all(not(feature = "uefi"), not(any(target_arch = "x86", target_arch = "x86_64"))))]
+    {
+        0
+    }
+}

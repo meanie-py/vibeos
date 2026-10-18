@@ -207,6 +207,10 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
         [NETSTACK] ping gateway OK
         [NETSTACK] dns OK (example.com resolved)
 
-   The host pinged 192.168.1.150 back, 5 of 5. Still owed: a soak through the AP's group
-   rekeys on the board (host-tested only), the card interrupt in place of the 4 ms poll,
+   The host pinged 192.168.1.150 back, 5 of 5. Soak, 2026-10-17 12:08 to 21:00 (run
+   `20261017-120821-szwfl2oe`, serial `serial-20261015-162157`, host ping log one ping a
+   minute): one 4-way handshake at boot, then 9 group rekeys, each answered and its key
+   installed, no EAPOL refused, no link loss, no rejoin; 526 of 528 pings answered, the two
+   misses single and separate (12:11, 12:21, the first minutes after boot); 32,429 frames
+   delivered by the 9th rekey. Still owed: the card interrupt in place of the 4 ms poll,
    high-speed SDIO, and the Pi 4 (host and power differ).

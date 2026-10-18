@@ -630,10 +630,19 @@ pub unsafe extern "system" fn HalQueryDisplayParameters(
 }
 
 /// QEMU virt PL031 RTC: DR register at +0x00 holds seconds since the Unix
-/// epoch (UTC). Lazily mapped on first use.
+/// epoch (UTC). Lazily mapped on first use, and only on QEMU: the address is
+/// QEMU's board layout, not something firmware describes, and on hardware it is
+/// whatever lives there. On the Pi 5 it read 0 (1970, before FAT's 1980 epoch),
+/// so every file the guest wrote carried a zeroed date.
 const PL031_BASE: u64 = 0x0901_0000;
 static PL031_VA: AtomicUsize = AtomicUsize::new(0);
 const PL031_VA_NONE: usize = usize::MAX;
+/// 1980-01-01 UTC: a clock reading before it is not a time FAT, or anyone, can use.
+const SANE_SECS: u64 = 315_532_800;
+/// 2025-01-01 UTC, what a board without a clock boots at until the network sets
+/// the time.
+const FALLBACK_SECS: u64 = 1_735_689_600;
+static FALLBACK_SAID: AtomicU32 = AtomicU32::new(0);
 
 unsafe fn pl031_va() -> *mut u32 {
     let cached = PL031_VA.load(Ordering::Acquire);
@@ -642,6 +651,10 @@ unsafe fn pl031_va() -> *mut u32 {
     }
     if cached != 0 {
         return cached as *mut u32;
+    }
+    if !unsafe { super::ecam::on_qemu() } {
+        PL031_VA.store(PL031_VA_NONE, Ordering::Release);
+        return core::ptr::null_mut();
     }
     let va = unsafe {
         ddk::MmMapIoSpace(
@@ -658,6 +671,22 @@ unsafe fn pl031_va() -> *mut u32 {
     va
 }
 
+/// Seconds since 1970-01-01 UTC: the PL031's, else the fallback (said once).
+unsafe fn rtc_secs() -> u64 {
+    let rtc = unsafe { pl031_va() };
+    let secs = if rtc.is_null() { 0 } else { (unsafe { core::ptr::read_volatile(rtc) }) as u64 };
+    if secs >= SANE_SECS {
+        return secs;
+    }
+    if FALLBACK_SAID.swap(1, Ordering::Relaxed) == 0 {
+        let why: &[u8] = if rtc.is_null() { b"no clock on this board\0" } else { b"the PL031 reads before 1980\0" };
+        unsafe {
+            DbgPrint(b"[HAL] HalQueryRealTimeClock: %s, booting at 2025-01-01 until the time is set\n\0".as_ptr(), why.as_ptr());
+        }
+    }
+    FALLBACK_SECS
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalQueryRealTimeClock(Time: ddk::PTIME_FIELDS) -> ddk::BOOLEAN {
     if Time.is_null() {
@@ -665,23 +694,7 @@ pub unsafe extern "system" fn HalQueryRealTimeClock(Time: ddk::PTIME_FIELDS) -> 
     }
 
     unsafe {
-        let rtc = pl031_va();
-        if rtc.is_null() {
-            // No PL031 (or MmMapIoSpace not up yet) — be loud, then fall back
-            // to a fixed date so callers still get *a* sane time.
-            DbgPrint(b"[HAL] HalQueryRealTimeClock: PL031 unavailable, using fallback date\n\0".as_ptr());
-            (*Time).Year = 2025;
-            (*Time).Month = 1;
-            (*Time).Day = 1;
-            (*Time).Hour = 0;
-            (*Time).Minute = 0;
-            (*Time).Second = 0;
-            (*Time).Milliseconds = 0;
-            (*Time).Weekday = 0;
-            return TRUE;
-        }
-
-        let secs = core::ptr::read_volatile(rtc) as u64; // seconds since 1970-01-01 UTC
+        let secs = rtc_secs();
 
         let days = secs / 86_400;
         let rem = secs % 86_400;

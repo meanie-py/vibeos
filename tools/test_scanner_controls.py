@@ -822,6 +822,38 @@ pub unsafe extern "C" fn CreateShellLink() -> i32 {
     0
 }
 """
+# scan_uncalled_ctor_hook. Seeded from acppage (2026-10-17): a hand-banked constructor without
+# cpp_app's `m_psp = T::__psp_init(this_)` prologue line left the PROPSHEETPAGE zeroed.
+_CTORHOOK_HOOK = """\
+impl CPage {
+    pub unsafe fn __psp_init(this_: *mut CPage) -> PropSheetPage {
+        property_page_init(this_, 100, core::ptr::null())
+    }
+}
+"""
+_CTORHOOK_BAD = (
+    _CTORHOOK_HOOK
+    + """\
+impl CPage {
+    pub unsafe fn __ctor_0(&mut self) {
+        let this_: *mut Self = self;
+        (*this_).m_psp.dwFlags |= PSP_USETITLE;
+    }
+}
+"""
+)
+_CTORHOOK_GOOD = (
+    _CTORHOOK_HOOK
+    + """\
+impl CPage {
+    pub unsafe fn __ctor_0(&mut self) {
+        let this_: *mut Self = self;
+        (*this_).m_psp = CPage::__psp_init(this_);
+        (*this_).m_psp.dwFlags |= PSP_USETITLE;
+    }
+}
+"""
+)
 
 _FNABI_GOOD = """\
 pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
@@ -3228,6 +3260,12 @@ CONTROLS: list[Control] = [
         script="tools/vibeos-lint/src/rules/entry_point_cc.rs",
         bad={"bad.rs": _ENTRYCC_BAD},
         good={"good.rs": _ENTRYCC_GOOD},
+    ),
+    Control(
+        name="scan_uncalled_ctor_hook",
+        script="tools/vibeos-lint/src/rules/uncalled_ctor_hook.rs",
+        bad={"page.rs": _CTORHOOK_BAD},
+        good={"page.rs": _CTORHOOK_GOOD},
     ),
     Control(
         name="scan_cdecl_alias",

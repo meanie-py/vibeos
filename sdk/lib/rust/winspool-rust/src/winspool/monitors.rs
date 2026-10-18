@@ -313,10 +313,6 @@ pub unsafe extern "system" fn EnumMonitorsW(pName: PWSTR, Level: DWORD, pMonitor
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER) handler: reached only on a structured exception,
     // which plain Rust cannot model here; kept literally but never taken on this path.
     #[allow(unreachable_code)]
-    if false
-    {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-    }
     // RpcEndExcept;
 
     if dwErrorCode == ERROR_SUCCESS
