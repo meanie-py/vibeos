@@ -338,11 +338,11 @@ def test_code_seg_and_ntddi_split_signature_parse(tmp_path):
     audit INCOMPLETE (or report a variable named NTAPI) instead of checking the file."""
     c = tmp_path / "h.c"
     c.write_text(
-        'static ULONG Counter;\n'
+        "static ULONG Counter;\n"
         'CODE_SEG("PAGE")\n'
-        'NTSTATUS\nNTAPI\n#if (NTDDI_VERSION >= NTDDI_VISTA)\n'
-        'Foo(_In_ PVOID A, _In_ PVOID B)\n{\n    return 0;\n}\n#else\n'
-        'Foo(_In_ PVOID A)\n{\n    return 0;\n}\n#endif\n'
+        "NTSTATUS\nNTAPI\n#if (NTDDI_VERSION >= NTDDI_VISTA)\n"
+        "Foo(_In_ PVOID A, _In_ PVOID B)\n{\n    return 0;\n}\n#else\n"
+        "Foo(_In_ PVOID A)\n{\n    return 0;\n}\n#endif\n"
     )
     findings = audit_preamble(c, "")
     assert not any("INCOMPLETE" in f for f in findings), findings

@@ -342,7 +342,11 @@ unsafe extern "system" fn worker(_context: PVOID) {
     // No static IP — DHCP assigns it.
 
     let mut sockets = SocketSet::new(Vec::new());
-    let dhcp_handle = sockets.add(dhcpv4::Socket::new());
+    let mut dhcp = dhcpv4::Socket::new();
+    // Ask for the NTP servers too, and keep the packet so option 42 can be read.
+    dhcp.set_parameter_request_list(&crate::sntp::DHCP_PARAMETERS);
+    dhcp.set_receive_packet_buffer(alloc::boxed::Box::leak(vec![0u8; 1500].into_boxed_slice()));
+    let dhcp_handle = sockets.add(dhcp);
     let tcp_handle = sockets.add(tcp::Socket::new(
         tcp::SocketBuffer::new(vec![0u8; 4096]),
         tcp::SocketBuffer::new(vec![0u8; 4096]),
@@ -365,6 +369,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         .get_mut::<icmp::Socket>(icmp_handle)
         .bind(icmp::Endpoint::Ident(ICMP_IDENT))
         .ok();
+    let mut sntp = crate::sntp::Sntp::new(&mut sockets, now().total_millis() as u64 ^ 0xA076_1D64_78BD_642F);
 
     // The boot ping goes to the lease's router and the DNS self-test to the lease's
     // servers: slirp's 10.0.2.2 / 10.0.2.3 under QEMU, the LAN's own on a board.
@@ -446,6 +451,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
                     }
                     warm_ip = o;
                     warm_next_ms = 0;
+                    sntp.on_lease(cfg.packet.as_ref().and_then(|p| crate::sntp::Sntp::lease_server(p.options())));
                     dhcp_configured = true;
                     DHCP_READY.store(true, core::sync::atomic::Ordering::Release);
                 }
@@ -496,6 +502,8 @@ unsafe extern "system" fn worker(_context: PVOID) {
                     }
                 }
             }
+
+            sntp.poll(&mut iface, &mut sockets, dns_handle, ts.total_millis() as i64);
 
             // --- DNS: resolve a name via slirp's forwarder ---
             if dns_query.is_none() && !dns_started && dns_attempts < DNS_MAX_ATTEMPTS {

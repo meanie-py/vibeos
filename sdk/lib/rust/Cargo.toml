@@ -914,6 +914,8 @@ members = [
     "tdihelpers-rust",
     "spapisup-rust",
     "setupapi-rust",
+    "acppage-rust",
+    "cabview-rust",
     "pdh-rust",
     "wtsapi32-rust",
     "imagehlp-rust",

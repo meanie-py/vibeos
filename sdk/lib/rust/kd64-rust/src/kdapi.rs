@@ -217,13 +217,9 @@ const PACKET_TYPE_KD_DEBUG_IO: ULONG = 3;
 const PACKET_TYPE_KD_STATE_CHANGE64: ULONG = 7;
 const PACKET_MAX_SIZE: ULONG = 4000;
 const DBGKD_MAXSTREAM: ULONG = 16;
-const MMDBG_COPY_UNSAFE: ULONG = 0x00000001;
-const MMDBG_COPY_WRITE: ULONG = 0x00000002;
-const MMDBG_COPY_PHYSICAL: ULONG = 0x00000004;
-const MMDBG_COPY_CACHED: ULONG = 0x00000008;
-const MMDBG_COPY_UNCACHED: ULONG = 0x00000010;
-const MMDBG_COPY_WRITE_COMBINED: ULONG = 0x00000020;
-const MMDBG_COPY_MAX_SIZE: ULONG = 4096;
+// MMDBG_COPY_* come from ntkrnl_sys::mm, the encoding MmDbgCopyMemory reads. kd64
+// had its own (UNSAFE=1, WRITE=2, PHYSICAL=4, MAX_SIZE=4096): every debugger read
+// arrived as a WRITE, writes as physical, and any chunk over 8 bytes was refused.
 
 const DBGKD_QUERY_MEMORY_VIRTUAL: ULONG = 0;
 const DBGKD_QUERY_MEMORY_PROCESS: ULONG = 0;
@@ -351,8 +347,8 @@ pub unsafe extern "system" fn KdpCopyMemoryChunks(
     let mut chunk = chunk_size;
     if chunk == 0 {
         chunk = 4;
-    } else if chunk > MMDBG_COPY_MAX_SIZE {
-        chunk = MMDBG_COPY_MAX_SIZE;
+    } else if chunk > MMDBG_COPY_MAX_SIZE as ULONG {
+        chunk = MMDBG_COPY_MAX_SIZE as ULONG;
     }
 
     let mut remaining = total_size;

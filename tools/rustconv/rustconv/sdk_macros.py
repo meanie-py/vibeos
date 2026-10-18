@@ -87,6 +87,13 @@ _TOKEN = re.compile(
 )
 
 
+def cxx_ref_alias(name: str, expansion: str) -> str | None:
+    """A type macro's C++ spelling, `const IID &` (REFIID/REFCLSID in a C++ unit, acppage's
+    DllGetClassObject): a reference is a pointer at the C ABI these exports have."""
+    m = re.fullmatch(r"\s*const\s+([A-Za-z_]\w*)\s*&\s*", expansion)
+    return f"pub type {name} = *const {m.group(1)};" if m else None
+
+
 def tokenize(text: str) -> list[str]:
     out, pos = [], 0
     text = text.strip()
@@ -619,11 +626,20 @@ def _emit(node: Node) -> tuple[str, str | None]:
         return f"{_emit(fn)[0]}({', '.join(rendered)})", None
     if k == "member":
         base, field = node.kids
+        # A parameter as the MEMBER (oleaut32's `V_UNION(A,B) ((A)->n1.n2.n3.B)`) is a field
+        # name, which render_macro makes an `ident` fragment.
+        param = re.fullmatch(r"__rcv_p(\d+)__", field.text)
+        name = f"$p{param.group(1)}" if param else field.text
         if node.text == "->":
-            return f"(*{_emit(base)[0]}).{field.text}", None
-        return f"{_emit(base)[0]}.{field.text}", None
+            return f"(*{_emit(base)[0]}).{name}", None
+        return f"{_emit(base)[0]}.{name}", None
     if k == "index":
-        return f"{_emit(node.kids[0])[0]}[({_emit(node.kids[1])[0]}) as usize]", None
+        base, ty = _emit(node.kids[0])
+        if ty == _PTR:
+            # C's `p[i]` on a POINTER is `*(p + i)`; Rust indexes only arrays and slices.
+            # commctrl's DPA_FastGetPtr is `DPA_GetPtrPtr(hdpa)[i]`.
+            return f"(*({base}).add(({_emit(node.kids[1])[0]}) as usize))", None
+        return f"{base}[({_emit(node.kids[1])[0]}) as usize]", None
     if k == "unary":
         op, (x,) = node.text, node.kids
         text, ty = _emit(x)
@@ -637,7 +653,9 @@ def _emit(node: Node) -> tuple[str, str | None]:
         if op == "*":
             if x.kind == "cast" and x.volatile:
                 return f"core::ptr::read_volatile({text})", None
-            return f"(*{text})", None
+            # Through a cast to `T **..`, what is read is still a pointer.
+            deeper = x.kind == "cast" and x.ctype[0].startswith(("*mut *", "*const *"))
+            return f"(*{text})", (_PTR if deeper else None)
         if ty is None and x.kind == "num":
             # A C integer literal is an `int` when it fits, else `unsigned int`: `-0x10000`
             # (TVI_ROOT) must negate an int, and Rust would infer the literal from the
@@ -899,7 +917,11 @@ def island_types(crate_src: Path) -> set[str]:
 
 
 def render_macro(name: str, arity: int, body: str) -> str:
-    pat = ", ".join(f"$p{i}:expr" for i in range(arity))
+    fields = set(re.findall(r"\.\$p(\d+)\b", body))
+    for i in fields:
+        if len(re.findall(rf"\$p{i}\b", body)) != len(re.findall(rf"\.\$p{i}\b", body)):
+            raise LowerError(f"parameter {i} is both a field name and an expression")
+    pat = ", ".join(f"$p{i}:{'ident' if str(i) in fields else 'expr'}" for i in range(arity))
     pat = f"{pat} $(,)?" if pat else ""
     return f"#[macro_export] macro_rules! {name} {{ ({pat}) => {{ {body} }}; }}"
 
@@ -1170,6 +1192,10 @@ def object_items(
                 and (as_type or expansion in island)
             ):
                 out[n] = f"pub type {n} = {expansion};"
+                continue
+            ref = cxx_ref_alias(n, expansion)
+            if as_type and ref is not None:
+                out[n] = ref
                 continue
             if as_type:
                 # `#define REFIID const IID* const` -- a C type NAME, not a single identifier.

@@ -145,15 +145,16 @@ pub unsafe extern "system" fn IntProtectHandle(hSpooler: HANDLE, Close: BOOL) ->
 
     EnterCriticalSection(core::ptr::addr_of_mut!(rtlCritSec));
 
-    // _SEH2_TRY
+    // _SEH2_TRY / _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {}: a garbage handle that faults
+    // on the Sig read is just Bad. DUMMY_PSEH compiled the guard out of the C; rpc_try
+    // (ntdll's RtlSehTryExcept, which catches everything as the C's filter does) is real.
+    pHandle = hSpooler as PSPOOLER_HANDLE;
+    if !pHandle.is_null()
+        && ntdll_sys::seh::rpc_try(|| core::ptr::read_volatile(core::ptr::addr_of!((*pHandle).Sig)))
+            == Ok(SPOOLER_HANDLE_SIG as DWORD_PTR)
     {
-        pHandle = hSpooler as PSPOOLER_HANDLE;
-        if !pHandle.is_null() && (*pHandle).Sig == SPOOLER_HANDLE_SIG as DWORD_PTR {
-            Bad = FALSE; // Not bad.
-        }
+        Bad = FALSE; // Not bad.
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {} : empty handler, no Rust equivalent emitted
-    // _SEH2_END
 
     Ret = Bad as LONG; // Set return Level to 1 if we are BAD.
 

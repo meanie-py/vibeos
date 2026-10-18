@@ -226,7 +226,9 @@ const RelationNumaNode: ULONG = 1;
 const SystemFirmwareTable_Enumerate: ULONG = 0;
 const SystemFirmwareTable_Get: ULONG = 1;
 const WMIGUID_QUERY: ULONG = 0x0001;
-const OBJ_HANDLE_ATTRIBUTES: ULONG = 0x00000012;
+// ob.h: OBJ_PROTECT_CLOSE | OBJ_INHERIT | OBJ_AUDIT_OBJECT_CLOSE. The port had
+// 0x12, dropping protect-close and audit and leaking pointer bit 4.
+const OBJ_HANDLE_ATTRIBUTES: ULONG = 0x00000007;
 
 // SYSTEM_INFORMATION_CLASS values used directly (matches bindgen _SYSTEM_INFORMATION_CLASS_*)
 const SystemBasicInformation: ULONG = 0;

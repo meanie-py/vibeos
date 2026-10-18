@@ -188,6 +188,8 @@ class Hierarchy:
         self.com = com or {}
         # Every type name the island defines (render_classes sets it): _nested_names.
         self.island_names: frozenset[str] = frozenset()
+        # island struct -> its field names in order, for a brace-list static initializer.
+        self.island_fields: dict[str, list[str]] = {}
         self.dep_classes: frozenset[str] = frozenset()
         self.hand_methods: dict[str, set[str]] = {}
 
@@ -427,6 +429,7 @@ def render_classes(
     island: str = "",
     hand_methods: dict[str, set[str]] | None = None,
     hand_names: frozenset[str] = frozenset(),
+    substrate: str = "",
 ) -> str:
     """`island_structs`: names the crate's bindgen island already lays out. A plain struct
     (no methods, no bases, no vtable) the island has is the island's -- its C layout is the
@@ -440,6 +443,9 @@ def render_classes(
     both is E0592/E0252, and dropping the hand one silently loses the MDI behaviour."""
     h = Hierarchy(model, parse_com_vtbls(island))
     h.island_names = island_type_names(island)
+    # `substrate`: the -sys bindgen the island globs (ntdll-sys: RECT is `tagRECT` there),
+    # read only for struct field names.
+    h.island_fields = island_struct_fields(island + "\n" + substrate)
     h.hand_methods = hand_methods or {}
     # Classes a path dependency owns (`pub use cicero_rust::cicero::cpp_classes::X;`, from
     # port's _dep_classes). Whether one drops is not knowable from here.
@@ -642,7 +648,12 @@ def _render_class(
     )
     derive = "" if has_drop(cls, h) or from_dep else "#[derive(Clone, Copy)]\n"
     kw = "union" if cls.tag == "union" else "struct"
-    lines = [f"// ---- {cls.qualified} ({cls.file})", f"{derive}#[repr(C)]", f"pub {kw} {n} {{"]
+    repr_ = "C" if cls.pack is None else "C, packed" if cls.pack == 1 else f"C, packed({cls.pack})"
+    lines = [
+        f"// ---- {cls.qualified} ({cls.file})",
+        f"{derive}#[repr({repr_})]",
+        f"pub {kw} {n} {{",
+    ]
     if h.has_own_vtbl(cls):
         lines.append(f"    pub __vtbl: *const {n}__vtbl,")
     for i in _base_layout_order(cls, h):
@@ -652,6 +663,10 @@ def _render_class(
             lines.append(f"    pub __base{i}: {bn},")
         else:
             lines.append(f"    pub __base{i}: {_external_base(b.name, model)},")
+    if atl_template(cls) == "CPropertyPageImpl":
+        # The base's `PROPSHEETPAGE m_psp`, kept where the derived class can write it (acppage
+        # sets its title in its constructor); filled by `__psp_init` before the body runs.
+        lines.append("    pub m_psp: atl_rust::win::PropSheetPage,")
     for f in cls.fields:
         if f.static:
             continue
@@ -684,7 +699,8 @@ def _render_class(
         if f.static:
             ty = rust_type(f.c_type, model, field=True)
             lines.append(
-                f"pub static mut {n}__{f.name}: {ty} = {_static_member_init(cls, f, ty, model)};"
+                f"pub static mut {n}__{f.name}: {ty} = "
+                f"{_static_member_init(cls, f, ty, model, h.island_fields)};"
             )
     # vtable instances, one per vtable-bearing subobject (every class: abstract ones are never
     # built, but their constructors install their own table, as C++ does mid-construction)
@@ -785,6 +801,10 @@ def _render_class(
             impl.append(f"        let vt = (*sub).__vtbl as *const {decl.name}__vtbl;")
             impl.append(f"        ((*vt).{m.rust_name})(sub{', ' + args if args else ''})")
             impl.append("    }")
+    if atl_window(cls, h) is None:
+        # A class-scoped `enum { FSATTS = .. };` is `CABITEM::FSATTS` to the bodies (cabview).
+        # A window class gets these from its ATL glue instead, beside IDD.
+        impl.extend(f"    pub const {k}: i32 = {v};" for k, v in cls.constants)
     impl.append("}")
     lines.extend(impl)
     lines.append("")
@@ -849,7 +869,16 @@ def _render_class(
             f"pub unsafe fn {n}__new_{i}({sig}) -> *mut {n} {{ "
             f"{n}__new_in_{i}(cpp_alloc::<{n}>(){', ' if args else ''}{args}) }}"
         )
-    if h.virtual_dtor(cls):
+    if h.virtual_dtor(cls) and not h.tops(cls) and not _module_subclasses(h, cls):
+        # A virtual destructor with no vtable of ours (cabview's CEnumIDList: every other
+        # virtual is a COM interface method, and the interface's lpVtbl is the vptr) and no
+        # module class deriving from it: nothing can delete it through a base pointer, so
+        # the static destructor is exactly what the virtual one would reach.
+        lines.append(
+            f"pub unsafe fn {n}__delete(p: *mut {n}) {{ if p.is_null() {{ return; }} "
+            f"core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }}"
+        )
+    elif h.virtual_dtor(cls):
         root_path, root = _vtbl_path(h, cls)
         field = root_path.rstrip(".")
         sub = f"core::ptr::addr_of_mut!((*p).{field})" if field else "p"
@@ -1000,6 +1029,12 @@ def _slot_home(h: Hierarchy, cls: ClassModel, m: Method) -> tuple[str, ClassMode
             if any(s.name == m.name and s.signature_key == m.signature_key for s in h.new_slots(x)):
                 return h.root_path(path, top), h.vtbl_root(top), x
     raise CppAppError(f"{cls.qualified}::{m.name} is virtual but no vtable declares it")
+
+
+def _module_subclasses(h: Hierarchy, cls: ClassModel) -> list[ClassModel]:
+    return [
+        c for c in h.by_short.values() if any(short(b.name) == short(cls.name) for b in c.bases)
+    ]
 
 
 def _vtbl_path(h: Hierarchy, cls: ClassModel) -> tuple[str, ClassModel]:
@@ -1440,10 +1475,14 @@ def _property_page_glue(cls: ClassModel, idd: str, base: str) -> list[str]:
     C++ base calls them through `static_cast<T*>(this)`, i.e. the derived class's own when it
     declares one -- exactly a trait default and its override."""
     lines = [
-        "    /// rosdlgs.h `CPropertyPageImpl::Create`: this page's HPROPSHEETPAGE.",
+        "    /// rosdlgs.h `CPropertyPageImpl(LPCTSTR lpszTitle = NULL)`: what it puts in `m_psp`.",
+        "    /// Every constructor's prologue stores this before its body runs.",
+        f"    pub unsafe fn __psp_init(this_: *mut {cls.name}) -> atl_rust::win::PropSheetPage {{",
+        f"        atl_rust::win::property_page_init(this_, {idd} as u16, core::ptr::null())",
+        "    }",
+        "    /// rosdlgs.h `CPropertyPageImpl::Create`: `::CreatePropertySheetPage(&m_psp)`.",
         "    pub unsafe fn Create(&mut self) -> HPROPSHEETPAGE {",
-        "        atl_rust::win::create_property_page(self as *mut Self, "
-        f"{idd} as u16, core::ptr::null()) as HPROPSHEETPAGE",
+        "        atl_rust::win::create_property_page_from(&self.m_psp) as HPROPSHEETPAGE",
         "    }",
         "    /// A page is not a modal dialog: the C++ `EndDialog` is `return FALSE`.",
         "    pub unsafe fn EndDialog(&mut self, code: INT_PTR) -> BOOL {",
@@ -1893,7 +1932,33 @@ _ZERO_INIT = re.compile(
 )
 
 
-def _static_member_init(cls, f, ty: str, model: ModuleModel) -> str:
+def island_struct_fields(island: str) -> dict[str, list[str]]:
+    """Each island struct's field names, in declaration order."""
+    out: dict[str, list[str]] = {}
+    for m in re.finditer(r"^pub struct (\w+) \{\n(.*?)^\}", island, re.M | re.S):
+        out.setdefault(m.group(1), re.findall(r"^\s*pub (\w+):", m.group(2), re.M))
+    for alias, target in re.findall(r"^pub type (\w+) = (\w+);", island, re.M):
+        if target in out:
+            out.setdefault(alias, out[target])
+    return out
+
+
+def _static_element(v: str) -> str | None:
+    """One element of a brace-list initializer, typed by the field it lands in (`as _`)."""
+    v = v.strip()
+    if _ZERO_INIT.fullmatch(v):
+        return "0 as _"
+    m = re.fullmatch(r"\(?\s*(-?)\s*(0[xX][0-9A-Fa-f]+|\d+)[uUlL]*\s*\)?", v)
+    if m is not None:
+        return f"({m.group(1)}{m.group(2)}i64) as _"
+    if re.fullmatch(r"[A-Z_][A-Z0-9_]*", v):  # an SDK constant (CW_USEDEFAULT): the island's
+        return f"{v} as _"
+    return None
+
+
+def _static_member_init(
+    cls, f, ty: str, model: ModuleModel, fields: dict[str, list[str]] | None = None
+) -> str:
     """A static data member's value before any code runs: its definition's initializer
     (`DWORD TLS::s_dwTlsIndex = (DWORD)-1;`), rendered as a Rust constant. Zero-like and
     absent initializers are the zeroed storage C++ also starts from. Anything else this
@@ -1912,6 +1977,19 @@ def _static_member_init(cls, f, ty: str, model: ModuleModel) -> str:
         if cast is not None and " ".join(cast.split()) != " ".join(f.c_type.split()):
             lit = f"({lit} as {rust_type(cast, model)})"  # `(BYTE)-1` is 0xFF in any field
         return f"{lit} as {ty}"
+    # `RECT CWindow::rcDefault = { CW_USEDEFAULT, CW_USEDEFAULT, 0, 0 };` -- a brace list for
+    # an island struct, as a named literal. rapps and cleanmgr shipped this static zeroed
+    # before the refusal below existed.
+    names = (fields or {}).get(ty)
+    b = re.fullmatch(r"\{(.*)\}", v, re.S)
+    if b is not None and names:
+        elems = [e for e in b.group(1).split(",")]
+        if elems and not elems[-1].strip():
+            elems.pop()  # a trailing comma
+        rendered = [_static_element(e) for e in elems]
+        if len(rendered) == len(names) and None not in rendered:
+            body = ", ".join(f"{n}: {r}" for n, r in zip(names, rendered, strict=True))
+            return f"{ty} {{ {body} }}"
     raise CppAppError(
         f"{cls.qualified}::{f.name} = {v}: a static member initializer this cannot render "
         "(cpp_app._static_member_init); extend it rather than leave the static zeroed"
@@ -1995,6 +2073,10 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
     t = " ".join(g.c_type.split())
     const = t.startswith("const ")
     t = t.removeprefix("const ").strip()
+    # `static const struct FOLDERCOLUMN {..} g_Columns[] = {..}` (cabview) records its type
+    # with the elaborated keyword, which hid the table from this and handed it to the model,
+    # which invented every field name.
+    t = re.sub(r"^(?:struct|class)\s+", "", t)
     arr = re.fullmatch(r"(\w+)\s*\[(\d*)\]", t)
     cls = h.by_short.get(arr.group(1) if arr else t)
     if cls is None or cls.bases or any(m.kind == "ctor" for m in cls.methods):
@@ -2027,6 +2109,8 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
             # the value (`GUID as *const GUID` does not even compile).
             f"{_ident(f.name)}: core::ptr::addr_of!({_strip_ns(v, model)}) as _"
             if _is_reference(f.c_type)
+            else f"{_ident(f.name)}: core::ptr::addr_of!({_strip_ns(a.group(1), model)}) as _"
+            if (a := re.fullmatch(r"&\s*(\w+)", v))
             else f"{_ident(f.name)}: ({_strip_ns(v, model)}) as _"
             for f, v in zip(fields, vals, strict=False)
         ]
@@ -2035,7 +2119,9 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
         return f"{cls.name} {{ {', '.join(parts)} }}"
 
     body = g.init.strip()
-    mut = "" if const else "mut "
+    # A `static` must be Sync, and a raw pointer is not: cabview's const g_Columns holds
+    # `const GUID *pkg` (E0277). C's const table is never written, so `static mut` is exact.
+    mut = "" if const and not any("*" in f.c_type for f in fields) else "mut "
     if arr:
         items = [v for v in split(body[1:-1]) if v.strip()]
         rendered = [one(v) for v in items]
@@ -2424,6 +2510,30 @@ _QUALIFIED_CALL_RE = re.compile(r"\b\w+::\s*([A-Za-z_]\w*)\s*\(")
 _CALL_RE = re.compile(r"(?:\.|->)\s*([A-Za-z_]\w*)\s*\(")
 
 
+def fold_module_subclasses(model: ModuleModel) -> list[str]:
+    """`class CLayerUIPropPageModule : public CComModule {};` (acppage) IS the module: fold it
+    into `CComModule`, so its global is atl_rust::dll's and its workers get CComModule's
+    contract. Rendered as its own class, it lost the CComModule base (atl_rust has no C++
+    layout for it) and the model, given no module API, invented
+    `ATL_CAtlDllModuleT_DllGetClassObject`. A subclass that ADDS members is refused: what it
+    adds would have to be ported onto atl_rust::dll::CComModule first. Returns the names."""
+    folded = []
+    for q, c in list(model.classes.items()):
+        if c.external or [short(b.name) for b in c.bases] != ["CComModule"]:
+            continue
+        if c.fields or any(m.kind not in ("ctor", "dtor") or m.body for m in c.methods):
+            raise CppAppError(
+                f"{c.qualified}: a CComModule subclass with members; port them onto "
+                "atl_rust::dll::CComModule first"
+            )
+        del model.classes[q]
+        folded.append(c.name)
+    for g in model.globals:
+        if short(" ".join(g.c_type.split())) in folded:
+            g.c_type = "CComModule"
+    return folded
+
+
 def prune_unused_external(model: ModuleModel) -> list[str]:
     """Drop the EXTERNAL classes (EXTERNAL_CLASSES: CRegKey, CWindow, ..) that nothing in the
     module names. Their constructors and destructor are translated unconditionally (Drop calls
@@ -2436,7 +2546,11 @@ def prune_unused_external(model: ModuleModel) -> list[str]:
         return []
 
     def words(c: ClassModel) -> str:
-        parts = [b.name for b in c.bases] + [f.c_type for f in c.fields]
+        # A base names its alias too: an ATL window template IS the module's CWindow
+        # (`short`), so acppage's `CPropertyPageImpl<CLayerUIPropPage>` base uses CWindow
+        # though no text spells it, and pruning it left the base with no layout.
+        parts = [b.name for b in c.bases] + [short(b.name) for b in c.bases]
+        parts += [f.c_type for f in c.fields]
         for m in c.methods:
             parts += [m.return_type, m.lowered or "", *(p.c_type for p in m.params)]
             parts += [t for _, t in m.lowered_inits]
@@ -2609,6 +2723,9 @@ def _ctor_prologue(
         lines.append(f"    this_->__base{i}.__ctor_{idx}{call};")
     if cls.polymorphic:
         lines.append("    this_->__init_vtables();")
+    if atl_template(cls) == "CPropertyPageImpl":
+        # The CPropertyPageImpl base constructor (the derived body may then edit m_psp).
+        lines.append(f"    this_->m_psp = {cls.name}::__psp_init(this_);")
     for f in cls.fields:
         if f.static:
             continue

@@ -276,7 +276,7 @@ pub unsafe extern "system" fn NetGetJoinInformation(
     // only on success, exactly as there.
     let mut pName: LPWSTR = core::ptr::null_mut();
     // RpcTryExcept body (no SEH handler, as in the other wkssvc wrappers here)
-    let status = NetrGetJoinInformation(lpServer as WKSSVC_IMPERSONATE_HANDLE, &mut pName, BufferType);
+    let status = rpc_try(|| NetrGetJoinInformation(lpServer as WKSSVC_IMPERSONATE_HANDLE, &mut pName, BufferType)).unwrap_or_else(|code| I_RpcMapWin32Status(code as _) as _);
     if status == NERR_Success {
         *lpNameBuffer = pName;
     }

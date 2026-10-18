@@ -3366,7 +3366,16 @@ crate can hold both values: `ke/i386/cpu.rs` has `NPX_STATE_NOT_LOADED = 0xA` an
 `traphdlr.rs` `= CR0_TS` (8). `scan_shadowed_c_define` (native Rust rule) evaluates every
 object-like `#define` visible to the crate (shared headers plus its own module's C tree) and
 flags a Rust `const` of the same name whose value differs at the declared width; its baseline
-is the triage queue, and some entries are deliberate self-consistent re-encodings.
+is the triage queue, and some entries are deliberate self-consistent re-encodings. The worst
+shape is a FLAG SET re-invented per caller against a consumer in another crate: each crate's
+values agree with themselves and nothing compiles wrong. kd64 had `MMDBG_COPY_UNSAFE = 1`,
+which `MmDbgCopyMemory` reads as WRITE, so every debugger read wrote; the ICIF probe flags were
+3, 0x10 and 0x200|0x400 at the call sites against a consumer testing 0x20, and se's
+`ICIF_SIZE_VARIABLE = 0x08` made `GetTokenInformation(TokenOwner)`'s size probe fail. Give the
+set ONE definition beside its consumer and import it; a deliberate divergence takes
+`// nolint: shadowed-c-define (why)` on the const's line. A generated bindgen island goes STALE the same
+way when upstream renumbers a header after generation: syssetup's showed swapped icons for
+two months. The rule checks islands against their module's own tree for exactly that.
 - **Fix deterministically:** `ntkrnl_sys::bugcodes::NAME` from `tools/gen_bugcodes.py`;
   `tools/rustconv/rustconv/verify_constants.py` (`--enums`, `--fix`) against a header catalog;
   `tools/scan_bugcheck_codes.py` (empty baseline, gate-wired).
@@ -5100,6 +5109,20 @@ a decision to take deliberately, not to reach for because a module will not tran
 
 The model does not only get things wrong — it omits them. Every entry here compiles.
 
+### An anonymous C struct table comes back with fields the model named
+
+**Symptom:** a table-driven lookup that compiles but matches the wrong column. acppage's
+mode list showed the right text and stored the display string where the layer id belongs.
+
+**Cause:** `static struct { const PCWSTR Display; const PCWSTR Name; } g_CompatModes[]` has no
+type name, so the model invented one (`CompatModeEntry`) and invented the fields too:
+`{ name, layer }`. Its `name` held the C's `Display` and its `layer` the C's `Name`, so every
+body written against the C (`g_CompatModes[n].Name`) failed to compile only by luck of the
+spelling. A model that had kept `name` for the C's `Name` would have compiled and been wrong.
+
+**Fix:** keep the C's field names for an anonymous struct (rename the type only), and check
+each table row's strings against the C. acppage's are fixed and banked.
+
 ### A string macro beside a literal: the model kept the macro and dropped the literal
 **Symptom.** Report output loses its text but compiles and runs: every drwtsn32 line built as
 `xfprintf(output, "%5d: %ls" NEWLINE, ...)` came back `xfprintf(output, NEWLINE, ...)`, so
@@ -6262,9 +6285,12 @@ preamble does not have. Both spellings are masked now, and `preamble_audit` mask
 its own parse without the mask or `_strip_sal`, so it called the same file "does not parse at
 top level" and skipped every file-scope check. **The scanner and every audit that re-parses
 the C must apply the same normalizers, or they disagree about what the file contains.** The
-old scanner gives different bodies for 248 functions in 31 files, including shipped ports
-(advapi32 scm.c/lsa.c/crypt.c, samlib, netapi32, winspool, kernel32 res.c). Which of those
-were bought truncated is owed (conformance-ratchet-quest.md).
+old scanner gives different bodies for 248 functions in 31 files. Audited against every bank
+in the fleet by body hash (`python -m rustconv.bank_drift --fleet` is the general form): 7
+were bought from the cut body, and only winspool's `GetMonitorUI` shipped without its tail
+(no MONITORUIDATA, no monitor UI DLL, leaked handle); the other six came out whole because
+c2rust anchors on the whole TU. **Check what was bought, not what the scanner says now: the
+bank's per-function C hash is the record.**
 
 The two fixes compose, and the order matters: expanding is what lets `--seal-facts` see the arms
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
@@ -12316,6 +12342,21 @@ lld ever looked for the module's real one, which in shell32 sits in `libshell32_
 an object file. **Fix:** a defaults crate may hold ONLY symbols that should be pulled for
 themselves: the default `DllEntryPoint` moved into crt-startup-rust beside its caller. To check
 any module: relink it with `-Wl,-Map=` and see which input defines `DllMain`/`main`.
+The same codegen-unit bundling breaks a shared crate's UNUSED helper: making atl_rust's
+`create_property_page` non-generic put its `CreatePropertySheetPageW` call in atl_rust's own
+object, which came along with live code into certmgr, a module that never links comctl32
+(`undefined symbol: CreatePropertySheetPageW`, amd64 LINK_FAIL). A generic or `#[inline]` fn
+is instantiated only in a crate that calls it, so a shared-crate helper that imports a DLL
+not every user links must be one of those.
+And lazy pulling can lose a fully flipped module its own EXPORTS: link_guard's "an import was
+kept over a local definition" for `DllGetClassObject` (acppage, i386 then amd64). A DELAY
+import library is ONE object holding every thunk of its DLL, ole32's own `DllGetClassObject`
+included, so the first Rust call into ole32 loads them all; the module's real export arrives
+later and is the duplicate `--allow-multiple-definition` drops. Codegen-unit order decided it,
+so the same module linked on one edit and failed on the next. **Fix:** the flipped module's
+`rust_cohab_stub` references every `.spec` export by its raw per-arch symbol (asm labels, so
+the PCH's prototypes cannot clash), and an object's undefined symbol is taken from the first
+archive defining it: the module's own. `port flip` writes it (`rustconv/cohab_stub.py`).
 
 ### A Rust archive behind an INTERFACE wrapper links AFTER the import libraries, which then answer
 **Symptom:** a DLL's export is silently satisfied by another DLL's import: ucrtbase and
@@ -12334,6 +12375,19 @@ globally (gcc.cmake), not as a variable exported from the producing directory: `
 configured before `sdk/lib/`, so such a variable is empty on a fresh configure and filled
 in only on the next one. To check: `grep` the module's `LINK_LIBRARIES` in build.ninja for
 where the archive actually sits, and relink with `-Wl,-Map=` to see who defines the symbol.
+
+### A C++ helper a header macro renamed overloads an import, and in Rust replaces it
+**Symptom:** a translated C++ module defines `#[no_mangle] fn InsertMenuItemW` with the module
+helper's six parameters, and the user32 call inside it binds to itself: infinite recursion,
+and the DLL's every other `InsertMenuItemW` call reaches the helper (cabview).
+**Cause:** winuser.h's UNICODE `#define InsertMenuItem InsertMenuItemW` renames the module's
+own `inline HRESULT InsertMenuItem(QCMINFO &, ..)` too, so to C++ it is an OVERLOAD of
+user32's, told apart by its parameters. clang reports the expanded name; Rust has no
+overloads, and a crate-defined symbol beats the import.
+**Fix:** automatic: cpp_model names a module function by its WRITTEN spelling when the name
+token is a macro's expansion (clang's `expansionLoc`, not a macro argument), which is also
+what the module's call sites say. When a translated module defines an SDK function's name,
+check whether the C defines it or overloads it.
 
 ### A module translated down to Rust + `.rc` links with the RC driver, and `LINKER:` flags break
 **Symptom:** `clang: error: unknown argument: '--allow-multiple-definition'` from a module's

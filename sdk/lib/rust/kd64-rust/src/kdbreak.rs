@@ -28,8 +28,8 @@ const KD_BREAKPOINT_ACTIVE: ULONG = 0x01;
 const KD_BREAKPOINT_PENDING: ULONG = 0x02;
 const KD_BREAKPOINT_SUSPENDED: ULONG = 0x04;
 const KD_BREAKPOINT_EXPIRED: ULONG = 0x08;
-const MMDBG_COPY_UNSAFE: ULONG = 0x00000001;
-const MMDBG_COPY_WRITE: ULONG = 0x00000002;
+// mm.h's encoding, the one MmDbgCopyMemory reads (see kdapi.rs).
+use ntkrnl_sys::mm::{MMDBG_COPY_UNSAFE, MMDBG_COPY_WRITE};
 
 // Breakpoint table entry structure
 #[repr(C)]

@@ -133,3 +133,23 @@ pub unsafe fn rpc_try<T, F: FnOnce() -> T>(body: F) -> Result<T, u32> {
         Err(code) => Err(code as u32),
     }
 }
+
+/// `__TRY { body } __EXCEPT_PAGE_FAULT { .. }` (Wine's `exception.h`): the body's result,
+/// or `None` when it raised `EXCEPTION_ACCESS_VIOLATION`. Every other exception keeps
+/// searching, as the C filter does. For the handle and buffer checks that answer
+/// "invalid" for a garbage pointer instead of faulting the caller's process.
+pub unsafe fn page_fault_try<T, F: FnOnce() -> T>(body: F) -> Option<T> {
+    const EXCEPTION_ACCESS_VIOLATION: NTSTATUS = 0xC000_0005u32 as NTSTATUS;
+    let mut out = core::mem::MaybeUninit::<T>::uninit();
+    let filter = |_: &mut core::mem::MaybeUninit<T>, pointers: *mut c_void| {
+        if exception_code(pointers) == EXCEPTION_ACCESS_VIOLATION {
+            EXCEPTION_EXECUTE_HANDLER
+        } else {
+            EXCEPTION_CONTINUE_SEARCH
+        }
+    };
+    match try_except(&mut out, |o| { o.write(body()); }, filter) {
+        Ok(()) => Some(out.assume_init()),
+        Err(_) => None,
+    }
+}

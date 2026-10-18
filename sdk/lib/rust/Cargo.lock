@@ -83,6 +83,19 @@ name = "acpica-sys"
 version = "0.1.0"
 
 [[package]]
+name = "acppage-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "advapi32-rust"
 version = "0.1.0"
 dependencies = [
@@ -567,6 +580,18 @@ dependencies = [
  "panic-common",
  "winedebug-rust",
  "winelist-rust",
+]
+
+[[package]]
+name = "cabview-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]

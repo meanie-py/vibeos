@@ -69,6 +69,7 @@ def test_the_cell_gets_a_bin_per_layout_in_list_order(tmp_path):
     cell.write_text(CELL)
     assert kl.wire_bins(["kbda", "kbdb", "kbdc"], cell)
     assert cell.read_text() == CELL.replace(
-        '[[bin]]\nname = "kbdc"', '[[bin]]\nname = "kbdb"\npath = "src/main.rs"\n\n[[bin]]\nname = "kbdc"'
+        '[[bin]]\nname = "kbdc"',
+        '[[bin]]\nname = "kbdb"\npath = "src/main.rs"\n\n[[bin]]\nname = "kbdc"',
     )
     assert not kl.wire_bins(["kbda", "kbdb", "kbdc"], cell)

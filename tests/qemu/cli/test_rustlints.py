@@ -230,6 +230,7 @@ def test_shared_c_index_completes_with_nested_parallel_rules(tmp_path, jobs):
 
 
 def test_selected_plugins_run_once_and_keep_baselines(tmp_path, monkeypatch):
+    monkeypatch.setattr(rustlints.hostjobs, "ensure", lambda repo: Path("/fixture/host-jobs"))
     monkeypatch.setattr(rustlints, "ensure", lambda repo: Path("/fixture/vibeos-lint"))
     monkeypatch.setattr(lints, "lint_jobs", lambda: 2)
     monkeypatch.setattr(
@@ -251,10 +252,12 @@ def test_selected_plugins_run_once_and_keep_baselines(tmp_path, monkeypatch):
     lints.run_source_lints(run, tmp_path, strict=True, only={"a", "b"})
     assert len(calls) == 1
     assert calls[0][-1] == "a,b"
+    assert calls[0][:4] == ["/fixture/host-jobs", "--kind", "lint", "--"]
     assert [(s.name, s.status) for s in run.stages] == [("a", "ok"), ("b", "ok")]
 
 
 def test_failed_shared_baseline_update_writes_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(rustlints.hostjobs, "ensure", lambda repo: Path("/fixture/host-jobs"))
     monkeypatch.setattr(rustlints, "ensure", lambda repo: Path("/fixture/vibeos-lint"))
     monkeypatch.setattr(
         lints, "source_lint_specs", lambda repo: [("a", [rustlints.SENTINEL, "a"], "stdout")]
@@ -285,6 +288,7 @@ def test_bootstrap_failure_is_scanner_error(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("changed_input", ["rust", "conventions", "grants", "engines"])
 def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, changed_input):
+    monkeypatch.setattr(rustlints.hostjobs, "ensure", lambda repo: Path("/fixture/host-jobs"))
     source = tmp_path / "tools/vibeos-lint"
     (source / "src").mkdir(parents=True)
     (source / "Cargo.toml").write_text("[package]\nname='test'\nversion='0.1.0'\n")

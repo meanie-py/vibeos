@@ -5,9 +5,10 @@ use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 use core::mem::transmute;
 
-const PSP_MAX_CREATE_THREAD_NOTIFY: usize = 64;
-const PSP_MAX_CREATE_PROCESS_NOTIFY: usize = 64;
-const PSP_MAX_LOAD_IMAGE_NOTIFY: usize = 64;
+// 64 slots as Windows has, not ps.h's 8; agrees with psmgr.rs and ntkrnl-sys.
+const PSP_MAX_CREATE_THREAD_NOTIFY: usize = 64; // nolint: shadowed-c-define
+const PSP_MAX_CREATE_PROCESS_NOTIFY: usize = 64; // nolint: shadowed-c-define
+const PSP_MAX_LOAD_IMAGE_NOTIFY: usize = 64; // nolint: shadowed-c-define
 
 #[no_mangle]
 static mut PsImageNotifyEnabled: BOOLEAN = 0u8;

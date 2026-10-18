@@ -405,10 +405,14 @@ fn has_export_attr(sibling: Option<&SiblingAttrs>) -> bool {
     sibling.is_some_and(|a| a.exported)
 }
 fn norm(s: &str) -> String {
-    PATH_QUAL
-        .replace_all(&s.split_whitespace().collect::<Vec<_>>().join(" "), "$1")
-        .trim()
-        .to_owned()
+    // Most Rust type spellings are already compact. Avoid constructing the
+    // split/join buffer for those; replace_all borrows the input when no path
+    // qualification needs rewriting.
+    if !s.chars().any(char::is_whitespace) {
+        return PATH_QUAL.replace_all(s, "$1").into_owned();
+    }
+    let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    PATH_QUAL.replace_all(&collapsed, "$1").trim().to_owned()
 }
 fn ptr_names(t: &str) -> bool {
     matches!(

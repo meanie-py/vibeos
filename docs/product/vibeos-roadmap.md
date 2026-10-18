@@ -609,6 +609,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   jsproxy is not a KnownDLL) fails it identically, so the fault is below jsproxy: most likely
   jscript (also Rust) on i386, not yet chased. Repro: `portwinetest` payload on i386, suite
   `jsproxy_winetest.exe jsproxy`.
+- **Directory change notification: 19 Wine `change` failures left after the fsrtl fix (open,
+  found 2026-10-17, smp-bringup).** `FsRtlNotifyFilterReportChange` was an empty placeholder,
+  so no watch ever completed with data. It is now translated, along with the lost-IRP
+  `goto HandleIRP` in FilterChangeDirectory and the NOTIFY_IMMEDIATELY/WATCH_TREE bit
+  collision. Payload `changewinetest` (amd64, `20261017-222313-pck9pxts`): kernel32:change
+  333 checks / 12 failures, ntdll:change 82 / 7, no hangs. Whether the C shares them is
+  UNVERIFIED. A C-oracle swap of notify.c does not link, because the kernel's cargo cell does
+  not take ntos.cmake objects. At least ntdll 279-280 is the C's own behaviour:
+  NotifyChange->BufferLength is fixed at the first watch, which had length 0.
+- **syssetup's bindgen island needs a real regeneration (owed, 2026-10-17).** It predates
+  upstream 5653298fed6 renumbering `resource.h`. The 11 stale ids (swapped check/arrow icons,
+  off-by-one task bitmaps and checkboxes, IDS_DEFAULT) are hand-corrected in `types_*.rs`.
+  `gen_driver_types.sh syssetup` regenerates the island but leaves 33 errors per arch. That
+  output is parked in stash "smp-bringup: syssetup island full regen (33 errors/arch),
+  2026-10-17".
 
 - **arm64 FEX: a guest dies when a commit is refused; appstorm64 at 1024M is 53/54 (open,
   found 2026-10-17, human-only).** On 1G `VIBEOS_PAYLOAD=appstorm64` media, the ramdisk leaves
@@ -953,7 +968,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   for timesup, is the fix. Field manual, "An `extern` declaration for a symbol YOUR OWN CRATE
   defines". Also owed: a file VibeOS wrote from the **Pi 4** (`REDIR.TXT` on the bench stick)
   carries the date 08/05/2097. The same write path stamps the right year in QEMU, so suspect
-  the Pi 4's clock (no RTC; whatever UEFI hands over) before fastfat.
+  the Pi 4's clock (no RTC; whatever UEFI hands over) before fastfat. **Root cause (FIXED
+  2026-10-18):** the arm64 HAL read QEMU's PL031 address (0x09010000) as the clock on every
+  board, so on the Pis it read whatever sits there: 2097 on the Pi 4, 0 (1970, an all-zero FAT
+  date) on the Pi 5. The HAL now reads it only on QEMU and otherwise boots at 2025-01-01, and
+  netstack sets the time by SNTP once it has a lease (DHCP option 42, else `pool.ntp.org`).
+  Pi 5 run `20261018-133122-fds63jk5`: `sntp: time set from 172.233.157.223: 2026-10-18
+  17:33:20 UTC`, seconds from the host's clock. Files written before the sync still carry the
+  fallback date.
 
 - **arm64: keystrokes sent through QMP to the default virtio keyboard do not reach the
   desktop's windows** (OPEN, 2026-10-06, seen while gating nvme.sys). On a quiet arm64 boot,

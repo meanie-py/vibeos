@@ -33,6 +33,8 @@
 #![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case, non_camel_case_types, clippy::missing_safety_doc)]
 
+#[cfg(feature = "bstr")]
+pub mod bstr;
 pub mod com;
 #[cfg(feature = "dll")]
 pub mod dll;
@@ -712,6 +714,35 @@ impl<T> CSimpleArray<T> {
         self.m_aT = core::ptr::null_mut();
         self.m_nSize = 0;
         self.m_nAllocSize = 0;
+    }
+}
+
+impl<T: Clone> Clone for CSimpleArray<T> {
+    /// `operator=(const CSimpleArray&)` / the copy constructor (atlsimpcoll.h): a new array of
+    /// copies. Assigning the clone drops the old contents first, as the C++'s RemoveAll does.
+    fn clone(&self) -> Self {
+        let mut out = CSimpleArray::new();
+        for i in 0..self.m_nSize as usize {
+            unsafe { out.Add(self[i].clone()) };
+        }
+        out
+    }
+}
+
+impl<T> core::ops::Index<usize> for CSimpleArray<T> {
+    type Output = T;
+    /// `T& operator[](int nIndex)` (atlsimpcoll.h): unchecked, as the C++ is; its
+    /// `ATLASSERT(0 <= nIndex && nIndex < m_nCount)` is this debug assertion.
+    fn index(&self, i: usize) -> &T {
+        debug_assert!(i < self.m_nSize as usize);
+        unsafe { &*self.m_aT.add(i) }
+    }
+}
+
+impl<T> core::ops::IndexMut<usize> for CSimpleArray<T> {
+    fn index_mut(&mut self, i: usize) -> &mut T {
+        debug_assert!(i < self.m_nSize as usize);
+        unsafe { &mut *self.m_aT.add(i) }
     }
 }
 
@@ -1442,10 +1473,18 @@ impl CStringW {
 
     /// `ReleaseBufferSetLength(int nNewLength)` — atlsimpstr.h; also `ReleaseBuffer(n)` with
     /// an explicit length (CWindow::GetWindowText). The length is the caller's, not measured.
+    /// Also ATL's `ReleaseBuffer(int nNewLength)`, which Rust cannot overload onto
+    /// `ReleaseBuffer()`: a NEGATIVE length means "measure to the NUL" (atlsimpstr.h), as
+    /// ATL's ReleaseBuffer does before calling this. acppage's `ReleaseBuffer(Length)` gets
+    /// LB_ERR (-1) for no selection; taken as given, it wrote the NUL one element before the
+    /// buffer.
     pub unsafe fn ReleaseBufferSetLength(&mut self, nNewLength: i32) {
         if self.m_pszData.is_null() {
             self.m_nLength = 0;
             return;
+        }
+        if nNewLength < 0 {
+            return self.ReleaseBuffer();
         }
         self.m_nLength = nNewLength;
         *self.m_pszData.add(nNewLength as usize) = 0;
@@ -2182,10 +2221,18 @@ impl CStringA {
     }
 
     /// `ReleaseBufferSetLength(int nNewLength)`: the caller's length, terminated there.
+    /// Also ATL's `ReleaseBuffer(int nNewLength)`, which Rust cannot overload onto
+    /// `ReleaseBuffer()`: a NEGATIVE length means "measure to the NUL" (atlsimpstr.h), as
+    /// ATL's ReleaseBuffer does before calling this. acppage's `ReleaseBuffer(Length)` gets
+    /// LB_ERR (-1) for no selection; taken as given, it wrote the NUL one element before the
+    /// buffer.
     pub unsafe fn ReleaseBufferSetLength(&mut self, nNewLength: i32) {
         if self.m_pszData.is_null() {
             self.m_nLength = 0;
             return;
+        }
+        if nNewLength < 0 {
+            return self.ReleaseBuffer();
         }
         self.m_nLength = nNewLength;
         *self.m_pszData.add(nNewLength as usize) = 0;
@@ -2461,6 +2508,30 @@ mod collection_tests {
     }
 
     #[test]
+    fn simple_array_clone_is_a_deep_copy() {
+        let mut a: CSimpleArray<u32> = CSimpleArray::new();
+        unsafe {
+            a.Add(1);
+            a.Add(2);
+        }
+        let mut b = a.clone();
+        b[0] = 5;
+        assert_eq!((a[0], a.GetSize(), b[0], b[1], b.GetSize()), (1, 2, 5, 2, 2));
+    }
+
+    #[test]
+    fn simple_array_index_reads_and_writes_in_place() {
+        let mut a: CSimpleArray<u32> = CSimpleArray::new();
+        unsafe {
+            a.Add(7);
+            a.Add(9);
+        }
+        assert_eq!(a[1], 9);
+        a[0] = 4;
+        assert_eq!(unsafe { a.Find(&4) }, 0);
+    }
+
+    #[test]
     fn atl_list_remove_at_relinks_head_middle_and_tail() {
         let mut l: CAtlList<u32> = CAtlList::new();
         unsafe {
@@ -2543,6 +2614,19 @@ mod cstring_tests {
     }
     fn text(s: &CStringW) -> String {
         unsafe { String::from_utf16(core::slice::from_raw_parts(s.as_ptr(), s.GetLength() as usize)).unwrap() }
+    }
+
+    #[test]
+    fn release_buffer_set_length_negative_measures() {
+        unsafe {
+            let mut s = CStringW::new();
+            let b = s.GetBuffer(4);
+            for (i, c) in [b'a', b'b', 0].iter().enumerate() {
+                *b.add(i) = *c as u16;
+            }
+            s.ReleaseBufferSetLength(-1); // ATL's ReleaseBuffer(-1): measured, not -1
+            assert_eq!(s.GetLength(), 2);
+        }
     }
 
     #[test]

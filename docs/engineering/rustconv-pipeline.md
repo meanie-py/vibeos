@@ -1245,6 +1245,18 @@ over shellutils.h would buy 40 functions for those two. resolve counts
 `add_delay_importlibs` (ole32 is delay-loaded in every shell extension). Runtime:
 `probes/droptarget.c` serves both suites, dropping a real two-item HIDA on each handler.
 
+acppage (a property-page extension) added: a `CComModule` subclass with no members folds into
+the module (`fold_module_subclasses`; with members it is refused); an ATL window-template base
+keeps `CWindow` from being pruned; a `CPropertyPageImpl` class owns `m_psp`
+(`atl_rust::win::PropSheetPage`, Win32 field names), filled by `T::__psp_init` in every
+constructor's prologue, and `Create` builds the page from it; brace-list static initializers
+(`CWindow::rcDefault`) render as struct literals against the island and its -sys substrate;
+`atl_rust` gains `CComBSTR` (feature `bstr`), `CCoInit`/`COleInit`, `CSimpleArray` indexing and
+Clone; resolve never allowlists a type from ATL's own headers into the island; the macros stage
+lowers a C++ reference type macro (`REFIID` = `const IID &`) to a pointer alias; and a replay
+skips a hand-banked function the cache cannot replay on the C++ path too (it used to refuse,
+one function per run).
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it
