@@ -59,8 +59,11 @@ impl Sntp {
 
     /// The first NTP server a DHCP packet's option 42 names.
     pub fn lease_server<'p>(mut options: impl Iterator<Item = DhcpOption<'p>>) -> Option<Ipv4Address> {
-        let d = options.find(|o| o.kind == OPT_NTP_SERVERS && o.data.len() >= 4)?.data;
-        Some(Ipv4Address::new(d[0], d[1], d[2], d[3]))
+        // A fixed-size copy, not slice indexing: the length guard alone left a
+        // bounds-check panic in the poll path (scan_flex_array_panic).
+        let o = options.find(|o| o.kind == OPT_NTP_SERVERS && o.data.len() >= 4)?;
+        let [a, b, c, d]: [u8; 4] = o.data.get(..4)?.try_into().ok()?;
+        Some(Ipv4Address::new(a, b, c, d))
     }
 
     /// A new lease: sync now, from `server` (its option 42) if it named one.
