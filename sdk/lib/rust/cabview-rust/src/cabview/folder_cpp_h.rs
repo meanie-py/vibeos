@@ -581,7 +581,9 @@ impl CCabFolder {
     pub unsafe fn GetItemDetails(&mut self, pidl: PCUITEMID_CHILD, iColumn: UINT, psd: *mut SHELLDETAILS, pv: *mut VARIANT) -> HRESULT {
         let this_: *mut Self = self;
         let mut hr: HRESULT = E_FAIL;
-        let psr: *mut STRRET = core::ptr::addr_of_mut!((*psd).str_);
+        // `&psd->str`, which C++ computes even when GetDetailsEx passes psd = NULL; a Rust place
+        // projection through NULL is UB, and psr is only used when psd is not NULL.
+        let psr: *mut STRRET = if psd.is_null() { core::ptr::null_mut() } else { core::ptr::addr_of_mut!((*psd).str_) };
         let mut srvar: STRRET = core::mem::zeroed();
         let item: *mut CABITEM = CABITEM::Validate(pidl);
         if item.is_null() {
@@ -698,12 +700,23 @@ impl CCabFolder {
             ret = lstrcmpiW(core::ptr::addr_of!((*p1).Path) as LPCWSTR, core::ptr::addr_of!((*p2).Path) as LPCWSTR);
             if ret != 0 && (lParam & (SHCIDS_ALLFIELDS as LPARAM)) != 0
             {
+                // Diverges from folder.cpp, which is wrong here: its loop runs only while `ret`
+                // is nonzero and forces COL_NAME (column 0) to 0, so it stops at once and two
+                // items with DIFFERENT paths compared equal under SHCIDS_ALLFIELDS. Order by the
+                // first other column that differs; if none does, the paths still do.
+                let path_ret = ret;
+                ret = 0;
                 let mut i: UINT = 0;
-                while ret != 0 && (hr >= 0) && i < (COLCOUNT as u32)
+                while ret == 0 && (hr >= 0) && i < (COLCOUNT as u32)
                 {
-                    hr = if i == (COL_NAME as u32) { 0 } else { (*this_).CompareID(i as LPARAM, pidl1, pidl2) };
-                    ret = (HRESULT_CODE!(hr) as i16) as i32;
+                    if i != (COL_NAME as u32) {
+                        hr = (*this_).CompareID(i as LPARAM, pidl1, pidl2);
+                        ret = (HRESULT_CODE!(hr) as i16) as i32;
+                    }
                     i += 1;
+                }
+                if ret == 0 && hr >= 0 {
+                    ret = path_ret;
                 }
             }
         }
