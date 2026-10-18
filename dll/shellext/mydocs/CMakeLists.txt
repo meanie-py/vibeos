@@ -8,14 +8,20 @@ file(GLOB_RECURSE mydocs_rc_deps res/*.* ${ICONS_DIR}/235.ico ${ICONS_DIR}/236.i
 add_rc_deps(mydocs.rc ${mydocs_rc_deps})
 
 list(APPEND SOURCE
-    CMyDocsDropHandler.cpp
-    mydocs.cpp
+    # CMyDocsDropHandler.cpp  # replaced by Rust (sdk/lib/rust/mydocs-rust/src/mydocs/CMyDocsDropHandler_cpp_h.rs)
+    # mydocs.cpp  # replaced by Rust (sdk/lib/rust/mydocs-rust/src/mydocs/mydocs_cpp_h.rs)
+    rust_cohab_stub.cpp
     precomp.hpp)
 
+# Every translation unit is Rust now (mydocs-rust, `rustconv port`); the C stays on
+# disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(mydocs_rust mydocs-rust "" TRUE)
 add_library(mydocs MODULE
     ${SOURCE}
     mydocs.rc
     ${CMAKE_CURRENT_BINARY_DIR}/mydocs.def)
+add_dependencies(mydocs rust_mydocs_rust)
+target_link_libraries(mydocs ${mydocs_rust_LIB})
 
 set_module_type(mydocs win32dll UNICODE)
 target_link_libraries(mydocs uuid wine cpprt atl_classes)
@@ -23,3 +29,5 @@ add_delay_importlibs(mydocs ole32 oleaut32)
 add_importlibs(mydocs advapi32 shell32 user32 comctl32 shlwapi msvcrt kernel32 ntdll)
 add_pch(mydocs precomp.hpp SOURCE)
 add_cd_file(TARGET mydocs DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

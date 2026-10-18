@@ -1233,6 +1233,18 @@ External classes nothing in the module names (CRegKey, merely defined by atlbase
 longer rendered or bought. Runtime: `tools/payloads/modrun/suites/mmcshext.yaml` drives the
 factory, QueryInterface, the icon paths and register/unregister against the C.
 
+The drop handlers (sendmail, mydocs) added four things. A COM-map entry may name an ANCESTOR
+of a derived interface (`COM_INTERFACE_ENTRY_IID(IID_IPersist, IPersist)` on an IPersistFile
+class): it resolves to the derived base whose WIDL slots it prefixes, and two such bases is
+C++'s ambiguous cast, refused. `port translate` passes `--local-raii` for each canonical
+lowering in `tools/rustconv/data/local_raii/` that a C++ TU names (CDataObjectHIDA), and
+profile_derive blocklists that type from the island, so the lowering's struct (with its
+Drop) is the only one. shellutils.h's shared half (`hida_clipformat`, the HIDA accessors) is
+`atl_rust::shellutils`, re-exported by the prelude when the module names it; `port headers`
+over shellutils.h would buy 40 functions for those two. resolve counts
+`add_delay_importlibs` (ole32 is delay-loaded in every shell extension). Runtime:
+`probes/droptarget.c` serves both suites, dropping a real two-item HIDA on each handler.
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it
@@ -1619,6 +1631,10 @@ audit, and each flag contributes its own INDEPENDENT response-cache token (`fact
 free to add: turning one on misses the cache and pays for the bodies it covers, while every
 body already banked under the other tokens stays addressable and is never re-billed. Folding
 a new protection into an existing token's meaning would re-charge for work already owned.
+A call inside a `#if` arm is optional to the call seal unless the TU's own defines decide the
+arm live (`dead_regions.decided_live_lines`); then it is required like any other. That is a
+check on the reply, not the prompt, so it shares `callseal_v1`. `rustconv.live_arm_audit`
+reports shipped bodies that drop a live-arm callee, and it is how the tightening was measured.
 
 **`--seal-wide` (2026-08-07).** Rust has no UTF-16 literal, so a model asked to translate one
 has nothing correct to write: it invents an encoding, and every invention is a hand-count no

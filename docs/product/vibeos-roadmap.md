@@ -614,6 +614,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `VIBEOS_FEX=1` media (the gate's ladder) and appstorm64 at 1088M and 2G are clean. Details:
   `docs/engineering/wow64-x64-guest-design.md`, resume item 2.
 
+- **`SHFileOperationW(FO_COPY)` with progress UI crashes on i386 (open, found 2026-10-17,
+  cpp-cluster).** mydocs' drop handler copies the dropped files with `FOF_ALLOWUNDO |
+  FOF_FILESONLY | FOF_MULTIDESTFILES | FOF_NOCONFIRMMKDIR`, so no `FOF_SILENT`, and that makes
+  shell32 create `CLSID_ProgressDialog`. In the i386 modrun guest the pre-flip C and the Rust
+  crash identically, jumping to EIP `0x7f` just after winmm loads its wave/midi drivers (no
+  frames). amd64 and arm64 copy both files. Not mydocs: the same probe drives sendmail's drop
+  (no SHFileOperation) to a pass on every arch. `tools/payloads/modrun/suites/mydocs.yaml`
+  carries it as the `drop-copyui` xfail on i386, which turns into a failure once fixed. (An
+  arm64 hang seen first was the probe's: its redirect named a C: that arm64's media cannot
+  write, so shell32 raised its error box.)
+  Same session: modrun used to start before syssetup's LiveCD COM registration finished (first
+  case of a boot saw `CLSID_ProgressDialog` as REGDB_E_CLASSNOTREG); syssetup now sets
+  `HKLM\SYSTEM\Setup\VibeosRegistrationDone` and modrun waits for it (FIXED).
+
 - **C++ apps: an override calling `Base::M()` recursed into itself, 36 sites (FIXED
   2026-10-16, cpp-cluster; latent).** A qualified base call is non-virtual in C++, but the
   generated Rust called the base's VIRTUAL dispatcher (`(*this_).__base0.M(..)`) from inside

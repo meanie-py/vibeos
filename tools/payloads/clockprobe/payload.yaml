@@ -1,0 +1,23 @@
+# clockprobe — do QPC, GetTickCount and interrupt time agree across a Sleep(500), and does a
+# 10 ms periodic pool timer on a one-thread pool keep up? (mf.c:4553's shape.)
+#   tools/payloads/clockprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=clockprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload clockprobe
+# Rounds 10-19 run beside a normal-priority spinning thread. Reference (2026-10-17, same TCG):
+#   Windows 11 (winref): 22-29 callbacks per round under the hog (18-23 ms each).
+#   vibeos (ProductType=ServerNT, 12-tick fixed quantums): 3 per round (~188 ms each).
+# Idle rounds should read 32 callbacks (15.6 ms, one per clock tick) on both.
+name: clockprobe
+description: compare the guest clocks and a 10 ms pool timer's callback rate
+
+build_hint: "tools/payloads/clockprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/clockprobe/clockprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/clockprobe.exe
+
+test:
+  launch_marker: "[CLOCKPROBE] done"
+  pass_marker: "[CLOCKPROBE] done VERDICT=PASS"
+  launch_drain_secs: 300

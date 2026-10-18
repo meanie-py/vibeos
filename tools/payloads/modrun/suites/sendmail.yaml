@@ -1,0 +1,22 @@
+# sendmail (dll/shellext/sendmail -> sendmail-rust, `port cppapp`): the DeskLink drop handler
+# behind SendTo's "Desktop (create shortcut)". The live CD never drops on it, so smoke
+# reaches none of this. probes/droptarget.c, staged twice: as sendmail_c.exe it loads the
+# pre-flip C (sendmail_c.dll, from c_oracle.cmake) beside it, as sendmail_probe.exe the
+# system sendmail.dll. Both print only values, so the outputs must match byte for byte.
+module: sendmail
+variants:
+  c: '%SystemRoot%\bin\modrun\sendmail_c.exe'
+  rust: '%SystemRoot%\bin\modrun\sendmail_probe.exe'
+ninja: [sendmail_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/droptarget-{arch}.exe', dest: bin/modrun/sendmail_c.exe}
+  - {src: 'tools/payloads/modrun/probes/droptarget-{arch}.exe', dest: bin/modrun/sendmail_probe.exe}
+  - {src: 'build-{arch}/dll/shellext/sendmail/sendmail_c.dll', dest: bin/modrun/sendmail_c.dll}
+cases:
+  - id: drop
+    expect: ['module sendmail', 'class object 00000000', 'create 00000000',
+             'qi persist 00000000', 'persist is persistfile 1', 'class id 00000000 match=1',
+             'dragenter 00000000 effect=4', 'drop null 80004003 effect=1', 'drop 00000000 effect=5',
+             'Shortcut to alpha.lnk: present', 'Shortcut to gamma.lnk: present',
+             'register 00000000', 'probe done']
+    timeout: 120

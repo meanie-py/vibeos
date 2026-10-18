@@ -60,12 +60,11 @@ extern "system" {
     static MSSmBios_RawSMBiosTables_GUID: GUID;
 }
 
-#[repr(C)]
-struct WMIP_GUID_OBJECT {
-    Guid: GUID,
-}
-
-type PWMIP_GUID_OBJECT = *mut WMIP_GUID_OBJECT;
+// The guid object guidobj.rs creates (KEVENT Event; GUID Guid; ...). A local one-field
+// `struct { Guid }` used to stand in for it here, so IoWMIQueryAllData compared the
+// KEVENT's bytes against the SMBIOS GUID, never matched, and answered every query
+// STATUS_NOT_SUPPORTED -- GetSystemFirmwareTable('RSMB') returned nothing.
+use crate::guidobj::PWMIP_GUID_OBJECT;
 
 #[no_mangle]
 pub unsafe extern "system" fn IsEqualGUID(guid1: *const GUID, guid2: *const GUID) -> bool {

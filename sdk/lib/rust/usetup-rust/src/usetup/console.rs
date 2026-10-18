@@ -1,10 +1,10 @@
-use crate::usetup::cabinet::CabinetClose;
-use crate::usetup::cabinet::CabinetExtractFile;
-use crate::usetup::cabinet::CabinetFindFirst;
-use crate::usetup::cabinet::CabinetInitialize;
-use crate::usetup::cabinet::CabinetOpen;
-use crate::usetup::cabinet::CabinetSetCabinetName;
-use crate::usetup::cabinet::CabinetSetEventHandlers;
+use spapisup_rust::spapisup::cabinet::CabinetClose;
+use spapisup_rust::spapisup::cabinet::CabinetExtractFile;
+use spapisup_rust::spapisup::cabinet::CabinetFindFirst;
+use spapisup_rust::spapisup::cabinet::CabinetInitialize;
+use spapisup_rust::spapisup::cabinet::CabinetOpen;
+use spapisup_rust::spapisup::cabinet::CabinetSetCabinetName;
+use spapisup_rust::spapisup::cabinet::CabinetSetEventHandlers;
 use crate::usetup::keytrans::IntTranslateKey;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
 use crate::prelude::*;

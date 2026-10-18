@@ -412,7 +412,15 @@ pub use crate::usetup::mui::CharVertLineAndRightHorizLine;
 pub use crate::usetup::mui::CharVerticalLine;
 pub use crate::usetup::usetup::ProcessHeap;
 pub use crate::usetup::usetup::SelectedLanguageId;
-pub use crate::usetup::fileqsup::SpFileExports;
+pub use spapisup_rust::SpFileExports;
+// The cabinet API's types are spapisup-rust's, not this island's: console.rs loads its font
+// through CabinetOpen & co., and an island struct is a distinct nominal type per crate.
+// Explicit, so they shadow the `types::*` glob.
+pub use spapisup_rust::prelude::{
+    _CABINET_CONTEXT, _CAB_SEARCH, CABINET_CONTEXT, CAB_SEARCH, PCABINET_CONTEXT,
+    PCABINET_CREATE_FILE, PCABINET_DISK_CHANGE, PCABINET_EXTRACT, PCABINET_OVERWRITE,
+    PCAB_SEARCH,
+};
 pub use crate::usetup::infsupp::SpInfExports;
 pub use crate::usetup::consup::StdInput;
 pub use crate::usetup::consup::StdOutput;

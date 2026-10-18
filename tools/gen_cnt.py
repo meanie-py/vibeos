@@ -754,6 +754,15 @@ def shim(name: str, m: dict) -> str:
     def core_call(args: str) -> str:
         return f"crate::core_rs::{cf}({args})"
 
+    # Manifest `null_guard_nls = true` (a compare): either operand NULL → _NLSCMPERROR
+    # when there is anything to compare, else 0. memicmp.c gates this on
+    # OSMajorVersion >= 6; under the 5.x kernel it was dead, and after the Windows 10
+    # version flip it is live, so it is validated unconditionally. _LIBCNT_'s
+    # MSVCRT_INVALID_PMT is a no-op, so the return value is the whole effect.
+    if m.get("null_guard_nls", False):
+        cond = " || ".join(f"{p}.is_null()" for p in ptrs)
+        body.append(f"    if {cond} {{ return if {szp} != 0 {{ 0x7fff_ffff }} else {{ 0 }}; }}")
+
     # ---- slice reconstruction --------------------------------------
     if sp == "nul_in":
         for n in ptrs:  # only pointer args become slices; scalars pass through

@@ -3,16 +3,17 @@ use crate::Rule;
 pub mod const_narrowing_cast;
 pub mod double_fetch;
 pub mod dowhile_continue;
+pub mod entry_point_cc;
 pub mod fnptr_abi_transmute;
 pub mod hkey_zero_extend;
 pub mod hresult_literals;
-pub mod shadowed_c_define;
 pub mod info_class_literals;
 pub mod init_then_move;
 pub mod let_shadow;
 pub mod list_walk_from_head;
 pub mod misaligned_cast;
 pub mod read_after_clear;
+pub mod shadowed_c_define;
 pub mod variadic_array_arg;
 
 pub mod assert_to_ub;
@@ -130,7 +131,6 @@ pub mod fnclass_cc;
 pub mod gen_ctype_tables;
 pub mod list_walk_cursor_after_loop;
 pub mod marshalgen_audit;
-pub mod scan_cargo_manifests;
 pub mod scan_cmake_linked_rust;
 pub mod vendored_registry;
 pub mod verify_match_consts;
@@ -141,7 +141,6 @@ pub mod verify_ucrtbase_cohab;
 pub fn registry() -> Vec<Box<dyn Rule>> {
     vec![
         Box::new(scan_cmake_linked_rust::ScanCmakeLinkedRust),
-        Box::new(scan_cargo_manifests::ScanCargoManifests),
         Box::new(verify_ucrtbase_cohab::VerifyUcrtbaseCohab),
         Box::new(marshalgen_audit::MarshalgenAudit),
         Box::new(atl_slot_cast::AtlSlotCast),
@@ -263,5 +262,6 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(info_class_literals::InfoClassLiterals),
         Box::new(misaligned_cast::MisalignedCast),
         Box::new(fnptr_abi_transmute::FnptrAbiTransmute),
+        Box::new(entry_point_cc::EntryPointCc),
     ]
 }

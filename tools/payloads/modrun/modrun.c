@@ -232,6 +232,32 @@ static void run(const char *id, const struct variant *v, const char *in, DWORD i
     free(cap.Buf);
 }
 
+/* The LiveCD registers its COM classes (syssetup's RegistrationPhase2) while the shell is
+ * already up, and modrun is a shell startup program: the first case of a boot saw
+ * CLSID_ProgressDialog unregistered and the next one found it. syssetup sets
+ * HKLM\SYSTEM\Setup\VibeosRegistrationDone when it is through; wait for it on the LiveCD
+ * (an installed system registered everything at setup, and never sets it). */
+static void wait_for_registration(void)
+{
+    char root[MAX_PATH];
+    DWORD done = 0, cb = sizeof done, t0 = GetTickCount();
+    GetWindowsDirectoryA(root, sizeof root);
+    if (root[0] != 'X' && root[0] != 'x')
+        return;
+    while (RegGetValueA(HKEY_LOCAL_MACHINE, "SYSTEM\\Setup", "VibeosRegistrationDone", RRF_RT_REG_DWORD, NULL,
+                        &done, &cb) != ERROR_SUCCESS || !done)
+    {
+        if (GetTickCount() - t0 > 600000)
+        {
+            SAY("setup registration NOT signalled after 600000ms: COM-dependent cases may fail\n");
+            return;
+        }
+        cb = sizeof done;
+        Sleep(500);
+    }
+    SAY("setup registration done after %lums\n", GetTickCount() - t0);
+}
+
 int main(void)
 {
     char path[MAX_PATH], line[2048], id[128] = "";
@@ -250,6 +276,7 @@ int main(void)
         return 1;
     }
     SAY("begin %s\n", path);
+    wait_for_registration();
     while (fgets(line, sizeof line, f))
     {
         size_t n = strlen(line);

@@ -433,9 +433,10 @@ mod m_memicmp {
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int _memicmp(const void *s1, const void *s2, size_t n)`
-    /// preserved misfeature: ASCII toupper fold (a..z only; >=0x80 untouched) for the COMPARE but returns the RAW unfolded unsigned-char diff *p1-*p2 (not the folded one); n==0 → 0; the Vista (OSMajorVersion>=6) NULL/_NLSCMPERROR guard is dead under the NT 5.x kernel → NULL never validly passed (not modeled)
+    /// preserved misfeature: ASCII toupper fold (a..z only; >=0x80 untouched) for the COMPARE but returns the RAW unfolded unsigned-char diff *p1-*p2 (not the folded one); n==0 → 0; NULL s1 or s2 → _NLSCMPERROR (0x7fffffff) when n!=0, else 0 (the C's OSMajorVersion>=6 guard, validated unconditionally; _LIBCNT_ INVALID_PMT is a no-op)
     #[no_mangle]
     pub unsafe extern "C" fn _memicmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32 {
+        if s1.is_null() || s2.is_null() { return if n != 0 { 0x7fff_ffff } else { 0 }; }
         let s1_s = raw_slice(s1 as *const u8, n);
         let s2_s = raw_slice(s2 as *const u8, n);
         crate::core_rs::mem::icmp(s1_s, s2_s)

@@ -54,8 +54,9 @@ impl Rule for ShadowedCDefine {
     }
 }
 
-static C_SKIP: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(^|/)(build-[^/]*|\.git|modules/rostests|sdk/lib/rust)/").unwrap());
+static C_SKIP: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(^|/)(build-[^/]*|\.git|modules/rostests|sdk/lib/rust)/").unwrap()
+});
 static RUST_SKIP: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(/target/|/\.responses/|bindgen_[a-z0-9_]+\.rs$|/island_[a-z0-9_]+\.rs$)").unwrap()
 });
@@ -86,7 +87,9 @@ impl CDefines {
             // Join backslash continuations, then drop comments, keeping line numbers.
             let joined = text.replace("\\\r\n", "  ").replace("\\\n", " ");
             let code = C_COMMENTS.replace_all(&joined, |c: &regex::Captures| {
-                c[0].chars().map(|ch| if ch == '\n' { '\n' } else { ' ' }).collect::<String>()
+                c[0].chars()
+                    .map(|ch| if ch == '\n' { '\n' } else { ' ' })
+                    .collect::<String>()
             });
             for c in DEFINE.captures_iter(&code) {
                 let line = code[..c.get(0).unwrap().start()].matches('\n').count() + 1;
@@ -97,14 +100,22 @@ impl CDefines {
                 ));
             }
         }
-        Self { raw, memo: Default::default() }
+        Self {
+            raw,
+            memo: Default::default(),
+        }
     }
     /// The single value every definition of `name` visible from `scope` evaluates
     /// to, if there is one. `None` scope sees every definition (tests).
     pub(crate) fn value(&self, name: &str, scope: Option<&str>) -> Option<i128> {
         self.value_inner(name, scope, &mut HashSet::new())
     }
-    fn value_inner(&self, name: &str, scope: Option<&str>, active: &mut HashSet<String>) -> Option<i128> {
+    fn value_inner(
+        &self,
+        name: &str,
+        scope: Option<&str>,
+        active: &mut HashSet<String>,
+    ) -> Option<i128> {
         let key = (scope.map(str::to_string), name.to_string());
         if let Some(v) = self.memo.lock().unwrap().get(&key) {
             return *v;
@@ -124,7 +135,11 @@ impl CDefines {
         let mut agreed: Option<i128> = None;
         let mut ok = true;
         for (_, _, body) in defs {
-            let v = eval(body, &mut |id| self.value_inner(id, scope, active), Dialect::C);
+            let v = eval(
+                body,
+                &mut |id| self.value_inner(id, scope, active),
+                Dialect::C,
+            );
             match (v, agreed) {
                 (Some(v), None) => agreed = Some(v),
                 (Some(v), Some(a)) if v == a => {}
@@ -157,9 +172,9 @@ fn crate_scope(path: &str) -> Option<String> {
         .trim_end_matches("-cargo");
     Some(
         match stem {
-            "ntkrnl" | "ntoskrnl" | "ex" | "ps" | "cc" | "ob" | "se" | "iomgr" | "config" | "mm"
-            | "ke" | "ke-inlines" | "kernel" | "fsrtl" | "kd64" | "kdbg" | "inbv" | "po" | "lpc"
-            | "dbgk" | "wmi" => "ntoskrnl",
+            "ntkrnl" | "ntoskrnl" | "ex" | "ps" | "cc" | "ob" | "se" | "iomgr" | "config"
+            | "mm" | "ke" | "ke-inlines" | "kernel" | "fsrtl" | "kd64" | "kdbg" | "inbv" | "po"
+            | "lpc" | "dbgk" | "wmi" => "ntoskrnl",
             "rtlk" => "rtl",
             "win32k" => "win32ss",
             other => other,
@@ -190,9 +205,13 @@ fn scan_rust(text: &str, defines: &CDefines, scope: Option<&str>) -> Vec<String>
     let mut seen = BTreeMap::new();
     for (name, ty, rhs, line) in sites {
         let Some(bits) = type_bits(&ty) else { continue };
-        let Some(c_value) = defines.value(&name, scope) else { continue };
+        let Some(c_value) = defines.value(&name, scope) else {
+            continue;
+        };
         let mut active = HashSet::from([name.clone()]);
-        let Some(r_value) = eval_rust(&rhs, &locals, defines, scope, &mut active) else { continue };
+        let Some(r_value) = eval_rust(&rhs, &locals, defines, scope, &mut active) else {
+            continue;
+        };
         let mask: i128 = (1i128 << bits) - 1;
         if r_value & mask == c_value & mask {
             continue;
@@ -272,7 +291,9 @@ enum Tok {
 }
 
 fn lex(s: &str, d: Dialect) -> Option<Vec<Tok>> {
-    const OPS: &[&str] = &["<<", ">>", "::", "+", "-", "*", "/", "%", "&", "|", "^", "~", "(", ")", "!"];
+    const OPS: &[&str] = &[
+        "<<", ">>", "::", "+", "-", "*", "/", "%", "&", "|", "^", "~", "(", ")", "!",
+    ];
     let b = s.as_bytes();
     let mut i = 0;
     let mut out = Vec::new();
@@ -323,10 +344,15 @@ fn number(raw: &str, d: Dialect) -> Option<i128> {
         (lower.clone(), 10)
     };
     let digits = match d {
-        Dialect::C => digits.trim_end_matches(|c| c == 'u' || c == 'l').to_string(),
+        Dialect::C => digits
+            .trim_end_matches(|c| c == 'u' || c == 'l')
+            .to_string(),
         Dialect::Rust => {
             let mut s = digits;
-            for suf in ["usize", "isize", "u128", "i128", "u64", "i64", "u32", "i32", "u16", "i16", "u8", "i8"] {
+            for suf in [
+                "usize", "isize", "u128", "i128", "u64", "i64", "u32", "i32", "u16", "i16", "u8",
+                "i8",
+            ] {
                 if radix != 16 || suf.len() > 2 {
                     if let Some(x) = s.strip_suffix(suf) {
                         s = x.to_string();
@@ -350,7 +376,12 @@ fn eval(s: &str, lookup: &mut dyn FnMut(&str) -> Option<i128>, d: Dialect) -> Op
     if toks.is_empty() {
         return None;
     }
-    let mut p = Parser { toks, pos: 0, lookup, d };
+    let mut p = Parser {
+        toks,
+        pos: 0,
+        lookup,
+        d,
+    };
     let v = p.expr(0)?;
     (p.pos == p.toks.len()).then_some(v)
 }
@@ -374,7 +405,9 @@ impl Parser<'_> {
                 self.path()?;
                 continue;
             }
-            let Some(Tok::Op(op)) = self.peek() else { break };
+            let Some(Tok::Op(op)) = self.peek() else {
+                break;
+            };
             let (prec, op) = match *op {
                 "*" | "/" | "%" => (6, *op),
                 "+" | "-" => (5, *op),
@@ -405,11 +438,15 @@ impl Parser<'_> {
         Some(lhs)
     }
     fn path(&mut self) -> Option<String> {
-        let Some(Tok::Id(mut last)) = self.peek().cloned() else { return None };
+        let Some(Tok::Id(mut last)) = self.peek().cloned() else {
+            return None;
+        };
         self.pos += 1;
         while matches!(self.peek(), Some(Tok::Op("::"))) {
             self.pos += 1;
-            let Some(Tok::Id(next)) = self.peek().cloned() else { return None };
+            let Some(Tok::Id(next)) = self.peek().cloned() else {
+                return None;
+            };
             last = next;
             self.pos += 1;
         }
@@ -425,7 +462,9 @@ impl Parser<'_> {
                 self.pos += 1;
                 self.unary()
             }
-            Tok::Op("~") | Tok::Op("!") if self.d == Dialect::C || matches!(self.peek(), Some(Tok::Op("!"))) => {
+            Tok::Op("~") | Tok::Op("!")
+                if self.d == Dialect::C || matches!(self.peek(), Some(Tok::Op("!"))) =>
+            {
                 self.pos += 1;
                 // 64-bit complement; the width mask applies at comparison.
                 Some(!self.unary()? & ((1i128 << 64) - 1))
@@ -434,12 +473,17 @@ impl Parser<'_> {
                 self.pos += 1;
                 // A C cast `(TYPE)x`: a lone identifier in parens followed by an operand.
                 if self.d == Dialect::C {
-                    if let (Some(Tok::Id(_)), Some(Tok::Op(")"))) =
-                        (self.toks.get(self.pos).cloned(), self.toks.get(self.pos + 1).cloned())
-                    {
+                    if let (Some(Tok::Id(_)), Some(Tok::Op(")"))) = (
+                        self.toks.get(self.pos).cloned(),
+                        self.toks.get(self.pos + 1).cloned(),
+                    ) {
                         let operand_follows = matches!(
                             self.toks.get(self.pos + 2),
-                            Some(Tok::Num(_)) | Some(Tok::Id(_)) | Some(Tok::Op("(")) | Some(Tok::Op("-")) | Some(Tok::Op("~"))
+                            Some(Tok::Num(_))
+                                | Some(Tok::Id(_))
+                                | Some(Tok::Op("("))
+                                | Some(Tok::Op("-"))
+                                | Some(Tok::Op("~"))
                         );
                         if operand_follows {
                             self.pos += 2;
@@ -478,8 +522,14 @@ mod tests {
     #[test]
     fn invented_boost_priority_is_reported() {
         let d = defs(&[
-            ("sdk/include/ndk/ketypes.h", "#define LOW_REALTIME_PRIORITY 16\n"),
-            ("ntoskrnl/ke/balmgr.c", "#define THREAD_BOOST_PRIORITY (LOW_REALTIME_PRIORITY - 1)\n"),
+            (
+                "sdk/include/ndk/ketypes.h",
+                "#define LOW_REALTIME_PRIORITY 16\n",
+            ),
+            (
+                "ntoskrnl/ke/balmgr.c",
+                "#define THREAD_BOOST_PRIORITY (LOW_REALTIME_PRIORITY - 1)\n",
+            ),
         ]);
         let out = scan_rust("const THREAD_BOOST_PRIORITY: ULONG = 23;\n", &d, None);
         assert_eq!(
@@ -491,7 +541,10 @@ mod tests {
     fn the_fix_is_clean_and_resolves_through_rust_locals() {
         let d = defs(&[
             ("a.h", "#define LOW_REALTIME_PRIORITY 16\n"),
-            ("b.c", "#define THREAD_BOOST_PRIORITY (LOW_REALTIME_PRIORITY - 1)\n"),
+            (
+                "b.c",
+                "#define THREAD_BOOST_PRIORITY (LOW_REALTIME_PRIORITY - 1)\n",
+            ),
         ]);
         let src = "const LOW_REALTIME_PRIORITY: ULONG = 16;\nconst THREAD_BOOST_PRIORITY: ULONG = LOW_REALTIME_PRIORITY - 1;\n";
         assert!(scan_rust(src, &d, None).is_empty());
@@ -507,7 +560,15 @@ mod tests {
         assert!(scan_rust("const MAX_CPUS: usize = 64;", &d, scope.as_deref()).is_empty());
         let d = defs(&[("ntoskrnl/ex/work.c", "#define EX_DELAYED_WORK_THREADS 12\n")]);
         let scope = crate_scope("sdk/lib/rust/ex-rust/src/work.rs");
-        assert_eq!(scan_rust("const EX_DELAYED_WORK_THREADS: ULONG = 3;", &d, scope.as_deref()).len(), 1);
+        assert_eq!(
+            scan_rust(
+                "const EX_DELAYED_WORK_THREADS: ULONG = 3;",
+                &d,
+                scope.as_deref()
+            )
+            .len(),
+            1
+        );
     }
     #[test]
     fn disagreeing_c_definitions_are_skipped() {
@@ -516,18 +577,42 @@ mod tests {
     }
     #[test]
     fn width_and_casts_compare_like_the_type() {
-        let d = defs(&[("a.h", "#define STATUS_X ((NTSTATUS)0xC0000005L)\n#define ALL (~0)\n")]);
-        assert!(scan_rust("pub const STATUS_X: NTSTATUS = 0xC0000005u32 as i32;\nconst ALL: u32 = 0xFFFF_FFFF;", &d, None).is_empty());
-        assert_eq!(scan_rust("const STATUS_X: NTSTATUS = 0xC0000006u32 as NTSTATUS;", &d, None).len(), 1);
+        let d = defs(&[(
+            "a.h",
+            "#define STATUS_X ((NTSTATUS)0xC0000005L)\n#define ALL (~0)\n",
+        )]);
+        assert!(scan_rust(
+            "pub const STATUS_X: NTSTATUS = 0xC0000005u32 as i32;\nconst ALL: u32 = 0xFFFF_FFFF;",
+            &d,
+            None
+        )
+        .is_empty());
+        assert_eq!(
+            scan_rust(
+                "const STATUS_X: NTSTATUS = 0xC0000006u32 as NTSTATUS;",
+                &d,
+                None
+            )
+            .len(),
+            1
+        );
     }
     #[test]
     fn unsized_types_strings_and_calls_are_skipped() {
         let d = defs(&[("a.h", "#define A 1\n#define B 2\n#define NAME \"x\"\n")]);
-        assert!(scan_rust("const A: Foo = 5;\nconst B: u32 = f(1);\nconst NAME: &str = \"y\";", &d, None).is_empty());
+        assert!(scan_rust(
+            "const A: Foo = 5;\nconst B: u32 = f(1);\nconst NAME: &str = \"y\";",
+            &d,
+            None
+        )
+        .is_empty());
     }
     #[test]
     fn comments_and_continuations_in_c() {
-        let d = defs(&[("a.h", "/* #define A 9 */\n#define A \\\n  (1 << 4) // sixteen\n")]);
+        let d = defs(&[(
+            "a.h",
+            "/* #define A 9 */\n#define A \\\n  (1 << 4) // sixteen\n",
+        )]);
         assert!(scan_rust("const A: u32 = 16;", &d, None).is_empty());
         assert_eq!(scan_rust("const A: u32 = 15;", &d, None).len(), 1);
     }

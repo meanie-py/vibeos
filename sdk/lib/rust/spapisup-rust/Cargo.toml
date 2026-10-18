@@ -1,0 +1,15 @@
+# spapisup-rust — usetup's cabinet.c + fileqsup.c, the one copy usetup.exe and reactos.exe
+# both link (reactos.exe's C #included them; each crate used to carry its own translation).
+[package]
+name = "spapisup-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "spapisup_rust"
+path = "src/lib.rs"
+
+[dependencies]
+strsafe-rust = { path = "../strsafe-rust" }
+ntdll-sys = { path = "../ntdll-sys" }
+win32macros-rust = { path = "../win32macros-rust" }

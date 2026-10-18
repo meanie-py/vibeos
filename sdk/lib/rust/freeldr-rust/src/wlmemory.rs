@@ -289,6 +289,19 @@ pub unsafe extern "C" fn WinLdrSetupMemoryLayout(LoaderBlock: PLOADER_PARAMETER_
     TRACE!("Memory Descriptor List prepared, printing PDE\n");
     List_PaToVa(core::ptr::addr_of_mut!((*LoaderBlock).MemoryDescriptorListHead));
 
+    // C: `#if DBG MempDump(); #endif` -- the per-arch page-directory TRACE dump (empty on
+    // amd64). DBG is `debug_assertions` in this crate, as heap.rs's poison fills are.
+    // Found dropped by `rustconv.live_arm_audit`.
+    #[cfg(debug_assertions)]
+    {
+        #[cfg(target_arch = "x86")]
+        crate::winldr_i386::MempDump();
+        #[cfg(target_arch = "x86_64")]
+        crate::winldr_amd64::MempDump();
+        #[cfg(target_arch = "aarch64")]
+        crate::winldr_arm64::MempDump();
+    }
+
     1u8
 }
 

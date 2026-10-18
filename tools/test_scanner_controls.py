@@ -804,6 +804,25 @@ pub unsafe fn f(irp: *mut u8) {
     );
 }
 """
+# scan_entry_point_cc. Seeded from wshtcpip (2026-10-17): an `extern "C"` DllMain defines
+# `_DllMain` on i386 where crt-startup calls `_DllMain@12`, so the module's own never runs.
+_ENTRYCC_BAD = """\
+#[no_mangle]
+pub unsafe extern "C" fn DllMain(hInstDll: HANDLE, dwReason: ULONG, Reserved: PVOID) -> BOOL {
+    1
+}
+"""
+_ENTRYCC_GOOD = """\
+#[no_mangle]
+pub unsafe extern "system" fn DllMain(hInstDll: HANDLE, dwReason: ULONG, Reserved: PVOID) -> BOOL {
+    1
+}
+#[no_mangle]
+pub unsafe extern "C" fn CreateShellLink() -> i32 {
+    0
+}
+"""
+
 _FNABI_GOOD = """\
 pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> = Some(InitFrontEnd);
@@ -3205,6 +3224,12 @@ CONTROLS: list[Control] = [
         good={"good.rs": _FNABI_GOOD},
     ),
     Control(
+        name="scan_entry_point_cc",
+        script="tools/vibeos-lint/src/rules/entry_point_cc.rs",
+        bad={"bad.rs": _ENTRYCC_BAD},
+        good={"good.rs": _ENTRYCC_GOOD},
+    ),
+    Control(
         name="scan_cdecl_alias",
         script="tools/scan_cdecl_alias.py",
         argv=["--lint"],
@@ -3302,14 +3327,6 @@ UNCOVERED: dict[str, str] = {
         "tools/vibeos-lint/src/rules/shadowed_c_define.rs: balmgr's invented "
         "THREAD_BOOST_PRIORITY = 23 must be flagged, its fix through a Rust local must not, "
         "and neither must another module's same-named macro."
-    ),
-    "scan_cargo_manifests": (
-        "it compares sdk/lib/rust/cells/<arch>.jsonl and boot/media/<arch>.json with a "
-        "configured build-<arch>/ (build.ninja's Cargo-linking edges, boot/<cd>.<config>.lst), "
-        "which a fixture directory does not have. Its unit tests in "
-        "tools/vibeos-lint/src/rules/scan_cargo_manifests.rs build those inputs in a temp tree: "
-        "a current pair is clean, a cell missing from the manifest and a moved CD placement "
-        "are each reported, and an arch with no configured build is skipped."
     ),
     "scan_cmake_linked_rust": (
         "it models modules from build-amd64/build.ninja and the tree's own CMakeLists through "

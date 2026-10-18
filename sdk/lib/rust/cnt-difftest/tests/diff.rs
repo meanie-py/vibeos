@@ -2722,6 +2722,19 @@ fn diff_memicmp() {
         let r = unsafe { ref_memicmp(a.as_ptr() as *const c_void, b.as_ptr() as *const c_void, n) };
         assert_eq!(c, r, "memicmp a={a:?} b={b:?} n={n}");
     }
+    // The OSMajorVersion>=6 NULL guard, live at the pinned 10: NULL either side →
+    // _NLSCMPERROR when n != 0, 0 when n == 0.
+    let buf = *b"abc";
+    let p = buf.as_ptr() as *const c_void;
+    let null = core::ptr::null::<c_void>();
+    for (s1, s2) in [(null, p), (p, null), (null, null)] {
+        for n in [0usize, 1, 3] {
+            let c = unsafe { cabi::_memicmp(s1, s2, n) };
+            let r = unsafe { ref_memicmp(s1, s2, n) };
+            assert_eq!(c, r, "memicmp NULL s1={s1:?} s2={s2:?} n={n}");
+            assert_eq!(c, if n != 0 { 0x7fff_ffff } else { 0 });
+        }
+    }
 }
 
 fn diff_rand() {

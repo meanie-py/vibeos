@@ -211,7 +211,7 @@ pub unsafe extern "system" fn ClassCheckVerifyComplete(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn DllUnload() -> i32 {
+pub unsafe extern "system" fn DllUnload() -> i32 {
     DbgPrintEx(DPFLTR_CLASSPNP_ID, DPFLTR_INFO_LEVEL, b"classpnp.sys is now unloading\n\0".as_ptr() as *const i8);
 
     if !PowerSettingNotificationHandle.is_null() {

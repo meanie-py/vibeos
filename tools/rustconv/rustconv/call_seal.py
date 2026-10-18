@@ -189,6 +189,7 @@ def seal_calls(
     receiver_callees: frozenset[str] = frozenset(),
     callee_cpp_names: Mapping[str, str] | None = None,
     hwnd_receiver_callees: Mapping[str, int] | None = None,
+    pinned: Mapping[str, int] | None = None,
 ) -> SealedCalls:
     """Replace each known runtime-callee occurrence with a unique token.
 
@@ -246,7 +247,9 @@ def seal_calls(
             continue
         spans.append((match.start(1), match.end(1), name))
 
-    dead_spans = dead_region_spans(text, masked)
+    # `pinned`: the TU's own defines, which settle some `#if` arms live -- those calls are
+    # required like any other. Without it every arm stays optional (dead_regions).
+    dead_spans = dead_region_spans(text, masked, pinned)
     result = text
     calls = []
     for index, (start, end, original) in reversed(list(enumerate(spans))):

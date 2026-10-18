@@ -96,18 +96,36 @@ mod tests {
     #[test]
     fn zero_extending_chains_are_flagged() {
         // winlogon's preamble and iphlpapi's prelude, and an inline call argument (userenv).
-        assert_eq!(hits("pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY;"), 1);
-        assert_eq!(hits("const HKEY_USERS: HKEY = 0x80000003u32 as usize as HKEY;"), 1);
+        assert_eq!(
+            hits("pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY;"),
+            1
+        );
+        assert_eq!(
+            hits("const HKEY_USERS: HKEY = 0x80000003u32 as usize as HKEY;"),
+            1
+        );
         assert_eq!(hits("f(0x8000_0002u32 as isize as HKEY);"), 1);
-        assert_eq!(hits("RegOpenKeyExW((0x80000001) as HKEY, k, 0, KEY_READ, &mut h);"), 1);
+        assert_eq!(
+            hits("RegOpenKeyExW((0x80000001) as HKEY, k, 0, KEY_READ, &mut h);"),
+            1
+        );
     }
 
     #[test]
     fn sign_extending_and_unrelated_casts_pass() {
-        assert_eq!(hits("const K: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;"), 0);
-        assert_eq!(hits("const K: HKEY = 0x80000003u32 as ::core::ffi::c_int as isize as HKEY;"), 0);
+        assert_eq!(
+            hits("const K: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;"),
+            0
+        );
+        assert_eq!(
+            hits("const K: HKEY = 0x80000003u32 as ::core::ffi::c_int as isize as HKEY;"),
+            0
+        );
         assert_eq!(hits("const S: NTSTATUS = 0x8000_0001u32 as NTSTATUS;"), 0);
         assert_eq!(hits("// was 0x8000_0002usize as HKEY"), 0);
-        assert_eq!(hits("let k = 0x8000_0002usize as HKEY; // nolint: hkey-zero-extend"), 0);
+        assert_eq!(
+            hits("let k = 0x8000_0002usize as HKEY; // nolint: hkey-zero-extend"),
+            0
+        );
     }
 }

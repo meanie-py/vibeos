@@ -56,3 +56,22 @@ def test_an_unknown_post_link_step_is_refused():
 def test_an_output_the_command_does_not_copy_is_refused():
     with pytest.raises(m.ManifestError, match="declared outputs"):
         m.parse_cell("drivers/beep/beep.sys drivers/beep/other.sys ", COMMAND, "i386")
+
+
+def test_drift_counts_one_new_cell_as_one():
+    a = {"crate": "a-cargo", "outputs": []}
+    b = {"crate": "b-cargo", "outputs": []}
+    changed = {"crate": "a-cargo", "outputs": [{"out": "x"}]}
+    assert m.drift([a], [a, b]) == ["+ b-cargo"]
+    assert m.drift([a, b], [changed]) == ["- b-cargo", "~ a-cargo"]
+
+
+def test_a_configured_graph_wins_over_the_committed_copy(tmp_path, monkeypatch):
+    """cmake still owns cells: with a graph, a merge's new cell is seen before anyone
+    regenerates the committed manifest."""
+    monkeypatch.setattr(m, "derive", lambda arch, repo: [{"crate": "from-graph"}])
+    monkeypatch.setattr(m, "load", lambda arch, repo: [{"crate": "committed"}])
+    assert m.current("amd64", tmp_path) == [{"crate": "committed"}]
+    (tmp_path / "build-amd64").mkdir()
+    (tmp_path / "build-amd64/build.ninja").write_text("")
+    assert m.current("amd64", tmp_path) == [{"crate": "from-graph"}]

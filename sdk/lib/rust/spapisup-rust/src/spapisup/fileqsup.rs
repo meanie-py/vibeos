@@ -1,13 +1,13 @@
-use crate::usetup::cabinet::CabinetCleanup;
-use crate::usetup::cabinet::CabinetExtractFile;
-use crate::usetup::cabinet::CabinetFindFirst;
-use crate::usetup::cabinet::CabinetFindNextFileSequential;
-use crate::usetup::cabinet::CabinetGetCabinetName;
-use crate::usetup::cabinet::CabinetInitialize;
-use crate::usetup::cabinet::CabinetOpen;
-use crate::usetup::cabinet::CabinetSetCabinetName;
-use crate::usetup::cabinet::CabinetSetDestinationPath;
-use crate::usetup::cabinet::CabinetSetEventHandlers;
+use crate::spapisup::cabinet::CabinetCleanup;
+use crate::spapisup::cabinet::CabinetExtractFile;
+use crate::spapisup::cabinet::CabinetFindFirst;
+use crate::spapisup::cabinet::CabinetFindNextFileSequential;
+use crate::spapisup::cabinet::CabinetGetCabinetName;
+use crate::spapisup::cabinet::CabinetInitialize;
+use crate::spapisup::cabinet::CabinetOpen;
+use crate::spapisup::cabinet::CabinetSetCabinetName;
+use crate::spapisup::cabinet::CabinetSetDestinationPath;
+use crate::spapisup::cabinet::CabinetSetEventHandlers;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
 use crate::prelude::*;
 pub static RUSTCONV_WSTR_6AF5D4B374C5: [u16; 4] = [0x006Eu16, 0x002F, 0x0061, 0x0000];
@@ -159,7 +159,6 @@ unsafe extern "C" fn SetupExtractFile(
     return STATUS_SUCCESS;
 }
 
-#[no_mangle]
 pub unsafe extern "system" fn SetupOpenFileQueue() -> HSPFILEQ {
     let mut QueueHeader: *mut FILEQUEUEHEADER = core::ptr::null_mut();
 
@@ -214,7 +213,6 @@ unsafe extern "C" fn SetupDeleteQueueEntry(mut Entry: PQUEUEENTRY) {
     RtlFreeHeap(ProcessHeap, 0, Entry as PVOID);
 }
 
-#[no_mangle]
 pub unsafe extern "system" fn SetupCloseFileQueue(
     QueueHandle: HSPFILEQ,
 ) -> BOOL {
@@ -255,7 +253,6 @@ pub unsafe extern "system" fn SetupCloseFileQueue(
     return (TRUE) as BOOL;
 }
 
-#[no_mangle]
 pub unsafe extern "system" fn SetupQueueCopyWithCab(
     QueueHandle: HSPFILEQ,
     SourceRootPath: PCWSTR,
@@ -532,7 +529,6 @@ pub unsafe extern "system" fn SetupQueueCopyWithCab(
     return (TRUE) as i32;
 }
 
-#[no_mangle]
 pub unsafe extern "system" fn SetupQueueDeleteW(
     QueueHandle: HSPFILEQ,
     PathPart1: PCWSTR,
@@ -595,7 +591,6 @@ pub unsafe extern "system" fn SetupQueueDeleteW(
     return (TRUE) as BOOL;
 }
 
-#[no_mangle]
 pub unsafe extern "system" fn SetupQueueRenameW(
     QueueHandle: HSPFILEQ,
     SourcePath: PCWSTR,
@@ -747,7 +742,6 @@ pub unsafe extern "system" fn SetupQueueRenameW(
     return (TRUE) as BOOL;
 }
 
-#[no_mangle]
 pub unsafe extern "system" fn SetupCommitFileQueueW(
     Owner: HWND,
     QueueHandle: HSPFILEQ,

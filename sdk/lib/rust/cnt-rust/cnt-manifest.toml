@@ -1215,8 +1215,10 @@ fuzz_domain  = ["as strtok over wide", "leading/trailing/consecutive delims", "n
 # bespoke shim (copy-scan with the signed-char `t==c` + NUL-precedence
 # misfeatures in mem::ccpy). memicmp REUSES the memcmp shape (ptr_len +
 # i32_passthrough) over mem::icmp: ASCII toupper fold for the compare,
-# raw unfolded diff returned; the Vista NULL guard is dead under the
-# NT 5.x kernel so NULL is never passed (diff pins OSMajorVersion=5).
+# raw unfolded diff returned; the Vista NULL guard (NULL → _NLSCMPERROR,
+# or 0 when n==0) is modeled unconditionally: dead under the NT 5.x
+# kernel, live after the Windows 10 version flip (diff pins
+# OSMajorVersion=10).
 
 [symbols._memccpy]
 c_signature  = "void *_memccpy(void *to, const void *from, int c, size_t count)"
@@ -1235,10 +1237,11 @@ family       = "mem"
 slice_pattern = "ptr_len"
 core_fn      = "mem::icmp"
 return_collapse = "i32_passthrough"
+null_guard_nls = true
 inout_effects = "none (read-only)"
-preserved_misfeature = "ASCII toupper fold (a..z only; >=0x80 untouched) for the COMPARE but returns the RAW unfolded unsigned-char diff *p1-*p2 (not the folded one); n==0 → 0; the Vista (OSMajorVersion>=6) NULL/_NLSCMPERROR guard is dead under the NT 5.x kernel → NULL never validly passed (not modeled)"
+preserved_misfeature = "ASCII toupper fold (a..z only; >=0x80 untouched) for the COMPARE but returns the RAW unfolded unsigned-char diff *p1-*p2 (not the folded one); n==0 → 0; NULL s1 or s2 → _NLSCMPERROR (0x7fffffff) when n!=0, else 0 (the C's OSMajorVersion>=6 guard, validated unconditionally; _LIBCNT_ INVALID_PMT is a no-op)"
 reference    = "sdk/lib/crt/mem/memicmp.c"
-fuzz_domain  = ["n==0", "equal", "differ pre-fold", "differ only by case (→0)", "high-bit >=0x80 (never folded)", "differ at 0", "differ at n-1"]
+fuzz_domain  = ["n==0", "equal", "differ pre-fold", "differ only by case (→0)", "high-bit >=0x80 (never folded)", "differ at 0", "differ at n-1", "NULL s1/s2 with n!=0 (→_NLSCMPERROR)", "NULL with n==0 (→0)"]
 
 # --- Wave RAND: rand/srand (stdlib/rand_nt.c) ----------------------
 # 48-bit-multiplier LCG over a u64 seed; hidden static state in the

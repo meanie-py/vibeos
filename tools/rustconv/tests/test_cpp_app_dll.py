@@ -209,3 +209,40 @@ def test_the_island_allowlists_the_classes_interface_bases(tmp_path):
     assert profile_derive.cpp_interface_bases(module) == ["IExtractIconW", "IPersistFile"]
     lines = profile_derive._allow_files_lines(["a"], ["IExtractIconW", "IPersistFile"])
     assert lines[-1].endswith("--allowlist-type '(IExtractIconW|IPersistFile)(Vtbl)?' )")
+
+
+_IBASE = """
+#[repr(C)]
+pub struct IBaseVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IBase,
+            riid: REFIID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IBase) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IBase) -> ULONG>,
+}
+"""
+
+
+def test_an_entry_for_an_interface_ancestor_lands_on_the_derived_base():
+    # sendmail/mydocs: COM_INTERFACE_ENTRY_IID(IID_IPersist, IPersist) on a class that
+    # derives only IPersistFile -- static_cast<IPersist*> is the IPersistFile subobject.
+    m = _model()
+    m.classes["CX"].com_map.append(MsgMapEntry("COM_INTERFACE_ENTRY_IID", ["IID_IBase", "IBase"]))
+    rs = cpp_app.render_classes(m, frozenset(), _ISLAND + _IBASE)
+    assert (
+        "iid: core::ptr::addr_of!(IID_IBase) as *const c_void, offset: core::mem::offset_of!(CX, __base2)"
+        in rs
+    )
+
+
+def test_an_ambiguous_interface_ancestor_is_refused():
+    m = _model(extra_bases=(Base("IFoo2", "public"),))
+    m.classes["CX"].com_map.append(MsgMapEntry("COM_INTERFACE_ENTRY_IID", ["IID_IBase", "IBase"]))
+    ifoo2 = "#[repr(C)]\npub struct IFooVtbl" + _ISLAND.split("pub struct IFooVtbl")[1]
+    island = _ISLAND + _IBASE + ifoo2.replace("IFoo", "IFoo2")
+    with pytest.raises(cpp_app.CppAppError, match="IBase is an ambiguous base"):
+        cpp_app.render_classes(m, frozenset(), island)

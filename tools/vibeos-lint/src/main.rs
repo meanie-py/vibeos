@@ -1,3 +1,10 @@
+// Keep the allocator in the executable: embedding the library must not select
+// an allocator for its host. Linux also enables mimalloc's C malloc override so
+// transient tree-sitter allocations do not accumulate in separate libc arenas.
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 use std::io::{self, Write};
 use std::path::PathBuf;
 use vibeos_lint::{rules, Corpus, Rule, SourceNeeds};
@@ -147,6 +154,15 @@ fn run() -> Result<(), String> {
     if selected.is_empty() {
         return Err("no rules selected".into());
     }
+    let ast_cache_nodes = match std::env::var("VIBEOS_LINT_AST_CACHE_NODES") {
+        Ok(value) => Some(
+            value
+                .parse::<usize>()
+                .map_err(|_| "VIBEOS_LINT_AST_CACHE_NODES must be a nonnegative integer")?,
+        ),
+        Err(std::env::VarError::NotPresent) => None,
+        Err(error) => return Err(format!("VIBEOS_LINT_AST_CACHE_NODES: {error}")),
+    };
     let jobs = std::env::var("VIBEOS_LINT_JOBS")
         .ok()
         .map(|raw| {
@@ -156,10 +172,16 @@ fn run() -> Result<(), String> {
                 .ok_or("VIBEOS_LINT_JOBS must be positive")
         })
         .transpose()?;
-    let mut builder = rayon::ThreadPoolBuilder::new();
-    if let Some(jobs) = jobs {
-        builder = builder.num_threads(jobs);
-    }
+    // Each worker may hold a large generated-source AST. Leave room for other
+    // lanes and avoid multiplying parser peaks by every logical CPU on the host.
+    let jobs = match jobs {
+        Some(jobs) => jobs,
+        None => std::thread::available_parallelism()
+            .map_err(|e| format!("available CPU parallelism: {e}"))?
+            .get()
+            .min(8),
+    };
+    let builder = rayon::ThreadPoolBuilder::new().num_threads(jobs);
     let pool = builder.build().map_err(|e| e.to_string())?;
     let results = pool.install(|| {
         let needs = SourceNeeds {
@@ -184,7 +206,11 @@ fn run() -> Result<(), String> {
             source_sets.extend_from_slice(vibeos_lint::module_inputs::SOURCE_SETS);
         }
         let started = std::time::Instant::now();
-        let corpus = Corpus::load_scopes_with_sets(&root, &inputs, needs, &extras, &source_sets)?;
+        let mut corpus =
+            Corpus::load_scopes_with_sets(&root, &inputs, needs, &extras, &source_sets)?;
+        if let Some(nodes) = ast_cache_nodes {
+            corpus = corpus.with_ast_cache_nodes(nodes);
+        }
         if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
             eprintln!(
                 "TIMING\tsource_snapshot\t{:.3}\t{} files\t{} bytes",
@@ -200,6 +226,16 @@ fn run() -> Result<(), String> {
                 "TIMING\tsource_rules\t{:.3}",
                 started.elapsed().as_secs_f64()
             );
+        }
+        if std::env::var_os("VIBEOS_LINT_CACHE_STATS").is_some() {
+            let started = std::time::Instant::now();
+            eprintln!("CACHE_STATS\t{}", corpus.cache_stats());
+            if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
+                eprintln!(
+                    "TIMING\tsource_cache_stats\t{:.3}",
+                    started.elapsed().as_secs_f64()
+                );
+            }
         }
         // This is a one-shot CLI snapshot with no destructor side effects.
         // Cached trees/views can occupy gigabytes: walking their allocations

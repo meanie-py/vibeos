@@ -1,3 +1,7 @@
+//! ORPHAN-BY-DESIGN: superseded by sdk/lib/rust/spapisup-rust (the one copy of usetup's
+//! cabinet.c + fileqsup.c, which this TU #included). Same banked translation: 29 of 34
+//! bodies byte-identical, the other 5 differ only in integrate spelling (`!NT_SUCCESS!`,
+//! `as UINT`). Kept on disk only until its deletion is approved (paid artifact).
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
 use crate::prelude::*;
 use core::ffi::c_void;

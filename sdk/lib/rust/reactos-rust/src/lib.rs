@@ -11,13 +11,15 @@
 #![allow(unused_assignments, static_mut_refs)]
 #![allow(clippy::all)]
 
+// spapisup/fileqsup.c: usetup's cabinet.c + fileqsup.c, linked from spapisup-rust.
+extern crate spapisup_rust;
+
 pub mod types; // bindgen island, per arch (gen_driver_types.sh reactos)
 #[macro_use]
 pub mod prelude; // the ONE import surface: types glob + debug macros + CRT externs
 
 #[allow(clippy::module_inception)]
 pub mod reactos {
-    pub mod fileqsup;
     pub mod infsupp;
     pub mod drivepage;
     pub mod reactos;

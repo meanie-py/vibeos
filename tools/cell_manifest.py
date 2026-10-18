@@ -136,6 +136,26 @@ def load(arch: str, repo: Path = REPO) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def current(arch: str, repo: Path = REPO) -> list[dict]:
+    """The cells as the build links them: read from build-<arch>/build.ninja when there is
+    one (cmake is still the source of truth, and a merge's new cell is in the graph before
+    anyone regenerates the committed copy), else the committed manifest a build with no
+    cmake has to go on."""
+    if (repo / f"build-{arch}/build.ninja").exists():
+        return derive(arch, repo)
+    return load(arch, repo)
+
+
+def drift(committed: list[dict], derived: list[dict]) -> list[str]:
+    """What changed, by crate: a set comparison, so one new cell reads as one."""
+    have = {c["crate"]: c for c in committed}
+    want = {c["crate"]: c for c in derived}
+    out = [f"+ {k}" for k in sorted(want.keys() - have.keys())]
+    out += [f"- {k}" for k in sorted(have.keys() - want.keys())]
+    out += [f"~ {k}" for k in sorted(want.keys() & have.keys()) if want[k] != have[k]]
+    return out
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -154,8 +174,10 @@ def main(argv: list[str] | None = None) -> int:
             path.write_text(text)
             print(f"wrote {path.relative_to(REPO)} ({text.count(chr(10))} cells)")
         elif not path.exists() or path.read_text() != text:
+            changes = drift(load(arch) if path.exists() else [], derive(arch))
             print(
-                f"{path.relative_to(REPO)}: stale against build-{arch}/build.ninja "
+                f"{path.relative_to(REPO)}: stale against build-{arch}/build.ninja: "
+                f"{', '.join(changes[:8])}{' ...' if len(changes) > 8 else ''} "
                 "(python3 tools/cell_manifest.py --write)",
                 file=sys.stderr,
             )

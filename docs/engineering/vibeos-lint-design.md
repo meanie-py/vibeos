@@ -697,3 +697,65 @@ caches differ and fleet activity was not controlled, so this is not a controlled
 `parity/performance-04.json` preserves the method, hashes, timings and Python replay.
 The single-digit target remains owed; retained source-view/AST memory and repeated fact
 extraction are the next performance work.
+
+
+## Performance checkpoint 6: bounded syntax and cheaper snapshots (2026-10-17)
+
+Master `91640c25fb1` is reconciled, including its linear vendor directory index and Rust
+scanner fixes. The source suite preserves all 5,550 finding lines byte for byte across
+the reconciled baseline and every cache experiment (`parity/performance-05.json`).
+
+The default source pool now caps workers at eight. A shared weighted LRU retains at most
+four million Rust syntax nodes, admits a file after its second request, and keeps sources
+over 256 KiB weakly cached as before. Active callers retain their Arcs through eviction;
+library ownership and cleanup remain normal. The small already-cached `lru-slab` dependency
+provides constant-time recency tracking. This bounds retention, not total process memory.
+Raw bytes share decoded text when identical (528.2 MB of extra raw storage becomes 1.8 MB);
+CRLF and invalid UTF-8 still preserve original bytes. The lexer masks its character buffer
+in place, matching the old implementation on 20,000 generated inputs.
+
+Traversal rejects irrelevant names before root checks and carries only eligible source sets
+into each subtree, preserving each set's pruning and explicit-input rules. Extern drift
+extracts island facts once, keeps only relevant AST nodes, and reads lines from the shared
+index with exactly `str::lines()` semantics. New timings separate inventory, materialization,
+shared indexes, parallel rule execution and optional cache statistics. Statistics inspect
+initialized metadata without parsing or walking the compiler's entire JSON AST.
+
+Sequential old/new native scans on the same checkout observed 152.90s / 149.13s wall,
+568.99s / 556.92s user+system CPU, and 14.40 / 9.76 GiB maximum RSS. The final normal source
+gate observed 109.6s in the native process: 2.19s inventory, 1.75s materialization, 7.84s
+shared initialization and 97.26s parallel rules. Host activity was not controlled, so the
+paired results establish a memory improvement and similar observed latency, not a universal
+speedup. Extern drift remains the largest rule (80.81s in that final gate). The single-digit
+whole-suite target remains owed; further CPU and scheduling work follows this checkpoint.
+
+
+## Performance checkpoint 7: transient allocations (2026-10-17)
+
+Merged master `50c7c7907f2`, including the compile-command cache, unsupported-regex,
+dangling-symlink and formatting fixes. Raw-user-access now borrows cached function facts
+and source lines instead of copying their bodies and raw line strings. Masked views share
+an allocation when an absent cutoff marker and ASCII character/byte masking give identical
+input and output; Unicode and real cutoffs retain their distinct behavior.
+
+The CLI uses `mimalloc` 0.1.52. Its Linux C allocator override covers tree-sitter too;
+the global allocator declaration lives only in the executable. `--no-default-features`
+builds retain the system allocator for comparisons. The new dependency is authorized by
+the user's general dependency approval. Usage and override support come from the
+[allocator crate](https://docs.rs/mimalloc/0.1.52/mimalloc/).
+
+The merged baseline observed 9.02 GiB maximum RSS / 121.30s. Rust allocations alone with
+mimalloc observed 8.22 GiB / 106.72s. With borrowing/view sharing, the system-allocator
+source gate observed 8.08 GiB (169s including compilation); the native full-override
+experiment observed 6.97 GiB / 110.83s. Every completed scan emitted the same 5,840 tagged
+finding lines. A two-arena glibc experiment was rejected: 7.83 GiB / 487.46s.
+Host activity and build caches were not controlled; these are observations, not a universal
+speedup or a complete allocation attribution. The retained corpus and live rule working
+sets still consume several GiB. `parity/performance-06.json` records methods and evidence;
+the single-digit latency target and further memory reduction remain open.
+
+The final default-allocator source gate passed all 123 stages with the same finding hash
+at 6.81 GiB peak RSS / 121.22s including bootstrap, alongside 692 Rust tests and all 106
+tooling checks. That is about 25% less peak RSS than the observed merged baseline, with
+similar elapsed time. Inspection of ELF symbols confirms the executable overrides malloc,
+calloc, realloc and free; the library test executable has no allocator override symbols.

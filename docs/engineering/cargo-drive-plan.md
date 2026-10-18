@@ -504,10 +504,14 @@ finding until it is converted. Teaching the generator a refused shape shrinks th
 baseline.
 
 `--convert` ends by regenerating what a build with no cmake reads: the cell and media
-manifests and the shared C libraries' recipes. `vibeos-cli check` holds them to the build
-graph: `scan_cargo_manifests` (Rust, tools/vibeos-lint; deferred, it reads build-<arch>/)
-fails while `sdk/lib/rust/cells/<arch>.jsonl` or `boot/media/<arch>.json` disagrees with
-the graph. Its first run found arm64's livecd list a module behind master (netbwfm.inf).
+manifests and the shared C libraries' recipes. They are deliberately NOT gated: they are
+derived from the build graph while cmake still owns cells and CD placement, so a merge
+that adds a cell is stale only once the merged tree is configured, inside the gate itself
+(a lint, `scan_cargo_manifests`, did exactly that and bounced a cold gate for a generated
+file; retired the same day). Instead every consumer reads the live graph when there is
+one (`cell_manifest.current`, `media_manifest.current`), and the committed copies serve a
+build with no graph. `cell_manifest.py --check` / `media_manifest.py --check` report drift
+as added/removed entries.
 
 The manual steps, still there for a wave: build ×3, `--survey`, `--save-baseline DIR`,
 `--apply`, build ×3, `--check DIR`.

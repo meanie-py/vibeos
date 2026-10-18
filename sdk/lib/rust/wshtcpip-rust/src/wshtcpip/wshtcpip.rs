@@ -22,8 +22,11 @@ macro_rules! RTL_CONSTANT_STRING {
         }
     }};
 }
+// `BOOL EXPORT DllMain` with EXPORT = WINAPI (wshtcpip.h). This was `extern "C"`, which on
+// i386 defines `_DllMain` where the CRT calls `_DllMain@12`, so the link bound crt-startup's
+// default DllMain instead and this one never ran (tools/scan_entry_point_cc.py).
 #[no_mangle]
-pub unsafe extern "C" fn DllMain(
+pub unsafe extern "system" fn DllMain(
     hInstDll: HANDLE,
     dwReason: ULONG,
     Reserved: PVOID,

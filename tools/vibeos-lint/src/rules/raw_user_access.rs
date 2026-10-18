@@ -57,11 +57,11 @@ const KEYWORDS: &[&str] = &[
 ];
 
 #[derive(Clone)]
-pub(crate) struct FnDef {
-    pub(crate) function: Function,
+pub(crate) struct FnDef<'a> {
+    pub(crate) function: &'a Function,
     pub(crate) path: PathBuf,
     crate_key: String,
-    pub(crate) raw: Arc<Vec<String>>,
+    pub(crate) raw: Arc<Vec<&'a str>>,
     code: Arc<Vec<String>>,
     first: usize,
     last: usize,
@@ -156,8 +156,8 @@ fn split_params(s: &str) -> Vec<(String, String)> {
         })
         .collect()
 }
-pub(crate) fn parse_file(file: &SourceFile, root: &Path) -> Vec<FnDef> {
-    let raw = file.text.split('\n').map(str::to_owned).collect::<Vec<_>>();
+pub(crate) fn parse_file<'a>(file: &'a SourceFile, root: &Path) -> Vec<FnDef<'a>> {
+    let raw = file.text.split('\n').collect::<Vec<_>>();
     let code = strip_lines(&file.text);
     let raw = Arc::new(raw);
     let code = Arc::new(code);
@@ -178,7 +178,7 @@ pub(crate) fn parse_file(file: &SourceFile, root: &Path) -> Vec<FnDef> {
                 return None;
             }
             Some(FnDef {
-                function: f.clone(),
+                function: f,
                 path: path.clone(),
                 crate_key: crate_key.clone(),
                 raw: raw.clone(),
@@ -189,7 +189,7 @@ pub(crate) fn parse_file(file: &SourceFile, root: &Path) -> Vec<FnDef> {
         })
         .collect()
 }
-fn ptr_params(f: &FnDef) -> Vec<String> {
+fn ptr_params(f: &FnDef<'_>) -> Vec<String> {
     split_params(&f.function.params)
         .into_iter()
         .filter(|(_, t)| POINTER.is_match(t))
@@ -509,7 +509,7 @@ fn field_patterns(name: &str) -> Vec<Regex> {
     .map(|p| custom(p))
     .collect()
 }
-fn walk(fn_def: &FnDef, seed: &HashSet<String>) -> Vec<WalkItem> {
+fn walk(fn_def: &FnDef<'_>, seed: &HashSet<String>) -> Vec<WalkItem> {
     let first = fn_def.first;
     let last = fn_def.last;
     let mut body = fn_def.code[first..=last].join("\n");
@@ -545,6 +545,7 @@ fn walk(fn_def: &FnDef, seed: &HashSet<String>) -> Vec<WalkItem> {
         let Some(raw) = fn_def.raw.get(first + local) else {
             continue;
         };
+        let raw = *raw;
         let rebind = first_assignment(
             &custom(r"^\s*(?:let\s+(?:mut\s+)?)?(\w+)\s*(?::[^=]*)?=\s*(.*)"),
             line,
@@ -571,13 +572,7 @@ fn walk(fn_def: &FnDef, seed: &HashSet<String>) -> Vec<WalkItem> {
                 }
             }
         }
-        if NOLINT.is_match(
-            fn_def
-                .raw
-                .get(first + local)
-                .map(String::as_str)
-                .unwrap_or(raw),
-        ) {
+        if NOLINT.is_match(fn_def.raw.get(first + local).copied().unwrap_or(raw)) {
             continue;
         }
         for (name, pats) in &patterns {
@@ -762,7 +757,7 @@ fn scope_end(text: &str, starts: &[usize], line: usize, name: &str) -> usize {
     }
     usize::MAX
 }
-fn syscall(f: &FnDef) -> bool {
+fn syscall(f: &FnDef<'_>) -> bool {
     if f.function.name == "NtProcessStartup" {
         return false;
     }
@@ -792,7 +787,7 @@ struct FnIndex {
     global: HashMap<String, Vec<usize>>,
 }
 impl FnIndex {
-    fn new(all: &[FnDef]) -> Self {
+    fn new(all: &[FnDef<'_>]) -> Self {
         let mut index = Self {
             local: HashMap::new(),
             global: HashMap::new(),
@@ -814,7 +809,12 @@ impl FnIndex {
         index
     }
 }
-fn resolve<'a>(caller: &FnDef, name: &str, all: &'a [FnDef], index: &FnIndex) -> Option<&'a FnDef> {
+fn resolve<'a, 'f>(
+    caller: &FnDef<'f>,
+    name: &str,
+    all: &'a [FnDef<'f>],
+    index: &FnIndex,
+) -> Option<&'a FnDef<'f>> {
     let local = index
         .local
         .get(&caller.crate_key)
@@ -825,24 +825,24 @@ fn resolve<'a>(caller: &FnDef, name: &str, all: &'a [FnDef], index: &FnIndex) ->
     let global = index.global.get(name)?;
     (global.len() == 1).then(|| &all[global[0]])
 }
-pub(crate) fn walk_hits(f: &FnDef, names: &HashSet<String>) -> Vec<WalkItem> {
+pub(crate) fn walk_hits(f: &FnDef<'_>, names: &HashSet<String>) -> Vec<WalkItem> {
     walk(f, names)
 }
-pub(crate) fn body_code(f: &FnDef) -> String {
+pub(crate) fn body_code(f: &FnDef<'_>) -> String {
     f.code[f.first..=f.last].join("\n")
 }
-pub(crate) fn raw_line(f: &FnDef, line: usize) -> &str {
+pub(crate) fn raw_line<'a>(f: &FnDef<'a>, line: usize) -> &'a str {
     line.checked_sub(1)
         .and_then(|i| f.raw.get(i))
-        .map(String::as_str)
+        .copied()
         .unwrap_or("")
 }
 pub(crate) fn is_skipped(file: &SourceFile) -> bool {
     skip(file)
 }
 fn scan_syscall(
-    f: &FnDef,
-    all: &[FnDef],
+    f: &FnDef<'_>,
+    all: &[FnDef<'_>],
     index: &FnIndex,
 ) -> Vec<(String, String, usize, String, String)> {
     let params = ptr_params(f);
@@ -919,6 +919,24 @@ impl Rule for RawUserAccess {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn function_and_raw_lines_borrow_the_corpus_allocations() {
+        let file = SourceFile::new(
+            "sdk/lib/rust/x-rust/src/a.rs".into(),
+            "unsafe fn item(p: *mut u8) {\n *p = 0;\n}\n".into(),
+        );
+        let root = Path::new("/repo");
+        let functions = parse_file(&file, root);
+        assert_eq!(functions.len(), 1);
+        assert!(std::ptr::eq(
+            functions[0].function,
+            &file.twin_functions(root)[0]
+        ));
+        assert_eq!(functions[0].raw[0].as_ptr(), file.text.as_ptr());
+        assert_eq!(raw_line(&functions[0], 2), " *p = 0;");
+        assert_eq!(raw_line(&functions[0], 4), "");
+    }
+
     #[test]
     fn indexed_offsets_match_prefix_and_line_joining_with_unicode() {
         let text = "α\nsecond\nlast";

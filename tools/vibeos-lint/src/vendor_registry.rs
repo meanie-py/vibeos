@@ -588,31 +588,22 @@ fn blocked(s: &AuditSnapshot, d: &str) -> bool {
 fn skip_suspect(d: &str) -> bool {
     SUSPECT_SKIP.contains(&d)
 }
-fn files_in_dir<'a>(
-    s: &'a AuditSnapshot,
-    d: &str,
-) -> impl Iterator<Item = (&'a String, &'a String)> + 'a {
-    // The inventory is already indexed lexically. Restrict the search to this
-    // directory's prefix instead of visiting every repository file for every
-    // directory. Exclude descendants: the Python oracle uses os.walk filenames.
-    let prefix = if d.is_empty() {
-        String::new()
-    } else {
-        format!("{d}/")
-    };
-    let start = prefix.clone();
-    let directory = d.to_owned();
-    s.files
-        .range(start..)
-        .take_while(move |(p, _)| p.starts_with(&prefix))
-        .filter(move |(p, _)| {
-            let relative = p.rsplit_once('/');
-            match relative {
-                Some((parent, _)) => parent == directory,
-                None => directory.is_empty(),
-            }
-        })
+fn file_names_by_dir(s: &AuditSnapshot) -> BTreeMap<&Path, BTreeSet<String>> {
+    let mut grouped = BTreeMap::<&Path, BTreeSet<String>>::new();
+    for p in s.files.keys() {
+        let path = Path::new(p.as_str());
+        if let Some(parent) = path.parent() {
+            grouped.entry(parent).or_default().insert(
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_lowercase(),
+            );
+        }
+    }
+    grouped
 }
+
 fn suspects(reg: &Registry, s: &AuditSnapshot) -> Vec<(String, usize)> {
     let mut counts = BTreeMap::<String, usize>::new();
     let mut dir_order = Vec::<String>::new();
@@ -824,33 +815,24 @@ fn grant_gaps(
     Vec<(String, usize, String)>,
     BTreeMap<String, (usize, String)>,
 ) {
+    // Group every file by its parent in one pass. Rescanning the whole snapshot
+    // once per walkable directory was quadratic in the tree and took this rule
+    // past pytest's 300 s timeout.
+    let grouped = file_names_by_dir(s);
     let mut by_dir = BTreeMap::<String, BTreeSet<String>>::new();
     by_dir.insert(
         String::new(),
-        files_in_dir(s, "")
-            .map(|(p, _)| {
-                Path::new(p)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_lowercase()
-            })
-            .collect(),
+        grouped.get(Path::new("")).cloned().unwrap_or_default(),
     );
     for d in walkable_dirs(s, "") {
         let root_dir = d.split('/').next().unwrap_or("");
         if skip_suspect(root_dir) || blocked(s, &d) {
             continue;
         }
-        let names = files_in_dir(s, &d)
-            .map(|(p, _)| {
-                Path::new(p)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_lowercase()
-            })
-            .collect();
+        let names = grouped
+            .get(Path::new(d.as_str()))
+            .cloned()
+            .unwrap_or_default();
         by_dir.insert(d, names);
     }
     fn resolve(name: &str, from: &str, by: &BTreeMap<String, BTreeSet<String>>, depth: u8) -> bool {
@@ -1212,14 +1194,18 @@ mod tests {
         ] {
             file(&mut s, p, "");
         }
+        let grouped = file_names_by_dir(&s);
         let names = |d| {
-            files_in_dir(&s, d)
-                .map(|(p, _)| p.as_str())
+            grouped
+                .get(Path::new(d))
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
                 .collect::<Vec<_>>()
         };
-        assert_eq!(names(""), ["COPYING", "src.c"]);
-        assert_eq!(names("src"), ["src/a.c"]);
-        assert_eq!(names("src/sub"), ["src/sub/b.c"]);
+        assert_eq!(names(""), ["copying", "src.c"]);
+        assert_eq!(names("src"), ["a.c"]);
+        assert_eq!(names("src/sub"), ["b.c"]);
         assert!(names("missing").is_empty());
     }
 

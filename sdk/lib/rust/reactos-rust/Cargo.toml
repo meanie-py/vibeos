@@ -18,3 +18,5 @@ strsafe-rust = { path = "../strsafe-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 win32macros-rust = { path = "../win32macros-rust" }
+# spapisup/fileqsup.c #includes usetup's cabinet.c + fileqsup.c: the shared copy.
+spapisup-rust = { path = "../spapisup-rust" }

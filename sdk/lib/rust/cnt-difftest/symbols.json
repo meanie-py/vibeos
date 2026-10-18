@@ -214,7 +214,9 @@
       "differ only by case (\u21920)",
       "high-bit >=0x80 (never folded)",
       "differ at 0",
-      "differ at n-1"
+      "differ at n-1",
+      "NULL s1/s2 with n!=0 (\u2192_NLSCMPERROR)",
+      "NULL with n==0 (\u21920)"
     ]
   },
   "_splitpath": {

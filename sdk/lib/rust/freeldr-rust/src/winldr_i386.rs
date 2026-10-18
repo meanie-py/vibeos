@@ -306,7 +306,7 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
     WinLdrSetupSpecialDataPointers();
 }
 
-unsafe fn MempDump() {
+pub(crate) unsafe fn MempDump() {
     let PDE_Addr: *mut u32 = PDE as *mut u32;
     let mut i: i32;
     let mut j: i32;
