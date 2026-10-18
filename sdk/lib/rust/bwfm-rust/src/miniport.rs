@@ -522,6 +522,8 @@ unsafe fn carry(a: *mut Adapter, bus: &mut Bus<Kernel>, st: &mut Station) -> boo
     let mut log = LinkLog::default();
     let mut frame = [0u8; ETH_FRAME_MAX];
     let deliver = move |eth: &[u8]| indicate(a, eth);
+    // The rekeys and refusals already logged: each new one gets its line.
+    let mut logged = (0u32, 0u32);
     let end = loop {
         if (*a).stopping.load(Ordering::Acquire) {
             break None;
@@ -553,6 +555,16 @@ unsafe fn carry(a: *mut Adapter, bus: &mut Bus<Kernel>, st: &mut Station) -> boo
                 bwprint!("receive failed: {:?}\n", e);
                 busy = false;
             }
+        }
+        if (log.rekeys, log.rejected) != logged {
+            logged = (log.rekeys, log.rejected);
+            bwprint!(
+                "group rekey: {} answered and installed, {} EAPOL refused (last {:?}); {} frames delivered\n",
+                log.rekeys,
+                log.rejected,
+                log.last_reject,
+                log.delivered
+            );
         }
         if !busy && wait(a, IDLE_POLL_MS) {
             break None;

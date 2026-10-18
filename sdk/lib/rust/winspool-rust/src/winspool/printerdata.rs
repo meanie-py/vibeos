@@ -1224,9 +1224,6 @@ pub unsafe extern "system" fn SetPrinterDataExW(mut hPrinter: HANDLE, mut pKeyNa
         cbData,
     )).unwrap_or_else(|code| code as _);
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-    if _SEH2_Volatile0 != 0 || 0 as ::core::ffi::c_int != 0 && 1 as ::core::ffi::c_int != 0 {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-    }
     // RpcEndExcept;
 
     return dwErrorCode;

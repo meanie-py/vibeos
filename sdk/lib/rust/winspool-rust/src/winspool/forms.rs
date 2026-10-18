@@ -101,10 +101,6 @@ pub unsafe extern "system" fn AddFormW(hPrinter: HANDLE, Level: DWORD, pForm: PB
     // RpcTryExcept
     dwErrorCode = rpc_try(|| _RpcAddForm((*pHandle).hPrinter, core::ptr::addr_of_mut!(FormInfoContainer))).unwrap_or_else(|code| code as _);
     // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-    let rpc_exception_raised: bool = false;
-    if rpc_exception_raised {
-        dwErrorCode = RpcExceptionCode!() as DWORD;
-    }
     // RpcEndExcept;
 
     SetLastError(dwErrorCode);

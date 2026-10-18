@@ -8,9 +8,12 @@
 //! every C definition of it VISIBLE to the crate evaluates to the same integer: the
 //! shared headers (`sdk/include/`) plus the C tree of the crate's own module (path
 //! component = crate stem; the kernel subsystem crates map to `ntoskrnl`). That drops
-//! per-arch `#ifdef` variants and a `MAX_CPUS` in some unrelated Wine DLL. The Rust value
-//! is compared at the width of its declared type; a type this rule cannot size is
-//! skipped rather than guessed.
+//! per-arch `#ifdef` variants and a `MAX_CPUS` in some unrelated Wine DLL. A header under
+//! an arch directory (`amd64/mm.h`) is visible only to Rust under the same arch (`i386/`,
+//! `x86/`, `ke_amd64.rs`), and a define inside `#ifdef __ASM__` is what the assembler
+//! sees, not C: ndk/i386/asm.h carries `KMODE_EXCEPTION_NOT_HANDLED 0x13` there while C
+//! gets 0x1E from the generated bugcodes.h. The Rust value is compared at the width of
+//! its declared type; a type this rule cannot size is skipped rather than guessed.
 use crate::{Corpus, Rule};
 use rayon::prelude::*;
 use regex::Regex;
@@ -44,7 +47,7 @@ impl Rule for ShadowedCDefine {
             .par_iter()
             .flat_map_iter(|f| {
                 let scope = crate_scope(&f.path.to_string_lossy());
-                scan_rust(&f.text, &defines, scope.as_deref())
+                scan_rust(&f.text, &defines, scope.as_ref())
                     .into_iter()
                     .map(move |x| format!("{}:{}", f.path.display(), x))
             })
@@ -65,6 +68,13 @@ static C_COMMENTS: LazyLock<Regex> =
 static DEFINE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?m)^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+([^\n]*?)[ \t]*$").unwrap()
 });
+static DIRECTIVE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^[ \t]*#[ \t]*(ifdef|ifndef|if|elif|else|endif)\b(.*)$").unwrap()
+});
+static NOLINT: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"//.*\bnolint:[\w\s,-]*\bshadowed-c-define\b").unwrap());
+static TARGET_ARCH: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r#"target_arch[ \t]*=[ \t]*"(\w+)""#).unwrap());
 static RUST_CONST: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
         r"(?m)^[ \t]*(?:pub(?:\([\w: ]+\))?[ \t]+)?const[ \t]+([A-Za-z_]\w*)[ \t]*:[ \t]*([\w:]+)[ \t]*=[ \t]*([^;]+);",
@@ -75,7 +85,7 @@ static RUST_CONST: LazyLock<Regex> = LazyLock::new(|| {
 /// Every object-like C `#define` with a value all of its definitions agree on.
 pub(crate) struct CDefines {
     raw: HashMap<String, Vec<(String, usize, String)>>,
-    memo: std::sync::Mutex<HashMap<(Option<String>, String), Option<i128>>>,
+    memo: std::sync::Mutex<HashMap<(Option<Scope>, String), Option<i128>>>,
 }
 impl CDefines {
     pub(crate) fn collect<'a>(files: impl Iterator<Item = (&'a str, &'a str)>) -> Self {
@@ -84,20 +94,66 @@ impl CDefines {
             if !text.contains("define") {
                 continue;
             }
-            // Join backslash continuations, then drop comments, keeping line numbers.
-            let joined = text.replace("\\\r\n", "  ").replace("\\\n", " ");
-            let code = C_COMMENTS.replace_all(&joined, |c: &regex::Captures| {
+            // Drop comments keeping newlines, then join backslash continuations into
+            // logical lines that keep the number of their first physical line.
+            let code = C_COMMENTS.replace_all(text, |c: &regex::Captures| {
                 c[0].chars()
                     .map(|ch| if ch == '\n' { '\n' } else { ' ' })
                     .collect::<String>()
             });
-            for c in DEFINE.captures_iter(&code) {
-                let line = code[..c.get(0).unwrap().start()].matches('\n').count() + 1;
-                raw.entry(c[1].to_string()).or_default().push((
-                    path.to_string(),
-                    line,
-                    c[2].to_string(),
-                ));
+            let mut logical: Vec<(usize, String)> = Vec::new();
+            let mut open = false;
+            for (i, l) in code.lines().enumerate() {
+                let l = l.trim_end_matches('\r');
+                let (body, cont) = match l.strip_suffix('\\') {
+                    Some(b) => (b, true),
+                    None => (l, false),
+                };
+                match logical.last_mut() {
+                    Some((_, acc)) if open => {
+                        acc.push(' ');
+                        acc.push_str(body);
+                    }
+                    _ => logical.push((i, body.to_string())),
+                }
+                open = cont;
+            }
+            let mut frames: Vec<Guard> = Vec::new();
+            for (i, l) in logical.iter().map(|(i, l)| (*i, l.as_str())) {
+                if let Some(d) = DIRECTIVE.captures(l) {
+                    let rest = d[2].trim();
+                    let asm = rest.trim_start_matches("defined").trim_matches(['(', ')', ' '])
+                        == "__ASM__";
+                    match &d[1] {
+                        "ifdef" | "if" if asm => frames.push(Guard::Asm),
+                        "ifndef" if asm => frames.push(Guard::NotAsm),
+                        "if" | "ifdef" | "ifndef" => frames.push(Guard::Other),
+                        "else" | "elif" => {
+                            if let Some(top) = frames.last_mut() {
+                                *top = match top {
+                                    Guard::Asm => Guard::NotAsm,
+                                    Guard::NotAsm if &d[1] == "else" => Guard::Asm,
+                                    _ => Guard::Other,
+                                };
+                            }
+                        }
+                        "endif" => {
+                            frames.pop();
+                        }
+                        _ => {}
+                    }
+                    continue;
+                }
+                if frames.contains(&Guard::Asm) {
+                    continue;
+                }
+                if let Some(c) = DEFINE.captures(l) {
+                    raw.entry(c[1].to_string()).or_default().push((
+                        path.to_string(),
+                        i + 1,
+                        c[2].to_string(),
+                    ));
+                }
             }
         }
         Self {
@@ -107,16 +163,16 @@ impl CDefines {
     }
     /// The single value every definition of `name` visible from `scope` evaluates
     /// to, if there is one. `None` scope sees every definition (tests).
-    pub(crate) fn value(&self, name: &str, scope: Option<&str>) -> Option<i128> {
+    pub(crate) fn value(&self, name: &str, scope: Option<&Scope>) -> Option<i128> {
         self.value_inner(name, scope, &mut HashSet::new())
     }
     fn value_inner(
         &self,
         name: &str,
-        scope: Option<&str>,
+        scope: Option<&Scope>,
         active: &mut HashSet<String>,
     ) -> Option<i128> {
-        let key = (scope.map(str::to_string), name.to_string());
+        let key = (scope.cloned(), name.to_string());
         if let Some(v) = self.memo.lock().unwrap().get(&key) {
             return *v;
         }
@@ -154,7 +210,7 @@ impl CDefines {
         self.memo.lock().unwrap().insert(key, result);
         result
     }
-    fn site(&self, name: &str, scope: Option<&str>) -> Option<(&str, usize)> {
+    fn site(&self, name: &str, scope: Option<&Scope>) -> Option<(&str, usize)> {
         self.raw
             .get(name)?
             .iter()
@@ -163,53 +219,118 @@ impl CDefines {
     }
 }
 
+#[derive(PartialEq)]
+enum Guard {
+    Asm,
+    NotAsm,
+    Other,
+}
+
+/// What a Rust file can see of the C tree: its module's path component and its arches.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct Scope {
+    module: String,
+    arches: u8,
+}
+
+const I386: u8 = 1;
+const AMD64: u8 = 2;
+const ARM64: u8 = 4;
+const ARM: u8 = 8;
+const OTHER_ARCH: u8 = 16;
+
+/// The arch a C path is specific to, from an arch directory component.
+fn c_arch(path: &str) -> Option<u8> {
+    path.split('/').find_map(|part| match part {
+        // sdk/include/xdk/x86 is the i386 half; amd64 has its own directory.
+        "i386" | "x86" => Some(I386),
+        "amd64" => Some(AMD64),
+        "arm64" => Some(ARM64),
+        "arm" => Some(ARM),
+        "powerpc" | "ppc" | "mips" => Some(OTHER_ARCH),
+        _ => None,
+    })
+}
+
+/// The arches a Rust file builds for, from its directories and file-name tokens.
+fn rust_arches(path: &str) -> u8 {
+    let mut parts: Vec<&str> = path.split('/').collect();
+    let file = parts.pop().unwrap_or("").trim_end_matches(".rs");
+    let mut bits = 0;
+    for tok in parts.into_iter().chain(file.split('_')) {
+        bits |= match tok {
+            "i386" => I386,
+            "amd64" => AMD64,
+            "x86" => I386 | AMD64,
+            "arm64" | "aarch64" => ARM64,
+            "arm" => ARM,
+            _ => 0,
+        };
+    }
+    if file.contains("x86_64") {
+        bits = (bits & !I386) | AMD64;
+    }
+    bits
+}
+
 /// The C module a Rust crate translates, as a path component: `ex-rust` -> `ntoskrnl`.
-fn crate_scope(path: &str) -> Option<String> {
+fn crate_scope(path: &str) -> Option<Scope> {
     let name = path.strip_prefix("sdk/lib/rust/")?.split('/').next()?;
     let stem = name
         .trim_end_matches("-rust")
         .trim_end_matches("-sys")
         .trim_end_matches("-cargo");
-    Some(
-        match stem {
+    let module = match stem {
             "ntkrnl" | "ntoskrnl" | "ex" | "ps" | "cc" | "ob" | "se" | "iomgr" | "config"
             | "mm" | "ke" | "ke-inlines" | "kernel" | "fsrtl" | "kd64" | "kdbg" | "inbv" | "po"
             | "lpc" | "dbgk" | "wmi" => "ntoskrnl",
             "rtlk" => "rtl",
             "win32k" => "win32ss",
             other => other,
-        }
-        .to_string(),
-    )
+        };
+    Some(Scope {
+        module: module.to_string(),
+        arches: rust_arches(path),
+    })
 }
 
-fn visible(c_path: &str, scope: Option<&str>) -> bool {
-    match scope {
-        None => true,
-        Some(stem) => {
-            c_path.starts_with("sdk/include/") || c_path.split('/').any(|part| part == stem)
-        }
-    }
+fn visible(c_path: &str, scope: Option<&Scope>) -> bool {
+    let Some(s) = scope else { return true };
+    (c_path.starts_with("sdk/include/") || c_path.split('/').any(|part| part == s.module))
+        && c_arch(c_path).is_none_or(|a| s.arches & a != 0)
 }
 
-fn scan_rust(text: &str, defines: &CDefines, scope: Option<&str>) -> Vec<String> {
+fn scan_rust(text: &str, defines: &CDefines, scope: Option<&Scope>) -> Vec<String> {
     let code = crate::lexical::strip_noise(text);
-    let mut locals: HashMap<String, String> = HashMap::new();
+    let raw: Vec<&str> = text.lines().collect();
+    let mut locals: Locals = HashMap::new();
     let mut sites = Vec::new();
     for c in RUST_CONST.captures_iter(&code) {
-        locals.insert(c[1].to_string(), c[3].to_string());
         let line = code[..c.get(0).unwrap().start()].matches('\n').count() + 1;
-        sites.push((c[1].to_string(), c[2].to_string(), c[3].to_string(), line));
+        let (arches, deliberate) = annotations(&raw, line);
+        locals
+            .entry(c[1].to_string())
+            .or_default()
+            .push((arches, c[3].to_string()));
+        if !deliberate {
+            sites.push((c[1].to_string(), c[2].to_string(), c[3].to_string(), line, arches));
+        }
     }
     let mut out = Vec::new();
     let mut seen = BTreeMap::new();
-    for (name, ty, rhs, line) in sites {
+    for (name, ty, rhs, line, arches) in sites {
         let Some(bits) = type_bits(&ty) else { continue };
+        // A `#[cfg(target_arch)]` on the const narrows the file's arches.
+        let narrowed = scope.map(|s| Scope {
+            module: s.module.clone(),
+            arches: if arches != 0 { arches } else { s.arches },
+        });
+        let scope = narrowed.as_ref();
         let Some(c_value) = defines.value(&name, scope) else {
             continue;
         };
         let mut active = HashSet::from([name.clone()]);
-        let Some(r_value) = eval_rust(&rhs, &locals, defines, scope, &mut active) else {
+        let Some(r_value) = eval_rust(&rhs, &locals, arches, defines, scope, &mut active) else {
             continue;
         };
         let mask: i128 = (1i128 << bits) - 1;
@@ -229,21 +350,55 @@ fn scan_rust(text: &str, defines: &CDefines, scope: Option<&str>) -> Vec<String>
     out
 }
 
+/// Each Rust const's definitions, with the arches its `#[cfg]` limits it to (0 = all).
+type Locals = HashMap<String, Vec<(u8, String)>>;
+
+/// The `#[cfg(target_arch)]` arches and the `// nolint: shadowed-c-define (why)` marker
+/// in the attributes and comments directly above a const at 1-based `line`, or on it.
+fn annotations(raw: &[&str], line: usize) -> (u8, bool) {
+    let mut arches = 0;
+    let mut deliberate = raw.get(line - 1).is_some_and(|l| NOLINT.is_match(l));
+    for l in raw[..line.saturating_sub(1).min(raw.len())].iter().rev() {
+        let t = l.trim();
+        if !(t.starts_with("#[") || t.starts_with("//")) {
+            break;
+        }
+        deliberate |= NOLINT.is_match(t);
+        if t.starts_with("#[cfg") && !t.contains("not(") {
+            for c in TARGET_ARCH.captures_iter(t) {
+                arches |= match &c[1] {
+                    "x86" => I386,
+                    "x86_64" => AMD64,
+                    "aarch64" => ARM64,
+                    "arm" => ARM,
+                    _ => OTHER_ARCH,
+                };
+            }
+        }
+    }
+    (arches, deliberate)
+}
+
 fn eval_rust(
     rhs: &str,
-    locals: &HashMap<String, String>,
+    locals: &Locals,
+    arches: u8,
     defines: &CDefines,
-    scope: Option<&str>,
+    scope: Option<&Scope>,
     active: &mut HashSet<String>,
 ) -> Option<i128> {
     eval(
         rhs,
         &mut |id: &str| {
-            if let Some(body) = locals.get(id) {
+            let body = locals.get(id).and_then(|defs| {
+                defs.iter()
+                    .find(|(a, _)| *a == 0 || arches == 0 || a & arches != 0)
+            });
+            if let Some((_, body)) = body {
                 if !active.insert(id.to_string()) {
                     return None;
                 }
-                let v = eval_rust(body, locals, defines, scope, active);
+                let v = eval_rust(body, locals, arches, defines, scope, active);
                 active.remove(id);
                 v
             } else {
@@ -556,15 +711,15 @@ mod tests {
             ("hal/halarm/gic.c", "#define OTHER 1\n"),
         ]);
         let scope = crate_scope("sdk/lib/rust/hal-rust/src/arm64/gic3.rs");
-        assert_eq!(scope.as_deref(), Some("hal"));
-        assert!(scan_rust("const MAX_CPUS: usize = 64;", &d, scope.as_deref()).is_empty());
+        assert_eq!(scope.as_ref().map(|s| s.module.as_str()), Some("hal"));
+        assert!(scan_rust("const MAX_CPUS: usize = 64;", &d, scope.as_ref()).is_empty());
         let d = defs(&[("ntoskrnl/ex/work.c", "#define EX_DELAYED_WORK_THREADS 12\n")]);
         let scope = crate_scope("sdk/lib/rust/ex-rust/src/work.rs");
         assert_eq!(
             scan_rust(
                 "const EX_DELAYED_WORK_THREADS: ULONG = 3;",
                 &d,
-                scope.as_deref()
+                scope.as_ref()
             )
             .len(),
             1
@@ -615,5 +770,57 @@ mod tests {
         )]);
         assert!(scan_rust("const A: u32 = 16;", &d, None).is_empty());
         assert_eq!(scan_rust("const A: u32 = 15;", &d, None).len(), 1);
+    }
+    #[test]
+    fn arch_headers_are_visible_only_to_the_same_arch() {
+        let d = defs(&[
+            ("sdk/include/xdk/amd64/mm.h", "#define PTE_BASE 0xFFFFF68000000000ULL\n"),
+            ("ntoskrnl/include/internal/i386/ke.h", "#define DR_REG_MASK 0x4F\n"),
+        ]);
+        let src = "const PTE_BASE: ULONG = 0xC0000000;\nconst DR_REG_MASK: ULONG = 0xCF;\n";
+        let generic = crate_scope("sdk/lib/rust/hal-rust/src/x86/memory.rs");
+        // x86 is i386|amd64: the amd64 header is visible and disagrees at 32 bits.
+        assert_eq!(scan_rust(src, &d, generic.as_ref()).len(), 1);
+        let i386 = crate_scope("sdk/lib/rust/ntoskrnl-rust/src/ke/i386/exp.rs");
+        let out = scan_rust(src, &d, i386.as_ref());
+        assert_eq!(out.len(), 1);
+        assert!(out[0].contains("DR_REG_MASK"), "{out:?}");
+        let arm = crate_scope("sdk/lib/rust/ntoskrnl-rust/src/ke/bug.rs");
+        assert!(scan_rust(src, &d, arm.as_ref()).is_empty());
+        assert_eq!(rust_arches("ntkrnl-sys/src/inline/ke_amd64.rs"), AMD64);
+    }
+    #[test]
+    fn assembler_only_defines_are_not_c() {
+        let d = defs(&[(
+            "sdk/include/ndk/i386/asm.h",
+            "#ifdef __ASM__\n#define KMODE_EXCEPTION_NOT_HANDLED 0x13\n#ifdef X\n#endif\n#else\n#define B 2\n#endif\n#ifndef __ASM__\n#define C 3\n#endif\n",
+        )]);
+        let src = "const KMODE_EXCEPTION_NOT_HANDLED: ULONG = 0x1E;\nconst B: u32 = 9;\nconst C: u32 = 9;\n";
+        let out = scan_rust(src, &d, None);
+        assert_eq!(out.len(), 2, "{out:?}");
+        assert!(out.iter().all(|l| !l.contains("KMODE")));
+    }
+    #[test]
+    fn cfg_target_arch_selects_the_header_and_the_local() {
+        let d = defs(&[
+            ("sdk/include/xdk/x86/ke.h", "#define KERNEL_STACK_SIZE 12288\n#define KERNEL_LARGE_STACK_COMMIT KERNEL_STACK_SIZE\n"),
+            ("sdk/include/xdk/amd64/ke.h", "#define KERNEL_STACK_SIZE 0xC000\n#define KERNEL_LARGE_STACK_COMMIT KERNEL_STACK_SIZE\n"),
+        ]);
+        let scope = crate_scope("sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs");
+        let src = "#[cfg(target_arch = \"x86_64\")]\npub const KERNEL_STACK_SIZE: usize = 0xC000;\n#[cfg(target_arch = \"x86_64\")]\npub const KERNEL_LARGE_STACK_COMMIT: usize = KERNEL_STACK_SIZE;\n#[cfg(target_arch = \"x86\")]\npub const KERNEL_STACK_SIZE: usize = 12 * 1024;\n#[cfg(target_arch = \"x86\")]\npub const KERNEL_LARGE_STACK_COMMIT: usize = KERNEL_STACK_SIZE;\n";
+        assert!(scan_rust(src, &d, scope.as_ref()).is_empty(), "{:?}", scan_rust(src, &d, scope.as_ref()));
+        let bad = src.replace("12 * 1024", "16 * 1024");
+        let out = scan_rust(&bad, &d, scope.as_ref());
+        assert_eq!(out.len(), 2, "{out:?}");
+        let marked = bad.replace(
+            "#[cfg(target_arch = \"x86\")]\npub const KERNEL_STACK_SIZE",
+            "// nolint: shadowed-c-define (test)\n#[cfg(target_arch = \"x86\")]\npub const KERNEL_STACK_SIZE",
+        );
+        assert_eq!(scan_rust(&marked, &d, scope.as_ref()).len(), 1);
+    }
+    #[test]
+    fn line_numbers_survive_continuations() {
+        let d = defs(&[("a.h", "#define M(x) \\\n  (x) \\\n  + 1\n#define A 5\n")]);
+        assert_eq!(scan_rust("const A: u32 = 6;", &d, None), ["1: shadowed-c-define A rust=6 c=5 (a.h:4)"]);
     }
 }

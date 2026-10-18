@@ -4883,7 +4883,14 @@ static ImageListImpl_Vtbl: IImageList2Vtbl = IImageList2Vtbl {
     ReplaceFromImageList: Some(ImageListImpl_ReplaceFromImageList),
 };
 
-unsafe extern "C" fn is_valid(mut himl: HIMAGELIST) -> BOOL {
+/// The C runs is_valid's reads under `__TRY .. __EXCEPT_PAGE_FAULT { valid = FALSE }`, so a
+/// garbage HIMAGELIST is "invalid", not a fault. DUMMY_PSEH compiled that out of the C;
+/// page_fault_try makes it real (both is_valid and is_valid2).
+unsafe extern "C" fn is_valid(himl: HIMAGELIST) -> BOOL {
+    ntdll_sys::seh::page_fault_try(|| is_valid_unguarded(himl)).unwrap_or(FALSE as BOOL)
+}
+
+unsafe fn is_valid_unguarded(himl: HIMAGELIST) -> BOOL {
     let mut valid: BOOL = 0;
     valid = (!himl.is_null() && (*himl).usMagic == (IMAGELIST_MAGIC) as ULONG) as ::core::ffi::c_int
         as BOOL;
@@ -4906,12 +4913,6 @@ unsafe extern "C" fn is_valid(mut himl: HIMAGELIST) -> BOOL {
                 himl,
             );
         }
-    }
-    if _SEH2_Volatile0 != 0
-        || 0 as ::core::ffi::c_int != 0
-            && _SEH2_VolatileExceptionCode as DWORD == 0xc0000005 as ::core::ffi::c_uint
-    {
-        valid = FALSE as BOOL;
     }
     return valid;
 }
@@ -4962,7 +4963,11 @@ unsafe extern "C" fn IImageList2_from_impl(himl: HIMAGELIST) -> *mut IImageList2
     return core::ptr::null_mut();
 }
 #[no_mangle]
-pub unsafe extern "C" fn is_valid2(mut himl: HIMAGELIST) -> BOOL {
+pub unsafe extern "C" fn is_valid2(himl: HIMAGELIST) -> BOOL {
+    ntdll_sys::seh::page_fault_try(|| is_valid2_unguarded(himl)).unwrap_or(FALSE as BOOL)
+}
+
+unsafe fn is_valid2_unguarded(himl: HIMAGELIST) -> BOOL {
     let mut valid: BOOL = 0;
     valid = (!himl.is_null()
         && (*himl).IImageList2_iface.lpVtbl == &raw const ImageListImpl_Vtbl
@@ -4986,12 +4991,6 @@ pub unsafe extern "C" fn is_valid2(mut himl: HIMAGELIST) -> BOOL {
                 himl,
             );
         }
-    }
-    if _SEH2_Volatile0 != 0
-        || 0 as ::core::ffi::c_int != 0
-            && _SEH2_VolatileExceptionCode as DWORD == 0xc0000005 as ::core::ffi::c_uint
-    {
-        valid = FALSE as BOOL;
     }
     return valid;
 }

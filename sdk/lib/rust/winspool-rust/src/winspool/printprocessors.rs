@@ -127,27 +127,6 @@ pub unsafe extern "system" fn DeletePrintProcessorW(mut pName: PWSTR, mut pEnvir
         pEnvironment as *mut WCHAR,
         pPrintProcessorName as *mut WCHAR,
     )).unwrap_or_else(|code| code as _);
-    if _SEH2_Volatile0 != 0 || 0 as ::core::ffi::c_int != 0 && 1 as ::core::ffi::c_int != 0 {
-        dwErrorCode = _SEH2_VolatileExceptionCode as DWORD;
-        if (*__wine_dbch___default).flags as ::core::ffi::c_int
-            & (1 as ::core::ffi::c_int) << __WINE_DBCL_ERR as ::core::ffi::c_int
-            != 0
-        {
-            let __dbch_0: *mut __wine_debug_channel = __wine_dbch___default;
-            let __dbcl_0: __wine_debug_class = __WINE_DBCL_ERR;
-            ros_dbg_log(
-                __dbcl_0,
-                __dbch_0,
-                b"win32ss/printing/base/winspool/printprocessors.c\0"
-                    as *const u8 as *const ::core::ffi::c_char,
-                b"DeletePrintProcessorW\0" as *const u8 as *const ::core::ffi::c_char,
-                92 as ::core::ffi::c_int,
-                b"_RpcDeletePrintProcessor failed with exception code %lu!\n\0"
-                    as *const u8 as *const ::core::ffi::c_char,
-                dwErrorCode,
-            );
-        }
-    }
     SetLastError(dwErrorCode);
     return (dwErrorCode == ERROR_SUCCESS) as i32;
 }
@@ -180,9 +159,6 @@ pub unsafe extern "system" fn EnumPrintProcessorDatatypesW(pName: PWSTR, pPrintP
 
         // Do the RPC call
         dwErrorCode = rpc_try(|| _RpcEnumPrintProcessorDatatypes(pName, pPrintProcessorName, Level, pDatatypes, cbBuf, pcbNeeded, pcReturned)).unwrap_or_else(|code| code as _);
-        if _SEH2_Volatile0 != 0 {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
 
         if dwErrorCode == ERROR_SUCCESS {
             // Replace relative offset addresses in the output by absolute pointers.
@@ -628,9 +604,6 @@ pub unsafe extern "system" fn GetPrintProcessorDirectoryW(
             )).unwrap_or_else(|code| code as _);
         }
         // RpcExcept(EXCEPTION_EXECUTE_HANDLER)
-        if _SEH2_Volatile0 != 0 {
-            dwErrorCode = RpcExceptionCode!() as DWORD;
-        }
         // RpcEndExcept;
     }
 
