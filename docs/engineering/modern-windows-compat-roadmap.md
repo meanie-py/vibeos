@@ -450,9 +450,27 @@ from us: tlhelp32.h's 64-bit layouts (field manual, "The SDK header can be the w
 runs it.
 
 **Owed on the export surface:**
-- **Modules other apps still need:** `mi` (Docker; WMI's Management Infrastructure, which
-  Wine does not have): in progress as a Rust mi.dll over wbemprox; `sdk/include/psdk/mi.h`
-  is OMI's header, and the function tables were measured on Windows 11. Office: bring it in when the rest is green, it is its own campaign.
+- **Done 2026-10-17: mi.dll**, WMI's Management Infrastructure client (Docker reaches it
+  through the CIM .NET layer, whose native half imports only `mi_clientFT_V1`; Wine has no
+  mi.dll). Written fresh in Rust (`sdk/lib/rust/mi-rust`) over WMI's COM interfaces, against
+  OMI's MI.h (`sdk/include/psdk/mi.h`, tables measured on Windows 11). Every operation runs on
+  its own MTA worker thread, so the client's apartment never matters; results arrive sync
+  (`MI_Operation_GetInstance`) or by callback, with manual acknowledgement.
+  `modules/rostests/apitests/mi` was written against Windows' own mi.dll first (x64 3953
+  checks, x86 3991, 0 failures). Ours passes it on the Windows host over Windows' WMI (x64
+  3984, x86 3999), and in the guest over wbemprox (216, 0 failures). A C# program
+  using `Microsoft.Management.Infrastructure` gives identical output through ours and
+  Windows' (OS query, 484 processes, Docker's `Win32_OptionalFeature` WSL query,
+  `InvalidClass`). What it needed from wbemprox: Win32_OperatingSystem.NumberOfProcesses,
+  and a query for an unknown class failing at the enumerator's first Next, as Windows does
+  (Wine's test had it todo_wine). Completes with MI_RESULT_NOT_SUPPORTED (owed): create/
+  modify/delete, Invoke, associations, subscriptions, GetClass/MI_Class, serializers,
+  hosted providers, remote destinations.
+- **Modules other apps still need:** Office: bring it in when the rest is green, it is its
+  own campaign.
+- **reactos-link puts cargo's hashed bin name in the export directory** of every
+  cargo-linked DLL (`dcomp-4d1aeb251b7d5eac.exe`, `mi-0eb7fbcab8fde2be.exe`): handed to the
+  upstream-sync lane 2026-10-17.
 - **The d3d10/11 family (d2d1, dwrite, dxgi, d3dx10/11) is built at every version**
   (2026-10-17); before, a default build had no d3d11.dll at all. `tools/payloads/d3dwinetest`
   runs Wine's d3d11 and dxgi suites (imported at the DLLs' own sync point, wine-10.1-dev
@@ -492,6 +510,23 @@ runs it.
   reported by `port island` but still not generated.
 - **New partials from the third batch:** iphlpapi change notifications after the
   initial one, IPv6 tables; IDN nameprep without NFKC.
+- **Firmware tables beyond SMBIOS (owed, upstream-sync lane):** `SystemFirmwareTableInformation`
+  (class 76) answers only the `'RSMB'` provider; `'ACPI'` and `'FIRM'` return
+  STATUS_NOT_IMPLEMENTED in ex-rust `QSI_SystemFirmwareTableInformation`. kernel32's
+  version.c does not exercise them, but `GetSystemFirmwareTable('ACPI')` is how programs
+  find the TPM, the battery and whether they run in a VM. RSMB itself returned
+  STATUS_NOT_SUPPORTED until 2026-10-17 (wmi-rust compared the SMBIOS GUID against a
+  guid object declared without its leading KEVENT); it now reaches the provider and
+  answers STATUS_NOT_FOUND, because the kernel never finds an entry point. Measured
+  2026-10-17: SeaBIOS (`-M pc`) leaves a valid `_SM3_` at 0xF52D0, but the kernel's
+  MmMapIoSpace view of 0xF0000-0xFFFFF holds no `_SM`/`RSD PTR` anchor at all (2411
+  non-0xFF bytes in 64 KB) -- the shadowed F-segment is not what reads there after boot,
+  which the HAL never notices because freeldr finds ACPI first. And on UEFI (amd64-uefi,
+  arm64) SMBIOS is only in the EFI configuration table, which nothing passes on:
+  `LOADER_PARAMETER_EXTENSION.SMBiosEPSHeader` (arc.h) is never filled. Owed: have
+  freeldr (pc: real-mode scan, as for ACPI; uefi: SMBIOS/SMBIOS3 config-table GUIDs)
+  record the entry point and copy the table, and WmipGetRawSMBiosTableData use it first.
+  Then kernel32 version.c:741-785 (RSMB) is the check.
 - **Bodies that answer honestly but not fully:** `GetNamedPipeServerProcessId` (npfs has
   no attribute FSCTL); `GetProcessInformation(ProcessMachineTypeInfo)` (no
   NtQuerySystemInformationEx); Get/SetRestrictedErrorInfo stay E_NOTIMPL as in Wine.
@@ -502,7 +537,11 @@ runs it.
   XP fallback. The audit is done (`version-flip-audit.md`, 2026-10-17): we report 5.2 build
   3790 today; 11 checks break at 10.0, starting with three `& 0x3FFF` build masks that turn
   22000 into 5616, and ntdll records the LOWEST supportedOS GUID, which cannot answer the
-  manifest rule.
+  manifest rule. **Phases 1-2 done 2026-10-17** (inert at 5.2): the version-independent
+  breaks are fixed (status in the audit doc's header), ntdll records the HIGHEST declared OS,
+  and kernel32's GetVersion/GetVersionEx/VerifyVersionInfo apply the manifest rule
+  (`min(real, max(6.2, declared))`, 6.2 reports build 9200, 6.3 build 9600; RtlGetVersion
+  stays truthful). Next: phase 3, the flip itself (the D-rows).
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
   applet): exactly one stub is reached, the SEH smoke probe's deliberate

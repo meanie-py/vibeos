@@ -28,6 +28,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import generated_items
+
 BEGIN = "// ==== port macros: the module's own C macros (generated -- `rustconv port macros`) ===="
 END = "// ==== end port macros ===="
 
@@ -338,22 +340,45 @@ def c_source_location(text: str) -> str:
     return re.sub(r"(?<![\w:])NULL(?![\w(])", "core::ptr::null_mut()", text)
 
 
-def render(ported: dict[str, str], macros: dict[str, CMacro]) -> str:
-    out = [BEGIN]
-    ported = {n: c_source_location(t) for n, t in ported.items()}
-    for name in sorted(ported):
+def render_items(ported: dict[str, str], macros: dict[str, CMacro]) -> dict[str, str]:
+    """Each ported item as it stands in the block, `gen:`-stamped (generated_items.py)."""
+    out = {}
+    for name, text in ported.items():
         m = macros[name]
+        text = c_source_location(text)
         if m.kind == "fn":
-            out.append(f"// {m.where}: header-inline `{name}`")
-            out.append("#[allow(dead_code)]")
-            out.append(ported[name])
-            continue
-        out.append(f"// {m.where}: {m.c_text()}")
-        out.append("#[allow(unused_macros)]")
-        out.append(ported[name])
-        out.append(f"#[allow(unused_imports)]\npub(crate) use {name};")
-    out.append(END)
-    return "\n".join(out) + "\n"
+            item = f"// {m.where}: header-inline `{name}`\n#[allow(dead_code)]\n{text}"
+        else:
+            item = (
+                f"// {m.where}: {m.c_text()}\n#[allow(unused_macros)]\n{text}\n"
+                f"#[allow(unused_imports)]\npub(crate) use {name};"
+            )
+        out[name] = generated_items.stamp(item)
+    return out
+
+
+def render(ported: dict[str, str], macros: dict[str, CMacro]) -> str:
+    return render_block(render_items(ported, macros))
+
+
+def render_block(items: dict[str, str]) -> str:
+    return "\n".join([BEGIN, *(items[n] for n in sorted(items)), END]) + "\n"
+
+
+# An item's first line is its `// <file>:<line>: ...` provenance comment (render_items).
+_ITEM_HEAD = re.compile(r"^// [^\s:]+:\d+: ", re.M)
+
+
+def split_block(body: str) -> dict[str, str]:
+    """A block body back into {name: item text}, the inverse of render_items."""
+    starts = [m.start() for m in _ITEM_HEAD.finditer(body)]
+    out = {}
+    for a, b in zip(starts, [*starts[1:], len(body)][: len(starts)], strict=True):
+        item = body[a:b].strip("\n")
+        m = _ITEM.search(item)
+        if m:
+            out[m.group(1) or m.group(2)] = item
+    return out
 
 
 def in_scope_macros(prelude: Path) -> set[str]:

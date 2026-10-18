@@ -68,6 +68,14 @@ HRESULT create_view( enum view_type type, enum wbm_namespace ns, const WCHAR *pa
             free( view );
             return WBEM_E_INVALID_CLASS;
         }
+#ifdef __REACTOS__
+        /* A class the namespace does not have: Windows' semisynchronous ExecQuery still
+           returns S_OK, and the enumerator's first Next returns WBEM_E_INVALID_CLASS
+           (query.c test_query_semisync, todo_wine in Wine). Without it a query for a
+           misspelled class reads as an empty, successful one, and so does MI's. */
+        else if (!table && class)
+            view->status = WBEM_E_INVALID_CLASS;
+#endif
         view->proplist = proplist;
         view->cond     = cond;
         break;

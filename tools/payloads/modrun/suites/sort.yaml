@@ -1,6 +1,8 @@
 # sort (base/applications/cmdutils/sort -> sort-rust, batch C). The shipped Rust diffed
 # against the pre-flip C (`python -m rustconv.c_oracle`). ReactOS sort reads stdin only:
-# a file argument is ignored by the C, so every case feeds stdin.
+# a file argument is ignored by the C, so every case feeds stdin. Not covered: the C cut the
+# last character of a final line with no newline (fixed in the Rust), but modrun ends every
+# stdin line with CRLF, and `cmd /c sort < file` hangs under modrun's detached launch.
 module: sort
 variants:
   c: '%SystemRoot%\bin\modrun\sort_c.exe'

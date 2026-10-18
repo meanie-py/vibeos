@@ -376,7 +376,7 @@
            *audit_info = core::ptr::null_mut();
            *audit_info = object_name_info;
            *big_pages = (*entry).NumberOfPages as ULONG_PTR;
-           *build_number = NtBuildNumber & 0x3FFF;
+           *build_number = NtBuildNumber & 0xFFFF;
            *change_stamp = 0;
            *connect_message = (reply_message as usize + core::mem::size_of::<_LPCP_MESSAGE>()) as PLPCP_CONNECTION_MESSAGE;
            *count = 0;

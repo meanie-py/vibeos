@@ -507,7 +507,8 @@ pub unsafe extern "system" fn MmCreatePeb(
 
     (*Peb).OSMajorVersion = NtMajorVersion;
     (*Peb).OSMinorVersion = NtMinorVersion;
-    (*Peb).OSBuildNumber = (NtBuildNumber & 0x3FFF) as USHORT;
+    // Windows 10+ masks the build with 0xFFFF; the old 0x3FFF turns build 22000 (0x55F0) into 5616.
+    (*Peb).OSBuildNumber = (NtBuildNumber & 0xFFFF) as USHORT;
     (*Peb).OSPlatformId = VER_PLATFORM_WIN32_NT;
     (*Peb).OSCSDVersion = CmNtCSDVersion as USHORT;
 

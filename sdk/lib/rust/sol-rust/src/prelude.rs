@@ -70,7 +70,7 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const CW_USEDEFAULT: INT = 0x8000_0000u32 as INT; // comctl32-rust/src/prelude.rs
-pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY; // access-rust/src/prelude.rs
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY; // access-rust/src/prelude.rs
 pub const IDC_ARROW: LPCWSTR = 32512usize as LPCWSTR; // comctl32-rust/src/prelude.rs
 pub const King: eValue = eValue_King; // island enum
 pub const NULL_BRUSH: u32 = 5; // access-rust/src/types_amd64.rs

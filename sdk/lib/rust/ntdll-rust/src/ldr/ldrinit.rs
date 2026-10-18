@@ -84,6 +84,10 @@ pub struct ReactOS_ShimData {
     pub dwMagic: u32,
     pub dwReserved2: [u32; 242],
     pub dwRosProcessCompatVersion: u32,
+    // compat_undoc.h has this on amd64. Without it the size (and `dwSize`) is 12 bytes
+    // short there, so the block apphelp's `ShimData` fills was rejected by the dwSize check.
+    #[cfg(target_arch = "x86_64")]
+    pub RtlGetCurrentDirectory_U_RtlpMsysDecoy: *mut core::ffi::c_void,
 }
 
 // COMPAT_GUID_* — process-compat manifest GUIDs (ldrinit.c file-scope #defines).
@@ -1695,9 +1699,14 @@ pub unsafe extern "system" fn LdrpInitializeProcessCompat(
         return;
     }
 
-    cur = (KnownCompatGuids.len() as DWORD).wrapping_sub(1);
+    // Divergence from the C, which walks from Vista up and so records the LOWEST
+    // supportedOS the manifest declares: a manifest normally lists Vista through Win10 and
+    // came out as 0x0600, which can say nothing about whether the process declared Win10.
+    // Windows keys its version behaviour (GetVersionEx's manifest rule, api-set choice) on
+    // the HIGHEST declared OS, so walk from Win10 down and record the first match.
+    cur = 0;
     loop {
-        if cur == DWORD::MAX {
+        if cur as usize >= KnownCompatGuids.len() {
             break;
         }
         n = 0;
@@ -1739,7 +1748,7 @@ pub unsafe extern "system" fn LdrpInitializeProcessCompat(
             }
             n += 1;
         }
-        cur = cur.wrapping_sub(1);
+        cur += 1;
     }
 }
 #[no_mangle]

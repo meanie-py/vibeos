@@ -181,6 +181,9 @@ struct view
     struct table **table;
     UINT result_count;
     UINT *result;
+#ifdef __REACTOS__
+    HRESULT status;                         /* reported by the first IEnumWbemClassObject::Next */
+#endif
 };
 
 struct query

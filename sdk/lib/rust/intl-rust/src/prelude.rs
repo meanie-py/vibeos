@@ -200,10 +200,10 @@ pub use crate::types::{GetWindowLongW as GetWindowLongPtr, SetWindowLongW as Set
 
 // ================= constants bindgen could not fold ===========================================
 // Each is a #define whose body is a CAST or an expression, which bindgen does not always emit.
-pub const HKEY_CLASSES_ROOT: HKEY = 0x80000000u32 as usize as HKEY;
-pub const HKEY_CURRENT_USER: HKEY = 0x80000001u32 as usize as HKEY;
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x80000002u32 as usize as HKEY;
-pub const HKEY_USERS: HKEY = 0x80000003u32 as usize as HKEY;
+pub const HKEY_CLASSES_ROOT: HKEY = 0x8000_0000u32 as i32 as isize as HKEY;
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
+pub const HKEY_USERS: HKEY = 0x8000_0003u32 as i32 as isize as HKEY;
 pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE; // winbase.h `(HANDLE)(-1)`
 pub const HWND_BROADCAST: HWND = 0xffffusize as HWND; // winuser.h `((HWND)0xffff)`
 pub const UNICODE_NULL: WCHAR = 0; // ntdef.h `((WCHAR)0)`

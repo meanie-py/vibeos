@@ -556,7 +556,12 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
         # An extern DATA symbol: the island's declaration is the header's own transcript. It
         # outranks a crate's `const GUID_NULL: GUID = ..` copy, which is not the symbol.
         voters = [i for i in statics if _is_bindgen(i.path)] or statics
-        types = {re.sub(r"\s+", "", i.text.split(":", 1)[1]) for i in voters}
+        # guiddef.h's IID/CLSID/FMTID are typedefs of GUID: shell32 declares IID_IDropTarget
+        # as IID in some files and GUID in others, which is one type, not a disagreement.
+        types = {
+            re.sub(r"\b(?:IID|CLSID|FMTID)\b", "GUID", re.sub(r"\s+", "", i.text.split(":", 1)[1]))
+            for i in voters
+        }
         if len(types) != 1:
             return None, f"extern static type disagreement ({len(types)} types)"
         return _most_common(voters), ""

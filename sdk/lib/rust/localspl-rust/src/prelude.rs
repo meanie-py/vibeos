@@ -68,7 +68,7 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 pub const DsRolePrimaryDomainInfoBasic: _DSROLE_PRIMARY_DOMAIN_INFO_LEVEL = _DSROLE_PRIMARY_DOMAIN_INFO_LEVEL_DsRolePrimaryDomainInfoBasic; // island enum
 pub const DsRole_RoleMemberServer: _DSROLE_MACHINE_ROLE = _DSROLE_MACHINE_ROLE_DsRole_RoleMemberServer; // island enum
 pub const DsRole_RoleMemberWorkstation: _DSROLE_MACHINE_ROLE = _DSROLE_MACHINE_ROLE_DsRole_RoleMemberWorkstation; // island enum
-pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY; // console-rust/src/prelude.rs
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY; // console-rust/src/prelude.rs
 pub const HWND_BROADCAST: HWND = 0xffffusize as HWND; // desk-rust/src/prelude.rs
 pub const INVALID_FILE_ATTRIBUTES: DWORD = 0xFFFFFFFF; // kernel32-rust/src/file/fileinfo.rs
 pub const NameSamCompatible: EXTENDED_NAME_FORMAT = EXTENDED_NAME_FORMAT_NameSamCompatible; // island enum

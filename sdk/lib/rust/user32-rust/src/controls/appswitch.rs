@@ -51,7 +51,7 @@ const WC_SWITCH: PCWSTR = 0x8003 as PCWSTR;
 type REGSAM = u32;
 const CW_USEDEFAULT: INT = 0x8000_0000u32 as INT;
 const HWND_TOP: HWND = core::ptr::null_mut();
-const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as HKEY;
+const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
 
 // ReleaseCapture/ReleaseDC/SwitchToThisWindow forward to their NtUserx* multiplexers
 // (keeps the C call sites — and the 1u8/1 fAltTab args — intact via BOOL coercion).

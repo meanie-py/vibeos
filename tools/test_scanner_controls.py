@@ -134,6 +134,21 @@ class Control:
 
 # ── fixtures, each seeded from a real incident ───────────────────────────────
 
+# scan_hkey_zero_extend. Seeded from the ~14 preludes found 2026-10-10 (winlogon's preamble,
+# iphlpapi's prelude): a predefined key cast through usize/u32 is 0x0000000080000002 on
+# 64-bit where winreg.h's `(LONG)` makes it 0xFFFFFFFF80000002. GOOD: the sign-extending
+# chain, and an unrelated 0x8000_0002 that is not a HKEY.
+_HKEY_ZERO_EXTEND_BAD = """
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002usize as HKEY;
+const HKEY_USERS: HKEY = 0x80000003u32 as usize as HKEY;
+unsafe fn f() { RegOpenKeyExW(0x80000001 as HKEY, k, 0, KEY_READ, &mut h); }
+"""
+_HKEY_ZERO_EXTEND_GOOD = """
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
+const HKEY_USERS: HKEY = 0x80000003u32 as ::core::ffi::c_int as isize as HKEY;
+const STATUS_GUARD_PAGE_VIOLATION: NTSTATUS = 0x8000_0001u32 as NTSTATUS;
+"""
+
 # scan_override_self_dispatch. Seeded from mspaint 2026-10-16: SmoothDrawTool::OnEndDraw's
 # `ToolBase::OnEndDraw(bCancel)` dispatched back into itself. GOOD: the base's own body, and
 # the same virtual called on ANOTHER object (a member), which is an ordinary virtual call.
@@ -789,6 +804,25 @@ pub unsafe fn f(irp: *mut u8) {
     );
 }
 """
+# scan_entry_point_cc. Seeded from wshtcpip (2026-10-17): an `extern "C"` DllMain defines
+# `_DllMain` on i386 where crt-startup calls `_DllMain@12`, so the module's own never runs.
+_ENTRYCC_BAD = """\
+#[no_mangle]
+pub unsafe extern "C" fn DllMain(hInstDll: HANDLE, dwReason: ULONG, Reserved: PVOID) -> BOOL {
+    1
+}
+"""
+_ENTRYCC_GOOD = """\
+#[no_mangle]
+pub unsafe extern "system" fn DllMain(hInstDll: HANDLE, dwReason: ULONG, Reserved: PVOID) -> BOOL {
+    1
+}
+#[no_mangle]
+pub unsafe extern "C" fn CreateShellLink() -> i32 {
+    0
+}
+"""
+
 _FNABI_GOOD = """\
 pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> = Some(InitFrontEnd);
@@ -3021,6 +3055,13 @@ CONTROLS: list[Control] = [
         good={"good.rs": _BITWISE_NOT_GOOD},
     ),
     Control(
+        name="scan_hkey_zero_extend",
+        script="tools/scan_hkey_zero_extend.py",
+        argv=["--lint"],
+        bad={"bad.rs": _HKEY_ZERO_EXTEND_BAD},
+        good={"good.rs": _HKEY_ZERO_EXTEND_GOOD},
+    ),
+    Control(
         name="scan_override_self_dispatch",
         script="tools/scan_override_self_dispatch.py",
         argv=["--lint"],
@@ -3181,6 +3222,12 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _FNABI_BAD, "bad_typed.rs": _FNABI_BAD_TYPED},
         good={"good.rs": _FNABI_GOOD},
+    ),
+    Control(
+        name="scan_entry_point_cc",
+        script="tools/vibeos-lint/src/rules/entry_point_cc.rs",
+        bad={"bad.rs": _ENTRYCC_BAD},
+        good={"good.rs": _ENTRYCC_GOOD},
     ),
     Control(
         name="scan_cdecl_alias",

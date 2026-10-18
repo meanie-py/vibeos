@@ -571,7 +571,7 @@ pub unsafe extern "C" fn SaveWorkstationInfo(Level: u32) {
 
 
     dwError = RegOpenKeyExW(
-        0x80000002 as HKEY,
+        HKEY_LOCAL_MACHINE,
         w!("System\\CurrentControlSet\\Services\\LanmanWorkstation\\Parameters"),
         0,
         KEY_WRITE,

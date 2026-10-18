@@ -44,6 +44,10 @@ pub static mut pkill_size: DWORD = 0;
 #[no_mangle]
 pub static mut self_pid: DWORD = 0;
 
+/// How many of pkill_list's leading entries were NAMED on the command line; the rest are
+/// children that /T queued after them.
+static mut pkill_roots: DWORD = 0;
+
 static mut opList: [PWCHAR; 5] = unsafe {
     [
         RUSTCONV_C2R_WSTR_9EE4EE67ED95.as_ptr()
@@ -219,7 +223,9 @@ unsafe extern "C" fn enumerate_processes() -> BOOL {
     process_list = malloc(
         (alloc_count as usize).wrapping_mul(::core::mem::size_of::<C2RustUnnamed_11>() as usize),
     ) as *mut C2RustUnnamed_11;
+    // Every failure below closes the snapshot; the C leaked it on each one.
     if process_list.is_null() {
+        CloseHandle(snapshot);
         return (FALSE) as BOOL;
     }
     (*process_list.offset(0 as isize)).p.dwSize =
@@ -229,6 +235,7 @@ unsafe extern "C" fn enumerate_processes() -> BOOL {
         &raw mut (*process_list.offset(0 as isize)).p,
     ) == 0
     {
+        CloseHandle(snapshot);
         return (FALSE) as BOOL;
     }
     loop {
@@ -243,6 +250,7 @@ unsafe extern "C" fn enumerate_processes() -> BOOL {
                 (alloc_count as usize).wrapping_mul(::core::mem::size_of::<C2RustUnnamed_11>() as usize),
             );
             if realloc_list.is_null() {
+                CloseHandle(snapshot);
                 return (FALSE) as BOOL;
             }
             process_list = realloc_list as *mut C2RustUnnamed_11;
@@ -267,6 +275,10 @@ unsafe extern "C" fn mark_task_process(str: *const WCHAR, status_code: *mut i32)
     let mut i: u32;
     let mut pid: DWORD;
     let mut at_not_found: bool = false;
+    // Divergence from the C, whose not-found test was `pkill_size == 0` -- the size of the
+    // list for the WHOLE command line, so `/IM a.exe /IM nosuch.exe` never reported the
+    // second name. Only what this argument queued counts.
+    let queued_before: DWORD = pkill_size;
     is_numeric = (TRUE) as i32;
     while *p != 0 {
         let fresh = p;
@@ -324,7 +336,7 @@ unsafe extern "C" fn mark_task_process(str: *const WCHAR, status_code: *mut i32)
             i = i.wrapping_add(1);
         }
         // Cannot find any process matching the PID or name
-        if pkill_size == 0 {
+        if pkill_size == queued_before {
             at_not_found = true;
         }
     }
@@ -459,7 +471,9 @@ unsafe extern "C" fn send_close_messages() -> ::core::ffi::c_int {
                 &raw mut info as LPARAM,
             );
             if info.found != 0 {
-                if kill_child_processes != 0 {
+                // A named process is not anyone's child: the C printed "child of" for every
+                // entry once /T was given, the roots included.
+                if kill_child_processes != 0 && index >= pkill_roots {
                     taskkill_message_printfW(
                         (STRING_CLOSE_CHILD as i32),
                         info.pid,
@@ -498,7 +512,8 @@ unsafe extern "C" fn terminate_processes() -> ::core::ffi::c_int {
             taskkill_message_print_process((STRING_SEARCH_FAILED as i32), i);
             status_code = 128 as ::core::ffi::c_int;
         } else if TerminateProcess(process, 1 as UINT) == 0 {
-            if kill_child_processes != 0 {
+            // Roots are not children (see send_close_messages).
+            if kill_child_processes != 0 && index >= pkill_roots {
                 taskkill_message_printfW(
                     (STRING_TERM_CHILD_FAILED as i32),
                     pid,
@@ -510,7 +525,7 @@ unsafe extern "C" fn terminate_processes() -> ::core::ffi::c_int {
             status_code = 1 as ::core::ffi::c_int;
             CloseHandle(process);
         } else {
-            if kill_child_processes != 0 {
+            if kill_child_processes != 0 && index >= pkill_roots {
                 taskkill_message_printfW(
                     (STRING_TERM_CHILD as i32),
                     pid,
@@ -729,6 +744,7 @@ pub unsafe extern "C" fn wmain(argc: c_int, argv: *mut *mut WCHAR) -> c_int {
         mark_task_process(*task_list.offset(i as isize), core::ptr::addr_of_mut!(search_status));
         i = i.wrapping_add(1);
     }
+    pkill_roots = pkill_size;
     if kill_child_processes != 0 {
         mark_child_processes();
     }
@@ -737,5 +753,12 @@ pub unsafe extern "C" fn wmain(argc: c_int, argv: *mut *mut WCHAR) -> c_int {
     } else {
         terminate_status = send_close_messages();
     }
+    // The C never freed its three lists. task_list's entries are argv's, not ours.
+    free(pkill_list as *mut c_void);
+    pkill_list = core::ptr::null_mut();
+    free(process_list as *mut c_void);
+    process_list = core::ptr::null_mut();
+    free(task_list as *mut c_void);
+    task_list = core::ptr::null_mut();
     return if search_status != 0 { search_status } else { terminate_status };
 }
