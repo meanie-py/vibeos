@@ -18,6 +18,7 @@
 #include <shlwapi.h>
 #include <prsht.h>
 #include <stdio.h>
+#include <string.h>
 
 static const CLSID CLSID_Page = {0x513D916F, 0x2A8E, 0x4F51, {0xAE, 0xAB, 0x0C, 0xBC, 0x76, 0xFB, 0x1A, 0xF8}};
 
@@ -204,13 +205,27 @@ int main(void)
     CoInitialize(NULL);
     InitCommonControls();
 
-    /* The subject: a copy of this probe on a local fixed disk (AllowPermLayer refuses the CD).
-       One directory per variant: both copy themselves to app.exe, and the second copy over
-       the first's failed, so the variants did not even start from the same fixture. */
-    lstrcpyW(dir, L"C:\\modrun_acp_");
-    lstrcatW(dir, PathFindFileNameW(self));
-    PathRemoveExtensionW(dir);
-    CreateDirectoryW(dir, NULL);
+    /* The subject: a copy of this probe on a local disk (AllowPermLayer refuses the CD), in
+       the first candidate that takes a write: C: is writable on the amd64 and i386 media but
+       not on arm64's. One directory per variant: both copy themselves to app.exe, and the
+       second copy over the first's failed, so the variants did not start from one fixture.
+       The label (never the path) is printed; both variants of one arch pick the same. */
+    WCHAR cands[3][MAX_PATH];
+    const char *labels[3] = {"c root", "temp", "personal"};
+    lstrcpyW(cands[0], L"C:\\");
+    GetTempPathW(MAX_PATH, cands[1]);
+    SHGetSpecialFolderPathW(NULL, cands[2], CSIDL_PERSONAL, FALSE);
+    const char *picked = "none";
+    for (int c = 0; c < 3 && !strcmp(picked, "none"); c++)
+    {
+        lstrcpyW(dir, cands[c]);
+        PathAppendW(dir, L"modrun_acp_");
+        lstrcatW(dir, PathFindFileNameW(self));
+        PathRemoveExtensionW(dir);
+        if (CreateDirectoryW(dir, NULL) || GetLastError() == ERROR_ALREADY_EXISTS)
+            picked = labels[c];
+    }
+    printf("subject dir %s\n", picked);
     lstrcpyW(exe, dir);
     PathAppendW(exe, L"app.exe");
     lstrcpyW(txt, dir);
