@@ -71,6 +71,25 @@ DEAD_IMPORTS = {
     # The engine archives the shim objects, so whether lld keeps it varies by arch.
     "sndvol32": {"kernel32.dll!FormatMessageW"},
 }
+_SPEC_IMPORT_ENTRY = re.compile(r"^\s*(?:\d+|@)\s+\w+\s+(?:-\S+\s+)*?-import\b(?:\s+-\S+)*\s+(\w+)", re.M)
+
+
+_SPEC_SELF_TARGET = re.compile(r"^\s*(?:\d+|@)\s+\w+\s+(?:-\S+\s+)*(\w+)\([^)]*\)\s+(\w+)\s*$", re.M)
+
+
+def _spec_imported_exports(spec: Path) -> set[str]:
+    """Names a .spec exports with `-import`: spec2def binds them to the import thunk of the
+    same name, so the DLL re-exports another DLL's function (imagehlp -> dbghelp)."""
+    if not spec.is_file():
+        return set()
+    text = spec.read_text(errors="replace")
+    # ...and an entry naming ITSELF as its target (`SymEnumSourceFiles(..) SymEnumSourceFiles`):
+    # spec2def emits `NAME=NAME`, which the link satisfies from whichever import library
+    # provides it when the module defines no such function.
+    same = {m.group(1) for m in _SPEC_SELF_TARGET.finditer(text) if m.group(1) == m.group(2)}
+    return set(_SPEC_IMPORT_ENTRY.findall(text)) | same
+
+
 # Modules whose cmake link bound an EXPORT to an import thunk of the same name, which the
 # cell fixes by linking the body first. user32_vista (2026-10-17): its `dpi.c` was an object
 # in the C link, so it won; the cohab flip moved it into an archive that loses to user32's
@@ -1631,8 +1650,11 @@ def model(target: str, repo: Path = REPO) -> Cell:
     if len(set(subs.values())) > 1 and not all(subs.values()):
         raise GenError(f"{target}: subsystem set on some arches only {subs}")
     panics = {a: carries_panic_handler(repo / f"build-{a}" / links[a].output) for a in ARCHES}
+    # A spec entry marked `-import` IS an export bound to an import thunk, on purpose:
+    # imagehlp re-exports dbghelp's EnumerateLoadedModules & co. that way.
+    spec_imports = _spec_imported_exports(repo / spec[0]) if spec else set()
     for a in ARCHES:
-        bound = _exports_bound_to_imports(repo / f"build-{a}" / links[a].output)
+        bound = _exports_bound_to_imports(repo / f"build-{a}" / links[a].output) - spec_imports
         if bound and not bound <= REBOUND_EXPORTS.get(target, set()):
             # user32_vista: cmake's link resolved its exports to user32's import thunks
             # before it reached the body, so the Rust is never linked and the DLL only

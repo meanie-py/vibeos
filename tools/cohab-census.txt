@@ -1071,6 +1071,7 @@ dll/win32/comctl32/CMakeLists.txt	1	# tooltips.c # replaced by Rust (sdk/lib/rus
 dll/win32/comctl32/CMakeLists.txt	1	# trackbar.c # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/trackbar.rs)
 dll/win32/comctl32/CMakeLists.txt	1	# treeview.c # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/treeview.rs)
 dll/win32/comctl32/CMakeLists.txt	1	# updown.c # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/updown.rs)
+dll/win32/credui/CMakeLists.txt	1	# credui_main.c # replaced by Rust (sdk/lib/rust/credui-rust/src/credui/credui_main.rs)
 dll/win32/crtdll/CMakeLists.txt	1	# advapi32: the shared CRT's rand_s calls SystemFunction036 (RtlGenRandom). dllmain.c used to
 dll/win32/crtdll/CMakeLists.txt	1	# dllmain.c is msvcrt-crt-rust src/legacy.rs (CRTDLL_* names, which crtdll.spec maps).
 dll/win32/dbghelp/CMakeLists.txt	1	# elf_module.c
@@ -1111,6 +1112,10 @@ dll/win32/ifmon/CMakeLists.txt	1	# ifmon.c # replaced by Rust (sdk/lib/rust/ifmo
 dll/win32/ifmon/CMakeLists.txt	1	# interface.c # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/interface.rs)
 dll/win32/ifmon/CMakeLists.txt	1	# ip.c # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/ip.rs)
 dll/win32/ifmon/CMakeLists.txt	1	# winsock.c # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/winsock.rs)
+dll/win32/imagehlp/CMakeLists.txt	1	# access.c # replaced by Rust (sdk/lib/rust/imagehlp-rust/src/imagehlp/access.rs)
+dll/win32/imagehlp/CMakeLists.txt	1	# imagehlp_main.c # replaced by Rust (sdk/lib/rust/imagehlp-rust/src/imagehlp/imagehlp_main.rs)
+dll/win32/imagehlp/CMakeLists.txt	1	# integrity.c # replaced by Rust (sdk/lib/rust/imagehlp-rust/src/imagehlp/integrity.rs)
+dll/win32/imagehlp/CMakeLists.txt	1	# modify.c # replaced by Rust (sdk/lib/rust/imagehlp-rust/src/imagehlp/modify.rs)
 dll/win32/iphlpapi/CMakeLists.txt	1	# (DeepSeek V4-pro), except iphlpapi_fakestubs.c whose 16 Pf* bodies are byte-identical stubs
 dll/win32/iphlpapi/CMakeLists.txt	1	# STILL C (correctly): only the generated iphlpapi_stubs.c. `wine` stays linked for
 dll/win32/iphlpapi/CMakeLists.txt	1	# add_pch kept for the remaining C files; iphlpapi_rust_shims.c is SKIPPED (freestanding, and the
@@ -1422,6 +1427,7 @@ dll/win32/oleaut32/CMakeLists.txt	1	# usrmarshal.c — replaced by Rust (oleaut3
 dll/win32/oleaut32/CMakeLists.txt	1	# varformat.c — replaced by Rust (oleaut32-rust varformat.rs — VarFormat* family/VarTokenizeFormatString/VarMonthName/VarWeekdayName; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# variant.c — replaced by Rust (oleaut32-rust variant.rs — VariantInit/Clear/Copy/Change + arithmetic; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# vartype.c — replaced by Rust (oleaut32-rust vartype.rs — VarXxxFromYyy coercion matrix, 253 exports; full)
+dll/win32/pdh/CMakeLists.txt	1	# pdh_main.c # replaced by Rust (sdk/lib/rust/pdh-rust/src/pdh/pdh_main.rs)
 dll/win32/psapi/CMakeLists.txt	1	# The DLL target is all Rust too: main.c's DllMain is psapi-rust's `dllmain` feature
 dll/win32/psapi/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/main.rs)
 dll/win32/psapi/CMakeLists.txt	1	# psapi.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/psapi.rs)
@@ -1797,6 +1803,7 @@ dll/win32/wshtcpip/CMakeLists.txt	1	# wshtcpip.c)
 dll/win32/wsock32/CMakeLists.txt	1	# deterministically (zero paid API calls). stubs.c is commented out below and kept on disk
 dll/win32/wsock32/CMakeLists.txt	1	# stubs.c
 dll/win32/wsock32/CMakeLists.txt	1	# stubs.c → wsock32-rust
+dll/win32/wtsapi32/CMakeLists.txt	1	# wtsapi32.c # replaced by Rust (sdk/lib/rust/wtsapi32-rust/src/wtsapi32/wtsapi32.rs)
 dll/win32/xinput1_3/CMakeLists.txt	1	# Wine 11.19's HID implementation (dlls/xinput1_3/main.c); xinput1_4 builds the same
 dll/win32/xinput1_4/CMakeLists.txt	1	# XInputGetCapabilitiesEx (#108) and XInputGetAudioDeviceIds (#10, audio.c) are 1_4 only.
 drivers/base/beep/CMakeLists.txt	1	# beep.c is translated to Rust (sdk/lib/rust/beep-rust, kept on disk per the
