@@ -2272,6 +2272,14 @@ Three kinds of divergence hide in that, and they are not equally serious:
   wrong pointer type, and 44 parameters the translator had renamed `_riid`, `_This` — because
   with every use swallowed, they really did look unused. A `$($t:tt)*` debug macro is a dropped
   print AND an unchecked expression; use the shared crate.
+- **The module's own header redefines the macro, and the port took the SDK's spelling.**
+  `winddi.h:2816` says `FLOATOBJ_GetFloat(pf)` is `(*(PULONG)(pf))` (the bits, for an i386
+  kernel where `FLOATL` is `DWORD`); `win32ss/pch.h:90` redefines it as `(*(pf))` for win32k.
+  win32k-rust followed winddi.h on amd64/arm64, where `FLOATL` is `FLOAT`, so the bits were
+  converted as a NUMBER: every `GetWorldTransform` read `1.0` as `1065353216.0` (raw
+  `0x4e7e0000` for `0x3f800000`; dwrite font.c:1397). Before porting a macro, grep the
+  module's precompiled header and local headers for a `#define` of the same name — the last
+  definition the TU sees wins.
 - **Not a gap at all — the island HAS it, under a name nobody guessed.** A C `enum` member is
   emitted by bindgen, but only fully qualified by its anonymous enum's generated tag:
   shobjidl.h's `FVM_ICON` exists in shell32's island solely as
@@ -7969,6 +7977,10 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   places the C uses the field offset, so every name `ObQueryNameString` built for a file
   object was two characters short. Process image names read `svchost.e`, which also blinded a
   harness looking for `setup.exe`. Spell it `offset_of!(T, Field)`, never a number.
+  Nor `size_of::<T>()`: wmi-rust's `HeaderSize` for `MSSmBios_RawSMBiosTables` was `size_of`
+  (12, the `[UCHAR; 1]` tail padded) where the C says `FIELD_OFFSET(..., SMBiosData)` (8), so
+  every `'RSMB'` table carried four stray bytes before the first structure. An allocation
+  that over-sizes this way is harmless; an offset that does is a shifted payload.
 - **Cast-before-offset**: `(ptr as *T).offset(1)` overshoots by the size delta → heap overrun.
   **A ZST-array pointer `.add()`** steps 0 bytes.
 - **A dangling pointer to a by-value `transmute` temporary** — the WCHAR[] → storageless-

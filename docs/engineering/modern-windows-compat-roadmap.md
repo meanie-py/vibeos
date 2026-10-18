@@ -510,14 +510,16 @@ runs it.
   reported by `port island` but still not generated.
 - **New partials from the third batch:** iphlpapi change notifications after the
   initial one, IPv6 tables; IDN nameprep without NFKC.
-- **Firmware tables beyond SMBIOS (owed, upstream-sync lane):** `SystemFirmwareTableInformation`
-  (class 76) answers only the `'RSMB'` provider; `'ACPI'` and `'FIRM'` return
-  STATUS_NOT_IMPLEMENTED in ex-rust `QSI_SystemFirmwareTableInformation`. kernel32's
-  version.c does not exercise them, but `GetSystemFirmwareTable('ACPI')` is how programs
-  find the TPM, the battery and whether they run in a VM. RSMB works on every arch since
-  2026-10-17 (kernel32 version.c 120/0 on amd64-uefi, amd64-bios, i386, arm64): the loader
-  hands the kernel a copy of the SMBIOS entry point and table in
-  `LOADER_PARAMETER_EXTENSION.SMBiosEPSHeader`, as Windows' does.
+- **Firmware tables (`SystemFirmwareTableInformation`, class 76):** `'RSMB'` and `'ACPI'` work;
+  `'FIRM'` is still STATUS_NOT_IMPLEMENTED in ex-rust `QSI_SystemFirmwareTableInformation`
+  (owed, upstream-sync lane; it hands out raw 0xC0000/0xE0000 BIOS memory, so it waits on the
+  F-segment question below). `GetSystemFirmwareTable('ACPI')` is how programs find the TPM,
+  the battery and whether they run in a VM: it lists every table the XSDT/RSDT names plus the
+  DSDT, and fetches the first table with a given signature, reached through the loader's
+  "ACPI BIOS" configuration node. RSMB works on every arch since 2026-10-17: the loader hands
+  the kernel a copy of the SMBIOS entry point and table in
+  `LOADER_PARAMETER_EXTENSION.SMBiosEPSHeader`, as Windows' does. `tools/payloads/fwprobe`
+  checks both providers (every ACPI table's checksum, the RSMB header against its payload).
 - **Open question from that work:** after boot, the kernel's `MmMapIoSpace` view of the
   BIOS F-segment (0xF0000-0xFFFFF) holds none of what SeaBIOS left there -- no `_SM3_`
   (host dump: valid at 0xF52D0) and no `RSD PTR`, 2411 non-0xFF bytes in 64 KB. The

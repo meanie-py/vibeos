@@ -214,7 +214,9 @@ pub unsafe extern "system" fn WmipGetRawSMBiosTableData(
     let OutTableData = opaque_ptr(OutTableData);
     let OutDataSize = opaque_ptr(OutDataSize);
     const SearchSize: SIZE_T = 0x10000;
-    const HeaderSize: ULONG = core::mem::size_of::<MSSmBios_RawSMBiosTables>() as ULONG;
+    // FIELD_OFFSET(..., SMBiosData) in the C, not sizeof: the [UCHAR; 1] tail pads the struct to
+    // 12, which put four stray bytes between the 8-byte header and the first SMBIOS structure.
+    const HeaderSize: ULONG = core::mem::offset_of!(MSSmBios_RawSMBiosTables, SMBiosData) as ULONG;
     let mut PhysicalAddress: PHYSICAL_ADDRESS = core::mem::zeroed();
     let EntryPointMapping: *mut UCHAR;
     let mut BiosTablesHeader: MSSmBios_RawSMBiosTables = core::mem::zeroed();
