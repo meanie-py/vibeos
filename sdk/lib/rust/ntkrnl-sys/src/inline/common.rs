@@ -31,13 +31,8 @@ pub const ICIF_QUERY_SIZE_VARIABLE: u16 = 0x4;
 pub const ICIF_SET_SIZE_VARIABLE: u16 = 0x8;
 pub const ICIF_SIZE_VARIABLE: u16 = ICIF_QUERY_SIZE_VARIABLE | ICIF_SET_SIZE_VARIABLE;
 
-// The `Flags` ARGUMENT of DefaultQueryInfoBufferCheck: a second namespace that
-// reuses 0x1/0x2. Every caller takes these from here. The translations had each
-// invented their own (3, 0x10, 0x200|0x400) while this consumer tested 0x20, so
-// NtQueryInformationToken's forced ReturnLength probe never fired.
-pub const ICIF_PROBE_READ_WRITE: ULONG = 0x0;
-pub const ICIF_PROBE_READ: ULONG = 0x1;
-pub const ICIF_FORCE_RETURN_LENGTH_PROBE: ULONG = 0x2;
+// The `Flags` ARGUMENT of DefaultQueryInfoBufferCheck; see constants.rs.
+pub use crate::constants::{ICIF_FORCE_RETURN_LENGTH_PROBE, ICIF_PROBE_READ, ICIF_PROBE_READ_WRITE};
 
 // Pool tag 'USTR' in little-endian byte order
 const TAG_USTR: u32 = u32::from_le_bytes(*b"USTR");
