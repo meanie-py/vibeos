@@ -16,6 +16,7 @@ mod inventory;
 pub use inventory::SourceSet;
 pub mod lexical;
 mod line_cursor;
+mod line_index;
 pub mod link_model;
 pub mod module_inputs;
 pub mod modules;
@@ -23,6 +24,7 @@ pub mod regexes;
 pub mod rules;
 pub mod syntax;
 mod syntax_cache;
+mod text_cache;
 pub mod twins;
 
 use rayon::prelude::*;
@@ -84,15 +86,14 @@ pub struct SourceFile {
     syntax_cache: Option<(Arc<syntax_cache::Cache>, usize)>,
     twin_functions: OnceLock<Vec<twins::Function>>,
     scopes: u8,
-    noise: OnceLock<Arc<str>>,
-    lines: Vec<usize>,
-    views: Mutex<HashMap<(String, Option<String>, bool), Arc<OnceLock<Arc<str>>>>>,
+    noise: Mutex<Weak<String>>,
+    lines: OnceLock<line_index::LineIndex>,
+    text_cache: Arc<text_cache::Cache>,
+    views: Mutex<HashMap<(String, Option<String>, bool), Arc<Mutex<Weak<String>>>>>,
 }
 
 impl SourceFile {
     pub fn new(path: PathBuf, text: String) -> Self {
-        let mut lines = vec![0];
-        lines.extend(text.match_indices('\n').map(|(at, _)| at + 1));
         Self {
             path,
             text,
@@ -106,8 +107,9 @@ impl SourceFile {
             syntax_cache: None,
             twin_functions: OnceLock::new(),
             scopes: u8::MAX,
-            noise: OnceLock::new(),
-            lines,
+            noise: Mutex::new(Weak::new()),
+            lines: OnceLock::new(),
+            text_cache: Arc::new(text_cache::Cache::new(text_cache::DEFAULT_BYTE_LIMIT)),
             views: Mutex::new(HashMap::new()),
         }
     }
@@ -162,9 +164,9 @@ impl SourceFile {
     }
 
     /// Legacy rules disagree about which lexemes to mask and about whether
-    /// offsets count UTF-8 bytes or Unicode characters. Cache each exact view;
-    /// equivalent users share its allocation and never tokenize it again.
-    pub fn masked(&self, regex: &Regex, cutoff: Option<&str>, characters: bool) -> Arc<str> {
+    /// offsets count UTF-8 bytes or Unicode characters. Share each exact view
+    /// while live, with bounded retention between consumers.
+    pub fn masked(&self, regex: &Regex, cutoff: Option<&str>, characters: bool) -> Arc<String> {
         // Absent cutoff markers leave the entire input intact. On ASCII input,
         // character and byte masking also produce exactly the same view. Reuse
         // one allocation for these equivalent legacy scanner configurations.
@@ -185,10 +187,15 @@ impl SourceFile {
             let mut views = self.views.lock().unwrap();
             views
                 .entry(key)
-                .or_insert_with(|| Arc::new(OnceLock::new()))
+                .or_insert_with(|| Arc::new(Mutex::new(Weak::new())))
                 .clone()
         };
-        slot.get_or_init(|| {
+        let mut weak = slot.lock().expect("masked view cache poisoned");
+        if let Some(text) = weak.upgrade() {
+            self.text_cache.retain(&text);
+            return text;
+        }
+        let text = Arc::new(
             regex
                 .replace_all(raw, |caps: &regex::Captures<'_>| {
                     let text = caps.get(0).unwrap().as_str();
@@ -202,36 +209,49 @@ impl SourceFile {
                             .collect::<String>()
                     }
                 })
-                .into_owned()
-                .into()
-        })
-        .clone()
+                .into_owned(),
+        );
+        *weak = Arc::downgrade(&text);
+        self.text_cache.retain(&text);
+        text
     }
 
-    pub fn rust_noise(&self) -> &str {
-        self.noise
-            .get_or_init(|| lexical::strip_noise(&self.text).into())
+    pub fn rust_noise(&self) -> Arc<String> {
+        let mut weak = self.noise.lock().expect("noise cache poisoned");
+        if let Some(text) = weak.upgrade() {
+            self.text_cache.retain(&text);
+            return text;
+        }
+        let text = Arc::new(lexical::strip_noise(&self.text));
+        *weak = Arc::downgrade(&text);
+        self.text_cache.retain(&text);
+        text
+    }
+
+    fn line_index(&self) -> &line_index::LineIndex {
+        self.lines
+            .get_or_init(|| line_index::LineIndex::new(&self.text))
     }
 
     pub fn line(&self, byte: usize) -> usize {
-        self.lines.partition_point(|&at| at <= byte)
+        self.line_index().line(byte)
     }
 
     pub fn line_text(&self, line: usize) -> &str {
-        let Some(&start) = line.checked_sub(1).and_then(|i| self.lines.get(i)) else {
+        let Some(start) = line.checked_sub(1).and_then(|i| self.line_index().get(i)) else {
             return "";
         };
-        let end = self.lines.get(line).copied().unwrap_or(self.text.len());
+        let end = self.line_index().get(line).unwrap_or(self.text.len());
         self.text[start..end].trim_end_matches(['\r', '\n'])
     }
 
     /// Zero-based line with exactly `str::lines()` ending semantics.
     pub fn source_line(&self, row: usize) -> Option<&str> {
-        let start = *self.lines.get(row)?;
+        let start = self.line_index().get(row)?;
         if start == self.text.len() {
             return None;
         }
-        let end = self.lines.get(row + 1).copied().unwrap_or(self.text.len());
+        let end = self.line_index().get(row + 1).unwrap_or(self.text.len());
         let line = &self.text[start..end];
         Some(match line.strip_suffix('\n') {
             Some(line) => line.strip_suffix('\r').unwrap_or(line),
@@ -244,6 +264,7 @@ pub struct Corpus {
     pub root: PathBuf,
     pub files: Vec<SourceFile>,
     syntax_cache: Arc<syntax_cache::Cache>,
+    text_cache: Arc<text_cache::Cache>,
     explicit_paths: Vec<PathBuf>,
     c_signature_asts: OnceLock<BTreeMap<String, Result<serde_json::Value, String>>>,
     twins: OnceLock<twins::CIndex>,
@@ -305,8 +326,13 @@ impl Corpus {
         for file in &self.files {
             text_bytes += file.text.len();
             raw_bytes += file.raw.as_ref().map_or(0, |raw| raw.len());
-            line_bytes += file.lines.capacity() * std::mem::size_of::<usize>();
-            noise_bytes += file.noise.get().map_or(0, |text| text.len());
+            line_bytes += file.lines.get().map_or(0, line_index::LineIndex::bytes);
+            noise_bytes += file
+                .noise
+                .lock()
+                .unwrap()
+                .upgrade()
+                .map_or(0, |text| text.len());
             if let Some(functions) = file.twin_functions.get() {
                 twin_bytes += functions
                     .iter()
@@ -318,7 +344,7 @@ impl Corpus {
                 tree_nodes += tree.root_node().descendant_count();
             }
             for ((pattern, cutoff, characters), slot) in file.views.lock().unwrap().iter() {
-                if let Some(text) = slot.get() {
+                if let Some(text) = slot.lock().unwrap().upgrade() {
                     *views
                         .entry(format!(
                             "{pattern}; cutoff={cutoff:?}; characters={characters}"
@@ -330,11 +356,13 @@ impl Corpus {
         let cache = self.syntax_cache.stats();
         tree_count += cache["retained_trees"].as_u64().unwrap() as usize;
         tree_nodes += cache["retained_nodes"].as_u64().unwrap() as usize;
-        serde_json::json!({"source_text_bytes": text_bytes, "additional_raw_bytes": raw_bytes, "line_index_capacity_bytes": line_bytes, "noise_bytes": noise_bytes, "rust_twin_payload_bytes": twin_bytes, "retained_rust_trees": tree_count, "retained_rust_tree_nodes": tree_nodes, "masked_view_bytes": views, "c_signature_arches": self.c_signature_asts.get().map_or(0, |asts| asts.len()), "syntax_cache": cache})
+        serde_json::json!({"source_text_bytes": text_bytes, "additional_raw_bytes": raw_bytes, "line_index_capacity_bytes": line_bytes, "noise_bytes": noise_bytes, "rust_twin_payload_bytes": twin_bytes, "retained_rust_trees": tree_count, "retained_rust_tree_nodes": tree_nodes, "masked_view_bytes": views, "c_signature_arches": self.c_signature_asts.get().map_or(0, |asts| asts.len()), "syntax_cache": cache, "text_cache": self.text_cache.stats()})
     }
     pub fn new(root: PathBuf, mut files: Vec<SourceFile>) -> Self {
         let syntax_cache = Arc::new(syntax_cache::Cache::new(syntax_cache::DEFAULT_NODE_LIMIT));
+        let text_cache = Arc::new(text_cache::Cache::new(text_cache::DEFAULT_BYTE_LIMIT));
         for (index, file) in files.iter_mut().enumerate() {
+            file.text_cache = text_cache.clone();
             file.syntax_cache = Some((syntax_cache.clone(), index));
             if let Some(Ok(tree)) = file.rust_tree.take() {
                 *file
@@ -348,6 +376,7 @@ impl Corpus {
             root,
             files,
             syntax_cache,
+            text_cache,
             explicit_paths: Vec::new(),
             c_signature_asts: OnceLock::new(),
             twins: OnceLock::new(),
@@ -1044,6 +1073,47 @@ pub fn execute(
 mod tests {
     use super::*;
     #[test]
+    fn masked_views_survive_eviction_and_rebuild_with_identical_unicode_offsets() {
+        let mut file = SourceFile::new("u.rs".into(), "/*é*/ x\nEND tail".into());
+        file.text_cache = Arc::new(text_cache::Cache::new(1));
+        let regex = Regex::new(r"/\*.*?\*/").unwrap();
+        for characters in [false, true] {
+            let first = file.masked(&regex, Some("END"), characters);
+            let expected = first.to_string();
+            let weak = Arc::downgrade(&first);
+            std::thread::scope(|scope| {
+                let readers: Vec<_> = (0..4)
+                    .map(|_| scope.spawn(|| file.masked(&regex, Some("END"), characters)))
+                    .collect();
+                for reader in readers {
+                    assert!(Arc::ptr_eq(&first, &reader.join().unwrap()));
+                }
+            });
+            assert_eq!(file.text_cache.stats()["retained_bytes"], 0);
+            drop(first);
+            assert!(weak.upgrade().is_none());
+            assert_eq!(
+                file.masked(&regex, Some("END"), characters).as_str(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn noise_releases_after_consumers_finish_and_rebuilds_identically() {
+        let mut file =
+            SourceFile::new("noise.rs".into(), "/*é*/ fn x() { let s = \"猫\"; }".into());
+        file.text_cache = Arc::new(text_cache::Cache::new(0));
+        let first = file.rust_noise();
+        let expected = first.to_string();
+        assert!(Arc::ptr_eq(&first, &file.rust_noise()));
+        let weak = Arc::downgrade(&first);
+        drop(first);
+        assert!(weak.upgrade().is_none());
+        assert_eq!(file.rust_noise().as_str(), expected);
+    }
+
+    #[test]
     fn equivalent_ascii_mask_views_share_the_same_allocation() {
         let file = SourceFile::new("a.rs".into(), "/* comment */ fn item() {}".into());
         let regex = Regex::new(r"/\*.*?\*/").unwrap();
@@ -1115,6 +1185,7 @@ mod tests {
         let initial = corpus.cache_stats();
         assert_eq!(initial["retained_rust_trees"], 0);
         assert_eq!(initial["noise_bytes"], 0);
+        assert_eq!(initial["line_index_capacity_bytes"], 0);
         assert_eq!(initial["masked_view_bytes"], serde_json::json!({}));
         let file = &corpus.files[0];
         let tree = file.rust_tree().unwrap();
@@ -1122,7 +1193,9 @@ mod tests {
         assert!(Arc::ptr_eq(&tree, &file.rust_tree().unwrap()));
         let masked = file.masked(&Regex::new(r"/\*.*?\*/").unwrap(), None, false);
         assert_eq!(masked.len(), file.text.len());
+        assert_eq!(file.line(5), 1);
         let observed = corpus.cache_stats();
+        assert_eq!(observed["line_index_capacity_bytes"], 8);
         assert_eq!(observed["retained_rust_tree_nodes"], nodes);
         assert_eq!(observed["syntax_cache"]["successful_parses"], 1);
         assert_eq!(observed["noise_bytes"], 0);
