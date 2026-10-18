@@ -510,21 +510,20 @@ runs it.
   reported by `port island` but still not generated.
 - **New partials from the third batch:** iphlpapi change notifications after the
   initial one, IPv6 tables; IDN nameprep without NFKC.
-- **Firmware tables (`SystemFirmwareTableInformation`, class 76):** `'RSMB'` and `'ACPI'` work;
-  `'FIRM'` is still STATUS_NOT_IMPLEMENTED in ex-rust `QSI_SystemFirmwareTableInformation`
-  (owed, upstream-sync lane; it hands out raw 0xC0000/0xE0000 BIOS memory, so it waits on the
-  F-segment question below). `GetSystemFirmwareTable('ACPI')` is how programs find the TPM,
-  the battery and whether they run in a VM: it lists every table the XSDT/RSDT names plus the
-  DSDT, and fetches the first table with a given signature, reached through the loader's
-  "ACPI BIOS" configuration node. RSMB works on every arch since 2026-10-17: the loader hands
-  the kernel a copy of the SMBIOS entry point and table in
-  `LOADER_PARAMETER_EXTENSION.SMBiosEPSHeader`, as Windows' does. `tools/payloads/fwprobe`
-  checks both providers (every ACPI table's checksum, the RSMB header against its payload).
-- **Open question from that work:** after boot, the kernel's `MmMapIoSpace` view of the
-  BIOS F-segment (0xF0000-0xFFFFF) holds none of what SeaBIOS left there -- no `_SM3_`
-  (host dump: valid at 0xF52D0) and no `RSD PTR`, 2411 non-0xFF bytes in 64 KB. The
-  loader still reads it correctly. Anything else that maps the F-segment after boot (a
-  driver reading the BIOS data area or option ROMs) sees the same; not investigated.
+- **Firmware tables (`SystemFirmwareTableInformation`, class 76):** all three providers
+  Windows has. `'ACPI'` lists every table the XSDT/RSDT names plus the DSDT and fetches the
+  first table with a given signature, reached through the loader's "ACPI BIOS" configuration
+  node; it is how programs find the TPM, the battery and whether they run in a VM. `'RSMB'`
+  works on every arch since 2026-10-17: the loader hands the kernel a copy of the SMBIOS entry
+  point and table in `LOADER_PARAMETER_EXTENSION.SMBiosEPSHeader`, as Windows' does. `'FIRM'`
+  returns the 0xC0000 and 0xE0000 legacy regions (128 KB each) on x86 and lists nothing on
+  arm64. `tools/payloads/fwprobe` checks all three on every boot, including a true SeaBIOS
+  one: RSDP and `_SM_` found in the E/F segment, reset vector `ea 5b e0 00 f0`.
+- **Resolved: "the kernel sees an empty F-segment after boot."** It was never the kernel.
+  `smoke --arch amd64-bios --payload X` ran the payload under OVMF (the payload stage mapped
+  the base arch to amd64-uefi), so the "BIOS" view was a UEFI machine's, which has no
+  anchors there. Fixed in smoke.py; before 2026-10-17 no amd64-bios payload verdict, the
+  kernel32 version.c one included, was a BIOS boot.
 - **Bodies that answer honestly but not fully:** `GetNamedPipeServerProcessId` (npfs has
   no attribute FSCTL); `GetProcessInformation(ProcessMachineTypeInfo)` (no
   NtQuerySystemInformationEx); Get/SetRestrictedErrorInfo stay E_NOTIMPL as in Wine.

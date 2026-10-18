@@ -5,6 +5,7 @@
  * 'ACPI': Enumerate lists every table the XSDT/RSDT names plus the DSDT; Get on each
  * returns the whole table: its own signature, Length equal to the bytes returned, and a
  * byte sum of zero. A FACP must be listed, and so must the DSDT it points at.
+ * 'FIRM': the 0xC0000 and 0xE0000 regions, 128 KB each, on x86 (none elsewhere).
  * Verdict: "[FWPROBE] done VERDICT=PASS|FAIL". */
 #define _WIN32_WINNT 0x0601
 #include <windows.h>
@@ -172,10 +173,75 @@ static void probe_acpi(void)
         FAIL("ACPI get of an absent table", SIG('N', 'O', 'P', 'E'), 1, 0);
 }
 
+/* 'FIRM': the legacy BIOS regions as raw memory, IDs 0xC0000 and 0xE0000, 128 KB each, on x86
+ * only. A BIOS boot keeps its RSDP and SMBIOS anchors in the E/F segment, so finding them (with
+ * a valid RSDP checksum) shows the kernel maps the real memory there; a UEFI boot has none. */
+static void probe_firm(void)
+{
+    DWORD ids[8];
+    UINT bytes = EnumSystemFirmwareTables(PROVIDER('F', 'I', 'R', 'M'), ids, sizeof(ids));
+    UINT i, len, off;
+    BYTE *t;
+#if defined(__i386__) || defined(__x86_64__)
+    if (bytes != 2 * sizeof(DWORD) || ids[0] != 0xC0000 || ids[1] != 0xE0000)
+    {
+        FAIL("FIRM enumerate bytes", PROVIDER('F', 'I', 'R', 'M'), bytes, 2 * sizeof(DWORD));
+        return;
+    }
+#else
+    if (bytes != 0)
+        FAIL("FIRM enumerate bytes", PROVIDER('F', 'I', 'R', 'M'), bytes, 0);
+    return;
+#endif
+    for (i = 0; i < 2; i++)
+    {
+        t = fetch(PROVIDER('F', 'I', 'R', 'M'), ids[i], &len);
+        if (!t || len != 0x20000)
+        {
+            FAIL("FIRM get length", ids[i], len, 0x20000);
+            if (t)
+                HeapFree(GetProcessHeap(), 0, t);
+            continue;
+        }
+        for (off = 0; off + 20 <= len; off += 16)
+        {
+            if (!memcmp(t + off, "RSD PTR ", 8))
+            {
+                BYTE sum = 0;
+                UINT k;
+                for (k = 0; k < 20; k++)
+                    sum += t[off + k];
+                SAY("FIRM %05lx: RSD PTR at %05lx, checksum %s\n", ids[i], ids[i] + off, sum ? "BAD" : "ok");
+                if (sum)
+                    FAIL("FIRM RSDP checksum", ids[i], sum, 0);
+            }
+            else if (!memcmp(t + off, "_SM3_", 5) || !memcmp(t + off, "_SM_", 4))
+                SAY("FIRM %05lx: %.4s anchor at %05lx\n", ids[i], t + off, ids[i] + off);
+        }
+        {
+            /* What the region holds, for comparing against a physical read of the same
+             * addresses: the reset vector at 0xFFFF0 and a sample at 0xF52D0. */
+            UINT ff = 0;
+            for (off = 0; off < len; off++)
+                ff += t[off] == 0xff;
+            SAY("FIRM %05lx: %u of %u bytes are 0xFF\n", ids[i], ff, len);
+            if (ids[i] == 0xE0000)
+            {
+                const BYTE *r = t + 0x1fff0, *q = t + 0x152d0;
+                SAY("FIRM ffff0:  %02x %02x %02x %02x %02x %02x %02x %02x\n", r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
+                SAY("FIRM f52d0:  %02x %02x %02x %02x %02x %02x %02x %02x\n", q[0], q[1], q[2], q[3], q[4], q[5], q[6], q[7]);
+            }
+        }
+        HeapFree(GetProcessHeap(), 0, t);
+    }
+    SAY("FIRM: 2 regions of 128 KB\n");
+}
+
 int main(void)
 {
     probe_rsmb();
     probe_acpi();
+    probe_firm();
     SAY("done VERDICT=%s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
     return failures;
 }
