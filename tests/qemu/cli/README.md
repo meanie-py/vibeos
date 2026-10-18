@@ -471,14 +471,32 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   command/owner, queue and execution duration, exit code, 100 ms process-tree RSS
   samples, kernel `wait4` peak RSS, CPU time, and host memory PSI before/after.
   RSS samples may miss short peaks and double-count shared pages; `wait4` is
-  the largest-process high-water mark, not a simultaneous tree peak. Cache-client
-  measurements are explicitly partial: persistent cache-daemon compiler memory
-  is not attributed to the client. All observations can raise future reservations
+  the largest-process high-water mark, not a simultaneous tree peak. Local sccache
+  workers are discovered on the configured sccache endpoint, matched through an
+  exact per-request environment marker and included
+  once alongside the client tree. The shared server itself and remote workers are
+  excluded. `cache_worker_pids` reports how many worker PIDs were observed;
+  `cache_scan_denied` reports denied environment reads (including transient exec
+  restrictions and inaccessible workers). Zero observed workers may
+  mean a short invocation, not necessarily a cache hit. Discovery starts after
+  100 ms so short cache hits avoid scanning the process table. All observations can raise reservations
   (peak plus 25% and 64 MiB), never lower the conservative defaults.
   Profiles use command arguments and working directory with repository roots
   normalized; memory history is advisory, not a build artifact. Metrics rotate
   at 64 MiB, retaining one previous file. Compiler exit wakes the sampler
   immediately, so short jobs do not wait for the next 100 ms sample.
+- **Measure builds and lint together with `build-bench`.** For example,
+  `./vibeos-cli build-bench --arches i386 amd64 arm64 --repeat 2` runs the build
+  matrix alongside early source checks, then runs deferred source and architecture
+  checks after the artifacts exist. Add `--clean` for clean build outputs; it does
+  **not** clear shared compiler caches. A clean committed tree is required, and
+  input changes fail the benchmark. This measures resource use, not boot correctness.
+  Summaries and per-child artifacts live under `.cache/build-bench/` by default
+  (`--output` selects a new summary path). Independent `/proc` samples stream every
+  200 ms to JSONL with host memory, OOM counters and CPU/memory/I/O PSI. Compare
+  elapsed times and minimum available memory with the recorded build policy,
+  environment and cache statistics in child build summaries. Host samples include
+  other lanes; repeat on comparable host load before claiming a speedup.
 - **Concurrency is safe to over-submit.** Each smoke is a `vibeos-cli smoke`
   subprocess that self-throttles on the host boot-CPU pool (`hostlock` `bootcpu`,
   capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap

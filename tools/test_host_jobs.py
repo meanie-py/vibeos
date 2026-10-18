@@ -2,7 +2,9 @@
 
 import json
 import os
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -128,3 +130,69 @@ def test_environment_preserves_cache_and_reports_explicit_policy(runner, tmp_pat
     assert int(env["VIBEOS_HOST_JOB_SLOTS"]) == 18
     assert int(env["VIBEOS_HOST_CPU_LEASES"]) == 6
     assert hostjobs.status(REPO)["cpu_slots"] == 18
+
+
+@pytest.mark.skipif(shutil.which("sccache") is None, reason="optional sccache integration")
+def test_sccache_worker_attribution_preserves_hits(runner, tmp_path):
+    # Private socket/server/cache: never stop or reset the fleet's server.
+    # Short socket path also avoids the Unix socket path-length limit in pytest dirs.
+    with tempfile.TemporaryDirectory(prefix="host-jobs-cache-") as socket_dir:
+        env = dict(
+            os.environ,
+            SCCACHE_SERVER_UDS=f"{socket_dir}/server.sock",
+            SCCACHE_DIR=str(tmp_path / "cache"),
+            VIBEOS_HOSTLOCK_DIR=str(tmp_path / "locks"),
+            VIBEOS_HOST_JOB_SLOTS="2",
+        )
+        for key in ("SCCACHE_SERVER_PORT", "VIBEOS_HOST_JOB_HELD", "SCCACHE_RECACHE"):
+            env.pop(key, None)
+        source = tmp_path / "probe.rs"
+        source.write_text(
+            "\n".join(
+                f"#[no_mangle] pub fn probe_{i}(x:u64)->u64 {{ x.wrapping_mul({i}) }}"
+                for i in range(10000)
+            )
+        )
+        rustc = run(["rustup", "which", "rustc"], REPO, env).strip()
+        command = [
+            str(runner),
+            "--kind",
+            "compile",
+            "--",
+            "sccache",
+            rustc,
+            "--crate-name",
+            "memory_probe",
+            "--crate-type",
+            "rlib",
+            "--emit=dep-info,link",
+            "-C",
+            "opt-level=1",
+            str(source),
+            "--out-dir",
+            str(tmp_path),
+        ]
+        try:
+            run(command, REPO, env)
+            artifact = tmp_path / "libmemory_probe.rlib"
+            first = artifact.read_bytes()
+            artifact.unlink()  # prove the second request restores output
+            run(command, REPO, env)
+            assert artifact.read_bytes() == first
+            stats = json.loads(
+                run(["sccache", "--show-stats", "--stats-format", "json"], REPO, env)
+            )["stats"]
+            assert stats["cache_misses"]["counts"]["Rust"] == 1
+            assert stats["cache_hits"]["counts"]["Rust"] == 1
+            rows = [
+                json.loads(line)
+                for line in (tmp_path / "locks/job-metrics.jsonl").read_text().splitlines()
+            ]
+            assert rows[0]["cache_worker_pids"] > 0
+            assert rows[0]["sampled_tree_peak_kib"] > rows[0]["wait4_maxrss_kib"] * 2
+            # /proc environ can be unreadable during exec or for other workers.
+            # This is explicitly partial sampling; the deterministic daemon test
+            # covers an inaccessible worker and ensures it isn't charged.
+            assert all(isinstance(row["cache_scan_denied"], int) for row in rows)
+        finally:
+            run(["sccache", "--stop-server"], REPO, env)
