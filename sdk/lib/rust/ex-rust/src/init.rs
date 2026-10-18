@@ -753,6 +753,7 @@ unsafe fn ExpInitSystemPhase0() -> BOOLEAN {
     ExpInitLookasideLists();
     InitializeListHead(core::ptr::addr_of_mut!(ExpFirmwareTableProviderListHead));
     ExInitializeResourceLite(core::ptr::addr_of_mut!(ExpFirmwareTableResource));
+    crate::sysinfo::ExpCaptureAcpiRootTable();
     ExInitializeResourceLite(core::ptr::addr_of_mut!(ExpTimeRefreshLock));
     ExSuiteMask = 0xFFFFFFFF;
     1u8

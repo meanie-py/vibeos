@@ -49,9 +49,12 @@ extern "system" {
 #[inline(always)] pub unsafe fn FLOATOBJ_SetFloat(pf: *mut FLOATOBJ, f: FLOATL) { *pf = f; }
 #[cfg(not(target_arch = "x86"))]
 #[inline(always)] pub unsafe fn FLOATOBJ_SetLong(pf: *mut FLOATOBJ, l: i32) { *pf = l as FLOATOBJ; }
-// macro: (*(PULONG)(pf)) — raw bits as ULONG; assignment to FLOATL(=FLOAT) converts.
+// win32ss/pch.h redefines this as (*(pf)) for win32k: the float itself. winddi.h's
+// (*(PULONG)(pf)) only makes sense where FLOATL is DWORD (i386 kernel); here FLOATL is FLOAT,
+// and taking the bits and converting them turned 1.0 into 1065353216.0 for every
+// GetWorldTransform on amd64/arm64.
 #[cfg(not(target_arch = "x86"))]
-#[inline(always)] pub unsafe fn FLOATOBJ_GetFloat(pf: *const FLOATOBJ) -> FLOATL { (*pf).to_bits() as FLOATL }
+#[inline(always)] pub unsafe fn FLOATOBJ_GetFloat(pf: *const FLOATOBJ) -> FLOATL { *pf }
 
 // ── Group B — predicate/convert helpers (FORCEINLINE i386 / macro non-x86) ──
 // No exported symbol on either arch, so always inline.

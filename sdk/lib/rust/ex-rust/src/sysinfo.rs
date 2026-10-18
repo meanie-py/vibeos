@@ -668,6 +668,206 @@ unsafe fn ExpGetRawSMBiosTable(
     FinalStatus
 }
 
+// ---------------------------------------------------------------------------
+// The 'ACPI' firmware table provider. ReactOS answers NOT_IMPLEMENTED; Windows
+// enumerates every table the root table lists plus the DSDT the FADT points at,
+// and returns the first table whose signature matches a Get. The tables are
+// reached through the loader's "ACPI BIOS" configuration node (both loaders
+// publish it, BIOS and UEFI), whose RsdtAddress is the XSDT on ACPI 2.0+ and the
+// RSDT on 1.0. The loader block is gone once boot finishes, so phase 0 captures
+// the address and each query maps the tables afresh.
+// ---------------------------------------------------------------------------
+
+static mut ExpAcpiRootTable: u64 = 0;
+
+#[repr(C)]
+struct AcpiTableHeader {
+    Signature: ULONG,
+    Length: ULONG,
+    Revision: UCHAR,
+    Checksum: UCHAR,
+    OemId: [UCHAR; 6],
+    OemTableId: [UCHAR; 8],
+    OemRevision: ULONG,
+    CreatorId: ULONG,
+    CreatorRevision: ULONG,
+}
+
+const ACPI_SIG_XSDT: ULONG = u32::from_le_bytes(*b"XSDT");
+const ACPI_SIG_FACP: ULONG = u32::from_le_bytes(*b"FACP");
+const ACPI_SIG_DSDT: ULONG = u32::from_le_bytes(*b"DSDT");
+// FADT: the 32-bit DSDT pointer, and the 64-bit X_DSDT that ACPI 2.0 adds.
+const FADT_DSDT: usize = 40;
+const FADT_X_DSDT: usize = 140;
+// No ACPI table comes near this; a larger Length is a bad mapping, not a table.
+const ACPI_TABLE_MAX: ULONG = 0x0100_0000;
+
+pub(crate) unsafe fn ExpCaptureAcpiRootTable() {
+    extern "system" {
+        static mut KeLoaderBlock: *mut ntkrnl_sys::ddk::_LOADER_PARAMETER_BLOCK;
+        fn KeFindConfigurationNextEntry(
+            Child: ntkrnl_sys::ddk::PCONFIGURATION_COMPONENT_DATA,
+            Class: ntkrnl_sys::ddk::CONFIGURATION_CLASS,
+            Type: ntkrnl_sys::ddk::CONFIGURATION_TYPE,
+            ComponentKey: *mut ULONG,
+            NextLink: *mut ntkrnl_sys::ddk::PCONFIGURATION_COMPONENT_DATA,
+        ) -> ntkrnl_sys::ddk::PCONFIGURATION_COMPONENT_DATA;
+    }
+    let lb = KeLoaderBlock;
+    if lb.is_null() {
+        return;
+    }
+    let root = (*lb).ConfigurationRoot;
+    let mut next: ntkrnl_sys::ddk::PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
+    loop {
+        let entry = KeFindConfigurationNextEntry(
+            root,
+            ntkrnl_sys::ddk::_CONFIGURATION_CLASS_AdapterClass,
+            ntkrnl_sys::ddk::_CONFIGURATION_TYPE_MultiFunctionAdapter,
+            core::ptr::null_mut(),
+            &mut next,
+        );
+        if entry.is_null() {
+            return;
+        }
+        next = entry;
+        let id = (*entry).ComponentEntry.Identifier as *const u8;
+        if id.is_null() || (*entry).ConfigurationData.is_null() {
+            continue;
+        }
+        let want = b"ACPI BIOS\0";
+        let mut i = 0;
+        while i < want.len() && (*id.add(i)).to_ascii_uppercase() == want[i] {
+            i += 1;
+        }
+        if i != want.len() {
+            continue;
+        }
+        // ACPI_BIOS_MULTI_NODE follows the one-descriptor resource list, only 4-aligned.
+        let node = ((*entry).ConfigurationData as *const ntkrnl_sys::ddk::CM_PARTIAL_RESOURCE_LIST).add(1);
+        ExpAcpiRootTable = core::ptr::read_unaligned(node as *const u64);
+        return;
+    }
+}
+
+/// Maps the whole table at `pa`, or returns null. Unmap with `MmUnmapIoSpace(p, len)`.
+unsafe fn ExpMapAcpiTable(pa: u64, len: *mut ULONG) -> *const u8 {
+    let hdr_size = core::mem::size_of::<AcpiTableHeader>();
+    let mut phys: ntkrnl_sys::ddk::PHYSICAL_ADDRESS = core::mem::zeroed();
+    phys.QuadPart = pa as i64;
+    let h = ntkrnl_sys::ddk::MmMapIoSpace(phys, hdr_size as _, ntkrnl_sys::ddk::_MEMORY_CACHING_TYPE_MmCached as _)
+        as *const AcpiTableHeader;
+    if h.is_null() {
+        return core::ptr::null();
+    }
+    let n = core::ptr::read_unaligned(core::ptr::addr_of!((*h).Length));
+    ntkrnl_sys::ddk::MmUnmapIoSpace(h as PVOID, hdr_size as _);
+    if (n as usize) < hdr_size || n > ACPI_TABLE_MAX {
+        return core::ptr::null();
+    }
+    let t = ntkrnl_sys::ddk::MmMapIoSpace(phys, n as _, ntkrnl_sys::ddk::_MEMORY_CACHING_TYPE_MmCached as _)
+        as *const u8;
+    *len = n;
+    t
+}
+
+/// Calls `f(signature, physical address)` for each table the root lists, and for the
+/// DSDT right after the FADT. Stops early when `f` returns true.
+unsafe fn ExpForEachAcpiTable(mut f: impl FnMut(ULONG, u64) -> bool) {
+    let root_pa = ExpAcpiRootTable;
+    if root_pa == 0 {
+        return;
+    }
+    let mut root_len: ULONG = 0;
+    let root = ExpMapAcpiTable(root_pa, &mut root_len);
+    if root.is_null() {
+        return;
+    }
+    let hdr_size = core::mem::size_of::<AcpiTableHeader>();
+    let wide = core::ptr::read_unaligned(root as *const ULONG) == ACPI_SIG_XSDT;
+    let step = if wide { 8 } else { 4 };
+    let count = (root_len as usize - hdr_size) / step;
+    for i in 0..count {
+        let at = root.add(hdr_size + i * step);
+        let pa = if wide {
+            core::ptr::read_unaligned(at as *const u64)
+        } else {
+            core::ptr::read_unaligned(at as *const u32) as u64
+        };
+        if pa == 0 {
+            continue;
+        }
+        let mut len: ULONG = 0;
+        let t = ExpMapAcpiTable(pa, &mut len);
+        if t.is_null() {
+            continue;
+        }
+        let sig = core::ptr::read_unaligned(t as *const ULONG);
+        let mut dsdt: u64 = 0;
+        if sig == ACPI_SIG_FACP {
+            if len as usize >= FADT_X_DSDT + 8 {
+                dsdt = core::ptr::read_unaligned(t.add(FADT_X_DSDT) as *const u64);
+            }
+            if dsdt == 0 && len as usize >= FADT_DSDT + 4 {
+                dsdt = core::ptr::read_unaligned(t.add(FADT_DSDT) as *const u32) as u64;
+            }
+        }
+        ntkrnl_sys::ddk::MmUnmapIoSpace(t as PVOID, len as _);
+        if f(sig, pa) || (dsdt != 0 && f(ACPI_SIG_DSDT, dsdt)) {
+            break;
+        }
+    }
+    ntkrnl_sys::ddk::MmUnmapIoSpace(root as PVOID, root_len as _);
+}
+
+/// Enumerate: the signature list. Get: the first table named `TableID`.
+unsafe fn ExpGetAcpiTable(
+    Info: PSYSTEM_FIRMWARE_TABLE_INFORMATION,
+    DataBufSize: ULONG,
+    DataSize: *mut ULONG,
+) -> NTSTATUS {
+    let out = (*Info).TableBuffer.as_mut_ptr();
+    *DataSize = 0;
+    if (*Info).Action == SystemFirmwareTable_Enumerate {
+        let mut n: ULONG = 0;
+        ExpForEachAcpiTable(|sig, _| {
+            let at = n * core::mem::size_of::<ULONG>() as ULONG;
+            if at + core::mem::size_of::<ULONG>() as ULONG <= DataBufSize {
+                core::ptr::write_unaligned(out.add(at as usize) as *mut ULONG, sig);
+            }
+            n += 1;
+            false
+        });
+        *DataSize = n * core::mem::size_of::<ULONG>() as ULONG;
+        return STATUS_SUCCESS;
+    }
+    if (*Info).Action != SystemFirmwareTable_Get {
+        return STATUS_SUCCESS; // the caller turns an unknown action into ILLEGAL_FUNCTION
+    }
+    let want = (*Info).TableID;
+    let mut found: u64 = 0;
+    ExpForEachAcpiTable(|sig, pa| {
+        if sig == want {
+            found = pa;
+        }
+        found != 0
+    });
+    if found == 0 {
+        return STATUS_NOT_FOUND;
+    }
+    let mut len: ULONG = 0;
+    let t = ExpMapAcpiTable(found, &mut len);
+    if t.is_null() {
+        return STATUS_NOT_FOUND;
+    }
+    *DataSize = len;
+    if len <= DataBufSize {
+        RtlMoveMemory(out as PVOID, t as PVOID, len as usize);
+    }
+    ntkrnl_sys::ddk::MmUnmapIoSpace(t as PVOID, len as _);
+    STATUS_SUCCESS
+}
+
 unsafe fn ExpCopyLookasideInformation(
     InfoPointer: *mut PSYSTEM_LOOKASIDE_INFORMATION,
     RemainingPointer: *mut ULONG,
@@ -2465,7 +2665,9 @@ unsafe extern "C" fn QSI_SystemFirmwareTableInformation(Buffer: PVOID, Size: ULO
     let DataBufSize = Size - *ReqSize;
     match (*SysFirmwareInfo).ProviderSignature {
         SIG_ACPI => {
-            Status = STATUS_NOT_IMPLEMENTED;
+            Status = ExpGetAcpiTable(SysFirmwareInfo, DataBufSize, &mut DataSize);
+            (*SysFirmwareInfo).TableBufferLength = DataSize;
+            *ReqSize += DataSize;
         }
         SIG_FIRM => {
             Status = STATUS_NOT_IMPLEMENTED;
