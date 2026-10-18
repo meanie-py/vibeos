@@ -899,7 +899,10 @@ members = [
     "tdi-rust",
     "tzlib-rust",
     "mmcshext-rust",
+    "sendmail-rust",
+    "mydocs-rust",
     "tdihelpers-rust",
+    "spapisup-rust",
     "setupapi-rust",
 ]
 resolver = "2"

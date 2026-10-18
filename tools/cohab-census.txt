@@ -502,7 +502,7 @@ base/setup/lib/CMakeLists.txt	1	# utils/regutil.c # replaced by Rust (sdk/lib/ru
 base/setup/lib/CMakeLists.txt	1	# utils/volutil.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/volutil.rs)
 base/setup/reactos/CMakeLists.txt	1	# drivepage.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/drivepage.rs)
 base/setup/reactos/CMakeLists.txt	1	# reactos.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/reactos.rs)
-base/setup/reactos/CMakeLists.txt	1	# spapisup/fileqsup.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/fileqsup.rs)
+base/setup/reactos/CMakeLists.txt	1	# spapisup/fileqsup.c # replaced by Rust (sdk/lib/rust/spapisup-rust: usetup's cabinet.c + fileqsup.c, which it #includes)
 base/setup/reactos/CMakeLists.txt	1	# spapisup/infsupp.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/infsupp.rs)
 base/setup/usetup/CMakeLists.txt	1	# cmdcons.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/cmdcons.rs)
 base/setup/usetup/CMakeLists.txt	1	# console.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/console.rs)
@@ -516,8 +516,8 @@ base/setup/usetup/CMakeLists.txt	1	# mui.c # replaced by Rust (sdk/lib/rust/uset
 base/setup/usetup/CMakeLists.txt	1	# mui_tables.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/mui_tables/mod.rs, generated: port data)
 base/setup/usetup/CMakeLists.txt	1	# partlist.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/partlist.rs)
 base/setup/usetup/CMakeLists.txt	1	# progress.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/progress.rs)
-base/setup/usetup/CMakeLists.txt	1	# spapisup/cabinet.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/cabinet.rs)
-base/setup/usetup/CMakeLists.txt	1	# spapisup/fileqsup.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/fileqsup.rs)
+base/setup/usetup/CMakeLists.txt	1	# spapisup/cabinet.c # replaced by Rust (sdk/lib/rust/spapisup-rust/src/spapisup/cabinet.rs)
+base/setup/usetup/CMakeLists.txt	1	# spapisup/fileqsup.c # replaced by Rust (sdk/lib/rust/spapisup-rust/src/spapisup/fileqsup.rs)
 base/setup/usetup/CMakeLists.txt	1	# spapisup/infsupp.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/infsupp.rs)
 base/setup/usetup/CMakeLists.txt	1	# usetup.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/usetup.rs)
 base/setup/welcome/CMakeLists.txt	1	# welcome.c # replaced by Rust (sdk/lib/rust/welcome-rust/src/welcome/welcome.rs)
@@ -978,8 +978,12 @@ dll/shellext/deskadp/CMakeLists.txt	1	# shxiface.c # replaced by Rust (sdk/lib/r
 dll/shellext/deskmon/CMakeLists.txt	1	# deskmon.c # replaced by Rust (sdk/lib/rust/deskmon-rust/src/deskmon/deskmon.rs)
 dll/shellext/deskmon/CMakeLists.txt	1	# shxiface.c # replaced by Rust (sdk/lib/rust/deskmon-rust/src/deskmon/shxiface.rs)
 dll/shellext/mmcshext/CMakeLists.txt	1	# mmcshext.cpp # replaced by Rust (sdk/lib/rust/mmcshext-rust/src/mmcshext/mmcshext_cpp_h.rs)
+dll/shellext/mydocs/CMakeLists.txt	1	# CMyDocsDropHandler.cpp # replaced by Rust (sdk/lib/rust/mydocs-rust/src/mydocs/CMyDocsDropHandler_cpp_h.rs)
+dll/shellext/mydocs/CMakeLists.txt	1	# mydocs.cpp # replaced by Rust (sdk/lib/rust/mydocs-rust/src/mydocs/mydocs_cpp_h.rs)
 dll/shellext/netplwiz/CMakeLists.txt	1	# SHDisconnectNetDrives.c # replaced by Rust (sdk/lib/rust/netplwiz-rust/src/netplwiz/SHDisconnectNetDrives.rs)
 dll/shellext/netplwiz/CMakeLists.txt	1	# netplwiz.c # replaced by Rust (sdk/lib/rust/netplwiz-rust/src/netplwiz/netplwiz.rs)
+dll/shellext/sendmail/CMakeLists.txt	1	# CDeskLinkDropHandler.cpp # replaced by Rust (sdk/lib/rust/sendmail-rust/src/sendmail/CDeskLinkDropHandler_cpp_h.rs)
+dll/shellext/sendmail/CMakeLists.txt	1	# sendmail.cpp # replaced by Rust (sdk/lib/rust/sendmail-rust/src/sendmail/sendmail_cpp_h.rs)
 dll/win32/CMakeLists.txt	1	# exports instead of forwarding to kernelbase_ros. combase.c externs
 dll/win32/aclui/CMakeLists.txt	1	# (rust_varargs_shim.c and the generated aclui_stubs.c) do not include precomp.h.
 dll/win32/aclui/CMakeLists.txt	1	# aclui.c

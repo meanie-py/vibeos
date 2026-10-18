@@ -1,0 +1,184 @@
+{
+  "method": "GNU time -v maximum RSS in KiB; sorted unique complete tagged output lines joined by LF with no trailing LF, no text/path normalization. The default/arena2/Rust-only allocator experiments use an immutable scanner built from merged master 50c7c7907f2. The full-override experiment also contains the borrowing and masked-view changes, using the same pinned preexisting dependency versions. Some runs overlap and other host activity/build caches are uncontrolled. Generated inventory entries varied slightly; byte counts are recorded in logs. RSS differences alone do not establish a precise fragmentation or per-rule allocation attribution.",
+  "base_revision": "50c7c7907f2",
+  "rules": 123,
+  "experiments": [
+    {
+      "label": "merged system baseline",
+      "log": ".cache/vibeos-lint/memory-master-default",
+      "finding_lines": 5840,
+      "finding_sha256": "fad763b0c11e5032c14f95c739bec0d6259203418eab16042c9ca3154ef860dc",
+      "gnu_time": "\tCommand being timed: \"/home/curi/Projects/os-playground/vibeos-lint/.cache/vibeos-lint/memory-master-bin --root /home/curi/Projects/os-playground/vibeos-lint --rules shellcheck,py-syntax,verify_ffi,verify_constants,verify_constants_enums,lint_kernel,scan_nightly_surface,scan_cmake_linked_rust,scan_atl_slot_cast,strip_msvc_cmake,shell32_tail_inventory,verify_tables,verify_match_consts,verify_signatures,verify_conv_macros,verify_ucrtbase_cohab,vendored_registry,verify_translation_literals,gen_ctype_tables,verify_lost_exports,verify_c_signatures,scan_inline_flag_literals,scan_extern_arity,scan_orphan_modules,cohab_census,scan_bugcheck_stubs,scan_silent_failures,scan_magic_offsets,scan_doc_sections,scan_boot_media_drift,scan_raw_uart_writes,scan_bugcheck_codes,scan_assert_to_ub,scan_bitwise_not_bool,scan_override_self_dispatch,scan_hkey_zero_extend,scan_variadic_array_arg,scan_ptr_byte_diff,scan_misaligned_cast,scan_dropped_null_guard,scan_store_on_failure,scan_bool_width,scan_cfg_vs_c,scan_version_vs_c,scan_fnclass_cc,null_offset_to_offset_of,scan_constant_placement,scan_const_contradictions,scan_const_vs_island,scan_const_vs_own_island,scan_const_within_crate,scan_invented_constants,scan_hresult_literals,scan_byteptr_stride,scan_gmem_flags,scan_let_shadow,scan_raw_bitfield,scan_winerror_consts,scan_case_bitor_pattern,scan_list_walk_from_head,scan_list_walk_cursor_after_loop,scan_dowhile_continue,scan_mask_drift,scan_dropped_prints,scan_dropped_probes,scan_ptr_typedef_indirection,scan_dropped_seh_pairs,scan_raising_probes,scan_raw_user_access,scan_double_fetch,scan_safe_probe_deref,scan_macro_fn_shadow,scan_type_alias_contradictions,scan_varargs_shim_parity,scan_wide_literals,scan_dangling_transmute,scan_opaque_ptr_arith,scan_fnptr_abi_transmute,scan_cdecl_alias,scan_wide_byte_copy,scan_typed_byte_copy,scan_noop_goto,scan_formatless_printf,scan_byte_step_one,scan_ptr_typedef_cast_read,scan_info_class_literals,scan_shadowed_c_define,scan_const_narrowing_cast,scan_comment_swallowed_code,scan_call_arg_swap,scan_narrow_vs_wide_literal,scan_sse_helpers,scan_read_after_clear,scan_init_then_move,scan_containing_record_null,scan_call_literal_vs_c,scan_pack_drift,scan_unaligned_wide,verify_svc_numbering,marshalgen_audit,scan_cc_mismatch,scan_entry_point_cc,scan_rawdylib_linkname,scan_import_cc,scan_assert_polarity,scan_fourcc_literals,scan_match_arm_break,scan_calloc_elem_type,scan_varargs_spec_arity,scan_octal_literals,scan_ptr_highword_mask,scan_arg_side_effects,scan_res_named_types,scan_bindgen_padding_index,scan_extern_static_width,scan_duplicate_symbols,scan_export_shadows,scan_irql_balance,scan_ob_refcount,scan_com_double_release,scan_unpruned_walk,scan_extern_decl_drift,scan_dropped_asserts --python /home/curi/Projects/os-playground/vibeos/.venv/bin/python --shellcheck /usr/bin/shellcheck\"\n\tUser time (seconds): 584.69\n\tSystem time (seconds): 18.02\n\tPercent of CPU this job got: 496%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 2:01.30\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 9462520\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 900\n\tMinor (reclaiming a frame) page faults: 2935043\n\tVoluntary context switches: 176437\n\tInvoluntary context switches: 40429\n\tSwaps: 0\n\tFile system inputs: 0\n\tFile system outputs: 0\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n",
+      "retained_payloads": {
+        "additional_raw_bytes": 1796277,
+        "c_signature_arches": 1,
+        "line_index_capacity_bytes": 301232400,
+        "masked_view_bytes": {
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=false": 527249521,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=true": 435083531
+        },
+        "noise_bytes": 527046169,
+        "retained_rust_tree_nodes": 3981878,
+        "retained_rust_trees": 889,
+        "rust_twin_payload_bytes": 144892206,
+        "source_text_bytes": 954286706,
+        "syntax_cache": {
+          "node_limit": 4000000,
+          "retained_nodes": 3981878,
+          "retained_trees": 889,
+          "reused_tree_files": 6193,
+          "shared_tree_hits": 1860,
+          "successful_parses": 23432,
+          "unique_tree_files": 7102
+        }
+      }
+    },
+    {
+      "label": "rejected glibc arena cap of two",
+      "log": ".cache/vibeos-lint/memory-master-arena2",
+      "finding_lines": 5840,
+      "finding_sha256": "fad763b0c11e5032c14f95c739bec0d6259203418eab16042c9ca3154ef860dc",
+      "gnu_time": "\tCommand being timed: \"/home/curi/Projects/os-playground/vibeos-lint/.cache/vibeos-lint/memory-master-bin --root /home/curi/Projects/os-playground/vibeos-lint --rules shellcheck,py-syntax,verify_ffi,verify_constants,verify_constants_enums,lint_kernel,scan_nightly_surface,scan_cmake_linked_rust,scan_atl_slot_cast,strip_msvc_cmake,shell32_tail_inventory,verify_tables,verify_match_consts,verify_signatures,verify_conv_macros,verify_ucrtbase_cohab,vendored_registry,verify_translation_literals,gen_ctype_tables,verify_lost_exports,verify_c_signatures,scan_inline_flag_literals,scan_extern_arity,scan_orphan_modules,cohab_census,scan_bugcheck_stubs,scan_silent_failures,scan_magic_offsets,scan_doc_sections,scan_boot_media_drift,scan_raw_uart_writes,scan_bugcheck_codes,scan_assert_to_ub,scan_bitwise_not_bool,scan_override_self_dispatch,scan_hkey_zero_extend,scan_variadic_array_arg,scan_ptr_byte_diff,scan_misaligned_cast,scan_dropped_null_guard,scan_store_on_failure,scan_bool_width,scan_cfg_vs_c,scan_version_vs_c,scan_fnclass_cc,null_offset_to_offset_of,scan_constant_placement,scan_const_contradictions,scan_const_vs_island,scan_const_vs_own_island,scan_const_within_crate,scan_invented_constants,scan_hresult_literals,scan_byteptr_stride,scan_gmem_flags,scan_let_shadow,scan_raw_bitfield,scan_winerror_consts,scan_case_bitor_pattern,scan_list_walk_from_head,scan_list_walk_cursor_after_loop,scan_dowhile_continue,scan_mask_drift,scan_dropped_prints,scan_dropped_probes,scan_ptr_typedef_indirection,scan_dropped_seh_pairs,scan_raising_probes,scan_raw_user_access,scan_double_fetch,scan_safe_probe_deref,scan_macro_fn_shadow,scan_type_alias_contradictions,scan_varargs_shim_parity,scan_wide_literals,scan_dangling_transmute,scan_opaque_ptr_arith,scan_fnptr_abi_transmute,scan_cdecl_alias,scan_wide_byte_copy,scan_typed_byte_copy,scan_noop_goto,scan_formatless_printf,scan_byte_step_one,scan_ptr_typedef_cast_read,scan_info_class_literals,scan_shadowed_c_define,scan_const_narrowing_cast,scan_comment_swallowed_code,scan_call_arg_swap,scan_narrow_vs_wide_literal,scan_sse_helpers,scan_read_after_clear,scan_init_then_move,scan_containing_record_null,scan_call_literal_vs_c,scan_pack_drift,scan_unaligned_wide,verify_svc_numbering,marshalgen_audit,scan_cc_mismatch,scan_entry_point_cc,scan_rawdylib_linkname,scan_import_cc,scan_assert_polarity,scan_fourcc_literals,scan_match_arm_break,scan_calloc_elem_type,scan_varargs_spec_arity,scan_octal_literals,scan_ptr_highword_mask,scan_arg_side_effects,scan_res_named_types,scan_bindgen_padding_index,scan_extern_static_width,scan_duplicate_symbols,scan_export_shadows,scan_irql_balance,scan_ob_refcount,scan_com_double_release,scan_unpruned_walk,scan_extern_decl_drift,scan_dropped_asserts --python /home/curi/Projects/os-playground/vibeos/.venv/bin/python --shellcheck /usr/bin/shellcheck\"\n\tUser time (seconds): 1247.24\n\tSystem time (seconds): 640.17\n\tPercent of CPU this job got: 387%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 8:07.46\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 8208876\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 6\n\tMinor (reclaiming a frame) page faults: 2227578\n\tVoluntary context switches: 42305381\n\tInvoluntary context switches: 404718\n\tSwaps: 0\n\tFile system inputs: 0\n\tFile system outputs: 0\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n",
+      "retained_payloads": {
+        "additional_raw_bytes": 1796277,
+        "c_signature_arches": 1,
+        "line_index_capacity_bytes": 301232400,
+        "masked_view_bytes": {
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=false": 527249521,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=true": 435083531
+        },
+        "noise_bytes": 527046169,
+        "retained_rust_tree_nodes": 3999300,
+        "retained_rust_trees": 493,
+        "rust_twin_payload_bytes": 144892206,
+        "source_text_bytes": 954286706,
+        "syntax_cache": {
+          "node_limit": 4000000,
+          "retained_nodes": 3999300,
+          "retained_trees": 493,
+          "reused_tree_files": 6193,
+          "shared_tree_hits": 1207,
+          "successful_parses": 24085,
+          "unique_tree_files": 7102
+        }
+      }
+    },
+    {
+      "label": "merged baseline with Rust-only mimalloc",
+      "log": ".cache/vibeos-lint/memory-master-mimalloc",
+      "finding_lines": 5840,
+      "finding_sha256": "fad763b0c11e5032c14f95c739bec0d6259203418eab16042c9ca3154ef860dc",
+      "gnu_time": "\tCommand being timed: \"/home/curi/Projects/os-playground/vibeos-lint/.cache/vibeos-lint/target/release/lint-mimalloc-experiment --root /home/curi/Projects/os-playground/vibeos-lint --rules shellcheck,py-syntax,verify_ffi,verify_constants,verify_constants_enums,lint_kernel,scan_nightly_surface,scan_cmake_linked_rust,scan_atl_slot_cast,strip_msvc_cmake,shell32_tail_inventory,verify_tables,verify_match_consts,verify_signatures,verify_conv_macros,verify_ucrtbase_cohab,vendored_registry,verify_translation_literals,gen_ctype_tables,verify_lost_exports,verify_c_signatures,scan_inline_flag_literals,scan_extern_arity,scan_orphan_modules,cohab_census,scan_bugcheck_stubs,scan_silent_failures,scan_magic_offsets,scan_doc_sections,scan_boot_media_drift,scan_raw_uart_writes,scan_bugcheck_codes,scan_assert_to_ub,scan_bitwise_not_bool,scan_override_self_dispatch,scan_hkey_zero_extend,scan_variadic_array_arg,scan_ptr_byte_diff,scan_misaligned_cast,scan_dropped_null_guard,scan_store_on_failure,scan_bool_width,scan_cfg_vs_c,scan_version_vs_c,scan_fnclass_cc,null_offset_to_offset_of,scan_constant_placement,scan_const_contradictions,scan_const_vs_island,scan_const_vs_own_island,scan_const_within_crate,scan_invented_constants,scan_hresult_literals,scan_byteptr_stride,scan_gmem_flags,scan_let_shadow,scan_raw_bitfield,scan_winerror_consts,scan_case_bitor_pattern,scan_list_walk_from_head,scan_list_walk_cursor_after_loop,scan_dowhile_continue,scan_mask_drift,scan_dropped_prints,scan_dropped_probes,scan_ptr_typedef_indirection,scan_dropped_seh_pairs,scan_raising_probes,scan_raw_user_access,scan_double_fetch,scan_safe_probe_deref,scan_macro_fn_shadow,scan_type_alias_contradictions,scan_varargs_shim_parity,scan_wide_literals,scan_dangling_transmute,scan_opaque_ptr_arith,scan_fnptr_abi_transmute,scan_cdecl_alias,scan_wide_byte_copy,scan_typed_byte_copy,scan_noop_goto,scan_formatless_printf,scan_byte_step_one,scan_ptr_typedef_cast_read,scan_info_class_literals,scan_shadowed_c_define,scan_const_narrowing_cast,scan_comment_swallowed_code,scan_call_arg_swap,scan_narrow_vs_wide_literal,scan_sse_helpers,scan_read_after_clear,scan_init_then_move,scan_containing_record_null,scan_call_literal_vs_c,scan_pack_drift,scan_unaligned_wide,verify_svc_numbering,marshalgen_audit,scan_cc_mismatch,scan_entry_point_cc,scan_rawdylib_linkname,scan_import_cc,scan_assert_polarity,scan_fourcc_literals,scan_match_arm_break,scan_calloc_elem_type,scan_varargs_spec_arity,scan_octal_literals,scan_ptr_highword_mask,scan_arg_side_effects,scan_res_named_types,scan_bindgen_padding_index,scan_extern_static_width,scan_duplicate_symbols,scan_export_shadows,scan_irql_balance,scan_ob_refcount,scan_com_double_release,scan_unpruned_walk,scan_extern_decl_drift,scan_dropped_asserts --python /home/curi/Projects/os-playground/vibeos/.venv/bin/python --shellcheck /usr/bin/shellcheck\"\n\tUser time (seconds): 538.83\n\tSystem time (seconds): 41.28\n\tPercent of CPU this job got: 543%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 1:46.72\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 8619820\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 10\n\tMinor (reclaiming a frame) page faults: 3164394\n\tVoluntary context switches: 49962\n\tInvoluntary context switches: 17214\n\tSwaps: 0\n\tFile system inputs: 0\n\tFile system outputs: 0\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n",
+      "retained_payloads": {
+        "additional_raw_bytes": 1796277,
+        "c_signature_arches": 1,
+        "line_index_capacity_bytes": 301266344,
+        "masked_view_bytes": {
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=false": 527249521,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=true": 435083531
+        },
+        "noise_bytes": 527046169,
+        "retained_rust_tree_nodes": 3984485,
+        "retained_rust_trees": 614,
+        "rust_twin_payload_bytes": 144892206,
+        "source_text_bytes": 954472996,
+        "syntax_cache": {
+          "node_limit": 4000000,
+          "retained_nodes": 3984485,
+          "retained_trees": 614,
+          "reused_tree_files": 6193,
+          "shared_tree_hits": 1835,
+          "successful_parses": 23457,
+          "unique_tree_files": 7102
+        }
+      }
+    },
+    {
+      "label": "borrowing and shared views with full mimalloc override",
+      "log": ".cache/vibeos-lint/memory-shared-mimalloc-override",
+      "finding_lines": 5840,
+      "finding_sha256": "fad763b0c11e5032c14f95c739bec0d6259203418eab16042c9ca3154ef860dc",
+      "gnu_time": "\tCommand being timed: \"/home/curi/Projects/os-playground/vibeos-lint/.cache/vibeos-lint/target/release/lint-mimalloc-experiment --root /home/curi/Projects/os-playground/vibeos-lint --rules shellcheck,py-syntax,verify_ffi,verify_constants,verify_constants_enums,lint_kernel,scan_nightly_surface,scan_cmake_linked_rust,scan_atl_slot_cast,strip_msvc_cmake,shell32_tail_inventory,verify_tables,verify_match_consts,verify_signatures,verify_conv_macros,verify_ucrtbase_cohab,vendored_registry,verify_translation_literals,gen_ctype_tables,verify_lost_exports,verify_c_signatures,scan_inline_flag_literals,scan_extern_arity,scan_orphan_modules,cohab_census,scan_bugcheck_stubs,scan_silent_failures,scan_magic_offsets,scan_doc_sections,scan_boot_media_drift,scan_raw_uart_writes,scan_bugcheck_codes,scan_assert_to_ub,scan_bitwise_not_bool,scan_override_self_dispatch,scan_hkey_zero_extend,scan_variadic_array_arg,scan_ptr_byte_diff,scan_misaligned_cast,scan_dropped_null_guard,scan_store_on_failure,scan_bool_width,scan_cfg_vs_c,scan_version_vs_c,scan_fnclass_cc,null_offset_to_offset_of,scan_constant_placement,scan_const_contradictions,scan_const_vs_island,scan_const_vs_own_island,scan_const_within_crate,scan_invented_constants,scan_hresult_literals,scan_byteptr_stride,scan_gmem_flags,scan_let_shadow,scan_raw_bitfield,scan_winerror_consts,scan_case_bitor_pattern,scan_list_walk_from_head,scan_list_walk_cursor_after_loop,scan_dowhile_continue,scan_mask_drift,scan_dropped_prints,scan_dropped_probes,scan_ptr_typedef_indirection,scan_dropped_seh_pairs,scan_raising_probes,scan_raw_user_access,scan_double_fetch,scan_safe_probe_deref,scan_macro_fn_shadow,scan_type_alias_contradictions,scan_varargs_shim_parity,scan_wide_literals,scan_dangling_transmute,scan_opaque_ptr_arith,scan_fnptr_abi_transmute,scan_cdecl_alias,scan_wide_byte_copy,scan_typed_byte_copy,scan_noop_goto,scan_formatless_printf,scan_byte_step_one,scan_ptr_typedef_cast_read,scan_info_class_literals,scan_shadowed_c_define,scan_const_narrowing_cast,scan_comment_swallowed_code,scan_call_arg_swap,scan_narrow_vs_wide_literal,scan_sse_helpers,scan_read_after_clear,scan_init_then_move,scan_containing_record_null,scan_call_literal_vs_c,scan_pack_drift,scan_unaligned_wide,verify_svc_numbering,marshalgen_audit,scan_cc_mismatch,scan_entry_point_cc,scan_rawdylib_linkname,scan_import_cc,scan_assert_polarity,scan_fourcc_literals,scan_match_arm_break,scan_calloc_elem_type,scan_varargs_spec_arity,scan_octal_literals,scan_ptr_highword_mask,scan_arg_side_effects,scan_res_named_types,scan_bindgen_padding_index,scan_extern_static_width,scan_duplicate_symbols,scan_export_shadows,scan_irql_balance,scan_ob_refcount,scan_com_double_release,scan_unpruned_walk,scan_extern_decl_drift,scan_dropped_asserts --python /home/curi/Projects/os-playground/vibeos/.venv/bin/python --shellcheck /usr/bin/shellcheck\"\n\tUser time (seconds): 542.46\n\tSystem time (seconds): 43.72\n\tPercent of CPU this job got: 528%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 1:50.83\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 7304016\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 3\n\tMinor (reclaiming a frame) page faults: 3059073\n\tVoluntary context switches: 26485\n\tInvoluntary context switches: 66210\n\tSwaps: 0\n\tFile system inputs: 0\n\tFile system outputs: 0\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n",
+      "retained_payloads": {
+        "additional_raw_bytes": 1796277,
+        "c_signature_arches": 1,
+        "line_index_capacity_bytes": 301266344,
+        "masked_view_bytes": {
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=false": 527249521,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=true": 359587284,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=false": 6812081,
+          "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=true": 27597723
+        },
+        "noise_bytes": 527046169,
+        "retained_rust_tree_nodes": 3961869,
+        "retained_rust_trees": 770,
+        "rust_twin_payload_bytes": 144892206,
+        "source_text_bytes": 954475061,
+        "syntax_cache": {
+          "node_limit": 4000000,
+          "retained_nodes": 3961869,
+          "retained_trees": 770,
+          "reused_tree_files": 6193,
+          "shared_tree_hits": 907,
+          "successful_parses": 24385,
+          "unique_tree_files": 7102
+        }
+      }
+    }
+  ],
+  "system_allocator_shared_views_gate": {
+    "run_id": "20261017-201855-l91jv9ze-check-all",
+    "verdict": "OK",
+    "duration_ms": 168972,
+    "gnu_time": "\tCommand being timed: \"env VIBEOS_LINT_TIMINGS=1 VIBEOS_LINT_CACHE_STATS=1 ./vibeos-cli check\"\n\tUser time (seconds): 753.19\n\tSystem time (seconds): 18.43\n\tPercent of CPU this job got: 456%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 2:49.13\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 8477516\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 17\n\tMinor (reclaiming a frame) page faults: 3562993\n\tVoluntary context switches: 188576\n\tInvoluntary context switches: 137374\n\tSwaps: 0\n\tFile system inputs: 0\n\tFile system outputs: 0\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n",
+    "finding_lines": 5840,
+    "finding_sha256": "fad763b0c11e5032c14f95c739bec0d6259203418eab16042c9ca3154ef860dc"
+  },
+  "final_source_gate": {
+    "run_id": "20261017-202328-rsm9f_x0-check-all",
+    "verdict": "OK",
+    "duration_ms": 121096,
+    "rules": 123,
+    "finding_lines": 5840,
+    "finding_sha256": "fad763b0c11e5032c14f95c739bec0d6259203418eab16042c9ca3154ef860dc",
+    "gnu_time": "\tCommand being timed: \"env VIBEOS_LINT_TIMINGS=1 VIBEOS_LINT_CACHE_STATS=1 ./vibeos-cli check\"\n\tUser time (seconds): 568.71\n\tSystem time (seconds): 51.29\n\tPercent of CPU this job got: 511%\n\tElapsed (wall clock) time (h:mm:ss or m:ss): 2:01.22\n\tAverage shared text size (kbytes): 0\n\tAverage unshared data size (kbytes): 0\n\tAverage stack size (kbytes): 0\n\tAverage total size (kbytes): 0\n\tMaximum resident set size (kbytes): 7138544\n\tAverage resident set size (kbytes): 0\n\tMajor (requiring I/O) page faults: 48\n\tMinor (reclaiming a frame) page faults: 2424201\n\tVoluntary context switches: 46897\n\tInvoluntary context switches: 366485\n\tSwaps: 0\n\tFile system inputs: 0\n\tFile system outputs: 0\n\tSocket messages sent: 0\n\tSocket messages received: 0\n\tSignals delivered: 0\n\tPage size (bytes): 4096\n\tExit status: 0\n",
+    "retained_payloads": {
+      "additional_raw_bytes": 1796277,
+      "c_signature_arches": 1,
+      "line_index_capacity_bytes": 301577776,
+      "masked_view_bytes": {
+        "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=false": 527249521,
+        "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=None; characters=true": 359587284,
+        "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=false": 6812081,
+        "(?s)//[^\\n]*|/\\*.*?\\*/; cutoff=Some(\"ORIGINAL C SOURCE\"); characters=true": 27597723
+      },
+      "noise_bytes": 527046169,
+      "retained_rust_tree_nodes": 3999748,
+      "retained_rust_trees": 614,
+      "rust_twin_payload_bytes": 144892206,
+      "source_text_bytes": 955362250,
+      "syntax_cache": {
+        "node_limit": 4000000,
+        "retained_nodes": 3999748,
+        "retained_trees": 614,
+        "reused_tree_files": 6193,
+        "shared_tree_hits": 682,
+        "successful_parses": 24610,
+        "unique_tree_files": 7102
+      }
+    }
+  },
+  "verification": {
+    "rust_unit_tests": 685,
+    "rust_integration_tests": 7,
+    "tooling_checks": 106,
+    "no_default_features_cargo_check": "passed",
+    "library_test_executable_allocator_override_symbols": [],
+    "linux_cli_allocator_override_symbols": [
+      "malloc",
+      "calloc",
+      "realloc",
+      "free"
+    ]
+  }
+}

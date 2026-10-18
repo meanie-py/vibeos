@@ -20,6 +20,7 @@ pub mod syssetup {
     pub mod classinst;
     pub mod dllmain;
     pub mod install;
+    pub mod install_vibeos;
     pub mod logfile;
     pub mod netinstall;
     pub mod proppage;

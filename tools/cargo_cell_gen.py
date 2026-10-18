@@ -3084,8 +3084,9 @@ def convert(targets: list[str], baseline: Path | None = None, repo: Path = REPO)
 
 def refresh_manifests(repo: Path = REPO) -> None:
     """What a build with no cmake reads, regenerated from the graphs this wave just
-    configured: the cell and media manifests (scan_cargo_manifests fails while they are
-    stale) and the shared C libraries' recipes."""
+    configured: the cell and media manifests and the shared C libraries' recipes. (A build
+    with a configured graph reads the graph itself; the committed copies are for one with
+    none, so they are refreshed here rather than gated.)"""
     for tool in ("cell_manifest.py", "media_manifest.py"):
         subprocess.run([sys.executable, str(repo / "tools" / tool), "--write"], check=True)
     for a in ARCHES:

@@ -3867,6 +3867,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mydocs-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "ncpa-cargo"
 version = "0.1.0"
 dependencies = [
@@ -4850,6 +4862,7 @@ dependencies = [
  "conutils-h",
  "ntdll-sys",
  "panic-common",
+ "spapisup-rust",
  "strsafe-rust",
  "varargs-rust",
  "win32macros-rust",
@@ -5533,6 +5546,18 @@ name = "secur32-sys"
 version = "0.1.0"
 
 [[package]]
+name = "sendmail-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "serial-acpi-difftest"
 version = "0.1.0"
 
@@ -5864,6 +5889,15 @@ dependencies = [
  "conutils-h",
  "ntdll-sys",
  "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "spapisup-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
  "strsafe-rust",
  "win32macros-rust",
 ]
@@ -6863,6 +6897,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "spapisup-rust",
  "strsafe-rust",
  "varargs-rust",
  "win32macros-rust",

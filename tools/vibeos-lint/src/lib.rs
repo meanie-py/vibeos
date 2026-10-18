@@ -21,6 +21,7 @@ pub mod modules;
 pub mod regexes;
 pub mod rules;
 pub mod syntax;
+mod syntax_cache;
 pub mod twins;
 
 use rayon::prelude::*;
@@ -79,6 +80,7 @@ pub struct SourceFile {
     inventory_order: usize,
     rust_tree: OnceLock<Result<Arc<tree_sitter::Tree>, String>>,
     large_rust_tree: Mutex<Weak<tree_sitter::Tree>>,
+    syntax_cache: Option<(Arc<syntax_cache::Cache>, usize)>,
     twin_functions: OnceLock<Vec<twins::Function>>,
     scopes: u8,
     noise: OnceLock<Arc<str>>,
@@ -100,6 +102,7 @@ impl SourceFile {
             inventory_order: 0,
             rust_tree: OnceLock::new(),
             large_rust_tree: Mutex::new(Weak::new()),
+            syntax_cache: None,
             twin_functions: OnceLock::new(),
             scopes: u8::MAX,
             noise: OnceLock::new(),
@@ -115,6 +118,19 @@ impl SourceFile {
         self.directory
     }
     pub fn rust_tree(&self) -> Result<Arc<tree_sitter::Tree>, String> {
+        if let Some((cache, file)) = &self.syntax_cache {
+            let mut weak = self.large_rust_tree.lock().expect("syntax cache poisoned");
+            let (tree, parsed) = match weak.upgrade() {
+                Some(tree) => (tree, false),
+                None => {
+                    let tree = Arc::new(syntax::parse(&self.text)?);
+                    *weak = Arc::downgrade(&tree);
+                    (tree, true)
+                }
+            };
+            cache.retain(*file, &tree, parsed, self.text.len() <= 256 * 1024);
+            return Ok(tree);
+        }
         // Retaining every bindgen AST costs many times the source bytes. Large
         // parses are shared while consumers hold them, then released; ordinary
         // source parses stay cached for the whole run.
@@ -148,6 +164,17 @@ impl SourceFile {
     /// offsets count UTF-8 bytes or Unicode characters. Cache each exact view;
     /// equivalent users share its allocation and never tokenize it again.
     pub fn masked(&self, regex: &Regex, cutoff: Option<&str>, characters: bool) -> Arc<str> {
+        // Absent cutoff markers leave the entire input intact. On ASCII input,
+        // character and byte masking also produce exactly the same view. Reuse
+        // one allocation for these equivalent legacy scanner configurations.
+        let (raw, cutoff) = cutoff
+            .and_then(|marker| {
+                self.text
+                    .split_once(marker)
+                    .map(|(raw, _)| (raw, Some(marker)))
+            })
+            .unwrap_or((&self.text, None));
+        let characters = characters && !raw.is_ascii();
         let key = (
             regex.as_str().to_owned(),
             cutoff.map(str::to_owned),
@@ -161,9 +188,6 @@ impl SourceFile {
                 .clone()
         };
         slot.get_or_init(|| {
-            let raw = cutoff
-                .and_then(|marker| self.text.split_once(marker).map(|p| p.0))
-                .unwrap_or(&self.text);
             regex
                 .replace_all(raw, |caps: &regex::Captures<'_>| {
                     let text = caps.get(0).unwrap().as_str();
@@ -199,11 +223,26 @@ impl SourceFile {
         let end = self.lines.get(line).copied().unwrap_or(self.text.len());
         self.text[start..end].trim_end_matches(['\r', '\n'])
     }
+
+    /// Zero-based line with exactly `str::lines()` ending semantics.
+    pub fn source_line(&self, row: usize) -> Option<&str> {
+        let start = *self.lines.get(row)?;
+        if start == self.text.len() {
+            return None;
+        }
+        let end = self.lines.get(row + 1).copied().unwrap_or(self.text.len());
+        let line = &self.text[start..end];
+        Some(match line.strip_suffix('\n') {
+            Some(line) => line.strip_suffix('\r').unwrap_or(line),
+            None => line,
+        })
+    }
 }
 
 pub struct Corpus {
     pub root: PathBuf,
     pub files: Vec<SourceFile>,
+    syntax_cache: Arc<syntax_cache::Cache>,
     explicit_paths: Vec<PathBuf>,
     c_signature_asts: OnceLock<BTreeMap<String, Result<serde_json::Value, String>>>,
     twins: OnceLock<twins::CIndex>,
@@ -251,10 +290,63 @@ impl Default for SourceNeeds {
 }
 
 impl Corpus {
-    pub fn new(root: PathBuf, files: Vec<SourceFile>) -> Self {
+    /// Retained payloads after execution; counts exclude allocator overhead.
+    /// Inspect initialized caches only, without parsing or creating new views.
+    pub fn cache_stats(&self) -> serde_json::Value {
+        let mut text_bytes = 0;
+        let mut raw_bytes = 0;
+        let mut line_bytes = 0;
+        let mut noise_bytes = 0;
+        let mut twin_bytes = 0;
+        let mut tree_count = 0;
+        let mut tree_nodes = 0;
+        let mut views = BTreeMap::<String, usize>::new();
+        for file in &self.files {
+            text_bytes += file.text.len();
+            raw_bytes += file.raw.as_ref().map_or(0, |raw| raw.len());
+            line_bytes += file.lines.capacity() * std::mem::size_of::<usize>();
+            noise_bytes += file.noise.get().map_or(0, |text| text.len());
+            if let Some(functions) = file.twin_functions.get() {
+                twin_bytes += functions
+                    .iter()
+                    .map(|f| f.body.len() + f.params.len() + f.ret.len())
+                    .sum::<usize>();
+            }
+            if let Some(Ok(tree)) = file.rust_tree.get() {
+                tree_count += 1;
+                tree_nodes += tree.root_node().descendant_count();
+            }
+            for ((pattern, cutoff, characters), slot) in file.views.lock().unwrap().iter() {
+                if let Some(text) = slot.get() {
+                    *views
+                        .entry(format!(
+                            "{pattern}; cutoff={cutoff:?}; characters={characters}"
+                        ))
+                        .or_default() += text.len();
+                }
+            }
+        }
+        let cache = self.syntax_cache.stats();
+        tree_count += cache["retained_trees"].as_u64().unwrap() as usize;
+        tree_nodes += cache["retained_nodes"].as_u64().unwrap() as usize;
+        serde_json::json!({"source_text_bytes": text_bytes, "additional_raw_bytes": raw_bytes, "line_index_capacity_bytes": line_bytes, "noise_bytes": noise_bytes, "rust_twin_payload_bytes": twin_bytes, "retained_rust_trees": tree_count, "retained_rust_tree_nodes": tree_nodes, "masked_view_bytes": views, "c_signature_arches": self.c_signature_asts.get().map_or(0, |asts| asts.len()), "syntax_cache": cache})
+    }
+    pub fn new(root: PathBuf, mut files: Vec<SourceFile>) -> Self {
+        let syntax_cache = Arc::new(syntax_cache::Cache::new(syntax_cache::DEFAULT_NODE_LIMIT));
+        for (index, file) in files.iter_mut().enumerate() {
+            file.syntax_cache = Some((syntax_cache.clone(), index));
+            if let Some(Ok(tree)) = file.rust_tree.take() {
+                *file
+                    .large_rust_tree
+                    .get_mut()
+                    .expect("syntax cache poisoned") = Arc::downgrade(&tree);
+                syntax_cache.retain(index, &tree, false, true);
+            }
+        }
         Self {
             root,
             files,
+            syntax_cache,
             explicit_paths: Vec::new(),
             c_signature_asts: OnceLock::new(),
             twins: OnceLock::new(),
@@ -266,6 +358,11 @@ impl Corpus {
             files_by_path: OnceLock::new(),
             link_scans: Mutex::new(BTreeMap::new()),
         }
+    }
+    /// Bound retained syntax by node count; active consumers keep their Arcs.
+    pub fn with_ast_cache_nodes(self, nodes: usize) -> Self {
+        self.syntax_cache.set_limit(nodes);
+        self
     }
     pub fn c_signature_ast(&self, arch: &str) -> Result<&serde_json::Value, String> {
         self.c_signature_asts
@@ -382,6 +479,7 @@ impl Corpus {
         extras: &[PathBuf],
         sets: &[SourceSet],
     ) -> Result<Self, String> {
+        let inventory_started = std::time::Instant::now();
         let root = root
             .canonicalize()
             .map_err(|e| format!("{}: {e}", root.display()))?;
@@ -549,6 +647,13 @@ impl Corpus {
             }
         }
         let entries: Vec<_> = paths.into_iter().collect();
+        if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
+            eprintln!(
+                "TIMING\tsource_inventory\t{:.3}",
+                inventory_started.elapsed().as_secs_f64()
+            );
+        }
+        let materialize_started = std::time::Instant::now();
         let files: Result<Vec<_>, String> = entries
             .par_iter()
             .map(|(path, scopes)| {
@@ -576,8 +681,9 @@ impl Corpus {
                 file.directory = directory;
                 file.inventory_order = traversal.get(path).copied().unwrap_or(usize::MAX);
                 file.groups = groups.get(path).cloned().unwrap_or_default();
-                if needs.cargo_manifests && path.extension().is_some_and(|ext| ext == "rs")
-                    || path.extension().is_some_and(|ext| ext == "res")
+                if (needs.cargo_manifests && path.extension().is_some_and(|ext| ext == "rs")
+                    || path.extension().is_some_and(|ext| ext == "res"))
+                    && bytes != file.text.as_bytes()
                 {
                     file.raw = Some(bytes.into());
                 }
@@ -585,6 +691,12 @@ impl Corpus {
                 Ok(file)
             })
             .collect();
+        if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
+            eprintln!(
+                "TIMING\tsource_materialize\t{:.3}",
+                materialize_started.elapsed().as_secs_f64()
+            );
+        }
         let explicit_paths = inputs
             .iter()
             .map(|p| {
@@ -711,7 +823,14 @@ fn collect_scopes_with_sets(
     }
     let relative = dir.strip_prefix(base).unwrap();
     let scopes = directory_scopes(relative, needs, explicit);
-    if scopes == 0 && !sets.iter().any(|set| set.visits(relative, explicit)) {
+    // A set that cannot visit this directory cannot visit its descendants.
+    // Retain each set's own pruning policy while dropping irrelevant root tests.
+    let active_sets: Vec<_> = sets
+        .iter()
+        .copied()
+        .filter(|set| set.visits(relative, explicit))
+        .collect();
+    if scopes == 0 && active_sets.is_empty() {
         return Ok(());
     }
     let mut directories = Vec::new();
@@ -719,12 +838,15 @@ fn collect_scopes_with_sets(
         let entry = entry?;
         let path = entry.path();
         let kind = entry.file_type()?;
-        if kind.is_symlink() && fs::metadata(&path)?.is_dir() {
+        // A link to a directory is not followed, and a dangling link (a ramdisk
+        // stage's link to a deleted payload under build-<arch>/) has nothing to
+        // read: skip both rather than fail the whole traversal on its ENOENT.
+        if kind.is_symlink() && fs::metadata(&path).map_or(true, |m| m.is_dir()) {
             continue;
         }
         let file_relative = path.strip_prefix(base).unwrap();
         let mut grouped = false;
-        for set in sets.iter().filter(|set| {
+        for set in active_sets.iter().filter(|set| {
             !set.tracked
                 && (set.accepts(file_relative, explicit)
                     || kind.is_dir() && set.directories && set.visits(file_relative, explicit))
@@ -779,7 +901,7 @@ fn collect_scopes_with_sets(
             selected |= CDECL;
         }
         if selected != 0 {
-            if kind.is_symlink() && fs::metadata(&path)?.is_dir() {
+            if kind.is_symlink() && fs::metadata(&path).map_or(true, |m| m.is_dir()) {
                 continue;
             }
             *paths.entry(path).or_default() |= selected;
@@ -787,9 +909,27 @@ fn collect_scopes_with_sets(
     }
     // pathlib.rglob visits all matches in a directory before its subdirectories.
     for path in directories {
-        collect_scopes_with_sets(base, &path, needs, explicit, paths, sets, groups, traversal)?;
+        collect_scopes_with_sets(
+            base,
+            &path,
+            needs,
+            explicit,
+            paths,
+            &active_sets,
+            groups,
+            traversal,
+        )?;
     }
     Ok(())
+}
+
+fn timed<T>(stage: &str, action: impl FnOnce() -> T) -> T {
+    let started = std::time::Instant::now();
+    let result = action();
+    if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
+        eprintln!("TIMING\t{stage}\t{:.3}", started.elapsed().as_secs_f64());
+    }
+    result
 }
 
 pub fn execute(
@@ -803,18 +943,23 @@ pub fn execute(
         .flat_map(|r| r.needs_c_signature_asts().iter().copied())
         .collect();
     if !ast_arches.is_empty() {
-        corpus.c_signature_asts.get_or_init(|| {
-            ast_arches
-                .iter()
-                .map(|a| (a.to_string(), ast_facts::c_signature_ast(&corpus.root, a)))
-                .collect()
-        });
-        for arch in ast_arches {
-            corpus.c_signature_ast(arch)?;
-        }
+        timed("c_signature_asts", || {
+            corpus.c_signature_asts.get_or_init(|| {
+                ast_arches
+                    .iter()
+                    .map(|a| (a.to_string(), ast_facts::c_signature_ast(&corpus.root, a)))
+                    .collect()
+            });
+            for arch in ast_arches {
+                corpus.c_signature_ast(arch)?;
+            }
+            Ok::<(), String>(())
+        })?;
     }
     if selected.iter().any(|rule| rule.needs_module_inputs()) {
-        corpus.module_inputs();
+        timed("module_inputs", || {
+            corpus.module_inputs();
+        });
     }
     if selected.iter().any(|rule| rule.needs_version_history()) {
         let started = std::time::Instant::now();
@@ -830,11 +975,16 @@ pub fn execute(
         }
     }
     if selected.iter().any(|rule| rule.needs_c_twins()) {
-        corpus.c_twins();
+        timed("c_twins", || {
+            corpus.c_twins();
+        });
     }
     if selected.iter().any(|rule| rule.needs_module_tree()) {
-        corpus.module_tree();
+        timed("module_tree", || {
+            corpus.module_tree();
+        });
     }
+    let execution_started = std::time::Instant::now();
     let results: Vec<_> = selected
         .par_iter()
         .map(|rule| {
@@ -880,12 +1030,105 @@ pub fn execute(
             Ok((rule.name(), lines))
         })
         .collect();
+    if std::env::var_os("VIBEOS_LINT_TIMINGS").is_some() {
+        eprintln!(
+            "TIMING\tsource_rule_execution\t{:.3}",
+            execution_started.elapsed().as_secs_f64()
+        );
+    }
     results.into_iter().collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn equivalent_ascii_mask_views_share_the_same_allocation() {
+        let file = SourceFile::new("a.rs".into(), "/* comment */ fn item() {}".into());
+        let regex = Regex::new(r"/\*.*?\*/").unwrap();
+        let bytes = file.masked(&regex, None, false);
+        let characters = file.masked(&regex, Some("ABSENT"), true);
+        let other_marker = file.masked(&regex, Some("ALSO_ABSENT"), false);
+        assert!(Arc::ptr_eq(&bytes, &characters));
+        assert!(Arc::ptr_eq(&bytes, &other_marker));
+        assert_eq!(bytes.as_ref(), "              fn item() {}");
+        // A real cutoff and non-ASCII masked text must keep their semantics.
+        let unicode = SourceFile::new("u.rs".into(), "/*é*/ END tail".into());
+        let bytes = unicode.masked(&regex, None, false);
+        let characters = unicode.masked(&regex, None, true);
+        assert_ne!(bytes.as_ref(), characters.as_ref());
+        assert_eq!(unicode.masked(&regex, Some("END"), true).as_ref(), "      ");
+    }
+
+    #[test]
+    fn indexed_source_lines_match_str_lines_including_unterminated_cr() {
+        for text in ["", "a", "a\n", "\n", "\r", "a\r\nb\r\r\nc\r", "é\n猫"] {
+            let file = SourceFile::new("fixture.rs".into(), text.into());
+            for row in 0..text.lines().count() + 2 {
+                assert_eq!(
+                    file.source_line(row),
+                    text.lines().nth(row),
+                    "{text:?}, row {row}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn concurrent_consumers_share_one_parse_even_without_retention() {
+        let corpus = Corpus::new(
+            "/fixture".into(),
+            vec![SourceFile::new("a.rs".into(), "fn item() {}".into())],
+        )
+        .with_ast_cache_nodes(0);
+        let barrier = std::sync::Barrier::new(8);
+        std::thread::scope(|scope| {
+            let file = &corpus.files[0];
+            let threads: Vec<_> = (0..8)
+                .map(|_| {
+                    let barrier = &barrier;
+                    scope.spawn(move || {
+                        barrier.wait();
+                        file.rust_tree().unwrap()
+                    })
+                })
+                .collect();
+            let trees: Vec<_> = threads
+                .into_iter()
+                .map(|thread| thread.join().unwrap())
+                .collect();
+            assert!(trees.iter().all(|tree| Arc::ptr_eq(tree, &trees[0])));
+            assert_eq!(corpus.cache_stats()["syntax_cache"]["successful_parses"], 1);
+            assert_eq!(corpus.cache_stats()["retained_rust_trees"], 0);
+        });
+    }
+    #[test]
+    fn cache_statistics_observe_only_initialized_payloads_and_eviction() {
+        let corpus = Corpus::new(
+            "/fixture".into(),
+            vec![SourceFile::new(
+                "a.rs".into(),
+                "/* hi */ fn item() {}\n".into(),
+            )],
+        );
+        let initial = corpus.cache_stats();
+        assert_eq!(initial["retained_rust_trees"], 0);
+        assert_eq!(initial["noise_bytes"], 0);
+        assert_eq!(initial["masked_view_bytes"], serde_json::json!({}));
+        let file = &corpus.files[0];
+        let tree = file.rust_tree().unwrap();
+        let nodes = tree.root_node().descendant_count();
+        assert!(Arc::ptr_eq(&tree, &file.rust_tree().unwrap()));
+        let masked = file.masked(&Regex::new(r"/\*.*?\*/").unwrap(), None, false);
+        assert_eq!(masked.len(), file.text.len());
+        let observed = corpus.cache_stats();
+        assert_eq!(observed["retained_rust_tree_nodes"], nodes);
+        assert_eq!(observed["syntax_cache"]["successful_parses"], 1);
+        assert_eq!(observed["noise_bytes"], 0);
+        let corpus = corpus.with_ast_cache_nodes(0);
+        assert_eq!(corpus.cache_stats()["retained_rust_trees"], 0);
+        assert_eq!(tree.root_node().descendant_count(), nodes);
+    }
     #[test]
     fn multiline_reports_are_tagged_as_individual_output_lines() {
         struct Report;
@@ -1005,10 +1248,14 @@ mod tests {
 
     #[test]
     fn large_syntax_is_shared_only_while_consumers_hold_it() {
-        let file = SourceFile::new(
-            "large.rs".into(),
-            format!("{}fn live() {{}}", " ".repeat(256 * 1024)),
+        let corpus = Corpus::new(
+            "/fixture".into(),
+            vec![SourceFile::new(
+                "large.rs".into(),
+                format!("{}fn live() {{}}", " ".repeat(256 * 1024)),
+            )],
         );
+        let file = &corpus.files[0];
         let first = file.rust_tree().unwrap();
         let second = file.rust_tree().unwrap();
         assert!(Arc::ptr_eq(&first, &second));
@@ -1072,6 +1319,14 @@ mod tests {
             std::os::unix::fs::symlink(&rust, rust.join("cycle")).unwrap();
             std::os::unix::fs::symlink(rust.join("crate/src/lib.rs"), rust.join("alias.rs"))
                 .unwrap();
+            // Dangling links, in scope and under a build tree, are skipped.
+            std::os::unix::fs::symlink(rust.join("deleted.rs"), rust.join("dangling.rs")).unwrap();
+            fs::create_dir_all(temp.join("build-arm64/boot/ramdisk")).unwrap();
+            std::os::unix::fs::symlink(
+                temp.join("gone/payload.exe"),
+                temp.join("build-arm64/boot/ramdisk/payload.exe"),
+            )
+            .unwrap();
         }
         let corpus = Corpus::load(&temp).unwrap();
         assert!(corpus
@@ -1257,6 +1512,17 @@ mod tests {
             Path::new("source/oracle.c")
         );
         assert_eq!(corpus.c_twins().get("Cpp").len(), 1);
+        let rust_path = Path::new("sdk/lib/rust/x/src/lib.rs");
+        fs::write(temp.join(rust_path), "pub fn Caller() {}\n").unwrap();
+        let plain = Corpus::load_scopes(&temp, &[], needs).unwrap();
+        let file = plain.file(rust_path).unwrap();
+        assert_eq!(file.bytes(), b"pub fn Caller() {}\n");
+        assert!(file.raw.is_none());
+        fs::write(temp.join(rust_path), b"// \xff\r\n").unwrap();
+        let invalid = Corpus::load_scopes(&temp, &[], needs).unwrap();
+        let file = invalid.file(rust_path).unwrap();
+        assert_eq!(file.text, "// \u{fffd}\n");
+        assert_eq!(file.bytes(), b"// \xff\r\n");
         fs::remove_file(temp.join("source/cpp.cpp")).unwrap();
         assert!(Corpus::load_scopes(&temp, &[], needs)
             .unwrap()

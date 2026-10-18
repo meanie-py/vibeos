@@ -76,6 +76,25 @@ fn merge_facts(dst: &mut Facts, src: Facts) {
         dst.ret_decl.entry(name).or_default().extend(values);
     }
 }
+fn split_island_facts(extracted: Facts) -> (Facts, Facts) {
+    let Facts {
+        aliases,
+        aggregates,
+        decls,
+        ..
+    } = extracted;
+    (
+        Facts {
+            aliases,
+            aggregates,
+            ..Facts::default()
+        },
+        Facts {
+            decls,
+            ..Facts::default()
+        },
+    )
+}
 #[derive(Default)]
 struct Types {
     aliases: BTreeMap<String, BTreeSet<String>>,
@@ -107,7 +126,20 @@ fn collect_tree<'a>(
     let mut depth = 0usize;
     loop {
         let n = cursor.node();
-        nodes.push(n);
+        if matches!(
+            n.kind(),
+            "type_item"
+                | "use_as_clause"
+                | "struct_item"
+                | "enum_item"
+                | "union_item"
+                | "call_expression"
+                | "function_signature_item"
+                | "static_item"
+                | "function_item"
+        ) {
+            nodes.push(n);
+        }
         let foreign = inherited_foreign[depth];
         if matches!(
             n.kind(),
@@ -253,7 +285,6 @@ fn file_facts(
 ) -> Result<(), String> {
     let src = &f.text;
     let (nodes, sibling_attrs) = collect_tree(tree.root_node(), src);
-    let lines = src.lines().collect::<Vec<_>>();
     let p = f.path.to_string_lossy().replace('\\', "/");
     for n in nodes {
         match n.kind() {
@@ -303,7 +334,7 @@ fn file_facts(
             && sibling_attrs.get(&n.id()).is_some_and(|a| a.foreign)
         {
             let ln = n.start_position().row;
-            let line = lines.get(ln).copied().unwrap_or("");
+            let line = f.source_line(ln).unwrap_or("");
             if nolint(line) {
                 continue;
             }
@@ -336,7 +367,7 @@ fn file_facts(
                 let sym = symbol(n, src, text(nm, src), sib);
                 let t = norm(text(ty, src));
                 if sibling_attrs.get(&n.id()).is_some_and(|a| a.foreign) {
-                    if !nolint(lines.get(ln).copied().unwrap_or("")) {
+                    if !nolint(f.source_line(ln).unwrap_or("")) {
                         all.statics_decl
                             .entry(sym)
                             .or_default()
@@ -829,12 +860,9 @@ impl Rule for ExternDeclDrift {
                     .map(|f| {
                         let owner = f.path.ancestors().find(|d| crate_dirs.contains(*d));
                         let owner_key = owner.map(|p| p.to_string_lossy().to_string());
-                        // Large bindgen trees are weak-cached. Hold this tree
-                        // across both extraction passes so islands parse once.
                         let tree = f.rust_tree()?;
                         let mut local = Facts::default();
-                        file_facts(f, &tree, owner_key.as_deref(), &mut local)?;
-                        let island = if owner.is_none()
+                        let island_dep = if owner.is_none()
                             && f.path
                                 .file_name()
                                 .is_some_and(|n| n.to_string_lossy().contains("bindgen"))
@@ -843,13 +871,24 @@ impl Rule for ExternDeclDrift {
                                 .values()
                                 .flatten()
                                 .find(|d| f.path.starts_with(d))
-                                .map(|sd| {
-                                    let mut facts = Facts::default();
-                                    file_facts(f, &tree, Some("island"), &mut facts)?;
-                                    Ok::<_, String>((sd.clone(), facts))
-                                })
-                                .transpose()?
+                                .cloned()
                         } else {
+                            None
+                        };
+                        let island = if let Some(sd) = island_dep {
+                            // For an island file, the owner-less pass contributes
+                            // only aliases and aggregate names to global facts.
+                            // The island-owned pass contributes those same names
+                            // plus declarations; only its declarations are used by
+                            // the caller. Extract once, then split the useful facts.
+                            let mut extracted = Facts::default();
+                            file_facts(f, &tree, Some("island"), &mut extracted)?;
+                            let (shared, island) = split_island_facts(extracted);
+                            local.aliases = shared.aliases;
+                            local.aggregates = shared.aggregates;
+                            Some((sd, island))
+                        } else {
+                            file_facts(f, &tree, owner_key.as_deref(), &mut local)?;
                             None
                         };
                         Ok((local, island))
@@ -1426,5 +1465,47 @@ extern "C" {
     fn crt_authority_skips_kernel_crates_and_matching_user_return_widths() {
         assert!(run_owned(crt_tree(true, "c_int")).is_empty());
         assert!(run_owned(crt_tree(false, "u16")).is_empty());
+    }
+    // Add this test inside extern_decl_drift.rs's existing `mod tests`.
+    #[test]
+    fn island_split_keeps_aliases_aggregates_and_declarations_only() {
+        let src = r#"
+pub type Handle = usize;
+pub struct Token;
+extern "C" {
+    fn IslandCall(value: Handle);
+    static EXTERNAL: Handle;
+}
+#[no_mangle]
+pub extern "C" fn ExportedDefinition() -> u8 { 1 }
+pub unsafe fn caller() { IslandCall(0); }
+"#;
+        let file = SourceFile::new("ntdll-sys/src/bindgen.rs".into(), src.into());
+        let tree = file.rust_tree().unwrap();
+        let mut extracted = Facts::default();
+        file_facts(&file, &tree, Some("island"), &mut extracted).unwrap();
+
+        // Verify the fixture really exercises facts that the split must discard.
+        assert!(extracted.called.contains_key("ntdll-sys/src/bindgen.rs"));
+        assert!(extracted.statics_decl.contains_key("EXTERNAL"));
+        assert!(extracted.defs.contains_key("ExportedDefinition"));
+        assert!(extracted.ret_def.contains_key("ExportedDefinition"));
+
+        let (global, island) = split_island_facts(extracted);
+        assert_eq!(global.aliases["Handle"], BTreeSet::from(["usize".into()]));
+        assert!(global.aggregates.contains("Token"));
+        assert!(global.decls.is_empty());
+        assert!(global.called.is_empty());
+        assert!(global.statics_decl.is_empty());
+        assert!(global.defs.is_empty());
+        assert!(global.ret_def.is_empty());
+
+        assert!(island.aliases.is_empty());
+        assert!(island.aggregates.is_empty());
+        assert!(island.decls.contains_key("IslandCall"));
+        assert!(island.called.is_empty());
+        assert!(island.statics_decl.is_empty());
+        assert!(island.defs.is_empty());
+        assert!(island.ret_def.is_empty());
     }
 }

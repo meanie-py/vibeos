@@ -1,15 +1,18 @@
 //! Legacy Rust token masking shared by source rules.
 pub fn strip_noise(text: &str) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = chars.clone();
+    // Keep one character buffer for the legacy character-indexed scanner and
+    // mask it in place. The previous implementation cloned this allocation,
+    // making an ASCII input occupy two 4-byte-per-character buffers before
+    // building the returned String.
+    let mut chars: Vec<char> = text.chars().collect();
     let (mut i, n) = (0usize, chars.len());
-    let starts = |at: usize, pat: &str| -> bool {
+    let starts = |chars: &[char], at: usize, pat: &str| -> bool {
         pat.chars()
             .enumerate()
             .all(|(offset, ch)| chars.get(at + offset) == Some(&ch))
     };
-    let blank = |out: &mut [char], start: usize, end: usize| {
-        for c in &mut out[start..end] {
+    let blank = |chars: &mut [char], start: usize, end: usize| {
+        for c in &mut chars[start..end] {
             if *c != '\n' {
                 *c = ' ';
             }
@@ -22,7 +25,7 @@ pub fn strip_noise(text: &str) -> String {
         }
         let start = i;
         // Match Python's b?r(#*)" raw-string opener at the current token.
-        let raw_prefix = if starts(i, "br") {
+        let raw_prefix = if starts(&chars, i, "br") {
             Some(i + 2)
         } else if chars[i] == 'r' {
             Some(i + 1)
@@ -35,46 +38,43 @@ pub fn strip_noise(text: &str) -> String {
             }
             if j < n && chars[j] == '"' {
                 let hashes = j - raw_prefix.unwrap();
-                let close: Vec<char> = std::iter::once('"')
-                    .chain(std::iter::repeat('#').take(hashes))
-                    .collect();
                 j += 1;
                 let mut end = n;
-                while j + close.len() <= n {
-                    if chars[j..j + close.len()] == close {
-                        end = j + close.len();
+                while j + hashes + 1 <= n {
+                    if chars[j] == '"' && chars[j + 1..j + hashes + 1].iter().all(|&c| c == '#') {
+                        end = j + hashes + 1;
                         break;
                     }
                     j += 1;
                 }
-                blank(&mut out, start, end);
+                blank(&mut chars, start, end);
                 i = end;
                 continue;
             }
         }
-        if starts(i, "//") {
+        if starts(&chars, i, "//") {
             let end = chars[i..]
                 .iter()
                 .position(|&c| c == '\n')
                 .map_or(n, |d| i + d);
-            blank(&mut out, i, end);
+            blank(&mut chars, i, end);
             i = end;
             continue;
         }
-        if starts(i, "/*") {
+        if starts(&chars, i, "/*") {
             let (mut depth, mut j) = (1usize, i + 2);
             while j < n && depth > 0 {
-                if starts(j, "/*") {
+                if starts(&chars, j, "/*") {
                     depth += 1;
                     j += 2;
-                } else if starts(j, "*/") {
+                } else if starts(&chars, j, "*/") {
                     depth -= 1;
                     j += 2;
                 } else {
                     j += 1;
                 }
             }
-            blank(&mut out, i, j);
+            blank(&mut chars, i, j);
             i = j;
             continue;
         }
@@ -95,7 +95,7 @@ pub fn strip_noise(text: &str) -> String {
                     j += 1;
                 }
             }
-            blank(&mut out, i, j.min(n));
+            blank(&mut chars, i, j.min(n));
             i = j.min(n);
             continue;
         }
@@ -132,17 +132,50 @@ pub fn strip_noise(text: &str) -> String {
                 }
                 if j < n && chars[j] == '\'' {
                     j += 1;
-                    blank(&mut out, i, j);
+                    blank(&mut chars, i, j);
                     i = j;
                     continue;
                 }
             }
             // An unmatched tick is a lifetime; preserve it and scan the following text.
-            out[i] = chars[i];
             i += 1;
             continue;
         }
         i += 1;
     }
-    out.into_iter().collect()
+    chars.into_iter().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_noise;
+
+    #[test]
+    fn masks_unicode_by_character_and_keeps_newlines() {
+        let input = "α/*é\n猫*/β";
+        assert_eq!(strip_noise(input), "α   \n   β");
+    }
+
+    #[test]
+    fn nested_comments_raw_strings_byte_chars_and_lifetimes() {
+        let input =
+            "let a = r##\"/* text */\"##; /* x /* y */ z */ let b = b'Q'; let r: &'static str;";
+        let expected = format!(
+            "let a = {}; {} let b = {}; let r: &'static str;",
+            " ".repeat(17),
+            " ".repeat(17),
+            " ".repeat(4),
+        );
+        assert_eq!(strip_noise(input), expected);
+    }
+
+    #[test]
+    fn malformed_literals_keep_the_legacy_scan_boundaries() {
+        assert_eq!(
+            strip_noise("let x = \"unterminated\ncode;"),
+            format!("let x = {}\n     ", " ".repeat(13))
+        );
+        assert_eq!(strip_noise("'life + value"), "'life + value");
+        assert_eq!(strip_noise("b'\\xGG' + live"), "b'\\xGG' + live");
+    }
 }

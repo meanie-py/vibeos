@@ -19,7 +19,6 @@ PORTED = frozenset(
         "shellcheck",
         "py-syntax",
         "scan_cmake_linked_rust",
-        "scan_cargo_manifests",
         "scan_atl_slot_cast",
         "scan_fnclass_cc",
         "scan_list_walk_cursor_after_loop",
@@ -137,6 +136,7 @@ PORTED = frozenset(
         "scan_info_class_literals",
         "scan_misaligned_cast",
         "scan_fnptr_abi_transmute",
+        "scan_entry_point_cc",
         "scan_shadowed_c_define",
         "scan_hkey_zero_extend",
     }
