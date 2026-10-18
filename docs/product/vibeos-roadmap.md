@@ -602,6 +602,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Shared cargo link dir lost an uplifted `.d` (open flake, seen once 2026-10-18,
+  integration).** Cold gate `20261018-182602-3__g5z_l` failed i386 at winlogon.exe:
+  `cargo-depfile: No such file ... cell-link-v1-i386-15/.../release/winlogon.d`. cargo had
+  just built it (`deps/winlogon-<hash>.d` present, but 357 bytes listing only `main.rs`), and
+  the uplifted `release/winlogon.d` was absent. The warm rebuild was green with a 15 KB `.d`.
+  Suspect: the shared `cell-link-v1-<arch>-<n>` shard dirs (`baa4ba3795a`/`fd9c0f4d64e`). The
+  shard is not locked across the `cargo build` → `retarget_cargo_depfile.py` chain, so another
+  cell's cargo in the same shard can run in that window. UNVERIFIED; this is the first sighting
+  in any `/tmp/vibeos-cli` log.
 - **Directory change notification: 19 Wine `change` failures left after the fsrtl fix (open,
   found 2026-10-17, smp-bringup).** `FsRtlNotifyFilterReportChange` was an empty placeholder,
   so no watch ever completed with data. It is now translated, along with the lost-IRP
