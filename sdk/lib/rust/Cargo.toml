@@ -1,5 +1,9 @@
 [workspace]
 members = [
+    "imagehlp-cargo",
+    "credui-cargo",
+    "wtsapi32-cargo",
+    "pdh-cargo",
     "reactos-cargo",
     "tdi-cargo",
     "rtl8139-cargo",
@@ -906,6 +910,10 @@ members = [
     "setupapi-rust",
     "acppage-rust",
     "cabview-rust",
+    "pdh-rust",
+    "wtsapi32-rust",
+    "imagehlp-rust",
+    "credui-rust",
 ]
 resolver = "2"
 

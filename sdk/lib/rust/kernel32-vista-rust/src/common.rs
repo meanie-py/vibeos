@@ -14,6 +14,7 @@ extern "system" {
     pub fn GetLocaleInfoW(Locale: LCID, LCType: LCTYPE, lpLCData: LPWSTR, cchData: core::ffi::c_int)
         -> core::ffi::c_int;
     pub fn lstrlenW(lpString: LPCWSTR) -> core::ffi::c_int;
+    pub fn GetUserDefaultUILanguage() -> LANGID;
 }
 
 // ---- kernel32-shared-rust ----

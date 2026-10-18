@@ -200,3 +200,29 @@ def test_the_em_dash_flip_spelling_counts_as_flipped():
 def test_a_library_whose_name_contains_rust_is_kept():
     out = co.generate(_CML + "add_delay_importlibs(x comdlg32 wintrust)\n")
     assert "add_delay_importlibs(x_c comdlg32 wintrust)" in out
+
+
+def test_reflip_keeps_a_list_closing_on_its_last_flipped_entry():
+    """imagehlp: `modify.c)` became `# modify.c  # replaced by Rust)`, the `)` inside the
+    comment, and the list never closed ("unbalanced parentheses in list(")."""
+    old = "list(APPEND SOURCE\n    access.c\n    modify.c)\n\nadd_library(imagehlp MODULE ${SOURCE})\n"
+    cml = "# access.c  # replaced by Rust (x)\n# modify.c  # replaced by Rust (y)\nadd_cargo_module(imagehlp)\n"
+    out = co.reflip(old, cml)
+    assert "    # modify.c  # replaced by Rust\n    )\n" in out
+    assert [c.name for c in co.commands(out)] == ["list", "add_library"]
+
+
+def test_an_untouched_list_the_oracle_names_is_carried_into_it():
+    """The cargo flip deletes `list(APPEND PCH_SKIP_SOURCE .._stubs.c)`; imagehlp_c then read an
+    empty ${PCH_SKIP_SOURCE} and lost spec2def's stubs."""
+    old = (
+        "list(APPEND SOURCE\n    access.c\n    modify.c)\n"
+        "list(APPEND PCH_SKIP_SOURCE\n    ${CMAKE_CURRENT_BINARY_DIR}/imagehlp_stubs.c)\n"
+        "add_library(imagehlp MODULE ${SOURCE} ${PCH_SKIP_SOURCE} imagehlp.rc)\n"
+    )
+    cml = "# access.c  # replaced by Rust (x)\n# modify.c  # replaced by Rust (y)\nadd_cargo_module(imagehlp)\n"
+    out = co.generate(co.reflip(old, cml))
+    assert (
+        "set(PCH_SKIP_SOURCE_C_ORACLE\n    ${CMAKE_CURRENT_BINARY_DIR}/imagehlp_stubs.c\n)" in out
+    )
+    assert "${SOURCE_C_ORACLE} ${PCH_SKIP_SOURCE_C_ORACLE} imagehlp.rc" in out

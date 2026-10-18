@@ -3454,7 +3454,15 @@ def _drop_dead_arms(path: Path, c_file: Path) -> list[str]:
 
 
 _WINE_DBCH_ITEM = re.compile(
-    r"^(?:#\[no_mangle\]\n)?pub\s+static\s+(?:mut\s+)?(__wine_dbch_\w+)\s*:[^\n]*;\n", re.M
+    r"^(?:#\[no_mangle\]\n)?pub\s+static\s+(?:mut\s+)?(__wine_dbch_\w+)\s*:"
+    r"(?:[^\n]*;\n|[^\n]*\{\n(?:[^\n]*\n)*?\};\n)",
+    re.M,
+)
+#: wine/debug.h's own types, which resolve writes into the prelude beside the statics.
+_WINE_DBCH_TYPES = re.compile(
+    r"^(?:#\[repr\(C\)\]\n)?pub\s+struct\s+(__wine_debug_channel)\s*\{\n(?:[^\n]*\n)*?\}\n"
+    r"|^pub\s+type\s+(__wine_debug_class)\s*=[^\n]*;\n",
+    re.M,
 )
 
 
@@ -3489,10 +3497,16 @@ def _wine_list_entry(path: Path, module_dir: Path, crate: Path) -> int:
         n += k
         return out
 
+    # A struct LITERAL with Flink/Blink is the NT type whatever the module's C says: Wine's
+    # critical-section initializer expands to one (pdh's `ProcessLocksList: _LIST_ENTRY {
+    # Flink: .., Blink: .. }` in a CRITICAL_SECTION_DEBUG), and `list` has no such fields.
+    nt_literal = re.compile(r"\b_?LIST_ENTRY(\s*\{\s*Flink\s*:)")
+    text = nt_literal.sub(r"__NT_LIST_ENTRY_LITERAL\1", text)
     text = sub(r"\bLIST_ENTRY\s*\(", "LIST_ENTRY!(", text)
     text = sub(r"\bPLIST_ENTRY\b", "*mut list", text)
     text = sub(r"\b_LIST_ENTRY\b", "list", text)  # mf: bindgen's tag spelling
     text = sub(r"\bLIST_ENTRY\b(?!\s*!)", "list", text)
+    text = text.replace("__NT_LIST_ENTRY_LITERAL", "_LIST_ENTRY")
     if n:
         path.write_text(text)
     return n
@@ -3526,16 +3540,58 @@ def _c_struct_tag_names(path: Path, crate_src: Path) -> list[str]:
     return done
 
 
+_CRITSEC_DEBUG_STATIC = re.compile(
+    r"^(static\s+mut\s+(\w+)\s*:\s*CRITICAL_SECTION_DEBUG\s*=\s*)(_RTL_CRITICAL_SECTION_DEBUG\s*\{\n.*?\n\s*\};)\n",
+    re.M | re.S,
+)
+_CRITSEC_DEBUG_STRING = re.compile(
+    r"WineDebugString:\s*b\"[^\"]*\"\s*as\s*\*const\s+u8\s+as\s+\*const\s+::core::ffi::c_char"
+    r"\s+as\s+DWORD_PTR,?\s*"
+)
+
+
+def _wine_critsec_debug(path: Path) -> list[str]:
+    """Wine's static critical section, `{ 0, 0, &cs, { &cs_debug.ProcessLocksList, ... }, 0, 0,
+    { (DWORD_PTR)(__FILE__ ": cs") } }`, as a const initializer Rust can evaluate.
+
+    It came back (pdh, credui) with the label's address cast to DWORD_PTR, which const
+    evaluation refuses (a pointer is not an integer there), and `&raw mut` of the statics it
+    names outside `unsafe`. The label only names the lock for a debugger, so the slot is
+    zeroed (`Spare: [0; 1]`, the union's other arm) and the initializer goes in `unsafe`.
+    Returns the statics rewritten."""
+    text = path.read_text()
+    done: list[str] = []
+
+    def fix(m: re.Match[str]) -> str:
+        body = m.group(3)
+        new_body = _CRITSEC_DEBUG_STRING.sub("Spare: [0; 1] ", body)
+        if new_body == body and "unsafe" in m.group(1):
+            return m.group(0)
+        done.append(m.group(2))
+        return f"{m.group(1)}unsafe {{ {new_body[:-1]}}};\n"
+
+    new = _CRITSEC_DEBUG_STATIC.sub(fix, text)
+    if new != text:
+        path.write_text(new)
+    return done
+
+
 def _wine_debug_storage(path: Path) -> list[str]:
     """`WINE_DEFAULT_DEBUG_CHANNEL(ch)` is two statics in a HEADER macro, and resolve writes
     them once in the prelude (`_wine_debug_channels`). A translation that spells its own --
     inetcpl's security.c came back with `pub static __wine_dbch___default: [u8; 8] =
     *b"inetcpl\0"`, two TUs each with a different invented type -- shadows the real
     `*mut __wine_debug_channel`, so it is dropped, and the bodies that then indexed it as
-    bytes (`__wine_dbch___default[0]`, the struct's first field) read `.flags`."""
+    bytes (`__wine_dbch___default[0]`, the struct's first field) read `.flags`. A TU-local
+    copy of the struct or the class enum goes too: there is one, the prelude's."""
     text = path.read_text()
     names = _WINE_DBCH_ITEM.findall(text)
     new = _WINE_DBCH_ITEM.sub("", text)
+    # pdh_main.c came back with the channel static as a multi-line literal (flags: 0, where
+    # the macro says (unsigned char)~0, i.e. every class off) and its own copy of the struct,
+    # which then disagreed with the prelude's at every TRACE: drop both, resolve writes them.
+    names += [a or b for a, b in _WINE_DBCH_TYPES.findall(new)]
+    new = _WINE_DBCH_TYPES.sub("", new)
     new, n = re.subn(r"\b(__wine_dbch_\w+)\[0\]", r"(*\1).flags", new)
     # `TRACE_ON(extrac32)` pastes `&__wine_dbch_##ch`, which macro_rules cannot: name the
     # channel static for win32macros-rust's `TRACE_ON!`.
@@ -4382,6 +4438,13 @@ def stage_integrate(stem: str) -> None:
         if wl:
             changed += 1
             print(f"integrate: {path.stem}: {wl} NT LIST_ENTRY(s) as wine/list.h's `list`")
+        critsec = _wine_critsec_debug(path)
+        if critsec:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: Wine critical-section debug static(s) made const: "
+                + ", ".join(critsec)
+            )
         wine = _wine_debug_storage(path)
         if wine:
             changed += 1
@@ -5692,6 +5755,16 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
         t for t in sdk_alias.values() if t not in declared
     }
     failed: list[str] = []
+    # Same rule as the consensus pass: a user-mode extern must be something an import library
+    # this module links exports. pdh and credui got `RtlSecureZeroMemory` here -- winnt.h's
+    # FORCEINLINE, which bindgen declares and no DLL exports -- and failed to link on every
+    # arch. Kernel crates are left to the substrate's link check, as there.
+    crate = _crate_dir(state)
+    island_sys = prelude_resolve.island_substrate(crate / "src", REPO / "sdk" / "lib" / "rust")
+    user_mode = island_sys is None or island_sys.parent.name != "ntkrnl-sys"
+    exported_anywhere = (
+        prelude_resolve.module_exports(module_dir, REPO, every_arch=False) if user_mode else None
+    )
     for tu in state["tus"]:
         if not todo:
             break
@@ -5712,6 +5785,13 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             if "VaList" in sig:
                 print(
                     f"resolve: {name}: takes a va_list (not declarable on stable); use the C shim"
+                )
+                todo.discard(name)
+                continue
+            if exported_anywhere is not None and name not in exported_anywhere:
+                print(
+                    f"resolve: {name}: no import library this module links exports it -- a "
+                    "header inline: port it, or import it from a shared crate"
                 )
                 todo.discard(name)
                 continue

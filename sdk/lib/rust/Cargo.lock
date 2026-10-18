@@ -1122,6 +1122,26 @@ name = "crc32"
 version = "0.1.0"
 
 [[package]]
+name = "credui-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "credui-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
+]
+
+[[package]]
 name = "crt-dllmain-rust"
 version = "0.1.0"
 dependencies = [
@@ -2455,6 +2475,25 @@ dependencies = [
 
 [[package]]
 name = "ifmon-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "imagehlp-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "imagehlp-rust"
 version = "0.1.0"
 dependencies = [
  "conutils-h",
@@ -4570,6 +4609,26 @@ dependencies = [
  "ntkrnl-sys",
  "panic-common",
  "win32macros-rust",
+]
+
+[[package]]
+name = "pdh-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "pdh-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -7853,6 +7912,25 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+]
+
+[[package]]
+name = "wtsapi32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "wtsapi32-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]

@@ -927,3 +927,24 @@ def test_an_asm_command_keeps_the_defines_a_source_adds_after_cmakes_sorted_run(
     assert f.defines == ("_M_AMD64",)
     obj = "sdk/lib/x/CMakeFiles/x.dir/a.s.obj"
     assert g.asm_decode(f, ATMPL, "amd64", obj) == ASM_CMD.split()[:-2]
+
+
+def test_spec_entries_that_reexport_an_import_are_recognized(tmp_path):
+    """imagehlp re-exports dbghelp: `-import` entries and an entry naming itself as its target
+    are exports bound to import thunks on purpose, not the user32_vista accident."""
+    spec = tmp_path / "imagehlp.spec"
+    spec.write_text(
+        "@ stdcall -import EnumerateLoadedModules(long ptr ptr)\n"
+        "@ stdcall -import -arch=win32 MapDebugInformation(long str str long)\n"
+        "@ stdcall -import ImageNtHeader(ptr) RtlImageNtHeader\n"
+        "@ stdcall SymEnumSourceFiles(ptr int64 str ptr ptr) SymEnumSourceFiles\n"
+        "@ stdcall BindImage(str str str)\n"
+        "@ stdcall Alias(long) Target\n"
+    )
+    assert g._spec_imported_exports(spec) == {
+        "EnumerateLoadedModules",
+        "MapDebugInformation",
+        "ImageNtHeader",
+        "SymEnumSourceFiles",
+    }
+    assert g._spec_imported_exports(tmp_path / "missing.spec") == set()

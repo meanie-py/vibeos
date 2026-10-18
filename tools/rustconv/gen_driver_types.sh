@@ -9280,6 +9280,98 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  pdh)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from dll/win32/pdh/CMakeLists.txt
+    # (1 compiled TU(s), 150 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 23 external prototype(s) declared by the include closure, 5 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/pdh"
+    WRAPPER_INC=$'#include <stdarg.h>\n#include <stdlib.h>\n#include <math.h>\n#include "windef.h"\n#include "winbase.h"\n#include "pdh.h"\n#include "pdhmsg.h"\n#include "winperf.h"\n#include <wchar.h>\n#include <winnls.h>\n#include "wine/debug.h"\n#include "wine/list.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]pdh\.h' --allowlist-file '.*[/\\]pdhmsg\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winperf\.h'
+                  --allowlist-file '.*pdh[/\\].*\.h' )
+    # wine/list.h: `struct list` and its helpers are winelist-rust's.
+    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )
+    EXTRA_BL_ITEMS=( list )
+    EXTRA_INC=( -I"${SRC}/dll/win32/pdh" -I"${SRC}/build-i386/dll/win32/pdh" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D__WINESRC__ -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  wtsapi32)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from dll/win32/wtsapi32/CMakeLists.txt
+    # (1 compiled TU(s), 74 headers in the include closure, 18 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 11 external prototype(s) declared by the include closure, 7 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/wtsapi32"
+    WRAPPER_INC=$'#include <stdarg.h>\n#include <stdlib.h>\n#include "ntstatus.h"\n#define WIN32_NO_STATUS\n#include "windef.h"\n#include "winbase.h"\n#include "wine/winternl.h"\n#include "wtsapi32.h"\n#include "wine/debug.h"\n#include "wine/heap.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]wtsapi32\.h' --allowlist-file '.*wtsapi32[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/wtsapi32" -I"${SRC}/build-i386/dll/win32/wtsapi32" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D__WINESRC__ -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  imagehlp)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from dll/win32/imagehlp/CMakeLists.txt
+    # (4 compiled TU(s), 76 headers in the include closure, 2 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 24 external prototype(s) declared by the include closure, 4 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/imagehlp"
+    WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <string.h>\n#include "windef.h"\n#include "winbase.h"\n#include "winnt.h"\n#include "winternl.h"\n#include "winerror.h"\n#include "winver.h"\n#include "wine/debug.h"\n#include "imagehlp.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]imagehlp\.h' --allowlist-file '.*[/\\]winerror\.h'
+                  --allowlist-file '.*[/\\]winternl\.h'
+                  --allowlist-file '.*[/\\]winver\.h'
+                  --allowlist-file '.*imagehlp[/\\].*\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/imagehlp" -I"${SRC}/build-i386/dll/win32/imagehlp" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_IMAGEHLP_SOURCE_ -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  credui)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from dll/win32/credui/CMakeLists.txt
+    # (1 compiled TU(s), 148 headers in the include closure, 14 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 43 external prototype(s) declared by the include closure, 3 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/credui"
+    WRAPPER_INC=$'#include <stdarg.h>\n#include "windef.h"\n#include "winbase.h"\n#include "winnt.h"\n#include "winuser.h"\n#include "wincred.h"\n#include "rpc.h"\n#include "sspi.h"\n#include "commctrl.h"\n#include "credui_resources.h"\n#include "wine/debug.h"\n#include "wine/list.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]rpc\.h'
+                  --allowlist-file '.*[/\\]sspi\.h'
+                  --allowlist-file '.*[/\\]wincred\.h'
+                  --allowlist-file '.*credui[/\\].*\.h'
+                  --allowlist-file '.*[/\\]rpcdce\.h' )
+    # wine/list.h: `struct list` and its helpers are winelist-rust's.
+    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )
+    EXTRA_BL_ITEMS=( list )
+    EXTRA_INC=( -I"${SRC}/dll/win32/credui" -I"${SRC}/build-i386/dll/win32/credui" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D__WINESRC__ -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

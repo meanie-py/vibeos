@@ -100,8 +100,9 @@ def _words(args: str) -> list[str]:
     return re.findall(r'"[^"]*"|[^\s"]+', re.sub(r"#[^\n]*", "", args))
 
 
-def source_lists(text: str) -> dict[str, list[str]]:
-    """Each `list(APPEND V ..)` / `set(V ..)` holding a flipped TU -> its pre-flip entries."""
+def source_lists(text: str, *, all_lists: bool = False) -> dict[str, list[str]]:
+    """Each `list(APPEND V ..)` / `set(V ..)` holding a flipped TU -> its pre-flip entries
+    (every such list with `all_lists`)."""
     lists: dict[str, list[str]] = {}
     flipped: set[str] = set()
     for cmd in commands(text):
@@ -122,7 +123,7 @@ def source_lists(text: str) -> dict[str, list[str]]:
             # rust_varargs_shim.c, whose trampolines redefine netsh.c's own variadics.
             entries += [w for w in _words(line) if not Path(w).name.startswith("rust_")]
         lists.setdefault(var, []).extend(entries)
-    return {v: lists[v] for v in lists if v in flipped}
+    return {v: lists[v] for v in lists if v in flipped or all_lists}
 
 
 def _target_of(cmd: Command) -> str | None:
@@ -174,6 +175,19 @@ def generate(cml: str) -> str:
             if words and words[0] not in oracle and any(w in oracle for w in words[1:]):
                 oracle[words[0]] = f"{words[0]}_c"
                 grew = True
+
+    # A list the oracle names that the flip did NOT touch is copied too: the cargo flip
+    # deletes `list(APPEND PCH_SKIP_SOURCE .._stubs.c)` along with the sources, so imagehlp_c
+    # read an empty ${PCH_SKIP_SOURCE}, lost spec2def's stubs, and failed to link.
+    every = source_lists(cml, all_lists=True)
+    used = {
+        v
+        for cmd in cmds
+        if _target_of(cmd) in oracle
+        for v in re.findall(r"\$\{(\w+)\}", cmd.args)
+        if v in every and v not in lists
+    }
+    lists = {**lists, **{v: every[v] for v in used}}
 
     def rewrite(word: str) -> str | None:
         if _RUST_WORD.search(word):
@@ -285,9 +299,13 @@ def reflip(old: str, cml: str) -> str:
         entry = line.strip().rstrip(")").strip()
         if entry in flipped and not line.lstrip().startswith("#"):
             indent = line[: len(line) - len(line.lstrip())]
-            line = f"{indent}# {entry}  # replaced by Rust" + (
-                ")" if line.rstrip().endswith(")") else ""
-            )
+            closes = line.rstrip().endswith(")")
+            line = f"{indent}# {entry}  # replaced by Rust"
+            if closes:
+                # The list's `)` on a line of its own: after the comment it would be part of
+                # it, and the list never closes (imagehlp's `modify.c)`, its last entry).
+                out.append(line)
+                line = f"{indent})"
         out.append(line)
     return "\n".join(out) + "\n"
 

@@ -1,0 +1,33 @@
+# Wine's conformance suites for the Wine DLLs ported to Rust by the upstream-sync lane, under
+# the apitest sweep runner: each module's own winetest grades the Rust that replaced its C.
+# Add a suite here (binaries + --suites) when a module is flipped.
+#
+# The list is olewinetest's gen_suites.py pointed at these suites; see that payload for why
+# children start on C:.
+name: portwinetest
+description: Wine conformance suites for the Rust-ported pdh, wtsapi32, imagehlp and credui
+
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites pdh,wtsapi32,imagehlp,credui --register '' --out-dir tools/payloads/portwinetest"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/portwinetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/portwinetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/portwinetest/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: build-{arch}/modules/rostests/winetests/pdh/pdh_winetest.exe
+    dest: bin/pdh_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/wtsapi32/wtsapi32_winetest.exe
+    dest: bin/wtsapi32_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/imagehlp/imagehlp_winetest.exe
+    dest: bin/imagehlp_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/credui/credui_winetest.exe
+    dest: bin/credui_winetest.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 900
