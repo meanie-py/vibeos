@@ -497,6 +497,11 @@ impl Gem {
     }
 
     /// Frames handed to the GEM that it has not handed back yet.
+    /// Whether the PHY reports a link (as of the last poll, at most LINK_POLL_MS old).
+    pub fn link_up(&self) -> bool {
+        self.link
+    }
+
     pub fn tx_in_flight(&self) -> bool {
         self.tx_cons != self.tx_prod
     }
