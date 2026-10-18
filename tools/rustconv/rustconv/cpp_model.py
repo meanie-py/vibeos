@@ -137,6 +137,9 @@ class ClassModel:
     # (`DECLARE_REGISTRY_RESOURCEID` -> `IDR_EXTRACTICON`). The methods they generate are
     # dropped from `methods` (macro-generated, see _method); cpp_app renders their effect.
     atl_declares: dict[str, str] = field(default_factory=dict)
+    # `#pragma pack` in force at the definition (pshpack1.h -> 1), or None for natural
+    # alignment. cabview's CABITEM (a PIDL item, read at 2-byte-aligned addresses) is packed.
+    pack: int | None = None
 
     def method(self, name: str) -> list[Method]:
         return [m for m in self.methods if m.name == name]
@@ -356,6 +359,38 @@ def _file_of(node: dict, key: str = "loc") -> str | None:
     if key == "range":
         loc = loc.get("begin", {})
     return cdp._loc(loc).get("_file")
+
+
+_PACK_RE = re.compile(
+    r"^[ \t]*#[ \t]*(?:include[ \t]*[<\"](?P<inc>pshpack(?P<incn>\d+)|poppack)\.h[>\"]"
+    r"|pragma[ \t]+pack[ \t]*\((?P<args>[^)]*)\))",
+    re.M,
+)
+
+
+def pragma_pack_at(text: str) -> int | None:
+    """The `#pragma pack` value in force at the end of `text` (pshpackN.h pushes N,
+    poppack.h pops), or None when natural alignment is."""
+    stack: list[int | None] = []
+    cur: int | None = None
+    for m in _PACK_RE.finditer(text):
+        if m.group("inc"):
+            if m.group("incn"):
+                stack.append(cur)
+                cur = int(m.group("incn"))
+            else:
+                cur = stack.pop() if stack else None
+            continue
+        args = [a.strip() for a in m.group("args").split(",") if a.strip()]
+        nums = [int(a) for a in args if a.isdigit()]
+        if args and args[0] == "push":
+            stack.append(cur)
+            cur = nums[0] if nums else cur
+        elif args and args[0] == "pop":
+            cur = stack.pop() if stack else None
+        else:
+            cur = nums[0] if nums else None  # `pack()` restores the default
+    return cur
 
 
 def _span(node: dict) -> tuple[str, int, int] | None:
@@ -1031,6 +1066,16 @@ class _Extractor:
             template=template,
         )
         text = self.src.text(span) or ""
+        if any(c.get("kind") == "MaxFieldAlignmentAttr" for c in n.get("inner", [])):
+            # clang's JSON marks a packed record but not by how much: read the directives
+            # in force at it. Refused rather than guessed: a wrong pack is a wrong layout.
+            before = self.src.text((span[0], 0, span[1])) if span else None
+            cls.pack = pragma_pack_at(before or "")
+            if cls.pack is None:
+                raise CppModelError(
+                    f"{qualified}: packed (MaxFieldAlignmentAttr) but no #pragma pack / "
+                    "pshpackN.h before it says how much"
+                )
         cls.msg_map = parse_msg_map(text)
         cls.com_map = parse_com_map(text)
         cls.atl_declares = parse_atl_declares(text)

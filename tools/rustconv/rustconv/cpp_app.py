@@ -648,7 +648,12 @@ def _render_class(
     )
     derive = "" if has_drop(cls, h) or from_dep else "#[derive(Clone, Copy)]\n"
     kw = "union" if cls.tag == "union" else "struct"
-    lines = [f"// ---- {cls.qualified} ({cls.file})", f"{derive}#[repr(C)]", f"pub {kw} {n} {{"]
+    repr_ = "C" if cls.pack is None else "C, packed" if cls.pack == 1 else f"C, packed({cls.pack})"
+    lines = [
+        f"// ---- {cls.qualified} ({cls.file})",
+        f"{derive}#[repr({repr_})]",
+        f"pub {kw} {n} {{",
+    ]
     if h.has_own_vtbl(cls):
         lines.append(f"    pub __vtbl: *const {n}__vtbl,")
     for i in _base_layout_order(cls, h):
@@ -796,6 +801,10 @@ def _render_class(
             impl.append(f"        let vt = (*sub).__vtbl as *const {decl.name}__vtbl;")
             impl.append(f"        ((*vt).{m.rust_name})(sub{', ' + args if args else ''})")
             impl.append("    }")
+    if atl_window(cls, h) is None:
+        # A class-scoped `enum { FSATTS = .. };` is `CABITEM::FSATTS` to the bodies (cabview).
+        # A window class gets these from its ATL glue instead, beside IDD.
+        impl.extend(f"    pub const {k}: i32 = {v};" for k, v in cls.constants)
     impl.append("}")
     lines.extend(impl)
     lines.append("")
@@ -860,7 +869,16 @@ def _render_class(
             f"pub unsafe fn {n}__new_{i}({sig}) -> *mut {n} {{ "
             f"{n}__new_in_{i}(cpp_alloc::<{n}>(){', ' if args else ''}{args}) }}"
         )
-    if h.virtual_dtor(cls):
+    if h.virtual_dtor(cls) and not h.tops(cls) and not _module_subclasses(h, cls):
+        # A virtual destructor with no vtable of ours (cabview's CEnumIDList: every other
+        # virtual is a COM interface method, and the interface's lpVtbl is the vptr) and no
+        # module class deriving from it: nothing can delete it through a base pointer, so
+        # the static destructor is exactly what the virtual one would reach.
+        lines.append(
+            f"pub unsafe fn {n}__delete(p: *mut {n}) {{ if p.is_null() {{ return; }} "
+            f"core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }}"
+        )
+    elif h.virtual_dtor(cls):
         root_path, root = _vtbl_path(h, cls)
         field = root_path.rstrip(".")
         sub = f"core::ptr::addr_of_mut!((*p).{field})" if field else "p"
@@ -1011,6 +1029,12 @@ def _slot_home(h: Hierarchy, cls: ClassModel, m: Method) -> tuple[str, ClassMode
             if any(s.name == m.name and s.signature_key == m.signature_key for s in h.new_slots(x)):
                 return h.root_path(path, top), h.vtbl_root(top), x
     raise CppAppError(f"{cls.qualified}::{m.name} is virtual but no vtable declares it")
+
+
+def _module_subclasses(h: Hierarchy, cls: ClassModel) -> list[ClassModel]:
+    return [
+        c for c in h.by_short.values() if any(short(b.name) == short(cls.name) for b in c.bases)
+    ]
 
 
 def _vtbl_path(h: Hierarchy, cls: ClassModel) -> tuple[str, ClassModel]:
@@ -2049,6 +2073,10 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
     t = " ".join(g.c_type.split())
     const = t.startswith("const ")
     t = t.removeprefix("const ").strip()
+    # `static const struct FOLDERCOLUMN {..} g_Columns[] = {..}` (cabview) records its type
+    # with the elaborated keyword, which hid the table from this and handed it to the model,
+    # which invented every field name.
+    t = re.sub(r"^(?:struct|class)\s+", "", t)
     arr = re.fullmatch(r"(\w+)\s*\[(\d*)\]", t)
     cls = h.by_short.get(arr.group(1) if arr else t)
     if cls is None or cls.bases or any(m.kind == "ctor" for m in cls.methods):
@@ -2081,6 +2109,8 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
             # the value (`GUID as *const GUID` does not even compile).
             f"{_ident(f.name)}: core::ptr::addr_of!({_strip_ns(v, model)}) as _"
             if _is_reference(f.c_type)
+            else f"{_ident(f.name)}: core::ptr::addr_of!({_strip_ns(a.group(1), model)}) as _"
+            if (a := re.fullmatch(r"&\s*(\w+)", v))
             else f"{_ident(f.name)}: ({_strip_ns(v, model)}) as _"
             for f, v in zip(fields, vals, strict=False)
         ]

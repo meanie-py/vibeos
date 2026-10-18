@@ -890,6 +890,19 @@ def count_halting_errors(diagnostics: Sequence[Mapping[str, Any]]) -> int:
     )
 
 
+def halting_summaries(diagnostics: Sequence[Mapping[str, Any]], limit: int = 5) -> list[str]:
+    """The halting errors (see `count_halting_errors`) as `file:line: message`, so a refused
+    pass names what it broke instead of only how many."""
+    out = []
+    for d in diagnostics:
+        if not is_error_diagnostic(d) or (d.get("code") or {}).get("code"):
+            continue
+        span = next((sp for sp in d.get("spans") or [] if sp.get("is_primary")), None)
+        where = f"{span['file_name']}:{span['line_start']}: " if span else ""
+        out.append(f"{where}{d.get('message', '')}")
+    return out[:limit]
+
+
 def pointer_width(target: str) -> int:
     """Pointer width in bytes for a cargo triple or our arch shorthand. Loud on unknowns."""
     arch = target.split("-", 1)[0]
@@ -7158,7 +7171,13 @@ def repair_crate(
             session.detail = (
                 f"pass {index - 1} added parse/expansion errors ({previous_halting} -> "
                 f"{halting}), which hide every later error -- its total of {total} is not a "
-                "real count. Its edits were REVERTED; fix the rule (or the macro it fed)."
+                "real count. Its edits were REVERTED; fix the rule (or the macro it fed). "
+                "Halting: "
+                + "; ".join(
+                    dict.fromkeys(
+                        h for run in runs.values() for h in halting_summaries(run.diagnostics)
+                    )
+                )
             )
             return session
         if previous_total is not None and total > previous_total:

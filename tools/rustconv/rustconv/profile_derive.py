@@ -4587,6 +4587,11 @@ _SHELLUTILS_SHARED = {
     "CDataObjectHIDA": "hida_clipformat",
     "HIDA_GetPIDLFolder": "HIDA_GetPIDLFolder",
     "HIDA_GetPIDLItem": "HIDA_GetPIDLItem",
+    "HResultFromWin32": "HResultFromWin32",
+    "ILIsEmpty": "ILIsEmpty",
+    "ILIsSingle": "ILIsSingle",
+    "SHILClone": "SHILClone",
+    "SHELL_ErrorBox": "SHELL_ErrorBox",
 }
 
 
@@ -4670,7 +4675,11 @@ def scaffold_crate(
     if is_cpp:
         # The ATL types a C++ worker is told are in scope (atl_contract.py). Named, not a
         # glob: atl-rust's primitive aliases (WCHAR, BOOL) would collide with the island's.
-        texts = [tu.read_text(errors="replace") for tu in m.compiled_tus if tu.is_file()]
+        # The module's own headers too: cabview declares its CComHeapPtr member and calls
+        # ShellObjectCreator only in cabview.h, so a scan of the .cpp files imported neither.
+        sources = {tu for tu in m.compiled_tus if tu.is_file()}
+        sources |= {h for h in m.module_dir.glob("*.h*") if h.is_file()}
+        texts = [f.read_text(errors="replace") for f in sorted(sources)]
         # CComHeapPtr (the task allocator) and shellutils.h's CCoInit/COleInit: ole32.
         com = any(re.search(r"\b(?:CComHeapPtr|CCoInit|COleInit)\b", t) for t in texts)
         # atlpath.h's typedefs: CPath is CPathT<CString>, CPathW CPathT<CStringW> (rapps).

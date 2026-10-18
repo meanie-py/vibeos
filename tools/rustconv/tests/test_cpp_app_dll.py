@@ -309,3 +309,51 @@ def test_a_ccommodule_subclass_with_members_is_refused():
     m.classes["CMyModule"] = sub
     with pytest.raises(cpp_app.CppAppError, match="CComModule subclass with members"):
         cpp_app.fold_module_subclasses(m)
+
+
+def _with_virtual_dtor(m):
+    c = m.classes["CX"]
+    c.methods.append(
+        Method("~CX", "dtor", [], "", virtual=True, body=("x.cpp", 0, 1), lowered="{ f(); }")
+    )
+    _assign_names(c)
+    return m
+
+
+def test_a_com_class_virtual_dtor_without_a_vtable_of_ours_deletes_statically():
+    # cabview's CEnumIDList: every other virtual is an IEnumIDList method, so the interface's
+    # lpVtbl is the only vptr, and nothing in the module derives from it.
+    rs = cpp_app.render_classes(_with_virtual_dtor(_model()), frozenset(), _ISLAND)
+    delete = next(ln for ln in rs.splitlines() if ln.startswith("pub unsafe fn CX__delete"))
+    assert "drop_in_place(p)" in delete and "__vtbl" not in delete
+
+
+def test_the_same_dtor_with_a_module_subclass_still_fails_loud():
+    m = _with_virtual_dtor(_model())
+    d = ClassModel("CY", "CY", "class", "x.cpp", polymorphic=True)
+    d.bases = [Base("CX", "public")]
+    _assign_names(d)
+    m.classes[d.qualified] = d
+    with pytest.raises(cpp_app.CppAppError, match="virtual destructor but no vtable"):
+        cpp_app.render_classes(m, frozenset(), _ISLAND)
+
+
+def test_pragma_pack_follows_pshpack_and_pragma_stacks():
+    from rustconv.cpp_model import pragma_pack_at
+
+    assert pragma_pack_at("struct A {};") is None
+    assert pragma_pack_at("#include <pshpack1.h>\nstruct CABITEM") == 1
+    assert pragma_pack_at("#include <pshpack1.h>\n#include <poppack.h>\nstruct B") is None
+    assert pragma_pack_at("#pragma pack(push, 2)\n#include <pshpack4.h>\n#include <poppack.h>") == 2
+    assert pragma_pack_at("#pragma pack(push, 8)\n#pragma pack(pop)\n") is None
+
+
+def test_a_packed_struct_and_its_class_constants_render():
+    # cabview's CABITEM: under pshpack1.h, with `enum { FSATTS = .. };` in its scope.
+    c = ClassModel("CABITEM", "CABITEM", "struct", "x.cpp", pack=1, constants=[("FSATTS", 55)])
+    c.fields = [Field("cb", "WORD"), Field("Size", "UINT")]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = cpp_app.render_classes(m, frozenset(), _ISLAND)
+    assert "#[repr(C, packed)]\npub struct CABITEM" in rs
+    assert "pub const FSATTS: i32 = 55;" in rs
