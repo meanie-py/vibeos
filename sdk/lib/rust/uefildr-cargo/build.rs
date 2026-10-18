@@ -36,6 +36,10 @@
 use reactos_link::{Linker, ModuleKind};
 use std::env;
 
+// blrtl-rust's path-deps (its own src is tracked by the .rust_lib build).
+const BLRTL_RUST_DEPS: &[&str] =
+    &["bitmap/src", "compress/src", "crc32/src", "largeint/src", "random/src", "byteswap/src", "mem/src"];
+
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
 
@@ -120,20 +124,12 @@ fn main() {
         // sibling (.rust_lib() below), not the cmake-copied libcntpr_rust.a.
     ]);
 
-    // blrtl (boot-loader RTL leaf, boot/rtl/blrtl.cmake) compiled in-cargo: C
-    // via compile_commands.json replay (target `blrtl` disambiguates the shared
-    // sdk/lib/rtl/*.c sources), per-arch asm via .asm_archive() below. The
-    // common C set; amd64 adds bitmap64/byteswap/mem (blrtl.cmake amd64 branch).
-    let mut blrtl_c: Vec<&str> = vec![
-        "sdk/lib/rtl/bitmap.c",
-        "sdk/lib/rtl/compress.c",
-        "sdk/lib/rtl/crc32.c",
-        "sdk/lib/rtl/image.c",
-        "sdk/lib/rtl/largeint.c",
-        "boot/rtl/nlsboot.c",
-        "sdk/lib/rtl/random.c",
-        "sdk/lib/rtl/unicode.c",
-    ];
+    // blrtl (boot-loader RTL, boot/rtl/blrtl.cmake): the blrtl-rust crate (the kernel's
+    // RTL rlibs + nlsboot, with blrtl.cmake's per-arch membership) as a .rust_lib below;
+    // what is still C compiles in-cargo via compile_commands.json replay (target `blrtl`
+    // disambiguates the shared sdk/lib/rtl/*.c sources); the per-arch asm via
+    // .asm_archive() below.
+    let blrtl_c: &[&str] = &["sdk/lib/rtl/image.c", "sdk/lib/rtl/unicode.c"];
     // blrtl's per-arch asm (asm.inc only — AsmDefineSet::Kernel). i386:
     // debug_asm/rtlmem/rtlswap; amd64: debug_asm; arm64: none (no ASM_SOURCE).
     let blrtl_asm: &[&str] = match arch.as_str() {
@@ -142,14 +138,7 @@ fn main() {
             "sdk/lib/rtl/i386/rtlmem.s",
             "sdk/lib/rtl/i386/rtlswap.S",
         ],
-        "x86_64" => {
-            blrtl_c.extend_from_slice(&[
-                "sdk/lib/rtl/bitmap64.c",
-                "sdk/lib/rtl/byteswap.c",
-                "sdk/lib/rtl/mem.c",
-            ]);
-            &["sdk/lib/rtl/amd64/debug_asm.S"]
-        }
+        "x86_64" => &["sdk/lib/rtl/amd64/debug_asm.S"],
         _ => &[],
     };
 
@@ -222,12 +211,14 @@ fn main() {
         // path-deps) — watch so an edit re-runs build.rs (each crate's OWN src
         // is auto-tracked by build_rust_crate; these are the path-deps).
         .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
+        .rust_watch(BLRTL_RUST_DEPS)
         // Bootloader cmlib: Rust crate built with the `bldr` feature, matching
         // the old C blcmlib's -D_BLDR_ reduced hive surface.
         .rust_lib("cmlib-rust", &["bldr"], true)
         // blrtl C compiled in-cargo (target `blrtl` disambiguates the shared
         // rtl sources) — drops the cmake boot/rtl/libblrtl.a reuse.
-        .c_from_compile_db("blrtl", &blrtl_c)
+        .rust_lib("blrtl-rust", &[], true)
+        .c_from_compile_db("blrtl", blrtl_c)
         // libcntpr C compiled in-cargo — drops the cmake liblibcntpr.a reuse
         // (cmake-off WS1 DEEP). cmake-off path uses cflags/libcntpr.<arch>.flags.
         .c_from_compile_db("libcntpr", &libcntpr_c)

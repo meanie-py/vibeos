@@ -424,6 +424,19 @@ name = "bitmap"
 version = "0.1.0"
 
 [[package]]
+name = "blrtl-rust"
+version = "0.1.0"
+dependencies = [
+ "bitmap",
+ "byteswap",
+ "compress",
+ "crc32",
+ "largeint",
+ "mem",
+ "random",
+]
+
+[[package]]
 name = "blue-cargo"
 version = "0.1.0"
 dependencies = [
