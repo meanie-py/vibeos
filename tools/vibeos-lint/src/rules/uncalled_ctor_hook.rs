@@ -82,8 +82,12 @@ fn def_re() -> &'static Regex {
 
 fn call_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    // `T::__psp_init(`, `Self::__psp_init(`, `.__init_vtables(`.
-    RE.get_or_init(|| Regex::new(r"(?:(\w+)::|\.)(__psp_init|__init_vtables)\s*\(").unwrap())
+    // `T::__psp_init(`, `Self::__psp_init(`, `.__init_vtables(`. A titled page's constructor
+    // (`CPropertyPageImpl<T>(title)`, zipfldr's wizard pages) calls `T::__psp_init_titled(`,
+    // which is the same hook.
+    RE.get_or_init(|| {
+        Regex::new(r"(?:(\w+)::|\.)(__psp_init|__init_vtables)(?:_titled)?\s*\(").unwrap()
+    })
 }
 
 fn hook(name: &str) -> &'static str {
@@ -185,6 +189,9 @@ mod tests {
         let called: BTreeSet<_> = c.into_iter().collect();
         assert!(d.iter().all(|(t, h, _)| called.contains(&(t.clone(), *h))));
         assert!(called.contains(&("Other".to_owned(), "__psp_init")));
+        let titled = "impl CPage {\n    fn __ctor_0(&mut self) {\n        (*this_).m_psp = CPage::__psp_init_titled(this_, t);\n    }\n}\n";
+        let (_, c) = scan_text(titled);
+        assert!(c.contains(&("CPage".to_owned(), "__psp_init")));
     }
 
     #[test]
