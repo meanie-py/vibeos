@@ -191,7 +191,7 @@ def generated_checks(repo: Path) -> list[tuple[str, list[str]]]:
         checks.append(
             (
                 f"protos:{stem}",
-                [py, str(repo / "tools" / "gen_msvcrt_ref_protos.py"), f"{stem}.c", "--check"],
+                [str(repo / "tools" / "codegen"), "ref-protos", f"{stem}.c", "--check"],
             )
         )
     # The 32-bit harness's i386 layout guardian. Same argument as the two above: it is

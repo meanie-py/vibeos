@@ -1151,7 +1151,7 @@ impl Linker {
 
     /// Delay-import `dll_name` instead of importing it: cmake's
     /// `add_delay_importlibs(m <basename>)`. The lib comes from the same
-    /// `spec2def --implib` .def as `import_lib`'s, through `sdk/tools/gen-delaylib.py`
+    /// `spec2def --implib` .def as `import_lib`'s, through `tools/codegen delaylib`
     /// (llvm-dlltool has no `--output-delaylib`), exactly as cmake builds
     /// `lib<basename>_delayed.a`. The module still needs the delay-load runtime
     /// (`libdelayimp.a`, a `static_libs` entry) and, once linked, `native-pefixup
@@ -2852,16 +2852,15 @@ impl Linker {
         self.import_lib(spec, "kdcom.dll", "kdcom")
     }
 
-    /// `spec --implib → .def → gen-delaylib.py → lib<NAME>_delayed.a`, the command
+    /// `spec --implib → .def → codegen delaylib → lib<NAME>_delayed.a`, the command
     /// cmake's `generate_import_lib` runs for a delay-import lib.
     fn generate_delay_import_lib(&self, spec_rel: &str, dll_name: &str, basename: &str) -> PathBuf {
         let (out, implib_def) = self.generate_implib_def(spec_rel, dll_name, basename);
         let bin = self.repo_root.join(".build-tools/llvm-mingw/bin");
-        let script = self.repo_root.join("sdk/tools/gen-delaylib.py");
+        let script = self.repo_root.join("tools/codegen");
         let lib_a = out.join(format!("lib{basename}_delayed.a"));
-        let _ = std::fs::remove_file(&lib_a);
-        let status = Command::new("python3")
-            .arg(&script)
+        let status = Command::new(&script)
+            .arg("delaylib")
             .arg("--def")
             .arg(&implib_def)
             .arg("--arch")
@@ -2874,14 +2873,22 @@ impl Linker {
             .arg(bin.join(format!("{}-ar", self.arch.triple)))
             .current_dir(&out)
             .traced_status()
-            .unwrap_or_else(|e| panic!("gen-delaylib.py: {e}"));
+            .unwrap_or_else(|e| panic!("codegen delaylib: {e}"));
         if !status.success() {
-            panic!("gen-delaylib.py failed for {basename}");
+            panic!("codegen delaylib failed for {basename}");
         }
         if !lib_a.exists() {
-            panic!("gen-delaylib.py produced no {}", lib_a.display());
+            panic!("codegen delaylib produced no {}", lib_a.display());
         }
-        println!("cargo:rerun-if-changed={}", script.display());
+        for dep in [
+            "tools/codegen",
+            "rust-toolchain.toml",
+            "tools/vibeos-codegen/Cargo.toml",
+            "tools/vibeos-codegen/Cargo.lock",
+            "tools/vibeos-codegen/src",
+        ] {
+            println!("cargo:rerun-if-changed={}", self.repo_root.join(dep).display());
+        }
         lib_a
     }
 

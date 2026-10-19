@@ -1,0 +1,23 @@
+	subq $0x88, %rsp
+	movq %rcx,0x20(%rsp)
+	movq %rdx,0x28(%rsp)
+	movq %r8,0x30(%rsp)
+	movq %r9,0x38(%rsp)
+	movaps %xmm0,0x40(%rsp)
+	movaps %xmm1,0x50(%rsp)
+	movaps %xmm2,0x60(%rsp)
+	movaps %xmm3,0x70(%rsp)
+	leaq {IMP}(%rip), %rdx
+	leaq {DESC}(%rip), %rcx
+	callq __delayLoadHelper2
+	movq %rax, %r11
+	movaps 0x70(%rsp),%xmm3
+	movaps 0x60(%rsp),%xmm2
+	movaps 0x50(%rsp),%xmm1
+	movaps 0x40(%rsp),%xmm0
+	movq 0x38(%rsp),%r9
+	movq 0x30(%rsp),%r8
+	movq 0x28(%rsp),%rdx
+	movq 0x20(%rsp),%rcx
+	addq $0x88, %rsp
+	jmpq *%r11

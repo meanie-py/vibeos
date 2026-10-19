@@ -199,56 +199,10 @@ fn check_geninc(ctx: &BinaryContext, rows: &mut Vec<Row>) -> Result<(), String> 
 }
 
 fn read_coff_section(obj: &Path, wanted: &str) -> Result<Vec<u8>, String> {
-    let raw = read_bytes(obj)?;
-    if raw.len() < 20 {
-        return Err(format!("truncated COFF object {}", obj.display()));
-    }
-    let n = u16::from_le_bytes([raw[2], raw[3]]) as usize;
-    let oh = u16::from_le_bytes([raw[16], raw[17]]) as usize;
-    let start = 20usize.checked_add(oh).ok_or("COFF offset overflow")?;
-    for i in 0..n {
-        let o = start
-            .checked_add(i.checked_mul(40).ok_or("COFF section offset overflow")?)
-            .ok_or("COFF section offset overflow")?;
-        if o + 40 > raw.len() {
-            return Err(format!("truncated COFF section table in {}", obj.display()));
-        }
-        let name = &raw[o..o + 8];
-        let end = name.iter().position(|b| *b == 0).unwrap_or(8);
-        if &name[..end] == wanted.as_bytes() {
-            let size = u32::from_le_bytes(raw[o + 16..o + 20].try_into().unwrap()) as usize;
-            let offset = u32::from_le_bytes(raw[o + 20..o + 24].try_into().unwrap()) as usize;
-            let stop = offset
-                .checked_add(size)
-                .ok_or("COFF section size overflow")?;
-            if stop > raw.len() {
-                return Err(format!("truncated section {wanted} in {}", obj.display()));
-            }
-            return Ok(raw[offset..stop].to_vec());
-        }
-    }
-    Err(format!("section {wanted:?} not in {}", obj.display()))
+    vibeos_codegen::asm::read_coff_section(&read_bytes(obj)?, wanted)
 }
 fn emit_ks(asmdef: &[u8]) -> Result<String, String> {
-    let mut out = String::new();
-    for chunk in asmdef.chunks_exact(64) {
-        let ty = chunk[0];
-        let name_end = chunk[1..56].iter().position(|b| *b == 0).unwrap_or(55);
-        let name = std::str::from_utf8(&chunk[1..1 + name_end])
-            .map_err(|e| format!("non-UTF8 asmdef name: {e}"))?;
-        let val = u64::from_le_bytes(chunk[56..64].try_into().unwrap());
-        match ty {
-            0 => break,
-            1 => {
-                out.push_str(name);
-                out.push('\n');
-            }
-            2 => out.push_str(&format!("{name} = 0x{val:x}\n")),
-            3 => out.push_str(&format!("\n/* {name} */\n")),
-            _ => {}
-        }
-    }
-    Ok(out)
+    vibeos_codegen::asm::emit_ks(asmdef)
 }
 
 fn check_cflags_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Result<(), String> {
@@ -305,17 +259,9 @@ fn check_cflags(ctx: &BinaryContext, rows: &mut Vec<Row>) -> Result<(), String> 
 }
 
 fn check_res_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Result<String, String> {
-    let value = write_json_command(
-        &ctx.root,
-        "tools/gen_committed_res.py",
-        &cmd_args(&["--jobs-json", "--arch", arch]),
-    )?;
-    let messages = value["messages"]
-        .as_str()
-        .ok_or("resource recipes missing messages")?
-        .to_owned();
-    let value = value.get("jobs").ok_or("resource recipes missing jobs")?;
-    if value.is_null() {
+    let recipes = vibeos_codegen::resources::committed_jobs(&ctx.root, arch)?;
+    let messages = recipes.messages;
+    let Some(jobs) = recipes.jobs else {
         add(
             rows,
             ".res",
@@ -324,62 +270,25 @@ fn check_res_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Resul
             format!("no build-{arch}"),
         );
         return Ok(messages);
-    }
-    let jobs = value
-        .as_array()
-        .ok_or("gen_committed_res JSON output must be a list or null")?;
-    for job in jobs {
-        let fields = job
-            .as_array()
-            .ok_or("gen_committed_res job must be an array")?;
-        if fields.len() != 4 {
-            return Err("gen_committed_res job must have four fields".into());
-        }
-        let stem = fields[0].as_str().ok_or("res job stem must be a string")?;
-        let committed_rel = fields[1].as_str().ok_or("res job path must be a string")?;
-        let toks: Vec<String> =
-            serde_json::from_value(fields[2].clone()).map_err(|e| format!("res job argv: {e}"))?;
-        let cwd_raw = fields[3].as_str().ok_or("res job cwd must be a string")?;
-        let mut cwd = PathBuf::from(cwd_raw);
-        let mut toks = toks;
-        if !cwd.is_dir() {
-            let real = cwd_raw.replace("/tmp/vibeos", &ctx.root.to_string_lossy());
-            let real_cwd = PathBuf::from(real);
-            if real_cwd.is_dir() {
-                cwd = real_cwd;
-                for token in &mut toks {
-                    *token = token.replace("/tmp/vibeos", &ctx.root.to_string_lossy());
-                }
-            } else {
-                add(
-                    rows,
-                    ".res",
-                    format!("{stem}-{arch}"),
-                    SKIP,
-                    "build dir absent (canonical + real)",
-                );
+    };
+    for raw in jobs {
+        let stem = &raw.0;
+        let tmp = TempDir::new()?;
+        let job = match vibeos_codegen::resources::localize_job(&ctx.root, &raw, tmp.path()) {
+            Ok(job) => job,
+            Err(error) => {
+                add(rows, ".res", format!("{stem}-{arch}"), SKIP, error);
                 continue;
             }
-        }
-        let tmp = TempDir::new()?;
-        let dst = tmp.path().join("out.res");
-        if toks.is_empty() {
-            return Err(format!("empty windres command for {stem}-{arch}"));
-        }
-        *toks.last_mut().unwrap() = dst.to_string_lossy().into_owned();
-        let output = command(&ctx.root, &toks[0], &toks[1..].to_vec(), Some(&cwd))?;
-        if !output.status.success() || !dst.exists() {
-            add(
-                rows,
-                ".res",
-                format!("{stem}-{arch}"),
-                SKIP,
-                "windres replay failed",
-            );
-            continue;
-        }
-        let committed = ctx.root.join(committed_rel);
-        if !committed.exists() {
+        };
+        let fresh = match vibeos_codegen::resources::execute(&job, tmp.path()) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                add(rows, ".res", format!("{stem}-{arch}"), SKIP, error);
+                continue;
+            }
+        };
+        if !job.output.exists() {
             add(
                 rows,
                 ".res",
@@ -393,7 +302,7 @@ fn check_res_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Resul
             rows,
             ".res",
             format!("{stem}-{arch}"),
-            if read_bytes(&committed)? == read_bytes(&dst)? {
+            if read_bytes(&job.output)? == fresh {
                 OK
             } else {
                 DRIFT
