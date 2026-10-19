@@ -397,7 +397,7 @@ fn sockets_dhcp<'s>(set: &'s mut SocketSet<'static>, h: SocketHandle) -> &'s mut
 #[inline(never)]
 fn native_link(slot: usize) -> Option<alloc::boxed::Box<Link>> {
     let mut platform_irq: Option<crate::pnp::PlatformIrq> = None;
-    let (mut phy, name) = match device::bringup() {
+    let (phy, name) = match device::bringup() {
         Some(d) => (AnyPhy::Virtio(VirtioPhy::new(d)), NAME_VIRTIO),
         None => match crate::e1000::bringup() {
             Some(d) => (AnyPhy::E1000(crate::e1000::E1000Phy::new(d)), NAME_E1000),
@@ -416,11 +416,16 @@ fn native_link(slot: usize) -> Option<alloc::boxed::Box<Link>> {
         },
     };
 
-    // M10: connect the NIC's interrupt so an arriving frame wakes this worker via
+    // M10, once the device is at its final address (the boxed link's): virtio's ISR
+    // context is the NetDev inside VirtioPhy, so connecting first and moving the phy
+    // after left the ISR on a stale copy, or on a dead frame once the link was
+    // built out of line (BUGCHECK 0x1E on every virtio boot). Connect the NIC's
+    // interrupt so an arriving frame wakes this worker via
     // an event instead of pure busy-polling: virtio's INTx (x86 and arm64), the
     // GEM's PnP interrupt on the Pi 5. Null on any failure → the loop keeps the `delay_ms`
     // poll fallback, no regression.
-    let rx_event: *mut ntkrnl_sys::ddk::KEVENT = match &mut phy {
+    let mut link = Link::new(slot, phy, null_mut(), name);
+    link.rx_event = match &mut link.phy {
         AnyPhy::Virtio(v) => {
             v.enable_interrupts();
             let df = crate::pci::find_virtio_net();
@@ -456,7 +461,7 @@ fn native_link(slot: usize) -> Option<alloc::boxed::Box<Link>> {
         }
         AnyPhy::Ndis(_) => null_mut(),
     };
-    Some(Link::new(slot, phy, rx_event, name))
+    Some(link)
 }
 
 unsafe extern "system" fn worker(_context: PVOID) {
