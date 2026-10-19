@@ -70,6 +70,19 @@ _TEXT_MACRO = re.compile(
 _ATL_QUALIFIED_GLUE = re.compile(r"\b(CWindowImpl|CDialogImpl)(?:<[^;{}()]*?>)?::this_->(\w+)\s*\(")
 
 
+_COM_OBJECT_CREATE = re.compile(r"\b_?CComObject\s*<\s*(\w+)\s*>\s*::\s*CreateInstance\s*\(")
+_COM_OBJECT_TYPE = re.compile(r"\b_?CComObject\s*<\s*(\w+)\s*>")
+
+
+def com_object_create(text: str) -> str:
+    """`_CComObject<T>::CreateInstance(&p)` -> `ComObject_CreateInstance<T>(&p)`, and the
+    `CComObject<T> *p` it fills -> `T *p`: atl_rust gives the class itself CComObject's
+    QueryInterface/AddRef/Release, so the object IS a T. Left as written, ntobjshex's model
+    invented a `_CComObject_CFolderViewCB` type and a bare `CreateInstance`."""
+    text = _COM_OBJECT_CREATE.sub(lambda m: f"ComObject_CreateInstance<{m.group(1)}>(", text)
+    return _COM_OBJECT_TYPE.sub(lambda m: m.group(1), text)
+
+
 def atl_qualified_glue(text: str) -> str:
     """`CWindowImpl::Create(..)` -> `this_->CWindowImpl_Create(..)`. A class's own `Create`
     hides the ATL template's in C++ name lookup, and the qualified call is how rapps reaches it

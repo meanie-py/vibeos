@@ -311,6 +311,50 @@ pub unsafe fn SHSetStrRetEmpty<P>(p: *mut P) -> i32 {
     0
 }
 
+extern "C" {
+    fn DbgPrint(format: *const u8, ...) -> u32;
+}
+extern "system" {
+    fn ILGetNext(pidl: *const core::ffi::c_void) -> *mut core::ffi::c_void;
+}
+
+/// shellutils.h `DumpIdList`: each SHITEMID's bytes to the debugger, four per line, the
+/// tail of a `cb` that is not a multiple of 4 padded with `--`. Debug output only.
+pub unsafe fn DumpIdList<P>(pcidl: *const P) {
+    DbgPrint(b"Begin IDList Dump\n\0".as_ptr());
+    let mut p = pcidl as *const u8;
+    while !p.is_null() {
+        let mut cb = u16::from_le_bytes([*p, *p.add(1)]) as i32;
+        if cb == 0 {
+            break; // ITEMIDLISTs are terminated with a null SHITEMID.
+        }
+        DbgPrint(b"Begin SHITEMID (cb=%d)\n\0".as_ptr(), cb);
+        if cb & 3 != 0 {
+            DbgPrint(b" - WARNING: cb is not a multiple of 4\n\0".as_ptr());
+        }
+        let sh = |k: i32| *p.add(k as usize) as u32;
+        let mut i = 0;
+        while i + 4 <= cb {
+            DbgPrint(
+                b" - abID[%08x]: %02x %02x %02x %02x\n\0".as_ptr(),
+                i, sh(i), sh(i + 1), sh(i + 2), sh(i + 3),
+            );
+            i += 4;
+        }
+        if i < cb {
+            cb -= i;
+            match cb {
+                3 => DbgPrint(b" - abID[%08x]: %02x %02x %02x --\n\0".as_ptr(), i, sh(i), sh(i + 1), sh(i + 2)),
+                2 => DbgPrint(b" - abID[%08x]: %02x %02x -- --\n\0".as_ptr(), i, sh(i), sh(i + 1)),
+                _ => DbgPrint(b" - abID[%08x]: %02x -- -- --\n\0".as_ptr(), i, sh(i)),
+            };
+        }
+        DbgPrint(b"End SHITEMID\n\0".as_ptr());
+        p = ILGetNext(p as *const core::ffi::c_void) as *const u8;
+    }
+    DbgPrint(b"End IDList Dump.\n\0".as_ptr());
+}
+
 #[repr(C)]
 struct FormatEtc {
     cf_format: u16,

@@ -144,7 +144,6 @@ def test_no_registry_and_protect_final_construct():
 @pytest.mark.parametrize(
     ("declares", "match"),
     [
-        ({"DECLARE_REGISTRY_RESOURCEID": "IDR_X"}, "aggregatable"),
         (
             {"DECLARE_NOT_AGGREGATABLE": "CX", "DECLARE_CLASSFACTORY_SINGLETON": "CX"},
             "DECLARE_CLASSFACTORY_SINGLETON is not ported",
@@ -155,6 +154,15 @@ def test_no_registry_and_protect_final_construct():
 def test_what_atl_rust_dll_does_not_provide_is_refused(declares, match):
     with pytest.raises(cpp_app.CppAppError, match=match):
         cpp_app.render_classes(_model(declares), frozenset(), _ISLAND)
+
+
+def test_a_class_without_an_aggregation_declare_renders_with_the_refusing_creator():
+    # ntobjshex's folders: ReactOS's CComCoClass leaves DECLARE_AGGREGATABLE commented out,
+    # so the C creator refuses an outer unknown too (measured by its modrun suite).
+    rs = cpp_app.render_classes(
+        _model({"DECLARE_REGISTRY_RESOURCEID": "IDR_X"}), frozenset(), _ISLAND
+    )
+    assert "impl atl_rust::dll::CoClass for CX" in rs
 
 
 def test_object_entry_auto_is_refused():
@@ -457,3 +465,38 @@ def test_the_atl_contract_sees_a_global_cstring_the_body_does_not_spell():
     assert atl_contract.contract(body) == ""
     declared = cpp_app.declared_types(m, "Power_Update", body)
     assert "atl_format!" in atl_contract.contract(body, declared=declared)
+
+
+def test_a_wide_pointer_table_renders_each_literal_nul_terminated():
+    # ntobjshex's RegistryTypeNames / ObjectTypeNames (the latter ends with a 0).
+    g = GlobalVar("Names", "const LPCWSTR[3]", "e.cpp", '{\n    L"REG_SZ", L"Key",\n    0\n}')
+    out = cpp_app.wide_pointer_table(g) or ""
+    assert "static NAMES__W0: [u16; 7] = [82, 69, 71, 95, 83, 90, 0];" in out
+    assert (
+        "pub static mut Names: [LPCWSTR; 3] = [NAMES__W0.as_ptr() as _, NAMES__W1.as_ptr() as _, "
+        "core::ptr::null_mut()];" in out
+    )
+
+
+def test_a_struct_table_with_a_wide_field_renders_its_literal():
+    # ntobjshex's `RootKeys[] = { { HKEY_CLASSES_ROOT, L"HKEY_CLASSES_ROOT" }, .. }`.
+    c = ClassModel("RootKeyEntry", "RootKeyEntry", "struct", "e.cpp")
+    c.fields = [Field("key", "HKEY"), Field("keyName", "PCWSTR")]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    g = GlobalVar("RootKeys", "RootKeyEntry []", "e.cpp", '{ { HKEY_USERS, L"HKU" } }')
+    out = cpp_app.aggregate_static(g, cpp_app.Hierarchy(m), m) or ""
+    assert "static ROOTKEYS__W0: [u16; 4] = [72, 75, 85, 0];" in out
+    assert "keyName: ROOTKEYS__W0.as_ptr() as _" in out
+
+
+def test_a_crtp_base_com_map_moves_to_the_class_it_names():
+    base = ClassModel("CCommonFolder_CX", "CCommonFolder_CX", "class", "f.h")
+    base.com_map = [MsgMapEntry("COM_INTERFACE_ENTRY_IID", ["IID_IFoo", "IFoo"])]
+    base.template_args = [("TSelf", "CX")]
+    derived = ClassModel("CX", "CX", "class", "x.cpp")
+    derived.bases = [Base("CCommonFolder_CX", "public")]
+    m = ModuleModel()
+    m.classes = {"CCommonFolder_CX": base, "CX": derived}
+    assert cpp_app.inherit_crtp_com_maps(m) == ["CX"]
+    assert derived.com_map is not None and base.com_map is None

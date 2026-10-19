@@ -4673,9 +4673,10 @@ _SHELLUTILS_SHARED = {
     "SHELL_ErrorBox": "SHELL_ErrorBox",
     "SHSetStrRetEmpty": "SHSetStrRetEmpty",
     "DataObject_SetData": "DataObject_SetData",
+    "DumpIdList": "DumpIdList",
 }
 # shellutils.h's overloaded/templated helpers, as atl_rust macros (crate root): by name.
-_SHELLUTILS_MACROS = ("SHSetStrRet", "ShellObjectCreatorInit")
+_SHELLUTILS_MACROS = ("SHSetStrRet", "ShellObjectCreatorInit", "ShellObjectCreatorIid")
 
 
 def _shellutils_uses(texts: list[str]) -> str:

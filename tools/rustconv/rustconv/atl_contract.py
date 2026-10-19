@@ -92,11 +92,22 @@ def _shellutils_helpers(body: str) -> str:
             "pointer); `SHSetStrRet(p, hInstance, resId)` → `SHSetStrRet!(p, hInstance, "
             "resId)`. `p` is a `*mut STRRET`.\n"
         )
+    if re.search(r"\bShellObjectCreator\s*<", body):
+        lines.append(
+            "- `ShellObjectCreator<T>(riid, ppv)` → `ShellObjectCreatorIid!(T, riid, ppv)`; "
+            "`ShellObjectCreator(ptr)` with a `CComPtr<T>` → `ShellObjectCreator(&mut ptr)`.\n"
+        )
     if re.search(r"\bShellObjectCreatorInit\b", body):
         lines.append(
             "- `ShellObjectCreatorInit<T>(a, b, riid, ppv)` → "
             "`ShellObjectCreatorInit!(T, [a, b], riid, ppv)` (the Initialize arguments in "
             "brackets).\n"
+        )
+    if "ComObject_CreateInstance" in body:
+        lines.append(
+            "- `ComObject_CreateInstance<T>(&p)` (ATL's `CComObject<T>::CreateInstance`, `p` a "
+            "`*mut T`) → `<T as atl_rust::com::ComObject>::create_instance(&mut p)`; the "
+            "object starts at reference count 0, so AddRef it before handing it out.\n"
         )
     if not lines:
         return ""

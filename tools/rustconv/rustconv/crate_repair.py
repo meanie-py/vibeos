@@ -3165,7 +3165,16 @@ def _keyword_field_rule(
         f"{base}_",
         "bindgen renames a keyword-named C field with a trailing underscore",
     )
-    if base not in _BINDGEN_KEYWORDS:
+    anon = re.fullmatch(r"__anon(\d+)", field_name)
+    if anon is not None:
+        # cpp_model's `__anonK` (K-th anonymous member, from 0) on a struct the ISLAND lays
+        # out, where bindgen numbers the same members `__bindgen_anon_{K+1}` (ntobjshex's
+        # RegPidlEntry). Taken only when rustc lists that field as existing.
+        want = f"__bindgen_anon_{int(anon.group(1)) + 1}"
+        if want not in json.dumps(diagnostic.get("children") or []):
+            return [], [], False
+        replacement, authority = want, "bindgen numbers anonymous members from 1, in order"
+    elif base not in _BINDGEN_KEYWORDS:
         # c2rust also suffixes `_0` onto a field named like a prelude item (mmixer's
         # MIXER_CONTEXT `Copy` became `Copy_0`), which bindgen leaves alone. Taken only when
         # rustc itself names the C spelling as the existing field.

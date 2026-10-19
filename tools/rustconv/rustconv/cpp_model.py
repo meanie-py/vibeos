@@ -1216,7 +1216,13 @@ class _Extractor:
         for f in rec.get("inner", []):
             if f.get("kind") == "FieldDecl":
                 if not f.get("name"):
-                    raise CppModelError(f"{cls.qualified}: nested anonymous member")
+                    # ntobjshex's RegPidlEntry: `union { struct { DWORD contentType; USHORT
+                    # contentsLength; }; HKEY rootKey; }`. The inner record becomes its own
+                    # generated record, embedded in place, as one level is.
+                    inner = self._anon_record(rec, f, anon)
+                    assert inner is not None
+                    anon.fields.append(Field(_anon_field(inner), inner.name))
+                    continue
                 anon.fields.append(Field(f["name"], f["type"]["qualType"]))
         self.model.classes[anon.qualified] = anon
         return anon
@@ -1615,6 +1621,7 @@ class _Extractor:
             text = cpp_lower.concat_string_macros(out.text, strings)
             text = cpp_lower.ppv_arg_macros(text)
             text = cpp_lower.local_enums_to_consts(text)
+            text = cpp_lower.com_object_create(text)
             text = cpp_lower.atl_qualified_glue(text)
             target.lowered = cpp_lower.unicode_text_macros(text) if self.unicode else text
             target.unplaced = out.unplaced
