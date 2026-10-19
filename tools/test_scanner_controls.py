@@ -873,7 +873,8 @@ pub unsafe fn f(h: HANDLE) {
     let mut Vol: FILE_FS_VOLUME_INFORMATION = core::mem::zeroed();
     let mut Name: [WCHAR; 255] = [0; 255];
     NtQueryVolumeInformationFile(h, &mut Io, &mut Vol as *mut _ as PVOID,
-        (core::mem::size_of::<FILE_FS_VOLUME_INFORMATION>() + core::mem::size_of::<[WCHAR; 255]>()) as ULONG, 1);
+        (core::mem::size_of::<FILE_FS_VOLUME_INFORMATION>()
+            + core::mem::size_of::<[WCHAR; 255]>()) as ULONG, 1);
 }
 """
 _OVERLEN_GOOD = """\
