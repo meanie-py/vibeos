@@ -284,7 +284,8 @@ pub unsafe extern "system" fn RealSystemParametersInfoA(
             );
             if cb == NCMA_VISTA_SIZE {
                 // iPaddedBorderWidth: ours draw no padded border (Windows reports 4).
-                *((pnclma as *mut u8).add(NCMA_XP_SIZE as usize) as *mut INT) = 0;
+                // The INT right after the XP-layout struct.
+                *((pnclma as *mut NONCLIENTMETRICSA).add(1) as *mut INT) = 0;
             }
             return 1;
         }

@@ -678,7 +678,7 @@ unsafe fn SpiGetNonClientMetrics(pvParam: PVOID, fl: FLONG) -> UINT_PTR {
     if cb == NCM_VISTA_SIZE {
         // Windows reports 4 here, its frames' padded border; ours draw none.
         let mut padded: INT = 0;
-        let tail = (pvParam as *mut u8).add(NCM_XP_SIZE as usize) as PVOID;
+        let tail = (pvParam as *mut NONCLIENTMETRICSW).add(1) as PVOID; // right after the XP layout
         return SpiGet(tail, core::ptr::addr_of_mut!(padded) as PVOID, core::mem::size_of::<INT>() as ULONG, fl);
     }
     1

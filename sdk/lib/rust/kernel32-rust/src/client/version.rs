@@ -78,17 +78,12 @@ unsafe fn capped_version() -> Option<(u32, u32, u32)> {
 /// 0x0A00 for 10.0 or more, 0x0603 for 6.3 up to 9.x, 0 below.
 unsafe fn image_os_version() -> u32 {
     let Peb: PPEB = (*NtCurrentTeb()).ProcessEnvironmentBlock;
-    let base = (*Peb).ImageBaseAddress as *const u8;
-    if base.is_null() || *(base as *const u16) != 0x5A4D {
+    let nt = RtlImageNtHeader((*Peb).ImageBaseAddress);
+    if nt.is_null() {
         return 0;
     }
-    let nt = base.add(*(base.add(0x3c) as *const u32) as usize);
-    if *(nt as *const u32) != 0x0000_4550 {
-        return 0;
-    }
-    // The OS version fields sit at the same offsets (40/42) of PE32 and PE32+ optional headers.
-    let opt = nt.add(24);
-    let pe = ((*(opt.add(40) as *const u16) as u32) << 8) | *(opt.add(42) as *const u16) as u32;
+    let opt = &(*nt).OptionalHeader;
+    let pe = ((opt.MajorOperatingSystemVersion as u32) << 8) | opt.MinorOperatingSystemVersion as u32;
     if pe >= 0x0A00 {
         0x0A00
     } else if pe >= 0x0603 {
