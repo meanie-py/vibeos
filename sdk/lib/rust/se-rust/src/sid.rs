@@ -300,6 +300,78 @@ pub unsafe extern "system" fn SepInitSecurityIDs() -> BOOLEAN {
     SubAuthority = RtlSubAuthoritySid(SeNetworkServiceSid, 0);
     *SubAuthority = SECURITY_NETWORK_SERVICE_RID;
 
+    if SepInitVistaSids() == 0 {
+        FreeInitializedSids();
+        return 0u8;
+    }
+    1u8
+}
+
+// The SE_EXPORTS tail Vista and Windows 8 added. ReactOS never filled it, so every field read
+// NULL, and a driver (or kmtest CmSecurity, once the version flip sent it down its Win8
+// branch) that compares against one dereferences NULL.
+#[no_mangle]
+pub static mut SeIUserSid: PSID = core::ptr::null_mut();
+#[no_mangle]
+pub static mut SeUntrustedMandatorySid: PSID = core::ptr::null_mut();
+#[no_mangle]
+pub static mut SeLowMandatorySid: PSID = core::ptr::null_mut();
+#[no_mangle]
+pub static mut SeMediumMandatorySid: PSID = core::ptr::null_mut();
+#[no_mangle]
+pub static mut SeHighMandatorySid: PSID = core::ptr::null_mut();
+#[no_mangle]
+pub static mut SeSystemMandatorySid: PSID = core::ptr::null_mut();
+#[no_mangle]
+pub static mut SeOwnerRightsSid: PSID = core::ptr::null_mut();
+#[no_mangle]
+pub static mut SeAllAppPackagesSid: PSID = core::ptr::null_mut();
+#[no_mangle]
+pub static mut SeUserModeDriversSid: PSID = core::ptr::null_mut();
+
+/// A SID of `authority` (the last byte of SID_IDENTIFIER_AUTHORITY; all ours fit) with
+/// these subauthorities, from paged pool like the rest; NULL if the pool is out.
+unsafe fn sep_new_sid(authority: u8, subs: &[ULONG]) -> PSID {
+    let mut auth = SID_IDENTIFIER_AUTHORITY { Value: [0, 0, 0, 0, 0, authority] };
+    let sid = ExAllocatePoolWithTag(PagedPool, RtlLengthRequiredSid(subs.len() as ULONG) as SIZE_T, TAG_SID) as PSID;
+    if sid.is_null() {
+        return sid;
+    }
+    RtlInitializeSid(sid, &mut auth, subs.len() as u8);
+    for (i, sub) in subs.iter().enumerate() {
+        *RtlSubAuthoritySid(sid, i as ULONG) = *sub;
+    }
+    sid
+}
+
+unsafe fn SepInitVistaSids() -> BOOLEAN {
+    const NT: u8 = 5; // SECURITY_NT_AUTHORITY
+    const CREATOR: u8 = 3; // SECURITY_CREATOR_SID_AUTHORITY
+    const MANDATORY: u8 = 16; // SECURITY_MANDATORY_LABEL_AUTHORITY
+    const APP_PACKAGE: u8 = 15; // SECURITY_APP_PACKAGE_AUTHORITY
+    SeIUserSid = sep_new_sid(NT, &[SECURITY_IUSER_RID]);
+    SeUntrustedMandatorySid = sep_new_sid(MANDATORY, &[SECURITY_MANDATORY_UNTRUSTED_RID]);
+    SeLowMandatorySid = sep_new_sid(MANDATORY, &[SECURITY_MANDATORY_LOW_RID]);
+    SeMediumMandatorySid = sep_new_sid(MANDATORY, &[SECURITY_MANDATORY_MEDIUM_RID]);
+    SeHighMandatorySid = sep_new_sid(MANDATORY, &[SECURITY_MANDATORY_HIGH_RID]);
+    SeSystemMandatorySid = sep_new_sid(MANDATORY, &[SECURITY_MANDATORY_SYSTEM_RID]);
+    SeOwnerRightsSid = sep_new_sid(CREATOR, &[SECURITY_CREATOR_OWNER_RIGHTS_RID]);
+    // S-1-15-2-1, ALL APPLICATION PACKAGES.
+    SeAllAppPackagesSid =
+        sep_new_sid(APP_PACKAGE, &[SECURITY_APP_PACKAGE_BASE_RID, SECURITY_BUILTIN_PACKAGE_ANY_PACKAGE]);
+    // S-1-5-84-0-0-0-0-0, USER MODE DRIVERS.
+    SeUserModeDriversSid = sep_new_sid(NT, &[SECURITY_USERMODEDRIVERHOST_ID_BASE_RID, 0, 0, 0, 0, 0]);
+    let all = [
+        SeIUserSid, SeUntrustedMandatorySid, SeLowMandatorySid, SeMediumMandatorySid,
+        SeHighMandatorySid, SeSystemMandatorySid, SeOwnerRightsSid, SeAllAppPackagesSid,
+        SeUserModeDriversSid,
+    ];
+    if all.iter().any(|s| s.is_null()) {
+        for s in all.iter().filter(|s| !s.is_null()) {
+            ExFreePoolWithTag(*s as PVOID, TAG_SID);
+        }
+        return 0u8;
+    }
     1u8
 }
 

@@ -220,6 +220,22 @@ unsafe fn SepInitExports() -> BOOLEAN {
     SepExports.SeImpersonatePrivilege = SeImpersonatePrivilege;
     SepExports.SeCreateGlobalPrivilege = SeCreateGlobalPrivilege;
 
+    // The Vista and Windows 8 tail (sid.rs SepInitVistaSids); NULL until 2026-10-19.
+    SepExports.SeTrustedCredManAccessPrivilege = LUID { LowPart: SE_TRUSTED_CREDMAN_ACCESS_PRIVILEGE, HighPart: 0 };
+    SepExports.SeRelabelPrivilege = LUID { LowPart: SE_RELABEL_PRIVILEGE, HighPart: 0 };
+    SepExports.SeIncreaseWorkingSetPrivilege = LUID { LowPart: SE_INC_WORKING_SET_PRIVILEGE, HighPart: 0 };
+    SepExports.SeTimeZonePrivilege = LUID { LowPart: SE_TIME_ZONE_PRIVILEGE, HighPart: 0 };
+    SepExports.SeCreateSymbolicLinkPrivilege = LUID { LowPart: SE_CREATE_SYMBOLIC_LINK_PRIVILEGE, HighPart: 0 };
+    SepExports.SeIUserSid = crate::sid::SeIUserSid;
+    SepExports.SeUntrustedMandatorySid = crate::sid::SeUntrustedMandatorySid;
+    SepExports.SeLowMandatorySid = crate::sid::SeLowMandatorySid;
+    SepExports.SeMediumMandatorySid = crate::sid::SeMediumMandatorySid;
+    SepExports.SeHighMandatorySid = crate::sid::SeHighMandatorySid;
+    SepExports.SeSystemMandatorySid = crate::sid::SeSystemMandatorySid;
+    SepExports.SeOwnerRightsSid = crate::sid::SeOwnerRightsSid;
+    SepExports.SeAllAppPackagesSid = crate::sid::SeAllAppPackagesSid;
+    SepExports.SeUserModeDriversSid = crate::sid::SeUserModeDriversSid;
+
     SeExports = &raw mut SepExports as PSE_EXPORTS;
     1u8
 }
