@@ -152,15 +152,24 @@ What the batch added to the shared crates and tools:
    cases). Smoke reached on i386, amd64, arm64 and amd64-bios. Along the way: mbstrlen.c's
    private always-NULL `NlsLeadByteInfo` is `extern` now (it had won or lost by link
    order), and vibeos-lint's link model honours `[target.'cfg(target_arch)'.dependencies]`.
-   **`unicode.c` waits for the owner's call**, because the Rust that would replace it
-   (`rtl-strings`' cabi) does not do what the C does: unicode.c converts and case-maps
-   through the NLS exports (`RtlUnicodeToOemN`, `RtlUpcaseUnicodeChar`, ...), and the Rust
-   inlines a fixed CP1252 model instead (`rtl-strings/src/cabi/mod.rs`, e.g.
-   `RtlUnicodeStringToOemString` -> `nls::uni_to_oem`). In the loader that would replace
-   nlsboot's ASCII-only behaviour; in the kernel and ntdll it already ignores the tables
-   `RtlResetRtlTranslations` loads (OEM is CP437 there, so bytes >= 0x80 differ from the
-   C). The fix routes rtl-strings' unicode layer through the NLS exports, as the C does,
-   which also changes kernel/ntdll behaviour for non-ASCII text.
+   **`unicode.c` is Rust too (2026-10-18, owner's call: make it faithful, $0)**, and the
+   change reaches the kernel and ntdll. rtl-strings' unicode layer called a fixed CP1252
+   model in every build, so the kernel ignored the tables `RtlResetRtlTranslations` loads
+   (OEM is 437: bytes >= 0x80 differed from the C). Now:
+   - `cabi/nlsapi.rs` routes unicode.c's NLS calls per build: nls_tables.rs (kernel/ntdll),
+     nlsboot (`bldr`, the loaders), the model (the host harness only).
+   - nls_tables.rs gained table-driven ports of nls.c's 12 converters/case helpers (they
+     were the model); `rtl-difftest/tests/nls_tables.rs` grades them against genuine nls.c
+     on txt2nls-generated 1252/437 and 932 (DBCS) tables, every WCHAR and byte.
+   - The wrappers free and NULL the destination on a failed allocating conversion, as the C
+     does; `RtlAnsiCharToUnicodeChar` honours lead bytes; `RtlIsValidOemCharacter` walks the
+     tables; `RtlEqualComputerName` was `return FALSE` (the harness's NULL-alloc outcome
+     shipped) and is the C now.
+   - `bldr` exports exactly unicode.c's 61 functions; the rest of librtl sits in
+     `librtl_rest`, compiled out for the loaders. boot/rtl's C target is pruned.
+   - librtl's crates take ntkrnl-sys without `hal_bindgen`: it raw-dylib-imported the three
+     Nls* globals librtl itself defines, and amd64 ntdll's link crashed lld over it.
+   Smoke reached on i386, amd64, arm64 and amd64-bios.
 7. Pick the next native area from `rust-port-status.md` (what is still C and not on the
    skip list below).
 

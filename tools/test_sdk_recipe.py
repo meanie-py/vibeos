@@ -18,6 +18,10 @@ def test_only_generator_commands_are_kept():
     assert not s._keep("cd /b && /tmp/vibeos/build-amd64/host-tools/bin/spec2def --implib x.spec")
     assert not s._keep('"/tmp/vibeos/.cache/host-jobs/host-jobs" --kind compile -- clang -c x.c')
     assert not s._keep("cd /b && /usr/bin/cmake -E env python3 x.py")
+    # add_idl_reg_objects' .res-to-object conversion is kept; a windres .rc compile is not.
+    windres = "cd /r && /r/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-windres"
+    assert s._keep(f"{windres} -O coff -i /b/x_r.res -o /b/x_r.o")
+    assert not s._keep(f"{windres} -O coff -i /r/x.rc -o /b/x.res")
 
 
 def test_paths_are_written_against_the_roots():

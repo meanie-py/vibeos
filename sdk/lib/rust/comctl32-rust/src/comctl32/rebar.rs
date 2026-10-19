@@ -814,7 +814,13 @@ unsafe extern "C" fn round_child_height(lpBand: *const REBAR_BAND, mut cyHeight:
             .wrapping_div((*lpBand).cyIntegral)
             .wrapping_mul((*lpBand).cyIntegral),
     ) as ::core::ffi::c_int;
-    cy = min(cy, (*lpBand).cyMaxChild as ::core::ffi::c_int);
+    // The C's `min(cy, lpBand->cyMaxChild)` mixes int and UINT, so it compares UNSIGNED: a
+    // cyMaxChild of (UINT)-1, "no maximum", never wins. Casting it to int made it -1 and
+    // every such band 0 px tall, explorer's task band among them (an 8 px taskbar).
+    // The cyIntegral == 0 arm above casts to int in the C itself, so that one stays signed.
+    if (cy as UINT) > (*lpBand).cyMaxChild {
+        cy = (*lpBand).cyMaxChild as ::core::ffi::c_int;
+    }
     return cy;
 }
 
@@ -2220,7 +2226,8 @@ unsafe extern "C" fn REBAR_LayoutRow(
         if i > iBeginBand {
             width += SEP_WIDTH!(infoPtr);
         }
-        (*lpBand).cxEffective = max((*lpBand).cxMinBand as INT, (*lpBand).cx as INT);
+        // max() of two UINTs compares unsigned in the C
+        (*lpBand).cxEffective = max((*lpBand).cxMinBand, (*lpBand).cx) as INT;
         width += (*lpBand).cxEffective as ::core::ffi::c_int;
         i = next_visible(infoPtr, i as INT) as ::core::ffi::c_int;
     }

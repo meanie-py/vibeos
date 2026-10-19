@@ -16,16 +16,33 @@
 /// CP1252 model. mbcp::upcase already coincides with the genuine ASCII
 /// fast path (`<0x61 ⇒ id`, `0x61..=0x7A ⇒ -0x20`) so a straight
 /// delegate is faithful for every code unit.
+///
+/// That model is the HOST harness's only: a kernel/ntdll or boot-loader build calls the
+/// real `RtlpUpcaseUnicodeChar` (cabi::nlsapi), as unicode.c does, so the compare/prefix/
+/// hash/upcase helpers below fold with the loaded tables (or nlsboot's ASCII rule).
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[inline]
 pub fn upcase_uc(w: u16) -> u16 {
     cnt_rust::core_rs::mbcp::upcase(w)
 }
+#[cfg(any(feature = "kernel", feature = "bldr"))]
+#[inline]
+pub fn upcase_uc(w: u16) -> u16 {
+    crate::cabi::nlsapi::upcase(w)
+}
 
 /// `RtlpDowncaseUnicodeChar` / `RtlDowncaseUnicodeChar` — the shared
 /// symmetric model (see [`cnt_rust::core_rs::mbcp::downcase`]).
+/// The real `RtlpDowncaseUnicodeChar` outside the host harness, as for [`upcase_uc`].
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[inline]
 pub fn downcase_uc(w: u16) -> u16 {
     cnt_rust::core_rs::mbcp::downcase(w)
+}
+#[cfg(any(feature = "kernel", feature = "bldr"))]
+#[inline]
+pub fn downcase_uc(w: u16) -> u16 {
+    crate::cabi::nlsapi::downcase(w)
 }
 
 /// `RtlUpperChar(IN CHAR Source)` (nls.c). `Source` is **signed**
@@ -34,6 +51,13 @@ pub fn downcase_uc(w: u16) -> u16 {
 /// 0x7B–0x7F take the NLS branch but CP1252 maps them to themselves.
 /// Net: a–z ⇒ A–Z, every other byte unchanged. Returns the (signed)
 /// `CHAR` byte.
+/// The real `RtlUpperChar` outside the host harness, as for [`upcase_uc`].
+#[cfg(any(feature = "kernel", feature = "bldr"))]
+#[inline]
+pub fn upper_ansi(c: u8) -> u8 {
+    crate::cabi::nlsapi::upper(c)
+}
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[inline]
 pub fn upper_ansi(c: u8) -> u8 {
     if c.is_ascii_lowercase() {

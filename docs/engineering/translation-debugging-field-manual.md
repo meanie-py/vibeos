@@ -1393,6 +1393,22 @@ function goes in a plain `extern "system"` block and resolves through the import
 `scan_unresolved_imports` (binary lint, every arch) checks every livecd PE's imports against
 its exporter's export table, so any name the loader cannot bind fails the build.
 
+### A library that DEFINES a data export must not also raw-dylib-import it
+
+**Symptom:** amd64 `ntdll` link: `lld` crashes in `IdataContents::create`, after warnings that
+`__declspec(dllimport) NlsMbCodePageTag` is defined both in `librtl_rust.a` and at
+`ntoskrnl.exe`. i386 and arm64 link, which is worse, because there the outcome is luck.
+
+**Cause:** librtl defines `NlsMbCodePageTag`/`NlsMbOemCodePageTag`/`NlsOemLeadByteInfo`, and
+`ntkrnl-sys`' default `hal_bindgen` feature raw-dylib-declares the same three as ntoskrnl.exe
+DATA imports, so rustc bundles import members for them into the same staticlib. A reference
+from another codegen unit resolves to whichever archive member the linker meets first. It
+stayed latent until code outside nls_tables.rs started reading the globals.
+
+**Fix:** a crate graph that owns a symbol must not carry an import of it: librtl's crates take
+`ntkrnl-sys` with `default-features = false, features = ["inline_exports", "dbg"]` (no librtl
+crate uses `hal_ddk`); check with `llvm-ar t librtl_rust.a | grep -i ntoskrnl` (empty).
+
 ### An `extern "C"` DllMain never runs on i386: crt-startup's default takes its place
 
 **Symptom:** none visible. The DLL loads and works on amd64 and arm64. On i386 its DllMain
@@ -2575,6 +2591,26 @@ reading the C before touching anything — the same panic over a **signed** C co
 the C guards, is a genuine mistranslation and wants the guard restored instead. Check test
 helpers too, not just the shipping crate: one of the four was a double→`long double` rebias in
 wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
+
+### A mixed-sign `min`/`max` translated as a signed compare
+**Symptom:** explorer's taskbar was 8 px tall on every arch, its borders and nothing else, for
+a week after comctl32 went to Rust (2026-10-09 → 10-18). The tray window existed, so smoke and
+appstorm's `shell=OK` stayed green; only a screenshot showed it.
+**Cause:** rebar.c's `round_child_height` ends `cy = min(cy, lpBand->cyMaxChild)`, an `int`
+against a `UINT`. C's usual arithmetic conversions make that an UNSIGNED compare, so a
+`cyMaxChild` of `(UINT)-1` ("no maximum", what browseui's band site passes) never wins. Rust's
+`min` needs one type, and the translation cast `cyMaxChild as c_int`: `min(22, -1)` is -1, the
+band's `cyChild` became `0xFFFFFFFF`, `REBAR_ValidateBand` zeroed it as out of range, and the
+rebar reported a bar height of 0.
+**Fix:** compare the way the C does: `if (cy as UINT) > max { cy = max as c_int }`, or
+`min(a as UINT, b) as c_int`. The rest of rebar.c was already right, including every
+`i < uNumBands` and `uNumBands - 1` site; it is the `min`/`max` CALL that invites a single
+cast to one side.
+**Finding the rest:** clang's `-Wsign-compare` on the C oracle flags exactly this. Run it over
+a module's `<target>_c` compile commands and keep the lines that call `min`/`max`. Across all
+53 oracle modules (2026-10-18) that is 24 sites in comctl32 and 2 in credui, and this was the
+only mistranslated one. Modules with no oracle are unaudited. A rebar section in the modrun
+comctl32 probe (`probes/comctl32.c`) now diffs the band and bar heights against the C.
 
 ### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
 **Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a
@@ -10787,6 +10823,15 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   `command` is shell-quoted — use `shlex.split()`, never `.split()`; and bindgen records the
   Windows spelling of a fixed-width type (`__msvcrt_ulong` is 32-bit).
 - **A harness improvement is worth nothing if you only point it at NEW code** `[§9.66]`.
+- **…and the harness's MODEL must not become the shipping body.** rtl-strings modelled nls.c
+  as a fixed CP1252 table on both sides of rtl-difftest, which is fine for grading unicode.c's
+  wrappers, but the model was also what the kernel and ntdll exported: `RtlUnicodeToOemN` and
+  friends ignored the tables `RtlResetRtlTranslations` loads (OEM is CP437, so every byte
+  >= 0x80 came out wrong), and `RtlEqualComputerName` shipped as `return FALSE`, the harness's
+  outcome (its allocator returns NULL). **Fix:** route the model through one dispatch module
+  that only the harness build selects (`rtl-strings/src/cabi/nlsapi.rs`), and grade the real
+  layer separately against the genuine C on real data (`rtl-difftest/tests/nls_tables.rs`
+  loads txt2nls-generated code pages into both).
 - **Un-stubbing a global the harness defined as NULL is only HALF the fix; the other half is
   one per side.** msvcrt-difftest defined `MSVCRT_locale = 0` so mbcs.c would link, and that
   NULL is why `_setmbcp` was refused for months — its non-thread arm dereferences it. But that
@@ -14186,6 +14231,23 @@ temporaries live to the end of the match; atlclasses' `atl_format!` now does thi
 format and every argument. In ordinary code, keep the owning `CStringW` in a named local before
 taking `.GetString()`.
 
+### A native server's flattened RPC buffer reaches a 32-bit client in the server's layout
+**Symptom.** A 32-bit app under WoW64 reads garbage or NULL from a structure an RPC call
+filled successfully: every field up to the first pointer is right, everything after it is
+wrong. wordpad faulted at address 0x44 in comdlg32's `PRINTDLG_SetDefaultPrinter`, reading
+`PRINTER_INFO_2W.pDevMode->dmSize` with `pDevMode` NULL.
+**Cause.** The spooler RPCs (`GetPrinter`, `Enum*`, `GetJob`, `GetForm`, `GetPrinterDriver`)
+return a `[size_is] BYTE *` buffer that the native spoolsv fills with its own 8-byte pointer
+offsets and 64-bit padding. NDR carries opaque bytes untouched, so no thunk sees them, and
+winspool's `MarshallUpStructure` read them with the i386 table. `pDevMode` (i386 offset 0x1c)
+was the zero high half of `pPortName`'s offset.
+**Fix.** `winspool-rust/src/winspool/wow64.rs`: under WoW64 the client narrows the buffer in
+place with a 64-bit twin of each structure before unmarshalling. The marshalling tables
+cannot stand in for the layout: they omit fields (`DRIVER_INFO_x.cVersion`), and i386 pads
+before `dwlDriverVersion` where amd64 does not. The twins are const-asserted against the real
+structure on the 64-bit builds. Any other interface that ships a struct as opaque bytes has
+the same exposure.
+
 ### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
 **Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing
 call anywhere near. The syscall that did it **succeeded** and returned the right value in the
@@ -15384,6 +15446,25 @@ per-arch accelerator cap, so a parallel repro just queues.
 - **Rust release omits frame pointers** `[§9.5]`, so an EBP-chain `bt` is worthless. **Scan the raw stack
   upward from the fault ESP** for values in the kernel/win32k `.text` ranges — those are the call
   chain. On arm64, walk `Fp`(x29): `lr = *(fp+8)`, `next = *(fp)`.
+
+### An i386 double fault (`0x7F`, param 1 = 8): read the `[DBLFAULT]` lines first
+
+**Symptom:** `BUGCHECK 0x7F (0x8, <TSS>, ...)` and nothing else to go on. The hang triage shows
+only `KiTrap08Handler`, and the faulting code is often in a driver the kernel-only symbolizer
+cannot place. **Cause, usually:** a kernel stack overflow. ESP has run past the thread's
+`StackLimit`, and the push into the guard page faults inside the page-fault delivery. A 12 KB
+i386 kernel stack goes faster than you expect. netstack's worker reserved 7.3 KB of it in one
+frame (`mov $0x1c80,%eax; call __alloca`). A `ZwSetSystemTime` from that loop then ran the
+registry path, and a disk interrupt landed on top (2026-10-18, ~7% of boots). **Read:**
+`KiTrap08Handler` prints, from the TSS the CPU saved the faulting task in:
+`[DBLFAULT] EIP=… ESP=… stack=[StackLimit,StackBase)`, then `at <module>+<off>` and the EBP
+chain as `#n <module>+<off>`. EIP/ESP are also bugcheck parameters 3/4. ESP below the stack
+range is an overflow. Symbolize kernel lines with `llvm-symbolizer --obj=ntkrnlmp.exe
+<ImageBase+off>`, and drivers the same way against their `.sys`. **Fix:** find the frame hog,
+not the last frame. Sort a module's frames with `llvm-objdump -d` (`sub $N,%esp` and
+`mov $N,%eax; call __alloca` for anything over 4 KB). Then either move deep calls off the
+loop onto a system worker thread (`ExQueueWorkItem`, a fresh stack) or shrink the frame
+(`Box` the large locals, `#[inline(never)]` the big helpers).
 
 ### Watchpoint on a not-yet-mapped page `[§9.4]`
 A session/desktop-heap address isn't mapped at boot, so sequence it: `hbreak` a function that

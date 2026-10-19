@@ -123,7 +123,7 @@ def test_the_preamble_audit_and_the_catalog_agree(tmp_path):
 
     p = tmp_path / "t.c"
     p.write_text(BREAKS_THE_PARSE)
-    _, _, unparsed = _scan(p)
+    _, _, unparsed, _ = _scan(p)
     assert unparsed == [], f"top-level ERROR at line(s) {unparsed} — audit would report INCOMPLETE"
 
 

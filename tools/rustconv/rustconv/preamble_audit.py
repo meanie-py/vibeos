@@ -113,8 +113,39 @@ def _declarator_name(node, src: bytes) -> tuple[str | None, bool]:
     return None, is_fn
 
 
-def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
-    """(file-scope definitions, tag<->typedef alias map, unparsed top-level lines).
+def _file_scope(node, src: bytes):
+    """The root's file-scope nodes, looking through an INCLUDE GUARD. A guarded header
+    (`#ifndef __SETUPAPI_PRIVATE_H` .. `#endif`) is one preproc_ifdef node, so walking only
+    the root's children audited zero declarations in every guarded header. Only a guard is
+    opened: an ordinary `#ifdef __REACTOS__ .. #else` has an inactive branch the model
+    rightly did not translate, and auditing it would report false drops."""
+    for ch in node.named_children:
+        if _is_include_guard(ch, src):
+            yield from _file_scope(ch, src)
+        else:
+            yield ch
+
+
+def _is_include_guard(node, src: bytes) -> bool:
+    """`#ifndef X` whose first statement is `#define X`: the guard's own shape. A name
+    pattern is not enough -- `#ifdef __REACTOS__` looks like a guard by name."""
+    if node.type != "preproc_ifdef" or not _txt(node, src).lstrip().startswith("#ifndef"):
+        return False
+    name = node.child_by_field_name("name")
+    body = [
+        c
+        for c in node.named_children
+        if c.start_byte != (name.start_byte if name is not None else -1) and c.type != "comment"
+    ]
+    if name is None or not body or body[0].type != "preproc_def":
+        return False
+    defined = body[0].child_by_field_name("name")
+    return defined is not None and _txt(defined, src) == _txt(name, src)
+
+
+def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int], set[str]]:
+    """(file-scope definitions, tag<->typedef alias map, unparsed top-level lines, the
+    variables the file only declares `extern`).
 
     Parsed from the real AST (not the carved preamble text) so line numbers are
     true and the parse is clean; a top-level declaration is by construction never
@@ -168,11 +199,12 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
 
     unparsed = [n.start_point[0] + 1 for n in root.named_children if n.type == "ERROR"]
     if unparsed:
-        return [], {}, unparsed
+        return [], {}, unparsed, set()
 
     decls: dict[tuple[str, str], CDecl] = {}
     tags: set[str] = set()  # struct/union/enum tags that got a definition
     typedef_of: dict[str, str] = {}  # typedef name -> underlying tag
+    externs: set[str] = set()  # variables declared `extern` (defined in another TU)
 
     def add(d: CDecl) -> None:
         key = (d.kind, d.name)
@@ -208,7 +240,7 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
         )
         return name
 
-    for node in root.named_children:
+    for node in _file_scope(root, src):
         # A bare `struct Bare { int b; };` at file scope is a top-level
         # struct_specifier — NOT wrapped in a `declaration`. Missing this case
         # would drop struct definitions silently, the exact class this exists to
@@ -247,6 +279,10 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
             # `extern` is a DECLARATION, not a definition — the symbol lives in
             # another TU, so the Rust preamble is right not to define it.
             if re.match(r"^\s*extern\b", raw):
+                for d in node.children_by_field_name("declarator"):
+                    nm, is_fn = _declarator_name(d, src)
+                    if nm and not is_fn:
+                        externs.add(nm)
                 continue
             for ch in node.named_children:
                 if ch.type in ("struct_specifier", "union_specifier", "enum_specifier"):
@@ -296,12 +332,53 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
         aliases.setdefault(m.group(2), m.group(1))
 
     out = sorted(decls.values(), key=lambda d: (d.line, d.kind, d.name))
-    return out, aliases, []
+    defined = {d.name for d in out if d.kind in ("variable", "table")}
+    return out, aliases, [], externs - defined
 
 
 def preamble_decls(c_path: Path) -> list[CDecl]:
     """Every file-scope declaration the C source DEFINES."""
     return _scan(Path(c_path))[0]
+
+
+_STATIC_ITEM_RE = re.compile(r"^(?:pub(?:\([^)]*\))?\s+)?static\s+(?:mut\s+)?([A-Za-z_]\w*)\s*:")
+
+
+def strip_static_definitions(rust: str, names: set[str]) -> tuple[str, list[str]]:
+    """Drop the column-0 `static [mut] NAME: T = ..;` items for `names`, with the
+    attributes above them (an orphaned `#[no_mangle]` would attach to the next item).
+    Items inside an `extern "C" { .. }` block are indented and never touched."""
+    if not names:
+        return rust, []
+    kept: list[str] = []
+    dropped: list[str] = []
+    lines = rust.splitlines()
+    i = 0
+    while i < len(lines):
+        m = _STATIC_ITEM_RE.match(lines[i])
+        if not m or m.group(1) not in names:
+            kept.append(lines[i])
+            i += 1
+            continue
+        while kept and re.match(r"^\s*(?:#\[|///)", kept[-1]):
+            kept.pop()
+        dropped.append(m.group(1))
+        depth = 0
+        while i < len(lines):
+            ln = lines[i]
+            depth += ln.count("[") - ln.count("]") + ln.count("{") - ln.count("}")
+            i += 1
+            if depth <= 0 and ln.rstrip().endswith(";"):
+                break
+    return "\n".join(kept), dropped
+
+
+def extern_only_names(c_path: Path) -> set[str]:
+    """Variables the C declares `extern` at file scope and never defines: they live in
+    another TU, so a Rust preamble that DEFINES one (`#[no_mangle] pub static mut X = ..`)
+    makes a second copy of that symbol. setupapi_private.h's `extern HINSTANCE hInstance;`
+    came back from the model as exactly that, beside setupcab.c's real definition."""
+    return _scan(Path(c_path))[3]
 
 
 # ---------------------------------------------------------------------------
@@ -372,7 +449,7 @@ def audit_preamble(
     """
     c_path = Path(c_path)
     haystack = rust_preamble + ("\n" + rust_full if rust_full else "")
-    decls, aliases, unparsed = _scan(c_path)
+    decls, aliases, unparsed, _ = _scan(c_path)
 
     findings: list[str] = []
     if unparsed:

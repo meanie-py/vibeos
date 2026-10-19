@@ -733,6 +733,12 @@ def _qemu_preflight(repo: Path, boot_arch: str) -> Stage | None:
     exe = be.windows_qemu_bin(get_arch_config(boot_arch).qemu_bin, win.get("qemu_dir", ""), accel)
     version = be.windows_qemu_version(exe)
     bad = be.known_bad_windows_qemu(version)
+    if bad and be.known_bad_allowed():
+        return Stage(
+            "qemu",
+            status="warn",
+            detail=f"KNOWN-BAD {version} allowed by VIBEOS_QEMU_ALLOW_KNOWN_BAD=1 ({exe})",
+        )
     if bad:
         return Stage(
             "qemu",
@@ -1726,6 +1732,26 @@ def smoke(args, repo: Path) -> int:
             return run.finalize(repo)
         os.environ["VIBEOS_QEMU_MEMORY"] = vm_memory
         run.extra["vm_memory"] = vm_memory
+
+    # --- external media (--media): admitted on its provenance stamp, never on trust ---
+    media = getattr(args, "media", None)
+    if media:
+        image = Path(media).resolve()
+        bad = [
+            f"--media cannot combine with --{o.replace('_', '-')}"
+            for o in ("payload", "doom", "ladder", "require_probe", "tripwire")
+            if getattr(args, o, None)
+        ]
+        if arch == "arm64":
+            bad.append("arm64 boots qemu/boot.img: mastering it from the manifest is not modelled")
+        problems = bad or provenance.external_media_problems(repo, arch, image)
+        if problems:
+            run.classification = "BAD_ARGS" if bad else "STALE_MEDIA"
+            run.add(Stage("media", status="fail", detail=str(image), salient=problems))
+            return run.finalize(repo)
+        os.environ["VIBEOS_BOOT_MEDIA"] = str(image)
+        run.extra["media"] = str(image)
+        run.add(Stage("media", status="ok", detail=f"{image} (stamp matches this tree)"))
 
     # --- staleness preflight (hard boundary) ---
     st = provenance.check_staleness(repo, arch)

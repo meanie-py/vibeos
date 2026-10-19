@@ -9,6 +9,7 @@ extern crate crc32;
 extern crate largeint;
 extern crate random;
 extern crate rtl_diag;
+extern crate rtl_strings;
 #[cfg(target_arch = "x86_64")]
 extern crate byteswap;
 #[cfg(target_arch = "x86_64")]

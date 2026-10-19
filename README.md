@@ -52,8 +52,8 @@ and `shell ready` (no idle-detection proxies, no per-arch shortcuts). ARM64 gets
 | Platform | State |
 |---|---|
 | **QEMU i386, amd64, ARM64** | Desktop on all three, `-smp 2`, gated on every merge. amd64 boots under both UEFI and SeaBIOS, and installs from the boot CD onto a blank disk. |
-| **Raspberry Pi 4B** (physical) | Desktop on all four cores; USB keyboard, mouse and mass storage; Ethernet; SD card writes. Network-booted from the build host in about 100 s. |
-| **Raspberry Pi 5** (physical) | Desktop at 1080p over HDMI; USB, SD card, and Ethernet through the RP1 southbridge. |
+| **Raspberry Pi 4B** (physical) | Desktop on all four cores; USB keyboard, mouse and mass storage; Ethernet and Wi-Fi at once; SD card writes. Network-booted from the build host in about 100 s. |
+| **Raspberry Pi 5** (physical) | Desktop at 1080p over HDMI; USB, SD card, Ethernet through the RP1 southbridge, and Wi-Fi beside it. |
 | **Dell OptiPlex 9020** (physical x86) | Desktop; Realtek's own Windows 10 Wi-Fi driver joins a WPA2 network through a from-scratch Rust supplicant. |
 
 ### Rust translation
@@ -100,6 +100,7 @@ vibeos keeps ReactOS's compatibility target and measures it rather than assuming
 
 - 🍓 **Boots on a real Raspberry Pi 4**: all four cores, USB, Ethernet, SD card, about 100 s from power-on to desktop.
 - 🍓 **And a Raspberry Pi 5**: 1080p HDMI, USB, SD, Ethernet through RP1 at 360 of 360 pings.
+- 📶 **Wi-Fi on both Pis**: a Rust driver for the CYW43455 (an NDIS 6 miniport over SDIO, with WPA2 group rekeys), up beside Ethernet; 9 hours on the Pi 5 with no link loss.
 - 📶 **A real x86 PC gets online over Wi-Fi**: Realtek's stock Windows 10 driver plus a from-scratch Rust WPA2 supplicant.
 - 🔀 **Stock x86-64 Windows apps run on ARM64** under FEX: 25 of them, as real x86-64 processes.
 - 🦀 **The boot path is all Rust**: the kernel and HAL compile zero lines of C.
@@ -134,6 +135,30 @@ the engineering is in making that output trustworthy without a human reading eve
   grades each failure FLAKE or DETERMINISTIC.
 - **One front door.** `./vibeos-cli` builds, boots, smokes, gates, debugs (GDB over the real
   UEFI boot), drives the Pi benches, and refuses to boot stale media.
+
+## The hardware bench
+
+Agents boot their changes on real boards with nobody at the desk. Each board has:
+
+- **A Raspberry Pi Pico 2 W running [picousb](https://github.com/meanie-py/picousb)**, plugged
+  into one of the board's USB ports and driven over Wi-Fi. It is the board's boot keyboard,
+  mouse and absolute pointer (so an agent can click through UEFI setup or the desktop), a USB
+  mass-storage disk serving an image the agent picks, and a UART bridge that streams the
+  board's serial console back to the build host. It also reports what the board's USB host
+  did to it, which is how USB enumeration bugs get diagnosed from the device side.
+- **A USB HDMI capture card**, so a run can look at the screen: the desktop verdict is a
+  serial marker plus a frame that is not black, and every run keeps a screenshot.
+- **A Shelly smart plug** on the LAN for power. `vibeos-cli` power-cycles through the plug's
+  local RPC with the plug's own off-then-on timer, so a caller that dies mid-cycle still
+  leaves the board powered. The bench doctor reads the plug's power draw and refuses a plug
+  drawing more than a Pi can (it once named the wrong machine's plug).
+
+`./vibeos-cli pi4 boot` (or `pi5`) takes a lease so agents in other worktrees don't collide on
+a board, checks every service, stages the build (TFTP/HTTP netboot for the Pi 4; over SSH to
+the Pi 5's own Linux, then a one-shot `tryboot`), power-cycles, and returns a verdict with the
+serial log and the screenshot; `--until TEXT` keeps reading past the desktop for drivers that
+work on after it (the Wi-Fi's join). A Dell OptiPlex 9020 has the same rig with a second
+Pico. Bench docs: `docs/engineering/pi4-bench.md`, `pi5-bench.md`, `optiplex-bench.md`.
 
 ## What this is *not*
 

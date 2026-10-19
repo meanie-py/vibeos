@@ -3409,6 +3409,16 @@ def test_backend_known_bad_windows_qemu():
     assert be_mod.known_bad_windows_qemu("") is None
 
 
+def test_backend_known_bad_allowed_only_by_the_explicit_override(monkeypatch):
+    """The emulator A/B soak boots the snapshot on purpose; nothing else may."""
+    monkeypatch.delenv("VIBEOS_QEMU_ALLOW_KNOWN_BAD", raising=False)
+    assert not be_mod.known_bad_allowed()
+    monkeypatch.setenv("VIBEOS_QEMU_ALLOW_KNOWN_BAD", "yes")
+    assert not be_mod.known_bad_allowed()
+    monkeypatch.setenv("VIBEOS_QEMU_ALLOW_KNOWN_BAD", "1")
+    assert be_mod.known_bad_allowed()
+
+
 def test_backend_rewrite_accel():
     base = ["-M", "pc", "-accel", "kvm", "-cpu", "host", "-m", "512M"]
     # tcg: kvm->tcg AND drop the paired -cpu host
@@ -4253,6 +4263,8 @@ def _gate_args(**kw):
         clean=False,
         no_net=False,
         no_lint=True,
+        # Real stortest lanes boot QEMU; the stortest-lane tests pass no_stortest=False.
+        no_stortest=True,
     )
     base.update(kw)
     return Namespace(**base)
@@ -9732,6 +9744,100 @@ def test_conformance_lane_reports_the_failing_identities_not_the_whole_table(tmp
     assert "pass=11" not in r["salient"], "the per-test table must not reach the summary"
 
 
+def _fake_pytest(monkeypatch, rc: int, out: str = "", verdict: dict | None = None):
+    """Stand in for the stortest lane's pytest: exit `rc`, print `out`, and write
+    `verdict` where VIBEOS_STORTEST_RESULT points, as test_stortest.py does."""
+    seen = {}
+
+    class _CP:
+        returncode = rc
+        stdout = out
+        stderr = ""
+
+    def run(cmd, **kw):
+        seen["cmd"], seen["env"] = cmd, kw["env"]
+        if verdict is not None:
+            Path(kw["env"]["VIBEOS_STORTEST_RESULT"]).write_text(json.dumps(verdict))
+        return _CP()
+
+    monkeypatch.setattr(gate_mod.subprocess, "run", run)
+    return seen
+
+
+def test_stortest_lane_boots_the_gates_media_with_the_stick(tmp_path, monkeypatch):
+    seen = _fake_pytest(monkeypatch, 0, verdict={"classification": "", "salient": ["ALL OK"]})
+    r = gate_mod._stortest_once(tmp_path, "i386", tmp_path / "stor")
+    assert r["ok"] and r["arch"] == "stor:i386" and r["classification"] == ""
+    assert seen["env"]["VIBEOS_QEMU_STORTEST"] == "1"
+    assert seen["cmd"][seen["cmd"].index("--arch") + 1] == "i386-uefi"
+    # Never a rebuild: the gate just built these media and the test checks staleness.
+    assert "--skip-clean-build" in seen["cmd"]
+
+
+def test_stortest_lane_names_the_failure_and_does_not_retry_a_wrong_answer(tmp_path, monkeypatch):
+    """A stortest FAIL or a wrong readback is the storage stack answering wrong, which
+    reproduces: retrying it would only let a 50% regression through."""
+    _fake_pytest(
+        monkeypatch,
+        1,
+        verdict={"classification": "STORTEST_MISMATCH", "salient": ["WRITETST.TXT: b''"]},
+    )
+    r = gate_mod._stortest_once(tmp_path, "arm64", tmp_path / "stor")
+    assert not r["ok"]
+    assert r["classification"] == "STORTEST_MISMATCH"
+    assert r["retryable"] is False
+    assert "WRITETST.TXT" in r["salient"]
+
+
+def test_stortest_lane_classifies_a_boot_that_never_reached_stortest(tmp_path, monkeypatch):
+    """The vm fixture fails before the test body can write a verdict: classify the
+    console instead of reporting a bare exit 1, and allow the retry a host hiccup needs."""
+    _fake_pytest(monkeypatch, 1, out="E   Failed: Boot failed: Timed out waiting for marker\n")
+    r = gate_mod._stortest_once(tmp_path, "amd64", tmp_path / "stor")
+    assert not r["ok"]
+    assert r["classification"]  # never empty on a failure
+    assert r["retryable"] is True
+
+
+def test_stortest_lane_does_not_call_a_pytest_error_a_hang(tmp_path, monkeypatch):
+    """The first live run of the lane: pytest errored in 5 s (stale media) and the
+    console fallback read that as HANG_TIMEOUT. Only a failed BOOT goes to triage."""
+    _fake_pytest(monkeypatch, 1, out="E       AssertionError: Rebuild i386 media: [...]\n")
+    r = gate_mod._stortest_once(tmp_path, "i386", tmp_path / "stor")
+    assert r["classification"] == "STORTEST_ERROR"
+    assert "Rebuild i386 media" in r["salient"]
+
+
+def test_stortest_lane_passing_without_a_verdict_is_not_green(tmp_path, monkeypatch):
+    """pytest exits 0 on a SKIP (VIBEOS_QEMU_STORTEST unset, say): a lane that cannot fail
+    must not read as one that held."""
+    _fake_pytest(monkeypatch, 0)
+    r = gate_mod._stortest_once(tmp_path, "i386", tmp_path / "stor")
+    assert not r["ok"]
+    assert r["classification"] == "STORTEST_NO_VERDICT"
+
+
+def test_gate_stortest_red_withholds_the_stamp(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(gate_mod, "_smoke_once", _fake_smoke({}))
+
+    def stor(repo, arch, root):
+        return {
+            "arch": f"stor:{arch}",
+            "verdict": "FAIL" if arch == "arm64" else "PASS",
+            "classification": "STORTEST_FAIL" if arch == "arm64" else "",
+            "ok": arch != "arm64",
+            "retryable": False,
+            "seconds": 1.0,
+            "run_dir": str(root),
+            "salient": "",
+        }
+
+    monkeypatch.setattr(gate_mod, "_stortest_once", stor)
+    rc = gate_mod.gate(_gate_args(no_stortest=False), tmp_path)
+    assert rc == 1, "a red stortest lane must fail the gate"
+
+
 # ---------------------------------------------------------------------------
 # the kmtest payload provisioning scar (2026-09-06)
 # ---------------------------------------------------------------------------
@@ -12465,3 +12571,34 @@ def test_payload_not_in_media_advice_keeps_rostests_for_a_winetest_payload(tmp_p
     (d / "plain" / "payload.yaml").write_text("binaries:\n  - src: tools/payloads/plain/x.exe\n")
     assert smoke_mod._payload_build_flags(tmp_path, ["wt"]) == " --rostests --keep-going"
     assert smoke_mod._payload_build_flags(tmp_path, ["plain"]) == ""
+
+
+def test_external_media_is_admitted_only_on_a_matching_stamp(tmp_path, monkeypatch):
+    """`smoke --media`: an image from tools/media_manifest.py --assemble boots only when its
+    stamp names this arch, the livecd, the image's bytes and this tree's source."""
+    import hashlib
+    import json
+
+    from tests.qemu.cli import provenance
+
+    monkeypatch.setattr(provenance, "tree_content_hash", lambda repo, paths: "src")
+    image = tmp_path / "livecd.iso"
+    assert provenance.external_media_problems(tmp_path, "amd64", image) == [
+        f"{image}: no such image"
+    ]
+    image.write_bytes(b"iso")
+    assert "missing" in provenance.external_media_problems(tmp_path, "amd64", image)[0]
+    stamp = {
+        "arch": "amd64",
+        "cd": "livecd",
+        "sha256": hashlib.sha256(b"iso").hexdigest(),
+        "source": "src",
+    }
+    (tmp_path / "livecd.provenance.json").write_text(json.dumps(stamp))
+    assert provenance.external_media_problems(tmp_path, "amd64", image) == []
+    assert provenance.external_media_problems(tmp_path, "i386", image)
+    image.write_bytes(b"other")
+    assert "changed since" in provenance.external_media_problems(tmp_path, "amd64", image)[0]
+    image.write_bytes(b"iso")
+    monkeypatch.setattr(provenance, "tree_content_hash", lambda repo, paths: "moved")
+    assert "another source tree" in provenance.external_media_problems(tmp_path, "amd64", image)[0]

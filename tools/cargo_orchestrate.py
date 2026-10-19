@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import shlex
 import shutil
@@ -266,9 +267,6 @@ def build_pefixup(root: Path, arch: str, out_dir: Path, dry: bool = False) -> Pa
     target_compile_definitions). Single .c, like spec2def/native-hpp.
     """
     exe = out_dir / f"native-pefixup-{arch}"
-    if exe.exists() and not dry:
-        return exe
-    out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         host_cc(),
         "-O2",
@@ -278,8 +276,21 @@ def build_pefixup(root: Path, arch: str, out_dir: Path, dry: bool = False) -> Pa
     ]
     if ARCH_PE64[arch]:
         cmd.append("-D_TARGET_PE64")
-    cmd += ["-o", str(exe), str(root / "sdk/tools/pefixup.c")]
+    src = root / "sdk/tools/pefixup.c"
+    cmd += ["-o", str(exe), str(src)]
+    # Rebuilt when its source or command changes: a kept binary outlived a new
+    # post-link option (--dllname) and failed every cell that used it.
+    compat = root / "dll/win32/dbghelp/compat.h"  # its one local include
+    digest = hashlib.sha256(
+        src.read_bytes() + compat.read_bytes() + "\0".join(cmd).encode()
+    ).hexdigest()
+    stamp = exe.with_name(exe.name + ".stamp")
+    if exe.exists() and not dry and stamp.exists() and stamp.read_text().strip() == digest:
+        return exe
+    out_dir.mkdir(parents=True, exist_ok=True)
     run(cmd, dry=dry)
+    if not dry:
+        stamp.write_text(digest + "\n")
     return exe
 
 
@@ -522,17 +533,22 @@ def configure_gen(root: Path, arch: str, gen: Path, seed: Path | None = None) ->
     which `sdk/include/reactos/version.cmake` writes at CONFIGURE time (the UTC date, `git
     describe`), into `gen/sdk/include/reactos/` for the engine (VIBEOS_GEN_DIR). Like a
     configure, it runs once: a later build keeps them until `--reconfigure`. `seed` copies
-    a configured build's own instead (a comparison against it needs the same inputs)."""
+    a configured build's own instead (a comparison against it needs the same inputs).
+    The host-tools project configures its own pair, naming the host compiler, under
+    `gen/host-tools/bin` (mkisofs prints it in `-version`)."""
     import datetime
     import re
 
     out = gen / "sdk/include/reactos"
-    if (out / "buildno.h").exists() and (out / "version.h").exists():
+    host_out = gen / "host-tools/bin/sdk/include/reactos"
+    pairs = ((out, "sdk/include/reactos"), (host_out, "host-tools/bin/sdk/include/reactos"))
+    if all((d / h).exists() for d, _ in pairs for h in ("buildno.h", "version.h")):
         return gen
-    out.mkdir(parents=True, exist_ok=True)
     if seed is not None:
-        for h in ("version.h", "buildno.h"):
-            shutil.copy2(seed / "sdk/include/reactos" / h, out / h)
+        for d, rel in pairs:
+            d.mkdir(parents=True, exist_ok=True)
+            for h in ("version.h", "buildno.h"):
+                shutil.copy2(seed / rel / h, d / h)
         return gen
     cm = (root / "sdk/include/reactos/version.cmake").read_text()
     var = dict(re.findall(r'^set\((\w+) "([^"]*)"\)', cm, re.M))
@@ -556,6 +572,13 @@ def configure_gen(root: Path, arch: str, gen: Path, seed: Path | None = None) ->
             [str(clang), "--version"], capture_output=True, text=True, check=True
         ).stdout,
     )
+
+    # The host project's compiler is the host cc, named as cmake identifies it.
+    def cc(*a: str) -> str:
+        return subprocess.run(["cc", *a], capture_output=True, text=True, check=True).stdout
+
+    host_id = "Clang" if "clang" in cc("--version") else "GNU"
+    host_cc = cc("-dumpfullversion" if host_id == "GNU" else "-dumpversion").strip()
     values = {
         **var,
         "KERNEL_VERSION_BUILD": datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d"),
@@ -567,10 +590,12 @@ def configure_gen(root: Path, arch: str, gen: Path, seed: Path | None = None) ->
         "CMAKE_C_COMPILER_ID": "Clang",
         "CMAKE_C_COMPILER_VERSION": ver.group(1) if ver else "",
     }
-    for h in ("version.h", "buildno.h"):
-        tmpl = (root / f"sdk/include/reactos/{h}.cmake").read_text()
-        text = re.sub(r"@(\w+)@", lambda m: values[m.group(1)], tmpl)
-        (out / h).write_text(text)
+    host = {**values, "CMAKE_C_COMPILER_ID": host_id, "CMAKE_C_COMPILER_VERSION": host_cc}
+    for (d, _), vals in zip(pairs, (values, host), strict=True):
+        d.mkdir(parents=True, exist_ok=True)
+        for h in ("version.h", "buildno.h"):
+            tmpl = (root / f"sdk/include/reactos/{h}.cmake").read_text()
+            (d / h).write_text(re.sub(r"@(\w+)@", lambda m, v=vals: v[m.group(1)], tmpl))
     return gen
 
 
@@ -580,7 +605,6 @@ def artifact_store_env(root: Path, arch: str, report: Path):
     into it once) instead of each cell compiling its own privately. A context manager
     yielding the env to add."""
     import contextlib
-    import json
 
     sys.path.insert(0, str(root))
     from tests.qemu.cli import hostjobs
@@ -648,7 +672,13 @@ def manifest_build(
     and apply each output's post-link."""
     sys.path.insert(0, str(root / "tools"))
     import cell_manifest
+    import media_manifest
 
+    # A full build stamps out_dir with the source it was made from, for
+    # media_manifest.py --assemble --cells (and the smoke that boots what it masters).
+    stamp = out_dir / media_manifest.CELLS_STAMP
+    stamp.unlink(missing_ok=True)
+    source = None if crates else media_manifest.source_hash(root)
     cells = cell_manifest.current(arch, root)
     if crates:
         unknown = set(crates) - {c["crate"] for c in cells}
@@ -717,6 +747,11 @@ def manifest_build(
         log(f"{len(failed)}/{len(cells)} cells FAILED: {' '.join(failed)}")
         return 1
     log(f"all {len(cells)} cells built into {out_dir}")
+    if source is not None:
+        if media_manifest.source_hash(root) != source:
+            log("the source tree changed during the build: not stamping it")
+            return 1
+        stamp.write_text(json.dumps({"arch": arch, "source": source}) + "\n")
     return 0
 
 

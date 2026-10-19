@@ -602,16 +602,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **i386 double fault `0x7F/8` after netstack comes up (open flake, 1 in 14, seen
-  2026-10-18, integration).** Cold gate `20261018-203418-4bm2iwmq`, i386 `-smp 2` on QEMU 11.1.0:
-  `BUGCHECK 0x7F (8, 0x80082000)` via `KiTrap08Handler`. CPU#0 was at a garbage PC
-  (`XHF_NOEXECUTE+521701`) and CPU#1 in `_YieldProcessor`. It came straight after netstack's
-  `ping gateway OK` / `dns OK` and an `[RQAFF] affinity-defer` line. The same media then went
-  13/13 green (`20261018-205518-_e9s2jz2`, plus a `--repeat 10`). This is the first `0x7F/8`
-  in any i386 serial log, and both suspects landed today: QEMU 11.1.0 (`1b759a0c50b`) and
-  netstack multi-adapter (`db748db1dff`). UNVERIFIED which, if either. Artifacts, outside /tmp:
-  `~/vibeos-flake-farm/fails/i386-dblfault-qemu1110-20261018/`. Next: a `farm --arches i386`
-  soak on each QEMU.
+- **i386 double fault `0x7F/8` after netstack comes up (FIXED 2026-10-18, upstream-sync; was
+  ~7% of i386 boots).** A kernel stack overflow, not the emulator: 1/20 on QEMU 11.0.50 and 2/20
+  on 11.1.0 from the same media. netstack's `engine::worker` reserves a 7.3 KB frame (0x1c80) of
+  its 12 KB i386 kernel stack. SNTP (`a5033d3b1ac`) then called `ZwSetSystemTime` from that
+  loop. The path runs NtSetSystemTime -> RtlQueryRegistryValues -> a nested ZwOpenKey ->
+  CmpParseKey -> `CmpLockRegistry`, and a uniata disk interrupt arriving during that wait went
+  past StackLimit. Fix: SNTP sets the clock from a system worker thread (`ExQueueWorkItem`, a
+  fresh stack). Soak afterwards: 40/40, no double fault, the time set in all 40. The worker's
+  frame has since shrunk from 0x1C70 to 0x6C0 (rpi-bringup, `96e96a254d2` + the virtio
+  ISR-context fix `7df93b16130`): `Link::new` is now boxed and out of line. `KiTrap08Handler` now prints the faulting EIP/ESP and the stack
+  bounds, and walks the EBP chain as module+offset (`[DBLFAULT]` lines; EIP/ESP are also
+  bugcheck parameters 3/4). That is what found this one.
 - **Shared cargo link dir lost an uplifted `.d` (open flake, seen once 2026-10-18,
   integration).** Cold gate `20261018-182602-3__g5z_l` failed i386 at winlogon.exe:
   `cargo-depfile: No such file ... cell-link-v1-i386-15/.../release/winlogon.d`. cargo had
