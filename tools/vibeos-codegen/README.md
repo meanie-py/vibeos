@@ -98,6 +98,46 @@ generated include directories and message sidecars. Compiler tools may still be 
 The existing drift check retains its optional-artifact SKIP classifications; explicitly
 requested generation fails on missing or incomplete inputs.
 
+## Binding and header generation
+
+Seven more commands replace the corresponding Python implementations:
+
+| Command | Inputs/options | Output |
+| --- | --- | --- |
+| `com-macros` | `--bindgen FILE [--only IFoo,IBar] --output FILE` | COM vtable call helpers |
+| `enum-consts` | `HEADER TAG [--by-member] [--only A,B] [--type u32]` | computed Rust constants on stdout |
+| `ioctl-consts` | `HEADER [--prefix IOCTL_FAMILY_] [--type u32]` | SDK-resolved macro constants on stdout |
+| `ks386-inc` | local i386 generated headers | committed i386 assembly constants |
+| `ref-protos` | `file.c` and its local amd64 object | CRT reference prototypes and rename exclusions |
+| `rpc-guards` | `--header FILE [--prelude HEADER] --out-c FILE --out-h FILE` | SEH wrappers for WIDL stubs |
+| `delaylib` | `--def FILE --arch ARCH --out FILE [--clang TOOL] [--ar TOOL]` | compiled delay-import archive |
+
+These commands require explicit selection; `--all` still covers only the eleven text
+outputs. `enum-consts` and `ioctl-consts` accept `--check RSFILE`, comparing the constants
+present in that Rust file. Mismatches, unparseable values, and zero overlapping constants
+fail. Relative input/check paths for these two commands retain their checkout-relative
+meaning. Headers retain replacement decoding for legacy non-UTF-8 comments. Other paths
+are caller-relative. `--output` selects a text destination; `ref-protos --output-dir DIR`
+redirects both outputs to an existing directory. The latter requires a built local
+amd64 CRT object and fails if `llvm-nm` fails or finds no functions.
+
+`com-macros --bindgen - --parse-json` exposes the native parser through stdin/stdout.
+The Python `parse_vtbls` API used by rustconv is a thin bridge retaining its tuple shapes.
+`rpc-guards` retains both client and `s_` prototypes, matching the original implementation.
+`delaylib --stdout` renders assembly without compiling. Archive compilation happens in a
+private temporary directory, then replaces the destination atomically; compiler/archiver
+failure preserves the previous archive. `--keep-asm` writes a `.delay.s` sidecar; temporary
+objects are cleaned up. Ninja and reactos-link track the native source/templates, manifests,
+launcher and pinned toolchain. The launcher clears inherited cross-build and jobserver
+settings and limits its host Cargo build to one job.
+
+Migration parity against Python at `da29cd4910f`: complete COM output and parsed signatures
+for three architectures, RPC C/header fixtures, all three delay-thunk architectures,
+compiler-derived ks386 constants, file/time/process CRT prototype pairs, and five real SDK
+enum/IOCTL families. Regression fixtures preserve Python bytes, NONAME ordinals, nested
+callbacks, arrays and void signatures; integration checks compile real COFF archives for
+all three architectures and exercise Ninja invalidation and failed-tool preservation.
+
 ## Remaining migration work
 
 Outstanding resource refresh, observed 2026-10-18: the committed HAL/i386 and
@@ -110,12 +150,11 @@ These remain Python implementations; the native generators above do not replace 
 
 | Group | Entry points |
 | --- | --- |
-| Binding/header helpers | `gen_commacros.py`, `gen_enum_consts.py`, `gen_ioctl_consts.py`, `gen_ks386_inc.py`, `gen_msvcrt_ref_protos.py`, `gen_rpc_guards.py`, `sdk/tools/gen-delaylib.py` |
 | Registry/module generation | `gen_cnt.py`, `gen_cohab_registry.py`, `gen_global_barrier.py` |
 | Compiler-derived test data | `gen_ctype_tables.py` (its audit is already Rust), `gen_msvcrt_difftest_consts.py`, `gen_msvcrt_seh_layout.py`, `gen_ucrt_tier2_cases.py` |
 | Build graph/configuration | `cargo_cell_gen.py`, `gen_cflags.py`, `sdk/tools/gen_baseaddress.py` |
 | Payload and WoW64 generation | `payloads/apitest/gen_suites.py`, `payloads/olewinetest/gen_suites.py`, `wow64gen/wow64gen.py`, `wow64gen/marshalgen.py` |
 | Translation pipeline | `rustconv/gen_enum_constants.py`, `rustconv/gen_kmdf_dispatch.py`, bindgen postprocessors, and rustconv's generation modules; retain for the C-to-Rust tooling phase |
 
-Binding/header helpers are the next cohesive group. Compiler-derived fixtures and
+Registry/module generators are the next group. Compiler-derived fixtures and
 build-graph generation retain their current independent validation while still Python.

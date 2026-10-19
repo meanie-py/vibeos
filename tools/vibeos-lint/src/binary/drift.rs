@@ -199,56 +199,10 @@ fn check_geninc(ctx: &BinaryContext, rows: &mut Vec<Row>) -> Result<(), String> 
 }
 
 fn read_coff_section(obj: &Path, wanted: &str) -> Result<Vec<u8>, String> {
-    let raw = read_bytes(obj)?;
-    if raw.len() < 20 {
-        return Err(format!("truncated COFF object {}", obj.display()));
-    }
-    let n = u16::from_le_bytes([raw[2], raw[3]]) as usize;
-    let oh = u16::from_le_bytes([raw[16], raw[17]]) as usize;
-    let start = 20usize.checked_add(oh).ok_or("COFF offset overflow")?;
-    for i in 0..n {
-        let o = start
-            .checked_add(i.checked_mul(40).ok_or("COFF section offset overflow")?)
-            .ok_or("COFF section offset overflow")?;
-        if o + 40 > raw.len() {
-            return Err(format!("truncated COFF section table in {}", obj.display()));
-        }
-        let name = &raw[o..o + 8];
-        let end = name.iter().position(|b| *b == 0).unwrap_or(8);
-        if &name[..end] == wanted.as_bytes() {
-            let size = u32::from_le_bytes(raw[o + 16..o + 20].try_into().unwrap()) as usize;
-            let offset = u32::from_le_bytes(raw[o + 20..o + 24].try_into().unwrap()) as usize;
-            let stop = offset
-                .checked_add(size)
-                .ok_or("COFF section size overflow")?;
-            if stop > raw.len() {
-                return Err(format!("truncated section {wanted} in {}", obj.display()));
-            }
-            return Ok(raw[offset..stop].to_vec());
-        }
-    }
-    Err(format!("section {wanted:?} not in {}", obj.display()))
+    vibeos_codegen::asm::read_coff_section(&read_bytes(obj)?, wanted)
 }
 fn emit_ks(asmdef: &[u8]) -> Result<String, String> {
-    let mut out = String::new();
-    for chunk in asmdef.chunks_exact(64) {
-        let ty = chunk[0];
-        let name_end = chunk[1..56].iter().position(|b| *b == 0).unwrap_or(55);
-        let name = std::str::from_utf8(&chunk[1..1 + name_end])
-            .map_err(|e| format!("non-UTF8 asmdef name: {e}"))?;
-        let val = u64::from_le_bytes(chunk[56..64].try_into().unwrap());
-        match ty {
-            0 => break,
-            1 => {
-                out.push_str(name);
-                out.push('\n');
-            }
-            2 => out.push_str(&format!("{name} = 0x{val:x}\n")),
-            3 => out.push_str(&format!("\n/* {name} */\n")),
-            _ => {}
-        }
-    }
-    Ok(out)
+    vibeos_codegen::asm::emit_ks(asmdef)
 }
 
 fn check_cflags_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Result<(), String> {

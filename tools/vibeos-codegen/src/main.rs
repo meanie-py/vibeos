@@ -1,3 +1,4 @@
+mod binding_cli;
 use std::path::{Path, PathBuf};
 use std::{fs, io::Write};
 use vibeos_codegen::{generate, generate_all, resources, GENERATORS};
@@ -19,6 +20,9 @@ Generators: apisets-table, bugcodes, bugcodes-h, error-tables, winerror-consts,
 --arch ARCH     Required for resources; repeat or use comma-separated architectures.
 --module NAME   ntdll-res module selection (default: ntdll,ntdll_vista).
 --jobs-json     Show resource recipes without executing them.
+
+Binding commands: com-macros, enum-consts, ioctl-consts, ks386-inc, ref-protos,
+                  rpc-guards, delaylib. See tools/vibeos-codegen/README.md.
 
 Resource commands: hal-res, ntdll-res, ntoskrnl-res, win32k-res, committed-res.
 --all selects the text recipes above; resources require an explicit command/arch.
@@ -299,12 +303,20 @@ fn main() -> std::process::ExitCode {
         return 0.into();
     }
     if args.iter().any(|s| s == "--list") {
-        for name in GENERATORS.iter().chain(resources::NAMES) {
+        for name in GENERATORS
+            .iter()
+            .chain(resources::NAMES)
+            .chain(binding_cli::NAMES)
+        {
             println!("{name}");
         }
         return 0.into();
     }
-    match parse(args).and_then(run) {
+    match if binding_cli::selected(&args) {
+        binding_cli::run(args)
+    } else {
+        parse(args).and_then(run)
+    } {
         Ok(code) => code.into(),
         Err(error) => {
             eprintln!("vibeos-codegen: {error}");

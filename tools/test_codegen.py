@@ -112,6 +112,8 @@ def test_host_tool_cleans_inherited_cross_build_environment(tmp_path):
             "RUSTFLAGS": "--invalid-cross-build-option",
             "CARGO_BUILD_TARGET": "invalid-cross-build-target",
             "RUSTC_WRAPPER": "/missing/cross-build-wrapper",
+            "RUSTC": "/missing/cross-build-compiler",
+            "CARGO_BUILD_RUSTC": "/missing/cargo-cross-build-compiler",
         },
         capture_output=True,
         text=True,
