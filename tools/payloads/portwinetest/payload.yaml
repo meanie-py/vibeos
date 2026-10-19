@@ -5,9 +5,9 @@
 # The list is olewinetest's gen_suites.py pointed at these suites; see that payload for why
 # children start on C:.
 name: portwinetest
-description: Wine conformance suites for the Rust-ported Wine DLLs (pdh, wtsapi32, imagehlp, credui, ntdsapi, jsproxy, sti, wmiutils, sxs, inetmib1)
+description: Wine conformance suites for the Rust-ported Wine DLLs (pdh, wtsapi32, imagehlp, credui, ntdsapi, jsproxy, sti, wmiutils, sxs, inetmib1, twain_32, activeds, xinput1_3, msrle32, oledlg)
 
-build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites pdh,wtsapi32,imagehlp,credui,ntdsapi,jsproxy,sti,wmiutils,sxs,inetmib1 --register '' --out-dir tools/payloads/portwinetest"
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites pdh,wtsapi32,imagehlp,credui,ntdsapi,jsproxy,sti,wmiutils,sxs,inetmib1,twain_32,activeds,xinput1_3,msrle32,oledlg --register '' --out-dir tools/payloads/portwinetest"
 
 binaries:
   - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
@@ -39,6 +39,16 @@ binaries:
     dest: bin/sxs_winetest.exe
   - src: build-{arch}/modules/rostests/winetests/inetmib1/inetmib1_winetest.exe
     dest: bin/inetmib1_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/twain_32/twain_32_winetest.exe
+    dest: bin/twain_32_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/activeds/activeds_winetest.exe
+    dest: bin/activeds_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/xinput1_3/xinput1_3_winetest.exe
+    dest: bin/xinput1_3_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/msrle32/msrle32_winetest.exe
+    dest: bin/msrle32_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/oledlg/oledlg_winetest.exe
+    dest: bin/oledlg_winetest.exe
 
 test:
   launch_marker: "[APITEST-SWEEP] done"
