@@ -98,14 +98,81 @@ pub unsafe fn OBJECT_HEADER_TO_EXCLUSIVE_PROCESS(
 // Handle entry macros (from ob.h)
 // ============================================================================
 
+// Windows 8 handle reference biasing. Creating a handle charges the object OBP_HANDLE_BIAS
+// references: one the handle holds, and BIAS-1 cached in the entry, which
+// ObReferenceObjectByHandle draws down instead of incrementing PointerCount and which
+// closing the handle returns. So PointerCount reads 65537 for two handles plus a pointer
+// reference on x64 (65 on x86), as ObjectBasicInformation shows on Windows (kmtest ObHandle,
+// MmSection, ZwMapViewOfSection). The cache lives where Windows keeps it: on 64-bit in the
+// object pointer's top 16 bits (kernel pointers are canonical, so those bits are otherwise
+// all ones; stored inverted, so a plain pointer means 0 cached); on x86 in GrantedAccess bits
+// 26-30, above ObpAccessProtectCloseBit (25). Entries are read through ObpGetHandleObject
+// and ObpHandleGrantedAccess, which strip it.
+#[cfg(target_pointer_width = "64")]
+pub const OBP_HANDLE_BIAS: usize = 0x8000;
+#[cfg(target_pointer_width = "32")]
+pub const OBP_HANDLE_BIAS: usize = 32;
+#[cfg(target_pointer_width = "64")]
+const OBP_HANDLE_REFS_SHIFT: u32 = 48;
+#[cfg(target_pointer_width = "32")]
+const OBP_HANDLE_REFS_SHIFT: u32 = 26;
+#[cfg(target_pointer_width = "32")]
+const OBP_HANDLE_REFS_MASK: u32 = 0x1F << OBP_HANDLE_REFS_SHIFT;
+
 /// ObpGetHandleObject — extract POBJECT_HEADER from a handle table entry.
-/// C: `(POBJECT_HEADER)((ULONG_PTR)x->Object & ~OBJ_HANDLE_ATTRIBUTES)`
+/// C: `(POBJECT_HEADER)((ULONG_PTR)x->Object & ~OBJ_HANDLE_ATTRIBUTES)`; on 64-bit the top
+/// 16 bits are restored too (the cached-reference count, above).
 #[inline]
 pub unsafe fn ObpGetHandleObject(
     entry: ddk::PHANDLE_TABLE_ENTRY,
 ) -> ddk::POBJECT_HEADER {
     let obj_ptr = (*entry).__bindgen_anon_1.Object as usize;
+    if obj_ptr == 0 {
+        return core::ptr::null_mut();
+    }
+    #[cfg(target_pointer_width = "64")]
+    let obj_ptr = obj_ptr | (0xFFFFusize << OBP_HANDLE_REFS_SHIFT);
     (obj_ptr & !(OBJ_HANDLE_ATTRIBUTES as usize)) as ddk::POBJECT_HEADER
+}
+
+/// The entry's GrantedAccess without the x86 cached-reference bits.
+#[inline]
+pub unsafe fn ObpHandleGrantedAccess(entry: ddk::PHANDLE_TABLE_ENTRY) -> u32 {
+    let access = (*entry).__bindgen_anon_2.GrantedAccess;
+    #[cfg(target_pointer_width = "32")]
+    let access = access & !OBP_HANDLE_REFS_MASK;
+    access
+}
+
+/// References cached in the entry (see OBP_HANDLE_BIAS). The entry must be locked or new.
+#[inline]
+pub unsafe fn ObpHandleCachedRefs(entry: ddk::PHANDLE_TABLE_ENTRY) -> usize {
+    #[cfg(target_pointer_width = "64")]
+    {
+        !(((*entry).__bindgen_anon_1.Object as usize >> OBP_HANDLE_REFS_SHIFT) as u16) as usize
+    }
+    #[cfg(target_pointer_width = "32")]
+    {
+        (((*entry).__bindgen_anon_2.GrantedAccess & OBP_HANDLE_REFS_MASK) >> OBP_HANDLE_REFS_SHIFT)
+            as usize
+    }
+}
+
+/// Store the cached-reference count. On 64-bit only the top 16 bits are written, so the lock
+/// bit ExUnlockHandleTableEntry ORs into the low dword is not raced. Locked or new entries only.
+#[inline]
+pub unsafe fn ObpSetHandleCachedRefs(entry: ddk::PHANDLE_TABLE_ENTRY, refs: usize) {
+    #[cfg(target_pointer_width = "64")]
+    {
+        let top = (core::ptr::addr_of_mut!((*entry).__bindgen_anon_1.Object) as *mut u16).add(3);
+        core::ptr::write_volatile(top, !(refs as u16));
+    }
+    #[cfg(target_pointer_width = "32")]
+    {
+        let access = (*entry).__bindgen_anon_2.GrantedAccess & !OBP_HANDLE_REFS_MASK;
+        (*entry).__bindgen_anon_2.GrantedAccess =
+            access | (((refs as u32) << OBP_HANDLE_REFS_SHIFT) & OBP_HANDLE_REFS_MASK);
+    }
 }
 
 // ============================================================================

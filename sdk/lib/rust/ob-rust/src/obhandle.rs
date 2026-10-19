@@ -211,7 +211,7 @@ unsafe fn ObpReferenceProcessObjectByHandle(
     handle_entry = ExMapHandleToPointer(handle_table, handle);
     if !handle_entry.is_null() {
         object_header = ObpGetHandleObject(handle_entry);
-        granted_access = (*handle_entry).__bindgen_anon_2.GrantedAccess;
+        granted_access = ObpHandleGrantedAccess(handle_entry);
         attributes = ((*handle_entry).__bindgen_anon_1.ObAttributes as ULONG) & OBJ_HANDLE_ATTRIBUTES;
 
         (*handle_information).HandleAttributes = attributes;
@@ -219,9 +219,7 @@ unsafe fn ObpReferenceProcessObjectByHandle(
         *audit_mask = 0;
 
         *object = core::ptr::addr_of_mut!((*object_header).Body) as PVOID;
-        InterlockedIncrementSizeT(
-            core::ptr::addr_of_mut!((*object_header).PointerCount) as *mut isize
-        );
+        crate::obref::ObpReferenceByHandleEntry(handle_entry, object_header);
 
         ExUnlockHandleTableEntry(handle_table, handle_entry);
         KeLeaveCriticalRegion();
@@ -278,7 +276,7 @@ unsafe fn _ObpEnumFindHandleProcedure(
     }
 
     if !(*find_data).HandleInformation.is_null() {
-        granted_access = (*handle_entry).__bindgen_anon_2.GrantedAccess;
+        granted_access = ObpHandleGrantedAccess(handle_entry);
         handle_attributes = ((*handle_entry).__bindgen_anon_1.ObAttributes as ULONG) & OBJ_HANDLE_ATTRIBUTES;
 
         if (*(*find_data).HandleInformation).HandleAttributes != handle_attributes
@@ -579,7 +577,7 @@ unsafe fn ObpCloseHandleTableEntry(
     object_header = ObpGetHandleObject(handle_entry);
     object_type = (*object_header).Type;
     body = core::ptr::addr_of_mut!((*object_header).Body) as PVOID;
-    granted_access = (*handle_entry).__bindgen_anon_2.GrantedAccess;
+    granted_access = ObpHandleGrantedAccess(handle_entry);
 
     if (*object_type).TypeInfo.OkayToCloseProcedure.is_some() {
         ObpCalloutStart(&mut callout_irql as *mut _);
@@ -613,10 +611,20 @@ unsafe fn ObpCloseHandleTableEntry(
         }
     }
 
+    // Read before ExDestroyHandle clears the entry.
+    let cached = ObpHandleCachedRefs(handle_entry);
     ExDestroyHandle(handle_table, handle, handle_entry);
 
     ObpDecrementHandleCount(body, PsGetCurrentProcess() as *mut _EPROCESS , granted_access, object_type);
 
+    // The references the handle still had cached go back first; they cannot be the last,
+    // because the handle's own reference is still outstanding.
+    if cached != 0 {
+        InterlockedExchangeAddSizeT(
+            core::ptr::addr_of_mut!((*object_header).PointerCount) as *mut isize,
+            -(cached as isize),
+        );
+    }
     ObDereferenceObject(body);
 
     STATUS_SUCCESS
@@ -1023,6 +1031,26 @@ unsafe fn ObpAddImpliedAccess(object_type: POBJECT_TYPE, mut access: ACCESS_MASK
     access
 }
 
+/// Charge a new handle's cached references (Windows 8 handle reference biasing; see
+/// OBP_HANDLE_BIAS in ntkrnl-sys), before ExCreateHandle publishes the entry: once it is in
+/// the table another thread can close it and return them.
+unsafe fn ObpChargeHandleBias(entry: PHANDLE_TABLE_ENTRY, header: POBJECT_HEADER) {
+    ObpSetHandleCachedRefs(entry, OBP_HANDLE_BIAS - 1);
+    InterlockedExchangeAddSizeT(
+        core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize,
+        (OBP_HANDLE_BIAS - 1) as isize,
+    );
+}
+
+/// ExCreateHandle failed: give back what ObpChargeHandleBias charged. Never the last
+/// reference, since the caller's own is still held.
+unsafe fn ObpUnchargeHandleBias(header: POBJECT_HEADER) {
+    InterlockedExchangeAddSizeT(
+        core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize,
+        -((OBP_HANDLE_BIAS - 1) as isize),
+    );
+}
+
 unsafe fn ObpCreateUnnamedHandle(
     object: PVOID,
     mut desired_access: ACCESS_MASK,
@@ -1089,6 +1117,7 @@ unsafe fn ObpCreateUnnamedHandle(
     }
 
     new_entry.__bindgen_anon_2.GrantedAccess = granted_access;
+    ObpChargeHandleBias(&mut new_entry, object_header);
 
     handle = ExCreateHandle(handle_table as PHANDLE_TABLE, &mut new_entry as *mut _);
 
@@ -1109,6 +1138,8 @@ unsafe fn ObpCreateUnnamedHandle(
 
         return STATUS_SUCCESS;
     }
+
+    ObpUnchargeHandleBias(object_header);
 
     if additional_references != 0 {
         InterlockedExchangeAddSizeT(
@@ -1222,6 +1253,7 @@ unsafe fn ObpCreateHandle(
     }
 
     new_entry.__bindgen_anon_2.GrantedAccess = granted_access;
+    ObpChargeHandleBias(&mut new_entry, object_header);
 
     handle = ExCreateHandle(handle_table as PHANDLE_TABLE, &mut new_entry as *mut _);
 
@@ -1253,6 +1285,8 @@ unsafe fn ObpCreateHandle(
 
         return STATUS_SUCCESS;
     }
+
+    ObpUnchargeHandleBias(object_header);
 
     ObpDecrementHandleCount(
         core::ptr::addr_of_mut!((*object_header).Body) as PVOID,
@@ -1416,6 +1450,12 @@ unsafe fn _ObpDuplicateHandleCallback(
         InterlockedIncrementSizeT(
             core::ptr::addr_of_mut!((*object_header).PointerCount) as *mut isize
         );
+        // The child's entry is a copy of the parent's, cached references included: it gets
+        // its own fresh bias below, and on x86 ObpIncrementHandleCount reads the access mask
+        // without the parent's cache bits. The child's table is not live yet, so charging
+        // after the count is safe.
+        (*handle_table_entry).__bindgen_anon_2.GrantedAccess = ObpHandleGrantedAccess(handle_table_entry);
+        ObpSetHandleCachedRefs(handle_table_entry, 0);
 
         ExUnlockHandleTableEntry(handle_table, old_entry);
 
@@ -1431,6 +1471,8 @@ unsafe fn _ObpDuplicateHandleCallback(
         if status < 0 {
             ObDereferenceObject(core::ptr::addr_of_mut!((*object_header).Body) as PVOID);
             ret = 0u8;
+        } else {
+            ObpChargeHandleBias(handle_table_entry, object_header);
         }
     } else {
         ExUnlockHandleTableEntry(handle_table, old_entry);
@@ -1779,8 +1821,10 @@ pub unsafe extern "system" fn ObDuplicateObject(
         new_handle_entry.__bindgen_anon_2.GrantedAccess |= ObpAccessProtectCloseBit;
     }
 
+    ObpChargeHandleBias(&mut new_handle_entry, object_header);
     new_handle = ExCreateHandle(handle_table, &mut new_handle_entry as *mut _);
     if new_handle.is_null() {
+        ObpUnchargeHandleBias(object_header);
         ObpDecrementHandleCount(
             source_object,
             target_process,

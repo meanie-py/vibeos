@@ -25,6 +25,18 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+/// Take a reference through a LOCKED handle entry: from the references the handle has
+/// cached (Windows 8 handle reference biasing, ntkrnl-sys OBP_HANDLE_BIAS) while it has
+/// any, so PointerCount does not move; otherwise a new one on PointerCount.
+pub(crate) unsafe fn ObpReferenceByHandleEntry(entry: ntkrnl_sys::ddk::PHANDLE_TABLE_ENTRY, header: POBJECT_HEADER) {
+    let cached = ObpHandleCachedRefs(entry);
+    if cached != 0 {
+        ObpSetHandleCachedRefs(entry, cached - 1);
+    } else {
+        InterlockedIncrementSizeT(core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize);
+    }
+}
+
 // ReactOS uses 7 for ALL architectures (3 low bits), matching C #define.
 pub const MAX_FAST_REFS: LONG = 7;
 
@@ -369,9 +381,9 @@ pub unsafe extern "system" fn ObReferenceFileObjectForWrite(
             STATUS_OBJECT_TYPE_MISMATCH
         } else {
             let granted_access = if (NtGlobalFlag & 0x2000) != 0 {
-                (*handle_entry).__bindgen_anon_2.GrantedAccess
+                ObpHandleGrantedAccess(handle_entry)
             } else {
-                (*handle_entry).__bindgen_anon_2.GrantedAccess & !ObpAccessProtectCloseBit
+                ObpHandleGrantedAccess(handle_entry) & !ObpAccessProtectCloseBit
             };
 
             (*HandleInformation).GrantedAccess = granted_access;
@@ -382,9 +394,7 @@ pub unsafe extern "system" fn ObReferenceFileObjectForWrite(
                 (*handle_entry).__bindgen_anon_1.ObAttributes as u32 & OBJ_HANDLE_ATTRIBUTES;
 
             if (granted_access & desired_access) != 0 {
-                InterlockedIncrementSizeT(
-                    core::ptr::addr_of_mut!((*object_header).PointerCount) as *mut isize
-                );
+                ObpReferenceByHandleEntry(handle_entry, object_header);
 
                 ExUnlockHandleTableEntry(handle_table, handle_entry);
                 KeLeaveCriticalRegion();
@@ -711,15 +721,13 @@ unsafe fn ObReferenceObjectByHandleInternal(
     let status = if !handle_entry.is_null() {
         let object_header = ObpGetHandleObject(handle_entry);
         if ObjectType.is_null() || ObjectType == (*object_header).Type {
-            let granted_access = (*handle_entry).__bindgen_anon_2.GrantedAccess;
+            let granted_access = ObpHandleGrantedAccess(handle_entry);
 
             if AccessMode != 0i8 && ((!(granted_access) & DesiredAccess) != 0) {
                 ExUnlockHandleTableEntry(HandleTable, handle_entry);
                 STATUS_ACCESS_DENIED
             } else {
-                InterlockedIncrementSizeT(
-                    core::ptr::addr_of_mut!((*object_header).PointerCount) as *mut isize
-                );
+                ObpReferenceByHandleEntry(handle_entry, object_header);
 
                 let attributes =
                     (*handle_entry).__bindgen_anon_1.ObAttributes as u32 & OBJ_HANDLE_ATTRIBUTES;
