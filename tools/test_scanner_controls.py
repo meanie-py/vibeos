@@ -822,6 +822,10 @@ pub unsafe extern "C" fn CreateShellLink() -> i32 {
     0
 }
 """
+# scan_container_ptr_read. Seeded from fontext (2026-10-18): the font cache was a bitwise
+# copy of a list the list then freed.
+_CPR_BAD = "fn f() { m.Add(core::ptr::read(l.GetNext(&mut it))); }\n"
+_CPR_GOOD = "fn f() { while let Some(e) = l.RemoveHead() { m.Add(e); } }\n"
 # scan_guid_values. Seeded from stobject (2026-10-18): CGID_ShellServiceObject written from
 # memory, Data1 one digit off, so explorer's Exec never started the tray.
 _GUID_SDK = "DEFINE_OLEGUID(CGID_ShellServiceObject, 0x000214D2, 0, 0);\n"
@@ -3271,12 +3275,8 @@ CONTROLS: list[Control] = [
     Control(
         name="scan_container_ptr_read",
         script="tools/vibeos-lint/src/rules/container_ptr_read.rs",
-        bad={
-            "sdk/lib/rust/x-rust/src/a.rs": "fn f() { m.Add(core::ptr::read(l.GetNext(&mut it))); }\n"
-        },
-        good={
-            "sdk/lib/rust/x-rust/src/a.rs": "fn f() { while let Some(e) = l.RemoveHead() { m.Add(e); } }\n"
-        },
+        bad={"sdk/lib/rust/x-rust/src/a.rs": _CPR_BAD},
+        good={"sdk/lib/rust/x-rust/src/a.rs": _CPR_GOOD},
     ),
     Control(
         name="scan_guid_values",
