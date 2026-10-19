@@ -32,13 +32,13 @@ from pathlib import Path
 from . import atl_contract, cpp_templates
 from .cpp_core import c_type_to_rust
 from .cpp_model import (
-    short_name,
     ATL_IMPL_METHODS,
     ClassModel,
     Field,
     Method,
     ModuleModel,
     atl_base_alias,
+    short_name,
 )
 
 
@@ -551,7 +551,7 @@ def render_classes(
         for name, val in e.members:
             out.append(f"pub const {name}: {e.name} = {val};")
         out.append("")
-    for name, cls in h.module_ifaces.items():
+    for name in h.module_ifaces:
         out.append(_render_module_interface(name, h.com[name]))
     for cls in model.classes.values():
         if short(cls.qualified) in h.module_ifaces:

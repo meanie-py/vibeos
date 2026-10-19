@@ -3047,7 +3047,8 @@ def _island_enum_path_rule(
     if (diagnostic.get("code") or {}).get("code") != "E0599":
         return [], [], False
     m = re.search(
-        r"no (?:function or )?associated item named `(\w+)` found for type `[iu](?:8|16|32|64|size)`",
+        r"no (?:function or )?associated item named `(\w+)` found for type "
+        r"`[iu](?:8|16|32|64|size)`",
         str(diagnostic.get("message") or ""),
     )
     got = _primary_bytes(diagnostic, load) if m else None
