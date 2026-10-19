@@ -968,13 +968,62 @@ def _island_extern_statics(src: Path) -> set[str]:
     *SolWnd;`), on every arch it was generated for."""
     names: set[str] = set()
     for island in src.glob("types_*.rs"):
-        names |= set(
-            re.findall(r"^\s+pub static (?:mut )?(\w+):", island.read_text(errors="replace"), re.M)
-        )
+        text = island.read_text(errors="replace")
+        names |= set(re.findall(r"^\s+pub static (?:mut )?(\w+):", text, re.M))
+        # An extern `port resolve` replaced with the defining unit's item, re-exported:
+        # ntobjshex's CLSID_NtObjectFolder. Still a C global, still needs storage (the
+        # object map takes its address).
+        names |= set(re.findall(r"^pub use crate::\w+::\w+::(\w+);", text, re.M))
     return names
 
 
-_UNIT_STATIC = re.compile(r"^(?!#\[no_mangle\]\n)(pub )?static (mut )?(\w+):", re.M)
+_RENDERED_ITEM = re.compile(r"^pub (?:static (?:mut )?|const )(\w+):", re.M)
+
+
+def _rendered_globals(crate_src: Path, stem: str) -> set[str]:
+    """The statics and consts cpp_app renders into cpp_classes.rs (aggregate tables, wide
+    strings, the object map): their one definition."""
+    f = crate_src / stem / "cpp_classes.rs"
+    return set(_RENDERED_ITEM.findall(f.read_text(errors="replace"))) if f.is_file() else set()
+
+
+def _drop_rendered_duplicates(path: Path, rendered: set[str]) -> list[str]:
+    """A unit's file-scope item that cpp_classes.rs already renders: the model's copy of a
+    table cppapp now lays out itself. ntobjshex's preamble kept `pub const RootKeys` with
+    invented field names (`hKey`, `name` for `key`, `keyName`) beside the rendered static.
+    The item runs to the `;` that closes it at bracket depth 0."""
+    if not rendered or path.name == "cpp_classes.rs":
+        return []
+    text = path.read_text()
+    out, dropped, i = [], [], 0
+    item = re.compile(r"^(?:#\[no_mangle\]\n)?pub (?:static (?:mut )?|const )(\w+)\s*:", re.M)
+    while True:
+        m = item.search(text, i)
+        if m is None:
+            out.append(text[i:])
+            break
+        if m.group(1) not in rendered:
+            out.append(text[i : m.end()])
+            i = m.end()
+            continue
+        depth, j = 0, m.end()
+        while j < len(text):
+            c = text[j]
+            depth += (c in "([{") - (c in ")]}")
+            if c == ";" and depth == 0:
+                break
+            j += 1
+        out.append(text[i : m.start()])
+        i = j + 1
+        if i < len(text) and text[i] == "\n":
+            i += 1
+        dropped.append(m.group(1))
+    if dropped:
+        path.write_text("".join(out))
+    return dropped
+
+
+_UNIT_STATIC = re.compile(r"^(?!#\[no_mangle\]\n)(pub )?(?:static (mut )?|(const) )(\w+):", re.M)
 
 
 def _export_island_statics(path: Path, island: set[str]) -> list[str]:
@@ -986,12 +1035,15 @@ def _export_island_statics(path: Path, island: set[str]) -> list[str]:
     done: list[str] = []
 
     def repl(m: re.Match[str]) -> str:
-        name = m.group(3)
+        name = m.group(4)
         start = m.start()
         prev = text[text.rfind("\n", 0, max(start - 1, 0)) + 1 : start]
         if name not in island or "no_mangle" in prev:
             return m.group(0)
         done.append(name)
+        # A `const` has no storage, so the extern the other units name stays undefined:
+        # fontext's `const GUID CLSID_CFontExt = {..}` came back `pub const` and its
+        # object map failed to link.
         return f"#[no_mangle]\npub static {m.group(2) or ''}{name}:"
 
     new = _UNIT_STATIC.sub(repl, text)
@@ -1264,6 +1316,9 @@ def stage_cppapp(stem: str) -> None:
     ] + [f"{f.name}: {u}" for f in model.functions for u in f.unplaced]
     for u in unplaced:
         print(f"cppapp: UNLOWERED (inside a macro expansion): {u}")
+    crtp = cpp_app.inherit_crtp_com_maps(model)
+    if crtp:
+        print(f"cppapp: COM map(s) of a CRTP base given to the class they name: {', '.join(crtp)}")
     folded = cpp_app.fold_module_subclasses(model)
     if folded:
         print(f"cppapp: CComModule subclass(es) folded into the module: {', '.join(folded)}")
@@ -1293,6 +1348,7 @@ def stage_cppapp(stem: str) -> None:
         substrate=substrate,
     )
     (crate_src / "cpp_classes.rs").write_text(generated)
+
     deferred = _defer_island_classes(_crate_dir(state) / "src", stem, generated)
     if deferred:
         print(f"cppapp: island defers {len(deferred)} class(es) to cpp_classes.rs")
@@ -1573,7 +1629,8 @@ def guid_library_symbols(libs: list[str]) -> set[str]:
 
 _GUID_STATIC = re.compile(
     r"(?m)^(?:#\[no_mangle\]\n)?pub static (?:mut )?(\w+): (?:GUID|_GUID|IID|CLSID) = "
-    r"(?:_GUID|GUID) \{\n(?:.*\n)*?\};\n\n?"
+    # Either layout: a literal on its own lines, or on one (fontext's IID_IContextMenu copy).
+    r"(?:_GUID|GUID|IID|CLSID) \{(?:[^\n]*\};\n|\n(?:.*\n)*?\};\n)\n?"
 )
 
 
@@ -4425,6 +4482,7 @@ def stage_integrate(stem: str) -> None:
     island_consts = _island_consts(crate / "src")
     unicode = _TCHAR_BEGIN in (crate / "src" / "prelude.rs").read_text(errors="replace")
     island_statics = _island_extern_statics(crate / "src")
+    rendered_globals = _rendered_globals(crate / "src", stem)
     c_pointer_typedefs = _c_fn_pointer_typedefs(state)
     libs = guid_libraries(REPO / state["module_dir"] / "CMakeLists.txt")
     guid_symbols = guid_library_symbols(libs) if libs else set()
@@ -4439,6 +4497,12 @@ def stage_integrate(stem: str) -> None:
         renamed = _tchar_entry_point(path, unicode)
         if renamed:
             print(f"integrate: {path.stem}: entry point {renamed}")
+        dup = _drop_rendered_duplicates(path, rendered_globals)
+        if dup:
+            print(
+                f"integrate: {path.stem}: cpp_classes.rs renders {', '.join(dup)}; "
+                "unit copy dropped"
+            )
         exported = _export_island_statics(path, island_statics)
         if exported:
             print(f"integrate: {path.stem}: #[no_mangle] on {', '.join(exported)}")
@@ -4843,7 +4907,10 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     module_dir = REPO / state["module_dir"]
     default: str | None = None
     declared: list[str] = []
-    for f in sorted([*module_dir.rglob("*.c"), *module_dir.rglob("*.h")]):
+    # The C++ sources too: fontext declares its channel in each .cpp and nowhere else, so
+    # scanning .c/.h wrote no storage and `__wine_dbch_fontext` was undefined.
+    sources = [module_dir.rglob(p) for p in ("*.c", "*.h", "*.cpp", "*.hpp", "*.cxx")]
+    for f in sorted(f for g in sources for f in g):
         text = re.sub(r"/\*.*?\*/|//[^\n]*", "", f.read_text(errors="replace"), flags=re.S)
         for m in re.finditer(r"\bWINE_(DEFAULT|DECLARE)_DEBUG_CHANNEL\(\s*(\w+)\s*\)", text):
             if m.group(1) == "DEFAULT":

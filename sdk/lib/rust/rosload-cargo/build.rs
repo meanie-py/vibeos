@@ -30,7 +30,7 @@ use std::env;
 
 // blrtl-rust's path-deps (its own src is tracked by the .rust_lib build).
 const BLRTL_RUST_DEPS: &[&str] =
-    &["bitmap/src", "compress/src", "crc32/src", "largeint/src", "random/src", "byteswap/src", "mem/src", "rtl-diag/src"];
+    &["bitmap/src", "compress/src", "crc32/src", "largeint/src", "random/src", "byteswap/src", "mem/src", "rtl-diag/src", "rtl-strings/src"];
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
@@ -75,9 +75,8 @@ fn main() {
         // hive via `cmlib-rust` built with the `bldr` feature (mirrors the old C
         // blcmlib's -D_BLDR_ reduced surface). See .rust_lib("cmlib-rust",
         // &["bldr"]) below + cmlib_loader_stubs.c (da9c72b240d).
-        // blrtl (boot RTL leaf) is compiled IN-cargo below (C via
-        // .c_from_compile_db("blrtl", …) + asm via .asm_archive("blrtl_asm", …)),
-        // not reused boot/rtl/libblrtl.a.
+        // blrtl (boot RTL): the blrtl-rust crate (.rust_lib below) + its per-arch asm
+        // (.asm_archive("blrtl_asm", …)); no C, no reused boot/rtl/libblrtl.a.
         // libcntpr (cntpr C floor) likewise compiled IN-cargo via
         // .c_from_compile_db("libcntpr", …) (cmake-off WS1 DEEP) — was the reused
         // cmake "sdk/lib/crt/liblibcntpr.a". Its i386 MSVC asm intrinsics
@@ -88,12 +87,9 @@ fn main() {
         // the cmake-copied libcntpr_rust.a.
     ]);
 
-    // blrtl (boot-loader RTL, boot/rtl/blrtl.cmake): the blrtl-rust crate (the kernel's
-    // RTL rlibs + nlsboot, with blrtl.cmake's per-arch membership) as a .rust_lib below;
-    // what is still C compiles in-cargo via compile_commands.json replay (target `blrtl`
-    // disambiguates the shared sdk/lib/rtl/*.c sources); the per-arch asm via
-    // .asm_archive() below.
-    let blrtl_c: &[&str] = &["sdk/lib/rtl/unicode.c"];
+    // blrtl (boot-loader RTL, boot/rtl/blrtl.cmake) is the blrtl-rust crate (the kernel's
+    // RTL rlibs + nlsboot, with blrtl.cmake's per-arch membership; no C left), a .rust_lib
+    // below; its per-arch asm goes in via .asm_archive() below.
     // blrtl's per-arch asm (asm.inc only — AsmDefineSet::Kernel). i386:
     // debug_asm/rtlmem/rtlswap; amd64: debug_asm. (rosload is i386/amd64 only.)
     let blrtl_asm: &[&str] = match arch.as_str() {
@@ -109,7 +105,7 @@ fn main() {
     // libcntpr (cntpr C floor, sdk/lib/crt/libcntpr.cmake) compiled in-cargo via
     // c_from_compile_db — was the reused cmake liblibcntpr.a (cmake-off WS1 DEEP).
     // Common C set + i386 x87 math wrappers / amd64 ehandler.c; mirrors the cmake
-    // `libcntpr` target objects (tools/gen_cflags.py + cflags/libcntpr.<arch>.flags).
+    // `libcntpr` target objects (with no cmake build, clibs/<arch>/libcntpr.recipe).
     // asm intrinsics GC'd (gnu target) — no asm_archive. (rosload is i386/amd64.)
     let mut libcntpr_c: Vec<&str> = vec![
         "sdk/lib/crt/math/_invoke_matherr.c",
@@ -175,9 +171,8 @@ fn main() {
         // blrtl C compiled in-cargo (target `blrtl` disambiguates the shared
         // rtl sources) — drops the cmake boot/rtl/libblrtl.a reuse.
         .rust_lib("blrtl-rust", &[], true)
-        .c_from_compile_db("blrtl", blrtl_c)
         // libcntpr C compiled in-cargo — drops the cmake liblibcntpr.a reuse
-        // (cmake-off WS1 DEEP). cmake-off path uses cflags/libcntpr.<arch>.flags.
+        // (cmake-off WS1 DEEP). cmake-off path uses its lines of clibs/<arch>/libcntpr.recipe.
         .c_from_compile_db("libcntpr", &libcntpr_c)
         // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
         .rust_lib("cnt-rust-lib", cnt_feats, true)

@@ -150,6 +150,9 @@ const VIRTIO_MMIO_HID_STRING: &[u8] = b"_HID\x0DLNRO0005\x00";
 /// The Pi 5's SD hosts (worproject): the card slot's _HID is a Method returning
 /// this string, so match the string alone.
 const SDHC5_HID_STRING: &[u8] = b"\x0DBRCM5D12\x00";
+/// The Pi 4's Arasan SDHCI (SDC1), which the Pi 4's UEFI routes to the Wi-Fi's SDIO
+/// lines by default; the card slot is EMMC2 (SDC3, BRCME88C).
+const ARASAN_HID_STRING: &[u8] = b"_HID\x0DBCM2847\x00";
 /// An xHCI register file is never smaller than this, and it is what the Pi's
 /// _CRS method computes (Len 1 + 0xFFF) from its placeholder template.
 const XHCI_MIN_WINDOW: u64 = 0x1000;
@@ -499,6 +502,11 @@ pub(crate) unsafe fn find_sdhc_pi5() -> Option<AcpiDevice> {
 /// The Raspberry Pi 5's Wi-Fi SDIO host: SDC1, the BRCM5D12 with the `WLAN` child.
 pub(crate) unsafe fn find_wifi_pi5() -> Option<AcpiDevice> {
     find_device(&[SDHC5_HID_STRING], |body| find(body, b"WLAN").is_some())
+}
+
+/// The Raspberry Pi 4's Wi-Fi SDIO host: SDC1, the Arasan SDHCI (BCM2847).
+pub(crate) unsafe fn find_wifi_pi4() -> Option<AcpiDevice> {
+    find_device(&[ARASAN_HID_STRING], any)
 }
 
 /// RP1's Ethernet MAC (a Cadence GEM, rev 0x00070109) sits 0x100000 into RP1's

@@ -1536,6 +1536,24 @@ def test_drop_guid_library_copies_cuts_only_what_a_linked_library_defines(tmp_pa
     assert "pub static mut MY_OWN: GUID" in text and text.endswith("fn x() {}\n")
 
 
+def test_a_one_line_guid_copy_is_dropped_and_an_island_const_becomes_storage(tmp_path):
+    # fontext: CFontExt.cpp's model-written IID copies are one-liners; fontext.cpp's
+    # `const GUID CLSID_CFontExt = {..}` came back `pub const`, which no extern can name.
+    f = tmp_path / "u.rs"
+    f.write_text(
+        "#[no_mangle]\npub static IID_IShellView: IID = GUID { Data1: 0x000214E3, Data2: 0, "
+        "Data3: 0, Data4: [0; 8] };\npub const CLSID_CFontExt: GUID = GUID {\n    Data1: 1,\n};\n"
+    )
+    assert port.drop_guid_library_copies(f, {"IID_IShellView"}) == ["IID_IShellView"]
+    assert port._export_island_statics(f, {"CLSID_CFontExt"}) == ["CLSID_CFontExt"]
+    text = f.read_text()
+    assert "IID_IShellView" not in text
+    assert "#[no_mangle]\npub static CLSID_CFontExt: GUID = GUID {" in text
+    # ntobjshex spelled its copy through the IID alias.
+    f.write_text("pub static IID_IShellFolder: IID = IID { Data1: 0x000214E6, Data4: [0; 8] };\n")
+    assert port.drop_guid_library_copies(f, {"IID_IShellFolder"}) == ["IID_IShellFolder"]
+
+
 def test_com_method_names_are_the_islands_vtable_slots(tmp_path):
     (tmp_path / "types_amd64.rs").write_text(
         "#[repr(C)]\npub struct IStreamVtbl {\n    pub QueryInterface: Option<fn()>,\n"

@@ -207,6 +207,221 @@ pub type CCoInit = CCoInitBase<false>;
 #[cfg(feature = "com")]
 pub type COleInit = CCoInitBase<true>;
 
+// ---- STRRET (shtypes.h) and IDataObject::SetData, layout-generic ------------------------
+// STRRET is `{ UINT uType; union { LPWSTR pOleStr; UINT uOffset; char cStr[MAX_PATH]; } }` on
+// every target: the union is pointer-aligned, so it starts at `size_of::<usize>()`. Each
+// island's STRRET is its own nominal type, so these take a pointer to any of them.
+extern "system" {
+    fn CoTaskMemAlloc(cb: usize) -> *mut core::ffi::c_void;
+    fn GlobalAlloc(flags: u32, bytes: usize) -> *mut core::ffi::c_void;
+    fn GlobalLock(h: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+    fn GlobalUnlock(h: *mut core::ffi::c_void) -> i32;
+    fn GlobalFree(h: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
+}
+
+const STRRET_WSTR: u32 = 0;
+const STRRET_CSTR: u32 = 2;
+const E_OUTOFMEMORY: i32 = 0x8007000Eu32 as i32;
+const E_FAIL: i32 = 0x80004005u32 as i32;
+const E_UNEXPECTED: i32 = 0x8000FFFFu32 as i32;
+
+#[doc(hidden)]
+#[inline]
+pub unsafe fn strret_set_wide<P>(p: *mut P, value: *const u16) -> i32 {
+    let mut n = 0usize;
+    while *value.add(n) != 0 {
+        n += 1;
+    }
+    let buf = CoTaskMemAlloc((n + 1) * 2) as *mut u16;
+    if buf.is_null() {
+        return E_OUTOFMEMORY;
+    }
+    core::ptr::copy_nonoverlapping(value, buf, n + 1);
+    *(p as *mut u32) = STRRET_WSTR;
+    *((p as *mut u8).add(core::mem::size_of::<usize>()) as *mut *mut u16) = buf;
+    0
+}
+
+#[doc(hidden)]
+#[inline]
+pub unsafe fn strret_set_ansi<P>(p: *mut P, value: *const u8) -> i32 {
+    *(p as *mut u32) = STRRET_CSTR;
+    let dst = (p as *mut u8).add(core::mem::size_of::<usize>());
+    // strcpy, as the C: the source is a C string the caller vouches fits cStr[MAX_PATH].
+    let mut i = 0usize;
+    loop {
+        let c = *value.add(i);
+        *dst.add(i) = c;
+        if c == 0 {
+            break;
+        }
+        i += 1;
+    }
+    0
+}
+
+/// The value half of `SHSetStrRet(pStrRet, value)`: a wide string is STRRET_WSTR in a
+/// CoTaskMemAlloc copy, a narrow one is STRRET_CSTR copied into `cStr`.
+pub trait StrRetValue {
+    unsafe fn set_strret<P>(self, p: *mut P) -> i32;
+}
+impl StrRetValue for *const u16 {
+    unsafe fn set_strret<P>(self, p: *mut P) -> i32 { strret_set_wide(p, self) }
+}
+impl StrRetValue for *mut u16 {
+    unsafe fn set_strret<P>(self, p: *mut P) -> i32 { strret_set_wide(p, self) }
+}
+impl StrRetValue for *const i8 {
+    unsafe fn set_strret<P>(self, p: *mut P) -> i32 { strret_set_ansi(p, self as *const u8) }
+}
+impl StrRetValue for *const u8 {
+    unsafe fn set_strret<P>(self, p: *mut P) -> i32 { strret_set_ansi(p, self) }
+}
+
+/// shellutils.h `SHSetStrRet(pStrRet, hInstance, resId)`: the string resource, as a wide
+/// STRRET; E_FAIL when it does not load.
+#[doc(hidden)]
+#[inline]
+pub unsafe fn strret_set_resource<P, H>(p: *mut P, hinstance: *mut H, res_id: u32) -> i32 {
+    let mut buf = [0u16; 260];
+    if LoadStringW(hinstance as *mut core::ffi::c_void, res_id, buf.as_mut_ptr(), 260) == 0 {
+        return E_FAIL;
+    }
+    strret_set_wide(p, buf.as_ptr())
+}
+
+/// shellutils.h's three `SHSetStrRet` overloads, told apart by arity as C++ tells them apart
+/// by type: `SHSetStrRet!(p, wide_or_narrow)` and `SHSetStrRet!(p, hInstance, resId)`.
+#[macro_export]
+macro_rules! SHSetStrRet {
+    ($p:expr, $v:expr $(,)?) => {
+        $crate::shellutils::StrRetValue::set_strret($v, $p)
+    };
+    ($p:expr, $h:expr, $id:expr $(,)?) => {
+        // `as *mut u8` pins a generic `GetResourceInstance::<T>()` (E0282 otherwise).
+        $crate::shellutils::strret_set_resource($p, ($h) as *mut u8, ($id) as u32)
+    };
+}
+
+/// shellutils.h `SHSetStrRetEmpty`: an empty STRRET_CSTR.
+#[inline]
+pub unsafe fn SHSetStrRetEmpty<P>(p: *mut P) -> i32 {
+    *(p as *mut u32) = STRRET_CSTR;
+    *(p as *mut u8).add(core::mem::size_of::<usize>()) = 0;
+    0
+}
+
+extern "C" {
+    fn DbgPrint(format: *const u8, ...) -> u32;
+}
+extern "system" {
+    fn ILGetNext(pidl: *const core::ffi::c_void) -> *mut core::ffi::c_void;
+}
+
+/// shellutils.h `DumpIdList`: each SHITEMID's bytes to the debugger, four per line, the
+/// tail of a `cb` that is not a multiple of 4 padded with `--`. Debug output only.
+pub unsafe fn DumpIdList<P>(pcidl: *const P) {
+    DbgPrint(b"Begin IDList Dump\n\0".as_ptr());
+    let mut p = pcidl as *const u8;
+    while !p.is_null() {
+        let mut cb = u16::from_le_bytes([*p, *p.add(1)]) as i32;
+        if cb == 0 {
+            break; // ITEMIDLISTs are terminated with a null SHITEMID.
+        }
+        DbgPrint(b"Begin SHITEMID (cb=%d)\n\0".as_ptr(), cb);
+        if cb & 3 != 0 {
+            DbgPrint(b" - WARNING: cb is not a multiple of 4\n\0".as_ptr());
+        }
+        let sh = |k: i32| *p.add(k as usize) as u32;
+        let mut i = 0;
+        while i + 4 <= cb {
+            DbgPrint(
+                b" - abID[%08x]: %02x %02x %02x %02x\n\0".as_ptr(),
+                i, sh(i), sh(i + 1), sh(i + 2), sh(i + 3),
+            );
+            i += 4;
+        }
+        if i < cb {
+            cb -= i;
+            match cb {
+                3 => DbgPrint(b" - abID[%08x]: %02x %02x %02x --\n\0".as_ptr(), i, sh(i), sh(i + 1), sh(i + 2)),
+                2 => DbgPrint(b" - abID[%08x]: %02x %02x -- --\n\0".as_ptr(), i, sh(i), sh(i + 1)),
+                _ => DbgPrint(b" - abID[%08x]: %02x -- -- --\n\0".as_ptr(), i, sh(i)),
+            };
+        }
+        DbgPrint(b"End SHITEMID\n\0".as_ptr());
+        p = ILGetNext(p as *const core::ffi::c_void) as *const u8;
+    }
+    DbgPrint(b"End IDList Dump.\n\0".as_ptr());
+}
+
+#[repr(C)]
+struct FormatEtc {
+    cf_format: u16,
+    ptd: *mut core::ffi::c_void,
+    dw_aspect: u32,
+    lindex: i32,
+    tymed: u32,
+}
+
+#[repr(C)]
+struct StgMedium {
+    tymed: u32,
+    h_global: *mut core::ffi::c_void,
+    p_unk_for_release: *mut core::ffi::c_void,
+}
+
+/// shellutils.h `DataObject_SetData`: hand `pBuffer` to the data object as an HGLOBAL
+/// medium it takes ownership of (fRelease TRUE); the HGLOBAL is freed if SetData fails.
+#[inline]
+pub unsafe fn DataObject_SetData<D, B>(
+    pDataObject: *mut D,
+    clipformat: u16,
+    pBuffer: *const B,
+    dwBufferSize: usize,
+) -> i32 {
+    const GHND: u32 = 0x42;
+    const TYMED_HGLOBAL: u32 = 1;
+    const DVASPECT_CONTENT: u32 = 1;
+    let mut medium = StgMedium {
+        tymed: TYMED_HGLOBAL,
+        h_global: GlobalAlloc(GHND, dwBufferSize),
+        p_unk_for_release: core::ptr::null_mut(),
+    };
+    if medium.h_global.is_null() {
+        return E_OUTOFMEMORY;
+    }
+    let mut hr = E_UNEXPECTED;
+    let blob = GlobalLock(medium.h_global);
+    if !blob.is_null() {
+        core::ptr::copy_nonoverlapping(pBuffer as *const u8, blob as *mut u8, dwBufferSize);
+        GlobalUnlock(medium.h_global);
+        let mut etc = FormatEtc {
+            cf_format: clipformat,
+            ptd: core::ptr::null_mut(),
+            dw_aspect: DVASPECT_CONTENT,
+            lindex: -1,
+            tymed: TYMED_HGLOBAL,
+        };
+        // IDataObject's vtable: IUnknown's three, GetData, GetDataHere, QueryGetData,
+        // GetCanonicalFormatEtc, then SetData (slot 7).
+        type SetData = unsafe extern "system" fn(
+            *mut core::ffi::c_void,
+            *mut FormatEtc,
+            *mut StgMedium,
+            i32,
+        ) -> i32;
+        let vtbl = *(pDataObject as *const *const Option<SetData>);
+        if let Some(set) = *vtbl.add(7) {
+            hr = set(pDataObject as *mut core::ffi::c_void, &mut etc, &mut medium, 1);
+        }
+    }
+    if hr < 0 {
+        GlobalFree(medium.h_global);
+    }
+    hr
+}
+
 #[cfg(test)]
 mod tests {
     #[no_mangle]

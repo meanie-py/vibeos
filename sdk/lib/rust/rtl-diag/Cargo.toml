@@ -17,7 +17,7 @@ path = "src/lib.rs"
 
 [features]
 # The #[no_mangle] extern "system"/"C" NTAPI shim layer (the rtl symbols).
-cabi = ["image", "ntkrnl-sys/default"]
+cabi = ["image", "ntkrnl-sys/inline_exports", "ntkrnl-sys/dbg"]
 # image.c alone, for the boot loaders' RTL (blrtl-rust): no debug/exception/VEH modules, and
 # ntkrnl-sys without its defaults -- hal_bindgen's raw-dylib ntoskrnl.exe imports and the
 # inline exports have no business in a pre-kernel image (freeldr-rust/cmlib-rust likewise).

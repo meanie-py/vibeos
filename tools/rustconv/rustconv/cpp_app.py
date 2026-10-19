@@ -216,7 +216,10 @@ class Hierarchy:
         """`m` is the class's implementation of a COM interface method: dispatched through
         that interface's vtable (the island's IFooVtbl), never a slot of a vtable of ours."""
         for _, iface in self.com_bases(cls):
-            if any(slot.name == m.name for slot in self.com[iface]):
+            if any(
+                slot.name == m.name and not _names_module_type(m, slot, self)
+                for slot in self.com[iface]
+            ):
                 return True
         return any(self.implements_com(b, m) for _, b in self.module_bases(cls))
 
@@ -769,11 +772,25 @@ def _render_class(
             f"&{n}__VTBL_{tag} as *const {vt}__vtbl as *const {rn}__vtbl;"
         )
     for k, iface in h.com_bases(cls):
-        lines.extend(_com_vtable(cls, k, iface, h))
+        lines.extend(_com_vtable(cls, f"__base{k}.", iface, h))
         vt_install.append(
             f"        (*this).__base{k}.lpVtbl = "
             f"&{n}__{iface}_VTBL as *const {iface}Vtbl as *mut {iface}Vtbl;"
         )
+    if cls.com_map is not None:
+        # The COM object's IUnknown is the final overrider of EVERY interface it holds,
+        # including those inside a CRTP template base (ntobjshex's CNtObjectFolder ->
+        # CCommonFolder<..>::IShellFolder2): this class installs its own tables there, after
+        # the base's (C++: the most-derived constructor sets the vptrs last).
+        for iface, path in _iface_paths(h, cls):
+            if "." not in path or iface not in h.com:
+                continue
+            tag = path.rstrip(".").replace(".", "_")
+            lines.extend(_com_vtable(cls, path + ".", iface, h, tag=tag))
+            vt_install.append(
+                f"        (*this).{path}.lpVtbl = "
+                f"&{n}__{tag}_{iface}_VTBL as *const {iface}Vtbl as *mut {iface}Vtbl;"
+            )
     impl.append(
         "    /// Point every vtable this object contains at this class's tables: what a C++"
     )
@@ -799,7 +816,18 @@ def _render_class(
             impl.append("        let this: *mut Self = self;")
             impl.append(f"        let sub = {sub} as *mut {root.name};")
             impl.append(f"        let vt = (*sub).__vtbl as *const {decl.name}__vtbl;")
-            impl.append(f"        ((*vt).{m.rust_name})(sub{', ' + args if args else ''})")
+            # The slot is the DECLARING class's field: ntobjshex's CCommonFolder overloads
+            # IsFolder (slots IsFolder__0/__1) and CNtObjectFolder's lone override is plain
+            # `IsFolder`, so its own rust_name named no field.
+            field = next(
+                (
+                    sl.rust_name
+                    for sl in h.new_slots(decl)
+                    if sl.name == m.name and sl.signature_key == m.signature_key
+                ),
+                m.rust_name,
+            )
+            impl.append(f"        ((*vt).{field})(sub{', ' + args if args else ''})")
             impl.append("    }")
     if atl_window(cls, h) is None:
         # A class-scoped `enum { FSATTS = .. };` is `CABITEM::FSATTS` to the bodies (cabview).
@@ -958,26 +986,77 @@ def h_path(h: Hierarchy, frm: ClassModel, to: ClassModel) -> str:
     return ""
 
 
-def _com_vtable(cls: ClassModel, k: int, iface: str, h: Hierarchy) -> list[str]:
+_IUNKNOWN_SLOTS = ("QueryInterface", "AddRef", "Release")
+
+
+def _names_module_type(m: Method, slot, h: Hierarchy) -> bool:
+    """`m` takes one of the module's own types where the interface slot does not: a COM
+    method cannot, so `m` is a same-named helper (its arity can match; ntobjshex's
+    `CompareIDs(LPARAM, const NtPidlEntry*, const NtPidlEntry*)` beside IShellFolder's)."""
+    slot_text = " ".join(t for _, t in slot.params)
+    for p in m.params:
+        for word in re.findall(r"[A-Za-z_]\w*", p.c_type):
+            if word in h.by_short and word not in slot_text:
+                return True
+    return False
+
+
+def _com_vtable(cls: ClassModel, path: str, iface: str, h: Hierarchy, tag: str = "") -> list[str]:
     """The island's IFooVtbl filled with this class's implementations, each behind a thunk
-    that turns `This` (the interface subobject) back into the object -- C++'s adjustor."""
+    that turns `This` (the interface subobject at `path`) back into the object -- C++'s
+    adjustor. `tag` names a table for an interface nested in a module base."""
     n = cls.name
+    prefix = f"{n}__{tag}_{iface}" if tag else f"{n}__{iface}"
     entries, thunks = [], []
 
-    def pick(methods: list) -> Method | None:
+    def pick(methods: list, owner_cls: ClassModel = cls) -> Method | None:
         # Overloads across interfaces (mmc_new's CConsoleWnd: IConsole2::Expand(item, bExpand)
-        # beside IConsoleNameSpace2::Expand(item)): the slot's arity chooses.
-        cands = [m for m in methods if m.name == slot.name]
+        # beside IConsoleNameSpace2::Expand(item)): the slot's arity chooses. An override of
+        # a module base's own (non-COM) virtual is never the interface's: ntobjshex's
+        # CNtObjectFolder::CompareIDs(LPARAM, const NtPidlEntry*, ..) has IShellFolder's
+        # arity and overrides CCommonFolder's helper, not IShellFolder::CompareIDs.
+        cands = [m for m in methods if m.name == slot.name and not _names_module_type(m, slot, h)]
         return next((m for m in cands if len(m.params) == len(slot.params)), None) or next(
             iter(cands), None
         )
 
     for slot in h.com[iface]:
+        sig = ", ".join([f"This: *mut {iface}", *(f"{a}: {t}" for a, t in slot.params)])
+        ret = f" -> {slot.ret}" if slot.ret else ""
+        name = f"{prefix}_{slot.name}"
+        if slot.name in _IUNKNOWN_SLOTS and (cls.com_map is not None or tag):
+            # The COM object's own QueryInterface/AddRef/Release (its CComObject glue).
+            target = f"(*{_down(n, path, 'This')})"
+            args = ", ".join(a for a, _ in slot.params)
+            thunks.append(
+                f'unsafe extern "system" fn {name}({sig}){ret} {{ {target}.{slot.name}({args}) }}'
+            )
+            entries.append(
+                f"{slot.name}: Some({name})" if slot.optional else f"{slot.name}: {name}"
+            )
+            continue
         impl = pick(cls.methods)
         owner = cls
+        if (
+            impl is not None
+            and not impl.body
+            and (impl.pure or slot.name in _IUNKNOWN_SLOTS)
+            and cls.com_map is None
+        ):
+            # An abstract base's own table (ntobjshex's CCommonFolder<..>, whose COM map moved
+            # to the derived class): installed only mid-construction, and a call through a
+            # slot it only DECLARES is C++'s pure virtual call too.
+            thunks.append(
+                f'unsafe extern "system" fn {name}({sig}){ret} {{ '
+                f'cpp_pure_virtual_call("{cls.qualified}::{slot.name}") }}'
+            )
+            entries.append(
+                f"{slot.name}: Some({name})" if slot.optional else f"{slot.name}: {name}"
+            )
+            continue
         if impl is None:
             for _, b in h.module_bases(cls):
-                impl = pick(b.methods)
+                impl = pick(b.methods, b)
                 if impl is not None:
                     owner = b
                     break
@@ -989,20 +1068,17 @@ def _com_vtable(cls: ClassModel, k: int, iface: str, h: Hierarchy) -> list[str]:
                 f"parameter(s), but {iface}'s slot has {len(slot.params)}"
             )
         via = h_path(h, cls, owner).rstrip(".")
-        target = f"(*{_down(n, f'__base{k}.', 'This')})" + (f".{via}" if via else "")
-        sig = ", ".join([f"This: *mut {iface}", *(f"{a}: {t}" for a, t in slot.params)])
+        target = f"(*{_down(n, path, 'This')})" + (f".{via}" if via else "")
         args = ", ".join(
             _ref_arg(a, p) for (a, _), p in zip(slot.params, _pad(impl.params, slot), strict=True)
         )
-        ret = f" -> {slot.ret}" if slot.ret else ""
-        name = f"{n}__{iface}_{slot.name}"
         thunks.append(
             f'unsafe extern "system" fn {name}({sig}){ret} {{ {target}.{impl.rust_name}({args}) }}'
         )
         entries.append(f"{slot.name}: Some({name})" if slot.optional else f"{slot.name}: {name}")
     return [
         *thunks,
-        f"pub static {n}__{iface}_VTBL: {iface}Vtbl = {iface}Vtbl {{ {', '.join(entries)} }};",
+        f"pub static {prefix}_VTBL: {iface}Vtbl = {iface}Vtbl {{ {', '.join(entries)} }};",
     ]
 
 
@@ -1278,17 +1354,53 @@ def _iface_upcast_path(h: Hierarchy, cls: ClassModel, iface: str) -> str | None:
     return next(iter(hits), None)
 
 
+def _root_ex_path(h: Hierarchy, cls: ClassModel) -> str | None:
+    """The field path to `cls`'s CComObjectRootEx, through module bases: ntobjshex's
+    CNtObjectFolder holds it inside its CCommonFolder<..> template base."""
+    for i, b in enumerate(cls.bases):
+        if _template_name(b.name) == "CComObjectRootEx":
+            return f"__base{i}"
+    for i, b in h.module_bases(cls):
+        sub = _root_ex_path(h, b)
+        if sub is not None:
+            return f"__base{i}.{sub}"
+    return None
+
+
+def inherit_crtp_com_maps(model: ModuleModel) -> list[str]:
+    """A CRTP template base's `BEGIN_COM_MAP(TSelf)` is the DERIVED class's map: ntobjshex's
+    `CCommonFolder<CNtObjectFolder, ..>` declares the IShellFolder2/IPersistFolder2 entries
+    and `CNtObjectFolder` (the object-map class) has none of its own. The map moves to the
+    class it names, which is the one CComObject<T> wraps; left on the instance, the derived
+    class got no QueryInterface, AddRef, Release or CoClass at all. Returns the classes."""
+    by_name = {c.name: c for c in model.classes.values()}
+    moved = []
+    for base in list(model.classes.values()):
+        if base.com_map is None:
+            continue
+        for _param, arg in base.template_args:
+            derived = by_name.get(short(arg))
+            if (
+                derived is None
+                or derived.com_map is not None
+                or not any(short(b.name) == base.name for b in derived.bases)
+            ):
+                continue
+            derived.com_map, base.com_map = base.com_map, None
+            moved.append(derived.name)
+            break
+    return moved
+
+
 def _render_com_object_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
     """What `CComObject<T>` adds over a class with a COM map, given to the class itself:
     QueryInterface over the map, AddRef/Release on CComObjectRootEx's count (destroying at
     0 the way `CComObject`'s destructor does: FinalRelease, module Unlock, then the class's
     own destructor), and `CComObject<T>::CreateInstance` as atl_rust::com::ComObject."""
     n = cls.name
-    root = next(
-        (i for i, b in enumerate(cls.bases) if _template_name(b.name) == "CComObjectRootEx"), None
-    )
+    root = _root_ex_path(h, cls)
     if root is None:
-        raise CppAppError(f"{cls.qualified}: a COM map, but no CComObjectRootEx base of its own")
+        raise CppAppError(f"{cls.qualified}: a COM map, but no CComObjectRootEx base")
     unk = {slot.name: slot for slot in h.com.get("IUnknown", [])}
     if set(unk) < {"QueryInterface", "AddRef", "Release"}:
         raise CppAppError(f"{cls.qualified}: the island lays out no IUnknownVtbl")
@@ -1323,7 +1435,7 @@ def _render_com_object_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -
     if fc and "DECLARE_PROTECT_FINAL_CONSTRUCT" in cls.atl_declares:
         # InternalFinalConstructAddRef/Release: a FinalConstruct that hands `this` out and
         # takes it back (AddRef, Release) would otherwise destroy the object it is building.
-        r = f"core::ptr::addr_of_mut!((*p).__base{root})"
+        r = f"core::ptr::addr_of_mut!((*p).{root})"
         construct = (
             f"{{ atl_rust::com::internal_add_ref({r}); let hr = {construct}; "
             f"atl_rust::com::internal_release({r}); hr }}"
@@ -1342,11 +1454,10 @@ def _render_com_object_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -
             f"&map, {a_riid} as *const c_void, {a_ppv} as *mut *mut c_void) as {qi.ret}",
             "    }",
             f"    pub unsafe fn AddRef(&mut self) -> {unk['AddRef'].ret} {{",
-            f"        atl_rust::com::internal_add_ref(&mut self.__base{root}) as "
-            f"{unk['AddRef'].ret}",
+            f"        atl_rust::com::internal_add_ref(&mut self.{root}) as {unk['AddRef'].ret}",
             "    }",
             f"    pub unsafe fn Release(&mut self) -> {unk['Release'].ret} {{",
-            f"        let n = atl_rust::com::internal_release(&mut self.__base{root});",
+            f"        let n = atl_rust::com::internal_release(&mut self.{root});",
             f"        if n == 0 {{ {n}__com_destroy(self); }}",
             f"        n as {unk['Release'].ret}",
             "    }",
@@ -1395,11 +1506,11 @@ def _render_coclass_glue(cls: ClassModel, model: ModuleModel) -> list[str]:
     for d in _UNPORTED_DECLARES:
         if d in cls.atl_declares:
             raise CppAppError(f"{cls.qualified}: {d} is not ported (atl_rust::dll)")
-    if "DECLARE_NOT_AGGREGATABLE" not in cls.atl_declares:
-        raise CppAppError(
-            f"{cls.qualified}: in an object map without DECLARE_NOT_AGGREGATABLE, i.e. "
-            "aggregatable (CComCoClass's default); atl_rust has no CComAggObject"
-        )
+    # No DECLARE_NOT_AGGREGATABLE is still not aggregatable HERE: ReactOS's atlcom.h has
+    # CComCoClass's `DECLARE_AGGREGATABLE(T)` commented out ("This should be here, but
+    # gcc..."), so its creator refuses an outer unknown with CLASS_E_NOAGGREGATION, exactly
+    # what atl_rust::dll::creator does. ntobjshex's modrun suite measured the pre-flip C doing
+    # so. The aggregating DECLARE_* forms stay refused above.
     if cls.method("ObjectMain"):
         raise CppAppError(f"{cls.qualified}: its own ObjectMain is not called by atl_rust::dll")
     lines = [
@@ -2119,7 +2230,24 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
     if cls is None or cls.bases or any(m.kind == "ctor" for m in cls.methods):
         return None
     fields = [f for f in cls.fields if not f.static]
-    if '"' in g.init or "'" in g.init:
+    # A wide literal field (`{ HKEY_CLASSES_ROOT, L"HKEY_CLASSES_ROOT" }`, ntobjshex's
+    # RootKeys) is its own static [u16; N], NUL included, and the field its pointer. Any
+    # other quote (a narrow string, a char) is still left to the model.
+    wides: list[str] = []
+    wide_lit = re.compile(r'L"((?:[^"\\]|\\.)*)"')
+
+    def wide_value(v: str) -> str | None:
+        m = wide_lit.fullmatch(v.strip())
+        units = _wide_units(m.group(1)) if m else None
+        if units is None:
+            return None
+        name = f"{g.name.upper()}__W{len(wides)}"
+        vals = ", ".join(str(u) for u in [*units, 0])
+        wides.append(f"static {name}: [u16; {len(units) + 1}] = [{vals}];")
+        return f"{name}.as_ptr()"
+
+    rest = wide_lit.sub("", g.init)
+    if '"' in rest or "'" in rest:
         return None
 
     def split(text: str) -> list[str]:  # top-level commas; braces nest too
@@ -2141,7 +2269,9 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
         if len(vals) > len(fields) or any("{" in v for v in vals):
             return None
         parts = [
-            f"{_ident(f.name)}: {fn_value}"
+            f"{_ident(f.name)}: {wv} as _"
+            if (wv := wide_value(v)) is not None
+            else f"{_ident(f.name)}: {fn_value}"
             if (fn_value := _fn_pointer_value(v, model)) is not None
             # A REFERENCE member (`REFGUID m_guid;`, msctfime's MODEBIAS) is laid out as a
             # pointer and binds to its initializer's object: the address, never a cast of
@@ -2168,9 +2298,12 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
             return None
         n = arr.group(2) or str(len(rendered))
         lines = ",\n    ".join(r for r in rendered if r)
-        return f"pub static {mut}{g.name}: [{cls.name}; {n}] = [\n    {lines},\n];"
+        table = f"pub static {mut}{g.name}: [{cls.name}; {n}] = [\n    {lines},\n];"
+        return "\n".join([*wides, table])
     single = one(body)
-    return None if single is None else f"pub static {mut}{g.name}: {cls.name} = {single};"
+    if single is None:
+        return None
+    return "\n".join([*wides, f"pub static {mut}{g.name}: {cls.name} = {single};"])
 
 
 _C_ESCAPES = {"n": 10, "t": 9, "r": 13, "0": 0, "a": 7, "b": 8, "f": 12, "v": 11}
@@ -2231,11 +2364,48 @@ def wide_string_static(g) -> str | None:
     return f"pub static {'' if m.group(1) else 'mut '}{g.name}: [u16; {n}] = [{vals}];"
 
 
+_WIDE_PTR_TYPES = r"(?:LPCWSTR|PCWSTR|LPWSTR|PWSTR|(?:const )?(?:WCHAR|wchar_t) \*)"
+
+
+def wide_pointer_table(g) -> str | None:
+    """`const LPCWSTR RegistryTypeNames[] = { L"REG_NONE", .. };` (ntobjshex): each literal
+    its own NUL-terminated `[u16; N]`, the table their pointers. Left to the model, five of
+    twelve sizes came back miscounted."""
+    t = " ".join(g.c_type.split())
+    m = re.fullmatch(rf"(?:const )?({_WIDE_PTR_TYPES})(?: const)?\s*\[(\d*)\]", t)
+    if m is None or not g.init or not g.init.strip().startswith("{"):
+        return None
+    body = g.init.strip()[1:-1]
+    items = [v.strip() for v in re.split(r",(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)", body) if v.strip()]
+    lines, ptrs = [], []
+    for i, v in enumerate(items):
+        if v in ("0", "NULL", "nullptr"):  # ObjectTypeNames ends `.., L"Port", 0`
+            ptrs.append("core::ptr::null_mut()")
+            continue
+        lit = re.fullmatch(r'L"((?:[^"\\]|\\.)*)"', v)
+        units = _wide_units(lit.group(1)) if lit else None
+        if units is None:
+            return None
+        name = f"{g.name.upper()}__W{i}"
+        vals = ", ".join(str(u) for u in [*units, 0])
+        lines.append(f"static {name}: [u16; {len(units) + 1}] = [{vals}];")
+        ptrs.append(f"{name}.as_ptr() as _")
+    n = int(m.group(2)) if m.group(2) else len(ptrs)
+    if len(ptrs) > n:
+        return None
+    ptrs += ["core::ptr::null_mut()"] * (n - len(ptrs))
+    # A raw-pointer static is not Sync; C's const table is never written, so `static mut`.
+    lines.append(
+        f"pub static mut {g.name}: [{m.group(1).replace('const ', '')}; {n}] = [{', '.join(ptrs)}];"
+    )
+    return "\n".join(lines)
+
+
 def _render_globals(model: ModuleModel, h: Hierarchy) -> str:
     """Module globals of CLASS type, zeroed until `__cxx_global_init` constructs them."""
     out = []
     for g in model.globals:
-        wide = wide_string_static(g)
+        wide = wide_string_static(g) or wide_pointer_table(g)
         if wide is not None:
             out.append(wide)
             continue
@@ -2477,9 +2647,15 @@ def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
         cls = h.by_short.get(short(g.c_type))
         if cls is not None and "*" not in g.c_type and "[" not in g.c_type:
             continue
+        if g.name.startswith("__wine_dbch_"):
+            # WINE_DEFAULT_DEBUG_CHANNEL's storage: `port resolve` writes it, deterministically,
+            # and integrate strips the model's. Left here, ntobjshex's precomp.h became a unit
+            # of nothing but these two, which translate refuses (no function to buy).
+            continue
         if (
             aggregate_static(g, h, model) is not None
             or wide_string_static(g) is not None
+            or wide_pointer_table(g) is not None
             or atl_module_static(g, model) is not None
         ):
             continue  # rendered in cpp_classes.rs, field by field / unit by unit
@@ -2554,22 +2730,76 @@ def fold_module_subclasses(model: ModuleModel) -> list[str]:
     into `CComModule`, so its global is atl_rust::dll's and its workers get CComModule's
     contract. Rendered as its own class, it lost the CComModule base (atl_rust has no C++
     layout for it) and the model, given no module API, invented
-    `ATL_CAtlDllModuleT_DllGetClassObject`. A subclass that ADDS members is refused: what it
-    adds would have to be ported onto atl_rust::dll::CComModule first. Returns the names."""
-    folded = []
+    `ATL_CAtlDllModuleT_DllGetClassObject`.
+
+    A subclass that hides a CComModule method with its own (fontext's `Init` creates the font
+    cache, then calls `CComModule::Init`) keeps that method as a module function
+    `CFontExtModule_Init(CComModule *this_, ..)`, and every `gModule.Init(..)` in the module
+    calls it: folding it away would boot with no font cache. ONE underscore: integrate reads
+    `C__m` as class C's method m, and turned `this_->Init` into a call to itself. A subclass
+    with FIELDS is refused: atl_rust::dll::CComModule has no room for them. Returns the names."""
+    from .cpp_model import FreeFunc
+
+    folded: list[str] = []
+    hidden: dict[str, list[str]] = {}  # folded class -> its own method names
     for q, c in list(model.classes.items()):
         if c.external or [short(b.name) for b in c.bases] != ["CComModule"]:
             continue
-        if c.fields or any(m.kind not in ("ctor", "dtor") or m.body for m in c.methods):
+        if c.fields:
             raise CppAppError(
-                f"{c.qualified}: a CComModule subclass with members; port them onto "
+                f"{c.qualified}: a CComModule subclass with fields; port them onto "
                 "atl_rust::dll::CComModule first"
             )
+        for m in c.methods:
+            if m.kind in ("ctor", "dtor") and not m.body:
+                continue
+            if m.kind != "method" or m.static or m.virtual or m.lowered is None:
+                raise CppAppError(
+                    f"{c.qualified}::{m.name}: only plain methods of a CComModule subclass "
+                    "can be kept as module functions"
+                )
+            body = re.sub(r"\b(?:CComModule::\s*)?this_->__base0\.", "this_->", m.lowered).replace(
+                "CComModule::", "this_->"
+            )
+            params = ", ".join(["CComModule *this_", *(f"{p.c_type} {p.name}" for p in m.params)])
+            name = f"{c.name}_{m.rust_name}"  # one `_`: `C__m` is a METHOD to integrate
+            model.functions.append(
+                FreeFunc(name, f"{m.return_type} {name}({params})", c.file, body, static=True)
+            )
+            hidden.setdefault(c.name, []).append(m.rust_name)
         del model.classes[q]
         folded.append(c.name)
+    globals_of = {
+        g.name: short(" ".join(g.c_type.split()))
+        for g in model.globals
+        if short(" ".join(g.c_type.split())) in folded
+    }
     for g in model.globals:
-        if short(" ".join(g.c_type.split())) in folded:
+        if g.name in globals_of:
             g.c_type = "CComModule"
+
+    def reroute(text: str) -> str:
+        for g, cls in globals_of.items():
+            # Inherited calls reached the base through `.__base0`; the global IS the base now.
+            text = re.sub(rf"\b{g}\s*\.\s*__base0\s*\.", f"{g}.", text)
+            for meth in hidden.get(cls, []):
+
+                def call(
+                    m: re.Match[str], g: str = g, fn: str = f"{cls}_{meth}", src: str = text
+                ) -> str:
+                    rest = src[m.end() :].lstrip()
+                    return f"{fn}(&{g}" + ("" if rest.startswith(")") else ", ")
+
+                text = re.sub(rf"\b{g}\s*\.\s*{meth}\s*\(", call, text)
+        return text
+
+    if globals_of:
+        for c in model.classes.values():
+            for m in c.methods:
+                if m.lowered:
+                    m.lowered = reroute(m.lowered)
+        for f in model.functions:
+            f.lowered = reroute(f.lowered)
     return folded
 
 
@@ -3187,11 +3417,14 @@ def worker_contract(model: ModuleModel, worker: str, body: str) -> str:
         ),
         key=lambda c: (not worker.startswith(c.name + "__"), c.name),
     )
+    # A folded subclass's own method (`CFontExtModule_Init(CComModule *this_, ..)`) names the
+    # module by type, not by its global: it needs the CComModule API as much as DllMain does.
+    by_type = re.search(r"\bCComModule\s*\*\s*this_\b", body) is not None
     module_globals = [
         g.name
         for g in model.globals
         if short(" ".join(g.c_type.split())) == "CComModule"
-        and re.search(rf"\b{re.escape(g.name)}\b", body)
+        and (by_type or re.search(rf"\b{re.escape(g.name)}\b", body))
     ]
     maps = [
         g.name

@@ -787,6 +787,90 @@ impl<T> CSimpleArray<T> {
 }
 
 // -------------------------------------------------------------------------------------------
+// CAtlArray
+// -------------------------------------------------------------------------------------------
+
+/// `CAtlArray<E>` — atlcoll.h's growable array, indexed by `size_t`.
+///
+/// Measured surface (fontext): `new()`, `Add(e)` (returns the new index), `GetCount()`,
+/// `GetAt(i)` for `arr[i]` / `&arr[i]` (a pointer, as `CSimpleArray::GetAt`), `GetData()`,
+/// `RemoveAll()`. Storage is the CRT allocator, as ATL's `malloc`. ATL throws
+/// `E_OUTOFMEMORY` from `Add`; this `no_std` crate has no unwinding, so a failed `Add`
+/// drops the element and returns `usize::MAX`, which no index can be.
+///
+/// **Exceeds the C:** ReactOS's `GrowAllocatedData` computes a geometric size and then
+/// allocates only `nNewSize`, so every `Add` reallocates and copies the whole array; this
+/// grows by half, which is what the dead `allocSize` meant.
+pub struct CAtlArray<T> {
+    m_pData: *mut T,
+    m_Size: usize,
+    m_AllocatedSize: usize,
+}
+
+impl<T> CAtlArray<T> {
+    pub const fn new() -> Self {
+        Self { m_pData: core::ptr::null_mut(), m_Size: 0, m_AllocatedSize: 0 }
+    }
+
+    pub unsafe fn Add(&mut self, element: T) -> usize {
+        if self.m_Size >= self.m_AllocatedSize {
+            let n = (self.m_AllocatedSize + self.m_AllocatedSize / 2).max(self.m_Size + 1);
+            let bytes = n.wrapping_mul(core::mem::size_of::<T>());
+            let p = CCRTAllocator::Reallocate(self.m_pData as *mut c_void, bytes) as *mut T;
+            if p.is_null() {
+                drop(element);
+                return usize::MAX;
+            }
+            self.m_pData = p;
+            self.m_AllocatedSize = n;
+        }
+        core::ptr::write(self.m_pData.add(self.m_Size), element);
+        self.m_Size += 1;
+        self.m_Size - 1
+    }
+
+    pub fn GetCount(&self) -> usize {
+        self.m_Size
+    }
+
+    pub fn IsEmpty(&self) -> bool {
+        self.m_Size == 0
+    }
+
+    /// `operator[]` as a pointer; null out of range (ATL asserts, a no-op in release).
+    pub unsafe fn GetAt(&self, iElement: usize) -> *mut T {
+        if iElement >= self.m_Size {
+            return core::ptr::null_mut();
+        }
+        self.m_pData.add(iElement)
+    }
+
+    pub fn GetData(&self) -> *mut T {
+        self.m_pData
+    }
+
+    pub fn RemoveAll(&mut self) {
+        unsafe {
+            for i in 0..self.m_Size {
+                core::ptr::drop_in_place(self.m_pData.add(i));
+            }
+            if !self.m_pData.is_null() {
+                CCRTAllocator::Free(self.m_pData as *mut c_void);
+            }
+        }
+        self.m_pData = core::ptr::null_mut();
+        self.m_Size = 0;
+        self.m_AllocatedSize = 0;
+    }
+}
+
+impl<T> Drop for CAtlArray<T> {
+    fn drop(&mut self) {
+        self.RemoveAll();
+    }
+}
+
+// -------------------------------------------------------------------------------------------
 // CSimpleMap
 // -------------------------------------------------------------------------------------------
 
@@ -1062,6 +1146,51 @@ impl<T> CAtlList<T> {
         self.count
     }
 
+    /// `InsertBefore(pos, e)` — atlcoll.h: a null `pos` is `AddHead`. The count is kept
+    /// here; ReactOS's CreateNode does the same.
+    pub unsafe fn InsertBefore(&mut self, pos: POSITION, element: T) -> POSITION {
+        if pos.is_null() {
+            return self.AddHead(element);
+        }
+        let old = pos as *mut CAtlListNode<T>;
+        let node = Self::alloc_node(element);
+        if node.is_null() {
+            return core::ptr::null_mut();
+        }
+        (*node).prev = (*old).prev;
+        (*node).next = old;
+        if (*old).prev.is_null() {
+            self.head = node;
+        } else {
+            (*(*old).prev).next = node;
+        }
+        (*old).prev = node;
+        self.count += 1;
+        node.cast()
+    }
+
+    /// `InsertAfter(pos, e)` — a null `pos` is `AddTail`.
+    pub unsafe fn InsertAfter(&mut self, pos: POSITION, element: T) -> POSITION {
+        if pos.is_null() {
+            return self.AddTail(element);
+        }
+        let old = pos as *mut CAtlListNode<T>;
+        let node = Self::alloc_node(element);
+        if node.is_null() {
+            return core::ptr::null_mut();
+        }
+        (*node).prev = old;
+        (*node).next = (*old).next;
+        if (*old).next.is_null() {
+            self.tail = node;
+        } else {
+            (*(*old).next).prev = node;
+        }
+        (*old).next = node;
+        self.count += 1;
+        node.cast()
+    }
+
     pub fn GetHeadPosition(&self) -> POSITION {
         self.head.cast()
     }
@@ -1110,6 +1239,29 @@ impl<T> CAtlList<T> {
             self.relink(bp, a, true);
             self.relink(bn, a, false);
         }
+    }
+
+    /// `RemoveHead()` — atlcoll.h: unlink the head and return its element BY VALUE; the node
+    /// is freed, the element is not destroyed (it is the caller's now). ATL asserts on an
+    /// empty list; this returns None. This is how an element leaves a list without a copy:
+    /// `core::ptr::read` of a `GetNext` pointer leaves the list owning it too, and the list's
+    /// drop then frees what the reader still holds (fontext's font cache, freed and then
+    /// freed again).
+    pub unsafe fn RemoveHead(&mut self) -> Option<T> {
+        let node = self.head;
+        if node.is_null() {
+            return None;
+        }
+        self.head = (*node).next;
+        if self.head.is_null() {
+            self.tail = core::ptr::null_mut();
+        } else {
+            (*self.head).prev = core::ptr::null_mut();
+        }
+        let element = core::ptr::read(core::ptr::addr_of!((*node).element));
+        CCRTAllocator::Free(node as *mut c_void);
+        self.count -= 1;
+        Some(element)
     }
 
     /// `RemoveAt(POSITION pos)` — atlcoll.h: unlink that node, destroy its element, free it.
@@ -1497,8 +1649,12 @@ impl CStringW {
         if nNewLength < 0 {
             return self.ReleaseBuffer();
         }
-        self.m_nLength = nNewLength;
-        *self.m_pszData.add(nNewLength as usize) = 0;
+        // ATL's SetLength throws past the allocation (AtlThrow); nothing here unwinds, and
+        // the caller's length is usually a registry size that outran the buffer (fontext's
+        // ERROR_MORE_DATA loop), so it is held to what the buffer holds, never a NUL past it.
+        let n = nNewLength.min((self.m_nAlloc - 1).max(0));
+        self.m_nLength = n;
+        *self.m_pszData.add(n as usize) = 0;
     }
 
     /// `Left(int nCount)` — cstringt.h:776. ATL clamps: negative yields empty, over-long
@@ -2252,8 +2408,12 @@ impl CStringA {
         if nNewLength < 0 {
             return self.ReleaseBuffer();
         }
-        self.m_nLength = nNewLength;
-        *self.m_pszData.add(nNewLength as usize) = 0;
+        // ATL's SetLength throws past the allocation (AtlThrow); nothing here unwinds, and
+        // the caller's length is usually a registry size that outran the buffer (fontext's
+        // ERROR_MORE_DATA loop), so it is held to what the buffer holds, never a NUL past it.
+        let n = nNewLength.min((self.m_nAlloc - 1).max(0));
+        self.m_nLength = n;
+        *self.m_pszData.add(n as usize) = 0;
     }
 
     /// `GetAllocLength()` — atlsimpstr.h: the characters the buffer can hold, NOT counting
@@ -2611,6 +2771,41 @@ mod cstring_tests {
         _u: *mut BOOL,
     ) -> INT {
         0
+    }
+
+    #[test]
+    fn catlarray_adds_by_index_and_insert_before_links_both_ways() {
+        unsafe {
+            let mut a: CAtlArray<u32> = CAtlArray::new();
+            for i in 0..10 {
+                assert_eq!(a.Add(i * 3), i as usize);
+            }
+            assert_eq!((a.GetCount(), *a.GetAt(9), a.GetAt(10).is_null()), (10, 27, true));
+            let mut l: CAtlList<u32> = CAtlList::new();
+            let b = l.AddTail(2);
+            l.InsertBefore(b, 1);
+            l.InsertBefore(core::ptr::null_mut(), 0);
+            l.InsertAfter(b, 3);
+            let mut pos = l.GetHeadPosition();
+            let mut seen = [0u32; 4];
+            for slot in seen.iter_mut() {
+                *slot = *l.GetNext(&mut pos);
+            }
+            assert_eq!((seen, l.GetCount(), pos.is_null()), ([0, 1, 2, 3], 4, true));
+            assert_eq!((l.RemoveHead(), l.GetCount()), (Some(0), 3));
+            while l.RemoveHead().is_some() {}
+            assert!(l.IsEmpty() && l.RemoveHead().is_none());
+        }
+    }
+
+    #[test]
+    fn a_narrow_strret_is_cstr_after_the_pointer_aligned_union() {
+        unsafe {
+            let mut sr = [0u8; 8 + 260];
+            assert_eq!(crate::SHSetStrRet!(sr.as_mut_ptr(), b"hi\0".as_ptr()), 0);
+            let at = core::mem::size_of::<usize>();
+            assert_eq!((sr[0], &sr[at..at + 3]), (2, &b"hi\0"[..]));
+        }
     }
 
     #[test]

@@ -25,3 +25,12 @@ def test_a_hidden_stdcall_is_spelled_in_a_free_function_signature():
     assert _spell_stdcall("MYAPI int F(int x)", "F", qt) == "MYAPI int __stdcall F(int x)"
     assert _spell_stdcall("int WINAPI F(int x)", "F", qt) == "int WINAPI F(int x)"
     assert _spell_stdcall("static int F(int x)", "F", "int (int)") == "static int F(int x)"
+
+
+def test_ccomobject_create_instance_is_the_class_itself():
+    from rustconv.cpp_lower import com_object_create
+
+    body = "_CComObject<CFolderViewCB> *pcb;\nHRESULT hr = _CComObject<CFolderViewCB>::CreateInstance(&pcb);"
+    assert com_object_create(body) == (
+        "CFolderViewCB *pcb;\nHRESULT hr = ComObject_CreateInstance<CFolderViewCB>(&pcb);"
+    )

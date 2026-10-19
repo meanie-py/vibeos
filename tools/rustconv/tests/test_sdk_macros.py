@@ -352,3 +352,17 @@ def test_a_subscript_on_a_pointer_is_pointer_arithmetic():
     assert out.startswith("(*((*(") and out.endswith(
         " as *mut *mut *mut c_void))).add(($p1) as usize))"
     )
+
+
+def test_a_braced_guid_macro_is_a_guid_const():
+    from rustconv.sdk_macros import guid_initializer
+
+    out = guid_initializer(
+        "PSGUID_STORAGE",
+        "{0xb725f130, 0x47ef, 0x101a, {0xa5, 0xf1, 0x02, 0x60, 0x8c, 0x9e, 0xeb, 0xac}}",
+    )
+    assert out == (
+        "pub const PSGUID_STORAGE: GUID = GUID { Data1: 0xb725f130, Data2: 0x47ef, "
+        "Data3: 0x101a, Data4: [0xa5, 0xf1, 0x02, 0x60, 0x8c, 0x9e, 0xeb, 0xac] };"
+    )
+    assert guid_initializer("X", "{1, 2}") is None

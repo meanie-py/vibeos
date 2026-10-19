@@ -1,3 +1,4 @@
+include(${CMAKE_CURRENT_LIST_DIR}/codegen.cmake)
 
 # Set up dlltool machine flag for llvm-dlltool (needed for ARM64)
 if(CMAKE_DLLTOOL_MACHINE)
@@ -1299,26 +1300,25 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
     set(LIBRARY_PRIVATE_DIR ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/${_libname}_delayed.dir)
     # llvm-dlltool doesn't support --output-delaylib. Instead of an empty archive (which
     # silently degraded delay-imports to regular imports OS-wide), generate a real
-    # delay-import lib ourselves: sdk/tools/gen-delaylib.py emits the descriptor + INT/IAT
+    # delay-import lib ourselves: tools/codegen delaylib emits the descriptor + INT/IAT
     # + per-function thunk from the implib .def and clang-compiles it. The delay-load
     # runtime helper is sdk/lib/delayimp (__delayLoadHelper2). See
     # docs/engineering/archive/delay-import-llvm-mingw-design.md. VIBEOS_ENABLE_DELAYLOAD
     # (default ON) selects the generated delay libs; VIBEOS_NO_DELAYLOAD keeps the
     # empty-archive + regular-import fallback.
     if(CMAKE_DLLTOOL_MACHINE AND VIBEOS_ENABLE_DELAYLOAD AND NOT VIBEOS_NO_DELAYLOAD)
+        vibeos_codegen_dependencies(__codegen_deps)
         add_custom_command(
             OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
-            COMMAND ${CMAKE_COMMAND} -E rm -f ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
-            COMMAND ${CMAKE_COMMAND} -E env python3
-                ${REACTOS_SOURCE_DIR}/sdk/tools/gen-delaylib.py
+            COMMAND ${REACTOS_SOURCE_DIR}/tools/codegen delaylib
                 --def ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def
                 --arch ${ARCH}
                 --out ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
                 --clang ${CMAKE_C_COMPILER} --ar ${CMAKE_AR}
             DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def
-                ${REACTOS_SOURCE_DIR}/sdk/tools/gen-delaylib.py
+                ${__codegen_deps}
             WORKING_DIRECTORY ${LIBRARY_PRIVATE_DIR}
-            COMMENT "Generating delay-import lib for ${_libname} (gen-delaylib.py, ${ARCH})")
+            COMMENT "Generating delay-import lib for ${_libname} (native codegen, ${ARCH})")
     elseif(CMAKE_DLLTOOL_MACHINE)
         # Default/VIBEOS_NO_DELAYLOAD fallback: empty archive → add_delay_importlibs()
         # uses regular imports.

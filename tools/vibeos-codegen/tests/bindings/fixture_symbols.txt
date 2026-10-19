@@ -1,0 +1,5 @@
+00000000 T _stat
+00000000 T erased
+00000000 T missing
+00000000 T pointer
+00000000 T variadic

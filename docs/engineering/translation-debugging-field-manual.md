@@ -1393,6 +1393,22 @@ function goes in a plain `extern "system"` block and resolves through the import
 `scan_unresolved_imports` (binary lint, every arch) checks every livecd PE's imports against
 its exporter's export table, so any name the loader cannot bind fails the build.
 
+### A library that DEFINES a data export must not also raw-dylib-import it
+
+**Symptom:** amd64 `ntdll` link: `lld` crashes in `IdataContents::create`, after warnings that
+`__declspec(dllimport) NlsMbCodePageTag` is defined both in `librtl_rust.a` and at
+`ntoskrnl.exe`. i386 and arm64 link, which is worse, because there the outcome is luck.
+
+**Cause:** librtl defines `NlsMbCodePageTag`/`NlsMbOemCodePageTag`/`NlsOemLeadByteInfo`, and
+`ntkrnl-sys`' default `hal_bindgen` feature raw-dylib-declares the same three as ntoskrnl.exe
+DATA imports, so rustc bundles import members for them into the same staticlib. A reference
+from another codegen unit resolves to whichever archive member the linker meets first. It
+stayed latent until code outside nls_tables.rs started reading the globals.
+
+**Fix:** a crate graph that owns a symbol must not carry an import of it: librtl's crates take
+`ntkrnl-sys` with `default-features = false, features = ["inline_exports", "dbg"]` (no librtl
+crate uses `hal_ddk`); check with `llvm-ar t librtl_rust.a | grep -i ntoskrnl` (empty).
+
 ### An `extern "C"` DllMain never runs on i386: crt-startup's default takes its place
 
 **Symptom:** none visible. The DLL loads and works on amd64 and arm64. On i386 its DllMain
@@ -2575,6 +2591,26 @@ reading the C before touching anything — the same panic over a **signed** C co
 the C guards, is a genuine mistranslation and wants the guard restored instead. Check test
 helpers too, not just the shipping crate: one of the four was a double→`long double` rebias in
 wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
+
+### A mixed-sign `min`/`max` translated as a signed compare
+**Symptom:** explorer's taskbar was 8 px tall on every arch, its borders and nothing else, for
+a week after comctl32 went to Rust (2026-10-09 → 10-18). The tray window existed, so smoke and
+appstorm's `shell=OK` stayed green; only a screenshot showed it.
+**Cause:** rebar.c's `round_child_height` ends `cy = min(cy, lpBand->cyMaxChild)`, an `int`
+against a `UINT`. C's usual arithmetic conversions make that an UNSIGNED compare, so a
+`cyMaxChild` of `(UINT)-1` ("no maximum", what browseui's band site passes) never wins. Rust's
+`min` needs one type, and the translation cast `cyMaxChild as c_int`: `min(22, -1)` is -1, the
+band's `cyChild` became `0xFFFFFFFF`, `REBAR_ValidateBand` zeroed it as out of range, and the
+rebar reported a bar height of 0.
+**Fix:** compare the way the C does: `if (cy as UINT) > max { cy = max as c_int }`, or
+`min(a as UINT, b) as c_int`. The rest of rebar.c was already right, including every
+`i < uNumBands` and `uNumBands - 1` site; it is the `min`/`max` CALL that invites a single
+cast to one side.
+**Finding the rest:** clang's `-Wsign-compare` on the C oracle flags exactly this. Run it over
+a module's `<target>_c` compile commands and keep the lines that call `min`/`max`. Across all
+53 oracle modules (2026-10-18) that is 24 sites in comctl32 and 2 in credui, and this was the
+only mistranslated one. Modules with no oracle are unaudited. A rebar section in the modrun
+comctl32 probe (`probes/comctl32.c`) now diffs the band and bar heights against the C.
 
 ### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
 **Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a
@@ -10787,6 +10823,15 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   `command` is shell-quoted — use `shlex.split()`, never `.split()`; and bindgen records the
   Windows spelling of a fixed-width type (`__msvcrt_ulong` is 32-bit).
 - **A harness improvement is worth nothing if you only point it at NEW code** `[§9.66]`.
+- **…and the harness's MODEL must not become the shipping body.** rtl-strings modelled nls.c
+  as a fixed CP1252 table on both sides of rtl-difftest, which is fine for grading unicode.c's
+  wrappers, but the model was also what the kernel and ntdll exported: `RtlUnicodeToOemN` and
+  friends ignored the tables `RtlResetRtlTranslations` loads (OEM is CP437, so every byte
+  >= 0x80 came out wrong), and `RtlEqualComputerName` shipped as `return FALSE`, the harness's
+  outcome (its allocator returns NULL). **Fix:** route the model through one dispatch module
+  that only the harness build selects (`rtl-strings/src/cabi/nlsapi.rs`), and grade the real
+  layer separately against the genuine C on real data (`rtl-difftest/tests/nls_tables.rs`
+  loads txt2nls-generated code pages into both).
 - **Un-stubbing a global the harness defined as NULL is only HALF the fix; the other half is
   one per side.** msvcrt-difftest defined `MSVCRT_locale = 0` so mbcs.c would link, and that
   NULL is why `_setmbcp` was refused for months — its non-thread arm dereferences it. But that
@@ -12415,6 +12460,40 @@ token is a macro's expansion (clang's `expansionLoc`, not a macro argument), whi
 what the module's call sites say. When a translated module defines an SDK function's name,
 check whether the C defines it or overloads it.
 
+### A CRTP template base's `BEGIN_COM_MAP(TSelf)` gave the object no IUnknown
+**Symptom:** `no method named QueryInterface` / `AddRef` on a template instance, and no
+`CoClass` for the object-map class (ntobjshex's `CNtObjectFolder : CComCoClass<..>,
+CCommonFolder<CNtObjectFolder, NtPidlEntry, ..>`).
+**Cause:** the COM map belongs to `TSelf`, but cppapp generated COM glue for the class that
+declares the map, an abstract instance never created on its own. The most-derived class had
+neither glue nor its own tables for the interfaces inside the base.
+**Fix:** automatic: `inherit_crtp_com_maps` moves the map to the class it names, which then
+installs its own IShellFolder2/IPersistFolder2 tables inside the base (most-derived last, as
+C++), IUnknown slots on its own glue; the base's own table traps a call through a slot it
+only declares (C++'s pure virtual call). A same-named helper (`CompareIDs(LPARAM, const
+NtPidlEntry*, ..)`) is never taken for the interface method: a COM slot cannot take a
+module-private type. A class with no `DECLARE_*AGGREGATABLE` is NOT aggregatable in ReactOS
+(atlcom.h comments CComCoClass's `DECLARE_AGGREGATABLE` out), so atl_rust's refusing creator is
+the faithful one; ntobjshex's modrun suite measured the C answering CLASS_E_NOAGGREGATION.
+
+### A table of wide strings came back hand-counted
+**Symptom:** `expected an array with a size of 9, found one with a size of 10` on a
+`pub static W_REG_DWORD: [u16; 9]`; five of ntobjshex's twelve `RegistryTypeNames` were off.
+**Cause:** `const LPCWSTR X[] = { L"..", .. }` and a struct table with an `L".."` field
+(`RootKeys`) were left to the model, which also invented the struct's field names.
+**Fix:** automatic: cppapp renders both (`wide_pointer_table`, `aggregate_static`), each
+literal a NUL-terminated `[u16; N]`, and integrate drops a unit's copy of anything
+cpp_classes.rs renders.
+
+### A `CComModule` subclass's own `Init`/`Term` vanish when it is folded
+**Symptom:** none at compile time; the module boots without what its `Init` builds (fontext's
+font cache, created before `CComModule::Init`).
+**Cause:** cppapp folds an empty `class X : public CComModule {}` into atl_rust's CComModule;
+a subclass that hides `Init`/`Term` was refused, and folding it naively drops them.
+**Fix:** automatic: each hiding method is kept as a module function `X_Init(CComModule *this_,
+..)` and every `gModule.Init(..)` calls it. ONE underscore: integrate reads `X__Init` as class
+X's method and turned the base call into a call to itself.
+
 ### A file-static helper several TUs define became ONE function
 **Symptom:** right-clicking stobject's volume or power icon opened the hotplug icon's
 removable-device menu, whose items eject the device.
@@ -12424,6 +12503,30 @@ kept and the other two TUs' calls bound to it.
 **Fix:** automatic: a file-static whose name a different file already defined is named
 `<name>__<file stem>` (`_ShowContextMenu__volume`), and the TU's calls follow through clang's
 decl ids.
+
+### A C++ element copy written as `ptr::read` frees the copy's strings
+**Symptom:** garbage or freed-memory names the first time a cached list is read, then heap
+corruption when it is rebuilt (fontext's Fonts folder, the moment it opened).
+**Cause:** C++ `m_Fonts.Add(fonts.GetNext(it))` copy-constructs each element; the translation
+wrote `m_Fonts.Add(core::ptr::read(fonts.GetNext(&mut it)))`, a bitwise duplicate. The local
+list then dropped and freed every `CStringW` the cache still pointed at, and the cache's own
+`RemoveAll` freed them again.
+**Fix:** move the element out (`CAtlList::RemoveHead` returns it by value) or `clone()` it.
+`scan_container_ptr_read` (vibeos-lint, empty baseline) fails `check` on a `ptr::read` of a
+container accessor.
+
+### One function declared through two typedef spellings became two "overloads"
+**Symptom:** `cannot find function DoGetFontTitle__0` though `DoGetFontTitle__1` exists.
+**Cause:** precomp.h declares `DoGetFontTitle(PCWSTR, CStringW&)` and fontext.cpp defines it
+with `LPCWSTR`; cpp_model keyed overloads by clang's sugared `qualType`, so one function had
+two signatures. **Fix:** automatic: overloads are keyed by the parameters' desugared types.
+
+### A C++ `const` global the island declares `extern` came back as a Rust `const`
+**Symptom:** `undefined symbol: CLSID_CFontExt` at link, from the object map.
+**Cause:** `const GUID CLSID_CFontExt = {..}` translated as `pub const`, which has no storage;
+every other unit names the island's `extern static`. **Fix:** automatic: integrate turns a
+`const` whose name the island declares extern into `#[no_mangle] pub static`. The same pass
+drops a model-written copy of a GUID a linked library (uuid) defines, one-line literals too.
 
 ### `CString s((LPCSTR)IDS_X)` is a resource load, not text
 **Symptom:** an access violation at a small address (0x60) when a menu or dialog is built.
@@ -14127,6 +14230,23 @@ initializer is dropped at that `;`, so the pointer is to freed memory by the tim
 temporaries live to the end of the match; atlclasses' `atl_format!` now does this for the
 format and every argument. In ordinary code, keep the owning `CStringW` in a named local before
 taking `.GetString()`.
+
+### A native server's flattened RPC buffer reaches a 32-bit client in the server's layout
+**Symptom.** A 32-bit app under WoW64 reads garbage or NULL from a structure an RPC call
+filled successfully: every field up to the first pointer is right, everything after it is
+wrong. wordpad faulted at address 0x44 in comdlg32's `PRINTDLG_SetDefaultPrinter`, reading
+`PRINTER_INFO_2W.pDevMode->dmSize` with `pDevMode` NULL.
+**Cause.** The spooler RPCs (`GetPrinter`, `Enum*`, `GetJob`, `GetForm`, `GetPrinterDriver`)
+return a `[size_is] BYTE *` buffer that the native spoolsv fills with its own 8-byte pointer
+offsets and 64-bit padding. NDR carries opaque bytes untouched, so no thunk sees them, and
+winspool's `MarshallUpStructure` read them with the i386 table. `pDevMode` (i386 offset 0x1c)
+was the zero high half of `pPortName`'s offset.
+**Fix.** `winspool-rust/src/winspool/wow64.rs`: under WoW64 the client narrows the buffer in
+place with a 64-bit twin of each structure before unmarshalling. The marshalling tables
+cannot stand in for the layout: they omit fields (`DRIVER_INFO_x.cVersion`), and i386 pads
+before `dwlDriverVersion` where amd64 does not. The twins are const-asserted against the real
+structure on the 64-bit builds. Any other interface that ships a struct as opaque bytes has
+the same exposure.
 
 ### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
 **Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing

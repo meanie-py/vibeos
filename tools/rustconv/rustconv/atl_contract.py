@@ -26,7 +26,15 @@ ATL_RUST = Path(__file__).resolve().parents[3] / "sdk" / "lib" / "rust" / "atlcl
 # would make that wrong, and `rust_type_for` refuses rather than guess (see `unicode`).
 _STRING_SPELLINGS = ("CAtlStringW", "CStringW", "CAtlString", "CString")
 _TCHAR_SPELLINGS = frozenset({"CAtlString", "CString"})
-_DIRECT = ("CComPtr", "CHeapPtr", "CComHeapPtr", "CSimpleArray", "CSimpleMap", "CAtlList")
+_DIRECT = (
+    "CComPtr",
+    "CHeapPtr",
+    "CComHeapPtr",
+    "CSimpleArray",
+    "CSimpleMap",
+    "CAtlList",
+    "CAtlArray",
+)
 # Non-template atl_rust types, named bare (`CComBSTR title;`, acppage).
 _PLAIN = ("CComBSTR",)
 # C++ standard library spelling -> atl_rust::stl type (drwtsn32, ksproxy).
@@ -75,6 +83,39 @@ def types_used(body: str) -> list[str]:
     return used
 
 
+def _shellutils_helpers(body: str) -> str:
+    """shellutils.h's overloaded / templated helpers, which atl_rust spells as macros."""
+    lines = []
+    if re.search(r"\bSHSetStrRet\b", body):
+        lines.append(
+            "- `SHSetStrRet(p, value)` → `SHSetStrRet!(p, value)` (wide or narrow string "
+            "pointer); `SHSetStrRet(p, hInstance, resId)` → `SHSetStrRet!(p, hInstance, "
+            "resId)`. `p` is a `*mut STRRET`.\n"
+        )
+    if re.search(r"\bShellObjectCreator\s*<", body):
+        lines.append(
+            "- `ShellObjectCreator<T>(riid, ppv)` → `ShellObjectCreatorIid!(T, riid, ppv)`; "
+            "`ShellObjectCreator(ptr)` with a `CComPtr<T>` → `ShellObjectCreator(&mut ptr)`.\n"
+        )
+    if re.search(r"\bShellObjectCreatorInit\b", body):
+        lines.append(
+            "- `ShellObjectCreatorInit<T>(a, b, riid, ppv)` → "
+            "`ShellObjectCreatorInit!(T, [a, b], riid, ppv)` (the Initialize arguments in "
+            "brackets).\n"
+        )
+    if "ComObject_CreateInstance" in body:
+        lines.append(
+            "- `ComObject_CreateInstance<T>(&p)` (ATL's `CComObject<T>::CreateInstance`, `p` a "
+            "`*mut T`) → `<T as atl_rust::com::ComObject>::create_instance(&mut p)`; the "
+            "object starts at reference count 0, so AddRef it before handing it out.\n"
+        )
+    if not lines:
+        return ""
+    return "\n## shellutils.h helpers (deterministic — atl_rust macros, in scope)\n" + "".join(
+        lines
+    )
+
+
 def contract(
     body: str, *, unicode: bool = True, com_methods: bool = False, declared: str = ""
 ) -> str:
@@ -83,8 +124,9 @@ def contract(
     power.cpp calls `g_strTooltip.Format(..)` on a file-scope `CString`, a body that never
     spells the type, so the model got no contract and invented `CStringW::Format`."""
     used = types_used(body + "\n" + declared)
+    helpers = _shellutils_helpers(body)
     if not used:
-        return ""
+        return helpers
     if not unicode and any(re.search(rf"\b{s}\b", body) for s in _TCHAR_SPELLINGS):
         raise ValueError(
             "a non-UNICODE C++ module names CString/CAtlString: its TCHAR string is the ANSI "
@@ -131,6 +173,11 @@ def contract(
             "`for (auto& it : m)` / an iterator loop → `for it in m.as_mut_slice()` with "
             "`it.first` / `it.second`.\n",
         ]
+    if "CSimpleArray" in used or "CAtlArray" in used:
+        lines.append(
+            "- `a[i]` → `(*a.GetAt(i))`, `&a[i]` → `a.GetAt(i)` (a pointer; CAtlArray "
+            "indexes by `usize`, CSimpleArray by `i32`).\n"
+        )
     if "CComPtr" in used:
         # A C++ island run through rustconv.com_vtables gives each interface a method per
         # vtable slot; a C island has only the slot fields.
@@ -143,7 +190,7 @@ def contract(
             "- `CComPtr<I> p;` → `let mut p: CComPtr<I> = CComPtr::new();`; `&p` as an out "
             f"parameter → `p.GetAddressOf()`; `p->Method(..)` → {call}.\n"
         )
-    return "".join(lines)
+    return "".join(lines) + helpers
 
 
 def com_module_contract(module_globals: list[str], object_maps: list[str]) -> str:

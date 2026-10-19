@@ -3696,3 +3696,28 @@ def test_a_null_for_a_mut_pointer_parameter_is_null_mut():
     edits, _, handled = _literal_mut_rule(diag, lambda f: src, _Ctx(target="i386", width=32))
     assert handled
     assert [e.replacement for e in edits] == ["core::ptr::null_mut()"]
+
+
+def test_a_const_method_through_a_const_pointer_casts_the_receiver():
+    """fontext: `(*fontEntry1).Name__1()` with `fontEntry1: *const FontPidlEntry`."""
+    from rustconv.crate_repair import _const_receiver_rule, _Ctx
+
+    src = b"f((*e).Name__1());\n"
+    lo = src.index(b"(*e)")
+    diag = {
+        "code": {"code": "E0596"},
+        "spans": [
+            {
+                "file_name": "m.rs",
+                "byte_start": lo,
+                "byte_end": lo + 4,
+                "line_start": 1,
+                "column_start": lo + 1,
+                "is_primary": True,
+                "label": "`e` is a `*const` pointer, so the data it refers to cannot be "
+                "borrowed as mutable",
+            }
+        ],
+    }
+    edits, _, handled = _const_receiver_rule(diag, lambda f: src, _Ctx(target="i386", width=32))
+    assert handled and [e.replacement for e in edits] == ["(*e.cast_mut())"]

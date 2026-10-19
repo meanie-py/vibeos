@@ -1480,6 +1480,11 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # wrote CGID_ShellServiceObject from memory, one digit off, and the tray never started.
     # A Rust rule (tools/vibeos-lint/src/rules/guid_values.rs).
     specs.append(("scan_guid_values", [rustlints.SENTINEL, "scan_guid_values"], "stdout"))
+    # `ptr::read` of an element an atl_rust container still owns: fontext's font cache was
+    # freed under its readers. A Rust rule (tools/vibeos-lint/src/rules/container_ptr_read.rs).
+    specs.append(
+        ("scan_container_ptr_read", [rustlints.SENTINEL, "scan_container_ptr_read"], "stdout")
+    )
     # The OTHER half of that pair: a cross-MODULE extern declaration, checked against the
     # .spec of the DLL that exports it. `cargo check` never links, so nothing in `check`,
     # `check-tooling` or `difftest` can see a wrong-ABI import — it survives to the PE link,

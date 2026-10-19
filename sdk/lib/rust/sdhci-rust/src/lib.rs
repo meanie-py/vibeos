@@ -196,10 +196,15 @@ impl<P: Platform> Sdhci<P> {
 
     /// Reset everything, then power the bus at 3.3 V with the slot forced
     /// occupied, latch every status we wait on, set the longest data timeout and
-    /// start the card clock at `hz`. Returns the clock it got.
+    /// start the card clock at `hz`. Returns the clock it got. The base clock is the
+    /// capabilities register's, else whatever the platform put in `base_hz` first:
+    /// the Pi 4's Arasan host reports none (Linux's SDHCI_QUIRK_MISSING_CAPS).
     pub fn power_up(&mut self, hz: u32) -> Result<u32, Error> {
         let caps = self.rd(REG_CAPS);
-        self.base_hz = ((caps >> 8) & 0xFF) * 1_000_000;
+        let from_caps = ((caps >> 8) & 0xFF) * 1_000_000;
+        if from_caps != 0 {
+            self.base_hz = from_caps;
+        }
         if self.base_hz == 0 {
             return Err(Error::Card("capabilities register has no base clock", caps));
         }

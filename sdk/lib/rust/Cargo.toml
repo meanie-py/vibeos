@@ -934,11 +934,13 @@ members = [
     "sxs-rust",
     "inetmib1-rust",
     "stobject-rust",
+    "fontext-rust",
     "twain_32-rust",
     "activeds-rust",
     "xinput1_3-rust",
     "msrle32-rust",
     "oledlg-rust",
+    "ntobjshex-rust",
 ]
 resolver = "2"
 

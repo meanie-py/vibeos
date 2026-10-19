@@ -21,15 +21,10 @@ include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_or
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # guid.c  # replaced by Rust (sdk/lib/rust/sti-rust/src/sti/guid.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
-# How cmake compiled the target's sources, now on the OBJECT libraries.
-add_library(sti_shims OBJECT ${CMAKE_CURRENT_BINARY_DIR}/proxy.dlldata.c ${CMAKE_CURRENT_BINARY_DIR}/sti_wia_p.c)
-target_link_libraries(sti_shims PRIVATE wine wine_dll_register wine_dll_canunload uuid libole32 liboleaut32 librpcrt4 libadvapi32 libmsvcrt libkernel32 libntdll)
-set_wine_module_fixme(sti_shims)
 set(STI_REUSED
     ${CMAKE_BINARY_DIR}/dll/win32/sti/sti_wia_r.o)
 add_cargo_module(sti sti-cargo sti.dll
     KIND win32dll
     BODY_CRATE sti-rust
     DESTINATION reactos/system32
-    EXTRA_DEPENDS sti_shims psdk sti_r ${STI_REUSED} uuid_sources)
+    EXTRA_DEPENDS psdk sti_r ${STI_REUSED} uuid_sources wine wine_dll_register wine_dll_canunload uuid libole32 liboleaut32 librpcrt4 libadvapi32 libmsvcrt libkernel32 libntdll ${REACTOS_BINARY_DIR}/dll/win32/sti/proxy.dlldata.c ${REACTOS_BINARY_DIR}/dll/win32/sti/sti_wia_p.c)

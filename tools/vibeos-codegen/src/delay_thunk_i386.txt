@@ -1,0 +1,4 @@
+	pushl ${IMP}
+	pushl ${DESC}
+	calll ___delayLoadHelper2@8
+	jmpl  *%eax

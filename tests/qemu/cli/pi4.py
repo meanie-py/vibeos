@@ -522,6 +522,8 @@ def _boot(run: Run, args, repo: Path) -> int:
         if getattr(args, "ladder", False):
             text = _ladder(run, repo, serial, start, text)
             _save_serial(run, text)
+        elif getattr(args, "until", None):
+            await_until(run, serial, start, args.until, args.until_timeout)
     else:
         run.classification = verdict["classification"]
         salient = list(verdict.get("salient", []))
@@ -532,6 +534,38 @@ def _boot(run: Run, args, repo: Path) -> int:
         run.add(Stage("desktop", status="fail", detail=verdict["classification"], salient=salient))
     _screenshot(run, repo)
     return run.finalize(repo)
+
+
+def await_until(run: Run, serial: Path, start: int, needle: str, timeout: float) -> None:
+    """`pi4 boot` / `pi5 boot --until TEXT`: the desktop is not the end of every test. A driver
+    that works on after it (the Wi-Fi's join, 2026-10-17) needs the serial read on
+    until its line arrives, or the run says it never did."""
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            with open(serial, "rb") as f:
+                f.seek(start)
+                text = f.read().decode("utf-8", errors="replace")
+        except OSError:
+            text = ""
+        if needle in text or time.monotonic() > deadline:
+            break
+        time.sleep(2)
+    _save_serial(run, text)
+    hit = next((line for line in text.splitlines() if needle in line), None)
+    if hit is not None:
+        run.add(Stage("until", detail=hit.strip()[:200]))
+        return
+    run.classification = "HANG_TIMEOUT"
+    tail = [line.strip()[:200] for line in text.splitlines()[-6:]]
+    run.add(
+        Stage(
+            "until",
+            status="fail",
+            detail=f"{needle!r} not seen {timeout:.0f}s after the desktop",
+            salient=tail,
+        )
+    )
 
 
 def _ladder(run: Run, repo: Path, serial: Path, start: int, text: str) -> str:
@@ -638,6 +672,19 @@ def add_parser(sub) -> None:
         action="store_true",
         help="after the desktop, drain and grade the WoW64 ladder as `smoke --ladder` does "
         "(needs VIBEOS_FEX=1 media); records per-guest timings in summary.json",
+    )
+    boot.add_argument(
+        "--until",
+        metavar="TEXT",
+        help="after the desktop, keep reading serial until a line contains TEXT (a driver "
+        "that works on past the desktop); HANG_TIMEOUT if it never comes",
+    )
+    boot.add_argument(
+        "--until-timeout",
+        type=float,
+        default=180.0,
+        metavar="S",
+        help="seconds --until waits after the desktop (default 180)",
     )
     boot.add_argument("--allow-stale", action="store_true")
     boot.add_argument("--skip-doctor", action="store_true")

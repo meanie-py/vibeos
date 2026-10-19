@@ -1165,4 +1165,85 @@ fn main() {
     for obj in dbuild4.compile_intermediates() {
         println!("cargo:rustc-link-arg={}", obj.display());
     }
+
+    // nls.c vs rtl-strings' table-driven port (cabi/nls_tables.rs), over REAL code pages.
+    // The model-on-both-sides discipline above pins unicode.c's wrappers; this pins the
+    // converters themselves, which the kernel and ntdll run on the tables
+    // RtlResetRtlTranslations loads. The C is genuine nls.c with every export and global
+    // renamed nref_*; the Rust is nls_tables.rs with its #[no_mangle]s dropped (so it
+    // lives in the test's own module) -- the shipping text, not a copy.
+    let nls_c = repo.join("sdk/lib/rtl/nls.c");
+    let nls_names = [
+        "RtlCustomCPToUnicodeN", "RtlpDowncaseUnicodeChar", "RtlDowncaseUnicodeChar",
+        "RtlGetDefaultCodePage", "RtlInitCodePageTable", "RtlInitNlsTables",
+        "RtlMultiByteToUnicodeN", "RtlConsoleMultiByteToUnicodeN", "RtlMultiByteToUnicodeSize",
+        "RtlOemToUnicodeN", "RtlResetRtlTranslations", "RtlUnicodeToCustomCPN",
+        "RtlUnicodeToMultiByteN", "RtlUnicodeToMultiByteSize", "RtlUnicodeToOemN",
+        "RtlpUpcaseUnicodeChar", "RtlUpcaseUnicodeChar", "RtlUpcaseUnicodeToCustomCPN",
+        "RtlUpcaseUnicodeToMultiByteN", "RtlUpcaseUnicodeToOemN", "RtlUpperChar",
+        "NlsUnicodeUpcaseTable", "NlsUnicodeLowercaseTable", "NlsAnsiCodePage",
+        "NlsMbCodePageTag", "NlsAnsiToUnicodeTable", "NlsUnicodeToAnsiTable",
+        "NlsUnicodeToMbAnsiTable", "NlsLeadByteInfo", "NlsOemCodePage", "NlsMbOemCodePageTag",
+        "NlsOemToUnicodeTable", "NlsUnicodeToOemTable", "NlsUnicodeToMbOemTable",
+        "NlsOemLeadByteInfo", "NlsOemDefaultChar", "NlsUnicodeDefaultChar",
+    ];
+    let mut nls_body = String::from("#include <rtl.h>\n#include <debug.h>\n#include <nls_host.h>\n");
+    for n in nls_names {
+        nls_body.push_str(&format!("#define {n} nref_{n}\n"));
+    }
+    nls_body.push_str(&format!("#include \"{}\"\n", nls_c.display()));
+    let nls_src = out.join("ref_nls.c");
+    fs::write(&nls_src, nls_body).unwrap();
+    let mut nbuild = cc::Build::new();
+    nbuild
+        .include(&refstub)
+        .warnings(false)
+        .flag("-w")
+        .opt_level(2)
+        .cargo_metadata(false)
+        .file(&nls_src);
+    println!("cargo:rerun-if-changed={}", nls_c.display());
+    for obj in nbuild.compile_intermediates() {
+        println!("cargo:rustc-link-arg={}", obj.display());
+    }
+    let port_rs = repo.join("sdk/lib/rust/rtl-strings/src/cabi/nls_tables.rs");
+    println!("cargo:rerun-if-changed={}", port_rs.display());
+    let port: String = fs::read_to_string(&port_rs)
+        .unwrap()
+        .lines()
+        .filter(|l| l.trim() != "#[no_mangle]" && !l.starts_with("//!"))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    fs::write(out.join("nls_tables_port.rs"), port).unwrap();
+
+    // The code pages, generated from the tree's sources by its own host tool (txt2nls) so
+    // the test needs no prior OS build. l_intl.nls (the case table) is checked in.
+    let txt2nls = out.join("txt2nls");
+    let cxx = cc::Build::new().cpp(true).cargo_metadata(false).get_compiler();
+    let main_cpp = repo.join("sdk/tools/txt2nls/main.cpp");
+    println!("cargo:rerun-if-changed={}", main_cpp.display());
+    let st = cxx
+        .to_command()
+        .arg("-O1")
+        .arg("-o")
+        .arg(&txt2nls)
+        .arg(&main_cpp)
+        .status()
+        .expect("compile txt2nls");
+    assert!(st.success(), "txt2nls failed to compile");
+    for cp in ["c_1252", "c_437", "c_932"] {
+        let txt = repo.join(format!("media/nls/src/{cp}.txt"));
+        println!("cargo:rerun-if-changed={}", txt.display());
+        let st = std::process::Command::new(&txt2nls)
+            .arg(&txt)
+            .arg(out.join(format!("{cp}.nls")))
+            .status()
+            .expect("run txt2nls");
+        assert!(st.success(), "txt2nls {cp} failed");
+    }
+    println!("cargo:rustc-env=RTL_DIFFTEST_NLS_DIR={}", out.display());
+    println!(
+        "cargo:rustc-env=RTL_DIFFTEST_CASE_NLS={}",
+        repo.join("media/nls/l_intl.nls").display()
+    );
 }

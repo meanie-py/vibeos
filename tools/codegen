@@ -3,15 +3,16 @@
 set -euo pipefail
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 # Callers may be inside a cross-build environment or outside the checkout.
-unset RUSTUP_TOOLCHAIN RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_TARGET
+unset RUSTUP_TOOLCHAIN RUSTC CARGO_BUILD_RUSTC RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_TARGET
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS RUSTC_BOOTSTRAP
+unset CARGO_MAKEFLAGS MAKEFLAGS MFLAGS
 toolchain=$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' "$repo/rust-toolchain.toml")
 if [[ -z "$toolchain" ]]; then
     echo "codegen: missing pinned channel in $repo/rust-toolchain.toml" >&2
     exit 2
 fi
 export RUSTUP_TOOLCHAIN="$toolchain"
-exec cargo run --quiet --offline --locked \
+exec cargo run --quiet --offline --locked --jobs 1 \
     --manifest-path "$repo/tools/vibeos-codegen/Cargo.toml" \
     --target-dir "$repo/.cache/vibeos-codegen/target" \
     -- --root "$repo" "$@"

@@ -58,13 +58,17 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
 
 ## Shell extensions (from 2026-10-17)
 
-**RESUME HERE (2026-10-18, evening):** mmcshext, sendmail, mydocs, acppage, cabview and
-stobject are flipped on `atl_rust::dll`, each with a modrun suite against its C; stobject
-cost $0.09 on Haiku, and `port replay <stem>` rebuilds each at $0. acppage and cabview are on
-master; stobject is the next merge request. Next in the queue: fontext, ntobjshex, netshell,
-zipfldr. Landing is a merge request to the integrator (`vibeos-integration-4e` at last
-contact; find it by role). New linters are Rust rules in `tools/vibeos-lint`. Run `check`
-after a gate's builds, not beside them.
+**RESUME HERE (2026-10-19):** mmcshext, sendmail, mydocs, acppage, cabview, stobject,
+fontext and ntobjshex are flipped on `atl_rust::dll`, each with a modrun suite against its C;
+`port replay <stem>` rebuilds each at $0. Everything through fontext is on master (fontext:
+d47d633d013); ntobjshex is the next merge request. Next in the queue: netshell, zipfldr.
+Landing is a merge request to the integrator (`merge-integrator` at last contact; find it by
+role). New linters are Rust rules in `tools/vibeos-lint`. Run `check` after a gate's builds,
+not beside them.
+
+Owed from ntobjshex: `CNtObjectFolderExtractIcon::GetIconLocation` faults (address 2: the
+GIL_FORSHELL flag read as a pointer) in the pre-flip C as well as the Rust, so the probe does
+not call it; find whether that is the C++ or the call's ABI.
 
 stobject's review found three pipeline bugs, all fixed at the root: an invented GUID
 (`DECLARING_HEADER_ADDED` + `scan_guid_values`, which also caught acpi's and iomgr's), a

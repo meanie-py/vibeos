@@ -467,6 +467,7 @@ dependencies = [
  "mem",
  "random",
  "rtl-diag",
+ "rtl-strings",
 ]
 
 [[package]]
@@ -2004,6 +2005,18 @@ dependencies = [
 name = "fmifs-rust"
 version = "0.1.0"
 dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "fontext-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
  "conutils-h",
  "ntdll-sys",
  "panic-common",
@@ -4433,6 +4446,18 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "ntobjshex-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
  "win32macros-rust",
 ]
 

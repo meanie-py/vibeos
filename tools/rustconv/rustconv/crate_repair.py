@@ -95,6 +95,7 @@ RULE_C2RUST_ANON = "c2rust_anon_member"
 RULE_CPP_REFERENCE_ARG = "cpp_reference_argument"
 RULE_FLOAT_LITERAL = "c_float_literal"
 RULE_OBJECT_DEREF = "object_deref"
+RULE_CONST_RECEIVER = "cpp_const_receiver"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -150,6 +151,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_C2RUST_ANON,
     RULE_FLOAT_LITERAL,
     RULE_OBJECT_DEREF,
+    RULE_CONST_RECEIVER,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -2477,6 +2479,9 @@ def _option_fn_call_rule(
 #: Rust keywords bindgen renames with a trailing `_` when they name a C field.
 _BINDGEN_KEYWORDS = frozenset(
     {
+        # Not a keyword but in bindgen's rename list too: SHELLDETAILS' `STRRET str` is
+        # `str_` (cabview, fontext).
+        "str",
         "Self",
         "self",
         "type",
@@ -3160,7 +3165,16 @@ def _keyword_field_rule(
         f"{base}_",
         "bindgen renames a keyword-named C field with a trailing underscore",
     )
-    if base not in _BINDGEN_KEYWORDS:
+    anon = re.fullmatch(r"__anon(\d+)", field_name)
+    if anon is not None:
+        # cpp_model's `__anonK` (K-th anonymous member, from 0) on a struct the ISLAND lays
+        # out, where bindgen numbers the same members `__bindgen_anon_{K+1}` (ntobjshex's
+        # RegPidlEntry). Taken only when rustc lists that field as existing.
+        want = f"__bindgen_anon_{int(anon.group(1)) + 1}"
+        if want not in json.dumps(diagnostic.get("children") or []):
+            return [], [], False
+        replacement, authority = want, "bindgen numbers anonymous members from 1, in order"
+    elif base not in _BINDGEN_KEYWORDS:
         # c2rust also suffixes `_0` onto a field named like a prelude item (mmixer's
         # MIXER_CONTEXT `Copy` became `Copy_0`), which bindgen leaves alone. Taken only when
         # rustc itself names the C spelling as the existing field.
@@ -4279,6 +4293,48 @@ def _packed_union_member_edit(
         line=int(span.get("line_start") or 0),
         column=int(span.get("column_start") or 0),
         targets=(ctx.target,),
+    )
+
+
+def _const_receiver_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`(*p).Name()` with `p: *const T` (E0596): a C++ `const` method called through a
+    `const T*`. cpp_app renders every method `&mut self`, so the receiver is cast to
+    `*mut`: `(*p.cast_mut()).Name()`. Sound because C++ compiled the call, which it does
+    only for a const method; nothing writes through the cast. fontext's
+    `fontEntry->Name()` on a `const FontPidlEntry*` had seven."""
+    if (diagnostic.get("code") or {}).get("code") != "E0596":
+        return [], [], False
+    span = next((x for x in diagnostic.get("spans") or [] if x.get("is_primary")), None)
+    if span is None or "is a `*const` pointer" not in str(span.get("label") or ""):
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    text = data[start:end].decode("utf-8", "replace")
+    m = re.fullmatch(r"\(\s*\*\s*([A-Za-z_]\w*)\s*\)", text)
+    after = data[end : end + 2]
+    if m is None or after[:1] != b"." or _in_macro_definition(_mask_lexical(data), start):
+        return [], [], False
+    return (
+        [
+            _simple_edit(
+                RULE_CONST_RECEIVER,
+                file_name,
+                data,
+                start,
+                end,
+                f"(*{m.group(1)}.cast_mut())",
+                "a C++ const method called through a const pointer; the method is `&mut self`",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
     )
 
 
@@ -5784,6 +5840,7 @@ _RULE_TABLE: dict[
     RULE_POINTER_CAST: _pointer_cast_rule,
     RULE_ANON_UNION: _anon_union_rule,
     RULE_PACKED_FIELD_PTR: _packed_field_ptr_rule,
+    RULE_CONST_RECEIVER: _const_receiver_rule,
     RULE_CPP_BASE_FIELD: _cpp_base_field_rule,
     RULE_REFGUID_DEREF: _refguid_deref_rule,
     RULE_MACRO_PLACE_DEREF: _macro_place_deref_rule,

@@ -1,0 +1,20 @@
+# ntobjshex (dll/shellext/ntobjshex -> ntobjshex-rust, `port cppapp`): the NT object namespace
+# and registry shell folders. Nothing at boot browses them, so smoke reaches none of it.
+# probes/ntobjshex.c, staged twice: as ntobjshex_c.exe it loads the pre-flip C
+# (ntobjshex_c.dll, from c_oracle.cmake) beside it, as ntobjshex_probe.exe the system
+# ntobjshex.dll. Both read the same guest's object namespace and registry and print only
+# values, so the outputs must match byte for byte.
+module: ntobjshex
+variants:
+  c: '%SystemRoot%\bin\modrun\ntobjshex_c.exe'
+  rust: '%SystemRoot%\bin\modrun\ntobjshex_probe.exe'
+ninja: [ntobjshex_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/ntobjshex-{arch}.exe', dest: bin/modrun/ntobjshex_c.exe}
+  - {src: 'tools/payloads/modrun/probes/ntobjshex-{arch}.exe', dest: bin/modrun/ntobjshex_probe.exe}
+  - {src: 'build-{arch}/dll/shellext/ntobjshex/ntobjshex_c.dll', dest: bin/modrun/ntobjshex_c.dll}
+cases:
+  - id: folders
+    expect: ['nt create 00000000', 'nt initialize 00000000', 'nt enum 00000000',
+             'reg create 00000000', 'reg enum 00000000', 'probe done']
+    timeout: 180

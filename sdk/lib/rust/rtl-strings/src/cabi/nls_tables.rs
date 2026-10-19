@@ -30,9 +30,9 @@
 use core::ffi::c_void;
 use core::ptr;
 
-use super::{STRING, UNICODE_STRING};
 
 const STATUS_SUCCESS: i32 = 0x0000_0000;
+const STATUS_BUFFER_OVERFLOW: i32 = 0x8000_0005u32 as i32;
 
 const MAXIMUM_LEADBYTES: usize = 12;
 
@@ -408,7 +408,7 @@ pub unsafe extern "system" fn RtlConsoleMultiByteToUnicodeN(
     unknown: *mut u32,
 ) -> i32 {
     *unknown = 1;
-    super::RtlMultiByteToUnicodeN(
+    RtlMultiByteToUnicodeN(
         unicode_string,
         unicode_size,
         result_size,
@@ -417,31 +417,383 @@ pub unsafe extern "system" fn RtlConsoleMultiByteToUnicodeN(
     )
 }
 
+// RtlpDidUnicodeToOemWork is unicode.c's, not nls.c's: it lives in nlsapi.rs, which the
+// boot loaders' build shares.
+
 // ---------------------------------------------------------------------------
-// RtlpDidUnicodeToOemWork (unicode.c 470-507) — exported (called by the
-// counted-OEM wrappers). Single-byte: a translated char equal to the
-// OEM default whose source wasn't the unicode default ⇒ unmappable.
+// The nls.c converters and case helpers, table-driven as the C is. These were the
+// shared CP1252 model in cabi/mod.rs, which ignored the tables RtlResetRtlTranslations
+// loads: with the OEM code page 437, every byte >= 0x80 came out of RtlUnicodeToOemN and
+// friends as the CP1252 byte instead. The model survives only for the host byte-diff
+// harness (no `kernel` feature), where both sides model the table identically.
+//
+// `MbSize * sizeof(WCHAR)` is SIZE_T arithmetic in the C, so the single-byte size
+// compares widen to usize. The multi-byte branches are the C's own FIXME code, ported as
+// it stands (unreachable on a single-byte install).
 // ---------------------------------------------------------------------------
 
+#[inline(always)]
+fn lobyte(w: u16) -> u8 {
+    w as u8
+}
+#[inline(always)]
+fn hibyte(w: u16) -> u8 {
+    (w >> 8) as u8
+}
+
 #[no_mangle]
-pub unsafe extern "system" fn RtlpDidUnicodeToOemWork(
-    unicode_string: *const UNICODE_STRING,
-    oem_string: *const STRING,
-) -> u8 {
-    if NlsMbOemCodePageTag == 0 {
-        let os = &*oem_string;
-        let us = &*unicode_string;
-        let mut i: u32 = 0;
-        while i < os.Length as u32 {
-            let oem_ch = *os.Buffer.add(i as usize) as i8 as i32;
-            let uni_ch = *us.Buffer.add(i as usize);
-            if oem_ch == NlsOemDefaultChar as i32 && uni_ch != NlsUnicodeDefaultChar {
-                return 0; // FALSE
-            }
-            i += 1;
+pub unsafe extern "system" fn RtlDowncaseUnicodeChar(source: u16) -> u16 {
+    RtlpDowncaseUnicodeChar(source)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpcaseUnicodeChar(source: u16) -> u16 {
+    RtlpUpcaseUnicodeChar(source)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetDefaultCodePage(ansi_code_page: *mut u16, oem_code_page: *mut u16) {
+    *ansi_code_page = NlsAnsiCodePage;
+    *oem_code_page = NlsOemCodePage;
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlMultiByteToUnicodeN(
+    mut unicode_string: *mut u16,
+    unicode_size: u32,
+    result_size: *mut u32,
+    mut mb_string: *const u8,
+    mb_size: u32,
+) -> i32 {
+    if NlsMbCodePageTag == 0 {
+        let size = if mb_size > unicode_size / 2 { unicode_size / 2 } else { mb_size };
+        if !result_size.is_null() {
+            *result_size = size * 2;
         }
-        return 1; // TRUE
+        for i in 0..size as usize {
+            *unicode_string.add(i) = *NlsAnsiToUnicodeTable.add(*mb_string.add(i) as usize);
+        }
+    } else {
+        let mb_end = mb_string.add(mb_size as usize);
+        let mut i: u32 = 0;
+        while i < unicode_size / 2 && mb_string < mb_end {
+            let ch = *mb_string;
+            mb_string = mb_string.add(1);
+            i += 1;
+            if ch < 0x80 {
+                *unicode_string = ch as u16;
+                unicode_string = unicode_string.add(1);
+                continue;
+            }
+            let lead_byte_info = *NlsLeadByteInfo.add(ch as usize);
+            if lead_byte_info == 0 {
+                *unicode_string = *NlsAnsiToUnicodeTable.add(ch as usize);
+                unicode_string = unicode_string.add(1);
+                continue;
+            }
+            if mb_string < mb_end {
+                *unicode_string = *NlsLeadByteInfo.add(lead_byte_info as usize + *mb_string as usize);
+                unicode_string = unicode_string.add(1);
+                mb_string = mb_string.add(1);
+            }
+        }
+        if !result_size.is_null() {
+            *result_size = i * 2;
+        }
     }
-    // multibyte FIXME → TRUE
-    1
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlMultiByteToUnicodeSize(
+    unicode_size: *mut u32,
+    mut mb_string: *const u8,
+    mut mb_size: u32,
+) -> i32 {
+    if NlsMbCodePageTag == 0 {
+        *unicode_size = mb_size.wrapping_mul(2);
+    } else {
+        let mut length: u32 = 0;
+        while mb_size != 0 {
+            mb_size -= 1;
+            let ch = *mb_string;
+            mb_string = mb_string.add(1);
+            if ch >= 0x80 && *NlsLeadByteInfo.add(ch as usize) != 0 && mb_size != 0 {
+                mb_size -= 1;
+                mb_string = mb_string.add(1);
+            }
+            length += 1;
+        }
+        *unicode_size = length * 2;
+    }
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlOemToUnicodeN(
+    mut unicode_string: *mut u16,
+    unicode_size: u32,
+    result_size: *mut u32,
+    mut oem_string: *const u8,
+    oem_size: u32,
+) -> i32 {
+    if NlsMbOemCodePageTag == 0 {
+        let size = if oem_size > unicode_size / 2 { unicode_size / 2 } else { oem_size };
+        if !result_size.is_null() {
+            *result_size = size * 2;
+        }
+        for _ in 0..size {
+            *unicode_string = *NlsOemToUnicodeTable.add(*oem_string as usize);
+            unicode_string = unicode_string.add(1);
+            oem_string = oem_string.add(1);
+        }
+    } else {
+        let oem_end = oem_string.add(oem_size as usize);
+        let mut i: u32 = 0;
+        while i < unicode_size / 2 && oem_string < oem_end {
+            let ch = *oem_string;
+            oem_string = oem_string.add(1);
+            i += 1;
+            if ch < 0x80 {
+                *unicode_string = ch as u16;
+                unicode_string = unicode_string.add(1);
+                continue;
+            }
+            let lead_byte_info = *NlsOemLeadByteInfo.add(ch as usize);
+            if lead_byte_info == 0 {
+                *unicode_string = *NlsOemToUnicodeTable.add(ch as usize);
+                unicode_string = unicode_string.add(1);
+                continue;
+            }
+            if oem_string < oem_end {
+                *unicode_string = *NlsOemLeadByteInfo.add(lead_byte_info as usize + *oem_string as usize);
+                unicode_string = unicode_string.add(1);
+                oem_string = oem_string.add(1);
+            }
+        }
+        if !result_size.is_null() {
+            *result_size = i * 2;
+        }
+    }
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeToMultiByteN(
+    mut mb_string: *mut u8,
+    mb_size: u32,
+    result_size: *mut u32,
+    mut unicode_string: *const u16,
+    unicode_size: u32,
+) -> i32 {
+    if NlsMbCodePageTag == 0 {
+        let size = if unicode_size as usize > mb_size as usize * 2 { mb_size } else { unicode_size / 2 };
+        if !result_size.is_null() {
+            *result_size = size;
+        }
+        for _ in 0..size {
+            *mb_string = *NlsUnicodeToAnsiTable.add(*unicode_string as usize) as u8;
+            mb_string = mb_string.add(1);
+            unicode_string = unicode_string.add(1);
+        }
+    } else {
+        let mut i = mb_size;
+        let mut size = unicode_size / 2;
+        while i != 0 && size != 0 {
+            let wide_char = *unicode_string;
+            unicode_string = unicode_string.add(1);
+            if wide_char < 0x80 {
+                *mb_string = lobyte(wide_char);
+                mb_string = mb_string.add(1);
+            } else {
+                let mb_char = *NlsUnicodeToMbAnsiTable.add(wide_char as usize);
+                if hibyte(mb_char) == 0 {
+                    *mb_string = lobyte(mb_char);
+                    mb_string = mb_string.add(1);
+                } else if i >= 2 {
+                    *mb_string = hibyte(mb_char);
+                    *mb_string.add(1) = lobyte(mb_char);
+                    mb_string = mb_string.add(2);
+                    i -= 1;
+                } else {
+                    break;
+                }
+            }
+            i -= 1;
+            size -= 1;
+        }
+        if !result_size.is_null() {
+            *result_size = mb_size - i;
+        }
+    }
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeToMultiByteSize(
+    mb_size: *mut u32,
+    mut unicode_string: *const u16,
+    unicode_size: u32,
+) -> i32 {
+    let mut unicode_length = unicode_size / 2;
+    if NlsMbCodePageTag == 0 {
+        *mb_size = unicode_length;
+    } else {
+        let mut mb_length: u32 = 0;
+        while unicode_length != 0 {
+            unicode_length -= 1;
+            let wide_char = *unicode_string;
+            unicode_string = unicode_string.add(1);
+            if wide_char >= 0x80 && hibyte(*NlsUnicodeToMbAnsiTable.add(wide_char as usize)) != 0 {
+                mb_length += 2;
+            } else {
+                mb_length += 1;
+            }
+        }
+        *mb_size = mb_length;
+    }
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlUnicodeToOemN(
+    oem_string: *mut u8,
+    mut oem_size: u32,
+    result_size: *mut u32,
+    mut unicode_string: *const u16,
+    unicode_size: u32,
+) -> i32 {
+    let mut size: u32 = 0;
+    // Bytes -> chars
+    let mut unicode_size = unicode_size / 2;
+    if NlsMbOemCodePageTag == 0 {
+        while oem_size != 0 && unicode_size != 0 {
+            *oem_string.add(size as usize) = *NlsUnicodeToOemTable.add(*unicode_string as usize) as u8;
+            unicode_string = unicode_string.add(1);
+            size += 1;
+            oem_size -= 1;
+            unicode_size -= 1;
+        }
+    } else {
+        while oem_size != 0 && unicode_size != 0 {
+            let oem_char = *NlsUnicodeToMbOemTable.add(*unicode_string as usize);
+            unicode_string = unicode_string.add(1);
+            if hibyte(oem_char) != 0 {
+                if oem_size < 2 {
+                    break;
+                }
+                *oem_string.add(size as usize) = hibyte(oem_char);
+                size += 1;
+                oem_size -= 1;
+            }
+            *oem_string.add(size as usize) = lobyte(oem_char);
+            size += 1;
+            oem_size -= 1;
+            unicode_size -= 1;
+        }
+    }
+    if !result_size.is_null() {
+        *result_size = size;
+    }
+    if unicode_size != 0 {
+        STATUS_BUFFER_OVERFLOW
+    } else {
+        STATUS_SUCCESS
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpcaseUnicodeToMultiByteN(
+    mut mb_string: *mut u8,
+    mb_size: u32,
+    result_size: *mut u32,
+    mut unicode_string: *const u16,
+    unicode_size: u32,
+) -> i32 {
+    if NlsMbCodePageTag == 0 {
+        let size = if unicode_size as usize > mb_size as usize * 2 { mb_size } else { unicode_size / 2 };
+        if !result_size.is_null() {
+            *result_size = size;
+        }
+        for _ in 0..size {
+            let upcase_char = RtlpUpcaseUnicodeChar(*unicode_string);
+            *mb_string = *NlsUnicodeToAnsiTable.add(upcase_char as usize) as u8;
+            mb_string = mb_string.add(1);
+            unicode_string = unicode_string.add(1);
+        }
+    }
+    // else: the C's multi-byte branch is ASSERT(FALSE) -- a release no-op.
+    STATUS_SUCCESS
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpcaseUnicodeToOemN(
+    mut oem_string: *mut u8,
+    oem_size: u32,
+    result_size: *mut u32,
+    mut unicode_string: *const u16,
+    unicode_size: u32,
+) -> i32 {
+    if NlsMbOemCodePageTag == 0 {
+        let size = if unicode_size as usize > oem_size as usize * 2 { oem_size } else { unicode_size / 2 };
+        if !result_size.is_null() {
+            *result_size = size;
+        }
+        for _ in 0..size {
+            let upcase_char = RtlpUpcaseUnicodeChar(*unicode_string);
+            *oem_string = *NlsUnicodeToOemTable.add(upcase_char as usize) as u8;
+            oem_string = oem_string.add(1);
+            unicode_string = unicode_string.add(1);
+        }
+    } else {
+        let mut i = oem_size;
+        let mut size = unicode_size / 2;
+        while i != 0 && size != 0 {
+            let wide_char = RtlpUpcaseUnicodeChar(*unicode_string);
+            unicode_string = unicode_string.add(1);
+            if wide_char < 0x80 {
+                *oem_string = lobyte(wide_char);
+                oem_string = oem_string.add(1);
+            } else {
+                let oem_char = *NlsUnicodeToMbOemTable.add(wide_char as usize);
+                if hibyte(oem_char) == 0 {
+                    *oem_string = lobyte(oem_char);
+                    oem_string = oem_string.add(1);
+                } else if i >= 2 {
+                    *oem_string = hibyte(oem_char);
+                    *oem_string.add(1) = lobyte(oem_char);
+                    oem_string = oem_string.add(2);
+                    i -= 1;
+                } else {
+                    break;
+                }
+            }
+            i -= 1;
+            size -= 1;
+        }
+        if !result_size.is_null() {
+            *result_size = oem_size - i;
+        }
+    }
+    STATUS_SUCCESS
+}
+
+/// `CHAR RtlUpperChar(CHAR)`. CHAR is signed, so every byte >= 0x80 takes the `<= 'z'`
+/// branch and comes back unchanged; only 0x7B-0x7F reach the tables.
+#[no_mangle]
+pub unsafe extern "system" fn RtlUpperChar(source: u8) -> u8 {
+    let s = source as i8;
+    if s <= b'z' as i8 {
+        if s >= b'a' as i8 {
+            return source ^ (b'a' - b'A');
+        }
+        return source;
+    }
+    if NlsMbCodePageTag == 0 {
+        let unicode = *NlsAnsiToUnicodeTable.add(source as usize);
+        let unicode = RtlpUpcaseUnicodeChar(unicode);
+        *NlsUnicodeToAnsiTable.add(unicode as usize) as u8
+    } else {
+        source
+    }
 }

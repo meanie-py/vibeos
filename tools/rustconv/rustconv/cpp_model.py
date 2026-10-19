@@ -363,6 +363,27 @@ _STDCALL_SPELLED = re.compile(
 )
 
 
+def _signature_key(n: dict) -> str:
+    """A function's type with its typedefs resolved, so one function declared through two
+    spellings is one signature: fontext's precomp.h says `PCWSTR` and fontext.cpp `LPCWSTR`,
+    and the two "overloads" `DoGetFontTitle__0`/`__1` left the caller naming one nobody
+    defined. A real overload (`Fill(.., COLORREF)` / `Fill(.., HBRUSH)`) still differs."""
+    params = [x for x in n.get("inner", []) if x.get("kind") == "ParmVarDecl"]
+    if not params:
+        t = n.get("type", {})
+        return t.get("desugaredQualType") or t.get("qualType", "")
+    # C++ overloads on the parameter list alone, so that is the key; clang desugars each
+    # parameter's typedef (`PCWSTR` -> `const wchar_t *`), not the function type's.
+    return (
+        "("
+        + ", ".join(
+            p.get("type", {}).get("desugaredQualType") or p.get("type", {}).get("qualType", "")
+            for p in params
+        )
+        + ")"
+    )
+
+
 def _spell_stdcall(sig: str, name: str, qual_type: str) -> str:
     """A free function's declarator with its stdcall written out. `STDAPI_(BOOL) DllMain(..)`
     is `EXTERN_C BOOL STDAPICALLTYPE`, but the macro hides that: stobject's DllMain came
@@ -1195,7 +1216,13 @@ class _Extractor:
         for f in rec.get("inner", []):
             if f.get("kind") == "FieldDecl":
                 if not f.get("name"):
-                    raise CppModelError(f"{cls.qualified}: nested anonymous member")
+                    # ntobjshex's RegPidlEntry: `union { struct { DWORD contentType; USHORT
+                    # contentsLength; }; HKEY rootKey; }`. The inner record becomes its own
+                    # generated record, embedded in place, as one level is.
+                    inner = self._anon_record(rec, f, anon)
+                    assert inner is not None
+                    anon.fields.append(Field(_anon_field(inner), inner.name))
+                    continue
                 anon.fields.append(Field(f["name"], f["type"]["qualType"]))
         self.model.classes[anon.qualified] = anon
         return anon
@@ -1445,7 +1472,7 @@ class _Extractor:
         for n in nodes:
             if n.get("kind") == "FunctionDecl" and self.mine(_file_of(n)):
                 sigs = self._overloads.setdefault(n["name"], [])
-                qt = n.get("type", {}).get("qualType", "")
+                qt = _signature_key(n)
                 if qt not in sigs:
                     sigs.append(qt)
             elif n.get("kind") in ("NamespaceDecl", "LinkageSpecDecl"):
@@ -1472,7 +1499,7 @@ class _Extractor:
                 base = f"{base}__{Path(here).stem}"
         if len(sigs) < 2:
             return base
-        qt = n.get("type", {}).get("qualType", "")
+        qt = _signature_key(n)
         return f"{base}__{sigs.index(qt) if qt in sigs else len(sigs)}"
 
     def _register_function(self, n: dict) -> None:
@@ -1594,6 +1621,7 @@ class _Extractor:
             text = cpp_lower.concat_string_macros(out.text, strings)
             text = cpp_lower.ppv_arg_macros(text)
             text = cpp_lower.local_enums_to_consts(text)
+            text = cpp_lower.com_object_create(text)
             text = cpp_lower.atl_qualified_glue(text)
             target.lowered = cpp_lower.unicode_text_macros(text) if self.unicode else text
             target.unplaced = out.unplaced
