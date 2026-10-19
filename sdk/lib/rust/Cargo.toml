@@ -1,5 +1,11 @@
 [workspace]
 members = [
+    "mstask-cargo",
+    "shcore-cargo",
+    "hlink-cargo",
+    "oleacc-cargo",
+    "cryptnet-cargo",
+    "propsys-cargo",
     "oledlg-cargo",
     "msrle32-cargo",
     "xinput1_3-cargo",
@@ -942,6 +948,12 @@ members = [
     "oledlg-rust",
     "ntobjshex-rust",
     "netshell-rust",
+    "propsys-rust",
+    "cryptnet-rust",
+    "oleacc-rust",
+    "hlink-rust",
+    "shcore-rust",
+    "mstask-rust",
 ]
 resolver = "2"
 
