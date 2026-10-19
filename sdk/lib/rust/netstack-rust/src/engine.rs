@@ -288,7 +288,12 @@ const NAME_GEM: usize = 4;
 const NAME_NDIS: usize = 5;
 
 impl Link {
-    fn new(slot: usize, mut phy: AnyPhy, rx_event: *mut ntkrnl_sys::ddk::KEVENT, name: usize) -> Self {
+    // Out of line, as are the other one-time helpers below: the worker runs on a 12 KB
+    // i386 kernel stack, and inlined, their by-value smoltcp Interface and its copies
+    // stayed in the worker's frame for its whole life (0x1C70 bytes, and a double fault
+    // 1 boot in 14 once smoltcp's poll ran on what was left).
+    #[inline(never)]
+    fn new(slot: usize, mut phy: AnyPhy, rx_event: *mut ntkrnl_sys::ddk::KEVENT, name: usize) -> alloc::boxed::Box<Self> {
         let mac = phy.mac();
         // Published for the M9 management plane (iphlpapi IFEntry queries).
         crate::netcfg::set_mac(slot, mac, name);
@@ -308,10 +313,22 @@ impl Link {
             slot, crate::netcfg::NAMES[name], m[0], m[1], m[2], m[3], m[4], m[5]
         );
         let link_up = phy.link_up();
-        Link { phy, iface, own, dhcp, rx_event, link_up, lease: None, warm: [[0; 4]; WARM_MAX], nwarm: 0, warm_next_ms: 0 }
+        alloc::boxed::Box::new(Link {
+            phy,
+            iface,
+            own,
+            dhcp,
+            rx_event,
+            link_up,
+            lease: None,
+            warm: [[0; 4]; WARM_MAX],
+            nwarm: 0,
+            warm_next_ms: 0,
+        })
     }
 
     /// Move the DHCP client into the shared set (`to_shared`) or back to the link's own.
+    #[inline(never)]
     fn move_dhcp(&mut self, shared: &mut SocketSet<'static>, to_shared: bool) {
         let (from, to) = if to_shared { (&mut self.own, shared) } else { (shared, &mut self.own) };
         let s = from.remove(self.dhcp);
@@ -321,6 +338,7 @@ impl Link {
 
 /// Take a DHCP event off `set`'s client and apply it to `iface` and netcfg's `slot`.
 /// None: no event. Some(None): the lease is gone. Some(Some(lease)): a new lease.
+#[inline(never)]
 fn dhcp_event(
     iface: &mut Interface,
     set: &mut SocketSet<'static>,
@@ -376,7 +394,8 @@ fn sockets_dhcp<'s>(set: &'s mut SocketSet<'static>, h: SocketHandle) -> &'s mut
 
 /// The NIC netstack drives itself: virtio-net, the e1000s, else a platform NIC
 /// (the Pi's GENET and GEM), with the event its interrupt sets (null: poll it).
-fn native_link() -> Option<(AnyPhy, *mut ntkrnl_sys::ddk::KEVENT, usize)> {
+#[inline(never)]
+fn native_link(slot: usize) -> Option<alloc::boxed::Box<Link>> {
     let mut platform_irq: Option<crate::pnp::PlatformIrq> = None;
     let (mut phy, name) = match device::bringup() {
         Some(d) => (AnyPhy::Virtio(VirtioPhy::new(d)), NAME_VIRTIO),
@@ -437,7 +456,7 @@ fn native_link() -> Option<(AnyPhy, *mut ntkrnl_sys::ddk::KEVENT, usize)> {
         }
         AnyPhy::Ndis(_) => null_mut(),
     };
-    Some((phy, rx_event, name))
+    Some(Link::new(slot, phy, rx_event, name))
 }
 
 unsafe extern "system" fn worker(_context: PVOID) {
@@ -448,12 +467,12 @@ unsafe extern "system" fn worker(_context: PVOID) {
     // boot (PnP installs a downloaded driver's device late), side by side: the Pi 5's
     // GEM and its Wi-Fi. All expose the same phy::Device surface, so the poll loop is
     // backend-agnostic.
-    let mut links: Vec<Link> = Vec::new();
+    let mut links: Vec<alloc::boxed::Box<Link>> = Vec::new();
     let ndis_only = crate::dma::NDIS_ONLY.load(core::sync::atomic::Ordering::Acquire);
     if ndis_only {
         nsprint!("[NETSTACK] NETSTACK=NDIS: not driving any NIC directly\n");
-    } else if let Some((phy, rx_event, name)) = native_link() {
-        links.push(Link::new(0, phy, rx_event, name));
+    } else if let Some(link) = native_link(0) {
+        links.push(link);
     }
     let ndis = crate::ndis::register();
     if links.is_empty() {
@@ -623,7 +642,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         }
         let gw = links[primary].lease.as_ref().and_then(|l| l.router).map(IpAddress::Ipv4);
         let dhcp_configured = links[primary].lease.is_some();
-        let Link { iface, .. } = &mut links[primary];
+        let Link { iface, .. } = &mut *links[primary];
 
         // TDI data path: drain AFD's commands + run the completion bridge.
         crate::tditrans::pump(iface, &mut sockets, &mut tdi_state);

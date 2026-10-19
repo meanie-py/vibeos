@@ -612,6 +612,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   netstack multi-adapter (`db748db1dff`). UNVERIFIED which, if either. Artifacts, outside /tmp:
   `~/vibeos-flake-farm/fails/i386-dblfault-qemu1110-20261018/`. Next: a `farm --arches i386`
   soak on each QEMU.
+  Measured since (rpi-bringup): netstack's worker had a **0x1C70-byte frame** (its `_chkstk`
+  prologue, i386) on a 12 KB kernel stack, about 5 KB left for smoltcp's poll and the
+  drivers under it. The multi-adapter `Link::new`, inlined, kept a by-value smoltcp
+  Interface and its copies in that frame. Out of line and boxed, the frame is 0x6C0. A stack
+  overflow fits a `0x7F/8`, but the dump does not name the faulting thread, so this is a
+  real hazard fixed, not this fault proven. The frame BEFORE `db748db1dff` was not measured.
+  6/6 i386 smokes after the fix (`-smp 1`, not the failing config).
 - **Shared cargo link dir lost an uplifted `.d` (open flake, seen once 2026-10-18,
   integration).** Cold gate `20261018-182602-3__g5z_l` failed i386 at winlogon.exe:
   `cargo-depfile: No such file ... cell-link-v1-i386-15/.../release/winlogon.d`. cargo had
