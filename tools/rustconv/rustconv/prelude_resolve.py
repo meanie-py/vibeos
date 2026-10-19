@@ -75,6 +75,39 @@ def unresolved_names(crate: str, triple: str, workspace: Path, target_dir: Path)
     return set(unresolved(crate, triple, workspace, target_dir))
 
 
+def early_errors(crate: str, triple: str, workspace: Path, target_dir: Path) -> list[str]:
+    """Errors that stop rustc BEFORE name resolution: a module file not found (E0583) or a
+    parse error (no error code). Behind one, no name is reported unresolved at all, so a
+    stage that lowers "what the crate cannot find" sees nothing and must not say so."""
+    proc = subprocess.run(
+        ["cargo", "check", "-p", crate, "--target", triple, "--message-format=json"],
+        cwd=workspace,
+        env=dict(os.environ, CARGO_TARGET_DIR=str(target_dir)),
+        capture_output=True,
+        text=True,
+    )
+    out: list[str] = []
+    for line in proc.stdout.splitlines():
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("reason") != "compiler-message":
+            continue
+        m = msg.get("message") or {}
+        if m.get("level") != "error":
+            continue
+        code = (m.get("code") or {}).get("code") if m.get("code") else None
+        text = str(m.get("message") or "")
+        if text.startswith(("aborting due to", "could not compile")):
+            continue
+        if code == "E0583" or code is None:
+            spans = [sp for sp in m.get("spans") or [] if sp.get("is_primary")]
+            where = f"{spans[0]['file_name']}:{spans[0]['line_start']}" if spans else "?"
+            out.append(f"{where}: {text}")
+    return out
+
+
 def unresolved(crate: str, triple: str, workspace: Path, target_dir: Path) -> dict[str, set[str]]:
     """Each name rustc cannot find -> the namespaces it was wanted in ("type" / "value").
 
