@@ -88,9 +88,11 @@ PUBLIC RtlCaptureContext
     /* Store eflags */
     mov [rcx + CxEFlags], eax
 
-    /* FltSave.MxCsr (+24), now that eax no longer holds the flags */
+    /* FltSave.MxCsr (+24). eax is the flags again afterwards: callers see rax = eflags
+       on return (kmtest RtlCaptureContext). */
     mov eax, [rcx + CxMxCsr]
     mov [rcx + CxFltSave + 24], eax
+    mov eax, [rcx + CxEFlags]
 
     /* Check if we are in kernel mode */
     test byte ptr [rcx + CxSegCs], MODE_MASK

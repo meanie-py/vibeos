@@ -242,10 +242,13 @@ pub unsafe extern "system" fn NtSystemDebugControl(
             }
         }
 
-        // Vista on: with no debugger attached, the debugger commands (0-20) answer
-        // STATUS_DEBUGGER_INACTIVE instead of running (kmtest NtSystemDebugControl; Windows
-        // 11 agrees). The breakpoint is UNSUCCESSFUL only when KD is off altogether.
-        let inactive = KdDebuggerNotPresent != 0u8 && (Command as i32) <= SysDbgCheckLowMemory as i32;
+        // Vista on: with no debugger attached, the debugger commands (0-20, and the Vista+
+        // ones from 32 up) answer STATUS_DEBUGGER_INACTIVE instead of running (kmtest
+        // NtSystemDebugControl; Windows 11 agrees). 21-31 (enable/disable, AutoKd, the
+        // print buffer, triage dumps) still run. The breakpoint is UNSUCCESSFUL only when
+        // KD is off altogether.
+        let inactive = KdDebuggerNotPresent != 0u8
+            && ((Command as i32) <= SysDbgCheckLowMemory as i32 || (Command as i32) >= 32);
         let status = match Command {
             SysDbgBreakPoint if inactive && KdDebuggerEnabled != 0u8 => STATUS_DEBUGGER_INACTIVE,
             SysDbgBreakPoint => {
