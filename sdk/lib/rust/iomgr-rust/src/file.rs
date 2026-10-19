@@ -1847,7 +1847,24 @@ unsafe fn IopQueryNameInternal(
     let FileObject = ObjectBody as PFILE_OBJECT;
 
     if Length < size_of::<_OBJECT_NAME_INFORMATION>() as u32 {
-        *ReturnLength = size_of::<_OBJECT_NAME_INFORMATION>() as u32;
+        // Vista on, the size reported is what the whole name needs, not the header alone
+        // (kmtest ObQuery; Server 2003 reported the header). Measured with a scratch
+        // buffer: a longer name comes back as BUFFER_OVERFLOW with its full size.
+        let mut need = size_of::<_OBJECT_NAME_INFORMATION>() as u32;
+        let probe_len = (size_of::<_OBJECT_NAME_INFORMATION>() + 512 * size_of::<u16>()) as u32;
+        let scratch = ExAllocatePoolWithTag(PagedPool as u32, probe_len as usize, TAG_IO)
+            as POBJECT_NAME_INFORMATION;
+        if !scratch.is_null() {
+            let mut got: ULONG = 0;
+            let st = IopQueryNameInternal(
+                ObjectBody, HasName, QueryDosName, scratch, probe_len, &mut got, PreviousMode,
+            );
+            if (st >= 0 || st == STATUS_BUFFER_OVERFLOW) && got > need {
+                need = got;
+            }
+            ExFreePoolWithTag(scratch as PVOID, TAG_IO);
+        }
+        *ReturnLength = need;
         return STATUS_INFO_LENGTH_MISMATCH;
     }
 

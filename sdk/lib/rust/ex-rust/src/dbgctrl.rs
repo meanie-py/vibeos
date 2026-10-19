@@ -24,6 +24,7 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 extern "C" {
     static SeDebugPrivilege: LUID;
     static mut KdDebuggerEnabled: BOOLEAN;
+    static mut KdDebuggerNotPresent: BOOLEAN;
     static mut KdAutoEnableOnEvent: BOOLEAN;
     static mut KdPitchDebugger: BOOLEAN;
     static mut KdPrintBufferSize: ULONG;
@@ -241,7 +242,21 @@ pub unsafe extern "system" fn NtSystemDebugControl(
             }
         }
 
+        // Vista on: with no debugger attached, the debugger commands (0-20) answer
+        // STATUS_DEBUGGER_INACTIVE instead of running (kmtest NtSystemDebugControl; Windows
+        // 11 agrees). The breakpoint is UNSUCCESSFUL only when KD is off altogether.
+        let inactive = KdDebuggerNotPresent != 0u8 && (Command as i32) <= SysDbgCheckLowMemory as i32;
         let status = match Command {
+            SysDbgBreakPoint if inactive && KdDebuggerEnabled != 0u8 => STATUS_DEBUGGER_INACTIVE,
+            SysDbgBreakPoint => {
+                if KdDebuggerEnabled != 0u8 {
+                    DbgBreakPointWithStatus(DBG_STATUS_DEBUG_CONTROL);
+                    STATUS_SUCCESS
+                } else {
+                    STATUS_UNSUCCESSFUL
+                }
+            }
+            _ if inactive => STATUS_DEBUGGER_INACTIVE,
             SysDbgQueryModuleInformation => {
                 STATUS_INVALID_INFO_CLASS
             }
@@ -281,15 +296,6 @@ pub unsafe extern "system" fn NtSystemDebugControl(
                     )
                 } else {
                     STATUS_NOT_IMPLEMENTED
-                }
-            }
-
-            SysDbgBreakPoint => {
-                if KdDebuggerEnabled != 0u8 {
-                    DbgBreakPointWithStatus(DBG_STATUS_DEBUG_CONTROL);
-                    STATUS_SUCCESS
-                } else {
-                    STATUS_UNSUCCESSFUL
                 }
             }
 
