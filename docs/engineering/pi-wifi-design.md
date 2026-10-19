@@ -213,8 +213,7 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    minute): one 4-way handshake at boot, then 9 group rekeys, each answered and its key
    installed, no EAPOL refused, no link loss, no rejoin; 526 of 528 pings answered, the two
    misses single and separate (12:11, 12:21, the first minutes after boot); 32,429 frames
-   delivered by the 9th rekey. Still owed: high-speed SDIO, and the Pi 4 (host and power
-   differ).
+   delivered by the 9th rekey. Still owed: the Pi 4 (host and power differ).
 8. Card interrupt (done 2026-10-18). Initialize connects the SDIO host's interrupt (the
    PDO's, GSIV 306 level on the Pi 5) with `NdisMRegisterInterruptEx`, sets CCCR 0x04 to
    IENM | IEN1 | IEN2 and the host's card-interrupt status enable. The SDIO host has one
@@ -231,3 +230,10 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    Run `20261018-201635-gei_5r35`: in the first 10 s of the link 24 card interrupts and
    101 idle waits that ran out; host pings 59/60, average RTT 3.97 ms (min 1.58) where
    the 4 ms poll gave ~7.4 ms.
+9. High speed (done 2026-10-18). Bring-up switches the bus to SDIO high speed (50 MHz SDR
+   at 3.3 V) when the card sets CCCR 0x13 SHS and the host's capabilities have bit 21
+   (both do on the Pi 5): EHS on the card, the host's high-speed timing, then the clock,
+   before the firmware download. Run `20261018-203013-ajj6x040`: the download and its
+   read-back took 66 ms where 25 MHz took 129; host pings of 1390 bytes every 10 ms,
+   500/500. (A 1400-byte ping from WSL is fragmented by its 1420 MTU and was answered by
+   neither VibeOS nor the router, so it says nothing about either.)
