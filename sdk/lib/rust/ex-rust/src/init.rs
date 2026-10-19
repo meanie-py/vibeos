@@ -266,8 +266,14 @@ pub static mut ExpNlsSectionPointer: PVOID = core::ptr::null_mut();
 
 #[no_mangle]
 pub static mut ExCmosClockIsSane: BOOLEAN = 1;
+// Whether the HAL's clock keeps UTC rather than local time. ReactOS reads
+// RealTimeIsUniversal into a dummy (config-rust cmdata), so this is never set
+// from the registry. x86's CMOS clock keeps local time, as Windows sets it; the
+// arm64 HAL's is UTC (QEMU's PL031, else a fallback until netstack's SNTP sets
+// the system time, which is UTC), as on Windows on ARM. Left FALSE there, any
+// zone with a bias would shift arm64's boot time by it.
 #[no_mangle]
-pub static mut ExpRealTimeIsUniversal: BOOLEAN = 0;
+pub static mut ExpRealTimeIsUniversal: BOOLEAN = if cfg!(target_arch = "aarch64") { 1 } else { 0 };
 
 extern "C" {
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: *mut _UNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
