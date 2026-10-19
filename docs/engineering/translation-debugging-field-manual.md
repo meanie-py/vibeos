@@ -3302,6 +3302,20 @@ tail into the suspend counts.
 exists precisely because the tail is someone else's storage. Grep for the overlay
 (`*Fill[...]` members in ndk headers) before collapsing it to `size_of`.
 
+### A C struct with a trailing buffer, translated as two locals, is a stack overrun
+**Symptom:** a handle or local in the CALLER goes bad right after a query returns success:
+every later call on it fails `ERROR_INVALID_HANDLE`, or an app fails with an unrelated error
+(7-Zip "Can't allocate required memory", libarchive "Out of memory") and no syscall reports
+one. Volume-dependent: it hit FAT's label, not CDFS's.
+**Cause:** the C declares `struct { FILE_FS_VOLUME_INFORMATION FileFsVolume; WCHAR Name[255]; } v;`
+and passes `&v, sizeof(v)`. The Rust declared two locals and passed the first with
+`size_of::<FILE_FS_VOLUME_INFORMATION>() + size_of::<[WCHAR; 255]>()`. Rust gives no layout
+guarantee for separate locals, so the callee wrote the tail over whatever came next
+(kernel32 `GetFileInformationByHandle`, 2026-10-18).
+**Fix:** one `#[repr(C)]` struct holding both, sized with `size_of` of it.
+`scan_local_overlength` gates the shape: the address of one local of type `T` with a length
+of `size_of::<T>() + ...`.
+
 ### A header sized as the SUM of its members is short when the trailing field is wider-aligned
 **Symptom.** i386-only BUGCHECK 0x19 (BAD_POOL_HEADER) on a free in RtlSplayTreeKM, and
 NO-END in its user-mode twin; amd64 and arm64 were clean. It looked like splay-tree corruption.
@@ -8012,6 +8026,14 @@ three by hand. All three came out of one file (`brfolder.cpp`, 2026-07-31).
   pointer.
 - **`copy_nonoverlapping`/`copy` have the same element-vs-byte trap** (the `RtlCopyMemory`
   sibling).
+- **A pointer typed by its DECLARATION, not a cast at the call**, hides it from a reader:
+  `let data_buffer: *mut _READ_CAPACITY16_DATA = ExAllocatePoolWithTag(.., 32, ..)` then
+  `write_bytes(data_buffer, 0, allocation_buffer_length)` zeroed 1024 bytes of a 32-byte
+  block. classpnp's READ CAPACITY 16 and VPD Block Device Characteristics queries both did
+  it, so an unprivileged `IOCTL_STORAGE_QUERY_PROPERTY(StorageAccessAlignmentProperty)` was a
+  BUGCHECK 0x19 with the NEXT chunk's header zeroed. `scan_typed_byte_copy` flags a
+  declaration-typed pointer whose count is named like bytes (`*Length`, `*_length`,
+  `*Bytes`, `cb*`); fix with `as *mut u8`.
 - **A C pointer difference lowered as ADDRESS subtraction.** `lpNextSlash - lpSubBlock` on
   `LPCWSTR` counts WCHARs; `(a as isize - b as isize)` counts bytes. version.dll's
   `VersionInfo32_QueryValue` passed that to `FindChild` as the key length, so every key

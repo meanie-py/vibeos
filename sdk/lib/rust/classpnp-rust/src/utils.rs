@@ -1557,7 +1557,10 @@ pub unsafe extern "C" fn ClassReadCapacity16(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    core::ptr::write_bytes(data_buffer, 0, allocation_buffer_length as usize);
+    // RtlZeroMemory counts bytes; write_bytes on the typed pointer counted
+    // READ_CAPACITY16_DATAs: 32 x 32 bytes into a 32-byte block, a BAD_POOL_HEADER
+    // from any user-mode IOCTL_STORAGE_QUERY_PROPERTY(StorageAccessAlignmentProperty).
+    core::ptr::write_bytes(data_buffer as *mut u8, 0, allocation_buffer_length as usize);
 
     // Initialize the SRB
     if (*((*FdoExtension).AdapterDescriptor as *mut LocalStorageAdapterDescriptor)).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK as u8 {
@@ -1940,7 +1943,8 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockDeviceCharacteristicsVPDPage(
     if data_buffer.is_null() {
         status = STATUS_INSUFFICIENT_RESOURCES;
     } else {
-        core::ptr::write_bytes(data_buffer, 0u8, allocation_buffer_length as usize);
+        // Bytes, as RtlZeroMemory counts them (see ClasspReadCapacity16).
+        core::ptr::write_bytes(data_buffer as *mut u8, 0u8, allocation_buffer_length as usize);
 
         SrbSetTimeOutValue((srb).cast(), (*fdo_extension).TimeOutValue);
         SrbSetRequestTag((srb).cast(), SP_UNTAGGED);

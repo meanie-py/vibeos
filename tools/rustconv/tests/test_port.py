@@ -1747,3 +1747,89 @@ def test_a_spec_stub_keeps_its_export_from_a_same_named_cpp_function(tmp_path):
     text = f.read_text()
     assert text.startswith('pub unsafe extern "C" fn RepairConnection(')
     assert '#[no_mangle]\npub unsafe extern "system" fn DllCanUnloadNow' in text
+
+
+def test_c2rust_unnamed_accepts_the_typedef_spelling_and_nested_members(tmp_path):
+    """xinput1_3: `HIDP_VALUE_CAPS { c2rust_unnamed: C2RustUnnamed_21 { Range: C2RustUnnamed_23
+    { UsageMin: 0 } } }`. The literal names the typedef, and `Range` with a `UsageMin` field
+    exists in two island unions, so only the enclosing literal can pick one."""
+    island = (
+        "pub struct _HIDP_VALUE_CAPS {\n    pub __bindgen_anon_1: _HIDP_VALUE_CAPS__bindgen_ty_1,\n}\n"
+        "pub union _HIDP_VALUE_CAPS__bindgen_ty_1 {\n"
+        "    pub Range: _HIDP_VALUE_CAPS__bindgen_ty_1__bindgen_ty_1,\n}\n"
+        "pub struct _HIDP_VALUE_CAPS__bindgen_ty_1__bindgen_ty_1 {\n    pub UsageMin: u16,\n}\n"
+        "pub struct _HIDP_BUTTON_CAPS {\n    pub __bindgen_anon_1: _HIDP_BUTTON_CAPS__bindgen_ty_1,\n}\n"
+        "pub union _HIDP_BUTTON_CAPS__bindgen_ty_1 {\n"
+        "    pub Range: _HIDP_BUTTON_CAPS__bindgen_ty_1__bindgen_ty_1,\n}\n"
+        "pub struct _HIDP_BUTTON_CAPS__bindgen_ty_1__bindgen_ty_1 {\n    pub UsageMin: u16,\n}\n"
+    )
+    f = tmp_path / "m.rs"
+    f.write_text(
+        "static V: X = HIDP_VALUE_CAPS {\n    c2rust_unnamed: C2RustUnnamed_21 {\n"
+        "        Range: C2RustUnnamed_23 {\n            UsageMin: 0,\n        },\n    },\n};\n"
+    )
+    port._c2rust_unnamed(f, island)
+    out = f.read_text()
+    assert "__bindgen_anon_1: _HIDP_VALUE_CAPS__bindgen_ty_1 {" in out
+    assert "Range: _HIDP_VALUE_CAPS__bindgen_ty_1__bindgen_ty_1 {" in out
+    assert "BUTTON" not in out
+
+
+def test_links_oldnames_reads_the_link_edge(tmp_path, monkeypatch):
+    """msvcrtex lists oldnames as an INTERFACE lib, so the CMakeLists rarely names it."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    mod = tmp_path / "dll" / "win32" / "xi"
+    mod.mkdir(parents=True)
+    (mod / "CMakeLists.txt").write_text("add_library(xi MODULE main.c)\n")
+    b = tmp_path / "build-amd64"
+    b.mkdir()
+    (b / "build.ninja").write_text(
+        "build dll/win32/xi/xi.dll: C_MODULE_LIBRARY_LINKER__xi_Debug a.obj | "
+        "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a\n"
+    )
+    assert port._links_oldnames(mod)
+    (b / "build.ninja").write_text("build dll/win32/xi/xi.dll: C_MODULE_LIBRARY_LINKER__xi a.obj\n")
+    assert not port._links_oldnames(mod)
+
+
+def test_early_errors_names_what_stops_rustc_before_name_resolution(monkeypatch, tmp_path):
+    """macros lowered 0 SDK macros behind such an error (activeds) and said "nothing to port"."""
+    import json as _json
+    import subprocess as _sp
+
+    from rustconv import prelude_resolve
+
+    def msg(level, text, code=None, file="src/a.rs", line=3):
+        m = {
+            "level": level,
+            "message": text,
+            "code": {"code": code} if code else None,
+            "spans": [{"is_primary": True, "file_name": file, "line_start": line}],
+        }
+        return _json.dumps({"reason": "compiler-message", "message": m})
+
+    def fake(lines):
+        return lambda *a, **k: _sp.CompletedProcess(a, 101, stdout="\n".join(lines), stderr="")
+
+    monkeypatch.setattr(
+        prelude_resolve.subprocess,
+        "run",
+        fake(
+            [
+                msg("error", "expected one of `,` or `}`, found `x`"),
+                msg("error", "file not found for module `stubs`", "E0583", line=20),
+                msg("error", "mismatched types", "E0308"),
+                msg("error", "aborting due to 3 previous errors"),
+                msg("warning", "unused variable", None),
+            ]
+        ),
+    )
+    got = prelude_resolve.early_errors("c", "t", tmp_path, tmp_path)
+    assert got == [
+        "src/a.rs:3: expected one of `,` or `}`, found `x`",
+        "src/a.rs:20: file not found for module `stubs`",
+    ]
+    monkeypatch.setattr(
+        prelude_resolve.subprocess, "run", fake([msg("error", "mismatched types", "E0308")])
+    )
+    assert prelude_resolve.early_errors("c", "t", tmp_path, tmp_path) == []

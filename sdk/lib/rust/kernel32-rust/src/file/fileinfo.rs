@@ -413,8 +413,15 @@ pub unsafe extern "system" fn GetFileInformationByHandle(
     hFile: HANDLE,
     lpFileInformation: LPBY_HANDLE_FILE_INFORMATION,
 ) -> BOOL {
-    let mut FileFsVolume: FILE_FS_VOLUME_INFORMATION = core::mem::zeroed();
-    let mut FileFsVolumeName: [WCHAR; 255] = [0; 255];
+    // One struct, as in the C: the label lands in Name. Two separate locals had no
+    // layout guarantee, so the file system wrote the label over whatever the compiler
+    // put next -- on FAT, the caller's file handle (7-Zip, CMake's libarchive).
+    #[repr(C)]
+    struct VolumeInfo {
+        FileFsVolume: FILE_FS_VOLUME_INFORMATION,
+        Name: [WCHAR; 255],
+    }
+    let mut FileFsVolume: VolumeInfo = core::mem::zeroed();
     let mut FileBasic: FILE_BASIC_INFORMATION = core::mem::zeroed();
     let mut FileInternal: FILE_INTERNAL_INFORMATION = core::mem::zeroed();
     let mut FileStandard: FILE_STANDARD_INFORMATION = core::mem::zeroed();
@@ -468,7 +475,7 @@ pub unsafe extern "system" fn GetFileInformationByHandle(
         hFile,
         &mut IoStatusBlock,
         &mut FileFsVolume as *mut _ as PVOID,
-        (core::mem::size_of::<FILE_FS_VOLUME_INFORMATION>() + core::mem::size_of::<[WCHAR; 255]>()) as ULONG,
+        core::mem::size_of::<VolumeInfo>() as ULONG,
         FileFsVolumeInformation,
     );
     if !NT_SUCCESS(errCode) {
@@ -476,7 +483,7 @@ pub unsafe extern "system" fn GetFileInformationByHandle(
         return FALSE as BOOL;
     }
 
-    (*lpFileInformation).dwVolumeSerialNumber = FileFsVolume.VolumeSerialNumber as DWORD;
+    (*lpFileInformation).dwVolumeSerialNumber = FileFsVolume.FileFsVolume.VolumeSerialNumber as DWORD;
 
     errCode = NtQueryInformationFile(
         hFile,

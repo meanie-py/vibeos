@@ -352,9 +352,26 @@ def ensure_built(names: list[str], arch: str) -> list[str]:
         for build in borrowed_builds(name, arch) + [(name, arch)]:
             if build not in expanded:
                 expanded.append(build)
+    # A payload only BORROWED from (not selected itself) needs only the files the borrower
+    # stages to be fresh. hostapps stages apitest's sweep runner, and judging all of
+    # apitest's outputs refused a fresh worktree over apitest-suites-<arch>.txt, which only
+    # an --apitests build can generate (2026-10-19).
+    own = {(n, arch) for n in names}
+    wanted: dict[tuple[str, str], set[Path]] = {}
+    for name in names:
+        for b in binaries(load_spec(name), arch):
+            a = str(b.get("build_arch", arch))
+            src = (REPO / str(b["src"]).format(arch=a)).resolve()
+            try:
+                owner = src.relative_to(PAYLOADS_DIR.resolve()).parts[0]
+            except ValueError:
+                continue
+            wanted.setdefault((owner, a), set()).add(src)
     rebuilt = []
     for name, arch in expanded:
         stale = stale_binaries(name, arch)
+        if (name, arch) not in own:
+            stale = [p for p in stale if p in wanted.get((name, arch), set())]
         # `rebuild: always`: build.sh does incremental work this mtime check cannot see
         # (modrun's ninja step relinks probes against Rust crates that live elsewhere).
         if not stale and load_spec(name).get("rebuild") != "always":
@@ -372,6 +389,8 @@ def ensure_built(names: list[str], arch: str) -> list[str]:
             tail = "\n".join((cp.stderr or cp.stdout or "(no output)").strip().splitlines()[-5:])
             die(f"payload {name!r}: build.sh {arch} failed:\n{tail}")
         still = stale_binaries(name, arch)
+        if (name, arch) not in own:
+            still = [p for p in still if p in wanted.get((name, arch), set())]
         if still:
             die(f"payload {name!r}: build.sh {arch} succeeded but {still[0]} is still stale")
         rebuilt.append(name)
