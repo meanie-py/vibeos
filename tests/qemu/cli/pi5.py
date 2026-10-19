@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -39,12 +40,14 @@ STORTEST_MARKER = b"vibeos usb e2e marker\r\n"
 STORTEST_WROTE = b"vibeos wrote this through fastfat+usbstor\r\n"
 # stortest polls 120 s for the volume, then writes; this is the wait after the desktop.
 STORTEST_WAIT = 240
-# `--drop-medium`: the image server is stopped when this line arrives. Nothing mounts the
-# Pico's volume before stortest asks for it (2026-10-17 run: the FastFat mounts follow
-# "[STORTEST] start"), so the mount then reads a disk whose medium has gone -- the
-# 2026-10-16 deadlock, where FastFat raised a hard error on the mounting thread inside
-# IopMountVolume's critical region and the APC that completes it could never run.
-DROP_MEDIUM_AT = "[STORTEST] start"
+# `--drop-medium`: the image server is stopped when the Pico's disk reports its partition,
+# i.e. partmgr has read the table. Nothing mounts that volume before stortest asks for it
+# (2026-10-17 run: the FastFat mounts follow "[STORTEST] start"), so the mount then reads
+# a disk whose medium has gone -- the 2026-10-16 deadlock, where FastFat raised a hard
+# error on the mounting thread inside IopMountVolume's critical region and the APC that
+# completes it could never run. Not "[STORTEST] start" itself: the first run dropped
+# there and stortest had read, written and read back before the 5 s poll fired.
+DROP_MEDIUM_AT = re.compile(r"PiEnumerateDevice USBSTOR\\Disk&Ven_PICOUSB_[^\n]*: 1 children")
 # iomgr-rust error.rs's trace when IoRaiseHardError completes the IRP itself.
 HARD_ERROR_INLINE = "completed inline: the requester has APCs disabled"
 
@@ -390,8 +393,15 @@ def _boot(run: Run, args, repo: Path) -> int:
             return run.finalize(repo)
         run.add(Stage("serve-image", detail=f"{STORTEST_LABEL} writable"))
         medium = ImageServerWatch(server, run.dir / "serve-image.log")
-        drop = server.terminate if getattr(args, "drop_medium", False) else None
-        rc = _await(run, args, repo, serial, start, stortest=True, medium=medium, drop=drop)
+        drop = None
+        if getattr(args, "drop_medium", False):
+            assert serial is not None  # --stortest refused a boot without one
+            drop = MediumDrop(serial, start, server.terminate)
+        try:
+            rc = _await(run, args, repo, serial, start, stortest=True, medium=medium, drop=drop)
+        finally:
+            if drop is not None:
+                drop.close()
     finally:
         server.terminate()
         try:
@@ -459,6 +469,36 @@ class ImageServerWatch:
         )
 
 
+class MediumDrop:
+    """`--drop-medium`: tail serial from `start` and call `stop` (the image server's
+    terminate) once DROP_MEDIUM_AT appears. A thread, because the line comes mid-boot,
+    while `_await` is still waiting for the desktop."""
+
+    def __init__(self, serial: Path, start: int, stop, poll: float = 0.5) -> None:
+        self.dropped = False
+        self._closed = threading.Event()
+
+        def watch() -> None:
+            while not self._closed.wait(poll):
+                try:
+                    with open(serial, "rb") as f:
+                        f.seek(start)
+                        text = f.read().decode("utf-8", errors="replace")
+                except OSError:
+                    continue
+                if DROP_MEDIUM_AT.search(text):
+                    stop()
+                    self.dropped = True
+                    return
+
+        self._thread = threading.Thread(target=watch, daemon=True)
+        self._thread.start()
+
+    def close(self) -> None:
+        self._closed.set()
+        self._thread.join(timeout=5)
+
+
 def _await(
     run: Run,
     args,
@@ -467,7 +507,7 @@ def _await(
     start: int,
     stortest: bool = False,
     medium: ImageServerWatch | None = None,
-    drop=None,
+    drop: MediumDrop | None = None,
 ) -> int:
 
     if serial is not None:
@@ -537,12 +577,15 @@ def _await(
 
 
 def _await_stortest(
-    run: Run, serial: Path, start: int, medium: ImageServerWatch | None = None, drop=None
+    run: Run,
+    serial: Path,
+    start: int,
+    medium: ImageServerWatch | None = None,
+    drop: MediumDrop | None = None,
 ) -> None:
-    """Grade stortest from serial. With `drop` (`--drop-medium`), call it when
-    DROP_MEDIUM_AT arrives and grade the hard-error path instead of the write."""
+    """Grade stortest from serial. With `drop` (`--drop-medium`), grade the hard-error
+    path its dropped medium takes instead of the write."""
     deadline = time.monotonic() + STORTEST_WAIT
-    dropped = False
     while True:
         try:
             with open(serial, "rb") as f:
@@ -550,9 +593,7 @@ def _await_stortest(
                 text = f.read().decode("utf-8", errors="replace")
         except OSError:
             text = ""
-        if drop is not None and not dropped and DROP_MEDIUM_AT in text:
-            drop()
-            dropped = True
+        dropped = drop is not None and drop.dropped
         verdict, lines = stortest_verdict(text)
         if verdict is not None or time.monotonic() > deadline:
             break
@@ -561,6 +602,7 @@ def _await_stortest(
         time.sleep(5)
     pi4._save_serial(run, text)
     run.extra["stortest"] = lines
+    dropped = drop is not None and drop.dropped
     if drop is not None and not dropped and medium is not None and medium.lost():
         run.classification = "BENCH_UNHEALTHY"  # it went on its own, before the drop
         run.add(medium.stage())
@@ -600,7 +642,7 @@ def _grade_dropped_medium(
             Stage(
                 "drop-medium",
                 status="fail",
-                detail=f"{DROP_MEDIUM_AT!r} never arrived: the medium was never dropped",
+                detail="the Pico's disk never reported its partition: the medium was never dropped",
                 salient=lines[-6:] or ["no [STORTEST] line: did winlogon start it?"],
             )
         )

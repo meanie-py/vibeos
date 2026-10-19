@@ -157,6 +157,7 @@ def _drop_medium_run(tmp_path: Path, serial_text: str):
     `serial_text`, with a live stand-in image server that the drop stops."""
     import subprocess
     import sys
+    import time
 
     class FakeRun:
         def __init__(self) -> None:
@@ -175,11 +176,24 @@ def _drop_medium_run(tmp_path: Path, serial_text: str):
     serial = tmp_path / "live.log"
     serial.write_text(serial_text)
     run = FakeRun()
+    drop = pi5.MediumDrop(serial, 0, server.terminate, poll=0.05)
+    # On the bench the partition line precedes any verdict by ~900 serial lines.
+    deadline = time.monotonic() + 10
+    while not drop.dropped and time.monotonic() < deadline:
+        time.sleep(0.05)
     try:
-        pi5._await_stortest(run, serial, 0, watch, server.terminate)  # type: ignore[arg-type]
+        pi5._await_stortest(run, serial, 0, watch, drop)  # type: ignore[arg-type]
     finally:
+        drop.close()
         server.kill()
     return run, server
+
+
+# The 2026-10-17 Pi 5 serial's line for the Pico's disk, once partmgr read its table.
+_PICO_PARTITION = (
+    "[DA] PiEnumerateDevice USBSTOR\\Disk&Ven_PICOUSB_&Prod_REMOTE_DISK_____&Rev_0100"
+    "\\5&40f6e57b&DB0001&0: 1 children (cs=0x0)\n"
+)
 
 
 def test_drop_medium_passes_on_the_inline_hard_error_and_a_finished_stortest(
@@ -190,7 +204,7 @@ def test_drop_medium_passes_on_the_inline_hard_error_and_a_finished_stortest(
     inline, and stortest gives up on the volume instead of hanging in the open."""
     run, server = _drop_medium_run(
         tmp_path,
-        "[STORTEST] start\n"
+        _PICO_PARTITION + "[STORTEST] start\n"
         "[IO] hard error 0xc0000013 completed inline: the requester has APCs disabled\n"
         "[STORTEST] FAIL: no VIBEUSB volume found after 120s\n",
     )
@@ -200,10 +214,18 @@ def test_drop_medium_passes_on_the_inline_hard_error_and_a_finished_stortest(
     assert "completed inline" in run.stages[-1].detail
 
 
+def test_the_drop_waits_for_the_pico_disk_not_another_usb_disk() -> None:
+    assert pi5.DROP_MEDIUM_AT.search(_PICO_PARTITION)
+    other = _PICO_PARTITION.replace("PICOUSB_&Prod_REMOTE_DISK", "Generic_&Prod_Flash_Disk")
+    assert not pi5.DROP_MEDIUM_AT.search(other)
+    assert not pi5.DROP_MEDIUM_AT.search(_PICO_PARTITION.replace("1 children", "0 children"))
+
+
 def test_drop_medium_without_the_inline_trace_is_not_exercised(tmp_path: Path) -> None:
     """stortest finishing proves nothing about the fix if the hard error never fired."""
     run, _ = _drop_medium_run(
-        tmp_path, "[STORTEST] start\n[STORTEST] FAIL: no VIBEUSB volume found after 120s\n"
+        tmp_path,
+        _PICO_PARTITION + "[STORTEST] start\n[STORTEST] FAIL: no VIBEUSB volume found after 120s\n",
     )
     assert run.classification == "NOT_EXERCISED"
 
@@ -229,7 +251,9 @@ def test_a_server_lost_before_the_drop_is_the_bench_not_the_fix(tmp_path: Path) 
     serial = tmp_path / "live.log"
     serial.write_text("[FLDR] still booting\n")
     run = FakeRun()
-    pi5._await_stortest(run, serial, 0, watch, server.terminate)  # type: ignore[arg-type]
+    drop = pi5.MediumDrop(serial, 0, server.terminate, poll=0.05)
+    pi5._await_stortest(run, serial, 0, watch, drop)  # type: ignore[arg-type]
+    drop.close()
     assert run.classification == "BENCH_UNHEALTHY"
     assert run.stages[-1].name == "serve-image"
 
