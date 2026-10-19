@@ -1497,7 +1497,14 @@ dll/win32/secur32/CMakeLists.txt	1	# wine/util.c — replaced by Rust (secur32-r
 dll/win32/secur32/CMakeLists.txt	1	# wrapper.c — replaced by Rust (secur32-rust)
 dll/win32/serialui/CMakeLists.txt	1	# serialui.c # replaced by Rust (sdk/lib/rust/serialui-rust/src/serialui/serialui.rs)
 dll/win32/setupapi/CMakeLists.txt	1	# cfgmgr.c — replaced by Rust (setupapi-rust)
-dll/win32/setupapi/CMakeLists.txt	1	# libsetupapi_rust.a carries the TUs flipped so far (cfgmgr.c, whose RpcTryExcept guards
+dll/win32/setupapi/CMakeLists.txt	1	# dialog.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# dirid.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# diskspace.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# interface.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# libsetupapi_rust.a carries the TUs flipped so far: cfgmgr.c (whose RpcTryExcept guards
+dll/win32/setupapi/CMakeLists.txt	1	# query.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# setupcab.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# stringtable.c — replaced by Rust (setupapi-rust)
 dll/win32/shcore/CMakeLists.txt	1	# Windows; main.c's Wine versions of those are not exported.
 dll/win32/shcore/CMakeLists.txt	1	# combase is not built here (see dll/win32/CMakeLists.txt): what main.c takes from it
 dll/win32/shell32/CMakeLists.txt	1	# C++ CDefView.cpp and utils.cpp — both declarations are now EXTERN_C.
