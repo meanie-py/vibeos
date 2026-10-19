@@ -488,8 +488,12 @@ runs it.
   with 7, under `WINETEST_PLATFORM=wine` (`classify_failures.py` makes the same todo_wine
   split for a guest log). Owed: in the guest, analyzer has 31 and layout 9 failures beyond
   todo_wine, all where the result depends on which fonts are installed (Arabic shaping,
-  justification, combining marks); the font suite outruns the sweep's fixed 120 s per
-  subtest (`PER_SUBTEST_TIMEOUT_MS` in apitest-sweep.c wants a per-suite override).
+  justification, combining marks). The font suite now finishes in the guest (1800 s
+  per-suite timeout; 2026-10-18: 208099 tests, 533 failures, 522 todo_wine + 8 todo_if): the
+  79 at :3932 were `GetUnicodeRanges` not merging adjacent ranges and keeping format 4's
+  closing 0xFFFF segment, which Windows does not (`opentype.c`, `__REACTOS__`). Owed: the 3
+  left, all the system font set (:4452/:4453 `GetFontSet` on a factory 3, :4568 a leaked
+  factory reference).
 - **mf.c:4553, the presentation clock's callback interval,** reads 27-188 ms instead of a
   tick, with or without the condition-variable fix; the 10 ms periodic pool timer alone runs
   at 64 Hz in wakeprobe. Repro (2026-10-17): `gen_suites.py ... --repeat mf:mf=3` then
@@ -498,6 +502,13 @@ runs it.
   mfplat.c:3308 (`0x102`) showed once in the same 6 boots. NOT the timer queue's order:
   its periodic re-arm did insert one place early (fixed, a real divergence from Wine's
   C), but with that fix on the media the same soak still failed 8 of 18.
+  2026-10-18, clockprobe (one-thread pool, 10 ms timer, a normal-priority spinner beside it):
+  ProductType ServerNT gave 3 callbacks per 500 ms, WinNT (client quantums) gives 11-16,
+  Windows 11 22-29; idle is 32 on all three. Owed: both wake hops onto the worker carry no
+  priority increment (the timer thread's condvar wait times out, then `KeReleaseSemaphore`
+  on the keyed-wait semaphore with 0, `ex-rust/src/keyedevt.rs`), as in ReactOS's C; Windows
+  wakes the worker through a worker factory and an IoCompletion instead. Unmeasured: which
+  increment Windows applies there.
   Seen once beside it: mf.c:4493 "got count 0, state 0".
 - **mf's converter scenario:** both builds fail mf.c's "SetTopology ... requiring a
   converter" checks (no converter MFT is registered: the codec gap below).

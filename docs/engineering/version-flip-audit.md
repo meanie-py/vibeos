@@ -16,8 +16,19 @@ KeQueryMaximumProcessorCount/Ex at every version, so KMDF never reaches its vers
 HIGHEST declared supportedOS) and #11 (setupapi reads RtlGetVersion) are fixed. D13, the manifest
 rule, is in kernel32-rust `client/version.rs`. Also fixed on the way: ntdll-rust's and
 shell32-rust's `ReactOS_ShimData` lacked compat_undoc.h's amd64-only trailing pointer, so on
-amd64 ntdll rejected every apphelp-filled block on its `dwSize` check. Left: phase 3, the
-D-rows.
+amd64 ntdll rejected every apphelp-filled block on its `dwSize` check.
+
+**Status 2026-10-18, phase 3 (the flip):** the OS reports NT 10.0 build 22631 (`ex-rust`
+`init.rs`, registry `CurrentVersion` "6.3" plus `CurrentMajorVersionNumber`/`CurrentBuild`),
+and GetVersion/VerifyVersionInfo give min(real, max(6.2, declared)), where declared is the
+manifest's highest supportedOS, else the PE `MajorOperatingSystemVersion`. kernel32_winetest
+`version` passes 108/0 on amd64, all seven header variants included (the sweep stages the exe
+to `C:\TEMP` so the test can patch it; CDFS copies are read-only). ProductType is now `WinNT`
+with ProductSuite "Terminal Server" and no CSDVersion, which is what a Windows 11 client
+measures; that also moved us onto the client scheduler, and clockprobe's 10 ms pool timer
+under a spinning thread went from 3 to 16 callbacks per 500 ms (Windows: 22-29; the rest is
+an unwait-boost question, owed in the compat roadmap). Left: the D-rows decided as-is
+(D8 ProductName, D16 ntverp.h, D17 kernel32 42.x) and the two open items below.
 
 ## Summary
 
