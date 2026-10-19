@@ -1,0 +1,39 @@
+# hostapps sweep list (hand-written). "<exe under X:\reactos\bin> <command line>"; children
+# start in C:\TEMP (cwd.txt), the writable volume. gpg gets --homedir there because the
+# profile on X: is read-only. cmake prints "Could not find CMAKE_ROOT": its share/ tree is
+# not staged, and the -E tools do not need it.
+set GNUPGHOME=C:\TEMP\gpghome
+timeout 7zip\7z.exe 1200
+# fsquery.c: what an archiver asks about its output, to diff against winref.
+fsquery\fsquery.exe C:\TEMP X:\reactos\system32\ntdll.dll
+7zip\7z.exe i
+7zip\7z.exe b -mmt2 -md22
+# Bisecting "Can't allocate required memory" / libarchive "Out of memory" (2026-10-18):
+7zip\7z.exe a -ttar C:\TEMP\p1.tar X:\reactos\system32\ntdll.dll -bb3
+7zip\7z.exe a -tzip C:\TEMP\p2.zip X:\reactos\system32\ntdll.dll -mx0 -mmt1 -bb3
+7zip\7z.exe a -tzip C:\TEMP\p3.zip X:\reactos\system32\ntdll.dll -mx1 -mmt1 -bb3
+7zip\7z.exe a -t7z C:\TEMP\p4.7z X:\reactos\system32\ntdll.dll -mx1 -mmt1 -bb3
+7zip\7z.exe a -t7z C:\TEMP\p5.7z X:\reactos\system32\ntdll.dll -m0=Copy -bb3
+cmake\cmake.exe -E tar cf C:\TEMP\p6.tar X:\reactos\system32\ntdll.dll
+7zip\7z.exe a C:\TEMP\sys.7z X:\reactos\system32\*.dll -mx5 -mmt2
+7zip\7z.exe t C:\TEMP\sys.7z
+7zip\7z.exe a C:\TEMP\sys.zip X:\reactos\system32\drivers\*.sys
+7zip\7z.exe l C:\TEMP\sys.zip
+cmake\cmake.exe --version
+cmake\cmake.exe -E sha256sum X:\reactos\system32\ntdll.dll X:\reactos\system32\kernel32.dll
+cmake\cmake.exe -E make_directory C:\TEMP\cm\a\b
+cmake\cmake.exe -E tar cfz C:\TEMP\cm.tgz X:\reactos\system32\drivers\null.sys X:\reactos\system32\ntdll.dll
+cmake\cmake.exe -E tar tfz C:\TEMP\cm.tgz
+cmake\cmake.exe -E environment
+cmake\cmake.exe -E capabilities
+cmake\cmake.exe -E make_directory C:\TEMP\gpghome
+gnupg\gpg.exe --version
+gnupg\gpg.exe --homedir C:\TEMP\gpghome --print-md SHA256 X:\reactos\system32\ntdll.dll
+gnupg\gpg.exe --batch --homedir C:\TEMP\gpghome --symmetric --passphrase vibeos --pinentry-mode loopback -o C:\TEMP\ntdll.gpg X:\reactos\system32\ntdll.dll
+gnupg\gpg.exe --batch --homedir C:\TEMP\gpghome --decrypt --passphrase vibeos --pinentry-mode loopback -o C:\TEMP\ntdll.out C:\TEMP\ntdll.gpg
+cmake\cmake.exe -E compare_files X:\reactos\system32\ntdll.dll C:\TEMP\ntdll.out
+# Source on C: instead of X: (the decrypted ntdll.out above):
+7zip\7z.exe a -ttar C:\TEMP\p8.tar C:\TEMP\ntdll.out -bb3
+cmake\cmake.exe -E tar cf C:\TEMP\p9.tar ntdll.out
+7zip\7z.exe a -ttar C:\TEMP\p10.tar X:\reactos\system32\ntdll.dll -bb3 -ssw
+7zip\7z.exe a -ttar C:\TEMP\p11.tar X:\reactos\bin\apitest-cwd.txt -bb3
