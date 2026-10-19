@@ -3,7 +3,7 @@
 # blrtl is the kernel's sdk/lib/rtl sources compiled with -D_BLDR_ (which only trims
 # rtl.h/rtlp.h declarations; no .c body changes under it) plus the loader's own
 # boot/rtl/nlsboot.c. So this umbrella links the SAME rlibs the kernel's rtl-rust does, one
-# per blrtl source, and adds nlsboot. freeldr (BIOS), rosload and uefildr link it as a
+# per blrtl source, and adds nlsboot. Nothing of blrtl is C any more. freeldr (BIOS), rosload and uefildr link it as a
 # `.rust_lib` sibling in place of their old `.c_from_compile_db("blrtl", ..)`.
 #
 # Per-arch membership mirrors blrtl.cmake exactly: byteswap.c and mem.c are amd64-only
@@ -24,6 +24,9 @@ crc32    = { path = "../crc32" }    # crc32.c
 largeint = { path = "../largeint" } # largeint.c
 random   = { path = "../random" }   # random.c
 rtl-diag = { path = "../rtl-diag", features = ["image"] } # image.c (rtl-diag's image module alone)
+# unicode.c: rtl-strings' unicode layer alone, calling nlsboot below for the NLS layer
+# (instead of the kernel's tables) and freeldr-rust's RtlpAllocateMemory for memory.
+rtl-strings = { path = "../rtl-strings", features = ["bldr"] }
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 byteswap = { path = "../byteswap" } # byteswap.c

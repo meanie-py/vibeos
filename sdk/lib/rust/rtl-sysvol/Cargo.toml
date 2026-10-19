@@ -13,4 +13,7 @@ edition = "2021"
 crate-type = ["rlib"]
 
 [dependencies]
-ntkrnl-sys = { path = "../ntkrnl-sys" }
+# Not hal_bindgen: librtl DEFINES NlsMbCodePageTag/NlsMbOemCodePageTag/NlsOemLeadByteInfo,
+# and hal_bindgen raw-dylib-imports them from ntoskrnl.exe -- both in one archive, so which
+# one a reference got was archive order (amd64 ntdll: lld crashed in IdataContents).
+ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false, features = ["inline_exports", "dbg"] }

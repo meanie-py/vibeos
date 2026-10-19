@@ -25,7 +25,10 @@ kernel = ["cabi"]
 winedebug-rust = { path = "../winedebug-rust" }
 win32macros-rust = { path = "../win32macros-rust" }
 winelist-rust = { path = "../winelist-rust" }
-ntkrnl-sys = { path = "../ntkrnl-sys" }
+# Not hal_bindgen: librtl DEFINES NlsMbCodePageTag/NlsMbOemCodePageTag/NlsOemLeadByteInfo,
+# and hal_bindgen raw-dylib-imports them from ntoskrnl.exe -- both in one archive, so which
+# one a reference got was archive order (amd64 ntdll: lld crashed in IdataContents).
+ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false, features = ["inline_exports", "dbg"] }
 
 # `#ifndef __REACTOS__`: __REACTOS__ is always defined, so this is never set.
 [lints.rust]

@@ -435,6 +435,7 @@ dependencies = [
  "mem",
  "random",
  "rtl-diag",
+ "rtl-strings",
 ]
 
 [[package]]
