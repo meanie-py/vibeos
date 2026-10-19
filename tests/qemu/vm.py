@@ -2816,7 +2816,7 @@ class QemuVM:
         # A build caught computing wrong guest answers never boots: its verdicts are about
         # the emulator (smoke refuses it earlier, with its own classification).
         bad = be.known_bad_windows_qemu(be.windows_qemu_version(win_bin))
-        if bad:
+        if bad and not be.known_bad_allowed():
             raise RuntimeError(f"{be.known_bad_windows_qemu_fix(win_bin)} ({bad})")
 
         # Pick hostfwd ports on the WINDOWS stack (where QEMU.exe binds them), not

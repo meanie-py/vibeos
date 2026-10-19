@@ -733,6 +733,12 @@ def _qemu_preflight(repo: Path, boot_arch: str) -> Stage | None:
     exe = be.windows_qemu_bin(get_arch_config(boot_arch).qemu_bin, win.get("qemu_dir", ""), accel)
     version = be.windows_qemu_version(exe)
     bad = be.known_bad_windows_qemu(version)
+    if bad and be.known_bad_allowed():
+        return Stage(
+            "qemu",
+            status="warn",
+            detail=f"KNOWN-BAD {version} allowed by VIBEOS_QEMU_ALLOW_KNOWN_BAD=1 ({exe})",
+        )
     if bad:
         return Stage(
             "qemu",

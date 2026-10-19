@@ -3409,6 +3409,16 @@ def test_backend_known_bad_windows_qemu():
     assert be_mod.known_bad_windows_qemu("") is None
 
 
+def test_backend_known_bad_allowed_only_by_the_explicit_override(monkeypatch):
+    """The emulator A/B soak boots the snapshot on purpose; nothing else may."""
+    monkeypatch.delenv("VIBEOS_QEMU_ALLOW_KNOWN_BAD", raising=False)
+    assert not be_mod.known_bad_allowed()
+    monkeypatch.setenv("VIBEOS_QEMU_ALLOW_KNOWN_BAD", "yes")
+    assert not be_mod.known_bad_allowed()
+    monkeypatch.setenv("VIBEOS_QEMU_ALLOW_KNOWN_BAD", "1")
+    assert be_mod.known_bad_allowed()
+
+
 def test_backend_rewrite_accel():
     base = ["-M", "pc", "-accel", "kvm", "-cpu", "host", "-m", "512M"]
     # tcg: kvm->tcg AND drop the paired -cpu host
