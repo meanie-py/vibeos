@@ -1994,6 +1994,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "fontext-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "fontview-cargo"
 version = "0.1.0"
 dependencies = [

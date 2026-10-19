@@ -929,6 +929,7 @@ members = [
     "sxs-rust",
     "inetmib1-rust",
     "stobject-rust",
+    "fontext-rust",
 ]
 resolver = "2"
 
