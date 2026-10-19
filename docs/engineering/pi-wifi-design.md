@@ -182,9 +182,10 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
 
    `pi5 boot --until TEXT` keeps reading serial past the desktop: the join finishes after it.
 7. Data path: an NDIS 6 miniport (`miniport.rs`, `link.rs`). One path to netstack for
-   every Wi-Fi adapter: netstack binds an NDIS 802.3 miniport when it drives no NIC itself
-   (`/NETSTACK=NDIS` on the Pi 5, whose GEM it would otherwise take), as it binds the
-   OptiPlex's Realtek. PnP installs bwfm from `netbwfm.inf` on `VIBEOS\CYW43455` (a Net
+   every Wi-Fi adapter: netstack binds an NDIS 802.3 miniport beside the NIC it drives itself
+   (since 2026-10-18; before, only with `/NETSTACK=NDIS`, which made it leave the GEM alone),
+   as it binds the OptiPlex's Realtek. Pi 5 run `20261018-190323-d_9udrc7`: GEM and Wi-Fi
+   leased on one boot (smoltcp-netstack-design.md, "Several adapters at once"). PnP installs bwfm from `netbwfm.inf` on `VIBEOS\CYW43455` (a Net
    class key is what ndis.sys's AddDevice needs, so the critical-device entry is gone).
    Initialize runs the bring-up to a running firmware and its MAC (the general attributes
    need it) and starts a worker, which owns the bus from then on: scan, join, link up to
