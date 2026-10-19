@@ -179,11 +179,10 @@ file(GLOB_RECURSE FREELDR_CNT_RUST_SOURCES CONFIGURE_DEPENDS
 file(GLOB FREELDR_BLCMLIB_SOURCES CONFIGURE_DEPENDS
     ${CMAKE_SOURCE_DIR}/sdk/lib/cmlib/*.c)
 # blrtl (boot-loader RTL, boot/rtl/blrtl.cmake) is the blrtl-rust crate (a
-# reactos-link .rust_lib sibling: the kernel's RTL rlibs plus nlsboot), the C still
-# compiled in-cargo via c_from_compile_db("blrtl", …), and the per-arch asm via
-# .asm_archive("blrtl_asm", …) — no reused libblrtl.a. file-track all three so an
-# edit re-invokes the cargo link. The C/asm set is blrtl.cmake's (NOT a glob — the
-# rtl dir holds far more than blrtl compiles), listed regardless of arch.
+# reactos-link .rust_lib sibling: the kernel's RTL rlibs plus nlsboot; no C left) and
+# the per-arch asm via .asm_archive("blrtl_asm", …) — no reused libblrtl.a. file-track
+# both so an edit re-invokes the cargo link. The asm set is blrtl.cmake's, listed
+# regardless of arch.
 file(GLOB_RECURSE FREELDR_BLRTL_SOURCES CONFIGURE_DEPENDS
     ${FREELDR_RUST_WORKSPACE_DIR}/blrtl-rust/src/*.rs
     ${FREELDR_RUST_WORKSPACE_DIR}/bitmap/src/*.rs
@@ -193,10 +192,10 @@ file(GLOB_RECURSE FREELDR_BLRTL_SOURCES CONFIGURE_DEPENDS
     ${FREELDR_RUST_WORKSPACE_DIR}/random/src/*.rs
     ${FREELDR_RUST_WORKSPACE_DIR}/byteswap/src/*.rs
     ${FREELDR_RUST_WORKSPACE_DIR}/mem/src/*.rs
-    ${FREELDR_RUST_WORKSPACE_DIR}/rtl-diag/src/*.rs)
+    ${FREELDR_RUST_WORKSPACE_DIR}/rtl-diag/src/*.rs
+    ${FREELDR_RUST_WORKSPACE_DIR}/rtl-strings/src/*.rs)
 list(APPEND FREELDR_BLRTL_SOURCES
     ${FREELDR_RUST_WORKSPACE_DIR}/blrtl-rust/Cargo.toml
-    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/unicode.c
     # per-arch asm (.asm_archive): i386 debug_asm/rtlmem/rtlswap, amd64 debug_asm.
     ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/i386/debug_asm.S
     ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/i386/rtlmem.s

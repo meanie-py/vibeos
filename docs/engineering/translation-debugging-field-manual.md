@@ -1393,6 +1393,22 @@ function goes in a plain `extern "system"` block and resolves through the import
 `scan_unresolved_imports` (binary lint, every arch) checks every livecd PE's imports against
 its exporter's export table, so any name the loader cannot bind fails the build.
 
+### A library that DEFINES a data export must not also raw-dylib-import it
+
+**Symptom:** amd64 `ntdll` link: `lld` crashes in `IdataContents::create`, after warnings that
+`__declspec(dllimport) NlsMbCodePageTag` is defined both in `librtl_rust.a` and at
+`ntoskrnl.exe`. i386 and arm64 link, which is worse, because there the outcome is luck.
+
+**Cause:** librtl defines `NlsMbCodePageTag`/`NlsMbOemCodePageTag`/`NlsOemLeadByteInfo`, and
+`ntkrnl-sys`' default `hal_bindgen` feature raw-dylib-declares the same three as ntoskrnl.exe
+DATA imports, so rustc bundles import members for them into the same staticlib. A reference
+from another codegen unit resolves to whichever archive member the linker meets first. It
+stayed latent until code outside nls_tables.rs started reading the globals.
+
+**Fix:** a crate graph that owns a symbol must not carry an import of it: librtl's crates take
+`ntkrnl-sys` with `default-features = false, features = ["inline_exports", "dbg"]` (no librtl
+crate uses `hal_ddk`); check with `llvm-ar t librtl_rust.a | grep -i ntoskrnl` (empty).
+
 ### An `extern "C"` DllMain never runs on i386: crt-startup's default takes its place
 
 **Symptom:** none visible. The DLL loads and works on amd64 and arm64. On i386 its DllMain
@@ -10787,6 +10803,15 @@ against *our model* rather than msvcrt's real locale-table lookup with a domain 
   `command` is shell-quoted — use `shlex.split()`, never `.split()`; and bindgen records the
   Windows spelling of a fixed-width type (`__msvcrt_ulong` is 32-bit).
 - **A harness improvement is worth nothing if you only point it at NEW code** `[§9.66]`.
+- **…and the harness's MODEL must not become the shipping body.** rtl-strings modelled nls.c
+  as a fixed CP1252 table on both sides of rtl-difftest, which is fine for grading unicode.c's
+  wrappers, but the model was also what the kernel and ntdll exported: `RtlUnicodeToOemN` and
+  friends ignored the tables `RtlResetRtlTranslations` loads (OEM is CP437, so every byte
+  >= 0x80 came out wrong), and `RtlEqualComputerName` shipped as `return FALSE`, the harness's
+  outcome (its allocator returns NULL). **Fix:** route the model through one dispatch module
+  that only the harness build selects (`rtl-strings/src/cabi/nlsapi.rs`), and grade the real
+  layer separately against the genuine C on real data (`rtl-difftest/tests/nls_tables.rs`
+  loads txt2nls-generated code pages into both).
 - **Un-stubbing a global the harness defined as NULL is only HALF the fix; the other half is
   one per side.** msvcrt-difftest defined `MSVCRT_locale = 0` so mbcs.c would link, and that
   NULL is why `_setmbcp` was refused for months — its non-thread arm dereferences it. But that
