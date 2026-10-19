@@ -15292,6 +15292,25 @@ per-arch accelerator cap, so a parallel repro just queues.
   upward from the fault ESP** for values in the kernel/win32k `.text` ranges — those are the call
   chain. On arm64, walk `Fp`(x29): `lr = *(fp+8)`, `next = *(fp)`.
 
+### An i386 double fault (`0x7F`, param 1 = 8): read the `[DBLFAULT]` lines first
+
+**Symptom:** `BUGCHECK 0x7F (0x8, <TSS>, ...)` and nothing else to go on. The hang triage shows
+only `KiTrap08Handler`, and the faulting code is often in a driver the kernel-only symbolizer
+cannot place. **Cause, usually:** a kernel stack overflow. ESP has run past the thread's
+`StackLimit`, and the push into the guard page faults inside the page-fault delivery. A 12 KB
+i386 kernel stack goes faster than you expect. netstack's worker reserved 7.3 KB of it in one
+frame (`mov $0x1c80,%eax; call __alloca`). A `ZwSetSystemTime` from that loop then ran the
+registry path, and a disk interrupt landed on top (2026-10-18, ~7% of boots). **Read:**
+`KiTrap08Handler` prints, from the TSS the CPU saved the faulting task in:
+`[DBLFAULT] EIP=… ESP=… stack=[StackLimit,StackBase)`, then `at <module>+<off>` and the EBP
+chain as `#n <module>+<off>`. EIP/ESP are also bugcheck parameters 3/4. ESP below the stack
+range is an overflow. Symbolize kernel lines with `llvm-symbolizer --obj=ntkrnlmp.exe
+<ImageBase+off>`, and drivers the same way against their `.sys`. **Fix:** find the frame hog,
+not the last frame. Sort a module's frames with `llvm-objdump -d` (`sub $N,%esp` and
+`mov $N,%eax; call __alloca` for anything over 4 KB). Then either move deep calls off the
+loop onto a system worker thread (`ExQueueWorkItem`, a fresh stack) or shrink the frame
+(`Box` the large locals, `#[inline(never)]` the big helpers).
+
 ### Watchpoint on a not-yet-mapped page `[§9.4]`
 A session/desktop-heap address isn't mapped at boot, so sequence it: `hbreak` a function that
 runs *after* the page maps but before the corruption, then set the watchpoint **conditioned on
