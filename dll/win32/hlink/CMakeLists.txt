@@ -24,3 +24,5 @@ add_cargo_module(hlink hlink-cargo hlink.dll
     DESTINATION reactos/system32
     DELAY_IMPORTS
     EXTRA_DEPENDS hlink_shims hlink_r ${HLINK_REUSED} psdk uuid_sources)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

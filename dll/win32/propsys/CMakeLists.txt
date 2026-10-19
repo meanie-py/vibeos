@@ -20,3 +20,5 @@ add_cargo_module(propsys propsys-cargo propsys.dll
     BODY_CRATE propsys-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS propsys_shims psdk uuid_sources)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

@@ -40,3 +40,5 @@ add_cargo_module(oleacc oleacc-cargo oleacc.dll
     BODY_CRATE oleacc-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS oleacc_shims psdk oleacc_r oleacc_t ${OLEACC_REUSED} uuid_sources)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

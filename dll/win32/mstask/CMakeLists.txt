@@ -27,3 +27,5 @@ add_cargo_module(mstask mstask-cargo mstask.dll
     BODY_CRATE mstask-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS mstask_shims psdk uuid_sources)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

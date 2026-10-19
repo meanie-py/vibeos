@@ -26,3 +26,5 @@ add_cargo_module(shcore shcore-cargo shcore.dll
     BODY_CRATE shcore-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS shcore_shims psdk xdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle
