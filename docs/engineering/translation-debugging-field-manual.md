@@ -2573,6 +2573,26 @@ the C guards, is a genuine mistranslation and wants the guard restored instead. 
 helpers too, not just the shipping crate: one of the four was a double→`long double` rebias in
 wave16.rs whose neighbouring subnormal branch was already `wrapping_*`.
 
+### A mixed-sign `min`/`max` translated as a signed compare
+**Symptom:** explorer's taskbar was 8 px tall on every arch, its borders and nothing else, for
+a week after comctl32 went to Rust (2026-10-09 → 10-18). The tray window existed, so smoke and
+appstorm's `shell=OK` stayed green; only a screenshot showed it.
+**Cause:** rebar.c's `round_child_height` ends `cy = min(cy, lpBand->cyMaxChild)`, an `int`
+against a `UINT`. C's usual arithmetic conversions make that an UNSIGNED compare, so a
+`cyMaxChild` of `(UINT)-1` ("no maximum", what browseui's band site passes) never wins. Rust's
+`min` needs one type, and the translation cast `cyMaxChild as c_int`: `min(22, -1)` is -1, the
+band's `cyChild` became `0xFFFFFFFF`, `REBAR_ValidateBand` zeroed it as out of range, and the
+rebar reported a bar height of 0.
+**Fix:** compare the way the C does: `if (cy as UINT) > max { cy = max as c_int }`, or
+`min(a as UINT, b) as c_int`. The rest of rebar.c was already right, including every
+`i < uNumBands` and `uNumBands - 1` site; it is the `min`/`max` CALL that invites a single
+cast to one side.
+**Finding the rest:** clang's `-Wsign-compare` on the C oracle flags exactly this. Run it over
+a module's `<target>_c` compile commands and keep the lines that call `min`/`max`. Across all
+53 oracle modules (2026-10-18) that is 24 sites in comctl32 and 2 in credui, and this was the
+only mistranslated one. Modules with no oracle are unaudited. A rebar section in the modrun
+comctl32 probe (`probes/comctl32.c`) now diffs the band and bar heights against the C.
+
 ### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
 **Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a
 BUGCHECK 0x1E / STATUS_DATATYPE_MISALIGNMENT out of a syscall's `ProbeForRead`, with
