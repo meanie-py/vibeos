@@ -120,7 +120,7 @@ fn main() {
     // libcntpr (cntpr C floor, sdk/lib/crt/libcntpr.cmake) compiled in-cargo via
     // c_from_compile_db — was the reused cmake liblibcntpr.a (cmake-off WS1 DEEP).
     // Common C set + i386 x87 math wrappers / amd64 ehandler.c; mirrors the cmake
-    // `libcntpr` target objects (tools/gen_cflags.py + cflags/libcntpr.<arch>.flags).
+    // `libcntpr` target objects (with no cmake build, clibs/<arch>/libcntpr.recipe).
     // asm intrinsics GC'd (gnu target) — no asm_archive. (rosload is i386/amd64.)
     let mut libcntpr_c: Vec<&str> = vec![
         "sdk/lib/crt/math/_invoke_matherr.c",

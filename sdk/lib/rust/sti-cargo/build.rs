@@ -7,6 +7,84 @@ use std::env;
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
+
+    // The C left, and its part of cmake's C rule; reactos-link adds what every C
+    // compile shares from reactos-link/cflags/c.<arch>.flags (Linker::c_compiled).
+    let c_sources: &[&str] = &["@build/dll/win32/sti/proxy.dlldata.c", "@build/dll/win32/sti/sti_wia_p.c"];
+    let c_includes: &[&str] = &[
+        "@build/dll/win32/sti",
+        "dll/win32/sti",
+        "@build/sdk/include/wine",
+        "sdk/include/wine",
+        "@std",
+        "vendor/opengl-headers/include",
+        "vendor/libdxg/include",
+    ];
+    let c_flags: &[&str] = match arch.as_str() {
+        "x86" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-std=gnu99",
+            "@core",
+        ],
+        "x86_64" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-std=gnu99",
+            "-U_X86_",
+            "-UWIN32",
+            "@core",
+        ],
+        "aarch64" => &[
+            "-isystem",
+            "{REPO}/sdk/lib/pseh/include",
+            "-isystem",
+            "{REPO}/sdk/lib/tdilib",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/inc",
+            "-isystem",
+            "{REPO}/vendor/symcrypt/lib",
+            "-isystem",
+            "{REPO}/vendor/zlib/include",
+            "-isystem",
+            "{REPO}/vendor/libtiff/include",
+            "-std=gnu99",
+            "@core",
+        ],
+        _ => unreachable!(),
+    };
+    let c_defines: &[&str] = &[
+        "ENTRY_PREFIX=STI_",
+        "PROXY_DELEGATION",
+        "WINE_REGISTER_DLL",
+        "WINVER=0x502",
+        "_CRT_DECLARE_NONSTDC_NAMES=1",
+        "_CRT_NONSTDC_NO_DEPRECATE",
+        "_DLL",
+        "_WIN32_WINNT=0x502",
+        "__USE_CRTIMP",
+        "__WINESRC__",
+    ];
     let (target_json, entry, image_base) = match arch.as_str() {
         "x86" => ("i686-pc-windows-gnu", "_DllMainCRTStartup@12", Some(0x6e080000u64)),
         "x86_64" => ("x86_64-pc-windows-gnu", "DllMainCRTStartup", Some(0x7fe74000000u64)),
@@ -54,7 +132,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("sti-rust")
-        .c_from_compile_db("sti_shims", &["dll/win32/sti/proxy.dlldata.c", "dll/win32/sti/sti_wia_p.c"])
+        .c_compiled("sti_shims", c_sources, c_includes, c_flags, c_defines)
         .rc("dll/win32/sti/sti.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("dll/win32/sti/sti.spec", "sti.dll")
         .import_lib("dll/win32/ole32/ole32.spec", "ole32.dll", "ole32")

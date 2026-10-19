@@ -69,8 +69,8 @@ fn main() {
     // The common C set (math _invoke_matherr/exp2f, mbstring, misc fltused, the 12
     // printf shells, string atol/wctype/winesup, scanf_trampoline); i386 adds the
     // x87 math wrappers (ci*/libm_sse2/nexttowardf), amd64 adds ehandler.c. Source
-    // list mirrors the cmake `libcntpr` target's objects (see tools/gen_cflags.py
-    // + the committed cflags/libcntpr.<arch>.flags template). asm intrinsics are
+    // list is a subset of the cmake `libcntpr` target's objects (with no cmake build,
+    // their lines of clibs/<arch>/libcntpr.recipe). asm intrinsics are
     // GC'd (gnu target) — no asm_archive.
     let mut libcntpr_c: Vec<&str> = vec![
         "sdk/lib/crt/math/_invoke_matherr.c",

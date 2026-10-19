@@ -17,18 +17,26 @@ makes it, so the media no longer needs cmake's 1,400 configure-time appends to e
         [--cells DIR]    # take the cells' outputs from a cmake-off build (cargo_orchestrate.py
                          # --manifest --out-dir DIR) instead of build-<arch>
 
-`--assemble` writes the list and masters the image with the build's own host tools
-(build-<arch>/host-tools/bin): self-hosting mkisofs/isohybrid/cabman is owed, and their
-absence is a hard failure, not a fallback. bootcd's reactos.cab is a build product here;
-re-cabbing cells from `--cells` is owed too, so `--cells` is refused for a CD that carries
-one.
+bootcd's `reactos.cab` is recorded the same way: cmake writes its file list
+(`reactos.dff.<config>.dyn`, `"<source>" <dir>` per line) at configure time and cabman
+packs `reactos.dff.in` + that list. With `--cells`, `--assemble` re-cabs from the cells'
+outputs; otherwise the cab is the build's.
+
+`--assemble` masters with the host tools under build-<arch>/host-tools/bin, which a
+cmake-off build's generated SDK provides (tools/sdk_recipe.py records mkisofs, isohybrid
+and cabman with the generators). It writes `<out>/<cd>.provenance.json` beside the image:
+the source tree's content hash, the cells' (cargo_orchestrate.py --manifest stamps its
+out dir) and the image's sha256. `vibeos-cli smoke --media <image>` boots only media
+whose stamp matches the tree it is run in.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -41,6 +49,10 @@ ARCHES = ("i386", "amd64", "arm64")
 CDS = ("livecd", "bootcd", "bootcdregtest")
 CANON = "/tmp/vibeos"
 CONFIG = "Debug"
+CAB = "build:reactos.cab"
+CAB_INF = "build:boot/bootdata/packages/reactos.inf"
+PACKAGES = "{BUILD}/boot/bootdata/packages"
+CELLS_STAMP = ".cells.json"
 
 
 class MediaError(Exception):
@@ -70,6 +82,31 @@ def _command(ninja: str, cd: str) -> str:
     return m.group(1) if m else ""
 
 
+def _output_command(ninja: str, out: str) -> str:
+    m = re.search(rf"\nbuild {re.escape(out)} [^\n]*\n  COMMAND = ([^\n]*)\n", ninja)
+    if not m:
+        raise MediaError(f"build.ninja: no command makes {out}")
+    return m.group(1)
+
+
+def derive_cab(arch: str, build: Path, ninja: str, cells: set[str]) -> dict:
+    """reactos.cab: cabman over `reactos.dff.in` + cmake's configure-time file list, first
+    for the inf (`-I`) and then for the cab (`-N`, the inf in its reserved area)."""
+    dyn = build / f"boot/bootdata/packages/reactos.dff.{CONFIG}.dyn"
+    files = []
+    for line in dyn.read_text().splitlines():
+        m = re.fullmatch(r'"([^"]+)" (.+)', line)
+        if not m:
+            raise MediaError(f"{dyn}: unmodelled line {line!r}")
+        files.append([_enc(m.group(1), arch, cells), m.group(2)])
+    return {
+        "dff": "repo:boot/bootdata/packages/reactos.dff.in",
+        "inf_command": _enc_cmd(_output_command(ninja, "boot/bootdata/packages/reactos.inf"), arch),
+        "cab_command": _enc_cmd(_output_command(ninja, "reactos.cab"), arch),
+        "files": files,
+    }
+
+
 def derive(arch: str, repo: Path = REPO) -> dict:
     build = repo / f"build-{arch}"
     ninja = (build / "build.ninja").read_text()
@@ -84,6 +121,8 @@ def derive(arch: str, repo: Path = REPO) -> dict:
             dest, sep, src = line.rpartition("=")
             entries.append([dest if sep else None, _enc(src, arch, cells)])
         out["cds"][cd] = {"entries": entries, "command": _enc_cmd(_command(ninja, cd), arch)}
+    if any(s == CAB for c in out["cds"].values() for _d, s in c["entries"]):
+        out["cab"] = derive_cab(arch, build, ninja, cells)
     return out
 
 
@@ -141,6 +180,16 @@ def render(m: dict) -> str:
         out.append(",\n".join(rows))
         out.append("  ]")
         out.append(" }" + ("," if i < len(m["cds"]) - 1 else ""))
+    if "cab" not in m:
+        out.append("}}")
+        return "\n".join(out) + "\n"
+    cab = m["cab"]
+    out.append('}, "cab": {')
+    for k in ("dff", "inf_command", "cab_command"):
+        out.append(f"  {json.dumps(k)}: {json.dumps(cab[k])},")
+    out.append('  "files": [')
+    out.append(",\n".join(f"   {json.dumps(e)}" for e in cab["files"]))
+    out.append("  ]")
     out.append("}}")
     return "\n".join(out) + "\n"
 
@@ -171,46 +220,131 @@ def resolve(src: str, build: Path, repo: Path, cells: Path | None) -> Path:
     raise MediaError(f"unknown media source {src!r}")
 
 
-def write_list(entries: list, build: Path, repo: Path, cells: Path | None) -> str:
+def write_list(entries: list, where: dict[str, Path]) -> str:
     lines = []
     for dest, src in entries:
-        p = resolve(src, build, repo, cells)
+        p = where[src]
         lines.append(str(p) if dest is None else f"{dest}={p}")
     return "\n".join(lines) + "\n"
 
 
+def source_hash(repo: Path = REPO) -> str:
+    """The tree's build-relevant content, as a build stamp records it (docs excluded)."""
+    sys.path.insert(0, str(repo / "tests/qemu"))
+    from cli import provenance
+
+    return provenance.tree_content_hash(repo, [".", *provenance.NON_BUILD_PATHSPEC])
+
+
+def cells_source(cells: Path, arch: str) -> str:
+    """The source hash a cmake-off cell build was made from (cargo_orchestrate.py stamps
+    its out dir after building every cell)."""
+    stamp = cells / CELLS_STAMP
+    if not stamp.exists():
+        raise MediaError(
+            f"{stamp} missing: build every cell with cargo_orchestrate.py --arch {arch} --manifest"
+        )
+    st = json.loads(stamp.read_text())
+    if st.get("arch") != arch:
+        raise MediaError(f"{cells} holds {st.get('arch')} cells, not {arch}")
+    return st["source"]
+
+
+def _check_tools(cmd: str) -> None:
+    for tool in re.findall(r"(\S+/host-tools/bin/\w+)", cmd):
+        if not Path(tool).exists():
+            raise MediaError(
+                f"{tool} missing: a cmake-off build's generated SDK makes it "
+                "(cargo_orchestrate.py --manifest --cmake-off), a cmake build makes it too"
+            )
+
+
+def _run(cmd: str) -> None:
+    _check_tools(cmd)
+    subprocess.run(["bash", "-c", cmd], check=True)
+
+
+def recab(m: dict, out: Path, build: Path, repo: Path, cells: Path) -> dict[str, Path]:
+    """reactos.cab and its inf, packed from the cells' outputs with cmake's two cabman
+    commands, into out/cab."""
+    cab = m["cab"]
+    d = out / "cab"
+    if d.exists():
+        shutil.rmtree(d)
+    d.mkdir(parents=True)
+    rows, missing = [], []
+    for src, rest in cab["files"]:
+        p = resolve(src, build, repo, cells)
+        if not p.exists():
+            missing.append(str(p))
+        rows.append(f'"{p}" {rest}\n')
+    if missing:
+        raise MediaError(f"reactos.cab: {len(missing)} sources missing, first {missing[:3]}")
+    head = resolve(cab["dff"], build, repo, cells).read_text()
+    (d / "reactos.dff").write_text(head + "".join(rows))
+    sub = {PACKAGES: str(d), "{BUILD}/reactos.inf": str(d / "reactos.inf"), "cd {BUILD} ": f"cd {d} "}
+    for key in ("inf_command", "cab_command"):
+        cmd = cab[key]
+        for k, v in sub.items():
+            cmd = cmd.replace(k, v)
+        _run(cmd.replace("{BUILD}", str(build)).replace("{REPO}", str(repo)))
+    made = {CAB: d / "reactos.cab", CAB_INF: d / "reactos.inf"}
+    for p in made.values():
+        if not p.exists():
+            raise MediaError(f"cabman made no {p}")
+    return made
+
+
 def assemble(arch: str, cd: str, out: Path, cells: Path | None, repo: Path = REPO) -> Path:
+    source = source_hash(repo)
+    cells_from = None
+    if cells is not None:
+        cells_from = cells_source(cells, arch)
+        if cells_from != source:
+            raise MediaError(
+                f"{cells} was built from another source tree: rebuild it with "
+                f"cargo_orchestrate.py --arch {arch} --manifest"
+            )
     m = current(arch, repo)
     spec = m["cds"][cd]
     build = repo / f"build-{arch}"
-    if cells is not None and any(s == "build:reactos.cab" for _d, s in spec["entries"]):
-        raise MediaError(f"{cd} carries reactos.cab, which is not re-cabbed from --cells yet")
-    missing = [
-        str(p) for _d, s in spec["entries"] if not (p := resolve(s, build, repo, cells)).exists()
-    ]
+    out.mkdir(parents=True, exist_ok=True)
+    where = {s: resolve(s, build, repo, cells) for _d, s in spec["entries"]}
+    if cells is not None and CAB in where:
+        where.update(recab(m, out, build, repo, cells))
+    missing = [str(p) for p in where.values() if not p.exists()]
     if missing:
         raise MediaError(f"{cd}: {len(missing)} sources missing, first {missing[:3]}")
-    out.mkdir(parents=True, exist_ok=True)
     lst = out / f"{cd}.lst"
-    lst.write_text(write_list(spec["entries"], build, repo, cells))
+    lst.write_text(write_list(spec["entries"], where))
     cmd = spec["command"]
     if not cmd:
         # arm64's livecd is a list only: qemu/mkramdisk.sh lays it out into ramdisk.img.
         return lst
     cfg = m["config"]
+    image = out / f"{cd}.iso"
     cmd = (
         cmd.replace(f"{{BUILD}}/boot/{cd}.{cfg}.lst", str(lst))
         .replace(f"{{BUILD}}/boot/{cd}.stripped.lst", str(out / f"{cd}.stripped.lst"))
         .replace("{BUILD}/boot/stripped ", f"{out / 'stripped'} ")
-        .replace(f"{{BUILD}}/{cd}.iso", str(out / f"{cd}.iso"))
+        .replace(f"{{BUILD}}/{cd}.iso", str(image))
         .replace("{BUILD}", str(build))
         .replace("{REPO}", str(repo))
     )
-    for tool in re.findall(r"(\S+/host-tools/bin/\w+)", cmd):
-        if not Path(tool).exists():
-            raise MediaError(f"{tool} missing: self-hosting it is owed, build it with cmake")
-    subprocess.run(["bash", "-c", cmd], check=True)
-    return out / f"{cd}.iso"
+    image.unlink(missing_ok=True)
+    _run(cmd)
+    if source_hash(repo) != source:
+        raise MediaError("the source tree changed while the image was mastered")
+    stamp = {
+        "arch": arch,
+        "cd": cd,
+        "image": image.name,
+        "sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
+        "source": source,
+        "cells": str(cells) if cells else None,
+    }
+    (out / f"{cd}.provenance.json").write_text(json.dumps(stamp, indent=1) + "\n")
+    return image
 
 
 def main(argv: list[str] | None = None) -> int:

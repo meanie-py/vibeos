@@ -252,7 +252,7 @@ fn emit_ks(asmdef: &[u8]) -> Result<String, String> {
 }
 
 fn check_cflags_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Result<(), String> {
-    for target in ["blrtl", "libcntpr", "win32k_residue", "genincdata"] {
+    for target in ["genincdata"] {
         let args = cmd_args(&["--stdout", "--target", target, "--arch", arch]);
         let value = write_json_command(&ctx.root, "tools/gen_cflags.py", &args)?;
         let name = format!("{target}.{arch}");
@@ -291,7 +291,7 @@ fn check_cflags(ctx: &BinaryContext, rows: &mut Vec<Row>) -> Result<(), String> 
     for arch in &arches {
         check_cflags_arch(ctx, arch, &mut generated)?;
     }
-    for target in ["blrtl", "libcntpr", "win32k_residue", "genincdata"] {
+    for target in ["genincdata"] {
         for arch in &arches {
             let name = format!("{target}.{arch}");
             let i = generated
