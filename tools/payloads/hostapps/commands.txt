@@ -4,6 +4,8 @@
 # not staged, and the -E tools do not need it.
 set GNUPGHOME=C:\TEMP\gpghome
 timeout 7zip\7z.exe 1200
+# fsquery.c: what an archiver asks about its output, to diff against winref.
+fsquery\fsquery.exe C:\TEMP X:\reactos\system32\ntdll.dll
 7zip\7z.exe i
 7zip\7z.exe b -mmt2 -md22
 # Bisecting "Can't allocate required memory" / libarchive "Out of memory" (2026-10-18):

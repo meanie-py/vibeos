@@ -8,6 +8,7 @@
 #   ./vibeos-cli smoke --arch amd64 --payload hostapps
 #   python3 tools/stub_hits.py /tmp/vibeos-cli/<run>/payload/amd64-uefi_serial.log
 # apps.txt says which folders and files; commands.txt is the sweep list.
+build_hint: "tools/payloads/hostapps/build.sh {arch}"
 name: hostapps
 description: run real third-party programs (7-Zip, CMake, GnuPG) from the host's Program Files
 arches: [amd64]
@@ -22,6 +23,8 @@ binaries:
     dest: bin/apitest-skip.txt
   - src: tools/payloads/hostapps/cwd.txt
     dest: bin/apitest-cwd.txt
+  - src: tools/payloads/hostapps/fsquery-{arch}.exe
+    dest: bin/fsquery/fsquery.exe
 binaries_from: tools/payloads/hostapps/stage.py
 
 test:
