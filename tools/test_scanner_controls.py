@@ -866,6 +866,27 @@ impl CPage {
 """
 )
 
+# scan_local_overlength. Seeded from kernel32's GetFileInformationByHandle (2026-10-18).
+_OVERLEN_BAD = """\
+pub unsafe fn f(h: HANDLE) {
+    let mut Io: IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut Vol: FILE_FS_VOLUME_INFORMATION = core::mem::zeroed();
+    let mut Name: [WCHAR; 255] = [0; 255];
+    NtQueryVolumeInformationFile(h, &mut Io, &mut Vol as *mut _ as PVOID,
+        (core::mem::size_of::<FILE_FS_VOLUME_INFORMATION>() + core::mem::size_of::<[WCHAR; 255]>()) as ULONG, 1);
+}
+"""
+_OVERLEN_GOOD = """\
+#[repr(C)]
+struct VolumeInfo { Vol: FILE_FS_VOLUME_INFORMATION, Name: [WCHAR; 255] }
+pub unsafe fn f(h: HANDLE) {
+    let mut Io: IO_STATUS_BLOCK = core::mem::zeroed();
+    let mut Vol: VolumeInfo = core::mem::zeroed();
+    NtQueryVolumeInformationFile(h, &mut Io, &mut Vol as *mut _ as PVOID,
+        core::mem::size_of::<VolumeInfo>() as ULONG, 1);
+}
+"""
+
 _FNABI_GOOD = """\
 pub unsafe extern "system" fn InitFrontEnd(this: *mut u8) -> i32 { 0 }
 pub static SLOT: Option<unsafe extern "system" fn(*mut u8) -> i32> = Some(InitFrontEnd);
@@ -3289,6 +3310,12 @@ CONTROLS: list[Control] = [
             "sdk/include/psdk/shlguid.h": _GUID_SDK,
             "sdk/lib/rust/x-rust/src/a.rs": _GUID_RS.format(d1="0x000214D2"),
         },
+    ),
+    Control(
+        name="scan_local_overlength",
+        script="tools/vibeos-lint/src/rules/local_overlength.rs",
+        bad={"vol.rs": _OVERLEN_BAD},
+        good={"vol.rs": _OVERLEN_GOOD},
     ),
     Control(
         name="scan_uncalled_ctor_hook",

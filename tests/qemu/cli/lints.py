@@ -1485,6 +1485,14 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_container_ptr_read", [rustlints.SENTINEL, "scan_container_ptr_read"], "stdout")
     )
+    # The address of ONE local of type T passed with a length of size_of::<T>() + ...: a C
+    # struct-with-trailing-buffer translated as two locals, so the callee's tail writes hit
+    # whatever the compiler put next. kernel32's GetFileInformationByHandle wrote the FAT
+    # volume label over its caller's file handle (7-Zip, libarchive). Baseline is EMPTY.
+    # A Rust rule (tools/vibeos-lint/src/rules/local_overlength.rs).
+    specs.append(
+        ("scan_local_overlength", [rustlints.SENTINEL, "scan_local_overlength"], "stdout")
+    )
     # The OTHER half of that pair: a cross-MODULE extern declaration, checked against the
     # .spec of the DLL that exports it. `cargo check` never links, so nothing in `check`,
     # `check-tooling` or `difftest` can see a wrong-ABI import — it survives to the PE link,

@@ -39,6 +39,7 @@ pub mod ptr_highword_mask;
 pub mod raw_bitfield;
 pub mod raw_uart_writes;
 pub mod typed_byte_copy;
+pub mod local_overlength;
 pub mod wide_byte_copy;
 
 pub mod call_arg_swap;
@@ -234,6 +235,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(byte_step_one::ByteStepOne),
         Box::new(wide_byte_copy::WideByteCopy),
         Box::new(typed_byte_copy::TypedByteCopy),
+        Box::new(local_overlength::LocalOverlength),
         Box::new(calloc_elem_type::CallocElemType),
         Box::new(containing_record_null::ContainingRecordNull),
         Box::new(dangling_transmute::DanglingTransmute),
