@@ -6,6 +6,14 @@ set GNUPGHOME=C:\TEMP\gpghome
 timeout 7zip\7z.exe 1200
 7zip\7z.exe i
 7zip\7z.exe b -mmt2 -md22
+# Bisecting "Can't allocate required memory" / libarchive "Out of memory" (2026-10-18):
+7zip\7z.exe a -ttar C:\TEMP\p1.tar X:\reactos\system32\ntdll.dll -bb3
+7zip\7z.exe a -tzip C:\TEMP\p2.zip X:\reactos\system32\ntdll.dll -mx0 -mmt1 -bb3
+7zip\7z.exe a -tzip C:\TEMP\p3.zip X:\reactos\system32\ntdll.dll -mx1 -mmt1 -bb3
+7zip\7z.exe a -t7z C:\TEMP\p4.7z X:\reactos\system32\ntdll.dll -mx1 -mmt1 -bb3
+7zip\7z.exe a -t7z C:\TEMP\p5.7z X:\reactos\system32\ntdll.dll -m0=Copy -bb3
+cmake\cmake.exe -E tar cf C:\TEMP\p6.tar X:\reactos\system32\ntdll.dll
+cmake\cmake.exe -E tar cf C:\TEMP\p7.tar ntdll.out
 7zip\7z.exe a C:\TEMP\sys.7z X:\reactos\system32\*.dll -mx5 -mmt2
 7zip\7z.exe t C:\TEMP\sys.7z
 7zip\7z.exe a C:\TEMP\sys.zip X:\reactos\system32\drivers\*.sys
