@@ -1833,3 +1833,17 @@ def test_early_errors_names_what_stops_rustc_before_name_resolution(monkeypatch,
         prelude_resolve.subprocess, "run", fake([msg("error", "mismatched types", "E0308")])
     )
     assert prelude_resolve.early_errors("c", "t", tmp_path, tmp_path) == []
+
+
+def test_a_recalled_sdk_constant_is_dropped_and_the_modules_own_kept(tmp_path):
+    # zipfldr: `PID_STG_NAME = 2` from memory (10); COL_NAME is the module's own enum member.
+    f = tmp_path / "CZipFolder_cpp_h.rs"
+    f.write_text(
+        "pub const PID_STG_NAME: u32 = 0x0000_0002;\n"
+        "pub const COL_NAME: i32 = 0;\n"
+        "fn f() { let x = PID_STG_NAME; }\n"
+    )
+    assert port._drop_recalled_constants(f, {"COL_NAME"}) == ["PID_STG_NAME"]
+    text = f.read_text()
+    assert "PID_STG_NAME: u32" not in text and "pub const COL_NAME" in text
+    assert "let x = PID_STG_NAME" in text

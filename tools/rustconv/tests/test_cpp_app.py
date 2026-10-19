@@ -1346,3 +1346,37 @@ def test_an_empty_constructor_is_a_definition_the_scanner_sees(tmp_path):
     p = Path(tmp_path) / "s_h.hpp"
     p.write_text(unit)
     assert [f.name for f in scan_file(p).functions] == ["SysInfo____ctor_0"]
+
+
+def test_a_module_declared_interface_is_laid_out_as_an_interface_not_a_class():
+    # zipfldr's IZip.hpp: `struct IZip : public IUnknown { virtual unzFile getZip() PURE; };`
+    izip = ClassModel(
+        "IZip",
+        "IZip",
+        "struct",
+        "IZip.hpp",
+        polymorphic=True,
+        bases=[Base("IUnknown", "public")],
+        methods=[_m("getZip", ret="unzFile", virtual=True, pure=True)],
+    )
+    model = ModuleModel(classes={"IZip": izip})
+    island = (
+        "pub struct IUnknownVtbl {\n"
+        '    pub QueryInterface: ::core::option::Option<unsafe extern "system" fn(This: *mut '
+        "IUnknown, riid: *const IID, ppvObject: *mut *mut c_void) -> HRESULT>,\n"
+        '    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUnknown) '
+        "-> ULONG>,\n"
+        '    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUnknown) '
+        "-> ULONG>,\n}\n"
+    )
+    h = cpp_app.Hierarchy(model, cpp_app.parse_com_vtbls(island))
+    assert "IZip" in h.module_ifaces and "IZip" not in h.by_short
+    assert [s.name for s in h.com["IZip"]] == ["QueryInterface", "AddRef", "Release", "getZip"]
+    text = cpp_app._render_module_interface("IZip", h.com["IZip"])
+    assert 'pub getZip: Option<unsafe extern "system" fn(This: *mut IZip) -> unzFile>,' in text
+    assert "pub unsafe fn getZip(&mut self) -> unzFile {" in text
+
+
+def test_c_comments_are_stripped_but_literals_kept():
+    text = '{ A, 1 }, // { B, 2 },\n/* { C, 3 }, */ { D, L"//x" }'
+    assert cpp_app._strip_c_comments(text) == '{ A, 1 }, \n { D, L"//x" }'

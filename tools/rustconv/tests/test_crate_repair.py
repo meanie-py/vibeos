@@ -3721,3 +3721,54 @@ def test_a_const_method_through_a_const_pointer_casts_the_receiver():
     }
     edits, _, handled = _const_receiver_rule(diag, lambda f: src, _Ctx(target="i386", width=32))
     assert handled and [e.replacement for e in edits] == ["(*e.cast_mut())"]
+
+
+def test_cpp_this_converted_to_an_interface_goes_through_its_subobject():
+    """zipfldr: `CDefFolderMenu_Create2(.., this, ..)` -- `this` is the IShellFolder2 base."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"f(this_);"
+    layout = (
+        b"pub struct CZipFolder {\n    pub __base2: IShellFolder2,\n"
+        b"    pub __base0: atl_rust::com::CComCoClass,\n    pub __base6: IPersistFolder2,\n}\n"
+    )
+    d = _diag(
+        "mismatched types",
+        spans=[_span("z-rust/src/z/u.rs", 2, 7, is_primary=True)],
+        children=[
+            {
+                "message": "expected raw pointer `*mut types_arch::IShellFolder`\n"
+                "   found raw pointer `*mut cpp_classes::CZipFolder`",
+                "code": None,
+                "level": "note",
+                "spans": [],
+                "children": [],
+                "rendered": None,
+            }
+        ],
+    )
+    plan = propose_edits(
+        [d],
+        _reader({"z-rust/src/z/u.rs": src, "z-rust/src/z/cpp_classes.rs": layout}),
+        target="i386",
+        rules=[RULE_OBJECT_DEREF],
+    )
+    assert [e.replacement for e in plan.edits] == [
+        "core::ptr::addr_of_mut!((*this_).__base2) as *mut IShellFolder"
+    ]
+
+
+def test_a_c_enum_written_as_a_rust_enum_path_becomes_its_bindgen_const():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"return eZipExtractError::eNoError;"
+    at = src.index(b"eNoError")
+    d = _diag(
+        "no function or associated item named `eNoError` found for type `u32` in the current scope",
+        code="E0599",
+        spans=[_span("src/a.rs", at, at + len(b"eNoError"), is_primary=True)],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="i386", rules=[RULE_OBJECT_DEREF])
+    assert [(e.byte_start, e.replacement) for e in plan.edits] == [
+        (src.index(b"eZip"), "eZipExtractError_eNoError")
+    ]

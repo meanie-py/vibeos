@@ -4687,7 +4687,14 @@ def _shellutils_uses(texts: list[str]) -> str:
         {v for k, v in _SHELLUTILS_SHARED.items() if any(re.search(rf"\b{k}\b", t) for t in texts)}
     )
     out = f"pub use atl_rust::shellutils::{{{', '.join(names)}}};\n" if names else ""
-    macros = [m for m in _SHELLUTILS_MACROS if any(re.search(rf"\b{m}\b", t) for t in texts)]
+    # atl_contract spells `ShellObjectCreator<T>(riid, ppv)` as ShellObjectCreatorIid!, a
+    # name the C++ never writes (zipfldr's CFolderViewCB: "cannot find macro").
+    spelled = {"ShellObjectCreatorIid": r"\bShellObjectCreator\s*<"}
+    macros = [
+        m
+        for m in _SHELLUTILS_MACROS
+        if any(re.search(spelled.get(m, rf"\b{m}\b"), t) for t in texts)
+    ]
     if macros:
         out += f"pub use atl_rust::{{{', '.join(macros)}}};\n"
     return out
@@ -4800,7 +4807,7 @@ def scaffold_crate(
             "\n// ================= ATL =========================================================="
             "==============\n"
             "// ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.\n"
-            "pub use atl_rust::{atl_format, atl_format_id, CAtlArray, CAtlList, CComPtr, CHeapPtr, "
+            "pub use atl_rust::{atl_format, atl_format_id, CA2WEX, CW2AEX, CAtlArray, CAtlList, CComPtr, CHeapPtr, "
             "CSimpleArray, CLocalAllocator, CSimpleMap, CStringA, CStringW, POSITION, "
             "_AtlBaseModule};\n"
             # atlsimpstr.h's CSimpleStringT<WCHAR> is CStringW's base: every `CSimpleString&`

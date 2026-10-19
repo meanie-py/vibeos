@@ -1015,6 +1015,19 @@ dll/shellext/stobject/CMakeLists.txt	1	# mouse.cpp # replaced by Rust (sdk/lib/r
 dll/shellext/stobject/CMakeLists.txt	1	# power.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/power_cpp_h.rs)
 dll/shellext/stobject/CMakeLists.txt	1	# stobject.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/stobject_cpp_h.rs)
 dll/shellext/stobject/CMakeLists.txt	1	# volume.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/volume_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CConfirmReplace.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CConfirmReplace_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CEnumZipContents.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CEnumZipContents_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CExplorerCommand.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CExplorerCommand_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CFolderViewCB.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CFolderViewCB_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CSendToZip.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CSendToZip_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CZipCreator.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CZipCreator_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CZipEnumerator.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CZipEnumerator_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CZipExtract.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CZipExtract_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CZipFolder.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CZipFolder_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CZipPassword.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CZipPassword_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# Debug.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/Debug_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# zipfldr.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/zipfldr_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# zippidl.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/zippidl_cpp_h.rs)
 dll/win32/CMakeLists.txt	1	# exports instead of forwarding to kernelbase_ros. combase.c externs
 dll/win32/aclui/CMakeLists.txt	1	# (rust_varargs_shim.c and the generated aclui_stubs.c) do not include precomp.h.
 dll/win32/aclui/CMakeLists.txt	1	# aclui.c

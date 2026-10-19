@@ -532,6 +532,16 @@ impl<T> CComPtr<T> {
         Self { p }
     }
 
+    /// ATL's `CComPtr(T* lp)` constructor: hold `p` WITH a reference of its own (AddRef).
+    /// zipfldr's `DoDeleteItems(CComPtr<IDataObject>(pdtobj))` went through `from_raw`, and
+    /// the temporary's Release then dropped a reference the callback never owned.
+    pub unsafe fn from_addref(p: *mut T) -> Self {
+        if !p.is_null() {
+            com::com_add_ref(p as *mut c_void);
+        }
+        Self { p }
+    }
+
     /// ATL's `Attach(T*)`: release the current interface, then adopt `p` without AddRef'ing.
     pub unsafe fn Attach(&mut self, p: *mut T) {
         if !self.p.is_null() {
@@ -831,6 +841,36 @@ impl<T> CAtlArray<T> {
 
     pub fn GetCount(&self) -> usize {
         self.m_Size
+    }
+
+    /// `SetCount(nNewSize)`: grow (new elements value-initialized -- ATL's placement `new E`
+    /// leaves a POD indeterminate; zipfldr reads every byte only after unzip fills it) or
+    /// shrink (the removed elements destroyed). FALSE when the allocation fails.
+    pub unsafe fn SetCount(&mut self, nNewSize: usize) -> bool
+    where
+        T: Default,
+    {
+        if nNewSize < self.m_Size {
+            for i in nNewSize..self.m_Size {
+                core::ptr::drop_in_place(self.m_pData.add(i));
+            }
+            self.m_Size = nNewSize;
+            return true;
+        }
+        if nNewSize > self.m_AllocatedSize {
+            let bytes = nNewSize.wrapping_mul(core::mem::size_of::<T>());
+            let p = CCRTAllocator::Reallocate(self.m_pData as *mut c_void, bytes) as *mut T;
+            if p.is_null() {
+                return false;
+            }
+            self.m_pData = p;
+            self.m_AllocatedSize = nNewSize;
+        }
+        for i in self.m_Size..nNewSize {
+            core::ptr::write(self.m_pData.add(i), T::default());
+        }
+        self.m_Size = nNewSize;
+        true
     }
 
     pub fn IsEmpty(&self) -> bool {
@@ -1578,6 +1618,11 @@ impl CStringW {
     /// ATL sizes with `MultiByteToWideChar(acp, 0, src, -1, NULL, 0) - 1` (the `-1` drops the
     /// terminator from the COUNT, which SetString then re-adds), so the same shape is kept.
     pub unsafe fn from_ansi(pszSrc: LPCSTR) -> Self {
+        Self::from_ansi_cp(pszSrc, CP_THREAD_ACP)
+    }
+
+    /// atlconv.h `CA2WEX<N>(psz, nCodePage)`: the same conversion in a named code page.
+    pub unsafe fn from_ansi_cp(pszSrc: LPCSTR, cp: u32) -> Self {
         let mut s = Self::new();
         if pszSrc.is_null() {
             return s;
@@ -1589,7 +1634,7 @@ impl CStringW {
             s.LoadStringW((pszSrc as usize & 0xFFFF) as UINT);
             return s;
         }
-        let n = MultiByteToWideChar(CP_THREAD_ACP, 0, pszSrc, -1, core::ptr::null_mut(), 0) - 1;
+        let n = MultiByteToWideChar(cp, 0, pszSrc, -1, core::ptr::null_mut(), 0) - 1;
         if n <= 0 {
             return s;
         }
@@ -1597,7 +1642,7 @@ impl CStringW {
         if s.m_pszData.is_null() {
             return s;
         }
-        MultiByteToWideChar(CP_THREAD_ACP, 0, pszSrc, -1, s.m_pszData, n + 1);
+        MultiByteToWideChar(cp, 0, pszSrc, -1, s.m_pszData, n + 1);
         *s.m_pszData.add(n as usize) = 0;
         s.m_nLength = n;
         s
@@ -1669,6 +1714,14 @@ impl CStringW {
         };
         let mut s = Self::new();
         s.SetString(self.as_ptr(), n);
+        s
+    }
+
+    /// `Right(nCount)` -- the last `nCount` characters (clamped as `Left` clamps).
+    pub unsafe fn Right(&self, nCount: i32) -> Self {
+        let n = nCount.clamp(0, self.m_nLength);
+        let mut s = Self::new();
+        s.SetString(self.as_ptr().add((self.m_nLength - n) as usize), n);
         s
     }
 
@@ -1828,6 +1881,18 @@ impl CStringW {
             stack.as_mut_ptr(),
             stack.len() as INT,
         );
+        if n <= 0 {
+            return 0;
+        }
+        self.SetString(stack.as_ptr(), n);
+        1
+    }
+
+    /// `LoadString(HINSTANCE hInstance, UINT nID)` -- from another module's string table
+    /// (zipfldr loads shell32's IDS_CREATEFOLDER_DENIED, 128).
+    pub unsafe fn LoadStringFrom(&mut self, hInstance: *mut c_void, nID: UINT) -> BOOL {
+        let mut stack: [WCHAR; 512] = [0; 512];
+        let n = LoadStringW(hInstance as _, nID, stack.as_mut_ptr(), stack.len() as INT);
         if n <= 0 {
             return 0;
         }
@@ -2033,6 +2098,10 @@ extern "C" {
     /// `CompareNoCase`.
     fn _wcsicmp(left: *const WCHAR, right: *const WCHAR) -> INT;
     fn wcscmp(left: *const WCHAR, right: *const WCHAR) -> INT;
+    /// msvcrt -- ChTraitsCRT<wchar_t>::StringLowercase/StringUppercase, what ATL's
+    /// MakeLower/MakeUpper call: towlower/towupper over all of Unicode, not just ASCII.
+    fn _wcslwr(s: *mut WCHAR) -> *mut WCHAR;
+    fn _wcsupr(s: *mut WCHAR) -> *mut WCHAR;
 }
 
 impl PartialEq for CStringW {
@@ -2059,16 +2128,11 @@ impl PartialEq for CStringW {
 impl CStringW {
     /// `MakeLower()` — cstringt.h, in place, returning the string.
     pub unsafe fn MakeLower(&mut self) {
+        // zipfldr's NextUnique folds entry names with it to merge `Ä/` and `ä/`: an ASCII-only
+        // fold kept them apart.
         let buf = self.GetBuffer(-1);
         if !buf.is_null() {
-            let mut i = 0usize;
-            while *buf.add(i) != 0 {
-                let c = *buf.add(i);
-                if (b'A' as WCHAR..=b'Z' as WCHAR).contains(&c) {
-                    *buf.add(i) = c + 32;
-                }
-                i += 1;
-            }
+            _wcslwr(buf);
         }
         self.ReleaseBuffer();
     }
@@ -2212,6 +2276,112 @@ impl core::ops::AddAssign<*const WCHAR> for CStringW {
     }
 }
 
+impl CStringW {
+    /// `MakeUpper()` — msvcrt `_wcsupr`, as `MakeLower`.
+    pub unsafe fn MakeUpper(&mut self) {
+        let buf = self.GetBuffer(-1);
+        if !buf.is_null() {
+            _wcsupr(buf);
+        }
+        self.ReleaseBuffer();
+    }
+
+    /// `Find(PCXSTR pszSub, int iStart)` — cstringt.h (`wcsstr`): the index of the first
+    /// occurrence at or after `iStart`, or -1. An empty `pszSub` matches at `iStart`.
+    pub unsafe fn FindStr(&self, pszSub: *const WCHAR, iStart: i32) -> i32 {
+        if pszSub.is_null() || iStart < 0 || iStart > self.GetLength() {
+            return -1;
+        }
+        let n = wide_len(pszSub);
+        let len = self.GetLength() as usize;
+        let p = self.as_ptr();
+        let mut i = iStart as usize;
+        while i + n <= len {
+            if (0..n).all(|k| *p.add(i + k) == *pszSub.add(k)) {
+                return i as i32;
+            }
+            i += 1;
+        }
+        -1
+    }
+
+    /// `AllocSysString()` — a BSTR copy (oleaut32 `SysAllocStringLen`). Inline, so a module
+    /// that never calls it never imports oleaut32 through this crate.
+    #[inline]
+    pub unsafe fn AllocSysString(&self) -> *mut WCHAR {
+        extern "system" {
+            fn SysAllocStringLen(str_in: *const WCHAR, ui: u32) -> *mut WCHAR;
+        }
+        SysAllocStringLen(self.as_ptr(), self.GetLength() as u32)
+    }
+
+    /// `FormatMessage(UINT nFormatID, ...)` with one insert (`%1`), cstringt.h: the resource
+    /// string, then kernel32 `FormatMessageW(FORMAT_MESSAGE_FROM_STRING |
+    /// FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_ARGUMENT_ARRAY)`.
+    #[inline]
+    pub unsafe fn FormatMessage(&mut self, nFormatID: UINT, arg1: *const WCHAR) {
+        extern "system" {
+            fn FormatMessageW(
+                dwFlags: u32,
+                lpSource: *const c_void,
+                dwMessageId: u32,
+                dwLanguageId: u32,
+                lpBuffer: *mut WCHAR,
+                nSize: u32,
+                Arguments: *mut c_void,
+            ) -> u32;
+        }
+        let mut fmt = CStringW::new();
+        fmt.LoadStringW(nFormatID);
+        self.FormatMessageStr(fmt.as_ptr(), arg1);
+    }
+
+    /// `FormatMessage(PCXSTR pszFormat, ...)` with one insert. `pszFormat` may be this string's
+    /// own buffer (zipfldr's `strText.FormatMessage(strText.GetString(), path)`): FormatMessageW
+    /// writes a fresh LocalAlloc'd buffer, so the source is read in full before any store here.
+    #[inline]
+    pub unsafe fn FormatMessageStr(&mut self, pszFormat: *const WCHAR, arg1: *const WCHAR) {
+        extern "system" {
+            fn FormatMessageW(
+                dwFlags: u32,
+                lpSource: *const c_void,
+                dwMessageId: u32,
+                dwLanguageId: u32,
+                lpBuffer: *mut WCHAR,
+                nSize: u32,
+                Arguments: *mut c_void,
+            ) -> u32;
+        }
+        let mut args: [usize; 1] = [arg1 as usize];
+        let mut out: *mut WCHAR = core::ptr::null_mut();
+        // FROM_STRING | ALLOCATE_BUFFER | ARGUMENT_ARRAY
+        let n = FormatMessageW(
+            0x400 | 0x100 | 0x2000,
+            pszFormat as *const c_void,
+            0,
+            0,
+            core::ptr::addr_of_mut!(out) as *mut WCHAR,
+            0,
+            args.as_mut_ptr() as *mut c_void,
+        );
+        if n == 0 || out.is_null() {
+            self.Empty();
+            return;
+        }
+        self.SetString(out, n as i32);
+        LocalFree(out as HLOCAL);
+    }
+}
+
+impl core::ops::Add<*const WCHAR> for CStringW {
+    type Output = CStringW;
+    /// `operator+(const CStringT&, PCXSTR)`.
+    fn add(mut self, rhs: *const WCHAR) -> CStringW {
+        unsafe { self.Append(rhs) };
+        self
+    }
+}
+
 impl Default for CStringW {
     fn default() -> Self {
         Self::new()
@@ -2272,13 +2442,19 @@ impl CStringA {
 
     /// `CStringA(LPCWSTR)`. NULL is the empty string, as in ATL.
     pub unsafe fn from_wide(pszSrc: *const WCHAR) -> Self {
+        Self::from_wide_cp(pszSrc, CP_THREAD_ACP)
+    }
+
+    /// atlconv.h `CW2AEX<N>(psz, nCodePage)`: the same conversion in a named code page
+    /// (zipfldr converts entry names with CP_UTF8 or the archive's own page).
+    pub unsafe fn from_wide_cp(pszSrc: *const WCHAR, cp: u32) -> Self {
         let mut s = Self::new();
         if pszSrc.is_null() {
             return s;
         }
         // GetBaseTypeLength(LPCWSTR): the converted length, terminator excluded.
         let n = WideCharToMultiByte(
-            CP_THREAD_ACP,
+            cp,
             0,
             pszSrc,
             -1,
@@ -2296,7 +2472,7 @@ impl CStringA {
             return s;
         }
         WideCharToMultiByte(
-            CP_THREAD_ACP,
+            cp,
             0,
             pszSrc,
             wide_len(pszSrc) as INT + 1,
@@ -2473,6 +2649,57 @@ impl CStringA {
     pub fn GetLength(&self) -> i32 {
         self.m_nLength
     }
+}
+
+impl CStringA {
+    /// `CStringA(const char* psz, int nLength)`.
+    pub unsafe fn from_ptr_len(pszSrc: *const c_char, nLength: i32) -> Self {
+        let mut s = Self::new();
+        s.SetString(pszSrc, nLength);
+        s
+    }
+
+    pub fn IsEmpty(&self) -> bool {
+        self.m_nLength == 0
+    }
+}
+
+impl core::ops::Add<CStringA> for CStringA {
+    type Output = CStringA;
+    /// `operator+(const CStringT&, const CStringT&)`.
+    fn add(mut self, rhs: CStringA) -> CStringA {
+        unsafe { self.Append(rhs.GetString() as *const c_char) };
+        self
+    }
+}
+
+impl Clone for CStringA {
+    fn clone(&self) -> Self {
+        unsafe { Self::from_ptr_len(self.m_pszData as *const c_char, self.m_nLength) }
+    }
+}
+
+impl PartialEq for CStringA {
+    /// `operator==` — a byte compare (cstringt.h's StringCompare is `strcmp`).
+    fn eq(&self, other: &Self) -> bool {
+        self.m_nLength == other.m_nLength
+            && (self.m_nLength == 0
+                || unsafe {
+                    core::slice::from_raw_parts(self.m_pszData, self.m_nLength as usize)
+                        == core::slice::from_raw_parts(other.m_pszData, other.m_nLength as usize)
+                })
+    }
+}
+
+/// atlconv.h `CA2WEX<N>(psz, nCodePage)`, as the string it converts to (`N` sizes ATL's
+/// stack buffer only; the result here is always heap-backed and never truncated).
+pub unsafe fn CA2WEX<const N: u32>(psz: LPCSTR, nCodePage: u32) -> CStringW {
+    CStringW::from_ansi_cp(psz, nCodePage)
+}
+
+/// atlconv.h `CW2AEX<N>(psz, nCodePage)`.
+pub unsafe fn CW2AEX<const N: u32>(psz: *const WCHAR, nCodePage: u32) -> CStringA {
+    CStringA::from_wide_cp(psz, nCodePage)
 }
 
 impl Default for CStringA {
@@ -2931,6 +3158,80 @@ mod cstring_tests {
             a.Append(b"cab.cab\0".as_ptr() as *const c_char);
             a.Append(core::ptr::null());
             assert_eq!(core::slice::from_raw_parts(a.GetString(), a.GetLength() as usize), b"\\cab.cab");
+        }
+    }
+}
+
+#[cfg(test)]
+mod zipfldr_surface_tests {
+    use super::*;
+
+    // Host stand-ins for msvcrt's towupper/towlower-based case mapping (BMP, 1:1 only).
+    unsafe fn map_case(s: *mut WCHAR, upper: bool) -> *mut WCHAR {
+        let mut i = 0usize;
+        while *s.add(i) != 0 {
+            if let Some(c) = char::from_u32(*s.add(i) as u32) {
+                let m: Vec<char> =
+                    if upper { c.to_uppercase().collect() } else { c.to_lowercase().collect() };
+                if let [one] = m[..] {
+                    if (one as u32) <= 0xFFFF {
+                        *s.add(i) = one as u32 as WCHAR;
+                    }
+                }
+            }
+            i += 1;
+        }
+        s
+    }
+    #[no_mangle]
+    unsafe extern "C" fn _wcsupr(s: *mut WCHAR) -> *mut WCHAR {
+        map_case(s, true)
+    }
+    #[no_mangle]
+    unsafe extern "C" fn _wcslwr(s: *mut WCHAR) -> *mut WCHAR {
+        map_case(s, false)
+    }
+
+    #[test]
+    fn make_upper_lower_fold_beyond_ascii() {
+        unsafe {
+            let text = |s: &CStringW| {
+                String::from_utf16(core::slice::from_raw_parts(s.GetString(), s.GetLength() as usize))
+                    .unwrap()
+            };
+            let mut s = CStringW::from_ptr(w("Äb/ä").as_ptr());
+            s.MakeLower();
+            assert_eq!(text(&s), "äb/ä");
+            s.MakeUpper();
+            assert_eq!(text(&s), "ÄB/Ä");
+        }
+    }
+
+    fn w(s: &str) -> Vec<u16> {
+        s.encode_utf16().chain(core::iter::once(0)).collect()
+    }
+
+    #[test]
+    fn findstr_makeupper_add_and_setcount() {
+        unsafe {
+            let hay = w("foo/BAR/baz");
+            let mut s = CStringW::from_ptr(hay.as_ptr());
+            assert_eq!(s.FindStr(w("BAR").as_ptr(), 0), 4);
+            assert_eq!(s.FindStr(w("BAR").as_ptr(), 5), -1);
+            assert_eq!(s.FindStr(w("").as_ptr(), 3), 3);
+            s.MakeUpper();
+            assert_eq!(s.FindStr(w("BAZ").as_ptr(), 0), 8);
+            let t = s.clone() + w("!").as_ptr();
+            assert_eq!(t.GetLength(), 12);
+            let mut a: CAtlArray<u8> = CAtlArray::new();
+            assert!(a.SetCount(5));
+            assert_eq!(a.GetCount(), 5);
+            assert_eq!(*a.GetAt(4), 0);
+            assert!(a.SetCount(2));
+            assert_eq!(a.GetCount(), 2);
+            let x = CStringA::from_ptr_len(b"abcdef\0".as_ptr() as *const c_char, 3);
+            assert!(x == x.clone() && !x.IsEmpty() && x.GetLength() == 3);
+            assert!(CStringA::new().IsEmpty());
         }
     }
 }

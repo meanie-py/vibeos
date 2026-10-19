@@ -1625,6 +1625,9 @@ class _Extractor:
             text = cpp_lower.concat_string_macros(out.text, strings)
             text = cpp_lower.ppv_arg_macros(text)
             text = cpp_lower.resolve_module_conditionals(text, own_defines)
+            # clang's (and gcc's) __FUNCTION__ is the unqualified name; the model left it a
+            # bare identifier nothing defines (zipfldr's `DbgPrint("%s..", __FUNCTION__)`).
+            text = re.sub(r"\b(?:__FUNCTION__|__func__)\b", f'"{target.name}"', text)
             text = cpp_lower.local_enums_to_consts(text)
             text = cpp_lower.com_object_create(text)
             text = cpp_lower.atl_qualified_glue(text)

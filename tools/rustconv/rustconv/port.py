@@ -1079,6 +1079,41 @@ def _module_globals(state: dict) -> list[str]:
     ]
 
 
+def _module_constant_names(state: dict) -> set[str] | None:
+    """Every constant name a C++ module defines itself -- its `#define`s, enum members,
+    class-scoped constants and globals -- or None for a port without a cppapp model."""
+    model = (state.get("cppapp") or {}).get("model")
+    if not model or not Path(model).is_file():
+        return None
+    raw = json.loads(Path(model).read_text())
+    names = _module_own_defines(state)
+    names |= {g["name"] for g in raw.get("globals", [])}
+    names |= set(raw.get("defines") or {})
+    for e in raw.get("enums", []):
+        names |= {m[0] for m in e.get("members", [])}
+    for c in raw.get("classes", {}).values():
+        names |= {k[0] for k in c.get("constants", [])}
+    return names
+
+
+_RECALLED_CONST = re.compile(r"^pub const (\w+): [\w:]+ = [^;\n]+;[^\n]*\n", re.M)
+
+
+def _drop_recalled_constants(path: Path, own: set[str]) -> list[str]:
+    """A file-scope `pub const` the model wrote for a name the module does not define is the
+    SDK's, from memory: zipfldr's CZipFolder.cpp came back with `PID_STG_NAME = 2` (10),
+    `PID_STG_SIZE = 6` (12) and `SHCOLSTATE_TYPE_DATE = 4` (3), and resolve then wired the
+    prelude to them. Dropped, the name is unresolved, and resolve has clang evaluate it from
+    the module's own TUs (or the island has it)."""
+    text = path.read_text()
+    dropped = [m.group(1) for m in _RECALLED_CONST.finditer(text) if m.group(1) not in own]
+    if dropped:
+        path.write_text(
+            _RECALLED_CONST.sub(lambda m: m.group(0) if m.group(1) in own else "", text)
+        )
+    return dropped
+
+
 def _module_method_calls(path: Path, globals_: list[str]) -> list[str]:
     """`gModule_DllRegisterServer(..)` -> `gModule.DllRegisterServer(..)`, and the invented
     `fn gModule_X(..)` extern dropped. The model, told `gModule` is atl_rust's CComModule,
@@ -4569,6 +4604,7 @@ def stage_integrate(stem: str) -> None:
     rendered_globals = _rendered_globals(crate / "src", stem)
     module_globals = _module_globals(state)
     spec_stubs = _spec_stubs(state)
+    own_constants = _module_constant_names(state)
     c_pointer_typedefs = _c_fn_pointer_typedefs(state)
     libs = guid_libraries(REPO / state["module_dir"] / "CMakeLists.txt")
     guid_symbols = guid_library_symbols(libs) if libs else set()
@@ -4592,6 +4628,21 @@ def stage_integrate(stem: str) -> None:
         exported = _export_island_statics(path, island_statics)
         if exported:
             print(f"integrate: {path.stem}: #[no_mangle] on {', '.join(exported)}")
+        recalled = _drop_recalled_constants(path, own_constants) if own_constants else []
+        if recalled:
+            # resolve wired the prelude to the unit's copies; those re-exports go too.
+            prelude_rs = crate / "src" / "prelude.rs"
+            if prelude_rs.is_file():
+                gone = re.compile(
+                    rf"^pub use crate::(?:\w+::)*{re.escape(path.stem)}::"
+                    rf"(?:{'|'.join(map(re.escape, recalled))});[^\n]*\n",
+                    re.M,
+                )
+                prelude_rs.write_text(gone.sub("", prelude_rs.read_text()))
+            print(
+                f"integrate: {path.stem}: SDK constant(s) written from memory dropped "
+                f"(clang evaluates them): {', '.join(recalled)}"
+            )
         unexported = _unexport_spec_stubs(path, spec_stubs)
         if unexported:
             print(f"integrate: {path.stem}: .spec stub(s) keep the export: {', '.join(unexported)}")
@@ -5622,6 +5673,12 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
                 res.undefined.append(name)
                 continue
             pick, why = prelude_resolve.consensus(name, found)
+            if pick is None and "char pointee" in why:
+                # Not a conflict to report: consensus refuses to vote on a `char *`'s
+                # pointee, and the prototype route spells the header's own c_char (zipfldr's
+                # strlen/strcmp sat "not copied" and the crate never compiled).
+                res.undefined.append(name)
+                continue
             if pick is None:
                 res.conflicting[name] = why
                 continue
