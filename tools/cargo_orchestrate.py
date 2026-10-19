@@ -267,9 +267,6 @@ def build_pefixup(root: Path, arch: str, out_dir: Path, dry: bool = False) -> Pa
     target_compile_definitions). Single .c, like spec2def/native-hpp.
     """
     exe = out_dir / f"native-pefixup-{arch}"
-    if exe.exists() and not dry:
-        return exe
-    out_dir.mkdir(parents=True, exist_ok=True)
     cmd = [
         host_cc(),
         "-O2",
@@ -279,8 +276,21 @@ def build_pefixup(root: Path, arch: str, out_dir: Path, dry: bool = False) -> Pa
     ]
     if ARCH_PE64[arch]:
         cmd.append("-D_TARGET_PE64")
-    cmd += ["-o", str(exe), str(root / "sdk/tools/pefixup.c")]
+    src = root / "sdk/tools/pefixup.c"
+    cmd += ["-o", str(exe), str(src)]
+    # Rebuilt when its source or command changes: a kept binary outlived a new
+    # post-link option (--dllname) and failed every cell that used it.
+    compat = root / "dll/win32/dbghelp/compat.h"  # its one local include
+    digest = hashlib.sha256(
+        src.read_bytes() + compat.read_bytes() + "\0".join(cmd).encode()
+    ).hexdigest()
+    stamp = exe.with_name(exe.name + ".stamp")
+    if exe.exists() and not dry and stamp.exists() and stamp.read_text().strip() == digest:
+        return exe
+    out_dir.mkdir(parents=True, exist_ok=True)
     run(cmd, dry=dry)
+    if not dry:
+        stamp.write_text(digest + "\n")
     return exe
 
 
