@@ -948,6 +948,7 @@ members = [
     "oledlg-rust",
     "ntobjshex-rust",
     "netshell-rust",
+    "zipfldr-rust",
     "propsys-rust",
     "cryptnet-rust",
     "oleacc-rust",

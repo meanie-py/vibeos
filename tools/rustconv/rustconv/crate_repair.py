@@ -3038,6 +3038,101 @@ def _com_ptr_receiver_rule(
     )
 
 
+def _island_enum_path_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0599 `eZipExtractError::eNoError`: a C enum written as a Rust enum path. bindgen's
+    island lays a C enum out as a type alias of an integer plus one `Enum_Member` const per
+    member (zipfldr's CZipExtract: 17 sites), so the path is that const."""
+    if (diagnostic.get("code") or {}).get("code") != "E0599":
+        return [], [], False
+    m = re.search(
+        r"no (?:function or )?associated item named `(\w+)` found for type "
+        r"`[iu](?:8|16|32|64|size)`",
+        str(diagnostic.get("message") or ""),
+    )
+    got = _primary_bytes(diagnostic, load) if m else None
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    assert m is not None
+    if data[start:end].decode("utf-8", "replace") != m.group(1):
+        return [], [], False
+    head = re.search(rb"\b([A-Za-z_]\w*)::$", data[max(0, start - 128) : start])
+    if head is None:
+        return [], [], False
+    lo = start - len(head.group(0))
+    enum = head.group(1).decode()
+    note = "rustc E0599: bindgen lays a C enum out as `Enum_Member` consts, not a Rust enum"
+    return (
+        [
+            _simple_edit(
+                RULE_OBJECT_DEREF,
+                file_name,
+                data,
+                lo,
+                end,
+                f"{enum}_{m.group(1)}",
+                note,
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+_UPCAST_TYPES = re.compile(
+    r"expected raw pointer `\*mut (?:\w+::)*(I[A-Z]\w*)`\s*(?:\\n)?\s*found raw pointer "
+    r"`\*mut (?:\w+::)*cpp_classes::(\w+)`"
+)
+
+
+def _cpp_interface_upcast_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0308 `expected *mut IShellFolder, found *mut CZipFolder`: C++'s implicit conversion
+    of `this` to one of its interfaces, which is a pointer to that interface's SUBOBJECT, not
+    to the object. Three in one day: netshell's `cvf.pshf = this` (written `as _`, so it
+    compiled and DefView called IShellFolder slots through IPersistFolder2's table), zipfldr's
+    `CDefFolderMenu_Create2(.., this, ..)` and its `SFV_CREATE { pshf: this }`. The subobject
+    is the class's `__baseN` of that interface -- or of the one interface derived from it by
+    a version suffix (IShellFolder2 for IShellFolder) -- read off the generated layout;
+    anything ambiguous is left alone."""
+    if (diagnostic.get("code") or {}).get("code") != "E0308":
+        return [], [], False
+    m = _UPCAST_TYPES.search(json.dumps(diagnostic))
+    got = _primary_bytes(diagnostic, load) if m else None
+    if got is None:
+        return [], [], False
+    assert m is not None
+    span, file_name, data, _masked, start, end = got
+    iface, cls = m.group(1), m.group(2)
+    layout = load(file_name.rsplit("/", 1)[0] + "/cpp_classes.rs")
+    if layout is None:
+        return [], [], False
+    body = re.search(rb"pub struct " + cls.encode() + rb" \{\n(.*?)^\}", layout, re.M | re.S)
+    if body is None:
+        return [], [], False
+    bases = re.findall(rb"^\s*pub (__base\d+): (\w+),", body.group(1), re.M)
+    exact = [f for f, t in bases if t.decode() == iface]
+    derived = [f for f, t in bases if re.fullmatch(re.escape(iface) + r"\d+", t.decode())]
+    picks = exact or derived
+    if len(picks) != 1:
+        return [], [], False
+    expr = data[start:end].decode("utf-8", "replace").strip()
+    if not re.fullmatch(r"[\w.()*]+", expr):
+        return [], [], False
+    rep = f"core::ptr::addr_of_mut!((*{expr}).{picks[0].decode()}) as *mut {iface}"
+    note = f"rustc E0308: C++ converts `this` to its {iface} subobject"
+    return (
+        [_simple_edit(RULE_OBJECT_DEREF, file_name, data, start, end, rep, note, span, ctx)],
+        [],
+        True,
+    )
+
+
 def _c2rust_anon_turbofish(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -5886,6 +5981,8 @@ _RULE_TABLE: dict[
         _ptr_int_arith_rule,
         _heap_ptr_conversion_rule,
         _com_ptr_receiver_rule,
+        _island_enum_path_rule,
+        _cpp_interface_upcast_rule,
         _hwnd_to_cwindow_rule,
     ),
     RULE_CONST_OPERAND: _constant_operand_rule,

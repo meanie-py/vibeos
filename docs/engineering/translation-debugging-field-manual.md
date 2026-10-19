@@ -3386,6 +3386,15 @@ sees a valid integer; the linker is happy; the code is often read only once the 
 already dying. Every constant that reaches Rust must come from the header, deterministically —
 never from the model.
 
+### A file-scope `const` the model wrote for an SDK name, from memory
+**Symptom:** a C++ crate compiles with a column, property id or flag silently wrong: zipfldr's
+`PID_STG_NAME = 2` (10), `PID_STG_SIZE = 6` (12), `SHCOLSTATE_TYPE_DATE = 4` (3).
+**Cause:** the island did not lay those headers out, so the model defined the names itself at
+file scope, and `port resolve` then wired the prelude to its copies.
+**Fix:** automatic: `port integrate` drops a file-scope `pub const` for any name the module does
+not define itself (its `#define`s, enum members, class constants, globals), and resolve fills
+it from tree consensus or clang.
+
 ### The LLM invents plausible values `[§9.113, §9.113a, §9.113b]`
 `KeBugCheck(SYMBOL)` came back as `KeBugCheck(0xNN)` and **61 of ~115 translated stop codes
 were wrong**. Review slides right off it: the numbers are the right magnitude, valid codes, and
@@ -12515,6 +12524,45 @@ Type column blank (`COLUMN_TYPE` 4, shell32's recycle bin's, for the module's 1)
 and the module's `#define COLUMN_TYPE 1` lives in a .cpp the island never sees.
 **Fix:** automatic: a name the module's own sources `#define` is never copied from another
 crate; clang evaluates it from the module's TUs.
+
+### C++'s implicit `this` → interface conversion came back as the object pointer
+**Symptom:** a COM consumer calls slot N of the wrong vtable: netshell's folder view called
+`IShellFolder::EnumObjects` and landed in `IPersistFolder2::Initialize`; or E0308 `expected
+*mut IShellFolder, found *mut CZipFolder`.
+**Cause:** C++ converts `this` to an interface pointer implicitly (`SFV_CREATE{.., this}`,
+`CDefFolderMenu_Create2(.., this, ..)`), which is a pointer to that interface's SUBOBJECT,
+the class's `__baseN`. The model passed `this_` itself, so the object's first vtable answered.
+**Fix:** automatic where rustc sees it: crate-repair's `_cpp_interface_upcast_rule` rewrites to
+`addr_of_mut!((*this_).__baseN) as *mut IFoo` from the generated layout (an exact interface, or
+the one `IFoo2`-style derivative; ambiguous is left alone). Written `this_ as _` it compiles,
+so review every interface-typed argument that is `this_`.
+
+### A property page built by value hands comctl32 a dead `this`
+**Symptom:** a wizard or property sheet crashes as it opens, in the page's dialog proc.
+**Cause:** `CPropertyPageImpl`'s constructor stores `this` in `m_psp.lParam`; cppapp's
+`__make_0` constructs into a local and returns it BY VALUE, so the page moved and lParam
+still names the old frame (zipfldr's `CExtractSettingsPage extractPage(..)`). C++ constructs
+in place.
+**Fix:** automatic: the generated `Create()` re-points `m_psp.lParam` at `self` before
+`CreatePropertySheetPage`, where the object finally sits. The title argument of
+`CPropertyPageImpl<T>(title)` is m_psp's, not the CWindow base's (`__psp_init_titled`).
+
+### `CComPtr<I>(p)` became `from_raw`: one Release too many
+**Symptom:** use-after-free some time after an operation that wrapped a borrowed interface:
+zipfldr's delete verb (`DoDeleteItems(CComPtr<IDataObject>(pdtobj))`).
+**Cause:** ATL's `CComPtr(T*)` constructor AddRefs; `atl_rust::CComPtr::from_raw` adopts
+without one (ATL's `Attach`), and the temporary still Releases. `core::ptr::read` of a
+`CComPtr` field is the same bug (a copy with no reference).
+**Fix:** `CComPtr::from_addref(p)` for the C++ constructor; `from_raw` only where the C++ says
+`Attach` or the pointer came from a call that returned a reference.
+
+### An interface the module declares in C++ has no vtable to fill
+**Symptom:** `port cppapp` fails `IZip implements IUnknown but defines no QueryInterface`.
+**Cause:** zipfldr's `struct IZip : IUnknown { virtual unzFile getZip() PURE; }` has no IDL, so
+the island never lays it out, and cppapp took it for a class.
+**Fix:** automatic: a fieldless `I`-named class whose methods are all pure and whose one base
+is an island interface is laid out as WIDL would (`IZipVtbl` with `Option` slots, the
+`lpVtbl` struct, call wrappers) and dispatched like an island interface.
 
 ### A table of wide strings came back hand-counted
 **Symptom:** `expected an array with a size of 9, found one with a size of 10` on a

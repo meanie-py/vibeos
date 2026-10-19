@@ -599,10 +599,11 @@ pub unsafe fn create_dialog<T: MessageMap>(this: *mut T, idd: u16, parent: HWND)
     )
 }
 
-/// `PROPSHEETPAGEW` through `pcRefParent` -- `PROPSHEETPAGEW_V1_SIZE`, which every comctl32
-/// accepts. The C++ passes `sizeof(PROPSHEETPAGE)` of whatever `_WIN32_IE` it compiled
-/// against; none of the later fields (header titles, activation context, header bitmap) are
-/// set by `CPropertyPageImpl`, so the V1 size says exactly what the C says.
+/// `PROPSHEETPAGEW` through `pszHeaderSubTitle` -- `PROPSHEETPAGEW_V2_SIZE`, which every
+/// comctl32 since 4.71 accepts. The C++ passes `sizeof(PROPSHEETPAGE)` of whatever `_WIN32_IE`
+/// it compiled against. `CPropertyPageImpl` itself sets none of the fields past V1, but a
+/// derived wizard page does: zipfldr's CExtractSettingsPage writes `m_psp.pszHeaderTitle`
+/// and `pszHeaderSubTitle` with PSP_USEHEADERTITLE. Null and unflagged, they are inert.
 ///
 /// `CPropertyPageImpl::m_psp`, with the Win32 field names: the C++ derived class writes it
 /// directly (acppage's constructor sets `m_psp.pszTitle` and `m_psp.dwFlags |= PSP_USETITLE`).
@@ -619,6 +620,8 @@ pub struct PropSheetPage {
     pub lParam: LPARAM,
     pub pfnCallback: Option<PageCallback>,
     pub pcRefParent: *mut u32,
+    pub pszHeaderTitle: *const u16,
+    pub pszHeaderSubTitle: *const u16,
 }
 type PropSheetPageV1 = PropSheetPage;
 
@@ -714,6 +717,8 @@ pub unsafe fn property_page_init<T: PropertyPage>(
         lParam: this as LPARAM,
         pfnCallback: Some(page_callback::<T>),
         pcRefParent: core::ptr::null_mut(),
+        pszHeaderTitle: core::ptr::null(),
+        pszHeaderSubTitle: core::ptr::null(),
     }
 }
 

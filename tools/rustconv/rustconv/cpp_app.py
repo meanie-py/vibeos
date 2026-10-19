@@ -38,6 +38,7 @@ from .cpp_model import (
     Method,
     ModuleModel,
     atl_base_alias,
+    short_name,
 )
 
 
@@ -175,6 +176,67 @@ def parse_com_vtbls(island: str) -> dict[str, list[ComSlot]]:
     return out
 
 
+def _module_interface_slots(
+    cls: ClassModel, com: dict[str, list[ComSlot]], model: ModuleModel
+) -> list[ComSlot] | None:
+    """A module-declared COM interface's flattened slots, or None when `cls` is not one: an
+    `I`-named class with no fields, every method pure virtual, deriving only from interfaces
+    the island lays out."""
+    if cls.external or not re.fullmatch(r"I[A-Z]\w*", cls.name) or len(cls.bases) != 1:
+        return None
+    base = short(cls.bases[0].name)
+    if base not in com or any(not f.static for f in cls.fields) or not cls.methods:
+        return None
+    if not all(m.pure and m.kind == "method" and not m.static for m in cls.methods):
+        return None
+    own = [
+        ComSlot(
+            m.name,
+            [(p.name or f"arg{i}", rust_type(p.c_type, model)) for i, p in enumerate(m.params)],
+            "" if m.return_type.strip() == "void" else rust_type(m.return_type, model),
+        )
+        for m in cls.methods
+    ]
+    return [*com[base], *own]
+
+
+def _render_module_interface(name: str, slots: list[ComSlot]) -> str:
+    """`IFoo { lpVtbl }`, `IFooVtbl` and the call wrappers, in the island's own shape."""
+    fields, calls = [], []
+    for sl in slots:
+        sig = ", ".join([f"This: *mut {name}", *(f"{a}: {t}" for a, t in sl.params)])
+        ret = f" -> {sl.ret}" if sl.ret else ""
+        fields.append(f'    pub {sl.name}: Option<unsafe extern "system" fn({sig}){ret}>,')
+        own = ", ".join(f"{a}: {t}" for a, t in sl.params)
+        args = ", ".join(["self", *(a for a, _ in sl.params)])
+        calls.append(
+            f"    pub unsafe fn {sl.name}(&mut self{', ' if own else ''}{own}){ret} {{\n"
+            f"        match (*self.lpVtbl).{sl.name} {{\n"
+            f"            Some(f) => f({args}),\n"
+            f'            None => panic!("{name}::{sl.name}: null vtable slot"),\n'
+            "        }\n    }"
+        )
+    return "\n".join(
+        [
+            f"/// `{name}`: an interface the module declares in C++, laid out as WIDL would.",
+            "#[repr(C)]",
+            "#[derive(Copy, Clone)]",
+            f"pub struct {name}Vtbl {{",
+            *fields,
+            "}",
+            "#[repr(C)]",
+            "#[derive(Copy, Clone)]",
+            f"pub struct {name} {{",
+            f"    pub lpVtbl: *mut {name}Vtbl,",
+            "}",
+            f"impl {name} {{",
+            *calls,
+            "}",
+            "",
+        ]
+    )
+
+
 @dataclass
 class Slot:
     owner: str  # the class whose vtable struct declares this slot (short name)
@@ -193,6 +255,18 @@ class Hierarchy:
         self.island_fields: dict[str, list[str]] = {}
         self.dep_classes: frozenset[str] = frozenset()
         self.hand_methods: dict[str, set[str]] = {}
+        # Interfaces the module declares in C++ itself (zipfldr's `struct IZip : IUnknown`
+        # with one pure `getZip`): no IDL, so the island never lays them out. They are
+        # interfaces, not classes -- laid out here as WIDL would, and dispatched like the
+        # island's (an implementing class gets a filled IZipVtbl, callers the impl wrappers).
+        self.module_ifaces: dict[str, ClassModel] = {}
+        if self.com:
+            for name, cls in list(self.by_short.items()):
+                slots = _module_interface_slots(cls, self.com, model)
+                if slots is not None:
+                    self.com[name] = slots
+                    self.module_ifaces[name] = cls
+                    del self.by_short[name]
 
     def com_bases(self, cls: ClassModel) -> list[tuple[int, str]]:
         out = []
@@ -477,7 +551,11 @@ def render_classes(
         for name, val in e.members:
             out.append(f"pub const {name}: {e.name} = {val};")
         out.append("")
+    for name in h.module_ifaces:
+        out.append(_render_module_interface(name, h.com[name]))
     for cls in model.classes.values():
+        if short(cls.qualified) in h.module_ifaces:
+            continue
         out.append(_render_class(cls, h, model, cls.name in island_structs and _plain(cls)))
     if any(c.method("GetWndClassInfo") for c in model.classes.values() if not c.external):
         out.append(_START_WINDOW_PROC)
@@ -1592,8 +1670,17 @@ def _property_page_glue(cls: ClassModel, idd: str, base: str) -> list[str]:
         f"    pub unsafe fn __psp_init(this_: *mut {cls.name}) -> atl_rust::win::PropSheetPage {{",
         f"        atl_rust::win::property_page_init(this_, {idd} as u16, core::ptr::null())",
         "    }",
+        "    /// `CPropertyPageImpl(lpszTitle)`: the same, titled (PSP_USETITLE).",
+        f"    pub unsafe fn __psp_init_titled(this_: *mut {cls.name}, title: *const u16) "
+        "-> atl_rust::win::PropSheetPage {",
+        f"        atl_rust::win::property_page_init(this_, {idd} as u16, title)",
+        "    }",
         "    /// rosdlgs.h `CPropertyPageImpl::Create`: `::CreatePropertySheetPage(&m_psp)`.",
         "    pub unsafe fn Create(&mut self) -> HPROPSHEETPAGE {",
+        # The constructor stored `this` in m_psp.lParam, but a page built by value
+        # (zipfldr's `CExtractSettingsPage extractPage(..)` -> `__make_0`) has moved since;
+        # C++ constructs in place. Where it sits NOW is where its procs must find it.
+        "        self.m_psp.lParam = self as *mut Self as _;",
         "        atl_rust::win::create_property_page_from(&self.m_psp) as HPROPSHEETPAGE",
         "    }",
         "    /// A page is not a modal dialog: the C++ `EndDialog` is `return FALSE`.",
@@ -2126,7 +2213,9 @@ def object_map(g) -> list[tuple[str, str]] | None:
     if "_ATL_OBJMAP_ENTRY" not in g.c_type or not g.init or "BEGIN_OBJECT_MAP" not in g.init:
         return None
     entries = []
-    for m in _OBJECT_ENTRY_RE.finditer(g.init):
+    # zipfldr: `//OBJECT_ENTRY(CLSID_ZipFolderDropHandler, CZipFolderDropHandler) // FIXME`
+    # named a class the module never defines.
+    for m in _OBJECT_ENTRY_RE.finditer(_strip_c_comments(g.init)):
         if m.group(1) != "OBJECT_ENTRY":
             raise CppAppError(f"{g.name}: {m.group(1)}({m.group(2)}, {m.group(3)}) is not ported")
         entries.append((m.group(2), m.group(3)))
@@ -2245,6 +2334,10 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
     deeper than one struct, a class with constructors or bases): the model gets it."""
     if not g.init or not g.init.lstrip().startswith("{"):
         return None
+    # zipfldr's g_ColumnDefs ends with two commented-out rows (`// IDS_COL_METHOD, ... },`),
+    # which split as rows of their own: the table went to the model, which invented every
+    # field name.
+    init = _strip_c_comments(g.init)
     t = " ".join(g.c_type.split())
     const = t.startswith("const ")
     t = t.removeprefix("const ").strip()
@@ -2280,7 +2373,7 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
         wides.append(f"static {name}: [u16; {len(units) + 1}] = [{vals}];")
         return f"{name}.as_ptr()"
 
-    rest = wide_lit.sub("", g.init)
+    rest = wide_lit.sub("", init)
     if '"' in rest or "'" in rest:
         return None
 
@@ -2321,7 +2414,7 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
             parts.append("..unsafe { core::mem::zeroed() }")
         return f"{cls.name} {{ {', '.join(parts)} }}"
 
-    body = g.init.strip()
+    body = init.strip()
     # A `static` must be Sync, and a raw pointer is not: cabview's const g_Columns holds
     # `const GUID *pkg` (E0277). C's const table is never written, so `static mut` is exact.
     mut = "" if const and not any("*" in f.c_type for f in fields) else "mut "
@@ -2338,6 +2431,29 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
     if single is None:
         return None
     return "\n".join([*wides, f"pub static {mut}{g.name}: {cls.name} = {single};"])
+
+
+def _strip_c_comments(text: str) -> str:
+    """`//` and `/* */` comments removed, string and character literals left intact."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c in "\"'":
+            j = i + 1
+            while j < n and text[j] != c:
+                j += 2 if text[j] == "\\" else 1
+            out.append(text[i : j + 1])
+            i = j + 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
 
 
 _C_ESCAPES = {"n": 10, "t": 9, "r": 13, "0": 0, "a": 7, "b": 8, "f": 12, "v": 11}
@@ -2429,9 +2545,12 @@ def wide_pointer_table(g) -> str | None:
         return None
     ptrs += ["core::ptr::null_mut()"] * (n - len(ptrs))
     # A raw-pointer static is not Sync; C's const table is never written, so `static mut`.
-    lines.append(
-        f"pub static mut {g.name}: [{m.group(1).replace('const ', '')}; {n}] = [{', '.join(ptrs)}];"
-    )
+    # acppage's `const WCHAR* g_AllowedExtensions[]` named its element `WCHAR *`, which is no
+    # Rust type; a pointer spelling is `*const WCHAR`, an LPCWSTR-style typedef is itself.
+    elem = m.group(1).replace("const ", "").strip()
+    if elem.endswith("*"):
+        elem = f"*const {elem[:-1].strip()}"
+    lines.append(f"pub static mut {g.name}: [{elem}; {n}] = [{', '.join(ptrs)}];")
     return "\n".join(lines)
 
 
@@ -2658,6 +2777,8 @@ def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
     reached = external_reached(model)
     by_file: dict[str, list[str]] = {}
     for cls in model.classes.values():
+        if short(cls.qualified) in h.module_ifaces:
+            continue  # an interface: nothing to construct (zipfldr's IZip got a __ctor_0)
         for m in cls.methods:
             if m.body is None or m.lowered is None:
                 continue
@@ -3017,19 +3138,29 @@ def _ctor_prologue(
     (not init-list order) from its init-list entry, else its in-class initializer."""
     inits = dict(m.lowered_inits) if m else {}
     lines = []
+    page_title = None
     for i, b in enumerate(cls.bases):
         bn = short(b.name)
+        arg = inits.get(b.name) or inits.get(bn)
+        if short_name(b.name).startswith("CPropertyPageImpl"):
+            # `CPropertyPageImpl<T>(lpszTitle)` is m_psp's title, below -- not an argument
+            # to the CWindow the template is aliased to (zipfldr's wizard pages: the title
+            # went to CWindow(HWND) and m_psp got NULL). The window is default-constructed.
+            page_title = arg[1:-1].strip() if arg and arg.startswith("(") else arg
+            arg = None
         base = h.by_short.get(bn)
         if base is None:
             continue
-        arg = inits.get(b.name) or inits.get(bn)
         idx, call = _ctor_call(base, arg or "()")
         lines.append(f"    this_->__base{i}.__ctor_{idx}{call};")
     if cls.polymorphic:
         lines.append("    this_->__init_vtables();")
     if atl_template(cls) == "CPropertyPageImpl":
         # The CPropertyPageImpl base constructor (the derived body may then edit m_psp).
-        lines.append(f"    this_->m_psp = {cls.name}::__psp_init(this_);")
+        if page_title:
+            lines.append(f"    this_->m_psp = {cls.name}::__psp_init_titled(this_, {page_title});")
+        else:
+            lines.append(f"    this_->m_psp = {cls.name}::__psp_init(this_);")
     for f in cls.fields:
         if f.static:
             continue
