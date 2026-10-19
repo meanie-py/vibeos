@@ -930,6 +930,7 @@ members = [
     "inetmib1-rust",
     "stobject-rust",
     "fontext-rust",
+    "ntobjshex-rust",
 ]
 resolver = "2"
 

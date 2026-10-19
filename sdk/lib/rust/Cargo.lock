@@ -4411,6 +4411,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ntobjshex-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "ntoskrnl-cargo"
 version = "0.1.0"
 dependencies = [
