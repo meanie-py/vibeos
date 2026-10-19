@@ -1130,8 +1130,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `enum result { ok, ... }` collides with the test `ok` macro), `wine.combase.test.dll`
   (`-llibcombase` not found), `user32_winetest` monitor.c (`ddk/d3dkmthk.h` not on its include
   path; it lives in sdk/include/wine/ddk).
-- **i386 smoke QEMU mis-executes SAHF after a logic op** (OPEN, 2026-10-04; host tooling,
-  not vibeos). The windows-host backend's QEMU is 11.0.50, a development snapshot
+- **i386 smoke QEMU mis-executes SAHF after a logic op** (FIXED 2026-10-18 by QEMU 11.1.0;
+  host tooling, not vibeos). The backend now runs the released 11.1.0 from `C:\qemu-11.1.0`:
+  atodbl passes on it exactly as on real Windows, and smoke refuses the 11.0.50 snapshot as
+  `QEMU_KNOWN_BAD` (`tests/qemu/backend.py` `KNOWN_BAD_WINDOWS_QEMU`). Also seen as jscript
+  integers reaching COM as `VT_R8` (jsproxy winetest 168-169). History: The windows-host backend's QEMU is 11.0.50, a development snapshot
   (`v11.0.0-12631-g54e84cdc7a`, installed 2026-05-01). After `or`/`xor`/`test`/`mov`, `sahf`
   sets CF wrong, so `fucom; fnstsw; sahf; jcc` -- every x87 float compare `-march=pentium`
   emits -- can branch the wrong way in i386 guests. Seen as Wine msvcrt `string.c:3522`'s 5,535

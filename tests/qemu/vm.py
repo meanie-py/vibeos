@@ -2813,6 +2813,11 @@ class QemuVM:
 
         self._win_uid = f"vibeos-{os.getpid()}-{ser_port}"
         win_bin = be.windows_qemu_bin(self.config.qemu_bin, self._win["qemu_dir"], accel)
+        # A build caught computing wrong guest answers never boots: its verdicts are about
+        # the emulator (smoke refuses it earlier, with its own classification).
+        bad = be.known_bad_windows_qemu(be.windows_qemu_version(win_bin))
+        if bad:
+            raise RuntimeError(f"{be.known_bad_windows_qemu_fix(win_bin)} ({bad})")
 
         # Pick hostfwd ports on the WINDOWS stack (where QEMU.exe binds them), not
         # WSL's — see _free_tcp_port / be.windows_free_tcp_port. The hook is read by
