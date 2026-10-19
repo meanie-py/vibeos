@@ -990,6 +990,12 @@ dll/shellext/netplwiz/CMakeLists.txt	1	# SHDisconnectNetDrives.c # replaced by R
 dll/shellext/netplwiz/CMakeLists.txt	1	# netplwiz.c # replaced by Rust (sdk/lib/rust/netplwiz-rust/src/netplwiz/netplwiz.rs)
 dll/shellext/sendmail/CMakeLists.txt	1	# CDeskLinkDropHandler.cpp # replaced by Rust (sdk/lib/rust/sendmail-rust/src/sendmail/CDeskLinkDropHandler_cpp_h.rs)
 dll/shellext/sendmail/CMakeLists.txt	1	# sendmail.cpp # replaced by Rust (sdk/lib/rust/sendmail-rust/src/sendmail/sendmail_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# csystray.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/csystray_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# hotplug.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/hotplug_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# mouse.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/mouse_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# power.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/power_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# stobject.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/stobject_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# volume.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/volume_cpp_h.rs)
 dll/win32/CMakeLists.txt	1	# exports instead of forwarding to kernelbase_ros. combase.c externs
 dll/win32/aclui/CMakeLists.txt	1	# (rust_varargs_shim.c and the generated aclui_stubs.c) do not include precomp.h.
 dll/win32/aclui/CMakeLists.txt	1	# aclui.c

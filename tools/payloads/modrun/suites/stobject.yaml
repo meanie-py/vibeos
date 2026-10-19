@@ -1,0 +1,30 @@
+# stobject (dll/shellext/stobject -> stobject-rust, `port cppapp`): the systray service object
+# explorer starts at boot for the volume, power and hotplug icons. Smoke reaches its startup;
+# probes/stobject.c drives the rest -- the IOleCommandTarget start/stop pair, the tray
+# window, and the WM_USER+220/221 service protocol. Staged twice: as stobject_c.exe it loads
+# the pre-flip C (stobject_c.dll, from c_oracle.cmake) beside it, as stobject_probe.exe the
+# system stobject.dll. It prints only values, so the outputs must match byte for byte.
+module: stobject
+variants:
+  c: '%SystemRoot%\bin\modrun\stobject_c.exe'
+  rust: '%SystemRoot%\bin\modrun\stobject_probe.exe'
+ninja: [stobject_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/stobject-{arch}.exe', dest: bin/modrun/stobject_c.exe}
+  - {src: 'tools/payloads/modrun/probes/stobject-{arch}.exe', dest: bin/modrun/stobject_probe.exe}
+  - {src: 'build-{arch}/dll/shellext/stobject/stobject_c.dll', dest: bin/modrun/stobject_c.dll}
+cases:
+  - id: tray
+    expect: ['classobject 00000000', 'create 00000000', 'exec wrong group 80004005',
+             'exec new 00000000', 'tray 1', 'style 86400000 exstyle 00000188',
+             'query power 1', 'disable power 0 services 6', 'query power 0', 'query volume 4',
+             'exec save 00000000', 'tray gone 1', 'release 0', 'canunload 00000000',
+             'probe done']
+    timeout: 120
+    diverge:
+      # A handled WM_TIMER writes no result, and ATL's CWindowImplBaseT::WindowProc declares
+      # `LRESULT lResult;` uninitialized, so the C returns whatever the stack held (4 here,
+      # the previous query's answer). atl_rust starts it at 0.
+      - why: 'a handled message that sets no result returns 0, not stack garbage'
+        c: '^timer poll -?[0-9]+$'
+        rust: '^timer poll 0$'
