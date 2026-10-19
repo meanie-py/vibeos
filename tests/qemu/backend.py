@@ -222,6 +222,12 @@ def known_bad_windows_qemu(version: str) -> str | None:
     return KNOWN_BAD_WINDOWS_QEMU.get(version)
 
 
+def known_bad_allowed() -> bool:
+    """VIBEOS_QEMU_ALLOW_KNOWN_BAD=1: boot a listed build anyway, for an emulator A/B soak
+    (did 11.1.0 bring a fault 11.0.50 never showed?). Smoke still reports it as a warning."""
+    return os.environ.get("VIBEOS_QEMU_ALLOW_KNOWN_BAD") == "1"
+
+
 def known_bad_windows_qemu_fix(exe: str) -> str:
     return (
         f"{exe} is a known-bad QEMU build. Point VIBEOS_QEMU_WINDOWS_DIR (or qemu.windows."
