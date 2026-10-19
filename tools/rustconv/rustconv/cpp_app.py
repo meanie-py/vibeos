@@ -2167,7 +2167,8 @@ def atl_module_static(g, model: ModuleModel) -> str | None:
     central = [
         cls
         for _, cls in entries
-        if cls in by_name and "DECLARE_CENTRAL_INSTANCE_NOT_AGGREGATABLE" in by_name[cls].atl_declares
+        if cls in by_name
+        and "DECLARE_CENTRAL_INSTANCE_NOT_AGGREGATABLE" in by_name[cls].atl_declares
     ]
 
     def creator_of(cls: str) -> str:
@@ -2187,7 +2188,7 @@ def atl_module_static(g, model: ModuleModel) -> str | None:
         for line in (
             f"static {cls}__CENTRAL: core::sync::atomic::AtomicPtr<c_void> = "
             "core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());",
-            f"unsafe extern \"system\" fn {cls}__central_creator(pv: *mut c_void, riid: *const "
+            f'unsafe extern "system" fn {cls}__central_creator(pv: *mut c_void, riid: *const '
             "c_void, ppv: *mut *mut c_void) -> i32 { "
             f"atl_rust::dll::central_creator::<{cls}>(&{cls}__CENTRAL, pv, riid, ppv) }}",
         )

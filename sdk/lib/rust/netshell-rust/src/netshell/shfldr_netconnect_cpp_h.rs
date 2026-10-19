@@ -355,6 +355,10 @@ impl CNetworkConnections {
             while cidl > 0 && !(*apidl).is_null() {
                 let pdata: PNETCONIDSTRUCT = ILGetConnData(*apidl);
                 if pdata.is_null() {
+                    // Divergence: the C++ `continue`s without advancing, so a pidl that is
+                    // not a connection spins this loop forever. Skip it instead.
+                    apidl = apidl.add(1);
+                    cidl -= 1;
                     continue;
                 }
 

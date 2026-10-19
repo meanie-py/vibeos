@@ -4597,7 +4597,9 @@ def stage_integrate(stem: str) -> None:
             print(f"integrate: {path.stem}: .spec stub(s) keep the export: {', '.join(unexported)}")
         rerouted = _module_method_calls(path, module_globals)
         if rerouted:
-            print(f"integrate: {path.stem}: module-method externs made calls: {', '.join(rerouted)}")
+            print(
+                f"integrate: {path.stem}: module-method externs made calls: {', '.join(rerouted)}"
+            )
         lib_copies = drop_guid_library_copies(path, guid_symbols)
         if lib_copies:
             changed += 1
@@ -6570,7 +6572,9 @@ def _module_own_defines(state: dict) -> set[str]:
     for pat in ("*.c", "*.cpp", "*.h", "*.hpp", "*.cxx"):
         for f in module_dir.rglob(pat):
             names |= set(
-                re.findall(r"^[ \t]*#[ \t]*define[ \t]+(\w+)(?![\w(])", f.read_text(errors="replace"), re.M)
+                re.findall(
+                    r"^[ \t]*#[ \t]*define[ \t]+(\w+)(?![\w(])", f.read_text(errors="replace"), re.M
+                )
             )
     return names
 

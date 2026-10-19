@@ -199,8 +199,10 @@ def resolve_module_conditionals(text: str, defines: dict[str, str]) -> str:
         kw, rest = m.group(1), m.group(2).strip()
         live = all((not f[0]) or f[1] for f in stack)
         if kw in ("if", "ifdef", "ifndef"):
-            cond = rest if kw == "if" else (
-                f"defined({rest})" if kw == "ifdef" else f"!defined({rest})"
+            cond = (
+                rest
+                if kw == "if"
+                else (f"defined({rest})" if kw == "ifdef" else f"!defined({rest})")
             )
             if kw != "if" and rest not in defines:
                 verdict = None  # an undefined name may be the SDK's
