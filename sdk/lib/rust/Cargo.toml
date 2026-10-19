@@ -926,6 +926,7 @@ members = [
     "wmiutils-rust",
     "sxs-rust",
     "inetmib1-rust",
+    "stobject-rust",
 ]
 resolver = "2"
 

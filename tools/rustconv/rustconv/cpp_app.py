@@ -1817,9 +1817,14 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel, win: Atl
         lines.append(f"    pub const {k}: i32 = {v};")
     if t == "CWindowImpl":
         traits = _template_name(win.traits) if win.traits else "CControlWinTraits"
-        if traits not in _WIN_TRAITS:
+        if traits in _WIN_TRAITS:
+            style, ex_style = _WIN_TRAITS[traits]
+        elif traits == "CWinTraits" and len(_template_args(win.traits or "")) == 2:
+            style, ex_style = _template_args(win.traits or "")
+        elif traits in model.win_traits:
+            style, ex_style = model.win_traits[traits]
+        else:
             raise CppAppError(f"{cls.qualified}: window traits {win.traits}")
-        style, ex_style = _WIN_TRAITS[traits]
         params = (
             "parent: HWND, rect: *mut RECT, name: LPCWSTR, style: DWORD, ex_style: DWORD, "
             "menu_or_id: impl atl_rust::win::MenuOrId"
@@ -2062,6 +2067,38 @@ def atl_module_static(g, model: ModuleModel) -> str | None:
     )
 
 
+_STDCALL_MARKERS = re.compile(r"\b(?:WINAPI|STDMETHODCALLTYPE|CALLBACK|APIENTRY|NTAPI|__stdcall)\b")
+
+
+def _fn_pointer_value(v: str, model: ModuleModel) -> str | None:
+    """A table entry naming one of the module's functions, as the `Option<fn>` bindgen gives
+    a function-pointer member: `Some(name)`; `(name) as _` cannot cast a fn item to it.
+    stobject's `{VOLUME_SERVICE_FLAG, Volume_Init, .., Volume_Message}`: a C++ REFERENCE
+    parameter (`LRESULT &lResult`) is `&mut` in the Rust function and `*mut` in bindgen's
+    pointer type, the same ABI, so that one goes through a transmute (C++ checked the
+    types match)."""
+    name = v.strip().removeprefix("&").strip()
+    fn = next((f for f in model.functions if f.name == name), None)
+    if fn is None or "(" not in fn.signature:
+        return None
+    sig = fn.signature
+    start = sig.index("(", sig.index(name) if name in sig else 0)
+    depth, end = 0, len(sig)
+    for i in range(start, len(sig)):
+        depth += (sig[i] == "(") - (sig[i] == ")")
+        if depth == 0:
+            end = i
+            break
+    params = [p for p in _split(sig[start + 1 : end]) if p.strip() and p.strip() != "void"]
+    if not any("&" in p for p in params):
+        return f"Some({name})"
+    abi = "system" if _STDCALL_MARKERS.search(sig[:start]) else "C"
+    holes = ", ".join("_" for _ in params)
+    return (
+        f'Some(unsafe {{ core::mem::transmute({name} as unsafe extern "{abi}" fn({holes}) -> _) }})'
+    )
+
+
 def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
     """A module struct (or array of them) with a brace initializer, as a Rust static:
     positional C values zipped with the struct's DECLARED field order. The model, given
@@ -2104,10 +2141,12 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
         if len(vals) > len(fields) or any("{" in v for v in vals):
             return None
         parts = [
+            f"{_ident(f.name)}: {fn_value}"
+            if (fn_value := _fn_pointer_value(v, model)) is not None
             # A REFERENCE member (`REFGUID m_guid;`, msctfime's MODEBIAS) is laid out as a
             # pointer and binds to its initializer's object: the address, never a cast of
             # the value (`GUID as *const GUID` does not even compile).
-            f"{_ident(f.name)}: core::ptr::addr_of!({_strip_ns(v, model)}) as _"
+            else f"{_ident(f.name)}: core::ptr::addr_of!({_strip_ns(v, model)}) as _"
             if _is_reference(f.c_type)
             else f"{_ident(f.name)}: core::ptr::addr_of!({_strip_ns(a.group(1), model)}) as _"
             if (a := re.fullmatch(r"&\s*(\w+)", v))
@@ -3119,6 +3158,21 @@ Mandatory mapping:
   first parameter, exactly as given. Do NOT write it as a method (`&mut self`): rustconv
   moves it into the class itself, by that name.
 """
+
+
+def declared_types(model: ModuleModel, worker: str, body: str) -> str:
+    """The C++ types of the module globals and class fields the body names: what
+    `atl_contract.contract` must see to know a `g_str.Format(..)` is CString's. Only what
+    the body NAMES -- the contract is part of the purchase key, and handing every method of
+    a class with one CComPtr field the CComPtr contract re-keyed 20 of stobject's 24."""
+
+    def named(name: str) -> bool:
+        return re.search(rf"\b{re.escape(name)}\b", body) is not None
+
+    out = [g.c_type for g in model.globals if named(g.name)]
+    for c in model.classes.values():
+        out += [f.c_type for f in c.fields if not f.static and named(f.name)]
+    return "\n".join(out)
 
 
 def worker_contract(model: ModuleModel, worker: str, body: str) -> str:

@@ -1476,6 +1476,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_uncalled_ctor_hook", [rustlints.SENTINEL, "scan_uncalled_ctor_hook"], "stdout")
     )
+    # A Rust GUID literal the SDK's DEFINE_GUID gives a different value. stobject's model
+    # wrote CGID_ShellServiceObject from memory, one digit off, and the tray never started.
+    # A Rust rule (tools/vibeos-lint/src/rules/guid_values.rs).
+    specs.append(("scan_guid_values", [rustlints.SENTINEL, "scan_guid_values"], "stdout"))
     # The OTHER half of that pair: a cross-MODULE extern declaration, checked against the
     # .spec of the DLL that exports it. `cargo check` never links, so nothing in `check`,
     # `check-tooling` or `difftest` can see a wrong-ABI import — it survives to the PE link,

@@ -103,11 +103,12 @@ const LoaderXIPRom: u32 = 25;
 
 const RAMDISK_BOOT_DISK: ULONG = 0x03;
 
+// ntddrdsk.h's value; this literal was once written from memory as {9E475CAB-..}.
 static RAMDISK_BOOTDISK_GUID: _GUID = _GUID {
-    Data1: 0x9E475CAB,
-    Data2: 0x956F,
-    Data3: 0x11D0,
-    Data4: [0xA0, 0xC4, 0x08, 0x00, 0x2B, 0xE1, 0x0D, 0x8E],
+    Data1: 0xD9B257FC,
+    Data2: 0x684E,
+    Data3: 0x4DCB,
+    Data4: [0xAB, 0x79, 0x03, 0xCF, 0xA2, 0xF6, 0xB7, 0x50],
 };
 
 // In ntddrdsk.h this is a 6-field bitfield: Readonly:1 | Fixed:1 | NoDriveLetter:1

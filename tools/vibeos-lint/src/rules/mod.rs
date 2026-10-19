@@ -5,6 +5,7 @@ pub mod double_fetch;
 pub mod dowhile_continue;
 pub mod entry_point_cc;
 pub mod uncalled_ctor_hook;
+pub mod guid_values;
 pub mod fnptr_abi_transmute;
 pub mod hkey_zero_extend;
 pub mod hresult_literals;
@@ -265,5 +266,6 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(fnptr_abi_transmute::FnptrAbiTransmute),
         Box::new(entry_point_cc::EntryPointCc),
         Box::new(uncalled_ctor_hook::UncalledCtorHook),
+        Box::new(guid_values::GuidValues),
     ]
 }
