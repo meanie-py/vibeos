@@ -219,7 +219,11 @@ unsafe fn ObpReferenceProcessObjectByHandle(
         *audit_mask = 0;
 
         *object = core::ptr::addr_of_mut!((*object_header).Body) as PVOID;
-        crate::obref::ObpReferenceByHandleEntry(handle_entry, object_header);
+        // A new reference, not one of the source handle's cached ones: it becomes the
+        // duplicate's own, so it must not come out of what the source will return on close.
+        // Windows leaves the source's count alone here (kmtest ObHandle reads 65537 for a
+        // handle plus its duplicate on x64).
+        InterlockedIncrementSizeT(core::ptr::addr_of_mut!((*object_header).PointerCount) as *mut isize);
 
         ExUnlockHandleTableEntry(handle_table, handle_entry);
         KeLeaveCriticalRegion();
@@ -1007,6 +1011,7 @@ const THREAD_RESUME_: ACCESS_MASK = 0x1000;
 
 extern "C" {
     static mut PsThreadType: POBJECT_TYPE;
+    static mut ObpTypeObjectType: POBJECT_TYPE;
 }
 
 unsafe fn ObpAddImpliedAccess(object_type: POBJECT_TYPE, mut access: ACCESS_MASK) -> ACCESS_MASK {
@@ -1035,10 +1040,10 @@ unsafe fn ObpAddImpliedAccess(object_type: POBJECT_TYPE, mut access: ACCESS_MASK
 /// OBP_HANDLE_BIAS in ntkrnl-sys), before ExCreateHandle publishes the entry: once it is in
 /// the table another thread can close it and return them.
 unsafe fn ObpChargeHandleBias(entry: PHANDLE_TABLE_ENTRY, header: POBJECT_HEADER) {
-    ObpSetHandleCachedRefs(entry, OBP_HANDLE_BIAS - 1);
+    ObpSetHandleCachedRefs(entry, OBP_HANDLE_BIAS);
     InterlockedExchangeAddSizeT(
         core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize,
-        (OBP_HANDLE_BIAS - 1) as isize,
+        OBP_HANDLE_BIAS as isize,
     );
 }
 
@@ -1047,7 +1052,7 @@ unsafe fn ObpChargeHandleBias(entry: PHANDLE_TABLE_ENTRY, header: POBJECT_HEADER
 unsafe fn ObpUnchargeHandleBias(header: POBJECT_HEADER) {
     InterlockedExchangeAddSizeT(
         core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize,
-        -((OBP_HANDLE_BIAS - 1) as isize),
+        -(OBP_HANDLE_BIAS as isize),
     );
 }
 
@@ -1320,8 +1325,10 @@ unsafe fn ObpCloseHandle(mut handle: HANDLE, access_mode: KPROCESSOR_MODE) -> NT
     let mut status: NTSTATUS;
     let process = PsGetCurrentProcess() as *mut _EPROCESS ;
 
-    if access_mode == 0i8 && handle == (-1isize) as HANDLE {
-        return STATUS_INVALID_HANDLE;
+    // Windows 10 closes the current-process pseudo-handle as a no-op success, from either
+    // mode (kmtest ObHandle; NT 6.x returned STATUS_INVALID_HANDLE).
+    if handle == (-1isize) as HANDLE {
+        return STATUS_SUCCESS;
     }
 
     if ObpIsKernelHandle(handle, access_mode) != 0 {
@@ -1981,9 +1988,12 @@ pub unsafe extern "system" fn ObOpenObjectByName(
         open_reason = ObOpenHandle;
     }
 
+    // Windows 11 will not open an object type by name: \ObjectTypes\Directory gives
+    // STATUS_INVALID_PARAMETER whatever the attributes (kmtest ObReference :180, ObTypes :80).
     if (*(*object_header).Type).TypeInfo.InvalidAttributes
         & (*temp_buffer).ObjectCreateInfo.Attributes
         != 0
+        || (*object_header).Type == ObpTypeObjectType
     {
         status = STATUS_INVALID_PARAMETER;
 

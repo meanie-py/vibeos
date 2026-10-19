@@ -1468,7 +1468,7 @@ pub unsafe extern "system" fn MmCreateSection(
     ObjectAttributes: POBJECT_ATTRIBUTES,
     MaximumSize: PLARGE_INTEGER,
     SectionPageProtection: ULONG,
-    mut AllocationAttributes: ULONG,
+    AllocationAttributes: ULONG,
     FileHandle: HANDLE,
     FileObject: PFILE_OBJECT,
 ) -> NTSTATUS {
@@ -1480,10 +1480,11 @@ pub unsafe extern "system" fn MmCreateSection(
     if AllocationAttributes & SEC_LARGE_PAGES != 0 {
         return STATUS_INVALID_PARAMETER_6;
     }
-    // Windows 8 on, an image section needs the file HANDLE; a bare FileObject is refused
-    // (kmtest MmSection). No caller in the tree builds one that way (Cc's FileObject-only
-    // sections are SEC_RESERVE).
-    if AllocationAttributes & SEC_IMAGE != 0 && FileHandle.is_null() && !FileObject.is_null() {
+    // Windows 8 on, an image section is built from the file HANDLE alone; a caller-supplied
+    // FileObject is refused, with or without a handle beside it (kmtest MmSection, all six
+    // SEC_IMAGE + FileObject cases). No caller in the tree builds one that way (Cc's
+    // FileObject-only sections are SEC_RESERVE).
+    if AllocationAttributes & SEC_IMAGE != 0 && !FileObject.is_null() {
         return STATUS_INVALID_PARAMETER_6;
     }
 
@@ -1509,7 +1510,6 @@ pub unsafe extern "system" fn MmCreateSection(
 
     let mut FileObject = FileObject;
     let mut FileLock = 0u8;
-    let mut HaveFileObject = 0u8;
 
     if !FileHandle.is_null() || !FileObject.is_null() {
         if AllocationAttributes & SEC_LARGE_PAGES != 0 {
@@ -1518,7 +1518,6 @@ pub unsafe extern "system" fn MmCreateSection(
 
         if !FileObject.is_null() {
             ObReferenceObject(FileObject as PVOID);
-            HaveFileObject = 1u8;
         } else {
             let Status = ObReferenceObjectByHandle(
                 FileHandle,
@@ -1555,14 +1554,6 @@ pub unsafe extern "system" fn MmCreateSection(
         return STATUS_INVALID_FILE_FOR_SECTION;
     }
 
-    // A caller-supplied FileObject always gets a DATA section, as on Server 2003 (the version
-    // we report): MmSection.c expects SEC_FILE alone, and a map at the requested base, for
-    // SEC_IMAGE with FileObject1 or FileObject2. ReactOS built an image section here and
-    // only fell back to data when the image was invalid; Win8+ rejects the combination with
-    // STATUS_INVALID_PARAMETER_6. No in-tree caller passes SEC_IMAGE with a FileObject.
-    if HaveFileObject != 0 {
-        AllocationAttributes &= !SEC_IMAGE;
-    }
 
     let mut Status = if AllocationAttributes & SEC_IMAGE != 0 {
         MmCreateImageSection(
@@ -3916,7 +3907,9 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         if !(IsFile && Reserve)
             && (ViewOffset as u64).wrapping_add(current_view_size as u64) > (*Section).SizeOfSection.QuadPart as u64
         {
-            if (*Section).u.Flags.PhysicalMemory() == 0 || ExGetPreviousMode() != 0i8 {
+            // \Device\PhysicalMemory may be viewed past its end from either mode on
+            // Windows 10 (MmSection.c:851/:900; NT 6.x allowed it to kernel mode only).
+            if (*Section).u.Flags.PhysicalMemory() == 0 {
                 MmUnlockAddressSpace(AddressSpace);
                 if IsAttached != 0 {
                     KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));

@@ -98,16 +98,17 @@ pub unsafe fn OBJECT_HEADER_TO_EXCLUSIVE_PROCESS(
 // Handle entry macros (from ob.h)
 // ============================================================================
 
-// Windows 8 handle reference biasing. Creating a handle charges the object OBP_HANDLE_BIAS
-// references: one the handle holds, and BIAS-1 cached in the entry, which
-// ObReferenceObjectByHandle draws down instead of incrementing PointerCount and which
-// closing the handle returns. So PointerCount reads 65537 for two handles plus a pointer
-// reference on x64 (65 on x86), as ObjectBasicInformation shows on Windows (kmtest ObHandle,
-// MmSection, ZwMapViewOfSection). The cache lives where Windows keeps it: on 64-bit in the
-// object pointer's top 16 bits (kernel pointers are canonical, so those bits are otherwise
-// all ones; stored inverted, so a plain pointer means 0 cached); on x86 in GrantedAccess bits
-// 26-30, above ObpAccessProtectCloseBit (25). Entries are read through ObpGetHandleObject
-// and ObpHandleGrantedAccess, which strip it.
+// Windows 8 handle reference biasing. A handle holds its own reference plus OBP_HANDLE_BIAS
+// more cached in its entry, charged to PointerCount when the handle is created;
+// ObReferenceObjectByHandle draws the cache down instead of incrementing PointerCount, and
+// closing the handle returns what is left of it plus its own. So a directory with one handle
+// reads 32769 in ObjectBasicInformation on x64 (33 on x86), and each query through the handle
+// lowers it by one for good, as on Windows (kmtest ObHandle, MmSection, ZwMapViewOfSection).
+// The cache lives where Windows keeps it: on 64-bit in the object pointer's top 16 bits
+// (kernel pointers are canonical, so those bits are otherwise all ones; stored inverted, so a
+// plain pointer means 0 cached); on x86 in GrantedAccess bits 26-31, above
+// ObpAccessProtectCloseBit (25) and wide enough for 32. Entries are read through
+// ObpGetHandleObject and ObpHandleGrantedAccess, which strip it.
 #[cfg(target_pointer_width = "64")]
 pub const OBP_HANDLE_BIAS: usize = 0x8000;
 #[cfg(target_pointer_width = "32")]
@@ -117,7 +118,7 @@ const OBP_HANDLE_REFS_SHIFT: u32 = 48;
 #[cfg(target_pointer_width = "32")]
 const OBP_HANDLE_REFS_SHIFT: u32 = 26;
 #[cfg(target_pointer_width = "32")]
-const OBP_HANDLE_REFS_MASK: u32 = 0x1F << OBP_HANDLE_REFS_SHIFT;
+const OBP_HANDLE_REFS_MASK: u32 = 0x3F << OBP_HANDLE_REFS_SHIFT;
 
 /// ObpGetHandleObject — extract POBJECT_HEADER from a handle table entry.
 /// C: `(POBJECT_HEADER)((ULONG_PTR)x->Object & ~OBJ_HANDLE_ATTRIBUTES)`; on 64-bit the top
