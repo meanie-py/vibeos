@@ -2554,22 +2554,76 @@ def fold_module_subclasses(model: ModuleModel) -> list[str]:
     into `CComModule`, so its global is atl_rust::dll's and its workers get CComModule's
     contract. Rendered as its own class, it lost the CComModule base (atl_rust has no C++
     layout for it) and the model, given no module API, invented
-    `ATL_CAtlDllModuleT_DllGetClassObject`. A subclass that ADDS members is refused: what it
-    adds would have to be ported onto atl_rust::dll::CComModule first. Returns the names."""
-    folded = []
+    `ATL_CAtlDllModuleT_DllGetClassObject`.
+
+    A subclass that hides a CComModule method with its own (fontext's `Init` creates the font
+    cache, then calls `CComModule::Init`) keeps that method as a module function
+    `CFontExtModule_Init(CComModule *this_, ..)`, and every `gModule.Init(..)` in the module
+    calls it: folding it away would boot with no font cache. ONE underscore: integrate reads
+    `C__m` as class C's method m, and turned `this_->Init` into a call to itself. A subclass
+    with FIELDS is refused: atl_rust::dll::CComModule has no room for them. Returns the names."""
+    from .cpp_model import FreeFunc
+
+    folded: list[str] = []
+    hidden: dict[str, list[str]] = {}  # folded class -> its own method names
     for q, c in list(model.classes.items()):
         if c.external or [short(b.name) for b in c.bases] != ["CComModule"]:
             continue
-        if c.fields or any(m.kind not in ("ctor", "dtor") or m.body for m in c.methods):
+        if c.fields:
             raise CppAppError(
-                f"{c.qualified}: a CComModule subclass with members; port them onto "
+                f"{c.qualified}: a CComModule subclass with fields; port them onto "
                 "atl_rust::dll::CComModule first"
             )
+        for m in c.methods:
+            if m.kind in ("ctor", "dtor") and not m.body:
+                continue
+            if m.kind != "method" or m.static or m.virtual or m.lowered is None:
+                raise CppAppError(
+                    f"{c.qualified}::{m.name}: only plain methods of a CComModule subclass "
+                    "can be kept as module functions"
+                )
+            body = re.sub(r"\b(?:CComModule::\s*)?this_->__base0\.", "this_->", m.lowered).replace(
+                "CComModule::", "this_->"
+            )
+            params = ", ".join(["CComModule *this_", *(f"{p.c_type} {p.name}" for p in m.params)])
+            name = f"{c.name}_{m.rust_name}"  # one `_`: `C__m` is a METHOD to integrate
+            model.functions.append(
+                FreeFunc(name, f"{m.return_type} {name}({params})", c.file, body, static=True)
+            )
+            hidden.setdefault(c.name, []).append(m.rust_name)
         del model.classes[q]
         folded.append(c.name)
+    globals_of = {
+        g.name: short(" ".join(g.c_type.split()))
+        for g in model.globals
+        if short(" ".join(g.c_type.split())) in folded
+    }
     for g in model.globals:
-        if short(" ".join(g.c_type.split())) in folded:
+        if g.name in globals_of:
             g.c_type = "CComModule"
+
+    def reroute(text: str) -> str:
+        for g, cls in globals_of.items():
+            # Inherited calls reached the base through `.__base0`; the global IS the base now.
+            text = re.sub(rf"\b{g}\s*\.\s*__base0\s*\.", f"{g}.", text)
+            for meth in hidden.get(cls, []):
+
+                def call(
+                    m: re.Match[str], g: str = g, fn: str = f"{cls}_{meth}", src: str = text
+                ) -> str:
+                    rest = src[m.end() :].lstrip()
+                    return f"{fn}(&{g}" + ("" if rest.startswith(")") else ", ")
+
+                text = re.sub(rf"\b{g}\s*\.\s*{meth}\s*\(", call, text)
+        return text
+
+    if globals_of:
+        for c in model.classes.values():
+            for m in c.methods:
+                if m.lowered:
+                    m.lowered = reroute(m.lowered)
+        for f in model.functions:
+            f.lowered = reroute(f.lowered)
     return folded
 
 
@@ -3187,11 +3241,14 @@ def worker_contract(model: ModuleModel, worker: str, body: str) -> str:
         ),
         key=lambda c: (not worker.startswith(c.name + "__"), c.name),
     )
+    # A folded subclass's own method (`CFontExtModule_Init(CComModule *this_, ..)`) names the
+    # module by type, not by its global: it needs the CComModule API as much as DllMain does.
+    by_type = re.search(r"\bCComModule\s*\*\s*this_\b", body) is not None
     module_globals = [
         g.name
         for g in model.globals
         if short(" ".join(g.c_type.split())) == "CComModule"
-        and re.search(rf"\b{re.escape(g.name)}\b", body)
+        and (by_type or re.search(rf"\b{re.escape(g.name)}\b", body))
     ]
     maps = [
         g.name

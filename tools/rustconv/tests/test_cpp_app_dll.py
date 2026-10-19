@@ -307,8 +307,45 @@ def test_a_ccommodule_subclass_with_members_is_refused():
     sub.bases = [Base("CComModule", "public")]
     sub.fields = [Field("m_extra", "int")]
     m.classes["CMyModule"] = sub
-    with pytest.raises(cpp_app.CppAppError, match="CComModule subclass with members"):
+    with pytest.raises(cpp_app.CppAppError, match="CComModule subclass with fields"):
         cpp_app.fold_module_subclasses(m)
+
+
+def test_a_ccommodule_subclass_method_stays_a_module_function_and_its_calls_follow():
+    # fontext: CFontExtModule::Init creates the font cache, then calls CComModule::Init.
+    from rustconv.cpp_model import FreeFunc
+
+    m = _model()
+    sub = ClassModel("CFontExtModule", "CFontExtModule", "class", "fontext.cpp")
+    sub.bases = [Base("CComModule", "public")]
+    init = Method("Init", "method", [Param("p", "_ATL_OBJMAP_ENTRY *")], "void", rust_name="Init")
+    init.lowered = (
+        "{\n    g_FontCache = CFontCache__new_0();\n    CComModule::this_->__base0.Init(p);\n}"
+    )
+    term = Method("Term", "method", [], "void", rust_name="Term")
+    term.lowered = "{\n    CComModule::this_->__base0.Term();\n}"
+    sub.methods = [init, term]
+    m.classes["CFontExtModule"] = sub
+    m.globals[1].c_type = "CFontExtModule"
+    g = m.globals[1].name
+    m.functions.append(
+        FreeFunc(
+            "DllMain",
+            "BOOL WINAPI DllMain()",
+            "fontext.cpp",
+            f"{{ {g}.Init(ObjectMap); {g}.Term(); {g}.__base0.DllCanUnloadNow(); }}",
+        )
+    )
+    assert cpp_app.fold_module_subclasses(m) == ["CFontExtModule"]
+    fns = {f.name: f for f in m.functions}
+    assert "this_->Init(p);" in fns["CFontExtModule_Init"].lowered
+    assert fns["CFontExtModule_Init"].signature.startswith(
+        "void CFontExtModule_Init(CComModule *this_, _ATL_OBJMAP_ENTRY * p)"
+    )
+    body = fns["DllMain"].lowered
+    assert f"CFontExtModule_Init(&{g}, ObjectMap);" in body
+    assert f"CFontExtModule_Term(&{g});" in body
+    assert f"{g}.DllCanUnloadNow()" in body
 
 
 def _with_virtual_dtor(m):

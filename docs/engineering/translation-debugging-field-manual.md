@@ -12411,6 +12411,15 @@ token is a macro's expansion (clang's `expansionLoc`, not a macro argument), whi
 what the module's call sites say. When a translated module defines an SDK function's name,
 check whether the C defines it or overloads it.
 
+### A `CComModule` subclass's own `Init`/`Term` vanish when it is folded
+**Symptom:** none at compile time; the module boots without what its `Init` builds (fontext's
+font cache, created before `CComModule::Init`).
+**Cause:** cppapp folds an empty `class X : public CComModule {}` into atl_rust's CComModule;
+a subclass that hides `Init`/`Term` was refused, and folding it naively drops them.
+**Fix:** automatic: each hiding method is kept as a module function `X_Init(CComModule *this_,
+..)` and every `gModule.Init(..)` calls it. ONE underscore: integrate reads `X__Init` as class
+X's method and turned the base call into a call to itself.
+
 ### A file-static helper several TUs define became ONE function
 **Symptom:** right-clicking stobject's volume or power icon opened the hotplug icon's
 removable-device menu, whose items eject the device.
@@ -12420,6 +12429,30 @@ kept and the other two TUs' calls bound to it.
 **Fix:** automatic: a file-static whose name a different file already defined is named
 `<name>__<file stem>` (`_ShowContextMenu__volume`), and the TU's calls follow through clang's
 decl ids.
+
+### A C++ element copy written as `ptr::read` frees the copy's strings
+**Symptom:** garbage or freed-memory names the first time a cached list is read, then heap
+corruption when it is rebuilt (fontext's Fonts folder, the moment it opened).
+**Cause:** C++ `m_Fonts.Add(fonts.GetNext(it))` copy-constructs each element; the translation
+wrote `m_Fonts.Add(core::ptr::read(fonts.GetNext(&mut it)))`, a bitwise duplicate. The local
+list then dropped and freed every `CStringW` the cache still pointed at, and the cache's own
+`RemoveAll` freed them again.
+**Fix:** move the element out (`CAtlList::RemoveHead` returns it by value) or `clone()` it.
+`scan_container_ptr_read` (vibeos-lint, empty baseline) fails `check` on a `ptr::read` of a
+container accessor.
+
+### One function declared through two typedef spellings became two "overloads"
+**Symptom:** `cannot find function DoGetFontTitle__0` though `DoGetFontTitle__1` exists.
+**Cause:** precomp.h declares `DoGetFontTitle(PCWSTR, CStringW&)` and fontext.cpp defines it
+with `LPCWSTR`; cpp_model keyed overloads by clang's sugared `qualType`, so one function had
+two signatures. **Fix:** automatic: overloads are keyed by the parameters' desugared types.
+
+### A C++ `const` global the island declares `extern` came back as a Rust `const`
+**Symptom:** `undefined symbol: CLSID_CFontExt` at link, from the object map.
+**Cause:** `const GUID CLSID_CFontExt = {..}` translated as `pub const`, which has no storage;
+every other unit names the island's `extern static`. **Fix:** automatic: integrate turns a
+`const` whose name the island declares extern into `#[no_mangle] pub static`. The same pass
+drops a model-written copy of a GUID a linked library (uuid) defines, one-line literals too.
 
 ### `CString s((LPCSTR)IDS_X)` is a resource load, not text
 **Symptom:** an access violation at a small address (0x60) when a menu or dialog is built.

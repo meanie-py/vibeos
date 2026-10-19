@@ -3269,6 +3269,16 @@ CONTROLS: list[Control] = [
         good={"good.rs": _ENTRYCC_GOOD},
     ),
     Control(
+        name="scan_container_ptr_read",
+        script="tools/vibeos-lint/src/rules/container_ptr_read.rs",
+        bad={
+            "sdk/lib/rust/x-rust/src/a.rs": "fn f() { m.Add(core::ptr::read(l.GetNext(&mut it))); }\n"
+        },
+        good={
+            "sdk/lib/rust/x-rust/src/a.rs": "fn f() { while let Some(e) = l.RemoveHead() { m.Add(e); } }\n"
+        },
+    ),
+    Control(
         name="scan_guid_values",
         script="tools/vibeos-lint/src/rules/guid_values.rs",
         bad={

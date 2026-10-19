@@ -363,6 +363,27 @@ _STDCALL_SPELLED = re.compile(
 )
 
 
+def _signature_key(n: dict) -> str:
+    """A function's type with its typedefs resolved, so one function declared through two
+    spellings is one signature: fontext's precomp.h says `PCWSTR` and fontext.cpp `LPCWSTR`,
+    and the two "overloads" `DoGetFontTitle__0`/`__1` left the caller naming one nobody
+    defined. A real overload (`Fill(.., COLORREF)` / `Fill(.., HBRUSH)`) still differs."""
+    params = [x for x in n.get("inner", []) if x.get("kind") == "ParmVarDecl"]
+    if not params:
+        t = n.get("type", {})
+        return t.get("desugaredQualType") or t.get("qualType", "")
+    # C++ overloads on the parameter list alone, so that is the key; clang desugars each
+    # parameter's typedef (`PCWSTR` -> `const wchar_t *`), not the function type's.
+    return (
+        "("
+        + ", ".join(
+            p.get("type", {}).get("desugaredQualType") or p.get("type", {}).get("qualType", "")
+            for p in params
+        )
+        + ")"
+    )
+
+
 def _spell_stdcall(sig: str, name: str, qual_type: str) -> str:
     """A free function's declarator with its stdcall written out. `STDAPI_(BOOL) DllMain(..)`
     is `EXTERN_C BOOL STDAPICALLTYPE`, but the macro hides that: stobject's DllMain came
@@ -1445,7 +1466,7 @@ class _Extractor:
         for n in nodes:
             if n.get("kind") == "FunctionDecl" and self.mine(_file_of(n)):
                 sigs = self._overloads.setdefault(n["name"], [])
-                qt = n.get("type", {}).get("qualType", "")
+                qt = _signature_key(n)
                 if qt not in sigs:
                     sigs.append(qt)
             elif n.get("kind") in ("NamespaceDecl", "LinkageSpecDecl"):
@@ -1472,7 +1493,7 @@ class _Extractor:
                 base = f"{base}__{Path(here).stem}"
         if len(sigs) < 2:
             return base
-        qt = n.get("type", {}).get("qualType", "")
+        qt = _signature_key(n)
         return f"{base}__{sigs.index(qt) if qt in sigs else len(sigs)}"
 
     def _register_function(self, n: dict) -> None:

@@ -475,6 +475,27 @@ pub unsafe extern "system" fn StringCchLengthW(
     StringLengthWorkerW(psz, cchMax, pcchLength)
 }
 
+/// strsafe.h `StringCbLengthW`: StringCchLengthW in bytes. Unlike the Cch form, a failure
+/// (NULL, too long, unterminated within cbMax) writes 0 to `*pcbLength` when it is given.
+#[no_mangle]
+pub unsafe extern "system" fn StringCbLengthW(
+    psz: *const WCHAR,
+    cbMax: usize,
+    pcbLength: *mut usize,
+) -> HRESULT {
+    let cchMax = cbMax / core::mem::size_of::<WCHAR>();
+    let mut cchLength = 0usize;
+    let hr = if psz.is_null() || cchMax > STRSAFE_MAX_CCH {
+        STRSAFE_E_INVALID_PARAMETER
+    } else {
+        StringLengthWorkerW(psz, cchMax, &mut cchLength)
+    };
+    if !pcbLength.is_null() {
+        *pcbLength = if hr >= 0 { cchLength * core::mem::size_of::<WCHAR>() } else { 0 };
+    }
+    hr
+}
+
 /// strsafe.h `StringLengthWorkerA` -- StringLengthWorkerW over CHAR.
 unsafe fn StringLengthWorkerA(
     mut psz: *const core::ffi::c_char,
