@@ -13,7 +13,6 @@ timeout 7zip\7z.exe 1200
 7zip\7z.exe a -t7z C:\TEMP\p4.7z X:\reactos\system32\ntdll.dll -mx1 -mmt1 -bb3
 7zip\7z.exe a -t7z C:\TEMP\p5.7z X:\reactos\system32\ntdll.dll -m0=Copy -bb3
 cmake\cmake.exe -E tar cf C:\TEMP\p6.tar X:\reactos\system32\ntdll.dll
-cmake\cmake.exe -E tar cf C:\TEMP\p7.tar ntdll.out
 7zip\7z.exe a C:\TEMP\sys.7z X:\reactos\system32\*.dll -mx5 -mmt2
 7zip\7z.exe t C:\TEMP\sys.7z
 7zip\7z.exe a C:\TEMP\sys.zip X:\reactos\system32\drivers\*.sys
@@ -31,3 +30,8 @@ gnupg\gpg.exe --homedir C:\TEMP\gpghome --print-md SHA256 X:\reactos\system32\nt
 gnupg\gpg.exe --batch --homedir C:\TEMP\gpghome --symmetric --passphrase vibeos --pinentry-mode loopback -o C:\TEMP\ntdll.gpg X:\reactos\system32\ntdll.dll
 gnupg\gpg.exe --batch --homedir C:\TEMP\gpghome --decrypt --passphrase vibeos --pinentry-mode loopback -o C:\TEMP\ntdll.out C:\TEMP\ntdll.gpg
 cmake\cmake.exe -E compare_files X:\reactos\system32\ntdll.dll C:\TEMP\ntdll.out
+# Source on C: instead of X: (the decrypted ntdll.out above):
+7zip\7z.exe a -ttar C:\TEMP\p8.tar C:\TEMP\ntdll.out -bb3
+cmake\cmake.exe -E tar cf C:\TEMP\p9.tar ntdll.out
+7zip\7z.exe a -ttar C:\TEMP\p10.tar X:\reactos\system32\ntdll.dll -bb3 -ssw
+7zip\7z.exe a -ttar C:\TEMP\p11.tar X:\reactos\bin\apitest-cwd.txt -bb3
