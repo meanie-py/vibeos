@@ -1003,7 +1003,10 @@ unsafe extern "system" fn Client_accHitTest(
         child,
         OBJID_WINDOW as DWORD,
         core::ptr::addr_of!(IID_IDispatch),
-        V_DISPATCH!(pvarID) as *mut *mut core::ffi::c_void,
+        // C: (void**)&V_DISPATCH(pvarID) -- the ADDRESS of the slot. The translation passed its
+        // (uninitialised) value, so AccessibleObjectFromWindow stored the interface pointer
+        // through garbage: heap corruption, caught later in RtlpRemoveFreeBlock.
+        core::ptr::addr_of_mut!(V_DISPATCH!(pvarID)) as *mut *mut core::ffi::c_void,
     );
 }
 
@@ -1112,7 +1115,9 @@ unsafe extern "system" fn Client_EnumVARIANT_Next(iface: *mut IEnumVARIANT, celt
             cur,
             OBJID_WINDOW as DWORD,
             core::ptr::addr_of!(IID_IDispatch),
-            V_DISPATCH!(rgVar.add(fetched as usize)) as *mut *mut core::ffi::c_void,
+            // C: (void**)&V_DISPATCH(rgVar+fetched) -- the slot's address, not its value.
+            core::ptr::addr_of_mut!(V_DISPATCH!(rgVar.add(fetched as usize)))
+                as *mut *mut core::ffi::c_void,
         );
         if hr < (0 as HRESULT) {
             V_VT!(rgVar.add(fetched as usize)) = VT_EMPTY as VARTYPE;

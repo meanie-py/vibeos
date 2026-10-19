@@ -2417,6 +2417,19 @@ pub unsafe extern "C" fn KdIoPrintf(Format: *const i8, a0: usize, a1: usize) {}
 pub unsafe extern "C" fn _vsnwprintf(b: *mut u16, n: usize, fmt: *const u16, ap: *mut u8) {}
 """
 
+_VARIANT_OUTPTR_BAD = """\
+// oleacc's Client_EnumVARIANT_Next: the slot's value where C passed its address.
+unsafe fn next(rgVar: *mut VARIANT, n: u32) -> i32 {
+    AccessibleObjectFromWindow(h, 0, &IID_IDispatch,
+        V_DISPATCH!(rgVar.add(n as usize)) as *mut *mut core::ffi::c_void)
+}
+"""
+_VARIANT_OUTPTR_GOOD = """\
+unsafe fn next(rgVar: *mut VARIANT, n: u32) -> i32 {
+    AccessibleObjectFromWindow(h, 0, &IID_IDispatch,
+        core::ptr::addr_of_mut!(V_DISPATCH!(rgVar.add(n as usize))) as *mut *mut core::ffi::c_void)
+}
+"""
 _BYTE_STEP_ONE_BAD = """\
 pub unsafe fn folders(h: *mut CFHEADER) -> *mut u8 {
     // C: (PUCHAR)(PCABHeader + 1) -- past the whole header, not one byte.
@@ -3194,6 +3207,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BYTE_STEP_ONE_BAD},
         good={"good.rs": _BYTE_STEP_ONE_GOOD},
+    ),
+    Control(
+        name="scan_variant_outptr",
+        script="tools/scan_variant_outptr.py",
+        argv=["--lint"],
+        bad={"bad.rs": _VARIANT_OUTPTR_BAD},
+        good={"good.rs": _VARIANT_OUTPTR_GOOD},
     ),
     Control(
         name="scan_ptr_typedef_cast_read",
