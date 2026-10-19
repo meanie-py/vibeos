@@ -1612,7 +1612,11 @@ class _Extractor:
             for f in Path(self.module_dir).rglob(pat)
             if f.is_file()
         )
-        strings = cpp_lower.string_macros([f.read_text(errors="replace") for f in own])
+        own_text = [f.read_text(errors="replace") for f in own]
+        strings = cpp_lower.string_macros(own_text)
+        own_defines = cpp_lower.module_defines(own_text)
+        for k, v in self.model.defines.items():
+            own_defines.setdefault(k, v)
         for target, node, owner in self.pending:
             span = self.src.node_span(node)
             if span is None:
@@ -1620,6 +1624,7 @@ class _Extractor:
             out = low.lower(node, span, owner)
             text = cpp_lower.concat_string_macros(out.text, strings)
             text = cpp_lower.ppv_arg_macros(text)
+            text = cpp_lower.resolve_module_conditionals(text, own_defines)
             text = cpp_lower.local_enums_to_consts(text)
             text = cpp_lower.com_object_create(text)
             text = cpp_lower.atl_qualified_glue(text)

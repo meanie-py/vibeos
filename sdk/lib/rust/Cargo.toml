@@ -931,6 +931,7 @@ members = [
     "stobject-rust",
     "fontext-rust",
     "ntobjshex-rust",
+    "netshell-rust",
 ]
 resolver = "2"
 

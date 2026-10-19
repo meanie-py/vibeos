@@ -1,0 +1,20 @@
+# netshell (dll/shellext/netshell -> netshell-rust, `port cppapp`): Network Connections --
+# the connection manager, the shell folder, the LAN property UI and the tray icon explorer
+# starts at boot (through stobject). probes/netshell.c, staged twice: as netshell_c.exe it
+# loads the pre-flip C (netshell_c.dll, from c_oracle.cmake) beside it, as netshell_probe.exe
+# the system netshell.dll. Both see the same guest's adapters and print only values, so the
+# outputs must match byte for byte.
+module: netshell
+variants:
+  c: '%SystemRoot%\bin\modrun\netshell_c.exe'
+  rust: '%SystemRoot%\bin\modrun\netshell_probe.exe'
+ninja: [netshell_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/netshell-{arch}.exe', dest: bin/modrun/netshell_c.exe}
+  - {src: 'tools/payloads/modrun/probes/netshell-{arch}.exe', dest: bin/modrun/netshell_probe.exe}
+  - {src: 'build-{arch}/dll/shellext/netshell/netshell_c.dll', dest: bin/modrun/netshell_c.dll}
+cases:
+  - id: connections
+    expect: ['manager create 00000000', 'manager enum 00000000', 'folder create 00000000',
+             'folder enum 00000000', 'tray create 00000000', 'probe done']
+    timeout: 180

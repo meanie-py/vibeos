@@ -355,6 +355,115 @@ pub unsafe fn DumpIdList<P>(pcidl: *const P) {
     DbgPrint(b"End IDList Dump.\n\0".as_ptr());
 }
 
+// ---- shellfolderutils.h -------------------------------------------------------------------
+// C++ templates over compile-time column count / canonical column / compare kind; here those
+// are arguments. IShellFolder2's GetDetailsOf is vtable slot 18 (IUnknown 3, IShellFolder 10,
+// then GetDefaultSearchGUID, EnumSearches, GetDefaultColumn, GetDefaultColumnState,
+// GetDetailsEx), and SHELLDETAILS is `{ int fmt; int cxChar; STRRET str; }` with STRRET at 8.
+extern "system" {
+    fn StrRetToStrW(psr: *mut core::ffi::c_void, pidl: *const core::ffi::c_void, ppsz: *mut *mut u16)
+        -> i32;
+    fn StrCmpLogicalW(a: *const u16, b: *const u16) -> i32;
+    fn lstrcmpiW(a: *const u16, b: *const u16) -> i32;
+    fn SHFree(pv: *mut core::ffi::c_void);
+}
+
+const S_EQUAL: i32 = 0;
+const S_GREATERTHAN: i32 = 1;
+const S_LESSTHAN: i32 = 0xFFFF;
+const SHCIDS_COLUMNMASK: i64 = 0x0000_FFFF;
+const SHCIDS_CANONICALONLY: i64 = 0x1000_0000;
+const SHCIDS_ALLFIELDS: i64 = 0x8000_0000;
+
+/// shellutils.h `MAKE_COMPARE_HRESULT`.
+fn make_compare_hresult(x: i32) -> i32 {
+    if x > 0 {
+        S_GREATERTHAN
+    } else if x < 0 {
+        S_LESSTHAN
+    } else {
+        S_EQUAL
+    }
+}
+
+#[repr(C, align(8))]
+struct ShellDetails([u8; 8 + 272]);
+
+unsafe fn details_of<F, P>(psf: *mut F, pidl: *const P, column: u32, sd: *mut ShellDetails) -> i32 {
+    type GetDetailsOf =
+        unsafe extern "system" fn(*mut core::ffi::c_void, *const core::ffi::c_void, u32, *mut u8) -> i32;
+    let vtbl = *(psf as *const *const Option<GetDetailsOf>);
+    match *vtbl.add(18) {
+        Some(f) => f(psf as *mut _, pidl as *const _, column, sd as *mut u8),
+        None => E_UNEXPECTED,
+    }
+}
+
+/// shellfolderutils.h `ShellFolderImpl_CompareItemColumn<LOGICALCMP>`: the column's text for
+/// both items, compared logically (StrCmpLogicalW) or case-insensitively (lstrcmpiW).
+pub unsafe fn ShellFolderImpl_CompareItemColumn<F, P>(
+    psf: *mut F,
+    column: u32,
+    pidl1: *const P,
+    pidl2: *const P,
+    logical: bool,
+) -> i32 {
+    let mut d1 = ShellDetails([0; 280]);
+    let mut d2 = ShellDetails([0; 280]);
+    let (mut s1, mut s2): (*mut u16, *mut u16) = (core::ptr::null_mut(), core::ptr::null_mut());
+    let mut hr = details_of(psf, pidl1, column, &mut d1);
+    if hr >= 0 {
+        hr = StrRetToStrW(d1.0.as_mut_ptr().add(8).cast(), pidl1.cast(), &mut s1);
+        if hr >= 0 {
+            hr = details_of(psf, pidl2, column, &mut d2);
+            if hr >= 0 {
+                hr = StrRetToStrW(d2.0.as_mut_ptr().add(8).cast(), pidl2.cast(), &mut s2);
+                if hr >= 0 {
+                    let res = if logical { StrCmpLogicalW(s1, s2) } else { lstrcmpiW(s1, s2) };
+                    hr = make_compare_hresult(res);
+                    SHFree(s2.cast());
+                }
+            }
+            SHFree(s1.cast());
+        }
+    }
+    hr
+}
+
+/// shellfolderutils.h `ShellFolderImpl_CompareItemIDs<COLCOUNT, CANONICAL, LOGICALCMP>`.
+/// **Exceeds the C:** with `colcount` 0 and SHCIDS_ALLFIELDS the C++ returns an
+/// uninitialized HRESULT; this returns S_EQUAL (no column differs).
+pub unsafe fn ShellFolderImpl_CompareItemIDs<F, P, L: TryInto<i64>>(
+    psf: *mut F,
+    lParam: L,
+    pidl1: *const P,
+    pidl2: *const P,
+    colcount: u32,
+    canonical: i32,
+    logical: bool,
+) -> i32 {
+    let lparam: i64 = lParam.try_into().unwrap_or(0);
+    let mut hr;
+    if canonical >= 0 && lparam & SHCIDS_CANONICALONLY != 0 {
+        hr = ShellFolderImpl_CompareItemColumn(psf, canonical as u32, pidl1, pidl2, logical);
+        if hr == S_EQUAL || lparam & SHCIDS_ALLFIELDS == 0 || hr < 0 {
+            return hr;
+        }
+    }
+    if lparam & SHCIDS_ALLFIELDS != 0 {
+        hr = S_EQUAL;
+        for i in 0..colcount {
+            hr = ShellFolderImpl_CompareItemColumn(psf, i, pidl1, pidl2, logical);
+            if hr != 0 && hr >= 0 {
+                break; // only stop on a successfully found difference
+            }
+        }
+        return hr;
+    }
+    let column = (lparam & SHCIDS_COLUMNMASK) as u32;
+    ShellFolderImpl_CompareItemColumn(psf, column, pidl1, pidl2, logical)
+}
+
 #[repr(C)]
 struct FormatEtc {
     cf_format: u16,

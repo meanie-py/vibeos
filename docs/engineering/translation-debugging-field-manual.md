@@ -12476,6 +12476,24 @@ module-private type. A class with no `DECLARE_*AGGREGATABLE` is NOT aggregatable
 (atlcom.h comments CComCoClass's `DECLARE_AGGREGATABLE` out), so atl_rust's refusing creator is
 the faithful one; ntobjshex's modrun suite measured the C answering CLASS_E_NOAGGREGATION.
 
+### A body's `#if` on a module macro was translated from the wrong arm
+**Symptom:** a feature quietly never runs. netshell's tray icon never started:
+`CNetConnectionManager_CreateInstance` called `CoCreateInstance(CLSID_ConnectionManager)`, an
+unregistered CLSID, instead of `ShellObjectCreatorInit<CNetConnectionManager>`.
+**Cause:** the lowered body keeps every arm of `#if USE_CUSTOM_CONMGR .. #else .. #endif`, and
+the model took the `#else`; precomp.h sets it to 1.
+**Fix:** automatic: `cpp_lower.resolve_module_conditionals` decides a body's conditional from
+the module's own `#define`s and the compile's `-D`s before translation; one naming any other
+macro (arch, SDK) is left whole for the reader.
+
+### A module's own `#define` was copied from another crate
+**Symptom:** a column, page count or flag with the wrong value and no compile error: netshell's
+Type column blank (`COLUMN_TYPE` 4, shell32's recycle bin's, for the module's 1).
+**Cause:** `port resolve` filled an unresolved constant from tree consensus before asking clang,
+and the module's `#define COLUMN_TYPE 1` lives in a .cpp the island never sees.
+**Fix:** automatic: a name the module's own sources `#define` is never copied from another
+crate; clang evaluates it from the module's TUs.
+
 ### A table of wide strings came back hand-counted
 **Symptom:** `expected an array with a size of 9, found one with a size of 10` on a
 `pub static W_REG_DWORD: [u16; 9]`; five of ntobjshex's twelve `RegistryTypeNames` were off.

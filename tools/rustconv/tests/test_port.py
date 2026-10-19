@@ -1718,3 +1718,32 @@ def test_c2rust_unnamed_named_member_takes_bindgen_type(tmp_path):
     assert "u: _MIB_IPSTATS__bindgen_ty_1 { dwForwarding:" in out
     assert "u: _MIB_TCPSTATS__bindgen_ty_1 { dwRtoAlgorithm:" in out
     assert "C2RustUnnamed_9 { nobody" in out, "no owning type: left alone"
+
+
+def test_an_invented_module_method_extern_becomes_a_method_call(tmp_path):
+    # fontext/netshell: `gModule.DllRegisterServer(FALSE)` came back as an extern nothing defines.
+    f = tmp_path / "netshell_cpp_h.rs"
+    f.write_text(
+        'extern "system" {\n    fn gModule_DllRegisterServer(bRegTypeLib: i32) -> HRESULT;\n'
+        "    fn gModule_DllUnregisterServer(this: *mut u8, arg0: i32) -> HRESULT;\n}\n"
+        "fn f() { hr = gModule_DllRegisterServer(0); "
+        "hr = gModule_DllUnregisterServer(core::ptr::addr_of_mut!(gModule), 0); }\n"
+    )
+    done = port._module_method_calls(f, ["gModule"])
+    assert sorted(done) == ["gModule_DllRegisterServer", "gModule_DllUnregisterServer"]
+    text = f.read_text()
+    assert "gModule.DllRegisterServer(0)" in text and "gModule.DllUnregisterServer(0)" in text
+    assert "extern" not in text
+
+
+def test_a_spec_stub_keeps_its_export_from_a_same_named_cpp_function(tmp_path):
+    # netshell: lanstatusui.cpp's C++-linkage RepairConnection beside `32 stub RepairConnection`.
+    f = tmp_path / "lanstatusui_cpp_h.rs"
+    f.write_text(
+        '#[no_mangle]\npub unsafe extern "C" fn RepairConnection(p: *mut c_void) -> HRESULT { 0 }\n'
+        '#[no_mangle]\npub unsafe extern "system" fn DllCanUnloadNow() -> HRESULT { 0 }\n'
+    )
+    assert port._unexport_spec_stubs(f, {"RepairConnection"}) == ["RepairConnection"]
+    text = f.read_text()
+    assert text.startswith('pub unsafe extern "C" fn RepairConnection(')
+    assert '#[no_mangle]\npub unsafe extern "system" fn DllCanUnloadNow' in text

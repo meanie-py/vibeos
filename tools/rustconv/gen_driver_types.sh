@@ -9634,6 +9634,58 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  netshell)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-19 from dll/shellext/netshell/CMakeLists.txt
+    # (7 compiled TU(s), 214 headers in the include closure, 51 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 109 external prototype(s) declared by the include closure, 14 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    DRIVER_DIR="${SRC}/dll/shellext/netshell"
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    WRAPPER_INC=$'#include "precomp.h"\n#include <syssetup/syssetup.h>\n#include <winsock.h>\n#include <shellfolderutils.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]devguid\.h' --allowlist-file '.*[/\\]docobj\.h'
+                  --allowlist-file '.*[/\\]iphlpapi\.h'
+                  --allowlist-file '.*[/\\]ipifcons\.h'
+                  --allowlist-file '.*[/\\]netcfgn\.h'
+                  --allowlist-file '.*[/\\]netcfgx\.h'
+                  --allowlist-file '.*[/\\]netcon\.h'
+                  --allowlist-file '.*[/\\]objidl\.h'
+                  --allowlist-file '.*[/\\]ocidl\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]setupapi\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shellfolderutils\.h'
+                  --allowlist-file '.*[/\\]shellutils\.h'
+                  --allowlist-file '.*[/\\]shlguid\.h'
+                  --allowlist-file '.*[/\\]shlguid_undoc\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]shobjidl\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]syssetup[/\\]syssetup\.h'
+                  --allowlist-file '.*[/\\]undocshell\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*[/\\]winsock\.h'
+                  --allowlist-file '.*netshell[/\\].*\.h'
+                  --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]ifmib\.h'
+                  --allowlist-file '.*[/\\]iptypes\.h'
+                  --allowlist-type '(IContextMenu3|IEnumIDList|IEnumNetConnection|IExtractIconW|INetConnection|INetConnectionConnectUi|INetConnectionManager|INetConnectionPropertyUi2|INetLanConnectionUiInfo|IObjectWithSite|IOleCommandTarget|IPersistFolder2|IQueryInfo|IShellExtInit|IShellFolder2|IShellFolderViewCB)(Vtbl)?' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/dll/shellext/netshell" -I"${SRC}/build-i386/dll/shellext/netshell" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_NETSHELL_ -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

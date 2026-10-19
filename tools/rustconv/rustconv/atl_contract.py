@@ -92,6 +92,14 @@ def _shellutils_helpers(body: str) -> str:
             "pointer); `SHSetStrRet(p, hInstance, resId)` → `SHSetStrRet!(p, hInstance, "
             "resId)`. `p` is a `*mut STRRET`.\n"
         )
+    if re.search(r"\bShellFolderImpl_Compare", body):
+        lines.append(
+            "- `ShellFolderImpl_CompareItemIDs<COLCOUNT, CANONICAL>(psf, lParam, p1, p2)` "
+            "(template arguments are runtime ones here) → `ShellFolderImpl_CompareItemIDs(psf, "
+            "lParam, p1, p2, COLCOUNT, CANONICAL, true)`; a third template argument FALSE → "
+            "`false`. `ShellFolderImpl_CompareItemColumn<L>(psf, col, p1, p2)` → "
+            "`ShellFolderImpl_CompareItemColumn(psf, col, p1, p2, L)`.\n"
+        )
     if re.search(r"\bShellObjectCreator\s*<", body):
         lines.append(
             "- `ShellObjectCreator<T>(riid, ppv)` → `ShellObjectCreatorIid!(T, riid, ppv)`; "

@@ -59,12 +59,16 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
 ## Shell extensions (from 2026-10-17)
 
 **RESUME HERE (2026-10-19):** mmcshext, sendmail, mydocs, acppage, cabview, stobject,
-fontext and ntobjshex are flipped on `atl_rust::dll`, each with a modrun suite against its C;
-`port replay <stem>` rebuilds each at $0. Everything through fontext is on master (fontext:
-d47d633d013); ntobjshex is the next merge request. Next in the queue: netshell, zipfldr.
+fontext, ntobjshex and netshell are flipped on `atl_rust::dll`, each with a modrun suite
+against its C; `port replay <stem>` rebuilds each at $0. Everything through ntobjshex is on
+master (9ab62c28753); netshell is the next merge request. Next in the queue: zipfldr.
 Landing is a merge request to the integrator (`merge-integrator` at last contact; find it by
 role). New linters are Rust rules in `tools/vibeos-lint`. Run `check` after a gate's builds,
 not beside them.
+
+Owed from netshell: its connection manager enumerates 0 connections in the guest in BOTH the
+C and the Rust, though the guest has an e1000; find why (the SetupDi/Network-class path), then
+extend probes/netshell.c to each connection's properties.
 
 Owed from ntobjshex: `CNtObjectFolderExtractIcon::GetIconLocation` faults (address 2: the
 GIL_FORSHELL flag read as a pointer) in the pre-flip C as well as the Rust, so the probe does
