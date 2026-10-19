@@ -5,6 +5,7 @@ use ntkrnl_sys::ddk::SeQuerySecurityAccessMask as SeQuerySecurityAccessMaskImpor
 use ntkrnl_sys::ddk::SeSetSecurityAccessMask as SeSetSecurityAccessMaskImport;
 use ntkrnl_sys::base::{STATUS_SUCCESS, NT_SUCCESS, TRUE, FALSE};
 use ntkrnl_sys::constants::*;
+use crate::sid::vista::*;
 use ntkrnl_sys::mm::{PagedPool, NonPagedPool};
 use ntkrnl_sys::ps::PsGetCurrentProcess;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
@@ -221,11 +222,11 @@ unsafe fn SepInitExports() -> BOOLEAN {
     SepExports.SeCreateGlobalPrivilege = SeCreateGlobalPrivilege;
 
     // The Vista and Windows 8 tail (sid.rs SepInitVistaSids); NULL until 2026-10-19.
-    SepExports.SeTrustedCredManAccessPrivilege = LUID { LowPart: SE_TRUSTED_CREDMAN_ACCESS_PRIVILEGE, HighPart: 0 };
-    SepExports.SeRelabelPrivilege = LUID { LowPart: SE_RELABEL_PRIVILEGE, HighPart: 0 };
-    SepExports.SeIncreaseWorkingSetPrivilege = LUID { LowPart: SE_INC_WORKING_SET_PRIVILEGE, HighPart: 0 };
-    SepExports.SeTimeZonePrivilege = LUID { LowPart: SE_TIME_ZONE_PRIVILEGE, HighPart: 0 };
-    SepExports.SeCreateSymbolicLinkPrivilege = LUID { LowPart: SE_CREATE_SYMBOLIC_LINK_PRIVILEGE, HighPart: 0 };
+    SepExports.SeTrustedCredManAccessPrivilege = _LUID { LowPart: SE_TRUSTED_CREDMAN_ACCESS_PRIVILEGE, HighPart: 0 };
+    SepExports.SeRelabelPrivilege = _LUID { LowPart: SE_RELABEL_PRIVILEGE, HighPart: 0 };
+    SepExports.SeIncreaseWorkingSetPrivilege = _LUID { LowPart: SE_INC_WORKING_SET_PRIVILEGE, HighPart: 0 };
+    SepExports.SeTimeZonePrivilege = _LUID { LowPart: SE_TIME_ZONE_PRIVILEGE, HighPart: 0 };
+    SepExports.SeCreateSymbolicLinkPrivilege = _LUID { LowPart: SE_CREATE_SYMBOLIC_LINK_PRIVILEGE, HighPart: 0 };
     SepExports.SeIUserSid = crate::sid::SeIUserSid;
     SepExports.SeUntrustedMandatorySid = crate::sid::SeUntrustedMandatorySid;
     SepExports.SeLowMandatorySid = crate::sid::SeLowMandatorySid;

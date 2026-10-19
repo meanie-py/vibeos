@@ -1,6 +1,7 @@
 use ntkrnl_sys::ddk::*;
 use ntkrnl_sys::base::{STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES, NT_SUCCESS, TRUE, FALSE, POOL_RAISE_IF_ALLOCATION_FAILURE};
 use ntkrnl_sys::constants::*;
+use vista::*;
 use ntkrnl_sys::mm::PagedPool;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::probe::*;
@@ -305,6 +306,25 @@ pub unsafe extern "system" fn SepInitSecurityIDs() -> BOOLEAN {
         return 0u8;
     }
     1u8
+}
+
+/// winnt.h / ntifs.h values the arm64 island does not carry (only the x86 HAL islands do,
+/// with these values; scan_const_vs_island checks them there).
+pub mod vista {
+    pub const SECURITY_IUSER_RID: u32 = 17;
+    pub const SECURITY_MANDATORY_UNTRUSTED_RID: u32 = 0x0000;
+    pub const SECURITY_MANDATORY_LOW_RID: u32 = 0x1000;
+    pub const SECURITY_MANDATORY_MEDIUM_RID: u32 = 0x2000;
+    pub const SECURITY_MANDATORY_HIGH_RID: u32 = 0x3000;
+    pub const SECURITY_MANDATORY_SYSTEM_RID: u32 = 0x4000;
+    pub const SECURITY_APP_PACKAGE_BASE_RID: u32 = 2;
+    pub const SECURITY_BUILTIN_PACKAGE_ANY_PACKAGE: u32 = 1;
+    pub const SECURITY_USERMODEDRIVERHOST_ID_BASE_RID: u32 = 84;
+    pub const SE_TRUSTED_CREDMAN_ACCESS_PRIVILEGE: u32 = 31;
+    pub const SE_RELABEL_PRIVILEGE: u32 = 32;
+    pub const SE_INC_WORKING_SET_PRIVILEGE: u32 = 33;
+    pub const SE_TIME_ZONE_PRIVILEGE: u32 = 34;
+    pub const SE_CREATE_SYMBOLIC_LINK_PRIVILEGE: u32 = 35;
 }
 
 // The SE_EXPORTS tail Vista and Windows 8 added. ReactOS never filled it, so every field read
