@@ -11625,6 +11625,33 @@ def test_payload_stale_binary_is_rebuilt_before_staging(tmp_path, monkeypatch):
     assert pc.ensure_built(["demo"], "arm64") == []  # fresh: no rebuild
 
 
+def test_payload_borrower_needs_only_what_it_stages(tmp_path, monkeypatch):
+    """A payload borrowing ONE output of another (hostapps stages apitest's sweep runner)
+    must not need the owner's other outputs fresh: apitest-suites-<arch>.txt only comes
+    from an --apitests build, and a fresh worktree refused hostapps over it."""
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    owner = payloads / "owner"
+    owner.mkdir(parents=True)
+    (owner / "payload.yaml").write_text(
+        "name: owner\nbinaries:\n"
+        "  - src: tools/payloads/owner/runner-{arch}.exe\n    dest: runner.exe\n"
+        "  - src: tools/payloads/owner/list-{arch}.txt\n    dest: list.txt\n"
+    )
+    (owner / "build.sh").write_text('echo built > "$(dirname "$0")/runner-$1.exe"\n')
+    user = payloads / "user"
+    user.mkdir()
+    (user / "payload.yaml").write_text(
+        "name: user\nbinaries:\n  - src: tools/payloads/owner/runner-{arch}.exe\n    dest: r.exe\n"
+    )
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+
+    assert pc.ensure_built(["user"], "amd64") == ["owner"]
+    assert (owner / "runner-amd64.exe").read_text().strip() == "built"
+    assert pc.ensure_built(["user"], "amd64") == []
+
+
 def _fake_receipts(pc, monkeypatch, stale_arches):
     """compile.py's receipt modules replaced: `missing` answers `stale_arches`."""
     import types
