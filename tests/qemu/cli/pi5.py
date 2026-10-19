@@ -528,7 +528,7 @@ def _await(
             if stortest:
                 _await_stortest(run, serial, start, medium, drop)
             elif getattr(args, "until", None):
-                _await_until(run, serial, start, args.until, args.until_timeout)
+                pi4.await_until(run, serial, start, args.until, args.until_timeout)
         else:
             verdict = triage.classify(text, reached=False, fail_marker=None, debugcon=None)
             run.classification = verdict["classification"]
@@ -680,38 +680,6 @@ def _grade_dropped_medium(
         )
         return
     run.add(Stage("drop-medium", detail=f"{inline[:120]}; stortest: {lines[-1][:80]}"))
-
-
-def _await_until(run: Run, serial: Path, start: int, needle: str, timeout: float) -> None:
-    """`pi5 boot --until TEXT`: the desktop is not the end of every test. A driver
-    that works on after it (the Wi-Fi's join, 2026-10-17) needs the serial read on
-    until its line arrives, or the run says it never did."""
-    deadline = time.monotonic() + timeout
-    while True:
-        try:
-            with open(serial, "rb") as f:
-                f.seek(start)
-                text = f.read().decode("utf-8", errors="replace")
-        except OSError:
-            text = ""
-        if needle in text or time.monotonic() > deadline:
-            break
-        time.sleep(2)
-    pi4._save_serial(run, text)
-    hit = next((line for line in text.splitlines() if needle in line), None)
-    if hit is not None:
-        run.add(Stage("until", detail=hit.strip()[:200]))
-        return
-    run.classification = "HANG_TIMEOUT"
-    tail = [line.strip()[:200] for line in text.splitlines()[-6:]]
-    run.add(
-        Stage(
-            "until",
-            status="fail",
-            detail=f"{needle!r} not seen {timeout:.0f}s after the desktop",
-            salient=tail,
-        )
-    )
 
 
 def add_parser(sub) -> None:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from . import pi4lease, pi5
+from . import pi4, pi4lease, pi5
 
 
 @pytest.fixture(autouse=True)
@@ -272,11 +272,11 @@ def test_until_reads_on_past_the_desktop_and_says_when_the_line_never_comes(tmp_
     serial = tmp_path / "live.log"
     serial.write_text("[WIN32K] shell ready\n[BWFM] joining 'x'\n[BWFM] 4-way handshake complete\n")
     run = FakeRun()
-    pi5._await_until(run, serial, 0, "[BWFM] 4-way", 5)  # type: ignore[arg-type]
+    pi4.await_until(run, serial, 0, "[BWFM] 4-way", 5)  # type: ignore[arg-type]
     assert (run.classification, run.stages[-1].status) == ("", "ok")
     assert run.stages[-1].detail == "[BWFM] 4-way handshake complete"
     run = FakeRun()
-    pi5._await_until(run, serial, 0, "[BWFM] link up", 0)  # type: ignore[arg-type]
+    pi4.await_until(run, serial, 0, "[BWFM] link up", 0)  # type: ignore[arg-type]
     assert run.classification == "HANG_TIMEOUT"
     assert "not seen" in run.stages[-1].detail and run.stages[-1].salient[-1].startswith(
         "[BWFM] 4-way"

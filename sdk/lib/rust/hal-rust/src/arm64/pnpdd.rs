@@ -41,7 +41,8 @@
 
 use super::ecam::Window;
 use super::acpi::{
-    find_genet, find_rp1_gem, find_sdhc, find_sdhc_pi5, find_wifi_pi5, for_each_virtio_mmio, for_each_xhci, AcpiDevice,
+    find_genet, find_rp1_gem, find_sdhc, find_sdhc_pi5, find_wifi_pi4, find_wifi_pi5, for_each_virtio_mmio, for_each_xhci,
+    AcpiDevice,
 };
 use ntkrnl_sys::ddk;
 use ntkrnl_sys::ddk::{
@@ -180,7 +181,7 @@ enum Child {
     /// The Pi 5's Ethernet (RP1's Cadence GEM), which ACPI leaves out.
     Rp1Gem,
     /// The Pi 5's Wi-Fi SDIO host (SDC1), for bwfm.sys.
-    Wifi5,
+    Wifi,
     VirtioBlk,
     /// A PCI segment's root bus.
     PciRoot,
@@ -459,7 +460,7 @@ unsafe fn query_id(pdo: &PdoExtension, id_type: u32, out: *mut PVOID) -> NTSTATU
         Child::Sdhc => &SDHC_HARDWARE_IDS,
         Child::Sdhc5 => &SDHC5_HARDWARE_IDS,
         Child::Rp1Gem => &RP1_GEM_HARDWARE_IDS,
-        Child::Wifi5 => &CYW43455_HARDWARE_IDS,
+        Child::Wifi => &CYW43455_HARDWARE_IDS,
         Child::VirtioBlk => &VIRTIO_BLK_HARDWARE_IDS,
         Child::PciRoot => &PCI_ROOT_HARDWARE_IDS,
     };
@@ -790,13 +791,13 @@ unsafe fn create_pdo(driver: PDRIVER_OBJECT, child: Child, x: AcpiDevice, window
             ),
             None => 0,
         },
-        Child::Genet | Child::Sdhc | Child::Sdhc5 | Child::Rp1Gem | Child::Wifi5 => DbgPrint(
+        Child::Genet | Child::Sdhc | Child::Sdhc5 | Child::Rp1Gem | Child::Wifi => DbgPrint(
             b"[HAL] ACPI %s: regs %p+0x%x, GSIV %u %s\n\0".as_ptr(),
             match child {
                 Child::Genet => b"GENET (BCM6E4E)\0".as_ptr(),
                 Child::Sdhc5 => b"SD host (BRCM5D12)\0".as_ptr(),
                 Child::Rp1Gem => b"RP1 Ethernet (Cadence GEM, not in ACPI)\0".as_ptr(),
-                Child::Wifi5 => b"Wi-Fi SDIO host (SDC1, for the CYW43455)\0".as_ptr(),
+                Child::Wifi => b"Wi-Fi SDIO host (SDC1, for the CYW43455)\0".as_ptr(),
                 _ => b"SD host (BRCME88C)\0".as_ptr(),
             },
             x.mmio as PVOID,
@@ -893,7 +894,7 @@ unsafe extern "system" fn AddDevice(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT)
         (Child::Sdhc, find_sdhc()),
         (Child::Sdhc5, find_sdhc_pi5()),
         (Child::Rp1Gem, find_rp1_gem()),
-        (Child::Wifi5, find_wifi_pi5()),
+        (Child::Wifi, find_wifi_pi5().or_else(|| find_wifi_pi4())),
     ] {
         if let Some(x) = found {
             add(child, x, None);
