@@ -1549,6 +1549,9 @@ def test_a_one_line_guid_copy_is_dropped_and_an_island_const_becomes_storage(tmp
     text = f.read_text()
     assert "IID_IShellView" not in text
     assert "#[no_mangle]\npub static CLSID_CFontExt: GUID = GUID {" in text
+    # ntobjshex spelled its copy through the IID alias.
+    f.write_text("pub static IID_IShellFolder: IID = IID { Data1: 0x000214E6, Data4: [0; 8] };\n")
+    assert port.drop_guid_library_copies(f, {"IID_IShellFolder"}) == ["IID_IShellFolder"]
 
 
 def test_com_method_names_are_the_islands_vtable_slots(tmp_path):

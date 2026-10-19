@@ -12460,6 +12460,31 @@ token is a macro's expansion (clang's `expansionLoc`, not a macro argument), whi
 what the module's call sites say. When a translated module defines an SDK function's name,
 check whether the C defines it or overloads it.
 
+### A CRTP template base's `BEGIN_COM_MAP(TSelf)` gave the object no IUnknown
+**Symptom:** `no method named QueryInterface` / `AddRef` on a template instance, and no
+`CoClass` for the object-map class (ntobjshex's `CNtObjectFolder : CComCoClass<..>,
+CCommonFolder<CNtObjectFolder, NtPidlEntry, ..>`).
+**Cause:** the COM map belongs to `TSelf`, but cppapp generated COM glue for the class that
+declares the map, an abstract instance never created on its own. The most-derived class had
+neither glue nor its own tables for the interfaces inside the base.
+**Fix:** automatic: `inherit_crtp_com_maps` moves the map to the class it names, which then
+installs its own IShellFolder2/IPersistFolder2 tables inside the base (most-derived last, as
+C++), IUnknown slots on its own glue; the base's own table traps a call through a slot it
+only declares (C++'s pure virtual call). A same-named helper (`CompareIDs(LPARAM, const
+NtPidlEntry*, ..)`) is never taken for the interface method: a COM slot cannot take a
+module-private type. A class with no `DECLARE_*AGGREGATABLE` is NOT aggregatable in ReactOS
+(atlcom.h comments CComCoClass's `DECLARE_AGGREGATABLE` out), so atl_rust's refusing creator is
+the faithful one; ntobjshex's modrun suite measured the C answering CLASS_E_NOAGGREGATION.
+
+### A table of wide strings came back hand-counted
+**Symptom:** `expected an array with a size of 9, found one with a size of 10` on a
+`pub static W_REG_DWORD: [u16; 9]`; five of ntobjshex's twelve `RegistryTypeNames` were off.
+**Cause:** `const LPCWSTR X[] = { L"..", .. }` and a struct table with an `L".."` field
+(`RootKeys`) were left to the model, which also invented the struct's field names.
+**Fix:** automatic: cppapp renders both (`wide_pointer_table`, `aggregate_static`), each
+literal a NUL-terminated `[u16; N]`, and integrate drops a unit's copy of anything
+cpp_classes.rs renders.
+
 ### A `CComModule` subclass's own `Init`/`Term` vanish when it is folded
 **Symptom:** none at compile time; the module boots without what its `Init` builds (fontext's
 font cache, created before `CComModule::Init`).

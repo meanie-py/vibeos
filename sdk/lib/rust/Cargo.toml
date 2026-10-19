@@ -940,6 +940,7 @@ members = [
     "xinput1_3-rust",
     "msrle32-rust",
     "oledlg-rust",
+    "ntobjshex-rust",
 ]
 resolver = "2"
 
