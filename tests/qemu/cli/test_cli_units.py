@@ -3403,7 +3403,8 @@ def test_backend_windows_qemu_version_reads_and_rereads_a_replaced_binary(tmp_pa
 
 def test_backend_known_bad_windows_qemu():
     """The 11.0.50 snapshot whose SAHF broke i386 float compares is refused; 11.1.0 is not."""
-    assert "SAHF" in be_mod.known_bad_windows_qemu("11.0.50 (v11.0.0-12631-g54e84cdc7a)")
+    reason = be_mod.known_bad_windows_qemu("11.0.50 (v11.0.0-12631-g54e84cdc7a)")
+    assert reason is not None and "SAHF" in reason
     assert be_mod.known_bad_windows_qemu("11.1.0 (v11.1.0-12130-ge470268ff4)") is None
     assert be_mod.known_bad_windows_qemu("") is None
 
