@@ -357,3 +357,66 @@ def test_a_packed_struct_and_its_class_constants_render():
     rs = cpp_app.render_classes(m, frozenset(), _ISLAND)
     assert "#[repr(C, packed)]\npub struct CABITEM" in rs
     assert "pub const FSATTS: i32 = 55;" in rs
+
+
+def _handler_table_model():
+    # stobject's g_IconHandlers: `{ VOLUME_SERVICE_FLAG, Volume_Init, .., Volume_Message }`.
+    from rustconv.cpp_model import FreeFunc
+
+    c = ClassModel("SysTrayIconHandlers_t", "SysTrayIconHandlers_t", "struct", "precomp.h")
+    c.fields = [
+        Field("dwServiceFlag", "DWORD"),
+        Field("pfnInit", "PFNSTINIT"),
+        Field("pfnMessage", "PFNSTMESSAGE"),
+    ]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    m.functions = [
+        FreeFunc("Volume_Init", "HRESULT STDMETHODCALLTYPE Volume_Init(CSysTray * p)", "v.cpp", ""),
+        FreeFunc(
+            "Volume_Message",
+            "HRESULT STDMETHODCALLTYPE Volume_Message(CSysTray * p, UINT u, WPARAM w, "
+            "LPARAM l, LRESULT &r)",
+            "v.cpp",
+            "",
+        ),
+    ]
+    g = GlobalVar(
+        "g_IconHandlers",
+        "SysTrayIconHandlers_t []",
+        "c.cpp",
+        "{ { 4, Volume_Init, Volume_Message } }",
+    )
+    return m, g
+
+
+def test_a_function_in_a_handler_table_is_some_and_a_reference_param_transmutes():
+    m, g = _handler_table_model()
+    out = cpp_app.aggregate_static(g, cpp_app.Hierarchy(m), m) or ""
+    assert "pfnInit: Some(Volume_Init)" in out
+    assert (
+        'pfnMessage: Some(unsafe { core::mem::transmute(Volume_Message as unsafe extern "system" '
+        "fn(_, _, _, _, _) -> _) })" in out
+    )
+
+
+def test_a_module_cwintraits_typedef_gives_the_window_its_styles():
+    from rustconv.cpp_model import _split_top
+
+    assert [" ".join(a.split()) for a in _split_top("WS_POPUP | WS_DLGFRAME,\n WS_EX_LEFT")] == [
+        "WS_POPUP | WS_DLGFRAME",
+        "WS_EX_LEFT",
+    ]
+    m = ModuleModel(win_traits={"CMessageWndClass": ["WS_POPUP", "WS_EX_LEFT"]})
+    assert ModuleModel.from_json(m.to_json()).win_traits == m.win_traits
+
+
+def test_the_atl_contract_sees_a_global_cstring_the_body_does_not_spell():
+    from rustconv import atl_contract
+
+    m = ModuleModel()
+    m.globals = [GlobalVar("g_strTooltip", "CString", "power.cpp", None)]
+    body = "g_strTooltip.Format(IDS_PWR_CHARGING, p);"
+    assert atl_contract.contract(body) == ""
+    declared = cpp_app.declared_types(m, "Power_Update", body)
+    assert "atl_format!" in atl_contract.contract(body, declared=declared)

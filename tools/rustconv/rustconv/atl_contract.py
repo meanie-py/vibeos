@@ -75,9 +75,14 @@ def types_used(body: str) -> list[str]:
     return used
 
 
-def contract(body: str, *, unicode: bool = True, com_methods: bool = False) -> str:
-    """The deterministic-contract block for one C++ worker, or "" if it names no ATL type."""
-    used = types_used(body)
+def contract(
+    body: str, *, unicode: bool = True, com_methods: bool = False, declared: str = ""
+) -> str:
+    """The deterministic-contract block for one C++ worker, or "" if it names no ATL type.
+    `declared` is the declarations of the globals and fields the body names: stobject's
+    power.cpp calls `g_strTooltip.Format(..)` on a file-scope `CString`, a body that never
+    spells the type, so the model got no contract and invented `CStringW::Format`."""
+    used = types_used(body + "\n" + declared)
     if not used:
         return ""
     if not unicode and any(re.search(rf"\b{s}\b", body) for s in _TCHAR_SPELLINGS):

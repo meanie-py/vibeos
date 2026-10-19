@@ -531,6 +531,23 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+_GUID_DECL_RE = re.compile(r"\bDEFINE_(?:OLE|SHL|)GUID\s*\(\s*(\w+)\s*,")
+_IDENT_RE = re.compile(r"\b[A-Za-z_]\w*\b")
+_COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.S)
+
+
+def _guid_declarations(text: str) -> set[str]:
+    """The GUIDs a header declares: `DEFINE_GUID(CLSID_X, ..)` and its OLE/SHL spellings."""
+    return {m.group(1) for m in _GUID_DECL_RE.finditer(_COMMENT_RE.sub(" ", text))}
+
+
+def _module_identifiers(files: list[Path]) -> set[str]:
+    out: set[str] = set()
+    for f in files:
+        out |= set(_IDENT_RE.findall(_COMMENT_RE.sub(" ", _read(f))))
+    return out
+
+
 _FOREACH_RE = re.compile(
     r"^[ \t]*foreach\s*\(\s*(\w+)\s+([^)]*)\)(.*?)^[ \t]*endforeach\s*\(\s*\w*\s*\)", re.M | re.S
 )
@@ -2740,6 +2757,21 @@ def resolve_sys_crate(repo_root: Path, module_name: str, usermode: bool) -> str:
     return "ntdll-sys" if usermode else "ntkrnl-sys"
 
 
+def sys_crate_items(
+    repo_root: Path, usermode: bool, arch: str = "i386", crate: str | None = None
+) -> set[str]:
+    """The functions and statics the sibling -sys crate's bindgen islands declare for
+    `arch`: what the island never needs to re-declare."""
+    crate = crate or ("ntdll-sys" if usermode else "ntkrnl-sys")
+    base = repo_root / "sdk/lib/rust" / crate / "src"
+    other_arches = tuple(f"_{a}" for a in ARCHES if a != arch)
+    out: set[str] = set()
+    for f in sorted(base.glob("*bindgen*.rs")) if base.is_dir() else []:
+        if not f.stem.endswith(other_arches):
+            out |= set(re.findall(r"pub (?:fn|static(?: mut)?) (\w+)", _read(f)))
+    return out
+
+
 def sys_crate_consts(
     repo_root: Path,
     usermode: bool,
@@ -3458,6 +3490,53 @@ def derive(
                 f"depth {ref.depth}, reached only through SDK headers ({ref.includers[0]}) — "
                 "promote if the island needs it"
             )
+
+    # Promote an excluded header that DECLARES a GUID the module's own code names and no
+    # allowlisted header declares. stobject named shlguid.h's CGID_ShellServiceObject,
+    # reached only through shlobj.h, and the model invented the GUID -- wrong by one digit,
+    # so the tray never started. A local definition hides the gap from `port resolve`,
+    # which supplies a missing FUNCTION from tree consensus but never sees a name the body
+    # defines itself. Text-scanned like the const owners above.
+    module_idents = _module_identifiers(
+        [*tus, *(p for p, r in closure.headers.items() if r.kind == "module")]
+    )
+    module_idents -= sys_crate_items(repo_root, module.is_usermode, arch, sys_crate)
+    module_idents -= set(sys_consts)
+    declared_by: dict[str, list[Path]] = {}
+    for path, ref in closure.headers.items():
+        if ref.kind in ("crt", "toolchain", "module"):
+            continue
+        for name in _guid_declarations(_read(path)) & module_idents:
+            declared_by.setdefault(name, []).append(path)
+    for name, paths in sorted(declared_by.items()):
+        refs = [closure.headers[p] for p in paths]
+        if any(_hdr_regex(r.name) in allow_reasons for r in refs):
+            continue
+        ref = min(
+            (
+                r
+                for r in refs
+                if r.name in excluded and Path(r.name).name not in BASE_PLATFORM_HEADERS
+            ),
+            key=lambda r: r.depth,
+            default=None,
+        )
+        if ref is None:
+            continue
+        rx = _hdr_regex(ref.name)
+        allow_reasons[rx] = (
+            f"DECLARES `{name}`, which the module names and no allowlisted header declares "
+            f"-- depth {ref.depth}"
+        )
+        excluded.pop(ref.name, None)
+        allow_tus.setdefault(rx, set()).update(ref.tus)
+        findings.append(
+            Finding(
+                "info",
+                "DECLARING_HEADER_ADDED",
+                f"{ref.name} allowlisted because it declares `{name}`, which the module names",
+            )
+        )
 
     # Force-add const owners: this is the §9.112 prophylactic, and it OVERRIDES the tier
     # heuristic — an omitted const is a silent catch-all, not a compile error.
