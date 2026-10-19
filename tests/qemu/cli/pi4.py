@@ -28,6 +28,10 @@ from .artifacts import Run, Stage
 
 MARKER = "shell ready"
 DARK = 12  # mean 0-255 luma below which an HDMI frame counts as black
+# A Pi 4 or 5 draws a few watts (3.5 W at the UEFI prompt), never this much. A plug over it
+# feeds another machine: on 2026-10-18 the Pi 4's old default fed the OptiPlex (40 W),
+# and a boot power-cycled that instead.
+PI_WATTS_MAX = 20.0
 DEFAULT_DESKTOP_TIMEOUT = 300
 
 
@@ -112,6 +116,18 @@ def doctor_stages(repo: Path, run_dir: Path | None = None) -> list[Stage]:
                 salient=[out[-160:], "check PI4_PLUG / the Shelly plug on the LAN"],
             )
         )
+    elif power["on"] and power["watts"] > PI_WATTS_MAX:
+        stages.append(
+            Stage(
+                "plug",
+                status="fail",
+                detail=f"draws {power['watts']:.1f} W: not a Pi",
+                salient=[
+                    f"a Pi draws under {PI_WATTS_MAX:.0f} W; this plug feeds something bigger",
+                    "check PI4_PLUG names this board's plug (the OptiPlex's draws ~40 W)",
+                ],
+            )
+        )
     else:
         state = "on" if power["on"] else "off"
         stages.append(Stage("plug", detail=f"{state} {power['watts']:.1f} W"))
@@ -126,7 +142,7 @@ def doctor_stages(repo: Path, run_dir: Path | None = None) -> list[Stage]:
                 detail=str(usb["error"]),
                 salient=[
                     "the Pico 2 W is not answering on "
-                    f"{os.environ.get('PI4_PICO_HOST', 'picousb5')}:8080",
+                    f"{os.environ.get('PI4_PICO_HOST', 'picousb')}:8080",
                     "green LED off = no Wi-Fi; its own log is on GP4 (picousb docs/protocol.md)",
                 ],
             )

@@ -9573,9 +9573,13 @@ as `VT_R8`. Seen as jsproxy's winetest 168-169 (`'test'.substring(0, 4)` returne
 the i386-only `V_VT(...) = 5` failures of jscript's `run` suite (2026-10-18). The same guest
 under `VIBEOS_QEMU_WINDOWS_ACCEL=whpx` (the real CPU) gets all of them right.
 
-**Fix:** none in our tree; it is the emulator. `tools/payloads/atodbl` is the check: it runs
-SAHF after each op class, the exact compiled `compare_double` from its raw bytes, and the
-winetest's loop, each against its native result, and passes only on a correct emulator. When
+**Fix:** the emulator. QEMU 11.1.0 (released) executes it correctly, the backend runs it
+from `C:\qemu-11.1.0`, and smoke refuses the 11.0.50 snapshot as `QEMU_KNOWN_BAD`
+(`tests/qemu/backend.py`). `tools/payloads/atodbl` is the check: it runs SAHF after each op
+class, the exact compiled `compare_double` from its raw bytes, and the winetest's loop, each
+against its native result, and passes only on a correct emulator. The loop's native count is
+1,823, not 0: the probe's own `pow` is mingw's static x87 one, a few ulps off near 1e-307,
+and real Windows fails the same 1,823 with the same bits. When
 an i386-only float result looks impossible, run it before suspecting the code. The method that
 found it: dump raw bits through `DbgPrint` (not the printf under test), build the probe with
 the tree's flags (a default-flags build used SSE moves and passed), then run the same bytes

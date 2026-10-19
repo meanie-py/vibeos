@@ -209,6 +209,11 @@ impl E1000 {
     }
 
     /// The INTx line to connect (`pci::read_interrupt_line`).
+    /// STATUS.LU: the MAC sees a link (every e1000-family part, the I219 too).
+    pub fn link_up(&self) -> bool {
+        unsafe { self.rd(STATUS) & (1 << 1) != 0 }
+    }
+
     pub fn interrupt_line(&self) -> Option<u8> {
         crate::pci::read_interrupt_line(self.df)
     }

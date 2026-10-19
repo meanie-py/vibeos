@@ -193,6 +193,11 @@ fn unit(
 /// One feature-unified path-dependency unit per SDK build script and staticlib crate.
 pub fn link_units(c: &Corpus) -> BTreeMap<String, BTreeMap<String, Unit>> {
     let all = link_model::crates(c);
+    // A `[target.'cfg(target_arch = ..)'.dependencies]` dep links only on its arches.
+    let by_arch: BTreeMap<&str, _> = ARCHES
+        .iter()
+        .map(|a| (*a, link_model::for_arch(&all, a)))
+        .collect();
     let mut units = BTreeMap::new();
     let mut builds = c
         .sources("link-build-inputs")
@@ -266,7 +271,7 @@ pub fn link_units(c: &Corpus) -> BTreeMap<String, BTreeMap<String, Unit>> {
             }
             roots.retain(|n, _| all.contains_key(n));
             if !roots.is_empty() {
-                per.insert(arch.to_string(), unit(&all, &roots, &maybe));
+                per.insert(arch.to_string(), unit(&by_arch[arch], &roots, &maybe));
             }
         }
         if !per.is_empty() {
@@ -285,10 +290,12 @@ pub fn link_units(c: &Corpus) -> BTreeMap<String, BTreeMap<String, Unit>> {
             let root = [(k.name.clone(), (BTreeSet::new(), true))]
                 .into_iter()
                 .collect();
-            let u = unit(&all, &root, &BTreeSet::new());
             units.insert(
                 k.name.clone(),
-                ARCHES.iter().map(|a| (a.to_string(), u.clone())).collect(),
+                ARCHES
+                    .iter()
+                    .map(|a| (a.to_string(), unit(&by_arch[a], &root, &BTreeSet::new())))
+                    .collect(),
             );
         }
     }

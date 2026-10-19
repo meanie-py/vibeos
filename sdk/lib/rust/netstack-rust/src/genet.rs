@@ -529,6 +529,11 @@ impl Genet {
     /// pings peaked at 148 ms and TCP echoes stalled for good. Linux masks it in
     /// the ISR and unmasks after NAPI for the same reason. True if frames are
     /// already waiting, so the worker should not sleep.
+    /// Whether the PHY reports a link (as of the last poll, at most LINK_POLL_MS old).
+    pub fn link_up(&self) -> bool {
+        self.link
+    }
+
     pub fn rearm_irq(&self) -> bool {
         if self.irq_on.get() {
             self.wr(INTRL2_CPU_CLEAR, UMAC_IRQ_RXDMA_DONE);
