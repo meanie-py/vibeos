@@ -883,11 +883,102 @@ static void list_tests(HWND parent)
     notify_quiet = 0;
 }
 
+/* The taskbar's geometry, as explorer builds it: the task switcher's toolbar (taskswnd.cpp),
+ * then browseui's band site rebar (CBandSite.cpp) holding it as a RBBS_VARIABLEHEIGHT band
+ * (taskband.cpp GetBandInfo), then FitToRebar's RB_SIZETORECT/RBSTR_CHANGERECT (traywnd.cpp).
+ * comctl32-rust shipped a taskbar 8 px tall -- the window's borders and no rebar -- from this
+ * path, and nothing else in the boot measures it. */
+static void rebar_tests(HWND parent)
+{
+    static const int heights[] = { 0, 8, 30, 60 };
+    HWND tb, rb;
+    TBBUTTON btn = {0};
+    REBARBANDINFOW rbi;
+    RECT rc;
+    DWORD size;
+    int i, btn_cy;
+
+    tb = CreateWindowExW(0, TOOLBARCLASSNAMEW, NULL,
+                         WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | TBSTYLE_TOOLTIPS |
+                             TBSTYLE_WRAPABLE | TBSTYLE_LIST | TBSTYLE_TRANSPARENT | CCS_TOP |
+                             CCS_NORESIZE | CCS_NODIVIDER,
+                         0, 0, 0, 0, parent, NULL, NULL, NULL);
+    printf("tb created %d\n", tb != NULL);
+    if (!tb)
+        return;
+    SendMessageW(tb, TB_BUTTONSTRUCTSIZE, sizeof(TBBUTTON), 0);
+    btn.iBitmap = I_IMAGENONE;
+    btn.idCommand = 1;
+    btn.fsState = TBSTATE_ENABLED | TBSTATE_ELLIPSES;
+    btn.fsStyle = BTNS_CHECK | BTNS_NOPREFIX | BTNS_SHOWTEXT;
+    btn.iString = (INT_PTR)L"Task";
+    printf("tb add %ld\n", (long)SendMessageW(tb, TB_ADDBUTTONSW, 1, (LPARAM)&btn));
+    size = (DWORD)SendMessageW(tb, TB_GETBUTTONSIZE, 0, 0);
+    btn_cy = HIWORD(size);
+    printf("tb buttonsize %u,%u\n", LOWORD(size), HIWORD(size));
+    SendMessageW(tb, TB_GETITEMRECT, 0, (LPARAM)&rc);
+    printf("tb itemrect %ld,%ld,%ld,%ld\n", rc.left, rc.top, rc.right, rc.bottom);
+    SetWindowPos(tb, NULL, 0, 0, 200, btn_cy, SWP_NOZORDER | SWP_NOACTIVATE);
+
+    rb = CreateWindowExW(WS_EX_TOOLWINDOW, REBARCLASSNAMEW, NULL,
+                         WS_CHILD | WS_CLIPSIBLINGS | WS_CLIPCHILDREN | RBS_VARHEIGHT |
+                             RBS_AUTOSIZE | RBS_BANDBORDERS | CCS_NODIVIDER | CCS_NOPARENTALIGN,
+                         0, 0, 0, 0, parent, NULL, NULL, NULL);
+    printf("rb created %d\n", rb != NULL);
+    if (!rb)
+    {
+        DestroyWindow(tb);
+        return;
+    }
+    /* tbsite.cpp then drops RBS_BANDBORDERS */
+    SetWindowLongW(rb, GWL_STYLE, GetWindowLongW(rb, GWL_STYLE) & ~RBS_BANDBORDERS);
+
+    memset(&rbi, 0, sizeof(rbi));
+    rbi.cbSize = sizeof(rbi);
+    rbi.fMask = RBBIM_ID | RBBIM_CHILD | RBBIM_CHILDSIZE | RBBIM_IDEALSIZE | RBBIM_SIZE |
+                RBBIM_STYLE;
+    rbi.wID = 1;
+    rbi.hwndChild = tb;
+    rbi.fStyle = RBBS_VARIABLEHEIGHT | RBBS_NOGRIPPER;
+    rbi.cxMinChild = 0;
+    rbi.cyMinChild = btn_cy;
+    rbi.cyMaxChild = (UINT)-1;
+    rbi.cyIntegral = btn_cy;
+    rbi.cx = rbi.cxIdeal = 200;
+    rbi.cyChild = btn_cy;
+    printf("rb insert %ld\n", (long)SendMessageW(rb, RB_INSERTBANDW, (WPARAM)-1, (LPARAM)&rbi));
+    printf("rb bands %ld rows %ld barheight %ld\n", (long)SendMessageW(rb, RB_GETBANDCOUNT, 0, 0),
+           (long)SendMessageW(rb, RB_GETROWCOUNT, 0, 0),
+           (long)SendMessageW(rb, RB_GETBARHEIGHT, 0, 0));
+    memset(&rbi, 0, sizeof(rbi));
+    rbi.cbSize = sizeof(rbi);
+    rbi.fMask = RBBIM_CHILDSIZE | RBBIM_STYLE | RBBIM_SIZE | RBBIM_IDEALSIZE;
+    SendMessageW(rb, RB_GETBANDINFOW, 0, (LPARAM)&rbi);
+    printf("rb band style=0x%x cx=%u cxIdeal=%u minchild=%u,%u child=%u max=%d integral=%u\n",
+           rbi.fStyle, rbi.cx, rbi.cxIdeal, rbi.cxMinChild, rbi.cyMinChild, rbi.cyChild,
+           (int)rbi.cyMaxChild, rbi.cyIntegral);
+    SendMessageW(rb, RB_GETRECT, 0, (LPARAM)&rc);
+    printf("rb bandrect %ld,%ld,%ld,%ld\n", rc.left, rc.top, rc.right, rc.bottom);
+
+    for (i = 0; i < (int)(sizeof(heights) / sizeof(heights[0])); i++)
+    {
+        RECT r = { 0, 0, 400, heights[i] };
+        LRESULT ok = SendMessageW(rb, RB_SIZETORECT, RBSTR_CHANGERECT, (LPARAM)&r);
+        GetClientRect(rb, &rc);
+        printf("rb sizetorect %d -> %ld rect=%ld,%ld,%ld,%ld client=%ldx%ld barheight %ld rows %ld\n",
+               heights[i], (long)ok, r.left, r.top, r.right, r.bottom, rc.right, rc.bottom,
+               (long)SendMessageW(rb, RB_GETBARHEIGHT, 0, 0),
+               (long)SendMessageW(rb, RB_GETROWCOUNT, 0, 0));
+    }
+    DestroyWindow(rb); /* takes the toolbar with it: SetParent made it the band's child */
+}
+
 static void control_tests(void)
 {
     typedef BOOL(WINAPI * ICCEX_t)(const INITCOMMONCONTROLSEX *);
     ICCEX_t iccex = (ICCEX_t)GetProcAddress(dll, "InitCommonControlsEx");
-    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_TREEVIEW_CLASSES | ICC_LISTVIEW_CLASSES };
+    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_TREEVIEW_CLASSES | ICC_LISTVIEW_CLASSES |
+                                                ICC_BAR_CLASSES | ICC_COOL_CLASSES };
     WNDCLASSW wc = {0};
     HWND parent;
 
@@ -904,6 +995,8 @@ static void control_tests(void)
     tree_tests(parent);
     fflush(stdout);
     list_tests(parent);
+    fflush(stdout);
+    rebar_tests(parent);
     fflush(stdout);
     DestroyWindow(parent);
 }
