@@ -213,7 +213,7 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    minute): one 4-way handshake at boot, then 9 group rekeys, each answered and its key
    installed, no EAPOL refused, no link loss, no rejoin; 526 of 528 pings answered, the two
    misses single and separate (12:11, 12:21, the first minutes after boot); 32,429 frames
-   delivered by the 9th rekey. Still owed: the Pi 4 (host and power differ).
+   delivered by the 9th rekey.
 8. Card interrupt (done 2026-10-18). Initialize connects the SDIO host's interrupt (the
    PDO's, GSIV 306 level on the Pi 5) with `NdisMRegisterInterruptEx`, sets CCCR 0x04 to
    IENM | IEN1 | IEN2 and the host's card-interrupt status enable. The SDIO host has one
@@ -237,3 +237,17 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    read-back took 66 ms where 25 MHz took 129; host pings of 1390 bytes every 10 ms,
    500/500. (A 1400-byte ping from WSL is fragmented by its 1420 MTU and was answered by
    neither VibeOS nor the router, so it says nothing about either.)
+10. The Pi 4 (done 2026-10-18). Its Wi-Fi host is SDC1, the BCM2711's Arasan SDHCI
+    (`BCM2847`, regs 0xFE300000, GSIV 158 shared with the card slot's EMMC2), which the
+    Pi 4's UEFI routes to the Wi-Fi's SDIO lines; the HAL publishes it as the same
+    `VIBEOS\CYW43455` child as the Pi 5's (`find_wifi_pi4`). Two things live behind the
+    VideoCore firmware, asked through the mailbox's property channel (`mbox.rs`, as
+    UEFI's RpiFirmwareDxe does): WL_REG_ON is line 1 of the firmware's GPIO expander
+    (GPIO 129, SET_GPIO_STATE, low then high and 150 ms), and the host's capabilities
+    register is 0, so its base clock is the firmware's EMMC clock (GET_CLOCK_RATE id 1,
+    250 MHz; `sdhci-rust` takes a platform base clock when the register has none). No
+    high-speed bit in that register, so the bus stays at 25 MHz. The card reads
+    02d0:a9a6, the chip 0x4345 rev 6, the same firmware as the Pi 5's.
+    Run `20261018-224456-m19qzmlp` (serial `serial-20261018-210137`): firmware loaded and verified
+    in 124 ms, joined 'Piconet', 4-way handshake in 2793 ms, lease 192.168.1.217 beside the
+    GENET's 192.168.1.216; host pings 60/60 (4.98 ms average) and 300/300 of 1390 bytes.

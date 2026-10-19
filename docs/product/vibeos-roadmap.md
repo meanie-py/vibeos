@@ -609,9 +609,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   loop. The path runs NtSetSystemTime -> RtlQueryRegistryValues -> a nested ZwOpenKey ->
   CmpParseKey -> `CmpLockRegistry`, and a uniata disk interrupt arriving during that wait went
   past StackLimit. Fix: SNTP sets the clock from a system worker thread (`ExQueueWorkItem`, a
-  fresh stack). Soak afterwards: 40/40, no double fault, the time set in all 40. Still OWED by
-  netstack: the worker's 7.3 KB frame. Any deep call or interrupt nesting from that loop is
-  ~4.7 KB from the guard page. `KiTrap08Handler` now prints the faulting EIP/ESP and the stack
+  fresh stack). Soak afterwards: 40/40, no double fault, the time set in all 40. The worker's
+  frame has since shrunk from 0x1C70 to 0x6C0 (rpi-bringup, `96e96a254d2` + the virtio
+  ISR-context fix `7df93b16130`): `Link::new` is now boxed and out of line. `KiTrap08Handler` now prints the faulting EIP/ESP and the stack
   bounds, and walks the EBP chain as module+offset (`[DBLFAULT]` lines; EIP/ESP are also
   bugcheck parameters 3/4). That is what found this one.
 - **Shared cargo link dir lost an uplifted `.d` (open flake, seen once 2026-10-18,

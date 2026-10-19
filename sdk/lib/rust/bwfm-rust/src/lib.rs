@@ -22,6 +22,8 @@ mod sim;
 #[cfg(not(test))]
 mod driver;
 #[cfg(not(test))]
+mod mbox;
+#[cfg(not(test))]
 mod miniport;
 #[cfg(not(test))]
 mod print;
