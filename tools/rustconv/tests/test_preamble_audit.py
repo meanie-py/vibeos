@@ -348,3 +348,65 @@ def test_code_seg_and_ntddi_split_signature_parse(tmp_path):
     assert not any("INCOMPLETE" in f for f in findings), findings
     assert any("Counter" in f for f in findings), findings
     assert not any("NTAPI" in f for f in findings), findings
+
+
+# ---------------------------------------------------------------------------
+# An `extern` declaration the model turned into a definition (setupapi, 2026-10-18)
+# ---------------------------------------------------------------------------
+
+
+_GUARDED_HEADER = """\
+#ifndef __PRIV_H
+#define __PRIV_H
+
+struct log { int level; };
+extern HINSTANCE hInstance;
+extern DWORD GlobalSetupFlags;
+DWORD Owned = 0;
+
+#endif /* __PRIV_H */
+"""
+
+
+def test_a_guarded_header_is_audited_at_all(tmp_path):
+    """The include guard is one preproc_ifdef node: walking only the root's children
+    found zero declarations in every guarded header, so its audit passed vacuously."""
+    h = tmp_path / "priv.h"
+    h.write_text(_GUARDED_HEADER)
+    names = {d.name for d in preamble_decls(h)}
+    assert {"log", "Owned"} <= names
+
+
+def test_an_ordinary_ifdef_branch_is_not_audited(tmp_path):
+    """Only a guard is opened: the inactive half of `#ifdef X .. #else` is not the model's
+    to translate, and reading it would report false drops."""
+    c = tmp_path / "f.c"
+    c.write_text("#ifdef __REACTOS__\nstatic int a = 1;\n#else\nstatic int b = 2;\n#endif\n")
+    assert preamble_decls(c) == []
+
+
+def test_extern_only_names_and_their_invented_definitions_are_dropped(tmp_path):
+    from rustconv.preamble_audit import extern_only_names, strip_static_definitions
+
+    h = tmp_path / "priv.h"
+    h.write_text(_GUARDED_HEADER)
+    externs = extern_only_names(h)
+    # Owned is DEFINED here, so it is this file's to translate; the other two live elsewhere.
+    assert externs == {"hInstance", "GlobalSetupFlags"}
+    # The shape the model returned for setupapi_private.h.
+    rust = (
+        "pub const ANYSIZE_ARRAY: usize = 1;\n"
+        "#[no_mangle]\n"
+        "pub static mut hInstance: HINSTANCE = unsafe { core::mem::zeroed() };\n"
+        "#[no_mangle]\n"
+        "pub static mut GlobalSetupFlags: DWORD = 0;\n"
+        "pub static mut Owned: DWORD = 0;\n"
+        'extern "C" {\n'
+        "    pub static mut hInstance: HINSTANCE;\n"
+        "}\n"
+    )
+    out, dropped = strip_static_definitions(rust, externs)
+    assert sorted(dropped) == ["GlobalSetupFlags", "hInstance"]
+    assert "#[no_mangle]" not in out, "an orphaned attribute would bind to the next item"
+    assert "pub static mut Owned: DWORD = 0;" in out
+    assert "    pub static mut hInstance: HINSTANCE;" in out, "an extern block is not a definition"

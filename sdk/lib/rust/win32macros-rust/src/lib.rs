@@ -2212,6 +2212,18 @@ pub unsafe fn InterlockedExchange(target: *mut i32, value: i32) -> i32 {
         .swap(value, core::sync::atomic::Ordering::SeqCst)
 }
 
+/// `InterlockedExchangePointer(Target, Value)`: swaps a pointer-sized slot, returning the OLD
+/// pointer. An intrinsic on every target (no export to import). advapi32, mfplat and eventvwr
+/// had each hand-ported it; setupapi's stringtable was the fourth.
+#[inline(always)]
+pub unsafe fn InterlockedExchangePointer(
+    target: *mut *mut core::ffi::c_void,
+    value: *mut core::ffi::c_void,
+) -> *mut core::ffi::c_void {
+    (*(target as *const core::sync::atomic::AtomicPtr<core::ffi::c_void>))
+        .swap(value, core::sync::atomic::Ordering::SeqCst)
+}
+
 /// `InterlockedCompareExchange(Destination, Exchange, Comperand)`: stores `exchange` only when
 /// the current value equals `comperand`, and returns the value it found either way.
 #[inline(always)]
