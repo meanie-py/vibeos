@@ -1,0 +1,80 @@
+{
+  "hal-i386": {
+    "family": "hal",
+    "module": "hal",
+    "arch": "i386",
+    "sha256": "eab2022ff102ba002d028da5f69652e9a3160fcf243394a2579fea1e69270ba1"
+  },
+  "ntdll-i386": {
+    "family": "ntdll",
+    "module": "ntdll",
+    "arch": "i386",
+    "sha256": "5fb52b151e56e40edb688605b20679436e815799343dde669e5eaa065be62729"
+  },
+  "ntdll-amd64": {
+    "family": "ntdll",
+    "module": "ntdll",
+    "arch": "amd64",
+    "sha256": "cab6187e9554c33aadd0cbae9355a4a95049f8642bff3c78cd2ed3c89a0695a2"
+  },
+  "ntdll-arm64": {
+    "family": "ntdll",
+    "module": "ntdll",
+    "arch": "arm64",
+    "sha256": "8e196cb1ab96f5c832c9843243198d818e04daae43f30848a158e90aff9d717e"
+  },
+  "ntdll_vista-i386": {
+    "family": "ntdll",
+    "module": "ntdll_vista",
+    "arch": "i386",
+    "sha256": "898982f2fc85f067bdbf5082cec3c379a351c0660545cda7c0bc41a25c749c90"
+  },
+  "ntdll_vista-amd64": {
+    "family": "ntdll",
+    "module": "ntdll_vista",
+    "arch": "amd64",
+    "sha256": "b16fd51bab06a9cdd1771f171a447e2d589e240161d4f8146caaaea6d0ef9599"
+  },
+  "ntdll_vista-arm64": {
+    "family": "ntdll",
+    "module": "ntdll_vista",
+    "arch": "arm64",
+    "sha256": "4bdd884ea567aec99fddb210767ccbe09ff2474c8f78877370f0386302cf4367"
+  },
+  "ntoskrnl-i386": {
+    "family": "ntoskrnl",
+    "module": "ntoskrnl",
+    "arch": "i386",
+    "sha256": "f05c72112fb8cb6ec1b14cc81d7915f0d73fad45334db7446d6619519d41193b"
+  },
+  "ntoskrnl-amd64": {
+    "family": "ntoskrnl",
+    "module": "ntoskrnl",
+    "arch": "amd64",
+    "sha256": "03e815e043510dff34bb9d360ba2fc9e80990ffcd45c64965022cc5b3bc59fec"
+  },
+  "ntoskrnl-arm64": {
+    "family": "ntoskrnl",
+    "module": "ntoskrnl",
+    "arch": "arm64",
+    "sha256": "65546625feaa99c845310139e3d0f143c8101bb7c18196e2ccf7cf85b61a55d6"
+  },
+  "win32k-i386": {
+    "family": "win32k",
+    "module": "win32k",
+    "arch": "i386",
+    "sha256": "a58f24ab04e7f657994fe4975257332f5ef16f7e4f79bc0e4fe6f9f25ace465b"
+  },
+  "win32k-amd64": {
+    "family": "win32k",
+    "module": "win32k",
+    "arch": "amd64",
+    "sha256": "604d3d1f4542000cee1160eca274930476727529f1b02f2cb36cd2d18488c289"
+  },
+  "win32k-arm64": {
+    "family": "win32k",
+    "module": "win32k",
+    "arch": "arm64",
+    "sha256": "39bdd703b5bff06f4918f2c059ea2ac5036569098aa56b2b43caa782ec74c0cc"
+  }
+}

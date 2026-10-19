@@ -305,17 +305,9 @@ fn check_cflags(ctx: &BinaryContext, rows: &mut Vec<Row>) -> Result<(), String> 
 }
 
 fn check_res_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Result<String, String> {
-    let value = write_json_command(
-        &ctx.root,
-        "tools/gen_committed_res.py",
-        &cmd_args(&["--jobs-json", "--arch", arch]),
-    )?;
-    let messages = value["messages"]
-        .as_str()
-        .ok_or("resource recipes missing messages")?
-        .to_owned();
-    let value = value.get("jobs").ok_or("resource recipes missing jobs")?;
-    if value.is_null() {
+    let recipes = vibeos_codegen::resources::committed_jobs(&ctx.root, arch)?;
+    let messages = recipes.messages;
+    let Some(jobs) = recipes.jobs else {
         add(
             rows,
             ".res",
@@ -324,62 +316,25 @@ fn check_res_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Resul
             format!("no build-{arch}"),
         );
         return Ok(messages);
-    }
-    let jobs = value
-        .as_array()
-        .ok_or("gen_committed_res JSON output must be a list or null")?;
-    for job in jobs {
-        let fields = job
-            .as_array()
-            .ok_or("gen_committed_res job must be an array")?;
-        if fields.len() != 4 {
-            return Err("gen_committed_res job must have four fields".into());
-        }
-        let stem = fields[0].as_str().ok_or("res job stem must be a string")?;
-        let committed_rel = fields[1].as_str().ok_or("res job path must be a string")?;
-        let toks: Vec<String> =
-            serde_json::from_value(fields[2].clone()).map_err(|e| format!("res job argv: {e}"))?;
-        let cwd_raw = fields[3].as_str().ok_or("res job cwd must be a string")?;
-        let mut cwd = PathBuf::from(cwd_raw);
-        let mut toks = toks;
-        if !cwd.is_dir() {
-            let real = cwd_raw.replace("/tmp/vibeos", &ctx.root.to_string_lossy());
-            let real_cwd = PathBuf::from(real);
-            if real_cwd.is_dir() {
-                cwd = real_cwd;
-                for token in &mut toks {
-                    *token = token.replace("/tmp/vibeos", &ctx.root.to_string_lossy());
-                }
-            } else {
-                add(
-                    rows,
-                    ".res",
-                    format!("{stem}-{arch}"),
-                    SKIP,
-                    "build dir absent (canonical + real)",
-                );
+    };
+    for raw in jobs {
+        let stem = &raw.0;
+        let tmp = TempDir::new()?;
+        let job = match vibeos_codegen::resources::localize_job(&ctx.root, &raw, tmp.path()) {
+            Ok(job) => job,
+            Err(error) => {
+                add(rows, ".res", format!("{stem}-{arch}"), SKIP, error);
                 continue;
             }
-        }
-        let tmp = TempDir::new()?;
-        let dst = tmp.path().join("out.res");
-        if toks.is_empty() {
-            return Err(format!("empty windres command for {stem}-{arch}"));
-        }
-        *toks.last_mut().unwrap() = dst.to_string_lossy().into_owned();
-        let output = command(&ctx.root, &toks[0], &toks[1..].to_vec(), Some(&cwd))?;
-        if !output.status.success() || !dst.exists() {
-            add(
-                rows,
-                ".res",
-                format!("{stem}-{arch}"),
-                SKIP,
-                "windres replay failed",
-            );
-            continue;
-        }
-        let committed = ctx.root.join(committed_rel);
-        if !committed.exists() {
+        };
+        let fresh = match vibeos_codegen::resources::execute(&job, tmp.path()) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                add(rows, ".res", format!("{stem}-{arch}"), SKIP, error);
+                continue;
+            }
+        };
+        if !job.output.exists() {
             add(
                 rows,
                 ".res",
@@ -393,7 +348,7 @@ fn check_res_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Resul
             rows,
             ".res",
             format!("{stem}-{arch}"),
-            if read_bytes(&committed)? == read_bytes(&dst)? {
+            if read_bytes(&job.output)? == fresh {
                 OK
             } else {
                 DRIFT

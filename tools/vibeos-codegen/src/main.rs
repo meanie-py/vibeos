@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::{fs, io::Write};
-use vibeos_codegen::{generate, generate_all, GENERATORS};
+use vibeos_codegen::{generate, generate_all, resources, GENERATORS};
 
 const HELP: &str =
     "Usage: tools/codegen <generator> [--check | --stdout] [--input FILE] [--output FILE]
@@ -16,6 +16,12 @@ Generators: apisets-table, bugcodes, bugcodes-h, error-tables, winerror-consts,
 --output FILE   Override a single output (errlist requires an existing marked file).
 --header FILE   Header for winerror-consts; repeat in resolution order.
 --root DIR      Checkout whose sources and default outputs to use.
+--arch ARCH     Required for resources; repeat or use comma-separated architectures.
+--module NAME   ntdll-res module selection (default: ntdll,ntdll_vista).
+--jobs-json     Show resource recipes without executing them.
+
+Resource commands: hal-res, ntdll-res, ntoskrnl-res, win32k-res, committed-res.
+--all selects the text recipes above; resources require an explicit command/arch.
 
 Without --check/--stdout, write changed outputs. All rendering succeeds before writes.
 Generated provenance comments retain legacy names for byte compatibility.
@@ -31,6 +37,9 @@ struct Args {
     check: bool,
     stdout: bool,
     all: bool,
+    arches: Vec<String>,
+    modules: Vec<String>,
+    jobs_json: bool,
 }
 
 fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
@@ -47,6 +56,21 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
             "--check" => out.check = true,
             "--stdout" => out.stdout = true,
             "--all" => out.all = true,
+            "--arch" => out.arches.extend(
+                args.next()
+                    .ok_or("--arch requires a value")?
+                    .split(',')
+                    .map(str::trim)
+                    .map(str::to_owned),
+            ),
+            "--module" => out.modules.extend(
+                args.next()
+                    .ok_or("--module requires a value")?
+                    .split(',')
+                    .map(str::trim)
+                    .map(str::to_owned),
+            ),
+            "--jobs-json" => out.jobs_json = true,
             s if !s.starts_with('-') && out.name.is_none() => out.name = Some(arg),
             _ => return Err(format!("unexpected argument: {arg}")),
         }
@@ -62,17 +86,32 @@ fn parse(args: impl IntoIterator<Item = String>) -> Result<Args, String> {
     {
         return Err("--all cannot be combined with input/output overrides or --stdout".into());
     }
+    let resource = out
+        .name
+        .as_deref()
+        .is_some_and(|s| resources::NAMES.contains(&s));
+    if !resource && (!out.arches.is_empty() || !out.modules.is_empty() || out.jobs_json) {
+        return Err("resource options require a resource command".into());
+    }
+    if resource && (out.input.is_some() || !out.headers.is_empty()) {
+        return Err(
+            "resource recipes use declared inputs; --input/--header are unsupported".into(),
+        );
+    }
+    if out.jobs_json && (out.check || out.stdout || out.output.is_some()) {
+        return Err("--jobs-json cannot be combined with output modes".into());
+    }
     Ok(out)
 }
 
-fn write_atomic(path: &Path, text: &str, serial: usize) -> Result<(), String> {
+fn write_atomic(path: &Path, bytes: &[u8], serial: usize) -> Result<(), String> {
     if path.is_symlink() {
         return Err(format!(
             "refusing to replace output symlink: {}",
             path.display()
         ));
     }
-    if fs::read(path).ok().as_deref() == Some(text.as_bytes()) {
+    if fs::read(path).ok().as_deref() == Some(bytes) {
         return Ok(());
     }
     let parent = path.parent().ok_or("output has no parent directory")?;
@@ -86,7 +125,7 @@ fn write_atomic(path: &Path, text: &str, serial: usize) -> Result<(), String> {
         .open(&temporary)
         .map_err(|e| format!("{}: {e}", temporary.display()))?;
     let result = (|| {
-        file.write_all(text.as_bytes())?;
+        file.write_all(bytes)?;
         if let Ok(metadata) = fs::metadata(path) {
             file.set_permissions(metadata.permissions())?;
         }
@@ -103,7 +142,15 @@ fn write_atomic(path: &Path, text: &str, serial: usize) -> Result<(), String> {
 fn run(args: Args) -> Result<u8, String> {
     let root = args
         .root
+        .clone()
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."));
+    if args
+        .name
+        .as_deref()
+        .is_some_and(|s| resources::NAMES.contains(&s))
+    {
+        return run_resources(&root, &args);
+    }
     let outputs = if args.all {
         generate_all(&root)?
     } else {
@@ -132,12 +179,108 @@ fn run(args: Args) -> Result<u8, String> {
                 stale = true;
             }
         } else {
-            write_atomic(&out.path, &out.text, i)?;
+            write_atomic(&out.path, out.text.as_bytes(), i)?;
         }
     }
     if !stale {
         eprintln!(
             "OK: {} generated outputs {}",
+            outputs.len(),
+            if args.check {
+                "match"
+            } else {
+                "written or unchanged"
+            }
+        );
+    }
+    Ok(u8::from(stale))
+}
+
+fn run_resources(root: &Path, args: &Args) -> Result<u8, String> {
+    let root = fs::canonicalize(root).map_err(|e| format!("{}: {e}", root.display()))?;
+    let name = args.name.as_deref().unwrap();
+    if args.jobs_json && name == "committed-res" {
+        if args.arches.len() != 1 || !args.modules.is_empty() {
+            return Err(
+                "committed-res --jobs-json requires exactly one --arch and no --module".into(),
+            );
+        }
+        println!(
+            "{}",
+            resources::committed_jobs(&root, &args.arches[0])?.json()
+        );
+        return Ok(0);
+    }
+    let tmp = resources::TempDir::new()?;
+    let work = if args.jobs_json {
+        Path::new("{WORK}")
+    } else {
+        tmp.path()
+    };
+    let (jobs, messages) = resources::selection(
+        &root,
+        name,
+        &args.arches,
+        &args.modules,
+        work,
+        !args.jobs_json,
+    )?;
+    if (args.stdout || args.output.is_some()) && jobs.len() != 1 {
+        return Err("resource output overrides require exactly one selected output".into());
+    }
+    if args.jobs_json {
+        let raw: Vec<_> = jobs
+            .iter()
+            .map(|j| {
+                (
+                    &j.stem,
+                    j.output.strip_prefix(&root).unwrap_or(&j.output),
+                    &j.argv,
+                    &j.cwd,
+                )
+            })
+            .collect();
+        println!("{}", serde_json::json!({"jobs":raw,"messages":messages}));
+        return Ok(0);
+    }
+    let mut outputs = Vec::new();
+    for job in &jobs {
+        // Each recipe gets an isolated stage/output so jobs cannot consume each
+        // other's stale files. Re-plan with that directory before executing.
+        let stage = resources::TempDir::new()?;
+        let mut argv = job.argv.clone();
+        for token in &mut argv {
+            *token = token.replace(
+                &tmp.path().to_string_lossy().to_string(),
+                &stage.path().to_string_lossy(),
+            );
+        }
+        let bytes = resources::execute_with_argv(job, argv, stage.path())?;
+        let destination = args.output.clone().unwrap_or_else(|| job.output.clone());
+        outputs.push((destination, bytes));
+    }
+    if args.stdout {
+        std::io::stdout()
+            .write_all(&outputs[0].1)
+            .map_err(|e| e.to_string())?;
+        return Ok(0);
+    }
+    let mut stale = false;
+    for (i, (path, bytes)) in outputs.iter().enumerate() {
+        if args.check {
+            if fs::read(path).ok().as_deref() != Some(bytes.as_slice()) {
+                eprintln!("STALE: {}", path.display());
+                stale = true;
+            }
+        } else {
+            fs::create_dir_all(path.parent().ok_or("resource output has no parent")?)
+                .map_err(|e| e.to_string())?;
+            write_atomic(path, bytes, i)?;
+        }
+    }
+    if !stale {
+        eprintln!(
+            "OK: {} resource outputs {}",
             outputs.len(),
             if args.check {
                 "match"
@@ -156,7 +299,7 @@ fn main() -> std::process::ExitCode {
         return 0.into();
     }
     if args.iter().any(|s| s == "--list") {
-        for name in GENERATORS {
+        for name in GENERATORS.iter().chain(resources::NAMES) {
             println!("{name}");
         }
         return 0.into();

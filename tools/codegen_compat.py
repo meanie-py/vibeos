@@ -10,6 +10,18 @@ from typing import NoReturn
 
 def main(generator: str) -> NoReturn:
     args = sys.argv[1:]
+    if generator.endswith("-res"):
+        expanded = []
+        for arg in args:
+            key, separator, value = arg.partition("=")
+            expanded.extend([key, value] if separator and key in {"--arch", "--module"} else [arg])
+        args = expanded
+        if generator == "committed-res":
+            # The original replay helper read compile_commands relative to cwd.
+            args = ["--root", str(Path.cwd()), *args]
+        if "--arch" not in args and "--jobs-json" not in args:
+            default = "i386,amd64,arm64" if generator in {"committed-res", "ntdll-res"} else "i386"
+            args.extend(["--arch", default])
     if generator in {"error-tables", "winerror-consts"}:
         minimum = 3 if generator == "winerror-consts" else 2
         if len(args) < minimum or any(arg.startswith("-") for arg in args):
