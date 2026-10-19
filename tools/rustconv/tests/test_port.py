@@ -1819,6 +1819,7 @@ def test_early_errors_names_what_stops_rustc_before_name_resolution(monkeypatch,
                 msg("error", "expected one of `,` or `}`, found `x`"),
                 msg("error", "file not found for module `stubs`", "E0583", line=20),
                 msg("error", "mismatched types", "E0308"),
+        msg("error", "not automatically applying `DerefMut` on `ManuallyDrop` union field"),
                 msg("error", "aborting due to 3 previous errors"),
                 msg("warning", "unused variable", None),
             ]

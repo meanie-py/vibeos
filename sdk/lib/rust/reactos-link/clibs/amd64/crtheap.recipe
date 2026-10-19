@@ -1,0 +1,7 @@
+# crtheap (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	sdk/lib/crtheap/_msize.c	@build/sdk/lib/crtheap sdk/lib/crtheap @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x502 _CRTBLD _WIN32_WINNT=0x502
+c	sdk/lib/crtheap/_recalloc.c	@build/sdk/lib/crtheap sdk/lib/crtheap @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x502 _CRTBLD _WIN32_WINNT=0x502
+c	sdk/lib/crtheap/calloc.c	@build/sdk/lib/crtheap sdk/lib/crtheap @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x502 _CRTBLD _WIN32_WINNT=0x502
+c	sdk/lib/crtheap/free.c	@build/sdk/lib/crtheap sdk/lib/crtheap @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x502 _CRTBLD _WIN32_WINNT=0x502
+c	sdk/lib/crtheap/malloc.c	@build/sdk/lib/crtheap sdk/lib/crtheap @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x502 _CRTBLD _WIN32_WINNT=0x502
+c	sdk/lib/crtheap/realloc.c	@build/sdk/lib/crtheap sdk/lib/crtheap @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x502 _CRTBLD _WIN32_WINNT=0x502

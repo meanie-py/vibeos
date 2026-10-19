@@ -1231,6 +1231,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "cryptnet-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "cryptnet-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "cscript-cargo"
 version = "0.1.0"
 dependencies = [
@@ -2412,6 +2431,26 @@ dependencies = [
  "ntkrnl-sys",
  "panic-common",
  "usb-sys",
+]
+
+[[package]]
+name = "hlink-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "hlink-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -3899,6 +3938,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "mstask-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "mstask-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "mstsc-cargo"
 version = "0.1.0"
 dependencies = [
@@ -4603,6 +4661,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "oleacc-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "oleacc-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "oleaut32-rust"
 version = "0.1.0"
 dependencies = [
@@ -4950,6 +5027,26 @@ dependencies = [
  "strsafe-rust",
  "varargs-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "propsys-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "propsys-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -5938,6 +6035,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shcore-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "shcore-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
