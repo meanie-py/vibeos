@@ -10,6 +10,7 @@ use core::ptr::null_mut;
 
 use ntkrnl_sys::ddk::{
     ExAllocatePoolWithTag, ExFreePoolWithTag, KeDelayExecutionThread, KeQueryPerformanceCounter, KeStallExecutionProcessor,
+    KeWaitForSingleObject,
     MmMapIoSpace, ZwClose, ZwCreateFile, ZwQueryInformationFile, ZwReadFile,
     _FILE_INFORMATION_CLASS_FileStandardInformation, _MEMORY_CACHING_TYPE_MmNonCached, FILE_STANDARD_INFORMATION,
     HANDLE, IO_STATUS_BLOCK, LARGE_INTEGER, NTSTATUS, OBJECT_ATTRIBUTES, PHYSICAL_ADDRESS, PVOID, ULONG,
@@ -56,10 +57,11 @@ const FILE_MAX: usize = 1 << 20;
 /// the adapter late in boot, after the volume is up, so this is a margin, not a wait.
 const FILE_WAIT_S: u32 = 30;
 
-/// The mapped SDHCI window and the ARM generic timer. No interrupt yet: the
-/// driver polls.
+/// The mapped SDHCI window, the ARM generic timer, and once the miniport connects
+/// the host's interrupt, the event its DPC sets (null until then: every wait spins).
 pub struct Kernel {
     regs: *mut u32,
+    pub wake: *mut ntkrnl_sys::ddk::KEVENT,
 }
 
 impl Kernel {
@@ -83,6 +85,24 @@ impl Platform for Kernel {
     }
     fn stall_us(&self, us: u32) {
         unsafe { KeStallExecutionProcessor(us) }
+    }
+    fn irq_connected(&self) -> bool {
+        !self.wake.is_null()
+    }
+    /// The worker's wake event: the interrupt's DPC sets it, and so do a queued frame
+    /// and halt, which only make a command wait look again sooner.
+    fn irq_wait(&self, us: u64) -> bool {
+        let mut t: LARGE_INTEGER = unsafe { core::mem::zeroed() };
+        t.QuadPart = -((us.max(1) * 10) as i64);
+        // Executive, KernelMode, not alertable: STATUS_SUCCESS when it was set.
+        unsafe { KeWaitForSingleObject(self.wake.cast(), 0, 0, 0, &mut t) == 0 }
+    }
+}
+
+impl Kernel {
+    /// The register window, for the interrupt service routine.
+    pub fn regs(&self) -> *mut u32 {
+        self.regs
     }
 }
 
@@ -203,7 +223,7 @@ pub unsafe fn attach(pa: u64, len: usize) -> Option<Chip<Kernel>> {
         bwprint!("could not map the SDIO host at {:#x}\n", pa);
         return None;
     }
-    let p = Kernel { regs: regs.cast() };
+    let p = Kernel { regs: regs.cast(), wake: core::ptr::null_mut() };
     bwprint!(
         "SDIO host {:#x}+{:#x}: version {:#x}, caps {:#010x}, firmware left clock {:#06x} host {:#010x}\n",
         pa,
@@ -213,7 +233,7 @@ pub unsafe fn attach(pa: u64, len: usize) -> Option<Chip<Kernel>> {
         p.rd(sdhci_rust::REG_CLOCK) & 0xFFFF,
         p.rd(sdhci_rust::REG_HOST_CTRL)
     );
-    // Nothing may signal: this driver polls.
+    // Nothing may signal until the miniport has connected the interrupt.
     p.wr(sdhci_rust::REG_INT_SIGNAL, 0);
     if !power_on(pa) {
         bwprint!("no known power line on this board: trying the chip as it is\n");

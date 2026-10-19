@@ -193,8 +193,8 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    link down, and join again (5 s, doubling to a minute after failures). The send handler
    may run at DISPATCH_LEVEL and the SDIO bus waits, so it only copies frames into a ring
    (`net::TxRing`) for the worker. Receives are indicated at DISPATCH_LEVEL with
-   RESOURCES (NDIS copies; the one NBL is never returned). The worker polls the chip every
-   4 ms when idle: the card interrupt is still owed. The join hands back its `Station`,
+   RESOURCES (NDIS copies; the one NBL is never returned). Idle, the worker sleeps on the
+   card interrupt (see 8), polling every 4 ms only when it is not connected. The join hands back its `Station`,
    whose supplicant answers the AP's group rekeys for as long as the link lasts. The NDIS 6
    layouts are one crate, `ndis6-sys`, shared with ndis.sys's NDIS 6 shim.
    On the Pi 5 (`pi5 boot --options /NETSTACK=NDIS`, run `20261017-105240-4fzlm0y6`), PnP
@@ -213,5 +213,21 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    minute): one 4-way handshake at boot, then 9 group rekeys, each answered and its key
    installed, no EAPOL refused, no link loss, no rejoin; 526 of 528 pings answered, the two
    misses single and separate (12:11, 12:21, the first minutes after boot); 32,429 frames
-   delivered by the 9th rekey. Still owed: the card interrupt in place of the 4 ms poll,
-   high-speed SDIO, and the Pi 4 (host and power differ).
+   delivered by the 9th rekey. Still owed: high-speed SDIO, and the Pi 4 (host and power
+   differ).
+8. Card interrupt (done 2026-10-18). Initialize connects the SDIO host's interrupt (the
+   PDO's, GSIV 306 level on the Pi 5) with `NdisMRegisterInterruptEx`, sets CCCR 0x04 to
+   IENM | IEN1 | IEN2 and the host's card-interrupt status enable. The SDIO host has one
+   user, the worker, so whoever waits arms `INT_SIGNAL` with the bits it wants: an idle
+   wait arms the card interrupt, a command wait (`Platform::irq_wait`, also on the
+   worker's wake event) its completion. The ISR masks every signal, which drops the level
+   line, and the DPC sets the event. On a wake the worker clears the SDIO core's
+   `intstatus` (the chip holds DAT1 low until then), then reads the chip. An idle wait
+   still times out after 100 ms, in case an interrupt is ever missed.
+   The Pi 5's host LATCHES the card interrupt: with DAT1 back high (PRESENT bit 21) and
+   CCCR 0x05 pending 0, its status stayed set, and the first build took ~54,000
+   interrupts a second (run `20261018-200445-3d2994kd`). Toggling the status enable clears
+   it; Linux's sdhci does the same, off on each card interrupt and on again once handled.
+   Run `20261018-201635-gei_5r35`: in the first 10 s of the link 24 card interrupts and
+   101 idle waits that ran out; host pings 59/60, average RTT 3.97 ms (min 1.58) where
+   the 4 ms poll gave ~7.4 ms.
