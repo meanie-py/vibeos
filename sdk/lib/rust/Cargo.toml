@@ -1,5 +1,16 @@
 [workspace]
 members = [
+    "mstask-cargo",
+    "shcore-cargo",
+    "hlink-cargo",
+    "oleacc-cargo",
+    "cryptnet-cargo",
+    "propsys-cargo",
+    "oledlg-cargo",
+    "msrle32-cargo",
+    "xinput1_3-cargo",
+    "activeds-cargo",
+    "twain_32-cargo",
     "wmiutils-cargo",
     "sti-cargo",
     "inetmib1-cargo",
@@ -387,6 +398,8 @@ members = [
     "access",
     "avltable",
     "bitmap",
+    # The boot loaders' RTL (boot/rtl/blrtl.cmake): the RTL rlibs above + nlsboot.
+    "blrtl-rust",
     "byteswap",
     "cnt-ctype",
     "cnt-difftest",
@@ -926,6 +939,22 @@ members = [
     "wmiutils-rust",
     "sxs-rust",
     "inetmib1-rust",
+    "stobject-rust",
+    "fontext-rust",
+    "twain_32-rust",
+    "activeds-rust",
+    "xinput1_3-rust",
+    "msrle32-rust",
+    "oledlg-rust",
+    "ntobjshex-rust",
+    "netshell-rust",
+    "zipfldr-rust",
+    "propsys-rust",
+    "cryptnet-rust",
+    "oleacc-rust",
+    "hlink-rust",
+    "shcore-rust",
+    "mstask-rust",
 ]
 resolver = "2"
 

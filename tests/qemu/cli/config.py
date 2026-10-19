@@ -40,8 +40,15 @@ DEFAULTS: dict[str, Any] = {
         "backend": "windows-host",
         "windows": {
             # Directory holding the Windows QEMU executables (qemu-system-*.exe), as a
-            # WSL path under /mnt/<drive>.
-            "qemu_dir": "/mnt/c/Program Files/qemu",
+            # WSL path under /mnt/<drive>. Pinned to a VERSIONED directory so an upgrade is a
+            # reviewed change, not a silent one: the 11.0.50 snapshot that used to live in
+            # "C:\Program Files\qemu" broke i386 float compares (backend.KNOWN_BAD_WINDOWS_QEMU).
+            # A new build needs three things before it goes here: the atodbl payload passes on
+            # i386, smoke reaches the desktop on all three arches, and Windows Firewall ALLOWS
+            # inbound TCP/UDP for each qemu-system-*.exe -- rules are per program path, and a
+            # dismissed first-run prompt leaves BLOCK rules that fail amd64's net suite (hostfwd
+            # connects from WSL time out) while every boot still passes.
+            "qemu_dir": "/mnt/c/qemu-11.1.0",
             # Windows-visible scratch dir (WSL path) where media (ISO/OVMF/vars) is staged so
             # the Windows QEMU can read it natively. Cleaned per run.
             "staging_dir": "/mnt/c/temp/vibeos-qemu",

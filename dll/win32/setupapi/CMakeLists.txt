@@ -17,18 +17,18 @@ list(APPEND SOURCE
     devclass.c
     devprop.c
     devinst.c
-    dialog.c
-    dirid.c
-    diskspace.c
+    # dialog.c — replaced by Rust (setupapi-rust)
+    # dirid.c — replaced by Rust (setupapi-rust)
+    # diskspace.c — replaced by Rust (setupapi-rust)
     driver.c
     install.c
-    interface.c
+    # interface.c — replaced by Rust (setupapi-rust)
     misc.c
     parser.c
-    query.c
+    # query.c — replaced by Rust (setupapi-rust)
     queue.c
-    setupcab.c
-    stringtable.c
+    # setupcab.c — replaced by Rust (setupapi-rust)
+    # stringtable.c — replaced by Rust (setupapi-rust)
     stubs.c
     rpc.c)
 
@@ -36,9 +36,10 @@ list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/setupapi_stubs.c)
 
 # --- Rust cohabitation (setupapi-rust) ------------------------------------
-# libsetupapi_rust.a carries the TUs flipped so far (cfgmgr.c, whose RpcTryExcept guards
-# compile to nothing under DUMMY_PSEH and are real rpc_try calls in Rust); the rest of
-# the module is still the C above.
+# libsetupapi_rust.a carries the TUs flipped so far: cfgmgr.c (whose RpcTryExcept guards
+# compile to nothing under DUMMY_PSEH and are real rpc_try calls in Rust), then dialog,
+# dirid, diskspace, interface, query, setupcab and stringtable. The rest of the module is
+# still the C above.
 set(SETUPAPI_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 rust_storage_target(SETUPAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-setupapi-target" setupapi-rust)
 set(SETUPAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsetupapi_rust.a")

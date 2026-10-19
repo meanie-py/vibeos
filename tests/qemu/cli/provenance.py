@@ -1022,6 +1022,11 @@ NON_BUILD_PATHSPEC = (
     # that very test refuse the build it was written against.
     ":(exclude,glob)tests/**/test_*.py",
     ":(exclude,glob)tools/test_*.py",
+    # tests/qemu/vm.py is the QEMU launcher: it decides how the media boot (devices,
+    # PCI slots, patched COPIES in a work dir), never what they contain, and nothing
+    # in build/archcfg/mkramdisk imports it. Pinning a USB controller's PCI slot in it
+    # made every arch's fresh media STALE_MEDIA for the very boot that needed the fix.
+    ":(exclude)tests/qemu/vm.py",
 )
 
 
@@ -1174,6 +1179,31 @@ class Staleness:
 # It is deleted rather than left unused: a plausible-looking helper named "has work" is
 # exactly what the next person reaches for. Use build_src_hash() — content, not a
 # dry-run. Do not reintroduce a `ninja -n` staleness probe in a CONFIGURE_DEPENDS tree.
+
+
+def external_media_problems(repo: Path, arch: str, image: Path) -> list[str]:
+    """Why `image` (tools/media_manifest.py --assemble output) may NOT be booted as this
+    tree's `arch` livecd; empty when it may. Its stamp `<cd>.provenance.json` must name the
+    arch and the livecd, hash the image as it is now, and record the source this tree has
+    now: an image mastered from another tree, or from cells built from one, is refused
+    (--assemble refuses cells that do not match the source it masters from). The entries
+    that are not cells come from build-<arch>, which the ordinary staleness check covers."""
+    stamp = image.parent / f"{image.stem}.provenance.json"
+    if not image.is_file():
+        return [f"{image}: no such image"]
+    if not stamp.is_file():
+        return [f"{stamp} missing: master it with tools/media_manifest.py --assemble"]
+    st = json.loads(stamp.read_text())
+    problems = []
+    if st.get("arch") != arch:
+        problems.append(f"{image} is {st.get('arch')} media, not {arch}")
+    if st.get("cd") != "livecd":
+        problems.append(f"{image} is the {st.get('cd')} image: smoke boots the livecd")
+    if st.get("sha256") != _sha256_file(image):
+        problems.append(f"{image} changed since it was mastered (sha256 differs from its stamp)")
+    if st.get("source") != tree_content_hash(repo, [".", *NON_BUILD_PATHSPEC]):
+        problems.append(f"{image} was mastered from another source tree: master it again")
+    return problems
 
 
 def check_staleness(repo: Path, arch: str) -> Staleness:

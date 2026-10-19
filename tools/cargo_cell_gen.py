@@ -2818,11 +2818,12 @@ def clib_recipe(arch: str, target: str, repo: Path = REPO) -> str:
 
 
 def engine_c_targets(repo: Path = REPO) -> list[str]:
-    """Every cmake C library the engine compiles for a cell: `engine:c:<t>` and the named
-    replays (wine, uuid, conutils)."""
+    """Every cmake C library the engine compiles for a cell: `engine:c:<t>`, the named
+    replays (wine, uuid, conutils) and every `c_from_compile_db` library, whose sources a
+    build with no cmake takes from this recipe."""
     text = "".join(f.read_text() for f in (repo / "sdk/lib/rust").glob("*-cargo/build.rs"))
     names = set(re.findall(r'"engine:c:(\w+)"', text)) | {"wine", "uuid", "conutils"}
-    return sorted(names)
+    return sorted(names | set(SHIMS_CALL.findall(text)))
 
 
 SHIMS_CALL = re.compile(r'\.c_from_compile_db\(\s*"(\w+)"')
@@ -2936,6 +2937,7 @@ def _drop_shims_in(cmake: Path, target: str, generated: list[str]) -> None:
     for c in (
         "# How cmake compiled the target's sources, now on the OBJECT libraries.\n",
         "# Generated inputs those compiles read, ordered before them.\n",
+        "# The C still compiled, in an OBJECT library whose compile the cargo link replays.\n",
     ):
         out = out.replace(c, "")
 
@@ -3042,6 +3044,7 @@ def _drop_res_in(cmake: Path, target: str) -> None:
     for c in (
         "# How cmake compiled the target's sources, now on the OBJECT libraries.\n",
         "# Generated inputs those compiles read, ordered before them.\n",
+        "# The C still compiled, in an OBJECT library whose compile the cargo link replays.\n",
     ):
         if c in out and not re.search(c.replace(".", r"\.") + r"\s*\S*_shims", out):
             nxt = out[out.index(c) + len(c) :]

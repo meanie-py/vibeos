@@ -85,7 +85,12 @@ int WINAPI WinMain(HINSTANCE a, HINSTANCE b, LPSTR c, int d)
     /* Only the symptom is countable here: mul_pow10's own `exp < 0` is an x87 compare too,
      * so under the broken SAHF the EXPECTED side is sometimes x*10^j instead of x/10^j. That
      * _atodbl itself is right was shown off-guest: every one of the 5,535 pairs the winetest
-     * logged parses to the correctly rounded double (2026-10-04). */
+     * logged parses to the correctly rounded double (2026-10-04).
+     * Not 0 on a correct CPU: this binary's pow() is mingw's static x87 one, a few ulps off near
+     * 1e-307, so 1,823 cases fail on real Windows with the same bits as in the guest under WHPX
+     * and QEMU 11.1.0 (2026-10-18). The count is then a pure function of CPU semantics -- the
+     * winetest itself calls msvcrt.dll's pow -- and the check is that it matches native. */
+#define NATIVE_FAILS 1823
     int fails = 0, cases = 0;
     for (int j = DBL_MIN_10_EXP; j <= DBL_MAX_10_EXP; j++) {
         for (int i = 1; i <= 9; i++) {
@@ -99,8 +104,9 @@ int WINAPI WinMain(HINSTANCE a, HINSTANCE b, LPSTR c, int d)
             fails += !compare_double(dd.x, expected, 2);
         }
     }
-    SAY("3. string.c:3522 loop: %d cases, compare_double fails %d (native: 0)\n", cases, fails);
-    if (fails) g_fail++;
+    SAY("3. string.c:3522 loop: %d cases, compare_double fails %d (native: %d)\n", cases, fails,
+        NATIVE_FAILS);
+    if (fails != NATIVE_FAILS) g_fail++;
 
     SAY("done %s\n", g_fail ? "FAIL" : "PASS");
     return g_fail != 0;

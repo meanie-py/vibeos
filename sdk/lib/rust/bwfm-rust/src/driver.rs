@@ -10,6 +10,7 @@ use core::ptr::null_mut;
 
 use ntkrnl_sys::ddk::{
     ExAllocatePoolWithTag, ExFreePoolWithTag, KeDelayExecutionThread, KeQueryPerformanceCounter, KeStallExecutionProcessor,
+    KeWaitForSingleObject,
     MmMapIoSpace, ZwClose, ZwCreateFile, ZwQueryInformationFile, ZwReadFile,
     _FILE_INFORMATION_CLASS_FileStandardInformation, _MEMORY_CACHING_TYPE_MmNonCached, FILE_STANDARD_INFORMATION,
     HANDLE, IO_STATUS_BLOCK, LARGE_INTEGER, NTSTATUS, OBJECT_ATTRIBUTES, PHYSICAL_ADDRESS, PVOID, ULONG,
@@ -38,6 +39,9 @@ const PI5_GIO: u64 = 0x10_7D50_8500;
 const GIO_DATA: usize = 0x04;
 const GIO_IODIR: usize = 0x08;
 const PI5_WL_ON: u32 = 1 << 28;
+/// The Pi 4's Wi-Fi SDIO host, the Arasan SDHCI (SDC1's _CRS). Its WL_REG_ON is the
+/// firmware GPIO expander's WL_ON (mbox.rs), and it has no base clock of its own.
+const PI4_ARASAN: u64 = 0xFE30_0000;
 const WL_OFF_MS: i64 = 20;
 const WL_ON_MS: i64 = 150;
 
@@ -56,10 +60,11 @@ const FILE_MAX: usize = 1 << 20;
 /// the adapter late in boot, after the volume is up, so this is a margin, not a wait.
 const FILE_WAIT_S: u32 = 30;
 
-/// The mapped SDHCI window and the ARM generic timer. No interrupt yet: the
-/// driver polls.
+/// The mapped SDHCI window, the ARM generic timer, and once the miniport connects
+/// the host's interrupt, the event its DPC sets (null until then: every wait spins).
 pub struct Kernel {
     regs: *mut u32,
+    pub wake: *mut ntkrnl_sys::ddk::KEVENT,
 }
 
 impl Kernel {
@@ -84,6 +89,24 @@ impl Platform for Kernel {
     fn stall_us(&self, us: u32) {
         unsafe { KeStallExecutionProcessor(us) }
     }
+    fn irq_connected(&self) -> bool {
+        !self.wake.is_null()
+    }
+    /// The worker's wake event: the interrupt's DPC sets it, and so do a queued frame
+    /// and halt, which only make a command wait look again sooner.
+    fn irq_wait(&self, us: u64) -> bool {
+        let mut t: LARGE_INTEGER = unsafe { core::mem::zeroed() };
+        t.QuadPart = -((us.max(1) * 10) as i64);
+        // Executive, KernelMode, not alertable: STATUS_SUCCESS when it was set.
+        unsafe { KeWaitForSingleObject(self.wake.cast(), 0, 0, 0, &mut t) == 0 }
+    }
+}
+
+impl Kernel {
+    /// The register window, for the interrupt service routine.
+    pub fn regs(&self) -> *mut u32 {
+        self.regs
+    }
 }
 
 pub fn sleep_ms(ms: i64) {
@@ -93,7 +116,7 @@ pub fn sleep_ms(ms: i64) {
     unsafe { KeDelayExecutionThread(0, 0, &mut t) };
 }
 
-unsafe fn map(pa: u64, len: usize) -> *mut u8 {
+pub(crate) unsafe fn map(pa: u64, len: usize) -> *mut u8 {
     let mut p: PHYSICAL_ADDRESS = core::mem::zeroed();
     p.QuadPart = pa as i64;
     MmMapIoSpace(p, len as _, _MEMORY_CACHING_TYPE_MmNonCached) as *mut u8
@@ -102,6 +125,9 @@ unsafe fn map(pa: u64, len: usize) -> *mut u8 {
 /// Raise WL_REG_ON from low, so the chip starts from its power-on reset
 /// whatever the firmware left it in. False when this board's line is unknown.
 unsafe fn power_on(host: u64) -> bool {
+    if host == PI4_ARASAN {
+        return power_on_pi4();
+    }
     if host != PI5_SDIO2 {
         return false;
     }
@@ -126,6 +152,23 @@ unsafe fn power_on(host: u64) -> bool {
     wr(GIO_DATA, rd(GIO_DATA) | PI5_WL_ON);
     sleep_ms(WL_ON_MS);
     bwprint!("WL_ON raised: DATA {:#010x} IODIR {:#010x}\n", rd(GIO_DATA), rd(GIO_IODIR));
+    true
+}
+
+/// The Pi 4's WL_ON, through the firmware: low, then high and the chip's 150 ms.
+unsafe fn power_on_pi4() -> bool {
+    use crate::mbox::{property, GPIO_WL_ON, TAG_SET_GPIO_STATE};
+    if property(TAG_SET_GPIO_STATE, [GPIO_WL_ON, 0]).is_none() {
+        bwprint!("the firmware refused WL_ON (expander GPIO {}) low\n", GPIO_WL_ON);
+        return false;
+    }
+    sleep_ms(WL_OFF_MS);
+    if property(TAG_SET_GPIO_STATE, [GPIO_WL_ON, 1]).is_none() {
+        bwprint!("the firmware refused WL_ON (expander GPIO {}) high\n", GPIO_WL_ON);
+        return false;
+    }
+    sleep_ms(WL_ON_MS);
+    bwprint!("WL_ON (firmware expander GPIO {}) raised\n", GPIO_WL_ON);
     true
 }
 
@@ -203,7 +246,7 @@ pub unsafe fn attach(pa: u64, len: usize) -> Option<Chip<Kernel>> {
         bwprint!("could not map the SDIO host at {:#x}\n", pa);
         return None;
     }
-    let p = Kernel { regs: regs.cast() };
+    let p = Kernel { regs: regs.cast(), wake: core::ptr::null_mut() };
     bwprint!(
         "SDIO host {:#x}+{:#x}: version {:#x}, caps {:#010x}, firmware left clock {:#06x} host {:#010x}\n",
         pa,
@@ -213,12 +256,22 @@ pub unsafe fn attach(pa: u64, len: usize) -> Option<Chip<Kernel>> {
         p.rd(sdhci_rust::REG_CLOCK) & 0xFFFF,
         p.rd(sdhci_rust::REG_HOST_CTRL)
     );
-    // Nothing may signal: this driver polls.
+    // Nothing may signal until the miniport has connected the interrupt.
     p.wr(sdhci_rust::REG_INT_SIGNAL, 0);
     if !power_on(pa) {
         bwprint!("no known power line on this board: trying the chip as it is\n");
     }
     let mut sdio = Sdio::new(p);
+    if (sdio.hc.rd(sdhci_rust::REG_CAPS) >> 8) & 0xFF == 0 {
+        // No base clock in the capabilities (the Pi 4's Arasan): the EMMC clock feeds it.
+        match crate::mbox::property(crate::mbox::TAG_GET_CLOCK_RATE, [crate::mbox::CLOCK_EMMC, 0]) {
+            Some([_, hz]) if hz != 0 => {
+                bwprint!("the host reports no base clock: the firmware's EMMC clock is {} MHz\n", hz / 1_000_000);
+                sdio.hc.base_hz = hz;
+            }
+            _ => bwprint!("the host reports no base clock, and the firmware gave none\n"),
+        }
+    }
     let card = match sdio.init() {
         Ok(c) => c,
         Err(e) => {

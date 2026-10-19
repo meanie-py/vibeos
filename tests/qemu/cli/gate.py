@@ -61,10 +61,11 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 from pathlib import Path
 
-from . import archcfg, canon, hostdisk, hostlock, lints, rustlints
+from . import archcfg, canon, hostdisk, hostlock, lints, rustlints, triage
 from . import ladder as ladder_mod
 from .artifacts import Run, Stage, is_incomplete
 
@@ -350,6 +351,96 @@ def _conformance_once(repo: Path, arch: str, root: Path) -> dict:
         "seconds": time.monotonic() - t0,
         "run_dir": str(root),
         "salient": "; ".join(salient[:6]) or ("" if ok else f"conformance exited {cp.returncode}"),
+    }
+
+
+# A stortest boot is ~80-100 s; the outer timeout only catches a wedged pytest, which the
+# test's own 240 s verdict wait and the vm fixture's boot budget should never reach.
+STORTEST_TIMEOUT_S = 900
+
+
+def _stortest_once(repo: Path, arch: str, root: Path) -> dict:
+    """tests/qemu/test_stortest.py for one arch, on THIS GATE'S MEDIA: stortest.exe reads,
+    writes and reads back a VIBEUSB stick (usbstor + fastfat + mountmgr), and the write is
+    then read off the stick image on the host. Nothing else in the gate writes a file
+    through a USB disk; smoke boots from read-only media.
+
+    The test refuses stale media itself (its preflight is check_staleness), and the media
+    patch it boots is an equal-length copy, so no rebuild is ever involved. Its verdict
+    comes back as JSON through VIBEOS_STORTEST_RESULT; a boot that never reached the
+    desktop writes none and is classified from the console with triage, so a red lane
+    always names a cause (BUGCHECK / HANG_TIMEOUT / STORTEST_FAIL / STORTEST_MISMATCH).
+    Only a failure that never reached a verdict retries: a stortest FAIL or a wrong
+    readback is the storage stack answering wrong, which reproduces."""
+    t0 = time.monotonic()
+    root.mkdir(parents=True, exist_ok=True)
+    result = root / "stortest.json"
+    cmd = [
+        sys.executable,
+        "-m",
+        "pytest",
+        str(repo / "tests" / "qemu" / "test_stortest.py"),
+        "--arch",
+        archcfg.vm_arch(arch),
+        "--skip-clean-build",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+    ]
+    env = dict(
+        os.environ,
+        VIBEOS_QEMU_STORTEST="1",
+        VIBEOS_STORTEST_RESULT=str(result),
+        VIBEOS_ARTIFACT_DIR=str(root),
+    )
+    try:
+        cp = subprocess.run(
+            cmd,
+            cwd=str(repo),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=STORTEST_TIMEOUT_S,
+        )
+        out, rc = (cp.stdout or "") + (cp.stderr or ""), cp.returncode
+    except subprocess.TimeoutExpired as e:
+        out = (e.stdout or b"").decode(errors="replace") if isinstance(e.stdout, bytes) else ""
+        rc = -1
+    (root / "stortest.log").write_text(out)
+    try:
+        verdict = json.loads(result.read_text())
+    except (OSError, ValueError):
+        verdict = None
+    if verdict is not None:
+        classification = verdict.get("classification", "")
+        salient = "; ".join(verdict.get("salient", [])[:4])
+    elif rc == 0:
+        # pytest passed without the test writing its verdict: it was skipped.
+        classification, salient = "STORTEST_NO_VERDICT", "pytest passed but recorded no verdict"
+    elif "Boot failed" in out:
+        # The vm fixture's boot never reached the desktop; its message carries the
+        # serial's head and tail, which is what triage reads.
+        v = triage.classify(out, reached=False, fail_marker=None, debugcon=None)
+        classification = v["classification"] or "STORTEST_BOOT_FAIL"
+        salient = "; ".join(v.get("salient", [])[:3]) or _last_words(out)
+    else:
+        # pytest itself failed (collection, a fixture, a timeout): say so, with its error.
+        errors = [ln[1:].strip() for ln in out.splitlines() if ln.startswith("E ")]
+        errors = [e for e in errors if e]
+        classification = "STORTEST_ERROR"
+        salient = (errors[0] if errors else _last_words(out))[:300]
+    ok = rc == 0 and verdict is not None and not classification
+    return {
+        "arch": f"stor:{arch}",
+        "verdict": "PASS" if ok else "FAIL",
+        "classification": "" if ok else classification,
+        "ok": ok,
+        # Retry only what never reached stortest's own verdict (the boot, or the host).
+        "retryable": not ok and verdict is None,
+        "exit": rc,
+        "seconds": time.monotonic() - t0,
+        "run_dir": str(root),
+        "salient": "" if ok else f"{salient}  (log: {root / 'stortest.log'})",
     }
 
 
@@ -931,6 +1022,10 @@ def gate(args, repo: Path) -> int:
                     ],
                 )
             )
+    # tests/qemu/test_stortest.py, one lane per arch, on this gate's media. On by default:
+    # it is the only thing in the gate that writes through a USB disk. `--no-stortest`
+    # opts out.
+    stor_requested = not getattr(args, "no_stortest", False)
     do_lint = not getattr(args, "no_lint", False)
     build_order = sorted(arches, key=lambda a: a != "amd64")  # amd64 first, rest in order
     results: dict[str, dict] = {}
@@ -987,6 +1082,8 @@ def gate(args, repo: Path) -> int:
             return _smoke_once(repo, lane, root, smoke_extra)
         if lane.startswith("conf:"):
             return _conformance_once(repo, lane.split(":", 1)[1], root)
+        if lane.startswith("stor:"):
+            return _stortest_once(repo, lane.split(":", 1)[1], root)
         return _smoke_once(repo, lane, root, smoke_extra + _ladder_extra(lane))
 
     # Workers: every lane's first pass can be in flight while retries queue, plus
@@ -1002,6 +1099,7 @@ def gate(args, repo: Path) -> int:
         + (1 if net_requested and "amd64" in arches else 0)
         + (1 if "amd64" in arches else 0)
         + (len(arches) if conf_requested else 0)
+        + (len(arches) if stor_requested else 0)
     )
     max_workers = (
         min(
@@ -1065,6 +1163,10 @@ def gate(args, repo: Path) -> int:
             if conf_requested:
                 fut[ex.submit(_lane_once, f"conf:{arch}", gate_root / f"conf-{arch}-a1")] = (
                     f"conf:{arch}"
+                )
+            if stor_requested:
+                fut[ex.submit(_lane_once, f"stor:{arch}", gate_root / f"stor-{arch}-a1")] = (
+                    f"stor:{arch}"
                 )
             if do_lint:
                 lfut[ex.submit(_lint_once, repo, arch, gate_root / f"lint-{arch}")] = arch
@@ -1210,6 +1312,7 @@ def gate(args, repo: Path) -> int:
             + (["net"] if net_lane else [])
             + ([BIOS_LANE] if "amd64" in arches else [])
             + ([f"conf:{a}" for a in arches] if conf_requested else [])
+            + ([f"stor:{a}" for a in arches] if stor_requested else [])
         )
 
         def _collect_lints() -> None:
@@ -1358,6 +1461,7 @@ def gate(args, repo: Path) -> int:
 
     # --- verdict matrix ---
     _conf_lanes = [f"conf:{a}" for a in arches] if conf_requested else []
+    _stor_lanes = [f"stor:{a}" for a in arches] if stor_requested else []
     # Every lane _launch_lanes submits must be listed here AND in requested_lanes below,
     # or it runs, prints, and is ignored: the BIOS lane did exactly that on its first day.
     _bios_lanes = [BIOS_LANE] if "amd64" in arches else []
@@ -1366,6 +1470,7 @@ def gate(args, repo: Path) -> int:
         + (["net"] if net_lane else [])
         + _bios_lanes
         + _conf_lanes
+        + _stor_lanes
     ):
         r = results.get(arch)
         if r is None:
@@ -1386,9 +1491,12 @@ def gate(args, repo: Path) -> int:
         if r["ok"] and r.get("recovered"):
             first = r.get("first_classification") or "a flake"
             salient.append(f"first pass was {first}; passed on retry")
-        stage_name = (
-            f"conformance:{arch.split(':', 1)[1]}" if arch.startswith("conf:") else f"smoke:{arch}"
-        )
+        if arch.startswith("conf:"):
+            stage_name = f"conformance:{arch.split(':', 1)[1]}"
+        elif arch.startswith("stor:"):
+            stage_name = f"stortest:{arch.split(':', 1)[1]}"
+        else:
+            stage_name = f"smoke:{arch}"
         run.add(
             Stage(
                 stage_name,
@@ -1412,6 +1520,8 @@ def gate(args, repo: Path) -> int:
         # withhold the push credential, exactly as a dead desktop does. Without this
         # line the lane would run, print red, and still mint the stamp.
         + ([f"conf:{a}" for a in requested] if conf_requested else [])
+        # Same for stortest: a storage-stack regression must withhold the stamp.
+        + ([f"stor:{a}" for a in requested] if stor_requested else [])
     )
     all_ok = (
         bool(results)

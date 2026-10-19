@@ -4,6 +4,8 @@
 //! stdcall on i386 — and plain C on the x86-64 host the diff harness
 //! links against). The pure decisions live in `core_rs::ustr`.
 #![allow(non_snake_case)]
+// A boot-loader build exports unicode.c alone (blrtl-rust), so the rest is dead there.
+#![cfg_attr(feature = "bldr", allow(dead_code, unused_imports, unused_macros))]
 
 #[cfg(not(feature = "kernel"))]
 use crate::core_rs::utf8;
@@ -17,6 +19,10 @@ use crate::core_rs::{
 /// globals + `Rtlp{Up,Down}caseUnicodeChar`.
 #[cfg(feature = "kernel")]
 pub mod nls_tables;
+
+/// The NLS layer the unicode.c wrappers call, per build (kernel tables, the loaders'
+/// nlsboot, or the host model).
+pub mod nlsapi;
 
 /// `STRING` / `ANSI_STRING` / `OEM_STRING` (umtypes.h).
 #[repr(C)]
@@ -87,14 +93,14 @@ const TAG_OSTR: u32 = u32::from_be_bytes(*b"RTSO"); // C literal 'RTSO' -- sdk/l
 //   3. Host difftest (`cabi` only, NOT windows): the cdylib dlopened by
 //      the C harness keeps the NULL stub so its alloc-failure model
 //      paths still fire (and RtlAllocateHeap isn't linkable on host).
-#[cfg(feature = "kernel")]
+#[cfg(any(feature = "kernel", feature = "bldr"))]
 extern "system" {
     // rtlp.h: `PVOID RtlpAllocateMemory(ULONG, ULONG)`, `VOID RtlpFreeMemory(PVOID, ULONG)`;
     // spelled exactly as path_wave's declaration of the same symbols.
     fn RtlpAllocateMemory(Bytes: u32, Tag: u32) -> *mut core::ffi::c_void;
     fn RtlpFreeMemory(Mem: *mut core::ffi::c_void, Tag: u32);
 }
-#[cfg(all(not(feature = "kernel"), target_os = "windows"))]
+#[cfg(all(not(any(feature = "kernel", feature = "bldr")), target_os = "windows"))]
 extern "system" {
     fn RtlGetProcessHeap() -> *mut core::ffi::c_void;
     fn RtlAllocateHeap(HeapHandle: *mut core::ffi::c_void, Flags: u32, Size: usize) -> *mut u8;
@@ -102,16 +108,16 @@ extern "system" {
 }
 #[inline]
 unsafe fn rtl_alloc(bytes: usize, tag: u32) -> *mut u8 {
-    #[cfg(feature = "kernel")]
+    #[cfg(any(feature = "kernel", feature = "bldr"))]
     {
         (RtlpAllocateMemory(bytes as u32, tag)).cast()
     }
-    #[cfg(all(not(feature = "kernel"), target_os = "windows"))]
+    #[cfg(all(not(any(feature = "kernel", feature = "bldr")), target_os = "windows"))]
     {
         let _ = tag;
         RtlAllocateHeap(RtlGetProcessHeap(), 0, bytes)
     }
-    #[cfg(all(not(feature = "kernel"), not(target_os = "windows")))]
+    #[cfg(all(not(any(feature = "kernel", feature = "bldr")), not(target_os = "windows")))]
     {
         let _ = (bytes, tag);
         core::ptr::null_mut()
@@ -120,20 +126,20 @@ unsafe fn rtl_alloc(bytes: usize, tag: u32) -> *mut u8 {
 #[inline]
 #[allow(dead_code)]
 unsafe fn rtl_free(p: *mut u8, tag: u32) {
-    #[cfg(feature = "kernel")]
+    #[cfg(any(feature = "kernel", feature = "bldr"))]
     {
         if !p.is_null() {
             RtlpFreeMemory((p).cast(), tag);
         }
     }
-    #[cfg(all(not(feature = "kernel"), target_os = "windows"))]
+    #[cfg(all(not(any(feature = "kernel", feature = "bldr")), target_os = "windows"))]
     {
         let _ = tag;
         if !p.is_null() {
             RtlFreeHeap(RtlGetProcessHeap(), 0, p);
         }
     }
-    #[cfg(all(not(feature = "kernel"), not(target_os = "windows")))]
+    #[cfg(all(not(any(feature = "kernel", feature = "bldr")), not(target_os = "windows")))]
     {
         let _ = (p, tag);
     }
@@ -189,6 +195,7 @@ unsafe fn wslice<'a, T>(p: *mut T, n: usize) -> &'a mut [T] {
     }
 }
 #[inline]
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 unsafe fn put_u32(p: *mut u32, v: u32) {
     if !p.is_null() {
         core::ptr::write_volatile(p, v);
@@ -384,6 +391,9 @@ pub unsafe extern "system" fn RtlPrefixString(
 
 /// `WCHAR NTAPI RtlUpcaseUnicodeChar(WCHAR)` (nls.c → the shared
 /// model).
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlUpcaseUnicodeChar(src: u16) -> u16 {
     nls::upcase_uc(src)
@@ -391,6 +401,9 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeChar(src: u16) -> u16 {
 
 /// `CHAR NTAPI RtlUpperChar(CHAR)` (nls.c). Signed-`char` guard ⇒
 /// only a–z fold; every other byte unchanged.
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlUpperChar(src: u8) -> u8 {
     nls::upper_ansi(src)
@@ -498,6 +511,9 @@ pub unsafe extern "system" fn RtlHashUnicodeString(
 
 /// `NTSTATUS NTAPI RtlMultiByteToUnicodeN(PWCHAR, ULONG UnicodeSize,
 /// PULONG ResultSize, PCSTR, ULONG MbSize)`.
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlMultiByteToUnicodeN(
     unicode: *mut u16,
@@ -515,6 +531,9 @@ pub unsafe extern "system" fn RtlMultiByteToUnicodeN(
 
 /// `NTSTATUS NTAPI RtlOemToUnicodeN(...)` — same single-byte body as
 /// MultiByte (shared model: OEM CP == ANSI CP == CP1252).
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlOemToUnicodeN(
     unicode: *mut u16,
@@ -532,6 +551,9 @@ pub unsafe extern "system" fn RtlOemToUnicodeN(
 
 /// `NTSTATUS NTAPI RtlUnicodeToMultiByteN(PCHAR, ULONG MbSize,
 /// PULONG ResultSize, PCWCH, ULONG UnicodeSize)`.
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlUnicodeToMultiByteN(
     mb: *mut u8,
@@ -549,6 +571,9 @@ pub unsafe extern "system" fn RtlUnicodeToMultiByteN(
 
 /// `NTSTATUS NTAPI RtlUnicodeToOemN(...)` — the `while` shape:
 /// `STATUS_BUFFER_OVERFLOW` iff Unicode input left over.
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlUnicodeToOemN(
     oem: *mut u8,
@@ -570,6 +595,9 @@ pub unsafe extern "system" fn RtlUnicodeToOemN(
 
 /// `NTSTATUS NTAPI RtlUpcaseUnicodeToMultiByteN(...)` — min-precompute
 /// shape, always SUCCESS, upcase via the shared model.
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlUpcaseUnicodeToMultiByteN(
     mb: *mut u8,
@@ -588,6 +616,9 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeToMultiByteN(
 /// `NTSTATUS NTAPI RtlUpcaseUnicodeToOemN(...)` — same min-precompute
 /// shape as the MultiByte upcase variant (NOT the `while`/overflow
 /// shape of `RtlUnicodeToOemN`).
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlUpcaseUnicodeToOemN(
     oem: *mut u8,
@@ -605,6 +636,9 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeToOemN(
 
 /// `NTSTATUS NTAPI RtlMultiByteToUnicodeSize(PULONG, PCSTR, ULONG)` —
 /// single-byte: `*UnicodeSize = MbSize * sizeof(WCHAR)`.
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlMultiByteToUnicodeSize(
     unicode_size: *mut u32,
@@ -617,6 +651,9 @@ pub unsafe extern "system" fn RtlMultiByteToUnicodeSize(
 
 /// `NTSTATUS NTAPI RtlUnicodeToMultiByteSize(PULONG, PCWCH, ULONG)` —
 /// single-byte: `*MbSize = UnicodeSize / sizeof(WCHAR)`.
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlUnicodeToMultiByteSize(
     mb_size: *mut u32,
@@ -635,9 +672,26 @@ pub unsafe extern "system" fn RtlUnicodeToMultiByteSize(
 // caller-buffer path is what the diff actually exercises; the
 // allocate path's NULL/NO_MEMORY contract is the pinned edge).
 
-/// `WCHAR NTAPI RtlAnsiCharToUnicodeChar(IN OUT PUCHAR *AnsiChar)` —
-/// NlsLeadByteInfo is NULL in the model ⇒ Size=1; converts one byte,
-/// advances `*AnsiChar` by 1.
+/// `WCHAR NTAPI RtlAnsiCharToUnicodeChar(IN OUT PUCHAR *AnsiChar)` — a lead byte
+/// (`NlsLeadByteInfo[c] != 0`) makes it two bytes; converts through
+/// `RtlMultiByteToUnicodeN` and advances `*AnsiChar` by the size.
+#[cfg(any(feature = "kernel", feature = "bldr"))]
+#[no_mangle]
+pub unsafe extern "system" fn RtlAnsiCharToUnicodeChar(ansi_char: *mut *mut u8) -> u16 {
+    let p = *ansi_char;
+    let lead = nlsapi::NlsLeadByteInfo;
+    let size: u32 = if !lead.is_null() && *lead.add(*p as usize) != 0 { 2 } else { 1 };
+    let mut unicode_char: u16 = b' ' as u16;
+    let status = nlsapi::RtlMultiByteToUnicodeN(&mut unicode_char, 2, core::ptr::null_mut(), p, size);
+    if !nt_success(status) {
+        unicode_char = b' ' as u16;
+    }
+    *ansi_char = p.add(size as usize);
+    unicode_char
+}
+
+/// The host model: no lead bytes (NlsLeadByteInfo is NULL there), one byte.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlAnsiCharToUnicodeChar(ansi_char: *mut *mut u8) -> u16 {
     let p = *ansi_char;
@@ -678,12 +732,23 @@ pub unsafe extern "system" fn RtlAnsiStringToUnicodeString(
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
     }
-    let dlen = (*dest).Length;
-    let buf = wslice((*dest).Buffer, dlen as usize / 2);
-    let s = rslice((*src).Buffer, (*src).Length as usize);
-    let n = nls::mb_to_uni(&mut buf[..dlen as usize / 2], s);
-    core::ptr::write_volatile((*dest).Buffer.add(n), 0u16);
-    STATUS_SUCCESS
+    let mut index: u32 = 0;
+    let status = nlsapi::RtlMultiByteToUnicodeN(
+        (*dest).Buffer,
+        (*dest).Length as u32,
+        &mut index,
+        (*src).Buffer,
+        (*src).Length as u32,
+    );
+    if !nt_success(status) {
+        if alloc != 0 {
+            rtl_free((*dest).Buffer as *mut u8, TAG_USTR);
+            (*dest).Buffer = core::ptr::null_mut();
+        }
+        return status;
+    }
+    core::ptr::write_volatile((*dest).Buffer.add(index as usize / 2), 0u16);
+    status
 }
 
 /// `ULONG NTAPI RtlxAnsiStringToUnicodeSize` = `Ansi.Length*2 + 2`.
@@ -721,11 +786,19 @@ pub unsafe extern "system" fn RtlUnicodeStringToAnsiString(
         status = STATUS_BUFFER_OVERFLOW;
         (*dest).Length = (*dest).MaximumLength - 1;
     }
-    let dlen = (*dest).Length;
-    let buf = wslice((*dest).Buffer, dlen as usize);
-    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
-    let n = nls::uni_to_mb(&mut buf[..dlen as usize], s);
-    core::ptr::write_volatile((*dest).Buffer.add(n), 0u8);
+    let mut index: u32 = 0;
+    let real_status = nlsapi::RtlUnicodeToMultiByteN(
+        (*dest).Buffer,
+        (*dest).Length as u32,
+        &mut index,
+        (*src).Buffer,
+        (*src).Length as u32,
+    );
+    if !nt_success(real_status) && alloc != 0 {
+        rtl_free((*dest).Buffer, TAG_ASTR);
+        return real_status;
+    }
+    core::ptr::write_volatile((*dest).Buffer.add(index as usize), 0u8);
     status
 }
 
@@ -771,12 +844,21 @@ pub unsafe extern "system" fn RtlOemStringToUnicodeString(
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
     }
-    let dlen = (*dest).Length;
-    let buf = wslice((*dest).Buffer, dlen as usize / 2);
-    let s = rslice((*src).Buffer, (*src).Length as usize);
-    let n = nls::mb_to_uni(&mut buf[..dlen as usize / 2], s);
-    core::ptr::write_volatile((*dest).Buffer.add(n), 0u16);
-    STATUS_SUCCESS
+    let mut index: u32 = 0;
+    let status = nlsapi::RtlOemToUnicodeN(
+        (*dest).Buffer,
+        (*dest).Length as u32,
+        &mut index,
+        (*src).Buffer,
+        (*src).Length as u32,
+    );
+    if !nt_success(status) && alloc != 0 {
+        rtl_free((*dest).Buffer as *mut u8, TAG_USTR);
+        (*dest).Buffer = core::ptr::null_mut();
+        return status;
+    }
+    core::ptr::write_volatile((*dest).Buffer.add(index as usize / 2), 0u16);
+    status
 }
 
 /// `RtlUnicodeStringToOemString` — `Length = (Uni.Length+2)/2`; NUL
@@ -803,16 +885,21 @@ pub unsafe extern "system" fn RtlUnicodeStringToOemString(
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
     }
-    let dlen = (*dest).Length;
-    let buf = wslice((*dest).Buffer, dlen as usize);
-    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
-    let (n, overflow) = nls::uni_to_oem(&mut buf[..dlen as usize], s);
-    core::ptr::write_volatile((*dest).Buffer.add(n), 0u8);
-    if overflow {
-        STATUS_BUFFER_OVERFLOW
-    } else {
-        STATUS_SUCCESS
+    let mut index: u32 = 0;
+    let status = nlsapi::RtlUnicodeToOemN(
+        (*dest).Buffer,
+        (*dest).Length as u32,
+        &mut index,
+        (*src).Buffer,
+        (*src).Length as u32,
+    );
+    if !nt_success(status) && alloc != 0 {
+        rtl_free((*dest).Buffer, TAG_OSTR);
+        (*dest).Buffer = core::ptr::null_mut();
+        return status;
     }
+    core::ptr::write_volatile((*dest).Buffer.add(index as usize), 0u8);
+    status
 }
 
 /// `RtlOemStringToCountedUnicodeString` — `Length = Oem.Length*2`;
@@ -846,10 +933,19 @@ pub unsafe extern "system" fn RtlOemStringToCountedUnicodeString(
     if (*dest).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
     }
-    let dlen = (*dest).Length;
-    let buf = wslice((*dest).Buffer, dlen as usize / 2);
-    let s = rslice((*src).Buffer, (*src).Length as usize);
-    nls::mb_to_uni(&mut buf[..dlen as usize / 2], s);
+    let mut index: u32 = 0;
+    let status = nlsapi::RtlOemToUnicodeN(
+        (*dest).Buffer,
+        (*dest).Length as u32,
+        &mut index,
+        (*src).Buffer,
+        (*src).Length as u32,
+    );
+    if !nt_success(status) && alloc != 0 {
+        rtl_free((*dest).Buffer as *mut u8, TAG_USTR);
+        (*dest).Buffer = core::ptr::null_mut();
+        return status;
+    }
     STATUS_SUCCESS
 }
 
@@ -884,17 +980,21 @@ pub unsafe extern "system" fn RtlUnicodeStringToCountedOemString(
     if (*dest).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
     }
-    let dlen = (*dest).Length;
-    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
-    let buf = wslice((*dest).Buffer, dlen as usize);
-    let (n, overflow) = nls::uni_to_oem(&mut buf[..dlen as usize], s);
-    let mut status = if overflow {
-        STATUS_BUFFER_OVERFLOW
-    } else {
-        STATUS_SUCCESS
-    };
-    if nt_success(status) && !nls::did_oem_work(s, rslice((*dest).Buffer, n)) {
+    let mut index: u32 = 0;
+    let mut status = nlsapi::RtlUnicodeToOemN(
+        (*dest).Buffer,
+        (*dest).Length as u32,
+        &mut index,
+        (*src).Buffer,
+        (*src).Length as u32,
+    );
+    if nt_success(status) && nlsapi::RtlpDidUnicodeToOemWork(src, dest) == 0 {
         status = STATUS_UNMAPPABLE_CHARACTER;
+    }
+    if !nt_success(status) && alloc != 0 {
+        rtl_free((*dest).Buffer, TAG_OSTR);
+        (*dest).Buffer = core::ptr::null_mut();
+        return status;
     }
     status
 }
@@ -952,12 +1052,21 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToAnsiString(
     } else if (*dest).Length >= (*dest).MaximumLength && (*dest).MaximumLength == 0 {
         return STATUS_BUFFER_OVERFLOW;
     }
-    let dlen = (*dest).Length;
-    let buf = wslice((*dest).Buffer, dlen as usize);
-    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
-    let n = nls::upcase_uni_to_mb(&mut buf[..dlen as usize], s);
-    core::ptr::write_volatile((*dest).Buffer.add(n), 0u8);
-    STATUS_SUCCESS
+    let mut index: u32 = 0;
+    let status = nlsapi::RtlUpcaseUnicodeToMultiByteN(
+        (*dest).Buffer,
+        (*dest).Length as u32,
+        &mut index,
+        (*src).Buffer,
+        (*src).Length as u32,
+    );
+    if !nt_success(status) && alloc != 0 {
+        rtl_free((*dest).Buffer, TAG_ASTR);
+        (*dest).Buffer = core::ptr::null_mut();
+        return status;
+    }
+    core::ptr::write_volatile((*dest).Buffer.add(index as usize), 0u8);
+    status
 }
 
 /// `RtlUpcaseUnicodeStringToCountedOemString` — `Length =
@@ -991,13 +1100,21 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToCountedOemString(
     if (*dest).Length > (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
     }
-    let dlen = (*dest).Length;
-    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
-    let buf = wslice((*dest).Buffer, dlen as usize);
-    let n = nls::upcase_uni_to_mb(&mut buf[..dlen as usize], s);
-    let mut status = STATUS_SUCCESS;
-    if nt_success(status) && !nls::did_oem_work(s, rslice((*dest).Buffer, n)) {
+    let mut index: u32 = 0;
+    let mut status = nlsapi::RtlUpcaseUnicodeToOemN(
+        (*dest).Buffer,
+        (*dest).Length as u32,
+        &mut index,
+        (*src).Buffer,
+        (*src).Length as u32,
+    );
+    if nt_success(status) && nlsapi::RtlpDidUnicodeToOemWork(src, dest) == 0 {
         status = STATUS_UNMAPPABLE_CHARACTER;
+    }
+    if !nt_success(status) && alloc != 0 {
+        rtl_free((*dest).Buffer, TAG_OSTR);
+        (*dest).Buffer = core::ptr::null_mut();
+        return status;
     }
     status
 }
@@ -1026,21 +1143,32 @@ pub unsafe extern "system" fn RtlUpcaseUnicodeStringToOemString(
     if (*dest).Length >= (*dest).MaximumLength {
         return STATUS_BUFFER_OVERFLOW;
     }
-    let dlen = (*dest).Length;
-    let s = rslice((*src).Buffer, (*src).Length as usize / 2);
-    let buf = wslice((*dest).Buffer, dlen as usize);
-    let n = nls::upcase_uni_to_mb(&mut buf[..dlen as usize], s);
-    let mut status = STATUS_SUCCESS;
-    if nt_success(status) && !nls::did_oem_work(s, rslice((*dest).Buffer, n)) {
+    let mut index: u32 = 0;
+    let mut status = nlsapi::RtlUpcaseUnicodeToOemN(
+        (*dest).Buffer,
+        (*dest).Length as u32,
+        &mut index,
+        (*src).Buffer,
+        (*src).Length as u32,
+    );
+    if nt_success(status) && nlsapi::RtlpDidUnicodeToOemWork(src, dest) == 0 {
         status = STATUS_UNMAPPABLE_CHARACTER;
     }
-    core::ptr::write_volatile((*dest).Buffer.add(n), 0u8);
+    if !nt_success(status) && alloc != 0 {
+        rtl_free((*dest).Buffer, TAG_OSTR);
+        (*dest).Buffer = core::ptr::null_mut();
+        return status;
+    }
+    core::ptr::write_volatile((*dest).Buffer.add(index as usize), 0u8);
     status
 }
 
 // ── Wave RTL-3b: downcase family + default code page ──────────────
 
 /// `WCHAR NTAPI RtlDowncaseUnicodeChar(WCHAR)` (nls.c → shared model).
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlDowncaseUnicodeChar(src: u16) -> u16 {
     nls::downcase_uc(src)
@@ -1078,6 +1206,9 @@ pub unsafe extern "system" fn RtlDowncaseUnicodeString(
 
 /// `VOID NTAPI RtlGetDefaultCodePage(PUSHORT Ansi, PUSHORT Oem)` —
 /// shared model is single-byte CP1252 (1252) for both.
+// The host model of nls.c: the kernel/ntdll take nls_tables' table-driven port, the
+// boot loaders nlsboot's.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[no_mangle]
 pub unsafe extern "system" fn RtlGetDefaultCodePage(ansi_cp: *mut u16, oem_cp: *mut u16) {
     if !ansi_cp.is_null() {
@@ -1298,7 +1429,7 @@ pub unsafe extern "system" fn RtlAppendAsciizToString(dest: *mut STRING, src: *c
 /// `LONG NTAPI RtlCompareUnicodeStrings(PCWCH, SIZE_T, PCWCH, SIZE_T,
 /// BOOLEAN)` — raw-buffer compare, unit-count lengths, `SIZE_T`
 /// subtraction tiebreak.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCompareUnicodeStrings(
     string1: *const u16,
     string1_length: usize,
@@ -1315,16 +1446,26 @@ pub unsafe extern "system" fn RtlCompareUnicodeStrings(
 
 // ── Wave RTL-4b slice 4: computer-name ────────────────────────────
 
-/// `BOOLEAN NTAPI RtlEqualComputerName(PUNICODE_STRING,
-/// PUNICODE_STRING)`. Chains through `RtlUpcaseUnicodeStringToOemString
-/// (…, TRUE)` which (alloc → NULL) yields STATUS_NO_MEMORY ⇒
-/// `NT_SUCCESS` FALSE ⇒ the outer guard never sets Result ⇒ FALSE.
+/// `BOOLEAN NTAPI RtlEqualComputerName(PUNICODE_STRING, PUNICODE_STRING)`: both names
+/// upcased to OEM (allocating), compared case-sensitively, freed. This returned FALSE
+/// unconditionally -- the host harness's outcome (its allocator yields NULL, so the C's
+/// first conversion fails there) shipped as the body in every build.
 #[no_mangle]
 pub unsafe extern "system" fn RtlEqualComputerName(
-    _computer_name1: *mut UNICODE_STRING,
-    _computer_name2: *mut UNICODE_STRING,
+    computer_name1: *mut UNICODE_STRING,
+    computer_name2: *mut UNICODE_STRING,
 ) -> u8 {
-    0
+    let mut oem1 = STRING { Length: 0, MaximumLength: 0, Buffer: core::ptr::null_mut() };
+    let mut oem2 = STRING { Length: 0, MaximumLength: 0, Buffer: core::ptr::null_mut() };
+    let mut result = 0u8;
+    if nt_success(RtlUpcaseUnicodeStringToOemString(&mut oem1, computer_name1, 1)) {
+        if nt_success(RtlUpcaseUnicodeStringToOemString(&mut oem2, computer_name2, 1)) {
+            result = RtlEqualString(&oem1, &oem2, 0);
+            RtlFreeOemString(&mut oem2);
+        }
+        RtlFreeOemString(&mut oem1);
+    }
+    result
 }
 
 /// `BOOLEAN NTAPI RtlEqualDomainName(...)` — delegates to
@@ -1362,7 +1503,7 @@ pub unsafe extern "system" fn RtlDnsHostNameToComputerName(
     if cn_len > 0 {
         let mut oemn = [0u8; (MAX_COMPUTERNAME_LENGTH + 1) as usize];
         let mut oemn_len: u32 = 0;
-        status = RtlUpcaseUnicodeToOemN(
+        status = nlsapi::RtlUpcaseUnicodeToOemN(
             oemn.as_mut_ptr(),
             MAX_COMPUTERNAME_LENGTH,
             &mut oemn_len,
@@ -1377,10 +1518,7 @@ pub unsafe extern "system" fn RtlDnsHostNameToComputerName(
                 MaximumLength: (MAX_COMPUTERNAME_LENGTH + 1) as u16,
                 Buffer: oemn.as_mut_ptr(),
             };
-            // RtlpDidUnicodeToOemWork(DnsHostName, &cn_oem): reads
-            // DnsHostName->Buffer[i] / oemn[i] for i < oemn_len.
-            let uni_src = rslice((*dns_host_name).Buffer, oemn_len as usize);
-            if nls::did_oem_work(uni_src, &oemn[..oemn_len as usize]) {
+            if nlsapi::RtlpDidUnicodeToOemWork(dns_host_name, &cn_oem) != 0 {
                 status = RtlOemStringToUnicodeString(computer_name, &cn_oem, allocate);
             }
         }
@@ -1861,7 +1999,7 @@ pub unsafe extern "system" fn RtlInt64ToUnicodeString(
 /// final ntoskrnl link. `rtl-difftest` (no `kernel` feature) still
 /// fuzzes them.
 #[cfg(not(feature = "kernel"))]
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlUnicodeToUTF8N(
     utf8_dest: *mut u8,
     utf8_bytes_max: u32,
@@ -1893,7 +2031,7 @@ pub unsafe extern "system" fn RtlUnicodeToUTF8N(
 /// CHAR*, ULONG)`. Gated off the `kernel` build (see
 /// `RtlUnicodeToUTF8N`).
 #[cfg(not(feature = "kernel"))]
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlUTF8ToUnicodeN(
     uni_dest: *mut u16,
     uni_bytes_max: u32,
@@ -1932,9 +2070,47 @@ pub struct GenerateNameContext {
     pub last_index_value: u32,
 }
 
-/// Shared-CP1252 model of `RtlIsValidOemCharacter` (unicode.c):
+/// `RtlIsValidOemCharacter`'s body (unicode.c): round-trip `*Char` through the OEM tables,
+/// upcase it, and reject it if it comes back as the OEM default char; on success the C
+/// **mutates** `*Char` to the upcased character.
+#[cfg(any(feature = "kernel", feature = "bldr"))]
+#[inline]
+fn iv_oem(ch: &mut u16) -> bool {
+    use nlsapi::{
+        NlsMbOemCodePageTag, NlsOemDefaultChar, NlsOemLeadByteInfo, NlsOemToUnicodeTable,
+        NlsUnicodeToMbOemTable, NlsUnicodeToOemTable,
+    };
+    unsafe {
+        let unicode_char: u16;
+        let oem_char: u16;
+        if NlsMbOemCodePageTag != 0 {
+            let mb = *NlsUnicodeToMbOemTable.add(*ch as usize);
+            let offset = *NlsOemLeadByteInfo.add((mb >> 8) as usize);
+            let u = if offset != 0 {
+                *NlsOemLeadByteInfo.add(offset as usize + (mb & 0xFF) as usize)
+            } else {
+                *NlsOemToUnicodeTable.add(mb as usize)
+            };
+            unicode_char = nls::upcase_uc(u);
+            oem_char = *NlsUnicodeToMbOemTable.add(unicode_char as usize);
+        } else {
+            let oem = *NlsUnicodeToOemTable.add(*ch as usize) as u8;
+            unicode_char = nls::upcase_uc(*NlsOemToUnicodeTable.add(oem as usize));
+            // WCHAR OemChar = CHAR table entry: sign-extends, as the C's assignment does.
+            oem_char = *NlsUnicodeToOemTable.add(unicode_char as usize) as i16 as u16;
+        }
+        if oem_char == NlsOemDefaultChar {
+            return false;
+        }
+        *ch = unicode_char;
+        true
+    }
+}
+
+/// Shared-CP1252 model of `RtlIsValidOemCharacter` (the host harness):
 /// `u = upcase(dec(enc(*c)))`; `valid = enc(u) != '?'`; on valid the
 /// genuine **mutates** `*c = u`.
+#[cfg(not(any(feature = "kernel", feature = "bldr")))]
 #[inline]
 fn iv_oem(ch: &mut u16) -> bool {
     let u = nls::upcase_uc(nls::dec_byte(nls::enc_byte(*ch)));
@@ -1961,7 +2137,7 @@ pub unsafe extern "system" fn RtlIsValidOemCharacter(ch: *mut u16) -> u8 {
 /// AllowExtendedCharacters, PGENERATE_NAME_CONTEXT, PUNICODE_STRING
 /// Name8dot3)`. Single-byte model (`NlsMbOemCodePageTag == 0` ⇒ the
 /// MB-OEM extra-decrement branch is dead).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGenerate8dot3Name(
     name: *const UNICODE_STRING,
     allow_ext: u8,
@@ -2104,7 +2280,7 @@ pub unsafe extern "system" fn RtlGenerate8dot3Name(
 
 /// `BOOLEAN NTAPI RtlIsNameLegalDOS8Dot3(PCUNICODE_STRING,
 /// POEM_STRING OemName, PBOOLEAN NameContainsSpaces)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlIsNameLegalDOS8Dot3(
     name: *const UNICODE_STRING,
     oem_name: *mut STRING,
@@ -2183,6 +2359,17 @@ pub unsafe extern "system" fn RtlIsNameLegalDOS8Dot3(
     1
 }
 
+// Everything below is the rest of librtl (sid/acl/sd/priv/timezone/env/security/resource/
+// thread/process/path/atom), which the kernel and ntdll link and the boot loaders do not:
+// a `bldr` build compiles it out entirely, because a non-exported fn is still emitted and
+// still references Zw*/Nt*/the atom-table and thread helpers no loader defines.
+#[cfg(not(feature = "bldr"))]
+pub use self::librtl_rest::*;
+#[cfg(not(feature = "bldr"))]
+mod librtl_rest {
+#![allow(unused_imports)]
+use super::*;
+
 // ── Wave SID: sdk/lib/rtl/sid.c (byte + alloc-edge surface) ───────
 // A SID is a raw binary record (no counted-string wrapper):
 //   off0 Revision:u8  off1 SubAuthorityCount:u8
@@ -2207,7 +2394,7 @@ pub struct SidAndAttributes {
 /// `BOOLEAN NTAPI RtlValidSid(PSID)`. NULL ⇒ TRUE (genuine `&&`
 /// short-circuits). A bad non-NULL pointer faults (DUMMY_PSEH dead
 /// `_SEH2_EXCEPT`) = genuine UB, never fuzzed.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlValidSid(sid_: *const u8) -> u8 {
     if sid_.is_null() {
         return sid::valid(0, 0, true) as u8;
@@ -2216,7 +2403,7 @@ pub unsafe extern "system" fn RtlValidSid(sid_: *const u8) -> u8 {
 }
 
 /// `ULONG NTAPI RtlLengthRequiredSid(ULONG SubAuthorityCount)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlLengthRequiredSid(count: u32) -> u32 {
     sid::length_required(count)
 }
@@ -2224,7 +2411,7 @@ pub unsafe extern "system" fn RtlLengthRequiredSid(count: u32) -> u32 {
 /// `NTSTATUS NTAPI RtlInitializeSid(PSID, PSID_IDENTIFIER_AUTHORITY,
 /// UCHAR)`. Writes Revision/Count/IdentifierAuthority only (does NOT
 /// zero the subauthorities).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlInitializeSid(
     sid_: *mut u8,
     id_auth: *const u8,
@@ -2238,20 +2425,20 @@ pub unsafe extern "system" fn RtlInitializeSid(
 
 /// `PULONG NTAPI RtlSubAuthoritySid(PSID, ULONG)` —
 /// `&Sid->SubAuthority[n]`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSubAuthoritySid(sid_: *mut u8, sub_authority: u32) -> *mut u32 {
     sid_.add(8 + 4 * sub_authority as usize) as *mut u32
 }
 
 /// `PUCHAR NTAPI RtlSubAuthorityCountSid(PSID)` —
 /// `&Sid->SubAuthorityCount`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSubAuthorityCountSid(sid_: *mut u8) -> *mut u8 {
     sid_.add(1)
 }
 
 /// `PSID_IDENTIFIER_AUTHORITY NTAPI RtlIdentifierAuthoritySid(PSID)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlIdentifierAuthoritySid(sid_: *mut u8) -> *mut u8 {
     sid_.add(2)
 }
@@ -2260,7 +2447,7 @@ pub unsafe extern "system" fn RtlIdentifierAuthoritySid(sid_: *mut u8) -> *mut u
 /// (Revision+Count) compare, then byte-equal over
 /// `RtlLengthSid(Sid1)` (genuine reads Sid2 to Sid1's length —
 /// over-read if Sid2 shorter = genuine UB; fuzz sizes Sid2 ≥ Sid1).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlEqualSid(s1: *const u8, s2: *const u8) -> u8 {
     if *(s1 as *const u16) != *(s2 as *const u16) {
         return 0;
@@ -2270,14 +2457,14 @@ pub unsafe extern "system" fn RtlEqualSid(s1: *const u8, s2: *const u8) -> u8 {
 }
 
 /// `ULONG NTAPI RtlLengthSid(PSID)` = `8 + 4*SubAuthorityCount`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlLengthSid(sid_: *const u8) -> u32 {
     sid::length(*sid_.add(1))
 }
 
 /// `NTSTATUS NTAPI RtlCopySid(ULONG BufferLength, PSID Dest,
 /// PSID Src)`. `RtlMoveMemory` (overlap-safe).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCopySid(buffer_length: u32, dest: *mut u8, src: *const u8) -> i32 {
     let sid_length = sid::length(*src.add(1));
     if sid_length > buffer_length {
@@ -2289,13 +2476,13 @@ pub unsafe extern "system" fn RtlCopySid(buffer_length: u32, dest: *mut u8, src:
 
 /// `PVOID NTAPI RtlFreeSid(PSID)` — genuine always returns NULL; the
 /// free is a no-op (rtl-strings no-alloc discipline).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlFreeSid(_sid: *mut u8) -> *mut u8 {
     core::ptr::null_mut()
 }
 
 /// `BOOLEAN NTAPI RtlEqualPrefixSid(PSID, PSID)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlEqualPrefixSid(s1: *const u8, s2: *const u8) -> u8 {
     let c1 = *s1.add(1) as usize;
     let c2 = *s2.add(1) as usize;
@@ -2307,7 +2494,7 @@ pub unsafe extern "system" fn RtlEqualPrefixSid(s1: *const u8, s2: *const u8) ->
 }
 
 /// `NTSTATUS NTAPI RtlCopySidAndAttributesArray(...)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCopySidAndAttributesArray(
     count: u32,
     src: *const SidAndAttributes,
@@ -2346,7 +2533,7 @@ pub unsafe extern "system" fn RtlCopySidAndAttributesArray(
 /// SID layout (winnt.h SID): 1 byte Revision + 1 byte SubAuthorityCount
 /// + 6 bytes IdentifierAuthority + N×4 SubAuthorities = 8 + N*4 bytes.
 const TAG_SID: u32 = u32::from_le_bytes(*b"pSid"); // nolint: const-contradiction ('diSp' -- sdk/lib/rtl/sid.c:15; ntoskrnl's TAG_SID is 'iSeS')
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAllocateAndInitializeSid(
     id_auth: *const u8,
     sub_authority_count: u8,
@@ -2388,7 +2575,7 @@ pub unsafe extern "system" fn RtlAllocateAndInitializeSid(
 /// Caller-buffer: Length=(wcs-Buffer)*2; `> MaximumLength` ⇒
 /// BUFFER_TOO_SMALL; else set Length, copy, and NUL-terminate at
 /// `Buffer[Length/2]` only when `Length < MaximumLength`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlConvertSidToUnicodeString(
     string: *mut UNICODE_STRING,
     sid_: *const u8,
@@ -2435,7 +2622,7 @@ pub unsafe extern "system" fn RtlConvertSidToUnicodeString(
 }
 
 /// `NTSTATUS NTAPI RtlCreateServiceSid(...)` — genuine UNIMPLEMENTED.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCreateServiceSid(
     _service_name: *const UNICODE_STRING,
     _service_sid: *mut u8,
@@ -2467,7 +2654,7 @@ unsafe fn ace_size(p: *const u8) -> u16 {
 }
 
 /// `NTSTATUS NTAPI RtlCreateAcl(PACL, ULONG AclSize, ULONG Revision)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCreateAcl(acl_: *mut u8, acl_sz: u32, acl_revision: u32) -> i32 {
     if (acl_sz as usize) < acl::ACL_HDR {
         return STATUS_BUFFER_TOO_SMALL;
@@ -2487,7 +2674,7 @@ pub unsafe extern "system" fn RtlCreateAcl(acl_: *mut u8, acl_sz: u32, acl_revis
 }
 
 /// `BOOLEAN NTAPI RtlValidAcl(PACL)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlValidAcl(acl_: *const u8) -> u8 {
     // Need the header to know AclSize; valid_acl re-checks size>=8.
     let sz = acl_size(acl_) as usize;
@@ -2496,7 +2683,7 @@ pub unsafe extern "system" fn RtlValidAcl(acl_: *const u8) -> u8 {
 }
 
 /// `BOOLEAN NTAPI RtlFirstFreeAce(PACL, PACE *FirstFreeAce)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlFirstFreeAce(acl_: *mut u8, first_free_ace: *mut *mut u8) -> u8 {
     *first_free_ace = core::ptr::null_mut();
     let acl_end = acl_.add(acl_size(acl_) as usize);
@@ -2515,7 +2702,7 @@ pub unsafe extern "system" fn RtlFirstFreeAce(acl_: *mut u8, first_free_ace: *mu
 }
 
 /// `NTSTATUS NTAPI RtlGetAce(PACL, ULONG AceIndex, PVOID *Ace)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGetAce(
     acl_: *mut u8,
     ace_index: u32,
@@ -2547,7 +2734,7 @@ pub unsafe extern "system" fn RtlGetAce(
 /// ULONG Len, ACL_INFORMATION_CLASS Class)`. Class 1 =
 /// ACL_REVISION_INFORMATION {u32}, 2 = ACL_SIZE_INFORMATION
 /// {AceCount, AclBytesInUse, AclBytesFree}.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlQueryInformationAcl(
     acl_: *mut u8,
     information: *mut u8,
@@ -2593,7 +2780,7 @@ pub unsafe extern "system" fn RtlQueryInformationAcl(
 /// `NTSTATUS NTAPI RtlSetInformationAcl(PACL, PVOID, ULONG,
 /// ACL_INFORMATION_CLASS)`. Only AclRevisionInformation; new
 /// revision must be strictly greater than the current.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetInformationAcl(
     acl_: *mut u8,
     information: *mut u8,
@@ -2630,7 +2817,7 @@ pub unsafe extern "system" fn RtlSetInformationAcl(
 
 /// `VOID NTAPI RtlpAddData(PVOID AceList, ULONG AceListLength,
 /// PVOID Ace, ULONG Offset)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpAddData(
     ace_list: *const u8,
     ace_list_length: u32,
@@ -2646,7 +2833,7 @@ pub unsafe extern "system" fn RtlpAddData(
 }
 
 /// `VOID NTAPI RtlpDeleteData(PVOID Ace, ULONG AceSize, ULONG Offset)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpDeleteData(ace: *mut u8, ace_size: u32, offset: u32) {
     if ace_size < offset {
         core::ptr::copy(
@@ -2662,7 +2849,7 @@ pub unsafe extern "system" fn RtlpDeleteData(ace: *mut u8, ace_size: u32, offset
 
 /// `NTSTATUS NTAPI RtlpAddKnownAce(PACL, Revision, Flags, Mask,
 /// PSID, Type)`. KNOWN_ACE: Header@0, Mask@4, SidStart@8.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpAddKnownAce(
     acl_: *mut u8,
     revision: u32,
@@ -2719,7 +2906,7 @@ pub unsafe extern "system" fn RtlpAddKnownAce(
 /// `NTSTATUS NTAPI RtlpAddKnownObjectAce(...)`. KNOWN_OBJECT_ACE:
 /// Header@0, Mask@4, Flags@8, SidStart@12. Revision must be exactly
 /// ACL_REVISION4.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpAddKnownObjectAce(
     acl_: *mut u8,
     revision: u32,
@@ -2798,7 +2985,7 @@ pub unsafe extern "system" fn RtlpAddKnownObjectAce(
 
 /// `NTSTATUS NTAPI RtlAddAce(PACL, AclRevision, StartingIndex,
 /// PVOID AceList, ULONG AceListLength)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAddAce(
     acl_: *mut u8,
     acl_revision: u32,
@@ -2858,7 +3045,7 @@ pub unsafe extern "system" fn RtlAddAce(
 }
 
 /// `NTSTATUS NTAPI RtlDeleteAce(PACL, ULONG AceIndex)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDeleteAce(acl_: *mut u8, ace_index: u32) -> i32 {
     if RtlValidAcl(acl_) == 0 {
         return STATUS_INVALID_PARAMETER;
@@ -2880,7 +3067,7 @@ pub unsafe extern "system" fn RtlDeleteAce(acl_: *mut u8, ace_index: u32) -> i32
 }
 
 // Typed Add* wrappers (thin pass-throughs).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAddAccessAllowedAce(
     acl_: *mut u8,
     revision: u32,
@@ -2897,7 +3084,7 @@ pub unsafe extern "system" fn RtlAddAccessAllowedAce(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAddAccessAllowedAceEx(
     acl_: *mut u8,
     revision: u32,
@@ -2915,7 +3102,7 @@ pub unsafe extern "system" fn RtlAddAccessAllowedAceEx(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAddAccessAllowedObjectAce(
     acl_: *mut u8,
     revision: u32,
@@ -2947,7 +3134,7 @@ pub unsafe extern "system" fn RtlAddAccessAllowedObjectAce(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAddAccessDeniedAce(
     acl_: *mut u8,
     revision: u32,
@@ -2964,7 +3151,7 @@ pub unsafe extern "system" fn RtlAddAccessDeniedAce(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAddAccessDeniedAceEx(
     acl_: *mut u8,
     revision: u32,
@@ -2982,7 +3169,7 @@ pub unsafe extern "system" fn RtlAddAccessDeniedAceEx(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAddAccessDeniedObjectAce(
     acl_: *mut u8,
     revision: u32,
@@ -3014,7 +3201,7 @@ pub unsafe extern "system" fn RtlAddAccessDeniedObjectAce(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAddAuditAccessAce(
     acl_: *mut u8,
     revision: u32,
@@ -3040,7 +3227,7 @@ pub unsafe extern "system" fn RtlAddAuditAccessAce(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAddAuditAccessAceEx(
     acl_: *mut u8,
     revision: u32,
@@ -3067,7 +3254,7 @@ pub unsafe extern "system" fn RtlAddAuditAccessAceEx(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAddAuditAccessObjectAce(
     acl_: *mut u8,
     revision: u32,
@@ -3270,7 +3457,7 @@ unsafe fn rtlp_query_sd(
 // --- SD-1 cabi exports.
 
 /// `NTSTATUS NTAPI RtlCreateSecurityDescriptor(PSD, ULONG Revision)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCreateSecurityDescriptor(
     sd_p: *mut SECURITY_DESCRIPTOR,
     revision: u32,
@@ -3289,7 +3476,7 @@ pub unsafe extern "system" fn RtlCreateSecurityDescriptor(
 }
 
 /// `NTSTATUS NTAPI RtlCreateSecurityDescriptorRelative(PISDREL, ULONG Revision)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCreateSecurityDescriptorRelative(
     sd_p: *mut SECURITY_DESCRIPTOR_RELATIVE,
     revision: u32,
@@ -3308,7 +3495,7 @@ pub unsafe extern "system" fn RtlCreateSecurityDescriptorRelative(
 }
 
 /// `ULONG NTAPI RtlLengthSecurityDescriptor(PSD)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlLengthSecurityDescriptor(sd_p: *const SECURITY_DESCRIPTOR) -> u32 {
     let control = (*sd_p).Control;
     let mut length = if control & sd_::SE_SELF_RELATIVE != 0 {
@@ -3337,7 +3524,7 @@ pub unsafe extern "system" fn RtlLengthSecurityDescriptor(sd_p: *const SECURITY_
 }
 
 /// `NTSTATUS NTAPI RtlGetDaclSecurityDescriptor(PSD, PBOOLEAN, PACL*, PBOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGetDaclSecurityDescriptor(
     sd_p: *const SECURITY_DESCRIPTOR,
     dacl_present: *mut u8,
@@ -3358,7 +3545,7 @@ pub unsafe extern "system" fn RtlGetDaclSecurityDescriptor(
 }
 
 /// `NTSTATUS NTAPI RtlGetSaclSecurityDescriptor(PSD, PBOOLEAN, PACL*, PBOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGetSaclSecurityDescriptor(
     sd_p: *const SECURITY_DESCRIPTOR,
     sacl_present: *mut u8,
@@ -3379,7 +3566,7 @@ pub unsafe extern "system" fn RtlGetSaclSecurityDescriptor(
 }
 
 /// `NTSTATUS NTAPI RtlGetOwnerSecurityDescriptor(PSD, PSID*, PBOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGetOwnerSecurityDescriptor(
     sd_p: *const SECURITY_DESCRIPTOR,
     owner_out: *mut *mut u8,
@@ -3395,7 +3582,7 @@ pub unsafe extern "system" fn RtlGetOwnerSecurityDescriptor(
 }
 
 /// `NTSTATUS NTAPI RtlGetGroupSecurityDescriptor(PSD, PSID*, PBOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGetGroupSecurityDescriptor(
     sd_p: *const SECURITY_DESCRIPTOR,
     group_out: *mut *mut u8,
@@ -3411,7 +3598,7 @@ pub unsafe extern "system" fn RtlGetGroupSecurityDescriptor(
 }
 
 /// `NTSTATUS NTAPI RtlSetDaclSecurityDescriptor(PSD, BOOLEAN, PACL, BOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetDaclSecurityDescriptor(
     sd_p: *mut SECURITY_DESCRIPTOR,
     dacl_present: u8,
@@ -3438,7 +3625,7 @@ pub unsafe extern "system" fn RtlSetDaclSecurityDescriptor(
 }
 
 /// `NTSTATUS NTAPI RtlSetSaclSecurityDescriptor(PSD, BOOLEAN, PACL, BOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetSaclSecurityDescriptor(
     sd_p: *mut SECURITY_DESCRIPTOR,
     sacl_present: u8,
@@ -3465,7 +3652,7 @@ pub unsafe extern "system" fn RtlSetSaclSecurityDescriptor(
 }
 
 /// `NTSTATUS NTAPI RtlSetOwnerSecurityDescriptor(PSD, PSID, BOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetOwnerSecurityDescriptor(
     sd_p: *mut SECURITY_DESCRIPTOR,
     owner: *mut u8,
@@ -3486,7 +3673,7 @@ pub unsafe extern "system" fn RtlSetOwnerSecurityDescriptor(
 }
 
 /// `NTSTATUS NTAPI RtlSetGroupSecurityDescriptor(PSD, PSID, BOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetGroupSecurityDescriptor(
     sd_p: *mut SECURITY_DESCRIPTOR,
     group: *mut u8,
@@ -3507,7 +3694,7 @@ pub unsafe extern "system" fn RtlSetGroupSecurityDescriptor(
 }
 
 /// `NTSTATUS NTAPI RtlGetControlSecurityDescriptor(PSD, PSDCONTROL, PULONG)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGetControlSecurityDescriptor(
     sd_p: *const SECURITY_DESCRIPTOR,
     control_out: *mut u16,
@@ -3522,7 +3709,7 @@ pub unsafe extern "system" fn RtlGetControlSecurityDescriptor(
 }
 
 /// `NTSTATUS NTAPI RtlSetControlSecurityDescriptor(PSD, SDCONTROL, SDCONTROL)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetControlSecurityDescriptor(
     sd_p: *mut SECURITY_DESCRIPTOR,
     control_bits_of_interest: u16,
@@ -3539,7 +3726,7 @@ pub unsafe extern "system" fn RtlSetControlSecurityDescriptor(
 }
 
 /// `BOOLEAN NTAPI RtlGetSecurityDescriptorRMControl(PSD, PUCHAR)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGetSecurityDescriptorRMControl(
     sd_p: *const SECURITY_DESCRIPTOR,
     rm_control: *mut u8,
@@ -3553,7 +3740,7 @@ pub unsafe extern "system" fn RtlGetSecurityDescriptorRMControl(
 }
 
 /// `VOID NTAPI RtlSetSecurityDescriptorRMControl(PSD, PUCHAR)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetSecurityDescriptorRMControl(
     sd_p: *mut SECURITY_DESCRIPTOR,
     rm_control: *const u8,
@@ -3568,7 +3755,7 @@ pub unsafe extern "system" fn RtlSetSecurityDescriptorRMControl(
 }
 
 /// `NTSTATUS NTAPI RtlSetAttributesSecurityDescriptor(PSD, SDCONTROL, PULONG)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetAttributesSecurityDescriptor(
     sd_p: *mut SECURITY_DESCRIPTOR,
     control: u16,
@@ -3590,7 +3777,7 @@ pub unsafe extern "system" fn RtlSetAttributesSecurityDescriptor(
 /// handler is dead, so this faithful port matches both the live and
 /// the dead halves of the original (only valid-ish inputs are tested
 /// by the diff harness).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlValidSecurityDescriptor(sd_p: *const SECURITY_DESCRIPTOR) -> u8 {
     if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
         return 0;
@@ -3615,7 +3802,7 @@ pub unsafe extern "system" fn RtlValidSecurityDescriptor(sd_p: *const SECURITY_D
 }
 
 /// `BOOLEAN NTAPI RtlValidRelativeSecurityDescriptor(PSD, ULONG, SECURITY_INFORMATION)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlValidRelativeSecurityDescriptor(
     sd_p: *const u8,
     sd_len: u32,
@@ -3632,7 +3819,7 @@ pub unsafe extern "system" fn RtlValidRelativeSecurityDescriptor(
 /// `NTSTATUS NTAPI RtlMakeSelfRelativeSD(PSD, PSD, PULONG)` — produces
 /// a self-relative SD packed as `[REL hdr | SACL | DACL | Owner | Group]`
 /// (matches the C copy order exactly: SACL→DACL→Owner→Group).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlMakeSelfRelativeSD(
     src_p: *const SECURITY_DESCRIPTOR,
     rel_p: *mut SECURITY_DESCRIPTOR_RELATIVE,
@@ -3676,7 +3863,7 @@ pub unsafe extern "system" fn RtlMakeSelfRelativeSD(
 }
 
 /// `NTSTATUS NTAPI RtlAbsoluteToSelfRelativeSD(PSD, PSD, PULONG)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAbsoluteToSelfRelativeSD(
     src_p: *const SECURITY_DESCRIPTOR,
     rel_p: *mut SECURITY_DESCRIPTOR_RELATIVE,
@@ -3690,7 +3877,7 @@ pub unsafe extern "system" fn RtlAbsoluteToSelfRelativeSD(
 
 /// `NTSTATUS NTAPI RtlSelfRelativeToAbsoluteSD(PSD, PSD, PULONG, PACL, PULONG,
 ///                                             PACL, PULONG, PSID, PULONG, PSID, PULONG)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSelfRelativeToAbsoluteSD(
     rel_p: *const SECURITY_DESCRIPTOR_RELATIVE,
     abs_p: *mut SECURITY_DESCRIPTOR,
@@ -3757,7 +3944,7 @@ pub unsafe extern "system" fn RtlSelfRelativeToAbsoluteSD(
 }
 
 /// `NTSTATUS NTAPI RtlSelfRelativeToAbsoluteSD2(PSD, PULONG)` — in-place.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSelfRelativeToAbsoluteSD2(
     sd_p: *mut SECURITY_DESCRIPTOR,
     buffer_size: *mut u32,
@@ -3862,7 +4049,7 @@ pub unsafe extern "system" fn RtlSelfRelativeToAbsoluteSD2(
 /// No-alloc edge: `RtlAllocateHeap=NULL` in the diff harness ⇒ this
 /// always returns STATUS_NO_MEMORY. The Rust side wraps the same
 /// FFI shape so the diff pins the NO_MEMORY path identically.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCopySecurityDescriptor(
     src_p: *const SECURITY_DESCRIPTOR,
     dst_pp: *mut *mut SECURITY_DESCRIPTOR,
@@ -4007,7 +4194,7 @@ extern "system" {
 // the top of this file, cfg-gated to the user-mode windows build (for the
 // rtl_alloc/rtl_free helpers). Declare them here ONLY for the kernel and
 // host-difftest builds so every context has exactly one declaration.
-#[cfg(not(all(not(feature = "kernel"), target_os = "windows")))]
+#[cfg(not(all(not(any(feature = "kernel", feature = "bldr")), target_os = "windows")))]
 extern "system" {
     fn RtlAllocateHeap(Heap: *mut u8, Flags: u32, Size: usize) -> *mut u8;
     fn RtlFreeHeap(Heap: *mut u8, Flags: u32, Ptr: *mut u8) -> u8;
@@ -4073,7 +4260,7 @@ unsafe fn read_is_impersonating() -> u32 {
 /// `NTSTATUS NTAPI RtlpOpenThreadToken(ACCESS_MASK, PHANDLE)` —
 /// private helper, calls ZwOpenThreadToken twice (`OpenAsSelf=TRUE`
 /// then `FALSE`).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpOpenThreadToken(
     desired_access: u32,
     token_handle: *mut *mut u8,
@@ -4086,7 +4273,7 @@ pub unsafe extern "system" fn RtlpOpenThreadToken(
 }
 
 /// `NTSTATUS NTAPI RtlImpersonateSelf(SECURITY_IMPERSONATION_LEVEL)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlImpersonateSelf(impersonation_level: u32) -> i32 {
     let mut process_token: *mut u8 = core::ptr::null_mut();
     let mut impersonation_token: *mut u8 = core::ptr::null_mut();
@@ -4144,7 +4331,7 @@ pub unsafe extern "system" fn RtlImpersonateSelf(impersonation_level: u32) -> i3
 ///
 /// Straight translation; uses `read_is_impersonating()` (TEB inline
 /// asm) for the user-mode impersonation check.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAcquirePrivilege(
     privilege: *mut u32,
     num_priv: u32,
@@ -4345,7 +4532,7 @@ unsafe fn cleanup_acquire(state_p: *mut RTL_ACQUIRE_STATE_FFI, status: i32, _fla
 }
 
 /// `VOID NTAPI RtlReleasePrivilege(PVOID)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlReleasePrivilege(returned_state: *mut u8) {
     let state_p = returned_state as *mut RTL_ACQUIRE_STATE_FFI;
 
@@ -4385,7 +4572,7 @@ pub unsafe extern "system" fn RtlReleasePrivilege(returned_state: *mut u8) {
 }
 
 /// `NTSTATUS NTAPI RtlAdjustPrivilege(ULONG, BOOLEAN, BOOLEAN, PBOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAdjustPrivilege(
     privilege: u32,
     enable: u8,
@@ -4470,7 +4657,7 @@ pub unsafe extern "system" fn RtlAdjustPrivilege(
 /// `NTSTATUS NTAPI RtlRemovePrivileges(HANDLE, PULONG, ULONG)` —
 /// Vista+. Removes all privileges except those listed in
 /// `PrivilegesToKeep`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlRemovePrivileges(
     token_handle: *mut u8,
     privileges_to_keep: *mut u32,
@@ -4626,7 +4813,7 @@ static TZ_DAY_START: [u16; 14] = wsz(b"DaylightStart\0");
 /// `UNICODE_STRING` wrapper around the inline `StandardName` /
 /// `DaylightName` `WCHAR[32]` buffers needed by the
 /// `RTL_QUERY_REGISTRY_DIRECT` REG_SZ direct-write path.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlQueryTimeZoneInformation(
     tzi: *mut RTL_TIME_ZONE_INFORMATION,
 ) -> i32 {
@@ -4747,7 +4934,7 @@ pub unsafe extern "system" fn RtlQueryTimeZoneInformation(
 /// Seven sequential `RtlWriteRegistryValue` calls; bails on first
 /// failure. Faithful to the C — `wcslen` on the inline name buffers
 /// (caller's responsibility to null-terminate within `WCHAR[32]`).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetTimeZoneInformation(
     tzi: *mut RTL_TIME_ZONE_INFORMATION,
 ) -> i32 {
@@ -4949,7 +5136,7 @@ fn nt_current_process() -> *mut u8 {
 /// `value_len + 1` (the wrapper subtracts the 1 back out). On
 /// too-small, only `Value[0]` is NUL'd (if there is room) — unlike
 /// the pre-rewrite C, the value is *not* partially copied.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlQueryEnvironmentVariable(
     environment: *mut u16,
     name: *const u16,
@@ -5022,7 +5209,7 @@ pub unsafe extern "system" fn RtlQueryEnvironmentVariable(
 /// `+1` on `STATUS_BUFFER_TOO_SMALL`, and sets `Value->Length`
 /// unconditionally (even on `STATUS_VARIABLE_NOT_FOUND`, where it
 /// ends up 0).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlQueryEnvironmentVariable_U(
     environment: *mut u16,
     name: *const UNICODE_STRING,
@@ -5065,7 +5252,7 @@ pub unsafe extern "system" fn RtlQueryEnvironmentVariable_U(
 /// keeps our pre-existing up-front PEB substitution instead (see its
 /// doc comment) — equivalent in practice, and this raw export has no
 /// other caller today.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlExpandEnvironmentStrings(
     environment: *mut u16,
     source_buffer: *const u16,
@@ -5112,7 +5299,7 @@ pub unsafe extern "system" fn RtlExpandEnvironmentStrings(
 /// NULL (the form RtlQueryRegistryValues uses for REG_EXPAND_SZ)
 /// yields an empty env and `%SystemRoot%`-style references are left
 /// unexpanded (broke smss KnownDll dir resolution → boot failure).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlExpandEnvironmentStrings_U(
     environment: *mut u16,
     source: *const UNICODE_STRING,
@@ -5164,7 +5351,7 @@ pub unsafe extern "system" fn RtlExpandEnvironmentStrings_U(
 
 /// `RtlSetEnvironmentStrings(PWCHAR, ULONG) -> NTSTATUS`. Stub; the
 /// genuine C is `UNIMPLEMENTED; return STATUS_NOT_IMPLEMENTED;`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetEnvironmentStrings(
     _new_environment: *mut u16,
     _new_environment_size: u32,
@@ -5175,7 +5362,7 @@ pub unsafe extern "system" fn RtlSetEnvironmentStrings(
 /// `RtlCreateEnvironment(BOOLEAN Inherit, PWSTR* OutEnvironment) -> NTSTATUS`.
 /// Faithful port of the C. If `Inherit`, copies the calling process'
 /// current env block (under PEB lock); else allocates an empty page.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCreateEnvironment(
     inherit: u8,
     out_environment: *mut *mut u16,
@@ -5254,7 +5441,7 @@ pub unsafe extern "system" fn RtlCreateEnvironment(
 /// `VOID RtlDestroyEnvironment(PWSTR Environment)`. Frees the env
 /// block via `NtFreeVirtualMemory`. Faithful to C: passes a
 /// stack-local `&Environment` and `Size=0` (full release).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDestroyEnvironment(environment: *mut u16) {
     let mut env_ptr = environment as *mut u8;
     let mut size: usize = 0;
@@ -5264,7 +5451,7 @@ pub unsafe extern "system" fn RtlDestroyEnvironment(environment: *mut u16) {
 /// `VOID RtlSetCurrentEnvironment(NewEnvironment, PWSTR* OldEnvironment)`.
 /// Swaps the PEB env pointer under PEB lock; reports the old pointer
 /// in `*OldEnvironment` if non-NULL.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetCurrentEnvironment(
     new_environment: *mut u16,
     old_environment: *mut *mut u16,
@@ -5285,7 +5472,7 @@ pub unsafe extern "system" fn RtlSetCurrentEnvironment(
 /// inserts a new entry in case-insensitive sort order, or replaces
 /// the value of an existing entry. If `Value` is NULL, removes the
 /// variable. May reallocate the env block via Nt*VirtualMemory.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetEnvironmentVariable(
     environment: *mut *mut u16,
     name: *const UNICODE_STRING,
@@ -5639,7 +5826,7 @@ unsafe fn round_up_4(n: u32) -> u32 {
 /// modification descriptor (for components signalled by
 /// `SecurityInformation`) with the existing descriptor's other
 /// components. Faithful port of security.c.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpSetSecurityObject(
     _object: *mut u8,
     security_information: u32,
@@ -5829,7 +6016,7 @@ pub unsafe extern "system" fn RtlpSetSecurityObject(
 // SEC translate-only stubs (UNIMPLEMENTED in C).
 // ---------------------------------------------------------------------
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpNewSecurityObject(
     _parent: *const u8,
     _creator: *const u8,
@@ -5844,7 +6031,7 @@ pub unsafe extern "system" fn RtlpNewSecurityObject(
     STATUS_NOT_IMPLEMENTED_SEC
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpConvertToAutoInheritSecurityObject(
     _parent: *const u8,
     _creator: *const u8,
@@ -5856,7 +6043,7 @@ pub unsafe extern "system" fn RtlpConvertToAutoInheritSecurityObject(
     STATUS_NOT_IMPLEMENTED_SEC
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCreateAndSetSD(
     _ace_data: *mut u8,
     _ace_count: u32,
@@ -5867,12 +6054,12 @@ pub unsafe extern "system" fn RtlCreateAndSetSD(
     STATUS_NOT_IMPLEMENTED_SEC
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlRegisterSecureMemoryCacheCallback(_callback: *mut u8) -> i32 {
     STATUS_NOT_IMPLEMENTED_SEC
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlFlushSecureMemoryCache(
     _memory_cache: *mut u8,
     _memory_length: usize,
@@ -5884,13 +6071,13 @@ pub unsafe extern "system" fn RtlFlushSecureMemoryCache(
 // SEC thin wrappers + simple fns.
 // ---------------------------------------------------------------------
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDeleteSecurityObject(object_descriptor: *mut *mut u8) -> i32 {
     RtlFreeHeap(RtlGetProcessHeap(), 0, *object_descriptor);
     0
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlNewSecurityObject(
     parent: *const u8,
     creator: *const u8,
@@ -5912,7 +6099,7 @@ pub unsafe extern "system" fn RtlNewSecurityObject(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlNewSecurityObjectEx(
     parent: *const u8,
     creator: *const u8,
@@ -5942,7 +6129,7 @@ pub unsafe extern "system" fn RtlNewSecurityObjectEx(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlNewSecurityObjectWithMultipleInheritance(
     parent: *const u8,
     creator: *const u8,
@@ -5967,7 +6154,7 @@ pub unsafe extern "system" fn RtlNewSecurityObjectWithMultipleInheritance(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlNewInstanceSecurityObject(
     parent_descriptor_changed: u8,
     creator_descriptor_changed: u8,
@@ -6017,7 +6204,7 @@ pub unsafe extern "system" fn RtlNewInstanceSecurityObject(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCreateUserSecurityObject(
     ace_data: *mut u8,
     ace_count: u32,
@@ -6055,7 +6242,7 @@ pub unsafe extern "system" fn RtlCreateUserSecurityObject(
     status
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetSecurityObject(
     security_information: u32,
     modification_descriptor: *const u8,
@@ -6075,7 +6262,7 @@ pub unsafe extern "system" fn RtlSetSecurityObject(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlSetSecurityObjectEx(
     security_information: u32,
     modification_descriptor: *const u8,
@@ -6096,7 +6283,7 @@ pub unsafe extern "system" fn RtlSetSecurityObjectEx(
     )
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlConvertToAutoInheritSecurityObject(
     parent: *const u8,
     creator: *const u8,
@@ -6121,7 +6308,7 @@ pub unsafe extern "system" fn RtlConvertToAutoInheritSecurityObject(
 // then converts to self-relative in the caller's buffer.
 // ---------------------------------------------------------------------
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlQuerySecurityObject(
     object_descriptor: *const u8,
     security_information: u32,
@@ -6264,7 +6451,7 @@ macro_rules! ASSERT {
     };
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDefaultNpAcl(p_acl: *mut *mut u8) -> i32 {
     let nt_authority = SID_IDENTIFIER_AUTHORITY_FFI {
         Value: SECURITY_NT_AUTHORITY_VAL,
@@ -6408,7 +6595,7 @@ struct ACL_HDR {
     Sbz2: u16,
 }
 
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlNewSecurityGrantedAccess(
     mut desired_access: u32,
     privileges: *mut PRIVILEGE_SET_FFI,
@@ -6556,7 +6743,7 @@ unsafe fn read_current_thread_id() -> *mut u8 {
 ///
 /// Allocates the critsec + the two semaphores; on any failure raises
 /// the failing NTSTATUS via `RtlRaiseStatus`. Counters/owner cleared.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlInitializeResource(resource: *mut res::RTL_RESOURCE) {
     let r = &mut *resource;
 
@@ -6594,7 +6781,7 @@ pub unsafe extern "system" fn RtlInitializeResource(resource: *mut res::RTL_RESO
 }
 
 /// `VOID NTAPI RtlDeleteResource(PRTL_RESOURCE)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDeleteResource(resource: *mut res::RTL_RESOURCE) {
     let r = &mut *resource;
     let _ = RtlDeleteCriticalSection(&mut r.Lock as *mut _ as *mut u8);
@@ -6609,7 +6796,7 @@ pub unsafe extern "system" fn RtlDeleteResource(resource: *mut res::RTL_RESOURCE
 /// `BOOLEAN NTAPI RtlAcquireResourceExclusive(PRTL_RESOURCE, BOOLEAN)`.
 ///
 /// Faithful port of the C `goto`-driven state machine (start/wait/done).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAcquireResourceExclusive(
     resource: *mut res::RTL_RESOURCE,
     wait: u8,
@@ -6675,7 +6862,7 @@ pub unsafe extern "system" fn RtlAcquireResourceExclusive(
 }
 
 /// `BOOLEAN NTAPI RtlAcquireResourceShared(PRTL_RESOURCE, BOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAcquireResourceShared(
     resource: *mut res::RTL_RESOURCE,
     wait: u8,
@@ -6720,7 +6907,7 @@ pub unsafe extern "system" fn RtlAcquireResourceShared(
 }
 
 /// `VOID NTAPI RtlConvertExclusiveToShared(PRTL_RESOURCE)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlConvertExclusiveToShared(resource: *mut res::RTL_RESOURCE) {
     let r = &mut *resource;
     let _ = RtlEnterCriticalSection(&mut r.Lock as *mut _ as *mut u8);
@@ -6744,7 +6931,7 @@ pub unsafe extern "system" fn RtlConvertExclusiveToShared(resource: *mut res::RT
 }
 
 /// `VOID NTAPI RtlConvertSharedToExclusive(PRTL_RESOURCE)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlConvertSharedToExclusive(resource: *mut res::RTL_RESOURCE) {
     let r = &mut *resource;
     let _ = RtlEnterCriticalSection(&mut r.Lock as *mut _ as *mut u8);
@@ -6767,7 +6954,7 @@ pub unsafe extern "system" fn RtlConvertSharedToExclusive(resource: *mut res::RT
 }
 
 /// `VOID NTAPI RtlReleaseResource(PRTL_RESOURCE)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlReleaseResource(resource: *mut res::RTL_RESOURCE) {
     let r = &mut *resource;
     let _ = RtlEnterCriticalSection(&mut r.Lock as *mut _ as *mut u8);
@@ -6807,7 +6994,7 @@ pub unsafe extern "system" fn RtlReleaseResource(resource: *mut res::RTL_RESOURC
 /// Faithful translation: emit one `DbgPrint` line via the kernel/user
 /// `DbgPrint` extern. Format strings use ANSI literals (`%p`, `%d`,
 /// `%u`) — same as the C original.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDumpResource(resource: *mut res::RTL_RESOURCE) {
     use path_wave::DbgPrint;
     let r = &*resource;
@@ -6927,7 +7114,7 @@ extern "system" {
 /// commit failure path the reserved region is released. Per-image
 /// stack defaults come from PE OptionalHeader when the target is the
 /// current process.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpCreateUserStack(
     process_handle: *mut u8,
     mut stack_reserve: usize,
@@ -7062,7 +7249,7 @@ pub unsafe extern "system" fn RtlpCreateUserStack(
 }
 
 /// `VOID NTAPI RtlpFreeUserStack(HANDLE, PINITIAL_TEB)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpFreeUserStack(
     process_handle: *mut u8,
     initial_teb: *mut thr::INITIAL_TEB,
@@ -7088,7 +7275,7 @@ pub unsafe extern "system" fn RtlpFreeUserStack(
 /// Note: C declares this `__cdecl`, not `NTAPI`. `extern "C"` on all
 /// arches matches — Wave THR is the only fn here with this calling
 /// convention.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "C" fn RtlSetThreadIsCritical(
     new_value: u8,
     old_value: *mut u8,
@@ -7130,7 +7317,7 @@ pub unsafe extern "C" fn RtlSetThreadIsCritical(
 /// `NTSTATUS NTAPI RtlCreateUserThread(HANDLE, PSECURITY_DESCRIPTOR,
 /// BOOLEAN, ULONG, SIZE_T, SIZE_T, PTHREAD_START_ROUTINE, PVOID,
 /// PHANDLE, PCLIENT_ID)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCreateUserThread(
     process_handle: *mut u8,
     security_descriptor: *mut u8,
@@ -7210,7 +7397,7 @@ pub unsafe extern "system" fn RtlCreateUserThread(
 }
 
 /// `VOID NTAPI RtlExitUserThread(NTSTATUS)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlExitUserThread(status: i32) {
     // Call the Loader and tell him to notify the DLLs.
     let _ = LdrShutdownThread();
@@ -7220,7 +7407,7 @@ pub unsafe extern "system" fn RtlExitUserThread(status: i32) {
 }
 
 /// `VOID NTAPI RtlFreeUserThreadStack(HANDLE, HANDLE)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlFreeUserThreadStack(
     process_handle: *mut u8,
     thread_handle: *mut u8,
@@ -7267,14 +7454,14 @@ pub unsafe extern "system" fn RtlFreeUserThreadStack(
 /// just returns the current thread's TEB. User-mode: libsupp's
 /// `RtlpThrCurrentTeb` reads gs/fs/x18 via the C `NtCurrentTeb()`
 /// macro. Kernel-mode: libsupp returns NULL (no current TEB).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn _NtCurrentTeb() -> *mut u8 {
     RtlpThrCurrentTeb()
 }
 
 /// `NTSTATUS NTAPI RtlRemoteCall(HANDLE, HANDLE, PVOID, ULONG, PULONG,
 /// BOOLEAN, BOOLEAN)` — UNIMPLEMENTED in the C original.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlRemoteCall(
     _process: *mut u8,
     _thread: *mut u8,
@@ -7374,7 +7561,7 @@ extern "C" {
 }
 
 /// `NTSTATUS NTAPI RtlpMapFile(PUNICODE_STRING, ULONG, PHANDLE)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpMapFile(
     image_file_name: *mut UNICODE_STRING,
     attributes: u32,
@@ -7421,7 +7608,7 @@ pub unsafe extern "system" fn RtlpMapFile(
 /// copies them across via ZwWriteVirtualMemory, then writes the
 /// parameter-block base address into the foreign PEB's
 /// ProcessParameters slot.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlpInitEnvironment(
     process_handle: *mut u8,
     peb: *mut u8,
@@ -7547,7 +7734,7 @@ pub unsafe extern "system" fn RtlpInitEnvironment(
 /// the body of the `_SEH2_TRY` becomes the function body, and the
 /// `_SEH2_FINALLY` cleanup runs on any failure status — implemented
 /// here as a plain on-error block.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCreateUserProcess(
     image_file_name: *mut UNICODE_STRING,
     attributes: u32,
@@ -7742,7 +7929,7 @@ pub unsafe extern "system" fn RtlCreateUserProcess(
 /// `PVOID NTAPI RtlEncodePointer(PVOID)`. XOR the pointer with the
 /// per-process `ProcessCookie` queried lazily on first call. The
 /// XOR itself lives in `core_rs::process::xor_pointer` (tested).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlEncodePointer(pointer: *mut u8) -> *mut u8 {
     let mut cookie: u32 = 0;
     let status = ZwQueryInformationProcess(
@@ -7759,14 +7946,14 @@ pub unsafe extern "system" fn RtlEncodePointer(pointer: *mut u8) -> *mut u8 {
 }
 
 /// `PVOID NTAPI RtlDecodePointer(PVOID)` — same XOR.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDecodePointer(pointer: *mut u8) -> *mut u8 {
     RtlEncodePointer(pointer)
 }
 
 /// `PVOID NTAPI RtlEncodeSystemPointer(PVOID)` — XOR with
 /// `SharedUserData->Cookie` at fixed VA.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlEncodeSystemPointer(pointer: *mut u8) -> *mut u8 {
     // VA chosen at runtime: librtl.a is shared by ntoskrnl + ntdll, so
     // the kernel KUSER_SHARED_DATA VA would fault when called from user
@@ -7777,13 +7964,13 @@ pub unsafe extern "system" fn RtlEncodeSystemPointer(pointer: *mut u8) -> *mut u
 }
 
 /// `PVOID NTAPI RtlDecodeSystemPointer(PVOID)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDecodeSystemPointer(pointer: *mut u8) -> *mut u8 {
     RtlEncodeSystemPointer(pointer)
 }
 
 /// `NTSTATUS __cdecl RtlSetProcessIsCritical(BOOLEAN, PBOOLEAN, BOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "C" fn RtlSetProcessIsCritical(
     new_value: u8,
     old_value: *mut u8,
@@ -7819,14 +8006,14 @@ pub unsafe extern "C" fn RtlSetProcessIsCritical(
 }
 
 /// `ULONG NTAPI RtlGetCurrentProcessorNumber(VOID)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGetCurrentProcessorNumber() -> u32 {
     NtGetCurrentProcessorNumber()
 }
 
 /// `BOOLEAN NTAPI RtlIsProcessorFeaturePresent(ULONG)` (upstream rtl/processor.c, 2026;
 /// the rest of that file is declined because it redefines the function above).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlIsProcessorFeaturePresent(processor_feature: u32) -> u8 {
     if processor_feature >= prc::PROCESSOR_FEATURE_MAX {
         return 0;
@@ -7849,7 +8036,7 @@ pub struct PROCESSOR_NUMBER {
 /// kernel does not have (sysfuncs.lst carries only the plain one). We have one processor
 /// group, so group 0 plus the plain syscall's number is the same answer, with no
 /// unresolvable import behind it.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGetCurrentProcessorNumberEx(processor_number: *mut PROCESSOR_NUMBER) {
     (*processor_number).Group = 0;
     (*processor_number).Number = NtGetCurrentProcessorNumber() as u8;
@@ -7860,7 +8047,7 @@ pub unsafe extern "system" fn RtlGetCurrentProcessorNumberEx(processor_number: *
 /// Returns `(PEB.OSMajorVersion << 8) | PEB.OSMinorVersion`, or the
 /// Server 2003 default if no PEB. Decision in
 /// `core_rs::process::appcompat_version` (tested).
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlRosGetAppcompatVersion() -> u32 {
     prc::appcompat_version(RtlpPrcGetPebOSMajorVersion(), RtlpPrcGetPebOSMinorVersion())
 }
@@ -7873,7 +8060,7 @@ pub unsafe extern "system" fn RtlRosGetAppcompatVersion() -> u32 {
 
 /// `RTL_PATH_TYPE NTAPI RtlDetermineDosPathNameType_Ustr(PCUNICODE_STRING)`.
 /// Note: `RTL_PATH_TYPE` is an enum — `extern "system" fn -> u32`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDetermineDosPathNameType_Ustr(
     path_string: *const UNICODE_STRING,
 ) -> u32 {
@@ -7884,7 +8071,7 @@ pub unsafe extern "system" fn RtlDetermineDosPathNameType_Ustr(
 }
 
 /// `RTL_PATH_TYPE NTAPI RtlDetermineDosPathNameType_U(PCWSTR)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDetermineDosPathNameType_U(path: *const u16) -> u32 {
     // Faithful: the C version peeks Path[0..=3] unconditionally
     // (assumes 4 chars of lookahead are valid). Mirror that here.
@@ -7896,14 +8083,14 @@ pub unsafe extern "system" fn RtlDetermineDosPathNameType_U(path: *const u16) ->
 }
 
 /// `ULONG NTAPI RtlGetLongestNtPathLength(VOID)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGetLongestNtPathLength() -> u32 {
     path_::LONGEST_NT_PATH_LENGTH
 }
 
 /// `NTSTATUS NTAPI RtlGetLengthWithoutTrailingPathSeparators(ULONG,
 /// PCUNICODE_STRING, PULONG)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlGetLengthWithoutTrailingPathSeparators(
     flags: u32,
     path_string: *const UNICODE_STRING,
@@ -7941,7 +8128,7 @@ unsafe fn us_view(buf: *mut u16, len_chars: u16) -> UNICODE_STRING {
 /// translation of path.c lines 92-251. Returns 0 if the path is not
 /// a DOS device name, or `MAKELONG(length_bytes, offset_bytes)` if
 /// it is.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlIsDosDeviceName_Ustr(path_string: *const UNICODE_STRING) -> u32 {
     if path_string.is_null() {
         return 0;
@@ -8091,7 +8278,7 @@ pub unsafe extern "system" fn RtlIsDosDeviceName_Ustr(path_string: *const UNICOD
 }
 
 /// `ULONG NTAPI RtlIsDosDeviceName_U(PCWSTR)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlIsDosDeviceName_U(path: *const u16) -> u32 {
     // Build a UNICODE_STRING from the NUL-terminated path (faithful
     // to RtlInitUnicodeStringEx semantics: success iff <=MAXUSHORT/2
@@ -8363,7 +8550,7 @@ unsafe fn RtlpCheckIntegerAtom(atom_name: *const u16, atom_value: *mut u16) -> b
 }
 
 /// `NTSTATUS NTAPI RtlCreateAtomTable(ULONG, PRTL_ATOM_TABLE*)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlCreateAtomTable(
     table_size: u32,
     atom_table: *mut *mut RTL_ATOM_TABLE,
@@ -8399,7 +8586,7 @@ pub unsafe extern "system" fn RtlCreateAtomTable(
 }
 
 /// `NTSTATUS NTAPI RtlDestroyAtomTable(PRTL_ATOM_TABLE)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDestroyAtomTable(atom_table: *mut RTL_ATOM_TABLE) -> i32 {
     if RtlpLockAtomTable(atom_table) == 0 {
         return STATUS_INVALID_PARAMETER;
@@ -8427,7 +8614,7 @@ pub unsafe extern "system" fn RtlDestroyAtomTable(atom_table: *mut RTL_ATOM_TABL
 }
 
 /// `NTSTATUS NTAPI RtlEmptyAtomTable(PRTL_ATOM_TABLE, BOOLEAN)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlEmptyAtomTable(
     atom_table: *mut RTL_ATOM_TABLE,
     delete_pinned: u8,
@@ -8460,7 +8647,7 @@ pub unsafe extern "system" fn RtlEmptyAtomTable(
 }
 
 /// `NTSTATUS NTAPI RtlAddAtomToAtomTable(PRTL_ATOM_TABLE, PWSTR, PRTL_ATOM)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlAddAtomToAtomTable(
     atom_table: *mut RTL_ATOM_TABLE,
     atom_name: *mut u16,
@@ -8533,7 +8720,7 @@ pub unsafe extern "system" fn RtlAddAtomToAtomTable(
 }
 
 /// `NTSTATUS NTAPI RtlDeleteAtomFromAtomTable(PRTL_ATOM_TABLE, RTL_ATOM)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlDeleteAtomFromAtomTable(
     atom_table: *mut RTL_ATOM_TABLE,
     atom: u16,
@@ -8573,7 +8760,7 @@ pub unsafe extern "system" fn RtlDeleteAtomFromAtomTable(
 }
 
 /// `NTSTATUS NTAPI RtlLookupAtomInAtomTable(PRTL_ATOM_TABLE, PWSTR, PRTL_ATOM)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlLookupAtomInAtomTable(
     atom_table: *mut RTL_ATOM_TABLE,
     atom_name: *mut u16,
@@ -8610,7 +8797,7 @@ pub unsafe extern "system" fn RtlLookupAtomInAtomTable(
 }
 
 /// `NTSTATUS NTAPI RtlPinAtomInAtomTable(PRTL_ATOM_TABLE, RTL_ATOM)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlPinAtomInAtomTable(
     atom_table: *mut RTL_ATOM_TABLE,
     atom: u16,
@@ -8635,7 +8822,7 @@ pub unsafe extern "system" fn RtlPinAtomInAtomTable(
 
 /// `NTSTATUS NTAPI RtlQueryAtomInAtomTable(PRTL_ATOM_TABLE, RTL_ATOM,
 /// PULONG RefCount, PULONG PinCount, PWSTR AtomName, PULONG NameLength)`.
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlQueryAtomInAtomTable(
     atom_table: *mut RTL_ATOM_TABLE,
     atom: u16,
@@ -8709,7 +8896,7 @@ pub unsafe extern "system" fn RtlQueryAtomInAtomTable(
 
 /// `NTSTATUS NTAPI RtlQueryAtomListInAtomTable(PRTL_ATOM_TABLE, ULONG,
 /// PULONG AtomCount, PRTL_ATOM AtomList)`. (NtQueryInformationAtom.)
-#[no_mangle]
+#[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlQueryAtomListInAtomTable(
     atom_table: *mut RTL_ATOM_TABLE,
     mut max_atom_count: u32,
@@ -8773,7 +8960,7 @@ mod path_wave {
         RtlDetermineDosPathNameType_U, RtlDetermineDosPathNameType_Ustr, RtlEqualUnicodeString,
         RtlFindCharInUnicodeString, RtlFreeUnicodeString,
         RtlInitUnicodeStringEx, RtlIsDosDeviceName_Ustr, RtlPrefixUnicodeString,
-        RtlQueryEnvironmentVariable_U, RtlUpcaseUnicodeChar, RTL_BUFFER, UNICODE_STRING,
+        RtlQueryEnvironmentVariable_U, RTL_BUFFER, UNICODE_STRING,
     };
 
     type ULONG = u32;
@@ -8989,7 +9176,7 @@ mod path_wave {
     }
     #[inline]
     unsafe fn RtlpUpcaseUnicodeChar(c: u16) -> u16 {
-        RtlUpcaseUnicodeChar(c)
+        crate::core_rs::nls::upcase_uc(c)
     }
     #[inline]
     unsafe fn InterlockedDecrement(p: *mut i32) -> i32 {
@@ -9121,7 +9308,7 @@ mod path_wave {
 
     // --- device / prefix statics (real UTF-16 buffers) ---
     static DEVICEROOTSTRING_BUF: [u16; 5] = [0x005C, 0x005C, 0x002E, 0x005C, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static DeviceRootString: UNICODE_STRING = UNICODE_STRING {
         Length: 8,
         MaximumLength: 10,
@@ -9130,14 +9317,14 @@ mod path_wave {
     static RTLPDOSDEVICESUNCPREFIX_BUF: [u16; 9] = [
         0x005C, 0x003F, 0x003F, 0x005C, 0x0055, 0x004E, 0x0043, 0x005C, 0x0000,
     ];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDosDevicesUncPrefix: UNICODE_STRING = UNICODE_STRING {
         Length: 16,
         MaximumLength: 18,
         Buffer: RTLPDOSDEVICESUNCPREFIX_BUF.as_ptr() as *mut u16,
     };
     static RTLPWIN32NTROOTSLASH_BUF: [u16; 5] = [0x005C, 0x005C, 0x003F, 0x005C, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpWin32NtRootSlash: UNICODE_STRING = UNICODE_STRING {
         Length: 8,
         MaximumLength: 10,
@@ -9146,70 +9333,70 @@ mod path_wave {
     static RTLPDOSSLASHCONDEVICE_BUF: [u16; 8] = [
         0x005C, 0x005C, 0x002E, 0x005C, 0x0043, 0x004F, 0x004E, 0x0000,
     ];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDosSlashCONDevice: UNICODE_STRING = UNICODE_STRING {
         Length: 14,
         MaximumLength: 16,
         Buffer: RTLPDOSSLASHCONDEVICE_BUF.as_ptr() as *mut u16,
     };
     static RTLPDOSDEVICESPREFIX_BUF: [u16; 5] = [0x005C, 0x003F, 0x003F, 0x005C, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDosDevicesPrefix: UNICODE_STRING = UNICODE_STRING {
         Length: 8,
         MaximumLength: 10,
         Buffer: RTLPDOSDEVICESPREFIX_BUF.as_ptr() as *mut u16,
     };
     static RTLPDOSLPTDEVICE_BUF: [u16; 4] = [0x004C, 0x0050, 0x0054, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDosLPTDevice: UNICODE_STRING = UNICODE_STRING {
         Length: 6,
         MaximumLength: 8,
         Buffer: RTLPDOSLPTDEVICE_BUF.as_ptr() as *mut u16,
     };
     static RTLPDOSCOMDEVICE_BUF: [u16; 4] = [0x0043, 0x004F, 0x004D, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDosCOMDevice: UNICODE_STRING = UNICODE_STRING {
         Length: 6,
         MaximumLength: 8,
         Buffer: RTLPDOSCOMDEVICE_BUF.as_ptr() as *mut u16,
     };
     static RTLPDOSPRNDEVICE_BUF: [u16; 4] = [0x0050, 0x0052, 0x004E, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDosPRNDevice: UNICODE_STRING = UNICODE_STRING {
         Length: 6,
         MaximumLength: 8,
         Buffer: RTLPDOSPRNDEVICE_BUF.as_ptr() as *mut u16,
     };
     static RTLPDOSAUXDEVICE_BUF: [u16; 4] = [0x0041, 0x0055, 0x0058, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDosAUXDevice: UNICODE_STRING = UNICODE_STRING {
         Length: 6,
         MaximumLength: 8,
         Buffer: RTLPDOSAUXDEVICE_BUF.as_ptr() as *mut u16,
     };
     static RTLPDOSCONDEVICE_BUF: [u16; 4] = [0x0043, 0x004F, 0x004E, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDosCONDevice: UNICODE_STRING = UNICODE_STRING {
         Length: 6,
         MaximumLength: 8,
         Buffer: RTLPDOSCONDEVICE_BUF.as_ptr() as *mut u16,
     };
     static RTLPDOSNULDEVICE_BUF: [u16; 4] = [0x004E, 0x0055, 0x004C, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDosNULDevice: UNICODE_STRING = UNICODE_STRING {
         Length: 6,
         MaximumLength: 8,
         Buffer: RTLPDOSNULDEVICE_BUF.as_ptr() as *mut u16,
     };
     static RTLPDOUBLESLASHPREFIX_BUF: [u16; 3] = [0x005C, 0x005C, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDoubleSlashPrefix: UNICODE_STRING = UNICODE_STRING {
         Length: 4,
         MaximumLength: 6,
         Buffer: RTLPDOUBLESLASHPREFIX_BUF.as_ptr() as *mut u16,
     };
     static RTLPDEFAULTEXTENSION_BUF: [u16; 5] = [0x002E, 0x0044, 0x004C, 0x004C, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDefaultExtension: UNICODE_STRING = UNICODE_STRING {
         Length: 8,
         MaximumLength: 10,
@@ -9218,24 +9405,24 @@ mod path_wave {
     static RTLPDOTLOCAL_BUF: [u16; 8] = [
         0x002E, 0x004C, 0x006F, 0x0063, 0x0061, 0x006C, 0x005C, 0x0000,
     ];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpDotLocal: UNICODE_STRING = UNICODE_STRING {
         Length: 14,
         MaximumLength: 16,
         Buffer: RTLPDOTLOCAL_BUF.as_ptr() as *mut u16,
     };
     static RTLPPATHDIVIDERS_BUF: [u16; 3] = [0x005C, 0x002F, 0x0000];
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static RtlpPathDividers: UNICODE_STRING = UNICODE_STRING {
         Length: 4,
         MaximumLength: 6,
         Buffer: RTLPPATHDIVIDERS_BUF.as_ptr() as *mut u16,
     };
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub static mut RtlpCurDirRef: PRTLP_CURDIR_REF = core::ptr::null_mut();
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlpCheckDeviceName(
         FileName: PUNICODE_STRING,
         Length: ULONG,
@@ -9411,7 +9598,7 @@ mod path_wave {
         (UncPath.offset_from(FileNameBuffer)) as SIZE_T
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlpApplyLengthFunction(
         Flags: ULONG,
         Type: ULONG,
@@ -9456,7 +9643,7 @@ mod path_wave {
         STATUS_SUCCESS
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlGetLengthWithoutLastFullDosOrNtPathElement(
         Flags: ULONG,
         Path: PCUNICODE_STRING,
@@ -9552,7 +9739,7 @@ mod path_wave {
         STATUS_SUCCESS
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlComputePrivatizedDllName_U(
         DllName: PUNICODE_STRING,
         RealName: PUNICODE_STRING,
@@ -9723,7 +9910,7 @@ mod path_wave {
         STATUS_SUCCESS
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlGetFullPathName_Ustr(
         FileName: PUNICODE_STRING,
         Size: ULONG,
@@ -10032,7 +10219,7 @@ mod path_wave {
         reqsize
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlpWin32NTNameToNtPathName_U(
         DosPath: PUNICODE_STRING,
         NtPath: PUNICODE_STRING,
@@ -10112,7 +10299,7 @@ mod path_wave {
         STATUS_SUCCESS
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlpDosPathNameToRelativeNtPathName_Ustr(
         HaveRelative: BOOLEAN,
         DosName: PCUNICODE_STRING,
@@ -10320,7 +10507,7 @@ mod path_wave {
         STATUS_SUCCESS
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlpDosPathNameToRelativeNtPathName_U(
         HaveRelative: BOOLEAN,
         DosName: PCWSTR,
@@ -10344,7 +10531,7 @@ mod path_wave {
         Status
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDosPathNameToRelativeNtPathName_Ustr(
         DosName: PCUNICODE_STRING,
         NtName: PUNICODE_STRING,
@@ -10364,7 +10551,7 @@ mod path_wave {
         }
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDoesFileExists_UstrEx(
         FileName: PCUNICODE_STRING,
         SucceedIfBusy: BOOLEAN,
@@ -10432,12 +10619,12 @@ mod path_wave {
         Result
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDoesFileExists_UStr(FileName: PUNICODE_STRING) -> BOOLEAN {
         RtlDoesFileExists_UstrEx(FileName, 1u8)
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDoesFileExists_UEx(
         FileName: PCWSTR,
         SucceedIfBusy: BOOLEAN,
@@ -10454,7 +10641,7 @@ mod path_wave {
         0u8
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlReleaseRelativeName(RelativeName: PRTL_RELATIVE_NAME_U) {
         if !(*RelativeName).CurDirRef.is_null() {
             if InterlockedDecrement(core::ptr::addr_of_mut!(
@@ -10468,7 +10655,7 @@ mod path_wave {
         }
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlGetCurrentDirectory_U(
         MaximumLength: ULONG,
         Buffer: PWSTR,
@@ -10515,7 +10702,7 @@ mod path_wave {
         Length * core::mem::size_of::<u16>() as ULONG
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlSetCurrentDirectory_U(Path: PUNICODE_STRING) -> NTSTATUS {
         let CurDir: PCURDIR;
         let mut Status: NTSTATUS;
@@ -10734,7 +10921,7 @@ mod path_wave {
         Status
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlGetFullPathName_UEx(
         FileName: PWSTR,
         BufferLength: ULONG,
@@ -10764,7 +10951,7 @@ mod path_wave {
         )
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlGetFullPathName_U(
         FileName: PCWSTR,
         Size: ULONG,
@@ -10776,7 +10963,7 @@ mod path_wave {
         RtlGetFullPathName_UEx(FileName as PWSTR, Size, Buffer, ShortName, &mut PathType)
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDosPathNameToNtPathName_U(
         DosName: PCWSTR,
         NtName: PUNICODE_STRING,
@@ -10796,7 +10983,7 @@ mod path_wave {
         }
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDosPathNameToNtPathName_U_WithStatus(
         DosName: PCWSTR,
         NtName: PUNICODE_STRING,
@@ -10806,7 +10993,7 @@ mod path_wave {
         RtlpDosPathNameToRelativeNtPathName_U(0u8, DosName, NtName, PartName, RelativeName)
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDosPathNameToRelativeNtPathName_U(
         DosName: PCWSTR,
         NtName: PUNICODE_STRING,
@@ -10826,7 +11013,7 @@ mod path_wave {
         }
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDosPathNameToRelativeNtPathName_U_WithStatus(
         DosName: PCWSTR,
         NtName: PUNICODE_STRING,
@@ -10836,7 +11023,7 @@ mod path_wave {
         RtlpDosPathNameToRelativeNtPathName_U(1u8, DosName, NtName, PartName, RelativeName)
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlNtPathNameToDosPathName(
         Flags: ULONG,
         Path: PRTL_UNICODE_STRING_BUFFER,
@@ -10956,7 +11143,7 @@ mod path_wave {
         STATUS_SUCCESS
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDosSearchPath_U(
         Path: PCWSTR,
         FileName: PCWSTR,
@@ -11113,7 +11300,7 @@ mod path_wave {
         Length
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlGetFullPathName_UstrEx(
         FileName: PUNICODE_STRING,
         StaticString: PUNICODE_STRING,
@@ -11350,7 +11537,7 @@ mod path_wave {
     /// `sdk/lib/rtl/path.c:2565`. The SxS isolation-redirection branch is
     /// `#ifndef _NTOSKRNL_` in C (RtlDosApplyFileIsolationRedirection_Ustr is
     /// an ntdll-only symbol), so it is cfg-gated out of the kernel build here.
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDosSearchPath_Ustr(
         Flags: ULONG,
         PathString: PUNICODE_STRING,
@@ -11770,7 +11957,7 @@ mod path_wave {
         Status
     }
 
-    #[no_mangle]
+    #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDoesFileExists_U(FileName: PCWSTR) -> BOOLEAN {
         RtlDoesFileExists_UEx(FileName, 1u8)
     }
@@ -11784,3 +11971,4 @@ use path_wave::{
     DeviceRootString, RtlpDosAUXDevice, RtlpDosCOMDevice, RtlpDosCONDevice, RtlpDosLPTDevice,
     RtlpDosNULDevice, RtlpDosPRNDevice, RtlpDosSlashCONDevice,
 };
+}

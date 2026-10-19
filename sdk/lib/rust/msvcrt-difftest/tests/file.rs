@@ -4636,7 +4636,9 @@ unsafe fn utime_rows() {
                 ref__utime32(w.r(), t32.as_ptr()) as i64
             }
         });
-        let (gi, ni) = stat_both(&w);
+        let (mut gi, mut ni) = stat_both(&w);
+        mask_stat_ctime(&mut gi);
+        mask_stat_ctime(&mut ni);
         let tags = vec![
             if n.ret == 0 { "ok" } else { "enoent" },
             if at == 0 || mt == 0 { "epoch" } else { "" },
@@ -4675,7 +4677,9 @@ unsafe fn utime_rows() {
                 ref__wutime32(rw.as_ptr(), t32.as_ptr()) as i64
             }
         });
-        let (gi, ni) = stat_both(&w);
+        let (mut gi, mut ni) = stat_both(&w);
+        mask_stat_ctime(&mut gi);
+        mask_stat_ctime(&mut ni);
         let tags = vec![
             if n.ret == 0 { "ok" } else { "enoent" },
             if at == 0 || mt == 0 { "epoch" } else { "" },
@@ -4780,6 +4784,13 @@ fn stat_times(img: &[u8]) -> Vec<u8> {
 
 fn mask_stat_times(img: &mut [u8]) {
     img[STAT_TIMES].fill(0);
+}
+
+/// `st_ctime` alone (offset 48). A utime row compares the atime/mtime it SET, but the host
+/// stamps the inode-change time with its own clock as each side writes, so the two files'
+/// ctimes straddle a second boundary at random: a flake, not a finding.
+fn mask_stat_ctime(img: &mut [u8]) {
+    img[8 + 48..8 + 56].fill(0);
 }
 
 unsafe fn global_stream_rows() {

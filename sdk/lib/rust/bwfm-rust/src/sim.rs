@@ -145,6 +145,7 @@ impl Card {
     pub fn cyw43455() -> Self {
         let mut cccr = [0u8; 0x100];
         cccr[0] = 0x43; // CCCR 3.00, SDIO 3.00
+        cccr[0x13] = 1; // SHS: high speed supported
         cccr[0x09..0x0C].copy_from_slice(&CIS_AT.to_le_bytes()[..3]);
         let mut backplane = HashMap::new();
         backplane.insert(0x1800_0000, 0x1526_4345);
@@ -809,7 +810,7 @@ pub struct Sim {
 impl Sim {
     pub fn new(card: Card) -> Self {
         let mut regs = [0u32; 64];
-        regs[REG_CAPS / 4] = 100 << 8; // 100 MHz base clock
+        regs[REG_CAPS / 4] = 100 << 8 | sdhci_rust::CAPS_HIGH_SPEED; // 100 MHz base clock, high speed
         regs[REG_VERSION / 4] = 2 << 16; // SDHCI 3.00
         Self { st: RefCell::new(St { regs, card, xfer: None }), now: Cell::new(0) }
     }

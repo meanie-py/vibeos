@@ -1,8 +1,11 @@
 # Raspberry Pi 4B bench
 
-> **Retired 2026-10-09.** Its plug, Pico (`picousb5`) and capture card now drive
-> the OptiPlex 9020: see `optiplex-bench.md`. This doc stays for when the Pi 4 is
-> rewired.
+> **Rewired 2026-10-18** with the Pi 5's plug (`shellyplugusg4-acebe6f18e28`), Pico
+> (`picousb`), HDMI capture and Ethernet, now `tools/pi4`'s defaults. Its first plug,
+> Pico (`picousb5`) and capture card drive the OptiPlex 9020 (`optiplex-bench.md`)
+> since 2026-10-09. The Pi 5 has no bench until it gets its own again.
+> The Pi 4 has no JST debug connector, so its serial is the header's: pin 8 (TXD) to
+> the Pico's GP1, pin 10 (RXD) from GP0, GND to GND (see "Serial" below).
 
 How to wire up and drive a physical Pi 4B for VibeOS arm64 bring-up, remotely
 and without card swaps. Read this before touching the board. What has been
@@ -249,10 +252,11 @@ the card".
 ## USB input: the Pico
 
 A Pico 2 W running the picousb firmware (`D:\home\Projects\picousb`) sits in a
-Pi USB port. The bench has two: **`picousb5` is wired to the Pi 4** (USB and UART)
-and `picousb` to the Pi 5. Every Pi 4 script reads `PI4_PICO_HOST` (default
-`picousb5`), and `bench.sh up` restarts a serial listener that is reading the
-other Pico. It presents a boot keyboard, boot mouse, mass storage and an
+Pi USB port. The bench has two: **`picousb` is wired to the Pi 4** (USB and UART,
+since 2026-10-18) and `picousb5` to the OptiPlex. Every Pi 4 script reads
+`PI4_PICO_HOST` (default `picousb`), and `bench.sh up` restarts a serial listener
+that is reading the other Pico. Only one client can hold a Pico's console: a stale
+listener for another board keeps resetting the new one's. It presents a boot keyboard, boot mouse, mass storage and an
 absolute pointer, is controlled over Wi-Fi, and reports what the Pi's USB host
 did to it. `tools/pi4/pico.sh` wraps its CLI (address, token file, venv; setup
 in the script header):

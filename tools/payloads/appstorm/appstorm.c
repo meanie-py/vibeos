@@ -778,6 +778,28 @@ int main(void)
     fmtmsg_check() ? pass++ : fail++;
     shell_note();
     SAY("shell tray=%p\n", (void *)shell_tray);
+    if (shell_tray) {
+        /* The tray existing is not the taskbar SHOWING: every appstorm shot from 2026-10-14 on
+         * had no taskbar while shell=OK. Say where it is and whether it is drawn. */
+        RECT r = {0}, w = {0};
+        GetWindowRect(shell_tray, &r);
+        SystemParametersInfoW(SPI_GETWORKAREA, 0, &w, 0);
+        SAY("shell tray rect=%ld,%ld,%ld,%ld visible=%d style=0x%lx exstyle=0x%lx "
+            "screen=%dx%d workarea=%ld,%ld,%ld,%ld\n",
+            r.left, r.top, r.right, r.bottom, IsWindowVisible(shell_tray),
+            (unsigned long)GetWindowLongW(shell_tray, GWL_STYLE),
+            (unsigned long)GetWindowLongW(shell_tray, GWL_EXSTYLE), GetSystemMetrics(SM_CXSCREEN),
+            GetSystemMetrics(SM_CYSCREEN), w.left, w.top, w.right, w.bottom);
+        /* comctl32-rust's rebar once reported a 0 px band, leaving a taskbar of 8 px (its
+         * borders) that every check here passed. A docked taskbar is at least a button tall. */
+        LONG thick = min(r.right - r.left, r.bottom - r.top);
+        if (!IsWindowVisible(shell_tray) || thick < 16) {
+            SAY("shell tray FAIL: %s, %ld px thick\n",
+                IsWindowVisible(shell_tray) ? "collapsed" : "hidden", thick);
+            fail++;
+        } else
+            pass++;
+    }
     note_emulation();
     Sleep(5000); /* let the desktop settle before the first snapshot */
     /* APPSTORM_REPEAT (build.sh): the whole app list N times, to catch an intermittent

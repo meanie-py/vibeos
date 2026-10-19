@@ -95,6 +95,7 @@ RULE_C2RUST_ANON = "c2rust_anon_member"
 RULE_CPP_REFERENCE_ARG = "cpp_reference_argument"
 RULE_FLOAT_LITERAL = "c_float_literal"
 RULE_OBJECT_DEREF = "object_deref"
+RULE_CONST_RECEIVER = "cpp_const_receiver"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -150,6 +151,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_C2RUST_ANON,
     RULE_FLOAT_LITERAL,
     RULE_OBJECT_DEREF,
+    RULE_CONST_RECEIVER,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -2477,6 +2479,9 @@ def _option_fn_call_rule(
 #: Rust keywords bindgen renames with a trailing `_` when they name a C field.
 _BINDGEN_KEYWORDS = frozenset(
     {
+        # Not a keyword but in bindgen's rename list too: SHELLDETAILS' `STRRET str` is
+        # `str_` (cabview, fontext).
+        "str",
         "Self",
         "self",
         "type",
@@ -3033,6 +3038,101 @@ def _com_ptr_receiver_rule(
     )
 
 
+def _island_enum_path_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0599 `eZipExtractError::eNoError`: a C enum written as a Rust enum path. bindgen's
+    island lays a C enum out as a type alias of an integer plus one `Enum_Member` const per
+    member (zipfldr's CZipExtract: 17 sites), so the path is that const."""
+    if (diagnostic.get("code") or {}).get("code") != "E0599":
+        return [], [], False
+    m = re.search(
+        r"no (?:function or )?associated item named `(\w+)` found for type "
+        r"`[iu](?:8|16|32|64|size)`",
+        str(diagnostic.get("message") or ""),
+    )
+    got = _primary_bytes(diagnostic, load) if m else None
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    assert m is not None
+    if data[start:end].decode("utf-8", "replace") != m.group(1):
+        return [], [], False
+    head = re.search(rb"\b([A-Za-z_]\w*)::$", data[max(0, start - 128) : start])
+    if head is None:
+        return [], [], False
+    lo = start - len(head.group(0))
+    enum = head.group(1).decode()
+    note = "rustc E0599: bindgen lays a C enum out as `Enum_Member` consts, not a Rust enum"
+    return (
+        [
+            _simple_edit(
+                RULE_OBJECT_DEREF,
+                file_name,
+                data,
+                lo,
+                end,
+                f"{enum}_{m.group(1)}",
+                note,
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+_UPCAST_TYPES = re.compile(
+    r"expected raw pointer `\*mut (?:\w+::)*(I[A-Z]\w*)`\s*(?:\\n)?\s*found raw pointer "
+    r"`\*mut (?:\w+::)*cpp_classes::(\w+)`"
+)
+
+
+def _cpp_interface_upcast_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0308 `expected *mut IShellFolder, found *mut CZipFolder`: C++'s implicit conversion
+    of `this` to one of its interfaces, which is a pointer to that interface's SUBOBJECT, not
+    to the object. Three in one day: netshell's `cvf.pshf = this` (written `as _`, so it
+    compiled and DefView called IShellFolder slots through IPersistFolder2's table), zipfldr's
+    `CDefFolderMenu_Create2(.., this, ..)` and its `SFV_CREATE { pshf: this }`. The subobject
+    is the class's `__baseN` of that interface -- or of the one interface derived from it by
+    a version suffix (IShellFolder2 for IShellFolder) -- read off the generated layout;
+    anything ambiguous is left alone."""
+    if (diagnostic.get("code") or {}).get("code") != "E0308":
+        return [], [], False
+    m = _UPCAST_TYPES.search(json.dumps(diagnostic))
+    got = _primary_bytes(diagnostic, load) if m else None
+    if got is None:
+        return [], [], False
+    assert m is not None
+    span, file_name, data, _masked, start, end = got
+    iface, cls = m.group(1), m.group(2)
+    layout = load(file_name.rsplit("/", 1)[0] + "/cpp_classes.rs")
+    if layout is None:
+        return [], [], False
+    body = re.search(rb"pub struct " + cls.encode() + rb" \{\n(.*?)^\}", layout, re.M | re.S)
+    if body is None:
+        return [], [], False
+    bases = re.findall(rb"^\s*pub (__base\d+): (\w+),", body.group(1), re.M)
+    exact = [f for f, t in bases if t.decode() == iface]
+    derived = [f for f, t in bases if re.fullmatch(re.escape(iface) + r"\d+", t.decode())]
+    picks = exact or derived
+    if len(picks) != 1:
+        return [], [], False
+    expr = data[start:end].decode("utf-8", "replace").strip()
+    if not re.fullmatch(r"[\w.()*]+", expr):
+        return [], [], False
+    rep = f"core::ptr::addr_of_mut!((*{expr}).{picks[0].decode()}) as *mut {iface}"
+    note = f"rustc E0308: C++ converts `this` to its {iface} subobject"
+    return (
+        [_simple_edit(RULE_OBJECT_DEREF, file_name, data, start, end, rep, note, span, ctx)],
+        [],
+        True,
+    )
+
+
 def _c2rust_anon_turbofish(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -3160,7 +3260,16 @@ def _keyword_field_rule(
         f"{base}_",
         "bindgen renames a keyword-named C field with a trailing underscore",
     )
-    if base not in _BINDGEN_KEYWORDS:
+    anon = re.fullmatch(r"__anon(\d+)", field_name)
+    if anon is not None:
+        # cpp_model's `__anonK` (K-th anonymous member, from 0) on a struct the ISLAND lays
+        # out, where bindgen numbers the same members `__bindgen_anon_{K+1}` (ntobjshex's
+        # RegPidlEntry). Taken only when rustc lists that field as existing.
+        want = f"__bindgen_anon_{int(anon.group(1)) + 1}"
+        if want not in json.dumps(diagnostic.get("children") or []):
+            return [], [], False
+        replacement, authority = want, "bindgen numbers anonymous members from 1, in order"
+    elif base not in _BINDGEN_KEYWORDS:
         # c2rust also suffixes `_0` onto a field named like a prelude item (mmixer's
         # MIXER_CONTEXT `Copy` became `Copy_0`), which bindgen leaves alone. Taken only when
         # rustc itself names the C spelling as the existing field.
@@ -4282,6 +4391,48 @@ def _packed_union_member_edit(
     )
 
 
+def _const_receiver_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`(*p).Name()` with `p: *const T` (E0596): a C++ `const` method called through a
+    `const T*`. cpp_app renders every method `&mut self`, so the receiver is cast to
+    `*mut`: `(*p.cast_mut()).Name()`. Sound because C++ compiled the call, which it does
+    only for a const method; nothing writes through the cast. fontext's
+    `fontEntry->Name()` on a `const FontPidlEntry*` had seven."""
+    if (diagnostic.get("code") or {}).get("code") != "E0596":
+        return [], [], False
+    span = next((x for x in diagnostic.get("spans") or [] if x.get("is_primary")), None)
+    if span is None or "is a `*const` pointer" not in str(span.get("label") or ""):
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    text = data[start:end].decode("utf-8", "replace")
+    m = re.fullmatch(r"\(\s*\*\s*([A-Za-z_]\w*)\s*\)", text)
+    after = data[end : end + 2]
+    if m is None or after[:1] != b"." or _in_macro_definition(_mask_lexical(data), start):
+        return [], [], False
+    return (
+        [
+            _simple_edit(
+                RULE_CONST_RECEIVER,
+                file_name,
+                data,
+                start,
+                end,
+                f"(*{m.group(1)}.cast_mut())",
+                "a C++ const method called through a const pointer; the method is `&mut self`",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
 def _packed_field_ptr_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -4344,6 +4495,36 @@ def _packed_field_ptr_rule(
                         "taken through addr_of! so no reference is formed"
                     ),
                     original=data[lo:hi].decode("utf-8", "replace"),
+                    line=int(span.get("line_start") or 0),
+                    column=int(span.get("column_start") or 0),
+                    targets=(ctx.target,),
+                )
+            ],
+            [],
+            True,
+        )
+    # `_countof!(nim.szTip)` (stobject's NOTIFYICONDATA, packed on i386): the macro's
+    # `($a).len()` borrows the field. A block copies the array out first (bindgen arrays are
+    # Copy), and the length of the copy is the length of the field. The macro itself cannot
+    # take an addr_of!: `_countof!(CONST_TABLE)` names a temporary (E0745).
+    count = re.search(
+        rb"\b(?:_countof|ARRAYSIZE|RTL_NUMBER_OF(?:_V[12])?)!\s*\(\s*$",
+        masked[max(0, start - 40) : start],
+    )
+    if count is not None and _next_code_byte(masked, end) == b")" and _balanced(masked[start:end]):
+        return (
+            [
+                Edit(
+                    file_name=file_name,
+                    byte_start=start,
+                    byte_end=end,
+                    replacement=f"{{ {place} }}",
+                    rule=RULE_PACKED_FIELD_PTR,
+                    authority=(
+                        f"rustc E0793: `{place[:40]}` is a packed field; counted from a copy, "
+                        "so no reference to it is formed"
+                    ),
+                    original=place,
                     line=int(span.get("line_start") or 0),
                     column=int(span.get("column_start") or 0),
                     targets=(ctx.target,),
@@ -5431,6 +5612,24 @@ def _literal_mut_rule(
             continue
         lo, hi = int(span["byte_start"]), int(span["byte_end"])
         inner = data[lo:hi].decode("utf-8", "replace")
+        if re.fullmatch(r"(?:(?:core|std)::)?(?:ptr::)?null\(\)", inner.strip()):
+            # C's NULL for a non-const pointer parameter, spelled `null()` (stobject's
+            # TrackPopupMenuEx(.., NULL)): the same null, typed `*mut`.
+            if not _in_macro_definition(_mask_lexical(data), lo):
+                edits.append(
+                    _simple_edit(
+                        RULE_LITERAL_MUT,
+                        file_name,
+                        data,
+                        lo,
+                        hi,
+                        "core::ptr::null_mut()",
+                        "C's NULL for a non-const pointer parameter",
+                        span,
+                        ctx,
+                    )
+                )
+            continue
         addr = re.fullmatch(r"((?:core::ptr::|ptr::)?)addr_of!(\(.*\))", inner.strip(), re.S)
         if addr is not None and not _in_macro_definition(_mask_lexical(data), lo):
             # C's `&x` is mutable; the translation spelled it `addr_of!`. A C local is mutable
@@ -5562,13 +5761,15 @@ def _int_range(ty: str, width: int) -> tuple[int, int] | None:
 
 
 def _sibling_declared_type(data: bytes, start: int, end: int) -> str | None:
-    """`wParam & K` / `K | wParam`: the type NAME the other operand was declared with
-    (`wParam: WPARAM` earlier in the function), when the constant at start..end is one side
-    of a bitwise or arithmetic operator and the other side is a bare identifier."""
+    """`wParam & K` / `K | wParam` / `lParam == K`: the type NAME the other operand was
+    declared with (`wParam: WPARAM` earlier in the function), when the constant at
+    start..end is one side of a bitwise, arithmetic or comparison operator and the other
+    side is a bare identifier. stobject's `lParam == WM_LBUTTONDOWN` wanted `i32` on i386
+    and `i64` on the 64-bit pair, so no width could agree; `as LPARAM` is right on all."""
     before = data[:start].decode("utf-8", "replace")
     after = data[end:].decode("utf-8", "replace")
-    m = re.search(r"\b([A-Za-z_]\w*)\s*[&|^+*/-]\s*$", before) or re.match(
-        r"\s*[&|^+*/-]\s*([A-Za-z_]\w*)\b(?!\s*[.(\[])", after
+    m = re.search(r"\b([A-Za-z_]\w*)\s*(?:[&|^+*/-]|[=!<>]=|<|>)\s*$", before) or re.match(
+        r"\s*(?:[&|^+*/-]|[=!<>]=|<|>)\s*([A-Za-z_]\w*)\b(?!\s*[.(\[])", after
     )
     if m is None:
         return None
@@ -5645,12 +5846,13 @@ def _constant_operand_rule(
         # A match ARM is a pattern, where a cast does not parse: the scrutinee rule owns it.
         if _in_macro_definition(masked, start) or _in_match_pattern(masked, end):
             continue
-        target = expected
-        if baked is not None or expected in ("u64", "i64", "usize", "isize"):
+        # The other operand's DECLARED type name, when there is one, is portable on every
+        # target (a primitive the width-varying alias resolves to here is not).
+        sibling = _sibling_declared_type(data, start, end)
+        target = sibling or expected
+        if sibling is None and (baked is not None or expected in ("u64", "i64", "usize", "isize")):
             # A baked width is arch-dependent by construction, whatever this target wants.
-            # `as _` cannot be inferred under an arithmetic/bitwise operator (`wParam &
-            # (MK_LBUTTON as _)`); there the other operand's DECLARED type name is portable.
-            target = _sibling_declared_type(data, start, end) or "_"
+            target = "_"
         ctx.claimed.add((file_name, start, end))
         edits.append(
             Edit(
@@ -5733,6 +5935,7 @@ _RULE_TABLE: dict[
     RULE_POINTER_CAST: _pointer_cast_rule,
     RULE_ANON_UNION: _anon_union_rule,
     RULE_PACKED_FIELD_PTR: _packed_field_ptr_rule,
+    RULE_CONST_RECEIVER: _const_receiver_rule,
     RULE_CPP_BASE_FIELD: _cpp_base_field_rule,
     RULE_REFGUID_DEREF: _refguid_deref_rule,
     RULE_MACRO_PLACE_DEREF: _macro_place_deref_rule,
@@ -5778,6 +5981,8 @@ _RULE_TABLE: dict[
         _ptr_int_arith_rule,
         _heap_ptr_conversion_rule,
         _com_ptr_receiver_rule,
+        _island_enum_path_rule,
+        _cpp_interface_upcast_rule,
         _hwnd_to_cwindow_rule,
     ),
     RULE_CONST_OPERAND: _constant_operand_rule,

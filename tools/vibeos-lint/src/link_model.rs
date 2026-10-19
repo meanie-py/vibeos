@@ -193,6 +193,9 @@ pub struct Crate {
     pub features: BTreeMap<String, Vec<String>>,
     pub edges: BTreeMap<String, (Vec<String>, bool)>,
     pub optional: BTreeSet<String>,
+    /// Deps declared under `[target.'cfg(target_arch = ..)'.dependencies]`: the arches
+    /// (bits over `ARCHES`) they link on. A dep missing here links everywhere.
+    pub arch_only: BTreeMap<String, u8>,
 }
 #[derive(Default)]
 struct Manifest {
@@ -200,7 +203,7 @@ struct Manifest {
     lib: BTreeMap<String, String>,
     bins: Vec<BTreeMap<String, String>>,
     features: BTreeMap<String, Vec<String>>,
-    edges: Vec<(String, Vec<String>, bool, bool)>,
+    edges: Vec<(String, Vec<String>, bool, bool, u8)>,
 }
 fn strings(s: &str) -> Vec<String> {
     re(r#""([^"]*)""#)
@@ -208,7 +211,50 @@ fn strings(s: &str) -> Vec<String> {
         .map(|m| m[1].to_owned())
         .collect()
 }
-fn dep_edge(path: String, val: &str) -> (String, Vec<String>, bool, bool) {
+const ALL_ARCHES: u8 = (1 << ARCHES.len()) - 1;
+/// The arches a `[target.'<cfg>'.dependencies]` table applies to. Only `target_arch` and
+/// `any`/`all`/`not` over it are understood; anything else (`windows`, `target_os`, a
+/// triple) is every arch, which can only over-report.
+fn target_arches(cfg: &str) -> u8 {
+    fn eval(e: &str) -> Option<u8> {
+        let e = e.trim();
+        if let Some(inner) = e.strip_prefix("not(").and_then(|s| s.strip_suffix(')')) {
+            return eval(inner).map(|m| ALL_ARCHES & !m);
+        }
+        for (op, any) in [("any(", true), ("all(", false)] {
+            if let Some(inner) = e.strip_prefix(op).and_then(|s| s.strip_suffix(')')) {
+                let mut depth = 0;
+                let mut start = 0;
+                let mut acc = if any { 0 } else { ALL_ARCHES };
+                for (i, ch) in inner.char_indices().chain([(inner.len(), ',')]) {
+                    match ch {
+                        '(' => depth += 1,
+                        ')' => depth -= 1,
+                        ',' if depth == 0 => {
+                            let part = &inner[start..i];
+                            start = i + 1;
+                            if part.trim().is_empty() {
+                                continue;
+                            }
+                            let m = eval(part)?;
+                            acc = if any { acc | m } else { acc & m };
+                        }
+                        _ => {}
+                    }
+                }
+                return Some(acc);
+            }
+        }
+        let c = re(r#"^target_arch\s*=\s*"(\w+)"$"#).captures(e)?;
+        ARCHES.iter().position(|a| *a == &c[1]).map(|i| 1 << i)
+    }
+    let cfg = cfg.trim().trim_matches(|c| c == '\'' || c == '"');
+    cfg.strip_prefix("cfg(")
+        .and_then(|s| s.strip_suffix(')'))
+        .and_then(eval)
+        .unwrap_or(ALL_ARCHES)
+}
+fn dep_edge(path: String, val: &str, arches: u8) -> (String, Vec<String>, bool, bool, u8) {
     let fs = re(r"\bfeatures\s*=\s*\[([^\]]*)\]")
         .captures(val)
         .map(|m| strings(&m[1]))
@@ -218,6 +264,7 @@ fn dep_edge(path: String, val: &str) -> (String, Vec<String>, bool, bool) {
         fs,
         !re(r"default-features\s*=\s*false").is_match(val),
         re(r"optional\s*=\s*true").is_match(val),
+        arches,
     )
 }
 fn manifest(text: &str) -> Manifest {
@@ -262,14 +309,18 @@ fn manifest(text: &str) -> Manifest {
                 val.push_str(lines.next().unwrap_or("}"));
             }
         }
+        let arches = table
+            .strip_prefix("target.")
+            .and_then(|s| s.rsplit_once('.'))
+            .map_or(ALL_ARCHES, |(cfg, _)| target_arches(cfg));
         if isdep {
             if let Some(pm) = re(r#"\bpath\s*=\s*"([^"]+)""#).captures(&val) {
-                out.edges.push(dep_edge(pm[1].to_owned(), &val));
+                out.edges.push(dep_edge(pm[1].to_owned(), &val, arches));
             }
         } else if table.starts_with("dependencies.") || table.contains(".dependencies.") {
             if key == "path" {
                 if let Some(p) = strings(&val).first() {
-                    out.edges.push((p.clone(), vec![], true, false));
+                    out.edges.push((p.clone(), vec![], true, false, ALL_ARCHES));
                     edge_index = Some(out.edges.len() - 1);
                 }
             } else if let Some(i) = edge_index {
@@ -352,17 +403,44 @@ pub fn crates(c: &Corpus) -> BTreeMap<String, Crate> {
         .collect();
     for (d, es) in edges {
         let kr = dirs.get_mut(&d).unwrap();
-        for (path, fs, df, opt) in es {
+        for (path, fs, df, opt, arches) in es {
             if let Some(n) = names.get(&normalize(&d.join(path))) {
                 kr.deps.push(n.clone());
                 kr.edges.insert(n.clone(), (fs, df));
                 if opt {
                     kr.optional.insert(n.clone());
                 }
+                if arches != ALL_ARCHES {
+                    kr.arch_only.insert(n.clone(), arches);
+                }
             }
         }
     }
     dirs.into_values().map(|c| (c.name.clone(), c)).collect()
+}
+/// The crate graph as it links on `arch`: every target-gated dep that does not apply there
+/// removed, so a closure or feature walk over it sees only what that arch's cargo builds.
+pub fn for_arch(all: &BTreeMap<String, Crate>, arch: &str) -> BTreeMap<String, Crate> {
+    let Some(bit) = ARCHES.iter().position(|a| *a == arch).map(|i| 1u8 << i) else {
+        return all.clone();
+    };
+    all.iter()
+        .map(|(n, c)| {
+            let mut c = c.clone();
+            let gone: Vec<String> = c
+                .arch_only
+                .iter()
+                .filter(|(_, m)| **m & bit == 0)
+                .map(|(d, _)| d.clone())
+                .collect();
+            for d in &gone {
+                c.deps.retain(|x| x != d);
+                c.edges.remove(d);
+                c.optional.remove(d);
+            }
+            (n.clone(), c)
+        })
+        .collect()
 }
 pub type Features = BTreeMap<String, BTreeSet<String>>;
 pub fn resolve_features(
@@ -1039,5 +1117,51 @@ maybe=[]
         assert!(!on["b"].contains("default"));
         assert!(unknown["a"].contains("maybe"));
         assert!(!on["a"].contains("maybe"));
+    }
+
+    #[test]
+    fn target_arch_dependencies_link_only_on_their_arches() {
+        // blrtl-rust's shape: mem links on amd64 only, so an arm64 loader that defines
+        // RtlFillMemoryUlong itself does not see mem's copy.
+        let items = [
+            (
+                "a/Cargo.toml",
+                r#"[package]
+name="a"
+[dependencies]
+b={path="../b"}
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+m={ path = "../m" }
+[target.'cfg(not(target_arch = "aarch64"))'.dependencies]
+n={path="../n"}
+[target.'cfg(windows)'.dependencies]
+w={path="../w"}
+"#,
+            ),
+            ("b/Cargo.toml", "[package]\nname=\"b\"\n"),
+            ("m/Cargo.toml", "[package]\nname=\"m\"\n"),
+            ("n/Cargo.toml", "[package]\nname=\"n\"\n"),
+            ("w/Cargo.toml", "[package]\nname=\"w\"\n"),
+        ];
+        let c = Corpus::new(
+            ".".into(),
+            items
+                .into_iter()
+                .map(|(p, s)| SourceFile::new(p.into(), s.into()))
+                .collect(),
+        );
+        let all = crates(&c);
+        let deps = |arch: &str| {
+            let mut d = for_arch(&all, arch)["a"].deps.clone();
+            d.sort();
+            d
+        };
+        assert_eq!(deps("x86_64"), ["b", "m", "n", "w"]);
+        assert_eq!(deps("x86"), ["b", "n", "w"]);
+        assert_eq!(deps("aarch64"), ["b", "w"]);
+        assert_eq!(
+            target_arches(r#"'cfg(any(target_arch = "x86", target_arch = "aarch64"))'"#),
+            0b101
+        );
     }
 }

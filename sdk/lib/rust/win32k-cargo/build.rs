@@ -82,11 +82,12 @@ fn main() {
     // WS5 cmake-off (2026-06-21): libwin32k_residue.a is now compiled IN-cargo
     // (the last win32k cmake .a). Its 13 members split by provenance:
     //   - 5 *_rust_shims.c + (i386) floatobj.c → c_from_compile_db (replay when
-    //     cmake configured; committed-flags + native-hpp xdk + committed
-    //     bugcodes.h when cmake-off — the blrtl pattern).
+    //     cmake configured; their lines of clibs/<arch>/win32k_residue.recipe when
+    //     cmake-off).
     //   - 3 gendib DIB tables (dib{8,16,32}gen.c, GENERATED) → the `.gendib()`
     //     marker: replay finds them under build-<arch>/; cmake-off runs the
-    //     self-hosted native-gendib (byte-identical to cmake's).
+    //     self-hosted native-gendib (byte-identical to cmake's) and puts them where
+    //     the recipe's commands name them.
     //   - (i386) 4 asm (3 dib*_hline/colorfill.s + floatobj.S) → asm_archive.
     // amd64/arm64 have only the 5 shims + 3 gendib (no floatobj/asm).
     let mut residue_c: Vec<&str> = vec![

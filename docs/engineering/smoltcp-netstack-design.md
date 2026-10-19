@@ -530,8 +530,32 @@ How it behaves:
 - RX: `ProtocolReceive` copies header + lookahead into the ring; a frame past the lookahead
   comes in through `NdisTransferData`. The lookahead is set to the miniport's
   `OID_GEN_MAXIMUM_LOOKAHEAD`. Both receive handlers set an event the worker waits on.
-- One adapter, the first that binds. More than one NIC, and yielding a device netstack drives
-  directly to a miniport installed for it, are still owed.
+- One NDIS adapter, the first that binds. Yielding a device netstack drives directly to a
+  miniport installed for it is still owed.
+
+**Several adapters at once (2026-10-18).** The protocol registers whether or not netstack
+drives a NIC itself, so a miniport's adapter runs beside netstack's own: the Pi 5's GEM and
+its Wi-Fi on one boot, with no boot option (`NETSTACK=NDIS` now only means "drive no NIC
+directly"). Each adapter is a `Link` in `engine.rs` with its own smoltcp `Interface` and DHCP
+client, so each holds its own lease, ARPs and answers ping on its own address; ipconfig lists
+them all (`netcfg` has a slot per adapter, the MIB interface instance; `tdidev` reports an IF
+and AT entity per slot, an address and a default route per lease, the primary's at metric 1).
+- The stack's own sockets (TDI's, the self-tests', SNTP's) live in ONE shared `SocketSet`,
+  polled with the **primary** link's interface, and leave through it whatever their
+  destination. The primary's DHCP client is moved into that set with them, since a frame
+  reaches only the sockets in the set its interface is polled with.
+- The primary is the first adapter; when it has no lease and another has one, the shared
+  set moves there (`primary adapter: N` in the log), and connections bound to the old
+  address end. It does not move back when the first adapter's lease returns.
+- A link losing its media resets its DHCP client, so the lease goes at once instead of when
+  it expires: the GEM's, GENET's and e1000's PHY/STATUS link bit, and a miniport's
+  NDIS_STATUS_MEDIA_CONNECT/DISCONNECT (bwfm's NDIS 6 link state, through ndis6.rs).
+- Owed: a connection arriving on a non-primary adapter's address finds no listener (the
+  listeners are in the shared set), and only one NIC of netstack's own is driven.
+- Test: `tests/qemu/test_multinic.py` (amd64; netstack's e1000 on 10.0.3.0/24, the 82544GC
+  through NDIS on 10.0.2.0/24, the wired link cut and restored over QMP `set_link`). Pi 5:
+  run `20261018-190323-d_9udrc7`, GEM 192.168.1.248 and Wi-Fi 192.168.1.150 leased on one
+  boot, 30/30 and 29/30 host pings.
 
 Bugs the scaffold carried, found by running it: it registered as NDIS 5.0 with the 4.0
 structure (refused as `NDIS_STATUS_BAD_CHARACTERISTICS`); its `NDIS_REQUEST` put `Oid` at

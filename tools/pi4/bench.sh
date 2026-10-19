@@ -27,7 +27,7 @@ PORT=${PI4_COM:-COM5}
 SERIAL=${PI4_SERIAL:-pico}
 PICO_PY=${PICO_PY:-$HOME/.venvs/picousb/bin/python}
 # The Pico wired to THIS Pi (pico.sh reads the same variable). picousb is on the Pi 5.
-PICO_HOST=${PI4_PICO_HOST:-picousb5}
+PICO_HOST=${PI4_PICO_HOST:-picousb}  # the Pi 4's since 2026-10-18; picousb5 is the OptiPlex's
 PICO_PID="$BENCH/pico-serial.pid"
 PS=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
 HTTP_PORT=${PI4_HTTP_PORT:-8069}

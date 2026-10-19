@@ -13,7 +13,9 @@
 # - cutting power mid-write can corrupt the FAT volume the firmware boots from.
 set -u
 
-PLUG=${PI4_PLUG:-shellyplugusg4-e8f60a7df904}
+# The Pi 4's plug since 2026-10-18 (it was the Pi 5's; e8f60a7df904, the Pi 4's
+# first, now feeds the OptiPlex, ~40 W, and tools/optiplex/env.sh names it).
+PLUG=${PI4_PLUG:-shellyplugusg4-acebe6f18e28}
 # Digest auth, when the plug has a password set (Shelly's user is always admin).
 AUTH=()
 [ -n "${PI4_PLUG_PASS:-}" ] && AUTH=(--digest -u "admin:$PI4_PLUG_PASS")

@@ -412,10 +412,25 @@ extends it from the boot spine to every fully-Rust module.
      relinked by the i386 build twelve minutes after cmake mastered its ISO).
    - About 365 entries per CD are cells; the rest are the C tail's modules, configure
      products and source files, still made by cmake.
-   - **Owed:** self-hosting mkisofs/isohybrid/cabman (`--assemble` uses build-<arch>/host-tools and
-     fails without them); re-cabbing reactos.cab from `--cells` for bootcd; and a smoke
-     that boots media mastered outside build-<arch> (`smoke` reads only
-     build-<arch>/livecd.iso, with its staleness checks).
+   - **Done 2026-10-18: the mastering tools, reactos.cab, and booting the result.**
+     `tools/sdk_recipe.py` records mkisofs, isohybrid and cabman with the host tools, so a
+     cmake-off configure makes them (and the host-tools project's own version.h/buildno.h).
+     The manifest's `cab` section is cmake's configure-time cab list
+     (`reactos.dff.<config>.dyn`) and its two cabman commands; `--assemble --cells`
+     re-cabs from the cells. `--assemble` writes `<cd>.provenance.json` (the tree's source
+     hash, the image's sha256), refusing cells whose stamp (written by a full
+     `cargo_orchestrate --manifest` build) names another source, and
+     `vibeos-cli smoke --media <iso>` boots an x86 livecd only when that stamp matches the
+     tree; the non-cell entries come from build-<arch>, which the usual staleness check
+     covers. **Proof (amd64, i386):** livecd 1394/1163 entries and bootcd 421/419 match
+     cmake's images entry for entry, byte-identical but for services.exe and winlogon.exe
+     (`pe_equiv --code`) and the cab, whose 1018/1017 files are the same (cabman records
+     mtimes); reactos.inf byte-identical. And it boots: `smoke --media` on both livecds
+     reached the desktop marker (runs 20261018-223714-3ggpfl0h amd64,
+     20261018-224316-e1sdedl_ i386); the Windows-host media cache holds the staged images
+     under the external ISOs' sha256, not build-<arch>'s.
+   - **Owed:** `smoke --media` for arm64, whose livecd is a list that qemu/mkramdisk.sh
+     lays out into boot.img (smoke refuses `--media` there, BAD_ARGS).
 6. **Modules that still have C** compile it from cargo, so cmake's last job is the C-only
    tail, then nothing.
    - **6a, done 2026-10-17: the cells' own C.** cmake's C rule is `<CC> --target=<t>
@@ -441,9 +456,12 @@ extends it from the boot spine to every fully-Rust module.
      own template, `cflags/asm.<arch>.flags`; every asm command in the tree rebuilds
      (75/27/9). Proof: 112 of 112 recipe-built objects byte-identical to cmake's, the
      compile directory DWARF records aside.
-   - **Owed (6a):** opengl32's i386 asm shims still replay (`c_from_compile_db`), and so do
-     the shared `c_from_compile_db` libraries (rtl, blrtl, libcntpr, win32k_residue),
-     whose cmake-off path is the older committed `cflags/<name>.<arch>.flags`.
+   - **`c_from_compile_db` without cmake, done 2026-10-18.** A library a cell lists
+     sources of (blrtl, libcntpr, win32k_residue, opengl32's i386 shims) replays
+     compile_commands.json in a cmake build; with none, it compiles its sources' lines of
+     that library's recipe, win32k's gendib tables placed where the recipe names them. The
+     per-library `cflags/<name>.<arch>.flags` are retired (genincdata's stays, for
+     geninc). sti, landed that day, moved to `c_compiled` with `--own-c`.
    - **6b, the generated SDK: recorded and replayable, 2026-10-17.**
      `tools/sdk_recipe.py --write` records, from ninja itself (`ninja -t commands`), every
      generator command that makes something a cell build reads: psdk/xdk's headers and
@@ -468,10 +486,12 @@ extends it from the boot spine to every fully-Rust module.
      `pe_equiv --code` equivalent. An amd64 livecd mastered from those cells
      (`media_manifest.py --assemble --cells`) holds the same 1364 files as cmake's, 1361
      byte-identical and the same three code-equivalent.
+   - **Measured again 2026-10-18, all three arches.** The no-cmake worktree builds all
+     285/282/287 cells (amd64/i386/arm64) with no compile_commands.json replay and no
+     per-library flag file. Against cmake's links: 378/375/380 byte-identical, services.exe
+     and winlogon.exe `pe_equiv --code` equivalent, none different.
    - **What still needs cmake for a whole image:** the C tail's own modules (about 1000 of
-     livecd's 1364 entries are not cells), the host tools that master the media
-     (mkisofs/isohybrid/cabman), bootcd's reactos.cab, and a smoke that boots media
-     mastered outside build-<arch>.
+     livecd's entries are not cells, nor are bootcd's setup and boot-sector products).
    - **i386 and arm64, measured 2026-10-17.** The same fresh worktree builds all 271 i386
      cells (after rosload's 16-bit drvmap object joined the SDK recipe and opengl32's i386
      asm shims got a recipe) and all 276 arm64 cells. Against cmake's links: i386 358

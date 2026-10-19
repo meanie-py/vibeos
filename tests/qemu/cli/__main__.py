@@ -339,6 +339,12 @@ def build_parser() -> argparse.ArgumentParser:
     arch_arg(s)
     s.add_argument("--allow-stale", action="store_true")
     s.add_argument(
+        "--media",
+        metavar="ISO",
+        help="boot this x86 livecd instead of build-<arch>'s: one tools/media_manifest.py "
+        "--assemble mastered, admitted only when its provenance stamp matches this tree",
+    )
+    s.add_argument(
         "--timing",
         action="store_true",
         help="boot-phase timing: stamp the live serial log with elapsed seconds "
@@ -547,6 +553,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-lint",
         action="store_true",
         help="skip the strict scanner suite (default-on; blocks the stamp on NEW findings)",
+    )
+    g.add_argument(
+        "--no-stortest",
+        action="store_true",
+        help=(
+            "skip the stortest lanes (default-on: one boot per arch of "
+            "tests/qemu/test_stortest.py on this gate's media, reading and writing a "
+            "VIBEUSB stick through usbstor + fastfat)"
+        ),
     )
     g.add_argument(
         "--no-conformance",

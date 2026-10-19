@@ -1,0 +1,19 @@
+# zipfldr (dll/shellext/zipfldr -> zipfldr-rust, `port cppapp`): the Compressed Folder shell
+# extension -- explorer's view of a .zip. probes/zipfldr.c, staged twice: as zipfldr_c.exe it
+# loads the pre-flip C (zipfldr_c.dll, from c_oracle.cmake) beside it, as zipfldr_probe.exe
+# the system zipfldr.dll. Each writes the same embedded archive and prints only values, so
+# the outputs must match byte for byte.
+module: zipfldr
+variants:
+  c: '%SystemRoot%\bin\modrun\zipfldr_c.exe'
+  rust: '%SystemRoot%\bin\modrun\zipfldr_probe.exe'
+ninja: [zipfldr_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/zipfldr-{arch}.exe', dest: bin/modrun/zipfldr_c.exe}
+  - {src: 'tools/payloads/modrun/probes/zipfldr-{arch}.exe', dest: bin/modrun/zipfldr_probe.exe}
+  - {src: 'build-{arch}/dll/shellext/zipfldr/zipfldr_c.dll', dest: bin/modrun/zipfldr_c.dll}
+cases:
+  - id: browse
+    expect: ['storage create 00000000', 'storage load 00000000', 'root enum 00000000',
+             'root items 3', 'sub items 1', 'probe done']
+    timeout: 180

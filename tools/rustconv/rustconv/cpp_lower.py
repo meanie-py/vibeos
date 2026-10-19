@@ -70,6 +70,19 @@ _TEXT_MACRO = re.compile(
 _ATL_QUALIFIED_GLUE = re.compile(r"\b(CWindowImpl|CDialogImpl)(?:<[^;{}()]*?>)?::this_->(\w+)\s*\(")
 
 
+_COM_OBJECT_CREATE = re.compile(r"\b_?CComObject\s*<\s*(\w+)\s*>\s*::\s*CreateInstance\s*\(")
+_COM_OBJECT_TYPE = re.compile(r"\b_?CComObject\s*<\s*(\w+)\s*>")
+
+
+def com_object_create(text: str) -> str:
+    """`_CComObject<T>::CreateInstance(&p)` -> `ComObject_CreateInstance<T>(&p)`, and the
+    `CComObject<T> *p` it fills -> `T *p`: atl_rust gives the class itself CComObject's
+    QueryInterface/AddRef/Release, so the object IS a T. Left as written, ntobjshex's model
+    invented a `_CComObject_CFolderViewCB` type and a bare `CreateInstance`."""
+    text = _COM_OBJECT_CREATE.sub(lambda m: f"ComObject_CreateInstance<{m.group(1)}>(", text)
+    return _COM_OBJECT_TYPE.sub(lambda m: m.group(1), text)
+
+
 def atl_qualified_glue(text: str) -> str:
     """`CWindowImpl::Create(..)` -> `this_->CWindowImpl_Create(..)`. A class's own `Create`
     hides the ATL template's in C++ name lookup, and the qualified call is how rapps reaches it
@@ -128,6 +141,127 @@ def concat_string_macros(text: str, macros: dict[str, str]) -> str:
 
 
 _PPV_ARG = re.compile(r"\b(IID_PPV_ARG|IID_NULL_PPV_ARG)\s*\(")
+
+
+_DEFINE_LINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+(\w+)(?![\w(])[ \t]*([^\n]*)$", re.M)
+_COND_LINE = re.compile(r"^[ \t]*#[ \t]*(if|ifdef|ifndef|elif|else|endif)\b(.*)$")
+
+
+def module_defines(sources: list[str]) -> dict[str, str]:
+    """The object-like `#define NAME VALUE` a module's own sources make (value text, comments
+    stripped; the first definition wins)."""
+    out: dict[str, str] = {}
+    for text in sources:
+        for m in _DEFINE_LINE.finditer(text):
+            out.setdefault(m.group(1), re.sub(r"//.*|/\*.*?\*/", "", m.group(2)).strip())
+    return out
+
+
+def _eval_condition(cond: str, defines: dict[str, str]) -> bool | None:
+    """A `#if` condition over the module's own macros: True/False, or None when it names
+    anything else (an SDK or arch macro), which is then left for the reader."""
+    names = set(re.findall(r"\b[A-Za-z_]\w*\b", cond)) - {"defined"}
+    if any(n not in defines for n in names):
+        return None
+    expr = re.sub(r"\bdefined\s*\(\s*(\w+)\s*\)|\bdefined\s+(\w+)", lambda m: "1", cond)
+
+    def value(m: re.Match[str]) -> str:
+        v = defines[m.group(0)]
+        return v if re.fullmatch(r"\(?-?\d+[uUlL]*\)?", v or "x") else ("1" if v == "" else "@")
+
+    expr = re.sub(r"\b[A-Za-z_]\w*\b", value, expr)
+    if "@" in expr or not re.fullmatch(r"[\d\s()!&|<>=+\-*uUlL]*", expr):
+        return None
+    expr = re.sub(r"(\d+)[uUlL]+", r"\1", expr)
+    expr = expr.replace("&&", " and ").replace("||", " or ")
+    expr = re.sub(r"!(?!=)", " not ", expr)
+    try:
+        return bool(eval(expr, {"__builtins__": {}}, {}))  # digits and operators only
+    except Exception:
+        return None
+
+
+def resolve_module_conditionals(text: str, defines: dict[str, str]) -> str:
+    """A body's `#if USE_CUSTOM_CONMGR .. #else .. #endif` decided by the module's own
+    macros before the model sees it. netshell's precomp.h sets USE_CUSTOM_CONMGR 1, and the
+    model translated the `#else` arm: an unregistered CLSID, so the tray never started. A
+    block whose condition names any macro the module does not define is left whole."""
+    out: list[str] = []
+    # Each frame: [decided?, taking current arm?, an arm already taken?]; an undecided
+    # frame passes its lines (and its directives) through.
+    stack: list[list[bool | None]] = []
+    for line in text.splitlines(keepends=True):
+        m = _COND_LINE.match(line)
+        if m is None:
+            if all((not f[0]) or f[1] for f in stack):
+                out.append(line)
+            continue
+        kw, rest = m.group(1), m.group(2).strip()
+        live = all((not f[0]) or f[1] for f in stack)
+        if kw in ("if", "ifdef", "ifndef"):
+            cond = (
+                rest
+                if kw == "if"
+                else (f"defined({rest})" if kw == "ifdef" else f"!defined({rest})")
+            )
+            if kw != "if" and rest not in defines:
+                verdict = None  # an undefined name may be the SDK's
+            else:
+                verdict = _eval_condition(cond, defines) if live else None
+            stack.append([verdict is not None, bool(verdict), bool(verdict)])
+            if verdict is None:
+                out.append(line)
+        elif kw == "elif":
+            f = stack[-1] if stack else None
+            if f is None or not f[0]:
+                out.append(line)
+                continue
+            v = _eval_condition(rest, defines)
+            if v is None:
+                return text  # mixed decidable/undecidable chain: leave the body whole
+            f[1] = (not f[2]) and v
+            f[2] = bool(f[2] or v)
+        elif kw == "else":
+            f = stack[-1] if stack else None
+            if f is None or not f[0]:
+                out.append(line)
+                continue
+            f[1] = not f[2]
+            f[2] = True
+        else:  # endif
+            f = stack.pop() if stack else None
+            if f is None or not f[0]:
+                out.append(line)
+    return "".join(out)
+
+
+_LOCAL_ENUM = re.compile(r"\benum\s+(?:class\s+)?(\w+\s*)?\{([^{}]*)\}\s*;")
+
+
+def local_enums_to_consts(text: str) -> str:
+    """A body's own `enum { IDC_EXTRACT, IDC_EXTRACTALL };` as `const int` declarations.
+
+    The island cannot carry a function-local enum, and the model given one wrote
+    `let _ = (IDC_EXTRACT, IDC_EXTRACTALL);` with the names undefined, so every `case`
+    on them became a catch-all binding (cabview's ItemMenuCallback). An implicit value is
+    the previous member plus one, spelled so, which is what C++ means by it. A named enum
+    keeps its name as an `int` typedef for the declarations that use it."""
+
+    def lower(m: re.Match[str]) -> str:
+        out = [f"typedef int {m.group(1).strip()};"] if m.group(1) else []
+        prev = None
+        for item in (i.strip() for i in m.group(2).split(",")):
+            if not item:
+                continue
+            name, _, value = (p.strip() for p in item.partition("="))
+            if not re.fullmatch(r"\w+", name):
+                return m.group(0)  # not a plain enumerator list; leave it to the model
+            value = value or ("0" if prev is None else f"{prev} + 1")
+            out.append(f"const int {name} = {value};")
+            prev = name
+        return " ".join(out)
+
+    return _LOCAL_ENUM.sub(lower, text)
 
 
 def ppv_arg_macros(text: str) -> str:

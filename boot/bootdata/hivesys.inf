@@ -1469,6 +1469,16 @@ HKLM,"SYSTEM\CurrentControlSet\Control\ProductOptions","ProductSuite",0x00010002
 ; ServerNT gave a fixed 12-tick one. ReportAsWorkstation must agree with ProductType, or
 ; ntdll's SetRosSpecificInfo reports the other one.
 HKLM,"SYSTEM\CurrentControlSet\Control\ReactOS\Settings\Version","ReportAsWorkstation",0x00010001,0x00000001
+; The zone until setup or the Date/Time panel picks one: GMT, no daylight saving. Without
+; the key every RtlQueryTimeZoneInformation failed, NtSetSystemTime's on the live CD among them.
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","Bias",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","StandardName",0x00000000,"Greenwich Standard Time"
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","StandardBias",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","StandardStart",0x00000001,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","DaylightName",0x00000000,"Greenwich Daylight Time"
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","DaylightBias",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","DaylightStart",0x00000001,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","TimeZoneKeyName",0x00000000,"Greenwich Standard Time"
 ; Windows 10 and 11 have no service pack (this feeds CSDVersion and the PEB's wServicePackMajor)
 HKLM,"SYSTEM\CurrentControlSet\Control\Windows","CSDReleaseType",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Control\Windows","CSDVersion",0x00010001,0x00000000

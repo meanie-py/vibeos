@@ -1246,6 +1246,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # `V_DISPATCH!(v) as *mut *mut c_void` for the C's `(void**)&V_DISPATCH(v)`: the VARIANT
+    # accessor's VALUE passed as an out-pointer. oleacc's Client_EnumVARIANT_Next corrupted
+    # the heap that way (the callee stored its interface through garbage). Gated at zero.
+    svo = repo / "tools" / "scan_variant_outptr.py"
+    specs.append(
+        (
+            "scan_variant_outptr",
+            [py, str(svo), "--lint"] if svo.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # `(*(x as *mut PFOO).read()).F` for the C's `((PFOO)x)->F`: the cast form of
     # scan_ptr_typedef_indirection. usetup's unattended language lookup used L"0000" as a
     # pointer and the bootcd's smss.exe died (0x71). Gated at zero.
@@ -1475,6 +1486,15 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # Baseline is EMPTY. A Rust rule (tools/vibeos-lint/src/rules/uncalled_ctor_hook.rs).
     specs.append(
         ("scan_uncalled_ctor_hook", [rustlints.SENTINEL, "scan_uncalled_ctor_hook"], "stdout")
+    )
+    # A Rust GUID literal the SDK's DEFINE_GUID gives a different value. stobject's model
+    # wrote CGID_ShellServiceObject from memory, one digit off, and the tray never started.
+    # A Rust rule (tools/vibeos-lint/src/rules/guid_values.rs).
+    specs.append(("scan_guid_values", [rustlints.SENTINEL, "scan_guid_values"], "stdout"))
+    # `ptr::read` of an element an atl_rust container still owns: fontext's font cache was
+    # freed under its readers. A Rust rule (tools/vibeos-lint/src/rules/container_ptr_read.rs).
+    specs.append(
+        ("scan_container_ptr_read", [rustlints.SENTINEL, "scan_container_ptr_read"], "stdout")
     )
     # The address of ONE local of type T passed with a length of size_of::<T>() + ...: a C
     # struct-with-trailing-buffer translated as two locals, so the callee's tail writes hit

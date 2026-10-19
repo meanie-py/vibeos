@@ -4,10 +4,11 @@
 //! `phy::Device` swaps (`NdisPhy`, see `ndisphy.rs`). Modelled on the surviving
 //! reference binding `drivers/network/tcpip/datalink/lan.c`.
 //!
-//! Lifecycle: `register_and_open` builds NDIS40 protocol characteristics and
+//! Lifecycle: `register` builds NDIS40 protocol characteristics and
 //! `NdisRegisterProtocol`s them; NDIS then calls our `bind_adapter` for each
 //! 802.3 miniport, which `NdisOpenAdapter`s it; `open_adapter_complete` stores
-//! the binding handle + signals; we then OID-query the MAC and return.
+//! the binding handle. The worker's `poll_bound` then OID-queries the MAC, sets the
+//! filter and hands the adapter to the engine as a link of its own.
 //!
 //! RX (the hard part): `protocol_receive` / `receive_packet` run at DISPATCH and
 //! ONLY copy frame bytes into `ndisphy::RX_RING` (no smoltcp, no pageable alloc);
@@ -15,9 +16,10 @@
 //! `NDIS_PACKET` + `NDIS_BUFFER` chain and hands it to `NdisSend`; the completion
 //! frees them.
 //!
-//! The engine falls back to this when it finds no NIC of its own (engine.rs), and
-//! waits for a miniport to bind for as long as it takes: on a board a downloaded
-//! driver's device is installed minutes into boot.
+//! The engine registers whether or not it drives a NIC itself, so a miniport's
+//! adapter (the Pi 5's Wi-Fi) runs beside netstack's own (its GEM). A miniport can
+//! bind any time: on a board a downloaded driver's device is installed minutes into
+//! boot. One adapter: the first that binds.
 
 // The FFI surface is intentionally complete (teardown imports + full request /
 // packet layouts) ahead of the teardown path being wired — keep the unexercised
@@ -215,6 +217,8 @@ struct NdisCtx {
     packet_pool: AtomicUsize,
     buffer_pool: AtomicUsize,
     open_status: AtomicUsize, // NdisStatus of the last open/request, as usize
+    /// Set once the open has finished, inline or through open_adapter_complete.
+    open_done: AtomicUsize,
     mac: AtomicU64,
     mac_ready: AtomicUsize,
 }
@@ -230,9 +234,17 @@ fn ctx() -> Option<&'static NdisCtx> {
 
 static PROTO_NAME: [u16; 8] = [b'V' as u16, b'i' as u16, b'b' as u16, b'e' as u16, b'o' as u16, b's' as u16, b'N' as u16, b'S' as u16];
 
-/// Wire the protocol, wait for the first miniport to bind+open, OID-query the
-/// MAC, and return it. None on any failure (no adapter, registration error).
-pub fn register_and_open() -> Option<[u8; 6]> {
+/// Whether the bound adapter has been handed to the engine (`poll_bound`).
+static OPENED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+/// The miniport's last media indication not yet taken: 0 none, 1 connect, 2 disconnect.
+static MEDIA: AtomicUsize = AtomicUsize::new(0);
+const NDIS_STATUS_MEDIA_CONNECT: NdisStatus = 0x4001_000B;
+const NDIS_STATUS_MEDIA_DISCONNECT: NdisStatus = 0x4001_000C;
+
+/// Register the protocol. NDIS then binds a miniport whenever one appears, now or
+/// minutes into boot (PnP installs a downloaded driver's device late); `poll_bound`
+/// says when one has. False if the registration failed.
+pub fn register() -> bool {
     use alloc::boxed::Box;
     let ctx_box = Box::leak(Box::new(NdisCtx {
         event: unsafe { core::mem::zeroed() },
@@ -243,6 +255,7 @@ pub fn register_and_open() -> Option<[u8; 6]> {
         packet_pool: AtomicUsize::new(0),
         buffer_pool: AtomicUsize::new(0),
         open_status: AtomicUsize::new(0),
+        open_done: AtomicUsize::new(0),
         mac: AtomicU64::new(0),
         mac_ready: AtomicUsize::new(0),
     }));
@@ -292,25 +305,30 @@ pub fn register_and_open() -> Option<[u8; 6]> {
     }
     if status != NDIS_STATUS_SUCCESS {
         nsprint!("[NETSTACK] NDIS: RegisterProtocol failed {:#010x}\n", status as u32);
-        return None;
+        return false;
     }
     ctx_box.protocol_handle = handle;
     nsprint!("[NETSTACK] NDIS: protocol registered, awaiting bind\n");
+    true
+}
 
-    // Wait for bind_adapter -> NdisOpenAdapter -> open_adapter_complete. No timeout:
-    // a miniport can arrive any time (PnP installs a downloaded driver's device
-    // minutes into boot), and the engine has nothing else to drive meanwhile.
-    loop {
-        wait_event(ctx_box, i64::MAX / 10_000);
-        if ctx_box.binding_handle.load(Ordering::Acquire) != 0
-            && ctx_box.open_status.load(Ordering::Acquire) as NdisStatus == NDIS_STATUS_SUCCESS
-        {
-            break;
-        }
-        // A failed open: forget it and wait for the next adapter.
-        ctx_box.binding_handle.store(0, Ordering::Release);
-        unsafe { KeInitializeEvent(&ctx_box.event as *const _ as *mut KEVENT, 0, 0) };
+/// The MAC of a miniport bound since the last call, its adapter open and ready to
+/// carry frames; None until one is, and after (one adapter: the first that binds).
+pub fn poll_bound() -> Option<[u8; 6]> {
+    let ctx_box = ctx()?;
+    if OPENED.load(Ordering::Acquire)
+        || ctx_box.binding_handle.load(Ordering::Acquire) == 0
+        || ctx_box.open_done.load(Ordering::Acquire) == 0
+    {
+        return None;
     }
+    if ctx_box.open_status.load(Ordering::Acquire) as NdisStatus != NDIS_STATUS_SUCCESS {
+        // A failed open: forget it and wait for the next adapter.
+        ctx_box.open_done.store(0, Ordering::Release);
+        ctx_box.binding_handle.store(0, Ordering::Release);
+        return None;
+    }
+    OPENED.store(true, Ordering::Release);
 
     // Allocate the TX packet/buffer pools now the adapter is open.
     let mut s1: NdisStatus = 0;
@@ -346,6 +364,16 @@ pub fn register_and_open() -> Option<[u8; 6]> {
         return None;
     }
     Some(mac)
+}
+
+/// The bound miniport's media indication since the last call: Some(true) on
+/// connect, Some(false) on disconnect.
+pub fn take_media_change() -> Option<bool> {
+    match MEDIA.swap(0, Ordering::AcqRel) {
+        1 => Some(true),
+        2 => Some(false),
+        _ => None,
+    }
 }
 
 /// The event the receive handlers set, for the worker's wait between polls.
@@ -571,16 +599,17 @@ unsafe extern "system" fn bind_adapter(
     // (valid even on PENDING); OpenAdapterComplete only reports completion. So
     // record it here, then signal inline (success/failure) or let the completion
     // callback signal (PENDING).
-    if !binding.is_null() {
-        ctx.binding_handle.store(binding as usize, Ordering::Release);
-    }
-    ctx.open_status.store(open_status as usize, Ordering::Release);
     if open_status != NDIS_STATUS_PENDING {
+        ctx.open_status.store(open_status as usize, Ordering::Release);
         ctx.bind_context.store(0, Ordering::Release);
+        ctx.open_done.store(1, Ordering::Release);
         if open_status != NDIS_STATUS_SUCCESS {
             nsprint!("[NETSTACK] NDIS: OpenAdapter failed {:#010x}\n", open_status as u32);
         }
         signal(ctx);
+    }
+    if !binding.is_null() {
+        ctx.binding_handle.store(binding as usize, Ordering::Release);
     }
     *status_out = open_status;
 }
@@ -600,6 +629,7 @@ unsafe extern "system" fn open_adapter_complete(
     if status != NDIS_STATUS_SUCCESS {
         nsprint!("[NETSTACK] NDIS: OpenAdapter completed with {:#010x}\n", status as u32);
     }
+    ctx.open_done.store(1, Ordering::Release);
     signal(ctx);
 }
 
@@ -770,10 +800,16 @@ unsafe extern "system" fn receive_packet(_binding_context: NdisHandle, packet: *
 
 unsafe extern "system" fn status_handler(
     _binding_context: NdisHandle,
-    _general_status: NdisStatus,
+    general_status: NdisStatus,
     _status_buffer: *mut c_void,
     _status_buffer_size: u32,
 ) {
+    match general_status {
+        NDIS_STATUS_MEDIA_CONNECT => MEDIA.store(1, Ordering::Release),
+        NDIS_STATUS_MEDIA_DISCONNECT => MEDIA.store(2, Ordering::Release),
+        _ => return,
+    }
+    wake_rx_event();
 }
 
 unsafe extern "system" fn status_complete(_binding_context: NdisHandle) {}
@@ -803,6 +839,10 @@ fn wake_rx() {
     if FIRST_RX.swap(false, Ordering::Relaxed) {
         nsprint!("[NETSTACK] NDIS: first frame received\n");
     }
+    wake_rx_event();
+}
+
+fn wake_rx_event() {
     if let Some(c) = ctx() {
         unsafe { KeSetEvent(&c.rx_event as *const _ as *mut KEVENT, 0, 0) };
     }

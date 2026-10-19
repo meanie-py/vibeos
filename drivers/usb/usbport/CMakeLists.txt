@@ -14,7 +14,6 @@ spec2def(usbport.sys usbport.spec ADD_IMPORTLIB)
 # The translated C, kept on disk:
 # All usbport .c bodies are now Rust (usbport-rust). guid.c stays as the data-only TU
 # (DEFINE_GUID via initguid.h — instantiates the interface/bus GUID symbols).
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
 add_cargo_module(usbport usbport-cargo usbport.sys
     KIND kernelmodedriver
     BODY_CRATE usbport-rust

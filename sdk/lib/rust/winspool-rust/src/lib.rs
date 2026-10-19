@@ -32,6 +32,7 @@ pub mod winspool {
     pub mod printproviders;
     pub mod spoolfile;
     pub mod utils;
+    pub mod wow64; // a 32-bit client of the native spooler
 }
 
 // staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.

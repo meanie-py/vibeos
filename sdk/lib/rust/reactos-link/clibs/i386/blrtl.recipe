@@ -1,0 +1,12 @@
+# blrtl (i386), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	sdk/lib/rtl/bitmap.c	@build/boot/rtl boot/rtl @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/rtl	-std=gnu99 @core -Wunused-result	NO_RTL_INLINES WINVER=0x502 _BLDR_ _NTSYSTEM_ _WIN32_WINNT=0x502
+c	sdk/lib/rtl/compress.c	@build/boot/rtl boot/rtl @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/rtl	-std=gnu99 @core -Wunused-result	NO_RTL_INLINES WINVER=0x502 _BLDR_ _NTSYSTEM_ _WIN32_WINNT=0x502
+c	sdk/lib/rtl/crc32.c	@build/boot/rtl boot/rtl @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/rtl	-std=gnu99 @core -Wunused-result	NO_RTL_INLINES WINVER=0x502 _BLDR_ _NTSYSTEM_ _WIN32_WINNT=0x502
+c	sdk/lib/rtl/image.c	@build/boot/rtl boot/rtl @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/rtl	-std=gnu99 @core -Wunused-result	NO_RTL_INLINES WINVER=0x502 _BLDR_ _NTSYSTEM_ _WIN32_WINNT=0x502
+c	sdk/lib/rtl/largeint.c	@build/boot/rtl boot/rtl @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/rtl	-std=gnu99 @core -Wunused-result	NO_RTL_INLINES WINVER=0x502 _BLDR_ _NTSYSTEM_ _WIN32_WINNT=0x502
+c	boot/rtl/nlsboot.c	@build/boot/rtl boot/rtl @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/rtl	-std=gnu99 @core -Wunused-result	NO_RTL_INLINES WINVER=0x502 _BLDR_ _NTSYSTEM_ _WIN32_WINNT=0x502
+c	sdk/lib/rtl/random.c	@build/boot/rtl boot/rtl @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/rtl	-std=gnu99 @core -Wunused-result	NO_RTL_INLINES WINVER=0x502 _BLDR_ _NTSYSTEM_ _WIN32_WINNT=0x502
+c	sdk/lib/rtl/unicode.c	@build/boot/rtl boot/rtl @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/rtl	-std=gnu99 @core -Wunused-result	NO_RTL_INLINES WINVER=0x502 _BLDR_ _NTSYSTEM_ _WIN32_WINNT=0x502
+asm	sdk/lib/rtl/i386/debug_asm.S	sdk/include/asm @build/sdk/include/asm @build/boot/rtl boot/rtl @std sdk/lib/rtl	@core -Wunused-result	NO_RTL_INLINES _BLDR_ _NTSYSTEM_
+asm	sdk/lib/rtl/i386/rtlmem.s	sdk/include/asm @build/sdk/include/asm @build/boot/rtl boot/rtl @std sdk/lib/rtl	@core -Wunused-result	NO_RTL_INLINES _BLDR_ _NTSYSTEM_
+asm	sdk/lib/rtl/i386/rtlswap.S	sdk/include/asm @build/sdk/include/asm @build/boot/rtl boot/rtl @std sdk/lib/rtl	@core -Wunused-result	NO_RTL_INLINES _BLDR_ _NTSYSTEM_

@@ -1,0 +1,28 @@
+// AUTO-GENERATED from ntoskrnl/include/sysfuncs.h by tools/gen_ssdt.py.
+// Do not edit by hand — re-run the generator if sysfuncs.h changes.
+//
+// Materializes MainSSDT (function pointer table), MainSSPT (per-syscall
+// argument byte counts), and MainNumberOfSysCalls in Rust. Replaces the
+// macro-expansion of <internal/napi.h> inside ke_rust_shims.c so the shim
+// can drop its <ntoskrnl.h> include.
+//
+// MainSSDT entries are taken as `<name> as usize` so the ABI of the
+// underlying Rust impl (NTAPI = stdcall on i386, cdecl on amd64/arm64)
+// is opaque here — KiFastCallEntry asm does the real call. The forward
+// declarations below are sized with `usize` arguments so on i386 the
+// stdcall name decoration (_Name@N) matches the real impl.
+#![allow(non_upper_case_globals)]
+#![allow(improper_ctypes)]
+#![allow(unused_imports)]
+
+/// SSDT entry — a syscall implementation. The arg count + ABI is
+/// captured by the per-syscall extern decl below; here we erase to
+/// `*const ()` because Rust forbids `fn() as fn()` casts between
+/// different signatures and forbids `fn() as integer` in const
+/// init, but allows `fn() as *const ()`. On every supported arch a
+/// fn pointer is the same size as `ULONG_PTR`, so consumers re-cast
+/// `addr_of_mut!(MainSSDT)` to `*mut ULONG_PTR` to match the
+/// historical C `ULONG_PTR MainSSDT[]` signature without changing
+/// the bytes.
+pub type SSDTEntry = *const ();
+

@@ -175,11 +175,43 @@ impl Linker {
     /// `lib<target>.a` from the committed recipe of a shared cmake C library, for a build
     /// with no cmake: what `replay_target` replays from compile_commands.json otherwise.
     pub(crate) fn compile_recipe(&self, target: &str, ar: &Path) -> PathBuf {
+        self.compile_recipe_part(target, None, ar)
+    }
+
+    /// `compile_recipe` restricted to `only` (a `c_from_compile_db` list: repo-relative, or
+    /// build-relative for a generated source), in its own archive so a cell can also link
+    /// the whole library (`engine:c:<target>`).
+    pub(crate) fn compile_recipe_part(
+        &self,
+        target: &str,
+        only: Option<&Vec<String>>,
+        ar: &Path,
+    ) -> PathBuf {
         let rpath = self.repo_root.join(format!(
             "sdk/lib/rust/reactos-link/clibs/{}/{target}.recipe",
             self.arch.name
         ));
-        let lines = parse_recipe(&rpath);
+        let mut lines = parse_recipe(&rpath);
+        let tag = if let Some(only) = only {
+            let listed = |src: &str| {
+                only.iter().any(|o| src == o || src.strip_prefix("@build/") == Some(o.as_str()))
+            };
+            let missing: Vec<&String> = only
+                .iter()
+                .filter(|o| !lines.iter().any(|l| l.src == **o || l.src == format!("@build/{o}")))
+                .collect();
+            if !missing.is_empty() {
+                panic!(
+                    "{}: no line for {missing:?} (regenerate: python3 tools/cargo_cell_gen.py \
+                     --clib-recipes)",
+                    rpath.display()
+                );
+            }
+            lines.retain(|l| listed(&l.src));
+            format!("ccdb-{target}")
+        } else {
+            target.to_string()
+        };
         let (cpath, ct) = self.template("c");
         let (apath, at) = self.template("asm");
         let root = self.rc_build_root();
@@ -197,7 +229,7 @@ impl Linker {
             std::fs::copy(&made, &tmp).expect("stage ks inc");
             std::fs::rename(&tmp, ks_dir.join(self.ks_inc_name())).expect("place ks inc");
         }
-        let out_sub = self.obj_dir().join(format!("recipe-{target}"));
+        let out_sub = self.obj_dir().join(format!("recipe-{tag}"));
         std::fs::create_dir_all(&out_sub).expect("mkdir recipe objs");
         let mut objs = Vec::new();
         for line in &lines {
@@ -233,7 +265,7 @@ impl Linker {
         for p in [&rpath, &cpath, &apath] {
             println!("cargo:rerun-if-changed={}", p.display());
         }
-        let lib_a = self.obj_dir().join(format!("lib{target}.a"));
+        let lib_a = self.obj_dir().join(format!("lib{tag}.a"));
         let _ = std::fs::remove_file(&lib_a);
         let status = Command::new(ar)
             .arg("rcs")
@@ -242,7 +274,7 @@ impl Linker {
             .traced_status()
             .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
         if !status.success() {
-            panic!("ar failed for engine:{target}");
+            panic!("ar failed for engine:{tag}");
         }
         lib_a
     }

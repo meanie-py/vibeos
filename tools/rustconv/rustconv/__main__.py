@@ -161,7 +161,7 @@ from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
 from .placement_audit import placement_findings
 from .postprocess import postprocess
-from .preamble_audit import audit_preamble
+from .preamble_audit import audit_preamble, extern_only_names, strip_static_definitions
 from .probe_migrate import (
     build_probe_file_prompt,
     load_probe_system_prompt,
@@ -3360,6 +3360,7 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if re.search(rf"\b{raii_name}\b", dep.body_text):
                     deterministic_contracts[dep.name] += raii_block
+        app_model = None
         if getattr(args, "cpp_app_model", None):
             # A synthetic TU from cpp_app: each worker gets the generated class context.
             app_model = cpp_model.ModuleModel.from_json(Path(args.cpp_app_model).read_text())
@@ -3374,8 +3375,13 @@ def cmd_translate(args):
             com_methods = crate is not None and com_vtables.island_has_methods(crate / "src")
             for dep in sorted_deps:
                 if not any(re.search(rf"\b{n}\b", dep.body_text) for n in local_raii_impls):
+                    declared = (
+                        cpp_app.declared_types(app_model, dep.name, dep.body_text)
+                        if app_model is not None
+                        else ""
+                    )
                     deterministic_contracts[dep.name] += atl_contract.contract(
-                        dep.body_text, com_methods=com_methods
+                        dep.body_text, com_methods=com_methods, declared=declared
                     )
         if cpp_com_cls is not None:
             container_fields = [
@@ -4833,6 +4839,22 @@ def cmd_translate(args):
                     f"--local-raii type(s): {', '.join(sorted(set(deduped)))}",
                     file=sys.stderr,
                 )
+
+        # The model translates an `extern` declaration as a DEFINITION often enough
+        # (setupapi_private.h: hInstance, OsVersionInfo, GlobalSetupFlags, each also
+        # defined by the TU that owns it), and two `#[no_mangle]` copies of one symbol are
+        # a duplicate definition. The C says the symbol lives elsewhere; the island
+        # declares it `extern`, so the preamble's copy goes. Deterministic, $0.
+        if preamble_rust.strip() and c_file.suffix.lower() in (".c", ".h"):
+            externs = extern_only_names(c_file)
+            if externs:
+                preamble_rust, invented = strip_static_definitions(preamble_rust, externs)
+                if invented:
+                    print(
+                        f"  [preamble] dropped {len(invented)} definition(s) of names the C "
+                        f"only declares extern: {', '.join(sorted(set(invented)))}",
+                        file=sys.stderr,
+                    )
 
         print(f"\n  Stitching {len(translated)} functions...", file=sys.stderr)
         if resumed:

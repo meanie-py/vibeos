@@ -822,6 +822,17 @@ pub unsafe extern "C" fn CreateShellLink() -> i32 {
     0
 }
 """
+# scan_container_ptr_read. Seeded from fontext (2026-10-18): the font cache was a bitwise
+# copy of a list the list then freed.
+_CPR_BAD = "fn f() { m.Add(core::ptr::read(l.GetNext(&mut it))); }\n"
+_CPR_GOOD = "fn f() { while let Some(e) = l.RemoveHead() { m.Add(e); } }\n"
+# scan_guid_values. Seeded from stobject (2026-10-18): CGID_ShellServiceObject written from
+# memory, Data1 one digit off, so explorer's Exec never started the tray.
+_GUID_SDK = "DEFINE_OLEGUID(CGID_ShellServiceObject, 0x000214D2, 0, 0);\n"
+_GUID_RS = (
+    "const CGID_ShellServiceObject: GUID = GUID {{ Data1: {d1}, Data2: 0x0000, Data3: 0x0000, "
+    "Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46] }};\n"
+)
 # scan_uncalled_ctor_hook. Seeded from acppage (2026-10-17): a hand-banked constructor without
 # cpp_app's `m_psp = T::__psp_init(this_)` prologue line left the PROPSHEETPAGE zeroed.
 _CTORHOOK_HOOK = """\
@@ -2428,6 +2439,19 @@ pub unsafe extern "C" fn KdIoPrintf(Format: *const i8, a0: usize, a1: usize) {}
 pub unsafe extern "C" fn _vsnwprintf(b: *mut u16, n: usize, fmt: *const u16, ap: *mut u8) {}
 """
 
+_VARIANT_OUTPTR_BAD = """\
+// oleacc's Client_EnumVARIANT_Next: the slot's value where C passed its address.
+unsafe fn next(rgVar: *mut VARIANT, n: u32) -> i32 {
+    AccessibleObjectFromWindow(h, 0, &IID_IDispatch,
+        V_DISPATCH!(rgVar.add(n as usize)) as *mut *mut core::ffi::c_void)
+}
+"""
+_VARIANT_OUTPTR_GOOD = """\
+unsafe fn next(rgVar: *mut VARIANT, n: u32) -> i32 {
+    AccessibleObjectFromWindow(h, 0, &IID_IDispatch,
+        core::ptr::addr_of_mut!(V_DISPATCH!(rgVar.add(n as usize))) as *mut *mut core::ffi::c_void)
+}
+"""
 _BYTE_STEP_ONE_BAD = """\
 pub unsafe fn folders(h: *mut CFHEADER) -> *mut u8 {
     // C: (PUCHAR)(PCABHeader + 1) -- past the whole header, not one byte.
@@ -3207,6 +3231,13 @@ CONTROLS: list[Control] = [
         good={"good.rs": _BYTE_STEP_ONE_GOOD},
     ),
     Control(
+        name="scan_variant_outptr",
+        script="tools/scan_variant_outptr.py",
+        argv=["--lint"],
+        bad={"bad.rs": _VARIANT_OUTPTR_BAD},
+        good={"good.rs": _VARIANT_OUTPTR_GOOD},
+    ),
+    Control(
         name="scan_ptr_typedef_cast_read",
         script="tools/scan_ptr_typedef_cast_read.py",
         argv=["--lint"],
@@ -3282,6 +3313,24 @@ CONTROLS: list[Control] = [
         script="tools/vibeos-lint/src/rules/entry_point_cc.rs",
         bad={"bad.rs": _ENTRYCC_BAD},
         good={"good.rs": _ENTRYCC_GOOD},
+    ),
+    Control(
+        name="scan_container_ptr_read",
+        script="tools/vibeos-lint/src/rules/container_ptr_read.rs",
+        bad={"sdk/lib/rust/x-rust/src/a.rs": _CPR_BAD},
+        good={"sdk/lib/rust/x-rust/src/a.rs": _CPR_GOOD},
+    ),
+    Control(
+        name="scan_guid_values",
+        script="tools/vibeos-lint/src/rules/guid_values.rs",
+        bad={
+            "sdk/include/psdk/shlguid.h": _GUID_SDK,
+            "sdk/lib/rust/x-rust/src/a.rs": _GUID_RS.format(d1="0x000214D4"),
+        },
+        good={
+            "sdk/include/psdk/shlguid.h": _GUID_SDK,
+            "sdk/lib/rust/x-rust/src/a.rs": _GUID_RS.format(d1="0x000214D2"),
+        },
     ),
     Control(
         name="scan_local_overlength",

@@ -55,13 +55,24 @@ pub unsafe extern "system" fn MarshallDownStructuresArray(
 
 #[no_mangle]
 pub unsafe extern "system" fn MarshallUpStructure(cbSize: DWORD, pStructure: PVOID, pInfo: *const MARSHALLING_INFO, cbStructureSize: DWORD, bSomeBoolean: BOOL) -> BOOL {
-    let mut pInfo = pInfo;
-
     // Sanity checks
     if pStructure.is_null() || pInfo.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE as BOOL;
     }
+
+    // Under WoW64 the spooler wrote its own 64-bit layout (see wow64.rs).
+    #[cfg(target_arch = "x86")]
+    if crate::winspool::wow64::NarrowSpoolerStructures(cbSize, pStructure, 1, pInfo, cbStructureSize) == 0 {
+        return FALSE as BOOL;
+    }
+
+    MarshallUpNarrowedStructure(cbSize, pStructure, pInfo, cbStructureSize, bSomeBoolean)
+}
+
+/// `MarshallUpStructure` once the structure is in this build's layout.
+unsafe fn MarshallUpNarrowedStructure(cbSize: DWORD, pStructure: PVOID, pInfo: *const MARSHALLING_INFO, _cbStructureSize: DWORD, _bSomeBoolean: BOOL) -> BOOL {
+    let mut pInfo = pInfo;
 
     // Loop until we reach an element with offset set to MAXDWORD.
     while (*pInfo).dwOffset != MAXDWORD {
@@ -90,6 +101,13 @@ pub unsafe extern "system" fn MarshallUpStructure(cbSize: DWORD, pStructure: PVO
 pub unsafe extern "system" fn MarshallUpStructuresArray(cbSize: DWORD, pStructuresArray: PVOID, mut cElements: DWORD, pInfo: *const MARSHALLING_INFO, cbStructureSize: DWORD, bSomeBoolean: BOOL) -> BOOL {
     let mut pCurrentElement: PBYTE = pStructuresArray as PBYTE;
 
+    // Under WoW64 the spooler wrote its own 64-bit layout (see wow64.rs): narrow the whole
+    // array first, since the elements move.
+    #[cfg(target_arch = "x86")]
+    if !pStructuresArray.is_null() && !pInfo.is_null() && crate::winspool::wow64::NarrowSpoolerStructures(cbSize, pStructuresArray, cElements, pInfo, cbStructureSize) == 0 {
+        return FALSE as BOOL;
+    }
+
     // Call MarshallUpStructure on all array elements given by cElements of cbStructureSize.
     loop {
         let fresh0 = cElements;
@@ -97,7 +115,11 @@ pub unsafe extern "system" fn MarshallUpStructuresArray(cbSize: DWORD, pStructur
         if !(fresh0 != 0) {
             break;
         }
-        if MarshallUpStructure(cbSize, pCurrentElement as PVOID, pInfo, cbStructureSize, bSomeBoolean) == 0 {
+        if pCurrentElement.is_null() || pInfo.is_null() {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE as BOOL;
+        }
+        if MarshallUpNarrowedStructure(cbSize, pCurrentElement as PVOID, pInfo, cbStructureSize, bSomeBoolean) == 0 {
             return FALSE as BOOL;
         }
 

@@ -39,6 +39,10 @@ pub const PRESENT_CMD_INHIBIT: u32 = 1 << 0;
 pub const PRESENT_DAT_INHIBIT: u32 = 1 << 1;
 
 pub const HOST_4BIT: u32 = 1 << 1;
+/// High-speed timing: outputs on the rising clock edge, for 26-50 MHz.
+pub const HOST_HIGH_SPEED: u32 = 1 << 2;
+/// Capabilities: the host can run a high-speed bus.
+pub const CAPS_HIGH_SPEED: u32 = 1 << 21;
 /// Card-detect test level + "use the test level": the slot reads as occupied.
 pub const HOST_CD_FORCED: u32 = 0xC0;
 pub const POWER_330: u32 = 0x0E << 8;
@@ -192,10 +196,15 @@ impl<P: Platform> Sdhci<P> {
 
     /// Reset everything, then power the bus at 3.3 V with the slot forced
     /// occupied, latch every status we wait on, set the longest data timeout and
-    /// start the card clock at `hz`. Returns the clock it got.
+    /// start the card clock at `hz`. Returns the clock it got. The base clock is the
+    /// capabilities register's, else whatever the platform put in `base_hz` first:
+    /// the Pi 4's Arasan host reports none (Linux's SDHCI_QUIRK_MISSING_CAPS).
     pub fn power_up(&mut self, hz: u32) -> Result<u32, Error> {
         let caps = self.rd(REG_CAPS);
-        self.base_hz = ((caps >> 8) & 0xFF) * 1_000_000;
+        let from_caps = ((caps >> 8) & 0xFF) * 1_000_000;
+        if from_caps != 0 {
+            self.base_hz = from_caps;
+        }
         if self.base_hz == 0 {
             return Err(Error::Card("capabilities register has no base clock", caps));
         }
@@ -227,6 +236,12 @@ impl<P: Platform> Sdhci<P> {
     /// Switch the host side of the bus to 4 bits (after the card has).
     pub fn set_4bit(&self) {
         self.wr(REG_HOST_CTRL, self.rd(REG_HOST_CTRL) | HOST_4BIT);
+    }
+
+    /// Switch the host to high-speed timing (after the card has), before the clock
+    /// goes past 25 MHz.
+    pub fn set_high_speed(&self) {
+        self.wr(REG_HOST_CTRL, self.rd(REG_HOST_CTRL) | HOST_HIGH_SPEED);
     }
 
     /// Issue a command; for a data command (`CMD_DATA` in `flags`), the caller

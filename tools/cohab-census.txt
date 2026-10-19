@@ -983,13 +983,51 @@ dll/shellext/deskadp/CMakeLists.txt	1	# deskadp.c # replaced by Rust (sdk/lib/ru
 dll/shellext/deskadp/CMakeLists.txt	1	# shxiface.c # replaced by Rust (sdk/lib/rust/deskadp-rust/src/deskadp/shxiface.rs)
 dll/shellext/deskmon/CMakeLists.txt	1	# deskmon.c # replaced by Rust (sdk/lib/rust/deskmon-rust/src/deskmon/deskmon.rs)
 dll/shellext/deskmon/CMakeLists.txt	1	# shxiface.c # replaced by Rust (sdk/lib/rust/deskmon-rust/src/deskmon/shxiface.rs)
+dll/shellext/fontext/CMakeLists.txt	1	# CDataObject.cpp # replaced by Rust (sdk/lib/rust/fontext-rust/src/fontext/CDataObject_cpp_h.rs)
+dll/shellext/fontext/CMakeLists.txt	1	# CEnumFonts.cpp # replaced by Rust (sdk/lib/rust/fontext-rust/src/fontext/CEnumFonts_cpp_h.rs)
+dll/shellext/fontext/CMakeLists.txt	1	# CFontBackgroundMenu.cpp # replaced by Rust (sdk/lib/rust/fontext-rust/src/fontext/CFontBackgroundMenu_cpp_h.rs)
+dll/shellext/fontext/CMakeLists.txt	1	# CFontCache.cpp # replaced by Rust (sdk/lib/rust/fontext-rust/src/fontext/CFontCache_cpp_h.rs)
+dll/shellext/fontext/CMakeLists.txt	1	# CFontExt.cpp # replaced by Rust (sdk/lib/rust/fontext-rust/src/fontext/CFontExt_cpp_h.rs)
+dll/shellext/fontext/CMakeLists.txt	1	# CFontFolderViewCB.cpp # replaced by Rust (sdk/lib/rust/fontext-rust/src/fontext/CFontFolderViewCB_cpp_h.rs)
+dll/shellext/fontext/CMakeLists.txt	1	# fontext.cpp # replaced by Rust (sdk/lib/rust/fontext-rust/src/fontext/fontext_cpp_h.rs)
+dll/shellext/fontext/CMakeLists.txt	1	# fontpidl.cpp # replaced by Rust (sdk/lib/rust/fontext-rust/src/fontext/fontpidl_cpp_h.rs)
 dll/shellext/mmcshext/CMakeLists.txt	1	# mmcshext.cpp # replaced by Rust (sdk/lib/rust/mmcshext-rust/src/mmcshext/mmcshext_cpp_h.rs)
 dll/shellext/mydocs/CMakeLists.txt	1	# CMyDocsDropHandler.cpp # replaced by Rust (sdk/lib/rust/mydocs-rust/src/mydocs/CMyDocsDropHandler_cpp_h.rs)
 dll/shellext/mydocs/CMakeLists.txt	1	# mydocs.cpp # replaced by Rust (sdk/lib/rust/mydocs-rust/src/mydocs/mydocs_cpp_h.rs)
 dll/shellext/netplwiz/CMakeLists.txt	1	# SHDisconnectNetDrives.c # replaced by Rust (sdk/lib/rust/netplwiz-rust/src/netplwiz/SHDisconnectNetDrives.rs)
 dll/shellext/netplwiz/CMakeLists.txt	1	# netplwiz.c # replaced by Rust (sdk/lib/rust/netplwiz-rust/src/netplwiz/netplwiz.rs)
+dll/shellext/netshell/CMakeLists.txt	1	# connectmanager.cpp # replaced by Rust (sdk/lib/rust/netshell-rust/src/netshell/connectmanager_cpp_h.rs)
+dll/shellext/netshell/CMakeLists.txt	1	# enumlist.cpp # replaced by Rust (sdk/lib/rust/netshell-rust/src/netshell/enumlist_cpp_h.rs)
+dll/shellext/netshell/CMakeLists.txt	1	# lanconnectui.cpp # replaced by Rust (sdk/lib/rust/netshell-rust/src/netshell/lanconnectui_cpp_h.rs)
+dll/shellext/netshell/CMakeLists.txt	1	# lanstatusui.cpp # replaced by Rust (sdk/lib/rust/netshell-rust/src/netshell/lanstatusui_cpp_h.rs)
+dll/shellext/netshell/CMakeLists.txt	1	# netshell.cpp # replaced by Rust (sdk/lib/rust/netshell-rust/src/netshell/netshell_cpp_h.rs)
+dll/shellext/netshell/CMakeLists.txt	1	# setup.cpp # replaced by Rust (sdk/lib/rust/netshell-rust/src/netshell/setup_cpp_h.rs)
+dll/shellext/netshell/CMakeLists.txt	1	# shfldr_netconnect.cpp # replaced by Rust (sdk/lib/rust/netshell-rust/src/netshell/shfldr_netconnect_cpp_h.rs)
+dll/shellext/ntobjshex/CMakeLists.txt	1	# ntobjenum.cpp # replaced by Rust (sdk/lib/rust/ntobjshex-rust/src/ntobjshex/ntobjenum_cpp_h.rs)
+dll/shellext/ntobjshex/CMakeLists.txt	1	# ntobjfolder.cpp # replaced by Rust (sdk/lib/rust/ntobjshex-rust/src/ntobjshex/ntobjfolder_cpp_h.rs)
+dll/shellext/ntobjshex/CMakeLists.txt	1	# ntobjshex.cpp # replaced by Rust (sdk/lib/rust/ntobjshex-rust/src/ntobjshex/ntobjshex_cpp_h.rs)
+dll/shellext/ntobjshex/CMakeLists.txt	1	# regfolder.cpp # replaced by Rust (sdk/lib/rust/ntobjshex-rust/src/ntobjshex/regfolder_cpp_h.rs)
 dll/shellext/sendmail/CMakeLists.txt	1	# CDeskLinkDropHandler.cpp # replaced by Rust (sdk/lib/rust/sendmail-rust/src/sendmail/CDeskLinkDropHandler_cpp_h.rs)
 dll/shellext/sendmail/CMakeLists.txt	1	# sendmail.cpp # replaced by Rust (sdk/lib/rust/sendmail-rust/src/sendmail/sendmail_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# csystray.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/csystray_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# hotplug.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/hotplug_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# mouse.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/mouse_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# power.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/power_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# stobject.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/stobject_cpp_h.rs)
+dll/shellext/stobject/CMakeLists.txt	1	# volume.cpp # replaced by Rust (sdk/lib/rust/stobject-rust/src/stobject/volume_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CConfirmReplace.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CConfirmReplace_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CEnumZipContents.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CEnumZipContents_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CExplorerCommand.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CExplorerCommand_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CFolderViewCB.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CFolderViewCB_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CSendToZip.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CSendToZip_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CZipCreator.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CZipCreator_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CZipEnumerator.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CZipEnumerator_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CZipExtract.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CZipExtract_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CZipFolder.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CZipFolder_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# CZipPassword.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/CZipPassword_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# Debug.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/Debug_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# zipfldr.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/zipfldr_cpp_h.rs)
+dll/shellext/zipfldr/CMakeLists.txt	1	# zippidl.cpp # replaced by Rust (sdk/lib/rust/zipfldr-rust/src/zipfldr/zippidl_cpp_h.rs)
 dll/win32/CMakeLists.txt	1	# exports instead of forwarding to kernelbase_ros. combase.c externs
 dll/win32/aclui/CMakeLists.txt	1	# (rust_varargs_shim.c and the generated aclui_stubs.c) do not include precomp.h.
 dll/win32/aclui/CMakeLists.txt	1	# aclui.c
@@ -1000,6 +1038,9 @@ dll/win32/aclui/CMakeLists.txt	1	# guid.c stays C ON PURPOSE and is NOT a transl
 dll/win32/aclui/CMakeLists.txt	1	# misc.c
 dll/win32/aclui/CMakeLists.txt	1	# rust_varargs_shim.c is a C-language gap filler, not a translation left in C: misc.c's
 dll/win32/aclui/CMakeLists.txt	1	# sidcache.c)
+dll/win32/activeds/CMakeLists.txt	1	# activeds_main.c # replaced by Rust (sdk/lib/rust/activeds-rust/src/activeds/activeds_main.rs)
+dll/win32/activeds/CMakeLists.txt	1	# pathname.c # replaced by Rust (sdk/lib/rust/activeds-rust/src/activeds/pathname.rs)
+dll/win32/activeds/CMakeLists.txt	1	# stubs.c # replaced by Rust (sdk/lib/rust/activeds-rust/src/activeds/stubs.rs)
 dll/win32/advapi32/CMakeLists.txt	1	# misc/dllmain.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# misc/efs.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# misc/evntrace.c — replaced by Rust (advapi32-rust)
@@ -1080,6 +1121,7 @@ dll/win32/comctl32/CMakeLists.txt	1	# updown.c # replaced by Rust (sdk/lib/rust/
 dll/win32/credui/CMakeLists.txt	1	# credui_main.c # replaced by Rust (sdk/lib/rust/credui-rust/src/credui/credui_main.rs)
 dll/win32/crtdll/CMakeLists.txt	1	# advapi32: the shared CRT's rand_s calls SystemFunction036 (RtlGenRandom). dllmain.c used to
 dll/win32/crtdll/CMakeLists.txt	1	# dllmain.c is msvcrt-crt-rust src/legacy.rs (CRTDLL_* names, which crtdll.spec maps).
+dll/win32/cryptnet/CMakeLists.txt	1	# cryptnet_main.c # replaced by Rust (sdk/lib/rust/cryptnet-rust/src/cryptnet/cryptnet_main.rs)
 dll/win32/dbghelp/CMakeLists.txt	1	# elf_module.c
 dll/win32/dbghelp/CMakeLists.txt	1	# macho_module.c
 dll/win32/dcomp/CMakeLists.txt	1	# device.c # replaced by Rust (sdk/lib/rust/dcomp-rust/src/dcomp/device.rs)
@@ -1113,6 +1155,10 @@ dll/win32/fmifs/CMakeLists.txt	1	# media.c # replaced by Rust (sdk/lib/rust/fmif
 dll/win32/fmifs/CMakeLists.txt	1	# query.c # replaced by Rust (sdk/lib/rust/fmifs-rust/src/fmifs/query.rs)
 dll/win32/hid/CMakeLists.txt	1	# hid.c # replaced by Rust (sdk/lib/rust/hid-rust/src/hid/hid.rs)
 dll/win32/hid/CMakeLists.txt	1	# hid.c includes the parser's hidp.h, which the C static lib used to export as its interface.
+dll/win32/hlink/CMakeLists.txt	1	# browse_ctx.c # replaced by Rust (sdk/lib/rust/hlink-rust/src/hlink/browse_ctx.rs)
+dll/win32/hlink/CMakeLists.txt	1	# extserv.c # replaced by Rust (sdk/lib/rust/hlink-rust/src/hlink/extserv.rs)
+dll/win32/hlink/CMakeLists.txt	1	# hlink_main.c # replaced by Rust (sdk/lib/rust/hlink-rust/src/hlink/hlink_main.rs)
+dll/win32/hlink/CMakeLists.txt	1	# link.c # replaced by Rust (sdk/lib/rust/hlink-rust/src/hlink/link.rs)
 dll/win32/ifmon/CMakeLists.txt	1	# guid.c # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/guid.rs)
 dll/win32/ifmon/CMakeLists.txt	1	# ifmon.c # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/ifmon.rs)
 dll/win32/ifmon/CMakeLists.txt	1	# interface.c # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/interface.rs)
@@ -1304,6 +1350,13 @@ dll/win32/msports/CMakeLists.txt	1	# comdb.c # replaced by Rust (sdk/lib/rust/ms
 dll/win32/msports/CMakeLists.txt	1	# msports.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/msports.rs)
 dll/win32/msports/CMakeLists.txt	1	# parallel.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/parallel.rs)
 dll/win32/msports/CMakeLists.txt	1	# serial.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/serial.rs)
+dll/win32/msrle32/CMakeLists.txt	1	# msrle32.c # replaced by Rust (sdk/lib/rust/msrle32-rust/src/msrle32/msrle32.rs)
+dll/win32/mstask/CMakeLists.txt	1	# factory.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/factory.rs)
+dll/win32/mstask/CMakeLists.txt	1	# mstask_main.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/mstask_main.rs)
+dll/win32/mstask/CMakeLists.txt	1	# stubs.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/stubs.rs)
+dll/win32/mstask/CMakeLists.txt	1	# task.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/task.rs)
+dll/win32/mstask/CMakeLists.txt	1	# task_scheduler.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/task_scheduler.rs)
+dll/win32/mstask/CMakeLists.txt	1	# task_trigger.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/task_trigger.rs)
 dll/win32/msv1_0/CMakeLists.txt	1	# `ntlm/global.c` never went through `rustconv translate`: it defines only globals and no
 dll/win32/msv1_0/CMakeLists.txt	1	# lsa.c
 dll/win32/msv1_0/CMakeLists.txt	1	# lsa.c → src/msv1_0/lsa.rs
@@ -1420,6 +1473,11 @@ dll/win32/ole32/CMakeLists.txt	1	# stg_stream.c — replaced by Rust (ole32-rust
 dll/win32/ole32/CMakeLists.txt	1	# storage32.c — replaced by Rust (ole32-rust ring/storage32.rs — the compound-file implementation: IStorage, the dir-entry tree, block chains, transactions)
 dll/win32/ole32/CMakeLists.txt	1	# stubmanager.c — replaced by Rust (ole32-rust stubmanager.rs — stub/ifstub lifetime)
 dll/win32/ole32/CMakeLists.txt	1	# usrmarshal.c — replaced by Rust (ole32-rust ring/usrmarshal.rs — the NDR *_User{Size,Marshal,Unmarshal,Free} helpers)
+dll/win32/oleacc/CMakeLists.txt	1	# client.c # replaced by Rust (sdk/lib/rust/oleacc-rust/src/oleacc/client.rs)
+dll/win32/oleacc/CMakeLists.txt	1	# guid.c # replaced by Rust (sdk/lib/rust/oleacc-rust/src/oleacc/guid.rs)
+dll/win32/oleacc/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/oleacc-rust/src/oleacc/main.rs)
+dll/win32/oleacc/CMakeLists.txt	1	# propservice.c # replaced by Rust (sdk/lib/rust/oleacc-rust/src/oleacc/propservice.rs)
+dll/win32/oleacc/CMakeLists.txt	1	# window.c # replaced by Rust (sdk/lib/rust/oleacc-rust/src/oleacc/window.rs)
 dll/win32/oleaut32/CMakeLists.txt	1	# call_double_method trampolines factored out of dispatch.c for
 dll/win32/oleaut32/CMakeLists.txt	1	# connpt.c — replaced by Rust (oleaut32-rust connpt.rs — IConnectionPoint/IEnumConnections + CreateConnectionPoint; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# dispatch.c — replaced by Rust (oleaut32-rust dispatch.rs — CreateStdDispatch/DispInvoke/DispGetIDsOfNames/DispGetParam + StdDispatch vtbl; full)
@@ -1436,7 +1494,13 @@ dll/win32/oleaut32/CMakeLists.txt	1	# usrmarshal.c — replaced by Rust (oleaut3
 dll/win32/oleaut32/CMakeLists.txt	1	# varformat.c — replaced by Rust (oleaut32-rust varformat.rs — VarFormat* family/VarTokenizeFormatString/VarMonthName/VarWeekdayName; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# variant.c — replaced by Rust (oleaut32-rust variant.rs — VariantInit/Clear/Copy/Change + arithmetic; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# vartype.c — replaced by Rust (oleaut32-rust vartype.rs — VarXxxFromYyy coercion matrix, 253 exports; full)
+dll/win32/oledlg/CMakeLists.txt	1	# insobjdlg.c # replaced by Rust (sdk/lib/rust/oledlg-rust/src/oledlg/insobjdlg.rs)
+dll/win32/oledlg/CMakeLists.txt	1	# oledlg_main.c # replaced by Rust (sdk/lib/rust/oledlg-rust/src/oledlg/oledlg_main.rs)
+dll/win32/oledlg/CMakeLists.txt	1	# pastespl.c # replaced by Rust (sdk/lib/rust/oledlg-rust/src/oledlg/pastespl.rs)
 dll/win32/pdh/CMakeLists.txt	1	# pdh_main.c # replaced by Rust (sdk/lib/rust/pdh-rust/src/pdh/pdh_main.rs)
+dll/win32/propsys/CMakeLists.txt	1	# propstore.c # replaced by Rust (sdk/lib/rust/propsys-rust/src/propsys/propstore.rs)
+dll/win32/propsys/CMakeLists.txt	1	# propsys_main.c # replaced by Rust (sdk/lib/rust/propsys-rust/src/propsys/propsys_main.rs)
+dll/win32/propsys/CMakeLists.txt	1	# propvar.c # replaced by Rust (sdk/lib/rust/propsys-rust/src/propsys/propvar.rs)
 dll/win32/psapi/CMakeLists.txt	1	# The DLL target is all Rust too: main.c's DllMain is psapi-rust's `dllmain` feature
 dll/win32/psapi/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/main.rs)
 dll/win32/psapi/CMakeLists.txt	1	# psapi.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/psapi.rs)
@@ -1497,9 +1561,17 @@ dll/win32/secur32/CMakeLists.txt	1	# wine/util.c — replaced by Rust (secur32-r
 dll/win32/secur32/CMakeLists.txt	1	# wrapper.c — replaced by Rust (secur32-rust)
 dll/win32/serialui/CMakeLists.txt	1	# serialui.c # replaced by Rust (sdk/lib/rust/serialui-rust/src/serialui/serialui.rs)
 dll/win32/setupapi/CMakeLists.txt	1	# cfgmgr.c — replaced by Rust (setupapi-rust)
-dll/win32/setupapi/CMakeLists.txt	1	# libsetupapi_rust.a carries the TUs flipped so far (cfgmgr.c, whose RpcTryExcept guards
+dll/win32/setupapi/CMakeLists.txt	1	# dialog.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# dirid.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# diskspace.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# interface.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# libsetupapi_rust.a carries the TUs flipped so far: cfgmgr.c (whose RpcTryExcept guards
+dll/win32/setupapi/CMakeLists.txt	1	# query.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# setupcab.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# stringtable.c — replaced by Rust (setupapi-rust)
 dll/win32/shcore/CMakeLists.txt	1	# Windows; main.c's Wine versions of those are not exported.
 dll/win32/shcore/CMakeLists.txt	1	# combase is not built here (see dll/win32/CMakeLists.txt): what main.c takes from it
+dll/win32/shcore/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/shcore-rust/src/shcore/main.rs)
 dll/win32/shell32/CMakeLists.txt	1	# C++ CDefView.cpp and utils.cpp — both declarations are now EXTERN_C.
 dll/win32/shell32/CMakeLists.txt	1	# CActiveDesktop.cpp — replaced by Rust (shell32-rust/src/active_desktop.rs).
 dll/win32/shell32/CMakeLists.txt	1	# CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
@@ -1670,6 +1742,8 @@ dll/win32/syssetup/CMakeLists.txt	1	# security.c
 dll/win32/syssetup/CMakeLists.txt	1	# wizard.c
 dll/win32/syssetup/CMakeLists.txt	1	#addons.c
 dll/win32/tbs/CMakeLists.txt	1	# tbs.c # replaced by Rust (sdk/lib/rust/tbs-rust/src/tbs/tbs.rs)
+dll/win32/twain_32/CMakeLists.txt	1	# dsm_ctrl.c # replaced by Rust (sdk/lib/rust/twain_32-rust/src/twain_32/dsm_ctrl.rs)
+dll/win32/twain_32/CMakeLists.txt	1	# twain32_main.c # replaced by Rust (sdk/lib/rust/twain_32-rust/src/twain_32/twain32_main.rs)
 dll/win32/ucrtbase/CMakeLists.txt	1	# printf.c (sprintf/_vsnprintf) and ucrt_varargs_shim.c (the `...` entry points as
 dll/win32/ucrtbase/CMakeLists.txt	1	# stubs.c (atexit, operator_new/delete, _chkesp_failed, __acrt_initialize_sse2) is
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c
@@ -1824,6 +1898,7 @@ dll/win32/wsock32/CMakeLists.txt	1	# stubs.c
 dll/win32/wsock32/CMakeLists.txt	1	# stubs.c → wsock32-rust
 dll/win32/wtsapi32/CMakeLists.txt	1	# wtsapi32.c # replaced by Rust (sdk/lib/rust/wtsapi32-rust/src/wtsapi32/wtsapi32.rs)
 dll/win32/xinput1_3/CMakeLists.txt	1	# Wine 11.19's HID implementation (dlls/xinput1_3/main.c); xinput1_4 builds the same
+dll/win32/xinput1_3/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/xinput1_3-rust/src/xinput1_3/main.rs)
 dll/win32/xinput1_4/CMakeLists.txt	1	# XInputGetCapabilitiesEx (#108) and XInputGetAudioDeviceIds (#10, audio.c) are 1_4 only.
 drivers/base/beep/CMakeLists.txt	1	# beep.c is translated to Rust (sdk/lib/rust/beep-rust, kept on disk per the
 drivers/base/bootvid/CMakeLists.txt	1	# framebuf/bootvid.c (+ included <drivers/bootvid/framebuf.c>) and the

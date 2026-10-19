@@ -12,27 +12,76 @@
 //! `from_ne_bytes`, so the recovered `u32` matches the on-wire `in_addr` layout
 //! the MIB structs expect (octet `a` at the lowest address).
 
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
-/// MAC in the low 48 bits (byte 0 in the most-significant position), 0 = unknown.
-static MAC: AtomicU64 = AtomicU64::new(0);
-static IPV4: AtomicU32 = AtomicU32::new(0);
-static MASK: AtomicU32 = AtomicU32::new(0);
-static GATEWAY: AtomicU32 = AtomicU32::new(0);
-static DNS0: AtomicU32 = AtomicU32::new(0);
+/// Adapters netstack can carry at once (its own NIC, an NDIS miniport's, one spare).
+pub const ADAPTER_SLOTS: usize = 3;
 
-pub fn set_mac(mac: [u8; 6]) {
+/// One adapter's published config. The slot index is the MIB interface instance
+/// (`if_index` = slot + 1).
+struct Slot {
+    /// MAC in the low 48 bits (byte 0 in the most-significant position), 0 = no adapter.
+    mac: AtomicU64,
+    ipv4: AtomicU32,
+    mask: AtomicU32,
+    gateway: AtomicU32,
+    dns0: AtomicU32,
+    /// Index into `NAMES`: what drives the adapter, for its MIB description.
+    name: AtomicUsize,
+}
+
+static SLOT: [Slot; ADAPTER_SLOTS] = [const {
+    Slot {
+        mac: AtomicU64::new(0),
+        ipv4: AtomicU32::new(0),
+        mask: AtomicU32::new(0),
+        gateway: AtomicU32::new(0),
+        dns0: AtomicU32::new(0),
+        name: AtomicUsize::new(0),
+    }
+}; ADAPTER_SLOTS];
+
+/// The slot whose adapter carries the stack's own sockets (TDI, the self-tests):
+/// the getters without a slot argument read it.
+static PRIMARY: AtomicUsize = AtomicUsize::new(0);
+
+/// What can drive an adapter, as the MIB describes it.
+pub const NAMES: [&str; 6] = [
+    "netstack smoltcp adapter",
+    "netstack smoltcp adapter (virtio-net)",
+    "netstack smoltcp adapter (Intel Ethernet)",
+    "netstack smoltcp adapter (Broadcom GENET Ethernet)",
+    "netstack smoltcp adapter (Cadence GEM Ethernet)",
+    "netstack smoltcp adapter (NDIS miniport)",
+];
+
+pub fn set_mac(slot: usize, mac: [u8; 6], name: usize) {
     let v = (mac[0] as u64) << 40
         | (mac[1] as u64) << 32
         | (mac[2] as u64) << 24
         | (mac[3] as u64) << 16
         | (mac[4] as u64) << 8
         | (mac[5] as u64);
-    MAC.store(v, Ordering::Relaxed);
+    SLOT[slot].name.store(name, Ordering::Relaxed);
+    SLOT[slot].mac.store(v, Ordering::Release);
 }
 
-pub fn mac() -> [u8; 6] {
-    let v = MAC.load(Ordering::Relaxed);
+/// Whether `slot` has an adapter.
+pub fn present(slot: usize) -> bool {
+    SLOT[slot].mac.load(Ordering::Acquire) != 0
+}
+
+/// How many adapters there are (they fill the slots from 0).
+pub fn count() -> usize {
+    (0..ADAPTER_SLOTS).take_while(|&i| present(i)).count()
+}
+
+pub fn name(slot: usize) -> &'static str {
+    NAMES[SLOT[slot].name.load(Ordering::Relaxed).min(NAMES.len() - 1)]
+}
+
+pub fn mac_of(slot: usize) -> [u8; 6] {
+    let v = SLOT[slot].mac.load(Ordering::Relaxed);
     [
         (v >> 40) as u8,
         (v >> 32) as u8,
@@ -43,37 +92,66 @@ pub fn mac() -> [u8; 6] {
     ]
 }
 
-/// Publish the DHCP-assigned config. `prefix_len` is the CIDR length (0..=32);
+pub fn mac() -> [u8; 6] {
+    mac_of(primary())
+}
+
+pub fn set_primary(slot: usize) {
+    PRIMARY.store(slot, Ordering::Release);
+}
+
+pub fn primary() -> usize {
+    PRIMARY.load(Ordering::Acquire)
+}
+
+/// Publish a DHCP-assigned config. `prefix_len` is the CIDR length (0..=32);
 /// the netmask + broadcast are derived from it.
-pub fn set_ipv4(ip: [u8; 4], prefix_len: u8, gw: Option<[u8; 4]>) {
-    IPV4.store(u32::from_ne_bytes(ip), Ordering::Relaxed);
-    MASK.store(u32::from_ne_bytes(mask_octets(prefix_len)), Ordering::Relaxed);
-    GATEWAY.store(u32::from_ne_bytes(gw.unwrap_or([0, 0, 0, 0])), Ordering::Relaxed);
+pub fn set_ipv4(slot: usize, ip: [u8; 4], prefix_len: u8, gw: Option<[u8; 4]>) {
+    let s = &SLOT[slot];
+    s.ipv4.store(u32::from_ne_bytes(ip), Ordering::Relaxed);
+    s.mask.store(u32::from_ne_bytes(mask_octets(prefix_len)), Ordering::Relaxed);
+    s.gateway.store(u32::from_ne_bytes(gw.unwrap_or([0, 0, 0, 0])), Ordering::Relaxed);
 }
 
-/// The interface IPv4 as a network-order `in_addr` ULONG (0 if unconfigured).
-pub fn ipv4_naddr() -> u32 {
-    IPV4.load(Ordering::Relaxed)
+/// The lease is gone.
+pub fn clear_ipv4(slot: usize) {
+    let s = &SLOT[slot];
+    s.ipv4.store(0, Ordering::Relaxed);
+    s.mask.store(0, Ordering::Relaxed);
+    s.gateway.store(0, Ordering::Relaxed);
+    s.dns0.store(0, Ordering::Relaxed);
 }
 
-pub fn mask_naddr() -> u32 {
-    MASK.load(Ordering::Relaxed)
+/// A slot's IPv4 as a network-order `in_addr` ULONG (0 if unconfigured).
+pub fn ipv4_of(slot: usize) -> u32 {
+    SLOT[slot].ipv4.load(Ordering::Relaxed)
 }
 
-pub fn gateway_naddr() -> u32 {
-    GATEWAY.load(Ordering::Relaxed)
+pub fn mask_of(slot: usize) -> u32 {
+    SLOT[slot].mask.load(Ordering::Relaxed)
+}
+
+pub fn gateway_of(slot: usize) -> u32 {
+    SLOT[slot].gateway.load(Ordering::Relaxed)
 }
 
 /// Broadcast = ip | ~mask, as a network-order `in_addr` ULONG.
-pub fn broadcast_naddr() -> u32 {
-    let ip = IPV4.load(Ordering::Relaxed);
-    let mask = MASK.load(Ordering::Relaxed);
-    ip | !mask
+pub fn broadcast_of(slot: usize) -> u32 {
+    ipv4_of(slot) | !mask_of(slot)
 }
 
-/// The lease's gateway, if it named one.
+/// The primary adapter's IPv4 as a network-order `in_addr` ULONG (0 if unconfigured).
+pub fn ipv4_naddr() -> u32 {
+    ipv4_of(primary())
+}
+
+pub fn broadcast_naddr() -> u32 {
+    broadcast_of(primary())
+}
+
+/// The primary lease's gateway, if it named one.
 pub fn gateway() -> Option<[u8; 4]> {
-    match GATEWAY.load(Ordering::Relaxed) {
+    match gateway_of(primary()) {
         0 => None,
         v => Some(v.to_ne_bytes()),
     }
@@ -89,17 +167,21 @@ pub fn on_slirp() -> bool {
     gateway() == Some([10, 0, 2, 2])
 }
 
-/// The lease's first DNS server, if it named one.
+/// The primary lease's first DNS server, if it named one.
 pub fn dns0() -> Option<[u8; 4]> {
-    match DNS0.load(Ordering::Relaxed) {
+    match SLOT[primary()].dns0.load(Ordering::Relaxed) {
         0 => None,
         v => Some(v.to_ne_bytes()),
     }
 }
 
-/// True once a DHCP lease has been published.
+/// True once the primary adapter holds a lease.
 pub fn configured() -> bool {
-    IPV4.load(Ordering::Relaxed) != 0
+    configured_of(primary())
+}
+
+pub fn configured_of(slot: usize) -> bool {
+    ipv4_of(slot) != 0
 }
 
 /// CIDR prefix length -> network-order mask octets (e.g. 24 -> [255,255,255,0]).
@@ -119,14 +201,15 @@ fn mask_octets(prefix_len: u8) -> [u8; 4] {
 /// Windows dhcpcsvc writes `DhcpNameServer` when it binds a lease; here netstack's
 /// own DHCP client owns the lease (dhcpcsvc's DISCOVERs never see a reply), so
 /// unless netstack writes it, every name lookup fails with "host not found" while
-/// the network itself works. Runs on the poll worker at PASSIVE, once per lease.
-pub fn publish_dns_servers(servers: &[[u8; 4]]) {
+/// the network itself works. Runs on the poll worker at PASSIVE, once per lease;
+/// each adapter has its own key (`netstack`, then `netstack1`, ...).
+pub fn publish_dns_servers(slot: usize, servers: &[[u8; 4]]) {
     use ntkrnl_sys::ddk::{ZwClose, ZwCreateKey, ZwSetValueKey, OBJECT_ATTRIBUTES, UNICODE_STRING};
 
     if servers.is_empty() {
         return;
     }
-    DNS0.store(u32::from_ne_bytes(servers[0]), Ordering::Relaxed);
+    SLOT[slot].dns0.store(u32::from_ne_bytes(servers[0]), Ordering::Relaxed);
     // "a.b.c.d,a.b.c.d" as UTF-16, NUL-terminated (REG_SZ).
     let mut text = [0u16; 128];
     let mut n = 0usize;
@@ -179,6 +262,10 @@ pub fn publish_dns_servers(servers: &[[u8; 4]]) {
             let mut len = 0usize;
             for b in part.bytes() {
                 wide[len] = b as u16;
+                len += 1;
+            }
+            if part == "netstack" && slot > 0 {
+                wide[len] = (b'0' + slot as u8) as u16;
                 len += 1;
             }
             let mut name = UNICODE_STRING {

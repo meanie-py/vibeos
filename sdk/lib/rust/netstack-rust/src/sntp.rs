@@ -13,7 +13,12 @@ use smoltcp::iface::{Interface, SocketHandle, SocketSet};
 use smoltcp::socket::{dns, udp};
 use smoltcp::wire::{DhcpOption, DnsQueryType, IpAddress, Ipv4Address};
 
-use ntkrnl_sys::ddk::{RtlTimeToTimeFields, ZwSetSystemTime, LARGE_INTEGER, TIME_FIELDS};
+use core::sync::atomic::{AtomicBool, Ordering};
+
+use ntkrnl_sys::ddk::{
+    ExQueueWorkItem, RtlTimeToTimeFields, ZwSetSystemTime, _WORK_QUEUE_TYPE_DelayedWorkQueue, LARGE_INTEGER,
+    PVOID, TIME_FIELDS, WORK_QUEUE_ITEM,
+};
 
 use crate::serial::nsprint;
 
@@ -132,24 +137,25 @@ impl Sntp {
     }
 
     fn set(&mut self, server: Ipv4Address, nt: u64, now_ms: i64) {
-        let mut t: LARGE_INTEGER = unsafe { core::mem::zeroed() };
-        let mut was: LARGE_INTEGER = unsafe { core::mem::zeroed() };
-        t.QuadPart = nt as i64;
-        let status = unsafe { ZwSetSystemTime(&mut t, &mut was) };
-        if status < 0 {
-            nsprint!("[NETSTACK] sntp: setting the time failed {:#x}\n", status as u32);
+        // The clock is set on a system worker thread, not here. ZwSetSystemTime runs a deep
+        // kernel path (time zone -> RtlQueryRegistryValues -> a nested ZwOpenKey -> the
+        // registry parse, waiting on the registry lock), and this loop's own frame is 7 KB
+        // of a 12 KB i386 kernel stack: a disk interrupt arriving inside that wait overflowed
+        // it, a 0x7F/8 double fault in ~7% of i386 boots (uniata's ISR atop CmpLockRegistry).
+        if SET_PENDING.swap(true, Ordering::AcqRel) {
             self.state = State::Idle;
-            self.next_ms = now_ms + RETRY_MAX_MS;
+            self.next_ms = now_ms + RETRY_MIN_MS; // the previous set is still queued
             return;
         }
-        let mut f: TIME_FIELDS = unsafe { core::mem::zeroed() };
-        unsafe { RtlTimeToTimeFields(&mut t, &mut f) };
-        let off = (nt as i64 - unsafe { was.QuadPart }) / 10_000_000;
-        let o = server.octets();
-        nsprint!(
-            "[NETSTACK] sntp: time set from {}.{}.{}.{}: {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC (clock was {}s off)\n",
-            o[0], o[1], o[2], o[3], f.Year, f.Month, f.Day, f.Hour, f.Minute, f.Second, off
-        );
+        unsafe {
+            SET_TIME = nt as i64;
+            SET_SERVER = server.octets();
+            let item = core::ptr::addr_of_mut!(SET_ITEM);
+            (*item).List.Flink = core::ptr::null_mut();
+            (*item).WorkerRoutine = Some(set_time_worker);
+            (*item).Parameter = core::ptr::null_mut();
+            ExQueueWorkItem(item, _WORK_QUEUE_TYPE_DelayedWorkQueue);
+        }
         self.state = State::Idle;
         self.failures = 0;
         self.next_ms = now_ms + RESYNC_MS;
@@ -174,4 +180,31 @@ impl Sntp {
         let shift = (self.failures - 1).min(6);
         self.next_ms = now_ms + (RETRY_MIN_MS << shift).min(RETRY_MAX_MS);
     }
+}
+
+// The one pending clock set: its item, the time it carries, and who supplied it.
+static SET_PENDING: AtomicBool = AtomicBool::new(false);
+static mut SET_ITEM: WORK_QUEUE_ITEM = unsafe { core::mem::zeroed() };
+static mut SET_TIME: i64 = 0;
+static mut SET_SERVER: [u8; 4] = [0; 4];
+
+/// ZwSetSystemTime on a system worker thread's own stack (see `Sntp::set`).
+unsafe extern "system" fn set_time_worker(_context: PVOID) {
+    let mut t: LARGE_INTEGER = core::mem::zeroed();
+    let mut was: LARGE_INTEGER = core::mem::zeroed();
+    t.QuadPart = SET_TIME;
+    let o = SET_SERVER;
+    let status = ZwSetSystemTime(&mut t, &mut was);
+    if status < 0 {
+        nsprint!("[NETSTACK] sntp: setting the time failed {:#x}\n", status as u32);
+    } else {
+        let mut f: TIME_FIELDS = core::mem::zeroed();
+        RtlTimeToTimeFields(&mut t, &mut f);
+        let off = (t.QuadPart - was.QuadPart) / 10_000_000;
+        nsprint!(
+            "[NETSTACK] sntp: time set from {}.{}.{}.{}: {:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC (clock was {}s off)\n",
+            o[0], o[1], o[2], o[3], f.Year, f.Month, f.Day, f.Hour, f.Minute, f.Second, off
+        );
+    }
+    SET_PENDING.store(false, Ordering::Release);
 }

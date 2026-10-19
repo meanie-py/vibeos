@@ -104,6 +104,9 @@ pub const SDPCMD_HOSTINTMASK: u32 = 0x024;
 pub const SDPCMD_TOSBMAILBOXDATA: u32 = 0x048;
 const INTSTATUS_HMB_SW_MASK: u32 = 0xF0;
 const INTSTATUS_CHIPACTIVE: u32 = 1 << 29;
+/// What the SDIO core may interrupt the host for: the mailbox (frame indication
+/// among it) and the chip waking.
+const HOSTINTMASK: u32 = INTSTATUS_HMB_SW_MASK | INTSTATUS_CHIPACTIVE;
 const SDPCM_PROT_VERSION: u32 = 4;
 
 // Core ids (a component descriptor's part number).
@@ -499,7 +502,7 @@ impl<P: Platform> Chip<P> {
         let sdio = self.need(CORE_SDIO_DEV, "no SDIO device core")?;
         self.write_4(sdio.base + SDPCMD_TOSBMAILBOXDATA, SDPCM_PROT_VERSION << 16)?;
         self.sdio.enable_function(2)?;
-        self.write_4(sdio.base + SDPCMD_HOSTINTMASK, INTSTATUS_HMB_SW_MASK | INTSTATUS_CHIPACTIVE)?;
+        self.write_4(sdio.base + SDPCMD_HOSTINTMASK, HOSTINTMASK)?;
         self.sdio.write_1(1, F1_WATERMARK, 8)?;
         if self.sr_capable()? {
             let w = self.sdio.read_1(1, F1_WAKEUPCTRL)?;
@@ -549,6 +552,17 @@ impl<P: Platform> Chip<P> {
         self.sdio.write_1(1, F1_SBADDR_HIGH, (base >> 24) as u8)?;
         self.window = base;
         Ok(())
+    }
+
+    /// Clear the SDIO core's pending host interrupts (write 1 to clear). Until they
+    /// are, the card holds its interrupt (DAT1) asserted. Returns those that were set.
+    pub fn ack_interrupts(&mut self) -> Result<u32, Error> {
+        let sdio = self.need(CORE_SDIO_DEV, "no SDIO device core")?;
+        let s = self.read_4(sdio.base + SDPCMD_INTSTATUS)? & HOSTINTMASK;
+        if s != 0 {
+            self.write_4(sdio.base + SDPCMD_INTSTATUS, s)?;
+        }
+        Ok(s)
     }
 
     pub fn read_4(&mut self, addr: u32) -> Result<u32, Error> {

@@ -18,8 +18,8 @@
 #   python3 -m venv ~/.venvs/picousb && ~/.venvs/picousb/bin/pip install -e <picousb>/host
 #
 # Environment:
-#   PI4_PICO_HOST          default picousb5: the Pico wired to the Pi 4 (USB + UART).
-#                          The bench has two; picousb is on the Pi 5.
+#   PI4_PICO_HOST          default picousb: the Pico wired to the Pi 4 (USB + UART),
+#                          since 2026-10-18. picousb5 is the OptiPlex's.
 #   PICO_URL               default ws://$PI4_PICO_HOST:8080/ws (router DNS; mDNS does not work in WSL)
 #   PICO_DEVICE_TOKEN_FILE default ~/.config/picousb/token. Created by the bench owner;
 #                          agents pass the path and never read the file.
@@ -28,7 +28,8 @@
 # 6 host not polling, 7 USB reset during the operation.
 set -euo pipefail
 
-PICO_URL="${PICO_URL:-ws://${PI4_PICO_HOST:-picousb5}:8080/ws}"
+# The Pi 4's Pico since 2026-10-18 (picousb5 is the OptiPlex's: tools/optiplex/env.sh).
+PICO_URL="${PICO_URL:-ws://${PI4_PICO_HOST:-picousb}:8080/ws}"
 export PICO_DEVICE_TOKEN_FILE="${PICO_DEVICE_TOKEN_FILE:-$HOME/.config/picousb/token}"
 PICO_DEVBOX="${PICO_DEVBOX:-$HOME/.venvs/picousb/bin/pico-devbox}"
 

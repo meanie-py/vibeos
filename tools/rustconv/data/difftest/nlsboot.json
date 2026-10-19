@@ -1,0 +1,644 @@
+{
+ "version": 1,
+ "scope": "stateless-host",
+ "memory": "guard-pages",
+ "seed": 261018,
+ "random_cases": 256,
+ "validity": "Genuine boot/rtl/nlsboot.c against the shipping blrtl-rust nlsboot module, its functions and NlsOemDefaultChar selected as exact bytes. Buffers are readable/writable for exactly their declared sizes; UTF-16 buffers are 2-aligned; ResultSize is NULL or a 4-byte output (the C tolerates NULL). RtlOemToUnicodeN writes one WCHAR whatever UnicodeSize says, so its buffer is a fixed 2 bytes or NULL. NOT graded: RtlUpperChar, whose plain `char` parameter a scalar argument cannot spell (int8_t is a distinct C type); and RtlMultiByteToUnicodeN, where the Rust zero-extends each byte as the C's own comment says and the C's signed CHAR sign-extends (a deliberate, documented divergence). C headers are rtl-difftest's reviewed refstub (NTAPI = host C ABI) plus the _Use_decl_annotations_ marker; host char is signed like every ReactOS target. Host 64-bit only, so the SIZE_T `MbSize * sizeof(WCHAR)` compare is 64-bit, as on amd64/arm64.",
+ "c_source": "../../../../boot/rtl/nlsboot.c",
+ "c_include_dirs": [
+  "../../../../sdk/lib/rust/rtl-difftest/refstub"
+ ],
+ "c_prelude": "nlsboot_host.h",
+ "rust_source": "../../../../sdk/lib/rust/blrtl-rust/src/nlsboot.rs",
+ "rust_items": [
+  "NTSTATUS",
+  "STATUS_SUCCESS",
+  "STATUS_NOT_IMPLEMENTED",
+  "NlsOemDefaultChar",
+  "RtlpUpcaseUnicodeChar",
+  "RtlpDowncaseUnicodeChar",
+  "RtlUpcaseUnicodeChar",
+  "RtlDowncaseUnicodeChar",
+  "RtlUnicodeToMultiByteN",
+  "RtlUpcaseUnicodeToMultiByteN",
+  "RtlUnicodeToMultiByteSize",
+  "RtlMultiByteToUnicodeSize",
+  "RtlUnicodeToOemN",
+  "RtlUpcaseUnicodeToOemN",
+  "RtlOemToUnicodeN"
+ ],
+ "rust_imports": [
+  "core::ffi::c_char"
+ ],
+ "functions": [
+  {
+   "c": "RtlpUpcaseUnicodeChar",
+   "rust": "candidate::RtlpUpcaseUnicodeChar",
+   "rust_abi": "system",
+   "return": "u16",
+   "args": [
+    {
+     "name": "source",
+     "type": "u16",
+     "values": [
+      0,
+      64,
+      65,
+      90,
+      91,
+      96,
+      97,
+      122,
+      123,
+      127,
+      128,
+      224,
+      255,
+      256,
+      945,
+      65313,
+      65345,
+      65535
+     ],
+     "random_range": [
+      0,
+      65535
+     ]
+    }
+   ]
+  },
+  {
+   "c": "RtlpDowncaseUnicodeChar",
+   "rust": "candidate::RtlpDowncaseUnicodeChar",
+   "rust_abi": "system",
+   "return": "u16",
+   "args": [
+    {
+     "name": "source",
+     "type": "u16",
+     "values": [
+      0,
+      64,
+      65,
+      90,
+      91,
+      96,
+      97,
+      122,
+      123,
+      127,
+      128,
+      224,
+      255,
+      256,
+      945,
+      65313,
+      65345,
+      65535
+     ],
+     "random_range": [
+      0,
+      65535
+     ]
+    }
+   ]
+  },
+  {
+   "c": "RtlUpcaseUnicodeChar",
+   "rust": "candidate::RtlUpcaseUnicodeChar",
+   "rust_abi": "system",
+   "return": "u16",
+   "args": [
+    {
+     "name": "source",
+     "type": "u16",
+     "values": [
+      0,
+      64,
+      65,
+      90,
+      91,
+      96,
+      97,
+      122,
+      123,
+      127,
+      128,
+      224,
+      255,
+      256,
+      945,
+      65313,
+      65345,
+      65535
+     ],
+     "random_range": [
+      0,
+      65535
+     ]
+    }
+   ]
+  },
+  {
+   "c": "RtlDowncaseUnicodeChar",
+   "rust": "candidate::RtlDowncaseUnicodeChar",
+   "rust_abi": "system",
+   "return": "u16",
+   "args": [
+    {
+     "name": "source",
+     "type": "u16",
+     "values": [
+      0,
+      64,
+      65,
+      90,
+      91,
+      96,
+      97,
+      122,
+      123,
+      127,
+      128,
+      224,
+      255,
+      256,
+      945,
+      65313,
+      65345,
+      65535
+     ],
+     "random_range": [
+      0,
+      65535
+     ]
+    }
+   ]
+  },
+  {
+   "c": "RtlUnicodeToMultiByteN",
+   "rust": "candidate::RtlUnicodeToMultiByteN",
+   "rust_abi": "system",
+   "return": "i32",
+   "args": [
+    {
+     "name": "mb",
+     "type": "bytes",
+     "c_type": "PCHAR",
+     "rust_type": "*mut i8",
+     "length": "mb_size",
+     "align": 1
+    },
+    {
+     "name": "mb_size",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      7,
+      8,
+      15,
+      16,
+      64
+     ],
+     "random_range": [
+      0,
+      300
+     ]
+    },
+    {
+     "name": "result_size",
+     "type": "bytes",
+     "c_type": "PULONG",
+     "rust_type": "*mut u32",
+     "align": 4,
+     "length": 4,
+     "nullable": true
+    },
+    {
+     "name": "uni",
+     "type": "const_bytes",
+     "c_type": "PCWCH",
+     "rust_type": "*const u16",
+     "align": 2,
+     "length": "uni_size"
+    },
+    {
+     "name": "uni_size",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      7,
+      8,
+      15,
+      16,
+      64,
+      5,
+      9,
+      33
+     ],
+     "random_range": [
+      0,
+      700
+     ]
+    }
+   ],
+   "c_return_type": "int"
+  },
+  {
+   "c": "RtlUpcaseUnicodeToMultiByteN",
+   "rust": "candidate::RtlUpcaseUnicodeToMultiByteN",
+   "rust_abi": "system",
+   "return": "i32",
+   "args": [
+    {
+     "name": "mb",
+     "type": "bytes",
+     "c_type": "PCHAR",
+     "rust_type": "*mut i8",
+     "length": "mb_size",
+     "align": 1
+    },
+    {
+     "name": "mb_size",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      7,
+      8,
+      15,
+      16,
+      64
+     ],
+     "random_range": [
+      0,
+      300
+     ]
+    },
+    {
+     "name": "result_size",
+     "type": "bytes",
+     "c_type": "PULONG",
+     "rust_type": "*mut u32",
+     "align": 4,
+     "length": 4,
+     "nullable": true
+    },
+    {
+     "name": "uni",
+     "type": "const_bytes",
+     "c_type": "PCWCH",
+     "rust_type": "*const u16",
+     "align": 2,
+     "length": "uni_size"
+    },
+    {
+     "name": "uni_size",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      7,
+      8,
+      15,
+      16,
+      64,
+      5,
+      9,
+      33
+     ],
+     "random_range": [
+      0,
+      700
+     ]
+    }
+   ],
+   "c_return_type": "int"
+  },
+  {
+   "c": "RtlUnicodeToMultiByteSize",
+   "rust": "candidate::RtlUnicodeToMultiByteSize",
+   "rust_abi": "system",
+   "return": "i32",
+   "args": [
+    {
+     "name": "mb_size",
+     "type": "bytes",
+     "c_type": "PULONG",
+     "rust_type": "*mut u32",
+     "align": 4,
+     "length": 4
+    },
+    {
+     "name": "uni",
+     "type": "const_bytes",
+     "c_type": "PCWCH",
+     "rust_type": "*const u16",
+     "align": 2,
+     "length": 0
+    },
+    {
+     "name": "uni_size",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      7,
+      8,
+      15,
+      16,
+      64,
+      4294967295
+     ],
+     "random_range": [
+      0,
+      4294967295
+     ]
+    }
+   ],
+   "c_return_type": "int"
+  },
+  {
+   "c": "RtlMultiByteToUnicodeSize",
+   "rust": "candidate::RtlMultiByteToUnicodeSize",
+   "rust_abi": "system",
+   "return": "i32",
+   "args": [
+    {
+     "name": "uni_size",
+     "type": "bytes",
+     "c_type": "PULONG",
+     "rust_type": "*mut u32",
+     "align": 4,
+     "length": 4
+    },
+    {
+     "name": "mb",
+     "type": "const_bytes",
+     "c_type": "PCCH",
+     "rust_type": "*const i8",
+     "length": 0,
+     "align": 1
+    },
+    {
+     "name": "mb_size",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      7,
+      8,
+      15,
+      16,
+      64,
+      2147483648,
+      4294967295
+     ],
+     "random_range": [
+      0,
+      4294967295
+     ]
+    }
+   ],
+   "c_return_type": "int"
+  },
+  {
+   "c": "RtlUnicodeToOemN",
+   "rust": "candidate::RtlUnicodeToOemN",
+   "rust_abi": "system",
+   "return": "i32",
+   "args": [
+    {
+     "name": "oem",
+     "type": "bytes",
+     "c_type": "PCHAR",
+     "rust_type": "*mut i8",
+     "length": "oem_size",
+     "align": 1
+    },
+    {
+     "name": "oem_size",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      2,
+      16
+     ],
+     "random_range": [
+      0,
+      64
+     ]
+    },
+    {
+     "name": "result_size",
+     "type": "bytes",
+     "c_type": "PULONG",
+     "rust_type": "*mut u32",
+     "align": 4,
+     "length": 4,
+     "nullable": true
+    },
+    {
+     "name": "uni",
+     "type": "const_bytes",
+     "c_type": "PCWCH",
+     "rust_type": "*const u16",
+     "align": 2,
+     "length": "uni_size"
+    },
+    {
+     "name": "uni_size",
+     "type": "u32",
+     "values": [
+      0,
+      2,
+      8
+     ],
+     "random_range": [
+      0,
+      64
+     ]
+    }
+   ],
+   "c_return_type": "int"
+  },
+  {
+   "c": "RtlUpcaseUnicodeToOemN",
+   "rust": "candidate::RtlUpcaseUnicodeToOemN",
+   "rust_abi": "system",
+   "return": "i32",
+   "args": [
+    {
+     "name": "oem",
+     "type": "bytes",
+     "c_type": "PCHAR",
+     "rust_type": "*mut i8",
+     "length": "oem_size",
+     "align": 1
+    },
+    {
+     "name": "oem_size",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      2,
+      16
+     ],
+     "random_range": [
+      0,
+      64
+     ]
+    },
+    {
+     "name": "result_size",
+     "type": "bytes",
+     "c_type": "PULONG",
+     "rust_type": "*mut u32",
+     "align": 4,
+     "length": 4,
+     "nullable": true
+    },
+    {
+     "name": "uni",
+     "type": "const_bytes",
+     "c_type": "PCWCH",
+     "rust_type": "*const u16",
+     "align": 2,
+     "length": "uni_size"
+    },
+    {
+     "name": "uni_size",
+     "type": "u32",
+     "values": [
+      0,
+      2,
+      8
+     ],
+     "random_range": [
+      0,
+      64
+     ]
+    }
+   ],
+   "c_return_type": "int"
+  },
+  {
+   "c": "RtlOemToUnicodeN",
+   "rust": "candidate::RtlOemToUnicodeN",
+   "rust_abi": "system",
+   "return": "i32",
+   "args": [
+    {
+     "name": "uni",
+     "type": "bytes",
+     "c_type": "PWCHAR",
+     "rust_type": "*mut u16",
+     "align": 2,
+     "length": 2,
+     "nullable": true
+    },
+    {
+     "name": "uni_size",
+     "type": "u32",
+     "values": [
+      0,
+      2,
+      8
+     ]
+    },
+    {
+     "name": "result_size",
+     "type": "bytes",
+     "c_type": "PULONG",
+     "rust_type": "*mut u32",
+     "align": 4,
+     "length": 4,
+     "nullable": true
+    },
+    {
+     "name": "oem",
+     "type": "const_bytes",
+     "c_type": "PCCH",
+     "rust_type": "*const i8",
+     "length": "oem_size",
+     "align": 1
+    },
+    {
+     "name": "oem_size",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      16
+     ]
+    }
+   ],
+   "c_return_type": "int"
+  }
+ ],
+ "mutants": [
+  {
+   "name": "upcase_offset",
+   "find": "return Source - (b'a' - b'A') as u16;",
+   "replace": "return Source - (b'a' - b'B') as u16;"
+  },
+  {
+   "name": "downcase_bound",
+   "find": "if Source <= b'Z' as u16 {",
+   "replace": "if Source < b'Z' as u16 {"
+  },
+  {
+   "name": "demote_highbyte",
+   "find": "*MbString = if c >> 8 == 0",
+   "replace": "*MbString = if c >> 9 == 0"
+  },
+  {
+   "name": "mbsize_bytes",
+   "find": "*MbSize = UnicodeSize / 2;",
+   "replace": "*MbSize = UnicodeSize;"
+  },
+  {
+   "name": "oem_result_kept",
+   "find": "pub unsafe extern \"system\" fn RtlUnicodeToOemN(\n    OemString: *mut c_char,\n    OemSize: u32,\n    ResultSize: *mut u32,\n    _UnicodeString: *const u16,\n    _UnicodeSize: u32,\n) -> NTSTATUS {\n    if OemSize != 0 {",
+   "replace": "pub unsafe extern \"system\" fn RtlUnicodeToOemN(\n    OemString: *mut c_char,\n    OemSize: u32,\n    ResultSize: *mut u32,\n    _UnicodeString: *const u16,\n    _UnicodeSize: u32,\n) -> NTSTATUS {\n    if OemSize > 1 {"
+  },
+  {
+   "name": "mbtouni_size_units",
+   "find": "*UnicodeSize = MbSize.wrapping_mul(2);",
+   "replace": "*UnicodeSize = MbSize;"
+  },
+  {
+   "name": "oemtouni_no_nul",
+   "find": "*UnicodeString = 0;",
+   "replace": "*UnicodeString = 1;"
+  },
+  {
+   "name": "upcase_oem_result_kept",
+   "find": "pub unsafe extern \"system\" fn RtlUpcaseUnicodeToOemN(\n    OemString: *mut c_char,\n    OemSize: u32,\n    ResultSize: *mut u32,\n    _UnicodeString: *const u16,\n    _UnicodeSize: u32,\n) -> NTSTATUS {\n    if OemSize != 0 {",
+   "replace": "pub unsafe extern \"system\" fn RtlUpcaseUnicodeToOemN(\n    OemString: *mut c_char,\n    OemSize: u32,\n    ResultSize: *mut u32,\n    _UnicodeString: *const u16,\n    _UnicodeSize: u32,\n) -> NTSTATUS {\n    if OemSize > 1 {"
+  }
+ ]
+}

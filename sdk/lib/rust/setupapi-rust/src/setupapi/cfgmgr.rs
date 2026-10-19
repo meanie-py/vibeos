@@ -44,10 +44,6 @@ pub static RUSTCONV_WSTR_FC2D9680B5FB: [u16; 39] = [
 
 use core::ffi::c_void;
 
-extern "C" {
-    fn ros_dbg_log( cls: __wine_debug_class, ch: *mut __wine_debug_channel, file: *const core::ffi::c_char, func: *const core::ffi::c_char, line: core::ffi::c_int, fmt: *const core::ffi::c_char, ... );
-}
-
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut BackslashOpenBrace: [WCHAR; 3] = [
@@ -243,7 +239,7 @@ pub type PCONFLICT_DATA = *mut _CONFLICT_DATA;
 
 pub const CONFLICT_MAGIC: u32 = 0x11225588;
 
-const __WINE_DBCL_TRACE: u32 = 3;
+pub const __WINE_DBCL_TRACE: u32 = 3;
 unsafe extern "C" fn GuidToString(Guid: LPGUID, String: LPWSTR) -> BOOL {
     let mut lpString: LPWSTR = core::ptr::null_mut();
     if UuidToStringW(Guid as *mut UUID, core::ptr::addr_of_mut!(lpString)) != RPC_S_OK {

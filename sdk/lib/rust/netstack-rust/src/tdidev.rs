@@ -299,17 +299,23 @@ struct TdiObjectId {
 }
 
 /// The TDI entities netstack advertises: TCP (connection-oriented transport),
-/// UDP (connectionless transport), IP (connectionless network) and one
-/// interface — all instance 0 (single smoltcp interface).
-const ENTITIES: [TdiEntityId; 5] = [
-    TdiEntityId { tei_entity: CO_TL_ENTITY, tei_instance: 0 },
-    TdiEntityId { tei_entity: CL_TL_ENTITY, tei_instance: 0 },
-    TdiEntityId { tei_entity: CL_NL_ENTITY, tei_instance: 0 },
-    TdiEntityId { tei_entity: IF_ENTITY, tei_instance: 0 },
-    // ARP/address-translation entity — lets iphlpapi's hasArp() detect the
-    // adapter supports ARP (GetAdaptersInfo enumeration) + GetIpNetTable.
-    TdiEntityId { tei_entity: AT_ENTITY, tei_instance: 0 },
-];
+/// UDP (connectionless transport), IP (connectionless network), then an interface
+/// and an ARP entity per adapter, instance = the adapter's netcfg slot. The ARP
+/// (address-translation) entity lets iphlpapi's hasArp() see the adapter supports
+/// ARP (GetAdaptersInfo enumeration) + GetIpNetTable. One interface is advertised
+/// before any adapter is up, as before there were several.
+fn entities(out: &mut [TdiEntityId; 3 + 2 * crate::netcfg::ADAPTER_SLOTS]) -> usize {
+    out[0] = TdiEntityId { tei_entity: CO_TL_ENTITY, tei_instance: 0 };
+    out[1] = TdiEntityId { tei_entity: CL_TL_ENTITY, tei_instance: 0 };
+    out[2] = TdiEntityId { tei_entity: CL_NL_ENTITY, tei_instance: 0 };
+    let mut n = 3;
+    for i in 0..crate::netcfg::count().max(1) {
+        out[n] = TdiEntityId { tei_entity: IF_ENTITY, tei_instance: i as u32 };
+        out[n + 1] = TdiEntityId { tei_entity: AT_ENTITY, tei_instance: i as u32 };
+        n += 2;
+    }
+    n
+}
 
 /// Handle IOCTL_TCP_QUERY_INFORMATION_EX (METHOD_NEITHER): input is a
 /// TCP_REQUEST_QUERY_INFORMATION_EX in Type3InputBuffer, output goes to
@@ -337,10 +343,9 @@ unsafe fn handle_query_info_ex(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS
 
     // ENTITY_LIST — the full entity-id array (what wshtcpip's bind path needs).
     if id.toi_class == INFO_CLASS_GENERIC && id.toi_id == ENTITY_LIST_ID && ent == GENERIC_ENTITY {
-        let bytes = core::slice::from_raw_parts(
-            ENTITIES.as_ptr() as *const u8,
-            core::mem::size_of::<TdiEntityId>() * ENTITIES.len(),
-        );
+        let mut list = [TdiEntityId { tei_entity: 0, tei_instance: 0 }; 3 + 2 * crate::netcfg::ADAPTER_SLOTS];
+        let n = entities(&mut list);
+        let bytes = core::slice::from_raw_parts(list.as_ptr() as *const u8, core::mem::size_of::<TdiEntityId>() * n);
         return complete_query(irp, out_buf, out_len, bytes);
     }
 
@@ -361,7 +366,9 @@ unsafe fn handle_query_info_ex(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS
     // fixed struct (or a size-probe count for the table queries) via complete_query.
     if id.toi_class == INFO_CLASS_PROTOCOL {
         match (ent, id.toi_id) {
-            (IF_ENTITY, IF_MIB_STATS_ID) => return mib_if_entry(irp, out_buf, out_len),
+            (IF_ENTITY, IF_MIB_STATS_ID) => {
+                return mib_if_entry(irp, out_buf, out_len, id.toi_entity.tei_instance as usize)
+            }
             (CL_NL_ENTITY, IP_MIB_STATS_ID) => return mib_ip_stats(irp, out_buf, out_len),
             (CL_NL_ENTITY, IP_MIB_ADDRTABLE_ENTRY_ID) => {
                 return mib_ip_addrtable(irp, out_buf, out_len)
@@ -506,19 +513,22 @@ const _: () = assert!(core::mem::size_of::<IpSnmpInfo>() == 92);
 const _: () = assert!(core::mem::size_of::<IpAddrEntry>() == 24);
 const _: () = assert!(core::mem::size_of::<IpRouteEntry>() == 52);
 
-/// IFEntry — the adapter's interface MIB (ifenum reads index/type/mtu/physaddr/descr).
-unsafe fn mib_if_entry(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTSTATUS {
-    let mac = crate::netcfg::mac();
-    const DESCR: &[u8] = b"netstack smoltcp adapter";
+/// IFEntry — an adapter's interface MIB (ifenum reads index/type/mtu/physaddr/descr).
+unsafe fn mib_if_entry(irp: PIRP, out_buf: *mut u8, out_len: usize, slot: usize) -> NTSTATUS {
+    let slot = slot.min(crate::netcfg::ADAPTER_SLOTS - 1);
+    let mac = crate::netcfg::mac_of(slot);
+    let descr = crate::netcfg::name(slot).as_bytes();
     let e = IfEntryFixed {
-        if_index: 1,
+        if_index: slot as u32 + 1,
         if_type: 6, // MIB_IF_TYPE_ETHERNET
         if_mtu: 1500,
         if_speed: 100_000_000,
         if_physaddrlen: 6,
         if_physaddr: [mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], 0, 0],
         if_adminstatus: 1,
-        if_operstatus: 5, // IF_OPER_STATUS_OPERATIONAL
+        // IF_OPER_STATUS_OPERATIONAL with a lease, else DISCONNECTED: ipconfig then
+        // says "Media disconnected" for an adapter with no network yet.
+        if_operstatus: if crate::netcfg::configured_of(slot) || crate::netcfg::count() <= 1 { 5 } else { 2 },
         if_lastchange: 0,
         if_inoctets: 0,
         if_inucastpkts: 0,
@@ -532,60 +542,74 @@ unsafe fn mib_if_entry(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTSTATUS 
         if_outdiscards: 0,
         if_outerrors: 0,
         if_outqlen: 0,
-        if_descrlen: DESCR.len() as u32,
+        if_descrlen: descr.len() as u32,
     };
     let fixed = core::mem::size_of::<IfEntryFixed>();
-    let mut buf = [0u8; core::mem::size_of::<IfEntryFixed>() + 32];
+    let mut buf = [0u8; core::mem::size_of::<IfEntryFixed>() + 64];
     core::ptr::copy_nonoverlapping(&e as *const _ as *const u8, buf.as_mut_ptr(), fixed);
-    let dl = DESCR.len().min(buf.len() - fixed);
-    core::ptr::copy_nonoverlapping(DESCR.as_ptr(), buf.as_mut_ptr().add(fixed), dl);
+    let dl = descr.len().min(buf.len() - fixed);
+    core::ptr::copy_nonoverlapping(descr.as_ptr(), buf.as_mut_ptr().add(fixed), dl);
     complete_query(irp, out_buf, out_len, &buf[..fixed + dl])
 }
 
 /// IPSNMPInfo — IP protocol stats; iphlpapi reads numif/numaddr/numroutes to size
 /// the address + route table queries.
 unsafe fn mib_ip_stats(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTSTATUS {
-    let n = if crate::netcfg::configured() { 1 } else { 0 };
+    let slots = 0..crate::netcfg::count();
     let mut info: IpSnmpInfo = core::mem::zeroed();
     info.ipsi_forwarding = 2; // not forwarding
     info.ipsi_defaultttl = 128;
-    info.ipsi_numif = 1;
-    info.ipsi_numaddr = n;
-    info.ipsi_numroutes = n;
+    info.ipsi_numif = crate::netcfg::count().max(1) as u32;
+    info.ipsi_numaddr = slots.clone().filter(|&i| crate::netcfg::configured_of(i)).count() as u32;
+    info.ipsi_numroutes = slots.filter(|&i| has_default_route(i)).count() as u32;
     complete_query(irp, out_buf, out_len, as_bytes(&info))
 }
 
-/// IPAddrEntry[] — the IP address table (one entry: our DHCP address on if 1).
+/// IPAddrEntry[] — the IP address table: each leased adapter's address, on its
+/// interface (`if_index` = slot + 1).
 unsafe fn mib_ip_addrtable(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTSTATUS {
-    if !crate::netcfg::configured() {
-        return complete_query(irp, out_buf, out_len, &[]);
+    const E: usize = core::mem::size_of::<IpAddrEntry>();
+    let mut buf = [0u8; E * crate::netcfg::ADAPTER_SLOTS];
+    let mut n = 0;
+    for i in (0..crate::netcfg::count()).filter(|&i| crate::netcfg::configured_of(i)) {
+        let e = IpAddrEntry {
+            iae_addr: crate::netcfg::ipv4_of(i),
+            iae_index: i as u32 + 1,
+            iae_mask: crate::netcfg::mask_of(i),
+            iae_bcastaddr: crate::netcfg::broadcast_of(i),
+            iae_reasmsize: 0xffff,
+            iae_context: 0,
+            iae_pad: 0,
+        };
+        buf[n * E..(n + 1) * E].copy_from_slice(as_bytes(&e));
+        n += 1;
     }
-    let e = IpAddrEntry {
-        iae_addr: crate::netcfg::ipv4_naddr(),
-        iae_index: 1,
-        iae_mask: crate::netcfg::mask_naddr(),
-        iae_bcastaddr: crate::netcfg::broadcast_naddr(),
-        iae_reasmsize: 0xffff,
-        iae_context: 0,
-        iae_pad: 0,
-    };
-    complete_query(irp, out_buf, out_len, as_bytes(&e))
+    complete_query(irp, out_buf, out_len, &buf[..n * E])
 }
 
-/// IPRouteEntry[] — the route table (one default route via the DHCP gateway).
+fn has_default_route(slot: usize) -> bool {
+    crate::netcfg::configured_of(slot) && crate::netcfg::gateway_of(slot) != 0
+}
+
+/// IPRouteEntry[] — the route table: a default route via each lease's gateway. The
+/// primary adapter's, which carries the stack's sockets, has the lowest metric.
 unsafe fn mib_ip_routetable(irp: PIRP, out_buf: *mut u8, out_len: usize) -> NTSTATUS {
-    if !crate::netcfg::configured() || crate::netcfg::gateway_naddr() == 0 {
-        return complete_query(irp, out_buf, out_len, &[]);
+    const E: usize = core::mem::size_of::<IpRouteEntry>();
+    let mut buf = [0u8; E * crate::netcfg::ADAPTER_SLOTS];
+    let mut n = 0;
+    for i in (0..crate::netcfg::count()).filter(|&i| has_default_route(i)) {
+        let mut e: IpRouteEntry = core::mem::zeroed();
+        e.ire_dest = 0; // 0.0.0.0 default
+        e.ire_index = i as u32 + 1;
+        e.ire_metric1 = if i == crate::netcfg::primary() { 1 } else { 2 };
+        e.ire_gw = crate::netcfg::gateway_of(i);
+        e.ire_type = 4; // MIB_IPROUTE_TYPE_INDIRECT (remote)
+        e.ire_proto = 3; // MIB_IPPROTO_NETMGMT
+        e.ire_mask = 0; // 0.0.0.0 mask for the default route
+        buf[n * E..(n + 1) * E].copy_from_slice(as_bytes(&e));
+        n += 1;
     }
-    let mut e: IpRouteEntry = core::mem::zeroed();
-    e.ire_dest = 0; // 0.0.0.0 default
-    e.ire_index = 1;
-    e.ire_metric1 = 1;
-    e.ire_gw = crate::netcfg::gateway_naddr();
-    e.ire_type = 4; // MIB_IPROUTE_TYPE_INDIRECT (remote)
-    e.ire_proto = 3; // MIB_IPPROTO_NETMGMT
-    e.ire_mask = 0; // 0.0.0.0 mask for the default route
-    complete_query(irp, out_buf, out_len, as_bytes(&e))
+    complete_query(irp, out_buf, out_len, &buf[..n * E])
 }
 
 /// Handle IOCTL_TCP_SET_INFORMATION_EX (METHOD_BUFFERED). Input is a

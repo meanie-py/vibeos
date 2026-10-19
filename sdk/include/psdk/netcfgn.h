@@ -1,6 +1,10 @@
 #ifndef _NETCFGN_H__
 #define _NETCFGN_H__
 
+/* The interfaces below take netcfgx.h's INetCfgComponent, INetCfg and INetCfgBindingPath.
+   The SDK's netcfgn.h imports netcfgx.idl for them; this one depended on its includer. */
+#include <netcfgx.h>
+
 typedef enum
 {
     NCRL_NDIS   = 1,

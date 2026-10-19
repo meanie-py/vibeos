@@ -118,6 +118,8 @@ const MENUITEMINFO_TYPE_MASK: UINT = MFT_STRING
     | MFT_RIGHTJUSTIFY;
 const TYPE_MASK: UINT = MENUITEMINFO_TYPE_MASK | MF_POPUP | MF_SYSMENU;
 const STATE_MASK: UINT = !TYPE_MASK;
+/// ntuser.h: win32k's internal "item has a bitmap to draw" state bit; never reported.
+const MFS_HBMMENUBMP: UINT = 0x2000_0000;
 const MENUITEMINFO_STATE_MASK: UINT = STATE_MASK & !(MF_BYPOSITION | MF_MOUSESELECT);
 const MII_STATE_MASK: UINT = MFS_GRAYED | MFS_CHECKED | MFS_HILITE | MFS_DEFAULT;
 #[inline]
@@ -444,7 +446,11 @@ unsafe fn GetMenuItemInfo_common(
     }
 
     if (*lpmii).fMask & MIIM_STATE != 0 {
-        (*lpmii).fState = (*pItem).fState & MENUITEMINFO_STATE_MASK;
+        // Exceeds the C: MENUITEMINFO_STATE_MASK is ~TYPE_MASK with two bits off, so it let
+        // win32k's private MFS_HBMMENUBMP (ntuser.h, 0x20000000: "this item draws an
+        // hbmpItem") out through GetMenuItemInfo, which Windows never reports. Wine's oledlg
+        // winetest (main.c:375/399/466) read fState 0x20000001 for MF_GRAYED.
+        (*lpmii).fState = (*pItem).fState & MENUITEMINFO_STATE_MASK & !MFS_HBMMENUBMP;
     }
 
     if (*lpmii).fMask & MIIM_ID != 0 {

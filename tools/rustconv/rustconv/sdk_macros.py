@@ -1130,6 +1130,25 @@ def com_wrappers(crate_src: Path, wanted: set[str]) -> dict[str, str]:
 _OBJ_DEFINE = re.compile(r"^#define ([A-Za-z_]\w*) (.+)$", re.M)
 
 
+_GUID_INIT = re.compile(
+    r"\{\s*(0x[0-9A-Fa-f]+|\d+)L?\s*,\s*(0x[0-9A-Fa-f]+|\d+)\s*,\s*(0x[0-9A-Fa-f]+|\d+)\s*,"
+    r"\s*\{((?:\s*(?:0x[0-9A-Fa-f]+|\d+)\s*,){7}\s*(?:0x[0-9A-Fa-f]+|\d+)\s*)\}\s*\}"
+)
+
+
+def guid_initializer(name: str, expansion: str) -> str | None:
+    """`#define PSGUID_STORAGE {0xb725f130, 0x47ef, 0x101a, {0xa5, .., 0xac}}` (ntquery.h)
+    as a `GUID` const: the brace list IS the value, which the expression parser refuses."""
+    m = _GUID_INIT.fullmatch(expansion.strip())
+    if m is None:
+        return None
+    d4 = ", ".join(b.strip() for b in m.group(4).split(","))
+    return (
+        f"pub const {name}: GUID = GUID {{ Data1: {m.group(1)}, Data2: {m.group(2)}, "
+        f"Data3: {m.group(3)}, Data4: [{d4}] }};"
+    )
+
+
 def object_items(
     repo: Path, tus: list[Path], crate_src: Path, values: set[str], types_wanted: set[str]
 ) -> tuple[dict[str, str], dict[str, str]]:
@@ -1214,6 +1233,10 @@ def object_items(
                 out[n] = (
                     f"pub const {n}: *const u16 = (&[{units}u16]).as_ptr(); // {expansion[:100]}"
                 )
+                continue
+            guid = guid_initializer(n, expansion)
+            if guid is not None:
+                out[n] = guid
                 continue
             try:
                 node = _Parser(tokenize(expansion), island).parse()

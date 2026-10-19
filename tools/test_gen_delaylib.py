@@ -1,59 +1,72 @@
-"""sdk/tools/gen-delaylib.py: a NONAME export must be delay-bound by ORDINAL.
+"""Native delay imports retain NONAME ordinals and all architecture thunks."""
 
-The DLL exports no name for `Name @127 NONAME`, so a by-name INT entry can never resolve and
-every call raises 0xc06d007f. That was shell32 -> browseui!SHOnCWMCommandLine, i.e. every
-folder window opened from another process.
-"""
-
-import importlib.util
+import subprocess
 from pathlib import Path
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[1]
-_spec = importlib.util.spec_from_file_location(
-    "gen_delaylib", REPO / "sdk" / "tools" / "gen-delaylib.py"
-)
-assert _spec is not None and _spec.loader is not None
-gen = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(gen)
-
-DEF = """LIBRARY browseui.dll
-EXPORTS
- ByName @101
- SHOnCWMCommandLine @127 NONAME
- Data @130 DATA
-"""
+FIXTURES = REPO / "tools/vibeos-codegen/tests/bindings"
 
 
-@pytest.fixture
-def exports(tmp_path):
-    p = tmp_path / "x.def"
-    p.write_text(DEF)
-    dll, exports = gen.parse_def(str(p))
-    assert dll == "browseui.dll"
-    return exports
+def run(*args):
+    return subprocess.run(
+        [str(REPO / "tools/codegen"), "delaylib", *map(str, args)], capture_output=True, check=False
+    )
 
 
-def test_noname_export_carries_its_ordinal(exports):
-    assert ("SHOnCWMCommandLine", False, 127) in exports
-    assert ("ByName", False, None) in exports
-
-
-@pytest.mark.parametrize(
-    ("arch", "entry"),
-    [("i386", "\t.long 0x8000007f"), ("amd64", "\t.long 0x7f\n\t.long 0x80000000")],
-)
-def test_noname_export_is_bound_by_ordinal(exports, arch, entry):
-    asm = gen.emit("browseui.dll", exports, arch)
-    assert entry in asm
-    # ...and never by name: no hint/name string for it.
-    assert '.asciz "SHOnCWMCommandLine"' not in asm
-    assert '.asciz "ByName"' in asm
+@pytest.mark.parametrize("arch", ["i386", "amd64", "arm64"])
+def test_assembly_matches_legacy_and_noname_never_binds_by_name(arch):
+    result = run("--def", FIXTURES / "delay.def", "--arch", arch, "--stdout")
+    assert result.returncode == 0, result.stderr.decode()
+    assert result.stdout == (FIXTURES / f"delay-{arch}.s").read_bytes()
+    assert b'.asciz "SHOnCWMCommandLine"' not in result.stdout
+    assert b'.asciz "ByName"' in result.stdout
+    assert (
+        b"0x8000007f" in result.stdout
+        if arch == "i386"
+        else b"0x7f\n\t.long 0x80000000" in result.stdout
+    )
 
 
 def test_noname_without_ordinal_fails_loud(tmp_path):
-    p = tmp_path / "x.def"
-    p.write_text("LIBRARY a.dll\nEXPORTS\n Broken NONAME\n")
-    with pytest.raises(SystemExit, match="no @ordinal"):
-        gen.parse_def(str(p))
+    source = tmp_path / "x.def"
+    source.write_text("LIBRARY a.dll\nEXPORTS\n Broken NONAME\n")
+    result = run("--def", source, "--arch", "amd64", "--stdout")
+    assert result.returncode != 0
+    assert b"no @ordinal" in result.stderr
+
+
+@pytest.mark.parametrize("arch,machine", [("i386", 0x14C), ("amd64", 0x8664), ("arm64", 0xAA64)])
+def test_archive_contains_real_coff_and_is_preserved_on_failure(tmp_path, arch, machine):
+    clang = REPO / ".build-tools/llvm-mingw/bin/clang"
+    ar = REPO / ".build-tools/llvm-mingw/bin/llvm-ar"
+    output = tmp_path / "libfixture.a"
+    args = [
+        "--def",
+        FIXTURES / "delay.def",
+        "--arch",
+        arch,
+        "--out",
+        output,
+        "--clang",
+        clang,
+        "--ar",
+        ar,
+    ]
+    result = run(*args)
+    assert result.returncode == 0, result.stderr.decode()
+    archive = output.read_bytes()
+    assert archive.startswith(b"!<arch>\n")
+    members = subprocess.run(
+        [str(ar), "t", str(output)], capture_output=True, check=True
+    ).stdout.splitlines()
+    assert members == [b"libfixture.delay.o"]
+    obj = subprocess.run(
+        [str(ar), "p", str(output), members[0].decode()], capture_output=True, check=True
+    ).stdout
+    assert int.from_bytes(obj[:2], "little") == machine
+    for option in ("--clang", "--ar"):
+        failed = run(*args, option, "/bin/false")
+        assert failed.returncode != 0
+        assert output.read_bytes() == archive

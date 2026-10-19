@@ -14,6 +14,7 @@ marshalled across apartments (right-click > Properties showed an error box).
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -32,7 +33,12 @@ def modules_registering_from_resources() -> list[Path]:
 
 
 def has_registry_resources(cmakelists: Path) -> bool:
-    if "add_idl_reg_scripts(" in cmakelists.read_text(errors="replace"):
+    text = cmakelists.read_text(errors="replace")
+    if "add_idl_reg_scripts(" in text:
+        return True
+    # A cargo cell generates the objects with add_idl_reg_objects and links <idl>_r.o itself,
+    # so it counts only when that object is actually named for the link.
+    if re.search(r"add_idl_reg_objects\(\S+\s+registry\b", text) and "_r.o" in text:
         return True
     return any(
         "WINE_REGISTRY" in rc.read_text(errors="replace") for rc in cmakelists.parent.glob("*.rc")
@@ -63,3 +69,18 @@ def test_the_check_would_have_caught_ole32(tmp_path):
         "add_definitions(-DWINE_REGISTER_DLL)\nadd_idl_reg_scripts(ole32 registry dcom.idl)\n"
     )
     assert has_registry_resources(d / "CMakeLists.txt")
+
+
+def test_a_cargo_cell_counts_only_if_it_links_the_registry_object(tmp_path):
+    d = tmp_path / "oleacc"
+    d.mkdir()
+    cm = d / "CMakeLists.txt"
+    cm.write_text(
+        "add_definitions(-DWINE_REGISTER_DLL)\n"
+        "add_idl_reg_objects(oleacc registry oleacc_classes.idl)\n"
+    )
+    assert not has_registry_resources(cm)
+    cm.write_text(
+        cm.read_text() + "set(R ${CMAKE_BINARY_DIR}/dll/win32/oleacc/oleacc_classes_r.o)\n"
+    )
+    assert has_registry_resources(cm)

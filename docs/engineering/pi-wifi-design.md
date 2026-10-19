@@ -182,9 +182,10 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
 
    `pi5 boot --until TEXT` keeps reading serial past the desktop: the join finishes after it.
 7. Data path: an NDIS 6 miniport (`miniport.rs`, `link.rs`). One path to netstack for
-   every Wi-Fi adapter: netstack binds an NDIS 802.3 miniport when it drives no NIC itself
-   (`/NETSTACK=NDIS` on the Pi 5, whose GEM it would otherwise take), as it binds the
-   OptiPlex's Realtek. PnP installs bwfm from `netbwfm.inf` on `VIBEOS\CYW43455` (a Net
+   every Wi-Fi adapter: netstack binds an NDIS 802.3 miniport beside the NIC it drives itself
+   (since 2026-10-18; before, only with `/NETSTACK=NDIS`, which made it leave the GEM alone),
+   as it binds the OptiPlex's Realtek. Pi 5 run `20261018-190323-d_9udrc7`: GEM and Wi-Fi
+   leased on one boot (smoltcp-netstack-design.md, "Several adapters at once"). PnP installs bwfm from `netbwfm.inf` on `VIBEOS\CYW43455` (a Net
    class key is what ndis.sys's AddDevice needs, so the critical-device entry is gone).
    Initialize runs the bring-up to a running firmware and its MAC (the general attributes
    need it) and starts a worker, which owns the bus from then on: scan, join, link up to
@@ -192,8 +193,8 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    link down, and join again (5 s, doubling to a minute after failures). The send handler
    may run at DISPATCH_LEVEL and the SDIO bus waits, so it only copies frames into a ring
    (`net::TxRing`) for the worker. Receives are indicated at DISPATCH_LEVEL with
-   RESOURCES (NDIS copies; the one NBL is never returned). The worker polls the chip every
-   4 ms when idle: the card interrupt is still owed. The join hands back its `Station`,
+   RESOURCES (NDIS copies; the one NBL is never returned). Idle, the worker sleeps on the
+   card interrupt (see 8), polling every 4 ms only when it is not connected. The join hands back its `Station`,
    whose supplicant answers the AP's group rekeys for as long as the link lasts. The NDIS 6
    layouts are one crate, `ndis6-sys`, shared with ndis.sys's NDIS 6 shim.
    On the Pi 5 (`pi5 boot --options /NETSTACK=NDIS`, run `20261017-105240-4fzlm0y6`), PnP
@@ -212,5 +213,41 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
    minute): one 4-way handshake at boot, then 9 group rekeys, each answered and its key
    installed, no EAPOL refused, no link loss, no rejoin; 526 of 528 pings answered, the two
    misses single and separate (12:11, 12:21, the first minutes after boot); 32,429 frames
-   delivered by the 9th rekey. Still owed: the card interrupt in place of the 4 ms poll,
-   high-speed SDIO, and the Pi 4 (host and power differ).
+   delivered by the 9th rekey.
+8. Card interrupt (done 2026-10-18). Initialize connects the SDIO host's interrupt (the
+   PDO's, GSIV 306 level on the Pi 5) with `NdisMRegisterInterruptEx`, sets CCCR 0x04 to
+   IENM | IEN1 | IEN2 and the host's card-interrupt status enable. The SDIO host has one
+   user, the worker, so whoever waits arms `INT_SIGNAL` with the bits it wants: an idle
+   wait arms the card interrupt, a command wait (`Platform::irq_wait`, also on the
+   worker's wake event) its completion. The ISR masks every signal, which drops the level
+   line, and the DPC sets the event. On a wake the worker clears the SDIO core's
+   `intstatus` (the chip holds DAT1 low until then), then reads the chip. An idle wait
+   still times out after 100 ms, in case an interrupt is ever missed.
+   The Pi 5's host LATCHES the card interrupt: with DAT1 back high (PRESENT bit 21) and
+   CCCR 0x05 pending 0, its status stayed set, and the first build took ~54,000
+   interrupts a second (run `20261018-200445-3d2994kd`). Toggling the status enable clears
+   it; Linux's sdhci does the same, off on each card interrupt and on again once handled.
+   Run `20261018-201635-gei_5r35`: in the first 10 s of the link 24 card interrupts and
+   101 idle waits that ran out; host pings 59/60, average RTT 3.97 ms (min 1.58) where
+   the 4 ms poll gave ~7.4 ms.
+9. High speed (done 2026-10-18). Bring-up switches the bus to SDIO high speed (50 MHz SDR
+   at 3.3 V) when the card sets CCCR 0x13 SHS and the host's capabilities have bit 21
+   (both do on the Pi 5): EHS on the card, the host's high-speed timing, then the clock,
+   before the firmware download. Run `20261018-203013-ajj6x040`: the download and its
+   read-back took 66 ms where 25 MHz took 129; host pings of 1390 bytes every 10 ms,
+   500/500. (A 1400-byte ping from WSL is fragmented by its 1420 MTU and was answered by
+   neither VibeOS nor the router, so it says nothing about either.)
+10. The Pi 4 (done 2026-10-18). Its Wi-Fi host is SDC1, the BCM2711's Arasan SDHCI
+    (`BCM2847`, regs 0xFE300000, GSIV 158 shared with the card slot's EMMC2), which the
+    Pi 4's UEFI routes to the Wi-Fi's SDIO lines; the HAL publishes it as the same
+    `VIBEOS\CYW43455` child as the Pi 5's (`find_wifi_pi4`). Two things live behind the
+    VideoCore firmware, asked through the mailbox's property channel (`mbox.rs`, as
+    UEFI's RpiFirmwareDxe does): WL_REG_ON is line 1 of the firmware's GPIO expander
+    (GPIO 129, SET_GPIO_STATE, low then high and 150 ms), and the host's capabilities
+    register is 0, so its base clock is the firmware's EMMC clock (GET_CLOCK_RATE id 1,
+    250 MHz; `sdhci-rust` takes a platform base clock when the register has none). No
+    high-speed bit in that register, so the bus stays at 25 MHz. The card reads
+    02d0:a9a6, the chip 0x4345 rev 6, the same firmware as the Pi 5's.
+    Run `20261018-224456-m19qzmlp` (serial `serial-20261018-210137`): firmware loaded and verified
+    in 124 ms, joined 'Piconet', 4-way handshake in 2793 ms, lease 192.168.1.217 beside the
+    GENET's 192.168.1.216; host pings 60/60 (4.98 ms average) and 300/300 of 1390 bytes.

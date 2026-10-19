@@ -1,0 +1,23 @@
+# fontext (dll/shellext/fontext -> fontext-rust, `port cppapp`): the Fonts shell folder.
+# Explorer loads it only when someone opens Fonts, so smoke reaches none of it.
+# probes/fontext.c, staged twice: as fontext_c.exe it loads the pre-flip C (fontext_c.dll,
+# from c_oracle.cmake) beside it, as fontext_probe.exe the system fontext.dll. Both read the
+# guest's installed fonts and print only values, so the outputs must match byte for byte.
+module: fontext
+variants:
+  c: '%SystemRoot%\bin\modrun\fontext_c.exe'
+  rust: '%SystemRoot%\bin\modrun\fontext_probe.exe'
+ninja: [fontext_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/fontext-{arch}.exe', dest: bin/modrun/fontext_c.exe}
+  - {src: 'tools/payloads/modrun/probes/fontext-{arch}.exe', dest: bin/modrun/fontext_probe.exe}
+  - {src: 'build-{arch}/dll/shellext/fontext/fontext_c.dll', dest: bin/modrun/fontext_c.dll}
+cases:
+  - id: folder
+    expect: ['classobject 00000000', 'create 00000000', 'initialize 00000000',
+             'curfolder 00000000 same=1', "  col 0 00000000 fmt=0 cx=25 'Name'", 'enum 00000000',
+             "item 0 'Arial (TrueType)'", "  name infolder-parsing 00000000 'arial.ttf'",
+             'compare allfields self 0', 'parse 00000000 same=1', 'parse missing 80070002 null=1',
+             'item contextmenu 00000000', 'dataobject 00000000', 'release 0', 'canunload 00000000',
+             'probe done']
+    timeout: 180

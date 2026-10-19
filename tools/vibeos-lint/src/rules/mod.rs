@@ -5,6 +5,8 @@ pub mod double_fetch;
 pub mod dowhile_continue;
 pub mod entry_point_cc;
 pub mod uncalled_ctor_hook;
+pub mod guid_values;
+pub mod container_ptr_read;
 pub mod fnptr_abi_transmute;
 pub mod hkey_zero_extend;
 pub mod hresult_literals;
@@ -22,6 +24,7 @@ pub mod bindgen_padding_index;
 pub mod bitwise_not_bool;
 pub mod bugcheck_codes;
 pub mod byte_step_one;
+pub mod variant_outptr;
 pub mod byteptr_stride;
 pub mod calloc_elem_type;
 pub mod cdecl_alias;
@@ -231,6 +234,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(sse_helpers::SseHelpers),
         Box::new(extern_arity::ExternArity),
         Box::new(byte_step_one::ByteStepOne),
+        Box::new(variant_outptr::VariantOutptr),
         Box::new(wide_byte_copy::WideByteCopy),
         Box::new(typed_byte_copy::TypedByteCopy),
         Box::new(local_overlength::LocalOverlength),
@@ -267,5 +271,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(fnptr_abi_transmute::FnptrAbiTransmute),
         Box::new(entry_point_cc::EntryPointCc),
         Box::new(uncalled_ctor_hook::UncalledCtorHook),
+        Box::new(guid_values::GuidValues),
+        Box::new(container_ptr_read::ContainerPtrRead),
     ]
 }

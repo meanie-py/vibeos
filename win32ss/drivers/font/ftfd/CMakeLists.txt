@@ -12,7 +12,6 @@ list(APPEND SOURCE
 # The C stays on disk, uncompiled.
 # The translated C, kept on disk:
 # sprintf.c  # replaced by Rust (sdk/lib/rust/ftfd-rust/src/ftfd/sprintf.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
 add_cargo_module(ftfd ftfd-cargo ftfd.dll
     KIND kerneldll
     BODY_CRATE ftfd-rust

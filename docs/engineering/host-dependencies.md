@@ -20,7 +20,7 @@ hours spent debugging the wrong thing.
 | rust target `i686-unknown-linux-gnu` | `rustup target list --installed` | `msvcrt-seh-difftest`: "can't find crate for `core`" |
 | rust targets `i686-pc-windows-gnu`, `x86_64-pc-windows-gnu`, `aarch64-pc-windows-gnullvm` | same | the arch will not build |
 | cmake · ninja · ccache · sccache | `--version` | build |
-| qemu (Windows-side too) | `qemu-system-x86_64`, `/mnt/c/Program Files/qemu` | smoke |
+| qemu (Windows-side too) | `qemu-system-x86_64`; Windows build 11.1.0 extracted to `C:\qemu-11.1.0` (`qemu.windows.qemu_dir`), with Windows Firewall ALLOWING inbound for each `qemu-system-*.exe` | smoke |
 | bindgen + libclang | `bindgen --version` | `-sys` crate generation |
 | bison · flex | `--version` | build |
 | **`windmc`** | `x86_64-w64-mingw32-windmc` — **NOT bare `windmc`** | `committed_drift` bugcodes.h check |

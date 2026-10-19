@@ -20,6 +20,10 @@
 use reactos_link::{Linker, ModuleKind};
 use std::env;
 
+// blrtl-rust's path-deps (its own src is tracked by the .rust_lib build).
+const BLRTL_RUST_DEPS: &[&str] =
+    &["bitmap/src", "compress/src", "crc32/src", "largeint/src", "random/src", "byteswap/src", "mem/src", "rtl-diag/src", "rtl-strings/src"];
+
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
     if arch != "x86_64" {
@@ -31,20 +35,9 @@ fn main() {
     // build compiles its recipe (reactos-link/clibs).
     let libs: Vec<&str> = vec!["engine:c:freeldr_bios_asm"];
 
-    // blrtl (boot-loader RTL leaf, boot/rtl/blrtl.cmake) compiled in-cargo: C
-    // via compile_commands.json replay (target `blrtl` disambiguates the shared
-    // sdk/lib/rtl/*.c sources), per-arch asm via .asm_archive() below. The
-    // common C set; amd64 adds bitmap64/byteswap/mem (blrtl.cmake amd64 branch).
-    let mut blrtl_c: Vec<&str> = vec![
-        "sdk/lib/rtl/bitmap.c",
-        "sdk/lib/rtl/compress.c",
-        "sdk/lib/rtl/crc32.c",
-        "sdk/lib/rtl/image.c",
-        "sdk/lib/rtl/largeint.c",
-        "boot/rtl/nlsboot.c",
-        "sdk/lib/rtl/random.c",
-        "sdk/lib/rtl/unicode.c",
-    ];
+    // blrtl (boot-loader RTL, boot/rtl/blrtl.cmake) is the blrtl-rust crate (the kernel's
+    // RTL rlibs + nlsboot, with blrtl.cmake's per-arch membership; no C left), a .rust_lib
+    // below; its per-arch asm goes in via .asm_archive() below.
     // blrtl's per-arch asm (asm.inc only — AsmDefineSet::Kernel). i386:
     // debug_asm/rtlmem/rtlswap; amd64: debug_asm; arm64: none (no ASM_SOURCE).
     let blrtl_asm: &[&str] = match arch.as_str() {
@@ -53,14 +46,7 @@ fn main() {
             "sdk/lib/rtl/i386/rtlmem.s",
             "sdk/lib/rtl/i386/rtlswap.S",
         ],
-        "x86_64" => {
-            blrtl_c.extend_from_slice(&[
-                "sdk/lib/rtl/bitmap64.c",
-                "sdk/lib/rtl/byteswap.c",
-                "sdk/lib/rtl/mem.c",
-            ]);
-            &["sdk/lib/rtl/amd64/debug_asm.S"]
-        }
+        "x86_64" => &["sdk/lib/rtl/amd64/debug_asm.S"],
         _ => &[],
     };
 
@@ -69,8 +55,8 @@ fn main() {
     // The common C set (math _invoke_matherr/exp2f, mbstring, misc fltused, the 12
     // printf shells, string atol/wctype/winesup, scanf_trampoline); i386 adds the
     // x87 math wrappers (ci*/libm_sse2/nexttowardf), amd64 adds ehandler.c. Source
-    // list mirrors the cmake `libcntpr` target's objects (see tools/gen_cflags.py
-    // + the committed cflags/libcntpr.<arch>.flags template). asm intrinsics are
+    // list is a subset of the cmake `libcntpr` target's objects (with no cmake build,
+    // their lines of clibs/<arch>/libcntpr.recipe). asm intrinsics are
     // GC'd (gnu target) — no asm_archive.
     let mut libcntpr_c: Vec<&str> = vec![
         "sdk/lib/crt/math/_invoke_matherr.c",
@@ -122,8 +108,9 @@ fn main() {
         .rust_staticlib("freeldr-rust")
         .rust_user_target()
         .rust_watch(&["cmboot-rust/src", "cnt-rust/src", "cnt-ctype/src"])
+        .rust_watch(BLRTL_RUST_DEPS)
         .rust_lib("cmlib-rust", &["bldr"], true)
-        .c_from_compile_db("blrtl", &blrtl_c)
+        .rust_lib("blrtl-rust", &[], true)
         .c_from_compile_db("libcntpr", &libcntpr_c)
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         .rust_lib("cport-rust", &[], true)

@@ -7,7 +7,6 @@
 # enable.c  # replaced by Rust (sdk/lib/rust/bmfd-rust/src/bmfd/enable.rs)
 # font.c  # replaced by Rust (sdk/lib/rust/bmfd-rust/src/bmfd/font.rs)
 # glyph.c  # replaced by Rust (sdk/lib/rust/bmfd-rust/src/bmfd/glyph.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
 add_cargo_module(bmfd bmfd-cargo bmfd.dll
     KIND kerneldll
     BODY_CRATE bmfd-rust

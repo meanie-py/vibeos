@@ -93,6 +93,48 @@ pub trait CoClass: ComObject {
     unsafe fn destroy(p: *mut Self);
 }
 
+/// shellutils.h `CComCreatorCentralInstance<CComObject<T>>::CreateInstance`, what
+/// `DECLARE_CENTRAL_INSTANCE_NOT_AGGREGATABLE(T)` makes the creator: ONE object per process,
+/// made on the first request and handed out (QueryInterface'd) to every later one. netshell's
+/// CLanStatus: explorer's tray instance and the folder's `CoCreateInstance(CLSID_ConnectionTray)`
+/// must be the same object, or the folder's "Status" verb reaches a tray with no connections.
+/// `slot` is that class's own instance cell (cppapp generates one per class). The instance is
+/// never released, as in the C++ (its `Term` is never called).
+pub unsafe fn central_creator<T: CoClass>(
+    slot: &AtomicPtr<c_void>,
+    pv: *mut c_void,
+    riid: *const c_void,
+    ppv: *mut *mut c_void,
+) -> HRESULT {
+    if ppv.is_null() {
+        return E_POINTER;
+    }
+    *ppv = core::ptr::null_mut();
+    if !pv.is_null() {
+        return CLASS_E_NOAGGREGATION;
+    }
+    type Release = unsafe extern "system" fn(*mut c_void) -> u32;
+    type Qi = unsafe extern "system" fn(*mut c_void, *const c_void, *mut *mut c_void) -> HRESULT;
+    if slot.load(Ordering::Acquire).is_null() {
+        let mut obj: *mut c_void = core::ptr::null_mut();
+        const IID_IUNKNOWN: [u8; 16] = [0, 0, 0, 0, 0, 0, 0, 0, 0xC0, 0, 0, 0, 0, 0, 0, 0x46];
+        let hr = creator::<T>(core::ptr::null_mut(), IID_IUNKNOWN.as_ptr() as *const c_void, &mut obj);
+        if failed(hr) {
+            return hr;
+        }
+        if slot
+            .compare_exchange(core::ptr::null_mut(), obj, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            let vtbl = *(obj as *const *const Release);
+            (*vtbl.add(2))(obj); // another thread won: drop this one
+        }
+    }
+    let inst = slot.load(Ordering::Acquire);
+    let vtbl = *(inst as *const *const Qi);
+    (*vtbl)(inst, riid, ppv)
+}
+
 /// `DECLARE_NOT_AGGREGATABLE(T)`'s `_CreatorClass::CreateInstance`:
 /// `CComCreator2<CComCreator<CComObject<T>>, CComFailCreator<CLASS_E_NOAGGREGATION>>`.
 pub unsafe extern "system" fn creator<T: CoClass>(

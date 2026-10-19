@@ -22,11 +22,11 @@
 #![allow(unused_unsafe, unused_parens, unused_variables, unused_assignments, dead_code)]
 
 // Shared glue (libc externs, TRACE/FIXME macros, local FORCEINLINE gaps).
-#[cfg(feature = "cabi")]
+#[cfg(feature = "image")]
 #[macro_use]
 pub mod shim;
 
-#[cfg(feature = "cabi")]
+#[cfg(feature = "image")]
 pub mod image;
 #[cfg(feature = "cabi")]
 pub mod assert;

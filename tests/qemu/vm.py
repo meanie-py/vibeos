@@ -587,12 +587,23 @@ def writable_root() -> bool:
     return os.environ.get("VIBEOS_WRITABLE_ROOT", "").strip() == "1"
 
 
+def boot_iso(build_dir: Path) -> Path:
+    """The x86 livecd this run boots: build_dir's, or `VIBEOS_BOOT_MEDIA`, an image
+    tools/media_manifest.py --assemble mastered elsewhere. `vibeos-cli smoke --media` sets
+    it only after checking the image's provenance stamp against this tree."""
+    media = os.environ.get("VIBEOS_BOOT_MEDIA", "").strip()
+    return Path(media) if media else build_dir / "livecd.iso"
+
+
 def livecd_media(build_dir: Path) -> Path:
     """The x86 boot ISO: livecd.iso, or its writable-root twin (tools/conformance/
     mk_writable_livecd.py, rebuilt only when livecd.iso changes) under writable_root()."""
-    iso = build_dir / "livecd.iso"
+    iso = boot_iso(build_dir)
     if not writable_root():
         return iso
+    if iso != build_dir / "livecd.iso":
+        # The twin is made from build_dir's livecd, which is not the media asked for.
+        raise RuntimeError("VIBEOS_BOOT_MEDIA cannot boot with VIBEOS_WRITABLE_ROOT=1")
     import importlib.util
 
     spec = importlib.util.spec_from_file_location(
@@ -1132,7 +1143,7 @@ class I386Config(ArchConfig):
     )
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = _maybe_smp_iso(PROJECT_DIR / "build-i386" / "livecd.iso", work_dir)
+        iso = _maybe_smp_iso(boot_iso(PROJECT_DIR / "build-i386"), work_dir)
         return [
             *self.machine_args,
             "-m",
@@ -1286,7 +1297,7 @@ class Amd64Config(ArchConfig):
     )
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = _maybe_smp_iso(PROJECT_DIR / "build-amd64" / "livecd.iso", work_dir)
+        iso = _maybe_smp_iso(boot_iso(PROJECT_DIR / "build-amd64"), work_dir)
         return [
             *self.machine_args,
             "-m",
@@ -1462,7 +1473,7 @@ class Amd64BiosConfig(Amd64Config):
     arch: str = "amd64-bios"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = _maybe_smp_iso(PROJECT_DIR / "build-amd64" / "livecd.iso", work_dir)
+        iso = _maybe_smp_iso(boot_iso(PROJECT_DIR / "build-amd64"), work_dir)
         return [
             *self.machine_args,
             "-m",
@@ -2341,7 +2352,11 @@ class QemuVM:
         on its own EHCI controller. A stick is a 64M MBR disk with one FAT
         partition (the SuperSpeed one FAT32) holding USB_STICK_FILE, so a guest
         that mounts it has something known to read back. The image lives beside
-        scratch_path so the windows-host backend stages it like any other media."""
+        scratch_path so the windows-host backend stages it like any other media.
+        EHCI is pinned to PCI slot 0xb, next to xHCI's 8, NVMe's 9 and AHCI's 0xa:
+        auto-assigned, it takes slot 2 from arm64's boot disk, whose `Pci(0x2,0x0)`
+        path is saved in efivars, and UEFI falls through to PXE (the first arm64
+        stortest run)."""
         if not self._usb_disk_enabled():
             return []
         usb_disk = self.scratch_path.parent / "usbdisk.qcow2"
@@ -2362,7 +2377,7 @@ class QemuVM:
             return [*drive, "-drive", f"file={ss_disk},format=qcow2,if=none,id=usbstor1"]
         return [
             "-device",
-            "usb-ehci,id=xehci",
+            "usb-ehci,id=xehci,addr=0xb",
             *drive,
             "-device",
             "usb-storage,bus=xehci.0,drive=usbstor0",
@@ -2809,6 +2824,11 @@ class QemuVM:
 
         self._win_uid = f"vibeos-{os.getpid()}-{ser_port}"
         win_bin = be.windows_qemu_bin(self.config.qemu_bin, self._win["qemu_dir"], accel)
+        # A build caught computing wrong guest answers never boots: its verdicts are about
+        # the emulator (smoke refuses it earlier, with its own classification).
+        bad = be.known_bad_windows_qemu(be.windows_qemu_version(win_bin))
+        if bad and not be.known_bad_allowed():
+            raise RuntimeError(f"{be.known_bad_windows_qemu_fix(win_bin)} ({bad})")
 
         # Pick hostfwd ports on the WINDOWS stack (where QEMU.exe binds them), not
         # WSL's — see _free_tcp_port / be.windows_free_tcp_port. The hook is read by

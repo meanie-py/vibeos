@@ -11,8 +11,10 @@ use sdhci_rust::{
 };
 
 pub const ID_CLOCK_HZ: u32 = 400_000;
-/// Default speed. High speed (50 MHz, CCCR 0x13) comes once the chip runs.
+/// Default speed, for a card or host without high speed.
 pub const XFER_CLOCK_HZ: u32 = 25_000_000;
+/// High speed (SDIO 3.00 section 6.8): SDR at 3.3 V, 50 MHz.
+pub const HS_CLOCK_HZ: u32 = 50_000_000;
 
 // CCCR (function 0).
 pub const CCCR_IO_ENABLE: u32 = 0x02;
@@ -21,6 +23,10 @@ pub const CCCR_INT_ENABLE: u32 = 0x04;
 pub const CCCR_IO_ABORT: u32 = 0x06;
 pub const CCCR_BUS_IF: u32 = 0x07;
 pub const CCCR_CIS_PTR: u32 = 0x09;
+/// Bus speed select: SHS (the card supports high speed), EHS (enable it).
+pub const CCCR_SPEED: u32 = 0x13;
+const SPEED_SHS: u8 = 1 << 0;
+const SPEED_EHS: u8 = 1 << 1;
 /// A function's FBR is at 0x100 * n: its CIS pointer at +9, block size at +0x10.
 pub const FBR_CIS_PTR: u32 = 0x09;
 pub const FBR_BLOCK_SIZE: u32 = 0x10;
@@ -115,7 +121,17 @@ impl<P: Platform> Sdio<P> {
         let bus = self.read_1(0, CCCR_BUS_IF)?;
         self.write_1(0, CCCR_BUS_IF, (bus & !3) | BUS_WIDTH_4)?;
         self.hc.set_4bit();
-        self.card.clock_hz = self.hc.set_clock(XFER_CLOCK_HZ)?;
+        // High speed when both ends have it: the card first, then the host's timing,
+        // then the clock. The firmware download is the first thing to run on it.
+        let speed = self.read_1(0, CCCR_SPEED)?;
+        let hz = if speed & SPEED_SHS != 0 && self.hc.rd(sdhci_rust::REG_CAPS) & sdhci_rust::CAPS_HIGH_SPEED != 0 {
+            self.write_1(0, CCCR_SPEED, speed | SPEED_EHS)?;
+            self.hc.set_high_speed();
+            HS_CLOCK_HZ
+        } else {
+            XFER_CLOCK_HZ
+        };
+        self.card.clock_hz = self.hc.set_clock(hz)?;
         Ok(self.card)
     }
 
@@ -300,12 +316,24 @@ mod tests {
         assert_eq!((c.vendor, c.device), (0x02D0, 0x4345));
         assert_eq!(c.rca, 0x0001);
         assert_eq!(c.functions, 2);
-        assert_eq!(c.clock_hz, 25_000_000);
+        assert_eq!(c.clock_hz, HS_CLOCK_HZ);
         {
             let card = s.hc.p.card();
             assert!(card.selected && card.cccr[CCCR_BUS_IF as usize] & 3 == BUS_WIDTH_4);
+            assert!(card.cccr[CCCR_SPEED as usize] & SPEED_EHS != 0, "the card was switched first");
         }
-        assert!(s.hc.rd(sdhci_rust::REG_HOST_CTRL) & sdhci_rust::HOST_4BIT != 0);
+        let host = s.hc.rd(sdhci_rust::REG_HOST_CTRL);
+        assert!(host & sdhci_rust::HOST_4BIT != 0 && host & sdhci_rust::HOST_HIGH_SPEED != 0);
+    }
+
+    #[test]
+    fn a_card_without_high_speed_stays_at_default_speed() {
+        let mut card = Card::cyw43455();
+        card.cccr[CCCR_SPEED as usize] = 0;
+        let mut s = Sdio::new(Sim::new(card));
+        assert_eq!(s.init().unwrap().clock_hz, XFER_CLOCK_HZ);
+        assert!(s.hc.rd(sdhci_rust::REG_HOST_CTRL) & sdhci_rust::HOST_HIGH_SPEED == 0);
+        assert!(s.hc.p.card().cccr[CCCR_SPEED as usize] & SPEED_EHS == 0);
     }
 
     #[test]

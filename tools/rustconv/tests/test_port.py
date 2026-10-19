@@ -1536,6 +1536,24 @@ def test_drop_guid_library_copies_cuts_only_what_a_linked_library_defines(tmp_pa
     assert "pub static mut MY_OWN: GUID" in text and text.endswith("fn x() {}\n")
 
 
+def test_a_one_line_guid_copy_is_dropped_and_an_island_const_becomes_storage(tmp_path):
+    # fontext: CFontExt.cpp's model-written IID copies are one-liners; fontext.cpp's
+    # `const GUID CLSID_CFontExt = {..}` came back `pub const`, which no extern can name.
+    f = tmp_path / "u.rs"
+    f.write_text(
+        "#[no_mangle]\npub static IID_IShellView: IID = GUID { Data1: 0x000214E3, Data2: 0, "
+        "Data3: 0, Data4: [0; 8] };\npub const CLSID_CFontExt: GUID = GUID {\n    Data1: 1,\n};\n"
+    )
+    assert port.drop_guid_library_copies(f, {"IID_IShellView"}) == ["IID_IShellView"]
+    assert port._export_island_statics(f, {"CLSID_CFontExt"}) == ["CLSID_CFontExt"]
+    text = f.read_text()
+    assert "IID_IShellView" not in text
+    assert "#[no_mangle]\npub static CLSID_CFontExt: GUID = GUID {" in text
+    # ntobjshex spelled its copy through the IID alias.
+    f.write_text("pub static IID_IShellFolder: IID = IID { Data1: 0x000214E6, Data4: [0; 8] };\n")
+    assert port.drop_guid_library_copies(f, {"IID_IShellFolder"}) == ["IID_IShellFolder"]
+
+
 def test_com_method_names_are_the_islands_vtable_slots(tmp_path):
     (tmp_path / "types_amd64.rs").write_text(
         "#[repr(C)]\npub struct IStreamVtbl {\n    pub QueryInterface: Option<fn()>,\n"
@@ -1700,3 +1718,153 @@ def test_c2rust_unnamed_named_member_takes_bindgen_type(tmp_path):
     assert "u: _MIB_IPSTATS__bindgen_ty_1 { dwForwarding:" in out
     assert "u: _MIB_TCPSTATS__bindgen_ty_1 { dwRtoAlgorithm:" in out
     assert "C2RustUnnamed_9 { nobody" in out, "no owning type: left alone"
+
+
+def test_an_invented_module_method_extern_becomes_a_method_call(tmp_path):
+    # fontext/netshell: `gModule.DllRegisterServer(FALSE)` came back as an extern nothing defines.
+    f = tmp_path / "netshell_cpp_h.rs"
+    f.write_text(
+        'extern "system" {\n    fn gModule_DllRegisterServer(bRegTypeLib: i32) -> HRESULT;\n'
+        "    fn gModule_DllUnregisterServer(this: *mut u8, arg0: i32) -> HRESULT;\n}\n"
+        "fn f() { hr = gModule_DllRegisterServer(0); "
+        "hr = gModule_DllUnregisterServer(core::ptr::addr_of_mut!(gModule), 0); }\n"
+    )
+    done = port._module_method_calls(f, ["gModule"])
+    assert sorted(done) == ["gModule_DllRegisterServer", "gModule_DllUnregisterServer"]
+    text = f.read_text()
+    assert "gModule.DllRegisterServer(0)" in text and "gModule.DllUnregisterServer(0)" in text
+    assert "extern" not in text
+
+
+def test_a_spec_stub_keeps_its_export_from_a_same_named_cpp_function(tmp_path):
+    # netshell: lanstatusui.cpp's C++-linkage RepairConnection beside `32 stub RepairConnection`.
+    f = tmp_path / "lanstatusui_cpp_h.rs"
+    f.write_text(
+        '#[no_mangle]\npub unsafe extern "C" fn RepairConnection(p: *mut c_void) -> HRESULT { 0 }\n'
+        '#[no_mangle]\npub unsafe extern "system" fn DllCanUnloadNow() -> HRESULT { 0 }\n'
+    )
+    assert port._unexport_spec_stubs(f, {"RepairConnection"}) == ["RepairConnection"]
+    text = f.read_text()
+    assert text.startswith('pub unsafe extern "C" fn RepairConnection(')
+    assert '#[no_mangle]\npub unsafe extern "system" fn DllCanUnloadNow' in text
+
+
+def test_c2rust_unnamed_accepts_the_typedef_spelling_and_nested_members(tmp_path):
+    """xinput1_3: `HIDP_VALUE_CAPS { c2rust_unnamed: C2RustUnnamed_21 { Range: C2RustUnnamed_23
+    { UsageMin: 0 } } }`. The literal names the typedef, and `Range` with a `UsageMin` field
+    exists in two island unions, so only the enclosing literal can pick one."""
+    island = (
+        "pub struct _HIDP_VALUE_CAPS {\n    pub __bindgen_anon_1: _HIDP_VALUE_CAPS__bindgen_ty_1,\n}\n"
+        "pub union _HIDP_VALUE_CAPS__bindgen_ty_1 {\n"
+        "    pub Range: _HIDP_VALUE_CAPS__bindgen_ty_1__bindgen_ty_1,\n}\n"
+        "pub struct _HIDP_VALUE_CAPS__bindgen_ty_1__bindgen_ty_1 {\n    pub UsageMin: u16,\n}\n"
+        "pub struct _HIDP_BUTTON_CAPS {\n    pub __bindgen_anon_1: _HIDP_BUTTON_CAPS__bindgen_ty_1,\n}\n"
+        "pub union _HIDP_BUTTON_CAPS__bindgen_ty_1 {\n"
+        "    pub Range: _HIDP_BUTTON_CAPS__bindgen_ty_1__bindgen_ty_1,\n}\n"
+        "pub struct _HIDP_BUTTON_CAPS__bindgen_ty_1__bindgen_ty_1 {\n    pub UsageMin: u16,\n}\n"
+    )
+    f = tmp_path / "m.rs"
+    f.write_text(
+        "static V: X = HIDP_VALUE_CAPS {\n    c2rust_unnamed: C2RustUnnamed_21 {\n"
+        "        Range: C2RustUnnamed_23 {\n            UsageMin: 0,\n        },\n    },\n};\n"
+    )
+    port._c2rust_unnamed(f, island)
+    out = f.read_text()
+    assert "__bindgen_anon_1: _HIDP_VALUE_CAPS__bindgen_ty_1 {" in out
+    assert "Range: _HIDP_VALUE_CAPS__bindgen_ty_1__bindgen_ty_1 {" in out
+    assert "BUTTON" not in out
+
+
+def test_links_oldnames_reads_the_link_edge(tmp_path, monkeypatch):
+    """msvcrtex lists oldnames as an INTERFACE lib, so the CMakeLists rarely names it."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    mod = tmp_path / "dll" / "win32" / "xi"
+    mod.mkdir(parents=True)
+    (mod / "CMakeLists.txt").write_text("add_library(xi MODULE main.c)\n")
+    b = tmp_path / "build-amd64"
+    b.mkdir()
+    (b / "build.ninja").write_text(
+        "build dll/win32/xi/xi.dll: C_MODULE_LIBRARY_LINKER__xi_Debug a.obj | "
+        "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a\n"
+    )
+    assert port._links_oldnames(mod)
+    (b / "build.ninja").write_text("build dll/win32/xi/xi.dll: C_MODULE_LIBRARY_LINKER__xi a.obj\n")
+    assert not port._links_oldnames(mod)
+
+
+def test_early_errors_names_what_stops_rustc_before_name_resolution(monkeypatch, tmp_path):
+    """macros lowered 0 SDK macros behind such an error (activeds) and said "nothing to port"."""
+    import json as _json
+    import subprocess as _sp
+
+    from rustconv import prelude_resolve
+
+    def msg(level, text, code=None, file="src/a.rs", line=3):
+        m = {
+            "level": level,
+            "message": text,
+            "code": {"code": code} if code else None,
+            "spans": [{"is_primary": True, "file_name": file, "line_start": line}],
+        }
+        return _json.dumps({"reason": "compiler-message", "message": m})
+
+    def fake(lines):
+        return lambda *a, **k: _sp.CompletedProcess(a, 101, stdout="\n".join(lines), stderr="")
+
+    monkeypatch.setattr(
+        prelude_resolve.subprocess,
+        "run",
+        fake(
+            [
+                msg("error", "expected one of `,` or `}`, found `x`"),
+                msg("error", "file not found for module `stubs`", "E0583", line=20),
+                msg("error", "mismatched types", "E0308"),
+                msg("error", "not automatically applying `DerefMut` on `ManuallyDrop` union field"),
+                msg("error", "aborting due to 3 previous errors"),
+                msg("warning", "unused variable", None),
+            ]
+        ),
+    )
+    got = prelude_resolve.early_errors("c", "t", tmp_path, tmp_path)
+    assert got == [
+        "src/a.rs:3: expected one of `,` or `}`, found `x`",
+        "src/a.rs:20: file not found for module `stubs`",
+    ]
+    monkeypatch.setattr(
+        prelude_resolve.subprocess, "run", fake([msg("error", "mismatched types", "E0308")])
+    )
+    assert prelude_resolve.early_errors("c", "t", tmp_path, tmp_path) == []
+
+
+def test_a_recalled_sdk_constant_is_dropped_and_the_modules_own_kept(tmp_path):
+    # zipfldr: `PID_STG_NAME = 2` from memory (10); COL_NAME is the module's own enum member.
+    f = tmp_path / "CZipFolder_cpp_h.rs"
+    f.write_text(
+        "pub const PID_STG_NAME: u32 = 0x0000_0002;\n"
+        "pub const COL_NAME: i32 = 0;\n"
+        "fn f() { let x = PID_STG_NAME; }\n"
+    )
+    assert port._drop_recalled_constants(f, {"COL_NAME"}) == ["PID_STG_NAME"]
+    text = f.read_text()
+    assert "PID_STG_NAME: u32" not in text and "pub const COL_NAME" in text
+    assert "let x = PID_STG_NAME" in text
+
+
+def test_a_helper_passing_an_atl_class_gets_the_rust_abi(tmp_path):
+    # zipfldr: `unsafe extern "C" fn DoGetZipName(..) -> CStringW` failed rust_ub_deny
+    # (improper_ctypes_definitions) at the gate on every arch.
+    f = tmp_path / "CZipCreator_cpp_h.rs"
+    f.write_text(
+        'unsafe extern "C" fn DoGetZipName(filename: PCWSTR) -> CStringW {\n    todo()\n}\n'
+        'unsafe extern "C" fn Crc(name: PCSTR) -> DWORD {\n    0\n}\n'
+        '#[no_mangle]\npub unsafe extern "C" fn Exported(s: &CStringW) -> HRESULT {\n    0\n}\n'
+        'unsafe extern "C" fn Callback(s: &CStringW) -> i32 {\n    0\n}\n'
+        "fn user() { DoGetZipName(p); register(Callback); }\n"
+    )
+    done = port._rust_abi_helpers(f, f.read_text())
+    assert done == ["DoGetZipName"]
+    text = f.read_text()
+    assert "unsafe fn DoGetZipName(filename: PCWSTR) -> CStringW {" in text
+    assert 'unsafe extern "C" fn Crc(' in text, "no ATL class: untouched"
+    assert 'pub unsafe extern "C" fn Exported(' in text, "an export keeps its ABI"
+    assert 'unsafe extern "C" fn Callback(' in text, "taken as a fn pointer: kept"

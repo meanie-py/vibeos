@@ -149,6 +149,59 @@ pub unsafe fn ShellObjectCreator<T: ComObject>(objref: &mut CComPtr<T>) -> HRESU
     S_OK
 }
 
+/// shellutils.h `ShellObjectCreator<T>(riid, ppv)`: create, AddRef, QueryInterface,
+/// Release (which destroys the object if the QI did not keep it).
+#[macro_export]
+macro_rules! ShellObjectCreatorIid {
+    ($T:ty, $riid:expr, $ppv:expr $(,)?) => {{
+        let mut __pobj: *mut $T = core::ptr::null_mut();
+        let mut __hr = <$T as $crate::com::ComObject>::create_instance(&mut __pobj);
+        if __hr >= 0 {
+            (*__pobj).AddRef();
+            __hr = (*__pobj).QueryInterface(($riid) as *const _ as _, ($ppv) as *mut _ as _);
+            (*__pobj).Release();
+        }
+        __hr
+    }};
+}
+
+/// shellutils.h `ShellObjectCreatorInit<T>(args.., riid, ppv)`: create, AddRef, call
+/// `Initialize(args..)`, then QueryInterface on success, and Release (which destroys the
+/// object if the QI did not keep it). C++ deduces the arity from the template; spelled
+/// `ShellObjectCreatorInit!(T, [args..], riid, ppv)` here, or
+/// `ShellObjectCreatorInit!(T, Initialize__1, [args..], riid, ppv)` when T overloads
+/// Initialize: C++ picks the overload by argument type, which a macro cannot (ntobjshex's
+/// CNtObjectFolder has IPersistFolder's Initialize(pidl) beside its own (pidl, ntPath)).
+#[macro_export]
+macro_rules! ShellObjectCreatorInit {
+    ($T:ty, $init:ident, [$($arg:expr),* $(,)?], $riid:expr, $ppv:expr $(,)?) => {{
+        let mut __pobj: *mut $T = core::ptr::null_mut();
+        let mut __hr = <$T as $crate::com::ComObject>::create_instance(&mut __pobj);
+        if __hr >= 0 {
+            (*__pobj).AddRef();
+            __hr = (*__pobj).$init($($arg),*);
+            if __hr >= 0 {
+                __hr = (*__pobj).QueryInterface(($riid) as *const _ as _, ($ppv) as *mut _ as _);
+            }
+            (*__pobj).Release();
+        }
+        __hr
+    }};
+    ($T:ty, [$($arg:expr),* $(,)?], $riid:expr, $ppv:expr $(,)?) => {{
+        let mut __pobj: *mut $T = core::ptr::null_mut();
+        let mut __hr = <$T as $crate::com::ComObject>::create_instance(&mut __pobj);
+        if __hr >= 0 {
+            (*__pobj).AddRef();
+            __hr = (*__pobj).Initialize($($arg),*);
+            if __hr >= 0 {
+                __hr = (*__pobj).QueryInterface(($riid) as *const _ as _, ($ppv) as *mut _ as _);
+            }
+            (*__pobj).Release();
+        }
+        __hr
+    }};
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

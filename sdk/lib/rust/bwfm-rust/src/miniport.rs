@@ -7,15 +7,16 @@
 //! device stack and calls initialize with the PDO's resources. Initialize brings the chip
 //! up to a running firmware with its MAC address, which the general attributes need,
 //! and starts the worker. The worker owns the bus from then on: it scans, joins (and
-//! joins again whenever the link is lost), then carries frames both ways, polling the
-//! chip between sends (no card interrupt yet). The stack's send path only copies frames
-//! into a ring, because it may run at DISPATCH_LEVEL and the SDIO bus waits.
+//! joins again whenever the link is lost), then carries frames both ways, sleeping on
+//! the card's interrupt (the SDIO host's, through NDIS) between them, or polling the
+//! chip when there is none. The stack's send path only copies frames into a ring,
+//! because it may run at DISPATCH_LEVEL and the SDIO bus waits.
 
 use core::ptr::{addr_of_mut, null_mut};
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use ndis6_sys::{
-    GeneralAttributes, LinkState, MiniportDriverCharacteristics, MiniportInitParameters, MiniportRestartParameters,
+    GeneralAttributes, InterruptCharacteristics, LinkState, NDIS_OBJECT_TYPE_MINIPORT_INTERRUPT, MiniportDriverCharacteristics, MiniportInitParameters, MiniportRestartParameters,
     NblPoolParameters, NdisObjectHeader, NdisOidRequest, NetBuffer, NetBufferList, RegistrationAttributes,
     StatusIndication, MEDIA_CONNECT_STATE_CONNECTED, MEDIA_CONNECT_STATE_DISCONNECTED, MEDIA_DUPLEX_STATE_FULL,
     NDIS_OBJECT_TYPE_DEFAULT, NDIS_OBJECT_TYPE_MINIPORT_ADAPTER_GENERAL_ATTRIBUTES,
@@ -73,8 +74,12 @@ const OID_SET: u32 = 1;
 /// Frames the stack may have waiting for the worker.
 const TX_SLOTS: usize = 32;
 /// How long the worker sleeps between polls when the chip is quiet and nothing waits
-/// to go out. A queued frame wakes it at once.
+/// to go out, without the card interrupt. A queued frame wakes it at once.
 const IDLE_POLL_MS: i64 = 4;
+/// With the card interrupt: a look at the chip anyway, in case one is ever missed.
+const IDLE_IRQ_MS: i64 = 100;
+/// After link up, when the interrupt's tally reaches the log.
+const IRQ_TALLY_S: u64 = 10;
 /// The wait before joining again after a failure, doubling to the cap; a lost link
 /// tries again after the first.
 const REJOIN_FIRST_S: u32 = 5;
@@ -101,6 +106,13 @@ struct Adapter {
     rx_buf: *mut u8,
     rx_mdl: PMDL,
     rx_nbl: *mut NetBufferList,
+    /// The SDIO host's registers, for the ISR; null until the interrupt is connected.
+    regs: *mut u32,
+    irq: NdisHandle,
+    /// Interrupts serviced (the card's among them), and idle waits that ended without one.
+    irqs: AtomicU32,
+    card_irqs: AtomicU32,
+    quiet: AtomicU32,
 }
 
 static mut BUFFERS: Buffers = Buffers::new();
@@ -123,6 +135,13 @@ extern "system" {
         ReceiveFlags: u32,
     );
     fn NdisMIndicateStatusEx(MiniportAdapterHandle: NdisHandle, StatusIndication: *mut StatusIndication);
+    fn NdisMRegisterInterruptEx(
+        MiniportAdapterHandle: NdisHandle,
+        MiniportInterruptContext: NdisHandle,
+        MiniportInterruptCharacteristics: *mut InterruptCharacteristics,
+        NdisInterruptHandle: *mut NdisHandle,
+    ) -> NdisStatus;
+    fn NdisMDeregisterInterruptEx(NdisInterruptHandle: NdisHandle);
     fn NdisAllocateNetBufferListPool(NdisHandle: NdisHandle, Parameters: *mut NblPoolParameters) -> NdisHandle;
     fn NdisAllocateNetBufferAndNetBufferList(
         PoolHandle: NdisHandle,
@@ -210,6 +229,11 @@ unsafe extern "system" fn initialize(handle: NdisHandle, _driver_ctx: NdisHandle
         rx_buf,
         rx_mdl: null_mut(),
         rx_nbl: null_mut(),
+        regs: null_mut(),
+        irq: null_mut(),
+        irqs: AtomicU32::new(0),
+        card_irqs: AtomicU32::new(0),
+        quiet: AtomicU32::new(0),
     });
     KeInitializeEvent(addr_of_mut!((*a).wake), _EVENT_TYPE_SynchronizationEvent, 0);
     KeInitializeEvent(addr_of_mut!((*a).worker_done), _EVENT_TYPE_NotificationEvent, 0);
@@ -262,6 +286,7 @@ unsafe extern "system" fn initialize(handle: NdisHandle, _driver_ctx: NdisHandle
         return s;
     }
 
+    connect_interrupt(a);
     if (*a).cfg.is_none() {
         bwprint!("no \\SystemRoot\\bin\\wifi.txt (ssid=, psk=): the adapter stays disconnected\n");
     }
@@ -289,6 +314,12 @@ unsafe extern "system" fn halt(ctx: NdisHandle, _action: u32) {
         bwprint!("halt: the worker did not stop in 60 s\n");
         return;
     }
+    if !(*a).irq.is_null() {
+        if let Some(bus) = (*a).bus.as_ref() {
+            bus.chip.sdio.hc.wr(sdhci_rust::REG_INT_SIGNAL, 0);
+        }
+        NdisMDeregisterInterruptEx((*a).irq);
+    }
     if !(*a).rx_mdl.is_null() {
         IoFreeMdl((*a).rx_mdl);
     }
@@ -297,6 +328,96 @@ unsafe extern "system" fn halt(ctx: NdisHandle, _action: u32) {
 }
 
 unsafe extern "system" fn shutdown(_ctx: NdisHandle, _action: u32) {}
+
+/// Connect the SDIO host's interrupt (its PDO resource, through NDIS) and let the card
+/// raise it: the worker then sleeps until the card has something instead of polling.
+/// Left polling (logged) when any step fails.
+unsafe fn connect_interrupt(a: *mut Adapter) {
+    let Some(bus) = (*a).bus.as_mut() else { return };
+    // The ISR reads the window; nothing signals before the worker arms a wait.
+    (*a).regs = bus.chip.sdio.hc.p.regs();
+    let mut ic: InterruptCharacteristics = core::mem::zeroed();
+    ic.Header = header(NDIS_OBJECT_TYPE_MINIPORT_INTERRUPT, core::mem::size_of::<InterruptCharacteristics>());
+    ic.InterruptHandler = Some(isr);
+    ic.InterruptDpcHandler = Some(dpc);
+    let s = NdisMRegisterInterruptEx((*a).handle, a as NdisHandle, &mut ic, addr_of_mut!((*a).irq));
+    if s != NDIS_STATUS_SUCCESS {
+        (*a).irq = null_mut();
+        bwprint!("no interrupt ({:#010x}): polling the card every {} ms\n", s as u32, IDLE_POLL_MS);
+        return;
+    }
+    // The card interrupts for functions 1 and 2 (IENM | IEN1 | IEN2), and the host
+    // reports it in its status (signalled only while a wait arms it).
+    if let Err(e) = bus.chip.sdio.write_1(0, crate::sdio::CCCR_INT_ENABLE, 0x07) {
+        bwprint!("the card refused its interrupt enable ({:?}): polling\n", e);
+        NdisMDeregisterInterruptEx((*a).irq);
+        (*a).irq = null_mut();
+        return;
+    }
+    let hc = &mut bus.chip.sdio.hc;
+    hc.wr(sdhci_rust::REG_INT_ENABLE, hc.rd(sdhci_rust::REG_INT_ENABLE) | sdhci_rust::INT_CARD);
+    hc.p.wake = addr_of_mut!((*a).wake);
+    bwprint!("card interrupt connected\n");
+}
+
+/// The SDIO host's interrupt, at DIRQL. It is ours when a status bit a wait armed is
+/// set: mask every signal (which drops the level line) and leave the rest to the DPC.
+unsafe extern "system" fn isr(ctx: NdisHandle, queue_dpc: *mut u8, _targets: *mut u32) -> u8 {
+    let a = ctx as *mut Adapter;
+    let regs = (*a).regs;
+    let at = |off: usize| regs.add(off / 4);
+    if regs.is_null() {
+        *queue_dpc = 0;
+        return 0;
+    }
+    let ours = core::ptr::read_volatile(at(sdhci_rust::REG_INT_STATUS)) & core::ptr::read_volatile(at(sdhci_rust::REG_INT_SIGNAL));
+    if ours == 0 {
+        *queue_dpc = 0;
+        return 0;
+    }
+    if ours & sdhci_rust::INT_CARD != 0 {
+        (*a).card_irqs.fetch_add(1, Ordering::Relaxed);
+    }
+    core::ptr::write_volatile(at(sdhci_rust::REG_INT_SIGNAL), 0);
+    *queue_dpc = 1;
+    1
+}
+
+unsafe extern "system" fn dpc(ctx: NdisHandle, _message: PVOID, _throttle: PVOID, _reserved: PVOID) {
+    let a = ctx as *mut Adapter;
+    (*a).irqs.fetch_add(1, Ordering::Relaxed);
+    KeSetEvent(addr_of_mut!((*a).wake), 0, 0);
+}
+
+/// Sleep until the card interrupts, a frame is queued, halt, or the safety look is due.
+/// Nothing is armed, and the wait is skipped, when something is already waiting. True
+/// at halt.
+unsafe fn idle(a: *mut Adapter, bus: &mut Bus<Kernel>) -> bool {
+    let queued = {
+        let _g = SpinLockGuard::acquire(addr_of_mut!((*a).tx_lock));
+        !(*a).tx.is_empty()
+    };
+    if queued {
+        return (*a).stopping.load(Ordering::Acquire);
+    }
+    if (*a).irq.is_null() {
+        return wait(a, IDLE_POLL_MS);
+    }
+    let hc = &bus.chip.sdio.hc;
+    hc.wr(sdhci_rust::REG_INT_SIGNAL, sdhci_rust::INT_CARD);
+    // Asserted before the arm: no edge to wait for on a level line that is already up.
+    if hc.rd(sdhci_rust::REG_INT_STATUS) & sdhci_rust::INT_CARD != 0 {
+        hc.wr(sdhci_rust::REG_INT_SIGNAL, 0);
+        return (*a).stopping.load(Ordering::Acquire);
+    }
+    let before = (*a).irqs.load(Ordering::Relaxed);
+    let halt = wait(a, IDLE_IRQ_MS);
+    hc.wr(sdhci_rust::REG_INT_SIGNAL, 0);
+    if (*a).irqs.load(Ordering::Relaxed) == before {
+        (*a).quiet.fetch_add(1, Ordering::Relaxed);
+    }
+    halt
+}
 
 unsafe extern "system" fn pause(ctx: NdisHandle, _params: PVOID) -> NdisStatus {
     let a = ctx as *mut Adapter;
@@ -524,9 +645,42 @@ unsafe fn carry(a: *mut Adapter, bus: &mut Bus<Kernel>, st: &mut Station) -> boo
     let deliver = move |eth: &[u8]| indicate(a, eth);
     // The rekeys and refusals already logged: each new one gets its line.
     let mut logged = (0u32, 0u32);
+    let up_at = Kernel::now_us_static();
+    let mut tallied = (*a).irq.is_null();
+    let (irqs0, quiet0) = ((*a).irqs.load(Ordering::Relaxed), (*a).quiet.load(Ordering::Relaxed));
+    let card0 = (*a).card_irqs.load(Ordering::Relaxed);
+    // Every SDIO core interrupt bit an ack cleared.
+    let mut bits = 0u32;
     let end = loop {
         if (*a).stopping.load(Ordering::Acquire) {
             break None;
+        }
+        // The card holds its interrupt until the SDIO core's status is cleared. Cleared
+        // before the chip is read, so a frame arriving after the read raises it again.
+        if !(*a).irq.is_null() && bus.chip.sdio.hc.rd(sdhci_rust::REG_INT_STATUS) & sdhci_rust::INT_CARD != 0 {
+            match bus.chip.ack_interrupts() {
+                Ok(s) => bits |= s,
+                Err(e) => bwprint!("clearing the card's interrupt failed: {:?}\n", e),
+            }
+            // The Pi 5's host latches the card interrupt: with DAT1 back high and nothing
+            // pending in CCCR 0x05 its status stayed set, ~54,000 interrupts a second,
+            // until its enable is toggled (Linux's sdhci turns it off on every card
+            // interrupt and on again when done). Driven by the card, it comes straight back.
+            let hc = &bus.chip.sdio.hc;
+            let en = hc.rd(sdhci_rust::REG_INT_ENABLE);
+            hc.wr(sdhci_rust::REG_INT_ENABLE, en & !sdhci_rust::INT_CARD);
+            hc.wr(sdhci_rust::REG_INT_ENABLE, en);
+        }
+        if !tallied && Kernel::now_us_static().wrapping_sub(up_at) > IRQ_TALLY_S * 1_000_000 {
+            tallied = true;
+            bwprint!(
+                "card interrupt: {} serviced ({} the card's, bits {:#010x}), {} idle waits ran out, in the first {} s of the link\n",
+                (*a).irqs.load(Ordering::Relaxed) - irqs0,
+                (*a).card_irqs.load(Ordering::Relaxed) - card0,
+                bits,
+                (*a).quiet.load(Ordering::Relaxed) - quiet0,
+                IRQ_TALLY_S
+            );
         }
         let mut busy = false;
         let mut lost = None;
@@ -566,7 +720,7 @@ unsafe fn carry(a: *mut Adapter, bus: &mut Bus<Kernel>, st: &mut Station) -> boo
                 log.delivered
             );
         }
-        if !busy && wait(a, IDLE_POLL_MS) {
+        if !busy && idle(a, bus) {
             break None;
         }
     };

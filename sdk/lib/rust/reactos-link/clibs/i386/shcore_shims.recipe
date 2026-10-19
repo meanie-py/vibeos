@@ -1,0 +1,2 @@
+# shcore_shims (i386), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	dll/win32/shcore/rust_cohab_stub.c	@build/dll/win32/shcore dll/win32/shcore @build/sdk/include/wine sdk/include/wine @std vendor/opengl-headers/include vendor/libdxg/include	-isystem {REPO}/sdk/lib/pseh/include -isystem {REPO}/sdk/lib/tdilib -isystem {REPO}/vendor/symcrypt/inc -isystem {REPO}/vendor/symcrypt/lib -isystem {REPO}/vendor/zlib/include -isystem {REPO}/vendor/libtiff/include -std=gnu99 @core	CONST_VTABLE WINVER=0x502 _WIN32_WINNT=0x600

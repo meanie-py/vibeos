@@ -199,6 +199,9 @@ class ModuleModel:
     # The compile's `-DNAME=VALUE` macros: mmcshext's IDR_EXTRACTICON is defined by its
     # CMakeLists, not a header, so the island has no constant for it.
     defines: dict[str, str] = field(default_factory=dict)
+    # A module's own `typedef CWinTraits<style, exStyle> Name;` -> [style, exStyle] as
+    # written: stobject's CMessageWndClass, which its CWindowImpl names as the traits.
+    win_traits: dict[str, list[str]] = field(default_factory=dict)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=1, sort_keys=True)
@@ -236,6 +239,7 @@ class ModuleModel:
         out.typedefs = [tuple(t) for t in raw.get("typedefs", [])]
         out.instances = raw.get("instances", {})
         out.defines = raw.get("defines", {})
+        out.win_traits = raw.get("win_traits", {})
         return out
 
 
@@ -352,6 +356,46 @@ def _template_defaults(tmpl: dict) -> list[tuple[str, ...] | None]:
             v = _const_value(p) if p.get("inner") else None
             out.append(None if v is None else (str(v),))
     return out
+
+
+_STDCALL_SPELLED = re.compile(
+    r"\b(?:CALLBACK|WINAPI|APIENTRY|__stdcall|PASCAL|NTAPI|STDMETHODCALLTYPE)\b"
+)
+
+
+def _signature_key(n: dict) -> str:
+    """A function's type with its typedefs resolved, so one function declared through two
+    spellings is one signature: fontext's precomp.h says `PCWSTR` and fontext.cpp `LPCWSTR`,
+    and the two "overloads" `DoGetFontTitle__0`/`__1` left the caller naming one nobody
+    defined. A real overload (`Fill(.., COLORREF)` / `Fill(.., HBRUSH)`) still differs."""
+    params = [x for x in n.get("inner", []) if x.get("kind") == "ParmVarDecl"]
+    if not params:
+        t = n.get("type", {})
+        return t.get("desugaredQualType") or t.get("qualType", "")
+    # C++ overloads on the parameter list alone, so that is the key; clang desugars each
+    # parameter's typedef (`PCWSTR` -> `const wchar_t *`), not the function type's.
+    return (
+        "("
+        + ", ".join(
+            p.get("type", {}).get("desugaredQualType") or p.get("type", {}).get("qualType", "")
+            for p in params
+        )
+        + ")"
+    )
+
+
+def _spell_stdcall(sig: str, name: str, qual_type: str) -> str:
+    """A free function's declarator with its stdcall written out. `STDAPI_(BOOL) DllMain(..)`
+    is `EXTERN_C BOOL STDAPICALLTYPE`, but the macro hides that: stobject's DllMain came
+    back `extern "C"`, which on i386 leaves the loader's 12 bytes on the stack. The macro
+    becomes its expansion, and any other stdcall clang's (i386) type reports but the text
+    does not say gets `__stdcall` before the name."""
+    sig = re.sub(r"\bSTDAPI_\(\s*([^()]*?)\s*\)", r"\1 WINAPI", sig, count=1)
+    sig = re.sub(r"\bSTDAPI\b", "HRESULT WINAPI", sig, count=1)
+    head = sig.split(f"{name}(", 1)[0] if f"{name}(" in sig else sig
+    if "stdcall" in qual_type and not _STDCALL_SPELLED.search(head):
+        sig = re.sub(rf"\b{re.escape(name)}(?=\s*\()", f"__stdcall {name}", sig, count=1)
+    return sig
 
 
 def _file_of(node: dict, key: str = "loc") -> str | None:
@@ -798,11 +842,26 @@ class _Extractor:
     def rel(self, f: str) -> str:
         return str(Path(f).resolve().relative_to(self.repo.resolve()))
 
+    def win_traits_typedef(self, n: dict) -> None:
+        """Records `typedef CWinTraits<A, B> Name;` from its source text: the qualType
+        spells the arguments evaluated or as written depending on clang, the text never
+        varies."""
+        text = self.src.typedef_text(_span(n)) or ""
+        m = re.fullmatch(r"\s*typedef\s+CWinTraits\s*<(.*)>\s*(\w+)\s*;?\s*", text, re.S)
+        if not m:
+            return
+        args = [" ".join(a.split()) for a in _split_top(m.group(1))]
+        if len(args) != 2:
+            raise CppModelError(f"{n['name']}: CWinTraits takes 2 arguments, got {args}")
+        self.model.win_traits[m.group(2)] = args
+
     def walk(self, nodes: list, scope: str = "", record: str | None = None) -> None:
         for n in nodes:
             kind = n.get("kind")
             if kind == "TypedefDecl" and record is None and n.get("name"):
                 self.typedef_map.setdefault(n["name"], n.get("type", {}).get("qualType", ""))
+            if kind == "TypedefDecl" and record is None and self.mine(_file_of(n)):
+                self.win_traits_typedef(n)
             if kind in ("NamespaceDecl", "LinkageSpecDecl"):
                 inner_scope = f"{scope}{n['name']}::" if n.get("name") else scope
                 self.walk(n.get("inner", []), inner_scope)
@@ -1157,7 +1216,13 @@ class _Extractor:
         for f in rec.get("inner", []):
             if f.get("kind") == "FieldDecl":
                 if not f.get("name"):
-                    raise CppModelError(f"{cls.qualified}: nested anonymous member")
+                    # ntobjshex's RegPidlEntry: `union { struct { DWORD contentType; USHORT
+                    # contentsLength; }; HKEY rootKey; }`. The inner record becomes its own
+                    # generated record, embedded in place, as one level is.
+                    inner = self._anon_record(rec, f, anon)
+                    assert inner is not None
+                    anon.fields.append(Field(_anon_field(inner), inner.name))
+                    continue
                 anon.fields.append(Field(f["name"], f["type"]["qualType"]))
         self.model.classes[anon.qualified] = anon
         return anon
@@ -1407,7 +1472,7 @@ class _Extractor:
         for n in nodes:
             if n.get("kind") == "FunctionDecl" and self.mine(_file_of(n)):
                 sigs = self._overloads.setdefault(n["name"], [])
-                qt = n.get("type", {}).get("qualType", "")
+                qt = _signature_key(n)
                 if qt not in sigs:
                     sigs.append(qt)
             elif n.get("kind") in ("NamespaceDecl", "LinkageSpecDecl"):
@@ -1421,9 +1486,20 @@ class _Extractor:
         base = _spelled_name(self, n) or n["name"]
         if base.startswith("operator "):
             base = "cxx_" + base.replace("operator ", "operator_").replace("[]", "_array")
+        if n.get("storageClass") == "static":
+            # A file-static is one function PER TU: stobject's volume.cpp, power.cpp and
+            # hotplug.cpp each define `static void _ShowContextMenu`, and keeping only the
+            # first made the volume and power icons open hotplug's eject menu. A later TU's
+            # one is named for its file; its calls resolve through the same decl ids.
+            f = _file_of(n)
+            here = self.rel(f) if f else None
+            if here and any(
+                x.name == base and x.static and x.file != here for x in self.model.functions
+            ):
+                base = f"{base}__{Path(here).stem}"
         if len(sigs) < 2:
             return base
-        qt = n.get("type", {}).get("qualType", "")
+        qt = _signature_key(n)
         return f"{base}__{sigs.index(qt) if qt in sigs else len(sigs)}"
 
     def _register_function(self, n: dict) -> None:
@@ -1467,6 +1543,7 @@ class _Extractor:
             sig = _signature_from_ast(n)
         if rust != n["name"]:
             sig = re.sub(rf"\b{re.escape(n['name'])}(?=\s*\()", rust, sig, count=1)
+        sig = _spell_stdcall(sig, rust, n.get("type", {}).get("qualType", ""))
         ff = FreeFunc(
             rust,
             " ".join(sig.split()),
@@ -1535,7 +1612,11 @@ class _Extractor:
             for f in Path(self.module_dir).rglob(pat)
             if f.is_file()
         )
-        strings = cpp_lower.string_macros([f.read_text(errors="replace") for f in own])
+        own_text = [f.read_text(errors="replace") for f in own]
+        strings = cpp_lower.string_macros(own_text)
+        own_defines = cpp_lower.module_defines(own_text)
+        for k, v in self.model.defines.items():
+            own_defines.setdefault(k, v)
         for target, node, owner in self.pending:
             span = self.src.node_span(node)
             if span is None:
@@ -1543,6 +1624,12 @@ class _Extractor:
             out = low.lower(node, span, owner)
             text = cpp_lower.concat_string_macros(out.text, strings)
             text = cpp_lower.ppv_arg_macros(text)
+            text = cpp_lower.resolve_module_conditionals(text, own_defines)
+            # clang's (and gcc's) __FUNCTION__ is the unqualified name; the model left it a
+            # bare identifier nothing defines (zipfldr's `DbgPrint("%s..", __FUNCTION__)`).
+            text = re.sub(r"\b(?:__FUNCTION__|__func__)\b", f'"{target.name}"', text)
+            text = cpp_lower.local_enums_to_consts(text)
+            text = cpp_lower.com_object_create(text)
             text = cpp_lower.atl_qualified_glue(text)
             target.lowered = cpp_lower.unicode_text_macros(text) if self.unicode else text
             target.unplaced = out.unplaced

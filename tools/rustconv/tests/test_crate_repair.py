@@ -2357,6 +2357,13 @@ def test_sizeof_of_a_packed_field_never_forms_a_reference():
     assert "size_of_val" not in out
 
 
+def test_countof_of_a_packed_field_counts_a_copy():
+    """stobject: `_countof!(nim.szTip)` on i386's packed NOTIFYICONDATA borrows the field."""
+    src = "fn f(nim: N) -> u32 { (_countof!(nim.szTip)) as _ }\n"
+    _, out = _one_site(src, "nim.szTip", "reference to packed field is unaligned", "E0793")
+    assert "(_countof!({ nim.szTip })) as _" in out
+
+
 def test_a_function_cast_to_a_fn_pointer_is_left_to_coerce():
     src = (
         'static T: [S; 1] = [S { F: Some(\n    VfatFormat\n        as unsafe extern "C" fn(\n'
@@ -3440,7 +3447,24 @@ def test_a_constant_operand_for_a_64bit_want_infers_its_width():
         rules=[RULE_CONST_OPERAND],
         constants={"VK_ESCAPE": 0x1B},
     )
-    assert [e.replacement for e in plan.edits] == ["(VK_ESCAPE as _)"]
+    # The compared operand's declared type name, which every target agrees on.
+    assert [e.replacement for e in plan.edits] == ["(VK_ESCAPE as WPARAM)"]
+
+
+def test_a_compared_constant_takes_the_operands_declared_type_on_i386_too():
+    # stobject: `lParam == WM_LBUTTONDOWN` wants i32 on i386 and i64 on 64-bit; a width
+    # could never agree, `as LPARAM` does.
+    from rustconv.crate_repair import RULE_CONST_OPERAND
+
+    src = b"fn f(lParam: LPARAM) -> bool {\n    lParam == WM_LBUTTONDOWN\n}\n"
+    plan = propose_edits(
+        [_mismatch(src, b"WM_LBUTTONDOWN", "i32", "u32")],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_CONST_OPERAND],
+        constants={"WM_LBUTTONDOWN": 0x201},
+    )
+    assert [e.replacement for e in plan.edits] == ["(WM_LBUTTONDOWN as LPARAM)"]
 
 
 def test_a_baked_constant_width_and_a_bitwise_sibling_use_portable_types():
@@ -3460,7 +3484,10 @@ def test_a_baked_constant_width_and_a_bitwise_sibling_use_portable_types():
         rules=[RULE_CONST_OPERAND],
         constants={"IDD_X": 5, "MK_LBUTTON": 1},
     )
-    assert sorted(e.replacement for e in plan.edits) == ["(IDD_X as _)", "(MK_LBUTTON as WPARAM)"]
+    assert sorted(e.replacement for e in plan.edits) == [
+        "(IDD_X as WPARAM)",
+        "(MK_LBUTTON as WPARAM)",
+    ]
     # `original` must be the span's own text, or apply_edits declines it as stale.
     assert sorted(e.original for e in plan.edits) == ["(IDD_X as u64)", "MK_LBUTTON"]
     # Parenthesised places bind to a C++ reference too.
@@ -3643,4 +3670,105 @@ def test_an_hwnd_where_a_cwindow_is_wanted_is_constructed():
     plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
     assert [e.replacement for e in plan.edits] == [
         "CWindow__make_0((*this_).__base0.GetDlgItem(7))"
+    ]
+
+
+def test_a_null_for_a_mut_pointer_parameter_is_null_mut():
+    """stobject: `TrackPopupMenuEx(.., core::ptr::null())` against `LPTPMPARAMS`."""
+    from rustconv.crate_repair import _Ctx, _literal_mut_rule
+
+    src = b"F(h, core::ptr::null());\n"
+    lo = src.index(b"core::ptr::null()")
+    diag = {
+        "code": {"code": "E0308"},
+        "spans": [
+            {
+                "file_name": "m.rs",
+                "byte_start": lo,
+                "byte_end": lo + len(b"core::ptr::null()"),
+                "line_start": 1,
+                "column_start": lo + 1,
+                "label": "types differ in mutability",
+            }
+        ],
+        "children": [{"message": "expected raw pointer `*mut T`\nfound raw pointer `*const _`"}],
+    }
+    edits, _, handled = _literal_mut_rule(diag, lambda f: src, _Ctx(target="i386", width=32))
+    assert handled
+    assert [e.replacement for e in edits] == ["core::ptr::null_mut()"]
+
+
+def test_a_const_method_through_a_const_pointer_casts_the_receiver():
+    """fontext: `(*fontEntry1).Name__1()` with `fontEntry1: *const FontPidlEntry`."""
+    from rustconv.crate_repair import _const_receiver_rule, _Ctx
+
+    src = b"f((*e).Name__1());\n"
+    lo = src.index(b"(*e)")
+    diag = {
+        "code": {"code": "E0596"},
+        "spans": [
+            {
+                "file_name": "m.rs",
+                "byte_start": lo,
+                "byte_end": lo + 4,
+                "line_start": 1,
+                "column_start": lo + 1,
+                "is_primary": True,
+                "label": "`e` is a `*const` pointer, so the data it refers to cannot be "
+                "borrowed as mutable",
+            }
+        ],
+    }
+    edits, _, handled = _const_receiver_rule(diag, lambda f: src, _Ctx(target="i386", width=32))
+    assert handled and [e.replacement for e in edits] == ["(*e.cast_mut())"]
+
+
+def test_cpp_this_converted_to_an_interface_goes_through_its_subobject():
+    """zipfldr: `CDefFolderMenu_Create2(.., this, ..)` -- `this` is the IShellFolder2 base."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"f(this_);"
+    layout = (
+        b"pub struct CZipFolder {\n    pub __base2: IShellFolder2,\n"
+        b"    pub __base0: atl_rust::com::CComCoClass,\n    pub __base6: IPersistFolder2,\n}\n"
+    )
+    d = _diag(
+        "mismatched types",
+        spans=[_span("z-rust/src/z/u.rs", 2, 7, is_primary=True)],
+        children=[
+            {
+                "message": "expected raw pointer `*mut types_arch::IShellFolder`\n"
+                "   found raw pointer `*mut cpp_classes::CZipFolder`",
+                "code": None,
+                "level": "note",
+                "spans": [],
+                "children": [],
+                "rendered": None,
+            }
+        ],
+    )
+    plan = propose_edits(
+        [d],
+        _reader({"z-rust/src/z/u.rs": src, "z-rust/src/z/cpp_classes.rs": layout}),
+        target="i386",
+        rules=[RULE_OBJECT_DEREF],
+    )
+    assert [e.replacement for e in plan.edits] == [
+        "core::ptr::addr_of_mut!((*this_).__base2) as *mut IShellFolder"
+    ]
+
+
+def test_a_c_enum_written_as_a_rust_enum_path_becomes_its_bindgen_const():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"return eZipExtractError::eNoError;"
+    at = src.index(b"eNoError")
+    d = _diag(
+        "no function or associated item named `eNoError` found for type `u32` in the current scope",
+        code="E0599",
+        spans=[_span("src/a.rs", at, at + len(b"eNoError"), is_primary=True)],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="i386", rules=[RULE_OBJECT_DEREF])
+    assert [(e.byte_start, e.replacement) for e in plan.edits] == [
+        (src.index(b"eZip"), "eZipExtractError_eNoError")
     ]

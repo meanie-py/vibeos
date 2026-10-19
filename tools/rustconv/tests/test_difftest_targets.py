@@ -3,7 +3,8 @@
 cryptlib's MD4/MD5/SHA1 (records from arbitrary sampled context states), rtl's CRC32
 (a selected static table) and rtl's run-encode pair (a UNICODE_STRING whose Buffer is
 a Length-sized byte pointee, plus a scripted NtQuerySystemTime fixture) and rtl's LZNT1
-(encoder-produced example streams, with mutants reaching the lznt1.rs support module).
+(encoder-produced example streams, with mutants reaching the lznt1.rs support module), and
+the boot loaders' table-less NLS (boot/rtl/nlsboot.c vs blrtl-rust).
 """
 
 from pathlib import Path
@@ -15,7 +16,7 @@ from rustconv.difftest_contract import ContractError, grade, load_contract, sele
 DATA = Path(__file__).resolve().parents[1] / "data/difftest"
 
 
-@pytest.mark.parametrize("name", ["md4", "md5", "sha1", "crc32", "encode", "compress"])
+@pytest.mark.parametrize("name", ["md4", "md5", "sha1", "crc32", "encode", "compress", "nlsboot"])
 def test_shipped_target_passes_with_every_mutant_detected(tmp_path, name):
     report = grade(DATA / f"{name}.json", tmp_path / name)
     assert report["status"] == "pass", report
