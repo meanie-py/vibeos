@@ -572,6 +572,7 @@ def configure_gen(root: Path, arch: str, gen: Path, seed: Path | None = None) ->
             [str(clang), "--version"], capture_output=True, text=True, check=True
         ).stdout,
     )
+
     # The host project's compiler is the host cc, named as cmake identifies it.
     def cc(*a: str) -> str:
         return subprocess.run(["cc", *a], capture_output=True, text=True, check=True).stdout
@@ -590,11 +591,11 @@ def configure_gen(root: Path, arch: str, gen: Path, seed: Path | None = None) ->
         "CMAKE_C_COMPILER_VERSION": ver.group(1) if ver else "",
     }
     host = {**values, "CMAKE_C_COMPILER_ID": host_id, "CMAKE_C_COMPILER_VERSION": host_cc}
-    for (d, _), vals in zip(pairs, (values, host)):
+    for (d, _), vals in zip(pairs, (values, host), strict=True):
         d.mkdir(parents=True, exist_ok=True)
         for h in ("version.h", "buildno.h"):
             tmpl = (root / f"sdk/include/reactos/{h}.cmake").read_text()
-            (d / h).write_text(re.sub(r"@(\w+)@", lambda m: vals[m.group(1)], tmpl))
+            (d / h).write_text(re.sub(r"@(\w+)@", lambda m, v=vals: v[m.group(1)], tmpl))
     return gen
 
 
@@ -671,7 +672,6 @@ def manifest_build(
     and apply each output's post-link."""
     sys.path.insert(0, str(root / "tools"))
     import cell_manifest
-
     import media_manifest
 
     # A full build stamps out_dir with the source it was made from, for

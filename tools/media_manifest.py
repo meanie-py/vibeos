@@ -282,7 +282,11 @@ def recab(m: dict, out: Path, build: Path, repo: Path, cells: Path) -> dict[str,
         raise MediaError(f"reactos.cab: {len(missing)} sources missing, first {missing[:3]}")
     head = resolve(cab["dff"], build, repo, cells).read_text()
     (d / "reactos.dff").write_text(head + "".join(rows))
-    sub = {PACKAGES: str(d), "{BUILD}/reactos.inf": str(d / "reactos.inf"), "cd {BUILD} ": f"cd {d} "}
+    sub = {
+        PACKAGES: str(d),
+        "{BUILD}/reactos.inf": str(d / "reactos.inf"),
+        "cd {BUILD} ": f"cd {d} ",
+    }
     for key in ("inf_command", "cab_command"):
         cmd = cab[key]
         for k, v in sub.items():

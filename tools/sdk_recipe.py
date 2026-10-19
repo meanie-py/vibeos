@@ -14,8 +14,9 @@ tree (`$VIBEOS_GEN_DIR`, which `@build/` names in a cmake-off build):
 
 The host tools those commands run (widl, hpp, utf16le, ...) and the ones that master the
 boot media (mkisofs, isohybrid, cabman) are themselves the host-tools project's commands,
-recorded the same way (`<arch>.host.cmds`) and replayed into `DIR/host-tools/bin`. Only generator commands are kept: compiles, archives, import
-libraries (the engine makes its own) and cmake's ExternalProject bookkeeping are not.
+recorded the same way (`<arch>.host.cmds`) and replayed into `DIR/host-tools/bin`. Only
+generator commands are kept: compiles, archives, import libraries (the engine makes its
+own) and cmake's ExternalProject bookkeeping are not.
 """
 
 from __future__ import annotations
