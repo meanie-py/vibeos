@@ -5,9 +5,9 @@
 # The list is olewinetest's gen_suites.py pointed at these suites; see that payload for why
 # children start on C:.
 name: portwinetest
-description: Wine conformance suites for the Rust-ported Wine DLLs (pdh, wtsapi32, imagehlp, credui, ntdsapi, jsproxy, sti, wmiutils, sxs, inetmib1, twain_32, activeds, xinput1_3, msrle32, oledlg)
+description: Wine conformance suites for the Rust-ported Wine DLLs (pdh, wtsapi32, imagehlp, credui, ntdsapi, jsproxy, sti, wmiutils, sxs, inetmib1, twain_32, activeds, xinput1_3, msrle32, oledlg, propsys, cryptnet, oleacc, hlink, shcore, mstask)
 
-build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites pdh,wtsapi32,imagehlp,credui,ntdsapi,jsproxy,sti,wmiutils,sxs,inetmib1,twain_32,activeds,xinput1_3,msrle32,oledlg --register '' --out-dir tools/payloads/portwinetest"
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites pdh,wtsapi32,imagehlp,credui,ntdsapi,jsproxy,sti,wmiutils,sxs,inetmib1,twain_32,activeds,xinput1_3,msrle32,oledlg,propsys,cryptnet,oleacc,hlink,shcore,mstask --register '' --out-dir tools/payloads/portwinetest"
 
 binaries:
   - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
@@ -49,6 +49,18 @@ binaries:
     dest: bin/msrle32_winetest.exe
   - src: build-{arch}/modules/rostests/winetests/oledlg/oledlg_winetest.exe
     dest: bin/oledlg_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/propsys/propsys_winetest.exe
+    dest: bin/propsys_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/cryptnet/cryptnet_winetest.exe
+    dest: bin/cryptnet_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/oleacc/oleacc_winetest.exe
+    dest: bin/oleacc_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/hlink/hlink_winetest.exe
+    dest: bin/hlink_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/shcore/shcore_winetest.exe
+    dest: bin/shcore_winetest.exe
+  - src: build-{arch}/modules/rostests/winetests/mstask/mstask_winetest.exe
+    dest: bin/mstask_winetest.exe
 
 test:
   launch_marker: "[APITEST-SWEEP] done"

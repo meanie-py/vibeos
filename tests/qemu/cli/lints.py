@@ -1246,6 +1246,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # `V_DISPATCH!(v) as *mut *mut c_void` for the C's `(void**)&V_DISPATCH(v)`: the VARIANT
+    # accessor's VALUE passed as an out-pointer. oleacc's Client_EnumVARIANT_Next corrupted
+    # the heap that way (the callee stored its interface through garbage). Gated at zero.
+    svo = repo / "tools" / "scan_variant_outptr.py"
+    specs.append(
+        (
+            "scan_variant_outptr",
+            [py, str(svo), "--lint"] if svo.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # `(*(x as *mut PFOO).read()).F` for the C's `((PFOO)x)->F`: the cast form of
     # scan_ptr_typedef_indirection. usetup's unattended language lookup used L"0000" as a
     # pointer and the bootcd's smss.exe died (0x71). Gated at zero.
