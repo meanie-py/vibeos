@@ -14206,6 +14206,23 @@ temporaries live to the end of the match; atlclasses' `atl_format!` now does thi
 format and every argument. In ordinary code, keep the owning `CStringW` in a named local before
 taking `.GetString()`.
 
+### A native server's flattened RPC buffer reaches a 32-bit client in the server's layout
+**Symptom.** A 32-bit app under WoW64 reads garbage or NULL from a structure an RPC call
+filled successfully: every field up to the first pointer is right, everything after it is
+wrong. wordpad faulted at address 0x44 in comdlg32's `PRINTDLG_SetDefaultPrinter`, reading
+`PRINTER_INFO_2W.pDevMode->dmSize` with `pDevMode` NULL.
+**Cause.** The spooler RPCs (`GetPrinter`, `Enum*`, `GetJob`, `GetForm`, `GetPrinterDriver`)
+return a `[size_is] BYTE *` buffer that the native spoolsv fills with its own 8-byte pointer
+offsets and 64-bit padding. NDR carries opaque bytes untouched, so no thunk sees them, and
+winspool's `MarshallUpStructure` read them with the i386 table. `pDevMode` (i386 offset 0x1c)
+was the zero high half of `pPortName`'s offset.
+**Fix.** `winspool-rust/src/winspool/wow64.rs`: under WoW64 the client narrows the buffer in
+place with a 64-bit twin of each structure before unmarshalling. The marshalling tables
+cannot stand in for the layout: they omit fields (`DRIVER_INFO_x.cVersion`), and i386 pads
+before `dwlDriverVersion` where amd64 does not. The twins are const-asserted against the real
+structure on the 64-bit builds. Any other interface that ships a struct as opaque bytes has
+the same exposure.
+
 ### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
 **Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing
 call anywhere near. The syscall that did it **succeeded** and returned the right value in the
