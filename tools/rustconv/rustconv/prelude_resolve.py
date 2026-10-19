@@ -75,6 +75,12 @@ def unresolved_names(crate: str, triple: str, workspace: Path, target_dir: Path)
     return set(unresolved(crate, triple, workspace, target_dir))
 
 
+_PARSE_ERROR = re.compile(
+    r"(?:expected |unexpected |unclosed delimiter|mismatched closing delimiter|"
+    r"this file contains an unclosed delimiter|unterminated |unknown start of token)"
+)
+
+
 def early_errors(crate: str, triple: str, workspace: Path, target_dir: Path) -> list[str]:
     """Errors that stop rustc BEFORE name resolution: a module file not found (E0583) or a
     parse error (no error code). Behind one, no name is reported unresolved at all, so a
@@ -101,7 +107,10 @@ def early_errors(crate: str, triple: str, workspace: Path, target_dir: Path) -> 
         text = str(m.get("message") or "")
         if text.startswith(("aborting due to", "could not compile")):
             continue
-        if code == "E0583" or code is None:
+        # A parse error carries no code, but neither do some later checks (shcore's
+        # "not automatically applying `DerefMut` on `ManuallyDrop` union field", reported
+        # AFTER resolution, aborted a replay): only the parser's own wording counts.
+        if code == "E0583" or (code is None and _PARSE_ERROR.match(text)):
             spans = [sp for sp in m.get("spans") or [] if sp.get("is_primary")]
             where = f"{spans[0]['file_name']}:{spans[0]['line_start']}" if spans else "?"
             out.append(f"{where}: {text}")

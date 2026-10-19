@@ -1101,6 +1101,7 @@ dll/win32/comctl32/CMakeLists.txt	1	# updown.c # replaced by Rust (sdk/lib/rust/
 dll/win32/credui/CMakeLists.txt	1	# credui_main.c # replaced by Rust (sdk/lib/rust/credui-rust/src/credui/credui_main.rs)
 dll/win32/crtdll/CMakeLists.txt	1	# advapi32: the shared CRT's rand_s calls SystemFunction036 (RtlGenRandom). dllmain.c used to
 dll/win32/crtdll/CMakeLists.txt	1	# dllmain.c is msvcrt-crt-rust src/legacy.rs (CRTDLL_* names, which crtdll.spec maps).
+dll/win32/cryptnet/CMakeLists.txt	1	# cryptnet_main.c # replaced by Rust (sdk/lib/rust/cryptnet-rust/src/cryptnet/cryptnet_main.rs)
 dll/win32/dbghelp/CMakeLists.txt	1	# elf_module.c
 dll/win32/dbghelp/CMakeLists.txt	1	# macho_module.c
 dll/win32/dcomp/CMakeLists.txt	1	# device.c # replaced by Rust (sdk/lib/rust/dcomp-rust/src/dcomp/device.rs)
@@ -1134,6 +1135,10 @@ dll/win32/fmifs/CMakeLists.txt	1	# media.c # replaced by Rust (sdk/lib/rust/fmif
 dll/win32/fmifs/CMakeLists.txt	1	# query.c # replaced by Rust (sdk/lib/rust/fmifs-rust/src/fmifs/query.rs)
 dll/win32/hid/CMakeLists.txt	1	# hid.c # replaced by Rust (sdk/lib/rust/hid-rust/src/hid/hid.rs)
 dll/win32/hid/CMakeLists.txt	1	# hid.c includes the parser's hidp.h, which the C static lib used to export as its interface.
+dll/win32/hlink/CMakeLists.txt	1	# browse_ctx.c # replaced by Rust (sdk/lib/rust/hlink-rust/src/hlink/browse_ctx.rs)
+dll/win32/hlink/CMakeLists.txt	1	# extserv.c # replaced by Rust (sdk/lib/rust/hlink-rust/src/hlink/extserv.rs)
+dll/win32/hlink/CMakeLists.txt	1	# hlink_main.c # replaced by Rust (sdk/lib/rust/hlink-rust/src/hlink/hlink_main.rs)
+dll/win32/hlink/CMakeLists.txt	1	# link.c # replaced by Rust (sdk/lib/rust/hlink-rust/src/hlink/link.rs)
 dll/win32/ifmon/CMakeLists.txt	1	# guid.c # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/guid.rs)
 dll/win32/ifmon/CMakeLists.txt	1	# ifmon.c # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/ifmon.rs)
 dll/win32/ifmon/CMakeLists.txt	1	# interface.c # replaced by Rust (sdk/lib/rust/ifmon-rust/src/ifmon/interface.rs)
@@ -1326,6 +1331,12 @@ dll/win32/msports/CMakeLists.txt	1	# msports.c # replaced by Rust (sdk/lib/rust/
 dll/win32/msports/CMakeLists.txt	1	# parallel.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/parallel.rs)
 dll/win32/msports/CMakeLists.txt	1	# serial.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/serial.rs)
 dll/win32/msrle32/CMakeLists.txt	1	# msrle32.c # replaced by Rust (sdk/lib/rust/msrle32-rust/src/msrle32/msrle32.rs)
+dll/win32/mstask/CMakeLists.txt	1	# factory.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/factory.rs)
+dll/win32/mstask/CMakeLists.txt	1	# mstask_main.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/mstask_main.rs)
+dll/win32/mstask/CMakeLists.txt	1	# stubs.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/stubs.rs)
+dll/win32/mstask/CMakeLists.txt	1	# task.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/task.rs)
+dll/win32/mstask/CMakeLists.txt	1	# task_scheduler.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/task_scheduler.rs)
+dll/win32/mstask/CMakeLists.txt	1	# task_trigger.c # replaced by Rust (sdk/lib/rust/mstask-rust/src/mstask/task_trigger.rs)
 dll/win32/msv1_0/CMakeLists.txt	1	# `ntlm/global.c` never went through `rustconv translate`: it defines only globals and no
 dll/win32/msv1_0/CMakeLists.txt	1	# lsa.c
 dll/win32/msv1_0/CMakeLists.txt	1	# lsa.c → src/msv1_0/lsa.rs
@@ -1442,6 +1453,11 @@ dll/win32/ole32/CMakeLists.txt	1	# stg_stream.c — replaced by Rust (ole32-rust
 dll/win32/ole32/CMakeLists.txt	1	# storage32.c — replaced by Rust (ole32-rust ring/storage32.rs — the compound-file implementation: IStorage, the dir-entry tree, block chains, transactions)
 dll/win32/ole32/CMakeLists.txt	1	# stubmanager.c — replaced by Rust (ole32-rust stubmanager.rs — stub/ifstub lifetime)
 dll/win32/ole32/CMakeLists.txt	1	# usrmarshal.c — replaced by Rust (ole32-rust ring/usrmarshal.rs — the NDR *_User{Size,Marshal,Unmarshal,Free} helpers)
+dll/win32/oleacc/CMakeLists.txt	1	# client.c # replaced by Rust (sdk/lib/rust/oleacc-rust/src/oleacc/client.rs)
+dll/win32/oleacc/CMakeLists.txt	1	# guid.c # replaced by Rust (sdk/lib/rust/oleacc-rust/src/oleacc/guid.rs)
+dll/win32/oleacc/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/oleacc-rust/src/oleacc/main.rs)
+dll/win32/oleacc/CMakeLists.txt	1	# propservice.c # replaced by Rust (sdk/lib/rust/oleacc-rust/src/oleacc/propservice.rs)
+dll/win32/oleacc/CMakeLists.txt	1	# window.c # replaced by Rust (sdk/lib/rust/oleacc-rust/src/oleacc/window.rs)
 dll/win32/oleaut32/CMakeLists.txt	1	# call_double_method trampolines factored out of dispatch.c for
 dll/win32/oleaut32/CMakeLists.txt	1	# connpt.c — replaced by Rust (oleaut32-rust connpt.rs — IConnectionPoint/IEnumConnections + CreateConnectionPoint; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# dispatch.c — replaced by Rust (oleaut32-rust dispatch.rs — CreateStdDispatch/DispInvoke/DispGetIDsOfNames/DispGetParam + StdDispatch vtbl; full)
@@ -1462,6 +1478,9 @@ dll/win32/oledlg/CMakeLists.txt	1	# insobjdlg.c # replaced by Rust (sdk/lib/rust
 dll/win32/oledlg/CMakeLists.txt	1	# oledlg_main.c # replaced by Rust (sdk/lib/rust/oledlg-rust/src/oledlg/oledlg_main.rs)
 dll/win32/oledlg/CMakeLists.txt	1	# pastespl.c # replaced by Rust (sdk/lib/rust/oledlg-rust/src/oledlg/pastespl.rs)
 dll/win32/pdh/CMakeLists.txt	1	# pdh_main.c # replaced by Rust (sdk/lib/rust/pdh-rust/src/pdh/pdh_main.rs)
+dll/win32/propsys/CMakeLists.txt	1	# propstore.c # replaced by Rust (sdk/lib/rust/propsys-rust/src/propsys/propstore.rs)
+dll/win32/propsys/CMakeLists.txt	1	# propsys_main.c # replaced by Rust (sdk/lib/rust/propsys-rust/src/propsys/propsys_main.rs)
+dll/win32/propsys/CMakeLists.txt	1	# propvar.c # replaced by Rust (sdk/lib/rust/propsys-rust/src/propsys/propvar.rs)
 dll/win32/psapi/CMakeLists.txt	1	# The DLL target is all Rust too: main.c's DllMain is psapi-rust's `dllmain` feature
 dll/win32/psapi/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/main.rs)
 dll/win32/psapi/CMakeLists.txt	1	# psapi.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/psapi.rs)
@@ -1532,6 +1551,7 @@ dll/win32/setupapi/CMakeLists.txt	1	# setupcab.c — replaced by Rust (setupapi-
 dll/win32/setupapi/CMakeLists.txt	1	# stringtable.c — replaced by Rust (setupapi-rust)
 dll/win32/shcore/CMakeLists.txt	1	# Windows; main.c's Wine versions of those are not exported.
 dll/win32/shcore/CMakeLists.txt	1	# combase is not built here (see dll/win32/CMakeLists.txt): what main.c takes from it
+dll/win32/shcore/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/shcore-rust/src/shcore/main.rs)
 dll/win32/shell32/CMakeLists.txt	1	# C++ CDefView.cpp and utils.cpp — both declarations are now EXTERN_C.
 dll/win32/shell32/CMakeLists.txt	1	# CActiveDesktop.cpp — replaced by Rust (shell32-rust/src/active_desktop.rs).
 dll/win32/shell32/CMakeLists.txt	1	# CCopyAsPathMenu.cpp — replaced by Rust (shell32-rust/src/copy_as_path_menu.rs); cohab via libshell32_rust.a
