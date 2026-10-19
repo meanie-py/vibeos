@@ -4644,8 +4644,10 @@ def stage_integrate(stem: str) -> None:
     module_globals = _module_globals(state)
     spec_stubs = _spec_stubs(state)
     own_constants = _module_constant_names(state)
+    from tools.source_walk import source_files  # repo-root package: imported at use
+
     crate_text = (
-        "\n".join(f.read_text(errors="replace") for f in (crate / "src").rglob("*.rs"))
+        "\n".join(f.read_text(errors="replace") for f in source_files(crate / "src", "*.rs"))
         if state.get("cppapp")
         else ""
     )
