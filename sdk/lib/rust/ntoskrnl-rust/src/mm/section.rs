@@ -1480,7 +1480,12 @@ pub unsafe extern "system" fn MmCreateSection(
     if AllocationAttributes & SEC_LARGE_PAGES != 0 {
         return STATUS_INVALID_PARAMETER_6;
     }
-
+    // Windows 8 on, an image section needs the file HANDLE; a bare FileObject is refused
+    // (kmtest MmSection). No caller in the tree builds one that way (Cc's FileObject-only
+    // sections are SEC_RESERVE).
+    if AllocationAttributes & SEC_IMAGE != 0 && FileHandle.is_null() && !FileObject.is_null() {
+        return STATUS_INVALID_PARAMETER_6;
+    }
 
     if AllocationAttributes & SEC_IMAGE == 0 {
         if FileObject.is_null() && FileHandle.is_null() {
