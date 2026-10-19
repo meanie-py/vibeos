@@ -822,6 +822,13 @@ pub unsafe extern "C" fn CreateShellLink() -> i32 {
     0
 }
 """
+# scan_guid_values. Seeded from stobject (2026-10-18): CGID_ShellServiceObject written from
+# memory, Data1 one digit off, so explorer's Exec never started the tray.
+_GUID_SDK = "DEFINE_OLEGUID(CGID_ShellServiceObject, 0x000214D2, 0, 0);\n"
+_GUID_RS = (
+    "const CGID_ShellServiceObject: GUID = GUID {{ Data1: {d1}, Data2: 0x0000, Data3: 0x0000, "
+    "Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46] }};\n"
+)
 # scan_uncalled_ctor_hook. Seeded from acppage (2026-10-17): a hand-banked constructor without
 # cpp_app's `m_psp = T::__psp_init(this_)` prologue line left the PROPSHEETPAGE zeroed.
 _CTORHOOK_HOOK = """\
@@ -3260,6 +3267,18 @@ CONTROLS: list[Control] = [
         script="tools/vibeos-lint/src/rules/entry_point_cc.rs",
         bad={"bad.rs": _ENTRYCC_BAD},
         good={"good.rs": _ENTRYCC_GOOD},
+    ),
+    Control(
+        name="scan_guid_values",
+        script="tools/vibeos-lint/src/rules/guid_values.rs",
+        bad={
+            "sdk/include/psdk/shlguid.h": _GUID_SDK,
+            "sdk/lib/rust/x-rust/src/a.rs": _GUID_RS.format(d1="0x000214D4"),
+        },
+        good={
+            "sdk/include/psdk/shlguid.h": _GUID_SDK,
+            "sdk/lib/rust/x-rust/src/a.rs": _GUID_RS.format(d1="0x000214D2"),
+        },
     ),
     Control(
         name="scan_uncalled_ctor_hook",

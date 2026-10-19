@@ -8,7 +8,7 @@
 //! wrong subsystem (field manual §9.113); `tools/scan_bugcheck_codes.py` keeps
 //! new ones out.
 //!
-//! Source: sdk/include/reactos/mc/bugcodes.mc (186 stop codes + 16
+//! Source: sdk/include/reactos/mc/bugcodes.mc (187 stop codes + 16
 //! bugcheck-screen message strings, which keep their message-compiler severity
 //! bits), cross-verified against
 //! sdk/lib/rust/reactos-link/committed-headers/bugcodes.h.
@@ -149,6 +149,7 @@ pub const INVALID_KERNEL_HANDLE                                    : ULONG = 0x9
 pub const KERNEL_STACK_LOCKED_AT_EXIT                              : ULONG = 0x94;
 pub const INVALID_WORK_QUEUE_ITEM                                  : ULONG = 0x96;
 pub const MORAL_EXCEPTION_ERROR                                    : ULONG = 0x9A;
+pub const DRIVER_POWER_STATE_FAILURE                               : ULONG = 0x9F;
 pub const INTERNAL_POWER_ERROR                                     : ULONG = 0xA0;
 pub const PCI_BUS_DRIVER_INTERNAL                                  : ULONG = 0xA1;
 pub const ACPI_BIOS_ERROR                                          : ULONG = 0xA5;

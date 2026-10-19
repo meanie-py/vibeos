@@ -437,6 +437,20 @@ name = "bitmap"
 version = "0.1.0"
 
 [[package]]
+name = "blrtl-rust"
+version = "0.1.0"
+dependencies = [
+ "bitmap",
+ "byteswap",
+ "compress",
+ "crc32",
+ "largeint",
+ "mem",
+ "random",
+ "rtl-diag",
+]
+
+[[package]]
 name = "blue-cargo"
 version = "0.1.0"
 dependencies = [
@@ -6141,6 +6155,18 @@ dependencies = [
 name = "sti-rust"
 version = "0.1.0"
 dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "stobject-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
  "conutils-h",
  "ntdll-sys",
  "panic-common",

@@ -1,0 +1,30 @@
+# blrtl-rust — the boot loaders' RTL (boot/rtl/blrtl.cmake), in Rust.
+#
+# blrtl is the kernel's sdk/lib/rtl sources compiled with -D_BLDR_ (which only trims
+# rtl.h/rtlp.h declarations; no .c body changes under it) plus the loader's own
+# boot/rtl/nlsboot.c. So this umbrella links the SAME rlibs the kernel's rtl-rust does, one
+# per blrtl source, and adds nlsboot. freeldr (BIOS), rosload and uefildr link it as a
+# `.rust_lib` sibling in place of their old `.c_from_compile_db("blrtl", ..)`.
+#
+# Per-arch membership mirrors blrtl.cmake exactly: byteswap.c and mem.c are amd64-only
+# there (i386 takes rtlmem.s/rtlswap.S, still linked as blrtl_asm; arm64 has neither).
+
+[package]
+name = "blrtl-rust"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+bitmap   = { path = "../bitmap" }   # bitmap.c + bitmap64.c
+compress = { path = "../compress" } # compress.c
+crc32    = { path = "../crc32" }    # crc32.c
+largeint = { path = "../largeint" } # largeint.c
+random   = { path = "../random" }   # random.c
+rtl-diag = { path = "../rtl-diag", features = ["image"] } # image.c (rtl-diag's image module alone)
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+byteswap = { path = "../byteswap" } # byteswap.c
+mem      = { path = "../mem" }      # mem.c

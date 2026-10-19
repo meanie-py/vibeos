@@ -1325,6 +1325,10 @@ impl CStringW {
     /// clean crash either, since a low address may well be mapped.
     pub unsafe fn from_ptr(pszSrc: *const WCHAR) -> Self {
         let mut s = Self::new();
+        // cstringt.h's LoadFromPtr_: NULL is the empty string, never LoadString(0).
+        if pszSrc.is_null() {
+            return s;
+        }
         // IS_INTRESOURCE(p): the whole pointer fits in its low word.
         if (pszSrc as usize) >> 16 == 0 {
             s.LoadStringW((pszSrc as usize & 0xFFFF) as UINT);
@@ -1424,6 +1428,13 @@ impl CStringW {
     pub unsafe fn from_ansi(pszSrc: LPCSTR) -> Self {
         let mut s = Self::new();
         if pszSrc.is_null() {
+            return s;
+        }
+        // LoadFromPtr_ checks IS_INTRESOURCE for the YCHAR constructor too: stobject's
+        // `CString strOpen((LPCSTR)IDS_PWR_PROPERTIES)` is a resource load, and converting
+        // the ID as text read address 0x60 the moment the power icon was right-clicked.
+        if (pszSrc as usize) >> 16 == 0 {
+            s.LoadStringW((pszSrc as usize & 0xFFFF) as UINT);
             return s;
         }
         let n = MultiByteToWideChar(CP_THREAD_ACP, 0, pszSrc, -1, core::ptr::null_mut(), 0) - 1;
@@ -2086,6 +2097,13 @@ impl CStringA {
     /// buffer pointer out of the path text (arm64: a fault at address "X:\\Profi").
     pub unsafe fn from_ptr(pszSrc: *const c_char) -> Self {
         let mut s = Self::new();
+        // LoadFromPtr_: a resource ID is a string-table load, never text to read. Loaded
+        // wide and converted as `from_wide` converts, the thread code page.
+        if !pszSrc.is_null() && (pszSrc as usize) >> 16 == 0 {
+            let mut w = CStringW::new();
+            w.LoadStringW((pszSrc as usize & 0xFFFF) as UINT);
+            return Self::from_wide(w.GetString());
+        }
         if !pszSrc.is_null() {
             let mut n = 0usize;
             while *pszSrc.add(n) != 0 {
@@ -2574,9 +2592,41 @@ mod cstring_tests {
 
     #[no_mangle]
     static __ImageBase: u8 = 0;
+    static LAST_LOAD: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
     #[no_mangle]
-    extern "system" fn LoadStringW(_h: *mut c_void, _id: u32, _buf: *mut WCHAR, _n: INT) -> INT {
-        0 // no string table on the host: the resource paths are not what these tests reach
+    extern "system" fn LoadStringW(_h: *mut c_void, id: u32, _buf: *mut WCHAR, _n: INT) -> INT {
+        // No string table on the host; the ID asked for is recorded.
+        LAST_LOAD.store(id, core::sync::atomic::Ordering::SeqCst);
+        0
+    }
+    #[no_mangle]
+    extern "system" fn MultiByteToWideChar(
+        _cp: u32, _f: u32, _s: LPCSTR, _n: INT, _out: *mut WCHAR, _cch: INT,
+    ) -> INT {
+        0
+    }
+    #[no_mangle]
+    extern "system" fn WideCharToMultiByte(
+        _cp: u32, _f: u32, _w: *const WCHAR, _n: INT, _out: *mut u8, _cb: INT, _d: *const u8,
+        _u: *mut BOOL,
+    ) -> INT {
+        0
+    }
+
+    #[test]
+    fn a_resource_id_pointer_loads_and_null_is_empty() {
+        use core::sync::atomic::Ordering::SeqCst;
+        unsafe {
+            LAST_LOAD.store(0, SeqCst);
+            let s = CStringW::from_ansi(0x60 as LPCSTR);
+            assert_eq!((s.GetLength(), LAST_LOAD.load(SeqCst)), (0, 0x60));
+            let a = CStringA::from_ptr(0x61 as *const c_char);
+            assert_eq!(LAST_LOAD.load(SeqCst), 0x61);
+            drop(a);
+            LAST_LOAD.store(7, SeqCst);
+            assert_eq!(CStringW::from_ptr(core::ptr::null()).GetLength(), 0);
+            assert_eq!(LAST_LOAD.load(SeqCst), 7, "NULL is empty, not LoadString(0)");
+        }
     }
     #[no_mangle]
     extern "system" fn LocalAlloc(_f: u32, n: usize) -> HLOCAL {

@@ -130,6 +130,35 @@ def concat_string_macros(text: str, macros: dict[str, str]) -> str:
 _PPV_ARG = re.compile(r"\b(IID_PPV_ARG|IID_NULL_PPV_ARG)\s*\(")
 
 
+_LOCAL_ENUM = re.compile(r"\benum\s+(?:class\s+)?(\w+\s*)?\{([^{}]*)\}\s*;")
+
+
+def local_enums_to_consts(text: str) -> str:
+    """A body's own `enum { IDC_EXTRACT, IDC_EXTRACTALL };` as `const int` declarations.
+
+    The island cannot carry a function-local enum, and the model given one wrote
+    `let _ = (IDC_EXTRACT, IDC_EXTRACTALL);` with the names undefined, so every `case`
+    on them became a catch-all binding (cabview's ItemMenuCallback). An implicit value is
+    the previous member plus one, spelled so, which is what C++ means by it. A named enum
+    keeps its name as an `int` typedef for the declarations that use it."""
+
+    def lower(m: re.Match[str]) -> str:
+        out = [f"typedef int {m.group(1).strip()};"] if m.group(1) else []
+        prev = None
+        for item in (i.strip() for i in m.group(2).split(",")):
+            if not item:
+                continue
+            name, _, value = (p.strip() for p in item.partition("="))
+            if not re.fullmatch(r"\w+", name):
+                return m.group(0)  # not a plain enumerator list; leave it to the model
+            value = value or ("0" if prev is None else f"{prev} + 1")
+            out.append(f"const int {name} = {value};")
+            prev = name
+        return " ".join(out)
+
+    return _LOCAL_ENUM.sub(lower, text)
+
+
 def ppv_arg_macros(text: str) -> str:
     """shellutils.h `IID_PPV_ARG(Itype, ppType)` -> `&IID_Itype, (void**)(ppType)`, its C
     spelling (`IID_NULL_PPV_ARG` adds the NULL outer unknown). It expands to TWO arguments, so
