@@ -602,6 +602,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **i386 double fault `0x7F/8` after netstack comes up (open flake, 1 in 14, seen
+  2026-10-18, integration).** Cold gate `20261018-203418-4bm2iwmq`, i386 `-smp 2` on QEMU 11.1.0:
+  `BUGCHECK 0x7F (8, 0x80082000)` via `KiTrap08Handler`. CPU#0 was at a garbage PC
+  (`XHF_NOEXECUTE+521701`) and CPU#1 in `_YieldProcessor`. It came straight after netstack's
+  `ping gateway OK` / `dns OK` and an `[RQAFF] affinity-defer` line. The same media then went
+  13/13 green (`20261018-205518-_e9s2jz2`, plus a `--repeat 10`). This is the first `0x7F/8`
+  in any i386 serial log, and both suspects landed today: QEMU 11.1.0 (`1b759a0c50b`) and
+  netstack multi-adapter (`db748db1dff`). UNVERIFIED which, if either. Artifacts, outside /tmp:
+  `~/vibeos-flake-farm/fails/i386-dblfault-qemu1110-20261018/`. Next: a `farm --arches i386`
+  soak on each QEMU.
+- **Shared cargo link dir lost an uplifted `.d` (open flake, seen once 2026-10-18,
+  integration).** Cold gate `20261018-182602-3__g5z_l` failed i386 at winlogon.exe:
+  `cargo-depfile: No such file ... cell-link-v1-i386-15/.../release/winlogon.d`. cargo had
+  just built it (`deps/winlogon-<hash>.d` present, but 357 bytes listing only `main.rs`), and
+  the uplifted `release/winlogon.d` was absent. The warm rebuild was green with a 15 KB `.d`.
+  Suspect: the shared `cell-link-v1-<arch>-<n>` shard dirs (`baa4ba3795a`/`fd9c0f4d64e`). The
+  shard is not locked across the `cargo build` → `retarget_cargo_depfile.py` chain, so another
+  cell's cargo in the same shard can run in that window. UNVERIFIED; this is the first sighting
+  in any `/tmp/vibeos-cli` log.
 - **Directory change notification: 19 Wine `change` failures left after the fsrtl fix (open,
   found 2026-10-17, smp-bringup).** `FsRtlNotifyFilterReportChange` was an empty placeholder,
   so no watch ever completed with data. It is now translated, along with the lost-IRP
@@ -1121,8 +1140,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `enum result { ok, ... }` collides with the test `ok` macro), `wine.combase.test.dll`
   (`-llibcombase` not found), `user32_winetest` monitor.c (`ddk/d3dkmthk.h` not on its include
   path; it lives in sdk/include/wine/ddk).
-- **i386 smoke QEMU mis-executes SAHF after a logic op** (OPEN, 2026-10-04; host tooling,
-  not vibeos). The windows-host backend's QEMU is 11.0.50, a development snapshot
+- **i386 smoke QEMU mis-executes SAHF after a logic op** (FIXED 2026-10-18 by QEMU 11.1.0;
+  host tooling, not vibeos). The backend now runs the released 11.1.0 from `C:\qemu-11.1.0`:
+  atodbl passes on it exactly as on real Windows, and smoke refuses the 11.0.50 snapshot as
+  `QEMU_KNOWN_BAD` (`tests/qemu/backend.py` `KNOWN_BAD_WINDOWS_QEMU`). Also seen as jscript
+  integers reaching COM as `VT_R8` (jsproxy winetest 168-169). History: The windows-host backend's QEMU is 11.0.50, a development snapshot
   (`v11.0.0-12631-g54e84cdc7a`, installed 2026-05-01). After `or`/`xor`/`test`/`mov`, `sahf`
   sets CF wrong, so `fucom; fnstsw; sahf; jcc` -- every x87 float compare `-march=pentium`
   emits -- can branch the wrong way in i386 guests. Seen as Wine msvcrt `string.c:3522`'s 5,535

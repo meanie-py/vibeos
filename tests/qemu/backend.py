@@ -183,6 +183,52 @@ def windows_qemu_bin(native_bin: str, qemu_dir: str, accel: str) -> str:
     return str(Path(qemu_dir) / f"{name}.exe")
 
 
+# Windows QEMU builds no smoke may boot on, keyed by the version line `--version` prints
+# (after "QEMU emulator version "). Each was caught giving a WRONG guest answer, not a slow
+# or flaky one, so a verdict from it is not evidence about vibeos.
+KNOWN_BAD_WINDOWS_QEMU = {
+    "11.0.50 (v11.0.0-12631-g54e84cdc7a)": (
+        "development snapshot whose TCG sets CF/ZF wrong when SAHF follows a logic op, so i386 "
+        "x87 float compares (fnstsw; sahf; jcc under -march=pentium) branch the wrong way: "
+        "tools/payloads/atodbl fails here and passes on 11.1.0 and real hardware"
+    ),
+}
+
+_QEMU_VERSIONS: dict[tuple[str, int, int], str] = {}
+
+
+def windows_qemu_version(exe: str) -> str:
+    """The version an exe reports, e.g. "11.1.0 (v11.1.0-12130-ge470268ff4)"; cached per
+    (path, size, mtime) so a replaced binary is read again. "" when it cannot be run."""
+    try:
+        st = os.stat(exe)
+    except OSError:
+        return ""
+    key = (exe, st.st_size, int(st.st_mtime))
+    if key not in _QEMU_VERSIONS:
+        try:
+            out = subprocess.run(
+                [exe, "--version"], capture_output=True, text=True, timeout=30, check=False
+            ).stdout
+        except (OSError, subprocess.TimeoutExpired):
+            out = ""
+        first = out.splitlines()[0] if out.strip() else ""
+        _QEMU_VERSIONS[key] = first.removeprefix("QEMU emulator version ").strip()
+    return _QEMU_VERSIONS[key]
+
+
+def known_bad_windows_qemu(version: str) -> str | None:
+    """Why `version` may not run a smoke, or None when it is not on the list."""
+    return KNOWN_BAD_WINDOWS_QEMU.get(version)
+
+
+def known_bad_windows_qemu_fix(exe: str) -> str:
+    return (
+        f"{exe} is a known-bad QEMU build. Point VIBEOS_QEMU_WINDOWS_DIR (or qemu.windows."
+        "qemu_dir) at a released build that passes the atodbl payload on i386."
+    )
+
+
 def rewrite_accel(args: list[str], accel: str, arch: str = "amd64") -> list[str]:
     """Swap the KVM accelerator for the Windows one and drop the paired `-cpu host`.
     `-accel kvm` -> `-accel <accel>` (whpx adds a PER-ARCH `kernel-irqchip` — see below).
