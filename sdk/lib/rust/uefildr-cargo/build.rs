@@ -220,7 +220,7 @@ fn main() {
         .rust_lib("blrtl-rust", &[], true)
         .c_from_compile_db("blrtl", blrtl_c)
         // libcntpr C compiled in-cargo — drops the cmake liblibcntpr.a reuse
-        // (cmake-off WS1 DEEP). cmake-off path uses cflags/libcntpr.<arch>.flags.
+        // (cmake-off WS1 DEEP). cmake-off path uses its lines of clibs/<arch>/libcntpr.recipe.
         .c_from_compile_db("libcntpr", &libcntpr_c)
         // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
