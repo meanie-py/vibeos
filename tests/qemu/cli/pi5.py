@@ -71,9 +71,9 @@ def ssh_up(repo: Path) -> bool:
 
 
 def plug_configured(repo: Path) -> bool:
-    """Whether env.sh names a plug. It holds the default, so PI5_PLUG need not be set."""
+    """Whether env.sh names a plug: PI5_PLUG, since its plug moved to the Pi 4 (2026-10-18)."""
     rc, out = pi4._quick(_env_sh(repo, 'printf %s "$PI4_PLUG"'), timeout=10)
-    return rc == 0 and bool(out.strip())
+    return rc == 0 and out.strip() not in ("", "none.invalid")
 
 
 def payload_manifest() -> dict:
@@ -158,6 +158,15 @@ def doctor_stages(repo: Path) -> list[Stage]:
         power = pi4.parse_power(out)
         if rc or not power:
             stages.append(Stage("plug", status="fail", detail="unreachable", salient=[out[-160:]]))
+        elif power["on"] and power["watts"] > pi4.PI_WATTS_MAX:
+            stages.append(
+                Stage(
+                    "plug",
+                    status="fail",
+                    detail=f"draws {power['watts']:.1f} W: not a Pi",
+                    salient=["check PI5_PLUG names the Pi 5's plug"],
+                )
+            )
         else:
             stages.append(
                 Stage("plug", detail=f"{'on' if power['on'] else 'off'} {power['watts']:.1f} W")
@@ -165,7 +174,7 @@ def doctor_stages(repo: Path) -> list[Stage]:
 
     rc, out = pi4._quick([*_script(repo, "pico.sh"), "usb"])
     usb = pi4.parse_usb(out)
-    host = os.environ.get("PI5_PICO_HOST", "picousb")
+    host = os.environ.get("PI5_PICO_HOST", "none.invalid")
     if "error" in usb:
         stages.append(
             Stage(

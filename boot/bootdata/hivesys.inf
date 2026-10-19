@@ -1467,6 +1467,16 @@ HKLM,"SYSTEM\CurrentControlSet\Control\ProductOptions","ProductSuite",0x00010002
 ; ReactOS specific - by default we report ourselves as Server for the user,
 ; but we can also report as Workstation if some application needs it.
 HKLM,"SYSTEM\CurrentControlSet\Control\ReactOS\Settings\Version","ReportAsWorkstation",0x00010001,0x00000000
+; The zone until setup or the Date/Time panel picks one: GMT, no daylight saving. Without
+; the key every RtlQueryTimeZoneInformation failed, NtSetSystemTime's on the live CD among them.
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","Bias",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","StandardName",0x00000000,"Greenwich Standard Time"
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","StandardBias",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","StandardStart",0x00000001,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","DaylightName",0x00000000,"Greenwich Daylight Time"
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","DaylightBias",0x00010001,0x00000000
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","DaylightStart",0x00000001,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+HKLM,"SYSTEM\CurrentControlSet\Control\TimeZoneInformation","TimeZoneKeyName",0x00000000,"Greenwich Standard Time"
 ; Some installers check for SP2
 HKLM,"SYSTEM\CurrentControlSet\Control\Windows","CSDReleaseType",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Control\Windows","CSDVersion",0x00010001,0x00000200
