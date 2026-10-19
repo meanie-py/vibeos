@@ -567,11 +567,84 @@ pub unsafe extern "fastcall" fn KiTrap07Handler(TrapFrame: PKTRAP_FRAME) -> ! {
     KiNpxHandler(TrapFrame, thread, save_area);
 }
 
+/// vibeos: the loaded module holding `addr` -- its base name (ASCII, NUL-terminated, in `out`)
+/// and the offset into it -- for a double fault's EIP and return addresses, which land in
+/// drivers the kernel-only symbolizer cannot place. Read-only walk of PsLoadedModuleList.
+unsafe fn df_module_of(addr: ULONG, out: &mut [u8; 32]) -> ULONG {
+    extern "C" {
+        static mut PsLoadedModuleList: LIST_ENTRY;
+    }
+    out[0] = b'?';
+    out[1] = 0;
+    let head = core::ptr::addr_of_mut!(PsLoadedModuleList);
+    let mut e = (*head).Flink;
+    let mut guard = 0;
+    while !e.is_null() && e != head && guard < 256 {
+        let m = e as *mut ntkrnl_sys::ddk::_LDR_DATA_TABLE_ENTRY;
+        let base = (*m).DllBase as ULONG;
+        if addr >= base && addr - base < (*m).SizeOfImage {
+            let name = &(*m).BaseDllName;
+            let n = ((name.Length / 2) as usize).min(out.len() - 1);
+            for i in 0..n {
+                let c = *name.Buffer.add(i);
+                out[i] = if c < 0x80 { c as u8 } else { b'?' };
+            }
+            out[n] = 0;
+            return addr - base;
+        }
+        e = (*e).Flink;
+        guard += 1;
+    }
+    addr
+}
+
+/// vibeos: EIP and the faulting thread's EBP chain, each as module+offset. A kernel stack
+/// overflow is deep recursion or one huge frame; the chain names which. Frames are followed
+/// only while EBP climbs inside [lo, hi), so a corrupt chain stops instead of faulting again.
+unsafe fn df_dump_frames(eip: ULONG, ebp: ULONG, lo: ULONG, hi: ULONG) {
+    let mut name = [0u8; 32];
+    let off = df_module_of(eip, &mut name);
+    crate::dbg_print!(b"[DBLFAULT]   at %s+0x%lx\n\0", name.as_ptr(), off);
+    let mut fp = ebp;
+    let mut n = 0;
+    while n < 24 && fp >= lo && fp.wrapping_add(8) <= hi && fp & 3 == 0 {
+        let ret = *((fp + 4) as *const ULONG);
+        let off = df_module_of(ret, &mut name);
+        crate::dbg_print!(b"[DBLFAULT]   #%u %s+0x%lx (ebp=0x%08lx)\n\0", n as ULONG, name.as_ptr(), off, fp);
+        let next = *(fp as *const ULONG);
+        if next <= fp {
+            break;
+        }
+        fp = next;
+        n += 1;
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn KiTrap08Handler() {
     _disable();
     let tss = (*KeGetPcr()).TSS;
     let thread = (*((KeGetPcr() as PKIPCR))).PrcbData.CurrentThread;
+    // vibeos: the faulting task's context, from the TSS the CPU saved it in on the task
+    // switch, beside the thread's kernel stack bounds. ESP below StackLimit is a kernel stack
+    // overflow; `EIP=` is what triage symbolicates. The same two values ride the bugcheck too
+    // (parameters 3 and 4, otherwise 0), so they survive if this print does not.
+    let kt = thread as PKTHREAD;
+    crate::dbg_print!(
+        b"[DBLFAULT] EIP=0x%08lx ESP=0x%08lx EBP=0x%08lx CR3=0x%08lx thread=%p stack=[0x%08lx,0x%08lx) initial=0x%08lx\n\0",
+        (*tss).Eip,
+        (*tss).Esp,
+        (*tss).Ebp,
+        (*tss).CR3,
+        thread as PVOID,
+        (*kt).StackLimit as ULONG,
+        (*kt).StackBase as ULONG,
+        (*kt).InitialStack as ULONG,
+    );
+    let (fault_eip, fault_esp) = ((*tss).Eip, (*tss).Esp);
+    // The stack overflowed downward, so the frames above ESP are still mapped: walk from the
+    // stack's lower guard up to its base.
+    df_dump_frames(fault_eip, (*tss).Ebp, ((*kt).StackLimit as ULONG).wrapping_sub(0x1000), (*kt).InitialStack as ULONG);
     let process = (*(thread as *mut _ETHREAD)).Tcb.__bindgen_anon_1.ApcState.Process;
     (*tss).CR3 = (*(process as *mut _EPROCESS)).Pcb.DirectoryTableBase[0];
     (*tss).IoMapBase = (*(process as *mut _EPROCESS)).Pcb.IopmOffset;
@@ -593,8 +666,8 @@ pub unsafe extern "C" fn KiTrap08Handler() {
         UNEXPECTED_KERNEL_MODE_TRAP,
         EXCEPTION_DOUBLE_FAULT,
         tss as u32,
-        0,
-        0,
+        fault_eip,
+        fault_esp,
         core::ptr::null_mut(),
     );
 }
