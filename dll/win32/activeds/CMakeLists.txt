@@ -22,3 +22,5 @@ add_cargo_module(activeds activeds-cargo activeds.dll
     BODY_CRATE activeds-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS activeds_shims activeds_r ${ACTIVEDS_REUSED} psdk uuid_sources)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

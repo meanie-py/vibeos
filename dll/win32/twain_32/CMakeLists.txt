@@ -16,3 +16,5 @@ add_cargo_module(twain_32 twain_32-cargo twain_32.dll
     BODY_CRATE twain_32-rust
     DESTINATION reactos
     EXTRA_DEPENDS twain_32_shims psdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

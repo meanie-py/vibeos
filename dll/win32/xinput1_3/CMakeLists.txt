@@ -20,3 +20,5 @@ add_cargo_module(xinput1_3 xinput1_3-cargo xinput1_3.dll
     BODY_CRATE xinput1_3-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS xinput1_3_shims psdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

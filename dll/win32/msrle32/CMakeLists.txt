@@ -17,3 +17,5 @@ add_cargo_module(msrle32 msrle32-cargo msrle32.dll
     BODY_CRATE msrle32-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS msrle32_shims psdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

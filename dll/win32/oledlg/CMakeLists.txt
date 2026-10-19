@@ -19,3 +19,5 @@ add_cargo_module(oledlg oledlg-cargo oledlg.dll
     BODY_CRATE oledlg-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS oledlg_shims psdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle
