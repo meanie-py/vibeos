@@ -2,101 +2,178 @@
 
 > *An operating system for nobody.*
 
-An AI-vibecoded fork of [ReactOS](https://reactos.org/) that ports the kernel to ARM64 and rewrites most of it in Rust — for fun, for science, and for absolutely no practical purpose.
+An AI-vibecoded fork of [ReactOS](https://reactos.org/), the open-source Windows-compatible
+operating system, that ports it to ARM64 and rewrites it in Rust. It is still ReactOS at heart:
+the same NT architecture, the same Win32 API, the same goal of running Windows drivers and
+applications. Only the language underneath, and the list of machines it boots on, have changed.
+For fun, for science, and for absolutely no practical purpose.
 
 > [!CAUTION]
 > **Do not use this for anything. Ever.**
 >
-> This is an experimental research toy generated largely by LLMs (Claude, Codex, Gemini) running automated translation pipelines against the ReactOS C source. The kernel is held together by static analyzers, smoke tests, and `#[no_mangle]` incantations. **It is significantly less production-ready than upstream ReactOS, which is itself alpha-quality and explicitly warns against use on real hardware with real data.**
+> This is an experimental research toy generated largely by LLMs (Claude, Codex, Gemini, Haiku,
+> DeepSeek) running automated translation pipelines against the ReactOS C source. It is held
+> together by static analyzers, differential test harnesses, boot smoke tests and `#[no_mangle]`
+> incantations. **It is significantly less production-ready than upstream ReactOS, which is
+> itself alpha-quality and explicitly warns against use on real hardware with real data.**
 >
-> If ReactOS says "may corrupt your hard disk," vibeos says "will absolutely brick your VM, eat your data, summon undefined behavior, and generate ud2 instructions in functions LLVM has decided are unreachable." Run it in a throwaway QEMU and nowhere else.
+> If ReactOS says "may corrupt your hard disk," vibeos says "will absolutely brick your VM, eat
+> your data, summon undefined behavior, and generate ud2 instructions in functions LLVM has
+> decided are unreachable." Run it in a throwaway VM, or on a Raspberry Pi you don't love.
 
 ---
 
 ## Screenshots
 
-All three architectures boot to a graphical desktop in the QEMU smoke harness — **arm64 reaches the same real `shell ready` marker as x86**, not an idle-detection proxy.
+Real hardware first: a **physical Raspberry Pi 5**, captured over HDMI at 1080p.
 
-| i386 LiveCD desktop | amd64 LiveCD desktop |
+![vibeos on a physical Raspberry Pi 5, captured over HDMI](docs/screenshots/pi5_hdmi_desktop.png)
+
+| Doom on ARM64 (doomgeneric, Win32 GDI) | Registry Editor on ARM64 |
 |---|---|
-| ![i386 desktop](docs/screenshots/i386_desktop.png) | ![amd64 desktop](docs/screenshots/amd64_desktop.png) |
+| ![Doom running on ARM64](docs/screenshots/arm64_doom.png) | ![Registry Editor on ARM64](docs/screenshots/arm64_regedit.png) |
 
-| ARM64 desktop | ARM64 Notepad |
-|---|---|
-| ![ARM64 desktop](docs/screenshots/arm64_desktop.png) | ![ARM64 notepad](docs/screenshots/arm64_notepad.png) |
+| Explorer, Task Manager and System Properties on amd64 |
+|---|
+| ![Explorer and friends on amd64](docs/screenshots/amd64_explorer.png) |
 
-ARM64 was the original target — bringing up an NT-style kernel on a non-x86 architecture from a codebase that had never built for one before. It now boots to the same graphical desktop as x86 in ~40s under QEMU `virt`, with real GIC interrupts (routing + dispatch + hardware-backed IRQL), a PL031 real-time clock, and USB HID keyboard/mouse input through the Rust USB host stack.
+The QEMU shots are from `appstorm`, the payload that opens and closes about 50 stock applications and Control Panel applets on every arch.
 
 ---
 
-## What this is
+## Status (October 2026)
 
-A multi-architecture port of ReactOS — an open-source Windows-compatible operating system — with two parallel goals:
+**All three architectures boot to a graphical desktop, and the boot path is entirely Rust.**
+The kernel and HAL compile zero lines of C. One smoke harness boots i386, amd64 and ARM64 with
+two CPUs each and requires the same real marker on every arch: explorer's `_tWinMain` entered
+and `shell ready` (no idle-detection proxies, no per-arch shortcuts). ARM64 gets there in about
+40 seconds under QEMU.
 
-1. **ARM64 port.** Cross-compile the entire NT-compatible kernel and userspace to AArch64 PE-COFF using `llvm-mingw`. Boot under QEMU `virt`. Also retains amd64 and i386 builds; all three target zero build failures and pass smoke tests independently.
-2. **Rust in the kernel.** Translate the C source of `ntoskrnl` (and the HAL) to Rust subsystem-by-subsystem using an automated LLM pipeline (`tools/rustconv/`), then link the result into the kernel. `ntoskrnl.exe` now **links via cargo with zero cmake-built static libraries** and consumes only a handful of tiny C shim files — every subsystem (`ob`, `se`, `ps`, `ex`, `ke`, `mm`, `cc`, `fsrtl`, `iomgr`, `pnpmgr`, `config`, `kd`, `kdbg`, `kd64`, `lpc`, `dbgk`, `po`, `wmi`, `vdm`, `rtl`, etc.) is Rust. The kernel monolith crate is being split per-subsystem for build velocity (~70% extracted, ~250-member cargo workspace). The HAL is Rust on **all three arches** — x86 (i386 + amd64) and arm64 (GIC/timer/DMA-adapter/PL031). Dozens of sibling rlibs under `sdk/lib/rust/` factor out reusable primitives (slist, bitmap, splaytree, generictable, avltable, mm-avl, etc.).
+| Platform | State |
+|---|---|
+| **QEMU i386, amd64, ARM64** | Desktop on all three, `-smp 2`, gated on every merge. amd64 boots under both UEFI and SeaBIOS, and installs from the boot CD onto a blank disk. |
+| **Raspberry Pi 4B** (physical) | Desktop on all four cores; USB keyboard, mouse and mass storage; Ethernet; SD card writes. Network-booted from the build host in about 100 s. |
+| **Raspberry Pi 5** (physical) | Desktop at 1080p over HDMI; USB, SD card, and Ethernet through the RP1 southbridge. |
+| **Dell OptiPlex 9020** (physical x86) | Desktop; Realtek's own Windows 10 Wi-Fi driver joins a WPA2 network through a from-scratch Rust supplicant. |
 
-The translation pipeline produces transliterated Rust that mostly preserves the original C structure, with subsequent passes for probe migration, RAII guards, and idiomatic NTSTATUS handling. It is held together by:
+### Rust translation
 
-- ~1,500 compile-time struct layout assertions per architecture (bindgen-generated).
-- A custom static-analysis suite (`scan_ud2.py`, `lint_kernel.py`, `verify_constants.py`, `verify_ffi.py`, etc.) for catching LLVM miscompilations and FFI mismatches, plus bespoke runtime tripwires (lockdep, waitdep, cswitchdep, special-pool) for the hard concurrency/corruption bugs.
-- QEMU smoke tests (`tests/qemu/test_smoke.py`, driven by `./vibeos-cli`) that boot each arch end-to-end and require a graphical desktop to count as passing.
+**55% of the core OS is Rust, and 89% of the ReactOS-native part.** What is left is mostly
+Wine-derived userland (22% covered) and the DirectX stack. The tree holds 4.1M
+lines of translated Rust (plus 10M lines of generated bindings, which we don't count).
+
+| Surface | Rust |
+|---|---:|
+| Kernel (`ntoskrnl.exe`), HAL, `ntdll.dll`, CSR | 100% |
+| win32k: USER / GDI / display drivers | 99–100% |
+| Control Panel applets, keyboard layouts, OpenGL | 100% |
+| Shell, CTF/IME, print spooler, AppCompat | 96–98% |
+| Boot loader (freeldr) | 96% |
+| Driver fleet (storage, filesystems, input, USB, network) | 95% |
+| Services | 92% |
+| In-box applications | 81% |
+| Setup | 51% |
+| Win32 DLLs (mostly Wine) | 34% |
+| DirectX | 0% |
+
+*Lines of compiled C replaced by Rust, from `python3 tools/port_audit.py` at 2026-10-18.*
+
+The per-module ledger, generated from the build graph and stamped with its commit, is
+[`docs/engineering/rust-port-status.md`](docs/engineering/rust-port-status.md).
+
+### Compatibility
+
+vibeos keeps ReactOS's compatibility target and measures it rather than assuming it:
+
+- **Conformance ratchets.** ReactOS's kernel-mode tests (kmtest), 62 user-mode apitest suites
+  and all 128 Wine winetest suites build and run inside the booted guest. Per-assertion results
+  are baselined per arch, and a merge that turns a passing assertion red is rejected.
+- **Rust against its own C.** For a translated module, the original C is built alongside as a
+  reference and both run the same test in the same guest. setupapi's Wine test suite produces
+  byte-identical output from the Rust and the C. On the host, `difftest` grades shipping Rust
+  against the genuine C it replaced, with mutants to prove each test can fail.
+- **Real Windows binaries.** Doom (doomgeneric, Win32 GDI) runs as a payload; `appstorm` opens
+  and closes about 50 stock applications and Control Panel applets on every arch; on ARM64,
+  stock **x86-64** Windows programs run through [FEX](https://github.com/FEX-Emu/FEX).
+
+## Recent wins
+
+- 🍓 **Boots on a real Raspberry Pi 4**: all four cores, USB, Ethernet, SD card, about 100 s from power-on to desktop.
+- 🍓 **And a Raspberry Pi 5**: 1080p HDMI, USB, SD, Ethernet through RP1 at 360 of 360 pings.
+- 📶 **A real x86 PC gets online over Wi-Fi**: Realtek's stock Windows 10 driver plus a from-scratch Rust WPA2 supplicant.
+- 🔀 **Stock x86-64 Windows apps run on ARM64** under FEX: 25 of them, as real x86-64 processes.
+- 🦀 **The boot path is all Rust**: the kernel and HAL compile zero lines of C.
+- ⚙️ **The kernel links with Cargo**: kernel, core binaries, drivers and `win32k.sys` are byte-identical to the CMake build apart from the timestamp.
+- 🪟 **user32, comctl32, msvcrt and ucrtbase are Rust**, and the C runtimes link no C at all.
+- 📝 **Whole apps translate for pocket change**: Notepad cost about $0.20, then Paint, the Control Panel and C++/ATL shell extensions.
+- 🧠 **Multiprocessor boots on all three arches**, and every merge is gated on two-CPU boots.
+- 🐛 **A 453-boot soak caught an inherited lock that never locked**: dead code in ReactOS, live once a second CPU exists.
+- 🔒 **61 invented crash codes caught**, and constants no longer pass through the model at all.
+- 🧪 **The conformance suites gate merges**: 62 apitest suites that had never run (they found a win32k crash immediately) and all 128 winetest suites.
+- 🔁 **Upstream ReactOS fixes are used to find bugs**: one sync wave found eleven, two of them crash-class.
+- 💿 **Installs onto a blank disk** from the boot CD, and the installed system boots to the desktop.
+- 👹 **Doom runs.** Of course it does.
+
+## How it's built
+
+The C is translated function by function by an LLM pipeline (`tools/rustconv/`), and most of
+the engineering is in making that output trustworthy without a human reading every line:
+
+- **Deterministic first, paid last.** Constants, struct layouts, call targets, COM vtables and
+  wide-string literals are extracted from the C and *sealed*. They never pass through the model,
+  and a body that drops or invents one is rejected. Trivial bodies are lowered for free; a
+  bounded repair pass fixes compile errors before anything is re-bought. Translating a typical
+  DLL now costs cents (Notepad: about $0.20).
+- **Cohabitation.** A translated file's C stays on disk, commented out of the build, while the
+  Rust takes over its symbols. Any module can be half-translated and still boot.
+- **Static defenses.** Struct layouts and FFI signatures in the Rust are checked against the C
+  headers generated by the same commit, and a Rust lint binary (`tools/vibeos-lint`) catches
+  LLVM miscompile classes, invented constants and ABI drift before a boot is ever attempted.
+- **Runtime tripwires** for the hard bugs: lockdep, waitdep, special pool (fault at the
+  corrupting store, not minutes later), and a flake farm that soaks boots into a corpus and
+  grades each failure FLAKE or DETERMINISTIC.
+- **One front door.** `./vibeos-cli` builds, boots, smokes, gates, debugs (GDB over the real
+  UEFI boot), drives the Pi benches, and refuses to boot stale media.
 
 ## What this is *not*
 
 - A usable operating system.
-- A drop-in replacement for ReactOS — most of the value here is in the experimental scaffolding (translation pipeline, multi-arch toolchain, smoke harness), not the resulting binaries.
-- An attempt to compete with, replace, or upstream into ReactOS. Branding, donation links, and project infrastructure from upstream have been stripped because none of it applies to this fork. The original code is GPL-2.0; see [`COPYING`](COPYING).
-- Affiliated with or endorsed by ReactOS, the ReactOS Foundation, Microsoft, or anyone else with a legal department.
-
-## Status
-
-> [!NOTE]
-> **Active development is intermittent.** The repo is generally kept in a state where all three architectures build cleanly and pass the smoke harness, but the smoke harness's bar varies a lot by arch (see below). It may go quiet again at any time.
-
-Current per-arch boot state (HEAD as of July 2026):
-
-- **i386 — full graphical desktop** with start menu and taskbar. LiveCD ISO boots the full chain (kernel → SMSS → CSRSS → win32k → winlogon → explorer → desktop with shell).
-- **amd64 — full graphical desktop.** Same chain, same outcome.
-- **ARM64 — full graphical desktop.** Reaches the *same* real `shell ready` marker as x86 (not idle-detection — that's retired lore), in ~40s under QEMU `virt`, with real GIC interrupts, RTC clock, and USB HID input.
-
-All three are driven by one smoke harness (`./vibeos-cli gate` builds serially, then boots all arches in parallel); the boot marker is `[EXPLORER] _tWinMain entered` + `shell ready` on **every** arch.
-
-Other status:
-
-- **Build:** All three arches build cleanly from Linux/WSL2 with the unified `llvm-mingw` toolchain (Clang 19 / lld 19.1.7, rustc 1.92 / LLVM 21). Zero build failures. Builds run at a canonical bind-mount path with a mandatory shared ccache/sccache; the front door is `./vibeos-cli build`.
-- **Rust coverage:** `ntoskrnl.exe` links via cargo with zero cmake static libs (only a few tiny C shims remain); every subsystem is Rust; the monolith crate is ~70% split into per-subsystem crates. The HAL is Rust on all three arches.
-- **LLVM defenses:** the captures(none) miscompile class (ud2 in named functions, dropped output-pointer writes) is **toolchain-fixed on LLVM ≥ 21** (we ship rustc 1.92 / LLVM 21.1.3); the `lto = false` + `codegen-units = 256` workspace firewall stays as belt-and-suspenders (it still guards the toolchain-independent ABI-mismatch ud2 cascade), backed by `scan_ud2.py`/`lint_kernel.py` in the smoke harness.
-- **Smoke harness:** Boot marker is `shell ready` on **all three arches** (proves kernel → user-mode → desktop). Static analysis (ud2 scan, sacred-primitives, FFI/constant checks) runs as a blocking lint gate before boots and gates regressions.
-
-For a deeper look, see:
-
-- [`docs/engineering/rust-port-status.md`](docs/engineering/rust-port-status.md) — the single source of truth for current Rust-vs-C coverage per subsystem
-- [`docs/product/vibeos-roadmap.md`](docs/product/vibeos-roadmap.md) — what this could become (+ the live Check-back ledger and Known-bugs registry)
-- [`docs/product/vibeos-roadmap-complete.md`](docs/product/vibeos-roadmap-complete.md) — what's already shipped
-- [`docs/engineering/`](docs/engineering/) — the ~11 living reference docs (field manual, kernel-Rust patterns, build system, debug infrastructure); `docs/engineering/active-lanes/` for in-flight work, `docs/engineering/archive/` for closed lanes
-- [`AGENTS.md`](AGENTS.md) — the long-form context document used by AI agents working on this repo (also the best single-page summary of how everything fits together)
+- A drop-in replacement for ReactOS. Most of the value here is in the experimental scaffolding
+  (translation pipeline, multi-arch toolchain, test harnesses), not the resulting binaries.
+- An attempt to compete with, replace, or upstream into ReactOS. We sync from upstream
+  regularly, and use each upstream fix as a bug report against our Rust. Branding, donation
+  links and project infrastructure from upstream have been stripped because none of it applies
+  to this fork.
+- Affiliated with or endorsed by ReactOS, the ReactOS Foundation, Microsoft, or anyone else
+  with a legal department.
 
 ## Building (for the curious)
 
-Requires `llvm-mingw` (Clang 19+), `windmc` from Homebrew `mingw-w64`, `cargo` with the `aarch64-pc-windows-gnullvm`, `x86_64-pc-windows-gnu`, and `i686-pc-windows-gnu` targets, plus `qemu-system-{aarch64,x86_64,i386}`. See [`AGENTS.md`](AGENTS.md) for the full setup.
-
-The unified front door is **`./vibeos-cli`** (build / smoke / check / gate / debug). It handles the canonical build path, shared cache, and per-arch boot media automatically:
+Builds from Linux or WSL2. Requires [`llvm-mingw`](https://github.com/mstorsjo/llvm-mingw)
+(20250114, LLVM 19), Rust 1.92 (pinned in `rust-toolchain.toml`, with the
+`aarch64-pc-windows-gnullvm`, `x86_64-pc-windows-gnu` and `i686-pc-windows-gnu` targets), and
+`qemu-system-{aarch64,x86_64,i386}`. See
+[`docs/engineering/agent-reference.md`](docs/engineering/agent-reference.md) for the full setup.
 
 ```bash
 ./vibeos-cli build  --arch arm64      # or amd64 / i386  (--clean for a cold link)
-./vibeos-cli smoke  --arch arm64      # the verdict — boots to desktop, refuses stale media
-./vibeos-cli gate                     # build ×3 serial → smoke all arches in parallel
+./vibeos-cli smoke  --arch arm64      # the verdict: boots to desktop, refuses stale media
+./vibeos-cli smoke  --arch amd64 --payload appstorm   # media built with VIBEOS_PAYLOAD=appstorm
+./vibeos-cli gate                     # build and smoke all three arches
 ```
 
-Raw ninja still works, but a canonical build dir must be entered through the mount wrapper (plain `cd build-<arch> && ninja` fails loudly by design — its baked paths only exist inside the mount):
+## Further reading
 
-```bash
-cd build-amd64 && bash ../tools/canon-run.sh ninja livecd
-```
+- [`docs/engineering/rust-port-status.md`](docs/engineering/rust-port-status.md): Rust-vs-C coverage per module (generated)
+- [`docs/product/vibeos-roadmap.md`](docs/product/vibeos-roadmap.md): where this is going, and the live known-bugs registry
+- [`docs/engineering/translation-debugging-field-manual.md`](docs/engineering/translation-debugging-field-manual.md): every class of translation bug we have eaten, symptom first
+- [`docs/engineering/rustconv-pipeline.md`](docs/engineering/rustconv-pipeline.md): the translation pipeline
+- [`AGENTS.md`](AGENTS.md): the rules the AI agents working on this repo follow, and the incidents behind each one
 
 ## License
 
-The original ReactOS code is licensed under [GNU GPL 2.0](COPYING). All modifications in this fork inherit that license.
+The original ReactOS code is licensed under [GNU GPL 2.0](COPYING). All modifications in this
+fork inherit that license.
 
-The vibecoded slop is provided as-is, with no warranty of any kind, and in particular no warranty that the code does what its function names suggest.
+The vibecoded slop is provided as-is, with no warranty of any kind, and in particular no
+warranty that the code does what its function names suggest.
