@@ -33,9 +33,9 @@ Real hardware first: a **physical Raspberry Pi 5**, captured over HDMI at 1080p.
 |---|---|
 | ![Doom running on ARM64](docs/screenshots/arm64_doom.png) | ![Registry Editor on ARM64](docs/screenshots/arm64_regedit.png) |
 
-| Explorer, Task Manager and System Properties on amd64 |
-|---|
-| ![Explorer and friends on amd64](docs/screenshots/amd64_explorer.png) |
+| Control Panel on ARM64 | Notepad's Save As on ARM64 |
+|---|---|
+| ![Control Panel on ARM64](docs/screenshots/arm64_control_panel.png) | ![Notepad Save As dialog on ARM64](docs/screenshots/arm64_notepad_save.png) |
 
 The QEMU shots are from `appstorm`, the payload that opens and closes about 50 stock applications and Control Panel applets on every arch.
 
