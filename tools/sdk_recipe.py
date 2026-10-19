@@ -83,6 +83,10 @@ def _keep(line: str) -> bool:
     # mc: binutils' windmc on the host (add_message_headers), not a host-tools build.
     if tool.endswith("-windmc"):
         return True
+    # add_idl_reg_objects: windres converting widl's registration .res to an object a
+    # cell links (sti, wmiutils). A format conversion, not a resource compile.
+    if tool.endswith("-windres") and re.search(r" -O coff -i \S+\.res ", line):
+        return True
     # rosload's 16-bit drvmap.S: clang cannot assemble .code16, so cmake runs mingw gcc
     # on it (compile_asm_with_gcc) into an object the cell links from the build tree.
     if tool.endswith("gcc") and " -x assembler-with-cpp " in line:
