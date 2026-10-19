@@ -1819,7 +1819,7 @@ def test_early_errors_names_what_stops_rustc_before_name_resolution(monkeypatch,
                 msg("error", "expected one of `,` or `}`, found `x`"),
                 msg("error", "file not found for module `stubs`", "E0583", line=20),
                 msg("error", "mismatched types", "E0308"),
-        msg("error", "not automatically applying `DerefMut` on `ManuallyDrop` union field"),
+                msg("error", "not automatically applying `DerefMut` on `ManuallyDrop` union field"),
                 msg("error", "aborting due to 3 previous errors"),
                 msg("warning", "unused variable", None),
             ]
@@ -1848,3 +1848,23 @@ def test_a_recalled_sdk_constant_is_dropped_and_the_modules_own_kept(tmp_path):
     text = f.read_text()
     assert "PID_STG_NAME: u32" not in text and "pub const COL_NAME" in text
     assert "let x = PID_STG_NAME" in text
+
+
+def test_a_helper_passing_an_atl_class_gets_the_rust_abi(tmp_path):
+    # zipfldr: `unsafe extern "C" fn DoGetZipName(..) -> CStringW` failed rust_ub_deny
+    # (improper_ctypes_definitions) at the gate on every arch.
+    f = tmp_path / "CZipCreator_cpp_h.rs"
+    f.write_text(
+        'unsafe extern "C" fn DoGetZipName(filename: PCWSTR) -> CStringW {\n    todo()\n}\n'
+        'unsafe extern "C" fn Crc(name: PCSTR) -> DWORD {\n    0\n}\n'
+        '#[no_mangle]\npub unsafe extern "C" fn Exported(s: &CStringW) -> HRESULT {\n    0\n}\n'
+        'unsafe extern "C" fn Callback(s: &CStringW) -> i32 {\n    0\n}\n'
+        "fn user() { DoGetZipName(p); register(Callback); }\n"
+    )
+    done = port._rust_abi_helpers(f, f.read_text())
+    assert done == ["DoGetZipName"]
+    text = f.read_text()
+    assert "unsafe fn DoGetZipName(filename: PCWSTR) -> CStringW {" in text
+    assert 'unsafe extern "C" fn Crc(' in text, "no ATL class: untouched"
+    assert 'pub unsafe extern "C" fn Exported(' in text, "an export keeps its ABI"
+    assert 'unsafe extern "C" fn Callback(' in text, "taken as a fn pointer: kept"

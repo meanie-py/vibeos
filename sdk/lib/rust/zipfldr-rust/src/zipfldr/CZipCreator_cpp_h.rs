@@ -19,7 +19,7 @@ unsafe extern "C" fn CalculateNameCRC32(name: PCSTR) -> DWORD {
     return crc32(0, name as *const u8, strlen(name) as uInt) as DWORD;
 }
 
-unsafe extern "C" fn DoGetZipName(filename: PCWSTR) -> CStringW {
+unsafe fn DoGetZipName(filename: PCWSTR) -> CStringW {
     let mut szPath = [0u16; (MAX_PATH) as _];
     StringCbCopyW(szPath.as_mut_ptr(), core::mem::size_of::<[u16; (MAX_PATH) as _]>(), filename);
     PathRemoveExtensionW(szPath.as_mut_ptr());
@@ -41,7 +41,7 @@ unsafe extern "C" fn DoGetZipName(filename: PCWSTR) -> CStringW {
     return ret;
 }
 
-unsafe extern "C" fn DoGetBaseName(filename: PCWSTR) -> CStringW {
+unsafe fn DoGetBaseName(filename: PCWSTR) -> CStringW {
     let mut szBaseName: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     StringCbCopyW(szBaseName.as_mut_ptr(), core::mem::size_of_val(&szBaseName), filename);
     PathRemoveFileSpecW(szBaseName.as_mut_ptr());
@@ -49,7 +49,7 @@ unsafe extern "C" fn DoGetBaseName(filename: PCWSTR) -> CStringW {
     return CStringW::from_ptr(szBaseName.as_ptr());
 }
 
-unsafe extern "C" fn DoGetNameInZip(basename: &CStringW, filename: &CStringW, nCodePage: UINT) -> CStringA {
+unsafe fn DoGetNameInZip(basename: &CStringW, filename: &CStringW, nCodePage: UINT) -> CStringA {
     let mut basenameI = CStringW::new();
     basenameI.SetString(basename.GetString(), basename.GetLength());
     let mut filenameI = CStringW::new();
@@ -88,7 +88,7 @@ unsafe extern "C" fn DoGetFileTimeInfo(hFile: HANDLE, pzi: *mut zip_fileinfo) ->
     return (FALSE) as BOOL;
 }
 
-unsafe extern "C" fn DoAddFilesFromItem(files: &mut CSimpleArray<CStringW>, item: PCWSTR) {
+unsafe fn DoAddFilesFromItem(files: &mut CSimpleArray<CStringW>, item: PCWSTR) {
     if PathIsDirectoryW(item) == 0 {
         files.Add(CStringW::from_ptr(item));
         return;

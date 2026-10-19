@@ -1114,6 +1114,45 @@ def _drop_recalled_constants(path: Path, own: set[str]) -> list[str]:
     return dropped
 
 
+_ATL_BY_VALUE = re.compile(
+    r"(?<![*\w])(?:&\s*(?:mut\s+)?)?(?:CStringW|CStringA|CString|CPath|CPathW|CComBSTR|"
+    r"CComPtr<|CHeapPtr<|CComHeapPtr<|CAtlArray<|CAtlList<|CSimpleArray<|CSimpleMap<)"
+)
+_EXTERN_C_FN = re.compile(
+    r'^((?:pub(?:\([^)]*\))? )?unsafe )extern "C" '
+    r"(fn (\w+)\(([^{;]*?)\)(?:\s*->\s*([^{]+?))?\s*\{)",
+    re.M,
+)
+
+
+def _rust_abi_helpers(path: Path, crate_text: str) -> list[str]:
+    """`extern "C"` off a module helper that is no export and passes an atl_rust class by
+    value or reference. zipfldr's file-static `CStringW DoGetZipName(PCWSTR)` came back
+    `unsafe extern "C" fn .. -> CStringW`, which improper_ctypes_definitions (rust_ub_deny)
+    rejects on every arch at the gate's lint. Only Rust calls such a helper, so the C ABI was
+    never needed; one taken as a function pointer anywhere in the crate is left alone."""
+    text = path.read_text()
+    done: list[str] = []
+
+    def repl(m: re.Match[str]) -> str:
+        name, params, ret = m.group(3), m.group(4) or "", m.group(5) or ""
+        line_start = text.rfind("\n", 0, m.start()) + 1
+        prev = text[text.rfind("\n", 0, max(line_start - 1, 0)) + 1 : line_start]
+        if "#[no_mangle]" in prev or "export_name" in prev:
+            return m.group(0)
+        if not _ATL_BY_VALUE.search(params + " " + ret):
+            return m.group(0)
+        if re.search(rf"\b{re.escape(name)}\b(?!\s*\()", crate_text.replace(m.group(0), "")):
+            return m.group(0)  # named as a value somewhere: a callback, keep its ABI
+        done.append(name)
+        return m.group(1) + m.group(2)
+
+    new = _EXTERN_C_FN.sub(repl, text)
+    if done:
+        path.write_text(new)
+    return done
+
+
 def _module_method_calls(path: Path, globals_: list[str]) -> list[str]:
     """`gModule_DllRegisterServer(..)` -> `gModule.DllRegisterServer(..)`, and the invented
     `fn gModule_X(..)` extern dropped. The model, told `gModule` is atl_rust's CComModule,
@@ -4605,6 +4644,11 @@ def stage_integrate(stem: str) -> None:
     module_globals = _module_globals(state)
     spec_stubs = _spec_stubs(state)
     own_constants = _module_constant_names(state)
+    crate_text = (
+        "\n".join(f.read_text(errors="replace") for f in (crate / "src").rglob("*.rs"))
+        if state.get("cppapp")
+        else ""
+    )
     c_pointer_typedefs = _c_fn_pointer_typedefs(state)
     libs = guid_libraries(REPO / state["module_dir"] / "CMakeLists.txt")
     guid_symbols = guid_library_symbols(libs) if libs else set()
@@ -4642,6 +4686,12 @@ def stage_integrate(stem: str) -> None:
             print(
                 f"integrate: {path.stem}: SDK constant(s) written from memory dropped "
                 f"(clang evaluates them): {', '.join(recalled)}"
+            )
+        rust_abi = _rust_abi_helpers(path, crate_text) if crate_text else []
+        if rust_abi:
+            print(
+                f"integrate: {path.stem}: Rust ABI for helper(s) passing ATL classes: "
+                + ", ".join(rust_abi)
             )
         unexported = _unexport_spec_stubs(path, spec_stubs)
         if unexported:
