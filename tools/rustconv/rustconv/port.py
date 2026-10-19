@@ -3776,12 +3776,20 @@ def _c2rust_unnamed(path: Path, island: str) -> list[str]:
     unions = _anon_unions(island)
     done: list[str] = []
 
+    def opened(before: str, owner: str) -> int:
+        # Where the nearest `Owner {` literal opens; the typedef spelling counts too
+        # (xinput1_3's `HIDP_VALUE_CAPS {` for bindgen's `_HIDP_VALUE_CAPS`).
+        bare = owner.lstrip("_")
+        return max(
+            (m.start() for m in re.finditer(rf"\b_*{re.escape(bare)} \{{", before)), default=-1
+        )
+
     def lit(m: re.Match[str]) -> str:
         owners = unions.get(m.group("field"), [])
         before = text[: m.start()]
         # The literal's struct: the nearest `Name {` opened before it that owns the field.
-        for owner, member in sorted(owners, key=lambda o: before.rfind(f"{o[0]} {{"), reverse=True):
-            if before.rfind(f"{owner} {{") >= 0:
+        for owner, member in sorted(owners, key=lambda o: opened(before, o[0]), reverse=True):
+            if opened(before, owner) >= 0:
                 n = member.rsplit("_", 1)[1]
                 done.append(f"{owner}.{member}")
                 return f"{member}: {owner}__bindgen_ty_{n} {{ {m.group('field')}:"
@@ -3802,12 +3810,27 @@ def _c2rust_unnamed(path: Path, island: str) -> list[str]:
         )
     }
 
+    # Which struct declares `member: T`: two island unions can both have a `Range` whose first
+    # field is `UsageMin` (HIDP value and button caps), and only the enclosing literal decides.
+    parents: dict[tuple[str, str], set[str]] = {}
+    for b in re.finditer(r"^pub (?:union|struct) (\w+) \{(.*?)^\}", island, re.M | re.S):
+        for f in re.finditer(r"^\s*pub (\w+): (\w+__bindgen_ty_\d+),", b.group(2), re.M):
+            parents.setdefault((f.group(1), f.group(2)), set()).add(b.group(1))
+
     def named(m: re.Match[str]) -> str:
         hits = [
             t
             for t in member_types.get(m.group("member"), ())
             if m.group("field") in fields_of.get(t, ())
         ]
+        if len(hits) > 1:
+            before = m.string[: m.start()]
+            near = {
+                t: max(opened(before, o) for o in parents.get((m.group("member"), t), {""}))
+                for t in hits
+            }
+            best = max(near.values())
+            hits = [t for t in hits if near[t] == best and best >= 0]
         if len(hits) != 1:
             return m.group(0)
         done.append(f"{m.group('member')}: {hits[0]}")
@@ -5420,6 +5443,11 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
             )
         todo -= set(in_island)
         for name in sorted(todo):
+            if name.startswith("__wine_dbch_"):
+                # Wine debug-channel storage is the module's own, written by resolve's channel
+                # block; a sibling's copy is a second definition (twain_32: E0428 on
+                # __wine_dbch___default, an extern from appwiz beside the block's static).
+                continue
             found = items.get(name, [])
             # A copied declaration must speak this crate's types (ucrt's private `Compare`).
             found = [i for i in found if i.kind != "fn" or not _private_types(i, visible_types)]
@@ -5724,11 +5752,25 @@ def _prelude_declared_fns(prelude: Path) -> set[str]:
 
 
 def _links_oldnames(module_dir: Path) -> bool:
-    """True when the module's C links oldnames.lib (`wcsdup` -> msvcrt's `_wcsdup`)."""
+    """True when the module's C links oldnames.lib (`wcsdup` -> msvcrt's `_wcsdup`).
+
+    Usually not in its CMakeLists: msvcrtex lists oldnames as an INTERFACE library, so every
+    module that imports msvcrt links it (xinput1_3's `wcsicmp`). The link edge in a build's
+    build.ninja is the authority; the CMakeLists is the fallback when no build exists.
+    """
     cmake = module_dir / "CMakeLists.txt"
-    return cmake.is_file() and bool(
-        re.search(r"target_link_libraries\([^)]*\boldnames\b", cmake.read_text())
-    )
+    if cmake.is_file() and re.search(
+        r"target_link_libraries\([^)]*\boldnames\b", cmake.read_text()
+    ):
+        return True
+    rel = module_dir.relative_to(REPO).as_posix()
+    edge = re.compile(rf"^build {re.escape(rel)}/[^/ ]+\.(?:dll|exe|cpl|ocx|sys): \S*LINKER")
+    for ninja in sorted(REPO.glob("build-*/build.ninja")):
+        with open(ninja, errors="replace") as f:
+            for line in f:
+                if edge.match(line):
+                    return "oldnames" in line
+    return False
 
 
 def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:

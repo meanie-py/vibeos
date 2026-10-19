@@ -1715,3 +1715,46 @@ def test_c2rust_unnamed_named_member_takes_bindgen_type(tmp_path):
     assert "u: _MIB_IPSTATS__bindgen_ty_1 { dwForwarding:" in out
     assert "u: _MIB_TCPSTATS__bindgen_ty_1 { dwRtoAlgorithm:" in out
     assert "C2RustUnnamed_9 { nobody" in out, "no owning type: left alone"
+
+
+def test_c2rust_unnamed_accepts_the_typedef_spelling_and_nested_members(tmp_path):
+    """xinput1_3: `HIDP_VALUE_CAPS { c2rust_unnamed: C2RustUnnamed_21 { Range: C2RustUnnamed_23
+    { UsageMin: 0 } } }`. The literal names the typedef, and `Range` with a `UsageMin` field
+    exists in two island unions, so only the enclosing literal can pick one."""
+    island = (
+        "pub struct _HIDP_VALUE_CAPS {\n    pub __bindgen_anon_1: _HIDP_VALUE_CAPS__bindgen_ty_1,\n}\n"
+        "pub union _HIDP_VALUE_CAPS__bindgen_ty_1 {\n"
+        "    pub Range: _HIDP_VALUE_CAPS__bindgen_ty_1__bindgen_ty_1,\n}\n"
+        "pub struct _HIDP_VALUE_CAPS__bindgen_ty_1__bindgen_ty_1 {\n    pub UsageMin: u16,\n}\n"
+        "pub struct _HIDP_BUTTON_CAPS {\n    pub __bindgen_anon_1: _HIDP_BUTTON_CAPS__bindgen_ty_1,\n}\n"
+        "pub union _HIDP_BUTTON_CAPS__bindgen_ty_1 {\n"
+        "    pub Range: _HIDP_BUTTON_CAPS__bindgen_ty_1__bindgen_ty_1,\n}\n"
+        "pub struct _HIDP_BUTTON_CAPS__bindgen_ty_1__bindgen_ty_1 {\n    pub UsageMin: u16,\n}\n"
+    )
+    f = tmp_path / "m.rs"
+    f.write_text(
+        "static V: X = HIDP_VALUE_CAPS {\n    c2rust_unnamed: C2RustUnnamed_21 {\n"
+        "        Range: C2RustUnnamed_23 {\n            UsageMin: 0,\n        },\n    },\n};\n"
+    )
+    port._c2rust_unnamed(f, island)
+    out = f.read_text()
+    assert "__bindgen_anon_1: _HIDP_VALUE_CAPS__bindgen_ty_1 {" in out
+    assert "Range: _HIDP_VALUE_CAPS__bindgen_ty_1__bindgen_ty_1 {" in out
+    assert "BUTTON" not in out
+
+
+def test_links_oldnames_reads_the_link_edge(tmp_path, monkeypatch):
+    """msvcrtex lists oldnames as an INTERFACE lib, so the CMakeLists rarely names it."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    mod = tmp_path / "dll" / "win32" / "xi"
+    mod.mkdir(parents=True)
+    (mod / "CMakeLists.txt").write_text("add_library(xi MODULE main.c)\n")
+    b = tmp_path / "build-amd64"
+    b.mkdir()
+    (b / "build.ninja").write_text(
+        "build dll/win32/xi/xi.dll: C_MODULE_LIBRARY_LINKER__xi_Debug a.obj | "
+        "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a\n"
+    )
+    assert port._links_oldnames(mod)
+    (b / "build.ninja").write_text("build dll/win32/xi/xi.dll: C_MODULE_LIBRARY_LINKER__xi a.obj\n")
+    assert not port._links_oldnames(mod)

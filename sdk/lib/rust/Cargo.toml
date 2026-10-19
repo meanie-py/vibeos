@@ -1,5 +1,10 @@
 [workspace]
 members = [
+    "oledlg-cargo",
+    "msrle32-cargo",
+    "xinput1_3-cargo",
+    "activeds-cargo",
+    "twain_32-cargo",
     "wmiutils-cargo",
     "sti-cargo",
     "inetmib1-cargo",
@@ -930,6 +935,11 @@ members = [
     "inetmib1-rust",
     "stobject-rust",
     "fontext-rust",
+    "twain_32-rust",
+    "activeds-rust",
+    "xinput1_3-rust",
+    "msrle32-rust",
+    "oledlg-rust",
 ]
 resolver = "2"
 

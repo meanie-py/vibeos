@@ -1014,6 +1014,9 @@ dll/win32/aclui/CMakeLists.txt	1	# guid.c stays C ON PURPOSE and is NOT a transl
 dll/win32/aclui/CMakeLists.txt	1	# misc.c
 dll/win32/aclui/CMakeLists.txt	1	# rust_varargs_shim.c is a C-language gap filler, not a translation left in C: misc.c's
 dll/win32/aclui/CMakeLists.txt	1	# sidcache.c)
+dll/win32/activeds/CMakeLists.txt	1	# activeds_main.c # replaced by Rust (sdk/lib/rust/activeds-rust/src/activeds/activeds_main.rs)
+dll/win32/activeds/CMakeLists.txt	1	# pathname.c # replaced by Rust (sdk/lib/rust/activeds-rust/src/activeds/pathname.rs)
+dll/win32/activeds/CMakeLists.txt	1	# stubs.c # replaced by Rust (sdk/lib/rust/activeds-rust/src/activeds/stubs.rs)
 dll/win32/advapi32/CMakeLists.txt	1	# misc/dllmain.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# misc/efs.c — replaced by Rust (advapi32-rust)
 dll/win32/advapi32/CMakeLists.txt	1	# misc/evntrace.c — replaced by Rust (advapi32-rust)
@@ -1318,6 +1321,7 @@ dll/win32/msports/CMakeLists.txt	1	# comdb.c # replaced by Rust (sdk/lib/rust/ms
 dll/win32/msports/CMakeLists.txt	1	# msports.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/msports.rs)
 dll/win32/msports/CMakeLists.txt	1	# parallel.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/parallel.rs)
 dll/win32/msports/CMakeLists.txt	1	# serial.c # replaced by Rust (sdk/lib/rust/msports-rust/src/msports/serial.rs)
+dll/win32/msrle32/CMakeLists.txt	1	# msrle32.c # replaced by Rust (sdk/lib/rust/msrle32-rust/src/msrle32/msrle32.rs)
 dll/win32/msv1_0/CMakeLists.txt	1	# `ntlm/global.c` never went through `rustconv translate`: it defines only globals and no
 dll/win32/msv1_0/CMakeLists.txt	1	# lsa.c
 dll/win32/msv1_0/CMakeLists.txt	1	# lsa.c → src/msv1_0/lsa.rs
@@ -1450,6 +1454,9 @@ dll/win32/oleaut32/CMakeLists.txt	1	# usrmarshal.c — replaced by Rust (oleaut3
 dll/win32/oleaut32/CMakeLists.txt	1	# varformat.c — replaced by Rust (oleaut32-rust varformat.rs — VarFormat* family/VarTokenizeFormatString/VarMonthName/VarWeekdayName; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# variant.c — replaced by Rust (oleaut32-rust variant.rs — VariantInit/Clear/Copy/Change + arithmetic; full)
 dll/win32/oleaut32/CMakeLists.txt	1	# vartype.c — replaced by Rust (oleaut32-rust vartype.rs — VarXxxFromYyy coercion matrix, 253 exports; full)
+dll/win32/oledlg/CMakeLists.txt	1	# insobjdlg.c # replaced by Rust (sdk/lib/rust/oledlg-rust/src/oledlg/insobjdlg.rs)
+dll/win32/oledlg/CMakeLists.txt	1	# oledlg_main.c # replaced by Rust (sdk/lib/rust/oledlg-rust/src/oledlg/oledlg_main.rs)
+dll/win32/oledlg/CMakeLists.txt	1	# pastespl.c # replaced by Rust (sdk/lib/rust/oledlg-rust/src/oledlg/pastespl.rs)
 dll/win32/pdh/CMakeLists.txt	1	# pdh_main.c # replaced by Rust (sdk/lib/rust/pdh-rust/src/pdh/pdh_main.rs)
 dll/win32/psapi/CMakeLists.txt	1	# The DLL target is all Rust too: main.c's DllMain is psapi-rust's `dllmain` feature
 dll/win32/psapi/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/main.rs)
@@ -1691,6 +1698,8 @@ dll/win32/syssetup/CMakeLists.txt	1	# security.c
 dll/win32/syssetup/CMakeLists.txt	1	# wizard.c
 dll/win32/syssetup/CMakeLists.txt	1	#addons.c
 dll/win32/tbs/CMakeLists.txt	1	# tbs.c # replaced by Rust (sdk/lib/rust/tbs-rust/src/tbs/tbs.rs)
+dll/win32/twain_32/CMakeLists.txt	1	# dsm_ctrl.c # replaced by Rust (sdk/lib/rust/twain_32-rust/src/twain_32/dsm_ctrl.rs)
+dll/win32/twain_32/CMakeLists.txt	1	# twain32_main.c # replaced by Rust (sdk/lib/rust/twain_32-rust/src/twain_32/twain32_main.rs)
 dll/win32/ucrtbase/CMakeLists.txt	1	# printf.c (sprintf/_vsnprintf) and ucrt_varargs_shim.c (the `...` entry points as
 dll/win32/ucrtbase/CMakeLists.txt	1	# stubs.c (atexit, operator_new/delete, _chkesp_failed, __acrt_initialize_sse2) is
 dll/win32/userenv/CMakeLists.txt	1	# desktop.c
@@ -1845,6 +1854,7 @@ dll/win32/wsock32/CMakeLists.txt	1	# stubs.c
 dll/win32/wsock32/CMakeLists.txt	1	# stubs.c → wsock32-rust
 dll/win32/wtsapi32/CMakeLists.txt	1	# wtsapi32.c # replaced by Rust (sdk/lib/rust/wtsapi32-rust/src/wtsapi32/wtsapi32.rs)
 dll/win32/xinput1_3/CMakeLists.txt	1	# Wine 11.19's HID implementation (dlls/xinput1_3/main.c); xinput1_4 builds the same
+dll/win32/xinput1_3/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/xinput1_3-rust/src/xinput1_3/main.rs)
 dll/win32/xinput1_4/CMakeLists.txt	1	# XInputGetCapabilitiesEx (#108) and XInputGetAudioDeviceIds (#10, audio.c) are 1_4 only.
 drivers/base/beep/CMakeLists.txt	1	# beep.c is translated to Rust (sdk/lib/rust/beep-rust, kept on disk per the
 drivers/base/bootvid/CMakeLists.txt	1	# framebuf/bootvid.c (+ included <drivers/bootvid/framebuf.c>) and the
