@@ -28,3 +28,6 @@ test:
   launch_marker: "[APITEST-SWEEP] done"
   launch_idle_secs: 1200
   launch_drain_secs: 3600
+  # 7-Zip sizes its buffers from the RAM it sees; at the smoke default (512M) archiving
+  # failed "Can't allocate required memory", which is not the bug class we are after.
+  vm_memory: 2G

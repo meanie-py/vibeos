@@ -1,5 +1,8 @@
 # hostapps sweep list (hand-written). "<exe under X:\reactos\bin> <command line>"; children
-# start in C:\TEMP (cwd.txt), the writable volume.
+# start in C:\TEMP (cwd.txt), the writable volume. gpg gets --homedir there because the
+# profile on X: is read-only. cmake prints "Could not find CMAKE_ROOT": its share/ tree is
+# not staged, and the -E tools do not need it.
+set GNUPGHOME=C:\TEMP\gpghome
 timeout 7zip\7z.exe 1200
 7zip\7z.exe i
 7zip\7z.exe b -mmt2 -md22
@@ -10,10 +13,13 @@ timeout 7zip\7z.exe 1200
 cmake\cmake.exe --version
 cmake\cmake.exe -E sha256sum X:\reactos\system32\ntdll.dll X:\reactos\system32\kernel32.dll
 cmake\cmake.exe -E make_directory C:\TEMP\cm\a\b
-cmake\cmake.exe -E tar cfz C:\TEMP\cm.tgz C:\TEMP\sys.zip
+cmake\cmake.exe -E tar cfz C:\TEMP\cm.tgz X:\reactos\system32\drivers\null.sys X:\reactos\system32\ntdll.dll
 cmake\cmake.exe -E tar tfz C:\TEMP\cm.tgz
 cmake\cmake.exe -E environment
 cmake\cmake.exe -E capabilities
+cmake\cmake.exe -E make_directory C:\TEMP\gpghome
 gnupg\gpg.exe --version
-gnupg\gpg.exe --print-md SHA256 X:\reactos\system32\ntdll.dll
-gnupg\gpg.exe --batch --homedir C:\TEMP\gpghome --symmetric --passphrase vibeos --pinentry-mode loopback -o C:\TEMP\sys.gpg C:\TEMP\sys.zip
+gnupg\gpg.exe --homedir C:\TEMP\gpghome --print-md SHA256 X:\reactos\system32\ntdll.dll
+gnupg\gpg.exe --batch --homedir C:\TEMP\gpghome --symmetric --passphrase vibeos --pinentry-mode loopback -o C:\TEMP\ntdll.gpg X:\reactos\system32\ntdll.dll
+gnupg\gpg.exe --batch --homedir C:\TEMP\gpghome --decrypt --passphrase vibeos --pinentry-mode loopback -o C:\TEMP\ntdll.out C:\TEMP\ntdll.gpg
+cmake\cmake.exe -E compare_files X:\reactos\system32\ntdll.dll C:\TEMP\ntdll.out
