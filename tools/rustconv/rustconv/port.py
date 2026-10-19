@@ -6772,6 +6772,22 @@ def stage_macros(
         REPO / "sdk" / "lib" / "rust",
         STATE_ROOT / stem / "target-amd64",
     )
+    if not names:
+        # Fail loud, not "nothing to port": behind a parse error or a missing module file
+        # rustc reports no unresolved name at all. activeds' first run lowered 0 SDK macros
+        # that way and left 102 errors; the same stage rerun later lowered 24.
+        early = prelude_resolve.early_errors(
+            state["crate"],
+            RUST_TARGETS["amd64"],
+            REPO / "sdk" / "lib" / "rust",
+            STATE_ROOT / stem / "target-amd64",
+        )
+        if early:
+            raise PortError(
+                f"macros: {state['crate']} fails before name resolution, so nothing can be "
+                f"found to lower ({len(early)}: {early[0]}). Fix that (integrate/resolve, or "
+                "by hand), then run `port macros` again."
+            )
     # An object-like macro is ported only where the crate CALLS it (`SpInfFindFirstLine(..)`);
     # used as a plain value it is a constant, which is resolve's business.
     called = {

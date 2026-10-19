@@ -1743,3 +1743,46 @@ def test_links_oldnames_reads_the_link_edge(tmp_path, monkeypatch):
     assert port._links_oldnames(mod)
     (b / "build.ninja").write_text("build dll/win32/xi/xi.dll: C_MODULE_LIBRARY_LINKER__xi a.obj\n")
     assert not port._links_oldnames(mod)
+
+
+def test_early_errors_names_what_stops_rustc_before_name_resolution(monkeypatch, tmp_path):
+    """macros lowered 0 SDK macros behind such an error (activeds) and said "nothing to port"."""
+    import json as _json
+    import subprocess as _sp
+
+    from rustconv import prelude_resolve
+
+    def msg(level, text, code=None, file="src/a.rs", line=3):
+        m = {
+            "level": level,
+            "message": text,
+            "code": {"code": code} if code else None,
+            "spans": [{"is_primary": True, "file_name": file, "line_start": line}],
+        }
+        return _json.dumps({"reason": "compiler-message", "message": m})
+
+    def fake(lines):
+        return lambda *a, **k: _sp.CompletedProcess(a, 101, stdout="\n".join(lines), stderr="")
+
+    monkeypatch.setattr(
+        prelude_resolve.subprocess,
+        "run",
+        fake(
+            [
+                msg("error", "expected one of `,` or `}`, found `x`"),
+                msg("error", "file not found for module `stubs`", "E0583", line=20),
+                msg("error", "mismatched types", "E0308"),
+                msg("error", "aborting due to 3 previous errors"),
+                msg("warning", "unused variable", None),
+            ]
+        ),
+    )
+    got = prelude_resolve.early_errors("c", "t", tmp_path, tmp_path)
+    assert got == [
+        "src/a.rs:3: expected one of `,` or `}`, found `x`",
+        "src/a.rs:20: file not found for module `stubs`",
+    ]
+    monkeypatch.setattr(
+        prelude_resolve.subprocess, "run", fake([msg("error", "mismatched types", "E0308")])
+    )
+    assert prelude_resolve.early_errors("c", "t", tmp_path, tmp_path) == []
