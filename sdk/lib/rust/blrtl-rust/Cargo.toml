@@ -23,6 +23,7 @@ compress = { path = "../compress" } # compress.c
 crc32    = { path = "../crc32" }    # crc32.c
 largeint = { path = "../largeint" } # largeint.c
 random   = { path = "../random" }   # random.c
+rtl-diag = { path = "../rtl-diag", features = ["image"] } # image.c (rtl-diag's image module alone)
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 byteswap = { path = "../byteswap" } # byteswap.c

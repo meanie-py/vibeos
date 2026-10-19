@@ -434,6 +434,7 @@ dependencies = [
  "largeint",
  "mem",
  "random",
+ "rtl-diag",
 ]
 
 [[package]]

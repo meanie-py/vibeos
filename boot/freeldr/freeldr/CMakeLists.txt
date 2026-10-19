@@ -192,10 +192,10 @@ file(GLOB_RECURSE FREELDR_BLRTL_SOURCES CONFIGURE_DEPENDS
     ${FREELDR_RUST_WORKSPACE_DIR}/largeint/src/*.rs
     ${FREELDR_RUST_WORKSPACE_DIR}/random/src/*.rs
     ${FREELDR_RUST_WORKSPACE_DIR}/byteswap/src/*.rs
-    ${FREELDR_RUST_WORKSPACE_DIR}/mem/src/*.rs)
+    ${FREELDR_RUST_WORKSPACE_DIR}/mem/src/*.rs
+    ${FREELDR_RUST_WORKSPACE_DIR}/rtl-diag/src/*.rs)
 list(APPEND FREELDR_BLRTL_SOURCES
     ${FREELDR_RUST_WORKSPACE_DIR}/blrtl-rust/Cargo.toml
-    ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/image.c
     ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/unicode.c
     # per-arch asm (.asm_archive): i386 debug_asm/rtlmem/rtlswap, amd64 debug_asm.
     ${CMAKE_SOURCE_DIR}/sdk/lib/rtl/i386/debug_asm.S

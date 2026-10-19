@@ -22,7 +22,7 @@ use std::env;
 
 // blrtl-rust's path-deps (its own src is tracked by the .rust_lib build).
 const BLRTL_RUST_DEPS: &[&str] =
-    &["bitmap/src", "compress/src", "crc32/src", "largeint/src", "random/src", "byteswap/src", "mem/src"];
+    &["bitmap/src", "compress/src", "crc32/src", "largeint/src", "random/src", "byteswap/src", "mem/src", "rtl-diag/src"];
 
 fn main() {
     let arch = env::var("CARGO_CFG_TARGET_ARCH").expect("CARGO_CFG_TARGET_ARCH");
@@ -40,7 +40,7 @@ fn main() {
     // what is still C compiles in-cargo via compile_commands.json replay (target `blrtl`
     // disambiguates the shared sdk/lib/rtl/*.c sources); the per-arch asm via
     // .asm_archive() below.
-    let blrtl_c: &[&str] = &["sdk/lib/rtl/image.c", "sdk/lib/rtl/unicode.c"];
+    let blrtl_c: &[&str] = &["sdk/lib/rtl/unicode.c"];
     // blrtl's per-arch asm (asm.inc only — AsmDefineSet::Kernel). i386:
     // debug_asm/rtlmem/rtlswap; amd64: debug_asm; arm64: none (no ASM_SOURCE).
     let blrtl_asm: &[&str] = match arch.as_str() {
