@@ -1,0 +1,19 @@
+# hostapps sweep list (hand-written). "<exe under X:\reactos\bin> <command line>"; children
+# start in C:\TEMP (cwd.txt), the writable volume.
+timeout 7zip\7z.exe 1200
+7zip\7z.exe i
+7zip\7z.exe b -mmt2 -md22
+7zip\7z.exe a C:\TEMP\sys.7z X:\reactos\system32\*.dll -mx5 -mmt2
+7zip\7z.exe t C:\TEMP\sys.7z
+7zip\7z.exe a C:\TEMP\sys.zip X:\reactos\system32\drivers\*.sys
+7zip\7z.exe l C:\TEMP\sys.zip
+cmake\cmake.exe --version
+cmake\cmake.exe -E sha256sum X:\reactos\system32\ntdll.dll X:\reactos\system32\kernel32.dll
+cmake\cmake.exe -E make_directory C:\TEMP\cm\a\b
+cmake\cmake.exe -E tar cfz C:\TEMP\cm.tgz C:\TEMP\sys.zip
+cmake\cmake.exe -E tar tfz C:\TEMP\cm.tgz
+cmake\cmake.exe -E environment
+cmake\cmake.exe -E capabilities
+gnupg\gpg.exe --version
+gnupg\gpg.exe --print-md SHA256 X:\reactos\system32\ntdll.dll
+gnupg\gpg.exe --batch --homedir C:\TEMP\gpghome --symmetric --passphrase vibeos --pinentry-mode loopback -o C:\TEMP\sys.gpg C:\TEMP\sys.zip
