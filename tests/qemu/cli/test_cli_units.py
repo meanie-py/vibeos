@@ -12571,3 +12571,34 @@ def test_payload_not_in_media_advice_keeps_rostests_for_a_winetest_payload(tmp_p
     (d / "plain" / "payload.yaml").write_text("binaries:\n  - src: tools/payloads/plain/x.exe\n")
     assert smoke_mod._payload_build_flags(tmp_path, ["wt"]) == " --rostests --keep-going"
     assert smoke_mod._payload_build_flags(tmp_path, ["plain"]) == ""
+
+
+def test_external_media_is_admitted_only_on_a_matching_stamp(tmp_path, monkeypatch):
+    """`smoke --media`: an image from tools/media_manifest.py --assemble boots only when its
+    stamp names this arch, the livecd, the image's bytes and this tree's source."""
+    import hashlib
+    import json
+
+    from tests.qemu.cli import provenance
+
+    monkeypatch.setattr(provenance, "tree_content_hash", lambda repo, paths: "src")
+    image = tmp_path / "livecd.iso"
+    assert provenance.external_media_problems(tmp_path, "amd64", image) == [
+        f"{image}: no such image"
+    ]
+    image.write_bytes(b"iso")
+    assert "missing" in provenance.external_media_problems(tmp_path, "amd64", image)[0]
+    stamp = {
+        "arch": "amd64",
+        "cd": "livecd",
+        "sha256": hashlib.sha256(b"iso").hexdigest(),
+        "source": "src",
+    }
+    (tmp_path / "livecd.provenance.json").write_text(json.dumps(stamp))
+    assert provenance.external_media_problems(tmp_path, "amd64", image) == []
+    assert provenance.external_media_problems(tmp_path, "i386", image)
+    image.write_bytes(b"other")
+    assert "changed since" in provenance.external_media_problems(tmp_path, "amd64", image)[0]
+    image.write_bytes(b"iso")
+    monkeypatch.setattr(provenance, "tree_content_hash", lambda repo, paths: "moved")
+    assert "another source tree" in provenance.external_media_problems(tmp_path, "amd64", image)[0]

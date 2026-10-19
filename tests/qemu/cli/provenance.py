@@ -1181,6 +1181,31 @@ class Staleness:
 # dry-run. Do not reintroduce a `ninja -n` staleness probe in a CONFIGURE_DEPENDS tree.
 
 
+def external_media_problems(repo: Path, arch: str, image: Path) -> list[str]:
+    """Why `image` (tools/media_manifest.py --assemble output) may NOT be booted as this
+    tree's `arch` livecd; empty when it may. Its stamp `<cd>.provenance.json` must name the
+    arch and the livecd, hash the image as it is now, and record the source this tree has
+    now: an image mastered from another tree, or from cells built from one, is refused
+    (--assemble refuses cells that do not match the source it masters from). The entries
+    that are not cells come from build-<arch>, which the ordinary staleness check covers."""
+    stamp = image.parent / f"{image.stem}.provenance.json"
+    if not image.is_file():
+        return [f"{image}: no such image"]
+    if not stamp.is_file():
+        return [f"{stamp} missing: master it with tools/media_manifest.py --assemble"]
+    st = json.loads(stamp.read_text())
+    problems = []
+    if st.get("arch") != arch:
+        problems.append(f"{image} is {st.get('arch')} media, not {arch}")
+    if st.get("cd") != "livecd":
+        problems.append(f"{image} is the {st.get('cd')} image: smoke boots the livecd")
+    if st.get("sha256") != _sha256_file(image):
+        problems.append(f"{image} changed since it was mastered (sha256 differs from its stamp)")
+    if st.get("source") != tree_content_hash(repo, [".", *NON_BUILD_PATHSPEC]):
+        problems.append(f"{image} was mastered from another source tree: master it again")
+    return problems
+
+
 def check_staleness(repo: Path, arch: str) -> Staleness:
     """Fresh/stale verdict for the built media. Never raises: a ProvenanceError
     is reported as its OWN failure ("the oracle could not answer") rather than

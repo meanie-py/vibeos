@@ -10,7 +10,6 @@ add_definitions(-DWITH_SSL)
 # The translated C, kept on disk:
 # connectdialog.c  # replaced by Rust (sdk/lib/rust/mstsc-rust/src/mstsc/connectdialog.rs)
 # settings.c  # replaced by Rust (sdk/lib/rust/mstsc-rust/src/mstsc/settings.rs)
-# The C still compiled, in an OBJECT library whose compile the cargo link replays.
 add_cargo_module(mstsc mstsc-cargo mstsc.exe
     KIND win32exe
     BODY_CRATE mstsc-rust

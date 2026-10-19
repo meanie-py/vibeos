@@ -12,10 +12,11 @@ tree (`$VIBEOS_GEN_DIR`, which `@build/` names in a cmake-off build):
     python3 tools/sdk_recipe.py --check
     python3 tools/sdk_recipe.py --run --arch amd64 --gen DIR
 
-The host tools those commands run (widl, hpp, utf16le, ...) are themselves the
-host-tools project's commands, recorded the same way (`<arch>.host.cmds`) and replayed
-into `DIR/host-tools/bin`. Only generator commands are kept: compiles, archives, import
-libraries (the engine makes its own) and cmake's ExternalProject bookkeeping are not.
+The host tools those commands run (widl, hpp, utf16le, ...) and the ones that master the
+boot media (mkisofs, isohybrid, cabman) are themselves the host-tools project's commands,
+recorded the same way (`<arch>.host.cmds`) and replayed into `DIR/host-tools/bin`. Only
+generator commands are kept: compiles, archives, import libraries (the engine makes its
+own) and cmake's ExternalProject bookkeeping are not.
 """
 
 from __future__ import annotations
@@ -33,6 +34,8 @@ CANON = "/tmp/vibeos"
 # geninc and gendib are not here: the engine self-hosts both (ks*.inc, win32k's DIB tables).
 GENERATORS = ("widl", "hpp", "utf16le", "wmc", "bin2c", "txt2nls")
 HOST_TOOLS = ("widl", "hpp", "utf16le", "wmc", "bin2c", "txt2nls")
+# The tools that master the boot media (tools/media_manifest.py --assemble).
+MEDIA_TOOLS = ("cabman", "isohybrid", "mkisofs")
 CELL_EDGE = re.compile(
     r"\nbuild ([^\n]*?): CUSTOM_COMMAND([^\n]*)\n  COMMAND = [^\n]*\n  DESC = Cargo-linking"
 )
@@ -80,6 +83,10 @@ def _keep(line: str) -> bool:
     tool = _tool(line)
     # mc: binutils' windmc on the host (add_message_headers), not a host-tools build.
     if tool.endswith("-windmc"):
+        return True
+    # add_idl_reg_objects: windres converting widl's registration .res to an object a
+    # cell links (sti, wmiutils). A format conversion, not a resource compile.
+    if tool.endswith("-windres") and re.search(r" -O coff -i \S+\.res ", line):
         return True
     # rosload's 16-bit drvmap.S: clang cannot assemble .code16, so cmake runs mingw gcc
     # on it (compile_asm_with_gcc) into an object the cell links from the build tree.
@@ -166,7 +173,7 @@ def derive(arch: str, repo: Path = REPO) -> tuple[list[str], list[str]]:
         _unwrap(line)
         .replace(f"{CANON}/build-{arch}/host-tools/bin", "{TOOLS}")
         .replace(CANON, "{REPO}")
-        for line in _ninja_commands(build / "host-tools/bin", used)
+        for line in _ninja_commands(build / "host-tools/bin", [*used, *MEDIA_TOOLS])
     ]
     return sdk, host
 

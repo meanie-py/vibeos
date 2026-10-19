@@ -76,7 +76,7 @@ mod artifact_store;
 // unset, so a normal build is never affected.
 
 /// `VIBEOS_FORCE_CMAKE_OFF`: make the engine take the cmake-OFF paths (self-host
-/// geninc, committed `.res`, committed-flags C compile) even when a configured
+/// geninc, committed `.res`, the C libraries' recipes) even when a configured
 /// `build-<arch>/` is present — i.e. treat compile_commands.json / the build-dir
 /// ks*.inc as absent. Lets the cmake-off path be exercised + byte-verified against
 /// the cmake artifact without physically moving build-dir files aside (what the
@@ -731,16 +731,8 @@ impl Linker {
         if !self.c_db_libs.is_empty() {
             let db_path = self.build_dir.join("compile_commands.json");
             if cmake_off_forced() || !db_path.exists() {
-                // cmake-off (WS1 DEEP): no compile_commands.json. Compile each
-                // c_db lib from its committed per-arch flag template
-                // (`sdk/lib/rust/reactos-link/cflags/<name>.<arch>.flags`) plus
-                // the native-hpp-generated xdk headers (`winnt.h` etc.). Mirrors
-                // the WS2 (`ks*.inc`) / WS3 (`.res`) committed-fallback pattern:
-                // cmake's compile_commands.json wins when a build is configured
-                // (the replay branch below — it can never go stale against the
-                // committed flags), the committed flags fill in only when there
-                // is no cmake build at all. Regen via `tools/gen_cflags.py`.
-                self.compile_c_db_committed(clang, ar);
+                // No cmake build: the libs' lines of their committed recipes.
+                self.compile_c_db_committed(ar);
             } else {
             let db_text = std::fs::read_to_string(&db_path).unwrap_or_else(|e| {
                 panic!(
@@ -2975,125 +2967,35 @@ impl Linker {
         }
     }
 
-    /// cmake-off (WS1 DEEP): compile every `c_from_compile_db` lib from its
-    /// committed per-arch flag template instead of replaying cmake's recorded
-    /// command. Each `cflags/<name>.<arch>.flags` (repo-relative) is cmake's
-    /// exact blrtl flag set minus the (inert) PCH + build-dir `-I`, with the
-    /// repo root abstracted to `{REPO}`; we substitute it back, append the
-    /// native-hpp xdk include dirs, and run clang per source. Objects are
-    /// instruction/symbol/reloc identical to cmake's (only `.debug_*` comp_dir
-    /// strings differ). Same archive + link semantics as the replay branch.
-    fn compile_c_db_committed(&self, clang: &Path, ar: &Path) {
-        let xdk = self.generate_xdk_headers();
+    /// No cmake build: each `c_from_compile_db` lib is its sources' lines of the shared
+    /// library's committed recipe (`clibs/<arch>/<name>.recipe`, cargo_cell_gen
+    /// --clib-recipes), compiled with cmake's C rule rebuilt from the template. A source
+    /// the build generates is listed by its build-relative path and recorded as
+    /// `@build/<rel>`; win32k's DIB tables come from the self-hosted gendib.
+    fn compile_c_db_committed(&self, ar: &Path) {
         for (name, sources) in &self.c_db_libs {
-            let flags_rel =
-                format!("sdk/lib/rust/reactos-link/cflags/{name}.{}.flags", self.arch.name);
-            let flags_path = self.repo_root.join(&flags_rel);
-            // No flag template, but a recipe (cargo_cell_gen --clib-recipes): opengl32's
-            // i386 asm shims. The recipe is the newer form of the same thing.
-            let recipe = self.repo_root.join(format!(
-                "sdk/lib/rust/reactos-link/clibs/{}/{name}.recipe",
-                self.arch.name
-            ));
-            if !flags_path.exists() && recipe.exists() {
-                let lib_a = self.compile_recipe(name, ar);
-                link_arg!(self, "{}", lib_a.display());
+            if self.gendib_libs.contains(name) {
+                self.stage_gendib();
+            }
+            let lib_a = self.compile_recipe_part(name, Some(sources), ar);
+            link_arg!(self, "{}", lib_a.display());
+        }
+    }
+
+    /// The DIB tables gendib makes, put where cmake's commands name them
+    /// (`@build/win32ss/gdi/dib`), so the recipe's command stays cmake's. Cells share
+    /// the tree and write the same bytes, so each goes in by rename.
+    fn stage_gendib(&self) {
+        let dir = self.rc_build_root().join("win32ss/gdi/dib");
+        for (base, made) in self.generate_gendib() {
+            let dst = dir.join(&base);
+            if dst.exists() {
                 continue;
             }
-            let raw = std::fs::read_to_string(&flags_path).unwrap_or_else(|e| {
-                panic!(
-                    "cmake-off c_from_compile_db({name}) needs committed flags {} \
-                     (no compile_commands.json) — regen via tools/gen_cflags.py: {e}",
-                    flags_path.display()
-                )
-            });
-            println!("cargo:rerun-if-changed={}", flags_path.display());
-            let repo = self.repo_root.to_str().expect("utf8 repo root");
-            let flags: Vec<String> = raw
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .map(|l| l.replace("{REPO}", repo))
-                .collect();
-            let out_sub = self.obj_dir().join(format!("ccdb-{name}"));
-            std::fs::create_dir_all(&out_sub).ok();
-            // gendib libs (win32k residue): produce the 3 generated DIB tables
-            // in-build (no compile_commands), keyed by basename for resolution.
-            let gendib = if self.gendib_libs.contains(name) {
-                self.generate_gendib()
-            } else {
-                std::collections::HashMap::new()
-            };
-            // bugcodes.h (windmc-generated, arch-identical) is committed next to
-            // the engine; win32k.h's closure needs it. Harmless for other libs.
-            let committed_hdrs = self
-                .repo_root
-                .join("sdk/lib/rust/reactos-link/committed-headers");
-            let mut objs = Vec::new();
-            for rel in sources {
-                // A GENERATED gendib source (dib*gen.c) resolves to its native-
-                // gendib OUT_DIR copy; everything else is repo-relative.
-                let base = Path::new(rel).file_name().and_then(|s| s.to_str()).unwrap_or("");
-                let abs = match gendib.get(base) {
-                    Some(p) => p.clone(),
-                    None => {
-                        let p = self.repo_root.join(rel);
-                        if !p.exists() {
-                            panic!("missing c_from_compile_db source {}", p.display());
-                        }
-                        p
-                    }
-                };
-                let stem = abs
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or_else(|| panic!("bad source path {}", abs.display()));
-                let obj = out_sub.join(format!("{stem}.o"));
-                let status = Command::new(clang)
-                    // Generated-header dirs go FIRST (cmake interleaves its
-                    // `build-<arch>/` generated `-I` BEFORE the source `sdk/include/
-                    // wine` dir, so the generated `winnt.h`/`ddk/{wdm,ntddk}.h` win
-                    // over wine's competing copies — the loaders pull wine/winnt.h,
-                    // which else redefines `_EXCEPTION_REGISTRATION_RECORD` vs
-                    // ndk/rtltypes.h). The 6 native-hpp headers have no other source
-                    // `.h` (only `.template.h`), so front-placing them matches
-                    // cmake's resolution and leaves blrtl/win32k byte-identical.
-                    // `-I xdk-gen` (base) resolves the `<psdk/winnt.h>` prefixed form;
-                    // `-I xdk-gen/{psdk,ddk}` the bare `<winnt.h>`/`<wdm.h>` form.
-                    .arg("-I")
-                    .arg(&xdk)
-                    .arg("-I")
-                    .arg(xdk.join("psdk"))
-                    .arg("-I")
-                    .arg(xdk.join("ddk"))
-                    .arg("-I")
-                    .arg(&committed_hdrs)
-                    .args(&flags)
-                    .arg(&abs)
-                    .arg("-o")
-                    .arg(&obj)
-                    .current_dir(&self.repo_root)
-                    .native_status(&abs)
-                    .unwrap_or_else(|e| {
-                        panic!("committed-flags clang for {rel} (lib {name}): {e}")
-                    });
-                if !status.success() {
-                    panic!("cmake-off c_from_compile_db: compile failed for {rel} (lib {name})");
-                }
-                objs.push(obj);
-                println!("cargo:rerun-if-changed={}", abs.display());
-            }
-            let lib_a = self.obj_dir().join(format!("lib{name}.a"));
-            let _ = std::fs::remove_file(&lib_a);
-            let status = Command::new(ar)
-                .arg("rcs")
-                .arg(&lib_a)
-                .args(&objs)
-                .traced_status()
-                .unwrap_or_else(|e| panic!("ar ({}): {e}", ar.display()));
-            if !status.success() {
-                panic!("ar failed for c_from_compile_db {name}");
-            }
-            link_arg!(self, "{}", lib_a.display());
+            std::fs::create_dir_all(&dir).expect("mkdir generated dib dir");
+            let tmp = dir.join(format!("{base}.{}.tmp", std::process::id()));
+            std::fs::copy(&made, &tmp).expect("stage gendib source");
+            std::fs::rename(&tmp, &dst).expect("place gendib source");
         }
     }
 

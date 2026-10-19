@@ -143,8 +143,8 @@ fn main() {
     // The common C set (math _invoke_matherr/exp2f, mbstring, misc fltused, the 12
     // printf shells, string atol/wctype/winesup, scanf_trampoline); i386 adds the
     // x87 math wrappers (ci*/libm_sse2/nexttowardf), amd64 adds ehandler.c. Source
-    // list mirrors the cmake `libcntpr` target's objects (see tools/gen_cflags.py
-    // + the committed cflags/libcntpr.<arch>.flags template). asm intrinsics are
+    // list is a subset of the cmake `libcntpr` target's objects (with no cmake build,
+    // their lines of clibs/<arch>/libcntpr.recipe). asm intrinsics are
     // GC'd (gnu target) — no asm_archive.
     let mut libcntpr_c: Vec<&str> = vec![
         "sdk/lib/crt/math/_invoke_matherr.c",
@@ -215,7 +215,7 @@ fn main() {
         // rtl sources) — drops the cmake boot/rtl/libblrtl.a reuse.
         .rust_lib("blrtl-rust", &[], true)
         // libcntpr C compiled in-cargo — drops the cmake liblibcntpr.a reuse
-        // (cmake-off WS1 DEEP). cmake-off path uses cflags/libcntpr.<arch>.flags.
+        // (cmake-off WS1 DEEP). cmake-off path uses its lines of clibs/<arch>/libcntpr.recipe.
         .c_from_compile_db("libcntpr", &libcntpr_c)
         // cnt cohabitation twin built directly (was reused cmake libcntpr_rust.a).
         .rust_lib("cnt-rust-lib", cnt_feats, true)
