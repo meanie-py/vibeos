@@ -182,10 +182,3 @@ impl Device for NdisPhy {
         caps
     }
 }
-
-/// Register the NDIS protocol, bind+open the first 802.3 miniport, and return the
-/// device once the adapter MAC is known. Returns None if no adapter binds.
-pub fn bringup() -> Option<NdisPhy> {
-    let mac = crate::ndis::register_and_open()?;
-    Some(NdisPhy::new(mac))
-}
