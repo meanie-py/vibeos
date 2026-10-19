@@ -721,6 +721,28 @@ def _net_stage(run: Run, repo: Path, arch: str) -> None:
         )
 
 
+def _qemu_preflight(repo: Path, boot_arch: str) -> Stage | None:
+    """The Windows QEMU this smoke will launch, by version; None off the windows-host backend."""
+    from .. import backend as be
+
+    cli_cfg = cli_config.load(repo)
+    if cli_cfg.get("qemu.backend", "native") != "windows-host":
+        return None
+    win = cli_cfg.get("qemu.windows", {}) or {}
+    accel = be.resolve_accel(boot_arch, win.get("accel", "tcg"))
+    exe = be.windows_qemu_bin(get_arch_config(boot_arch).qemu_bin, win.get("qemu_dir", ""), accel)
+    version = be.windows_qemu_version(exe)
+    bad = be.known_bad_windows_qemu(version)
+    if bad:
+        return Stage(
+            "qemu",
+            status="fail",
+            detail=f"{version} ({bad})",
+            salient=[be.known_bad_windows_qemu_fix(exe)],
+        )
+    return Stage("qemu", status="ok", detail=f"{version or 'version unknown'} ({exe})")
+
+
 def _payload_build_flags(repo: Path, names: list[str]) -> str:
     """The build flags a payload's staged binaries need: ` --rostests --keep-going` when
     it stages a winetest or apitest. A plain build turns ENABLE_ROSTESTS back off and
@@ -1799,6 +1821,17 @@ def smoke(args, repo: Path) -> int:
                 detail=f"{len(require)} probe(s) present in every boot image",
             )
         )
+
+    # --- emulator preflight (hard boundary) ---
+    # Which QEMU produced this verdict goes in summary.json, and a build caught computing
+    # wrong guest answers is refused before a boot is spent on it: QEMU 11.0.50's SAHF
+    # sent i386 float compares the wrong way, which read as msvcrt, jscript and jsproxy bugs.
+    qemu_stage = _qemu_preflight(repo, boot_arch)
+    if qemu_stage is not None:
+        run.add(qemu_stage)
+        if qemu_stage.status == "fail":
+            run.classification = "QEMU_KNOWN_BAD"
+            return run.finalize(repo)
 
     # --- payload preflight (hard boundary) ---
     # Payloads are staged at BUILD time, and the build stamps which. Booting media

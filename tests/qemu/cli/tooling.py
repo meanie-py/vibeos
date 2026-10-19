@@ -95,6 +95,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_wine_registry_resources.py"),
     (".", ".", "tools/test_gen_delaylib.py"),
     (".", ".", "tools/test_gen_apisets_table.py"),
+    (".", ".", "tools/test_codegen.py"),
     (".", ".", "tools/test_gen_rpc_guards.py"),
     (".", ".", "tools/test_rpc_try_wrap.py"),
     # The characterisation driver's accusation rule. Its failure mode is to
@@ -280,6 +281,22 @@ def check_tooling(args, repo: Path) -> int:
     )
     # 4. pytest
     if not args.no_tests:
+        checks.append(
+            (
+                "rust:vibeos-codegen",
+                [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--manifest-path",
+                    "tools/vibeos-codegen/Cargo.toml",
+                    "--target-dir",
+                    ".cache/vibeos-codegen/target",
+                ],
+                {},
+            )
+        )
         checks.append(
             (
                 "rust:vibeos-lint",

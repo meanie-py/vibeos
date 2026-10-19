@@ -1,5 +1,9 @@
 # Raspberry Pi 5 bench
 
+> **No bench since 2026-10-18:** its plug, Pico, capture card and Ethernet moved to the
+> Pi 4. `tools/pi5/env.sh` points at `none.invalid` until `PI5_PLUG` and
+> `PI5_PICO_HOST` name new ones.
+
 The Pi 4 bench's twin (`docs/engineering/pi4-bench.md`): same lease, plug, Pico and
 capture-card machinery, pointed at the other board by `tools/pi5/env.sh`. What is
 different is how a build reaches the board.

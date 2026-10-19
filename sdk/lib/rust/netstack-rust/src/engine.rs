@@ -10,7 +10,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::ptr::null_mut;
 
-use smoltcp::iface::{Config, Interface, SocketSet};
+use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
 use smoltcp::phy::ChecksumCapabilities;
 use smoltcp::socket::{dhcpv4, dns, icmp, tcp};
 use smoltcp::wire::{
@@ -113,6 +113,17 @@ enum AnyPhy {
 }
 
 impl AnyPhy {
+    /// The PHY's link, for a NIC netstack drives itself and knows it of (an NDIS
+    /// miniport indicates its own: `ndis::take_media_change`).
+    fn link_up(&self) -> Option<bool> {
+        match self {
+            AnyPhy::Genet(g) => Some(g.dev().link_up()),
+            AnyPhy::Gem(g) => Some(g.dev().link_up()),
+            AnyPhy::E1000(e) => Some(e.dev().link_up()),
+            _ => None,
+        }
+    }
+
     fn mac(&self) -> [u8; 6] {
         match self {
             AnyPhy::Virtio(v) => v.mac(),
@@ -240,65 +251,156 @@ fn connect_platform(
     event
 }
 
-/// No NIC of netstack's own: take one an NDIS miniport drives. A miniport can bind
-/// minutes into boot (PnP installs a downloaded driver late), so wait as long as it
-/// takes, with the engine marked dead meanwhile so TDI callers fail fast instead of
-/// queueing behind a worker that is not polling; it comes back once bound.
-fn ndis_fallback() -> Option<crate::ndisphy::NdisPhy> {
-    crate::tditrans::mark_engine_dead();
-    nsprint!("[NETSTACK] no NIC of its own; waiting for an NDIS miniport\n");
-    let phy = crate::ndisphy::bringup()?;
-    crate::tditrans::revive_engine();
-    Some(phy)
+/// One adapter: its device, its smoltcp interface, its DHCP client and lease.
+///
+/// Each link has an interface of its own, so each holds its own lease and answers
+/// ARP and ping on its own address. The stack's own sockets (TDI's, the self-tests',
+/// SNTP's) live in one shared set, polled with the PRIMARY link's interface: they
+/// leave through it, whatever their destination. The primary's DHCP client is
+/// moved into that set with them (a frame is only delivered to sockets in the set
+/// its interface is polled with); the others' stay in their link's own set.
+struct Link {
+    phy: AnyPhy,
+    iface: Interface,
+    own: SocketSet<'static>,
+    dhcp: SocketHandle,
+    rx_event: *mut ntkrnl_sys::ddk::KEVENT,
+    /// The link state last seen, for a NIC whose PHY netstack reads.
+    link_up: Option<bool>,
+    lease: Option<Lease>,
+    warm: [[u8; 4]; WARM_MAX],
+    nwarm: usize,
+    warm_next_ms: i64,
 }
 
-unsafe extern "system" fn worker(_context: PVOID) {
-    nsprint!("[NETSTACK] M2/M3 engine: starting smoltcp poll loop\n");
+struct Lease {
+    ip: [u8; 4],
+    router: Option<smoltcp::wire::Ipv4Address>,
+    dns: Vec<IpAddress>,
+    ntp: Option<smoltcp::wire::Ipv4Address>,
+}
 
-    // Device backend: a NIC netstack drives itself (virtio-net, the e1000s, the
-    // Pi's GENET and GEM), else an NDIS miniport through the protocol shim (M11).
-    // All expose the same phy::Device surface, so the poll loop is backend-agnostic.
-    let mut platform_irq: Option<crate::pnp::PlatformIrq> = None;
-    let ndis_only = crate::dma::NDIS_ONLY.load(core::sync::atomic::Ordering::Acquire);
-    if ndis_only {
-        nsprint!("[NETSTACK] NETSTACK=NDIS: not driving any NIC directly\n");
+/// netcfg::NAMES indexes: what drives a link.
+const NAME_VIRTIO: usize = 1;
+const NAME_E1000: usize = 2;
+const NAME_GENET: usize = 3;
+const NAME_GEM: usize = 4;
+const NAME_NDIS: usize = 5;
+
+impl Link {
+    fn new(slot: usize, mut phy: AnyPhy, rx_event: *mut ntkrnl_sys::ddk::KEVENT, name: usize) -> Self {
+        let mac = phy.mac();
+        // Published for the M9 management plane (iphlpapi IFEntry queries).
+        crate::netcfg::set_mac(slot, mac, name);
+        let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
+        config.random_seed = (now().total_millis() as u64) ^ 0x9E37_79B9_7F4A_7C15 ^ ((slot as u64) << 56);
+        // No static IP — DHCP assigns it.
+        let iface = Interface::new(config, &mut phy, now());
+        let mut own = SocketSet::new(Vec::new());
+        let mut dhcp = dhcpv4::Socket::new();
+        // Ask for the NTP servers too, and keep the packet so option 42 can be read.
+        dhcp.set_parameter_request_list(&crate::sntp::DHCP_PARAMETERS);
+        dhcp.set_receive_packet_buffer(alloc::boxed::Box::leak(vec![0u8; 1500].into_boxed_slice()));
+        let dhcp = own.add(dhcp);
+        let m = mac;
+        nsprint!(
+            "[NETSTACK] adapter {}: {}, MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\n",
+            slot, crate::netcfg::NAMES[name], m[0], m[1], m[2], m[3], m[4], m[5]
+        );
+        let link_up = phy.link_up();
+        Link { phy, iface, own, dhcp, rx_event, link_up, lease: None, warm: [[0; 4]; WARM_MAX], nwarm: 0, warm_next_ms: 0 }
     }
-    let mut phy = match (!ndis_only).then(device::bringup).flatten() {
-        Some(d) => AnyPhy::Virtio(VirtioPhy::new(d)),
-        None => match (!ndis_only).then(crate::e1000::bringup).flatten() {
-            Some(d) => AnyPhy::E1000(crate::e1000::E1000Phy::new(d)),
+
+    /// Move the DHCP client into the shared set (`to_shared`) or back to the link's own.
+    fn move_dhcp(&mut self, shared: &mut SocketSet<'static>, to_shared: bool) {
+        let (from, to) = if to_shared { (&mut self.own, shared) } else { (shared, &mut self.own) };
+        let s = from.remove(self.dhcp);
+        self.dhcp = to.add(s);
+    }
+}
+
+/// Take a DHCP event off `set`'s client and apply it to `iface` and netcfg's `slot`.
+/// None: no event. Some(None): the lease is gone. Some(Some(lease)): a new lease.
+fn dhcp_event(
+    iface: &mut Interface,
+    set: &mut SocketSet<'static>,
+    dhcp: SocketHandle,
+    slot: usize,
+) -> Option<Option<Lease>> {
+    match sockets_dhcp(set, dhcp).poll()? {
+        dhcpv4::Event::Configured(cfg) => {
+            iface.update_ip_addrs(|addrs| {
+                addrs.clear();
+                let _ = addrs.push(IpCidr::Ipv4(cfg.address));
+            });
+            match cfg.router {
+                Some(router) => {
+                    let _ = iface.routes_mut().add_default_ipv4_route(router);
+                }
+                None => {
+                    let _ = iface.routes_mut().remove_default_ipv4_route();
+                }
+            }
+            let o = cfg.address.address().octets();
+            nsprint!("[NETSTACK] dhcp lease {}.{}.{}.{} on adapter {}\n", o[0], o[1], o[2], o[3], slot);
+            // Publish L3 config for the M9 management plane (ipconfig /
+            // GetAdaptersInfo / GetIpAddrTable read it via the MIB queries).
+            crate::netcfg::set_ipv4(slot, o, cfg.address.prefix_len(), cfg.router.map(|r| r.octets()));
+            let mut dns = [[0u8; 4]; 4];
+            let mut ndns = 0;
+            for server in cfg.dns_servers.iter().take(dns.len()) {
+                dns[ndns] = server.octets();
+                ndns += 1;
+            }
+            crate::netcfg::publish_dns_servers(slot, &dns[..ndns]);
+            let ntp = cfg.packet.as_ref().and_then(|p| crate::sntp::Sntp::lease_server(p.options()));
+            Some(Some(Lease {
+                ip: o,
+                router: cfg.router,
+                dns: dns[..ndns].iter().map(|o| IpAddress::v4(o[0], o[1], o[2], o[3])).collect(),
+                ntp,
+            }))
+        }
+        dhcpv4::Event::Deconfigured => {
+            iface.update_ip_addrs(|addrs| addrs.clear());
+            let _ = iface.routes_mut().remove_default_ipv4_route();
+            crate::netcfg::clear_ipv4(slot);
+            Some(None)
+        }
+    }
+}
+
+fn sockets_dhcp<'s>(set: &'s mut SocketSet<'static>, h: SocketHandle) -> &'s mut dhcpv4::Socket<'static> {
+    set.get_mut::<dhcpv4::Socket>(h)
+}
+
+/// The NIC netstack drives itself: virtio-net, the e1000s, else a platform NIC
+/// (the Pi's GENET and GEM), with the event its interrupt sets (null: poll it).
+fn native_link() -> Option<(AnyPhy, *mut ntkrnl_sys::ddk::KEVENT, usize)> {
+    let mut platform_irq: Option<crate::pnp::PlatformIrq> = None;
+    let (mut phy, name) = match device::bringup() {
+        Some(d) => (AnyPhy::Virtio(VirtioPhy::new(d)), NAME_VIRTIO),
+        None => match crate::e1000::bringup() {
+            Some(d) => (AnyPhy::E1000(crate::e1000::E1000Phy::new(d)), NAME_E1000),
             // No PCI NIC: a platform NIC (pnp.rs) starts moments after
             // DriverEntry when the machine has one.
-            None => match (!ndis_only).then(crate::pnp::wait).flatten().and_then(|nic| {
+            None => {
+                let nic = crate::pnp::wait()?;
                 platform_irq = nic.irq;
                 match nic.kind {
-                crate::pnp::NicKind::Genet => {
-                    crate::genet::bringup(nic).map(|d| AnyPhy::Genet(crate::genet::GenetPhy::new(d)))
-                }
-                crate::pnp::NicKind::Gem => crate::gem::bringup(nic).map(|d| AnyPhy::Gem(crate::gem::GemPhy::new(d))),
-                }
-            }) {
-                Some(phy) => phy,
-                None => match ndis_fallback() {
-                    Some(n) => AnyPhy::Ndis(n),
-                    None => {
-                        nsprint!("[NETSTACK] FAIL: M2 device bringup\n");
-                        crate::tditrans::mark_engine_dead();
-                        return;
+                    crate::pnp::NicKind::Genet => {
+                        (AnyPhy::Genet(crate::genet::GenetPhy::new(crate::genet::bringup(nic)?)), NAME_GENET)
                     }
-                },
-            },
+                    crate::pnp::NicKind::Gem => (AnyPhy::Gem(crate::gem::GemPhy::new(crate::gem::bringup(nic)?)), NAME_GEM),
+                }
+            }
         },
     };
-    let mac = phy.mac();
-    // Publish the MAC for the M9 management plane (iphlpapi IFEntry queries).
-    crate::netcfg::set_mac(mac);
 
     // M10: connect the NIC's interrupt so an arriving frame wakes this worker via
     // an event instead of pure busy-polling: virtio's INTx (x86 and arm64), the
     // GEM's PnP interrupt on the Pi 5. Null on any failure → the loop keeps the `delay_ms`
-    // poll fallback, no regression. The NDIS backend's receive handlers set its
-    // event instead.
+    // poll fallback, no regression.
     let rx_event: *mut ntkrnl_sys::ddk::KEVENT = match &mut phy {
         AnyPhy::Virtio(v) => {
             v.enable_interrupts();
@@ -333,20 +435,40 @@ unsafe extern "system" fn worker(_context: PVOID) {
         AnyPhy::Genet(g) => {
             connect_platform(platform_irq, crate::genet::irq_ack, g.dev().irq_ctx(), || g.dev().enable_interrupts())
         }
-        AnyPhy::Ndis(_) => crate::ndis::rx_event(),
+        AnyPhy::Ndis(_) => null_mut(),
     };
+    Some((phy, rx_event, name))
+}
 
-    let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
-    config.random_seed = (now().total_millis() as u64) ^ 0x9E37_79B9_7F4A_7C15;
-    let mut iface = Interface::new(config, &mut phy, now());
-    // No static IP — DHCP assigns it.
+unsafe extern "system" fn worker(_context: PVOID) {
+    nsprint!("[NETSTACK] M2/M3 engine: starting smoltcp poll loop\n");
+
+    // Adapters: the NIC netstack drives itself (virtio-net, the e1000s, the Pi's
+    // GENET and GEM), and whatever NDIS miniport binds (M11), now or minutes into
+    // boot (PnP installs a downloaded driver's device late), side by side: the Pi 5's
+    // GEM and its Wi-Fi. All expose the same phy::Device surface, so the poll loop is
+    // backend-agnostic.
+    let mut links: Vec<Link> = Vec::new();
+    let ndis_only = crate::dma::NDIS_ONLY.load(core::sync::atomic::Ordering::Acquire);
+    if ndis_only {
+        nsprint!("[NETSTACK] NETSTACK=NDIS: not driving any NIC directly\n");
+    } else if let Some((phy, rx_event, name)) = native_link() {
+        links.push(Link::new(0, phy, rx_event, name));
+    }
+    let ndis = crate::ndis::register();
+    if links.is_empty() {
+        if !ndis {
+            nsprint!("[NETSTACK] FAIL: M2 device bringup\n");
+            crate::tditrans::mark_engine_dead();
+            return;
+        }
+        // No adapter yet: TDI callers fail fast instead of queueing behind a worker
+        // that has nothing to carry them; the engine comes back once one binds.
+        crate::tditrans::mark_engine_dead();
+        nsprint!("[NETSTACK] no NIC of its own; waiting for an NDIS miniport\n");
+    }
 
     let mut sockets = SocketSet::new(Vec::new());
-    let mut dhcp = dhcpv4::Socket::new();
-    // Ask for the NTP servers too, and keep the packet so option 42 can be read.
-    dhcp.set_parameter_request_list(&crate::sntp::DHCP_PARAMETERS);
-    dhcp.set_receive_packet_buffer(alloc::boxed::Box::leak(vec![0u8; 1500].into_boxed_slice()));
-    let dhcp_handle = sockets.add(dhcp);
     let tcp_handle = sockets.add(tcp::Socket::new(
         tcp::SocketBuffer::new(vec![0u8; 4096]),
         tcp::SocketBuffer::new(vec![0u8; 4096]),
@@ -362,7 +484,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         tcp::SocketBuffer::new(vec![0u8; 4096]),
     ));
     let dns_handle = sockets.add(dns::Socket::new(
-        &[], // the lease's servers, set when it binds
+        &[], // the primary lease's servers, set when it binds
         Vec::new(),
     ));
     sockets
@@ -371,10 +493,14 @@ unsafe extern "system" fn worker(_context: PVOID) {
         .ok();
     let mut sntp = crate::sntp::Sntp::new(&mut sockets, now().total_millis() as u64 ^ 0xA076_1D64_78BD_642F);
 
+    // The link whose interface carries the shared set.
+    let mut primary = 0usize;
+    if let Some(link) = links.first_mut() {
+        link.move_dhcp(&mut sockets, true);
+    }
+
     // The boot ping goes to the lease's router and the DNS self-test to the lease's
     // servers: slirp's 10.0.2.2 / 10.0.2.3 under QEMU, the LAN's own on a board.
-    let mut gw: Option<IpAddress> = None;
-    let mut dhcp_configured = false;
     let mut ping_sent = false;
     let mut ping_ok = false;
     let mut echo_announced = false;
@@ -387,91 +513,124 @@ unsafe extern "system" fn worker(_context: PVOID) {
     let mut client_sent_ms: i64 = 0;
     let mut client_sends = 0u32;
     let mut client_connect_ms: i64 = 0;
-    let mut warm: [[u8; 4]; WARM_MAX] = [[0; 4]; WARM_MAX];
-    let mut nwarm = 0usize;
-    let mut warm_ip = [0u8; 4];
-    let mut warm_next_ms: i64 = 0;
     // TDI transport state (connections/addresses driven by AFD via tdidev).
     let mut tdi_state = crate::tditrans::TdiState::new();
 
     loop {
-        let ts = now();
-        iface.poll(ts, &mut phy, &mut sockets);
-
-        // TDI data path: drain AFD's commands + run the completion bridge.
-        crate::tditrans::pump(&mut iface, &mut sockets, &mut tdi_state);
-
-        // --- DHCPv4: obtain a lease from slirp, apply it to the interface ---
-        // The lease's DNS servers, handed to the DNS socket once `sockets` is free.
-        let mut lease_dns: Option<Vec<IpAddress>> = None;
-        if let Some(event) = sockets.get_mut::<dhcpv4::Socket>(dhcp_handle).poll() {
-            match event {
-                dhcpv4::Event::Configured(cfg) => {
-                    iface.update_ip_addrs(|addrs| {
-                        addrs.clear();
-                        let _ = addrs.push(IpCidr::Ipv4(cfg.address));
-                    });
-                    if let Some(router) = cfg.router {
-                        let _ = iface.routes_mut().add_default_ipv4_route(router);
-                    }
-                    let o = cfg.address.address().octets();
-                    nsprint!("[NETSTACK] dhcp lease {}.{}.{}.{}\n", o[0], o[1], o[2], o[3]);
-                    // Publish L3 config for the M9 management plane (ipconfig /
-                    // GetAdaptersInfo / GetIpAddrTable read it via the MIB queries).
-                    crate::netcfg::set_ipv4(
-                        o,
-                        cfg.address.prefix_len(),
-                        cfg.router.map(|r| r.octets()),
-                    );
-                    let mut dns = [[0u8; 4]; 4];
-                    let mut ndns = 0;
-                    for server in cfg.dns_servers.iter().take(dns.len()) {
-                        dns[ndns] = server.octets();
-                        ndns += 1;
-                    }
-                    crate::netcfg::publish_dns_servers(&dns[..ndns]);
-                    gw = cfg.router.map(IpAddress::Ipv4);
-                    lease_dns =
-                        Some(dns[..ndns].iter().map(|o| IpAddress::v4(o[0], o[1], o[2], o[3])).collect());
-                    // Resolve the gateway and the on-link DNS servers ourselves, now and
-                    // every WARM_PERIOD_MS (see warm_neighbors).
-                    nwarm = 0;
-                    if let Some(router) = cfg.router {
-                        warm[nwarm] = router.octets();
-                        nwarm += 1;
-                    }
-                    for server in &dns[..ndns] {
-                        let on_link = cfg
-                            .address
-                            .contains_addr(&smoltcp::wire::Ipv4Address::from(*server));
-                        if on_link && nwarm < WARM_MAX && !warm[..nwarm].contains(server) {
-                            warm[nwarm] = *server;
-                            nwarm += 1;
-                        }
-                    }
-                    warm_ip = o;
-                    warm_next_ms = 0;
-                    sntp.on_lease(cfg.packet.as_ref().and_then(|p| crate::sntp::Sntp::lease_server(p.options())));
-                    dhcp_configured = true;
-                    DHCP_READY.store(true, core::sync::atomic::Ordering::Release);
-                }
-                dhcpv4::Event::Deconfigured => {
-                    iface.update_ip_addrs(|addrs| addrs.clear());
-                    let _ = iface.routes_mut().remove_default_ipv4_route();
-                    dhcp_configured = false;
+        // An NDIS miniport bound: a link of its own.
+        if ndis && links.len() < crate::netcfg::ADAPTER_SLOTS {
+            if let Some(mac) = crate::ndis::poll_bound() {
+                let slot = links.len();
+                links.push(Link::new(slot, AnyPhy::Ndis(crate::ndisphy::NdisPhy::new(mac)), crate::ndis::rx_event(), NAME_NDIS));
+                if slot == 0 {
+                    links[0].move_dhcp(&mut sockets, true);
+                    crate::tditrans::revive_engine();
                 }
             }
         }
-        if let Some(servers) = lease_dns {
-            sockets.get_mut::<dns::Socket>(dns_handle).update_servers(&servers);
+        if links.is_empty() {
+            delay_ms(100);
+            continue;
+        }
+        // A link's media came or went (the cable, the access point): look for a
+        // lease again at once (a new network, or none, which hands the stack's
+        // sockets to another link), instead of when the old lease would run out.
+        let ndis_media = crate::ndis::take_media_change();
+        for (i, link) in links.iter_mut().enumerate() {
+            let change = match &link.phy {
+                AnyPhy::Ndis(_) => ndis_media,
+                phy => match (phy.link_up(), link.link_up) {
+                    (Some(now), Some(was)) if now != was => Some(now),
+                    _ => None,
+                },
+            };
+            let Some(up) = change else { continue };
+            link.link_up = Some(up);
+            nsprint!("[NETSTACK] adapter {}: media {}\n", i, if up { "connected" } else { "disconnected" });
+            let set = if i == primary { &mut sockets } else { &mut link.own };
+            sockets_dhcp(set, link.dhcp).reset();
         }
 
-        // The rest needs an address — gate on the lease.
-        if dhcp_configured && nwarm > 0 && (ts.total_millis() as i64) >= warm_next_ms {
-            warm_neighbors(&mut phy, ts, mac, warm_ip, &warm[..nwarm]);
-            warm_next_ms = ts.total_millis() as i64 + WARM_PERIOD_MS;
+        let ts = now();
+        let mut primary_changed = false;
+        for (i, link) in links.iter_mut().enumerate() {
+            let set = if i == primary { &mut sockets } else { &mut link.own };
+            link.iface.poll(ts, &mut link.phy, set);
+            if let Some(lease) = dhcp_event(&mut link.iface, set, link.dhcp, i) {
+                // A new client reports itself unconfigured once, before any lease.
+                if lease.is_none() && link.lease.is_some() {
+                    nsprint!("[NETSTACK] dhcp lease lost on adapter {}\n", i);
+                }
+                link.lease = lease;
+                let iface = &link.iface;
+                let on_link = |o: [u8; 4]| {
+                    iface.ip_addrs().iter().any(|c| c.contains_addr(&IpAddress::v4(o[0], o[1], o[2], o[3])))
+                };
+                let mut targets = [[0u8; 4]; WARM_MAX];
+                let mut n = 0;
+                if let Some(lease) = &link.lease {
+                    if let Some(router) = lease.router {
+                        targets[n] = router.octets();
+                        n += 1;
+                    }
+                    for server in &lease.dns {
+                        let IpAddress::Ipv4(v4) = server;
+                        let o = v4.octets();
+                        if on_link(o) && n < WARM_MAX && !targets[..n].contains(&o) {
+                            targets[n] = o;
+                            n += 1;
+                        }
+                    }
+                }
+                link.warm = targets;
+                link.nwarm = n;
+                link.warm_next_ms = 0;
+                primary_changed |= i == primary;
+            }
+            // Resolve the gateway and the on-link DNS servers ourselves, now and
+            // every WARM_PERIOD_MS (see warm_neighbors).
+            if let (Some(lease), true) = (&link.lease, link.nwarm > 0) {
+                if (ts.total_millis() as i64) >= link.warm_next_ms {
+                    let mac = link.phy.mac();
+                    warm_neighbors(&mut link.phy, ts, mac, lease.ip, &link.warm[..link.nwarm]);
+                    link.warm_next_ms = ts.total_millis() as i64 + WARM_PERIOD_MS;
+                }
+            }
         }
+
+        // The primary has no lease and another link has one: move the stack's
+        // sockets to it. Connections bound to the old address end, as they would
+        // when that network went away.
+        if links[primary].lease.is_none() {
+            if let Some(j) = links.iter().position(|l| l.lease.is_some()) {
+                links[primary].move_dhcp(&mut sockets, false);
+                links[j].move_dhcp(&mut sockets, true);
+                nsprint!("[NETSTACK] primary adapter: {} ({})\n", j, crate::netcfg::name(j));
+                primary = j;
+                crate::netcfg::set_primary(j);
+                primary_changed = true;
+            }
+        }
+        if primary_changed {
+            match &links[primary].lease {
+                Some(lease) => {
+                    sockets.get_mut::<dns::Socket>(dns_handle).update_servers(&lease.dns);
+                    sntp.on_lease(lease.ntp);
+                    DHCP_READY.store(true, core::sync::atomic::Ordering::Release);
+                }
+                None => sockets.get_mut::<dns::Socket>(dns_handle).update_servers(&[]),
+            }
+        }
+        let gw = links[primary].lease.as_ref().and_then(|l| l.router).map(IpAddress::Ipv4);
+        let dhcp_configured = links[primary].lease.is_some();
+        let Link { iface, .. } = &mut links[primary];
+
+        // TDI data path: drain AFD's commands + run the completion bridge.
+        crate::tditrans::pump(iface, &mut sockets, &mut tdi_state);
+
         if dhcp_configured {
+            sntp.poll(iface, &mut sockets, dns_handle, ts.total_millis() as i64);
+
             // --- ICMP ping the gateway (also exercises ARP) ---
             {
                 let s = sockets.get_mut::<icmp::Socket>(icmp_handle);
@@ -503,8 +662,6 @@ unsafe extern "system" fn worker(_context: PVOID) {
                 }
             }
 
-            sntp.poll(&mut iface, &mut sockets, dns_handle, ts.total_millis() as i64);
-
             // --- DNS: resolve a name via slirp's forwarder ---
             if dns_query.is_none() && !dns_started && dns_attempts < DNS_MAX_ATTEMPTS {
                 let q = sockets
@@ -533,7 +690,6 @@ unsafe extern "system" fn worker(_context: PVOID) {
                 }
             }
         }
-
         // --- Outbound TCP client to the host via slirp guestfwd (10.0.2.100:9999) ---
         // Retries until the host listener is up (the test starts it post-boot).
         // :9999 is THIS consumer's port and nobody else's — the harness gives every
@@ -630,35 +786,56 @@ unsafe extern "system" fn worker(_context: PVOID) {
             }
         }
 
-        // Sleep until smoltcp's next deadline. A pending timer caps the wait at
-        // 10ms (TX completion / echo latency); when nothing is pending the RX
-        // event (amd64) lets us idle far longer since a frame wakes us instantly.
-        let mut pending = iface.poll_delay(ts, &sockets).map(|d| d.total_millis() as i64);
-        // A GEM frame still queued may be waiting on a TX restart that only a poll
-        // performs (gem.rs `reap_tx`); don't let the event wait sit on it.
-        if matches!(&phy, AnyPhy::Gem(g) if g.dev().tx_in_flight()) {
-            pending = Some(1);
-        }
-        // GENET's RX-done is masked by its ISR until this pass has run.
-        if matches!(&phy, AnyPhy::Genet(g) if g.dev().rearm_irq()) {
-            pending = Some(1);
-        }
-                {
-            if rx_event.is_null() {
-                delay_ms(pending.map(|d| d.clamp(1, 10)).unwrap_or(10));
+        // Sleep until the links' next smoltcp deadline. A pending timer caps the
+        // wait at 10ms (TX completion / echo latency); when nothing is pending the
+        // RX events (every link's, when every link has one) let us idle far longer,
+        // since a frame wakes us instantly.
+        let mut pending: Option<i64> = None;
+        let mut events: [PVOID; crate::netcfg::ADAPTER_SLOTS] = [null_mut(); crate::netcfg::ADAPTER_SLOTS];
+        let mut nevents = 0usize;
+        let mut polled = false;
+        for (i, link) in links.iter_mut().enumerate() {
+            let set = if i == primary { &sockets } else { &link.own };
+            if let Some(d) = link.iface.poll_delay(ts, set).map(|d| d.total_millis() as i64) {
+                pending = Some(pending.map_or(d, |p| p.min(d)));
+            }
+            // A GEM frame still queued may be waiting on a TX restart that only a poll
+            // performs (gem.rs `reap_tx`); don't let the event wait sit on it.
+            // GENET's RX-done is masked by its ISR until this pass has run.
+            if matches!(&link.phy, AnyPhy::Gem(g) if g.dev().tx_in_flight())
+                || matches!(&link.phy, AnyPhy::Genet(g) if g.dev().rearm_irq())
+            {
+                pending = Some(1);
+            }
+            if link.rx_event.is_null() {
+                polled = true;
             } else {
-                // Event = primary RX wake; the timeout is the timer/TX fallback.
-                // KeWaitForSingleObject auto-resets the synchronization event.
-                let ms = pending.map(|d| d.clamp(1, 10)).unwrap_or(100);
-                unsafe {
-                    let mut t: ntkrnl_sys::ddk::LARGE_INTEGER = core::mem::zeroed();
-                    t.QuadPart = -(ms * 10_000); // relative wait, 100ns units
-                    ntkrnl_sys::ddk::KeWaitForSingleObject(
-                        rx_event as ntkrnl_sys::ddk::PVOID,
-                        0, // Executive
-                        0, // KernelMode
-                        0, // not alertable
+                events[nevents] = link.rx_event as PVOID;
+                nevents += 1;
+            }
+        }
+        if polled || nevents == 0 {
+            delay_ms(pending.map(|d| d.clamp(1, 10)).unwrap_or(10));
+        } else {
+            // Events = primary RX wake; the timeout is the timer/TX fallback.
+            // KeWait* auto-resets the synchronization events.
+            let ms = pending.map(|d| d.clamp(1, 10)).unwrap_or(100);
+            unsafe {
+                let mut t: ntkrnl_sys::ddk::LARGE_INTEGER = core::mem::zeroed();
+                t.QuadPart = -(ms * 10_000); // relative wait, 100ns units
+                if nevents == 1 {
+                    ntkrnl_sys::ddk::KeWaitForSingleObject(events[0], 0, 0, 0, &mut t);
+                } else {
+                    // WaitAny; up to THREAD_WAIT_OBJECTS (3) objects need no wait blocks.
+                    ntkrnl_sys::ddk::KeWaitForMultipleObjects(
+                        nevents as u32,
+                        events.as_mut_ptr(),
+                        1 as _,
+                        0 as _, // Executive
+                        0,      // KernelMode
+                        0,      // not alertable
                         &mut t,
+                        null_mut(),
                     );
                 }
             }

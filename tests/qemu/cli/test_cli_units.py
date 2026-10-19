@@ -3390,6 +3390,25 @@ def test_backend_windows_qemu_bin():
     )
 
 
+def test_backend_windows_qemu_version_reads_and_rereads_a_replaced_binary(tmp_path):
+    exe = tmp_path / "qemu-system-i386.exe"
+    exe.write_text("#!/bin/sh\necho 'QEMU emulator version 11.1.0 (v11.1.0-12130-ge470268ff4)'\n")
+    exe.chmod(0o755)
+    assert be_mod.windows_qemu_version(str(exe)) == "11.1.0 (v11.1.0-12130-ge470268ff4)"
+    exe.write_text("#!/bin/sh\necho 'QEMU emulator version 11.0.50 (v11.0.0-12631-g54e84cdc7a)'\n")
+    os.utime(exe, (1, 1))  # a new (size, mtime): the cache must not answer with the old build
+    assert be_mod.windows_qemu_version(str(exe)) == "11.0.50 (v11.0.0-12631-g54e84cdc7a)"
+    assert be_mod.windows_qemu_version(str(tmp_path / "missing.exe")) == ""
+
+
+def test_backend_known_bad_windows_qemu():
+    """The 11.0.50 snapshot whose SAHF broke i386 float compares is refused; 11.1.0 is not."""
+    reason = be_mod.known_bad_windows_qemu("11.0.50 (v11.0.0-12631-g54e84cdc7a)")
+    assert reason is not None and "SAHF" in reason
+    assert be_mod.known_bad_windows_qemu("11.1.0 (v11.1.0-12130-ge470268ff4)") is None
+    assert be_mod.known_bad_windows_qemu("") is None
+
+
 def test_backend_rewrite_accel():
     base = ["-M", "pc", "-accel", "kvm", "-cpu", "host", "-m", "512M"]
     # tcg: kvm->tcg AND drop the paired -cpu host
@@ -5847,23 +5866,28 @@ def test_staleness_lint_baseline_change_is_not_stale(staleness_repo: Path):
 
 
 def test_staleness_pytest_module_edit_is_not_stale(staleness_repo: Path):
-    """A pytest module only consumes the media; editing one must not void it.
-    The harness's own modules (vm.py, archcfg) stay build-relevant."""
+    """A pytest module only consumes the media; editing one must not void it. Nor
+    does vm.py, the QEMU launcher: it decides how media boot, never what they hold
+    (pinning EHCI's PCI slot there voided three arches' fresh media). archcfg, which
+    picks the ramdisk's targets, stays build-relevant."""
     t = staleness_repo / "tests" / "qemu" / "test_rig.py"
     t.parent.mkdir(parents=True, exist_ok=True)
     t.write_text("def test_a(): pass\n")
     (t.parent / "vm.py").write_text("X = 1\n")
+    (t.parent / "cli").mkdir()
+    (t.parent / "cli" / "archcfg.py").write_text("X = 1\n")
     _git(staleness_repo, "add", "-A")
     _git(staleness_repo, "commit", "-qm", "tests")
     provenance.make_stamp(staleness_repo, "i386", cold=True, ts=1).write(
         staleness_repo / "build-i386"
     )
     t.write_text("def test_a(): pass\ndef test_b(): pass\n")
-    v = provenance.check_staleness(staleness_repo, "i386")
-    assert v.fresh and not v.stale, v.reasons
     (t.parent / "vm.py").write_text("X = 2\n")
     v = provenance.check_staleness(staleness_repo, "i386")
-    assert v.stale, "vm.py is harness code, not a test module"
+    assert v.fresh and not v.stale, v.reasons
+    (t.parent / "cli" / "archcfg.py").write_text("X = 2\n")
+    v = provenance.check_staleness(staleness_repo, "i386")
+    assert v.stale, "archcfg is harness code that shapes the media, not a test module"
 
 
 def test_staleness_cohab_census_rerecord_is_not_stale(staleness_repo: Path):

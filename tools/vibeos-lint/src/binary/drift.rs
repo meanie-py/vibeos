@@ -416,20 +416,7 @@ fn check_bugcodes(ctx: &BinaryContext, rows: &mut Vec<Row>) -> Result<(), String
     let committed = ctx
         .root
         .join("sdk/lib/rust/reactos-link/committed-headers/bugcodes.h");
-    let script = ctx.root.join("tools/gen_bugcodes_h.py");
-    let output = command(
-        &ctx.root,
-        &python(),
-        &[script.to_string_lossy().into_owned(), "--stdout".into()],
-        Some(&ctx.root),
-    )?;
-    if !output.status.success() {
-        return Err(format!(
-            "gen_bugcodes_h.py --stdout failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-    let fresh = output.stdout;
+    let fresh = vibeos_codegen::messages::bugcodes_h(&ctx.root)?.into_bytes();
     if !committed.exists() {
         add(
             rows,

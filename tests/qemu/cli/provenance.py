@@ -1022,6 +1022,11 @@ NON_BUILD_PATHSPEC = (
     # that very test refuse the build it was written against.
     ":(exclude,glob)tests/**/test_*.py",
     ":(exclude,glob)tools/test_*.py",
+    # tests/qemu/vm.py is the QEMU launcher: it decides how the media boot (devices,
+    # PCI slots, patched COPIES in a work dir), never what they contain, and nothing
+    # in build/archcfg/mkramdisk imports it. Pinning a USB controller's PCI slot in it
+    # made every arch's fresh media STALE_MEDIA for the very boot that needed the fix.
+    ":(exclude)tests/qemu/vm.py",
 )
 
 

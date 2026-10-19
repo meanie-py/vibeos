@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import threading
@@ -39,6 +40,16 @@ STORTEST_MARKER = b"vibeos usb e2e marker\r\n"
 STORTEST_WROTE = b"vibeos wrote this through fastfat+usbstor\r\n"
 # stortest polls 120 s for the volume, then writes; this is the wait after the desktop.
 STORTEST_WAIT = 240
+# `--drop-medium`: the image server is stopped when the Pico's disk reports its partition,
+# i.e. partmgr has read the table. Nothing mounts that volume before stortest asks for it
+# (2026-10-17 run: the FastFat mounts follow "[STORTEST] start"), so the mount then reads
+# a disk whose medium has gone -- the 2026-10-16 deadlock, where FastFat raised a hard
+# error on the mounting thread inside IopMountVolume's critical region and the APC that
+# completes it could never run. Not "[STORTEST] start" itself: the first run dropped
+# there and stortest had read, written and read back before the 5 s poll fired.
+DROP_MEDIUM_AT = re.compile(r"PiEnumerateDevice USBSTOR\\Disk&Ven_PICOUSB_[^\n]*: 1 children")
+# iomgr-rust error.rs's trace when IoRaiseHardError completes the IRP itself.
+HARD_ERROR_INLINE = "completed inline: the requester has APCs disabled"
 
 
 def bench_dir() -> Path:
@@ -60,9 +71,9 @@ def ssh_up(repo: Path) -> bool:
 
 
 def plug_configured(repo: Path) -> bool:
-    """Whether env.sh names a plug. It holds the default, so PI5_PLUG need not be set."""
+    """Whether env.sh names a plug: PI5_PLUG, since its plug moved to the Pi 4 (2026-10-18)."""
     rc, out = pi4._quick(_env_sh(repo, 'printf %s "$PI4_PLUG"'), timeout=10)
-    return rc == 0 and bool(out.strip())
+    return rc == 0 and out.strip() not in ("", "none.invalid")
 
 
 def payload_manifest() -> dict:
@@ -147,6 +158,15 @@ def doctor_stages(repo: Path) -> list[Stage]:
         power = pi4.parse_power(out)
         if rc or not power:
             stages.append(Stage("plug", status="fail", detail="unreachable", salient=[out[-160:]]))
+        elif power["on"] and power["watts"] > pi4.PI_WATTS_MAX:
+            stages.append(
+                Stage(
+                    "plug",
+                    status="fail",
+                    detail=f"draws {power['watts']:.1f} W: not a Pi",
+                    salient=["check PI5_PLUG names the Pi 5's plug"],
+                )
+            )
         else:
             stages.append(
                 Stage("plug", detail=f"{'on' if power['on'] else 'off'} {power['watts']:.1f} W")
@@ -154,7 +174,7 @@ def doctor_stages(repo: Path) -> list[Stage]:
 
     rc, out = pi4._quick([*_script(repo, "pico.sh"), "usb"])
     usb = pi4.parse_usb(out)
-    host = os.environ.get("PI5_PICO_HOST", "picousb")
+    host = os.environ.get("PI5_PICO_HOST", "none.invalid")
     if "error" in usb:
         stages.append(
             Stage(
@@ -242,6 +262,9 @@ def cmd_doctor(args, repo: Path) -> int:
 
 
 def cmd_boot(args, repo: Path) -> int:
+    if getattr(args, "drop_medium", False) and not args.stortest:
+        print("pi5 boot: --drop-medium needs --stortest (it drops stortest's medium)")
+        return 2
     run = Run("pi5-boot", "arm64")
     owner = pi4lease.owner_of(repo)
     held_before = pi4lease.current().get("owner") == owner
@@ -379,7 +402,15 @@ def _boot(run: Run, args, repo: Path) -> int:
             return run.finalize(repo)
         run.add(Stage("serve-image", detail=f"{STORTEST_LABEL} writable"))
         medium = ImageServerWatch(server, run.dir / "serve-image.log")
-        rc = _await(run, args, repo, serial, start, stortest=True, medium=medium)
+        drop = None
+        if getattr(args, "drop_medium", False):
+            assert serial is not None  # --stortest refused a boot without one
+            drop = MediumDrop(serial, start, server.terminate)
+        try:
+            rc = _await(run, args, repo, serial, start, stortest=True, medium=medium, drop=drop)
+        finally:
+            if drop is not None:
+                drop.close()
     finally:
         server.terminate()
         try:
@@ -387,6 +418,8 @@ def _boot(run: Run, args, repo: Path) -> int:
         except subprocess.TimeoutExpired:
             server.kill()
         log.close()
+    if not run.classification and getattr(args, "drop_medium", False):
+        return run.finalize(repo)  # the medium went before stortest could write it
     if not run.classification:
         wrote = stortest_readback(image)
         if wrote != STORTEST_WROTE:
@@ -445,6 +478,36 @@ class ImageServerWatch:
         )
 
 
+class MediumDrop:
+    """`--drop-medium`: tail serial from `start` and call `stop` (the image server's
+    terminate) once DROP_MEDIUM_AT appears. A thread, because the line comes mid-boot,
+    while `_await` is still waiting for the desktop."""
+
+    def __init__(self, serial: Path, start: int, stop, poll: float = 0.5) -> None:
+        self.dropped = False
+        self._closed = threading.Event()
+
+        def watch() -> None:
+            while not self._closed.wait(poll):
+                try:
+                    with open(serial, "rb") as f:
+                        f.seek(start)
+                        text = f.read().decode("utf-8", errors="replace")
+                except OSError:
+                    continue
+                if DROP_MEDIUM_AT.search(text):
+                    stop()
+                    self.dropped = True
+                    return
+
+        self._thread = threading.Thread(target=watch, daemon=True)
+        self._thread.start()
+
+    def close(self) -> None:
+        self._closed.set()
+        self._thread.join(timeout=5)
+
+
 def _await(
     run: Run,
     args,
@@ -453,6 +516,7 @@ def _await(
     start: int,
     stortest: bool = False,
     medium: ImageServerWatch | None = None,
+    drop: MediumDrop | None = None,
 ) -> int:
 
     if serial is not None:
@@ -462,7 +526,7 @@ def _await(
         if reached:
             run.add(Stage("desktop", detail=pi4.MARKER))
             if stortest:
-                _await_stortest(run, serial, start, medium)
+                _await_stortest(run, serial, start, medium, drop)
             elif getattr(args, "until", None):
                 _await_until(run, serial, start, args.until, args.until_timeout)
         else:
@@ -522,8 +586,14 @@ def _await(
 
 
 def _await_stortest(
-    run: Run, serial: Path, start: int, medium: ImageServerWatch | None = None
+    run: Run,
+    serial: Path,
+    start: int,
+    medium: ImageServerWatch | None = None,
+    drop: MediumDrop | None = None,
 ) -> None:
+    """Grade stortest from serial. With `drop` (`--drop-medium`), grade the hard-error
+    path its dropped medium takes instead of the write."""
     deadline = time.monotonic() + STORTEST_WAIT
     while True:
         try:
@@ -532,14 +602,23 @@ def _await_stortest(
                 text = f.read().decode("utf-8", errors="replace")
         except OSError:
             text = ""
+        dropped = drop is not None and drop.dropped
         verdict, lines = stortest_verdict(text)
         if verdict is not None or time.monotonic() > deadline:
             break
-        if medium is not None and medium.lost():
+        if medium is not None and medium.lost() and not dropped:
             break
         time.sleep(5)
     pi4._save_serial(run, text)
     run.extra["stortest"] = lines
+    dropped = drop is not None and drop.dropped
+    if drop is not None and not dropped and medium is not None and medium.lost():
+        run.classification = "BENCH_UNHEALTHY"  # it went on its own, before the drop
+        run.add(medium.stage())
+        return
+    if drop is not None:
+        _grade_dropped_medium(run, text, verdict, lines, dropped)
+        return
     if verdict != "ok" and medium is not None and medium.lost():
         # Whatever the guest printed after this, it was about a medium that had gone.
         run.classification = "BENCH_UNHEALTHY"
@@ -557,6 +636,50 @@ def _await_stortest(
             salient=lines[-6:] or ["no [STORTEST] line: did winlogon start it?"],
         )
     )
+
+
+def _grade_dropped_medium(
+    run: Run, text: str, verdict: str | None, lines: list[str], dropped: bool
+) -> None:
+    """`--drop-medium`'s verdict. stortest is expected to FAIL (its volume has gone);
+    what is graded is that it finishes at all, and that it got there through
+    IoRaiseHardError's inline completion rather than by never reaching it."""
+    inline = next((ln.strip() for ln in text.splitlines() if HARD_ERROR_INLINE in ln), None)
+    if not dropped:
+        run.classification = "HANG_TIMEOUT"
+        run.add(
+            Stage(
+                "drop-medium",
+                status="fail",
+                detail="the Pico's disk never reported its partition: the medium was never dropped",
+                salient=lines[-6:] or ["no [STORTEST] line: did winlogon start it?"],
+            )
+        )
+        return
+    if verdict is None:
+        run.classification = "HANG_TIMEOUT"
+        run.add(
+            Stage(
+                "drop-medium",
+                status="fail",
+                detail=f"no stortest verdict {STORTEST_WAIT}s after the medium went",
+                salient=[*([inline] if inline else []), *lines[-5:]],
+            )
+        )
+        return
+    if inline is None:
+        # Finished, but by some other path: this run says nothing about the fix.
+        run.classification = "NOT_EXERCISED"
+        run.add(
+            Stage(
+                "drop-medium",
+                status="fail",
+                detail="stortest finished but no hard error completed inline",
+                salient=lines[-6:],
+            )
+        )
+        return
+    run.add(Stage("drop-medium", detail=f"{inline[:120]}; stortest: {lines[-1][:80]}"))
 
 
 def _await_until(run: Run, serial: Path, start: int, needle: str, timeout: float) -> None:
@@ -637,6 +760,13 @@ def add_parser(sub) -> None:
         action="store_true",
         help="serve a VIBEUSB image from the Pico, boot with /STORTEST, grade stortest.exe "
         "on serial and the written file on the image",
+    )
+    boot.add_argument(
+        "--drop-medium",
+        action="store_true",
+        help="with --stortest: stop serving the image when stortest starts, so its mount "
+        "reads a missing medium; passes when IoRaiseHardError completes inline and "
+        "stortest still finishes",
     )
 
 
