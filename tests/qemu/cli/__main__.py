@@ -549,6 +549,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="skip the strict scanner suite (default-on; blocks the stamp on NEW findings)",
     )
     g.add_argument(
+        "--no-stortest",
+        action="store_true",
+        help=(
+            "skip the stortest lanes (default-on: one boot per arch of "
+            "tests/qemu/test_stortest.py on this gate's media, reading and writing a "
+            "VIBEUSB stick through usbstor + fastfat)"
+        ),
+    )
+    g.add_argument(
         "--no-conformance",
         action="store_true",
         help=(
