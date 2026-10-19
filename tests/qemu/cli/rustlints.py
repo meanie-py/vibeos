@@ -143,6 +143,7 @@ PORTED = frozenset(
         "scan_uncalled_ctor_hook",
         "scan_guid_values",
         "scan_container_ptr_read",
+        "scan_local_overlength",
         "scan_shadowed_c_define",
         "scan_hkey_zero_extend",
     }

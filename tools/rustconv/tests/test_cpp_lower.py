@@ -34,3 +34,20 @@ def test_ccomobject_create_instance_is_the_class_itself():
     assert com_object_create(body) == (
         "CFolderViewCB *pcb;\nHRESULT hr = ComObject_CreateInstance<CFolderViewCB>(&pcb);"
     )
+
+
+def test_a_module_conditional_in_a_body_is_decided_and_a_foreign_one_left():
+    from rustconv.cpp_lower import resolve_module_conditionals
+
+    body = (
+        "{\n#if USE_CUSTOM_CONMGR\n    return mine(riid, ppv);\n#else\n"
+        "    return theirs(riid, ppv);\n#endif\n}\n"
+    )
+    out = resolve_module_conditionals(body, {"USE_CUSTOM_CONMGR": "1"})
+    assert "mine" in out and "theirs" not in out and "#if" not in out
+    assert "theirs" in resolve_module_conditionals(body, {"USE_CUSTOM_CONMGR": "0"})
+    arch = "{\n#if defined(_M_IX86)\n    a();\n#else\n    b();\n#endif\n}\n"
+    assert resolve_module_conditionals(arch, {"USE_CUSTOM_CONMGR": "1"}) == arch
+    nested = "{\n#ifdef FOO\n#if X\n x();\n#endif\n#else\n y();\n#endif\n}\n"
+    out = resolve_module_conditionals(nested, {"FOO": ""})
+    assert "#if X" in out and "y();" not in out

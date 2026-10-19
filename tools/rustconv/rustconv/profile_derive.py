@@ -4674,6 +4674,8 @@ _SHELLUTILS_SHARED = {
     "SHSetStrRetEmpty": "SHSetStrRetEmpty",
     "DataObject_SetData": "DataObject_SetData",
     "DumpIdList": "DumpIdList",
+    "ShellFolderImpl_CompareItemIDs": "ShellFolderImpl_CompareItemIDs",
+    "ShellFolderImpl_CompareItemColumn": "ShellFolderImpl_CompareItemColumn",
 }
 # shellutils.h's overloaded/templated helpers, as atl_rust macros (crate root): by name.
 _SHELLUTILS_MACROS = ("SHSetStrRet", "ShellObjectCreatorInit", "ShellObjectCreatorIid")

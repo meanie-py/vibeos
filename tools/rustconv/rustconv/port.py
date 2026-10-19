@@ -1023,6 +1023,90 @@ def _drop_rendered_duplicates(path: Path, rendered: set[str]) -> list[str]:
     return dropped
 
 
+def _spec_stubs(state: dict) -> set[str]:
+    """The names the module's .spec exports as `stub`s (spec2def generates their bodies)."""
+    out: set[str] = set()
+    for spec in (REPO / state["module_dir"]).glob("*.spec"):
+        for line in spec.read_text(errors="replace").splitlines():
+            m = re.match(r"^\s*(?:\d+|@)\s+stub\s+(?:-\S+\s+)*(\w+)", line)
+            if m:
+                out.add(m.group(1))
+    return out
+
+
+def _unexport_spec_stubs(path: Path, stubs: set[str]) -> list[str]:
+    """`#[no_mangle]` off a module function the .spec exports as a `stub`. netshell's
+    lanstatusui.cpp defines `HRESULT RepairConnection(INetConnection*, HWND)` with C++
+    linkage -- a mangled symbol -- beside the spec's `32 stub RepairConnection`; the model's
+    `#[no_mangle]` put both on one name and link-guard refused the DLL. The stub owns it."""
+    if not stubs:
+        return []
+    text = path.read_text()
+    done = []
+
+    def repl(m: re.Match[str]) -> str:
+        if m.group(2) not in stubs:
+            return m.group(0)
+        done.append(m.group(2))
+        return m.group(1)
+
+    new = re.sub(
+        r"^#\[no_mangle\]\n((?:pub )?unsafe extern \"(?:C|system)\" fn (\w+)\()",
+        repl,
+        text,
+        flags=re.M,
+    )
+    if done:
+        path.write_text(new)
+    return done
+
+
+def _module_globals(state: dict) -> list[str]:
+    """The module's `CComModule` globals (after cppapp folded any subclass into it)."""
+    model = (state.get("cppapp") or {}).get("model")
+    if not model or not Path(model).is_file():
+        return []
+    raw = json.loads(Path(model).read_text())
+    folded = {
+        c["name"]
+        for c in raw.get("classes", {}).values()
+        if [b["name"].split("<")[0].split("::")[-1] for b in c.get("bases", [])] == ["CComModule"]
+    }
+    return [
+        g["name"]
+        for g in raw.get("globals", [])
+        if g["c_type"].split("::")[-1].strip() in {"CComModule", *folded}
+    ]
+
+
+def _module_method_calls(path: Path, globals_: list[str]) -> list[str]:
+    """`gModule_DllRegisterServer(..)` -> `gModule.DllRegisterServer(..)`, and the invented
+    `fn gModule_X(..)` extern dropped. The model, told `gModule` is atl_rust's CComModule,
+    still declared the module's own method calls as externs nothing defines (fontext,
+    netshell) -- an undefined symbol at link. Only for a method atl_rust's CComModule has."""
+    from . import atl_contract
+
+    sigs = atl_contract._api().get("CComModule", [])
+    methods = {m.group(1) for s in sigs if (m := re.search(r"\bfn (\w+)", s))}
+    text = path.read_text()
+    done = []
+    for g in globals_:
+        for meth in sorted(methods):
+            fn = f"{g}_{meth}"
+            if not re.search(rf"\b{fn}\(", text):
+                continue
+            text = re.sub(rf"^[ \t]*(?:pub )?fn {fn}\([^;]*;[ \t]*\n", "", text, flags=re.M)
+            text = re.sub(
+                rf"\b{fn}\(\s*core::ptr::addr_of_mut!\({g}\)\s*,\s*", f"{g}.{meth}(", text
+            )
+            text = re.sub(rf"\b{fn}\(", f"{g}.{meth}(", text)
+            done.append(fn)
+    if done:
+        text = re.sub(r'^extern "(?:system|C)" \{\s*\}\n', "", text, flags=re.M)
+        path.write_text(text)
+    return done
+
+
 _UNIT_STATIC = re.compile(r"^(?!#\[no_mangle\]\n)(pub )?(?:static (mut )?|(const) )(\w+):", re.M)
 
 
@@ -4483,6 +4567,8 @@ def stage_integrate(stem: str) -> None:
     unicode = _TCHAR_BEGIN in (crate / "src" / "prelude.rs").read_text(errors="replace")
     island_statics = _island_extern_statics(crate / "src")
     rendered_globals = _rendered_globals(crate / "src", stem)
+    module_globals = _module_globals(state)
+    spec_stubs = _spec_stubs(state)
     c_pointer_typedefs = _c_fn_pointer_typedefs(state)
     libs = guid_libraries(REPO / state["module_dir"] / "CMakeLists.txt")
     guid_symbols = guid_library_symbols(libs) if libs else set()
@@ -4506,6 +4592,14 @@ def stage_integrate(stem: str) -> None:
         exported = _export_island_statics(path, island_statics)
         if exported:
             print(f"integrate: {path.stem}: #[no_mangle] on {', '.join(exported)}")
+        unexported = _unexport_spec_stubs(path, spec_stubs)
+        if unexported:
+            print(f"integrate: {path.stem}: .spec stub(s) keep the export: {', '.join(unexported)}")
+        rerouted = _module_method_calls(path, module_globals)
+        if rerouted:
+            print(
+                f"integrate: {path.stem}: module-method externs made calls: {', '.join(rerouted)}"
+            )
         lib_copies = drop_guid_library_copies(path, guid_symbols)
         if lib_copies:
             changed += 1
@@ -5490,6 +5584,7 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         in_island = _island_defined(crate / "src")
         visible_types = _visible_type_names(crate)
         com_methods = com_method_names(crate / "src")
+        own_defines = _module_own_defines(state)
         for name in sorted(todo & set(in_island)):
             arches = sorted(in_island[name])
             # On EVERY arch it is no gap at all: the island has it and the module cannot see
@@ -5503,6 +5598,13 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
             )
         todo -= set(in_island)
         for name in sorted(todo):
+            if name in own_defines:
+                # The module #defines it itself (netshell's shfldr_netconnect.cpp:
+                # `#define COLUMN_TYPE 1`): another crate's same-named constant is somebody
+                # else's (shell32's recycle bin has COLUMN_TYPE 4). Its value is clang's,
+                # from the module's own TUs, in the facts pass below.
+                res.undefined.append(name)
+                continue
             if name.startswith("__wine_dbch_"):
                 # Wine debug-channel storage is the module's own, written by resolve's channel
                 # block; a sibling's copy is a second definition (twain_32: E0428 on
@@ -6461,6 +6563,20 @@ def _own_object_macros(state: dict) -> set[str]:
             continue
         out |= set(re.findall(r"(?m)^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+\S", text))
     return out
+
+
+def _module_own_defines(state: dict) -> set[str]:
+    """Every object-like `#define NAME ..` in the module's own sources."""
+    names: set[str] = set()
+    module_dir = REPO / state["module_dir"]
+    for pat in ("*.c", "*.cpp", "*.h", "*.hpp", "*.cxx"):
+        for f in module_dir.rglob(pat):
+            names |= set(
+                re.findall(
+                    r"^[ \t]*#[ \t]*define[ \t]+(\w+)(?![\w(])", f.read_text(errors="replace"), re.M
+                )
+            )
+    return names
 
 
 def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str]:

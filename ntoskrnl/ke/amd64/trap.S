@@ -814,6 +814,8 @@ FUNC KiInterruptDispatch
 ENDFUNC
 
 EXTERN KiSystemCallHandler:PROC
+EXTERN VibeSvcTraceExit:PROC
+EXTERN VibeSvcTraceArmed:BYTE
 #ifdef VIBEOS_CSWITCHDEP
 EXTERN VibeosCswitchdepUserExit:PROC
 #endif
@@ -931,6 +933,22 @@ GLOBAL_LABEL KiSystemCall64Again
 GLOBAL_LABEL KiSystemServiceExit
 
     ASSERT_TRAP_FRAME_INTS_ENABLED rsp + MAX_SYSCALL_PARAM_SIZE
+
+    /* SVCFAIL tripwire: log a failing status (tripwire.rs VibeSvcTraceExit).
+       rax is the only live volatile; the push plus 40 keeps rsp call-aligned
+       with the 32-byte home area, so the trap frame is 48 bytes further up. */
+    cmp byte ptr VibeSvcTraceArmed[rip], 0
+    jz SvcTraceDone
+    push rax
+    sub rsp, 40
+    mov rcx, rax
+    mov rdx, [rsp + 48 + MAX_SYSCALL_PARAM_SIZE + KTRAP_FRAME_Rax]
+    lea r8, [rsp + 48 + MAX_SYSCALL_PARAM_SIZE]
+    lea r9, [rsp + 48 + 32]        /* the service's stack arguments, as it was called */
+    call VibeSvcTraceExit
+    add rsp, 40
+    pop rax
+SvcTraceDone:
 
 #ifdef VIBEOS_CSWITCHDEP
     /* cswitchdep tap 5 (return→user): rax (the syscall status) is the only

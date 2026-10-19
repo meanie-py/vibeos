@@ -1,0 +1,4 @@
+# <guest folder under X:\reactos\bin>|<host folder under VIBEOS_HOST_APPS_ROOT>|<comma-separated globs>
+7zip|7-Zip|7z.exe,7z.dll
+cmake|CMake/bin|cmake.exe
+gnupg|GnuPG/bin|gpg.exe,gpg-agent.exe,*.dll

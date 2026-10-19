@@ -1,0 +1,36 @@
+# hostapps — real third-party programs from the host's Program Files, run under the apitest
+# sweep runner (one command line per list entry, stdout and exit code captured). The stub-hit
+# report only means something over third-party programs (modern-windows-compat-roadmap,
+# "Seed the stub-hit report"), and this is the first payload that runs any.
+# Their binaries are not ours to commit, so stage.py copies them from the host at build time:
+#   [VIBEOS_HOST_APPS_ROOT=<dir, default /mnt/c/Program Files>] \
+#   VIBEOS_PAYLOAD=hostapps ./vibeos-cli build --arch amd64
+#   ./vibeos-cli smoke --arch amd64 --payload hostapps
+#   python3 tools/stub_hits.py /tmp/vibeos-cli/<run>/payload/amd64-uefi_serial.log
+# apps.txt says which folders and files; commands.txt is the sweep list.
+build_hint: "tools/payloads/hostapps/build.sh {arch}"
+name: hostapps
+description: run real third-party programs (7-Zip, CMake, GnuPG) from the host's Program Files
+arches: [amd64]
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/hostapps/commands.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/hostapps/skip.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/hostapps/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: tools/payloads/hostapps/fsquery-{arch}.exe
+    dest: bin/fsquery/fsquery.exe
+binaries_from: tools/payloads/hostapps/stage.py
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_idle_secs: 1200
+  launch_drain_secs: 3600
+  # 7-Zip sizes its buffers from the RAM it sees; at the smoke default (512M) archiving
+  # failed "Can't allocate required memory", which is not the bug class we are after.
+  vm_memory: 2G

@@ -947,6 +947,7 @@ members = [
     "msrle32-rust",
     "oledlg-rust",
     "ntobjshex-rust",
+    "netshell-rust",
     "propsys-rust",
     "cryptnet-rust",
     "oleacc-rust",

@@ -70,6 +70,7 @@ struct Patterns {
     count: Regex,
     times_sizeof: Regex,
     divided: Regex,
+    byte_named: Regex,
     nolint: Regex,
 }
 fn patterns() -> &'static Patterns {
@@ -84,6 +85,12 @@ fn patterns() -> &'static Patterns {
         count: regex(r"\b(?:size|\w*Size|\w*_size|\w*Length|\w*Bytes\w*|\w*ByteCount|cb[A-Z_]\w*|bytes)\b"),
         times_sizeof: regex(r"\*\s*(?:\(\s*)?(?:core::|std::)?(?:mem::)?size_of\b|size_of\b[^/]*\*"),
         divided: regex(r"/\s*\(?\s*(?:core::|std::)?(?:mem::)?size_of"),
+        // Stricter than `count`: names that only ever mean bytes. A pointer typed by its
+        // declaration (no cast at the call) is flagged with one of these, not with a bare
+        // `size` (`OldListSize` is an element count). classpnp's ClasspReadCapacity16
+        // zeroed `allocation_buffer_length` (32) ELEMENTS of a 32-byte buffer through a
+        // `*mut _READ_CAPACITY16_DATA`: 1024 bytes of pool, a BAD_POOL_HEADER from user mode.
+        byte_named: regex(r"(?i:\b\w*(?:_length|_bytes|_byte_count)\b)|\b\w*(?:Length|Bytes|ByteCount)\b|\bcb[A-Z_]\w*\b|\b(?:bytes|length)\b"),
         nolint: regex(r"//\s*nolint(?::\s*typed-byte-copy\b|\s*$|:?\s*\()"),
     })
 }
@@ -149,7 +156,9 @@ fn declared(text: &str, before: usize, name: &str) -> Option<String> {
     }
     if matches!(
         alias,
-        "PWSTR" | "LPWSTR" | "PCWSTR" | "LPCWSTR" | "PWCHAR" | "PWCH" | "PCWCH"
+        "PWSTR" | "LPWSTR" | "PCWSTR" | "LPCWSTR" | "PWCHAR" | "PWCH" | "PCWCH" | "PTSTR"
+            | "LPTSTR" | "PCTSTR" | "LPCTSTR" | "PTCHAR" | "LPOLESTR" | "LPCOLESTR"
+            | "POLESTR" | "PCOLESTR"
     ) {
         return Some("u16".into());
     }
@@ -217,7 +226,10 @@ fn scan_text(text: &str) -> Vec<(usize, String, String)> {
         {
             continue;
         }
-        if !(p.times_sizeof.is_match(count) || (cast && p.count.is_match(count)))
+        if !(p.times_sizeof.is_match(count)
+            || (cast && p.count.is_match(count))
+            // Not a call: `BYTES_TO_PAGES(ReadLength)` is already in elements.
+            || (p.byte_named.is_match(count) && !count.contains('(')))
             || p.divided.is_match(count)
         {
             continue;
@@ -250,6 +262,17 @@ mod tests {
         assert!(scan_text("copy::<Thing>(a, b, byteSize / size_of::<Thing>());").is_empty());
         assert!(scan_text("write_bytes(p as *mut Thing, 0, 1usize);").is_empty());
         assert!(scan_text("copy(a as *const u8, b as *mut _, byteSize);").is_empty());
+        // A declaration-typed pointer with a byte-named count (classpnp's READ CAPACITY 16).
+        let rc16 = "let data_buffer: *mut _READ_CAPACITY16_DATA = alloc();\n\
+                    core::ptr::write_bytes(data_buffer, 0, allocation_buffer_length as usize);";
+        assert_eq!(scan_text(rc16)[0].1, "_READ_CAPACITY16_DATA");
+        let ok = "let data_buffer: *mut _READ_CAPACITY16_DATA = alloc();\n\
+                  core::ptr::write_bytes(data_buffer as *mut u8, 0, allocation_buffer_length as usize);";
+        assert!(scan_text(ok).is_empty());
+        // Element counts that merely mention a length.
+        assert!(scan_text("let p: *mut PFN_NUMBER = q;\nwrite_bytes(p, 0, BYTES_TO_PAGES(ReadLength as usize));").is_empty());
+        assert!(scan_text("let v: PCTSTR = q;\ncopy_nonoverlapping(v, d, VarLength);").is_empty());
+        assert!(scan_text("let t: *mut ENTRY = q;\ncopy_nonoverlapping(s, t, len + 1);").is_empty());
         assert_eq!(
             declared("fn f(p: LPTHING) {}", 17, "p"),
             Some("THING".into())

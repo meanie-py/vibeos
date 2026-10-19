@@ -34,6 +34,7 @@ from .cpp_core import c_type_to_rust
 from .cpp_model import (
     ATL_IMPL_METHODS,
     ClassModel,
+    Field,
     Method,
     ModuleModel,
     atl_base_alias,
@@ -2162,13 +2163,39 @@ def atl_module_static(g, model: ModuleModel) -> str | None:
             # OBJECT_ENTRY_AUTO's `__objMap_X`: a linker-section map atl_rust does not walk.
             raise CppAppError(f"{g.name}: OBJECT_ENTRY_AUTO is not ported (atl_rust::dll)")
         return None
+    by_name = {c.name: c for c in model.classes.values()}
+    central = [
+        cls
+        for _, cls in entries
+        if cls in by_name
+        and "DECLARE_CENTRAL_INSTANCE_NOT_AGGREGATABLE" in by_name[cls].atl_declares
+    ]
+
+    def creator_of(cls: str) -> str:
+        return f"{cls}__central_creator" if cls in central else f"atl_rust::dll::creator::<{cls}>"
+
     rows = [
         f"    atl_rust::dll::ObjMapEntry::new(core::ptr::addr_of!({clsid}) as *const c_void, "
-        f"{cls}__UpdateRegistry_thunk, atl_rust::dll::creator::<{cls}>),"
+        f"{cls}__UpdateRegistry_thunk, {creator_of(cls)}),"
         for clsid, cls in entries
+    ]
+    # shellutils.h's DECLARE_CENTRAL_INSTANCE_NOT_AGGREGATABLE: one instance per process
+    # (netshell's CLanStatus, which explorer's tray and the folder must share). The plain
+    # creator made a fresh, empty object per request.
+    centrals = [
+        line
+        for cls in central
+        for line in (
+            f"static {cls}__CENTRAL: core::sync::atomic::AtomicPtr<c_void> = "
+            "core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());",
+            f'unsafe extern "system" fn {cls}__central_creator(pv: *mut c_void, riid: *const '
+            "c_void, ppv: *mut *mut c_void) -> i32 { "
+            f"atl_rust::dll::central_creator::<{cls}>(&{cls}__CENTRAL, pv, riid, ppv) }}",
+        )
     ]
     return "\n".join(
         [
+            *centrals,
             f"/// BEGIN_OBJECT_MAP({g.name}): what `CComModule::Init` is given.",
             f"pub static {g.name}: [atl_rust::dll::ObjMapEntry; {len(entries) + 1}] = [",
             *rows,
@@ -2226,7 +2253,14 @@ def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
     # which invented every field name.
     t = re.sub(r"^(?:struct|class)\s+", "", t)
     arr = re.fullmatch(r"(\w+)\s*\[(\d*)\]", t)
-    cls = h.by_short.get(arr.group(1) if arr else t)
+    tname = arr.group(1) if arr else t
+    cls = h.by_short.get(tname)
+    if cls is None and tname in h.island_fields:
+        # A struct the ISLAND lays out (netshell's `typedef struct { .. } shvheader;` in its
+        # own header, which the model never sees as a class): its declared field order is
+        # bindgen's, the types are unknown here, so the table is `static mut` below.
+        cls = ClassModel(tname, tname, "struct", "")
+        cls.fields = [Field(name, "*") for name in h.island_fields[tname]]
     if cls is None or cls.bases or any(m.kind == "ctor" for m in cls.methods):
         return None
     fields = [f for f in cls.fields if not f.static]
@@ -2618,6 +2652,7 @@ def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
     for render_classes: a COM interface method is a plain body, not a `__body` behind a
     dispatcher -- the two must agree or assemble's names miss the vtable's."""
     h = Hierarchy(model, parse_com_vtbls(island))
+    h.island_fields = island_struct_fields(island)
     # The signature/body renames (_synthetic_method) need the island's type names.
     h.island_names = island_type_names(island)
     reached = external_reached(model)
