@@ -3360,6 +3360,7 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if re.search(rf"\b{raii_name}\b", dep.body_text):
                     deterministic_contracts[dep.name] += raii_block
+        app_model = None
         if getattr(args, "cpp_app_model", None):
             # A synthetic TU from cpp_app: each worker gets the generated class context.
             app_model = cpp_model.ModuleModel.from_json(Path(args.cpp_app_model).read_text())
@@ -3374,8 +3375,13 @@ def cmd_translate(args):
             com_methods = crate is not None and com_vtables.island_has_methods(crate / "src")
             for dep in sorted_deps:
                 if not any(re.search(rf"\b{n}\b", dep.body_text) for n in local_raii_impls):
+                    declared = (
+                        cpp_app.declared_types(app_model, dep.name, dep.body_text)
+                        if app_model is not None
+                        else ""
+                    )
                     deterministic_contracts[dep.name] += atl_contract.contract(
-                        dep.body_text, com_methods=com_methods
+                        dep.body_text, com_methods=com_methods, declared=declared
                     )
         if cpp_com_cls is not None:
             container_fields = [

@@ -286,13 +286,20 @@ def test_bootstrap_failure_is_scanner_error(tmp_path, monkeypatch):
     assert "compiler unavailable" in result["a"].stderr
 
 
-@pytest.mark.parametrize("changed_input", ["rust", "conventions", "grants", "engines"])
+@pytest.mark.parametrize(
+    "changed_input", ["rust", "conventions", "grants", "engines", "codegen", "template"]
+)
 def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, changed_input):
     monkeypatch.setattr(rustlints.hostjobs, "ensure", lambda repo: Path("/fixture/host-jobs"))
     source = tmp_path / "tools/vibeos-lint"
     (source / "src").mkdir(parents=True)
     (source / "Cargo.toml").write_text("[package]\nname='test'\nversion='0.1.0'\n")
     (source / "Cargo.lock").write_text("")
+    codegen = tmp_path / "tools/vibeos-codegen"
+    (codegen / "src").mkdir(parents=True)
+    (codegen / "Cargo.toml").write_text("[package]\nname='codegen'\nversion='0.1.0'\n")
+    (codegen / "src/lib.rs").write_text("pub fn render() {}")
+    (codegen / "src/preamble.txt").write_text("header")
     (tmp_path / "rust-toolchain.toml").write_text("[toolchain]\nchannel='stable'\n")
     conventions = tmp_path / "tools/rustconv/rustconv/conventions.py"
     conventions.parent.mkdir(parents=True)
@@ -318,8 +325,12 @@ def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, c
                 conventions.write_text('KW_TO_CONV = {"B": "cdecl"}\n')
             elif changed_input == "grants":
                 grants.write_text('{"ptr:fixture": "reviewed"}\n')
-            else:
+            elif changed_input == "engines":
                 engines.write_text('ENGINE_LIBS = {"libfixture.a": "engine:fixture"}\n')
+            elif changed_input == "codegen":
+                (codegen / "src/lib.rs").write_text("pub fn changed() {}")
+            else:
+                (codegen / "src/preamble.txt").write_text("changed header")
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(rustlints.subprocess, "run", build)

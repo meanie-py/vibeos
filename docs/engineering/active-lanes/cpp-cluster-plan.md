@@ -58,25 +58,28 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
 
 ## Shell extensions (from 2026-10-17)
 
-**RESUME HERE (2026-10-18):** mmcshext, sendmail, mydocs, acppage and cabview are flipped on
-`atl_rust::dll`, each with a modrun suite against its C; $0.23 on Haiku for the five, and
-`port replay <stem>` rebuilds each at $0. acppage landed (master 5ee41e4da7c); cabview is the
-next merge request. Next in the queue: stobject, fontext, ntobjshex, netshell, zipfldr.
-Landing is a merge request to the integrator (`vibeos-integration-4e` at last contact; find it
-by role). New linters are Rust rules in `tools/vibeos-lint`. Run `check` after a gate's
-builds, not beside them.
+**RESUME HERE (2026-10-18, evening):** mmcshext, sendmail, mydocs, acppage, cabview and
+stobject are flipped on `atl_rust::dll`, each with a modrun suite against its C; stobject
+cost $0.09 on Haiku, and `port replay <stem>` rebuilds each at $0. acppage and cabview are on
+master; stobject is the next merge request. Next in the queue: fontext, ntobjshex, netshell,
+zipfldr. Landing is a merge request to the integrator (`vibeos-integration-4e` at last
+contact; find it by role). New linters are Rust rules in `tools/vibeos-lint`. Run `check`
+after a gate's builds, not beside them.
 
-Owed from cabview (tracked, not done):
-- **Function-local enums.** `enum { IDC_EXTRACT, IDC_EXTRACTALL };` inside a function body
-  came back as `let _ = (IDC_EXTRACT, IDC_EXTRACTALL);` with the names undefined, a catch-all
-  `match` pattern that `port check`'s CATCH-ALL guard caught. Hand-fixed; cppapp should lower
-  a body's local enum to consts before translation.
-- **Island header promotion for functions.** derive allowlists only SDK headers the module's
-  own code names, so commctrl.h's `DPA_DestroyCallback` (called, declared only there) was
-  missing and hand-declared. Promote a header that declares a function the module calls and
-  no allowlisted header declares.
+stobject's review found three pipeline bugs, all fixed at the root: an invented GUID
+(`DECLARING_HEADER_ADDED` + `scan_guid_values`, which also caught acpi's and iomgr's), a
+file-static helper merged across TUs (per-file names), and `STDAPI_` hiding stdcall
+(`_spell_stdcall`). Also: `CStringW::from_ansi`/`CStringA::from_ptr` now load a resource ID.
+
+Owed (tracked, not done):
+- **Island header promotion for FUNCTIONS.** `port resolve` supplies a missing function from
+  tree consensus; cabview's commctrl.h `DPA_DestroyCallback`, declared by nobody in the tree,
+  was hand-declared. Promotion is GUID-only now because promoting for functions pulled in
+  winreg.h/objbase.h/mmsystem.h for names resolve already handles.
 - **Dropped failure traces.** `FAILED_UNEXPECTEDLY!` is a bare `< 0`; shellutils.h's
-  `_ROS_FAILED_HELPER` also prints in this DBG=1 tree. Same class as the 88 dropped ERR prints.
+  `_ROS_FAILED_HELPER` also prints in this DBG=1 tree. Same class as the 88 dropped ERR prints;
+  stobject dropped its TRACE/ERR prints too (Volume_FindMixerControl's ERRs among them).
+- Function-local enums are now lowered to `const int` before translation (cabview's case).
 
 ## rapps (FLIPPED 2026-10-15)
 

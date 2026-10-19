@@ -387,6 +387,8 @@ members = [
     "access",
     "avltable",
     "bitmap",
+    # The boot loaders' RTL (boot/rtl/blrtl.cmake): the RTL rlibs above + nlsboot.
+    "blrtl-rust",
     "byteswap",
     "cnt-ctype",
     "cnt-difftest",
@@ -926,6 +928,7 @@ members = [
     "wmiutils-rust",
     "sxs-rust",
     "inetmib1-rust",
+    "stobject-rust",
 ]
 resolver = "2"
 

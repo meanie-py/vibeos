@@ -450,11 +450,13 @@ pub const CM_RESOURCE_MEMORY_COMBINEDWRITE: ULONG = 8;
 pub const CM_RESOURCE_MEMORY_PREFETCHABLE: ULONG = 0x04;
 pub const CM_RESOURCE_MEMORY_24: ULONG = 0x10;
 
+// wdmguid.h's value. This literal was once written from memory as {E8C9E6C1-..}, which
+// put a bus type GUID no reader knows into every child PDO's PNP_BUS_INFORMATION.
 pub const GUID_ACPI_INTERFACE_STANDARD: GUID = GUID {
-    Data1: 0xE8C9E6C1,
-    Data2: 0x4B9C,
-    Data3: 0x4B2B,
-    Data4: [0x9E, 0x8B, 0x1A, 0x6E, 0x0B, 0x3E, 0x0C, 0xE0],
+    Data1: 0xB091A08A,
+    Data2: 0xBA97,
+    Data3: 0x11D0,
+    Data4: [0xBD, 0x14, 0x00, 0xAA, 0x00, 0xB7, 0xB3, 0x2A],
 };
 
 pub const UNICODE_NULL: WCHAR = 0;

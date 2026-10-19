@@ -2357,6 +2357,13 @@ def test_sizeof_of_a_packed_field_never_forms_a_reference():
     assert "size_of_val" not in out
 
 
+def test_countof_of_a_packed_field_counts_a_copy():
+    """stobject: `_countof!(nim.szTip)` on i386's packed NOTIFYICONDATA borrows the field."""
+    src = "fn f(nim: N) -> u32 { (_countof!(nim.szTip)) as _ }\n"
+    _, out = _one_site(src, "nim.szTip", "reference to packed field is unaligned", "E0793")
+    assert "(_countof!({ nim.szTip })) as _" in out
+
+
 def test_a_function_cast_to_a_fn_pointer_is_left_to_coerce():
     src = (
         'static T: [S; 1] = [S { F: Some(\n    VfatFormat\n        as unsafe extern "C" fn(\n'
@@ -3440,7 +3447,24 @@ def test_a_constant_operand_for_a_64bit_want_infers_its_width():
         rules=[RULE_CONST_OPERAND],
         constants={"VK_ESCAPE": 0x1B},
     )
-    assert [e.replacement for e in plan.edits] == ["(VK_ESCAPE as _)"]
+    # The compared operand's declared type name, which every target agrees on.
+    assert [e.replacement for e in plan.edits] == ["(VK_ESCAPE as WPARAM)"]
+
+
+def test_a_compared_constant_takes_the_operands_declared_type_on_i386_too():
+    # stobject: `lParam == WM_LBUTTONDOWN` wants i32 on i386 and i64 on 64-bit; a width
+    # could never agree, `as LPARAM` does.
+    from rustconv.crate_repair import RULE_CONST_OPERAND
+
+    src = b"fn f(lParam: LPARAM) -> bool {\n    lParam == WM_LBUTTONDOWN\n}\n"
+    plan = propose_edits(
+        [_mismatch(src, b"WM_LBUTTONDOWN", "i32", "u32")],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_CONST_OPERAND],
+        constants={"WM_LBUTTONDOWN": 0x201},
+    )
+    assert [e.replacement for e in plan.edits] == ["(WM_LBUTTONDOWN as LPARAM)"]
 
 
 def test_a_baked_constant_width_and_a_bitwise_sibling_use_portable_types():
@@ -3460,7 +3484,10 @@ def test_a_baked_constant_width_and_a_bitwise_sibling_use_portable_types():
         rules=[RULE_CONST_OPERAND],
         constants={"IDD_X": 5, "MK_LBUTTON": 1},
     )
-    assert sorted(e.replacement for e in plan.edits) == ["(IDD_X as _)", "(MK_LBUTTON as WPARAM)"]
+    assert sorted(e.replacement for e in plan.edits) == [
+        "(IDD_X as WPARAM)",
+        "(MK_LBUTTON as WPARAM)",
+    ]
     # `original` must be the span's own text, or apply_edits declines it as stale.
     assert sorted(e.original for e in plan.edits) == ["(IDD_X as u64)", "MK_LBUTTON"]
     # Parenthesised places bind to a C++ reference too.
@@ -3644,3 +3671,28 @@ def test_an_hwnd_where_a_cwindow_is_wanted_is_constructed():
     assert [e.replacement for e in plan.edits] == [
         "CWindow__make_0((*this_).__base0.GetDlgItem(7))"
     ]
+
+
+def test_a_null_for_a_mut_pointer_parameter_is_null_mut():
+    """stobject: `TrackPopupMenuEx(.., core::ptr::null())` against `LPTPMPARAMS`."""
+    from rustconv.crate_repair import _Ctx, _literal_mut_rule
+
+    src = b"F(h, core::ptr::null());\n"
+    lo = src.index(b"core::ptr::null()")
+    diag = {
+        "code": {"code": "E0308"},
+        "spans": [
+            {
+                "file_name": "m.rs",
+                "byte_start": lo,
+                "byte_end": lo + len(b"core::ptr::null()"),
+                "line_start": 1,
+                "column_start": lo + 1,
+                "label": "types differ in mutability",
+            }
+        ],
+        "children": [{"message": "expected raw pointer `*mut T`\nfound raw pointer `*const _`"}],
+    }
+    edits, _, handled = _literal_mut_rule(diag, lambda f: src, _Ctx(target="i386", width=32))
+    assert handled
+    assert [e.replacement for e in edits] == ["core::ptr::null_mut()"]

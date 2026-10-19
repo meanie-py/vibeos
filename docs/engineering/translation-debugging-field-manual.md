@@ -1409,7 +1409,10 @@ exports, `CPlApplet`, `DriverEntry`) are WINAPI too, and get stack imbalance rat
 silent swap.
 
 **Fix:** `extern "system"`. `scan_entry_point_cc` (a vibeos-lint rule, empty baseline) fails
-`check` on any of these names defined with another convention.
+`check` on any of these names defined with another convention. stobject came back the same way, the
+third time, and the pipeline now prevents it: cpp_model writes a free function's `STDAPI_(T)` /
+`STDAPI` as `T WINAPI` / `HRESULT WINAPI`, and adds `__stdcall` wherever clang's i386 type says
+stdcall and the text does not.
 
 ### Assorted ABI-adjacent traps
 - **A trap handler that never sets the return register returns the caller's own argument.**
@@ -3459,6 +3462,20 @@ two months. The rule checks islands against their module's own tree for exactly 
   `#[cfg(any(target_arch = "x86", target_arch = "x86_64"))] const _: () = assert!(LOCAL == island);`
   — which keeps the hand-typed value honest wherever an oracle exists instead of trading one
   unchecked literal for another.
+
+### A GUID the island lacks is written from memory, a digit off
+**Symptom:** a COM call that checks a command group or a class ID fails its check, quietly.
+stobject's `IOleCommandTarget::Exec` returned E_FAIL to every OLECMDID_NEW explorer sent, so
+the tray thread never started and no volume, power or hotplug icon appeared at any boot.
+**Cause:** the island did not carry shlguid.h (reached only through shlobj.h), so the model
+wrote `CGID_ShellServiceObject` itself with Data1 `0x000214D4` for `0x000214D2`. A name the
+body DEFINES never reaches `port resolve`'s unresolved list, so nothing supplied the real one.
+`scan_guid_values` found two more already shipping: acpi's `GUID_ACPI_INTERFACE_STANDARD` and
+iomgr's `RAMDISK_BOOTDISK_GUID`, both written from memory.
+**Fix:** `profile_derive` allowlists a header that `DEFINE_*GUID`s a name the module uses and
+no allowlisted header declares (`DECLARING_HEADER_ADDED`). `scan_guid_values` (vibeos-lint,
+empty baseline) fails `check` on a Rust `GUID { Data1, .. }` literal whose name the SDK
+defines with another value.
 
 ### An invented term in a length computation
 usbccgp's `USBCCGP_PDOSelectConfiguration` came out of translation as `Hdr.Length -
@@ -12397,6 +12414,24 @@ overloads, and a crate-defined symbol beats the import.
 token is a macro's expansion (clang's `expansionLoc`, not a macro argument), which is also
 what the module's call sites say. When a translated module defines an SDK function's name,
 check whether the C defines it or overloads it.
+
+### A file-static helper several TUs define became ONE function
+**Symptom:** right-clicking stobject's volume or power icon opened the hotplug icon's
+removable-device menu, whose items eject the device.
+**Cause:** volume.cpp, power.cpp and hotplug.cpp each define `static void _ShowContextMenu`.
+cpp_model keyed free functions by name across the module, so the first TU's definition was
+kept and the other two TUs' calls bound to it.
+**Fix:** automatic: a file-static whose name a different file already defined is named
+`<name>__<file stem>` (`_ShowContextMenu__volume`), and the TU's calls follow through clang's
+decl ids.
+
+### `CString s((LPCSTR)IDS_X)` is a resource load, not text
+**Symptom:** an access violation at a small address (0x60) when a menu or dialog is built.
+**Cause:** ATL's `LoadFromPtr_` treats an `IS_INTRESOURCE` pointer as a string-table ID for
+the narrow (`YCHAR`) constructor too. atl_rust's `CStringW::from_ansi` and
+`CStringA::from_ptr` read it as text (stobject's power menu).
+**Fix:** both now load the resource as ATL does, and `from_ptr(NULL)` is the empty string
+instead of `LoadString(0)`.
 
 ### A module translated down to Rust + `.rc` links with the RC driver, and `LINKER:` flags break
 **Symptom:** `clang: error: unknown argument: '--allow-multiple-definition'` from a module's

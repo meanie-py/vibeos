@@ -4352,6 +4352,36 @@ def _packed_field_ptr_rule(
             [],
             True,
         )
+    # `_countof!(nim.szTip)` (stobject's NOTIFYICONDATA, packed on i386): the macro's
+    # `($a).len()` borrows the field. A block copies the array out first (bindgen arrays are
+    # Copy), and the length of the copy is the length of the field. The macro itself cannot
+    # take an addr_of!: `_countof!(CONST_TABLE)` names a temporary (E0745).
+    count = re.search(
+        rb"\b(?:_countof|ARRAYSIZE|RTL_NUMBER_OF(?:_V[12])?)!\s*\(\s*$",
+        masked[max(0, start - 40) : start],
+    )
+    if count is not None and _next_code_byte(masked, end) == b")" and _balanced(masked[start:end]):
+        return (
+            [
+                Edit(
+                    file_name=file_name,
+                    byte_start=start,
+                    byte_end=end,
+                    replacement=f"{{ {place} }}",
+                    rule=RULE_PACKED_FIELD_PTR,
+                    authority=(
+                        f"rustc E0793: `{place[:40]}` is a packed field; counted from a copy, "
+                        "so no reference to it is formed"
+                    ),
+                    original=place,
+                    line=int(span.get("line_start") or 0),
+                    column=int(span.get("column_start") or 0),
+                    targets=(ctx.target,),
+                )
+            ],
+            [],
+            True,
+        )
     if tail is None or not _balanced(masked[start:end]):
         return (
             [],
@@ -5431,6 +5461,24 @@ def _literal_mut_rule(
             continue
         lo, hi = int(span["byte_start"]), int(span["byte_end"])
         inner = data[lo:hi].decode("utf-8", "replace")
+        if re.fullmatch(r"(?:(?:core|std)::)?(?:ptr::)?null\(\)", inner.strip()):
+            # C's NULL for a non-const pointer parameter, spelled `null()` (stobject's
+            # TrackPopupMenuEx(.., NULL)): the same null, typed `*mut`.
+            if not _in_macro_definition(_mask_lexical(data), lo):
+                edits.append(
+                    _simple_edit(
+                        RULE_LITERAL_MUT,
+                        file_name,
+                        data,
+                        lo,
+                        hi,
+                        "core::ptr::null_mut()",
+                        "C's NULL for a non-const pointer parameter",
+                        span,
+                        ctx,
+                    )
+                )
+            continue
         addr = re.fullmatch(r"((?:core::ptr::|ptr::)?)addr_of!(\(.*\))", inner.strip(), re.S)
         if addr is not None and not _in_macro_definition(_mask_lexical(data), lo):
             # C's `&x` is mutable; the translation spelled it `addr_of!`. A C local is mutable
@@ -5562,13 +5610,15 @@ def _int_range(ty: str, width: int) -> tuple[int, int] | None:
 
 
 def _sibling_declared_type(data: bytes, start: int, end: int) -> str | None:
-    """`wParam & K` / `K | wParam`: the type NAME the other operand was declared with
-    (`wParam: WPARAM` earlier in the function), when the constant at start..end is one side
-    of a bitwise or arithmetic operator and the other side is a bare identifier."""
+    """`wParam & K` / `K | wParam` / `lParam == K`: the type NAME the other operand was
+    declared with (`wParam: WPARAM` earlier in the function), when the constant at
+    start..end is one side of a bitwise, arithmetic or comparison operator and the other
+    side is a bare identifier. stobject's `lParam == WM_LBUTTONDOWN` wanted `i32` on i386
+    and `i64` on the 64-bit pair, so no width could agree; `as LPARAM` is right on all."""
     before = data[:start].decode("utf-8", "replace")
     after = data[end:].decode("utf-8", "replace")
-    m = re.search(r"\b([A-Za-z_]\w*)\s*[&|^+*/-]\s*$", before) or re.match(
-        r"\s*[&|^+*/-]\s*([A-Za-z_]\w*)\b(?!\s*[.(\[])", after
+    m = re.search(r"\b([A-Za-z_]\w*)\s*(?:[&|^+*/-]|[=!<>]=|<|>)\s*$", before) or re.match(
+        r"\s*(?:[&|^+*/-]|[=!<>]=|<|>)\s*([A-Za-z_]\w*)\b(?!\s*[.(\[])", after
     )
     if m is None:
         return None
@@ -5645,12 +5695,13 @@ def _constant_operand_rule(
         # A match ARM is a pattern, where a cast does not parse: the scrutinee rule owns it.
         if _in_macro_definition(masked, start) or _in_match_pattern(masked, end):
             continue
-        target = expected
-        if baked is not None or expected in ("u64", "i64", "usize", "isize"):
+        # The other operand's DECLARED type name, when there is one, is portable on every
+        # target (a primitive the width-varying alias resolves to here is not).
+        sibling = _sibling_declared_type(data, start, end)
+        target = sibling or expected
+        if sibling is None and (baked is not None or expected in ("u64", "i64", "usize", "isize")):
             # A baked width is arch-dependent by construction, whatever this target wants.
-            # `as _` cannot be inferred under an arithmetic/bitwise operator (`wParam &
-            # (MK_LBUTTON as _)`); there the other operand's DECLARED type name is portable.
-            target = _sibling_declared_type(data, start, end) or "_"
+            target = "_"
         ctx.claimed.add((file_name, start, end))
         edits.append(
             Edit(

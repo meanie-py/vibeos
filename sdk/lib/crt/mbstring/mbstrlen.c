@@ -13,7 +13,10 @@
 #include <stdlib.h>
 
 #ifdef _LIBCNT_
-unsigned short *NlsLeadByteInfo;
+/* The RTL's lead-byte table (nls.c in the kernel, nlsboot in the loaders). Upstream's
+ * tentative definition here was a common symbol that merged with it; under -fno-common it
+ * became a second, always-NULL table that satisfied any reference by link order alone. */
+extern unsigned short *NlsLeadByteInfo;
 #define isleadbyte(c) NlsLeadByteInfo[c]
 #else
 int isleadbyte(int byte);
