@@ -100,6 +100,74 @@ extern "system" {
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
 }
 
+/// SVCFAIL: tested on every amd64 system-call return (trap.S `KiSystemServiceExit`),
+/// so it is one byte and the rest stays out of the hot path until it is set.
+#[no_mangle]
+pub static mut VibeSvcTraceArmed: u8 = 0;
+static mut SVCFAIL_IMAGE: [u8; 15] = [0; 15];
+static mut SVCFAIL_IMAGE_LEN: usize = 0;
+/// A runaway retry loop must not bury the boot log.
+const SVCFAIL_MAX_LINES: u32 = 20000;
+static SVCFAIL_LINES: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+/// trap.S calls this when SVCFAIL is armed, with the service's return value, the number
+/// the caller asked for (the trap frame's Rax, bit 12 set for win32k's table), the trap
+/// frame (the first four arguments are its Rcx/Rdx/R8/R9) and the kernel copy of the
+/// stack arguments (the fifth on).
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub unsafe extern "system" fn VibeSvcTraceExit(
+    status: u64,
+    service: u64,
+    tf: ntkrnl_sys::ddk::PKTRAP_FRAME,
+    stack_args: *const u64,
+) {
+    let st = status as u32;
+    if st < 0xC000_0000 {
+        return; // success, informational and warning codes (STATUS_BUFFER_OVERFLOW...)
+    }
+    extern "system" {
+        fn PsGetCurrentProcess() -> *mut core::ffi::c_void;
+        fn PsGetProcessImageFileName(p: *mut core::ffi::c_void) -> *const u8;
+        fn PsGetCurrentProcessId() -> PVOID;
+        fn PsGetCurrentThreadId() -> PVOID;
+    }
+    let name = PsGetProcessImageFileName(PsGetCurrentProcess());
+    if name.is_null() {
+        return;
+    }
+    let want = &SVCFAIL_IMAGE[..SVCFAIL_IMAGE_LEN];
+    if want != b"*" {
+        for (i, w) in want.iter().enumerate() {
+            if (*name.add(i)).to_ascii_lowercase() != w.to_ascii_lowercase() {
+                return;
+            }
+        }
+    }
+    let n = SVCFAIL_LINES.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    if n == SVCFAIL_MAX_LINES {
+        DbgPrint(b"[SVCFAIL] line cap reached; the rest are dropped\n\0".as_ptr());
+    }
+    if n >= SVCFAIL_MAX_LINES {
+        return;
+    }
+    DbgPrint(
+        b"[SVCFAIL] %.15s pid=%p tid=%p svc=0x%04lx status=0x%08lx args=%p %p %p %p %p %p\n\0"
+            .as_ptr(),
+        name,
+        PsGetCurrentProcessId(),
+        PsGetCurrentThreadId(),
+        (service & 0xFFFF) as u32,
+        st,
+        (*tf).Rcx as PVOID,
+        (*tf).Rdx as PVOID,
+        (*tf).R8 as PVOID,
+        (*tf).R9 as PVOID,
+        *stack_args as PVOID,
+        *stack_args.add(1) as PVOID,
+    );
+}
+
 /// Selftest mode parsed from the tripwire blob: 0 none, 1 pattern, 2 guard.
 static mut VIBE_SELFTEST: u8 = 0;
 /// CSWITCH_SELFTEST=1 armed via fw_cfg (consumed by `KiStartSyncCensus`).
@@ -343,6 +411,14 @@ unsafe fn apply_token(tok: &[u8]) {
             crate::ARM3::census::MEMCENSUS_ARMED.store(true, core::sync::atomic::Ordering::Relaxed);
             DbgPrint(b"[TRIPWIRE] memory census armed: a [MEMCENSUS] line at every process teardown\n\0".as_ptr());
         }
+    } else if let Some(val) = token_val(tok, b"SVCFAIL") {
+        // Log every system call from the named image (a case-insensitive prefix of its
+        // 15-char ImageFileName, or `*` for all) that returns an NTSTATUS error.
+        let n = val.len().min(SVCFAIL_IMAGE.len());
+        SVCFAIL_IMAGE[..n].copy_from_slice(&val[..n]);
+        SVCFAIL_IMAGE_LEN = n;
+        VibeSvcTraceArmed = 1;
+        DbgPrint(b"[TRIPWIRE] SVCFAIL armed: failing system calls are logged as [SVCFAIL]\n\0".as_ptr());
     } else if tok == b"UEXCVERBOSE" {
         // Print EVERY first-chance user exception in full, lifting the per-code
         // cap in ke/arm64/stubs.rs `uexc_should_print` (which exists because
