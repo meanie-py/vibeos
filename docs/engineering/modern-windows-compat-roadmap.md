@@ -507,8 +507,11 @@ runs it.
   Windows 11 22-29; idle is 32 on all three. Owed: both wake hops onto the worker carry no
   priority increment (the timer thread's condvar wait times out, then `KeReleaseSemaphore`
   on the keyed-wait semaphore with 0, `ex-rust/src/keyedevt.rs`), as in ReactOS's C; Windows
-  wakes the worker through a worker factory and an IoCompletion instead. Unmeasured: which
-  increment Windows applies there.
+  wakes the worker through a worker factory and an IoCompletion instead. Measured
+  2026-10-19 (upstream-sync, ServerNT): Increment=1 on the keyed-event release changed
+  nothing (3/round either way), so hop 2 is not the limit there; hop 1 is, the timer
+  thread's timeout wake behind a same-priority spinner. Owed: quantum length or a
+  timeout-wake boost (scheduler policy), re-measured with clockprobe on WinNT.
   Seen once beside it: mf.c:4493 "got count 0, state 0".
 - **mf's converter scenario:** both builds fail mf.c's "SetTopology ... requiring a
   converter" checks (no converter MFT is registered: the codec gap below).
@@ -563,6 +566,15 @@ runs it.
   and kernel32's GetVersion/GetVersionEx/VerifyVersionInfo apply the manifest rule
   (`min(real, max(6.2, declared))`, 6.2 reports build 9200, 6.3 build 9600; RtlGetVersion
   stays truthful). Next: phase 3, the flip itself (the D-rows).
+- **`tools/payloads/hostapps` (2026-10-18):** 7-Zip, CMake and GnuPG from the host's
+  Program Files under the sweep runner, 30/30 green after two fixes it found: kernel32's
+  `GetFileInformationByHandle` wrote the FAT volume label over the caller's handle (every
+  archive failed), and classpnp's READ CAPACITY 16 zeroing overran pool, a BUGCHECK 0x19 from
+  any unprivileged `StorageAccessAlignmentProperty` query. Its stub-hit reading: three real
+  Windows 10/11 probes we lack, all with fallbacks: `FlsGetValue2` (newer MSVC CRT),
+  `GetFileInformationByName` (24H2), `AppPolicyGetProcessTerminationMethod`. Owed: those
+  three; `FileStorageInfo`/`FileAlignmentInfo` on fastfat and cdfs (winref answers both,
+  we give ERROR_NOT_SUPPORTED and 0); SVCFAIL on i386 and arm64.
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
   applet): exactly one stub is reached, the SEH smoke probe's deliberate
