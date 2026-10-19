@@ -260,6 +260,10 @@ pub unsafe extern "system" fn NtSystemDebugControl(
                 }
             }
             _ if inactive => STATUS_DEBUGGER_INACTIVE,
+            // 32-36 (the user-mode break/attach PIDs, Vista) and 37 (SysDbgGetLiveKernelDump,
+            // 8.1) exist on Windows 10, so with a debugger attached they are not an invalid
+            // class (kmtest NtSystemDebugControl :248/:263). We do not implement them.
+            _ if (32..=37).contains(&(Command as i32)) => STATUS_NOT_IMPLEMENTED,
             SysDbgQueryModuleInformation => {
                 STATUS_INVALID_INFO_CLASS
             }
