@@ -305,14 +305,14 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
     let mut i: ULONG;
 
     SidLength = RtlLengthRequiredSid(1);
-    Sid[0] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, 0x44534D43u32);
-    Sid[1] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, 0x44534D43u32);
-    Sid[2] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, 0x44534D43u32);
+    Sid[0] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
+    Sid[1] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
+    Sid[2] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
     SidLength = RtlLengthRequiredSid(2);
-    Sid[3] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, 0x44534D43u32);
-    Sid[4] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, 0x44534D43u32);
+    Sid[3] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
+    Sid[4] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
     SidLength = RtlLengthRequiredSid(READ_CAPABILITY_SUBS.len() as ULONG);
-    Sid[5] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, 0x44534D43u32);
+    Sid[5] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
 
     if Sid.iter().any(|s| s.is_null()) {
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 1, 0, 0);
@@ -355,7 +355,7 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
         i += 1;
     }
 
-    Acl = ExAllocatePoolWithTag(PagedPool, AclLength as usize, 0x44534D43u32) as PACL;
+    Acl = ExAllocatePoolWithTag(PagedPool, AclLength as usize, crate::cmsysini::TAG_CMSD) as PACL;
     if Acl.is_null() {
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 3, 0, 0);
     }
@@ -383,7 +383,7 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
     SecurityDescriptor = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<_SECURITY_DESCRIPTOR>() + AclLength as usize,
-        0x44534D43u32,
+        crate::cmsysini::TAG_CMSD,
     );
     if SecurityDescriptor.is_null() {
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 6, 0, 0);
@@ -404,10 +404,10 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
 
     i = 0;
     while i < 6 {
-        ExFreePoolWithTag(Sid[i as usize] as *mut core::ffi::c_void, 0x44534D43u32);
+        ExFreePoolWithTag(Sid[i as usize] as *mut core::ffi::c_void, crate::cmsysini::TAG_CMSD);
         i += 1;
     }
-    ExFreePoolWithTag(Acl as *mut core::ffi::c_void, 0x44534D43u32);
+    ExFreePoolWithTag(Acl as *mut core::ffi::c_void, crate::cmsysini::TAG_CMSD);
 
     SecurityDescriptor
 }
