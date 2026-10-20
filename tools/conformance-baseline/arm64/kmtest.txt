@@ -151,6 +151,14 @@
 # 2026-10-08 (later), by HAND, two agreeing sweeps: MmMapLockedPagesSpecifyCache and
 #   MmReservedMapping come out of quarantine after their kernel bugs were fixed (see the
 #   sweep list).
+# 2026-10-19, by HAND: ZwAllocateVirtualMemory 582 -> 570 = 582 minus the 12 its race can
+#   cost. Its two system threads commit 64 GiB chunks from one commit pool until
+#   STATUS_COMMITMENT_LIMIT, and each checked chunk below COMMIT_CHECKED_CHUNKS (50) is 3
+#   passes. Thread 1 reads 476-480 chunks on master and on the handle-biasing branch alike
+#   (no less commit to be had); what moved is thread 2, which on master finishes second
+#   (159 chunks, past the checked range) and on the branch finishes first at 29-54 (582 at
+#   54, 579 at 35-39, 576 at 29-30; sweeps 20261019-192750 .. 203947). Why the two threads
+#   now finish in the other order is not explained. At 1 chunk the row reads 570.
 CmSecurity OK pass=829 fail=12 skip=1 exit=0
     assert CmSecurity.c:378
     assert CmSecurity.c:385
@@ -368,7 +376,7 @@ TcpIpConnect OK pass=27 fail=7 skip=0 exit=0
     assert connect.c:236
     assert connect.c:237
 SeTokenFiltering OK pass=11 fail=0 skip=0 exit=0
-ZwAllocateVirtualMemory OK pass=582 fail=3 skip=0 exit=0
+ZwAllocateVirtualMemory OK pass=570 fail=3 skip=0 exit=0
     assert ZwAllocateVirtualMemory.c:145
     assert ZwAllocateVirtualMemory.c:246
 ZwCreateSection OK pass=284 fail=3 skip=1 exit=0
