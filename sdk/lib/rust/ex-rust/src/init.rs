@@ -1876,8 +1876,14 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         // The exact fastfat path: the int3 comes from deep in the pool tracker
         // (ExAllocatePoolWithTag -> ExpInsertPoolTracker, key == PoolHitTag).
         let mut hit = Err(0);
+        // With the special-pool tripwire armed for this tag (or "*", every tag) the
+        // allocation goes to special pool and never reaches the tracker, so there is no
+        // breakpoint to catch; the fault path is then not tested, rather than failed.
+        let tracker_bypassed;
         {
             const SEH_TEST_POOL_TAG: u32 = u32::from_le_bytes(*b"SehT");
+            tracker_bypassed = crate::pool::globals::ExpPoolFlags & POOL_FLAG_SPECIAL_POOL != 0
+                && MmUseSpecialPool(32, SEH_TEST_POOL_TAG) != 0;
             let saved = crate::pool::globals::PoolHitTag;
             crate::pool::globals::PoolHitTag = SEH_TEST_POOL_TAG;
             let mut p: PVOID = core::ptr::null_mut();
@@ -1894,7 +1900,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         }
         let pass = bp == Err(STATUS_BREAKPOINT) && bp_trace == 3
             && av == Err(STATUS_ACCESS_VIOLATION) && av_trace == 3
-            && hit == Err(STATUS_BREAKPOINT)
+            && (hit == Err(STATUS_BREAKPOINT) || tracker_bypassed)
             && irqs_kept;
         crate::dbg_print!(
             b"[SEH-TRY] rust hw faults: int3=0x%x trace=%u av=0x%x trace=%u pooltrack=0x%x irqs=%d/%d (%s)\n\0",
