@@ -13,7 +13,7 @@ static mut __wine_dbch_netapi32: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_netapi32 as *mut __wine_debug_channel };
+    &raw const __wine_dbch_netapi32 as *mut __wine_debug_channel;
 
 pub const WINE_DEFAULT_DEBUG_CHANNEL: &[u8; 9] = b"netapi32\0";
 

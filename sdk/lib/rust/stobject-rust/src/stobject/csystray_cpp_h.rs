@@ -13,7 +13,7 @@ use core::ffi::c_void;
 // initializer may not read the `static mut` table, and the count needs no read.
 pub static g_NumIcons: i32 = {
     const fn len_of<T, const N: usize>(_: *const [T; N]) -> usize { N }
-    len_of(unsafe { core::ptr::addr_of!(g_IconHandlers) }) as i32
+    len_of({ core::ptr::addr_of!(g_IconHandlers) }) as i32
 };
 
 

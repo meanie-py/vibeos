@@ -239,7 +239,7 @@ pub unsafe extern "C" fn CdCreateInternalStream(
     ntkrnl_sys::seh::try_finally(
         &mut (),
         |_| {
-            'seh_try: {
+            {
                 loop {
                     StreamFile = IoCreateStreamFileObjectLite(
                         core::ptr::null_mut(),

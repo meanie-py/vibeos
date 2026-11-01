@@ -36,7 +36,7 @@ unsafe extern "C" fn InstallInfSections(
     BufferSize = ARRAYSIZE!(Buffer) - 5 - (wcslen(InfFile)) as u32;
     if GetWindowsDirectoryW(Buffer.as_mut_ptr(), BufferSize) > BufferSize {
         SetLastError(ERROR_GEN_FAILURE);
-        'cleanup: loop {
+        loop {
             if !Context.is_null() {
                 SetupTermDefaultQueueCallback(Context);
             }
@@ -59,7 +59,7 @@ unsafe extern "C" fn InstallInfSections(
 
     hInf = SetupOpenInfFileW(Buffer.as_ptr(), core::ptr::null(), (INF_STYLE_WIN4) as u32, core::ptr::null_mut());
     if hInf == INVALID_HANDLE_VALUE {
-        'cleanup: loop {
+        loop {
             if !Context.is_null() {
                 SetupTermDefaultQueueCallback(Context);
             }
@@ -76,7 +76,7 @@ unsafe extern "C" fn InstallInfSections(
 
     Context = SetupInitDefaultQueueCallback(hWnd);
     if Context.is_null() {
-        'cleanup: loop {
+        loop {
             if !Context.is_null() {
                 SetupTermDefaultQueueCallback(Context);
             }
@@ -106,7 +106,7 @@ unsafe extern "C" fn InstallInfSections(
     )) as u8;
     if ret == (FALSE) as u8 {
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if !Context.is_null() {
                 SetupTermDefaultQueueCallback(Context);
             }
@@ -127,7 +127,7 @@ unsafe extern "C" fn InstallInfSections(
     ret = (SetupInstallServicesFromInfSectionW(hInf, Buffer.as_ptr(), 0)) as u8;
     if ret == (FALSE) as u8 {
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if !Context.is_null() {
                 SetupTermDefaultQueueCallback(Context);
             }
@@ -177,7 +177,7 @@ unsafe extern "C" fn CreateInstanceKey(
     RpcStatus = UuidCreate(&mut Uuid);
     if RpcStatus != RPC_S_OK && RpcStatus != (RPC_S_UUID_LOCAL_ONLY) as i32 {
         // DPRINT removed
-        'done: loop {
+        loop {
             if ret == (FALSE) as i32 {
                 RegCloseKey(hInstanceKey);
             }
@@ -189,7 +189,7 @@ unsafe extern "C" fn CreateInstanceKey(
     RpcStatus = UuidToStringW(&mut Uuid, &mut UuidString);
     if RpcStatus != RPC_S_OK {
         // DPRINT removed
-        'done: loop {
+        loop {
             if ret == (FALSE) as i32 {
                 RegCloseKey(hInstanceKey);
             }
@@ -218,7 +218,7 @@ unsafe extern "C" fn CreateInstanceKey(
     )) as u32;
     if rc != ERROR_SUCCESS {
         // DPRINT removed
-        'done: loop {
+        loop {
             if ret == (FALSE) as i32 {
                 RegCloseKey(hInstanceKey);
             }
@@ -237,7 +237,7 @@ unsafe extern "C" fn CreateInstanceKey(
     )) as u32;
     if rc != ERROR_SUCCESS {
         // DPRINT removed
-        'done: loop {
+        loop {
             if ret == (FALSE) as i32 {
                 RegCloseKey(hInstanceKey);
             }
@@ -256,7 +256,7 @@ unsafe extern "C" fn CreateInstanceKey(
     )) as u32;
     if rc != ERROR_SUCCESS {
         // DPRINT removed
-        'done: loop {
+        loop {
             if ret == (FALSE) as i32 {
                 RegCloseKey(hInstanceKey);
             }
@@ -275,7 +275,7 @@ unsafe extern "C" fn CreateInstanceKey(
     )) as u32;
     if rc != ERROR_SUCCESS {
         // DPRINT removed
-        'done: loop {
+        loop {
             if ret == (FALSE) as i32 {
                 RegCloseKey(hInstanceKey);
             }
@@ -294,7 +294,7 @@ unsafe extern "C" fn CreateInstanceKey(
     )) as u32;
     if rc != ERROR_SUCCESS {
         // DPRINT removed
-        'done: loop {
+        loop {
             if ret == (FALSE) as i32 {
                 RegCloseKey(hInstanceKey);
             }
@@ -313,7 +313,7 @@ unsafe extern "C" fn CreateInstanceKey(
     )) as u32;
     if rc != ERROR_SUCCESS {
         // DPRINT removed
-        'done: loop {
+        loop {
             if ret == (FALSE) as i32 {
                 RegCloseKey(hInstanceKey);
             }
@@ -370,7 +370,7 @@ unsafe extern "C" fn CheckInfFile(
         return (FALSE) as i32;
     }
 
-    'outer: loop {
+    loop {
         if SetupGetStringFieldW(
             &mut MfgContext,
             1,
@@ -609,7 +609,7 @@ pub unsafe extern "C" fn InstallNetworkComponent(
     ZeroMemory!(&mut ComponentInfo as *mut _ as *mut core::ffi::c_void, core::mem::size_of::<COMPONENT_INFO>());
 
     if ScanForInfFile(pszComponentId, &mut ComponentInfo) == 0 {
-        return 'done: {
+        return {
             if !hInstanceKey.is_null() {
                 RegCloseKey(hInstanceKey);
             }
@@ -647,7 +647,7 @@ pub unsafe extern "C" fn InstallNetworkComponent(
 
     if CreateInstanceKey(&mut ComponentInfo, &mut hInstanceKey) == 0 {
         // DPRINT removed
-        return 'done: {
+        return {
             if !hInstanceKey.is_null() {
                 RegCloseKey(hInstanceKey);
             }
@@ -678,7 +678,7 @@ pub unsafe extern "C" fn InstallNetworkComponent(
 
     if InstallInfSections(core::ptr::null_mut(), hInstanceKey, ComponentInfo.pszInfPath, ComponentInfo.pszInfSection) == 0 {
         // DPRINT removed
-        return 'done: {
+        return {
             if !hInstanceKey.is_null() {
                 RegCloseKey(hInstanceKey);
             }

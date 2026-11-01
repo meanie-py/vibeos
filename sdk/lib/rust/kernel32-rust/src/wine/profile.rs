@@ -91,7 +91,7 @@ static mut critsect_debug: RTL_CRITICAL_SECTION_DEBUG = RTL_CRITICAL_SECTION_DEB
     __bindgen_anon_1: _RTL_CRITICAL_SECTION_DEBUG__bindgen_ty_1 { WineDebugString: 0 },
 };
 
-static mut PROFILE_CritSect: RTL_CRITICAL_SECTION = unsafe {
+static mut PROFILE_CritSect: RTL_CRITICAL_SECTION = {
     _RTL_CRITICAL_SECTION {
         DebugInfo: &raw const critsect_debug as PRTL_CRITICAL_SECTION_DEBUG,
         LockCount: -(1 as ::core::ffi::c_int) as LONG,

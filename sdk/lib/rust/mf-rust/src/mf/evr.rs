@@ -20,7 +20,7 @@ pub static mut IID_IDirect3DDeviceManager9: GUID = _GUID {
     ],
 };
 
-static mut evr_activate_funcs: activate_funcs = unsafe {
+static mut evr_activate_funcs: activate_funcs = {
     activate_funcs {
         create_object: Some(
             evr_create_object

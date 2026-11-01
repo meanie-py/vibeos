@@ -131,7 +131,7 @@ static mut NLS_FormatsCS_debug: RTL_CRITICAL_SECTION_DEBUG = RTL_CRITICAL_SECTIO
     __bindgen_anon_1: _RTL_CRITICAL_SECTION_DEBUG__bindgen_ty_1 { WineDebugString: 0 },
 };
 
-static mut NLS_FormatsCS: RTL_CRITICAL_SECTION = unsafe {
+static mut NLS_FormatsCS: RTL_CRITICAL_SECTION = {
     _RTL_CRITICAL_SECTION {
         DebugInfo: &raw const NLS_FormatsCS_debug as PRTL_CRITICAL_SECTION_DEBUG,
         LockCount: -(1 as ::core::ffi::c_int) as LONG,

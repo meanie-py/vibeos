@@ -229,7 +229,7 @@ unsafe extern "system" fn sample_copier_transform_GetInputAvailableType(
     type_: *mut *mut IMFMediaType,
 ) -> HRESULT {
     static mut types: [*const GUID; 2] =
-        unsafe { [&raw const MFMediaType_Video, &raw const MFMediaType_Audio] };
+        [&raw const MFMediaType_Video, &raw const MFMediaType_Audio];
     let mut hr: HRESULT = 0;
 
     if id != 0 {

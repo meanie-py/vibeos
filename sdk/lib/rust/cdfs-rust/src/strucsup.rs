@@ -1634,7 +1634,7 @@ pub unsafe extern "system" fn CdFcbTableCompare(
     Fid1: *mut core::ffi::c_void,
     Fid2: *mut core::ffi::c_void,
 ) -> ntkrnl_sys::ddk::RTL_GENERIC_COMPARE_RESULTS {
-    unsafe { /* PAGED_CODE!(); */ }
+    { /* PAGED_CODE!(); */ }
 
     let _ = FcbTable; // UNREFERENCED_PARAMETER(FcbTable)
 

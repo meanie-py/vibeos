@@ -480,7 +480,7 @@ pub unsafe extern "system" fn NetClassInstaller(
     DriverInfoData.cbSize = core::mem::size_of::<SP_DRVINFO_DATA_W>() as u32;
     if SetupDiGetSelectedDriverW(DeviceInfoSet, DeviceInfoData, &mut DriverInfoData) == 0 {
         rc = GetLastError() as i32;
-        return 'cleanup: loop {
+        return loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -505,7 +505,7 @@ pub unsafe extern "system" fn NetClassInstaller(
         && GetLastError() != ERROR_INSUFFICIENT_BUFFER
     {
         rc = GetLastError() as i32;
-        return 'cleanup: loop {
+        return loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -526,7 +526,7 @@ pub unsafe extern "system" fn NetClassInstaller(
     );
     if hInf == INVALID_HANDLE_VALUE {
         rc = GetLastError() as i32;
-        return 'cleanup: loop {
+        return loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -549,7 +549,7 @@ pub unsafe extern "system" fn NetClassInstaller(
     ) == 0
     {
         rc = GetLastError() as i32;
-        return 'cleanup: loop {
+        return loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -570,7 +570,7 @@ pub unsafe extern "system" fn NetClassInstaller(
     ) == 0
     {
         rc = GetLastError() as i32;
-        return 'cleanup: loop {
+        return loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -585,7 +585,7 @@ pub unsafe extern "system" fn NetClassInstaller(
 
     if SetupGetIntField(&mut InfContext, 1, &mut CharacteristicsInt) == 0 {
         rc = GetLastError() as i32;
-        return 'cleanup: loop {
+        return loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -616,7 +616,7 @@ pub unsafe extern "system" fn NetClassInstaller(
             ) == 0
             {
                 rc = GetLastError() as i32;
-                return 'cleanup: loop {
+                return loop {
                     if hInf != INVALID_HANDLE_VALUE {
                         SetupCloseInfFile(hInf);
                     }
@@ -635,7 +635,7 @@ pub unsafe extern "system" fn NetClassInstaller(
             ) as LPWSTR;
             if BusType.is_null() {
                 rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
-                return 'cleanup: loop {
+                return loop {
                     if hInf != INVALID_HANDLE_VALUE {
                         SetupCloseInfFile(hInf);
                     }
@@ -657,7 +657,7 @@ pub unsafe extern "system" fn NetClassInstaller(
             ) == 0
             {
                 rc = GetLastError() as i32;
-                return 'cleanup: loop {
+                return loop {
                     if hInf != INVALID_HANDLE_VALUE {
                         SetupCloseInfFile(hInf);
                     }
@@ -675,7 +675,7 @@ pub unsafe extern "system" fn NetClassInstaller(
     RpcStatus = UuidCreate(&mut Uuid);
     if RpcStatus != RPC_S_OK && RpcStatus != (RPC_S_UUID_LOCAL_ONLY) as i32 {
         rc = (ERROR_GEN_FAILURE) as i32;
-        return 'cleanup: loop {
+        return loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -691,7 +691,7 @@ pub unsafe extern "system" fn NetClassInstaller(
     RpcStatus = UuidToStringW(&mut Uuid, &mut UuidRpcString);
     if RpcStatus != RPC_S_OK {
         rc = (ERROR_GEN_FAILURE) as i32;
-        return 'cleanup: loop {
+        return loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -711,7 +711,7 @@ pub unsafe extern "system" fn NetClassInstaller(
     ) as LPWSTR;
     if UuidString.is_null() {
         rc = (ERROR_NOT_ENOUGH_MEMORY) as i32;
-        return 'cleanup: loop {
+        return loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -740,7 +740,7 @@ pub unsafe extern "system" fn NetClassInstaller(
         rc = (ERROR_GEN_FAILURE) as i32;
     }
 
-    'cleanup: loop {
+    loop {
         if hInf != INVALID_HANDLE_VALUE {
             SetupCloseInfFile(hInf);
         }

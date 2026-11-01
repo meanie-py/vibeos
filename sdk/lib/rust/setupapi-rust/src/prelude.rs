@@ -279,7 +279,7 @@ pub static mut __wine_dbch_setupapi: __wine_debug_channel = __wine_debug_channel
     name: unsafe { ::core::mem::transmute::<[u8; 15], [::core::ffi::c_char; 15]>(*b"\x73\x65\x74\x75\x70\x61\x70\x69\x00\x00\x00\x00\x00\x00\x00") },
 };
 pub static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw mut __wine_dbch_setupapi };
+    { &raw mut __wine_dbch_setupapi };
 // ==== end wine debug channels ====
 
 // ==== port resolve: UNICODE TCHAR family (generated) ====
