@@ -48,7 +48,9 @@ It has NOT been smoked locally; the integrator's cold gate is its first boot. Be
 resuming, check that it landed (`git merge-base --is-ancestor 1acc6748417 origin/master`) or read
 the integrator's classification and artifact dir, and fix forward.
 
-**BOUNCED 2026-11-01, LINT_FAIL — the first thing to do on resume.** Integrator batch 60
+**BOUNCED 2026-11-01, LINT_FAIL; FIXED 2026-11-01 after the migration** (ntkrnl-sys regenerated; the
+ndk EXTENDED_DEVOBJ_EXTENSION gained the InterruptCount upstream gave only the public type, so
+both are 60/112 bytes). The original note follows. Integrator batch 60
 (merged onto master `aa597d19355`, tag `integration-batch60-red`; gate
 `/tmp/vibeos-cli/20261101-000723-fkugq9ie-gate-i386+amd64+arm64`, which the migration wipes).
 Everything else was green: build, smoke x3 + net + bios, conformance x3, stortest x3. The one

@@ -1102,6 +1102,11 @@ typedef struct _EXTENDED_DEVOBJ_EXTENSION
     PVOID DependencyNode;
 #if (NTDDI_VERSION >= NTDDI_WIN10) || defined(__REACTOS__)
     PVOID InterruptContext;
+    /* VibeOS: upstream's 167c0e97ce5 declared the full public DEVOBJ_EXTENSION (xdk/iotypes.h)
+       with InterruptCount between InterruptContext and VerifierContext, as NT10 lays it out,
+       but left this internal twin without it. The kernel allocates THIS one, so the public
+       view read 4/8 bytes past the allocation and the two disagreed on VerifierContext. */
+    volatile LONG InterruptCount;
 #endif
     PVOID VerifierContext;
 #elif (NTDDI_VERSION >= NTDDI_VISTASP1)
