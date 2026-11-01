@@ -488,6 +488,34 @@ def _trim_own_target(repo: Path) -> None:
         print(f"[trim] skipped: {exc}")
 
 
+def _failure_over_moved_tree(run, repo: Path, start_tree: str | None) -> None:
+    """A finalize hook: reclassify a FAILED build whose inputs moved while it ran.
+
+    The success path refuses to stamp a moved tree, but a failure used to be reported as
+    itself: `port data` commented a TU out of a CMakeLists mid-build, and the arm64 build
+    said LINK_FAIL (the C's callers linked without the tables, the Rust not yet wired)
+    with nothing hinting that the tree had moved. A failure over a moved tree is a failure
+    of neither tree, so say that, and name the original verdict."""
+    if run.verdict in ("OK", "WARN") or run.classification == "BUILD_INPUTS_MOVED":
+        return
+    moved = _inputs_moved(repo, start_tree)
+    if not moved:
+        return
+    was = run.classification or run.verdict
+    run.classification = "BUILD_INPUTS_MOVED"
+    run.add(
+        Stage(
+            "inputs-moved",
+            status="fail",
+            detail=(
+                f"{len(moved)} build input(s) changed while this build ran, so its "
+                f"{was} may be the edit's, not the tree's. Rebuild before diagnosing."
+            ),
+            salient=moved[:8],
+        )
+    )
+
+
 def _inputs_moved(repo: Path, start_tree: str | None) -> list[str]:
     """Build-input paths that differ between the tree this build started from and now.
 
@@ -1358,6 +1386,8 @@ def _build_locked(
         start_tree = warmth.worktree_tree(repo)
     except (OSError, RuntimeError, subprocess.SubprocessError):
         start_tree = None
+
+    run.finalize_hooks.append(lambda: _failure_over_moved_tree(run, repo, start_tree))
 
     if not _isolation_preflight(run, repo, build_dir):
         return run.finalize(repo)

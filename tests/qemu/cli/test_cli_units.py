@@ -12591,6 +12591,43 @@ def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Pat
     assert build_mod._inputs_moved(tiny_repo, start) == []
 
 
+def test_a_failure_over_a_moved_tree_is_reclassified_at_finalize(
+    tiny_repo: Path, tmp_path, monkeypatch
+):
+    """A LINK_FAIL from a build whose CMakeLists moved under it (`port data` mid-build) is
+    reported as BUILD_INPUTS_MOVED naming the original verdict; an unmoved failure and a
+    green run keep their own. The hook runs from finalize(), so every early return gets it."""
+    from . import warmth
+    from .artifacts import Run
+
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path / "root"))
+    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path / "art"))
+    start = warmth.worktree_tree(tiny_repo)
+
+    def failed_run() -> Run:
+        run = Run("build", "arm64")
+        run.classification = "LINK_FAIL"
+        run.add(build_mod.Stage("ninja", status="fail"))
+        run.finalize_hooks.append(lambda: build_mod._failure_over_moved_tree(run, tiny_repo, start))
+        return run
+
+    unmoved = failed_run()
+    assert unmoved.finalize(tiny_repo) == 1
+    assert unmoved.classification == "LINK_FAIL"
+
+    green = Run("build", "arm64")
+    (tiny_repo / "a.txt").write_text("edited mid-build\n")
+    build_mod._failure_over_moved_tree(green, tiny_repo, start)
+    assert green.verdict == "OK" and green.classification == ""
+
+    moved = failed_run()
+    assert moved.finalize(tiny_repo) == 1
+    assert moved.classification == "BUILD_INPUTS_MOVED"
+    assert "LINK_FAIL" in moved.stages[-1].detail
+    assert moved.stages[-1].salient == ["a.txt"]
+    assert moved.finalize_hooks == []
+
+
 def test_fex_build_prerequisites_are_named_up_front(tmp_path):
     """VIBEOS_FEX=1 arm64 on a fresh worktree: every missing out-of-tree piece is named with
     the command that provides it, before the build runs (it used to skip, warn, and die at

@@ -185,10 +185,13 @@ What the batch added to the shared crates and tools:
      Two harness features made it possible: `c_env_probe` (the shared env reports state
      after each call, here the last error and live heap blocks, so an error code or a leak
      is a mismatch) and `{"arg": n, "mul": 2}` extents for WCHAR-counted buffers.
-   - **Owed: `port data` flips CMake.** It comments the data TU out of the source list, so
-     running it while a build of the tree is going produced a LINK_FAIL on arm64 (the C's
-     users linked without the tables, the Rust not yet linked). Not detected as
-     BUILD_INPUTS_MOVED; `port data`/`flip` should refuse while this tree is building.
+   - **`port data` flips CMake, and ran under a live build.** It comments the data TU out
+     of the source list, so the running arm64 build linked normaliz.dll without the tables
+     and said LINK_FAIL, nothing hinting that the tree had moved. Fixed both ways
+     (2026-11-01): `port flip`/`port data` refuse while a build dir of THIS tree holds its
+     broker lock, and `build` reclassifies any FAILURE over a moved tree as
+     BUILD_INPUTS_MOVED naming the original verdict (a `Run.finalize_hooks` entry, so every
+     early return gets it; the success path already refused to stamp a moved tree).
 8. Pick the next native area from `rust-port-status.md` (what is still C and not on the
    skip list below).
 
