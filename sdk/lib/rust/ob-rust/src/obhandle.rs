@@ -1325,9 +1325,10 @@ unsafe fn ObpCloseHandle(mut handle: HANDLE, access_mode: KPROCESSOR_MODE) -> NT
     let mut status: NTSTATUS;
     let process = PsGetCurrentProcess() as *mut _EPROCESS ;
 
-    // Windows 10 closes the current-process pseudo-handle as a no-op success, from either
-    // mode (kmtest ObHandle; NT 6.x returned STATUS_INVALID_HANDLE).
-    if handle == (-1isize) as HANDLE {
+    // Windows 10 closes the pseudo-handles as a no-op success, from either mode: -1 (kmtest
+    // ObHandle; NT 6.x returned STATUS_INVALID_HANDLE) and -3 to -6, the session and token
+    // ones (winref 20261031-223348-ha327ekw).
+    if handle == (-1isize) as HANDLE || (-6..=-3).contains(&(handle as isize)) {
         return STATUS_SUCCESS;
     }
 

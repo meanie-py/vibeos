@@ -1,0 +1,149 @@
+AppPolicyGetClrCompat kb=1 k32=1
+  tok=-6 rc=0 v=1 gle=dead
+  tok=-4 rc=0 v=1 gle=dead
+  tok=-5 rc=-805306244 v=0 gle=dead
+  tok=0 rc=87 v=21845 gle=dead
+  tok=4660 rc=-805306360 v=0 gle=dead
+AppPolicyGetCreateFileAccess kb=1 k32=1
+  tok=-6 rc=0 v=0 gle=dead
+  tok=-4 rc=0 v=0 gle=dead
+  tok=-5 rc=-805306244 v=0 gle=dead
+  tok=0 rc=87 v=21845 gle=dead
+  tok=4660 rc=-805306360 v=0 gle=dead
+AppPolicyGetLifecycleManagement kb=1 k32=1
+  tok=-6 rc=0 v=0 gle=dead
+  tok=-4 rc=0 v=0 gle=dead
+  tok=-5 rc=-805306244 v=0 gle=dead
+  tok=0 rc=87 v=21845 gle=dead
+  tok=4660 rc=-805306360 v=0 gle=dead
+AppPolicyGetMediaFoundationCodecLoading kb=1 k32=1
+  tok=-6 rc=0 v=0 gle=dead
+  tok=-4 rc=0 v=0 gle=dead
+  tok=-5 rc=-805306244 v=0 gle=dead
+  tok=0 rc=87 v=21845 gle=dead
+  tok=4660 rc=-805306360 v=0 gle=dead
+AppPolicyGetProcessTerminationMethod kb=1 k32=1
+  tok=-6 rc=0 v=0 gle=dead
+  tok=-4 rc=0 v=0 gle=dead
+  tok=-5 rc=-805306244 v=0 gle=dead
+  tok=0 rc=87 v=21845 gle=dead
+  tok=4660 rc=-805306360 v=0 gle=dead
+AppPolicyGetShowDeveloperDiagnostic kb=1 k32=1
+  tok=-6 rc=0 v=1 gle=dead
+  tok=-4 rc=0 v=1 gle=dead
+  tok=-5 rc=-805306244 v=0 gle=dead
+  tok=0 rc=87 v=21845 gle=dead
+  tok=4660 rc=-805306360 v=0 gle=dead
+AppPolicyGetThreadInitializationType kb=1 k32=1
+  tok=-6 rc=0 v=0 gle=dead
+  tok=-4 rc=0 v=0 gle=dead
+  tok=-5 rc=-805306244 v=0 gle=dead
+  tok=0 rc=87 v=21845 gle=dead
+  tok=4660 rc=-805306360 v=0 gle=dead
+AppPolicyGetWindowingModel kb=1 k32=1
+  tok=-6 rc=0 v=2 gle=dead
+  tok=-4 rc=0 v=2 gle=dead
+  tok=-5 rc=-805306244 v=0 gle=dead
+  tok=0 rc=87 v=21845 gle=dead
+  tok=4660 rc=-805306360 v=0 gle=dead
+FlsGetValue2 k32=1 kb=1 RtlFlsGetValue2=1 RtlFlsGetValue=1
+  idx=4 v=0000000000001234 gle=dead
+  unset idx=5 v=0000000000000000 gle=dead
+  freed v=0000000000000000 gle=dead
+  FlsGetValue(freed) v=0000000000000000 gle=0
+GetFileInformationByName k32=1 kb=1
+  n=0 c=0 r=1 gle=57005
+    51c200000000010088bf6a10ad43dd0104106c10ad43dd0104106c10ad43dd017557d82dee59dd0100800500000000000080050000000000200004000000000003000000a9001200cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  n=0 c=1 r=1 gle=57005
+    51c200000000010088bf6a10ad43dd0104106c10ad43dd0104106c10ad43dd017557d82dee59dd0100800500000000000080050000000000200000000000000003000000a9001200000000000000000000000000000000000000000000000000cccccccccccccccccccccccccccccccc
+  n=0 c=2 r=0 gle=5
+  n=0 c=3 r=1 gle=57005
+    51c200000000010088bf6a10ad43dd0104106c10ad43dd0104106c10ad43dd017557d82dee59dd0100800500000000000080050000000000200000000000000003000000070000000001000000000000d3e83ac6313bc67e51c20000000001000000000000000000cccccccccccccccc
+  n=0 c=4 r=0 gle=87
+  n=0 c=5 r=0 gle=87
+  n=1 c=0 r=1 gle=57005
+    c0100000000001007c222a2f0584da014557c67faa69dd0189bfe07caa69dd0189bfe07caa69dd0100600000000000000060000000000000100000000000000001000000bf011300cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+  n=1 c=1 r=1 gle=57005
+    c0100000000001007c222a2f0584da014557c67faa69dd0189bfe07caa69dd0189bfe07caa69dd0100600000000000000060000000000000100000000000000001000000bf011300000000000000000000000000000000000000000000000000cccccccccccccccccccccccccccccccc
+  n=1 c=2 r=0 gle=5
+  n=1 c=3 r=1 gle=57005
+    c0100000000001007c222a2f0584da014557c67faa69dd0189bfe07caa69dd0189bfe07caa69dd0100600000000000000060000000000000100000000000000001000000070000000001000000000000d3e83ac6313bc67ec0100000000001000000000000000000cccccccccccccccc
+  n=1 c=4 r=0 gle=87
+  n=1 c=5 r=0 gle=87
+  n=2 c=0 r=0 gle=2
+  n=2 c=1 r=0 gle=2
+  n=2 c=2 r=0 gle=2
+  n=2 c=3 r=0 gle=2
+  n=2 c=4 r=0 gle=87
+  n=2 c=5 r=0 gle=87
+  n=3 c=0 r=0 gle=2
+  n=3 c=1 r=0 gle=2
+  n=3 c=2 r=0 gle=2
+  n=3 c=3 r=0 gle=2
+  n=3 c=4 r=0 gle=87
+  n=3 c=5 r=0 gle=87
+  n=4 c=0 r=1 gle=57005
+  n=4 c=1 r=1 gle=57005
+  n=4 c=2 r=0 gle=5
+  n=4 c=3 r=1 gle=57005
+  n=4 c=4 r=0 gle=87
+  n=4 c=5 r=0 gle=87
+  size=0 r=0 gle=24
+  size=4 r=0 gle=24
+  size=47 r=0 gle=24
+  size=48 r=0 gle=24
+  size=72 r=1 gle=57005
+  size=111 r=1 gle=57005
+  size=112 r=1 gle=57005
+  size=120 r=1 gle=57005
+  null c=0 r=0 gle=24
+  null c=1 r=0 gle=24
+  null c=2 r=0 gle=24
+  null c=3 r=0 gle=24
+NtQueryInformationByName=1
+  class=4 st=c000000d info=21845
+  class=5 st=c000000d info=21845
+  class=6 st=c000000d info=21845
+  class=7 st=c000000d info=21845
+  class=8 st=c000000d info=21845
+  class=9 st=c000000d info=21845
+  class=14 st=c000000d info=21845
+  class=16 st=c000000d info=21845
+  class=17 st=c000000d info=21845
+  class=18 st=c000000d info=21845
+  class=21 st=c000000d info=21845
+  class=22 st=c000000d info=21845
+  class=23 st=c000000d info=21845
+  class=24 st=c000000d info=21845
+  class=25 st=c000000d info=21845
+  class=26 st=c000000d info=21845
+  class=28 st=c000000d info=21845
+  class=29 st=c000000d info=21845
+  class=32 st=c000000d info=21845
+  class=33 st=c000000d info=21845
+  class=34 st=c000000d info=21845
+  class=35 st=c000000d info=21845
+  class=41 st=c000000d info=21845
+  class=43 st=c000000d info=21845
+  class=44 st=c000000d info=21845
+  class=45 st=c000000d info=21845
+  class=46 st=c000000d info=21845
+  class=47 st=c000000d info=21845
+  class=48 st=c000000d info=21845
+  class=49 st=c000000d info=21845
+  class=51 st=c000000d info=21845
+  class=53 st=c000000d info=21845
+  class=54 st=c000000d info=21845
+  class=55 st=c000000d info=21845
+  class=58 st=c000000d info=21845
+  class=59 st=c000000d info=21845
+  class=62 st=c000000d info=21845
+  class=67 st=c000000d info=21845
+  class=68 st=0 info=72
+  class=70 st=0 info=96
+  class=71 st=c0000022 info=0
+  class=74 st=c000000d info=21845
+  class=75 st=c000000d info=21845
+  class=76 st=c000000d info=21845
+  class=77 st=0 info=104
+DONE
