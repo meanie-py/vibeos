@@ -77,6 +77,15 @@ checked against the file's bytes at the span, and every arch must agree. ~235 si
 the `unused_braces` it leaves behind are rustc machine fixes. The phantom conutils/ws2_32
 `unexpected_cfgs` units are gone: the wind-down deleted every build dir, so all were rebuilt.
 
+**Read, not swept (2026-11-01):** every non-hot `dead_code` and `unused_variables` site was checked
+against its C. None is dropped logic. They are trace-only values, because the crates'
+`TRACE!`/`FIXME!` macros discard their arguments; unused params of C stubs; and helpers the C
+never calls either (`GetXmmReg`, `RtlSubtreePredecessor`, `RtlpFindLeastSetBit`). The one
+exception was rtl-actctx: three truncated, non-NUL-terminated `requireAdministrator`/
+`highestAvailable` literals sat dead beside the correct `...Wfull` ones, and were deleted. A
+root fix for the trace-only class would make each crate's TRACE!-family macro type-check
+its arguments under `if false`. That is many per-crate macros, so it was not started.
+
 **Owed, roughly in priority order:**
 - **The rest of `clashing_extern`** (outside shell32; re-run the census). `extern_to_use` gaps:
   - it does not collapse two declarations in the SAME file under different inline mods
