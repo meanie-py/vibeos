@@ -55,6 +55,13 @@ unsafe fn capped_version() -> Option<(u32, u32, u32)> {
             return None;
         }
     }
+    if declared == 0 {
+        // No supportedOS in the manifest: Windows goes by the image's PE header instead,
+        // MajorOperatingSystemVersion 6.3..9.x reading as 8.1 and 10.0 or more as 10 (Wine's
+        // test_pe_os_version table, which Windows 11 passes). A manifest that declares any
+        // supportedOS wins over the header.
+        declared = image_os_version();
+    }
     let cap = declared.max(WIN32_WINNT_WIN8);
     if real <= cap {
         return None;
@@ -65,6 +72,25 @@ unsafe fn capped_version() -> Option<(u32, u32, u32)> {
         _ => (*Peb).OSBuildNumber as u32,
     };
     Some((cap >> 8, cap & 0xFF, build))
+}
+
+/// The process image's PE `Major/MinorOperatingSystemVersion`, as a manifest-rule level:
+/// 0x0A00 for 10.0 or more, 0x0603 for 6.3 up to 9.x, 0 below.
+unsafe fn image_os_version() -> u32 {
+    let Peb: PPEB = (*NtCurrentTeb()).ProcessEnvironmentBlock;
+    let nt = RtlImageNtHeader((*Peb).ImageBaseAddress);
+    if nt.is_null() {
+        return 0;
+    }
+    let opt = &(*nt).OptionalHeader;
+    let pe = ((opt.MajorOperatingSystemVersion as u32) << 8) | opt.MinorOperatingSystemVersion as u32;
+    if pe >= 0x0A00 {
+        0x0A00
+    } else if pe >= 0x0603 {
+        0x0603
+    } else {
+        0
+    }
 }
 
 #[no_mangle]

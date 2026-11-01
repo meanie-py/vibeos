@@ -18,6 +18,16 @@
 ; the 0x502-baseline base ntdll.dll and only export from ntdll_vista.dll — hence
 ; every ntdll forward below targets ntdll_vista, not ntdll.
 
+@ stdcall AppPolicyGetClrCompat(ptr ptr) kernel32.AppPolicyGetClrCompat
+@ stdcall AppPolicyGetCreateFileAccess(ptr ptr) kernel32.AppPolicyGetCreateFileAccess
+@ stdcall AppPolicyGetLifecycleManagement(ptr ptr) kernel32.AppPolicyGetLifecycleManagement
+@ stdcall AppPolicyGetMediaFoundationCodecLoading(ptr ptr) kernel32.AppPolicyGetMediaFoundationCodecLoading
+@ stdcall AppPolicyGetProcessTerminationMethod(ptr ptr) kernel32.AppPolicyGetProcessTerminationMethod
+@ stdcall AppPolicyGetShowDeveloperDiagnostic(ptr ptr) kernel32.AppPolicyGetShowDeveloperDiagnostic
+@ stdcall AppPolicyGetThreadInitializationType(ptr ptr) kernel32.AppPolicyGetThreadInitializationType
+@ stdcall AppPolicyGetWindowingModel(ptr ptr) kernel32.AppPolicyGetWindowingModel
+@ stdcall FlsGetValue2(long) kernel32.FlsGetValue2
+@ stdcall GetFileInformationByName(wstr long ptr long) kernel32.GetFileInformationByName
 @ stdcall Sleep(long) kernel32.Sleep
 @ stdcall InitOnceExecuteOnce(ptr ptr ptr ptr) kernel32_vista.InitOnceExecuteOnce
 @ stdcall SleepConditionVariableSRW(ptr ptr long long) kernel32_vista.SleepConditionVariableSRW
@@ -50,14 +60,6 @@
 @ stub -version=0xA00+ AppContainerLookupMoniker
 @ stub -version=0xA00+ AppContainerRegisterSid
 @ stub -version=0xA00+ AppContainerUnregisterSid
-@ stub -version=0xA00+ AppPolicyGetClrCompat
-@ stub -version=0xA00+ AppPolicyGetCreateFileAccess
-@ stub -version=0xA00+ AppPolicyGetLifecycleManagement
-@ stub -version=0xA00+ AppPolicyGetMediaFoundationCodecLoading
-@ stub -version=0xA00+ AppPolicyGetProcessTerminationMethod
-@ stub -version=0xA00+ AppPolicyGetShowDeveloperDiagnostic
-@ stub -version=0xA00+ AppPolicyGetThreadInitializationType
-@ stub -version=0xA00+ AppPolicyGetWindowingModel
 @ stub -version=0xA00+ AppXCheckPplSupport
 @ stub -version=0xA00+ AppXFreeMemory
 @ stub -version=0xA00+ AppXGetApplicationData
@@ -223,7 +225,6 @@
 @ stub -version=0xA00+ FindNextFileNameW
 @ stub -version=0xA00+ FindPackageDependency
 @ stub -version=0xA00+ FindStringOrdinal
-@ stub -version=0xA00+ FlsGetValue2 # -> NTDLL.RtlFlsGetValue2
 @ stub -version=0xA00+ ForceSyncFgPolicyInternal
 @ stub -version=0xA00+ FormatApplicationUserModelId
 @ stub -version=0xA00+ FormatApplicationUserModelIdA
@@ -287,7 +288,6 @@
 @ stub -version=0xA00+ GetFeatureToggleConfiguration # -> NTDLL.RtlGetFeatureToggleConfiguration
 @ stub -version=0xA00+ GetFeatureTogglesChangeToken # -> NTDLL.RtlGetFeatureTogglesChangeToken
 @ stub -version=0xA00+ GetFileAttributesExFromAppW
-@ stub -version=0xA00+ GetFileInformationByName
 @ stub -version=0xA00+ GetFileVersionInfoA
 @ stub -version=0xA00+ GetFileVersionInfoByHandle
 @ stub -version=0xA00+ GetFileVersionInfoExA

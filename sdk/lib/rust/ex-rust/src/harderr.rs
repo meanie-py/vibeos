@@ -131,7 +131,9 @@ unsafe fn ExpRaiseHardError(
                 PreviousMode,
             ) == 0u8
         {
-            *Response = ResponseNotHandled;
+            // ResponseReturnToCaller from Windows 7 on (kmtest ExHardError, 64-bit; 32-bit
+            // Windows 8+ leaves an undefined value). Server 2003 said ResponseNotHandled.
+            *Response = ResponseReturnToCaller;
             return STATUS_PRIVILEGE_NOT_HELD;
         }
 

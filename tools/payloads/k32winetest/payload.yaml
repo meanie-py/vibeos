@@ -1,0 +1,31 @@
+# Wine's kernel32 conformance suite. Its `version` subtest is the oracle for the version
+# flip: test_pe_os_version copies itself beside a .manifest declaring chosen supportedOS
+# GUIDs and checks what GetVersionEx/RtlGetVersion/VerifyVersionInfo report, which is
+# Windows' manifest rule (an undeclared process is told 6.2). It passes unchanged on the
+# Windows 11 host (156 checks, 0 failures, 2026-10-17).
+#
+# The list is olewinetest's gen_suites.py pointed at kernel32; --only narrows it to a
+# subtest. Children start on C: (the writable scratch disk) because the version test
+# writes its exe copies and manifests to the current directory.
+name: k32winetest
+description: Wine kernel32 conformance suite under the apitest sweep runner
+
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites kernel32 --only kernel32:version --register '' --out-dir tools/payloads/k32winetest"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+  - src: tools/payloads/k32winetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/k32winetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/k32winetest/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: build-{arch}/modules/rostests/winetests/kernel32/kernel32_winetest.exe
+    dest: bin/kernel32_winetest.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 3600
+  launch_idle_secs: 600

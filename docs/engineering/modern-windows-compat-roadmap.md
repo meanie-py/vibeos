@@ -488,8 +488,12 @@ runs it.
   with 7, under `WINETEST_PLATFORM=wine` (`classify_failures.py` makes the same todo_wine
   split for a guest log). Owed: in the guest, analyzer has 31 and layout 9 failures beyond
   todo_wine, all where the result depends on which fonts are installed (Arabic shaping,
-  justification, combining marks); the font suite outruns the sweep's fixed 120 s per
-  subtest (`PER_SUBTEST_TIMEOUT_MS` in apitest-sweep.c wants a per-suite override).
+  justification, combining marks). The font suite now finishes in the guest (1800 s
+  per-suite timeout; 2026-10-18: 208099 tests, 533 failures, 522 todo_wine + 8 todo_if): the
+  79 at :3932 were `GetUnicodeRanges` not merging adjacent ranges and keeping format 4's
+  closing 0xFFFF segment, which Windows does not (`opentype.c`, `__REACTOS__`). Owed: the 3
+  left, all the system font set (:4452/:4453 `GetFontSet` on a factory 3, :4568 a leaked
+  factory reference).
 - **mf.c:4553, the presentation clock's callback interval,** reads 27-188 ms instead of a
   tick, with or without the condition-variable fix; the 10 ms periodic pool timer alone runs
   at 64 Hz in wakeprobe. Repro (2026-10-17): `gen_suites.py ... --repeat mf:mf=3` then
@@ -498,6 +502,16 @@ runs it.
   mfplat.c:3308 (`0x102`) showed once in the same 6 boots. NOT the timer queue's order:
   its periodic re-arm did insert one place early (fixed, a real divergence from Wine's
   C), but with that fix on the media the same soak still failed 8 of 18.
+  2026-10-18, clockprobe (one-thread pool, 10 ms timer, a normal-priority spinner beside it):
+  ProductType ServerNT gave 3 callbacks per 500 ms, WinNT (client quantums) gives 11-16,
+  Windows 11 22-29; idle is 32 on all three. Owed: both wake hops onto the worker carry no
+  priority increment (the timer thread's condvar wait times out, then `KeReleaseSemaphore`
+  on the keyed-wait semaphore with 0, `ex-rust/src/keyedevt.rs`), as in ReactOS's C; Windows
+  wakes the worker through a worker factory and an IoCompletion instead. Measured
+  2026-10-19 (upstream-sync, ServerNT): Increment=1 on the keyed-event release changed
+  nothing (3/round either way), so hop 2 is not the limit there; hop 1 is, the timer
+  thread's timeout wake behind a same-priority spinner. Owed: quantum length or a
+  timeout-wake boost (scheduler policy), re-measured with clockprobe on WinNT.
   Seen once beside it: mf.c:4493 "got count 0, state 0".
 - **mf's converter scenario:** both builds fail mf.c's "SetTopology ... requiring a
   converter" checks (no converter MFT is registered: the codec gap below).
@@ -552,6 +566,23 @@ runs it.
   and kernel32's GetVersion/GetVersionEx/VerifyVersionInfo apply the manifest rule
   (`min(real, max(6.2, declared))`, 6.2 reports build 9200, 6.3 build 9600; RtlGetVersion
   stays truthful). Next: phase 3, the flip itself (the D-rows).
+- **`tools/payloads/hostapps` (2026-10-18):** 7-Zip, CMake and GnuPG from the host's
+  Program Files under the sweep runner, 30/30 green after two fixes it found: kernel32's
+  `GetFileInformationByHandle` wrote the FAT volume label over the caller's handle (every
+  archive failed), and classpnp's READ CAPACITY 16 zeroing overran pool, a BUGCHECK 0x19 from
+  any unprivileged `StorageAccessAlignmentProperty` query. Its stub-hit reading: three real
+  Windows 10/11 probes we lack, all with fallbacks: `FlsGetValue2` (newer MSVC CRT),
+  `GetFileInformationByName` (24H2), `AppPolicyGetProcessTerminationMethod`. Those three
+  are done (win11-flip, 2026-10-31), graded by hostapps' `w11api`/`w11tok` probes against
+  Windows 11's own answers (`w11*.win11.txt`): all eight `AppPolicyGet*`, the Win8 token
+  pseudo-handles under them (-4/-5/-6, token queries only, as on Windows), `FlsGetValue2`
+  and `GetFileInformationByName` match line for line, except where noted next. Divergences
+  left: ntdll has no `RtlFlsGetValue`/`RtlFlsGetValue2` (FLS lives in kernel32 here) and no
+  `NtQueryInformationByName` (kernel32 builds the stat records from basic/standard/internal/
+  attribute-tag queries); `FileCaseSensitiveByNameInfo` reads ERROR_INVALID_PARAMETER where
+  Windows says ERROR_ACCESS_DENIED for the same files, and why Windows refuses it is not
+  known. Still owed: `FileStorageInfo`/`FileAlignmentInfo` on fastfat and cdfs (winref
+  answers both, we give ERROR_NOT_SUPPORTED and 0); SVCFAIL on i386 and arm64.
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
   applet): exactly one stub is reached, the SEH smoke probe's deliberate

@@ -282,13 +282,22 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
     let SecurityDescriptor: PSECURITY_DESCRIPTOR;
     let mut Acl: PACL;
     let AclCopy: PACL;
-    let mut Sid: [PSID; 4] = [core::ptr::null_mut(); 4];
+    let mut Sid: [PSID; 6] = [core::ptr::null_mut(); 6];
     let WorldAuthority = SID_IDENTIFIER_AUTHORITY {
         Value: [0, 0, 0, 0, 0, 1],
     };
     let NtAuthority = SID_IDENTIFIER_AUTHORITY {
         Value: [0, 0, 0, 0, 0, 5],
     };
+    let AppPackageAuthority = SID_IDENTIFIER_AUTHORITY {
+        Value: [0, 0, 0, 0, 0, 15],
+    };
+    // Windows 11 (winref, 2026-10-19) grants KEY_READ on every hive root to ALL APPLICATION
+    // PACKAGES (S-1-15-2-1) and to this capability SID, after the four Server 2003 ACEs.
+    const READ_CAPABILITY_SUBS: [ULONG; 10] = [
+        3, 1024, 1065365936, 1281604716, 3511738428, 1654721687, 432734479, 3232135806,
+        4053264122, 3456934681,
+    ];
     let mut AceLength: ULONG;
     let mut AclLength: ULONG;
     let mut SidLength: ULONG;
@@ -296,13 +305,16 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
     let mut i: ULONG;
 
     SidLength = RtlLengthRequiredSid(1);
-    Sid[0] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, 0x44534D43u32);
-    Sid[1] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, 0x44534D43u32);
-    Sid[2] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, 0x44534D43u32);
+    Sid[0] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
+    Sid[1] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
+    Sid[2] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
     SidLength = RtlLengthRequiredSid(2);
-    Sid[3] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, 0x44534D43u32);
+    Sid[3] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
+    Sid[4] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
+    SidLength = RtlLengthRequiredSid(READ_CAPABILITY_SUBS.len() as ULONG);
+    Sid[5] = ExAllocatePoolWithTag(PagedPool, SidLength as usize, crate::cmsysini::TAG_CMSD);
 
-    if Sid[0].is_null() || Sid[1].is_null() || Sid[2].is_null() || Sid[3].is_null() {
+    if Sid.iter().any(|s| s.is_null()) {
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 1, 0, 0);
     }
 
@@ -310,6 +322,12 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
     Status |= RtlInitializeSid(Sid[1], &NtAuthority as *const _ as *mut _, 1);
     Status |= RtlInitializeSid(Sid[2], &NtAuthority as *const _ as *mut _, 1);
     Status |= RtlInitializeSid(Sid[3], &NtAuthority as *const _ as *mut _, 2);
+    Status |= RtlInitializeSid(Sid[4], &AppPackageAuthority as *const _ as *mut _, 2);
+    Status |= RtlInitializeSid(
+        Sid[5],
+        &AppPackageAuthority as *const _ as *mut _,
+        READ_CAPABILITY_SUBS.len() as u8,
+    );
     if !NT_SUCCESS(Status) {
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 2, 0, 0);
     }
@@ -322,17 +340,22 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
     *RtlSubAuthoritySid(Sid[2], 0) = SECURITY_LOCAL_SYSTEM_RID;
     *RtlSubAuthoritySid(Sid[3], 0) = SECURITY_BUILTIN_DOMAIN_RID;
     *RtlSubAuthoritySid(Sid[3], 1) = DOMAIN_ALIAS_RID_ADMINS;
+    *RtlSubAuthoritySid(Sid[4], 0) = 2; // SECURITY_APP_PACKAGE_BASE_RID
+    *RtlSubAuthoritySid(Sid[4], 1) = 1; // SECURITY_BUILTIN_PACKAGE_ANY_PACKAGE
+    for (n, sub) in READ_CAPABILITY_SUBS.iter().enumerate() {
+        *RtlSubAuthoritySid(Sid[5], n as ULONG) = *sub;
+    }
 
     AclLength = core::mem::size_of::<ACL>() as ULONG;
     i = 0;
-    while i < 4 {
+    while i < 6 {
         AceLength = 8;
         AceLength += SeLengthSid(Sid[i as usize]);
         AclLength += AceLength;
         i += 1;
     }
 
-    Acl = ExAllocatePoolWithTag(PagedPool, AclLength as usize, 0x44534D43u32) as PACL;
+    Acl = ExAllocatePoolWithTag(PagedPool, AclLength as usize, crate::cmsysini::TAG_CMSD) as PACL;
     if Acl.is_null() {
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 3, 0, 0);
     }
@@ -346,23 +369,21 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
     Status |= RtlAddAccessAllowedAce(Acl, ACL_REVISION, KEY_ALL_ACCESS, Sid[3]);
     Status |= RtlAddAccessAllowedAce(Acl, ACL_REVISION, KEY_READ, Sid[0]);
     Status |= RtlAddAccessAllowedAce(Acl, ACL_REVISION, KEY_READ, Sid[1]);
+    Status |= RtlAddAccessAllowedAce(Acl, ACL_REVISION, KEY_READ, Sid[4]);
+    Status |= RtlAddAccessAllowedAce(Acl, ACL_REVISION, KEY_READ, Sid[5]);
     if !NT_SUCCESS(Status) {
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 5, Status as ULONG_PTR, 0);
     }
 
-    Status = RtlGetAce(Acl, 0, &mut AceHeader as *mut _ as *mut *mut core::ffi::c_void);
-    (*AceHeader).AceFlags |= CONTAINER_INHERIT_ACE;
-    Status = RtlGetAce(Acl, 1, &mut AceHeader as *mut _ as *mut *mut core::ffi::c_void);
-    (*AceHeader).AceFlags |= CONTAINER_INHERIT_ACE;
-    Status = RtlGetAce(Acl, 2, &mut AceHeader as *mut _ as *mut *mut core::ffi::c_void);
-    (*AceHeader).AceFlags |= CONTAINER_INHERIT_ACE;
-    Status = RtlGetAce(Acl, 3, &mut AceHeader as *mut _ as *mut *mut core::ffi::c_void);
-    (*AceHeader).AceFlags |= CONTAINER_INHERIT_ACE;
+    for n in 0..6 {
+        Status = RtlGetAce(Acl, n, &mut AceHeader as *mut _ as *mut *mut core::ffi::c_void);
+        (*AceHeader).AceFlags |= CONTAINER_INHERIT_ACE;
+    }
 
     SecurityDescriptor = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<_SECURITY_DESCRIPTOR>() + AclLength as usize,
-        0x44534D43u32,
+        crate::cmsysini::TAG_CMSD,
     );
     if SecurityDescriptor.is_null() {
         KeBugCheckEx(ntkrnl_sys::bugcodes::REGISTRY_ERROR, 11, 6, 0, 0);
@@ -382,11 +403,11 @@ pub unsafe extern "system" fn CmpHiveRootSecurityDescriptor() -> PSECURITY_DESCR
     }
 
     i = 0;
-    while i < 4 {
-        ExFreePoolWithTag(Sid[i as usize] as *mut core::ffi::c_void, 0x44534D43u32);
+    while i < 6 {
+        ExFreePoolWithTag(Sid[i as usize] as *mut core::ffi::c_void, crate::cmsysini::TAG_CMSD);
         i += 1;
     }
-    ExFreePoolWithTag(Acl as *mut core::ffi::c_void, 0x44534D43u32);
+    ExFreePoolWithTag(Acl as *mut core::ffi::c_void, crate::cmsysini::TAG_CMSD);
 
     SecurityDescriptor
 }

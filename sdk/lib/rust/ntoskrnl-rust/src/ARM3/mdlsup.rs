@@ -1127,7 +1127,12 @@ pub unsafe extern "system" fn MmMapLockedPagesWithReservedMapping(
         MdlPages = MdlPages.add(1);
     }
 
-    (*Mdl).MappedSystemVa = MappingAddress;
+    // The page the reserved PTEs map, plus the MDL's byte offset: an unaligned
+    // MappingAddress does not carry into the result (Windows 8 on, kmtest
+    // MmReservedMapping), and MappedSystemVa is that same address -- it lacked the byte
+    // offset, so MmGetSystemAddressForMdlSafe on an offset MDL returned the page start.
+    let SystemVa = (PAGE_ALIGN(MappingAddress as usize) as ULONG_PTR + (*Mdl).ByteOffset as ULONG_PTR) as PVOID;
+    (*Mdl).MappedSystemVa = SystemVa;
     (*Mdl).MdlFlags |= MDL_MAPPED_TO_SYSTEM_VA as i16;
 
     if ((*Mdl).MdlFlags as u32 & MDL_PARTIAL) != 0 {
@@ -1138,7 +1143,7 @@ pub unsafe extern "system" fn MmMapLockedPagesWithReservedMapping(
         (*Mdl).MdlFlags |= 0x0020 as i16;
     }
 
-    (MappingAddress as ULONG_PTR + (*Mdl).ByteOffset as ULONG_PTR) as PVOID
+    SystemVa
 }
 
 #[no_mangle]

@@ -140,6 +140,48 @@ static void Test_NonClientMetrics()
     COMPARE_CACHE(CaptionHeight_chain);
 }
 
+/* Windows takes NONCLIENTMETRICS in the XP layout or in Vista's, which appends
+ * iPaddedBorderWidth; it writes exactly cbSize bytes and fails any other size. A program
+ * built for Vista or later passes the larger one on every version since. */
+static void Test_NonClientMetricsSizes(void)
+{
+    const UINT xpW = FIELD_OFFSET(NONCLIENTMETRICSW, lfMessageFont) + sizeof(LOGFONTW);
+    const UINT xpA = FIELD_OFFSET(NONCLIENTMETRICSA, lfMessageFont) + sizeof(LOGFONTA);
+    static const struct { int delta; BOOL ret; } sizes[] =
+        { { 0, TRUE }, { 4, TRUE }, { 2, FALSE }, { 8, FALSE }, { -4, FALSE } };
+    DWORD storage[(sizeof(NONCLIENTMETRICSW) + 64) / sizeof(DWORD)];
+    BYTE *buf = (BYTE *)storage;
+    UINT i, cb;
+    BOOL ret;
+
+    for (i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++)
+    {
+        cb = xpW + sizes[i].delta;
+        memset(storage, 0xab, sizeof(storage));
+        *(UINT *)buf = cb;
+        ret = SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, 0, buf, 0);
+        ok(ret == sizes[i].ret, "W cbSize %u: got %d\n", cb, ret);
+        ok(*(UINT *)buf == cb, "W cbSize %u: came back %u\n", cb, *(UINT *)buf);
+        ok(buf[cb] == 0xab, "W cbSize %u: wrote past it\n", cb);
+        if (ret && sizes[i].delta == 4)
+            ok(*(DWORD *)(buf + xpW) != 0xabababab, "W: iPaddedBorderWidth not written\n");
+
+        cb = xpA + sizes[i].delta;
+        memset(storage, 0xab, sizeof(storage));
+        *(UINT *)buf = cb;
+        ret = SystemParametersInfoA(SPI_GETNONCLIENTMETRICS, 0, buf, 0);
+        ok(ret == sizes[i].ret, "A cbSize %u: got %d\n", cb, ret);
+        ok(*(UINT *)buf == cb, "A cbSize %u: came back %u\n", cb, *(UINT *)buf);
+        ok(buf[cb] == 0xab, "A cbSize %u: wrote past it\n", cb);
+        if (ret && sizes[i].delta == 4)
+            ok(*(DWORD *)(buf + xpA) != 0xabababab, "A: iPaddedBorderWidth not written\n");
+    }
+
+    memset(storage, 0, sizeof(storage));
+    ok(!SystemParametersInfoW(SPI_GETNONCLIENTMETRICS, 0, buf, 0), "W cbSize 0 succeeded\n");
+    ok(!SystemParametersInfoA(SPI_GETNONCLIENTMETRICS, 0, buf, 0), "A cbSize 0 succeeded\n");
+}
+
 static void Test_MouseSpeed()
 {
     ULONG ulMouseSpeed, temp;
@@ -278,6 +320,7 @@ START_TEST(SystemParametersInfo)
                          200, 200, 300, 300, NULL, NULL, 0, NULL);
 
     Test_NonClientMetrics();
+    Test_NonClientMetricsSizes();
     Test_MouseSpeed();
     Test_GradientCaptions();
 

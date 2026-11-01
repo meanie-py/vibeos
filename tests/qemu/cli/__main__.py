@@ -340,9 +340,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--allow-stale", action="store_true")
     s.add_argument(
         "--media",
-        metavar="ISO",
-        help="boot this x86 livecd instead of build-<arch>'s: one tools/media_manifest.py "
-        "--assemble mastered, admitted only when its provenance stamp matches this tree",
+        metavar="IMAGE",
+        help="boot this livecd (x86 livecd.iso, arm64 livecd.img) instead of the tree's own: "
+        "one tools/media_manifest.py --assemble mastered, admitted only when its provenance "
+        "stamp matches this tree",
     )
     s.add_argument(
         "--timing",

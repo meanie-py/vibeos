@@ -24,6 +24,7 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 extern "C" {
     static SeDebugPrivilege: LUID;
     static mut KdDebuggerEnabled: BOOLEAN;
+    static mut KdDebuggerNotPresent: BOOLEAN;
     static mut KdAutoEnableOnEvent: BOOLEAN;
     static mut KdPitchDebugger: BOOLEAN;
     static mut KdPrintBufferSize: ULONG;
@@ -241,7 +242,28 @@ pub unsafe extern "system" fn NtSystemDebugControl(
             }
         }
 
+        // Vista on: with no debugger attached, the debugger commands (0-20, and the Vista+
+        // ones from 32 up) answer STATUS_DEBUGGER_INACTIVE instead of running (kmtest
+        // NtSystemDebugControl; Windows 11 agrees). 21-31 (enable/disable, AutoKd, the
+        // print buffer, triage dumps) still run. The breakpoint is UNSUCCESSFUL only when
+        // KD is off altogether.
+        let inactive = KdDebuggerNotPresent != 0u8
+            && ((Command as i32) <= SysDbgCheckLowMemory as i32 || (Command as i32) >= 32);
         let status = match Command {
+            SysDbgBreakPoint if inactive && KdDebuggerEnabled != 0u8 => STATUS_DEBUGGER_INACTIVE,
+            SysDbgBreakPoint => {
+                if KdDebuggerEnabled != 0u8 {
+                    DbgBreakPointWithStatus(DBG_STATUS_DEBUG_CONTROL);
+                    STATUS_SUCCESS
+                } else {
+                    STATUS_UNSUCCESSFUL
+                }
+            }
+            _ if inactive => STATUS_DEBUGGER_INACTIVE,
+            // 32-36 (the user-mode break/attach PIDs, Vista) and 37 (SysDbgGetLiveKernelDump,
+            // 8.1) exist on Windows 10, so with a debugger attached they are not an invalid
+            // class (kmtest NtSystemDebugControl :248/:263). We do not implement them.
+            _ if (32..=37).contains(&(Command as i32)) => STATUS_NOT_IMPLEMENTED,
             SysDbgQueryModuleInformation => {
                 STATUS_INVALID_INFO_CLASS
             }
@@ -281,15 +303,6 @@ pub unsafe extern "system" fn NtSystemDebugControl(
                     )
                 } else {
                     STATUS_NOT_IMPLEMENTED
-                }
-            }
-
-            SysDbgBreakPoint => {
-                if KdDebuggerEnabled != 0u8 {
-                    DbgBreakPointWithStatus(DBG_STATUS_DEBUG_CONTROL);
-                    STATUS_SUCCESS
-                } else {
-                    STATUS_UNSUCCESSFUL
                 }
             }
 

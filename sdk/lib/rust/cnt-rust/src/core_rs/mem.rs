@@ -45,8 +45,8 @@ pub fn cmp(a: &[u8], b: &[u8]) -> i32 {
 /// unfolded** `unsigned char` difference `*p1 - *p2` (NOT the folded
 /// one). Equal → 0. Caller passes equal-length slices (the shim slices
 /// both to `n`); the ReactOS Vista `NULL`/`n!=0` `_NLSCMPERROR` guard
-/// is dead under the NT 5.x kernel (OSMajorVersion < 6), so NULL is
-/// never validly passed and is not modeled here.
+/// lives in the `_memicmp` shim (`cabi/generated.rs`), which never
+/// hands this a NULL.
 #[inline]
 pub fn icmp(a: &[u8], b: &[u8]) -> i32 {
     #[inline]

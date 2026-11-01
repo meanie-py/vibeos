@@ -57,7 +57,7 @@ LocaleID = 409
 ; set product option
 ; 0: ReactOS Server
 ; 1: ReactOS Workstation
-ProductOption = 0
+ProductOption = 1
 
 ; Enable this section to automatically launch programs
 ; after 3rd boot
