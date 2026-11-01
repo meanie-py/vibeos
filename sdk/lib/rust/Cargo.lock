@@ -4399,6 +4399,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "normaliz-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "normaliz-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "notepad-cargo"
 version = "0.1.0"
 dependencies = [

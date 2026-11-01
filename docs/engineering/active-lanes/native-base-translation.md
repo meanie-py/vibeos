@@ -143,8 +143,7 @@ What the batch added to the shared crates and tools:
      island's `[T; 0]` is an incomplete declaration, not a length mismatch.
    - **Smoke** passes on all three arches.
    - **normaliz is not native:** IdnToAscii/IdnToUnicode say "Taken from Wine
-     kernel32/locale.c", and nameprep.c is their table. It waits for the owner's call on
-     Wine.
+     kernel32/locale.c", and nameprep.c is their table. The owner approved it: item 7.
 6. **The boot loaders' RTL is Rust except `unicode.c` (2026-10-18, $0).** freeldr (BIOS),
    rosload and uefildr link `blrtl-rust`: the kernel's bitmap/compress/crc32/largeint/
    random/byteswap/mem rlibs and rtl-diag's new `image` feature, with blrtl.cmake's per-arch
@@ -170,7 +169,27 @@ What the batch added to the shared crates and tools:
    - librtl's crates take ntkrnl-sys without `hal_bindgen`: it raw-dylib-imported the three
      Nls* globals librtl itself defines, and amd64 ntdll's link crashed lld over it.
    Smoke reached on i386, amd64, arm64 and amd64-bios.
-7. Pick the next native area from `rust-port-status.md` (what is still C and not on the
+7. **normaliz is Rust (2026-11-01, owner's call on this Wine-derived DLL, $0.03).** All four
+   TUs went through `rustconv port`: `nameprep.c`'s two tables as `port data` ($0), the
+   other three as 9 sealed Haiku functions. `cargo_cell_gen` moved the link to
+   `normaliz-cargo`, which is PE-EQUIVALENT to the cmake build on all three arches, and smoke
+   reached the marker on i386, amd64 and arm64. `strlenW`/`tolowerW` (ReactOS
+   `wine/unicode.h`'s `wcslen`/`towlower`) went into `win32macros-rust` for every Wine crate.
+   - **Two Wine bugs, fixed in the Rust with divergence comments.** `IdnToUnicode` bounds
+     its punycode insert by `cchASCIIChar`, the INPUT length, so a shorter output buffer is
+     overrun; and under `IDN_USE_STD3_ASCII_RULES` an input of just `L"\0"` reads
+     `lpASCIICharStr[-1]` (an empty label's "last character"). The host harness found the
+     second: the genuine C faulted on its guard page.
+   - **Graded vs the genuine C** (`difftest/normaliz_ascii.json`, 13,344 cases;
+     `normaliz_unicode.json`, 1,060 curated cases): 0 mismatches, every mutant detected.
+     Two harness features made it possible: `c_env_probe` (the shared env reports state
+     after each call, here the last error and live heap blocks, so an error code or a leak
+     is a mismatch) and `{"arg": n, "mul": 2}` extents for WCHAR-counted buffers.
+   - **Owed: `port data` flips CMake.** It comments the data TU out of the source list, so
+     running it while a build of the tree is going produced a LINK_FAIL on arm64 (the C's
+     users linked without the tables, the Rust not yet linked). Not detected as
+     BUILD_INPUTS_MOVED; `port data`/`flip` should refuse while this tree is building.
+8. Pick the next native area from `rust-port-status.md` (what is still C and not on the
    skip list below).
 
 ## Not ours: skip these
