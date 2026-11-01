@@ -117,34 +117,6 @@ pub static g_Layers: [LayerEntry; 4] = [
     LayerEntry { Name: core::ptr::null(), Id: 0 },
 ];
 
-pub static g_ExtExe: [u16; 5] = ['.' as u16, 'e' as u16, 'x' as u16, 'e' as u16, 0];
-pub static g_ExtMsi: [u16; 5] = ['.' as u16, 'm' as u16, 's' as u16, 'i' as u16, 0];
-pub static g_ExtPif: [u16; 5] = ['.' as u16, 'p' as u16, 'i' as u16, 'f' as u16, 0];
-pub static g_ExtBat: [u16; 5] = ['.' as u16, 'b' as u16, 'a' as u16, 't' as u16, 0];
-pub static g_ExtCmd: [u16; 5] = ['.' as u16, 'c' as u16, 'm' as u16, 'd' as u16, 0];
-
-// Mutable only so the raw-pointer table can be a plain static without a Sync wrapper.
-pub static mut g_AllowedExtensions: [PCWSTR; 6] = [
-    core::ptr::addr_of!(g_ExtExe) as PCWSTR,
-    core::ptr::addr_of!(g_ExtMsi) as PCWSTR,
-    core::ptr::addr_of!(g_ExtPif) as PCWSTR,
-    core::ptr::addr_of!(g_ExtBat) as PCWSTR,
-    core::ptr::addr_of!(g_ExtCmd) as PCWSTR,
-    core::ptr::null(),
-];
-
-
-
-
-
-
-
-
-
-
-
-
-
 #[no_mangle]
 pub unsafe extern "C" fn IsBuiltinLayer(Name: PCWSTR) -> i32 {
     let mut n: usize;
@@ -184,8 +156,6 @@ pub unsafe extern "C" fn ACDBG_FN_v(FunctionName: PCSTR, Format: PCWSTR, ap_list
 
     OutputDebugStringW(Buffer.as_ptr());
 }
-
-
 
 unsafe extern "C" fn GetLayerInfo(Filename: PCWSTR, QueryFlags: DWORD, OSMode: PDWORD, Enabledlayers: PDWORD, customLayers: &mut CSimpleArray<CStringW>) -> BOOL {
     let mut wszLayers: [WCHAR; (MAX_LAYER_LENGTH) as _] = [0; (MAX_LAYER_LENGTH) as _];

@@ -309,19 +309,11 @@ extern "C" {
     pub static IID_IRunningObjectTable: IID;
 }
 
-#[repr(C)]
-pub struct CFileVersionInfo {
-    pub m_pInfo: PVOID,
-    pub m_wLang: WORD,
-    pub m_wCode: WORD,
-    pub m_wszLang: [WCHAR; 64],
-}
+pub use crate::island::CFileVersionInfo;
 
 // Deterministic COM scaffold for CFileDefExt; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -330,7 +322,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -764,11 +756,7 @@ pub type PROPSHEETPAGE = PROPSHEETPAGEW;
 
 pub use crate::island::OPENASINFO;
 
-#[repr(C)]
-pub struct CIDA {
-    pub cidl: UINT,
-    pub aoffset: [UINT; 1],
-}
+pub use crate::island::CIDA;
 
 #[repr(C)]
 pub struct DIRTREESTATS {
@@ -875,21 +863,19 @@ pub type EXPPS = UINT;
 
 pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAGE, LPARAM) -> BOOL>;
 
+// winuser.h: on 32-bit the *Ptr forms are macros over the *Long* exports.
+#[cfg(not(target_pointer_width = "32"))]
+use crate::island::{GetWindowLongPtrW, SetWindowLongPtrW};
+#[cfg(target_pointer_width = "32")]
+use crate::island::{GetWindowLongW as GetWindowLongPtrW, SetWindowLongW as SetWindowLongPtrW};
+
 extern "system" {
-    #[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")] fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
-    #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")] fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn GetFileVersionInfoSizeW(path: LPCWSTR, handle: *mut DWORD) -> DWORD;
     fn GetFileVersionInfoW(path: LPCWSTR, handle: DWORD, bytes: DWORD, data: PVOID) -> BOOL;
     fn VerLanguageNameW(lang: DWORD, buffer: LPWSTR, capacity: DWORD) -> DWORD;
-    #[link_name = "CDataObjectHIDA_CreateCIDA_RustBridge"]
-    fn CDataObjectHIDA_CreateCIDA(data: *mut IDataObject, cida: *mut *mut CIDA, medium: *mut STGMEDIUM) -> HRESULT;
-    #[link_name = "CDataObjectHIDA_DestroyCIDA_RustBridge"]
-    fn CDataObjectHIDA_DestroyCIDA(cida: *mut CIDA, medium: *mut STGMEDIUM);
-    #[link_name = "_ILCopyCidaToaPidl_RustBridge"]
-    fn CFileDefExt_ILCopyCidaToaPidl(folder: *mut LPITEMIDLIST, cida: *const CIDA) -> *mut LPITEMIDLIST;
     fn FindClose(find: HANDLE) -> BOOL;
     fn NtQueryInformationFile(file: HANDLE, iosb: *mut _IO_STATUS_BLOCK, info: PVOID, bytes: ULONG, class: DWORD) -> NTSTATUS;
     fn GetFileAttributesW(path: LPCWSTR) -> DWORD;
@@ -897,17 +883,9 @@ extern "system" {
     fn GetFileAttributesExW(path: LPCWSTR, level: DWORD, data: LPVOID) -> BOOL;
     fn PathFindExtensionW(path: LPCWSTR) -> LPWSTR;
     fn PathFindFileNameW(path: LPCWSTR) -> LPWSTR;
-    #[link_name = "PathRemoveExtensionW"]
-    fn PathRemoveExtension(path: LPWSTR);
-    #[link_name = "PathRemoveArgsW"]
-    fn PathRemoveArgs(path: LPWSTR);
     fn PathUnquoteSpacesW(path: LPWSTR) -> BOOL;
-    #[link_name = "PathSearchAndQualifyW"]
-    fn PathSearchAndQualify(path: LPCWSTR, out: LPWSTR, capacity: UINT) -> BOOL;
     fn PathFileExistsW(path: LPCWSTR) -> BOOL;
     fn PathIsDirectoryW(path: LPCWSTR) -> BOOL;
-    #[link_name = "PathIsDotOrDotDotW_RustBridge"]
-    fn PathIsDotOrDotDotW(path: LPCWSTR) -> BOOL;
     fn PathRemoveBackslashW(path: LPWSTR) -> LPWSTR;
     fn PathAppendW(path: LPWSTR, more: LPCWSTR) -> BOOL;
     fn PathParseIconLocationW(path: LPWSTR) -> INT;
@@ -918,25 +896,10 @@ extern "system" {
     fn GetTimeFormatW(locale: DWORD, flags: DWORD, time: *const SYSTEMTIME, format: LPCWSTR, out: LPWSTR, capacity: INT) -> INT;
     fn GetTickCount() -> DWORD;
     fn DragQueryFileW(drop: HDROP, file: UINT, path: LPWSTR, capacity: UINT) -> UINT;
-    fn ReleaseStgMedium(medium: *mut STGMEDIUM);
     fn GetPrivateProfileIntW(section: LPCWSTR, key: LPCWSTR, default: INT, file: LPCWSTR) -> UINT;
     fn GetPrivateProfileStringW(section: LPCWSTR, key: LPCWSTR, default: LPCWSTR, out: LPWSTR, capacity: DWORD, file: LPCWSTR) -> DWORD;
     fn WritePrivateProfileStringW(section: LPCWSTR, key: LPCWSTR, value: LPCWSTR, file: LPCWSTR) -> BOOL;
-    #[link_name = "DataObject_GetHIDACount_RustBridge"]
-    fn DataObject_GetHIDACount(data: *mut IDataObject) -> HRESULT;
-    #[link_name = "SHELL32_GetDllFromRundll32CommandLine_RustBridge"]
-    fn SHELL32_GetDllFromRundll32CommandLine(command: LPCWSTR, out: LPWSTR, capacity: UINT) -> HRESULT;
-    #[link_name = "SHELL_DisplayNameOf_RustBridge"]
-    fn SHELL_DisplayNameOf(folder: *mut IShellFolder, pidl: LPCITEMIDLIST, flags: DWORD, out: *mut LPWSTR) -> HRESULT;
-    #[link_name = "SH_FormatFileSizeWithBytes_RustBridge"]
-    fn SH_FormatFileSizeWithBytes(size: *const ULARGE_INTEGER, out: LPWSTR, capacity: UINT) -> LPWSTR;
-    #[link_name = "GetPhysicalFileSize_RustBridge"]
-    fn GetPhysicalFileSize(path: LPCWSTR, size: *mut ULARGE_INTEGER) -> BOOL;
     fn lstrcmpW(left: LPCWSTR, right: LPCWSTR) -> INT;
-    #[link_name = "SH_CreatePropertySheetPage_RustBridge"]
-    fn SH_CreatePropertySheetPage(id: WORD, proc_: DLGPROC, param: LPARAM, title: LPCWSTR) -> HPROPSHEETPAGE;
-    #[link_name = "SH_CreatePropertySheetPageEx_RustBridge"]
-    fn SH_CreatePropertySheetPageEx(id: WORD, proc_: DLGPROC, param: LPARAM, title: LPCWSTR, callback: unsafe extern "system" fn(HWND, UINT, *mut PROPSHEETPAGEW) -> UINT) -> HPROPSHEETPAGE;
 }
 
 #[inline] unsafe fn GetWindowLongPtr(window: HWND, index: INT) -> LONG_PTR { GetWindowLongPtrW(window, index) }
@@ -1060,7 +1023,6 @@ extern "C" {
 }
 
 extern "C" {
-    fn memset(dst: *mut core::ffi::c_void, value: INT, bytes: usize) -> *mut core::ffi::c_void;
 }
 #[inline]
 unsafe fn CopyMemory<D, S, N: CppComSize>(
@@ -1173,6 +1135,28 @@ pub static CPP_COM_WSTR_VERSION_STRING_PREFIX: [WCHAR; 17] = [0x005C,0x0053,0x00
 pub static CPP_COM_WSTR_VERSION_ROOT: [WCHAR; 2] = [0x005C,0];
 
 use core::ffi::c_void;
+// One declaration per external symbol: win32.rs.
+use crate::win32::ReleaseStgMedium;
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::memset;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+use crate::island::PathRemoveArgsW as PathRemoveArgs;
+use crate::island::PathRemoveExtensionW as PathRemoveExtension;
+use crate::island::PathSearchAndQualifyW as PathSearchAndQualify;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::file_def_ext_tu::DataObject_GetHIDACount_RustBridge as DataObject_GetHIDACount;
+use crate::file_def_ext_tu::GetPhysicalFileSize_RustBridge as GetPhysicalFileSize;
+use crate::file_def_ext_tu::PathIsDotOrDotDotW_RustBridge as PathIsDotOrDotDotW;
+use crate::file_def_ext_tu::SHELL32_GetDllFromRundll32CommandLine_RustBridge as SHELL32_GetDllFromRundll32CommandLine;
+use crate::file_def_ext_tu::SHELL_DisplayNameOf_RustBridge as SHELL_DisplayNameOf;
+use crate::file_def_ext_tu::SH_CreatePropertySheetPageEx_RustBridge as SH_CreatePropertySheetPageEx;
+use crate::file_def_ext_tu::SH_CreatePropertySheetPage_RustBridge as SH_CreatePropertySheetPage;
+use crate::file_def_ext_tu::SH_FormatFileSizeWithBytes_RustBridge as SH_FormatFileSizeWithBytes;
+use crate::file_def_ext_tu::_ILCopyCidaToaPidl_RustBridge as CFileDefExt_ILCopyCidaToaPidl;
+use crate::shell32::shldataobject::CDataObjectHIDA_CreateCIDA_RustBridge as CDataObjectHIDA_CreateCIDA;
+use crate::shell32::shldataobject::CDataObjectHIDA_DestroyCIDA_RustBridge as CDataObjectHIDA_DestroyCIDA;
 // The crate's own functions: the definition is the declaration.
 use crate::shell32::iconcache::ExtractIconExW;
 use crate::wine::pidl::ILCombine;
@@ -1811,7 +1795,7 @@ pub unsafe fn CFileDefExt_InitFileAttr_body(this: *mut CFileDefExt, hwndDlg: HWN
             let mut FileSize: ULARGE_INTEGER = core::mem::zeroed();
             FileSize.QuadPart = ((FileInfo.nFileSizeHigh as ULONGLONG) << 32) | FileInfo.nFileSizeLow as ULONGLONG;
             if SH_FormatFileSizeWithBytes(
-                &FileSize as *const ULARGE_INTEGER,
+                (&FileSize as *const ULARGE_INTEGER).cast(),
                 wszBuf.as_mut_ptr(),
                 wszBuf.len() as UINT,
             ).is_null() == false {
@@ -1819,10 +1803,10 @@ pub unsafe fn CFileDefExt_InitFileAttr_body(this: *mut CFileDefExt, hwndDlg: HWN
 
                 if GetPhysicalFileSize(
                     (*this).m_wszPath.as_ptr() as *const u16,
-                    &mut FileSize as *mut ULARGE_INTEGER,
+                    (&mut FileSize as *mut ULARGE_INTEGER).cast(),
                 ) != 0 {
                     SH_FormatFileSizeWithBytes(
-                        &FileSize as *const ULARGE_INTEGER,
+                        (&FileSize as *const ULARGE_INTEGER).cast(),
                         wszBuf.as_mut_ptr(),
                         wszBuf.len() as UINT,
                     );
@@ -2825,18 +2809,18 @@ pub unsafe fn CFileDefExt_Initialize_body(this: *mut CFileDefExt, pidlFolder: PC
         return E_FAIL;
     }
 
-    let count = DataObject_GetHIDACount(pDataObj);
+    let count = DataObject_GetHIDACount((pDataObj).cast());
     (*this).m_bMultifile = (count > 1) as BOOL;
 
     if (*this).m_bMultifile != 0 {
         let mut cida: *mut CIDA = core::ptr::null_mut();
         let mut cida_medium: STGMEDIUM = core::mem::zeroed();
-        if CDataObjectHIDA_CreateCIDA(pDataObj, &mut cida, &mut cida_medium) >= 0 {
+        if CDataObjectHIDA_CreateCIDA((pDataObj).cast(), (&raw mut cida).cast(), &mut cida_medium) >= 0 {
             (*this).m_pidls = CFileDefExt_ILCopyCidaToaPidl(&raw mut (*this).m_pidlFolder, cida);
             if !(*this).m_pidls.is_null() {
                 (*this).m_cidl = (*cida).cidl;
             }
-            CDataObjectHIDA_DestroyCIDA(cida, &mut cida_medium);
+            CDataObjectHIDA_DestroyCIDA((cida).cast(), &mut cida_medium);
         }
     }
 
@@ -2893,13 +2877,13 @@ pub unsafe fn CFileDefExt_AddPages_body(this: *mut CFileDefExt, pfnAddPage: LPFN
         GeneralPageProc
     };
 
-    let hPage: HPROPSHEETPAGE = SH_CreatePropertySheetPageEx(
+    let hPage: HPROPSHEETPAGE = (SH_CreatePropertySheetPageEx(
         wResId,
-        pfnFirstPage,
+        Some(pfnFirstPage),
         this as LPARAM,
         core::ptr::null_mut(),
         CFileDefExt_PropSheetPageLifetimeCallback,
-    );
+    )).cast();
 
     let hr: HRESULT = AddPropSheetPage(hPage, pfnAddPage, lParam);
 
@@ -2916,21 +2900,21 @@ pub unsafe fn CFileDefExt_AddPages_body(this: *mut CFileDefExt, pfnAddPage: LPFN
     if (*this).m_bDir == 0 && GetFileVersionInfoSizeW((*this).m_wszPath.as_ptr(), core::ptr::null_mut()) != 0 {
         let hPage = SH_CreatePropertySheetPage(
             IDD_FILE_VERSION as WORD,
-            VersionPageProc,
+            Some(VersionPageProc),
             this as LPARAM,
             core::ptr::null_mut(),
         );
-        AddPropSheetPage(hPage, pfnAddPage, lParam);
+        AddPropSheetPage((hPage).cast(), pfnAddPage, lParam);
     }
 
     if (*this).m_bDir != 0 {
         let hPage = SH_CreatePropertySheetPage(
             IDD_FOLDER_CUSTOMIZE as WORD,
-            FolderCustomizePageProc,
+            Some(FolderCustomizePageProc),
             this as LPARAM,
             core::ptr::null_mut(),
         );
-        AddPropSheetPage(hPage, pfnAddPage, lParam);
+        AddPropSheetPage((hPage).cast(), pfnAddPage, lParam);
     }
 
     S_OK

@@ -19,6 +19,10 @@
 //     for why a second re-derivation is a latent HKEY leak — two earlier ones both dropped the
 //     destructor).
 use crate::prelude::*;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::shell32::shlfolder::AddClassKeyToArray_RustBridge as AddClassKeyToArray;
+use crate::shell32::shlfolder::SHELL32_BindToSF_RustBridge as SHELL32_BindToSF;
+use crate::shell32::shlfolder::SHELL32_DefaultContextMenuCallBack_RustBridge as SHELL32_DefaultContextMenuCallBack;
 // The crate's own functions: the definition is the declaration.
 use crate::wine::shellord::SHRunControlPanel;
 use crate::wine::shlmenu::Shell_MergeMenus;
@@ -142,12 +146,6 @@ pub unsafe extern "system" fn CNetFolderExtractIcon_RustBridge(
 // itself fixed to `crate::types::HKEY`; see that module's header), and the two are different
 // Rust types of the same width/ABI.
 extern "system" {
-    #[link_name = "SHELL32_DefaultContextMenuCallBack_RustBridge"]
-    fn SHELL32_DefaultContextMenuCallBack(psf: *mut IShellFolder, pdo: *mut IDataObject, msg: UINT) -> HRESULT;
-    #[link_name = "AddClassKeyToArray_RustBridge"]
-    fn AddClassKeyToArray(szClass: LPCWSTR, array: *mut crate::types::HKEY, cKeys: *mut UINT) -> LONG;
-    #[link_name = "SHELL32_BindToSF_RustBridge"]
-    fn SHELL32_BindToSF(pidlRoot: LPCITEMIDLIST, ppfti: *mut PERSIST_FOLDER_TARGET_INFO, pidl: LPCITEMIDLIST, clsid: *const CLSID, riid: REFIID, ppvOut: *mut LPVOID) -> HRESULT;
 }
 
 /// shellutils.h:218 `#define SHELL_ExecuteControlPanelCPL(hwnd, cpl) SHRunControlPanel(cpl, hwnd)`
@@ -339,7 +337,7 @@ pub unsafe extern "system" fn CNetFolder_BindToSF_RustBridge(
     riid: REFIID,
     ppvOut: *mut LPVOID,
 ) -> HRESULT {
-    SHELL32_BindToSF(pidlRoot, ppfti, pidl, pclsid, riid, ppvOut)
+    SHELL32_BindToSF(pidlRoot, ppfti, pidl, (pclsid).cast(), riid, ppvOut)
 }
 
 #[no_mangle]

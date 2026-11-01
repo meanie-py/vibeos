@@ -83,7 +83,7 @@ pub unsafe extern "system" fn CdFspDispatch(
 
     let mut irp_context: *mut IRP_CONTEXT = Context as *mut IRP_CONTEXT;
     let mut irp: PIRP = (*irp_context).Irp;
-    let mut irp_sp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(irp);
+    let irp_sp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(irp);
     let mut vol_do: *mut VOLUME_DEVICE_OBJECT = core::ptr::null_mut();
     let mut thread_context: THREAD_CONTEXT = core::mem::zeroed();
 
@@ -207,8 +207,8 @@ pub unsafe extern "system" fn CdFspDispatch(
             as *mut IRP_CONTEXT;
 
         irp = (*irp_context).Irp;
-        irp_sp = IoGetCurrentIrpStackLocation(irp);
-        ntkrnl_sys::__analysis_assert!((!irp_sp.is_null()) as BOOLEAN);
+        // fspdisp.c reloads IrpSp here only for a PREfast `__analysis_assert`; nothing
+        // after it reads IrpSp, so the reload is not carried.
 
         // Continue the outer loop
     }

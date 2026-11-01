@@ -602,6 +602,82 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **setupapi file-queue COPIES fail `ERROR_ACCESS_DENIED` on the live boot (open, found
+  2026-11-01, both the C and setupapi-rust).** In the modrun setupapi suite, the queued delete
+  and rename succeed in the same directory, but both copies raise `SPFILENOTIFY_COPYERROR`
+  err=5. The ReactOS arm of `do_file_copyW` (queue.c) extracts every file through
+  `GetTempFileNameW(GetTempPathW())`, and on the live CD boot `%TEMP%` does not exist: the
+  probe's first run failed to open a file there with `ERROR_PATH_NOT_FOUND`. Separately, the
+  COPYERROR notification for the second file names the FIRST file's target (`a2.txt` for
+  `b.txt`), in both builds. Not yet checked: whether an installed (non-live) system has the
+  same failure, and what device installs from the CD do instead. Repro:
+  `MODRUN_SUITES=setupapi`, then `./vibeos-cli smoke --arch amd64 --payload modrun`, and look
+  for the `copyerror` lines.
+- **arm64 kmtest: `MiIncrementPageTableReferences` counts a page table past 512 (open, found
+  2026-11-01, one occurrence, recovered on retry).** A kernel Rust panic in the kmtest sweep:
+  `assertion failed: new_val <= ntkrnl_sys::mm::PTE_PER_PAGE as u32` at
+  `ntoskrnl-rust/src/shim_exports.rs:1615` (the non-x86 arm, reading
+  `MMPFN.UsedPageTableEntries` of the PDE's page). BUGCHECK `0xE0525354`, P4 = 0x64F. 80 of
+  81 launched tests had passed, and the retry went 104/104. It appeared in the gate
+  `20261101-133030-vbj0pxqz` (shell32-com @ `99c26767a13`: the setupapi flip, which is
+  user-mode only), with logs at `conf-arm64-a1/conformance.log` and `smoke-conf-arm64-r1/`.
+  Not yet triaged. Likely shapes are an increment without its matching decrement
+  (map/unmap imbalance) or a PFN read for the wrong PDE. Start with `farm --arches arm64`
+  using the conformance payload, and arm the tripwire before reading the dump.
+- **amd64-bios: demand-zero fault on an already-valid PTE (open, found 2026-11-01, one
+  occurrence in 8 boots, needs an MM owner).** A kernel Rust panic after the boot marker, while
+  a WoW64 32-bit app was starting (`[FEX-WOW64C]` lines, then winsxs manifest opens):
+  `assertion failed: ((*PointerPte).valid() as usize) == 0` at
+  `ntoskrnl-rust/src/ARM3/pagfault.rs:2292` (the `ASSERT` at the top of `MiResolveDemandZeroFault`,
+  inlined into the `MmArmAccessFault` call). BUGCHECK `0xE0525354`, P4 = 0x8F4, `-smp 2`. Seen in
+  the batch-66 gate `20261101-162640-4a__9dav` (`smoke-amd64-bios-a1/`, preserved in
+  `~/vibeos-flake-farm/fails/auto/20261101-170141-h3n7guz0-smoke-amd64-bios-BUGCHECK`). That
+  batch touched no MM code, and the same media then passed 3/3 boots at `-smp 1` and 4/4 at `-smp 2`.
+  The shape is a second CPU resolving the same PTE between the fault's validity check and the
+  demand-zero call, so look for a path that releases the working-set lock in between.
+  Repro: `farm --arches amd64-bios` with `--smp 2`.
+  **Second occurrence, a different signature, in the very next gate** (`20261101-171955-l2klm01v`,
+  same batch plus batch 67): `0x1A` from `[MMGUARD] rmap.MmDeleteRmap mapping-not-in-list`
+  (Page `0x55c4`, Address `0x7c3b7000`, inside a WoW64 process right after `gui32.exe` exited),
+  preserved at `~/vibeos-flake-farm/fails/auto/20261101-180225-j0r39m3x-smoke-amd64-bios-BUGCHECK`.
+  Today's earlier gates passed amd64-bios 5/5 with the same WoW64 workload, so either batch 66
+  raised the rate or this was bad luck. The WoW64 thunk generator lint-rs moved to Rust emits
+  byte-identical tables (NT 303 and win32k 740 syscalls, checked against master's Python), so
+  it is not the thunks.
+- **x86 user mode never calls vectored exception handlers (open, found 2026-11-01, needs
+  an owner: rtl-except + wow64).** i386's and amd64's Rust `RtlDispatchException` drop the
+  `RtlCallVectoredExceptionHandlers` call, faithfully: the C guards it with `#ifndef
+  _NTOSKRNL_`, and librtl only ever builds with `-D_NTOSKRNL_`
+  (`sdk/lib/rust/rtl-except/src/{i386,amd64}/except.rs` say so). arm64 calls them, gated on
+  `RtlpGetMode() == UserMode`. Seen in the guest: a probe's `AddVectoredExceptionHandler`
+  handler never ran on i386, and the fault ended the process (`20261101-132440-czxr3qjn`). The
+  fix is arm64's gate on the other two, but it would wake handlers that have never run there,
+  wow64's `Wow64pVeh` on amd64 among them, which deliberately goes through
+  `Wow64PrepareForException` instead (`dll/ntdll/dispatch/amd64/dispatch.S`). It needs smoke
+  and the wow64 suites, not a drive-by.
+- **netshell lists no connections: the guest's NIC has no driver in the Net class (open, found
+  2026-11-01, netstack).** The connection manager in both C and Rust walks
+  `SetupDiGetClassDevs(GUID_DEVCLASS_NET, DIGCF_PRESENT)`, which returns no devices. The
+  e1000 (`PCI\VEN_8086&DEV_100E`, virtio-net on arm64) is present with an empty class and no
+  service. Separately, `GetAdaptersInfo` names the one adapter "netstack smoltcp adapter
+  (Intel Ethernet)" where Windows gives its `{NetCfgInstanceId}` GUID, so even a Net-class device
+  would never match it. probes/netshell.c's `replay` lines retrace each step
+  (`20261101-150612-t3gz_kkw`). Network Connections stays empty until the netstack registers
+  its adapter the way NDIS miniports do.
+- **arm64 Pi 4: `services.exe` calls a null function pointer at boot, so no device installs
+  (open, found 2026-11-01, graviton; 1 of 5 Pi 4 boots of master `b2564f11c37`+bwfm).** The kill
+  record: `C0000005`, PC=0, LR=0, second chance, `Proc= services.exe`; the boot reaches the desktop
+  but umpnpmgr (inside services.exe) never installs `VIBEOS\CYW43455`, so the Wi-Fi driver never
+  loads. An earlier first-chance write to NULL in the same boot was at `0x7FFB7001488` (a DLL, not
+  yet named). Serial: `serial-20261101-153827` (bench `D:\home\vibeos-rpi4-setup`), second boot.
+  QEMU arm64 smoke does not show it.
+- **arm64 Pi 4: a real user-mode FAULTLOOP on a stack page (open, found 2026-11-01, graviton;
+  1 of 5 boots).** `[FAULTLOOP] VA=0x13BFFA PC=0x7FFB70376E0 ESR=0x92000047 DFSC=0x07`, the pager
+  reporting success 64 times with identical registers (the detector that fires only on a true
+  loop since 2026-10-04); X0=0x13AFF0, so a write just above the stack pointer region, in the same
+  `0x7FFB7...` DLL as the null write above. PTE `0x00C0000034BB0743` is valid when reported. Same
+  serial capture, third boot.
+
 - **arm64 kmtest ZwAllocateVirtualMemory: its two system threads now finish in the other order
   (open question, found 2026-10-19, research; benign for the ratchet).** The pass count moved
   576/579/582 on the version-flip + handle-biasing branch, where master reads 581. Thread 1's
@@ -1011,6 +1087,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Pi 5 run `20261018-133122-fds63jk5`: `sntp: time set from 172.233.157.223: 2026-10-18
   17:33:20 UTC`, seconds from the host's clock. Files written before the sync still carry the
   fallback date.
+  **Second cause (FIXED 2026-11-01): the time SNTP set did not stay set.** After 13 days up,
+  the Pi 4 read 1:25 AM, 2025-01-01. `NtSetSystemTime` ends in `ExpSetTimeZoneInformation`,
+  which (as in the C) sets the system time back from `HalQueryRealTimeClock`, trusting that
+  `HalSetRealTimeClock` just wrote the RTC. The arm64 HAL's set was a no-op and its query
+  returned the fixed fallback, so every sync put the clock back to 2025-01-01 00:00. Each
+  6-hourly sync's "clock was N s off" was the time since the previous sync. The HAL now keeps
+  the time it is given as an offset from the generic timer (and writes QEMU's PL031 load
+  register), so the clock runs on from each set.
 
 - **arm64: keystrokes sent through QMP to the default virtio keyboard do not reach the
   desktop's windows** (OPEN, 2026-10-06, seen while gating nvme.sys). On a quiet arm64 boot,

@@ -57,6 +57,10 @@ pub struct Card {
     pub refuse_join: bool,
     /// The AP does not broadcast its SSID: only a scan that names it hears it.
     pub ap_hidden: bool,
+    /// The AP ignores the station (no probe responses, no association) until the
+    /// radio is restarted this many times, as after the network went away and came back.
+    pub deaf_until_restarts: u32,
+    pub restarts: u32,
     /// The firmware puts its own RSN capabilities in the association request
     /// instead of `wpaie`'s, as real firmware may.
     pub fw_rewrites_rsn_caps: Option<u16>,
@@ -66,6 +70,8 @@ pub struct Card {
     pub tx_ethernet: Vec<Vec<u8>>,
     pub wpaie: Vec<u8>,
     pub joined_bssid: Option<[u8; 6]>,
+    /// The chanspecs the last join asked the firmware to look on (empty: all).
+    pub join_chanspecs: Vec<u16>,
     pub ap_log: Vec<&'static str>,
     pub keys_match: bool,
     wsec: u32,
@@ -192,11 +198,14 @@ impl Card {
             event_mask: Vec::new(),
             refuse_join: false,
             ap_hidden: false,
+            deaf_until_restarts: 0,
+            restarts: 0,
             fw_rewrites_rsn_caps: None,
             assoc_rsn: Vec::new(),
             tx_ethernet: Vec::new(),
             wpaie: Vec::new(),
             joined_bssid: None,
+            join_chanspecs: Vec::new(),
             ap_log: Vec::new(),
             keys_match: false,
             wsec: 0,
@@ -340,6 +349,11 @@ impl Card {
     }
 
     fn queue_bcm_event_reason(&mut self, event_type: u32, status: u32, reason: u32, data: &[u8]) {
+        // The firmware sends only the events `event_msgs` asked for, once it was asked.
+        let masked = |m: &[u8]| m.get(event_type as usize / 8).is_none_or(|b| b & (1 << (event_type % 8)) == 0);
+        if !self.event_mask.is_empty() && masked(&self.event_mask) {
+            return;
+        }
         let mut f = vec![0x20, 0, 0, 0];
         f.extend_from_slice(&MAC);
         f.extend_from_slice(&MAC);
@@ -661,9 +675,18 @@ impl Card {
             }
             (262, b"assoc_req_ies") => (0, [&[0x00, AP_SSID.len() as u8][..], AP_SSID, &self.assoc_rsn].concat()),
             (263, b"join") => {
-                assert_eq!(rest.len(), 68, "ext join parameters");
+                assert_eq!(rest.len(), 72, "ext join parameters");
+                self.join_chanspecs = match u32::from_le_bytes([rest[64], rest[65], rest[66], rest[67]]) {
+                    0 => Vec::new(),
+                    n => {
+                        assert_eq!(n, 1, "one chanspec fits");
+                        vec![u16::from_le_bytes([rest[68], rest[69]])]
+                    }
+                };
                 let ssid_len = u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
-                if self.refuse_join || &rest[4..4 + ssid_len] != AP_SSID {
+                if self.restarts < self.deaf_until_restarts {
+                    self.queue_bcm_event(0, 3, &[]); // E_SET_SSID, NO_NETWORKS
+                } else if self.refuse_join || &rest[4..4 + ssid_len] != AP_SSID {
                     self.queue_bcm_event(0, 1, &[]); // E_SET_SSID, FAIL
                 } else {
                     let mut b = [0u8; 6];
@@ -691,11 +714,20 @@ impl Card {
             (263, b"escan") => {
                 assert!(rest.len() == 72 || rest.len() == 108, "escan v0 parameters");
                 let named = rest.len() == 108 && rest[51] == 0 && &rest[76..76 + rest[72] as usize] == AP_SSID;
-                self.escan_results(!self.ap_hidden || named);
+                self.escan_results(self.restarts >= self.deaf_until_restarts && (!self.ap_hidden || named));
                 (0, Vec::new())
             }
             (2, _) => {
                 self.up = true;
+                (0, Vec::new())
+            }
+            (3, _) => {
+                self.up = false;
+                self.restarts += 1;
+                (0, Vec::new())
+            }
+            (52, _) => {
+                self.joined_bssid = None;
                 (0, Vec::new())
             }
             (20, _) => {

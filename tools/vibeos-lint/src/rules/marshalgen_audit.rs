@@ -9,6 +9,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
+use vibeos_codegen::wow64::compute_thunk_table;
+#[cfg(test)]
+use vibeos_codegen::wow64::parse_sysfuncs;
 
 pub struct MarshalgenAudit;
 
@@ -776,144 +779,6 @@ pub fn audit_verdict(cls: &str, detail: &str) -> &'static str {
     }
 }
 
-#[derive(Clone)]
-struct Sc {
-    manual: String,
-    slots: usize,
-}
-fn parse_sysfuncs(text: &str) -> Vec<(String, usize)> {
-    let (cpp, svc) = (
-        re(r"^\s*#\s*(ifdef|ifndef|if|else|elif|endif)\b(.*)$"),
-        re(r"^\s*SVC_\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*(\d+)\s*\)"),
-    );
-    let w64 = re(r"\b_WIN64\b");
-    let mut out = vec![];
-    let mut stack: Vec<(bool, bool)> = vec![];
-    for line in text.lines() {
-        if let Some(m) = cpp.captures(line) {
-            let kind = &m[1];
-            let rest = &m[2];
-            if ["ifdef", "ifndef", "if"].contains(&kind) {
-                let has = w64.is_match(rest);
-                if !has {
-                    stack.push((false, false))
-                } else if kind == "ifdef" {
-                    stack.push((true, true))
-                } else if kind == "ifndef" {
-                    stack.push((true, false))
-                } else {
-                    stack.push((true, !rest.contains('!')))
-                }
-            } else if kind == "else" {
-                if let Some((true, suppress)) = stack.last_mut() {
-                    *suppress = !*suppress
-                }
-            } else if kind == "endif" {
-                stack.pop();
-            }
-            continue;
-        }
-        if stack.iter().any(|x| x.1) {
-            continue;
-        }
-        if let Some(m) = svc.captures(line) {
-            out.push((format!("Nt{}", &m[1]), m[2].parse().unwrap_or(0)))
-        }
-    }
-    out
-}
-fn compute_thunk_table(
-    root: &Path,
-    table: &str,
-    arch: &str,
-) -> Result<HashMap<String, bool>, String> {
-    let (spec, sys, lists) = if table == "win32k" {
-        (
-            "win32ss/win32u/win32u.spec",
-            "win32ss/w32ksvc32.h",
-            vec![
-                "tools/wow64gen/manual-win32k.txt",
-                "tools/wow64gen/automarshal-win32k.txt",
-            ],
-        )
-    } else {
-        (
-            "dll/ntdll/def/ntdll.spec",
-            "ntoskrnl/include/sysfuncs.h",
-            vec!["tools/wow64gen/manual.txt"],
-        )
-    };
-    let mut manual = HashSet::new();
-    for f in lists {
-        let t = read(root, f)?;
-        for line in t.lines() {
-            let name = line.split('#').next().unwrap_or("").trim();
-            if !name.is_empty() {
-                manual.insert(name.to_owned());
-            }
-        }
-    }
-    let spec_text = read(root, spec)?;
-    let pat = re(r"^\s*@\s+stdcall\s+(?:-arch=(\S+)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)");
-    let mut specs = HashMap::new();
-    let spec_arch = if arch == "amd64" { "x86_64" } else { arch };
-    for line in spec_text.lines() {
-        let Some(m) = pat.captures(line) else {
-            continue;
-        };
-        let name = &m[2];
-        if !name.starts_with("Nt") {
-            continue;
-        }
-        let entry = m.get(1).map(|x| x.as_str());
-        if let Some(e) = entry {
-            let arches: Vec<_> = e.split(',').collect();
-            let neg = arches.first().is_some_and(|x| x.starts_with('!'));
-            let found = arches
-                .iter()
-                .any(|x| x.trim_start_matches('!') == spec_arch);
-            if (neg && found) || (!neg && !found) {
-                continue;
-            }
-        }
-        let args: Vec<_> = m[3].split_whitespace().map(str::to_owned).collect();
-        let (mut slots, mut why) = (0, String::new());
-        for tok in &args {
-            let (n, manual) = match tok.as_str() {
-                "long" | "s_long" | "word" | "ptr" | "str" | "wstr" => (1, false),
-                "int64" | "double" => (2, false),
-                "int128" => (4, true),
-                _ => (0, false),
-            };
-            if n == 0 {
-                why = format!("unknown arg token '{tok}'");
-                break;
-            }
-            if manual {
-                why = format!("arg '{tok}' needs deep marshalling")
-            }
-            slots += n
-        }
-        if manual.contains(name) && why.is_empty() {
-            why = "listed in --manual-list (struct layout)".into()
-        }
-        specs.insert(name.to_owned(), Sc { manual: why, slots });
-    }
-    let sys = read(root, sys)?;
-    let mut result = HashMap::new();
-    for (name, argc) in parse_sysfuncs(&sys) {
-        let mut sc = specs.get(&name).cloned().unwrap_or_else(|| Sc {
-            manual: "in sysfuncs.h but not in .spec (no type info)".into(),
-            slots: argc,
-        });
-        if sc.manual.is_empty() && sc.slots != argc {
-            sc.manual = format!("spec arg dwords {} != sysfuncs.h argcount {argc}", sc.slots);
-            sc.slots = argc
-        }
-        result.insert(name, sc.manual.is_empty());
-    }
-    Ok(result)
-}
 fn read(root: &Path, rel: &str) -> Result<String, String> {
     fs::read_to_string(root.join(rel)).map_err(|e| {
         format!(

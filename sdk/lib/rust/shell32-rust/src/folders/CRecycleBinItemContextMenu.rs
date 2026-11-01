@@ -4,6 +4,13 @@
 // `crate::prelude::*`. They are DROPPED, not joined: carrying both makes every shared
 // name ambiguous (E0659). The island via `prelude` is the only substrate source.
 use crate::prelude::*;
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::PlaySoundW;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+use crate::shell32::dllmain::Shell32RustGetCommandStringImpl as SHELL_GetCommandStringImpl;
+use crate::shell32::dllmain::Shell32RustMapContextMenuVerbToCmdId as SHELL_MapContextMenuVerbToCmdId;
 // The crate's own functions: the definition is the declaration.
 use crate::def_view::SHCreateShellFolderView;
 use crate::recycle_bin_tu::SHEmptyRecycleBinW;
@@ -80,8 +87,6 @@ extern "C" {
 // Deterministic COM scaffold for CRecycleBinItemContextMenu; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -90,7 +95,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -487,7 +492,6 @@ pub static mut g_BBItemVerbMap: [CMVERBMAP; 5] = [
 ];
 
 extern "system" {
-    fn PlaySoundW(sound: LPCWSTR, module: HANDLE, flags: DWORD) -> BOOL;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn GetLastError() -> DWORD;
@@ -495,8 +499,6 @@ extern "system" {
     fn CoTaskMemFree(memory: LPVOID);
     fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
     fn SHQueryRecycleBinW(root: LPCWSTR, info: *mut SHQUERYRBINFO) -> HRESULT;
-    #[link_name = "Shell32RustMapContextMenuVerbToCmdId"] fn SHELL_MapContextMenuVerbToCmdId(info: LPCMINVOKECOMMANDINFO, map: *const CMVERBMAP) -> INT;
-    #[link_name = "Shell32RustGetCommandStringImpl"] fn SHELL_GetCommandStringImpl(command: SIZE_T, flags: UINT, buffer: LPSTR, capacity: UINT, map: *const CMVERBMAP) -> HRESULT;
 }
 
 extern "C" {
@@ -920,7 +922,7 @@ unsafe extern "system" fn FileOpCallback(
 }
 
 pub unsafe fn CRecycleBinItemContextMenu_InvokeCommand_body(this: *mut CRecycleBinItemContextMenu, lpcmi: LPCMINVOKECOMMANDINFO) -> HRESULT {
-    let mut CmdId: i32 = SHELL_MapContextMenuVerbToCmdId(lpcmi, g_BBItemVerbMap.as_ptr());
+    let mut CmdId: i32 = SHELL_MapContextMenuVerbToCmdId((lpcmi).cast(), (g_BBItemVerbMap.as_ptr()).cast());
 
     if (*lpcmi).lpVerb as usize == FCIDM_SHVIEW_CUT as usize {
         CmdId = IDC_BB_CUT as i32;
@@ -991,7 +993,7 @@ pub unsafe fn CRecycleBinItemContextMenu_InvokeCommand_body(this: *mut CRecycleB
 }
 
 pub unsafe fn CRecycleBinItemContextMenu_GetCommandString_body(this: *mut CRecycleBinItemContextMenu, idCommand: UINT_PTR, uFlags: UINT, lpReserved: *mut UINT, lpszName: LPSTR, uMaxNameLen: UINT) -> HRESULT {
-    SHELL_GetCommandStringImpl(idCommand, uFlags, lpszName, uMaxNameLen, g_BBItemVerbMap.as_ptr())
+    SHELL_GetCommandStringImpl(idCommand, uFlags, lpszName, uMaxNameLen, (g_BBItemVerbMap.as_ptr()).cast())
 }
 
 pub unsafe fn CRecycleBinItemContextMenu_HandleMenuMsg_body(this: *mut CRecycleBinItemContextMenu, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> HRESULT { E_NOTIMPL }

@@ -28,8 +28,9 @@ const CRYPTO_ALGO_AES_CCM: u32 = 4;
 const WSEC_PRIMARY_KEY: u32 = 1 << 1;
 /// `bwfm_wsec_key`, padded to its C size.
 const WSEC_KEY_LEN: usize = 164;
-/// `bwfm_ext_join_params`: SSID, the join scan's parameters, the association's BSSID.
-const EXT_JOIN_LEN: usize = 68;
+/// `bwfm_ext_join_params`: SSID, the join scan's parameters, the association's BSSID and
+/// its one chanspec (`chanspec_list[1]`, padded).
+const EXT_JOIN_LEN: usize = 72;
 /// `bwfm_join_params`, for firmware that does not know the `join` iovar.
 const JOIN_LEN: usize = 48;
 
@@ -111,8 +112,11 @@ pub fn our_rsn(ap: &[u8]) -> Result<[u8; 22], &'static str> {
     Ok(ie)
 }
 
-/// `bwfm_ext_join_params` for `ssid` at `bssid` (all ones: any).
-pub fn ext_join_params(ssid: &[u8], bssid: &[u8; 6]) -> [u8; EXT_JOIN_LEN] {
+/// `bwfm_ext_join_params` for `ssid` at `bssid` (all ones: any), on `chanspec` when the
+/// scan gave one (0: every channel). Without it the firmware's own join scan sweeps every
+/// channel with its default probes, and a hidden network that answers few of them is
+/// "not found" (E_SET_SSID status 3) while it beacons at -32 dBm on the channel it scanned.
+pub fn ext_join_params(ssid: &[u8], bssid: &[u8; 6], chanspec: u16) -> [u8; EXT_JOIN_LEN] {
     let mut p = [0u8; EXT_JOIN_LEN];
     p[0..4].copy_from_slice(&(ssid.len() as u32).to_le_bytes());
     p[4..4 + ssid.len()].copy_from_slice(ssid);
@@ -120,6 +124,10 @@ pub fn ext_join_params(ssid: &[u8], bssid: &[u8; 6]) -> [u8; EXT_JOIN_LEN] {
     p[36] = 0xFF;
     p[40..56].fill(0xFF);
     p[56..62].copy_from_slice(bssid);
+    if chanspec != 0 {
+        p[64..68].copy_from_slice(&1u32.to_le_bytes());
+        p[68..70].copy_from_slice(&chanspec.to_le_bytes());
+    }
     p
 }
 
@@ -171,6 +179,9 @@ pub struct JoinLog {
     /// Optional settings the firmware refused: bit 0 `sup_wpa`, bit 1 `mfp`.
     pub optional_refused: u8,
     pub optional_error: Option<Error>,
+    /// The last E_AUTH or E_ASSOC that failed: (event, status, reason). A join that
+    /// runs out of time says with it how far it got.
+    pub firmware_said: Option<(u32, u32, u32)>,
     /// The RSN element the firmware's association request carried, and whether it
     /// differed from the one we gave it (then message 2 used the firmware's).
     pub assoc_rsn: [u8; 64],
@@ -188,6 +199,7 @@ impl Default for JoinLog {
             last_reject: None,
             optional_refused: 0,
             optional_error: None,
+            firmware_said: None,
             assoc_rsn: [0; 64],
             assoc_rsn_len: 0,
             assoc_rsn_differs: false,
@@ -221,6 +233,7 @@ struct Inbox {
     n: usize,
     linked: bool,
     refused: Option<(u32, u32)>,
+    failed: Option<(u32, u32, u32)>,
 }
 
 impl Inbox {
@@ -233,6 +246,7 @@ impl Inbox {
             match e.event_type {
                 event::E_LINK if e.flags & 1 != 0 => self.linked = true,
                 event::E_SET_SSID if e.status != 0 => self.refused = Some((e.event_type, e.status)),
+                event::E_AUTH | event::E_ASSOC if e.status != 0 => self.failed = Some((e.event_type, e.status, e.reason)),
                 event::E_DEAUTH | event::E_DEAUTH_IND | event::E_DISASSOC | event::E_DISASSOC_IND
                     if self.linked =>
                 {
@@ -341,7 +355,7 @@ impl<P: Platform> Bus<P> {
         let rsn = our_rsn(target.rsn()).map_err(|why| Error::Card(why, target.channel as u32))?;
         // Events and message 1 can arrive while a command still waits for its reply:
         // every frame read from here on goes through the inbox first.
-        let inbox = RefCell::new(Inbox { eapol: [[0; 256]; 4], eapol_len: [0; 4], n: 0, linked: false, refused: None });
+        let inbox = RefCell::new(Inbox { eapol: [[0; 256]; 4], eapol_len: [0; 4], n: 0, linked: false, refused: None, failed: None });
         let mut each = |f: Frame| {
             inbox.borrow_mut().take(&f);
             each(f);
@@ -369,7 +383,7 @@ impl<P: Platform> Bus<P> {
             log.optional_refused |= 2;
             log.optional_error = Some(e);
         }
-        let params = ext_join_params(cfg.ssid(), &target.bssid);
+        let params = ext_join_params(cfg.ssid(), &target.bssid, target.chanspec);
         if self.set_var(b"join", &params, &mut each).is_err() {
             let mut j = [0u8; JOIN_LEN];
             j[..36].copy_from_slice(&params[..36]);
@@ -389,6 +403,9 @@ impl<P: Platform> Bus<P> {
             self.poll(&mut each)?;
             let (refused, linked, n) = {
                 let b = inbox.borrow();
+                if b.failed.is_some() {
+                    log.firmware_said = b.failed;
+                }
                 (b.refused, b.linked, b.n)
             };
             if let Some((e, s)) = refused {
@@ -525,6 +542,8 @@ mod tests {
         let card = bus.chip.sdio.hc.p.card();
         assert_eq!(card.wpaie[..20], our_rsn(t.rsn()).unwrap()[..20], "the firmware got our RSN element");
         assert_eq!(card.joined_bssid, Some(AP_BSSID));
+        assert_eq!(card.join_chanspecs, vec![t.chanspec], "the join looks on the channel the scan heard it on");
+        assert_eq!(t.chanspec, 0x1006, "20 MHz on channel 6, as the record carried it");
         // The AP saw message 4 before the pairwise key existed, and both keys match its own.
         assert_eq!(card.ap_log, vec!["msg2 ok", "msg4 ok", "pairwise key", "group key"]);
         assert!(card.keys_match, "TK and GTK as the AP derived them");

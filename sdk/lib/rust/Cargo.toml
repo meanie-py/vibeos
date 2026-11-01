@@ -1,5 +1,10 @@
 [workspace]
 members = [
+    "cryptdlg-cargo",
+    "batt-cargo",
+    "esent-cargo",
+    "dciman32-cargo",
+    "clusapi-cargo",
     "mstask-cargo",
     "shcore-cargo",
     "hlink-cargo",

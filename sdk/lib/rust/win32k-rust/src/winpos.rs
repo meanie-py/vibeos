@@ -4490,7 +4490,7 @@ unsafe extern "fastcall" fn co_IntCalculateSnapPosition(
 
     match Edge {
         HTTOP => {
-            height = core::cmp::min(((*pos2).bottom - (*pos2).top) as UINT, maxs.y as UINT);
+            height = core::cmp::min((*pos2).bottom - (*pos2).top, maxs.y) as UINT;
         }
         HTLEFT => {
             (*pos2).right = width as _;
@@ -4538,7 +4538,7 @@ unsafe extern "C" fn co_IntCalculateSnapPosition(
 
     match Edge {
         HTTOP => {
-            height = core::cmp::min(((*pos2).bottom - (*pos2).top) as UINT, maxs.y as UINT);
+            height = core::cmp::min((*pos2).bottom - (*pos2).top, maxs.y) as UINT;
         }
         HTLEFT => {
             (*pos2).right = width as _;

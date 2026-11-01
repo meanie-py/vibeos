@@ -1,0 +1,588 @@
+{
+  "arch": "i386",
+  "includes": [
+    "stdarg.h",
+    "fpieee.h",
+    "setjmp.h",
+    "\"windef.h\"",
+    "\"winbase.h\"",
+    "\"winternl.h\"",
+    "\"msvcrt.h\"",
+    "\"wine/exception.h\"",
+    "\"excpt.h\"",
+    "\"wine/debug.h\"",
+    "\"cppexcept.h\""
+  ],
+  "include_dirs": [
+    "sdk/include/wine",
+    "sdk/include",
+    "sdk/include/ddk",
+    "sdk/include/ndk",
+    "sdk/include/psdk",
+    "sdk/include/reactos",
+    "sdk/include/reactos/libs",
+    "sdk/include/vcruntime",
+    "sdk/include/winrt",
+    "build-i386/sdk/include",
+    "build-i386/sdk/include/psdk",
+    "build-i386/sdk/include/ddk",
+    "build-i386/sdk/include/dxsdk",
+    "build-i386/sdk/include/reactos",
+    "build-i386/sdk/include/reactos/mc",
+    "sdk/include/dxsdk",
+    "sdk/lib/pseh/include",
+    "dll/win32/msvcrt/include",
+    "dll/win32/msvcrt"
+  ],
+  "defines": [
+    "_MSVCR_VER=0",
+    "_WIN32_WINNT=0x601",
+    "WINVER=0x601",
+    "_CRTIMP=",
+    "__REACTOS__"
+  ],
+  "expressions": [
+    [
+      "const:EXCEPTION_UNWINDING",
+      "EXCEPTION_UNWINDING"
+    ],
+    [
+      "const:EXCEPTION_EXIT_UNWIND",
+      "EXCEPTION_EXIT_UNWIND"
+    ],
+    [
+      "const:EXCEPTION_MAXIMUM_PARAMETERS",
+      "EXCEPTION_MAXIMUM_PARAMETERS"
+    ],
+    [
+      "const:EXCEPTION_EXECUTE_HANDLER",
+      "EXCEPTION_EXECUTE_HANDLER"
+    ],
+    [
+      "const:EXCEPTION_CONTINUE_SEARCH",
+      "EXCEPTION_CONTINUE_SEARCH"
+    ],
+    [
+      "const:EXCEPTION_CONTINUE_EXECUTION",
+      "EXCEPTION_CONTINUE_EXECUTION"
+    ],
+    [
+      "const:ExceptionContinueExecution",
+      "ExceptionContinueExecution"
+    ],
+    [
+      "const:ExceptionContinueSearch",
+      "ExceptionContinueSearch"
+    ],
+    [
+      "const:ExceptionNestedException",
+      "ExceptionNestedException"
+    ],
+    [
+      "const:ExceptionCollidedUnwind",
+      "ExceptionCollidedUnwind"
+    ],
+    [
+      "const:CXX_FRAME_MAGIC_VC6",
+      "CXX_FRAME_MAGIC_VC6"
+    ],
+    [
+      "const:CXX_FRAME_MAGIC_VC7",
+      "CXX_FRAME_MAGIC_VC7"
+    ],
+    [
+      "const:CXX_FRAME_MAGIC_VC8",
+      "CXX_FRAME_MAGIC_VC8"
+    ],
+    [
+      "const:CXX_EXCEPTION",
+      "CXX_EXCEPTION"
+    ],
+    [
+      "const:FUNC_DESCR_SYNCHRONOUS",
+      "FUNC_DESCR_SYNCHRONOUS"
+    ],
+    [
+      "const:FUNC_DESCR_NOEXCEPT",
+      "FUNC_DESCR_NOEXCEPT"
+    ],
+    [
+      "const:STATUS_FLOAT_DIVIDE_BY_ZERO",
+      "STATUS_FLOAT_DIVIDE_BY_ZERO"
+    ],
+    [
+      "const:STATUS_FLOAT_INVALID_OPERATION",
+      "STATUS_FLOAT_INVALID_OPERATION"
+    ],
+    [
+      "const:_FpCodeDivide",
+      "_FpCodeDivide"
+    ],
+    [
+      "const:_FpFormatFp64",
+      "_FpFormatFp64"
+    ],
+    [
+      "const:_FpFormatFp80",
+      "_FpFormatFp80"
+    ],
+    [
+      "const:SIZE_OF_80387_REGISTERS",
+      "SIZE_OF_80387_REGISTERS"
+    ],
+    [
+      "const:MAXIMUM_SUPPORTED_EXTENSION",
+      "MAXIMUM_SUPPORTED_EXTENSION"
+    ],
+    [
+      "const:LOCALE_NAME_MAX_LENGTH",
+      "LOCALE_NAME_MAX_LENGTH"
+    ],
+    [
+      "off:EXCEPTION_RECORD:ExceptionCode",
+      "__builtin_offsetof(EXCEPTION_RECORD, ExceptionCode)"
+    ],
+    [
+      "off:EXCEPTION_RECORD:ExceptionFlags",
+      "__builtin_offsetof(EXCEPTION_RECORD, ExceptionFlags)"
+    ],
+    [
+      "off:EXCEPTION_RECORD:ExceptionRecord",
+      "__builtin_offsetof(EXCEPTION_RECORD, ExceptionRecord)"
+    ],
+    [
+      "off:EXCEPTION_RECORD:ExceptionAddress",
+      "__builtin_offsetof(EXCEPTION_RECORD, ExceptionAddress)"
+    ],
+    [
+      "off:EXCEPTION_RECORD:NumberParameters",
+      "__builtin_offsetof(EXCEPTION_RECORD, NumberParameters)"
+    ],
+    [
+      "off:EXCEPTION_RECORD:ExceptionInformation",
+      "__builtin_offsetof(EXCEPTION_RECORD, ExceptionInformation)"
+    ],
+    [
+      "size:EXCEPTION_RECORD",
+      "sizeof(EXCEPTION_RECORD)"
+    ],
+    [
+      "off:EXCEPTION_REGISTRATION_RECORD:Prev",
+      "__builtin_offsetof(EXCEPTION_REGISTRATION_RECORD, Prev)"
+    ],
+    [
+      "off:EXCEPTION_REGISTRATION_RECORD:Handler",
+      "__builtin_offsetof(EXCEPTION_REGISTRATION_RECORD, Handler)"
+    ],
+    [
+      "size:EXCEPTION_REGISTRATION_RECORD",
+      "sizeof(EXCEPTION_REGISTRATION_RECORD)"
+    ],
+    [
+      "off:EXCEPTION_POINTERS:ExceptionRecord",
+      "__builtin_offsetof(EXCEPTION_POINTERS, ExceptionRecord)"
+    ],
+    [
+      "off:EXCEPTION_POINTERS:ContextRecord",
+      "__builtin_offsetof(EXCEPTION_POINTERS, ContextRecord)"
+    ],
+    [
+      "size:EXCEPTION_POINTERS",
+      "sizeof(EXCEPTION_POINTERS)"
+    ],
+    [
+      "off:FLOATING_SAVE_AREA:ControlWord",
+      "__builtin_offsetof(FLOATING_SAVE_AREA, ControlWord)"
+    ],
+    [
+      "off:FLOATING_SAVE_AREA:StatusWord",
+      "__builtin_offsetof(FLOATING_SAVE_AREA, StatusWord)"
+    ],
+    [
+      "off:FLOATING_SAVE_AREA:TagWord",
+      "__builtin_offsetof(FLOATING_SAVE_AREA, TagWord)"
+    ],
+    [
+      "off:FLOATING_SAVE_AREA:ErrorOffset",
+      "__builtin_offsetof(FLOATING_SAVE_AREA, ErrorOffset)"
+    ],
+    [
+      "off:FLOATING_SAVE_AREA:ErrorSelector",
+      "__builtin_offsetof(FLOATING_SAVE_AREA, ErrorSelector)"
+    ],
+    [
+      "off:FLOATING_SAVE_AREA:DataOffset",
+      "__builtin_offsetof(FLOATING_SAVE_AREA, DataOffset)"
+    ],
+    [
+      "off:FLOATING_SAVE_AREA:DataSelector",
+      "__builtin_offsetof(FLOATING_SAVE_AREA, DataSelector)"
+    ],
+    [
+      "off:FLOATING_SAVE_AREA:RegisterArea",
+      "__builtin_offsetof(FLOATING_SAVE_AREA, RegisterArea)"
+    ],
+    [
+      "off:FLOATING_SAVE_AREA:Cr0NpxState",
+      "__builtin_offsetof(FLOATING_SAVE_AREA, Cr0NpxState)"
+    ],
+    [
+      "size:FLOATING_SAVE_AREA",
+      "sizeof(FLOATING_SAVE_AREA)"
+    ],
+    [
+      "off:CONTEXT:ContextFlags",
+      "__builtin_offsetof(CONTEXT, ContextFlags)"
+    ],
+    [
+      "off:CONTEXT:Dr0",
+      "__builtin_offsetof(CONTEXT, Dr0)"
+    ],
+    [
+      "off:CONTEXT:Dr7",
+      "__builtin_offsetof(CONTEXT, Dr7)"
+    ],
+    [
+      "off:CONTEXT:FloatSave",
+      "__builtin_offsetof(CONTEXT, FloatSave)"
+    ],
+    [
+      "off:CONTEXT:SegGs",
+      "__builtin_offsetof(CONTEXT, SegGs)"
+    ],
+    [
+      "off:CONTEXT:Edi",
+      "__builtin_offsetof(CONTEXT, Edi)"
+    ],
+    [
+      "off:CONTEXT:Eax",
+      "__builtin_offsetof(CONTEXT, Eax)"
+    ],
+    [
+      "off:CONTEXT:Ebp",
+      "__builtin_offsetof(CONTEXT, Ebp)"
+    ],
+    [
+      "off:CONTEXT:Eip",
+      "__builtin_offsetof(CONTEXT, Eip)"
+    ],
+    [
+      "off:CONTEXT:Esp",
+      "__builtin_offsetof(CONTEXT, Esp)"
+    ],
+    [
+      "off:CONTEXT:SegSs",
+      "__builtin_offsetof(CONTEXT, SegSs)"
+    ],
+    [
+      "off:CONTEXT:ExtendedRegisters",
+      "__builtin_offsetof(CONTEXT, ExtendedRegisters)"
+    ],
+    [
+      "size:CONTEXT",
+      "sizeof(CONTEXT)"
+    ],
+    [
+      "off:NT_TIB:ExceptionList",
+      "__builtin_offsetof(NT_TIB, ExceptionList)"
+    ],
+    [
+      "off:NT_TIB:StackBase",
+      "__builtin_offsetof(NT_TIB, StackBase)"
+    ],
+    [
+      "off:NT_TIB:StackLimit",
+      "__builtin_offsetof(NT_TIB, StackLimit)"
+    ],
+    [
+      "off:NT_TIB:Self",
+      "__builtin_offsetof(NT_TIB, Self)"
+    ],
+    [
+      "size:NT_TIB",
+      "sizeof(NT_TIB)"
+    ],
+    [
+      "off:_JUMP_BUFFER:Ebp",
+      "__builtin_offsetof(_JUMP_BUFFER, Ebp)"
+    ],
+    [
+      "off:_JUMP_BUFFER:Ebx",
+      "__builtin_offsetof(_JUMP_BUFFER, Ebx)"
+    ],
+    [
+      "off:_JUMP_BUFFER:Edi",
+      "__builtin_offsetof(_JUMP_BUFFER, Edi)"
+    ],
+    [
+      "off:_JUMP_BUFFER:Esi",
+      "__builtin_offsetof(_JUMP_BUFFER, Esi)"
+    ],
+    [
+      "off:_JUMP_BUFFER:Esp",
+      "__builtin_offsetof(_JUMP_BUFFER, Esp)"
+    ],
+    [
+      "off:_JUMP_BUFFER:Eip",
+      "__builtin_offsetof(_JUMP_BUFFER, Eip)"
+    ],
+    [
+      "off:_JUMP_BUFFER:Registration",
+      "__builtin_offsetof(_JUMP_BUFFER, Registration)"
+    ],
+    [
+      "off:_JUMP_BUFFER:TryLevel",
+      "__builtin_offsetof(_JUMP_BUFFER, TryLevel)"
+    ],
+    [
+      "off:_JUMP_BUFFER:Cookie",
+      "__builtin_offsetof(_JUMP_BUFFER, Cookie)"
+    ],
+    [
+      "off:_JUMP_BUFFER:UnwindFunc",
+      "__builtin_offsetof(_JUMP_BUFFER, UnwindFunc)"
+    ],
+    [
+      "off:_JUMP_BUFFER:UnwindData",
+      "__builtin_offsetof(_JUMP_BUFFER, UnwindData)"
+    ],
+    [
+      "size:_JUMP_BUFFER",
+      "sizeof(_JUMP_BUFFER)"
+    ],
+    [
+      "off:_FPIEEE_VALUE:Value",
+      "__builtin_offsetof(_FPIEEE_VALUE, Value)"
+    ],
+    [
+      "size:_FPIEEE_VALUE",
+      "sizeof(_FPIEEE_VALUE)"
+    ],
+    [
+      "off:_FPIEEE_RECORD:Cause",
+      "__builtin_offsetof(_FPIEEE_RECORD, Cause)"
+    ],
+    [
+      "off:_FPIEEE_RECORD:Enable",
+      "__builtin_offsetof(_FPIEEE_RECORD, Enable)"
+    ],
+    [
+      "off:_FPIEEE_RECORD:Status",
+      "__builtin_offsetof(_FPIEEE_RECORD, Status)"
+    ],
+    [
+      "off:_FPIEEE_RECORD:Operand1",
+      "__builtin_offsetof(_FPIEEE_RECORD, Operand1)"
+    ],
+    [
+      "off:_FPIEEE_RECORD:Operand2",
+      "__builtin_offsetof(_FPIEEE_RECORD, Operand2)"
+    ],
+    [
+      "off:_FPIEEE_RECORD:Result",
+      "__builtin_offsetof(_FPIEEE_RECORD, Result)"
+    ],
+    [
+      "size:_FPIEEE_RECORD",
+      "sizeof(_FPIEEE_RECORD)"
+    ],
+    [
+      "off:cxx_function_descr:unwind_count",
+      "__builtin_offsetof(cxx_function_descr, unwind_count)"
+    ],
+    [
+      "off:cxx_function_descr:unwind_table",
+      "__builtin_offsetof(cxx_function_descr, unwind_table)"
+    ],
+    [
+      "off:cxx_function_descr:tryblock_count",
+      "__builtin_offsetof(cxx_function_descr, tryblock_count)"
+    ],
+    [
+      "off:cxx_function_descr:tryblock",
+      "__builtin_offsetof(cxx_function_descr, tryblock)"
+    ],
+    [
+      "off:cxx_function_descr:ipmap_count",
+      "__builtin_offsetof(cxx_function_descr, ipmap_count)"
+    ],
+    [
+      "off:cxx_function_descr:ipmap",
+      "__builtin_offsetof(cxx_function_descr, ipmap)"
+    ],
+    [
+      "off:cxx_function_descr:expect_list",
+      "__builtin_offsetof(cxx_function_descr, expect_list)"
+    ],
+    [
+      "off:cxx_function_descr:flags",
+      "__builtin_offsetof(cxx_function_descr, flags)"
+    ],
+    [
+      "size:cxx_function_descr",
+      "sizeof(cxx_function_descr)"
+    ],
+    [
+      "off:tryblock_info:start_level",
+      "__builtin_offsetof(tryblock_info, start_level)"
+    ],
+    [
+      "off:tryblock_info:end_level",
+      "__builtin_offsetof(tryblock_info, end_level)"
+    ],
+    [
+      "off:tryblock_info:catch_level",
+      "__builtin_offsetof(tryblock_info, catch_level)"
+    ],
+    [
+      "off:tryblock_info:catchblock_count",
+      "__builtin_offsetof(tryblock_info, catchblock_count)"
+    ],
+    [
+      "off:tryblock_info:catchblock",
+      "__builtin_offsetof(tryblock_info, catchblock)"
+    ],
+    [
+      "size:tryblock_info",
+      "sizeof(tryblock_info)"
+    ],
+    [
+      "off:unwind_info:prev",
+      "__builtin_offsetof(unwind_info, prev)"
+    ],
+    [
+      "off:unwind_info:handler",
+      "__builtin_offsetof(unwind_info, handler)"
+    ],
+    [
+      "size:unwind_info",
+      "sizeof(unwind_info)"
+    ],
+    [
+      "off:catchblock_info:flags",
+      "__builtin_offsetof(catchblock_info, flags)"
+    ],
+    [
+      "off:catchblock_info:type_info",
+      "__builtin_offsetof(catchblock_info, type_info)"
+    ],
+    [
+      "off:catchblock_info:offset",
+      "__builtin_offsetof(catchblock_info, offset)"
+    ],
+    [
+      "off:catchblock_info:handler",
+      "__builtin_offsetof(catchblock_info, handler)"
+    ],
+    [
+      "size:catchblock_info",
+      "sizeof(catchblock_info)"
+    ],
+    [
+      "off:cxx_exception_type:flags",
+      "__builtin_offsetof(cxx_exception_type, flags)"
+    ],
+    [
+      "off:cxx_exception_type:destructor",
+      "__builtin_offsetof(cxx_exception_type, destructor)"
+    ],
+    [
+      "off:cxx_exception_type:custom_handler",
+      "__builtin_offsetof(cxx_exception_type, custom_handler)"
+    ],
+    [
+      "off:cxx_exception_type:type_info_table",
+      "__builtin_offsetof(cxx_exception_type, type_info_table)"
+    ],
+    [
+      "size:cxx_exception_type",
+      "sizeof(cxx_exception_type)"
+    ],
+    [
+      "off:frame_info:object",
+      "__builtin_offsetof(frame_info, object)"
+    ],
+    [
+      "off:frame_info:next",
+      "__builtin_offsetof(frame_info, next)"
+    ],
+    [
+      "size:frame_info",
+      "sizeof(frame_info)"
+    ],
+    [
+      "off:cxx_frame_info:frame_info",
+      "__builtin_offsetof(cxx_frame_info, frame_info)"
+    ],
+    [
+      "off:cxx_frame_info:rec",
+      "__builtin_offsetof(cxx_frame_info, rec)"
+    ],
+    [
+      "off:cxx_frame_info:context",
+      "__builtin_offsetof(cxx_frame_info, context)"
+    ],
+    [
+      "size:cxx_frame_info",
+      "sizeof(cxx_frame_info)"
+    ],
+    [
+      "off:thread_data_t:se_translator",
+      "__builtin_offsetof(thread_data_t, se_translator)"
+    ],
+    [
+      "off:thread_data_t:exc_record",
+      "__builtin_offsetof(thread_data_t, exc_record)"
+    ],
+    [
+      "off:thread_data_t:ctx_record",
+      "__builtin_offsetof(thread_data_t, ctx_record)"
+    ],
+    [
+      "off:thread_data_t:processing_throw",
+      "__builtin_offsetof(thread_data_t, processing_throw)"
+    ],
+    [
+      "off:thread_data_t:frame_info_head",
+      "__builtin_offsetof(thread_data_t, frame_info_head)"
+    ],
+    [
+      "size:thread_data_t",
+      "sizeof(thread_data_t)"
+    ],
+    [
+      "size:void *",
+      "sizeof(void *)"
+    ],
+    [
+      "size:long",
+      "sizeof(long)"
+    ],
+    [
+      "size:unsigned long",
+      "sizeof(unsigned long)"
+    ],
+    [
+      "size:int",
+      "sizeof(int)"
+    ],
+    [
+      "size:DWORD",
+      "sizeof(DWORD)"
+    ],
+    [
+      "size:ULONG_PTR",
+      "sizeof(ULONG_PTR)"
+    ],
+    [
+      "size:WCHAR",
+      "sizeof(WCHAR)"
+    ]
+  ],
+  "outputs": [
+    [
+      "sdk/lib/rust/msvcrt-seh-difftest/refstub/seh_layout.h",
+      "/* GENERATED by tools/gen_msvcrt_seh_layout.py — DO NOT EDIT.\n *\n * Every number here was computed by the PINNED CROSS-COMPILER from the REAL i386\n * headers, then asserted against refstub/seh_types.h's transcription by the HOST\n * compiler.  A failure names the field that moved; regenerate rather than editing\n * the assert, and then fix the transcription it is pointing at.\n */\n\n#ifndef MSVCRT_SEH_LAYOUT_H\n#define MSVCRT_SEH_LAYOUT_H\n\n/* ── scalar widths ─────────────────────────────────────────────────── */\n_Static_assert(sizeof(void *) == {{size:void *}}, \"seh refstub: sizeof(void *) != {{size:void *}}\");\n_Static_assert(sizeof(long) == {{size:long}}, \"seh refstub: sizeof(long) != {{size:long}}\");\n_Static_assert(sizeof(unsigned long) == {{size:unsigned long}}, \"seh refstub: sizeof(unsigned long) != {{size:unsigned long}}\");\n_Static_assert(sizeof(int) == {{size:int}}, \"seh refstub: sizeof(int) != {{size:int}}\");\n_Static_assert(sizeof(DWORD) == {{size:DWORD}}, \"seh refstub: sizeof(DWORD) != {{size:DWORD}}\");\n_Static_assert(sizeof(ULONG_PTR) == {{size:ULONG_PTR}}, \"seh refstub: sizeof(ULONG_PTR) != {{size:ULONG_PTR}}\");\n_Static_assert(sizeof(WCHAR) == {{size:WCHAR}}, \"seh refstub: sizeof(WCHAR) != {{size:WCHAR}}\");\n\n/* ── constants ─────────────────────────────────────────────────────── */\n_Static_assert((long long)(EXCEPTION_UNWINDING) == {{const:EXCEPTION_UNWINDING}}LL, \"seh refstub: EXCEPTION_UNWINDING != {{const:EXCEPTION_UNWINDING}}\");\n_Static_assert((long long)(EXCEPTION_EXIT_UNWIND) == {{const:EXCEPTION_EXIT_UNWIND}}LL, \"seh refstub: EXCEPTION_EXIT_UNWIND != {{const:EXCEPTION_EXIT_UNWIND}}\");\n_Static_assert((long long)(EXCEPTION_MAXIMUM_PARAMETERS) == {{const:EXCEPTION_MAXIMUM_PARAMETERS}}LL, \"seh refstub: EXCEPTION_MAXIMUM_PARAMETERS != {{const:EXCEPTION_MAXIMUM_PARAMETERS}}\");\n_Static_assert((long long)(EXCEPTION_EXECUTE_HANDLER) == {{const:EXCEPTION_EXECUTE_HANDLER}}LL, \"seh refstub: EXCEPTION_EXECUTE_HANDLER != {{const:EXCEPTION_EXECUTE_HANDLER}}\");\n_Static_assert((long long)(EXCEPTION_CONTINUE_SEARCH) == {{const:EXCEPTION_CONTINUE_SEARCH}}LL, \"seh refstub: EXCEPTION_CONTINUE_SEARCH != {{const:EXCEPTION_CONTINUE_SEARCH}}\");\n_Static_assert((long long)(EXCEPTION_CONTINUE_EXECUTION) == {{const:EXCEPTION_CONTINUE_EXECUTION}}LL, \"seh refstub: EXCEPTION_CONTINUE_EXECUTION != {{const:EXCEPTION_CONTINUE_EXECUTION}}\");\n_Static_assert((long long)(ExceptionContinueExecution) == {{const:ExceptionContinueExecution}}LL, \"seh refstub: ExceptionContinueExecution != {{const:ExceptionContinueExecution}}\");\n_Static_assert((long long)(ExceptionContinueSearch) == {{const:ExceptionContinueSearch}}LL, \"seh refstub: ExceptionContinueSearch != {{const:ExceptionContinueSearch}}\");\n_Static_assert((long long)(ExceptionNestedException) == {{const:ExceptionNestedException}}LL, \"seh refstub: ExceptionNestedException != {{const:ExceptionNestedException}}\");\n_Static_assert((long long)(ExceptionCollidedUnwind) == {{const:ExceptionCollidedUnwind}}LL, \"seh refstub: ExceptionCollidedUnwind != {{const:ExceptionCollidedUnwind}}\");\n_Static_assert((long long)(CXX_FRAME_MAGIC_VC6) == {{const:CXX_FRAME_MAGIC_VC6}}LL, \"seh refstub: CXX_FRAME_MAGIC_VC6 != {{const:CXX_FRAME_MAGIC_VC6}}\");\n_Static_assert((long long)(CXX_FRAME_MAGIC_VC7) == {{const:CXX_FRAME_MAGIC_VC7}}LL, \"seh refstub: CXX_FRAME_MAGIC_VC7 != {{const:CXX_FRAME_MAGIC_VC7}}\");\n_Static_assert((long long)(CXX_FRAME_MAGIC_VC8) == {{const:CXX_FRAME_MAGIC_VC8}}LL, \"seh refstub: CXX_FRAME_MAGIC_VC8 != {{const:CXX_FRAME_MAGIC_VC8}}\");\n_Static_assert((long long)(CXX_EXCEPTION) == {{const:CXX_EXCEPTION}}LL, \"seh refstub: CXX_EXCEPTION != {{const:CXX_EXCEPTION}}\");\n_Static_assert((long long)(FUNC_DESCR_SYNCHRONOUS) == {{const:FUNC_DESCR_SYNCHRONOUS}}LL, \"seh refstub: FUNC_DESCR_SYNCHRONOUS != {{const:FUNC_DESCR_SYNCHRONOUS}}\");\n_Static_assert((long long)(FUNC_DESCR_NOEXCEPT) == {{const:FUNC_DESCR_NOEXCEPT}}LL, \"seh refstub: FUNC_DESCR_NOEXCEPT != {{const:FUNC_DESCR_NOEXCEPT}}\");\n_Static_assert((long long)(STATUS_FLOAT_DIVIDE_BY_ZERO) == {{const:STATUS_FLOAT_DIVIDE_BY_ZERO}}LL, \"seh refstub: STATUS_FLOAT_DIVIDE_BY_ZERO != {{const:STATUS_FLOAT_DIVIDE_BY_ZERO}}\");\n_Static_assert((long long)(STATUS_FLOAT_INVALID_OPERATION) == {{const:STATUS_FLOAT_INVALID_OPERATION}}LL, \"seh refstub: STATUS_FLOAT_INVALID_OPERATION != {{const:STATUS_FLOAT_INVALID_OPERATION}}\");\n_Static_assert((long long)(_FpCodeDivide) == {{const:_FpCodeDivide}}LL, \"seh refstub: _FpCodeDivide != {{const:_FpCodeDivide}}\");\n_Static_assert((long long)(_FpFormatFp64) == {{const:_FpFormatFp64}}LL, \"seh refstub: _FpFormatFp64 != {{const:_FpFormatFp64}}\");\n_Static_assert((long long)(_FpFormatFp80) == {{const:_FpFormatFp80}}LL, \"seh refstub: _FpFormatFp80 != {{const:_FpFormatFp80}}\");\n_Static_assert((long long)(SIZE_OF_80387_REGISTERS) == {{const:SIZE_OF_80387_REGISTERS}}LL, \"seh refstub: SIZE_OF_80387_REGISTERS != {{const:SIZE_OF_80387_REGISTERS}}\");\n_Static_assert((long long)(MAXIMUM_SUPPORTED_EXTENSION) == {{const:MAXIMUM_SUPPORTED_EXTENSION}}LL, \"seh refstub: MAXIMUM_SUPPORTED_EXTENSION != {{const:MAXIMUM_SUPPORTED_EXTENSION}}\");\n_Static_assert((long long)(LOCALE_NAME_MAX_LENGTH) == {{const:LOCALE_NAME_MAX_LENGTH}}LL, \"seh refstub: LOCALE_NAME_MAX_LENGTH != {{const:LOCALE_NAME_MAX_LENGTH}}\");\n\n/* ── struct layouts ────────────────────────────────────────────────── */\n/* EXCEPTION_RECORD */\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, ExceptionCode) == {{off:EXCEPTION_RECORD:ExceptionCode}}, \"seh refstub: EXCEPTION_RECORD.ExceptionCode is not at {{off:EXCEPTION_RECORD:ExceptionCode}}\");\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, ExceptionFlags) == {{off:EXCEPTION_RECORD:ExceptionFlags}}, \"seh refstub: EXCEPTION_RECORD.ExceptionFlags is not at {{off:EXCEPTION_RECORD:ExceptionFlags}}\");\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, ExceptionRecord) == {{off:EXCEPTION_RECORD:ExceptionRecord}}, \"seh refstub: EXCEPTION_RECORD.ExceptionRecord is not at {{off:EXCEPTION_RECORD:ExceptionRecord}}\");\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, ExceptionAddress) == {{off:EXCEPTION_RECORD:ExceptionAddress}}, \"seh refstub: EXCEPTION_RECORD.ExceptionAddress is not at {{off:EXCEPTION_RECORD:ExceptionAddress}}\");\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, NumberParameters) == {{off:EXCEPTION_RECORD:NumberParameters}}, \"seh refstub: EXCEPTION_RECORD.NumberParameters is not at {{off:EXCEPTION_RECORD:NumberParameters}}\");\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, ExceptionInformation) == {{off:EXCEPTION_RECORD:ExceptionInformation}}, \"seh refstub: EXCEPTION_RECORD.ExceptionInformation is not at {{off:EXCEPTION_RECORD:ExceptionInformation}}\");\n_Static_assert(sizeof(EXCEPTION_RECORD) == {{size:EXCEPTION_RECORD}}, \"seh refstub: sizeof(EXCEPTION_RECORD) != {{size:EXCEPTION_RECORD}}\");\n\n/* EXCEPTION_REGISTRATION_RECORD */\n_Static_assert(__builtin_offsetof(EXCEPTION_REGISTRATION_RECORD, Prev) == {{off:EXCEPTION_REGISTRATION_RECORD:Prev}}, \"seh refstub: EXCEPTION_REGISTRATION_RECORD.Prev is not at {{off:EXCEPTION_REGISTRATION_RECORD:Prev}}\");\n_Static_assert(__builtin_offsetof(EXCEPTION_REGISTRATION_RECORD, Handler) == {{off:EXCEPTION_REGISTRATION_RECORD:Handler}}, \"seh refstub: EXCEPTION_REGISTRATION_RECORD.Handler is not at {{off:EXCEPTION_REGISTRATION_RECORD:Handler}}\");\n_Static_assert(sizeof(EXCEPTION_REGISTRATION_RECORD) == {{size:EXCEPTION_REGISTRATION_RECORD}}, \"seh refstub: sizeof(EXCEPTION_REGISTRATION_RECORD) != {{size:EXCEPTION_REGISTRATION_RECORD}}\");\n\n/* EXCEPTION_POINTERS */\n_Static_assert(__builtin_offsetof(EXCEPTION_POINTERS, ExceptionRecord) == {{off:EXCEPTION_POINTERS:ExceptionRecord}}, \"seh refstub: EXCEPTION_POINTERS.ExceptionRecord is not at {{off:EXCEPTION_POINTERS:ExceptionRecord}}\");\n_Static_assert(__builtin_offsetof(EXCEPTION_POINTERS, ContextRecord) == {{off:EXCEPTION_POINTERS:ContextRecord}}, \"seh refstub: EXCEPTION_POINTERS.ContextRecord is not at {{off:EXCEPTION_POINTERS:ContextRecord}}\");\n_Static_assert(sizeof(EXCEPTION_POINTERS) == {{size:EXCEPTION_POINTERS}}, \"seh refstub: sizeof(EXCEPTION_POINTERS) != {{size:EXCEPTION_POINTERS}}\");\n\n/* FLOATING_SAVE_AREA */\n_Static_assert(__builtin_offsetof(FLOATING_SAVE_AREA, ControlWord) == {{off:FLOATING_SAVE_AREA:ControlWord}}, \"seh refstub: FLOATING_SAVE_AREA.ControlWord is not at {{off:FLOATING_SAVE_AREA:ControlWord}}\");\n_Static_assert(__builtin_offsetof(FLOATING_SAVE_AREA, StatusWord) == {{off:FLOATING_SAVE_AREA:StatusWord}}, \"seh refstub: FLOATING_SAVE_AREA.StatusWord is not at {{off:FLOATING_SAVE_AREA:StatusWord}}\");\n_Static_assert(__builtin_offsetof(FLOATING_SAVE_AREA, TagWord) == {{off:FLOATING_SAVE_AREA:TagWord}}, \"seh refstub: FLOATING_SAVE_AREA.TagWord is not at {{off:FLOATING_SAVE_AREA:TagWord}}\");\n_Static_assert(__builtin_offsetof(FLOATING_SAVE_AREA, ErrorOffset) == {{off:FLOATING_SAVE_AREA:ErrorOffset}}, \"seh refstub: FLOATING_SAVE_AREA.ErrorOffset is not at {{off:FLOATING_SAVE_AREA:ErrorOffset}}\");\n_Static_assert(__builtin_offsetof(FLOATING_SAVE_AREA, ErrorSelector) == {{off:FLOATING_SAVE_AREA:ErrorSelector}}, \"seh refstub: FLOATING_SAVE_AREA.ErrorSelector is not at {{off:FLOATING_SAVE_AREA:ErrorSelector}}\");\n_Static_assert(__builtin_offsetof(FLOATING_SAVE_AREA, DataOffset) == {{off:FLOATING_SAVE_AREA:DataOffset}}, \"seh refstub: FLOATING_SAVE_AREA.DataOffset is not at {{off:FLOATING_SAVE_AREA:DataOffset}}\");\n_Static_assert(__builtin_offsetof(FLOATING_SAVE_AREA, DataSelector) == {{off:FLOATING_SAVE_AREA:DataSelector}}, \"seh refstub: FLOATING_SAVE_AREA.DataSelector is not at {{off:FLOATING_SAVE_AREA:DataSelector}}\");\n_Static_assert(__builtin_offsetof(FLOATING_SAVE_AREA, RegisterArea) == {{off:FLOATING_SAVE_AREA:RegisterArea}}, \"seh refstub: FLOATING_SAVE_AREA.RegisterArea is not at {{off:FLOATING_SAVE_AREA:RegisterArea}}\");\n_Static_assert(__builtin_offsetof(FLOATING_SAVE_AREA, Cr0NpxState) == {{off:FLOATING_SAVE_AREA:Cr0NpxState}}, \"seh refstub: FLOATING_SAVE_AREA.Cr0NpxState is not at {{off:FLOATING_SAVE_AREA:Cr0NpxState}}\");\n_Static_assert(sizeof(FLOATING_SAVE_AREA) == {{size:FLOATING_SAVE_AREA}}, \"seh refstub: sizeof(FLOATING_SAVE_AREA) != {{size:FLOATING_SAVE_AREA}}\");\n\n/* CONTEXT */\n_Static_assert(__builtin_offsetof(CONTEXT, ContextFlags) == {{off:CONTEXT:ContextFlags}}, \"seh refstub: CONTEXT.ContextFlags is not at {{off:CONTEXT:ContextFlags}}\");\n_Static_assert(__builtin_offsetof(CONTEXT, Dr0) == {{off:CONTEXT:Dr0}}, \"seh refstub: CONTEXT.Dr0 is not at {{off:CONTEXT:Dr0}}\");\n_Static_assert(__builtin_offsetof(CONTEXT, Dr7) == {{off:CONTEXT:Dr7}}, \"seh refstub: CONTEXT.Dr7 is not at {{off:CONTEXT:Dr7}}\");\n_Static_assert(__builtin_offsetof(CONTEXT, FloatSave) == {{off:CONTEXT:FloatSave}}, \"seh refstub: CONTEXT.FloatSave is not at {{off:CONTEXT:FloatSave}}\");\n_Static_assert(__builtin_offsetof(CONTEXT, SegGs) == {{off:CONTEXT:SegGs}}, \"seh refstub: CONTEXT.SegGs is not at {{off:CONTEXT:SegGs}}\");\n_Static_assert(__builtin_offsetof(CONTEXT, Edi) == {{off:CONTEXT:Edi}}, \"seh refstub: CONTEXT.Edi is not at {{off:CONTEXT:Edi}}\");\n_Static_assert(__builtin_offsetof(CONTEXT, Eax) == {{off:CONTEXT:Eax}}, \"seh refstub: CONTEXT.Eax is not at {{off:CONTEXT:Eax}}\");\n_Static_assert(__builtin_offsetof(CONTEXT, Ebp) == {{off:CONTEXT:Ebp}}, \"seh refstub: CONTEXT.Ebp is not at {{off:CONTEXT:Ebp}}\");\n_Static_assert(__builtin_offsetof(CONTEXT, Eip) == {{off:CONTEXT:Eip}}, \"seh refstub: CONTEXT.Eip is not at {{off:CONTEXT:Eip}}\");\n_Static_assert(__builtin_offsetof(CONTEXT, Esp) == {{off:CONTEXT:Esp}}, \"seh refstub: CONTEXT.Esp is not at {{off:CONTEXT:Esp}}\");\n_Static_assert(__builtin_offsetof(CONTEXT, SegSs) == {{off:CONTEXT:SegSs}}, \"seh refstub: CONTEXT.SegSs is not at {{off:CONTEXT:SegSs}}\");\n_Static_assert(__builtin_offsetof(CONTEXT, ExtendedRegisters) == {{off:CONTEXT:ExtendedRegisters}}, \"seh refstub: CONTEXT.ExtendedRegisters is not at {{off:CONTEXT:ExtendedRegisters}}\");\n_Static_assert(sizeof(CONTEXT) == {{size:CONTEXT}}, \"seh refstub: sizeof(CONTEXT) != {{size:CONTEXT}}\");\n\n/* NT_TIB */\n_Static_assert(__builtin_offsetof(NT_TIB, ExceptionList) == {{off:NT_TIB:ExceptionList}}, \"seh refstub: NT_TIB.ExceptionList is not at {{off:NT_TIB:ExceptionList}}\");\n_Static_assert(__builtin_offsetof(NT_TIB, StackBase) == {{off:NT_TIB:StackBase}}, \"seh refstub: NT_TIB.StackBase is not at {{off:NT_TIB:StackBase}}\");\n_Static_assert(__builtin_offsetof(NT_TIB, StackLimit) == {{off:NT_TIB:StackLimit}}, \"seh refstub: NT_TIB.StackLimit is not at {{off:NT_TIB:StackLimit}}\");\n_Static_assert(__builtin_offsetof(NT_TIB, Self) == {{off:NT_TIB:Self}}, \"seh refstub: NT_TIB.Self is not at {{off:NT_TIB:Self}}\");\n_Static_assert(sizeof(NT_TIB) == {{size:NT_TIB}}, \"seh refstub: sizeof(NT_TIB) != {{size:NT_TIB}}\");\n\n/* _JUMP_BUFFER */\n_Static_assert(__builtin_offsetof(_JUMP_BUFFER, Ebp) == {{off:_JUMP_BUFFER:Ebp}}, \"seh refstub: _JUMP_BUFFER.Ebp is not at {{off:_JUMP_BUFFER:Ebp}}\");\n_Static_assert(__builtin_offsetof(_JUMP_BUFFER, Ebx) == {{off:_JUMP_BUFFER:Ebx}}, \"seh refstub: _JUMP_BUFFER.Ebx is not at {{off:_JUMP_BUFFER:Ebx}}\");\n_Static_assert(__builtin_offsetof(_JUMP_BUFFER, Edi) == {{off:_JUMP_BUFFER:Edi}}, \"seh refstub: _JUMP_BUFFER.Edi is not at {{off:_JUMP_BUFFER:Edi}}\");\n_Static_assert(__builtin_offsetof(_JUMP_BUFFER, Esi) == {{off:_JUMP_BUFFER:Esi}}, \"seh refstub: _JUMP_BUFFER.Esi is not at {{off:_JUMP_BUFFER:Esi}}\");\n_Static_assert(__builtin_offsetof(_JUMP_BUFFER, Esp) == {{off:_JUMP_BUFFER:Esp}}, \"seh refstub: _JUMP_BUFFER.Esp is not at {{off:_JUMP_BUFFER:Esp}}\");\n_Static_assert(__builtin_offsetof(_JUMP_BUFFER, Eip) == {{off:_JUMP_BUFFER:Eip}}, \"seh refstub: _JUMP_BUFFER.Eip is not at {{off:_JUMP_BUFFER:Eip}}\");\n_Static_assert(__builtin_offsetof(_JUMP_BUFFER, Registration) == {{off:_JUMP_BUFFER:Registration}}, \"seh refstub: _JUMP_BUFFER.Registration is not at {{off:_JUMP_BUFFER:Registration}}\");\n_Static_assert(__builtin_offsetof(_JUMP_BUFFER, TryLevel) == {{off:_JUMP_BUFFER:TryLevel}}, \"seh refstub: _JUMP_BUFFER.TryLevel is not at {{off:_JUMP_BUFFER:TryLevel}}\");\n_Static_assert(__builtin_offsetof(_JUMP_BUFFER, Cookie) == {{off:_JUMP_BUFFER:Cookie}}, \"seh refstub: _JUMP_BUFFER.Cookie is not at {{off:_JUMP_BUFFER:Cookie}}\");\n_Static_assert(__builtin_offsetof(_JUMP_BUFFER, UnwindFunc) == {{off:_JUMP_BUFFER:UnwindFunc}}, \"seh refstub: _JUMP_BUFFER.UnwindFunc is not at {{off:_JUMP_BUFFER:UnwindFunc}}\");\n_Static_assert(__builtin_offsetof(_JUMP_BUFFER, UnwindData) == {{off:_JUMP_BUFFER:UnwindData}}, \"seh refstub: _JUMP_BUFFER.UnwindData is not at {{off:_JUMP_BUFFER:UnwindData}}\");\n_Static_assert(sizeof(_JUMP_BUFFER) == {{size:_JUMP_BUFFER}}, \"seh refstub: sizeof(_JUMP_BUFFER) != {{size:_JUMP_BUFFER}}\");\n\n/* _FPIEEE_VALUE */\n_Static_assert(__builtin_offsetof(_FPIEEE_VALUE, Value) == {{off:_FPIEEE_VALUE:Value}}, \"seh refstub: _FPIEEE_VALUE.Value is not at {{off:_FPIEEE_VALUE:Value}}\");\n_Static_assert(sizeof(_FPIEEE_VALUE) == {{size:_FPIEEE_VALUE}}, \"seh refstub: sizeof(_FPIEEE_VALUE) != {{size:_FPIEEE_VALUE}}\");\n\n/* _FPIEEE_RECORD */\n_Static_assert(__builtin_offsetof(_FPIEEE_RECORD, Cause) == {{off:_FPIEEE_RECORD:Cause}}, \"seh refstub: _FPIEEE_RECORD.Cause is not at {{off:_FPIEEE_RECORD:Cause}}\");\n_Static_assert(__builtin_offsetof(_FPIEEE_RECORD, Enable) == {{off:_FPIEEE_RECORD:Enable}}, \"seh refstub: _FPIEEE_RECORD.Enable is not at {{off:_FPIEEE_RECORD:Enable}}\");\n_Static_assert(__builtin_offsetof(_FPIEEE_RECORD, Status) == {{off:_FPIEEE_RECORD:Status}}, \"seh refstub: _FPIEEE_RECORD.Status is not at {{off:_FPIEEE_RECORD:Status}}\");\n_Static_assert(__builtin_offsetof(_FPIEEE_RECORD, Operand1) == {{off:_FPIEEE_RECORD:Operand1}}, \"seh refstub: _FPIEEE_RECORD.Operand1 is not at {{off:_FPIEEE_RECORD:Operand1}}\");\n_Static_assert(__builtin_offsetof(_FPIEEE_RECORD, Operand2) == {{off:_FPIEEE_RECORD:Operand2}}, \"seh refstub: _FPIEEE_RECORD.Operand2 is not at {{off:_FPIEEE_RECORD:Operand2}}\");\n_Static_assert(__builtin_offsetof(_FPIEEE_RECORD, Result) == {{off:_FPIEEE_RECORD:Result}}, \"seh refstub: _FPIEEE_RECORD.Result is not at {{off:_FPIEEE_RECORD:Result}}\");\n_Static_assert(sizeof(_FPIEEE_RECORD) == {{size:_FPIEEE_RECORD}}, \"seh refstub: sizeof(_FPIEEE_RECORD) != {{size:_FPIEEE_RECORD}}\");\n\n/* cxx_function_descr */\n_Static_assert(__builtin_offsetof(cxx_function_descr, unwind_count) == {{off:cxx_function_descr:unwind_count}}, \"seh refstub: cxx_function_descr.unwind_count is not at {{off:cxx_function_descr:unwind_count}}\");\n_Static_assert(__builtin_offsetof(cxx_function_descr, unwind_table) == {{off:cxx_function_descr:unwind_table}}, \"seh refstub: cxx_function_descr.unwind_table is not at {{off:cxx_function_descr:unwind_table}}\");\n_Static_assert(__builtin_offsetof(cxx_function_descr, tryblock_count) == {{off:cxx_function_descr:tryblock_count}}, \"seh refstub: cxx_function_descr.tryblock_count is not at {{off:cxx_function_descr:tryblock_count}}\");\n_Static_assert(__builtin_offsetof(cxx_function_descr, tryblock) == {{off:cxx_function_descr:tryblock}}, \"seh refstub: cxx_function_descr.tryblock is not at {{off:cxx_function_descr:tryblock}}\");\n_Static_assert(__builtin_offsetof(cxx_function_descr, ipmap_count) == {{off:cxx_function_descr:ipmap_count}}, \"seh refstub: cxx_function_descr.ipmap_count is not at {{off:cxx_function_descr:ipmap_count}}\");\n_Static_assert(__builtin_offsetof(cxx_function_descr, ipmap) == {{off:cxx_function_descr:ipmap}}, \"seh refstub: cxx_function_descr.ipmap is not at {{off:cxx_function_descr:ipmap}}\");\n_Static_assert(__builtin_offsetof(cxx_function_descr, expect_list) == {{off:cxx_function_descr:expect_list}}, \"seh refstub: cxx_function_descr.expect_list is not at {{off:cxx_function_descr:expect_list}}\");\n_Static_assert(__builtin_offsetof(cxx_function_descr, flags) == {{off:cxx_function_descr:flags}}, \"seh refstub: cxx_function_descr.flags is not at {{off:cxx_function_descr:flags}}\");\n_Static_assert(sizeof(cxx_function_descr) == {{size:cxx_function_descr}}, \"seh refstub: sizeof(cxx_function_descr) != {{size:cxx_function_descr}}\");\n\n/* tryblock_info */\n_Static_assert(__builtin_offsetof(tryblock_info, start_level) == {{off:tryblock_info:start_level}}, \"seh refstub: tryblock_info.start_level is not at {{off:tryblock_info:start_level}}\");\n_Static_assert(__builtin_offsetof(tryblock_info, end_level) == {{off:tryblock_info:end_level}}, \"seh refstub: tryblock_info.end_level is not at {{off:tryblock_info:end_level}}\");\n_Static_assert(__builtin_offsetof(tryblock_info, catch_level) == {{off:tryblock_info:catch_level}}, \"seh refstub: tryblock_info.catch_level is not at {{off:tryblock_info:catch_level}}\");\n_Static_assert(__builtin_offsetof(tryblock_info, catchblock_count) == {{off:tryblock_info:catchblock_count}}, \"seh refstub: tryblock_info.catchblock_count is not at {{off:tryblock_info:catchblock_count}}\");\n_Static_assert(__builtin_offsetof(tryblock_info, catchblock) == {{off:tryblock_info:catchblock}}, \"seh refstub: tryblock_info.catchblock is not at {{off:tryblock_info:catchblock}}\");\n_Static_assert(sizeof(tryblock_info) == {{size:tryblock_info}}, \"seh refstub: sizeof(tryblock_info) != {{size:tryblock_info}}\");\n\n/* unwind_info */\n_Static_assert(__builtin_offsetof(unwind_info, prev) == {{off:unwind_info:prev}}, \"seh refstub: unwind_info.prev is not at {{off:unwind_info:prev}}\");\n_Static_assert(__builtin_offsetof(unwind_info, handler) == {{off:unwind_info:handler}}, \"seh refstub: unwind_info.handler is not at {{off:unwind_info:handler}}\");\n_Static_assert(sizeof(unwind_info) == {{size:unwind_info}}, \"seh refstub: sizeof(unwind_info) != {{size:unwind_info}}\");\n\n/* catchblock_info */\n_Static_assert(__builtin_offsetof(catchblock_info, flags) == {{off:catchblock_info:flags}}, \"seh refstub: catchblock_info.flags is not at {{off:catchblock_info:flags}}\");\n_Static_assert(__builtin_offsetof(catchblock_info, type_info) == {{off:catchblock_info:type_info}}, \"seh refstub: catchblock_info.type_info is not at {{off:catchblock_info:type_info}}\");\n_Static_assert(__builtin_offsetof(catchblock_info, offset) == {{off:catchblock_info:offset}}, \"seh refstub: catchblock_info.offset is not at {{off:catchblock_info:offset}}\");\n_Static_assert(__builtin_offsetof(catchblock_info, handler) == {{off:catchblock_info:handler}}, \"seh refstub: catchblock_info.handler is not at {{off:catchblock_info:handler}}\");\n_Static_assert(sizeof(catchblock_info) == {{size:catchblock_info}}, \"seh refstub: sizeof(catchblock_info) != {{size:catchblock_info}}\");\n\n/* cxx_exception_type */\n_Static_assert(__builtin_offsetof(cxx_exception_type, flags) == {{off:cxx_exception_type:flags}}, \"seh refstub: cxx_exception_type.flags is not at {{off:cxx_exception_type:flags}}\");\n_Static_assert(__builtin_offsetof(cxx_exception_type, destructor) == {{off:cxx_exception_type:destructor}}, \"seh refstub: cxx_exception_type.destructor is not at {{off:cxx_exception_type:destructor}}\");\n_Static_assert(__builtin_offsetof(cxx_exception_type, custom_handler) == {{off:cxx_exception_type:custom_handler}}, \"seh refstub: cxx_exception_type.custom_handler is not at {{off:cxx_exception_type:custom_handler}}\");\n_Static_assert(__builtin_offsetof(cxx_exception_type, type_info_table) == {{off:cxx_exception_type:type_info_table}}, \"seh refstub: cxx_exception_type.type_info_table is not at {{off:cxx_exception_type:type_info_table}}\");\n_Static_assert(sizeof(cxx_exception_type) == {{size:cxx_exception_type}}, \"seh refstub: sizeof(cxx_exception_type) != {{size:cxx_exception_type}}\");\n\n/* frame_info */\n_Static_assert(__builtin_offsetof(frame_info, object) == {{off:frame_info:object}}, \"seh refstub: frame_info.object is not at {{off:frame_info:object}}\");\n_Static_assert(__builtin_offsetof(frame_info, next) == {{off:frame_info:next}}, \"seh refstub: frame_info.next is not at {{off:frame_info:next}}\");\n_Static_assert(sizeof(frame_info) == {{size:frame_info}}, \"seh refstub: sizeof(frame_info) != {{size:frame_info}}\");\n\n/* cxx_frame_info */\n_Static_assert(__builtin_offsetof(cxx_frame_info, frame_info) == {{off:cxx_frame_info:frame_info}}, \"seh refstub: cxx_frame_info.frame_info is not at {{off:cxx_frame_info:frame_info}}\");\n_Static_assert(__builtin_offsetof(cxx_frame_info, rec) == {{off:cxx_frame_info:rec}}, \"seh refstub: cxx_frame_info.rec is not at {{off:cxx_frame_info:rec}}\");\n_Static_assert(__builtin_offsetof(cxx_frame_info, context) == {{off:cxx_frame_info:context}}, \"seh refstub: cxx_frame_info.context is not at {{off:cxx_frame_info:context}}\");\n_Static_assert(sizeof(cxx_frame_info) == {{size:cxx_frame_info}}, \"seh refstub: sizeof(cxx_frame_info) != {{size:cxx_frame_info}}\");\n\n/* thread_data_t */\n_Static_assert(__builtin_offsetof(thread_data_t, se_translator) == {{off:thread_data_t:se_translator}}, \"seh refstub: thread_data_t.se_translator is not at {{off:thread_data_t:se_translator}}\");\n_Static_assert(__builtin_offsetof(thread_data_t, exc_record) == {{off:thread_data_t:exc_record}}, \"seh refstub: thread_data_t.exc_record is not at {{off:thread_data_t:exc_record}}\");\n_Static_assert(__builtin_offsetof(thread_data_t, ctx_record) == {{off:thread_data_t:ctx_record}}, \"seh refstub: thread_data_t.ctx_record is not at {{off:thread_data_t:ctx_record}}\");\n_Static_assert(__builtin_offsetof(thread_data_t, processing_throw) == {{off:thread_data_t:processing_throw}}, \"seh refstub: thread_data_t.processing_throw is not at {{off:thread_data_t:processing_throw}}\");\n_Static_assert(__builtin_offsetof(thread_data_t, frame_info_head) == {{off:thread_data_t:frame_info_head}}, \"seh refstub: thread_data_t.frame_info_head is not at {{off:thread_data_t:frame_info_head}}\");\n_Static_assert(sizeof(thread_data_t) == {{size:thread_data_t}}, \"seh refstub: sizeof(thread_data_t) != {{size:thread_data_t}}\");\n\n#endif /* MSVCRT_SEH_LAYOUT_H */\n"
+    ]
+  ]
+}

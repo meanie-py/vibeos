@@ -160,3 +160,9 @@ def test_all_renders_before_any_write(tmp_path):
     assert result.returncode == 2, result.stderr
     assert "sdk/lib/rtl/error.c" in result.stderr
     assert target.read_text() == "do not replace before every recipe renders"
+
+
+def test_output_filename_may_share_a_generator_name(tmp_path):
+    result = run("lcid", "--output", "seh-layout", cwd=tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "seh-layout").read_text() == run("lcid", "--stdout").stdout

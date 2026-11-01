@@ -41,6 +41,10 @@
 
 // The header-derived authority: struct layouts, constants, and the Win32/shell fn surface.
 // The crate's own functions: the definition is the declaration.
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+pub use crate::shell32::utils::GetDfmCmd_RustBridge as GetDfmCmd;
+pub use crate::shell32::utils::SHGetAttributes_RustBridge as SHGetAttributes;
+pub use crate::shell32::utils::SHILAppend_RustBridge as SHILAppend;
 pub use crate::cfs_folder_tu::CFSFolder_CompareUiStrings_RustBridge;
 pub use crate::wine::pidl::ILClone;
 pub use crate::wine::pidl::ILCombine;
@@ -190,6 +194,12 @@ extern "system" {
         lcid: crate::island::LCID,
         pptlib: *mut *mut crate::island::ITypeLib,
     ) -> crate::island::HRESULT;
+    /// winmm's `BOOL PlaySoundW(LPCWSTR, HMODULE, DWORD)`, the recycle bin's empty sound.
+    pub fn PlaySoundW(
+        pszSound: crate::island::LPCWSTR,
+        hmod: crate::island::HMODULE,
+        fdwSound: crate::island::DWORD,
+    ) -> crate::island::BOOL;
 }
 
 /// `DLGPROC`, spelled `extern "system"` on EVERY arch.
@@ -834,12 +844,6 @@ pub use crate::shell_link::__SHCloneStrAtoW;
 pub use crate::wine::pidl::{_ILCreateDesktop, _ILGetDataPointer, _ILIsMyComputer};
 
 extern "system" {
-    /// C++ linkage in `utils.cpp`; reached through the WINAPI shim like its neighbours.
-    #[link_name = "SHILAppend_RustBridge"]
-    pub fn SHILAppend(
-        pidl: crate::island::LPITEMIDLIST,
-        ppidl: *mut crate::island::LPITEMIDLIST,
-    ) -> crate::island::HRESULT;
 }
 
 extern "C" {
@@ -904,20 +908,6 @@ extern "system" {
         pszShort: crate::island::LPCWSTR,
         pszFileSpec: crate::island::LPCWSTR,
     ) -> crate::island::BOOL;
-    /// `precomp.h:290` — a real function, not an inline, defined in `utils.cpp` with C++
-    /// linkage and no WINAPI, so it is reached through a shim rather than declared directly.
-    #[link_name = "SHGetAttributes_RustBridge"]
-    pub fn SHGetAttributes(
-        psf: *mut crate::shellcom::IShellFolder,
-        pidl: crate::island::LPCITEMIDLIST,
-        dwAttributes: crate::island::DWORD,
-    ) -> crate::island::DWORD;
-    /// `precomp.h:217` — maps a verb string to its DFM_CMD_*. C++ linkage; shimmed.
-    #[link_name = "GetDfmCmd_RustBridge"]
-    pub fn GetDfmCmd(
-        pCM: *mut core::ffi::c_void,
-        verba: crate::island::LPCSTR,
-    ) -> crate::island::UINT;
 }
 
 /// `SetWindowLongPtrW` is a winuser.h MACRO for `SetWindowLongW` on 32-bit — there is no export

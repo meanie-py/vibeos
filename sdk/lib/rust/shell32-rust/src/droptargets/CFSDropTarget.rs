@@ -42,6 +42,16 @@
 // fail differently. The prelude glob resolves far more names, so it is the one kept, and the
 // per-type ownership is then stated explicitly below.
 use crate::prelude::*;
+// One declaration per external symbol: win32.rs.
+use crate::win32::ReleaseStgMedium;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::default_context_menu_tu::DCMA_Destroy_RustBridge as DCMA_Destroy;
+use crate::default_context_menu_tu::DCMA_InsertMenuItems_RustBridge as DCMA_InsertMenuItems;
+use crate::default_context_menu_tu::DCMA_InvokeCommand_RustBridge as DCMA_InvokeCommand;
+use crate::shell32::utils::DCIA_AddShellExSubkey_RustBridge as DCIA_AddShellExSubkey;
 // The crate's own functions: the definition is the declaration.
 use crate::desktop_folder_tu::SHGetDesktopFolder;
 // One declaration per external symbol: island.rs.
@@ -151,24 +161,6 @@ unsafe fn DCIA_Destroy(hDCIA: HDCIA) {
 // spelling of an extern block reaches them. Each gets a `_RustBridge` shim on the C++ side,
 // the same treatment SHELL_ErrorBox and the other cross-language helpers already have.
 extern "system" {
-    #[link_name = "DCIA_AddShellExSubkey_RustBridge"]
-    fn DCIA_AddShellExSubkey(hDCIA: HDCIA, hProgId: HKEY, pszSubkey: PCWSTR);
-    #[link_name = "DCMA_InsertMenuItems_RustBridge"]
-    fn DCMA_InsertMenuItems(
-        hDCMA: HDCMA,
-        hDCIA: HDCIA,
-        pidlFolder: LPCITEMIDLIST,
-        pDO: *mut IDataObject,
-        pKeys: *mut HKEY,
-        nKeys: UINT,
-        pQCMI: *mut QCMINFO,
-        fCmf: UINT,
-        pUnkSite: *mut IUnknown,
-    ) -> UINT;
-    #[link_name = "DCMA_InvokeCommand_RustBridge"]
-    fn DCMA_InvokeCommand(hDCMA: HDCMA, pICI: *mut CMINVOKECOMMANDINFO) -> HRESULT;
-    #[link_name = "DCMA_Destroy_RustBridge"]
-    fn DCMA_Destroy(hDCMA: HDCMA);
 }
 
 extern "C" {
@@ -456,8 +448,6 @@ extern "C" {
 // Deterministic COM scaffold for CFSDropTarget; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -466,7 +456,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -753,11 +743,7 @@ pub struct BIND_OPTS {
     pub dwTickCountDeadline: DWORD,
 }
 
-#[repr(C)]
-pub struct CIDA {
-    pub cidl: UINT,
-    pub aoffset: [UINT; 1],
-}
+pub use crate::island::CIDA;
 pub type LPIDA = *mut CIDA;
 
 pub use crate::island::DROPFILES;
@@ -1664,7 +1650,6 @@ pub unsafe fn CFSDropTarget__DoDropThreadProc_body(this: *mut CFSDropTarget, lpP
 // ============================================================================
 
 extern "system" {
-    fn ReleaseStgMedium(pmedium: *mut STGMEDIUM);
     fn DisplayNameOfW(
         psf: *mut IShellFolder,
         pidl: LPCITEMIDLIST,

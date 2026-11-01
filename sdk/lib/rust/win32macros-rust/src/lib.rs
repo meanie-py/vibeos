@@ -750,11 +750,14 @@ macro_rules! InitializeObjectAttributes {
 
 /// shellutils.h:88 `FAILED_UNEXPECTEDLY(hr)` -- `_ROS_FAILED_HELPER`, i.e. `FAILED(hr)` plus a
 /// debug trace of the failing expression. The VALUE is `FAILED`; the trace is not carried.
+/// C also calls it as a bare statement for the trace alone (fontext, stobject), so the value
+/// goes through a binding: a bare `<` in statement position is an `unused_must_use`.
 #[macro_export]
 macro_rules! FAILED_UNEXPECTEDLY {
-    ($hr:expr $(,)?) => {
-        (($hr) as i32) < 0
-    };
+    ($hr:expr $(,)?) => {{
+        let failed: bool = (($hr) as i32) < 0;
+        failed
+    }};
 }
 
 /// MSVC's `__debugbreak()` intrinsic: the breakpoint instruction inline, never a call (the
@@ -2222,6 +2225,24 @@ pub unsafe fn InterlockedExchangePointer(
 ) -> *mut core::ffi::c_void {
     (*(target as *const core::sync::atomic::AtomicPtr<core::ffi::c_void>))
         .swap(value, core::sync::atomic::Ordering::SeqCst)
+}
+
+/// `InterlockedCompareExchangePointer(Destination, Exchange, Comperand)`: stores `exchange`
+/// only when the slot holds `comperand`, and returns the value it held either way.
+#[inline(always)]
+pub unsafe fn InterlockedCompareExchangePointer(
+    destination: *mut *mut core::ffi::c_void,
+    exchange: *mut core::ffi::c_void,
+    comperand: *mut core::ffi::c_void,
+) -> *mut core::ffi::c_void {
+    match (*(destination as *const core::sync::atomic::AtomicPtr<core::ffi::c_void>)).compare_exchange(
+        comperand,
+        exchange,
+        core::sync::atomic::Ordering::SeqCst,
+        core::sync::atomic::Ordering::SeqCst,
+    ) {
+        Ok(old) | Err(old) => old,
+    }
 }
 
 /// `InterlockedCompareExchange(Destination, Exchange, Comperand)`: stores `exchange` only when

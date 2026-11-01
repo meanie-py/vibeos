@@ -1,0 +1,15 @@
+SVC_(Foo, 7)
+SVC_(Manual, 4)
+#ifdef _WIN64
+SVC_(Bad, 0)
+#else
+SVC_(Unknown, 2)
+#endif
+#ifndef _WIN64
+SVC_(Missing, 9)
+#endif
+#if DBG
+SVC_(Arch, 2)
+#else
+SVC_(Negative, 3)
+#endif

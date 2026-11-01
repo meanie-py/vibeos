@@ -10,11 +10,14 @@
  * IPersistFile::Load, EnumObjects, GetDisplayNameOf, every GetDetailsOf column (name, type,
  * compressed size, password, size, ratio, date), GetAttributesOf, CompareIDs, BindToObject
  * into the subdirectory, and the item context menu's QueryContextMenu/GetCommandString.
- * Nothing is extracted, created, shown or run. */
+ * Then the paths that sit behind UI, with a clicker thread answering the dialogs: "Extract
+ * All" through its wizard, SendTo's drop target creating an archive from two files, and the
+ * item menu's "delete" (confirmed) rewriting it. */
 #define COBJMACROS
 #include <windows.h>
 #include <shlobj.h>
 #include <shlwapi.h>
+#include <commctrl.h>
 #include <stdio.h>
 
 static const unsigned char kZip[] = {
@@ -49,7 +52,11 @@ static const unsigned char kZip[] = {
 };
 
 static const CLSID kZipStorage = {0xe88dcce0, 0xb7b3, 0x11d1, {0xa9, 0xf0, 0x00, 0xaa, 0x00, 0x60, 0xfa, 0x31}};
+static const CLSID kZipContextMenu = {0xb8cdcb65, 0xb1bf, 0x4b42, {0x94, 0x28, 0x1d, 0xfd, 0xb7, 0xee, 0x92, 0xaf}};
 static const CLSID kZipSendTo = {0x888dca60, 0xfc0a, 0x11cf, {0x8f, 0x0f, 0x00, 0xc0, 0x4f, 0xd7, 0xd0, 0x62}};
+
+/* zipfldr's resource.h: the wizard's destination edit and "show extracted files" box. */
+enum { kIdcDirectory = 1001, kIdcShowExtracted = 1102 };
 
 typedef HRESULT(WINAPI *GCO)(REFCLSID, REFIID, void **);
 typedef HRESULT(WINAPI *VOIDFN)(void);
@@ -150,6 +157,469 @@ static int list_folder(const char *tag, IShellFolder2 *sf, LPITEMIDLIST *keep, i
     IEnumIDList_Release(en);
     printf("%s items %d\n", tag, n);
     return n;
+}
+
+/* The UI-gated paths, driven without a user: a clicker thread answers each dialog that
+ * appears in this process -- a message box with Yes (else OK), the extract wizard with Next
+ * then Finish (unticking "show extracted files" so no explorer starts). It prints what it
+ * answered, so a dialog only one side raises shows up in the diff. */
+static volatile LONG g_clicker_stop;
+static volatile LONG g_wizard_next, g_wizard_finish;
+
+static BOOL CALLBACK clicker_enum(HWND hwnd, LPARAM lp)
+{
+    DWORD pid = 0;
+    WCHAR cls[16];
+    (void)lp;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid != GetCurrentProcessId() || !IsWindowVisible(hwnd) ||
+        !GetClassNameW(hwnd, cls, 16) || lstrcmpW(cls, L"#32770"))
+        return TRUE;
+    HWND page = (HWND)SendMessageW(hwnd, PSM_GETCURRENTPAGEHWND, 0, 0);
+    if (page)
+    {
+        if (GetDlgItem(page, kIdcDirectory) && !g_wizard_next && IsWindowEnabled(GetDlgItem(page, kIdcDirectory)))
+        {
+            InterlockedExchange(&g_wizard_next, 1);
+            printf("wizard next\n");
+            PostMessageW(hwnd, PSM_PRESSBUTTON, PSBTN_NEXT, 0);
+        }
+        else if (GetDlgItem(page, kIdcShowExtracted) && !g_wizard_finish)
+        {
+            InterlockedExchange(&g_wizard_finish, 1);
+            SendMessageW(GetDlgItem(page, kIdcShowExtracted), BM_SETCHECK, BST_UNCHECKED, 0);
+            printf("wizard finish\n");
+            PostMessageW(hwnd, PSM_PRESSBUTTON, PSBTN_FINISH, 0);
+        }
+        return TRUE;
+    }
+    WCHAR text[512] = L"";
+    GetDlgItemTextW(hwnd, 0xFFFF, text, 512);
+    int button = GetDlgItem(hwnd, IDYES) ? IDYES : IDOK;
+    printf("dialog %s '%ls'\n", button == IDYES ? "yes" : "ok", text);
+    PostMessageW(hwnd, WM_COMMAND, MAKEWPARAM(button, BN_CLICKED), (LPARAM)GetDlgItem(hwnd, button));
+    Sleep(300); /* let it close before the next scan sees it again */
+    return TRUE;
+}
+
+static DWORD WINAPI clicker(LPVOID arg)
+{
+    (void)arg;
+    while (!g_clicker_stop)
+    {
+        Sleep(100);
+        EnumWindows(clicker_enum, 0);
+    }
+    return 0;
+}
+
+/* A minimal IDataObject offering CF_HDROP for a list of paths, which is all the drop target
+ * and IShellExtInit read. */
+typedef struct
+{
+    IDataObject iface;
+    LONG ref;
+    WCHAR files[4][MAX_PATH];
+    int n;
+} HdropObj;
+
+static HRESULT WINAPI ho_qi(IDataObject *This, REFIID riid, void **ppv)
+{
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IDataObject))
+    {
+        *ppv = This;
+        IDataObject_AddRef(This);
+        return S_OK;
+    }
+    *ppv = NULL;
+    return E_NOINTERFACE;
+}
+static ULONG WINAPI ho_addref(IDataObject *This) { return InterlockedIncrement(&((HdropObj *)This)->ref); }
+static ULONG WINAPI ho_release(IDataObject *This) { return InterlockedDecrement(&((HdropObj *)This)->ref); }
+static HRESULT WINAPI ho_querygetdata(IDataObject *This, FORMATETC *fe)
+{
+    (void)This;
+    return fe->cfFormat == CF_HDROP && (fe->tymed & TYMED_HGLOBAL) ? S_OK : DV_E_FORMATETC;
+}
+static HRESULT WINAPI ho_getdata(IDataObject *This, FORMATETC *fe, STGMEDIUM *stg)
+{
+    HdropObj *o = (HdropObj *)This;
+    if (ho_querygetdata(This, fe) != S_OK)
+        return DV_E_FORMATETC;
+    SIZE_T chars = 1;
+    for (int i = 0; i < o->n; i++)
+        chars += lstrlenW(o->files[i]) + 1;
+    HGLOBAL h = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, sizeof(DROPFILES) + chars * sizeof(WCHAR));
+    DROPFILES *df = (DROPFILES *)GlobalLock(h);
+    df->pFiles = sizeof(DROPFILES);
+    df->fWide = TRUE;
+    WCHAR *p = (WCHAR *)(df + 1);
+    for (int i = 0; i < o->n; i++)
+    {
+        lstrcpyW(p, o->files[i]);
+        p += lstrlenW(p) + 1;
+    }
+    GlobalUnlock(h);
+    stg->tymed = TYMED_HGLOBAL;
+    stg->hGlobal = h;
+    stg->pUnkForRelease = NULL;
+    return S_OK;
+}
+/* Each stub keeps its real signature: on i386 a stdcall callee pops its own arguments. */
+static HRESULT WINAPI ho_getdatahere(IDataObject *This, FORMATETC *fe, STGMEDIUM *stg)
+{
+    (void)This, (void)fe, (void)stg;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI ho_canonical(IDataObject *This, FORMATETC *in, FORMATETC *out)
+{
+    (void)This, (void)in, (void)out;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI ho_setdata(IDataObject *This, FORMATETC *fe, STGMEDIUM *stg, BOOL rel)
+{
+    (void)This, (void)fe, (void)stg, (void)rel;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI ho_enumfmt(IDataObject *This, DWORD dir, IEnumFORMATETC **en)
+{
+    (void)This, (void)dir;
+    *en = NULL;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI ho_dadvise(IDataObject *This, FORMATETC *fe, DWORD f, IAdviseSink *s, DWORD *c)
+{
+    (void)This, (void)fe, (void)f, (void)s, (void)c;
+    return OLE_E_ADVISENOTSUPPORTED;
+}
+static HRESULT WINAPI ho_dunadvise(IDataObject *This, DWORD c)
+{
+    (void)This, (void)c;
+    return OLE_E_ADVISENOTSUPPORTED;
+}
+static HRESULT WINAPI ho_enumadvise(IDataObject *This, IEnumSTATDATA **en)
+{
+    (void)This;
+    *en = NULL;
+    return OLE_E_ADVISENOTSUPPORTED;
+}
+
+static IDataObjectVtbl ho_vtbl = {
+    ho_qi, ho_addref, ho_release, ho_getdata, ho_getdatahere, ho_querygetdata,
+    ho_canonical, ho_setdata, ho_enumfmt, ho_dadvise, ho_dunadvise, ho_enumadvise,
+};
+
+static void hdrop_init(HdropObj *o)
+{
+    ZeroMemory(o, sizeof(*o));
+    o->iface.lpVtbl = &ho_vtbl;
+    o->ref = 1;
+}
+
+/* Waits for a condition the probe cannot be signalled about: a file another thread of the
+ * extension writes, or the wizard closing. */
+static BOOL wait_until(BOOL (*cond)(const WCHAR *), const WCHAR *arg, int seconds)
+{
+    for (int i = 0; i < seconds * 10; i++)
+    {
+        if (cond(arg))
+            return TRUE;
+        Sleep(100);
+    }
+    return FALSE;
+}
+
+/* The creator writes the archive on its own thread; done once nobody holds it open. */
+static BOOL zip_closed(const WCHAR *path)
+{
+    HANDLE h = CreateFileW(path, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+        return FALSE;
+    CloseHandle(h);
+    return TRUE;
+}
+
+
+static BOOL CALLBACK find_wizard(HWND hwnd, LPARAM lp)
+{
+    DWORD pid = 0;
+    GetWindowThreadProcessId(hwnd, &pid);
+    if (pid == GetCurrentProcessId() && SendMessageW(hwnd, PSM_GETCURRENTPAGEHWND, 0, 0))
+        *(BOOL *)lp = TRUE;
+    return TRUE;
+}
+
+static BOOL wizard_open(const WCHAR *unused)
+{
+    BOOL found = FALSE;
+    (void)unused;
+    EnumWindows(find_wizard, (LPARAM)&found);
+    return found;
+}
+
+static BOOL wizard_shut(const WCHAR *unused)
+{
+    return !wizard_open(unused);
+}
+
+/* Names, sizes and a byte sum, relative to the root, sorted by FindFirstFile's order. */
+static void walk_tree(const WCHAR *root, const WCHAR *rel)
+{
+    WCHAR pat[MAX_PATH];
+    lstrcpyW(pat, root);
+    if (*rel)
+        PathAppendW(pat, rel);
+    PathAppendW(pat, L"*");
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(pat, &fd);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+    do
+    {
+        if (!lstrcmpW(fd.cFileName, L".") || !lstrcmpW(fd.cFileName, L".."))
+            continue;
+        WCHAR sub[MAX_PATH], full[MAX_PATH];
+        lstrcpyW(sub, rel);
+        PathAppendW(sub, fd.cFileName);
+        lstrcpyW(full, root);
+        PathAppendW(full, sub);
+        if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+        {
+            printf("extracted dir '%ls'\n", sub);
+            walk_tree(root, sub);
+            continue;
+        }
+        unsigned long sum = 0;
+        HANDLE f = CreateFileW(full, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+        if (f != INVALID_HANDLE_VALUE)
+        {
+            BYTE buf[512];
+            DWORD got;
+            while (ReadFile(f, buf, sizeof(buf), &got, NULL) && got)
+                for (DWORD k = 0; k < got; k++)
+                    sum = sum * 31 + buf[k];
+            CloseHandle(f);
+        }
+        printf("extracted file '%ls' size %lu sum %08lx\n", sub, fd.nFileSizeLow, sum);
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+}
+
+static void remove_tree(const WCHAR *dir)
+{
+    WCHAR pat[MAX_PATH];
+    lstrcpyW(pat, dir);
+    PathAppendW(pat, L"*");
+    WIN32_FIND_DATAW fd;
+    HANDLE h = FindFirstFileW(pat, &fd);
+    if (h != INVALID_HANDLE_VALUE)
+    {
+        do
+        {
+            if (!lstrcmpW(fd.cFileName, L".") || !lstrcmpW(fd.cFileName, L".."))
+                continue;
+            WCHAR full[MAX_PATH];
+            lstrcpyW(full, dir);
+            PathAppendW(full, fd.cFileName);
+            if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+                remove_tree(full);
+            else
+                DeleteFileW(full);
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+    }
+    RemoveDirectoryW(dir);
+}
+
+
+/* Names and the size/compressed columns of an archive, by a fresh storage folder each time
+ * (the date column is the creation time, so it is left out). */
+static void brief_list(GCO gco, const char *tag, const WCHAR *zip)
+{
+    IShellFolder2 *sf = create_folder(gco, zip);
+    if (!sf)
+        return;
+    IEnumIDList *en = NULL;
+    HRESULT hr = IShellFolder2_EnumObjects(sf, NULL, SHCONTF_FOLDERS | SHCONTF_NONFOLDERS, &en);
+    printf("%s enum %08lx\n", tag, (unsigned long)hr);
+    int n = 0;
+    LPITEMIDLIST pidl;
+    ULONG got;
+    while (en && IEnumIDList_Next(en, 1, &pidl, &got) == S_OK && got == 1)
+    {
+        for (UINT col = 0; col < 6; col++)
+        {
+            SHELLDETAILS sd;
+            char what[48];
+            ZeroMemory(&sd, sizeof(sd));
+            sprintf(what, "%s item %d col %u", tag, n, col);
+            hr = IShellFolder2_GetDetailsOf(sf, pidl, col, &sd);
+            if (SUCCEEDED(hr))
+                print_strret(what, &sd.str, pidl);
+            else
+                printf("%s %08lx\n", what, (unsigned long)hr);
+        }
+        CoTaskMemFree(pidl);
+        n++;
+    }
+    if (en)
+        IEnumIDList_Release(en);
+    printf("%s items %d\n", tag, n);
+    IShellFolder2_Release(sf);
+}
+
+static void write_file(const WCHAR *path, const char *body, int repeat)
+{
+    HANDLE h = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    DWORD wrote;
+    for (int i = 0; i < repeat; i++)
+        WriteFile(h, body, lstrlenA(body), &wrote, NULL);
+    CloseHandle(h);
+}
+
+/* SendTo -> Compressed folder: a drop of two files makes "<first>.zip" beside them. */
+static BOOL create_archive(GCO gco, const WCHAR *src, WCHAR *zip)
+{
+    HdropObj files;
+    hdrop_init(&files);
+    CreateDirectoryW(src, NULL);
+    lstrcpyW(files.files[0], src);
+    PathAppendW(files.files[0], L"alpha.txt");
+    write_file(files.files[0], "alpha alpha alpha alpha\r\n", 40);
+    lstrcpyW(files.files[1], src);
+    PathAppendW(files.files[1], L"beta.bin");
+    write_file(files.files[1], "b", 3);
+    files.n = 2;
+    lstrcpyW(zip, src);
+    PathAppendW(zip, L"alpha.zip");
+
+    IClassFactory *cf = NULL;
+    IDropTarget *dt = NULL;
+    HRESULT hr = gco(&kZipSendTo, &IID_IClassFactory, (void **)&cf);
+    if (SUCCEEDED(hr))
+    {
+        hr = IClassFactory_CreateInstance(cf, NULL, &IID_IDropTarget, (void **)&dt);
+        IClassFactory_Release(cf);
+    }
+    printf("create droptarget %08lx\n", (unsigned long)hr);
+    if (FAILED(hr))
+        return FALSE;
+    POINTL pt = {0, 0};
+    DWORD effect = DROPEFFECT_COPY | DROPEFFECT_MOVE;
+    hr = IDropTarget_DragEnter(dt, &files.iface, 0, pt, &effect);
+    printf("create dragenter %08lx effect %lu\n", (unsigned long)hr, effect);
+    effect = DROPEFFECT_COPY;
+    hr = IDropTarget_Drop(dt, &files.iface, 0, pt, &effect);
+    printf("create drop %08lx effect %lu\n", (unsigned long)hr, effect);
+    IDropTarget_Release(dt);
+    BOOL done = wait_until(zip_closed, zip, 60);
+    printf("create archive written %d\n", done);
+    printf("create dataobject refs %ld\n", files.ref);
+    return done;
+}
+
+/* The item context menu's "delete" verb: confirm box (the clicker says yes), then the
+ * archive is rewritten without the item. */
+static void delete_item(GCO gco, const WCHAR *zip, const WCHAR *victim)
+{
+    IShellFolder2 *sf = create_folder(gco, zip);
+    if (!sf)
+        return;
+    IEnumIDList *en = NULL;
+    HRESULT hr = IShellFolder2_EnumObjects(sf, NULL, SHCONTF_FOLDERS | SHCONTF_NONFOLDERS, &en);
+    LPITEMIDLIST pidl, hit = NULL;
+    ULONG got;
+    while (en && IEnumIDList_Next(en, 1, &pidl, &got) == S_OK && got == 1)
+    {
+        STRRET sr;
+        WCHAR name[MAX_PATH] = L"";
+        if (SUCCEEDED(IShellFolder2_GetDisplayNameOf(sf, pidl, SHGDN_FORPARSING | SHGDN_INFOLDER, &sr)))
+            StrRetToBufW(&sr, pidl, name, MAX_PATH);
+        if (!hit && !lstrcmpiW(name, victim))
+            hit = pidl;
+        else
+            CoTaskMemFree(pidl);
+    }
+    if (en)
+        IEnumIDList_Release(en);
+    printf("delete found %d\n", hit != NULL);
+    if (hit)
+    {
+        IContextMenu *cm = NULL;
+        hr = IShellFolder2_GetUIObjectOf(sf, NULL, 1, (PCUITEMID_CHILD_ARRAY)&hit, &IID_IContextMenu,
+                                         NULL, (void **)&cm);
+        printf("delete menu %08lx\n", (unsigned long)hr);
+        if (SUCCEEDED(hr))
+        {
+            CMINVOKECOMMANDINFO ici;
+            ZeroMemory(&ici, sizeof(ici));
+            ici.cbSize = sizeof(ici);
+            ici.lpVerb = "delete";
+            ici.nShow = SW_SHOWNORMAL;
+            hr = IContextMenu_InvokeCommand(cm, &ici);
+            printf("delete invoke %08lx\n", (unsigned long)hr);
+            IContextMenu_Release(cm);
+        }
+        CoTaskMemFree(hit);
+    }
+    IShellFolder2_Release(sf);
+}
+
+/* "Extract All..." on the .zip itself: IShellExtInit + the "extract" verb start the wizard
+ * on its own thread; the clicker presses Next (extraction) and Finish. */
+static void extract_archive(GCO gco, const WCHAR *zip, const WCHAR *dest)
+{
+    remove_tree(dest);
+    HdropObj files;
+    hdrop_init(&files);
+    lstrcpyW(files.files[0], zip);
+    files.n = 1;
+    IClassFactory *cf = NULL;
+    IShellExtInit *ext = NULL;
+    HRESULT hr = gco(&kZipContextMenu, &IID_IClassFactory, (void **)&cf);
+    if (SUCCEEDED(hr))
+    {
+        hr = IClassFactory_CreateInstance(cf, NULL, &IID_IShellExtInit, (void **)&ext);
+        IClassFactory_Release(cf);
+    }
+    printf("extract create %08lx\n", (unsigned long)hr);
+    if (FAILED(hr))
+        return;
+    hr = IShellExtInit_Initialize(ext, NULL, &files.iface, NULL);
+    printf("extract initialize %08lx\n", (unsigned long)hr);
+    IContextMenu *cm = NULL;
+    if (SUCCEEDED(hr))
+        hr = IShellExtInit_QueryInterface(ext, &IID_IContextMenu, (void **)&cm);
+    if (cm)
+    {
+        CMINVOKECOMMANDINFO ici;
+        ZeroMemory(&ici, sizeof(ici));
+        ici.cbSize = sizeof(ici);
+        ici.lpVerb = "extract";
+        ici.nShow = SW_SHOWNORMAL;
+        hr = IContextMenu_InvokeCommand(cm, &ici);
+        printf("extract invoke %08lx\n", (unsigned long)hr);
+        IContextMenu_Release(cm);
+        if (SUCCEEDED(hr))
+        {
+            BOOL opened = wait_until(wizard_open, NULL, 30);
+            BOOL closed = opened && wait_until(wizard_shut, NULL, 120);
+            printf("extract wizard opened %d closed %d next %ld finish %ld\n", opened, closed,
+                   g_wizard_next, g_wizard_finish);
+        }
+    }
+    IShellExtInit_Release(ext);
+    walk_tree(dest, L"");
+}
+
+/* DllCanUnloadNow once the extension's worker threads have had time to drop their module
+ * reference: a phase that leaks one shows here, not only in the final total. */
+static void settle(VOIDFN pCanUnloadNow, const char *phase)
+{
+    HRESULT hr = S_FALSE;
+    for (int i = 0; i < 50 && (hr = pCanUnloadNow()) != S_OK; i++)
+        Sleep(100);
+    printf("canunload after %s %08lx\n", phase, (unsigned long)hr);
 }
 
 int main(void)
@@ -307,6 +777,41 @@ int main(void)
             printf("sendto release %lu\n", IDropTarget_Release(dt));
         IClassFactory_Release(cf);
     }
+
+    /* The paths behind UI: extract the embedded archive, then make one from two files and
+     * delete an item from it. Each works under its own per-variant name beside the archive. */
+    settle(pCanUnloadNow, "browse");
+    HANDLE clk = CreateThread(NULL, 0, clicker, NULL, 0, NULL);
+    /* Delete rewrites the archive through a GetTempFileName file, and this guest's %TEMP% can
+     * be read-only: point TMP at the directory the archive was written to. */
+    WCHAR tmp[MAX_PATH];
+    lstrcpyW(tmp, path);
+    PathRemoveFileSpecW(tmp);
+    SetEnvironmentVariableW(L"TMP", tmp);
+    WCHAR dest[MAX_PATH], src[MAX_PATH], made[MAX_PATH];
+    lstrcpyW(dest, path);
+    PathRemoveExtensionW(dest);
+    extract_archive(gco, path, dest);
+    settle(pCanUnloadNow, "extract");
+    remove_tree(dest);
+    lstrcpyW(src, dest);
+    lstrcatW(src, L"_src");
+    remove_tree(src);
+    if (create_archive(gco, src, made))
+    {
+        brief_list(gco, "made", made);
+        settle(pCanUnloadNow, "create");
+        delete_item(gco, made, L"beta.bin");
+        brief_list(gco, "deleted", made);
+        settle(pCanUnloadNow, "delete");
+    }
+    remove_tree(src);
+    InterlockedExchange(&g_clicker_stop, 1);
+    WaitForSingleObject(clk, 5000);
+    CloseHandle(clk);
+    /* The extract and create threads drop their module reference as they exit. */
+    for (int i = 0; i < 100 && pCanUnloadNow() != S_OK; i++)
+        Sleep(100);
     DeleteFileW(path);
     printf("canunload %08lx\n", (unsigned long)pCanUnloadNow());
     printf("probe done\n");

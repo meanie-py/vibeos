@@ -1492,6 +1492,12 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_uncalled_ctor_hook", [rustlints.SENTINEL, "scan_uncalled_ctor_hook"], "stdout")
     )
+    # A payload probe calling `x->lpVtbl->M` on an interface mingw declares with
+    # DECLARE_INTERFACE_, whose C vtable lacks IUnknown's slots: the call lands three slots
+    # early. ntobjshex's probe called QueryInterface for GetIconLocation and the fault was
+    # filed against the extension. Baseline is EMPTY. A Rust rule
+    # (tools/vibeos-lint/src/rules/mingw_c_vtable.rs).
+    specs.append(("scan_mingw_c_vtable", [rustlints.SENTINEL, "scan_mingw_c_vtable"], "stdout"))
     # A Rust GUID literal the SDK's DEFINE_GUID gives a different value. stobject's model
     # wrote CGID_ShellServiceObject from memory, one digit off, and the tray never started.
     # A Rust rule (tools/vibeos-lint/src/rules/guid_values.rs).

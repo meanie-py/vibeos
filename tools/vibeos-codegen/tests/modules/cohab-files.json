@@ -1,0 +1,9 @@
+{
+  "sdk/lib/rust/foo-rust/src/one.rs": "",
+  "sdk/lib/rust/foo-rust/a/dup.rs": "",
+  "sdk/lib/rust/foo-rust/b/dup.rs": "",
+  "src/mod/a.c": "",
+  "src/mod/CMakeLists.txt": "# Rust foo-rust src/one.rs \u2014 \"quoted\"\n# a.c\n# b.c (foo-rust src/dup.rs)\n# prose.c was a stub\n\n# x.c\n# ${REACTOS_SOURCE_DIR}/src/mod/a.c (foo-rust src/one.rs)\na.c\n",
+  "build-x/CMakeLists.txt": "# bad.c (foo-rust)\n",
+  "sdk/lib/rust/foo-rust/target/nested/one.rs": ""
+}

@@ -425,8 +425,6 @@ extern "C" {
 // Deterministic COM scaffold for CRecycleBin; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -435,7 +433,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -1114,8 +1112,7 @@ pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAG
 
 pub use crate::island::SHQUERYRBINFO;
 
-#[repr(C)]
-pub struct CMVERBMAP { pub Verb: LPCSTR, pub CmdId: WORD }
+pub use crate::island::CMVERBMAP;
 pub static mut g_BBItemVerbMap: [CMVERBMAP; 5] = [
     CMVERBMAP { Verb: b"undelete\0".as_ptr() as LPCSTR, CmdId: IDC_BB_RESTORE as WORD },
     CMVERBMAP { Verb: b"cut\0".as_ptr() as LPCSTR, CmdId: IDC_BB_CUT as WORD },
@@ -1125,7 +1122,6 @@ pub static mut g_BBItemVerbMap: [CMVERBMAP; 5] = [
 ];
 
 extern "system" {
-    fn PlaySoundW(sound: LPCWSTR, module: HANDLE, flags: DWORD) -> BOOL;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn GetLastError() -> DWORD;
@@ -1133,9 +1129,6 @@ extern "system" {
     fn CoTaskMemFree(memory: LPVOID);
     fn SHQueryRecycleBinW(root: LPCWSTR, info: *mut SHQUERYRBINFO) -> HRESULT;
     fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;
-    #[link_name = "Shell32RustCoCreateInitSF"] fn SHELL32_CoCreateInitSF(root: LPCITEMIDLIST, clsid: *const GUID, csidl: INT, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
-    #[link_name = "Shell32RustMapContextMenuVerbToCmdId"] fn SHELL_MapContextMenuVerbToCmdId(info: LPCMINVOKECOMMANDINFO, map: *const CMVERBMAP) -> INT;
-    #[link_name = "Shell32RustGetCommandStringImpl"] fn SHELL_GetCommandStringImpl(command: SIZE_T, flags: UINT, buffer: LPSTR, capacity: UINT, map: *const CMVERBMAP) -> HRESULT;
 }
 
 extern "C" {
@@ -1229,7 +1222,6 @@ extern "C" {
 }
 
 extern "C" {
-    fn memset(dst: *mut core::ffi::c_void, value: INT, bytes: usize) -> *mut core::ffi::c_void;
 }
 #[inline]
 unsafe fn CopyMemory<D, S, N: CppComSize>(
@@ -1281,6 +1273,16 @@ pub static CPP_COM_WSTR_9855CDA098DC: [WCHAR; 2] = [0x0058, 0x0000];
 pub static CPP_COM_WSTR_F51AA22D711D: [WCHAR; 5] = [0x0043, 0x003A, 0x005C, 0x0058, 0x0000];
 
 use crate::island::{GetVersion, CLSID_ShellSearchExt};
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::memset;
+use crate::prelude::PlaySoundW;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+use crate::island::SHStrDupW as SHStrDupW_ex;
+use crate::shell32::dllmain::Shell32RustCoCreateInitSF as SHELL32_CoCreateInitSF;
+use crate::shell32::dllmain::Shell32RustGetCommandStringImpl as SHELL_GetCommandStringImpl;
+use crate::shell32::dllmain::Shell32RustMapContextMenuVerbToCmdId as SHELL_MapContextMenuVerbToCmdId;
 // The crate's own functions: the definition is the declaration.
 use crate::cfs_folder_tu::CFSFolder_CompareUiStrings_RustBridge;
 use crate::wine::pidl::ILClone;
@@ -1461,7 +1463,6 @@ extern "system" {
     fn SHRestricted(rest: DWORD) -> DWORD;
     // EXTERN_C (wine/shell32_main.h) + WINAPI; def CDefaultContextMenu.cpp
     // Rust #[no_mangle] extern "C" defs in wine/pidl.rs
-    #[link_name = "SHStrDupW"] fn SHStrDupW_ex(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
 }
 
 // EXTERN_C cdecl (recyclebin.h:68 — no WINAPI), so this is cdecl on ALL arches;
@@ -2261,7 +2262,7 @@ pub unsafe fn CRecycleBin_QueryContextMenu_body(this: *mut CRecycleBin, hMenu: H
 }
 
 pub unsafe fn CRecycleBin_InvokeCommand_body(this: *mut CRecycleBin, lpcmi: LPCMINVOKECOMMANDINFO) -> HRESULT {
-    let cmd_id = SHELL_MapContextMenuVerbToCmdId(lpcmi, g_BBFolderVerbMap.as_ptr());
+    let cmd_id = SHELL_MapContextMenuVerbToCmdId((lpcmi).cast(), (g_BBFolderVerbMap.as_ptr()).cast());
     if cmd_id == IDC_EMPTYRECYCLEBIN as INT {
         let hr = SHEmptyRecycleBinW((*lpcmi).hwnd, core::ptr::null_mut(), 0);
         return hr;
@@ -2272,7 +2273,7 @@ pub unsafe fn CRecycleBin_InvokeCommand_body(this: *mut CRecycleBin, lpcmi: LPCM
 }
 
 pub unsafe fn CRecycleBin_GetCommandString_body(this: *mut CRecycleBin, idCommand: UINT_PTR, uFlags: UINT, lpReserved: *mut UINT, lpszName: LPSTR, uMaxNameLen: UINT) -> HRESULT {
-    SHELL_GetCommandStringImpl((idCommand) as _, uFlags, lpszName, uMaxNameLen, g_BBFolderVerbMap.as_ptr())
+    SHELL_GetCommandStringImpl((idCommand) as _, uFlags, lpszName, uMaxNameLen, (g_BBFolderVerbMap.as_ptr()).cast())
 }
 
 pub unsafe fn CRecycleBin_AddPages_body(this: *mut CRecycleBin, pfnAddPage: LPFNSVADDPROPSHEETPAGE, lParam: LPARAM) -> HRESULT {

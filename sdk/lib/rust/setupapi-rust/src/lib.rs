@@ -29,6 +29,16 @@ pub mod setupapi {
     pub mod setupcab;
     pub mod stringtable;
     pub mod setupapi_private_h;
+    pub mod rpc;
+    pub mod devclass;
+    pub mod devprop;
+    pub mod devinst;
+    pub mod install;
+    pub mod misc;
+    pub mod parser;
+    pub mod queue;
+    pub mod stubs;
+    pub mod driver;
 }
 
 // staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.

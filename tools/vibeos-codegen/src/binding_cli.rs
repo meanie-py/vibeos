@@ -15,9 +15,6 @@ pub const NAMES: &[&str] = &[
     "rpc-guards",
     "delaylib",
 ];
-pub fn selected(args: &[String]) -> bool {
-    args.iter().any(|a| NAMES.contains(&a.as_str()))
-}
 
 #[derive(Default)]
 struct Args {

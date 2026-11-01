@@ -665,10 +665,7 @@ unsafe extern "C" fn InstallOneInterface(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn SetupDiInstallDeviceInterfaces(
-    DeviceInfoSet: HDEVINFO,
-    DeviceInfoData: PSP_DEVINFO_DATA,
-) -> BOOL {
+pub unsafe extern "system" fn SetupDiInstallDeviceInterfaces(DeviceInfoSet: HDEVINFO, DeviceInfoData: PSP_DEVINFO_DATA) -> BOOL {
     let mut list: *mut DeviceInfoSet = core::ptr::null_mut();
     let mut ret: BOOL = (FALSE as i32);
 

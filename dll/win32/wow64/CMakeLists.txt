@@ -10,21 +10,24 @@ spec2def(wow64.dll wow64.spec ADD_IMPORTLIB)
 # spec2def-class codegen — see tools/wow64gen/README.md). Indexed by REAL
 # service number (sysfuncs.h order == what guest EAX carries); ntdll.spec
 # contributes argument types only. wow64.c #includes the output.
+include(${REACTOS_SOURCE_DIR}/sdk/cmake/codegen.cmake)
+vibeos_codegen_dependencies(_wow64_codegen_deps)
+
 set(_wow64_thunks ${CMAKE_CURRENT_BINARY_DIR}/wow64_thunks.gen.c)
 add_custom_command(
     OUTPUT ${_wow64_thunks}
-    COMMAND ${CMAKE_COMMAND} -E env python3
-        ${REACTOS_SOURCE_DIR}/tools/wow64gen/wow64gen.py
+    COMMAND ${REACTOS_SOURCE_DIR}/tools/codegen wow64-thunks
         --spec ${REACTOS_SOURCE_DIR}/dll/ntdll/def/ntdll.spec
         --arch ${ARCH}
         --sysfuncs ${REACTOS_SOURCE_DIR}/ntoskrnl/include/sysfuncs.h
         --manual-list ${REACTOS_SOURCE_DIR}/tools/wow64gen/manual.txt
         --out-c ${_wow64_thunks}
     DEPENDS
-        ${REACTOS_SOURCE_DIR}/tools/wow64gen/wow64gen.py
+        ${_wow64_codegen_deps}
         ${REACTOS_SOURCE_DIR}/dll/ntdll/def/ntdll.spec
         ${REACTOS_SOURCE_DIR}/ntoskrnl/include/sysfuncs.h
         ${REACTOS_SOURCE_DIR}/tools/wow64gen/manual.txt
+    VERBATIM
     COMMENT "wow64gen: generating WoW64 syscall thunk table")
 
 # wow64win surface: the win32k (NtGdi*/NtUser*) thunk table, same generator,
@@ -33,8 +36,7 @@ add_custom_command(
 set(_wow64_w32k_thunks ${CMAKE_CURRENT_BINARY_DIR}/wow64_win32k_thunks.gen.c)
 add_custom_command(
     OUTPUT ${_wow64_w32k_thunks}
-    COMMAND ${CMAKE_COMMAND} -E env python3
-        ${REACTOS_SOURCE_DIR}/tools/wow64gen/wow64gen.py
+    COMMAND ${REACTOS_SOURCE_DIR}/tools/codegen wow64-thunks
         --spec ${REACTOS_SOURCE_DIR}/win32ss/win32u/win32u.spec
         --arch ${ARCH}
         --sysfuncs ${REACTOS_SOURCE_DIR}/win32ss/w32ksvc32.h
@@ -42,11 +44,12 @@ add_custom_command(
         --symbol-prefix Wow64Win32kThunk
         --out-c ${_wow64_w32k_thunks}
     DEPENDS
-        ${REACTOS_SOURCE_DIR}/tools/wow64gen/wow64gen.py
+        ${_wow64_codegen_deps}
         ${REACTOS_SOURCE_DIR}/win32ss/win32u/win32u.spec
         ${REACTOS_SOURCE_DIR}/win32ss/w32ksvc32.h
         ${REACTOS_SOURCE_DIR}/tools/wow64gen/manual-win32k.txt
         ${REACTOS_SOURCE_DIR}/tools/wow64gen/automarshal-win32k.txt
+    VERBATIM
     COMMENT "wow64gen: generating WoW64 win32k thunk table")
 
 add_library(wow64 MODULE

@@ -42,11 +42,7 @@ pub use crate::island::DROPFILES;
 
 /// CIDA / *LPIDA (shlobj.h): { UINT cidl; UINT aoffset[1]; } — header + offset table.
 /// Accessed via raw pointer arithmetic because of the flexible `aoffset[]` array.
-#[repr(C)]
-pub struct CIDA {
-    pub cidl: UINT,
-    pub aoffset: [UINT; 1],
-}
+pub use crate::island::CIDA;
 
 // ── constants pinned from SDK headers ───────────────────────────────────────────────────
 const MAX_PATH: usize = 260; // minwindef.h

@@ -7,6 +7,7 @@ pub struct CohabCensus;
 const CMAKE_SET: SourceSet = SourceSet::tree("cmake-files", &[""], &["cmake"], &["CMakeLists.txt"])
     .with_pruning(&[
         ".git",
+        ".cache",
         "build",
         "output",
         "target",
@@ -154,6 +155,28 @@ mod tests {
         SourceFile::new(PathBuf::from(p), s.into())
     }
     const FLIP: &str = "    #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/reply.c\n";
+    #[test]
+    fn source_inventory_excludes_cached_cmake_fixtures() {
+        let temp = vibeos_codegen::resources::TempDir::new().unwrap();
+        let root = temp.path();
+        std::fs::create_dir_all(root.join(".cache/fixture")).unwrap();
+        std::fs::create_dir(root.join("ntoskrnl")).unwrap();
+        std::fs::write(root.join(".cache/fixture/CMakeLists.txt"), "# ghost.c\n").unwrap();
+        std::fs::write(root.join("ntoskrnl/ntos.cmake"), FLIP).unwrap();
+        let corpus = Corpus::load_scopes_with_sets(
+            root,
+            &[],
+            crate::SourceNeeds {
+                workspace_rust: false,
+                ..crate::SourceNeeds::default()
+            },
+            &[],
+            SETS,
+        )
+        .unwrap();
+        assert_eq!(corpus.sources("cmake-files").count(), 1);
+        assert_eq!(scan(&corpus).len(), 1);
+    }
     #[test]
     fn comment_line_addition_and_removal_are_counted() {
         let before = Census::new();

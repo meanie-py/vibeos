@@ -987,7 +987,6 @@ pub unsafe extern "system" fn PciAddDevice(
                             }
                         }
                         ExFreePoolWithTag(Descriptor as PVOID, 0);
-                        Descriptor = core::ptr::null_mut();
                         if found {
                             DbgPrint(
                                 (b"PCI   Root bus base %u from its boot configuration.\n\0".as_ptr() as PCSTR).cast(),

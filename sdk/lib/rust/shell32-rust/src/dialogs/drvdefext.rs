@@ -312,8 +312,6 @@ extern "C" {
 // Deterministic COM scaffold for CDrvDefExt; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -322,7 +320,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -722,7 +720,6 @@ pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAG
 pub type ITEMIDLIST_ABSOLUTE = ITEMIDLIST;
 
 extern "system" {
-    #[link_name = "LoadImageW"] fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, height: INT, flags: UINT) -> HANDLE;
     fn CoTaskMemFree(memory: LPVOID);
 }
 
@@ -874,7 +871,6 @@ extern "system" {
            xr1: INT, yr1: INT, xr2: INT, yr2: INT) -> BOOL;
     // comctl32
     // ole32
-    fn ReleaseStgMedium(medium: *mut STGMEDIUM);
     // shell32 public exports
     fn DragQueryFileW(drop: HDROP, index: UINT, path: LPWSTR, cch: UINT) -> UINT;
     fn SHSimpleIDListFromPathW(path: LPCWSTR) -> LPITEMIDLIST;
@@ -889,43 +885,22 @@ extern "system" {
 // winuser.h: on win32 the *Ptr forms are macro aliases of the LONG forms —
 // bind to the real 32-bit exports there (shell_link.rs precedent).
 #[cfg(target_pointer_width = "64")]
-extern "system" {
-    #[link_name = "GetWindowLongPtrW"]
-    fn GetWindowLongPtr(hwnd: HWND, index: INT) -> LONG_PTR;
-    #[link_name = "SetWindowLongPtrW"]
-    fn SetWindowLongPtr(hwnd: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
-}
+use crate::island::{GetWindowLongPtrW as GetWindowLongPtr, SetWindowLongPtrW as SetWindowLongPtr};
 #[cfg(target_pointer_width = "32")]
-extern "system" {
-    #[link_name = "GetWindowLongW"]
-    fn GetWindowLongPtr(hwnd: HWND, index: INT) -> LONG_PTR;
-    #[link_name = "SetWindowLongW"]
-    fn SetWindowLongPtr(hwnd: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
-}
+use crate::island::{GetWindowLongW as GetWindowLongPtr, SetWindowLongW as SetWindowLongPtr};
 
 // -- Rust bridges to retained C++ companions (EXTERN_C ... WINAPI shims C++-side) --
 extern "system" {
     // EXISTING bridge (utils.cpp:2267, created by the CFSFolder landing):
-    #[link_name = "SHGetNameAndFlagsW_RustBridge"]
-    fn SHGetNameAndFlagsW(pidl: LPCITEMIDLIST, flags: DWORD, text: LPWSTR, cch: UINT,
-                          attributes: *mut DWORD) -> HRESULT;
     // NEW — must be created C++-side (see integration TODO):
     // C++: UINT SH_FormatByteSize(LONGLONG cbSize, LPWSTR pwszResult, UINT cchResultMax)
     //      (dialogs/filedefext.cpp:274, C++ linkage)
-    #[link_name = "SH_FormatByteSize_RustBridge"]
-    fn SH_FormatByteSize(cbSize: LONGLONG, pwszResult: LPWSTR, cchResultMax: UINT) -> UINT;
     // C++: BOOL IsDriveFloppyW(LPCWSTR pszDriveRoot) (dialogs/drvdefext.cpp, C++ linkage)
-    #[link_name = "IsDriveFloppyW_RustBridge"]
-    fn IsDriveFloppyW(pszDriveRoot: LPCWSTR) -> BOOL;
     // C++: static HRESULT CDrivesFolder::SetDriveLabel(HWND, PCWSTR, PCWSTR)
     //      (folders/CDrivesFolder.cpp:1193; also Rust-owned as
     //      drives_folder.rs::CDrivesFolder_SetDriveLabel_body)
-    #[link_name = "CDrivesFolder_SetDriveLabel_RustBridge"]
-    fn SetDriveLabel(hwndOwner: HWND, DrivePath: PCWSTR, Label: PCWSTR) -> HRESULT;
     // C++: static INT_PTR CALLBACK ChkDskDlg(HWND, UINT, WPARAM, LPARAM)
     //      (dialogs/drvdefext.cpp:704 region, file-static — shim must forward)
-    #[link_name = "ChkDskDlg_RustBridge"]
-    fn ChkDskDlg(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR;
 }
 
 extern "C" {
@@ -1077,6 +1052,18 @@ impl Drop for CDrop {
 }
 
 use core::ffi::c_void;
+// One declaration per external symbol: win32.rs.
+use crate::win32::ReleaseStgMedium;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+use crate::island::LoadImageW as LoadImage;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::drives_folder_tu::CDrivesFolder_SetDriveLabel_RustBridge as SetDriveLabel;
+use crate::drives_folder_tu::IsDriveFloppyW_RustBridge as IsDriveFloppyW;
+use crate::drv_def_ext_tu::ChkDskDlg_RustBridge as ChkDskDlg;
+use crate::file_def_ext_tu::SH_FormatByteSize_RustBridge as SH_FormatByteSize;
+use crate::shell32::utils::SHGetNameAndFlagsW_RustBridge as SHGetNameAndFlagsW;
 // The crate's own functions: the definition is the declaration.
 use crate::propsheet::SH_CreatePropertySheetPage;
 use crate::propsheet::SH_CreatePropertySheetPageEx;
@@ -1587,12 +1574,10 @@ pub unsafe fn CDrvDefExt_ExtraPageProc_body(this: *mut CDrvDefExt, hwndDlg: HWND
                             SW_SHOW as INT,
                         ) as usize <= 32
                         {
-                            unsafe {
-                                ERR!(
-                                    "Failed to create defrag process {}\n",
-                                    wszCmd.as_ptr()
-                                )
-                            };
+                            ERR!(
+                                "Failed to create defrag process {}\n",
+                                wszCmd.as_ptr()
+                            );
                         }
                     }
                 }
@@ -1616,12 +1601,10 @@ pub unsafe fn CDrvDefExt_ExtraPageProc_body(this: *mut CDrvDefExt, hwndDlg: HWND
                             SW_SHOW as INT,
                         ) as usize <= 32
                         {
-                            unsafe {
-                                ERR!(
-                                    "Failed to create backup process {}\n",
-                                    wszBuf.as_ptr()
-                                )
-                            };
+                            ERR!(
+                                "Failed to create backup process {}\n",
+                                wszBuf.as_ptr()
+                            );
                         }
                     }
                 }
