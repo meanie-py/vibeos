@@ -53,6 +53,27 @@ class SessionError(StoreError):
     """Supervisor lease/capability is absent, stale, or no longer protected."""
 
 
+def _clone_or_copy(incoming, outgoing) -> None:
+    """Copy one open file into another, sharing extents where the filesystem can.
+
+    `copy_file_range` within one reflink filesystem (the fleet's XFS data disk) clones
+    instead of copying, so a stored output costs no new blocks until something rewrites
+    it; elsewhere the kernel copies. Only a filesystem pair that refuses outright falls
+    back to a plain read/write copy, restarted from the beginning."""
+    src, dst = incoming.fileno(), outgoing.fileno()
+    try:
+        while os.copy_file_range(src, dst, 1 << 30):
+            pass
+        return
+    except OSError as exc:
+        if exc.errno not in (errno.EXDEV, errno.EINVAL, errno.ENOSYS, errno.EOPNOTSUPP):
+            raise
+    incoming.seek(0)
+    outgoing.seek(0)
+    outgoing.truncate()
+    shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
+
+
 def canonical(value: Any) -> bytes:
     """Versioned manifests use strict JSON; absent and empty remain distinct."""
 
@@ -900,7 +921,7 @@ class Store:
             descriptor_fd = _open_regular(source)
             with os.fdopen(descriptor_fd, "rb") as incoming, target.open("xb") as outgoing:
                 before = os.fstat(incoming.fileno())
-                shutil.copyfileobj(incoming, outgoing, length=1024 * 1024)
+                _clone_or_copy(incoming, outgoing)
                 if _stamp(before) != _stamp(os.fstat(incoming.fileno())):
                     raise StoreError(f"builder output changed during copy: {source}")
                 outgoing.flush()

@@ -23,6 +23,39 @@ CMake copies it. No output is linked or shared across worktrees.
 architecture's CMake cache. New configurations default to four. A clean build
 removes discovered obsolete targets and rebuilds the selected layout.
 
+## Extent dedup on XFS (since 2026-11-01)
+
+The fleet's home (`/home`, `/tmp`, `/var/tmp`) is on an XFS data disk with `reflink=1`,
+mounted at `/data`; the root filesystem is a separate small disk. Duplicate bytes across
+lanes are shared at the extent level, never by hardlinks:
+
+- **`vibeos-dedup.timer`** runs `/usr/local/sbin/vibeos-dedup` every 3 hours (at :15, with up
+  to 10 minutes' random delay): an incremental `duperemove -dhr` over `/data/home/curi`, with
+  the hashfile `/var/lib/duperemove/data.hash` and the lock `/var/lib/duperemove/data.lock`,
+  at idle CPU and I/O priority. Each run logs one line: `sudo journalctl -u vibeos-dedup`.
+  The first two passes, after the wind-down had already deleted every build output, freed
+  40 GB and then 18 GB.
+- **`vibeos-cli build`** starts that service as its last stage (`dedup`), without waiting:
+  a fresh build is the biggest batch of new duplicates, because the shared compiler caches
+  make lanes' outputs byte-identical. A pass that is already running makes the start a
+  no-op. The stage is skipped on a host without the unit.
+- **Copies clone.** On the same XFS, `copy_file_range` (Rust's `fs::copy`, and the artifact
+  store's `_clone_or_copy`) and `cp` (Ubuntu 24.04 defaults to `--reflink=auto`) share
+  extents instead of writing new blocks.
+
+Why this is safe beside live builds, when hardlinking was not: every file keeps its own
+inode, a link count of 1, and its own mtime and ctime (checked: a dedup leaves all of them
+unchanged), so cargo and ninja freshness and the `ISOLATION_FAIL` link-count preflight see
+nothing. The kernel's FIDEDUPERANGE compares the bytes under the filesystem lock before it
+shares a range, so a file written mid-pass just fails the compare, and a later write to a
+shared file gets private blocks. The two failures that retired hardlinking were a shared
+inode truncated under a sibling's mmap, and shared timestamps; extent sharing has neither.
+
+**Do not seed a lane's build dir by copying another lane's**, even as a free reflink copy.
+The copy carries the other lane's mtimes, and ninja and cargo judge freshness by mtime, so
+outputs built from a different commit can look up to date. Build each lane normally; the
+caches make it fast and dedup makes it cheap.
+
 ## Measurement
 
 The same-source i386 comparison in `vibeos-diskopt`:
