@@ -602,6 +602,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **fastfat/cdfs translation audit: half of each driver only grep-scanned (owed, found
+  2026-11-01, research).** Three Sonnet agents compared the early DeepSeek translations
+  against the in-tree C; everything they confirmed is fixed (win11-flip, see its commits).
+  Compared function by function: fastfat's C glue (`rust_cohab_*.c`), FSCTL dispatch, lock,
+  volume-info, completion and exception paths, allocsup, the FileInformation handlers, the
+  write/read cores; cdfs's dirent/path-table/name/mount/read/allocation/query paths. ONLY
+  scanned (constants, call-multiset diffs, cfg gates), so still owed a line-by-line read:
+  fastfat `FatCommonCreate` and the open paths, `FatCreateVcb`/`FatDeleteVcb`/
+  `FatCreateFcb`, `FatVerifyVcb`/`FatPerformVerify`, `FatMoveFile`, `FatDismountVolume`,
+  `FatSetRenameInfo`/`FatRenameEAs`/directory defrag, the rest of deviosup/cachesup/easup,
+  lockctrl, filobsup, pnp, shutdown, acchksup, fatinit; cdfs create, cleanup, close,
+  lockctrl, pnp, verfysup (`CdVerifyVolume`), devctrl, workque, fspdisp, shutdown,
+  prefxsup, write, and the tails of `CdLookupAllocation` and strucsup. Known left as-is:
+  fastfat's oplock stand-ins (`FsRtlOplockBreakH` SUCCESS, `FsRtlCheckOplockEx` ignoring
+  Flags: ntoskrnl stubs them at 0xA00+), `KeAcquireSpinLockRaiseToDpc` in
+  `rust_cohab_fat.c` (raises IRQL, takes no lock: UP-only), cdfs's `FsRtlIsLeadDbcsCharacter`
+  stand-in (always FALSE, DBCS OEM code pages), `RtlOemStringToCountedUnicodeSize` (Length*2,
+  SBCS-only), and the lost file/line in `FatBugCheck`/`CdBugCheck` parameter 1.
+- **amd64 STATUS_NONEXISTENT_SECTOR in-page error, 0x1E during the boot WoW64 self-tests
+  (open flake, seen once 2026-11-01, research).** hostapps `20261101-123017-7ue7skcb`:
+  `[MM] Failed to page data in! st=c0000015 off=10000` while `apc32.exe` created threads,
+  then BUGCHECK 0x1E (0xC0000006). The rerun of the same media was clean
+  (`20261101-123345-09ibq5oq`), as were five hostapps runs after it. First boot on the new
+  XFS volume; most likely the CD through uniata. Not reproduced.
 - **arm64 kmtest ZwAllocateVirtualMemory: its two system threads now finish in the other order
   (open question, found 2026-10-19, research; benign for the ratchet).** The pass count moved
   576/579/582 on the version-flip + handle-biasing branch, where master reads 581. Thread 1's
