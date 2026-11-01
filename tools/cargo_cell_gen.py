@@ -29,6 +29,7 @@ import functools
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import time
@@ -272,17 +273,79 @@ def _ccdb(path: Path) -> list:
     return json.loads(path.read_text())
 
 
+class NoLinkEdge(GenError):
+    """The build has no cmake link edge for the target on one arch. `why` says what is
+    there instead: "cell" (a cargo cell already links it), "absent" (the target is not
+    generated on that arch: an if(ARCH ...) gate or a build option) or "unknown"."""
+
+    def __init__(self, target: str, arch: str, why: str):
+        self.target, self.arch, self.why = target, arch, why
+        super().__init__(f"{target}: {_NO_EDGE_TEXT[why].format(arch=arch)}")
+
+
+_NO_EDGE_TEXT = {
+    "cell": "already a cargo cell on {arch} (add_cargo_module, no cmake link edge)",
+    "absent": "not defined on {arch} in this configuration"
+    " (an if(ARCH ...) gate or a build option such as --rostests)",
+    "unknown": "no link edge in build-{arch}/build.ninja",
+}
+
+
+def _no_edge_why(ninja: str, target: str) -> str:
+    t = re.escape(target)
+    # add_cargo_module: the module is a CUSTOM_COMMAND over its `<target>-cargo` crate.
+    if re.search(rf"^build [^:\n]*: CUSTOM_COMMAND \S*/{t}-cargo/Cargo\.toml", ninja, re.M):
+        return "cell"
+    if not re.search(rf"^build cmake_object_order_depends_target_{t}:", ninja, re.M):
+        return "absent"
+    return "unknown"
+
+
+def _link_edges(target: str, repo: Path) -> dict[str, Link]:
+    """link_edge on every arch, refusing with one message that names each arch's story."""
+    links, miss = {}, {}
+    for a in ARCHES:
+        try:
+            links[a] = link_edge(a, target, repo)
+        except NoLinkEdge as e:
+            miss[a] = e
+    if not miss:
+        return links
+    have = sorted(links)
+    if not have:
+        whys = {e.why for e in miss.values()}
+        if len(whys) == 1:
+            raise GenError(f"{target}: {_NO_EDGE_TEXT[whys.pop()].format(arch='every arch')}")
+        raise GenError(f"{target}: no cmake link edge on any arch ({_why_by_arch(miss)})")
+    if {e.why for e in miss.values()} == {"cell"}:
+        raise GenError(
+            f"{target}: a cargo cell on {sorted(miss)} but still cmake-linked on {have}"
+            f" (a partly converted module is not modelled)"
+        )
+    raise GenError(
+        f"{target}: {_why_by_arch(miss)}, but cmake links it on {have}: the generator needs "
+        f"the same cmake-linked module on every arch"
+    )
+
+
+def _why_by_arch(miss: dict) -> str:
+    return ", ".join(f"{a}: {_NO_EDGE_TEXT[e.why].format(arch=a)}" for a, e in miss.items())
+
+
 def link_edge(arch: str, target: str, repo: Path = REPO) -> Link:
     ninja = _read(repo / f"build-{arch}/build.ninja")
     m = re.search(
         # The config suffix anchors the name: `cmd_\S*` also matched cmd_help's edge.
-        rf"^build (\S+): (C_\w+?)_LINKER__{re.escape(target)}_{CONFIGS}( .*)?\n((?:  .*\n)+)",
+        # `CXX_` is the same link with the C++ driver: a module with any .cpp/.cxx.
+        rf"^build (\S+): C(?:XX)?(_\w+?)_LINKER__{re.escape(target)}_{CONFIGS}"
+        r"( .*)?\n((?:  .*\n)+)",
         ninja,
         re.M,
     )
     if not m:
-        raise GenError(f"{target}: no link edge in build-{arch}/build.ninja (a static lib?)")
-    output, kind, ins, var_block = m.group(1), m.group(2), m.group(3) or "", m.group(4)
+        raise NoLinkEdge(target, arch, _no_edge_why(ninja, target))
+    # CXX_EXECUTABLE normalises to C_EXECUTABLE: the generator reads the kind, not the driver.
+    output, kind, ins, var_block = m.group(1), "C" + m.group(2), m.group(3) or "", m.group(4)
     flags = re.search(r"^  LINK_FLAGS = (.*)$", var_block, re.M)
     flags_s = flags.group(1) if flags else ""
     libs_m = re.search(r"^  LINK_LIBRARIES = (.*)$", var_block, re.M)
@@ -748,6 +811,10 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
             facts["transfer"].append(raw)
         elif cmd == "set_target_properties" and _names_only(a):
             pass  # the output name comes from the link edge
+        elif cmd == "set_target_cpp_properties":
+            # WITH_EXCEPTIONS/WITH_RTTI flag the target's C++ compiles. model() refuses a
+            # C++ TU the engine would have to compile, so none is left for it to apply to.
+            pass
         elif cmd == "target_link_options" and _subsystem_only(a):
             pass  # the subsystem comes from each arch's link edge
         elif cmd == "add_idl_reg_scripts" and len(a) > 2 and a[1] in REG_SUFFIX:
@@ -764,8 +831,13 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
         # The keyboard layouts are made in a foreach over `${_keyboard_layout}`: there is
         # no statement of the target's own to replace.
         facts["unknown"].append("target made in a loop or function")
-    named = [n for n in variants if n in (f"{target}_rust",) or n.removesuffix("_rust") == target]
-    named = named or [n for n in variants if f"lib{n}.a" in linked]
+    # The variant the module links is its body: psapi has psapi_rust (for psapi_static,
+    # which kernel32 links) and psapi_dll_rust (the DLL's, with DllMain), and the DLL links
+    # only the second. Without a link edge to tell, the `<target>_rust` name decides.
+    named = [n for n in variants if f"lib{n}.a" in linked]
+    if len(named) != 1:
+        named = [n for n in variants if n == f"{target}_rust" or n.removesuffix("_rust") == target]
+        named = named or [n for n in variants if f"lib{n}.a" in linked]
     if len(named) == 1:
         a = variants[named[0]]
         feats = a[2].strip('"').replace(";", " ").split()
@@ -882,7 +954,11 @@ def _inlinable_source(text: str, cmake_dir: Path) -> list[str] | None:
     for x in src:
         if x.endswith((".h", ".hpp")):
             continue
-        if not (x.endswith(".c") and (cmake_dir / x).exists() and _placeholder(cmake_dir / x)):
+        if not (
+            x.endswith((".c", ".cpp", ".cxx", ".cc"))
+            and (cmake_dir / x).exists()
+            and _placeholder(cmake_dir / x)
+        ):
             return None
     return src
 
@@ -1015,6 +1091,8 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             transferred.append((cmd, raw))
         if a and a[0] == cell.target and cmd == "set_target_properties" and _names_only(a):
             drop = True
+        if a and a[0] == cell.target and cmd == "set_target_cpp_properties":
+            drop = True  # no C++ TU is compiled for the module any more
         if a and a[0] == cell.target and cmd == "target_link_options" and _subsystem_only(a):
             drop = True  # build.rs sets each arch's subsystem
         if a[:1] == [cell.target] and cmd == "target_sources" and _ssp_objects(a):
@@ -1445,19 +1523,58 @@ def _placeholder_archive(arch: str, lib: str, repo: Path) -> bool:
     )
 
 
+def source_dir(arch: str, output: str, target: str, repo: Path = REPO) -> Path:
+    """The directory whose CMakeLists.txt defines `target`, absolute.
+
+    The build dir mirrors the source dir only by habit: add_subdirectory(vendor/ac97
+    drivers/wdm/audio/drivers/ac97) and the dll/3rdparty/libpng -> vendor/libpng
+    mirrors put the module's output somewhere its CMakeLists is not. The build wrote
+    the real answer in `<output dir>/cmake_install.cmake` ("Install script for
+    directory: <src>"), rooted at the cache's CMAKE_HOME_DIRECTORY.
+    """
+    out_dir = repo / f"build-{arch}" / Path(output).parent
+    inst = out_dir / "cmake_install.cmake"
+    cache = repo / f"build-{arch}/CMakeCache.txt"
+    if inst.exists() and cache.exists():
+        m = re.match(r"# Install script for directory: (.+)", inst.read_text().split("\n", 1)[0])
+        h = re.search(r"^CMAKE_HOME_DIRECTORY:INTERNAL=(.+)$", _read(cache), re.M)
+        if m and h:
+            try:
+                return repo / Path(m.group(1)).relative_to(h.group(1))
+            except ValueError:
+                pass
+    return repo / Path(output).parent
+
+
 def model(target: str, repo: Path = REPO) -> Cell:
-    links = {a: link_edge(a, target, repo) for a in ARCHES}
+    links = _link_edges(target, repo)
     first = links["amd64"]
-    cmake_dir = repo / Path(first.output).parent
+    bin_dir = Path(first.output).parent
+    cmake_dir = source_dir("amd64", first.output, target, repo)
+    for a in ARCHES:
+        if source_dir(a, links[a].output, target, repo) != cmake_dir:
+            raise GenError(f"{target}: the source directory differs by arch")
     cmake = cmake_dir / "CMakeLists.txt"
     if not cmake.exists():
         raise GenError(f"{target}: no {cmake.relative_to(repo)}")
     facts = cmake_facts(cmake, target, first.libs)
-    if facts["unknown"]:
-        raise GenError(f"{target}: unmodelled statements on the target: {facts['unknown']}")
     # No Rust body: a C module. The cell compiles its C (c_from_compile_db, then the
     # engine's recipe) and links it with no Rust archive, so cmake still makes nothing.
+    # Unless something Rust IS built for it by a route the generator cannot read: a custom
+    # `cargo build` command, or a `_rust.a` of the target's own name on the link. A cell
+    # made "body-less" from those would silently drop the Rust, so they stay refused.
     bodyless = not facts["body"] and not facts.get("custom_body")
+    if bodyless:
+        if re.search(r"\bcargo build\b", cmake.read_text()):
+            raise GenError(
+                f"{target}: no rust_staticlib_variant names its body crate, and its custom"
+                " `cargo build` command is not the one shape _custom_body reads"
+            )
+        own = re.compile(rf"(?:^|/)lib{re.escape(target)}\w*_rust\.a$", re.I)
+        if any(own.search(lib) for a in ARCHES for lib in links[a].libs):
+            raise GenError(f"{target}: links its own Rust archive, but no body is declared")
+    if facts["unknown"]:
+        raise GenError(f"{target}: unmodelled statements on the target: {facts['unknown']}")
     if facts.get("ssp") and any(
         re.search(
             r"^STACK_PROTECTOR:BOOL=(ON|TRUE|1)$", _read(repo / f"build-{a}/CMakeCache.txt"), re.M
@@ -1484,6 +1601,8 @@ def model(target: str, repo: Path = REPO) -> Cell:
         else:
             module_kind = "Win32Dll"
     else:
+        if first.kind.endswith("STATIC_LIBRARY"):
+            raise GenError(f"{target}: a static library (no PE to link)")
         raise GenError(f"{target}: link kind {first.kind}")
     specs = spec_index(repo)
     custom = facts.get("custom_body")
@@ -1621,7 +1740,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
                 # flex output live in the build dir. The shim is named build-dir
                 # relative, which c_from_compile_db resolves there, and cmake still
                 # generates it (as a source of the <m>_shims OBJECT library).
-                rel = cmake_dir.relative_to(repo) / nm.removesuffix(".obj")
+                rel = bin_dir / nm.removesuffix(".obj")
                 if not all((repo / f"build-{a}" / rel).exists() for a in ARCHES):
                     raise GenError(f"{target}: compiled C {nm} found in no source or build dir")
                 shims.append(rel.as_posix())
@@ -1630,6 +1749,16 @@ def model(target: str, repo: Path = REPO) -> Cell:
             if nm == "rust_cohab_stub.c.obj" and _placeholder(src):
                 continue
             shims.append(src.relative_to(repo).as_posix())
+        elif re.search(r"\.(cpp|cxx|cc)\.obj$", nm):
+            # The engine has a C rule and an asm rule (cflags/), and no C++ one. A C++ TU
+            # that is only the placeholder (an exe's `typedef int x;`) compiles to nothing
+            # and is dropped like the C one; anything else would have to be compiled.
+            src = cmake_dir / nm.removesuffix(".obj")
+            if not (src.exists() and _placeholder(src)):
+                raise GenError(
+                    f"{target}: compiled C++ {nm} (reactos-link compiles C and asm shims only;"
+                    f" cflags/ has no C++ template)"
+                )
         else:
             raise GenError(f"{target}: unmodelled link input {nm}")
     # set_module_type(... UNICODE) is the one target-level define a user module's
@@ -1960,14 +2089,47 @@ def build_rs(cell: Cell) -> str:
 CFG_ARCH = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}
 
 
+def _export_is_import_thunk(code: bytes, machine: int) -> bool:
+    """Whether an export's first bytes are an import thunk (`jmp [__imp_X]`), the stub an
+    import library defines for a symbol: x86/x64 `ff 25`, ARM64 `adrp x16, ...`."""
+    if machine == 0xAA64:
+        return len(code) >= 4 and (int.from_bytes(code[:4], "little") & 0x9F00001F) == 0x90000010
+    return code[:2] == b"\xff\x25"
+
+
 def _exports_bound_to_imports(pe_path: Path) -> set[str]:
-    """Names the cmake-built module both exports and imports."""
+    """Names the cmake-built module exports AS an import thunk: the linker satisfied the
+    export from an import library's stub where the module's own definition should be.
+
+    A name in both tables is not enough. A forwarder (`MFCopyImage mfplat.MFCopyImage`)
+    shares its name with the import of the DLL it forwards to, and a delay-import lib
+    carries a thunk for every function of its DLL, including the ones the module exports
+    as its own stubs (evr, mf): neither is bound. The export's code has to be the thunk."""
     import pe_equiv
 
     pe = pe_equiv.load(pe_path)
-    exported = {e.split(" ", 1)[1].split(" ", 1)[0] for e in pe.exports()}
     imported = {i.split("!", 1)[1] for i in pe.imports()}
-    return exported & imported
+    rva, size = pe.dirs.get("export", (0, 0))
+    if not rva:
+        return set()
+    d = pe.data
+    (_, _, _, _, _, _base, nfun, nnames, afun, anames, aords) = struct.unpack_from(
+        "<IIHHIIIIIII", d, pe.off(rva)
+    )
+    names = {}
+    for i in range(nnames):
+        nrva = struct.unpack_from("<I", d, pe.off(anames) + 4 * i)[0]
+        names[struct.unpack_from("<H", d, pe.off(aords) + 2 * i)[0]] = pe.cstr(nrva)
+    bound = set()
+    for i in range(nfun):
+        frva = struct.unpack_from("<I", d, pe.off(afun) + 4 * i)[0]
+        name = names.get(i)
+        if not frva or name not in imported or rva <= frva < rva + size:
+            continue  # unused, unnamed, not an import's name, or a forwarder
+        off = pe.off(frva)
+        if _export_is_import_thunk(d[off : off + 4], pe.machine):
+            bound.add(name)
+    return bound
 
 
 def carries_panic_handler(pe_path: Path) -> bool:
