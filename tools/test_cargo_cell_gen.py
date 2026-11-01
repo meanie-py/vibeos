@@ -957,3 +957,22 @@ def test_spec_entries_that_reexport_an_import_are_recognized(tmp_path):
         "SymEnumSourceFiles",
     }
     assert g._spec_imported_exports(tmp_path / "missing.spec") == set()
+
+
+def test_a_c_module_with_no_rust_body_is_a_cell_with_no_rust_archive(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_executable(m main.c rsrc.rc)\n"
+        "set_module_type(m win32gui UNICODE)\n"
+        "add_importlibs(m user32 msvcrt kernel32 ntdll)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    rs = g.build_rs(c)
+    assert "rust_staticlib" not in rs and "rust_lib(" not in rs
+    assert "there is no Rust body" in rs
+    assert '"m_shims"' in rs
+    out = g.rewrite_cmake(f, c)
+    assert "BODY_CRATE" not in out
+    assert "is C, and cargo compiles and links it" in out
+    assert "add_library(m_shims OBJECT main.c)" in out
