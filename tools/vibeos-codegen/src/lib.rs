@@ -20,6 +20,7 @@ pub mod rpc;
 pub mod source_walk;
 pub mod tables;
 pub mod ucrt_cases;
+pub mod wow64;
 
 use std::path::{Path, PathBuf};
 

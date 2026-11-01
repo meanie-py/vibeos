@@ -30,9 +30,10 @@ _MAX_AGE = 24 * 3600
 _LIVE = {
     "pytest:tests/qemu/cli/test_portlease.py",
     "pytest:tools/test_host_jobs.py",
-    # Compiler generators inspect mutable local objects and toolchain installations.
+    # Native generator tests inspect local tools or mutable compiler artifacts.
     "pytest:tools/test_gen_ctype_tables.py",
     "pytest:tools/test_compiler_codegen.py",
+    "pytest:tools/wow64gen/test_wow64gen.py",
     "pytest:tools/test_verify_ucrtbase_cohab.py",
     "pytest:tools/test_tooling_receipts.py",
     # These compile temporary projects using mutable external Cargo registry/sysroot inputs.
@@ -96,7 +97,6 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_verify_c_signatures.py",
     "pytest:tools/test_verify_lost_exports.py",
     "pytest:tools/test_verify_translation_literals.py",
-    "pytest:tools/wow64gen/test_wow64gen.py",
 }
 _TOOLS = ("git", "rustc", "cargo", "cmake", "ninja", "cc", "c++", "clang", "ar", "objdump", "node")
 _VOLATILE_ENV = {

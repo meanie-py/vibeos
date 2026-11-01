@@ -3,6 +3,7 @@ mod build_cli;
 mod compiler_cli;
 mod module_cli;
 mod payload_cli;
+mod wow64_cli;
 use std::path::{Path, PathBuf};
 use std::{fs, io::Write};
 use vibeos_codegen::{generate, generate_all, resources, GENERATORS};
@@ -33,6 +34,9 @@ Module commands: cnt, cohab-registry, global-barrier.
   cohab-registry and global-barrier default to stdout; --output/--check select files.
   cohab-registry --report prints only its summary.
   global-barrier --source-dir DIR explicitly selects a monolithic crate source root.
+
+WoW64: wow64-thunks --spec FILE --sysfuncs FILE --arch ARCH [--out-c FILE].
+  --manual-list FILES forces manual stubs; --symbol-prefix selects the table name.
 
 Suite lists: apitest-suites, winetest-suites --arch ARCH.
   apitest-suites --discover-json --build-dir DIR lists unquarantined binaries.
@@ -358,6 +362,10 @@ fn command_name(args: &[String]) -> Option<&str> {
                     "--global-flag",
                     "--suites",
                     "--register",
+                    "--spec",
+                    "--sysfuncs",
+                    "--manual-list",
+                    "--symbol-prefix",
                 ]
                 .contains(&arg.as_str())
             {
@@ -385,6 +393,7 @@ fn main() -> std::process::ExitCode {
             .chain(compiler_cli::NAMES)
             .chain(build_cli::NAMES)
             .chain(payload_cli::NAMES)
+            .chain(wow64_cli::NAMES)
         {
             println!("{name}");
         }
@@ -393,6 +402,8 @@ fn main() -> std::process::ExitCode {
     let name = command_name(&args);
     match if name.is_some_and(|n| compiler_cli::NAMES.contains(&n)) {
         compiler_cli::run(args)
+    } else if name.is_some_and(|n| wow64_cli::NAMES.contains(&n)) {
+        wow64_cli::run(args)
     } else if name.is_some_and(|n| payload_cli::NAMES.contains(&n)) {
         payload_cli::run(args)
     } else if name.is_some_and(|n| build_cli::NAMES.contains(&n)) {

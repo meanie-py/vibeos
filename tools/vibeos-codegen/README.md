@@ -277,6 +277,31 @@ with frozen Python results; negative tests cover invalid options, locality, read
 discovery and failed generation preserving existing files. No committed payload lists
 were changed.
 
+## WoW64 flat thunk generation
+
+`wow64-thunks --spec FILE --sysfuncs FILE --arch ARCH [--out-c FILE]` replaces the
+first-stage `wow64gen.py` generator. Without `--out-c`, it prints C. `--manual-list`
+accepts comma-separated files; `--symbol-prefix` selects the dispatch table/count
+names. `--stats` prints coverage to stderr and `--check --out-c FILE` compares without
+writing. Generation preserves the supplied path spellings in provenance comments.
+
+The shared library owns argument kinds, spec filtering, guest service ordering,
+classification and C rendering. Missing type information and mismatched dword counts
+remain manual stubs. `_WIN64` conditionals are expanded for the i386 guest, retaining
+the established treatment of unrelated conditionals. The native lint audit uses that
+same source-derived table. The former Python API retains data classes and mutable
+object identities through a JSON bridge; stage-two marshalgen callers remain supported.
+
+Both WoW64 CMake commands invoke the native tool directly and track its Rust sources,
+templates, manifests, launcher and pinned toolchain. An isolated Ninja fixture checks
+cold generation, warm no-op, template invalidation and paths containing spaces.
+
+Migration parity matched complete C output for the real ntdll and win32k recipes on
+all three architectures. Frozen recipe inputs and SHA-256 oracles retain that coverage
+without coupling tests to future syscall additions. Structured synthetic fixtures and
+legacy API tests cover signed pseudo-handle widening, manual reasons, service indices,
+duplicate service names and in-place updates. No shipping generated OS C changed.
+
 ## Remaining migration work
 
 Outstanding resource refresh, observed 2026-10-18: the committed HAL/i386 and
@@ -290,7 +315,7 @@ These remain Python implementations; the native generators above do not replace 
 | Group | Entry points |
 | --- | --- |
 | Build graph/configuration | `cargo_cell_gen.py` |
-| WoW64 generation | `wow64gen/wow64gen.py`, `wow64gen/marshalgen.py` |
+| WoW64 deep marshalling | `wow64gen/marshalgen.py` |
 | Translation pipeline | `rustconv/gen_enum_constants.py`, `rustconv/gen_kmdf_dispatch.py`, bindgen postprocessors, and rustconv's generation modules; retain for the C-to-Rust tooling phase |
 
 The remaining build-graph generator is `cargo_cell_gen.py`; its conversion,
