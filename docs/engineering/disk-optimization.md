@@ -32,7 +32,12 @@ lanes are shared at the extent level, never by hardlinks:
 - **`vibeos-dedup.timer`** runs `/usr/local/sbin/vibeos-dedup` every 3 hours (at :15, with up
   to 10 minutes' random delay): an incremental `duperemove -dhr` over `/data/home/curi`, with
   the hashfile `/var/lib/duperemove/data.hash` and the lock `/var/lib/duperemove/data.lock`,
-  at idle CPU and I/O priority. Each run logs one line: `sudo journalctl -u vibeos-dedup`.
+  at idle CPU priority, with its reads capped at 60 MB/s by the cgroup (`IOReadBandwidthMax`),
+  and it skips itself within an hour of the last pass. **`IOSchedulingClass=idle` does nothing
+  on this host**: idle I/O priority needs the BFQ scheduler, and the WSL kernel offers only
+  none/mq-deadline/kyber. Before the cap, back-to-back passes (every build started one) held
+  the fleet at about 60% iowait; stopping the pass took iowait to 0-1% within a minute
+  (2026-11-01). Each run logs one line: `sudo journalctl -u vibeos-dedup`.
   The first two passes, after the wind-down had already deleted every build output, freed
   40 GB and then 18 GB.
 - **`vibeos-cli build`** starts that service as its last stage (`dedup`), without waiting:

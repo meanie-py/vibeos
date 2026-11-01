@@ -1826,6 +1826,13 @@ def model(target: str, repo: Path = REPO) -> Cell:
             if m:
                 if m.group(1) in MSVCRTEX:
                     msvcrtex = MSVCRTEX[m.group(1)]
+                # The engine links the Rust CRT that replaces msvcrtex (crt-dllmain-rust,
+                # crt-startup-rust: Linker::msvcrtex_crt) at link_order's "body" item, with
+                # the body. A body-less cell has no body to anchor it, so the CRT goes
+                # where cmake had libmsvcrtex: without it a C DLL has no
+                # _DllMainCRTStartup@12 (cryptdlg, i386, the first body-less pilot).
+                if bodyless and "body" not in seq:
+                    seq.append("body")
                 continue
             # add_delay_importlibs: `lib<x>_delayed.a`, which gen-delaylib.py made
             # from the same implib .def the engine generates.
