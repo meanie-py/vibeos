@@ -4825,7 +4825,8 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
         cdb_pro.set_Scope(pr_out.Scope());
         cdb_pro.set_Type(pr_out.Type());
         cdb_pro.ParameterListLength[1] = core::mem::size_of::<PRO_PARAMETER_LIST>() as UCHAR;
-        core::ptr::copy_nonoverlapping(
+        // C: RtlMoveMemory -- ParameterList lives inside *prCommand, so the ranges overlap.
+        core::ptr::copy(
             pr_out.ParameterList.as_ptr() as *const u8,
             prCommand as *mut u8,
             core::mem::size_of::<PRO_PARAMETER_LIST>(),

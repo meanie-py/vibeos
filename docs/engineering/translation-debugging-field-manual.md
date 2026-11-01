@@ -9540,6 +9540,13 @@ guarantees** — `copy` and `copy_if_different` differ precisely on whether mtim
   gate.
 - **`#[no_mangle] pub static mut` in a shared lib gives each consumer a PRIVATE data copy.**
 - **A dual-archive cohab runs STALE Rust** when the consumer's DEPENDS list doesn't mirror it.
+- **A `[profile]` edit in `sdk/lib/rust/Cargo.toml` rebuilt only the crates whose sources also
+  changed.** `rust_crate_sources` (the storage/driver `.a` edges) listed each crate's own
+  manifest but not the workspace one that holds `[profile.release.package.*]`: disarming
+  cdrom-rust's `debug-assertions` left cdrom.sys armed on a green warm build, its asserts
+  firing. It now depends on the workspace `Cargo.toml` and `.cargo/config.toml`, as
+  `add_cargo_module` cells already did (`Cargo.lock` stays an explicit caller edge). Settle a doubt with the crate's
+  `.fingerprint/<crate>-*/lib-*.json` `profile` hash and the `.a` mtime.
 - **Editing a kernel C shim silently ships the stale object** (no `rerun-if-changed`).
 - **Smoke "green ×3" lies when conftest nukes only `rust-kernel-target`** (there are five).
 - **New trace points produce nothing in serial** → stale `livecd.iso`.
@@ -10538,6 +10545,26 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   same word (`AtomicUsize::from_ptr(..).swap`, `&*(p as *const AtomicI32)`) did NOT panic and
   need no change on x86: they lower to `lock`-prefixed instructions, which take any alignment,
   and rustc's misaligned-deref check skips borrows. Only plain loads and stores trip it.
+- **A caller's buffer the API aligns to ULONG only** (2026-11-01, cdfs/fastfat).
+  `NtQueryDirectoryFile` probes `FileInformation` with `sizeof(ULONG)`, a WoW64 caller's buffer
+  is 4-aligned, and `FILE_*_DIR_INFORMATION` is 8-aligned: every typed field store into the
+  entry is a misaligned deref (fastfat even formed `&mut` to it). Fix: fill an aligned local
+  copy of the fixed part and store its bytes; fields written later go through `addr_of_mut!` +
+  `write_unaligned`. Any FSD output into a USER buffer has this shape; SystemBuffer is aligned.
+- **A packed on-disk record.** FAT's LFN dirent puts `Name1` at byte 1, so a WCHAR-typed
+  `copy_nonoverlapping` of it is misaligned. Copy bytes, as the C's `RtlCopyMemory` does.
+- **A real overlap.** classpnp's `RtlMoveMemory` of READ_CAPACITY_DATA one ULONG up inside its
+  own _EX had become `copy_nonoverlapping` -- memcpy on overlapping ranges, a genuine bug on
+  every arch. `scan_move_vs_nonoverlapping` now pairs each Rust fn with its C twin's moves.
+- **OPEN: a cache-aligned type inside a device extension.** On 64-bit `COMMON_DEVICE_EXTENSION`
+  embeds a `LOOKASIDE_ALIGN` `NPAGED_LOOKASIDE_LIST`, so classpnp/disk/cdrom's extension types
+  are 64/128-aligned while `IoCreateDevice` places extensions 16-aligned, exactly as the C. The
+  first `(*commonExtension).X` panics; those crates stay unarmed (roadmap #72).
+Arming also changes what a FAILED assert does: `nt_assert!` was `debug_assert!`, a panic and a
+halt where the C's DBG `ASSERT` prints and continues. It now reports through `RtlAssert` (still
+`cfg!(debug_assertions)`-gated, evaluated in the calling crate). Its first two fires were real
+bugs: fastfat's `FatNoOpAcquire` set top-level IRP 1 for the C's `FSRTL_CACHE_TOP_LEVEL_IRP`
+(2), and an empty `DbgDoit!` dropped the increment a `cfg(debug_assertions)` decrement paired.
 Triage tip: the i386 HAL loads as `halmp.dll` under the harness label `hal.dll`, and its panic
 text can print garbled; P4 of the `0xE0525354` bugcheck is still the source line.
 

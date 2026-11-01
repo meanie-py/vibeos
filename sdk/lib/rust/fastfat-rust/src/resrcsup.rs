@@ -514,7 +514,9 @@ pub unsafe extern "system" fn FatNoOpAcquire(
 
     ntkrnl_sys::ASSERT!(IoGetTopLevelIrp().is_null());
 
-    IoSetTopLevelIrp((1 as *mut core::ffi::c_void).cast());
+    // C: (PIRP)FSRTL_CACHE_TOP_LEVEL_IRP (2). The translation had 1, FSRTL_FSP_TOP_LEVEL_IRP,
+    // so FatNoOpRelease's assert fired on every cache-manager no-op acquire once armed.
+    IoSetTopLevelIrp(FSRTL_CACHE_TOP_LEVEL_IRP.cast());
 
     1u8
 }

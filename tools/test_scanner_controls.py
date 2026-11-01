@@ -3436,6 +3436,13 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_move_vs_nonoverlapping": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/move_vs_nonoverlapping.rs: classpnp's RtlMoveMemory "
+        "lowered to copy_nonoverlapping must be flagged, a kept ptr::copy or a nolint must not, "
+        "and neither must another module's same-named C function."
+    ),
     "scan_shadowed_c_define": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "

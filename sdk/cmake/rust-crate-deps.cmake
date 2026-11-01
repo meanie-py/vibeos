@@ -69,6 +69,20 @@ function(rust_crate_sources out_var workspace crate)
         endforeach()
     endwhile()
 
+    # The workspace's own manifest carries [profile] (per-package debug-assertions), and its
+    # .cargo/config.toml the rustflags; neither is any crate's path dependency. Without them
+    # an edit to the [profile] table left every .a whose sources did not change built with the
+    # OLD flags: disarming cdrom-rust left cdrom.sys armed, its asserts firing, on a green
+    # warm build. add_cargo_module's cells list these too (gcc.cmake).
+    # Cargo.lock is left to callers: tools/test_build_invalidation.py's lockfile control
+    # proves a missing lock edge is detectable, and path crates do not move with the lock.
+    foreach(_cfg "${workspace}/Cargo.toml" "${workspace}/.cargo/config.toml")
+        if(EXISTS "${_cfg}")
+            get_filename_component(_cfg "${_cfg}" ABSOLUTE)
+            list(APPEND _srcs "${_cfg}")
+        endif()
+    endforeach()
+
     list(REMOVE_DUPLICATES _srcs)
     set(${out_var} ${_srcs} PARENT_SCOPE)
 endfunction()
