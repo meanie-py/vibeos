@@ -1,0 +1,13 @@
+{
+  "build-amd64/modules/rostests/apitests/a_apitest.exe": "MZ",
+  "build-amd64/modules/rostests/apitests/b_apitest.exe": "MZ",
+  "build-amd64/modules/rostests/apitests/rtl_unittest.exe": "MZ",
+  "build-amd64/modules/rostests/apitests/nested/a_apitest.exe": "MZ",
+  "build-amd64/modules/rostests/winetests/foo/foo_winetest.exe": "MZ",
+  "build-amd64/modules/rostests/winetests/bar/bar_winetest.exe": "MZ",
+  "build-amd64/modules/rostests/winetests/dwrite/dwrite_winetest.exe": "MZ",
+  "modules/rostests/winetests/foo/testlist.c": "{ \"alpha\", func_alpha },\n { \"beta\", func_beta },\n",
+  "modules/rostests/winetests/bar/a.c": "START_TEST(zulu)\nSTART_TEST(alpha)\n",
+  "modules/rostests/winetests/dwrite/testlist.c": "{ \"font\", func_font },\n",
+  "tools/payloads/apitest/quarantine-amd64.txt": "a_apitest.exe\ngone_apitest.exe\nb_apitest.exe  Broken # reason\nmissing_apitest.exe Sub\n"
+}

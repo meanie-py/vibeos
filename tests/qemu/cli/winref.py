@@ -807,8 +807,14 @@ def _stage_apitest(stage: Path, repo: Path) -> int:
     sweep = repo / "tools/payloads/apitest/apitest-sweep-amd64.exe"
     if not sweep.is_file():
         raise FileNotFoundError(f"{sweep}; fix: bash tools/payloads/apitest/build.sh amd64")
-    gen = _load(repo / "tools/payloads/apitest/gen_suites.py", "gen_suites")
-    suites = gen.discover(repo / "build-amd64")
+    discovered = subprocess.run(
+        [str(repo / "tools/codegen"), "apitest-suites", "--arch", "amd64", "--discover-json"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=180,
+    )
+    suites = json.loads(discovered.stdout)
     shutil.copy2(sweep, stage / "bin" / "apitest-sweep.exe")
     (stage / "bin" / "apitest-suites.txt").write_text("\n".join(suites) + "\n")
     (stage / "run.cmd").write_text(

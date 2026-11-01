@@ -251,6 +251,32 @@ ACM/DRV names. No committed flag templates or base-address assignments changed.
 Compiler-dependent tests run live rather than reusing source-only tooling receipts;
 `check-tooling --skip-generated` skips the suite requiring local generated headers.
 
+## Payload suite lists
+
+`apitest-suites --arch ARCH` discovers the local build's API-test and unittest binaries
+and renders both suite and subtest-skip lists. `--only SUITE[:SUBTEST]` is repeatable;
+`--ignore-quarantine` arms quarantined cases while retaining staleness warnings and
+marking the list as unsuitable for banking a baseline. Both warnings and the summary
+count against the full build before filtering. `--build-dir`, `--out-dir` and
+`--quarantine-dir` select explicit inputs/destinations. Unquarantined, sorted discovery
+is available through `--discover-json`; it writes nothing and needs either `--arch`
+or `--build-dir`. The Windows reference runner uses that native command directly.
+The former Python `discover(build_dir)` API is a thin JSON bridge for this checkout.
+
+`winetest-suites --arch ARCH` reads each suite's testlist or standalone `START_TEST`
+source, after checking for its local binary. It preserves `--suites`, `--register`,
+`--only`, `--skip`, `--repeat`, `--timeout` and `--global-flag` behavior, including
+registration order, slow-suite defaults and reproduction annotations. `--out-dir`
+selects the destination and its header tag. Both commands support `--check`, render
+both files before writing, and reject artifact/source links escaping the selected
+checkout. Legacy script entry points and payload build hints continue to delegate.
+
+All fourteen existing quarantine/reproduction regression cases now exercise the Rust
+CLI. Seven scenarios additionally compare both files, warnings, summaries and errors
+with frozen Python results; negative tests cover invalid options, locality, read-only
+discovery and failed generation preserving existing files. No committed payload lists
+were changed.
+
 ## Remaining migration work
 
 Outstanding resource refresh, observed 2026-10-18: the committed HAL/i386 and
@@ -264,7 +290,7 @@ These remain Python implementations; the native generators above do not replace 
 | Group | Entry points |
 | --- | --- |
 | Build graph/configuration | `cargo_cell_gen.py` |
-| Payload and WoW64 generation | `payloads/apitest/gen_suites.py`, `payloads/olewinetest/gen_suites.py`, `wow64gen/wow64gen.py`, `wow64gen/marshalgen.py` |
+| WoW64 generation | `wow64gen/wow64gen.py`, `wow64gen/marshalgen.py` |
 | Translation pipeline | `rustconv/gen_enum_constants.py`, `rustconv/gen_kmdf_dispatch.py`, bindgen postprocessors, and rustconv's generation modules; retain for the C-to-Rust tooling phase |
 
 The remaining build-graph generator is `cargo_cell_gen.py`; its conversion,

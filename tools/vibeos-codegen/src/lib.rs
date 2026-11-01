@@ -12,6 +12,7 @@ pub mod data;
 pub mod delay;
 pub mod global_barrier;
 pub mod messages;
+pub mod payload;
 pub mod probe;
 pub mod ref_protos;
 pub mod resources;

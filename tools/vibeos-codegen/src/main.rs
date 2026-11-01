@@ -2,6 +2,7 @@ mod binding_cli;
 mod build_cli;
 mod compiler_cli;
 mod module_cli;
+mod payload_cli;
 use std::path::{Path, PathBuf};
 use std::{fs, io::Write};
 use vibeos_codegen::{generate, generate_all, resources, GENERATORS};
@@ -32,6 +33,9 @@ Module commands: cnt, cohab-registry, global-barrier.
   cohab-registry and global-barrier default to stdout; --output/--check select files.
   cohab-registry --report prints only its summary.
   global-barrier --source-dir DIR explicitly selects a monolithic crate source root.
+
+Suite lists: apitest-suites, winetest-suites --arch ARCH.
+  apitest-suites --discover-json --build-dir DIR lists unquarantined binaries.
 
 Build commands: cflags --arch ARCH [--target NAME], baseaddress DIR [-64].
   cflags --stdout preserves the legacy JSON string/null inspection format.
@@ -345,6 +349,15 @@ fn command_name(args: &[String]) -> Option<&str> {
                     "--def",
                     "--module",
                     "--target",
+                    "--build-dir",
+                    "--out-dir",
+                    "--quarantine-dir",
+                    "--skip",
+                    "--repeat",
+                    "--timeout",
+                    "--global-flag",
+                    "--suites",
+                    "--register",
                 ]
                 .contains(&arg.as_str())
             {
@@ -371,6 +384,7 @@ fn main() -> std::process::ExitCode {
             .chain(module_cli::NAMES)
             .chain(compiler_cli::NAMES)
             .chain(build_cli::NAMES)
+            .chain(payload_cli::NAMES)
         {
             println!("{name}");
         }
@@ -379,6 +393,8 @@ fn main() -> std::process::ExitCode {
     let name = command_name(&args);
     match if name.is_some_and(|n| compiler_cli::NAMES.contains(&n)) {
         compiler_cli::run(args)
+    } else if name.is_some_and(|n| payload_cli::NAMES.contains(&n)) {
+        payload_cli::run(args)
     } else if name.is_some_and(|n| build_cli::NAMES.contains(&n)) {
         build_cli::run(args)
     } else if name.is_some_and(|n| module_cli::NAMES.contains(&n)) {
