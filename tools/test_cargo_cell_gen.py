@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cargo_cell_gen as g
@@ -957,3 +959,172 @@ def test_spec_entries_that_reexport_an_import_are_recognized(tmp_path):
         "SymEnumSourceFiles",
     }
     assert g._spec_imported_exports(tmp_path / "missing.spec") == set()
+
+
+# ---------------------------------------------------------------- the build-graph lookup
+
+
+def _fake_build(root: Path, arch: str, ninja: str, installs: dict[str, str] | None = None):
+    """A build-<arch> with the given build.ninja and per-directory cmake_install.cmake."""
+    b = root / f"build-{arch}"
+    b.mkdir(parents=True, exist_ok=True)
+    (b / "build.ninja").write_text(ninja)
+    (b / "CMakeCache.txt").write_text("CMAKE_HOME_DIRECTORY:INTERNAL=/tmp/vibeos\n")
+    for outdir, src in (installs or {}).items():
+        (b / outdir).mkdir(parents=True, exist_ok=True)
+        (b / outdir / "cmake_install.cmake").write_text(
+            f"# Install script for directory: /tmp/vibeos/{src}\n\nset(x 1)\n"
+        )
+
+
+def _edge(out: str, rule: str, target: str, extra: str = "x.obj") -> str:
+    return (
+        f"build {out}: {rule}__{target}_Debug {extra}\n"
+        "  LINK_FLAGS = -Wl,--subsystem,windows:5.01\n"
+        "  LINK_LIBRARIES = a.a\n\n"
+    )
+
+
+def test_a_cxx_link_is_the_same_edge_as_a_c_link(tmp_path):
+    """Any .cpp in a module makes cmake link it with CXX_*_LINKER, which the C-only pattern
+    missed: 40 modules were refused as 'a static lib?' for that alone."""
+    for rule, want in (
+        ("C_EXECUTABLE_LINKER", "C_EXECUTABLE"),
+        ("CXX_EXECUTABLE_LINKER", "C_EXECUTABLE"),
+        ("CXX_MODULE_LIBRARY_LINKER", "C_MODULE_LIBRARY"),
+        ("CXX_SHARED_LIBRARY_LINKER", "C_SHARED_LIBRARY"),
+    ):
+        _fake_build(tmp_path, "amd64", _edge("base/m/m.exe", rule, "m"))
+        link = g.link_edge("amd64", "m", tmp_path)
+        assert link.kind == want and link.output == "base/m/m.exe"
+        g._read.cache_clear()
+
+
+def test_the_link_edge_name_is_anchored_by_the_config(tmp_path):
+    _fake_build(
+        tmp_path,
+        "amd64",
+        _edge("base/m/m_c.exe", "C_EXECUTABLE_LINKER", "m_c")
+        + "build cmake_object_order_depends_target_m: phony\n\n",
+    )
+    with pytest.raises(g.GenError, match="no link edge"):
+        g.link_edge("amd64", "m", tmp_path)
+    g._read.cache_clear()
+
+
+def test_a_missing_link_edge_says_what_is_there_instead(tmp_path):
+    cell = (
+        "build dll/win32/a/a.dll | ${cmake_ninja_workdir}dll/win32/a/a.dll: CUSTOM_COMMAND "
+        "/tmp/vibeos/sdk/lib/rust/a-cargo/Cargo.toml /tmp/vibeos/x\n  COMMAND = c\n\n"
+    )
+    gated = "build cmake_object_order_depends_target_other: phony\n\n"
+    for t, text, why in (("a", cell, "cell"), ("w", gated, "absent")):
+        _fake_build(tmp_path, "i386", text)
+        with pytest.raises(g.NoLinkEdge) as e:
+            g.link_edge("i386", t, tmp_path)
+        assert e.value.why == why
+        g._read.cache_clear()
+    # A target that exists but has no edge of any kind stays the original message.
+    _fake_build(tmp_path, "i386", "build cmake_object_order_depends_target_u: phony\n\n")
+    with pytest.raises(g.NoLinkEdge) as e:
+        g.link_edge("i386", "u", tmp_path)
+    assert e.value.why == "unknown"
+    g._read.cache_clear()
+
+
+def test_a_module_missing_on_some_arches_is_refused_by_arch(tmp_path):
+    """wow64 exists on amd64/arm64 only: the refusal names i386, it is not 'a static lib'."""
+    here = _edge("dll/win32/w/w.dll", "C_MODULE_LIBRARY_LINKER", "w")
+    for a in ("amd64", "arm64"):
+        _fake_build(tmp_path, a, here)
+    _fake_build(tmp_path, "i386", "build cmake_object_order_depends_target_z: phony\n\n")
+    want = r"w: i386: not defined on i386.*cmake links it on \['amd64', 'arm64'\]"
+    with pytest.raises(g.GenError, match=want):
+        g._link_edges("w", tmp_path)
+    g._read.cache_clear()
+
+
+def test_a_module_that_is_a_cell_on_every_arch_is_not_converted_again(tmp_path):
+    cell = (
+        "build dll/win32/a/a.dll | ${cmake_ninja_workdir}dll/win32/a/a.dll: CUSTOM_COMMAND "
+        "/tmp/vibeos/sdk/lib/rust/a-cargo/Cargo.toml\n  COMMAND = c\n\n"
+    )
+    for a in g.ARCHES:
+        _fake_build(tmp_path, a, cell)
+    with pytest.raises(g.GenError, match="already a cargo cell on every arch"):
+        g._link_edges("a", tmp_path)
+    g._read.cache_clear()
+
+
+def test_a_cell_on_some_arches_only_is_a_partial_conversion(tmp_path):
+    cell = (
+        "build d/a.dll | ${w}d/a.dll: CUSTOM_COMMAND "
+        "/tmp/vibeos/sdk/lib/rust/a-cargo/Cargo.toml\n  C = c\n\n"
+    )
+    _fake_build(tmp_path, "i386", cell)
+    for a in ("amd64", "arm64"):
+        _fake_build(tmp_path, a, _edge("d/a.dll", "C_MODULE_LIBRARY_LINKER", "a"))
+    with pytest.raises(g.GenError, match="a cargo cell on \\['i386'\\] but still cmake-linked"):
+        g._link_edges("a", tmp_path)
+    g._read.cache_clear()
+
+
+def test_the_source_dir_is_where_the_build_says_not_where_it_wrote_the_output(tmp_path):
+    """vendor/ac97 builds into drivers/wdm/audio/drivers/ac97 (add_subdirectory with a
+    binary dir) and dll/3rdparty/libpng is vendor/libpng: the output dir has no CMakeLists."""
+    _fake_build(tmp_path, "amd64", "", {"drivers/wdm/audio/drivers/ac97": "vendor/ac97"})
+    got = g.source_dir("amd64", "drivers/wdm/audio/drivers/ac97/ac97.sys", "ac97", tmp_path)
+    assert got == tmp_path / "vendor/ac97"
+    # With no cmake_install.cmake to read, the output dir is the best guess.
+    assert g.source_dir("amd64", "x/y/y.dll", "y", tmp_path) == tmp_path / "x/y"
+    g._read.cache_clear()
+
+
+def test_a_cpp_placeholder_is_dropped_and_real_cpp_is_not(tmp_path):
+    stub = tmp_path / "rust_cohab_stub.cpp"
+    stub.write_text("/* placeholder */\ntypedef int x_t;\n")
+    assert g._placeholder(stub)
+    anchored = tmp_path / "anchored.cpp"
+    anchored.write_text('extern char a __asm__("f");\nstatic const void *const t[] = {&a};\n')
+    assert not g._placeholder(anchored)
+
+
+def test_cpp_properties_are_inert_once_no_cpp_is_compiled(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "set_target_cpp_properties(m WITH_EXCEPTIONS)\n")
+    assert g.cmake_facts(f, "m")["unknown"] == []
+    assert "set_target_cpp_properties" not in g.rewrite_cmake(f, cell(cmake_dir=tmp_path))
+
+
+def test_the_dll_variant_is_the_body_when_the_module_also_has_a_static_one(tmp_path):
+    """psapi: psapi_rust belongs to psapi_static (kernel32 links it), psapi_dll_rust to
+    the DLL. The name rule picked the first and then the i386 link had no libpsapi_rust.a."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        'rust_staticlib_variant(m_rust m-rust "" TRUE)\n'
+        'rust_staticlib_variant(m_dll_rust m-rust "dllmain" TRUE)\n'
+        "add_library(m MODULE ${SOURCE})\n"
+        "target_link_libraries(m ${m_dll_rust_LIB})\n"
+    )
+    facts = g.cmake_facts(f, "m", ["base/m/libm_dll_rust.a"])
+    assert facts["body_var"] == "m_dll_rust" and facts["body"] == ("m-rust", ["dllmain"], True)
+    # Linking neither, the `<target>_rust` name still decides.
+    assert g.cmake_facts(f, "m", [])["body_var"] == "m_rust"
+
+
+def test_only_an_export_that_is_an_import_thunk_counts_as_bound(tmp_path, monkeypatch):
+    """evr and mf export names their delay-import lib also carries (their own stubs, and
+    forwarders to the DLL it imports), which is not a rebound export: only a thunk is."""
+    import pe_equiv
+    from test_pe_equiv import make_pe
+
+    monkeypatch.setattr(pe_equiv.PE, "imports", lambda self: ["delay mfplat.dll!Alpha"])
+    thunk = tmp_path / "thunk.dll"
+    thunk.write_bytes(make_pe(["Alpha", "Beta"], code=b"\xff\x25\0\0\0\0"))
+    real = tmp_path / "real.dll"
+    real.write_bytes(make_pe(["Alpha", "Beta"], code=b"\x55\x48\x89\xe5\xc3"))
+    assert g._exports_bound_to_imports(thunk) == {"Alpha"}  # Beta is not imported
+    assert g._exports_bound_to_imports(real) == set()
+    # ARM64's import thunk opens with `adrp x16, ...`.
+    assert g._export_is_import_thunk((0x90000010).to_bytes(4, "little"), 0xAA64)
+    assert not g._export_is_import_thunk((0xD65F03C0).to_bytes(4, "little"), 0xAA64)
