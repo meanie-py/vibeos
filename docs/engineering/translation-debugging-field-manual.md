@@ -9610,6 +9610,23 @@ MSVC *intrinsic*).
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
 
+### A plain-C probe's COM call faults with an address like 2: mingw's C vtable has no IUnknown slots
+
+**Symptom.** A modrun or payload probe (C, built against llvm-mingw's headers) calls a shell
+interface method and faults at a tiny address, or gets `E_NOINTERFACE` from a method that
+cannot return it. It does this against the C oracle and the Rust alike, which makes it look
+like an extension bug the port inherited.
+**Cause.** mingw-w64 declares many shell interfaces (`IExtractIconW` in shlobj.h among hundreds)
+with `DECLARE_INTERFACE_(IFoo, IUnknown)`, and in C that macro drops the base: the vtable
+holds only the methods the body lists, so `p->lpVtbl->GetIconLocation` is slot 0,
+QueryInterface. ntobjshex's probe passed `GIL_FORSHELL` (2) as the IID pointer, and the fault at
+2 sat in the lane plan as "GetIconLocation faults in the C too" for two weeks. Such an
+interface has no COBJMACROS, which is why the probe reached for `lpVtbl` in the first place.
+**Fix.** Call through a local vtable struct that spells out QueryInterface/AddRef/Release
+(probes/ntobjshex.c's `ExtractIconWSlots`). `scan_mingw_c_vtable` flags any `x->lpVtbl->M` in
+tools/payloads whose `x` is such an interface. When oracle and port fail identically, read
+the caller before blaming the code both run.
+
 ### A resource string is right in the source and mojibake in the binary (llvm-rc ignores `#pragma code_page`)
 
 **Symptom:** a localized string or locale value is wrong at runtime while the `.rc`/`.nls`

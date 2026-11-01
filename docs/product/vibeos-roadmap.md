@@ -602,6 +602,27 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **x86 user mode never calls vectored exception handlers (open, found 2026-11-01, needs
+  an owner: rtl-except + wow64).** i386's and amd64's Rust `RtlDispatchException` drop the
+  `RtlCallVectoredExceptionHandlers` call, faithfully: the C guards it with `#ifndef
+  _NTOSKRNL_`, and librtl only ever builds with `-D_NTOSKRNL_`
+  (`sdk/lib/rust/rtl-except/src/{i386,amd64}/except.rs` say so). arm64 calls them, gated on
+  `RtlpGetMode() == UserMode`. Seen in the guest: a probe's `AddVectoredExceptionHandler`
+  handler never ran on i386, and the fault ended the process (`20261101-132440-czxr3qjn`). The
+  fix is arm64's gate on the other two, but it would wake handlers that have never run there,
+  wow64's `Wow64pVeh` on amd64 among them, which deliberately goes through
+  `Wow64PrepareForException` instead (`dll/ntdll/dispatch/amd64/dispatch.S`). It needs smoke
+  and the wow64 suites, not a drive-by.
+- **netshell lists no connections: the guest's NIC has no driver in the Net class (open, found
+  2026-11-01, netstack).** The connection manager in both C and Rust walks
+  `SetupDiGetClassDevs(GUID_DEVCLASS_NET, DIGCF_PRESENT)`, which returns no devices. The
+  e1000 (`PCI\VEN_8086&DEV_100E`, virtio-net on arm64) is present with an empty class and no
+  service. Separately, `GetAdaptersInfo` names the one adapter "netstack smoltcp adapter
+  (Intel Ethernet)" where Windows gives its `{NetCfgInstanceId}` GUID, so even a Net-class device
+  would never match it. probes/netshell.c's `replay` lines retrace each step
+  (`20261101-150612-t3gz_kkw`). Network Connections stays empty until the netstack registers
+  its adapter the way NDIS miniports do.
+
 - **arm64 kmtest ZwAllocateVirtualMemory: its two system threads now finish in the other order
   (open question, found 2026-10-19, research; benign for the ratchet).** The pass count moved
   576/579/582 on the version-flip + handle-biasing branch, where master reads 581. Thread 1's
