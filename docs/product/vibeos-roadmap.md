@@ -636,6 +636,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   The shape is a second CPU resolving the same PTE between the fault's validity check and the
   demand-zero call, so look for a path that releases the working-set lock in between.
   Repro: `farm --arches amd64-bios` with `--smp 2`.
+  **Second occurrence, a different signature, in the very next gate** (`20261101-171955-l2klm01v`,
+  same batch plus batch 67): `0x1A` from `[MMGUARD] rmap.MmDeleteRmap mapping-not-in-list`
+  (Page `0x55c4`, Address `0x7c3b7000`, inside a WoW64 process right after `gui32.exe` exited),
+  preserved at `~/vibeos-flake-farm/fails/auto/20261101-180225-j0r39m3x-smoke-amd64-bios-BUGCHECK`.
+  Today's earlier gates passed amd64-bios 5/5 with the same WoW64 workload, so either batch 66
+  raised the rate or this was bad luck. The WoW64 thunk generator lint-rs moved to Rust emits
+  byte-identical tables (NT 303 and win32k 740 syscalls, checked against master's Python), so
+  it is not the thunks.
 - **x86 user mode never calls vectored exception handlers (open, found 2026-11-01, needs
   an owner: rtl-except + wow64).** i386's and amd64's Rust `RtlDispatchException` drop the
   `RtlCallVectoredExceptionHandlers` call, faithfully: the C guards it with `#ifndef
