@@ -2,9 +2,6 @@
 use std::{fs, io::Write, path::PathBuf};
 use vibeos_codegen::{cnt, cohab_registry, global_barrier};
 pub const NAMES: &[&str] = &["cnt", "cohab-registry", "global-barrier"];
-pub fn selected(args: &[String]) -> bool {
-    args.iter().any(|a| NAMES.contains(&a.as_str()))
-}
 
 pub fn run(args: Vec<String>) -> Result<u8, String> {
     let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");

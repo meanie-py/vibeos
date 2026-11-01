@@ -177,13 +177,12 @@ def generated_checks(repo: Path) -> list[tuple[str, list[str]]]:
     hardcoded list is how the eighth arrives uncovered. `refstub/msvcrt_<stem>_protos.h`
     IS the registration — the file's existence names the source it was derived from.
     """
-    py = "python3"
     checks: list[tuple[str, list[str]]] = [
         # The constants and the layout guardian, in one invocation: one generator
         # writes both, so one `--check` re-derives both.
         (
             "consts",
-            [py, str(repo / "tools" / "gen_msvcrt_difftest_consts.py"), "--check"],
+            [str(repo / "tools" / "codegen"), "msvcrt-consts", "--check"],
         )
     ]
     for h in sorted(repo.joinpath(*_REFSTUB).glob("msvcrt_*_protos.h")):
@@ -200,7 +199,7 @@ def generated_checks(repo: Path) -> list[tuple[str, list[str]]]:
     # msvcrt.dll no longer has.
     if (repo / "sdk/lib/rust/msvcrt-seh-difftest/refstub/seh_layout.h").is_file():
         checks.append(
-            ("layout:seh-i386", [py, str(repo / "tools" / "gen_msvcrt_seh_layout.py"), "--check"])
+            ("layout:seh-i386", [str(repo / "tools" / "codegen"), "seh-layout", "--check"])
         )
     return checks
 

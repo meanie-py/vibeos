@@ -1,0 +1,72 @@
+[
+  {
+    "name": "NtFoo",
+    "args": [
+      "long",
+      "ptr",
+      "int64",
+      "double",
+      "word"
+    ],
+    "ordinal": 0,
+    "arch": null,
+    "manual_reason": "listed in --manual-list (struct layout)",
+    "slots": 7,
+    "needs_manual": true
+  },
+  {
+    "name": "NtManual",
+    "args": [
+      "int128"
+    ],
+    "ordinal": 1,
+    "arch": null,
+    "manual_reason": "arg 'int128' needs deep marshalling",
+    "slots": 4,
+    "needs_manual": true
+  },
+  {
+    "name": "NtUnknown",
+    "args": [
+      "long",
+      "banana"
+    ],
+    "ordinal": 2,
+    "arch": null,
+    "manual_reason": "unknown arg token 'banana'",
+    "slots": 0,
+    "needs_manual": true
+  },
+  {
+    "name": "NtMissing",
+    "args": [],
+    "ordinal": 3,
+    "arch": null,
+    "manual_reason": "in sysfuncs.h but not in .spec (no type info)",
+    "slots": 9,
+    "needs_manual": true
+  },
+  {
+    "name": "NtArch",
+    "args": [
+      "str",
+      "wstr"
+    ],
+    "ordinal": 4,
+    "arch": "x86_64",
+    "manual_reason": "",
+    "slots": 2,
+    "needs_manual": false
+  },
+  {
+    "name": "NtNegative",
+    "args": [
+      "ptr"
+    ],
+    "ordinal": 5,
+    "arch": "!i386",
+    "manual_reason": "spec arg dwords 1 != sysfuncs.h argcount 3",
+    "slots": 3,
+    "needs_manual": true
+  }
+]

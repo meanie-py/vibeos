@@ -181,10 +181,10 @@ def test_thunk_table_separates_live_flat_thunks_from_stubs(tmp_path):
     entry that still names a wow64_thunk_* body is dispatched flat."""
     gen = tmp_path / "t.gen.c"
     gen.write_text(
-        'static const X Wow64ThunkTable[] = {\n'
+        "static const X Wow64ThunkTable[] = {\n"
         '    { "NtGdiAbortDoc", wow64_thunk_NtGdiAbortDoc, 1 }, /* [0] */\n'
         '    { "NtUserBeginPaint", 0, 2 }, /* [307] MANUAL: listed in --manual-list */\n'
-        '};\n'
+        "};\n"
     )
     table = mg.load_thunk_table(gen)
     assert table == {"NtGdiAbortDoc": True, "NtUserBeginPaint": False}
@@ -199,7 +199,9 @@ def test_audit_verdict_flags_divergence_but_not_tool_blindness():
     assert mg.audit_verdict("SEMANTIC", "union/bitfield with divergent layout") == "DIVERGENT"
     # ...but "I couldn't SEE the layout" is a hole in the TOOL, not a claim
     # about the syscall. Gating on it would bury the real findings in noise.
-    assert mg.audit_verdict("SEMANTIC", "-> FOO: layout not in dump (add header to TU?)") == "UNKNOWN"
+    assert (
+        mg.audit_verdict("SEMANTIC", "-> FOO: layout not in dump (add header to TU?)") == "UNKNOWN"
+    )
     assert mg.audit_verdict("SEMANTIC", "unknown type 'BAR'") == "UNKNOWN"
     assert mg.audit_verdict("FLAT", "scalar") == "OK"
     assert mg.audit_verdict("IDENTICAL", "") == "OK"
@@ -256,3 +258,108 @@ def test_crosscheck_hard_fails_on_a_stale_built_table(tmp_path):
         assert "STALE" in str(e) and "NtFoo" in str(e)
     else:
         raise AssertionError("stale built table did not raise")
+
+
+def test_native_bridge_preserves_in_place_ordering_and_duplicate_identity(tmp_path):
+    sc = w.Syscall(name="NtA", args=["long"], slots=1)
+    ordered = w.order_by_sysfuncs([("NtA", 1), ("NtA", 2)], [sc])
+    assert ordered[0] is sc and ordered[1] is sc
+    assert sc.ordinal == 1 and sc.slots == 2 and sc.needs_manual
+    assert "argcount" in sc.manual_reason
+    unknown = w.Syscall(name="NtBad", args=["long", "banana"], slots=7)
+    w._classify(unknown)
+    assert unknown.slots == 7 and "banana" in unknown.manual_reason
+
+
+def test_native_cli_failure_preserves_output_and_check_is_read_only(tmp_path):
+    import subprocess
+    from pathlib import Path
+
+    tool = Path(__file__).resolve().parents[1] / "codegen"
+    spec = tmp_path / "empty.spec"
+    spec.write_text("@ stdcall RtlNotASyscall(long)\n")
+    services = tmp_path / "sysfuncs.h"
+    services.write_text("SVC_(A, 1)\n")
+    output = tmp_path / "keep.c"
+    output.write_text("keep")
+    args = [
+        str(tool),
+        "wow64-thunks",
+        "--arch",
+        "amd64",
+        "--spec",
+        str(spec),
+        "--sysfuncs",
+        str(services),
+        "--out-c",
+        str(output),
+    ]
+    result = subprocess.run(args, capture_output=True, text=True, check=False, timeout=180)
+    assert result.returncode != 0 and "no Nt* syscalls" in result.stderr
+    assert output.read_text() == "keep"
+    spec.write_text("@ stdcall NtA(long)\n")
+    result = subprocess.run(
+        [*args, "--check"], capture_output=True, text=True, check=False, timeout=180
+    )
+    assert result.returncode == 1 and "DRIFT" in result.stderr
+    assert output.read_text() == "keep"
+
+
+def test_shipping_cmake_tracks_native_generator_and_template_inputs(tmp_path):
+    import json
+    import shutil
+    import subprocess
+    import time
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[2]
+    source = tmp_path / "source tree"
+    source.mkdir()
+    inputs = json.loads((repo / "tools/vibeos-codegen/tests/wow64/real-inputs.json").read_text())
+    for name, text in inputs.items():
+        path = source / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    for name in [
+        "sdk/cmake/codegen.cmake",
+        "dll/win32/wow64/CMakeLists.txt",
+        "rust-toolchain.toml",
+        "tools/vibeos-codegen/Cargo.toml",
+        "tools/vibeos-codegen/Cargo.lock",
+    ]:
+        path = source / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(repo / name, path)
+    shutil.copytree(repo / "tools/vibeos-codegen/src", source / "tools/vibeos-codegen/src")
+    # A host compiler tool may be shared; all generation inputs/outputs are isolated.
+    binary = repo / ".cache/vibeos-codegen/target/debug/vibeos-codegen"
+    assert binary.is_file()
+    (source / "tools/codegen").symlink_to(binary)
+    (source / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.20)\nproject(ThunkFixture NONE)\n"
+        'set(ARCH amd64)\nset(REACTOS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")\n'
+        "foreach(cmd spec2def add_library target_include_directories set_module_type "
+        "add_importlibs add_dependencies add_cd_file)\n"
+        "function(${cmd})\nendfunction()\nendforeach()\n"
+        'include("${REACTOS_SOURCE_DIR}/dll/win32/wow64/CMakeLists.txt")\n'
+        "add_custom_target(thunks ALL DEPENDS ${_wow64_thunks} ${_wow64_w32k_thunks})\n"
+    )
+    build = tmp_path / "build"
+
+    def command(*args):
+        result = subprocess.run(args, capture_output=True, text=True, check=False, timeout=180)
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result.stdout
+
+    command("cmake", "-S", str(source), "-B", str(build), "-G", "Ninja")
+    first = command("ninja", "-C", str(build), "-v")
+    assert first.count(" --spec ") == 2
+    assert "no work to do" in command("ninja", "-C", str(build), "-v")
+    for name in ["wow64_thunks.gen.c", "wow64_win32k_thunks.gen.c"]:
+        assert (build / name).is_file() and "WOW64_THUNK_ENTRY" in (build / name).read_text()
+    template = source / "tools/vibeos-codegen/src/wow64/header.txt"
+    time.sleep(0.02)
+    template.write_text(template.read_text() + "\n")
+    rerun = command("ninja", "-C", str(build), "-v")
+    assert rerun.count(" --spec ") == 2
+    assert "no work to do" in command("ninja", "-C", str(build), "-v")

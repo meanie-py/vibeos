@@ -30,6 +30,10 @@ _MAX_AGE = 24 * 3600
 _LIVE = {
     "pytest:tests/qemu/cli/test_portlease.py",
     "pytest:tools/test_host_jobs.py",
+    # Native generator tests inspect local tools or mutable compiler artifacts.
+    "pytest:tools/test_gen_ctype_tables.py",
+    "pytest:tools/test_compiler_codegen.py",
+    "pytest:tools/wow64gen/test_wow64gen.py",
     "pytest:tools/test_verify_ucrtbase_cohab.py",
     "pytest:tools/test_tooling_receipts.py",
     # These compile temporary projects using mutable external Cargo registry/sysroot inputs.
@@ -40,7 +44,9 @@ _LIVE = {
 }
 # Checks whose inputs include THIS checkout's generated build output (build-<arch>/
 # compile_commands.json, generated SDK headers). They cannot run in a tree without builds.
-GENERATED_INPUT_CHECKS = frozenset({"pytest:tools/rustconv/tests"})
+GENERATED_INPUT_CHECKS = frozenset(
+    {"pytest:tools/rustconv/tests", "pytest:tools/test_compiler_codegen.py"}
+)
 # Audited source/fixture suites. Adding a suite to the runner does not establish
 # its input contract: new suites run live until explicitly reviewed here.
 _AUDITED_PYTEST = {
@@ -51,7 +57,6 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_conformance_probe.py",
     "pytest:tools/test_export_census.py",
     "pytest:tools/test_gate_source_partitions.py",
-    "pytest:tools/test_gen_ctype_tables.py",
     "pytest:tools/test_hostdisk.py",
     "pytest:tools/test_kernel_probe.py",
     "pytest:tools/test_link_guard.py",
@@ -92,7 +97,6 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_verify_c_signatures.py",
     "pytest:tools/test_verify_lost_exports.py",
     "pytest:tools/test_verify_translation_literals.py",
-    "pytest:tools/wow64gen/test_wow64gen.py",
 }
 _TOOLS = ("git", "rustc", "cargo", "cmake", "ninja", "cc", "c++", "clang", "ar", "objdump", "node")
 _VOLATILE_ENV = {

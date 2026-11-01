@@ -1,0 +1,199 @@
+use super::{read_optional, valid_arch, within, Generated};
+use std::{
+    collections::{BTreeSet, HashMap},
+    fs,
+    path::Path,
+};
+/// Options are already parsed; an empty `only` means no restriction.
+pub struct Options<'a> {
+    pub arch: &'a str,
+    pub build_dir: &'a Path,
+    pub quarantine_dir: &'a Path,
+    pub only: &'a [String],
+    pub ignore_quarantine: bool,
+}
+/// Sorted unique binary names; also serves callers that need unquarantined discovery.
+pub fn discover(build_dir: &Path) -> Result<Vec<String>, String> {
+    let root = build_dir.join("modules/rostests/apitests");
+    if !root.is_dir() {
+        return Ok(Vec::new());
+    }
+    within(&root, build_dir)?;
+    let mut found = BTreeSet::new();
+    let mut pending = vec![root];
+    while let Some(dir) = pending.pop() {
+        for entry in fs::read_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let ty = entry.file_type().map_err(|e| e.to_string())?;
+            if ty.is_dir() {
+                pending.push(entry.path());
+            } else {
+                let name = entry
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| "non-UTF-8 apitest filename")?;
+                if name.ends_with("_apitest.exe") || name.ends_with("_unittest.exe") {
+                    if ty.is_symlink() {
+                        within(&entry.path(), build_dir)?;
+                    }
+                    found.insert(name);
+                }
+            }
+        }
+    }
+    Ok(found.into_iter().collect())
+}
+/// Render both payload files; no files are written.
+pub fn generate(o: &Options<'_>) -> Result<Generated, String> {
+    valid_arch(o.arch)?;
+    let all = discover(o.build_dir)?;
+    if all.is_empty() {
+        return Err(format!("gen_suites: no apitest binaries under {}/modules/rostests/apitests.\n  fix: ./vibeos-cli build --arch {} --rostests --keep-going",o.build_dir.display(),o.arch));
+    }
+    let all_set: BTreeSet<_> = all.iter().cloned().collect();
+    let mut whole = BTreeSet::new();
+    let mut subs: HashMap<String, Vec<String>> = HashMap::new();
+    for entry in o.only {
+        let (s, t) = entry.split_once(':').unwrap_or((entry, ""));
+        if t.is_empty() {
+            whole.insert(s.to_owned());
+        } else {
+            subs.entry(s.to_owned()).or_default().push(t.to_owned());
+        }
+    }
+    let want: BTreeSet<_> = whole.iter().cloned().chain(subs.keys().cloned()).collect();
+    if !o.only.is_empty() {
+        let missing: Vec<_> = want.difference(&all_set).cloned().collect();
+        if !missing.is_empty() {
+            return Err(format!(
+                "gen_suites: --only names {} suite(s) this build did not produce: {}",
+                missing.len(),
+                missing.join(", ")
+            ));
+        }
+    }
+    let found: Vec<_> = all
+        .iter()
+        .filter(|s| o.only.is_empty() || want.contains(*s))
+        .cloned()
+        .collect();
+    let qname = format!("quarantine-{}.txt", o.arch);
+    let qpath = o.quarantine_dir.join(&qname);
+    let mut quarantined = BTreeSet::new();
+    let mut skipped = Vec::new();
+    for line in read_optional(&qpath)?.lines() {
+        let line = line.split('#').next().unwrap_or("").trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.contains(' ') {
+            skipped.push(line.split_whitespace().collect::<Vec<_>>().join(" "));
+        } else {
+            quarantined.insert(line.to_owned());
+        }
+    }
+    let mut warnings = Vec::new();
+    let stale: Vec<_> = quarantined.difference(&all_set).cloned().collect();
+    if !stale.is_empty() {
+        warnings.push(format!(
+            "gen_suites: {qname} names {} suite(s) this build did not produce: {}",
+            stale.len(),
+            stale.join(", ")
+        ));
+    }
+    let stale_sub: BTreeSet<_> = skipped
+        .iter()
+        .map(|e| e.split(' ').next().unwrap().to_owned())
+        .filter(|s| !all_set.contains(s))
+        .collect();
+    if !stale_sub.is_empty() {
+        warnings.push(format!(
+            "gen_suites: {qname} has subtest skips for suite(s) this build did not produce: {}",
+            stale_sub.into_iter().collect::<Vec<_>>().join(", ")
+        ));
+    }
+    let mut skip = vec![
+        format!(
+            "# apitest subtest skips — {}. GENERATED from {qname}.",
+            o.arch
+        ),
+        "# '<suite.exe> <subtest>' per line; the sweep announces each as SKIP.".into(),
+    ];
+    if o.ignore_quarantine {
+        skip.push("# QUARANTINE IGNORED (--ignore-quarantine): deliberately EMPTY.".into());
+    } else {
+        skip.extend(skipped.clone());
+    }
+    let buildname = o
+        .build_dir
+        .file_name()
+        .and_then(|s| s.to_str())
+        .ok_or("invalid build directory name")?;
+    let mut lines = vec![
+        format!(
+            "# apitest conformance sweep list — {}. GENERATED by",
+            o.arch
+        ),
+        "# tools/payloads/apitest/gen_suites.py from the binaries in".into(),
+        format!("# {buildname}/modules/rostests/apitests. Do not edit; to drop a suite,"),
+        format!("# add it to {qname} instead."),
+    ];
+    if !o.only.is_empty() {
+        let mut v = o.only.to_vec();
+        v.sort();
+        lines.extend([
+            format!("# RESTRICTED by --only to: {}", v.join(", ")),
+            "# This is a REPRODUCTION list, not the full sweep — do not bank a baseline".into(),
+            "# from a run using it; the coverage would silently be one suite's worth.".into(),
+        ]);
+    }
+    if o.ignore_quarantine {
+        lines.extend([
+            format!("# QUARANTINE IGNORED (--ignore-quarantine): {qname} was not"),
+            "# subtracted, so known-wedging suites and subtests are ARMED. This is a".into(),
+            "# REPRODUCTION list — do not bank a baseline from a run using it.".into(),
+        ]);
+    }
+    let armed = if o.ignore_quarantine {
+        BTreeSet::new()
+    } else {
+        quarantined
+    };
+    if !armed.is_empty() {
+        lines.push(format!(
+            "# {} suite(s) quarantined via {qname}.",
+            found.iter().filter(|s| armed.contains(*s)).count()
+        ));
+    }
+    for s in &found {
+        if armed.contains(s) {
+            continue;
+        }
+        if let Some(tests) = subs.get(s).filter(|_| !whole.contains(s)) {
+            lines.extend(tests.iter().map(|t| format!("{s} {t}")));
+        } else {
+            lines.push(s.clone());
+        }
+    }
+    let kept = found.iter().filter(|s| !armed.contains(*s)).count();
+    let mut restricted = if o.only.is_empty() {
+        String::new()
+    } else {
+        format!(", RESTRICTED to {} by --only", found.len())
+    };
+    if o.ignore_quarantine {
+        restricted.push_str(", QUARANTINE IGNORED");
+    }
+    let filtered = if o.only.is_empty() {
+        String::new()
+    } else {
+        format!("{} filtered, ", all.len() - found.len())
+    };
+    let status=format!("gen_suites: apitest-suites-{}.txt — {kept} suite(s) ({} built, {filtered}{} quarantined{restricted}), {} subtest skip(s)",o.arch,all.len(),found.len()-kept,if o.ignore_quarantine{0}else{skipped.len()});
+    Ok(Generated {
+        suites: lines.join("\n") + "\n",
+        skips: skip.join("\n") + "\n",
+        warnings,
+        status,
+    })
+}

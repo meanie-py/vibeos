@@ -114,6 +114,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     b = sub.add_parser("build", help="ninja + binary-lints + build-index + stamp")
     arch_arg(b)
+    b.add_argument(
+        "--headers-only",
+        action="store_true",
+        help="configure and generate headers only; no boot build or stamp",
+    )
     b.add_argument("--clean", action="store_true", help="cold: nuke all rust targets")
     b.add_argument(
         "--artifact-store",

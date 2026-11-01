@@ -1,18 +1,26 @@
 //! Deterministic host-side generators. Rendering is shared with drift checks.
 pub mod asm;
+pub mod baseaddress;
+pub mod cflags;
 pub mod cnt;
 pub mod cohab_registry;
 pub mod com;
 pub mod constants;
+pub mod crt_probes;
+pub mod ctype;
 pub mod data;
 pub mod delay;
 pub mod global_barrier;
 pub mod messages;
+pub mod payload;
+pub mod probe;
 pub mod ref_protos;
 pub mod resources;
 pub mod rpc;
 pub mod source_walk;
 pub mod tables;
+pub mod ucrt_cases;
+pub mod wow64;
 
 use std::path::{Path, PathBuf};
 

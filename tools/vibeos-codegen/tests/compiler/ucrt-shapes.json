@@ -1,0 +1,1547 @@
+[
+  [
+    "void (void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "const char *(void)",
+    null
+  ],
+  [
+    "int (struct _EXCEPTION_RECORD *, void *, struct _CONTEXT *, void *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "unsigned long (void) __attribute__((cdecl))",
+    []
+  ],
+  [
+    "void *(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "int (void) __attribute__((cdecl))",
+    []
+  ],
+  [
+    "const unsigned short *(void)",
+    null
+  ],
+  [
+    "const wctype_t *(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "pthreadlocinfo (void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "pthreadmbcinfo (void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "int (int, int) __attribute__((cdecl))",
+    [
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "int (int, int, _locale_t) __attribute__((cdecl))",
+    [
+      "I",
+      "I",
+      "L"
+    ]
+  ],
+  [
+    "int (int)",
+    [
+      "I"
+    ]
+  ],
+  [
+    "int (int, _locale_t) __attribute__((cdecl))",
+    [
+      "I",
+      "L"
+    ]
+  ],
+  [
+    "wint_t (wint_t) __attribute__((cdecl))",
+    [
+      "I"
+    ]
+  ],
+  [
+    "wint_t (wint_t, _locale_t) __attribute__((cdecl))",
+    [
+      "I",
+      "L"
+    ]
+  ],
+  [
+    "long (volatile long *, long)",
+    null
+  ],
+  [
+    "short (volatile short *)",
+    null
+  ],
+  [
+    "long long (volatile long long *, long long)",
+    null
+  ],
+  [
+    "unsigned char (volatile long *, long)",
+    null
+  ],
+  [
+    "unsigned char (unsigned long)",
+    [
+      "I"
+    ]
+  ],
+  [
+    "unsigned short (unsigned long)",
+    [
+      "I"
+    ]
+  ],
+  [
+    "unsigned long (unsigned long)",
+    [
+      "I"
+    ]
+  ],
+  [
+    "unsigned int (unsigned int, int) __attribute__((cdecl))",
+    [
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "unsigned long long (unsigned long long, int) __attribute__((cdecl))",
+    [
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "errno_t (void *, size_t, const void *, size_t) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "char *(char *, int) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "int (const char *, const char *)",
+    [
+      "SN",
+      "SN"
+    ]
+  ],
+  [
+    "unsigned int (const char *)",
+    [
+      "SN"
+    ]
+  ],
+  [
+    "size_t (const char *, size_t) __attribute__((cdecl))",
+    [
+      "SN",
+      "I"
+    ]
+  ],
+  [
+    "int (const char *, const char *, _locale_t) __attribute__((cdecl))",
+    [
+      "SN",
+      "SN",
+      "L"
+    ]
+  ],
+  [
+    "int (const char *, const char *, size_t) __attribute__((cdecl))",
+    [
+      "SN",
+      "SN",
+      "I"
+    ]
+  ],
+  [
+    "int (const char *, const char *, size_t, _locale_t) __attribute__((cdecl))",
+    [
+      "SN",
+      "SN",
+      "I",
+      "L"
+    ]
+  ],
+  [
+    "unsigned int (const char *, const char *)",
+    [
+      "SN",
+      "SN"
+    ]
+  ],
+  [
+    "unsigned int (char *, const char *, unsigned int)",
+    null
+  ],
+  [
+    "size_t (char *restrict, const char *restrict, size_t, _locale_t) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "wchar_t *(const wchar_t *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "unsigned short *(const unsigned short *, unsigned short)",
+    null
+  ],
+  [
+    "size_t (const wchar_t *, const wchar_t *) __attribute__((cdecl))",
+    [
+      "SW",
+      "SW"
+    ]
+  ],
+  [
+    "size_t (const wchar_t *, size_t) __attribute__((cdecl))",
+    [
+      "SW",
+      "I"
+    ]
+  ],
+  [
+    "int (const wchar_t *, const wchar_t *) __attribute__((cdecl))",
+    [
+      "SW",
+      "SW"
+    ]
+  ],
+  [
+    "int (const wchar_t *, const wchar_t *, _locale_t) __attribute__((cdecl))",
+    [
+      "SW",
+      "SW",
+      "L"
+    ]
+  ],
+  [
+    "int (const wchar_t *, const wchar_t *, size_t) __attribute__((cdecl))",
+    [
+      "SW",
+      "SW",
+      "I"
+    ]
+  ],
+  [
+    "int (const wchar_t *, const wchar_t *, size_t, _locale_t) __attribute__((cdecl))",
+    [
+      "SW",
+      "SW",
+      "I",
+      "L"
+    ]
+  ],
+  [
+    "__m64 (int)",
+    null
+  ],
+  [
+    "__attribute__((__vector_size__(2 * sizeof(int)))) int (int, int)",
+    null
+  ],
+  [
+    "errno_t (const wchar_t *, const wchar_t *) __attribute__((cdecl))",
+    [
+      "SW",
+      "SW"
+    ]
+  ],
+  [
+    "_purecall_handler (_purecall_handler) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "_invalid_parameter_handler (_invalid_parameter_handler) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "int *(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "errno_t (int) __attribute__((cdecl))",
+    [
+      "I"
+    ]
+  ],
+  [
+    "unsigned long *(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "char **(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "char ***(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "wchar_t ***(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "wchar_t **(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "unsigned int *(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "long (long)",
+    [
+      "I"
+    ]
+  ],
+  [
+    "long long (long long) __attribute__((cdecl))",
+    [
+      "I"
+    ]
+  ],
+  [
+    "double (const char *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "int (const char *) __attribute__((cdecl))",
+    [
+      "SN"
+    ]
+  ],
+  [
+    "int (const char *, _locale_t) __attribute__((cdecl))",
+    [
+      "SN",
+      "L"
+    ]
+  ],
+  [
+    "long (const char *) __attribute__((cdecl))",
+    [
+      "SN"
+    ]
+  ],
+  [
+    "long (const char *, _locale_t) __attribute__((cdecl))",
+    [
+      "SN",
+      "L"
+    ]
+  ],
+  [
+    "unsigned long long (unsigned long long) __attribute__((cdecl))",
+    [
+      "I"
+    ]
+  ],
+  [
+    "div_t (int, int) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "long long (const char *) __attribute__((cdecl))",
+    [
+      "SN"
+    ]
+  ],
+  [
+    "long long (const char *, _locale_t) __attribute__((cdecl))",
+    [
+      "SN",
+      "L"
+    ]
+  ],
+  [
+    "unsigned long long (const char *, char **, int) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "ldiv_t (long, long) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "int (const char *, size_t) __attribute__((cdecl))",
+    [
+      "SN",
+      "I"
+    ]
+  ],
+  [
+    "int (const char *, size_t, _locale_t) __attribute__((cdecl))",
+    [
+      "SN",
+      "I",
+      "L"
+    ]
+  ],
+  [
+    "size_t (const char *) __attribute__((cdecl))",
+    [
+      "SN"
+    ]
+  ],
+  [
+    "size_t (const char *, _locale_t) __attribute__((cdecl))",
+    [
+      "SN",
+      "L"
+    ]
+  ],
+  [
+    "size_t (const char *, size_t, _locale_t) __attribute__((cdecl))",
+    [
+      "SN",
+      "I",
+      "L"
+    ]
+  ],
+  [
+    "float (const char *, char **)",
+    null
+  ],
+  [
+    "long double (const char *, char **)",
+    null
+  ],
+  [
+    "unsigned long (const char *, char **, int)",
+    null
+  ],
+  [
+    "int (const wchar_t *) __attribute__((cdecl))",
+    [
+      "SW"
+    ]
+  ],
+  [
+    "int (const wchar_t *, _locale_t) __attribute__((cdecl))",
+    [
+      "SW",
+      "L"
+    ]
+  ],
+  [
+    "long (const wchar_t *) __attribute__((cdecl))",
+    [
+      "SW"
+    ]
+  ],
+  [
+    "long (const wchar_t *, _locale_t) __attribute__((cdecl))",
+    [
+      "SW",
+      "L"
+    ]
+  ],
+  [
+    "long long (const wchar_t *) __attribute__((cdecl))",
+    [
+      "SW"
+    ]
+  ],
+  [
+    "long long (const wchar_t *, _locale_t) __attribute__((cdecl))",
+    [
+      "SW",
+      "L"
+    ]
+  ],
+  [
+    "unsigned long (unsigned long, int) __attribute__((cdecl))",
+    [
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "_onexit_t (_onexit_t) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "__MINGW_ATTRIB_DEPRECATED void (unsigned int, unsigned int)",
+    null
+  ],
+  [
+    "lldiv_t (long long, long long) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "errno_t (const char *, const char *) __attribute__((cdecl))",
+    [
+      "SN",
+      "SN"
+    ]
+  ],
+  [
+    "size_t (void) __attribute__((cdecl))",
+    []
+  ],
+  [
+    "intptr_t (void) __attribute__((cdecl))",
+    []
+  ],
+  [
+    "__m128 (__m128, __m128)",
+    null
+  ],
+  [
+    "unsigned int (void)",
+    []
+  ],
+  [
+    "__m128d (__m128d, __m128d)",
+    null
+  ],
+  [
+    "__m128i (__m128d)",
+    null
+  ],
+  [
+    "WORD (DWORD, DWORD, PVOID *, PDWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "SIZE_T (const void *, const void *, SIZE_T) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PVOID (PVOID, PVOID *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PSLIST_ENTRY (const SLIST_HEADER *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "ULONGLONG (ULONGLONG, DWORD, BYTE) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "BOOLEAN (DWORD, DWORD, DWORD, DWORD, PDWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "DWORD (PVOID, HEAP_INFORMATION_CLASS, PVOID, SIZE_T) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "struct _TEB *(void)",
+    null
+  ],
+  [
+    "HRESULT (const GUID *const, void *, BEM_FREE_INTERFACE_CALLBACK, BEM_REFERENCE **) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "WINBOOL (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPTOP_LEVEL_EXCEPTION_FILTER (LPTOP_LEVEL_EXCEPTION_FILTER) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LONG (struct _EXCEPTION_POINTERS *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "ULONG (PVOID) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "UINT (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HANDLE (LPCSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPVOID (HANDLE, DWORD, SIZE_T) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "USHORT (PSLIST_HEADER) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HRSRC (HMODULE, LPCWSTR, LPCWSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HGLOBAL (HMODULE, HRSRC) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "DLL_DIRECTORY_COOKIE (PCWSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HMODULE (LPCSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "FARPROC (HMODULE, LPCSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPSTR (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPWSTR (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPCH (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPWCH (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PSID_IDENTIFIER_AUTHORITY (PSID) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PDWORD (PSID, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PUCHAR (PSID) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PTP_POOL (PVOID) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PTP_CLEANUP_GROUP (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PTP_WORK (PTP_WORK_CALLBACK, PVOID, PTP_CALLBACK_ENVIRON) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PTP_TIMER (PTP_TIMER_CALLBACK, PVOID, PTP_CALLBACK_ENVIRON) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PTP_WAIT (PTP_WAIT_CALLBACK, PVOID, PTP_CALLBACK_ENVIRON) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PTP_IO (HANDLE, PTP_WIN32_IO_CALLBACK, PVOID, PTP_CALLBACK_ENVIRON) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LONGLONG (volatile LONGLONG *, LONGLONG)",
+    null
+  ],
+  [
+    "HLOCAL (UINT, SIZE_T) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "DWORD_PTR (HANDLE, DWORD_PTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PUMS_CONTEXT (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "EXECUTION_STATE (EXECUTION_STATE) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "ATOM (ATOM) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "DEP_SYSTEM_POLICY_TYPE (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "int (int, int, int) __attribute__((stdcall))",
+    [
+      "I",
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "HFILE (LPCSTR, LPOFSTRUCT, UINT) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "DWORD64 (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HMETAFILE (HDC) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HBITMAP (int, int, UINT, UINT, const void *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HBRUSH (const LOGBRUSH *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HDC (HDC) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HRGN (int, int, int, int) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HFONT (const LOGFONTA *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HPALETTE (const LOGPALETTE *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HPEN (int, int, COLORREF) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "COLORREF (HDC) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HGDIOBJ (HDC, UINT) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HENHMETAFILE (HDC) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HCOLORSPACE (HDC) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HGLRC (HDC) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PROC (LPCSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HKL (LPCSTR, UINT) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HDESK (LPCSTR, LPCSTR, LPDEVMODEA, DWORD, ACCESS_MASK, LPSECURITY_ATTRIBUTES) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HWINSTA (LPCSTR, DWORD, ACCESS_MASK, LPSECURITY_ATTRIBUTES) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LRESULT (const MSG *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPARAM (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HPOWERNOTIFY (HANDLE, LPCGUID, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HDEVNOTIFY (HANDLE, LPVOID, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HWND (DWORD, LPCSTR, LPCSTR, DWORD, int, int, int, int, HWND, HMENU, HINSTANCE, LPVOID) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HDWP (int) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "INT_PTR (HINSTANCE, LPCSTR, HWND, DLGPROC, LPARAM) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "long (void) __attribute__((stdcall))",
+    []
+  ],
+  [
+    "DIALOG_CONTROL_DPI_CHANGE_BEHAVIORS (HWND) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "DIALOG_DPI_CHANGE_BEHAVIORS (HWND) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "SHORT (int) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "UINT_PTR (HWND, UINT_PTR, UINT, TIMERPROC) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HACCEL (HINSTANCE, LPCSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HMENU (HINSTANCE, LPCSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HCURSOR (HCURSOR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HHOOK (int, HOOKPROC) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HICON (HINSTANCE, LPCSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HMONITOR (POINT, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HWINEVENTHOOK (DWORD, DWORD, HMODULE, WINEVENTPROC, DWORD, DWORD, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "GEOID (GEOCLASS) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LCID (LPCWSTR, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LANGID (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "COORD (HANDLE) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HCONVLIST (DWORD, HSZ, HSZ, HCONVLIST, PCONVCONTEXT) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HCONV (HCONVLIST, HCONV) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HDDEDATA (DWORD, HSZ, HSZ, UINT) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPBYTE (HDDEDATA, LPDWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HSZ (DWORD, LPCSTR, int) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "INT (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "MCIERROR (MCIDEVICEID, UINT, DWORD_PTR, DWORD_PTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "MCIDEVICEID (LPCSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HTASK (MCIDEVICEID) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "YIELDPROC (MCIDEVICEID, LPDWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HDRVR (LPCWSTR, LPCWSTR, LPARAM) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "FOURCC (LPCSTR, UINT) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPMMIOPROC (FOURCC, LPMMIOPROC, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HMMIO (LPSTR, LPMMIOINFO, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "MMRESULT (LPCSTR, LPCSTR, LPCMMIOINFO, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "UCHAR (PNCB) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "RPC_STATUS (RPC_BINDING_HANDLE, RPC_BINDING_HANDLE *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "unsigned short (UUID *, RPC_STATUS *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "RPC_BINDING_HANDLE (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "RPC_ADDRESS_CHANGE_FN *(void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HINSTANCE (HWND, LPCSTR, LPCSTR, LPCSTR, LPCSTR, INT) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPWSTR *(LPCWSTR, int *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "SOCKET (SOCKET, struct sockaddr *, int *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "u_long (u_long) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "u_short (u_short) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "unsigned long (const char *) __attribute__((stdcall))",
+    [
+      "SN"
+    ]
+  ],
+  [
+    "struct hostent *(const char *, int, int) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "struct servent *(int, const char *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "struct protoent *(int) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "NTSTATUS (BCRYPT_ALG_HANDLE *, LPCWSTR, LPCWSTR, ULONG) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "SECURITY_STATUS (NCRYPT_PROV_HANDLE *, LPCWSTR, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HCRYPTOIDFUNCSET (LPCSTR, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PCCRYPT_OID_INFO (DWORD, void *, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPCWSTR (LPCWSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HCRYPTMSG (DWORD, DWORD, DWORD, const void *, LPSTR, PCMSG_STREAM_INFO) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HCERTSTORE (LPCSTR, DWORD, HCRYPTPROV_LEGACY, DWORD, const void *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PCCERT_CONTEXT (HCERTSTORE, DWORD, PCERT_INFO) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PCCRL_CONTEXT (HCERTSTORE, PCCRL_CONTEXT) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PCCTL_CONTEXT (PCCTL_CONTEXT) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PCTL_ENTRY (DWORD, DWORD, void *, PCCTL_CONTEXT, DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "const void *(DWORD, DWORD, const BYTE *, DWORD, DWORD, PCERT_CREATE_CONTEXT_PARA) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPCSTR (DWORD) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PCERT_EXTENSION (LPCSTR, DWORD, CERT_EXTENSION *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PCRYPT_ATTRIBUTE (LPCSTR, DWORD, CRYPT_ATTRIBUTE *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PCERT_RDN_ATTR (LPCSTR, PCERT_NAME_INFO) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PCCERT_CHAIN_CONTEXT (PCCERT_CHAIN_CONTEXT) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HCERT_SERVER_OCSP_RESPONSE (PCCERT_CHAIN_CONTEXT, DWORD, LPVOID) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PCCERT_SERVER_OCSP_RESPONSE_CONTEXT (HCERT_SERVER_OCSP_RESPONSE, DWORD, LPVOID) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "NDR_SCONTEXT (void *, unsigned long) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "unsigned char *(PMIDL_STUB_MESSAGE, unsigned char *, PFORMAT_STRING) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "CLIENT_CALL_RETURN (PMIDL_STUB_DESC, PFORMAT_STRING, ...) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "RPC_BUFPTR (PMIDL_STUB_MESSAGE, unsigned char **, unsigned long) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "RPC_SS_THREAD_HANDLE (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PFULL_PTR_XLAT_TABLES (unsigned long, XLAT_SIDE) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "SERIALIZEDPROPERTYVALUE *(const PROPVARIANT *, USHORT, SERIALIZEDPROPERTYVALUE *, ULONG *, PROPID, BOOLEAN, ULONG *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "BSTR (const OLECHAR *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "SAFEARRAY *(VARTYPE, UINT, SAFEARRAYBOUND *) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HOLEMENU (HMENU, LPOLEMENUGROUPWIDTHS) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HPROPSHEETPAGE (LPCPROPSHEETPAGEA) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PUWSTR (PUWSTR, PCUWSTR)",
+    null
+  ],
+  [
+    "SC_HANDLE (SC_HANDLE, LPCSTR, LPCSTR, DWORD, DWORD, DWORD, DWORD, LPCSTR, LPCSTR, LPDWORD, LPCSTR, LPCSTR, LPCSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "SC_LOCK (SC_HANDLE) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "SERVICE_STATUS_HANDLE (LPCSTR, LPHANDLER_FUNCTION) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "HIMC (void) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "wint_t (wint_t, wctrans_t) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "wctrans_t (const char *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "wctype_t (const char *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "FILE *(unsigned int) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "__MINGW_NOTHROW int (const char *restrict, ...)",
+    null
+  ],
+  [
+    "_off_t (FILE *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "_off64_t (FILE *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "unsigned int (unsigned int) __attribute__((cdecl))",
+    [
+      "I"
+    ]
+  ],
+  [
+    "wint_t (void) __attribute__((cdecl))",
+    []
+  ],
+  [
+    "intptr_t (int, const wchar_t *, const wchar_t *, ...) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "int (const wchar_t *, int) __attribute__((cdecl))",
+    [
+      "SW",
+      "I"
+    ]
+  ],
+  [
+    "errno_t (const wchar_t *, int) __attribute__((cdecl))",
+    [
+      "SW",
+      "I"
+    ]
+  ],
+  [
+    "long *(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "clock_t (void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "struct tm *(const __time32_t *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "__time32_t (__time32_t *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "__time64_t (struct tm *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "time_t (time_t *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "struct lconv *(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "_locale_t (void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "unsigned int (unsigned int, _locale_t) __attribute__((cdecl))",
+    [
+      "I",
+      "L"
+    ]
+  ],
+  [
+    "int (const unsigned char *, size_t) __attribute__((cdecl))",
+    [
+      "SU",
+      "I"
+    ]
+  ],
+  [
+    "int (const unsigned char *, size_t, _locale_t) __attribute__((cdecl))",
+    [
+      "SU",
+      "I",
+      "L"
+    ]
+  ],
+  [
+    "int (const unsigned char *, const unsigned char *) __attribute__((cdecl))",
+    [
+      "SU",
+      "SU"
+    ]
+  ],
+  [
+    "int (const unsigned char *, const unsigned char *, _locale_t) __attribute__((cdecl))",
+    [
+      "SU",
+      "SU",
+      "L"
+    ]
+  ],
+  [
+    "size_t (const unsigned char *, const unsigned char *) __attribute__((cdecl))",
+    [
+      "SU",
+      "SU"
+    ]
+  ],
+  [
+    "size_t (const unsigned char *, const unsigned char *, _locale_t) __attribute__((cdecl))",
+    [
+      "SU",
+      "SU",
+      "L"
+    ]
+  ],
+  [
+    "size_t (const unsigned char *) __attribute__((cdecl))",
+    [
+      "SU"
+    ]
+  ],
+  [
+    "size_t (const unsigned char *, _locale_t) __attribute__((cdecl))",
+    [
+      "SU",
+      "L"
+    ]
+  ],
+  [
+    "size_t (const unsigned char *, size_t) __attribute__((cdecl))",
+    [
+      "SU",
+      "I"
+    ]
+  ],
+  [
+    "size_t (const unsigned char *, size_t, _locale_t) __attribute__((cdecl))",
+    [
+      "SU",
+      "I",
+      "L"
+    ]
+  ],
+  [
+    "int (const unsigned char *, const unsigned char *, size_t) __attribute__((cdecl))",
+    [
+      "SU",
+      "SU",
+      "I"
+    ]
+  ],
+  [
+    "int (const unsigned char *, const unsigned char *, size_t, _locale_t) __attribute__((cdecl))",
+    [
+      "SU",
+      "SU",
+      "I",
+      "L"
+    ]
+  ],
+  [
+    "unsigned int (const unsigned char *) __attribute__((cdecl))",
+    [
+      "SU"
+    ]
+  ],
+  [
+    "unsigned int (const unsigned char *, _locale_t) __attribute__((cdecl))",
+    [
+      "SU",
+      "L"
+    ]
+  ],
+  [
+    "_crt_app_type (void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "uintptr_t (_beginthread_proc_type, unsigned int, void *) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "errno_t (const char *, int) __attribute__((cdecl))",
+    [
+      "SN",
+      "I"
+    ]
+  ],
+  [
+    "errno_t (int, long long) __attribute__((cdecl))",
+    [
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "long (int, long, int) __attribute__((cdecl))",
+    [
+      "I",
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "long long (int, long long, int) __attribute__((cdecl))",
+    [
+      "I",
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "intptr_t (int) __attribute__((cdecl))",
+    [
+      "I"
+    ]
+  ],
+  [
+    "__MINGW_ATTRIB_NONNULL (2) void *(const void *restrict, void **restrict, int (*)(const void *, const void *))",
+    null
+  ],
+  [
+    "void **(void) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "__p_sig_fn_t (int, __p_sig_fn_t) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "unsigned short (unsigned short, unsigned short) __attribute__((cdecl))",
+    [
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "unsigned char (unsigned char, unsigned char) __attribute__((cdecl))",
+    [
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "unsigned long long (const char *)",
+    [
+      "SN"
+    ]
+  ],
+  [
+    "unsigned long long (const char *, const char *)",
+    [
+      "SN",
+      "SN"
+    ]
+  ],
+  [
+    "unsigned long long (void)",
+    []
+  ],
+  [
+    "unsigned char (void)",
+    []
+  ],
+  [
+    "__m256d (__m256d, __m256d)",
+    null
+  ],
+  [
+    "__m256 (__m256, __m256)",
+    null
+  ],
+  [
+    "__m256i (__m256)",
+    null
+  ],
+  [
+    "unsigned int (unsigned int, unsigned int, unsigned int)",
+    [
+      "I",
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "unsigned long long (unsigned long long, unsigned int, unsigned int)",
+    [
+      "I",
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "__m512i (void)",
+    null
+  ],
+  [
+    "__m512d (void)",
+    null
+  ],
+  [
+    "__m512 (void)",
+    null
+  ],
+  [
+    "__mmask16 (int)",
+    null
+  ],
+  [
+    "__mmask8 (__m512i, __m512i)",
+    null
+  ],
+  [
+    "__mmask32 (__mmask32)",
+    null
+  ],
+  [
+    "__mmask64 (__mmask64)",
+    null
+  ],
+  [
+    "signed char (__m128i)",
+    null
+  ],
+  [
+    "_Float16 (__m512h)",
+    null
+  ],
+  [
+    "__m128h (void)",
+    null
+  ],
+  [
+    "__m256h (void)",
+    null
+  ],
+  [
+    "__m512h (void)",
+    null
+  ],
+  [
+    "__m512bh (__m512, __m512)",
+    null
+  ],
+  [
+    "__m256bh (__m512)",
+    null
+  ],
+  [
+    "__m128bh (__m128, __m128)",
+    null
+  ],
+  [
+    "__bf16 (float)",
+    null
+  ],
+  [
+    "unsigned char (unsigned int, unsigned int, unsigned int)",
+    [
+      "I",
+      "I",
+      "I"
+    ]
+  ],
+  [
+    "_tile1024i (unsigned short, unsigned short, const void *, unsigned long long)",
+    null
+  ],
+  [
+    "LONG64 (LONG64, LONG64, LONG64 *)",
+    null
+  ],
+  [
+    "PRUNTIME_FUNCTION (DWORD64, PDWORD64, PUNWIND_HISTORY_TABLE) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PEXCEPTION_ROUTINE (DWORD, DWORD64, DWORD64, PRUNTIME_FUNCTION, PCONTEXT, PVOID *, PDWORD64, PKNONVOLATILE_CONTEXT_POINTERS) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "char (volatile char *, char) __attribute__((cdecl))",
+    null
+  ],
+  [
+    "LONG_PTR (HWND, int) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "ULONG_PTR (HWND, int) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "LPUWSTR (LPUWSTR) __attribute__((stdcall))",
+    null
+  ],
+  [
+    "PUWSTR_C (PCUWSTR, WCHAR)",
+    null
+  ]
+]

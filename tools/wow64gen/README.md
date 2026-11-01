@@ -1,5 +1,11 @@
 # wow64gen — WoW64 syscall thunk generator
 
+Stage-one generation is native Rust in `tools/vibeos-codegen`. Use
+`tools/codegen wow64-thunks` with the same `--spec`, `--sysfuncs`, `--arch`,
+`--manual-list`, `--symbol-prefix` and `--out-c` options. CMake invokes it directly;
+`wow64gen.py` remains an API/CLI compatibility bridge. Stage-two `marshalgen.py`
+remains Python. Generated thunk bytes and guest service numbering are preserved.
+
 Re-runnable, deterministic codegen that turns our `.spec` syscall table into the
 C thunk table `wow64.dll` dispatches through. Part of WoW64 Phase D
 (`docs/engineering/active-lanes/wow64-plan.md`).
