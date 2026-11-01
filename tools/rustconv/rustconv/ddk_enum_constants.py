@@ -1,6 +1,6 @@
 """CamelCase DDK/PSDK enum-constant names — GENERATED, do not edit by hand.
 
-Regenerate with `python3 tools/rustconv/gen_enum_constants.py` (794 headers
+Regenerate with `python3 tools/rustconv/gen_enum_constants.py` (795 headers
 scanned).  See that script's docstring for why this exists: CamelCase enum
 constants are values the model must never be trusted to copy, and unlike
 ALL_CAPS #defines they do not match fact_seal's symbol pattern.
