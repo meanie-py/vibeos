@@ -124,10 +124,11 @@ pub unsafe extern "C" fn DetailDisk(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
 
     LoadStringW(
         GetModuleHandle(core::ptr::null_mut()),
+        // The C said `IsBoot ? IDS_STATUS_YES : IDS_STATUS_YES`; upstream 208bb7f59f9 fixed it.
         if (*CurrentDisk).IsBoot != 0 {
             IDS_STATUS_YES
         } else {
-            IDS_STATUS_YES
+            IDS_STATUS_NO
         },
         szBuffer.as_mut_ptr(),
         (ARRAYSIZE!(szBuffer)) as i32,

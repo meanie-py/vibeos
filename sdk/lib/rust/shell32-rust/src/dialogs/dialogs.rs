@@ -45,10 +45,8 @@ extern "system" {
 // rather than re-declaring it as an extern, so the signature is checked rather than asserted.
 use crate::shell32::iconcache::ExtractIconExW;
 
-extern "system" {
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: INT) -> LONG_PTR;
-    fn SetWindowLongPtrW(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR;
-}
+#[cfg(not(target_arch = "x86"))]
+use crate::island::{GetWindowLongPtrW, SetWindowLongPtrW};
 
 // i386 has no `*W`-suffixed LongPtr entry point -- the 32-bit ABI is the plain `Long` one.
 // ARCH-SPLIT (copy_to_menu.rs precedent).

@@ -8503,6 +8503,19 @@ pub struct _DEVOBJ_EXTENSION {
     pub Type: CSHORT,
     pub Size: USHORT,
     pub DeviceObject: PDEVICE_OBJECT,
+    pub PowerFlags: ULONG,
+    pub Dope: *mut _DEVICE_OBJECT_POWER_EXTENSION,
+    pub ExtensionFlags: ULONG,
+    pub DeviceNode: PVOID,
+    pub AttachedTo: PDEVICE_OBJECT,
+    pub StartIoCount: LONG,
+    pub StartIoKey: LONG,
+    pub StartIoFlags: ULONG,
+    pub Vpb: PVPB,
+    pub DependencyNode: PVOID,
+    pub InterruptContext: PVOID,
+    pub InterruptCount: LONG,
+    pub VerifierContext: PVOID,
 }
 pub type DEVOBJ_EXTENSION = _DEVOBJ_EXTENSION;
 pub type PDEVOBJ_EXTENSION = *mut _DEVOBJ_EXTENSION;
@@ -43944,6 +43957,7 @@ pub struct _EXTENDED_DEVOBJ_EXTENSION {
     pub Vpb: *mut _VPB,
     pub DependencyNode: PVOID,
     pub InterruptContext: PVOID,
+    pub InterruptCount: LONG,
     pub VerifierContext: PVOID,
 }
 pub type EXTENDED_DEVOBJ_EXTENSION = _EXTENDED_DEVOBJ_EXTENSION;
@@ -43957,6 +43971,9 @@ pub struct _EXTENDED_DRIVER_EXTENSION {
     pub ServiceKeyName: UNICODE_STRING,
     pub ClientDriverExtension: PIO_CLIENT_EXTENSION,
     pub FsFilterCallbacks: PFS_FILTER_CALLBACKS,
+    pub KseCallbacks: PVOID,
+    pub DvCallbacks: PVOID,
+    pub VerifierContext: PVOID,
 }
 pub type EXTENDED_DRIVER_EXTENSION = _EXTENDED_DRIVER_EXTENSION;
 pub type PEXTENDED_DRIVER_EXTENSION = *mut _EXTENDED_DRIVER_EXTENSION;
@@ -74530,6 +74547,9 @@ unsafe extern "system" {
 unsafe extern "system" {
     pub fn KeQueryTotalCycleTimeThread(Thread: PKTHREAD, CycleTimeStamp: PULONG64) -> ULONG64;
 }
+unsafe extern "system" {
+    pub fn Kii386SpinOnSpinLock(SpinLock: PKSPIN_LOCK, Flags: ULONG);
+}
 unsafe extern "C" {
     pub fn KiAcquireDispatcherObject(Object: *mut DISPATCHER_HEADER);
 }
@@ -84527,9 +84547,6 @@ unsafe extern "system" {
     ) -> NTSTATUS;
 }
 unsafe extern "system" {
-    pub fn Kii386SpinOnSpinLock(SpinLock: PKSPIN_LOCK, Flags: ULONG);
-}
-unsafe extern "system" {
     pub fn InbvDriverInitialize(LoaderBlock: PLOADER_PARAMETER_BLOCK, Count: ULONG) -> BOOLEAN;
 }
 unsafe extern "system" {
@@ -85618,6 +85635,85 @@ pub struct _ARBITER_INSTANCE {
     pub ConflictCallback: PRTL_CONFLICT_RANGE_CALLBACK,
 }
 pub type ARBITER_INSTANCE = _ARBITER_INSTANCE;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _KSE_HOOK {
+    pub Type: ULONG,
+    pub __bindgen_anon_1: _KSE_HOOK__bindgen_ty_1,
+    pub HookFunction: PVOID,
+    pub OriginalFunction: PVOID,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _KSE_HOOK__bindgen_ty_1 {
+    pub FunctionName: PCHAR,
+    pub CallbackId: ULONG,
+}
+pub type KSE_HOOK = _KSE_HOOK;
+pub type PKSE_HOOK = *mut _KSE_HOOK;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct _KSE_HOOK_COLLECTION {
+    pub Type: ULONG,
+    pub ExportDriverName: PWCHAR,
+    pub HookArray: PKSE_HOOK,
+}
+pub type KSE_HOOK_COLLECTION = _KSE_HOOK_COLLECTION;
+pub type PKSE_HOOK_COLLECTION = *mut _KSE_HOOK_COLLECTION;
+pub type PKSE_HOOK_DRIVER_TARGETED = ::core::option::Option<
+    unsafe extern "system" fn(
+        BaseName: PUNICODE_STRING,
+        BaseAddress: PVOID,
+        SizeOfImage: ULONG,
+        TimeDateStamp: ULONG,
+        CheckSum: ULONG,
+    ),
+>;
+pub type PKSE_HOOK_DRIVER_UNTARGETED =
+    ::core::option::Option<unsafe extern "system" fn(BaseAddress: PVOID)>;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _KSE_DRIVER_IO_CALLBACKS {
+    pub DriverInit: PDRIVER_INITIALIZE,
+    pub DriverStartIo: PDRIVER_STARTIO,
+    pub DriverUnload: PDRIVER_UNLOAD,
+    pub AddDevice: PDRIVER_ADD_DEVICE,
+    pub MajorFunction: [PDRIVER_DISPATCH; 28usize],
+}
+pub type KSE_DRIVER_IO_CALLBACKS = _KSE_DRIVER_IO_CALLBACKS;
+pub type PKSE_DRIVER_IO_CALLBACKS = *mut _KSE_DRIVER_IO_CALLBACKS;
+pub type PKSE_GET_IO_CALLBACKS = ::core::option::Option<
+    unsafe extern "system" fn(arg1: PDRIVER_OBJECT) -> PKSE_DRIVER_IO_CALLBACKS,
+>;
+pub type PKSE_SET_COMPLETION_HOOK = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: PDEVICE_OBJECT,
+        arg2: PIRP,
+        arg3: PIO_COMPLETION_ROUTINE,
+        arg4: PVOID,
+    ) -> NTSTATUS,
+>;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _KSE_CALLBACK_ROUTINES {
+    pub KseGetIoCallbacksRoutine: PKSE_GET_IO_CALLBACKS,
+    pub KseSetCompletionHookRoutine: PKSE_SET_COMPLETION_HOOK,
+}
+pub type KSE_CALLBACK_ROUTINES = _KSE_CALLBACK_ROUTINES;
+pub type PKSE_CALLBACK_ROUTINES = *mut _KSE_CALLBACK_ROUTINES;
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct _KSE_SHIM {
+    pub Size: ULONG,
+    pub ShimGuid: *const GUID,
+    pub ShimName: PWCHAR,
+    pub KseCallbackRoutines: PKSE_CALLBACK_ROUTINES,
+    pub ShimmedDriverTargetedNotification: PKSE_HOOK_DRIVER_TARGETED,
+    pub ShimmedDriverUntargetedNotification: PKSE_HOOK_DRIVER_UNTARGETED,
+    pub HookCollectionsArray: PKSE_HOOK_COLLECTION,
+}
+pub type PKSE_SHIM = *mut _KSE_SHIM;
+pub type KSE_SHIM = _KSE_SHIM;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct _POOL_DESCRIPTOR {

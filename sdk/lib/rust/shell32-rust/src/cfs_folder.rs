@@ -459,17 +459,15 @@ extern "C" {
 // Deterministic COM scaffold for CFSFolder; method bodies are generated separately.
 extern "system" {
     pub fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] pub fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] pub fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     pub fn Shell32RustObjectLock();
     pub fn Shell32RustObjectUnlock();
 }
-trait CppComSize { fn cpp_com_size(self) -> usize; }
+pub trait CppComSize { fn cpp_com_size(self) -> usize; }
 impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 pub unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 pub unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -1263,7 +1261,6 @@ extern "C" {
 }
 
 extern "C" {
-    pub fn memset(dst: *mut core::ffi::c_void, value: INT, bytes: usize) -> *mut core::ffi::c_void;
 }
 #[inline]
 pub unsafe fn CopyMemory<D, S, N: CppComSize>(
@@ -1338,6 +1335,36 @@ pub static CPP_COM_WSTR_B0CA6D12B3C0: [WCHAR; 39] = [0x007B, 0x0042, 0x0045, 0x0
 pub static CPP_COM_WSTR_FD81E9BD116B: [WCHAR; 7] = [0x0020, 0x0009, 0x000A, 0x000D, 0x000C, 0x000B, 0x0000];
 
 use core::ffi::c_void;
+// One declaration per external symbol: prelude.rs.
+pub use crate::prelude::memset;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+pub use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+pub use crate::island::HeapFree as cpp_com_HeapFree;
+pub use crate::island::PathAppendW as PathAppend;
+pub use crate::island::PathIsNetworkPathW as PathIsNetworkPath;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+pub use crate::cfs_folder_tu::CFSExtractIcon_CreateInstance_RustBridge as CFSExtractIcon_CreateInstance;
+pub use crate::cfs_folder_tu::GetCLSIDForFileType_RustBridge as GetCLSIDForFileType;
+pub use crate::cfs_folder_tu::GetItemCLSID_RustBridge as GetItemCLSID;
+pub use crate::cfs_folder_tu::SHELL32_GetFSItemAttributes_RustBridge as SHELL32_GetFSItemAttributes;
+pub use crate::cfs_folder_tu::SHELL_FS_HideExtension_RustBridge as SHELL_FS_HideExtension;
+pub use crate::cfs_folder_tu::SHELL_FS_ProcessDisplayFilename_RustBridge as SHELL_FS_ProcessDisplayFilename;
+pub use crate::fs_drop_target::CFSDropTarget_CreateInstance_RustBridge as CFSDropTarget_CreateInstance;
+pub use crate::shell32::shlfileop::SHELL_SingleFileOperation_RustBridge as SHELL_SingleFileOperation;
+pub use crate::shell32::shlfolder::AddClassKeyToArray_RustBridge as AddClassKeyToArray;
+pub use crate::shell32::shlfolder::AddFSClassKeysToArray_RustBridge as AddFSClassKeysToArray;
+pub use crate::shell32::shlfolder::SH32_GetDetailsOfPKeyAsVariant_RustBridge as SH32_GetDetailsOfPKeyAsVariant;
+pub use crate::shell32::shlfolder::SHELL32_BindToSF_RustBridge as SHELL32_BindToSF;
+pub use crate::shell32::shlfolder::SHELL32_CompareChildren_RustBridge as SHELL32_CompareChildren;
+pub use crate::shell32::shlfolder::SHELL32_DefaultContextMenuCallBack_RustBridge as SHELL32_DefaultContextMenuCallBack;
+pub use crate::shell32::shlfolder::SHELL32_GetDisplayNameOfChild_RustBridge as SHELL32_GetDisplayNameOfChild;
+pub use crate::shell32::shlfolder::SHELL_CreateVariantBuffer_RustBridge as SHELL_CreateVariantBuffer;
+pub use crate::shell32::shlfolder::SHELL_GetDetailsOfAsStringVariant_RustBridge as SHELL_GetDetailsOfAsStringVariant;
+pub use crate::shell32::shlfolder::Shell_NextElement_RustBridge as Shell_NextElement;
+pub use crate::shell32::utils::BindCtx_GetMode_RustBridge as BindCtx_GetMode;
+pub use crate::shell32::utils::PathIsDosDevice_RustBridge as PathIsDosDevice;
+pub use crate::shell32::utils::SHILAppend_RustBridge as SHILAppend;
+pub use crate::shell32::utils::SHIsFileSysBindCtx_RustBridge as SHIsFileSysBindCtx;
 // The crate's own functions: the definition is the declaration.
 pub use crate::wine::classes::HLM_GetIconW;
 pub use crate::shell32::cidldataobj_free::IDataObject_Constructor;
@@ -1803,8 +1830,8 @@ pub unsafe fn CFSFolder_BindToObject_v1_body(this: *mut CFSFolder, pidl: PCUIDLI
                     (*this).m_pidlRoot,
                     &mut pfti as *mut _,
                     pidl,
-                    &clsidFolder,
-                    riid,
+                    (&raw const clsidFolder).cast(),
+                    (riid).cast(),
                     ppvOut,
                 );
                 if hr >= 0 {
@@ -1832,8 +1859,8 @@ pub unsafe fn CFSFolder_BindToObject_v1_body(this: *mut CFSFolder, pidl: PCUIDLI
         (*this).m_pidlRoot,
         &mut pfti as *mut _,
         pidl,
-        &clsidFolder,
-        riid,
+        (&raw const clsidFolder).cast(),
+        (riid).cast(),
         ppvOut,
     );
     if ((hr) < 0) {
@@ -1965,7 +1992,7 @@ pub unsafe fn CFSFolder_CompareIDs_body(this: *mut CFSFolder, lParam: LPARAM, pi
     }
 
     if result == 0 {
-        return SHELL32_CompareChildren(this as *mut IShellFolder2, lParam, pidl1, pidl2);
+        return SHELL32_CompareChildren((this as *mut IShellFolder2).cast(), lParam, pidl1, pidl2);
     }
 
     MAKE_COMPARE_HRESULT(result as i64)
@@ -2210,7 +2237,7 @@ pub unsafe fn CFSFolder_GetDisplayNameOf_body(this: *mut CFSFolder, pidl: PCUITE
     }
 
     if _ILIsPidlSimple(pidl) == 0 {
-        return SHELL32_GetDisplayNameOfChild(this as *mut IShellFolder2, pidl, dwFlags, strRet);
+        return SHELL32_GetDisplayNameOfChild((this as *mut IShellFolder2).cast(), pidl, dwFlags, (strRet).cast());
     }
 
     if !pidl.is_null() && (*pidl).mkid.cb == 0 {
@@ -2381,7 +2408,7 @@ pub unsafe fn CFSFolder_GetDetailsEx_body(this: *mut CFSFolder, pidl: PCUITEMID_
     if cpp_com_iid_equal(core::ptr::addr_of!((*pscid).fmtid), core::ptr::addr_of!(FMTID_Storage)) {
         match (*pscid).pid {
             PID_STG_NAME => {
-                return SHELL_GetDetailsOfAsStringVariant(this as *mut IShellFolder2, pidl, SHFSF_COL_NAME, pv);
+                return SHELL_GetDetailsOfAsStringVariant((this as *mut IShellFolder2).cast(), pidl, SHFSF_COL_NAME, pv);
             }
             PID_STG_SIZE => {
                 *V_VT(pv) = VT_UI4 as VARTYPE;
@@ -2402,7 +2429,7 @@ pub unsafe fn CFSFolder_GetDetailsEx_body(this: *mut CFSFolder, pidl: PCUITEMID_
             _ => {}
         }
     }
-    SH32_GetDetailsOfPKeyAsVariant(this as *mut IShellFolder2, pidl, pscid, pv, TRUE)
+    SH32_GetDetailsOfPKeyAsVariant((this as *mut IShellFolder2).cast(), pidl, pscid, pv, TRUE)
 }
 
 pub unsafe fn CFSFolder_GetDetailsOf_body(this: *mut CFSFolder, pidl: PCUITEMID_CHILD, iColumn: UINT, psd: *mut SHELLDETAILS) -> HRESULT {
@@ -2755,7 +2782,7 @@ pub unsafe fn CFSFolder_CallBack_body(this: *mut CFSFolder, psf: *mut IShellFold
             return S_OK;
         }
     }
-    return SHELL32_DefaultContextMenuCallBack(psf, pdtobj, uMsg);
+    return SHELL32_DefaultContextMenuCallBack((psf).cast(), (pdtobj).cast(), uMsg);
 }
 
 pub unsafe fn DoLoadPicture_body(pszFileName: LPCWSTR) -> HBITMAP {
@@ -3042,18 +3069,12 @@ extern "C" {
 extern "system" {
     pub fn PathCombineW(lpszDest: LPWSTR, lpszDir: LPCWSTR, lpszFile: LPCWSTR) -> LPWSTR;
     pub fn PathAppendW(pszPath: LPWSTR, pszMore: LPCWSTR) -> BOOL;
-    #[link_name = "PathAppendW"]
-    pub fn PathAppend(pszPath: LPWSTR, pszMore: LPCWSTR) -> BOOL;
     pub fn PathAddBackslashW(pszPath: LPWSTR) -> LPWSTR;
     pub fn PathAddExtensionW(pszPath: LPWSTR, pszExt: LPCWSTR) -> BOOL;
     pub fn PathFindExtensionW(pszPath: LPCWSTR) -> LPWSTR;
     pub fn PathFindFileNameW(pszPath: LPCWSTR) -> LPWSTR;
     pub fn PathIsDirectoryW(pszPath: LPCWSTR) -> BOOL;
-    #[link_name = "PathIsNetworkPathW"]
-    pub fn PathIsNetworkPath(pszPath: LPCWSTR) -> BOOL;
     pub fn PathIsRelativeW(pszPath: LPCWSTR) -> BOOL;
-    #[link_name = "PathIsDosDevice_RustBridge"]
-    pub fn PathIsDosDevice(pszName: LPCWSTR) -> BOOL;
     pub fn GetPrivateProfileStringW(lpAppName: LPCWSTR, lpKeyName: LPCWSTR, lpDefault: LPCWSTR, lpReturnedString: LPWSTR, nSize: DWORD, lpFileName: LPCWSTR) -> DWORD;
     pub fn FindClose(hFindFile: HANDLE) -> BOOL;
     pub fn StrTrimW(psz: LPWSTR, pszTrimChars: LPCWSTR) -> BOOL;
@@ -3065,43 +3086,7 @@ extern "system" {
     pub fn DosDateTimeToVariantTime(wDosDate: WORD, wDosTime: WORD, pvtime: *mut DATE) -> BOOL;
     pub fn CopyImage(h: HANDLE, type_: UINT, cx: core::ffi::c_int, cy: core::ffi::c_int, flags: UINT) -> HANDLE;
     pub fn OleLoadPicture(lpstream: *mut IStream, lSize: LONG, fRunmode: BOOL, riid: REFIID, lplpvObj: *mut core::ffi::c_void) -> HRESULT;
-    #[link_name = "SHIsFileSysBindCtx_RustBridge"]
-    pub fn SHIsFileSysBindCtx(pbc: LPBC, pfd: *mut WIN32_FIND_DATAW) -> HRESULT;
-    #[link_name = "AddClassKeyToArray_RustBridge"]
-    pub fn AddClassKeyToArray(szClass: LPCWSTR, array: *mut HKEY, cKeys: *mut UINT) -> LONG;
-    #[link_name = "AddFSClassKeysToArray_RustBridge"]
-    pub fn AddFSClassKeysToArray(cidl: UINT, apidl: PCUITEMID_CHILD_ARRAY, array: *mut HKEY, cKeys: *mut UINT);
     // ── Rust bridges (EXTERN_C ... WINAPI shims C++-side, see rule A/D) ──
-    #[link_name = "SHELL32_GetFSItemAttributes_RustBridge"]
-    pub fn SHELL32_GetFSItemAttributes(psf: *mut IShellFolder, pidl: LPCITEMIDLIST, pdwAttributes: LPDWORD) -> HRESULT;
-    #[link_name = "SHELL32_CompareChildren_RustBridge"]
-    pub fn SHELL32_CompareChildren(psf: *mut IShellFolder2, lParam: LPARAM, pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> HRESULT;
-    #[link_name = "SHELL32_GetDisplayNameOfChild_RustBridge"]
-    pub fn SHELL32_GetDisplayNameOfChild(psf: *mut IShellFolder2, pidl: LPCITEMIDLIST, dwFlags: DWORD, strRet: *mut STRRET) -> HRESULT;
-    #[link_name = "SHELL32_BindToSF_RustBridge"]
-    pub fn SHELL32_BindToSF(pidlRoot: LPCITEMIDLIST, ppfti: *mut PERSIST_FOLDER_TARGET_INFO, pidl: LPCITEMIDLIST, clsid: *const CLSID, riid: REFIID, ppvOut: *mut *mut core::ffi::c_void) -> HRESULT;
-    #[link_name = "SHELL32_DefaultContextMenuCallBack_RustBridge"]
-    pub fn SHELL32_DefaultContextMenuCallBack(psf: *mut IShellFolder, pdo: *mut IDataObject, msg: UINT) -> HRESULT;
-    #[link_name = "SHELL_GetDetailsOfAsStringVariant_RustBridge"]
-    pub fn SHELL_GetDetailsOfAsStringVariant(pSF: *mut IShellFolder2, pidl: PCUITEMID_CHILD, Column: UINT, pVar: *mut VARIANT) -> HRESULT;
-    #[link_name = "SH32_GetDetailsOfPKeyAsVariant_RustBridge"]
-    pub fn SH32_GetDetailsOfPKeyAsVariant(psf: *mut IShellFolder2, pidl: PCUITEMID_CHILD, pscid: *const SHCOLUMNID, pVar: *mut VARIANT, UseFsColMap: BOOL) -> HRESULT;
-    #[link_name = "SHELL_CreateVariantBuffer_RustBridge"]
-    pub fn SHELL_CreateVariantBuffer(pVar: *mut VARIANT, cb: UINT) -> HRESULT;
-    #[link_name = "SHELL_SingleFileOperation_RustBridge"]
-    pub fn SHELL_SingleFileOperation(hWnd: HWND, Op: UINT, Src: LPCWSTR, Dest: LPCWSTR, Flags: UINT, ppNewName: *mut PWSTR) -> HRESULT;
-    #[link_name = "SHILAppend_RustBridge"]
-    pub fn SHILAppend(pidl: LPITEMIDLIST, ppidl: *mut LPITEMIDLIST) -> HRESULT;
-    #[link_name = "Shell_NextElement_RustBridge"]
-    pub fn Shell_NextElement(ppch: *mut LPWSTR, pszOut: LPWSTR, cchOut: INT, bValidate: BOOL) -> HRESULT;
-    #[link_name = "BindCtx_GetMode_RustBridge"]
-    pub fn BindCtx_GetMode(pbc: LPBC, dwDefault: DWORD) -> DWORD;
-    #[link_name = "SHELL_FS_ProcessDisplayFilename_RustBridge"]
-    pub fn SHELL_FS_ProcessDisplayFilename(szPath: LPWSTR, dwFlags: DWORD);
-    #[link_name = "CFSDropTarget_CreateInstance_RustBridge"]
-    pub fn CFSDropTarget_CreateInstance(sPathTarget: LPWSTR, riid: REFIID, ppvOut: *mut LPVOID) -> HRESULT;
-    #[link_name = "CFSExtractIcon_CreateInstance_RustBridge"]
-    pub fn CFSExtractIcon_CreateInstance(psf: *mut IShellFolder, pidl: LPCITEMIDLIST, iid: REFIID, ppvOut: *mut LPVOID) -> HRESULT;
 }
 
 // ── shell32-internal C helpers (cdecl) ──
@@ -3118,14 +3103,8 @@ extern "C" {
     pub fn _ILCreateFromFindDataW(wfd: *const WIN32_FIND_DATAW) -> LPITEMIDLIST;
     pub fn _ILSimpleGetTextW(pidl: LPCITEMIDLIST, szOut: LPWSTR, uOutSize: UINT) -> DWORD;
     pub fn _ILGetFileDateTime(pidl: LPCITEMIDLIST, pFt: *mut FILETIME) -> BOOL;
-    #[link_name = "GetCLSIDForFileType_RustBridge"]
-    pub fn GetCLSIDForFileType(pidl: LPCITEMIDLIST, KeyName: LPCWSTR, pclsid: *mut CLSID) -> HRESULT;
-    #[link_name = "GetItemCLSID_RustBridge"]
-    pub fn GetItemCLSID(pidl: LPCITEMIDLIST, pclsid: *mut CLSID) -> HRESULT;
     pub fn SHELL32_AssocGetFSDirectoryDescription(Buf: LPWSTR, cchBuf: UINT) -> HRESULT;
     pub fn SHELL32_AssocGetFileDescription(Name: LPCWSTR, Buf: LPWSTR, cchBuf: UINT) -> HRESULT;
-    #[link_name = "SHELL_FS_HideExtension_RustBridge"]
-    pub fn SHELL_FS_HideExtension(pwszPath: LPCWSTR) -> BOOL;
     pub fn wcstol(nptr: *const u16, endptr: *mut *mut u16, base: core::ffi::c_int) -> core::ffi::c_long;
     // sprintfW is `#define sprintfW _swprintf` (wine/unicode.h); _swprintf is exported by
     // ntdll (ntdll.spec). Proven pattern: advapi32-rust/src/prelude.rs:206.

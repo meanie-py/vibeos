@@ -1,0 +1,1 @@
+sdk/lib/rust/user32-rust/src/controls/combo.rs:409: dropped-null-guard CBGetTextAreaHeight(lphc)

@@ -648,6 +648,15 @@ def _preamble_has_translatable_content(preamble_src: str, tu_text: str | None = 
         # so with an empty reply, twice, and the hard-fail refused the file both times.
         if m and tu_text is not None and _only_preprocessor_reads(m.group(1), tu_text):
             continue
+        # Bare specifier tokens split off a function definition by the scanner (setupapi
+        # stubs.c: `WINSETUPAPI BOOL` from `WINSETUPAPI BOOL WINAPI SetupDi...(`). Without a
+        # `;`, `=`, `(` or `{` they declare nothing, and the TU itself shows where they belong:
+        # it starts a function declarator with exactly these tokens. The model said "nothing
+        # to emit" in prose, which does not parse, and the TU went to NO BODY with 8/8 bodies.
+        if tu_text is not None and re.fullmatch(r"[A-Za-z_]\w*(?:\s+[A-Za-z_]\w*)*", stripped):
+            prefix = r"\s+".join(map(re.escape, stripped.split()))
+            if re.search(rf"^\s*{prefix}\s+(?:[A-Za-z_]\w*\s+)*[A-Za-z_]\w*\s*\(", tu_text, re.M):
+                continue
         return True  # any surviving token => real content
     return False
 

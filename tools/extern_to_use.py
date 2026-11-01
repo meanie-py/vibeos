@@ -46,7 +46,9 @@ def decl_re(name: str) -> re.Pattern[str]:
     # re-declarations being removed).
     return re.compile(
         rf"^(?P<docs>(?:[ \t]*///[^\n]*\n)*)"
-        rf"(?P<attrs>(?:[ \t]*#\[[^\n]*\][ \t]*\n)*)[ \t]*(?P<vis>pub(?:\([^)]*\))?\s+)?"
+        # An attribute may also sit on the `fn` line itself (`#[link_name = "X"] fn Y(..);`).
+        rf"(?P<attrs>(?:[ \t]*#\[[^\n]*\][ \t]*\n)*(?:[ \t]*#\[[^\]\n]*\][ \t]*)*)"
+        rf"[ \t]*(?P<vis>pub(?:\([^)]*\))?\s+)?"
         rf"fn\s+{name}\s*\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)"
         rf"\s*(?:->\s*[^;{{]+?)?\s*;[ \t]*\n?",
         re.M,
@@ -197,6 +199,111 @@ def convert(
                     uses.append(line)
         if uses:
             changed[mod] = insert_uses(new, uses, mark)
+        elif new != text:
+            changed[mod] = new
+    return changed, report
+
+
+_EXTERN_BLOCK = re.compile(
+    r"^(?P<attrs>(?:[ \t]*#\[[^\n]*\][ \t]*\n)*)[ \t]*(?:unsafe\s+)?extern\s+\"[^\"]+\"\s*\{",
+    re.M,
+)
+MARK_BRIDGE = "// Renamed imports of each symbol's one declaration: a crate export or the island's."
+_LINK_NAME = re.compile(r'^\s*#\[link_name\s*=\s*"(\w+)"\]\s*$')
+
+
+def island_fns(src: Path, module: str = "island") -> set[str]:
+    """Functions the bindgen island declares on EVERY arch (`<module>_<arch>.rs`); empty when
+    the crate has no island. A name on some arches only (GetWindowLongPtrW is a macro on
+    i386) is not a home for an every-target `use`."""
+    found = [
+        set(re.findall(r"^\s*pub fn (\w+)\s*\(", p.read_text(errors="replace"), re.M))
+        for p in (src / f"{module}_{a}.rs" for a in ("i386", "amd64", "arm64"))
+        if p.is_file()
+    ]
+    return set.intersection(*found) if len(found) == 3 else set()
+
+
+def bridges(
+    files: dict[str, str], island: set[str] | frozenset[str] = frozenset()
+) -> tuple[dict, list[str]]:
+    """Every `#[link_name = "T"] fn N(..);` whose T the crate itself defines becomes
+    `use crate::<home>::T as N;`. shell32's `_RustBridge` exports were C-linkage forwarders a
+    .cpp published; once the forwarder moved into Rust, each caller still bound it by symbol
+    name with its own guess at the signature (36 clashes per arch, 2026-11-01).
+
+    The module that DEFINES T keeps its declaration: a bridge calls the real N, and binding N
+    to T in T's own module makes the bridge call itself (drvdefext_tu.rs shipped that once).
+    Only a lone `link_name` attribute qualifies; one beside a cfg is per-target and stays.
+
+    A T the crate does not define but its bindgen island declares on every arch (`island`)
+    binds to that: `#[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(..)` in eight modules,
+    each with its own SIZE_T, becomes `use crate::island::HeapAlloc as cpp_com_HeapAlloc;`."""
+    decl = decl_re(r"(?P<name>\w+)")
+    targets = {
+        m.group(1)
+        for t in files.values()
+        for d in decl.finditer(t)
+        if (m := _LINK_NAME.match(d.group("attrs").strip("\n")))
+        and d.group("attrs").count("#[") == 1
+    }
+    home: dict[str, str] = {}
+    report: list[str] = []
+    for t in sorted(targets):
+        try:
+            where = find_defs(files, [t])[t]
+        except SystemExit as e:
+            if t in island:
+                home[t] = "island"
+            else:
+                report.append(f"KEPT {e}")
+            continue
+        # Only an exported definition IS the symbol: shell32's `cfs_folder::HeapAlloc` is a
+        # generic Rust helper, and `link_name = "HeapAlloc"` binds kernel32's.
+        d = re.search(DEF.format(n=t), files[where], re.M)
+        if d and re.search(rf'no_mangle|export_name\s*=\s*"{t}"', d.group(0)):
+            home[t] = where
+        elif t in island:
+            home[t] = "island"
+        else:
+            report.append(f"KEPT {t}: crate::{where}::{t} is not exported under that symbol")
+    changed = {}
+    for mod, text in files.items():
+        if GENERATED.search(text[:2048]):
+            continue
+        new, uses, pos, gone = text, [], 0, 0
+        while d := decl.search(new, pos):
+            m = _LINK_NAME.match(d.group("attrs").strip("\n"))
+            if not m or d.group("attrs").count("#[") != 1 or m.group(1) not in home:
+                pos = d.end()
+                continue
+            t, n = m.group(1), d.group("name")
+            block = list(_EXTERN_BLOCK.finditer(new, 0, d.start()))
+            if block and "cfg" in block[-1].group("attrs"):
+                # A per-target block: shell_link's i386 `GetWindowLongPtr` is GetWindowLongW,
+                # and an unconditional `use` would collide with the 64-bit block's own.
+                pos = d.end()
+                continue
+            line = new.count("\n", 0, d.start()) + 1 + gone
+            if home[t] == mod:
+                report.append(f"KEPT {mod}.rs:{line}: {n}: {t} is defined in this module")
+                pos = d.end()
+                continue
+            vis = (d.group("vis") or "").strip()
+            use = f"{vis + ' ' if vis else ''}use crate::{home[t] + '::' if home[t] else ''}{t}"
+            use += "" if n == t else f" as {n}"
+            inner = _inline_mod_at(new, d.start())
+            report.append(f"{mod}.rs:{line}: {n} -> {use}")
+            gone += d.group(0).count("\n")
+            new = new[: d.start()] + new[d.end() :]
+            if inner is not None:
+                new = new[:inner] + f"\n    {use};" + new[inner:]
+                pos = inner
+            else:
+                uses.append(use + ";")
+                pos = d.start()
+        if uses:
+            changed[mod] = insert_uses(new, sorted(set(uses)), MARK_BRIDGE)
         elif new != text:
             changed[mod] = new
     return changed, report
@@ -370,11 +477,26 @@ def main(argv: list[str]) -> int:
         "it; `src` is then sdk/lib/rust, and --crate picks crates (repeatable)",
     )
     ap.add_argument("--crate", action="append", default=[], help="with --census")
+    ap.add_argument(
+        "--bridges",
+        action="store_true",
+        help="every `#[link_name]` declaration of a symbol the crate defines becomes a "
+        "renamed `use` of the definition",
+    )
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args(argv)
 
     if a.census:
         return from_census(a.src, a.census, a.crate, a.dry_run)
+
+    if a.bridges:
+        changed, report = bridges(module_files(a.src), island_fns(a.src))
+        print("\n".join(report))
+        print(f"{len(changed)} module(s) changed", file=sys.stderr)
+        if not a.dry_run:
+            for mod, text in changed.items():
+                module_path(a.src, mod).write_text(text)
+        return 0
 
     if a.canonical:
         rows = [json.loads(x) for x in a.canonical.read_text().splitlines() if x.strip()]

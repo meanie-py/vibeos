@@ -602,6 +602,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 kmtest: `MiIncrementPageTableReferences` counts a page table past 512 (open, found
+  2026-11-01, one occurrence, recovered on retry).** A kernel Rust panic in the kmtest sweep:
+  `assertion failed: new_val <= ntkrnl_sys::mm::PTE_PER_PAGE as u32` at
+  `ntoskrnl-rust/src/shim_exports.rs:1615` (the non-x86 arm, reading
+  `MMPFN.UsedPageTableEntries` of the PDE's page). BUGCHECK `0xE0525354`, P4 = 0x64F. 80 of
+  81 launched tests had passed, and the retry went 104/104. It appeared in the gate
+  `20261101-133030-vbj0pxqz` (shell32-com @ `99c26767a13`: the setupapi flip, which is
+  user-mode only), with logs at `conf-arm64-a1/conformance.log` and `smoke-conf-arm64-r1/`.
+  Not yet triaged. Likely shapes are an increment without its matching decrement
+  (map/unmap imbalance) or a PFN read for the wrong PDE. Start with `farm --arches arm64`
+  using the conformance payload, and arm the tripwire before reading the dump.
 - **arm64 kmtest ZwAllocateVirtualMemory: its two system threads now finish in the other order
   (open question, found 2026-10-19, research; benign for the ratchet).** The pass count moved
   576/579/582 on the version-flip + handle-biasing branch, where master reads 581. Thread 1's
@@ -1011,6 +1022,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Pi 5 run `20261018-133122-fds63jk5`: `sntp: time set from 172.233.157.223: 2026-10-18
   17:33:20 UTC`, seconds from the host's clock. Files written before the sync still carry the
   fallback date.
+  **Second cause (FIXED 2026-11-01): the time SNTP set did not stay set.** After 13 days up,
+  the Pi 4 read 1:25 AM, 2025-01-01. `NtSetSystemTime` ends in `ExpSetTimeZoneInformation`,
+  which (as in the C) sets the system time back from `HalQueryRealTimeClock`, trusting that
+  `HalSetRealTimeClock` just wrote the RTC. The arm64 HAL's set was a no-op and its query
+  returned the fixed fallback, so every sync put the clock back to 2025-01-01 00:00. Each
+  6-hourly sync's "clock was N s off" was the time since the previous sync. The HAL now keeps
+  the time it is given as an offset from the generic timer (and writes QEMU's PL031 load
+  register), so the clock runs on from each set.
 
 - **arm64: keystrokes sent through QMP to the default virtio keyboard do not reach the
   desktop's windows** (OPEN, 2026-10-06, seen while gating nvme.sys). On a quiet arm64 boot,
@@ -6765,15 +6784,14 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   realtime threads carrying a decrement because balmgr's `THREAD_BOOST_PRIORITY` was an invented
   23 (C: `LOW_REALTIME_PRIORITY - 1`), so the starvation scan boosted dynamic threads INTO the
   realtime range, where they never decay; a per-writer tripwire named it (pri=23 base=8 dec=15).
-  (a) OWED: i386 `MI_WRITE_VALID_PTE` over a valid PDE ×4 at `i386/init.rs:394` (PDEs
-  c0300fbc/fe8/fec/ff0 = VA 0xEF000000, 0xFE800000-0xFF000000; old PFNs 0x4176-9), 2 GiB UEFI
-  guest only. Inferred, not yet confirmed against the descriptor list: freeldr maps every region
-  below `LoaderPagesSpanned` at `KSEG0|PA` (`MempSetupPagingForRegion`), and OVMF's permanent
-  regions near the top of 2 GiB land inside the nonpaged-system VA that the single
-  `[MmNonPagedSystemStart, MmNonPagedPoolEnd)` loop re-maps. The Rust predates upstream #8613
-  (4cba65d760a, System PTEs moved to `KSEG0 + MmBootImageSize`), but that placement would not
-  survive this layout either, so this is a design fix, not a port. **Next:** (a), then the
-  loader/FS/driver tail. `debug_assert!` is gated on
+  (a) FIXED 2026-11-01: i386 `MI_WRITE_VALID_PTE` over a valid PDE x4 at `i386/init.rs`
+  (PDEs c0300fbc/fe8/fec/ff0 = VA 0xFBC00000, 0xFE800000-0xFF3FFFFF), 2 GiB UEFI guest only.
+  The earlier inference (KSEG0-mapped firmware regions) was WRONG: a probe showed all four old
+  tables held **0 valid PTEs**. freeldr's `MempAllocatePTE` allocated the KSEG0 twin table for
+  every identity PDE, so OVMF's identity-only regions near the top of 2 GiB left valid EMPTY
+  kernel PDEs inside the nonpaged-system range. `winldr_i386.rs` now allocates the kernel table
+  only when a KernelMapping region needs it (divergence from the C, commented). 2 GiB boot: 0
+  asserts, desktop (`20261101-133844-znu7bcj0-smoke-i386`). **Next:** the loader/FS/driver tail. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of

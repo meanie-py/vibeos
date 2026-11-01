@@ -57,6 +57,10 @@ pub struct Card {
     pub refuse_join: bool,
     /// The AP does not broadcast its SSID: only a scan that names it hears it.
     pub ap_hidden: bool,
+    /// The AP ignores the station (no probe responses, no association) until the
+    /// radio is restarted this many times, as after the network went away and came back.
+    pub deaf_until_restarts: u32,
+    pub restarts: u32,
     /// The firmware puts its own RSN capabilities in the association request
     /// instead of `wpaie`'s, as real firmware may.
     pub fw_rewrites_rsn_caps: Option<u16>,
@@ -192,6 +196,8 @@ impl Card {
             event_mask: Vec::new(),
             refuse_join: false,
             ap_hidden: false,
+            deaf_until_restarts: 0,
+            restarts: 0,
             fw_rewrites_rsn_caps: None,
             assoc_rsn: Vec::new(),
             tx_ethernet: Vec::new(),
@@ -340,6 +346,11 @@ impl Card {
     }
 
     fn queue_bcm_event_reason(&mut self, event_type: u32, status: u32, reason: u32, data: &[u8]) {
+        // The firmware sends only the events `event_msgs` asked for, once it was asked.
+        let masked = |m: &[u8]| m.get(event_type as usize / 8).is_none_or(|b| b & (1 << (event_type % 8)) == 0);
+        if !self.event_mask.is_empty() && masked(&self.event_mask) {
+            return;
+        }
         let mut f = vec![0x20, 0, 0, 0];
         f.extend_from_slice(&MAC);
         f.extend_from_slice(&MAC);
@@ -663,7 +674,9 @@ impl Card {
             (263, b"join") => {
                 assert_eq!(rest.len(), 68, "ext join parameters");
                 let ssid_len = u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
-                if self.refuse_join || &rest[4..4 + ssid_len] != AP_SSID {
+                if self.restarts < self.deaf_until_restarts {
+                    self.queue_bcm_event(0, 3, &[]); // E_SET_SSID, NO_NETWORKS
+                } else if self.refuse_join || &rest[4..4 + ssid_len] != AP_SSID {
                     self.queue_bcm_event(0, 1, &[]); // E_SET_SSID, FAIL
                 } else {
                     let mut b = [0u8; 6];
@@ -691,11 +704,20 @@ impl Card {
             (263, b"escan") => {
                 assert!(rest.len() == 72 || rest.len() == 108, "escan v0 parameters");
                 let named = rest.len() == 108 && rest[51] == 0 && &rest[76..76 + rest[72] as usize] == AP_SSID;
-                self.escan_results(!self.ap_hidden || named);
+                self.escan_results(self.restarts >= self.deaf_until_restarts && (!self.ap_hidden || named));
                 (0, Vec::new())
             }
             (2, _) => {
                 self.up = true;
+                (0, Vec::new())
+            }
+            (3, _) => {
+                self.up = false;
+                self.restarts += 1;
+                (0, Vec::new())
+            }
+            (52, _) => {
+                self.joined_bssid = None;
                 (0, Vec::new())
             }
             (20, _) => {

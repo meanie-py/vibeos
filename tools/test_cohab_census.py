@@ -109,6 +109,10 @@ def test_build_dirs_are_pruned_not_filtered(tmp_path):
     deep.mkdir(parents=True)
     (deep / "CMakeLists.txt").write_text("# decoy\n", encoding="utf-8")
 
+    cached = root / ".cache" / "fixture"
+    cached.mkdir(parents=True)
+    (cached / "CMakeLists.txt").write_text("# cached.c\n", encoding="utf-8")
+
     visited: list[str] = []
     real_walk = _os.walk
 
@@ -130,6 +134,7 @@ def test_build_dirs_are_pruned_not_filtered(tmp_path):
     assert not any("build-arm64" in v for v in visited), (
         f"walker descended into a build dir: {[v for v in visited if 'build-arm64' in v]}"
     )
+    assert not any(".cache" in Path(v).parts for v in visited), visited
     assert [f.name for f in found] == ["ntos.cmake"]
 
 

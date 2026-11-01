@@ -7404,7 +7404,7 @@ unsafe fn StorageBaseImpl_CopyStream(
 
         bytes_copied.QuadPart = 0;
         while bytes_copied.QuadPart < srcdata.size.QuadPart && SUCCEEDED(hr) {
-            bytestocopy = min(4096, (srcdata.size.QuadPart - bytes_copied.QuadPart) as ULONG);
+            bytestocopy = min(4096, srcdata.size.QuadPart - bytes_copied.QuadPart) as ULONG;
 
             hr = StorageBaseImpl_StreamReadAt(
                 src,

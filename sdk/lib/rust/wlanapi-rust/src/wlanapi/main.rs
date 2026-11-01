@@ -328,6 +328,35 @@ pub unsafe extern "system" fn WlanGetAvailableNetworkList(
     UNIMPLEMENTED!();
     return ERROR_SUCCESS;
 }
+// Upstream 8daa718f191: a better stub that hands back an empty, caller-freeable BSS list (the
+// caller releases it with WlanFreeMemory), so a scan reports "no networks" instead of failing.
+// Upstream dereferences the HeapAlloc result unchecked; a failed allocation is
+// ERROR_NOT_ENOUGH_MEMORY here.
+#[no_mangle]
+pub unsafe extern "system" fn WlanGetNetworkBssList(
+    hClientHandle: HANDLE,
+    pInterfaceGuid: *const GUID,
+    _pDot11Ssid: PDOT11_SSID,
+    _dot11BssType: DOT11_BSS_TYPE,
+    _bSecurityEnabled: BOOL,
+    pReserved: PVOID,
+    ppWlanBssList: *mut PWLAN_BSS_LIST,
+) -> DWORD {
+    if !pReserved.is_null() || pInterfaceGuid.is_null() || hClientHandle.is_null() || ppWlanBssList.is_null() {
+        return ERROR_INVALID_PARAMETER;
+    }
+
+    let list = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<WLAN_BSS_LIST>() as SIZE_T) as PWLAN_BSS_LIST;
+    if list.is_null() {
+        return ERROR_NOT_ENOUGH_MEMORY;
+    }
+    (*list).dwTotalSize = core::mem::size_of::<WLAN_BSS_LIST>() as DWORD;
+    *ppWlanBssList = list;
+
+    UNIMPLEMENTED!();
+    return ERROR_SUCCESS;
+}
+
 // EXPORTED AS `MIDL_user_allocate`, not the `midl_user_allocate` spelled in the C: rpcndr.h
 // carries `#define midl_user_allocate MIDL_user_allocate`, so the preprocessor renames it
 // before the compiler ever sees it, and the generated wlansvc_c.c stub table references the

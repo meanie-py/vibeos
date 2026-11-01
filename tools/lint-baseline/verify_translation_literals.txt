@@ -24,7 +24,34 @@ EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'appwiz.cpl,,install_g
 EXTRA: sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/umpnpmgr.rs: 'MININT' appears 1x here and 0x in umpnpmgr.c
 EXTRA: sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/umpnpmgr.rs: 'SYSTEM\\\\CurrentControlSet\\\\Control' appears 1x here and 0x in umpnpmgr.c
 EXTRA: sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/umpnpmgr.rs: 'SystemStartOptions' appears 1x here and 0x in umpnpmgr.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/profile.rs: 'AllUsersProfile' appears 1x here and 0x in profile.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/profile.rs: 'DefaultUserProfile' appears 2x here and 0x in profile.c
 EXTRA: sdk/lib/rust/userenv-rust/src/userenv/profile.rs: 'SeRestorePrivilege' appears 1x here and 0x in profile.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: '%ALLUSERSPROFILE%' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'ALLUSERSPROFILE' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'All Users' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AllUsersProfile' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Application Data' appears 2x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Common AppData' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Common Favorites' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Cookies' appears 2x here and 1x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Default User' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'DefaultUserProfile' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Favorites' appears 3x here and 2x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Local Settings' appears 2x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Local Settings\\\\Application Data' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Local Settings\\\\History' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Local Settings\\\\Temp' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Local Settings\\\\Temporary Internet Files' appears 1x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'My Documents' appears 2x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'NetHood' appears 2x here and 1x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'PrintHood' appears 2x here and 1x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Recent' appears 2x here and 1x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'SendTo' appears 2x here and 1x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Start Menu' appears 3x here and 1x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Start Menu\\\\Programs' appears 2x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Start Menu\\\\Programs\\\\Startup' appears 2x here and 0x in setup.c
+EXTRA: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Templates' appears 3x here and 2x in setup.c
 EXTRA: sdk/lib/rust/wkssvc-rust/src/wkssvc/wkssvc.rs: 'MICROSOFT_AUTHENTICATION_PACKAGE_V1_0' appears 1x here and 0x in wkssvc.c
 EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'cldap://' appears 2x here and 0x in init.c
 EXTRA: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: 'ldap://' appears 4x here and 0x in init.c
@@ -126,5 +153,57 @@ MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'UserExecute' appear
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'You must enter a password !' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'cmd.exe' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/umpnpmgr.rs: 'SYSTEM\\\\CurrentControlSet\\\\Control\\\\MiniNT' appears 1x in umpnpmgr.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/environment.rs: 'PUBLIC' appears 1x in environment.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/environment.rs: 'ProgramData' appears 1x in environment.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/environment.rs: 'Public' appears 1x in environment.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/environment.rs: 'SOFTWARE\\\\Microsoft\\\\Windows NT\\\\CurrentVersion\\\\ProfileList' appears 1x in environment.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/profile.rs: 'Default' appears 2x in profile.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/profile.rs: 'ProgramData' appears 1x in profile.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: '%PUBLIC%' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: '%ProgramData%' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: '%SystemDrive%\\\\ProgramData' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: '%SystemDrive%\\\\Users' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Administrative Tools' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData Root' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData' appears 2x in setup.c and 1x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Local' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\LocalLow' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Local\\\\Microsoft\\\\Windows\\\\History' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Local\\\\Microsoft\\\\Windows\\\\INetCookies' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Roaming' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Roaming\\\\Microsoft\\\\Windows\\\\Burn\\\\Burn' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Roaming\\\\Microsoft\\\\Windows\\\\Network Shortcuts' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Roaming\\\\Microsoft\\\\Windows\\\\Printer Shortcuts' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Roaming\\\\Microsoft\\\\Windows\\\\Recent' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Roaming\\\\Microsoft\\\\Windows\\\\SendTo' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Roaming\\\\Microsoft\\\\Windows\\\\Start Menu' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Roaming\\\\Microsoft\\\\Windows\\\\Start Menu\\\\Programs' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Roaming\\\\Microsoft\\\\Windows\\\\Start Menu\\\\Programs\\\\Administrative Tools' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'AppData\\\\Roaming\\\\Microsoft\\\\Windows\\\\Start Menu\\\\Programs\\\\Startup' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Appdata\\\\Local\\\\Microsoft\\\\Windows\\\\INetCache' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Appdata\\\\Local\\\\Temp' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'CD Burning' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'CommonMusic' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'CommonPictures' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'CommonVideo' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Default' appears 2x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Documents' appears 2x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Downloads' appears 2x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Microsoft\\\\Windows\\\\Start Menu' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Microsoft\\\\Windows\\\\Start Menu\\\\Programs' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Microsoft\\\\Windows\\\\Start Menu\\\\Programs\\\\Startup' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Microsoft\\\\Windows\\\\Templates' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Music' appears 3x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'My Music' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'My Pictures' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'My Video' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'PUBLIC' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Pictures' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'ProgramData' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Public' appears 2x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Videos' appears 2x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: '{374DE290-123F-4565-9164-39C4925E467B}' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: '{3D644C9B-1FB8-4f30-9B45-F670235F79C0}' appears 1x in setup.c and 0x here
+MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: '{A520A1A4-1780-4FF6-BD18-167343C5AF16}' appears 1x in setup.c and 0x here
 MISSING: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: ' ' appears 1x in init.c and 0x here
 MISSING: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: ':%d' appears 1x in init.c and 0x here

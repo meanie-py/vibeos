@@ -17,6 +17,12 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
 
 use crate::shellcom::*;
+// One declaration per external symbol: prelude.rs.
+pub use crate::prelude::memset;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+pub use crate::shell32::shldataobject::SHELL_DataObject_ILCloneFullItem_RustBridge as SHELL_DataObject_ILCloneFullItem;
+pub use crate::shell32::utils::DataObject_GetOffset_RustBridge as DataObject_GetOffset;
+pub use crate::shell32::utils::SHELL_ErrorBox_RustBridge as SHELL_ErrorBox;
 // The crate's own functions: the definition is the declaration.
 pub use crate::wine::classes::HCR_GetProgIdKeyOfExtension;
 pub use crate::wine::classes::HLM_GetIconW;
@@ -130,12 +136,7 @@ pub use crate::wine::shellord::{CABINETSTATE, ReadCabinetState, WriteCabinetStat
 // ---------------------------------------------------------------------------
 
 /// winuser.h `tagCOPYDATASTRUCT`.
-#[repr(C)]
-pub struct COPYDATASTRUCT {
-    pub dwData: ULONG_PTR,
-    pub cbData: DWORD,
-    pub lpData: *mut c_void,
-}
+pub use crate::island::COPYDATASTRUCT;
 
 /// commctrl.h `tagNMCUSTOMDRAWINFO`.
 pub use crate::island::NMCUSTOMDRAW;
@@ -645,13 +646,7 @@ pub unsafe fn PostMessage(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM)
 // SetWindowLongW. Import whichever the target actually exports — asking for
 // `_SetWindowLongPtrW@12` on i386 is a link error, not a portability wrapper.
 #[cfg(not(target_pointer_width = "32"))]
-extern "system" {
-    pub fn SetWindowLongPtrW(hwnd: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
-    pub fn GetWindowLongPtrW(hwnd: HWND, index: INT) -> LONG_PTR;
-}
-#[cfg(target_pointer_width = "32")]
-extern "system" {
-}
+pub use crate::island::{GetWindowLongPtrW, SetWindowLongPtrW};
 
 #[cfg(not(target_pointer_width = "32"))]
 #[inline]
@@ -707,14 +702,10 @@ pub use crate::wine::shellole::SHCoCreateInstance;
 
 // SHELL_DataObject_ILCloneFullItem — promoted from 3 module-local definition(s).
 extern "system" {
-    #[link_name = "SHELL_DataObject_ILCloneFullItem_RustBridge"]
-    pub fn SHELL_DataObject_ILCloneFullItem(pDO: *mut IDataObject, Index: UINT) -> PIDLIST_ABSOLUTE;
 }
 
 // SHELL_ErrorBox — promoted from 1 module-local definition(s).
 extern "system" {
-    #[link_name = "SHELL_ErrorBox_RustBridge"]
-    pub fn SHELL_ErrorBox(hwndOwner: HWND, Error: UINT) -> UINT;
 }
 
 // SHExtCoCreateInstance — promoted from 1 module-local definition(s) (in-crate impl).
@@ -1065,8 +1056,6 @@ pub type SHFILEINFO = crate::types::SHFILEINFOW;
 
 // utils.cpp / CDefView.cpp helpers with no exported symbol of their own.
 extern "system" {
-    #[link_name = "DataObject_GetOffset_RustBridge"]
-    pub fn DataObject_GetOffset(pDO: *mut IDataObject, pt: *mut POINT) -> HRESULT;
 }
 
 // Referenced only by IShellBrowser's vtable slots, which this crate does not call.
@@ -1180,7 +1169,7 @@ pub unsafe fn HIDA_GetPIDLFolder(pida: *const CIDA) -> PCUIDLIST_ABSOLUTE {
 pub unsafe fn HIDA_GetPIDLItem(pida: *const CIDA, i: usize) -> PCUIDLIST_RELATIVE {
     // aoffset is a C flexible array member modelled as [UINT; 1], so index it through
     // a raw pointer: `[i + 1]` bounds-check-panics for every i >= 0.
-    let aoffset = (*pida).aoffset.as_ptr();
+    let aoffset = core::ptr::addr_of!((*pida).aoffset).cast::<UINT>();
     (pida as *const u8).add(*aoffset.add(i + 1) as usize) as PCUIDLIST_RELATIVE
 }
 
@@ -1330,7 +1319,6 @@ extern "C" {
     pub fn _wcsicmp(left: LPCWSTR, right: LPCWSTR) -> INT;
     pub fn _wtoi(str: *const WCHAR) -> INT;
     pub fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
-    pub fn memset(dst: *mut core::ffi::c_void, value: INT, bytes: usize) -> *mut core::ffi::c_void;
     pub fn swprintf(buffer: *mut WCHAR, format: *const WCHAR, ...) -> INT;
 }
 

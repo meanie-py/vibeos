@@ -196,8 +196,7 @@ pub const IDC_COPYASPATH: UINT = 0;
 
 pub const IDS_COPYASPATHMENU: UINT = 30328;
 
-#[repr(C)]
-pub struct CMVERBMAP { pub Verb: LPCSTR, pub CmdId: WORD }
+pub use crate::island::CMVERBMAP;
 pub static mut g_VerbMap: [CMVERBMAP; 2] = [
     CMVERBMAP { Verb: b"copyaspath\0".as_ptr() as LPCSTR, CmdId: IDC_COPYASPATH as WORD },
     CMVERBMAP { Verb: core::ptr::null(), CmdId: 0 as WORD },
@@ -215,13 +214,10 @@ extern "system" {
     fn StrChrW(text: LPCWSTR, ch: WCHAR) -> LPWSTR;
     fn CoTaskMemFree(memory: LPVOID);
     fn SHCreateShellItemArrayFromDataObject(data: *mut IDataObject, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
-    #[link_name = "Shell32RustMapContextMenuVerbToCmdId"] fn SHELL_MapContextMenuVerbToCmdId(info: LPCMINVOKECOMMANDINFO, map: *const CMVERBMAP) -> INT;
-    #[link_name = "Shell32RustGetCommandStringImpl"] fn SHELL_GetCommandStringImpl(command: SIZE_T, flags: UINT, buffer: LPSTR, capacity: UINT, map: *const CMVERBMAP) -> HRESULT;
 }
 
 extern "C" {
     fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
-    fn memset(dst: *mut core::ffi::c_void, value: INT, bytes: usize) -> *mut core::ffi::c_void;
 }
 #[inline]
 unsafe fn CopyMemory(dst: LPVOID, src: LPCVOID, bytes: usize) {
@@ -295,6 +291,11 @@ static CPP_COM_EMPTY_WSTR: [WCHAR; 1] = [0];
 pub static CPP_COM_WSTR_80E09B2F645F: [WCHAR; 3] = [0x000D, 0x000A, 0x0000];
 
 use core::ffi::c_void;
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::memset;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::shell32::dllmain::Shell32RustGetCommandStringImpl as SHELL_GetCommandStringImpl;
+use crate::shell32::dllmain::Shell32RustMapContextMenuVerbToCmdId as SHELL_MapContextMenuVerbToCmdId;
 // One declaration per external symbol: island.rs.
 use crate::island::GetModuleHandleW;
 use crate::island::GlobalAlloc;
@@ -435,7 +436,7 @@ pub unsafe fn CCopyAsPathMenu_QueryContextMenu_body(this: *mut CCopyAsPathMenu, 
 }
 
 pub unsafe fn CCopyAsPathMenu_InvokeCommand_body(this: *mut CCopyAsPathMenu, lpcmi: LPCMINVOKECOMMANDINFO) -> HRESULT {
-    let cmd_id = SHELL_MapContextMenuVerbToCmdId(lpcmi, core::ptr::addr_of!(g_VerbMap).cast());
+    let cmd_id = SHELL_MapContextMenuVerbToCmdId((lpcmi).cast(), core::ptr::addr_of!(g_VerbMap).cast());
     if cmd_id == IDC_COPYASPATH as INT {
         return CCopyAsPathMenu_DoCopyAsPath_body(this, (*this).m_pDataObject as *mut IDataObject);
     }

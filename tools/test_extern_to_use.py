@@ -210,3 +210,45 @@ def test_doc_comment_leaves_with_its_declaration():
     changed, _ = e2u.convert(files, {"X": "a"}, e2u.MARK_OWN)
     assert "///" not in changed["b"]
     assert "fn Y();" in changed["b"]
+
+
+def test_a_link_name_bridge_becomes_a_renamed_use_of_the_crates_export():
+    files = {
+        "utils": "#[no_mangle]\n"
+        'pub unsafe extern "system" fn Foo_RustBridge(x: u32) -> u32 { Foo(x) }\n'
+        'extern "system" {\n    #[link_name = "Foo_RustBridge"]\n    fn Foo(x: u32) -> u32;\n}\n'
+        # A generic Rust helper is not the kernel32 symbol `link_name` names.
+        "pub unsafe fn HeapAlloc<N>(h: *mut u8, n: N) -> *mut u8 { h }\n",
+        "caller": 'extern "system" {\n'
+        '    #[link_name = "Foo_RustBridge"]\n    fn Foo(x: i32) -> u32;\n'
+        '    #[link_name = "HeapAlloc"]\n'
+        "    fn cpp_HeapAlloc(h: *mut u8, f: u32, n: usize) -> *mut u8;\n"
+        "}\n",
+    }
+    changed, report = e2u.bridges(files)
+    out = changed["caller"]
+    assert "use crate::utils::Foo_RustBridge as Foo;" in out
+    assert "fn Foo(" not in out
+    assert 'link_name = "HeapAlloc"' in out
+    # The bridge's own module keeps the declaration of the REAL Foo it forwards to; binding
+    # it to the bridge there would make the bridge call itself.
+    assert "utils" not in changed
+    assert any("defined in this module" in r for r in report)
+    assert any("HeapAlloc" in r and "not exported" in r for r in report)
+
+
+def test_a_bridge_to_an_island_symbol_and_a_per_target_block():
+    files = {
+        "a": 'extern "system" {\n'
+        '    #[link_name = "HeapAlloc"] fn cpp_HeapAlloc(h: *mut u8, n: usize) -> *mut u8;\n'
+        "}\n"
+        '#[cfg(target_pointer_width = "32")]\n'
+        'extern "system" {\n'
+        '    #[link_name = "GetWindowLongW"]\n    fn GetWindowLongPtr(h: *mut u8, i: i32) -> i32;\n'
+        "}\n",
+    }
+    changed, _ = e2u.bridges(files, {"HeapAlloc", "GetWindowLongW"})
+    out = changed["a"]
+    assert "use crate::island::HeapAlloc as cpp_HeapAlloc;" in out
+    # An i386-only block stays: an unconditional `use` would collide with the 64-bit path.
+    assert 'link_name = "GetWindowLongW"' in out

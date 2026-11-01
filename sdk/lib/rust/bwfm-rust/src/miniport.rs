@@ -39,6 +39,7 @@ use crate::bus::{Buffers, Bus};
 use crate::driver::{self, Kernel, BWFM_POOL_TAG};
 use crate::join::{JoinEnd, JoinLog, Station, WifiConfig};
 use crate::link::{LinkLog, Serviced};
+use crate::scan::Bss;
 use crate::net::{TxRing, ETH_FRAME_MAX};
 use crate::print::bwprint;
 
@@ -84,6 +85,14 @@ const IRQ_TALLY_S: u64 = 10;
 /// tries again after the first.
 const REJOIN_FIRST_S: u32 = 5;
 const REJOIN_MAX_S: u32 = 60;
+/// Failed joins in a row before the radio is taken down and brought up again. On
+/// 2026-10-19 the router restarted at 02:31 and was back in minutes; the Pi 4 then
+/// failed 630 joins over 12 hours (the network unheard by name, or no association)
+/// with the radio never restarted.
+const RESTART_RADIO_AFTER: u32 = 5;
+/// While joins fail, every this many the scan lists what it heard, to tell a network
+/// that is gone from one the radio no longer hears.
+const LIST_EVERY: u32 = 10;
 
 /// One adapter: the Pi has one Wi-Fi chip.
 struct Adapter {
@@ -586,10 +595,20 @@ unsafe extern "system" fn worker(context: PVOID) {
 unsafe fn stay_joined(a: *mut Adapter, bus: &mut Bus<Kernel>, cfg: &WifiConfig) {
     let mut backoff = REJOIN_FIRST_S;
     let mut attempt = 0u32;
+    // Failed joins since the link was last up, and the access point it was up at.
+    let mut failures = 0u32;
+    let mut known: Option<Bss> = None;
     loop {
         attempt += 1;
         let mut station = None;
-        if let Some(target) = driver::find(bus, cfg, attempt == 1) {
+        if failures > 0 && failures % RESTART_RADIO_AFTER == 0 {
+            match bus.restart_radio(|_| {}) {
+                Ok(()) => bwprint!("{} failed joins in a row: radio restarted\n", failures),
+                Err(e) => bwprint!("{} failed joins in a row: restarting the radio failed: {:?}\n", failures, e),
+            }
+        }
+        let list = attempt == 1 || (failures > 0 && failures % LIST_EVERY == 0);
+        if let Some(target) = driver::find(bus, cfg, list, known.as_ref()) {
             let mut log = JoinLog::default();
             let t0 = Kernel::now_us_static();
             let r = bus.join_station(cfg, &target, &mut log, |_| {});
@@ -597,14 +616,22 @@ unsafe fn stay_joined(a: *mut Adapter, bus: &mut Bus<Kernel>, cfg: &WifiConfig) 
             driver::log_join(cfg, &target, &log, &r.as_ref().map(|(e, _)| *e).map_err(|e| *e), ms);
             if let Ok((JoinEnd::Up, st)) = r {
                 station = st;
+                known = Some(target);
             }
         }
         let lost = match station {
             Some(mut st) => {
+                if failures > 0 {
+                    bwprint!("joined after {} failed attempts\n", failures);
+                }
                 backoff = REJOIN_FIRST_S;
+                failures = 0;
                 carry(a, bus, &mut st)
             }
-            None => false,
+            None => {
+                failures += 1;
+                false
+            }
         };
         if (*a).stopping.load(Ordering::Acquire) {
             return;

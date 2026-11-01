@@ -114,23 +114,33 @@ unsafe fn MempAllocatePageTables() -> u8 {
     1u8
 }
 
-unsafe fn MempAllocatePTE(Entry: u32, PhysicalPT: *mut PHARDWARE_PTE, KernelPT: *mut PHARDWARE_PTE) {
+unsafe fn MempAllocatePTE(Entry: u32, PhysicalPT: *mut PHARDWARE_PTE) {
     *PhysicalPT = PhysicalPageTablesBuffer.add((PhysicalPageTables * MM_PAGE_SIZE as ULONG) as usize) as PHARDWARE_PTE;
     PhysicalPageTables = PhysicalPageTables.wrapping_add(1);
 
     (*PDE.add(Entry as usize)).set_PageFrameNumber((*PhysicalPT as u32) >> MM_PAGE_SHIFT as ULONG);
     (*PDE.add(Entry as usize)).set_Valid(1 as ULONG);
     (*PDE.add(Entry as usize)).set_Write(1 as ULONG);
+}
 
-    if Entry.wrapping_add((KSEG0_BASE >> 22) as u32) > 1023 {
+// DIVERGES from the C, which allocates the KSEG0 table together with the identity one in
+// MempAllocatePTE: here it is allocated only when a KernelMapping region needs it. The C
+// left an EMPTY kernel table behind every identity-only region, and on a 2 GiB UEFI guest
+// OVMF's identity-only regions near the top of RAM (PA 0x7BC00000, 0x7E800000-0x7F3FFFFF)
+// put valid, empty PDEs at 0xFBC00000 and 0xFE800000-0xFF3FFFFF -- inside the kernel's
+// nonpaged-system range, whose MiInitMachineDependent loop then wrote valid PDEs over
+// valid PDEs (MI_WRITE_VALID_PTE's assert, x4) and leaked the four table pages.
+unsafe fn MempKernelPT(Entry: u32) -> PHARDWARE_PTE {
+    let KernelEntry = Entry.wrapping_add((KSEG0_BASE >> 22) as u32) as usize;
+    if (*(PDE as *mut u32).add(KernelEntry)) == 0 {
+        let KernelPT = KernelPageTablesBuffer.add((KernelPageTables * MM_PAGE_SIZE as ULONG) as usize) as PHARDWARE_PTE;
+        KernelPageTables = KernelPageTables.wrapping_add(1);
+
+        (*PDE.add(KernelEntry)).set_PageFrameNumber((KernelPT as u32) >> MM_PAGE_SHIFT as ULONG);
+        (*PDE.add(KernelEntry)).set_Valid(1 as ULONG);
+        (*PDE.add(KernelEntry)).set_Write(1 as ULONG);
     }
-
-    *KernelPT = KernelPageTablesBuffer.add((KernelPageTables * MM_PAGE_SIZE as ULONG) as usize) as PHARDWARE_PTE;
-    KernelPageTables = KernelPageTables.wrapping_add(1);
-
-    (*PDE.add((Entry.wrapping_add((KSEG0_BASE >> 22) as u32)) as usize)).set_PageFrameNumber((*KernelPT as u32) >> MM_PAGE_SHIFT as ULONG);
-    (*PDE.add((Entry.wrapping_add((KSEG0_BASE >> 22) as u32)) as usize)).set_Valid(1 as ULONG);
-    (*PDE.add((Entry.wrapping_add((KSEG0_BASE >> 22) as u32)) as usize)).set_Write(1 as ULONG);
+    ((*PDE.add(KernelEntry)).PageFrameNumber() << MM_PAGE_SHIFT) as PHARDWARE_PTE
 }
 
 #[no_mangle]
@@ -159,10 +169,9 @@ pub unsafe extern "C" fn MempSetupPaging(
         Entry = Page >> 10;
 
         if (*(PDE as *mut u32).add(Entry as usize)) == 0 {
-            MempAllocatePTE(Entry as u32, &mut PhysicalPT, &mut KernelPT);
+            MempAllocatePTE(Entry as u32, &mut PhysicalPT);
         } else {
             PhysicalPT = ((*PDE.add(Entry as usize)).PageFrameNumber() << MM_PAGE_SHIFT) as PHARDWARE_PTE;
-            KernelPT = ((*PDE.add(Entry.wrapping_add((KSEG0_BASE >> 22) as u32) as usize)).PageFrameNumber() << MM_PAGE_SHIFT) as PHARDWARE_PTE;
         }
 
         (*PhysicalPT.add((Page & 0x3ff) as usize)).set_PageFrameNumber(Page as ULONG);
@@ -170,6 +179,7 @@ pub unsafe extern "C" fn MempSetupPaging(
         (*PhysicalPT.add((Page & 0x3ff) as usize)).set_Write(if Page != 0 { 1 } else { 0 } as ULONG);
 
         if KernelMapping != 0 {
+            KernelPT = MempKernelPT(Entry as u32);
             if (*KernelPT.add((Page & 0x3ff) as usize)).Valid() != 0 {
                 WARN!("KernelPT already mapped\n");
             }
