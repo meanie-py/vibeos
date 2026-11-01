@@ -624,6 +624,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Not yet triaged. Likely shapes are an increment without its matching decrement
   (map/unmap imbalance) or a PFN read for the wrong PDE. Start with `farm --arches arm64`
   using the conformance payload, and arm the tripwire before reading the dump.
+- **amd64-bios: demand-zero fault on an already-valid PTE (open, found 2026-11-01, one
+  occurrence in 8 boots, needs an MM owner).** A kernel Rust panic after the boot marker, while
+  a WoW64 32-bit app was starting (`[FEX-WOW64C]` lines, then winsxs manifest opens):
+  `assertion failed: ((*PointerPte).valid() as usize) == 0` at
+  `ntoskrnl-rust/src/ARM3/pagfault.rs:2292` (the `ASSERT` at the top of `MiResolveDemandZeroFault`,
+  inlined into the `MmArmAccessFault` call). BUGCHECK `0xE0525354`, P4 = 0x8F4, `-smp 2`. Seen in
+  the batch-66 gate `20261101-162640-4a__9dav` (`smoke-amd64-bios-a1/`, preserved in
+  `~/vibeos-flake-farm/fails/auto/20261101-170141-h3n7guz0-smoke-amd64-bios-BUGCHECK`). That
+  batch touched no MM code, and the same media then passed 3/3 boots at `-smp 1` and 4/4 at `-smp 2`.
+  The shape is a second CPU resolving the same PTE between the fault's validity check and the
+  demand-zero call, so look for a path that releases the working-set lock in between.
+  Repro: `farm --arches amd64-bios` with `--smp 2`.
 - **x86 user mode never calls vectored exception handlers (open, found 2026-11-01, needs
   an owner: rtl-except + wow64).** i386's and amd64's Rust `RtlDispatchException` drop the
   `RtlCallVectoredExceptionHandlers` call, faithfully: the C guards it with `#ifndef
