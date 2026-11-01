@@ -45,6 +45,58 @@ extern "C" {
 }
 extern "system" {
     fn PsGetCurrentThread() -> *mut _ETHREAD;
+    fn PsReferencePrimaryToken(Process: PVOID) -> PVOID;
+    fn PsReferenceImpersonationToken(
+        Thread: PVOID,
+        CopyOnOpen: *mut BOOLEAN,
+        EffectiveOnly: *mut BOOLEAN,
+        ImpersonationLevel: *mut i32,
+    ) -> PVOID;
+}
+extern "C" {
+    static mut SeTokenObjectType: POBJECT_TYPE;
+}
+
+// Windows 8's token pseudo-handles: NtCurrentProcessToken() (-4), NtCurrentThreadToken() (-5),
+// NtCurrentThreadEffectiveToken() (-6). Measured on Windows 11 (winref
+// 20261031-223348-ha327ekw): they name a token only to a token query, TOKEN_QUERY and
+// TOKEN_QUERY_SOURCE; NtQueryObject, NtDuplicateObject, NtSetInformationToken,
+// DuplicateToken and AdjustTokenPrivileges on them all get STATUS_INVALID_HANDLE, as do -3
+// and -7. -5 without impersonation is STATUS_NO_TOKEN; -6 is the impersonation token while
+// impersonating, else the primary one.
+const OBP_PROCESS_TOKEN: isize = -4;
+const OBP_THREAD_TOKEN: isize = -5;
+const OBP_EFFECTIVE_TOKEN: isize = -6;
+
+unsafe fn ObpReferencePseudoToken(
+    Handle: HANDLE,
+    DesiredAccess: ACCESS_MASK,
+    ObjectType: POBJECT_TYPE,
+    Object: *mut PVOID,
+    HandleInformation: POBJECT_HANDLE_INFORMATION,
+) -> NTSTATUS {
+    let granted = TOKEN_QUERY | TOKEN_QUERY_SOURCE;
+    if ObjectType.is_null() || ObjectType != SeTokenObjectType || DesiredAccess & !granted != 0 {
+        return STATUS_INVALID_HANDLE;
+    }
+    let which = Handle as isize;
+    let mut token: PVOID = core::ptr::null_mut();
+    if which != OBP_PROCESS_TOKEN {
+        let (mut copy, mut eff, mut level) = (0u8, 0u8, 0i32);
+        token = PsReferenceImpersonationToken(PsGetCurrentThread() as PVOID, &mut copy, &mut eff, &mut level);
+        if token.is_null() && which == OBP_THREAD_TOKEN {
+            return STATUS_NO_TOKEN;
+        }
+    }
+    if token.is_null() {
+        token = PsReferencePrimaryToken(PsGetCurrentProcess() as PVOID);
+    }
+    if !HandleInformation.is_null() {
+        (*HandleInformation).HandleAttributes = 0;
+        (*HandleInformation).GrantedAccess = granted;
+    }
+    *Object = token;
+    STATUS_SUCCESS
 }
 
 extern "C" {
@@ -677,6 +729,8 @@ pub unsafe extern "system" fn ObReferenceObjectByHandle(
 
             *Object = current_thread as PVOID;
             return STATUS_SUCCESS;
+        } else if matches!(Handle as isize, OBP_PROCESS_TOKEN | OBP_THREAD_TOKEN | OBP_EFFECTIVE_TOKEN) {
+            return ObpReferencePseudoToken(Handle, DesiredAccess, ObjectType, Object, HandleInformation);
         } else if AccessMode == 0i8 {
             let handle_table = ObpKernelHandleTable;
             let handle_value = ObKernelHandleToHandle(Handle);

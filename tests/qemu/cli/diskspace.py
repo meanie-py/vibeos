@@ -100,6 +100,9 @@ def policy(*, initialize: bool = False) -> dict:
         raise AdmissionError(f"invalid host disk policy {path}: {exc}") from exc
 
 
+BACKING_FILE = Path("/etc/vibeos/disk-backing-mounts")
+
+
 def backing_mounts() -> list[Path]:
     """Host volumes BACKING our filesystem, which `df /` cannot see.
 
@@ -110,13 +113,27 @@ def backing_mounts() -> list[Path]:
     the disk did not survive it. Admission was not wrong, it was answering a different
     question than the one that mattered.
 
-    Colon-separated in VIBEOS_DISK_BACKING_MOUNTS; unset means unarmed, which is the
-    correct default for a bare-metal host that has no backing store. Deliberately NOT a
-    policy.json key: that file's loader rejects an unknown key set, so adding one there
-    would fail admission closed in every lane still running an older commit.
+    Only a DYNAMIC .vhdx's host belongs here: a fixed-size one cannot grow, so a full
+    host under it is harmless (since 2026-11-01 the XFS data disk is a fixed VHDX filling
+    G:, and only the dynamic root disk's C: is listed).
+
+    Read from BACKING_FILE (one path per line, `#` comments) on every call, because this
+    is a property of the HOST, not of a shell: as an environment variable exported from
+    .bashrc, a layout change reached no running session, and every lane plus the
+    integrator kept refusing builds on the old volume until all were restarted. The file
+    wins over VIBEOS_DISK_BACKING_MOUNTS for the same reason, so a stale export in an old
+    shell cannot override it; the variable (colon-separated) remains for a host without
+    the file. Neither means unarmed, the correct default for a bare-metal host. Not a
+    policy.json key either: that loader rejects an unknown key set, so adding one would
+    fail admission closed in every lane still running an older commit.
     """
-    raw = os.environ.get("VIBEOS_DISK_BACKING_MOUNTS", "")
-    return [Path(p) for p in raw.split(":") if p]
+    try:
+        lines = BACKING_FILE.read_text().splitlines()
+    except FileNotFoundError:
+        raw = os.environ.get("VIBEOS_DISK_BACKING_MOUNTS", "")
+        return [Path(p) for p in raw.split(":") if p]
+    paths = (line.split("#", 1)[0].strip() for line in lines)
+    return [Path(p) for p in paths if p]
 
 
 def filesystems(repo: Path) -> list[dict]:
@@ -338,7 +355,7 @@ def status(repo: Path, *, sizes: bool = False) -> dict:
         # Say ARMED/UNARMED positively. An absent guard that reports nothing reads
         # identically to a guard that found nothing to worry about.
         "backing_mounts": [str(p) for p in backing_mounts()]
-        or "UNARMED: set VIBEOS_DISK_BACKING_MOUNTS",
+        or f"UNARMED: list the host volumes in {BACKING_FILE}",
         "automatic_retention": timer_active,
         "retention_policy_path": str(retention_policy),
     }

@@ -407,6 +407,18 @@ pub unsafe extern "system" fn FlsGetValue(dwFlsIndex: DWORD) -> LPVOID {
     return *core::ptr::addr_of!((*pFlsData).Data).cast::<PVOID>().add(dwFlsIndex as usize);
 }
 
+/// Windows 11's FlsGetValue2: FlsGetValue without the last-error traffic. It never sets
+/// it, not for a freed or never-set slot either (both read NULL; winref
+/// 20261031-223113-3h38le85). An index out of range reads NULL rather than past the array.
+#[no_mangle]
+pub unsafe extern "system" fn FlsGetValue2(dwFlsIndex: DWORD) -> LPVOID {
+    let pFlsData = (*NtCurrentTeb()).FlsData as PRTL_FLS_DATA;
+    if dwFlsIndex == 0 || dwFlsIndex >= FLS_MAXIMUM_AVAILABLE || pFlsData.is_null() {
+        return core::ptr::null_mut();
+    }
+    *core::ptr::addr_of!((*pFlsData).Data).cast::<PVOID>().add(dwFlsIndex as usize)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn FlsSetValue(
     dwFlsIndex: DWORD,

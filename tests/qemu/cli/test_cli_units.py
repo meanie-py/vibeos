@@ -12660,3 +12660,26 @@ def test_external_media_is_admitted_only_on_a_matching_stamp(tmp_path, monkeypat
     image.write_bytes(b"iso")
     monkeypatch.setattr(provenance, "tree_content_hash", lambda repo, paths: "moved")
     assert "another source tree" in provenance.external_media_problems(tmp_path, "amd64", image)[0]
+
+
+def test_a_build_starts_the_dedup_pass_only_where_the_service_exists(tmp_path, monkeypatch):
+    calls = []
+
+    def run(argv, **kw):
+        calls.append(argv)
+        if fail:
+            raise subprocess.CalledProcessError(1, argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(build_mod.subprocess, "run", run)
+    monkeypatch.setattr(build_mod, "DEDUP_UNIT", tmp_path / "absent.service")
+    fail = False
+    assert build_mod.kick_dedup().status == "skip" and not calls
+    unit = tmp_path / "vibeos-dedup.service"
+    unit.write_text("")
+    monkeypatch.setattr(build_mod, "DEDUP_UNIT", unit)
+    st = build_mod.kick_dedup()
+    assert st.status == "ok"
+    assert calls == [["sudo", "-n", "systemctl", "start", "--no-block", "vibeos-dedup.service"]]
+    fail = True
+    assert build_mod.kick_dedup().status == "warn"
