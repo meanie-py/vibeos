@@ -602,6 +602,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 kmtest: `MiIncrementPageTableReferences` counts a page table past 512 (open, found
+  2026-11-01, one occurrence, recovered on retry).** A kernel Rust panic in the kmtest sweep:
+  `assertion failed: new_val <= ntkrnl_sys::mm::PTE_PER_PAGE as u32` at
+  `ntoskrnl-rust/src/shim_exports.rs:1615` (the non-x86 arm, reading
+  `MMPFN.UsedPageTableEntries` of the PDE's page). BUGCHECK `0xE0525354`, P4 = 0x64F. 80 of
+  81 launched tests had passed, and the retry went 104/104. It appeared in the gate
+  `20261101-133030-vbj0pxqz` (shell32-com @ `99c26767a13`: the setupapi flip, which is
+  user-mode only), with logs at `conf-arm64-a1/conformance.log` and `smoke-conf-arm64-r1/`.
+  Not yet triaged. Likely shapes are an increment without its matching decrement
+  (map/unmap imbalance) or a PFN read for the wrong PDE. Start with `farm --arches arm64`
+  using the conformance payload, and arm the tripwire before reading the dump.
 - **arm64 kmtest ZwAllocateVirtualMemory: its two system threads now finish in the other order
   (open question, found 2026-10-19, research; benign for the ratchet).** The pass count moved
   576/579/582 on the version-flip + handle-biasing branch, where master reads 581. Thread 1's
