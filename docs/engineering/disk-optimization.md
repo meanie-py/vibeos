@@ -51,6 +51,14 @@ shares a range, so a file written mid-pass just fails the compare, and a later w
 shared file gets private blocks. The two failures that retired hardlinking were a shared
 inode truncated under a sibling's mmap, and shared timestamps; extent sharing has neither.
 
+**Always dedup read-only (`duperemove -A`, as root).** By default duperemove opens every
+file read-write, and Linux refuses to exec a binary that something has open for writing
+(`ETXTBSY`, "Text file busy"). The first pass kicked by a build broke the next build that
+way: arm64 failed exec'ing `vibeos-codegen` (2026-11-01). Measured on this disk: 16
+exec failures in 2,000 during a read-write pass, 0 with `-A`, and `-A` still shares the
+extents. The kernel allows FIDEDUPERANGE on a read-only descriptor for root, so the
+service runs as root with `-A`. Never run a read-write pass by hand beside live lanes.
+
 **Do not seed a lane's build dir by copying another lane's**, even as a free reflink copy.
 The copy carries the other lane's mtimes, and ninja and cargo judge freshness by mtime, so
 outputs built from a different commit can look up to date. Build each lane normally; the
