@@ -14200,6 +14200,12 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   instruction bytes.
   > **"Flaky" + byte-identical registers on every hit = a DETERMINISTIC bug on a rarely-taken
   > path.** Hunt for why the path is rare, not for a race.
+
+  EC **0x01** is the same class for WFx: `Instr=0xD503205F` is `wfe`. FEXCore's SpinWaitLock
+  waits on a contended lock with `ldaxr; wfe`, so with SCTLR_EL1.nTWE clear any FEX lock that
+  contends kills the app. On 2026-11-01 that took out taskmgr, osk, devmgmt, rapps and iexplore
+  on appstorm64 (`WritePriorityMutex::lock_shared`). Windows and Linux both let EL0 run WFE, and
+  `KiSystemStartup` now sets nTWE. WFI still traps.
 - **A silent arm64 Rust panic looks like an opaque boot hang** — sample `$pc`; it parks in
   `rust_begin_unwind`. Also: `RtlCreateAtomTable` divided by zero on `NumberOfBuckets == 0`.
 - **arm64-only deadlock from UB**: `&immutable_local as *const T as *mut T` on an in/out FFI
