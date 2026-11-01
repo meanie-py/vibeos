@@ -46,8 +46,11 @@ protection was simply absent. Probe it the way the preflight does:
         (cd "$d" && cargo metadata --offline --format-version 1 >/dev/null) || echo "STALE: $d"
     done
 
-Also non-obvious, not a package: `VIBEOS_DISK_BACKING_MOUNTS=/mnt/g` must be exported, or
-disk admission cannot see the volume the guest actually consumes.
+Also non-obvious, not a package: `/etc/vibeos/disk-backing-mounts` must list the Windows
+volume under every DYNAMIC .vhdx the guest writes to (today `/mnt/c`, the root disk's host;
+the fixed-size XFS data disk on G: cannot grow and is not listed), or disk admission cannot
+see the volume that can actually run out. It is read on every call, so editing it needs no
+restart; the `VIBEOS_DISK_BACKING_MOUNTS` variable is only a fallback for a host without it.
 
 ## Two traps this audit hit itself
 
