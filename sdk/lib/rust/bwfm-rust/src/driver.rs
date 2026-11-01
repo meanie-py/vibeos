@@ -469,14 +469,20 @@ pub unsafe fn read_config() -> Option<WifiConfig> {
 
 /// Scan, and find `cfg`'s network: the strongest report for its SSID, asking for it
 /// by name when the plain scan did not hear it (a hidden network answers only that).
-/// `list`: log every network heard, once each (the first scan of a boot).
-pub fn find(bus: &mut Bus<Kernel>, cfg: &WifiConfig, list: bool) -> Option<Bss> {
+/// `list`: log every network heard, once each (the first scan of a boot, and now and
+/// then while joins fail). `known`: the access point last joined. A hidden network that
+/// does not answer by name but whose access point is still beaconing is joined at it.
+pub fn find(bus: &mut Bus<Kernel>, cfg: &WifiConfig, list: bool, known: Option<&Bss>) -> Option<Bss> {
     let mut best: Option<Bss> = None;
+    let mut beacon: Option<Bss> = None;
     let mut seen = [[0u8; 6]; 32];
     let (mut n, mut reports) = (0usize, 0u32);
     let t0 = Kernel::now_us_static();
     let end = bus.scan(|b| {
         reports += 1;
+        if known.is_some_and(|k| k.bssid == b.bssid) {
+            beacon = Some(*b);
+        }
         if b.ssid() == cfg.ssid() && best.is_none_or(|x| b.rssi > x.rssi) {
             best = Some(*b);
         }
@@ -526,10 +532,27 @@ pub fn find(bus: &mut Bus<Kernel>, cfg: &WifiConfig, list: bool) -> Option<Bss> 
             bwprint!("directed scan failed: {:?}\n", e);
         }
     }
-    if best.is_none() {
-        bwprint!("'{}' is not in the scan: nothing to join\n", ssid);
+    if best.is_some() {
+        return best;
     }
-    best
+    let (Some(k), Some(mut b)) = (known, beacon) else {
+        let gone = if known.is_some() { " (nor is the access point it was joined at)" } else { "" };
+        bwprint!("'{}' is not in the scan{}: nothing to join\n", ssid, gone);
+        return None;
+    };
+    bwprint!(
+        "'{}' did not answer by name, but its access point beacons on ch {} at {} dBm: joining it by address\n",
+        ssid,
+        b.channel,
+        b.rssi
+    );
+    b.ssid = [0; 32];
+    b.ssid[..cfg.ssid().len()].copy_from_slice(cfg.ssid());
+    b.ssid_len = cfg.ssid().len();
+    if b.rsn_len == 0 {
+        (b.rsn, b.rsn_len) = (k.rsn, k.rsn_len);
+    }
+    Some(b)
 }
 
 /// The join's outcome, for the log.
@@ -575,14 +598,15 @@ pub fn log_join(cfg: &WifiConfig, target: &Bss, log: &JoinLog, end: &Result<Join
             log.eapol_out
         ),
         Ok(e) => bwprint!(
-            "join ended {:?} after {} ms (associated {}, {} EAPOL in, {} out, {} rejected, last {:?})\n",
+            "join ended {:?} after {} ms (associated {}, {} EAPOL in, {} out, {} rejected, last {:?}; firmware {:?})\n",
             e,
             ms,
             log.associated,
             log.eapol_in,
             log.eapol_out,
             log.rejected,
-            log.last_reject
+            log.last_reject,
+            log.firmware_said
         ),
         Err(e) => bwprint!("join failed: {:?}\n", e),
     }

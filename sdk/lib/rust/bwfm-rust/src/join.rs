@@ -171,6 +171,9 @@ pub struct JoinLog {
     /// Optional settings the firmware refused: bit 0 `sup_wpa`, bit 1 `mfp`.
     pub optional_refused: u8,
     pub optional_error: Option<Error>,
+    /// The last E_AUTH or E_ASSOC that failed: (event, status, reason). A join that
+    /// runs out of time says with it how far it got.
+    pub firmware_said: Option<(u32, u32, u32)>,
     /// The RSN element the firmware's association request carried, and whether it
     /// differed from the one we gave it (then message 2 used the firmware's).
     pub assoc_rsn: [u8; 64],
@@ -188,6 +191,7 @@ impl Default for JoinLog {
             last_reject: None,
             optional_refused: 0,
             optional_error: None,
+            firmware_said: None,
             assoc_rsn: [0; 64],
             assoc_rsn_len: 0,
             assoc_rsn_differs: false,
@@ -221,6 +225,7 @@ struct Inbox {
     n: usize,
     linked: bool,
     refused: Option<(u32, u32)>,
+    failed: Option<(u32, u32, u32)>,
 }
 
 impl Inbox {
@@ -233,6 +238,7 @@ impl Inbox {
             match e.event_type {
                 event::E_LINK if e.flags & 1 != 0 => self.linked = true,
                 event::E_SET_SSID if e.status != 0 => self.refused = Some((e.event_type, e.status)),
+                event::E_AUTH | event::E_ASSOC if e.status != 0 => self.failed = Some((e.event_type, e.status, e.reason)),
                 event::E_DEAUTH | event::E_DEAUTH_IND | event::E_DISASSOC | event::E_DISASSOC_IND
                     if self.linked =>
                 {
@@ -341,7 +347,7 @@ impl<P: Platform> Bus<P> {
         let rsn = our_rsn(target.rsn()).map_err(|why| Error::Card(why, target.channel as u32))?;
         // Events and message 1 can arrive while a command still waits for its reply:
         // every frame read from here on goes through the inbox first.
-        let inbox = RefCell::new(Inbox { eapol: [[0; 256]; 4], eapol_len: [0; 4], n: 0, linked: false, refused: None });
+        let inbox = RefCell::new(Inbox { eapol: [[0; 256]; 4], eapol_len: [0; 4], n: 0, linked: false, refused: None, failed: None });
         let mut each = |f: Frame| {
             inbox.borrow_mut().take(&f);
             each(f);
@@ -389,6 +395,9 @@ impl<P: Platform> Bus<P> {
             self.poll(&mut each)?;
             let (refused, linked, n) = {
                 let b = inbox.borrow();
+                if b.failed.is_some() {
+                    log.firmware_said = b.failed;
+                }
                 (b.refused, b.linked, b.n)
             };
             if let Some((e, s)) = refused {

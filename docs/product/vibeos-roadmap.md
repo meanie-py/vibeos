@@ -1022,6 +1022,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Pi 5 run `20261018-133122-fds63jk5`: `sntp: time set from 172.233.157.223: 2026-10-18
   17:33:20 UTC`, seconds from the host's clock. Files written before the sync still carry the
   fallback date.
+  **Second cause (FIXED 2026-11-01): the time SNTP set did not stay set.** After 13 days up,
+  the Pi 4 read 1:25 AM, 2025-01-01. `NtSetSystemTime` ends in `ExpSetTimeZoneInformation`,
+  which (as in the C) sets the system time back from `HalQueryRealTimeClock`, trusting that
+  `HalSetRealTimeClock` just wrote the RTC. The arm64 HAL's set was a no-op and its query
+  returned the fixed fallback, so every sync put the clock back to 2025-01-01 00:00. Each
+  6-hourly sync's "clock was N s off" was the time since the previous sync. The HAL now keeps
+  the time it is given as an offset from the generic timer (and writes QEMU's PL031 load
+  register), so the clock runs on from each set.
 
 - **arm64: keystrokes sent through QMP to the default virtio keyboard do not reach the
   desktop's windows** (OPEN, 2026-10-06, seen while gating nvme.sys). On a quiet arm64 boot,
