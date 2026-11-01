@@ -2609,8 +2609,15 @@ cast to one side.
 **Finding the rest:** clang's `-Wsign-compare` on the C oracle flags exactly this. Run it over
 a module's `<target>_c` compile commands and keep the lines that call `min`/`max`. Across all
 53 oracle modules (2026-10-18) that is 24 sites in comctl32 and 2 in credui, and this was the
-only mistranslated one. Modules with no oracle are unaudited. A rebar section in the modrun
+only mistranslated one. A rebar section in the modrun
 comctl32 probe (`probes/comctl32.c`) now diffs the band and bar heights against the C.
+**The commoner variant is a NARROWING cast, not a sign flip.** A grep audit of every
+non-oracle `min`/`max` that casts an operand (2026-11-01, ~380 sites, each read against the C)
+found 9 real divergences, and most cut a wide operand down before the compare:
+`CcZeroData`'s `min(Length as ULONG, MAX_ZERO_LENGTH)` with a LONGLONG `Length` makes a 4 GiB
+range a 0-byte chunk and spins forever; freeldr's ATAPI `min(len as u16, 0xFFFE)` sends a byte
+count of 0 for a 64 KiB read; atapi's `ATA_LOCAL_BUFFER_SIZE as u8` is 572 → 60. Rule: compare
+at the width the C compares at, THEN narrow the result: `min(a, b as T_wide) as T_narrow`.
 
 ### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
 **Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a
