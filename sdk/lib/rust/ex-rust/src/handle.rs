@@ -2834,7 +2834,6 @@ pub unsafe extern "C" fn ExpKdbgExtHandle(
     argv: *mut *mut core::ffi::c_char,
 ) -> ntkrnl_sys::base::BOOLEAN {
     use ntkrnl_sys::base::*;
-    use ntkrnl_sys::constants::OBJ_HANDLE_ATTRIBUTES;
     use ntkrnl_sys::ddk::{
         PCM_KEY_BODY, PCM_KEY_CONTROL_BLOCK, PFILE_OBJECT, _HANDLE_TABLE, _HANDLE_TABLE_ENTRY,
         _LIST_ENTRY, _OBJECT_HEADER,
@@ -2891,10 +2890,9 @@ pub unsafe extern "C" fn ExpKdbgExtHandle(
             let object_raw = (*table_entry).__bindgen_anon_1.Object;
             let next_free = (*table_entry).__bindgen_anon_2.NextFreeTableEntry;
             if !object_raw.is_null() && next_free != -2 {
-                let object_header = ((object_raw as ULONG_PTR)
-                    & !(OBJ_HANDLE_ATTRIBUTES as ULONG_PTR))
-                    as *mut _OBJECT_HEADER;
-                let granted_access = (*table_entry).__bindgen_anon_2.GrantedAccess;
+                let object_header =
+                    ntkrnl_sys::macros::ObpGetHandleObject(table_entry) as *mut _OBJECT_HEADER;
+                let granted_access = ntkrnl_sys::macros::ObpHandleGrantedAccess(table_entry);
                 let body_ptr = core::ptr::addr_of_mut!((*object_header).Body);
 
                 crate::kdbp_print!(

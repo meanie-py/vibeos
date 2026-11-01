@@ -203,8 +203,14 @@ static DWORD WINAPI pump(LPVOID param)
  * boots from a CDFS image, so X:\ (bindir and %TEMP% included) refuses every
  * write with ERROR_ACCESS_DENIED, and such a suite reports its own environment
  * as failures. TEMP/TMP follow it (below). The regular apitest sweep stages no such file -- its suites may
- * read testdata relative to bindir. */
+ * read testdata relative to bindir.
+ *
+ * A second line `stage` also copies each suite exe into that directory (clearing
+ * the ReadOnly attribute CopyFile carries over from CDFS -- Windows does the same)
+ * and runs the copy, for suites that reopen argv[0] for writing: kernel32's
+ * version test patches its own PE header in copies of itself. */
 static char g_child_cwd[MAX_PATH];
+static BOOL g_stage_exe;
 
 static void load_child_cwd(const char *bindir)
 {
@@ -219,9 +225,12 @@ static void load_child_cwd(const char *bindir)
         return;
     if (fgets(g_child_cwd, sizeof(g_child_cwd), f))
     {
+        char opt[32];
         n = strlen(g_child_cwd);
         while (n && (g_child_cwd[n - 1] == '\n' || g_child_cwd[n - 1] == '\r' || g_child_cwd[n - 1] == ' '))
             g_child_cwd[--n] = 0;
+        if (fgets(opt, sizeof(opt), f) && !strncmp(opt, "stage", 5))
+            g_stage_exe = TRUE;
     }
     fclose(f);
     if (!g_child_cwd[0])
@@ -235,7 +244,7 @@ static void load_child_cwd(const char *bindir)
      * TEMP/TMP too. */
     SetEnvironmentVariableA("TEMP", g_child_cwd);
     SetEnvironmentVariableA("TMP", g_child_cwd);
-    emit("[APITEST-SWEEP] child cwd=TEMP=%s\n", g_child_cwd);
+    emit("[APITEST-SWEEP] child cwd=TEMP=%s%s\n", g_child_cwd, g_stage_exe ? " (exe staged)" : "");
 }
 
 static int run_child(const char *bindir, const char *suite, const char *arg,
@@ -252,6 +261,18 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
     DWORD wait, code = 0;
 
     _snprintf(exepath, sizeof(exepath), "%s\\%s", bindir, suite);
+    if (g_stage_exe)
+    {
+        char staged[MAX_PATH];
+        _snprintf(staged, sizeof(staged), "%s\\%s", g_child_cwd, suite);
+        SetFileAttributesA(staged, FILE_ATTRIBUTE_NORMAL);
+        if (!CopyFileA(exepath, staged, FALSE) || !SetFileAttributesA(staged, FILE_ATTRIBUTE_NORMAL))
+        {
+            emit("[APITEST-SWEEP] launch FAILED %s (staging to %s err=%lu)\n", suite, staged, GetLastError());
+            return -1;
+        }
+        lstrcpynA(exepath, staged, sizeof(exepath));
+    }
     if (arg && arg[0])
         _snprintf(cmdline, sizeof(cmdline), "\"%s\" %s", exepath, arg);
     else

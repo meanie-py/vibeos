@@ -77,8 +77,22 @@ PUBLIC RtlCaptureContext
     /* Store mxcsr */
     stmxcsr [rcx + CxMxCsr]
 
+    /* The head of FltSave, as Windows 8 and later fill it (kmtest RtlCaptureContext):
+       the x87 control word, a zeroed status word, tag word and Reserved1, and MxCsr again.
+       The rest of FltSave is left as the caller had it. XSAVE_FORMAT offsets: ControlWord
+       +0, StatusWord +2, TagWord +4 (byte), Reserved1 +5 (byte), MxCsr +24. */
+    fnstcw [rcx + CxFltSave]
+    mov word ptr [rcx + CxFltSave + 2], 0
+    mov word ptr [rcx + CxFltSave + 4], 0
+
     /* Store eflags */
     mov [rcx + CxEFlags], eax
+
+    /* FltSave.MxCsr (+24). eax is the flags again afterwards: callers see rax = eflags
+       on return (kmtest RtlCaptureContext). */
+    mov eax, [rcx + CxMxCsr]
+    mov [rcx + CxFltSave + 24], eax
+    mov eax, [rcx + CxEFlags]
 
     /* Check if we are in kernel mode */
     test byte ptr [rcx + CxSegCs], MODE_MASK

@@ -1410,7 +1410,9 @@ pub unsafe extern "system" fn ExEnterCriticalRegionAndAcquireResourceExclusive(
 ) -> PVOID {
     KeEnterCriticalRegion();
     ExAcquireResourceExclusiveLite(Resource, 1u8);
-    (*ExpGetCurrentKThread()).Win32Thread
+    // NULL from Vista on (kmtest ExResource); Server 2003 returned the Win32Thread,
+    // which no caller in the tree reads.
+    core::ptr::null_mut()
 }
 
 #[no_mangle]
@@ -1419,7 +1421,9 @@ pub unsafe extern "system" fn ExEnterCriticalRegionAndAcquireResourceShared(
 ) -> PVOID {
     KeEnterCriticalRegion();
     ExAcquireResourceSharedLite(Resource, 1u8);
-    (*ExpGetCurrentKThread()).Win32Thread
+    // NULL from Vista on (kmtest ExResource); Server 2003 returned the Win32Thread,
+    // which no caller in the tree reads.
+    core::ptr::null_mut()
 }
 
 #[no_mangle]
@@ -1428,7 +1432,9 @@ pub unsafe extern "system" fn ExEnterCriticalRegionAndAcquireSharedWaitForExclus
 ) -> PVOID {
     KeEnterCriticalRegion();
     ExAcquireSharedWaitForExclusive(Resource, 1u8);
-    (*ExpGetCurrentKThread()).Win32Thread
+    // NULL from Vista on (kmtest ExResource); Server 2003 returned the Win32Thread,
+    // which no caller in the tree reads.
+    core::ptr::null_mut()
 }
 
 #[cfg(target_arch = "x86")]

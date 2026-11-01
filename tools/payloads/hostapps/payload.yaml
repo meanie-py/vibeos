@@ -25,6 +25,8 @@ binaries:
     dest: bin/apitest-cwd.txt
   - src: tools/payloads/hostapps/fsquery-{arch}.exe
     dest: bin/fsquery/fsquery.exe
+  - src: tools/payloads/hostapps/regsd-{arch}.exe
+    dest: bin/regsd/regsd.exe
 binaries_from: tools/payloads/hostapps/stage.py
 
 test:
