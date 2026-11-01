@@ -1742,8 +1742,6 @@ def smoke(args, repo: Path) -> int:
             for o in ("payload", "doom", "ladder", "require_probe", "tripwire")
             if getattr(args, o, None)
         ]
-        if arch == "arm64":
-            bad.append("arm64 boots qemu/boot.img: mastering it from the manifest is not modelled")
         problems = bad or provenance.external_media_problems(repo, arch, image)
         if problems:
             run.classification = "BAD_ARGS" if bad else "STALE_MEDIA"
