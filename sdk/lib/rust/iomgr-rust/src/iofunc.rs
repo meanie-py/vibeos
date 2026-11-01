@@ -370,6 +370,9 @@ const FileFsDriverPathInformation: u32 = 0x00000009;
 // valid classes 9 and 10.
 const FileFsMaximumInformation: u32 =
     ntkrnl_sys::ddk::_FSINFOCLASS_FileFsMaximumInformation as u32;
+/// One past the last query class io_tables' IopQueryFsOperationLength covers (Windows 10's
+/// FileFsGuidInformation is 15). The set table still ends at FileFsMaximumInformation.
+const FS_QUERY_CLASS_LIMIT: u32 = 16;
 
 // Additional IRP constants
 const IRP_MJ_SET_VOLUME_INFORMATION: u32 = 0x0B;
@@ -3938,7 +3941,7 @@ pub unsafe extern "system" fn NtQueryVolumeInformationFile(
     let mut KernelIosb: _IO_STATUS_BLOCK = core::mem::zeroed();
 
     if PreviousMode != 0i8 {
-        if FsInformationClass >= FileFsMaximumInformation
+        if FsInformationClass >= FS_QUERY_CLASS_LIMIT
             || c_array_get(&IopQueryFsOperationLength, FsInformationClass as usize) as ULONG == 0
         {
             return STATUS_INVALID_INFO_CLASS;

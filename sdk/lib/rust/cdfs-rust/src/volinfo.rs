@@ -38,7 +38,7 @@ extern "C" {
 }
 extern "system" {
     #[cfg(feature = "ntddi_win8")]
-    fn FsRtlGetSectorSizeInformation( RealDevice: *mut core::ffi::c_void, Buffer: PFILE_FS_SECTOR_SIZE_INFORMATION, ) -> i32;
+    fn FsRtlGetSectorSizeInformation(RealDevice: *mut ntkrnl_sys::ddk::_DEVICE_OBJECT, Buffer: PFILE_FS_SECTOR_SIZE_INFORMATION) -> i32;
 }
 extern "C" {
 }
@@ -53,7 +53,20 @@ extern "C" {
 
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_VOLINFO;
-pub type PFILE_FS_SECTOR_SIZE_INFORMATION = PVOID;
+/// FILE_FS_SECTOR_SIZE_INFORMATION (ntifs.h, Windows 8): not in ReactOS's headers, so not
+/// in the bindgen island either. Same layout as fsrtl-rust's, which fills it.
+#[repr(C)]
+pub struct FILE_FS_SECTOR_SIZE_INFORMATION {
+    pub LogicalBytesPerSector: u32,
+    pub PhysicalBytesPerSectorForAtomicity: u32,
+    pub PhysicalBytesPerSectorForPerformance: u32,
+    pub FileSystemEffectivePhysicalBytesPerSectorForAtomicity: u32,
+    pub Flags: u32,
+    pub ByteOffsetForSectorAlignment: u32,
+    pub ByteOffsetForPartitionAlignment: u32,
+}
+const _: () = assert!(core::mem::size_of::<FILE_FS_SECTOR_SIZE_INFORMATION>() == 28);
+pub type PFILE_FS_SECTOR_SIZE_INFORMATION = *mut FILE_FS_SECTOR_SIZE_INFORMATION;
 
 const FILE_CASE_SENSITIVE_SEARCH: u32 = 1;
 const FILE_READ_ONLY_VOLUME: u32 = 0x00080000;
@@ -63,7 +76,7 @@ const VCB_STATE_JOLIET: u32 = 0x04;
 
 const UnopenedFileObject: u32 = 0;
 #[no_mangle]
-pub unsafe extern "C" fn CdCommonQueryVolInfo(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+pub unsafe extern "C" fn CdCommonQueryVolInfo(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS { // nolint: version-vs-c -- its FileFsSectorSizeInformation arm (feature ntddi_win8, on) is NTDDI_WIN8 in the C and answered on purpose, as Windows 11 CDFS does
     PAGED_CODE!();
 
     let mut Status: NTSTATUS = STATUS_INVALID_PARAMETER;
@@ -299,16 +312,12 @@ pub unsafe extern "C" fn CdQueryFsSectorSizeInfo(
     Buffer: PFILE_FS_SECTOR_SIZE_INFORMATION,
     Length: *mut u32,
 ) -> i32 {
-    let mut Status: i32 = 0;
-
     PAGED_CODE!();
     let _ = IrpContext;
 
-    let cond_assert = (*Length as usize) >= core::mem::size_of::<FILE_FS_SECTOR_SIZE_INFORMATION>();
-    ASSERT!(cond_assert);
-    let _ = (*Length as usize) >= core::mem::size_of::<FILE_FS_SECTOR_SIZE_INFORMATION>();
+    debug_assert!((*Length as usize) >= core::mem::size_of::<FILE_FS_SECTOR_SIZE_INFORMATION>());
 
-    Status = FsRtlGetSectorSizeInformation((*(*Vcb).Vpb).RealDevice, Buffer);
+    let Status = FsRtlGetSectorSizeInformation((*(*Vcb).Vpb).RealDevice, Buffer);
 
     if NT_SUCCESS(Status) {
         *Length -= core::mem::size_of::<FILE_FS_SECTOR_SIZE_INFORMATION>() as u32;

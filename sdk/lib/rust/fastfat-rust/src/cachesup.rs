@@ -37,7 +37,7 @@ use ntkrnl_sys::ddk::{CACHE_MANAGER_CALLBACKS, CC_FILE_SIZES, DEVICE_OBJECT, ERE
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
 
 extern "system" {
-    static mut FatDisableParentCheck: i32;
+    static mut FatDisableParentCheck: u8; // BOOLEAN (cachesup.c), one byte
     } extern "system" {
     fn FatAcquireDirectoryFileMutex(Vcb: *mut VCB);
     fn FatCheckFreeDirentBitmap(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB);
@@ -621,7 +621,7 @@ pub unsafe extern "system" fn FatIsCurrentOperationSynchedForDcbTeardown(
         index += 1;
     }
 
-    return FatDisableParentCheck;
+    return FatDisableParentCheck as i32;
 }
 
 
