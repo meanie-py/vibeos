@@ -10,6 +10,9 @@ from typing import NoReturn
 
 def main(generator: str) -> NoReturn:
     args = sys.argv[1:]
+    if generator == "global-barrier":
+        # Legacy barrier input is relative to the invocation directory.
+        args = ["--root", str(Path.cwd()), *args]
     if generator.endswith("-res"):
         expanded = []
         for arg in args:

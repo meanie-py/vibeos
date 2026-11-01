@@ -1,0 +1,45 @@
+{
+  "src/mod/a.c": {
+    "also_compiled_uncommented": true,
+    "c_path": "src/mod/a.c",
+    "confidence": "MEDIUM",
+    "disabled_at": [
+      "src/mod/CMakeLists.txt:2",
+      "src/mod/CMakeLists.txt:7"
+    ],
+    "evidence": [
+      {
+        "detail": "src/mod/CMakeLists.txt: '# Rust foo-rust src/one.rs \u2014 \"quoted\"' (block header)",
+        "kind": "block-hint"
+      },
+      {
+        "detail": "src/mod/CMakeLists.txt:7: # ${REACTOS_SOURCE_DIR}/src/mod/a.c (foo-rust src/one.rs)",
+        "kind": "inline"
+      }
+    ],
+    "exists_on_disk": true,
+    "rust_crate": "foo-rust",
+    "rust_files": [
+      "sdk/lib/rust/foo-rust/src/one.rs"
+    ]
+  },
+  "src/mod/b.c": {
+    "also_compiled_uncommented": false,
+    "c_path": "src/mod/b.c",
+    "confidence": "LOW",
+    "disabled_at": [
+      "src/mod/CMakeLists.txt:3"
+    ],
+    "evidence": [
+      {
+        "detail": "src/mod/CMakeLists.txt:3: # b.c (foo-rust src/dup.rs)",
+        "kind": "inline"
+      }
+    ],
+    "exists_on_disk": false,
+    "rust_crate": "foo-rust",
+    "rust_files": [
+      "sdk/lib/rust/foo-rust/src/dup.rs"
+    ]
+  }
+}

@@ -1,0 +1,475 @@
+schema_version = 1
+
+[symbols.future__atoi64]
+c_signature = "__int64 future__atoi64(const char *nptr)"
+family = "radix"
+slice_pattern = "nul_in"
+core_fn = "radix::parse_i64_wrapping"
+return_collapse = "i64_passthrough"
+inout_effects = "none"
+preserved_misfeature = "NULL→0; i64 wrapping accumulate, NO overflow error; no (int) trunc (unlike atoi)"
+reference = "sdk/lib/crt/string/atoi64.c"
+fuzz_domain = ["NULL", "empty", "ws+sign", "near i64::MAX", "i64 overflow wrap", "trailing junk", "no digits", "non-ASCII ± 😀"]
+
+[symbols.future__i64toa]
+c_signature = "char* future__i64toa(__int64 value, char *string, int radix)"
+family = "radix"
+slice_pattern = "int_to_str"
+core_fn = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "string ← '-'(iff radix==10&&value<0) + digits + NUL; no bounds check (caller ≥65 bytes); returns string"
+preserved_misfeature = "no radix validation, no buffer-size check, no NULL guard (narrow memcpy is unconditional); sign only for radix==10, else i64 bit pattern as u64"
+reference = "sdk/lib/crt/string/itoa.c"
+fuzz_domain = ["value 0/±1/I64_MIN/I64_MAX", "radix 2/8/10/16/36", "neg+radix!=10 (unsigned reinterpret)", "non-ASCII ± 😀"]
+
+[symbols.future__i64toa_s]
+c_signature = "int future__i64toa_s(__int64 value, char *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "s_erange_n"
+core_fn = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "ok→str=sign+digits+NUL,ret 0; bad param→str[0]=0(if str&&size),ret 22; need>size→LSD-first reverse fill (sign skipped) then str[0]=0, ret 34"
+preserved_misfeature = "ERANGE writes a right-aligned REVERSED partial (units-first) sans sign, then clobbers str[0]=NUL — not a clean truncation; _LIBCNT_ no errno"
+reference = "sdk/lib/crt/string/itoa.c"
+fuzz_domain = ["size {exact,exact-1,1,big,0}", "radix {2,10,16,36,1,37}", "value 0/±/I64_MIN/I64_MAX", "str=NULL", "non-ASCII ± 😀"]
+
+[symbols.future__i64tow]
+c_signature = "wchar_t* future__i64tow(__int64 value, wchar_t *string, int radix)"
+family = "wstring"
+slice_pattern = "int_to_wstr"
+core_fn = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "if string!=NULL: '-'(iff radix==10&&value<0)+digits+NUL as u16; returns string (even NULL)"
+preserved_misfeature = "NULL dst accepted (computes nothing, returns NULL); no radix/bounds validation; sign only radix==10 else i64 bit pattern as u64"
+reference = "sdk/lib/crt/string/itow.c"
+fuzz_domain = ["value 0/±1/I64_MIN/I64_MAX", "radix 2/8/10/16/36", "neg+radix!=10", "string=NULL", "non-ASCII ± 😀"]
+
+[symbols.future__i64tow_s]
+c_signature = "int future__i64tow_s(__int64 value, wchar_t *str, size_t size, int radix)"
+family = "wstring"
+slice_pattern = "s_erange_w"
+core_fn = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "ok→str=sign+digits+NUL (u16),ret 0; bad param→str[0]=0(if str&&size),ret 22; need>size→LSD-first reverse fill (sign skipped, u16) then str[0]=0, ret 34"
+preserved_misfeature = "same ERANGE reverse-fill as _i64toa_s, u16 elements; _LIBCNT_ no errno"
+reference = "sdk/lib/crt/string/itow.c"
+fuzz_domain = ["size {exact,exact-1,1,big,0}", "radix {2,10,16,36,1,37}", "value 0/±/I64_MIN/I64_MAX", "str=NULL", "non-ASCII ± 😀"]
+
+[symbols.future__makepath]
+c_signature = "void future__makepath(char *path, const char *drive, const char *dir, const char *fname, const char *ext)"
+family = "string"
+slice_pattern = "makepath"
+core_fn = "path::make"
+return_collapse = "void"
+inout_effects = "path = [drive[0] ':']? + dir + ('\\\\' iff dir non-empty & last not /\\\\)? + fname + ('.' iff ext[0]!='.')? + ext; always NUL-terminated; NULL path => no write"
+preserved_misfeature = "NULL path = clean no-op; component skipped if NULL OR empty (X && X[0]); drive uses ONLY drive[0]+':'; dir always gets trailing '\\\\' unless already ended /\\\\ (forward slash preserved); fname bare-concat (no sep/dot); ext '.' prepended only if ext[0]!='.'; zero bounds checking"
+reference = "sdk/lib/crt/stdlib/makepath.c"
+fuzz_domain = ["all empty", "drive only", "dir w/o trailing sep", "dir w/ trailing \\\\", "dir w/ trailing /", "fname only", "ext leading dot", "ext no dot", "NULL each component", "empty-string component", "drive >1 char (only [0])", "full path", "NULL path no-op", "non-ASCII ± 😀"]
+
+[symbols.future__memccpy]
+c_signature = "void *future__memccpy(void *to, const void *from, int c, size_t count)"
+family = "mem"
+slice_pattern = "memccpy"
+core_fn = "mem::ccpy"
+return_collapse = "memccpy"
+inout_effects = "to[0..=k] ← from[0..=k] where k = first index with from[k] matching c (return &to[k+1]) OR first NUL (return NULL) OR count-1 (return NULL); each byte copied before its test"
+preserved_misfeature = "NUL test PRECEDES c test → c==0 always returns NULL (NUL break wins); the `t==c` match is signed-char `t` vs int `c` (memchr deal: byte 0x90 matches only c==-112, never 0x90); count==0 copies nothing → NULL"
+reference = "sdk/lib/crt/mem/memccpy.c"
+fuzz_domain = ["count==0", "c present (signed match)", "c absent", "NUL before c", "c==0 (→NULL via NUL precedence)", "c high-bit positive (no match)", "c negative (high byte match)", "c at last byte", "non-ASCII ± 😀"]
+
+[symbols.future__memicmp]
+c_signature = "int future__memicmp(const void *s1, const void *s2, size_t n)"
+family = "mem"
+slice_pattern = "ptr_len"
+core_fn = "mem::icmp"
+return_collapse = "i32_passthrough"
+null_guard_nls = true
+inout_effects = "none (read-only)"
+preserved_misfeature = "ASCII toupper fold (a..z only; >=0x80 untouched) for the COMPARE but returns the RAW unfolded unsigned-char diff *p1-*p2 (not the folded one); n==0 → 0; NULL s1 or s2 → _NLSCMPERROR (0x7fffffff) when n!=0, else 0 (the C's OSMajorVersion>=6 guard, validated unconditionally; _LIBCNT_ INVALID_PMT is a no-op)"
+reference = "sdk/lib/crt/mem/memicmp.c"
+fuzz_domain = ["n==0", "equal", "differ pre-fold", "differ only by case (→0)", "high-bit >=0x80 (never folded)", "differ at 0", "differ at n-1", "NULL s1/s2 with n!=0 (→_NLSCMPERROR)", "NULL with n==0 (→0)", "non-ASCII ± 😀"]
+
+[symbols.future__splitpath]
+c_signature = "void future__splitpath(const char *path, char *drive, char *dir, char *fname, char *ext)"
+family = "string"
+slice_pattern = "splitpath"
+core_fn = "path::split"
+return_collapse = "void"
+inout_effects = "each non-NULL of drive/dir/fname/ext pre-set \"\" then refilled+NUL; drive synthesized [letter,':',0] iff path[1]==':' && drive!=NULL; path advanced 2 on drive regardless of drive==NULL (folded into split dir_start)"
+preserved_misfeature = "drive = single char path[1]==':' only (no UNC/\\\\?\\); drive synthesized not sliced; dir INCLUDES trailing sep; ext INCLUDES leading '.'; leading-dot filename IS ext (fname empty); dot in dir component discarded (ext_start<file_start); no sep => whole tail is fname; trailing sep => empty fname+ext; NO MBCS (_LIBCNT_ strips _ismbblead); empty path => all \"\"; INT_MAX copy caps unreachable (not modeled)"
+reference = "sdk/lib/crt/string/_splitpath.c"
+fuzz_domain = ["empty", "drive only X:", "no drive", "X:dir\\file.ext", "no ext", "bare fname", "trailing sep", "leading-dot .bashrc", "dot in dir a.b/c", "multi-dot", "forward slash", "mixed / and \\\\", "NULL drive/dir/fname/ext each skipped", "1:x / ::x edge", "non-ASCII ± 😀"]
+
+[symbols.future__strlwr]
+c_signature = "char *future__strlwr(char *_String)"
+family = "string"
+slice_pattern = "case_inplace"
+core_fn = "casemap::lower_ascii"
+return_collapse = "casemap"
+inout_effects = "in-place: each A..Z += 32; returns _String"
+preserved_misfeature = "ASCII-only (literal 'A'..'Z'); NO NULL guard (<string.h>, not precomp) → NULL crashes in C, never fuzzed; signed-char compare is moot for ASCII range"
+reference = "sdk/lib/crt/string/_strlwr_nt.c"
+fuzz_domain = ["empty", "all-lower (noop)", "all-upper", "mixed", "digits/punct", "0x80-0xFF (untouched)", "non-ASCII ± 😀"]
+
+[symbols.future__strnicmp]
+c_signature = "int __cdecl future__strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)"
+family = "string"
+slice_pattern = "nul_in_n"
+core_fn = "string::ncmp_ci"
+return_collapse = "i32_cmp_n"
+inout_effects = "none (read-only)"
+preserved_misfeature = "as _stricmp + count-bounded; n==0 → 0 (while(remaining--!=0)); equal-NUL still breaks early within n"
+reference = "sdk/lib/crt/string/_strnicmp_nt.c"
+fuzz_domain = ["n==0", "equal < n", "differ < n", "n past NUL", "high-bit", "diff only after fold", "non-ASCII ± 😀"]
+
+[symbols.future__strnset]
+c_signature = "char *future__strnset(char *szToFill, int szFill, size_t sizeMaxFill)"
+family = "string"
+slice_pattern = "mut_nset"
+core_fn = "strmut::fill"
+return_collapse = "strmut"
+inout_effects = "first min(strlen, (int)sizeMaxFill) bytes = (char)szFill; returns szToFill"
+preserved_misfeature = "sizeMaxFill cast to signed int: (int)sizeMaxFill <= 0 (incl. size_t > INT_MAX wrapping negative) → fills NOTHING; stops at NUL even if count not reached; szFill low-byte trunc"
+reference = "sdk/lib/crt/string/strset.c"
+fuzz_domain = ["max 0 (→nothing)", "max < strlen", "max == strlen", "max > strlen (→strlen)", "empty str", "max > INT_MAX (→negative→nothing)", "szFill>0xFF trunc", "non-ASCII ± 😀"]
+
+[symbols.future__strrev]
+c_signature = "char *future__strrev(char *s)"
+family = "string"
+slice_pattern = "mut_reverse"
+core_fn = "strmut::reverse"
+return_collapse = "strmut"
+inout_effects = "in-place reverse of content [0..strlen); returns s"
+preserved_misfeature = "len 0/1 natural no-op (C walks to NUL then swaps inward, b<e guards); NO NULL guard (precomp but while(*e) derefs) → NULL crashes in C, never fuzzed"
+reference = "sdk/lib/crt/string/strrev.c"
+fuzz_domain = ["empty", "len 1", "len 2", "even len", "odd len", "embedded high bytes", "all same char", "non-ASCII ± 😀"]
+
+[symbols.future__strset]
+c_signature = "char *future__strset(char *szToFill, int szFill)"
+family = "string"
+slice_pattern = "mut_set"
+core_fn = "strmut::fill"
+return_collapse = "strmut"
+inout_effects = "each content byte = (char)szFill; returns szToFill; stops at original NUL (never extends)"
+preserved_misfeature = "szFill int truncated to char (low byte); empty → no writes; NO NULL guard → NULL crashes in C, never fuzzed"
+reference = "sdk/lib/crt/string/strset.c"
+fuzz_domain = ["empty", "len 1", "typical", "szFill 0x41", "szFill>0xFF (low-byte trunc)", "szFill negative", "szFill 0 (early-stop semantics: still fills since check is on src not fill)", "non-ASCII ± 😀"]
+
+[symbols.future__strtoi64]
+c_signature = "__int64 future__strtoi64(const char *nptr, char **endptr, int base)"
+family = "radix"
+slice_pattern = "nul_endptr_base"
+core_fn = "radix::parse_i64_clamped"
+return_collapse = "i64_endptr"
+inout_effects = "*endptr = nptr + (got_digit ? after-last-digit : 0); not written if base invalid"
+preserved_misfeature = "overflow CLAMPS to _I64_MAX/_I64_MIN (NOT wrap, unlike _atoi64); _LIBCNT_ sets no errno; endptr=original-nptr when no digit (leading ws/sign not reflected)"
+reference = "sdk/lib/crt/string/strtoi64.c"
+fuzz_domain = ["base10", "base16 0x", "base0 octal", "base 2..36", "+I64 overflow→MAX", "-overflow→MIN", "ws+sign", "no digits (endptr=nptr)", "invalid base→0", "junk after digits", "non-ASCII ± 😀"]
+
+[symbols.future__ui64toa_s]
+c_signature = "int future__ui64toa_s(unsigned __int64 value, char *str, size_t size, int radix)"
+family = "radix"
+slice_pattern = "s_einval_n"
+core_fn = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "ok→str=digits+NUL,ret 0; bad param→ret 22 (NO str[0]=0); need(ndigits+1)>size→ret 22 (NO fill)"
+preserved_misfeature = "unlike _i64toa_s: NO str[0]=0 on bad param, returns EINVAL (22) not ERANGE on too-small, NO partial fill; pure unsigned"
+reference = "sdk/lib/crt/string/itoa.c"
+fuzz_domain = ["size {exact,exact-1,1,big,0}", "radix {2,10,16,36,1,37}", "value 0/1/U64_MAX", "str=NULL", "non-ASCII ± 😀"]
+
+[symbols.future__ui64tow_s]
+c_signature = "int future__ui64tow_s(unsigned __int64 value, wchar_t *str, size_t size, int radix)"
+family = "wstring"
+slice_pattern = "s_einval_w"
+core_fn = "radix::format_radix"
+return_collapse = "int2str"
+inout_effects = "ok→str gets ndigits+1 BYTES (the bug) of the u16-LE digits,ret 0; bad param→ret 22 (NO str[0]=0); (ndigits+1)>size→ret 22 (NO fill)"
+preserved_misfeature = "the genuine byte-count bug: memcpy copies ndigits+1 BYTES not *sizeof(wchar_t) — only ~half the wide string lands; NO str[0]=0 on bad param; EINVAL (not ERANGE) on too-small"
+reference = "sdk/lib/crt/string/itow.c"
+fuzz_domain = ["size {exact,exact-1,1,big,0}", "radix {2,10,16,36,1,37}", "value 0/1/U64_MAX", "str=NULL", "non-ASCII ± 😀"]
+
+[symbols.future__wcsicmp]
+c_signature = "int __cdecl future__wcsicmp(wchar_t const* _String1, wchar_t const* _String2)"
+family = "wstring"
+slice_pattern = "wnul_in"
+core_fn = "wstring::cmp_ci"
+return_collapse = "i32_passthrough"
+inout_effects = "none (read-only)"
+preserved_misfeature = "ASCII-only A..Z fold (no Unicode/locale); RAW u16 difference promoted to int (value-preserving, NOT signed-16, NOT clamped to {-1,0,1})"
+reference = "sdk/lib/crt/wstring/_wcsicmp_nt.c"
+fuzz_domain = ["equal same/diff case", "differ pre/post fold", ">=0x80 and >0xFF (never folded)", "prefix", "embedded equal-NUL", "non-ASCII ± 😀"]
+
+[symbols.future__wcsnicmp]
+c_signature = "int __cdecl future__wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)"
+family = "wstring"
+slice_pattern = "wnul_in_n"
+core_fn = "wstring::ncmp_ci"
+return_collapse = "i32_cmp_n"
+inout_effects = "none (read-only)"
+preserved_misfeature = "as _wcsicmp + count-bounded; n==0 → 0; equal-NUL breaks early within n"
+reference = "sdk/lib/crt/wstring/_wcsnicmp_nt.c"
+fuzz_domain = ["n==0", "equal < n", "differ < n", "n past NUL", ">0xFF wchars", "diff only after fold", "non-ASCII ± 😀"]
+
+[symbols.future__wcstoi64]
+c_signature = "__int64 future__wcstoi64(const wchar_t *nptr, wchar_t **endptr, int base)"
+family = "radix"
+slice_pattern = "wnul_endptr_base"
+core_fn = "radix::parse_i64_clamped_w"
+return_collapse = "wcstoi64_w"
+inout_effects = "*endptr (if !=NULL && base valid) = nptr + final-index (incl ws/sign/0x even with no digits); NOT written if NULL nptr or invalid base"
+preserved_misfeature = "per-digit clamp to _I64_MAX/_I64_MIN (NOT wrap), keeps consuming after clamp; endptr ALWAYS = final nptr (unlike narrow _strtoi64 got_digit?nptr:p); NULL→0 no endptr; _LIBCNT_ no errno"
+reference = "sdk/lib/crt/string/wtoi64.c"
+fuzz_domain = ["base10", "base16 0x", "base0 octal", "base 2..36", "+I64 overflow→MAX", "-overflow→MIN", "ws+sign", "no digits (endptr=after ws/sign/0x)", "0x then junk", "invalid base→0", "junk after digits", "NULL nptr", "non-ASCII ± 😀"]
+
+[symbols.future_mbstowcs]
+c_signature = "size_t future_mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)"
+family = "string"
+slice_pattern = "mbstowcs"
+core_fn = "mbcp::mbstowcs"
+return_collapse = "mbcp"
+inout_effects = "wcstr=NULL → query, returns strlen(mbstr); else writes min(strlen,count) decoded wchars (NO NUL appended), returns that count"
+preserved_misfeature = "NO NUL termination on convert (RtlMultiByteToUnicodeN writes only converted chars); query mode returns Size/sizeof(wchar_t); single-byte CP ⇒ wchars == mb length"
+reference = "sdk/lib/crt/string/mbstowcs_nt.c"
+fuzz_domain = ["wcstr=NULL (query)", "count < strlen", "count >= strlen", "empty mbstr", "bytes spanning 0x80-0x9F", "non-ASCII ± 😀"]
+
+[symbols.future_mbtowc]
+c_signature = "int future_mbtowc(wchar_t *wchar, const char *mbchar, size_t count)"
+family = "string"
+slice_pattern = "mbtowc"
+core_fn = "mbcp::mbtowc"
+return_collapse = "mbcp"
+inout_effects = "*wchar = decoded wchar (single-byte CP ⇒ 1 byte consumed) UNLESS space-guard returns -1; mbchar/wchar NULL → 0"
+preserved_misfeature = "space-guard: returns -1 (no *wchar write) if decoded==L' ' but mbarr[0]!=' ' (CP1252 never triggers it — only 0x20→U+0020 — but structurally pinned); count==0 → reads {0} → *wchar=0, ret 1"
+reference = "sdk/lib/crt/string/mbstowcs_nt.c"
+fuzz_domain = ["mbchar=NULL", "wchar=NULL", "count=0", "count=1", "count=2", "byte 0x00-0xFF incl 0x80-0x9F table + undefined slots", "non-ASCII ± 😀"]
+
+[symbols.future_memcpy]
+c_signature = "void *future_memcpy(void *dst, const void *src, size_t n)"
+family = "mem"
+slice_pattern = "mem_raw"
+core_fn = "cabi::raw_move"
+return_collapse = "ret_dst"
+inout_effects = "writes dst[0..n] = src[0..n], overlap-correct (forward if dst<=src or disjoint, else backward)"
+preserved_misfeature = "overlap-SAFE memcpy (textbook libc: overlap is UB). ReactOS memcpy.c handles it like memmove — must replicate or kernel callers relying on it break"
+reference = "sdk/lib/crt/mem/memcpy.c"
+fuzz_domain = ["disjoint", "dst < src overlap", "dst > src overlap", "dst == src", "n == 0", "n 1..256", "non-ASCII ± 😀"]
+
+[symbols.future_memset]
+c_signature = "void* __cdecl future_memset(void* src, int val, size_t count)"
+family = "mem"
+slice_pattern = "set_raw"
+core_fn = "mem::set"
+return_collapse = "ret_dst"
+inout_effects = "src[0..count] = val as u8; returns src"
+preserved_misfeature = "none (textbook; val truncated to u8)"
+reference = "sdk/lib/crt/mem/memset.c"
+fuzz_domain = ["count==0", "count==1", "typical", "val>255 (trunc)", "val<0", "non-ASCII ± 😀"]
+
+[symbols.future_qsort]
+c_signature = "void future_qsort(void *a, size_t n, size_t es, int (__cdecl *cmp)(const void*, const void*))"
+family = "sort"
+slice_pattern = "sort"
+core_fn = "(bespoke: cabi::qsort_rs — Bentley-McIlroy, no pure core)"
+return_collapse = "void"
+inout_effects = "a[0..n*es] sorted in place per cmp"
+preserved_misfeature = "Bentley-McIlroy (Engineering a Sort Function): median-of-3 (ninther for n>40), insertion-sort for n<7 + the no-swap fast path, equal keys partitioned to both ends then vecswap'd to the middle, recurse-left/iterate-right; UNSTABLE — equal-key final order IS this exact element-swap sequence (replicated faithfully; the swaptype long/byte choice is result-irrelevant so the port byte-swaps)"
+reference = "sdk/lib/crt/stdlib/qsort.c"
+fuzz_domain = ["n 0..60", "es 1/2/3/4/8/12", "small alphabet (many ties → equal-key order)", "full-byte keys (distinct)", "first-byte-only comparator (heavy ties)", "n<7 insertion path", "n>40 ninther path", "already/reverse sorted", "non-ASCII ± 😀"]
+
+[symbols.future_rand]
+c_signature = "int future_rand(void)"
+family = "rand"
+slice_pattern = "rand_step"
+core_fn = "rng::step"
+return_collapse = "rand"
+inout_effects = "advances the hidden LCG state (cabi RAND_STATE); returns (state>>16) & RAND_MAX"
+preserved_misfeature = "LCG next = next*0x5deece66d + 11; returns bits 16..30 (RAND_MAX=0x7fff, NOT the host 0x7fffffff); non-reentrant hidden static (AtomicU64, single-threaded-equivalent)"
+reference = "sdk/lib/crt/stdlib/rand_nt.c"
+fuzz_domain = ["fresh (state 0)", "after srand(seed)", "long sequence", "srand resets the sequence", "non-ASCII ± 😀"]
+
+[symbols.future_srand]
+c_signature = "void future_srand(unsigned int seed)"
+family = "rand"
+slice_pattern = "rand_seed"
+core_fn = "rng::seed"
+return_collapse = "void"
+inout_effects = "RAND_STATE = seed (zero-extended u32 → u64)"
+preserved_misfeature = "seed zero-extended into the 64-bit state with NO scrambling (next = seed directly)"
+reference = "sdk/lib/crt/stdlib/rand_nt.c"
+fuzz_domain = ["seed 0", "seed 1", "seed large", "reseed mid-sequence", "non-ASCII ± 😀"]
+
+[symbols.future_strcat]
+c_signature = "char* future_strcat(char *s, const char *append)"
+family = "string"
+slice_pattern = "strcat_like"
+core_fn = "string::cat"
+return_collapse = "strfam"
+inout_effects = "append's content + NUL written at s + strlen(s); returns s"
+preserved_misfeature = "no bounds check (tcscat.h); appends through+incl. NUL at the existing terminator"
+reference = "sdk/lib/crt/string/strcat.c"
+fuzz_domain = ["empty dst", "empty append", "both nonempty", "high bytes", "non-ASCII ± 😀"]
+
+[symbols.future_strcpy]
+c_signature = "char* future_strcpy(char *to, const char *from)"
+family = "string"
+slice_pattern = "strcpy_like"
+core_fn = "string::cpy"
+return_collapse = "strfam"
+inout_effects = "to ← from content + NUL; returns to (caller guarantees buffer, like libc — no bounds)"
+preserved_misfeature = "no bounds check (tcscpy.h trusts the dst buffer); copies through and incl. the terminating NUL"
+reference = "sdk/lib/crt/string/strcpy.c"
+fuzz_domain = ["empty", "len 1..64", "embedded high bytes", "non-ASCII ± 😀"]
+
+[symbols.future_strncat]
+c_signature = "char* future_strncat(char *dst, const char *src, size_t n)"
+family = "string"
+slice_pattern = "strncat_like"
+core_fn = "string::ncat"
+return_collapse = "strfam"
+inout_effects = "appends min(strlen(src),n) chars at dst+strlen(dst) then ALWAYS a NUL; n==0 → nothing (not even NUL); returns dst"
+preserved_misfeature = "n==0 writes nothing at all (no terminator) and returns dst unchanged (tcsncat.h); otherwise always terminates after ≤n appended"
+reference = "sdk/lib/crt/string/strncat.c"
+fuzz_domain = ["n==0", "n < srclen (trunc + NUL)", "n >= srclen (full + NUL)", "empty dst", "empty src", "non-ASCII ± 😀"]
+
+[symbols.future_strncpy]
+c_signature = "char *future_strncpy(char *dst, const char *src, size_t n)"
+family = "string"
+slice_pattern = "dst_fixed_n"
+core_fn = "string::ncpy"
+return_collapse = "ret_dst"
+inout_effects = "writes dst[0..n]: copy min(strlen(src),n); if src shorter, pad rest with 0; if n reached first, NO terminator"
+preserved_misfeature = "no NUL-termination when src len >= n (the classic strncpy footgun) — tcsncpy.h"
+reference = "sdk/lib/crt/string/tcsncpy.h"
+fuzz_domain = ["src shorter than n (pad path)", "src len == n (no-term)", "src len > n (truncate, no-term)", "n == 0 (no write at all)", "src empty", "non-ASCII ± 😀"]
+
+[symbols.future_strnlen]
+c_signature = "size_t future_strnlen(const char *str, size_t maxlen)"
+family = "string"
+slice_pattern = "nul_in_maxlen"
+core_fn = "string::len_of"
+return_collapse = "usize"
+inout_effects = "none"
+preserved_misfeature = "NULL→0 (tcsnlen.h guard); never reads past maxlen; result = min(strlen,maxlen)"
+reference = "sdk/lib/crt/string/tcsnlen.h"
+fuzz_domain = ["NULL", "empty", "shorter than cap", "exactly cap", "no NUL within cap", "cap==0", "non-ASCII ± 😀"]
+
+[symbols.future_strtok]
+c_signature = "char *future_strtok(char *str, const char *delim)"
+family = "string"
+slice_pattern = "tok_static"
+core_fn = "strtok::next_token"
+return_collapse = "strtok"
+inout_effects = "writes NUL over the terminating delimiter in the caller buffer; resumes from a process-global saved pointer when str==NULL"
+preserved_misfeature = "non-reentrant hidden state (genuine thread_data_t::strtok_next → here a process-global AtomicPtr, single-threaded-equivalent); str==NULL && saved==NULL → NULL; no-token path returns NULL WITHOUT updating saved (stale pointer persists); token-to-end leaves saved on the terminating NUL; NULL delim is C UB (never fuzzed)"
+reference = "sdk/lib/crt/string/strtok.c"
+fuzz_domain = ["leading delims", "trailing delims", "consecutive delims (empty tokens skipped)", "no delim in str (one token)", "empty str", "delim not present", "full re-tokenize via NULL calls", "single char", "str all delims", "non-ASCII ± 😀"]
+
+[symbols.future_strtok_s]
+c_signature = "char *future_strtok_s(char *str, const char *delim, char **ctx)"
+family = "string"
+slice_pattern = "tok_ctx"
+core_fn = "strtok::next_token"
+return_collapse = "strtok"
+inout_effects = "writes NUL over the terminating delimiter; *ctx updated to the resume point (incl. on the no-token path: *ctx = str-at-NUL); reentrant (explicit ctx)"
+preserved_misfeature = "param validation (delim!=NULL, ctx!=NULL, str!=NULL||*ctx!=NULL) → NULL (MSVCRT_CHECK_PMT, _LIBCNT_ = bare predicate, no handler); UNLIKE strtok/wcstok the no-token path DOES set *ctx = str (pointer to the NUL); resumes from *ctx when str==NULL"
+reference = "sdk/lib/crt/string/strtok_s.c"
+fuzz_domain = ["as strtok + explicit ctx threading", "delim NULL → NULL", "ctx NULL → NULL", "str NULL && *ctx NULL → NULL", "str NULL && *ctx valid (resume)", "no-token sets *ctx at NUL", "non-ASCII ± 😀"]
+
+[symbols.future_tolower]
+c_signature = "int future_tolower(int _C)"
+family = "string"
+slice_pattern = "case_tolower"
+core_fn = "casemap::tolower_ascii"
+return_collapse = "casemap"
+inout_effects = "none (pure scalar)"
+preserved_misfeature = "fold DECISION uses signed-char low byte ((char)_C) but returns FULL int +32: tolower(0x141)==0x161; low-byte>=0x80 (neg as signed char) returned unchanged regardless of high bits"
+reference = "sdk/lib/crt/string/tolower_nt.c"
+fuzz_domain = ["'A'..'Z'", "'a'..'z' (noop)", "non-alpha", "0", "negative _C", ">0xFF _C (0x141→0x161)", "low byte 0x80-0xFF (unchanged)", "non-ASCII ± 😀"]
+
+[symbols.future_toupper_nt_mb]
+c_signature = "int __cdecl future_toupper_nt_mb(int _C)"
+family = "string"
+slice_pattern = "toupper_mb"
+core_fn = "mbcp::toupper_nt_mb"
+return_collapse = "mbcp"
+inout_effects = "none (pure): low byte → decode → upcase → re-encode → packed return"
+preserved_misfeature = "packs the multibyte result: mbSize==2 → chr[1]|chr[0]<<8, ==1 → chr[0], else (WCHAR)_C; single-byte CP ⇒ always the ==1 branch (upcased byte, '?' if upcase escapes CP1252 e.g. µ→Μ); the ==2 DBCS branch is structurally present but unexercised"
+reference = "sdk/lib/crt/string/toupper_nt_mb.c"
+fuzz_domain = ["a-z/A-Z", "non-alpha", "0x80-0xFF (Latin-1 upcase, ÿ→Ÿ→'?', µ→Μ→'?')", "0x00", "negative _C (low byte)", ">0xFF _C (low byte only)", "non-ASCII ± 😀"]
+
+[symbols.future_towupper]
+c_signature = "wint_t future_towupper(wint_t _C)"
+family = "string"
+slice_pattern = "case_towupper"
+core_fn = "mbcp::upcase"
+return_collapse = "casemap"
+inout_effects = "none (pure scalar)"
+preserved_misfeature = "NLS upcase = RtlUpcaseUnicodeChar((WCHAR)_C); default-install model = CP1252/Rtl (shared with Wave E2 toupper_nt_mb): a..z & Latin-1 À-range -= 0x20, ÿ→Ÿ, µ→Μ, Š/Œ/Ž ligatures; (WCHAR) truncates _C to 16-bit"
+reference = "sdk/lib/crt/string/towupper_nt.c"
+fuzz_domain = ["a-z/A-Z", "0x80-0xFF Latin-1 upcase", "ÿ(0xFF→0x178)", "µ(0xB5→0x39C)", "š/œ/ž", "non-alpha", "0", ">0xFFFF _C (WCHAR-trunc)", "non-ASCII ± 😀"]
+
+[symbols.future_wcsncpy]
+c_signature = "wchar_t* future_wcsncpy(wchar_t *dst, const wchar_t *src, size_t n)"
+family = "wstring"
+slice_pattern = "wdst_fixed_n"
+core_fn = "string::ncpy"
+return_collapse = "ret_dst"
+inout_effects = "writes dst[0..n] (u16): copy min(wcslen(src),n); pad 0 if src shorter; NO terminator if n reached first"
+preserved_misfeature = "no NUL-termination when src len >= n (the strncpy footgun) — tcsncpy.h, wide"
+reference = "sdk/lib/crt/string/wcsncpy.c"
+fuzz_domain = ["src < n (pad)", "src == n (no-term)", "src > n (trunc no-term)", "n==0", "src empty", "non-ASCII ± 😀"]
+
+[symbols.future_wcsnlen]
+c_signature = "size_t future_wcsnlen(const wchar_t *str, size_t count)"
+family = "wstring"
+slice_pattern = "wnul_in_maxlen"
+core_fn = "string::len_of"
+return_collapse = "usize"
+inout_effects = "none"
+preserved_misfeature = "NULL→0 (tcsnlen.h); never reads past count; min(wcslen,count)"
+reference = "sdk/lib/crt/string/wcsnlen.c"
+fuzz_domain = ["NULL", "empty", "shorter than cap", "exactly cap", "no NUL within cap", "cap==0", "non-ASCII ± 😀"]
+
+[symbols.future_wcstok]
+c_signature = "wchar_t *future_wcstok(wchar_t *str, const wchar_t *delim)"
+family = "wstring"
+slice_pattern = "wtok_static"
+core_fn = "strtok::next_token"
+return_collapse = "strtok"
+inout_effects = "wcstok_s(str, delim, &hidden); hidden = process-global AtomicPtr (genuine thread_data_t::wcstok_next)"
+preserved_misfeature = "non-reentrant hidden state; str==NULL && saved==NULL → NULL; no-token path returns NULL WITHOUT updating saved (wcstok_s asymmetry inherited); NULL delim C UB (never fuzzed)"
+reference = "sdk/lib/crt/wstring/wcstok.c"
+fuzz_domain = ["as strtok over wide", "leading/trailing/consecutive delims", "no delim", "empty", "full re-tokenize via NULL calls", "non-ASCII ± 😀"]
+
+[symbols.future_wcstok_s]
+c_signature = "wchar_t *future_wcstok_s(wchar_t *str, const wchar_t *delim, wchar_t **next_token)"
+family = "wstring"
+slice_pattern = "wtok_ctx"
+core_fn = "strtok::next_token"
+return_collapse = "strtok"
+inout_effects = "as strtok_s over u16, BUT the no-token path leaves *next_token UNCHANGED (Wine asymmetry vs strtok_s); _set_errno(EINVAL) on bad params is a no-op under _LIBCNT_"
+preserved_misfeature = "param validation → NULL (+ _set_errno EINVAL, _LIBCNT_ no-op); no-token path does NOT update *next_token (differs from strtok_s which sets *ctx); strchrW = wcschr (matches the terminator for c==0, never reached under the *str&& guard)"
+reference = "sdk/lib/crt/wstring/wcstok.c"
+fuzz_domain = ["as strtok_s over wide", "delim NULL → NULL", "next_token NULL → NULL", "str NULL && *next_token NULL → NULL", "no-token leaves *next_token unchanged", "non-ASCII ± 😀"]
+
+[symbols.future_wcstombs]
+c_signature = "size_t future_wcstombs(char *mbstr, const wchar_t *wcstr, size_t count)"
+family = "wstring"
+slice_pattern = "wcstombs"
+core_fn = "mbcp::wcstombs"
+return_collapse = "mbcp"
+inout_effects = "mbstr=NULL → query, returns wcslen(wcstr); else writes min(wcslen,count) encoded bytes (NO NUL), returns that count"
+preserved_misfeature = "NO NUL termination; unmappable wchar → '?'; query returns Size; single-byte CP ⇒ bytes == wchar length"
+reference = "sdk/lib/crt/string/wcstombs_nt.c"
+fuzz_domain = ["mbstr=NULL (query)", "count < wcslen", "count >= wcslen", "empty wcstr", "unmappable wchars", "non-ASCII ± 😀"]
+
+[symbols.future_wctomb]
+c_signature = "int future_wctomb(char *mbchar, wchar_t wchar)"
+family = "wstring"
+slice_pattern = "wctomb"
+core_fn = "mbcp::wctomb"
+return_collapse = "mbcp"
+inout_effects = "mbchar=NULL → 0; else *mbchar = encoded byte ('?' if unrepresentable), returns 1"
+preserved_misfeature = "single-byte CP ⇒ always Size==1 (RtlUnicodeToMultiByteN writes the default char '?' for unmappable and still counts it); NULL → 0 (state-independent marker)"
+reference = "sdk/lib/crt/string/wcstombs_nt.c"
+fuzz_domain = ["mbchar=NULL", "ASCII wchar", "0xA0-0xFF (identity)", "CP1252 0x80-0x9F target codepoints", "unmappable → '?'", "non-ASCII ± 😀"]

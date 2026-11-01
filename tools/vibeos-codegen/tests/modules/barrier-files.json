@@ -1,0 +1,9 @@
+{
+  "plain.rs": "pub static mut A: u32 = 0;\npub static mut Duplicate: u8 = 0;\n",
+  "z.rs": "pub static mut Duplicate: u16 = 0;\npub static mut PREFIX: u8 = 0;\n",
+  "amd64/data.rs": "pub static mut Wide: u64 = 0;\n",
+  "arm64/data.rs": "pub static mut Arm: u64 = 0;\n",
+  "kd64/old.rs": "pub static mut SkippedModule: u8 = 0;\n",
+  "old_translations/old.rs": "pub static mut Dead: u32 = 0;\n",
+  "backup.bak.rs": "pub static mut Backup: u32 = 0;\n"
+}
