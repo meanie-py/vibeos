@@ -8,7 +8,12 @@ Its one red, `lint:source-deferred` SCANNER_ERROR, was a vibeos-lint race (verif
 walked cargo's `target/`), fixed in the same push. Spend: **$0.92** of the $5 Haiku
 budget ($4.08 left). Every paid run is in `tools/rustconv/.responses/2026103*`, and the
 ten modules are hand-banked whole.
-- **Next:** wait for merge-integrator's verdict on the push.
+- **Graded in the guest (2026-11-01):** `tools/payloads/modrun/suites/setupapi.yaml` passes on
+  i386/amd64/arm64. It found two C bugs that setupapi-rust had copied: AddReg append stores
+  heap garbage, and DelReg DELSTRING overruns its heap block, which crashed the i386 oracle.
+  Both are fixed in install.rs and submitted after af8e22bafeb.
+- **Next:** merge-integrator's verdicts on both pushes. Still open: the file-queue copy failure
+  on the live boot (roadmap registry), shared by the C.
 - **Owed:** the setupapi modrun suite against its own C (AGENTS step 6:
   `tools/payloads/modrun/suites/setupapi.yaml`).
 - **Gotcha:** the Bash tool's `grep` is ugrep with `-I`, and it silently skips ISO-8859

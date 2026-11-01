@@ -1676,6 +1676,16 @@ count or one multiplied by `size_of` (baseline empty).
 of its face-name shifts with the C's argument order and the C's byte count, so each moved the
 string the wrong way by twice its length (`scan_silent_failures` caught the `size_of` count;
 nothing catches the order). Read every `copy`/`copy_nonoverlapping` against its C call.
+**The C can be the one that is wrong, and a faithful translation copies it.** setupapi
+install.c `delete_multi_sz_value` allocated `size * 2` BYTES and then set `dst = buffer + size`
+on a `WCHAR *`. That is `size` WCHARs, which is exactly the end of the block, so every kept
+string was written past the allocation, and `RegSetValueExW` got a WCHAR count as its byte
+count. Its sibling `append_multi_sz_value` wrote `total + sizeof(WCHAR)` where `total` already
+counted the final NUL. That stored one WCHAR of uninitialized heap in the registry, and it read
+back differently every boot. setupapi-rust reproduced both line for line. The modrun setupapi
+suite found the second one when the C and Rust sizes disagreed, and the disagreement then
+flipped direction on the next boot. **When a C/Rust diff flips direction between runs, look
+for uninitialized memory in BOTH**: dump raw bytes, not the decoded value.
 
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 
