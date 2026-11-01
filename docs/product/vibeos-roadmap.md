@@ -6765,15 +6765,14 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   realtime threads carrying a decrement because balmgr's `THREAD_BOOST_PRIORITY` was an invented
   23 (C: `LOW_REALTIME_PRIORITY - 1`), so the starvation scan boosted dynamic threads INTO the
   realtime range, where they never decay; a per-writer tripwire named it (pri=23 base=8 dec=15).
-  (a) OWED: i386 `MI_WRITE_VALID_PTE` over a valid PDE ×4 at `i386/init.rs:394` (PDEs
-  c0300fbc/fe8/fec/ff0 = VA 0xEF000000, 0xFE800000-0xFF000000; old PFNs 0x4176-9), 2 GiB UEFI
-  guest only. Inferred, not yet confirmed against the descriptor list: freeldr maps every region
-  below `LoaderPagesSpanned` at `KSEG0|PA` (`MempSetupPagingForRegion`), and OVMF's permanent
-  regions near the top of 2 GiB land inside the nonpaged-system VA that the single
-  `[MmNonPagedSystemStart, MmNonPagedPoolEnd)` loop re-maps. The Rust predates upstream #8613
-  (4cba65d760a, System PTEs moved to `KSEG0 + MmBootImageSize`), but that placement would not
-  survive this layout either, so this is a design fix, not a port. **Next:** (a), then the
-  loader/FS/driver tail. `debug_assert!` is gated on
+  (a) FIXED 2026-11-01: i386 `MI_WRITE_VALID_PTE` over a valid PDE x4 at `i386/init.rs`
+  (PDEs c0300fbc/fe8/fec/ff0 = VA 0xFBC00000, 0xFE800000-0xFF3FFFFF), 2 GiB UEFI guest only.
+  The earlier inference (KSEG0-mapped firmware regions) was WRONG: a probe showed all four old
+  tables held **0 valid PTEs**. freeldr's `MempAllocatePTE` allocated the KSEG0 twin table for
+  every identity PDE, so OVMF's identity-only regions near the top of 2 GiB left valid EMPTY
+  kernel PDEs inside the nonpaged-system range. `winldr_i386.rs` now allocates the kernel table
+  only when a KernelMapping region needs it (divergence from the C, commented). 2 GiB boot: 0
+  asserts, desktop (`20261101-133844-znu7bcj0-smoke-i386`). **Next:** the loader/FS/driver tail. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of
