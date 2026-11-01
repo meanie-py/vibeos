@@ -1,4 +1,5 @@
 mod binding_cli;
+mod module_cli;
 use std::path::{Path, PathBuf};
 use std::{fs, io::Write};
 use vibeos_codegen::{generate, generate_all, resources, GENERATORS};
@@ -23,6 +24,12 @@ Generators: apisets-table, bugcodes, bugcodes-h, error-tables, winerror-consts,
 
 Binding commands: com-macros, enum-consts, ioctl-consts, ks386-inc, ref-protos,
                   rpc-guards, delaylib. See tools/vibeos-codegen/README.md.
+
+Module commands: cnt, cohab-registry, global-barrier.
+  cnt writes three outputs; --output-dir redirects them.
+  cohab-registry and global-barrier default to stdout; --output/--check select files.
+  cohab-registry --report prints only its summary.
+  global-barrier --source-dir DIR explicitly selects a monolithic crate source root.
 
 Resource commands: hal-res, ntdll-res, ntoskrnl-res, win32k-res, committed-res.
 --all selects the text recipes above; resources require an explicit command/arch.
@@ -307,12 +314,15 @@ fn main() -> std::process::ExitCode {
             .iter()
             .chain(resources::NAMES)
             .chain(binding_cli::NAMES)
+            .chain(module_cli::NAMES)
         {
             println!("{name}");
         }
         return 0.into();
     }
-    match if binding_cli::selected(&args) {
+    match if module_cli::selected(&args) {
+        module_cli::run(args)
+    } else if binding_cli::selected(&args) {
         binding_cli::run(args)
     } else {
         parse(args).and_then(run)
