@@ -602,6 +602,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **i386 under `SPECIALPOOL=*` bugchecks `0x0F` SPIN_LOCK_ALREADY_OWNED in boot (open, found
+  2026-10-19, research).** Every allocation routed to special pool; i386 stops right after
+  `IopInitializeSystemDrivers` / `PiEnumerateDevice HTREE\ROOT\0`. Parameter 1 is lock
+  `0x80741810` (`ntoskrnl.exe+0x286810`, which the symbolizer puts inside kdbg-rust's
+  `KdbStack`, so an unnamed lock in .data next to it). Then a second `0x1E` (0xC0000028), and the
+  `[DBLFAULT]` EBP walk recurses through `_SehExceptHandler`/`RemoveFromWsList`, which looks
+  like the fault handler re-entering, not the original fault. amd64 and arm64 boot to the
+  desktop with the same tripwire. NOT handle biasing: the branch's pre-biasing tree
+  (`f759caa734a` + the self-test fix) fails identically, the same lock address included
+  (`20261031-221917-yzvuu66y` base, `20261031-221917-vxinhkgd` branch). That base already has
+  the NT 10.0 flip, so whether master fails too is UNVERIFIED. No i386 `SPECIALPOOL=*` run
+  existed before this one; until `74ba9bd59e4` the boot self-test failed every `*` run first.
 - **i386 double fault `0x7F/8` after netstack comes up (FIXED 2026-10-18, upstream-sync; was
   ~7% of i386 boots).** A kernel stack overflow, not the emulator: 1/20 on QEMU 11.0.50 and 2/20
   on 11.1.0 from the same media. netstack's `engine::worker` reserves a 7.3 KB frame (0x1c80) of
