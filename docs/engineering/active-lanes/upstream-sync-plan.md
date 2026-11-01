@@ -48,6 +48,26 @@ It has NOT been smoked locally; the integrator's cold gate is its first boot. Be
 resuming, check that it landed (`git merge-base --is-ancestor 1acc6748417 origin/master`) or read
 the integrator's classification and artifact dir, and fix forward.
 
+**BOUNCED 2026-11-01, LINT_FAIL — the first thing to do on resume.** Integrator batch 60
+(merged onto master `aa597d19355`, tag `integration-batch60-red`; gate
+`/tmp/vibeos-cli/20261101-000723-fkugq9ie-gate-i386+amd64+arm64`, which the migration wipes).
+Everything else was green: build, smoke x3 + net + bios, conformance x3, stortest x3. The one
+failing row is layout `size_check` DRIFT ("C headers vs committed asserts") on all 3 arches,
+because two kernel layouts changed in the headers and ntkrnl-sys was not regenerated:
+- `xdk/iotypes.h` `_DEVOBJ_EXTENSION` (upstream 167c0e97ce5) went from the 3-field public stub
+  to the full layout. i386 8→60, 64-bit 16→112.
+- `ndk/iotypes.h` `_EXTENDED_DRIVER_EXTENSION` (6eaa9a97e7a, KSE) gained
+  KseCallbacks/DvCallbacks/VerifierContext. i386 28→40, 64-bit 56→80.
+
+Repro: `.venv/bin/python sdk/lib/rust/ntkrnl-sys/verify_sizes.py --output-dir X`, then diff
+`X/size_check_<arch>.rs` against the committed file (those 4 lines are the only diff). Fix:
+1. Audit FIRST where iomgr-rust allocates and lays out the device object plus its
+   DEVOBJ_EXTENSION, and the driver object plus its extension.
+2. Ask whether any C still in the image now reads past what the Rust allocates.
+3. Then either port the fields (DEVOBJ_EXTENSION's are real NT layout; KSE's belong with the
+   KSE port item) or keep our layout and `#if` the new fields out, giving the reason.
+4. Then run generate_bindings.sh, verify_sizes.py and tools/verify_offsets.py, and resubmit.
+
 **Two silent hazards fired, and both arrived as clean merges.** (a) Spec stubs turned into
 real exports with no implementation: nine RtlFls*/NtUserPfn lines in `ntdll.spec`, plus
 wlanapi's WlanGetNetworkBssList. A link break waiting. Sweep every merged `.spec` for a `-stub`
