@@ -5828,9 +5828,7 @@ def test_cohab_cargo_linked_binary_ignores_cmake_staticlib(cohab_repo: Path, mon
     """user32_vista.dll is linked by its cargo cell from the crate as an rlib, while the
     CMake user32_vista_static target still builds libuser32_vista_rust.a beside it. That
     archive finishing after the cargo link is not a missed relink (arm64, 2026-11-01)."""
-    monkeypatch.setattr(
-        provenance, "cargo_module_rels", lambda repo: ["drivers/widget/widget.sys"]
-    )
+    monkeypatch.setattr(provenance, "cargo_module_rels", lambda repo: ["drivers/widget/widget.sys"])
     mod = cohab_repo / "build-arm64" / "drivers" / "widget"
     os.utime(mod / "libwidget_rust.a", (6000, 6000))
     assert _cohab(cohab_repo) == []
