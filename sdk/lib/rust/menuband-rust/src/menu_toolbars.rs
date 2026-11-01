@@ -130,22 +130,6 @@ const MAX_PATH_: usize = 260;
 const TRUE: BOOL = 1;
 const FALSE: BOOL = 0;
 
-/// commoncontrols.h — not in the island (nothing else ported here has needed it yet).
-// commoncontrols.h — not in the island (nothing else ported here has needed it yet).
-// shlobj.h `SHGetPathFromIDListW` — a real shell32 export; not in the island under this exact
-// spelling (the island only carries the internal `SHGetPathFromIDListWrapW`).
-// shtypes.h `StrRetToStrW` — declared here against `shellcom::STRRET`, matching
-// `IShellFolder::GetDisplayNameOf`'s own output type. The island's OWN `StrRetToStrW` takes its
-// own, differently-nominal `STRRET` (byte-identical layout, not the same Rust type), which is
-// why rustc warns about a signature mismatch on this redeclaration — harmless, same real ABI.
-// winuser.h `#define`s GetWindowLongPtrW/SetWindowLongPtrW to GetWindowLongW/SetWindowLongW on
-// 32-bit targets: user32 exports no *Ptr* entry points there, so the island has nothing to
-// offer on i386 and the build fails to resolve them. A local declaration shadows the island's
-// glob on 64-bit too, which keeps one spelling for all three arches. menu_desk_bar.rs and
-// menu_site.rs carry the same two declarations privately.
-extern "system" {
-}
-
 extern "system" {
     fn SHGetImageList(iImageList: INT, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
     fn SHGetPathFromIDListW(pidl: LPCITEMIDLIST, pszPath: LPWSTR) -> BOOL;

@@ -37,8 +37,6 @@ extern "C" {
 // Deterministic COM scaffold for CUserNotification; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -47,7 +45,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -336,15 +334,15 @@ unsafe extern "system" fn CUserNotification_WorkerWndProc(
     )
 }
 
+// winuser.h: on 32-bit the *Ptr forms are macros over the *Long* exports.
+#[cfg(not(target_pointer_width = "32"))]
+use crate::island::{GetWindowLongPtrW, SetWindowLongPtrW};
+#[cfg(target_pointer_width = "32")]
+use crate::island::{GetWindowLongW as GetWindowLongPtrW, SetWindowLongW as SetWindowLongPtrW};
+
 extern "system" {
     fn CopyIcon(icon: HICON) -> HICON;
-    #[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")]
-    fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
-    #[link_name = "LoadIconW"] fn LoadIcon(instance: HINSTANCE, name: LPCWSTR) -> HICON;
-    fn PlaySoundW(sound: LPCWSTR, module: HANDLE, flags: DWORD) -> BOOL;
     fn PostQuitMessage(exit_code: INT);
-    #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")]
-    fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
     fn Shell_NotifyIconW(message: DWORD, data: *mut NOTIFYICONDATAW) -> BOOL;
     fn lstrlenW(text: LPCWSTR) -> INT;
 }
@@ -507,6 +505,12 @@ impl Drop for CStringW {
 static CPP_COM_EMPTY_WSTR: [WCHAR; 1] = [0];
 
 use core::ffi::c_void;
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::PlaySoundW;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+use crate::island::LoadIconW as LoadIcon;
 // One declaration per external symbol: island.rs.
 use crate::island::DefWindowProcW;
 use crate::island::DestroyIcon;
@@ -593,7 +597,7 @@ pub unsafe fn CUserNotification_SetUpNotifyData_body(this: *mut CUserNotificatio
         (*pnid).hIcon = if !(*this).m_hIcon.is_null() {
             (*this).m_hIcon
         } else {
-            LoadIcon(core::ptr::null_mut(), IDI_WINLOGO)
+            (LoadIcon(core::ptr::null_mut(), IDI_WINLOGO)).cast()
         };
     }
 

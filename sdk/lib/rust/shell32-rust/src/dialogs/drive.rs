@@ -40,6 +40,8 @@ pub static CPP_COM_WSTR_F3A549CDECCE: [WCHAR; 7] = [
 ];
 
 use crate::prelude::*;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::drives_folder_tu::IsDriveFloppyW_RustBridge as IsDriveFloppyW;
 // One declaration per external symbol: island.rs.
 use crate::island::DialogBoxParamW;
 use crate::island::SHCreateThread;
@@ -48,11 +50,6 @@ use core::ffi::c_void;
 // ---- file-scope preamble (translated) ----
 
 extern "system" {
-    /// `drive.cpp:28` `extern BOOL IsDriveFloppyW(LPCWSTR)`. C++ linkage in
-    /// `dialogs/drvdefext.cpp`, so it is reached through the `EXTERN_C ... WINAPI` bridge
-    /// `CDrivesFolder.cpp:1500` already exports for `drives_folder.rs` and `drvdefext.rs`.
-    #[link_name = "IsDriveFloppyW_RustBridge"]
-    fn IsDriveFloppyW(pszDriveRoot: LPCWSTR) -> BOOL;
 }
 
 /// `drive.cpp:30-39`. FILE-LOCAL, so it is in no header and no island can carry it.

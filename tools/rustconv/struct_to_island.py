@@ -17,8 +17,8 @@ field names in the same order, the copy derives nothing the island's does not, a
 the crate `impl`s it. A `repr` that differs is swapped too and reported as a CORRECTION: it is
 the header's packing, which a hand copy drops. Anything else is listed and left for a human -- a
 field-list difference is either bindgen's union/bitfield spelling (`__bindgen_anon_1`) or a copy
-that is wrong, and telling those apart is reading, not matching. COM interfaces and classes are
-never touched: the island blocklists them, `shellcom` owns vtable ABI.
+that is wrong, and telling those apart is reading, not matching. COM interfaces (a `lpVtbl`
+record) are never touched: `shellcom` owns vtable ABI.
 """
 
 from __future__ import annotations
@@ -61,7 +61,8 @@ def _fields(body: str) -> list[str]:
 
 
 def _repr(attrs: str) -> str:
-    m = re.search(r"#\[repr\(([^)]*)\)\]", attrs)
+    # `.*`, not `[^)]*`: `repr(C, packed(2))` (winnt.h's pshpack2 IMAGE_DOS_HEADER) nests.
+    m = re.search(r"#\[repr\((.*)\)\]", attrs)
     return ",".join(sorted(p.strip() for p in m.group(1).split(","))) if m else ""
 
 
@@ -158,16 +159,23 @@ def plan(
     cands = []
     kept: list[str] = []
     local_names: set[str] = set()
+    local_fields: dict[str, list[str]] = {}
     for key, text in hand.items():
         for m in STRUCT.finditer(text):
             name = m.group("name")
             local_names.add(name)
+            local_fields.setdefault(name, _fields(text[m.end() - 1 : _body_end(text, m.end() - 1)]))
             if names is not None and name not in names:
-                continue
-            if re.match(r"[IC][A-Z]", name):
                 continue
             got = [islands[a].resolve(name) for a in ARCHES]
             if any(g is None for g in got):
+                continue
+            # A COM interface is a `{ lpVtbl }` record, and `shellcom` owns its vtable ABI. Tell
+            # it by that field, never by an `I`/`C` prefix: CIDA and CMINVOKECOMMANDINFO are
+            # plain data, and a name test kept four hand copies of each (2026-11-01).
+            if name.endswith("Vtbl") or any(
+                {"lpVtbl", "vtable_"} & set(_fields(b)) for _, b in got
+            ):
                 continue
             end = _body_end(text, m.end() - 1)
             body = text[m.end() - 1 : end]
@@ -216,6 +224,15 @@ def plan(
     swapped = {c[3] for c in cands}
     while True:
         held = {canon(n) for n in local_names - swapped} | (local_names - swapped)
+        # A kept copy can carry a name the island does not: control.rs's `AppletInfo` is
+        # wine/cpanel.h's `struct applet_info`, so CPlApplet.info would silently change type.
+        # Match it by its field list instead.
+        kept_shapes = {tuple(local_fields[n]) for n in local_names - swapped if local_fields[n]}
+        held |= {
+            n
+            for n, (_, b) in islands["amd64"].structs.items()
+            if _fields(b) and tuple(_fields(b)) in kept_shapes
+        }
         drop = set()
         for c in cands:
             if c[3] not in swapped:

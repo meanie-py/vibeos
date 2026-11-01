@@ -110,20 +110,7 @@ pub const fn MAKE_HRESULT(severity: DWORD, facility: DWORD, code: DWORD) -> HRES
     ((severity << 31) | (facility << 16) | code) as HRESULT
 }
 
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct CMINVOKECOMMANDINFO {
-    pub cbSize: DWORD,
-    pub fMask: DWORD,
-    pub hwnd: HWND,
-    pub lpVerb: LPCSTR,
-    pub lpParameters: LPCSTR,
-    pub lpDirectory: LPCSTR,
-    pub nShow: INT,
-    pub dwHotKey: DWORD,
-    pub hIcon: HANDLE,
-}
-pub type LPCMINVOKECOMMANDINFO = *mut CMINVOKECOMMANDINFO;
+pub use crate::island::{CMINVOKECOMMANDINFO, LPCMINVOKECOMMANDINFO};
 
 pub use crate::island::MENUITEMINFOW;
 

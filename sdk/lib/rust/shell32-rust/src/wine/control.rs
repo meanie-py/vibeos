@@ -16,6 +16,8 @@
 #![allow(non_camel_case_types)]
 
 use crate::types::*;
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::memset;
 // The crate's own functions: the definition is the declaration.
 use crate::shell32::shlexec::ShellExecuteW;
 // One declaration per external symbol: island.rs.
@@ -230,7 +232,6 @@ extern "system" {
 
 extern "C" {
     fn memmove(dest: PVOID, src: LPCVOID, n: SIZE_T) -> PVOID;
-    fn memset(dest: PVOID, c: INT, n: SIZE_T) -> PVOID;
     fn wcscmp(s1: LPCWSTR, s2: LPCWSTR) -> INT;
     fn _wtoi(s: LPCWSTR) -> INT;
     // uuid lib data symbols (GUIDs referenced by address)

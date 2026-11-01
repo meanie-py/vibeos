@@ -923,6 +923,19 @@ kind of residue (2026-10-17, about 30 crates):
   disagreed with their OWN crate's definition: shell32's `SHGetSetSettings` took shellord's
   bit-exact SHELLSTATE while every caller held the island's, and `SH_CreatePropertySheetPageEx`
   took a bare fn where the header says `DLGPROC`. Retype the definition to the header's types.
+- **A `#[link_name = "T"]` alias is the same symbol under another Rust name.** shell32's 99
+  `_RustBridge` aliases once bound C++ forwarders that have since moved into Rust, and kernel32
+  calls went through `#[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(..)` in 60 modules, each
+  with its own SIZE_T. `extern_to_use.py <src> --bridges` turns each into
+  `use crate::<home>::T as N;`, where home is the crate's own `#[no_mangle]` definition, or the
+  island when it declares T on all three arches. It never binds a crate fn that is not exported
+  under T (shell32's generic `cfs_folder::HeapAlloc` helper is not kernel32's), never rewrites
+  inside a `#[cfg]` extern block (an i386-only `GetWindowLongW` alias), and never touches T's
+  own module, where the bridge calls the real N. struct_to_island used to skip any `I`/`C` name
+  as COM; it skipped CIDA (7 copies, all missing shlobj.h's pshpack1) and CMINVOKECOMMANDINFO
+  too. COM is now told by a `lpVtbl` field. A kept copy under ANOTHER name (control.rs
+  `AppletInfo` = cpanel.h `applet_info`) now also holds every struct that embeds it, matched by
+  field list.
 - **ntdll-sys aliases are not the canonical spelling.** On 64-bit, `SIZE_T`/`WPARAM`/`LPARAM` are
   `u64`/`i64`, while most canonical declarations spell them `usize`/`isize`. They have the same
   width on every arch but are different Rust types. Rewrite each call site from rustc's own span

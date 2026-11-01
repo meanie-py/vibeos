@@ -38,8 +38,6 @@ extern "C" {
 // Deterministic COM scaffold for CCPLItemMenu; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -48,7 +46,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -377,6 +375,9 @@ pub struct SHELLEXECUTEINFOW {
 // the assembler; CControlPanelFolder.rs (the free-functions slice) is the designated owner --
 // see its header comment. Import by name instead of carrying a second copy.
 use crate::control_panel_folder_tu::{shvheader, ControlPanelSFHeader};
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
 // The crate's own functions: the definition is the declaration.
 use crate::wine::pidl::ILClone;
 use crate::wine::pidl::ILFree;
@@ -403,7 +404,6 @@ extern "system" {
 
 extern "C" {
     fn _ILIsSpecialFolder(pidl: LPCITEMIDLIST) -> BOOL;
-    #[link_name = "CPrinterFolder_CompareDetails_RustBridge"] fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
 }
 
@@ -497,6 +497,7 @@ use core::ffi::c_void;
 // Re-importing the same names through shellcom/types/win32 does not add anything the
 // prelude lacks -- it supplies them by a second path, and every one becomes ambiguous
 // at the use site. See prelude.rs for why this is "instead of", not "as well as".
+use crate::file_sys_enum::SHELL32_CompareDetails;
 use crate::prelude::*;
 // `IDropTarget` is COM/menu substrate: island's own (opaque, com_sys-shaped) glob-import
 // would otherwise win, and this file calls through its vtbl directly (needs the real,

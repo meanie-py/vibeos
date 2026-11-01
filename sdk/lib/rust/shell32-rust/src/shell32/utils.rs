@@ -1048,7 +1048,7 @@ pub unsafe extern "system" fn ShortSizeFormatW(
     StrFormatByteSizeW(((dwNumber) as i64), pszBuffer, 0x8FFF)
 }
 #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn SHOpenEffectiveToken(phToken: *mut HANDLE) -> BOOL {
+pub unsafe extern "system" fn SHOpenEffectiveToken(phToken: *mut HANDLE) -> BOOL {
     OpenEffectiveToken(TOKEN_QUERY | TOKEN_ADJUST_PRIVILEGES, phToken)
 }
 
@@ -1081,7 +1081,7 @@ pub unsafe extern "system" fn SHGetUserSessionId(mut hToken: HANDLE) -> DWORD {
     dwSessionId
 }
 #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn SHInvokePrivilegedFunctionW(
+pub unsafe extern "system" fn SHInvokePrivilegedFunctionW(
     pszName: PCWSTR,
     fn_: PRIVILEGED_FUNCTION,
     lParam: LPARAM,

@@ -12,6 +12,8 @@
 //! simply does not resolve — these are ports, not translations, and each records its source.
 
 use crate::prelude::*;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+pub use crate::island::PathRemoveFileSpecW as PathRemoveFileSpec;
 // The crate's own functions: the definition is the declaration.
 pub use crate::vista::RegLoadMUIStringW;
 pub use crate::wine::shlmenu::Shell_MergeMenus;
@@ -154,9 +156,6 @@ extern "system" {
     /// ole32.
     pub fn OleGetClipboard(ppDataObj: *mut *mut IDataObject) -> HRESULT;
     pub fn OleSetClipboard(pDataObj: *mut IDataObject) -> HRESULT;
-    /// shlwapi — the W form; the C++ spells it unsuffixed under UNICODE.
-    #[link_name = "PathRemoveFileSpecW"]
-    pub fn PathRemoveFileSpec(path: LPWSTR) -> BOOL;
     /// Rust `#[no_mangle]` def: droptargets/CRecyclerDropTarget.rs:658.
     pub fn CRecyclerDropTarget_CreateInstance_RustBridge(riid: REFIID, ppvOut: *mut LPVOID) -> HRESULT;
 }
