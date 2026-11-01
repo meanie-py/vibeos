@@ -72,12 +72,13 @@ probe calling through mingw's IUnknown-less C vtable (`scan_mingw_c_vtable`). ne
 connections is the guest's NIC having no Net-class driver and a non-GUID adapter name; filed
 in the roadmap registry for netstack, not this lane's to fix.
 
-Owed from acppage: regenerating it with today's generator drifts from what was bought (10
-bodies' contracts changed: its module entry points after the gModule reroute, and three page
-methods), so `port replay acppage` would refuse until they are re-bought. The regenerated tree
-was set aside, not applied: stash "cpp-cluster: acppage cppapp regen drift (WCHAR* table bug),
-set aside 2026-10-19". The WCHAR* table bug it showed is fixed in cppapp. The user approved the
-re-buy 2026-11-01.
+acppage's regen drift, owed since 2026-10-19, closed 2026-11-01 at $0: with today's
+cppapp the bought contracts match again (the drift was the WCHAR* table bug, since fixed), and
+`port replay acppage` takes every banked body. The regen brings its glue up to the generator:
+`Create()` re-points `m_psp.lParam`, the titled page init, the rendered `g_AllowedExtensions`.
+Its whole-module hand bank kept putting a model-written copy of that table back after
+integrate dropped it; `apply_hand` now drops rendered duplicates too. The stash
+"cpp-cluster: acppage cppapp regen drift" is superseded and can be dropped.
 
 stobject's review found three pipeline bugs, all fixed at the root: an invented GUID
 (`DECLARING_HEADER_ADDED` + `scan_guid_values`, which also caught acpi's and iomgr's), a

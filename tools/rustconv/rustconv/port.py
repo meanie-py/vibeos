@@ -1013,7 +1013,14 @@ def _drop_rendered_duplicates(path: Path, rendered: set[str]) -> list[str]:
             if c == ";" and depth == 0:
                 break
             j += 1
-        out.append(text[i : m.start()])
+        # The comment lines directly above describe the dropped item; they go with it.
+        start = m.start()
+        while True:
+            prev = max(text.rfind("\n", i, start - 1) + 1, i) if start > i else start
+            if start <= i or not text[prev : start - 1].lstrip().startswith("//"):
+                break
+            start = prev
+        out.append(text[i:start])
         i = j + 1
         if i < len(text) and text[i] == "\n":
             i += 1
@@ -7722,6 +7729,12 @@ def apply_hand(stem: str, early_only: bool = False) -> int:
         if h["name"] == "*":
             if text != h["text"]:
                 path.write_text(h["text"])
+            # A whole-module bank predates what cppapp renders since, and integrate's drop of
+            # the unit's copy ran before it: acppage's 2026-10 bank put a model-written
+            # g_AllowedExtensions back beside the rendered table after every replay.
+            dup = _drop_rendered_duplicates(path, _rendered_globals(modules.parent, stem))
+            if dup:
+                print(f"hand: {h['file']}: cpp_classes.rs renders {', '.join(dup)}; dropped")
             applied += 1
             continue
         # Applied-ness is judged at the item's OWN span below, never `h["text"] in text`
