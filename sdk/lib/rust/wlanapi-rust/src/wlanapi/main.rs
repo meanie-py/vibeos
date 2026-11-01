@@ -347,11 +347,11 @@ pub unsafe extern "system" fn WlanGetNetworkBssList(
     }
 
     let list = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<WLAN_BSS_LIST>() as SIZE_T) as PWLAN_BSS_LIST;
-    *ppWlanBssList = list;
     if list.is_null() {
         return ERROR_NOT_ENOUGH_MEMORY;
     }
     (*list).dwTotalSize = core::mem::size_of::<WLAN_BSS_LIST>() as DWORD;
+    *ppWlanBssList = list;
 
     UNIMPLEMENTED!();
     return ERROR_SUCCESS;

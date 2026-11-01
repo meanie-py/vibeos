@@ -1,0 +1,1 @@
+shell32: LOST export SHGetKnownFolderItem — implemented in wine/shellpath.c, which is commented out; no Rust fn
