@@ -316,20 +316,6 @@ extern "system" {
 //   * allocated with AllocateAndInitializeSid (8 subauthorities) so the caller releases it with FreeSid.
 extern "system" {
     fn RtlDowncaseUnicodeChar(SourceCharacter: u16) -> u16;
-    #[link_name = "AllocateAndInitializeSid"]
-    fn AcSidAllocateAndInitializeSid(
-        pIdentifierAuthority: *mut [u8; 6],
-        nSubAuthorityCount: u8,
-        dwSubAuthority0: u32,
-        dwSubAuthority1: u32,
-        dwSubAuthority2: u32,
-        dwSubAuthority3: u32,
-        dwSubAuthority4: u32,
-        dwSubAuthority5: u32,
-        dwSubAuthority6: u32,
-        dwSubAuthority7: u32,
-        pSid: *mut *mut c_void,
-    ) -> i32;
 }
 
 #[no_mangle]
@@ -362,8 +348,9 @@ pub unsafe extern "system" fn DeriveAppContainerSidFromAppContainerName(
     // SECURITY_APP_PACKAGE_AUTHORITY = {0,0,0,0,0,15}; SECURITY_APP_PACKAGE_BASE_RID = 2.
     let mut auth: [u8; 6] = [0, 0, 0, 0, 0, 15];
     let mut sid: *mut c_void = core::ptr::null_mut();
-    if AcSidAllocateAndInitializeSid(
-        &mut auth, 8, 2, w(0), w(1), w(2), w(3), w(4), w(5), w(6), &mut sid,
+    // SID_IDENTIFIER_AUTHORITY is `{ BYTE Value[6]; }`, the array's exact layout.
+    if AllocateAndInitializeSid(
+        (&raw mut auth).cast(), 8, 2, w(0), w(1), w(2), w(3), w(4), w(5), w(6), (&raw mut sid).cast(),
     ) == 0
     {
         return E_OUTOFMEMORY_HR;
