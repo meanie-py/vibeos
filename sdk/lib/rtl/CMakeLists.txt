@@ -42,6 +42,10 @@ list(APPEND SOURCE
     # env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
     # error.c — replaced by Rust implementation (sdk/lib/rust/rtl-error/)
     # exception.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
+    # fls.c (upstream-new 2026-10, bf45318bc5b) — PORT ITEM, not built: RtlFlsAlloc/Free/
+    #   GetValue/SetValue + RtlProcessFlsData. ntdll.spec keeps these as -stub until the
+    #   Rust lands (kernel32's FlsAlloc/FlsFree in Rust do not route through them yet).
+    #fls.c
     # generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
     # handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
     # heap.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/, Wave HEAP)
@@ -345,6 +349,9 @@ target_link_libraries(rtl PRIVATE ${RUST_RTL_RUST_LIB})
     #   `cabi`), which precedes rtl_vista on its link line. rtl_vista therefore
     #   compiles no C synchronization code — just the placeholder TU below — so
     #   the COLD ntdll_vista link the C files used to back is now 100% Rust.
+# ntuserpfn.c + ntuserdisp.s (upstream-new 2026-10, 479662b3f0c) — PORT ITEM, not built:
+#   RtlInitializeNtUserPfn / RtlRetrieveNtUserPfn (user32's client-callback tables).
+#   ntdll.spec keeps both as -stub and ntdll_vista.spec omits them until the Rust lands.
 list(APPEND SOURCE_VISTA
     rtl_vista_stub.c
     )

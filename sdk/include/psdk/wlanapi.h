@@ -29,32 +29,44 @@ extern "C" {
 #define WLAN_AVAILABLE_NETWORK_HOTSPOT2_ROAMING                   0x00000080
 #define WLAN_AVAILABLE_NETWORK_AUTO_CONNECT_FAILED                0x00000100
 
+#define WLAN_NOTIFICATION_SOURCE_NONE                             0
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+#define WLAN_NOTIFICATION_SOURCE_ONEX                             0x00000004
+#endif
+#define WLAN_NOTIFICATION_SOURCE_ACM                              0x00000008
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+#define WLAN_NOTIFICATION_SOURCE_MSM                              0x00000010
+#define WLAN_NOTIFICATION_SOURCE_SECURITY                         0x00000020
+#define WLAN_NOTIFICATION_SOURCE_IHV                              0x00000040
+#endif
+#if (NTDDI_VERSION >= NTDDI_WIN7)
+#define WLAN_NOTIFICATION_SOURCE_HNWK                             0x00000080
+#endif
+#define WLAN_NOTIFICATION_SOURCE_ALL                              0x0000FFFF
+
 #define WLAN_READ_ACCESS    (STANDARD_RIGHTS_READ | FILE_READ_DATA)
 #define WLAN_EXECUTE_ACCESS (STANDARD_RIGHTS_EXECUTE | FILE_EXECUTE | WLAN_READ_ACCESS)
 #define WLAN_WRITE_ACCESS   (STANDARD_RIGHTS_WRITE | FILE_WRITE_DATA | DELETE | WRITE_DAC | WLAN_READ_ACCESS | WLAN_EXECUTE_ACCESS)
 
-/* Enumerations */
-
 #if defined(__midl) || defined(__WIDL__)
-typedef [v1_enum] enum _DOT11_RADIO_STATE {
+#define V1_ENUM [v1_enum]
 #else
-typedef enum _DOT11_RADIO_STATE {
+#define V1_ENUM
 #endif
+
+/* Enumerations */
+typedef V1_ENUM enum _DOT11_RADIO_STATE {
     dot11_radio_state_unknown = 0,
     dot11_radio_state_on,
     dot11_radio_state_off
-} DOT11_RADIO_STATE; /* HACK: WIDL is broken, *PDOT11_RADIO_STATE; */
+} DOT11_RADIO_STATE /* HACK: WIDL is broken, *PDOT11_RADIO_STATE */;
 
-#if defined(__midl) || defined(__WIDL__)
-typedef [v1_enum] enum _WLAN_OPCODE_VALUE_TYPE {
-#else
-typedef enum _WLAN_OPCODE_VALUE_TYPE {
-#endif
+typedef V1_ENUM enum _WLAN_OPCODE_VALUE_TYPE {
     wlan_opcode_value_type_query_only = 0,
     wlan_opcode_value_type_set_by_group_policy,
     wlan_opcode_value_type_set_by_user,
     wlan_opcode_value_type_invalid
-} WLAN_OPCODE_VALUE_TYPE; /* HACK: WIDL is broken    , *PWLAN_OPCODE_VALUE_TYPE; */
+} WLAN_OPCODE_VALUE_TYPE /* HACK: WIDL is broken, *PWLAN_OPCODE_VALUE_TYPE */;
 
 typedef enum _WLAN_SECURABLE_OBJECT {
     wlan_secure_permit_list = 0,
@@ -82,20 +94,12 @@ typedef enum _WLAN_CONNECTION_MODE {
     wlan_connection_mode_invalid
 } WLAN_CONNECTION_MODE, *PWLAN_CONNECTION_MODE;
 
-#if defined(__midl) || defined(__WIDL__)
-typedef [v1_enum] enum _WLAN_IHV_CONTROL_TYPE {
-#else
-typedef enum _WLAN_IHV_CONTROL_TYPE {
-#endif
+typedef V1_ENUM enum _WLAN_IHV_CONTROL_TYPE {
     wlan_ihv_control_type_service,
     wlan_ihv_control_type_driver
-} WLAN_IHV_CONTROL_TYPE;  /* HACK , *PWLAN_IHV_CONTROL_TYPE; */
+} WLAN_IHV_CONTROL_TYPE /* HACK: WIDL is broken, *PWLAN_IHV_CONTROL_TYPE */;
 
-#if defined(__midl) || defined(__WIDL__)
-typedef [v1_enum] enum _WLAN_INTF_OPCODE {
-#else
-typedef enum _WLAN_INTF_OPCODE {
-#endif
+typedef V1_ENUM enum _WLAN_INTF_OPCODE {
     wlan_intf_opcode_autoconf_start                              = 0x000000000,
     wlan_intf_opcode_autoconf_enabled,
     wlan_intf_opcode_background_scan_enabled,
@@ -122,13 +126,9 @@ typedef enum _WLAN_INTF_OPCODE {
     wlan_intf_opcode_security_end                                = 0x2fffffff,
     wlan_intf_opcode_ihv_start                                   = 0x30000000,
     wlan_intf_opcode_ihv_end                                     = 0x3fffffff
-} WLAN_INTF_OPCODE; /* HACK: WIDL is broken    , *PWLAN_INTF_OPCODE; */
+} WLAN_INTF_OPCODE /* HACK: WIDL is broken, *PWLAN_INTF_OPCODE */;
 
-#if defined(__midl) || defined(__WIDL__)
-typedef [v1_enum] enum _WLAN_INTERFACE_STATE {
-#else
-typedef enum _WLAN_INTERFACE_STATE {
-#endif
+typedef V1_ENUM enum _WLAN_INTERFACE_STATE {
     wlan_interface_state_not_ready = 0,
     wlan_interface_state_connected,
     wlan_interface_state_ad_hoc_network_formed,
@@ -144,6 +144,69 @@ typedef enum _WLAN_INTERFACE_TYPE {
     wlan_interface_type_native_802_11,
     wlan_interface_type_invalid
 } WLAN_INTERFACE_TYPE, *PWLAN_INTERFACE_TYPE;
+
+typedef V1_ENUM enum _WLAN_NOTIFICATION_ACM {
+    wlan_notification_acm_start,
+    wlan_notification_acm_autoconf_enabled,
+    wlan_notification_acm_autoconf_disabled,
+    wlan_notification_acm_background_scan_enabled,
+    wlan_notification_acm_background_scan_disabled,
+    wlan_notification_acm_bss_type_change,
+    wlan_notification_acm_power_setting_change,
+    wlan_notification_acm_scan_complete,
+    wlan_notification_acm_scan_fail,
+    wlan_notification_acm_connection_start,
+    wlan_notification_acm_connection_complete,
+    wlan_notification_acm_connection_attempt_fail,
+    wlan_notification_acm_filter_list_change,
+    wlan_notification_acm_interface_arrival,
+    wlan_notification_acm_interface_removal,
+    wlan_notification_acm_profile_change,
+    wlan_notification_acm_profile_name_change,
+    wlan_notification_acm_profiles_exhausted,
+    wlan_notification_acm_network_not_available,
+    wlan_notification_acm_network_available,
+    wlan_notification_acm_disconnecting,
+    wlan_notification_acm_disconnected,
+    wlan_notification_acm_adhoc_network_state_change,
+    wlan_notification_acm_profile_unblocked,
+    wlan_notification_acm_screen_power_change,
+    wlan_notification_acm_profile_blocked,
+    wlan_notification_acm_scan_list_refresh,
+    wlan_notification_acm_operational_state_change,
+    wlan_notification_acm_end
+} WLAN_NOTIFICATION_ACM /* HACK: WIDL is broken, *PWLAN_NOTIFICATION_ACM */;
+
+#if (NTDDI_VERSION >= NTDDI_VISTA)
+typedef V1_ENUM enum _WLAN_NOTIFICATION_MSM {
+    wlan_notification_msm_start,
+    wlan_notification_msm_associating,
+    wlan_notification_msm_associated,
+    wlan_notification_msm_authenticating,
+    wlan_notification_msm_connected,
+    wlan_notification_msm_roaming_start,
+    wlan_notification_msm_roaming_end,
+    wlan_notification_msm_radio_state_change,
+    wlan_notification_msm_signal_quality_change,
+    wlan_notification_msm_disassociating,
+    wlan_notification_msm_disconnected,
+    wlan_notification_msm_peer_join,
+    wlan_notification_msm_peer_leave,
+    wlan_notification_msm_adapter_removal,
+    wlan_notification_msm_adapter_operation_mode_change,
+    wlan_notification_msm_link_degraded,
+    wlan_notification_msm_link_improved,
+    wlan_notification_msm_end
+} WLAN_NOTIFICATION_MSM /* HACK: WIDL is broken, *PWLAN_NOTIFICATION_MSM */;
+#endif
+
+#if (NTDDI_VERSION >= NTDDI_WIN7)
+typedef V1_ENUM enum _WLAN_HOSTED_NETWORK_NOTIFICATION_CODE {
+    wlan_hosted_network_state_change = 0x1000,
+    wlan_hosted_network_peer_state_change,
+    wlan_hosted_network_radio_state_change
+} WLAN_HOSTED_NETWORK_NOTIFICATION_CODE /* HACK: WIDL is broken, *PWLAN_HOSTED_NETWORK_NOTIFICATION_CODE */;
+#endif
 
 /* Types */
 typedef DWORD WLAN_REASON_CODE, *PWLAN_REASON_CODE;
@@ -304,6 +367,18 @@ DWORD WINAPI WlanConnect(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid,
 DWORD WINAPI WlanDisconnect(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid, PVOID pReserved);
 DWORD WINAPI WlanEnumInterfaces(IN HANDLE hClientHandle, PVOID pReserved, OUT PWLAN_INTERFACE_INFO_LIST *ppInterfaceList);
 DWORD WINAPI WlanGetAvailableNetworkList(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid, IN DWORD dwFlags, PVOID pReserved, OUT PWLAN_AVAILABLE_NETWORK_LIST *ppAvailableNetworkList);
+
+DWORD
+WINAPI
+WlanGetNetworkBssList(
+    _In_ HANDLE hClientHandle,
+    _In_ const GUID *pInterfaceGuid,
+    _In_opt_ const PDOT11_SSID pDot11Ssid,
+    _In_ DOT11_BSS_TYPE dot11BssType,
+    _In_ BOOL bSecurityEnabled,
+    _Reserved_ PVOID pReserved,
+    _Outptr_ PWLAN_BSS_LIST *ppWlanBssList);
+
 DWORD WINAPI WlanGetInterfaceCapability(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid, PVOID pReserved, OUT PWLAN_INTERFACE_CAPABILITY *ppCapability);
 DWORD WINAPI WlanDeleteProfile(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid, IN LPCWSTR strProfileName, PVOID pReserved);
 DWORD WINAPI WlanGetProfile(IN HANDLE hClientHandle, IN const GUID *pInterfaceGuid, IN LPCWSTR strProfileName, PVOID pReserved, OUT LPWSTR *pstrProfileXml, DWORD *pdwFlags, PDWORD pdwGrantedAccess);
