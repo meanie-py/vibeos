@@ -8630,7 +8630,8 @@ def test_difftest_covers_the_seh_layout_guardian(tmp_path: Path):
     (seh / "seh_layout.h").write_text("")
     argv = dict(difftest_mod.generated_checks(tmp_path))["layout:seh-i386"]
     assert argv[-1] == "--check"
-    assert argv[-2].endswith("gen_msvcrt_seh_layout.py")
+    assert argv[-2] == "seh-layout"
+    assert argv[0].endswith("tools/codegen")
 
 
 def test_difftest_a_stale_generated_header_fails_the_run(tmp_path, monkeypatch):

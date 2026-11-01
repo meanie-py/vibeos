@@ -1,113 +1,134 @@
-"""Controls for the ctype-table generator.
+"""Exercise the native ctype source/island derivation and independent COFF proof."""
 
-The generator's whole claim is that it does not TRANSCRIBE: it derives 514 values from
-ctype.c's own initializers against the msvcrt-sys island's mask values, and refuses to emit
-unless every one equals the byte the C compiler actually put in `ctype.c.obj`'s `.data`.
-Both halves of that claim need a control, because a proof that cannot fail is not a proof —
-a `prove()` that silently returned on mismatch would look exactly like a passing one.
-
-So: `evaluate` must resolve the abbreviations and the `_MSVCR_VER`-gated arms the way the
-build does, and `prove` must EXIT on a single wrong entry.
-"""
-
-from __future__ import annotations
-
-import sys
+import subprocess
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from gen_ctype_tables import ABBREV, VER_GATED, evaluate, initializer, prove
-
-# The real ctype.h bit positions, as the island reports them.
-MASKS = {
-    "_UPPER": 1,
-    "_LOWER": 2,
-    "_DIGIT": 4,
-    "_SPACE": 8,
-    "_PUNCT": 16,
-    "_CONTROL": 32,
-    "_BLANK": 64,
-    "_HEX": 128,
-}
+REPO = Path(__file__).resolve().parents[1]
+MASKS = dict(_UPPER=1, _LOWER=2, _DIGIT=4, _SPACE=8, _PUNCT=16, _CONTROL=32, _BLANK=64, _HEX=128)
 
 
-def test_the_abbreviations_resolve_to_the_island_values():
-    # ctype.c's own shorthand, from its header comment. `_S_|_C_` is a real entry.
-    vals = evaluate(["_S_|_C_", "_D_|_H_", "_U_|_H_", "0"], MASKS)
-    assert vals == [8 | 32, 4 | 128, 1 | 128, 0]
-
-
-def test_the_version_gated_arms_use_this_dlls_setting():
-    # At _MSVCR_VER=0: B110 is _BLANK, D120 is 4, and S140/L140/C140 are 0. Getting any of
-    # these from a different _MSVCR_VER silently reclassifies real characters.
-    vals = evaluate(["0x0028 | B110", "0x0010 | D120", "0x0020 | S140", "0x0010 | L140"], MASKS)
-    assert vals == [0x0028 | 64, 0x0010 | 4, 0x0020, 0x0010]
-
-
-def test_every_gated_name_is_resolvable():
-    # A name in VER_GATED that is neither a mask nor an integer would raise at eval time
-    # for one specific table entry — i.e. only when that arm is actually used.
-    for name, (value, _why) in VER_GATED.items():
-        assert value in MASKS or value.lstrip("-").isdigit(), (name, value)
-    for abbrev, real in ABBREV.items():
-        assert real in MASKS, (abbrev, real)
-
-
-def test_prove_rejects_a_single_wrong_entry():
-    """THE control. One byte off in 257 must be fatal, not a warning."""
-    derived = [0] * 257
-    compiled = [0] * 257
-    compiled[65] = 0x81  # the object says 'A' is _UPPER|_HEX; the derivation says 0
-    with pytest.raises(SystemExit) as e:
-        prove("MSVCRT__ctype", ["0"] * 257, derived, compiled)
-    assert "do NOT ship" in str(e.value)
-
-
-def test_prove_accepts_an_exact_match():
-    vals = list(range(257))
-    assert prove("MSVCRT__ctype", ["x"] * 257, vals, list(vals)) is None
-
-
-def test_an_out_of_range_entry_is_fatal():
-    with pytest.raises(SystemExit) as e:
-        evaluate(["0x1FFFF"], MASKS)
-    assert "does not fit a WORD" in str(e.value)
-
-
-def test_initializer_demands_exactly_257_entries():
-    # 256 would be the natural mistake — the table is 257 because index 0 is the EOF slot
-    # that `pctype[-1]` addresses. A short parse must fail loudly, not emit a short table.
-    src = "WORD MSVCRT__ctype [257] = {" + ", ".join(["0"] * 256) + "};"
-    with pytest.raises(SystemExit) as e:
-        initializer(src, "WORD MSVCRT__ctype [257]")
-    assert "expected 257" in str(e.value)
-
-
-def test_initializer_strips_the_c_row_comments():
-    src = (
-        "WORD MSVCRT__wctype[257] =\n{\n"
-        + ",\n".join([f"/* {i:02x} */ 0" for i in range(257)])
-        + "\n};"
+def run(root, *args):
+    return subprocess.run(
+        [str(REPO / "tools/codegen"), "--root", str(root), "ctype-tables", *map(str, args)],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    entries = initializer(src, "WORD MSVCRT__wctype[257]")
-    assert len(entries) == 257
-    assert all(e == "0" for e in entries)
 
 
-def test_the_committed_tables_still_match_the_c_and_the_object():
-    """End-to-end: the real ctype.c, the real island, and (when built) the real object.
-
-    This is the drift half. It is the same thing `vibeos-cli check` runs, kept here so a
-    `pytest tools/` alone still notices ctype.c moving under the committed Rust.
-    """
-    from gen_ctype_tables import BEGIN, END, build_block, island_masks
-
-    target = Path(__file__).resolve().parent.parent / (
-        "sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/ctype.rs"
+def fixture(root):
+    source = root / "dll/win32/msvcrt/ctype.c"
+    source.parent.mkdir(parents=True)
+    values = ["_S_|_C_", *["0"] * 256]
+    source.write_text(
+        "WORD MSVCRT__ctype [257] = {"
+        + ",".join(values)
+        + "};\n"
+        + "WORD MSVCRT__wctype[257] = {"
+        + ",".join(values)
+        + "};\n"
     )
+    island = root / "sdk/lib/rust/msvcrt-sys/src/bindgen_i386.rs"
+    island.parent.mkdir(parents=True)
+    island.write_text("".join(f"pub const {k}: u32 = {v};\n" for k, v in MASKS.items()))
+    tools = root / ".build-tools"
+    tools.mkdir()
+    (tools / "llvm-mingw").symlink_to(REPO / ".build-tools/llvm-mingw", target_is_directory=True)
+    return source, island
+
+
+def compile_object(root, wrong=False):
+    # Literal values are independently emitted by clang; the generator parses its
+    # own macro-bearing C source and must refuse one disagreement in this object.
+    values = [40, *[0] * 256]
+    if wrong:
+        values[65] = 129
+    text = "typedef unsigned short WORD;\n" + "\n".join(
+        f"WORD {name}[257] = {{" + ",".join(map(str, values)) + "};"
+        for name in ("MSVCRT__ctype", "MSVCRT__wctype")
+    )
+    src = root / "object.c"
+    src.write_text(text)
+    obj = root / "build-i386/dll/win32/msvcrt/CMakeFiles/msvcrt_static.dir/ctype.c.obj"
+    obj.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            str(REPO / ".build-tools/llvm-mingw/bin/clang"),
+            "--target=i686-w64-windows-gnu",
+            "-c",
+            str(src),
+            "-o",
+            str(obj),
+        ],
+        capture_output=True,
+        check=True,
+    )
+    assert obj.stat().st_size > 1028
+    return obj
+
+
+def test_real_committed_block_matches_source_island_and_local_object():
+    result = run(REPO, "--check")
+    assert result.returncode == 0, result.stderr
+
+
+def test_source_only_proof_is_explicit_and_emit_preserves_surroundings(tmp_path):
+    fixture(tmp_path)
+    result = run(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "NOT proven" in result.stderr
+    assert "514/514 values proven" not in result.stderr
+    target = tmp_path / "target.rs"
+    target.write_text(
+        "// prefix\n// <gen_ctype_tables BEGIN>\nstale\n// <gen_ctype_tables END>\n// tail\n"
+    )
+    assert run(tmp_path, "--emit", target).returncode == 0
     text = target.read_text()
-    have = text.split(BEGIN, 1)[1].split(END, 1)[0].strip()
-    assert have == build_block(island_masks()).strip()
+    assert text.startswith("// prefix\n") and text.endswith("\n// tail\n")
+    assert run(tmp_path, "--check", target).returncode == 0
+    assert run(tmp_path, "--emit", "-").stdout == result.stdout
+
+
+def test_compiled_object_proof_rejects_a_single_wrong_entry(tmp_path):
+    fixture(tmp_path)
+    compile_object(tmp_path)
+    result = run(tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert "514/514 values proven" in result.stderr
+    compile_object(tmp_path, wrong=True)
+    failed = run(tmp_path)
+    assert failed.returncode != 0
+    assert "do NOT ship" in failed.stderr
+    assert failed.stdout == ""
+
+
+@pytest.mark.parametrize("bad", ["unresolved", "0x1ffff", "/* unterminated"])
+def test_bad_source_cannot_replace_output(tmp_path, bad):
+    source, _ = fixture(tmp_path)
+    source.write_text(source.read_text().replace("_S_|_C_", bad, 1))
+    output = tmp_path / "keep.rs"
+    output.write_text("keep")
+    assert run(tmp_path, "--emit", output).returncode != 0
+    assert output.read_text() == "keep"
+
+
+def test_unrecognized_or_short_island_fails(tmp_path):
+    _, island = fixture(tmp_path)
+    island.write_text("// missing masks")
+    result = run(tmp_path)
+    assert result.returncode != 0 and "_UPPER" in result.stderr
+
+
+def test_object_from_another_checkout_is_refused(tmp_path):
+    root = tmp_path / "own"
+    root.mkdir()
+    fixture(root)
+    obj = compile_object(root)
+    other = tmp_path / "outside.obj"
+    obj.replace(other)
+    obj.symlink_to(other)
+    result = run(root)
+    assert result.returncode != 0
+    assert "outside checkout" in result.stderr

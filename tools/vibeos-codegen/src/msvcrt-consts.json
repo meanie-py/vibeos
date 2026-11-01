@@ -1,0 +1,1755 @@
+{
+  "arch": "amd64",
+  "includes": [
+    "errno.h",
+    "fcntl.h",
+    "share.h",
+    "stdio.h",
+    "sys/stat.h",
+    "sys/locking.h",
+    "sys/utime.h",
+    "io.h",
+    "time.h",
+    "process.h",
+    "\"windef.h\"",
+    "\"winbase.h\"",
+    "\"winnls.h\"",
+    "\"winternl.h\"",
+    "signal.h",
+    "float.h",
+    "\"wincon.h\"",
+    "\"ntstatus.h\"",
+    "\"winver.h\"",
+    "\"imagehlp.h\"",
+    "\"msvcrt.h\"",
+    "\"cxx.h\""
+  ],
+  "include_dirs": [
+    "sdk/include/wine",
+    "sdk/include",
+    "sdk/include/ddk",
+    "sdk/include/ndk",
+    "sdk/include/psdk",
+    "sdk/include/reactos",
+    "sdk/include/reactos/libs",
+    "sdk/include/vcruntime",
+    "sdk/include/winrt",
+    "build-amd64/sdk/include",
+    "build-amd64/sdk/include/psdk",
+    "build-amd64/sdk/include/ddk",
+    "build-amd64/sdk/include/dxsdk",
+    "build-amd64/sdk/include/reactos",
+    "build-amd64/sdk/include/reactos/mc",
+    "sdk/include/dxsdk",
+    "sdk/lib/pseh/include",
+    "dll/win32/msvcrt/include",
+    "dll/win32/msvcrt"
+  ],
+  "defines": [
+    "_MSVCR_VER=0",
+    "_WIN32_WINNT=0x601",
+    "WINVER=0x601",
+    "_CRTIMP=",
+    "__REACTOS__"
+  ],
+  "expressions": [
+    [
+      "const:_O_APPEND",
+      "_O_APPEND"
+    ],
+    [
+      "const:_O_BINARY",
+      "_O_BINARY"
+    ],
+    [
+      "const:_O_CREAT",
+      "_O_CREAT"
+    ],
+    [
+      "const:_O_EXCL",
+      "_O_EXCL"
+    ],
+    [
+      "const:_O_NOINHERIT",
+      "_O_NOINHERIT"
+    ],
+    [
+      "const:_O_RANDOM",
+      "_O_RANDOM"
+    ],
+    [
+      "const:_O_RDONLY",
+      "_O_RDONLY"
+    ],
+    [
+      "const:_O_RDWR",
+      "_O_RDWR"
+    ],
+    [
+      "const:_O_SEQUENTIAL",
+      "_O_SEQUENTIAL"
+    ],
+    [
+      "const:_O_SHORT_LIVED",
+      "_O_SHORT_LIVED"
+    ],
+    [
+      "const:_O_TEMPORARY",
+      "_O_TEMPORARY"
+    ],
+    [
+      "const:_O_TEXT",
+      "_O_TEXT"
+    ],
+    [
+      "const:_O_TRUNC",
+      "_O_TRUNC"
+    ],
+    [
+      "const:_O_U16TEXT",
+      "_O_U16TEXT"
+    ],
+    [
+      "const:_O_U8TEXT",
+      "_O_U8TEXT"
+    ],
+    [
+      "const:_O_WRONLY",
+      "_O_WRONLY"
+    ],
+    [
+      "const:_O_WTEXT",
+      "_O_WTEXT"
+    ],
+    [
+      "const:_SH_DENYNO",
+      "_SH_DENYNO"
+    ],
+    [
+      "const:_SH_DENYRD",
+      "_SH_DENYRD"
+    ],
+    [
+      "const:_SH_DENYRW",
+      "_SH_DENYRW"
+    ],
+    [
+      "const:_SH_DENYWR",
+      "_SH_DENYWR"
+    ],
+    [
+      "const:_LK_LOCK",
+      "_LK_LOCK"
+    ],
+    [
+      "const:_LK_RLCK",
+      "_LK_RLCK"
+    ],
+    [
+      "const:_LK_UNLCK",
+      "_LK_UNLCK"
+    ],
+    [
+      "const:_S_IEXEC",
+      "_S_IEXEC"
+    ],
+    [
+      "const:_S_IFCHR",
+      "_S_IFCHR"
+    ],
+    [
+      "const:_S_IFDIR",
+      "_S_IFDIR"
+    ],
+    [
+      "const:_S_IFIFO",
+      "_S_IFIFO"
+    ],
+    [
+      "const:_S_IFREG",
+      "_S_IFREG"
+    ],
+    [
+      "const:_S_IREAD",
+      "_S_IREAD"
+    ],
+    [
+      "const:_S_IWRITE",
+      "_S_IWRITE"
+    ],
+    [
+      "const:_IOEOF",
+      "_IOEOF"
+    ],
+    [
+      "const:_IOERR",
+      "_IOERR"
+    ],
+    [
+      "const:_IOMYBUF",
+      "_IOMYBUF"
+    ],
+    [
+      "const:_IOREAD",
+      "_IOREAD"
+    ],
+    [
+      "const:_IORW",
+      "_IORW"
+    ],
+    [
+      "const:_IOSTRG",
+      "_IOSTRG"
+    ],
+    [
+      "const:_IOWRT",
+      "_IOWRT"
+    ],
+    [
+      "const:_IOFBF",
+      "_IOFBF"
+    ],
+    [
+      "const:_IOLBF",
+      "_IOLBF"
+    ],
+    [
+      "const:_IONBF",
+      "_IONBF"
+    ],
+    [
+      "const:BUFSIZ",
+      "BUFSIZ"
+    ],
+    [
+      "const:TMP_MAX_S",
+      "TMP_MAX_S"
+    ],
+    [
+      "const:STDIN_FILENO",
+      "STDIN_FILENO"
+    ],
+    [
+      "const:STDOUT_FILENO",
+      "STDOUT_FILENO"
+    ],
+    [
+      "const:STDERR_FILENO",
+      "STDERR_FILENO"
+    ],
+    [
+      "const:CLOCKS_PER_SEC",
+      "CLOCKS_PER_SEC"
+    ],
+    [
+      "const:CREATE_ALWAYS",
+      "CREATE_ALWAYS"
+    ],
+    [
+      "const:CREATE_NEW",
+      "CREATE_NEW"
+    ],
+    [
+      "const:OPEN_ALWAYS",
+      "OPEN_ALWAYS"
+    ],
+    [
+      "const:OPEN_EXISTING",
+      "OPEN_EXISTING"
+    ],
+    [
+      "const:TRUNCATE_EXISTING",
+      "TRUNCATE_EXISTING"
+    ],
+    [
+      "const:GENERIC_READ",
+      "GENERIC_READ"
+    ],
+    [
+      "const:GENERIC_WRITE",
+      "GENERIC_WRITE"
+    ],
+    [
+      "const:DELETE",
+      "DELETE"
+    ],
+    [
+      "const:FILE_SHARE_DELETE",
+      "FILE_SHARE_DELETE"
+    ],
+    [
+      "const:FILE_SHARE_READ",
+      "FILE_SHARE_READ"
+    ],
+    [
+      "const:FILE_SHARE_WRITE",
+      "FILE_SHARE_WRITE"
+    ],
+    [
+      "const:FILE_ATTRIBUTE_DIRECTORY",
+      "FILE_ATTRIBUTE_DIRECTORY"
+    ],
+    [
+      "const:FILE_ATTRIBUTE_NORMAL",
+      "FILE_ATTRIBUTE_NORMAL"
+    ],
+    [
+      "const:FILE_ATTRIBUTE_READONLY",
+      "FILE_ATTRIBUTE_READONLY"
+    ],
+    [
+      "const:FILE_ATTRIBUTE_TEMPORARY",
+      "FILE_ATTRIBUTE_TEMPORARY"
+    ],
+    [
+      "const:FILE_FLAG_DELETE_ON_CLOSE",
+      "FILE_FLAG_DELETE_ON_CLOSE"
+    ],
+    [
+      "const:FILE_FLAG_RANDOM_ACCESS",
+      "FILE_FLAG_RANDOM_ACCESS"
+    ],
+    [
+      "const:FILE_FLAG_SEQUENTIAL_SCAN",
+      "FILE_FLAG_SEQUENTIAL_SCAN"
+    ],
+    [
+      "const:FILE_BEGIN",
+      "FILE_BEGIN"
+    ],
+    [
+      "const:FILE_CURRENT",
+      "FILE_CURRENT"
+    ],
+    [
+      "const:FILE_END",
+      "FILE_END"
+    ],
+    [
+      "const:FILE_TYPE_CHAR",
+      "FILE_TYPE_CHAR"
+    ],
+    [
+      "const:FILE_TYPE_DISK",
+      "FILE_TYPE_DISK"
+    ],
+    [
+      "const:FILE_TYPE_PIPE",
+      "FILE_TYPE_PIPE"
+    ],
+    [
+      "const:FILE_TYPE_UNKNOWN",
+      "FILE_TYPE_UNKNOWN"
+    ],
+    [
+      "const:INVALID_FILE_ATTRIBUTES",
+      "INVALID_FILE_ATTRIBUTES"
+    ],
+    [
+      "const:INVALID_SET_FILE_POINTER",
+      "INVALID_SET_FILE_POINTER"
+    ],
+    [
+      "const:MOVEFILE_COPY_ALLOWED",
+      "MOVEFILE_COPY_ALLOWED"
+    ],
+    [
+      "const:MAX_PATH",
+      "MAX_PATH"
+    ],
+    [
+      "const:DUPLICATE_SAME_ACCESS",
+      "DUPLICATE_SAME_ACCESS"
+    ],
+    [
+      "const:STD_ERROR_HANDLE",
+      "STD_ERROR_HANDLE"
+    ],
+    [
+      "const:STD_INPUT_HANDLE",
+      "STD_INPUT_HANDLE"
+    ],
+    [
+      "const:STD_OUTPUT_HANDLE",
+      "STD_OUTPUT_HANDLE"
+    ],
+    [
+      "const:RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO",
+      "RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO"
+    ],
+    [
+      "const:_P_WAIT",
+      "_P_WAIT"
+    ],
+    [
+      "const:_P_NOWAIT",
+      "_P_NOWAIT"
+    ],
+    [
+      "const:_P_OVERLAY",
+      "_P_OVERLAY"
+    ],
+    [
+      "const:_P_NOWAITO",
+      "_P_NOWAITO"
+    ],
+    [
+      "const:_P_DETACH",
+      "_P_DETACH"
+    ],
+    [
+      "const:CREATE_UNICODE_ENVIRONMENT",
+      "CREATE_UNICODE_ENVIRONMENT"
+    ],
+    [
+      "const:DETACHED_PROCESS",
+      "DETACHED_PROCESS"
+    ],
+    [
+      "const:STARTF_USESTDHANDLES",
+      "STARTF_USESTDHANDLES"
+    ],
+    [
+      "const:INFINITE",
+      "INFINITE"
+    ],
+    [
+      "const:WAIT_OBJECT_0",
+      "WAIT_OBJECT_0"
+    ],
+    [
+      "const:WAIT_TIMEOUT",
+      "WAIT_TIMEOUT"
+    ],
+    [
+      "const:WAIT_FAILED",
+      "WAIT_FAILED"
+    ],
+    [
+      "const:CP_ACP",
+      "CP_ACP"
+    ],
+    [
+      "const:MB_PRECOMPOSED",
+      "MB_PRECOMPOSED"
+    ],
+    [
+      "const:ERROR_SUCCESS",
+      "ERROR_SUCCESS"
+    ],
+    [
+      "const:NO_ERROR",
+      "NO_ERROR"
+    ],
+    [
+      "const:ERROR_ACCESS_DENIED",
+      "ERROR_ACCESS_DENIED"
+    ],
+    [
+      "const:ERROR_BROKEN_PIPE",
+      "ERROR_BROKEN_PIPE"
+    ],
+    [
+      "const:ERROR_FILE_NOT_FOUND",
+      "ERROR_FILE_NOT_FOUND"
+    ],
+    [
+      "const:ERROR_INVALID_HANDLE",
+      "ERROR_INVALID_HANDLE"
+    ],
+    [
+      "const:ERROR_INVALID_PARAMETER",
+      "ERROR_INVALID_PARAMETER"
+    ],
+    [
+      "const:ERROR_INSUFFICIENT_BUFFER",
+      "ERROR_INSUFFICIENT_BUFFER"
+    ],
+    [
+      "const:ERROR_ENVVAR_NOT_FOUND",
+      "ERROR_ENVVAR_NOT_FOUND"
+    ],
+    [
+      "const:ERROR_PROC_NOT_FOUND",
+      "ERROR_PROC_NOT_FOUND"
+    ],
+    [
+      "const:ERROR_ALREADY_EXISTS",
+      "ERROR_ALREADY_EXISTS"
+    ],
+    [
+      "const:ERROR_ARENA_TRASHED",
+      "ERROR_ARENA_TRASHED"
+    ],
+    [
+      "const:ERROR_BAD_DEVICE",
+      "ERROR_BAD_DEVICE"
+    ],
+    [
+      "const:ERROR_BAD_ENVIRONMENT",
+      "ERROR_BAD_ENVIRONMENT"
+    ],
+    [
+      "const:ERROR_BAD_FORMAT",
+      "ERROR_BAD_FORMAT"
+    ],
+    [
+      "const:ERROR_BAD_NETPATH",
+      "ERROR_BAD_NETPATH"
+    ],
+    [
+      "const:ERROR_BAD_NET_NAME",
+      "ERROR_BAD_NET_NAME"
+    ],
+    [
+      "const:ERROR_BAD_PATHNAME",
+      "ERROR_BAD_PATHNAME"
+    ],
+    [
+      "const:ERROR_BUSY",
+      "ERROR_BUSY"
+    ],
+    [
+      "const:ERROR_CANNOT_MAKE",
+      "ERROR_CANNOT_MAKE"
+    ],
+    [
+      "const:ERROR_CHILD_NOT_COMPLETE",
+      "ERROR_CHILD_NOT_COMPLETE"
+    ],
+    [
+      "const:ERROR_CURRENT_DIRECTORY",
+      "ERROR_CURRENT_DIRECTORY"
+    ],
+    [
+      "const:ERROR_DIR_NOT_EMPTY",
+      "ERROR_DIR_NOT_EMPTY"
+    ],
+    [
+      "const:ERROR_DISK_FULL",
+      "ERROR_DISK_FULL"
+    ],
+    [
+      "const:ERROR_DRIVE_LOCKED",
+      "ERROR_DRIVE_LOCKED"
+    ],
+    [
+      "const:ERROR_FAIL_I24",
+      "ERROR_FAIL_I24"
+    ],
+    [
+      "const:ERROR_FILENAME_EXCED_RANGE",
+      "ERROR_FILENAME_EXCED_RANGE"
+    ],
+    [
+      "const:ERROR_FILE_EXISTS",
+      "ERROR_FILE_EXISTS"
+    ],
+    [
+      "const:ERROR_INVALID_ACCESS",
+      "ERROR_INVALID_ACCESS"
+    ],
+    [
+      "const:ERROR_INVALID_BLOCK",
+      "ERROR_INVALID_BLOCK"
+    ],
+    [
+      "const:ERROR_INVALID_DRIVE",
+      "ERROR_INVALID_DRIVE"
+    ],
+    [
+      "const:ERROR_IO_DEVICE",
+      "ERROR_IO_DEVICE"
+    ],
+    [
+      "const:ERROR_LOCK_FAILED",
+      "ERROR_LOCK_FAILED"
+    ],
+    [
+      "const:ERROR_LOCK_VIOLATION",
+      "ERROR_LOCK_VIOLATION"
+    ],
+    [
+      "const:ERROR_MAX_THRDS_REACHED",
+      "ERROR_MAX_THRDS_REACHED"
+    ],
+    [
+      "const:ERROR_NESTING_NOT_ALLOWED",
+      "ERROR_NESTING_NOT_ALLOWED"
+    ],
+    [
+      "const:ERROR_NETWORK_ACCESS_DENIED",
+      "ERROR_NETWORK_ACCESS_DENIED"
+    ],
+    [
+      "const:ERROR_NOT_ENOUGH_QUOTA",
+      "ERROR_NOT_ENOUGH_QUOTA"
+    ],
+    [
+      "const:ERROR_NOT_LOCKED",
+      "ERROR_NOT_LOCKED"
+    ],
+    [
+      "const:ERROR_NO_MORE_FILES",
+      "ERROR_NO_MORE_FILES"
+    ],
+    [
+      "const:ERROR_NO_PROC_SLOTS",
+      "ERROR_NO_PROC_SLOTS"
+    ],
+    [
+      "const:ERROR_OUTOFMEMORY",
+      "ERROR_OUTOFMEMORY"
+    ],
+    [
+      "const:ERROR_PATH_NOT_FOUND",
+      "ERROR_PATH_NOT_FOUND"
+    ],
+    [
+      "const:ERROR_POSSIBLE_DEADLOCK",
+      "ERROR_POSSIBLE_DEADLOCK"
+    ],
+    [
+      "const:ERROR_SEEK_ON_DEVICE",
+      "ERROR_SEEK_ON_DEVICE"
+    ],
+    [
+      "const:ERROR_SHARING_VIOLATION",
+      "ERROR_SHARING_VIOLATION"
+    ],
+    [
+      "const:ERROR_TOO_MANY_OPEN_FILES",
+      "ERROR_TOO_MANY_OPEN_FILES"
+    ],
+    [
+      "const:ERROR_WAIT_NO_CHILDREN",
+      "ERROR_WAIT_NO_CHILDREN"
+    ],
+    [
+      "const:ERROR_HANDLE_EOF",
+      "ERROR_HANDLE_EOF"
+    ],
+    [
+      "const:ERROR_NEGATIVE_SEEK",
+      "ERROR_NEGATIVE_SEEK"
+    ],
+    [
+      "const:ERROR_NOT_ENOUGH_MEMORY",
+      "ERROR_NOT_ENOUGH_MEMORY"
+    ],
+    [
+      "const:ERROR_NOT_SUPPORTED",
+      "ERROR_NOT_SUPPORTED"
+    ],
+    [
+      "const:ERROR_SEEK",
+      "ERROR_SEEK"
+    ],
+    [
+      "const:ERROR_WRITE_FAULT",
+      "ERROR_WRITE_FAULT"
+    ],
+    [
+      "const:E2BIG",
+      "E2BIG"
+    ],
+    [
+      "const:EACCES",
+      "EACCES"
+    ],
+    [
+      "const:EAGAIN",
+      "EAGAIN"
+    ],
+    [
+      "const:EBADF",
+      "EBADF"
+    ],
+    [
+      "const:EBUSY",
+      "EBUSY"
+    ],
+    [
+      "const:ECHILD",
+      "ECHILD"
+    ],
+    [
+      "const:EDEADLK",
+      "EDEADLK"
+    ],
+    [
+      "const:EEXIST",
+      "EEXIST"
+    ],
+    [
+      "const:EINVAL",
+      "EINVAL"
+    ],
+    [
+      "const:EIO",
+      "EIO"
+    ],
+    [
+      "const:EMFILE",
+      "EMFILE"
+    ],
+    [
+      "const:ENODEV",
+      "ENODEV"
+    ],
+    [
+      "const:ENOENT",
+      "ENOENT"
+    ],
+    [
+      "const:ENOEXEC",
+      "ENOEXEC"
+    ],
+    [
+      "const:ENOMEM",
+      "ENOMEM"
+    ],
+    [
+      "const:ENOSPC",
+      "ENOSPC"
+    ],
+    [
+      "const:ENOTEMPTY",
+      "ENOTEMPTY"
+    ],
+    [
+      "const:EPIPE",
+      "EPIPE"
+    ],
+    [
+      "const:FileBasicInformation",
+      "FileBasicInformation"
+    ],
+    [
+      "const:FileStandardInformation",
+      "FileStandardInformation"
+    ],
+    [
+      "const:GetFileExInfoStandard",
+      "GetFileExInfoStandard"
+    ],
+    [
+      "const:ExceptionContinueSearch",
+      "ExceptionContinueSearch"
+    ],
+    [
+      "const:ExceptionContinueExecution",
+      "ExceptionContinueExecution"
+    ],
+    [
+      "const:ExceptionNestedException",
+      "ExceptionNestedException"
+    ],
+    [
+      "const:ExceptionCollidedUnwind",
+      "ExceptionCollidedUnwind"
+    ],
+    [
+      "const:SIGABRT",
+      "SIGABRT"
+    ],
+    [
+      "const:SIGBREAK",
+      "SIGBREAK"
+    ],
+    [
+      "const:SIGFPE",
+      "SIGFPE"
+    ],
+    [
+      "const:SIGILL",
+      "SIGILL"
+    ],
+    [
+      "const:SIGINT",
+      "SIGINT"
+    ],
+    [
+      "const:SIGSEGV",
+      "SIGSEGV"
+    ],
+    [
+      "const:SIGTERM",
+      "SIGTERM"
+    ],
+    [
+      "const:NSIG",
+      "NSIG"
+    ],
+    [
+      "const:_FPE_DENORMAL",
+      "_FPE_DENORMAL"
+    ],
+    [
+      "const:_FPE_EXPLICITGEN",
+      "_FPE_EXPLICITGEN"
+    ],
+    [
+      "const:_FPE_INEXACT",
+      "_FPE_INEXACT"
+    ],
+    [
+      "const:_FPE_INVALID",
+      "_FPE_INVALID"
+    ],
+    [
+      "const:_FPE_OVERFLOW",
+      "_FPE_OVERFLOW"
+    ],
+    [
+      "const:_FPE_STACKOVERFLOW",
+      "_FPE_STACKOVERFLOW"
+    ],
+    [
+      "const:_FPE_UNDERFLOW",
+      "_FPE_UNDERFLOW"
+    ],
+    [
+      "const:_FPE_ZERODIVIDE",
+      "_FPE_ZERODIVIDE"
+    ],
+    [
+      "const:EXCEPTION_CONTINUE_EXECUTION",
+      "EXCEPTION_CONTINUE_EXECUTION"
+    ],
+    [
+      "const:EXCEPTION_CONTINUE_SEARCH",
+      "EXCEPTION_CONTINUE_SEARCH"
+    ],
+    [
+      "const:EXCEPTION_EXECUTE_HANDLER",
+      "EXCEPTION_EXECUTE_HANDLER"
+    ],
+    [
+      "const:EXCEPTION_NONCONTINUABLE",
+      "EXCEPTION_NONCONTINUABLE"
+    ],
+    [
+      "const:EXCEPTION_UNWINDING",
+      "EXCEPTION_UNWINDING"
+    ],
+    [
+      "const:EXCEPTION_EXIT_UNWIND",
+      "EXCEPTION_EXIT_UNWIND"
+    ],
+    [
+      "const:EXCEPTION_TARGET_UNWIND",
+      "EXCEPTION_TARGET_UNWIND"
+    ],
+    [
+      "const:EXCEPTION_MAXIMUM_PARAMETERS",
+      "EXCEPTION_MAXIMUM_PARAMETERS"
+    ],
+    [
+      "const:EXCEPTION_ACCESS_VIOLATION",
+      "EXCEPTION_ACCESS_VIOLATION"
+    ],
+    [
+      "const:EXCEPTION_ILLEGAL_INSTRUCTION",
+      "EXCEPTION_ILLEGAL_INSTRUCTION"
+    ],
+    [
+      "const:EXCEPTION_PRIV_INSTRUCTION",
+      "EXCEPTION_PRIV_INSTRUCTION"
+    ],
+    [
+      "const:EXCEPTION_FLT_DENORMAL_OPERAND",
+      "EXCEPTION_FLT_DENORMAL_OPERAND"
+    ],
+    [
+      "const:EXCEPTION_FLT_DIVIDE_BY_ZERO",
+      "EXCEPTION_FLT_DIVIDE_BY_ZERO"
+    ],
+    [
+      "const:EXCEPTION_FLT_INEXACT_RESULT",
+      "EXCEPTION_FLT_INEXACT_RESULT"
+    ],
+    [
+      "const:EXCEPTION_FLT_INVALID_OPERATION",
+      "EXCEPTION_FLT_INVALID_OPERATION"
+    ],
+    [
+      "const:EXCEPTION_FLT_OVERFLOW",
+      "EXCEPTION_FLT_OVERFLOW"
+    ],
+    [
+      "const:EXCEPTION_FLT_STACK_CHECK",
+      "EXCEPTION_FLT_STACK_CHECK"
+    ],
+    [
+      "const:EXCEPTION_FLT_UNDERFLOW",
+      "EXCEPTION_FLT_UNDERFLOW"
+    ],
+    [
+      "const:STATUS_ACCESS_VIOLATION",
+      "STATUS_ACCESS_VIOLATION"
+    ],
+    [
+      "const:STATUS_FLOAT_DIVIDE_BY_ZERO",
+      "STATUS_FLOAT_DIVIDE_BY_ZERO"
+    ],
+    [
+      "const:STATUS_FLOAT_INEXACT_RESULT",
+      "STATUS_FLOAT_INEXACT_RESULT"
+    ],
+    [
+      "const:STATUS_FLOAT_INVALID_OPERATION",
+      "STATUS_FLOAT_INVALID_OPERATION"
+    ],
+    [
+      "const:STATUS_FLOAT_OVERFLOW",
+      "STATUS_FLOAT_OVERFLOW"
+    ],
+    [
+      "const:STATUS_FLOAT_UNDERFLOW",
+      "STATUS_FLOAT_UNDERFLOW"
+    ],
+    [
+      "const:STATUS_LONGJUMP",
+      "STATUS_LONGJUMP"
+    ],
+    [
+      "const:STATUS_UNWIND_CONSOLIDATE",
+      "STATUS_UNWIND_CONSOLIDATE"
+    ],
+    [
+      "const:CTRL_C_EVENT",
+      "CTRL_C_EVENT"
+    ],
+    [
+      "const:CTRL_BREAK_EVENT",
+      "CTRL_BREAK_EVENT"
+    ],
+    [
+      "const:UNDNAME_NO_ARGUMENTS",
+      "UNDNAME_NO_ARGUMENTS"
+    ],
+    [
+      "const:UNDNAME_32_BIT_DECODE",
+      "UNDNAME_32_BIT_DECODE"
+    ],
+    [
+      "derived:MSVCRT_SIZEOF_EXCEPTION",
+      "sizeof(exception)"
+    ],
+    [
+      "derived:MSVCRT_OFF_EXCEPTION_NAME",
+      "__builtin_offsetof(exception, name)"
+    ],
+    [
+      "derived:MSVCRT_OFF_EXCEPTION_DO_FREE",
+      "__builtin_offsetof(exception, do_free)"
+    ],
+    [
+      "derived:MSVCRT_SIZEOF_TYPE_INFO",
+      "sizeof(type_info)"
+    ],
+    [
+      "derived:MSVCRT_OFF_TYPE_INFO_NAME",
+      "__builtin_offsetof(type_info, name)"
+    ],
+    [
+      "derived:MSVCRT_OFF_TYPE_INFO_MANGLED",
+      "__builtin_offsetof(type_info, mangled)"
+    ],
+    [
+      "off:FILE:_ptr",
+      "__builtin_offsetof(FILE, _ptr)"
+    ],
+    [
+      "off:FILE:_cnt",
+      "__builtin_offsetof(FILE, _cnt)"
+    ],
+    [
+      "off:FILE:_base",
+      "__builtin_offsetof(FILE, _base)"
+    ],
+    [
+      "off:FILE:_flag",
+      "__builtin_offsetof(FILE, _flag)"
+    ],
+    [
+      "off:FILE:_file",
+      "__builtin_offsetof(FILE, _file)"
+    ],
+    [
+      "off:FILE:_charbuf",
+      "__builtin_offsetof(FILE, _charbuf)"
+    ],
+    [
+      "off:FILE:_bufsiz",
+      "__builtin_offsetof(FILE, _bufsiz)"
+    ],
+    [
+      "off:FILE:_tmpfname",
+      "__builtin_offsetof(FILE, _tmpfname)"
+    ],
+    [
+      "size:FILE",
+      "sizeof(FILE)"
+    ],
+    [
+      "off:struct _stat32:st_dev",
+      "__builtin_offsetof(struct _stat32, st_dev)"
+    ],
+    [
+      "off:struct _stat32:st_ino",
+      "__builtin_offsetof(struct _stat32, st_ino)"
+    ],
+    [
+      "off:struct _stat32:st_mode",
+      "__builtin_offsetof(struct _stat32, st_mode)"
+    ],
+    [
+      "off:struct _stat32:st_nlink",
+      "__builtin_offsetof(struct _stat32, st_nlink)"
+    ],
+    [
+      "off:struct _stat32:st_uid",
+      "__builtin_offsetof(struct _stat32, st_uid)"
+    ],
+    [
+      "off:struct _stat32:st_gid",
+      "__builtin_offsetof(struct _stat32, st_gid)"
+    ],
+    [
+      "off:struct _stat32:st_rdev",
+      "__builtin_offsetof(struct _stat32, st_rdev)"
+    ],
+    [
+      "off:struct _stat32:st_size",
+      "__builtin_offsetof(struct _stat32, st_size)"
+    ],
+    [
+      "off:struct _stat32:st_atime",
+      "__builtin_offsetof(struct _stat32, st_atime)"
+    ],
+    [
+      "off:struct _stat32:st_mtime",
+      "__builtin_offsetof(struct _stat32, st_mtime)"
+    ],
+    [
+      "off:struct _stat32:st_ctime",
+      "__builtin_offsetof(struct _stat32, st_ctime)"
+    ],
+    [
+      "size:struct _stat32",
+      "sizeof(struct _stat32)"
+    ],
+    [
+      "off:struct _stat32i64:st_dev",
+      "__builtin_offsetof(struct _stat32i64, st_dev)"
+    ],
+    [
+      "off:struct _stat32i64:st_ino",
+      "__builtin_offsetof(struct _stat32i64, st_ino)"
+    ],
+    [
+      "off:struct _stat32i64:st_mode",
+      "__builtin_offsetof(struct _stat32i64, st_mode)"
+    ],
+    [
+      "off:struct _stat32i64:st_nlink",
+      "__builtin_offsetof(struct _stat32i64, st_nlink)"
+    ],
+    [
+      "off:struct _stat32i64:st_uid",
+      "__builtin_offsetof(struct _stat32i64, st_uid)"
+    ],
+    [
+      "off:struct _stat32i64:st_gid",
+      "__builtin_offsetof(struct _stat32i64, st_gid)"
+    ],
+    [
+      "off:struct _stat32i64:st_rdev",
+      "__builtin_offsetof(struct _stat32i64, st_rdev)"
+    ],
+    [
+      "off:struct _stat32i64:st_size",
+      "__builtin_offsetof(struct _stat32i64, st_size)"
+    ],
+    [
+      "off:struct _stat32i64:st_atime",
+      "__builtin_offsetof(struct _stat32i64, st_atime)"
+    ],
+    [
+      "off:struct _stat32i64:st_mtime",
+      "__builtin_offsetof(struct _stat32i64, st_mtime)"
+    ],
+    [
+      "off:struct _stat32i64:st_ctime",
+      "__builtin_offsetof(struct _stat32i64, st_ctime)"
+    ],
+    [
+      "size:struct _stat32i64",
+      "sizeof(struct _stat32i64)"
+    ],
+    [
+      "off:struct _stat64i32:st_dev",
+      "__builtin_offsetof(struct _stat64i32, st_dev)"
+    ],
+    [
+      "off:struct _stat64i32:st_ino",
+      "__builtin_offsetof(struct _stat64i32, st_ino)"
+    ],
+    [
+      "off:struct _stat64i32:st_mode",
+      "__builtin_offsetof(struct _stat64i32, st_mode)"
+    ],
+    [
+      "off:struct _stat64i32:st_nlink",
+      "__builtin_offsetof(struct _stat64i32, st_nlink)"
+    ],
+    [
+      "off:struct _stat64i32:st_uid",
+      "__builtin_offsetof(struct _stat64i32, st_uid)"
+    ],
+    [
+      "off:struct _stat64i32:st_gid",
+      "__builtin_offsetof(struct _stat64i32, st_gid)"
+    ],
+    [
+      "off:struct _stat64i32:st_rdev",
+      "__builtin_offsetof(struct _stat64i32, st_rdev)"
+    ],
+    [
+      "off:struct _stat64i32:st_size",
+      "__builtin_offsetof(struct _stat64i32, st_size)"
+    ],
+    [
+      "off:struct _stat64i32:st_atime",
+      "__builtin_offsetof(struct _stat64i32, st_atime)"
+    ],
+    [
+      "off:struct _stat64i32:st_mtime",
+      "__builtin_offsetof(struct _stat64i32, st_mtime)"
+    ],
+    [
+      "off:struct _stat64i32:st_ctime",
+      "__builtin_offsetof(struct _stat64i32, st_ctime)"
+    ],
+    [
+      "size:struct _stat64i32",
+      "sizeof(struct _stat64i32)"
+    ],
+    [
+      "off:struct _stat64:st_dev",
+      "__builtin_offsetof(struct _stat64, st_dev)"
+    ],
+    [
+      "off:struct _stat64:st_ino",
+      "__builtin_offsetof(struct _stat64, st_ino)"
+    ],
+    [
+      "off:struct _stat64:st_mode",
+      "__builtin_offsetof(struct _stat64, st_mode)"
+    ],
+    [
+      "off:struct _stat64:st_nlink",
+      "__builtin_offsetof(struct _stat64, st_nlink)"
+    ],
+    [
+      "off:struct _stat64:st_uid",
+      "__builtin_offsetof(struct _stat64, st_uid)"
+    ],
+    [
+      "off:struct _stat64:st_gid",
+      "__builtin_offsetof(struct _stat64, st_gid)"
+    ],
+    [
+      "off:struct _stat64:st_rdev",
+      "__builtin_offsetof(struct _stat64, st_rdev)"
+    ],
+    [
+      "off:struct _stat64:st_size",
+      "__builtin_offsetof(struct _stat64, st_size)"
+    ],
+    [
+      "off:struct _stat64:st_atime",
+      "__builtin_offsetof(struct _stat64, st_atime)"
+    ],
+    [
+      "off:struct _stat64:st_mtime",
+      "__builtin_offsetof(struct _stat64, st_mtime)"
+    ],
+    [
+      "off:struct _stat64:st_ctime",
+      "__builtin_offsetof(struct _stat64, st_ctime)"
+    ],
+    [
+      "size:struct _stat64",
+      "sizeof(struct _stat64)"
+    ],
+    [
+      "off:struct _stat:st_dev",
+      "__builtin_offsetof(struct _stat, st_dev)"
+    ],
+    [
+      "off:struct _stat:st_ino",
+      "__builtin_offsetof(struct _stat, st_ino)"
+    ],
+    [
+      "off:struct _stat:st_mode",
+      "__builtin_offsetof(struct _stat, st_mode)"
+    ],
+    [
+      "off:struct _stat:st_nlink",
+      "__builtin_offsetof(struct _stat, st_nlink)"
+    ],
+    [
+      "off:struct _stat:st_uid",
+      "__builtin_offsetof(struct _stat, st_uid)"
+    ],
+    [
+      "off:struct _stat:st_gid",
+      "__builtin_offsetof(struct _stat, st_gid)"
+    ],
+    [
+      "off:struct _stat:st_rdev",
+      "__builtin_offsetof(struct _stat, st_rdev)"
+    ],
+    [
+      "off:struct _stat:st_size",
+      "__builtin_offsetof(struct _stat, st_size)"
+    ],
+    [
+      "off:struct _stat:st_atime",
+      "__builtin_offsetof(struct _stat, st_atime)"
+    ],
+    [
+      "off:struct _stat:st_mtime",
+      "__builtin_offsetof(struct _stat, st_mtime)"
+    ],
+    [
+      "off:struct _stat:st_ctime",
+      "__builtin_offsetof(struct _stat, st_ctime)"
+    ],
+    [
+      "size:struct _stat",
+      "sizeof(struct _stat)"
+    ],
+    [
+      "off:struct _stati64:st_dev",
+      "__builtin_offsetof(struct _stati64, st_dev)"
+    ],
+    [
+      "off:struct _stati64:st_ino",
+      "__builtin_offsetof(struct _stati64, st_ino)"
+    ],
+    [
+      "off:struct _stati64:st_mode",
+      "__builtin_offsetof(struct _stati64, st_mode)"
+    ],
+    [
+      "off:struct _stati64:st_nlink",
+      "__builtin_offsetof(struct _stati64, st_nlink)"
+    ],
+    [
+      "off:struct _stati64:st_uid",
+      "__builtin_offsetof(struct _stati64, st_uid)"
+    ],
+    [
+      "off:struct _stati64:st_gid",
+      "__builtin_offsetof(struct _stati64, st_gid)"
+    ],
+    [
+      "off:struct _stati64:st_rdev",
+      "__builtin_offsetof(struct _stati64, st_rdev)"
+    ],
+    [
+      "off:struct _stati64:st_size",
+      "__builtin_offsetof(struct _stati64, st_size)"
+    ],
+    [
+      "off:struct _stati64:st_atime",
+      "__builtin_offsetof(struct _stati64, st_atime)"
+    ],
+    [
+      "off:struct _stati64:st_mtime",
+      "__builtin_offsetof(struct _stati64, st_mtime)"
+    ],
+    [
+      "off:struct _stati64:st_ctime",
+      "__builtin_offsetof(struct _stati64, st_ctime)"
+    ],
+    [
+      "size:struct _stati64",
+      "sizeof(struct _stati64)"
+    ],
+    [
+      "off:struct __utimbuf32:actime",
+      "__builtin_offsetof(struct __utimbuf32, actime)"
+    ],
+    [
+      "off:struct __utimbuf32:modtime",
+      "__builtin_offsetof(struct __utimbuf32, modtime)"
+    ],
+    [
+      "size:struct __utimbuf32",
+      "sizeof(struct __utimbuf32)"
+    ],
+    [
+      "off:struct __utimbuf64:actime",
+      "__builtin_offsetof(struct __utimbuf64, actime)"
+    ],
+    [
+      "off:struct __utimbuf64:modtime",
+      "__builtin_offsetof(struct __utimbuf64, modtime)"
+    ],
+    [
+      "size:struct __utimbuf64",
+      "sizeof(struct __utimbuf64)"
+    ],
+    [
+      "off:FILETIME:dwLowDateTime",
+      "__builtin_offsetof(FILETIME, dwLowDateTime)"
+    ],
+    [
+      "off:FILETIME:dwHighDateTime",
+      "__builtin_offsetof(FILETIME, dwHighDateTime)"
+    ],
+    [
+      "size:FILETIME",
+      "sizeof(FILETIME)"
+    ],
+    [
+      "off:WIN32_FILE_ATTRIBUTE_DATA:dwFileAttributes",
+      "__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, dwFileAttributes)"
+    ],
+    [
+      "off:WIN32_FILE_ATTRIBUTE_DATA:ftCreationTime",
+      "__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, ftCreationTime)"
+    ],
+    [
+      "off:WIN32_FILE_ATTRIBUTE_DATA:ftLastAccessTime",
+      "__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, ftLastAccessTime)"
+    ],
+    [
+      "off:WIN32_FILE_ATTRIBUTE_DATA:ftLastWriteTime",
+      "__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, ftLastWriteTime)"
+    ],
+    [
+      "off:WIN32_FILE_ATTRIBUTE_DATA:nFileSizeHigh",
+      "__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, nFileSizeHigh)"
+    ],
+    [
+      "off:WIN32_FILE_ATTRIBUTE_DATA:nFileSizeLow",
+      "__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, nFileSizeLow)"
+    ],
+    [
+      "size:WIN32_FILE_ATTRIBUTE_DATA",
+      "sizeof(WIN32_FILE_ATTRIBUTE_DATA)"
+    ],
+    [
+      "off:FILE_BASIC_INFORMATION:CreationTime",
+      "__builtin_offsetof(FILE_BASIC_INFORMATION, CreationTime)"
+    ],
+    [
+      "off:FILE_BASIC_INFORMATION:LastAccessTime",
+      "__builtin_offsetof(FILE_BASIC_INFORMATION, LastAccessTime)"
+    ],
+    [
+      "off:FILE_BASIC_INFORMATION:LastWriteTime",
+      "__builtin_offsetof(FILE_BASIC_INFORMATION, LastWriteTime)"
+    ],
+    [
+      "off:FILE_BASIC_INFORMATION:ChangeTime",
+      "__builtin_offsetof(FILE_BASIC_INFORMATION, ChangeTime)"
+    ],
+    [
+      "off:FILE_BASIC_INFORMATION:FileAttributes",
+      "__builtin_offsetof(FILE_BASIC_INFORMATION, FileAttributes)"
+    ],
+    [
+      "size:FILE_BASIC_INFORMATION",
+      "sizeof(FILE_BASIC_INFORMATION)"
+    ],
+    [
+      "off:FILE_STANDARD_INFORMATION:AllocationSize",
+      "__builtin_offsetof(FILE_STANDARD_INFORMATION, AllocationSize)"
+    ],
+    [
+      "off:FILE_STANDARD_INFORMATION:EndOfFile",
+      "__builtin_offsetof(FILE_STANDARD_INFORMATION, EndOfFile)"
+    ],
+    [
+      "off:FILE_STANDARD_INFORMATION:NumberOfLinks",
+      "__builtin_offsetof(FILE_STANDARD_INFORMATION, NumberOfLinks)"
+    ],
+    [
+      "off:FILE_STANDARD_INFORMATION:DeletePending",
+      "__builtin_offsetof(FILE_STANDARD_INFORMATION, DeletePending)"
+    ],
+    [
+      "off:FILE_STANDARD_INFORMATION:Directory",
+      "__builtin_offsetof(FILE_STANDARD_INFORMATION, Directory)"
+    ],
+    [
+      "size:FILE_STANDARD_INFORMATION",
+      "sizeof(FILE_STANDARD_INFORMATION)"
+    ],
+    [
+      "off:IO_STATUS_BLOCK:Information",
+      "__builtin_offsetof(IO_STATUS_BLOCK, Information)"
+    ],
+    [
+      "size:IO_STATUS_BLOCK",
+      "sizeof(IO_STATUS_BLOCK)"
+    ],
+    [
+      "off:LARGE_INTEGER:QuadPart",
+      "__builtin_offsetof(LARGE_INTEGER, QuadPart)"
+    ],
+    [
+      "size:LARGE_INTEGER",
+      "sizeof(LARGE_INTEGER)"
+    ],
+    [
+      "off:CRITICAL_SECTION_DEBUG:Type",
+      "__builtin_offsetof(CRITICAL_SECTION_DEBUG, Type)"
+    ],
+    [
+      "off:CRITICAL_SECTION_DEBUG:CreatorBackTraceIndex",
+      "__builtin_offsetof(CRITICAL_SECTION_DEBUG, CreatorBackTraceIndex)"
+    ],
+    [
+      "off:CRITICAL_SECTION_DEBUG:CriticalSection",
+      "__builtin_offsetof(CRITICAL_SECTION_DEBUG, CriticalSection)"
+    ],
+    [
+      "off:CRITICAL_SECTION_DEBUG:ProcessLocksList",
+      "__builtin_offsetof(CRITICAL_SECTION_DEBUG, ProcessLocksList)"
+    ],
+    [
+      "off:CRITICAL_SECTION_DEBUG:EntryCount",
+      "__builtin_offsetof(CRITICAL_SECTION_DEBUG, EntryCount)"
+    ],
+    [
+      "off:CRITICAL_SECTION_DEBUG:ContentionCount",
+      "__builtin_offsetof(CRITICAL_SECTION_DEBUG, ContentionCount)"
+    ],
+    [
+      "off:CRITICAL_SECTION_DEBUG:Spare",
+      "__builtin_offsetof(CRITICAL_SECTION_DEBUG, Spare)"
+    ],
+    [
+      "size:CRITICAL_SECTION_DEBUG",
+      "sizeof(CRITICAL_SECTION_DEBUG)"
+    ],
+    [
+      "off:CRITICAL_SECTION:DebugInfo",
+      "__builtin_offsetof(CRITICAL_SECTION, DebugInfo)"
+    ],
+    [
+      "off:CRITICAL_SECTION:LockCount",
+      "__builtin_offsetof(CRITICAL_SECTION, LockCount)"
+    ],
+    [
+      "off:CRITICAL_SECTION:RecursionCount",
+      "__builtin_offsetof(CRITICAL_SECTION, RecursionCount)"
+    ],
+    [
+      "off:CRITICAL_SECTION:OwningThread",
+      "__builtin_offsetof(CRITICAL_SECTION, OwningThread)"
+    ],
+    [
+      "off:CRITICAL_SECTION:LockSemaphore",
+      "__builtin_offsetof(CRITICAL_SECTION, LockSemaphore)"
+    ],
+    [
+      "off:CRITICAL_SECTION:SpinCount",
+      "__builtin_offsetof(CRITICAL_SECTION, SpinCount)"
+    ],
+    [
+      "size:CRITICAL_SECTION",
+      "sizeof(CRITICAL_SECTION)"
+    ],
+    [
+      "off:STARTUPINFOA:cb",
+      "__builtin_offsetof(STARTUPINFOA, cb)"
+    ],
+    [
+      "off:STARTUPINFOA:lpReserved",
+      "__builtin_offsetof(STARTUPINFOA, lpReserved)"
+    ],
+    [
+      "off:STARTUPINFOA:dwFlags",
+      "__builtin_offsetof(STARTUPINFOA, dwFlags)"
+    ],
+    [
+      "off:STARTUPINFOA:wShowWindow",
+      "__builtin_offsetof(STARTUPINFOA, wShowWindow)"
+    ],
+    [
+      "off:STARTUPINFOA:cbReserved2",
+      "__builtin_offsetof(STARTUPINFOA, cbReserved2)"
+    ],
+    [
+      "off:STARTUPINFOA:lpReserved2",
+      "__builtin_offsetof(STARTUPINFOA, lpReserved2)"
+    ],
+    [
+      "off:STARTUPINFOA:hStdInput",
+      "__builtin_offsetof(STARTUPINFOA, hStdInput)"
+    ],
+    [
+      "off:STARTUPINFOA:hStdOutput",
+      "__builtin_offsetof(STARTUPINFOA, hStdOutput)"
+    ],
+    [
+      "off:STARTUPINFOA:hStdError",
+      "__builtin_offsetof(STARTUPINFOA, hStdError)"
+    ],
+    [
+      "size:STARTUPINFOA",
+      "sizeof(STARTUPINFOA)"
+    ],
+    [
+      "off:SECURITY_ATTRIBUTES:nLength",
+      "__builtin_offsetof(SECURITY_ATTRIBUTES, nLength)"
+    ],
+    [
+      "off:SECURITY_ATTRIBUTES:lpSecurityDescriptor",
+      "__builtin_offsetof(SECURITY_ATTRIBUTES, lpSecurityDescriptor)"
+    ],
+    [
+      "off:SECURITY_ATTRIBUTES:bInheritHandle",
+      "__builtin_offsetof(SECURITY_ATTRIBUTES, bInheritHandle)"
+    ],
+    [
+      "size:SECURITY_ATTRIBUTES",
+      "sizeof(SECURITY_ATTRIBUTES)"
+    ],
+    [
+      "off:STARTUPINFOW:cb",
+      "__builtin_offsetof(STARTUPINFOW, cb)"
+    ],
+    [
+      "off:STARTUPINFOW:lpReserved",
+      "__builtin_offsetof(STARTUPINFOW, lpReserved)"
+    ],
+    [
+      "off:STARTUPINFOW:dwFlags",
+      "__builtin_offsetof(STARTUPINFOW, dwFlags)"
+    ],
+    [
+      "off:STARTUPINFOW:wShowWindow",
+      "__builtin_offsetof(STARTUPINFOW, wShowWindow)"
+    ],
+    [
+      "off:STARTUPINFOW:cbReserved2",
+      "__builtin_offsetof(STARTUPINFOW, cbReserved2)"
+    ],
+    [
+      "off:STARTUPINFOW:lpReserved2",
+      "__builtin_offsetof(STARTUPINFOW, lpReserved2)"
+    ],
+    [
+      "off:STARTUPINFOW:hStdInput",
+      "__builtin_offsetof(STARTUPINFOW, hStdInput)"
+    ],
+    [
+      "off:STARTUPINFOW:hStdOutput",
+      "__builtin_offsetof(STARTUPINFOW, hStdOutput)"
+    ],
+    [
+      "off:STARTUPINFOW:hStdError",
+      "__builtin_offsetof(STARTUPINFOW, hStdError)"
+    ],
+    [
+      "size:STARTUPINFOW",
+      "sizeof(STARTUPINFOW)"
+    ],
+    [
+      "off:PROCESS_INFORMATION:hProcess",
+      "__builtin_offsetof(PROCESS_INFORMATION, hProcess)"
+    ],
+    [
+      "off:PROCESS_INFORMATION:hThread",
+      "__builtin_offsetof(PROCESS_INFORMATION, hThread)"
+    ],
+    [
+      "off:PROCESS_INFORMATION:dwProcessId",
+      "__builtin_offsetof(PROCESS_INFORMATION, dwProcessId)"
+    ],
+    [
+      "off:PROCESS_INFORMATION:dwThreadId",
+      "__builtin_offsetof(PROCESS_INFORMATION, dwThreadId)"
+    ],
+    [
+      "size:PROCESS_INFORMATION",
+      "sizeof(PROCESS_INFORMATION)"
+    ],
+    [
+      "off:EXCEPTION_RECORD:ExceptionCode",
+      "__builtin_offsetof(EXCEPTION_RECORD, ExceptionCode)"
+    ],
+    [
+      "off:EXCEPTION_RECORD:ExceptionFlags",
+      "__builtin_offsetof(EXCEPTION_RECORD, ExceptionFlags)"
+    ],
+    [
+      "off:EXCEPTION_RECORD:ExceptionRecord",
+      "__builtin_offsetof(EXCEPTION_RECORD, ExceptionRecord)"
+    ],
+    [
+      "off:EXCEPTION_RECORD:ExceptionAddress",
+      "__builtin_offsetof(EXCEPTION_RECORD, ExceptionAddress)"
+    ],
+    [
+      "off:EXCEPTION_RECORD:NumberParameters",
+      "__builtin_offsetof(EXCEPTION_RECORD, NumberParameters)"
+    ],
+    [
+      "off:EXCEPTION_RECORD:ExceptionInformation",
+      "__builtin_offsetof(EXCEPTION_RECORD, ExceptionInformation)"
+    ],
+    [
+      "size:EXCEPTION_RECORD",
+      "sizeof(EXCEPTION_RECORD)"
+    ],
+    [
+      "off:EXCEPTION_POINTERS:ExceptionRecord",
+      "__builtin_offsetof(EXCEPTION_POINTERS, ExceptionRecord)"
+    ],
+    [
+      "off:EXCEPTION_POINTERS:ContextRecord",
+      "__builtin_offsetof(EXCEPTION_POINTERS, ContextRecord)"
+    ],
+    [
+      "size:EXCEPTION_POINTERS",
+      "sizeof(EXCEPTION_POINTERS)"
+    ],
+    [
+      "off:DISPATCHER_CONTEXT:ControlPc",
+      "__builtin_offsetof(DISPATCHER_CONTEXT, ControlPc)"
+    ],
+    [
+      "off:DISPATCHER_CONTEXT:ImageBase",
+      "__builtin_offsetof(DISPATCHER_CONTEXT, ImageBase)"
+    ],
+    [
+      "off:DISPATCHER_CONTEXT:FunctionEntry",
+      "__builtin_offsetof(DISPATCHER_CONTEXT, FunctionEntry)"
+    ],
+    [
+      "off:DISPATCHER_CONTEXT:EstablisherFrame",
+      "__builtin_offsetof(DISPATCHER_CONTEXT, EstablisherFrame)"
+    ],
+    [
+      "off:DISPATCHER_CONTEXT:TargetIp",
+      "__builtin_offsetof(DISPATCHER_CONTEXT, TargetIp)"
+    ],
+    [
+      "off:DISPATCHER_CONTEXT:ContextRecord",
+      "__builtin_offsetof(DISPATCHER_CONTEXT, ContextRecord)"
+    ],
+    [
+      "off:DISPATCHER_CONTEXT:LanguageHandler",
+      "__builtin_offsetof(DISPATCHER_CONTEXT, LanguageHandler)"
+    ],
+    [
+      "off:DISPATCHER_CONTEXT:HandlerData",
+      "__builtin_offsetof(DISPATCHER_CONTEXT, HandlerData)"
+    ],
+    [
+      "off:DISPATCHER_CONTEXT:HistoryTable",
+      "__builtin_offsetof(DISPATCHER_CONTEXT, HistoryTable)"
+    ],
+    [
+      "off:DISPATCHER_CONTEXT:ScopeIndex",
+      "__builtin_offsetof(DISPATCHER_CONTEXT, ScopeIndex)"
+    ],
+    [
+      "size:DISPATCHER_CONTEXT",
+      "sizeof(DISPATCHER_CONTEXT)"
+    ],
+    [
+      "off:RUNTIME_FUNCTION:BeginAddress",
+      "__builtin_offsetof(RUNTIME_FUNCTION, BeginAddress)"
+    ],
+    [
+      "off:RUNTIME_FUNCTION:EndAddress",
+      "__builtin_offsetof(RUNTIME_FUNCTION, EndAddress)"
+    ],
+    [
+      "off:RUNTIME_FUNCTION:UnwindData",
+      "__builtin_offsetof(RUNTIME_FUNCTION, UnwindData)"
+    ],
+    [
+      "size:RUNTIME_FUNCTION",
+      "sizeof(RUNTIME_FUNCTION)"
+    ],
+    [
+      "off:frame_info:object",
+      "__builtin_offsetof(frame_info, object)"
+    ],
+    [
+      "off:frame_info:next",
+      "__builtin_offsetof(frame_info, next)"
+    ],
+    [
+      "size:frame_info",
+      "sizeof(frame_info)"
+    ],
+    [
+      "off:cxx_frame_info:frame_info",
+      "__builtin_offsetof(cxx_frame_info, frame_info)"
+    ],
+    [
+      "off:cxx_frame_info:rec",
+      "__builtin_offsetof(cxx_frame_info, rec)"
+    ],
+    [
+      "off:cxx_frame_info:context",
+      "__builtin_offsetof(cxx_frame_info, context)"
+    ],
+    [
+      "size:cxx_frame_info",
+      "sizeof(cxx_frame_info)"
+    ],
+    [
+      "size:_dev_t",
+      "sizeof(_dev_t)"
+    ],
+    [
+      "size:_ino_t",
+      "sizeof(_ino_t)"
+    ],
+    [
+      "size:_off_t",
+      "sizeof(_off_t)"
+    ],
+    [
+      "size:__time32_t",
+      "sizeof(__time32_t)"
+    ],
+    [
+      "size:__time64_t",
+      "sizeof(__time64_t)"
+    ],
+    [
+      "size:CONTEXT",
+      "sizeof(CONTEXT)"
+    ]
+  ],
+  "outputs": [
+    [
+      "sdk/lib/rust/msvcrt-difftest/refstub/msvcrt_crt_consts.h",
+      "/* GENERATED by tools/gen_msvcrt_difftest_consts.py — DO NOT EDIT.\n *\n * The CRT/Win32 constants the msvcrt-difftest reference TUs need, with\n * every value computed by the PINNED CROSS-COMPILER against msvcrt's real\n * include set at _MSVCR_VER=0 — the same model the shipping DLL builds\n * under.  Hand-transcription is unsafe here: _IOMYBUF differs between\n * msvcrt.h's _MSVCR_VER>=140 block and the header the build reaches, and\n * msvcrt substitutes its own CRT headers for sdk/include/crt.  See the\n * generator's docstring.\n *\n * Regenerate:  python3 tools/gen_msvcrt_difftest_consts.py\n * Drift gate:  python3 tools/gen_msvcrt_difftest_consts.py --check\n */\n#ifndef MSVCRT_DIFFTEST_CRT_CONSTS_H\n#define MSVCRT_DIFFTEST_CRT_CONSTS_H\n\n/* open / share / lock modes (msvcrt's own fcntl.h, share.h, sys/locking.h) */\n#define _O_APPEND      {{const:_O_APPEND}}\n#define _O_BINARY      {{const:_O_BINARY}}\n#define _O_CREAT       {{const:_O_CREAT}}\n#define _O_EXCL        {{const:_O_EXCL}}\n#define _O_NOINHERIT   {{const:_O_NOINHERIT}}\n#define _O_RANDOM      {{const:_O_RANDOM}}\n#define _O_RDONLY      {{const:_O_RDONLY}}\n#define _O_RDWR        {{const:_O_RDWR}}\n#define _O_SEQUENTIAL  {{const:_O_SEQUENTIAL}}\n#define _O_SHORT_LIVED {{const:_O_SHORT_LIVED}}\n#define _O_TEMPORARY   {{const:_O_TEMPORARY}}\n#define _O_TEXT        {{const:_O_TEXT}}\n#define _O_TRUNC       {{const:_O_TRUNC}}\n#define _O_U16TEXT     {{const:_O_U16TEXT}}\n#define _O_U8TEXT      {{const:_O_U8TEXT}}\n#define _O_WRONLY      {{const:_O_WRONLY}}\n#define _O_WTEXT       {{const:_O_WTEXT}}\n#define _SH_DENYNO     {{const:_SH_DENYNO}}\n#define _SH_DENYRD     {{const:_SH_DENYRD}}\n#define _SH_DENYRW     {{const:_SH_DENYRW}}\n#define _SH_DENYWR     {{const:_SH_DENYWR}}\n#define _LK_LOCK       {{const:_LK_LOCK}}\n#define _LK_RLCK       {{const:_LK_RLCK}}\n#define _LK_UNLCK      {{const:_LK_UNLCK}}\n\n/* stat mode bits (sys/stat.h) */\n#define _S_IEXEC  {{const:_S_IEXEC}}\n#define _S_IFCHR  {{const:_S_IFCHR}}\n#define _S_IFDIR  {{const:_S_IFDIR}}\n#define _S_IFIFO  {{const:_S_IFIFO}}\n#define _S_IFREG  {{const:_S_IFREG}}\n#define _S_IREAD  {{const:_S_IREAD}}\n#define _S_IWRITE {{const:_S_IWRITE}}\n\n/* FILE._flag bits — NOTE the _MSVCR_VER trap in this file's docstring */\n#define _IOEOF   {{const:_IOEOF}}\n#define _IOERR   {{const:_IOERR}}\n#define _IOMYBUF {{const:_IOMYBUF}}\n#define _IOREAD  {{const:_IOREAD}}\n#define _IORW    {{const:_IORW}}\n#define _IOSTRG  {{const:_IOSTRG}}\n#define _IOWRT   {{const:_IOWRT}}\n\n/* setvbuf modes — _IONBF doubles as MSVCRT__NOBUF at _MSVCR_VER < 140 */\n#undef  _IOFBF\n#define _IOFBF {{const:_IOFBF}}\n#undef  _IOLBF\n#define _IOLBF {{const:_IOLBF}}\n#undef  _IONBF\n#define _IONBF {{const:_IONBF}}\n\n/* stdio / io.h */\n#undef  BUFSIZ\n#define BUFSIZ        {{const:BUFSIZ}}\n#define TMP_MAX_S     {{const:TMP_MAX_S}}\n#define STDIN_FILENO  {{const:STDIN_FILENO}}\n#define STDOUT_FILENO {{const:STDOUT_FILENO}}\n#define STDERR_FILENO {{const:STDERR_FILENO}}\n\n/* time (msvcrt's own time.h) */\n#undef  CLOCKS_PER_SEC\n#define CLOCKS_PER_SEC {{const:CLOCKS_PER_SEC}}\n\n/* Win32 file API (psdk) */\n#define CREATE_ALWAYS                              {{const:CREATE_ALWAYS}}\n#define CREATE_NEW                                 {{const:CREATE_NEW}}\n#define OPEN_ALWAYS                                {{const:OPEN_ALWAYS}}\n#define OPEN_EXISTING                              {{const:OPEN_EXISTING}}\n#define TRUNCATE_EXISTING                          {{const:TRUNCATE_EXISTING}}\n#define GENERIC_READ                               {{const:GENERIC_READ}}\n#define GENERIC_WRITE                              {{const:GENERIC_WRITE}}\n#define DELETE                                     {{const:DELETE}}\n#define FILE_SHARE_DELETE                          {{const:FILE_SHARE_DELETE}}\n#define FILE_SHARE_READ                            {{const:FILE_SHARE_READ}}\n#define FILE_SHARE_WRITE                           {{const:FILE_SHARE_WRITE}}\n#define FILE_ATTRIBUTE_DIRECTORY                   {{const:FILE_ATTRIBUTE_DIRECTORY}}\n#define FILE_ATTRIBUTE_NORMAL                      {{const:FILE_ATTRIBUTE_NORMAL}}\n#define FILE_ATTRIBUTE_READONLY                    {{const:FILE_ATTRIBUTE_READONLY}}\n#define FILE_ATTRIBUTE_TEMPORARY                   {{const:FILE_ATTRIBUTE_TEMPORARY}}\n#define FILE_FLAG_DELETE_ON_CLOSE                  {{const:FILE_FLAG_DELETE_ON_CLOSE}}\n#define FILE_FLAG_RANDOM_ACCESS                    {{const:FILE_FLAG_RANDOM_ACCESS}}\n#define FILE_FLAG_SEQUENTIAL_SCAN                  {{const:FILE_FLAG_SEQUENTIAL_SCAN}}\n#define FILE_BEGIN                                 {{const:FILE_BEGIN}}\n#define FILE_CURRENT                               {{const:FILE_CURRENT}}\n#define FILE_END                                   {{const:FILE_END}}\n#define FILE_TYPE_CHAR                             {{const:FILE_TYPE_CHAR}}\n#define FILE_TYPE_DISK                             {{const:FILE_TYPE_DISK}}\n#define FILE_TYPE_PIPE                             {{const:FILE_TYPE_PIPE}}\n#define FILE_TYPE_UNKNOWN                          {{const:FILE_TYPE_UNKNOWN}}\n#define INVALID_FILE_ATTRIBUTES                    {{const:INVALID_FILE_ATTRIBUTES}}\n#define INVALID_SET_FILE_POINTER                   {{const:INVALID_SET_FILE_POINTER}}\n#define MOVEFILE_COPY_ALLOWED                      {{const:MOVEFILE_COPY_ALLOWED}}\n#define MAX_PATH                                   {{const:MAX_PATH}}\n#define DUPLICATE_SAME_ACCESS                      {{const:DUPLICATE_SAME_ACCESS}}\n#define STD_ERROR_HANDLE                           {{const:STD_ERROR_HANDLE}}\n#define STD_INPUT_HANDLE                           {{const:STD_INPUT_HANDLE}}\n#define STD_OUTPUT_HANDLE                          {{const:STD_OUTPUT_HANDLE}}\n#define RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO {{const:RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO}}\n\n/* spawn modes (msvcrt's own process.h) */\n#define _P_WAIT    {{const:_P_WAIT}}\n#define _P_NOWAIT  {{const:_P_NOWAIT}}\n#define _P_OVERLAY {{const:_P_OVERLAY}}\n#define _P_NOWAITO {{const:_P_NOWAITO}}\n#define _P_DETACH  {{const:_P_DETACH}}\n\n/* Win32 process API (psdk) */\n#define CREATE_UNICODE_ENVIRONMENT {{const:CREATE_UNICODE_ENVIRONMENT}}\n#define DETACHED_PROCESS           {{const:DETACHED_PROCESS}}\n#define STARTF_USESTDHANDLES       {{const:STARTF_USESTDHANDLES}}\n#define INFINITE                   {{const:INFINITE}}\n#define WAIT_OBJECT_0              {{const:WAIT_OBJECT_0}}\n#define WAIT_TIMEOUT               {{const:WAIT_TIMEOUT}}\n#define WAIT_FAILED                {{const:WAIT_FAILED}}\n\n/* codepage conversion — msvcrt.h's get_aw_cp / convert_*_utf8 inlines */\n#define CP_ACP         {{const:CP_ACP}}\n#define MB_PRECOMPOSED {{const:MB_PRECOMPOSED}}\n\n/* Win32 error codes */\n#define ERROR_SUCCESS             {{const:ERROR_SUCCESS}}\n#define NO_ERROR                  {{const:NO_ERROR}}\n#define ERROR_ACCESS_DENIED       {{const:ERROR_ACCESS_DENIED}}\n#define ERROR_BROKEN_PIPE         {{const:ERROR_BROKEN_PIPE}}\n#define ERROR_FILE_NOT_FOUND      {{const:ERROR_FILE_NOT_FOUND}}\n#define ERROR_INVALID_HANDLE      {{const:ERROR_INVALID_HANDLE}}\n#define ERROR_INVALID_PARAMETER   {{const:ERROR_INVALID_PARAMETER}}\n#define ERROR_INSUFFICIENT_BUFFER {{const:ERROR_INSUFFICIENT_BUFFER}}\n#define ERROR_ENVVAR_NOT_FOUND    {{const:ERROR_ENVVAR_NOT_FOUND}}\n#define ERROR_PROC_NOT_FOUND      {{const:ERROR_PROC_NOT_FOUND}}\n\n/* Win32 error codes — errno.c's msvcrt_set_errno case labels */\n#define ERROR_ALREADY_EXISTS        {{const:ERROR_ALREADY_EXISTS}}\n#define ERROR_ARENA_TRASHED         {{const:ERROR_ARENA_TRASHED}}\n#define ERROR_BAD_DEVICE            {{const:ERROR_BAD_DEVICE}}\n#define ERROR_BAD_ENVIRONMENT       {{const:ERROR_BAD_ENVIRONMENT}}\n#define ERROR_BAD_FORMAT            {{const:ERROR_BAD_FORMAT}}\n#define ERROR_BAD_NETPATH           {{const:ERROR_BAD_NETPATH}}\n#define ERROR_BAD_NET_NAME          {{const:ERROR_BAD_NET_NAME}}\n#define ERROR_BAD_PATHNAME          {{const:ERROR_BAD_PATHNAME}}\n#define ERROR_BUSY                  {{const:ERROR_BUSY}}\n#define ERROR_CANNOT_MAKE           {{const:ERROR_CANNOT_MAKE}}\n#define ERROR_CHILD_NOT_COMPLETE    {{const:ERROR_CHILD_NOT_COMPLETE}}\n#define ERROR_CURRENT_DIRECTORY     {{const:ERROR_CURRENT_DIRECTORY}}\n#define ERROR_DIR_NOT_EMPTY         {{const:ERROR_DIR_NOT_EMPTY}}\n#define ERROR_DISK_FULL             {{const:ERROR_DISK_FULL}}\n#define ERROR_DRIVE_LOCKED          {{const:ERROR_DRIVE_LOCKED}}\n#define ERROR_FAIL_I24              {{const:ERROR_FAIL_I24}}\n#define ERROR_FILENAME_EXCED_RANGE  {{const:ERROR_FILENAME_EXCED_RANGE}}\n#define ERROR_FILE_EXISTS           {{const:ERROR_FILE_EXISTS}}\n#define ERROR_INVALID_ACCESS        {{const:ERROR_INVALID_ACCESS}}\n#define ERROR_INVALID_BLOCK         {{const:ERROR_INVALID_BLOCK}}\n#define ERROR_INVALID_DRIVE         {{const:ERROR_INVALID_DRIVE}}\n#define ERROR_IO_DEVICE             {{const:ERROR_IO_DEVICE}}\n#define ERROR_LOCK_FAILED           {{const:ERROR_LOCK_FAILED}}\n#define ERROR_LOCK_VIOLATION        {{const:ERROR_LOCK_VIOLATION}}\n#define ERROR_MAX_THRDS_REACHED     {{const:ERROR_MAX_THRDS_REACHED}}\n#define ERROR_NESTING_NOT_ALLOWED   {{const:ERROR_NESTING_NOT_ALLOWED}}\n#define ERROR_NETWORK_ACCESS_DENIED {{const:ERROR_NETWORK_ACCESS_DENIED}}\n#define ERROR_NOT_ENOUGH_QUOTA      {{const:ERROR_NOT_ENOUGH_QUOTA}}\n#define ERROR_NOT_LOCKED            {{const:ERROR_NOT_LOCKED}}\n#define ERROR_NO_MORE_FILES         {{const:ERROR_NO_MORE_FILES}}\n#define ERROR_NO_PROC_SLOTS         {{const:ERROR_NO_PROC_SLOTS}}\n#define ERROR_OUTOFMEMORY           {{const:ERROR_OUTOFMEMORY}}\n#define ERROR_PATH_NOT_FOUND        {{const:ERROR_PATH_NOT_FOUND}}\n#define ERROR_POSSIBLE_DEADLOCK     {{const:ERROR_POSSIBLE_DEADLOCK}}\n#define ERROR_SEEK_ON_DEVICE        {{const:ERROR_SEEK_ON_DEVICE}}\n#define ERROR_SHARING_VIOLATION     {{const:ERROR_SHARING_VIOLATION}}\n#define ERROR_TOO_MANY_OPEN_FILES   {{const:ERROR_TOO_MANY_OPEN_FILES}}\n#define ERROR_WAIT_NO_CHILDREN      {{const:ERROR_WAIT_NO_CHILDREN}}\n\n/* Win32 error codes — raised by the POSIX-backed shims in refimpl.c */\n#define ERROR_HANDLE_EOF        {{const:ERROR_HANDLE_EOF}}\n#define ERROR_NEGATIVE_SEEK     {{const:ERROR_NEGATIVE_SEEK}}\n#define ERROR_NOT_ENOUGH_MEMORY {{const:ERROR_NOT_ENOUGH_MEMORY}}\n#define ERROR_NOT_SUPPORTED     {{const:ERROR_NOT_SUPPORTED}}\n#define ERROR_SEEK              {{const:ERROR_SEEK}}\n#define ERROR_WRITE_FAULT       {{const:ERROR_WRITE_FAULT}}\n\n/* CRT errno values (msvcrt's errno.h; these DISPLACE the host's) */\n#undef  E2BIG\n#define E2BIG     {{const:E2BIG}}\n#undef  EACCES\n#define EACCES    {{const:EACCES}}\n#undef  EAGAIN\n#define EAGAIN    {{const:EAGAIN}}\n#undef  EBADF\n#define EBADF     {{const:EBADF}}\n#undef  EBUSY\n#define EBUSY     {{const:EBUSY}}\n#undef  ECHILD\n#define ECHILD    {{const:ECHILD}}\n#undef  EDEADLK\n#define EDEADLK   {{const:EDEADLK}}\n#undef  EEXIST\n#define EEXIST    {{const:EEXIST}}\n#undef  EINVAL\n#define EINVAL    {{const:EINVAL}}\n#undef  EIO\n#define EIO       {{const:EIO}}\n#undef  EMFILE\n#define EMFILE    {{const:EMFILE}}\n#undef  ENODEV\n#define ENODEV    {{const:ENODEV}}\n#undef  ENOENT\n#define ENOENT    {{const:ENOENT}}\n#undef  ENOEXEC\n#define ENOEXEC   {{const:ENOEXEC}}\n#undef  ENOMEM\n#define ENOMEM    {{const:ENOMEM}}\n#undef  ENOSPC\n#define ENOSPC    {{const:ENOSPC}}\n#undef  ENOTEMPTY\n#define ENOTEMPTY {{const:ENOTEMPTY}}\n#undef  EPIPE\n#define EPIPE     {{const:EPIPE}}\n\n/* NT enum constants — invisible to a -dM macro dump, hence the object probe */\n#define FileBasicInformation       {{const:FileBasicInformation}}\n#define FileStandardInformation    {{const:FileStandardInformation}}\n#define GetFileExInfoStandard      {{const:GetFileExInfoStandard}}\n#define ExceptionContinueSearch    {{const:ExceptionContinueSearch}}\n#define ExceptionContinueExecution {{const:ExceptionContinueExecution}}\n#define ExceptionNestedException   {{const:ExceptionNestedException}}\n#define ExceptionCollidedUnwind    {{const:ExceptionCollidedUnwind}}\n\n/* signal numbers (msvcrt's OWN signal.h — these DISPLACE the host's) */\n#undef  SIGABRT\n#define SIGABRT  {{const:SIGABRT}}\n#define SIGBREAK {{const:SIGBREAK}}\n#undef  SIGFPE\n#define SIGFPE   {{const:SIGFPE}}\n#undef  SIGILL\n#define SIGILL   {{const:SIGILL}}\n#undef  SIGINT\n#define SIGINT   {{const:SIGINT}}\n#undef  SIGSEGV\n#define SIGSEGV  {{const:SIGSEGV}}\n#undef  SIGTERM\n#define SIGTERM  {{const:SIGTERM}}\n#undef  NSIG\n#define NSIG     {{const:NSIG}}\n\n/* _FPE_* subcodes (msvcrt's float.h) — the second argument to a SIGFPE handler */\n#define _FPE_DENORMAL      {{const:_FPE_DENORMAL}}\n#define _FPE_EXPLICITGEN   {{const:_FPE_EXPLICITGEN}}\n#define _FPE_INEXACT       {{const:_FPE_INEXACT}}\n#define _FPE_INVALID       {{const:_FPE_INVALID}}\n#define _FPE_OVERFLOW      {{const:_FPE_OVERFLOW}}\n#define _FPE_STACKOVERFLOW {{const:_FPE_STACKOVERFLOW}}\n#define _FPE_UNDERFLOW     {{const:_FPE_UNDERFLOW}}\n#define _FPE_ZERODIVIDE    {{const:_FPE_ZERODIVIDE}}\n\n/* SEH filter dispositions and exception-record flags (winnt.h / excpt.h) */\n#define EXCEPTION_CONTINUE_EXECUTION {{const:EXCEPTION_CONTINUE_EXECUTION}}\n#define EXCEPTION_CONTINUE_SEARCH    {{const:EXCEPTION_CONTINUE_SEARCH}}\n#define EXCEPTION_EXECUTE_HANDLER    {{const:EXCEPTION_EXECUTE_HANDLER}}\n#define EXCEPTION_NONCONTINUABLE     {{const:EXCEPTION_NONCONTINUABLE}}\n#define EXCEPTION_UNWINDING          {{const:EXCEPTION_UNWINDING}}\n#define EXCEPTION_EXIT_UNWIND        {{const:EXCEPTION_EXIT_UNWIND}}\n#define EXCEPTION_TARGET_UNWIND      {{const:EXCEPTION_TARGET_UNWIND}}\n#define EXCEPTION_MAXIMUM_PARAMETERS {{const:EXCEPTION_MAXIMUM_PARAMETERS}}\n\n/* exception CODES — except.c's SIGFPE/SIGSEGV/SIGILL mapping switches on these */\n#define EXCEPTION_ACCESS_VIOLATION      {{const:EXCEPTION_ACCESS_VIOLATION}}\n#define EXCEPTION_ILLEGAL_INSTRUCTION   {{const:EXCEPTION_ILLEGAL_INSTRUCTION}}\n#define EXCEPTION_PRIV_INSTRUCTION      {{const:EXCEPTION_PRIV_INSTRUCTION}}\n#define EXCEPTION_FLT_DENORMAL_OPERAND  {{const:EXCEPTION_FLT_DENORMAL_OPERAND}}\n#define EXCEPTION_FLT_DIVIDE_BY_ZERO    {{const:EXCEPTION_FLT_DIVIDE_BY_ZERO}}\n#define EXCEPTION_FLT_INEXACT_RESULT    {{const:EXCEPTION_FLT_INEXACT_RESULT}}\n#define EXCEPTION_FLT_INVALID_OPERATION {{const:EXCEPTION_FLT_INVALID_OPERATION}}\n#define EXCEPTION_FLT_OVERFLOW          {{const:EXCEPTION_FLT_OVERFLOW}}\n#define EXCEPTION_FLT_STACK_CHECK       {{const:EXCEPTION_FLT_STACK_CHECK}}\n#define EXCEPTION_FLT_UNDERFLOW         {{const:EXCEPTION_FLT_UNDERFLOW}}\n\n/* NTSTATUS values (ntstatus.h) — the same codes on the other side of the map */\n#define STATUS_ACCESS_VIOLATION        {{const:STATUS_ACCESS_VIOLATION}}\n#define STATUS_FLOAT_DIVIDE_BY_ZERO    {{const:STATUS_FLOAT_DIVIDE_BY_ZERO}}\n#define STATUS_FLOAT_INEXACT_RESULT    {{const:STATUS_FLOAT_INEXACT_RESULT}}\n#define STATUS_FLOAT_INVALID_OPERATION {{const:STATUS_FLOAT_INVALID_OPERATION}}\n#define STATUS_FLOAT_OVERFLOW          {{const:STATUS_FLOAT_OVERFLOW}}\n#define STATUS_FLOAT_UNDERFLOW         {{const:STATUS_FLOAT_UNDERFLOW}}\n#define STATUS_LONGJUMP                {{const:STATUS_LONGJUMP}}\n#define STATUS_UNWIND_CONSOLIDATE      {{const:STATUS_UNWIND_CONSOLIDATE}}\n\n/* console control events (wincon.h) — except.c's Ctrl-C handler */\n#define CTRL_C_EVENT     {{const:CTRL_C_EVENT}}\n#define CTRL_BREAK_EVENT {{const:CTRL_BREAK_EVENT}}\n\n/* undecoration flags (imagehlp.h) — cpp.c's type_info::name() calls __unDName */\n#define UNDNAME_NO_ARGUMENTS  {{const:UNDNAME_NO_ARGUMENTS}}\n#define UNDNAME_32_BIT_DECODE {{const:UNDNAME_32_BIT_DECODE}}\n\n/* MEASURED, not transcribed: cxx.h's two object layouts, for the Rust mirror in\n * tests/cpp.rs to assert itself against.  See DERIVED in the generator. */\n#define MSVCRT_SIZEOF_EXCEPTION      {{derived:MSVCRT_SIZEOF_EXCEPTION}}\n#define MSVCRT_OFF_EXCEPTION_NAME    {{derived:MSVCRT_OFF_EXCEPTION_NAME}}\n#define MSVCRT_OFF_EXCEPTION_DO_FREE {{derived:MSVCRT_OFF_EXCEPTION_DO_FREE}}\n#define MSVCRT_SIZEOF_TYPE_INFO      {{derived:MSVCRT_SIZEOF_TYPE_INFO}}\n#define MSVCRT_OFF_TYPE_INFO_NAME    {{derived:MSVCRT_OFF_TYPE_INFO_NAME}}\n#define MSVCRT_OFF_TYPE_INFO_MANGLED {{derived:MSVCRT_OFF_TYPE_INFO_MANGLED}}\n\n/* Pointer-valued; not an integer initializer, so emitted verbatim. */\n#define INVALID_HANDLE_VALUE ((HANDLE)(LONG_PTR)-1)\n\n#endif /* MSVCRT_DIFFTEST_CRT_CONSTS_H */\n"
+    ],
+    [
+      "sdk/lib/rust/msvcrt-difftest/refstub/msvcrt_crt_layout.h",
+      "/* GENERATED by tools/gen_msvcrt_difftest_consts.py — DO NOT EDIT.\n *\n * The layout guardian.  Every number below was measured by the PINNED\n * CROSS-COMPILER reading msvcrt's real headers; the host compiler checks\n * them against the transcribed definitions in msvcrt_file_types.h.  The\n * two must agree or the reference TU does not build — which is the whole\n * point: a struct layout cannot be derived into a header the way a\n * constant can, so it is transcribed and then PROVED.\n *\n * Include AFTER msvcrt_file_types.h.\n */\n#ifndef MSVCRT_DIFFTEST_CRT_LAYOUT_H\n#define MSVCRT_DIFFTEST_CRT_LAYOUT_H\n\n/* Scalar widths every layout below depends on. */\n_Static_assert(sizeof(_dev_t) == {{size:_dev_t}}, \"_dev_t width drifted\");\n_Static_assert(sizeof(_ino_t) == {{size:_ino_t}}, \"_ino_t width drifted\");\n_Static_assert(sizeof(_off_t) == {{size:_off_t}}, \"_off_t width drifted\");\n_Static_assert(sizeof(__time32_t) == {{size:__time32_t}}, \"__time32_t width drifted\");\n_Static_assert(sizeof(__time64_t) == {{size:__time64_t}}, \"__time64_t width drifted\");\n\n/* FILE */\n_Static_assert(__builtin_offsetof(FILE, _ptr) == {{off:FILE:_ptr}}, \"FILE._ptr moved\");\n_Static_assert(__builtin_offsetof(FILE, _cnt) == {{off:FILE:_cnt}}, \"FILE._cnt moved\");\n_Static_assert(__builtin_offsetof(FILE, _base) == {{off:FILE:_base}}, \"FILE._base moved\");\n_Static_assert(__builtin_offsetof(FILE, _flag) == {{off:FILE:_flag}}, \"FILE._flag moved\");\n_Static_assert(__builtin_offsetof(FILE, _file) == {{off:FILE:_file}}, \"FILE._file moved\");\n_Static_assert(__builtin_offsetof(FILE, _charbuf) == {{off:FILE:_charbuf}}, \"FILE._charbuf moved\");\n_Static_assert(__builtin_offsetof(FILE, _bufsiz) == {{off:FILE:_bufsiz}}, \"FILE._bufsiz moved\");\n_Static_assert(__builtin_offsetof(FILE, _tmpfname) == {{off:FILE:_tmpfname}}, \"FILE._tmpfname moved\");\n_Static_assert(sizeof(FILE) == {{size:FILE}}, \"FILE size drifted\");\n\n/* struct _stat32 */\n_Static_assert(__builtin_offsetof(struct _stat32, st_dev) == {{off:struct _stat32:st_dev}}, \"_stat32.st_dev moved\");\n_Static_assert(__builtin_offsetof(struct _stat32, st_ino) == {{off:struct _stat32:st_ino}}, \"_stat32.st_ino moved\");\n_Static_assert(__builtin_offsetof(struct _stat32, st_mode) == {{off:struct _stat32:st_mode}}, \"_stat32.st_mode moved\");\n_Static_assert(__builtin_offsetof(struct _stat32, st_nlink) == {{off:struct _stat32:st_nlink}}, \"_stat32.st_nlink moved\");\n_Static_assert(__builtin_offsetof(struct _stat32, st_uid) == {{off:struct _stat32:st_uid}}, \"_stat32.st_uid moved\");\n_Static_assert(__builtin_offsetof(struct _stat32, st_gid) == {{off:struct _stat32:st_gid}}, \"_stat32.st_gid moved\");\n_Static_assert(__builtin_offsetof(struct _stat32, st_rdev) == {{off:struct _stat32:st_rdev}}, \"_stat32.st_rdev moved\");\n_Static_assert(__builtin_offsetof(struct _stat32, st_size) == {{off:struct _stat32:st_size}}, \"_stat32.st_size moved\");\n_Static_assert(__builtin_offsetof(struct _stat32, st_atime) == {{off:struct _stat32:st_atime}}, \"_stat32.st_atime moved\");\n_Static_assert(__builtin_offsetof(struct _stat32, st_mtime) == {{off:struct _stat32:st_mtime}}, \"_stat32.st_mtime moved\");\n_Static_assert(__builtin_offsetof(struct _stat32, st_ctime) == {{off:struct _stat32:st_ctime}}, \"_stat32.st_ctime moved\");\n_Static_assert(sizeof(struct _stat32) == {{size:struct _stat32}}, \"_stat32 size drifted\");\n\n/* struct _stat32i64 */\n_Static_assert(__builtin_offsetof(struct _stat32i64, st_dev) == {{off:struct _stat32i64:st_dev}}, \"_stat32i64.st_dev moved\");\n_Static_assert(__builtin_offsetof(struct _stat32i64, st_ino) == {{off:struct _stat32i64:st_ino}}, \"_stat32i64.st_ino moved\");\n_Static_assert(__builtin_offsetof(struct _stat32i64, st_mode) == {{off:struct _stat32i64:st_mode}}, \"_stat32i64.st_mode moved\");\n_Static_assert(__builtin_offsetof(struct _stat32i64, st_nlink) == {{off:struct _stat32i64:st_nlink}}, \"_stat32i64.st_nlink moved\");\n_Static_assert(__builtin_offsetof(struct _stat32i64, st_uid) == {{off:struct _stat32i64:st_uid}}, \"_stat32i64.st_uid moved\");\n_Static_assert(__builtin_offsetof(struct _stat32i64, st_gid) == {{off:struct _stat32i64:st_gid}}, \"_stat32i64.st_gid moved\");\n_Static_assert(__builtin_offsetof(struct _stat32i64, st_rdev) == {{off:struct _stat32i64:st_rdev}}, \"_stat32i64.st_rdev moved\");\n_Static_assert(__builtin_offsetof(struct _stat32i64, st_size) == {{off:struct _stat32i64:st_size}}, \"_stat32i64.st_size moved\");\n_Static_assert(__builtin_offsetof(struct _stat32i64, st_atime) == {{off:struct _stat32i64:st_atime}}, \"_stat32i64.st_atime moved\");\n_Static_assert(__builtin_offsetof(struct _stat32i64, st_mtime) == {{off:struct _stat32i64:st_mtime}}, \"_stat32i64.st_mtime moved\");\n_Static_assert(__builtin_offsetof(struct _stat32i64, st_ctime) == {{off:struct _stat32i64:st_ctime}}, \"_stat32i64.st_ctime moved\");\n_Static_assert(sizeof(struct _stat32i64) == {{size:struct _stat32i64}}, \"_stat32i64 size drifted\");\n\n/* struct _stat64i32 */\n_Static_assert(__builtin_offsetof(struct _stat64i32, st_dev) == {{off:struct _stat64i32:st_dev}}, \"_stat64i32.st_dev moved\");\n_Static_assert(__builtin_offsetof(struct _stat64i32, st_ino) == {{off:struct _stat64i32:st_ino}}, \"_stat64i32.st_ino moved\");\n_Static_assert(__builtin_offsetof(struct _stat64i32, st_mode) == {{off:struct _stat64i32:st_mode}}, \"_stat64i32.st_mode moved\");\n_Static_assert(__builtin_offsetof(struct _stat64i32, st_nlink) == {{off:struct _stat64i32:st_nlink}}, \"_stat64i32.st_nlink moved\");\n_Static_assert(__builtin_offsetof(struct _stat64i32, st_uid) == {{off:struct _stat64i32:st_uid}}, \"_stat64i32.st_uid moved\");\n_Static_assert(__builtin_offsetof(struct _stat64i32, st_gid) == {{off:struct _stat64i32:st_gid}}, \"_stat64i32.st_gid moved\");\n_Static_assert(__builtin_offsetof(struct _stat64i32, st_rdev) == {{off:struct _stat64i32:st_rdev}}, \"_stat64i32.st_rdev moved\");\n_Static_assert(__builtin_offsetof(struct _stat64i32, st_size) == {{off:struct _stat64i32:st_size}}, \"_stat64i32.st_size moved\");\n_Static_assert(__builtin_offsetof(struct _stat64i32, st_atime) == {{off:struct _stat64i32:st_atime}}, \"_stat64i32.st_atime moved\");\n_Static_assert(__builtin_offsetof(struct _stat64i32, st_mtime) == {{off:struct _stat64i32:st_mtime}}, \"_stat64i32.st_mtime moved\");\n_Static_assert(__builtin_offsetof(struct _stat64i32, st_ctime) == {{off:struct _stat64i32:st_ctime}}, \"_stat64i32.st_ctime moved\");\n_Static_assert(sizeof(struct _stat64i32) == {{size:struct _stat64i32}}, \"_stat64i32 size drifted\");\n\n/* struct _stat64 */\n_Static_assert(__builtin_offsetof(struct _stat64, st_dev) == {{off:struct _stat64:st_dev}}, \"_stat64.st_dev moved\");\n_Static_assert(__builtin_offsetof(struct _stat64, st_ino) == {{off:struct _stat64:st_ino}}, \"_stat64.st_ino moved\");\n_Static_assert(__builtin_offsetof(struct _stat64, st_mode) == {{off:struct _stat64:st_mode}}, \"_stat64.st_mode moved\");\n_Static_assert(__builtin_offsetof(struct _stat64, st_nlink) == {{off:struct _stat64:st_nlink}}, \"_stat64.st_nlink moved\");\n_Static_assert(__builtin_offsetof(struct _stat64, st_uid) == {{off:struct _stat64:st_uid}}, \"_stat64.st_uid moved\");\n_Static_assert(__builtin_offsetof(struct _stat64, st_gid) == {{off:struct _stat64:st_gid}}, \"_stat64.st_gid moved\");\n_Static_assert(__builtin_offsetof(struct _stat64, st_rdev) == {{off:struct _stat64:st_rdev}}, \"_stat64.st_rdev moved\");\n_Static_assert(__builtin_offsetof(struct _stat64, st_size) == {{off:struct _stat64:st_size}}, \"_stat64.st_size moved\");\n_Static_assert(__builtin_offsetof(struct _stat64, st_atime) == {{off:struct _stat64:st_atime}}, \"_stat64.st_atime moved\");\n_Static_assert(__builtin_offsetof(struct _stat64, st_mtime) == {{off:struct _stat64:st_mtime}}, \"_stat64.st_mtime moved\");\n_Static_assert(__builtin_offsetof(struct _stat64, st_ctime) == {{off:struct _stat64:st_ctime}}, \"_stat64.st_ctime moved\");\n_Static_assert(sizeof(struct _stat64) == {{size:struct _stat64}}, \"_stat64 size drifted\");\n\n/* struct _stat */\n_Static_assert(__builtin_offsetof(struct _stat, st_dev) == {{off:struct _stat:st_dev}}, \"_stat.st_dev moved\");\n_Static_assert(__builtin_offsetof(struct _stat, st_ino) == {{off:struct _stat:st_ino}}, \"_stat.st_ino moved\");\n_Static_assert(__builtin_offsetof(struct _stat, st_mode) == {{off:struct _stat:st_mode}}, \"_stat.st_mode moved\");\n_Static_assert(__builtin_offsetof(struct _stat, st_nlink) == {{off:struct _stat:st_nlink}}, \"_stat.st_nlink moved\");\n_Static_assert(__builtin_offsetof(struct _stat, st_uid) == {{off:struct _stat:st_uid}}, \"_stat.st_uid moved\");\n_Static_assert(__builtin_offsetof(struct _stat, st_gid) == {{off:struct _stat:st_gid}}, \"_stat.st_gid moved\");\n_Static_assert(__builtin_offsetof(struct _stat, st_rdev) == {{off:struct _stat:st_rdev}}, \"_stat.st_rdev moved\");\n_Static_assert(__builtin_offsetof(struct _stat, st_size) == {{off:struct _stat:st_size}}, \"_stat.st_size moved\");\n_Static_assert(__builtin_offsetof(struct _stat, st_atime) == {{off:struct _stat:st_atime}}, \"_stat.st_atime moved\");\n_Static_assert(__builtin_offsetof(struct _stat, st_mtime) == {{off:struct _stat:st_mtime}}, \"_stat.st_mtime moved\");\n_Static_assert(__builtin_offsetof(struct _stat, st_ctime) == {{off:struct _stat:st_ctime}}, \"_stat.st_ctime moved\");\n_Static_assert(sizeof(struct _stat) == {{size:struct _stat}}, \"_stat size drifted\");\n\n/* struct _stati64 */\n_Static_assert(__builtin_offsetof(struct _stati64, st_dev) == {{off:struct _stati64:st_dev}}, \"_stati64.st_dev moved\");\n_Static_assert(__builtin_offsetof(struct _stati64, st_ino) == {{off:struct _stati64:st_ino}}, \"_stati64.st_ino moved\");\n_Static_assert(__builtin_offsetof(struct _stati64, st_mode) == {{off:struct _stati64:st_mode}}, \"_stati64.st_mode moved\");\n_Static_assert(__builtin_offsetof(struct _stati64, st_nlink) == {{off:struct _stati64:st_nlink}}, \"_stati64.st_nlink moved\");\n_Static_assert(__builtin_offsetof(struct _stati64, st_uid) == {{off:struct _stati64:st_uid}}, \"_stati64.st_uid moved\");\n_Static_assert(__builtin_offsetof(struct _stati64, st_gid) == {{off:struct _stati64:st_gid}}, \"_stati64.st_gid moved\");\n_Static_assert(__builtin_offsetof(struct _stati64, st_rdev) == {{off:struct _stati64:st_rdev}}, \"_stati64.st_rdev moved\");\n_Static_assert(__builtin_offsetof(struct _stati64, st_size) == {{off:struct _stati64:st_size}}, \"_stati64.st_size moved\");\n_Static_assert(__builtin_offsetof(struct _stati64, st_atime) == {{off:struct _stati64:st_atime}}, \"_stati64.st_atime moved\");\n_Static_assert(__builtin_offsetof(struct _stati64, st_mtime) == {{off:struct _stati64:st_mtime}}, \"_stati64.st_mtime moved\");\n_Static_assert(__builtin_offsetof(struct _stati64, st_ctime) == {{off:struct _stati64:st_ctime}}, \"_stati64.st_ctime moved\");\n_Static_assert(sizeof(struct _stati64) == {{size:struct _stati64}}, \"_stati64 size drifted\");\n\n/* struct __utimbuf32 */\n_Static_assert(__builtin_offsetof(struct __utimbuf32, actime) == {{off:struct __utimbuf32:actime}}, \"__utimbuf32.actime moved\");\n_Static_assert(__builtin_offsetof(struct __utimbuf32, modtime) == {{off:struct __utimbuf32:modtime}}, \"__utimbuf32.modtime moved\");\n_Static_assert(sizeof(struct __utimbuf32) == {{size:struct __utimbuf32}}, \"__utimbuf32 size drifted\");\n\n/* struct __utimbuf64 */\n_Static_assert(__builtin_offsetof(struct __utimbuf64, actime) == {{off:struct __utimbuf64:actime}}, \"__utimbuf64.actime moved\");\n_Static_assert(__builtin_offsetof(struct __utimbuf64, modtime) == {{off:struct __utimbuf64:modtime}}, \"__utimbuf64.modtime moved\");\n_Static_assert(sizeof(struct __utimbuf64) == {{size:struct __utimbuf64}}, \"__utimbuf64 size drifted\");\n\n/* FILETIME */\n_Static_assert(__builtin_offsetof(FILETIME, dwLowDateTime) == {{off:FILETIME:dwLowDateTime}}, \"FILETIME.dwLowDateTime moved\");\n_Static_assert(__builtin_offsetof(FILETIME, dwHighDateTime) == {{off:FILETIME:dwHighDateTime}}, \"FILETIME.dwHighDateTime moved\");\n_Static_assert(sizeof(FILETIME) == {{size:FILETIME}}, \"FILETIME size drifted\");\n\n/* WIN32_FILE_ATTRIBUTE_DATA */\n_Static_assert(__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, dwFileAttributes) == {{off:WIN32_FILE_ATTRIBUTE_DATA:dwFileAttributes}}, \"WIN32_FILE_ATTRIBUTE_DATA.dwFileAttributes moved\");\n_Static_assert(__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, ftCreationTime) == {{off:WIN32_FILE_ATTRIBUTE_DATA:ftCreationTime}}, \"WIN32_FILE_ATTRIBUTE_DATA.ftCreationTime moved\");\n_Static_assert(__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, ftLastAccessTime) == {{off:WIN32_FILE_ATTRIBUTE_DATA:ftLastAccessTime}}, \"WIN32_FILE_ATTRIBUTE_DATA.ftLastAccessTime moved\");\n_Static_assert(__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, ftLastWriteTime) == {{off:WIN32_FILE_ATTRIBUTE_DATA:ftLastWriteTime}}, \"WIN32_FILE_ATTRIBUTE_DATA.ftLastWriteTime moved\");\n_Static_assert(__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, nFileSizeHigh) == {{off:WIN32_FILE_ATTRIBUTE_DATA:nFileSizeHigh}}, \"WIN32_FILE_ATTRIBUTE_DATA.nFileSizeHigh moved\");\n_Static_assert(__builtin_offsetof(WIN32_FILE_ATTRIBUTE_DATA, nFileSizeLow) == {{off:WIN32_FILE_ATTRIBUTE_DATA:nFileSizeLow}}, \"WIN32_FILE_ATTRIBUTE_DATA.nFileSizeLow moved\");\n_Static_assert(sizeof(WIN32_FILE_ATTRIBUTE_DATA) == {{size:WIN32_FILE_ATTRIBUTE_DATA}}, \"WIN32_FILE_ATTRIBUTE_DATA size drifted\");\n\n/* FILE_BASIC_INFORMATION */\n_Static_assert(__builtin_offsetof(FILE_BASIC_INFORMATION, CreationTime) == {{off:FILE_BASIC_INFORMATION:CreationTime}}, \"FILE_BASIC_INFORMATION.CreationTime moved\");\n_Static_assert(__builtin_offsetof(FILE_BASIC_INFORMATION, LastAccessTime) == {{off:FILE_BASIC_INFORMATION:LastAccessTime}}, \"FILE_BASIC_INFORMATION.LastAccessTime moved\");\n_Static_assert(__builtin_offsetof(FILE_BASIC_INFORMATION, LastWriteTime) == {{off:FILE_BASIC_INFORMATION:LastWriteTime}}, \"FILE_BASIC_INFORMATION.LastWriteTime moved\");\n_Static_assert(__builtin_offsetof(FILE_BASIC_INFORMATION, ChangeTime) == {{off:FILE_BASIC_INFORMATION:ChangeTime}}, \"FILE_BASIC_INFORMATION.ChangeTime moved\");\n_Static_assert(__builtin_offsetof(FILE_BASIC_INFORMATION, FileAttributes) == {{off:FILE_BASIC_INFORMATION:FileAttributes}}, \"FILE_BASIC_INFORMATION.FileAttributes moved\");\n_Static_assert(sizeof(FILE_BASIC_INFORMATION) == {{size:FILE_BASIC_INFORMATION}}, \"FILE_BASIC_INFORMATION size drifted\");\n\n/* FILE_STANDARD_INFORMATION */\n_Static_assert(__builtin_offsetof(FILE_STANDARD_INFORMATION, AllocationSize) == {{off:FILE_STANDARD_INFORMATION:AllocationSize}}, \"FILE_STANDARD_INFORMATION.AllocationSize moved\");\n_Static_assert(__builtin_offsetof(FILE_STANDARD_INFORMATION, EndOfFile) == {{off:FILE_STANDARD_INFORMATION:EndOfFile}}, \"FILE_STANDARD_INFORMATION.EndOfFile moved\");\n_Static_assert(__builtin_offsetof(FILE_STANDARD_INFORMATION, NumberOfLinks) == {{off:FILE_STANDARD_INFORMATION:NumberOfLinks}}, \"FILE_STANDARD_INFORMATION.NumberOfLinks moved\");\n_Static_assert(__builtin_offsetof(FILE_STANDARD_INFORMATION, DeletePending) == {{off:FILE_STANDARD_INFORMATION:DeletePending}}, \"FILE_STANDARD_INFORMATION.DeletePending moved\");\n_Static_assert(__builtin_offsetof(FILE_STANDARD_INFORMATION, Directory) == {{off:FILE_STANDARD_INFORMATION:Directory}}, \"FILE_STANDARD_INFORMATION.Directory moved\");\n_Static_assert(sizeof(FILE_STANDARD_INFORMATION) == {{size:FILE_STANDARD_INFORMATION}}, \"FILE_STANDARD_INFORMATION size drifted\");\n\n/* IO_STATUS_BLOCK */\n_Static_assert(__builtin_offsetof(IO_STATUS_BLOCK, Information) == {{off:IO_STATUS_BLOCK:Information}}, \"IO_STATUS_BLOCK.Information moved\");\n_Static_assert(sizeof(IO_STATUS_BLOCK) == {{size:IO_STATUS_BLOCK}}, \"IO_STATUS_BLOCK size drifted\");\n\n/* LARGE_INTEGER */\n_Static_assert(__builtin_offsetof(LARGE_INTEGER, QuadPart) == {{off:LARGE_INTEGER:QuadPart}}, \"LARGE_INTEGER.QuadPart moved\");\n_Static_assert(sizeof(LARGE_INTEGER) == {{size:LARGE_INTEGER}}, \"LARGE_INTEGER size drifted\");\n\n/* CRITICAL_SECTION_DEBUG */\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION_DEBUG, Type) == {{off:CRITICAL_SECTION_DEBUG:Type}}, \"CRITICAL_SECTION_DEBUG.Type moved\");\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION_DEBUG, CreatorBackTraceIndex) == {{off:CRITICAL_SECTION_DEBUG:CreatorBackTraceIndex}}, \"CRITICAL_SECTION_DEBUG.CreatorBackTraceIndex moved\");\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION_DEBUG, CriticalSection) == {{off:CRITICAL_SECTION_DEBUG:CriticalSection}}, \"CRITICAL_SECTION_DEBUG.CriticalSection moved\");\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION_DEBUG, ProcessLocksList) == {{off:CRITICAL_SECTION_DEBUG:ProcessLocksList}}, \"CRITICAL_SECTION_DEBUG.ProcessLocksList moved\");\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION_DEBUG, EntryCount) == {{off:CRITICAL_SECTION_DEBUG:EntryCount}}, \"CRITICAL_SECTION_DEBUG.EntryCount moved\");\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION_DEBUG, ContentionCount) == {{off:CRITICAL_SECTION_DEBUG:ContentionCount}}, \"CRITICAL_SECTION_DEBUG.ContentionCount moved\");\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION_DEBUG, Spare) == {{off:CRITICAL_SECTION_DEBUG:Spare}}, \"CRITICAL_SECTION_DEBUG.Spare moved\");\n_Static_assert(sizeof(CRITICAL_SECTION_DEBUG) == {{size:CRITICAL_SECTION_DEBUG}}, \"CRITICAL_SECTION_DEBUG size drifted\");\n\n/* CRITICAL_SECTION */\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION, DebugInfo) == {{off:CRITICAL_SECTION:DebugInfo}}, \"CRITICAL_SECTION.DebugInfo moved\");\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION, LockCount) == {{off:CRITICAL_SECTION:LockCount}}, \"CRITICAL_SECTION.LockCount moved\");\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION, RecursionCount) == {{off:CRITICAL_SECTION:RecursionCount}}, \"CRITICAL_SECTION.RecursionCount moved\");\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION, OwningThread) == {{off:CRITICAL_SECTION:OwningThread}}, \"CRITICAL_SECTION.OwningThread moved\");\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION, LockSemaphore) == {{off:CRITICAL_SECTION:LockSemaphore}}, \"CRITICAL_SECTION.LockSemaphore moved\");\n_Static_assert(__builtin_offsetof(CRITICAL_SECTION, SpinCount) == {{off:CRITICAL_SECTION:SpinCount}}, \"CRITICAL_SECTION.SpinCount moved\");\n_Static_assert(sizeof(CRITICAL_SECTION) == {{size:CRITICAL_SECTION}}, \"CRITICAL_SECTION size drifted\");\n\n/* STARTUPINFOA */\n_Static_assert(__builtin_offsetof(STARTUPINFOA, cb) == {{off:STARTUPINFOA:cb}}, \"STARTUPINFOA.cb moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOA, lpReserved) == {{off:STARTUPINFOA:lpReserved}}, \"STARTUPINFOA.lpReserved moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOA, dwFlags) == {{off:STARTUPINFOA:dwFlags}}, \"STARTUPINFOA.dwFlags moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOA, wShowWindow) == {{off:STARTUPINFOA:wShowWindow}}, \"STARTUPINFOA.wShowWindow moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOA, cbReserved2) == {{off:STARTUPINFOA:cbReserved2}}, \"STARTUPINFOA.cbReserved2 moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOA, lpReserved2) == {{off:STARTUPINFOA:lpReserved2}}, \"STARTUPINFOA.lpReserved2 moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOA, hStdInput) == {{off:STARTUPINFOA:hStdInput}}, \"STARTUPINFOA.hStdInput moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOA, hStdOutput) == {{off:STARTUPINFOA:hStdOutput}}, \"STARTUPINFOA.hStdOutput moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOA, hStdError) == {{off:STARTUPINFOA:hStdError}}, \"STARTUPINFOA.hStdError moved\");\n_Static_assert(sizeof(STARTUPINFOA) == {{size:STARTUPINFOA}}, \"STARTUPINFOA size drifted\");\n\n/* SECURITY_ATTRIBUTES */\n_Static_assert(__builtin_offsetof(SECURITY_ATTRIBUTES, nLength) == {{off:SECURITY_ATTRIBUTES:nLength}}, \"SECURITY_ATTRIBUTES.nLength moved\");\n_Static_assert(__builtin_offsetof(SECURITY_ATTRIBUTES, lpSecurityDescriptor) == {{off:SECURITY_ATTRIBUTES:lpSecurityDescriptor}}, \"SECURITY_ATTRIBUTES.lpSecurityDescriptor moved\");\n_Static_assert(__builtin_offsetof(SECURITY_ATTRIBUTES, bInheritHandle) == {{off:SECURITY_ATTRIBUTES:bInheritHandle}}, \"SECURITY_ATTRIBUTES.bInheritHandle moved\");\n_Static_assert(sizeof(SECURITY_ATTRIBUTES) == {{size:SECURITY_ATTRIBUTES}}, \"SECURITY_ATTRIBUTES size drifted\");\n\n/* STARTUPINFOW */\n_Static_assert(__builtin_offsetof(STARTUPINFOW, cb) == {{off:STARTUPINFOW:cb}}, \"STARTUPINFOW.cb moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOW, lpReserved) == {{off:STARTUPINFOW:lpReserved}}, \"STARTUPINFOW.lpReserved moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOW, dwFlags) == {{off:STARTUPINFOW:dwFlags}}, \"STARTUPINFOW.dwFlags moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOW, wShowWindow) == {{off:STARTUPINFOW:wShowWindow}}, \"STARTUPINFOW.wShowWindow moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOW, cbReserved2) == {{off:STARTUPINFOW:cbReserved2}}, \"STARTUPINFOW.cbReserved2 moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOW, lpReserved2) == {{off:STARTUPINFOW:lpReserved2}}, \"STARTUPINFOW.lpReserved2 moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOW, hStdInput) == {{off:STARTUPINFOW:hStdInput}}, \"STARTUPINFOW.hStdInput moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOW, hStdOutput) == {{off:STARTUPINFOW:hStdOutput}}, \"STARTUPINFOW.hStdOutput moved\");\n_Static_assert(__builtin_offsetof(STARTUPINFOW, hStdError) == {{off:STARTUPINFOW:hStdError}}, \"STARTUPINFOW.hStdError moved\");\n_Static_assert(sizeof(STARTUPINFOW) == {{size:STARTUPINFOW}}, \"STARTUPINFOW size drifted\");\n\n/* PROCESS_INFORMATION */\n_Static_assert(__builtin_offsetof(PROCESS_INFORMATION, hProcess) == {{off:PROCESS_INFORMATION:hProcess}}, \"PROCESS_INFORMATION.hProcess moved\");\n_Static_assert(__builtin_offsetof(PROCESS_INFORMATION, hThread) == {{off:PROCESS_INFORMATION:hThread}}, \"PROCESS_INFORMATION.hThread moved\");\n_Static_assert(__builtin_offsetof(PROCESS_INFORMATION, dwProcessId) == {{off:PROCESS_INFORMATION:dwProcessId}}, \"PROCESS_INFORMATION.dwProcessId moved\");\n_Static_assert(__builtin_offsetof(PROCESS_INFORMATION, dwThreadId) == {{off:PROCESS_INFORMATION:dwThreadId}}, \"PROCESS_INFORMATION.dwThreadId moved\");\n_Static_assert(sizeof(PROCESS_INFORMATION) == {{size:PROCESS_INFORMATION}}, \"PROCESS_INFORMATION size drifted\");\n\n#endif /* MSVCRT_DIFFTEST_CRT_LAYOUT_H */\n"
+    ],
+    [
+      "sdk/lib/rust/msvcrt-difftest/refstub/msvcrt_cpp_layout.h",
+      "/* GENERATED by tools/gen_msvcrt_difftest_consts.py — DO NOT EDIT.\n *\n * The layout guardian.  Every number below was measured by the PINNED\n * CROSS-COMPILER reading msvcrt's real headers; the host compiler checks\n * them against the transcribed definitions in msvcrt_cpp_types.h.  The\n * two must agree or the reference TU does not build — which is the whole\n * point: a struct layout cannot be derived into a header the way a\n * constant can, so it is transcribed and then PROVED.\n *\n * Include AFTER msvcrt_cpp_types.h.\n */\n#ifndef MSVCRT_DIFFTEST_CPP_LAYOUT_H\n#define MSVCRT_DIFFTEST_CPP_LAYOUT_H\n\n/* Scalar widths every layout below depends on. */\n_Static_assert(sizeof(CONTEXT) == {{size:CONTEXT}}, \"CONTEXT width drifted\");\n\n/* EXCEPTION_RECORD */\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, ExceptionCode) == {{off:EXCEPTION_RECORD:ExceptionCode}}, \"EXCEPTION_RECORD.ExceptionCode moved\");\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, ExceptionFlags) == {{off:EXCEPTION_RECORD:ExceptionFlags}}, \"EXCEPTION_RECORD.ExceptionFlags moved\");\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, ExceptionRecord) == {{off:EXCEPTION_RECORD:ExceptionRecord}}, \"EXCEPTION_RECORD.ExceptionRecord moved\");\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, ExceptionAddress) == {{off:EXCEPTION_RECORD:ExceptionAddress}}, \"EXCEPTION_RECORD.ExceptionAddress moved\");\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, NumberParameters) == {{off:EXCEPTION_RECORD:NumberParameters}}, \"EXCEPTION_RECORD.NumberParameters moved\");\n_Static_assert(__builtin_offsetof(EXCEPTION_RECORD, ExceptionInformation) == {{off:EXCEPTION_RECORD:ExceptionInformation}}, \"EXCEPTION_RECORD.ExceptionInformation moved\");\n_Static_assert(sizeof(EXCEPTION_RECORD) == {{size:EXCEPTION_RECORD}}, \"EXCEPTION_RECORD size drifted\");\n\n/* EXCEPTION_POINTERS */\n_Static_assert(__builtin_offsetof(EXCEPTION_POINTERS, ExceptionRecord) == {{off:EXCEPTION_POINTERS:ExceptionRecord}}, \"EXCEPTION_POINTERS.ExceptionRecord moved\");\n_Static_assert(__builtin_offsetof(EXCEPTION_POINTERS, ContextRecord) == {{off:EXCEPTION_POINTERS:ContextRecord}}, \"EXCEPTION_POINTERS.ContextRecord moved\");\n_Static_assert(sizeof(EXCEPTION_POINTERS) == {{size:EXCEPTION_POINTERS}}, \"EXCEPTION_POINTERS size drifted\");\n\n/* DISPATCHER_CONTEXT */\n_Static_assert(__builtin_offsetof(DISPATCHER_CONTEXT, ControlPc) == {{off:DISPATCHER_CONTEXT:ControlPc}}, \"DISPATCHER_CONTEXT.ControlPc moved\");\n_Static_assert(__builtin_offsetof(DISPATCHER_CONTEXT, ImageBase) == {{off:DISPATCHER_CONTEXT:ImageBase}}, \"DISPATCHER_CONTEXT.ImageBase moved\");\n_Static_assert(__builtin_offsetof(DISPATCHER_CONTEXT, FunctionEntry) == {{off:DISPATCHER_CONTEXT:FunctionEntry}}, \"DISPATCHER_CONTEXT.FunctionEntry moved\");\n_Static_assert(__builtin_offsetof(DISPATCHER_CONTEXT, EstablisherFrame) == {{off:DISPATCHER_CONTEXT:EstablisherFrame}}, \"DISPATCHER_CONTEXT.EstablisherFrame moved\");\n_Static_assert(__builtin_offsetof(DISPATCHER_CONTEXT, TargetIp) == {{off:DISPATCHER_CONTEXT:TargetIp}}, \"DISPATCHER_CONTEXT.TargetIp moved\");\n_Static_assert(__builtin_offsetof(DISPATCHER_CONTEXT, ContextRecord) == {{off:DISPATCHER_CONTEXT:ContextRecord}}, \"DISPATCHER_CONTEXT.ContextRecord moved\");\n_Static_assert(__builtin_offsetof(DISPATCHER_CONTEXT, LanguageHandler) == {{off:DISPATCHER_CONTEXT:LanguageHandler}}, \"DISPATCHER_CONTEXT.LanguageHandler moved\");\n_Static_assert(__builtin_offsetof(DISPATCHER_CONTEXT, HandlerData) == {{off:DISPATCHER_CONTEXT:HandlerData}}, \"DISPATCHER_CONTEXT.HandlerData moved\");\n_Static_assert(__builtin_offsetof(DISPATCHER_CONTEXT, HistoryTable) == {{off:DISPATCHER_CONTEXT:HistoryTable}}, \"DISPATCHER_CONTEXT.HistoryTable moved\");\n_Static_assert(__builtin_offsetof(DISPATCHER_CONTEXT, ScopeIndex) == {{off:DISPATCHER_CONTEXT:ScopeIndex}}, \"DISPATCHER_CONTEXT.ScopeIndex moved\");\n_Static_assert(sizeof(DISPATCHER_CONTEXT) == {{size:DISPATCHER_CONTEXT}}, \"DISPATCHER_CONTEXT size drifted\");\n\n/* RUNTIME_FUNCTION */\n_Static_assert(__builtin_offsetof(RUNTIME_FUNCTION, BeginAddress) == {{off:RUNTIME_FUNCTION:BeginAddress}}, \"RUNTIME_FUNCTION.BeginAddress moved\");\n_Static_assert(__builtin_offsetof(RUNTIME_FUNCTION, EndAddress) == {{off:RUNTIME_FUNCTION:EndAddress}}, \"RUNTIME_FUNCTION.EndAddress moved\");\n_Static_assert(__builtin_offsetof(RUNTIME_FUNCTION, UnwindData) == {{off:RUNTIME_FUNCTION:UnwindData}}, \"RUNTIME_FUNCTION.UnwindData moved\");\n_Static_assert(sizeof(RUNTIME_FUNCTION) == {{size:RUNTIME_FUNCTION}}, \"RUNTIME_FUNCTION size drifted\");\n\n/* frame_info */\n_Static_assert(__builtin_offsetof(frame_info, object) == {{off:frame_info:object}}, \"frame_info.object moved\");\n_Static_assert(__builtin_offsetof(frame_info, next) == {{off:frame_info:next}}, \"frame_info.next moved\");\n_Static_assert(sizeof(frame_info) == {{size:frame_info}}, \"frame_info size drifted\");\n\n/* cxx_frame_info */\n_Static_assert(__builtin_offsetof(cxx_frame_info, frame_info) == {{off:cxx_frame_info:frame_info}}, \"cxx_frame_info.frame_info moved\");\n_Static_assert(__builtin_offsetof(cxx_frame_info, rec) == {{off:cxx_frame_info:rec}}, \"cxx_frame_info.rec moved\");\n_Static_assert(__builtin_offsetof(cxx_frame_info, context) == {{off:cxx_frame_info:context}}, \"cxx_frame_info.context moved\");\n_Static_assert(sizeof(cxx_frame_info) == {{size:cxx_frame_info}}, \"cxx_frame_info size drifted\");\n\n#endif /* MSVCRT_DIFFTEST_CPP_LAYOUT_H */\n"
+    ]
+  ]
+}
