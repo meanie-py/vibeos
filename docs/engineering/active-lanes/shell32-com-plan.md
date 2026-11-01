@@ -1,30 +1,14 @@
 # shell32 COM/ATL C++ → Rust (lane: `shell32-com`)
 
-## RESUME HERE (parked 2026-11-01 for the XFS migration) — setupapi full flip, WIP
+## RESUME HERE (2026-11-01): setupapi full flip submitted to merge-integrator
 
-The lane now carries the setupapi port (`rust-port-status.md`, setupapi row). It is committed
-as WIP on `shell32-com` and has **not** been submitted to merge-integrator.
-- **Spend:** this buy of the last 10 TUs (devinst, install, parser, misc, driver, queue,
-  devclass, devprop, stubs, rpc; 406 functions) cost **$0.92** on Haiku 5.5, under a fresh
-  $5 budget. The earlier batches were $0.31 (cfgmgr) and $0.17 (the seven small TUs). All
-  paid bodies are in `tools/rustconv/.responses/2026103*-<tu>.c-run-*`, and the reviewed
-  modules are hand-banked whole (`port hand setupapi <f>.rs:*`, in
-  `~/vibeos-rust-staging/port/setupapi/hand/`).
-- **Done:** `cargo check` is clean on i386, amd64 and arm64. All 18 TUs are flipped in
-  `dll/win32/setupapi/CMakeLists.txt`. `SetupDiBuildDriverInfoList` is hand-written, because
-  Haiku hit max_tokens twice. The audit queue has been reviewed: four tables and the
-  preprocessor arms. One real i386 bug was fixed (the folded `FIELD_OFFSET` in devclass's
-  `InstallParamsData`). There is a new rustconv fix: a preamble made only of specifier tokens
-  split off a function now counts as vacuous (`test_preamble_vacuous.py`).
-- **Next, in order:**
-  1. `./vibeos-cli build --arch {amd64,i386,arm64}`. The flip has never been built; the
-     first build was stopped for the park.
-  2. `python3 tools/cohab_census.py --write`.
-  3. Re-run `python -m rustconv.c_oracle dll/win32/setupapi` and check that
-     `c_oracle.cmake` still lists all 18 TUs.
-  4. `./vibeos-cli check`, then pytest for `tools/rustconv/tests/test_preamble_vacuous.py`.
-  5. Gate ×3, which must include stortest, then `merge shell32-com @ <sha>` to
-     merge-integrator.
+All 18 setupapi TUs are in setupapi-rust and flipped. The full gate
+`20261101-133030-vbj0pxqz` passed smoke ×3, net, bios, conformance ×3 and stortest ×3.
+Its one red, `lint:source-deferred` SCANNER_ERROR, was a vibeos-lint race (verify_tables
+walked cargo's `target/`), fixed in the same push. Spend: **$0.92** of the $5 Haiku
+budget ($4.08 left). Every paid run is in `tools/rustconv/.responses/2026103*`, and the
+ten modules are hand-banked whole.
+- **Next:** wait for merge-integrator's verdict on the push.
 - **Owed:** the setupapi modrun suite against its own C (AGENTS step 6:
   `tools/payloads/modrun/suites/setupapi.yaml`).
 - **Gotcha:** the Bash tool's `grep` is ugrep with `-I`, and it silently skips ISO-8859
