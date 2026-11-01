@@ -12,8 +12,8 @@
  * over the NT root and the registry root (CEnumNTDirectory, CEnumRegRoot), BindToObject into
  * an NT directory and into HKEY_LOCAL_MACHINE (CEnumRegKey) and their enumerations, every
  * display-name flavour, the column headers and each column's details (object types, symbolic
- * link targets, registry value types), CompareIDs, GetAttributesOf, the extract-icon and
- * context-menu objects, and DllCanUnloadNow. Read-only: nothing is created or written. */
+ * link targets, registry value types), CompareIDs, GetAttributesOf, the extract-icon object's
+ * GetIconLocation (plain and GIL_FORSHELL), the context-menu object, and DllCanUnloadNow. Read-only: nothing is created or written. */
 #define COBJMACROS
 #include <windows.h>
 #include <shlobj.h>
@@ -225,17 +225,42 @@ static IShellFolder2 *create(GCO gco, const CLSID *clsid, const char *label)
     return sf;
 }
 
+/* mingw-w64's shlobj.h declares IExtractIconW with DECLARE_INTERFACE_IID_, which in C does
+ * not repeat IUnknown's slots, so its lpVtbl->GetIconLocation is slot 0 -- QueryInterface,
+ * with uFlags as the IID pointer. That read GIL_FORSHELL as an address and faulted at 2, in
+ * the C and the Rust alike. The real layout: */
+typedef struct
+{
+    HRESULT(STDMETHODCALLTYPE *QueryInterface)(IExtractIconW *, REFIID, void **);
+    ULONG(STDMETHODCALLTYPE *AddRef)(IExtractIconW *);
+    ULONG(STDMETHODCALLTYPE *Release)(IExtractIconW *);
+    HRESULT(STDMETHODCALLTYPE *GetIconLocation)(IExtractIconW *, UINT, LPWSTR, UINT, int *, UINT *);
+    HRESULT(STDMETHODCALLTYPE *Extract)(IExtractIconW *, LPCWSTR, UINT, HICON *, HICON *, UINT);
+} ExtractIconWSlots;
+
+static void icon_location(IExtractIconW *ei, const char *label, UINT flags)
+{
+    WCHAR file[MAX_PATH] = L"";
+    INT index = 0;
+    UINT out = 0xFFFFFFFF;
+    HRESULT hr = (*(ExtractIconWSlots **)ei)->GetIconLocation(ei, flags, file, MAX_PATH, &index, &out);
+    /* The file is the extension's own path, which differs between the variants. */
+    printf("%s iconlocation %u %08lx file %d index %d flags %u\n", label, flags, (unsigned long)hr,
+           file[0] != 0, index, out);
+}
+
 static void ui_objects(IShellFolder2 *sf, const char *label, LPITEMIDLIST item)
 {
     IExtractIconW *ei = NULL;
     HRESULT hr = IShellFolder2_GetUIObjectOf(sf, NULL, 1, (PCUITEMID_CHILD_ARRAY)&item,
                                              &IID_IExtractIconW, NULL, (void **)&ei);
     printf("%s extracticon %08lx\n", label, hr);
-    /* GetIconLocation is not called: the pre-flip C faults on it too (address 2, the
-     * GIL_FORSHELL flag read as a pointer -- owed, cpp-cluster-plan.md), so it measures
-     * nothing about the port. */
     if (ei)
+    {
+        for (UINT flags = 0; flags <= GIL_FORSHELL; flags += GIL_FORSHELL)
+            icon_location(ei, label, flags);
         IUnknown_Release((IUnknown *)ei);
+    }
     IContextMenu *cm = NULL;
     hr = IShellFolder2_GetUIObjectOf(sf, NULL, 1, (PCUITEMID_CHILD_ARRAY)&item, &IID_IContextMenu,
                                      NULL, (void **)&cm);

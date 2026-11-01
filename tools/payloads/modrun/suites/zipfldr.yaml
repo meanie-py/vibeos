@@ -2,7 +2,9 @@
 # extension -- explorer's view of a .zip. probes/zipfldr.c, staged twice: as zipfldr_c.exe it
 # loads the pre-flip C (zipfldr_c.dll, from c_oracle.cmake) beside it, as zipfldr_probe.exe
 # the system zipfldr.dll. Each writes the same embedded archive and prints only values, so
-# the outputs must match byte for byte.
+# the outputs must match byte for byte. Besides browsing, it extracts (Extract All, through
+# the wizard), creates (SendTo's drop target) and deletes (the item menu), with a thread in
+# the probe answering the dialogs.
 module: zipfldr
 variants:
   c: '%SystemRoot%\bin\modrun\zipfldr_c.exe'
@@ -15,5 +17,14 @@ stage:
 cases:
   - id: browse
     expect: ['storage create 00000000', 'storage load 00000000', 'root enum 00000000',
-             'root items 3', 'sub items 1', 'probe done']
+             'root items 3', 'sub items 1', 'wizard finish',
+             "extracted file 'dir\\inner.txt' size 242", 'create archive written 1',
+             'made items 2', 'deleted items 1', 'canunload after browse 00000000', 'probe done']
     timeout: 180
+    diverge:
+      # CZipCreator's thread never deletes the creator (runThread deletes it only when the
+      # thread fails to start), so its g_ModuleRefCnt reference leaks and the C can never
+      # unload after a SendTo. The Rust deletes it when the archive is written.
+      - why: 'a SendTo creator is freed when its thread ends'
+        c: '^canunload( after (create|delete))? 00000001$'
+        rust: '^canunload( after (create|delete))? 00000000$'
