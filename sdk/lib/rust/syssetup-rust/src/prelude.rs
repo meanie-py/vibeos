@@ -219,8 +219,10 @@ pub use crate::types::{
     _USER_INFORMATION_CLASS_UserSetPasswordInformation as UserSetPasswordInformation,
 };
 // syssetup's own enum (sdk/include/reactos/libs/syssetup/syssetup.h:27), same prefixing rule.
+// The default is Workstation, as the header now says (INSTALLATION_TYPE_DEFAULT): we report
+// Windows 11, a client. The island predates that and still carries DEFAULT = SERVER.
+pub const PRODUCT_OPTION_DEFAULT: crate::types::_PRODUCT_OPTION = PRODUCT_OPTION_WORKSTATION;
 pub use crate::types::{
-    _PRODUCT_OPTION_PRODUCT_OPTION_DEFAULT as PRODUCT_OPTION_DEFAULT,
     _PRODUCT_OPTION_PRODUCT_OPTION_SERVER as PRODUCT_OPTION_SERVER,
     _PRODUCT_OPTION_PRODUCT_OPTION_WORKSTATION as PRODUCT_OPTION_WORKSTATION,
 };

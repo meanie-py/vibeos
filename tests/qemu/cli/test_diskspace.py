@@ -257,6 +257,7 @@ def test_backing_store_is_admitted_as_its_own_volume(tmp_path, monkeypatch):
     volume that ran out. Guard is opt-in because a bare-metal host has no backing store,
     so the test pins both states — unarmed must not invent a volume, armed must add one.
     """
+    monkeypatch.setattr(disk, "BACKING_FILE", tmp_path / "absent")
     monkeypatch.delenv("VIBEOS_DISK_BACKING_MOUNTS", raising=False)
     assert disk.backing_mounts() == []
     before = {v["device"] for v in disk.filesystems(tmp_path)}
@@ -306,3 +307,15 @@ def test_a_full_disk_refuses_at_once_even_when_waiting_is_allowed(isolated, monk
         pytest.fail("a full disk admitted a build")
     assert not isinstance(info.value, disk.ContentionError)
     assert time.monotonic() - started < 5
+
+
+def test_the_host_file_names_the_backing_volumes_and_beats_a_stale_export(tmp_path, monkeypatch):
+    """The setting is the host's, read on every call: a running shell's old export of
+    VIBEOS_DISK_BACKING_MOUNTS (the pre-2026-11-01 /mnt/g) must not override it."""
+    f = tmp_path / "disk-backing-mounts"
+    f.write_text("# dynamic root vhdx host\n/mnt/c\n\n/mnt/x  # another\n")
+    monkeypatch.setattr(disk, "BACKING_FILE", f)
+    monkeypatch.setenv("VIBEOS_DISK_BACKING_MOUNTS", "/mnt/g")
+    assert disk.backing_mounts() == [Path("/mnt/c"), Path("/mnt/x")]
+    f.write_text("# no dynamic vhdx under us\n")
+    assert disk.backing_mounts() == []

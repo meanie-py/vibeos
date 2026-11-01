@@ -723,3 +723,19 @@ def test_scheduled_gc_runs_once_per_interval_and_honours_the_kill_switch(store):
     assert scheduled_gc(root, now=1_000_000.0 + GC_INTERVAL_SECONDS + 1) is not None
     (root / "gc-disabled").touch()
     assert scheduled_gc(root, force=True) is None
+
+
+def test_clone_or_copy_copies_and_falls_back_when_the_kernel_refuses(tmp_path, monkeypatch):
+    src = tmp_path / "src"
+    src.write_bytes(os.urandom(3 * 1024 * 1024 + 17))
+    for name, refuse in (("cloned", False), ("copied", True)):
+        if refuse:
+
+            def refused(*_args):
+                raise OSError(implementation.errno.EXDEV, "cross-device")
+
+            monkeypatch.setattr(implementation.os, "copy_file_range", refused)
+        dst = tmp_path / name
+        with src.open("rb") as incoming, dst.open("xb") as outgoing:
+            implementation._clone_or_copy(incoming, outgoing)
+        assert dst.read_bytes() == src.read_bytes()

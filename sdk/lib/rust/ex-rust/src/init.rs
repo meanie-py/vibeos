@@ -164,16 +164,21 @@ struct INIT_BUFFER {
     RegistryBuffer: [u16; 256],
 }
 
+// The version the OS reports: Windows 11 23H2, NT 10.0 build 22631 (Windows 11 kept NT 10.0;
+// build >= 22000 is what tells 11 from 10). RtlGetVersion and the kernel always report this;
+// kernel32's GetVersion* report it capped by the process manifest (6.2 unless it declares
+// Windows 10). Was 5.2 build 3790 until the version flip (docs/engineering/version-flip-audit.md).
+pub const VIBEOS_BUILD_NUMBER: ULONG = 22631;
 #[no_mangle]
-pub static mut NtMajorVersion: ULONG = 5;
+pub static mut NtMajorVersion: ULONG = 10;
 #[no_mangle]
-pub static mut NtMinorVersion: ULONG = 2;
+pub static mut NtMinorVersion: ULONG = 0;
 #[cfg(debug_assertions)]
 #[no_mangle]
-pub static mut NtBuildNumber: ULONG = 3790 | 0xC0000000;
+pub static mut NtBuildNumber: ULONG = VIBEOS_BUILD_NUMBER | 0xC0000000;
 #[cfg(not(debug_assertions))]
 #[no_mangle]
-pub static mut NtBuildNumber: ULONG = 3790;
+pub static mut NtBuildNumber: ULONG = VIBEOS_BUILD_NUMBER;
 
 #[no_mangle]
 pub static mut NtGlobalFlag: ULONG = 0;
@@ -202,8 +207,16 @@ pub static mut CmVersionString: _UNICODE_STRING = unsafe { core::mem::zeroed() }
 #[no_mangle]
 pub static mut CmCSDVersionString: _UNICODE_STRING = unsafe { core::mem::zeroed() };
 
+// `<build>.<branch>.<date>-<time>` on Windows; here the build, and this arch's lab tag.
+#[cfg(target_arch = "x86")]
 #[no_mangle]
-pub static NtBuildLab: [u8; 22] = *b"3790.reactos.0.x86fre\0";
+pub static NtBuildLab: [u8; 23] = *b"22631.reactos.0.x86fre\0";
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub static NtBuildLab: [u8; 25] = *b"22631.reactos.0.amd64fre\0";
+#[cfg(target_arch = "aarch64")]
+#[no_mangle]
+pub static NtBuildLab: [u8; 25] = *b"22631.reactos.0.arm64fre\0";
 
 #[no_mangle]
 pub static mut ExpInitializationPhase: ULONG = 0;
@@ -1165,7 +1178,9 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
     Status = crate::rtl_string_cb_printf_a!(
         VersionBuffer.as_mut_ptr(),
         VersionBuffer.len(),
-        b"5.2",
+        // Windows 10 and 11 keep "6.3" in CurrentVersion (programs read it); the real
+        // version is in CurrentMajor/MinorVersionNumber (cmsysini).
+        b"6.3",
     );
     if Status < 0 {
         KeBugCheckEx(ntkrnl_sys::bugcodes::PHASE0_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
@@ -1861,8 +1876,14 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         // The exact fastfat path: the int3 comes from deep in the pool tracker
         // (ExAllocatePoolWithTag -> ExpInsertPoolTracker, key == PoolHitTag).
         let mut hit = Err(0);
+        // With the special-pool tripwire armed for this tag (or "*", every tag) the
+        // allocation goes to special pool and never reaches the tracker, so there is no
+        // breakpoint to catch; the fault path is then not tested, rather than failed.
+        let tracker_bypassed;
         {
             const SEH_TEST_POOL_TAG: u32 = u32::from_le_bytes(*b"SehT");
+            tracker_bypassed = crate::pool::globals::ExpPoolFlags & POOL_FLAG_SPECIAL_POOL != 0
+                && MmUseSpecialPool(32, SEH_TEST_POOL_TAG) != 0;
             let saved = crate::pool::globals::PoolHitTag;
             crate::pool::globals::PoolHitTag = SEH_TEST_POOL_TAG;
             let mut p: PVOID = core::ptr::null_mut();
@@ -1879,7 +1900,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         }
         let pass = bp == Err(STATUS_BREAKPOINT) && bp_trace == 3
             && av == Err(STATUS_ACCESS_VIOLATION) && av_trace == 3
-            && hit == Err(STATUS_BREAKPOINT)
+            && (hit == Err(STATUS_BREAKPOINT) || tracker_bypassed)
             && irqs_kept;
         crate::dbg_print!(
             b"[SEH-TRY] rust hw faults: int3=0x%x trace=%u av=0x%x trace=%u pooltrack=0x%x irqs=%d/%d (%s)\n\0",

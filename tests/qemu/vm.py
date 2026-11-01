@@ -595,6 +595,13 @@ def boot_iso(build_dir: Path) -> Path:
     return Path(media) if media else build_dir / "livecd.iso"
 
 
+def arm64_boot_img() -> Path:
+    """arm64's boot image: qemu/boot.img, or `VIBEOS_BOOT_MEDIA`, a livecd.img
+    tools/media_manifest.py --assemble mastered elsewhere (checked as boot_iso's is)."""
+    media = os.environ.get("VIBEOS_BOOT_MEDIA", "").strip()
+    return Path(media) if media else QEMU_DIR / "boot.img"
+
+
 def livecd_media(build_dir: Path) -> Path:
     """The x86 boot ISO: livecd.iso, or its writable-root twin (tools/conformance/
     mk_writable_livecd.py, rebuilt only when livecd.iso changes) under writable_root()."""
@@ -1058,7 +1065,7 @@ class Arm64Config(ArchConfig):
         # Same boot-entry selection x86 gets: the ramdisk always carries both
         # kernel/HAL pairs and both freeldr entries, so an --smp run repoints
         # DefaultOS= in a COPY of boot.img instead of needing --smp-kernel media.
-        boot_img = _maybe_smp_iso(QEMU_DIR / "boot.img", work_dir)
+        boot_img = _maybe_smp_iso(arm64_boot_img(), work_dir)
         uefi_fw = QEMU_DIR / "QEMU_EFI.fd"
         efivars_raw = work_dir / "efivars.fd"
         efivars = work_dir / "efivars.qcow2"
@@ -1832,7 +1839,7 @@ class Arm64TestKernelConfig(Arm64Config):
     desktop_settle_seconds: float = 0.0
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        boot_img = testkernel_boot_img(QEMU_DIR / "boot.img", work_dir)
+        boot_img = testkernel_boot_img(arm64_boot_img(), work_dir)
         uefi_fw = QEMU_DIR / "QEMU_EFI.fd"
         efivars_raw = work_dir / "efivars.fd"
         efivars = work_dir / "efivars.qcow2"

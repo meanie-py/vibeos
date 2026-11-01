@@ -11645,7 +11645,10 @@ room. The disk stopped attaching (HCS 0x80070570) and never mounted again -- WSL
 rebuilt on a new 2 TB NVMe and everything restored from backup. Disk admission had been asking
 an honest question of the wrong subject the whole time. Fixed by
 `VIBEOS_DISK_BACKING_MOUNTS=/mnt/g`, which enters the backing mount into admission as a real
-filesystem so a build is refused on HOST headroom the same way it is on guest headroom. Note
+filesystem so a build is refused on HOST headroom the same way it is on guest headroom. (Since
+2026-11-01 the list lives in `/etc/vibeos/disk-backing-mounts`, read on every call: as an
+export it reached no running session, so moving the data disk to a fixed VHDX left the whole
+fleet refusing builds on the old volume until every session was restarted.) Note
 this one could not be caught by retrying either: `df /` would have returned the same reassuring
 number every time, right up to the failure.
 

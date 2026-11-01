@@ -557,7 +557,10 @@ real incidents.
    fingerprint/timestamp mtimes silently defeated
    cargo invalidation (an edited `build.rs` whose stale compiled script kept executing —
    false-green, no error anywhere). Sharing belongs ONLY in content-addressed caches designed
-   for it (ccache/sccache). Fleet maintenance must be delete-only (`vibeos-cli prune`), run from
+   for it (ccache/sccache), and in the kernel's extent dedup on the fleet's XFS disk
+   (`vibeos-dedup.service`, `duperemove -A`): each file keeps its own inode, link count 1 and
+   mtimes, the bytes are compared under lock, files are opened read-only, nothing is written.
+   That one mechanism only — see `disk-optimization.md` "Extent dedup on XFS". Fleet maintenance must be delete-only (`vibeos-cli prune`), run from
    ONE pinned copy, under the host lock, kill-switchable via a stamp OUTSIDE all worktrees
    (root-level stamps reach every lane instantly; in-tree fixes propagate only at merge speed).
    `vibeos-cli build` enforces this with an `ISOLATION_FAIL` preflight that refuses a tree

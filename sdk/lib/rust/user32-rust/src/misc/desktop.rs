@@ -220,6 +220,10 @@ pub unsafe extern "system" fn SetDeskWallpaper(filename: LPCSTR) -> BOOL {
     SystemParametersInfoA(SPI_SETDESKWALLPAPER, 0, filename as PVOID, 1)
 }
 
+// NONCLIENTMETRICSA's XP layout (this island's, 340 bytes) and Vista's, + iPaddedBorderWidth.
+const NCMA_XP_SIZE: UINT = core::mem::size_of::<NONCLIENTMETRICSA>() as UINT;
+const NCMA_VISTA_SIZE: UINT = NCMA_XP_SIZE + core::mem::size_of::<INT>() as UINT;
+
 #[no_mangle]
 pub unsafe extern "system" fn RealSystemParametersInfoA(
     uiAction: UINT,
@@ -231,7 +235,9 @@ pub unsafe extern "system" fn RealSystemParametersInfoA(
         SPI_GETNONCLIENTMETRICS => {
             let pnclma = pvParam as LPNONCLIENTMETRICSA;
             let mut nclmw: NONCLIENTMETRICSW = core::mem::zeroed();
-            if (*pnclma).cbSize != core::mem::size_of::<NONCLIENTMETRICSA>() as UINT {
+            // The XP layout or Vista's, which appends iPaddedBorderWidth: win32k's rule for W.
+            let cb = (*pnclma).cbSize;
+            if cb != NCMA_XP_SIZE && cb != NCMA_VISTA_SIZE {
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return 0;
             }
@@ -276,12 +282,17 @@ pub unsafe extern "system" fn RealSystemParametersInfoA(
                 core::ptr::addr_of_mut!((*pnclma).lfMessageFont),
                 core::ptr::addr_of!(nclmw.lfMessageFont),
             );
+            if cb == NCMA_VISTA_SIZE {
+                // iPaddedBorderWidth: ours draw no padded border (Windows reports 4).
+                // The INT right after the XP-layout struct.
+                *((pnclma as *mut NONCLIENTMETRICSA).add(1) as *mut INT) = 0;
+            }
             return 1;
         }
         SPI_SETNONCLIENTMETRICS => {
             let pnclma = pvParam as LPNONCLIENTMETRICSA;
             let mut nclmw: NONCLIENTMETRICSW = core::mem::zeroed();
-            if (*pnclma).cbSize != core::mem::size_of::<NONCLIENTMETRICSA>() as UINT {
+            if (*pnclma).cbSize != NCMA_XP_SIZE && (*pnclma).cbSize != NCMA_VISTA_SIZE {
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return 0;
             }

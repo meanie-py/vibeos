@@ -44,6 +44,33 @@ _UNDEF = re.compile(r"undefined (?:symbol|reference)[^\w]*[`']?([@\w]+)", re.I)
 _DUP = re.compile(r"error:\s*duplicate symbol[:\s]+[`']?([@\w]+)", re.I)
 
 
+DEDUP_UNIT = Path("/etc/systemd/system/vibeos-dedup.service")
+
+
+def kick_dedup() -> Stage:
+    """Start the extent-dedup pass now rather than at its next timer slot, without waiting.
+
+    The fleet's data disk is XFS with reflink, and `vibeos-dedup.service` runs
+    `duperemove` over it (docs/engineering/disk-optimization.md). A fresh build is the
+    biggest batch of new duplicates there is: lanes' outputs are byte-identical through
+    the shared compiler caches. Unlike the retired hardlinking, extent dedup leaves every
+    file its own inode, link count, mtime and ctime, and the kernel compares the bytes
+    under lock before sharing, so it is safe beside live builds. A pass already running
+    makes this a no-op; the timer picks up whatever it missed."""
+    if not DEDUP_UNIT.exists():
+        return Stage("dedup", status="skip", detail="no vibeos-dedup.service on this host")
+    try:
+        subprocess.run(
+            ["sudo", "-n", "systemctl", "start", "--no-block", "vibeos-dedup.service"],
+            check=True,
+            capture_output=True,
+            timeout=30,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return Stage("dedup", status="warn", detail=f"could not start vibeos-dedup: {exc}")
+    return Stage("dedup", status="ok", detail="vibeos-dedup.service started")
+
+
 def _decoration_hint(sym: str) -> str:
     if re.match(r"@\w+@\d+$", sym):
         return f"{sym}: i386 fastcall — wrong extern or missing #[no_mangle]"
@@ -1955,7 +1982,9 @@ def _build_locked(
 
     # NOTE: auto hardlink-dedup of cache trees was RETIRED 2026-07-04 (unsound on
     # live trees — SIGBUS + mtime-poisoned false-green; see tools/dedup-build-cache.sh
-    # SAFETY + AGENTS.md "Fleet isolation law"). Disk reclaim is manual: `vibeos-cli prune`.
+    # SAFETY + AGENTS.md "Fleet isolation law"). Extent dedup on XFS is not that: see
+    # kick_dedup.
+    run.add(kick_dedup())
     if not cold:
         run.add(
             Stage(

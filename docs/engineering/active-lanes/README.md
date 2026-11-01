@@ -20,7 +20,7 @@ registry), never left to rot in an archived doc.
 | `warnings-burndown` | [warnings-burndown-plan.md](warnings-burndown-plan.md) *(follow-on from the closed `rust-warnings` lane)* |
 | `qemu-perf` | [qemu-perf-plan.md](qemu-perf-plan.md) *(QEMU execution layer: windows-host backend, TCG-vs-WHPX, boot concurrency)* |
 | `cpp-cluster` | [cpp-cluster-plan.md](cpp-cluster-plan.md) *(C++ apps via `port cppapp`; paused 2026-10-12, next is rapps)* |
-| `research` | [../winref.md](../winref.md) — the Windows 11 reference VM · [../modern-windows-compat-roadmap.md](../modern-windows-compat-roadmap.md) Rung 0 — the export-surface stubs and gap census *(paused 2026-10-12 until the weekend; both "Owed" lists are the queue)* · older: [x64-primary-plan.md](x64-primary-plan.md) |
+| `research` / `win11-flip` | [research-win11.md](research-win11.md) — **RESUME HERE** (parked 2026-11-01) · [../modern-windows-compat-roadmap.md](../modern-windows-compat-roadmap.md) — the API surface left after the NT 10.0 flip (landed `558865d4c44`) · [../winref.md](../winref.md) — the Windows 11 reference VM · older: [x64-primary-plan.md](x64-primary-plan.md) |
 | `upstream-sync` | [upstream-sync-plan.md](upstream-sync-plan.md) — strategy · [upstream-sync-merge-decisions.md](upstream-sync-merge-decisions.md) — **what the merge decided, and what it owes** · [upstream-sync-phase4-review-queue.md](upstream-sync-phase4-review-queue.md) — the 194-file review queue *(ONGOING: upstream is a bug oracle, not a patch queue; the big merge landed 2026-09-20, phase 4 is the lane now)* |
 
 *Recently landed & closed:*

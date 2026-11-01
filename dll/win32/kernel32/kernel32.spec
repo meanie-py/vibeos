@@ -19,6 +19,14 @@
 @ stdcall -stub -version=0x600+ AllocateUserPhysicalPagesNuma(ptr ptr ptr long)
 @ stdcall -version=0x600+ ApplicationRecoveryFinished(long)
 @ stdcall -version=0x600+ ApplicationRecoveryInProgress(ptr)
+@ stdcall AppPolicyGetClrCompat(ptr ptr)
+@ stdcall AppPolicyGetCreateFileAccess(ptr ptr)
+@ stdcall AppPolicyGetLifecycleManagement(ptr ptr)
+@ stdcall AppPolicyGetMediaFoundationCodecLoading(ptr ptr)
+@ stdcall AppPolicyGetProcessTerminationMethod(ptr ptr)
+@ stdcall AppPolicyGetShowDeveloperDiagnostic(ptr ptr)
+@ stdcall AppPolicyGetThreadInitializationType(ptr ptr)
+@ stdcall AppPolicyGetWindowingModel(ptr ptr)
 @ stdcall AreFileApisANSI()
 @ stdcall AssignProcessToJobObject(ptr ptr)
 @ stdcall AttachConsole(long)
@@ -343,6 +351,7 @@
 @ stdcall FlsAlloc(ptr)
 @ stdcall FlsFree(long)
 @ stdcall FlsGetValue(long)
+@ stdcall FlsGetValue2(long)
 @ stdcall FlsSetValue(long ptr)
 @ stdcall FlushConsoleInputBuffer(long)
 @ stdcall FlushFileBuffers(long)
@@ -500,6 +509,7 @@
 @ stdcall -version=0x600+ GetFileBandwidthReservation(ptr ptr ptr ptr ptr ptr)
 @ stdcall GetFileInformationByHandle(long ptr)
 @ stdcall -arch=arm64 GetFileInformationByHandleEx(ptr long ptr long) kernel32_vista.GetFileInformationByHandleEx
+@ stdcall GetFileInformationByName(wstr long ptr long)
 @ stdcall -version=0x600+ GetFileMUIInfo(long wstr ptr ptr)
 @ stdcall -version=0x600+ GetFileMUIPath(long wstr wstr ptr wstr ptr ptr)
 @ stdcall GetFileSize(long ptr)
@@ -1431,14 +1441,6 @@
 @ stub -version=0xA00+ AddResourceAttributeAce
 @ stub -version=0xA00+ AddScopedPolicyIDAce
 @ stub -version=0xA00+ AllocConsoleWithOptions
-@ stub -version=0xA00+ AppPolicyGetClrCompat # -> kernelbase.AppPolicyGetClrCompat
-@ stub -version=0xA00+ AppPolicyGetCreateFileAccess # -> kernelbase.AppPolicyGetCreateFileAccess
-@ stub -version=0xA00+ AppPolicyGetLifecycleManagement # -> kernelbase.AppPolicyGetLifecycleManagement
-@ stub -version=0xA00+ AppPolicyGetMediaFoundationCodecLoading # -> kernelbase.AppPolicyGetMediaFoundationCodecLoading
-@ stub -version=0xA00+ AppPolicyGetProcessTerminationMethod # -> kernelbase.AppPolicyGetProcessTerminationMethod
-@ stub -version=0xA00+ AppPolicyGetShowDeveloperDiagnostic # -> kernelbase.AppPolicyGetShowDeveloperDiagnostic
-@ stub -version=0xA00+ AppPolicyGetThreadInitializationType # -> kernelbase.AppPolicyGetThreadInitializationType
-@ stub -version=0xA00+ AppPolicyGetWindowingModel # -> kernelbase.AppPolicyGetWindowingModel
 @ stub -version=0xA00+ AppXGetOSMaxVersionTested # -> kernelbase.AppXGetOSMaxVersionTested
 @ stub -version=0xA00+ AreShortNamesEnabled
 @ stub -version=0xA00+ BackupReadEx
@@ -1555,7 +1557,6 @@
 @ stub -version=0xA00+ FindActCtxSectionGuidWorker
 @ stub -version=0xA00+ FindActCtxSectionStringWWorker
 @ stub -version=0xA00+ FindStringOrdinal
-@ stub -version=0xA00+ FlsGetValue2 # -> kernelbase.FlsGetValue2
 @ stub -version=0xA00+ FormatApplicationUserModelId # -> kernelbase.FormatApplicationUserModelId
 @ stub -version=0xA00+ FreeMemoryJobObject
 @ stub -version=0xA00+ GetAppContainerAce
@@ -1573,7 +1574,6 @@
 @ stub -version=0xA00+ GetDiskSpaceInformationW # -> api-ms-win-core-file-l1-2-3.GetDiskSpaceInformationW
 @ stub -version=0xA00+ GetEncryptedFileVersionExt
 @ stub -version=0xA00+ GetEraNameCountedString
-@ stub -version=0xA00+ GetFileInformationByName
 @ stub -version=0xA00+ GetGeoInfoEx
 @ stub -version=0xA00+ GetIoRingInfo # -> api-ms-win-core-ioring-l1-1-0.GetIoRingInfo
 @ stub -version=0xA00+ GetMachineTypeAttributes # -> api-ms-win-core-processthreads-l1-1-7.GetMachineTypeAttributes

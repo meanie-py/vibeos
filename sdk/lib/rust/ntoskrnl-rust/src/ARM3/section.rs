@@ -2391,16 +2391,11 @@ pub unsafe extern "system" fn NtMapViewOfSection(
         return status;
     }
 
-    if (*section).u.Flags.PhysicalMemory() != 0 {
-        if previous_mode == 1i8
-            && safe_section_offset.QuadPart as u64 + safe_view_size as u64
-                > (MmHighestPhysicalPage as u64) << PAGE_SHIFT
-        {
-            ObDereferenceObject(section as *mut c_void);
-            ObDereferenceObject(process as *mut c_void);
-            return STATUS_INVALID_PARAMETER_6;
-        }
-    } else if (allocation_type & MEM_DOS_LIM) == 0 {
+    // \Device\PhysicalMemory has no alignment rule. NT 6.x also refused a user-mode view of
+    // it reaching past the highest physical page (STATUS_INVALID_PARAMETER_6); Windows 10
+    // maps that from either mode (kmtest MmSection, the two "fails for user" cases). Opening
+    // the section at all needs SECTION_MAP_* on an object only SYSTEM is granted.
+    if (*section).u.Flags.PhysicalMemory() == 0 && (allocation_type & MEM_DOS_LIM) == 0 {
         // Check for non-allocation-granularity-aligned BaseAddress
         if safe_base_address as ULONG_PTR != ALIGN_DOWN_BY(safe_base_address as ULONG_PTR, MM_VIRTMEM_GRANULARITY as ULONG_PTR) {
             ObDereferenceObject(section as *mut c_void);

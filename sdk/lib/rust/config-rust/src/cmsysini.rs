@@ -335,6 +335,8 @@ extern "C" {
     pub static mut InitIsWinPEMode: u8;
     pub static mut InitSafeBootMode: u32;
     pub static NtBuildLab: i8; // C: extern CHAR NtBuildLab[]; — take addr_of
+    pub static NtMajorVersion: u32; // ex-rust init.rs
+    pub static NtMinorVersion: u32;
     pub static mut NtSystemRoot: _UNICODE_STRING;
 }
 
@@ -2685,6 +2687,57 @@ pub unsafe extern "system" fn CmpSetVersionData() {
         ValueData.Buffer as *mut core::ffi::c_void,
         ValueData.Length as u32 + core::mem::size_of::<u16>() as u32
     );
+
+    // What Windows 10/11 detectors read before CurrentVersion (which stays "6.3"):
+    // CurrentMajorVersionNumber/CurrentMinorVersionNumber (REG_DWORD), CurrentBuild (the
+    // same string as CurrentBuildNumber), UBR (the update revision; 0, there is no
+    // servicing), DisplayVersion ("23H2" for build 22631), EditionID, InstallationType.
+    for (name, value) in [("CurrentMajorVersionNumber", NtMajorVersion), ("CurrentMinorVersionNumber", NtMinorVersion), ("UBR", 0)] {
+        let mut wname = [0u16; 32];
+        for (k, b) in name.bytes().enumerate() {
+            wname[k] = b as u16;
+        }
+        let mut data: ULONG = value;
+        RtlInitUnicodeString(&mut ValueName, wname.as_ptr());
+        NtSetValueKey(
+            CurrentVersionKeyHandle,
+            &mut ValueName,
+            0,
+            4, // REG_DWORD
+            &mut data as *mut ULONG as *mut core::ffi::c_void,
+            core::mem::size_of::<ULONG>() as u32,
+        );
+    }
+    RtlInitUnicodeString(&mut ValueName, w!("CurrentBuild").as_ptr());
+    RtlInitEmptyUnicodeString(&mut ValueData, Buffer.as_mut_ptr(), core::mem::size_of_val(&Buffer) as u16);
+    RtlIntegerToUnicodeString(NtBuildNumber & 0xFFFF, 10, &mut ValueData);
+    NtSetValueKey(
+        CurrentVersionKeyHandle,
+        &mut ValueName,
+        0,
+        1,
+        ValueData.Buffer as *mut core::ffi::c_void,
+        ValueData.Length as u32 + core::mem::size_of::<u16>() as u32
+    );
+    for (name, value) in [("DisplayVersion", "23H2"), ("EditionID", "Professional"), ("InstallationType", "Client")] {
+        let mut wname = [0u16; 32];
+        let mut wvalue = [0u16; 32];
+        for (k, b) in name.bytes().enumerate() {
+            wname[k] = b as u16;
+        }
+        for (k, b) in value.bytes().enumerate() {
+            wvalue[k] = b as u16;
+        }
+        RtlInitUnicodeString(&mut ValueName, wname.as_ptr());
+        NtSetValueKey(
+            CurrentVersionKeyHandle,
+            &mut ValueName,
+            0,
+            1, // REG_SZ
+            wvalue.as_mut_ptr() as *mut core::ffi::c_void,
+            ((value.len() + 1) * core::mem::size_of::<u16>()) as u32,
+        );
+    }
 
     RtlInitUnicodeString(&mut ValueName, w!("BuildLab").as_ptr());
     RtlInitAnsiString(&mut TempString, core::ptr::addr_of!(NtBuildLab) as *const i8);
