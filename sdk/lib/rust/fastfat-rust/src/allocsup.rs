@@ -2729,7 +2729,9 @@ pub unsafe extern "system" fn FatSetFatEntry(
                 let mut IgnoreStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
                 CcRepinBcb((*p_Bcb).cast());
                 CcUnpinData((*p_Bcb).cast());
-                DbgDoit!(&mut ((*IrpContext).PinCount) as *mut _ as *mut c_void); // approximate
+                // C: DbgDoit( IrpContext->PinCount -= 1 ). The pin taken by CcRepinBcb's
+                // caller was counted unconditionally, so the release is too.
+                (*IrpContext).PinCount -= 1;
                 CcUnpinRepinnedBcb((*p_Bcb).cast(), 1, &mut IgnoreStatus);
             } else {
                 FatUnpinBcb(IrpContext, p_Bcb as *mut *mut core::ffi::c_void);

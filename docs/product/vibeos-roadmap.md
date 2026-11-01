@@ -6880,7 +6880,20 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   every identity PDE, so OVMF's identity-only regions near the top of 2 GiB left valid EMPTY
   kernel PDEs inside the nonpaged-system range. `winldr_i386.rs` now allocates the kernel table
   only when a KernelMapping region needs it (divergence from the C, commented). 2 GiB boot: 0
-  asserts, desktop (`20261101-133844-znu7bcj0-smoke-i386`). **Next:** the loader/FS/driver tail. `debug_assert!` is gated on
+  asserts, desktop (`20261101-133844-znu7bcj0-smoke-i386`). **fastfat, cdfs, storahci, cmlib and
+  afd ARMED 2026-11-01**, after `nt_assert!` stopped panicking (it reports through RtlAssert and
+  continues, as the C's DBG ASSERT). Found: classpnp `ClassReadDriveCapacity`, classpnp
+  `ClasspPersistentReserve` and usbaudio `PinRenderProcess` lowered an overlapping
+  `RtlMoveMemory` to `copy_nonoverlapping` (new rule `scan_move_vs_nonoverlapping`, 78 baselined
+  disjoint copies to review); cdfs/fastfat stored 8-aligned dir-info structs into a 4-aligned
+  WoW64 user buffer; fastfat's LFN copy was WCHAR-typed on a packed record, `FatNoOpAcquire`
+  set top-level IRP 1 for `FSRTL_CACHE_TOP_LEVEL_IRP`, and an empty `DbgDoit!` dropped a DBG
+  increment; and a workspace `[profile]` edit never rebuilt `rust_crate_sources` edges.
+  **OWED:** classpnp, disk and cdrom -- on 64-bit `COMMON_DEVICE_EXTENSION` is 64/128-aligned
+  (a `LOOKASIDE_ALIGN` lookaside inside it) while `IoCreateDevice` places extensions 16-aligned,
+  as the C does; needs a design decision (align extensions in `IoCreateDevice`, or keep these
+  crates unarmed). Then freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks),
+  win32k-rust (10) and the remaining drivers. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of

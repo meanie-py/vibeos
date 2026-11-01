@@ -1287,6 +1287,11 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # invented 23 for the C's 15 and boosted starved threads into the realtime range. The
     # baseline is the triage queue; new findings fail.
     specs.append(("scan_shadowed_c_define", ["MISSING"], "stdout"))
+    # A C RtlMoveMemory/memmove translated as copy_nonoverlapping (native Rust rule,
+    # tools/vibeos-lint/src/rules/move_vs_nonoverlapping.rs): memcpy on overlapping ranges.
+    # classpnp's ClassReadDriveCapacity shifted READ_CAPACITY_DATA inside its own _EX this way.
+    # The baseline is the triage queue (disjoint copies); new findings fail.
+    specs.append(("scan_move_vs_nonoverlapping", ["MISSING"], "stdout"))
     # A named constant cast to a type too narrow for it: rustc's overflow lint covers
     # literals only. disk.sys set SRB_CLASS_FLAGS_PERSISTANT `as USHORT` (= 0), classpnp freed
     # an SRB inside the device extension, 0xC2 on the first flush. Gated at zero.

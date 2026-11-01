@@ -1940,7 +1940,10 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
                     use16ByteCdb = 1u8;
                     continue 'cleanup;
                 } else {
-                    core::ptr::copy_nonoverlapping(
+                    // C: RtlMoveMemory -- source and destination overlap by 4 bytes (the
+                    // 8-byte READ_CAPACITY_DATA shifts up one ULONG inside the _EX).
+                    // copy_nonoverlapping here was UB, caught by the armed UB checks.
+                    core::ptr::copy(
                         readCapacity as *mut _ as *const u8,
                         (core::ptr::addr_of_mut!(readCapacityData) as *mut u8)
                             .add(core::mem::size_of::<ULONG>()),

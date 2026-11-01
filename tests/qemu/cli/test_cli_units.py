@@ -2243,6 +2243,11 @@ def test_rust_source_closure_tracks_shared_dependencies(tmp_path):
         (crate / "Cargo.toml").write_text(f'[package]\nname = "{name}"\n{deps}\n')
         (crate / "src/lib.rs").write_text("")
         (crate / "build.rs").write_text("fn main() {}")
+    # The workspace manifest holds [profile]: a per-package debug-assertions change must
+    # rebuild the .a even when none of its sources changed.
+    (workspace / "Cargo.toml").write_text(
+        "[profile.release.package.leaf]\ndebug-assertions = true\n"
+    )
     helper = Path(__file__).resolve().parents[3] / "sdk/cmake/rust-crate-deps.cmake"
     output = tmp_path / "sources.txt"
     script = tmp_path / "fixture.cmake"
@@ -2257,7 +2262,7 @@ def test_rust_source_closure_tracks_shared_dependencies(tmp_path):
         str(workspace / crate / source)
         for crate in ("leaf", "shared")
         for source in ("src/lib.rs", "Cargo.toml", "build.rs")
-    }
+    } | {str(workspace / "Cargo.toml")}
 
 
 def test_former_cargo_pocs_are_shipping_cmake_targets():

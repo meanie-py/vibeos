@@ -546,9 +546,10 @@ pub unsafe extern "system" fn FatNoOpAcquire(
 
     ntkrnl_sys::ASSERT!(IoGetTopLevelIrp().is_null());
 
-    // FSRTL_CACHE_TOP_LEVEL_IRP (2), as resrcsup.c; 1 is FSRTL_FSP_TOP_LEVEL_IRP, which made
-    // the lazy writer's Vcb/EA/volume-file writes look like FSP work to write.rs.
-    IoSetTopLevelIrp((FSRTL_CACHE_TOP_LEVEL_IRP as *mut core::ffi::c_void).cast());
+    // C: (PIRP)FSRTL_CACHE_TOP_LEVEL_IRP (2), as resrcsup.c. The translation had 1,
+    // FSRTL_FSP_TOP_LEVEL_IRP, which made the lazy writer's Vcb/EA/volume-file writes look like
+    // FSP work to write.rs, and fired FatNoOpRelease's assert on every no-op acquire once armed.
+    IoSetTopLevelIrp(FSRTL_CACHE_TOP_LEVEL_IRP.cast());
 
     1u8
 }
