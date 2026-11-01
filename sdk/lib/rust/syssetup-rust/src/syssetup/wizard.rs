@@ -801,7 +801,7 @@ unsafe extern "C" fn DoWriteSoundEvents(
     error = RegOpenKeyExW(hKey, lpSubkey, 0, KEY_READ, &mut hRootKey);
     if error != 0 {
         // DPRINT removed
-        'Error: {
+        {
             if !hRootKey.is_null() {
                 RegCloseKey(hRootKey);
             }
@@ -4727,7 +4727,7 @@ pub unsafe extern "C" fn InstallWizard() {
             w!("ReactOS Setup") as LPWSTR,
             (MB_ICONERROR | MB_OK) as u32,
         );
-        'done: loop {
+        loop {
             if !phpage.is_null() {
                 HeapFree(GetProcessHeap(), 0, phpage as LPVOID);
             }
@@ -4779,7 +4779,7 @@ pub unsafe extern "C" fn InstallWizard() {
             w!("ReactOS Setup") as LPWSTR,
             (MB_ICONERROR | MB_OK) as u32,
         );
-        'done2: loop {
+        loop {
             if !phpage.is_null() {
                 HeapFree(GetProcessHeap(), 0, phpage as LPVOID);
             }

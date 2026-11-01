@@ -1618,7 +1618,7 @@ fn StorageBaseImpl_Stat(
 
     if pstatstg.is_null() {
         res = E_INVALIDARG;
-        'end: loop {
+        loop {
             if res == S_OK {
                 TRACE!(b"<-- STATSTG: pwcsName: %s, type: %d, cbSize.Low/High: %d/%d, grfMode: %08x, grfLocksSupported: %d, grfStateBits: %08x\n\0".as_ptr() as *const i8);
             }
@@ -1629,7 +1629,7 @@ fn StorageBaseImpl_Stat(
 
     if (*This).reverted != 0 {
         res = STG_E_REVERTED;
-        'end: loop {
+        loop {
             if res == S_OK {
                 TRACE!(b"<-- STATSTG: pwcsName: %s, type: %d, cbSize.Low/High: %d/%d, grfMode: %08x, grfLocksSupported: %d, grfStateBits: %08x\n\0".as_ptr() as *const i8);
             }
@@ -1647,7 +1647,7 @@ fn StorageBaseImpl_Stat(
         (*pstatstg).grfStateBits = (*This).stateBits;
     }
 
-    'end: loop {
+    loop {
         if res == S_OK {
             TRACE!(b"<-- STATSTG: pwcsName: %s, type: %d, cbSize.Low/High: %d/%d, grfMode: %08x, grfLocksSupported: %d, grfStateBits: %08x\n\0".as_ptr() as *const i8);
         }

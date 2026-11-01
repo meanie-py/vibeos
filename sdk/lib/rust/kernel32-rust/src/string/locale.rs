@@ -864,7 +864,7 @@ static mut NumShapeW: [WCHAR; 9] = [
     0 as ::core::ffi::c_int as WCHAR,
 ];
 
-static mut registry_values: [registry_value; 39] = unsafe {
+static mut registry_values: [registry_value; 39] = {
     [
         registry_value {
             lctype: LOCALE_ICALENDARTYPE as DWORD,

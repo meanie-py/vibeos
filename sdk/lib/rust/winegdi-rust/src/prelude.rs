@@ -183,7 +183,7 @@ pub static mut __wine_dbch_enhmetafile: __wine_debug_channel = __wine_debug_chan
     name: unsafe { ::core::mem::transmute::<[u8; 15], [::core::ffi::c_char; 15]>(*b"\x65\x6e\x68\x6d\x65\x74\x61\x66\x69\x6c\x65\x00\x00\x00\x00") },
 };
 pub static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw mut __wine_dbch_enhmetafile };
+    { &raw mut __wine_dbch_enhmetafile };
 // ==== end wine debug channels ====
 
 // ==== port resolve: cross-TU definitions (generated) ====

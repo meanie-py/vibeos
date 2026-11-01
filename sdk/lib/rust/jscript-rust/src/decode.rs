@@ -73,7 +73,7 @@ unsafe extern "C" fn debugstr_w(mut s: *const WCHAR) -> *const i8 {
     return wine_dbgstr_wn(s, -(1 as i32));
 }
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_jscript as *mut __wine_debug_channel };
+    &raw const __wine_dbch_jscript as *mut __wine_debug_channel;
 static mut __wine_dbch_jscript: __wine_debug_channel = unsafe {
     __wine_debug_channel {
         flags: !(0 as i32) as u8,

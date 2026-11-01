@@ -41,13 +41,13 @@ pub static mut MFVideoFormat_ABGR32: GUID = _GUID {
     ],
 };
 
-static mut readwrite_factory: IMFReadWriteClassFactory = unsafe {
+static mut readwrite_factory: IMFReadWriteClassFactory = {
     IMFReadWriteClassFactory {
         lpVtbl: &raw const readwrite_factory_vtbl,
     }
 };
 
-static mut classfactory: IClassFactory = unsafe {
+static mut classfactory: IClassFactory = {
     IClassFactory {
         lpVtbl: &raw const classfactoryvtbl,
     }

@@ -3,11 +3,11 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-pub const SAMPLE_NUMBER: PCWSTR = unsafe {
+pub const SAMPLE_NUMBER: PCWSTR = {
     w!("123456789")
 };
 
-pub const SAMPLE_NEG_NUMBER: PCWSTR = unsafe {
+pub const SAMPLE_NEG_NUMBER: PCWSTR = {
     w!("-123456789")
 };
 
@@ -29,20 +29,20 @@ pub const MAX_LIST_SEP_SAMPLES: usize = 1;
 
 pub const MAX_UNITS_SYS_SAMPLES: usize = 2;
 
-pub static mut lpNumSepSamples: [PWSTR; 2] = unsafe {
+pub static mut lpNumSepSamples: [PWSTR; 2] = {
     [
         w!(",") as PWSTR,
         w!(".") as PWSTR,
     ]
 };
 
-pub static mut lpFieldSepSamples: [PWSTR; 1] = unsafe {
+pub static mut lpFieldSepSamples: [PWSTR; 1] = {
     [
         w!(" ") as PWSTR,
     ]
 };
 
-pub static mut lpFieldDigNumSamples: [PWSTR; 3] = unsafe {
+pub static mut lpFieldDigNumSamples: [PWSTR; 3] = {
     [
         w!("0;0") as PWSTR,
         w!("3;0") as PWSTR,
@@ -50,13 +50,13 @@ pub static mut lpFieldDigNumSamples: [PWSTR; 3] = unsafe {
     ]
 };
 
-pub static mut lpNegSignSamples: [PWSTR; 1] = unsafe {
+pub static mut lpNegSignSamples: [PWSTR; 1] = {
     [
         w!("-") as PWSTR,
     ]
 };
 
-pub static mut lpNegNumFmtSamples: [PWSTR; 5] = unsafe {
+pub static mut lpNegNumFmtSamples: [PWSTR; 5] = {
     [
         w!("(1,1)") as PWSTR,
         w!("-1,1") as PWSTR,
@@ -66,14 +66,14 @@ pub static mut lpNegNumFmtSamples: [PWSTR; 5] = unsafe {
     ]
 };
 
-pub static mut lpLeadNumFmtSamples: [PWSTR; 2] = unsafe {
+pub static mut lpLeadNumFmtSamples: [PWSTR; 2] = {
     [
         w!(",7") as PWSTR,
         w!("0,7") as PWSTR,
     ]
 };
 
-pub static mut lpListSepSamples: [PWSTR; 1] = unsafe {
+pub static mut lpListSepSamples: [PWSTR; 1] = {
     [
         w!(";") as PWSTR,
     ]

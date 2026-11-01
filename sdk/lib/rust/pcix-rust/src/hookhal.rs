@@ -237,7 +237,7 @@ pub unsafe extern "system" fn PciAssignSlotResources(
         core::ptr::null_mut::<_LARGE_INTEGER>(),
     );
 
-    'resource_assign_loop: loop {
+    loop {
         if !(DeviceObject != (*PdoExtension).PhysicalDeviceObject) {
             RtlAssert(
                 b"DeviceObject != PdoExtension->PhysicalDeviceObject\0".as_ptr() as *const i8

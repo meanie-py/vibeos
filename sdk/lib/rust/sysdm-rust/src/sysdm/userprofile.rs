@@ -37,7 +37,7 @@ unsafe extern "C" fn OnProfileTypeInit(
 
     pszCookedBuffer = (HeapAlloc(GetProcessHeap(), 0, ((nLength + (wcslen((*pProfileData).pszFullName)) as i32 + 1) * core::mem::size_of::<u16>() as i32) as SIZE_T)).cast();
     if pszCookedBuffer.is_null() {
-        'done: loop {
+        loop {
             if !pszCookedBuffer.is_null() {
                 HeapFree(GetProcessHeap(), 0, pszCookedBuffer as LPVOID);
             }

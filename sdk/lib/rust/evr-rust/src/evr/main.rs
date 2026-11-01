@@ -5,7 +5,7 @@ use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
-static mut object_creation: [object_creation_info; 3] = unsafe {
+static mut object_creation: [object_creation_info; 3] = {
     [
         object_creation_info {
             clsid: &raw const CLSID_EnhancedVideoRenderer,

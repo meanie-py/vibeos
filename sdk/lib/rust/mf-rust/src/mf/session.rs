@@ -26,7 +26,7 @@ pub static mut _MF_TOPONODE_IMFActivate: GUID = _GUID {
     ],
 };
 
-static mut local_mft_registration: IMFLocalMFTRegistration = unsafe {
+static mut local_mft_registration: IMFLocalMFTRegistration = {
     IMFLocalMFTRegistration {
         lpVtbl: &raw const local_mft_registration_vtbl,
     }

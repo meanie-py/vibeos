@@ -49,7 +49,7 @@ static mut critsect_debug: critsect_debug_init = critsect_debug_init {
         },
     };
 
-static mut enhmetafile_cs: CRITICAL_SECTION = unsafe {
+static mut enhmetafile_cs: CRITICAL_SECTION = {
     _RTL_CRITICAL_SECTION {
         DebugInfo: &raw const critsect_debug as PRTL_CRITICAL_SECTION_DEBUG,
         LockCount: -(1 as ::core::ffi::c_int) as LONG,

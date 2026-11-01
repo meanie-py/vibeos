@@ -22,7 +22,7 @@ pub static mut InterfaceTable: [INTERFACE_TABLE; 3] = [
         lpfnCI: Some(INetCfg_Constructor),
     },
     INTERFACE_TABLE {
-        riid: unsafe { &CLSID_TcpipConfigNotifyObject },
+        riid: { &CLSID_TcpipConfigNotifyObject },
         lpfnCI: Some(TcpipConfigNotify_Constructor),
     },
     INTERFACE_TABLE {

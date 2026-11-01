@@ -2466,6 +2466,18 @@ pub unsafe extern "C" fn KdIoPrintf(Format: *const i8, a0: usize, a1: usize) {}
 pub unsafe extern "C" fn _vsnwprintf(b: *mut u16, n: usize, fmt: *const u16, ap: *mut u8) {}
 """
 
+_INERT_CRATE_ALLOW_BAD = """\
+#![no_std]
+#[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+#[macro_use]
+extern crate winedebug_rust;
+"""
+_INERT_CRATE_ALLOW_GOOD = """\
+#![no_std]
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+#[macro_use]
+extern crate winedebug_rust;
+"""
 _VARIANT_OUTPTR_BAD = """\
 // oleacc's Client_EnumVARIANT_Next: the slot's value where C passed its address.
 unsafe fn next(rgVar: *mut VARIANT, n: u32) -> i32 {
@@ -3256,6 +3268,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BYTE_STEP_ONE_BAD},
         good={"good.rs": _BYTE_STEP_ONE_GOOD},
+    ),
+    Control(
+        name="scan_inert_crate_allow",
+        script="tools/scan_inert_crate_allow.py",
+        argv=["--lint"],
+        bad={"lib.rs": _INERT_CRATE_ALLOW_BAD},
+        good={"lib.rs": _INERT_CRATE_ALLOW_GOOD},
     ),
     Control(
         name="scan_variant_outptr",

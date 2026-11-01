@@ -826,7 +826,7 @@ unsafe extern "C" fn NetIDPage_OnApply(
                     (ARRAYSIZE!(NewComputerDescription)) as i32);
     if GetLastError() != ERROR_SUCCESS {
         lError = (GetLastError()) as i32;
-        'done: loop {
+        loop {
             if KeyHandle != core::ptr::null_mut() {
                 RegCloseKey(KeyHandle);
             }
@@ -842,7 +842,7 @@ unsafe extern "C" fn NetIDPage_OnApply(
                               ComputerDescription.as_mut_ptr() as PBYTE,
                               &mut dwSize);
     if lError != (ERROR_SUCCESS) as i32 && lError != (ERROR_FILE_NOT_FOUND) as i32 {
-        'done: loop {
+        loop {
             if KeyHandle != core::ptr::null_mut() {
                 RegCloseKey(KeyHandle);
             }

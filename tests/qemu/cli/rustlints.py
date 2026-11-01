@@ -111,6 +111,7 @@ PORTED = frozenset(
         "scan_bugcheck_codes",
         "scan_byte_step_one",
         "scan_variant_outptr",
+        "scan_inert_crate_allow",
         "scan_byteptr_stride",
         "scan_calloc_elem_type",
         "scan_cdecl_alias",

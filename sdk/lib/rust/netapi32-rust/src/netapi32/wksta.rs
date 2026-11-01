@@ -19,7 +19,7 @@ static mut __wine_dbch_netapi32: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_netapi32 as *mut __wine_debug_channel };
+    &raw const __wine_dbch_netapi32 as *mut __wine_debug_channel;
 
 pub const NBT_TRANSPORT_NAME_HEADER: [::core::ffi::c_char; 21] = unsafe {
     ::core::mem::transmute::<[u8; 21], [::core::ffi::c_char; 21]>(*b"\\Device\\NetBT_Tcpip_\0")
