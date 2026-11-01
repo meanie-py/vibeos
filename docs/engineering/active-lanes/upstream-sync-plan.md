@@ -42,6 +42,12 @@ Merge `cd5f05edbc1` (upstream c25e4fd7dec..80dec44f649, 2026-10-15..10-31; 63 co
 resolution in the commit message) plus follow-up `7b315dd0e56`, on branch `upstream-sync-2`.
 The next sync starts from `80dec44f649`.
 
+**Status at park (2026-11-01):** submitted to merge-integrator as `upstream-sync-2 @ 1acc6748417`
+(queued as its own batch 60, merging master `558865d4c44` onto it, which `merge-tree` shows as 0 conflicts).
+It has NOT been smoked locally; the integrator's cold gate is its first boot. Before
+resuming, check that it landed (`git merge-base --is-ancestor 1acc6748417 origin/master`) or read
+the integrator's classification and artifact dir, and fix forward.
+
 **Two silent hazards fired, and both arrived as clean merges.** (a) Spec stubs turned into
 real exports with no implementation: nine RtlFls*/NtUserPfn lines in `ntdll.spec`, plus
 wlanapi's WlanGetNetworkBssList. A link break waiting. Sweep every merged `.spec` for a `-stub`
