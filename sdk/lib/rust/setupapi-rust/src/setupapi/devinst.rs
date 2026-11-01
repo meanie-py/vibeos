@@ -2612,7 +2612,7 @@ pub unsafe extern "system" fn SetupDiEnumDeviceInfo(
                 } else {
                     // CONTAINING_RECORD(ItemList, struct DeviceInfo, ListEntry)
                     let mut DevInfo: *mut DeviceInfo = (ItemList as ULONG_PTR).wrapping_sub(
-                        core::ptr::addr_of_mut!((*::core::ptr::null_mut::<DeviceInfo>()).ListEntry)
+                        core::mem::offset_of!(DeviceInfo, ListEntry)
                             as ULONG_PTR,
                     ) as *mut DeviceInfo;
                     memcpy(
@@ -3916,7 +3916,7 @@ pub unsafe extern "system" fn SetupDiEnumDeviceInterfaces(
         let mut InterfaceListEntry: PLIST_ENTRY = (*devInfo).InterfaceListHead.Flink as PLIST_ENTRY;
         while InterfaceListEntry != &raw mut (*devInfo).InterfaceListHead && found == 0 {
             let mut DevItf: *mut DeviceInterface = (InterfaceListEntry as ULONG_PTR).wrapping_sub(
-                &raw mut (*::core::ptr::null_mut::<DeviceInterface>()).ListEntry as ULONG_PTR,
+                core::mem::offset_of!(DeviceInterface, ListEntry) as ULONG_PTR,
             ) as *mut DeviceInterface;
             if !IsEqualIID(
                 &raw mut (*DevItf).InterfaceClassGuid,
@@ -3950,13 +3950,13 @@ pub unsafe extern "system" fn SetupDiEnumDeviceInterfaces(
         while ItemList != &raw mut (*set).ListHead && found_0 == 0 {
             let mut InterfaceListEntry_0: PLIST_ENTRY = ::core::ptr::null_mut::<_LIST_ENTRY>();
             let mut devInfo_0: *mut DeviceInfo = (ItemList as ULONG_PTR).wrapping_sub(
-                &raw mut (*::core::ptr::null_mut::<DeviceInfo>()).ListEntry as ULONG_PTR,
+                core::mem::offset_of!(DeviceInfo, ListEntry) as ULONG_PTR,
             ) as *mut DeviceInfo;
             InterfaceListEntry_0 = (*devInfo_0).InterfaceListHead.Flink as PLIST_ENTRY;
             while InterfaceListEntry_0 != &raw mut (*devInfo_0).InterfaceListHead && found_0 == 0 {
                 let mut DevItf_0: *mut DeviceInterface =
                     (InterfaceListEntry_0 as ULONG_PTR).wrapping_sub(
-                        &raw mut (*::core::ptr::null_mut::<DeviceInterface>()).ListEntry
+                        core::mem::offset_of!(DeviceInterface, ListEntry)
                             as ULONG_PTR,
                     ) as *mut DeviceInterface;
                 if !IsEqualIID(

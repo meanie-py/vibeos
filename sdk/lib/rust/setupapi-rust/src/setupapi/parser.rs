@@ -158,16 +158,16 @@ pub const MAX_FIELD_LEN: i32 = 511;
 pub const MAX_STRING_LEN: i32 = 4096 + 1;
 
 pub type parser_state = i32;
-pub const LINE_START: parser_state = 0;
+pub const LINE_START: parser_state = 0; // nolint: const-contradiction (setupapi parser.c enum parser_state; reg.exe/regedit's same-named states are another enum)
 pub const SECTION_NAME: parser_state = 1;
-pub const KEY_NAME: parser_state = 2;
+pub const KEY_NAME: parser_state = 2; // nolint: const-contradiction (setupapi parser.c enum parser_state; reg.exe/regedit's same-named states are another enum)
 pub const VALUE_NAME: parser_state = 3;
-pub const EOL_BACKSLASH: parser_state = 4;
+pub const EOL_BACKSLASH: parser_state = 4; // nolint: const-contradiction (setupapi parser.c enum parser_state; reg.exe/regedit's same-named states are another enum)
 pub const QUOTES: parser_state = 5;
 pub const LEADING_SPACES: parser_state = 6;
 pub const TRAILING_SPACES: parser_state = 7;
 pub const COMMENT: parser_state = 8;
-pub const NB_PARSER_STATES: parser_state = 9;
+pub const NB_PARSER_STATES: parser_state = 9; // nolint: const-contradiction (setupapi parser.c enum parser_state; reg.exe/regedit's same-named states are another enum)
 
 #[repr(C)]
 pub struct parser {

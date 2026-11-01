@@ -1061,7 +1061,7 @@ pub unsafe extern "system" fn SetupDiEnumDriverInfoW(
             SetLastError(ERROR_NO_MORE_ITEMS as DWORD);
         } else {
             let DrvInfo: *mut DriverInfoElement = (ItemList as usize).wrapping_sub(
-                core::ptr::addr_of!((*core::ptr::null_mut::<DriverInfoElement>()).ListEntry) as usize,
+                core::mem::offset_of!(DriverInfoElement, ListEntry) as usize,
             ) as *mut DriverInfoElement;
 
             memcpy(
