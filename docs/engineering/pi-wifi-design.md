@@ -270,5 +270,14 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
     - **The log says why**: each failed join names the firmware's last `E_AUTH`/`E_ASSOC`
       failure, and every 10th failure lists the scan, so a network that is gone and a radio
       that stopped hearing it read differently.
-    Open until a router restart is seen with these in: whether the 12 hours were the
-    firmware's or the router's.
+    Seen with these in (2026-11-01, a cold boot, same router): the access point beacons
+    `<hidden>` at -32 dBm on channel 10 the whole time, beside its sister network on
+    `...:20`, yet a directed probe for 'Piconet' almost never gets an answer, the firmware's
+    join ends `E_SET_SSID` status 3 (no networks), and a radio restart changes nothing. So
+    it was not firmware state. The join now hands the firmware the scan's chanspec (one
+    `chanspec_list` entry, as brcmfmac does when the channel is known), which cut its join
+    scan from 2.7 s to 94 ms and changed nothing else: still status 3. With `hidden=1` and no
+    access point joined yet, the strongest nameless WPA2 access point is tried. What is left
+    is the access point not answering this station by name at all. Open: whether the router
+    is ignoring this MAC (a client blocklist after the 631 failed joins of 10-19 would look
+    exactly like this, and lift by itself).

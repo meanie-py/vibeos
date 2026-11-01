@@ -28,8 +28,9 @@ const CRYPTO_ALGO_AES_CCM: u32 = 4;
 const WSEC_PRIMARY_KEY: u32 = 1 << 1;
 /// `bwfm_wsec_key`, padded to its C size.
 const WSEC_KEY_LEN: usize = 164;
-/// `bwfm_ext_join_params`: SSID, the join scan's parameters, the association's BSSID.
-const EXT_JOIN_LEN: usize = 68;
+/// `bwfm_ext_join_params`: SSID, the join scan's parameters, the association's BSSID and
+/// its one chanspec (`chanspec_list[1]`, padded).
+const EXT_JOIN_LEN: usize = 72;
 /// `bwfm_join_params`, for firmware that does not know the `join` iovar.
 const JOIN_LEN: usize = 48;
 
@@ -111,8 +112,11 @@ pub fn our_rsn(ap: &[u8]) -> Result<[u8; 22], &'static str> {
     Ok(ie)
 }
 
-/// `bwfm_ext_join_params` for `ssid` at `bssid` (all ones: any).
-pub fn ext_join_params(ssid: &[u8], bssid: &[u8; 6]) -> [u8; EXT_JOIN_LEN] {
+/// `bwfm_ext_join_params` for `ssid` at `bssid` (all ones: any), on `chanspec` when the
+/// scan gave one (0: every channel). Without it the firmware's own join scan sweeps every
+/// channel with its default probes, and a hidden network that answers few of them is
+/// "not found" (E_SET_SSID status 3) while it beacons at -32 dBm on the channel it scanned.
+pub fn ext_join_params(ssid: &[u8], bssid: &[u8; 6], chanspec: u16) -> [u8; EXT_JOIN_LEN] {
     let mut p = [0u8; EXT_JOIN_LEN];
     p[0..4].copy_from_slice(&(ssid.len() as u32).to_le_bytes());
     p[4..4 + ssid.len()].copy_from_slice(ssid);
@@ -120,6 +124,10 @@ pub fn ext_join_params(ssid: &[u8], bssid: &[u8; 6]) -> [u8; EXT_JOIN_LEN] {
     p[36] = 0xFF;
     p[40..56].fill(0xFF);
     p[56..62].copy_from_slice(bssid);
+    if chanspec != 0 {
+        p[64..68].copy_from_slice(&1u32.to_le_bytes());
+        p[68..70].copy_from_slice(&chanspec.to_le_bytes());
+    }
     p
 }
 
@@ -375,7 +383,7 @@ impl<P: Platform> Bus<P> {
             log.optional_refused |= 2;
             log.optional_error = Some(e);
         }
-        let params = ext_join_params(cfg.ssid(), &target.bssid);
+        let params = ext_join_params(cfg.ssid(), &target.bssid, target.chanspec);
         if self.set_var(b"join", &params, &mut each).is_err() {
             let mut j = [0u8; JOIN_LEN];
             j[..36].copy_from_slice(&params[..36]);
@@ -534,6 +542,8 @@ mod tests {
         let card = bus.chip.sdio.hc.p.card();
         assert_eq!(card.wpaie[..20], our_rsn(t.rsn()).unwrap()[..20], "the firmware got our RSN element");
         assert_eq!(card.joined_bssid, Some(AP_BSSID));
+        assert_eq!(card.join_chanspecs, vec![t.chanspec], "the join looks on the channel the scan heard it on");
+        assert_eq!(t.chanspec, 0x1006, "20 MHz on channel 6, as the record carried it");
         // The AP saw message 4 before the pairwise key existed, and both keys match its own.
         assert_eq!(card.ap_log, vec!["msg2 ok", "msg4 ok", "pairwise key", "group key"]);
         assert!(card.keys_match, "TK and GTK as the AP derived them");

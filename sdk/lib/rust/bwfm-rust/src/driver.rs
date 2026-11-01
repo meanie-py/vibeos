@@ -471,10 +471,12 @@ pub unsafe fn read_config() -> Option<WifiConfig> {
 /// by name when the plain scan did not hear it (a hidden network answers only that).
 /// `list`: log every network heard, once each (the first scan of a boot, and now and
 /// then while joins fail). `known`: the access point last joined. A hidden network that
-/// does not answer by name but whose access point is still beaconing is joined at it.
+/// does not answer by name is joined at an access point that beacons with no name: the
+/// one it was last joined at, else (`hidden=1`) the strongest such that offers WPA2.
 pub fn find(bus: &mut Bus<Kernel>, cfg: &WifiConfig, list: bool, known: Option<&Bss>) -> Option<Bss> {
     let mut best: Option<Bss> = None;
     let mut beacon: Option<Bss> = None;
+    let mut nameless: Option<Bss> = None;
     let mut seen = [[0u8; 6]; 32];
     let (mut n, mut reports) = (0usize, 0u32);
     let t0 = Kernel::now_us_static();
@@ -482,6 +484,10 @@ pub fn find(bus: &mut Bus<Kernel>, cfg: &WifiConfig, list: bool, known: Option<&
         reports += 1;
         if known.is_some_and(|k| k.bssid == b.bssid) {
             beacon = Some(*b);
+        }
+        let no_name = b.ssid().iter().all(|&c| c == 0);
+        if cfg.hidden && no_name && b.rsn_len > 0 && nameless.is_none_or(|x| b.rssi > x.rssi) {
+            nameless = Some(*b);
         }
         if b.ssid() == cfg.ssid() && best.is_none_or(|x| b.rssi > x.rssi) {
             best = Some(*b);
@@ -535,21 +541,33 @@ pub fn find(bus: &mut Bus<Kernel>, cfg: &WifiConfig, list: bool, known: Option<&
     if best.is_some() {
         return best;
     }
-    let (Some(k), Some(mut b)) = (known, beacon) else {
-        let gone = if known.is_some() { " (nor is the access point it was joined at)" } else { "" };
-        bwprint!("'{}' is not in the scan{}: nothing to join\n", ssid, gone);
-        return None;
+    let (mut b, which) = match (known, beacon, nameless) {
+        (Some(_), Some(b), _) => (b, "the access point it was joined at"),
+        (None, _, Some(b)) => (b, "the strongest nameless WPA2 access point"),
+        _ => {
+            let gone = if known.is_some() { " (nor is the access point it was joined at)" } else { "" };
+            bwprint!("'{}' is not in the scan{}: nothing to join\n", ssid, gone);
+            return None;
+        }
     };
+    let t = b.bssid;
     bwprint!(
-        "'{}' did not answer by name, but its access point beacons on ch {} at {} dBm: joining it by address\n",
+        "'{}' did not answer by name: joining {}, {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} on ch {} at {} dBm\n",
         ssid,
+        which,
+        t[0],
+        t[1],
+        t[2],
+        t[3],
+        t[4],
+        t[5],
         b.channel,
         b.rssi
     );
     b.ssid = [0; 32];
     b.ssid[..cfg.ssid().len()].copy_from_slice(cfg.ssid());
     b.ssid_len = cfg.ssid().len();
-    if b.rsn_len == 0 {
+    if let (0, Some(k)) = (b.rsn_len, known) {
         (b.rsn, b.rsn_len) = (k.rsn, k.rsn_len);
     }
     Some(b)

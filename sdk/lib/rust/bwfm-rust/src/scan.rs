@@ -102,6 +102,9 @@ pub struct Bss {
     pub ssid: [u8; 32],
     pub ssid_len: usize,
     pub channel: u8,
+    /// The firmware's own encoding of the channel (band, width, number): what a join
+    /// hands back to it to look on that channel alone.
+    pub chanspec: u16,
     pub rssi: i16,
     pub capability: u16,
     /// Its RSN element (`30 len ...`), whole, when it advertises one.
@@ -115,7 +118,7 @@ pub const RSN_MAX: usize = 64;
 
 impl Default for Bss {
     fn default() -> Self {
-        Self { bssid: [0; 6], ssid: [0; 32], ssid_len: 0, channel: 0, rssi: 0, capability: 0, rsn: [0; RSN_MAX], rsn_len: 0 }
+        Self { bssid: [0; 6], ssid: [0; 32], ssid_len: 0, channel: 0, chanspec: 0, rssi: 0, capability: 0, rsn: [0; RSN_MAX], rsn_len: 0 }
     }
 }
 
@@ -166,6 +169,7 @@ pub fn escan_bss(data: &[u8]) -> impl Iterator<Item = Bss> + '_ {
         b.ssid_len = (rec[18] as usize).min(32);
         b.ssid[..b.ssid_len].copy_from_slice(&rec[19..19 + b.ssid_len]);
         let chanspec = u16::from_le_bytes([rec[72], rec[73]]);
+        b.chanspec = chanspec;
         b.rssi = i16::from_le_bytes([rec[78], rec[79]]);
         b.channel = if rec[88] != 0 { rec[88] } else { chanspec as u8 };
         // The IEs, at their own offset inside this record.
