@@ -1249,6 +1249,9 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # `V_DISPATCH!(v) as *mut *mut c_void` for the C's `(void**)&V_DISPATCH(v)`: the VARIANT
     # accessor's VALUE passed as an out-pointer. oleacc's Client_EnumVARIANT_Next corrupted
     # the heap that way (the callee stored its interface through garbage). Gated at zero.
+    # A crate root's `#[allow(non_snake_case, ..)]` written OUTER binds to the next `extern
+    # crate`/`use` and allows nothing (version-rust: 248 warnings). Gated at zero.
+    specs.append(("scan_inert_crate_allow", ["MISSING"], "stdout"))
     svo = repo / "tools" / "scan_variant_outptr.py"
     specs.append(
         (
