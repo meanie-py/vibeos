@@ -1,6 +1,6 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::mm::HANDLE;
-use ntkrnl_sys::ddk::{LARGE_INTEGER, NtClose, NtCreateKeyedEvent, NtReleaseKeyedEvent, NtWaitForKeyedEvent, PLARGE_INTEGER, PRTL_CONDITION_VARIABLE, PRTL_CRITICAL_SECTION, PRTL_SRWLOCK};
+use ntkrnl_sys::ddk::{NtClose, NtCreateKeyedEvent, NtReleaseKeyedEvent, NtWaitForKeyedEvent, PLARGE_INTEGER, PRTL_CONDITION_VARIABLE, PRTL_CRITICAL_SECTION, PRTL_SRWLOCK};
 // Atomics substrate (Acquire/Release CAS + YieldProcessor) and the keyed-event
 // constant; the SRW / critical-section primitives are sibling modules so we
 // call them directly (identical extern "system" ABI, no ddk decl mismatch).

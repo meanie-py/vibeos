@@ -57,7 +57,7 @@ pub unsafe extern "system" fn ArbiterLibInitializeInstance(
     OrderName: PCWSTR,
     TranslateOrderingFunction: PARB_TRANSLATE_ORDERING,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+    let Status: NTSTATUS;
 
     PAGED_CODE!();
 

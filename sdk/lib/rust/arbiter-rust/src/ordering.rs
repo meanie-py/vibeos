@@ -236,7 +236,7 @@ unsafe extern "C" fn ArbpReadPolicyValue(
     Value: *mut PKEY_VALUE_FULL_INFORMATION,
 ) -> NTSTATUS {
     let mut NameString: _UNICODE_STRING = core::mem::zeroed();
-    let mut Buffer: PKEY_VALUE_FULL_INFORMATION;
+    let Buffer: PKEY_VALUE_FULL_INFORMATION;
     let mut Size: ULONG = 0;
     let mut ResultLength: ULONG = 0;
     let mut Status: NTSTATUS;
