@@ -37,8 +37,8 @@ pub const MAX_STATIC_CS_DEBUG_OBJECTS: usize = 64;
 pub static mut RtlCriticalSectionLock: RTL_CRITICAL_SECTION = unsafe { core::mem::zeroed() };
 
 pub static mut RtlCriticalSectionList: LIST_ENTRY = LIST_ENTRY {
-    Flink: unsafe { core::ptr::addr_of!(RtlCriticalSectionList) as *mut LIST_ENTRY },
-    Blink: unsafe { core::ptr::addr_of!(RtlCriticalSectionList) as *mut LIST_ENTRY },
+    Flink: { core::ptr::addr_of!(RtlCriticalSectionList) as *mut LIST_ENTRY },
+    Blink: { core::ptr::addr_of!(RtlCriticalSectionList) as *mut LIST_ENTRY },
 };
 
 pub static mut RtlpCritSectInitialized: BOOLEAN = 0u8;
