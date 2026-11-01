@@ -1335,3 +1335,14 @@ def test_a_target_made_by_a_shared_function_names_the_function(tmp_path):
     assert any("add_t_target(24)" in u for u in unknown)
     f.write_text("add_bootvid(m x.cmake)\n")
     assert any("add_bootvid(m x.cmake)" in u for u in g.cmake_facts(f, "m")["unknown"])
+
+
+def test_a_bodyless_cell_is_recognised_by_its_build_script(tmp_path, monkeypatch):
+    crate = tmp_path / "sdk/lib/rust/m-cargo"
+    crate.mkdir(parents=True)
+    monkeypatch.setattr(g, "cell_crate", lambda target, repo: "m-cargo")
+    assert not g._cell_is_bodyless("m", tmp_path)
+    (crate / "build.rs").write_text(g.build_rs(cell(body_crate="", c_shims=["base/m/main.c"])))
+    assert g._cell_is_bodyless("m", tmp_path)
+    (crate / "build.rs").write_text(g.build_rs(cell()))
+    assert not g._cell_is_bodyless("m", tmp_path)

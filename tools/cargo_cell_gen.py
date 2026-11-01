@@ -117,6 +117,12 @@ I386_RSBEGIN_SECTIONS = {
     for name in (".ctors", ".dtors")
     for flags in (0x40000040, 0x48000040)
 }
+# A body-less cell (a C module, no Rust body) on i386 whose C cmake compiled without unwind
+# tables (cmake's PE has no `.eh_frame`) gains one: rsbegin/rsend's frame markers and the
+# shell's panic handler, the same EH-frame machinery as the `.ctors`/`.dtors` above. The C
+# is compiled with cmake's exact flags, so it contributes none; the bound is a backstop
+# (dxapi, kernelbase: 0x88). Nothing unwinds through it (panic=abort, no unwinder).
+I386_BODYLESS_EH_FRAME_MAX = 0x400
 # rsbegin.o's own `.data` (its frame-object pointers, 0x28 bytes): a section of its own
 # in a module that had none (hidusb, msfs, usbccgp, watchdog).
 I386_RSBEGIN_DATA = 0x28
@@ -2498,6 +2504,12 @@ def cell_crate(target: str, repo: Path = REPO) -> str:
     raise GenError(f"{target}: no add_cargo_module names it")
 
 
+def _cell_is_bodyless(target: str, repo: Path) -> bool:
+    """A cell generated for a C module with no Rust body (build.rs says so)."""
+    rs = repo / "sdk/lib/rust" / cell_crate(target, repo) / "build.rs"
+    return rs.exists() and "there is no Rust body" in rs.read_text()
+
+
 def _cell_uses_panic_common(target: str, arch: str, repo: Path) -> bool:
     main = repo / "sdk/lib/rust" / cell_crate(target, repo) / "src/main.rs"
     text = main.read_text() if main.exists() else ""
@@ -2608,6 +2620,17 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                     and data
                     and data[0][2] == I386_RSBEGIN_DATA
                 }
+            shell_eh = set()
+            if a == "i386" and _cell_is_bodyless(t, repo):
+                eh = [x for x in pe_equiv.load(new).sections if x[0] == ".eh_fram"]
+                shell_eh = {
+                    d
+                    for d in diffs
+                    if d.startswith("sections: + .eh_fram ")
+                    and eh
+                    and eh[0][2] <= I386_BODYLESS_EH_FRAME_MAX
+                }
+            rsbegin |= shell_eh
             # A panic-lean kernel cell's own handler is a function with an unwind entry:
             # a module cmake linked with none (watchdog) gains a `.pdata`.
             lean_unwind = {
@@ -2683,7 +2706,8 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
             )
             note += " (+ loose on the boot CD)" if loose else ""
             note += " (- cab: txtsetup.sif installs it)" if note_txtsetup else ""
-            note += " (+ rsbegin .ctors/.dtors)" if rsbegin else ""
+            note += " (+ rsbegin .ctors/.dtors)" if rsbegin - shell_eh else ""
+            note += " (+ the shell's i386 .eh_frame)" if shell_eh else ""
             note += " (+ the lean handler's .pdata)" if lean_unwind else ""
             note += " (+ __chkstk: frame pointers)" if probes else ""
             note += " (- dead-code import, see DEAD_IMPORTS)" if dead else ""
