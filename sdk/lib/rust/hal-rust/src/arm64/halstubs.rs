@@ -671,8 +671,35 @@ unsafe fn pl031_va() -> *mut u32 {
     va
 }
 
-/// Seconds since 1970-01-01 UTC: the PL031's, else the fallback (said once).
+/// The PL031's load register: a write sets the count DR reads from.
+const PL031_LR: usize = 0x08;
+
+/// The time HalSetRealTimeClock was last given, kept as an offset from the generic
+/// timer (counter ticks, wrapping) so that it runs on: secs = (cntvct + offset) / cntfrq.
+/// Zero until the first set. A board without a clock (the Pis) has nowhere else to
+/// keep it, and ExpSetTimeZoneInformation, at the end of every NtSetSystemTime, sets
+/// the system time back from what this clock reads. With the set dropped, every
+/// SNTP sync put the Pi 4 back at 2025-01-01 00:00 (13 days up, it read 01:25 that day).
+static CLOCK_OFFSET_TICKS: AtomicU64 = AtomicU64::new(0);
+
+/// The generic timer's count and frequency.
+fn generic_timer() -> (u64, u64) {
+    let (count, freq): (u64, u64);
+    unsafe {
+        core::arch::asm!("mrs {0}, cntvct_el0", out(reg) count, options(nomem, nostack, preserves_flags));
+        core::arch::asm!("mrs {0}, cntfrq_el0", out(reg) freq, options(nomem, nostack, preserves_flags));
+    }
+    (count, freq.max(1))
+}
+
+/// Seconds since 1970-01-01 UTC: the last time set, run on; else the PL031's, else
+/// the fallback (said once).
 unsafe fn rtc_secs() -> u64 {
+    let offset = CLOCK_OFFSET_TICKS.load(Ordering::Acquire);
+    if offset != 0 {
+        let (count, freq) = generic_timer();
+        return count.wrapping_add(offset) / freq;
+    }
     let rtc = unsafe { pl031_va() };
     let secs = if rtc.is_null() { 0 } else { (unsafe { core::ptr::read_volatile(rtc) }) as u64 };
     if secs >= SANE_SECS {
@@ -806,8 +833,35 @@ pub unsafe extern "system" fn HalSetProfileInterval(Interval: ddk::ULONG_PTR) ->
     Interval
 }
 
+/// Days since 1970-01-01 of a civil date (Howard Hinnant's days_from_civil, the
+/// inverse of HalQueryRealTimeClock's conversion).
+fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y.rem_euclid(400);
+    let mp = if m > 2 { m - 3 } else { m + 9 };
+    let doy = (153 * mp + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalSetRealTimeClock(Time: ddk::PTIME_FIELDS) -> ddk::BOOLEAN {
+    if Time.is_null() {
+        return FALSE;
+    }
+    let t = unsafe { &*Time };
+    let days = days_from_civil(t.Year as i64, t.Month as i64, t.Day as i64);
+    let secs = days * 86_400 + t.Hour as i64 * 3600 + t.Minute as i64 * 60 + t.Second as i64;
+    if secs < SANE_SECS as i64 {
+        return FALSE;
+    }
+    let rtc = unsafe { pl031_va() };
+    if !rtc.is_null() {
+        unsafe { core::ptr::write_volatile(rtc.add(PL031_LR / 4), secs as u32) };
+    }
+    let (count, freq) = generic_timer();
+    CLOCK_OFFSET_TICKS.store((secs as u64).wrapping_mul(freq).wrapping_sub(count).max(1), Ordering::Release);
     TRUE
 }
 
