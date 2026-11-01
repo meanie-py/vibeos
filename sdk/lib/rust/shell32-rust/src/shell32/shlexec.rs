@@ -44,6 +44,8 @@ pub static CPP_COM_WSTR_F99F36C2F40B: [WCHAR; 9] = [0x0070, 0x0072, 0x006F, 0x00
 pub static CPP_COM_WSTR_FC9A94A80631: [WCHAR; 13] = [0x005C, 0x0061, 0x0070, 0x0070, 0x006C, 0x0069, 0x0063, 0x0061, 0x0074, 0x0069, 0x006F, 0x006E, 0x0000];
 
 use core::ffi::c_void;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::open_with_menu_tu::Shell32RustInvokeOpenWith as SH32_InvokeOpenWith;
 // The crate's own functions: the definition is the declaration.
 use crate::wine::classes::HCR_GetProgIdKeyOfExtension;
 use crate::wine::pidl::ILGetSize;
@@ -68,12 +70,6 @@ use crate::shellcom::{IContextMenu, IUnknown};
 extern "system" {
     /// shlwapi.
     fn PathFindFileNameW(path: LPCWSTR) -> LPWSTR;
-    /// `COpenWithMenu.cpp:100` has C++ linkage and no header declaration, so there is no
-    /// unmangled `SH32_InvokeOpenWith` to bind to — the same file already exports a WINAPI
-    /// bridge for exactly this, which `open_with_menu.rs` also uses. (`win32.rs` declares the
-    /// bare name in an `extern "system"` block; that one has no callers and would not link.)
-    #[link_name = "Shell32RustInvokeOpenWith"]
-    fn SH32_InvokeOpenWith(path: PCWSTR, info: LPCMINVOKECOMMANDINFO, process: *mut HANDLE) -> HRESULT;
 }
 extern "C" {
     /// `shpolicy.c` — plain __cdecl, NOT WINAPI, so `extern "C"`: `extern "system"` would look

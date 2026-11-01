@@ -1,5 +1,10 @@
 // Deterministic from oaidl.h
 use crate::prelude::*;
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::LoadRegTypeLib;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
 // One declaration per external symbol: island.rs.
 use crate::island::OutputDebugStringA;
 #[repr(C)]
@@ -173,8 +178,6 @@ extern "C" {
 // Deterministic COM scaffold for CDefViewDual; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -183,7 +186,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -531,13 +534,6 @@ extern "C" {
 }
 
 extern "system" {
-    fn LoadRegTypeLib(
-        libid: REFGUID,
-        major: WORD,
-        minor: WORD,
-        lcid: LCID,
-        out: *mut *mut ITypeLib,
-    ) -> HRESULT;
 }
 
 pub const DISP_E_BADINDEX: HRESULT = 0x8002_000B_u32 as HRESULT;
@@ -563,11 +559,11 @@ pub unsafe fn CDefViewDual_EnsureTILoaded_body(this: *mut CDefViewDual, lcid: LC
     let mut spTypeLib: *mut ITypeLib = core::ptr::null_mut();
     let _spTypeLib_cpp_com_guard = CppComPtrGuard::new(core::ptr::addr_of_mut!(spTypeLib));
     hr = LoadRegTypeLib(
-        core::ptr::addr_of!(LIBID_Shell32),
+        (core::ptr::addr_of!(LIBID_Shell32)).cast(),
         1,
         0,
         lcid,
-        &mut spTypeLib,
+        (&raw mut spTypeLib).cast(),
     );
     if hr >= 0 {
         hr = ((*(*spTypeLib).lpVtbl).GetTypeInfoOfGuid)(

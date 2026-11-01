@@ -1849,6 +1849,12 @@ pub const USER_MARSHAL_FC_ULONG: u32 = 9;
 pub const USER_MARSHAL_FC_FLOAT: u32 = 10;
 pub const USER_MARSHAL_FC_HYPER: u32 = 11;
 pub const USER_MARSHAL_FC_DOUBLE: u32 = 12;
+pub const ROT_COMPARE_MAX: u32 = 2048;
+pub const ROTFLAGS_REGISTRATIONKEEPSALIVE: u32 = 1;
+pub const ROTFLAGS_ALLOWANYCLIENT: u32 = 2;
+pub const WDT_INPROC_CALL: u32 = 1215587415;
+pub const WDT_REMOTE_CALL: u32 = 1383359575;
+pub const WDT_INPROC64_CALL: u32 = 1349805143;
 pub const STGM_DIRECT: u32 = 0;
 pub const STGM_TRANSACTED: u32 = 65536;
 pub const STGM_SIMPLE: u32 = 134217728;
@@ -3011,6 +3017,232 @@ pub const EMBDHLP_INPROC_HANDLER: u32 = 0;
 pub const EMBDHLP_INPROC_SERVER: u32 = 1;
 pub const EMBDHLP_CREATENOW: u32 = 0;
 pub const EMBDHLP_DELAYCREATE: u32 = 65536;
+pub const SFGAO_CANCOPY: u32 = 1;
+pub const SFGAO_CANMOVE: u32 = 2;
+pub const SFGAO_CANLINK: u32 = 4;
+pub const SFGAO_STORAGE: u32 = 8;
+pub const SFGAO_CANRENAME: u32 = 16;
+pub const SFGAO_CANDELETE: u32 = 32;
+pub const SFGAO_HASPROPSHEET: u32 = 64;
+pub const SFGAO_DROPTARGET: u32 = 256;
+pub const SFGAO_CAPABILITYMASK: u32 = 375;
+pub const SFGAO_SYSTEM: u32 = 4096;
+pub const SFGAO_ENCRYPTED: u32 = 8192;
+pub const SFGAO_ISSLOW: u32 = 16384;
+pub const SFGAO_GHOSTED: u32 = 32768;
+pub const SFGAO_LINK: u32 = 65536;
+pub const SFGAO_SHARE: u32 = 131072;
+pub const SFGAO_READONLY: u32 = 262144;
+pub const SFGAO_HIDDEN: u32 = 524288;
+pub const SFGAO_DISPLAYATTRMASK: u32 = 1032192;
+pub const SFGAO_FILESYSANCESTOR: u32 = 268435456;
+pub const SFGAO_FOLDER: u32 = 536870912;
+pub const SFGAO_FILESYSTEM: u32 = 1073741824;
+pub const SFGAO_HASSUBFOLDER: u32 = 2147483648;
+pub const SFGAO_CONTENTSMASK: u32 = 2147483648;
+pub const SFGAO_VALIDATE: u32 = 16777216;
+pub const SFGAO_REMOVABLE: u32 = 33554432;
+pub const SFGAO_COMPRESSED: u32 = 67108864;
+pub const SFGAO_BROWSABLE: u32 = 134217728;
+pub const SFGAO_NONENUMERATED: u32 = 1048576;
+pub const SFGAO_NEWCONTENT: u32 = 2097152;
+pub const SFGAO_STREAM: u32 = 4194304;
+pub const SFGAO_STORAGEANCESTOR: u32 = 8388608;
+pub const SFGAO_STORAGECAPMASK: u32 = 1891958792;
+pub const SFGAO_PKEYSFGAOMASK: u32 = 2164539392;
+pub const SHCIDS_COLUMNMASK: u32 = 65535;
+pub const SHCIDS_BITMASK: u32 = 4294901760;
+pub const SHCIDS_CANONICALONLY: u32 = 268435456;
+pub const SHCIDS_ALLFIELDS: u32 = 2147483648;
+pub const STR_PARSE_SHELL_PROTOCOL_TO_FILE_OBJECTS: &[u8; 37] =
+    b"Parse Shell Protocol To File Objects\0";
+pub const STR_FILE_SYS_BIND_DATA: &[u8; 22] = b"File System Bind Data\0";
+pub const STR_PARSE_PREFER_FOLDER_BROWSING: &[u8; 29] = b"Parse Prefer Folder Browsing\0";
+pub const STR_PARSE_TRANSLATE_ALIASES: &[u8; 24] = b"Parse Translate Aliases\0";
+pub const STR_DONT_PARSE_RELATIVE: &[u8; 21] = b"Don't Parse Relative\0";
+pub const SVSI_DESELECT: u32 = 0;
+pub const SVSI_SELECT: u32 = 1;
+pub const SVSI_EDIT: u32 = 3;
+pub const SVSI_DESELECTOTHERS: u32 = 4;
+pub const SVSI_ENSUREVISIBLE: u32 = 8;
+pub const SVSI_FOCUSED: u32 = 16;
+pub const SVSI_TRANSLATEPT: u32 = 32;
+pub const SVSI_SELECTIONMARK: u32 = 64;
+pub const SVSI_POSITIONITEM: u32 = 128;
+pub const SVSI_CHECK: u32 = 256;
+pub const SVSI_NOSTATECHANGE: u32 = 2147483648;
+pub const SBSP_DEFBROWSER: u32 = 0;
+pub const SBSP_SAMEBROWSER: u32 = 1;
+pub const SBSP_NEWBROWSER: u32 = 2;
+pub const SBSP_DEFMODE: u32 = 0;
+pub const SBSP_OPENMODE: u32 = 16;
+pub const SBSP_EXPLOREMODE: u32 = 32;
+pub const SBSP_HELPMODE: u32 = 64;
+pub const SBSP_NOTRANSFERHIST: u32 = 128;
+pub const SBSP_ABSOLUTE: u32 = 0;
+pub const SBSP_RELATIVE: u32 = 4096;
+pub const SBSP_PARENT: u32 = 8192;
+pub const SBSP_NAVIGATEBACK: u32 = 16384;
+pub const SBSP_NAVIGATEFORWARD: u32 = 32768;
+pub const SBSP_ALLOW_AUTONAVIGATE: u32 = 65536;
+pub const SBSP_KEEPSAMETEMPLATE: u32 = 131072;
+pub const SBSP_KEEPWORDWHEELTEXT: u32 = 262144;
+pub const SBSP_ACTIVATE_NOFOCUS: u32 = 524288;
+pub const SBSP_CREATENOHISTORY: u32 = 1048576;
+pub const SBSP_PLAYNOSOUND: u32 = 2097152;
+pub const SBSP_CALLERUNTURUSTED: u32 = 8388608;
+pub const SBSP_TRUSTFIRSTDOWNLOAD: u32 = 16777216;
+pub const SBSP_UNTRUSTEDFORDOWNLOAD: u32 = 33554432;
+pub const SBSP_NOAUTOSELECT: u32 = 67108864;
+pub const SBSP_WRITENOHISTORY: u32 = 134217728;
+pub const SBSP_TRUSTEDFORACTIVEX: u32 = 268435456;
+pub const SBSP_FEEDNAVIGATION: u32 = 536870912;
+pub const SBSP_REDIRECT: u32 = 1073741824;
+pub const SBSP_INITIATEDBYHLINKFRAME: u32 = 2147483648;
+pub const FCW_STATUS: u32 = 1;
+pub const FCW_TOOLBAR: u32 = 2;
+pub const FCW_TREE: u32 = 3;
+pub const FCW_INTERNETBAR: u32 = 6;
+pub const FCW_PROGRESS: u32 = 8;
+pub const FCT_MERGE: u32 = 1;
+pub const FCT_CONFIGABLE: u32 = 2;
+pub const FCT_ADDTOEND: u32 = 4;
+pub const GIL_OPENICON: u32 = 1;
+pub const GIL_FORSHELL: u32 = 2;
+pub const GIL_ASYNC: u32 = 32;
+pub const GIL_DEFAULTICON: u32 = 64;
+pub const GIL_FORSHORTCUT: u32 = 128;
+pub const GIL_SIMULATEDOC: u32 = 1;
+pub const GIL_PERINSTANCE: u32 = 2;
+pub const GIL_PERCLASS: u32 = 4;
+pub const GIL_NOTFILENAME: u32 = 8;
+pub const GIL_DONTCACHE: u32 = 16;
+pub const CDBOSC_SETFOCUS: u32 = 0;
+pub const CDBOSC_KILLFOCUS: u32 = 1;
+pub const CDBOSC_SELCHANGE: u32 = 2;
+pub const CDBOSC_RENAME: u32 = 3;
+pub const CDBOSC_STATECHANGE: u32 = 4;
+pub const CDB2N_CONTEXTMENU_DONE: u32 = 1;
+pub const CDB2N_CONTEXTMENU_START: u32 = 2;
+pub const CDB2GVF_SHOWALLFILES: u32 = 1;
+pub const CDB2GVF_NOSELECTVERB: u32 = 8;
+pub const CDB2GVF_NOINCLUDEITEM: u32 = 16;
+pub const DWFRF_NORMAL: u32 = 0;
+pub const DWFRF_DELETECONFIGDATA: u32 = 1;
+pub const DWFAF_HIDDEN: u32 = 1;
+pub const CMF_NORMAL: u32 = 0;
+pub const CMF_DEFAULTONLY: u32 = 1;
+pub const CMF_VERBSONLY: u32 = 2;
+pub const CMF_EXPLORE: u32 = 4;
+pub const CMF_NOVERBS: u32 = 8;
+pub const CMF_CANRENAME: u32 = 16;
+pub const CMF_NODEFAULT: u32 = 32;
+pub const CMF_INCLUDESTATIC: u32 = 64;
+pub const CMF_EXTENDEDVERBS: u32 = 256;
+pub const CMF_DISABLEDVERBS: u32 = 512;
+pub const CMF_ASYNCVERBSTATE: u32 = 1024;
+pub const CMF_OPTIMIZEFORINVOKE: u32 = 2048;
+pub const CMF_SYNCCASCADEMENU: u32 = 4096;
+pub const CMF_DONOTPICKDEFAULT: u32 = 8192;
+pub const CMF_RESERVED: u32 = 4294901760;
+pub const GCS_VERBA: u32 = 0;
+pub const GCS_HELPTEXTA: u32 = 1;
+pub const GCS_VALIDATEA: u32 = 2;
+pub const GCS_VERBW: u32 = 4;
+pub const GCS_HELPTEXTW: u32 = 5;
+pub const GCS_VALIDATEW: u32 = 6;
+pub const GCS_UNICODE: u32 = 4;
+pub const CMDSTR_NEWFOLDERA: &[u8; 10] = b"NewFolder\0";
+pub const CMDSTR_VIEWLISTA: &[u8; 9] = b"ViewList\0";
+pub const CMDSTR_VIEWDETAILSA: &[u8; 12] = b"ViewDetails\0";
+pub const CMIC_MASK_SHIFT_DOWN: u32 = 268435456;
+pub const CMIC_MASK_PTINVOKE: u32 = 536870912;
+pub const CMIC_MASK_CONTROL_DOWN: u32 = 1073741824;
+pub const DBIM_MINSIZE: u32 = 1;
+pub const DBIM_MAXSIZE: u32 = 2;
+pub const DBIM_INTEGRAL: u32 = 4;
+pub const DBIM_ACTUAL: u32 = 8;
+pub const DBIM_TITLE: u32 = 16;
+pub const DBIM_MODEFLAGS: u32 = 32;
+pub const DBIM_BKCOLOR: u32 = 64;
+pub const DBIMF_NORMAL: u32 = 0;
+pub const DBIMF_FIXED: u32 = 1;
+pub const DBIMF_FIXEDBMP: u32 = 4;
+pub const DBIMF_VARIABLEHEIGHT: u32 = 8;
+pub const DBIMF_UNDELETEABLE: u32 = 16;
+pub const DBIMF_DEBOSSED: u32 = 32;
+pub const DBIMF_BKCOLOR: u32 = 64;
+pub const DBIMF_USECHEVRON: u32 = 128;
+pub const DBIMF_BREAK: u32 = 256;
+pub const DBIMF_ADDTOFRONT: u32 = 512;
+pub const DBIMF_TOPALIGN: u32 = 1024;
+pub const DBIF_VIEWMODE_NORMAL: u32 = 0;
+pub const DBIF_VIEWMODE_VERTICAL: u32 = 1;
+pub const DBIF_VIEWMODE_FLOATING: u32 = 2;
+pub const DBIF_VIEWMODE_TRANSPARENT: u32 = 4;
+pub const BSIM_STATE: u32 = 1;
+pub const BSIM_STYLE: u32 = 2;
+pub const BSSF_VISIBLE: u32 = 1;
+pub const BSSF_NOTITLE: u32 = 2;
+pub const BSSF_UNDELETEABLE: u32 = 4096;
+pub const BSIS_AUTOGRIPPER: u32 = 0;
+pub const BSIS_NOGRIPPER: u32 = 1;
+pub const BSIS_ALWAYSGRIPPER: u32 = 2;
+pub const BSIS_LEFTALIGN: u32 = 4;
+pub const BSIS_SINGLECLICK: u32 = 8;
+pub const BSIS_NOCONTEXTMENU: u32 = 16;
+pub const BSIS_NODROPTARGET: u32 = 32;
+pub const BSIS_NOCAPTION: u32 = 64;
+pub const BSIS_PREFERNOLINEBREAK: u32 = 128;
+pub const BSIS_LOCKED: u32 = 256;
+pub const SMDM_SHELLFOLDER: u32 = 1;
+pub const SMDM_HMENU: u32 = 2;
+pub const SMDM_TOOLBAR: u32 = 4;
+pub const SMC_INITMENU: u32 = 1;
+pub const SMC_CREATE: u32 = 2;
+pub const SMC_EXITMENU: u32 = 3;
+pub const SMC_GETINFO: u32 = 5;
+pub const SMC_GETSFINFO: u32 = 6;
+pub const SMC_GETOBJECT: u32 = 7;
+pub const SMC_GETSFOBJECT: u32 = 8;
+pub const SMC_SFEXEC: u32 = 9;
+pub const SMC_SFSELECTITEM: u32 = 10;
+pub const SMC_REFRESH: u32 = 16;
+pub const SMC_DEMOTE: u32 = 17;
+pub const SMC_PROMOTE: u32 = 18;
+pub const SMC_DEFAULTICON: u32 = 22;
+pub const SMC_NEWITEM: u32 = 23;
+pub const SMC_CHEVRONEXPAND: u32 = 25;
+pub const SMC_DISPLAYCHEVRONTIP: u32 = 42;
+pub const SMC_SETSFOBJECT: u32 = 45;
+pub const SMC_SHCHANGENOTIFY: u32 = 46;
+pub const SMC_CHEVRONGETTIP: u32 = 47;
+pub const SMC_SFDDRESTRICTED: u32 = 48;
+pub const SMC_SFEXEC_MIDDLE: u32 = 49;
+pub const SMC_GETAUTOEXPANDSTATE: u32 = 65;
+pub const SMC_AUTOEXPANDCHANGE: u32 = 66;
+pub const SMC_GETCONTEXTMENUMODIFIER: u32 = 67;
+pub const SMC_GETBKCONTEXTMENU: u32 = 68;
+pub const SMC_OPEN: u32 = 69;
+pub const SMAE_EXPANDED: u32 = 1;
+pub const SMAE_CONTRACTED: u32 = 2;
+pub const SMAE_USER: u32 = 4;
+pub const SMAE_VALID: u32 = 7;
+pub const SMINIT_DEFAULT: u32 = 0;
+pub const SMINIT_RESTRICT_DRAGDROP: u32 = 2;
+pub const SMINIT_TOPLEVEL: u32 = 4;
+pub const SMINIT_CACHED: u32 = 16;
+pub const SMINIT_VERTICAL: u32 = 268435456;
+pub const SMINIT_HORIZONTAL: u32 = 536870912;
+pub const SMSET_USEBKICONEXTRACTION: u32 = 8;
+pub const SMSET_HASEXPANDABLEFOLDERS: u32 = 16;
+pub const SMSET_TOP: u32 = 268435456;
+pub const SMSET_BOTTOM: u32 = 536870912;
+pub const SMSET_DONTOWN: u32 = 1;
+pub const SMINV_REFRESH: u32 = 1;
+pub const SMINV_ID: u32 = 8;
+pub const ACDD_VISIBLE: u32 = 1;
+pub const NSTCDHPOS_ONTOP: i32 = -1;
 pub const FCS_READ: u32 = 1;
 pub const FCS_FORCEWRITE: u32 = 2;
 pub const FCSM_ICONFILE: u32 = 16;
@@ -3482,6 +3714,466 @@ pub const ISFB_MASK_STATE: u32 = 1;
 pub const ISFB_MASK_IDLIST: u32 = 16;
 pub const ISFB_STATE_QLINKSMODE: u32 = 32;
 pub const ISFB_STATE_NOSHOWTEXT: u32 = 4;
+pub const GEOID_NOT_AVAILABLE: i32 = -1;
+pub const MAX_LEADBYTES: u32 = 12;
+pub const MAX_DEFAULTCHAR: u32 = 2;
+pub const LOCALE_ALL: u32 = 0;
+pub const LOCALE_NOUSEROVERRIDE: u32 = 2147483648;
+pub const LOCALE_USE_CP_ACP: u32 = 1073741824;
+pub const LOCALE_RETURN_NUMBER: u32 = 536870912;
+pub const LOCALE_RETURN_GENITIVE_NAMES: u32 = 268435456;
+pub const LOCALE_ALLOW_NEUTRAL_NAMES: u32 = 134217728;
+pub const LOCALE_SLOCALIZEDDISPLAYNAME: u32 = 2;
+pub const LOCALE_ILANGUAGE: u32 = 1;
+pub const LOCALE_SLANGUAGE: u32 = 2;
+pub const LOCALE_SENGLANGUAGE: u32 = 4097;
+pub const LOCALE_SENGLISHLANGUAGENAME: u32 = 4097;
+pub const LOCALE_SNATIVELANGUAGENAME: u32 = 4;
+pub const LOCALE_SLOCALIZEDCOUNTRYNAME: u32 = 6;
+pub const LOCALE_SNATIVECOUNTRYNAME: u32 = 8;
+pub const LOCALE_SABBREVLANGNAME: u32 = 3;
+pub const LOCALE_SNATIVELANGNAME: u32 = 4;
+pub const LOCALE_ICOUNTRY: u32 = 5;
+pub const LOCALE_SCOUNTRY: u32 = 6;
+pub const LOCALE_SENGCOUNTRY: u32 = 4098;
+pub const LOCALE_SENGLISHCOUNTRYNAME: u32 = 4098;
+pub const LOCALE_SABBREVCTRYNAME: u32 = 7;
+pub const LOCALE_SNATIVECTRYNAME: u32 = 8;
+pub const LOCALE_IDEFAULTLANGUAGE: u32 = 9;
+pub const LOCALE_IDEFAULTCOUNTRY: u32 = 10;
+pub const LOCALE_IDEFAULTCODEPAGE: u32 = 11;
+pub const LOCALE_IDEFAULTANSICODEPAGE: u32 = 4100;
+pub const LOCALE_IDEFAULTMACCODEPAGE: u32 = 4113;
+pub const LOCALE_SLIST: u32 = 12;
+pub const LOCALE_IMEASURE: u32 = 13;
+pub const LOCALE_SDECIMAL: u32 = 14;
+pub const LOCALE_STHOUSAND: u32 = 15;
+pub const LOCALE_SGROUPING: u32 = 16;
+pub const LOCALE_IDIGITS: u32 = 17;
+pub const LOCALE_ILZERO: u32 = 18;
+pub const LOCALE_INEGNUMBER: u32 = 4112;
+pub const LOCALE_SNATIVEDIGITS: u32 = 19;
+pub const LOCALE_SCURRENCY: u32 = 20;
+pub const LOCALE_SINTLSYMBOL: u32 = 21;
+pub const LOCALE_SMONDECIMALSEP: u32 = 22;
+pub const LOCALE_SMONTHOUSANDSEP: u32 = 23;
+pub const LOCALE_SMONGROUPING: u32 = 24;
+pub const LOCALE_ICURRDIGITS: u32 = 25;
+pub const LOCALE_IINTLCURRDIGITS: u32 = 26;
+pub const LOCALE_ICURRENCY: u32 = 27;
+pub const LOCALE_INEGCURR: u32 = 28;
+pub const LOCALE_SDATE: u32 = 29;
+pub const LOCALE_STIME: u32 = 30;
+pub const LOCALE_SSHORTDATE: u32 = 31;
+pub const LOCALE_SLONGDATE: u32 = 32;
+pub const LOCALE_STIMEFORMAT: u32 = 4099;
+pub const LOCALE_IDATE: u32 = 33;
+pub const LOCALE_ILDATE: u32 = 34;
+pub const LOCALE_ITIME: u32 = 35;
+pub const LOCALE_ITIMEMARKPOSN: u32 = 4101;
+pub const LOCALE_ICENTURY: u32 = 36;
+pub const LOCALE_ITLZERO: u32 = 37;
+pub const LOCALE_IDAYLZERO: u32 = 38;
+pub const LOCALE_IMONLZERO: u32 = 39;
+pub const LOCALE_S1159: u32 = 40;
+pub const LOCALE_S2359: u32 = 41;
+pub const LOCALE_ICALENDARTYPE: u32 = 4105;
+pub const LOCALE_IOPTIONALCALENDAR: u32 = 4107;
+pub const LOCALE_IFIRSTDAYOFWEEK: u32 = 4108;
+pub const LOCALE_IFIRSTWEEKOFYEAR: u32 = 4109;
+pub const LOCALE_SDAYNAME1: u32 = 42;
+pub const LOCALE_SDAYNAME2: u32 = 43;
+pub const LOCALE_SDAYNAME3: u32 = 44;
+pub const LOCALE_SDAYNAME4: u32 = 45;
+pub const LOCALE_SDAYNAME5: u32 = 46;
+pub const LOCALE_SDAYNAME6: u32 = 47;
+pub const LOCALE_SDAYNAME7: u32 = 48;
+pub const LOCALE_SABBREVDAYNAME1: u32 = 49;
+pub const LOCALE_SABBREVDAYNAME2: u32 = 50;
+pub const LOCALE_SABBREVDAYNAME3: u32 = 51;
+pub const LOCALE_SABBREVDAYNAME4: u32 = 52;
+pub const LOCALE_SABBREVDAYNAME5: u32 = 53;
+pub const LOCALE_SABBREVDAYNAME6: u32 = 54;
+pub const LOCALE_SABBREVDAYNAME7: u32 = 55;
+pub const LOCALE_SMONTHNAME1: u32 = 56;
+pub const LOCALE_SMONTHNAME2: u32 = 57;
+pub const LOCALE_SMONTHNAME3: u32 = 58;
+pub const LOCALE_SMONTHNAME4: u32 = 59;
+pub const LOCALE_SMONTHNAME5: u32 = 60;
+pub const LOCALE_SMONTHNAME6: u32 = 61;
+pub const LOCALE_SMONTHNAME7: u32 = 62;
+pub const LOCALE_SMONTHNAME8: u32 = 63;
+pub const LOCALE_SMONTHNAME9: u32 = 64;
+pub const LOCALE_SMONTHNAME10: u32 = 65;
+pub const LOCALE_SMONTHNAME11: u32 = 66;
+pub const LOCALE_SMONTHNAME12: u32 = 67;
+pub const LOCALE_SMONTHNAME13: u32 = 4110;
+pub const LOCALE_SABBREVMONTHNAME1: u32 = 68;
+pub const LOCALE_SABBREVMONTHNAME2: u32 = 69;
+pub const LOCALE_SABBREVMONTHNAME3: u32 = 70;
+pub const LOCALE_SABBREVMONTHNAME4: u32 = 71;
+pub const LOCALE_SABBREVMONTHNAME5: u32 = 72;
+pub const LOCALE_SABBREVMONTHNAME6: u32 = 73;
+pub const LOCALE_SABBREVMONTHNAME7: u32 = 74;
+pub const LOCALE_SABBREVMONTHNAME8: u32 = 75;
+pub const LOCALE_SABBREVMONTHNAME9: u32 = 76;
+pub const LOCALE_SABBREVMONTHNAME10: u32 = 77;
+pub const LOCALE_SABBREVMONTHNAME11: u32 = 78;
+pub const LOCALE_SABBREVMONTHNAME12: u32 = 79;
+pub const LOCALE_SABBREVMONTHNAME13: u32 = 4111;
+pub const LOCALE_SPOSITIVESIGN: u32 = 80;
+pub const LOCALE_SNEGATIVESIGN: u32 = 81;
+pub const LOCALE_IPOSSIGNPOSN: u32 = 82;
+pub const LOCALE_INEGSIGNPOSN: u32 = 83;
+pub const LOCALE_IPOSSYMPRECEDES: u32 = 84;
+pub const LOCALE_IPOSSEPBYSPACE: u32 = 85;
+pub const LOCALE_INEGSYMPRECEDES: u32 = 86;
+pub const LOCALE_INEGSEPBYSPACE: u32 = 87;
+pub const LOCALE_FONTSIGNATURE: u32 = 88;
+pub const LOCALE_SISO639LANGNAME: u32 = 89;
+pub const LOCALE_SISO3166CTRYNAME: u32 = 90;
+pub const LOCALE_SNAME: u32 = 92;
+pub const LOCALE_IREADINGLAYOUT: u32 = 112;
+pub const LOCALE_INEUTRAL: u32 = 113;
+pub const LOCALE_SENGLISHDISPLAYNAME: u32 = 114;
+pub const LOCALE_SNATIVEDISPLAYNAME: u32 = 115;
+pub const LOCALE_INEGATIVEPERCENT: u32 = 116;
+pub const LOCALE_IPOSITIVEPERCENT: u32 = 117;
+pub const LOCALE_SPERCENT: u32 = 118;
+pub const LOCALE_SPERMILLE: u32 = 119;
+pub const LOCALE_SMONTHDAY: u32 = 120;
+pub const LOCALE_SSHORTTIME: u32 = 121;
+pub const LOCALE_SOPENTYPELANGUAGETAG: u32 = 122;
+pub const LOCALE_SSORTLOCALE: u32 = 123;
+pub const LOCALE_SRELATIVELONGDATE: u32 = 124;
+pub const LOCALE_SSHORTESTAM: u32 = 126;
+pub const LOCALE_SSHORTESTPM: u32 = 127;
+pub const LOCALE_IDEFAULTUNIXCODEPAGE: u32 = 4144;
+pub const NORM_IGNORECASE: u32 = 1;
+pub const NORM_IGNOREKANATYPE: u32 = 65536;
+pub const NORM_IGNORENONSPACE: u32 = 2;
+pub const NORM_IGNORESYMBOLS: u32 = 4;
+pub const NORM_IGNOREWIDTH: u32 = 131072;
+pub const LINGUISTIC_IGNORECASE: u32 = 16;
+pub const LINGUISTIC_IGNOREDIACRITIC: u32 = 32;
+pub const NORM_LINGUISTIC_CASING: u32 = 134217728;
+pub const SORT_STRINGSORT: u32 = 4096;
+pub const SORT_DIGITSASNUMBERS: u32 = 8;
+pub const LCMAP_LOWERCASE: u32 = 256;
+pub const LCMAP_UPPERCASE: u32 = 512;
+pub const LCMAP_TITLECASE: u32 = 768;
+pub const LCMAP_SORTKEY: u32 = 1024;
+pub const LCMAP_BYTEREV: u32 = 2048;
+pub const LCMAP_HASH: u32 = 262144;
+pub const LCMAP_HIRAGANA: u32 = 1048576;
+pub const LCMAP_KATAKANA: u32 = 2097152;
+pub const LCMAP_HALFWIDTH: u32 = 4194304;
+pub const LCMAP_FULLWIDTH: u32 = 8388608;
+pub const LCMAP_LINGUISTIC_CASING: u32 = 16777216;
+pub const LCMAP_SIMPLIFIED_CHINESE: u32 = 33554432;
+pub const LCMAP_TRADITIONAL_CHINESE: u32 = 67108864;
+pub const LCMAP_SORTHANDLE: u32 = 536870912;
+pub const ENUM_ALL_CALENDARS: i32 = -1;
+pub const DATE_SHORTDATE: u32 = 1;
+pub const DATE_LONGDATE: u32 = 2;
+pub const DATE_USE_ALT_CALENDAR: u32 = 4;
+pub const DATE_AUTOLAYOUT: u32 = 64;
+pub const DATE_MONTHDAY: u32 = 128;
+pub const CP_INSTALLED: u32 = 1;
+pub const CP_SUPPORTED: u32 = 2;
+pub const LCID_INSTALLED: u32 = 1;
+pub const LCID_SUPPORTED: u32 = 2;
+pub const LCID_ALTERNATE_SORTS: u32 = 4;
+pub const FIND_STARTSWITH: u32 = 1048576;
+pub const FIND_ENDSWITH: u32 = 2097152;
+pub const FIND_FROMSTART: u32 = 4194304;
+pub const FIND_FROMEND: u32 = 8388608;
+pub const LOCALE_WINDOWS: u32 = 1;
+pub const LOCALE_SUPPLEMENTAL: u32 = 2;
+pub const LOCALE_ALTERNATE_SORTS: u32 = 4;
+pub const LOCALE_REPLACEMENT: u32 = 8;
+pub const LOCALE_NEUTRALDATA: u32 = 16;
+pub const LOCALE_SPECIFICDATA: u32 = 32;
+pub const MAP_FOLDCZONE: u32 = 16;
+pub const MAP_FOLDDIGITS: u32 = 128;
+pub const MAP_PRECOMPOSED: u32 = 32;
+pub const MAP_COMPOSITE: u32 = 64;
+pub const WC_DISCARDNS: u32 = 16;
+pub const WC_SEPCHARS: u32 = 32;
+pub const WC_DEFAULTCHAR: u32 = 64;
+pub const WC_ERR_INVALID_CHARS: u32 = 128;
+pub const WC_COMPOSITECHECK: u32 = 512;
+pub const WC_NO_BEST_FIT_CHARS: u32 = 1024;
+pub const CP_ACP: u32 = 0;
+pub const CP_OEMCP: u32 = 1;
+pub const CP_MACCP: u32 = 2;
+pub const CP_THREAD_ACP: u32 = 3;
+pub const CP_SYMBOL: u32 = 42;
+pub const CP_UTF7: u32 = 65000;
+pub const CP_UTF8: u32 = 65001;
+pub const CT_CTYPE1: u32 = 1;
+pub const CT_CTYPE2: u32 = 2;
+pub const CT_CTYPE3: u32 = 4;
+pub const C1_UPPER: u32 = 1;
+pub const C1_LOWER: u32 = 2;
+pub const C1_DIGIT: u32 = 4;
+pub const C1_SPACE: u32 = 8;
+pub const C1_PUNCT: u32 = 16;
+pub const C1_CNTRL: u32 = 32;
+pub const C1_BLANK: u32 = 64;
+pub const C1_XDIGIT: u32 = 128;
+pub const C1_ALPHA: u32 = 256;
+pub const C1_DEFINED: u32 = 512;
+pub const C2_LEFTTORIGHT: u32 = 1;
+pub const C2_RIGHTTOLEFT: u32 = 2;
+pub const C2_EUROPENUMBER: u32 = 3;
+pub const C2_EUROPESEPARATOR: u32 = 4;
+pub const C2_EUROPETERMINATOR: u32 = 5;
+pub const C2_ARABICNUMBER: u32 = 6;
+pub const C2_COMMONSEPARATOR: u32 = 7;
+pub const C2_BLOCKSEPARATOR: u32 = 8;
+pub const C2_SEGMENTSEPARATOR: u32 = 9;
+pub const C2_WHITESPACE: u32 = 10;
+pub const C2_OTHERNEUTRAL: u32 = 11;
+pub const C2_NOTAPPLICABLE: u32 = 0;
+pub const C3_NONSPACING: u32 = 1;
+pub const C3_DIACRITIC: u32 = 2;
+pub const C3_VOWELMARK: u32 = 4;
+pub const C3_SYMBOL: u32 = 8;
+pub const C3_KATAKANA: u32 = 16;
+pub const C3_HIRAGANA: u32 = 32;
+pub const C3_HALFWIDTH: u32 = 64;
+pub const C3_FULLWIDTH: u32 = 128;
+pub const C3_IDEOGRAPH: u32 = 256;
+pub const C3_KASHIDA: u32 = 512;
+pub const C3_LEXICAL: u32 = 1024;
+pub const C3_ALPHA: u32 = 32768;
+pub const C3_NOTAPPLICABLE: u32 = 0;
+pub const C3_HIGHSURROGATE: u32 = 2048;
+pub const C3_LOWSURROGATE: u32 = 4096;
+pub const TIME_NOMINUTESORSECONDS: u32 = 1;
+pub const TIME_NOSECONDS: u32 = 2;
+pub const TIME_NOTIMEMARKER: u32 = 4;
+pub const TIME_FORCE24HOURFORMAT: u32 = 8;
+pub const MB_PRECOMPOSED: u32 = 1;
+pub const MB_COMPOSITE: u32 = 2;
+pub const MB_ERR_INVALID_CHARS: u32 = 8;
+pub const MB_USEGLYPHCHARS: u32 = 4;
+pub const CTRY_DEFAULT: u32 = 0;
+pub const CTRY_ALBANIA: u32 = 355;
+pub const CTRY_ALGERIA: u32 = 213;
+pub const CTRY_ARGENTINA: u32 = 54;
+pub const CTRY_ARMENIA: u32 = 374;
+pub const CTRY_AUSTRALIA: u32 = 61;
+pub const CTRY_AUSTRIA: u32 = 43;
+pub const CTRY_AZERBAIJAN: u32 = 994;
+pub const CTRY_BAHRAIN: u32 = 973;
+pub const CTRY_BELARUS: u32 = 375;
+pub const CTRY_BELGIUM: u32 = 32;
+pub const CTRY_BELIZE: u32 = 501;
+pub const CTRY_BOLIVIA: u32 = 591;
+pub const CTRY_BRAZIL: u32 = 55;
+pub const CTRY_BRUNEI_DARUSSALAM: u32 = 673;
+pub const CTRY_BULGARIA: u32 = 359;
+pub const CTRY_CANADA: u32 = 2;
+pub const CTRY_CARIBBEAN: u32 = 1;
+pub const CTRY_CHILE: u32 = 56;
+pub const CTRY_COLOMBIA: u32 = 57;
+pub const CTRY_COSTA_RICA: u32 = 506;
+pub const CTRY_CROATIA: u32 = 385;
+pub const CTRY_CZECH: u32 = 420;
+pub const CTRY_DENMARK: u32 = 45;
+pub const CTRY_DOMINICAN_REPUBLIC: u32 = 1;
+pub const CTRY_ECUADOR: u32 = 593;
+pub const CTRY_EGYPT: u32 = 20;
+pub const CTRY_EL_SALVADOR: u32 = 503;
+pub const CTRY_ESTONIA: u32 = 372;
+pub const CTRY_FAEROE_ISLANDS: u32 = 298;
+pub const CTRY_FINLAND: u32 = 358;
+pub const CTRY_FRANCE: u32 = 33;
+pub const CTRY_GEORGIA: u32 = 995;
+pub const CTRY_GERMANY: u32 = 49;
+pub const CTRY_GREECE: u32 = 30;
+pub const CTRY_GUATEMALA: u32 = 502;
+pub const CTRY_HONDURAS: u32 = 504;
+pub const CTRY_HONG_KONG: u32 = 852;
+pub const CTRY_HUNGARY: u32 = 36;
+pub const CTRY_ICELAND: u32 = 354;
+pub const CTRY_INDIA: u32 = 91;
+pub const CTRY_INDONESIA: u32 = 62;
+pub const CTRY_IRAN: u32 = 981;
+pub const CTRY_IRAQ: u32 = 964;
+pub const CTRY_IRELAND: u32 = 353;
+pub const CTRY_ISRAEL: u32 = 972;
+pub const CTRY_ITALY: u32 = 39;
+pub const CTRY_JAMAICA: u32 = 1;
+pub const CTRY_JAPAN: u32 = 81;
+pub const CTRY_JORDAN: u32 = 962;
+pub const CTRY_KAZAKSTAN: u32 = 7;
+pub const CTRY_KENYA: u32 = 254;
+pub const CTRY_KUWAIT: u32 = 965;
+pub const CTRY_KYRGYZSTAN: u32 = 996;
+pub const CTRY_LATVIA: u32 = 371;
+pub const CTRY_LEBANON: u32 = 961;
+pub const CTRY_LIBYA: u32 = 218;
+pub const CTRY_LIECHTENSTEIN: u32 = 41;
+pub const CTRY_LITHUANIA: u32 = 370;
+pub const CTRY_LUXEMBOURG: u32 = 352;
+pub const CTRY_MACAU: u32 = 853;
+pub const CTRY_MACEDONIA: u32 = 389;
+pub const CTRY_MALAYSIA: u32 = 60;
+pub const CTRY_MALDIVES: u32 = 960;
+pub const CTRY_MEXICO: u32 = 52;
+pub const CTRY_MONACO: u32 = 33;
+pub const CTRY_MONGOLIA: u32 = 976;
+pub const CTRY_MOROCCO: u32 = 212;
+pub const CTRY_NETHERLANDS: u32 = 31;
+pub const CTRY_NEW_ZEALAND: u32 = 64;
+pub const CTRY_NICARAGUA: u32 = 505;
+pub const CTRY_NORWAY: u32 = 47;
+pub const CTRY_OMAN: u32 = 968;
+pub const CTRY_PAKISTAN: u32 = 92;
+pub const CTRY_PANAMA: u32 = 507;
+pub const CTRY_PARAGUAY: u32 = 595;
+pub const CTRY_PERU: u32 = 51;
+pub const CTRY_PHILIPPINES: u32 = 63;
+pub const CTRY_POLAND: u32 = 48;
+pub const CTRY_PORTUGAL: u32 = 351;
+pub const CTRY_PRCHINA: u32 = 86;
+pub const CTRY_PUERTO_RICO: u32 = 1;
+pub const CTRY_QATAR: u32 = 974;
+pub const CTRY_ROMANIA: u32 = 40;
+pub const CTRY_RUSSIA: u32 = 7;
+pub const CTRY_SAUDI_ARABIA: u32 = 966;
+pub const CTRY_SERBIA: u32 = 381;
+pub const CTRY_SINGAPORE: u32 = 65;
+pub const CTRY_SLOVAK: u32 = 421;
+pub const CTRY_SLOVENIA: u32 = 386;
+pub const CTRY_SOUTH_AFRICA: u32 = 27;
+pub const CTRY_SOUTH_KOREA: u32 = 82;
+pub const CTRY_SPAIN: u32 = 34;
+pub const CTRY_SWEDEN: u32 = 46;
+pub const CTRY_SWITZERLAND: u32 = 41;
+pub const CTRY_SYRIA: u32 = 963;
+pub const CTRY_TAIWAN: u32 = 886;
+pub const CTRY_TATARSTAN: u32 = 7;
+pub const CTRY_THAILAND: u32 = 66;
+pub const CTRY_TRINIDAD_Y_TOBAGO: u32 = 1;
+pub const CTRY_TUNISIA: u32 = 216;
+pub const CTRY_TURKEY: u32 = 90;
+pub const CTRY_UAE: u32 = 971;
+pub const CTRY_UKRAINE: u32 = 380;
+pub const CTRY_UNITED_KINGDOM: u32 = 44;
+pub const CTRY_UNITED_STATES: u32 = 1;
+pub const CTRY_URUGUAY: u32 = 598;
+pub const CTRY_UZBEKISTAN: u32 = 7;
+pub const CTRY_VENEZUELA: u32 = 58;
+pub const CTRY_VIET_NAM: u32 = 84;
+pub const CTRY_YEMEN: u32 = 967;
+pub const CTRY_ZIMBABWE: u32 = 263;
+pub const CAL_ICALINTVALUE: u32 = 1;
+pub const CAL_SCALNAME: u32 = 2;
+pub const CAL_IYEAROFFSETRANGE: u32 = 3;
+pub const CAL_SERASTRING: u32 = 4;
+pub const CAL_SSHORTDATE: u32 = 5;
+pub const CAL_SLONGDATE: u32 = 6;
+pub const CAL_SDAYNAME1: u32 = 7;
+pub const CAL_SDAYNAME2: u32 = 8;
+pub const CAL_SDAYNAME3: u32 = 9;
+pub const CAL_SDAYNAME4: u32 = 10;
+pub const CAL_SDAYNAME5: u32 = 11;
+pub const CAL_SDAYNAME6: u32 = 12;
+pub const CAL_SDAYNAME7: u32 = 13;
+pub const CAL_SABBREVDAYNAME1: u32 = 14;
+pub const CAL_SABBREVDAYNAME2: u32 = 15;
+pub const CAL_SABBREVDAYNAME3: u32 = 16;
+pub const CAL_SABBREVDAYNAME4: u32 = 17;
+pub const CAL_SABBREVDAYNAME5: u32 = 18;
+pub const CAL_SABBREVDAYNAME6: u32 = 19;
+pub const CAL_SABBREVDAYNAME7: u32 = 20;
+pub const CAL_SMONTHNAME1: u32 = 21;
+pub const CAL_SMONTHNAME2: u32 = 22;
+pub const CAL_SMONTHNAME3: u32 = 23;
+pub const CAL_SMONTHNAME4: u32 = 24;
+pub const CAL_SMONTHNAME5: u32 = 25;
+pub const CAL_SMONTHNAME6: u32 = 26;
+pub const CAL_SMONTHNAME7: u32 = 27;
+pub const CAL_SMONTHNAME8: u32 = 28;
+pub const CAL_SMONTHNAME9: u32 = 29;
+pub const CAL_SMONTHNAME10: u32 = 30;
+pub const CAL_SMONTHNAME11: u32 = 31;
+pub const CAL_SMONTHNAME12: u32 = 32;
+pub const CAL_SMONTHNAME13: u32 = 33;
+pub const CAL_SABBREVMONTHNAME1: u32 = 34;
+pub const CAL_SABBREVMONTHNAME2: u32 = 35;
+pub const CAL_SABBREVMONTHNAME3: u32 = 36;
+pub const CAL_SABBREVMONTHNAME4: u32 = 37;
+pub const CAL_SABBREVMONTHNAME5: u32 = 38;
+pub const CAL_SABBREVMONTHNAME6: u32 = 39;
+pub const CAL_SABBREVMONTHNAME7: u32 = 40;
+pub const CAL_SABBREVMONTHNAME8: u32 = 41;
+pub const CAL_SABBREVMONTHNAME9: u32 = 42;
+pub const CAL_SABBREVMONTHNAME10: u32 = 43;
+pub const CAL_SABBREVMONTHNAME11: u32 = 44;
+pub const CAL_SABBREVMONTHNAME12: u32 = 45;
+pub const CAL_SABBREVMONTHNAME13: u32 = 46;
+pub const CAL_SYEARMONTH: u32 = 47;
+pub const CAL_ITWODIGITYEARMAX: u32 = 48;
+pub const CAL_GREGORIAN: u32 = 1;
+pub const CAL_GREGORIAN_US: u32 = 2;
+pub const CAL_JAPAN: u32 = 3;
+pub const CAL_TAIWAN: u32 = 4;
+pub const CAL_KOREA: u32 = 5;
+pub const CAL_HIJRI: u32 = 6;
+pub const CAL_THAI: u32 = 7;
+pub const CAL_HEBREW: u32 = 8;
+pub const CAL_GREGORIAN_ME_FRENCH: u32 = 9;
+pub const CAL_GREGORIAN_ARABIC: u32 = 10;
+pub const CAL_GREGORIAN_XLIT_ENGLISH: u32 = 11;
+pub const CAL_GREGORIAN_XLIT_FRENCH: u32 = 12;
+pub const CAL_PERSIAN: u32 = 22;
+pub const CAL_UMALQURA: u32 = 23;
+pub const CSTR_LESS_THAN: u32 = 1;
+pub const CSTR_EQUAL: u32 = 2;
+pub const CSTR_GREATER_THAN: u32 = 3;
+pub const LGRPID_INSTALLED: u32 = 1;
+pub const LGRPID_SUPPORTED: u32 = 2;
+pub const LGRPID_WESTERN_EUROPE: u32 = 1;
+pub const LGRPID_CENTRAL_EUROPE: u32 = 2;
+pub const LGRPID_BALTIC: u32 = 3;
+pub const LGRPID_GREEK: u32 = 4;
+pub const LGRPID_CYRILLIC: u32 = 5;
+pub const LGRPID_TURKISH: u32 = 6;
+pub const LGRPID_JAPANESE: u32 = 7;
+pub const LGRPID_KOREAN: u32 = 8;
+pub const LGRPID_TRADITIONAL_CHINESE: u32 = 9;
+pub const LGRPID_SIMPLIFIED_CHINESE: u32 = 10;
+pub const LGRPID_THAI: u32 = 11;
+pub const LGRPID_HEBREW: u32 = 12;
+pub const LGRPID_ARABIC: u32 = 13;
+pub const LGRPID_VIETNAMESE: u32 = 14;
+pub const LGRPID_INDIC: u32 = 15;
+pub const LGRPID_GEORGIAN: u32 = 16;
+pub const LGRPID_ARMENIAN: u32 = 17;
+pub const LOCALE_SYEARMONTH: u32 = 4102;
+pub const LOCALE_SENGCURRNAME: u32 = 4103;
+pub const LOCALE_SNATIVECURRNAME: u32 = 4104;
+pub const LOCALE_IDEFAULTEBCDICCODEPAGE: u32 = 4114;
+pub const LOCALE_SSORTNAME: u32 = 4115;
+pub const LOCALE_IDIGITSUBSTITUTION: u32 = 4116;
+pub const LOCALE_IPAPERSIZE: u32 = 4106;
+pub const DATE_YEARMONTH: u32 = 8;
+pub const DATE_LTRREADING: u32 = 16;
+pub const DATE_RTLREADING: u32 = 32;
+pub const MAP_EXPAND_LIGATURES: u32 = 8192;
+pub const CAL_NOUSEROVERRIDE: u32 = 2147483648;
+pub const CAL_RETURN_NUMBER: u32 = 536870912;
+pub const CAL_RETURN_GENITIVE_NAMES: u32 = 268435456;
+pub const CAL_USE_CP_ACP: u32 = 1073741824;
+pub const HIGH_SURROGATE_START: u32 = 55296;
+pub const HIGH_SURROGATE_END: u32 = 56319;
+pub const LOW_SURROGATE_START: u32 = 56320;
+pub const LOW_SURROGATE_END: u32 = 57343;
 pub const IDC_FILENEEDED: u32 = 503;
 pub const IDC_INFO: u32 = 504;
 pub const IDC_COPYFROM: u32 = 505;
@@ -3578,6 +4270,17 @@ pub const _A_EXEC: u32 = 64;
 pub const cpuUNKNOWN: i32 = -1;
 pub const cpu80286: u32 = 0;
 pub const cpu80386: u32 = 1;
+pub const VS_VERSION_INFO: u32 = 1;
+pub const VS_USER_DEFINED: u32 = 100;
+pub const VFFF_ISSHAREDFILE: u32 = 1;
+pub const VFF_CURNEDEST: u32 = 1;
+pub const VFF_FILEINUSE: u32 = 2;
+pub const VFF_BUFFTOOSMALL: u32 = 4;
+pub const VIFF_FORCEINSTALL: u32 = 1;
+pub const VIFF_DONTDELETEOLD: u32 = 2;
+pub const FILE_VER_GET_LOCALISED: u32 = 1;
+pub const FILE_VER_GET_NEUTRAL: u32 = 2;
+pub const FILE_VER_GET_PREFETCHED: u32 = 4;
 pub const SERVICES_ACTIVE_DATABASEA: &[u8; 15] = b"ServicesActive\0";
 pub const SERVICES_ACTIVE_DATABASEW: &[u16; 15] = &[0x0053, 0x0065, 0x0072, 0x0076, 0x0069, 0x0063, 0x0065, 0x0073, 0x0041, 0x0063, 0x0074, 0x0069, 0x0076, 0x0065, 0x0000]; // L"ServicesActive"
 pub const SERVICES_FAILED_DATABASEA: &[u8; 15] = b"ServicesFailed\0";
@@ -13397,6 +14100,12 @@ unsafe extern "system" {
         pMarshalInfo: *mut NDR_USER_MARSHAL_INFO,
     ) -> RPC_STATUS;
 }
+unsafe extern "C" {
+    pub static mut IWinTypes_v0_1_c_ifspec: RPC_IF_HANDLE;
+}
+unsafe extern "C" {
+    pub static mut IWinTypes_v0_1_s_ifspec: RPC_IF_HANDLE;
+}
 pub type DOUBLE = f64;
 pub type OLECHAR = WCHAR;
 pub type LPOLESTR = *mut OLECHAR;
@@ -13426,8 +14135,326 @@ pub struct _COAUTHINFO {
     pub dwCapabilities: DWORD,
 }
 pub type COAUTHINFO = _COAUTHINFO;
+pub const tagMEMCTX_MEMCTX_TASK: tagMEMCTX = 1;
+pub const tagMEMCTX_MEMCTX_SHARED: tagMEMCTX = 2;
+pub const tagMEMCTX_MEMCTX_MACSYSTEM: tagMEMCTX = 3;
+pub const tagMEMCTX_MEMCTX_UNKNOWN: tagMEMCTX = -1;
+pub const tagMEMCTX_MEMCTX_SAME: tagMEMCTX = -2;
+pub type tagMEMCTX = ::core::ffi::c_int;
+pub use self::tagMEMCTX as MEMCTX;
+pub const tagCLSCTX_CLSCTX_INPROC_SERVER: tagCLSCTX = 1;
+pub const tagCLSCTX_CLSCTX_INPROC_HANDLER: tagCLSCTX = 2;
+pub const tagCLSCTX_CLSCTX_LOCAL_SERVER: tagCLSCTX = 4;
+pub const tagCLSCTX_CLSCTX_INPROC_SERVER16: tagCLSCTX = 8;
+pub const tagCLSCTX_CLSCTX_REMOTE_SERVER: tagCLSCTX = 16;
+pub const tagCLSCTX_CLSCTX_INPROC_HANDLER16: tagCLSCTX = 32;
+pub const tagCLSCTX_CLSCTX_INPROC_SERVERX86: tagCLSCTX = 64;
+pub const tagCLSCTX_CLSCTX_INPROC_HANDLERX86: tagCLSCTX = 128;
+pub const tagCLSCTX_CLSCTX_ESERVER_HANDLER: tagCLSCTX = 256;
+pub const tagCLSCTX_CLSCTX_NO_CODE_DOWNLOAD: tagCLSCTX = 1024;
+pub const tagCLSCTX_CLSCTX_NO_CUSTOM_MARSHAL: tagCLSCTX = 4096;
+pub const tagCLSCTX_CLSCTX_ENABLE_CODE_DOWNLOAD: tagCLSCTX = 8192;
+pub const tagCLSCTX_CLSCTX_NO_FAILURE_LOG: tagCLSCTX = 16384;
+pub const tagCLSCTX_CLSCTX_DISABLE_AAA: tagCLSCTX = 32768;
+pub const tagCLSCTX_CLSCTX_ENABLE_AAA: tagCLSCTX = 65536;
+pub const tagCLSCTX_CLSCTX_FROM_DEFAULT_CONTEXT: tagCLSCTX = 131072;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_X86_SERVER: tagCLSCTX = 262144;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_32_BIT_SERVER: tagCLSCTX = 262144;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_64_BIT_SERVER: tagCLSCTX = 524288;
+pub const tagCLSCTX_CLSCTX_ENABLE_CLOAKING: tagCLSCTX = 1048576;
+pub const tagCLSCTX_CLSCTX_APPCONTAINER: tagCLSCTX = 4194304;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_AAA_AS_IU: tagCLSCTX = 8388608;
+pub const tagCLSCTX_CLSCTX_RESERVED6: tagCLSCTX = 16777216;
+pub const tagCLSCTX_CLSCTX_ACTIVATE_ARM32_SERVER: tagCLSCTX = 33554432;
+pub const tagCLSCTX_CLSCTX_PS_DLL: tagCLSCTX = 2147483648;
+pub type tagCLSCTX = ::core::ffi::c_uint;
+pub use self::tagCLSCTX as CLSCTX;
+pub const tagMSHLFLAGS_MSHLFLAGS_NORMAL: tagMSHLFLAGS = 0;
+pub const tagMSHLFLAGS_MSHLFLAGS_TABLESTRONG: tagMSHLFLAGS = 1;
+pub const tagMSHLFLAGS_MSHLFLAGS_TABLEWEAK: tagMSHLFLAGS = 2;
+pub const tagMSHLFLAGS_MSHLFLAGS_NOPING: tagMSHLFLAGS = 4;
+pub type tagMSHLFLAGS = ::core::ffi::c_uint;
+pub use self::tagMSHLFLAGS as MSHLFLAGS;
+pub const tagMSHCTX_MSHCTX_LOCAL: tagMSHCTX = 0;
+pub const tagMSHCTX_MSHCTX_NOSHAREDMEM: tagMSHCTX = 1;
+pub const tagMSHCTX_MSHCTX_DIFFERENTMACHINE: tagMSHCTX = 2;
+pub const tagMSHCTX_MSHCTX_INPROC: tagMSHCTX = 3;
+pub const tagMSHCTX_MSHCTX_CROSSCTX: tagMSHCTX = 4;
+pub type tagMSHCTX = ::core::ffi::c_uint;
+pub use self::tagMSHCTX as MSHCTX;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _BYTE_BLOB {
+    pub clSize: ULONG,
+    pub abData: [byte; 1usize],
+}
+pub type BYTE_BLOB = _BYTE_BLOB;
+pub type UP_BYTE_BLOB = *mut BYTE_BLOB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _FLAGGED_BYTE_BLOB {
+    pub fFlags: ULONG,
+    pub clSize: ULONG,
+    pub abData: [byte; 1usize],
+}
+pub type FLAGGED_BYTE_BLOB = _FLAGGED_BYTE_BLOB;
+pub type UP_FLAGGED_BYTE_BLOB = *mut FLAGGED_BYTE_BLOB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _FLAGGED_WORD_BLOB {
+    pub fFlags: ULONG,
+    pub clSize: ULONG,
+    pub asData: [::core::ffi::c_ushort; 1usize],
+}
+pub type FLAGGED_WORD_BLOB = _FLAGGED_WORD_BLOB;
+pub type UP_FLAGGED_WORD_BLOB = *mut FLAGGED_WORD_BLOB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _BYTE_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut byte,
+}
+pub type BYTE_SIZEDARR = _BYTE_SIZEDARR;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _SHORT_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut ::core::ffi::c_ushort,
+}
+pub type WORD_SIZEDARR = _SHORT_SIZEDARR;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _LONG_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut ULONG,
+}
+pub type DWORD_SIZEDARR = _LONG_SIZEDARR;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _HYPER_SIZEDARR {
+    pub clSize: ULONG,
+    pub pData: *mut hyper,
+}
+pub type HYPER_SIZEDARR = _HYPER_SIZEDARR;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userCLIPFORMAT {
+    pub fContext: LONG,
+    pub u: _userCLIPFORMAT___WIDL_wtypes_generated_name_00000000,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userCLIPFORMAT___WIDL_wtypes_generated_name_00000000 {
+    pub dwValue: DWORD,
+    pub pwszName: LPWSTR,
+}
+pub type userCLIPFORMAT = _userCLIPFORMAT;
+pub type wireCLIPFORMAT = *mut userCLIPFORMAT;
 pub type CLIPFORMAT = WORD;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemHGLOBAL {
+    pub fNullHGlobal: LONG,
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHGLOBAL = tagRemHGLOBAL;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHGLOBAL {
+    pub fContext: LONG,
+    pub u: _userHGLOBAL___WIDL_wtypes_generated_name_00000001,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHGLOBAL___WIDL_wtypes_generated_name_00000001 {
+    pub hInproc: LONG,
+    pub hRemote: *mut FLAGGED_BYTE_BLOB,
+    pub hInproc64: INT64,
+}
+pub type userHGLOBAL = _userHGLOBAL;
+pub type wireHGLOBAL = *mut userHGLOBAL;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemHMETAFILEPICT {
+    pub mm: LONG,
+    pub xExt: LONG,
+    pub yExt: LONG,
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHMETAFILEPICT = tagRemHMETAFILEPICT;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHMETAFILE {
+    pub fContext: LONG,
+    pub u: _userHMETAFILE___WIDL_wtypes_generated_name_00000002,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHMETAFILE___WIDL_wtypes_generated_name_00000002 {
+    pub hInproc: LONG,
+    pub hRemote: *mut BYTE_BLOB,
+    pub hInproc64: INT64,
+}
+pub type userHMETAFILE = _userHMETAFILE;
+pub type wireHMETAFILE = *mut userHMETAFILE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _remoteMETAFILEPICT {
+    pub mm: LONG,
+    pub xExt: LONG,
+    pub yExt: LONG,
+    pub hMF: *mut userHMETAFILE,
+}
+pub type remoteMETAFILEPICT = _remoteMETAFILEPICT;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHMETAFILEPICT {
+    pub fContext: LONG,
+    pub u: _userHMETAFILEPICT___WIDL_wtypes_generated_name_00000003,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHMETAFILEPICT___WIDL_wtypes_generated_name_00000003 {
+    pub hInproc: LONG,
+    pub hRemote: *mut remoteMETAFILEPICT,
+    pub hInproc64: INT64,
+}
+pub type userHMETAFILEPICT = _userHMETAFILEPICT;
+pub type wireHMETAFILEPICT = *mut userHMETAFILEPICT;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemHENHMETAFILE {
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHENHMETAFILE = tagRemHENHMETAFILE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHENHMETAFILE {
+    pub fContext: LONG,
+    pub u: _userHENHMETAFILE___WIDL_wtypes_generated_name_00000004,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHENHMETAFILE___WIDL_wtypes_generated_name_00000004 {
+    pub hInproc: LONG,
+    pub hRemote: *mut BYTE_BLOB,
+    pub hInproc64: INT64,
+}
+pub type userHENHMETAFILE = _userHENHMETAFILE;
+pub type wireHENHMETAFILE = *mut userHENHMETAFILE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemHBITMAP {
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHBITMAP = tagRemHBITMAP;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userBITMAP {
+    pub bmType: LONG,
+    pub bmWidth: LONG,
+    pub bmHeight: LONG,
+    pub bmWidthBytes: LONG,
+    pub bmPlanes: WORD,
+    pub bmBitsPixel: WORD,
+    pub cbSize: ULONG,
+    pub pBuffer: [byte; 1usize],
+}
+pub type userBITMAP = _userBITMAP;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHBITMAP {
+    pub fContext: LONG,
+    pub u: _userHBITMAP___WIDL_wtypes_generated_name_00000005,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHBITMAP___WIDL_wtypes_generated_name_00000005 {
+    pub hInproc: LONG,
+    pub hRemote: *mut userBITMAP,
+    pub hInproc64: INT64,
+}
+pub type userHBITMAP = _userHBITMAP;
+pub type wireHBITMAP = *mut userHBITMAP;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemHPALETTE {
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemHPALETTE = tagRemHPALETTE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagrpcLOGPALETTE {
+    pub palVersion: WORD,
+    pub palNumEntries: WORD,
+    pub palPalEntry: [PALETTEENTRY; 1usize],
+}
+pub type rpcLOGPALETTE = tagrpcLOGPALETTE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userHPALETTE {
+    pub fContext: LONG,
+    pub u: _userHPALETTE___WIDL_wtypes_generated_name_00000006,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _userHPALETTE___WIDL_wtypes_generated_name_00000006 {
+    pub hInproc: LONG,
+    pub hRemote: *mut rpcLOGPALETTE,
+    pub hInproc64: INT64,
+}
+pub type userHPALETTE = _userHPALETTE;
+pub type wireHPALETTE = *mut userHPALETTE;
 pub type HMETAFILEPICT = *mut ::core::ffi::c_void;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _RemotableHandle {
+    pub fContext: LONG,
+    pub u: _RemotableHandle___WIDL_wtypes_generated_name_00000007,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _RemotableHandle___WIDL_wtypes_generated_name_00000007 {
+    pub hInproc: LONG,
+    pub hRemote: LONG,
+}
+pub type RemotableHandle = _RemotableHandle;
+pub type wireHACCEL = *mut RemotableHandle;
+pub type wireHBRUSH = *mut RemotableHandle;
+pub type wireHDC = *mut RemotableHandle;
+pub type wireHFONT = *mut RemotableHandle;
+pub type wireHICON = *mut RemotableHandle;
+pub type wireHMENU = *mut RemotableHandle;
+pub type wireHWND = *mut RemotableHandle;
+pub type wireHMONITOR = *mut RemotableHandle;
+pub const tagDVASPECT_DVASPECT_CONTENT: tagDVASPECT = 1;
+pub const tagDVASPECT_DVASPECT_THUMBNAIL: tagDVASPECT = 2;
+pub const tagDVASPECT_DVASPECT_ICON: tagDVASPECT = 4;
+pub const tagDVASPECT_DVASPECT_DOCPRINT: tagDVASPECT = 8;
+pub type tagDVASPECT = ::core::ffi::c_uint;
+pub use self::tagDVASPECT as DVASPECT;
+pub const tagSTGC_STGC_DEFAULT: tagSTGC = 0;
+pub const tagSTGC_STGC_OVERWRITE: tagSTGC = 1;
+pub const tagSTGC_STGC_ONLYIFCURRENT: tagSTGC = 2;
+pub const tagSTGC_STGC_DANGEROUSLYCOMMITMERELYTODISKCACHE: tagSTGC = 4;
+pub const tagSTGC_STGC_CONSOLIDATE: tagSTGC = 8;
+pub type tagSTGC = ::core::ffi::c_uint;
+pub use self::tagSTGC as STGC;
+pub const tagSTGMOVE_STGMOVE_MOVE: tagSTGMOVE = 0;
+pub const tagSTGMOVE_STGMOVE_COPY: tagSTGMOVE = 1;
+pub const tagSTGMOVE_STGMOVE_SHALLOWCOPY: tagSTGMOVE = 2;
+pub type tagSTGMOVE = ::core::ffi::c_uint;
+pub use self::tagSTGMOVE as STGMOVE;
+pub const tagSTATFLAG_STATFLAG_DEFAULT: tagSTATFLAG = 0;
+pub const tagSTATFLAG_STATFLAG_NONAME: tagSTATFLAG = 1;
+pub const tagSTATFLAG_STATFLAG_NOOPEN: tagSTATFLAG = 2;
+pub type tagSTATFLAG = ::core::ffi::c_uint;
+pub use self::tagSTATFLAG as STATFLAG;
 pub type DATE = f64;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -13450,6 +14477,7 @@ pub struct tagCY__bindgen_ty_1 {
     pub Hi: LONG,
 }
 pub type CY = tagCY;
+pub type LPCY = *mut CY;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagDEC {
@@ -13499,9 +14527,126 @@ pub struct tagDEC__bindgen_ty_2__bindgen_ty_1 {
     pub Mid32: ULONG,
 }
 pub type DECIMAL = tagDEC;
+pub type LPDECIMAL = *mut DECIMAL;
+pub type wireBSTR = *mut FLAGGED_WORD_BLOB;
 pub type BSTR = *mut OLECHAR;
+pub type LPBSTR = *mut BSTR;
 pub type VARIANT_BOOL = ::core::ffi::c_short;
+pub type _VARIANT_BOOL = VARIANT_BOOL;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagBSTRBLOB {
+    pub cbSize: ULONG,
+    pub pData: *mut BYTE,
+}
+pub type BSTRBLOB = tagBSTRBLOB;
+pub type LPBSTRBLOB = *mut tagBSTRBLOB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagBLOB {
+    pub cbSize: ULONG,
+    pub pBlobData: *mut BYTE,
+}
+pub type BLOB = tagBLOB;
+pub type LPBLOB = *mut tagBLOB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCLIPDATA {
+    pub cbSize: ULONG,
+    pub ulClipFmt: LONG,
+    pub pClipData: *mut BYTE,
+}
+pub type CLIPDATA = tagCLIPDATA;
+pub type PROPID = ULONG;
 pub type VARTYPE = ::core::ffi::c_ushort;
+pub const VARENUM_VT_EMPTY: VARENUM = 0;
+pub const VARENUM_VT_NULL: VARENUM = 1;
+pub const VARENUM_VT_I2: VARENUM = 2;
+pub const VARENUM_VT_I4: VARENUM = 3;
+pub const VARENUM_VT_R4: VARENUM = 4;
+pub const VARENUM_VT_R8: VARENUM = 5;
+pub const VARENUM_VT_CY: VARENUM = 6;
+pub const VARENUM_VT_DATE: VARENUM = 7;
+pub const VARENUM_VT_BSTR: VARENUM = 8;
+pub const VARENUM_VT_DISPATCH: VARENUM = 9;
+pub const VARENUM_VT_ERROR: VARENUM = 10;
+pub const VARENUM_VT_BOOL: VARENUM = 11;
+pub const VARENUM_VT_VARIANT: VARENUM = 12;
+pub const VARENUM_VT_UNKNOWN: VARENUM = 13;
+pub const VARENUM_VT_DECIMAL: VARENUM = 14;
+pub const VARENUM_VT_I1: VARENUM = 16;
+pub const VARENUM_VT_UI1: VARENUM = 17;
+pub const VARENUM_VT_UI2: VARENUM = 18;
+pub const VARENUM_VT_UI4: VARENUM = 19;
+pub const VARENUM_VT_I8: VARENUM = 20;
+pub const VARENUM_VT_UI8: VARENUM = 21;
+pub const VARENUM_VT_INT: VARENUM = 22;
+pub const VARENUM_VT_UINT: VARENUM = 23;
+pub const VARENUM_VT_VOID: VARENUM = 24;
+pub const VARENUM_VT_HRESULT: VARENUM = 25;
+pub const VARENUM_VT_PTR: VARENUM = 26;
+pub const VARENUM_VT_SAFEARRAY: VARENUM = 27;
+pub const VARENUM_VT_CARRAY: VARENUM = 28;
+pub const VARENUM_VT_USERDEFINED: VARENUM = 29;
+pub const VARENUM_VT_LPSTR: VARENUM = 30;
+pub const VARENUM_VT_LPWSTR: VARENUM = 31;
+pub const VARENUM_VT_RECORD: VARENUM = 36;
+pub const VARENUM_VT_INT_PTR: VARENUM = 37;
+pub const VARENUM_VT_UINT_PTR: VARENUM = 38;
+pub const VARENUM_VT_FILETIME: VARENUM = 64;
+pub const VARENUM_VT_BLOB: VARENUM = 65;
+pub const VARENUM_VT_STREAM: VARENUM = 66;
+pub const VARENUM_VT_STORAGE: VARENUM = 67;
+pub const VARENUM_VT_STREAMED_OBJECT: VARENUM = 68;
+pub const VARENUM_VT_STORED_OBJECT: VARENUM = 69;
+pub const VARENUM_VT_BLOB_OBJECT: VARENUM = 70;
+pub const VARENUM_VT_CF: VARENUM = 71;
+pub const VARENUM_VT_CLSID: VARENUM = 72;
+pub const VARENUM_VT_VERSIONED_STREAM: VARENUM = 73;
+pub const VARENUM_VT_BSTR_BLOB: VARENUM = 4095;
+pub const VARENUM_VT_VECTOR: VARENUM = 4096;
+pub const VARENUM_VT_ARRAY: VARENUM = 8192;
+pub const VARENUM_VT_BYREF: VARENUM = 16384;
+pub const VARENUM_VT_RESERVED: VARENUM = 32768;
+pub const VARENUM_VT_ILLEGAL: VARENUM = 65535;
+pub const VARENUM_VT_ILLEGALMASKED: VARENUM = 4095;
+pub const VARENUM_VT_TYPEMASK: VARENUM = 4095;
+pub type VARENUM = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCSPLATFORM {
+    pub dwPlatformId: DWORD,
+    pub dwVersionHi: DWORD,
+    pub dwVersionLo: DWORD,
+    pub dwProcessorArch: DWORD,
+}
+pub type CSPLATFORM = tagCSPLATFORM;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagQUERYCONTEXT {
+    pub dwContext: DWORD,
+    pub Platform: CSPLATFORM,
+    pub Locale: LCID,
+    pub dwVersionHi: DWORD,
+    pub dwVersionLo: DWORD,
+}
+pub type QUERYCONTEXT = tagQUERYCONTEXT;
+pub const tagTYSPEC_TYSPEC_CLSID: tagTYSPEC = 0;
+pub const tagTYSPEC_TYSPEC_FILEEXT: tagTYSPEC = 1;
+pub const tagTYSPEC_TYSPEC_MIMETYPE: tagTYSPEC = 2;
+pub const tagTYSPEC_TYSPEC_PROGID: tagTYSPEC = 3;
+pub const tagTYSPEC_TYSPEC_FILENAME: tagTYSPEC = 4;
+pub const tagTYSPEC_TYSPEC_PACKAGENAME: tagTYSPEC = 5;
+pub const tagTYSPEC_TYSPEC_OBJECTID: tagTYSPEC = 6;
+pub type tagTYSPEC = ::core::ffi::c_uint;
+pub use self::tagTYSPEC as TYSPEC;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _tagpropertykey {
+    pub fmtid: GUID,
+    pub pid: DWORD,
+}
+pub type PROPERTYKEY = _tagpropertykey;
 pub type LPUNKNOWN = *mut IUnknown;
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -13727,6 +14872,9 @@ pub const _APTTYPEQUALIFIER_APTTYPEQUALIFIER_RESERVED_1: _APTTYPEQUALIFIER = 7;
 pub type _APTTYPEQUALIFIER = ::core::ffi::c_uint;
 pub use self::_APTTYPEQUALIFIER as APTTYPEQUALIFIER;
 pub type LPMALLOCSPY = *mut IMallocSpy;
+unsafe extern "C" {
+    pub static IID_IMallocSpy: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IMallocSpyVtbl {
@@ -13751,6 +14899,7 @@ pub struct IMallocSpyVtbl {
 pub struct IMallocSpy {
     pub lpVtbl: *mut IMallocSpyVtbl,
 }
+pub type LPBINDCTX = *mut IBindCtx;
 pub type LPBC = *mut IBindCtx;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -13761,6 +14910,43 @@ pub struct tagBIND_OPTS {
     pub dwTickCountDeadline: DWORD,
 }
 pub type BIND_OPTS = tagBIND_OPTS;
+pub type LPBIND_OPTS = *mut tagBIND_OPTS;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagBIND_OPTS2 {
+    pub cbStruct: DWORD,
+    pub grfFlags: DWORD,
+    pub grfMode: DWORD,
+    pub dwTickCountDeadline: DWORD,
+    pub dwTrackFlags: DWORD,
+    pub dwClassContext: DWORD,
+    pub locale: LCID,
+    pub pServerInfo: *mut COSERVERINFO,
+}
+pub type BIND_OPTS2 = tagBIND_OPTS2;
+pub type LPBIND_OPTS2 = *mut tagBIND_OPTS2;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagBIND_OPTS3 {
+    pub cbStruct: DWORD,
+    pub grfFlags: DWORD,
+    pub grfMode: DWORD,
+    pub dwTickCountDeadline: DWORD,
+    pub dwTrackFlags: DWORD,
+    pub dwClassContext: DWORD,
+    pub locale: LCID,
+    pub pServerInfo: *mut COSERVERINFO,
+    pub hwnd: HWND,
+}
+pub type BIND_OPTS3 = tagBIND_OPTS3;
+pub type LPBIND_OPTS3 = *mut tagBIND_OPTS3;
+pub const tagBIND_FLAGS_BIND_MAYBOTHERUSER: tagBIND_FLAGS = 1;
+pub const tagBIND_FLAGS_BIND_JUSTTESTEXISTENCE: tagBIND_FLAGS = 2;
+pub type tagBIND_FLAGS = ::core::ffi::c_uint;
+pub use self::tagBIND_FLAGS as BIND_FLAGS;
+unsafe extern "C" {
+    pub static IID_IBindCtx: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IBindCtxVtbl {
@@ -13783,6 +14969,54 @@ pub struct IBindCtxVtbl {
 pub struct IBindCtx {
     pub lpVtbl: *mut IBindCtxVtbl,
 }
+unsafe extern "system" {
+    pub fn IBindCtx_RemoteSetBindOptions_Proxy(
+        This: *mut IBindCtx,
+        pbindopts: *mut BIND_OPTS2,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IBindCtx_RemoteSetBindOptions_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IBindCtx_RemoteGetBindOptions_Proxy(
+        This: *mut IBindCtx,
+        pbindopts: *mut BIND_OPTS2,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IBindCtx_RemoteGetBindOptions_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IBindCtx_SetBindOptions_Proxy(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS)
+        -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IBindCtx_SetBindOptions_Stub(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS2)
+        -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IBindCtx_GetBindOptions_Proxy(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS)
+        -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IBindCtx_GetBindOptions_Stub(This: *mut IBindCtx, pbindopts: *mut BIND_OPTS2)
+        -> HRESULT;
+}
+pub type LPENUMMONIKER = *mut IEnumMoniker;
+unsafe extern "C" {
+    pub static IID_IEnumMoniker: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IEnumMonikerVtbl {
@@ -13799,7 +15033,80 @@ pub struct IEnumMonikerVtbl {
 pub struct IEnumMoniker {
     pub lpVtbl: *mut IEnumMonikerVtbl,
 }
+unsafe extern "system" {
+    pub fn IEnumMoniker_RemoteNext_Proxy(
+        This: *mut IEnumMoniker,
+        celt: ULONG,
+        rgelt: *mut *mut IMoniker,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumMoniker_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IEnumMoniker_Next_Proxy(
+        This: *mut IEnumMoniker,
+        celt: ULONG,
+        rgelt: *mut *mut IMoniker,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumMoniker_Next_Stub(
+        This: *mut IEnumMoniker,
+        celt: ULONG,
+        rgelt: *mut *mut IMoniker,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub type LPRUNNABLEOBJECT = *mut IRunnableObject;
+unsafe extern "C" {
+    pub static IID_IRunnableObject: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IRunnableObjectVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRunnableObject, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> ULONG>,
+    pub GetRunningClass: ::core::option::Option< unsafe extern "system" fn(This: *mut IRunnableObject, lpClsid: LPCLSID) -> HRESULT, >,
+    pub Run: ::core::option::Option< unsafe extern "system" fn(This: *mut IRunnableObject, pbc: LPBINDCTX) -> HRESULT, >,
+    pub IsRunning: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableObject) -> BOOL>,
+    pub LockRunning: ::core::option::Option< unsafe extern "system" fn( This: *mut IRunnableObject, fLock: BOOL, fLastUnlockCloses: BOOL, ) -> HRESULT, >,
+    pub SetContainedObject: ::core::option::Option< unsafe extern "system" fn(This: *mut IRunnableObject, fContained: BOOL) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRunnableObject {
+    pub lpVtbl: *mut IRunnableObjectVtbl,
+}
+unsafe extern "system" {
+    pub fn IRunnableObject_RemoteIsRunning_Proxy(This: *mut IRunnableObject) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IRunnableObject_RemoteIsRunning_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IRunnableObject_IsRunning_Proxy(This: *mut IRunnableObject) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn IRunnableObject_IsRunning_Stub(This: *mut IRunnableObject) -> HRESULT;
+}
 pub type LPRUNNINGOBJECTTABLE = *mut IRunningObjectTable;
+unsafe extern "C" {
+    pub static IID_IRunningObjectTable: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IRunningObjectTableVtbl {
@@ -13819,6 +15126,27 @@ pub struct IRunningObjectTableVtbl {
 pub struct IRunningObjectTable {
     pub lpVtbl: *mut IRunningObjectTableVtbl,
 }
+pub type LPPERSIST = *mut IPersist;
+unsafe extern "C" {
+    pub static IID_IPersist: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IPersistVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersist, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersist) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersist) -> ULONG>,
+    pub GetClassID: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersist, pClassID: *mut CLSID) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersist {
+    pub lpVtbl: *mut IPersistVtbl,
+}
+pub type LPPERSISTSTREAM = *mut IPersistStream;
+unsafe extern "C" {
+    pub static IID_IPersistStream: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IPersistStreamVtbl {
@@ -13837,6 +15165,27 @@ pub struct IPersistStream {
     pub lpVtbl: *mut IPersistStreamVtbl,
 }
 pub type LPMONIKER = *mut IMoniker;
+pub const tagMKSYS_MKSYS_NONE: tagMKSYS = 0;
+pub const tagMKSYS_MKSYS_GENERICCOMPOSITE: tagMKSYS = 1;
+pub const tagMKSYS_MKSYS_FILEMONIKER: tagMKSYS = 2;
+pub const tagMKSYS_MKSYS_ANTIMONIKER: tagMKSYS = 3;
+pub const tagMKSYS_MKSYS_ITEMMONIKER: tagMKSYS = 4;
+pub const tagMKSYS_MKSYS_POINTERMONIKER: tagMKSYS = 5;
+pub const tagMKSYS_MKSYS_CLASSMONIKER: tagMKSYS = 7;
+pub const tagMKSYS_MKSYS_OBJREFMONIKER: tagMKSYS = 8;
+pub const tagMKSYS_MKSYS_SESSIONMONIKER: tagMKSYS = 9;
+pub const tagMKSYS_MKSYS_LUAMONIKER: tagMKSYS = 10;
+pub type tagMKSYS = ::core::ffi::c_uint;
+pub use self::tagMKSYS as MKSYS;
+pub const tagMKREDUCE_MKRREDUCE_ONE: tagMKREDUCE = 196608;
+pub const tagMKREDUCE_MKRREDUCE_TOUSER: tagMKREDUCE = 131072;
+pub const tagMKREDUCE_MKRREDUCE_THROUGHUSER: tagMKREDUCE = 65536;
+pub const tagMKREDUCE_MKRREDUCE_ALL: tagMKREDUCE = 0;
+pub type tagMKREDUCE = ::core::ffi::c_uint;
+pub use self::tagMKREDUCE as MKRREDUCE;
+unsafe extern "C" {
+    pub static IID_IMoniker: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IMonikerVtbl {
@@ -13869,6 +15218,112 @@ pub struct IMonikerVtbl {
 pub struct IMoniker {
     pub lpVtbl: *mut IMonikerVtbl,
 }
+unsafe extern "system" {
+    pub fn IMoniker_RemoteBindToObject_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riidResult: *const IID,
+        ppvResult: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IMoniker_RemoteBindToObject_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IMoniker_RemoteBindToStorage_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riid: *const IID,
+        ppvObj: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IMoniker_RemoteBindToStorage_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IMoniker_BindToObject_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riidResult: *const IID,
+        ppvResult: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IMoniker_BindToObject_Stub(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riidResult: *const IID,
+        ppvResult: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IMoniker_BindToStorage_Proxy(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riid: *const IID,
+        ppvObj: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IMoniker_BindToStorage_Stub(
+        This: *mut IMoniker,
+        pbc: *mut IBindCtx,
+        pmkToLeft: *mut IMoniker,
+        riid: *const IID,
+        ppvObj: *mut *mut IUnknown,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_IROTData: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IROTDataVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IROTData, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IROTData) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IROTData) -> ULONG>,
+    pub GetComparisonData: ::core::option::Option< unsafe extern "system" fn( This: *mut IROTData, pbData: *mut byte, cbMax: ULONG, pcbData: *mut ULONG, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IROTData {
+    pub lpVtbl: *mut IROTDataVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IClassActivator: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IClassActivatorVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IClassActivator, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassActivator) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IClassActivator) -> ULONG>,
+    pub GetClassObject: ::core::option::Option< unsafe extern "system" fn( This: *mut IClassActivator, rclsid: *const CLSID, dwClassContext: DWORD, locale: LCID, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IClassActivator {
+    pub lpVtbl: *mut IClassActivatorVtbl,
+}
+pub type LPENUMSTATSTG = *mut IEnumSTATSTG;
+unsafe extern "C" {
+    pub static IID_IEnumSTATSTG: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IEnumSTATSTGVtbl {
@@ -13885,8 +15340,52 @@ pub struct IEnumSTATSTGVtbl {
 pub struct IEnumSTATSTG {
     pub lpVtbl: *mut IEnumSTATSTGVtbl,
 }
+unsafe extern "system" {
+    pub fn IEnumSTATSTG_RemoteNext_Proxy(
+        This: *mut IEnumSTATSTG,
+        celt: ULONG,
+        rgelt: *mut STATSTG,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumSTATSTG_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IEnumSTATSTG_Next_Proxy(
+        This: *mut IEnumSTATSTG,
+        celt: ULONG,
+        rgelt: *mut STATSTG,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumSTATSTG_Next_Stub(
+        This: *mut IEnumSTATSTG,
+        celt: ULONG,
+        rgelt: *mut STATSTG,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
 pub type LPSTORAGE = *mut IStorage;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemSNB {
+    pub ulCntStr: ULONG,
+    pub ulCntChar: ULONG,
+    pub rgString: [OLECHAR; 1usize],
+}
+pub type RemSNB = tagRemSNB;
+pub type wireSNB = *mut RemSNB;
 pub type SNB = *mut *mut OLECHAR;
+unsafe extern "C" {
+    pub static IID_IStorage: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IStorageVtbl {
@@ -13914,7 +15413,109 @@ pub struct IStorageVtbl {
 pub struct IStorage {
     pub lpVtbl: *mut IStorageVtbl,
 }
+unsafe extern "system" {
+    pub fn IStorage_RemoteOpenStream_Proxy(
+        This: *mut IStorage,
+        pwcsName: LPCOLESTR,
+        cbReserved1: ULONG,
+        reserved1: *mut byte,
+        grfMode: DWORD,
+        reserved2: DWORD,
+        ppstm: *mut *mut IStream,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IStorage_RemoteOpenStream_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IStorage_RemoteEnumElements_Proxy(
+        This: *mut IStorage,
+        reserved1: DWORD,
+        cbReserved2: ULONG,
+        reserved2: *mut byte,
+        reserved3: DWORD,
+        ppenum: *mut *mut IEnumSTATSTG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IStorage_RemoteEnumElements_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IStorage_OpenStream_Proxy(
+        This: *mut IStorage,
+        pwcsName: LPCOLESTR,
+        reserved1: *mut ::core::ffi::c_void,
+        grfMode: DWORD,
+        reserved2: DWORD,
+        ppstm: *mut *mut IStream,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IStorage_OpenStream_Stub(
+        This: *mut IStorage,
+        pwcsName: LPCOLESTR,
+        cbReserved1: ULONG,
+        reserved1: *mut byte,
+        grfMode: DWORD,
+        reserved2: DWORD,
+        ppstm: *mut *mut IStream,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IStorage_EnumElements_Proxy(
+        This: *mut IStorage,
+        reserved1: DWORD,
+        reserved2: *mut ::core::ffi::c_void,
+        reserved3: DWORD,
+        ppenum: *mut *mut IEnumSTATSTG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IStorage_EnumElements_Stub(
+        This: *mut IStorage,
+        reserved1: DWORD,
+        cbReserved2: ULONG,
+        reserved2: *mut byte,
+        reserved3: DWORD,
+        ppenum: *mut *mut IEnumSTATSTG,
+    ) -> HRESULT;
+}
+pub type LPPERSISTFILE = *mut IPersistFile;
+unsafe extern "C" {
+    pub static IID_IPersistFile: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IPersistFileVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFile, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> ULONG>,
+    pub GetClassID: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFile, pClassID: *mut CLSID) -> HRESULT, >,
+    pub IsDirty: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFile) -> HRESULT>,
+    pub Load: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFile, pszFileName: LPCOLESTR, dwMode: DWORD, ) -> HRESULT, >,
+    pub Save: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFile, pszFileName: LPCOLESTR, fRemember: BOOL, ) -> HRESULT, >,
+    pub SaveCompleted: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFile, pszFileName: LPCOLESTR) -> HRESULT, >,
+    pub GetCurFile: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFile, ppszFileName: *mut LPOLESTR) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersistFile {
+    pub lpVtbl: *mut IPersistFileVtbl,
+}
 pub type LPPERSISTSTORAGE = *mut IPersistStorage;
+unsafe extern "C" {
+    pub static IID_IPersistStorage: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IPersistStorageVtbl {
@@ -13934,7 +15535,27 @@ pub struct IPersistStorageVtbl {
 pub struct IPersistStorage {
     pub lpVtbl: *mut IPersistStorageVtbl,
 }
+pub type LPROOTSTORAGE = *mut IRootStorage;
+unsafe extern "C" {
+    pub static IID_IRootStorage: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IRootStorageVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRootStorage, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRootStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRootStorage) -> ULONG>,
+    pub SwitchToFile: ::core::option::Option< unsafe extern "system" fn(This: *mut IRootStorage, pszFile: LPOLESTR) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRootStorage {
+    pub lpVtbl: *mut IRootStorageVtbl,
+}
 pub type LPLOCKBYTES = *mut ILockBytes;
+unsafe extern "C" {
+    pub static IID_ILockBytes: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct ILockBytesVtbl {
@@ -13954,6 +15575,257 @@ pub struct ILockBytesVtbl {
 pub struct ILockBytes {
     pub lpVtbl: *mut ILockBytesVtbl,
 }
+unsafe extern "system" {
+    pub fn ILockBytes_RemoteReadAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *mut byte,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ILockBytes_RemoteReadAt_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn ILockBytes_RemoteWriteAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ILockBytes_RemoteWriteAt_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn ILockBytes_ReadAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *mut ::core::ffi::c_void,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ILockBytes_ReadAt_Stub(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *mut byte,
+        cb: ULONG,
+        pcbRead: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ILockBytes_WriteAt_Proxy(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const ::core::ffi::c_void,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn ILockBytes_WriteAt_Stub(
+        This: *mut ILockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_IFillLockBytes: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IFillLockBytesVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFillLockBytes, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFillLockBytes) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFillLockBytes) -> ULONG>,
+    pub FillAppend: ::core::option::Option< unsafe extern "system" fn( This: *mut IFillLockBytes, pv: *const ::core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG, ) -> HRESULT, >,
+    pub FillAt: ::core::option::Option< unsafe extern "system" fn( This: *mut IFillLockBytes, ulOffset: ULARGE_INTEGER, pv: *const ::core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG, ) -> HRESULT, >,
+    pub SetFillSize: ::core::option::Option< unsafe extern "system" fn(This: *mut IFillLockBytes, ulSize: ULARGE_INTEGER) -> HRESULT, >,
+    pub Terminate: ::core::option::Option< unsafe extern "system" fn(This: *mut IFillLockBytes, bCanceled: BOOL) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFillLockBytes {
+    pub lpVtbl: *mut IFillLockBytesVtbl,
+}
+unsafe extern "system" {
+    pub fn IFillLockBytes_RemoteFillAppend_Proxy(
+        This: *mut IFillLockBytes,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IFillLockBytes_RemoteFillAppend_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IFillLockBytes_RemoteFillAt_Proxy(
+        This: *mut IFillLockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IFillLockBytes_RemoteFillAt_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IFillLockBytes_FillAppend_Proxy(
+        This: *mut IFillLockBytes,
+        pv: *const ::core::ffi::c_void,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IFillLockBytes_FillAppend_Stub(
+        This: *mut IFillLockBytes,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IFillLockBytes_FillAt_Proxy(
+        This: *mut IFillLockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const ::core::ffi::c_void,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IFillLockBytes_FillAt_Stub(
+        This: *mut IFillLockBytes,
+        ulOffset: ULARGE_INTEGER,
+        pv: *const byte,
+        cb: ULONG,
+        pcbWritten: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_IProgressNotify: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IProgressNotifyVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IProgressNotify, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IProgressNotify) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IProgressNotify) -> ULONG>,
+    pub OnProgress: ::core::option::Option< unsafe extern "system" fn( This: *mut IProgressNotify, dwProgressCurrent: DWORD, dwProgressMaximum: DWORD, fAccurate: BOOL, fOwner: BOOL, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IProgressNotify {
+    pub lpVtbl: *mut IProgressNotifyVtbl,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagStorageLayout {
+    pub LayoutType: DWORD,
+    pub pwcsElementName: *mut OLECHAR,
+    pub cOffset: LARGE_INTEGER,
+    pub cBytes: LARGE_INTEGER,
+}
+pub type StorageLayout = tagStorageLayout;
+unsafe extern "C" {
+    pub static IID_ILayoutStorage: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ILayoutStorageVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ILayoutStorage, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> ULONG>,
+    pub LayoutScript: ::core::option::Option< unsafe extern "system" fn( This: *mut ILayoutStorage, pStorageLayout: *mut StorageLayout, nEntries: DWORD, glfInterleavedFlag: DWORD, ) -> HRESULT, >,
+    pub BeginMonitor: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> HRESULT>,
+    pub EndMonitor: ::core::option::Option<unsafe extern "system" fn(This: *mut ILayoutStorage) -> HRESULT>,
+    pub ReLayoutDocfile: ::core::option::Option< unsafe extern "system" fn( This: *mut ILayoutStorage, pwcsNewDfName: *mut OLECHAR, ) -> HRESULT, >,
+    pub ReLayoutDocfileOnILockBytes: ::core::option::Option< unsafe extern "system" fn( This: *mut ILayoutStorage, pILockBytes: *mut ILockBytes, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ILayoutStorage {
+    pub lpVtbl: *mut ILayoutStorageVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IBlockingLock: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IBlockingLockVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IBlockingLock, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> ULONG>,
+    pub Lock: ::core::option::Option< unsafe extern "system" fn(This: *mut IBlockingLock, dwTimeout: DWORD) -> HRESULT, >,
+    pub Unlock: ::core::option::Option<unsafe extern "system" fn(This: *mut IBlockingLock) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IBlockingLock {
+    pub lpVtbl: *mut IBlockingLockVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ITimeAndNoticeControl: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct ITimeAndNoticeControlVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ITimeAndNoticeControl, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut ITimeAndNoticeControl) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut ITimeAndNoticeControl) -> ULONG, >,
+    pub SuppressChanges: ::core::option::Option< unsafe extern "system" fn( This: *mut ITimeAndNoticeControl, res1: DWORD, res2: DWORD, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITimeAndNoticeControl {
+    pub lpVtbl: *mut ITimeAndNoticeControlVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IOplockStorage: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IOplockStorageVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IOplockStorage, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOplockStorage) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOplockStorage) -> ULONG>,
+    pub CreateStorageEx: ::core::option::Option< unsafe extern "system" fn( This: *mut IOplockStorage, pwcsName: LPCWSTR, grfMode: DWORD, stgfmt: DWORD, grfAttrs: DWORD, riid: *const IID, ppstgOpen: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub OpenStorageEx: ::core::option::Option< unsafe extern "system" fn( This: *mut IOplockStorage, pwcsName: LPCWSTR, grfMode: DWORD, stgfmt: DWORD, grfAttrs: DWORD, riid: *const IID, ppstgOpen: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IOplockStorage {
+    pub lpVtbl: *mut IOplockStorageVtbl,
+}
 pub type LPENUMFORMATETC = *mut IEnumFORMATETC;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -13966,6 +15838,7 @@ pub struct tagDVTARGETDEVICE {
     pub tdData: [BYTE; 1usize],
 }
 pub type DVTARGETDEVICE = tagDVTARGETDEVICE;
+pub type LPCLIPFORMAT = *mut CLIPFORMAT;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagFORMATETC {
@@ -13977,6 +15850,9 @@ pub struct tagFORMATETC {
 }
 pub type FORMATETC = tagFORMATETC;
 pub type LPFORMATETC = *mut tagFORMATETC;
+unsafe extern "C" {
+    pub static IID_IEnumFORMATETC: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IEnumFORMATETCVtbl {
@@ -13993,6 +15869,48 @@ pub struct IEnumFORMATETCVtbl {
 pub struct IEnumFORMATETC {
     pub lpVtbl: *mut IEnumFORMATETCVtbl,
 }
+unsafe extern "system" {
+    pub fn IEnumFORMATETC_RemoteNext_Proxy(
+        This: *mut IEnumFORMATETC,
+        celt: ULONG,
+        rgelt: *mut FORMATETC,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumFORMATETC_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IEnumFORMATETC_Next_Proxy(
+        This: *mut IEnumFORMATETC,
+        celt: ULONG,
+        rgelt: *mut FORMATETC,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumFORMATETC_Next_Stub(
+        This: *mut IEnumFORMATETC,
+        celt: ULONG,
+        rgelt: *mut FORMATETC,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub type LPENUMSTATDATA = *mut IEnumSTATDATA;
+pub const tagADVF_ADVF_NODATA: tagADVF = 1;
+pub const tagADVF_ADVF_PRIMEFIRST: tagADVF = 2;
+pub const tagADVF_ADVF_ONLYONCE: tagADVF = 4;
+pub const tagADVF_ADVF_DATAONSTOP: tagADVF = 64;
+pub const tagADVF_ADVFCACHE_NOHANDLER: tagADVF = 8;
+pub const tagADVF_ADVFCACHE_FORCEBUILTIN: tagADVF = 16;
+pub const tagADVF_ADVFCACHE_ONSAVE: tagADVF = 32;
+pub type tagADVF = ::core::ffi::c_uint;
+pub use self::tagADVF as ADVF;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagSTATDATA {
@@ -14002,6 +15920,10 @@ pub struct tagSTATDATA {
     pub dwConnection: DWORD,
 }
 pub type STATDATA = tagSTATDATA;
+pub type LPSTATDATA = *mut tagSTATDATA;
+unsafe extern "C" {
+    pub static IID_IEnumSTATDATA: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IEnumSTATDATAVtbl {
@@ -14018,6 +15940,60 @@ pub struct IEnumSTATDATAVtbl {
 pub struct IEnumSTATDATA {
     pub lpVtbl: *mut IEnumSTATDATAVtbl,
 }
+unsafe extern "system" {
+    pub fn IEnumSTATDATA_RemoteNext_Proxy(
+        This: *mut IEnumSTATDATA,
+        celt: ULONG,
+        rgelt: *mut STATDATA,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumSTATDATA_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IEnumSTATDATA_Next_Proxy(
+        This: *mut IEnumSTATDATA,
+        celt: ULONG,
+        rgelt: *mut STATDATA,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumSTATDATA_Next_Stub(
+        This: *mut IEnumSTATDATA,
+        celt: ULONG,
+        rgelt: *mut STATDATA,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub type LPADVISESINK = *mut IAdviseSink;
+pub const tagTYMED_TYMED_HGLOBAL: tagTYMED = 1;
+pub const tagTYMED_TYMED_FILE: tagTYMED = 2;
+pub const tagTYMED_TYMED_ISTREAM: tagTYMED = 4;
+pub const tagTYMED_TYMED_ISTORAGE: tagTYMED = 8;
+pub const tagTYMED_TYMED_GDI: tagTYMED = 16;
+pub const tagTYMED_TYMED_MFPICT: tagTYMED = 32;
+pub const tagTYMED_TYMED_ENHMF: tagTYMED = 64;
+pub const tagTYMED_TYMED_NULL: tagTYMED = 0;
+pub type tagTYMED = ::core::ffi::c_uint;
+pub use self::tagTYMED as TYMED;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagRemSTGMEDIUM {
+    pub tymed: DWORD,
+    pub dwHandleType: DWORD,
+    pub pData: ULONG,
+    pub pUnkForRelease: ULONG,
+    pub cbData: ULONG,
+    pub data: [byte; 1usize],
+}
+pub type RemSTGMEDIUM = tagRemSTGMEDIUM;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagSTGMEDIUM {
@@ -14037,8 +16013,69 @@ pub union tagSTGMEDIUM__bindgen_ty_1 {
     pub pstg: *mut IStorage,
 }
 pub type uSTGMEDIUM = tagSTGMEDIUM;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _GDI_OBJECT {
+    pub ObjectType: DWORD,
+    pub u: _GDI_OBJECT___WIDL_objidl_generated_name_0000000A,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _GDI_OBJECT___WIDL_objidl_generated_name_0000000A {
+    pub hBitmap: wireHBITMAP,
+    pub hPalette: wireHPALETTE,
+    pub hGeneric: wireHGLOBAL,
+}
+pub type GDI_OBJECT = _GDI_OBJECT;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userSTGMEDIUM {
+    pub __bindgen_anon_1: _userSTGMEDIUM__bindgen_ty_1,
+    pub pUnkForRelease: *mut IUnknown,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userSTGMEDIUM__bindgen_ty_1 {
+    pub tymed: DWORD,
+    pub u: _userSTGMEDIUM__bindgen_ty_1___WIDL_objidl_generated_name_0000000B,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub union _userSTGMEDIUM__bindgen_ty_1___WIDL_objidl_generated_name_0000000B {
+    pub hMetaFilePict: wireHMETAFILEPICT,
+    pub hHEnhMetaFile: wireHENHMETAFILE,
+    pub hGdiHandle: *mut GDI_OBJECT,
+    pub hGlobal: wireHGLOBAL,
+    pub lpszFileName: LPOLESTR,
+    pub pstm: *mut BYTE_BLOB,
+    pub pstg: *mut BYTE_BLOB,
+}
+pub type userSTGMEDIUM = _userSTGMEDIUM;
+pub type wireSTGMEDIUM = *mut userSTGMEDIUM;
 pub type STGMEDIUM = uSTGMEDIUM;
+pub type wireASYNC_STGMEDIUM = *mut userSTGMEDIUM;
+pub type ASYNC_STGMEDIUM = STGMEDIUM;
 pub type LPSTGMEDIUM = *mut STGMEDIUM;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _userFLAG_STGMEDIUM {
+    pub ContextFlags: LONG,
+    pub fPassOwnership: LONG,
+    pub Stgmed: userSTGMEDIUM,
+}
+pub type userFLAG_STGMEDIUM = _userFLAG_STGMEDIUM;
+pub type wireFLAG_STGMEDIUM = *mut userFLAG_STGMEDIUM;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _FLAG_STGMEDIUM {
+    pub ContextFlags: LONG,
+    pub fPassOwnership: LONG,
+    pub Stgmed: STGMEDIUM,
+}
+pub type FLAG_STGMEDIUM = _FLAG_STGMEDIUM;
+unsafe extern "C" {
+    pub static IID_IAdviseSink: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IAdviseSinkVtbl {
@@ -14056,7 +16093,164 @@ pub struct IAdviseSinkVtbl {
 pub struct IAdviseSink {
     pub lpVtbl: *mut IAdviseSinkVtbl,
 }
+unsafe extern "system" {
+    pub fn IAdviseSink_RemoteOnDataChange_Proxy(
+        This: *mut IAdviseSink,
+        pFormatetc: *mut FORMATETC,
+        pStgmed: *mut ASYNC_STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_RemoteOnDataChange_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_RemoteOnViewChange_Proxy(
+        This: *mut IAdviseSink,
+        dwAspect: DWORD,
+        lindex: LONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_RemoteOnViewChange_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_RemoteOnRename_Proxy(This: *mut IAdviseSink, pmk: *mut IMoniker) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_RemoteOnRename_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_RemoteOnSave_Proxy(This: *mut IAdviseSink) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_RemoteOnSave_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_RemoteOnClose_Proxy(This: *mut IAdviseSink) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_RemoteOnClose_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_OnDataChange_Proxy(
+        This: *mut IAdviseSink,
+        pFormatetc: *mut FORMATETC,
+        pStgmed: *mut STGMEDIUM,
+    );
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_OnDataChange_Stub(
+        This: *mut IAdviseSink,
+        pFormatetc: *mut FORMATETC,
+        pStgmed: *mut ASYNC_STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_OnViewChange_Proxy(This: *mut IAdviseSink, dwAspect: DWORD, lindex: LONG);
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_OnViewChange_Stub(
+        This: *mut IAdviseSink,
+        dwAspect: DWORD,
+        lindex: LONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_OnRename_Proxy(This: *mut IAdviseSink, pmk: *mut IMoniker);
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_OnRename_Stub(This: *mut IAdviseSink, pmk: *mut IMoniker) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_OnSave_Proxy(This: *mut IAdviseSink);
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_OnSave_Stub(This: *mut IAdviseSink) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_OnClose_Proxy(This: *mut IAdviseSink);
+}
+unsafe extern "system" {
+    pub fn IAdviseSink_OnClose_Stub(This: *mut IAdviseSink) -> HRESULT;
+}
+pub type LPADVISESINK2 = *mut IAdviseSink2;
+unsafe extern "C" {
+    pub static IID_IAdviseSink2: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IAdviseSink2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAdviseSink2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2) -> ULONG>,
+    pub OnDataChange: ::core::option::Option< unsafe extern "system" fn( This: *mut IAdviseSink2, pFormatetc: *mut FORMATETC, pStgmed: *mut STGMEDIUM, ), >,
+    pub OnViewChange: ::core::option::Option< unsafe extern "system" fn(This: *mut IAdviseSink2, dwAspect: DWORD, lindex: LONG), >,
+    pub OnRename: ::core::option::Option< unsafe extern "system" fn(This: *mut IAdviseSink2, pmk: *mut IMoniker), >,
+    pub OnSave: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2)>,
+    pub OnClose: ::core::option::Option<unsafe extern "system" fn(This: *mut IAdviseSink2)>,
+    pub OnLinkSrcChange: ::core::option::Option< unsafe extern "system" fn(This: *mut IAdviseSink2, pmk: *mut IMoniker), >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAdviseSink2 {
+    pub lpVtbl: *mut IAdviseSink2Vtbl,
+}
+unsafe extern "system" {
+    pub fn IAdviseSink2_RemoteOnLinkSrcChange_Proxy(
+        This: *mut IAdviseSink2,
+        pmk: *mut IMoniker,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IAdviseSink2_RemoteOnLinkSrcChange_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IAdviseSink2_OnLinkSrcChange_Proxy(This: *mut IAdviseSink2, pmk: *mut IMoniker);
+}
+unsafe extern "system" {
+    pub fn IAdviseSink2_OnLinkSrcChange_Stub(
+        This: *mut IAdviseSink2,
+        pmk: *mut IMoniker,
+    ) -> HRESULT;
+}
 pub type LPDATAOBJECT = *mut IDataObject;
+pub const tagDATADIR_DATADIR_GET: tagDATADIR = 1;
+pub const tagDATADIR_DATADIR_SET: tagDATADIR = 2;
+pub type tagDATADIR = ::core::ffi::c_uint;
+pub use self::tagDATADIR as DATADIR;
+unsafe extern "C" {
+    pub static IID_IDataObject: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IDataObjectVtbl {
@@ -14078,7 +16272,100 @@ pub struct IDataObjectVtbl {
 pub struct IDataObject {
     pub lpVtbl: *mut IDataObjectVtbl,
 }
+unsafe extern "system" {
+    pub fn IDataObject_RemoteGetData_Proxy(
+        This: *mut IDataObject,
+        pformatetcIn: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IDataObject_RemoteGetData_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IDataObject_RemoteGetDataHere_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IDataObject_RemoteGetDataHere_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IDataObject_RemoteSetData_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut FLAG_STGMEDIUM,
+        fRelease: BOOL,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IDataObject_RemoteSetData_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IDataObject_GetData_Proxy(
+        This: *mut IDataObject,
+        pformatetcIn: *mut FORMATETC,
+        pmedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IDataObject_GetData_Stub(
+        This: *mut IDataObject,
+        pformatetcIn: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IDataObject_GetDataHere_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IDataObject_GetDataHere_Stub(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pRemoteMedium: *mut STGMEDIUM,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IDataObject_SetData_Proxy(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut STGMEDIUM,
+        fRelease: BOOL,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IDataObject_SetData_Stub(
+        This: *mut IDataObject,
+        pformatetc: *mut FORMATETC,
+        pmedium: *mut FLAG_STGMEDIUM,
+        fRelease: BOOL,
+    ) -> HRESULT;
+}
 pub type LPDATAADVISEHOLDER = *mut IDataAdviseHolder;
+unsafe extern "C" {
+    pub static IID_IDataAdviseHolder: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IDataAdviseHolderVtbl {
@@ -14096,6 +16383,27 @@ pub struct IDataAdviseHolder {
     pub lpVtbl: *mut IDataAdviseHolderVtbl,
 }
 pub type LPMESSAGEFILTER = *mut IMessageFilter;
+pub const tagCALLTYPE_CALLTYPE_TOPLEVEL: tagCALLTYPE = 1;
+pub const tagCALLTYPE_CALLTYPE_NESTED: tagCALLTYPE = 2;
+pub const tagCALLTYPE_CALLTYPE_ASYNC: tagCALLTYPE = 3;
+pub const tagCALLTYPE_CALLTYPE_TOPLEVEL_CALLPENDING: tagCALLTYPE = 4;
+pub const tagCALLTYPE_CALLTYPE_ASYNC_CALLPENDING: tagCALLTYPE = 5;
+pub type tagCALLTYPE = ::core::ffi::c_uint;
+pub use self::tagCALLTYPE as CALLTYPE;
+pub const tagSERVERCALL_SERVERCALL_ISHANDLED: tagSERVERCALL = 0;
+pub const tagSERVERCALL_SERVERCALL_REJECTED: tagSERVERCALL = 1;
+pub const tagSERVERCALL_SERVERCALL_RETRYLATER: tagSERVERCALL = 2;
+pub type tagSERVERCALL = ::core::ffi::c_uint;
+pub use self::tagSERVERCALL as SERVERCALL;
+pub const tagPENDINGTYPE_PENDINGTYPE_TOPLEVEL: tagPENDINGTYPE = 1;
+pub const tagPENDINGTYPE_PENDINGTYPE_NESTED: tagPENDINGTYPE = 2;
+pub type tagPENDINGTYPE = ::core::ffi::c_uint;
+pub use self::tagPENDINGTYPE as PENDINGTYPE;
+pub const tagPENDINGMSG_PENDINGMSG_CANCELCALL: tagPENDINGMSG = 0;
+pub const tagPENDINGMSG_PENDINGMSG_WAITNOPROCESS: tagPENDINGMSG = 1;
+pub const tagPENDINGMSG_PENDINGMSG_WAITDEFPROCESS: tagPENDINGMSG = 2;
+pub type tagPENDINGMSG = ::core::ffi::c_uint;
+pub use self::tagPENDINGMSG as PENDINGMSG;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagINTERFACEINFO {
@@ -14103,7 +16411,11 @@ pub struct tagINTERFACEINFO {
     pub iid: IID,
     pub wMethod: WORD,
 }
+pub type INTERFACEINFO = tagINTERFACEINFO;
 pub type LPINTERFACEINFO = *mut tagINTERFACEINFO;
+unsafe extern "C" {
+    pub static IID_IMessageFilter: GUID;
+}
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct IMessageFilterVtbl {
@@ -14118,6 +16430,60 @@ pub struct IMessageFilterVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct IMessageFilter {
     pub lpVtbl: *mut IMessageFilterVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IDirectWriterLock: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IDirectWriterLockVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IDirectWriterLock, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> ULONG>,
+    pub WaitForWriteAccess: ::core::option::Option< unsafe extern "system" fn(This: *mut IDirectWriterLock, dwTimeout: DWORD) -> HRESULT, >,
+    pub ReleaseWriteAccess: ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> HRESULT>,
+    pub HaveWriteAccess: ::core::option::Option<unsafe extern "system" fn(This: *mut IDirectWriterLock) -> HRESULT>,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDirectWriterLock {
+    pub lpVtbl: *mut IDirectWriterLockVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IUrlMon: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IUrlMonVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IUrlMon, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUrlMon) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUrlMon) -> ULONG>,
+    pub AsyncGetClassBits: ::core::option::Option< unsafe extern "system" fn( This: *mut IUrlMon, rclsid: *const CLSID, pszTYPE: LPCWSTR, pszExt: LPCWSTR, dwFileVersionMS: DWORD, dwFileVersionLS: DWORD, pszCodeBase: LPCWSTR, pbc: *mut IBindCtx, dwClassContext: DWORD, riid: *const IID, flags: DWORD, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IUrlMon {
+    pub lpVtbl: *mut IUrlMonVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IForegroundTransfer: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IForegroundTransferVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IForegroundTransfer, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IForegroundTransfer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IForegroundTransfer) -> ULONG>,
+    pub AllowForegroundTransfer: ::core::option::Option< unsafe extern "system" fn( This: *mut IForegroundTransfer, lpvReserved: *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IForegroundTransfer {
+    pub lpVtbl: *mut IForegroundTransferVtbl,
+}
+pub type LPINITIALIZESPY = *mut IInitializeSpy;
+unsafe extern "C" {
+    pub static IID_IInitializeSpy: GUID;
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
@@ -14134,6 +16500,223 @@ pub struct IInitializeSpyVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct IInitializeSpy {
     pub lpVtbl: *mut IInitializeSpyVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IThumbnailExtractor: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IThumbnailExtractorVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IThumbnailExtractor, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IThumbnailExtractor) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IThumbnailExtractor) -> ULONG>,
+    pub ExtractThumbnail: ::core::option::Option< unsafe extern "system" fn( This: *mut IThumbnailExtractor, pStg: *mut IStorage, ulLength: ULONG, ulHeight: ULONG, pulOutputLength: *mut ULONG, pulOutputHeight: *mut ULONG, phOutputBitmap: *mut HBITMAP, ) -> HRESULT, >,
+    pub OnFileUpdated: ::core::option::Option< unsafe extern "system" fn(This: *mut IThumbnailExtractor, pStg: *mut IStorage) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IThumbnailExtractor {
+    pub lpVtbl: *mut IThumbnailExtractorVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IDummyHICONIncluder: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IDummyHICONIncluderVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IDummyHICONIncluder, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDummyHICONIncluder) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDummyHICONIncluder) -> ULONG>,
+    pub Dummy: ::core::option::Option< unsafe extern "system" fn( This: *mut IDummyHICONIncluder, hIcon: HICON, hdc: HDC, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDummyHICONIncluder {
+    pub lpVtbl: *mut IDummyHICONIncluderVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IApartmentShutdown: GUID;
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IApartmentShutdownVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IApartmentShutdown, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IApartmentShutdown) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IApartmentShutdown) -> ULONG>,
+    pub OnUninitialize: ::core::option::Option< unsafe extern "system" fn(This: *mut IApartmentShutdown, identifier: UINT64), >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IApartmentShutdown {
+    pub lpVtbl: *mut IApartmentShutdownVtbl,
+}
+unsafe extern "system" {
+    pub fn SNB_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut SNB) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn SNB_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut SNB,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn SNB_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut SNB,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn SNB_UserFree(arg1: *mut ULONG, arg2: *mut SNB);
+}
+unsafe extern "system" {
+    pub fn CLIPFORMAT_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut CLIPFORMAT) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn CLIPFORMAT_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut CLIPFORMAT,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn CLIPFORMAT_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut CLIPFORMAT,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn CLIPFORMAT_UserFree(arg1: *mut ULONG, arg2: *mut CLIPFORMAT);
+}
+unsafe extern "system" {
+    pub fn STGMEDIUM_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut STGMEDIUM) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn STGMEDIUM_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn STGMEDIUM_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn STGMEDIUM_UserFree(arg1: *mut ULONG, arg2: *mut STGMEDIUM);
+}
+unsafe extern "system" {
+    pub fn ASYNC_STGMEDIUM_UserSize(
+        arg1: *mut ULONG,
+        arg2: ULONG,
+        arg3: *mut ASYNC_STGMEDIUM,
+    ) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn ASYNC_STGMEDIUM_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut ASYNC_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn ASYNC_STGMEDIUM_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut ASYNC_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn ASYNC_STGMEDIUM_UserFree(arg1: *mut ULONG, arg2: *mut ASYNC_STGMEDIUM);
+}
+unsafe extern "system" {
+    pub fn FLAG_STGMEDIUM_UserSize(
+        arg1: *mut ULONG,
+        arg2: ULONG,
+        arg3: *mut FLAG_STGMEDIUM,
+    ) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn FLAG_STGMEDIUM_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut FLAG_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn FLAG_STGMEDIUM_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut FLAG_STGMEDIUM,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn FLAG_STGMEDIUM_UserFree(arg1: *mut ULONG, arg2: *mut FLAG_STGMEDIUM);
+}
+unsafe extern "system" {
+    pub fn HBITMAP_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HBITMAP) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn HBITMAP_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HBITMAP,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HBITMAP_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HBITMAP,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HBITMAP_UserFree(arg1: *mut ULONG, arg2: *mut HBITMAP);
+}
+unsafe extern "system" {
+    pub fn HICON_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HICON) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn HICON_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HICON,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HICON_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HICON,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HICON_UserFree(arg1: *mut ULONG, arg2: *mut HICON);
+}
+unsafe extern "system" {
+    pub fn HDC_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HDC) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn HDC_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HDC,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HDC_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HDC,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HDC_UserFree(arg1: *mut ULONG, arg2: *mut HDC);
 }
 unsafe extern "system" {
     pub fn CoBuildVersion() -> DWORD;
@@ -14949,6 +17532,19 @@ pub struct IDropTargetVtbl {
 pub struct IDropTarget {
     pub lpVtbl: *mut IDropTargetVtbl,
 }
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IServiceProviderVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IServiceProvider, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IServiceProvider) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IServiceProvider) -> ULONG>,
+    pub QueryService: ::core::option::Option< unsafe extern "system" fn( This: *mut IServiceProvider, guidService: *const GUID, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IServiceProvider {
+    pub lpVtbl: *mut IServiceProviderVtbl,
+}
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct tagSAFEARRAYBOUND {
@@ -14967,6 +17563,7 @@ pub struct tagSAFEARRAY {
     pub rgsabound: [SAFEARRAYBOUND; 1usize],
 }
 pub type SAFEARRAY = tagSAFEARRAY;
+pub type LPSAFEARRAY = *mut SAFEARRAY;
 pub type VARIANT = tagVARIANT;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -15367,6 +17964,270 @@ pub struct IRecordInfoVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct IRecordInfo {
     pub lpVtbl: *mut IRecordInfoVtbl,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IErrorLogVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IErrorLog, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IErrorLog) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IErrorLog) -> ULONG>,
+    pub AddError: ::core::option::Option< unsafe extern "system" fn( This: *mut IErrorLog, pszPropName: LPCOLESTR, pExcepInfo: *mut EXCEPINFO, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IErrorLog {
+    pub lpVtbl: *mut IErrorLogVtbl,
+}
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct IPropertyBagVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyBag, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyBag) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyBag) -> ULONG>,
+    pub Read: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyBag, pszPropName: LPCOLESTR, pVar: *mut VARIANT, pErrorLog: *mut IErrorLog, ) -> HRESULT, >,
+    pub Write: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyBag, pszPropName: LPCOLESTR, pVar: *mut VARIANT, ) -> HRESULT, >,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPropertyBag {
+    pub lpVtbl: *mut IPropertyBagVtbl,
+}
+pub type PROPVARIANT = tagPROPVARIANT;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCAC {
+    pub cElems: ULONG,
+    pub pElems: *mut ::core::ffi::c_char,
+}
+pub type CAC = tagCAC;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCAUB {
+    pub cElems: ULONG,
+    pub pElems: *mut ::core::ffi::c_uchar,
+}
+pub type CAUB = tagCAUB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCAI {
+    pub cElems: ULONG,
+    pub pElems: *mut ::core::ffi::c_short,
+}
+pub type CAI = tagCAI;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCAUI {
+    pub cElems: ULONG,
+    pub pElems: *mut USHORT,
+}
+pub type CAUI = tagCAUI;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCAL {
+    pub cElems: ULONG,
+    pub pElems: *mut LONG,
+}
+pub type CAL = tagCAL;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCAUL {
+    pub cElems: ULONG,
+    pub pElems: *mut ULONG,
+}
+pub type CAUL = tagCAUL;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCAFLT {
+    pub cElems: ULONG,
+    pub pElems: *mut f32,
+}
+pub type CAFLT = tagCAFLT;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCADBL {
+    pub cElems: ULONG,
+    pub pElems: *mut f64,
+}
+pub type CADBL = tagCADBL;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCACY {
+    pub cElems: ULONG,
+    pub pElems: *mut CY,
+}
+pub type CACY = tagCACY;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCADATE {
+    pub cElems: ULONG,
+    pub pElems: *mut DATE,
+}
+pub type CADATE = tagCADATE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCABSTR {
+    pub cElems: ULONG,
+    pub pElems: *mut BSTR,
+}
+pub type CABSTR = tagCABSTR;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCABSTRBLOB {
+    pub cElems: ULONG,
+    pub pElems: *mut BSTRBLOB,
+}
+pub type CABSTRBLOB = tagCABSTRBLOB;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCABOOL {
+    pub cElems: ULONG,
+    pub pElems: *mut VARIANT_BOOL,
+}
+pub type CABOOL = tagCABOOL;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCASCODE {
+    pub cElems: ULONG,
+    pub pElems: *mut SCODE,
+}
+pub type CASCODE = tagCASCODE;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCAPROPVARIANT {
+    pub cElems: ULONG,
+    pub pElems: *mut PROPVARIANT,
+}
+pub type CAPROPVARIANT = tagCAPROPVARIANT;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCAH {
+    pub cElems: ULONG,
+    pub pElems: *mut LARGE_INTEGER,
+}
+pub type CAH = tagCAH;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCAUH {
+    pub cElems: ULONG,
+    pub pElems: *mut ULARGE_INTEGER,
+}
+pub type CAUH = tagCAUH;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCALPSTR {
+    pub cElems: ULONG,
+    pub pElems: *mut LPSTR,
+}
+pub type CALPSTR = tagCALPSTR;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCALPWSTR {
+    pub cElems: ULONG,
+    pub pElems: *mut LPWSTR,
+}
+pub type CALPWSTR = tagCALPWSTR;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCAFILETIME {
+    pub cElems: ULONG,
+    pub pElems: *mut FILETIME,
+}
+pub type CAFILETIME = tagCAFILETIME;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCACLIPDATA {
+    pub cElems: ULONG,
+    pub pElems: *mut CLIPDATA,
+}
+pub type CACLIPDATA = tagCACLIPDATA;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagCACLSID {
+    pub cElems: ULONG,
+    pub pElems: *mut CLSID,
+}
+pub type CACLSID = tagCACLSID;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagPROPVARIANT {
+    pub vt: VARTYPE,
+    pub wReserved1: WORD,
+    pub wReserved2: WORD,
+    pub wReserved3: WORD,
+    pub __bindgen_anon_1: tagPROPVARIANT__bindgen_ty_1,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union tagPROPVARIANT__bindgen_ty_1 {
+    pub cVal: ::core::ffi::c_char,
+    pub bVal: UCHAR,
+    pub iVal: ::core::ffi::c_short,
+    pub uiVal: USHORT,
+    pub boolVal: VARIANT_BOOL,
+    pub lVal: LONG,
+    pub ulVal: ULONG,
+    pub fltVal: f32,
+    pub scode: SCODE,
+    pub hVal: LARGE_INTEGER,
+    pub uhVal: ULARGE_INTEGER,
+    pub dblVal: f64,
+    pub cyVal: CY,
+    pub date: DATE,
+    pub filetime: FILETIME,
+    pub puuid: *mut CLSID,
+    pub blob: BLOB,
+    pub pclipdata: *mut CLIPDATA,
+    pub pStream: *mut IStream,
+    pub pStorage: *mut IStorage,
+    pub bstrVal: BSTR,
+    pub bstrblobVal: BSTRBLOB,
+    pub pszVal: LPSTR,
+    pub pwszVal: LPWSTR,
+    pub punkVal: *mut IUnknown,
+    pub pdispVal: *mut IDispatch,
+    pub cac: CAC,
+    pub caub: CAUB,
+    pub cai: CAI,
+    pub caui: CAUI,
+    pub cabool: CABOOL,
+    pub cal: CAL,
+    pub caul: CAUL,
+    pub caflt: CAFLT,
+    pub cascode: CASCODE,
+    pub cah: CAH,
+    pub cauh: CAUH,
+    pub cadbl: CADBL,
+    pub cacy: CACY,
+    pub cadate: CADATE,
+    pub cafiletime: CAFILETIME,
+    pub cauuid: CACLSID,
+    pub caclipdata: CACLIPDATA,
+    pub cabstr: CABSTR,
+    pub cabstrblob: CABSTRBLOB,
+    pub calpstr: CALPSTR,
+    pub calpwstr: CALPWSTR,
+    pub capropvar: CAPROPVARIANT,
+    pub parray: LPSAFEARRAY,
+    pub pcVal: *mut CHAR,
+    pub pbVal: *mut UCHAR,
+    pub piVal: *mut SHORT,
+    pub puiVal: *mut USHORT,
+    pub plVal: *mut LONG,
+    pub pulVal: *mut ULONG,
+    pub pintVal: *mut INT,
+    pub puintVal: *mut UINT,
+    pub pfltVal: *mut FLOAT,
+    pub pdblVal: *mut DOUBLE,
+    pub pboolVal: *mut VARIANT_BOOL,
+    pub pdecVal: *mut DECIMAL,
+    pub pscode: *mut SCODE,
+    pub pcyVal: *mut CY,
+    pub pdate: *mut DATE,
+    pub pbstrVal: *mut BSTR,
+    pub ppunkVal: *mut *mut IUnknown,
+    pub ppdispVal: *mut *mut IDispatch,
+    pub pparray: *mut LPSAFEARRAY,
+    pub pvarVal: *mut PROPVARIANT,
 }
 pub type PCVOID = *const ::core::ffi::c_void;
 pub type RETURN_TYPE = DWORD;
@@ -16527,68 +19388,7 @@ unsafe extern "system" {
     pub fn AddTagToGroupOrderList(arg1: PCWSTR, arg2: DWORD, arg3: DWORD) -> LONG;
 }
 unsafe extern "system" {
-    pub fn AssertFail(arg1: LPSTR, arg2: UINT, arg3: LPSTR);
-}
-unsafe extern "system" {
-    pub fn CaptureStringArg(arg1: PCWSTR, arg2: *mut PWSTR) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn DelayedMove(arg1: PCWSTR, arg2: PCWSTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn DoesUserHavePrivilege(arg1: PCWSTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn FileExists(arg1: PCWSTR, arg2: PWIN32_FIND_DATAW) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn GetSetFileTimestamp(
-        arg1: PCWSTR,
-        arg2: PFILETIME,
-        arg3: PFILETIME,
-        arg4: PFILETIME,
-        arg5: BOOLEAN,
-    ) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn InstallHinfSectionA(arg1: HWND, arg2: HINSTANCE, arg3: PCSTR, arg4: INT);
-}
-unsafe extern "system" {
-    pub fn InstallHinfSectionW(arg1: HWND, arg2: HINSTANCE, arg3: PCWSTR, arg4: INT);
-}
-unsafe extern "system" {
     pub fn IsUserAdmin() -> BOOL;
-}
-unsafe extern "system" {
-    pub fn MyFree(arg1: PVOID);
-}
-unsafe extern "system" {
-    pub fn MyMalloc(arg1: DWORD) -> PVOID;
-}
-unsafe extern "system" {
-    pub fn MyRealloc(arg1: PVOID, arg2: DWORD) -> PVOID;
-}
-unsafe extern "system" {
-    pub fn QueryRegistryValue(
-        arg1: HKEY,
-        arg2: PCWSTR,
-        arg3: *mut PBYTE,
-        arg4: PDWORD,
-        arg5: PDWORD,
-    ) -> LONG;
-}
-unsafe extern "system" {
-    pub fn RetreiveFileSecurity(arg1: PCWSTR, arg2: *mut PSECURITY_DESCRIPTOR) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn SetupAddInstallSectionToDiskSpaceListA(
-        arg1: HDSKSPC,
-        arg2: HINF,
-        arg3: HINF,
-        arg4: PCSTR,
-        arg5: PVOID,
-        arg6: UINT,
-    ) -> BOOL;
 }
 unsafe extern "system" {
     pub fn SetupAddInstallSectionToDiskSpaceListW(
@@ -16621,32 +19421,6 @@ unsafe extern "system" {
         arg6: PVOID,
         arg7: UINT,
     ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupAddToDiskSpaceListA(
-        arg1: HDSKSPC,
-        arg2: PCSTR,
-        arg3: LONGLONG,
-        arg4: UINT,
-        arg5: PVOID,
-        arg6: UINT,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupAddToDiskSpaceListW(
-        arg1: HDSKSPC,
-        arg2: PCWSTR,
-        arg3: LONGLONG,
-        arg4: UINT,
-        arg5: PVOID,
-        arg6: UINT,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupAddToSourceListA(arg1: DWORD, arg2: PCSTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupAddToSourceListW(arg1: DWORD, arg2: PCWSTR) -> BOOL;
 }
 unsafe extern "system" {
     pub fn SetupAdjustDiskSpaceListA(
@@ -16690,790 +19464,25 @@ unsafe extern "system" {
     pub fn SetupCancelTemporary() -> BOOL;
 }
 unsafe extern "system" {
-    pub fn SetupCloseFileQueue(arg1: HSPFILEQ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupCloseInfFile(arg1: HINF);
-}
-unsafe extern "system" {
-    pub fn SetupCloseLog();
-}
-unsafe extern "system" {
-    pub fn SetupCommitFileQueueA(
-        arg1: HWND,
-        arg2: HSPFILEQ,
-        arg3: PSP_FILE_CALLBACK_A,
-        arg4: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupCommitFileQueueW(
-        arg1: HWND,
-        arg2: HSPFILEQ,
-        arg3: PSP_FILE_CALLBACK_W,
-        arg4: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupCopyErrorA(
-        hwndParent: HWND,
-        DialogTitle: PCSTR,
-        DiskName: PCSTR,
-        PathToSource: PCSTR,
-        SourceFile: PCSTR,
-        TargetPathFile: PCSTR,
-        Win32ErrorCode: UINT,
-        Style: DWORD,
-        PathBuffer: PSTR,
-        PathBufferSize: DWORD,
-        PathRequiredSize: PDWORD,
-    ) -> UINT;
-}
-unsafe extern "system" {
-    pub fn SetupCopyErrorW(
-        hwndParent: HWND,
-        DialogTitle: PCWSTR,
-        DiskName: PCWSTR,
-        PathToSource: PCWSTR,
-        SourceFile: PCWSTR,
-        TargetPathFile: PCWSTR,
-        Win32ErrorCode: UINT,
-        Style: DWORD,
-        PathBuffer: PWSTR,
-        PathBufferSize: DWORD,
-        PathRequiredSize: PDWORD,
-    ) -> UINT;
-}
-unsafe extern "system" {
-    pub fn SetupCopyOEMInfA(
-        SourceInfFileName: PCSTR,
-        OEMSourceMediaLocation: PCSTR,
-        OEMSourceMediaType: DWORD,
-        CopyStyle: DWORD,
-        DestinationInfFileName: PSTR,
-        DestinationInfFileNameSize: DWORD,
-        RequiredSize: PDWORD,
-        DestinationInfFileNameComponent: *mut PSTR,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupCopyOEMInfW(
-        SourceInfFileName: PCWSTR,
-        OEMSourceMediaLocation: PCWSTR,
-        OEMSourceMediaType: DWORD,
-        CopyStyle: DWORD,
-        DestinationInfFileName: PWSTR,
-        DestinationInfFileNameSize: DWORD,
-        RequiredSize: PDWORD,
-        DestinationInfFileNameComponent: *mut PWSTR,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupCreateDiskSpaceListA(arg1: PVOID, arg2: DWORD, arg3: UINT) -> HDSKSPC;
-}
-unsafe extern "system" {
-    pub fn SetupCreateDiskSpaceListW(arg1: PVOID, arg2: DWORD, arg3: UINT) -> HDSKSPC;
-}
-unsafe extern "system" {
-    pub fn SetupDecompressOrCopyFileA(arg1: PCSTR, arg2: PCSTR, arg3: PUINT) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn SetupDecompressOrCopyFileW(arg1: PCWSTR, arg2: PCWSTR, arg3: PUINT) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn SetupDefaultQueueCallbackA(
-        arg1: PVOID,
-        arg2: UINT,
-        arg3: UINT_PTR,
-        arg4: UINT_PTR,
-    ) -> UINT;
-}
-unsafe extern "system" {
-    pub fn SetupDefaultQueueCallbackW(
-        arg1: PVOID,
-        arg2: UINT,
-        arg3: UINT_PTR,
-        arg4: UINT_PTR,
-    ) -> UINT;
-}
-unsafe extern "system" {
-    pub fn SetupDeleteErrorA(arg1: HWND, arg2: PCSTR, arg3: PCSTR, arg4: UINT, arg5: DWORD)
-        -> UINT;
-}
-unsafe extern "system" {
-    pub fn SetupDeleteErrorW(
-        arg1: HWND,
-        arg2: PCWSTR,
-        arg3: PCWSTR,
-        arg4: UINT,
-        arg5: DWORD,
-    ) -> UINT;
-}
-unsafe extern "system" {
-    pub fn SetupDestroyDiskSpaceList(arg1: HDSKSPC) -> BOOL;
-}
-unsafe extern "system" {
     pub fn SetupDiAskForOEMDisk(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiBuildClassInfoList(
-        Flags: DWORD,
-        ClassGuidList: LPGUID,
-        ClassGuidListSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiBuildClassInfoListExA(
-        Flags: DWORD,
-        ClassGuidList: LPGUID,
-        ClassGuidListSize: DWORD,
-        RequiredSize: PDWORD,
-        MachineName: PCSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiBuildClassInfoListExW(
-        Flags: DWORD,
-        ClassGuidList: LPGUID,
-        ClassGuidListSize: DWORD,
-        RequiredSize: PDWORD,
-        MachineName: PCWSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
 }
 unsafe extern "system" {
     pub fn SetupDiBuildDriverInfoList(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA, arg3: DWORD) -> BOOL;
 }
 unsafe extern "system" {
-    pub fn SetupDiCallClassInstaller(
-        arg1: DI_FUNCTION,
-        arg2: HDEVINFO,
-        arg3: PSP_DEVINFO_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
     pub fn SetupDiCancelDriverInfoSearch(arg1: HDEVINFO) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiChangeState(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiClassGuidsFromNameA(
-        ClassName: PCSTR,
-        ClassGuidList: LPGUID,
-        ClassGuidListSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiClassGuidsFromNameW(
-        ClassName: PCWSTR,
-        ClassGuidList: LPGUID,
-        ClassGuidListSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiClassGuidsFromNameExA(
-        ClassName: PCSTR,
-        ClassGuidList: LPGUID,
-        ClassGuidListSize: DWORD,
-        RequiredSize: PDWORD,
-        MachineName: PCSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiClassGuidsFromNameExW(
-        ClassName: PCWSTR,
-        ClassGuidList: LPGUID,
-        ClassGuidListSize: DWORD,
-        RequiredSize: PDWORD,
-        MachineName: PCWSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiClassNameFromGuidA(
-        ClassGuid: *const GUID,
-        ClassName: PSTR,
-        ClassNameSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiClassNameFromGuidW(
-        ClassGuid: *const GUID,
-        ClassName: PWSTR,
-        ClassNameSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiClassNameFromGuidExA(
-        ClassGuid: *const GUID,
-        ClassName: PSTR,
-        ClassNameSize: DWORD,
-        RequiredSize: PDWORD,
-        MachineName: PCSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiClassNameFromGuidExW(
-        ClassGuid: *const GUID,
-        ClassName: PWSTR,
-        ClassNameSize: DWORD,
-        RequiredSize: PDWORD,
-        MachineName: PCWSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiCreateDeviceInfoA(
-        arg1: HDEVINFO,
-        arg2: PCSTR,
-        arg3: *const GUID,
-        arg4: PCSTR,
-        arg5: HWND,
-        arg6: DWORD,
-        arg7: PSP_DEVINFO_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiCreateDeviceInfoW(
-        arg1: HDEVINFO,
-        arg2: PCWSTR,
-        arg3: *const GUID,
-        arg4: PCWSTR,
-        arg5: HWND,
-        arg6: DWORD,
-        arg7: PSP_DEVINFO_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiCreateDeviceInfoList(arg1: *const GUID, arg2: HWND) -> HDEVINFO;
-}
-unsafe extern "system" {
-    pub fn SetupDiCreateDeviceInfoListExA(
-        arg1: *const GUID,
-        arg2: HWND,
-        arg3: PCSTR,
-        arg4: PVOID,
-    ) -> HDEVINFO;
-}
-unsafe extern "system" {
-    pub fn SetupDiCreateDeviceInfoListExW(
-        arg1: *const GUID,
-        arg2: HWND,
-        arg3: PCWSTR,
-        arg4: PVOID,
-    ) -> HDEVINFO;
-}
-unsafe extern "system" {
-    pub fn SetupDiCreateDeviceInterfaceA(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: *const GUID,
-        arg4: PCSTR,
-        arg5: DWORD,
-        arg6: PSP_DEVICE_INTERFACE_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiCreateDeviceInterfaceW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: *const GUID,
-        arg4: PCWSTR,
-        arg5: DWORD,
-        arg6: PSP_DEVICE_INTERFACE_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiCreateDeviceInterfaceRegKeyA(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVICE_INTERFACE_DATA,
-        arg3: DWORD,
-        arg4: REGSAM,
-        arg5: HINF,
-        arg6: PCSTR,
-    ) -> HKEY;
-}
-unsafe extern "system" {
-    pub fn SetupDiCreateDeviceInterfaceRegKeyW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVICE_INTERFACE_DATA,
-        arg3: DWORD,
-        arg4: REGSAM,
-        arg5: HINF,
-        arg6: PCWSTR,
-    ) -> HKEY;
-}
-unsafe extern "system" {
-    pub fn SetupDiCreateDevRegKeyA(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: DWORD,
-        arg4: DWORD,
-        arg5: DWORD,
-        arg6: HINF,
-        arg7: PCSTR,
-    ) -> HKEY;
-}
-unsafe extern "system" {
-    pub fn SetupDiCreateDevRegKeyW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: DWORD,
-        arg4: DWORD,
-        arg5: DWORD,
-        arg6: HINF,
-        arg7: PCWSTR,
-    ) -> HKEY;
-}
-unsafe extern "system" {
-    pub fn SetupDiDeleteDeviceInfo(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiDeleteDeviceInterfaceData(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVICE_INTERFACE_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiDeleteDeviceInterfaceRegKey(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVICE_INTERFACE_DATA,
-        arg3: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiDeleteDevRegKey(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: DWORD,
-        arg4: DWORD,
-        arg5: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiDestroyClassImageList(arg1: PSP_CLASSIMAGELIST_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiDestroyDeviceInfoList(arg1: HDEVINFO) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiDestroyDriverInfoList(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: DWORD,
-    ) -> BOOL;
 }
 unsafe extern "system" {
     pub fn SetupDiDrawMiniIcon(arg1: HDC, arg2: RECT, arg3: INT, arg4: DWORD) -> INT;
 }
 unsafe extern "system" {
-    pub fn SetupDiEnumDeviceInfo(arg1: HDEVINFO, arg2: DWORD, arg3: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiEnumDeviceInterfaces(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: *const GUID,
-        arg4: DWORD,
-        arg5: PSP_DEVICE_INTERFACE_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiEnumDriverInfoA(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: DWORD,
-        arg4: DWORD,
-        arg5: PSP_DRVINFO_DATA_A,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiEnumDriverInfoW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: DWORD,
-        arg4: DWORD,
-        arg5: PSP_DRVINFO_DATA_W,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetActualSectionToInstallA(
-        InfHandle: HINF,
-        InfSectionName: PCSTR,
-        InfSectionWithExt: PSTR,
-        InfSectionWithExtSize: DWORD,
-        RequiredSize: PDWORD,
-        Extension: *mut PSTR,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetActualSectionToInstallW(
-        InfHandle: HINF,
-        InfSectionName: PCWSTR,
-        InfSectionWithExt: PWSTR,
-        InfSectionWithExtSize: DWORD,
-        RequiredSize: PDWORD,
-        Extension: *mut PWSTR,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetActualSectionToInstallExA(
-        InfHandle: HINF,
-        InfSectionName: PCSTR,
-        AlternatePlatformInfo: PSP_ALTPLATFORM_INFO,
-        InfSectionWithExt: PSTR,
-        InfSectionWithExtSize: DWORD,
-        RequiredSize: PDWORD,
-        Extension: *mut PSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetActualSectionToInstallExW(
-        InfHandle: HINF,
-        InfSectionName: PCWSTR,
-        AlternatePlatformInfo: PSP_ALTPLATFORM_INFO,
-        InfSectionWithExt: PWSTR,
-        InfSectionWithExtSize: DWORD,
-        RequiredSize: PDWORD,
-        Extension: *mut PWSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetActualModelsSectionA(
-        Context: PINFCONTEXT,
-        AlternatePlatformInfo: PSP_ALTPLATFORM_INFO,
-        InfSectionWithExt: PSTR,
-        InfSectionWithExtSize: DWORD,
-        RequiredSize: PDWORD,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetActualModelsSectionW(
-        Context: PINFCONTEXT,
-        AlternatePlatformInfo: PSP_ALTPLATFORM_INFO,
-        InfSectionWithExt: PWSTR,
-        InfSectionWithExtSize: DWORD,
-        RequiredSize: PDWORD,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
     pub fn SetupDiGetClassBitmapIndex(arg1: *const GUID, arg2: PINT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassDescriptionA(
-        ClassGuid: *const GUID,
-        ClassDescription: PSTR,
-        ClassDescriptionSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassDescriptionW(
-        ClassGuid: *const GUID,
-        ClassDescription: PWSTR,
-        ClassDescriptionSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassDescriptionExA(
-        ClassGuid: *const GUID,
-        ClassDescription: PSTR,
-        ClassDescriptionSize: DWORD,
-        RequiredSize: PDWORD,
-        MachineName: PCSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassDescriptionExW(
-        ClassGuid: *const GUID,
-        ClassDescription: PWSTR,
-        ClassDescriptionSize: DWORD,
-        RequiredSize: PDWORD,
-        MachineName: PCWSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassDevPropertySheetsA(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: LPPROPSHEETHEADERA,
-        arg4: DWORD,
-        arg5: PDWORD,
-        arg6: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassDevPropertySheetsW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: LPPROPSHEETHEADERW,
-        arg4: DWORD,
-        arg5: PDWORD,
-        arg6: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassDevsA(
-        arg1: *const GUID,
-        arg2: PCSTR,
-        arg3: HWND,
-        arg4: DWORD,
-    ) -> HDEVINFO;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassDevsW(
-        arg1: *const GUID,
-        arg2: PCWSTR,
-        arg3: HWND,
-        arg4: DWORD,
-    ) -> HDEVINFO;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassDevsExA(
-        arg1: *const GUID,
-        arg2: PCSTR,
-        arg3: HWND,
-        arg4: DWORD,
-        arg5: HDEVINFO,
-        arg6: PCSTR,
-        arg7: PVOID,
-    ) -> HDEVINFO;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassDevsExW(
-        arg1: *const GUID,
-        arg2: PCWSTR,
-        arg3: HWND,
-        arg4: DWORD,
-        arg5: HDEVINFO,
-        arg6: PCWSTR,
-        arg7: PVOID,
-    ) -> HDEVINFO;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassImageIndex(
-        arg1: PSP_CLASSIMAGELIST_DATA,
-        arg2: *const GUID,
-        arg3: PINT,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassImageList(arg1: PSP_CLASSIMAGELIST_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassImageListExA(
-        arg1: PSP_CLASSIMAGELIST_DATA,
-        arg2: PCSTR,
-        arg3: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassImageListExW(
-        arg1: PSP_CLASSIMAGELIST_DATA,
-        arg2: PCWSTR,
-        arg3: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassInstallParamsA(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        ClassInstallParams: PSP_CLASSINSTALL_HEADER,
-        ClassInstallParamsSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassInstallParamsW(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        ClassInstallParams: PSP_CLASSINSTALL_HEADER,
-        ClassInstallParamsSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassRegistryPropertyA(
-        ClassGuid: *const GUID,
-        Property: DWORD,
-        PropertyRegDataType: PDWORD,
-        PropertyBuffer: PBYTE,
-        PropertyBufferSize: DWORD,
-        RequiredSize: PDWORD,
-        MachineName: PCSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetClassRegistryPropertyW(
-        ClassGuid: *const GUID,
-        Property: DWORD,
-        PropertyRegDataType: PDWORD,
-        PropertyBuffer: PBYTE,
-        PropertyBufferSize: DWORD,
-        RequiredSize: PDWORD,
-        MachineName: PCWSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceInfoListClass(arg1: HDEVINFO, arg2: LPGUID) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceInfoListDetailA(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_LIST_DETAIL_DATA_A,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceInfoListDetailW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_LIST_DETAIL_DATA_W,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceInstallParamsA(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: PSP_DEVINSTALL_PARAMS_A,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceInstallParamsW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: PSP_DEVINSTALL_PARAMS_W,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceInstanceIdA(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        DeviceInstanceId: PSTR,
-        DeviceInstanceIdSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceInstanceIdW(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        DeviceInstanceId: PWSTR,
-        DeviceInstanceIdSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceInterfaceAlias(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVICE_INTERFACE_DATA,
-        arg3: *const GUID,
-        arg4: PSP_DEVICE_INTERFACE_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceInterfaceDetailA(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInterfaceData: PSP_DEVICE_INTERFACE_DATA,
-        DeviceInterfaceDetailData: PSP_DEVICE_INTERFACE_DETAIL_DATA_A,
-        DeviceInterfaceDetailDataSize: DWORD,
-        RequiredSize: PDWORD,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceInterfaceDetailW(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInterfaceData: PSP_DEVICE_INTERFACE_DATA,
-        DeviceInterfaceDetailData: PSP_DEVICE_INTERFACE_DETAIL_DATA_W,
-        DeviceInterfaceDetailDataSize: DWORD,
-        RequiredSize: PDWORD,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDevicePropertyW(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        PropertyKey: *const DEVPROPKEY,
-        PropertyType: *mut DEVPROPTYPE,
-        PropertyBuffer: PBYTE,
-        PropertyBufferSize: DWORD,
-        RequiredSize: PDWORD,
-        Flags: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceRegistryPropertyA(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        Property: DWORD,
-        PropertyRegDataType: PDWORD,
-        PropertyBuffer: PBYTE,
-        PropertyBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDeviceRegistryPropertyW(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        Property: DWORD,
-        PropertyRegDataType: PDWORD,
-        PropertyBuffer: PBYTE,
-        PropertyBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDriverInfoDetailA(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        DriverInfoData: PSP_DRVINFO_DATA_A,
-        DriverInfoDetailData: PSP_DRVINFO_DETAIL_DATA_A,
-        DriverInfoDetailDataSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDriverInfoDetailW(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        DriverInfoData: PSP_DRVINFO_DATA_W,
-        DriverInfoDetailData: PSP_DRVINFO_DETAIL_DATA_W,
-        DriverInfoDetailDataSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
 }
 unsafe extern "system" {
     pub fn SetupDiGetDriverInstallParamsA(
         arg1: HDEVINFO,
         arg2: PSP_DEVINFO_DATA,
         arg3: PSP_DRVINFO_DATA_A,
-        arg4: PSP_DRVINSTALL_PARAMS,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetDriverInstallParamsW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: PSP_DRVINFO_DATA_W,
         arg4: PSP_DRVINSTALL_PARAMS,
     ) -> BOOL;
 }
@@ -17542,41 +19551,6 @@ unsafe extern "system" {
     ) -> BOOL;
 }
 unsafe extern "system" {
-    pub fn SetupDiGetINFClassA(
-        InfName: PCSTR,
-        ClassGuid: LPGUID,
-        ClassName: PSTR,
-        ClassNameSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetINFClassW(
-        InfName: PCWSTR,
-        ClassGuid: LPGUID,
-        ClassName: PWSTR,
-        ClassNameSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetSelectedDevice(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetSelectedDriverA(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: PSP_DRVINFO_DATA_A,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiGetSelectedDriverW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: PSP_DRVINFO_DATA_W,
-    ) -> BOOL;
-}
-unsafe extern "system" {
     pub fn SetupDiGetWizardPage(
         arg1: HDEVINFO,
         arg2: PSP_DEVINFO_DATA,
@@ -17586,286 +19560,10 @@ unsafe extern "system" {
     ) -> HPROPSHEETPAGE;
 }
 unsafe extern "system" {
-    pub fn SetupDiInstallClassA(arg1: HWND, arg2: PCSTR, arg3: DWORD, arg4: HSPFILEQ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiInstallClassW(arg1: HWND, arg2: PCWSTR, arg3: DWORD, arg4: HSPFILEQ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiInstallClassExA(
-        arg1: HWND,
-        arg2: PCSTR,
-        arg3: DWORD,
-        arg4: HSPFILEQ,
-        arg5: *const GUID,
-        arg6: PVOID,
-        arg7: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiInstallClassExW(
-        arg1: HWND,
-        arg2: PCWSTR,
-        arg3: DWORD,
-        arg4: HSPFILEQ,
-        arg5: *const GUID,
-        arg6: PVOID,
-        arg7: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiInstallDevice(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiInstallDeviceInterfaces(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiInstallDriverFiles(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiLoadClassIcon(arg1: *const GUID, arg2: *mut HICON, arg3: PINT) -> BOOL;
-}
-unsafe extern "system" {
     pub fn SetupDiMoveDuplicateDevice(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
 }
 unsafe extern "system" {
-    pub fn SetupDiOpenClassRegKey(arg1: *const GUID, arg2: REGSAM) -> HKEY;
-}
-unsafe extern "system" {
-    pub fn SetupDiOpenClassRegKeyExA(
-        arg1: *const GUID,
-        arg2: REGSAM,
-        arg3: DWORD,
-        arg4: PCSTR,
-        arg5: PVOID,
-    ) -> HKEY;
-}
-unsafe extern "system" {
-    pub fn SetupDiOpenClassRegKeyExW(
-        arg1: *const GUID,
-        arg2: REGSAM,
-        arg3: DWORD,
-        arg4: PCWSTR,
-        arg5: PVOID,
-    ) -> HKEY;
-}
-unsafe extern "system" {
-    pub fn SetupDiOpenDeviceInfoA(
-        arg1: HDEVINFO,
-        arg2: PCSTR,
-        arg3: HWND,
-        arg4: DWORD,
-        arg5: PSP_DEVINFO_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiOpenDeviceInfoW(
-        arg1: HDEVINFO,
-        arg2: PCWSTR,
-        arg3: HWND,
-        arg4: DWORD,
-        arg5: PSP_DEVINFO_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiOpenDeviceInterfaceA(
-        arg1: HDEVINFO,
-        arg2: PCSTR,
-        arg3: DWORD,
-        arg4: PSP_DEVICE_INTERFACE_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiOpenDeviceInterfaceW(
-        arg1: HDEVINFO,
-        arg2: PCWSTR,
-        arg3: DWORD,
-        arg4: PSP_DEVICE_INTERFACE_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiOpenDeviceInterfaceRegKey(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVICE_INTERFACE_DATA,
-        arg3: DWORD,
-        arg4: REGSAM,
-    ) -> HKEY;
-}
-unsafe extern "system" {
-    pub fn SetupDiOpenDevRegKey(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: DWORD,
-        arg4: DWORD,
-        arg5: DWORD,
-        arg6: REGSAM,
-    ) -> HKEY;
-}
-unsafe extern "system" {
-    pub fn SetupDiRegisterCoDeviceInstallers(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiRegisterDeviceInfo(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: DWORD,
-        arg4: PSP_DETSIG_CMPPROC,
-        arg5: PVOID,
-        arg6: PSP_DEVINFO_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiRemoveDevice(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiRemoveDeviceInterface(arg1: HDEVINFO, arg2: PSP_DEVICE_INTERFACE_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiRestartDevices(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSelectBestCompatDrv(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSelectDevice(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
     pub fn SetupDiSelectOEMDrv(arg1: HWND, arg2: HDEVINFO, arg3: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetClassInstallParamsA(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        ClassInstallParams: PSP_CLASSINSTALL_HEADER,
-        ClassInstallParamsSize: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetClassInstallParamsW(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        ClassInstallParams: PSP_CLASSINSTALL_HEADER,
-        ClassInstallParamsSize: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetClassRegistryPropertyA(
-        ClassGuid: *const GUID,
-        Property: DWORD,
-        PropertyBuffer: *const BYTE,
-        PropertyBufferSize: DWORD,
-        MachineName: PCSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetClassRegistryPropertyW(
-        ClassGuid: *const GUID,
-        Property: DWORD,
-        PropertyBuffer: *const BYTE,
-        PropertyBufferSize: DWORD,
-        MachineName: PCWSTR,
-        Reserved: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetDeviceInstallParamsA(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: PSP_DEVINSTALL_PARAMS_A,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetDeviceInstallParamsW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: PSP_DEVINSTALL_PARAMS_W,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetDeviceRegistryPropertyA(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        Property: DWORD,
-        PropertyBuffer: *const BYTE,
-        PropertyBufferSize: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetDeviceRegistryPropertyW(
-        DeviceInfoSet: HDEVINFO,
-        DeviceInfoData: PSP_DEVINFO_DATA,
-        Property: DWORD,
-        PropertyBuffer: *const BYTE,
-        PropertyBufferSize: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetDriverInstallParamsA(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: PSP_DRVINFO_DATA_A,
-        arg4: PSP_DRVINSTALL_PARAMS,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetDriverInstallParamsW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: PSP_DRVINFO_DATA_W,
-        arg4: PSP_DRVINSTALL_PARAMS,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetSelectedDevice(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetSelectedDriverA(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: PSP_DRVINFO_DATA_A,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiSetSelectedDriverW(
-        arg1: HDEVINFO,
-        arg2: PSP_DEVINFO_DATA,
-        arg3: PSP_DRVINFO_DATA_W,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDiUnremoveDevice(arg1: HDEVINFO, arg2: PSP_DEVINFO_DATA) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupDuplicateDiskSpaceListA(
-        arg1: HDSKSPC,
-        arg2: PVOID,
-        arg3: DWORD,
-        arg4: UINT,
-    ) -> HDSKSPC;
-}
-unsafe extern "system" {
-    pub fn SetupDuplicateDiskSpaceListW(
-        arg1: HDSKSPC,
-        arg2: PVOID,
-        arg3: DWORD,
-        arg4: UINT,
-    ) -> HDSKSPC;
-}
-unsafe extern "system" {
-    pub fn SetupFindFirstLineA(arg1: HINF, arg2: PCSTR, arg3: PCSTR, arg4: PINFCONTEXT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupFindFirstLineW(arg1: HINF, arg2: PCWSTR, arg3: PCWSTR, arg4: PINFCONTEXT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupFindNextLine(arg1: PINFCONTEXT, arg2: PINFCONTEXT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupFindNextMatchLineA(arg1: PINFCONTEXT, arg2: PCSTR, arg3: PINFCONTEXT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupFindNextMatchLineW(arg1: PINFCONTEXT, arg2: PCWSTR, arg3: PINFCONTEXT) -> BOOL;
 }
 unsafe extern "system" {
     pub fn SetupFreeA(arg1: *mut *mut PCSTR, arg2: UINT) -> BOOL;
@@ -17878,171 +19576,6 @@ unsafe extern "system" {
 }
 unsafe extern "system" {
     pub fn SetupGetBackupInformationW(arg1: HSPFILEQ, arg2: PSP_BACKUP_QUEUE_PARAMS_W) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetBinaryField(
-        Context: PINFCONTEXT,
-        FieldIndex: DWORD,
-        ReturnBuffer: PBYTE,
-        ReturnBufferSize: DWORD,
-        RequiredSize: LPDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetFieldCount(arg1: PINFCONTEXT) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn SetupGetFileCompressionInfoA(
-        arg1: PCSTR,
-        arg2: *mut PSTR,
-        arg3: PDWORD,
-        arg4: PDWORD,
-        arg5: PUINT,
-    ) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn SetupGetFileCompressionInfoW(
-        arg1: PCWSTR,
-        arg2: *mut PWSTR,
-        arg3: PDWORD,
-        arg4: PDWORD,
-        arg5: PUINT,
-    ) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn SetupGetFileCompressionInfoExA(
-        SourceFileName: PCSTR,
-        ActualSourceFileNameBuffer: PSTR,
-        ActualSourceFileNameBufferLen: DWORD,
-        RequiredBufferLen: PDWORD,
-        SourceFileSize: PDWORD,
-        TargetFileSize: PDWORD,
-        CompressionType: PUINT,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetFileCompressionInfoExW(
-        SourceFileName: PCWSTR,
-        ActualSourceFileNameBuffer: PWSTR,
-        ActualSourceFileNameBufferLen: DWORD,
-        RequiredBufferLen: PDWORD,
-        SourceFileSize: PDWORD,
-        TargetFileSize: PDWORD,
-        CompressionType: PUINT,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetInfFileListA(
-        DirectoryPath: PCSTR,
-        InfStyle: DWORD,
-        ReturnBuffer: PSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetInfFileListW(
-        DirectoryPath: PCWSTR,
-        InfStyle: DWORD,
-        ReturnBuffer: PWSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetInfInformationA(
-        InfSpec: LPCVOID,
-        SearchControl: DWORD,
-        ReturnBuffer: PSP_INF_INFORMATION,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetInfInformationW(
-        InfSpec: LPCVOID,
-        SearchControl: DWORD,
-        ReturnBuffer: PSP_INF_INFORMATION,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetIntField(arg1: PINFCONTEXT, arg2: DWORD, arg3: PINT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetLineByIndexA(arg1: HINF, arg2: PCSTR, arg3: DWORD, arg4: PINFCONTEXT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetLineByIndexW(arg1: HINF, arg2: PCWSTR, arg3: DWORD, arg4: PINFCONTEXT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetLineCountA(arg1: HINF, arg2: PCSTR) -> LONG;
-}
-unsafe extern "system" {
-    pub fn SetupGetLineCountW(arg1: HINF, arg2: PCWSTR) -> LONG;
-}
-unsafe extern "system" {
-    pub fn SetupGetLineTextA(
-        Context: PINFCONTEXT,
-        InfHandle: HINF,
-        Section: PCSTR,
-        Key: PCSTR,
-        ReturnBuffer: PSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetLineTextW(
-        Context: PINFCONTEXT,
-        InfHandle: HINF,
-        Section: PCWSTR,
-        Key: PCWSTR,
-        ReturnBuffer: PWSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetMultiSzFieldA(
-        Context: PINFCONTEXT,
-        FieldIndex: DWORD,
-        ReturnBuffer: PSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: LPDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetMultiSzFieldW(
-        Context: PINFCONTEXT,
-        FieldIndex: DWORD,
-        ReturnBuffer: PWSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: LPDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetSourceFileLocationA(
-        InfHandle: HINF,
-        InfContext: PINFCONTEXT,
-        FileName: PCSTR,
-        SourceId: PUINT,
-        ReturnBuffer: PSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetSourceFileLocationW(
-        InfHandle: HINF,
-        InfContext: PINFCONTEXT,
-        FileName: PCWSTR,
-        SourceId: PUINT,
-        ReturnBuffer: PWSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
 }
 unsafe extern "system" {
     pub fn SetupGetSourceFileSizeA(
@@ -18062,106 +19595,6 @@ unsafe extern "system" {
         arg4: PCWSTR,
         arg5: PDWORD,
         arg6: UINT,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetSourceInfoA(
-        InfHandle: HINF,
-        SourceId: UINT,
-        InfoDesired: UINT,
-        ReturnBuffer: PSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetSourceInfoW(
-        InfHandle: HINF,
-        SourceId: UINT,
-        InfoDesired: UINT,
-        ReturnBuffer: PWSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetStringFieldA(
-        Context: PINFCONTEXT,
-        FieldIndex: DWORD,
-        ReturnBuffer: PSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetStringFieldW(
-        Context: PINFCONTEXT,
-        FieldIndex: DWORD,
-        ReturnBuffer: PWSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetTargetPathA(
-        InfHandle: HINF,
-        InfContext: PINFCONTEXT,
-        Section: PCSTR,
-        ReturnBuffer: PSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupGetTargetPathW(
-        InfHandle: HINF,
-        InfContext: PINFCONTEXT,
-        Section: PCWSTR,
-        ReturnBuffer: PWSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupInitDefaultQueueCallback(arg1: HWND) -> PVOID;
-}
-unsafe extern "system" {
-    pub fn SetupInitDefaultQueueCallbackEx(
-        arg1: HWND,
-        arg2: HWND,
-        arg3: UINT,
-        arg4: DWORD,
-        arg5: PVOID,
-    ) -> PVOID;
-}
-unsafe extern "system" {
-    pub fn SetupInitializeFileLogA(arg1: PCSTR, arg2: DWORD) -> HSPFILELOG;
-}
-unsafe extern "system" {
-    pub fn SetupInitializeFileLogW(arg1: PCWSTR, arg2: DWORD) -> HSPFILELOG;
-}
-unsafe extern "system" {
-    pub fn SetupInstallFileA(
-        arg1: HINF,
-        arg2: PINFCONTEXT,
-        arg3: PCSTR,
-        arg4: PCSTR,
-        arg5: PCSTR,
-        arg6: DWORD,
-        arg7: PSP_FILE_CALLBACK_A,
-        arg8: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupInstallFileW(
-        arg1: HINF,
-        arg2: PINFCONTEXT,
-        arg3: PCWSTR,
-        arg4: PCWSTR,
-        arg5: PCWSTR,
-        arg6: DWORD,
-        arg7: PSP_FILE_CALLBACK_W,
-        arg8: PVOID,
     ) -> BOOL;
 }
 unsafe extern "system" {
@@ -18191,106 +19624,6 @@ unsafe extern "system" {
     ) -> BOOL;
 }
 unsafe extern "system" {
-    pub fn SetupInstallFilesFromInfSectionA(
-        arg1: HINF,
-        arg2: HINF,
-        arg3: HSPFILEQ,
-        arg4: PCSTR,
-        arg5: PCSTR,
-        arg6: UINT,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupInstallFilesFromInfSectionW(
-        arg1: HINF,
-        arg2: HINF,
-        arg3: HSPFILEQ,
-        arg4: PCWSTR,
-        arg5: PCWSTR,
-        arg6: UINT,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupInstallFromInfSectionA(
-        arg1: HWND,
-        arg2: HINF,
-        arg3: PCSTR,
-        arg4: UINT,
-        arg5: HKEY,
-        arg6: PCSTR,
-        arg7: UINT,
-        arg8: PSP_FILE_CALLBACK_A,
-        arg9: PVOID,
-        arg10: HDEVINFO,
-        arg11: PSP_DEVINFO_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupInstallFromInfSectionW(
-        arg1: HWND,
-        arg2: HINF,
-        arg3: PCWSTR,
-        arg4: UINT,
-        arg5: HKEY,
-        arg6: PCWSTR,
-        arg7: UINT,
-        arg8: PSP_FILE_CALLBACK_W,
-        arg9: PVOID,
-        arg10: HDEVINFO,
-        arg11: PSP_DEVINFO_DATA,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupInstallServicesFromInfSectionA(arg1: HINF, arg2: PCSTR, arg3: DWORD) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupInstallServicesFromInfSectionW(arg1: HINF, arg2: PCWSTR, arg3: DWORD) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupInstallServicesFromInfSectionExA(
-        arg1: HINF,
-        arg2: PCSTR,
-        arg3: DWORD,
-        arg4: HDEVINFO,
-        arg5: PSP_DEVINFO_DATA,
-        arg6: PVOID,
-        arg7: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupInstallServicesFromInfSectionExW(
-        arg1: HINF,
-        arg2: PCWSTR,
-        arg3: DWORD,
-        arg4: HDEVINFO,
-        arg5: PSP_DEVINFO_DATA,
-        arg6: PVOID,
-        arg7: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupIterateCabinetA(
-        arg1: PCSTR,
-        arg2: DWORD,
-        arg3: PSP_FILE_CALLBACK_A,
-        arg4: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupIterateCabinetW(
-        arg1: PCWSTR,
-        arg2: DWORD,
-        arg3: PSP_FILE_CALLBACK_W,
-        arg4: PVOID,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupLogErrorA(arg1: LPCSTR, arg2: DWORD) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupLogErrorW(arg1: LPCWSTR, arg2: DWORD) -> BOOL;
-}
-unsafe extern "system" {
     pub fn SetupLogFileA(
         arg1: HSPFILELOG,
         arg2: PCSTR,
@@ -18315,68 +19648,6 @@ unsafe extern "system" {
         arg8: PCWSTR,
         arg9: DWORD,
     ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupOpenAppendInfFileA(FileName: PCSTR, InfHandle: HINF, ErrorLine: PUINT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupOpenAppendInfFileW(FileName: PCWSTR, InfHandle: HINF, ErrorLine: PUINT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupOpenFileQueue() -> HSPFILEQ;
-}
-unsafe extern "system" {
-    pub fn SetupOpenInfFileA(
-        FileName: PCSTR,
-        InfClass: PCSTR,
-        InfStyle: DWORD,
-        ErrorLine: PUINT,
-    ) -> HINF;
-}
-unsafe extern "system" {
-    pub fn SetupOpenInfFileW(
-        FileName: PCWSTR,
-        InfClass: PCWSTR,
-        InfStyle: DWORD,
-        ErrorLine: PUINT,
-    ) -> HINF;
-}
-unsafe extern "system" {
-    pub fn SetupOpenLog(arg1: BOOL) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupOpenMasterInf() -> HINF;
-}
-unsafe extern "system" {
-    pub fn SetupPromptForDiskA(
-        hwndParent: HWND,
-        DialogTitle: PCSTR,
-        DiskName: PCSTR,
-        PathToSource: PCSTR,
-        FileSought: PCSTR,
-        TagFile: PCSTR,
-        DiskPromptStyle: DWORD,
-        PathBuffer: PSTR,
-        PathBufferSize: DWORD,
-        PathRequiredSize: PDWORD,
-    ) -> UINT;
-}
-unsafe extern "system" {
-    pub fn SetupPromptForDiskW(
-        hwndParent: HWND,
-        DialogTitle: PCWSTR,
-        DiskName: PCWSTR,
-        PathToSource: PCWSTR,
-        FileSought: PCWSTR,
-        TagFile: PCWSTR,
-        DiskPromptStyle: DWORD,
-        PathBuffer: PWSTR,
-        PathBufferSize: DWORD,
-        PathRequiredSize: PDWORD,
-    ) -> UINT;
-}
-unsafe extern "system" {
-    pub fn SetupPromptReboot(arg1: HSPFILEQ, arg2: HWND, arg3: BOOL) -> INT;
 }
 unsafe extern "system" {
     pub fn SetupQueryA(arg1: DWORD, arg2: *mut *mut PCSTR, arg3: PUINT) -> BOOL;
@@ -18421,186 +19692,6 @@ unsafe extern "system" {
         ReturnBufferSize: DWORD,
         RequiredSize: PDWORD,
     ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueryInfFileInformationA(
-        InfInformation: PSP_INF_INFORMATION,
-        InfIndex: UINT,
-        ReturnBuffer: PSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueryInfFileInformationW(
-        InfInformation: PSP_INF_INFORMATION,
-        InfIndex: UINT,
-        ReturnBuffer: PWSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueryInfOriginalFileInformationA(
-        InfInformation: PSP_INF_INFORMATION,
-        InfIndex: UINT,
-        AlternatePlatformInfo: PSP_ALTPLATFORM_INFO,
-        OriginalFileInfo: PSP_ORIGINAL_FILE_INFO_A,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueryInfOriginalFileInformationW(
-        InfInformation: PSP_INF_INFORMATION,
-        InfIndex: UINT,
-        AlternatePlatformInfo: PSP_ALTPLATFORM_INFO,
-        OriginalFileInfo: PSP_ORIGINAL_FILE_INFO_W,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueryInfVersionInformationA(
-        InfInformation: PSP_INF_INFORMATION,
-        InfIndex: UINT,
-        Key: PCSTR,
-        ReturnBuffer: PSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueryInfVersionInformationW(
-        InfInformation: PSP_INF_INFORMATION,
-        InfIndex: UINT,
-        Key: PCWSTR,
-        ReturnBuffer: PWSTR,
-        ReturnBufferSize: DWORD,
-        RequiredSize: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQuerySpaceRequiredOnDriveA(
-        arg1: HDSKSPC,
-        arg2: PCSTR,
-        arg3: *mut LONGLONG,
-        arg4: PVOID,
-        arg5: UINT,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQuerySpaceRequiredOnDriveW(
-        arg1: HDSKSPC,
-        arg2: PCWSTR,
-        arg3: *mut LONGLONG,
-        arg4: PVOID,
-        arg5: UINT,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueCopyA(
-        arg1: HSPFILEQ,
-        arg2: PCSTR,
-        arg3: PCSTR,
-        arg4: PCSTR,
-        arg5: PCSTR,
-        arg6: PCSTR,
-        arg7: PCSTR,
-        arg8: PCSTR,
-        arg9: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueCopyW(
-        arg1: HSPFILEQ,
-        arg2: PCWSTR,
-        arg3: PCWSTR,
-        arg4: PCWSTR,
-        arg5: PCWSTR,
-        arg6: PCWSTR,
-        arg7: PCWSTR,
-        arg8: PCWSTR,
-        arg9: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueCopyIndirectA(arg1: PSP_FILE_COPY_PARAMS_A) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueCopyIndirectW(arg1: PSP_FILE_COPY_PARAMS_W) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueCopySectionA(
-        arg1: HSPFILEQ,
-        arg2: PCSTR,
-        arg3: HINF,
-        arg4: HINF,
-        arg5: PCSTR,
-        arg6: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueCopySectionW(
-        arg1: HSPFILEQ,
-        arg2: PCWSTR,
-        arg3: HINF,
-        arg4: HINF,
-        arg5: PCWSTR,
-        arg6: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueDefaultCopyA(
-        arg1: HSPFILEQ,
-        arg2: HINF,
-        arg3: PCSTR,
-        arg4: PCSTR,
-        arg5: PCSTR,
-        arg6: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueDefaultCopyW(
-        arg1: HSPFILEQ,
-        arg2: HINF,
-        arg3: PCWSTR,
-        arg4: PCWSTR,
-        arg5: PCWSTR,
-        arg6: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueDeleteA(arg1: HSPFILEQ, arg2: PCSTR, arg3: PCSTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueDeleteW(arg1: HSPFILEQ, arg2: PCWSTR, arg3: PCWSTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueDeleteSectionA(arg1: HSPFILEQ, arg2: HINF, arg3: HINF, arg4: PCSTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueDeleteSectionW(arg1: HSPFILEQ, arg2: HINF, arg3: HINF, arg4: PCWSTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueRenameA(
-        arg1: HSPFILEQ,
-        arg2: PCSTR,
-        arg3: PCSTR,
-        arg4: PCSTR,
-        arg5: PCSTR,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueRenameW(
-        arg1: HSPFILEQ,
-        arg2: PCWSTR,
-        arg3: PCWSTR,
-        arg4: PCWSTR,
-        arg5: PCWSTR,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueRenameSectionA(arg1: HSPFILEQ, arg2: HINF, arg3: HINF, arg4: PCSTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupQueueRenameSectionW(arg1: HSPFILEQ, arg2: HINF, arg3: HINF, arg4: PCWSTR) -> BOOL;
 }
 unsafe extern "system" {
     pub fn SetupRemoveFileLogEntryA(arg1: HSPFILELOG, arg2: PCSTR, arg3: PCSTR) -> BOOL;
@@ -18675,52 +19766,6 @@ unsafe extern "system" {
     ) -> BOOL;
 }
 unsafe extern "system" {
-    pub fn SetupRenameErrorA(
-        arg1: HWND,
-        arg2: PCSTR,
-        arg3: PCSTR,
-        arg4: PCSTR,
-        arg5: UINT,
-        arg6: DWORD,
-    ) -> UINT;
-}
-unsafe extern "system" {
-    pub fn SetupRenameErrorW(
-        arg1: HWND,
-        arg2: PCWSTR,
-        arg3: PCWSTR,
-        arg4: PCWSTR,
-        arg5: UINT,
-        arg6: DWORD,
-    ) -> UINT;
-}
-unsafe extern "system" {
-    pub fn SetupScanFileQueueA(
-        arg1: HSPFILEQ,
-        arg2: DWORD,
-        arg3: HWND,
-        arg4: PSP_FILE_CALLBACK_A,
-        arg5: PVOID,
-        arg6: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupScanFileQueueW(
-        arg1: HSPFILEQ,
-        arg2: DWORD,
-        arg3: HWND,
-        arg4: PSP_FILE_CALLBACK_W,
-        arg5: PVOID,
-        arg6: PDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupSetDirectoryIdA(arg1: HINF, arg2: DWORD, arg3: PCSTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupSetDirectoryIdW(arg1: HINF, arg2: DWORD, arg3: PCWSTR) -> BOOL;
-}
-unsafe extern "system" {
     pub fn SetupSetDirectoryIdExA(
         arg1: HINF,
         arg2: DWORD,
@@ -18741,82 +19786,10 @@ unsafe extern "system" {
     ) -> BOOL;
 }
 unsafe extern "system" {
-    pub fn SetupSetFileQueueAlternatePlatformA(
-        arg1: HSPFILEQ,
-        arg2: PSP_ALTPLATFORM_INFO,
-        arg3: PCSTR,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupSetFileQueueAlternatePlatformW(
-        arg1: HSPFILEQ,
-        arg2: PSP_ALTPLATFORM_INFO,
-        arg3: PCWSTR,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupSetNonInteractiveMode(arg1: BOOL) -> BOOL;
-}
-unsafe extern "system" {
     pub fn SetupSetPlatformPathOverrideA(arg1: PCSTR) -> BOOL;
 }
 unsafe extern "system" {
     pub fn SetupSetPlatformPathOverrideW(arg1: PCWSTR) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupSetSourceListA(Flags: DWORD, SourceList: *mut PCSTR, SourceCount: UINT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupSetSourceListW(Flags: DWORD, SourceList: *mut PCWSTR, SourceCount: UINT) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupTermDefaultQueueCallback(arg1: PVOID);
-}
-unsafe extern "system" {
-    pub fn SetupTerminateFileLog(arg1: HSPFILELOG) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupUninstallOEMInfA(InfFileName: PCSTR, Flags: DWORD, Reserved: PVOID) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn SetupUninstallOEMInfW(InfFileName: PCWSTR, Flags: DWORD, Reserved: PVOID) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn StampFileSecurity(arg1: PCWSTR, arg2: PSECURITY_DESCRIPTOR) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn pSetupCaptureAndConvertAnsiArg(arg1: PCSTR, arg2: *mut PWSTR) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn pSetupCenterWindowRelativeToParent(arg1: HWND);
-}
-unsafe extern "system" {
-    pub fn pSetupConcatenatePaths(arg1: LPWSTR, arg2: LPCWSTR, arg3: DWORD, arg4: LPDWORD) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn pSetupDuplicateString(arg1: PCWSTR) -> PWSTR;
-}
-unsafe extern "system" {
-    pub fn pSetupEnablePrivilege(arg1: PCWSTR, arg2: BOOL) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn pSetupGetFileTitle(arg1: PCWSTR) -> PWSTR;
-}
-unsafe extern "system" {
-    pub fn pSetupGetVersionInfoFromImage(arg1: LPWSTR, arg2: PULARGE_INTEGER, arg3: LPWORD)
-        -> BOOL;
-}
-unsafe extern "system" {
-    pub fn pSetupGuidFromString(arg1: PCWSTR, arg2: LPGUID) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn pSetupIsGuidNull(arg1: LPGUID) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn pSetupIsUserAdmin() -> BOOL;
-}
-unsafe extern "system" {
-    pub fn pSetupMultiByteToUnicode(arg1: PCSTR, arg2: UINT) -> PWSTR;
 }
 unsafe extern "system" {
     pub fn pSetupOpenAndMapForRead(
@@ -18826,81 +19799,6 @@ unsafe extern "system" {
         arg4: PHANDLE,
         arg5: *mut PVOID,
     ) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn pSetupStringFromGuid(arg1: LPGUID, arg2: PWSTR, arg3: DWORD) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableAddString(arg1: HSTRING_TABLE, arg2: LPWSTR, arg3: DWORD) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableAddStringEx(
-        arg1: HSTRING_TABLE,
-        arg2: LPWSTR,
-        arg3: DWORD,
-        arg4: LPVOID,
-        arg5: DWORD,
-    ) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableDestroy(arg1: HSTRING_TABLE);
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableDuplicate(arg1: HSTRING_TABLE) -> HSTRING_TABLE;
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableGetExtraData(
-        arg1: HSTRING_TABLE,
-        arg2: DWORD,
-        arg3: LPVOID,
-        arg4: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableInitialize() -> HSTRING_TABLE;
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableInitializeEx(arg1: DWORD, arg2: DWORD) -> HSTRING_TABLE;
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableLookUpString(arg1: HSTRING_TABLE, arg2: LPWSTR, arg3: DWORD) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableLookUpStringEx(
-        arg1: HSTRING_TABLE,
-        arg2: LPWSTR,
-        arg3: DWORD,
-        arg4: LPVOID,
-        arg5: DWORD,
-    ) -> DWORD;
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableSetExtraData(
-        arg1: HSTRING_TABLE,
-        arg2: DWORD,
-        arg3: LPVOID,
-        arg4: DWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableStringFromId(arg1: HSTRING_TABLE, arg2: DWORD) -> LPWSTR;
-}
-unsafe extern "system" {
-    pub fn pSetupStringTableStringFromIdEx(
-        arg1: HSTRING_TABLE,
-        arg2: DWORD,
-        arg3: LPWSTR,
-        arg4: LPDWORD,
-    ) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn pSetupUnicodeToMultiByte(lpUnicodeStr: PCWSTR, uCodePage: UINT) -> PSTR;
-}
-unsafe extern "system" {
-    pub fn pSetupUnmapAndCloseFile(arg1: HANDLE, arg2: HANDLE, arg3: PVOID) -> BOOL;
-}
-unsafe extern "system" {
-    pub fn TakeOwnershipOfFile(arg1: PCWSTR) -> DWORD;
 }
 unsafe extern "system" {
     pub fn UnicodeToMultiByte(lpUnicodeStr: PCWSTR, uCodePage: UINT) -> PSTR;
@@ -20361,6 +21259,7 @@ pub type PCUIDLIST_RELATIVE = *const ITEMIDLIST_RELATIVE;
 pub type PCUIDLIST_RELATIVE_ARRAY = *const PCUIDLIST_RELATIVE;
 pub type PIDLIST_ABSOLUTE = *mut ITEMIDLIST_ABSOLUTE;
 pub type PCIDLIST_ABSOLUTE = *const ITEMIDLIST_ABSOLUTE;
+pub type PCIDLIST_ABSOLUTE_ARRAY = *const PCIDLIST_ABSOLUTE;
 pub type PITEMID_CHILD = *mut ITEMID_CHILD;
 pub type PUITEMID_CHILD = *mut ITEMID_CHILD;
 pub type PCUITEMID_CHILD = *const ITEMID_CHILD;
@@ -20387,6 +21286,235 @@ pub struct __WIDL_shtypes_generated_name_0000000C {
     pub str_: STRRET,
 }
 pub type SHELLDETAILS = __WIDL_shtypes_generated_name_0000000C;
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub struct _COMDLG_FILTERSPEC {
+    pub pszName: LPCWSTR,
+    pub pszSpec: LPCWSTR,
+}
+pub type COMDLG_FILTERSPEC = _COMDLG_FILTERSPEC;
+pub type SHCOLSTATEF = DWORD;
+pub type KNOWNFOLDERID = GUID;
+pub type FOLDERTYPEID = GUID;
+#[repr(C)]
+#[derive(Debug)]
+pub struct ExplorerBrowser {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct FileOpenDialog {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct FileSaveDialog {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct NamespaceTreeControl {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct KnownFolderManager {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct ApplicationAssociationRegistration {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct ShellLink {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct TaskbarList {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct DestinationList {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct EnumerableObjectCollection {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct QueryCancelAutoPlay {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct ShellItem {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct ApplicationActivationManager {
+    _unused: [u8; 0],
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct UserNotification {
+    _unused: [u8; 0],
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IPropertyStoreVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyStore, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyStore) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyStore) -> ULONG>,
+    pub GetCount: ::core::option::Option< unsafe extern "system" fn(This: *mut IPropertyStore, cProps: *mut DWORD) -> HRESULT, >,
+    pub GetAt: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyStore, iProp: DWORD, pkey: *mut PROPERTYKEY, ) -> HRESULT, >,
+    pub GetValue: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyStore, key: *const PROPERTYKEY, pv: *mut PROPVARIANT, ) -> HRESULT, >,
+    pub SetValue: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyStore, key: *const PROPERTYKEY, propvar: *const PROPVARIANT, ) -> HRESULT, >,
+    pub Commit: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyStore) -> HRESULT>,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPropertyStore {
+    pub lpVtbl: *mut IPropertyStoreVtbl,
+}
+pub const GETPROPERTYSTOREFLAGS_GPS_DEFAULT: GETPROPERTYSTOREFLAGS = 0;
+pub const GETPROPERTYSTOREFLAGS_GPS_HANDLERPROPERTIESONLY: GETPROPERTYSTOREFLAGS = 1;
+pub const GETPROPERTYSTOREFLAGS_GPS_READWRITE: GETPROPERTYSTOREFLAGS = 2;
+pub const GETPROPERTYSTOREFLAGS_GPS_TEMPORARY: GETPROPERTYSTOREFLAGS = 4;
+pub const GETPROPERTYSTOREFLAGS_GPS_FASTPROPERTIESONLY: GETPROPERTYSTOREFLAGS = 8;
+pub const GETPROPERTYSTOREFLAGS_GPS_OPENSLOWITEM: GETPROPERTYSTOREFLAGS = 16;
+pub const GETPROPERTYSTOREFLAGS_GPS_DELAYCREATION: GETPROPERTYSTOREFLAGS = 32;
+pub const GETPROPERTYSTOREFLAGS_GPS_BESTEFFORT: GETPROPERTYSTOREFLAGS = 64;
+pub const GETPROPERTYSTOREFLAGS_GPS_NO_OPLOCK: GETPROPERTYSTOREFLAGS = 128;
+pub const GETPROPERTYSTOREFLAGS_GPS_MASK_VALID: GETPROPERTYSTOREFLAGS = 255;
+pub type GETPROPERTYSTOREFLAGS = ::core::ffi::c_uint;
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IPropertyChangeVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyChange, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyChange) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPropertyChange) -> ULONG>,
+    pub SetPropertyKey: ::core::option::Option< unsafe extern "system" fn(This: *mut IPropertyChange, key: *const PROPERTYKEY) -> HRESULT, >,
+    pub GetPropertyKey: ::core::option::Option< unsafe extern "system" fn(This: *mut IPropertyChange, key: *mut PROPERTYKEY) -> HRESULT, >,
+    pub ApplyToPropVariant: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyChange, propvarin: *const PROPVARIANT, propvarout: *mut PROPVARIANT, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPropertyChange {
+    pub lpVtbl: *mut IPropertyChangeVtbl,
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IPropertyChangeArrayVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyChangeArray, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IPropertyChangeArray) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IPropertyChangeArray) -> ULONG, >,
+    pub GetCount: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyChangeArray, pcOperations: *mut UINT, ) -> HRESULT, >,
+    pub GetAt: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyChangeArray, iIndex: UINT, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub InsertAt: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyChangeArray, iIndex: UINT, ppropChange: *mut IPropertyChange, ) -> HRESULT, >,
+    pub Append: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyChangeArray, ppropChange: *mut IPropertyChange, ) -> HRESULT, >,
+    pub AppendOrReplace: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyChangeArray, ppropChange: *mut IPropertyChange, ) -> HRESULT, >,
+    pub RemoveAt: ::core::option::Option< unsafe extern "system" fn(This: *mut IPropertyChangeArray, iIndex: UINT) -> HRESULT, >,
+    pub IsKeyInArray: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyChangeArray, key: *const PROPERTYKEY, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPropertyChangeArray {
+    pub lpVtbl: *mut IPropertyChangeArrayVtbl,
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IPropertyDescriptionListVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyDescriptionList, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IPropertyDescriptionList) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IPropertyDescriptionList) -> ULONG, >,
+    pub GetCount: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyDescriptionList, pcelem: *mut UINT, ) -> HRESULT, >,
+    pub GetAt: ::core::option::Option< unsafe extern "system" fn( This: *mut IPropertyDescriptionList, iElem: UINT, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPropertyDescriptionList {
+    pub lpVtbl: *mut IPropertyDescriptionListVtbl,
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IObjectArrayVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IObjectArray, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IObjectArray) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IObjectArray) -> ULONG>,
+    pub GetCount: ::core::option::Option< unsafe extern "system" fn(This: *mut IObjectArray, pcObjects: *mut UINT) -> HRESULT, >,
+    pub GetAt: ::core::option::Option< unsafe extern "system" fn( This: *mut IObjectArray, uiIndex: UINT, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IObjectArray {
+    pub lpVtbl: *mut IObjectArrayVtbl,
+}
+pub type LPPERSISTFOLDER = *mut IPersistFolder;
+unsafe extern "C" {
+    pub static IID_IPersistFolder: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IPersistFolderVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFolder, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFolder) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFolder) -> ULONG>,
+    pub GetClassID: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFolder, pClassID: *mut CLSID) -> HRESULT, >,
+    pub Initialize: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFolder, pidl: PCIDLIST_ABSOLUTE) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersistFolder {
+    pub lpVtbl: *mut IPersistFolderVtbl,
+}
+pub type LPPERSISTFOLDER2 = *mut IPersistFolder2;
+unsafe extern "C" {
+    pub static IID_IPersistFolder2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IPersistFolder2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFolder2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFolder2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFolder2) -> ULONG>,
+    pub GetClassID: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFolder2, pClassID: *mut CLSID) -> HRESULT, >,
+    pub Initialize: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFolder2, pidl: PCIDLIST_ABSOLUTE) -> HRESULT, >,
+    pub GetCurFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFolder2, ppidl: *mut PIDLIST_ABSOLUTE, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersistFolder2 {
+    pub lpVtbl: *mut IPersistFolder2Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_IPersistIDList: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IPersistIDListVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistIDList, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistIDList) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistIDList) -> ULONG>,
+    pub GetClassID: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistIDList, pClassID: *mut CLSID) -> HRESULT, >,
+    pub SetIDList: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistIDList, pidl: PCIDLIST_ABSOLUTE) -> HRESULT, >,
+    pub GetIDList: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistIDList, ppidl: *mut PIDLIST_ABSOLUTE, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersistIDList {
+    pub lpVtbl: *mut IPersistIDListVtbl,
+}
+pub type LPENUMIDLIST = *mut IEnumIDList;
+unsafe extern "C" {
+    pub static IID_IEnumIDList: GUID;
+}
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct IEnumIDListVtbl {
@@ -20404,10 +21532,55 @@ pub struct IEnumIDList {
     pub lpVtbl: *mut IEnumIDListVtbl,
 }
 pub type LPFNSVADDPROPSHEETPAGE = LPFNADDPROPSHEETPAGE;
+pub const tagSHELLPROPSHEETEXTPAGEID_EXPPS_FILETYPES: tagSHELLPROPSHEETEXTPAGEID = 1;
+pub type tagSHELLPROPSHEETEXTPAGEID = ::core::ffi::c_uint;
+pub type EXPPS = UINT;
+unsafe extern "C" {
+    pub static IID_IShellPropSheetExt: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellPropSheetExtVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellPropSheetExt, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellPropSheetExt) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellPropSheetExt) -> ULONG>,
+    pub AddPages: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellPropSheetExt, pfnAddPage: LPFNSVADDPROPSHEETPAGE, lParam: LPARAM, ) -> HRESULT, >,
+    pub ReplacePage: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellPropSheetExt, uPageID: EXPPS, pfnReplaceWith: LPFNSVADDPROPSHEETPAGE, lParam: LPARAM, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellPropSheetExt {
+    pub lpVtbl: *mut IShellPropSheetExtVtbl,
+}
+pub type LPSHELLPROPSHEETEXT = *mut IShellPropSheetExt;
 pub type LPSHELLFOLDER = *mut IShellFolder;
+pub const tagSHGDN_SHGDN_NORMAL: tagSHGDN = 0;
+pub const tagSHGDN_SHGDN_INFOLDER: tagSHGDN = 1;
+pub const tagSHGDN_SHGDN_FOREDITING: tagSHGDN = 4096;
+pub const tagSHGDN_SHGDN_INCLUDE_NONFILESYS: tagSHGDN = 8192;
+pub const tagSHGDN_SHGDN_FORADDRESSBAR: tagSHGDN = 16384;
+pub const tagSHGDN_SHGDN_FORPARSING: tagSHGDN = 32768;
+pub type tagSHGDN = ::core::ffi::c_uint;
+pub use self::tagSHGDN as SHGNO;
 pub type SHGDNF = DWORD;
+pub const tagSHCONTF_SHCONTF_FOLDERS: tagSHCONTF = 32;
+pub const tagSHCONTF_SHCONTF_NONFOLDERS: tagSHCONTF = 64;
+pub const tagSHCONTF_SHCONTF_INCLUDEHIDDEN: tagSHCONTF = 128;
+pub const tagSHCONTF_SHCONTF_INIT_ON_FIRST_NEXT: tagSHCONTF = 256;
+pub const tagSHCONTF_SHCONTF_NETPRINTERSRCH: tagSHCONTF = 512;
+pub const tagSHCONTF_SHCONTF_SHAREABLE: tagSHCONTF = 1024;
+pub const tagSHCONTF_SHCONTF_STORAGE: tagSHCONTF = 2048;
+pub const tagSHCONTF_SHCONTF_NAVIGATION_ENUM: tagSHCONTF = 4096;
+pub const tagSHCONTF_SHCONTF_FASTITEMS: tagSHCONTF = 8192;
+pub const tagSHCONTF_SHCONTF_FLATLIST: tagSHCONTF = 16384;
+pub const tagSHCONTF_SHCONTF_ENABLE_ASYNC: tagSHCONTF = 32768;
+pub const tagSHCONTF_SHCONTF_INCLUDESUPERHIDDEN: tagSHCONTF = 65536;
+pub type tagSHCONTF = ::core::ffi::c_uint;
 pub type SHCONTF = DWORD;
 pub type SFGAOF = ULONG;
+unsafe extern "C" {
+    pub static IID_IShellFolder: GUID;
+}
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct IShellFolderVtbl {
@@ -20430,6 +21603,125 @@ pub struct IShellFolderVtbl {
 pub struct IShellFolder {
     pub lpVtbl: *mut IShellFolderVtbl,
 }
+pub type LPENUMEXTRASEARCH = *mut IEnumExtraSearch;
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub struct __WIDL_shobjidl_generated_name_00000022 {
+    pub guidSearch: GUID,
+    pub wszFriendlyName: [WCHAR; 80usize],
+    pub wszUrl: [WCHAR; 2084usize],
+}
+pub type EXTRASEARCH = __WIDL_shobjidl_generated_name_00000022;
+pub type LPEXTRASEARCH = *mut __WIDL_shobjidl_generated_name_00000022;
+unsafe extern "C" {
+    pub static IID_IEnumExtraSearch: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IEnumExtraSearchVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumExtraSearch, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumExtraSearch) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumExtraSearch) -> ULONG>,
+    pub Next: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumExtraSearch, celt: ULONG, rgelt: *mut EXTRASEARCH, pceltFetched: *mut ULONG, ) -> HRESULT, >,
+    pub Skip: ::core::option::Option< unsafe extern "system" fn(This: *mut IEnumExtraSearch, celt: ULONG) -> HRESULT, >,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumExtraSearch) -> HRESULT>,
+    pub Clone: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumExtraSearch, ppenum: *mut *mut IEnumExtraSearch, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IEnumExtraSearch {
+    pub lpVtbl: *mut IEnumExtraSearchVtbl,
+}
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub struct __WIDL_shobjidl_generated_name_00000023 {
+    pub fmtid: GUID,
+    pub pid: DWORD,
+}
+pub type SHCOLUMNID = __WIDL_shobjidl_generated_name_00000023;
+pub type LPSHCOLUMNID = *mut __WIDL_shobjidl_generated_name_00000023;
+pub type LPCSHCOLUMNID = *const SHCOLUMNID;
+unsafe extern "C" {
+    pub static IID_IShellFolder2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellFolder2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellFolder2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellFolder2) -> ULONG>,
+    pub ParseDisplayName: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, hwndOwner: HWND, pbcReserved: LPBC, lpszDisplayName: LPOLESTR, pchEaten: *mut ULONG, ppidl: *mut PIDLIST_RELATIVE, pdwAttributes: *mut ULONG, ) -> HRESULT, >,
+    pub EnumObjects: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, hwndOwner: HWND, grfFlags: SHCONTF, ppenumIDList: *mut *mut IEnumIDList, ) -> HRESULT, >,
+    pub BindToObject: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, pidl: PCUIDLIST_RELATIVE, pbcReserved: LPBC, riid: *const IID, ppvOut: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub BindToStorage: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, pidl: PCUIDLIST_RELATIVE, pbcReserved: LPBC, riid: *const IID, ppvObj: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub CompareIDs: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, lParam: LPARAM, pidl1: PCUIDLIST_RELATIVE, pidl2: PCUIDLIST_RELATIVE, ) -> HRESULT, >,
+    pub CreateViewObject: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, hwndOwner: HWND, riid: *const IID, ppvOut: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetAttributesOf: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, cidl: UINT, apidl: PCUITEMID_CHILD_ARRAY, rgfInOut: *mut SFGAOF, ) -> HRESULT, >,
+    pub GetUIObjectOf: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, hwndOwner: HWND, cidl: UINT, apidl: PCUITEMID_CHILD_ARRAY, riid: *const IID, prgfInOut: *mut UINT, ppvOut: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetDisplayNameOf: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, pidl: PCUITEMID_CHILD, uFlags: SHGDNF, lpName: *mut STRRET, ) -> HRESULT, >,
+    pub SetNameOf: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, hwnd: HWND, pidl: PCUITEMID_CHILD, lpszName: LPCOLESTR, uFlags: SHGDNF, ppidlOut: *mut PITEMID_CHILD, ) -> HRESULT, >,
+    pub GetDefaultSearchGUID: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellFolder2, lpguid: *mut GUID) -> HRESULT, >,
+    pub EnumSearches: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, ppenum: *mut *mut IEnumExtraSearch, ) -> HRESULT, >,
+    pub GetDefaultColumn: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, dwReserved: DWORD, pSort: *mut ULONG, pDisplay: *mut ULONG, ) -> HRESULT, >,
+    pub GetDefaultColumnState: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, iColumn: UINT, pcsFlags: *mut SHCOLSTATEF, ) -> HRESULT, >,
+    pub GetDetailsEx: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, pidl: PCUITEMID_CHILD, pscid: *const SHCOLUMNID, pv: *mut VARIANT, ) -> HRESULT, >,
+    pub GetDetailsOf: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, pidl: PCUITEMID_CHILD, iColumn: UINT, psd: *mut SHELLDETAILS, ) -> HRESULT, >,
+    pub MapColumnToSCID: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellFolder2, iColumn: UINT, pscid: *mut SHCOLUMNID, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellFolder2 {
+    pub lpVtbl: *mut IShellFolder2Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_IParentAndItem: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IParentAndItemVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IParentAndItem, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IParentAndItem) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IParentAndItem) -> ULONG>,
+    pub SetParentAndItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IParentAndItem, parent: PCIDLIST_ABSOLUTE, folder: *mut IShellFolder, child: PCUITEMID_CHILD, ) -> HRESULT, >,
+    pub GetParentAndItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IParentAndItem, parent: *mut PIDLIST_ABSOLUTE, folder: *mut *mut IShellFolder, child: *mut PITEMID_CHILD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IParentAndItem {
+    pub lpVtbl: *mut IParentAndItemVtbl,
+}
+unsafe extern "system" {
+    pub fn IParentAndItem_RemoteGetParentAndItem_Proxy(
+        This: *mut IParentAndItem,
+        parent: *mut PIDLIST_ABSOLUTE,
+        folder: *mut *mut IShellFolder,
+        child: *mut PITEMID_CHILD,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IParentAndItem_RemoteGetParentAndItem_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IParentAndItem_GetParentAndItem_Proxy(
+        This: *mut IParentAndItem,
+        parent: *mut PIDLIST_ABSOLUTE,
+        folder: *mut *mut IShellFolder,
+        child: *mut PITEMID_CHILD,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IParentAndItem_GetParentAndItem_Stub(
+        This: *mut IParentAndItem,
+        parent: *mut PIDLIST_ABSOLUTE,
+        folder: *mut *mut IShellFolder,
+        child: *mut PITEMID_CHILD,
+    ) -> HRESULT;
+}
 pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_NORMALDISPLAY:
     __WIDL_shobjidl_generated_name_00000024 = 0;
 pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_PARENTRELATIVEPARSING:
@@ -20450,7 +21742,15 @@ pub const __WIDL_shobjidl_generated_name_00000024_SIGDN_PARENTRELATIVE:
     __WIDL_shobjidl_generated_name_00000024 = 2148007937;
 pub type __WIDL_shobjidl_generated_name_00000024 = ::core::ffi::c_uint;
 pub use self::__WIDL_shobjidl_generated_name_00000024 as SIGDN;
+pub const _SICHINTF_SICHINT_DISPLAY: _SICHINTF = 0;
+pub const _SICHINTF_SICHINT_CANONICAL: _SICHINTF = 268435456;
+pub const _SICHINTF_SICHINT_TEST_FILESYSPATH_IF_NOT_EQUAL: _SICHINTF = 536870912;
+pub const _SICHINTF_SICHINT_ALLFIELDS: _SICHINTF = 2147483648;
+pub type _SICHINTF = ::core::ffi::c_uint;
 pub type SICHINTF = DWORD;
+unsafe extern "C" {
+    pub static IID_IShellItem: GUID;
+}
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct IShellItemVtbl {
@@ -20468,6 +21768,322 @@ pub struct IShellItemVtbl {
 pub struct IShellItem {
     pub lpVtbl: *mut IShellItemVtbl,
 }
+unsafe extern "C" {
+    pub static IID_IShellItem2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellItem2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellItem2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellItem2) -> ULONG>,
+    pub BindToHandler: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, pbc: *mut IBindCtx, rbhid: *const GUID, riid: *const IID, ppvOut: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetParent: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellItem2, ppsi: *mut *mut IShellItem) -> HRESULT, >,
+    pub GetDisplayName: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, sigdnName: SIGDN, ppszName: *mut LPWSTR, ) -> HRESULT, >,
+    pub GetAttributes: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, sfgaoMask: SFGAOF, psfgaoAttribs: *mut SFGAOF, ) -> HRESULT, >,
+    pub Compare: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, psi: *mut IShellItem, hint: SICHINTF, piOrder: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetPropertyStore: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, flags: GETPROPERTYSTOREFLAGS, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetPropertyStoreWithCreateObject: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, flags: GETPROPERTYSTOREFLAGS, punkCreateObject: *mut IUnknown, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetPropertyStoreForKeys: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, rgKeys: *const PROPERTYKEY, cKeys: UINT, flags: GETPROPERTYSTOREFLAGS, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetPropertyDescriptionList: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, keyType: *const PROPERTYKEY, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub Update: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellItem2, pbc: *mut IBindCtx) -> HRESULT, >,
+    pub GetProperty: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, key: *const PROPERTYKEY, ppropvar: *mut PROPVARIANT, ) -> HRESULT, >,
+    pub GetCLSID: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, key: *const PROPERTYKEY, pclsid: *mut CLSID, ) -> HRESULT, >,
+    pub GetFileTime: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, key: *const PROPERTYKEY, pft: *mut FILETIME, ) -> HRESULT, >,
+    pub GetInt32: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, key: *const PROPERTYKEY, pi: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetString: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, key: *const PROPERTYKEY, ppsz: *mut LPWSTR, ) -> HRESULT, >,
+    pub GetUInt32: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, key: *const PROPERTYKEY, pui: *mut ULONG, ) -> HRESULT, >,
+    pub GetUInt64: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, key: *const PROPERTYKEY, pull: *mut ULONGLONG, ) -> HRESULT, >,
+    pub GetBool: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItem2, key: *const PROPERTYKEY, pf: *mut BOOL, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellItem2 {
+    pub lpVtbl: *mut IShellItem2Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_IRelatedItem: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IRelatedItemVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRelatedItem, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRelatedItem) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRelatedItem) -> ULONG>,
+    pub GetItemIDList: ::core::option::Option< unsafe extern "system" fn( This: *mut IRelatedItem, ppidl: *mut PIDLIST_ABSOLUTE, ) -> HRESULT, >,
+    pub GetItem: ::core::option::Option< unsafe extern "system" fn(This: *mut IRelatedItem, ppsi: *mut *mut IShellItem) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRelatedItem {
+    pub lpVtbl: *mut IRelatedItemVtbl,
+}
+pub const tagNWMF_NWMF_UNLOADING: tagNWMF = 1;
+pub const tagNWMF_NWMF_USERINITED: tagNWMF = 2;
+pub const tagNWMF_NWMF_FIRST: tagNWMF = 4;
+pub const tagNWMF_NWMF_OVERRIDEKEY: tagNWMF = 8;
+pub const tagNWMF_NWMF_SHOWHELP: tagNWMF = 16;
+pub const tagNWMF_NWMF_HTMLDIALOG: tagNWMF = 32;
+pub const tagNWMF_NWMF_FROMDIALOGCHILD: tagNWMF = 64;
+pub const tagNWMF_NWMF_USERREQUESTED: tagNWMF = 128;
+pub const tagNWMF_NWMF_USERALLOWED: tagNWMF = 256;
+pub type tagNWMF = ::core::ffi::c_uint;
+pub use self::tagNWMF as NWMF;
+unsafe extern "C" {
+    pub static IID_INewWindowManager: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct INewWindowManagerVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut INewWindowManager, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut INewWindowManager) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut INewWindowManager) -> ULONG>,
+    pub EvaluateNewWindow: ::core::option::Option< unsafe extern "system" fn( This: *mut INewWindowManager, pszUrl: LPCWSTR, pszName: LPCWSTR, pszUrlContext: LPCWSTR, pszFeatures: LPCWSTR, fReplace: BOOL, dwFlags: DWORD, dwUserActionTime: DWORD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct INewWindowManager {
+    pub lpVtbl: *mut INewWindowManagerVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IEnumShellItems: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IEnumShellItemsVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumShellItems, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumShellItems) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumShellItems) -> ULONG>,
+    pub Next: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumShellItems, celt: ULONG, rgelt: *mut *mut IShellItem, pceltFetched: *mut ULONG, ) -> HRESULT, >,
+    pub Skip: ::core::option::Option< unsafe extern "system" fn(This: *mut IEnumShellItems, celt: ULONG) -> HRESULT, >,
+    pub Reset: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumShellItems) -> HRESULT>,
+    pub Clone: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumShellItems, ppenum: *mut *mut IEnumShellItems, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IEnumShellItems {
+    pub lpVtbl: *mut IEnumShellItemsVtbl,
+}
+unsafe extern "system" {
+    pub fn IEnumShellItems_RemoteNext_Proxy(
+        This: *mut IEnumShellItems,
+        celt: ULONG,
+        rgelt: *mut *mut IShellItem,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumShellItems_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IEnumShellItems_Next_Proxy(
+        This: *mut IEnumShellItems,
+        celt: ULONG,
+        rgelt: *mut *mut IShellItem,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumShellItems_Next_Stub(
+        This: *mut IEnumShellItems,
+        celt: ULONG,
+        rgelt: *mut *mut IShellItem,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+pub const SIATTRIBFLAGS_SIATTRIBFLAGS_AND: SIATTRIBFLAGS = 1;
+pub const SIATTRIBFLAGS_SIATTRIBFLAGS_OR: SIATTRIBFLAGS = 2;
+pub const SIATTRIBFLAGS_SIATTRIBFLAGS_APPCOMPAT: SIATTRIBFLAGS = 3;
+pub const SIATTRIBFLAGS_SIATTRIBFLAGS_MASK: SIATTRIBFLAGS = 3;
+pub const SIATTRIBFLAGS_SIATTRIBFLAGS_ALLITEMS: SIATTRIBFLAGS = 16384;
+pub type SIATTRIBFLAGS = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IShellItemArray: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellItemArrayVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItemArray, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellItemArray) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellItemArray) -> ULONG>,
+    pub BindToHandler: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItemArray, pbc: *mut IBindCtx, bhid: *const GUID, riid: *const IID, ppvOut: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetPropertyStore: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItemArray, flags: GETPROPERTYSTOREFLAGS, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetPropertyDescriptionList: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItemArray, keyType: *const PROPERTYKEY, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetAttributes: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItemArray, AttribFlags: SIATTRIBFLAGS, sfgaoMask: SFGAOF, psfgaoAttribs: *mut SFGAOF, ) -> HRESULT, >,
+    pub GetCount: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellItemArray, pdwNumItems: *mut DWORD) -> HRESULT, >,
+    pub GetItemAt: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItemArray, dwIndex: DWORD, ppsi: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub EnumItems: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItemArray, ppenumShellItems: *mut *mut IEnumShellItems, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellItemArray {
+    pub lpVtbl: *mut IShellItemArrayVtbl,
+}
+pub const DATAOBJ_GET_ITEM_FLAGS_DOGIF_DEFAULT: DATAOBJ_GET_ITEM_FLAGS = 0;
+pub const DATAOBJ_GET_ITEM_FLAGS_DOGIF_TRAVERSE_LINK: DATAOBJ_GET_ITEM_FLAGS = 1;
+pub const DATAOBJ_GET_ITEM_FLAGS_DOGIF_NO_HDROP: DATAOBJ_GET_ITEM_FLAGS = 2;
+pub const DATAOBJ_GET_ITEM_FLAGS_DOGIF_NO_URL: DATAOBJ_GET_ITEM_FLAGS = 4;
+pub const DATAOBJ_GET_ITEM_FLAGS_DOGIF_ONLY_IF_ONE: DATAOBJ_GET_ITEM_FLAGS = 8;
+pub type DATAOBJ_GET_ITEM_FLAGS = ::core::ffi::c_uint;
+unsafe extern "system" {
+    pub fn SHGetNameFromIDList(
+        pidl: PCIDLIST_ABSOLUTE,
+        sigdnName: SIGDN,
+        ppszName: *mut PWSTR,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn SHCreateItemFromParsingName(
+        pszPath: PCWSTR,
+        pbc: *mut IBindCtx,
+        riid: *const IID,
+        ppv: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn SHCreateItemFromIDList(
+        pidl: PCIDLIST_ABSOLUTE,
+        riid: *const IID,
+        ppv: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn SHGetItemFromDataObject(
+        pdtobj: *mut IDataObject,
+        dwFlags: DATAOBJ_GET_ITEM_FLAGS,
+        riid: *const IID,
+        ppv: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn SHGetIDListFromObject(punk: *mut IUnknown, ppidl: *mut PIDLIST_ABSOLUTE) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn SHGetItemFromObject(
+        punk: *mut IUnknown,
+        riid: *const IID,
+        ppv: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn SHCreateShellItemArray(
+        pidlParent: PCIDLIST_ABSOLUTE,
+        psf: *mut IShellFolder,
+        cidl: UINT,
+        ppidl: PCUITEMID_CHILD_ARRAY,
+        ppsiItemArray: *mut *mut IShellItemArray,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn SHCreateShellItemArrayFromShellItem(
+        psi: *mut IShellItem,
+        riid: *const IID,
+        ppv: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn SHCreateShellItemArrayFromIDLists(
+        cidl: UINT,
+        pidl_array: PCIDLIST_ABSOLUTE_ARRAY,
+        psia: *mut *mut IShellItemArray,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn SHCreateShellItemArrayFromDataObject(
+        pdo: *mut IDataObject,
+        riid: *const IID,
+        ppv: *mut *mut ::core::ffi::c_void,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_IShellItemFilter: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellItemFilterVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItemFilter, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellItemFilter) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellItemFilter) -> ULONG>,
+    pub IncludeItem: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellItemFilter, psi: *mut IShellItem) -> HRESULT, >,
+    pub GetEnumFlagsForItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellItemFilter, psi: *mut IShellItem, pgrfFlags: *mut SHCONTF, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellItemFilter {
+    pub lpVtbl: *mut IShellItemFilterVtbl,
+}
+pub type LPVIEWSETTINGS = *mut ::core::ffi::c_char;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_AUTOARRANGE:
+    __WIDL_shobjidl_generated_name_00000025 = 1;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_ABBREVIATEDNAMES:
+    __WIDL_shobjidl_generated_name_00000025 = 2;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_SNAPTOGRID:
+    __WIDL_shobjidl_generated_name_00000025 = 4;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_OWNERDATA:
+    __WIDL_shobjidl_generated_name_00000025 = 8;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_BESTFITWINDOW:
+    __WIDL_shobjidl_generated_name_00000025 = 16;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_DESKTOP:
+    __WIDL_shobjidl_generated_name_00000025 = 32;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_SINGLESEL:
+    __WIDL_shobjidl_generated_name_00000025 = 64;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOSUBFOLDERS:
+    __WIDL_shobjidl_generated_name_00000025 = 128;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_TRANSPARENT:
+    __WIDL_shobjidl_generated_name_00000025 = 256;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOCLIENTEDGE:
+    __WIDL_shobjidl_generated_name_00000025 = 512;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOSCROLL:
+    __WIDL_shobjidl_generated_name_00000025 = 1024;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_ALIGNLEFT:
+    __WIDL_shobjidl_generated_name_00000025 = 2048;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOICONS:
+    __WIDL_shobjidl_generated_name_00000025 = 4096;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_SHOWSELALWAYS:
+    __WIDL_shobjidl_generated_name_00000025 = 8192;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOVISIBLE:
+    __WIDL_shobjidl_generated_name_00000025 = 16384;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_SINGLECLICKACTIVATE:
+    __WIDL_shobjidl_generated_name_00000025 = 32768;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOWEBVIEW:
+    __WIDL_shobjidl_generated_name_00000025 = 65536;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_HIDEFILENAMES:
+    __WIDL_shobjidl_generated_name_00000025 = 131072;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_CHECKSELECT:
+    __WIDL_shobjidl_generated_name_00000025 = 262144;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOENUMREFRESH:
+    __WIDL_shobjidl_generated_name_00000025 = 524288;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOGROUPING:
+    __WIDL_shobjidl_generated_name_00000025 = 1048576;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_FULLROWSELECT:
+    __WIDL_shobjidl_generated_name_00000025 = 2097152;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOFILTERS:
+    __WIDL_shobjidl_generated_name_00000025 = 4194304;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOCOLUMNHEADER:
+    __WIDL_shobjidl_generated_name_00000025 = 8388608;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOHEADERINALLVIEWS:
+    __WIDL_shobjidl_generated_name_00000025 = 16777216;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_EXTENDEDTILES:
+    __WIDL_shobjidl_generated_name_00000025 = 33554432;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_TRICHECKSELECT:
+    __WIDL_shobjidl_generated_name_00000025 = 67108864;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_AUTOCHECKSELECT:
+    __WIDL_shobjidl_generated_name_00000025 = 134217728;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_NOBROWSERVIEWSTATE:
+    __WIDL_shobjidl_generated_name_00000025 = 268435456;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_SUBSETGROUPS:
+    __WIDL_shobjidl_generated_name_00000025 = 536870912;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_USESEARCHFOLDER:
+    __WIDL_shobjidl_generated_name_00000025 = 1073741824;
+pub const __WIDL_shobjidl_generated_name_00000025_FWF_ALLOWRTLREADING:
+    __WIDL_shobjidl_generated_name_00000025 = 2147483648;
+pub type __WIDL_shobjidl_generated_name_00000025 = ::core::ffi::c_uint;
+pub use self::__WIDL_shobjidl_generated_name_00000025 as FOLDERFLAGS;
 pub const __WIDL_shobjidl_generated_name_00000026_FVM_AUTO:
     __WIDL_shobjidl_generated_name_00000026 = -1;
 pub const __WIDL_shobjidl_generated_name_00000026_FVM_ICON:
@@ -20499,9 +22115,54 @@ pub struct __WIDL_shobjidl_generated_name_00000027 {
     pub fFlags: UINT,
 }
 pub type FOLDERSETTINGS = __WIDL_shobjidl_generated_name_00000027;
+pub type PFOLDERSETTINGS = *mut __WIDL_shobjidl_generated_name_00000027;
 pub type LPFOLDERSETTINGS = *mut __WIDL_shobjidl_generated_name_00000027;
 pub type LPCFOLDERSETTINGS = *const FOLDERSETTINGS;
+unsafe extern "C" {
+    pub static IID_IShellIcon: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellIconVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellIcon, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellIcon) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellIcon) -> ULONG>,
+    pub GetIconOf: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellIcon, pidl: PCUITEMID_CHILD, flags: UINT, pIconIndex: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellIcon {
+    pub lpVtbl: *mut IShellIconVtbl,
+}
+pub type LPSHELLVIEW = *mut IShellView;
 pub type SVSIF = UINT;
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_BACKGROUND:
+    __WIDL_shobjidl_generated_name_00000028 = 0;
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_SELECTION:
+    __WIDL_shobjidl_generated_name_00000028 = 1;
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_ALLVIEW:
+    __WIDL_shobjidl_generated_name_00000028 = 2;
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_CHECKED:
+    __WIDL_shobjidl_generated_name_00000028 = 3;
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_TYPE_MASK:
+    __WIDL_shobjidl_generated_name_00000028 = 15;
+pub const __WIDL_shobjidl_generated_name_00000028_SVGIO_FLAG_VIEWORDER:
+    __WIDL_shobjidl_generated_name_00000028 = 2147483648;
+pub type __WIDL_shobjidl_generated_name_00000028 = ::core::ffi::c_uint;
+pub use self::__WIDL_shobjidl_generated_name_00000028 as SVGIO;
+pub const __WIDL_shobjidl_generated_name_00000029_SVUIA_DEACTIVATE:
+    __WIDL_shobjidl_generated_name_00000029 = 0;
+pub const __WIDL_shobjidl_generated_name_00000029_SVUIA_ACTIVATE_NOFOCUS:
+    __WIDL_shobjidl_generated_name_00000029 = 1;
+pub const __WIDL_shobjidl_generated_name_00000029_SVUIA_ACTIVATE_FOCUS:
+    __WIDL_shobjidl_generated_name_00000029 = 2;
+pub const __WIDL_shobjidl_generated_name_00000029_SVUIA_INPLACEACTIVATE:
+    __WIDL_shobjidl_generated_name_00000029 = 3;
+pub type __WIDL_shobjidl_generated_name_00000029 = ::core::ffi::c_uint;
+pub use self::__WIDL_shobjidl_generated_name_00000029 as SVUIA_STATUS;
+unsafe extern "C" {
+    pub static IID_IShellView: GUID;
+}
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct IShellViewVtbl {
@@ -20528,7 +22189,219 @@ pub struct IShellView {
     pub lpVtbl: *mut IShellViewVtbl,
 }
 pub type SHELLVIEWID = GUID;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _SV2CVW2_PARAMS {
+    pub cbSize: DWORD,
+    pub psvPrev: *mut IShellView,
+    pub pfs: LPCFOLDERSETTINGS,
+    pub psbOwner: *mut IShellBrowser,
+    pub prcView: *mut RECT,
+    pub pvid: *const SHELLVIEWID,
+    pub hwndView: HWND,
+}
+pub type SV2CVW2_PARAMS = _SV2CVW2_PARAMS;
+pub type LPSV2CVW2_PARAMS = *mut _SV2CVW2_PARAMS;
+unsafe extern "C" {
+    pub static IID_IShellView2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellView2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellView2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellView2) -> ULONG>,
+    pub GetWindow: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView2, phwnd: *mut HWND) -> HRESULT, >,
+    pub ContextSensitiveHelp: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView2, fEnterMode: BOOL) -> HRESULT, >,
+    pub TranslateAcceleratorW: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView2, pmsg: *mut MSG) -> HRESULT, >,
+    pub EnableModeless: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView2, fEnable: BOOL) -> HRESULT, >,
+    pub UIActivate: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView2, uState: UINT) -> HRESULT, >,
+    pub Refresh: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellView2) -> HRESULT>,
+    pub CreateViewWindow: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView2, psvPrevious: *mut IShellView, lpfs: LPCFOLDERSETTINGS, psb: *mut IShellBrowser, prcView: *mut RECT, phWnd: *mut HWND, ) -> HRESULT, >,
+    pub DestroyViewWindow: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellView2) -> HRESULT>,
+    pub GetCurrentInfo: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView2, lpfs: LPFOLDERSETTINGS) -> HRESULT, >,
+    pub AddPropertySheetPages: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView2, dwReserved: DWORD, pfn: LPFNSVADDPROPSHEETPAGE, lparam: LPARAM, ) -> HRESULT, >,
+    pub SaveViewState: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellView2) -> HRESULT>,
+    pub SelectItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView2, pidlItem: PCUITEMID_CHILD, uFlags: SVSIF, ) -> HRESULT, >,
+    pub GetItemObject: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView2, uItem: UINT, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetView: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView2, view_guid: *mut SHELLVIEWID, view_type: ULONG, ) -> HRESULT, >,
+    pub CreateViewWindow2: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView2, view_params: LPSV2CVW2_PARAMS, ) -> HRESULT, >,
+    pub HandleRename: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView2, new_pidl: PCUITEMID_CHILD) -> HRESULT, >,
+    pub SelectAndPositionItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView2, item: PCUITEMID_CHILD, flags: UINT, point: *mut POINT, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellView2 {
+    pub lpVtbl: *mut IShellView2Vtbl,
+}
+pub const _SV3CVW3_FLAGS_SV3CVW3_DEFAULT: _SV3CVW3_FLAGS = 0;
+pub const _SV3CVW3_FLAGS_SV3CVW3_NONINTERACTIVE: _SV3CVW3_FLAGS = 1;
+pub const _SV3CVW3_FLAGS_SV3CVW3_FORCEVIEWMODE: _SV3CVW3_FLAGS = 2;
+pub const _SV3CVW3_FLAGS_SV3CVW3_FORCEFOLDERFLAGS: _SV3CVW3_FLAGS = 4;
+pub type _SV3CVW3_FLAGS = ::core::ffi::c_uint;
+pub type SV3CVW3_FLAGS = DWORD;
+unsafe extern "C" {
+    pub static IID_IShellView3: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellView3Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView3, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellView3) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellView3) -> ULONG>,
+    pub GetWindow: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView3, phwnd: *mut HWND) -> HRESULT, >,
+    pub ContextSensitiveHelp: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView3, fEnterMode: BOOL) -> HRESULT, >,
+    pub TranslateAcceleratorW: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView3, pmsg: *mut MSG) -> HRESULT, >,
+    pub EnableModeless: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView3, fEnable: BOOL) -> HRESULT, >,
+    pub UIActivate: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView3, uState: UINT) -> HRESULT, >,
+    pub Refresh: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellView3) -> HRESULT>,
+    pub CreateViewWindow: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView3, psvPrevious: *mut IShellView, lpfs: LPCFOLDERSETTINGS, psb: *mut IShellBrowser, prcView: *mut RECT, phWnd: *mut HWND, ) -> HRESULT, >,
+    pub DestroyViewWindow: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellView3) -> HRESULT>,
+    pub GetCurrentInfo: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView3, lpfs: LPFOLDERSETTINGS) -> HRESULT, >,
+    pub AddPropertySheetPages: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView3, dwReserved: DWORD, pfn: LPFNSVADDPROPSHEETPAGE, lparam: LPARAM, ) -> HRESULT, >,
+    pub SaveViewState: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellView3) -> HRESULT>,
+    pub SelectItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView3, pidlItem: PCUITEMID_CHILD, uFlags: SVSIF, ) -> HRESULT, >,
+    pub GetItemObject: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView3, uItem: UINT, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetView: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView3, view_guid: *mut SHELLVIEWID, view_type: ULONG, ) -> HRESULT, >,
+    pub CreateViewWindow2: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView3, view_params: LPSV2CVW2_PARAMS, ) -> HRESULT, >,
+    pub HandleRename: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellView3, new_pidl: PCUITEMID_CHILD) -> HRESULT, >,
+    pub SelectAndPositionItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView3, item: PCUITEMID_CHILD, flags: UINT, point: *mut POINT, ) -> HRESULT, >,
+    pub CreateViewWindow3: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellView3, owner: *mut IShellBrowser, prev_view: *mut IShellView, view_flags: SV3CVW3_FLAGS, mask: FOLDERFLAGS, flags: FOLDERFLAGS, mode: FOLDERVIEWMODE, view_id: *const SHELLVIEWID, rect: *const RECT, hwnd: *mut HWND, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellView3 {
+    pub lpVtbl: *mut IShellView3Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_IFolderView: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFolderViewVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderView) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderView) -> ULONG>,
+    pub GetCurrentViewMode: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView, mode: *mut UINT) -> HRESULT, >,
+    pub SetCurrentViewMode: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView, mode: UINT) -> HRESULT, >,
+    pub GetFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub Item: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView, index: ::core::ffi::c_int, ppidl: *mut PITEMID_CHILD, ) -> HRESULT, >,
+    pub ItemCount: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView, flags: UINT, items: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub Items: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView, flags: UINT, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetSelectionMarkedItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView, item: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetFocusedItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView, item: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetItemPosition: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView, pidl: PCUITEMID_CHILD, ppt: *mut POINT, ) -> HRESULT, >,
+    pub GetSpacing: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView, pt: *mut POINT) -> HRESULT, >,
+    pub GetDefaultSpacing: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView, pt: *mut POINT) -> HRESULT, >,
+    pub GetAutoArrange: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderView) -> HRESULT>,
+    pub SelectItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView, item: ::core::ffi::c_int, flags: DWORD, ) -> HRESULT, >,
+    pub SelectAndPositionItems: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView, cidl: UINT, apidl: PCUITEMID_CHILD_ARRAY, apt: *mut POINT, flags: DWORD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFolderView {
+    pub lpVtbl: *mut IFolderViewVtbl,
+}
+pub const tagSORTDIRECTION_SORT_DESCENDING: tagSORTDIRECTION = -1;
+pub const tagSORTDIRECTION_SORT_ASCENDING: tagSORTDIRECTION = 1;
+pub type tagSORTDIRECTION = ::core::ffi::c_int;
+pub type SORTDIRECTION = ::core::ffi::c_int;
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub struct SORTCOLUMN {
+    pub propkey: PROPERTYKEY,
+    pub direction: SORTDIRECTION,
+}
+pub const FVTEXTTYPE_FVST_EMPTYTEXT: FVTEXTTYPE = 0;
+pub type FVTEXTTYPE = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IFolderView2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFolderView2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderView2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderView2) -> ULONG>,
+    pub GetCurrentViewMode: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView2, mode: *mut UINT) -> HRESULT, >,
+    pub SetCurrentViewMode: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView2, mode: UINT) -> HRESULT, >,
+    pub GetFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub Item: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, index: ::core::ffi::c_int, ppidl: *mut PITEMID_CHILD, ) -> HRESULT, >,
+    pub ItemCount: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, flags: UINT, items: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub Items: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, flags: UINT, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetSelectionMarkedItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, item: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetFocusedItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, item: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetItemPosition: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, pidl: PCUITEMID_CHILD, ppt: *mut POINT, ) -> HRESULT, >,
+    pub GetSpacing: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView2, pt: *mut POINT) -> HRESULT, >,
+    pub GetDefaultSpacing: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView2, pt: *mut POINT) -> HRESULT, >,
+    pub GetAutoArrange: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderView2) -> HRESULT>,
+    pub SelectItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, item: ::core::ffi::c_int, flags: DWORD, ) -> HRESULT, >,
+    pub SelectAndPositionItems: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, cidl: UINT, apidl: PCUITEMID_CHILD_ARRAY, apt: *mut POINT, flags: DWORD, ) -> HRESULT, >,
+    pub SetGroupBy: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, key: *const PROPERTYKEY, ascending: BOOL, ) -> HRESULT, >,
+    pub GetGroupBy: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, pkey: *mut PROPERTYKEY, ascending: *mut BOOL, ) -> HRESULT, >,
+    pub SetViewProperty: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, pidl: PCUITEMID_CHILD, propkey: *const PROPERTYKEY, propvar: *const PROPVARIANT, ) -> HRESULT, >,
+    pub GetViewProperty: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, pidl: PCUITEMID_CHILD, propkey: *const PROPERTYKEY, propvar: *mut PROPVARIANT, ) -> HRESULT, >,
+    pub SetTileViewProperties: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, pidl: PCUITEMID_CHILD, prop_list: LPCWSTR, ) -> HRESULT, >,
+    pub SetExtendedTileViewProperties: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, pidl: PCUITEMID_CHILD, prop_list: LPCWSTR, ) -> HRESULT, >,
+    pub SetText: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, type_: FVTEXTTYPE, text: LPCWSTR, ) -> HRESULT, >,
+    pub SetCurrentFolderFlags: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView2, mask: DWORD, flags: DWORD) -> HRESULT, >,
+    pub GetCurrentFolderFlags: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView2, flags: *mut DWORD) -> HRESULT, >,
+    pub GetSortColumnCount: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, columns: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetSortColumns: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, columns: *const SORTCOLUMN, count: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetSortColumns: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, columns: *mut SORTCOLUMN, count: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, ittem: ::core::ffi::c_int, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetVisibleItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, start: ::core::ffi::c_int, previous: BOOL, item: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetSelectedItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, start: ::core::ffi::c_int, item: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetSelection: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, none_implies_folder: BOOL, array: *mut *mut IShellItemArray, ) -> HRESULT, >,
+    pub GetSelectionState: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, pidl: PCUITEMID_CHILD, flags: *mut DWORD, ) -> HRESULT, >,
+    pub InvokeVerbOnSelection: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView2, verb: LPCSTR) -> HRESULT, >,
+    pub SetViewModeAndIconSize: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, mode: FOLDERVIEWMODE, size: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetViewModeAndIconSize: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderView2, mode: *mut FOLDERVIEWMODE, size: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetGroupSubsetCount: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView2, visible_rows: UINT) -> HRESULT, >,
+    pub GetGroupSubsetCount: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView2, visible_rows: *mut UINT) -> HRESULT, >,
+    pub SetRedraw: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderView2, redraw: BOOL) -> HRESULT, >,
+    pub IsMoveInSameFolder: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderView2) -> HRESULT>,
+    pub DoRename: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderView2) -> HRESULT>,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFolderView2 {
+    pub lpVtbl: *mut IFolderView2Vtbl,
+}
+unsafe extern "system" {
+    pub fn IFolderView2_RemoteGetGroupBy_Proxy(
+        This: *mut IFolderView2,
+        pkey: *mut PROPERTYKEY,
+        ascending: *mut BOOL,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IFolderView2_RemoteGetGroupBy_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IFolderView2_GetGroupBy_Proxy(
+        This: *mut IFolderView2,
+        pkey: *mut PROPERTYKEY,
+        ascending: *mut BOOL,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IFolderView2_GetGroupBy_Stub(
+        This: *mut IFolderView2,
+        pkey: *mut PROPERTYKEY,
+        ascending: *mut BOOL,
+    ) -> HRESULT;
+}
+pub type LPSHELLBROWSER = *mut IShellBrowser;
 pub type LPTBBUTTONSB = LPTBBUTTON;
+unsafe extern "C" {
+    pub static IID_IShellBrowser: GUID;
+}
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct IShellBrowserVtbl {
@@ -20556,6 +22429,368 @@ pub struct IShellBrowserVtbl {
 pub struct IShellBrowser {
     pub lpVtbl: *mut IShellBrowserVtbl,
 }
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NO_UI:
+    __WIDL_shobjidl_generated_name_0000002A = 1;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_ANY_MATCH:
+    __WIDL_shobjidl_generated_name_0000002A = 2;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_UPDATE:
+    __WIDL_shobjidl_generated_name_0000002A = 4;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NOUPDATE:
+    __WIDL_shobjidl_generated_name_0000002A = 8;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NOSEARCH:
+    __WIDL_shobjidl_generated_name_0000002A = 16;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NOTRACK:
+    __WIDL_shobjidl_generated_name_0000002A = 32;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NOLINKINFO:
+    __WIDL_shobjidl_generated_name_0000002A = 64;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_INVOKE_MSI:
+    __WIDL_shobjidl_generated_name_0000002A = 128;
+pub const __WIDL_shobjidl_generated_name_0000002A_SLR_NO_UI_WITH_MSG_PUMP:
+    __WIDL_shobjidl_generated_name_0000002A = 257;
+pub type __WIDL_shobjidl_generated_name_0000002A = ::core::ffi::c_uint;
+pub use self::__WIDL_shobjidl_generated_name_0000002A as SLR_FLAGS;
+pub const __WIDL_shobjidl_generated_name_0000002B_SLGP_SHORTPATH:
+    __WIDL_shobjidl_generated_name_0000002B = 1;
+pub const __WIDL_shobjidl_generated_name_0000002B_SLGP_UNCPRIORITY:
+    __WIDL_shobjidl_generated_name_0000002B = 2;
+pub const __WIDL_shobjidl_generated_name_0000002B_SLGP_RAWPATH:
+    __WIDL_shobjidl_generated_name_0000002B = 4;
+pub type __WIDL_shobjidl_generated_name_0000002B = ::core::ffi::c_uint;
+pub use self::__WIDL_shobjidl_generated_name_0000002B as SLGP_FLAGS;
+unsafe extern "C" {
+    pub static IID_IShellLinkA: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellLinkAVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkA, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellLinkA) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellLinkA) -> ULONG>,
+    pub GetPath: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkA, pszFile: LPSTR, cch: ::core::ffi::c_int, pfd: *mut WIN32_FIND_DATAA, fFlags: DWORD, ) -> HRESULT, >,
+    pub GetIDList: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkA, ppidl: *mut PIDLIST_ABSOLUTE) -> HRESULT, >,
+    pub SetIDList: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkA, pidl: PCIDLIST_ABSOLUTE) -> HRESULT, >,
+    pub GetDescription: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkA, pszName: LPSTR, cch: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetDescription: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkA, pszName: LPCSTR) -> HRESULT, >,
+    pub GetWorkingDirectory: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkA, pszDir: LPSTR, cch: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetWorkingDirectory: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkA, pszDir: LPCSTR) -> HRESULT, >,
+    pub GetArguments: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkA, pszArgs: LPSTR, cch: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetArguments: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkA, pszArgs: LPCSTR) -> HRESULT, >,
+    pub GetHotkey: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkA, pwHotkey: *mut WORD) -> HRESULT, >,
+    pub SetHotkey: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkA, wHotkey: WORD) -> HRESULT, >,
+    pub GetShowCmd: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkA, piShowCmd: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetShowCmd: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkA, iShowCmd: ::core::ffi::c_int) -> HRESULT, >,
+    pub GetIconLocation: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkA, pszIconPath: LPSTR, cch: ::core::ffi::c_int, piIcon: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetIconLocation: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkA, pszIconPath: LPCSTR, iIcon: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetRelativePath: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkA, pszPathRel: LPCSTR, dwReserved: DWORD, ) -> HRESULT, >,
+    pub Resolve: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkA, hwnd: HWND, fFlags: DWORD) -> HRESULT, >,
+    pub SetPath: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkA, pszFile: LPCSTR) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellLinkA {
+    pub lpVtbl: *mut IShellLinkAVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IShellLinkW: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellLinkWVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkW, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellLinkW) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellLinkW) -> ULONG>,
+    pub GetPath: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkW, pszFile: LPWSTR, cch: ::core::ffi::c_int, pfd: *mut WIN32_FIND_DATAW, fFlags: DWORD, ) -> HRESULT, >,
+    pub GetIDList: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkW, ppidl: *mut PIDLIST_ABSOLUTE) -> HRESULT, >,
+    pub SetIDList: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkW, pidl: PCIDLIST_ABSOLUTE) -> HRESULT, >,
+    pub GetDescription: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkW, pszName: LPWSTR, cch: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetDescription: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkW, pszName: LPCWSTR) -> HRESULT, >,
+    pub GetWorkingDirectory: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkW, pszDir: LPWSTR, cch: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetWorkingDirectory: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkW, pszDir: LPCWSTR) -> HRESULT, >,
+    pub GetArguments: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkW, pszArgs: LPWSTR, cch: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetArguments: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkW, pszArgs: LPCWSTR) -> HRESULT, >,
+    pub GetHotkey: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkW, pwHotkey: *mut WORD) -> HRESULT, >,
+    pub SetHotkey: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkW, wHotkey: WORD) -> HRESULT, >,
+    pub GetShowCmd: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkW, piShowCmd: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetShowCmd: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkW, iShowCmd: ::core::ffi::c_int) -> HRESULT, >,
+    pub GetIconLocation: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkW, pszIconPath: LPWSTR, cch: ::core::ffi::c_int, piIcon: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetIconLocation: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkW, pszIconPath: LPCWSTR, iIcon: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetRelativePath: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkW, pszPathRel: LPCWSTR, dwReserved: DWORD, ) -> HRESULT, >,
+    pub Resolve: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkW, hwnd: HWND, fFlags: DWORD) -> HRESULT, >,
+    pub SetPath: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkW, pszFile: LPCWSTR) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellLinkW {
+    pub lpVtbl: *mut IShellLinkWVtbl,
+}
+pub type LPSHELLEXTINIT = *mut IShellExtInit;
+unsafe extern "C" {
+    pub static IID_IShellExtInit: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellExtInitVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellExtInit, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellExtInit) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellExtInit) -> ULONG>,
+    pub Initialize: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellExtInit, pidlFolder: PCIDLIST_ABSOLUTE, pdtobj: *mut IDataObject, hkeyProgID: HKEY, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellExtInit {
+    pub lpVtbl: *mut IShellExtInitVtbl,
+}
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub struct __WIDL_shobjidl_generated_name_0000002C {
+    pub pidlTargetFolder: PIDLIST_ABSOLUTE,
+    pub szTargetParsingName: [WCHAR; 260usize],
+    pub szNetworkProvider: [WCHAR; 260usize],
+    pub dwAttributes: DWORD,
+    pub csidl: ::core::ffi::c_int,
+}
+pub type PERSIST_FOLDER_TARGET_INFO = __WIDL_shobjidl_generated_name_0000002C;
+unsafe extern "C" {
+    pub static IID_IPersistFolder3: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IPersistFolder3Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFolder3, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFolder3) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IPersistFolder3) -> ULONG>,
+    pub GetClassID: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFolder3, pClassID: *mut CLSID) -> HRESULT, >,
+    pub Initialize: ::core::option::Option< unsafe extern "system" fn(This: *mut IPersistFolder3, pidl: PCIDLIST_ABSOLUTE) -> HRESULT, >,
+    pub GetCurFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFolder3, ppidl: *mut PIDLIST_ABSOLUTE, ) -> HRESULT, >,
+    pub InitializeEx: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFolder3, pbc: *mut IBindCtx, pidlRoot: PCIDLIST_ABSOLUTE, ppfti: *const PERSIST_FOLDER_TARGET_INFO, ) -> HRESULT, >,
+    pub GetFolderTargetInfo: ::core::option::Option< unsafe extern "system" fn( This: *mut IPersistFolder3, ppfti: *mut PERSIST_FOLDER_TARGET_INFO, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IPersistFolder3 {
+    pub lpVtbl: *mut IPersistFolder3Vtbl,
+}
+pub type LPEXTRACTICONA = *mut IExtractIconA;
+unsafe extern "C" {
+    pub static IID_IExtractIconA: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IExtractIconAVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IExtractIconA, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IExtractIconA) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IExtractIconA) -> ULONG>,
+    pub GetIconLocation: ::core::option::Option< unsafe extern "system" fn( This: *mut IExtractIconA, uFlags: UINT, szIconFile: LPSTR, cchMax: UINT, piIndex: *mut INT, pwFlags: *mut UINT, ) -> HRESULT, >,
+    pub Extract: ::core::option::Option< unsafe extern "system" fn( This: *mut IExtractIconA, pszFile: LPCSTR, nIconIndex: UINT, phiconLarge: *mut HICON, phiconSmall: *mut HICON, nIconSize: UINT, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExtractIconA {
+    pub lpVtbl: *mut IExtractIconAVtbl,
+}
+pub type LPEXTRACTICONW = *mut IExtractIconW;
+unsafe extern "C" {
+    pub static IID_IExtractIconW: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IExtractIconWVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IExtractIconW, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IExtractIconW) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IExtractIconW) -> ULONG>,
+    pub GetIconLocation: ::core::option::Option< unsafe extern "system" fn( This: *mut IExtractIconW, uFlags: UINT, szIconFile: LPWSTR, cchMax: UINT, piIndex: *mut INT, pwFlags: *mut UINT, ) -> HRESULT, >,
+    pub Extract: ::core::option::Option< unsafe extern "system" fn( This: *mut IExtractIconW, pszFile: LPCWSTR, nIconIndex: UINT, phiconLarge: *mut HICON, phiconSmall: *mut HICON, nIconSize: UINT, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExtractIconW {
+    pub lpVtbl: *mut IExtractIconWVtbl,
+}
+pub type LPCOMMDLGBROWSER = *mut ICommDlgBrowser;
+unsafe extern "C" {
+    pub static IID_ICommDlgBrowser: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ICommDlgBrowserVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICommDlgBrowser) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICommDlgBrowser) -> ULONG>,
+    pub OnDefaultCommand: ::core::option::Option< unsafe extern "system" fn(This: *mut ICommDlgBrowser, shv: *mut IShellView) -> HRESULT, >,
+    pub OnStateChange: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser, shv: *mut IShellView, uChange: ULONG, ) -> HRESULT, >,
+    pub IncludeObject: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser, shv: *mut IShellView, pidl: PCUITEMID_CHILD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICommDlgBrowser {
+    pub lpVtbl: *mut ICommDlgBrowserVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ICommDlgBrowser2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ICommDlgBrowser2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICommDlgBrowser2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICommDlgBrowser2) -> ULONG>,
+    pub OnDefaultCommand: ::core::option::Option< unsafe extern "system" fn(This: *mut ICommDlgBrowser2, shv: *mut IShellView) -> HRESULT, >,
+    pub OnStateChange: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser2, shv: *mut IShellView, uChange: ULONG, ) -> HRESULT, >,
+    pub IncludeObject: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser2, shv: *mut IShellView, pidl: PCUITEMID_CHILD, ) -> HRESULT, >,
+    pub Notify: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser2, ppshv: *mut IShellView, dwNotifyType: DWORD, ) -> HRESULT, >,
+    pub GetDefaultMenuText: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser2, ppshv: *mut IShellView, pszText: LPWSTR, cchMax: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetViewFlags: ::core::option::Option< unsafe extern "system" fn(This: *mut ICommDlgBrowser2, pdwFlags: *mut DWORD) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICommDlgBrowser2 {
+    pub lpVtbl: *mut ICommDlgBrowser2Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_ICommDlgBrowser3: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ICommDlgBrowser3Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser3, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ICommDlgBrowser3) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ICommDlgBrowser3) -> ULONG>,
+    pub OnDefaultCommand: ::core::option::Option< unsafe extern "system" fn(This: *mut ICommDlgBrowser3, shv: *mut IShellView) -> HRESULT, >,
+    pub OnStateChange: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser3, shv: *mut IShellView, uChange: ULONG, ) -> HRESULT, >,
+    pub IncludeObject: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser3, shv: *mut IShellView, pidl: PCUITEMID_CHILD, ) -> HRESULT, >,
+    pub Notify: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser3, ppshv: *mut IShellView, dwNotifyType: DWORD, ) -> HRESULT, >,
+    pub GetDefaultMenuText: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser3, ppshv: *mut IShellView, pszText: LPWSTR, cchMax: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetViewFlags: ::core::option::Option< unsafe extern "system" fn(This: *mut ICommDlgBrowser3, pdwFlags: *mut DWORD) -> HRESULT, >,
+    pub OnColumnClicked: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser3, ppshv: *mut IShellView, iColumn: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetCurrentFilter: ::core::option::Option< unsafe extern "system" fn( This: *mut ICommDlgBrowser3, pszFileSpec: LPWSTR, cchFileSpec: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub OnPreviewCreated: ::core::option::Option< unsafe extern "system" fn(This: *mut ICommDlgBrowser3, ppshv: *mut IShellView) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICommDlgBrowser3 {
+    pub lpVtbl: *mut ICommDlgBrowser3Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_IFolderFilterSite: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFolderFilterSiteVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderFilterSite, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderFilterSite) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderFilterSite) -> ULONG>,
+    pub SetFilter: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderFilterSite, punk: *mut IUnknown) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFolderFilterSite {
+    pub lpVtbl: *mut IFolderFilterSiteVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IFolderFilter: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFolderFilterVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderFilter, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderFilter) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderFilter) -> ULONG>,
+    pub ShouldShow: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderFilter, psf: *mut IShellFolder, pidlFolder: PCIDLIST_ABSOLUTE, pidlItem: PCUITEMID_CHILD, ) -> HRESULT, >,
+    pub GetEnumFlags: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderFilter, psf: *mut IShellFolder, pidlFolder: PCIDLIST_ABSOLUTE, phwnd: *mut HWND, pgrfFlags: *mut DWORD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFolderFilter {
+    pub lpVtbl: *mut IFolderFilterVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IDockingWindow: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IDockingWindowVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IDockingWindow, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDockingWindow) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDockingWindow) -> ULONG>,
+    pub GetWindow: ::core::option::Option< unsafe extern "system" fn(This: *mut IDockingWindow, phwnd: *mut HWND) -> HRESULT, >,
+    pub ContextSensitiveHelp: ::core::option::Option< unsafe extern "system" fn(This: *mut IDockingWindow, fEnterMode: BOOL) -> HRESULT, >,
+    pub ShowDW: ::core::option::Option< unsafe extern "system" fn(This: *mut IDockingWindow, fShow: BOOL) -> HRESULT, >,
+    pub CloseDW: ::core::option::Option< unsafe extern "system" fn(This: *mut IDockingWindow, dwReserved: DWORD) -> HRESULT, >,
+    pub ResizeBorderDW: ::core::option::Option< unsafe extern "system" fn( This: *mut IDockingWindow, prcBorder: LPCRECT, punkToolbarSite: *mut IUnknown, fReserved: BOOL, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDockingWindow {
+    pub lpVtbl: *mut IDockingWindowVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IDockingWindowFrame: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IDockingWindowFrameVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IDockingWindowFrame, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDockingWindowFrame) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDockingWindowFrame) -> ULONG>,
+    pub GetWindow: ::core::option::Option< unsafe extern "system" fn(This: *mut IDockingWindowFrame, phwnd: *mut HWND) -> HRESULT, >,
+    pub ContextSensitiveHelp: ::core::option::Option< unsafe extern "system" fn(This: *mut IDockingWindowFrame, fEnterMode: BOOL) -> HRESULT, >,
+    pub AddToolbar: ::core::option::Option< unsafe extern "system" fn( This: *mut IDockingWindowFrame, punkSrc: *mut IUnknown, pwszItem: LPCWSTR, dwAddFlags: DWORD, ) -> HRESULT, >,
+    pub RemoveToolbar: ::core::option::Option< unsafe extern "system" fn( This: *mut IDockingWindowFrame, punkSrc: *mut IUnknown, dwRemoveFlags: DWORD, ) -> HRESULT, >,
+    pub FindToolbar: ::core::option::Option< unsafe extern "system" fn( This: *mut IDockingWindowFrame, pwszItem: LPCWSTR, riid: *const IID, ppvObj: *mut LPVOID, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDockingWindowFrame {
+    pub lpVtbl: *mut IDockingWindowFrameVtbl,
+}
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub struct __WIDL_shobjidl_generated_name_0000002D {
+    pub sizeDragImage: SIZE,
+    pub ptOffset: POINT,
+    pub hbmpDragImage: HBITMAP,
+    pub crColorKey: COLORREF,
+}
+pub type SHDRAGIMAGE = __WIDL_shobjidl_generated_name_0000002D;
+pub type LPSHDRAGIMAGE = *mut __WIDL_shobjidl_generated_name_0000002D;
+unsafe extern "C" {
+    pub static IID_IDragSourceHelper: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IDragSourceHelperVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IDragSourceHelper, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDragSourceHelper) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDragSourceHelper) -> ULONG>,
+    pub InitializeFromBitmap: ::core::option::Option< unsafe extern "system" fn( This: *mut IDragSourceHelper, pshdi: LPSHDRAGIMAGE, pDataObject: *mut IDataObject, ) -> HRESULT, >,
+    pub InitializeFromWindow: ::core::option::Option< unsafe extern "system" fn( This: *mut IDragSourceHelper, hwnd: HWND, ppt: *mut POINT, pDataObject: *mut IDataObject, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDragSourceHelper {
+    pub lpVtbl: *mut IDragSourceHelperVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IDropTargetHelper: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IDropTargetHelperVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IDropTargetHelper, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDropTargetHelper) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDropTargetHelper) -> ULONG>,
+    pub DragEnter: ::core::option::Option< unsafe extern "system" fn( This: *mut IDropTargetHelper, hwndTarget: HWND, pDataObject: *mut IDataObject, ppt: *mut POINT, dwEffect: DWORD, ) -> HRESULT, >,
+    pub DragLeave: ::core::option::Option<unsafe extern "system" fn(This: *mut IDropTargetHelper) -> HRESULT>,
+    pub DragOver: ::core::option::Option< unsafe extern "system" fn( This: *mut IDropTargetHelper, ppt: *mut POINT, dwEffect: DWORD, ) -> HRESULT, >,
+    pub Drop: ::core::option::Option< unsafe extern "system" fn( This: *mut IDropTargetHelper, pDataObject: *mut IDataObject, ppt: *mut POINT, dwEffect: DWORD, ) -> HRESULT, >,
+    pub Show: ::core::option::Option< unsafe extern "system" fn(This: *mut IDropTargetHelper, fShow: BOOL) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDropTargetHelper {
+    pub lpVtbl: *mut IDropTargetHelperVtbl,
+}
+pub type LPCONTEXTMENU = *mut IContextMenu;
 #[derive(Copy, Clone)]
 #[repr(C, packed)]
 pub struct tagCMINVOKECOMMANDINFO {
@@ -20569,7 +22804,32 @@ pub struct tagCMINVOKECOMMANDINFO {
     pub dwHotKey: DWORD,
     pub hIcon: HANDLE,
 }
+pub type CMINVOKECOMMANDINFO = tagCMINVOKECOMMANDINFO;
 pub type LPCMINVOKECOMMANDINFO = *mut tagCMINVOKECOMMANDINFO;
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub struct tagCMInvokeCommandInfoEx {
+    pub cbSize: DWORD,
+    pub fMask: DWORD,
+    pub hwnd: HWND,
+    pub lpVerb: LPCSTR,
+    pub lpParameters: LPCSTR,
+    pub lpDirectory: LPCSTR,
+    pub nShow: INT,
+    pub dwHotKey: DWORD,
+    pub hIcon: HANDLE,
+    pub lpTitle: LPCSTR,
+    pub lpVerbW: LPCWSTR,
+    pub lpParametersW: LPCWSTR,
+    pub lpDirectoryW: LPCWSTR,
+    pub lpTitleW: LPCWSTR,
+    pub ptInvoke: POINT,
+}
+pub type CMINVOKECOMMANDINFOEX = tagCMInvokeCommandInfoEx;
+pub type LPCMINVOKECOMMANDINFOEX = *mut tagCMInvokeCommandInfoEx;
+unsafe extern "C" {
+    pub static IID_IContextMenu: GUID;
+}
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct IContextMenuVtbl {
@@ -20585,6 +22845,50 @@ pub struct IContextMenuVtbl {
 pub struct IContextMenu {
     pub lpVtbl: *mut IContextMenuVtbl,
 }
+pub type LPCONTEXTMENU2 = *mut IContextMenu2;
+unsafe extern "C" {
+    pub static IID_IContextMenu2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IContextMenu2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IContextMenu2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IContextMenu2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IContextMenu2) -> ULONG>,
+    pub QueryContextMenu: ::core::option::Option< unsafe extern "system" fn( This: *mut IContextMenu2, hmenu: HMENU, indexMenu: UINT, idCmdFirst: UINT, idCmdLast: UINT, uFlags: UINT, ) -> HRESULT, >,
+    pub InvokeCommand: ::core::option::Option< unsafe extern "system" fn( This: *mut IContextMenu2, lpici: LPCMINVOKECOMMANDINFO, ) -> HRESULT, >,
+    pub GetCommandString: ::core::option::Option< unsafe extern "system" fn( This: *mut IContextMenu2, idCmd: UINT_PTR, uType: UINT, pwReserved: *mut UINT, pszName: LPSTR, cchMax: UINT, ) -> HRESULT, >,
+    pub HandleMenuMsg: ::core::option::Option< unsafe extern "system" fn( This: *mut IContextMenu2, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IContextMenu2 {
+    pub lpVtbl: *mut IContextMenu2Vtbl,
+}
+pub type LPCONTEXTMENU3 = *mut IContextMenu3;
+unsafe extern "C" {
+    pub static IID_IContextMenu3: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IContextMenu3Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IContextMenu3, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IContextMenu3) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IContextMenu3) -> ULONG>,
+    pub QueryContextMenu: ::core::option::Option< unsafe extern "system" fn( This: *mut IContextMenu3, hmenu: HMENU, indexMenu: UINT, idCmdFirst: UINT, idCmdLast: UINT, uFlags: UINT, ) -> HRESULT, >,
+    pub InvokeCommand: ::core::option::Option< unsafe extern "system" fn( This: *mut IContextMenu3, lpici: LPCMINVOKECOMMANDINFO, ) -> HRESULT, >,
+    pub GetCommandString: ::core::option::Option< unsafe extern "system" fn( This: *mut IContextMenu3, idCmd: UINT_PTR, uType: UINT, pwReserved: *mut UINT, pszName: LPSTR, cchMax: UINT, ) -> HRESULT, >,
+    pub HandleMenuMsg: ::core::option::Option< unsafe extern "system" fn( This: *mut IContextMenu3, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, ) -> HRESULT, >,
+    pub HandleMenuMsg2: ::core::option::Option< unsafe extern "system" fn( This: *mut IContextMenu3, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, plResult: *mut LRESULT, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IContextMenu3 {
+    pub lpVtbl: *mut IContextMenu3Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_IContextMenuCB: GUID;
+}
 #[repr(C, packed)]
 #[derive(Copy, Clone)]
 pub struct IContextMenuCBVtbl {
@@ -20597,6 +22901,2468 @@ pub struct IContextMenuCBVtbl {
 #[derive(Debug, Copy, Clone)]
 pub struct IContextMenuCB {
     pub lpVtbl: *mut IContextMenuCBVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IShellExecuteHookA: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellExecuteHookAVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellExecuteHookA, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellExecuteHookA) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellExecuteHookA) -> ULONG>,
+    pub Execute: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellExecuteHookA, pei: *mut _SHELLEXECUTEINFOA, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellExecuteHookA {
+    pub lpVtbl: *mut IShellExecuteHookAVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IShellExecuteHookW: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellExecuteHookWVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellExecuteHookW, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellExecuteHookW) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellExecuteHookW) -> ULONG>,
+    pub Execute: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellExecuteHookW, pei: *mut _SHELLEXECUTEINFOW, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellExecuteHookW {
+    pub lpVtbl: *mut IShellExecuteHookWVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IShellLinkDataList: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellLinkDataListVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkDataList, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellLinkDataList) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellLinkDataList) -> ULONG>,
+    pub AddDataBlock: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkDataList, pDataBlock: *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub CopyDataBlock: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLinkDataList, dwSig: DWORD, ppDataBlock: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub RemoveDataBlock: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkDataList, dwSig: DWORD) -> HRESULT, >,
+    pub GetFlags: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkDataList, pdwFlags: *mut DWORD) -> HRESULT, >,
+    pub SetFlags: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLinkDataList, dwFlags: DWORD) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellLinkDataList {
+    pub lpVtbl: *mut IShellLinkDataListVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IResolveShellLink: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IResolveShellLinkVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IResolveShellLink, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IResolveShellLink) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IResolveShellLink) -> ULONG>,
+    pub ResolveShellLink: ::core::option::Option< unsafe extern "system" fn( This: *mut IResolveShellLink, punk: *mut IUnknown, hwnd: HWND, fFlags: DWORD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IResolveShellLink {
+    pub lpVtbl: *mut IResolveShellLinkVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IURLSearchHook: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IURLSearchHookVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IURLSearchHook, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IURLSearchHook) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IURLSearchHook) -> ULONG>,
+    pub Translate: ::core::option::Option< unsafe extern "system" fn( This: *mut IURLSearchHook, lpwszSearchURL: LPWSTR, cchBufferSize: DWORD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IURLSearchHook {
+    pub lpVtbl: *mut IURLSearchHookVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ISearchContext: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ISearchContextVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ISearchContext, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ISearchContext) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ISearchContext) -> ULONG>,
+    pub GetSearchUrl: ::core::option::Option< unsafe extern "system" fn(This: *mut ISearchContext, pbstrSearchUrl: *mut BSTR) -> HRESULT, >,
+    pub GetSearchText: ::core::option::Option< unsafe extern "system" fn( This: *mut ISearchContext, pbstrSearchText: *mut BSTR, ) -> HRESULT, >,
+    pub GetSearchStyle: ::core::option::Option< unsafe extern "system" fn(This: *mut ISearchContext, pdwSearchStyle: *mut BSTR) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ISearchContext {
+    pub lpVtbl: *mut ISearchContextVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IURLSearchHook2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IURLSearchHook2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IURLSearchHook2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IURLSearchHook2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IURLSearchHook2) -> ULONG>,
+    pub Translate: ::core::option::Option< unsafe extern "system" fn( This: *mut IURLSearchHook2, lpwszSearchURL: LPWSTR, cchBufferSize: DWORD, ) -> HRESULT, >,
+    pub TranslateWithSearchContext: ::core::option::Option< unsafe extern "system" fn( This: *mut IURLSearchHook2, lpwszSearchURL: LPWSTR, cchBufferSize: DWORD, pSearchContext: *mut ISearchContext, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IURLSearchHook2 {
+    pub lpVtbl: *mut IURLSearchHook2Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_INewShortcutHookA: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct INewShortcutHookAVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookA, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut INewShortcutHookA) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut INewShortcutHookA) -> ULONG>,
+    pub SetReferent: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookA, pcszReferent: LPCSTR, hwnd: HWND, ) -> HRESULT, >,
+    pub GetReferent: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookA, pcszReferent: LPSTR, cchReferent: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut INewShortcutHookA, pcszReferent: LPCSTR) -> HRESULT, >,
+    pub GetFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookA, pcszReferent: LPSTR, cchFolder: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetName: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookA, pszName: LPSTR, cchName: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetExtension: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookA, pszExtension: LPSTR, cchExtension: ::core::ffi::c_int, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct INewShortcutHookA {
+    pub lpVtbl: *mut INewShortcutHookAVtbl,
+}
+unsafe extern "C" {
+    pub static IID_INewShortcutHookW: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct INewShortcutHookWVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookW, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut INewShortcutHookW) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut INewShortcutHookW) -> ULONG>,
+    pub SetReferent: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookW, pcszReferent: LPCWSTR, hwnd: HWND, ) -> HRESULT, >,
+    pub GetReferent: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookW, pcszReferent: LPWSTR, cchReferent: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut INewShortcutHookW, pcszReferent: LPCWSTR) -> HRESULT, >,
+    pub GetFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookW, pcszReferent: LPWSTR, cchFolder: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetName: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookW, pszName: LPWSTR, cchName: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetExtension: ::core::option::Option< unsafe extern "system" fn( This: *mut INewShortcutHookW, pszExtension: LPWSTR, cchExtension: ::core::ffi::c_int, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct INewShortcutHookW {
+    pub lpVtbl: *mut INewShortcutHookWVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IRunnableTask: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IRunnableTaskVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRunnableTask, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableTask) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableTask) -> ULONG>,
+    pub Run: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableTask) -> HRESULT>,
+    pub Kill: ::core::option::Option< unsafe extern "system" fn(This: *mut IRunnableTask, fWait: BOOL) -> HRESULT, >,
+    pub Suspend: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableTask) -> HRESULT>,
+    pub Resume: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableTask) -> HRESULT>,
+    pub IsRunning: ::core::option::Option<unsafe extern "system" fn(This: *mut IRunnableTask) -> ULONG>,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRunnableTask {
+    pub lpVtbl: *mut IRunnableTaskVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IShellChangeNotify: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellChangeNotifyVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellChangeNotify, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellChangeNotify) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellChangeNotify) -> ULONG>,
+    pub OnChange: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellChangeNotify, lEvent: LONG, pidl1: PCIDLIST_ABSOLUTE, pidl2: PCIDLIST_ABSOLUTE, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellChangeNotify {
+    pub lpVtbl: *mut IShellChangeNotifyVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IFileSystemBindData: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFileSystemBindDataVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSystemBindData, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileSystemBindData) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileSystemBindData) -> ULONG>,
+    pub SetFindData: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSystemBindData, pfd: *const WIN32_FIND_DATAW, ) -> HRESULT, >,
+    pub GetFindData: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSystemBindData, pfd: *mut WIN32_FIND_DATAW, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFileSystemBindData {
+    pub lpVtbl: *mut IFileSystemBindDataVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ITaskbarList: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ITaskbarListVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList) -> ULONG>,
+    pub HrInit: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList) -> HRESULT>,
+    pub AddTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList, hwnd: HWND) -> HRESULT, >,
+    pub DeleteTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList, hwnd: HWND) -> HRESULT, >,
+    pub ActivateTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList, hwnd: HWND) -> HRESULT, >,
+    pub SetActiveAlt: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList, hwnd: HWND) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITaskbarList {
+    pub lpVtbl: *mut ITaskbarListVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ITaskbarList2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ITaskbarList2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList2) -> ULONG>,
+    pub HrInit: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList2) -> HRESULT>,
+    pub AddTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList2, hwnd: HWND) -> HRESULT, >,
+    pub DeleteTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList2, hwnd: HWND) -> HRESULT, >,
+    pub ActivateTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList2, hwnd: HWND) -> HRESULT, >,
+    pub SetActiveAlt: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList2, hwnd: HWND) -> HRESULT, >,
+    pub MarkFullscreenWindow: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList2, hwnd: HWND, fullscreen: BOOL, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITaskbarList2 {
+    pub lpVtbl: *mut ITaskbarList2Vtbl,
+}
+pub const THUMBBUTTONFLAGS_THBF_ENABLED: THUMBBUTTONFLAGS = 0;
+pub const THUMBBUTTONFLAGS_THBF_DISABLED: THUMBBUTTONFLAGS = 1;
+pub const THUMBBUTTONFLAGS_THBF_DISMISSONCLICK: THUMBBUTTONFLAGS = 2;
+pub const THUMBBUTTONFLAGS_THBF_NOBACKGROUND: THUMBBUTTONFLAGS = 4;
+pub const THUMBBUTTONFLAGS_THBF_HIDDEN: THUMBBUTTONFLAGS = 8;
+pub const THUMBBUTTONFLAGS_THBF_NONINTERACTIVE: THUMBBUTTONFLAGS = 16;
+pub type THUMBBUTTONFLAGS = ::core::ffi::c_uint;
+pub const THUMBBUTTONMASK_THB_BITMAP: THUMBBUTTONMASK = 1;
+pub const THUMBBUTTONMASK_THB_ICON: THUMBBUTTONMASK = 2;
+pub const THUMBBUTTONMASK_THB_TOOLTIP: THUMBBUTTONMASK = 4;
+pub const THUMBBUTTONMASK_THB_FLAGS: THUMBBUTTONMASK = 8;
+pub type THUMBBUTTONMASK = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct THUMBBUTTON {
+    pub dwMask: THUMBBUTTONMASK,
+    pub iId: UINT,
+    pub iBitmap: UINT,
+    pub hIcon: HICON,
+    pub szTip: [WCHAR; 260usize],
+    pub dwFlags: THUMBBUTTONFLAGS,
+}
+pub type LPTHUMBBUTTON = *mut THUMBBUTTON;
+pub const TBPFLAG_TBPF_NOPROGRESS: TBPFLAG = 0;
+pub const TBPFLAG_TBPF_INDETERMINATE: TBPFLAG = 1;
+pub const TBPFLAG_TBPF_NORMAL: TBPFLAG = 2;
+pub const TBPFLAG_TBPF_ERROR: TBPFLAG = 4;
+pub const TBPFLAG_TBPF_PAUSED: TBPFLAG = 8;
+pub type TBPFLAG = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_ITaskbarList3: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ITaskbarList3Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList3) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList3) -> ULONG>,
+    pub HrInit: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList3) -> HRESULT>,
+    pub AddTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList3, hwnd: HWND) -> HRESULT, >,
+    pub DeleteTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList3, hwnd: HWND) -> HRESULT, >,
+    pub ActivateTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList3, hwnd: HWND) -> HRESULT, >,
+    pub SetActiveAlt: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList3, hwnd: HWND) -> HRESULT, >,
+    pub MarkFullscreenWindow: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwnd: HWND, fullscreen: BOOL, ) -> HRESULT, >,
+    pub SetProgressValue: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwnd: HWND, ullCompleted: ULONGLONG, ullTotal: ULONGLONG, ) -> HRESULT, >,
+    pub SetProgressState: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwnd: HWND, tbpFlags: TBPFLAG, ) -> HRESULT, >,
+    pub RegisterTab: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwndTab: HWND, hwndMDI: HWND, ) -> HRESULT, >,
+    pub UnregisterTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList3, hwndTab: HWND) -> HRESULT, >,
+    pub SetTabOrder: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwndTab: HWND, hwndInsertBefore: HWND, ) -> HRESULT, >,
+    pub SetTabActive: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwndTab: HWND, hwndMDI: HWND, dwReserved: DWORD, ) -> HRESULT, >,
+    pub ThumbBarAddButtons: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwnd: HWND, cButtons: UINT, pButton: LPTHUMBBUTTON, ) -> HRESULT, >,
+    pub ThumbBarUpdateButtons: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwnd: HWND, cButtons: UINT, pButton: LPTHUMBBUTTON, ) -> HRESULT, >,
+    pub ThumbBarSetImageList: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwnd: HWND, himl: HIMAGELIST, ) -> HRESULT, >,
+    pub SetOverlayIcon: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwnd: HWND, hIcon: HICON, pszDescription: LPCWSTR, ) -> HRESULT, >,
+    pub SetThumbnailTooltip: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwnd: HWND, pszTip: LPCWSTR, ) -> HRESULT, >,
+    pub SetThumbnailClip: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList3, hwnd: HWND, prcClip: *mut RECT, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITaskbarList3 {
+    pub lpVtbl: *mut ITaskbarList3Vtbl,
+}
+pub const STPFLAG_STPF_NONE: STPFLAG = 0;
+pub const STPFLAG_STPF_USEAPPTHUMBNAILALWAYS: STPFLAG = 1;
+pub const STPFLAG_STPF_USEAPPTHUMBNAILWHENACTIVE: STPFLAG = 2;
+pub const STPFLAG_STPF_USEAPPPEEKALWAYS: STPFLAG = 4;
+pub const STPFLAG_STPF_USEAPPPEEKWHENACTIVE: STPFLAG = 8;
+pub type STPFLAG = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_ITaskbarList4: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ITaskbarList4Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList4) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList4) -> ULONG>,
+    pub HrInit: ::core::option::Option<unsafe extern "system" fn(This: *mut ITaskbarList4) -> HRESULT>,
+    pub AddTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList4, hwnd: HWND) -> HRESULT, >,
+    pub DeleteTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList4, hwnd: HWND) -> HRESULT, >,
+    pub ActivateTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList4, hwnd: HWND) -> HRESULT, >,
+    pub SetActiveAlt: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList4, hwnd: HWND) -> HRESULT, >,
+    pub MarkFullscreenWindow: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwnd: HWND, fullscreen: BOOL, ) -> HRESULT, >,
+    pub SetProgressValue: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwnd: HWND, ullCompleted: ULONGLONG, ullTotal: ULONGLONG, ) -> HRESULT, >,
+    pub SetProgressState: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwnd: HWND, tbpFlags: TBPFLAG, ) -> HRESULT, >,
+    pub RegisterTab: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwndTab: HWND, hwndMDI: HWND, ) -> HRESULT, >,
+    pub UnregisterTab: ::core::option::Option< unsafe extern "system" fn(This: *mut ITaskbarList4, hwndTab: HWND) -> HRESULT, >,
+    pub SetTabOrder: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwndTab: HWND, hwndInsertBefore: HWND, ) -> HRESULT, >,
+    pub SetTabActive: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwndTab: HWND, hwndMDI: HWND, dwReserved: DWORD, ) -> HRESULT, >,
+    pub ThumbBarAddButtons: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwnd: HWND, cButtons: UINT, pButton: LPTHUMBBUTTON, ) -> HRESULT, >,
+    pub ThumbBarUpdateButtons: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwnd: HWND, cButtons: UINT, pButton: LPTHUMBBUTTON, ) -> HRESULT, >,
+    pub ThumbBarSetImageList: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwnd: HWND, himl: HIMAGELIST, ) -> HRESULT, >,
+    pub SetOverlayIcon: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwnd: HWND, hIcon: HICON, pszDescription: LPCWSTR, ) -> HRESULT, >,
+    pub SetThumbnailTooltip: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwnd: HWND, pszTip: LPCWSTR, ) -> HRESULT, >,
+    pub SetThumbnailClip: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwnd: HWND, prcClip: *mut RECT, ) -> HRESULT, >,
+    pub SetTabProperties: ::core::option::Option< unsafe extern "system" fn( This: *mut ITaskbarList4, hwndTab: HWND, stpFlags: STPFLAG, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITaskbarList4 {
+    pub lpVtbl: *mut ITaskbarList4Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_IDefaultExtractIconInit: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IDefaultExtractIconInitVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IDefaultExtractIconInit, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IDefaultExtractIconInit) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IDefaultExtractIconInit) -> ULONG, >,
+    pub SetDefaultIcon: ::core::option::Option< unsafe extern "system" fn( This: *mut IDefaultExtractIconInit, pszFile: LPCWSTR, iIcon: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetFlags: ::core::option::Option< unsafe extern "system" fn(This: *mut IDefaultExtractIconInit, uFlags: UINT) -> HRESULT, >,
+    pub SetKey: ::core::option::Option< unsafe extern "system" fn(This: *mut IDefaultExtractIconInit, hkey: HKEY) -> HRESULT, >,
+    pub SetNormalIcon: ::core::option::Option< unsafe extern "system" fn( This: *mut IDefaultExtractIconInit, pszFile: LPCWSTR, iIcon: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetOpenIcon: ::core::option::Option< unsafe extern "system" fn( This: *mut IDefaultExtractIconInit, pszFile: LPCWSTR, iIcon: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetShortcutIcon: ::core::option::Option< unsafe extern "system" fn( This: *mut IDefaultExtractIconInit, pszFile: LPCWSTR, iIcon: ::core::ffi::c_int, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDefaultExtractIconInit {
+    pub lpVtbl: *mut IDefaultExtractIconInitVtbl,
+}
+pub const _EXPCMDSTATE_ECS_ENABLED: _EXPCMDSTATE = 0;
+pub const _EXPCMDSTATE_ECS_DISABLED: _EXPCMDSTATE = 1;
+pub const _EXPCMDSTATE_ECS_HIDDEN: _EXPCMDSTATE = 2;
+pub const _EXPCMDSTATE_ECS_CHECKBOX: _EXPCMDSTATE = 4;
+pub const _EXPCMDSTATE_ECS_CHECKED: _EXPCMDSTATE = 8;
+pub const _EXPCMDSTATE_ECS_RADIOCHECK: _EXPCMDSTATE = 16;
+pub type _EXPCMDSTATE = ::core::ffi::c_uint;
+pub use self::_EXPCMDSTATE as EXPCMDSTATE;
+pub const _EXPCMDFLAGS_ECF_DEFAULT: _EXPCMDFLAGS = 0;
+pub const _EXPCMDFLAGS_ECF_HASSUBCOMMANDS: _EXPCMDFLAGS = 1;
+pub const _EXPCMDFLAGS_ECF_HASSPLITBUTTON: _EXPCMDFLAGS = 2;
+pub const _EXPCMDFLAGS_ECF_HIDELABEL: _EXPCMDFLAGS = 4;
+pub const _EXPCMDFLAGS_ECF_ISSEPARATOR: _EXPCMDFLAGS = 8;
+pub const _EXPCMDFLAGS_ECF_HASLUASHIELD: _EXPCMDFLAGS = 16;
+pub const _EXPCMDFLAGS_ECF_SEPARATORBEFORE: _EXPCMDFLAGS = 32;
+pub const _EXPCMDFLAGS_ECF_SEPARATORAFTER: _EXPCMDFLAGS = 64;
+pub const _EXPCMDFLAGS_ECF_ISDROPDOWN: _EXPCMDFLAGS = 128;
+pub const _EXPCMDFLAGS_ECF_TOGGLEABLE: _EXPCMDFLAGS = 256;
+pub const _EXPCMDFLAGS_ECF_AUTOMENUICONS: _EXPCMDFLAGS = 512;
+pub type _EXPCMDFLAGS = ::core::ffi::c_uint;
+pub use self::_EXPCMDFLAGS as EXPCMDFLAGS;
+unsafe extern "C" {
+    pub static IID_IExplorerCommand: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IExplorerCommandVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommand, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IExplorerCommand) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IExplorerCommand) -> ULONG>,
+    pub GetTitle: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommand, psiItemArray: *mut IShellItemArray, ppszName: *mut LPWSTR, ) -> HRESULT, >,
+    pub GetIcon: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommand, psiItemArray: *mut IShellItemArray, ppszIcon: *mut LPWSTR, ) -> HRESULT, >,
+    pub GetToolTip: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommand, psiItemArray: *mut IShellItemArray, ppszInfotip: *mut LPWSTR, ) -> HRESULT, >,
+    pub GetCanonicalName: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommand, pguidCommandName: *mut GUID, ) -> HRESULT, >,
+    pub GetState: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommand, psiItemArray: *mut IShellItemArray, fOkToBeSlow: BOOL, pCmdState: *mut EXPCMDSTATE, ) -> HRESULT, >,
+    pub Invoke: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommand, psiItemArray: *mut IShellItemArray, pbc: *mut IBindCtx, ) -> HRESULT, >,
+    pub GetFlags: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommand, pFlags: *mut EXPCMDFLAGS, ) -> HRESULT, >,
+    pub EnumSubCommands: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommand, ppEnum: *mut *mut IEnumExplorerCommand, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExplorerCommand {
+    pub lpVtbl: *mut IExplorerCommandVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IExplorerCommandState: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IExplorerCommandStateVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommandState, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IExplorerCommandState) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IExplorerCommandState) -> ULONG, >,
+    pub GetState: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommandState, psiItemArray: *mut IShellItemArray, fOkToBeSlow: BOOL, pCmdState: *mut EXPCMDSTATE, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExplorerCommandState {
+    pub lpVtbl: *mut IExplorerCommandStateVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IInitializeCommand: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IInitializeCommandVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IInitializeCommand, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IInitializeCommand) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IInitializeCommand) -> ULONG>,
+    pub Initialize: ::core::option::Option< unsafe extern "system" fn( This: *mut IInitializeCommand, pszCommandName: LPCWSTR, ppb: *mut IPropertyBag, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IInitializeCommand {
+    pub lpVtbl: *mut IInitializeCommandVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IEnumExplorerCommand: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IEnumExplorerCommandVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumExplorerCommand, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IEnumExplorerCommand) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IEnumExplorerCommand) -> ULONG, >,
+    pub Next: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumExplorerCommand, celt: ULONG, pUICommand: *mut *mut IExplorerCommand, pceltFetched: *mut ULONG, ) -> HRESULT, >,
+    pub Skip: ::core::option::Option< unsafe extern "system" fn(This: *mut IEnumExplorerCommand, celt: ULONG) -> HRESULT, >,
+    pub Reset: ::core::option::Option< unsafe extern "system" fn(This: *mut IEnumExplorerCommand) -> HRESULT, >,
+    pub Clone: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumExplorerCommand, ppenum: *mut *mut IEnumExplorerCommand, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IEnumExplorerCommand {
+    pub lpVtbl: *mut IEnumExplorerCommandVtbl,
+}
+unsafe extern "system" {
+    pub fn IEnumExplorerCommand_RemoteNext_Proxy(
+        This: *mut IEnumExplorerCommand,
+        celt: ULONG,
+        pUICommand: *mut *mut IExplorerCommand,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumExplorerCommand_RemoteNext_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IEnumExplorerCommand_Next_Proxy(
+        This: *mut IEnumExplorerCommand,
+        celt: ULONG,
+        pUICommand: *mut *mut IExplorerCommand,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IEnumExplorerCommand_Next_Stub(
+        This: *mut IEnumExplorerCommand,
+        celt: ULONG,
+        pUICommand: *mut *mut IExplorerCommand,
+        pceltFetched: *mut ULONG,
+    ) -> HRESULT;
+}
+unsafe extern "C" {
+    pub static IID_IExplorerCommandProvider: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IExplorerCommandProviderVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommandProvider, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IExplorerCommandProvider) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IExplorerCommandProvider) -> ULONG, >,
+    pub GetCommands: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommandProvider, punkSite: *mut IUnknown, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetCommand: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerCommandProvider, rguidCommandId: *const GUID, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExplorerCommandProvider {
+    pub lpVtbl: *mut IExplorerCommandProviderVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IExecuteCommand: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IExecuteCommandVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IExecuteCommand, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IExecuteCommand) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IExecuteCommand) -> ULONG>,
+    pub SetKeyState: ::core::option::Option< unsafe extern "system" fn(This: *mut IExecuteCommand, grfKeyState: DWORD) -> HRESULT, >,
+    pub SetParameters: ::core::option::Option< unsafe extern "system" fn(This: *mut IExecuteCommand, pszParameters: LPCWSTR) -> HRESULT, >,
+    pub SetPosition: ::core::option::Option< unsafe extern "system" fn(This: *mut IExecuteCommand, pt: POINT) -> HRESULT, >,
+    pub SetShowWindow: ::core::option::Option< unsafe extern "system" fn( This: *mut IExecuteCommand, nShow: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetNoShowUI: ::core::option::Option< unsafe extern "system" fn(This: *mut IExecuteCommand, fNoShowUI: BOOL) -> HRESULT, >,
+    pub SetDirectory: ::core::option::Option< unsafe extern "system" fn(This: *mut IExecuteCommand, pszDirectory: LPCWSTR) -> HRESULT, >,
+    pub Execute: ::core::option::Option<unsafe extern "system" fn(This: *mut IExecuteCommand) -> HRESULT>,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExecuteCommand {
+    pub lpVtbl: *mut IExecuteCommandVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IObjectWithSelection: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IObjectWithSelectionVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IObjectWithSelection, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IObjectWithSelection) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IObjectWithSelection) -> ULONG, >,
+    pub SetSelection: ::core::option::Option< unsafe extern "system" fn( This: *mut IObjectWithSelection, psia: *mut IShellItemArray, ) -> HRESULT, >,
+    pub GetSelection: ::core::option::Option< unsafe extern "system" fn( This: *mut IObjectWithSelection, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IObjectWithSelection {
+    pub lpVtbl: *mut IObjectWithSelectionVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IRegTreeItem: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IRegTreeItemVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IRegTreeItem, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IRegTreeItem) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IRegTreeItem) -> ULONG>,
+    pub GetCheckState: ::core::option::Option< unsafe extern "system" fn(This: *mut IRegTreeItem, pbCheck: *mut BOOL) -> HRESULT, >,
+    pub SetCheckState: ::core::option::Option< unsafe extern "system" fn(This: *mut IRegTreeItem, bCheck: BOOL) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IRegTreeItem {
+    pub lpVtbl: *mut IRegTreeItemVtbl,
+}
+pub const CPVIEW_CPVIEW_CLASSIC: CPVIEW = 0;
+pub const CPVIEW_CPVIEW_CATEGORY: CPVIEW = 1;
+pub const CPVIEW_CPVIEW_ALLITEMS: CPVIEW = 0;
+pub const CPVIEW_CPVIEW_HOME: CPVIEW = 1;
+pub type CPVIEW = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IOpenControlPanel: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IOpenControlPanelVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IOpenControlPanel, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IOpenControlPanel) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IOpenControlPanel) -> ULONG>,
+    pub Open: ::core::option::Option< unsafe extern "system" fn( This: *mut IOpenControlPanel, pszName: LPCWSTR, pszPage: LPCWSTR, punkSite: *mut IUnknown, ) -> HRESULT, >,
+    pub GetPath: ::core::option::Option< unsafe extern "system" fn( This: *mut IOpenControlPanel, pszName: LPCWSTR, pszPath: LPWSTR, cchPath: UINT, ) -> HRESULT, >,
+    pub GetCurrentView: ::core::option::Option< unsafe extern "system" fn(This: *mut IOpenControlPanel, pView: *mut CPVIEW) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IOpenControlPanel {
+    pub lpVtbl: *mut IOpenControlPanelVtbl,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagDESKBANDINFO {
+    pub dwMask: DWORD,
+    pub ptMinSize: POINTL,
+    pub ptMaxSize: POINTL,
+    pub ptIntegral: POINTL,
+    pub ptActual: POINTL,
+    pub wszTitle: [WCHAR; 256usize],
+    pub dwModeFlags: DWORD,
+    pub crBkgnd: COLORREF,
+}
+pub type DESKBANDINFO = tagDESKBANDINFO;
+pub const tagDESKBANDCID_DBID_BANDINFOCHANGED: tagDESKBANDCID = 0;
+pub const tagDESKBANDCID_DBID_SHOWONLY: tagDESKBANDCID = 1;
+pub const tagDESKBANDCID_DBID_MAXIMIZEBAND: tagDESKBANDCID = 2;
+pub const tagDESKBANDCID_DBID_PUSHCHEVRON: tagDESKBANDCID = 3;
+pub const tagDESKBANDCID_DBID_DELAYINIT: tagDESKBANDCID = 4;
+pub const tagDESKBANDCID_DBID_FINISHINIT: tagDESKBANDCID = 5;
+pub const tagDESKBANDCID_DBID_SETWINDOWTHEME: tagDESKBANDCID = 6;
+pub const tagDESKBANDCID_DBID_PERMITAUTOHIDE: tagDESKBANDCID = 7;
+pub type tagDESKBANDCID = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IDeskBand: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IDeskBandVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IDeskBand, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDeskBand) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDeskBand) -> ULONG>,
+    pub GetWindow: ::core::option::Option< unsafe extern "system" fn(This: *mut IDeskBand, phwnd: *mut HWND) -> HRESULT, >,
+    pub ContextSensitiveHelp: ::core::option::Option< unsafe extern "system" fn(This: *mut IDeskBand, fEnterMode: BOOL) -> HRESULT, >,
+    pub ShowDW: ::core::option::Option< unsafe extern "system" fn(This: *mut IDeskBand, fShow: BOOL) -> HRESULT, >,
+    pub CloseDW: ::core::option::Option< unsafe extern "system" fn(This: *mut IDeskBand, dwReserved: DWORD) -> HRESULT, >,
+    pub ResizeBorderDW: ::core::option::Option< unsafe extern "system" fn( This: *mut IDeskBand, prcBorder: LPCRECT, punkToolbarSite: *mut IUnknown, fReserved: BOOL, ) -> HRESULT, >,
+    pub GetBandInfo: ::core::option::Option< unsafe extern "system" fn( This: *mut IDeskBand, dwBandID: DWORD, dwViewMode: DWORD, pdbi: *mut DESKBANDINFO, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDeskBand {
+    pub lpVtbl: *mut IDeskBandVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IDeskBar: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IDeskBarVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IDeskBar, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IDeskBar) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IDeskBar) -> ULONG>,
+    pub GetWindow: ::core::option::Option< unsafe extern "system" fn(This: *mut IDeskBar, phwnd: *mut HWND) -> HRESULT, >,
+    pub ContextSensitiveHelp: ::core::option::Option< unsafe extern "system" fn(This: *mut IDeskBar, fEnterMode: BOOL) -> HRESULT, >,
+    pub SetClient: ::core::option::Option< unsafe extern "system" fn(This: *mut IDeskBar, punkClient: *mut IUnknown) -> HRESULT, >,
+    pub GetClient: ::core::option::Option< unsafe extern "system" fn(This: *mut IDeskBar, ppunkClient: *mut *mut IUnknown) -> HRESULT, >,
+    pub OnPosRectChangeDB: ::core::option::Option< unsafe extern "system" fn(This: *mut IDeskBar, prc: *mut RECT) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IDeskBar {
+    pub lpVtbl: *mut IDeskBarVtbl,
+}
+pub const tagMENUPOPUPSELECT_MPOS_EXECUTE: tagMENUPOPUPSELECT = 0;
+pub const tagMENUPOPUPSELECT_MPOS_FULLCANCEL: tagMENUPOPUPSELECT = 1;
+pub const tagMENUPOPUPSELECT_MPOS_CANCELLEVEL: tagMENUPOPUPSELECT = 2;
+pub const tagMENUPOPUPSELECT_MPOS_SELECTLEFT: tagMENUPOPUPSELECT = 3;
+pub const tagMENUPOPUPSELECT_MPOS_SELECTRIGHT: tagMENUPOPUPSELECT = 4;
+pub const tagMENUPOPUPSELECT_MPOS_CHILDTRACKING: tagMENUPOPUPSELECT = 5;
+pub type tagMENUPOPUPSELECT = ::core::ffi::c_uint;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_SETFOCUS: tagMENUPOPUPPOPUPFLAGS = 1;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_INITIALSELECT: tagMENUPOPUPPOPUPFLAGS = 2;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_NOANIMATE: tagMENUPOPUPPOPUPFLAGS = 4;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_KEYBOARD: tagMENUPOPUPPOPUPFLAGS = 16;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_REPOSITION: tagMENUPOPUPPOPUPFLAGS = 32;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_FORCEZORDER: tagMENUPOPUPPOPUPFLAGS = 64;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_FINALSELECT: tagMENUPOPUPPOPUPFLAGS = 128;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_TOP: tagMENUPOPUPPOPUPFLAGS = 536870912;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_LEFT: tagMENUPOPUPPOPUPFLAGS = 1073741824;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_RIGHT: tagMENUPOPUPPOPUPFLAGS = 1610612736;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_BOTTOM: tagMENUPOPUPPOPUPFLAGS = 2147483648;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_POS_MASK: tagMENUPOPUPPOPUPFLAGS = 3758096384;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_ALIGN_LEFT: tagMENUPOPUPPOPUPFLAGS = 33554432;
+pub const tagMENUPOPUPPOPUPFLAGS_MPPF_ALIGN_RIGHT: tagMENUPOPUPPOPUPFLAGS = 67108864;
+pub type tagMENUPOPUPPOPUPFLAGS = ::core::ffi::c_uint;
+pub type MP_POPUPFLAGS = ::core::ffi::c_int;
+unsafe extern "C" {
+    pub static IID_IMenuPopup: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IMenuPopupVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IMenuPopup, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMenuPopup) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMenuPopup) -> ULONG>,
+    pub GetWindow: ::core::option::Option< unsafe extern "system" fn(This: *mut IMenuPopup, phwnd: *mut HWND) -> HRESULT, >,
+    pub ContextSensitiveHelp: ::core::option::Option< unsafe extern "system" fn(This: *mut IMenuPopup, fEnterMode: BOOL) -> HRESULT, >,
+    pub SetClient: ::core::option::Option< unsafe extern "system" fn(This: *mut IMenuPopup, punkClient: *mut IUnknown) -> HRESULT, >,
+    pub GetClient: ::core::option::Option< unsafe extern "system" fn( This: *mut IMenuPopup, ppunkClient: *mut *mut IUnknown, ) -> HRESULT, >,
+    pub OnPosRectChangeDB: ::core::option::Option< unsafe extern "system" fn(This: *mut IMenuPopup, prc: *mut RECT) -> HRESULT, >,
+    pub Popup: ::core::option::Option< unsafe extern "system" fn( This: *mut IMenuPopup, ppt: *mut POINTL, prcExclude: *mut RECTL, dwFlags: MP_POPUPFLAGS, ) -> HRESULT, >,
+    pub OnSelect: ::core::option::Option< unsafe extern "system" fn(This: *mut IMenuPopup, dwSelectType: DWORD) -> HRESULT, >,
+    pub SetSubMenu: ::core::option::Option< unsafe extern "system" fn( This: *mut IMenuPopup, pmp: *mut IMenuPopup, fSet: BOOL, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IMenuPopup {
+    pub lpVtbl: *mut IMenuPopupVtbl,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagBANDSITEINFO {
+    pub dwMask: DWORD,
+    pub dwState: DWORD,
+    pub dwStyle: DWORD,
+}
+pub type BANDSITEINFO = tagBANDSITEINFO;
+pub const tagBANDSITECID_BSID_BANDADDED: tagBANDSITECID = 0;
+pub const tagBANDSITECID_BSID_BANDREMOVED: tagBANDSITECID = 1;
+pub type tagBANDSITECID = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IBandSite: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IBandSiteVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IBandSite, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IBandSite) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IBandSite) -> ULONG>,
+    pub AddBand: ::core::option::Option< unsafe extern "system" fn(This: *mut IBandSite, punk: *mut IUnknown) -> HRESULT, >,
+    pub EnumBands: ::core::option::Option< unsafe extern "system" fn( This: *mut IBandSite, uBand: UINT, pdwBandID: *mut DWORD, ) -> HRESULT, >,
+    pub QueryBand: ::core::option::Option< unsafe extern "system" fn( This: *mut IBandSite, dwBandID: DWORD, ppstb: *mut *mut IDeskBand, pdwState: *mut DWORD, pszName: LPWSTR, cchName: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetBandState: ::core::option::Option< unsafe extern "system" fn( This: *mut IBandSite, dwBandID: DWORD, dwMask: DWORD, dwState: DWORD, ) -> HRESULT, >,
+    pub RemoveBand: ::core::option::Option< unsafe extern "system" fn(This: *mut IBandSite, dwBandID: DWORD) -> HRESULT, >,
+    pub GetBandObject: ::core::option::Option< unsafe extern "system" fn( This: *mut IBandSite, dwBandID: DWORD, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub SetBandSiteInfo: ::core::option::Option< unsafe extern "system" fn(This: *mut IBandSite, pbsinfo: *const BANDSITEINFO) -> HRESULT, >,
+    pub GetBandSiteInfo: ::core::option::Option< unsafe extern "system" fn(This: *mut IBandSite, pbsinfo: *mut BANDSITEINFO) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IBandSite {
+    pub lpVtbl: *mut IBandSiteVtbl,
+}
+pub const tagMENUBANDHANDLERCID_MBHANDCID_PIDLSELECT: tagMENUBANDHANDLERCID = 0;
+pub type tagMENUBANDHANDLERCID = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IMenuBand: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IMenuBandVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IMenuBand, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IMenuBand) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IMenuBand) -> ULONG>,
+    pub IsMenuMessage: ::core::option::Option< unsafe extern "system" fn(This: *mut IMenuBand, pmsg: *mut MSG) -> HRESULT, >,
+    pub TranslateMenuMessage: ::core::option::Option< unsafe extern "system" fn( This: *mut IMenuBand, pmsg: *mut MSG, plRet: *mut LRESULT, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IMenuBand {
+    pub lpVtbl: *mut IMenuBandVtbl,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagSMDATA {
+    pub dwMask: DWORD,
+    pub dwFlags: DWORD,
+    pub hmenu: HMENU,
+    pub hwnd: HWND,
+    pub uId: UINT,
+    pub uIdParent: UINT,
+    pub uIdAncestor: UINT,
+    pub punk: *mut IUnknown,
+    pub pidlFolder: PIDLIST_ABSOLUTE,
+    pub pidlItem: PUITEMID_CHILD,
+    pub psf: *mut IShellFolder,
+    pub pvUserData: *mut ::core::ffi::c_void,
+}
+pub type SMDATA = tagSMDATA;
+pub type LPSMDATA = *mut tagSMDATA;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagSMINFO {
+    pub dwMask: DWORD,
+    pub dwType: DWORD,
+    pub dwFlags: DWORD,
+    pub iIcon: ::core::ffi::c_int,
+}
+pub type SMINFO = tagSMINFO;
+pub type PSMINFO = *mut tagSMINFO;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagSHCSCHANGENOTIFYSTRUCT {
+    pub lEvent: LONG,
+    pub pidl1: PCIDLIST_ABSOLUTE,
+    pub pidl2: PCIDLIST_ABSOLUTE,
+}
+pub type SMCSHCHANGENOTIFYSTRUCT = tagSHCSCHANGENOTIFYSTRUCT;
+pub type PSMCSHCHANGENOTIFYSTRUCT = *mut tagSHCSCHANGENOTIFYSTRUCT;
+pub const SMIM_TYPE: _bindgen_ty_4 = 1;
+pub const SMIM_FLAGS: _bindgen_ty_4 = 2;
+pub const SMIM_ICON: _bindgen_ty_4 = 4;
+pub type _bindgen_ty_4 = ::core::ffi::c_uint;
+pub const SMIT_SEPARATOR: _bindgen_ty_5 = 1;
+pub const SMIT_STRING: _bindgen_ty_5 = 2;
+pub type _bindgen_ty_5 = ::core::ffi::c_uint;
+pub const SMIF_ICON: _bindgen_ty_6 = 1;
+pub const SMIF_ACCELERATOR: _bindgen_ty_6 = 2;
+pub const SMIF_DROPTARGET: _bindgen_ty_6 = 4;
+pub const SMIF_SUBMENU: _bindgen_ty_6 = 8;
+pub const SMIF_CHECKED: _bindgen_ty_6 = 32;
+pub const SMIF_DROPCASCADE: _bindgen_ty_6 = 64;
+pub const SMIF_HIDDEN: _bindgen_ty_6 = 128;
+pub const SMIF_DISABLED: _bindgen_ty_6 = 256;
+pub const SMIF_TRACKPOPUP: _bindgen_ty_6 = 512;
+pub const SMIF_DEMOTED: _bindgen_ty_6 = 1024;
+pub const SMIF_ALTSTATE: _bindgen_ty_6 = 2048;
+pub const SMIF_DRAGNDROP: _bindgen_ty_6 = 4096;
+pub const SMIF_NEW: _bindgen_ty_6 = 8192;
+pub type _bindgen_ty_6 = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IShellMenuCallback: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellMenuCallbackVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellMenuCallback, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellMenuCallback) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellMenuCallback) -> ULONG>,
+    pub CallbackSM: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellMenuCallback, psmd: LPSMDATA, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellMenuCallback {
+    pub lpVtbl: *mut IShellMenuCallbackVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IShellMenu: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellMenuVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellMenu, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellMenu) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellMenu) -> ULONG>,
+    pub Initialize: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellMenu, psmc: *mut IShellMenuCallback, uId: UINT, uIdAncestor: UINT, dwFlags: DWORD, ) -> HRESULT, >,
+    pub GetMenuInfo: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellMenu, ppsmc: *mut *mut IShellMenuCallback, puId: *mut UINT, puIdAncestor: *mut UINT, pdwFlags: *mut DWORD, ) -> HRESULT, >,
+    pub SetShellFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellMenu, psf: *mut IShellFolder, pidlFolder: PCIDLIST_ABSOLUTE, hKey: HKEY, dwFlags: DWORD, ) -> HRESULT, >,
+    pub GetShellFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellMenu, pdwFlags: *mut DWORD, ppidl: *mut PIDLIST_ABSOLUTE, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub SetMenu: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellMenu, hmenu: HMENU, hwnd: HWND, dwFlags: DWORD, ) -> HRESULT, >,
+    pub GetMenu: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellMenu, phmenu: *mut HMENU, phwnd: *mut HWND, pdwFlags: *mut DWORD, ) -> HRESULT, >,
+    pub InvalidateItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellMenu, psmd: LPSMDATA, dwFlags: DWORD, ) -> HRESULT, >,
+    pub GetState: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellMenu, psmd: LPSMDATA) -> HRESULT, >,
+    pub SetMenuToolbar: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellMenu, punk: *mut IUnknown, dwFlags: DWORD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellMenu {
+    pub lpVtbl: *mut IShellMenuVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ITrackShellMenu: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ITrackShellMenuVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ITrackShellMenu, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITrackShellMenu) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITrackShellMenu) -> ULONG>,
+    pub Initialize: ::core::option::Option< unsafe extern "system" fn( This: *mut ITrackShellMenu, psmc: *mut IShellMenuCallback, uId: UINT, uIdAncestor: UINT, dwFlags: DWORD, ) -> HRESULT, >,
+    pub GetMenuInfo: ::core::option::Option< unsafe extern "system" fn( This: *mut ITrackShellMenu, ppsmc: *mut *mut IShellMenuCallback, puId: *mut UINT, puIdAncestor: *mut UINT, pdwFlags: *mut DWORD, ) -> HRESULT, >,
+    pub SetShellFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut ITrackShellMenu, psf: *mut IShellFolder, pidlFolder: PCIDLIST_ABSOLUTE, hKey: HKEY, dwFlags: DWORD, ) -> HRESULT, >,
+    pub GetShellFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut ITrackShellMenu, pdwFlags: *mut DWORD, ppidl: *mut PIDLIST_ABSOLUTE, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub SetMenu: ::core::option::Option< unsafe extern "system" fn( This: *mut ITrackShellMenu, hmenu: HMENU, hwnd: HWND, dwFlags: DWORD, ) -> HRESULT, >,
+    pub GetMenu: ::core::option::Option< unsafe extern "system" fn( This: *mut ITrackShellMenu, phmenu: *mut HMENU, phwnd: *mut HWND, pdwFlags: *mut DWORD, ) -> HRESULT, >,
+    pub InvalidateItem: ::core::option::Option< unsafe extern "system" fn( This: *mut ITrackShellMenu, psmd: LPSMDATA, dwFlags: DWORD, ) -> HRESULT, >,
+    pub GetState: ::core::option::Option< unsafe extern "system" fn(This: *mut ITrackShellMenu, psmd: LPSMDATA) -> HRESULT, >,
+    pub SetMenuToolbar: ::core::option::Option< unsafe extern "system" fn( This: *mut ITrackShellMenu, punk: *mut IUnknown, dwFlags: DWORD, ) -> HRESULT, >,
+    pub SetObscured: ::core::option::Option< unsafe extern "system" fn( This: *mut ITrackShellMenu, hwndTB: HWND, punkBand: *mut IUnknown, dwSMSetFlags: DWORD, ) -> HRESULT, >,
+    pub Popup: ::core::option::Option< unsafe extern "system" fn( This: *mut ITrackShellMenu, hwnd: HWND, ppt: *mut POINTL, prcExclude: *mut RECTL, dwFlags: MP_POPUPFLAGS, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITrackShellMenu {
+    pub lpVtbl: *mut ITrackShellMenuVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IAutoCompleteDropDown: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IAutoCompleteDropDownVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAutoCompleteDropDown, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IAutoCompleteDropDown) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IAutoCompleteDropDown) -> ULONG, >,
+    pub GetDropDownStatus: ::core::option::Option< unsafe extern "system" fn( This: *mut IAutoCompleteDropDown, pdwFlags: *mut DWORD, ppwszString: *mut LPWSTR, ) -> HRESULT, >,
+    pub ResetEnumerator: ::core::option::Option< unsafe extern "system" fn(This: *mut IAutoCompleteDropDown) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAutoCompleteDropDown {
+    pub lpVtbl: *mut IAutoCompleteDropDownVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IProfferService: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IProfferServiceVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IProfferService, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IProfferService) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IProfferService) -> ULONG>,
+    pub ProfferService: ::core::option::Option< unsafe extern "system" fn( This: *mut IProfferService, service: *const GUID, pService: *mut IServiceProvider, pCookie: *mut DWORD, ) -> HRESULT, >,
+    pub RevokeService: ::core::option::Option< unsafe extern "system" fn(This: *mut IProfferService, cookie: DWORD) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IProfferService {
+    pub lpVtbl: *mut IProfferServiceVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IExplorerBrowserEvents: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IExplorerBrowserEventsVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowserEvents, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IExplorerBrowserEvents) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IExplorerBrowserEvents) -> ULONG, >,
+    pub OnNavigationPending: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowserEvents, pidlFolder: PCIDLIST_ABSOLUTE, ) -> HRESULT, >,
+    pub OnViewCreated: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowserEvents, psv: *mut IShellView, ) -> HRESULT, >,
+    pub OnNavigationComplete: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowserEvents, pidlFolder: PCIDLIST_ABSOLUTE, ) -> HRESULT, >,
+    pub OnNavigationFailed: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowserEvents, pidlFolder: PCIDLIST_ABSOLUTE, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExplorerBrowserEvents {
+    pub lpVtbl: *mut IExplorerBrowserEventsVtbl,
+}
+pub type EXPLORERPANE = GUID;
+pub type REFEXPLORERPANE = *mut EXPLORERPANE;
+pub const tagEXPLORERPANESTATE_EPS_DONTCARE: tagEXPLORERPANESTATE = 0;
+pub const tagEXPLORERPANESTATE_EPS_DEFAULT_ON: tagEXPLORERPANESTATE = 1;
+pub const tagEXPLORERPANESTATE_EPS_DEFAULT_OFF: tagEXPLORERPANESTATE = 2;
+pub const tagEXPLORERPANESTATE_EPS_STATE_MASK: tagEXPLORERPANESTATE = 65535;
+pub const tagEXPLORERPANESTATE_EPS_INITIALSTATE: tagEXPLORERPANESTATE = 65536;
+pub const tagEXPLORERPANESTATE_EPS_FORCE: tagEXPLORERPANESTATE = 131072;
+pub type tagEXPLORERPANESTATE = ::core::ffi::c_uint;
+pub use self::tagEXPLORERPANESTATE as EXPLORERPANESTATE;
+unsafe extern "C" {
+    pub static IID_IExplorerPaneVisibility: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IExplorerPaneVisibilityVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerPaneVisibility, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IExplorerPaneVisibility) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IExplorerPaneVisibility) -> ULONG, >,
+    pub GetPaneState: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerPaneVisibility, ep: REFEXPLORERPANE, peps: *mut EXPLORERPANESTATE, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExplorerPaneVisibility {
+    pub lpVtbl: *mut IExplorerPaneVisibilityVtbl,
+}
+pub const tagEXPLORER_BROWSER_FILL_FLAGS_EBF_NONE: tagEXPLORER_BROWSER_FILL_FLAGS = 0;
+pub const tagEXPLORER_BROWSER_FILL_FLAGS_EBF_SELECTFROMDATAOBJECT: tagEXPLORER_BROWSER_FILL_FLAGS =
+    256;
+pub const tagEXPLORER_BROWSER_FILL_FLAGS_EBF_NODROPTARGET: tagEXPLORER_BROWSER_FILL_FLAGS = 512;
+pub type tagEXPLORER_BROWSER_FILL_FLAGS = ::core::ffi::c_uint;
+pub use self::tagEXPLORER_BROWSER_FILL_FLAGS as EXPLORER_BROWSER_FILL_FLAGS;
+pub const tagEXPLORER_BROWSER_OPTIONS_EBO_NONE: tagEXPLORER_BROWSER_OPTIONS = 0;
+pub const tagEXPLORER_BROWSER_OPTIONS_EBO_NAVIGATEONCE: tagEXPLORER_BROWSER_OPTIONS = 1;
+pub const tagEXPLORER_BROWSER_OPTIONS_EBO_SHOWFRAMES: tagEXPLORER_BROWSER_OPTIONS = 2;
+pub const tagEXPLORER_BROWSER_OPTIONS_EBO_ALWAYSNAVIGATE: tagEXPLORER_BROWSER_OPTIONS = 4;
+pub const tagEXPLORER_BROWSER_OPTIONS_EBO_NOTRAVELLOG: tagEXPLORER_BROWSER_OPTIONS = 8;
+pub const tagEXPLORER_BROWSER_OPTIONS_EBO_NOWRAPPERWINDOW: tagEXPLORER_BROWSER_OPTIONS = 16;
+pub const tagEXPLORER_BROWSER_OPTIONS_EBO_HTMLSHAREPOINTVIEW: tagEXPLORER_BROWSER_OPTIONS = 32;
+pub const tagEXPLORER_BROWSER_OPTIONS_EBO_NOBORDER: tagEXPLORER_BROWSER_OPTIONS = 64;
+pub const tagEXPLORER_BROWSER_OPTIONS_EBO_NOPERSISTVIEWSTATE: tagEXPLORER_BROWSER_OPTIONS = 128;
+pub type tagEXPLORER_BROWSER_OPTIONS = ::core::ffi::c_uint;
+pub use self::tagEXPLORER_BROWSER_OPTIONS as EXPLORER_BROWSER_OPTIONS;
+unsafe extern "C" {
+    pub static IID_IExplorerBrowser: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IExplorerBrowserVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowser, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IExplorerBrowser) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IExplorerBrowser) -> ULONG>,
+    pub Initialize: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowser, hwndParent: HWND, prc: *const RECT, pfs: *const FOLDERSETTINGS, ) -> HRESULT, >,
+    pub Destroy: ::core::option::Option<unsafe extern "system" fn(This: *mut IExplorerBrowser) -> HRESULT>,
+    pub SetRect: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowser, phdwp: *mut HDWP, rcBrowser: RECT, ) -> HRESULT, >,
+    pub SetPropertyBag: ::core::option::Option< unsafe extern "system" fn(This: *mut IExplorerBrowser, pszPropertyBag: LPCWSTR) -> HRESULT, >,
+    pub SetEmptyText: ::core::option::Option< unsafe extern "system" fn(This: *mut IExplorerBrowser, pszEmptyText: LPCWSTR) -> HRESULT, >,
+    pub SetFolderSettings: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowser, pfs: *const FOLDERSETTINGS, ) -> HRESULT, >,
+    pub Advise: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowser, psbe: *mut IExplorerBrowserEvents, pdwCookie: *mut DWORD, ) -> HRESULT, >,
+    pub Unadvise: ::core::option::Option< unsafe extern "system" fn(This: *mut IExplorerBrowser, dwCookie: DWORD) -> HRESULT, >,
+    pub SetOptions: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowser, dwFlag: EXPLORER_BROWSER_OPTIONS, ) -> HRESULT, >,
+    pub GetOptions: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowser, pdwFlag: *mut EXPLORER_BROWSER_OPTIONS, ) -> HRESULT, >,
+    pub BrowseToIDList: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowser, pidl: PCUIDLIST_RELATIVE, uFlags: UINT, ) -> HRESULT, >,
+    pub BrowseToObject: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowser, punk: *mut IUnknown, uFlags: UINT, ) -> HRESULT, >,
+    pub FillFromObject: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowser, punk: *mut IUnknown, dwFlags: EXPLORER_BROWSER_FILL_FLAGS, ) -> HRESULT, >,
+    pub RemoveAll: ::core::option::Option<unsafe extern "system" fn(This: *mut IExplorerBrowser) -> HRESULT>,
+    pub GetCurrentView: ::core::option::Option< unsafe extern "system" fn( This: *mut IExplorerBrowser, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IExplorerBrowser {
+    pub lpVtbl: *mut IExplorerBrowserVtbl,
+}
+pub const _NSTCSTYLE_NSTCS_HASEXPANDOS: _NSTCSTYLE = 1;
+pub const _NSTCSTYLE_NSTCS_HASLINES: _NSTCSTYLE = 2;
+pub const _NSTCSTYLE_NSTCS_SINGLECLICKEXPAND: _NSTCSTYLE = 4;
+pub const _NSTCSTYLE_NSTCS_FULLROWSELECT: _NSTCSTYLE = 8;
+pub const _NSTCSTYLE_NSTCS_SPRINGEXPAND: _NSTCSTYLE = 16;
+pub const _NSTCSTYLE_NSTCS_HORIZONTALSCROLL: _NSTCSTYLE = 32;
+pub const _NSTCSTYLE_NSTCS_ROOTHASEXPANDO: _NSTCSTYLE = 64;
+pub const _NSTCSTYLE_NSTCS_SHOWSELECTIONALWAYS: _NSTCSTYLE = 128;
+pub const _NSTCSTYLE_NSTCS_NOINFOTIP: _NSTCSTYLE = 512;
+pub const _NSTCSTYLE_NSTCS_EVENHEIGHT: _NSTCSTYLE = 1024;
+pub const _NSTCSTYLE_NSTCS_NOREPLACEOPEN: _NSTCSTYLE = 2048;
+pub const _NSTCSTYLE_NSTCS_DISABLEDRAGDROP: _NSTCSTYLE = 4096;
+pub const _NSTCSTYLE_NSTCS_NOORDERSTREAM: _NSTCSTYLE = 8192;
+pub const _NSTCSTYLE_NSTCS_RICHTOOLTIP: _NSTCSTYLE = 16384;
+pub const _NSTCSTYLE_NSTCS_BORDER: _NSTCSTYLE = 32768;
+pub const _NSTCSTYLE_NSTCS_NOEDITLABELS: _NSTCSTYLE = 65536;
+pub const _NSTCSTYLE_NSTCS_TABSTOP: _NSTCSTYLE = 131072;
+pub const _NSTCSTYLE_NSTCS_FAVORITESMODE: _NSTCSTYLE = 524288;
+pub const _NSTCSTYLE_NSTCS_AUTOHSCROLL: _NSTCSTYLE = 1048576;
+pub const _NSTCSTYLE_NSTCS_FADEINOUTEXPANDOS: _NSTCSTYLE = 2097152;
+pub const _NSTCSTYLE_NSTCS_EMPTYTEXT: _NSTCSTYLE = 4194304;
+pub const _NSTCSTYLE_NSTCS_CHECKBOXES: _NSTCSTYLE = 8388608;
+pub const _NSTCSTYLE_NSTCS_PARTIALCHECKBOXES: _NSTCSTYLE = 16777216;
+pub const _NSTCSTYLE_NSTCS_EXCLUSIONCHECKBOXES: _NSTCSTYLE = 33554432;
+pub const _NSTCSTYLE_NSTCS_DIMMEDCHECKBOXES: _NSTCSTYLE = 67108864;
+pub const _NSTCSTYLE_NSTCS_NOINDENTCHECKS: _NSTCSTYLE = 134217728;
+pub const _NSTCSTYLE_NSTCS_ALLOWJUNCTIONS: _NSTCSTYLE = 268435456;
+pub const _NSTCSTYLE_NSTCS_SHOWTABSBUTTON: _NSTCSTYLE = 536870912;
+pub const _NSTCSTYLE_NSTCS_SHOWDELETEBUTTON: _NSTCSTYLE = 1073741824;
+pub const _NSTCSTYLE_NSTCS_SHOWREFRESHBUTTON: _NSTCSTYLE = -2147483648;
+pub type _NSTCSTYLE = ::core::ffi::c_int;
+pub type NSTCSTYLE = DWORD;
+pub const _NSTCROOTSTYLE_NSTCRS_VISIBLE: _NSTCROOTSTYLE = 0;
+pub const _NSTCROOTSTYLE_NSTCRS_HIDDEN: _NSTCROOTSTYLE = 1;
+pub const _NSTCROOTSTYLE_NSTCRS_EXPANDED: _NSTCROOTSTYLE = 2;
+pub type _NSTCROOTSTYLE = ::core::ffi::c_uint;
+pub type NSTCROOTSTYLE = DWORD;
+pub const _NSTCITEMSTATE_NSTCIS_NONE: _NSTCITEMSTATE = 0;
+pub const _NSTCITEMSTATE_NSTCIS_SELECTED: _NSTCITEMSTATE = 1;
+pub const _NSTCITEMSTATE_NSTCIS_EXPANDED: _NSTCITEMSTATE = 2;
+pub const _NSTCITEMSTATE_NSTCIS_BOLD: _NSTCITEMSTATE = 4;
+pub const _NSTCITEMSTATE_NSTCIS_DISABLED: _NSTCITEMSTATE = 8;
+pub const _NSTCITEMSTATE_NSTCIS_SELECTEDNOEXPAND: _NSTCITEMSTATE = 16;
+pub type _NSTCITEMSTATE = ::core::ffi::c_uint;
+pub type NSTCITEMSTATE = DWORD;
+pub const NSTCGNI_NSTCGNI_NEXT: NSTCGNI = 0;
+pub const NSTCGNI_NSTCGNI_NEXTVISIBLE: NSTCGNI = 1;
+pub const NSTCGNI_NSTCGNI_PREV: NSTCGNI = 2;
+pub const NSTCGNI_NSTCGNI_PREVVISIBLE: NSTCGNI = 3;
+pub const NSTCGNI_NSTCGNI_PARENT: NSTCGNI = 4;
+pub const NSTCGNI_NSTCGNI_CHILD: NSTCGNI = 5;
+pub const NSTCGNI_NSTCGNI_FIRSTVISIBLE: NSTCGNI = 6;
+pub const NSTCGNI_NSTCGNI_LASTVISIBLE: NSTCGNI = 7;
+pub type NSTCGNI = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_INameSpaceTreeControl: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct INameSpaceTreeControlVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl) -> ULONG, >,
+    pub Initialize: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, hwndParent: HWND, prc: *mut RECT, nstcsFlags: NSTCSTYLE, ) -> HRESULT, >,
+    pub TreeAdvise: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, punk: *mut IUnknown, pdwCookie: *mut DWORD, ) -> HRESULT, >,
+    pub TreeUnadvise: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl, dwCookie: DWORD) -> HRESULT, >,
+    pub AppendRoot: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, psiRoot: *mut IShellItem, grfEnumFlags: SHCONTF, grfRootStyle: NSTCROOTSTYLE, pif: *mut IShellItemFilter, ) -> HRESULT, >,
+    pub InsertRoot: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, iIndex: ::core::ffi::c_int, psiRoot: *mut IShellItem, grfEnumFlags: SHCONTF, grfRootStyle: NSTCROOTSTYLE, pif: *mut IShellItemFilter, ) -> HRESULT, >,
+    pub RemoveRoot: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, psiRoot: *mut IShellItem, ) -> HRESULT, >,
+    pub RemoveAllRoots: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl) -> HRESULT, >,
+    pub GetRootItems: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, ppsiaRootItems: *mut *mut IShellItemArray, ) -> HRESULT, >,
+    pub SetItemState: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, psi: *mut IShellItem, nstcisMask: NSTCITEMSTATE, nstcisFlags: NSTCITEMSTATE, ) -> HRESULT, >,
+    pub GetItemState: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, psi: *mut IShellItem, nstcismask: NSTCITEMSTATE, pnstcisFlags: *mut NSTCITEMSTATE, ) -> HRESULT, >,
+    pub GetSelectedItems: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, psiaItems: *mut *mut IShellItemArray, ) -> HRESULT, >,
+    pub GetItemCustomState: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, psi: *mut IShellItem, piStateNumber: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetItemCustomState: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, psi: *mut IShellItem, iStateNumber: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub EnsureItemVisible: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, psi: *mut IShellItem, ) -> HRESULT, >,
+    pub SetTheme: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl, pszTheme: LPCWSTR) -> HRESULT, >,
+    pub GetNextItem: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, psi: *mut IShellItem, nstcgi: NSTCGNI, ppsiNext: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub HitTest: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, ppt: *mut POINT, ppsiOut: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub GetItemRect: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl, psi: *mut IShellItem, prect: *mut RECT, ) -> HRESULT, >,
+    pub CollapseAll: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct INameSpaceTreeControl {
+    pub lpVtbl: *mut INameSpaceTreeControlVtbl,
+}
+pub const NSTCSTYLE2_NSTCS2_DEFAULT: NSTCSTYLE2 = 0;
+pub const NSTCSTYLE2_NSTCS2_INTERRUPTNOTIFICATIONS: NSTCSTYLE2 = 1;
+pub const NSTCSTYLE2_NSTCS2_SHOWNULLSPACEMENU: NSTCSTYLE2 = 2;
+pub const NSTCSTYLE2_NSTCS2_DISPLAYPADDING: NSTCSTYLE2 = 4;
+pub const NSTCSTYLE2_NSTCS2_DISPLAYPINNEDONLY: NSTCSTYLE2 = 8;
+pub const NSTCSTYLE2_NTSCS2_NOSINGLETONAUTOEXPAND: NSTCSTYLE2 = 16;
+pub const NSTCSTYLE2_NTSCS2_NEVERINSERTNONENUMERATED: NSTCSTYLE2 = 32;
+pub type NSTCSTYLE2 = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_INameSpaceTreeControl2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct INameSpaceTreeControl2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl2) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl2) -> ULONG, >,
+    pub Initialize: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, hwndParent: HWND, prc: *mut RECT, nstcsFlags: NSTCSTYLE, ) -> HRESULT, >,
+    pub TreeAdvise: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, punk: *mut IUnknown, pdwCookie: *mut DWORD, ) -> HRESULT, >,
+    pub TreeUnadvise: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl2, dwCookie: DWORD) -> HRESULT, >,
+    pub AppendRoot: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, psiRoot: *mut IShellItem, grfEnumFlags: SHCONTF, grfRootStyle: NSTCROOTSTYLE, pif: *mut IShellItemFilter, ) -> HRESULT, >,
+    pub InsertRoot: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, iIndex: ::core::ffi::c_int, psiRoot: *mut IShellItem, grfEnumFlags: SHCONTF, grfRootStyle: NSTCROOTSTYLE, pif: *mut IShellItemFilter, ) -> HRESULT, >,
+    pub RemoveRoot: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, psiRoot: *mut IShellItem, ) -> HRESULT, >,
+    pub RemoveAllRoots: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl2) -> HRESULT, >,
+    pub GetRootItems: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, ppsiaRootItems: *mut *mut IShellItemArray, ) -> HRESULT, >,
+    pub SetItemState: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, psi: *mut IShellItem, nstcisMask: NSTCITEMSTATE, nstcisFlags: NSTCITEMSTATE, ) -> HRESULT, >,
+    pub GetItemState: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, psi: *mut IShellItem, nstcismask: NSTCITEMSTATE, pnstcisFlags: *mut NSTCITEMSTATE, ) -> HRESULT, >,
+    pub GetSelectedItems: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, psiaItems: *mut *mut IShellItemArray, ) -> HRESULT, >,
+    pub GetItemCustomState: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, psi: *mut IShellItem, piStateNumber: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub SetItemCustomState: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, psi: *mut IShellItem, iStateNumber: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub EnsureItemVisible: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, psi: *mut IShellItem, ) -> HRESULT, >,
+    pub SetTheme: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl2, pszTheme: LPCWSTR) -> HRESULT, >,
+    pub GetNextItem: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, psi: *mut IShellItem, nstcgi: NSTCGNI, ppsiNext: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub HitTest: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, ppt: *mut POINT, ppsiOut: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub GetItemRect: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, psi: *mut IShellItem, prect: *mut RECT, ) -> HRESULT, >,
+    pub CollapseAll: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControl2) -> HRESULT, >,
+    pub SetControlStyle: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, nstcsMask: NSTCSTYLE, nstcsStyle: NSTCSTYLE, ) -> HRESULT, >,
+    pub GetControlStyle: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, nstcsMask: NSTCSTYLE, pnstcsStyle: *mut NSTCSTYLE, ) -> HRESULT, >,
+    pub SetControlStyle2: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, nstcsMask: NSTCSTYLE2, nstcsStyle: NSTCSTYLE2, ) -> HRESULT, >,
+    pub GetControlStyle2: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControl2, nstcsMask: NSTCSTYLE2, pnstcsStyle: *mut NSTCSTYLE2, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct INameSpaceTreeControl2 {
+    pub lpVtbl: *mut INameSpaceTreeControl2Vtbl,
+}
+pub const _NSTCEHITTEST_NSTCEHT_NOWHERE: _NSTCEHITTEST = 1;
+pub const _NSTCEHITTEST_NSTCEHT_ONITEMICON: _NSTCEHITTEST = 2;
+pub const _NSTCEHITTEST_NSTCEHT_ONITEMLABEL: _NSTCEHITTEST = 4;
+pub const _NSTCEHITTEST_NSTCEHT_ONITEMIDENT: _NSTCEHITTEST = 8;
+pub const _NSTCEHITTEST_NSTCEHT_ONITEMBUTTON: _NSTCEHITTEST = 16;
+pub const _NSTCEHITTEST_NSTCEHT_ONITEMRIGHT: _NSTCEHITTEST = 32;
+pub const _NSTCEHITTEST_NSTCEHT_ONITEMSTATEICON: _NSTCEHITTEST = 64;
+pub const _NSTCEHITTEST_NSTCEHT_ONITEM: _NSTCEHITTEST = 70;
+pub const _NSTCEHITTEST_NSTCEHT_ONITEMTABBUTTON: _NSTCEHITTEST = 4096;
+pub type _NSTCEHITTEST = ::core::ffi::c_uint;
+pub type NSTCEHITTEST = DWORD;
+pub const _NSTCECLICKTYPE_NSTCECT_LBUTTON: _NSTCECLICKTYPE = 1;
+pub const _NSTCECLICKTYPE_NSTCECT_MBUTTON: _NSTCECLICKTYPE = 2;
+pub const _NSTCECLICKTYPE_NSTCECT_RBUTTON: _NSTCECLICKTYPE = 3;
+pub const _NSTCECLICKTYPE_NSTCECT_BUTTON: _NSTCECLICKTYPE = 3;
+pub const _NSTCECLICKTYPE_NSTCECT_DBLCLICK: _NSTCECLICKTYPE = 4;
+pub type _NSTCECLICKTYPE = ::core::ffi::c_uint;
+pub type NSTCECLICKTYPE = DWORD;
+unsafe extern "C" {
+    pub static IID_INameSpaceTreeControlEvents: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct INameSpaceTreeControlEventsVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControlEvents) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControlEvents) -> ULONG, >,
+    pub OnItemClick: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, nstceHitTest: NSTCEHITTEST, nstceClickType: NSTCECLICKTYPE, ) -> HRESULT, >,
+    pub OnPropertyItemCommit: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, ) -> HRESULT, >,
+    pub OnItemStateChanging: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, nstcisMask: NSTCITEMSTATE, nstcisState: NSTCITEMSTATE, ) -> HRESULT, >,
+    pub OnItemStateChanged: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, nstcisMask: NSTCITEMSTATE, nstcisState: NSTCITEMSTATE, ) -> HRESULT, >,
+    pub OnSelectionChanged: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psiaSelection: *mut IShellItemArray, ) -> HRESULT, >,
+    pub OnKeyboardInput: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, uMsg: UINT, wParam: WPARAM, lParam: LPARAM, ) -> HRESULT, >,
+    pub OnBeforeExpand: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, ) -> HRESULT, >,
+    pub OnAfterExpand: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, ) -> HRESULT, >,
+    pub OnBeginLabelEdit: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, ) -> HRESULT, >,
+    pub OnEndLabelEdit: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, ) -> HRESULT, >,
+    pub OnGetToolTip: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, pszTip: LPWSTR, cchTip: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub OnBeforeItemDelete: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, ) -> HRESULT, >,
+    pub OnItemAdded: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, fIsRoot: BOOL, ) -> HRESULT, >,
+    pub OnItemDeleted: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, fIsRoot: BOOL, ) -> HRESULT, >,
+    pub OnBeforeContextMenu: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub OnAfterContextMenu: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, pcmIn: *mut IContextMenu, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub OnBeforeStateImageChange: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, ) -> HRESULT, >,
+    pub OnGetDefaultIconIndex: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlEvents, psi: *mut IShellItem, piDefaultIcon: *mut ::core::ffi::c_int, piOpenIcon: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct INameSpaceTreeControlEvents {
+    pub lpVtbl: *mut INameSpaceTreeControlEventsVtbl,
+}
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub struct NSTCCUSTOMDRAW {
+    pub psi: *mut IShellItem,
+    pub uItemState: UINT,
+    pub nstcis: NSTCITEMSTATE,
+    pub pszText: LPCWSTR,
+    pub iImage: ::core::ffi::c_int,
+    pub himl: HIMAGELIST,
+    pub iLevel: ::core::ffi::c_int,
+    pub iIndent: ::core::ffi::c_int,
+}
+unsafe extern "C" {
+    pub static IID_INameSpaceTreeControlCustomDraw: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct INameSpaceTreeControlCustomDrawVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlCustomDraw, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControlCustomDraw) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControlCustomDraw) -> ULONG, >,
+    pub PrePaint: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlCustomDraw, hdc: HDC, prc: *mut RECT, plres: *mut LRESULT, ) -> HRESULT, >,
+    pub PostPaint: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlCustomDraw, hdc: HDC, prc: *mut RECT, ) -> HRESULT, >,
+    pub ItemPrePaint: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlCustomDraw, hdc: HDC, prc: *mut RECT, pclrText: *mut COLORREF, pclrTextBk: *mut COLORREF, plres: *mut LRESULT, ) -> HRESULT, >,
+    pub ItemPostPaint: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlCustomDraw, hdc: HDC, prc: *mut RECT, pnstccdItem: *mut NSTCCUSTOMDRAW, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct INameSpaceTreeControlCustomDraw {
+    pub lpVtbl: *mut INameSpaceTreeControlCustomDrawVtbl,
+}
+unsafe extern "C" {
+    pub static IID_INameSpaceTreeControlDropHandler: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct INameSpaceTreeControlDropHandlerVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlDropHandler, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControlDropHandler) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut INameSpaceTreeControlDropHandler) -> ULONG, >,
+    pub OnDragEnter: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlDropHandler, psiOver: *mut IShellItem, psiaData: *mut IShellItemArray, fOutsideSource: BOOL, grfKeyState: DWORD, pdwEffect: *mut DWORD, ) -> HRESULT, >,
+    pub OnDragOver: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlDropHandler, psiOver: *mut IShellItem, psiaData: *mut IShellItemArray, grfKeyState: DWORD, pdwEffect: *mut DWORD, ) -> HRESULT, >,
+    pub OnDragPosition: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlDropHandler, psiOver: *mut IShellItem, psiaData: *mut IShellItemArray, iNewPosition: ::core::ffi::c_int, iOldPosition: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub OnDrop: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlDropHandler, psiOver: *mut IShellItem, psiaData: *mut IShellItemArray, iPosition: ::core::ffi::c_int, grfKeyState: DWORD, pdwEffect: *mut DWORD, ) -> HRESULT, >,
+    pub OnDropPosition: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlDropHandler, psiOver: *mut IShellItem, psiaData: *mut IShellItemArray, iNewPosition: ::core::ffi::c_int, iOldPosition: ::core::ffi::c_int, ) -> HRESULT, >,
+    pub OnDragLeave: ::core::option::Option< unsafe extern "system" fn( This: *mut INameSpaceTreeControlDropHandler, psiOver: *mut IShellItem, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct INameSpaceTreeControlDropHandler {
+    pub lpVtbl: *mut INameSpaceTreeControlDropHandlerVtbl,
+}
+pub const FDE_OVERWRITE_RESPONSE_FDEOR_DEFAULT: FDE_OVERWRITE_RESPONSE = 0;
+pub const FDE_OVERWRITE_RESPONSE_FDEOR_ACCEPT: FDE_OVERWRITE_RESPONSE = 1;
+pub const FDE_OVERWRITE_RESPONSE_FDEOR_REFUSE: FDE_OVERWRITE_RESPONSE = 2;
+pub type FDE_OVERWRITE_RESPONSE = ::core::ffi::c_uint;
+pub const FDE_SHAREVIOLATION_RESPONSE_FDESVR_DEFAULT: FDE_SHAREVIOLATION_RESPONSE = 0;
+pub const FDE_SHAREVIOLATION_RESPONSE_FDESVR_ACCEPT: FDE_SHAREVIOLATION_RESPONSE = 1;
+pub const FDE_SHAREVIOLATION_RESPONSE_FDESVR_REFUSE: FDE_SHAREVIOLATION_RESPONSE = 2;
+pub type FDE_SHAREVIOLATION_RESPONSE = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IFileDialogEvents: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFileDialogEventsVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogEvents, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileDialogEvents) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileDialogEvents) -> ULONG>,
+    pub OnFileOk: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogEvents, pfd: *mut IFileDialog) -> HRESULT, >,
+    pub OnFolderChanging: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogEvents, pfd: *mut IFileDialog, psiFolder: *mut IShellItem, ) -> HRESULT, >,
+    pub OnFolderChange: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogEvents, pfd: *mut IFileDialog) -> HRESULT, >,
+    pub OnSelectionChange: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogEvents, pfd: *mut IFileDialog) -> HRESULT, >,
+    pub OnShareViolation: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogEvents, pfd: *mut IFileDialog, psi: *mut IShellItem, pResponse: *mut FDE_SHAREVIOLATION_RESPONSE, ) -> HRESULT, >,
+    pub OnTypeChange: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogEvents, pfd: *mut IFileDialog) -> HRESULT, >,
+    pub OnOverwrite: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogEvents, pfd: *mut IFileDialog, psi: *mut IShellItem, pResponse: *mut FDE_OVERWRITE_RESPONSE, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFileDialogEvents {
+    pub lpVtbl: *mut IFileDialogEventsVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IModalWindow: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IModalWindowVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IModalWindow, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IModalWindow) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IModalWindow) -> ULONG>,
+    pub Show: ::core::option::Option< unsafe extern "system" fn(This: *mut IModalWindow, hwndOwner: HWND) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IModalWindow {
+    pub lpVtbl: *mut IModalWindowVtbl,
+}
+unsafe extern "system" {
+    pub fn IModalWindow_RemoteShow_Proxy(This: *mut IModalWindow, hwndOwner: HWND) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IModalWindow_RemoteShow_Stub(
+        This: *mut IRpcStubBuffer,
+        pRpcChannelBuffer: *mut IRpcChannelBuffer,
+        pRpcMessage: PRPC_MESSAGE,
+        pdwStubPhase: *mut DWORD,
+    );
+}
+unsafe extern "system" {
+    pub fn IModalWindow_Show_Proxy(This: *mut IModalWindow, hwndOwner: HWND) -> HRESULT;
+}
+unsafe extern "system" {
+    pub fn IModalWindow_Show_Stub(This: *mut IModalWindow, hwndOwner: HWND) -> HRESULT;
+}
+pub const FDAP_FDAP_BOTTOM: FDAP = 0;
+pub const FDAP_FDAP_TOP: FDAP = 1;
+pub type FDAP = ::core::ffi::c_uint;
+pub const _FILEOPENDIALOGOPTIONS_FOS_OVERWRITEPROMPT: _FILEOPENDIALOGOPTIONS = 2;
+pub const _FILEOPENDIALOGOPTIONS_FOS_STRICTFILETYPES: _FILEOPENDIALOGOPTIONS = 4;
+pub const _FILEOPENDIALOGOPTIONS_FOS_NOCHANGEDIR: _FILEOPENDIALOGOPTIONS = 8;
+pub const _FILEOPENDIALOGOPTIONS_FOS_PICKFOLDERS: _FILEOPENDIALOGOPTIONS = 32;
+pub const _FILEOPENDIALOGOPTIONS_FOS_FORCEFILESYSTEM: _FILEOPENDIALOGOPTIONS = 64;
+pub const _FILEOPENDIALOGOPTIONS_FOS_ALLNONSTORAGEITEMS: _FILEOPENDIALOGOPTIONS = 128;
+pub const _FILEOPENDIALOGOPTIONS_FOS_NOVALIDATE: _FILEOPENDIALOGOPTIONS = 256;
+pub const _FILEOPENDIALOGOPTIONS_FOS_ALLOWMULTISELECT: _FILEOPENDIALOGOPTIONS = 512;
+pub const _FILEOPENDIALOGOPTIONS_FOS_PATHMUSTEXIST: _FILEOPENDIALOGOPTIONS = 2048;
+pub const _FILEOPENDIALOGOPTIONS_FOS_FILEMUSTEXIST: _FILEOPENDIALOGOPTIONS = 4096;
+pub const _FILEOPENDIALOGOPTIONS_FOS_CREATEPROMPT: _FILEOPENDIALOGOPTIONS = 8192;
+pub const _FILEOPENDIALOGOPTIONS_FOS_SHAREAWARE: _FILEOPENDIALOGOPTIONS = 16384;
+pub const _FILEOPENDIALOGOPTIONS_FOS_NOREADONLYRETURN: _FILEOPENDIALOGOPTIONS = 32768;
+pub const _FILEOPENDIALOGOPTIONS_FOS_NOTESTFILECREATE: _FILEOPENDIALOGOPTIONS = 65536;
+pub const _FILEOPENDIALOGOPTIONS_FOS_HIDEMRUPLACES: _FILEOPENDIALOGOPTIONS = 131072;
+pub const _FILEOPENDIALOGOPTIONS_FOS_HIDEPINNEDPLACES: _FILEOPENDIALOGOPTIONS = 262144;
+pub const _FILEOPENDIALOGOPTIONS_FOS_NODEREFERENCELINKS: _FILEOPENDIALOGOPTIONS = 1048576;
+pub const _FILEOPENDIALOGOPTIONS_FOS_DONTADDTORECENT: _FILEOPENDIALOGOPTIONS = 33554432;
+pub const _FILEOPENDIALOGOPTIONS_FOS_FORCESHOWHIDDEN: _FILEOPENDIALOGOPTIONS = 268435456;
+pub const _FILEOPENDIALOGOPTIONS_FOS_DEFAULTNOMINIMODE: _FILEOPENDIALOGOPTIONS = 536870912;
+pub const _FILEOPENDIALOGOPTIONS_FOS_FORCEPREVIEWPANEON: _FILEOPENDIALOGOPTIONS = 1073741824;
+pub const _FILEOPENDIALOGOPTIONS_FOS_SUPPORTSTREAMABLEITEMS: _FILEOPENDIALOGOPTIONS = 2147483648;
+pub type _FILEOPENDIALOGOPTIONS = ::core::ffi::c_uint;
+pub type FILEOPENDIALOGOPTIONS = DWORD;
+unsafe extern "C" {
+    pub static IID_IFileDialog: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFileDialogVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileDialog) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileDialog) -> ULONG>,
+    pub Show: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, hwndOwner: HWND) -> HRESULT, >,
+    pub SetFileTypes: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog, cFileTypes: UINT, rgFilterSpec: *const COMDLG_FILTERSPEC, ) -> HRESULT, >,
+    pub SetFileTypeIndex: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, iFileType: UINT) -> HRESULT, >,
+    pub GetFileTypeIndex: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, piFileType: *mut UINT) -> HRESULT, >,
+    pub Advise: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog, pfde: *mut IFileDialogEvents, pdwCookie: *mut DWORD, ) -> HRESULT, >,
+    pub Unadvise: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, dwCookie: DWORD) -> HRESULT, >,
+    pub SetOptions: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, fos: FILEOPENDIALOGOPTIONS) -> HRESULT, >,
+    pub GetOptions: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog, pfos: *mut FILEOPENDIALOGOPTIONS, ) -> HRESULT, >,
+    pub SetDefaultFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, psi: *mut IShellItem) -> HRESULT, >,
+    pub SetFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, psi: *mut IShellItem) -> HRESULT, >,
+    pub GetFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, ppsi: *mut *mut IShellItem) -> HRESULT, >,
+    pub GetCurrentSelection: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, ppsi: *mut *mut IShellItem) -> HRESULT, >,
+    pub SetFileName: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, pszName: LPCWSTR) -> HRESULT, >,
+    pub GetFileName: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, pszName: *mut LPWSTR) -> HRESULT, >,
+    pub SetTitle: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, pszTitle: LPCWSTR) -> HRESULT, >,
+    pub SetOkButtonLabel: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, pszText: LPCWSTR) -> HRESULT, >,
+    pub SetFileNameLabel: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, pszLabel: LPCWSTR) -> HRESULT, >,
+    pub GetResult: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, ppsi: *mut *mut IShellItem) -> HRESULT, >,
+    pub AddPlace: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog, psi: *mut IShellItem, fdap: FDAP, ) -> HRESULT, >,
+    pub SetDefaultExtension: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, pszDefaultExtension: LPCWSTR) -> HRESULT, >,
+    pub Close: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, hr: HRESULT) -> HRESULT, >,
+    pub SetClientGuid: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog, guid: *const GUID) -> HRESULT, >,
+    pub ClearClientData: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileDialog) -> HRESULT>,
+    pub SetFilter: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog, pFilter: *mut IShellItemFilter, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFileDialog {
+    pub lpVtbl: *mut IFileDialogVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IFileDialog2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFileDialog2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileDialog2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileDialog2) -> ULONG>,
+    pub Show: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, hwndOwner: HWND) -> HRESULT, >,
+    pub SetFileTypes: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog2, cFileTypes: UINT, rgFilterSpec: *const COMDLG_FILTERSPEC, ) -> HRESULT, >,
+    pub SetFileTypeIndex: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, iFileType: UINT) -> HRESULT, >,
+    pub GetFileTypeIndex: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, piFileType: *mut UINT) -> HRESULT, >,
+    pub Advise: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog2, pfde: *mut IFileDialogEvents, pdwCookie: *mut DWORD, ) -> HRESULT, >,
+    pub Unadvise: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, dwCookie: DWORD) -> HRESULT, >,
+    pub SetOptions: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, fos: FILEOPENDIALOGOPTIONS) -> HRESULT, >,
+    pub GetOptions: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog2, pfos: *mut FILEOPENDIALOGOPTIONS, ) -> HRESULT, >,
+    pub SetDefaultFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, psi: *mut IShellItem) -> HRESULT, >,
+    pub SetFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, psi: *mut IShellItem) -> HRESULT, >,
+    pub GetFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, ppsi: *mut *mut IShellItem) -> HRESULT, >,
+    pub GetCurrentSelection: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, ppsi: *mut *mut IShellItem) -> HRESULT, >,
+    pub SetFileName: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, pszName: LPCWSTR) -> HRESULT, >,
+    pub GetFileName: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, pszName: *mut LPWSTR) -> HRESULT, >,
+    pub SetTitle: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, pszTitle: LPCWSTR) -> HRESULT, >,
+    pub SetOkButtonLabel: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, pszText: LPCWSTR) -> HRESULT, >,
+    pub SetFileNameLabel: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, pszLabel: LPCWSTR) -> HRESULT, >,
+    pub GetResult: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, ppsi: *mut *mut IShellItem) -> HRESULT, >,
+    pub AddPlace: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog2, psi: *mut IShellItem, fdap: FDAP, ) -> HRESULT, >,
+    pub SetDefaultExtension: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog2, pszDefaultExtension: LPCWSTR, ) -> HRESULT, >,
+    pub Close: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, hr: HRESULT) -> HRESULT, >,
+    pub SetClientGuid: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, guid: *const GUID) -> HRESULT, >,
+    pub ClearClientData: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileDialog2) -> HRESULT>,
+    pub SetFilter: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialog2, pFilter: *mut IShellItemFilter, ) -> HRESULT, >,
+    pub SetCancelButtonLabel: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, pszLabel: LPCWSTR) -> HRESULT, >,
+    pub SetNavigationRoot: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialog2, psi: *mut IShellItem) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFileDialog2 {
+    pub lpVtbl: *mut IFileDialog2Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_IFileOperationProgressSink: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFileOperationProgressSinkVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperationProgressSink) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperationProgressSink) -> ULONG, >,
+    pub StartOperations: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperationProgressSink) -> HRESULT, >,
+    pub FinishOperations: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, hrResult: HRESULT, ) -> HRESULT, >,
+    pub PreRenameItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, dwFlags: DWORD, psiItem: *mut IShellItem, pszNewName: LPCWSTR, ) -> HRESULT, >,
+    pub PostRenameItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, dwFlags: DWORD, psiItem: *mut IShellItem, pszNewName: LPCWSTR, hrRename: HRESULT, psiNewlyCreated: *mut IShellItem, ) -> HRESULT, >,
+    pub PreMoveItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, dwFlags: DWORD, psiItem: *mut IShellItem, psiDestinationFolder: *mut IShellItem, pszNewName: LPCWSTR, ) -> HRESULT, >,
+    pub PostMoveItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, dwFlags: DWORD, psiItem: *mut IShellItem, psiDestinationFolder: *mut IShellItem, pszNewName: LPCWSTR, hrMove: HRESULT, psiNewlyCreated: *mut IShellItem, ) -> HRESULT, >,
+    pub PreCopyItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, dwFlags: DWORD, psiItem: *mut IShellItem, psiDestinationFolder: *mut IShellItem, pszNewName: LPCWSTR, ) -> HRESULT, >,
+    pub PostCopyItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, dwFlags: DWORD, psiItem: *mut IShellItem, psiDestinationFolder: *mut IShellItem, pszNewName: LPCWSTR, hrCopy: HRESULT, psiNewlyCreated: *mut IShellItem, ) -> HRESULT, >,
+    pub PreDeleteItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, dwFlags: DWORD, psiItem: *mut IShellItem, ) -> HRESULT, >,
+    pub PostDeleteItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, dwFlags: DWORD, psiItem: *mut IShellItem, hrDelete: HRESULT, psiNewlyCreated: *mut IShellItem, ) -> HRESULT, >,
+    pub PreNewItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, dwFlags: DWORD, psiDestinationFolder: *mut IShellItem, pszNewName: LPCWSTR, ) -> HRESULT, >,
+    pub PostNewItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, dwFlags: DWORD, psiDestinationFolder: *mut IShellItem, pszNewName: LPCWSTR, pszTemplateName: LPCWSTR, dwFileAttributes: DWORD, hrNew: HRESULT, psiNewItem: *mut IShellItem, ) -> HRESULT, >,
+    pub UpdateProgress: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperationProgressSink, iWorkTotal: UINT, iWorkSoFar: UINT, ) -> HRESULT, >,
+    pub ResetTimer: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperationProgressSink) -> HRESULT, >,
+    pub PauseTimer: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperationProgressSink) -> HRESULT, >,
+    pub ResumeTimer: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperationProgressSink) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFileOperationProgressSink {
+    pub lpVtbl: *mut IFileOperationProgressSinkVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IFileSaveDialog: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFileSaveDialogVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileSaveDialog) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileSaveDialog) -> ULONG>,
+    pub Show: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, hwndOwner: HWND) -> HRESULT, >,
+    pub SetFileTypes: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, cFileTypes: UINT, rgFilterSpec: *const COMDLG_FILTERSPEC, ) -> HRESULT, >,
+    pub SetFileTypeIndex: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, iFileType: UINT) -> HRESULT, >,
+    pub GetFileTypeIndex: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, piFileType: *mut UINT) -> HRESULT, >,
+    pub Advise: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, pfde: *mut IFileDialogEvents, pdwCookie: *mut DWORD, ) -> HRESULT, >,
+    pub Unadvise: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, dwCookie: DWORD) -> HRESULT, >,
+    pub SetOptions: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, fos: FILEOPENDIALOGOPTIONS, ) -> HRESULT, >,
+    pub GetOptions: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, pfos: *mut FILEOPENDIALOGOPTIONS, ) -> HRESULT, >,
+    pub SetDefaultFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, psi: *mut IShellItem) -> HRESULT, >,
+    pub SetFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, psi: *mut IShellItem) -> HRESULT, >,
+    pub GetFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, ppsi: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub GetCurrentSelection: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, ppsi: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub SetFileName: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, pszName: LPCWSTR) -> HRESULT, >,
+    pub GetFileName: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, pszName: *mut LPWSTR) -> HRESULT, >,
+    pub SetTitle: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, pszTitle: LPCWSTR) -> HRESULT, >,
+    pub SetOkButtonLabel: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, pszText: LPCWSTR) -> HRESULT, >,
+    pub SetFileNameLabel: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, pszLabel: LPCWSTR) -> HRESULT, >,
+    pub GetResult: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, ppsi: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub AddPlace: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, psi: *mut IShellItem, fdap: FDAP, ) -> HRESULT, >,
+    pub SetDefaultExtension: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, pszDefaultExtension: LPCWSTR, ) -> HRESULT, >,
+    pub Close: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, hr: HRESULT) -> HRESULT, >,
+    pub SetClientGuid: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, guid: *const GUID) -> HRESULT, >,
+    pub ClearClientData: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileSaveDialog) -> HRESULT>,
+    pub SetFilter: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, pFilter: *mut IShellItemFilter, ) -> HRESULT, >,
+    pub SetSaveAsItem: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileSaveDialog, psi: *mut IShellItem) -> HRESULT, >,
+    pub SetProperties: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, pStore: *mut IPropertyStore, ) -> HRESULT, >,
+    pub SetCollectedProperties: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, pList: *mut IPropertyDescriptionList, fAppendDefault: BOOL, ) -> HRESULT, >,
+    pub GetProperties: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, ppStore: *mut *mut IPropertyStore, ) -> HRESULT, >,
+    pub ApplyProperties: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileSaveDialog, psi: *mut IShellItem, pStore: *mut IPropertyStore, hwnd: HWND, pSink: *mut IFileOperationProgressSink, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFileSaveDialog {
+    pub lpVtbl: *mut IFileSaveDialogVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IFileOpenDialog: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFileOpenDialogVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileOpenDialog) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileOpenDialog) -> ULONG>,
+    pub Show: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, hwndOwner: HWND) -> HRESULT, >,
+    pub SetFileTypes: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, cFileTypes: UINT, rgFilterSpec: *const COMDLG_FILTERSPEC, ) -> HRESULT, >,
+    pub SetFileTypeIndex: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, iFileType: UINT) -> HRESULT, >,
+    pub GetFileTypeIndex: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, piFileType: *mut UINT) -> HRESULT, >,
+    pub Advise: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, pfde: *mut IFileDialogEvents, pdwCookie: *mut DWORD, ) -> HRESULT, >,
+    pub Unadvise: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, dwCookie: DWORD) -> HRESULT, >,
+    pub SetOptions: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, fos: FILEOPENDIALOGOPTIONS, ) -> HRESULT, >,
+    pub GetOptions: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, pfos: *mut FILEOPENDIALOGOPTIONS, ) -> HRESULT, >,
+    pub SetDefaultFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, psi: *mut IShellItem) -> HRESULT, >,
+    pub SetFolder: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, psi: *mut IShellItem) -> HRESULT, >,
+    pub GetFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, ppsi: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub GetCurrentSelection: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, ppsi: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub SetFileName: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, pszName: LPCWSTR) -> HRESULT, >,
+    pub GetFileName: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, pszName: *mut LPWSTR) -> HRESULT, >,
+    pub SetTitle: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, pszTitle: LPCWSTR) -> HRESULT, >,
+    pub SetOkButtonLabel: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, pszText: LPCWSTR) -> HRESULT, >,
+    pub SetFileNameLabel: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, pszLabel: LPCWSTR) -> HRESULT, >,
+    pub GetResult: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, ppsi: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub AddPlace: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, psi: *mut IShellItem, fdap: FDAP, ) -> HRESULT, >,
+    pub SetDefaultExtension: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, pszDefaultExtension: LPCWSTR, ) -> HRESULT, >,
+    pub Close: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, hr: HRESULT) -> HRESULT, >,
+    pub SetClientGuid: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOpenDialog, guid: *const GUID) -> HRESULT, >,
+    pub ClearClientData: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileOpenDialog) -> HRESULT>,
+    pub SetFilter: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, pFilter: *mut IShellItemFilter, ) -> HRESULT, >,
+    pub GetResults: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, ppenum: *mut *mut IShellItemArray, ) -> HRESULT, >,
+    pub GetSelectedItems: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOpenDialog, ppsai: *mut *mut IShellItemArray, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFileOpenDialog {
+    pub lpVtbl: *mut IFileOpenDialogVtbl,
+}
+pub const CDCONTROLSTATEF_CDCS_INACTIVE: CDCONTROLSTATEF = 0;
+pub const CDCONTROLSTATEF_CDCS_ENABLED: CDCONTROLSTATEF = 1;
+pub const CDCONTROLSTATEF_CDCS_VISIBLE: CDCONTROLSTATEF = 2;
+pub const CDCONTROLSTATEF_CDCS_ENABLEDVISIBLE: CDCONTROLSTATEF = 3;
+pub type CDCONTROLSTATEF = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IFileDialogCustomize: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFileDialogCustomizeVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogCustomize) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogCustomize) -> ULONG, >,
+    pub EnableOpenDropDown: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogCustomize, dwIDCtl: DWORD) -> HRESULT, >,
+    pub AddMenu: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, pszLabel: LPCWSTR, ) -> HRESULT, >,
+    pub AddPushButton: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, pszLabel: LPCWSTR, ) -> HRESULT, >,
+    pub AddComboBox: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogCustomize, dwIDCtl: DWORD) -> HRESULT, >,
+    pub AddRadioButtonList: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogCustomize, dwIDCtl: DWORD) -> HRESULT, >,
+    pub AddCheckButton: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, pszLabel: LPCWSTR, bChecked: BOOL, ) -> HRESULT, >,
+    pub AddEditBox: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, pszText: LPCWSTR, ) -> HRESULT, >,
+    pub AddSeparator: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogCustomize, dwIDCtl: DWORD) -> HRESULT, >,
+    pub AddText: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, pszText: LPCWSTR, ) -> HRESULT, >,
+    pub SetControlLabel: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, pszLabel: LPCWSTR, ) -> HRESULT, >,
+    pub GetControlState: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, pdwState: *mut CDCONTROLSTATEF, ) -> HRESULT, >,
+    pub SetControlState: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, dwState: CDCONTROLSTATEF, ) -> HRESULT, >,
+    pub GetEditBoxText: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, ppszText: *mut *mut WCHAR, ) -> HRESULT, >,
+    pub SetEditBoxText: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, pszText: LPCWSTR, ) -> HRESULT, >,
+    pub GetCheckButtonState: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, pbChecked: *mut BOOL, ) -> HRESULT, >,
+    pub SetCheckButtonState: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, bChecked: BOOL, ) -> HRESULT, >,
+    pub AddControlItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, dwIDItem: DWORD, pszLabel: LPCWSTR, ) -> HRESULT, >,
+    pub RemoveControlItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, dwIDItem: DWORD, ) -> HRESULT, >,
+    pub RemoveAllControlItems: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogCustomize, dwIDCtl: DWORD) -> HRESULT, >,
+    pub GetControlItemState: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, dwIDItem: DWORD, pdwState: *mut CDCONTROLSTATEF, ) -> HRESULT, >,
+    pub SetControlItemState: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, dwIDItem: DWORD, dwState: CDCONTROLSTATEF, ) -> HRESULT, >,
+    pub GetSelectedControlItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, pdwIDItem: *mut DWORD, ) -> HRESULT, >,
+    pub SetSelectedControlItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, dwIDItem: DWORD, ) -> HRESULT, >,
+    pub StartVisualGroup: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, pszLabel: LPCWSTR, ) -> HRESULT, >,
+    pub EndVisualGroup: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogCustomize) -> HRESULT, >,
+    pub MakeProminent: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogCustomize, dwIDCtl: DWORD) -> HRESULT, >,
+    pub SetControlItemText: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogCustomize, dwIDCtl: DWORD, dwIDItem: DWORD, pszLabel: LPCWSTR, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFileDialogCustomize {
+    pub lpVtbl: *mut IFileDialogCustomizeVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IFileDialogControlEvents: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFileDialogControlEventsVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogControlEvents, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogControlEvents) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileDialogControlEvents) -> ULONG, >,
+    pub OnItemSelected: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogControlEvents, pfdc: *mut IFileDialogCustomize, dwIDCtl: DWORD, dwIDItem: DWORD, ) -> HRESULT, >,
+    pub OnButtonClicked: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogControlEvents, pfdc: *mut IFileDialogCustomize, dwIDCtl: DWORD, ) -> HRESULT, >,
+    pub OnCheckButtonToggled: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogControlEvents, pfdc: *mut IFileDialogCustomize, dwIDCtl: BOOL, bChecked: BOOL, ) -> HRESULT, >,
+    pub OnControlActivating: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileDialogControlEvents, pfdc: *mut IFileDialogCustomize, dwIDCtl: DWORD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFileDialogControlEvents {
+    pub lpVtbl: *mut IFileDialogControlEventsVtbl,
+}
+pub const tagKF_CATEGORY_KF_CATEGORY_VIRTUAL: tagKF_CATEGORY = 1;
+pub const tagKF_CATEGORY_KF_CATEGORY_FIXED: tagKF_CATEGORY = 2;
+pub const tagKF_CATEGORY_KF_CATEGORY_COMMON: tagKF_CATEGORY = 3;
+pub const tagKF_CATEGORY_KF_CATEGORY_PERUSER: tagKF_CATEGORY = 4;
+pub type tagKF_CATEGORY = ::core::ffi::c_uint;
+pub use self::tagKF_CATEGORY as KF_CATEGORY;
+pub const tagKF_REDIRECTION_CAPABILITIES_KF_REDIRECTION_CAPABILITIES_ALLOW_ALL:
+    tagKF_REDIRECTION_CAPABILITIES = 255;
+pub const tagKF_REDIRECTION_CAPABILITIES_KF_REDIRECTION_CAPABILITIES_REDIRECTABLE:
+    tagKF_REDIRECTION_CAPABILITIES = 1;
+pub const tagKF_REDIRECTION_CAPABILITIES_KF_REDIRECTION_CAPABILITIES_DENY_ALL:
+    tagKF_REDIRECTION_CAPABILITIES = 1048320;
+pub const tagKF_REDIRECTION_CAPABILITIES_KF_REDIRECTION_CAPABILITIES_DENY_POLICY_REDIRECTED:
+    tagKF_REDIRECTION_CAPABILITIES = 256;
+pub const tagKF_REDIRECTION_CAPABILITIES_KF_REDIRECTION_CAPABILITIES_DENY_POLICY:
+    tagKF_REDIRECTION_CAPABILITIES = 512;
+pub const tagKF_REDIRECTION_CAPABILITIES_KF_REDIRECTION_CAPABILITIES_DENY_PERMISSIONS:
+    tagKF_REDIRECTION_CAPABILITIES = 1024;
+pub type tagKF_REDIRECTION_CAPABILITIES = ::core::ffi::c_uint;
+pub use self::tagKF_REDIRECTION_CAPABILITIES as KF_REDIRECTION_CAPABILITIES;
+pub const tagKF_DEFINITION_FLAGS_KFDF_LOCAL_REDIRECT_ONLY: tagKF_DEFINITION_FLAGS = 2;
+pub const tagKF_DEFINITION_FLAGS_KFDF_ROAMABLE: tagKF_DEFINITION_FLAGS = 4;
+pub const tagKF_DEFINITION_FLAGS_KFDF_PRECREATE: tagKF_DEFINITION_FLAGS = 8;
+pub const tagKF_DEFINITION_FLAGS_KFDF_STREAM: tagKF_DEFINITION_FLAGS = 16;
+pub const tagKF_DEFINITION_FLAGS_KFDF_PUBLISHEXPANDEDPATH: tagKF_DEFINITION_FLAGS = 32;
+pub type tagKF_DEFINITION_FLAGS = ::core::ffi::c_uint;
+pub use self::tagKF_DEFINITION_FLAGS as KF_DEFINITION_FLAGS;
+#[derive(Copy, Clone)]
+#[repr(C, packed)]
+pub struct tagKNOWNFOLDER_DEFINITION {
+    pub category: KF_CATEGORY,
+    pub pszName: LPWSTR,
+    pub pszDescription: LPWSTR,
+    pub fidParent: KNOWNFOLDERID,
+    pub pszRelativePath: LPWSTR,
+    pub pszParsingName: LPWSTR,
+    pub pszTooltip: LPWSTR,
+    pub pszLocalizedName: LPWSTR,
+    pub pszIcon: LPWSTR,
+    pub pszSecurity: LPWSTR,
+    pub dwAttributes: DWORD,
+    pub kfdFlags: KF_DEFINITION_FLAGS,
+    pub ftidType: FOLDERTYPEID,
+}
+pub type KNOWNFOLDER_DEFINITION = tagKNOWNFOLDER_DEFINITION;
+unsafe extern "C" {
+    pub static IID_IKnownFolder: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IKnownFolderVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolder, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IKnownFolder) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IKnownFolder) -> ULONG>,
+    pub GetId: ::core::option::Option< unsafe extern "system" fn(This: *mut IKnownFolder, pkfid: *mut KNOWNFOLDERID) -> HRESULT, >,
+    pub GetCategory: ::core::option::Option< unsafe extern "system" fn(This: *mut IKnownFolder, pCategory: *mut KF_CATEGORY) -> HRESULT, >,
+    pub GetShellItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolder, dwFlags: DWORD, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetPath: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolder, dwFlags: DWORD, ppszPath: *mut LPWSTR, ) -> HRESULT, >,
+    pub SetPath: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolder, dwFlags: DWORD, pszPath: LPCWSTR, ) -> HRESULT, >,
+    pub GetIDList: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolder, dwFlags: DWORD, ppidl: *mut PIDLIST_ABSOLUTE, ) -> HRESULT, >,
+    pub GetFolderType: ::core::option::Option< unsafe extern "system" fn(This: *mut IKnownFolder, pftid: *mut FOLDERTYPEID) -> HRESULT, >,
+    pub GetRedirectionCapabilities: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolder, pCapabilities: *mut KF_REDIRECTION_CAPABILITIES, ) -> HRESULT, >,
+    pub GetFolderDefinition: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolder, pKFD: *mut KNOWNFOLDER_DEFINITION, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IKnownFolder {
+    pub lpVtbl: *mut IKnownFolderVtbl,
+}
+pub const tagKF_REDIRECT_FLAGS_KF_REDIRECT_USER_EXCLUSIVE: tagKF_REDIRECT_FLAGS = 1;
+pub const tagKF_REDIRECT_FLAGS_KF_REDIRECT_COPY_SOURCE_DACL: tagKF_REDIRECT_FLAGS = 2;
+pub const tagKF_REDIRECT_FLAGS_KF_REDIRECT_OWNER_USER: tagKF_REDIRECT_FLAGS = 4;
+pub const tagKF_REDIRECT_FLAGS_KF_REDIRECT_SET_OWNER_EXPLICIT: tagKF_REDIRECT_FLAGS = 8;
+pub const tagKF_REDIRECT_FLAGS_KF_REDIRECT_CHECK_ONLY: tagKF_REDIRECT_FLAGS = 16;
+pub const tagKF_REDIRECT_FLAGS_KF_REDIRECT_WITH_UI: tagKF_REDIRECT_FLAGS = 32;
+pub const tagKF_REDIRECT_FLAGS_KF_REDIRECT_UNPIN: tagKF_REDIRECT_FLAGS = 64;
+pub const tagKF_REDIRECT_FLAGS_KF_REDIRECT_PIN: tagKF_REDIRECT_FLAGS = 128;
+pub const tagKF_REDIRECT_FLAGS_KF_REDIRECT_COPY_CONTENTS: tagKF_REDIRECT_FLAGS = 512;
+pub const tagKF_REDIRECT_FLAGS_KF_REDIRECT_DEL_SOURCE_CONTENTS: tagKF_REDIRECT_FLAGS = 1024;
+pub const tagKF_REDIRECT_FLAGS_KF_REDIRECT_EXCLUDE_ALL_KNOWN_SUBFOLDERS: tagKF_REDIRECT_FLAGS =
+    2048;
+pub type tagKF_REDIRECT_FLAGS = ::core::ffi::c_uint;
+pub use self::tagKF_REDIRECT_FLAGS as KF_REDIRECT_FLAGS;
+pub const tagFFFP_MODE_FFFP_EXACTMATCH: tagFFFP_MODE = 0;
+pub const tagFFFP_MODE_FFFP_NEARESTPARENTMATCH: tagFFFP_MODE = 1;
+pub type tagFFFP_MODE = ::core::ffi::c_uint;
+pub use self::tagFFFP_MODE as FFFP_MODE;
+unsafe extern "C" {
+    pub static IID_IKnownFolderManager: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IKnownFolderManagerVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolderManager, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IKnownFolderManager) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IKnownFolderManager) -> ULONG>,
+    pub FolderIdFromCsidl: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolderManager, nCsidl: ::core::ffi::c_int, pfid: *mut KNOWNFOLDERID, ) -> HRESULT, >,
+    pub FolderIdToCsidl: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolderManager, rfid: *const KNOWNFOLDERID, pnCsidl: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub GetFolderIds: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolderManager, ppKFId: *mut *mut KNOWNFOLDERID, pCount: *mut UINT, ) -> HRESULT, >,
+    pub GetFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolderManager, rfid: *const KNOWNFOLDERID, ppkf: *mut *mut IKnownFolder, ) -> HRESULT, >,
+    pub GetFolderByName: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolderManager, pszCanonicalName: LPCWSTR, ppkf: *mut *mut IKnownFolder, ) -> HRESULT, >,
+    pub RegisterFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolderManager, rfid: *const KNOWNFOLDERID, pKFD: *const KNOWNFOLDER_DEFINITION, ) -> HRESULT, >,
+    pub UnregisterFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolderManager, rfid: *const KNOWNFOLDERID, ) -> HRESULT, >,
+    pub FindFolderFromPath: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolderManager, pszPath: LPCWSTR, mode: FFFP_MODE, ppkf: *mut *mut IKnownFolder, ) -> HRESULT, >,
+    pub FindFolderFromIDList: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolderManager, pidl: PCIDLIST_ABSOLUTE, ppkf: *mut *mut IKnownFolder, ) -> HRESULT, >,
+    pub Redirect: ::core::option::Option< unsafe extern "system" fn( This: *mut IKnownFolderManager, rfid: *const KNOWNFOLDERID, hwnd: HWND, flags: KF_REDIRECT_FLAGS, pszTargetPath: LPCWSTR, cFolders: UINT, pExclusion: *const KNOWNFOLDERID, ppszError: *mut LPWSTR, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IKnownFolderManager {
+    pub lpVtbl: *mut IKnownFolderManagerVtbl,
+}
+pub const ASSOCIATIONLEVEL_AL_MACHINE: ASSOCIATIONLEVEL = 0;
+pub const ASSOCIATIONLEVEL_AL_EFFECTIVE: ASSOCIATIONLEVEL = 1;
+pub const ASSOCIATIONLEVEL_AL_USER: ASSOCIATIONLEVEL = 2;
+pub type ASSOCIATIONLEVEL = ::core::ffi::c_uint;
+pub const ASSOCIATIONTYPE_AT_FILEEXTENSION: ASSOCIATIONTYPE = 0;
+pub const ASSOCIATIONTYPE_AT_URLPROTOCOL: ASSOCIATIONTYPE = 1;
+pub const ASSOCIATIONTYPE_AT_STARTMENUCLIENT: ASSOCIATIONTYPE = 2;
+pub const ASSOCIATIONTYPE_AT_MIMETYPE: ASSOCIATIONTYPE = 3;
+pub type ASSOCIATIONTYPE = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IApplicationAssociationRegistration: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IApplicationAssociationRegistrationVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IApplicationAssociationRegistration, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IApplicationAssociationRegistration) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IApplicationAssociationRegistration) -> ULONG, >,
+    pub QueryCurrentDefault: ::core::option::Option< unsafe extern "system" fn( This: *mut IApplicationAssociationRegistration, pszQuery: LPCWSTR, atQueryType: ASSOCIATIONTYPE, alQueryLevel: ASSOCIATIONLEVEL, ppszAssociation: *mut LPWSTR, ) -> HRESULT, >,
+    pub QueryAppIsDefault: ::core::option::Option< unsafe extern "system" fn( This: *mut IApplicationAssociationRegistration, pszQuery: LPCWSTR, atQueryType: ASSOCIATIONTYPE, alQueryLevel: ASSOCIATIONLEVEL, pszAppRegistryName: LPCWSTR, pfDefault: *mut BOOL, ) -> HRESULT, >,
+    pub QueryAppIsDefaultAll: ::core::option::Option< unsafe extern "system" fn( This: *mut IApplicationAssociationRegistration, alQueryLevel: ASSOCIATIONLEVEL, pszAppRegistryName: LPCWSTR, pfDefault: *mut BOOL, ) -> HRESULT, >,
+    pub SetAppAsDefault: ::core::option::Option< unsafe extern "system" fn( This: *mut IApplicationAssociationRegistration, pszAppRegistryName: LPCWSTR, pszSet: LPCWSTR, atSetType: ASSOCIATIONTYPE, ) -> HRESULT, >,
+    pub SetAppAsDefaultAll: ::core::option::Option< unsafe extern "system" fn( This: *mut IApplicationAssociationRegistration, pszAppRegistryName: LPCWSTR, ) -> HRESULT, >,
+    pub ClearUserAssociations: ::core::option::Option< unsafe extern "system" fn(This: *mut IApplicationAssociationRegistration) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IApplicationAssociationRegistration {
+    pub lpVtbl: *mut IApplicationAssociationRegistrationVtbl,
+}
+pub const KNOWNDESTCATEGORY_KDC_FREQUENT: KNOWNDESTCATEGORY = 1;
+pub const KNOWNDESTCATEGORY_KDC_RECENT: KNOWNDESTCATEGORY = 2;
+pub type KNOWNDESTCATEGORY = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_ICustomDestinationList: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ICustomDestinationListVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ICustomDestinationList, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut ICustomDestinationList) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut ICustomDestinationList) -> ULONG, >,
+    pub SetAppID: ::core::option::Option< unsafe extern "system" fn(This: *mut ICustomDestinationList, pszAppID: LPCWSTR) -> HRESULT, >,
+    pub BeginList: ::core::option::Option< unsafe extern "system" fn( This: *mut ICustomDestinationList, pcMinSlots: *mut UINT, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AppendCategory: ::core::option::Option< unsafe extern "system" fn( This: *mut ICustomDestinationList, pszCategory: LPCWSTR, poa: *mut IObjectArray, ) -> HRESULT, >,
+    pub AppendKnownCategory: ::core::option::Option< unsafe extern "system" fn( This: *mut ICustomDestinationList, category: KNOWNDESTCATEGORY, ) -> HRESULT, >,
+    pub AddUserTasks: ::core::option::Option< unsafe extern "system" fn( This: *mut ICustomDestinationList, poa: *mut IObjectArray, ) -> HRESULT, >,
+    pub CommitList: ::core::option::Option< unsafe extern "system" fn(This: *mut ICustomDestinationList) -> HRESULT, >,
+    pub GetRemovedDestinations: ::core::option::Option< unsafe extern "system" fn( This: *mut ICustomDestinationList, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub DeleteList: ::core::option::Option< unsafe extern "system" fn(This: *mut ICustomDestinationList, pszAppID: LPCWSTR) -> HRESULT, >,
+    pub AbortList: ::core::option::Option< unsafe extern "system" fn(This: *mut ICustomDestinationList) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ICustomDestinationList {
+    pub lpVtbl: *mut ICustomDestinationListVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IQueryCancelAutoPlay: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IQueryCancelAutoPlayVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IQueryCancelAutoPlay, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IQueryCancelAutoPlay) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IQueryCancelAutoPlay) -> ULONG, >,
+    pub AllowAutoPlay: ::core::option::Option< unsafe extern "system" fn( This: *mut IQueryCancelAutoPlay, path: LPCWSTR, content_type: DWORD, label: LPCWSTR, serial_number: DWORD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IQueryCancelAutoPlay {
+    pub lpVtbl: *mut IQueryCancelAutoPlayVtbl,
+}
+pub const _TRANSFER_ADVISE_STATE_TS_NONE: _TRANSFER_ADVISE_STATE = 0;
+pub const _TRANSFER_ADVISE_STATE_TS_PERFORMING: _TRANSFER_ADVISE_STATE = 1;
+pub const _TRANSFER_ADVISE_STATE_TS_PREPARING: _TRANSFER_ADVISE_STATE = 2;
+pub const _TRANSFER_ADVISE_STATE_TS_INDETERMINATE: _TRANSFER_ADVISE_STATE = 4;
+pub type _TRANSFER_ADVISE_STATE = ::core::ffi::c_uint;
+pub type TRANSFER_ADVISE_STATE = DWORD;
+unsafe extern "C" {
+    pub static IID_ITransferAdviseSink: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ITransferAdviseSinkVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferAdviseSink, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITransferAdviseSink) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITransferAdviseSink) -> ULONG>,
+    pub UpdateProgress: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferAdviseSink, size_current: ULONGLONG, size_total: ULONGLONG, files_current: INT, files_total: INT, folders_current: INT, folders_total: INT, ) -> HRESULT, >,
+    pub UpdateTransferState: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferAdviseSink, state: TRANSFER_ADVISE_STATE, ) -> HRESULT, >,
+    pub ConfirmOverwrite: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferAdviseSink, source: *mut IShellItem, dest_parent: *mut IShellItem, name: LPCWSTR, ) -> HRESULT, >,
+    pub ConfirmEncryptLoss: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferAdviseSink, source: *mut IShellItem, ) -> HRESULT, >,
+    pub FileFailure: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferAdviseSink, item: *mut IShellItem, itemname: LPCWSTR, hr: HRESULT, rename: LPWSTR, crename: ULONG, ) -> HRESULT, >,
+    pub SubStreamFailure: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferAdviseSink, item: *mut IShellItem, stream: LPCWSTR, hr: HRESULT, ) -> HRESULT, >,
+    pub PropertyFailure: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferAdviseSink, item: *mut IShellItem, key: *const PROPERTYKEY, hr: HRESULT, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITransferAdviseSink {
+    pub lpVtbl: *mut ITransferAdviseSinkVtbl,
+}
+pub const _TRANSFER_SOURCE_FLAGS_TSF_NORMAL: _TRANSFER_SOURCE_FLAGS = 0;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_FAIL_EXIST: _TRANSFER_SOURCE_FLAGS = 0;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_RENAME_EXIST: _TRANSFER_SOURCE_FLAGS = 1;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_OVERWRITE_EXIST: _TRANSFER_SOURCE_FLAGS = 2;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_ALLOW_DECRYPTION: _TRANSFER_SOURCE_FLAGS = 4;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_NO_SECURITY: _TRANSFER_SOURCE_FLAGS = 8;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_COPY_CREATION_TIME: _TRANSFER_SOURCE_FLAGS = 16;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_COPY_WRITE_TIME: _TRANSFER_SOURCE_FLAGS = 32;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_USE_FULL_ACCESS: _TRANSFER_SOURCE_FLAGS = 64;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_DELETE_RECYCLE_IF_POSSIBLE: _TRANSFER_SOURCE_FLAGS = 128;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_COPY_HARD_LINK: _TRANSFER_SOURCE_FLAGS = 256;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_COPY_LOCALIZED_NAME: _TRANSFER_SOURCE_FLAGS = 512;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_MOVE_AS_COPY_DELETE: _TRANSFER_SOURCE_FLAGS = 1024;
+pub const _TRANSFER_SOURCE_FLAGS_TSF_SUSPEND_SHELLEVENTS: _TRANSFER_SOURCE_FLAGS = 2048;
+pub type _TRANSFER_SOURCE_FLAGS = ::core::ffi::c_uint;
+pub type TRANSFER_SOURCE_FLAGS = DWORD;
+unsafe extern "C" {
+    pub static IID_ITransferSource: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ITransferSourceVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut ITransferSource) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut ITransferSource) -> ULONG>,
+    pub Advise: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, sink: *mut ITransferAdviseSink, cookie: *mut DWORD, ) -> HRESULT, >,
+    pub Unadvise: ::core::option::Option< unsafe extern "system" fn(This: *mut ITransferSource, cookie: DWORD) -> HRESULT, >,
+    pub SetProperties: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, array: *mut IPropertyChangeArray, ) -> HRESULT, >,
+    pub OpenItem: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, item: *mut IShellItem, flags: TRANSFER_SOURCE_FLAGS, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub MoveItem: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, item: *mut IShellItem, parent_dest: *mut IShellItem, name_dest: LPCWSTR, flags: TRANSFER_SOURCE_FLAGS, newitem: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub RecycleItem: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, source: *mut IShellItem, parent_dest: *mut IShellItem, flags: TRANSFER_SOURCE_FLAGS, new_dest: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub RemoveItem: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, source: *mut IShellItem, flags: TRANSFER_SOURCE_FLAGS, ) -> HRESULT, >,
+    pub RenameItem: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, source: *mut IShellItem, newname: LPCWSTR, flags: TRANSFER_SOURCE_FLAGS, new_dest: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub LinkItem: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, source: *mut IShellItem, parent_dest: *mut IShellItem, new_name: LPCWSTR, flags: TRANSFER_SOURCE_FLAGS, new_dest: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub ApplyPropertiesToItem: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, source: *mut IShellItem, newitem: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub GetDefaultDestinationName: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, source: *mut IShellItem, parent_dest: *mut IShellItem, dest_name: *mut LPWSTR, ) -> HRESULT, >,
+    pub EnterFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, child_folder: *mut IShellItem, ) -> HRESULT, >,
+    pub LeaveFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferSource, child_folder: *mut IShellItem, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITransferSource {
+    pub lpVtbl: *mut ITransferSourceVtbl,
+}
+unsafe extern "C" {
+    pub static IID_ITransferDestination: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct ITransferDestinationVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferDestination, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut ITransferDestination) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut ITransferDestination) -> ULONG, >,
+    pub Advise: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferDestination, sink: *mut ITransferAdviseSink, cookie: *mut DWORD, ) -> HRESULT, >,
+    pub Unadvise: ::core::option::Option< unsafe extern "system" fn(This: *mut ITransferDestination, cookie: DWORD) -> HRESULT, >,
+    pub CreateItem: ::core::option::Option< unsafe extern "system" fn( This: *mut ITransferDestination, name: LPCWSTR, attr: DWORD, size: ULONGLONG, flags: TRANSFER_SOURCE_FLAGS, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, resources: *const IID, presources: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct ITransferDestination {
+    pub lpVtbl: *mut ITransferDestinationVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IAssocHandlerInvoker: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IAssocHandlerInvokerVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAssocHandlerInvoker, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IAssocHandlerInvoker) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IAssocHandlerInvoker) -> ULONG, >,
+    pub SupportsSelection: ::core::option::Option< unsafe extern "system" fn(This: *mut IAssocHandlerInvoker) -> HRESULT, >,
+    pub Invoke: ::core::option::Option< unsafe extern "system" fn(This: *mut IAssocHandlerInvoker) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAssocHandlerInvoker {
+    pub lpVtbl: *mut IAssocHandlerInvokerVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IAssocHandler: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IAssocHandlerVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IAssocHandler, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IAssocHandler) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IAssocHandler) -> ULONG>,
+    pub GetName: ::core::option::Option< unsafe extern "system" fn(This: *mut IAssocHandler, name: *mut LPWSTR) -> HRESULT, >,
+    pub GetUIName: ::core::option::Option< unsafe extern "system" fn(This: *mut IAssocHandler, uiname: *mut LPWSTR) -> HRESULT, >,
+    pub GetIconLocation: ::core::option::Option< unsafe extern "system" fn( This: *mut IAssocHandler, path: *mut LPWSTR, index: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+    pub IsRecommended: ::core::option::Option<unsafe extern "system" fn(This: *mut IAssocHandler) -> HRESULT>,
+    pub MakeDefault: ::core::option::Option< unsafe extern "system" fn(This: *mut IAssocHandler, description: LPCWSTR) -> HRESULT, >,
+    pub Invoke: ::core::option::Option< unsafe extern "system" fn(This: *mut IAssocHandler, object: *mut IDataObject) -> HRESULT, >,
+    pub CreateInvoker: ::core::option::Option< unsafe extern "system" fn( This: *mut IAssocHandler, object: *mut IDataObject, invoker: *mut *mut IAssocHandlerInvoker, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IAssocHandler {
+    pub lpVtbl: *mut IAssocHandlerVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IEnumAssocHandlers: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IEnumAssocHandlersVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumAssocHandlers, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumAssocHandlers) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IEnumAssocHandlers) -> ULONG>,
+    pub Next: ::core::option::Option< unsafe extern "system" fn( This: *mut IEnumAssocHandlers, count: ULONG, handlers: *mut *mut IAssocHandler, fetched: *mut ULONG, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IEnumAssocHandlers {
+    pub lpVtbl: *mut IEnumAssocHandlersVtbl,
+}
+pub const ASSOC_FILTER_ASSOC_FILTER_NONE: ASSOC_FILTER = 0;
+pub const ASSOC_FILTER_ASSOC_FILTER_RECOMMENDED: ASSOC_FILTER = 1;
+pub type ASSOC_FILTER = ::core::ffi::c_uint;
+unsafe extern "system" {
+    pub fn SHAssocEnumHandlers(
+        extra: PCWSTR,
+        filter: ASSOC_FILTER,
+        handlersenum: *mut *mut IEnumAssocHandlers,
+    ) -> HRESULT;
+}
+pub const ACTIVATEOPTIONS_AO_NONE: ACTIVATEOPTIONS = 0;
+pub const ACTIVATEOPTIONS_AO_DESIGNMODE: ACTIVATEOPTIONS = 1;
+pub const ACTIVATEOPTIONS_AO_NOERRORUI: ACTIVATEOPTIONS = 2;
+pub const ACTIVATEOPTIONS_AO_NOSPLASHSCREEN: ACTIVATEOPTIONS = 4;
+pub type ACTIVATEOPTIONS = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IApplicationActivationManager: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IApplicationActivationManagerVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IApplicationActivationManager, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IApplicationActivationManager) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IApplicationActivationManager) -> ULONG, >,
+    pub ActivateApplication: ::core::option::Option< unsafe extern "system" fn( This: *mut IApplicationActivationManager, appusermodelid: LPCWSTR, arguments: LPCWSTR, options: ACTIVATEOPTIONS, processid: *mut DWORD, ) -> HRESULT, >,
+    pub ActivateForFile: ::core::option::Option< unsafe extern "system" fn( This: *mut IApplicationActivationManager, appusermodelid: LPCWSTR, itemarray: *mut IShellItemArray, verb: LPCWSTR, processid: *mut DWORD, ) -> HRESULT, >,
+    pub ActivateForProtocol: ::core::option::Option< unsafe extern "system" fn( This: *mut IApplicationActivationManager, appusermodelid: LPCWSTR, itemarray: *mut IShellItemArray, processid: *mut DWORD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IApplicationActivationManager {
+    pub lpVtbl: *mut IApplicationActivationManagerVtbl,
+}
+unsafe extern "C" {
+    pub static LIBID_ShellObjects: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_ExplorerBrowser: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_FileOpenDialog: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_FileSaveDialog: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_NamespaceTreeControl: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_KnownFolderManager: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_ApplicationAssociationRegistration: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_ShellLink: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_TaskbarList: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_DestinationList: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_EnumerableObjectCollection: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_QueryCancelAutoPlay: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_ShellItem: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_ApplicationActivationManager: GUID;
+}
+unsafe extern "C" {
+    pub static CLSID_UserNotification: GUID;
+}
+pub const _OPPROGDLGF_OPPROGDLG_DEFAULT: _OPPROGDLGF = 0;
+pub const _OPPROGDLGF_OPPROGDLG_ENABLEPAUSE: _OPPROGDLGF = 128;
+pub const _OPPROGDLGF_OPPROGDLG_ALLOWUNDO: _OPPROGDLGF = 256;
+pub const _OPPROGDLGF_OPPROGDLG_DONTDISPLAYSOURCEPATH: _OPPROGDLGF = 512;
+pub const _OPPROGDLGF_OPPROGDLG_DONTDISPLAYDESTPATH: _OPPROGDLGF = 1024;
+pub const _OPPROGDLGF_OPPROGDLG_NOMULTIDAYESTIMATES: _OPPROGDLGF = 2048;
+pub const _OPPROGDLGF_OPPROGDLG_DONTDISPLAYLOCATIONS: _OPPROGDLGF = 4096;
+pub type _OPPROGDLGF = ::core::ffi::c_uint;
+pub type OPPROGDLGF = DWORD;
+pub const _PDMODE_PDM_DEFAULT: _PDMODE = 0;
+pub const _PDMODE_PDM_RUN: _PDMODE = 1;
+pub const _PDMODE_PDM_PREFLIGHT: _PDMODE = 2;
+pub const _PDMODE_PDM_UNDOING: _PDMODE = 4;
+pub const _PDMODE_PDM_ERRORSBLOCKING: _PDMODE = 8;
+pub const _PDMODE_PDM_INDETERMINATE: _PDMODE = 16;
+pub type _PDMODE = ::core::ffi::c_uint;
+pub type PDMODE = DWORD;
+pub const PDOPSTATUS_PDOPS_RUNNING: PDOPSTATUS = 1;
+pub const PDOPSTATUS_PDOPS_PAUSED: PDOPSTATUS = 2;
+pub const PDOPSTATUS_PDOPS_CANCELLED: PDOPSTATUS = 3;
+pub const PDOPSTATUS_PDOPS_STOPPED: PDOPSTATUS = 4;
+pub const PDOPSTATUS_PDOPS_ERRORS: PDOPSTATUS = 5;
+pub type PDOPSTATUS = ::core::ffi::c_uint;
+pub const _SPACTION_SPACTION_NONE: _SPACTION = 0;
+pub const _SPACTION_SPACTION_MOVING: _SPACTION = 1;
+pub const _SPACTION_SPACTION_COPYING: _SPACTION = 2;
+pub const _SPACTION_SPACTION_RECYCLING: _SPACTION = 3;
+pub const _SPACTION_SPACTION_APPLYINGATTRIBS: _SPACTION = 4;
+pub const _SPACTION_SPACTION_DOWNLOADING: _SPACTION = 5;
+pub const _SPACTION_SPACTION_SEARCHING_INTERNET: _SPACTION = 6;
+pub const _SPACTION_SPACTION_CALCULATING: _SPACTION = 7;
+pub const _SPACTION_SPACTION_UPLOADING: _SPACTION = 8;
+pub const _SPACTION_SPACTION_SEARCHING_FILES: _SPACTION = 9;
+pub const _SPACTION_SPACTION_DELETING: _SPACTION = 10;
+pub const _SPACTION_SPACTION_RENAMING: _SPACTION = 11;
+pub const _SPACTION_SPACTION_FORMATTING: _SPACTION = 12;
+pub const _SPACTION_SPACTION_COPY_MOVING: _SPACTION = 13;
+pub type _SPACTION = ::core::ffi::c_uint;
+pub use self::_SPACTION as SPACTION;
+unsafe extern "C" {
+    pub static IID_IOperationsProgressDialog: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IOperationsProgressDialogVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IOperationsProgressDialog, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IOperationsProgressDialog) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IOperationsProgressDialog) -> ULONG, >,
+    pub StartProgressDialog: ::core::option::Option< unsafe extern "system" fn( This: *mut IOperationsProgressDialog, hwndOwner: HWND, flags: OPPROGDLGF, ) -> HRESULT, >,
+    pub StopProgressDialog: ::core::option::Option< unsafe extern "system" fn(This: *mut IOperationsProgressDialog) -> HRESULT, >,
+    pub SetOperation: ::core::option::Option< unsafe extern "system" fn( This: *mut IOperationsProgressDialog, action: SPACTION, ) -> HRESULT, >,
+    pub SetMode: ::core::option::Option< unsafe extern "system" fn(This: *mut IOperationsProgressDialog, mode: PDMODE) -> HRESULT, >,
+    pub UpdateProgress: ::core::option::Option< unsafe extern "system" fn( This: *mut IOperationsProgressDialog, ullPointsCurrent: ULONGLONG, ullPointsTotal: ULONGLONG, ullSizeCurrent: ULONGLONG, ullSizeTotal: ULONGLONG, ullItemsCurrent: ULONGLONG, ullItemsTotal: ULONGLONG, ) -> HRESULT, >,
+    pub UpdateLocations: ::core::option::Option< unsafe extern "system" fn( This: *mut IOperationsProgressDialog, psiSource: *mut IShellItem, psiTarget: *mut IShellItem, psiItem: *mut IShellItem, ) -> HRESULT, >,
+    pub ResetTimer: ::core::option::Option< unsafe extern "system" fn(This: *mut IOperationsProgressDialog) -> HRESULT, >,
+    pub PauseTimer: ::core::option::Option< unsafe extern "system" fn(This: *mut IOperationsProgressDialog) -> HRESULT, >,
+    pub ResumeTimer: ::core::option::Option< unsafe extern "system" fn(This: *mut IOperationsProgressDialog) -> HRESULT, >,
+    pub GetMilliseconds: ::core::option::Option< unsafe extern "system" fn( This: *mut IOperationsProgressDialog, pullElapsed: *mut ULONGLONG, pullRemaining: *mut ULONGLONG, ) -> HRESULT, >,
+    pub GetOperationStatus: ::core::option::Option< unsafe extern "system" fn( This: *mut IOperationsProgressDialog, popstatus: *mut PDOPSTATUS, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IOperationsProgressDialog {
+    pub lpVtbl: *mut IOperationsProgressDialogVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IFileOperation: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFileOperationVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileOperation) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileOperation) -> ULONG>,
+    pub Advise: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, pfops: *mut IFileOperationProgressSink, pdwCookie: *mut DWORD, ) -> HRESULT, >,
+    pub Unadvise: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperation, dwCookie: DWORD) -> HRESULT, >,
+    pub SetOperationFlags: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperation, dwOperationFlags: DWORD) -> HRESULT, >,
+    pub SetProgressMessage: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperation, pszMessage: LPCWSTR) -> HRESULT, >,
+    pub SetProgressDialog: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, popd: *mut IOperationsProgressDialog, ) -> HRESULT, >,
+    pub SetProperties: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, pproparray: *mut IPropertyChangeArray, ) -> HRESULT, >,
+    pub SetOwnerWindow: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperation, hwndOwner: HWND) -> HRESULT, >,
+    pub ApplyPropertiesToItem: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperation, psiItem: *mut IShellItem) -> HRESULT, >,
+    pub ApplyPropertiesToItems: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperation, punkItems: *mut IUnknown) -> HRESULT, >,
+    pub RenameItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, psiItem: *mut IShellItem, pszNewName: LPCWSTR, pfopsItem: *mut IFileOperationProgressSink, ) -> HRESULT, >,
+    pub RenameItems: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, pUnkItems: *mut IUnknown, pszNewName: LPCWSTR, ) -> HRESULT, >,
+    pub MoveItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, psiItem: *mut IShellItem, psiDestinationFolder: *mut IShellItem, pszNewName: LPCWSTR, pfopsItem: *mut IFileOperationProgressSink, ) -> HRESULT, >,
+    pub MoveItems: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, punkItems: *mut IUnknown, psiDestinationFolder: *mut IShellItem, ) -> HRESULT, >,
+    pub CopyItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, psiItem: *mut IShellItem, psiDestinationFolder: *mut IShellItem, pszCopyName: LPCWSTR, pfopsItem: *mut IFileOperationProgressSink, ) -> HRESULT, >,
+    pub CopyItems: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, punkItems: *mut IUnknown, psiDestinationFolder: *mut IShellItem, ) -> HRESULT, >,
+    pub DeleteItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, psiItem: *mut IShellItem, pfopsItem: *mut IFileOperationProgressSink, ) -> HRESULT, >,
+    pub DeleteItems: ::core::option::Option< unsafe extern "system" fn(This: *mut IFileOperation, punkItems: *mut IUnknown) -> HRESULT, >,
+    pub NewItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, psiDestinationFolder: *mut IShellItem, dwFileAttributes: DWORD, pszName: LPCWSTR, pszTemplateName: LPCWSTR, pfopsItem: *mut IFileOperationProgressSink, ) -> HRESULT, >,
+    pub PerformOperations: ::core::option::Option<unsafe extern "system" fn(This: *mut IFileOperation) -> HRESULT>,
+    pub GetAnyOperationsAborted: ::core::option::Option< unsafe extern "system" fn( This: *mut IFileOperation, pfAnyOperationsAborted: *mut BOOL, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFileOperation {
+    pub lpVtbl: *mut IFileOperationVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IShellTaskScheduler: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellTaskSchedulerVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellTaskScheduler, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellTaskScheduler) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellTaskScheduler) -> ULONG>,
+    pub AddTask: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellTaskScheduler, pTask: *mut IRunnableTask, rtoid: *const GUID, lParam: DWORD_PTR, dwPriority: DWORD, ) -> HRESULT, >,
+    pub RemoveTasks: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellTaskScheduler, rtoid: *const GUID, lParam: DWORD_PTR, fWaitIfRunning: BOOL, ) -> HRESULT, >,
+    pub CountTasks: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellTaskScheduler, rtoid: *const GUID) -> UINT, >,
+    pub Status: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellTaskScheduler, dwReleaseStatus: DWORD, dwThreadTimeout: DWORD, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellTaskScheduler {
+    pub lpVtbl: *mut IShellTaskSchedulerVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IFolderBandPriv: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IFolderBandPrivVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IFolderBandPriv, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderBandPriv) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IFolderBandPriv) -> ULONG>,
+    pub SetCascade: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderBandPriv, fCascade: BOOL) -> HRESULT, >,
+    pub SetAccelerators: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderBandPriv, fAccelerators: BOOL) -> HRESULT, >,
+    pub SetNoIcons: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderBandPriv, fNoIcons: BOOL) -> HRESULT, >,
+    pub SetNoText: ::core::option::Option< unsafe extern "system" fn(This: *mut IFolderBandPriv, fNoText: BOOL) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IFolderBandPriv {
+    pub lpVtbl: *mut IFolderBandPrivVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IQueryContinue: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IQueryContinueVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IQueryContinue, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IQueryContinue) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IQueryContinue) -> ULONG>,
+    pub QueryContinue: ::core::option::Option<unsafe extern "system" fn(This: *mut IQueryContinue) -> HRESULT>,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IQueryContinue {
+    pub lpVtbl: *mut IQueryContinueVtbl,
+}
+pub const LIBRARYFOLDERFILTER_LFF_FORCEFILESYSTEM: LIBRARYFOLDERFILTER = 1;
+pub const LIBRARYFOLDERFILTER_LFF_STORAGEITEMS: LIBRARYFOLDERFILTER = 2;
+pub const LIBRARYFOLDERFILTER_LFF_ALLITEMS: LIBRARYFOLDERFILTER = 3;
+pub type LIBRARYFOLDERFILTER = ::core::ffi::c_uint;
+pub const LIBRARYOPTIONFLAGS_LOF_DEFAULT: LIBRARYOPTIONFLAGS = 0;
+pub const LIBRARYOPTIONFLAGS_LOF_PINNEDTONAVPANE: LIBRARYOPTIONFLAGS = 1;
+pub const LIBRARYOPTIONFLAGS_LOF_MASK_ALL: LIBRARYOPTIONFLAGS = 1;
+pub type LIBRARYOPTIONFLAGS = ::core::ffi::c_uint;
+pub const DEFAULTSAVEFOLDERTYPE_DSFT_DETECT: DEFAULTSAVEFOLDERTYPE = 1;
+pub const DEFAULTSAVEFOLDERTYPE_DSFT_PRIVATE: DEFAULTSAVEFOLDERTYPE = 2;
+pub const DEFAULTSAVEFOLDERTYPE_DSFT_PUBLIC: DEFAULTSAVEFOLDERTYPE = 3;
+pub type DEFAULTSAVEFOLDERTYPE = ::core::ffi::c_uint;
+pub const LIBRARYSAVEFLAGS_LSF_FAILIFTHERE: LIBRARYSAVEFLAGS = 0;
+pub const LIBRARYSAVEFLAGS_LSF_OVERRIDEEXISTING: LIBRARYSAVEFLAGS = 1;
+pub const LIBRARYSAVEFLAGS_LSF_MAKEUNIQUENAME: LIBRARYSAVEFLAGS = 2;
+pub type LIBRARYSAVEFLAGS = ::core::ffi::c_uint;
+unsafe extern "C" {
+    pub static IID_IShellLibrary: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IShellLibraryVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellLibrary) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellLibrary) -> ULONG>,
+    pub AddFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, psiLocation: *mut IShellItem, ) -> HRESULT, >,
+    pub Commit: ::core::option::Option<unsafe extern "system" fn(This: *mut IShellLibrary) -> HRESULT>,
+    pub GetDefaultSaveFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, dsft: DEFAULTSAVEFOLDERTYPE, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetFolders: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, lff: LIBRARYFOLDERFILTER, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub GetFolderType: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLibrary, pftid: *mut FOLDERTYPEID) -> HRESULT, >,
+    pub GetIcon: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLibrary, ppszIcon: *mut LPWSTR) -> HRESULT, >,
+    pub GetOptions: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, plofOptions: *mut LIBRARYOPTIONFLAGS, ) -> HRESULT, >,
+    pub LoadLibraryFromItem: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, psiLibrary: *mut IShellItem, grfMode: DWORD, ) -> HRESULT, >,
+    pub LoadLibraryFromKnownFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, kfidLibrary: *const KNOWNFOLDERID, grfMode: DWORD, ) -> HRESULT, >,
+    pub RemoveFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, psiLocation: *mut IShellItem, ) -> HRESULT, >,
+    pub ResolveFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, psiFolderToResolve: *mut IShellItem, dwTimeout: DWORD, riid: *const IID, ppv: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub Save: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, psiFolderToSaveIn: *mut IShellItem, pszLibraryName: LPCWSTR, lsf: LIBRARYSAVEFLAGS, ppsiSavedTo: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub SaveInKnownFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, kfidToSaveIn: *const KNOWNFOLDERID, pszLibraryName: LPCWSTR, lsf: LIBRARYSAVEFLAGS, ppsiSavedTo: *mut *mut IShellItem, ) -> HRESULT, >,
+    pub SetDefaultSaveFolder: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, dsft: DEFAULTSAVEFOLDERTYPE, psi: *mut IShellItem, ) -> HRESULT, >,
+    pub SetFolderType: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLibrary, ftid: *const FOLDERTYPEID) -> HRESULT, >,
+    pub SetIcon: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellLibrary, pszIcon: LPCWSTR) -> HRESULT, >,
+    pub SetOptions: ::core::option::Option< unsafe extern "system" fn( This: *mut IShellLibrary, lofMask: LIBRARYOPTIONFLAGS, lofOptions: LIBRARYOPTIONFLAGS, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IShellLibrary {
+    pub lpVtbl: *mut IShellLibraryVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IUserEventTimerCallback: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IUserEventTimerCallbackVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserEventTimerCallback, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IUserEventTimerCallback) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IUserEventTimerCallback) -> ULONG, >,
+    pub UserEventTimerProc: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserEventTimerCallback, uUserEventTimerID: ULONG, uTimerElapse: UINT, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IUserEventTimerCallback {
+    pub lpVtbl: *mut IUserEventTimerCallbackVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IUserEventTimer: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IUserEventTimerVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserEventTimer, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUserEventTimer) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUserEventTimer) -> ULONG>,
+    pub UserEventTimerProc: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserEventTimer, uUserEventTimerID: ULONG, uTimerElapse: UINT, ) -> HRESULT, >,
+    pub SetUserEventTimer: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserEventTimer, hWnd: HWND, uCallbackMsg: UINT, uTimerElapse: UINT, pUserEventTimerCallback: *mut IUserEventTimerCallback, puUserEventTimerID: *mut ULONG, ) -> HRESULT, >,
+    pub KillUserEventTimer: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserEventTimer, hWnd: HWND, uUserEventTimerID: ULONG, ) -> HRESULT, >,
+    pub GetUserEventTimerElapsed: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserEventTimer, hWnd: HWND, uUserEventTimerID: ULONG, puTimerElapsed: *mut UINT, ) -> HRESULT, >,
+    pub InitTimerTickInterval: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserEventTimer, uTimerTickIntervalMs: UINT, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IUserEventTimer {
+    pub lpVtbl: *mut IUserEventTimerVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IUserNotification: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IUserNotificationVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserNotification, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUserNotification) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUserNotification) -> ULONG>,
+    pub SetBalloonInfo: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserNotification, pszTitle: LPCWSTR, pszText: LPCWSTR, dwInfoFlags: DWORD, ) -> HRESULT, >,
+    pub SetBalloonRetry: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserNotification, dwShowTime: DWORD, dwInterval: DWORD, cRetryCount: UINT, ) -> HRESULT, >,
+    pub SetIconInfo: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserNotification, hIcon: HICON, pszToolTip: LPCWSTR, ) -> HRESULT, >,
+    pub Show: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserNotification, pqc: *mut IQueryContinue, dwContinuePollInterval: DWORD, ) -> HRESULT, >,
+    pub PlaySound: ::core::option::Option< unsafe extern "system" fn(This: *mut IUserNotification, pszSoundName: LPCWSTR) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IUserNotification {
+    pub lpVtbl: *mut IUserNotificationVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IUserNotificationCallback: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IUserNotificationCallbackVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserNotificationCallback, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option< unsafe extern "system" fn(This: *mut IUserNotificationCallback) -> ULONG, >,
+    pub Release: ::core::option::Option< unsafe extern "system" fn(This: *mut IUserNotificationCallback) -> ULONG, >,
+    pub OnBalloonUserClick: ::core::option::Option< unsafe extern "system" fn(This: *mut IUserNotificationCallback, pt: *mut POINT) -> HRESULT, >,
+    pub OnLeftClick: ::core::option::Option< unsafe extern "system" fn(This: *mut IUserNotificationCallback, pt: *mut POINT) -> HRESULT, >,
+    pub OnContextMenu: ::core::option::Option< unsafe extern "system" fn(This: *mut IUserNotificationCallback, pt: *mut POINT) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IUserNotificationCallback {
+    pub lpVtbl: *mut IUserNotificationCallbackVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IUserNotification2: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IUserNotification2Vtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserNotification2, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUserNotification2) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUserNotification2) -> ULONG>,
+    pub SetBalloonInfo: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserNotification2, pszTitle: LPCWSTR, pszText: LPCWSTR, dwInfoFlags: DWORD, ) -> HRESULT, >,
+    pub SetBalloonRetry: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserNotification2, dwShowTime: DWORD, dwInterval: DWORD, cRetryCount: UINT, ) -> HRESULT, >,
+    pub SetIconInfo: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserNotification2, hIcon: HICON, pszToolTip: LPCWSTR, ) -> HRESULT, >,
+    pub Show: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserNotification2, pqc: *mut IQueryContinue, dwContinuePollInterval: DWORD, pSink: *mut IUserNotificationCallback, ) -> HRESULT, >,
+    pub PlaySound: ::core::option::Option< unsafe extern "system" fn(This: *mut IUserNotification2, pszSoundName: LPCWSTR) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IUserNotification2 {
+    pub lpVtbl: *mut IUserNotification2Vtbl,
+}
+unsafe extern "C" {
+    pub static IID_IItemNameLimits: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IItemNameLimitsVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IItemNameLimits, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IItemNameLimits) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IItemNameLimits) -> ULONG>,
+    pub GetValidCharacters: ::core::option::Option< unsafe extern "system" fn( This: *mut IItemNameLimits, ppwszValidChars: *mut LPWSTR, ppwszInvalidChars: *mut LPWSTR, ) -> HRESULT, >,
+    pub GetMaxLength: ::core::option::Option< unsafe extern "system" fn( This: *mut IItemNameLimits, pszName: LPCWSTR, piMaxNameLen: *mut ::core::ffi::c_int, ) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IItemNameLimits {
+    pub lpVtbl: *mut IItemNameLimitsVtbl,
+}
+unsafe extern "C" {
+    pub static IID_IUserAssist: GUID;
+}
+#[repr(C, packed)]
+#[derive(Copy, Clone)]
+pub struct IUserAssistVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserAssist, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub AddRef: ::core::option::Option<unsafe extern "system" fn(This: *mut IUserAssist) -> ULONG>,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IUserAssist) -> ULONG>,
+    pub FireEvent: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserAssist, guid: *const GUID, param1: INT, param2: ULONG, wparam: WPARAM, lparam: LPARAM, ) -> HRESULT, >,
+    pub QueryEvent: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserAssist, guid: *const GUID, param: INT, wparam: WPARAM, lparam: LPARAM, ptr: PVOID, ) -> HRESULT, >,
+    pub SetEvent: ::core::option::Option< unsafe extern "system" fn( This: *mut IUserAssist, guid: *const GUID, param: INT, wparam: WPARAM, lparam: LPARAM, ptr: PVOID, ) -> HRESULT, >,
+    pub Enable: ::core::option::Option< unsafe extern "system" fn(This: *mut IUserAssist, bEnable: BOOL) -> HRESULT, >,
+}
+#[repr(C, packed)]
+#[derive(Debug, Copy, Clone)]
+pub struct IUserAssist {
+    pub lpVtbl: *mut IUserAssistVtbl,
+}
+unsafe extern "system" {
+    pub fn HWND_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HWND) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn HWND_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HWND,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HWND_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HWND,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HWND_UserFree(arg1: *mut ULONG, arg2: *mut HWND);
+}
+unsafe extern "system" {
+    pub fn VARIANT_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut VARIANT) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn VARIANT_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut VARIANT,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn VARIANT_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut VARIANT,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn VARIANT_UserFree(arg1: *mut ULONG, arg2: *mut VARIANT);
+}
+unsafe extern "system" {
+    pub fn BSTR_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut BSTR) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn BSTR_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut BSTR,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn BSTR_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut BSTR,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn BSTR_UserFree(arg1: *mut ULONG, arg2: *mut BSTR);
+}
+unsafe extern "system" {
+    pub fn LPSAFEARRAY_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut LPSAFEARRAY) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn LPSAFEARRAY_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut LPSAFEARRAY,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn LPSAFEARRAY_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut LPSAFEARRAY,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn LPSAFEARRAY_UserFree(arg1: *mut ULONG, arg2: *mut LPSAFEARRAY);
+}
+unsafe extern "system" {
+    pub fn HMENU_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HMENU) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn HMENU_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HMENU,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HMENU_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HMENU,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HMENU_UserFree(arg1: *mut ULONG, arg2: *mut HMENU);
+}
+unsafe extern "system" {
+    pub fn HGLOBAL_UserSize(arg1: *mut ULONG, arg2: ULONG, arg3: *mut HGLOBAL) -> ULONG;
+}
+unsafe extern "system" {
+    pub fn HGLOBAL_UserMarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HGLOBAL,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HGLOBAL_UserUnmarshal(
+        arg1: *mut ULONG,
+        arg2: *mut ::core::ffi::c_uchar,
+        arg3: *mut HGLOBAL,
+    ) -> *mut ::core::ffi::c_uchar;
+}
+unsafe extern "system" {
+    pub fn HGLOBAL_UserFree(arg1: *mut ULONG, arg2: *mut HGLOBAL);
 }
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -24233,6 +28999,951 @@ pub struct IShellFolderBandVtbl {
     pub SetBandInfoSFB: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellFolderBand, pbi: PBANDINFOSFB) -> HRESULT, >,
     pub GetBandInfoSFB: ::core::option::Option< unsafe extern "system" fn(This: *mut IShellFolderBand, pbi: PBANDINFOSFB) -> HRESULT, >,
 }
+pub type LCTYPE = DWORD;
+pub type CALTYPE = DWORD;
+pub type CALID = DWORD;
+pub type LGRPID = DWORD;
+pub type GEOID = DWORD;
+pub type GEOTYPE = DWORD;
+pub type GEOCLASS = DWORD;
+pub type CALINFO_ENUMPROCEXEX = ::core::option::Option<
+    unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID, arg3: LPWSTR, arg4: LPARAM) -> BOOL,
+>;
+pub type DATEFMT_ENUMPROCEXEX = ::core::option::Option<
+    unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID, arg3: LPARAM) -> BOOL,
+>;
+pub type TIMEFMT_ENUMPROCEX =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: LPARAM) -> BOOL>;
+pub type CALINFO_ENUMPROCA =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
+pub type CALINFO_ENUMPROCW =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
+pub type CALINFO_ENUMPROCEXA =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: CALID) -> BOOL>;
+pub type CALINFO_ENUMPROCEXW =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID) -> BOOL>;
+pub type LANGUAGEGROUP_ENUMPROCA = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: LGRPID,
+        arg2: LPSTR,
+        arg3: LPSTR,
+        arg4: DWORD,
+        arg5: LONG_PTR,
+    ) -> BOOL,
+>;
+pub type LANGUAGEGROUP_ENUMPROCW = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: LGRPID,
+        arg2: LPWSTR,
+        arg3: LPWSTR,
+        arg4: DWORD,
+        arg5: LONG_PTR,
+    ) -> BOOL,
+>;
+pub type LANGGROUPLOCALE_ENUMPROCA = ::core::option::Option<
+    unsafe extern "system" fn(arg1: LGRPID, arg2: LCID, arg3: LPSTR, arg4: LONG_PTR) -> BOOL,
+>;
+pub type LANGGROUPLOCALE_ENUMPROCW = ::core::option::Option<
+    unsafe extern "system" fn(arg1: LGRPID, arg2: LCID, arg3: LPWSTR, arg4: LONG_PTR) -> BOOL,
+>;
+pub type UILANGUAGE_ENUMPROCW =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: LONG_PTR) -> BOOL>;
+pub type UILANGUAGE_ENUMPROCA =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: LONG_PTR) -> BOOL>;
+pub type LOCALE_ENUMPROCA = ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
+pub type LOCALE_ENUMPROCW =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
+pub type LOCALE_ENUMPROCEX = ::core::option::Option<
+    unsafe extern "system" fn(arg1: LPWSTR, arg2: DWORD, arg3: LPARAM) -> BOOL,
+>;
+pub type CODEPAGE_ENUMPROCA =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
+pub type CODEPAGE_ENUMPROCW =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
+pub type DATEFMT_ENUMPROCA =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
+pub type DATEFMT_ENUMPROCW =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
+pub type DATEFMT_ENUMPROCEXA =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR, arg2: CALID) -> BOOL>;
+pub type DATEFMT_ENUMPROCEXW =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR, arg2: CALID) -> BOOL>;
+pub type TIMEFMT_ENUMPROCA =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPSTR) -> BOOL>;
+pub type TIMEFMT_ENUMPROCW =
+    ::core::option::Option<unsafe extern "system" fn(arg1: LPWSTR) -> BOOL>;
+pub type GEO_ENUMPROC = ::core::option::Option<unsafe extern "system" fn(arg1: GEOID) -> BOOL>;
+pub const NLS_FUNCTION_COMPARE_STRING: NLS_FUNCTION = 1;
+pub type NLS_FUNCTION = ::core::ffi::c_uint;
+pub const SYSGEOCLASS_GEOCLASS_ALL: SYSGEOCLASS = 0;
+pub const SYSGEOCLASS_GEOCLASS_REGION: SYSGEOCLASS = 14;
+pub const SYSGEOCLASS_GEOCLASS_NATION: SYSGEOCLASS = 16;
+pub type SYSGEOCLASS = ::core::ffi::c_uint;
+pub const SYSGEOTYPE_GEO_NATION: SYSGEOTYPE = 1;
+pub const SYSGEOTYPE_GEO_LATITUDE: SYSGEOTYPE = 2;
+pub const SYSGEOTYPE_GEO_LONGITUDE: SYSGEOTYPE = 3;
+pub const SYSGEOTYPE_GEO_ISO2: SYSGEOTYPE = 4;
+pub const SYSGEOTYPE_GEO_ISO3: SYSGEOTYPE = 5;
+pub const SYSGEOTYPE_GEO_RFC1766: SYSGEOTYPE = 6;
+pub const SYSGEOTYPE_GEO_LCID: SYSGEOTYPE = 7;
+pub const SYSGEOTYPE_GEO_FRIENDLYNAME: SYSGEOTYPE = 8;
+pub const SYSGEOTYPE_GEO_OFFICIALNAME: SYSGEOTYPE = 9;
+pub const SYSGEOTYPE_GEO_TIMEZONES: SYSGEOTYPE = 10;
+pub const SYSGEOTYPE_GEO_OFFICIALLANGUAGES: SYSGEOTYPE = 11;
+pub const SYSGEOTYPE_GEO_ISO_UN_NUMBER: SYSGEOTYPE = 12;
+pub const SYSGEOTYPE_GEO_PARENT: SYSGEOTYPE = 13;
+pub const SYSGEOTYPE_GEO_DIALINGCODE: SYSGEOTYPE = 14;
+pub const SYSGEOTYPE_GEO_CURRENCYCODE: SYSGEOTYPE = 15;
+pub const SYSGEOTYPE_GEO_CURRENCYSYMBOL: SYSGEOTYPE = 16;
+pub type SYSGEOTYPE = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _cpinfo {
+    pub MaxCharSize: UINT,
+    pub DefaultChar: [BYTE; 2usize],
+    pub LeadByte: [BYTE; 12usize],
+}
+pub type CPINFO = _cpinfo;
+pub type LPCPINFO = *mut _cpinfo;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _cpinfoexA {
+    pub MaxCharSize: UINT,
+    pub DefaultChar: [BYTE; 2usize],
+    pub LeadByte: [BYTE; 12usize],
+    pub UnicodeDefaultChar: WCHAR,
+    pub CodePage: UINT,
+    pub CodePageName: [CHAR; 260usize],
+}
+pub type CPINFOEXA = _cpinfoexA;
+pub type LPCPINFOEXA = *mut _cpinfoexA;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _cpinfoexW {
+    pub MaxCharSize: UINT,
+    pub DefaultChar: [BYTE; 2usize],
+    pub LeadByte: [BYTE; 12usize],
+    pub UnicodeDefaultChar: WCHAR,
+    pub CodePage: UINT,
+    pub CodePageName: [WCHAR; 260usize],
+}
+pub type CPINFOEXW = _cpinfoexW;
+pub type LPCPINFOEXW = *mut _cpinfoexW;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _currencyfmtA {
+    pub NumDigits: UINT,
+    pub LeadingZero: UINT,
+    pub Grouping: UINT,
+    pub lpDecimalSep: LPSTR,
+    pub lpThousandSep: LPSTR,
+    pub NegativeOrder: UINT,
+    pub PositiveOrder: UINT,
+    pub lpCurrencySymbol: LPSTR,
+}
+pub type CURRENCYFMTA = _currencyfmtA;
+pub type LPCURRENCYFMTA = *mut _currencyfmtA;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _currencyfmtW {
+    pub NumDigits: UINT,
+    pub LeadingZero: UINT,
+    pub Grouping: UINT,
+    pub lpDecimalSep: LPWSTR,
+    pub lpThousandSep: LPWSTR,
+    pub NegativeOrder: UINT,
+    pub PositiveOrder: UINT,
+    pub lpCurrencySymbol: LPWSTR,
+}
+pub type CURRENCYFMTW = _currencyfmtW;
+pub type LPCURRENCYFMTW = *mut _currencyfmtW;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _nlsversioninfo {
+    pub dwNLSVersionInfoSize: DWORD,
+    pub dwNLSVersion: DWORD,
+    pub dwDefinedVersion: DWORD,
+}
+pub type NLSVERSIONINFO = _nlsversioninfo;
+pub type LPNLSVERSIONINFO = *mut _nlsversioninfo;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _nlsversioninfoex {
+    pub dwNLSVersionInfoSize: DWORD,
+    pub dwNLSVersion: DWORD,
+    pub dwDefinedVersion: DWORD,
+    pub dwEffectiveId: DWORD,
+    pub guidCustomVersion: GUID,
+}
+pub type NLSVERSIONINFOEX = _nlsversioninfoex;
+pub type LPNLSVERSIONINFOEX = *mut _nlsversioninfoex;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _numberfmtA {
+    pub NumDigits: UINT,
+    pub LeadingZero: UINT,
+    pub Grouping: UINT,
+    pub lpDecimalSep: LPSTR,
+    pub lpThousandSep: LPSTR,
+    pub NegativeOrder: UINT,
+}
+pub type NUMBERFMTA = _numberfmtA;
+pub type LPNUMBERFMTA = *mut _numberfmtA;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _numberfmtW {
+    pub NumDigits: UINT,
+    pub LeadingZero: UINT,
+    pub Grouping: UINT,
+    pub lpDecimalSep: LPWSTR,
+    pub lpThousandSep: LPWSTR,
+    pub NegativeOrder: UINT,
+}
+pub type NUMBERFMTW = _numberfmtW;
+pub type LPNUMBERFMTW = *mut _numberfmtW;
+pub const _NORM_FORM_NormalizationOther: _NORM_FORM = 0;
+pub const _NORM_FORM_NormalizationC: _NORM_FORM = 1;
+pub const _NORM_FORM_NormalizationD: _NORM_FORM = 2;
+pub const _NORM_FORM_NormalizationKC: _NORM_FORM = 5;
+pub const _NORM_FORM_NormalizationKD: _NORM_FORM = 6;
+pub type _NORM_FORM = ::core::ffi::c_uint;
+pub use self::_NORM_FORM as NORM_FORM;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _FILEMUIINFO {
+    pub dwSize: DWORD,
+    pub dwVersion: DWORD,
+    pub dwFileType: DWORD,
+    pub pChecksum: [BYTE; 16usize],
+    pub pServiceChecksum: [BYTE; 16usize],
+    pub dwLanguageNameOffset: DWORD,
+    pub dwTypeIDMainSize: DWORD,
+    pub dwTypeIDMainOffset: DWORD,
+    pub dwTypeNameMainOffset: DWORD,
+    pub dwTypeIDMUISize: DWORD,
+    pub dwTypeIDMUIOffset: DWORD,
+    pub dwTypeNameMUIOffset: DWORD,
+    pub abBuffer: [BYTE; 8usize],
+}
+pub type FILEMUIINFO = _FILEMUIINFO;
+pub type PFILEMUIINFO = *mut _FILEMUIINFO;
+unsafe extern "system" {
+    pub fn CompareStringA(
+        Locale: LCID,
+        dwCmpFlags: DWORD,
+        lpString1: LPCSTR,
+        cchCount1: ::core::ffi::c_int,
+        lpString2: LPCSTR,
+        cchCount2: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn CompareStringW(
+        Locale: LCID,
+        dwCmpFlags: DWORD,
+        lpString1: LPCWSTR,
+        cchCount1: ::core::ffi::c_int,
+        lpString2: LPCWSTR,
+        cchCount2: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn ConvertDefaultLocale(arg1: LCID) -> LCID;
+}
+unsafe extern "system" {
+    pub fn EnumCalendarInfoA(
+        arg1: CALINFO_ENUMPROCA,
+        arg2: LCID,
+        arg3: CALID,
+        arg4: CALTYPE,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumCalendarInfoW(
+        arg1: CALINFO_ENUMPROCW,
+        arg2: LCID,
+        arg3: CALID,
+        arg4: CALTYPE,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumDateFormatsA(arg1: DATEFMT_ENUMPROCA, arg2: LCID, arg3: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumDateFormatsW(arg1: DATEFMT_ENUMPROCW, arg2: LCID, arg3: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumSystemCodePagesA(arg1: CODEPAGE_ENUMPROCA, arg2: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumSystemCodePagesW(arg1: CODEPAGE_ENUMPROCW, arg2: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumSystemGeoID(arg1: GEOCLASS, arg2: GEOID, arg3: GEO_ENUMPROC) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumSystemLocalesA(arg1: LOCALE_ENUMPROCA, arg2: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumSystemLocalesW(arg1: LOCALE_ENUMPROCW, arg2: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumSystemLocalesEx(
+        lpLocaleEnumProcEx: LOCALE_ENUMPROCEX,
+        dwFlags: DWORD,
+        lParam: LPARAM,
+        lpReserved: LPVOID,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumTimeFormatsA(arg1: TIMEFMT_ENUMPROCA, arg2: LCID, arg3: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumTimeFormatsW(arg1: TIMEFMT_ENUMPROCW, arg2: LCID, arg3: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn FindNLSString(
+        Locale: LCID,
+        dwFindNLSStringFlags: DWORD,
+        lpStringSource: LPCWSTR,
+        cchSource: ::core::ffi::c_int,
+        lpStringValue: LPCWSTR,
+        cchValue: ::core::ffi::c_int,
+        pcchFound: LPINT,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn FindNLSStringEx(
+        lpLocaleName: LPCWSTR,
+        dwFindNLSStringFlags: DWORD,
+        lpStringSource: LPCWSTR,
+        cchSource: ::core::ffi::c_int,
+        lpStringValue: LPCWSTR,
+        cchValue: ::core::ffi::c_int,
+        pcchFound: LPINT,
+        lpVersionInformation: LPNLSVERSIONINFO,
+        lpReserved: LPVOID,
+        sortHandle: LPARAM,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn FoldStringA(
+        dwMapFlags: DWORD,
+        lpSrcStr: LPCSTR,
+        cchSrc: ::core::ffi::c_int,
+        lpDestStr: LPSTR,
+        cchDest: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn FoldStringW(
+        dwMapFlags: DWORD,
+        lpSrcStr: LPCWSTR,
+        cchSrc: ::core::ffi::c_int,
+        lpDestStr: LPWSTR,
+        cchDest: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetACP() -> UINT;
+}
+unsafe extern "system" {
+    pub fn GetCalendarInfoA(
+        Locale: LCID,
+        Calendar: CALID,
+        CalType: CALTYPE,
+        lpCalData: LPSTR,
+        cchData: ::core::ffi::c_int,
+        lpValue: LPDWORD,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetCalendarInfoW(
+        Locale: LCID,
+        Calendar: CALID,
+        CalType: CALTYPE,
+        lpCalData: LPWSTR,
+        cchData: ::core::ffi::c_int,
+        lpValue: LPDWORD,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetCPInfo(arg1: UINT, arg2: LPCPINFO) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetCPInfoExA(arg1: UINT, arg2: DWORD, arg3: LPCPINFOEXA) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetCPInfoExW(arg1: UINT, arg2: DWORD, arg3: LPCPINFOEXW) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetCurrencyFormatA(
+        Locale: LCID,
+        dwFlags: DWORD,
+        lpValue: LPCSTR,
+        lpFormat: *const CURRENCYFMTA,
+        lpCurrencyStr: LPSTR,
+        cchCurrency: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetCurrencyFormatW(
+        Locale: LCID,
+        dwFlags: DWORD,
+        lpValue: LPCWSTR,
+        lpFormat: *const CURRENCYFMTW,
+        lpCurrencyStr: LPWSTR,
+        cchCurrency: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetDateFormatA(
+        arg1: LCID,
+        arg2: DWORD,
+        arg3: *const SYSTEMTIME,
+        arg4: LPCSTR,
+        arg5: LPSTR,
+        arg6: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetDateFormatW(
+        arg1: LCID,
+        arg2: DWORD,
+        arg3: *const SYSTEMTIME,
+        arg4: LPCWSTR,
+        arg5: LPWSTR,
+        arg6: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetDateFormatEx(
+        arg1: LPCWSTR,
+        arg2: DWORD,
+        arg3: *const SYSTEMTIME,
+        arg4: LPCWSTR,
+        arg5: LPWSTR,
+        arg6: ::core::ffi::c_int,
+        arg7: LPCWSTR,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetGeoInfoA(
+        Location: GEOID,
+        GeoType: GEOTYPE,
+        lpGeoData: LPSTR,
+        cchData: ::core::ffi::c_int,
+        LangId: LANGID,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetGeoInfoW(
+        Location: GEOID,
+        GeoType: GEOTYPE,
+        lpGeoData: LPWSTR,
+        cchData: ::core::ffi::c_int,
+        LangId: LANGID,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetLocaleInfoA(
+        Locale: LCID,
+        LCType: LCTYPE,
+        lpLCData: LPSTR,
+        cchData: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetLocaleInfoW(
+        Locale: LCID,
+        LCType: LCTYPE,
+        lpLCData: LPWSTR,
+        cchData: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetNLSVersion(arg1: NLS_FUNCTION, arg2: LCID, arg3: LPNLSVERSIONINFO) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetNLSVersionEx(
+        function: NLS_FUNCTION,
+        lpLocaleName: LPCWSTR,
+        lpVersionInformation: LPNLSVERSIONINFOEX,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetNumberFormatA(
+        Locale: LCID,
+        dwFlags: DWORD,
+        lpValue: LPCSTR,
+        lpFormat: *const NUMBERFMTA,
+        lpNumberStr: LPSTR,
+        cchNumber: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetNumberFormatW(
+        Locale: LCID,
+        dwFlags: DWORD,
+        lpValue: LPCWSTR,
+        lpFormat: *const NUMBERFMTW,
+        lpNumberStr: LPWSTR,
+        cchNumber: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetOEMCP() -> UINT;
+}
+unsafe extern "system" {
+    pub fn GetStringTypeA(
+        Locale: LCID,
+        dwInfoType: DWORD,
+        lpSrcStr: LPCSTR,
+        cchSrc: ::core::ffi::c_int,
+        lpCharType: LPWORD,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetStringTypeW(
+        dwInfoType: DWORD,
+        lpSrcStr: LPCWSTR,
+        cchSrc: ::core::ffi::c_int,
+        lpCharType: LPWORD,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetStringTypeExA(
+        Locale: LCID,
+        dwInfoType: DWORD,
+        lpSrcStr: LPCSTR,
+        cchSrc: ::core::ffi::c_int,
+        lpCharType: LPWORD,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetStringTypeExW(
+        Locale: LCID,
+        dwInfoType: DWORD,
+        lpSrcStr: LPCWSTR,
+        cchSrc: ::core::ffi::c_int,
+        lpCharType: LPWORD,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetSystemDefaultLangID() -> LANGID;
+}
+unsafe extern "system" {
+    pub fn GetSystemDefaultLCID() -> LCID;
+}
+unsafe extern "system" {
+    pub fn GetThreadLocale() -> LCID;
+}
+unsafe extern "system" {
+    pub fn GetTimeFormatA(
+        arg1: LCID,
+        arg2: DWORD,
+        arg3: *const SYSTEMTIME,
+        arg4: LPCSTR,
+        arg5: LPSTR,
+        arg6: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetTimeFormatW(
+        arg1: LCID,
+        arg2: DWORD,
+        arg3: *const SYSTEMTIME,
+        arg4: LPCWSTR,
+        arg5: LPWSTR,
+        arg6: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetTimeFormatEx(
+        arg1: LPCWSTR,
+        arg2: DWORD,
+        arg3: *const SYSTEMTIME,
+        arg4: LPCWSTR,
+        arg5: LPWSTR,
+        arg6: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetUserDefaultLangID() -> LANGID;
+}
+unsafe extern "system" {
+    pub fn GetUserDefaultLocaleName(
+        lpLocaleName: LPWSTR,
+        cchLocaleName: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetUserDefaultLCID() -> LCID;
+}
+unsafe extern "system" {
+    pub fn GetUserGeoID(arg1: GEOCLASS) -> GEOID;
+}
+unsafe extern "system" {
+    pub fn IdnToAscii(
+        dwFlags: DWORD,
+        lpUnicodeCharStr: LPCWSTR,
+        cchUnicodeChar: ::core::ffi::c_int,
+        lpASCIICharStr: LPWSTR,
+        cchASCIIChar: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn IdnToUnicode(
+        dwFlags: DWORD,
+        lpASCIICharStr: LPCWSTR,
+        cchASCIIChar: ::core::ffi::c_int,
+        lpUnicodeCharStr: LPWSTR,
+        cchUnicodeChar: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetSystemDefaultLocaleName(
+        lpLocaleName: LPWSTR,
+        cchLocaleName: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn EnumDateFormatsExEx(
+        lpDateFmtEnumProcExEx: DATEFMT_ENUMPROCEXEX,
+        lpLocaleName: LPCWSTR,
+        dwFlags: DWORD,
+        lParam: LPARAM,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn IsDBCSLeadByte(arg1: BYTE) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn IsDBCSLeadByteEx(arg1: UINT, arg2: BYTE) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn IsNLSDefinedString(
+        Function: NLS_FUNCTION,
+        dwFlags: DWORD,
+        lpVersionInformation: LPNLSVERSIONINFO,
+        lpString: LPCWSTR,
+        cchStr: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn IsValidCodePage(arg1: UINT) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn IsValidLocale(arg1: LCID, arg2: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn LCMapStringA(
+        Locale: LCID,
+        dwMapFlags: DWORD,
+        lpSrcStr: LPCSTR,
+        cchSrc: ::core::ffi::c_int,
+        lpDestStr: LPSTR,
+        cchDest: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn LCMapStringW(
+        Locale: LCID,
+        dwMapFlags: DWORD,
+        lpSrcStr: LPCWSTR,
+        cchSrc: ::core::ffi::c_int,
+        lpDestStr: LPWSTR,
+        cchDest: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn MultiByteToWideChar(
+        arg1: UINT,
+        arg2: DWORD,
+        arg3: LPCSTR,
+        arg4: ::core::ffi::c_int,
+        arg5: LPWSTR,
+        arg6: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn SetCalendarInfoA(
+        arg1: LCID,
+        arg2: CALID,
+        arg3: CALTYPE,
+        arg4: LPCSTR,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn SetCalendarInfoW(
+        arg1: LCID,
+        arg2: CALID,
+        arg3: CALTYPE,
+        arg4: LPCWSTR,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn SetLocaleInfoA(arg1: LCID, arg2: LCTYPE, arg3: LPCSTR) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn SetLocaleInfoW(arg1: LCID, arg2: LCTYPE, arg3: LPCWSTR) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn SetThreadLocale(arg1: LCID) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn SetThreadUILanguage(arg1: LANGID) -> LANGID;
+}
+unsafe extern "system" {
+    pub fn SetUserDefaultLCID(arg1: LCID) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn SetUserDefaultUILanguage(arg1: LANGID) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn SetUserGeoID(arg1: GEOID) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn WideCharToMultiByte(
+        arg1: UINT,
+        arg2: DWORD,
+        arg3: LPCWSTR,
+        arg4: ::core::ffi::c_int,
+        arg5: LPSTR,
+        arg6: ::core::ffi::c_int,
+        arg7: LPCSTR,
+        arg8: LPBOOL,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn EnumCalendarInfoExA(
+        arg1: CALINFO_ENUMPROCEXA,
+        arg2: LCID,
+        arg3: CALID,
+        arg4: CALTYPE,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumCalendarInfoExW(
+        arg1: CALINFO_ENUMPROCEXW,
+        arg2: LCID,
+        arg3: CALID,
+        arg4: CALTYPE,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumDateFormatsExA(arg1: DATEFMT_ENUMPROCEXA, arg2: LCID, arg3: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumDateFormatsExW(arg1: DATEFMT_ENUMPROCEXW, arg2: LCID, arg3: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumSystemLanguageGroupsA(
+        arg1: LANGUAGEGROUP_ENUMPROCA,
+        arg2: DWORD,
+        arg3: LONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumSystemLanguageGroupsW(
+        arg1: LANGUAGEGROUP_ENUMPROCW,
+        arg2: DWORD,
+        arg3: LONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumLanguageGroupLocalesA(
+        arg1: LANGGROUPLOCALE_ENUMPROCA,
+        arg2: LGRPID,
+        arg3: DWORD,
+        arg4: LONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumLanguageGroupLocalesW(
+        arg1: LANGGROUPLOCALE_ENUMPROCW,
+        arg2: LGRPID,
+        arg3: DWORD,
+        arg4: LONG_PTR,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumUILanguagesA(arg1: UILANGUAGE_ENUMPROCA, arg2: DWORD, arg3: LONG_PTR) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn EnumUILanguagesW(arg1: UILANGUAGE_ENUMPROCW, arg2: DWORD, arg3: LONG_PTR) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetSystemDefaultUILanguage() -> LANGID;
+}
+unsafe extern "system" {
+    pub fn GetUserDefaultUILanguage() -> LANGID;
+}
+unsafe extern "system" {
+    pub fn IsValidLanguageGroup(arg1: LGRPID, arg2: DWORD) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetFileMUIInfo(
+        dwFlags: DWORD,
+        pcwszFilePath: PCWSTR,
+        pFileMUIInfo: PFILEMUIINFO,
+        pcbFileMUIInfo: *mut DWORD,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetFileMUIPath(
+        dwFlags: DWORD,
+        pcwszFilePath: PCWSTR,
+        pwszLanguage: PWSTR,
+        pcchLanguage: PULONG,
+        pwszFileMUIPath: PWSTR,
+        pcchFileMUIPath: PULONG,
+        pululEnumerator: PULONGLONG,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetLocaleInfoEx(
+        lpLocaleName: LPCWSTR,
+        LCType: LCTYPE,
+        lpLCData: LPWSTR,
+        cchData: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn IsValidLocaleName(lpLocaleName: LPCWSTR) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetProcessPreferredUILanguages(
+        dwFlags: DWORD,
+        pulNumLanguages: PULONG,
+        pwszLanguagesBuffer: PZZWSTR,
+        pcchLanguagesBuffer: PULONG,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetSystemPreferredUILanguages(
+        dwFlags: DWORD,
+        pulNumLanguages: PULONG,
+        pwszLanguagesBuffer: PZZWSTR,
+        pcchLanguagesBuffer: PULONG,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetThreadPreferredUILanguages(
+        dwFlags: DWORD,
+        pulNumLanguages: PULONG,
+        pwszLanguagesBuffer: PZZWSTR,
+        pcchLanguagesBuffer: PULONG,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetThreadUILanguage() -> LANGID;
+}
+unsafe extern "system" {
+    pub fn GetUILanguageInfo(
+        dwFlags: DWORD,
+        pwmszLanguage: PCZZWSTR,
+        pwszFallbackLanguages: PZZWSTR,
+        pcchFallbackLanguages: PDWORD,
+        pAttributes: PDWORD,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn GetUserPreferredUILanguages(
+        dwFlags: DWORD,
+        pulNumLanguages: PULONG,
+        pwszLanguagesBuffer: PZZWSTR,
+        pcchLanguagesBuffer: PULONG,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn IdnToNameprepUnicode(
+        dwFlags: DWORD,
+        lpUnicodeCharStr: LPCWSTR,
+        cchUnicodeChar: ::core::ffi::c_int,
+        lpNameprepCharStr: LPWSTR,
+        cchNameprepChar: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn IsNormalizedString(
+        NormForm: NORM_FORM,
+        lpString: LPCWSTR,
+        cwLength: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn NormalizeString(
+        NormForm: NORM_FORM,
+        lpSrcString: LPCWSTR,
+        cwSrcLength: ::core::ffi::c_int,
+        lpDstString: LPWSTR,
+        cwDstLength: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn GetStringScripts(
+        dwFlags: DWORD,
+        lpString: LPCWSTR,
+        cchString: ::core::ffi::c_int,
+        lpScripts: LPWSTR,
+        cchScripts: ::core::ffi::c_int,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn SetProcessPreferredUILanguages(arg1: DWORD, arg2: PCZZWSTR, arg3: PULONG) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn SetThreadPreferredUILanguages(arg1: DWORD, arg2: PCZZWSTR, arg3: PULONG) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn VerifyScripts(
+        arg1: DWORD,
+        arg2: LPCWSTR,
+        arg3: ::core::ffi::c_int,
+        arg4: LPCWSTR,
+        arg5: ::core::ffi::c_int,
+    ) -> BOOL;
+}
+unsafe extern "system" {
+    pub fn LCMapStringEx(
+        lpLocaleName: LPCWSTR,
+        dwMapFlags: DWORD,
+        lpSrcStr: LPCWSTR,
+        cchSrc: ::core::ffi::c_int,
+        lpDestStr: LPWSTR,
+        cchDest: ::core::ffi::c_int,
+        lpVersionInformation: LPNLSVERSIONINFO,
+        lpReserved: LPVOID,
+        sortHandle: LPARAM,
+    ) -> ::core::ffi::c_int;
+}
+unsafe extern "system" {
+    pub fn LocaleNameToLCID(arg1: LPCWSTR, arg2: DWORD) -> LCID;
+}
+unsafe extern "system" {
+    pub fn CompareStringOrdinal(
+        arg1: *const WCHAR,
+        arg2: INT,
+        arg3: *const WCHAR,
+        arg4: INT,
+        arg5: BOOL,
+    ) -> INT;
+}
+unsafe extern "system" {
+    pub fn LCIDToLocaleName(
+        Locale: LCID,
+        lpName: LPWSTR,
+        cchName: ::core::ffi::c_int,
+        dwFlags: DWORD,
+    ) -> ::core::ffi::c_int;
+}
+pub type CPINFOEX = CPINFOEXW;
+pub type LPCPINFOEX = LPCPINFOEXW;
+pub type CURRENCYFMT = CURRENCYFMTW;
+pub type LPCURRENCYFMT = LPCURRENCYFMTW;
+pub type NUMBERFMT = NUMBERFMTW;
+pub type LPNUMBERFMT = LPNUMBERFMTW;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct __wine_debug_channel {
@@ -24328,115 +30039,19 @@ pub struct FileLog {
     pub SystemLog: DWORD,
     pub LogName: LPWSTR,
 }
-unsafe extern "C" {
-    pub static mut hInstance: HINSTANCE;
-}
-unsafe extern "C" {
-    pub static mut OsVersionInfo: OSVERSIONINFOEXW;
-}
-unsafe extern "C" {
-    pub static mut GlobalSetupFlags: DWORD;
-}
-use crate::prelude::inf_file; // whole in the TU that defines it (port resolve)
-unsafe extern "C" {
-    pub fn DIRID_get_string(dirid: ::core::ffi::c_int) -> *const WCHAR;
-}
-unsafe extern "C" {
-    pub fn PARSER_get_inf_filename(hinf: HINF) -> *const WCHAR;
-}
-unsafe extern "C" {
-    pub fn PARSER_get_src_root(hinf: HINF) -> *mut WCHAR;
-}
-unsafe extern "C" {
-    pub fn PARSER_get_dest_dir(context: *mut INFCONTEXT) -> *mut WCHAR;
+pub use crate::setupapi::setupcab::hInstance;
+pub use crate::setupapi::setupcab::OsVersionInfo;
+pub use crate::setupapi::misc::GlobalSetupFlags;
+#[repr(C)]
+#[derive(Debug)]
+pub struct inf_file {
+    _unused: [u8; 0],
 }
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct callback_WtoA_context {
     pub orig_context: *mut ::core::ffi::c_void,
     pub orig_handler: PSP_FILE_CALLBACK_A,
-}
-unsafe extern "system" {
-    pub fn QUEUE_callback_WtoA(
-        context: *mut ::core::ffi::c_void,
-        notification: UINT,
-        arg1: UINT_PTR,
-        arg2: UINT_PTR,
-    ) -> UINT;
-}
-unsafe extern "C" {
-    pub fn GetErrorCodeFromCrCode(cr: CONFIGRET) -> DWORD;
-}
-unsafe extern "C" {
-    pub fn CreateDeviceInfo(
-        list: *mut DeviceInfoSet,
-        InstancePath: LPCWSTR,
-        pClassGuid: LPCGUID,
-        pDeviceInfo: *mut *mut DeviceInfo,
-    ) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn SETUP_CreateDevicesList(
-        list: *mut DeviceInfoSet,
-        MachineName: PCWSTR,
-        Class: *const GUID,
-        Enumerator: PCWSTR,
-    ) -> LONG;
-}
-unsafe extern "C" {
-    pub fn SETUPDI_CreateDevKey(
-        RootKey: HKEY,
-        devInfo: *mut DeviceInfo,
-        samDesired: REGSAM,
-    ) -> HKEY;
-}
-unsafe extern "C" {
-    pub fn SETUPDI_CreateDrvKey(
-        RootKey: HKEY,
-        devInfo: *mut DeviceInfo,
-        ClassGuid: *mut UUID,
-        samDesired: REGSAM,
-    ) -> HKEY;
-}
-unsafe extern "C" {
-    pub fn SETUPDI_OpenDevKey(RootKey: HKEY, devInfo: *mut DeviceInfo, samDesired: REGSAM) -> HKEY;
-}
-unsafe extern "C" {
-    pub fn SETUPDI_OpenDrvKey(RootKey: HKEY, devInfo: *mut DeviceInfo, samDesired: REGSAM) -> HKEY;
-}
-unsafe extern "C" {
-    pub fn CreateInfFileDetails(FullInfFileName: LPCWSTR) -> *mut InfFileDetails;
-}
-unsafe extern "C" {
-    pub fn DereferenceInfFile(infFile: *mut InfFileDetails);
-}
-unsafe extern "C" {
-    pub fn DestroyDriverInfoElement(driverInfo: *mut DriverInfoElement) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn GetStringField(context: PINFCONTEXT, index: DWORD, value: *mut PWSTR) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn DestroyDeviceInterface(deviceInterface: *mut DeviceInterface) -> BOOL;
-}
-unsafe extern "C" {
-    pub fn SETUP_CreateInterfaceList(
-        list: *mut DeviceInfoSet,
-        MachineName: PCWSTR,
-        InterfaceGuid: *const GUID,
-        DeviceInstanceW: PCWSTR,
-        OnlyPresentInterfaces: BOOL,
-    ) -> LONG;
-}
-unsafe extern "C" {
-    pub fn GetFunctionPointer(
-        InstallerName: PWSTR,
-        ModulePointer: *mut HMODULE,
-        FunctionPointer: *mut PVOID,
-    ) -> DWORD;
-}
-unsafe extern "C" {
-    pub fn FreeFunctionPointer(ModulePointer: HMODULE, FunctionPointer: PVOID) -> DWORD;
 }
 unsafe extern "system" {
     pub fn CaptureAndConvertAnsiArg(pSrc: LPCSTR, pDst: *mut LPWSTR) -> DWORD;
@@ -24449,14 +30064,6 @@ unsafe extern "system" {
 }
 pub type FIND_CALLBACK =
     ::core::option::Option<unsafe extern "C" fn(SectionName: LPCWSTR, Context: PVOID) -> BOOL>;
-unsafe extern "C" {
-    pub fn EnumerateSectionsStartingWith(
-        hInf: HINF,
-        pStr: LPCWSTR,
-        Callback: FIND_CALLBACK,
-        Context: PVOID,
-    ) -> BOOL;
-}
 pub type CHECKSUM = ULONG;
 pub type UOFF = ULONG;
 pub type COFF = ULONG;
@@ -24630,6 +30237,24 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub fn FDITruncateCabinet(arg1: HFDI, arg2: *mut ::core::ffi::c_char, arg3: USHORT) -> BOOL;
 }
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagVS_FIXEDFILEINFO {
+    pub dwSignature: DWORD,
+    pub dwStrucVersion: DWORD,
+    pub dwFileVersionMS: DWORD,
+    pub dwFileVersionLS: DWORD,
+    pub dwProductVersionMS: DWORD,
+    pub dwProductVersionLS: DWORD,
+    pub dwFileFlagsMask: DWORD,
+    pub dwFileFlags: DWORD,
+    pub dwFileOS: DWORD,
+    pub dwFileType: DWORD,
+    pub dwFileSubtype: DWORD,
+    pub dwFileDateMS: DWORD,
+    pub dwFileDateLS: DWORD,
+}
+pub type VS_FIXEDFILEINFO = tagVS_FIXEDFILEINFO;
 unsafe extern "system" {
     pub fn VerFindFileA(
         arg1: DWORD,
@@ -27002,18 +32627,6 @@ unsafe extern "system" {
         pszServiceName: LPCWSTR,
         phServiceStatus: *mut SERVICE_STATUS_HANDLE,
     ) -> DWORD;
-}
-unsafe extern "C" {
-    pub fn PnpBindRpc(pszMachine: LPCWSTR, BindingHandle: *mut RPC_BINDING_HANDLE) -> RPC_STATUS;
-}
-unsafe extern "C" {
-    pub fn PnpUnbindRpc(BindingHandle: *mut RPC_BINDING_HANDLE) -> RPC_STATUS;
-}
-unsafe extern "C" {
-    pub fn PnpGetLocalHandles(
-        BindingHandle: *mut RPC_BINDING_HANDLE,
-        StringTable: *mut HSTRING_TABLE,
-    ) -> BOOL;
 }
 unsafe extern "C" {
     pub fn PnpUnbindLocalHandles() -> RPC_STATUS;

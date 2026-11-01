@@ -1,0 +1,1 @@
+sdk/lib/rust/shell32-rust/src/wine/knownfolders.rs:184: store-on-failure SHGetStockIconInfo(psii)

@@ -318,14 +318,7 @@ pub struct SHELLDETAILS {
 }
 
 /// ICONINFO (winuser.h)
-#[repr(C)]
-pub struct ICONINFO {
-    pub fIcon: BOOL,
-    pub xHotspot: DWORD,
-    pub yHotspot: DWORD,
-    pub hbmMask: HBITMAP,
-    pub hbmColor: HBITMAP,
-}
+pub use crate::island::ICONINFO;
 
 /// BITMAP (wingdi.h)
 pub use crate::island::BITMAP;
@@ -348,44 +341,9 @@ pub struct ABOUT_INFO {
 }
 
 // PE headers (winnt.h)
-#[repr(C)]
-pub struct IMAGE_DOS_HEADER {
-    pub e_magic: WORD,
-    pub e_cblp: WORD,
-    pub e_cp: WORD,
-    pub e_crlc: WORD,
-    pub e_cparhdr: WORD,
-    pub e_minalloc: WORD,
-    pub e_maxalloc: WORD,
-    pub e_ss: WORD,
-    pub e_sp: WORD,
-    pub e_csum: WORD,
-    pub e_ip: WORD,
-    pub e_cs: WORD,
-    pub e_lfarlc: WORD,
-    pub e_ovno: WORD,
-    pub e_res: [WORD; 4],
-    pub e_oemid: WORD,
-    pub e_oeminfo: WORD,
-    pub e_res2: [WORD; 10],
-    pub e_lfanew: LONG,
-}
-#[repr(C)]
-pub struct IMAGE_FILE_HEADER {
-    pub Machine: WORD,
-    pub NumberOfSections: WORD,
-    pub TimeDateStamp: DWORD,
-    pub PointerToSymbolTable: DWORD,
-    pub NumberOfSymbols: DWORD,
-    pub SizeOfOptionalHeader: WORD,
-    pub Characteristics: WORD,
-}
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct IMAGE_DATA_DIRECTORY {
-    pub VirtualAddress: DWORD,
-    pub Size: DWORD,
-}
+pub use crate::island::IMAGE_DOS_HEADER;
+pub use crate::island::IMAGE_FILE_HEADER;
+pub use crate::island::IMAGE_DATA_DIRECTORY;
 #[cfg(target_arch = "x86")]
 #[repr(C)]
 pub struct IMAGE_OPTIONAL_HEADER {
@@ -461,39 +419,7 @@ pub struct IMAGE_NT_HEADERS {
     pub FileHeader: IMAGE_FILE_HEADER,
     pub OptionalHeader: IMAGE_OPTIONAL_HEADER,
 }
-#[repr(C)]
-pub struct IMAGE_OS2_HEADER {
-    pub ne_magic: WORD,
-    pub ne_ver: CHAR,
-    pub ne_rev: CHAR,
-    pub ne_enttab: WORD,
-    pub ne_cbenttab: WORD,
-    pub ne_crc: LONG,
-    pub ne_flags: WORD,
-    pub ne_autodata: WORD,
-    pub ne_heap: WORD,
-    pub ne_stack: WORD,
-    pub ne_csip: LONG,
-    pub ne_sssp: LONG,
-    pub ne_cseg: WORD,
-    pub ne_cmod: WORD,
-    pub ne_cbnrestab: WORD,
-    pub ne_segtab: WORD,
-    pub ne_rsrctab: WORD,
-    pub ne_restab: WORD,
-    pub ne_modtab: WORD,
-    pub ne_imptab: WORD,
-    pub ne_nrestab: LONG,
-    pub ne_cmovent: WORD,
-    pub ne_align: WORD,
-    pub ne_cres: WORD,
-    pub ne_exetyp: BYTE,
-    pub ne_flagsothers: BYTE,
-    pub ne_pretthunks: WORD,
-    pub ne_psegrefbytes: WORD,
-    pub ne_swaparea: WORD,
-    pub ne_expver: WORD,
-}
+pub use crate::island::IMAGE_OS2_HEADER;
 
 // ── COM vtables (STDMETHODCALLTYPE == __stdcall → extern "system"; only invoked slots typed) ─
 #[repr(C)]
@@ -2232,10 +2158,7 @@ pub unsafe extern "system" fn ShellAboutW(
     let hinst = GetWindowLongW(hWnd, GWLP_HINSTANCE) as usize as HINSTANCE;
     #[cfg(not(target_arch = "x86"))]
     let hinst = {
-        extern "system" {
-            fn GetWindowLongPtrW(hWnd: HWND, nIndex: INT) -> LONG_PTR;
-        }
-        GetWindowLongPtrW(hWnd, GWLP_HINSTANCE) as usize as HINSTANCE
+        crate::island::GetWindowLongPtrW(hWnd, GWLP_HINSTANCE) as usize as HINSTANCE
     };
 
     DialogBoxIndirectParamW(

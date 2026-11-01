@@ -36,7 +36,68 @@ is a lead.
 
 ---
 
-## RESUME HERE (2026-10-17: the 2026-10-15 sync LANDED, `7509c4dc796`; follow-ups done)
+## RESUME HERE (2026-10-31: the 2026-10-31 sync, 127 commits to upstream `80dec44f649`)
+
+Merge `cd5f05edbc1` (upstream c25e4fd7dec..80dec44f649, 2026-10-15..10-31; 63 conflicts, each
+resolution in the commit message) plus follow-up `7b315dd0e56`, on branch `upstream-sync-2`.
+The next sync starts from `80dec44f649`.
+
+**Status at park (2026-11-01):** submitted to merge-integrator as `upstream-sync-2 @ 1acc6748417`
+(queued as its own batch 60, merging master `558865d4c44` onto it, which `merge-tree` shows as 0 conflicts).
+It has NOT been smoked locally; the integrator's cold gate is its first boot. Before
+resuming, check that it landed (`git merge-base --is-ancestor 1acc6748417 origin/master`) or read
+the integrator's classification and artifact dir, and fix forward.
+
+**BOUNCED 2026-11-01, LINT_FAIL; FIXED 2026-11-01 after the migration** (ntkrnl-sys regenerated; the
+ndk EXTENDED_DEVOBJ_EXTENSION gained the InterruptCount upstream gave only the public type, so
+both are 60/112 bytes). The original note follows. Integrator batch 60
+(merged onto master `aa597d19355`, tag `integration-batch60-red`; gate
+`/tmp/vibeos-cli/20261101-000723-fkugq9ie-gate-i386+amd64+arm64`, which the migration wipes).
+Everything else was green: build, smoke x3 + net + bios, conformance x3, stortest x3. The one
+failing row is layout `size_check` DRIFT ("C headers vs committed asserts") on all 3 arches,
+because two kernel layouts changed in the headers and ntkrnl-sys was not regenerated:
+- `xdk/iotypes.h` `_DEVOBJ_EXTENSION` (upstream 167c0e97ce5) went from the 3-field public stub
+  to the full layout. i386 8→60, 64-bit 16→112.
+- `ndk/iotypes.h` `_EXTENDED_DRIVER_EXTENSION` (6eaa9a97e7a, KSE) gained
+  KseCallbacks/DvCallbacks/VerifierContext. i386 28→40, 64-bit 56→80.
+
+Repro: `.venv/bin/python sdk/lib/rust/ntkrnl-sys/verify_sizes.py --output-dir X`, then diff
+`X/size_check_<arch>.rs` against the committed file (those 4 lines are the only diff). Fix:
+1. Audit FIRST where iomgr-rust allocates and lays out the device object plus its
+   DEVOBJ_EXTENSION, and the driver object plus its extension.
+2. Ask whether any C still in the image now reads past what the Rust allocates.
+3. Then either port the fields (DEVOBJ_EXTENSION's are real NT layout; KSE's belong with the
+   KSE port item) or keep our layout and `#if` the new fields out, giving the reason.
+4. Then run generate_bindings.sh, verify_sizes.py and tools/verify_offsets.py, and resubmit.
+
+**Two silent hazards fired, and both arrived as clean merges.** (a) Spec stubs turned into
+real exports with no implementation: nine RtlFls*/NtUserPfn lines in `ntdll.spec`, plus
+wlanapi's WlanGetNetworkBssList. A link break waiting. Sweep every merged `.spec` for a `-stub`
+or `@ stub` that lost the word. (b) A file added into a pruned tree
+(`drivers/filesystems/ntfs/lockctrl.c`). Also: a renumbered `resource.h` in a Rust-flipped
+module, where the `.rc` compiles against the new header and the island keeps the old numbers
+(diskpart, `scan_shadowed_c_define` caught it). Regenerate the island, then `port check`.
+
+Upstream independently landed two fixes we had already made: KiTryThreadLock's inverted fast
+path (1b5f5ac0801; ours since 2026-07-13) and diskpart's sizeof(PPARTENTRY) overrun
+(b44f5ceb7e4).
+
+**Owed from this sync** (all on disk as oracle C, none built):
+
+| item | upstream | what it needs |
+|---|---|---|
+| Vista users folder (`C:\Users`, ProgramData, Public) | f0a83320d79 | userenv-rust setup/profile/environment AND the hivedef/hivesft/livecd/boot_images half, landed TOGETHER. The hive half was declined alone, because a C:\Users ProfilesDirectory against XP-style profile code meets at first logon. The 79 userenv `verify_translation_literals` baseline lines are this item. |
+| Kernel Shim Engine (`ntoskrnl/kse/`, ~1.6K lines) | 6eaa9a97e7a, 1a577262b50, dd91acb1f95, 804d4036c26 | ntoskrnl-rust port; KseInitialize(0/1) in IoInitSystem; apphelp's `sdbread_km` for the driver database (`media/sdb/drvmain.xml`) |
+| RtlFls* (`sdk/lib/rtl/fls.c`) | bf45318bc5b | rtl-rust; flip the nine ntdll.spec lines; kernel32-rust FlsAlloc/FlsFree to route through it |
+| RtlInitializeNtUserPfn / RtlRetrieveNtUserPfn (`ntuserpfn.c`, `ntuserdisp.s`) | 479662b3f0c | rtl-rust; then ntdll.spec + ntdll_vista.spec |
+| PCIX as a full PnP bus driver (~3.7K lines) | 443d9c1de54 | pcix-rust; `pci.h`'s RoutingToken vs our IrqRoute fields is the layout seam |
+| USER32 Wine-11.11 controls (button/combo/edit/listbox/static/mdi/DDE, ~4K lines) | 39fee16a692 | user32-rust; the combo `scan_dropped_null_guard` baseline line is this item |
+| Boot-partition polling (`PollBootPartitionTimeout`, now in the hive at 30 s) | 2b15735e98c | iomgr-rust IopMarkBootPartition. HAZARD: arm64 and MININT boot with no boot device on purpose, and a straight port stalls them 30 s; gate the loop on those first |
+| diskpart volume rework (status column, sort, select by letter, CD/DVD size) | ac1ab9e3043, e386343489c, b6f74c0360a | diskpart-rust partlist/UpdateVolumeInfo; the Status column is empty until then. Upstream's PrintVolume default arm assigns nVolumeType for nVolumeStatus |
+| SHGetKnownFolderItem (Wine-11.16 shellpath) | fe98aaf5443 | shell32-rust; `verify_lost_exports` baseline line |
+| KBDCLASS/MOUCLASS port-device IRP support (14 commits) | 7f754b4e420..2349cb9a3bc | kbdclass-rust / mouclass-rust semantic review |
+
+## Previous sync (2026-10-17: the 2026-10-15 sync LANDED, `7509c4dc796`; follow-ups done)
 
 The 2026-10-15 upstream merge (64 commits to upstream c25e4fd7dec) is on master with its hand
 ports, island regen, Haiku translations (pnpprop, cacheinfo $0.10; storport re-ported $0.25)

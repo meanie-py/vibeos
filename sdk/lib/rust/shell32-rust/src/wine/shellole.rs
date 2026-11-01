@@ -300,17 +300,8 @@ pub type REFGUID = *const GUID;
 
 // user32 GetWindowLongPtr/SetWindowLongPtr — on i386 the SDK maps these macros to the
 // *Long* (32-bit) entry points (confirmed: _GetWindowLongA@8 / _SetWindowLongA@12).
-#[cfg(target_arch = "x86")]
-extern "system" {
-// @4
-// @8
-// @12
-}
 #[cfg(not(target_arch = "x86"))]
-extern "system" {
-    fn GetWindowLongPtrA(hWnd: HWND, nIndex: INT) -> LONG_PTR;
-    fn SetWindowLongPtrA(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR;
-}
+use crate::island::{GetWindowLongPtrA, SetWindowLongPtrA};
 
 // msvcrt — swprintf is the legacy variadic form ReactOS shell32 uses.
 extern "C" {

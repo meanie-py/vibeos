@@ -2224,6 +2224,24 @@ pub unsafe fn InterlockedExchangePointer(
         .swap(value, core::sync::atomic::Ordering::SeqCst)
 }
 
+/// `InterlockedCompareExchangePointer(Destination, Exchange, Comperand)`: stores `exchange`
+/// only when the slot holds `comperand`, and returns the value it held either way.
+#[inline(always)]
+pub unsafe fn InterlockedCompareExchangePointer(
+    destination: *mut *mut core::ffi::c_void,
+    exchange: *mut core::ffi::c_void,
+    comperand: *mut core::ffi::c_void,
+) -> *mut core::ffi::c_void {
+    match (*(destination as *const core::sync::atomic::AtomicPtr<core::ffi::c_void>)).compare_exchange(
+        comperand,
+        exchange,
+        core::sync::atomic::Ordering::SeqCst,
+        core::sync::atomic::Ordering::SeqCst,
+    ) {
+        Ok(old) | Err(old) => old,
+    }
+}
+
 /// `InterlockedCompareExchange(Destination, Exchange, Comperand)`: stores `exchange` only when
 /// the current value equals `comperand`, and returns the value it found either way.
 #[inline(always)]

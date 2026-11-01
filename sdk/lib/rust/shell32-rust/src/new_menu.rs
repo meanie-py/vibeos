@@ -352,14 +352,12 @@ pub struct SHELLNEW_ITEM {
 // Deterministic COM scaffold for CNewMenu; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -893,9 +891,7 @@ pub type LPFNSVADDPROPSHEETPAGE = Option<unsafe extern "system" fn(HPROPSHEETPAG
 extern "system" {
     fn CopyFileW(existing: LPCWSTR, new: LPCWSTR, fail_if_exists: BOOL) -> BOOL;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    #[link_name = "LoadImageW"] fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, height: INT, flags: UINT) -> HANDLE;
     fn PathYetAnotherMakeUniqueName(buffer: LPWSTR, path: LPCWSTR, short: LPCWSTR, long: LPCWSTR) -> BOOL;
-    #[link_name = "RegCreateKeyExW"] fn RegCreateKeyEx(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn WideCharToMultiByte(page: UINT, flags: DWORD, wide: LPCWSTR, wide_len: INT, multi: LPSTR, multi_len: INT, default_char: LPCSTR, used_default: *mut BOOL) -> INT;
     fn lstrlenW(text: LPCWSTR) -> INT;
@@ -904,7 +900,6 @@ extern "system" {
 
 extern "C" {
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
-    fn malloc(bytes: usize) -> *mut ();
     fn wcsstr(haystack: LPCWSTR, needle: LPCWSTR) -> LPWSTR;
     fn _wcsdup(text: LPCWSTR) -> LPWSTR;
     fn _wcsicmp(left: LPCWSTR, right: LPCWSTR) -> INT;
@@ -981,7 +976,6 @@ extern "C" {
 }
 
 extern "C" {
-    fn memset(dst: *mut core::ffi::c_void, value: INT, bytes: usize) -> *mut core::ffi::c_void;
 }
 #[inline]
 unsafe fn CopyMemory<D, S, N: CppComSize>(
@@ -1110,6 +1104,14 @@ pub static CPP_COM_WSTR_F4D7F37FC85E: [WCHAR; 9] = [0x004E, 0x0075, 0x006C, 0x00
 pub static CPP_COM_WSTR_FE706C396A0C: [WCHAR; 5] = [0x002E, 0x006C, 0x006E, 0x006B, 0x0000];
 
 use core::ffi::c_void;
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::memset;
+use crate::prelude::malloc;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+use crate::island::LoadImageW as LoadImage;
+use crate::island::RegCreateKeyExW as RegCreateKeyEx;
 // The crate's own functions: the definition is the declaration.
 use crate::shell32::iconcache::ExtractIconExW;
 use crate::wine::classes::HLM_GetIconW;
