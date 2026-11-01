@@ -322,21 +322,30 @@ def assemble(arch: str, cd: str, out: Path, cells: Path | None, repo: Path = REP
     lst = out / f"{cd}.lst"
     lst.write_text(write_list(spec["entries"], where))
     cmd = spec["command"]
-    if not cmd:
-        # arm64's livecd is a list only: qemu/mkramdisk.sh lays it out into ramdisk.img.
+    if cmd:
+        cfg = m["config"]
+        image = out / f"{cd}.iso"
+        cmd = (
+            cmd.replace(f"{{BUILD}}/boot/{cd}.{cfg}.lst", str(lst))
+            .replace(f"{{BUILD}}/boot/{cd}.stripped.lst", str(out / f"{cd}.stripped.lst"))
+            .replace("{BUILD}/boot/stripped ", f"{out / 'stripped'} ")
+            .replace(f"{{BUILD}}/{cd}.iso", str(image))
+            .replace("{BUILD}", str(build))
+            .replace("{REPO}", str(repo))
+        )
+        image.unlink(missing_ok=True)
+        _run(cmd)
+    elif cd == "livecd" and arch == "arm64":
+        # arm64's livecd is a list only: qemu/mkramdisk.sh lays it out into a FAT ramdisk
+        # inside a FAT boot image, here in out/ rather than qemu/.
+        image = out / "livecd.img"
+        image.unlink(missing_ok=True)
+        subprocess.run(
+            ["bash", str(repo / "qemu/mkramdisk.sh"), "--lst", str(lst), "--out-dir", str(out)],
+            check=True,
+        )
+    else:
         return lst
-    cfg = m["config"]
-    image = out / f"{cd}.iso"
-    cmd = (
-        cmd.replace(f"{{BUILD}}/boot/{cd}.{cfg}.lst", str(lst))
-        .replace(f"{{BUILD}}/boot/{cd}.stripped.lst", str(out / f"{cd}.stripped.lst"))
-        .replace("{BUILD}/boot/stripped ", f"{out / 'stripped'} ")
-        .replace(f"{{BUILD}}/{cd}.iso", str(image))
-        .replace("{BUILD}", str(build))
-        .replace("{REPO}", str(repo))
-    )
-    image.unlink(missing_ok=True)
-    _run(cmd)
     if source_hash(repo) != source:
         raise MediaError("the source tree changed while the image was mastered")
     stamp = {

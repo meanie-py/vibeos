@@ -136,3 +136,44 @@ def test_a_build_carrying_payload_rostests_is_refused_not_filtered():
     )
     with pytest.raises(m.MediaError, match=r"winetests.*ENABLE_ROSTESTS_APITESTS=OFF"):
         m.committed(dirty, "amd64")
+
+
+def test_the_arm64_livecd_is_laid_out_by_mkramdisk_into_out(tmp_path, monkeypatch):
+    src = tmp_path / "uefildr.efi"
+    src.write_bytes(b"efi")
+    manifest = {
+        "config": "Debug",
+        "cds": {
+            "livecd": {"command": "", "entries": [["efi/boot/bootaa64.efi", "repo:uefildr.efi"]]}
+        },
+    }
+    monkeypatch.setattr(m, "current", lambda arch, repo: manifest)
+    monkeypatch.setattr(m, "source_hash", lambda repo=None: "src")
+    out = tmp_path / "out"
+    calls = []
+
+    def fake(argv, check):
+        calls.append(argv)
+        (out / "livecd.img").write_bytes(b"fat")
+
+    monkeypatch.setattr(m.subprocess, "run", fake)
+    image = m.assemble("arm64", "livecd", out, None, tmp_path)
+    assert image == out / "livecd.img"
+    assert calls == [
+        [
+            "bash",
+            str(tmp_path / "qemu/mkramdisk.sh"),
+            "--lst",
+            str(out / "livecd.lst"),
+            "--out-dir",
+            str(out),
+        ]
+    ]
+    assert (out / "livecd.lst").read_text() == f"efi/boot/bootaa64.efi={src}\n"
+    stamp = json.loads((out / "livecd.provenance.json").read_text())
+    assert (stamp["arch"], stamp["cd"], stamp["image"], stamp["source"]) == (
+        "arm64",
+        "livecd",
+        "livecd.img",
+        "src",
+    )
