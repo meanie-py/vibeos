@@ -1,0 +1,63 @@
+{
+  "AUDIT_TABLES": {
+    "win32k": {
+      "gen": "dll/win32/wow64/wow64_win32k_thunks.gen.c",
+      "spec": "win32ss/win32u/win32u.spec",
+      "sysfuncs": "win32ss/w32ksvc32.h",
+      "manual_lists": [
+        "tools/wow64gen/manual-win32k.txt",
+        "tools/wow64gen/automarshal-win32k.txt"
+      ],
+      "headers": [
+        "win32ss/include/ntuser.h",
+        "sdk/include/psdk/ntgdi.h",
+        "win32ss/include/ntgdibad.h"
+      ],
+      "tus": [
+        [
+          "user32_layout_probe.c",
+          "#include <user32.h>\n"
+        ],
+        [
+          "gdi32/wine/rust_cohab_stub.c",
+          "#include <precomp.h>\n"
+        ]
+      ]
+    },
+    "ntdll": {
+      "gen": "dll/win32/wow64/wow64_thunks.gen.c",
+      "spec": "dll/ntdll/def/ntdll.spec",
+      "sysfuncs": "ntoskrnl/include/sysfuncs.h",
+      "manual_lists": [
+        "tools/wow64gen/manual.txt"
+      ],
+      "headers": [
+        "sdk/include/ndk/cmfuncs.h",
+        "sdk/include/ndk/dbgkfuncs.h",
+        "sdk/include/ndk/exfuncs.h",
+        "sdk/include/ndk/iofuncs.h",
+        "sdk/include/ndk/kdfuncs.h",
+        "sdk/include/ndk/kefuncs.h",
+        "sdk/include/ndk/lpcfuncs.h",
+        "sdk/include/ndk/mmfuncs.h",
+        "sdk/include/ndk/obfuncs.h",
+        "sdk/include/ndk/pofuncs.h",
+        "sdk/include/ndk/psfuncs.h",
+        "sdk/include/ndk/sefuncs.h"
+      ],
+      "tus": [
+        [
+          "ntdll/rtl/rtl_um_rust_stub.c",
+          "#define WIN32_NO_STATUS\n#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <winuser.h>\n#define NTOS_MODE_USER\n#include <ndk/cmfuncs.h>\n#include <ndk/exfuncs.h>\n#include <ndk/iofuncs.h>\n#include <ndk/kefuncs.h>\n#include <ndk/ldrfuncs.h>\n#include <ndk/mmfuncs.h>\n#include <ndk/obfuncs.h>\n#include <ndk/psfuncs.h>\n#include <ndk/rtlfuncs.h>\n#include <ndk/sefuncs.h>\n#include <ndk/lpcfuncs.h>\n#include <ndk/pofuncs.h>\n#include <ndk/dbgkfuncs.h>\n#include <ndk/umfuncs.h>\n"
+        ]
+      ]
+    }
+  },
+  "PARAM_RANK": {
+    "FLAT": 0,
+    "IDENTICAL": 0,
+    "SCALAR_WIDEN": 1,
+    "WIDENING": 2,
+    "SEMANTIC": 3
+  }
+}

@@ -11,6 +11,7 @@ pub mod ctype;
 pub mod data;
 pub mod delay;
 pub mod global_barrier;
+pub mod marshal;
 pub mod messages;
 pub mod payload;
 pub mod probe;
