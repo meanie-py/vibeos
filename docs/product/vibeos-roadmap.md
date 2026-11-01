@@ -6785,7 +6785,10 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   (a `LOOKASIDE_ALIGN` lookaside inside it) while `IoCreateDevice` places extensions 16-aligned,
   as the C does; needs a design decision (align extensions in `IoCreateDevice`, or keep these
   crates unarmed). Then freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks),
-  win32k-rust (10) and the remaining drivers. `debug_assert!` is gated on
+  win32k-rust (10) and the remaining drivers. Two armed-fastfat asserts print (and continue) twice per
+  amd64-bios boot, both owed triage: `cachesup.rs:182` (CcMapData returned FALSE for a WAIT
+  request, so fastfat raises STATUS_CANT_WAIT on a waitable IrpContext) and `read.rs:590`
+  (STATUS_VERIFY_REQUIRED on the volume's own VerifyThread); `20261101-183850-m41czity`. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of
