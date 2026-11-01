@@ -31,6 +31,7 @@ members = [
     "esent-cargo",
     "dciman32-cargo",
     "clusapi-cargo",
+    "normaliz-cargo",
     "mstask-cargo",
     "shcore-cargo",
     "hlink-cargo",
@@ -986,6 +987,7 @@ members = [
     "hlink-rust",
     "shcore-rust",
     "mstask-rust",
+    "normaliz-rust",
 ]
 resolver = "2"
 

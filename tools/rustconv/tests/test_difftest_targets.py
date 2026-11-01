@@ -4,7 +4,8 @@ cryptlib's MD4/MD5/SHA1 (records from arbitrary sampled context states), rtl's C
 (a selected static table) and rtl's run-encode pair (a UNICODE_STRING whose Buffer is
 a Length-sized byte pointee, plus a scripted NtQuerySystemTime fixture) and rtl's LZNT1
 (encoder-produced example streams, with mutants reaching the lznt1.rs support module), and
-the boot loaders' table-less NLS (boot/rtl/nlsboot.c vs blrtl-rust).
+the boot loaders' table-less NLS (boot/rtl/nlsboot.c vs blrtl-rust), and normaliz's
+Wine-derived IDN conversions (WCHAR-counted buffers, a last-error and heap probe).
 """
 
 from pathlib import Path
@@ -36,6 +37,70 @@ def test_wine_version_dll_through_the_host_profile(tmp_path):
     assert report["mismatches"] == 0
     assert "LZOpenFileW" in report["c_traps"]
     assert all(m["detected"] for m in report["mutants"])
+
+
+@pytest.mark.skipif(
+    not (DATA.parents[3] / "build-amd64/sdk/include/psdk/winnt.h").is_file(),
+    reason="reactos-amd64 host profile needs this worktree's generated headers: "
+    "./vibeos-cli build --arch amd64",
+)
+@pytest.mark.parametrize("name", ["normaliz_ascii", "normaliz_unicode"])
+def test_normaliz_idn_through_the_env_probe(tmp_path, name):
+    """The probe grades what the return value cannot: an error code, a leaked block."""
+    report = grade(DATA / f"{name}.json", tmp_path / name)
+    assert report["status"] == "pass", report
+    assert report["mismatches"] == 0
+    assert report["c_traps"] == []
+    assert all(m["detected"] for m in report["mutants"])
+    if name == "normaliz_ascii":
+        # Same return, same buffers: only the probe sees these two.
+        detected = {m["name"] for m in report["mutants"] if m["detected"]}
+        assert {"unassigned_code", "long_label_leak"} <= detected
+
+
+def _resolved(name: str) -> dict:
+    import json
+
+    data = json.loads((DATA / f"{name}.json").read_text())
+    base = DATA.resolve()
+    for key in ("c_source", "c_prelude", "rust_source"):
+        data[key] = str((base / data[key]).resolve())
+    data["c_env"] = [str((base / p).resolve()) for p in data["c_env"]]
+    data["rust_support"] = {k: str((base / v).resolve()) for k, v in data["rust_support"].items()}
+    return data
+
+
+def test_env_probe_requires_a_shared_env(tmp_path):
+    import json
+
+    data = _resolved("normaliz_ascii")
+    data["c_env"] = []
+    path = tmp_path / "bad.json"
+    path.write_text(json.dumps(data))
+    with pytest.raises(ContractError, match="c_env_probe requires c_env"):
+        load_contract(path)
+
+
+def test_wchar_examples_set_their_count_and_must_be_whole_elements(tmp_path):
+    import json
+
+    from rustconv.difftest_contract import generate_contract_cases
+
+    data = _resolved("normaliz_unicode")
+    path = tmp_path / "ok.json"
+    path.write_text(json.dumps(data))
+    cases = generate_contract_cases(load_contract(path))
+    assert cases and all(
+        len(bytes.fromhex(c["allocations"]["src"])) == 2 * c["args"]["src_cch"] for c in cases
+    )
+    data["functions"][0]["args"][1]["examples"].append("616")
+    path.write_text(json.dumps(data))
+    with pytest.raises(ContractError):
+        load_contract(path)
+    data["functions"][0]["args"][1]["examples"][-1] = "61"
+    path.write_text(json.dumps(data))
+    with pytest.raises(ContractError, match="whole number of elements"):
+        load_contract(path)
 
 
 def test_byte_pointee_fault_proves_the_allocation_ends_at_length(tmp_path):
