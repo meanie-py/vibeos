@@ -20,6 +20,13 @@
 #   ./mkramdisk.sh              # build ramdisk.img + boot.img from build-arm64
 #   ./mkramdisk.sh --up         # boot-select the UP kernel (opt-out; MP is default)
 #   ./mkramdisk.sh --refresh    # accepted for old callers; the image is always rebuilt
+#   ./mkramdisk.sh --lst L --out-dir D
+#                               # media mode: lay out livecd list L (tools/media_manifest.py
+#                               # --assemble writes it) into D/livecd.img + D/ramdisk.img,
+#                               # touching neither build-arm64 nor qemu/. uefildr and csrss
+#                               # come from L too, so cmake-off cells boot as themselves;
+#                               # no payloads, and VIBEOS_FEX=1 is refused (its guests are
+#                               # picked from build dirs, which the list does not describe).
 #
 # Build first with `./vibeos-cli build --arch arm64` (it builds `livecd`).
 
@@ -44,6 +51,8 @@ FREELDR_INI="$QEMU_DIR/freeldr.ini"
 LIVECD_LST="$BUILD_DIR/boot/livecd.Debug.lst"
 STAGE_DIR="$BUILD_DIR/boot/ramdisk"
 
+MEDIA_LST=""
+OUT_DIR=""
 UP=""    # --up: boot-select the UP entry. The MP pair is the DEFAULT (2026-09-12);
          # this is the only way to get a UP boot, and nothing automated should use it.
 
@@ -72,25 +81,62 @@ MMDIR_P() {
     done
 }
 
-for arg in "$@"; do
-    case "$arg" in
+while [ $# -gt 0 ]; do
+    case "$1" in
         --up)
             UP=1
             ;;
         --refresh)
             ;;
+        --lst)
+            MEDIA_LST="$2"; shift
+            ;;
+        --out-dir)
+            OUT_DIR="$2"; shift
+            ;;
         --help|-h)
-            sed -n '2,24p' "$0"
+            sed -n '2,31p' "$0"
             exit 0
             ;;
         *)
-            echo "[!] unknown argument: $arg"
+            echo "[!] unknown argument: $1"
             exit 1
             ;;
     esac
+    shift
 done
 
-for f in "$LIVECD_LST" "$UEFILDR"; do
+CSRSS_SRC="$BUILD_DIR/subsystems/csr/csrss/csrss.exe"
+LST_DIR="$BUILD_DIR/boot"
+if [ -n "$MEDIA_LST$OUT_DIR" ]; then
+    if [ -z "$MEDIA_LST" ] || [ -z "$OUT_DIR" ]; then
+        echo "[!] --lst and --out-dir go together"
+        exit 1
+    fi
+    if [ "${VIBEOS_FEX:-0}" = "1" ]; then
+        echo "[!] VIBEOS_FEX=1 cannot master media from a list: its guests come from build dirs"
+        exit 1
+    fi
+    mkdir -p "$OUT_DIR"
+    OUT_DIR="$(cd "$OUT_DIR" && pwd)"
+    LIVECD_LST="$MEDIA_LST"
+    LST_DIR="$OUT_DIR"
+    STAGE_DIR="$OUT_DIR/ramdisk"
+    STRIP_CACHE="$OUT_DIR/stripped"
+    RAMDISK_IMG_FINAL="$OUT_DIR/ramdisk.img"
+    BOOT_IMG_FINAL="$OUT_DIR/livecd.img"
+    RAMDISK_IMG="$OUT_DIR/.ramdisk.img.partial-$$"
+    BOOT_IMG="$OUT_DIR/.livecd.img.partial-$$"
+    # The loader and csrss are entries of the list, so they are whatever it names.
+    UEFILDR="$(sed -n 's#^efi/boot/bootaa64\.efi=##p' "$MEDIA_LST")"
+    CSRSS_SRC="$(sed -n 's#^reactos/system32/csrss\.exe=##p' "$MEDIA_LST")"
+    if [ -z "$UEFILDR" ] || [ -z "$CSRSS_SRC" ]; then
+        echo "[!] $MEDIA_LST names no efi/boot/bootaa64.efi or reactos/system32/csrss.exe"
+        exit 1
+    fi
+fi
+
+for f in "$LIVECD_LST" "$UEFILDR" "$CSRSS_SRC"; do
     if [ ! -f "$f" ]; then
         echo "[!] Missing: $f"
         echo "    Run: ./vibeos-cli build --arch arm64"
@@ -101,7 +147,6 @@ done
 # --- The livecd list -----------------------------------------------------------
 # Its paths are written against the canonical build root (tools/canon-run.sh), which
 # is only mounted while a build runs; map them back to this worktree.
-LST_DIR="$BUILD_DIR/boot"
 sed "s#=/tmp/vibeos/#=$PROJECT_DIR/#; s#^/tmp/vibeos/#$PROJECT_DIR/#" "$LIVECD_LST" > "$LST_DIR/ramdisk-livecd.lst"
 python3 "$PROJECT_DIR/tools/strip_cd_media.py" --lst "$LST_DIR/ramdisk-livecd.lst" \
     --out "$LST_DIR/ramdisk-livecd.stripped.lst" \
@@ -117,7 +162,7 @@ OVERLAY_LST="$LST_DIR/ramdisk-overlay.lst"
 # small for the deep DLL-initialisation chains of the arm64 bring-up, where
 # delay-imports became regular imports and every DLL loaded at once.
 CSRSS_PATCHED="$LST_DIR/csrss-stack256k.exe"
-cp "$BUILD_DIR/subsystems/csr/csrss/csrss.exe" "$CSRSS_PATCHED"
+cp "$CSRSS_SRC" "$CSRSS_PATCHED"
 python3 "$SCRIPT_DIR/patch_pe_stack.py" "$CSRSS_PATCHED" 0x40000
 echo "reactos/system32/csrss.exe=$CSRSS_PATCHED" >> "$OVERLAY_LST"
 
@@ -173,8 +218,12 @@ fi
 # reverting the payload set (the 2026-07-07 doom-clobber incident).
 # They are the last list, so a payload replaces a stock file of the same name.
 PAYLOAD_LST="$LST_DIR/ramdisk-payloads.lst"
-python3 "$PROJECT_DIR/tools/payloads/compile.py" manifest \
-    --arch arm64 --payloads-auto "$BUILD_DIR" > "$PAYLOAD_LST"
+if [ -n "$MEDIA_LST" ]; then
+    : > "$PAYLOAD_LST"
+else
+    python3 "$PROJECT_DIR/tools/payloads/compile.py" manifest \
+        --arch arm64 --payloads-auto "$BUILD_DIR" > "$PAYLOAD_LST"
+fi
 if [ -s "$PAYLOAD_LST" ]; then
     echo "[*] payloads (VIBEOS_PAYLOAD=${VIBEOS_PAYLOAD:-<stamp>}${VIBEOS_DOOM:+ VIBEOS_DOOM=$VIBEOS_DOOM}):"
     sed 's/^/[*]   /; s/=.*//' "$PAYLOAD_LST"

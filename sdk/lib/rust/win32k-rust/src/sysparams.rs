@@ -645,6 +645,45 @@ unsafe fn SpiSet(pvData: PVOID, pvParam: PVOID, cbSize: ULONG, fl: FLONG) -> UIN
     SpiMemCopy(pvData, pvParam, cbSize, (fl & SPIF_PROTECT) as BOOL)
 }
 
+// NONCLIENTMETRICSW comes in two sizes: the XP layout gspv.ncm keeps (500 bytes) and Vista's,
+// which appends iPaddedBorderWidth (504). Windows takes exactly those two cbSize values, copies
+// exactly cbSize bytes either way and fails anything else (measured, Windows 11). A program built
+// for Vista or later always passes 504, and it no longer shrinks it to 500 once it sees NT 10.0.
+const NCM_XP_SIZE: ULONG = core::mem::size_of::<NONCLIENTMETRICSW>() as ULONG;
+const NCM_VISTA_SIZE: ULONG = NCM_XP_SIZE + core::mem::size_of::<INT>() as ULONG;
+
+/// The caller's `cbSize` when it names one of the two layouts, else 0.
+unsafe fn SpiNcmCallerSize(pvParam: PVOID, fl: FLONG) -> ULONG {
+    let mut cb: ULONG = 0;
+    if pvParam.is_null()
+        || SpiMemCopy(core::ptr::addr_of_mut!(cb) as PVOID, pvParam, core::mem::size_of::<ULONG>() as ULONG, (fl & SPIF_PROTECT) as BOOL) == 0
+    {
+        return 0;
+    }
+    if cb == NCM_XP_SIZE || cb == NCM_VISTA_SIZE { cb } else { 0 }
+}
+
+unsafe fn SpiGetNonClientMetrics(pvParam: PVOID, fl: FLONG) -> UINT_PTR {
+    let mut cb = SpiNcmCallerSize(pvParam, fl);
+    if cb == 0 {
+        return 0;
+    }
+    if SpiGet(pvParam, core::ptr::addr_of_mut!(gspv.ncm) as PVOID, NCM_XP_SIZE, fl) == 0 {
+        return 0;
+    }
+    // The caller keeps the size it passed (gspv.ncm.cbSize is the XP one).
+    if SpiGet(pvParam, core::ptr::addr_of_mut!(cb) as PVOID, core::mem::size_of::<ULONG>() as ULONG, fl) == 0 {
+        return 0;
+    }
+    if cb == NCM_VISTA_SIZE {
+        // Windows reports 4 here, its frames' padded border; ours draw none.
+        let mut padded: INT = 0;
+        let tail = (pvParam as *mut NONCLIENTMETRICSW).add(1) as PVOID; // right after the XP layout
+        return SpiGet(tail, core::ptr::addr_of_mut!(padded) as PVOID, core::mem::size_of::<INT>() as ULONG, fl);
+    }
+    1
+}
+
 unsafe fn SpiGetEx(pvParam: PVOID, pvData: PVOID, cbSize: ULONG, fl: FLONG) -> UINT_PTR {
     let mut cbBufSize: ULONG = 0;
     if SpiSet(core::ptr::addr_of_mut!(cbBufSize) as PVOID, pvParam, core::mem::size_of::<ULONG>() as ULONG, fl) == 0 {
@@ -1889,15 +1928,17 @@ unsafe fn SpiGetSet(uiAction: UINT, uiParam: UINT, pvParam: PVOID, fl: FLONG) ->
         SPI_SETFASTTASKSWITCH => return SpiGetSet_SPI_SETFASTTASKSWITCH(),
         SPI_GETDRAGFULLWINDOWS => return SpiGetSet_SPI_GETDRAGFULLWINDOWS(pvParam, fl),
         SPI_SETDRAGFULLWINDOWS => return SpiGetSet_SPI_SETDRAGFULLWINDOWS(uiParam, fl),
-        SPI_GETNONCLIENTMETRICS => {
-            return SpiGet(pvParam, core::ptr::addr_of_mut!(gspv.ncm) as PVOID, core::mem::size_of::<NONCLIENTMETRICSW>() as ULONG, fl);
-        }
+        SPI_GETNONCLIENTMETRICS => return SpiGetNonClientMetrics(pvParam, fl),
         SPI_SETNONCLIENTMETRICS => {
-            let metrics = pvParam as LPNONCLIENTMETRICSW;
-            (*metrics).cbSize = core::mem::size_of::<NONCLIENTMETRICSW>() as UINT;
-            if SpiSet(core::ptr::addr_of_mut!(gspv.ncm) as PVOID, metrics as PVOID, core::mem::size_of::<NONCLIENTMETRICSW>() as ULONG, fl) == 0 {
+            // The C stored sizeof into the CALLER's cbSize (an unguarded write to user memory)
+            // so the copy would carry it; take either layout's leading XP part and set ours.
+            if SpiNcmCallerSize(pvParam, fl) == 0 {
                 return 0;
             }
+            if SpiSet(core::ptr::addr_of_mut!(gspv.ncm) as PVOID, pvParam, NCM_XP_SIZE, fl) == 0 {
+                return 0;
+            }
+            gspv.ncm.cbSize = NCM_XP_SIZE;
             if (fl & SPIF_UPDATEINIFILE) != 0 {
                 SpiStoreMetric(VAL_BORDER.as_ptr(), gspv.ncm.iBorderWidth);
                 SpiStoreMetric(w!("ScrollWidth").as_ptr() as LPCWSTR, gspv.ncm.iScrollWidth);
@@ -2409,7 +2450,12 @@ unsafe fn SpiGetSetProbeBuffer(uiAction: UINT, uiParam: UINT, pvParam: PVOID) ->
         }
 
         SPI_GETNONCLIENTMETRICS => {
-            cbSize = core::mem::size_of::<NONCLIENTMETRICSW>() as ULONG;
+            // Probe the layout the caller's cbSize names, once its first ULONG is readable. A
+            // size that is neither leaves cbSize 0, and SpiGetSet fails the call.
+            if !NT_SUCCESS(SafeProbeForRead(pvParam, core::mem::size_of::<ULONG>(), 1)) {
+                return 0;
+            }
+            cbSize = SpiNcmCallerSize(pvParam, SPIF_PROTECT);
         }
 
         SPI_GETMINIMIZEDMETRICS => {
@@ -2475,7 +2521,10 @@ unsafe fn SpiGetSetProbeBuffer(uiAction: UINT, uiParam: UINT, pvParam: PVOID) ->
         }
 
         SPI_SETNONCLIENTMETRICS => {
-            cbSize = core::mem::size_of::<NONCLIENTMETRICSW>() as ULONG;
+            if !NT_SUCCESS(SafeProbeForRead(pvParam, core::mem::size_of::<ULONG>(), 1)) {
+                return 0;
+            }
+            cbSize = SpiNcmCallerSize(pvParam, SPIF_PROTECT);
             bToUser = 0;
         }
 

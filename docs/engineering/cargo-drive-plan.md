@@ -429,8 +429,13 @@ extends it from the boot spine to every fully-Rust module.
      reached the desktop marker (runs 20261018-223714-3ggpfl0h amd64,
      20261018-224316-e1sdedl_ i386); the Windows-host media cache holds the staged images
      under the external ISOs' sha256, not build-<arch>'s.
-   - **Owed:** `smoke --media` for arm64, whose livecd is a list that qemu/mkramdisk.sh
-     lays out into boot.img (smoke refuses `--media` there, BAD_ARGS).
+   - **Done 2026-10-31: arm64.** Its livecd is a list, so `--assemble` hands it to
+     `qemu/mkramdisk.sh --lst <list> --out-dir <out>`, which lays it out into
+     `<out>/livecd.img` (+ `ramdisk.img`) with uefildr and csrss taken from the list, not
+     build-arm64; media mode stages no payloads and refuses `VIBEOS_FEX=1`. **Proof:** from
+     298 cmake-off cells, the ramdisk's 1217 entries are byte-identical to cmake's
+     `qemu/ramdisk.img`, and `smoke --arch arm64 --media` reached the desktop marker
+     booting that `livecd.img` (run 20261031-231043-d6i0arl5).
 6. **Modules that still have C** compile it from cargo, so cmake's last job is the C-only
    tail, then nothing.
    - **6a, done 2026-10-17: the cells' own C.** cmake's C rule is `<CC> --target=<t>

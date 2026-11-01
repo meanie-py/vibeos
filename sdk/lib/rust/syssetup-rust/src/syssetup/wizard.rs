@@ -60,14 +60,14 @@ pub static s_ProductOptionData: SyncTable<[PRODUCT_OPTION_DATA; 2]> = SyncTable(
         ProductSuite: w!("Terminal Server\0"),
         ProductType: w!("ServerNT"),
         ReportAsWorkstation: 0,
-        CSDVersion: 0x200,
+        CSDVersion: 0, // NT 10.0 has no service packs (the C's 0x200/0x300 were SP2/SP3)
         LogonType: 0,
     },
     PRODUCT_OPTION_DATA {
-        ProductSuite: w!("\0"),
+        ProductSuite: w!("Terminal Server\0"), // as Windows 11 client has it (measured)
         ProductType: w!("WinNT"),
         ReportAsWorkstation: 1,
-        CSDVersion: 0x300,
+        CSDVersion: 0,
         LogonType: 1,
     },
 ]);

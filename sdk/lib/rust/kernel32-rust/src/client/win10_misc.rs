@@ -1424,3 +1424,58 @@ pub unsafe extern "system" fn PssWalkSnapshot(
     let _ = (InformationClass, WalkMarkerHandle, Buffer, BufferLength);
     pss_bad_handle(SnapshotHandle)
 }
+
+// ---------------------------------------------------------------------------------------------
+// AppPolicyGet* (Windows 10). For a desktop app every policy is a fixed default; the token
+// only has to be one the caller may query. Measured on Windows 11 (winref
+// 20261031-223113-3h38le85) for all eight: NtCurrentThreadEffectiveToken() and
+// NtCurrentProcessToken() give ERROR_SUCCESS and the default; NtCurrentThreadToken() with no
+// impersonation gives HRESULT_FROM_NT(STATUS_NO_TOKEN) and a bad handle
+// HRESULT_FROM_NT(STATUS_INVALID_HANDLE), both with the policy zeroed; a NULL token gives
+// ERROR_INVALID_PARAMETER with the policy untouched. Wine returns the default for any token.
+// ---------------------------------------------------------------------------------------------
+
+const TOKEN_TYPE_CLASS_: u32 = 8; // TokenType
+
+unsafe fn app_policy(token: HANDLE, policy: *mut i32, desktop_default: i32) -> i32 {
+    if token.is_null() {
+        return ERROR_INVALID_PARAMETER_ as i32;
+    }
+    let mut ty: u32 = 0;
+    let mut len: u32 = 0;
+    let status = NtQueryInformationToken(
+        token,
+        TOKEN_TYPE_CLASS_ as _,
+        &mut ty as *mut u32 as *mut c_void,
+        size_of::<u32>() as u32,
+        &mut len,
+    );
+    if !NT_SUCCESS(status) {
+        if !policy.is_null() {
+            *policy = 0;
+        }
+        return (status as u32 | 0x1000_0000) as i32; // HRESULT_FROM_NT
+    }
+    if !policy.is_null() {
+        *policy = desktop_default;
+    }
+    ERROR_SUCCESS_ as i32
+}
+
+macro_rules! app_policy_export {
+    ($name:ident, $default:expr) => {
+        #[no_mangle]
+        pub unsafe extern "system" fn $name(token: HANDLE, policy: *mut i32) -> i32 {
+            app_policy(token, policy, $default)
+        }
+    };
+}
+
+app_policy_export!(AppPolicyGetClrCompat, 1); // AppPolicyClrCompat_ClassicDesktop
+app_policy_export!(AppPolicyGetCreateFileAccess, 0); // _Full
+app_policy_export!(AppPolicyGetLifecycleManagement, 0); // _Unmanaged
+app_policy_export!(AppPolicyGetMediaFoundationCodecLoading, 0); // _All
+app_policy_export!(AppPolicyGetProcessTerminationMethod, 0); // _ExitProcess
+app_policy_export!(AppPolicyGetShowDeveloperDiagnostic, 1); // _ShowUI
+app_policy_export!(AppPolicyGetThreadInitializationType, 0); // _None
+app_policy_export!(AppPolicyGetWindowingModel, 2); // _ClassicDesktop

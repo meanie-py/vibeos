@@ -180,9 +180,7 @@ pub unsafe extern "system" fn NtWaitForMultipleObjects(
         DefaultObject = (*(*ObjectHeader).Type).DefaultObject;
 
         if IsPointerOffset(DefaultObject) != 0 {
-            InterlockedIncrementSizeT(
-                core::ptr::addr_of_mut!((*ObjectHeader).PointerCount) as *mut isize
-            );
+            crate::obref::ObpReferenceByHandleEntry(HandleEntry, ObjectHeader);
             ReferencedObjects += 1;
 
             Objects[i as usize] = core::ptr::addr_of_mut!((*ObjectHeader).Body) as PVOID;

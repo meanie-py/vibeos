@@ -211,7 +211,7 @@ unsafe fn ObpReferenceProcessObjectByHandle(
     handle_entry = ExMapHandleToPointer(handle_table, handle);
     if !handle_entry.is_null() {
         object_header = ObpGetHandleObject(handle_entry);
-        granted_access = (*handle_entry).__bindgen_anon_2.GrantedAccess;
+        granted_access = ObpHandleGrantedAccess(handle_entry);
         attributes = ((*handle_entry).__bindgen_anon_1.ObAttributes as ULONG) & OBJ_HANDLE_ATTRIBUTES;
 
         (*handle_information).HandleAttributes = attributes;
@@ -219,9 +219,11 @@ unsafe fn ObpReferenceProcessObjectByHandle(
         *audit_mask = 0;
 
         *object = core::ptr::addr_of_mut!((*object_header).Body) as PVOID;
-        InterlockedIncrementSizeT(
-            core::ptr::addr_of_mut!((*object_header).PointerCount) as *mut isize
-        );
+        // A new reference, not one of the source handle's cached ones: it becomes the
+        // duplicate's own, so it must not come out of what the source will return on close.
+        // Windows leaves the source's count alone here (kmtest ObHandle reads 65537 for a
+        // handle plus its duplicate on x64).
+        InterlockedIncrementSizeT(core::ptr::addr_of_mut!((*object_header).PointerCount) as *mut isize);
 
         ExUnlockHandleTableEntry(handle_table, handle_entry);
         KeLeaveCriticalRegion();
@@ -278,7 +280,7 @@ unsafe fn _ObpEnumFindHandleProcedure(
     }
 
     if !(*find_data).HandleInformation.is_null() {
-        granted_access = (*handle_entry).__bindgen_anon_2.GrantedAccess;
+        granted_access = ObpHandleGrantedAccess(handle_entry);
         handle_attributes = ((*handle_entry).__bindgen_anon_1.ObAttributes as ULONG) & OBJ_HANDLE_ATTRIBUTES;
 
         if (*(*find_data).HandleInformation).HandleAttributes != handle_attributes
@@ -579,7 +581,7 @@ unsafe fn ObpCloseHandleTableEntry(
     object_header = ObpGetHandleObject(handle_entry);
     object_type = (*object_header).Type;
     body = core::ptr::addr_of_mut!((*object_header).Body) as PVOID;
-    granted_access = (*handle_entry).__bindgen_anon_2.GrantedAccess;
+    granted_access = ObpHandleGrantedAccess(handle_entry);
 
     if (*object_type).TypeInfo.OkayToCloseProcedure.is_some() {
         ObpCalloutStart(&mut callout_irql as *mut _);
@@ -613,10 +615,20 @@ unsafe fn ObpCloseHandleTableEntry(
         }
     }
 
+    // Read before ExDestroyHandle clears the entry.
+    let cached = ObpHandleCachedRefs(handle_entry);
     ExDestroyHandle(handle_table, handle, handle_entry);
 
     ObpDecrementHandleCount(body, PsGetCurrentProcess() as *mut _EPROCESS , granted_access, object_type);
 
+    // The references the handle still had cached go back first; they cannot be the last,
+    // because the handle's own reference is still outstanding.
+    if cached != 0 {
+        InterlockedExchangeAddSizeT(
+            core::ptr::addr_of_mut!((*object_header).PointerCount) as *mut isize,
+            -(cached as isize),
+        );
+    }
     ObDereferenceObject(body);
 
     STATUS_SUCCESS
@@ -999,6 +1011,7 @@ const THREAD_RESUME_: ACCESS_MASK = 0x1000;
 
 extern "C" {
     static mut PsThreadType: POBJECT_TYPE;
+    static mut ObpTypeObjectType: POBJECT_TYPE;
 }
 
 unsafe fn ObpAddImpliedAccess(object_type: POBJECT_TYPE, mut access: ACCESS_MASK) -> ACCESS_MASK {
@@ -1021,6 +1034,26 @@ unsafe fn ObpAddImpliedAccess(object_type: POBJECT_TYPE, mut access: ACCESS_MASK
         }
     }
     access
+}
+
+/// Charge a new handle's cached references (Windows 8 handle reference biasing; see
+/// OBP_HANDLE_BIAS in ntkrnl-sys), before ExCreateHandle publishes the entry: once it is in
+/// the table another thread can close it and return them.
+unsafe fn ObpChargeHandleBias(entry: PHANDLE_TABLE_ENTRY, header: POBJECT_HEADER) {
+    ObpSetHandleCachedRefs(entry, OBP_HANDLE_BIAS);
+    InterlockedExchangeAddSizeT(
+        core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize,
+        OBP_HANDLE_BIAS as isize,
+    );
+}
+
+/// ExCreateHandle failed: give back what ObpChargeHandleBias charged. Never the last
+/// reference, since the caller's own is still held.
+unsafe fn ObpUnchargeHandleBias(header: POBJECT_HEADER) {
+    InterlockedExchangeAddSizeT(
+        core::ptr::addr_of_mut!((*header).PointerCount) as *mut isize,
+        -(OBP_HANDLE_BIAS as isize),
+    );
 }
 
 unsafe fn ObpCreateUnnamedHandle(
@@ -1089,6 +1122,7 @@ unsafe fn ObpCreateUnnamedHandle(
     }
 
     new_entry.__bindgen_anon_2.GrantedAccess = granted_access;
+    ObpChargeHandleBias(&mut new_entry, object_header);
 
     handle = ExCreateHandle(handle_table as PHANDLE_TABLE, &mut new_entry as *mut _);
 
@@ -1109,6 +1143,8 @@ unsafe fn ObpCreateUnnamedHandle(
 
         return STATUS_SUCCESS;
     }
+
+    ObpUnchargeHandleBias(object_header);
 
     if additional_references != 0 {
         InterlockedExchangeAddSizeT(
@@ -1222,6 +1258,7 @@ unsafe fn ObpCreateHandle(
     }
 
     new_entry.__bindgen_anon_2.GrantedAccess = granted_access;
+    ObpChargeHandleBias(&mut new_entry, object_header);
 
     handle = ExCreateHandle(handle_table as PHANDLE_TABLE, &mut new_entry as *mut _);
 
@@ -1253,6 +1290,8 @@ unsafe fn ObpCreateHandle(
 
         return STATUS_SUCCESS;
     }
+
+    ObpUnchargeHandleBias(object_header);
 
     ObpDecrementHandleCount(
         core::ptr::addr_of_mut!((*object_header).Body) as PVOID,
@@ -1286,8 +1325,11 @@ unsafe fn ObpCloseHandle(mut handle: HANDLE, access_mode: KPROCESSOR_MODE) -> NT
     let mut status: NTSTATUS;
     let process = PsGetCurrentProcess() as *mut _EPROCESS ;
 
-    if access_mode == 0i8 && handle == (-1isize) as HANDLE {
-        return STATUS_INVALID_HANDLE;
+    // Windows 10 closes the pseudo-handles as a no-op success, from either mode: -1 (kmtest
+    // ObHandle; NT 6.x returned STATUS_INVALID_HANDLE) and -3 to -6, the session and token
+    // ones (winref 20261031-223348-ha327ekw).
+    if handle == (-1isize) as HANDLE || (-6..=-3).contains(&(handle as isize)) {
+        return STATUS_SUCCESS;
     }
 
     if ObpIsKernelHandle(handle, access_mode) != 0 {
@@ -1416,6 +1458,12 @@ unsafe fn _ObpDuplicateHandleCallback(
         InterlockedIncrementSizeT(
             core::ptr::addr_of_mut!((*object_header).PointerCount) as *mut isize
         );
+        // The child's entry is a copy of the parent's, cached references included: it gets
+        // its own fresh bias below, and on x86 ObpIncrementHandleCount reads the access mask
+        // without the parent's cache bits. The child's table is not live yet, so charging
+        // after the count is safe.
+        (*handle_table_entry).__bindgen_anon_2.GrantedAccess = ObpHandleGrantedAccess(handle_table_entry);
+        ObpSetHandleCachedRefs(handle_table_entry, 0);
 
         ExUnlockHandleTableEntry(handle_table, old_entry);
 
@@ -1431,6 +1479,8 @@ unsafe fn _ObpDuplicateHandleCallback(
         if status < 0 {
             ObDereferenceObject(core::ptr::addr_of_mut!((*object_header).Body) as PVOID);
             ret = 0u8;
+        } else {
+            ObpChargeHandleBias(handle_table_entry, object_header);
         }
     } else {
         ExUnlockHandleTableEntry(handle_table, old_entry);
@@ -1779,8 +1829,10 @@ pub unsafe extern "system" fn ObDuplicateObject(
         new_handle_entry.__bindgen_anon_2.GrantedAccess |= ObpAccessProtectCloseBit;
     }
 
+    ObpChargeHandleBias(&mut new_handle_entry, object_header);
     new_handle = ExCreateHandle(handle_table, &mut new_handle_entry as *mut _);
     if new_handle.is_null() {
+        ObpUnchargeHandleBias(object_header);
         ObpDecrementHandleCount(
             source_object,
             target_process,
@@ -1937,9 +1989,12 @@ pub unsafe extern "system" fn ObOpenObjectByName(
         open_reason = ObOpenHandle;
     }
 
+    // Windows 11 will not open an object type by name: \ObjectTypes\Directory gives
+    // STATUS_INVALID_PARAMETER whatever the attributes (kmtest ObReference :180, ObTypes :80).
     if (*(*object_header).Type).TypeInfo.InvalidAttributes
         & (*temp_buffer).ObjectCreateInfo.Attributes
         != 0
+        || (*object_header).Type == ObpTypeObjectType
     {
         status = STATUS_INVALID_PARAMETER;
 

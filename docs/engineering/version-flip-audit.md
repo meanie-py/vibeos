@@ -16,8 +16,24 @@ KeQueryMaximumProcessorCount/Ex at every version, so KMDF never reaches its vers
 HIGHEST declared supportedOS) and #11 (setupapi reads RtlGetVersion) are fixed. D13, the manifest
 rule, is in kernel32-rust `client/version.rs`. Also fixed on the way: ntdll-rust's and
 shell32-rust's `ReactOS_ShimData` lacked compat_undoc.h's amd64-only trailing pointer, so on
-amd64 ntdll rejected every apphelp-filled block on its `dwSize` check. Left: phase 3, the
-D-rows.
+amd64 ntdll rejected every apphelp-filled block on its `dwSize` check.
+
+**Status 2026-10-18, phase 3 (the flip):** the OS reports NT 10.0 build 22631 (`ex-rust`
+`init.rs`, registry `CurrentVersion` "6.3" plus `CurrentMajorVersionNumber`/`CurrentBuild`),
+and GetVersion/VerifyVersionInfo give min(real, max(6.2, declared)), where declared is the
+manifest's highest supportedOS, else the PE `MajorOperatingSystemVersion`. kernel32_winetest
+`version` passes 108/0 on amd64, all seven header variants included (the sweep stages the exe
+to `C:\TEMP` so the test can patch it; CDFS copies are read-only). ProductType is now `WinNT`
+with ProductSuite "Terminal Server" and no CSDVersion, which is what a Windows 11 client
+measures; that also moved us onto the client scheduler, and clockprobe's 10 ms pool timer
+under a spinning thread went from 3 to 16 callbacks per 500 ms (Windows: 22-29; the rest is
+an unwait-boost question, owed in the compat roadmap). Left: the D-rows decided as-is
+(D8 ProductName, D16 ntverp.h, D17 kernel32 42.x) and the two open items below.
+
+**Status 2026-10-31: the audit is closed.** The two open items are settled (KMDF's ASSERTs are
+moot since #5; the rapps cap is decided as-is), and the `_memicmp` (c) row had already been
+handled in the shim, msvcrt-crt-rust and cnt-difftest. What is left of "behave like Windows
+11" is API surface, not the version number: `docs/engineering/modern-windows-compat-roadmap.md`.
 
 ## Summary
 
@@ -77,12 +93,12 @@ Display-only consumers that follow D1/D2 with no change: `win32k-rust/src/deskto
 
 ### Could not determine
 
-- Whether KMDF is built with ASSERTs live, so whether BREAKS #5 is a debug break or only a disabled tracker.
-- Whether the HAL accepts `DEVICE_DESCRIPTION_VERSION3` (the KMDF DMA path at `fxdmaenabler.cpp:313` takes it at >= 6.2), and whether passive-level interrupts (`IoConnectInterruptEx` passive) work. Both turn on at 10.0, see (c).
-- Whether `DwmIsCompositionEnabled == TRUE` (`dwmapi_main.c:61`, via `RtlGetVersion`, so 10.0 regardless of manifest) leads apps into dwmapi calls that are unimplemented. I did not audit dwmapi's other exports.
-- Whether win32k `SPI_GETNONCLIENTMETRICS` (`sdk/lib/rust/win32k-rust/src/sysparams.rs:1893,2412`) rejects the Vista-size `NONCLIENTMETRICSW` (with `iPaddedBorderWidth`). Apps that see >= 6 pass that size. This is not a version check, but it is the classic flip-day regression. Unverified.
-- Which `.rapps` DB entries carry an NT-version upper bound (`rapps-rust/src/rapps/appinfo_cpp_h.rs:333`). Entries capped below 0x0A00 will hide.
-- `BaseStaticServerData->WindowsMajorVersion/MinorVersion/BuildNumber` (`smss-csrss-rust/src/basesrv/init.rs:236-238`) is never assigned in the Rust; only CSDNumber/RCNumber are set at `:928`. I did not determine whether anything reads it.
+- **Moot:** whether KMDF is built with ASSERTs live, so whether BREAKS #5 was a debug break or only a disabled tracker. #5 is fixed by exporting KeQueryMaximumProcessorCount/Ex at every version, so KMDF never reaches that version test.
+- **Resolved (8980033475d):** KMDF asks for `DEVICE_DESCRIPTION_VERSION3` only with `AddressWidthOverride != 0` at >= 6.2 (`fxdmaenabler.cpp:313`) and for the system-DMA profiles at any version (`:234/:243`), then calls the v3 ops unchecked. Both HALs leave every v3 slot NULL, so they now refuse Version > 2 (x86 already did; arm64 accepted it and would have called NULL). The v3 ops are owed in the compat roadmap. No in-tree KMDF driver creates a DMA enabler. A passive `IoConnectInterruptEx` (`CONNECT_FULLY_SPECIFIED` at PASSIVE_LEVEL, which KMDF sends at >= 6.2) was a DIRQL connect at IRQL 0; it now uses iomgr's passive machinery. No in-tree witness: compile-checked and boot-smoked only.
+- **Resolved by parity:** `DwmIsCompositionEnabled` is TRUE at 10.0 and the other exports are Wine's stubs (`DwmGetWindowAttribute`, `DwmGetColorizationColor` and friends return E_NOTIMPL). That is unmodified Wine dwmapi, which Wine ships with Windows 10 as its default version, so apps already cope with it.
+- **Resolved (phase 3):** `SPI_GETNONCLIENTMETRICS` was broken both ways. user32's A path rejected the Vista size (344), and win32k ignored cbSize and always wrote 500 bytes, overrunning a smaller buffer. Measured on Windows 11: W takes exactly 500 or 504, A takes 340 or 344, exactly cbSize bytes are written, and anything else is FALSE. Both now do that, with `iPaddedBorderWidth` = 0 because our frames have no padded border (Windows reports 4). Covered by `user32_apitest SystemParametersInfo` (34 checks, Windows-validated).
+- **Decided as-is:** `.rapps` DB entries with an NT-version upper bound below 0x0A00 hide (`rapps-rust/src/rapps/appinfo_cpp_h.rs:333`, `GetNTVersion` = `RtlGetVersion`). The DB is fetched at run time, not in the tree, and a cap is its authors saying the package is for an older Windows, which this OS no longer reports.
+- **Resolved (8980033475d):** nothing in the tree reads `BaseStaticServerData->WindowsMajorVersion/MinorVersion/BuildNumber`; kernel32's version paths read the PEB, and the C basesrv never set them either. They are now set from csrss's PEB, as on Windows. No behaviour change.
 - I did not audit runtime checks inside third-party vendored trees beyond `vendor/wdf` (`vendor/fex` hits are `.def`/header declarations only).
 
 ---
@@ -170,7 +186,7 @@ manifests contain the GUID), so after the flip every in-tree component reads 6.2
 | `sdk/lib/rust/rapps-rust/src/rapps/appinfo_cpp_h.rs:333` (via `misc_cpp_h.rs:410-415` `RtlGetVersion`) | live | DB `NTVER` ranges: entries capped below 0x0A00 hide |
 | `sdk/lib/rust/kernel32-rust/src/file/filemap.rs:101` | live | `PAGE_EXECUTE_WRITECOPY` accepted in CreateFileMapping |
 | `sdk/lib/rust/ps-rust/src/query.rs:1528` | live | amd64 `ProcessUserModeIOPL` -> STATUS_NOT_IMPLEMENTED for every user process (appcompat > WS03) |
-| `sdk/lib/rust/cnt-rust/src/cabi/generated.rs:438` / `core_rs/mem.rs:48` `_memicmp` (C `sdk/lib/crt/mem/memicmp.c:11` is REMOVE_ITEM'd) | live | the Rust deliberately did NOT model the C's `OSMajorVersion >= 6` NULL/`_NLSCMPERROR` guard ("dead under NT 5.x"). At 10.0 the C would validate NULL and the Rust will not. `cnt-difftest/build.rs:115-120` pins `OSMajorVersion=5`, so the difftest will not catch it |
+| `sdk/lib/rust/cnt-rust/src/cabi/generated.rs:438` `_memicmp` (C `sdk/lib/crt/mem/memicmp.c:11` is REMOVE_ITEM'd) | live | **resolved**: the shim applies the Vista NULL/`_NLSCMPERROR` guard unconditionally, msvcrt-crt-rust's `memicmp_core` too (with the EINVAL handler), and `cnt-difftest` builds the C reference at `OSMajorVersion=10`, so the guard is graded |
 | `sdk/lib/rust/ntdll-rust/src/rtl/libsupp.rs:1184-1205` `LdrpApisetVersion` | live | api-set table choice follows the shim version (see BREAKS #10) |
 | `dll/win32/browseui/shellbrowser.cpp:3990` | live C | Backspace: NavigateToParent -> GoBack |
 | `dll/win32/shlwapi/querysrc.cpp:108-112` | live C | Vista-only assoc elements enabled |

@@ -602,6 +602,27 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 kmtest ZwAllocateVirtualMemory: its two system threads now finish in the other order
+  (open question, found 2026-10-19, research; benign for the ratchet).** The pass count moved
+  576/579/582 on the version-flip + handle-biasing branch, where master reads 581. Thread 1's
+  chunk count (476-480) is the same on both, so available commit did not shrink. What changed:
+  on master thread 2 finishes second and reaches 159 chunks, on the branch it finishes first
+  at 29-54, below `COMMIT_CHECKED_CHUNKS` (3 passes per checked chunk). The arm64 floor is 570,
+  the most that race can cost (`a5f44ee4fcd`, header note). Why the order flipped is NOT
+  explained; a scheduling change from the NT 10.0 client-scheduler move is the first suspect.
+- **i386 under `SPECIALPOOL=*` bugchecks `0x0F` SPIN_LOCK_ALREADY_OWNED in boot (open, found
+  2026-10-19, research).** Every allocation routed to special pool; i386 stops right after
+  `IopInitializeSystemDrivers` / `PiEnumerateDevice HTREE\ROOT\0`. Parameter 1 is lock
+  `0x80741810` (`ntoskrnl.exe+0x286810`, which the symbolizer puts inside kdbg-rust's
+  `KdbStack`, so an unnamed lock in .data next to it). Then a second `0x1E` (0xC0000028), and the
+  `[DBLFAULT]` EBP walk recurses through `_SehExceptHandler`/`RemoveFromWsList`, which looks
+  like the fault handler re-entering, not the original fault. amd64 and arm64 boot to the
+  desktop with the same tripwire. NOT handle biasing: the branch's pre-biasing tree
+  (`f759caa734a` + the self-test fix) fails identically, the same lock address included
+  (`20261031-221917-yzvuu66y` base, `20261031-221917-vxinhkgd` branch), and neither the NT 10.0
+  flip: master `a319085fd99` plus only that self-test fix fails the same way, same lock
+  (`20261031-225210-_q82pnkv`). No i386 `SPECIALPOOL=*` run existed before these; until
+  `74ba9bd59e4` the boot self-test failed every `*` run first, so this has been latent on master.
 - **i386 double fault `0x7F/8` after netstack comes up (FIXED 2026-10-18, upstream-sync; was
   ~7% of i386 boots).** A kernel stack overflow, not the emulator: 1/20 on QEMU 11.0.50 and 2/20
   on 11.1.0 from the same media. netstack's `engine::worker` reserves a 7.3 KB frame (0x1c80) of

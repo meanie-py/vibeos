@@ -25,6 +25,12 @@ binaries:
     dest: bin/apitest-cwd.txt
   - src: tools/payloads/hostapps/fsquery-{arch}.exe
     dest: bin/fsquery/fsquery.exe
+  - src: tools/payloads/hostapps/regsd-{arch}.exe
+    dest: bin/regsd/regsd.exe
+  - src: tools/payloads/hostapps/w11api-{arch}.exe
+    dest: bin/w11api/w11api.exe
+  - src: tools/payloads/hostapps/w11tok-{arch}.exe
+    dest: bin/w11tok/w11tok.exe
 binaries_from: tools/payloads/hostapps/stage.py
 
 test:

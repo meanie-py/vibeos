@@ -1,0 +1,20 @@
+plain h=-3 type st=c0000008 v=0 src=c0000008 user=c0000008 qobj=c0000008 acc=0 attr=0 dupQ=c0000008 dupSame=c0000008 set=c0000008
+plain h=-4 type st=0 v=1 src=0 user=0 qobj=c0000008 acc=0 attr=0 dupQ=c0000008 dupSame=c0000008 set=c0000008
+plain h=-5 type st=c000007c v=0 src=c000007c user=c000007c qobj=c0000008 acc=0 attr=0 dupQ=c0000008 dupSame=c0000008 set=c0000008
+plain h=-6 type st=0 v=1 src=0 user=0 qobj=c0000008 acc=0 attr=0 dupQ=c0000008 dupSame=c0000008 set=c0000008
+plain h=-7 type st=c0000008 v=0 src=c0000008 user=c0000008 qobj=c0000008 acc=0 attr=0 dupQ=c0000008 dupSame=c0000008 set=c0000008
+plain DuplicateToken(-4) r=0 gle=6
+plain AdjustTokenPrivileges(-4) r=0 gle=6
+ImpersonateSelf=1
+imp h=-3 type st=c0000008 v=0 src=c0000008 user=c0000008 qobj=c0000008 acc=0 attr=0 dupQ=c0000008 dupSame=c0000008 set=c0000008
+imp h=-4 type st=0 v=1 src=0 user=0 qobj=c0000008 acc=0 attr=0 dupQ=c0000008 dupSame=c0000008 set=c0000008
+imp h=-5 type st=0 v=2 src=0 user=0 qobj=c0000008 acc=0 attr=0 dupQ=c0000008 dupSame=c0000008 set=c0000008
+imp h=-6 type st=0 v=2 src=0 user=0 qobj=c0000008 acc=0 attr=0 dupQ=c0000008 dupSame=c0000008 set=c0000008
+imp h=-7 type st=c0000008 v=0 src=c0000008 user=c0000008 qobj=c0000008 acc=0 attr=0 dupQ=c0000008 dupSame=c0000008 set=c0000008
+imp DuplicateToken(-4) r=0 gle=6
+imp AdjustTokenPrivileges(-4) r=0 gle=6
+NtClose(-3)=0
+NtClose(-4)=0
+NtClose(-5)=0
+NtClose(-6)=0
+DONE

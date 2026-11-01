@@ -1818,7 +1818,7 @@ unsafe extern "C" fn QSI_SystemHandleInformation(Buffer: PVOID, Size: ULONG, Req
                             ((*Entry).__bindgen_anon_1.ObAttributes as ULONG_PTR & OBJ_HANDLE_ATTRIBUTES as ULONG_PTR) as UCHAR;
                         (*entry_ptr).HandleValue = Handle.GenericHandleOverlay as ULONG_PTR as USHORT;
                         (*entry_ptr).Object = core::ptr::addr_of_mut!((*Hdr).Body) as PVOID;
-                        (*entry_ptr).GrantedAccess = (*Entry).__bindgen_anon_2.GrantedAccess;
+                        (*entry_ptr).GrantedAccess = ntkrnl_sys::macros::ObpHandleGrantedAccess(Entry);
                         Index += 1;
                     }
 
@@ -2610,7 +2610,7 @@ unsafe extern "C" fn QSI_SystemExtendedHandleInformation(Buffer: PVOID, Size: UL
                             ((*Entry).__bindgen_anon_1.ObAttributes as ULONG_PTR & OBJ_HANDLE_ATTRIBUTES as ULONG_PTR) as ULONG;
                         (*entry_ptr).HandleValue = Handle.GenericHandleOverlay as ULONG_PTR;
                         (*entry_ptr).Object = core::ptr::addr_of_mut!((*Hdr).Body) as PVOID;
-                        (*entry_ptr).GrantedAccess = (*Entry).__bindgen_anon_2.GrantedAccess;
+                        (*entry_ptr).GrantedAccess = ntkrnl_sys::macros::ObpHandleGrantedAccess(Entry);
                         (*entry_ptr).Reserved = 0;
                         Index += 1;
                     }
