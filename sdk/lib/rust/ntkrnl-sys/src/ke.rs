@@ -206,6 +206,35 @@ pub unsafe fn KeQueryInterruptTime() -> ULONGLONG {
     core::ptr::read_volatile((crate::mm::KI_USER_SHARED_DATA + 0x8) as *const ULONGLONG)
 }
 
+/// KeQuerySystemTime as a value, on every arch. It is an export on x86 only; amd64 and
+/// arm64 headers make it a read of KUSER_SHARED_DATA.SystemTime (+0x14), a KSYSTEM_TIME
+/// the clock interrupt updates as High2Time, LowPart, High1Time, so the reader takes
+/// High1Time, LowPart, High2Time and retries until the two highs agree.
+#[inline]
+pub unsafe fn ke_query_system_time() -> i64 {
+    #[cfg(target_arch = "x86")]
+    {
+        extern "system" {
+            fn KeQuerySystemTime(CurrentTime: *mut i64);
+        }
+        let mut t: i64 = 0;
+        KeQuerySystemTime(&mut t);
+        t
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        let base = crate::mm::KI_USER_SHARED_DATA + 0x14;
+        loop {
+            let high1 = core::ptr::read_volatile((base + 4) as *const i32);
+            let low = core::ptr::read_volatile(base as *const u32);
+            let high2 = core::ptr::read_volatile((base + 8) as *const i32);
+            if high1 == high2 {
+                return ((high1 as i64) << 32) | low as i64;
+            }
+        }
+    }
+}
+
 // ============================================================================
 // GuardedMutex — fastcall on all architectures
 // ============================================================================

@@ -12,9 +12,7 @@ use ntkrnl_sys::ddk::{CSHORT, PCSTR};
 
 extern "system" {
     fn KeGetCurrentIrql() -> KIRQL;
-    } extern "system" {
-    static mut SharedSystemTime: u64;
-}
+    }
 
 // ---- file-scope preamble (translated) ----
 // No file-scope declarations to translate; the original C preamble contains only #pragma directives,
@@ -252,10 +250,9 @@ pub unsafe extern "system" fn FatGetCurrentFatTime(IrpContext: PIRP_CONTEXT) -> 
         }
     }
 
-    // KeQuerySystemTime(&Time) inline:
-    // Copy the whole 64-bit value of SharedSystemTime into Time
-    *(core::ptr::addr_of_mut!(Time) as *mut u64) =
-        *(core::ptr::addr_of!(SharedSystemTime) as *const u64);
+    // KeQuerySystemTime(&Time). This read a `SharedSystemTime` global that only the C glue
+    // defined, as a static zero, so every volume-label dirent was stamped 1601.
+    *(core::ptr::addr_of_mut!(Time) as *mut i64) = ntkrnl_sys::ke::ke_query_system_time();
 
     ExSystemTimeToLocalTime(
         core::ptr::addr_of_mut!(Time),

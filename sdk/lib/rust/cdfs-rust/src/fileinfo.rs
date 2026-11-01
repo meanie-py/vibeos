@@ -732,7 +732,7 @@ pub unsafe extern "C" fn CdQueryNameInfo(
         let _ = irp_context;
 
         // NT_ASSERT(*Length >= sizeof(ULONG))
-        assert!(*length as usize >= core::mem::size_of::<u32>());
+        debug_assert!(*length as usize >= core::mem::size_of::<u32>()); // NT_ASSERT, not a release panic
 
         let mut status: i32 = STATUS_SUCCESS;
         let mut length_to_copy: u32;

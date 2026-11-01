@@ -657,7 +657,7 @@ pub unsafe extern "system" fn FatFsdSetVolumeInformation(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS {
+pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS { // nolint: version-vs-c -- its FileFsSectorSizeInformation arm is NTDDI_WIN8 in the C and answered here on purpose: the OS reports Windows 11 and ntoskrnl exports FsRtlGetSectorSizeInformation
     let mut IrpContext = IrpContext;
     let mut Irp = Irp;
     let mut Status: NTSTATUS = 0; // STATUS_SUCCESS
@@ -724,9 +724,10 @@ pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: PIRP_CONTEXT,
         7 => { // FileFsFullSizeInformation
             *p_status = FatQueryFsFullSizeInfo(IrpContext, Vcb, Buffer as *mut FILE_FS_FULL_SIZE_INFORMATION, p_length);
         },
-        // FileFsSectorSizeInformation exists from NTDDI >= WIN8 (volinfo.c 395-400); pre-WIN8 it
-        // is the default arm's STATUS_INVALID_PARAMETER.
-        #[cfg(ntddi_ge_ntddi_win8)]
+        // FileFsSectorSizeInformation: NTDDI >= WIN8 in the C (volinfo.c 395-400). Answered
+        // whatever NTDDI this builds at, because the OS reports Windows 11 and ntoskrnl now
+        // exports FsRtlGetSectorSizeInformation; Windows' FAT answers it (fsquery.win11.txt).
+        // Only this arm is ungated: the crate's other WIN8 paths stay off.
         11 => {
             *p_status = FatQueryFsSectorSizeInfo(IrpContext, Vcb, Buffer as *mut FatFileFsSectorSizeInformation, p_length);
         },

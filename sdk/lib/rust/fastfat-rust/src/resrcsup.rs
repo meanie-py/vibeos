@@ -64,6 +64,42 @@ const SyncTypeCreateSection: u32 = 1; // known value
 const STATUS_FSFILTER_OP_COMPLETED_SUCCESSFULLY: i32 = 0x0126; // FIXME: verify value
 const STATUS_FILE_LOCKED_WITH_ONLY_READERS: i32 = 0x012A; // FIXME: set actual value
 const STATUS_FILE_LOCKED_WITH_WRITERS: i32 = 0x012B; // FIXME: set actual value
+extern "system" {
+    fn FatGetNextFcbBottomUp(IrpContext: *mut IRP_CONTEXT, CurrentFcb: *mut FCB, RootFcb: *mut FCB) -> *mut FCB;
+}
+
+/// fatprocs.h's FatAcquireExclusiveVolume: the Vcb, then every Fcb bottom-up, exclusive,
+/// so lock, dismount, invalidate and shutdown quiesce open files. The C glue took the
+/// Vcb alone.
+#[no_mangle]
+pub unsafe extern "system" fn FatAcquireExclusiveVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) {
+    debug_assert!((*IrpContext).Flags & crate::types::IRP_CONTEXT_FLAG_WAIT != 0);
+    let _ = FatAcquireExclusiveVcb_Real(IrpContext, Vcb, 0);
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    loop {
+        Fcb = FatGetNextFcbBottomUp(IrpContext, Fcb, (*Vcb).RootDcb as *mut FCB);
+        if Fcb.is_null() {
+            break;
+        }
+        let _ = FatAcquireExclusiveFcb(IrpContext, Fcb);
+    }
+}
+
+/// fatprocs.h's FatReleaseVolume: every Fcb bottom-up, then the Vcb.
+#[no_mangle]
+pub unsafe extern "system" fn FatReleaseVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) {
+    debug_assert!((*IrpContext).Flags & crate::types::IRP_CONTEXT_FLAG_WAIT != 0);
+    let mut Fcb: *mut FCB = core::ptr::null_mut();
+    loop {
+        Fcb = FatGetNextFcbBottomUp(IrpContext, Fcb, (*Vcb).RootDcb as *mut FCB);
+        if Fcb.is_null() {
+            break;
+        }
+        ExReleaseResourceLite((*Fcb).Header.Resource);
+    }
+    FatReleaseVcb(IrpContext, Vcb);
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn FatAcquireExclusiveVcb_Real(
     IrpContext: *mut IRP_CONTEXT,
@@ -508,13 +544,11 @@ pub unsafe extern "system" fn FatNoOpAcquire(
     let _ = Fcb;
     let _ = Wait;
 
-    if KeGetCurrentIrql() > 1 {
-        DbgBreakPoint();
-    }
-
     ntkrnl_sys::ASSERT!(IoGetTopLevelIrp().is_null());
 
-    IoSetTopLevelIrp((1 as *mut core::ffi::c_void).cast());
+    // FSRTL_CACHE_TOP_LEVEL_IRP (2), as resrcsup.c; 1 is FSRTL_FSP_TOP_LEVEL_IRP, which made
+    // the lazy writer's Vcb/EA/volume-file writes look like FSP work to write.rs.
+    IoSetTopLevelIrp((FSRTL_CACHE_TOP_LEVEL_IRP as *mut core::ffi::c_void).cast());
 
     1u8
 }
