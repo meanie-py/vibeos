@@ -602,6 +602,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 Pi 4: `services.exe` calls a null function pointer at boot, so no device installs
+  (open, found 2026-11-01, graviton; 1 of 5 Pi 4 boots of master `b2564f11c37`+bwfm).** The kill
+  record: `C0000005`, PC=0, LR=0, second chance, `Proc= services.exe`; the boot reaches the desktop
+  but umpnpmgr (inside services.exe) never installs `VIBEOS\CYW43455`, so the Wi-Fi driver never
+  loads. An earlier first-chance write to NULL in the same boot was at `0x7FFB7001488` (a DLL, not
+  yet named). Serial: `serial-20261101-153827` (bench `D:\home\vibeos-rpi4-setup`), second boot.
+  QEMU arm64 smoke does not show it.
+- **arm64 Pi 4: a real user-mode FAULTLOOP on a stack page (open, found 2026-11-01, graviton;
+  1 of 5 boots).** `[FAULTLOOP] VA=0x13BFFA PC=0x7FFB70376E0 ESR=0x92000047 DFSC=0x07`, the pager
+  reporting success 64 times with identical registers (the detector that fires only on a true
+  loop since 2026-10-04); X0=0x13AFF0, so a write just above the stack pointer region, in the same
+  `0x7FFB7...` DLL as the null write above. PTE `0x00C0000034BB0743` is valid when reported. Same
+  serial capture, third boot.
+
 - **arm64 kmtest ZwAllocateVirtualMemory: its two system threads now finish in the other order
   (open question, found 2026-10-19, research; benign for the ratchet).** The pass count moved
   576/579/582 on the version-flip + handle-biasing branch, where master reads 581. Thread 1's
