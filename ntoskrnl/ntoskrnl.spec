@@ -661,6 +661,8 @@
 @ stdcall -arch=i386,arm KeQueryInterruptTime()
 ;@ cdecl -arch=x86_64 KeQueryMultiThreadProcessorSet
 ;@ cdecl -arch=x86_64 KeQueryPrcbAddress
+@ stdcall KeQueryMaximumProcessorCount()
+@ stdcall KeQueryMaximumProcessorCountEx(long)
 @ stdcall KeQueryPriorityThread(ptr)
 @ stdcall KeQueryRuntimeThread(ptr ptr)
 @ stdcall -arch=i386,arm KeQuerySystemTime(ptr)
@@ -2447,8 +2449,6 @@
 @ stub -version=0xA00+ KeQueryInterruptTimePrecise
 @ stub -version=0xA00+ KeQueryLogicalProcessorRelationship
 @ stub -version=0xA00+ KeQueryMaximumGroupCount
-@ stdcall KeQueryMaximumProcessorCount()
-@ stdcall KeQueryMaximumProcessorCountEx(long)
 @ stub -version=0xA00+ KeQueryNodeActiveAffinity
 @ stub -version=0xA00+ KeQueryNodeActiveAffinity2
 @ stub -version=0xA00+ KeQueryNodeActiveProcessorCount

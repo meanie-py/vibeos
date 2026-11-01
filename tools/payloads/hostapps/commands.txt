@@ -8,6 +8,9 @@ timeout 7zip\7z.exe 1200
 fsquery\fsquery.exe C:\TEMP X:\reactos\system32\ntdll.dll
 # regsd.c: the hive roots' DACLs, to diff against winref.
 regsd\regsd.exe
+# w11api.c / w11tok.c: Windows 10/11 API contracts; Windows' answers in w11*.win11.txt.
+w11api\w11api.exe X:\reactos\system32\ntdll.dll X:\reactos
+w11tok\w11tok.exe
 7zip\7z.exe i
 7zip\7z.exe b -mmt2 -md22
 # Bisecting "Can't allocate required memory" / libarchive "Out of memory" (2026-10-18):

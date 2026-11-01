@@ -1,5 +1,6 @@
 //! client/file/ — the kernel32 file-I/O API family, ported to Rust (rustconv c2rust).
 pub mod backup;
+pub mod byname;
 pub mod cnotify;
 pub mod copy;
 pub mod create;

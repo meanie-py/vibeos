@@ -572,9 +572,17 @@ runs it.
   archive failed), and classpnp's READ CAPACITY 16 zeroing overran pool, a BUGCHECK 0x19 from
   any unprivileged `StorageAccessAlignmentProperty` query. Its stub-hit reading: three real
   Windows 10/11 probes we lack, all with fallbacks: `FlsGetValue2` (newer MSVC CRT),
-  `GetFileInformationByName` (24H2), `AppPolicyGetProcessTerminationMethod`. Owed: those
-  three; `FileStorageInfo`/`FileAlignmentInfo` on fastfat and cdfs (winref answers both,
-  we give ERROR_NOT_SUPPORTED and 0); SVCFAIL on i386 and arm64.
+  `GetFileInformationByName` (24H2), `AppPolicyGetProcessTerminationMethod`. Those three
+  are done (win11-flip, 2026-10-31), graded by hostapps' `w11api`/`w11tok` probes against
+  Windows 11's own answers (`w11*.win11.txt`): all eight `AppPolicyGet*`, the Win8 token
+  pseudo-handles under them (-4/-5/-6, token queries only, as on Windows), `FlsGetValue2`
+  and `GetFileInformationByName` match line for line, except where noted next. Divergences
+  left: ntdll has no `RtlFlsGetValue`/`RtlFlsGetValue2` (FLS lives in kernel32 here) and no
+  `NtQueryInformationByName` (kernel32 builds the stat records from basic/standard/internal/
+  attribute-tag queries); `FileCaseSensitiveByNameInfo` reads ERROR_INVALID_PARAMETER where
+  Windows says ERROR_ACCESS_DENIED for the same files, and why Windows refuses it is not
+  known. Still owed: `FileStorageInfo`/`FileAlignmentInfo` on fastfat and cdfs (winref
+  answers both, we give ERROR_NOT_SUPPORTED and 0); SVCFAIL on i386 and arm64.
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
   applet): exactly one stub is reached, the SEH smoke probe's deliberate
