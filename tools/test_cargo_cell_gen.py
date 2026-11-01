@@ -1147,3 +1147,191 @@ def test_only_an_export_that_is_an_import_thunk_counts_as_bound(tmp_path, monkey
     # ARM64's import thunk opens with `adrp x16, ...`.
     assert g._export_is_import_thunk((0x90000010).to_bytes(4, "little"), 0xAA64)
     assert not g._export_is_import_thunk((0xD65F03C0).to_bytes(4, "little"), 0xAA64)
+
+
+# ---- statements that shape the link (set_subsystem, set_entrypoint, ...) ----
+
+
+def _link_edge_with(arch, **kw):
+    base = dict(
+        arch=arch,
+        output="dll/m.dll",
+        kind="C_MODULE_LIBRARY",
+        entry="",
+        subsystem=None,
+        image_base=None,
+        stack=None,
+        inputs=[],
+        libs=[],
+    )
+    base.update(kw)
+    return g.Link(**base)
+
+
+def test_set_subsystem_is_checked_against_every_link_edge(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "set_subsystem(m console)\n")
+    facts = g.cmake_facts(f, "m")
+    assert facts["unknown"] == []
+    assert facts["set_subsystem"] == "console:5.01"
+    ok = {a: _link_edge_with(a, subsystem="console:5.01") for a in g.ARCHES}
+    g._check_statement_effects("m", facts, ok)
+    bad = dict(ok, arm64=_link_edge_with("arm64", subsystem="windows:5.01"))
+    with pytest.raises(g.GenError, match=r"set_subsystem says console:5\.01 but the arm64"):
+        g._check_statement_effects("m", facts, bad)
+    # lld takes no numeric EFI id, so gcc.cmake maps it.
+    assert g._subsystem_flag("10") == "efi_application:5.01"
+
+
+def test_set_entrypoint_is_rebuilt_per_arch_and_checked(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "set_entrypoint(m DllMain 12)\n")
+    facts = g.cmake_facts(f, "m")
+    assert facts["unknown"] == [] and facts["set_entrypoint"] == ("DllMain", "12")
+    assert g._entry_symbol("i386", "DllMain", "12") == "_DllMain@12"
+    assert g._entry_symbol("amd64", "DllMain", "12") == "DllMain"
+    assert g._entry_symbol("i386", "0", None) == "___ImageBase"
+    assert g._entry_symbol("arm64", "0", None) == "__ImageBase"
+    edges = {
+        "i386": _link_edge_with("i386", entry="_DllMain@12"),
+        "amd64": _link_edge_with("amd64", entry="DllMain"),
+        "arm64": _link_edge_with("arm64", entry="DllMain"),
+    }
+    g._check_statement_effects("m", facts, edges)
+    # A guard that is false in this build leaves the other entry on the edge.
+    edges["amd64"] = _link_edge_with("amd64", entry="DllMainCRTStartup")
+    with pytest.raises(g.GenError, match="set_entrypoint"):
+        g._check_statement_effects("m", facts, edges)
+
+
+def test_rewrite_drops_the_subsystem_and_entry_statements_with_their_guard(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        CMAKE
+        + "if(DLL_EXPORT_VERSION LESS 0x600)\n    set_entrypoint(m DllMain 12)\nendif()\n"
+        + "set_subsystem(m console)\n"
+    )
+    out = g.rewrite_cmake(f, cell())
+    assert "set_entrypoint" not in out and "set_subsystem" not in out
+    assert "DLL_EXPORT_VERSION" not in out
+
+
+def test_link_strict_and_the_whole_archive_cohab_are_refused_with_the_reason(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "link_strict(m)\nlink_msvcrt_rust_cohab(m)\n")
+    unknown = g.cmake_facts(f, "m")["unknown"]
+    assert len(unknown) == 2
+    assert "--allow-multiple-definition" in unknown[0]
+    assert "whole-archive" in unknown[1]
+
+
+def test_linker_language_is_not_a_cell_property(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "set_target_properties(m PROPERTIES LINKER_LANGUAGE C)\n")
+    assert g.cmake_facts(f, "m")["unknown"] == []
+    assert "LINKER_LANGUAGE" not in g.rewrite_cmake(f, cell())
+
+
+REQUIRE = (
+    'if(ARCH STREQUAL "i386")\n'
+    '    target_link_options(m PRIVATE "LINKER:--require-defined=_A@4,--require-defined=_B@8")\n'
+    "else()\n"
+    '    target_link_options(m PRIVATE "LINKER:--require-defined=A,--require-defined=B")\n'
+    "endif()\n"
+)
+
+
+def test_require_defined_comes_from_each_link_edge_into_link_args(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + REQUIRE)
+    facts = g.cmake_facts(f, "m")
+    assert facts["unknown"] == [] and facts["require_defined"]
+    edges = {a: _link_edge_with(a, require_defined=("A", "B")) for a in g.ARCHES}
+    edges["i386"] = _link_edge_with("i386", require_defined=("_A@4", "_B@8"))
+    g._check_statement_effects("m", facts, edges)
+    edges["arm64"] = _link_edge_with("arm64")
+    with pytest.raises(g.GenError, match="--require-defined is on no link edge"):
+        g._check_statement_effects("m", facts, edges)
+    out = g.rewrite_cmake(f, cell())
+    assert "require-defined" not in out and "ARCH STREQUAL" not in out
+    rs = g.build_rs(
+        cell(
+            require_defined={
+                "i386": ["_A@4", "_B@8"],
+                "amd64": ["A", "B"],
+                "arm64": ["A", "B"],
+            }
+        )
+    )
+    assert '"x86" => &["-Wl,--require-defined=_A@4", "-Wl,--require-defined=_B@8"],' in rs
+    assert '"x86_64" => &["-Wl,--require-defined=A", "-Wl,--require-defined=B"],' in rs
+    assert ".link_args(require_defined)" in rs
+    assert "require_defined" not in g.build_rs(cell())
+
+
+def test_link_edge_reads_the_require_defined_operands(tmp_path):
+    for a in g.ARCHES:
+        d = tmp_path / f"build-{a}"
+        d.mkdir()
+        (d / "build.ninja").write_text(
+            "build dll/m.dll: C_SHARED_LIBRARY_LINKER__m_Release a.obj\n"
+            "  LINK_FLAGS = -Wl,--require-defined=_X@4,--require-defined=_Y@8"
+            " -Wl,--subsystem,console:5.01\n"
+        )
+    assert g.link_edge("i386", "m", tmp_path).require_defined == ("_X@4", "_Y@8")
+
+
+def test_kmt_native_seh_moves_to_the_object_library(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "kmt_enable_native_seh(m)\n")
+    assert g.cmake_facts(f, "m")["unknown"] == []
+    out = g.rewrite_cmake(f, cell(c_shims=["base/m/x.c"]))
+    assert "kmt_enable_native_seh(m_shims)" in out and "kmt_enable_native_seh(m)" not in out
+
+
+DBGHELP = """\
+if(NOT CMAKE_CROSSCOMPILING)
+    list(APPEND SOURCE host.c)
+    add_library(m_host ${SOURCE})
+else()
+    list(APPEND SOURCE a.c)
+    # main.c  # replaced by Rust (sdk/lib/rust/m-rust/src/m/main.rs)
+    rust_staticlib_variant(m_rust m-rust "" TRUE)
+    add_library(m MODULE ${SOURCE})
+    set_module_type(m win32dll)
+    add_importlibs(m kernel32)
+endif()
+"""
+
+
+def test_a_library_in_the_other_branch_does_not_share_the_source_list(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(DBGHELP)
+    # dbghelp's real shape: the module is in the else() of the host tool's if().
+    assert g.cmake_facts(f, "m")["unknown"] == []
+    # The rewrite only wraps a link in a plain if(): swap the branches to rewrite it.
+    host, module = DBGHELP.split("else()\n")
+    host = host.replace("if(NOT CMAKE_CROSSCOMPILING)\n", "")
+    module = module.replace("endif()\n", "")
+    f.write_text(f"if(CMAKE_CROSSCOMPILING)\n{module}else()\n{host}endif()\n")
+    out = g.rewrite_cmake(f, cell(target="m", output_name="m.dll", module_kind="Win32Dll"))
+    # The host tool keeps its own list and library; the module's list goes with its link.
+    assert "list(APPEND SOURCE host.c)" in out and "add_library(m_host ${SOURCE})" in out
+    assert "list(APPEND SOURCE a.c)" not in out
+
+
+def test_a_library_in_the_targets_own_branch_still_shares_it(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(DBGHELP.replace("else()", "endif()\nif(TRUE)", 1))
+    assert g.cmake_facts(f, "m")["unknown"]
+
+
+def test_a_target_made_by_a_shared_function_names_the_function(tmp_path):
+    (tmp_path / "t.cmake").write_text("function(add_t_target VERSION)\nendfunction()\n")
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text("include(${CMAKE_CURRENT_SOURCE_DIR}/t.cmake)\nadd_t_target(24)\n")
+    unknown = g.cmake_facts(f, "m_24")["unknown"]
+    assert "target made in a loop or function" in unknown
+    assert any("add_t_target(24)" in u for u in unknown)
+    f.write_text("add_bootvid(m x.cmake)\n")
+    assert any("add_bootvid(m x.cmake)" in u for u in g.cmake_facts(f, "m")["unknown"])
