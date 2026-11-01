@@ -602,6 +602,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **setupapi file-queue COPIES fail `ERROR_ACCESS_DENIED` on the live boot (open, found
+  2026-11-01, both the C and setupapi-rust).** In the modrun setupapi suite, the queued delete
+  and rename succeed in the same directory, but both copies raise `SPFILENOTIFY_COPYERROR`
+  err=5. The ReactOS arm of `do_file_copyW` (queue.c) extracts every file through
+  `GetTempFileNameW(GetTempPathW())`, and on the live CD boot `%TEMP%` does not exist: the
+  probe's first run failed to open a file there with `ERROR_PATH_NOT_FOUND`. Separately, the
+  COPYERROR notification for the second file names the FIRST file's target (`a2.txt` for
+  `b.txt`), in both builds. Not yet checked: whether an installed (non-live) system has the
+  same failure, and what device installs from the CD do instead. Repro:
+  `MODRUN_SUITES=setupapi`, then `./vibeos-cli smoke --arch amd64 --payload modrun`, and look
+  for the `copyerror` lines.
 - **arm64 kmtest: `MiIncrementPageTableReferences` counts a page table past 512 (open, found
   2026-11-01, one occurrence, recovered on retry).** A kernel Rust panic in the kmtest sweep:
   `assertion failed: new_val <= ntkrnl_sys::mm::PTE_PER_PAGE as u32` at
