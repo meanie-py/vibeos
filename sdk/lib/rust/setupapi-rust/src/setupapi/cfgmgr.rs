@@ -239,7 +239,6 @@ pub type PCONFLICT_DATA = *mut _CONFLICT_DATA;
 
 pub const CONFLICT_MAGIC: u32 = 0x11225588;
 
-pub const __WINE_DBCL_TRACE: u32 = 3;
 unsafe extern "C" fn GuidToString(Guid: LPGUID, String: LPWSTR) -> BOOL {
     let mut lpString: LPWSTR = core::ptr::null_mut();
     if UuidToStringW(Guid as *mut UUID, core::ptr::addr_of_mut!(lpString)) != RPC_S_OK {
@@ -1150,10 +1149,7 @@ pub unsafe extern "system" fn CM_Add_Res_Des_Ex(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Connect_MachineA(
-    UNCServerName: PCSTR,
-    phMachine: PHMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Connect_MachineA(UNCServerName: PCSTR, phMachine: PHMACHINE) -> CONFIGRET {
     let mut pServerNameW: PWSTR = core::ptr::null_mut();
     let mut ret: CONFIGRET = 0;
 
@@ -1173,10 +1169,7 @@ pub unsafe extern "system" fn CM_Connect_MachineA(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Connect_MachineW(
-    UNCServerName: PCWSTR,
-    phMachine: PHMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Connect_MachineW(UNCServerName: PCWSTR, phMachine: PHMACHINE) -> CONFIGRET {
     let mut pMachine: PMACHINE_INFO;
 
     if phMachine.is_null() {
@@ -1651,11 +1644,7 @@ pub unsafe extern "system" fn CM_Disable_DevNode(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Disable_DevNode_Ex(
-    dnDevInst: DEVINST,
-    ulFlags: ULONG,
-    hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Disable_DevNode_Ex(dnDevInst: DEVINST, ulFlags: ULONG, hMachine: HMACHINE) -> CONFIGRET {
     let mut BindingHandle: RPC_BINDING_HANDLE = core::ptr::null_mut();
     let mut StringTable: HSTRING_TABLE = core::ptr::null_mut();
     let mut lpDevInst: LPWSTR = core::ptr::null_mut();
@@ -1822,11 +1811,7 @@ pub unsafe extern "system" fn CM_Enable_DevNode(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Enable_DevNode_Ex(
-    dnDevInst: DEVINST,
-    ulFlags: ULONG,
-    hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Enable_DevNode_Ex(dnDevInst: DEVINST, ulFlags: ULONG, hMachine: HMACHINE) -> CONFIGRET {
     let mut BindingHandle: RPC_BINDING_HANDLE = core::ptr::null_mut();
     let mut StringTable: HSTRING_TABLE = core::ptr::null_mut();
     let mut lpDevInst: LPWSTR = core::ptr::null_mut();
@@ -1895,12 +1880,7 @@ pub unsafe extern "system" fn CM_Enumerate_Classes(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Enumerate_Classes_Ex(
-    mut ulClassIndex: ULONG,
-    mut ClassGuid: LPGUID,
-    mut ulFlags: ULONG,
-    mut hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Enumerate_Classes_Ex(mut ulClassIndex: ULONG, mut ClassGuid: LPGUID, mut ulFlags: ULONG, mut hMachine: HMACHINE) -> CONFIGRET {
     let mut szBuffer: [WCHAR; (MAX_GUID_STRING_LEN as _)] = [0; (MAX_GUID_STRING_LEN as _)];
     let mut BindingHandle: RPC_BINDING_HANDLE = core::ptr::null_mut();
     let mut ret: CONFIGRET = CR_SUCCESS as CONFIGRET;
@@ -2824,15 +2804,7 @@ pub unsafe extern "system" fn CM_Get_Class_Registry_PropertyA(ClassGuid: LPGUID,
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Get_Class_Registry_PropertyW(
-    ClassGuid: LPGUID,
-    ulProperty: ULONG,
-    pulRegDataType: PULONG,
-    Buffer: PVOID,
-    pulLength: PULONG,
-    ulFlags: ULONG,
-    hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Get_Class_Registry_PropertyW(ClassGuid: LPGUID, ulProperty: ULONG, pulRegDataType: PULONG, Buffer: PVOID, pulLength: PULONG, ulFlags: ULONG, hMachine: HMACHINE) -> CONFIGRET {
     let mut BindingHandle: RPC_BINDING_HANDLE = core::ptr::null_mut();
     let mut szGuidString: [WCHAR; (PNP_MAX_GUID_STRING_LEN + 1) as _] =
         [0; (PNP_MAX_GUID_STRING_LEN + 1) as _];
@@ -3547,13 +3519,7 @@ pub unsafe extern "system" fn CM_Get_Device_ID_ExA(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Get_Device_ID_ExW(
-    mut dnDevInst: DEVINST,
-    mut Buffer: PWCHAR,
-    mut BufferLen: ULONG,
-    mut ulFlags: ULONG,
-    mut hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Get_Device_ID_ExW(mut dnDevInst: DEVINST, mut Buffer: PWCHAR, mut BufferLen: ULONG, mut ulFlags: ULONG, mut hMachine: HMACHINE) -> CONFIGRET {
     let mut StringTable: HSTRING_TABLE = core::ptr::null_mut();
 
     if dnDevInst == 0 {
@@ -3688,13 +3654,7 @@ pub unsafe extern "system" fn CM_Get_Device_ID_List_ExA(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Get_Device_ID_List_ExW(
-    pszFilter: PCWSTR,
-    Buffer: PWCHAR,
-    mut BufferLen: ULONG,
-    ulFlags: ULONG,
-    hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Get_Device_ID_List_ExW(pszFilter: PCWSTR, Buffer: PWCHAR, mut BufferLen: ULONG, ulFlags: ULONG, hMachine: HMACHINE) -> CONFIGRET {
     let mut BindingHandle: RPC_BINDING_HANDLE = core::ptr::null_mut();
     let mut ret: CONFIGRET;
 
@@ -5104,12 +5064,7 @@ pub unsafe extern "system" fn CM_Get_Parent(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Get_Parent_Ex(
-    pdnDevInst: PDEVINST,
-    dnDevInst: DEVINST,
-    ulFlags: ULONG,
-    hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Get_Parent_Ex(pdnDevInst: PDEVINST, dnDevInst: DEVINST, ulFlags: ULONG, hMachine: HMACHINE) -> CONFIGRET {
     let mut szRelatedDevInst: [WCHAR; MAX_DEVICE_ID_LEN as usize] =
         [0; MAX_DEVICE_ID_LEN as usize];
     let mut BindingHandle: RPC_BINDING_HANDLE = core::ptr::null_mut();
@@ -5582,12 +5537,7 @@ pub unsafe extern "system" fn CM_Locate_DevNode_ExA(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Locate_DevNode_ExW(
-    pdnDevInst: PDEVINST,
-    pDeviceID: DEVINSTID_W,
-    ulFlags: ULONG,
-    hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Locate_DevNode_ExW(pdnDevInst: PDEVINST, pDeviceID: DEVINSTID_W, ulFlags: ULONG, hMachine: HMACHINE) -> CONFIGRET {
     let mut DeviceIdBuffer: [WCHAR; (MAX_DEVICE_ID_LEN as _)] = [0; (MAX_DEVICE_ID_LEN as _)];
     let mut BindingHandle: RPC_BINDING_HANDLE = NULL;
     let mut StringTable: HSTRING_TABLE = NULL;
@@ -5929,15 +5879,7 @@ pub unsafe extern "system" fn CM_Open_Class_Key_ExA(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Open_Class_Key_ExW(
-    pClassGuid: LPGUID,
-    pszClassName: LPCWSTR,
-    samDesired: REGSAM,
-    Disposition: REGDISPOSITION,
-    phkClass: PHKEY,
-    ulFlags: ULONG,
-    hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Open_Class_Key_ExW(pClassGuid: LPGUID, pszClassName: LPCWSTR, samDesired: REGSAM, Disposition: REGDISPOSITION, phkClass: PHKEY, ulFlags: ULONG, hMachine: HMACHINE) -> CONFIGRET {
     let mut szKeyName: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut lpGuidString: LPWSTR = core::ptr::null_mut();
     let mut dwDisposition: DWORD = 0;
@@ -6082,15 +6024,7 @@ pub unsafe extern "system" fn CM_Open_DevNode_Key(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Open_DevNode_Key_Ex(
-    dnDevNode: DEVINST,
-    samDesired: REGSAM,
-    ulHardwareProfile: ULONG,
-    Disposition: REGDISPOSITION,
-    phkDevice: PHKEY,
-    ulFlags: ULONG,
-    hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Open_DevNode_Key_Ex(dnDevNode: DEVINST, samDesired: REGSAM, ulHardwareProfile: ULONG, Disposition: REGDISPOSITION, phkDevice: PHKEY, ulFlags: ULONG, hMachine: HMACHINE) -> CONFIGRET {
     let mut BindingHandle: RPC_BINDING_HANDLE = core::ptr::null_mut();
     let mut StringTable: HSTRING_TABLE = core::ptr::null_mut();
     let mut pszDevInst: LPWSTR = core::ptr::null_mut();
@@ -7265,14 +7199,7 @@ pub unsafe extern "system" fn CM_Run_Detection_Ex(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Set_Class_Registry_PropertyA(
-    ClassGuid: LPGUID,
-    ulProperty: ULONG,
-    Buffer: PCVOID,
-    ulLength: ULONG,
-    ulFlags: ULONG,
-    hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Set_Class_Registry_PropertyA(ClassGuid: LPGUID, ulProperty: ULONG, Buffer: PCVOID, ulLength: ULONG, ulFlags: ULONG, hMachine: HMACHINE) -> CONFIGRET {
     let mut lpBuffer: LPWSTR = core::ptr::null_mut();
     let mut ulType: ULONG = 0;
     let mut ret: CONFIGRET = 0;
@@ -7349,14 +7276,7 @@ pub unsafe extern "system" fn CM_Set_Class_Registry_PropertyA(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn CM_Set_Class_Registry_PropertyW(
-    mut ClassGuid: LPGUID,
-    mut ulProperty: ULONG,
-    mut Buffer: PCVOID,
-    mut ulLength: ULONG,
-    mut ulFlags: ULONG,
-    mut hMachine: HMACHINE,
-) -> CONFIGRET {
+pub unsafe extern "system" fn CM_Set_Class_Registry_PropertyW(mut ClassGuid: LPGUID, mut ulProperty: ULONG, mut Buffer: PCVOID, mut ulLength: ULONG, mut ulFlags: ULONG, mut hMachine: HMACHINE) -> CONFIGRET {
     let mut BindingHandle: RPC_BINDING_HANDLE = core::ptr::null_mut();
     let mut szGuidString: [WCHAR; (PNP_MAX_GUID_STRING_LEN + 1) as _] =
         [0; (PNP_MAX_GUID_STRING_LEN + 1) as _];

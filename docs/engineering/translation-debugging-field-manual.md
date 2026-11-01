@@ -3586,6 +3586,21 @@ The tell was a probe, not a read: ReadAt never failed, the file was the right si
 structure was logically empty. **When a parser and its writer disagree, diff their offset
 lists — the writer is usually the named one.**
 
+### A `FIELD_OFFSET` in a c2rust file-scope table is amd64's number on every arch
+**Symptom:** a static table built from `FIELD_OFFSET`/`offsetof` shows up as
+`8 as ::core::ffi::c_ulonglong as LONG`. That is c2rust's spelling of a folded `size_t`
+on a 64-bit target. setupapi's `InstallParamsData` stored the offset of
+`ClassInstallParams.AddPropertyPageData` as 8. The field follows one pointer, so it is 4
+on i386, and every DIF_ADDPROPERTYPAGE_ADVANCED install-params read on i386 would have
+gone through the wrong slot. **Cause:** the "compiler-exact" c2rust preamble is exact only
+for the arch it was transpiled on. **Fix:**
+`core::mem::offset_of!(Struct, field) as LONG`. The audit already sends these tables to
+"table UNVERIFIED (read by hand)", so the review is where this gets caught. Find them
+with `grep -rnE '[0-9]+ as ::core::ffi::c_ulonglong as '`. Only a struct with a
+pointer-width member before the field is wrong. On 2026-10-31, inetmib1's MIB rows,
+winspool's `DEVMODE` sizes and kernel32's `ACCESS_ALLOWED_ACE.SidStart` all hit this
+grep, and none of them hold a pointer, so all are correct.
+
 ### A C `0` handle sentinel translated as `INVALID_HANDLE_VALUE`
 `StgCreateDocfileOnILockBytes` calls `Storage_Construct(0, 0, plkbyt, ...)`; the translation
 passed `INVALID_HANDLE_VALUE`. `StorageImpl_Construct` takes the FILE branch for any non-NULL
