@@ -4,6 +4,12 @@
 also lives in a library: the linter's committed-header drift check calls it directly.
 The former Python entry points delegate to this binary; they contain no generation logic.
 
+For new generators, add the implementation under `src/`, expose it through the library
+when checks or other tools need the same facts, and register a command in the existing
+binary. Add meaningful output/refusal fixtures and document the command here. Do not
+create another Python generator implementation or a separate binary per recipe.
+Preserve existing Python importers with thin compatibility adapters when necessary.
+
 ```sh
 tools/codegen --list
 tools/codegen --all --check          # compare all 11 outputs, without writing

@@ -405,7 +405,11 @@ new source rules there and artifact checks in `tools/vibeos-lint/src/binary/`.
 `./vibeos-cli lint --list-rules` lists native artifact/diagnostic checks; use
 `lint --arch <arch> --rules <name>` for an individual check. Gate, smoke static
 checks, and cohab coverage use that same binary. Do not add Python lint checkers.
-Python CLI, generator, and reporting helpers remain supported.
+**New code generators live in `tools/vibeos-codegen/src/`** and run through
+`tools/codegen`; add a reusable library implementation and a command in that binary.
+See `tools/vibeos-codegen/README.md`. Do not add new Python lint or generator
+implementations. Existing Python generator entry points are compatibility facades;
+CLI, reporting, and legacy translation-pipeline Python remain supported until migrated.
 
 **No default arch** — always pass `--arch`. Why it matters:
 
