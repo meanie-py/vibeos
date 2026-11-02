@@ -9760,6 +9760,16 @@ Same family as `$?` after a pipe and `sccache -s` reporting another server: a re
 a reading. Two agents hit this file on the same night; one lost a minute, the other lost a
 conclusion.
 
+### A C-twin rule that finds nothing may not be seeing the C function at all
+Symptom: a rule pairing Rust functions with their C twins (`twins::CIndex`) reports nothing for
+a function you KNOW differs. Cause: `defined_names` scans for definitions with a brace counter
+and stopped at the first body whose braces do not match -- and a C body that balances its
+braces only per `#if`/`#else` arm (fastfat read.c's `FatCommonRead`) never matches, so every
+function after it in the file was invisible to every C-twin rule. Fix (2026-11-02): definitions
+are located in a first-branch-only blanking (`blank_c_first_branch`), and each body is then cut
+from the full text at the same offsets, so rules still see every arm. Check a silent rule
+against a known-bad case on the real tree before believing it.
+
 ### A self-consistent pair of DERIVED values cannot detect its own staleness
 
 **Symptom:** an array whose length is an enum bound, a struct whose size assertion is
@@ -10637,6 +10647,10 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   `DEVICE_OBJECT` to the FDO extension (`DeviceObject as *mut FUNCTIONAL_DEVICE_EXTENSION` for
   the C's `DeviceObject->DeviceExtension`), writing a spinlock and flags into the device object.
   Grep a translated driver for a device-object variable cast to an extension type.
+- **A negated assert, dormant until armed.** fastfat's `FatCommonRead` asserted
+  `!(cur != VerifyThread || Status != VERIFY_REQUIRED)` for the C's un-negated condition, so it
+  fired on every I/O error (an empty CD drive). `scan_assert_negated_vs_c` compares each
+  `ASSERT!`/`NT_ASSERT!` with its C twin's.
 Arming also changes what a FAILED assert does: `nt_assert!` was `debug_assert!`, a panic and a
 halt where the C's DBG `ASSERT` prints and continues. It now reports through `RtlAssert` (still
 `cfg!(debug_assertions)`-gated, evaluated in the calling crate). Its first two fires were real

@@ -6916,9 +6916,13 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   cc-rust's `CcRosEnsureVacbResident` turned into FALSE (a stale "DUMMY_PSEH: return FALSE
   instead of raising" stand-in, 11 sites) -- "would block" to a WAIT caller, so fastfat raised
   STATUS_CANT_WAIT. cc-rust now raises as the C does, releasing its BCB/VACB first.
-  **OWED:** `read.rs:590`, a DASD non-cached read returning STATUS_VERIFY_REQUIRED on the
-  volume's own VerifyThread (`20261101-200736-od_rznoq`); find which IrpContext flag should
-  have set SL_OVERRIDE_VERIFY_VOLUME, and whether the C does the same on an empty floppy. `debug_assert!` is gated on
+  `read.rs:590` FIXED 2026-11-02: not a verify problem at all -- a probe showed
+  STATUS_NO_MEDIA_IN_DEVICE on an empty CD drive with no VerifyThread set. The translation had
+  wrapped the C's `NT_ASSERT(cur != Vcb->VerifyThread || Status != STATUS_VERIFY_REQUIRED)` in
+  `!( )` at all three FatCommonRead sites, so it fired on every legitimate I/O failure. New rule
+  `scan_assert_negated_vs_c`; it needed the C-twin index to stop losing every function after
+  one whose braces balance only per `#if` arm (read.c lost all of FatCommonRead onward). With
+  that, amd64-bios boots with no assert at all (`20261102-003650-2roxoi97`). `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of

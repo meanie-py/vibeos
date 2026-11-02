@@ -587,7 +587,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 
         Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
         if !NT_SUCCESS(Status) {
-            NT_ASSERT!((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || Status != STATUS_VERIFY_REQUIRED)) as i32);
+            NT_ASSERT!((KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || Status != STATUS_VERIFY_REQUIRED) as i32);
             FatNormalizeAndRaiseStatus(IrpContext, Status);
         }
 
@@ -781,7 +781,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 
                             (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
                             if !NT_SUCCESS(*p_status) {
-                                NT_ASSERT!((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED)) as i32);
+                                NT_ASSERT!((KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED) as i32);
                                 FatNormalizeAndRaiseStatus(IrpContext, *p_status);
                             } else {
                                 NT_ASSERT!(((*(*p_irp)).IoStatus.Information == BytesToRead as _) as i32);
@@ -890,7 +890,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 
                         (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
                         if !NT_SUCCESS(*p_status) {
-                            NT_ASSERT!((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED)) as i32);
+                            NT_ASSERT!((KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED) as i32);
                             FatNormalizeAndRaiseStatus(IrpContext, *p_status);
                         } else {
                             NT_ASSERT!(((*(*p_irp)).IoStatus.Information == ByteCount as _) as i32);
