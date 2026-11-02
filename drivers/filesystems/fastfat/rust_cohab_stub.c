@@ -566,9 +566,8 @@ BOOLEAN FsRtlFastLock(
  * 9. Statistics / accounting stubs
  * ====================================================================== */
 
-VOID CollectCreateStatistics(PVCB a, NTSTATUS b)   { (void)a;(void)b; }
-VOID CollectCreateHitStatistics(PVCB a)             { (void)a; }
-VOID CollectDiskIoStats(PVCB a, PIRP b, ULONG c, ULONG d) { (void)a;(void)b;(void)c;(void)d; }
+/* CollectCreateStatistics / CollectCreateHitStatistics / CollectDiskIoStats ->
+ * fastfat-rust/src/stats.rs (they were empty here, so nothing was ever counted). */
 /* CompareNames -> rust_cohab_fat.c (real macro) */
 VOID FatUpdateIOCountersPCW(PVCB a, BOOLEAN b, ULONG_PTR c) { (void)a;(void)b;(void)c; }
 

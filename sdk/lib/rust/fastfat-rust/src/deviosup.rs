@@ -1,4 +1,5 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
+use crate::stats::CollectDiskIoStats;
 use ntkrnl_sys::globals::*;
 use crate::externs::DbgPrint;
 // One declaration per external symbol: externs.rs.
@@ -66,7 +67,6 @@ extern "system" {
     } extern "system" {
     static mut FatBreakOnInterestingIoCompletion: i32;
 
-    fn CollectDiskIoStats(Vcb: *mut VCB, Function: u32, IsUserIo: u8, Count: u32);
     fn FsRtlAllocatePoolWithTag(PoolType: u32, NumberOfBytes: u32, Tag: u32) -> *mut core::ffi::c_void;
 }
 #[cfg(target_arch = "x86")]
@@ -1683,7 +1683,7 @@ pub unsafe extern "system" fn FatPagingFileErrorHandler(Irp: PIRP, Event: PKEVEN
     // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
     // Windows value (0x200/0x204) is not what any TU here compiles.
     const NonPagedPoolNx: u32 = 0;
-    const FAT_TAG: u32 = 0x46617420; // ' taF' (LE bytes)
+    const FAT_TAG: u32 = 0x20746146; // ' taF' (a C multi-char constant: 'F' is the low byte)
 
     let status: NTSTATUS;
 

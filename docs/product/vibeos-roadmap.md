@@ -702,24 +702,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `0x7FFB7...` DLL as the null write above. PTE `0x00C0000034BB0743` is valid when reported. Same
   serial capture, third boot.
 
-- **fastfat/cdfs translation audit: half of each driver only grep-scanned (owed, found
-  2026-11-01, research).** Three Sonnet agents compared the early DeepSeek translations
-  against the in-tree C; everything they confirmed is fixed (win11-flip, see its commits).
-  Compared function by function: fastfat's C glue (`rust_cohab_*.c`), FSCTL dispatch, lock,
-  volume-info, completion and exception paths, allocsup, the FileInformation handlers, the
-  write/read cores; cdfs's dirent/path-table/name/mount/read/allocation/query paths. ONLY
-  scanned (constants, call-multiset diffs, cfg gates), so still owed a line-by-line read:
-  fastfat `FatCommonCreate` and the open paths, `FatCreateVcb`/`FatDeleteVcb`/
-  `FatCreateFcb`, `FatVerifyVcb`/`FatPerformVerify`, `FatMoveFile`, `FatDismountVolume`,
-  `FatSetRenameInfo`/`FatRenameEAs`/directory defrag, the rest of deviosup/cachesup/easup,
-  lockctrl, filobsup, pnp, shutdown, acchksup, fatinit; cdfs create, cleanup, close,
-  lockctrl, pnp, verfysup (`CdVerifyVolume`), devctrl, workque, fspdisp, shutdown,
-  prefxsup, write, and the tails of `CdLookupAllocation` and strucsup. Known left as-is:
-  fastfat's oplock stand-ins (`FsRtlOplockBreakH` SUCCESS, `FsRtlCheckOplockEx` ignoring
-  Flags: ntoskrnl stubs them at 0xA00+), `KeAcquireSpinLockRaiseToDpc` in
-  `rust_cohab_fat.c` (raises IRQL, takes no lock: UP-only), cdfs's `FsRtlIsLeadDbcsCharacter`
-  stand-in (always FALSE, DBCS OEM code pages), `RtlOemStringToCountedUnicodeSize` (Length*2,
-  SBCS-only), and the lost file/line in `FatBugCheck`/`CdBugCheck` parameter 1.
+- **fastfat/cdfs translation audit (line-by-line read DONE 2026-11-01, research).** Two rounds
+  of Sonnet agents compared the early DeepSeek translations against the in-tree C, function by
+  function, across both drivers; every confirmed finding is fixed (win11-flip, fsaudit-2). The
+  second round found: CDFS refused every device IOCTL on a volume handle (`TypeOfOpen != 0`
+  for `!= UserVolumeOpen`), never tore down a not-mounted volume from the close queue
+  (`VcbMounted` read as 0), and gave the PnP swap VPB `VPB_MOUNTED` instead of
+  `VPB_REMOVE_PENDING` (a boolean `FlagOn`); fastfat truncated `FatLookupLastMcbEntry`'s LBO
+  to 32 bits, tested the wrong BPB field in `IsBpbFat32`, asked for Windows 8 NX pool types in
+  `FatVerifyVolume`, and counted no create/read/disk statistics (empty C stand-ins, now
+  `stats.rs`). Findings the agents raised that are NOT bugs here: open-coded asserts and
+  `DbgBreakPoint`s that mirror `NT_ASSERT` -- this build is `DBG=1`, so the C's asserts are
+  live too. Still open, as decisions rather than bugs: cdfs's `FILE_OPEN_REQUIRING_OPLOCK`
+  block is `#[cfg(any())]` although the crate builds `ntddi_win8` (its FCB oplock layout is
+  the pre-WIN8 one); fastfat's `FatCommonCreateCallout` lacks the C's try/except but is dead
+  below WINTHRESHOLD. Known left as-is: fastfat's oplock stand-ins (`FsRtlOplockBreakH`
+  SUCCESS, `FsRtlCheckOplockEx` ignoring Flags: ntoskrnl stubs them at 0xA00+),
+  `KeAcquireSpinLockRaiseToDpc` in `rust_cohab_fat.c` (raises IRQL, takes no lock: UP-only),
+  cdfs's `FsRtlIsLeadDbcsCharacter` stand-in (always FALSE, DBCS OEM code pages),
+  `RtlOemStringToCountedUnicodeSize` (Length*2, SBCS-only), and the lost file/line in
+  `FatBugCheck`/`CdBugCheck` parameter 1.
 - **amd64 STATUS_NONEXISTENT_SECTOR in-page error, 0x1E during the boot WoW64 self-tests
   (open flake, seen once 2026-11-01, research).** hostapps `20261101-123017-7ue7skcb`:
   `[MM] Failed to page data in! st=c0000015 off=10000` while `apc32.exe` created threads,
@@ -1875,9 +1877,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   IsConsoleMode calling NtUserCreateMenu, amd64 MAX_SYSCALL_PARAM_SIZE, smss's RESERVE_1MB
   setting NX, fastfat/cdfs MDL flags, TOKEN_HAS_ADMIN_GROUP), the legitimate ones (freeldr's
   ARC codes, driver-local ERROR levels) carry a `nolint` with their reason. The baseline is
-  empty: any new disagreement fails `vibeos-cli check`. Still owed from the sweep: fastfat's
-  `KeExpandKernelStackAndCalloutEx` extern takes `StackSize: u32` where the C has SIZE_T
-  (harmless while the shim ignores it).
+  empty: any new disagreement fails `vibeos-cli check`. (The sweep's last owed item, fastfat's
+  `KeExpandKernelStackAndCalloutEx` `StackSize: u32`, is fixed: the extern takes SIZE_T.)
 - **Hardware faults in a Rust try body: all three arches catch a breakpoint; arm64's
   access violation too** (2026-09-27). The per-boot
   `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3/brk, an access violation

@@ -8,6 +8,7 @@
 #include <winternl.h>
 #include <winioctl.h>
 #include <stdio.h>
+#include <wctype.h>
 
 static void hex(const char *tag, const void *p, ULONG n)
 {
@@ -64,6 +65,32 @@ static void file_queries(const wchar_t *path, HANDLE h)
     }
 }
 
+/* Device IOCTLs on a volume handle. The file system sees these first: CDFS's
+ * CdCommonDevControl accepts only a user volume open and forwards to the device, and a
+ * translated `TypeOfOpen != 0` once refused every one of them (2026-11-01). */
+static void volume_ioctls(wchar_t letter)
+{
+    wchar_t dev[8] = L"\\\\.\\X:";
+    dev[4] = letter;
+    HANDLE v = CreateFileW(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    if (v != INVALID_HANDLE_VALUE) {
+        STORAGE_PROPERTY_QUERY q = { StorageAccessAlignmentProperty, PropertyStandardQuery };
+        STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR d = {0};
+        DISK_GEOMETRY g = {0};
+        DWORD n = 0;
+        if (DeviceIoControl(v, IOCTL_STORAGE_QUERY_PROPERTY, &q, sizeof(q), &d, sizeof(d), &n, NULL))
+            printf("align logical=%lu physical=%lu\n", d.BytesPerLogicalSector, d.BytesPerPhysicalSector);
+        else
+            printf("align err=%lu\n", GetLastError());
+        if (DeviceIoControl(v, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &g, sizeof(g), &n, NULL))
+            printf("geometry bps=%lu media=%d\n", g.BytesPerSector, g.MediaType);
+        else
+            printf("geometry err=%lu\n", GetLastError());
+        CloseHandle(v);
+    } else
+        printf("volume open err=%lu\n", GetLastError());
+}
+
 int wmain(int argc, wchar_t **argv)
 {
     MEMORYSTATUSEX ms = { sizeof(ms) };
@@ -94,23 +121,8 @@ int wmain(int argc, wchar_t **argv)
         else
             printf("GVI err=%lu\n", GetLastError());
         dev[4] = argv[1][0];
-        HANDLE v = CreateFileW(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
-        if (v != INVALID_HANDLE_VALUE) {
-            STORAGE_PROPERTY_QUERY q = { StorageAccessAlignmentProperty, PropertyStandardQuery };
-            STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR d = {0};
-            DISK_GEOMETRY g = {0};
-            DWORD n = 0;
-            if (DeviceIoControl(v, IOCTL_STORAGE_QUERY_PROPERTY, &q, sizeof(q), &d, sizeof(d), &n, NULL))
-                printf("align logical=%lu physical=%lu\n", d.BytesPerLogicalSector, d.BytesPerPhysicalSector);
-            else
-                printf("align err=%lu\n", GetLastError());
-            if (DeviceIoControl(v, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &g, sizeof(g), &n, NULL))
-                printf("geometry bps=%lu media=%d\n", g.BytesPerSector, g.MediaType);
-            else
-                printf("geometry err=%lu\n", GetLastError());
-            CloseHandle(v);
-        } else
-            printf("volume open err=%lu\n", GetLastError());
+        volume_ioctls(argv[1][0]);
+        HANDLE v;
         /* FSCTL_GET_VOLUME_BITMAP needs a handle opened for data (FAT's manage-volume
          * check). From LCN 0: 8 bitmap bytes (partial: ERROR_MORE_DATA), then 64 KB. */
         v = CreateFileW(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
@@ -144,6 +156,12 @@ int wmain(int argc, wchar_t **argv)
             file_queries(out, h);
             CloseHandle(h);
             DeleteFileW(out);
+        }
+    }
+    for (int i = 2; i < argc; i++) {
+        if (argv[i][0] && argv[i][1] == L':' && towupper(argv[i][0]) != towupper(argv[1][0])) {
+            printf("== volume %lc:\n", argv[i][0]);
+            volume_ioctls(argv[i][0]);
         }
     }
     for (int i = 2; i < argc; i++) {

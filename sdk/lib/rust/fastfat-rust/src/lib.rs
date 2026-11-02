@@ -151,6 +151,7 @@ pub mod read;
 pub mod resrcsup;
 pub mod shutdown;
 pub mod splaysup;
+pub mod stats;     // create/read/disk-I/O performance counters (were empty C stubs)
 pub mod strucsup;
 pub mod timesup;
 pub mod verfysup;

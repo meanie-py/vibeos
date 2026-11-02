@@ -29,6 +29,7 @@ use crate::verfysup::IsFileDeleted;
 use crate::timesup::{FatGetCurrentFatTime, FatNtTimeToFatTime};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
+use crate::glue::TAG_BCB;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExFreePool, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, LARGE_INTEGER, LARGE_MCB, OEM_STRING, PFILE_OBJECT, PLARGE_INTEGER, PLONGLONG, POEM_STRING, PUNICODE_STRING, RtlAreBitsClear, RtlAreBitsSet, RtlDowncaseUnicodeString, RtlFindClearBits, RtlOemStringToCountedUnicodeString, RtlSetBits, RtlUpcaseUnicodeString};

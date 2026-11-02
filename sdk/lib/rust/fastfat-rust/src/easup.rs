@@ -23,6 +23,7 @@ use crate::cachesup::FatSetDirtyBcb;
 use crate::verfysup::FatVerifyFcb;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
+use crate::glue::TAG_BCB;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
@@ -2229,7 +2230,8 @@ pub unsafe extern "system" fn FatDeletePackedEa(
 
         let copy_len = *PackedEasLength - (Offset + packed_ea_size);
         let src = (packed_ea as *mut u8).add(packed_ea_size as usize);
-        core::ptr::copy_nonoverlapping(src as *const u8, packed_ea as *mut u8, copy_len as usize);
+        // RtlMoveMemory: the tail slides down over the deleted EA, so the ranges overlap.
+        core::ptr::copy(src as *const u8, packed_ea as *mut u8, copy_len as usize);
 
         let zero_addr = (*EaSetHeader).PackedEas.as_mut_ptr().add((*PackedEasLength - packed_ea_size) as usize);
         core::ptr::write_bytes(zero_addr, 0, packed_ea_size as usize);
