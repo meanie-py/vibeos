@@ -624,8 +624,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Not yet triaged. Likely shapes are an increment without its matching decrement
   (map/unmap imbalance) or a PFN read for the wrong PDE. Start with `farm --arches arm64`
   using the conformance payload, and arm the tripwire before reading the dump.
-- **amd64-bios: demand-zero fault on an already-valid PTE (open, found 2026-11-01, one
-  occurrence in 8 boots, needs an MM owner).** A kernel Rust panic after the boot marker, while
+- **amd64-bios: demand-zero fault on an already-valid PTE (FIX LANDING 2026-11-01, smp-bringup;
+  root cause by code reading, the race has not been reproduced on demand).** Cause: the 64-bit
+  self-map branch of `MmArmAccessFault` (a kernel fault on a page-table VA) built user
+  PXE/PPE/PDEs with an unlocked check-then-create, while every other user page-table writer holds
+  the process working-set lock, and `MiMakePdeExistAndMakeValid` -> `MiMakeSystemAddressValid`
+  RELEASES that lock before touching the table, so every ROS `page.rs` mapping (image views) went
+  through the unlocked branch. WoW64 is where 32-bit views and ARM3 private memory share page
+  tables below 4G. Fixed by taking the WS lock there for a user VA at <= APC_LEVEL when the thread
+  holds none; x86/amd64 `page.rs` and `rmap.rs` now log the per-VA ledger the not-in-list guard
+  dumps. Original report: A kernel Rust panic after the boot marker, while
   a WoW64 32-bit app was starting (`[FEX-WOW64C]` lines, then winsxs manifest opens):
   `assertion failed: ((*PointerPte).valid() as usize) == 0` at
   `ntoskrnl-rust/src/ARM3/pagfault.rs:2292` (the `ASSERT` at the top of `MiResolveDemandZeroFault`,
