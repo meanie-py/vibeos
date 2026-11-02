@@ -1070,7 +1070,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
     // Cleanup
     if !NT_SUCCESS(status) {
         if !wideDeviceName.is_null() {
-            FREE_POOL(wideDeviceName as *mut core::ffi::c_void);
+            FREE_POOL!(wideDeviceName);
         }
 
         if !deviceExtension.is_null() {
@@ -1099,7 +1099,7 @@ pub unsafe extern "system" fn DeviceEvtCleanup(Device: WDFOBJECT) {
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
     let deviceExtension = DeviceGetExtension(device as WDFDEVICE);
 
-    FREE_POOL((*deviceExtension).DeviceName.Buffer as *mut core::ffi::c_void);
+    FREE_POOL!((*deviceExtension).DeviceName.Buffer);
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!((*deviceExtension).DeviceName),
         core::ptr::null::<u16>(),
@@ -1111,7 +1111,7 @@ pub unsafe extern "system" fn DeviceEvtCleanup(Device: WDFOBJECT) {
         ));
     }
 
-    FREE_POOL((*deviceExtension).DeviceAdditionalData.WellKnownName.Buffer as *mut core::ffi::c_void);
+    FREE_POOL!((*deviceExtension).DeviceAdditionalData.WellKnownName.Buffer);
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!((*deviceExtension).DeviceAdditionalData.WellKnownName),
         core::ptr::null::<u16>(),
@@ -1177,18 +1177,18 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoCleanup(Device: *mut core::f
     );
 
     // Free allocated descriptors and sense data
-    FREE_POOL((*deviceExtension).DeviceDescriptor as *mut core::ffi::c_void);
-    FREE_POOL((*deviceExtension).AdapterDescriptor as *mut core::ffi::c_void);
-    FREE_POOL((*deviceExtension).PowerDescriptor as *mut core::ffi::c_void);
-    FREE_POOL((*deviceExtension).SenseData as *mut core::ffi::c_void);
+    FREE_POOL!((*deviceExtension).DeviceDescriptor);
+    FREE_POOL!((*deviceExtension).AdapterDescriptor);
+    FREE_POOL!((*deviceExtension).PowerDescriptor);
+    FREE_POOL!((*deviceExtension).SenseData);
 
     // Cached inquiry data
     if !(*deviceExtension).DeviceAdditionalData.CachedInquiryData.is_null() {
-        FREE_POOL((*deviceExtension).DeviceAdditionalData.CachedInquiryData as *mut core::ffi::c_void);
+        FREE_POOL!((*deviceExtension).DeviceAdditionalData.CachedInquiryData);
         (*deviceExtension).DeviceAdditionalData.CachedInquiryDataByteCount = 0;
     }
 
-    FREE_POOL((*deviceExtension).PrivateFdoData as *mut core::ffi::c_void);
+    FREE_POOL!((*deviceExtension).PrivateFdoData);
 
     // Release MCN and ZPODD resources
     DeviceReleaseMcnResources(deviceExtension);
@@ -3332,7 +3332,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
     let mut status: NTSTATUS;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
     let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext((Request as *mut core::ffi::c_void).cast());
-    let bufferToFree: *mut KEVENT = (*requestContext).SyncEvent;
+    let mut bufferToFree: *mut KEVENT = (*requestContext).SyncEvent;
 
     let mut sync_freq: i64 = 0;
     let sync_t0 = KeQueryPerformanceCounter(core::ptr::addr_of_mut!(sync_freq));
@@ -3345,7 +3345,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
             b"RequestSynchronousProcessWithSerialQueue called at DISPATCH_LEVEL or above\0".as_ptr() as *const i8,
         );
         CdromRequestCompletion(deviceExtension, Request, STATUS_INVALID_LEVEL, 0);
-        FREE_POOL(bufferToFree as *mut core::ffi::c_void);
+        FREE_POOL!(bufferToFree);
         return STATUS_INVALID_LEVEL;
     }
 
@@ -3364,7 +3364,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
             status,
             WdfRequestGetInformation(Request) as ULONG_PTR,
         );
-        FREE_POOL(bufferToFree as *mut core::ffi::c_void);
+        FREE_POOL!(bufferToFree);
         return status;
     } else {
         let mut waitStatus: NTSTATUS = STATUS_UNSUCCESSFUL;
@@ -3397,7 +3397,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                 );
                 status = waitStatus;
                 CdromRequestCompletion(deviceExtension, Request, status, 0);
-                FREE_POOL(bufferToFree as *mut core::ffi::c_void);
+                FREE_POOL!(bufferToFree);
                 return status;
             } else if PsIsThreadTerminating(PsGetCurrentThread()) != 0 {
                 // Thread alerted and terminating – cancel IRP
@@ -3452,7 +3452,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
         if WdfRequestIsCanceled(Request) != 0 {
             status = STATUS_CANCELLED;
             CdromRequestCompletion(deviceExtension, Request, status, 0);
-            FREE_POOL(bufferToFree as *mut core::ffi::c_void);
+            FREE_POOL!(bufferToFree);
             return status;
         } else {
             let fileObject = WdfRequestGetFileObject(Request);
@@ -3473,7 +3473,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                     requestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode,
                 );
                 CdromRequestCompletion(deviceExtension, Request, STATUS_ACCESS_DENIED, 0);
-                FREE_POOL(bufferToFree as *mut core::ffi::c_void);
+                FREE_POOL!(bufferToFree);
                 return STATUS_ACCESS_DENIED;
             } else {
                 TracePrint!(
@@ -3496,14 +3496,14 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
                 // The callback completes the request itself in every path (incl.
                 // failure); do NOT complete again here (was a double-complete of
                 // an already-completed WDF request). Found by rustconv semdiff.
-                FREE_POOL(bufferToFree as *mut core::ffi::c_void);
+                FREE_POOL!(bufferToFree);
                 return status;
             }
         }
     }
 
     // Free the allocation for the sync event
-    FREE_POOL(bufferToFree as *mut core::ffi::c_void);
+    FREE_POOL!(bufferToFree);
 
     status
 }

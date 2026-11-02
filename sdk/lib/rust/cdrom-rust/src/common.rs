@@ -848,7 +848,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
 
     // 5. Release all allocated resources (Executes always)
     if !senseInfoBuffer.is_null() {
-        FREE_POOL(senseInfoBuffer as *mut core::ffi::c_void);
+        FREE_POOL!(senseInfoBuffer);
     }
 
     (*Srb).SenseInfoBuffer = core::ptr::null_mut();
@@ -935,7 +935,7 @@ pub unsafe extern "C" fn DeviceSendNotification(
         core::ptr::null_mut(),
     );
 
-    FREE_POOL(notification as *mut core::ffi::c_void);
+    FREE_POOL!(notification);
 
     return;
 }
@@ -1065,7 +1065,7 @@ pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
     }
 
     if !NT_SUCCESS(status) {
-        FREE_POOL(context as *mut core::ffi::c_void);
+        FREE_POOL!(context);
         if !startUnitRequest.is_null() {
             WdfObjectDelete(startUnitRequest as WDFOBJECT);
         }
@@ -1129,7 +1129,7 @@ pub unsafe extern "system" fn DeviceAsynchronousCompletion(
     const SRB_STATUS_QUEUE_FROZEN: u8 = 0x40;
 
     // Cast Context to the expected completion context pointer.
-    let context = Context as *mut COMPLETION_CONTEXT;
+    let mut context = Context as *mut COMPLETION_CONTEXT;
 
     // Obtain device extension from the device stored in the context.
     let deviceExtension = DeviceGetExtension((*context).Device);
@@ -1152,7 +1152,7 @@ pub unsafe extern "system" fn DeviceAsynchronousCompletion(
     }
 
     // Release the context memory.
-    FREE_POOL(context as *mut core::ffi::c_void);
+    FREE_POOL!(context);
 
     // Delete the WDF request object.
     WdfObjectDelete(Request as WDFOBJECT);
@@ -2268,7 +2268,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         core::cmp::max(DVD_RPC_KEY_LENGTH, DVD_SET_RPC_KEY_LENGTH),
     );
 
-    let dvd_read_structure = ntkrnl_sys::ex::ExAllocatePoolWithTag(
+    let mut dvd_read_structure = ntkrnl_sys::ex::ExAllocatePoolWithTag(
         ntkrnl_sys::mm::PagedPool,
         buffer_len,
         DVD_TAG_DVD_REGION,
@@ -2538,7 +2538,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
 
     // cleanup (from getout:)
     if !dvd_read_structure.is_null() {
-        FREE_POOL(dvd_read_structure as *mut core::ffi::c_void);
+        FREE_POOL!(dvd_read_structure);
     }
 
     // final InterlockedExchange
@@ -2665,7 +2665,7 @@ pub unsafe extern "system" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
         device,
     );
 
-    let perfDescriptor: *mut PERFORMANCE_DESCRIPTOR = ExAllocatePoolWithTag(
+    let mut perfDescriptor: *mut PERFORMANCE_DESCRIPTOR = ExAllocatePoolWithTag(
         NonPagedPoolNxCacheAligned,
         transferLength as usize,
         CDROM_TAG_STREAM,
@@ -2700,7 +2700,7 @@ pub unsafe extern "system" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
         status,
     );
 
-    FREE_POOL(perfDescriptor as *mut core::ffi::c_void);
+    FREE_POOL!(perfDescriptor);
     WdfObjectDelete(WorkItem as WDFOBJECT);
 }
 #[no_mangle]
@@ -2810,7 +2810,7 @@ pub unsafe extern "C" fn RequestDuidGetDeviceIdProperty(
             status = STATUS_SUCCESS;
         }
 
-        FREE_POOL(deviceIdDescriptor as *mut core::ffi::c_void);
+        FREE_POOL!(deviceIdDescriptor);
     }
 
     status

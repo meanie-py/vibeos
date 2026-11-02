@@ -3,8 +3,11 @@
 Stage-one generation is native Rust in `tools/vibeos-codegen`. Use
 `tools/codegen wow64-thunks` with the same `--spec`, `--sysfuncs`, `--arch`,
 `--manual-list`, `--symbol-prefix` and `--out-c` options. CMake invokes it directly;
-`wow64gen.py` remains an API/CLI compatibility bridge. Stage-two `marshalgen.py`
-remains Python. Generated thunk bytes and guest service numbering are preserved.
+`wow64gen.py` remains an API/CLI compatibility bridge. Stage two also runs natively:
+`tools/codegen marshal report|gen|gen-callback`. `marshalgen.py` retains its imported
+API as a JSON bridge. Select local builds with `--build-dir` and `--build-dir32`;
+use `--out` / `--out-header` for candidates and `--check` to compare without writing.
+Generated thunk bytes and guest service numbering are preserved.
 
 Re-runnable, deterministic codegen that turns our `.spec` syscall table into the
 C thunk table `wow64.dll` dispatches through. Part of WoW64 Phase D
@@ -33,10 +36,10 @@ Under WoW64, a 32-bit guest calls a syscall; the CPU layer traps it and hands
 2. **widens** each to the host 64-bit ABI, and
 3. calls the real 64-bit `Nt*` (from the native ntdll), returning its NTSTATUS.
 
-**The simplification that makes this mostly mechanical:** a 32-bit guest pointer
-is already a valid 64-bit pointer (guest VAs are below 4 GB), so a `ptr` argument
-widens by a plain zero-extension. Scalars widen by their width. So the flat
-majority of `Nt*` are pure codegen.
+Flat thunks sign-extend each single-dword guest argument. This preserves the
+default guest address range and negative pseudo-handles; callees using 32-bit
+scalar parameters read the same low 32 bits. Wider scalar arguments combine
+multiple guest dwords. The flat majority of `Nt*` are mechanical codegen.
 
 ## The honest limitation (deep marshalling)
 

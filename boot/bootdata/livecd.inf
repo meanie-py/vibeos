@@ -26,15 +26,51 @@ HKLM,"SYSTEM\Setup","CmdLine",0x00020000,"setup -mini"
 
 ; User Profile List
 HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList",,0x00000012
-HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","ProfilesDirectory",0x00020000,"%SystemDrive%\Profiles"
-HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","AllUsersProfile",0x00000000,"All Users"
-HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","DefaultUserProfile",0x00000000,"Default User"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","Default",0x00000000,"%SystemDrive%\Users\Default"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","ProfilesDirectory",0x00020000,"%SystemDrive%\Users"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","ProgramData",0x00020000,"%SystemDrive%\ProgramData"
+HKLM,"SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList","Public",0x00020000,"%SystemDrive%\Users\Public"
 
 ; Shell Folders
-HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders","Common Documents",0x00020000,""
-HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders","Common Desktop",0x00020000,"%SystemDrive%\Profiles\All Users\Desktop"
-HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Desktop",0x00020000,"%SystemDrive%\Profiles\Default User\Desktop"
-HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Personal",0x00020000,"%SystemDrive%\Profiles\Default User\My Documents"
+; VibeOS: every shell folder is named here, as userenv's InitializeProfiles writes them on an
+; install. Upstream lists only these four and leans on its Wine-11.16 shellpath.c defaults;
+; shell32-rust's shellpath still defaults to XP names ("Start Menu\Programs" under
+; ALLUSERSPROFILE), which would leave the start menu and quick launch empty here. They go in
+; the User Shell Folders keys because that is what shellpath READS; Shell Folders is only its
+; write-back copy.
+HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","{3D644C9B-1FB8-4f30-9B45-F670235F79C0}",0x00020000,"%SystemDrive%\Users\Public\Downloads"
+HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Common Desktop",0x00020000,"%SystemDrive%\Users\Public\Desktop"
+HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Common Documents",0x00020000,"%SystemDrive%\Users\Public\Documents"
+HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Common Templates",0x00020000,"%SystemDrive%\ProgramData\Microsoft\Windows\Templates"
+HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Common Start Menu",0x00020000,"%SystemDrive%\ProgramData\Microsoft\Windows\Start Menu"
+HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Common Programs",0x00020000,"%SystemDrive%\ProgramData\Microsoft\Windows\Start Menu\Programs"
+HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Common Startup",0x00020000,"%SystemDrive%\ProgramData\Microsoft\Windows\Start Menu\Programs\Startup"
+HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","CommonMusic",0x00020000,"%SystemDrive%\Users\Public\Music"
+HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","CommonPictures",0x00020000,"%SystemDrive%\Users\Public\Pictures"
+HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","CommonVideo",0x00020000,"%SystemDrive%\Users\Public\Videos"
+HKLM,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Common AppData",0x00020000,"%SystemDrive%\ProgramData"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","AppData",0x00020000,"%SystemDrive%\Users\Default\AppData\Roaming"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Desktop",0x00020000,"%SystemDrive%\Users\Default\Desktop"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","{374DE290-123F-4565-9164-39C4925E467B}",0x00020000,"%SystemDrive%\Users\Default\Downloads"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Favorites",0x00020000,"%SystemDrive%\Users\Default\Favorites"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Personal",0x00020000,"%SystemDrive%\Users\Default\Documents"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","My Music",0x00020000,"%SystemDrive%\Users\Default\Music"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","My Pictures",0x00020000,"%SystemDrive%\Users\Default\Pictures"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","My Video",0x00020000,"%SystemDrive%\Users\Default\Videos"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","NetHood",0x00020000,"%SystemDrive%\Users\Default\AppData\Roaming\Microsoft\Windows\Network Shortcuts"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","PrintHood",0x00020000,"%SystemDrive%\Users\Default\AppData\Roaming\Microsoft\Windows\Printer Shortcuts"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Recent",0x00020000,"%SystemDrive%\Users\Default\AppData\Roaming\Microsoft\Windows\Recent"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","SendTo",0x00020000,"%SystemDrive%\Users\Default\AppData\Roaming\Microsoft\Windows\SendTo"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","CD Burning",0x00020000,"%SystemDrive%\Users\Default\AppData\Roaming\Microsoft\Windows\Burn\Burn"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Templates",0x00020000,"%SystemDrive%\Users\Default\Templates"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Start Menu",0x00020000,"%SystemDrive%\Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Programs",0x00020000,"%SystemDrive%\Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu\Programs"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Administrative Tools",0x00020000,"%SystemDrive%\Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Administrative Tools"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Startup",0x00020000,"%SystemDrive%\Users\Default\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Local AppData",0x00020000,"%SystemDrive%\Users\Default\AppData\Local"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Cache",0x00020000,"%SystemDrive%\Users\Default\AppData\Local\Microsoft\Windows\INetCache"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","History",0x00020000,"%SystemDrive%\Users\Default\AppData\Local\Microsoft\Windows\History"
+HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Cookies",0x00020000,"%SystemDrive%\Users\Default\AppData\Local\Microsoft\Windows\INetCookies"
 
 ; ComDlg32
 HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\ComDlg32",,0x00000012
@@ -50,8 +86,10 @@ HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer","NoLogoff",0x
 HKCU,"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer","StartMenuLogoff",0x00010001,1
 
 ; User Profile environment variables
-HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","USERPROFILE",0x00020000,"%SystemDrive%\Profiles\Default User"
-HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","ALLUSERSPROFILE",0x00020000,"%SystemDrive%\Profiles\All Users"
+; VibeOS: upstream comments USERPROFILE out here; ours stays set, because hivesys.inf also
+; sets a system-wide USERPROFILE (for the installed Administrator) that would otherwise apply.
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","USERPROFILE",0x00020000,"%SystemDrive%\Users\Default"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","ALLUSERSPROFILE",0x00020000,"%SystemDrive%\ProgramData"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management","PagingFiles",0x00000000,""
 
 ; Font Substitution

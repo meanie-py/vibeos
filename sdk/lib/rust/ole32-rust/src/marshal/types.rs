@@ -325,10 +325,10 @@ pub const CHARS_IN_GUID: usize = 39;
 // interpolated; no_std/no_alloc). This keeps every error path visible.
 // ---------------------------------------------------------------------------
 macro_rules! TRACE {
-    ($($t:tt)*) => {{}};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 macro_rules! WARN {
-    ($($t:tt)*) => {{}};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 // ERR/FIXME reach the loud sink by SYMBOL (an extern decl is expanded at each
 // use site) so the macros work regardless of how the integrator lays out the

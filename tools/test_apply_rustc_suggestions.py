@@ -59,3 +59,26 @@ def test_a_deletion_at_line_end_leaves_no_trailing_space():
     src = b"    (x == 0) as i32 )\n"
     end = src.index(b")\n")
     assert a.apply_edits(src, [(end, end + 1, "")]) == b"    (x == 0) as i32\n"
+
+
+def test_an_unused_label_and_an_unnecessary_unsafe_are_derived_deletions():
+    src = b"    'outer: loop {\n        let x = unsafe { f() };\n    }\n"
+    lab = src.index(b"'outer")
+    uns = src.index(b"unsafe")
+    edits = [
+        a.derive(src, (lab, lab + 6, "\0unused_labels")),
+        a.derive(src, (uns, uns + 6, "\0unused_unsafe")),
+    ]
+    assert a.apply_edits(src, edits) == b"    loop {\n        let x = { f() };\n    }\n"
+    # The span holding anything else (a stale cache, a shifted file) yields no edit.
+    assert a.derive(src, (lab + 1, lab + 7, "\0unused_labels")) is None
+    assert a.derive(b"unsafe fn f() {}", (0, 6, "\0unused_unsafe")) is None
+
+
+def test_a_derived_lint_takes_its_primary_span():
+    d = {
+        "code": {"code": "unused_labels"},
+        "spans": [{"is_primary": True, "file_name": "x.rs", "byte_start": 4, "byte_end": 10}],
+        "children": [],
+    }
+    assert a._suggestions(d) == [("x.rs", (4, 10, "\0unused_labels"))]

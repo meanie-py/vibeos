@@ -215,6 +215,18 @@ mod Profile {
             Us(S - K),
             Us(B),
         );
+        let Cb = |c: &AtomicU64| c.load(Ordering::Relaxed);
+        let NC = Cb(&crate::callback::Profile::CALLS);
+        if NC != 0 {
+            crate::trace!(
+                "pid %u callback profile: %I64u callbacks; per callback in %I64u ns, guest %I64u ns, out %I64u ns",
+                (*NtCurrentTeb()).ClientId.UniqueProcess as usize as u32,
+                NC,
+                Ns(Cb(&crate::callback::Profile::IN), NC),
+                Ns(Cb(&crate::callback::Profile::GUEST), NC),
+                Ns(Cb(&crate::callback::Profile::OUT), NC),
+            );
+        }
         if N < ITEMISE_FROM {
             return;
         }

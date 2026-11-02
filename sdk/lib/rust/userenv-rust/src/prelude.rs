@@ -38,27 +38,9 @@ pub const CP_ACP: u32 = 0;
 // handleapi.h: `#define INVALID_HANDLE_VALUE ((HANDLE)-1)`.
 pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 
-// userenv resource IDs — dll/win32/userenv/resources.h (string-table + dialog control ids).
-// Used only to index the shell-folder tables / address dialog controls; values verbatim.
-pub const IDS_PROFILEPATH: u32 = 1;
-pub const IDS_APPDATA: u32 = 2;
-pub const IDS_DESKTOP: u32 = 3;
-pub const IDS_FAVORITES: u32 = 4;
-pub const IDS_MYDOCUMENTS: u32 = 5;
-pub const IDS_NETHOOD: u32 = 6;
-pub const IDS_PRINTHOOD: u32 = 7;
-pub const IDS_RECENT: u32 = 8;
-pub const IDS_SENDTO: u32 = 9;
-pub const IDS_TEMPLATES: u32 = 10;
-pub const IDS_STARTMENU: u32 = 11;
-pub const IDS_PROGRAMS: u32 = 12;
-pub const IDS_STARTUP: u32 = 13;
-pub const IDS_LOCALSETTINGS: u32 = 14;
-pub const IDS_LOCALAPPDATA: u32 = 15;
-pub const IDS_TEMP: u32 = 16;
-pub const IDS_CACHE: u32 = 17;
-pub const IDS_HISTORY: u32 = 18;
-pub const IDS_COOKIES: u32 = 19;
+// The userenv string table (resources.h IDS_PROFILEPATH..IDS_COOKIES) is gone since upstream
+// f0a83320d79: the Vista folder names are fixed in setup.rs's tables, not localized.
+
 // Dialog control ids (resources.h) — passed to GetDlgItem/SetDlgItemTextW as `int`.
 pub const IDC_TIMEOUT: i32 = 1004;
 pub const IDC_TIMEOUTSTATIC: i32 = 1005;

@@ -17,7 +17,7 @@ build_hint: "tools/payloads/regcapture/build.sh {arch}"
 binaries:
   - src: tools/payloads/regcapture/regcapture-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/regcapture.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/regcapture.exe
   # The capture reads the registration list from the image's own syssetup.inf, and the
   # curated arm64 ramdisk does not carry one. Same file everywhere, so staging it is harmless.
   - src: media/inf/syssetup.inf

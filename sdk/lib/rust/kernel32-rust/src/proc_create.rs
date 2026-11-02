@@ -149,7 +149,7 @@ pub unsafe extern "system" fn CreateProcessInternalW(
     let mut IoStatusBlock: IO_STATUS_BLOCK = core::mem::zeroed();
     let mut ClientId: CLIENT_ID = core::mem::zeroed();
     let NoWindow: ULONG;
-    let mut StackSize: ULONG;
+    let mut StackSize: SIZE_T;
     let mut ErrorCode: ULONG;
     let mut Flags: ULONG;
     let mut RegionSize: SIZE_T;
@@ -2061,11 +2061,13 @@ pub unsafe extern "system" fn CreateProcessInternalW(
             }
 
             /* Create the Thread's Stack */
-            StackSize = core::cmp::max(256u32 * 1024, ImageInformation.MaximumStackSize as ULONG);
+            // The C holds this in a ULONG, so a PE32+ stack reserve of 4 GiB or more was
+            // truncated before BaseCreateStack (a SIZE_T) ever saw it. Keep the full width.
+            StackSize = core::cmp::max(256 * 1024, ImageInformation.MaximumStackSize as SIZE_T);
             Status = BaseCreateStack(
                 ProcessHandle,
                 ImageInformation.CommittedStackSize,
-                StackSize as SIZE_T,
+                StackSize,
                 &mut InitialTeb,
             );
             if !NT_SUCCESS(Status) {

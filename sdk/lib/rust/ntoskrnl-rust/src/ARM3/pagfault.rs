@@ -1798,12 +1798,34 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
                 if !_goto_user_fault {
 
+                // The check-then-create below must exclude the process's other page-table
+                // writers, which all hold its working-set lock (the user fault path,
+                // MiResolveDemandZeroFault on a PDE, and the ROS page.rs mappers). It used to
+                // run with no lock at all, and MiMakeSystemAddressValid -- how
+                // MiMakePdeExistAndMakeValid gets here -- RELEASES the WS lock first. On -smp 2
+                // a WoW64 process (32-bit views and ARM3 private memory share page tables below
+                // 4G) then had a PDE go valid under a WS-locked fault (MiResolveDemandZeroFault's
+                // ASSERT, BUGCHECK 0xE0525354) or a second table installed over a live one.
+                // Taken only for a USER underlying VA, at <= APC_LEVEL, by a thread holding no
+                // WS lock: the kernel-VA case this branch was written for (callers that already
+                // hold a WS lock, e.g. MiBuildPfnDatabase) keeps the old path. The self-map is
+                // the current, possibly attached, address space, hence PsGetCurrentProcess.
+                let ws_thread = PsGetCurrentThread();
+                let ws_process = PsGetCurrentProcess() as PEPROCESS;
+                let ws_taken = (UnderlyingVa as ULONG_PTR) < (MmSystemRangeStart as ULONG_PTR)
+                    && KeGetCurrentIrql() <= APC_LEVEL as KIRQL
+                    && crate::shim_exports::MM_ANY_WS_LOCK_HELD(ws_thread as _) == 0;
+                if ws_taken {
+                    MiLockProcessWorkingSet(ws_process, ws_thread);
+                }
+
                 UserPxe = MiAddressToPxe(UnderlyingVa);
                 if ((*UserPxe).valid() as usize) == 0 {
                     PfnIrql = MiAcquirePfnLock();
                     NewPage = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
                     if NewPage == 0 {
                         MiReleasePfnLock(PfnIrql);
+                        if ws_taken { MiUnlockProcessWorkingSet(ws_process, ws_thread); }
                         return STATUS_NO_MEMORY;
                     }
                     MiInitializePfn(NewPage as _, UserPxe as *mut _MMPTE, 1);
@@ -1831,6 +1853,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                     NewPage = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
                     if NewPage == 0 {
                         MiReleasePfnLock(PfnIrql);
+                        if ws_taken { MiUnlockProcessWorkingSet(ws_process, ws_thread); }
                         return STATUS_NO_MEMORY;
                     }
                     MiInitializePfn(NewPage as _, UserPpe as *mut _MMPTE, 1);
@@ -1861,6 +1884,7 @@ pub unsafe extern "system" fn MmArmAccessFault(
                         NewPage = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
                         if NewPage == 0 {
                             MiReleasePfnLock(PfnIrql);
+                            if ws_taken { MiUnlockProcessWorkingSet(ws_process, ws_thread); }
                             return STATUS_NO_MEMORY;
                         }
                         MiInitializePfn(NewPage as _, UserPde as *mut _MMPTE, 1);
@@ -1885,6 +1909,9 @@ pub unsafe extern "system" fn MmArmAccessFault(
                     }
                 }
 
+                if ws_taken {
+                    MiUnlockProcessWorkingSet(ws_process, ws_thread);
+                }
                 return STATUS_SUCCESS;
             }
         }
@@ -2445,10 +2472,18 @@ pub unsafe extern "system" fn MmArmAccessFault(
         if (ProtectionCode & MM_PROTECT_SPECIAL) == MM_GUARDPAGE {
             ASSERT!(ProtectionCode != MM_DECOMMIT);
 
+            // DIVERGES from the C, which asserts ProtoPte == NULL here (it never supported a
+            // guard page inside a section view) and writes a plain soft PTE. In a view that drops
+            // the prototype linkage: the next touch demand-zeroed and the view read zeros instead
+            // of the file (kmtest ZwMapViewOfSection maps PAGE_GUARD|PAGE_READWRITE and touches it
+            // twice). Keep the view's linkage -- a lookup-needed prototype PTE -- with the guard
+            // consumed; the lookup-needed re-fault below honours that PTE's own protection.
+            if !ProtoPte.is_null() {
+                TempPte = MMPTE { Long: PrototypePte as ULONG_PTR };
+            }
             TempPte.set_soft_protection(((ProtectionCode & !MM_GUARDPAGE) as u32) as ULONG);
             MI_WRITE_INVALID_PTE(PointerPte, TempPte);
 
-            ASSERT!(ProtoPte.is_null());
             // ASSERT: elided bitfield check (always true with & 0 == 0)
 
             MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
@@ -2539,7 +2574,15 @@ pub unsafe extern "system" fn MmArmAccessFault(
         ProtectionCode = TempPte.soft_protection() as ULONG;
         if (TempPte.prototype() as usize) != 0 {
             if TempPte.soft_page_file_high() == MI_PTE_LOOKUP_NEEDED {
+                // A lookup-needed prototype PTE carries the page's protection (the first fault
+                // above wrote it from the VAD); the C overwrote it with the VAD's again, which
+                // re-armed a consumed PAGE_GUARD forever. Keep the PTE's, unless the address is
+                // no longer in a view at all.
+                let pte_protection = ProtectionCode;
                 ProtoPte = MiCheckVirtualAddress(Address, &mut ProtectionCode, &mut Vad);
+                if !ProtoPte.is_null() && pte_protection != 0 && ProtectionCode != MM_NOACCESS {
+                    ProtectionCode = pte_protection;
+                }
                 if ProtoPte.is_null() {
                     ASSERT!(KeGetCurrentIrql() <= APC_LEVEL);
                     MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);

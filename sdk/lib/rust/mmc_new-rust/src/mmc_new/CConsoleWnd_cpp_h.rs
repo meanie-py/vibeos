@@ -968,25 +968,25 @@ impl CConsoleWnd {
     }
     pub unsafe fn SetHeader(&mut self, pHeader: LPHEADERCTRL) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"SetHeader\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn SetToolbar(&mut self, pToolbar: LPTOOLBAR) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"SetToolbar\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn QueryResultView(&mut self, pUnknown: *mut LPUNKNOWN) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"QueryResultView\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn QueryScopeImageList(&mut self, ppImageList: *mut LPIMAGELIST) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s(%p)\n", __FUNCTION__);
+        DPRINT!("%s(%p)\n", b"QueryScopeImageList\0".as_ptr() as *const i8);
         if ppImageList.is_null() {
             return E_INVALIDARG;
         }
@@ -997,109 +997,109 @@ impl CConsoleWnd {
     }
     pub unsafe fn QueryResultImageList(&mut self, ppImageList: *mut LPIMAGELIST) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"QueryResultImageList\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn UpdateAllViews(&mut self, lpDataObject: LPDATAOBJECT, data: LPARAM, hint: LONG_PTR) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"UpdateAllViews\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn QueryConsoleVerb(&mut self, ppConsoleVerb: *mut LPCONSOLEVERB) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"QueryConsoleVerb\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn SelectScopeItem(&mut self, hScopeItem: HSCOPEITEM) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"SelectScopeItem\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn GetMainWindow(&mut self, phwnd: *mut HWND) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"GetMainWindow\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn NewWindow(&mut self, hScopeItem: HSCOPEITEM, lOptions: ULONG) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"NewWindow\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn Expand__0(&mut self, hItem: HSCOPEITEM, bExpand: BOOL) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"Expand\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn IsTaskpadViewPreferred(&mut self) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"IsTaskpadViewPreferred\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn SetStatusText(&mut self, pszStatusText: LPWSTR) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"SetStatusText\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn InsertItem(&mut self, item: LPSCOPEDATAITEM) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"InsertItem\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn DeleteItem(&mut self, hItem: HSCOPEITEM, fDeleteThis: LONG) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"DeleteItem\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn SetItem(&mut self, item: LPSCOPEDATAITEM) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"SetItem\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn GetItem(&mut self, item: LPSCOPEDATAITEM) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"GetItem\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn GetChildItem(&mut self, item: HSCOPEITEM, pItemChild: *mut HSCOPEITEM, plCookie: *mut LONG) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"GetChildItem\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn GetNextItem(&mut self, item: HSCOPEITEM, pItemNext: *mut HSCOPEITEM, plCookie: *mut LONG) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"GetNextItem\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn GetParentItem(&mut self, item: HSCOPEITEM, pItemParent: *mut HSCOPEITEM, plCookie: *mut LONG) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"GetParentItem\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn Expand__1(&mut self, hItem: HSCOPEITEM) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"Expand\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
     pub unsafe fn AddExtension(&mut self, hItem: HSCOPEITEM, lpClsid: LPCLSID) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"AddExtension\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }
@@ -1110,7 +1110,7 @@ impl CConsoleWnd {
 impl CConsoleWnd {
     pub unsafe fn MessageBoxW(&mut self, lpszText: LPCWSTR, lpszTitle: LPCWSTR, fuStyle: UINT, piRetval: *mut c_int) -> HRESULT {
         let this_: *mut Self = self;
-        DPRINT!("%s()\n", __FUNCTION__);
+        DPRINT!("%s()\n", b"MessageBox\0".as_ptr() as *const i8);
         __debugbreak();
         return E_NOTIMPL;
     }

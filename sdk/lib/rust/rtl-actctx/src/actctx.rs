@@ -2364,10 +2364,9 @@ unsafe fn parse_requested_execution_level_elem(
 ) {
     const levelW: [WCHAR; 6] = [b'l' as WCHAR, b'e' as WCHAR, b'v' as WCHAR, b'e' as WCHAR, b'l' as WCHAR, 0];
     const asInvokerW: [WCHAR; 10] = [b'a' as WCHAR, b's' as WCHAR, b'I' as WCHAR, b'n' as WCHAR, b'v' as WCHAR, b'o' as WCHAR, b'k' as WCHAR, b'e' as WCHAR, b'r' as WCHAR, 0];
-    const requireAdministratorW: [WCHAR; 19] = [b'r' as WCHAR, b'e' as WCHAR, b'q' as WCHAR, b'u' as WCHAR, b'i' as WCHAR, b'r' as WCHAR, b'e' as WCHAR, b'A' as WCHAR, b'd' as WCHAR, b'm' as WCHAR, b'i' as WCHAR, b'n' as WCHAR, b'i' as WCHAR, b's' as WCHAR, b't' as WCHAR, b'r' as WCHAR, b'a' as WCHAR, b't' as WCHAR, b'o' as WCHAR];
-    const requireAdministratorW2: [WCHAR; 20] = [b'r' as WCHAR, b'e' as WCHAR, b'q' as WCHAR, b'u' as WCHAR, b'i' as WCHAR, b'r' as WCHAR, b'e' as WCHAR, b'A' as WCHAR, b'd' as WCHAR, b'm' as WCHAR, b'i' as WCHAR, b'n' as WCHAR, b'i' as WCHAR, b's' as WCHAR, b't' as WCHAR, b'r' as WCHAR, b'a' as WCHAR, b't' as WCHAR, b'o' as WCHAR, b'r' as WCHAR];
     const requireAdministratorWfull: [WCHAR; 21] = [b'r' as WCHAR, b'e' as WCHAR, b'q' as WCHAR, b'u' as WCHAR, b'i' as WCHAR, b'r' as WCHAR, b'e' as WCHAR, b'A' as WCHAR, b'd' as WCHAR, b'm' as WCHAR, b'i' as WCHAR, b'n' as WCHAR, b'i' as WCHAR, b's' as WCHAR, b't' as WCHAR, b'r' as WCHAR, b'a' as WCHAR, b't' as WCHAR, b'o' as WCHAR, b'r' as WCHAR, 0];
-    const highestAvailableW: [WCHAR; 16] = [b'h' as WCHAR, b'i' as WCHAR, b'g' as WCHAR, b'h' as WCHAR, b'e' as WCHAR, b's' as WCHAR, b't' as WCHAR, b'A' as WCHAR, b'v' as WCHAR, b'a' as WCHAR, b'i' as WCHAR, b'l' as WCHAR, b'a' as WCHAR, b'b' as WCHAR, b'l' as WCHAR, 0];
+    // The "...Wfull" spellings are the complete NUL-terminated literals; three truncated
+    // copies beside them (no NUL, a letter short) were dead and are gone.
     const highestAvailableWfull: [WCHAR; 17] = [b'h' as WCHAR, b'i' as WCHAR, b'g' as WCHAR, b'h' as WCHAR, b'e' as WCHAR, b's' as WCHAR, b't' as WCHAR, b'A' as WCHAR, b'v' as WCHAR, b'a' as WCHAR, b'i' as WCHAR, b'l' as WCHAR, b'a' as WCHAR, b'b' as WCHAR, b'l' as WCHAR, b'e' as WCHAR, 0];
     const uiAccessW: [WCHAR; 9] = [b'u' as WCHAR, b'i' as WCHAR, b'A' as WCHAR, b'c' as WCHAR, b'c' as WCHAR, b'e' as WCHAR, b's' as WCHAR, b's' as WCHAR, 0];
     const falseW: [WCHAR; 6] = [b'f' as WCHAR, b'a' as WCHAR, b'l' as WCHAR, b's' as WCHAR, b'e' as WCHAR, 0];

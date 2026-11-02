@@ -132,7 +132,7 @@ pub fn NT_VERIFY<T>(expr: T) -> T {
 // avoids any link symbol. #[macro_use] on `mod glue` puts it in scope crate-wide.
 #[macro_export]
 macro_rules! AFD_DbgPrint {
-    ($($arg:tt)*) => {{}};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 
 // --- debug trace levels (debug.h) ------------------------------------------

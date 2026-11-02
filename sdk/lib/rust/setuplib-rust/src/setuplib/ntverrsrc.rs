@@ -166,7 +166,7 @@ pub unsafe extern "C" fn NtVerQueryValue(
 
     DPRINT!(
         b"%s (%p, %S, %p, %p)\n\0".as_ptr() as *const i8,
-        __FUNCTION__,
+        b"NtVerQueryValue\0".as_ptr() as *const i8,
         pBlock,
         lpSubBlock,
         lplpBuffer,

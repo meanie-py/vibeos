@@ -710,7 +710,7 @@ pub unsafe extern "C" fn NSP_GetServiceByNameHeapAllocW(
 
     if (*data).hostnameW.is_null() {
         res = WSANO_RECOVERY as INT;
-        'End: {
+        {
             if !nameA.is_null() {
                 HeapFree(hHeap, 0, nameA as LPVOID);
             }
@@ -727,7 +727,7 @@ pub unsafe extern "C" fn NSP_GetServiceByNameHeapAllocW(
     nameProtoA = strchr(nameA, b'/' as i32);
     if nameProtoA.is_null() {
         res = WSANO_RECOVERY as INT;
-        'End: {
+        {
             if !nameA.is_null() {
                 HeapFree(hHeap, 0, nameA as LPVOID);
             }

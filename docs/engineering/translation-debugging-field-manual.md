@@ -1873,8 +1873,12 @@ false positive — the translator mirrors the C control flow, so the two frees l
 mutually-exclusive `match` arms, on either side of a `break 'switch`/`continue 'retry`, or the
 "use after free" is a pointer-*value* compare evaluated before the free. classpnp's
 `ClassDeviceControl` alone threw 52 such false hits. The blanket `macro_rules!`-that-nulls
-migration was considered and rejected: ~100 call sites would need the `FREE_POOL!` form, cast
-stripping, and assignable lvalues, to fix zero live bugs. Audit per site; don't migrate.
+migration was considered and rejected then as fixing zero live bugs -- **and that audit had a
+blind spot: a freed FIELD.** A per-fn same-pointer scan cannot see a struct field left dangling
+for someone else to find later. cdrom's `DeviceInitializeGesn` frees `info->Gesn.Buffer` on a
+failed GESN probe and the caller then asserts it is NULL (2026-11-01, live once cdrom was armed).
+MIGRATED the same day: `FREE_POOL!` frees through the crate's fn and nulls the place, 121 sites
+in cdrom/classpnp/disk (casts stripped, 14 bindings made `mut`, one ULONG_PTR field written out).
 
 ### NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust `[§9.65]`
 **It cannot be done correctly.** LLVM folds any byte-copy loop back into a call to the function
@@ -2314,6 +2318,17 @@ Three kinds of divergence hide in that, and they are not equally serious:
   wrong pointer type, and 44 parameters the translator had renamed `_riid`, `_This` — because
   with every use swallowed, they really did look unused. A `$($t:tt)*` debug macro is a dropped
   print AND an unchecked expression; use the shared crate.
+  **Channels that stay OFF still check their arguments.** TRACE/WARN, DPRINT, ATLTRACE and the
+  others forward to `win32macros_rust::DBG_TYPECHECK!`, or winedebug-rust's twin of it. It puts
+  `let _ = arg;` in a closure that is never called: names resolve and types check, but nothing is
+  evaluated or codegened, so a debug helper that is declared and never linked still links.
+  `let _ = place` never borrows, so packed fields work. 337 swallowing definitions in 290 files were
+  converted on 2026-11-01. They had hidden 413 errors in 38 crates: about 160 parameters renamed
+  `_x`, 30 `__FUNCTION__` (now the C name as a literal), stale bindgen field paths, ole32's
+  `c_void` `debugstr_*` stubs, and a `debugstr_wn` missing its length. One finding was in the C
+  itself: beepmidi.c calls `CallClient(.., MOM_OPEN, ..)` inside a DPRINT, so with NDEBUG the
+  client is never told. `scan_swallowing_debug_macro` gates the form, and profile_derive emits the
+  checking DPRINT.
 - **The module's own header redefines the macro, and the port took the SDK's spelling.**
   `winddi.h:2816` says `FLOATOBJ_GetFloat(pf)` is `(*(PULONG)(pf))` (the bits, for an i386
   kernel where `FLOATL` is `DWORD`); `win32ss/pch.h:90` redefines it as `(*(pf))` for win32k.
@@ -2641,6 +2656,11 @@ found 9 real divergences, and most cut a wide operand down before the compare:
 range a 0-byte chunk and spins forever; freeldr's ATAPI `min(len as u16, 0xFFFE)` sends a byte
 count of 0 for a 64 KiB read; atapi's `ATA_LOCAL_BUFFER_SIZE as u8` is 572 → 60. Rule: compare
 at the width the C compares at, THEN narrow the result: `min(a, b as T_wide) as T_narrow`.
+`scan_minmax_narrowing` (`vibeos-cli check`, baseline empty) now gates the narrowing shape where
+it can see the operand's declared width (locals, params, struct fields); `scan_const_narrowing_cast`
+gates the constant case, including the parenthesized `(NAME) as u8` that hid atapi's. Sign flips
+(rebar, the winpos and tui pair) are NOT linted: they need C types, so `-Wsign-compare` on the
+oracle stays the tool for those.
 
 ### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
 **Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a
@@ -9585,6 +9605,13 @@ guarantees** — `copy` and `copy_if_different` differ precisely on whether mtim
   gate.
 - **`#[no_mangle] pub static mut` in a shared lib gives each consumer a PRIVATE data copy.**
 - **A dual-archive cohab runs STALE Rust** when the consumer's DEPENDS list doesn't mirror it.
+- **A `[profile]` edit in `sdk/lib/rust/Cargo.toml` rebuilt only the crates whose sources also
+  changed.** `rust_crate_sources` (the storage/driver `.a` edges) listed each crate's own
+  manifest but not the workspace one that holds `[profile.release.package.*]`: disarming
+  cdrom-rust's `debug-assertions` left cdrom.sys armed on a green warm build, its asserts
+  firing. It now depends on the workspace `Cargo.toml` and `.cargo/config.toml`, as
+  `add_cargo_module` cells already did (`Cargo.lock` stays an explicit caller edge). Settle a doubt with the crate's
+  `.fingerprint/<crate>-*/lib-*.json` `profile` hash and the `.a` mtime.
 - **Editing a kernel C shim silently ships the stale object** (no `rerun-if-changed`).
 - **Smoke "green ×3" lies when conftest nukes only `rust-kernel-target`** (there are five).
 - **New trace points produce nothing in serial** → stale `livecd.iso`.
@@ -9743,6 +9770,16 @@ almost certainly exists, verify the SEARCH before you conclude anything about th
 Same family as `$?` after a pipe and `sccache -s` reporting another server: a reading about
 a reading. Two agents hit this file on the same night; one lost a minute, the other lost a
 conclusion.
+
+### A C-twin rule that finds nothing may not be seeing the C function at all
+Symptom: a rule pairing Rust functions with their C twins (`twins::CIndex`) reports nothing for
+a function you KNOW differs. Cause: `defined_names` scans for definitions with a brace counter
+and stopped at the first body whose braces do not match -- and a C body that balances its
+braces only per `#if`/`#else` arm (fastfat read.c's `FatCommonRead`) never matches, so every
+function after it in the file was invisible to every C-twin rule. Fix (2026-11-02): definitions
+are located in a first-branch-only blanking (`blank_c_first_branch`), and each body is then cut
+from the full text at the same offsets, so rules still see every arm. Check a silent rule
+against a known-bad case on the real tree before believing it.
 
 ### A self-consistent pair of DERIVED values cannot detect its own staleness
 
@@ -10600,6 +10637,42 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   same word (`AtomicUsize::from_ptr(..).swap`, `&*(p as *const AtomicI32)`) did NOT panic and
   need no change on x86: they lower to `lock`-prefixed instructions, which take any alignment,
   and rustc's misaligned-deref check skips borrows. Only plain loads and stores trip it.
+- **A caller's buffer the API aligns to ULONG only** (2026-11-01, cdfs/fastfat).
+  `NtQueryDirectoryFile` probes `FileInformation` with `sizeof(ULONG)`, a WoW64 caller's buffer
+  is 4-aligned, and `FILE_*_DIR_INFORMATION` is 8-aligned: every typed field store into the
+  entry is a misaligned deref (fastfat even formed `&mut` to it). Fix: fill an aligned local
+  copy of the fixed part and store its bytes; fields written later go through `addr_of_mut!` +
+  `write_unaligned`. Any FSD output into a USER buffer has this shape; SystemBuffer is aligned.
+- **A packed on-disk record.** FAT's LFN dirent puts `Name1` at byte 1, so a WCHAR-typed
+  `copy_nonoverlapping` of it is misaligned. Copy bytes, as the C's `RtlCopyMemory` does.
+- **A real overlap.** classpnp's `RtlMoveMemory` of READ_CAPACITY_DATA one ULONG up inside its
+  own _EX had become `copy_nonoverlapping` -- memcpy on overlapping ranges, a genuine bug on
+  every arch. `scan_move_vs_nonoverlapping` now pairs each Rust fn with its C twin's moves.
+- **A cache-aligned type inside a device extension.** On 64-bit `COMMON_DEVICE_EXTENSION` embeds
+  a `LOOKASIDE_ALIGN` lookaside, so classpnp's extension types are 64/128-aligned while the C's
+  `IoCreateDevice` gave 16. Do NOT move the extension off `DeviceObject + 1` to align it: KMDF
+  (`vendor/wdf/shared/core/fxdevice.cpp`) finds its WDM extension by that arithmetic and asserts
+  it. `ObpAllocateObject` instead carves the pool block so `DeviceObject + 1` is on a cache line,
+  and the pool honours `*CacheAligned` pool types (classpnp's `PNL_SLIST_HEADER` array).
+- **What the alignment checks found once they could run:** six classpnp sites cast the
+  `DEVICE_OBJECT` to the FDO extension (`DeviceObject as *mut FUNCTIONAL_DEVICE_EXTENSION` for
+  the C's `DeviceObject->DeviceExtension`), writing a spinlock and flags into the device object.
+  `scan_devobj_as_extension` now gates the class at zero.
+- **A negated assert, dormant until armed.** fastfat's `FatCommonRead` asserted
+  `!(cur != VerifyThread || Status != VERIFY_REQUIRED)` for the C's un-negated condition, so it
+  fired on every I/O error (an empty CD drive). `scan_assert_negated_vs_c` compares each
+  `ASSERT!`/`NT_ASSERT!` with its C twin's.
+Arming also changes what a FAILED assert does: `nt_assert!` was `debug_assert!`, a panic and a
+halt where the C's DBG `ASSERT` prints and continues. It now reports through `RtlAssert` (still
+`cfg!(debug_assertions)`-gated, evaluated in the calling crate). ntoskrnl-rust's own `ASSERT!` was the
+same `debug_assert!` and followed on 2026-11-02, after kmtest's ZwMapViewOfSection guard-page
+view bugchecked on pagfault.rs's `ASSERT(ProtoPte == NULL)`, which the C prints and then handles
+as a guard-page violation. A printed ntoskrnl assert must not boot green, so the harness keeps
+the old verdict: smoke classifies `*** ASSERT FAILED: ... at ntoskrnl-rust/` as `KERNEL_ASSERT`,
+a payload that passes with one fails its stage, and conformance files the round `A:kernel-assert`
+and turns `--gate` red (`triage.kernel_asserts`). Its first two fires were real
+bugs: fastfat's `FatNoOpAcquire` set top-level IRP 1 for the C's `FSRTL_CACHE_TOP_LEVEL_IRP`
+(2), and an empty `DbgDoit!` dropped the increment a `cfg(debug_assertions)` decrement paired.
 Triage tip: the i386 HAL loads as `halmp.dll` under the harness label `hal.dll`, and its panic
 text can print garbled; P4 of the `0xE0525354` bugcheck is still the source line.
 
@@ -14200,6 +14273,12 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   instruction bytes.
   > **"Flaky" + byte-identical registers on every hit = a DETERMINISTIC bug on a rarely-taken
   > path.** Hunt for why the path is rare, not for a race.
+
+  EC **0x01** is the same class for WFx: `Instr=0xD503205F` is `wfe`. FEXCore's SpinWaitLock
+  waits on a contended lock with `ldaxr; wfe`, so with SCTLR_EL1.nTWE clear any FEX lock that
+  contends kills the app. On 2026-11-01 that took out taskmgr, osk, devmgmt, rapps and iexplore
+  on appstorm64 (`WritePriorityMutex::lock_shared`). Windows and Linux both let EL0 run WFE, and
+  `KiSystemStartup` now sets nTWE. WFI still traps.
 - **A silent arm64 Rust panic looks like an opaque boot hang** — sample `$pc`; it parks in
   `rust_begin_unwind`. Also: `RtlCreateAtomTable` divided by zero on `NumberOfBuckets == 0`.
 - **arm64-only deadlock from UB**: `&immutable_local as *const T as *mut T` on an in/out FFI

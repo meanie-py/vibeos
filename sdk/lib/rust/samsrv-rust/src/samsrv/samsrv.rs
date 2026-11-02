@@ -74,7 +74,7 @@ pub unsafe extern "system" fn SamIConnect(
 
     TRACE!(
         b"SamIConnect(%p %p %lx %ld)\n\0".as_ptr() as LPSTR,
-        ServerName,
+        _ServerName,
         ServerHandle,
         DesiredAccess,
         Trusted as i32,

@@ -393,9 +393,9 @@ pub unsafe fn FmtGetNull(x: *const FMT_HEADER) -> u8 {
 // translated format casts are spelled with (winnt.h's `typedef CHAR *PCHAR`).
 pub type PCHAR = *mut core::ffi::c_char;
 #[macro_export]
-macro_rules! TRACE { ($($t:tt)*) => {{}} }
+macro_rules! TRACE { ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) } }
 #[macro_export]
-macro_rules! WARN { ($($t:tt)*) => {{}} }
+macro_rules! WARN { ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) } }
 #[macro_export]
 macro_rules! ERR { ($($t:tt)*) => { ::winedebug_rust::ERR!($($t)*) } }
 #[macro_export]

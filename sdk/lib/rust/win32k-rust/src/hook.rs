@@ -234,7 +234,7 @@ pub unsafe extern "C" fn IntLoadHookModule(iHookID: core::ffi::c_int, hHook: HHO
 
     ppi = PsGetCurrentProcessWin32Process() as PPROCESSINFO;
 
-    TRACE!(b"IntLoadHookModule. Client PID: %p\n\0".as_ptr() as *const core::ffi::c_char, PsGetProcessId(ppi_eprocess(ppi) as _));
+    TRACE!(b"IntLoadHookModule. Client PID: %p\n\0".as_ptr() as *const core::ffi::c_char, ntkrnl_sys::ddk::PsGetProcessId(ppi_eprocess(ppi) as _));
 
     if iHookID == WH_APIHOOK as core::ffi::c_int {
         if Unload == 0 && ((*ppi_w32pf_flags(ppi)) & W32PF_APIHOOKLOADED) == 0 {
@@ -292,7 +292,7 @@ unsafe fn IntHookModuleUnloaded(pdesk: PDESKTOP, iHookID: core::ffi::c_int, hHoo
                 TRACE!(
                     b"IntHookModuleUnloaded: sending message to PID %p, ppi=%p\n\0".as_ptr()
                         as *const core::ffi::c_char,
-                    PsGetProcessId(ppi_eprocess((*ptiCurrent).ppi) as _),
+                    ntkrnl_sys::ddk::PsGetProcessId(ppi_eprocess((*ptiCurrent).ppi) as _),
                     (*ptiCurrent).ppi,
                 );
                 co_MsqSendMessageAsync(
@@ -424,7 +424,7 @@ pub unsafe extern "fastcall" fn UserUnregisterUserApiHook() -> BOOL {
 
     TRACE!(
         b"UserUnregisterUserApiHook. Server PID: %p\n\0".as_ptr() as *const core::ffi::c_char,
-        PsGetProcessId(ppi_eprocess((*pti).ppi) as _),
+        ntkrnl_sys::ddk::PsGetProcessId(ppi_eprocess((*pti).ppi) as _),
     );
 
     (*gpsi).dwSRVIFlags &= !SRVINFO_APIHOOK;
@@ -452,7 +452,7 @@ pub unsafe extern "C" fn UserUnregisterUserApiHook() -> BOOL {
 
     TRACE!(
         b"UserUnregisterUserApiHook. Server PID: %p\n\0".as_ptr() as *const core::ffi::c_char,
-        PsGetProcessId(ppi_eprocess((*pti).ppi) as _),
+        ntkrnl_sys::ddk::PsGetProcessId(ppi_eprocess((*pti).ppi) as _),
     );
 
     (*gpsi).dwSRVIFlags &= !SRVINFO_APIHOOK;

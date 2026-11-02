@@ -18,10 +18,10 @@ use super::sys::*;
 // local debug-print macros (same convention as typelib.rs). TRACE!/WARN!
 // compile out; ERR!/FIXME! -> OutputDebugStringA.
 macro_rules! TRACE {
-    ($($t:tt)*) => {{}};
+    ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) };
 }
 macro_rules! WARN {
-    ($($t:tt)*) => {{}};
+    ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) };
 }
 // NOTE: paths in macro bodies resolve at the EXPANSION site — all users are
 // `typelib/*.rs` siblings (same module depth), so the relative path holds.

@@ -289,9 +289,17 @@ pub unsafe extern "system" fn KiSystemStartup(
     // maintenance on the common flush path, so `dc cvau` executed maybe once
     // per boot. UCI (bit 26) + UCT (bit 15) + DZE (bit 14). fexprobe.exe
     // executes all three ops every boot as the deterministic tripwire.
+    //
+    // nTWE (bit 18) too: EL0 WFE is legal on Windows and Linux, and FEXCore's
+    // SpinWaitLock waits with `ldaxr; wfe` whenever a lock is contended. With
+    // nTWE clear, a WFE that would sleep traps as EC=0x01 and dies as
+    // STATUS_ILLEGAL_INSTRUCTION, which killed taskmgr, osk, devmgmt, rapps and
+    // iexplore under FEX in WritePriorityMutex::lock_shared (2026-11-01).
+    // WFI stays trapped (nTWI clear): user mode has no business idling a core.
     core::arch::asm!(
         "mrs {tmp}, sctlr_el1",
         "orr {tmp}, {tmp}, #0x04000000", // UCI
+        "orr {tmp}, {tmp}, #0x40000",    // nTWE
         "orr {tmp}, {tmp}, #0xC000",     // UCT | DZE
         "msr sctlr_el1, {tmp}",
         "isb",

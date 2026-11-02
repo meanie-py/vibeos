@@ -19,7 +19,7 @@ build_hint: "SHELLTAIL_BASE=<baseline checkout> tools/payloads/shelltail/build.s
 binaries:
   - src: tools/payloads/shelltail/shelltail-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/shelltail.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/shelltail.exe
   - src: tools/payloads/shelltail/shelltail-base-{arch}.dll
     dest: system32/shelltail-base.dll
 

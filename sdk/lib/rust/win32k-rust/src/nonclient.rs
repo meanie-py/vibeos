@@ -2174,7 +2174,7 @@ pub unsafe extern "C" fn NC_HandleNCRButtonDown(pwnd: PWND, wParam: WPARAM, lPar
                 IntReleaseCapture();
 
                 if hittest == HTCAPTION as INT || hittest == HTSYSMENU as INT || hittest == HTHSCROLL as INT || hittest == HTVSCROLL as INT {
-                    TRACE!(b"Msg pt %x and Msg.lParam %x and lParam %x\n\0".as_ptr() as *const i8, MAKELONG(msg.pt.x as _, msg.pt.y as _), msg.lParam, lParam);
+                    TRACE!(b"Msg pt %x and Msg.lParam %x and lParam %x\n\0".as_ptr() as *const i8, MAKELONG(msg.pt.x as WORD, msg.pt.y as WORD), msg.lParam, lParam);
                     co_IntSendMessage(UserHMGetHandle(pwnd), WM_CONTEXTMENU, UserHMGetHandle(pwnd) as WPARAM, MAKELONG(msg.pt.x as u16, msg.pt.y as u16) as LPARAM);
                 }
             }

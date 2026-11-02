@@ -19,9 +19,9 @@ pub static mut isSpain: i32 = 0;
 
 #[no_mangle]
 pub static mut GroupingFormats: [GROUPINGDATA; MAX_GROUPINGFORMATS] = [
-    GROUPINGDATA { nInteger: 0, pszString: unsafe { w!("0;0") as PWSTR } },
-    GROUPINGDATA { nInteger: 3, pszString: unsafe { w!("3;0") as PWSTR } },
-    GROUPINGDATA { nInteger: 32, pszString: unsafe { w!("3;2;0") as PWSTR } },
+    GROUPINGDATA { nInteger: 0, pszString: { w!("0;0") as PWSTR } },
+    GROUPINGDATA { nInteger: 3, pszString: { w!("3;0") as PWSTR } },
+    GROUPINGDATA { nInteger: 32, pszString: { w!("3;2;0") as PWSTR } },
 ];
 unsafe extern "system" fn GeneralPropertyPageLocalesEnumProc(lpLocale: LPTSTR) -> i32 {
     let mut lcid: LCID;

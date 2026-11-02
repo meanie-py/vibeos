@@ -33,6 +33,7 @@ _LIVE = {
     # Native generator tests inspect local tools or mutable compiler artifacts.
     "pytest:tools/test_gen_ctype_tables.py",
     "pytest:tools/test_compiler_codegen.py",
+    "pytest:tools/test_marshal_codegen.py",
     "pytest:tools/wow64gen/test_wow64gen.py",
     "pytest:tools/test_verify_ucrtbase_cohab.py",
     "pytest:tools/test_tooling_receipts.py",

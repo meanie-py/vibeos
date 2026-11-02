@@ -1,4 +1,5 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
+use crate::stats::CollectReadStats;
 use ntkrnl_sys::globals::*;
 // One declaration per external symbol: externs.rs.
 use crate::externs::CanFsdWait;
@@ -81,7 +82,6 @@ extern "system" {
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatQuickVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatWaitSync(IrpContext: *mut IRP_CONTEXT);
-    fn CollectReadStats(Vcb: *mut VCB, OpenType: TYPE_OF_OPEN, ByteCount: ULONG);
     fn CcCopyReadEx(FileObject: *mut FILE_OBJECT, FileOffset: *mut LARGE_INTEGER, Length: ULONG, Wait: BOOLEAN, Buffer: *mut core::ffi::c_void, IoStatus: *mut _IO_STATUS_BLOCK, Thread: *mut _ETHREAD) -> BOOLEAN;
     fn FatPagingFileIo(Irp: PIRP, Fcb: *mut FCB);
 // BOOLEAN fn NodeType(ptr: *mut core::ffi::c_void) -> u16;
@@ -587,7 +587,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 
         Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
         if !NT_SUCCESS(Status) {
-            NT_ASSERT!((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || Status != STATUS_VERIFY_REQUIRED)) as i32);
+            NT_ASSERT!((KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || Status != STATUS_VERIFY_REQUIRED) as i32);
             FatNormalizeAndRaiseStatus(IrpContext, Status);
         }
 
@@ -781,7 +781,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 
                             (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
                             if !NT_SUCCESS(*p_status) {
-                                NT_ASSERT!((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED)) as i32);
+                                NT_ASSERT!((KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED) as i32);
                                 FatNormalizeAndRaiseStatus(IrpContext, *p_status);
                             } else {
                                 NT_ASSERT!(((*(*p_irp)).IoStatus.Information == BytesToRead as _) as i32);
@@ -890,7 +890,7 @@ pub unsafe extern "system" fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *
 
                         (*p_status) = (*(*p_irp)).IoStatus.__bindgen_anon_1.Status;
                         if !NT_SUCCESS(*p_status) {
-                            NT_ASSERT!((!(KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED)) as i32);
+                            NT_ASSERT!((KeGetCurrentThread() as *mut core::ffi::c_void != (*Vcb).VerifyThread as *mut core::ffi::c_void || (*p_status) != STATUS_VERIFY_REQUIRED) as i32);
                             FatNormalizeAndRaiseStatus(IrpContext, *p_status);
                         } else {
                             NT_ASSERT!(((*(*p_irp)).IoStatus.Information == ByteCount as _) as i32);

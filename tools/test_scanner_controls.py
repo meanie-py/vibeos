@@ -826,6 +826,17 @@ pub unsafe extern "C" fn CreateShellLink() -> i32 {
 # copy of a list the list then freed.
 _CPR_BAD = "fn f() { m.Add(core::ptr::read(l.GetNext(&mut it))); }\n"
 _CPR_GOOD = "fn f() { while let Some(e) = l.RemoveHead() { m.Add(e); } }\n"
+# scan_minmax_narrowing. Seeded from cc's CcZeroData (2026-11-01): a LONGLONG length cut to
+# ULONG before the min, so a 4 GiB range became a 0-byte chunk and the loop never ended.
+_MMN_BAD = (
+    "pub struct LARGE_INTEGER { pub QuadPart: LONGLONG }\n"
+    "fn z(e: *const LARGE_INTEGER, s: *const LARGE_INTEGER) {\n"
+    "    let length = (*e).QuadPart - (*s).QuadPart;\n"
+    "    let c = core::cmp::min(length as ULONG, MAX_ZERO_LENGTH);\n}\n"
+)
+_MMN_GOOD = _MMN_BAD.replace(
+    "min(length as ULONG, MAX_ZERO_LENGTH)", "min(length, MAX_ZERO_LENGTH as LONGLONG) as ULONG"
+)
 # scan_guid_values. Seeded from stobject (2026-10-18): CGID_ShellServiceObject written from
 # memory, Data1 one digit off, so explorer's Exec never started the tray.
 _GUID_SDK = "DEFINE_OLEGUID(CGID_ShellServiceObject, 0x000214D2, 0, 0);\n"
@@ -2466,6 +2477,26 @@ pub unsafe extern "C" fn KdIoPrintf(Format: *const i8, a0: usize, a1: usize) {}
 pub unsafe extern "C" fn _vsnwprintf(b: *mut u16, n: usize, fmt: *const u16, ap: *mut u8) {}
 """
 
+_SWALLOWING_DEBUG_MACRO_BAD = """\
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+"""
+_SWALLOWING_DEBUG_MACRO_GOOD = """\
+#[macro_export] macro_rules! DPRINT {
+    ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) };
+}
+"""
+_INERT_CRATE_ALLOW_BAD = """\
+#![no_std]
+#[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+#[macro_use]
+extern crate winedebug_rust;
+"""
+_INERT_CRATE_ALLOW_GOOD = """\
+#![no_std]
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+#[macro_use]
+extern crate winedebug_rust;
+"""
 _VARIANT_OUTPTR_BAD = """\
 // oleacc's Client_EnumVARIANT_Next: the slot's value where C passed its address.
 unsafe fn next(rgVar: *mut VARIANT, n: u32) -> i32 {
@@ -3308,6 +3339,20 @@ CONTROLS: list[Control] = [
         good={"good.rs": _BYTE_STEP_ONE_GOOD},
     ),
     Control(
+        name="scan_swallowing_debug_macro",
+        script="tools/scan_swallowing_debug_macro.py",
+        argv=["--lint"],
+        bad={"bad.rs": _SWALLOWING_DEBUG_MACRO_BAD},
+        good={"good.rs": _SWALLOWING_DEBUG_MACRO_GOOD},
+    ),
+    Control(
+        name="scan_inert_crate_allow",
+        script="tools/scan_inert_crate_allow.py",
+        argv=["--lint"],
+        bad={"lib.rs": _INERT_CRATE_ALLOW_BAD},
+        good={"lib.rs": _INERT_CRATE_ALLOW_GOOD},
+    ),
+    Control(
         name="scan_variant_outptr",
         script="tools/scan_variant_outptr.py",
         argv=["--lint"],
@@ -3396,6 +3441,12 @@ CONTROLS: list[Control] = [
         script="tools/vibeos-lint/src/rules/container_ptr_read.rs",
         bad={"sdk/lib/rust/x-rust/src/a.rs": _CPR_BAD},
         good={"sdk/lib/rust/x-rust/src/a.rs": _CPR_GOOD},
+    ),
+    Control(
+        name="scan_minmax_narrowing",
+        script="tools/vibeos-lint/src/rules/minmax_narrowing.rs",
+        bad={"sdk/lib/rust/x-rust/src/a.rs": _MMN_BAD},
+        good={"sdk/lib/rust/x-rust/src/a.rs": _MMN_GOOD},
     ),
     Control(
         name="scan_guid_values",
@@ -3519,6 +3570,27 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_devobj_as_extension": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/devobj_as_extension.rs: classpnp's `Fdo as "
+        "PFUNCTIONAL_DEVICE_EXTENSION` must be flagged, `(*Fdo).DeviceExtension as ...` and a "
+        "nolint must not."
+    ),
+    "scan_assert_negated_vs_c": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/assert_negated_vs_c.rs: fastfat's negated VerifyThread "
+        "NT_ASSERT must be flagged, the faithful one must not, and neither must another "
+        "module's same-named C function."
+    ),
+    "scan_move_vs_nonoverlapping": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/move_vs_nonoverlapping.rs: classpnp's RtlMoveMemory "
+        "lowered to copy_nonoverlapping must be flagged, a kept ptr::copy or a nolint must not, "
+        "and neither must another module's same-named C function."
+    ),
     "scan_shadowed_c_define": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "

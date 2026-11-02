@@ -204,7 +204,7 @@ unsafe extern "C" fn AtaTimDumpTimingInfo(
         b"CH %lu: Device %u '%s'\nCycle time       UDMA[%ld] MWDMA[%ld] SWDMA[%ld] PIO[%ld]\nSupported modes  0x%08lX\nActive modes     0x%08lX\nSelected modes   0x%08lX\nIOREADY          %u\n\0"
             .as_ptr() as *const i8,
         (*PortData).PortNumber,
-        (*DevExt).Device.AtaScsiAddress.TargetId,
+        (&(*DevExt).Device.AtaScsiAddress).TargetId,
         (*DevExt).FriendlyName,
         (*DevExt).MinimumUltraDmaCycleTime as i32,
         (*DevExt).MinimumMultiWordDmaCycleTime as i32,
@@ -213,7 +213,7 @@ unsafe extern "C" fn AtaTimDumpTimingInfo(
         (*DevExt).TransferModeSupportedBitmap,
         (*DevExt).TransferModeCurrentBitmap,
         (*DevExt).TransferModeSelectedBitmap,
-        (*DevExt).IdentifyDeviceData.Capabilities.IordySupported,
+        (*DevExt).__bindgen_anon_1.IdentifyDeviceData.Capabilities.IordySupported(),
     );
 }
 #[no_mangle]

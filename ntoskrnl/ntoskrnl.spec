@@ -235,6 +235,7 @@
 @ stdcall FsRtlGetNextFileLock(ptr long)
 @ stdcall FsRtlGetNextLargeMcbEntry(ptr long ptr ptr ptr)
 @ stdcall FsRtlGetNextMcbEntry(ptr long ptr ptr ptr)
+@ stdcall FsRtlGetSectorSizeInformation(ptr ptr)
 @ stdcall FsRtlIncrementCcFastReadNoWait()
 @ stdcall FsRtlIncrementCcFastReadNotPossible()
 @ stdcall FsRtlIncrementCcFastReadResourceMiss()
@@ -2007,7 +2008,6 @@
 @ stub -version=0xA00+ FsRtlGetFileNameInformation
 @ stub -version=0xA00+ FsRtlGetIoAtEof
 @ stub -version=0xA00+ FsRtlGetNextExtraCreateParameter
-@ stub -version=0xA00+ FsRtlGetSectorSizeInformation
 @ stub -version=0xA00+ FsRtlGetSupportedFeatures
 @ stub -version=0xA00+ FsRtlGetVirtualDiskNestingLevel
 @ stub -version=0xA00+ FsRtlHeatInit

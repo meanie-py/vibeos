@@ -1,14 +1,168 @@
 [workspace]
 members = [
+    "setup-cargo",
+    "sehtest-cargo",
+    "nettest-cargo",
+    "xinput9_1_0-cargo",
+    "xinput1_2-cargo",
+    "xinput1_1-cargo",
+    "winusb-cargo",
     "wing32-cargo",
+    "sspicli-cargo",
+    "srclient-cargo",
+    "sfcfiles-cargo",
     "sfc_os-cargo",
     "sfc-cargo",
+    "kernelbase-cargo",
+    "iccvid-cargo",
+    "getuname-cargo",
+    "fontsub-cargo",
+    "faultrep-cargo",
+    "dxva2-cargo",
+    "dpwsockx-cargo",
+    "dpnhupnp-cargo",
     "devcpux-cargo",
+    "mgmtapi-cargo",
+    "mciwave-cargo",
+    "mciseq-cargo",
+    "mciqtz32-cargo",
+    "mcicda-cargo",
+    "localui-cargo",
     "ksuser-cargo",
+    "mciavi32-cargo",
+    "lpk-cargo",
+    "inseng-cargo",
+    "ieproxy-cargo",
+    "dmscript-cargo",
+    "dmband-cargo",
+    "devenum-cargo",
+    "d3dxof-cargo",
+    "atl80-cargo",
+    "atl-cargo",
+    "advpack-cargo",
+    "xmllite-cargo",
+    "wmvcore-cargo",
+    "wbemdisp-cargo",
+    "tapi32-cargo",
+    "rsaenh-cargo",
+    "qmgrprxy-cargo",
+    "msvfw32-cargo",
+    "dxdiagn-cargo",
+    "dpvoice-cargo",
+    "ddrawex-cargo",
+    "bluetoothapis-cargo",
+    "atl100-cargo",
+    "xinput1_4-cargo",
+    "winscard-cargo",
+    "t2embed-cargo",
+    "mspatcha-cargo",
+    "msimtf-cargo",
+    "msdmo-cargo",
+    "loadperf-cargo",
+    "dxtn-cargo",
+    "advapi32_vista-cargo",
     "acledit-cargo",
+    "sensapi-cargo",
+    "rtworkq-cargo",
+    "riched32-cargo",
+    "query-cargo",
+    "pstorec-cargo",
+    "profmap-cargo",
+    "printui-cargo",
+    "powrprof-cargo",
+    "pidgen-cargo",
+    "olesvr32-cargo",
+    "olepro32-cargo",
+    "olecli32-cargo",
+    "odbccp32-cargo",
+    "odbc32-cargo",
+    "objsel-cargo",
+    "ntprint-cargo",
+    "ntlanman-cargo",
+    "netutils-cargo",
+    "nddeapi-cargo",
+    "msxml6-cargo",
+    "msxml4-cargo",
+    "msxml2-cargo",
+    "msxml-cargo",
+    "msvidc32-cargo",
+    "mssign32-cargo",
+    "msisys-cargo",
+    "msisip-cargo",
+    "msimg32-cargo",
+    "msftedit-cargo",
+    "modemui-cargo",
+    "midimap-cargo",
+    "kdstub-cargo",
+    "dxgthk-cargo",
     "dxapi-cargo",
+    "windowscodecsext-cargo",
+    "vssapi-cargo",
+    "verifier-cargo",
+    "url-cargo",
+    "updspapi-cargo",
+    "traffic-cargo",
     "streamci-cargo",
+    "mshtml-cargo",
+    "msi-cargo",
+    "windowscodecs-cargo",
+    "urlmon-cargo",
+    "riched20-cargo",
+    "quartz-cargo",
+    "ieframe-cargo",
+    "dmime-cargo",
+    "wbemprox-cargo",
+    "gdiplus-cargo",
+    "d2d1-cargo",
+    "actxprxy-cargo",
+    "avifil32-cargo",
+    "usp10-cargo",
+    "ddraw-cargo",
+    "d3d9-cargo",
+    "vbscript-cargo",
+    "dsound-cargo",
+    "dmusic-cargo",
+    "d3drm-cargo",
+    "d3d11-cargo",
+    "wininet-cargo",
+    "dmstyle-cargo",
+    "d3d8-cargo",
+    "winmm-cargo",
+    "qcap-cargo",
+    "mscoree-cargo",
+    "inetcomm-cargo",
+    "hhctrl-cargo",
+    "dplayx-cargo",
+    "qmgr-cargo",
+    "dxgi-cargo",
+    "d3dx10_43-cargo",
+    "winhttp-cargo",
+    "schannel-cargo",
+    "msacm32-cargo",
+    "mapi32-cargo",
+    "itss-cargo",
+    "hnetcfg-cargo",
+    "dpnet-cargo",
+    "d3d10-cargo",
+    "mscms-cargo",
+    "mpr-cargo",
+    "dmloader-cargo",
+    "dmcompos-cargo",
+    "amstream-cargo",
+    "wintrust-cargo",
+    "qedit-cargo",
+    "wshom-cargo",
+    "scrrun-cargo",
     "normaliz-cargo",
+    "dbgeng-cargo",
+    "d3d10core-cargo",
+    "d3d10_1-cargo",
+    "cryptui-cargo",
+    "cryptext-cargo",
+    "compstui-cargo",
+    "bthprops-cargo",
+    "bthci-cargo",
+    "bcrypt-cargo",
     "cryptdlg-cargo",
     "batt-cargo",
     "esent-cargo",
@@ -1055,8 +1209,15 @@ debug = 1
 # three already-fixed never-compiled blocks, are in the roadmap entry.
 #
 # ARMED: ntoskrnl-rust (2026-10-16), ex-rust and hal-rust (2026-10-17), ob-rust,
-# ps-rust, se-rust, iomgr-rust, config-rust and cc-rust (2026-10-17). overflow-checks defaults to FOLLOWING debug-assertions and
-# must stay off: the C has no overflow traps.
+# ps-rust, se-rust, iomgr-rust, config-rust and cc-rust (2026-10-17); fastfat, cdfs, storahci,
+# cmlib and afd 2026-11-01, once `nt_assert!` reported through RtlAssert instead of panicking.
+# classpnp, disk and cdrom followed once IoCreateDevice cache-aligned device extensions and the
+# pool honoured the *CacheAligned pool types: on 64-bit COMMON_DEVICE_EXTENSION embeds a
+# LOOKASIDE_ALIGN lookaside (64/128-aligned), which the C's 16-aligned placement never gave it.
+# NOT freeldr-rust: armed, the BIOS loader's PE grew to 0x7fc00 against MAX_FREELDR_PE_SIZE
+# 0x77000 (35840 bytes over; every BIOS boot would bugcheck). Its 19 cfg(debug_assertions) blocks
+# stay unbuilt until the loader has the room (2026-11-02). overflow-checks defaults to FOLLOWING
+# debug-assertions and must stay off: the C has no overflow traps.
 [profile.release.package.ntoskrnl-rust]
 debug-assertions = true
 overflow-checks = false
@@ -1082,6 +1243,30 @@ overflow-checks = false
 debug-assertions = true
 overflow-checks = false
 [profile.release.package.cc-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.fastfat-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.cdfs-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.storahci-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.cmlib-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.afd-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.classpnp-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.disk-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.cdrom-rust]
 debug-assertions = true
 overflow-checks = false
 

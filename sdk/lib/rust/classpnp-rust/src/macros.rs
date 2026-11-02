@@ -7,9 +7,18 @@
 #[macro_export]
 macro_rules! NT_ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) } }
 
-/// FREE_POOL — the crate's pool-free helper (shims::FREE_POOL wraps ExFreePool).
+/// FREE_POOL(p) — classp.h: `if (p != NULL) { ExFreePool(p); p = NULL; }`. It NULLS its argument,
+/// which the old `shims::FREE_POOL(p)`-only form dropped, leaving every freed place dangling.
 #[macro_export]
-macro_rules! FREE_POOL { ($p:expr) => { $crate::shims::FREE_POOL($p as PVOID) } }
+macro_rules! FREE_POOL {
+    ($p:expr) => {{
+        let __freed = ($p) as PVOID;
+        if !__freed.is_null() {
+            $crate::shims::FREE_POOL(__freed);
+            $p = core::ptr::null_mut();
+        }
+    }};
+}
 
 /// FIELD_OFFSET(Type, Field) — byte offset of a field, like C's FIELD_OFFSET.
 #[macro_export]

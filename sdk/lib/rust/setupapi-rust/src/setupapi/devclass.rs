@@ -82,7 +82,7 @@ static mut SetupapiDll: [WCHAR; 13] = [
     0 as ::core::ffi::c_int as WCHAR,
 ];
 
-static mut InstallParamsData: [INSTALL_PARAMS_DATA; 2] = unsafe {
+static mut InstallParamsData: [INSTALL_PARAMS_DATA; 2] = {
     [
         _INSTALL_PARAMS_DATA {
             Function: 18 as DI_FUNCTION,

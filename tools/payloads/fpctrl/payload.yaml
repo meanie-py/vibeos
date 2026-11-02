@@ -13,7 +13,7 @@ build_hint: "tools/payloads/fpctrl/build.sh {arch}"
 binaries:
   - src: tools/payloads/fpctrl/fpctrl-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/fpctrl.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fpctrl.exe
 
 test:
   launch_marker: "[FPCTRL] done"

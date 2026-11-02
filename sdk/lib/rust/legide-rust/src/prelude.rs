@@ -14,7 +14,7 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py rewrites C's bare
 // `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it. DPRINT1 PRINTS in this
 // DBG=1 tree: it is win32macros-rust's.
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
 #[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
 pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};
@@ -25,8 +25,8 @@ pub use win32macros_rust::DPRINT1;
 // format; INFO and TRACE are compiled out upstream too.
 #[macro_export] macro_rules! ERR { ($($arg:tt)*) => { ::win32macros_rust::DPRINT1!($($arg)*) }; }
 #[macro_export] macro_rules! WARN { ($($arg:tt)*) => { ::win32macros_rust::DPRINT1!($($arg)*) }; }
-#[macro_export] macro_rules! INFO { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! INFO { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
+#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
 pub use crate::{ERR, INFO, TRACE, WARN};
 
 // ================= kernel header helpers ======================================================

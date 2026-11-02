@@ -13,7 +13,7 @@ build_hint: "tools/payloads/tpprobe/build.sh {arch}"
 binaries:
   - src: tools/payloads/tpprobe/tpprobe-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/tpprobe.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/tpprobe.exe
 
 test:
   launch_marker: "[TPPROBE] done"

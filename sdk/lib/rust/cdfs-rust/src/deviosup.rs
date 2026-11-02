@@ -194,17 +194,15 @@ const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016u32 as i32;
 
 const CDFS_NTC_FCB_PATH_TABLE: u32 = 0x0303;
 const CD_ATTRIBUTE_DIRECTORY: u8 = 0x02;
-const CdAudioDirentSize: u32 = 32;
-const CdAudioDirentsPerSector: u32 = SECTOR_SIZE / CdAudioDirentSize;
-const CdAudioFileNameLength: u32 = 12;
-const CdAudioFileName: [u8; CdAudioFileNameLength as usize] = [
-    b'T', b'r', b'a', b'c', b'k', b'0', b'1', b'.', b'c', b'd', b'a', 0
-];
-const CdAudioSystemUseOffset: u32 = 24;
-const AUDIO_NAME_TENS_OFFSET: u32 = 4;
-const AUDIO_NAME_ONES_OFFSET: u32 = 5;
+// The audio-track dirents: cddata.rs's values, computed as cddata.c computes them (58-byte
+// dirent, "Track00.cda" with no NUL, system use at 44). Local guesses shadowed them here:
+// 32 / "Track01.cda\0" / 24, offsets 4 and 5, and an 'X' signature, so every synthetic
+// dirent failed CdCheckRawDirentBounds and audio CD directories could not be listed.
+use crate::cddata::{CdAudioDirentSize, CdAudioDirentsPerSector, CdAudioFileNameLength, CdAudioSystemUseOffset};
+const AUDIO_NAME_TENS_OFFSET: u32 = 5; // cddata.h
+const AUDIO_NAME_ONES_OFFSET: u32 = 6; // cddata.h
 const SYSTEM_USE_XA_DA: u8 = 0x40;
-const SYSTEM_XA_SIGNATURE: u8 = b'X';
+const SYSTEM_XA_SIGNATURE: u16 = 0x4158; // cd.h: "XA" read as a USHORT
 
 const STATUS_SUCCESS: i32 = 0;
 const CDFS_NTC_FCB_INDEX: u32 = 0x0304; // nodetype.h
@@ -2173,7 +2171,7 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
 
                 RtlCopyMemory(
                     &raw mut (*RawDirent).FileId[0] as *mut u8 as *mut c_void,
-                    &CdAudioFileName as *const u8 as *const c_void,
+                    core::ptr::addr_of!(crate::cddata::CdAudioFileName) as *const c_void,
                     CdAudioFileNameLength as usize,
                 );
 
@@ -2191,7 +2189,7 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
 
                 SystemUse = (RawDirent as *mut u8).add(CdAudioSystemUseOffset as usize) as *mut SYSTEM_USE_XA;
                 (*SystemUse).Attributes = SYSTEM_USE_XA_DA as u16;
-                (*SystemUse).Signature = SYSTEM_XA_SIGNATURE as u16;
+                (*SystemUse).Signature = SYSTEM_XA_SIGNATURE;
                 (*SystemUse).FileNumber = CurrentTrack as u8;
 
                 EntryCount += 1;

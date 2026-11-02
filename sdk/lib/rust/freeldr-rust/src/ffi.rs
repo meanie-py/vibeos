@@ -131,10 +131,10 @@ macro_rules! TRACE { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::TRAC
 macro_rules! WARN  { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::WARN_LEVEL,  $($a)*) } }
 #[cfg(not(any(feature = "uefi", feature = "rosload")))]
 #[macro_export]
-macro_rules! TRACE { ($($a:tt)*) => { () } }
+macro_rules! TRACE { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }} }
 #[cfg(not(any(feature = "uefi", feature = "rosload")))]
 #[macro_export]
-macro_rules! WARN  { ($($a:tt)*) => { () } }
+macro_rules! WARN  { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }} }
 
 // ---------------------------------------------------------------------
 // freeldr-internal C externs — cdecl. (ARC_STATUS/OPENMODE/SEEKMODE/

@@ -28,7 +28,10 @@ const EXPECTED_SPIN: &[&str] = &[
     "FatalAppExit",
     "FatalExit",
 ];
-const EXPECTED_SPIN_EXACT: &[&str] = &["exit"];
+// SymCryptFatalHang is vendored SymCrypt's deliberate last-resort fatal spin
+// (`fatalInfiniteLoop: goto fatalInfiniteLoop;`, vendor/symcrypt/lib/libmain.c). The scan
+// first saw it when bcrypt.dll became a C-only cargo cell and joined the Rust corpus.
+const EXPECTED_SPIN_EXACT: &[&str] = &["exit", "SymCryptFatalHang"];
 const DRIVER_INTRINSIC_SKIP: &[&str] = &[
     "compiler_builtins",
     "__add",

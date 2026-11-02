@@ -32,7 +32,7 @@ macro_rules! ACPI_MODULE_NAME {
     ($($t:tt)*) => {};
 }
 macro_rules! ACPI_DEBUG_PRINT {
-    ($($t:tt)*) => {};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 
 // ACPI_FLUSH_CPU_CACHE() — no-op (the C macro expands to a WBINVD only on builds

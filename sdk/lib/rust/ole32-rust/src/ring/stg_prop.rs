@@ -159,7 +159,7 @@ unsafe fn IPropertyStorage_fnQueryInterface(
 
     TRACE!(
         b"(%p, %s, %p)\n\0".as_ptr() as LPCSTR,
-        This,
+        _This,
         debugstr_guid(riid),
         ppvObject,
     );
@@ -3831,7 +3831,7 @@ pub unsafe extern "system" fn StgCreatePropStg(
         b"%p %s %s %08x %d %p\n\0".as_ptr() as LPCSTR,
         unk,
         debugstr_guid(fmt),
-        debugstr_guid(clsid),
+        debugstr_guid(_clsid),
         flags,
         reserved,
         prop_stg,

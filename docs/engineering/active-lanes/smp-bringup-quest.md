@@ -3,6 +3,22 @@
 **Status: QUEST (2026-07-10, lane `smp-bringup`, worktree
 `~/Projects/os-playground/vibeos-smp`). Handoff doc — read fully before starting.**
 
+## RESUME HERE (parked 2026-11-01, Sunday)
+
+Nothing in flight; nothing dirty. Landed or queued this session (verify with
+`git log origin/master` before trusting): #72a freeldr KSEG0 tables (landed, 31610459d67);
+#72 fs-tail arming fa8be8a9203 (batch 68); MM self-map WS-lock fix + cc raise semantics
+5c1bb095b90 (heads batch 69). Owed, in order:
+1. **The amd64-bios `-smp 2` WoW64 MM signatures** (roadmap "amd64-bios: demand-zero fault on an
+   already-valid PTE"): the fix was found by code reading and was never reproduced on demand.
+   If either signature recurs on a tree that has 5c1bb095b90, the x86 `MmDeleteRmap` guard now
+   dumps the per-VA ledger (`page-map`/`rmap-insert`/`rmap-delete`, thread field = process for
+   rmap events): read that first.
+2. DONE 2026-11-02 (verify with `git log origin/master`): `read.rs:590` (a negated assert) and
+   classpnp/disk/cdrom arming (device extensions cache-aligned at `DeviceObject + 1`).
+3. #72 tail: freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks), win32k-rust (10),
+   remaining drivers; then the 78-entry `scan_move_vs_nonoverlapping` baseline review.
+
 ## Mission
 
 vibeos is uniprocessor on every arch. That means **every spinlock, queued spinlock,

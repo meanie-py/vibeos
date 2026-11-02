@@ -43,7 +43,7 @@ macro_rules! w {
 
 
 // ---- Debug-channel macros — no kernel symbol, no-op. ----
-macro_rules! RIPMSG { ($($t:tt)*) => {{}}; }
+macro_rules! RIPMSG { ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) }; }
 
 // ---- Pool tags (tags.h). C 4-char literal is big-endian → from_le_bytes reverses it. ----
 const USERTAG_WINDOWLIST: u32 = u32::from_le_bytes(*b"Uswl"); // 'lwsU'

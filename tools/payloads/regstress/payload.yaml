@@ -12,7 +12,7 @@ build_hint: "tools/payloads/regstress/build.sh {arch}"
 binaries:
   - src: tools/payloads/regstress/regstress-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/regstress.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/regstress.exe
 
 test:
   launch_marker: "[REGSTRESS] done"

@@ -571,7 +571,7 @@ unsafe fn AfdCloseSocket(
     AFD_DbgPrint!(
         MID_TRACE,
         b"AfdClose(DeviceObject %p Irp %p)\n\0".as_ptr() as PCHAR,
-        DeviceObject,
+        _DeviceObject,
         Irp,
     );
 
@@ -1066,7 +1066,7 @@ unsafe extern "system" fn AfdDispatch(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -
 
     AFD_DbgPrint!(MID_TRACE, b"AfdDispatch: %u\n\0".as_ptr() as *const i8, (*IrpSp).MajorFunction);
     if (*IrpSp).MajorFunction != IRP_MJ_CREATE {
-        AFD_DbgPrint!(MID_TRACE, b"FO %p, IrpSp->FO %p\n\0".as_ptr() as *const i8, FileObject, (*IrpSp).FileObject);
+        AFD_DbgPrint!(MID_TRACE, b"FO %p, IrpSp->FO %p\n\0".as_ptr() as *const i8, _FileObject, (*IrpSp).FileObject);
     }
 
     (*Irp).IoStatus.Information = 0;

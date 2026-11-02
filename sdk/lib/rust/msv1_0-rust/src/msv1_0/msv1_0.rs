@@ -512,7 +512,7 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
     ) as PLSA_TOKEN_INFORMATION_V1;
     if Buffer.is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
-        'done: loop {
+        loop {
             if !NT_SUCCESS(Status) {
                 if !Buffer.is_null() {
                     if !(*Buffer).User.User.Sid.is_null() {
@@ -556,7 +556,7 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
         (*UserInfo).All.UserId,
     );
     if !NT_SUCCESS(Status) {
-        'done: loop {
+        loop {
             if !NT_SUCCESS(Status) {
                 if !Buffer.is_null() {
                     if !(*Buffer).User.User.Sid.is_null() {
@@ -597,7 +597,7 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
         (*UserInfo).All.PrimaryGroupId,
     );
     if !NT_SUCCESS(Status) {
-        'done: loop {
+        loop {
             if !NT_SUCCESS(Status) {
                 if !Buffer.is_null() {
                     if !(*Buffer).User.User.Sid.is_null() {
@@ -639,7 +639,7 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
         SpecialAccount,
     );
     if !NT_SUCCESS(Status) {
-        'done: loop {
+        loop {
             if !NT_SUCCESS(Status) {
                 if !Buffer.is_null() {
                     if !(*Buffer).User.User.Sid.is_null() {
@@ -676,7 +676,7 @@ unsafe extern "C" fn BuildTokenInformationBuffer(
 
     *TokenInformation = Buffer;
 
-    'done: loop {
+    loop {
         if !NT_SUCCESS(Status) {
             if !Buffer.is_null() {
                 if !(*Buffer).User.User.Sid.is_null() {

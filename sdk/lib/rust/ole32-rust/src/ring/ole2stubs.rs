@@ -65,7 +65,7 @@ pub unsafe extern "system" fn OleGetIconOfFile(
 ) -> HGLOBAL {
     FIXME!(
         b"(%s, %d), stub!\n\0".as_ptr() as *const i8,
-        debugstr_w(path.cast()),
+        debugstr_w(path),
         use_file_as_label,
     );
     core::ptr::null_mut()

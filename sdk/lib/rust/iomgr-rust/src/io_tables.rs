@@ -229,8 +229,15 @@ pub static IopSetOperationAccess: [u32; 42] = [
 
 // ---- Volume (FS) Information Classes ----------------------------------------
 
+/// Query classes run to FileFsGuidInformation (15) since Windows 10; ReactOS's headers stop
+/// at FileFsVolumeFlagsInformation (10), which they made the sentinel, so a query of 10
+/// failed the access check and 11+ never reached the file system. Measured on Windows 11
+/// (fsquery.win11.txt): the I/O manager passes 10-14 through and the file system answers
+/// or refuses; FAT and CDFS answer FileFsSectorSizeInformation (11) and refuse the rest
+/// with STATUS_INVALID_PARAMETER, NTFS answers 12 and 14 too. Lengths are each record's
+/// size; iofunc's `FS_QUERY_CLASS_LIMIT` bounds this table.
 #[no_mangle]
-pub static IopQueryFsOperationLength: [u8; 11] = [
+pub static IopQueryFsOperationLength: [u8; 17] = [
     0,                                                      // 0
     size_of::<_FILE_FS_VOLUME_INFORMATION>() as u8,         // 1
     0,                                                      // 2
@@ -241,7 +248,13 @@ pub static IopQueryFsOperationLength: [u8; 11] = [
     size_of::<_FILE_FS_FULL_SIZE_INFORMATION>() as u8,      // 7
     size_of::<_FILE_FS_OBJECTID_INFORMATION>() as u8,       // 8
     size_of::<_FILE_FS_DRIVER_PATH_INFORMATION>() as u8,    // 9
-    0xFF,                                                   // 10 — sentinel
+    4,   // 10 FileFsVolumeFlagsInformation: ULONG Flags
+    28,  // 11 FileFsSectorSizeInformation: seven ULONGs
+    4,   // 12 FileFsDataCopyInformation: ULONG NumberOfCopies
+    24,  // 13 FileFsMetadataSizeInformation: three LARGE_INTEGERs
+    96,  // 14 FileFsFullSizeInformationEx: eleven ULONGLONGs and two ULONGs
+    16,  // 15 FileFsGuidInformation: a GUID
+    0xFF,                                                   // 16 — sentinel
 ];
 
 #[no_mangle]
@@ -260,7 +273,7 @@ pub static IopSetFsOperationLength: [u8; 11] = [
 ];
 
 #[no_mangle]
-pub static IopQueryFsOperationAccess: [u32; 11] = [
+pub static IopQueryFsOperationAccess: [u32; 17] = [
     0,                  // 0
     0,                  // 1
     0,                  // 2
@@ -271,7 +284,13 @@ pub static IopQueryFsOperationAccess: [u32; 11] = [
     0,                  // 7
     0,                  // 8
     0,                  // 9
-    0xFFFFFFFF,         // 10 — sentinel
+    0,                  // 10
+    0,                  // 11
+    0,                  // 12
+    0,                  // 13
+    0,                  // 14
+    0,                  // 15
+    0xFFFFFFFF,         // 16 — sentinel
 ];
 
 #[no_mangle]

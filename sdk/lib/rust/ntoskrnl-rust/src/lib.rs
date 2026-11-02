@@ -15,11 +15,14 @@
 #![allow(unused_assignments)]
 #![allow(unused_mut)]
 
-/// ASSERT macro — maps to debug_assert! in debug builds, no-op in release.
+/// ASSERT(x) — the C's DBG ASSERT: reports through RtlAssert and CONTINUES (`nt_assert!`, live
+/// only when this crate is armed). It was `debug_assert!`, which panics: a failed diagnostic
+/// became BUGCHECK 0xE0525354 -- kmtest's ZwMapViewOfSection guard-page view hit pagfault.rs's
+/// `ASSERT(ProtoPte == NULL)`, which the C prints and then handles as a guard-page violation.
 #[allow(unused_macros)]
 macro_rules! ASSERT {
     ($e:expr) => {
-        debug_assert!($e)
+        ntkrnl_sys::nt_assert!($e)
     };
 }
 

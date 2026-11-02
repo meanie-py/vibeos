@@ -32,3 +32,11 @@ cases:
       - why: 'C oracle skips DELSTRING (heap overrun; crashed the i386 C run)'
         c: '^step 3 skipped'
         rust: '^step 3 1$'
+      # setupapi-rust queue.rs. The C stages every copy through %TEMP% (X:\reactos\TEMP on the
+      # read-only live CD: ERROR_ACCESS_DENIED on i386/amd64), never defaults a NULL target name
+      # to the source name, and concat_W leaves the target path unterminated, so b.txt went to
+      # the PREVIOUS op's a2.txt (arm64, where %TEMP% is writable). The Rust stages beside the
+      # target, as Windows does, and copies both files where they were asked to go.
+      - why: 'queue copies: %TEMP% staging, NULL target name, unterminated target path (C)'
+        c: '^\s*(note 0x(b|c|d|f) |after (a2|b)\.txt )'
+        rust: '^\s*(note 0xf <TMP>\\dst\\(a2|b)\.txt|note 0x(b|c) src=<TMP>\\src\\a\.txt dst=<TMP>\\dst\\a2\.txt err=0|note 0x(b|c) src=<TMP>\\src\\b\.txt dst=<TMP>\\dst\\b\.txt err=0|after a2\.txt "alpha file"|after b\.txt "bravo")$'

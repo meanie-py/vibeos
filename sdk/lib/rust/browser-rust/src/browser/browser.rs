@@ -44,7 +44,7 @@ unsafe extern "system" fn ServiceControlHandler(
 ) -> DWORD {
     match dwControl {
         SERVICE_CONTROL_STOP => {
-            unsafe {
+            {
                 TRACE!(
                     b"  SERVICE_CONTROL_STOP received\n\0".as_ptr() as *const i8,
                 );
@@ -55,7 +55,7 @@ unsafe extern "system" fn ServiceControlHandler(
         }
 
         SERVICE_CONTROL_PAUSE => {
-            unsafe {
+            {
                 TRACE!(
                     b"  SERVICE_CONTROL_PAUSE received\n\0".as_ptr() as *const i8,
                 );
@@ -65,7 +65,7 @@ unsafe extern "system" fn ServiceControlHandler(
         }
 
         SERVICE_CONTROL_CONTINUE => {
-            unsafe {
+            {
                 TRACE!(
                     b"  SERVICE_CONTROL_CONTINUE received\n\0".as_ptr() as *const i8,
                 );
@@ -75,7 +75,7 @@ unsafe extern "system" fn ServiceControlHandler(
         }
 
         SERVICE_CONTROL_INTERROGATE => {
-            unsafe {
+            {
                 TRACE!(
                     b"  SERVICE_CONTROL_INTERROGATE received\n\0".as_ptr()
                         as *const i8,
@@ -89,7 +89,7 @@ unsafe extern "system" fn ServiceControlHandler(
         }
 
         SERVICE_CONTROL_SHUTDOWN => {
-            unsafe {
+            {
                 TRACE!(
                     b"  SERVICE_CONTROL_SHUTDOWN received\n\0".as_ptr() as *const i8,
                 );
@@ -100,7 +100,7 @@ unsafe extern "system" fn ServiceControlHandler(
         }
 
         _ => {
-            unsafe {
+            {
                 TRACE!(
                     b"  Control %lu received\n\0".as_ptr() as *const i8,
                     dwControl as usize,

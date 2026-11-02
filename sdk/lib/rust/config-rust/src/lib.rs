@@ -28,9 +28,7 @@ macro_rules! ASSERT {
 /// (cminit.rs instead calls the kernel's exported UART writer by `extern`, on purpose.)
 #[allow(unused_macros)]
 macro_rules! ARM64_UART_TRACE {
-    ($($t:tt)*) => {
-        ()
-    };
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 
 // Debug-print / format macros hoisted to the dbgprint-rust leaf. Re-export at this

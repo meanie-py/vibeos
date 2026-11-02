@@ -42,7 +42,7 @@ static mut __WINE_DBCH_DEFAULT_STORAGE: __wine_debug_channel = __wine_debug_chan
     ],
 };
 pub static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw mut __WINE_DBCH_DEFAULT_STORAGE };
+    { &raw mut __WINE_DBCH_DEFAULT_STORAGE };
 
 extern "C" {
     pub fn ros_dbg_log(

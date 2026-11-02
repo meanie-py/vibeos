@@ -6,7 +6,7 @@ extern "C" {
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_ole as *mut __wine_debug_channel };
+    &raw const __wine_dbch_ole as *mut __wine_debug_channel;
 
 static mut __wine_dbch_ole: __wine_debug_channel = unsafe {
     __wine_debug_channel {
@@ -1052,7 +1052,7 @@ fn IRecordInfoImpl_RecordCreateCopy(
 ) -> HRESULT {
     let _This: *mut IRecordInfoImpl = impl_from_IRecordInfo(iface);
 
-    TRACE!(b"(%p)->(%p %p)\n\0".as_ptr() as *const i8, This, pvSource, ppvDest);
+    TRACE!(b"(%p)->(%p %p)\n\0".as_ptr() as *const i8, _This, pvSource, ppvDest);
 
     if pvSource.is_null() || ppvDest.is_null() {
         return E_INVALIDARG;
@@ -1072,7 +1072,7 @@ fn IRecordInfoImpl_RecordDestroy(
 
     TRACE!(
         b"(%p)->(%p)\n\0".as_ptr() as *const ::core::ffi::c_char,
-        This,
+        _This,
         pvRecord,
     );
 

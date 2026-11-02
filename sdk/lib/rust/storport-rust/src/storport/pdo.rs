@@ -45,6 +45,13 @@ pub static RUSTCONV_WSTR_CD76DE965A9E: [u16; 17] = [
 use crate::prelude::*;
 use ntkrnl_sys::ddk::{IoCreateDevice, IoDeleteDevice, PCSTR, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
+
+// pdo.c's DPRINT names scsiport's debug helper, which storport never defines: the C compiles
+// only because its DPRINT discards its arguments. Declared so the off-channel DPRINT type-
+// checks; it sits in a never-called closure (DBG_TYPECHECK), so nothing references it at link.
+extern "C" {
+    fn DbgGetDeviceIDString(IdType: u32) -> *const i8;
+}
 #[no_mangle]
 pub unsafe extern "C" fn PortCreatePdo(
     FdoDeviceExtension: PFDO_DEVICE_EXTENSION,

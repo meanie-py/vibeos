@@ -21,7 +21,7 @@ unsafe fn IsEqualGUIDAligned(guid1: *const GUID, guid2: *const GUID) -> bool {
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 #[no_mangle]
-pub static mut PciInterfaces: [PPCI_INTERFACE; 12] = unsafe {
+pub static mut PciInterfaces: [PPCI_INTERFACE; 12] = {
     [
         &raw const ArbiterInterfaceBusNumber as *mut PCI_INTERFACE,
         &raw const ArbiterInterfaceMemory as *mut PCI_INTERFACE,
@@ -39,7 +39,7 @@ pub static mut PciInterfaces: [PPCI_INTERFACE; 12] = unsafe {
 };
 
 #[no_mangle]
-pub static mut PciInterfacesLastResort: [PPCI_INTERFACE; 2] = unsafe {
+pub static mut PciInterfacesLastResort: [PPCI_INTERFACE; 2] = {
     [
         &raw const TranslatorInterfaceInterrupt as *mut PCI_INTERFACE,
         ::core::ptr::null::<_PCI_INTERFACE>() as *mut _PCI_INTERFACE,

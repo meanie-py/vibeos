@@ -23,11 +23,11 @@ static mut __wine_dbch_ole: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_ole as *mut __wine_debug_channel };
+    &raw const __wine_dbch_ole as *mut __wine_debug_channel;
 
 static mut olefont_hdc: HDC = ::core::ptr::null::<HDC__>() as *mut HDC__;
 
-static mut OLEFontImpl_hFontList: list = unsafe {
+static mut OLEFontImpl_hFontList: list = {
     list {
         next: &raw const OLEFontImpl_hFontList as *mut list,
         prev: &raw const OLEFontImpl_hFontList as *mut list,
@@ -48,7 +48,7 @@ static mut ifont_cnt: LONG = 0 as LONG;
 static mut OLEFontImpl_csHFONTLIST_debug: CRITICAL_SECTION_DEBUG = CRITICAL_SECTION_DEBUG {
     Type: 0,
     CreatorBackTraceIndex: 0,
-    CriticalSection: unsafe { &raw mut OLEFontImpl_csHFONTLIST },
+    CriticalSection: { &raw mut OLEFontImpl_csHFONTLIST },
     ProcessLocksList: LIST_ENTRY {
         Flink: unsafe { &raw mut OLEFontImpl_csHFONTLIST_debug.ProcessLocksList },
         Blink: unsafe { &raw mut OLEFontImpl_csHFONTLIST_debug.ProcessLocksList },
@@ -61,7 +61,7 @@ static mut OLEFontImpl_csHFONTLIST_debug: CRITICAL_SECTION_DEBUG = CRITICAL_SECT
     c2rust_unnamed: C2RustUnnamed_3 { WineDebugString: 0 },
 };
 
-static mut OLEFontImpl_csHFONTLIST: CRITICAL_SECTION = unsafe {
+static mut OLEFontImpl_csHFONTLIST: CRITICAL_SECTION = {
     _RTL_CRITICAL_SECTION {
         DebugInfo: &raw mut OLEFontImpl_csHFONTLIST_debug as PRTL_CRITICAL_SECTION_DEBUG,
         LockCount: -(1 as LONG),
@@ -72,7 +72,7 @@ static mut OLEFontImpl_csHFONTLIST: CRITICAL_SECTION = unsafe {
     }
 };
 
-static mut STDFONT_CF: IClassFactoryImpl = unsafe {
+static mut STDFONT_CF: IClassFactoryImpl = {
     IClassFactoryImpl {
         IClassFactory_iface: IClassFactory {
             // bindgen spells the C's `CONST_VTBL IClassFactoryVtbl *` as `*mut` (it drops
@@ -1322,7 +1322,7 @@ fn OLEFontImpl_AddRefHfont(
 ) -> HRESULT {
     let _this: *mut OLEFontImpl = impl_from_IFont(iface);
 
-    TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, this, hfont);
+    TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, _this, hfont);
 
     if hfont.is_null() {
         return E_INVALIDARG;
@@ -1338,7 +1338,7 @@ fn OLEFontImpl_ReleaseHfont(
 ) -> HRESULT {
     let _this: *mut OLEFontImpl = impl_from_IFont(iface);
 
-    TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, this, hfont);
+    TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, _this, hfont);
 
     if hfont.is_null() {
         return E_INVALIDARG;
@@ -1455,7 +1455,7 @@ fn OLEFontImpl_GetTypeInfo(
     let _this = impl_from_IDispatch(iface);
     TRACE!(
         b"(%p, iTInfo=%d, lcid=%04x, %p)\n\0".as_ptr() as *const i8,
-        this,
+        _this,
         iTInfo,
         lcid as i32,
         ppTInfo,
@@ -1507,7 +1507,7 @@ fn OLEFontImpl_GetIDsOfNames(
 
     TRACE!(
         b"(%p,%s,%p,cNames=%d,lcid=%04x,%p)\n\0".as_ptr() as *const i8,
-        this,
+        _this,
         debugstr_guid(riid),
         rgszNames,
         cNames,
@@ -2935,7 +2935,7 @@ fn SFCF_QueryInterface(
 
     TRACE!(
         b"(%p)->(%s, %p)\n\0".as_ptr() as *const i8,
-        This,
+        _This,
         debugstr_guid(riid as *const CLSID),
         obj,
     );

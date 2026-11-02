@@ -259,7 +259,7 @@ unsafe fn convert_to_fos_high_precision(
         #[cfg(target_pointer_width = "64")]
         let advance: isize = core::cmp::min(DIGITS_PER_ITERATION as isize, room);
         #[cfg(not(target_pointer_width = "64"))]
-        let advance: isize = core::cmp::min(DIGITS_PER_ITERATION, room as u32) as isize;
+        let advance: isize = core::cmp::min(DIGITS_PER_ITERATION, room as u32) as isize; // nolint: minmax-narrowing (32-bit targets only, where room is 32 bits)
         mantissa_it = mantissa_it.offset(advance);
     }
 

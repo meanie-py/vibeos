@@ -587,6 +587,13 @@ pub unsafe extern "system" fn FatQueryDirectory(
 
                     NT_ASSERT!((BytesRemainingInBuffer >= BaseLength) as u8);
                     core::ptr::write_bytes(Buffer.add(NextEntry as usize), 0, BaseLength as usize);
+                    // The C fills the entry in place, but NtQueryDirectoryFile probes the caller's
+                    // buffer for ULONG alignment only (a WoW64 caller's is 4-aligned) and these
+                    // structs are 8-aligned, so a typed reference into it is a misaligned deref.
+                    // Fill an aligned copy and store its bytes right after the class switch.
+                    let mut stage: FILE_ID_BOTH_DIR_INFORMATION = core::mem::zeroed();
+                    let stage_base = core::ptr::addr_of_mut!(stage) as *mut u8;
+                    NT_ASSERT!((BaseLength as usize <= core::mem::size_of::<FILE_ID_BOTH_DIR_INFORMATION>()) as u8);
 
                     // C switch FALLS THROUGH 5|2|6|3 -> 1: every dir-info class
                     // ALSO fills the FILE_DIRECTORY_INFORMATION body (times,
@@ -600,7 +607,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         FIC_BOTH_DIRECTORY | FIC_FULL_DIRECTORY | FIC_ID_BOTH_DIRECTORY | FIC_ID_FULL_DIRECTORY | FIC_DIRECTORY => {
                             if FileInformationClass != FIC_DIRECTORY {
                                 DebugTrace!(0, Dbg, b"FatQueryDirectory -> Getting file full directory information\n\0".as_ptr() as *const i8, 0);
-                                FullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_FULL_DIR_INFORMATION);
+                                FullDirInfo = &mut *(stage_base as *mut FILE_FULL_DIR_INFORMATION);
                                 // inner SEH_TRY for GetEaLength
                                 // _SEH2_TRY { FatGetEaLength } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
                                 let ea_result = crate::seh::try_except(&mut (), |_| {
@@ -612,7 +619,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                                 }
                             }
                             // C fallthrough target: FileDirectoryInformation body
-                            DirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_DIRECTORY_INFORMATION);
+                            DirInfo = &mut *(stage_base as *mut FILE_DIRECTORY_INFORMATION);
                             FatGetDirTimes(IrpContext as *mut IRP_CONTEXT, Dirent, DirInfo);
                             (*DirInfo).EndOfFile.QuadPart = (*Dirent).FileSize as i64;
                             if FlagOn((*Dirent).Attributes as u32, FAT_DIRENT_ATTR_DIRECTORY) == 0 {
@@ -632,7 +639,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         }
                         FIC_NAMES => {
                             DebugTrace!(0, Dbg, b"FatQueryDirectory -> Getting file names information\n\0".as_ptr() as *const i8, 0);
-                            NamesInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_NAMES_INFORMATION);
+                            NamesInfo = &mut *(stage_base as *mut FILE_NAMES_INFORMATION);
                             (*NamesInfo).FileIndex = (NextVbo) as u32;
                             (*NamesInfo).FileNameLength = FileNameLength;
                             DebugTrace!(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
@@ -641,6 +648,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             FatBugCheck((FileInformationClass) as ULONG_PTR, 0, 0);
                         }
                     }
+                    core::ptr::copy_nonoverlapping(stage_base as *const u8, Buffer.add(NextEntry as usize), BaseLength as usize);
 
                     BytesConverted = 0;
                     *p_Status = RtlOemToUnicodeN(
@@ -685,6 +693,13 @@ pub unsafe extern "system" fn FatQueryDirectory(
 
                     NT_ASSERT!((BytesRemainingInBuffer >= BaseLength) as u8);
                     core::ptr::write_bytes(Buffer.add(NextEntry as usize), 0, BaseLength as usize);
+                    // The C fills the entry in place, but NtQueryDirectoryFile probes the caller's
+                    // buffer for ULONG alignment only (a WoW64 caller's is 4-aligned) and these
+                    // structs are 8-aligned, so a typed reference into it is a misaligned deref.
+                    // Fill an aligned copy and store its bytes right after the class switch.
+                    let mut stage: FILE_ID_BOTH_DIR_INFORMATION = core::mem::zeroed();
+                    let stage_base = core::ptr::addr_of_mut!(stage) as *mut u8;
+                    NT_ASSERT!((BaseLength as usize <= core::mem::size_of::<FILE_ID_BOTH_DIR_INFORMATION>()) as u8);
 
                     // C switch FALLS THROUGH 5|6 -> 2|3 -> 1 (see the short-name
                     // block above for the full story): Both classes fill the
@@ -695,7 +710,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                     match FileInformationClass {
                         FIC_BOTH_DIRECTORY | FIC_ID_BOTH_DIRECTORY | FIC_FULL_DIRECTORY | FIC_ID_FULL_DIRECTORY | FIC_DIRECTORY => {
                             if FileInformationClass == FIC_BOTH_DIRECTORY || FileInformationClass == FIC_ID_BOTH_DIRECTORY {
-                                BothDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_BOTH_DIR_INFORMATION);
+                                BothDirInfo = &mut *(stage_base as *mut FILE_BOTH_DIR_INFORMATION);
                                 Fat8dot3ToString((IrpContext).cast(), (Dirent as *mut c_void).cast(), 0, &mut Fat8Dot3String);
                                 NT_ASSERT!((Fat8Dot3String.Length <= 12) as u8);
                                 *p_Status = RtlOemToUnicodeN(
@@ -717,7 +732,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             }
                             if FileInformationClass != FIC_DIRECTORY {
                                 DebugTrace!(0, Dbg, b"FatQueryDirectory -> Getting file full directory information\n\0".as_ptr() as *const i8, 0);
-                                FullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_FULL_DIR_INFORMATION);
+                                FullDirInfo = &mut *(stage_base as *mut FILE_FULL_DIR_INFORMATION);
                                 // _SEH2_TRY { FatGetEaLength } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
                                 let ea_result = crate::seh::try_except(&mut (), |_| {
                                     FatGetEaLength(IrpContext, Vcb as *mut c_void, Dirent as *mut c_void, &mut (*FullDirInfo).EaSize);
@@ -728,7 +743,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                                 }
                             }
                             // C fallthrough target: FileDirectoryInformation body
-                            DirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_DIRECTORY_INFORMATION);
+                            DirInfo = &mut *(stage_base as *mut FILE_DIRECTORY_INFORMATION);
                             FatGetDirTimes(IrpContext as *mut IRP_CONTEXT, Dirent, DirInfo);
                             (*DirInfo).EndOfFile.QuadPart = (*Dirent).FileSize as i64;
                             if FlagOn((*Dirent).Attributes as u32, FAT_DIRENT_ATTR_DIRECTORY) == 0 {
@@ -748,7 +763,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         }
                         FIC_NAMES => {
                             DebugTrace!(0, Dbg, b"FatQueryDirectory -> Getting file names information\n\0".as_ptr() as *const i8, 0);
-                            NamesInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_NAMES_INFORMATION);
+                            NamesInfo = &mut *(stage_base as *mut FILE_NAMES_INFORMATION);
                             (*NamesInfo).FileIndex = (NextVbo) as u32;
                             (*NamesInfo).FileNameLength = FileNameLength;
                             DebugTrace!(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
@@ -757,6 +772,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             FatBugCheck((FileInformationClass) as ULONG_PTR, 0, 0);
                         }
                     }
+                    core::ptr::copy_nonoverlapping(stage_base as *const u8, Buffer.add(NextEntry as usize), BaseLength as usize);
 
                     BytesConverted = if BytesRemainingInBuffer - BaseLength >= FileNameLength {
                         FileNameLength
@@ -789,16 +805,18 @@ pub unsafe extern "system" fn FatQueryDirectory(
                 // Fill in FileId
                 match FileInformationClass {
                     FIC_ID_BOTH_DIRECTORY => {
-                        IdBothDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_ID_BOTH_DIR_INFORMATION);
-                        (*IdBothDirInfo).FileId.QuadPart =
+                        // Straight into the caller's buffer: unaligned (see the staging note above).
+                        IdBothDirInfo = Buffer.add(NextEntry as usize) as *mut FILE_ID_BOTH_DIR_INFORMATION;
+                        core::ptr::addr_of_mut!((*IdBothDirInfo).FileId.QuadPart).write_unaligned(
                             crate::fileid::fat_generate_file_id_from_dirent_and_offset(
-                                Dcb, Dirent as *const c_void, NextVbo as u32);
+                                Dcb, Dirent as *const c_void, NextVbo as u32));
                     }
                     FIC_ID_FULL_DIRECTORY => {
-                        IdFullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_ID_FULL_DIR_INFORMATION);
-                        (*IdFullDirInfo).FileId.QuadPart =
+                        // Straight into the caller's buffer: unaligned (see the staging note above).
+                        IdFullDirInfo = Buffer.add(NextEntry as usize) as *mut FILE_ID_FULL_DIR_INFORMATION;
+                        core::ptr::addr_of_mut!((*IdFullDirInfo).FileId.QuadPart).write_unaligned(
                             crate::fileid::fat_generate_file_id_from_dirent_and_offset(
-                                Dcb, Dirent as *const c_void, NextVbo as u32);
+                                Dcb, Dirent as *const c_void, NextVbo as u32));
                     }
                     _ => {}
                 }

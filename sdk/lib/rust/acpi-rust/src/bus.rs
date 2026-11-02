@@ -86,7 +86,7 @@ fn ACPI_FAILURE(s: ACPI_STATUS) -> bool {
 
 // ---- ACPICA debug macros — no-ops under the driver's NDEBUG build. ----
 macro_rules! ACPI_DEBUG_PRINT {
-    ($($t:tt)*) => {};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 pub const ACPI_DB_INFO: u32 = 0;
 pub const ACPI_DB_ERROR: u32 = 0;
@@ -232,7 +232,7 @@ pub static mut acpi_root: *mut acpi_device = ::core::ptr::null::<acpi_device>() 
 
 pub static mut acpi_bus_event_lock: KSPIN_LOCK = 0;
 
-pub static mut acpi_bus_event_list: list_head = unsafe {
+pub static mut acpi_bus_event_list: list_head = {
     list_head {
         next: &raw const acpi_bus_event_list as *mut list_head,
         prev: &raw const acpi_bus_event_list as *mut list_head,
@@ -263,7 +263,7 @@ pub static mut FixedSleepButtonCount: ::core::ffi::c_int = 0;
 
 pub static mut SleepButtonCount: ::core::ffi::c_int = 0;
 
-static mut acpi_bus_drivers: list_head = unsafe {
+static mut acpi_bus_drivers: list_head = {
     list_head {
         next: &raw const acpi_bus_drivers as *mut list_head,
         prev: &raw const acpi_bus_drivers as *mut list_head,

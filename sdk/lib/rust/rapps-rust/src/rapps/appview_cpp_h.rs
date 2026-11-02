@@ -374,7 +374,7 @@ impl CAppScrnshotPreview {
                     return (TRUE) as BOOL; // do not erase to avoid blinking
                 }
                 WM_TIMER => {
-                    'wswitch2: {
+                    {
                         match wParam {
                             __c if __c == TIMER_LOADING_ANIMATION as _ => {
                                 (*this_).LoadingAnimationFrame += 1;
@@ -1764,7 +1764,7 @@ impl CApplicationView {
                         }
                     }
                 } else if (*pNotifyHeader).hwndFrom == ((*(*this_).m_Toolbar).__base0.GetWindow()).cast() {
-                    'inner2: {
+                    {
                         match (*pNotifyHeader).code {
                             TTN_GETDISPINFO => {
                                 (*(*this_).m_Toolbar).OnGetDispInfo(lParam as usize as LPTOOLTIPTEXT);

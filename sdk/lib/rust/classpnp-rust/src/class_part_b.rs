@@ -538,7 +538,7 @@ pub unsafe extern "system" fn ClassCreateDeviceObject(
                 TRACE_FLAG_INIT,
                 b"ClassCreateFdo: Freeing unicode name buffer\n\0".as_ptr() as PCHAR,
             );
-            FREE_POOL(ntUnicodeString.Buffer as PVOID);
+            FREE_POOL!(ntUnicodeString.Buffer);
             RtlInitUnicodeString(&mut ntUnicodeString as *mut _ as *mut _, core::ptr::null());
         }
     } else {
@@ -631,7 +631,7 @@ pub unsafe extern "system" fn ClassCreateDeviceObject(
                         TRACE_FLAG_INIT,
                         b"ClassCreateFdo: Freeing unicode name buffer\n\0".as_ptr() as PCHAR,
                     );
-                    FREE_POOL(ntUnicodeString.Buffer as PVOID);
+                    FREE_POOL!(ntUnicodeString.Buffer);
                     RtlInitUnicodeString(&mut ntUnicodeString as *mut _ as *mut _, core::ptr::null());
                 }
 
@@ -845,7 +845,7 @@ pub unsafe extern "system" fn ClassDeviceControl(
                     break;
                 }
 
-                let valueName = ExAllocatePoolWithTag(
+                let mut valueName = ExAllocatePoolWithTag(
                     PagedPool,
                     (((*commonExtension).DeviceName.Length as usize + core::mem::size_of::<WCHAR>()) as u64) as usize,
                     0x38436353
@@ -1859,7 +1859,7 @@ pub unsafe extern "system" fn ClassGetDescriptor(
         TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_INIT,
                    b"ClassGetDescriptor: error %lx trying to query properties #1\0".as_ptr() as PCHAR,
                    ioStatus.__bindgen_anon_1.Status);
-        FREE_POOL(descriptor as PVOID);
+        FREE_POOL!(descriptor);
         return ioStatus.__bindgen_anon_1.Status;
     }
 
@@ -3507,7 +3507,7 @@ pub unsafe extern "system" fn ClassQueryTimeOutRegistryValue(
     ) as PWSTR;
 
     if path.is_null() {
-        FREE_POOL(parameters as PVOID);
+        FREE_POOL!(parameters);
         return 0;
     }
 
@@ -3542,8 +3542,8 @@ pub unsafe extern "system" fn ClassQueryTimeOutRegistryValue(
         timeOut = 0;
     }
 
-    FREE_POOL(parameters as PVOID);
-    FREE_POOL(path as PVOID);
+    FREE_POOL!(parameters);
+    FREE_POOL!(path);
 
     TracePrint(
         TRACE_LEVEL_INFORMATION,
@@ -3726,7 +3726,7 @@ pub unsafe extern "system" fn ClassRemoveDevice(
 
                 ClassCleanupMediaChangeDetection(fdoExtension);
 
-                FREE_POOL(((*fdoExtension).FailurePredictionInfo).cast());
+                FREE_POOL!((*fdoExtension).FailurePredictionInfo);
 
                 ClassAcquireChildLock(fdoExtension);
                 child = ClassRemoveChild(fdoExtension, core::ptr::null_mut(), 0u8);
@@ -3758,15 +3758,22 @@ pub unsafe extern "system" fn ClassRemoveDevice(
 
                     ClasspDeleteTimer(fdoExtension);
 
-                    FREE_POOL(((*(*fdoExtension).PrivateFdoData).PowerProcessIrp).cast());
-                    FREE_POOL(((*(*fdoExtension).PrivateFdoData).FreeTransferPacketsLists).cast());
-                    FREE_POOL(((*fdoExtension).PrivateFdoData).cast());
+                    FREE_POOL!((*(*fdoExtension).PrivateFdoData).PowerProcessIrp);
+                    FREE_POOL!((*(*fdoExtension).PrivateFdoData).FreeTransferPacketsLists);
+                    FREE_POOL!((*fdoExtension).PrivateFdoData);
                 }
 
-                FREE_POOL((*fdoExtension).Reserved4 as PVOID);
+                {
+                    // FREE_POOL on a ULONG_PTR field: the C's `= NULL` stores 0.
+                    let reserved = (*fdoExtension).Reserved4 as PVOID;
+                    if !reserved.is_null() {
+                        crate::shims::FREE_POOL(reserved);
+                        (*fdoExtension).Reserved4 = 0;
+                    }
+                }
 
                 if !(*commonExtension).DeviceName.Buffer.is_null() {
-                    FREE_POOL(((*commonExtension).DeviceName.Buffer).cast());
+                    FREE_POOL!((*commonExtension).DeviceName.Buffer);
                     RtlInitUnicodeString(
                         core::ptr::addr_of_mut!((*commonExtension).DeviceName),
                         core::ptr::null_mut(),
@@ -3776,13 +3783,13 @@ pub unsafe extern "system" fn ClassRemoveDevice(
                 if !(*fdoExtension).FunctionSupportInfo.is_null() {
                     // HwFirmwareInfo is a Windows Threshold+ field not present in this bindgen snapshot; skip free
                 }
-                FREE_POOL(((*fdoExtension).FunctionSupportInfo).cast());
+                FREE_POOL!((*fdoExtension).FunctionSupportInfo);
 
-                FREE_POOL(((*fdoExtension).MiniportDescriptor).cast());
+                FREE_POOL!((*fdoExtension).MiniportDescriptor);
 
-                FREE_POOL(((*fdoExtension).AdapterDescriptor).cast());
+                FREE_POOL!((*fdoExtension).AdapterDescriptor);
 
-                FREE_POOL(((*fdoExtension).DeviceDescriptor).cast());
+                FREE_POOL!((*fdoExtension).DeviceDescriptor);
 
                 IoDetachDevice(lowerDeviceObject);
             }
@@ -4283,7 +4290,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
         );
 
         if irp.is_null() {
-            FREE_POOL(senseInfoBuffer);
+            FREE_POOL!(senseInfoBuffer);
             SrbSetSenseInfoBuffer((Srb).cast(), core::ptr::null_mut());
             SrbSetSenseInfoBufferLength((Srb).cast(), 0);
             TracePrint(
@@ -4311,7 +4318,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
         if !BufferAddress.is_null() {
             (*irp).MdlAddress = IoAllocateMdl(BufferAddress, BufferLength, 0u8, 0u8, irp);
             if (*irp).MdlAddress.is_null() {
-                FREE_POOL(senseInfoBuffer);
+                FREE_POOL!(senseInfoBuffer);
                 SrbSetSenseInfoBuffer((Srb).cast(), core::ptr::null_mut());
                 SrbSetSenseInfoBufferLength((Srb).cast(), 0);
                 IoFreeIrp(irp);
@@ -4331,7 +4338,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
                 if WriteToDevice != 0 { IoReadAccess } else { IoWriteAccess },
             );
             if !NT_SUCCESS(st) {
-                FREE_POOL(senseInfoBuffer);
+                FREE_POOL!(senseInfoBuffer);
                 SrbSetSenseInfoBuffer((Srb).cast(), core::ptr::null_mut());
                 SrbSetSenseInfoBufferLength((Srb).cast(), 0);
                 IoFreeMdl((*irp).MdlAddress);
@@ -4451,7 +4458,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
         FREE_PORT_ALLOCATED_SENSE_BUFFER_EX(fdoExtension, Srb);
     }
 
-    FREE_POOL(senseInfoBuffer);
+    FREE_POOL!(senseInfoBuffer);
     SrbSetSenseInfoBuffer((Srb).cast(), core::ptr::null_mut());
     SrbSetSenseInfoBufferLength((Srb).cast(), 0);
 

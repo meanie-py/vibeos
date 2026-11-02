@@ -1537,6 +1537,111 @@ def _pinned_int_macros(module) -> dict[str, int]:
 _eval_int_guard = eval_int_guard
 
 
+def dead_line_numbers(
+    text: str,
+    undefs: frozenset[str] | set[str],
+    pinned: dict[str, int],
+    culprits: dict[str, int] | None = None,
+) -> set[int]:
+    """1-based numbers of the lines of *text* inside a decidably-FALSE `#if`.
+
+    The ONE definition of "dead" that both the pre-payment dead-body audit and the
+    case-label audit use. They used to disagree: dinput's joystick_osx.c was reported 95%
+    dead by one and raised 73 blocking SWITCH_CONST_UNOWNED errors (IOKit's `kHIDUsage_*`)
+    from the very same dead lines by the other.
+
+    `#ifdef X` is dead when wine's config.h leaves X undefined; `#if <expr>` when the
+    module's pinned `-DNAME=<int>` settle it false. A guard neither can decide is UNKNOWN
+    (None), never "live" -- the `#else` inverter only flips a verdict it actually knows,
+    and an `#elif` drops its chain to UNKNOWN. *culprits*, if given, counts the macros
+    that killed each dead block.
+    """
+    # A macro the TU itself `#define`s ONLY on dead lines is undefined too: joystick_linuxinput.c
+    # defines HAS_PROPER_HEADER inside its dead `#ifdef HAVE_LINUX_INPUT_H` and then guards
+    # the whole driver with `#ifdef HAS_PROPER_HEADER` (its .obj defines one stub symbol).
+    # Iterate, because each newly-undefined macro can kill more defines.
+    lines = text.splitlines()
+    local_defs: dict[str, list[int]] = {}
+    for lineno, line in enumerate(lines, 1):
+        dm = _LOCAL_DEFINE_RE.match(line)
+        if dm is not None:
+            local_defs.setdefault(dm.group(1), []).append(lineno)
+    known_undef = set(undefs)
+    while True:
+        dead = _dead_lines_once(lines, known_undef, pinned, None)
+        more = {
+            name
+            for name, at in local_defs.items()
+            if name not in known_undef and all(n in dead for n in at)
+        }
+        if not more:
+            break
+        known_undef |= more
+    if culprits is not None:
+        _dead_lines_once(lines, known_undef, pinned, culprits)
+    return dead
+
+
+_LOCAL_DEFINE_RE = re.compile(r"^\s*#\s*define\s+([A-Za-z_]\w*)")
+
+
+def _dead_lines_once(
+    lines: list[str],
+    undefs: frozenset[str] | set[str],
+    pinned: dict[str, int],
+    culprits: dict[str, int] | None,
+) -> set[int]:
+    dead: set[int] = set()
+    depth_dead = 0
+    stack: list[bool | None] = []
+    for lineno, line in enumerate(lines, 1):
+        m = _GUARD_OPEN_RE.match(line)
+        if m is not None:
+            macro = m.group(2)
+            verdict: bool | None
+            if macro not in undefs:
+                verdict = None
+            else:
+                verdict = m.group(1) != "n"  # `#ifdef UNDEF` dead, `#ifndef UNDEF` live
+            stack.append(verdict)
+            if verdict:
+                depth_dead += 1
+                if culprits is not None:
+                    culprits[macro] = culprits.get(macro, 0) + 1
+            continue
+        m = _IF_EXPR_RE.match(line)
+        if m is not None:
+            expr = m.group(1)
+            value = _eval_int_guard(expr, pinned) if pinned else None
+            stack.append(None if value is None else not value)
+            if value is False:
+                depth_dead += 1
+                if culprits is not None:
+                    for name in set(re.findall(r"[A-Za-z_]\w*", expr)) & set(pinned):
+                        culprits[name] = culprits.get(name, 0) + 1
+            continue
+        if re.match(r"^\s*#\s*else\b", line) and stack:
+            if stack[-1] is not None:
+                if stack[-1]:
+                    depth_dead -= 1
+                stack[-1] = not stack[-1]
+                if stack[-1]:
+                    depth_dead += 1
+            continue
+        if re.match(r"^\s*#\s*elif\b", line) and stack:
+            if stack[-1]:
+                depth_dead -= 1
+            stack[-1] = None
+            continue
+        if re.match(r"^\s*#\s*endif\b", line) and stack:
+            if stack.pop():
+                depth_dead -= 1
+            continue
+        if depth_dead > 0:
+            dead.add(lineno)
+    return dead
+
+
 def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:
     """Warn when most of a module's CODE sits in a decidably-FALSE `#ifdef`.
 
@@ -1578,55 +1683,8 @@ def _audit_dead_bodies(module, repo_root: Path, findings: list) -> None:
         lines = text.splitlines()
         total_lines += len(lines)
         tu_lines = len(lines)
-        tu_dead = 0
-        depth_dead = 0
-        stack: list[bool | None] = []
-        for line in lines:
-            m = _GUARD_OPEN_RE.match(line)
-            if m is not None:
-                macro = m.group(2)
-                dead = macro in undefs and m.group(1) != "n"
-                stack.append(dead)
-                if dead:
-                    depth_dead += 1
-                    culprits[macro] = culprits.get(macro, 0) + 1
-                continue
-            m = _IF_EXPR_RE.match(line)
-            if m is not None:
-                expr = m.group(1)
-                verdict = _eval_int_guard(expr, pinned) if pinned else None
-                # `None` (undecidable) must stay None, not False: the `#else` inverter
-                # below only flips a verdict it actually knows.
-                stack.append(None if verdict is None else not verdict)
-                if verdict is False:
-                    depth_dead += 1
-                    for name in set(re.findall(r"[A-Za-z_]\w*", expr)) & set(pinned):
-                        culprits[name] = culprits.get(name, 0) + 1
-                continue
-            if re.match(r"^\s*#\s*else\s*$", line) and stack:
-                if stack[-1] is not None:
-                    if stack[-1]:
-                        depth_dead -= 1
-                    stack[-1] = not stack[-1]
-                    if stack[-1]:
-                        depth_dead += 1
-                continue
-            if re.match(r"^\s*#\s*elif\b", line) and stack:
-                # An `#elif` arm is live exactly when the arms before it were false, which
-                # is a question this evaluator does not answer. Drop to UNKNOWN rather than
-                # inheriting the previous arm's verdict — inheriting it would report the
-                # `#elif` body as dead on the strength of a test that no longer applies.
-                if stack[-1]:
-                    depth_dead -= 1
-                stack[-1] = None
-                continue
-            if re.match(r"^\s*#\s*endif\b", line) and stack:
-                if stack.pop():
-                    depth_dead -= 1
-                continue
-            if depth_dead > 0:
-                dead_lines += 1
-                tu_dead += 1
+        tu_dead = len(dead_line_numbers(text, undefs, pinned, culprits))
+        dead_lines += tu_dead
         # A file that is ~entirely dead is its own finding, at ERROR: the module-wide
         # percentage below can be under threshold while a specific file you are about to
         # pay for is 100% dead. msvcrt is exactly that shape.
@@ -2034,8 +2092,17 @@ def walk_includes(tus: list[Path], env: IncludeEnv) -> Closure:
 # ---------------------------------------------------------------------------
 
 
-def find_switch_constants(tus: list[Path], repo_root: Path) -> list[SwitchConst]:
+def find_switch_constants(
+    tus: list[Path],
+    repo_root: Path,
+    undefs: frozenset[str] | set[str] = frozenset(),
+    pinned: dict[str, int] | None = None,
+) -> list[SwitchConst]:
     """Identifiers appearing in ``case`` labels, via tree-sitter (no regex guessing).
+
+    Labels on lines :func:`dead_line_numbers` decides are dead (wine config *undefs*, the
+    module's *pinned* int macros) are not audited: the compiler never sees them, so they
+    cannot become a catch-all arm, and the translation drops them with their block.
 
     A hard dependency on purpose: a regex fallback would quietly miss arms, and a
     missed arm is the exact silent-catch-all bug this check exists to prevent.
@@ -2090,7 +2157,13 @@ def find_switch_constants(tus: list[Path], repo_root: Path) -> list[SwitchConst]
                         continue
                     text = src[v.start_byte : v.end_byte].decode("utf-8", "replace")
                     found.append(SwitchConst(text, key, v.start_point[0] + 1))
-        found.extend(_macro_switch_constants(src, key, parser))
+        tu_found = [c for c in found if c.tu == key]
+        tu_found.extend(_macro_switch_constants(src, key, parser))
+        found = [c for c in found if c.tu != key]
+        if undefs or pinned:
+            dead = dead_line_numbers(src.decode("utf-8", "replace"), undefs, pinned or {})
+            tu_found = [c for c in tu_found if c.line not in dead]
+        found.extend(tu_found)
     # stable, de-duplicated by (ident, tu, line)
     return sorted(set(found), key=lambda s: (s.tu, s.line, s.ident))
 
@@ -2114,8 +2187,14 @@ def _macro_switch_constants(src: bytes, key: str, parser) -> list[SwitchConst]:
     from .scanner import FN_MACRO_RE, macro_body, split_macro_args
 
     src_text = src.decode("utf-8", "replace")
-    # name -> parameter indices that reach a `case` label
-    case_params: dict[str, list[int]] = {}
+    # (name, live-from, live-until) -> parameter indices that reach a `case` label. A
+    # definition is in force from its own line to the next `#define`/`#undef` of the same
+    # name: dinput's device.c defines FE five times, once as `case x: TRACE(#x); break`, and
+    # keying on the name alone reported its later `FE(GUID_XAxis)` TABLE as 26 case labels.
+    case_params: dict[tuple[str, int, int], list[int]] = {}
+    redefs: dict[str, list[int]] = {}
+    for rm in re.finditer(r"^[ \t]*#[ \t]*(?:define|undef)[ \t]+([A-Za-z_]\w*)", src_text, re.M):
+        redefs.setdefault(rm.group(1), []).append(rm.start())
     # `#define ERR_CASE(oserr)` is itself a textual `ERR_CASE(` match, and its argument is
     # the PARAMETER NAME. Skipping the definition's own span is what keeps `oserr` from
     # being reported as a 43rd switch constant that no arm ever names.
@@ -2155,13 +2234,17 @@ def _macro_switch_constants(src: bytes, key: str, parser) -> list[SwitchConst]:
                     if text in sentinels:
                         hits.add(sentinels[text])
         if hits:
-            case_params[name] = sorted(hits)
+            later = [at for at in redefs.get(name, ()) if at > m.start()]
+            until = min(later, default=len(src_text))
+            case_params[(name, m.start(), until)] = sorted(hits)
     if not case_params:
         return []
 
     found: list[SwitchConst] = []
-    for name, idxs in case_params.items():
+    for (name, live_from, live_until), idxs in case_params.items():
         for call in re.finditer(rf"\b{re.escape(name)}[ \t]*\(", src_text):
+            if not live_from <= call.start() < live_until:
+                continue  # another definition of this name is in force there
             if any(lo <= call.start() < hi for lo, hi in def_spans.get(name, ())):
                 continue  # the `#define` line itself
             args = split_macro_args(src_text, call.end())
@@ -3440,7 +3523,9 @@ def derive(
         )
 
     # ---- switch-constant audit (§9.112) ----
-    switch_consts = find_switch_constants(tus, repo_root)
+    switch_consts = find_switch_constants(
+        tus, repo_root, _wine_config_undefs(repo_root), _pinned_int_macros(module)
+    )
     sys_crate = getattr(module, "sys_crate", None) or resolve_sys_crate(
         repo_root, module.name, module.is_usermode
     )
@@ -4954,8 +5039,12 @@ pub use crate::{ERR, FIXME, TRACE, WARN};"""
 // (field manual §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py
 // rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
 // DPRINT1 PRINTS in this DBG=1 tree, kernel and user mode alike: it comes from
-// win32macros-rust with the other macros.
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+// win32macros-rust with the other macros. DPRINT is off, but its arguments still
+// type-check (DBG_TYPECHECK: a never-called closure), so a stale one is a compile error
+// rather than silently swallowed tokens.
+#[macro_export] macro_rules! DPRINT {
+    ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) };
+}
 #[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
 pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};"""

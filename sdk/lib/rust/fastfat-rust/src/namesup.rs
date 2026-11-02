@@ -200,7 +200,9 @@ pub unsafe extern "system" fn Fat8dot3ToString(
                 while StringIndex < BaseLength {
                     let p = (*OutputString).Buffer.offset(StringIndex as isize);
                     if FsRtlIsLeadDbcsCharacter((*p) as u8) != 0 {
-                        StringIndex += 1;
+                        // Lead byte AND its trail: the C's `continue` is in a for loop whose
+                        // own += 1 follows, so a DBCS pair is skipped whole, never case-folded.
+                        StringIndex += 2;
                         continue;
                     }
                     if *p >= (b'A') as i8 && *p <= (b'Z') as i8 {
@@ -241,7 +243,9 @@ pub unsafe extern "system" fn Fat8dot3ToString(
                 while StringIndex < (*OutputString).Length as u32 {
                     let p = (*OutputString).Buffer.offset(StringIndex as isize);
                     if FsRtlIsLeadDbcsCharacter((*p) as u8) != 0 {
-                        StringIndex += 1;
+                        // Lead byte AND its trail: the C's `continue` is in a for loop whose
+                        // own += 1 follows, so a DBCS pair is skipped whole, never case-folded.
+                        StringIndex += 2;
                         continue;
                     }
                     if *p >= (b'A') as i8 && *p <= (b'Z') as i8 {

@@ -191,7 +191,7 @@ pub unsafe extern "system" fn CoGetActivationState(
 ) -> HRESULT {
     FIXME!(
         b"%s, %x, %p\n\0".as_ptr(),
-        debugstr_guid((&guid as *const GUID).cast()),
+        debugstr_guid(&guid as *const GUID),
         unknown,
         unknown2,
     );

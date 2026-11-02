@@ -125,6 +125,42 @@ def _load_by_path(modname: str, path: Path):
     return mod
 
 
+def unbuilt_rust_crate(build_dir: Path):
+    """A predicate: is this path inside a Rust crate that `build_dir` never compiles?
+
+    Such an edit cannot change a program that build stages. The arm64-only wowx64-rust
+    is the case that made this matter: every edit to it demanded a 19-minute amd64
+    rebuild before an x86-64 guest payload would stage (2026-11-01). Both of the build's
+    own records must be silent about the crate: the ninja graph, which can miss a cargo
+    edge, and cargo's dep-info files, which list every source it actually compiled."""
+    ninja = list(build_dir.glob("*.ninja"))
+    # any() stops at the first hit, and CMake keeps depfiles under build-<arch>/CMakeFiles/d/,
+    # so this never descends the tree.
+    if not ninja or not any(build_dir.rglob("*.d")):  # unpruned-walk: intentional
+        return lambda p: False  # no build records to consult: nothing is provably unbuilt
+    seen: dict[str, bool] = {}
+
+    def unbuilt(path: str) -> bool:
+        parts = path.split("/")
+        if len(parts) < 5 or parts[:3] != ["sdk", "lib", "rust"]:
+            return False
+        crate = "/".join(parts[:4]) + "/"
+        if crate not in seen:
+            named = any(crate in p.read_text(errors="ignore") for p in ninja)
+            if not named:
+                rc = subprocess.run(
+                    ["grep", "-rqF", "--include=*.d", crate, str(build_dir)],
+                    check=False,
+                ).returncode
+                if rc > 1:
+                    die(f"cannot search {build_dir} dep-info for {crate} (grep rc={rc})")
+                named = rc == 0
+            seen[crate] = not named
+        return seen[crate]
+
+    return unbuilt
+
+
 def guest_build_current(name: str, build_dir: Path) -> None:
     """Die unless `build_dir` was built from the current working tree.
 
@@ -138,8 +174,14 @@ def guest_build_current(name: str, build_dir: Path) -> None:
         die(f"payload {name!r}: guest set build_dir {build_dir.name!r} is not build-<arch>")
     warmth = _load_by_path("_payload_warmth", REPO / "tests/qemu/cli/warmth.py")
     docs_only = _load_by_path("_payload_docs_only", REPO / "tools/docs_only.py")
+    unbuilt = unbuilt_rust_crate(build_dir)
     try:
-        stale = warmth.missing(REPO, warmth.worktree_tree(REPO), (arch,), docs_only.is_inert)
+        stale = warmth.missing(
+            REPO,
+            warmth.worktree_tree(REPO),
+            (arch,),
+            lambda p: docs_only.is_inert(p) or unbuilt(p),
+        )
     except Exception as exc:
         die(f"payload {name!r}: cannot read the {arch} build receipts: {exc}")
     if stale:
@@ -247,7 +289,7 @@ def manifest(names: list[str], arch: str) -> dict[str, Path]:
         for b in binaries(spec, arch):
             src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
             # root: reactos (default) grafts under reactos/; root: image grafts
-            # at the media root (e.g. the Profiles/.../StartUp autostart folder).
+            # at the media root (e.g. the ProgramData/.../Startup autostart folder).
             prefix = "reactos/" if b.get("root", "reactos") == "reactos" else ""
             dest = prefix + str(b["dest"]).replace("\\", "/").lstrip("/")
             if dest in entries:
@@ -304,6 +346,28 @@ def stale_generator(src: Path) -> Path | None:
     return None
 
 
+def _git_ignored(pdir: Path) -> set[Path]:
+    """Files under `pdir` that git ignores, i.e. BUILD OUTPUTS, never sources.
+
+    The suffix filter in stale_binaries cannot see an output with a source-like name.
+    regdiff's build.sh writes `regdiff-base-<arch>.txt` beside the DLL it copies, so one
+    arch's build made every OTHER arch's binaries "older than a source" and refused to
+    stage them, and the stamp written after its own copy did the same to its own arch.
+    Ignored == generated is the rule this repo already keeps (every payload's binaries are
+    gitignored). A failed `git` answers "nothing ignored", the behaviour before this."""
+    try:
+        cp = subprocess.run(
+            ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "--", "."],
+            cwd=pdir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {(pdir / line).resolve() for line in cp.stdout.splitlines() if line}
+
+
 def stale_binaries(name: str, arch: str) -> list[Path]:
     """The payload's binaries for `arch` that are missing or older than its sources.
 
@@ -316,6 +380,7 @@ def stale_binaries(name: str, arch: str) -> list[Path]:
     """
     spec = load_spec(name)
     pdir = PAYLOADS_DIR / name
+    ignored = _git_ignored(pdir)
     srcs = [
         p
         for p in pdir.rglob("*")
@@ -323,6 +388,7 @@ def stale_binaries(name: str, arch: str) -> list[Path]:
         and "__pycache__" not in p.parts
         and not p.name.startswith(".")
         and p.suffix.lower() not in (".exe", ".dll", ".png", ".log")
+        and p.resolve() not in ignored
     ]
     srcs += list(PAYLOADS_DIR.glob("*.h"))
     newest = max((p.stat().st_mtime for p in srcs), default=0.0)

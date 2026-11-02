@@ -12,7 +12,7 @@ static mut __wine_dbch_ole: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_ole as *mut __wine_debug_channel };
+    &raw const __wine_dbch_ole as *mut __wine_debug_channel;
 
 pub const MAXSINKS: i32 = 10;
 
@@ -70,7 +70,7 @@ fn ConnectionPointImpl_QueryInterface(
     ppvObject: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
     let _This: *mut ConnectionPointImpl = impl_from_IConnectionPoint(iface);
-    TRACE!(b"(%p)->(%s, %p)\n\0".as_ptr() as *const i8, This, debugstr_guid(riid), ppvObject);
+    TRACE!(b"(%p)->(%s, %p)\n\0".as_ptr() as *const i8, _This, debugstr_guid(riid), ppvObject);
 
     if ppvObject.is_null() {
         return E_INVALIDARG;
@@ -357,7 +357,7 @@ fn EnumConnectionsImpl_QueryInterface(
     let _This: *mut ConnectionPointImpl = iface as *mut ConnectionPointImpl;
     TRACE!(
         b"(%p)->(%s, %p)\n\0".as_ptr() as *const i8,
-        This,
+        _This,
         debugstr_guid(riid),
         ppvObject,
     );

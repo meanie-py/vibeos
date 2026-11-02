@@ -574,7 +574,8 @@ pub unsafe extern "C" fn CdVerifyFcbOperation(
             (*(*Vcb).SwapVpb).Size = core::mem::size_of::<VPB>() as i16;
             (*(*Vcb).SwapVpb).RealDevice = (*OldVpb).RealDevice;
             (*(*(*Vcb).SwapVpb).RealDevice).Vpb = (*Vcb).SwapVpb;
-            (*(*Vcb).SwapVpb).Flags = FlagOn( (*OldVpb).Flags as u32, VPB_REMOVE_PENDING ) as u16;
+            // The C FlagOn is the masked bits, not a boolean: this keeps VPB_REMOVE_PENDING (8).
+            (*(*Vcb).SwapVpb).Flags = (*OldVpb).Flags & (VPB_REMOVE_PENDING as u16);
 
             IoReleaseVpbSpinLock(SavedIrql);
 

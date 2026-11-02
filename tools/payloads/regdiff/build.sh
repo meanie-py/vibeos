@@ -22,8 +22,10 @@ declare -A CC=( [arm64]=aarch64-w64-mingw32-gcc [amd64]=x86_64-w64-mingw32-gcc [
 for A in $ARCHES; do
     base="$REGDIFF_BASE/build-$A/dll/win32/shell32/shell32.dll"
     [ -f "$base" ] || { echo "[regdiff] FAIL($A): no baseline DLL at $base"; exit 1; }
-    cp "$base" "$HERE/regdiff-base-$A.dll"
+    # The .txt first: compile.py's staleness check counts every non-binary file in this
+    # directory as a SOURCE, so a stamp written after the copy makes the DLL stale forever.
     git -C "$REGDIFF_BASE" log -1 --format='%H %s' > "$HERE/regdiff-base-$A.txt"
+    cp "$base" "$HERE/regdiff-base-$A.dll"
     echo "[regdiff] building regdiff-$A.exe (baseline $(cut -c1-12 "$HERE/regdiff-base-$A.txt"))"
     # GUI subsystem + classic msvcrt, same recipe and reasons as ../procstorm/build.sh.
     "$TC/${CC[$A]}" -O2 -o "$HERE/regdiff-$A.exe" "$HERE/regdiff.c" \

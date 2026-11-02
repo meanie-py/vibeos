@@ -15,7 +15,7 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
 // DPRINT1 PRINTS in this DBG=1 tree, kernel and user mode alike: it comes from
 // win32macros-rust with the other macros.
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
 #[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
 pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};
@@ -243,7 +243,7 @@ pub static mut __wine_dbch_shell: __wine_debug_channel = __wine_debug_channel {
     name: unsafe { ::core::mem::transmute::<[u8; 15], [::core::ffi::c_char; 15]>(*b"\x73\x68\x65\x6c\x6c\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00") },
 };
 pub static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw mut __wine_dbch_shell };
+    { &raw mut __wine_dbch_shell };
 // ==== end wine debug channels ====
 
 // ==== port resolve: UNICODE TCHAR family (generated) ====

@@ -1,3 +1,4 @@
+use ntkrnl_sys::ex::ExRaiseStatus;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
@@ -968,13 +969,42 @@ pub unsafe extern "C" fn CcRosEnsureVacbResident(
             );
 
             if status < 0 {
-                // DUMMY_PSEH: return FALSE instead of raising
-                return 0u8;
+                // C: ExRaiseStatus(Status). Returning FALSE (the old DUMMY_PSEH stand-in) told a
+                // WAIT caller "would block": fastfat's mount of an EMPTY floppy (BIOS machines)
+                // got STATUS_NO_MEDIA_IN_DEVICE turned into STATUS_CANT_WAIT on a waitable
+                // IrpContext -- its NT_ASSERT, then VERIFY_REQUIRED on the verify thread.
+                // Callers that hold a BCB/VACB release it through `ensure_resident_or`.
+                ExRaiseStatus(status);
             }
         }
     }
 
     1u8
+}
+
+/// `CcRosEnsureVacbResident` inside the C caller's `_SEH2_TRY`: if it raises, `undo` runs
+/// (the caller's `_SEH2_FINALLY` / release of what it holds) and the status propagates on.
+/// `vacb` is untyped: callers hold the bindgen `_ROS_VACB`, this file its own `ROS_VACB`.
+pub(crate) unsafe fn ensure_resident_or<F: FnOnce()>(
+    vacb: *mut core::ffi::c_void,
+    wait: BOOLEAN,
+    no_read: BOOLEAN,
+    offset: ULONG,
+    length: ULONG,
+    undo: F,
+) -> BOOLEAN {
+    let mut resident = 0u8;
+    match ntkrnl_sys::seh::try_except(
+        &mut resident,
+        |r| *r = CcRosEnsureVacbResident(vacb as PROS_VACB, wait, no_read, offset, length),
+        |_, _| ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER,
+    ) {
+        Ok(()) => resident,
+        Err(code) => {
+            undo();
+            ExRaiseStatus(code)
+        }
+    }
 }
 
 #[no_mangle]

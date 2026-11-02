@@ -8,6 +8,7 @@
 #include <winternl.h>
 #include <winioctl.h>
 #include <stdio.h>
+#include <wctype.h>
 
 static void hex(const char *tag, const void *p, ULONG n)
 {
@@ -39,6 +40,21 @@ static void file_queries(const wchar_t *path, HANDLE h)
         else
             printf("%s: err=%lu\n", tag, GetLastError());
     }
+    /* FSCTL_GET_RETRIEVAL_POINTERS from VCN 0: a buffer that fits, then one with room for
+     * the header and a single extent (the partial-fill path, ERROR_MORE_DATA). */
+    for (int small = 0; small < 2; small++) {
+        STARTING_VCN_INPUT_BUFFER in = { 0 };
+        BYTE out[512] = {0};
+        RETRIEVAL_POINTERS_BUFFER *rp = (RETRIEVAL_POINTERS_BUFFER *)out;
+        DWORD n = 0, size = small ? sizeof(RETRIEVAL_POINTERS_BUFFER) : sizeof(out);
+        BOOL ok = DeviceIoControl(h, FSCTL_GET_RETRIEVAL_POINTERS, &in, sizeof(in), out, size, &n, NULL);
+        printf("RETPTR %s ok=%d err=%lu n=%lu extents=%lu startvcn=%lld",
+               small ? "small" : "full", ok, ok ? 0 : GetLastError(), n, rp->ExtentCount,
+               rp->StartingVcn.QuadPart);
+        if (n >= sizeof(RETRIEVAL_POINTERS_BUFFER))
+            printf(" next0=%lld lcn0_nonzero=%d", rp->Extents[0].NextVcn.QuadPart, rp->Extents[0].Lcn.QuadPart != 0);
+        printf("\n");
+    }
     for (ULONG c = 1; c <= 14; c++) {
         BYTE buf[1024] = {0};
         IO_STATUS_BLOCK io = {0};
@@ -47,6 +63,32 @@ static void file_queries(const wchar_t *path, HANDLE h)
         sprintf(tag, "NtQVIF %02lu st=%08lx n=%3lu", c, (ULONG)st, (ULONG)io.Information);
         hex(tag, buf, st < 0 ? 0 : 48);
     }
+}
+
+/* Device IOCTLs on a volume handle. The file system sees these first: CDFS's
+ * CdCommonDevControl accepts only a user volume open and forwards to the device, and a
+ * translated `TypeOfOpen != 0` once refused every one of them (2026-11-01). */
+static void volume_ioctls(wchar_t letter)
+{
+    wchar_t dev[8] = L"\\\\.\\X:";
+    dev[4] = letter;
+    HANDLE v = CreateFileW(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+    if (v != INVALID_HANDLE_VALUE) {
+        STORAGE_PROPERTY_QUERY q = { StorageAccessAlignmentProperty, PropertyStandardQuery };
+        STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR d = {0};
+        DISK_GEOMETRY g = {0};
+        DWORD n = 0;
+        if (DeviceIoControl(v, IOCTL_STORAGE_QUERY_PROPERTY, &q, sizeof(q), &d, sizeof(d), &n, NULL))
+            printf("align logical=%lu physical=%lu\n", d.BytesPerLogicalSector, d.BytesPerPhysicalSector);
+        else
+            printf("align err=%lu\n", GetLastError());
+        if (DeviceIoControl(v, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &g, sizeof(g), &n, NULL))
+            printf("geometry bps=%lu media=%d\n", g.BytesPerSector, g.MediaType);
+        else
+            printf("geometry err=%lu\n", GetLastError());
+        CloseHandle(v);
+    } else
+        printf("volume open err=%lu\n", GetLastError());
 }
 
 int wmain(int argc, wchar_t **argv)
@@ -79,23 +121,26 @@ int wmain(int argc, wchar_t **argv)
         else
             printf("GVI err=%lu\n", GetLastError());
         dev[4] = argv[1][0];
-        HANDLE v = CreateFileW(dev, 0, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
+        volume_ioctls(argv[1][0]);
+        HANDLE v;
+        /* FSCTL_GET_VOLUME_BITMAP needs a handle opened for data (FAT's manage-volume
+         * check). From LCN 0: 8 bitmap bytes (partial: ERROR_MORE_DATA), then 64 KB. */
+        v = CreateFileW(dev, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, 0, NULL);
         if (v != INVALID_HANDLE_VALUE) {
-            STORAGE_PROPERTY_QUERY q = { StorageAccessAlignmentProperty, PropertyStandardQuery };
-            STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR d = {0};
-            DISK_GEOMETRY g = {0};
-            DWORD n = 0;
-            if (DeviceIoControl(v, IOCTL_STORAGE_QUERY_PROPERTY, &q, sizeof(q), &d, sizeof(d), &n, NULL))
-                printf("align logical=%lu physical=%lu\n", d.BytesPerLogicalSector, d.BytesPerPhysicalSector);
-            else
-                printf("align err=%lu\n", GetLastError());
-            if (DeviceIoControl(v, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &g, sizeof(g), &n, NULL))
-                printf("geometry bps=%lu media=%d\n", g.BytesPerSector, g.MediaType);
-            else
-                printf("geometry err=%lu\n", GetLastError());
+            static BYTE out[65536];
+            for (int small = 1; small >= 0; small--) {
+                STARTING_LCN_INPUT_BUFFER in = { 0 };
+                VOLUME_BITMAP_BUFFER *vb = (VOLUME_BITMAP_BUFFER *)out;
+                DWORD n = 0, size = small ? (DWORD)FIELD_OFFSET(VOLUME_BITMAP_BUFFER, Buffer) + 8 : sizeof(out);
+                memset(out, 0xcc, sizeof(out));
+                BOOL ok = DeviceIoControl(v, FSCTL_GET_VOLUME_BITMAP, &in, sizeof(in), out, size, &n, NULL);
+                printf("VOLBMP %s ok=%d err=%lu n=%lu startlcn=%lld bitmapsize_positive=%d byte0_set=%d\n",
+                       small ? "small" : "full", ok, ok ? 0 : GetLastError(), n,
+                       vb->StartingLcn.QuadPart, vb->BitmapSize.QuadPart > 0, (vb->Buffer[0] & 1) != 0);
+            }
             CloseHandle(v);
         } else
-            printf("volume open err=%lu\n", GetLastError());
+            printf("volume data open err=%lu\n", GetLastError());
     }
     {
         wchar_t out[MAX_PATH];
@@ -111,6 +156,12 @@ int wmain(int argc, wchar_t **argv)
             file_queries(out, h);
             CloseHandle(h);
             DeleteFileW(out);
+        }
+    }
+    for (int i = 2; i < argc; i++) {
+        if (argv[i][0] && argv[i][1] == L':' && towupper(argv[i][0]) != towupper(argv[1][0])) {
+            printf("== volume %lc:\n", argv[i][0]);
+            volume_ioctls(argv[i][0]);
         }
     }
     for (int i = 2; i < argc; i++) {

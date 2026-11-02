@@ -2821,9 +2821,9 @@ static mut __wine_dbch_olepicture: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_olepicture as *mut __wine_debug_channel };
+    &raw const __wine_dbch_olepicture as *mut __wine_debug_channel;
 
-static mut STDPIC_CF: IClassFactoryImpl = unsafe {
+static mut STDPIC_CF: IClassFactoryImpl = {
     IClassFactoryImpl {
         IClassFactory_iface: IClassFactory {
             lpVtbl: &raw const SPCF_Vtbl as *mut IClassFactoryVtbl,
@@ -4543,7 +4543,7 @@ unsafe extern "C" fn serializeBMP(
         HEAP_ZERO_MEMORY,
         core::mem::size_of::<BITMAPINFOHEADER>().wrapping_add(
             256usize.wrapping_mul(core::mem::size_of::<RGBQUAD>())
-        ) as SIZE_T ,
+        ) as SIZE_T,
     ) as *mut BITMAPINFO;
 
     hDC = GetDC(core::ptr::null_mut());
@@ -5664,7 +5664,7 @@ pub unsafe extern "system" fn OleLoadPicture(
     TRACE!(
         b"(%p,%d,%d,%s,%p), partially implemented.\n\0".as_ptr() as *const i8,
         lpstream,
-        lSize,
+        _lSize,
         fRunmode,
         debugstr_guid(riid),
         ppvObj,

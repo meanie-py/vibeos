@@ -140,7 +140,7 @@ pub unsafe extern "system" fn WSPSocket(
     if !lpProtocolInfo.is_null() && (*lpProtocolInfo).dwServiceFlags3 != 0 && (*lpProtocolInfo).dwServiceFlags4 != 0 {
         if UlongToPtr((*lpProtocolInfo).dwServiceFlags3) == INVALID_HANDLE_VALUE {
             Status = (WSAEINVAL as i32);
-            'error: {
+            {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
                     UnmapViewOfFile(SharedData as PVOID);
@@ -164,7 +164,7 @@ pub unsafe extern "system" fn WSPSocket(
         }
         if UlongToPtr((*lpProtocolInfo).dwServiceFlags4) == INVALID_HANDLE_VALUE {
             Status = (WSAEINVAL as i32);
-            'error: {
+            {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
                     UnmapViewOfFile(SharedData as PVOID);
@@ -193,7 +193,7 @@ pub unsafe extern "system" fn WSPSocket(
                                    core::mem::size_of::<SOCK_SHARED_INFO>()) as PSOCK_SHARED_INFO;
         if SharedData.is_null() {
             Status = (WSAEINVAL as i32);
-            'error: {
+            {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
                     UnmapViewOfFile(SharedData as PVOID);
@@ -223,7 +223,7 @@ pub unsafe extern "system" fn WSPSocket(
 
     if AddressFamily == (AF_UNSPEC as i32) && SocketType == 0 && Protocol == 0 {
         Status = (WSAEINVAL as i32);
-        'error: {
+        {
             TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
             if !SharedData.is_null() {
                 UnmapViewOfFile(SharedData as PVOID);
@@ -286,7 +286,7 @@ pub unsafe extern "system" fn WSPSocket(
 
     if Status != (NO_ERROR as i32) {
         ERR!("SockGetTdiName: Status %x\n", Status);
-        'error: {
+        {
             TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
             if !SharedData.is_null() {
                 UnmapViewOfFile(SharedData as PVOID);
@@ -323,7 +323,7 @@ pub unsafe extern "system" fn WSPSocket(
     Socket = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<SOCKET_INFORMATION>()) as PSOCKET_INFORMATION;
     if Socket.is_null() {
         Status = (WSAENOBUFS as i32);
-        'error: {
+        {
             TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
             if !SharedData.is_null() {
                 UnmapViewOfFile(SharedData as PVOID);
@@ -356,7 +356,7 @@ pub unsafe extern "system" fn WSPSocket(
         (*Socket).SharedData = HeapAlloc(GlobalHeap, 0, core::mem::size_of::<SOCK_SHARED_INFO>()) as PSOCK_SHARED_INFO;
         if (*Socket).SharedData.is_null() {
             Status = (WSAENOBUFS as i32);
-            'error: {
+            {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
                     UnmapViewOfFile(SharedData as PVOID);
@@ -413,7 +413,7 @@ pub unsafe extern "system" fn WSPSocket(
     (*Socket).SanData = core::ptr::null_mut();
     core::ptr::copy_nonoverlapping(lpProtocolInfo, core::ptr::addr_of_mut!((*Socket).ProtocolInfo), 1);
     if !SharedData.is_null() {
-        'ok: {
+        {
             EnterCriticalSection(core::ptr::addr_of_mut!(SocketListLock));
             (*Socket).NextSocket = SocketListHead;
             SocketListHead = Socket;
@@ -436,7 +436,7 @@ pub unsafe extern "system" fn WSPSocket(
     EABuffer = HeapAlloc(GlobalHeap, 0, SizeOfEA as usize) as PFILE_FULL_EA_INFORMATION;
     if EABuffer.is_null() {
         Status = (WSAENOBUFS as i32);
-        'error: {
+        {
             TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
             if !SharedData.is_null() {
                 UnmapViewOfFile(SharedData as PVOID);
@@ -474,7 +474,7 @@ pub unsafe extern "system" fn WSPSocket(
     if ((*(*Socket).SharedData).ServiceFlags1 & XP1_CONNECTIONLESS) != 0 {
         if SocketType != (SOCK_DGRAM as i32) && SocketType != (SOCK_RAW as i32) {
             Status = (WSAEINVAL as i32);
-            'error: {
+            {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
                     UnmapViewOfFile(SharedData as PVOID);
@@ -503,7 +503,7 @@ pub unsafe extern "system" fn WSPSocket(
         if SocketType == (SOCK_STREAM as i32) {
             if ((*(*Socket).SharedData).ServiceFlags1 & XP1_PSEUDO_STREAM) == 0 {
                 Status = (WSAEINVAL as i32);
-                'error: {
+                {
                     TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                     if !SharedData.is_null() {
                         UnmapViewOfFile(SharedData as PVOID);
@@ -539,7 +539,7 @@ pub unsafe extern "system" fn WSPSocket(
                    WSA_FLAG_MULTIPOINT_D_LEAF)) != 0 {
         if ((*(*Socket).SharedData).ServiceFlags1 & XP1_SUPPORT_MULTIPOINT) == 0 {
             Status = (WSAEINVAL as i32);
-            'error: {
+            {
                 TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                 if !SharedData.is_null() {
                     UnmapViewOfFile(SharedData as PVOID);
@@ -567,7 +567,7 @@ pub unsafe extern "system" fn WSPSocket(
             if (((*(*Socket).SharedData).ServiceFlags1 & XP1_MULTIPOINT_CONTROL_PLANE) == 0) ||
                ((dwFlags & WSA_FLAG_MULTIPOINT_C_LEAF) != 0) {
                 Status = (WSAEINVAL as i32);
-                'error: {
+                {
                     TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                     if !SharedData.is_null() {
                         UnmapViewOfFile(SharedData as PVOID);
@@ -596,7 +596,7 @@ pub unsafe extern "system" fn WSPSocket(
             if (((*(*Socket).SharedData).ServiceFlags1 & XP1_MULTIPOINT_DATA_PLANE) == 0) ||
                ((dwFlags & WSA_FLAG_MULTIPOINT_D_LEAF) != 0) {
                 Status = (WSAEINVAL as i32);
-                'error: {
+                {
                     TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
                     if !SharedData.is_null() {
                         UnmapViewOfFile(SharedData as PVOID);
@@ -646,7 +646,7 @@ pub unsafe extern "system" fn WSPSocket(
     if !NT_SUCCESS(Status) {
         ERR!("Failed to open socket. Status 0x%08x\n", Status);
         Status = TranslateNtStatusError(Status);
-        'error: {
+        {
             TRACE!(b"Ending %x\n\0".as_ptr() as *const i8, Status);
             if !SharedData.is_null() {
                 UnmapViewOfFile(SharedData as PVOID);
@@ -1438,7 +1438,7 @@ pub unsafe extern "system" fn WSPSelect(
             b"Timeout: Orig %d.%06d kernel %d\n\0".as_ptr() as *const i8,
             (*timeout).tv_sec,
             (*timeout).tv_usec,
-            Timeout.u.__bindgen_anon_1.LowPart,
+            Timeout.u.LowPart,
         );
     }
 
@@ -2381,7 +2381,7 @@ pub unsafe extern "system" fn WSPConnect(
         }
 
         if Status != STATUS_SUCCESS {
-            'Leave: {
+            {
                 TRACE!(b"Ending %lx\n\0".as_ptr() as *const i8, Status);
 
                 NtClose(SockEvent);
@@ -2477,7 +2477,7 @@ pub unsafe extern "system" fn WSPConnect(
         }
 
         if Status != STATUS_SUCCESS {
-            'Leave: {
+            {
                 TRACE!(b"Ending %lx\n\0".as_ptr() as *const i8, Status);
 
                 NtClose(SockEvent);
@@ -2532,7 +2532,7 @@ pub unsafe extern "system" fn WSPConnect(
         if APCContext.is_null() {
             ERR!("Not enough memory for APC Context\n");
             Status = STATUS_INSUFFICIENT_RESOURCES;
-            'Leave: {
+            {
                 TRACE!(b"Ending %lx\n\0".as_ptr() as *const i8, Status);
 
                 NtClose(SockEvent);
@@ -2601,7 +2601,7 @@ pub unsafe extern "system" fn WSPConnect(
     if (*(*Socket).SharedData).__bindgen_anon_1.NonBlocking() != 0 {
         if Status == STATUS_PENDING {
             Status = STATUS_CANT_WAIT;
-            'Leave: {
+            {
                 TRACE!(b"Ending %lx\n\0".as_ptr() as *const i8, Status);
 
                 NtClose(SockEvent);
@@ -2655,7 +2655,7 @@ pub unsafe extern "system" fn WSPConnect(
 
         (*(*Socket).SharedData).SocketLastError = TranslateNtStatusError(Status);
         if Status != STATUS_SUCCESS {
-            'Leave: {
+            {
                 TRACE!(b"Ending %lx\n\0".as_ptr() as *const i8, Status);
 
                 NtClose(SockEvent);
@@ -2725,7 +2725,7 @@ pub unsafe extern "system" fn WSPConnect(
         }
     }
 
-    'Leave: {
+    {
         TRACE!(b"Ending %lx\n\0".as_ptr() as *const i8, Status);
 
         NtClose(SockEvent);
@@ -3030,7 +3030,7 @@ pub unsafe extern "system" fn WSPGetSockName(
             TRACE!(
                 b"NameLength %d Address: %x Port %x\n\0".as_ptr() as PCHAR,
                 *NameLength,
-                (*(Name as *mut sockaddr_in)).sin_addr.s_addr,
+                (*(Name as *mut sockaddr_in)).sin_addr.S_un.S_addr,
                 (*(Name as *mut sockaddr_in)).sin_port,
             );
             HeapFree(GlobalHeap, 0, TdiAddress as PVOID);
@@ -3140,7 +3140,7 @@ pub unsafe extern "system" fn WSPGetPeerName(
             TRACE!(
                 b"NameLength %d Address: %x Port %x\n\0".as_ptr() as PCHAR,
                 *NameLength,
-                (*(Name as *mut sockaddr_in)).sin_addr.s_addr,
+                (*(Name as *mut sockaddr_in)).sin_addr.S_un.S_addr,
                 (*(Name as *mut sockaddr_in)).sin_port,
             );
             HeapFree(GlobalHeap, 0, SocketAddress as LPVOID);
@@ -3487,7 +3487,7 @@ pub unsafe extern "system" fn WSPGetSockOpt(
                 }
 
                 SO_KEEPALIVE | SO_DONTROUTE => {
-                    'SendToHelper: {
+                    {
                         Errno = ((*(*Socket).HelperData).WSHGetSocketInformation.unwrap())(
                             (*Socket).HelperContext,
                             Handle,
@@ -3617,7 +3617,7 @@ unsafe fn MsafdUpdateConnectionContext(
         0u8,
     );
     if !NT_SUCCESS(Status) {
-        'Quit: {
+        {
             if Status == STATUS_SUCCESS {
                 return (NO_ERROR as i32);
             }
@@ -3647,7 +3647,7 @@ unsafe fn MsafdUpdateConnectionContext(
     }
 
     if !NT_SUCCESS(Status) {
-        'Quit: {
+        {
             if Status == STATUS_SUCCESS {
                 return (NO_ERROR as i32);
             }
@@ -3679,7 +3679,7 @@ unsafe fn MsafdUpdateConnectionContext(
     }
 
     if !NT_SUCCESS(Status) {
-        'Quit: {
+        {
             if Status == STATUS_SUCCESS {
                 return (NO_ERROR as i32);
             }

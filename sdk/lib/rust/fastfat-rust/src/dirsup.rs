@@ -29,6 +29,7 @@ use crate::verfysup::IsFileDeleted;
 use crate::timesup::{FatGetCurrentFatTime, FatNtTimeToFatTime};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
+use crate::glue::TAG_BCB;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExFreePool, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, LARGE_INTEGER, LARGE_MCB, OEM_STRING, PFILE_OBJECT, PLARGE_INTEGER, PLONGLONG, POEM_STRING, PUNICODE_STRING, RtlAreBitsClear, RtlAreBitsSet, RtlDowncaseUnicodeString, RtlFindClearBits, RtlOemStringToCountedUnicodeString, RtlSetBits, RtlUpcaseUnicodeString};
@@ -880,21 +881,24 @@ pub unsafe extern "system" fn FatLocateDirent(
                         } else {
                             ntkrnl_sys::ASSERT!((LfnIndex % 13) == 0 && LfnIndex != 0);
                             LfnIndex -= 13;
+                            // Byte copies, as the C's RtlCopyMemory: the on-disk LFN entry is
+                            // packed and Name1 starts at byte 1, so a WCHAR-typed copy reads
+                            // through a misaligned pointer (caught by the armed UB checks).
 
                             core::ptr::copy_nonoverlapping(
-                                core::ptr::addr_of!((*Lfn).Name1) as *const WCHAR,
-                                (*LongFileName).Buffer.add(LfnIndex as usize),
-                                5usize,
+                                core::ptr::addr_of!((*Lfn).Name1) as *const u8,
+                                (*LongFileName).Buffer.add(LfnIndex as usize).cast::<u8>(),
+                                5 * core::mem::size_of::<WCHAR>(),
                             );
                             core::ptr::copy_nonoverlapping(
-                                core::ptr::addr_of!((*Lfn).Name2) as *const WCHAR,
-                                (*LongFileName).Buffer.add(LfnIndex as usize + 5),
-                                6usize,
+                                core::ptr::addr_of!((*Lfn).Name2) as *const u8,
+                                (*LongFileName).Buffer.add(LfnIndex as usize + 5).cast::<u8>(),
+                                6 * core::mem::size_of::<WCHAR>(),
                             );
                             core::ptr::copy_nonoverlapping(
-                                core::ptr::addr_of!((*Lfn).Name3) as *const WCHAR,
-                                (*LongFileName).Buffer.add(LfnIndex as usize + 11),
-                                2usize,
+                                core::ptr::addr_of!((*Lfn).Name3) as *const u8,
+                                (*LongFileName).Buffer.add(LfnIndex as usize + 11).cast::<u8>(),
+                                2 * core::mem::size_of::<WCHAR>(),
                             );
 
                             Ordinal = (*Lfn).Ordinal;
@@ -920,19 +924,19 @@ pub unsafe extern "system" fn FatLocateDirent(
                         FatEnsureStringBufferEnough((LongFileName).cast(), ((LfnIndex + 13) * 2) as u16);
 
                         core::ptr::copy_nonoverlapping(
-                            core::ptr::addr_of!((*Lfn).Name1) as *const WCHAR,
-                            (*LongFileName).Buffer.add(LfnIndex as usize),
-                            5usize,
+                            core::ptr::addr_of!((*Lfn).Name1) as *const u8,
+                            (*LongFileName).Buffer.add(LfnIndex as usize).cast::<u8>(),
+                            5 * core::mem::size_of::<WCHAR>(),
                         );
                         core::ptr::copy_nonoverlapping(
-                            core::ptr::addr_of!((*Lfn).Name2) as *const WCHAR,
-                            (*LongFileName).Buffer.add(LfnIndex as usize + 5),
-                            6usize,
+                            core::ptr::addr_of!((*Lfn).Name2) as *const u8,
+                            (*LongFileName).Buffer.add(LfnIndex as usize + 5).cast::<u8>(),
+                            6 * core::mem::size_of::<WCHAR>(),
                         );
                         core::ptr::copy_nonoverlapping(
-                            core::ptr::addr_of!((*Lfn).Name3) as *const WCHAR,
-                            (*LongFileName).Buffer.add(LfnIndex as usize + 11),
-                            2usize,
+                            core::ptr::addr_of!((*Lfn).Name3) as *const u8,
+                            (*LongFileName).Buffer.add(LfnIndex as usize + 11).cast::<u8>(),
+                            2 * core::mem::size_of::<WCHAR>(),
                         );
 
                         // Compute Lfn size and check tail
@@ -1725,7 +1729,7 @@ pub unsafe extern "system" fn FatUpdateDirentFromFcb(
         || UpdateLastWriteTime != 0
         || UpdateLastAccessTime != 0
     {
-        DebugTrace!(0, Dbg, (b"Update Time and/or file size on File/Dir\n".as_ptr() as *const u8).cast(), 0);
+        DebugTrace!(0, Dbg, (b"Update Time and/or file size on File/Dir\n".as_ptr() as *const u8).cast::<i8>(), 0);
 
         // try { try { ... } except (FsRtlIsNtstatusExpected(code)) { FatResetExceptionState }
         // } finally { FatUnpinBcb }

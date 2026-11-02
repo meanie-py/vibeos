@@ -1423,7 +1423,7 @@ pub unsafe extern "C" fn _wmakepath_s(
             let len = wcslen(directory) as u32;
             let needs_separator = (*directory.offset((len - 1) as isize) != '/' as wchar_t
                 && *directory.offset((len - 1) as isize) != '\\' as wchar_t) as u32;
-            let copylen = min!((size - 1) as u32, len);
+            let copylen = min!(size.wrapping_sub(1), len as usize) as u32;
 
             if size < 2 {
                 break 'range;
@@ -1455,7 +1455,7 @@ pub unsafe extern "C" fn _wmakepath_s(
 
         if !filename.is_null() && *filename.offset(0) != 0 {
             let len = wcslen(filename) as u32;
-            let copylen = min!((size - 1) as u32, len);
+            let copylen = min!(size.wrapping_sub(1), len as usize) as u32;
 
             if size < 2 {
                 break 'range;
@@ -1490,7 +1490,7 @@ pub unsafe extern "C" fn _wmakepath_s(
                 size -= 1;
             }
 
-            copylen = min!((size - 1) as u32, len);
+            copylen = min!(size.wrapping_sub(1), len as usize) as u32;
             memmove(
                 p as *mut core::ffi::c_void,
                 extension as *const core::ffi::c_void,

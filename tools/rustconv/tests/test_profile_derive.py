@@ -403,6 +403,57 @@ def test_a_macro_call_in_a_case_label_audits_its_arguments_not_its_name(tmp_path
     assert {c.ident for c in consts} == {"WIDGET_MODE_FAST", "WIDGET_MODE_SLOW"}
 
 
+def test_a_redefined_macro_only_audits_calls_its_case_definition_governs(tmp_path):
+    """dinput's device.c: FE is `{ x, #x }` four times and `case x: ...` once.
+
+    Keyed by name alone, every later `FE(GUID_XAxis)` TABLE entry became a case label and
+    the module raised 26 blocking SWITCH_CONST_UNOWNED errors for arrays.
+    """
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\n'
+        "#define FE(x) { x, #x }\n"
+        "static const struct { int v; const char *n; } a[] = { FE(TABLE_A) };\n"
+        "#undef FE\n"
+        "int h(int r){ switch (r) {\n"
+        "#define FE(x) case x: return 1\n"
+        "    FE(WIDGET_MODE_FAST);\n"
+        "#undef FE\n"
+        "} return 0; }\n"
+        "#define FE(x) { &x, #x }\n"
+        "static const struct { const int *v; const char *n; } b[] = { FE(TABLE_B) };\n"
+        "#undef FE\n",
+    )
+    idents = {c.ident for c in find_switch_constants([_mod(tmp_path) / "helper.c"], root)}
+    assert idents == {"WIDGET_MODE_FAST"}
+
+
+def test_case_labels_on_config_dead_lines_are_not_audited(tmp_path):
+    """dinput's joystick_osx.c: 95% dead under wine config.h, yet its IOKit `kHIDUsage_*`
+    arms raised 73 blocking errors -- one check called the lines dead, the other audited
+    them. Including a guard macro the TU defines only INSIDE a dead block
+    (joystick_linuxinput.c's HAS_PROPER_HEADER)."""
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "helper.c",
+        '#include "precomp.h"\n'
+        "#ifdef HAVE_IOKIT\n#define HAS_PROPER\n#endif\n"
+        "int h(int r){ switch (r) {\n"
+        "#ifdef HAVE_IOKIT\n    case IOKIT_ONLY: return 2;\n"
+        "#else\n    case WIDGET_MODE_SLOW: return 3;\n#endif\n"
+        "#ifdef HAS_PROPER\n    case PROPER_ONLY: return 4;\n#endif\n"
+        "#ifdef UNDECIDABLE\n    case MAYBE: return 5;\n"
+        "#else\n    case MAYBE_NOT: return 6;\n#endif\n"
+        "    case WIDGET_MODE_FAST: return 1;\n} return 0; }\n",
+    )
+    consts = find_switch_constants(
+        [_mod(tmp_path) / "helper.c"], root, frozenset({"HAVE_IOKIT"}), {}
+    )
+    idents = {c.ident for c in consts}
+    assert idents == {"WIDGET_MODE_SLOW", "WIDGET_MODE_FAST", "MAYBE", "MAYBE_NOT"}
+
+
 def test_case_labels_hidden_behind_a_function_like_macro_are_audited(tmp_path):
     """msvcrt's errno.c: all 39 arms are `ERR_CASE(x)` / `ERR_MAPS(x, y)`, no literal `case`.
 

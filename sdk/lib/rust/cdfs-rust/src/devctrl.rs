@@ -50,7 +50,7 @@ pub unsafe extern "C" fn CdCommonDevControl(
         &mut Ccb,
     );
 
-    if TypeOfOpen != 0 { // UserVolumeOpen
+    if TypeOfOpen != crate::types::_TYPE_OF_OPEN_UserVolumeOpen {
         CdCompleteRequest((IrpContext).cast(), Irp, STATUS_INVALID_PARAMETER);
         return STATUS_INVALID_PARAMETER;
     }

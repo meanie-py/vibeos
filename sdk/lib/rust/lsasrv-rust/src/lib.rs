@@ -14,10 +14,10 @@
 // out in the C too). Defined at crate root before the body modules so textual
 // macro scoping makes them visible to every translated file.
 // Lowercase aliases — some translated files (lookup.rs) emit `trace!`/`warn!`/etc.
-macro_rules! trace { ($($arg:tt)*) => {{}}; }
-macro_rules! warn { ($($arg:tt)*) => {{}}; }
-macro_rules! err { ($($arg:tt)*) => {{}}; }
-macro_rules! fixme { ($($arg:tt)*) => {{}}; }
+macro_rules! trace { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
+macro_rules! warn { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
+macro_rules! err { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
+macro_rules! fixme { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
 
 // Compile-time UTF-16 NUL-terminated literal: `wide!("Accounts")` → &'static [u16; N]
 // (no alloc; the #![no_std] crate has no Vec). Replaces the c2rust

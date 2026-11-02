@@ -521,8 +521,8 @@ pub unsafe extern "C" fn CdFspClose(Vcb: *mut VCB) {
 
         // Compute potential teardown
         PotentialVcbTeardown = if Vcb.is_null()
-            && (*(*Fcb).Vcb).VcbCondition != /* VcbMounted */ 0
-            && (*(*Fcb).Vcb).VcbCondition != /* VcbMountInProgress */ 1
+            && (*(*Fcb).Vcb).VcbCondition != crate::types::_VCB_CONDITION_VcbMounted
+            && (*(*Fcb).Vcb).VcbCondition != crate::types::_VCB_CONDITION_VcbMountInProgress
             && (*(*Fcb).Vcb).VcbCleanup == 0
         {
             1
@@ -545,8 +545,8 @@ pub unsafe extern "C" fn CdFspClose(Vcb: *mut VCB) {
 
                 // Re-check under global lock
                 PotentialVcbTeardown = if Vcb.is_null()
-                    && (*(*Fcb).Vcb).VcbCondition != /* VcbMounted */ 0
-                    && (*(*Fcb).Vcb).VcbCondition != /* VcbMountInProgress */ 1
+                    && (*(*Fcb).Vcb).VcbCondition != crate::types::_VCB_CONDITION_VcbMounted
+                    && (*(*Fcb).Vcb).VcbCondition != crate::types::_VCB_CONDITION_VcbMountInProgress
                     && (*(*Fcb).Vcb).VcbCleanup == 0
                 {
                     1

@@ -1,6 +1,7 @@
 //! Register each plugin here; plugins have no subprocess or filesystem scan.
 use crate::Rule;
 pub mod const_narrowing_cast;
+pub mod minmax_narrowing;
 pub mod double_fetch;
 pub mod dowhile_continue;
 pub mod entry_point_cc;
@@ -20,6 +21,9 @@ pub mod list_walk_from_head;
 pub mod misaligned_cast;
 pub mod read_after_clear;
 pub mod shadowed_c_define;
+pub mod move_vs_nonoverlapping;
+pub mod assert_negated_vs_c;
+pub mod devobj_as_extension;
 pub mod variadic_array_arg;
 
 pub mod assert_to_ub;
@@ -29,6 +33,8 @@ pub mod bugcheck_codes;
 pub mod byte_step_one;
 pub mod variant_outptr;
 pub mod byteptr_stride;
+pub mod inert_crate_allow;
+pub mod swallowing_debug_macro;
 pub mod calloc_elem_type;
 pub mod cdecl_alias;
 pub mod containing_record_null;
@@ -225,6 +231,9 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(raw_user_access::RawUserAccess),
         Box::new(safe_probe_deref::SafeProbeDeref),
         Box::new(shadowed_c_define::ShadowedCDefine),
+        Box::new(move_vs_nonoverlapping::MoveVsNonoverlapping),
+        Box::new(assert_negated_vs_c::AssertNegatedVsC),
+        Box::new(devobj_as_extension::DevobjAsExtension),
         Box::new(store_on_failure::StoreOnFailure),
         Box::new(dropped_null_guard::DroppedNullGuard),
         Box::new(ptr_byte_diff::PtrByteDiff),
@@ -251,6 +260,8 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(raw_bitfield::RawBitfield),
         Box::new(gmem_flags::GmemFlags),
         Box::new(byteptr_stride::ByteptrStride),
+        Box::new(inert_crate_allow::InertCrateAllow),
+        Box::new(swallowing_debug_macro::SwallowingDebugMacro),
         Box::new(noop_goto::NoopGoto),
         Box::new(cdecl_alias::CdeclAlias),
         Box::new(narrow_vs_wide_literal::NarrowVsWideLiteral),
@@ -271,6 +282,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(init_then_move::InitThenMove),
         Box::new(read_after_clear::ReadAfterClear),
         Box::new(const_narrowing_cast::ConstNarrowingCast),
+        Box::new(minmax_narrowing::MinmaxNarrowing),
         Box::new(info_class_literals::InfoClassLiterals),
         Box::new(misaligned_cast::MisalignedCast),
         Box::new(fnptr_abi_transmute::FnptrAbiTransmute),

@@ -403,7 +403,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
 
     INFO!(
         b"%s(%p, %p, %p) '%wZ'\n\0".as_ptr() as *const i8,
-        __FUNCTION__,
+        b"PciIdeXAddDeviceEx\0".as_ptr() as *const i8,
         DriverObject as *mut core::ffi::c_void,
         PhysicalDeviceObject as *mut core::ffi::c_void,
         ControllerContext as *mut core::ffi::c_void,

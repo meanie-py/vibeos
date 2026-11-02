@@ -98,11 +98,10 @@ static REG_PROFILES_DIRECTORY2: [u16; 18] = [
     b's' as u16, b'D' as u16, b'i' as u16, b'r' as u16, b'e' as u16, b'c' as u16, b't' as u16,
     b'o' as u16, b'r' as u16, b'y' as u16, 0,
 ];
-// L"DefaultUserProfile"
-static REG_DEFAULT_USER_PROFILE: [u16; 19] = [
-    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16,
-    b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16, b'P' as u16, b'r' as u16, b'o' as u16,
-    b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16, 0,
+
+// L"Default" (the ProfileList value; was L"DefaultUserProfile" before upstream f0a83320d79)
+static REG_DEFAULT_USER_PROFILE: [u16; 8] = [
+    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16, 0,
 ];
 // L"\\"
 static PATH_SEP_BACKSLASH2: [u16; 2] = [
@@ -1041,6 +1040,13 @@ pub unsafe extern "system" fn CreateUserProfileExW(
         return 0;
     }
 
+    // Upstream f0a83320d79: `Default` is the default user's full (unexpanded) path, not a
+    // name to join onto ProfilesDirectory.
+    if ExpandEnvironmentStringsW(szBuffer.as_ptr(), szDefaultUserPath.as_mut_ptr(), 260) == 0 {
+        RegCloseKey(hKey);
+        return 0;
+    }
+
     RegCloseKey(hKey);
 
     StringCbCopyW(
@@ -1110,22 +1116,6 @@ pub unsafe extern "system" fn CreateUserProfileExW(
             i = i.wrapping_add(1);
         }
     }
-
-    StringCbCopyW(
-        szDefaultUserPath.as_mut_ptr() as LPWSTR,
-        core::mem::size_of::<[u16; 260]>(),
-        szProfilesPath.as_mut_ptr() as LPCWSTR,
-    );
-    StringCbCatW(
-        szDefaultUserPath.as_mut_ptr() as LPWSTR,
-        core::mem::size_of::<[u16; 260]>(),
-        PATH_SEP_BACKSLASH2.as_ptr() as LPCWSTR,
-    );
-    StringCbCatW(
-        szDefaultUserPath.as_mut_ptr() as LPWSTR,
-        core::mem::size_of::<[u16; 260]>(),
-        szBuffer.as_mut_ptr() as LPCWSTR,
-    );
 
     if CopyDirectory(
         szUserProfilePath.as_mut_ptr(),
@@ -1456,24 +1446,24 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryA(
     return bResult;
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
-    lpProfileDir: LPWSTR,
-    lpcchSize: LPDWORD,
-) -> BOOL {
+/// Read one value of the ProfileList key, expand it, and hand it out with the
+/// GetXxxProfileDirectory contract (`*lpcchSize` in/out, ERROR_INSUFFICIENT_BUFFER).
+///
+/// Upstream f0a83320d79: the Vista layout stores each root as a full path (`ProgramData`,
+/// `Default`, `Public`), so a getter no longer joins ProfilesDirectory to a profile NAME
+/// (the retired AllUsersProfile / DefaultUserProfile values).
+unsafe fn profile_list_dir(value: LPCWSTR, lpProfileDir: LPWSTR, lpcchSize: LPDWORD) -> BOOL {
     let mut szProfilePath: [u16; 260] = [0; 260];
     let mut szBuffer: [u16; 260] = [0; 260];
     let mut dwType: u32 = 0;
-    let mut dwLength: u32 = 0;
     let mut hKey: HKEY = core::ptr::null_mut();
-    let mut Error: i32 = 0;
 
     if lpcchSize.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
 
-    Error = RegOpenKeyExW(
+    let mut Error = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
         win32macros_rust::wide_bytes!(b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\0\0") as LPCWSTR,
         0,
@@ -1485,61 +1475,49 @@ pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
         return 0;
     }
 
-    dwLength = core::mem::size_of::<[u16; 260]>() as u32;
+    let mut dwLength = core::mem::size_of::<[u16; 260]>() as u32;
     Error = RegQueryValueExW(
         hKey,
-        win32macros_rust::wide_bytes!(b"P\0r\0o\0f\0i\0l\0e\0s\0D\0i\0r\0e\0c\0t\0o\0r\0y\0\0\0") as LPCWSTR,
+        value,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(dwType),
         szBuffer.as_mut_ptr() as LPBYTE,
         core::ptr::addr_of_mut!(dwLength),
     ) as i32;
-    if (Error != ERROR_SUCCESS as i32) || (dwType != REG_SZ && dwType != REG_EXPAND_SZ) {
-        RegCloseKey(hKey);
-        SetLastError(Error as u32);
-        return 0;
-    }
-
-    if ExpandEnvironmentStringsW(
-        szBuffer.as_ptr(),
-        szProfilePath.as_mut_ptr(),
-        (core::mem::size_of::<[u16; 260]>() / core::mem::size_of::<u16>()) as u32,
-    ) == 0
-    {
-        RegCloseKey(hKey);
-        return 0;
-    }
-
-    dwLength = core::mem::size_of::<[u16; 260]>() as u32;
-    Error = RegQueryValueExW(
-        hKey,
-        win32macros_rust::wide_bytes!(b"A\0l\0l\0U\0s\0e\0r\0s\0P\0r\0o\0f\0i\0l\0e\0\0\0") as LPCWSTR,
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(dwType),
-        szBuffer.as_mut_ptr() as LPBYTE,
-        core::ptr::addr_of_mut!(dwLength),
-    ) as i32;
-    if (Error != ERROR_SUCCESS as i32) || (dwType != REG_SZ && dwType != REG_EXPAND_SZ) {
-        RegCloseKey(hKey);
-        SetLastError(Error as u32);
-        return 0;
-    }
-
     RegCloseKey(hKey);
+    if (Error != ERROR_SUCCESS as i32) || (dwType != REG_SZ && dwType != REG_EXPAND_SZ) {
+        SetLastError(Error as u32);
+        return 0;
+    }
 
-    StringCbCatW(szProfilePath.as_mut_ptr(), core::mem::size_of::<[u16; 260]>(), win32macros_rust::wide_bytes!(b"\\\0\0\0") as LPCWSTR);
-    StringCbCatW(szProfilePath.as_mut_ptr(), core::mem::size_of::<[u16; 260]>(), szBuffer.as_ptr());
+    if ExpandEnvironmentStringsW(szBuffer.as_ptr(), szProfilePath.as_mut_ptr(), 260) == 0 {
+        return 0;
+    }
 
     dwLength = (wcslen(szProfilePath.as_ptr()) + 1) as u32;
     if !lpProfileDir.is_null() && *lpcchSize >= dwLength {
         StringCchCopyW(lpProfileDir, *lpcchSize as usize, szProfilePath.as_ptr());
         *lpcchSize = dwLength;
-        return 1;
+        1
     } else {
         *lpcchSize = dwLength;
         SetLastError(ERROR_INSUFFICIENT_BUFFER);
-        return 0;
+        0
     }
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn GetAllUsersProfileDirectoryW(
+    lpProfileDir: LPWSTR,
+    lpcchSize: LPDWORD,
+) -> BOOL {
+    // %ALLUSERSPROFILE% is ProgramData on Vista and later.
+    let ok = profile_list_dir(win32macros_rust::wide_bytes!(b"P\0r\0o\0g\0r\0a\0m\0D\0a\0t\0a\0\0\0") as LPCWSTR, lpProfileDir, lpcchSize);
+    // The C prints each failure; a too-small buffer is the normal size query, not one.
+    if ok == 0 && GetLastError() != ERROR_INSUFFICIENT_BUFFER {
+        DPRINT1!("GetAllUsersProfileDirectoryW", GetLastError());
+    }
+    ok
 }
 
 #[no_mangle]
@@ -1587,96 +1565,12 @@ pub unsafe extern "system" fn GetDefaultUserProfileDirectoryW(
     lpProfileDir: LPWSTR,
     lpcchSize: LPDWORD,
 ) -> BOOL {
-    let mut szProfilePath: [u16; 260] = [0; 260];
-    let mut szBuffer: [u16; 260] = [0; 260];
-    let mut dwType: u32 = 0;
-    let mut dwLength: u32 = 0;
-    let mut hKey: HKEY = core::ptr::null_mut();
-    let mut Error: i32 = 0;
-
-    if lpcchSize.is_null() {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return 0;
+    let ok = profile_list_dir(win32macros_rust::wide_bytes!(b"D\0e\0f\0a\0u\0l\0t\0\0\0") as LPCWSTR, lpProfileDir, lpcchSize);
+    // The C prints each failure; a too-small buffer is the normal size query, not one.
+    if ok == 0 && GetLastError() != ERROR_INSUFFICIENT_BUFFER {
+        DPRINT1!("GetDefaultUserProfileDirectoryW", GetLastError());
     }
-
-    Error = RegOpenKeyExW(
-        HKEY_LOCAL_MACHINE as HKEY,
-        win32macros_rust::wide_bytes!(b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\0\0") as LPCWSTR,
-        0,
-        KEY_QUERY_VALUE,
-        core::ptr::addr_of_mut!(hKey),
-    ) as i32;
-    if Error != 0i32 {
-        SetLastError(Error as u32);
-        return 0;
-    }
-
-    dwLength = core::mem::size_of::<[u16; 260]>() as u32;
-    Error = RegQueryValueExW(
-        hKey,
-        win32macros_rust::wide_bytes!(b"P\0r\0o\0f\0i\0l\0e\0s\0D\0i\0r\0e\0c\0t\0o\0r\0y\0\0\0") as LPCWSTR,
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(dwType),
-        core::ptr::addr_of_mut!(szBuffer) as *mut u16 as LPBYTE,
-        core::ptr::addr_of_mut!(dwLength),
-    ) as i32;
-    if (Error != 0i32) || (dwType != REG_SZ && dwType != REG_EXPAND_SZ) {
-        RegCloseKey(hKey);
-        SetLastError(Error as u32);
-        return 0;
-    }
-
-    if ExpandEnvironmentStringsW(
-        core::ptr::addr_of_mut!(szBuffer) as *mut u16 as LPCWSTR,
-        core::ptr::addr_of_mut!(szProfilePath) as LPWSTR,
-        (core::mem::size_of::<[u16; 260]>() / core::mem::size_of::<u16>()) as u32,
-    ) == 0 {
-        RegCloseKey(hKey);
-        return 0;
-    }
-
-    dwLength = core::mem::size_of::<[u16; 260]>() as u32;
-    Error = RegQueryValueExW(
-        hKey,
-        win32macros_rust::wide_bytes!(b"D\0e\0f\0a\0u\0l\0t\0U\0s\0e\0r\0P\0r\0o\0f\0i\0l\0e\0\0\0") as LPCWSTR,
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!(dwType),
-        core::ptr::addr_of_mut!(szBuffer) as *mut u16 as LPBYTE,
-        core::ptr::addr_of_mut!(dwLength),
-    ) as i32;
-    if (Error != 0i32) || (dwType != REG_SZ && dwType != REG_EXPAND_SZ) {
-        RegCloseKey(hKey);
-        SetLastError(Error as u32);
-        return 0;
-    }
-
-    RegCloseKey(hKey);
-
-    StringCbCatW(
-        core::ptr::addr_of_mut!(szProfilePath) as LPWSTR,
-        core::mem::size_of::<[u16; 260]>(),
-        win32macros_rust::wide_bytes!(b"\\\0\0\0") as LPCWSTR,
-    );
-    StringCbCatW(
-        core::ptr::addr_of_mut!(szProfilePath) as LPWSTR,
-        core::mem::size_of::<[u16; 260]>(),
-        core::ptr::addr_of_mut!(szBuffer) as *mut u16 as LPCWSTR,
-    );
-
-    dwLength = (wcslen(core::ptr::addr_of_mut!(szProfilePath) as *mut u16 as LPCWSTR) + 1) as u32;
-    if !lpProfileDir.is_null() && *lpcchSize >= dwLength {
-        StringCchCopyW(
-            lpProfileDir,
-            *lpcchSize as usize,
-            core::ptr::addr_of_mut!(szProfilePath) as *mut u16 as LPCWSTR,
-        );
-        *lpcchSize = dwLength;
-        return 1;
-    } else {
-        *lpcchSize = dwLength;
-        SetLastError(ERROR_INSUFFICIENT_BUFFER);
-        return 0;
-    }
+    ok
 }
 
 #[no_mangle]
@@ -1872,7 +1766,7 @@ pub unsafe extern "system" fn GetProfileType(pdwFlags: PDWORD) -> BOOL {
 
     }
 
-    'block: {
+    {
         if !hProfileKey.is_null() {
             RegCloseKey(hProfileKey);
         }

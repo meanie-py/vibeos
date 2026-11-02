@@ -957,7 +957,7 @@ pub unsafe extern "system" fn GlobalSize(hMem: HGLOBAL) -> SIZE_T {
     let mut dwSize: SIZE_T = MAXULONG_PTR;
 
     RtlLockHeap(BaseHeap);
-    'seh2_try: {
+    {
         // Check if this is a simple RTL Heap Managed block
         if (hMem as ULONG_PTR) & BASE_HEAP_IS_HANDLE_ENTRY == 0 {
             // Then we'll query RTL Heap

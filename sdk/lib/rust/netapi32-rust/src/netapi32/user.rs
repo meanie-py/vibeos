@@ -21,7 +21,7 @@ static mut __wine_dbch_netapi32: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_netapi32 as *mut __wine_debug_channel };
+    &raw const __wine_dbch_netapi32 as *mut __wine_debug_channel;
 
 pub static mut g_EnumContextListHead: LIST_ENTRY = LIST_ENTRY {
     Flink: ::core::ptr::null::<_LIST_ENTRY>() as *mut _LIST_ENTRY,
@@ -1212,7 +1212,7 @@ unsafe extern "C" fn SetUserInfo(
         api_status = GetUserDacl(UserHandle, &mut dacl);
         if api_status != NERR_Success {
             // jump to cleanup
-            return 'done: {
+            return {
                 if !dacl.is_null() {
                     HeapFree(GetProcessHeap(), 0, dacl as LPVOID);
                 }

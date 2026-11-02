@@ -272,7 +272,7 @@ pub unsafe extern "system" fn Power_Message(pSysTray: *mut CSysTray, uMsg: UINT,
         } else if uMsg == ID_ICON_POWER {
             Power_Update(pSysTray);
 
-            'inner: {
+            {
                 if lParam == (WM_LBUTTONDOWN as LPARAM) {
                     SetTimer((*pSysTray).GetHWnd(), (POWER_TIMER_ID as _), GetDoubleClickTime(), None);
                 } else if lParam == (WM_LBUTTONUP as LPARAM) {

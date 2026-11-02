@@ -1071,7 +1071,7 @@ unsafe extern "C" fn IntelInitChannel(
                 if IdeConfigReg as ::core::ffi::c_int & PIIX_CONFIG_CR!((*ChanData).__bindgen_anon_1.Channel) == 0 {
                     INFO!(
                         b"CH %lu: BIOS detected 40-conductor cable\n\0" as *const u8 as *const ::core::ffi::c_char,
-                        (*ChanData).Channel,
+                        (*ChanData).__bindgen_anon_1.Channel,
                     );
                     SupportedMode &= !(UDMA_80C_ALL as ULONG);
                 }
@@ -1096,7 +1096,7 @@ unsafe extern "C" fn IntelInitChannel(
                 INFO!(
                     b"CH %lu: BIOS hasn't selected mode faster than UDMA 2, assume 40-conductor cable\n\0"
                         as *const u8 as *const ::core::ffi::c_char,
-                    (*ChanData).Channel,
+                    (*ChanData).__bindgen_anon_1.Channel,
                 );
                 SupportedMode &= !(UDMA_80C_ALL as ULONG);
             }

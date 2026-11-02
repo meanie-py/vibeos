@@ -152,7 +152,7 @@ const DEBUG_TRACE_STRUCSUP: u32 = 0x20000000;
 // Constant definitions needed (these would be provided by the assembly step)
 const FcbGood: u32 = 1;          // Placeholder
 const FILE_ATTRIBUTE_DIRECTORY: u32 = 0x10;
-const TAG_FCB: u32 = 0x46746146; // 'T' 'A' 'C' 'F'? placeholder
+const TAG_FCB: u32 = 0x46746146; // 'FtaF' (fastfat/nodetype.h)
 // fatprocs.h:47: `#define NonPagedPoolNx NonPagedPool` under
 // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
 // Windows value (0x200/0x204) is not what any TU here compiles.
@@ -244,7 +244,7 @@ pub unsafe extern "system" fn FatAllocateFcb() -> *mut FCB {
     FsRtlAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<FCB>() as u32,
-        0x46434220u32, // TAG_FCB
+        TAG_FCB,
     ) as *mut FCB
 }
 #[no_mangle]
@@ -2294,9 +2294,11 @@ pub unsafe extern "system" fn FatPreallocateCloseContext(
         &raw mut FatData.GeneralSpinLock as *mut _,
     );
 
-    DbgDoit!((InterlockedIncrement(
-        &raw mut (*Vcb).CloseContextCount as *mut i32,
-    ) as u32) as i32);
+    // C: DbgDoit( InterlockedIncrement(&Vcb->CloseContextCount) ), i.e. under DBG -- the
+    // pair of FatAllocateCloseContext's decrement, which is #[cfg(debug_assertions)]. DbgDoit!
+    // is empty, so once armed the count was decremented and never raised: its 0 != assert.
+    #[cfg(debug_assertions)]
+    InterlockedIncrement(&raw mut (*Vcb).CloseContextCount as *mut i32);
 }
 
 #[no_mangle]

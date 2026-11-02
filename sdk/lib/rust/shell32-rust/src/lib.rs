@@ -24,7 +24,7 @@
 // Wine debug calls are macros in the C++ source. Keep them as macros in Rust too: an
 // out-of-line no-op function is an optimization/ABI barrier and is not equivalent.
 macro_rules! MESSAGE {
-    ($($arg:tt)*) => {{}};
+    ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) };
 }
 
 // Foundation: minimal Win32 type aliases (grows as waves land).

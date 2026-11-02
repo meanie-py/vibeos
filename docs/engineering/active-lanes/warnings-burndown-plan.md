@@ -70,6 +70,46 @@ shell32's last 36 clashes:
 - Get/SetWindowLongPtr*: arch-gated island imports. dialogs.rs had declared the *Ptr*
   forms unconditionally, which i386 does not export.
 
+**Same day, later:** the 16 LOGIC smalls were cut to the 7 that sit in hot crates (msvcrt-homebrew, audio).
+`apply_rustc_suggestions.py` now also DERIVES the fixes rustc does not offer for `unused_labels`
+(delete `'x:`) and `unused_unsafe` (delete the keyword; `{ .. }` is the same block). Both are
+checked against the file's bytes at the span, and every arch must agree. ~235 sites cleared;
+the `unused_braces` it leaves behind are rustc machine fixes. The phantom conutils/ws2_32
+`unexpected_cfgs` units are gone: the wind-down deleted every build dir, so all were rebuilt.
+
+**Read, not swept (2026-11-01):** every non-hot `dead_code` and `unused_variables` site was checked
+against its C. None is dropped logic. They are trace-only values, because the crates'
+`TRACE!`/`FIXME!` macros discard their arguments; unused params of C stubs; and helpers the C
+never calls either (`GetXmmReg`, `RtlSubtreePredecessor`, `RtlpFindLeastSetBit`). The one
+exception was rtl-actctx: three truncated, non-NUL-terminated `requireAdministrator`/
+`highestAvailable` literals sat dead beside the correct `...Wfull` ones, and were deleted. A
+root fix for the trace-only class would make each crate's TRACE!-family macro type-check
+its arguments under `if false`. That is many per-crate macros, so it was not started.
+
+**Census after these (2026-11-01 evening): 794 sites, 0 UB, 7 LOGIC (all in hot crates).**
+Of the 427 outside hot crates, 248 were version-rust's: its crate-wide naming allows were
+OUTER attributes bound to `extern crate`, so they allowed nothing. Fixed, and gated by
+`scan_inert_crate_allow` (baseline: msvcrt-crt's orphaned `#[allow(dead_code)]`, which is
+that lane's). About 180 non-hot sites remain, and none is mechanical:
+- `unused_macros` 55 (per-crate C macro ports);
+- `dead_code`/`unused_variables` ~60 (read: faithful or trace-only);
+- `ambiguous_glob_reexports` 14 and `private_interfaces` 10. Each is a module-API decision.
+
+**Off-channel debug macros type-check their arguments (2026-11-01, user-approved fan-out):**
+337 swallowing TRACE/WARN/DPRINT/... definitions now forward to `DBG_TYPECHECK!`. Of the 413
+errors this exposed, about 230 were fixed centrally and 158 by three Sonnet agents writing
+JSONL that I reviewed and applied with `apply_agent_edits.py`. Hot crates: msvcrt-crt needed
+one argument (`f as *const ()`), because it shares winedebug-rust. mmebuddy-macros-rust (the
+audio stack's) was left swallowing for the audio lane, and the audio crates' own definitions
+are in the `scan_swallowing_debug_macro` baseline.
+Pre-existing `cargo check --workspace` failures, all unrelated:
+- kdgdb on arm64 (7);
+- vioblk's global allocator;
+- netstack's duplicate lang item under `--workspace`;
+- hal-rust i386 `pic_pic.rs`;
+- the third-party `generator` crate;
+- freeldr's x86 asm on arm64.
+
 **Owed, roughly in priority order:**
 - **The rest of `clashing_extern`** (outside shell32; re-run the census). `extern_to_use` gaps:
   - it does not collapse two declarations in the SAME file under different inline mods

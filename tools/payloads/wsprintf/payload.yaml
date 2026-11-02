@@ -10,7 +10,7 @@ build_hint: "tools/payloads/wsprintf/build.sh {arch}"
 binaries:
   - src: tools/payloads/wsprintf/wsprintf-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/wsprintf.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/wsprintf.exe
 
 test:
   launch_marker: "[WSPRINTF] done"

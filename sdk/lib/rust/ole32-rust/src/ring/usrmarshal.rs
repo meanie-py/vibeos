@@ -480,7 +480,7 @@ pub unsafe extern "system" fn CLIPFORMAT_UserUnmarshal(
 ) -> *mut u8 {
     TRACE!(
         b"(%s, %p, %p\n\0".as_ptr() as *const i8,
-        debugstr_user_flags(pFlags),
+        debugstr_user_flags(_pFlags),
         pBuffer,
         pCF,
     );
@@ -791,7 +791,7 @@ pub unsafe extern "system" fn HGLOBAL_UserUnmarshal(
 ) -> *mut u8 {
     TRACE!(
         b"(%s, %p, &%p\n\0".as_ptr() as *const i8,
-        debugstr_user_flags(pFlags),
+        debugstr_user_flags(_pFlags),
         pBuffer,
         *phGlobal,
     );
@@ -962,7 +962,7 @@ pub unsafe extern "system" fn HBITMAP_UserUnmarshal(
 ) -> *mut u8 {
     TRACE!(
         b"(%s, %p, %p)\n\0".as_ptr() as *const i8,
-        debugstr_user_flags(flags),
+        debugstr_user_flags(_flags),
         buffer,
         bmp,
     );
@@ -1175,7 +1175,7 @@ pub unsafe extern "system" fn HMETAFILE_UserUnmarshal(
 ) -> *mut u8 {
     TRACE!(
         b"(%s, %p, %p\n\0".as_ptr() as *const i8,
-        debugstr_user_flags(pFlags),
+        debugstr_user_flags(_pFlags),
         pBuffer,
         phmf,
     );
@@ -1326,7 +1326,7 @@ pub unsafe extern "system" fn HENHMETAFILE_UserUnmarshal(
 ) -> *mut u8 {
     TRACE!(
         b"(%s, %p, %p\n\0".as_ptr() as *const i8,
-        debugstr_user_flags(pFlags),
+        debugstr_user_flags(_pFlags),
         pBuffer,
         phEmf,
     );
@@ -1584,7 +1584,7 @@ pub unsafe extern "system" fn WdtpInterfacePointer_UserSize(
 
     TRACE!(
         b"(%s, 0%x, %d, %p, %s)\n\0".as_ptr() as *const i8,
-        debugstr_user_flags(pFlags),
+        debugstr_user_flags(_pFlags),
         RealFlags,
         StartingSize,
         punk,
@@ -1627,7 +1627,7 @@ pub unsafe extern "system" fn WdtpInterfacePointer_UserMarshal(
 
     TRACE!(
         b"(%s, 0x%x, %p, &%p, %s)\n\0".as_ptr() as *const i8,
-        debugstr_user_flags(pFlags),
+        debugstr_user_flags(_pFlags),
         RealFlags,
         pBuffer,
         punk,
@@ -1690,7 +1690,7 @@ pub unsafe extern "system" fn WdtpInterfacePointer_UserUnmarshal(
 
     TRACE!(
         b"(%s, %p, %p, %s)\n\0".as_ptr() as *const i8,
-        debugstr_user_flags(pFlags),
+        debugstr_user_flags(_pFlags),
         pBuffer,
         ppunk,
         debugstr_guid(riid as *const c_void),
@@ -2124,7 +2124,7 @@ pub unsafe extern "system" fn STGMEDIUM_UserUnmarshal(
                 }
                 TRACE!(
                     b"unmarshalled file name is %s\n\0".as_ptr() as *const i8,
-                    debugstr_wn(pBuffer as *const c_void),
+                    debugstr_wn(pBuffer as *const c_void, variance),
                 );
                 memcpy(
                     (*pStgMedium).__bindgen_anon_1.lpszFileName as *mut c_void,
@@ -2344,7 +2344,7 @@ pub unsafe extern "system" fn SNB_UserSize(
 
     TRACE!(
         b"(%s, %d, %p\n\0".as_ptr() as *const i8,
-        debugstr_user_flags(pFlags),
+        debugstr_user_flags(_pFlags),
         StartingSize,
         pSnb,
     );
@@ -2378,7 +2378,7 @@ pub unsafe extern "system" fn SNB_UserMarshal(
 
     TRACE!(
         b"(%s, %p, %p)\n\0".as_ptr() as *const i8,
-        debugstr_user_flags(pFlags),
+        debugstr_user_flags(_pFlags),
         pBuffer,
         pSnb,
     );
@@ -3650,7 +3650,7 @@ pub unsafe extern "system" fn IOleInPlaceActiveObject_TranslateAccelerator_Proxy
     This: *mut IOleInPlaceActiveObject,
     _lpmsg: LPMSG,
 ) -> HRESULT {
-    TRACE!(b"(%p %p)\n\0".as_ptr() as *const i8, This, lpmsg);
+    TRACE!(b"(%p %p)\n\0".as_ptr() as *const i8, This, _lpmsg);
     IOleInPlaceActiveObject_RemoteTranslateAccelerator_Proxy(This)
 }
 
@@ -3658,7 +3658,7 @@ pub unsafe extern "system" fn IOleInPlaceActiveObject_TranslateAccelerator_Proxy
 pub unsafe extern "system" fn IOleInPlaceActiveObject_TranslateAccelerator_Stub(
     _This: *mut IOleInPlaceActiveObject,
 ) -> HRESULT {
-    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, This);
+    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, _This);
     S_FALSE
 }
 

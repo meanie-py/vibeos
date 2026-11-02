@@ -24,7 +24,7 @@ extern "C" {
 }
 #[macro_export]
 macro_rules! DPRINT {
-    ($($arg:tt)*) => {{}};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 // DPRINT1 / DPRINT2 / DH_DbgPrint are the other ROS debug channels. All are MACROS, never
 // out-of-line fns (field-manual §9.65: an out-of-line no-op is an ABI barrier). Callers use
@@ -48,11 +48,11 @@ macro_rules! DPRINT1 {
 }
 #[macro_export]
 macro_rules! DPRINT2 {
-    ($($arg:tt)*) => {{}};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 #[macro_export]
 macro_rules! DH_DbgPrint {
-    ($($arg:tt)*) => {{}};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 pub use crate::{DH_DbgPrint, DPRINT, DPRINT1, DPRINT2};
 pub use core::ptr::{addr_of, addr_of_mut};

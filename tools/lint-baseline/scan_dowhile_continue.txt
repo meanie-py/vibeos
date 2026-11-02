@@ -5,8 +5,8 @@ sdk/lib/rust/cdfs-rust/src/dirsup.rs: fn CdFindFile: loop ends in a do-while con
 sdk/lib/rust/cmlib-rust/src/cmcheck.rs: fn CmpValidateValueListByCount: `continue` skips the while loop's trailing `list_count_index` update
 sdk/lib/rust/config-rust/src/cmkcbncb.rs: fn CmpFlushNotifiesOnKeyBodyList: `continue` skips the while loop's trailing `NextEntry` update
 sdk/lib/rust/ex-rust/src/handle.rs: fn ExpAllocateHandleTableEntry: loop ends in a do-while condition that `continue` skips
-sdk/lib/rust/ex-rust/src/pool/expool.rs: fn ExAllocatePoolWithTag: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/ex-rust/src/pool/expool.rs: fn ExpInsertPoolTracker: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/ex-rust/src/pool/expool.rs: fn exp_allocate_pool_unaligned: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/explorer-rust/src/explorer/startup.rs: fn AutoStartupApplications: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/framebuf-rust/src/screen.rs: fn DrvGetModes: `continue` skips the while loop's trailing `OutputSize` update
 sdk/lib/rust/ftp-rust/src/ftp/main.rs: fn cmdscanner: loop ends in a do-while condition that `continue` skips
