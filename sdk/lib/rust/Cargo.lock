@@ -61,6 +61,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "acledit-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "aclui-rust"
 version = "0.1.0"
 dependencies = [
@@ -115,6 +123,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "actxprxy-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "advapi32-rust"
 version = "0.1.0"
 dependencies = [
@@ -127,6 +143,22 @@ dependencies = [
 [[package]]
 name = "advapi32-sys"
 version = "0.1.0"
+
+[[package]]
+name = "advapi32_vista-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "advpack-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
 
 [[package]]
 name = "afd-rust"
@@ -143,6 +175,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ddd31a130427c27518df266943a5308ed92d4b226cc639f5a8f1002816174301"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "amstream-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -293,6 +333,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "atl-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "atl100-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "atl80-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "atlclasses-rust"
 version = "0.1.0"
 
@@ -389,6 +453,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "avifil32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -503,6 +575,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "bluetoothapis-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -1367,6 +1447,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "d2d1-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3d10-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "d3d10_1-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1376,6 +1472,54 @@ dependencies = [
 
 [[package]]
 name = "d3d10core-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3d11-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3d8-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3d9-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3drm-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx10_43-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dxof-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-common",
@@ -1474,6 +1618,22 @@ dependencies = [
 [[package]]
 name = "ddk-macros-rust"
 version = "0.1.0"
+
+[[package]]
+name = "ddraw-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "ddrawex-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
 
 [[package]]
 name = "defmt"
@@ -1597,6 +1757,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "devenum-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "devmgmt-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1681,6 +1849,62 @@ dependencies = [
 ]
 
 [[package]]
+name = "dmband-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "dmcompos-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "dmime-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "dmloader-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "dmscript-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "dmstyle-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "dmusic-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "dnsapi-rust"
 version = "0.1.0"
 dependencies = [
@@ -1725,7 +1949,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "dplayx-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "dpnet-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "dpnhupnp-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "dpvoice-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-common",
@@ -1758,6 +2006,14 @@ dependencies = [
  "strsafe-rust",
  "varargs-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "dsound-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -1808,6 +2064,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dxdiagn-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "dxg-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1825,7 +2089,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "dxgi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "dxgthk-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "dxtn-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-lean",
@@ -2407,6 +2687,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gdiplus-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "generator"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2535,6 +2823,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hhctrl-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "hid-cargo"
 version = "0.1.0"
 dependencies = [
@@ -2638,6 +2934,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "hnetcfg-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "hostname-cargo"
 version = "0.1.0"
 dependencies = [
@@ -2720,6 +3024,22 @@ name = "icuuc-rust"
 version = "0.1.0"
 dependencies = [
  "panic-common",
+]
+
+[[package]]
+name = "ieframe-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "ieproxy-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -2825,6 +3145,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "inetcomm-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "inetcpl-cargo"
 version = "0.1.0"
 dependencies = [
@@ -2888,6 +3216,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "inseng-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "interlck"
 version = "0.1.0"
 
@@ -2935,6 +3271,14 @@ dependencies = [
  "panic-common",
  "win32macros-rust",
  "winedebug-rust",
+]
+
+[[package]]
+name = "itss-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -3360,6 +3704,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "loadperf-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "localmon-cargo"
 version = "0.1.0"
 dependencies = [
@@ -3506,6 +3858,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "lpk-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "lsa-stub"
 version = "0.1.0"
 dependencies = [
@@ -3607,12 +3967,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ca88d725a0a943b096803bd34e73a4437208b6077654cc4ecb2947a5f91618d"
 
 [[package]]
+name = "mapi32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
 dependencies = [
  "regex-automata",
+]
+
+[[package]]
+name = "mciavi32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -4039,6 +4415,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mpr-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "mprapi-rust"
 version = "0.1.0"
 dependencies = [
@@ -4048,12 +4432,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "msacm32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "msafd-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
  "winedebug-rust",
+]
+
+[[package]]
+name = "mscms-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -4073,6 +4473,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "mscoree-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -4098,6 +4506,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "msdmo-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -4155,6 +4571,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "mshtml-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "msi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "msiexec-cargo"
 version = "0.1.0"
 dependencies = [
@@ -4177,6 +4609,14 @@ dependencies = [
 
 [[package]]
 name = "msimg32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "msimtf-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-common",
@@ -4209,6 +4649,14 @@ dependencies = [
  "strsafe-rust",
  "varargs-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "mspatcha-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -4374,6 +4822,14 @@ dependencies = [
 [[package]]
 name = "msvcrt-sys"
 version = "0.1.0"
+
+[[package]]
+name = "msvfw32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
 
 [[package]]
 name = "msvidc32-cargo"
@@ -4725,6 +5181,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "nettest-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -5580,6 +6044,46 @@ dependencies = [
 ]
 
 [[package]]
+name = "qcap-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "qedit-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "qmgr-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "qmgrprxy-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "quartz-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "query-cargo"
 version = "0.1.0"
 dependencies = [
@@ -5851,6 +6355,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "riched20-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "riched32-cargo"
 version = "0.1.0"
 dependencies = [
@@ -5910,6 +6422,14 @@ dependencies = [
  "strsafe-rust",
  "win32macros-rust",
  "winelist-rust",
+]
+
+[[package]]
+name = "rsaenh-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -6262,6 +6782,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "schannel-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "schannel-tls-difftest"
 version = "0.1.0"
 dependencies = [
@@ -6310,6 +6838,14 @@ name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
+
+[[package]]
+name = "scrrun-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
 
 [[package]]
 name = "scsidisk-rust"
@@ -6416,6 +6952,14 @@ name = "secur32-sys"
 version = "0.1.0"
 
 [[package]]
+name = "sehtest-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "sendmail-rust"
 version = "0.1.0"
 dependencies = [
@@ -6515,6 +7059,14 @@ version = "0.1.0"
 dependencies = [
  "panic-common",
  "setjmp-rt",
+]
+
+[[package]]
+name = "setup-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -7202,6 +7754,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "t2embed-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "tapi32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "taskkill-cargo"
 version = "0.1.0"
 dependencies = [
@@ -7680,6 +8248,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "urlmon-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "usb-sys"
 version = "0.1.0"
 
@@ -7944,6 +8520,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "usp10-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "usrmgr-cargo"
 version = "0.1.0"
 dependencies = [
@@ -8001,6 +8585,14 @@ checksum = "ba73ea9cf16a25df0c8caa16c51acb937d5712a8429db78a3ee29d5dcacd3a65"
 [[package]]
 name = "varargs-rust"
 version = "0.1.0"
+
+[[package]]
+name = "vbscript-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
 
 [[package]]
 name = "vdm-rust"
@@ -8144,6 +8736,22 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "wbemdisp-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "wbemprox-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -8372,6 +8980,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "windowscodecs-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "windowscodecsext-cargo"
 version = "0.1.0"
 dependencies = [
@@ -8466,6 +9082,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "winhttp-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "wininet-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "winlogon-cargo"
 version = "0.1.0"
 dependencies = [
@@ -8506,6 +9138,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "winmm-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "winprint-cargo"
 version = "0.1.0"
 dependencies = [
@@ -8529,6 +9169,14 @@ version = "0.1.0"
 dependencies = [
  "midl-rt",
  "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "winscard-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
  "reactos-link",
 ]
 
@@ -8593,6 +9241,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "wintrust-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -8778,6 +9434,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wmvcore-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "wordpad-cargo"
 version = "0.1.0"
 dependencies = [
@@ -8913,6 +9577,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wshom-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "wshtcpip-rust"
 version = "0.1.0"
 dependencies = [
@@ -9043,10 +9715,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "xinput1_4-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "xinput9_1_0-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "xmllite-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
  "reactos-link",
 ]
 

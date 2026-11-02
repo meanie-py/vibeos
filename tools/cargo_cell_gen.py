@@ -1170,6 +1170,24 @@ def _names_only(a: list[str]) -> bool:
     return all(k in NAME_PROPERTIES for k in a[2::2])
 
 
+def _obj_source(cmake_dir: Path, obj: str) -> Path:
+    """The source an object under `<target>.dir/` was compiled from, subdirectory kept.
+
+    By basename alone crypt32's `reactos/unixlib.c.obj` resolved to `unixlib.c`, Wine's
+    unix-side file one directory up (it fails on dlfcn.h; `reactos/store.c` would have
+    compiled Wine's store.c without a word)."""
+    m = re.search(r"/CMakeFiles/[^/]+\.dir/(.+)\.obj$", obj)
+    return cmake_dir / (m.group(1) if m else obj.split("/")[-1].removesuffix(".obj"))
+
+
+def _shim_name(c: str, cell: Cell) -> str:
+    """A shim as the module's CMakeLists names it: relative to its directory."""
+    try:
+        return Path(c).relative_to(cell.cmake_dir.relative_to(REPO)).as_posix()
+    except ValueError:
+        return Path(c).name
+
+
 def _retarget(cmd: str, raw: str, new: str) -> str:
     """A transferred statement (`raw` is its argument text), re-aimed at `new`."""
     first = _args(raw)[0]
@@ -1185,7 +1203,8 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     keep, pos = [], 0
     body_lib = None
     body_var = cell.body_var or f"{cell.target}_rust"
-    transferred: list[tuple[str, str]] = []
+    # (cmd, raw, the if() conditions it sat under, outermost first)
+    transferred: list[tuple[str, str, tuple[str, ...]]] = []
     # `add_dependencies(m evtmsgstr)` orders a GENERATED input (an mc header the rc #includes)
     # before the compile that reads it. The cell drops the target's add_dependencies, and the
     # compile now lives on `<m>_res`/`<m>_shims`, so the ordering moves there with it — or a
@@ -1221,6 +1240,10 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
         None,
     )
 
+    rc_lists = _list_vars(text)
+    # if id -> its condition's argument text (_branches numbers the if()s in order).
+    if_raw = [r for _s, _e, c, r in all_stmts if c == "if"]
+
     def other_branch(i: int) -> bool:
         """Statement `i` is in the other branch of the target's own if() chain."""
         return home is not None and _exclusive(paths[i], home)
@@ -1243,6 +1266,8 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             build_deps += [d for d in a[1:] if not d.startswith("rust_") and d not in build_deps]
         rc_deps = _rc_object_depends(cmd, raw) if cell.rc else None
         if rc_deps is not None:
+            rc_deps = _expand(rc_deps, rc_lists)
+        if rc_deps is not None:
             # The engine compiles the .rc; a generated input it embeds orders the cell.
             drop = True
             rc_gen_deps += [d for d in rc_deps if "CMAKE_CURRENT_BINARY_DIR" in d]
@@ -1255,7 +1280,16 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             continue
         if a and a[0] == cell.target and cmd.lower() in TRANSFERRED:
             drop = True  # re-emitted below, on the OBJECT libraries
-            transferred.append((cmd, raw))
+            # ...under the same if()s: libxslt's MSVC-only /wd4267 moved out of its
+            # if(MSVC) reached clang. An elseif/else branch is refused rather than its
+            # condition reconstructed (it is the negation of every branch before it).
+            extra = paths[idx][len(home or ()) :]
+            if home is not None and paths[idx][: len(home)] != home:
+                raise GenError(f"{cell.target}: `{cmd}` sits outside its target's if() branch")
+            if any(b for _i, b in extra):
+                raise GenError(f"{cell.target}: `{cmd}` on the target is in an elseif/else branch")
+            conds = tuple(if_raw[i] for i, _b in extra)
+            transferred.append((cmd, raw, conds))
         if a and a[0] == cell.target and cmd == "set_target_properties" and _names_only(a):
             drop = True
         if a and a[0] == cell.target and cmd == "set_target_cpp_properties":
@@ -1394,7 +1428,7 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             if c in cell.generated
             else f"${{REACTOS_SOURCE_DIR}}/{c}"
             if c in cell.foreign
-            else Path(c).name
+            else _shim_name(c, cell)
             for c in cell.c_shims
         ]
         if guarded:
@@ -1404,7 +1438,7 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             for a in ARCHES:
                 if cell.arch_shims[a]:
                     block.append(f'if(ARCH STREQUAL "{a}")')
-                    names_a = " ".join(Path(c).name for c in cell.arch_shims[a])
+                    names_a = " ".join(_shim_name(c, cell) for c in cell.arch_shims[a])
                     block.append(f"    list(APPEND {var} {names_a})")
                     block.append("endif()")
             block.append(f"set({var}_TARGET)")
@@ -1429,7 +1463,12 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     if transferred and objlibs:
         block.append("# How cmake compiled the target's sources, now on the OBJECT libraries.")
         for lib in objlibs:
-            lines = [_retarget(c, r, lib) for c, r in transferred]
+            lines = []
+            for c, r, conds in transferred:
+                stmt = _retarget(c, r, lib)
+                for cond in reversed(conds):
+                    stmt = f"if({cond.strip()})\n    " + stmt.replace("\n", "\n    ") + "\nendif()"
+                lines.append(stmt)
             (shim_lines if lib == shims else block).extend(lines)
     if build_deps and objlibs:
         block.append("# Generated inputs those compiles read, ordered before them.")
@@ -1747,6 +1786,23 @@ def _check_statement_effects(target: str, facts: dict, links: dict[str, Link]) -
         raise GenError(f"{target}: target_link_options --require-defined is on no link edge")
 
 
+_GENEX_REFS: dict[Path, dict[str, list[str]]] = {}
+
+
+def _target_file_refs(repo: Path) -> dict[str, list[str]]:
+    """target -> the CMakeLists that name it in a `$<TARGET_FILE...:target>` expression."""
+    if repo not in _GENEX_REFS:
+        refs: dict[str, list[str]] = {}
+        pat = re.compile(r"\$<TARGET_(?:LINKER_)?FILE(?:_DIR|_NAME)?:([A-Za-z0-9_.+-]+)>")
+        for cm in repo.glob("**/CMakeLists.txt"):
+            if cm.parts[len(repo.parts)].startswith(("build-", ".", "cmake-off-out")):
+                continue
+            for t in set(pat.findall(cm.read_text(errors="replace"))):
+                refs.setdefault(t, []).append(cm.relative_to(repo).as_posix())
+        _GENEX_REFS[repo] = refs
+    return _GENEX_REFS[repo]
+
+
 def model(target: str, repo: Path = REPO) -> Cell:
     links = _link_edges(target, repo)
     first = links["amd64"]
@@ -1759,6 +1815,12 @@ def model(target: str, repo: Path = REPO) -> Cell:
     if not cmake.exists():
         raise GenError(f"{target}: no {cmake.relative_to(repo)}")
     facts = cmake_facts(cmake, target, first.libs)
+    # Another module reads this target's file through a generator expression (rshell and
+    # browseui copy themselves into `$<TARGET_FILE_DIR:filebrowser>`). A cell is a custom
+    # target, which those cannot resolve, so cmake's configure fails for the whole tree.
+    others = [c for c in _target_file_refs(repo).get(target, []) if repo / c != cmake]
+    if others:
+        raise GenError(f"{target}: other CMakeLists read its file via $<TARGET_FILE...>: {others}")
     # No Rust body: a C module. The cell compiles its C (c_from_compile_db, then the
     # engine's recipe) and links it with no Rust archive, so cmake still makes nothing.
     # Unless something Rust IS built for it by a route the generator cannot read: a custom
@@ -1911,7 +1973,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
             nm = obj.split("/")[-1]
             if nm in common:
                 continue
-            src = cmake_dir / nm.removesuffix(".obj")
+            src = _obj_source(cmake_dir, obj)
             if not re.search(r"\.(c|s|S)\.obj$", nm) or not src.exists():
                 odd = {x: sorted(set(v) - common) for x, v in by_arch.items()}
                 raise GenError(f"{target}: link inputs differ by arch {odd}")
@@ -1937,7 +1999,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
                 raise GenError(f"{target}: a .def without a spec2def()")
             spec = ((cmake_dir / m.group(2)).relative_to(repo).as_posix(), m.group(1))
         elif nm.endswith(".c.obj"):
-            src = cmake_dir / nm.removesuffix(".obj")
+            src = _obj_source(cmake_dir, obj)
             # A source from outside the module's directory: CMake spells each `..` of its
             # path as `__` under `<target>.dir/` (cscript compiles ../wscript's varargs shim).
             m = re.search(r"\.dir/((?:__/)+.*)\.obj$", obj)
@@ -1962,7 +2024,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
             # The engine has a C rule and an asm rule (cflags/), and no C++ one. A C++ TU
             # that is only the placeholder (an exe's `typedef int x;`) compiles to nothing
             # and is dropped like the C one; anything else would have to be compiled.
-            src = cmake_dir / nm.removesuffix(".obj")
+            src = _obj_source(cmake_dir, obj)
             if not (src.exists() and _placeholder(src)):
                 raise GenError(
                     f"{target}: compiled C++ {nm} (reactos-link compiles C and asm shims only;"
@@ -3417,6 +3479,29 @@ def _rc_object_depends(cmd: str, raw: str) -> list[str] | None:
     return None
 
 
+def _list_vars(text: str) -> dict[str, list[str]]:
+    """The lists a CMakeLists builds with set()/list(APPEND), in statement order."""
+    out: dict[str, list[str]] = {}
+    for _s, _e, cmd, raw in _statements(text):
+        a = _args(raw)
+        if cmd == "set" and a:
+            out[a[0]] = a[1:]
+        elif cmd == "list" and a[:1] == ["APPEND"] and len(a) > 1:
+            out.setdefault(a[1], []).extend(a[2:])
+    return out
+
+
+def _expand(items: list[str], lists: dict[str, list[str]]) -> list[str]:
+    """`${VAR}` items replaced by VAR's own items, recursively: msxml3's .rc waited for
+    `${msxml3_rc_deps}`, which holds the generated typelib, so a literal-only scan missed
+    it and the cell could compile the .rc before widl made msxml3_v1.tlb."""
+    out: list[str] = []
+    for x in items:
+        m = re.fullmatch(r"\$\{(\w+)\}", x)
+        out += _expand(lists[m.group(1)], lists) if m and m.group(1) in lists else [x]
+    return out
+
+
 def _drop_res_library(target: str, repo: Path) -> None:
     """Remove `add_library(<target> OBJECT ...)` and every statement on it from the
     CMakeLists that defines it; what it was ordered after (`add_dependencies(<target> X)`)
@@ -3435,9 +3520,12 @@ def _drop_res_library(target: str, repo: Path) -> None:
 def _drop_res_in(cmake: Path, target: str) -> None:
     text = cmake.read_text()
     keep, pos, deps = [], 0, []
+    lists = _list_vars(text)
     for s, e, cmd, raw in _statements(text):
         a = _args(raw)
         rc_deps = _rc_object_depends(cmd, raw)
+        if rc_deps is not None:
+            rc_deps = _expand(rc_deps, lists)
         if a[:1] == [target] or rc_deps is not None:
             if cmd == "add_dependencies":
                 deps += a[1:]
@@ -3559,6 +3647,10 @@ def convert(targets: list[str], baseline: Path | None = None, repo: Path = REPO)
     else:
         save_baseline(targets, baseline, repo)
         print(f"baseline: {baseline}")
+    # apply() refuses in rewrite_cmake too (a link in an elseif branch): try every rewrite
+    # before writing any cell, or a refusal at the 60th leaves 59 half-converted modules.
+    for cell in cells:
+        rewrite_cmake(cell.cmake_dir / "CMakeLists.txt", cell)
     for cell in cells:
         for p in apply(cell, repo):
             print(f"wrote {p.relative_to(repo)}")

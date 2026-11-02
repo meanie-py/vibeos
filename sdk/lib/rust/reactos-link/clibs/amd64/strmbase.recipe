@@ -1,0 +1,8 @@
+# strmbase (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	sdk/lib/strmbase/dispatch.c	@build/sdk/lib/strmbase sdk/lib/strmbase @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x600 _WIN32_WINNT=0x600 __WINESRC__
+c	sdk/lib/strmbase/filter.c	@build/sdk/lib/strmbase sdk/lib/strmbase @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x600 _WIN32_WINNT=0x600 __WINESRC__
+c	sdk/lib/strmbase/mediatype.c	@build/sdk/lib/strmbase sdk/lib/strmbase @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x600 _WIN32_WINNT=0x600 __WINESRC__
+c	sdk/lib/strmbase/pin.c	@build/sdk/lib/strmbase sdk/lib/strmbase @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x600 _WIN32_WINNT=0x600 __WINESRC__
+c	sdk/lib/strmbase/pospass.c	@build/sdk/lib/strmbase sdk/lib/strmbase @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x600 _WIN32_WINNT=0x600 __WINESRC__
+c	sdk/lib/strmbase/renderer.c	@build/sdk/lib/strmbase sdk/lib/strmbase @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x600 _WIN32_WINNT=0x600 __WINESRC__
+c	sdk/lib/strmbase/seeking.c	@build/sdk/lib/strmbase sdk/lib/strmbase @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x600 _WIN32_WINNT=0x600 __WINESRC__
