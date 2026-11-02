@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -16,8 +16,17 @@ from tools import build_infra_compat as bridge
 AMD64 = "x86_64-pc-windows-gnu"
 _metadata = None
 
+if TYPE_CHECKING:
+    PIN: str
+    CANON: Path
+    WORKSPACE: Path
+    IMPLEMENTATION_REPO: Path
+    PREPARED_SCHEMA: str
+    TARGETS: dict[str, str]
+    FLAGS: dict[tuple[str, bool], str]
 
-def __getattr__(name):
+
+def __getattr__(name: str) -> Any:
     global _metadata
     if name not in {
         "PIN",

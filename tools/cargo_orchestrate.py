@@ -628,7 +628,7 @@ def artifact_store_env(root: Path, arch: str, report: Path):
                     "VIBEOS_ARTIFACT_STORE_ROOT": str(store),
                     "VIBEOS_ARTIFACT_VERIFY_NONCE": "",
                     "VIBEOS_ARTIFACT_SUPERVISOR": str(sup),
-                    "VIBEOS_ARTIFACT_PYTHON": sys.executable,
+                    "VIBEOS_ARTIFACT_TOOL": str(real / "tools/build-infra"),
                     "VIBEOS_ARTIFACT_TOOLCHAIN_ID": json.loads(sup.read_text())["toolchain_key"],
                 },
                 result,
