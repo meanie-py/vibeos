@@ -447,7 +447,7 @@ pub unsafe extern "system" fn FatLookupLastMcbEntry(
     *Vbo = (LiVbo as u32) << mcb_scale_log2;
 
     if (LiLbo as u32) != u32::MAX {
-        *Lbo = ((LiLbo as u32) << mcb_scale_log2) as u64;
+        *Lbo = (LiLbo as u64) << mcb_scale_log2;
         *Lbo += (mcb_scale_modulo) as u64;
         *Vbo += mcb_scale_modulo;
     } else {
@@ -682,9 +682,11 @@ pub unsafe extern "system" fn FatVerifyVolume(
             }
 
             *BootSector_ptr = FsRtlAllocatePoolWithTag(
-                0x204 /* NonPagedPoolNxCacheAligned */,
+                // fatprocs.h: NonPagedPoolNxCacheAligned is NonPagedPoolCacheAligned (4) under
+                // __REACTOS__; 0x204 is Windows 8's NX pool type, which this kernel does not have.
+                4 /* NonPagedPoolNxCacheAligned */,
                 ROUND_TO_PAGES(SectorSize as usize) as u32,
-                0x46495346 /* TAG_VERIFY_BOOTSECTOR */,
+                0x73746146 /* TAG_VERIFY_BOOTSECTOR 'staF' */,
             ) as *mut PACKED_BOOT_SECTOR;
 
             if FatPerformVerifyDiskRead(
@@ -750,9 +752,9 @@ pub unsafe extern "system" fn FatVerifyVolume(
             RootDirectorySize = root_dir_size;
 
             *RootDirectory_ptr = FsRtlAllocatePoolWithTag(
-                0x200,
-                (((ROUND_TO_PAGES((((RootDirectorySize as usize) as u32) as u32) as usize) as u32) as usize)) as u32,
-                0x46495352 /* TAG_VERIFY_ROOTDIR */,
+                4 /* NonPagedPoolNxCacheAligned, as above */,
+                ROUND_TO_PAGES(RootDirectorySize as usize) as u32,
+                0x72746146 /* TAG_VERIFY_ROOTDIR 'rtaF' */,
             ) as *mut DIRENT;
 
             if !IsBpbFat32(&raw const (*BootSector).PackedBpb) {

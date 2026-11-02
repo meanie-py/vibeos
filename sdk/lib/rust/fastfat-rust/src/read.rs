@@ -1,4 +1,5 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
+use crate::stats::CollectReadStats;
 use ntkrnl_sys::globals::*;
 // One declaration per external symbol: externs.rs.
 use crate::externs::CanFsdWait;
@@ -81,7 +82,6 @@ extern "system" {
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatQuickVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatWaitSync(IrpContext: *mut IRP_CONTEXT);
-    fn CollectReadStats(Vcb: *mut VCB, OpenType: TYPE_OF_OPEN, ByteCount: ULONG);
     fn CcCopyReadEx(FileObject: *mut FILE_OBJECT, FileOffset: *mut LARGE_INTEGER, Length: ULONG, Wait: BOOLEAN, Buffer: *mut core::ffi::c_void, IoStatus: *mut _IO_STATUS_BLOCK, Thread: *mut _ETHREAD) -> BOOLEAN;
     fn FatPagingFileIo(Irp: PIRP, Fcb: *mut FCB);
 // BOOLEAN fn NodeType(ptr: *mut core::ffi::c_void) -> u16;

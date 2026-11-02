@@ -475,9 +475,11 @@ pub unsafe extern "system" fn IsFileDeleted(IrpContext: *mut IRP_CONTEXT, Fcb: *
 
 #[no_mangle]
 pub unsafe extern "system" fn IsBpbFat32(Bpb: *const PACKED_BIOS_PARAMETER_BLOCK) -> u8 {
-    // C macro: (*(PUSHORT)&(bpb)->RootEntries == 0) — packed layout, unaligned-safe
-    let root_entries = (*Bpb).RootEntries;
-    ((root_entries[0] == 0) && (root_entries[1] == 0)) as u8
+    // fat.h: `(*(USHORT *)(&(bpb)->SectorsPerFat) == 0)` -- FAT32 keeps its FAT size in
+    // LargeSectorsPerFat and zeroes the 16-bit field. (RootEntries is also 0 on a sane
+    // FAT32 volume, so testing it agreed on good media and diverged on odd BPBs.)
+    let sectors_per_fat = (*Bpb).SectorsPerFat;
+    ((sectors_per_fat[0] == 0) && (sectors_per_fat[1] == 0)) as u8
 }
 
 #[no_mangle]
@@ -616,7 +618,8 @@ pub unsafe extern "system" fn FatCleanVolumeDpc(
         return;
     }
 
-    let tag: u32 = u32::from_le_bytes([b' ', b't', b'a', b'F']);
+    // ' taF' is a C multi-char constant, so 'F' is the LOW byte.
+    let tag: u32 = 0x20746146;
     Packet = ExAllocatePoolWithTag(
         NonPagedPoolNx,
         core::mem::size_of::<CLEAN_AND_DIRTY_VOLUME_PACKET>(),
