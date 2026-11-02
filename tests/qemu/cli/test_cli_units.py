@@ -11740,6 +11740,38 @@ def test_payload_guest_set_from_a_current_build_passes(tmp_path, monkeypatch):
     pc.guest_build_current("appstorm64", tmp_path / "build-amd64")  # no SystemExit
 
 
+def _fake_build(tmp_path, ninja: str, depinfo: str):
+    b = tmp_path / "build-amd64"
+    (b / "dll").mkdir(parents=True)
+    (b / "build.ninja").write_text(ninja)
+    (b / "dll" / "x.dll.d").write_text(depinfo)
+    return b
+
+
+def test_payload_unbuilt_rust_crate_only_when_both_records_are_silent(tmp_path):
+    """An arm64-only crate (wowx64-rust) cannot change what build-amd64 stages, but a crate
+    named by EITHER the ninja graph or cargo's dep-info is compiled there."""
+    pc = _load_payload_compile()
+    b = _fake_build(
+        tmp_path,
+        "build x: CUSTOM /tmp/vibeos/sdk/lib/rust/user32-rust/src/lib.rs\n",
+        "x.dll: /tmp/vibeos/sdk/lib/rust/strsafe-rust/src/lib.rs\n",
+    )
+    unbuilt = pc.unbuilt_rust_crate(b)
+    assert unbuilt("sdk/lib/rust/wowx64-rust/src/callback.rs")
+    assert not unbuilt("sdk/lib/rust/user32-rust/src/lib.rs")  # ninja names it
+    assert not unbuilt("sdk/lib/rust/strsafe-rust/src/lib.rs")  # only cargo names it
+    assert not unbuilt("sdk/lib/rust/Cargo.toml")  # the workspace, not a crate
+    assert not unbuilt("dll/win32/wowx64/CMakeLists.txt")
+
+
+def test_payload_unbuilt_rust_crate_without_build_records_proves_nothing(tmp_path):
+    pc = _load_payload_compile()
+    b = tmp_path / "build-amd64"
+    b.mkdir()
+    assert not pc.unbuilt_rust_crate(b)("sdk/lib/rust/wowx64-rust/src/callback.rs")
+
+
 def test_payload_guest_set_build_dir_must_name_an_arch(tmp_path, monkeypatch):
     pc = _load_payload_compile()
     _fake_receipts(pc, monkeypatch, set())
