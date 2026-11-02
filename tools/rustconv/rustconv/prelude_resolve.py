@@ -31,7 +31,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import variadic_shim
+from . import generated_items, variadic_shim
 from .crate_integrate import _LITERAL_OR_COMMENT as _LITERAL_OR_COMMENT_RE
 from .crate_integrate import extern_block_spans, split_decls
 
@@ -1742,9 +1742,12 @@ def render(copied: dict[str, Item]) -> str:
     for i in copied.values():
         if i.kind in ("fn", "static"):
             fns.setdefault(i.abi or '"C"', []).append(i)
+    # Each item is `gen:`-stamped, so a hand edit made inside the block is recognised and
+    # moved out above it on the next run (`preserve_hand_edits`) instead of being
+    # re-derived from the tree, which silently undid it.
     out = [BEGIN]
     for i in sorted(consts, key=lambda i: i.text):
-        out.append(f"pub {i.text} // {i.path}")
+        out.append(generated_items.stamp(f"pub {i.text}{_source(i)}"))
     for abi, items in sorted(fns.items()):
         out.append(f"extern {abi} {{")
         for i in sorted(items, key=lambda i: i.text):
@@ -1753,10 +1756,86 @@ def render(copied: dict[str, Item]) -> str:
                 if i.text.startswith(("fn", "static"))
                 else re.sub(r"^.*?\bfn\b", "fn", i.text)
             )
-            out.append(f"{_x86_alias(text)}{_crt_inline_alias(text)}    pub {text} // {i.path}")
+            item = f"{_x86_alias(text)}{_crt_inline_alias(text)}    pub {text}{_source(i)}"
+            out.append(_stamp_last_line(item))
         out.append("}")
     out.append(END)
     return "\n".join(out) + "\n"
+
+
+def _source(i: Item) -> str:
+    """The `// <path>` naming where a copy came from; none for an item with no path (an
+    empty one rendered as a dangling `// ` that read back as part of the item)."""
+    return f" // {i.path}" if i.path else ""
+
+
+def _stamp_last_line(item: str) -> str:
+    """Stamp an item whose first lines are attributes: the stamp digests the whole item
+    but sits on its declaration line, where `existing_block` already strips comments."""
+    head, nl, last = item.rpartition("\n")
+    stamped = generated_items.stamp(last)
+    digest = generated_items.digest(item)
+    stamped = re.sub(r"// gen:[0-9a-f]{12}", f"// gen:{digest}", stamped)
+    return f"{head}{nl}{stamped}"
+
+
+_ITEM_NAME = re.compile(r"\b(?:const|type|fn|static(?:\s+mut)?)\s+([A-Za-z_]\w*)")
+
+
+def split_block(body: str) -> dict[str, str]:
+    """The block's items as {name: verbatim text}: a declaration line plus the attribute
+    lines above it (`#[link_name]`), never the `extern "ABI" {` / `}` that wrap them."""
+    out: dict[str, str] = {}
+    pending: list[str] = []
+    for line in body.splitlines():
+        s = line.strip()
+        if s.startswith("#["):
+            pending.append(line)
+            continue
+        if re.match(r'^extern "[^"]+" \{$', s) or s == "}":
+            pending = []
+            continue
+        m = _ITEM_NAME.search(generated_items.unstamp(s).partition(" // ")[0])
+        if m:
+            out[m.group(1)] = "\n".join([*pending, line])
+        pending = []
+    return out
+
+
+def preserve_hand_edits(prelude: Path) -> list[str]:
+    """Move hand-edited items out of the tree-consensus block before a run re-derives it.
+
+    An unstamped item (written before stamps) is left in the block: with nothing to check
+    it against, treating every legacy copy as a hand port would empty the block."""
+    if not prelude.is_file():
+        return []
+    text = prelude.read_text()
+    m = re.search(re.escape(BEGIN) + r"(.*?)" + re.escape(END), text, re.S)
+    if not m:
+        return []
+    abis: dict[str, str] = {}
+    abi = None
+    for line in m.group(1).splitlines():
+        ab = re.match(r'^extern ("[^"]+") \{$', line.strip())
+        if ab:
+            abi = ab.group(1)
+        elif line.strip() == "}":
+            abi = None
+        elif abi is not None:
+            n = _ITEM_NAME.search(line)
+            if n:
+                abis[n.group(1)] = abi
+    before = set(split_block(m.group(1)))
+    generated_items.preserve(
+        prelude,
+        BEGIN,
+        END,
+        split_block,
+        {},
+        outside=lambda n, t: f"extern {abis[n]} {{\n{t}\n}}" if n in abis else t,
+    )
+    after = existing_block(prelude)
+    return sorted(before - set(after))
 
 
 def write_block(prelude: Path, block: str) -> bool:
@@ -1778,7 +1857,7 @@ def existing_block(prelude: Path) -> dict[str, Item]:
     out: dict[str, Item] = {}
     abi = None
     for line in m.group(1).splitlines():
-        s = line.strip()
+        s = generated_items.unstamp(line).strip()
         ab = re.match(r'^extern ("[^"]+") \{$', s)
         if ab:
             abi = ab.group(1)

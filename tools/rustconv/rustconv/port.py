@@ -5487,6 +5487,9 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     # ...and never a name another part of the prelude now DEFINES: the wine-channel block
     # writes `__wine_dbch___default = &__wine_dbch_ch` beside the `extern` DECLARATION a
     # copy brought from appwiz, and the pair was E0428 forever (shsvcs, netlogon).
+    # Before re-deriving the block from the tree: an item a person edited inside it is moved
+    # out above it (and from then on is "defined outside", so the generator leaves it).
+    prelude_resolve.preserve_hand_edits(prelude)
     defined_elsewhere = _prelude_definitions_outside_consensus(prelude)
     # A name the bodies only ever CALL AS A MACRO (`FIXME!(..)`) is never satisfied by a fn:
     # srvsvc got mlang's stray `fn FIXME(format, ...)` declaration where the SDK alias pass
