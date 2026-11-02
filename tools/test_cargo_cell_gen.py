@@ -617,9 +617,12 @@ def test_convert_fails_loud_when_a_new_cells_own_c_has_no_recipe(tmp_path, monke
         g.clib_recipe_path(a, "n_shims", tmp_path).parent.mkdir(parents=True, exist_ok=True)
         g.clib_recipe_path(a, "n_shims", tmp_path).write_text("# n_shims\n")
     g.clib_recipe_path("arm64", "m_shims", tmp_path).write_text("# m_shims\n")
-    monkeypatch.setattr(g, "model", lambda t, repo: t)
     monkeypatch.setattr(g, "save_baseline", lambda *a: None)
     monkeypatch.setattr(g, "apply", lambda c, repo: [])
+    # convert() dry-runs every cmake rewrite before applying any (ctail wave 4), reading
+    # each cell's cmake_dir: model a real cell and stub the rewrite itself.
+    monkeypatch.setattr(g, "model", lambda t, repo: _Cell(t, tmp_path))
+    monkeypatch.setattr(g, "rewrite_cmake", lambda *a: None)
     monkeypatch.setattr(g, "_ninja", lambda *a: None)
     monkeypatch.setattr(g, "check", lambda *a: 0)
     monkeypatch.setattr(g, "refresh_manifests", lambda repo: None)
