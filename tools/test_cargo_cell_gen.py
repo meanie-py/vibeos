@@ -1346,3 +1346,38 @@ def test_a_bodyless_cell_is_recognised_by_its_build_script(tmp_path, monkeypatch
     assert g._cell_is_bodyless("m", tmp_path)
     (crate / "build.rs").write_text(g.build_rs(cell()))
     assert not g._cell_is_bodyless("m", tmp_path)
+
+
+def test_a_rerun_keeps_the_first_runs_baseline(tmp_path, monkeypatch):
+    """After a failed build, build-<arch> may hold cell-linked PEs: re-baselining from it
+    would compare the cells with themselves."""
+    saved = []
+    monkeypatch.setattr(g, "model", lambda t, repo: t)
+    monkeypatch.setattr(g, "save_baseline", lambda ts, b, repo: saved.append(b))
+    monkeypatch.setattr(g, "apply", lambda c, repo: [])
+    monkeypatch.setattr(g, "_ninja", lambda a, ts, repo: None)
+    monkeypatch.setattr(g, "check", lambda ts, b, repo: 0)
+    monkeypatch.setattr(g, "refresh_manifests", lambda repo: None)
+    b = tmp_path / "b"
+    for a in g.ARCHES:
+        (b / a).mkdir(parents=True)
+    (b / "targets.json").write_text('{"m": {}}')
+    assert g.convert(["m"], b, tmp_path) == 0 and saved == []
+    with pytest.raises(g.GenError, match="no baseline for"):
+        g.convert(["m", "n"], b, tmp_path)
+
+
+def test_a_failed_build_names_the_failed_edge_not_the_lock_noise(tmp_path, monkeypatch):
+    out = "\n".join(
+        ["[1/9] cargo"] * 3
+        + ["FAILED: drivers/base/kdstub/kdstub.dll", "error[E0425]: cannot find value"]
+        + ["    Blocking waiting for file lock on build directory"] * 20
+    )
+    monkeypatch.setattr(
+        g.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 1, out, "")
+    )
+    (tmp_path / "build-i386").mkdir()
+    with pytest.raises(g.GenError) as e:
+        g._ninja("i386", ["kdstub"], tmp_path)
+    assert "FAILED: drivers/base/kdstub/kdstub.dll" in str(e.value)
+    assert "error[E0425]" in str(e.value)
