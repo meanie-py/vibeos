@@ -14,13 +14,9 @@ Nothing in flight; nothing dirty. Landed or queued this session (verify with
    If either signature recurs on a tree that has 5c1bb095b90, the x86 `MmDeleteRmap` guard now
    dumps the per-VA ledger (`page-map`/`rmap-insert`/`rmap-delete`, thread field = process for
    rmap events): read that first.
-2. **#72 `read.rs:590`** (fastfat, amd64-bios only): STATUS_VERIFY_REQUIRED on the VerifyThread.
-   fastfat sets IRP_CONTEXT_FLAG_OVERRIDE_VERIFY and SL_OVERRIDE_VERIFY_VOLUME like the C, and
-   classpnp/cdrom honour the flag like the C, by reading. Next: trace which device and layer
-   returns it (`ClassSendSrbSynchronous ... srbstat=12h` precedes it), then compare with the C.
-3. **#72 classpnp/disk/cdrom arming**: needs the user's call: align device extensions to
-   `SYSTEM_CACHE_ALIGNMENT_SIZE` in `IoCreateDevice`, or keep those crates unarmed.
-4. #72 tail: freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks), win32k-rust (10),
+2. DONE 2026-11-02 (verify with `git log origin/master`): `read.rs:590` (a negated assert) and
+   classpnp/disk/cdrom arming (device extensions cache-aligned at `DeviceObject + 1`).
+3. #72 tail: freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks), win32k-rust (10),
    remaining drivers; then the 78-entry `scan_move_vs_nonoverlapping` baseline review.
 
 ## Mission

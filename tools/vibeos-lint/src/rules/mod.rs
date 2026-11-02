@@ -20,6 +20,8 @@ pub mod misaligned_cast;
 pub mod read_after_clear;
 pub mod shadowed_c_define;
 pub mod move_vs_nonoverlapping;
+pub mod assert_negated_vs_c;
+pub mod devobj_as_extension;
 pub mod variadic_array_arg;
 
 pub mod assert_to_ub;
@@ -228,6 +230,8 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(safe_probe_deref::SafeProbeDeref),
         Box::new(shadowed_c_define::ShadowedCDefine),
         Box::new(move_vs_nonoverlapping::MoveVsNonoverlapping),
+        Box::new(assert_negated_vs_c::AssertNegatedVsC),
+        Box::new(devobj_as_extension::DevobjAsExtension),
         Box::new(store_on_failure::StoreOnFailure),
         Box::new(dropped_null_guard::DroppedNullGuard),
         Box::new(ptr_byte_diff::PtrByteDiff),

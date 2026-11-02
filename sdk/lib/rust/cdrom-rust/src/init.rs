@@ -1380,7 +1380,7 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
 
     // 2. retrieve the inquiry data if still needed
     if status >= 0 && needResendCommand != 0 {
-        FREE_POOL(tmpInquiry as *mut core::ffi::c_void);
+        FREE_POOL!(tmpInquiry);
         core::ptr::write_bytes(
             core::ptr::addr_of_mut!(srb) as *mut u8,
             0,
@@ -1419,7 +1419,7 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
                 && srb.DataTransferLength >= MINIMUM_CDROM_INQUIRY_SIZE
             {
                 requestedInquiryTransferBytes = srb.DataTransferLength;
-                FREE_POOL(tmpInquiry as *mut core::ffi::c_void);
+                FREE_POOL!(tmpInquiry);
                 core::ptr::write_bytes(
                     core::ptr::addr_of_mut!(srb) as *mut u8,
                     0,
@@ -1484,7 +1484,7 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
         (*DeviceExtension).DeviceAdditionalData.CachedInquiryDataByteCount =
             requestedInquiryTransferBytes;
     } else {
-        FREE_POOL(tmpInquiry as *mut core::ffi::c_void);
+        FREE_POOL!(tmpInquiry);
     }
 
     status
@@ -1664,7 +1664,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
             status,
         );
 
-        FREE_POOL(buffer as *mut core::ffi::c_void);
+        FREE_POOL!(buffer);
         // Null after freeing, matching the C FREE_POOL macro (ExFreePool(p); p = NULL).
         // The Rust FREE_POOL is a by-value fn and cannot null the caller's local, so
         // without this the FnExit free below double-frees on the all-fail path.
@@ -1687,7 +1687,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
     // For clarity, we'll do:
     // FnExit:
     if !buffer.is_null() {
-        FREE_POOL(buffer as *mut core::ffi::c_void);
+        FREE_POOL!(buffer);
     }
 
     if count == 6 {

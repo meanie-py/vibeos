@@ -2472,10 +2472,18 @@ pub unsafe extern "system" fn MmArmAccessFault(
         if (ProtectionCode & MM_PROTECT_SPECIAL) == MM_GUARDPAGE {
             ASSERT!(ProtectionCode != MM_DECOMMIT);
 
+            // DIVERGES from the C, which asserts ProtoPte == NULL here (it never supported a
+            // guard page inside a section view) and writes a plain soft PTE. In a view that drops
+            // the prototype linkage: the next touch demand-zeroed and the view read zeros instead
+            // of the file (kmtest ZwMapViewOfSection maps PAGE_GUARD|PAGE_READWRITE and touches it
+            // twice). Keep the view's linkage -- a lookup-needed prototype PTE -- with the guard
+            // consumed; the lookup-needed re-fault below honours that PTE's own protection.
+            if !ProtoPte.is_null() {
+                TempPte = MMPTE { Long: PrototypePte as ULONG_PTR };
+            }
             TempPte.set_soft_protection(((ProtectionCode & !MM_GUARDPAGE) as u32) as ULONG);
             MI_WRITE_INVALID_PTE(PointerPte, TempPte);
 
-            ASSERT!(ProtoPte.is_null());
             // ASSERT: elided bitfield check (always true with & 0 == 0)
 
             MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
@@ -2566,7 +2574,15 @@ pub unsafe extern "system" fn MmArmAccessFault(
         ProtectionCode = TempPte.soft_protection() as ULONG;
         if (TempPte.prototype() as usize) != 0 {
             if TempPte.soft_page_file_high() == MI_PTE_LOOKUP_NEEDED {
+                // A lookup-needed prototype PTE carries the page's protection (the first fault
+                // above wrote it from the VAD); the C overwrote it with the VAD's again, which
+                // re-armed a consumed PAGE_GUARD forever. Keep the PTE's, unless the address is
+                // no longer in a view at all.
+                let pte_protection = ProtectionCode;
                 ProtoPte = MiCheckVirtualAddress(Address, &mut ProtectionCode, &mut Vad);
+                if !ProtoPte.is_null() && pte_protection != 0 && ProtectionCode != MM_NOACCESS {
+                    ProtectionCode = pte_protection;
+                }
                 if ProtoPte.is_null() {
                     ASSERT!(KeGetCurrentIrql() <= APC_LEVEL);
                     MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);

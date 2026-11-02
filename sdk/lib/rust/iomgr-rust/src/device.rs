@@ -979,10 +979,12 @@ unsafe fn IopFinishCreatedDeviceObject(
     (*CreatedDeviceObject).Size =
         (core::mem::size_of::<_DEVICE_OBJECT>() + DeviceExtensionSize as usize) as USHORT;
 
-    let DeviceObjectExtension = CreatedDeviceObject
-        .add(1)
-        .cast::<u8>()
-        .add(AlignedDeviceExtensionSize) as *mut _EXTENDED_DEVOBJ_EXTENSION;
+    // The extension is `CreatedDeviceObject + 1`, exactly as the C: KMDF (fxdevice.cpp) and
+    // drivers find it by that arithmetic. ObpAllocateObject places device objects so that this
+    // address is cache-line aligned (64, 128 on arm64), which the DDK's cache-aligned types need.
+    let DeviceExtension = CreatedDeviceObject.add(1).cast::<u8>();
+    let DeviceObjectExtension =
+        DeviceExtension.add(AlignedDeviceExtensionSize) as *mut _EXTENDED_DEVOBJ_EXTENSION;
 
     (*DeviceObjectExtension).Type = IO_TYPE_DEVICE_OBJECT_EXTENSION as i16;
     (*DeviceObjectExtension).Size = 0;
@@ -994,7 +996,7 @@ unsafe fn IopFinishCreatedDeviceObject(
     (*CreatedDeviceObject).DeviceType = DeviceType;
     (*CreatedDeviceObject).Characteristics = DeviceCharacteristics;
     (*CreatedDeviceObject).DeviceExtension = if DeviceExtensionSize != 0 {
-        CreatedDeviceObject.add(1) as PVOID
+        DeviceExtension as PVOID
     } else {
         core::ptr::null_mut()
     };

@@ -628,6 +628,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Not yet triaged. Likely shapes are an increment without its matching decrement
   (map/unmap imbalance) or a PFN read for the wrong PDE. Start with `farm --arches arm64`
   using the conformance payload, and arm the tripwire before reading the dump.
+- **Guard page in a section view loses the view's data (FIXED 2026-11-02, smp-bringup).** kmtest ZwMapViewOfSection maps a view `PAGE_GUARD | PAGE_READWRITE` and expects the
+  first touch to raise STATUS_GUARD_PAGE_VIOLATION and the second to succeed. MmArmAccessFault's
+  guard path asserts `ProtoPte == NULL` (pagfault.rs ~2478; upstream's C asserts the same, i.e. it
+  never supported this), then writes a plain soft PTE: the prototype linkage is gone and the
+  second touch DEMAND-ZEROES, so the view reads zeros instead of the file (the test does not
+  check the bytes, which is why it "passes"). Was a BUGCHECK while ntoskrnl's ASSERT! panicked
+  (2/2 standalone kmtest runs, 0/9 in a gate); now `KERNEL_ASSERT` / `A:kernel-assert`. Fix: write
+  a lookup-needed prototype PTE carrying the protection minus GUARD, AND make the re-fault path
+  honour that PTE's protection instead of overwriting it from the VAD via MiCheckVirtualAddress
+  (else the guard re-raises forever). That second half touches every section-view fault.
+  Done as described; amd64 conformance 107/107, ZwMapViewOfSection 135/0 and MmSection 250/4
+  (both the baseline), no kernel assertion (`20261102-022452-stmb0kb8-conformance-amd64`).
 - **amd64-bios: demand-zero fault on an already-valid PTE (FIX LANDING 2026-11-01, smp-bringup;
   root cause by code reading, the race has not been reproduced on demand).** Cause: the 64-bit
   self-map branch of `MmArmAccessFault` (a kernel fault on a page-table VA) built user
@@ -6901,19 +6913,28 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   WoW64 user buffer; fastfat's LFN copy was WCHAR-typed on a packed record, `FatNoOpAcquire`
   set top-level IRP 1 for `FSRTL_CACHE_TOP_LEVEL_IRP`, and an empty `DbgDoit!` dropped a DBG
   increment; and a workspace `[profile]` edit never rebuilt `rust_crate_sources` edges.
-  **OWED:** classpnp, disk and cdrom -- on 64-bit `COMMON_DEVICE_EXTENSION` is 64/128-aligned
-  (a `LOOKASIDE_ALIGN` lookaside inside it) while `IoCreateDevice` places extensions 16-aligned,
-  as the C does; needs a design decision (align extensions in `IoCreateDevice`, or keep these
-  crates unarmed). Then freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks),
+  **classpnp, disk and cdrom ARMED 2026-11-01** once device extensions were cache-aligned
+  (on 64-bit `COMMON_DEVICE_EXTENSION` holds a `LOOKASIDE_ALIGN` lookaside). The extension stays
+  at `DeviceObject + 1` -- KMDF's fxdevice.cpp asserts that arithmetic, so padding it away broke
+  a de-facto ABI -- and `ObpAllocateObject` places device objects so that address is on a cache
+  line (`ExpAllocatePoolWithTagAlignedAt`); the pool also honours the `*CacheAligned` pool types
+  now, which the C ignores. Found on the way: six classpnp sites cast the DEVICE_OBJECT itself to
+  the FDO extension (release-queue lock and flags written into the device object), and
+  `FREE_POOL` was a fn that freed without nulling its argument (121 sites in cdrom/classpnp/disk;
+  cdrom's Gesn.Buffer dangled after a failed GESN probe). Then freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks),
   win32k-rust (10) and the remaining drivers. Two armed-fastfat asserts printed twice per amd64-bios boot
   (`20261101-183850-m41czity`). `cachesup.rs:182` FIXED 2026-11-01: fastfat mounting the BIOS
   machine's EMPTY floppy got STATUS_NO_MEDIA_IN_DEVICE from MmMakeDataSectionResident, which
   cc-rust's `CcRosEnsureVacbResident` turned into FALSE (a stale "DUMMY_PSEH: return FALSE
   instead of raising" stand-in, 11 sites) -- "would block" to a WAIT caller, so fastfat raised
   STATUS_CANT_WAIT. cc-rust now raises as the C does, releasing its BCB/VACB first.
-  **OWED:** `read.rs:590`, a DASD non-cached read returning STATUS_VERIFY_REQUIRED on the
-  volume's own VerifyThread (`20261101-200736-od_rznoq`); find which IrpContext flag should
-  have set SL_OVERRIDE_VERIFY_VOLUME, and whether the C does the same on an empty floppy. `debug_assert!` is gated on
+  `read.rs:590` FIXED 2026-11-02: not a verify problem at all -- a probe showed
+  STATUS_NO_MEDIA_IN_DEVICE on an empty CD drive with no VerifyThread set. The translation had
+  wrapped the C's `NT_ASSERT(cur != Vcb->VerifyThread || Status != STATUS_VERIFY_REQUIRED)` in
+  `!( )` at all three FatCommonRead sites, so it fired on every legitimate I/O failure. New rule
+  `scan_assert_negated_vs_c`; it needed the C-twin index to stop losing every function after
+  one whose braces balance only per `#if` arm (read.c lost all of FatCommonRead onward). With
+  that, amd64-bios boots with no assert at all (`20261102-003650-2roxoi97`). `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of

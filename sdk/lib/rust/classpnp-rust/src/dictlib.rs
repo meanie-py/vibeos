@@ -145,7 +145,7 @@ pub unsafe extern "C" fn AllocateDictionaryEntry(
         oldIrql,
     );
     if status < 0 {
-        FREE_POOL(header as PVOID);
+        FREE_POOL!(header);
     } else {
         *Entry = core::ptr::addr_of_mut!((*header).Data) as PVOID;
     }

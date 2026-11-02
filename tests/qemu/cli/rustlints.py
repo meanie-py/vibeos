@@ -150,6 +150,8 @@ PORTED = frozenset(
         "scan_local_overlength",
         "scan_shadowed_c_define",
         "scan_move_vs_nonoverlapping",
+        "scan_assert_negated_vs_c",
+        "scan_devobj_as_extension",
         "scan_hkey_zero_extend",
     }
 )

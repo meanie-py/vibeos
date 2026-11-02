@@ -3520,6 +3520,20 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_devobj_as_extension": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/devobj_as_extension.rs: classpnp's `Fdo as "
+        "PFUNCTIONAL_DEVICE_EXTENSION` must be flagged, `(*Fdo).DeviceExtension as ...` and a "
+        "nolint must not."
+    ),
+    "scan_assert_negated_vs_c": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/assert_negated_vs_c.rs: fastfat's negated VerifyThread "
+        "NT_ASSERT must be flagged, the faithful one must not, and neither must another "
+        "module's same-named C function."
+    ),
     "scan_move_vs_nonoverlapping": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "

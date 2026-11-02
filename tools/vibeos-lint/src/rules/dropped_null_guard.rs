@@ -165,12 +165,26 @@ fn tested(body: &str) -> std::collections::HashSet<String> {
         r"\b([A-Za-z_]\w*)\s+as\s+[^;{}()=!]*?(?:==|!=)\s*(?:core::ptr::|ptr::)?null",
         r"\b([A-Za-z_]\w*)\s*(?:==|!=)\s*0\b",
         r"NonNull::new\s*\(\s*([A-Za-z_]\w*)\b",
+        // `(*p_x).is_null()` through an alias pointer (see below).
+        r"\(\s*\*\s*([A-Za-z_]\w*)\s*\)\s*\.\s*is_null\s*\(",
     ];
     let mut out = std::collections::HashSet::new();
     for p in pats {
         let re = crate::regexes::cached(p).unwrap();
         for c in re.captures_iter(body) {
             out.insert(c[1].to_string());
+        }
+    }
+    // Translated SEH bodies share a local with their closures through an alias,
+    // `let p_irp = core::ptr::addr_of_mut!(Irp);`, and test it as `(*p_irp).is_null()`:
+    // fastfat's FatCommonRead/FatCommonWrite guard `Irp` exactly as the C's `if (Irp)` does.
+    let alias = crate::regexes::cached(
+        r"\blet\s+(?:mut\s+)?([A-Za-z_]\w*)\s*(?::[^=;]*)?=\s*(?:core::ptr::addr_of_mut!\s*\(\s*|&raw\s+mut\s+|&mut\s+)([A-Za-z_]\w*)\s*\)?\s*;",
+    )
+    .unwrap();
+    for c in alias.captures_iter(body) {
+        if out.contains(&c[1]) {
+            out.insert(c[2].to_string());
         }
     }
     out
@@ -454,6 +468,12 @@ mod tests {
         assert!(is_pointer("*const u8"));
         assert!(is_pointer("PULONG"));
         assert!(!is_pointer("LPARAM"));
+    }
+    #[test]
+    fn guard_through_an_alias_pointer_counts() {
+        let body = "{ let mut Irp = Irp; let p_irp = core::ptr::addr_of_mut!(Irp); if !(*p_irp).is_null() { done(); } }";
+        assert!(tested(body).contains("Irp"));
+        assert!(!tested("{ let p_irp = core::ptr::addr_of_mut!(Irp); use_it(p_irp); }").contains("Irp"));
     }
     #[test]
     fn rust_store_and_guard() {

@@ -1873,8 +1873,12 @@ false positive — the translator mirrors the C control flow, so the two frees l
 mutually-exclusive `match` arms, on either side of a `break 'switch`/`continue 'retry`, or the
 "use after free" is a pointer-*value* compare evaluated before the free. classpnp's
 `ClassDeviceControl` alone threw 52 such false hits. The blanket `macro_rules!`-that-nulls
-migration was considered and rejected: ~100 call sites would need the `FREE_POOL!` form, cast
-stripping, and assignable lvalues, to fix zero live bugs. Audit per site; don't migrate.
+migration was considered and rejected then as fixing zero live bugs -- **and that audit had a
+blind spot: a freed FIELD.** A per-fn same-pointer scan cannot see a struct field left dangling
+for someone else to find later. cdrom's `DeviceInitializeGesn` frees `info->Gesn.Buffer` on a
+failed GESN probe and the caller then asserts it is NULL (2026-11-01, live once cdrom was armed).
+MIGRATED the same day: `FREE_POOL!` frees through the crate's fn and nulls the place, 121 sites
+in cdrom/classpnp/disk (casts stripped, 14 bindings made `mut`, one ULONG_PTR field written out).
 
 ### NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust `[§9.65]`
 **It cannot be done correctly.** LLVM folds any byte-copy loop back into a call to the function
@@ -9767,6 +9771,16 @@ Same family as `$?` after a pipe and `sccache -s` reporting another server: a re
 a reading. Two agents hit this file on the same night; one lost a minute, the other lost a
 conclusion.
 
+### A C-twin rule that finds nothing may not be seeing the C function at all
+Symptom: a rule pairing Rust functions with their C twins (`twins::CIndex`) reports nothing for
+a function you KNOW differs. Cause: `defined_names` scans for definitions with a brace counter
+and stopped at the first body whose braces do not match -- and a C body that balances its
+braces only per `#if`/`#else` arm (fastfat read.c's `FatCommonRead`) never matches, so every
+function after it in the file was invisible to every C-twin rule. Fix (2026-11-02): definitions
+are located in a first-branch-only blanking (`blank_c_first_branch`), and each body is then cut
+from the full text at the same offsets, so rules still see every arm. Check a silent rule
+against a known-bad case on the real tree before believing it.
+
 ### A self-consistent pair of DERIVED values cannot detect its own staleness
 
 **Symptom:** an array whose length is an enum bound, a struct whose size assertion is
@@ -10634,13 +10648,29 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
 - **A real overlap.** classpnp's `RtlMoveMemory` of READ_CAPACITY_DATA one ULONG up inside its
   own _EX had become `copy_nonoverlapping` -- memcpy on overlapping ranges, a genuine bug on
   every arch. `scan_move_vs_nonoverlapping` now pairs each Rust fn with its C twin's moves.
-- **OPEN: a cache-aligned type inside a device extension.** On 64-bit `COMMON_DEVICE_EXTENSION`
-  embeds a `LOOKASIDE_ALIGN` `NPAGED_LOOKASIDE_LIST`, so classpnp/disk/cdrom's extension types
-  are 64/128-aligned while `IoCreateDevice` places extensions 16-aligned, exactly as the C. The
-  first `(*commonExtension).X` panics; those crates stay unarmed (roadmap #72).
+- **A cache-aligned type inside a device extension.** On 64-bit `COMMON_DEVICE_EXTENSION` embeds
+  a `LOOKASIDE_ALIGN` lookaside, so classpnp's extension types are 64/128-aligned while the C's
+  `IoCreateDevice` gave 16. Do NOT move the extension off `DeviceObject + 1` to align it: KMDF
+  (`vendor/wdf/shared/core/fxdevice.cpp`) finds its WDM extension by that arithmetic and asserts
+  it. `ObpAllocateObject` instead carves the pool block so `DeviceObject + 1` is on a cache line,
+  and the pool honours `*CacheAligned` pool types (classpnp's `PNL_SLIST_HEADER` array).
+- **What the alignment checks found once they could run:** six classpnp sites cast the
+  `DEVICE_OBJECT` to the FDO extension (`DeviceObject as *mut FUNCTIONAL_DEVICE_EXTENSION` for
+  the C's `DeviceObject->DeviceExtension`), writing a spinlock and flags into the device object.
+  `scan_devobj_as_extension` now gates the class at zero.
+- **A negated assert, dormant until armed.** fastfat's `FatCommonRead` asserted
+  `!(cur != VerifyThread || Status != VERIFY_REQUIRED)` for the C's un-negated condition, so it
+  fired on every I/O error (an empty CD drive). `scan_assert_negated_vs_c` compares each
+  `ASSERT!`/`NT_ASSERT!` with its C twin's.
 Arming also changes what a FAILED assert does: `nt_assert!` was `debug_assert!`, a panic and a
 halt where the C's DBG `ASSERT` prints and continues. It now reports through `RtlAssert` (still
-`cfg!(debug_assertions)`-gated, evaluated in the calling crate). Its first two fires were real
+`cfg!(debug_assertions)`-gated, evaluated in the calling crate). ntoskrnl-rust's own `ASSERT!` was the
+same `debug_assert!` and followed on 2026-11-02, after kmtest's ZwMapViewOfSection guard-page
+view bugchecked on pagfault.rs's `ASSERT(ProtoPte == NULL)`, which the C prints and then handles
+as a guard-page violation. A printed ntoskrnl assert must not boot green, so the harness keeps
+the old verdict: smoke classifies `*** ASSERT FAILED: ... at ntoskrnl-rust/` as `KERNEL_ASSERT`,
+a payload that passes with one fails its stage, and conformance files the round `A:kernel-assert`
+and turns `--gate` red (`triage.kernel_asserts`). Its first two fires were real
 bugs: fastfat's `FatNoOpAcquire` set top-level IRP 1 for the C's `FSRTL_CACHE_TOP_LEVEL_IRP`
 (2), and an empty `DbgDoit!` dropped the increment a `cfg(debug_assertions)` decrement paired.
 Triage tip: the i386 HAL loads as `halmp.dll` under the harness label `hal.dll`, and its panic

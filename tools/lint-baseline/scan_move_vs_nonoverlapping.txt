@@ -23,7 +23,7 @@ sdk/lib/rust/kernel32-rust/src/client/loader.rs:673: move-vs-nonoverlapping GetM
 sdk/lib/rust/kernel32-rust/src/client/path.rs:2058: move-vs-nonoverlapping GetLongPathNameA: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
 sdk/lib/rust/kernel32-rust/src/client/path.rs:2155: move-vs-nonoverlapping GetShortPathNameA: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
 sdk/lib/rust/kernel32-rust/src/console/console.rs:1926: move-vs-nonoverlapping AddConsoleCtrlHandler: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
-sdk/lib/rust/kernel32-rust/src/proc_create.rs:2561: move-vs-nonoverlapping CreateProcessInternalA: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
+sdk/lib/rust/kernel32-rust/src/proc_create.rs:2563: move-vs-nonoverlapping CreateProcessInternalA: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
 sdk/lib/rust/kmixer-rust/src/kmixer/pin.rs:293: move-vs-nonoverlapping PerformChannelConversion: C makes 6 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
 sdk/lib/rust/ks-rust/src/allocators.rs:309: move-vs-nonoverlapping IKsAllocator_fnDeviceIoControl: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
 sdk/lib/rust/ks-rust/src/allocators.rs:677: move-vs-nonoverlapping KsCreateDefaultAllocatorEx: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
@@ -63,7 +63,7 @@ sdk/lib/rust/mmixer-rust/src/mmixer/midi.rs:302: move-vs-nonoverlapping MMixerOp
 sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:2454: move-vs-nonoverlapping LdrpInitializeProcess: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
 sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs:626: move-vs-nonoverlapping LdrQueryImageFileKeyOption: C makes 3 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
 sdk/lib/rust/ntdll-rust/src/ldr/ldrutils.rs:852: move-vs-nonoverlapping LdrpCheckForKnownDll: C makes 3 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
-sdk/lib/rust/partmgr-rust/src/partition.rs:904: move-vs-nonoverlapping PartitionHandleDeviceControl: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
+sdk/lib/rust/partmgr-rust/src/partition.rs:908: move-vs-nonoverlapping PartitionHandleDeviceControl: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
 sdk/lib/rust/partmgr-rust/src/partmgr.rs:742: move-vs-nonoverlapping FdoIoctlDiskGetDriveLayout: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
 sdk/lib/rust/pnpmgr-rust/src/devaction.rs:743: move-vs-nonoverlapping PiAttachFilterDriversCallback: C makes 1 overlap-safe move(s), Rust keeps 0 and uses copy_nonoverlapping
 sdk/lib/rust/rtl-strings/src/cabi/mod.rs:5642: move-vs-nonoverlapping RtlSetEnvironmentVariable: C makes 5 overlap-safe move(s), Rust keeps 2 and uses copy_nonoverlapping

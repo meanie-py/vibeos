@@ -10308,6 +10308,40 @@ def test_ahci_irq_check_reads_qemus_trace_not_the_driver(monkeypatch):
     assert smoke_mod._ahci_irq_check(firmware + done * 40) is None
 
 
+def test_kernel_assert_check_keeps_the_old_bugcheck_verdict():
+    """ntoskrnl's ASSERT! now prints and continues; a failed one must still fail the run, as
+    the panic it replaced did, or the next MM invariant break boots green."""
+    from . import smoke as smoke_mod
+
+    fired = "*** ASSERT FAILED: ProtoPte.is_null() at ntoskrnl-rust/src/ARM3/pagfault.rs:2478\n"
+    bad = smoke_mod._kernel_assert_check("boot noise\n" + fired)
+    assert bad and bad["classification"] == "KERNEL_ASSERT"
+    assert "1 kernel assertion(s) failed" in bad["salient"][0]
+    # Drivers' and ntkrnl-sys's asserts printed before this change too; they keep their own checks.
+    assert (
+        smoke_mod._kernel_assert_check("*** ASSERT FAILED: x at fastfat-rust/src/a.rs:1\n") is None
+    )
+    assert (
+        smoke_mod._kernel_assert_check("*** ASSERT FAILED: y at ntkrnl-sys/src/mm.rs:954\n") is None
+    )
+    assert smoke_mod._kernel_assert_check("") is None
+
+
+def test_conformance_round_with_a_kernel_assert_is_not_clean():
+    """The sweep completes now that a failed ntoskrnl ASSERT continues; the round must still
+    land in the bugcheck family it used to, not read clean."""
+    from .conformance import round_shape
+
+    serial = (
+        "[KMTEST:BEGIN ZwMapViewOfSection]\n"
+        "*** ASSERT FAILED: ProtoPte.is_null() at ntoskrnl-rust/src/ARM3/pagfault.rs:2478\n"
+    )
+    done = "[KMTEST-SWEEP] done"
+    assert round_shape(None, [{"status": "OK"}], done, [], serial) == "A:kernel-assert"
+    assert round_shape("0x1E", [], None, [], serial) == "A:bugcheck 0x1E"
+    assert round_shape(None, [{"status": "OK"}], done, [], "[KMTEST:BEGIN x]\n") == "clean"
+
+
 def test_ata_health_check_fails_a_lost_interrupt():
     """A timed-out ATA request is reset and retried and the boot carries on, so the
     desktop alone would hide an ISR that never ran."""
