@@ -3517,7 +3517,36 @@ def convert(targets: list[str], baseline: Path | None = None, repo: Path = REPO)
         print(f"built {len(targets)} cell(s) on {arch}")
     rc = check(targets, baseline, repo)
     refresh_manifests(repo)
-    return rc
+    missing = missing_cell_recipes(targets, repo)
+    for arch, lib in missing:
+        print(
+            f"ERROR: no clibs/{arch}/{lib}.recipe for a cell this wave built on {arch}: "
+            "cmake has not configured that library yet, so its compile_commands.json "
+            "entry is missing.\n  fix: ./vibeos-cli build --arch "
+            f"{arch}, then tools/cargo_cell_gen.py --clib-recipes"
+        )
+    return rc or (1 if missing else 0)
+
+
+def missing_cell_recipes(targets: list[str], repo: Path = REPO) -> list[tuple[str, str]]:
+    """The (arch, library) pairs a converted cell compiles C from with no recipe.
+
+    `refresh_manifests` skips a library whose recipe cannot be derived, because a shared
+    library legitimately has no sources on some arch. For a cell `convert` has just built on
+    every arch that excuse cannot apply: its own `<m>_shims` (the OBJECT library `apply`
+    adds to the module's CMakeLists) is simply not in compile_commands.json until cmake
+    reconfigures. Skipping it silently is how normaliz's and batch J's recipes went
+    uncommitted, leaving a cmake-off build with no way to compile those stubs."""
+    out = []
+    for t in targets:
+        build_rs = repo / f"sdk/lib/rust/{t}-cargo/build.rs"
+        if not build_rs.exists():
+            continue
+        libs = sorted(set(SHIMS_CALL.findall(build_rs.read_text())) - SHARED_C_LIBS)
+        out += [
+            (a, lib) for a in ARCHES for lib in libs if not clib_recipe_path(a, lib, repo).exists()
+        ]
+    return out
 
 
 def refresh_manifests(repo: Path = REPO) -> None:

@@ -208,7 +208,7 @@ fn main() {
             "sdk/lib/crt/misc/fltused.c",
         ]),
         "x86_64" => ndll_shims.extend_from_slice(&[
-            "sdk/lib/crt/except/amd64/ehandler.c",
+            // ehandler.c (__C_specific_handler/_local_unwind) is Rust now: rtl-except amd64/ehandler.rs.
             "sdk/lib/crt/misc/fltused.c",
         ]),
         // arm64: user-mode SEH / fault-delivery self-test (FEX bring-up rung 0e,

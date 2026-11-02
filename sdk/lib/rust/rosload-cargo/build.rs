@@ -140,7 +140,9 @@ fn main() {
             "sdk/lib/crt/math/i386/cisqrt.c",
             "sdk/lib/crt/math/i386/libm_sse2.c",
         ]),
-        "x86_64" => libcntpr_c.push("sdk/lib/crt/except/amd64/ehandler.c"),
+        // amd64: ehandler.c dropped. No boot-loader code references __C_specific_handler
+        // (no SEH here; the link resolves without it, 2026-11-02); the OS gets the Rust
+        // one from rtl-except.
         _ => {}
     }
 

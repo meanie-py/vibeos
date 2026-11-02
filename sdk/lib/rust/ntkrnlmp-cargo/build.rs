@@ -139,7 +139,7 @@ fn main() {
         // below; benign for the other shims). Includes no headers, so the
         // pseh2.h __try macro layer can't demote it back to DUMMY.
         "x86_64" => c_shims.extend_from_slice(&[
-            "sdk/lib/crt/except/amd64/ehandler.c",
+            // ehandler.c (__C_specific_handler/_local_unwind) is Rust now: rtl-except amd64/ehandler.rs.
             "ntoskrnl/seh_poc.c",
             // Fault-tolerant kernel copy (native SEH, same wiring as seh_poc.c) —
             // the memcpy+0x40 crasher-cluster fix. See ntoskrnl/kmsafecopy.c.

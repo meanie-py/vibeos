@@ -255,24 +255,55 @@ What the batch added to the shared crates and tools:
    it, then intersect the C-only names with the PE's export table (`llvm-readobj
    --coff-exports`); the archives each PE links come from `build.ninja` and the
    `*-cargo/build.rs` link orders.
-   - **crtmath** is linked only by ucrtbase.dll now (msvcrt takes the cohab). Of its
-     exports, only `_cabs` is served by C on any arch; the rest are shadowed by
-     `crt_shared_cargo`/`msvcrt_shared`.
+   - **crtmath is linked by NO PE on any arch.** ucrtbase.dll's `build.ninja` edge lists
+     `libcrtmath.a` only as an IMPLICIT dependency (after the `|`); its real link line is
+     `ucrtbase_stubs.rs.obj` + `crt_shared_cargo` + kernel32/ntdll. Reading the implicit
+     deps as inputs (as this item first did) makes `_cabs` look like crtmath's C, when
+     ucrtbase.spec's `-stub _cabs` is served by the spec2def stub; a Rust `_cabs` then
+     fails the link as a duplicate. Measure link inputs from the explicit inputs and
+     `LINK_LIBRARIES` only.
    - **libcntpr** (the kernel CRT; no PE links it through cmake, but 22 cargo cells name
-     `engine:c:libcntpr` AHEAD of `cntpr_rust`) defines 30 (arm64) / 42 (amd64) / 98
+     `engine:c:libcntpr` AHEAD of `cntpr_rust`; 17-20 PEs per arch link it) defines 30 (arm64) / 42 (amd64) / 98
      (i386) names. Overlap with Rust: only `atol` and `exp2f`, and there the C wins by
      order. The rest has no Rust twin:
-     - **ours, to translate:** `_mbstrlen`; `_invoke_matherr`/`__setusermatherr`;
-       winesup's `_atoldbl`/`_internal_handle_float`/`_LIBCNT_locinfo`; the `va_list`
-       printf wrappers (`_vsnprintf`, `vsprintf`, `vprintf`, …); amd64
-       `except/amd64/ehandler.c` (`__C_specific_handler`, `_local_unwind`); i386
-       `math/i386/libm_sse2.c` (`__libm_sse2_*`, ReactOS MIT, SSE2 intrinsics).
-     - **stays C:** the variadic `sprintf`/`_snprintf`/`sscanf`/… (stable Rust cannot
-       define a C variadic); x87 `__CI*` (operands on the x87 stack, asm-shaped); the
-       asm (`chkstk`, `seh.s`, i386 `all*`/`ftol*`); `wine_wctype_table` (Wine's data).
-   - **Also stays C:** `memcmp` (AGENTS.md: LLVM folds a Rust byte loop back into
-     `memcmp`); `vcstartup` (C++ startup objects); `getopt` (libtiff only); `dbgrpt`
-     (C++ lane, and no PE links it now).
+     - **amd64 `except/amd64/ehandler.c`** (`__C_specific_handler`, `_local_unwind`):
+       live, ours (ReactOS MIT), compiled into ntoskrnl's and ntdll's cells, freeldr,
+       rosload and libcntpr. The one substantive piece: Rust now (item 11).
+     - **never linked:** `_mbstrlen`, `exp2f`, `_invoke_matherr`/`__setusermatherr`, and
+       winesup's `_internal_handle_float` have no callers (libcntpr.cmake's own notes),
+       so their archive members are never pulled. Not worth buying.
+     - **stays C:** every printf/scanf shell, the `va_list` ones included. Defining a C
+       variadic needs `c_variadic` and consuming a `va_list` needs `core::ffi::VaList`,
+       both nightly; they are `va_start; streamout(...)` shells over the Rust engine.
+       Also the asm (`chkstk`, `seh.s`, i386 `all*`/`ftol*`), `wine_wctype_table`
+       (Wine's data), and `atol.c`, which also defines `_atoldbl` (no Rust twin yet).
+     - **owed, i386 kernel side:** `math/i386/ci*.c` (`__CI*`) and `libm_sse2.c`
+       (`__libm_sse2_*`), compiled into the i386 kernel cells, freeldr, rosload and
+       libcntpr. The user-mode CRT DLLs already get both from Rust `global_asm!`
+       (`crt-shared-rust/src/crtmath_i386.rs`); the kernel can reuse those bodies once
+       they are split out of that user-mode crate. No purchase needed.
+   - **Also stays C:** `memcmp` (~340 PEs per arch; AGENTS.md: LLVM folds a Rust byte
+     loop back into `memcmp`); `vcstartup` (C++ startup objects, linked by avifil32 and
+     d2d1 only); `getopt` (libtiff only). `dbgrpt` and `chkesp` reach no PE.
+11. **amd64 `__C_specific_handler` is Rust (2026-11-02, $0, hand port).** `ehandler.c` →
+   `rtl-except/src/amd64/ehandler.rs` (`__C_specific_handler`, `_local_unwind`), which
+   ntoskrnl and ntdll link through rtl-rust; both still export it. The C left every list:
+   ntoskrnl's two cells, ntdll's, libcntpr (amd64 REMOVE_ITEM, and its clib recipe), and
+   freeldr/rosload/uefildr, which never referenced it (no SEH in the boot loaders; they
+   link without it). Drivers that took the C statically from libcntpr now import it from
+   ntoskrnl, as Windows drivers do. Gate ×3 green
+   (`/tmp/vibeos-cli/20261102-001430-k2z_6ff8-gate-i386+amd64+arm64`); amd64 boots to the
+   desktop through it. It is NOT the arm64 handler (`arm64/except.rs`), which is a
+   different algorithm: this one bumps `ScopeIndex` before each scope, stops a target
+   unwind at the scope containing the target or whose `__except` is the target, and
+   filters on any `HandlerAddress` other than the literal 1.
+   - **`cargo_cell_gen --convert` dropped new cells' recipes silently.** Its
+     `refresh_manifests` skips a library with no compile command (fine for a library
+     absent on some arch), but a converted cell's own `<m>_shims` has none until cmake
+     reconfigures, so normaliz's and batch J's eight `*_shims.recipe` sets were never
+     written. `convert` now fails loud naming each missing (arch, library) and the fix
+     (`missing_cell_recipes`); the missing recipes are committed.
+
 
 ## Not ours: skip these
 
