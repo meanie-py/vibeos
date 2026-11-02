@@ -15,7 +15,7 @@ rebuild: always
 binaries:
   - src: tools/payloads/modrun/modrun-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/modrun.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/modrun.exe
   - src: tools/payloads/modrun/modrun-{arch}.txt
     dest: bin/modrun.txt
 # Each suite's `stage:` list (oracle and probe exes from build-<arch>).

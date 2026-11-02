@@ -247,7 +247,7 @@ def manifest(names: list[str], arch: str) -> dict[str, Path]:
         for b in binaries(spec, arch):
             src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
             # root: reactos (default) grafts under reactos/; root: image grafts
-            # at the media root (e.g. the Profiles/.../StartUp autostart folder).
+            # at the media root (e.g. the ProgramData/.../Startup autostart folder).
             prefix = "reactos/" if b.get("root", "reactos") == "reactos" else ""
             dest = prefix + str(b["dest"]).replace("\\", "/").lstrip("/")
             if dest in entries:

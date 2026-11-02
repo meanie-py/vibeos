@@ -13,7 +13,7 @@ build_hint: "tools/payloads/ucrtwine/build.sh {arch}"
 binaries:
   - src: tools/payloads/ucrtwine/sweep-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/apitest-sweep.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe
   - src: tools/payloads/ucrtwine/suites.txt
     dest: bin/apitest-suites.txt
   - src: tools/payloads/ucrtwine/skip.txt

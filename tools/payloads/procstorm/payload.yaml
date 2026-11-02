@@ -19,7 +19,7 @@ build_hint: "tools/payloads/procstorm/build.sh {arch}"
 binaries:
   - src: tools/payloads/procstorm/procstorm-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/procstorm.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/procstorm.exe
 
 test:
   # launch_drain_secs is WALL-CLOCK SECONDS. It used to be a read-iteration

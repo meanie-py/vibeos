@@ -10,7 +10,7 @@ build_hint: "tools/payloads/fenv/build.sh {arch}"
 binaries:
   - src: tools/payloads/fenv/fenv-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/fenv.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fenv.exe
 
 test:
   launch_marker: "[FENV] done"

@@ -20,7 +20,7 @@ build_hint: "REGDIFF_BASE=<baseline checkout> tools/payloads/regdiff/build.sh {a
 binaries:
   - src: tools/payloads/regdiff/regdiff-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/regdiff.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/regdiff.exe
   - src: tools/payloads/regdiff/regdiff-base-{arch}.dll
     dest: system32/regdiff-base.dll
 

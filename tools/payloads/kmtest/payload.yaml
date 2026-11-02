@@ -22,7 +22,7 @@ build_hint: "tools/payloads/kmtest/build.sh {arch}"
 binaries:
   - src: tools/payloads/kmtest/kmtest-sweep-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/kmtest-sweep.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/kmtest-sweep.exe
   - src: tools/payloads/kmtest/kmtest-tests-{arch}.txt
     dest: bin/kmtest-tests.txt
 
