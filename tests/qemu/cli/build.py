@@ -1888,14 +1888,9 @@ def _build_locked(
     # lane green, the fresh integration tree red. After this a warm build dir holds
     # what a fresh build of the same targets would. Only files ninja logged
     # building are candidates (tools/ninja_closure_prune.py).
-    import importlib.util
+    from tools.build_infra_compat import NativeError
+    from tools.build_infra_compat import call as build_call
 
-    _spec = importlib.util.spec_from_file_location(
-        "ninja_closure_prune", repo / "tools" / "ninja_closure_prune.py"
-    )
-    assert _spec is not None and _spec.loader is not None
-    _prune = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_prune)
     # A payload's build-dir artifacts (modrun's C oracles and probes) are EXCLUDE_FROM_ALL, so
     # nothing above depends on them; without these roots the prune deleted them before
     # arm64's ramdisk step could stage them.
@@ -1909,8 +1904,18 @@ def _build_locked(
         *payload_roots,
     ]
     try:
-        victims, unknown = _prune.plan(build_dir, roots, canon.canon_path() + f"/{build_dir.name}")
-    except OSError as exc:
+        victims = build_call(
+            "ninja_prune",
+            {
+                "build": build_dir,
+                "targets": roots,
+                "canon_root": canon.canon_path() + f"/{build_dir.name}",
+                "optional": list(cfg.ninja_targets_optional),
+            },
+            root=repo,
+        )
+        unknown = []
+    except (OSError, NativeError) as exc:
         victims, unknown = [], [f"<{exc}>"]
     # An optional target absent from this graph is a normal skip above; anything
     # else unresolvable means the walk cannot be trusted, so delete nothing.
@@ -1925,8 +1930,6 @@ def _build_locked(
             )
         )
         return run.finalize(repo)
-    for rel in victims:
-        (build_dir / rel).unlink(missing_ok=True)
     if victims:
         run.log("\n".join(victims), header="closure-prune")
     run.add(

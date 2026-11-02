@@ -132,7 +132,10 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
         "ucrt-cases" => {
             let arch = arch.ok_or("ucrt-cases requires --arch")?;
             if ast_json {
-                let functions = ucrt_cases::ast_functions(&root, &arch, cache.as_deref())?;
+                let functions: std::collections::BTreeMap<_, _> =
+                    ucrt_cases::ast_functions(&root, &arch, cache.as_deref())?
+                        .into_iter()
+                        .collect();
                 println!(
                     "{}",
                     serde_json::to_value(functions).map_err(|e| e.to_string())?

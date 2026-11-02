@@ -287,7 +287,7 @@ def test_bootstrap_failure_is_scanner_error(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "changed_input", ["rust", "conventions", "grants", "engines", "codegen", "template"]
+    "changed_input", ["rust", "conventions", "grants", "engines", "codegen", "template", "build"]
 )
 def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, changed_input):
     monkeypatch.setattr(rustlints.hostjobs, "ensure", lambda repo: Path("/fixture/host-jobs"))
@@ -300,6 +300,11 @@ def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, c
     (codegen / "Cargo.toml").write_text("[package]\nname='codegen'\nversion='0.1.0'\n")
     (codegen / "src/lib.rs").write_text("pub fn render() {}")
     (codegen / "src/preamble.txt").write_text("header")
+    buildlib = tmp_path / "tools/vibeos-build"
+    (buildlib / "src").mkdir(parents=True)
+    (buildlib / "src/lib.rs").write_text("pub fn plan() {}")
+    (buildlib / "Cargo.toml").write_text("[package]\nname='build'\nversion='0.1.0'\n")
+    (buildlib / "Cargo.lock").write_text("")
     (tmp_path / "rust-toolchain.toml").write_text("[toolchain]\nchannel='stable'\n")
     conventions = tmp_path / "tools/rustconv/rustconv/conventions.py"
     conventions.parent.mkdir(parents=True)
@@ -329,6 +334,8 @@ def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, c
                 engines.write_text('ENGINE_LIBS = {"libfixture.a": "engine:fixture"}\n')
             elif changed_input == "codegen":
                 (codegen / "src/lib.rs").write_text("pub fn changed() {}")
+            elif changed_input == "build":
+                (buildlib / "src/lib.rs").write_text("pub fn changed() {}")
             else:
                 (codegen / "src/preamble.txt").write_text("changed header")
         return subprocess.CompletedProcess(command, 0, "", "")

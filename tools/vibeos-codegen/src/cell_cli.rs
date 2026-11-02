@@ -73,15 +73,11 @@ fn baseline(plan: &proof::BaselinePlan) -> Result<()> {
     super::write_atomic(&plan.index_path, plan.index_text.as_bytes(), copies.len())
         .map_err(Error::new)
 }
-fn python() -> PathBuf {
-    std::env::var_os("VIBEOS_CODEGEN_PYTHON")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| "python3".into())
-}
 fn refresh(root: &Path) -> Result<()> {
     let recipes = driver::clib_recipes(root)?;
-    driver::refresh_reporters(root, &python())?;
-    write_edits(root, &recipes.edits)?;
+    let mut edits = driver::manifest_edits(root)?;
+    edits.extend(recipes.edits);
+    write_edits(root, &edits)?;
     for line in recipes.skipped {
         eprintln!("{line}");
     }

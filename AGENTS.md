@@ -410,6 +410,9 @@ checks, and cohab coverage use that same binary. Do not add Python lint checkers
 See `tools/vibeos-codegen/README.md`. Do not add new Python lint or generator
 implementations. Existing Python generator entry points are compatibility facades;
 CLI, reporting, and legacy translation-pipeline Python remain supported until migrated.
+Build mechanisms live in `tools/vibeos-build/src/` behind `tools/build-infra`; retain
+`vibeos-cli build` and the existing `host-jobs` broker as the build front door and
+admission owner. See `tools/vibeos-build/README.md`.
 
 **No default arch** — always pass `--arch`. Why it matters:
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -96,6 +97,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_gen_delaylib.py"),
     (".", ".", "tools/test_gen_apisets_table.py"),
     (".", ".", "tools/test_codegen.py"),
+    (".", ".", "tools/test_build_infra.py"),
     (".", ".", "tools/test_resource_codegen.py"),
     (".", ".", "tools/test_binding_codegen.py"),
     (".", ".", "tools/test_module_codegen.py"),
@@ -252,7 +254,20 @@ def _run(
     env = None
     if env_pp is not None:
         env = {**os.environ, "PYTHONPATH": str(repo / env_pp)}
-    proc = subprocess.run(cmd, cwd=cwd or repo, env=env, capture_output=True, text=True)
+    if label.startswith("pytest:"):
+        # Parallel suites must not share pytest-current or retention cleanup.
+        # Add the ephemeral argument here, below the receipt's stable command key.
+        # /tmp/vibeos is reserved for canonical compiler-path remapping.
+        with tempfile.TemporaryDirectory(prefix="pytest-tooling-") as temporary:
+            proc = subprocess.run(
+                [*cmd, "--basetemp", str(Path(temporary) / "run")],
+                cwd=cwd or repo,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+    else:
+        proc = subprocess.run(cmd, cwd=cwd or repo, env=env, capture_output=True, text=True)
     out = (proc.stdout + proc.stderr).strip()
     return label, proc.returncode == 0, out
 
@@ -287,6 +302,24 @@ def check_tooling(args, repo: Path) -> int:
     )
     # 4. pytest
     if not args.no_tests:
+        checks.append(
+            (
+                "rust:vibeos-build",
+                [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--jobs",
+                    "1",
+                    "--manifest-path",
+                    "tools/vibeos-build/Cargo.toml",
+                    "--target-dir",
+                    ".cache/vibeos-build/target",
+                ],
+                {},
+            )
+        )
         checks.append(
             (
                 "rust:vibeos-codegen",

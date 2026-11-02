@@ -177,34 +177,9 @@ pub fn with_marker(seq: &[String], run: &[String], marker: &str) -> Option<Vec<S
     None
 }
 pub fn majority_run(lists: &[Vec<String>], share: f64) -> Vec<String> {
-    let Some(first) = lists
-        .iter()
-        .reduce(|a, b| if b.len() > a.len() { b } else { a })
-    else {
-        return vec![];
-    };
-    let mut best = Vec::new();
-    for start in 0..first.len() {
-        let mut end = start + best.len() + 1;
-        if end > first.len() {
-            continue;
-        }
-        let count = |end: usize| {
-            lists
-                .iter()
-                .filter(|l| with_marker(l, &first[start..end], "@").is_some())
-                .count() as f64
-        };
-        if count(end) < share * lists.len() as f64 {
-            continue;
-        }
-        while end < first.len() && count(end + 1) >= share * lists.len() as f64 {
-            end += 1
-        }
-        best = first[start..end].to_vec();
-    }
-    best
+    vibeos_build::sdk_recipe::majority_run(lists, share)
 }
+
 pub fn rc_decode(f: &RcFlags, t: &RcTemplate, arch: &str, src: &str) -> Vec<String> {
     let mut out = vec![
         expand(&t.windres),

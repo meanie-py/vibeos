@@ -1,4 +1,5 @@
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -51,8 +52,9 @@ def test_the_cab_section_renders_after_the_cds():
     assert '   ["cell:base/m/m.exe", "2"],' in text.splitlines()
 
 
-def test_the_cab_is_packed_from_the_cells_with_cmakes_commands(tmp_path, monkeypatch):
-    build, repo, cells, out = (tmp_path / d for d in ("b", "r", "c", "o"))
+def test_the_cab_is_packed_from_the_cells_with_cmakes_commands(tmp_path):
+    repo, cells, out = (tmp_path / d for d in ("r", "c", "o"))
+    build = repo / "build-amd64"
     (repo / "boot").mkdir(parents=True)
     (repo / "boot/head.in").write_text(".Set X=1\n")
     (cells / "base/m").mkdir(parents=True)
@@ -69,30 +71,29 @@ def test_the_cab_is_packed_from_the_cells_with_cmakes_commands(tmp_path, monkeyp
             "files": [["cell:base/m/m.exe", "2"]],
         }
     }
-    ran = []
-
-    def fake(cmd):
-        ran.append(cmd)
-        for name in ("reactos.inf", "reactos.cab"):
-            (out / "cab" / name).write_text("")
-
-    monkeypatch.setattr(m, "_run", fake)
+    tool_path = build / "host-tools/bin/cabman"
+    tool_path.parent.mkdir(parents=True)
+    calls = tmp_path / "calls"
+    tool_path.write_text(
+        '#!/bin/sh\nprintf "%s\\n" "$PWD|$*" >> ' + str(calls) + "\ntouch reactos.inf reactos.cab\n"
+    )
+    tool_path.chmod(0o755)
     made = m.recab(man, out, build, repo, cells)
     d = out / "cab"
     assert (d / "reactos.dff").read_text() == f'.Set X=1\n"{cells}/base/m/m.exe" 2\n'
-    tool = f"{build}/host-tools/bin/cabman"
-    assert ran[0] == f"cd {d} && {tool} -C {d}/reactos.dff -L {d} -I -P {repo}"
-    assert ran[1] == f"cd {d} && {tool} -C {d}/reactos.dff -RC {d}/reactos.inf -N -P {repo}"
+    ran = calls.read_text().splitlines()
+    assert ran[0] == f"{d}|-C {d}/reactos.dff -L {d} -I -P {repo}"
+    assert ran[1] == f"{d}|-C {d}/reactos.dff -RC {d}/reactos.inf -N -P {repo}"
     assert made == {m.CAB: d / "reactos.cab", m.CAB_INF: d / "reactos.inf"}
 
 
-def test_cells_from_another_source_tree_are_refused(tmp_path, monkeypatch):
+def test_cells_from_another_source_tree_are_refused(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     cells = tmp_path / "cells"
     cells.mkdir()
     with pytest.raises(m.MediaError, match="cargo_orchestrate"):
         m.cells_source(cells, "amd64")
     (cells / m.CELLS_STAMP).write_text(json.dumps({"arch": "amd64", "source": "old"}))
-    monkeypatch.setattr(m, "source_hash", lambda repo=None: "new")
     with pytest.raises(m.MediaError, match="another source tree"):
         m.assemble("amd64", "livecd", tmp_path / "out", cells, tmp_path)
     (cells / m.CELLS_STAMP).write_text(json.dumps({"arch": "i386", "source": "new"}))
@@ -138,7 +139,10 @@ def test_a_build_carrying_payload_rostests_is_refused_not_filtered():
         m.committed(dirty, "amd64")
 
 
-def test_the_arm64_livecd_is_laid_out_by_mkramdisk_into_out(tmp_path, monkeypatch):
+def test_the_arm64_livecd_is_laid_out_by_mkramdisk_into_out(tmp_path):
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / ".gitignore").write_text("out/\nbuild-arm64/\n")
+    (tmp_path / "build-arm64").mkdir()
     src = tmp_path / "uefildr.efi"
     src.write_bytes(b"efi")
     manifest = {
@@ -147,27 +151,26 @@ def test_the_arm64_livecd_is_laid_out_by_mkramdisk_into_out(tmp_path, monkeypatc
             "livecd": {"command": "", "entries": [["efi/boot/bootaa64.efi", "repo:uefildr.efi"]]}
         },
     }
-    monkeypatch.setattr(m, "current", lambda arch, repo: manifest)
-    monkeypatch.setattr(m, "source_hash", lambda repo=None: "src")
+    manifest_path = m.manifest_path("arm64", tmp_path)
+    manifest_path.parent.mkdir(parents=True)
+    manifest_path.write_text(json.dumps(manifest))
     out = tmp_path / "out"
-    calls = []
-
-    def fake(argv, check):
-        calls.append(argv)
-        (out / "livecd.img").write_bytes(b"fat")
-
-    monkeypatch.setattr(m.subprocess, "run", fake)
+    script = tmp_path / "qemu/mkramdisk.sh"
+    script.parent.mkdir()
+    script.write_text(
+        'printf "%s\\n" "$@" > ' + str(out / "calls") + "\n"
+        'while [ "$#" -gt 0 ]; do if [ "$1" = --out-dir ]; then shift; out=$1; fi; shift; done\n'
+        'printf fat > "$out/livecd.img"\n'
+    )
     image = m.assemble("arm64", "livecd", out, None, tmp_path)
     assert image == out / "livecd.img"
-    assert calls == [
-        [
-            "bash",
-            str(tmp_path / "qemu/mkramdisk.sh"),
-            "--lst",
-            str(out / "livecd.lst"),
-            "--out-dir",
-            str(out),
-        ]
+    assert ["bash", str(script), *(out / "calls").read_text().splitlines()] == [
+        "bash",
+        str(tmp_path / "qemu/mkramdisk.sh"),
+        "--lst",
+        str(out / "livecd.lst"),
+        "--out-dir",
+        str(out),
     ]
     assert (out / "livecd.lst").read_text() == f"efi/boot/bootaa64.efi={src}\n"
     stamp = json.loads((out / "livecd.provenance.json").read_text())
@@ -175,5 +178,5 @@ def test_the_arm64_livecd_is_laid_out_by_mkramdisk_into_out(tmp_path, monkeypatc
         "arm64",
         "livecd",
         "livecd.img",
-        "src",
+        m.source_hash(tmp_path),
     )

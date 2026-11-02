@@ -1,0 +1,56 @@
+{
+  "tool": [
+    "widl",
+    "x86_64-w64-mingw32-windmc",
+    "x86_64-w64-mingw32-windres",
+    "cmake -E env",
+    "host-jobs"
+  ],
+  "keep": [
+    true,
+    true,
+    true,
+    false,
+    false
+  ],
+  "samples": [
+    "cd /tmp/vibeos/sdk/include/psdk && /tmp/vibeos/build-amd64/host-tools/bin/widl -h -o x.h x.idl",
+    "cd /b && /usr/bin/x86_64-w64-mingw32-windmc -u -h /b/ m.mc",
+    "cd /r && /r/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-windres -O coff -i /b/x_r.res -o /b/x_r.o",
+    "cd /r && /usr/bin/cmake -E env python3 x.py",
+    "\"/tmp/vibeos/.cache/host-jobs/host-jobs\" --kind compile -- /usr/bin/cc -c x.c"
+  ],
+  "factor_lines": [
+    "cd d0 && {TOOLS}/widl -Ia -Ib -Ic -Id -Ie -o o0.h i0.idl",
+    "cd d1 && {TOOLS}/widl -Ia -Ib -Ic -Id -Ie -o o1.h i1.idl",
+    "cd d2 && {TOOLS}/widl -Ia -Ib -Ic -Id -Ie -o o2.h i2.idl",
+    "cd d3 && {TOOLS}/widl -Ia -Ib -Ic -Id -Ie -o o3.h i3.idl",
+    "cd d4 && {TOOLS}/widl -Ia -Ib -Ic -Id -Ie -o o4.h i4.idl",
+    "cd d && /usr/bin/flex -o x.c x.l"
+  ],
+  "factor": [
+    "{WIDL} = && {TOOLS}/widl -Ia -Ib -Ic -Id -Ie -o",
+    "cd d0 {WIDL} o0.h i0.idl",
+    "cd d1 {WIDL} o1.h i1.idl",
+    "cd d2 {WIDL} o2.h i2.idl",
+    "cd d3 {WIDL} o3.h i3.idl",
+    "cd d4 {WIDL} o4.h i4.idl",
+    "cd d && /usr/bin/flex -o x.c x.l"
+  ],
+  "cell_deps": [
+    "sdk/include/x",
+    "sdk/include/y"
+  ],
+  "sdk": [
+    "{WIDL} = cd {REPO}/sdk/include && {TOOLS}/widl -I/a -I/b -I/c -I/d -h -o",
+    "{WIDL} {BUILD}/x.h x.idl",
+    "{WIDL} {BUILD}/y.h y.idl",
+    "cd /x && /usr/bin/flex -o{BUILD}/a.c a.l"
+  ],
+  "host": [
+    "/usr/bin/cc -c x.c",
+    "cd {TOOLS} && /usr/bin/cmake -E touch tool"
+  ],
+  "unwrap": "/usr/bin/cc -c x.c",
+  "encode": "cd {REPO}/sdk/include/psdk && {TOOLS}/widl -h -o x.h x.idl"
+}

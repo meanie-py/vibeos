@@ -385,8 +385,8 @@ three architectures before checking exports, imports, resources, header contract
 size, and CD placement against the saved baselines. Unchanged or missing binaries cannot
 pass as relinked cells. Accepted panic-handler, probe, and rsbegin differences retain the
 previous explicit policy. Failed proof returns nonzero and leaves the manifest refresh
-undone. The separate `cell_manifest.py` and `media_manifest.py` reporters are still invoked
-after a successful proof; `VIBEOS_CODEGEN_PYTHON` selects their interpreter if needed.
+undone. The native `vibeos-build` manifest library prepares cell/media manifests after a
+successful proof; all manifest and C-recipe rendering finishes before refresh writes.
 Conversion itself spends no translation API money.
 
 `cargo_cell_gen.py` retains dataclasses and import signatures as a JSON compatibility

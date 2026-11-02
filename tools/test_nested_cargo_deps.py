@@ -107,7 +107,7 @@ set(binary "${{CMAKE_BINARY_DIR}}/cargo/debug/outer")
 add_custom_command(OUTPUT "${{CMAKE_BINARY_DIR}}/app"
 COMMAND cargo build --offline -p outer --target-dir "${{CMAKE_BINARY_DIR}}/cargo"
 COMMAND "${{CMAKE_COMMAND}}" -E copy "${{binary}}" "${{CMAKE_BINARY_DIR}}/app"
-COMMAND "{sys.executable}" "{REPO}/tools/retarget_cargo_depfile.py"
+COMMAND "{REPO}/tools/build-infra" retarget-depfile
   --source "${{binary}}.d" --cargo-output "${{binary}}"
   --target "${{CMAKE_BINARY_DIR}}/app" --output "${{CMAKE_BINARY_DIR}}/app.d"
 DEPFILE "${{CMAKE_BINARY_DIR}}/app.d"

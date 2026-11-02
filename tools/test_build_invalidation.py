@@ -92,7 +92,7 @@ os.utime(target, ns=(latest + 1_000_000, latest + 1_000_000))
                 target = "${CMAKE_BINARY_DIR}/${name}"
                 policy = "cmake_policy(SET CMP0116 NEW)"
             depfile_commands = f'''
-        COMMAND "{sys.executable}" "{REPO}/tools/retarget_cargo_depfile.py"
+        COMMAND "{REPO}/tools/build-infra" retarget-depfile
             --source "${{CMAKE_BINARY_DIR}}/cargo/debug/${{name}}.d"
             --cargo-output "${{CMAKE_BINARY_DIR}}/cargo/debug/${{name}}"
             --target "{target}"
@@ -861,7 +861,7 @@ def test_real_bindgen_depfile_tracks_nested_header_and_layout(tmp_path, track_he
     retarget = ""
     if policy == "OLD":
         retarget = f'''
-    COMMAND "{sys.executable}" "{REPO}/tools/retarget_cargo_depfile.py"
+    COMMAND "{REPO}/tools/build-infra" retarget-depfile
         --source "${{CMAKE_BINARY_DIR}}/bindings.d"
         --cargo-output "${{CMAKE_BINARY_DIR}}/bindings.rs"
         --target bindings.rs --output "${{CMAKE_BINARY_DIR}}/bindings.d"

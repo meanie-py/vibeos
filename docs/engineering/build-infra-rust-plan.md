@@ -1,7 +1,9 @@
 # Build infrastructure migration to Rust
 
-Proposed next phase, 2026-11-01. This plans the port; it does not switch builders,
-change host capacity, or promise a performance gain before measurement.
+Batches 1–2 implemented on `lint-rs`, 2026-11-01; remaining batches are planned.
+The native commands and compatibility boundaries are documented in
+[`tools/vibeos-build/README.md`](../../tools/vibeos-build/README.md). Host capacity
+is unchanged; no performance gain is claimed before measurement.
 
 The target is one stable Rust build-infrastructure binary with a reusable library,
 provisioned by a `tools/build-infra` launcher. Keep `vibeos-cli build` as the front door
@@ -18,7 +20,7 @@ callers and tests after merging current master before implementing each batch.
 
 | Area | Current files | Destination / boundary |
 | --- | --- | --- |
-| Dependency and cleanup helpers | `cargo_depgraph.py`, `retarget_cargo_depfile.py`, `ninja_closure_prune.py`, `link_guard.py` | Native graph/depfile/cleanup commands; duplicate-symbol policy belongs in the lint library with a native linker adapter |
+| Dependency and cleanup helpers | `cargo_depgraph.py`, `retarget_cargo_depfile.py`, `ninja_closure_prune.py`, `link_guard.py` | Native graph/depfile/cleanup commands; duplicate-symbol policy lives in the shared low-level library with a native linker adapter |
 | Build and SDK manifests | `cell_manifest.py`, `media_manifest.py`, `sdk_recipe.py` | Native parse/validate/emit/replay modules; reuse codegen's CMake and compile-recipe facts where contracts match |
 | Cargo cell execution | `cargo_orchestrate.py` | Native execution plans and supervised per-arch execution |
 | Immutable artifact store | `artifact_config.py`, `artifact_inputs.py`, `artifact_worker.py`, `artifact_executor.py`, `artifact_store.py`, `artifact_runtime.py` | Shared native descriptor/snapshot/store/executor/runtime modules |
@@ -78,7 +80,7 @@ parity oracle. Do not maintain two evolving implementations.
    it into the new binary. Complete cold/warm and cross-lane trials, then retire obsolete
    algorithm implementations and document the remaining CLI adapters.
 
-Batches 1–2 are the first implementation chunk. They close the generator's remaining
+Batches 1–2 form the first implementation chunk. They close the generator's remaining
 Python manifest calls and exercise the new native build interface before touching
 shared cache state. Parallelize independent modules only after shared types, path
 rules and error semantics are established; integrate shared files and run gates centrally.

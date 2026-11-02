@@ -262,26 +262,16 @@ pub fn clib_recipes(root: &Path) -> Result<RecipePlan> {
     }
     Ok(plan)
 }
-/// Run the permitted standalone manifest reporters; generated code remains native.
-pub fn refresh_reporters(root: &Path, python: &Path) -> Result<()> {
-    for tool in ["cell_manifest.py", "media_manifest.py"] {
-        let path = local(root, &root.join("tools").join(tool))?;
-        let output = Command::new(python)
-            .arg(&path)
-            .arg("--write")
-            .current_dir(root)
-            .output()
-            .map_err(|e| Error::new(format!("{tool}: {e}")))?;
-        if !output.status.success() {
-            return Err(Error::new(format!(
-                "{tool} failed ({}): {}{}",
-                output.status,
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            )));
-        }
-    }
-    Ok(())
+/// Native manifest plans. All architectures render before the caller writes anything.
+pub fn manifest_edits(root: &Path) -> Result<BTreeMap<PathBuf, String>> {
+    let arches: Vec<String> = ARCHES.iter().map(|a| a.to_string()).collect();
+    let mut edits = vibeos_build::cell_manifest::write_plan(root, &arches)
+        .map_err(|e| Error::new(e.to_string()))?;
+    edits.extend(
+        vibeos_build::media_manifest::write_plan(root, &arches)
+            .map_err(|e| Error::new(e.to_string()))?,
+    );
+    Ok(edits)
 }
 /// Plan the RC templates for all configured architectures.
 pub fn rc_templates(root: &Path) -> Result<RecipePlan> {

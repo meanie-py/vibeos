@@ -158,6 +158,7 @@ SENTINEL = "VIBEOS_LINT"
 def ensure(repo: Path) -> Path:
     source = repo / "tools/vibeos-lint"
     codegen = repo / "tools/vibeos-codegen"
+    build_library = repo / "tools/vibeos-build"
     target = repo / ".cache/vibeos-lint/vibeos-lint"
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -166,6 +167,9 @@ def ensure(repo: Path) -> Path:
             source / "Cargo.toml",
             source / "Cargo.lock",
             codegen / "Cargo.toml",
+            build_library / "Cargo.toml",
+            build_library / "Cargo.lock",
+            *sorted(source_files(build_library / "src", "*")),
             *sorted(source_files(codegen / "src", "*")),
             repo / "rust-toolchain.toml",
             repo / "tools/rustconv/rustconv/conventions.py",

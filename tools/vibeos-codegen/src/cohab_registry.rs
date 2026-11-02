@@ -313,7 +313,11 @@ pub fn generate(root: &Path) -> Result<String, String> {
     render(&scan(root)?)
 }
 pub fn render(scan: &Scan) -> Result<String, String> {
-    let s = serde_json::to_string_pretty(&scan.entries).map_err(|e| e.to_string())?;
+    // serde_json features unify across dependencies. Preserve the sorted legacy
+    // contract even when another library enables insertion-ordered objects.
+    let mut entries = serde_json::to_value(&scan.entries).map_err(|e| e.to_string())?;
+    entries.sort_all_objects();
+    let s = serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())?;
     let mut out = String::new();
     for c in s.chars() {
         if (c as u32) < 0x7f {
