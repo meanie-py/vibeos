@@ -474,7 +474,7 @@ pub unsafe extern "C" fn HptGetControllerProperties(Controller: PATA_CONTROLLER)
         if HptHasUdmaCable(Controller, HwFlags, i) == 0 {
             INFO!(
                 b"CH %lu: BIOS detected 40-conductor cable\n\0".as_ptr() as PCHAR,
-                (*ChanData).Channel,
+                (*ChanData).__bindgen_anon_1.Channel,
             );
             (*ChanData).__bindgen_anon_1.TransferModeSupported &=
                 !(UDMA_80C_ALL as ULONG);

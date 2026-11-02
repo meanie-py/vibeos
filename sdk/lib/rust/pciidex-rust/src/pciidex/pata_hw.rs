@@ -17,7 +17,7 @@ unsafe extern "C" fn PataIsDevicePresent(
     IdeStatus = (*ChanData).ReadStatus.unwrap_unchecked()(ChanData);
     INFO!(
         b"CH %lu: Device %lu status %02x\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         DeviceNumber,
         IdeStatus,
     );
@@ -124,7 +124,7 @@ unsafe extern "C" fn PataDrainDeviceBuffer(ChanData: PCHANNEL_DATA_PATA) {
     if i > 0 {
         INFO!(
             b"CH %lu: Total drained %lu bytes\n\0".as_ptr() as *const i8,
-            (*ChanData).Channel,
+            (*ChanData).__bindgen_anon_1.Channel,
             i * core::mem::size_of::<USHORT>() as ULONG,
         );
     }
@@ -270,7 +270,7 @@ pub unsafe extern "C" fn PataResetChannel(ChannelContext: PVOID) {
         } else {
             INFO!(
                 b"CH %lu: Device %lu online with status %02x\n\0".as_ptr() as *const i8,
-                (*ChanData).Channel,
+                (*ChanData).__bindgen_anon_1.Channel,
                 DeviceNumber,
                 IdeStatus,
             );

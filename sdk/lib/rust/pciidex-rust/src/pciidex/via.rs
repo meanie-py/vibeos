@@ -659,7 +659,7 @@ unsafe extern "C" fn Via6421GetControllerProperties(mut Controller: PATA_CONTROL
             ) as PCHANNEL_SET_MODE_EX;
 
             if !VT6421A_UDMA_CABLE_PRESENT!(Controller) {
-                INFO!("CH %lu: BIOS detected 40-conductor cable\n", (*ChanData).Channel);
+                INFO!("CH %lu: BIOS detected 40-conductor cable\n", (*ChanData).__bindgen_anon_1.Channel);
                 (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
             }
         } else {
@@ -768,7 +768,7 @@ unsafe extern "C" fn ViaCx700GetControllerProperties(
             if !VIA_SINGLE_CHAN_UDMA_CABLE_PRESENT!(Controller) {
                 INFO!(
                     b"CH %lu: BIOS detected 40-conductor cable\n\0" as *const u8 as *const i8,
-                    (*ChanData).Channel,
+                    (*ChanData).__bindgen_anon_1.Channel,
                 );
                 (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
             }
@@ -954,7 +954,7 @@ unsafe extern "C" fn ViaPataGetControllerProperties(
                     INFO!(
                         b"CH %lu: BIOS detected 40-conductor cable or this chip is ATA/33 capable\n\0"
                             .as_ptr() as *const i8,
-                        (*ChanData).Channel,
+                        (*ChanData).__bindgen_anon_1.Channel,
                     );
                     (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
                     (*ChanData).HwFlags &= !(HW_FLAGS_TYPE_MASK as u32);
@@ -967,7 +967,7 @@ unsafe extern "C" fn ViaPataGetControllerProperties(
                 if !VIA_UDMA_CABLE_PRESENT!(UdmaTimReg, i) {
                     INFO!(
                         b"CH %lu: BIOS detected 40-conductor cable\n\0".as_ptr() as *const i8,
-                        (*ChanData).Channel,
+                        (*ChanData).__bindgen_anon_1.Channel,
                     );
                     (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
                 }
@@ -978,7 +978,7 @@ unsafe extern "C" fn ViaPataGetControllerProperties(
                 if !VIA_UDMA_CABLE_PRESENT!(UdmaTimReg, i) {
                     INFO!(
                         b"CH %lu: BIOS detected 40-conductor cable\n\0".as_ptr() as *const i8,
-                        (*ChanData).Channel,
+                        (*ChanData).__bindgen_anon_1.Channel,
                     );
                     (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
                 }
@@ -1003,7 +1003,7 @@ unsafe extern "C" fn ViaSataGetControllerProperties(
     PAGED_CODE!();
     INFO!(
         b"Port map: %02X\n\0" as *const u8 as *const i8,
-        PciRead8(Controller, VIA_REG_SATA_PORT_MAP),
+        PciRead8(Controller, VIA_REG_SATA_PORT_MAP as ULONG),
     );
     i = 0;
     while i < (*Controller).MaxChannels {

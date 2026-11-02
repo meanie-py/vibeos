@@ -482,7 +482,7 @@ pub unsafe extern "system" fn RegisterHelper(
     }
 
     DPRINT!("Guid: %lx\n", (*pHelperAttributes).guidHelper.Data1);
-    DPRINT!("dwVersion: %lu\n", (*pHelperAttributes).dwVersion);
+    DPRINT!("dwVersion: %lu\n", (*pHelperAttributes).__bindgen_anon_1.__bindgen_anon_1.dwVersion);
     DPRINT!("pfnStart: %p\n", (*pHelperAttributes).pfnStart);
     DPRINT!("pfnStop: %p\n", (*pHelperAttributes).pfnStop);
 

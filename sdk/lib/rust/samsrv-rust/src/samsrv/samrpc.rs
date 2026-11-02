@@ -8644,10 +8644,10 @@ pub unsafe extern "system" fn SamrGetDisplayEnumerationIndex2(
 ) -> NTSTATUS {
     TRACE!(
         b"SamrGetDisplayEnumerationIndex2(%p %lu %p %p)\n\0".as_ptr() as *const i8,
-        DomainHandle,
-        DisplayInformationClass,
-        Prefix,
-        Index,
+        _DomainHandle,
+        _DisplayInformationClass,
+        _Prefix,
+        _Index,
     );
 
     STATUS_NOT_IMPLEMENTED
@@ -9406,7 +9406,7 @@ pub unsafe extern "system" fn SamrConnect4(
         b"SamrConnect4(%p %p %lu 0x%lx)\n\0".as_ptr() as *const core::ffi::c_char,
         ServerName,
         ServerHandle,
-        ClientRevision,
+        _ClientRevision,
         DesiredAccess,
     );
 
@@ -9443,10 +9443,10 @@ pub unsafe extern "system" fn SamrConnect5(
 
     TRACE!(
         b"SamrConnect5(%p 0x%lx %lu %p %p %p %p)\n\0".as_ptr() as *const i8,
-        ServerName,
+        _ServerName,
         DesiredAccess,
         InVersion,
-        InRevisionInfo,
+        _InRevisionInfo,
         OutVersion,
         OutRevisionInfo,
         ServerHandle,

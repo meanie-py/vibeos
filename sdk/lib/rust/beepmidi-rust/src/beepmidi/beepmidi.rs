@@ -375,7 +375,7 @@ pub unsafe extern "C" fn OpenDevice(
         b"Success? %d\n\0" as *const u8 as *const core::ffi::c_char as *mut core::ffi::c_char,
         CallClient(
             the_device,
-            MOM_OPEN,
+            MOM_OPEN as DWORD_PTR,
             0,
             0,
         ) as core::ffi::c_int,

@@ -28,6 +28,46 @@ pub mod ffi {
     }
 }
 
+/// (win32macros-rust has the twin, `DBG_TYPECHECK`; this crate takes no dependencies.)
+#[doc(hidden)]
+/// The arguments of a debug macro whose channel is OFF (`TRACE`/`WARN`, a stubbed `DPRINT`),
+/// TYPE-CHECKED but never evaluated or emitted. They sit in a closure that is never called:
+/// the closure body is name-resolved and type-checked like any code, but no call means no codegen,
+/// so a debug helper that is declared and never linked still links. A swallowing
+/// `($($t:tt)*) => {{}}` compiles nothing, so a stale argument (a renamed local, a field
+/// that moved) rots silently, and every value computed only for a trace reads as unused.
+/// No catch-all arm: a call that is not `fmt, args..` must fail, not vanish.
+#[macro_export]
+macro_rules! __WINEDEBUG_TYPECHECK {
+    () => {{}};
+    ($fmt:expr $(, $arg:expr)* $(,)?) => {{
+        let _ = || {
+            // wine/debug.h's `debugstr_*`, as SIGNATURES only, so `TRACE!("%s", debugstr_w(x))`
+            // checks in a crate that never imported one. Items, not a `$crate::` module: macro
+            // hygiene leaves items visible to the caller's tokens, and the difftest harness mounts
+            // this file as a submodule, where a crate-root path does not exist. They sit inside
+            // a never-called closure, so they are never codegened and link nothing.
+            #[allow(dead_code)]
+            unsafe fn debugstr_w(_s: *const u16) -> *const ::core::ffi::c_char { ::core::ptr::null() }
+            #[allow(dead_code)]
+            unsafe fn debugstr_wn(_s: *const u16, _n: i32) -> *const ::core::ffi::c_char { ::core::ptr::null() }
+            #[allow(dead_code)]
+            unsafe fn debugstr_a(_s: *const ::core::ffi::c_char) -> *const ::core::ffi::c_char { ::core::ptr::null() }
+            #[allow(dead_code)]
+            unsafe fn debugstr_an(_s: *const ::core::ffi::c_char, _n: i32) -> *const ::core::ffi::c_char { ::core::ptr::null() }
+            #[allow(dead_code)]
+            unsafe fn debugstr_guid<T>(_id: *const T) -> *const ::core::ffi::c_char { ::core::ptr::null() }
+            #[allow(unused_unsafe)]
+            unsafe {
+                // `let _ = place;` binds nothing: no read, no move, no borrow, so a packed
+                // field or a moved local is fine, and the name still resolves and type-checks.
+                let _ = $fmt;
+                $(let _ = $arg;)*
+            }
+        };
+    }};
+}
+
 /// `ERR(fmt, ...)` — on by default (`__WINE_DBCL_ERR` is in `default_flags`).
 #[macro_export]
 macro_rules! ERR {
@@ -75,7 +115,7 @@ macro_rules! FIXME {
 #[macro_export]
 macro_rules! WARN {
     ($($t:tt)*) => {
-        ()
+        $crate::__WINEDEBUG_TYPECHECK!($($t)*)
     };
 }
 
@@ -84,6 +124,6 @@ macro_rules! WARN {
 #[macro_export]
 macro_rules! TRACE {
     ($($t:tt)*) => {
-        ()
+        $crate::__WINEDEBUG_TYPECHECK!($($t)*)
     };
 }

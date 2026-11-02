@@ -5664,7 +5664,7 @@ pub unsafe extern "system" fn OleLoadPicture(
     TRACE!(
         b"(%p,%d,%d,%s,%p), partially implemented.\n\0".as_ptr() as *const i8,
         lpstream,
-        lSize,
+        _lSize,
         fRunmode,
         debugstr_guid(riid),
         ppvObj,

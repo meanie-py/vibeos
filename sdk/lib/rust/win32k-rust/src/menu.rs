@@ -1335,13 +1335,13 @@ unsafe fn IntSetMenuInfoImpl(Menu: PMENU, lpmi: PROSMENUINFO) -> u8 {
     }
     if (*lpmi).fMask & MIM_STYLE != 0 {
         if (*lpmi).dwStyle & MNS_AUTODISMISS != 0 {
-            FIXME!(b"MNS_AUTODISMISS unimplemented wine\n\0".as_ptr() as _);
+            FIXME!(b"MNS_AUTODISMISS unimplemented wine\n\0".as_ptr() as *const core::ffi::c_char);
         }
         if (*lpmi).dwStyle & MNS_DRAGDROP != 0 {
-            FIXME!(b"MNS_DRAGDROP unimplemented wine\n\0".as_ptr() as _);
+            FIXME!(b"MNS_DRAGDROP unimplemented wine\n\0".as_ptr() as *const i8);
         }
         if (*lpmi).dwStyle & MNS_MODELESS != 0 {
-            FIXME!(b"MNS_MODELESS unimplemented wine\n\0".as_ptr() as _);
+            FIXME!(b"MNS_MODELESS unimplemented wine\n\0".as_ptr() as *const i8);
         }
     }
     1u8

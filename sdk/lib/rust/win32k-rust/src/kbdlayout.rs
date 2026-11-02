@@ -632,7 +632,7 @@ unsafe fn co_UserLoadKbdLayout(pustrKLID: PUNICODE_STRING, hKL: HKL) -> PKL {
     }
 
     TRACE!(
-        b"Language Identifiers LCID 0x%x\n\0".as_ptr() as _,
+        b"Language Identifiers LCID 0x%x\n\0".as_ptr() as *const core::ffi::c_char,
         pustrKLID,
         lCid,
     );
@@ -641,7 +641,7 @@ unsafe fn co_UserLoadKbdLayout(pustrKLID: PUNICODE_STRING, hKL: HKL) -> PKL {
         (*pKl).dwFontSigs = cs.fs.fsCsb[0];
         (*pKl).CodePage = cs.ciACP as USHORT;
         TRACE!(
-            b"Charset %u Font Sig %lu CodePage %u\n\0".as_ptr() as _,
+            b"Charset %u Font Sig %lu CodePage %u\n\0".as_ptr() as *const i8,
             (*pKl).iBaseCharset,
             (*pKl).dwFontSigs,
             (*pKl).CodePage,

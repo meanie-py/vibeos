@@ -408,7 +408,7 @@ pub unsafe extern "system" fn OleBuildVersion() -> DWORD {
 /// ole2.c:169 OleInitialize [OLE32.@]
 #[no_mangle]
 pub unsafe extern "system" fn OleInitialize(_reserved: LPVOID) -> HRESULT {
-    TRACE!(b"(%p)\n\0".as_ptr(), reserved);
+    TRACE!(b"(%p)\n\0".as_ptr(), _reserved);
 
     // The first duty of OleInitialize is to initialize the COM libraries.
     let hr0 = CoInitializeEx(core::ptr::null_mut(), COINIT_APARTMENTTHREADED);

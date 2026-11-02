@@ -370,7 +370,7 @@ fn OLEClipbrd_IEnumFORMATETC_QueryInterface(
 ) -> HRESULT {
     let _This = impl_from_IEnumFORMATETC(iface);
 
-    TRACE!(b"(%p)->(IID: %s, %p)\n\0".as_ptr(), This, debugstr_guid(riid), ppvObj);
+    TRACE!(b"(%p)->(IID: %s, %p)\n\0".as_ptr(), _This, debugstr_guid(riid), ppvObj);
 
     *ppvObj = core::ptr::null_mut();
 

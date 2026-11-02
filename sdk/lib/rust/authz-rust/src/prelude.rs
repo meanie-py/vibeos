@@ -13,7 +13,7 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // built -DCMAKE_BUILD_TYPE=Debug, i.e. -DDBG=1. Both stay MACROS, never out-of-line
 // fns (field manual §9.65: a no-op fn is an optimization barrier). The C passes
 // __RELFILE__/__LINE__ as two extra varargs; file!()/line!() fold into the literal.
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
 // ntdll exports DbgPrint; every usermode DLL links it.
 extern "C" {
     pub fn DbgPrint(Format: *const c_char, ...) -> u32;
@@ -60,7 +60,7 @@ pub fn NT_SUCCESS(s: NTSTATUS) -> bool {
 #[macro_export] macro_rules! VALIDATE_CLIENTCTX_HANDLE { ($h:expr $(,)?) => {{}}; }
 // reactos/debug.h
 #[macro_export] macro_rules! UNIMPLEMENTED { () => {{}}; }
-#[macro_export] macro_rules! UNREFERENCED_PARAMETER { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! UNREFERENCED_PARAMETER { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
 // winbase.h ZeroMemory→RtlZeroMemory, CopyMemory→RtlCopyMemory. Routed to the CRT entry points
 // rather than a Rust byte loop: LLVM folds any such loop back into a call to memset/memcpy.
 // The zeroing macros live in `win32macros-rust`, ported once from the header and

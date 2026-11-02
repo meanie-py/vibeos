@@ -838,7 +838,7 @@ unsafe extern "C" fn VARIANT_FormatNumber(
         debugstr_variant(pVarIn),
         debugstr_w(lpszFormat),
         rgbTok,
-        dwFlags,
+        _dwFlags,
         pbstrOut,
         lcid,
     );
@@ -1924,7 +1924,7 @@ unsafe extern "C" fn VARIANT_FormatString(
         debugstr_variant(pVarIn),
         debugstr_w(lpszFormat),
         rgbTok,
-        dwFlags,
+        _dwFlags,
         pbstrOut,
         lcid,
     );
@@ -2263,7 +2263,7 @@ pub unsafe extern "system" fn VarFormatNumber(
         nLeading,
         nParens,
         nGrouping,
-        dwFlags,
+        _dwFlags,
         pbstrOut,
     );
 
@@ -2467,7 +2467,7 @@ pub unsafe extern "system" fn VarFormatCurrency(
         nLeading,
         nParens,
         nGrouping,
-        dwFlags,
+        _dwFlags,
         pbstrOut
     );
 

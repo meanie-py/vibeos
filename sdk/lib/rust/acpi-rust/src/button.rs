@@ -27,7 +27,7 @@ macro_rules! ACPI_MODULE_NAME {
     ($($t:tt)*) => {};
 }
 macro_rules! ACPI_DEBUG_PRINT {
-    ($($t:tt)*) => {};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 
 // ---- ACPICA result macros (acexcep.h): SUCCESS(a)=!(a), FAILURE(a)=(a). AE_OK==0. ----

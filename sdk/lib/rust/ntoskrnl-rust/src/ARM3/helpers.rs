@@ -1562,7 +1562,7 @@ pub type PMMPPE = PMMPTE;
 
 #[macro_export]
 macro_rules! _A3_TRACE {
-    ($($arg:tt)*) => {};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 pub struct PfnLockGuard { previous_irql: KIRQL }
 impl PfnLockGuard {

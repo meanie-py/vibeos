@@ -1198,7 +1198,7 @@ pub unsafe extern "system" fn LsarLookupNames(
 
     TRACE!(
         b"LsarLookupNames(%p %lu %p %p %p %d %p)\n\0".as_ptr() as *const i8,
-        PolicyHandle,
+        _PolicyHandle,
         Count,
         Names,
         ReferencedDomains,
@@ -1274,7 +1274,7 @@ pub unsafe extern "system" fn LsarLookupSids(
 
     TRACE!(
         b"LsarLookupSids(%p %p %p %p %d %p)\n\0".as_ptr() as *const i8,
-        PolicyHandle,
+        _PolicyHandle,
         SidEnumBuffer,
         ReferencedDomains,
         TranslatedNames,
@@ -3766,7 +3766,7 @@ pub unsafe extern "system" fn LsarLookupSids2(
 
     TRACE!(
         b"LsarLookupSids2(%p %p %p %p %d %p %lu %lu)\n\0".as_ptr() as *const i8,
-        PolicyHandle,
+        _PolicyHandle,
         SidEnumBuffer,
         ReferencedDomains,
         TranslatedNames,
@@ -3811,7 +3811,7 @@ pub unsafe extern "system" fn LsarLookupNames2(
 
     TRACE!(
         b"LsarLookupNames2(%p %lu %p %p %p %d %p %lu %lu)\n\0".as_ptr() as *const i8,
-        PolicyHandle,
+        _PolicyHandle,
         Count,
         Names,
         ReferencedDomains,
@@ -3963,7 +3963,7 @@ pub unsafe extern "system" fn LsarLookupNames3(
 
     TRACE!(
         b"LsarLookupNames3(%p %lu %p %p %p %d %p %lu %lu)\n\0".as_ptr() as *const i8,
-        PolicyHandle,
+        _PolicyHandle,
         Count,
         Names,
         ReferencedDomains,
@@ -4066,7 +4066,7 @@ pub unsafe extern "system" fn LsarLookupSids3(
 
     TRACE!(
         b"LsarLookupSids3(%p %p %p %p %d %p %lu %lu)\n\0".as_ptr() as *const i8,
-        PolicyHandle,
+        _PolicyHandle,
         SidEnumBuffer,
         ReferencedDomains,
         TranslatedNames,
@@ -4109,7 +4109,7 @@ pub unsafe extern "system" fn LsarLookupNames4(
 
     TRACE!(
         b"LsarLookupNames4(%p %lu %p %p %p %d %p %lu %lu)\n\0".as_ptr() as *const i8,
-        RpcHandle,
+        _RpcHandle,
         Count,
         Names,
         ReferencedDomains,

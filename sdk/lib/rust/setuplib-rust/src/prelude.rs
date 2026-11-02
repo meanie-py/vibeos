@@ -12,7 +12,7 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // ================= debug ======================================================================
 // reactos/debug.h DPRINT/DPRINT1 — no-op MACROS, never out-of-line fns
 // (field manual §9.65: an out-of-line no-op is an optimization barrier).
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
 // DPRINT1 PRINTS: this tree builds -DDBG=1, where reactos/debug.h defines it as
 // `if (DbgPrint("(%s:%d) " fmt, __RELFILE__, __LINE__, ...)) DbgPrint("(%s:%d) DbgPrint() failed!\n", ..)`.
 // The prefix carries the Rust file, not the C one. The translations spell the format three

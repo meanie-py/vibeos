@@ -1311,10 +1311,10 @@ pub unsafe extern "system" fn VarUdateFromDate(
     }
     
     macro_rules! TRACE {
-        ($($arg:tt)*) => {};
+        ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) };
     }
     
-    TRACE!("(%g,0x%08x,%p)\n", dateIn, dwFlags, lpUdate);
+    TRACE!("(%g,0x%08x,%p)\n", dateIn, _dwFlags, lpUdate);
     
     if dateIn <= (-657434.0 - 1.0) || dateIn >= (2958465.0 + 1.0) {
         return 0x80070057u32 as i32;
@@ -3582,7 +3582,7 @@ pub unsafe extern "system" fn VarSub(mut left: LPVARIANT, mut right: LPVARIANT, 
     VariantInit(&mut tempLeft);
     VariantInit(&mut tempRight);
 
-    TRACE!(b"(%s,%s,%p)\n\0".as_ptr() as _, debugstr_variant(left), debugstr_variant(right), result);
+    TRACE!(b"(%s,%s,%p)\n\0".as_ptr() as *const i8, debugstr_variant(left), debugstr_variant(right), result);
 
     'end: loop {
         if ((*V_VT_ref(left)) & VT_TYPEMASK) == VT_DISPATCH &&
@@ -3801,7 +3801,7 @@ pub unsafe extern "system" fn VarSub(mut left: LPVARIANT, mut right: LPVARIANT, 
     VariantClear(&mut rv);
     VariantClear(&mut tempLeft);
     VariantClear(&mut tempRight);
-    TRACE!(b"returning 0x%8x %s\n\0".as_ptr() as _, hres, debugstr_variant(result));
+    TRACE!(b"returning 0x%8x %s\n\0".as_ptr() as *const i8, hres, debugstr_variant(result));
     hres
 }
 
@@ -5558,8 +5558,8 @@ pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: 
         (*V_I8_ref(result)) = (*V_I8_ref(&mut lv)) % (*V_I8_ref(&mut rv));
 
         TRACE!(b"(*V_I8_ref(left)) == %s, (*V_I8_ref(right)) == %s, (*V_I8_ref(result)) == %s\n\0".as_ptr() as *const i8,
-              wine_dbgstr_longlong((*V_I8_ref(&mut lv))), wine_dbgstr_longlong((*V_I8_ref(&mut rv))),
-              wine_dbgstr_longlong((*V_I8_ref(result))));
+              wine_dbgstr_longlong((*V_I8_ref(&mut lv)) as u64), wine_dbgstr_longlong((*V_I8_ref(&mut rv)) as u64),
+              wine_dbgstr_longlong((*V_I8_ref(result)) as u64));
 
         rc = VariantChangeType(result, result, 0, resT as u16);
         if FAILED(rc) {

@@ -270,7 +270,7 @@ pub unsafe extern "C" fn AtaDeviceSetAddressingMode(DevExt: PATAPORT_DEVICE_EXTE
     INFO!(
         b"Total sectors %I64u of size %lu, CHS %u:%u:%u\n\0".as_ptr() as *const i8,
         (*DevExt).Device.TotalSectors,
-        (*DevExt).Device.SectorSize,
+        (*DevExt).Device.__bindgen_anon_1.SectorSize,
         (*DevExt).Device.Cylinders,
         (*DevExt).Device.Heads,
         (*DevExt).Device.SectorsPerTrack,

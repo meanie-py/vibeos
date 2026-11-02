@@ -579,10 +579,10 @@ unsafe extern "C" fn AtaPdoPnp(
 
     INFO!(
         b"(%p, %p) Tid.%lu %s\n\0".as_ptr() as *const i8,
-        (*DevExt).Common.Self,
+        (*DevExt).Common.Self_,
         Irp,
-        (*DevExt).Device.AtaScsiAddress.TargetId,
-        GetIRPMinorFunctionString(IoGetCurrentIrpStackLocation(Irp).MinorFunction),
+        (&(*DevExt).Device.AtaScsiAddress).TargetId,
+        GetIRPMinorFunctionString((*IoGetCurrentIrpStackLocation(Irp)).MinorFunction),
     );
 
     Status = IoAcquireRemoveLock(&mut (*DevExt).Common.RemoveLock, (Irp).cast());

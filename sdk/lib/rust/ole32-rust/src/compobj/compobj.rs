@@ -42,10 +42,10 @@ use super::types::*;
 // runtime in the C too); ERR/FIXME forward to OutputDebugStringA.
 // ---------------------------------------------------------------------------
 macro_rules! TRACE {
-    ($($t:tt)*) => {{}};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 macro_rules! WARN {
-    ($($t:tt)*) => {{}};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 macro_rules! ERR {
     ($fmt:literal $(, $e:expr)* $(,)?) => {

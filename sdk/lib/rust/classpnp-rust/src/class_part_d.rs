@@ -118,7 +118,7 @@ use crate::types::{SCSI_PASS_THROUGH32};
 
 // TracePrint — telemetry no-op (matches ddk_shims/ETW no-op convention); macro swallows the
 // C double-paren `TracePrint!((lvl, flag, fmt, args))` form.
-macro_rules! TracePrint { ($($t:tt)*) => {{}} }
+macro_rules! TracePrint { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }} }
 extern "C" {
     
     

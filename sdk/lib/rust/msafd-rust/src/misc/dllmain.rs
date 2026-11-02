@@ -1438,7 +1438,7 @@ pub unsafe extern "system" fn WSPSelect(
             b"Timeout: Orig %d.%06d kernel %d\n\0".as_ptr() as *const i8,
             (*timeout).tv_sec,
             (*timeout).tv_usec,
-            Timeout.u.__bindgen_anon_1.LowPart,
+            Timeout.u.LowPart,
         );
     }
 
@@ -3030,7 +3030,7 @@ pub unsafe extern "system" fn WSPGetSockName(
             TRACE!(
                 b"NameLength %d Address: %x Port %x\n\0".as_ptr() as PCHAR,
                 *NameLength,
-                (*(Name as *mut sockaddr_in)).sin_addr.s_addr,
+                (*(Name as *mut sockaddr_in)).sin_addr.S_un.S_addr,
                 (*(Name as *mut sockaddr_in)).sin_port,
             );
             HeapFree(GlobalHeap, 0, TdiAddress as PVOID);
@@ -3140,7 +3140,7 @@ pub unsafe extern "system" fn WSPGetPeerName(
             TRACE!(
                 b"NameLength %d Address: %x Port %x\n\0".as_ptr() as PCHAR,
                 *NameLength,
-                (*(Name as *mut sockaddr_in)).sin_addr.s_addr,
+                (*(Name as *mut sockaddr_in)).sin_addr.S_un.S_addr,
                 (*(Name as *mut sockaddr_in)).sin_port,
             );
             HeapFree(GlobalHeap, 0, SocketAddress as LPVOID);

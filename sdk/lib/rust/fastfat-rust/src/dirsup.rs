@@ -1728,7 +1728,7 @@ pub unsafe extern "system" fn FatUpdateDirentFromFcb(
         || UpdateLastWriteTime != 0
         || UpdateLastAccessTime != 0
     {
-        DebugTrace!(0, Dbg, (b"Update Time and/or file size on File/Dir\n".as_ptr() as *const u8).cast(), 0);
+        DebugTrace!(0, Dbg, (b"Update Time and/or file size on File/Dir\n".as_ptr() as *const u8).cast::<i8>(), 0);
 
         // try { try { ... } except (FsRtlIsNtstatusExpected(code)) { FatResetExceptionState }
         // } finally { FatUnpinBcb }

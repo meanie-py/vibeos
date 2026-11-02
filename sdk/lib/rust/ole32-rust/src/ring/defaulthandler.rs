@@ -252,7 +252,7 @@ unsafe fn DefaultHandler_NDIUnknown_QueryInterface(
         if FAILED(hr) {
             FIXME!(
                 b"interface %s not implemented by data cache\n\0".as_ptr() as PCHAR,
-                debugstr_guid((riid).cast()),
+                debugstr_guid(riid),
             );
         }
         return hr;
@@ -1138,7 +1138,7 @@ unsafe fn DefaultHandler_DAdvise(
     let This: *mut DefaultHandler = impl_from_IDataObject(iface);
 
     TRACE!(
-        b"(%p, %p, %d, %p, %p)\n\0".as_ptr() as PCSTR,
+        b"(%p, %p, %d, %p, %p)\n\0".as_ptr() as *const i8,
         iface,
         pformatetc,
         advf,

@@ -257,7 +257,7 @@ pub unsafe extern "system" fn OleCreateFromDataEx(
     FIXME!(
         "(%p, %s, %08x, %08x, %d, %p, %p, %p, %p, %p, %p, %p): stub\n",
         data,
-        debugstr_guid((iid).cast()),
+        debugstr_guid(iid),
         flags,
         renderopt,
         num_cache_fmts,
@@ -332,7 +332,7 @@ pub unsafe extern "system" fn OleCreateLinkFromData(
     FIXME!(
         "%p,%s,%08x,%p,%p,%p,%p: semi-stub\n",
         data,
-        debugstr_guid((iid).cast()),
+        debugstr_guid(iid),
         renderopt,
         fmt,
         client_site,
@@ -543,10 +543,10 @@ pub unsafe extern "system" fn OleCreateFromFileEx(
 
     TRACE!(
         "cls %s, %s, iid %s, flags %d, render opts %d, num fmts %d, adv flags %p, fmts %p\n",
-        debugstr_guid(clsid),
+        debugstr_guid(_clsid),
         debugstr_w(filename as *const c_void),
         debugstr_guid(iid),
-        flags,
+        _flags,
         renderopt,
         num_fmts,
         adv_flags,
@@ -554,8 +554,8 @@ pub unsafe extern "system" fn OleCreateFromFileEx(
     );
     TRACE!(
         "sink %p, conns %p, client site %p, storage %p, obj %p\n",
-        sink,
-        conns,
+        _sink,
+        _conns,
         client_site,
         stg,
         obj
@@ -565,7 +565,7 @@ pub unsafe extern "system" fn OleCreateFromFileEx(
         TRACE!(
             "\t%d: fmt %s adv flags %d\n",
             i,
-            debugstr_formatetc(fmts.add(i as usize)),
+            crate::ring::datacache::debugstr_formatetc(fmts.add(i as usize)),
             *adv_flags.add(i as usize)
         );
         i += 1;

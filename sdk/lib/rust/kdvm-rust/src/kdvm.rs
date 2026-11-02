@@ -37,7 +37,7 @@ pub const STATUS_CONNECTION_REFUSED: NTSTATUS = 0xC0000236u32 as NTSTATUS;
 // `KDDBGPRINT(...)` — the C macro expands to nothing unless KDDEBUG is defined
 // (it is not), so the faithful translation is a no-op that discards its args.
 macro_rules! KDDBGPRINT {
-    ($($arg:tt)*) => {{ }};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 
 // KdDebuggerNotPresent is the ntoskrnl DATA export behind the

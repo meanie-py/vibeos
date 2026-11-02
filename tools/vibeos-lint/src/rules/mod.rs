@@ -30,6 +30,7 @@ pub mod byte_step_one;
 pub mod variant_outptr;
 pub mod byteptr_stride;
 pub mod inert_crate_allow;
+pub mod swallowing_debug_macro;
 pub mod calloc_elem_type;
 pub mod cdecl_alias;
 pub mod containing_record_null;
@@ -254,6 +255,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(gmem_flags::GmemFlags),
         Box::new(byteptr_stride::ByteptrStride),
         Box::new(inert_crate_allow::InertCrateAllow),
+        Box::new(swallowing_debug_macro::SwallowingDebugMacro),
         Box::new(noop_goto::NoopGoto),
         Box::new(cdecl_alias::CdeclAlias),
         Box::new(narrow_vs_wide_literal::NarrowVsWideLiteral),

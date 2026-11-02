@@ -560,7 +560,7 @@ pub unsafe extern "C" fn AmdGetControllerProperties(
                 {
                     INFO!(
                         "CH %lu: BIOS hasn't selected mode faster than UDMA 2, assume 40-conductor cable\n",
-                        (*ChanData).Channel,
+                        (*ChanData).__bindgen_anon_1.Channel,
                     );
                     (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
                 }

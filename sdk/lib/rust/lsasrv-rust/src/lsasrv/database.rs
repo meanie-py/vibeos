@@ -562,7 +562,7 @@ unsafe fn LsapGetDomainInfo() -> i32 {
 
         TRACE!(
             b"Builtin Domain Name: %wZ\n\0".as_ptr() as *const i8,
-            &BuiltinDomainName as *const _UNICODE_STRING,
+            &raw const BuiltinDomainName,
         );
 
         ConvertSidToStringSidW(AccountDomainSid, &mut SidString);
@@ -571,7 +571,7 @@ unsafe fn LsapGetDomainInfo() -> i32 {
 
         TRACE!(
             b"Account Domain Name: %wZ\n\0".as_ptr() as *const i8,
-            &AccountDomainName as *const _UNICODE_STRING,
+            &raw const AccountDomainName,
         );
 
         status // return whatever status we have (should be success)
