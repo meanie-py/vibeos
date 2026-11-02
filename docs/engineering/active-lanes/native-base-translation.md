@@ -219,7 +219,12 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
   an edited one leaves the block (`generated_items.py`). reactos-rust's three fixes now sit
   above their blocks; the `!` one was also fixed at the root (render applies the bang).
   Still owed: the SDK lowering does not widen a `ULONGLONG * ULONG` (it has no member
-  types for a macro parameter), so `GetDiskSizeInBytes` stays a hand port. **resolve's
+  types for a macro parameter), so `GetDiskSizeInBytes` stays a hand port. Typing a
+  member by field NAME across the island cannot settle it (measured 2026-11-01:
+  reactos-rust's `SectorCount` is `c_uint`, `LARGE_INTEGER` or `ULARGE_INTEGER`, and the
+  two with `.QuadPart` disagree on sign); it needs the parameter's type at the C call
+  sites, a clang `__typeof__` probe per site. Low value while the two hand ports are
+  stamp-protected, so parked. **resolve's
   tree-consensus block is stamped (2026-11-01):** `render` stamps each item, and
   `preserve_hand_edits` moves an edited one above the block (an `extern` declaration in
   its own `extern "ABI" {}`) before the run re-derives the rest from the tree, which used to
@@ -244,8 +249,13 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
   INTEGRATED Rust, not the bank -- a replay could not check the bank, because a flipped TU
   has no compile command and translate refuses it (`MacroAuthorityError`); 119 census rows
   do not resolve to a file pair, and 162 TUs whose CMakeLists profile_derive refuses were
-  decided on tree-wide defines only. Still owed: the seal sees only the body, so a
-  file-scope `#define` (beepmidi's `CONTINUOUS_NOTES`) still leaves its arms optional.
+  decided on tree-wide defines only. **File-scope `#define`s count too (2026-11-01):** the
+  seal finds the function's definition in the TU by name (exactly one) and seeds the walker
+  with what the lines above it, compiled by every build, `#define` and do not `#undef`
+  (`dead_regions.file_scope_defines`), so beepmidi's `CONTINUOUS_NOTES` arms are required.
+  A body it cannot place sees none, as before. Measured first: `live_arm_audit` (which
+  already walks whole files, a superset) reports 475 live-arm calls and 7 the Rust does
+  not name, all macros or a cast the seal never tokenizes, so no banked body turns red.
 - **The cost counter now bills failed attempts** (2026-10-17). Three causes: the Claude
   backend never set `usage_known`, so all 6,637 attempt `result.json`s said
   `cost_usd: null`; FAIL lines did not print the running figure `port translate` bills a
