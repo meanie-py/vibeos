@@ -329,12 +329,21 @@ What the batch added to the shared crates and tools:
      `wow64_manual.rs` and `wow64_callback.rs` their own never-assigned `static mut`
      copies, so `NtContinue` returned STATUS_INVALID_PARAMETER and every i386 guest died
      right after its loader. New `scan_extern_copy` (vibeos-lint) flags a private static
-     shadowing a crate's `#[no_mangle]` one; tree-wide it found 18 more, about 11 of them
-     real (the module's C declares the name `extern`): cmd `bTitleSet`, comctl32
-     `uDragListMessage`, dhcpcsvc `hAdapterStateChangedEvent`, fontview `g_NumFonts`, ndis
-     `CancelId`, win32k `gxcoTrivial`/`g_PointZero`, winspool `hinstWinSpool`, appwiz
-     `hApplet`, cc `LazyWriter`, opengl32 `ContextListHead`. **Owed next: fix those and
-     drop them from the baseline.** (2) `sizeof(*p)` came back as `size_of_val(&p)`, the
+     shadowing a crate's `#[no_mangle]` one; tree-wide it found 18 more. 11 were real (the module's C
+     declares the name `extern`) and are FIXED (2026-11-02): each private copy now
+     imports the one definition. Six were live bugs: cmd `bTitleSet` (the title command's
+     flag never reached cmd.c), comctl32 `uDragListMessage`, dhcpcsvc
+     `hAdapterStateChangedEvent` (the prelude re-exported the COPY, so every module but
+     adapter.rs used it), ndis `CancelId`, winspool `hinstWinSpool` (a null instance
+     for resource loads), win32k `gxcoTrivial` (bitblt_new's copy was ZEROED, so a
+     blit without a clip got empty rclBounds instead of LONG_MIN..LONG_MAX), and cc
+     `LazyWriter` (view.rs's ScanActive was always 0, so every dirtied VACB rescheduled
+     the lazy-write scan). Dead copies, unified anyway: appwiz `hApplet`, fontview
+     `g_NumFonts`, opengl32 `ContextListHead`, win32k `g_PointZero`. The 7 left in the
+     baseline are not copies: arch twins (hal arm64/x86, kiinit amd64/arm64), a C
+     `static` of its own (hal rtctimer, freeldr vidfb's FrameBufferData), a per-TU wine
+     debug channel, and csrsrv's SessionId (csrsrv and basesrv are separate DLLs in C).
+     (2) `sizeof(*p)` came back as `size_of_val(&p)`, the
      size of the POINTER: the AFD select marshaller allocated 8+8n bytes for a 24+16n
      buffer and `select()` overran the 64-bit heap. New `scan_sizeof_pointer`. All 71
      `size_of_val(&*p)` sites became `size_of::<T>()` too: `&*p` builds a reference from

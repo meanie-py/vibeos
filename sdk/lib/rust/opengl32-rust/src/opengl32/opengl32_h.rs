@@ -3,7 +3,8 @@ use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 
-pub static mut ContextListHead: LIST_ENTRY = unsafe { core::mem::zeroed() };
+// The C declares this `extern`; one definition lives in wgl.rs (scan_extern_copy).
+pub use crate::opengl32::wgl::ContextListHead;
 
 pub type Pwgl_context = *mut wgl_context;
 

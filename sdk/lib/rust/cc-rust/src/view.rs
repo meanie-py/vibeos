@@ -150,11 +150,8 @@ pub static mut CcDeferredWrites: _LIST_ENTRY = unsafe { core::mem::zeroed() };
 pub static mut CcDeferredWriteSpinLock: KSPIN_LOCK = unsafe { core::mem::zeroed() };
 static mut CcCleanSharedCacheMapList: _LIST_ENTRY = unsafe { core::mem::zeroed() };
 
-struct LazyWriterStruct {
-    ScanActive: BOOLEAN,
-}
-
-static mut LazyWriter: LazyWriterStruct = LazyWriterStruct { ScanActive: 0 };
+// The C declares this `extern`; one definition lives in lazywrite.rs (this copy's ScanActive was always 0) (scan_extern_copy).
+use crate::lazywrite::LazyWriter;
 
 extern "system" {
     fn FsRtlAcquireFileForCcFlushEx(file_object: PFILE_OBJECT) -> NTSTATUS;

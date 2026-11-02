@@ -11,7 +11,8 @@ pub static ServiceName: [u16; 5] = [0x44, 0x48, 0x43, 0x50, 0];
 pub static mut ServiceStatusHandle: SERVICE_STATUS_HANDLE = core::ptr::null_mut();
 pub static mut ServiceStatus: SERVICE_STATUS = unsafe { core::mem::zeroed() };
 pub static mut hStopEvent: HANDLE = core::ptr::null_mut();
-pub static mut hAdapterStateChangedEvent: HANDLE = core::ptr::null_mut();
+// The C declares this `extern`; one definition lives in dhcp/adapter.rs (scan_extern_copy).
+pub use crate::dhcp::adapter::hAdapterStateChangedEvent;
 extern "C" {
     pub static mut DhcpSocket: SOCKET;
 }
