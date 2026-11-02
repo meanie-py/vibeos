@@ -23,7 +23,7 @@ use core::ffi::c_void;
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 
-static mut file_scheme_handler_factory: class_factory = unsafe {
+static mut file_scheme_handler_factory: class_factory = {
     class_factory {
         IClassFactory_iface: IClassFactory {
             lpVtbl: &raw const class_factory_vtbl,
@@ -35,7 +35,7 @@ static mut file_scheme_handler_factory: class_factory = unsafe {
     }
 };
 
-static mut urlmon_scheme_handler_factory: class_factory = unsafe {
+static mut urlmon_scheme_handler_factory: class_factory = {
     class_factory {
         IClassFactory_iface: IClassFactory {
             lpVtbl: &raw const class_factory_vtbl,
@@ -118,7 +118,7 @@ unsafe extern "C" fn debug_compare_guid(a: *const core::ffi::c_void, b: *const c
 }
 #[no_mangle]
 pub unsafe extern "C" fn debugstr_mf_guid(mut guid: *const GUID) -> *const ::core::ffi::c_char {
-    static mut guid_defs: [guid_def; 127] = unsafe {
+    static mut guid_defs: [guid_def; 127] = {
         [
             guid_def { guid: &raw const MFAudioFormat_ADTS, name: b"MFAudioFormat_ADTS\0" as *const u8 as *const ::core::ffi::c_char },
             guid_def { guid: &raw const MFAudioFormat_PCM, name: b"MFAudioFormat_PCM\0" as *const u8 as *const ::core::ffi::c_char },

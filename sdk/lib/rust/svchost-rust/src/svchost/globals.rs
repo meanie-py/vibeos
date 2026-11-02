@@ -88,7 +88,7 @@ pub static mut AliasBackupOpsSid: PSID =
     ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void;
 
 #[no_mangle]
-pub static mut SidData: [SID_DATA; 12] = unsafe {
+pub static mut SidData: [SID_DATA; 12] = {
     [
         _SID_DATA {
             Sid: &raw const NullSid as *mut PSID,
@@ -262,7 +262,7 @@ pub static mut SidData: [SID_DATA; 12] = unsafe {
 };
 
 #[no_mangle]
-pub static mut DomainSidData: [DOMAIN_SID_DATA; 8] = unsafe {
+pub static mut DomainSidData: [DOMAIN_SID_DATA; 8] = {
     [
         _DOMAIN_SID_DATA {
             Sid: &raw const AliasAdminsSid as *mut PSID,

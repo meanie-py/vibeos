@@ -16,7 +16,7 @@ extern "system" {
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_ole as *mut __wine_debug_channel };
+    &raw const __wine_dbch_ole as *mut __wine_debug_channel;
 
 static mut __wine_dbch_ole: __wine_debug_channel = unsafe {
     __wine_debug_channel {

@@ -298,7 +298,7 @@ unsafe extern "C" fn InstallPrivileges(hSecurityInf: HINF) {
     );
     if !NT_SUCCESS(Status) {
         // DPRINT removed
-        'done: loop {
+        loop {
             if !PolicyHandle.is_null() {
                 LsaClose(PolicyHandle);
             }
@@ -315,7 +315,7 @@ unsafe extern "C" fn InstallPrivileges(hSecurityInf: HINF) {
     ) == 0
     {
         // DPRINT removed
-        'done: loop {
+        loop {
             if !PolicyHandle.is_null() {
                 LsaClose(PolicyHandle);
             }
@@ -334,7 +334,7 @@ unsafe extern "C" fn InstallPrivileges(hSecurityInf: HINF) {
         ) == 0
         {
             // DPRINT removed
-            'done: loop {
+            loop {
                 if !PolicyHandle.is_null() {
                     LsaClose(PolicyHandle);
                 }
@@ -355,7 +355,7 @@ unsafe extern "C" fn InstallPrivileges(hSecurityInf: HINF) {
             ) == 0
             {
                 // DPRINT removed
-                'done: loop {
+                loop {
                     if !PolicyHandle.is_null() {
                         LsaClose(PolicyHandle);
                     }
@@ -847,7 +847,7 @@ unsafe extern "C" fn ApplyPasswordSettings(
     );
     if !NT_SUCCESS(Status) {
         // DPRINT removed
-        'done: loop {
+        loop {
             if !PasswordInfo.is_null() {
                 SamFreeMemory(PasswordInfo as PVOID);
             }
@@ -876,7 +876,7 @@ unsafe extern "C" fn ApplyPasswordSettings(
     );
     if !NT_SUCCESS(Status) {
         // DPRINT removed
-        'done: loop {
+        loop {
             if !PasswordInfo.is_null() {
                 SamFreeMemory(PasswordInfo as PVOID);
             }
@@ -905,7 +905,7 @@ unsafe extern "C" fn ApplyPasswordSettings(
     );
     if !NT_SUCCESS(Status) {
         // DPRINT removed
-        'done: loop {
+        loop {
             if !PasswordInfo.is_null() {
                 SamFreeMemory(PasswordInfo as PVOID);
             }
@@ -933,7 +933,7 @@ unsafe extern "C" fn ApplyPasswordSettings(
     );
     if !NT_SUCCESS(Status) {
         // DPRINT removed
-        'done: loop {
+        loop {
             if !PasswordInfo.is_null() {
                 SamFreeMemory(PasswordInfo as PVOID);
             }
@@ -1250,7 +1250,7 @@ unsafe extern "C" fn EnableAccount(
 
     if SetupGetIntField(&mut InfContext, 1, &mut nValue) == 0 {
         // DPRINT removed
-        'done: loop {
+        loop {
             if !ControlInfo.is_null() {
                 SamFreeMemory((ControlInfo).cast());
             }
@@ -1273,7 +1273,7 @@ unsafe extern "C" fn EnableAccount(
     );
     if !NT_SUCCESS(Status) {
         // DPRINT removed
-        'done: loop {
+        loop {
             if !ControlInfo.is_null() {
                 SamFreeMemory((ControlInfo).cast());
             }
@@ -1293,7 +1293,7 @@ unsafe extern "C" fn EnableAccount(
     );
     if !NT_SUCCESS(Status) {
         // DPRINT removed
-        'done: loop {
+        loop {
             if !ControlInfo.is_null() {
                 SamFreeMemory((ControlInfo).cast());
             }

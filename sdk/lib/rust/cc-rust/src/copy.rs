@@ -218,12 +218,18 @@ pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
                     core::ptr::addr_of_mut!(vacb),
                 );
                 if status >= 0 {
-                    let success = CcRosEnsureVacbResident(
-                        vacb,
-                        1u8,
-                        0u8,
-                        (current_offset % VACB_MAPPING_GRANULARITY as LONGLONG) as ULONG,
-                        partial_length,
+                    // C: _SEH2_TRY ... _SEH2_EXCEPT(EXECUTE_HANDLER) { Success = FALSE; }
+                    let mut success = 0u8;
+                    let _ = ntkrnl_sys::seh::try_except(
+                        &mut success,
+                        |s| *s = CcRosEnsureVacbResident(
+                            vacb,
+                            1u8,
+                            0u8,
+                            (current_offset % VACB_MAPPING_GRANULARITY as LONGLONG) as ULONG,
+                            partial_length,
+                        ),
+                        |_, _| ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER,
                     );
 
                     CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
@@ -240,7 +246,12 @@ pub unsafe extern "C" fn CcPerformReadAhead(file_object: PFILE_OBJECT) {
                 let mut vacb: PROS_VACB = core::ptr::null_mut();
                 let status = CcRosRequestVacb(shared_cache_map, current_offset, core::ptr::addr_of_mut!(vacb));
                 if status >= 0 {
-                    let success = CcRosEnsureVacbResident(vacb, 1u8, 0u8, 0, partial_length);
+                    let mut success = 0u8;
+                    let _ = ntkrnl_sys::seh::try_except(
+                        &mut success,
+                        |s| *s = CcRosEnsureVacbResident(vacb, 1u8, 0u8, 0, partial_length),
+                        |_, _| ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER,
+                    );
 
                     CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
 
@@ -448,14 +459,15 @@ pub unsafe extern "system" fn CcCopyRead(
         let mut vacb: PROS_VACB = core::ptr::null_mut();
         let status = CcRosGetVacb(shared_cache_map, current_offset, core::ptr::addr_of_mut!(vacb));
         if status < 0 {
-            // DUMMY_PSEH: ExRaiseStatus would be caught by caller's SEH — return FALSE instead
-            return 0;
+            ExRaiseStatus(status);
         }
 
         let vacb_offset = (current_offset % VACB_MAPPING_GRANULARITY as LONGLONG) as ULONG;
         let vacb_length = core::cmp::min(length - read_length, VACB_MAPPING_GRANULARITY - vacb_offset);
 
-        if CcRosEnsureVacbResident(vacb, wait, 0u8, vacb_offset, vacb_length) == 0 {
+        if crate::view::ensure_resident_or(vacb.cast(), wait, 0u8, vacb_offset, vacb_length, || {
+            CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
+        }) == 0 {
             CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
             return 0;
         }
@@ -498,8 +510,7 @@ pub unsafe extern "system" fn CcCopyWrite(
     let mut write_end = 0i64;
     let status = RtlLongLongAdd((*file_offset).QuadPart, length as LONGLONG, core::ptr::addr_of_mut!(write_end));
     if status < 0 {
-        // DUMMY_PSEH: return FALSE instead of raising
-        return 0;
+        ExRaiseStatus(status);
     }
 
     let mut current_offset = (*file_offset).QuadPart;
@@ -512,11 +523,12 @@ pub unsafe extern "system" fn CcCopyWrite(
         let mut vacb: PROS_VACB = core::ptr::null_mut();
         let status = CcRosGetVacb(shared_cache_map, current_offset, core::ptr::addr_of_mut!(vacb));
         if status < 0 {
-            // DUMMY_PSEH: return FALSE instead of raising
-            return 0;
+            ExRaiseStatus(status);
         }
 
-        let resident = CcRosEnsureVacbResident(vacb, wait, 0u8, vacb_offset, vacb_length);
+        let resident = crate::view::ensure_resident_or(vacb.cast(), wait, 0u8, vacb_offset, vacb_length, || {
+            CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
+        });
         if resident == 0 {
             CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
             return 0;
@@ -540,8 +552,7 @@ pub unsafe extern "system" fn CcCopyWrite(
         CcRosReleaseVacb(shared_cache_map, vacb, 1u8, 0u8);
 
         if status < 0 {
-            // DUMMY_PSEH: return FALSE instead of raising
-            return 0;
+            ExRaiseStatus(status);
         }
     }
 
@@ -663,8 +674,7 @@ pub unsafe extern "system" fn CcZeroData(
             core::ptr::null_mut(),
         );
         if mdl.is_null() {
-            // DUMMY_PSEH: return FALSE instead of raising
-            return 0;
+            ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
         }
 
         let pfn_array = MmGetMdlPfnArray(mdl);
@@ -702,8 +712,7 @@ pub unsafe extern "system" fn CcZeroData(
             }
             if status < 0 {
                 IoFreeMdl(mdl);
-                // DUMMY_PSEH: return FALSE instead of raising
-                return 0;
+                ExRaiseStatus(status);
             }
             write_offset.QuadPart += current_length as LONGLONG;
             length -= current_length as LONGLONG;
@@ -726,11 +735,12 @@ pub unsafe extern "system" fn CcZeroData(
         let mut vacb: PROS_VACB = core::ptr::null_mut();
         let status = CcRosGetVacb(shared_cache_map, write_offset.QuadPart, core::ptr::addr_of_mut!(vacb));
         if status < 0 {
-            // DUMMY_PSEH: return FALSE instead of raising
-            return 0;
+            ExRaiseStatus(status);
         }
 
-        let resident = CcRosEnsureVacbResident(vacb, wait, 0u8, vacb_offset, vacb_length);
+        let resident = crate::view::ensure_resident_or(vacb.cast(), wait, 0u8, vacb_offset, vacb_length, || {
+            CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
+        });
         if resident == 0 {
             CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
             return 0;
@@ -754,8 +764,7 @@ pub unsafe extern "system" fn CcZeroData(
         CcRosReleaseVacb(shared_cache_map, vacb, 1u8, 0u8);
 
         if status < 0 {
-            // DUMMY_PSEH: return FALSE instead of raising
-            return 0;
+            ExRaiseStatus(status);
         }
     }
 

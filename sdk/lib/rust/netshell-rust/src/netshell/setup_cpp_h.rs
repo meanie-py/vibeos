@@ -40,11 +40,11 @@ pub static MS_NDISUIO_W: [u16; 11] = [
 pub static NetworkComponents: [NETWORKCOMPONENT; 2] = [
     NETWORKCOMPONENT {
         pszDeviceId: &MS_TCPIP_W as *const [u16; 9] as *mut u16,
-        pClassGuid: unsafe { core::ptr::addr_of!(GUID_DEVCLASS_NETTRANS) },
+        pClassGuid: { core::ptr::addr_of!(GUID_DEVCLASS_NETTRANS) },
     },
     NETWORKCOMPONENT {
         pszDeviceId: &MS_NDISUIO_W as *const [u16; 11] as *mut u16,
-        pClassGuid: unsafe { core::ptr::addr_of!(GUID_DEVCLASS_NETTRANS) },
+        pClassGuid: { core::ptr::addr_of!(GUID_DEVCLASS_NETTRANS) },
     },
 ];
 

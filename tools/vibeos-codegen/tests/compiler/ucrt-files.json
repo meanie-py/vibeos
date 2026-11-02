@@ -1,0 +1,9 @@
+{
+  "build-amd64/build.ninja": "build sdk/lib/ucrt/CMakeFiles/ucrt.dir/string/x.cpp.obj: foo\n",
+  "build-amd64/libucrt_rust.a": "",
+  "build-amd64/libucrt_ref.a": "",
+  ".build-tools/llvm-mingw/bin/llvm-nm": "#!/bin/sh\ncase \"$*\" in\n *libucrt_ref.a*) printf '0000 T ref_isalpha\\n0000 T ref_strcmp\\n0000 T ref_strcoll\\n';;\n *libucrt_rust.a*) printf '0000 T rust_isalpha\\n';;\n *x.cpp.obj*) printf '0000 T isalpha\\n0000 T strcmp\\n0000 T strcoll\\n';;\nesac\n",
+  ".build-tools/llvm-mingw/bin/x86_64-w64-mingw32-clang": "#!/bin/sh\ncat >/dev/null\nprintf '%s' '{\"inner\":[{\"inner\":[{\"kind\":\"FunctionDecl\",\"name\":\"isalpha\",\"type\":{\"qualType\":\"long (const char *)\"}}],\"kind\":\"FunctionDecl\",\"name\":\"isalpha\",\"type\":{\"qualType\":\"int (int)\"}},{\"kind\":\"FunctionDecl\",\"name\":\"strcmp\",\"type\":{\"qualType\":\"int (const char *, const char *)\"}},{\"kind\":\"FunctionDecl\",\"name\":\"strcoll\",\"type\":{\"qualType\":\"int (const char *, const char *)\"}}]}'\n",
+  "build-amd64/sdk/lib/ucrt/CMakeFiles/ucrt.dir/string/x.cpp.obj": "",
+  "dll/win32/ucrtbase/ucrtbase.spec": "@ cdecl isalpha(long)\n@ cdecl strcmp(ptr ptr)\n@ cdecl strcoll(ptr ptr)\n"
+}

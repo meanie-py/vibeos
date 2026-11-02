@@ -347,16 +347,33 @@ def dummy_pseh_except_spans(text: str, masked: str | None = None) -> list[tuple[
     return spans
 
 
-def decided_live_lines(text: str, pinned: Mapping[str, int]) -> dict[int, tuple[str, int]]:
+def decided_live_lines(
+    text: str, pinned: Mapping[str, int], predefined: frozenset[str] = frozenset()
+) -> dict[int, tuple[str, int]]:
     """Line -> (innermost guard, the line it opened on) for each line of `text` inside a
     conditional whose every enclosing arm is DECIDABLY live under `pinned` (a bare `-DNAME`
     is `NAME=1` there, as C has it). An undecidable chain, a dead arm and every `#elif` arm
     are left out: their lines stay optional. A `#define`/`#undef` on a line every build
-    compiles counts for the conditionals after it."""
+    compiles counts for the conditionals after it, and `predefined` names the ones made
+    before `text` begins (`file_scope_defines`)."""
+    return _walk(text, pinned, predefined)[0]
+
+
+def file_scope_defines(tu_text: str, upto: int, pinned: Mapping[str, int]) -> frozenset[str]:
+    """Names `#define`d (and not since `#undef`d) on lines of `tu_text[:upto]` that every
+    build compiles: what a function body starting at `upto` sees. beepmidi's
+    `#define CONTINUOUS_NOTES` sits above the functions whose `#ifdef CONTINUOUS_NOTES` arms
+    it makes live; reading only the body, the seal left those arms' calls optional."""
+    return frozenset(_walk(tu_text[:upto], pinned, frozenset())[1])
+
+
+def _walk(
+    text: str, pinned: Mapping[str, int], predefined: frozenset[str]
+) -> tuple[dict[int, tuple[str, int]], set[str]]:
     out: dict[int, tuple[str, int]] = {}
     # frames: (arm is live, chain is decidable, an arm was taken, guard text, opened on)
     stack: list[tuple[bool, bool, bool, str, int]] = []
-    local: set[str] = set()
+    local: set[str] = set(predefined)
     for n, line in enumerate(text.splitlines(), 1):
         d = _LOCAL_DEFINE_RE.match(line)
         if d and all(f[0] and f[1] for f in stack):
@@ -377,13 +394,15 @@ def decided_live_lines(text: str, pinned: Mapping[str, int]) -> dict[int, tuple[
             stack[-1] = (False, False, stack[-1][2], line.strip(), stack[-1][4])
         elif kind == "endif" and stack:
             stack.pop()
-    return out
+    return out, local
 
 
-def _optional_conditional_spans(text: str, pinned: Mapping[str, int]) -> list[tuple[int, int]]:
+def _optional_conditional_spans(
+    text: str, pinned: Mapping[str, int], predefined: frozenset[str] = frozenset()
+) -> list[tuple[int, int]]:
     """`preprocessor_conditional_spans`, less the lines `decided_live_lines` settles: one
     span per line that is in a conditional and NOT decidably live."""
-    live = decided_live_lines(text, pinned)
+    live = decided_live_lines(text, pinned, predefined)
     starts = [0] + [i + 1 for i, c in enumerate(text) if c == "\n"]
     spans: list[tuple[int, int]] = []
     for a, b in preprocessor_conditional_spans(text):
@@ -397,7 +416,10 @@ def _optional_conditional_spans(text: str, pinned: Mapping[str, int]) -> list[tu
 
 
 def dead_region_spans(
-    text: str, masked: str | None = None, pinned: Mapping[str, int] | None = None
+    text: str,
+    masked: str | None = None,
+    pinned: Mapping[str, int] | None = None,
+    predefined: frozenset[str] = frozenset(),
 ) -> list[tuple[int, int]]:
     """Every span of `text` the build compiles but does not execute.
 
@@ -409,7 +431,7 @@ def dead_region_spans(
     conditional = (
         preprocessor_conditional_spans(text)
         if pinned is None
-        else _optional_conditional_spans(text, pinned)
+        else _optional_conditional_spans(text, pinned, predefined)
     )
     return sorted(conditional + dummy_pseh_except_spans(text, masked))
 

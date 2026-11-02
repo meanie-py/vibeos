@@ -269,15 +269,8 @@ unsafe extern "system" fn FatQueryStandardInfo(
     Buffer: *mut FILE_STANDARD_INFORMATION,
     Length: *mut i32,
 ) {
-    // PAGED_CODE expansion
-    {
-        if KeGetCurrentIrql() > 0 {
-            #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-            core::arch::asm!("ud2", options(nostack, nomem));
-            #[cfg(target_arch = "aarch64")]
-            core::arch::asm!("udf #0", options(nostack, nomem));
-        }
-    }
+    // PAGED_CODE() only objects above APC_LEVEL; this trapped (ud2) at APC_LEVEL itself.
+    debug_assert!(KeGetCurrentIrql() <= 1);
 
     DebugTrace!(1, Dbg, b"FatQueryStandardInfo...\n\0".as_ptr() as *const i8, 0);
 

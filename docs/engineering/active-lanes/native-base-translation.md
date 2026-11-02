@@ -143,8 +143,7 @@ What the batch added to the shared crates and tools:
      island's `[T; 0]` is an incomplete declaration, not a length mismatch.
    - **Smoke** passes on all three arches.
    - **normaliz is not native:** IdnToAscii/IdnToUnicode say "Taken from Wine
-     kernel32/locale.c", and nameprep.c is their table. It waits for the owner's call on
-     Wine.
+     kernel32/locale.c", and nameprep.c is their table. The owner approved it: item 7.
 6. **The boot loaders' RTL is Rust except `unicode.c` (2026-10-18, $0).** freeldr (BIOS),
    rosload and uefildr link `blrtl-rust`: the kernel's bitmap/compress/crc32/largeint/
    random/byteswap/mem rlibs and rtl-diag's new `image` feature, with blrtl.cmake's per-arch
@@ -170,8 +169,49 @@ What the batch added to the shared crates and tools:
    - librtl's crates take ntkrnl-sys without `hal_bindgen`: it raw-dylib-imported the three
      Nls* globals librtl itself defines, and amd64 ntdll's link crashed lld over it.
    Smoke reached on i386, amd64, arm64 and amd64-bios.
-7. Pick the next native area from `rust-port-status.md` (what is still C and not on the
-   skip list below).
+7. **normaliz is Rust (2026-11-01, owner's call on this Wine-derived DLL, $0.03).** All four
+   TUs went through `rustconv port`: `nameprep.c`'s two tables as `port data` ($0), the
+   other three as 9 sealed Haiku functions. `cargo_cell_gen` moved the link to
+   `normaliz-cargo`, which is PE-EQUIVALENT to the cmake build on all three arches, and smoke
+   reached the marker on i386, amd64 and arm64. `strlenW`/`tolowerW` (ReactOS
+   `wine/unicode.h`'s `wcslen`/`towlower`) went into `win32macros-rust` for every Wine crate.
+   - **Two Wine bugs, fixed in the Rust with divergence comments.** `IdnToUnicode` bounds
+     its punycode insert by `cchASCIIChar`, the INPUT length, so a shorter output buffer is
+     overrun; and under `IDN_USE_STD3_ASCII_RULES` an input of just `L"\0"` reads
+     `lpASCIICharStr[-1]` (an empty label's "last character"). The host harness found the
+     second: the genuine C faulted on its guard page.
+   - **Graded vs the genuine C** (`difftest/normaliz_ascii.json`, 13,344 cases;
+     `normaliz_unicode.json`, 1,060 curated cases): 0 mismatches, every mutant detected.
+     Two harness features made it possible: `c_env_probe` (the shared env reports state
+     after each call, here the last error and live heap blocks, so an error code or a leak
+     is a mismatch) and `{"arg": n, "mul": 2}` extents for WCHAR-counted buffers.
+   - **`port data` flips CMake, and ran under a live build.** It comments the data TU out
+     of the source list, so the running arm64 build linked normaliz.dll without the tables
+     and said LINK_FAIL, nothing hinting that the tree had moved. Fixed both ways
+     (2026-11-01): `port flip`/`port data` refuse while a build dir of THIS tree holds its
+     broker lock, and `build` reclassifies any FAILURE over a moved tree as
+     BUILD_INPUTS_MOVED naming the original verdict (a `Run.finalize_hooks` entry, so every
+     early return gets it; the success path already refused to stamp a moved tree).
+8. **Survey: the native C still compiled (2026-11-01, amd64 `compile_commands.json`).**
+   Excluding vendored trees, `sdk/tools`, rostests, and every module DIRECTORY whose sources
+   carry a Wine marker (a debug channel, a `wine/` include, a Wine/CodeWeavers notice; a
+   per-file test let mshtml, `directx/wine` and setupapi through via their precomp.h):
+   **~20,900 non-blank lines in 237 TUs across 122 directories.** Most of the bulk is not
+   ours: `dll/win32/wow64` (8,422, fex-arm) and `wow64cpu`, `bootvid` (~1,000,
+   control-plane B), `shimgvw` (C++ lane), and the audio `backpln` bits. Ours, by size:
+   - **GUID data libraries:** `uuid`, `strmiids`, `dxguid` (~1,960 lines, all DEFINE_GUID).
+     Blocked on a tool gap: `port data` does not emit header `DEFINE_GUID`s (why cdrom's
+     `guid.c` stayed C). Teaching it to would retire these for $0.
+   - **The CRT's own residue:** `crt/math` (43 TUs incl. `arm64/`), `crt/printf`,
+     `crt/misc`, `crt/except/amd64`, `crtheap`, `vcstartup`, `gcc-compat`. This is the
+     msvcrt lane's, i.e. ours; read the CRT rows in `rust-port-status.md` before
+     starting, since some are deliberately C (startup, compiler support).
+   - **A tail of small native libs and DLLs, 60-420 lines each:** `epsapi`, `lsalib`,
+     `scrnsave`, `streamci`, `batt`, `shimlib`, `aux_klib`, `dxapi`, `acledit`,
+     `udmihelp`, `sdk/lib/nt`, `tdilib`, `conutils`, `ksuser`, `devcpux`, `sfc`, `sfc_os`,
+     `dmilib`, `wdfdriverentry`, `esent`, `wing32`, `skiplist`, and a few win32ss
+     stragglers. One `rustconv port` batch, a few dollars on Haiku.
+   Re-measure before starting; the script is in this commit's message.
 
 ## Not ours: skip these
 
@@ -197,8 +237,18 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
   an edited one leaves the block (`generated_items.py`). reactos-rust's three fixes now sit
   above their blocks; the `!` one was also fixed at the root (render applies the bang).
   Still owed: the SDK lowering does not widen a `ULONGLONG * ULONG` (it has no member
-  types for a macro parameter), so `GetDiskSizeInBytes` stays a hand port; and resolve's
-  generated blocks have no stamps yet.
+  types for a macro parameter), so `GetDiskSizeInBytes` stays a hand port. Typing a
+  member by field NAME across the island cannot settle it (measured 2026-11-01:
+  reactos-rust's `SectorCount` is `c_uint`, `LARGE_INTEGER` or `ULARGE_INTEGER`, and the
+  two with `.QuadPart` disagree on sign); it needs the parameter's type at the C call
+  sites, a clang `__typeof__` probe per site. Low value while the two hand ports are
+  stamp-protected, so parked. **resolve's
+  tree-consensus block is stamped (2026-11-01):** `render` stamps each item, and
+  `preserve_hand_edits` moves an edited one above the block (an `extern` declaration in
+  its own `extern "ABI" {}`) before the run re-derives the rest from the tree, which used to
+  overwrite it. All 269 such blocks in the tree round-trip unchanged. resolve's other
+  generated blocks (cross-TU, substrate, facts, local types, externs, INITGUID, TCHAR,
+  wine channels) are still unstamped.
 - **usetup's cabinet/file-queue code is one crate now** (2026-10-17): `spapisup-rust`, an
   rlib usetup-rust and reactos-rust both link, $0 (the two copies were the same banked
   translation; usetup's was moved, its island generated by the hand-written `spapisup`
@@ -217,8 +267,13 @@ driver (`tools/merge_drivers.py`, which also merges the cohab census), and psapi
   INTEGRATED Rust, not the bank -- a replay could not check the bank, because a flipped TU
   has no compile command and translate refuses it (`MacroAuthorityError`); 119 census rows
   do not resolve to a file pair, and 162 TUs whose CMakeLists profile_derive refuses were
-  decided on tree-wide defines only. Still owed: the seal sees only the body, so a
-  file-scope `#define` (beepmidi's `CONTINUOUS_NOTES`) still leaves its arms optional.
+  decided on tree-wide defines only. **File-scope `#define`s count too (2026-11-01):** the
+  seal finds the function's definition in the TU by name (exactly one) and seeds the walker
+  with what the lines above it, compiled by every build, `#define` and do not `#undef`
+  (`dead_regions.file_scope_defines`), so beepmidi's `CONTINUOUS_NOTES` arms are required.
+  A body it cannot place sees none, as before. Measured first: `live_arm_audit` (which
+  already walks whole files, a superset) reports 475 live-arm calls and 7 the Rust does
+  not name, all macros or a cast the seal never tokenizes, so no banked body turns red.
 - **The cost counter now bills failed attempts** (2026-10-17). Three causes: the Claude
   backend never set `usage_known`, so all 6,637 attempt `result.json`s said
   `cost_usd: null`; FAIL lines did not print the running figure `port translate` bills a

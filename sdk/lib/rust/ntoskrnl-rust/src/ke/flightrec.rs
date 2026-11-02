@@ -58,6 +58,12 @@ pub const OP_PAGE_UNMAP: u32 = 49;
 /// descriptor or from a software PTE decoded with the hardware layout — and
 /// `valid()` is only bit 0, so it cannot settle that either.
 pub const OP_PAGE_PTE: u32 = 50;
+/// Reverse-map insert/delete (mm/rmap.rs). `object` is the page-aligned VA as for
+/// OP_PAGE_MAP, `thread` is the OWNING PROCESS (one shared image VA is mapped in many
+/// WoW64 processes), data = the PFN. With OP_PAGE_MAP/UNMAP they let a
+/// `MmDeleteRmap mapping-not-in-list` say "never inserted" from "already removed".
+pub const OP_RMAP_INSERT: u32 = 51;
+pub const OP_RMAP_DELETE: u32 = 52;
 // ARM64 exception recovery: object is the named address. data retains the
 // exception code (PC), access kind (FAR), or zero (LR/resume).
 pub const OP_KERNEL_FAULT_PC: u32 = 64;
@@ -142,6 +148,8 @@ pub fn flightrec_op_name(op: u32) -> *const u8 {
         OP_PAGE_MAP => b"page-map\0".as_ptr(),
         OP_PAGE_UNMAP => b"page-unmap\0".as_ptr(),
         OP_PAGE_PTE => b"page-pte-raw\0".as_ptr(),
+        OP_RMAP_INSERT => b"rmap-insert\0".as_ptr(),
+        OP_RMAP_DELETE => b"rmap-delete\0".as_ptr(),
         OP_KERNEL_FAULT_PC => b"kernel-fault-pc\0".as_ptr(),
         OP_KERNEL_FAULT_FAR => b"kernel-fault-far\0".as_ptr(),
         OP_KERNEL_FAULT_LR => b"kernel-fault-lr\0".as_ptr(),

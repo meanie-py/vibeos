@@ -40,7 +40,10 @@ is a lead.
 
 Merge `cd5f05edbc1` (upstream c25e4fd7dec..80dec44f649, 2026-10-15..10-31; 63 conflicts, each
 resolution in the commit message) plus follow-up `7b315dd0e56`, on branch `upstream-sync-2`.
-The next sync starts from `80dec44f649`.
+The next sync starts from `80dec44f649`. LANDED 2026-11-01 as master `f702ef72441` (batch 65, after the
+batch-60 bounce fix). Of the upstream commits after it, two are already handled: 006cf40b7e3 (LSASRV
+LsarLookupSids) is hand-ported into lsasrv-rust, and dca105d7490 (BOOTVID:PC98) is a pruned tree.
+The git merge of them will still come through as dead C, plus a pc98 tree to keep deleted.
 
 **Status at park (2026-11-01):** submitted to merge-integrator as `upstream-sync-2 @ 1acc6748417`
 (queued as its own batch 60, merging master `558865d4c44` onto it, which `merge-tree` shows as 0 conflicts).

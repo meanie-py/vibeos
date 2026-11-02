@@ -602,6 +602,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **setupapi file-queue copies failed on the live boot, and a NULL target name went to the
+  wrong file (FIXED 2026-11-01 in setupapi-rust; the C has all three bugs).** Measured with the
+  modrun setupapi probe: `%TEMP%` = `X:\reactos\TEMP` EXISTS on the x86 live boot, but `X:` is
+  the read-only `/MININT` CD, so creating any file there fails `ERROR_ACCESS_DENIED`. (The first
+  version of this entry said `%TEMP%` did not exist. That was an inference from an
+  `ERROR_PATH_NOT_FOUND`, and it was wrong.) The ReactOS arm of `do_file_copyW` staged every
+  copy through `GetTempFileNameW(GetTempPathW())`, so every queued copy failed; a `%TEMP%` on
+  another volume would also have broken its final `MoveFileExW`, which has no COPY_ALLOWED.
+  The fix stages beside the target, as Windows' setupapi does (`SET*.tmp` in the destination
+  directory), and deletes a staged file that is not moved into place. The same suite caught
+  two more bugs on arm64, whose RAM-disk `%TEMP%` is writable: a NULL `TargetFilename` was
+  never defaulted to the source name, and `concat_W` left the path unterminated, so the second
+  copy (`b.txt`) overwrote the FIRST op's target (`a2.txt`). The livecd environment was left
+  alone: a read-only system volume is the CD's nature, and setupapi was the component that
+  depended on writing there.
 - **arm64 kmtest: `MiIncrementPageTableReferences` counts a page table past 512 (open, found
   2026-11-01, one occurrence, recovered on retry).** A kernel Rust panic in the kmtest sweep:
   `assertion failed: new_val <= ntkrnl_sys::mm::PTE_PER_PAGE as u32` at
@@ -613,6 +628,92 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Not yet triaged. Likely shapes are an increment without its matching decrement
   (map/unmap imbalance) or a PFN read for the wrong PDE. Start with `farm --arches arm64`
   using the conformance payload, and arm the tripwire before reading the dump.
+- **amd64-bios: demand-zero fault on an already-valid PTE (FIX LANDING 2026-11-01, smp-bringup;
+  root cause by code reading, the race has not been reproduced on demand).** Cause: the 64-bit
+  self-map branch of `MmArmAccessFault` (a kernel fault on a page-table VA) built user
+  PXE/PPE/PDEs with an unlocked check-then-create, while every other user page-table writer holds
+  the process working-set lock, and `MiMakePdeExistAndMakeValid` -> `MiMakeSystemAddressValid`
+  RELEASES that lock before touching the table, so every ROS `page.rs` mapping (image views) went
+  through the unlocked branch. WoW64 is where 32-bit views and ARM3 private memory share page
+  tables below 4G. Fixed by taking the WS lock there for a user VA at <= APC_LEVEL when the thread
+  holds none; x86/amd64 `page.rs` and `rmap.rs` now log the per-VA ledger the not-in-list guard
+  dumps. Original report: A kernel Rust panic after the boot marker, while
+  a WoW64 32-bit app was starting (`[FEX-WOW64C]` lines, then winsxs manifest opens):
+  `assertion failed: ((*PointerPte).valid() as usize) == 0` at
+  `ntoskrnl-rust/src/ARM3/pagfault.rs:2292` (the `ASSERT` at the top of `MiResolveDemandZeroFault`,
+  inlined into the `MmArmAccessFault` call). BUGCHECK `0xE0525354`, P4 = 0x8F4, `-smp 2`. Seen in
+  the batch-66 gate `20261101-162640-4a__9dav` (`smoke-amd64-bios-a1/`, preserved in
+  `~/vibeos-flake-farm/fails/auto/20261101-170141-h3n7guz0-smoke-amd64-bios-BUGCHECK`). That
+  batch touched no MM code, and the same media then passed 3/3 boots at `-smp 1` and 4/4 at `-smp 2`.
+  The shape is a second CPU resolving the same PTE between the fault's validity check and the
+  demand-zero call, so look for a path that releases the working-set lock in between.
+  Repro: `farm --arches amd64-bios` with `--smp 2`.
+  **Second occurrence, a different signature, in the very next gate** (`20261101-171955-l2klm01v`,
+  same batch plus batch 67): `0x1A` from `[MMGUARD] rmap.MmDeleteRmap mapping-not-in-list`
+  (Page `0x55c4`, Address `0x7c3b7000`, inside a WoW64 process right after `gui32.exe` exited),
+  preserved at `~/vibeos-flake-farm/fails/auto/20261101-180225-j0r39m3x-smoke-amd64-bios-BUGCHECK`.
+  Today's earlier gates passed amd64-bios 5/5 with the same WoW64 workload, so either batch 66
+  raised the rate or this was bad luck. The WoW64 thunk generator lint-rs moved to Rust emits
+  byte-identical tables (NT 303 and win32k 740 syscalls, checked against master's Python), so
+  it is not the thunks.
+- **x86 user mode never calls vectored exception handlers (open, found 2026-11-01, needs
+  an owner: rtl-except + wow64).** i386's and amd64's Rust `RtlDispatchException` drop the
+  `RtlCallVectoredExceptionHandlers` call, faithfully: the C guards it with `#ifndef
+  _NTOSKRNL_`, and librtl only ever builds with `-D_NTOSKRNL_`
+  (`sdk/lib/rust/rtl-except/src/{i386,amd64}/except.rs` say so). arm64 calls them, gated on
+  `RtlpGetMode() == UserMode`. Seen in the guest: a probe's `AddVectoredExceptionHandler`
+  handler never ran on i386, and the fault ended the process (`20261101-132440-czxr3qjn`). The
+  fix is arm64's gate on the other two, but it would wake handlers that have never run there,
+  wow64's `Wow64pVeh` on amd64 among them, which deliberately goes through
+  `Wow64PrepareForException` instead (`dll/ntdll/dispatch/amd64/dispatch.S`). It needs smoke
+  and the wow64 suites, not a drive-by.
+- **netshell lists no connections: the guest's NIC has no driver in the Net class (open, found
+  2026-11-01, netstack).** The connection manager in both C and Rust walks
+  `SetupDiGetClassDevs(GUID_DEVCLASS_NET, DIGCF_PRESENT)`, which returns no devices. The
+  e1000 (`PCI\VEN_8086&DEV_100E`, virtio-net on arm64) is present with an empty class and no
+  service. Separately, `GetAdaptersInfo` names the one adapter "netstack smoltcp adapter
+  (Intel Ethernet)" where Windows gives its `{NetCfgInstanceId}` GUID, so even a Net-class device
+  would never match it. probes/netshell.c's `replay` lines retrace each step
+  (`20261101-150612-t3gz_kkw`). Network Connections stays empty until the netstack registers
+  its adapter the way NDIS miniports do.
+- **arm64 Pi 4: `services.exe` calls a null function pointer at boot, so no device installs
+  (open, found 2026-11-01, graviton; 1 of 5 Pi 4 boots of master `b2564f11c37`+bwfm).** The kill
+  record: `C0000005`, PC=0, LR=0, second chance, `Proc= services.exe`; the boot reaches the desktop
+  but umpnpmgr (inside services.exe) never installs `VIBEOS\CYW43455`, so the Wi-Fi driver never
+  loads. An earlier first-chance write to NULL in the same boot was at `0x7FFB7001488` (a DLL, not
+  yet named). Serial: `serial-20261101-153827` (bench `D:\home\vibeos-rpi4-setup`), second boot.
+  QEMU arm64 smoke does not show it.
+- **arm64 Pi 4: a real user-mode FAULTLOOP on a stack page (open, found 2026-11-01, graviton;
+  1 of 5 boots).** `[FAULTLOOP] VA=0x13BFFA PC=0x7FFB70376E0 ESR=0x92000047 DFSC=0x07`, the pager
+  reporting success 64 times with identical registers (the detector that fires only on a true
+  loop since 2026-10-04); X0=0x13AFF0, so a write just above the stack pointer region, in the same
+  `0x7FFB7...` DLL as the null write above. PTE `0x00C0000034BB0743` is valid when reported. Same
+  serial capture, third boot.
+
+- **fastfat/cdfs translation audit: half of each driver only grep-scanned (owed, found
+  2026-11-01, research).** Three Sonnet agents compared the early DeepSeek translations
+  against the in-tree C; everything they confirmed is fixed (win11-flip, see its commits).
+  Compared function by function: fastfat's C glue (`rust_cohab_*.c`), FSCTL dispatch, lock,
+  volume-info, completion and exception paths, allocsup, the FileInformation handlers, the
+  write/read cores; cdfs's dirent/path-table/name/mount/read/allocation/query paths. ONLY
+  scanned (constants, call-multiset diffs, cfg gates), so still owed a line-by-line read:
+  fastfat `FatCommonCreate` and the open paths, `FatCreateVcb`/`FatDeleteVcb`/
+  `FatCreateFcb`, `FatVerifyVcb`/`FatPerformVerify`, `FatMoveFile`, `FatDismountVolume`,
+  `FatSetRenameInfo`/`FatRenameEAs`/directory defrag, the rest of deviosup/cachesup/easup,
+  lockctrl, filobsup, pnp, shutdown, acchksup, fatinit; cdfs create, cleanup, close,
+  lockctrl, pnp, verfysup (`CdVerifyVolume`), devctrl, workque, fspdisp, shutdown,
+  prefxsup, write, and the tails of `CdLookupAllocation` and strucsup. Known left as-is:
+  fastfat's oplock stand-ins (`FsRtlOplockBreakH` SUCCESS, `FsRtlCheckOplockEx` ignoring
+  Flags: ntoskrnl stubs them at 0xA00+), `KeAcquireSpinLockRaiseToDpc` in
+  `rust_cohab_fat.c` (raises IRQL, takes no lock: UP-only), cdfs's `FsRtlIsLeadDbcsCharacter`
+  stand-in (always FALSE, DBCS OEM code pages), `RtlOemStringToCountedUnicodeSize` (Length*2,
+  SBCS-only), and the lost file/line in `FatBugCheck`/`CdBugCheck` parameter 1.
+- **amd64 STATUS_NONEXISTENT_SECTOR in-page error, 0x1E during the boot WoW64 self-tests
+  (open flake, seen once 2026-11-01, research).** hostapps `20261101-123017-7ue7skcb`:
+  `[MM] Failed to page data in! st=c0000015 off=10000` while `apc32.exe` created threads,
+  then BUGCHECK 0x1E (0xC0000006). The rerun of the same media was clean
+  (`20261101-123345-09ibq5oq`), as were five hostapps runs after it. First boot on the new
+  XFS volume; most likely the CD through uniata. Not reproduced.
 - **arm64 kmtest ZwAllocateVirtualMemory: its two system threads now finish in the other order
   (open question, found 2026-10-19, research; benign for the ratchet).** The pass count moved
   576/579/582 on the version-flip + handle-biasing branch, where master reads 581. Thread 1's
@@ -6791,7 +6892,28 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   every identity PDE, so OVMF's identity-only regions near the top of 2 GiB left valid EMPTY
   kernel PDEs inside the nonpaged-system range. `winldr_i386.rs` now allocates the kernel table
   only when a KernelMapping region needs it (divergence from the C, commented). 2 GiB boot: 0
-  asserts, desktop (`20261101-133844-znu7bcj0-smoke-i386`). **Next:** the loader/FS/driver tail. `debug_assert!` is gated on
+  asserts, desktop (`20261101-133844-znu7bcj0-smoke-i386`). **fastfat, cdfs, storahci, cmlib and
+  afd ARMED 2026-11-01**, after `nt_assert!` stopped panicking (it reports through RtlAssert and
+  continues, as the C's DBG ASSERT). Found: classpnp `ClassReadDriveCapacity`, classpnp
+  `ClasspPersistentReserve` and usbaudio `PinRenderProcess` lowered an overlapping
+  `RtlMoveMemory` to `copy_nonoverlapping` (new rule `scan_move_vs_nonoverlapping`, 78 baselined
+  disjoint copies to review); cdfs/fastfat stored 8-aligned dir-info structs into a 4-aligned
+  WoW64 user buffer; fastfat's LFN copy was WCHAR-typed on a packed record, `FatNoOpAcquire`
+  set top-level IRP 1 for `FSRTL_CACHE_TOP_LEVEL_IRP`, and an empty `DbgDoit!` dropped a DBG
+  increment; and a workspace `[profile]` edit never rebuilt `rust_crate_sources` edges.
+  **OWED:** classpnp, disk and cdrom -- on 64-bit `COMMON_DEVICE_EXTENSION` is 64/128-aligned
+  (a `LOOKASIDE_ALIGN` lookaside inside it) while `IoCreateDevice` places extensions 16-aligned,
+  as the C does; needs a design decision (align extensions in `IoCreateDevice`, or keep these
+  crates unarmed). Then freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks),
+  win32k-rust (10) and the remaining drivers. Two armed-fastfat asserts printed twice per amd64-bios boot
+  (`20261101-183850-m41czity`). `cachesup.rs:182` FIXED 2026-11-01: fastfat mounting the BIOS
+  machine's EMPTY floppy got STATUS_NO_MEDIA_IN_DEVICE from MmMakeDataSectionResident, which
+  cc-rust's `CcRosEnsureVacbResident` turned into FALSE (a stale "DUMMY_PSEH: return FALSE
+  instead of raising" stand-in, 11 sites) -- "would block" to a WAIT caller, so fastfat raised
+  STATUS_CANT_WAIT. cc-rust now raises as the C does, releasing its BCB/VACB first.
+  **OWED:** `read.rs:590`, a DASD non-cached read returning STATUS_VERIFY_REQUIRED on the
+  volume's own VerifyThread (`20261101-200736-od_rznoq`); find which IrpContext flag should
+  have set SL_OVERRIDE_VERIFY_VOLUME, and whether the C does the same on an empty floppy. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of

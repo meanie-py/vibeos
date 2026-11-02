@@ -44,6 +44,7 @@ pub mod name;
 pub mod notify;
 pub mod oplock;
 pub mod pnp;
+pub mod sectorsize;
 pub mod stackovf;
 pub mod tunnel;
 pub mod unc;

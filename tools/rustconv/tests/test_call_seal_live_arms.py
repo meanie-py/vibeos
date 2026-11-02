@@ -59,3 +59,51 @@ def test_audit_bounds_survive_an_ifdef_inside_the_body(tmp_path):
     )
     got = c_functions(c)
     assert got["a"] == (1, 10) and got["b"] == (11, 17)
+
+
+BEEPMIDI = """#define CONTINUOUS_NOTES
+#if FOO
+#define MAYBE
+#endif
+#define GONE
+#undef GONE
+
+static void g(int n);
+
+static void play(int n)
+{
+#ifdef CONTINUOUS_NOTES
+    keep_going(n);
+#endif
+#ifdef MAYBE
+    maybe(n);
+#endif
+#ifdef GONE
+    gone(n);
+#endif
+#ifdef LATER
+    later(n);
+#endif
+}
+#define LATER
+"""
+
+
+def test_a_file_scope_define_above_the_function_makes_its_arm_required():
+    """beepmidi: `#define CONTINUOUS_NOTES` is at file scope, and the seal saw only the body."""
+    body = BEEPMIDI[BEEPMIDI.index("static void play") : BEEPMIDI.index("#define LATER")]
+    names = {"keep_going", "maybe", "gone", "later"}
+    sealed = seal_calls(body, names, tu_source=BEEPMIDI, pinned={})
+    # Unconditional define above: required. Defined under an undecidable #if, #undef'd
+    # again, or only defined after the function: optional, as C would have it or could.
+    assert _dead(sealed) == {"keep_going": False, "maybe": True, "gone": True, "later": True}
+    # Without pinned defines the seal stays in its old mode: every arm optional.
+    assert all(_dead(seal_calls(body, names, tu_source=BEEPMIDI)).values())
+
+
+def test_an_unlocatable_body_sees_no_file_scope_defines():
+    """Two definitions of the name (or none) cannot place the body; nothing is assumed."""
+    body = BEEPMIDI[BEEPMIDI.index("static void play") : BEEPMIDI.index("#define LATER")]
+    tu = BEEPMIDI + "\nstatic void play(int n)\n{\n}\n"
+    sealed = seal_calls(body, {"keep_going"}, tu_source=tu, pinned={})
+    assert _dead(sealed) == {"keep_going": True}

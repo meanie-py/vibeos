@@ -26,7 +26,7 @@ pub static mut IID_IDirect3DDeviceManager9: GUID = _GUID {
     ],
 };
 
-static mut renderer_ops: strmbase_renderer_ops = unsafe {
+static mut renderer_ops: strmbase_renderer_ops = {
     strmbase_renderer_ops {
         renderer_query_accept: Some(
             evr_query_accept

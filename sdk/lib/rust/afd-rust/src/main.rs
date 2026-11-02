@@ -11,7 +11,7 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::ob::*;
 use ntkrnl_sys::rtl::*;
-use ntkrnl_sys::ddk::{FILE_FS_DEVICE_INFORMATION, _FSINFOCLASS_FileFsDeviceInformation, IRP, IoCancelIrp, IoCreateDevice, IoReleaseCancelSpinLock, KeInitializeMutex, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_FS_DEVICE_INFORMATION, PFILE_FULL_EA_INFORMATION, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PLARGE_INTEGER, PIO_COMPLETION_ROUTINE, PUNICODE_STRING, ZwClose};
+use ntkrnl_sys::ddk::{FILE_FS_DEVICE_INFORMATION, _FSINFOCLASS_FileFsDeviceInformation, IRP, IoCancelIrp, IoCreateDevice, IoReleaseCancelSpinLock, KeInitializeMutex, PDEVICE_OBJECT, PDRIVER_OBJECT, PFILE_FS_DEVICE_INFORMATION, PFILE_FULL_EA_INFORMATION, PFILE_OBJECT, PIO_STACK_LOCATION, PIRP, PUNICODE_STRING, ZwClose};
 // FORCEINLINE WDK macros: use the linkable inline versions, not the (non-exported)
 // bindgen `ddk` extern stubs.
 use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSetCancelRoutine};

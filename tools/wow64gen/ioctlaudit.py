@@ -53,7 +53,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from marshalgen import (
     REPO,
     Record,
-    diff_struct,
+    diff_structs,
     dump_layouts,
     extract_flags,
 )
@@ -211,11 +211,14 @@ def build_rows() -> list[Row]:
                 f"fix: ./vibeos-cli build --arch {arch}"
             )
 
-    flags32 = extract_flags(REPO / "build-i386", "tdihelpers/tdi.c")
-    flags64 = extract_flags(REPO / "build-amd64", "tdihelpers/tdi.c")
+    # Both original TUs are Rust now; this target's cohab stub retains its
+    # kernel include/define configuration (drivers/network/tdihelpers/CMakeLists.txt).
+    flags32 = extract_flags(REPO / "build-i386", "tdihelpers/rust_cohab_stub.c")
+    flags64 = extract_flags(REPO / "build-amd64", "tdihelpers/rust_cohab_stub.c")
     db32 = dump_layouts(flags32, LAYOUT_TU)
     db64 = dump_layouts(flags64, LAYOUT_TU)
 
+    verdicts = diff_structs(sorted(set(wire.values())), db32, db64)
     rows: list[Row] = []
     for ioctl in sorted(ioctls):
         _op, method = ioctls[ioctl]
@@ -265,7 +268,7 @@ def build_rows() -> list[Row]:
             )
             continue
         for struct in structs:
-            v = diff_struct(struct, db32, db64)
+            v = verdicts[struct]
             r32: Record | None = v.rec32
             r64: Record | None = v.rec64
             rows.append(

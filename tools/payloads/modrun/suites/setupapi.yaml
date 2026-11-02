@@ -1,0 +1,42 @@
+# setupapi (dll/win32/setupapi -> setupapi-rust, all 18 TUs). Smoke only proves device install
+# reached a desktop; this drives what it never prints -- the INF parser field by field, the
+# string table, AddReg/DelReg, the file queue, class/device/devprop enumeration and a class
+# driver list whose models exist only under NT<arch>.10.0 (the hand-ported
+# SetupDiBuildDriverInfoList's VibeOS fallback). One probe (probes/setupapi.c), staged twice:
+# as setupapi_c.exe it loads the pre-flip C (setupapi_c.dll, from c_oracle.cmake) beside it,
+# under any other name the system setupapi.dll. Both print values only, so the outputs must
+# match byte for byte.
+module: setupapi
+variants:
+  c: '%SystemRoot%\bin\modrun\setupapi_c.exe'
+  rust: '%SystemRoot%\bin\modrun\setupapi_probe.exe'
+ninja: [setupapi_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/setupapi-{arch}.exe', dest: bin/modrun/setupapi_c.exe}
+  - {src: 'tools/payloads/modrun/probes/setupapi-{arch}.exe', dest: bin/modrun/setupapi_probe.exe}
+  - {src: 'build-{arch}/dll/win32/setupapi/setupapi_c.dll', dest: bin/modrun/setupapi_c.dll}
+cases:
+  - id: logic
+    expect: ['st add a=1', 'addreg 1', 'commit 1', 'build 1', 'drv 0 ', 'probe done']
+    timeout: 240
+    diverge:
+      # setupapi-rust install.rs append_multi_sz_value / delete_multi_sz_value. The C appends
+      # one WCHAR of uninitialized heap to every FLG_ADDREG_APPEND (it writes total+2 where
+      # total already counts the final NUL: read back as 0x0072, 0x0038, 0x0063 -- different
+      # every boot), and FLG_DELREG_MULTI_SZ_DELSTRING writes its result past the end of its
+      # own heap block. The C's lines are junk by construction; the Rust's are pinned exactly.
+      - why: 'multi-sz append writes heap garbage; delstring overflows its buffer (C)'
+        c: '^\s*reg (Multi|Steps) type=7 size=(?!14 )'
+        rust: '^\s*reg (Multi type=7 size=18 \[a\|b\|c\|d\|\] raw 0061 0000 0062 0000 0063 0000 0064 0000 0000|Steps type=7 size=18 \[a\|b\|c\|d\|\] raw 0061 0000 0062 0000 0063 0000 0064 0000 0000|Steps type=7 size=22 \[a\|b\|c\|d\|e\|\] raw 0061 0000 0062 0000 0063 0000 0064 0000 0065 0000 0000|Steps type=7 size=18 \[a\|c\|d\|e\|\] raw 0061 0000 0063 0000 0064 0000 0065 0000 0000)$'
+      # The C oracle skips the DELSTRING step outright: its overrun killed the i386 C run.
+      - why: 'C oracle skips DELSTRING (heap overrun; crashed the i386 C run)'
+        c: '^step 3 skipped'
+        rust: '^step 3 1$'
+      # setupapi-rust queue.rs. The C stages every copy through %TEMP% (X:\reactos\TEMP on the
+      # read-only live CD: ERROR_ACCESS_DENIED on i386/amd64), never defaults a NULL target name
+      # to the source name, and concat_W leaves the target path unterminated, so b.txt went to
+      # the PREVIOUS op's a2.txt (arm64, where %TEMP% is writable). The Rust stages beside the
+      # target, as Windows does, and copies both files where they were asked to go.
+      - why: 'queue copies: %TEMP% staging, NULL target name, unterminated target path (C)'
+        c: '^\s*(note 0x(b|c|d|f) |after (a2|b)\.txt )'
+        rust: '^\s*(note 0xf <TMP>\\dst\\(a2|b)\.txt|note 0x(b|c) src=<TMP>\\src\\a\.txt dst=<TMP>\\dst\\a2\.txt err=0|note 0x(b|c) src=<TMP>\\src\\b\.txt dst=<TMP>\\dst\\b\.txt err=0|after a2\.txt "alpha file"|after b\.txt "bravo")$'

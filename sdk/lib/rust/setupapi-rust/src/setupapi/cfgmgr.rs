@@ -304,8 +304,7 @@ unsafe extern "C" fn GetRegistryPropertyType(mut ulProperty: ULONG) -> ULONG {
     } else {
         return REG_BINARY;
     }
-
-    return REG_NONE;
+    // cfgmgr.c ends with an unreachable `return REG_NONE;` after the switch; not carried.
 }
 
 unsafe extern "C" fn SplitDeviceInstanceId(

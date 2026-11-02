@@ -137,6 +137,11 @@ unsafe extern "system" fn create_zip_function(arg: *mut core::ffi::c_void) -> u3
         SHChangeNotify((SHCNE_UPDATEDIR) as LONG, SHCNF_IDLIST, (*pCreator).m_pidlNotify.as_ptr() as LPCVOID, core::ptr::null_mut());
     }
 
+    // Divergence from the C: it returns here without deleting pCreator. runThread deletes it
+    // only when the thread fails to start, and CSendToZip::Drop's "deleted in runThread"
+    // assumes that holds on success too. So the C leaked every creator, and with it the
+    // g_ModuleRefCnt reference its destructor drops, which kept zipfldr loaded for good.
+    CZipCreator__delete(pCreator);
     return result;
 }
 

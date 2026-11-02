@@ -54,10 +54,25 @@ pub fn truthy<T: Truthy>(v: T) -> bool {
 
 /// `ASSERT(x)`. Define it in a crate as
 /// `macro_rules! ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }`.
+///
+/// Armed (`debug-assertions` on for the CALLING crate -- `cfg!` expands at the call
+/// site), a failure reports through `RtlAssert` and CONTINUES, as the C's DBG build does.
+/// It used to be `debug_assert!`, which panics: harmless while every user was compiled
+/// out, but arming a crate would have turned each C diagnostic into a halt.
 #[macro_export]
 macro_rules! nt_assert {
     ($e:expr $(,)?) => {
-        debug_assert!($crate::dbgassert::truthy($e))
+        if cfg!(debug_assertions) && !$crate::dbgassert::truthy($e) {
+            #[allow(unused_unsafe)]
+            unsafe {
+                $crate::ddk::RtlAssert(
+                    concat!(stringify!($e), "\0").as_ptr() as *mut ::core::ffi::c_void,
+                    concat!(file!(), "\0").as_ptr() as *mut ::core::ffi::c_void,
+                    line!(),
+                    ::core::ptr::null_mut::<i8>(),
+                );
+            }
+        }
     };
 }
 
@@ -65,7 +80,17 @@ macro_rules! nt_assert {
 #[macro_export]
 macro_rules! nt_assertmsg {
     ($msg:expr, $e:expr $(,)?) => {
-        debug_assert!($crate::dbgassert::truthy($e), "{:?}", $msg)
+        if cfg!(debug_assertions) && !$crate::dbgassert::truthy($e) {
+            #[allow(unused_unsafe)]
+            unsafe {
+                $crate::ddk::RtlAssert(
+                    concat!(stringify!($e), "\0").as_ptr() as *mut ::core::ffi::c_void,
+                    concat!(file!(), "\0").as_ptr() as *mut ::core::ffi::c_void,
+                    line!(),
+                    ($msg) as *const i8 as *mut i8,
+                );
+            }
+        }
     };
 }
 

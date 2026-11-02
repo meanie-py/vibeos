@@ -10,6 +10,14 @@ from typing import NoReturn
 
 def main(generator: str) -> NoReturn:
     args = sys.argv[1:]
+    if generator == "cflags":
+        # Preserve the old caller-relative compile database lookup and arch defaults.
+        args = ["--root", str(Path.cwd()), *args]
+        if "--stdout" not in args and not any(
+            a == "--arch" or a.startswith("--arch=") for a in args
+        ):
+            for arch in ("i386", "amd64", "arm64"):
+                args.extend(["--arch", arch])
     if generator == "global-barrier":
         # Legacy barrier input is relative to the invocation directory.
         args = ["--root", str(Path.cwd()), *args]

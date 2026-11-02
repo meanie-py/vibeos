@@ -70,6 +70,8 @@ pub struct Card {
     pub tx_ethernet: Vec<Vec<u8>>,
     pub wpaie: Vec<u8>,
     pub joined_bssid: Option<[u8; 6]>,
+    /// The chanspecs the last join asked the firmware to look on (empty: all).
+    pub join_chanspecs: Vec<u16>,
     pub ap_log: Vec<&'static str>,
     pub keys_match: bool,
     wsec: u32,
@@ -203,6 +205,7 @@ impl Card {
             tx_ethernet: Vec::new(),
             wpaie: Vec::new(),
             joined_bssid: None,
+            join_chanspecs: Vec::new(),
             ap_log: Vec::new(),
             keys_match: false,
             wsec: 0,
@@ -672,7 +675,14 @@ impl Card {
             }
             (262, b"assoc_req_ies") => (0, [&[0x00, AP_SSID.len() as u8][..], AP_SSID, &self.assoc_rsn].concat()),
             (263, b"join") => {
-                assert_eq!(rest.len(), 68, "ext join parameters");
+                assert_eq!(rest.len(), 72, "ext join parameters");
+                self.join_chanspecs = match u32::from_le_bytes([rest[64], rest[65], rest[66], rest[67]]) {
+                    0 => Vec::new(),
+                    n => {
+                        assert_eq!(n, 1, "one chanspec fits");
+                        vec![u16::from_le_bytes([rest[68], rest[69]])]
+                    }
+                };
                 let ssid_len = u32::from_le_bytes([rest[0], rest[1], rest[2], rest[3]]) as usize;
                 if self.restarts < self.deaf_until_restarts {
                     self.queue_bcm_event(0, 3, &[]); // E_SET_SSID, NO_NETWORKS

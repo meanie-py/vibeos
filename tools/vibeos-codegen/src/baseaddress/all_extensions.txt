@@ -1,0 +1,7 @@
+.dll
+.acm
+.ax
+.cpl
+.drv
+.ocx
+.ime

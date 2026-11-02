@@ -516,7 +516,7 @@ unsafe fn stream_socket_connect_complete_impl(
         Status = MakeSocketIntoConnection(FCB, 1);
 
         if !NT_SUCCESS(Status) {
-            'end: loop {
+            loop {
                 while !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX as usize])) {
                     NextIrpEntry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_CONNECTEX as usize]));
                     NextIrp = (NextIrpEntry as *mut u8).offset(-(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry) as isize)) as PIRP;

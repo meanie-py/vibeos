@@ -50,6 +50,13 @@ layer fits — see "Relationship to `qemu/`" below.
 ## Subcommands — what each is for, and the strategy
 
 ### `build --arch X [--clean] [--incremental] [--check] [--strict] [--no-cache] [--extra-target T]`
+
+`build --arch X --headers-only` prepares host tools and generated SDK/assembly headers
+for compiler-based generators without linking the OS or staging guest payloads. It
+retains the build lock, configure and resource guards, reports a partial `build-headers`
+run, and invalidates any boot stamp before mutation. It cannot be combined with
+`--clean`, `--extra-target`, build checks, artifact-store or shard options. A later
+full build is required before smoke testing.
 Compile the boot media for one arch, lint the binary, index symbols, and write a
 provenance stamp.
 

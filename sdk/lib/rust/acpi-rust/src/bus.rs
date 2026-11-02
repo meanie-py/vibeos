@@ -232,7 +232,7 @@ pub static mut acpi_root: *mut acpi_device = ::core::ptr::null::<acpi_device>() 
 
 pub static mut acpi_bus_event_lock: KSPIN_LOCK = 0;
 
-pub static mut acpi_bus_event_list: list_head = unsafe {
+pub static mut acpi_bus_event_list: list_head = {
     list_head {
         next: &raw const acpi_bus_event_list as *mut list_head,
         prev: &raw const acpi_bus_event_list as *mut list_head,
@@ -263,7 +263,7 @@ pub static mut FixedSleepButtonCount: ::core::ffi::c_int = 0;
 
 pub static mut SleepButtonCount: ::core::ffi::c_int = 0;
 
-static mut acpi_bus_drivers: list_head = unsafe {
+static mut acpi_bus_drivers: list_head = {
     list_head {
         next: &raw const acpi_bus_drivers as *mut list_head,
         prev: &raw const acpi_bus_drivers as *mut list_head,

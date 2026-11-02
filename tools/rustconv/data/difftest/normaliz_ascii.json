@@ -1,0 +1,294 @@
+{
+ "version": 1,
+ "scope": "stateless-host",
+ "memory": "guard-pages",
+ "c_host_profile": "reactos-amd64",
+ "c_env": [
+  "normaliz_env.c",
+  "../../../../dll/nls/normaliz/nameprep.c"
+ ],
+ "c_env_probe": {
+  "reset": "normaliz_env_reset",
+  "read": "normaliz_env_read"
+ },
+ "rust_support": {
+  "prelude": "normaliz_prelude.rs"
+ },
+ "c_prelude": "normaliz_env.h",
+ "seed": 261101,
+ "random_cases": 128,
+ "validity": "Genuine dll/nls/normaliz/IdnToAscii.c (Wine-derived, whole TU, the tree's own headers through the reactos-amd64 host profile) against the shipping normaliz-rust IdnToAscii.rs, whole module, its `crate::prelude` replaced by normaliz_prelude.rs (host widths, the SDK's constant values). Both link the genuine nameprep.c tables and normaliz_env.c: a last-error cell, a counting heap, ASCII towlower, 16-bit wcslen, and a FoldStringW(MAP_FOLDCZONE) model folding the fullwidth ASCII block. c_env_probe compares (live heap blocks, last error) after every call, so error codes and leaks are graded. Input buffers are exactly cch WCHARs; cch = -1 (NUL-terminated, strlenW) is NOT graded, since a counted buffer cannot express it. The output buffer is NULL or exactly its cch WCHARs. The nameprep tables themselves are graded by `port data` (clang-evaluated bytes), not here.",
+ "c_source": "../../../../dll/nls/normaliz/IdnToAscii.c",
+ "rust_source": "../../../../sdk/lib/rust/normaliz-rust/src/normaliz/IdnToAscii.rs",
+ "functions": [
+  {
+   "c": "IdnToNameprepUnicode",
+   "rust": "candidate::IdnToNameprepUnicode",
+   "rust_abi": "system",
+   "return": "i32",
+   "c_return_type": "int",
+   "args": [
+    {
+     "name": "flags",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      2,
+      3,
+      4
+     ],
+     "random_range": [
+      0,
+      3
+     ]
+    },
+    {
+     "name": "src",
+     "type": "const_bytes",
+     "c_type": "LPCWSTR",
+     "rust_type": "*const u16",
+     "align": 2,
+     "length": {
+      "arg": "src_cch",
+      "mul": 2
+     },
+     "examples": [
+      "610062006300",
+      "6100620063000000",
+      "61002e0062002e006300",
+      "41002e004200",
+      "2e00",
+      "61002e002e006200",
+      "6100620063002e00",
+      "6200fc0063006800650072002e0064006500",
+      "4d00fc006e006300680065006e00",
+      "44064a0647064506270628062a06430644064506480634063906310628064a061f06",
+      "d64eec4e3a4ec04e484e0d4ef48b2d4e8765",
+      "e5652c679e8a02306a007000",
+      "e5652c670eff6a007000",
+      "e5652c6761ff6a007000",
+      "c400d600dc00",
+      "7300740072006100df006500",
+      "01fb7800",
+      "ad00ad00",
+      "6100ad006200",
+      "30017800",
+      "e905dc05d505dd05",
+      "e905dc05d505dd05610062006300",
+      "e905dc05d505dd053100",
+      "21027800",
+      "780000007900",
+      "2d0061006200",
+      "610062002d00",
+      "61005f006200",
+      "21ff42ffe900",
+      "e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900",
+      "2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e",
+      "e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900",
+      "610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100",
+      "6100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100",
+      "6100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061002e006200",
+      "e9000230e8000eff",
+      "e9002e00",
+      "e9002e000000",
+      "5cd56dadb4c52e006b007200",
+      "28207800",
+      "00e0"
+     ]
+    },
+    {
+     "name": "src_cch",
+     "type": "i32",
+     "values": [
+      0,
+      1,
+      3
+     ],
+     "random_range": [
+      0,
+      24
+     ]
+    },
+    {
+     "name": "dst",
+     "type": "bytes",
+     "c_type": "LPWSTR",
+     "rust_type": "*mut u16",
+     "align": 2,
+     "length": {
+      "arg": "dst_cch",
+      "mul": 2
+     },
+     "nullable": true
+    },
+    {
+     "name": "dst_cch",
+     "type": "i32",
+     "values": [
+      0,
+      1,
+      4,
+      8,
+      64
+     ],
+     "random_range": [
+      64,
+      64
+     ]
+    }
+   ]
+  },
+  {
+   "c": "IdnToAscii",
+   "rust": "candidate::IdnToAscii",
+   "rust_abi": "system",
+   "return": "i32",
+   "c_return_type": "int",
+   "args": [
+    {
+     "name": "flags",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      2,
+      3,
+      4
+     ],
+     "random_range": [
+      0,
+      3
+     ]
+    },
+    {
+     "name": "src",
+     "type": "const_bytes",
+     "c_type": "LPCWSTR",
+     "rust_type": "*const u16",
+     "align": 2,
+     "length": {
+      "arg": "src_cch",
+      "mul": 2
+     },
+     "examples": [
+      "610062006300",
+      "6100620063000000",
+      "61002e0062002e006300",
+      "41002e004200",
+      "2e00",
+      "61002e002e006200",
+      "6100620063002e00",
+      "6200fc0063006800650072002e0064006500",
+      "4d00fc006e006300680065006e00",
+      "44064a0647064506270628062a06430644064506480634063906310628064a061f06",
+      "d64eec4e3a4ec04e484e0d4ef48b2d4e8765",
+      "e5652c679e8a02306a007000",
+      "e5652c670eff6a007000",
+      "e5652c6761ff6a007000",
+      "c400d600dc00",
+      "7300740072006100df006500",
+      "01fb7800",
+      "ad00ad00",
+      "6100ad006200",
+      "30017800",
+      "e905dc05d505dd05",
+      "e905dc05d505dd05610062006300",
+      "e905dc05d505dd053100",
+      "21027800",
+      "780000007900",
+      "2d0061006200",
+      "610062002d00",
+      "61005f006200",
+      "21ff42ffe900",
+      "e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900",
+      "2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e2d4e",
+      "e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900e900",
+      "610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100",
+      "6100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100",
+      "6100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061002e006200",
+      "e9000230e8000eff",
+      "e9002e00",
+      "e9002e000000",
+      "5cd56dadb4c52e006b007200",
+      "28207800",
+      "00e0"
+     ]
+    },
+    {
+     "name": "src_cch",
+     "type": "i32",
+     "values": [
+      0,
+      1,
+      3
+     ],
+     "random_range": [
+      0,
+      24
+     ]
+    },
+    {
+     "name": "dst",
+     "type": "bytes",
+     "c_type": "LPWSTR",
+     "rust_type": "*mut u16",
+     "align": 2,
+     "length": {
+      "arg": "dst_cch",
+      "mul": 2
+     },
+     "nullable": true
+    },
+    {
+     "name": "dst_cch",
+     "type": "i32",
+     "values": [
+      0,
+      1,
+      4,
+      8,
+      16,
+      64
+     ],
+     "random_range": [
+      64,
+      64
+     ]
+    }
+   ]
+  }
+ ],
+ "mutants": [
+  {
+   "name": "adapt_damp",
+   "find": "delta /= if firsttime != 0 { DAMP as INT } else { 2 as INT };",
+   "replace": "delta /= if firsttime != 0 { 2 as INT } else { 2 as INT };"
+  },
+  {
+   "name": "prefix_len",
+   "find": "out += 5 + b;",
+   "replace": "out += 4 + b;"
+  },
+  {
+   "name": "halfwidth_stop",
+   "find": "|| (ch as INT) == (0xff61 as INT)",
+   "replace": "|| (ch as INT) == (0xff62 as INT)"
+  },
+  {
+   "name": "bidi_ignored",
+   "find": "if have_bidi_ral != 0 && prohibit_bidi_ral != 0 {",
+   "replace": "if have_bidi_ral != 0 && prohibit_bidi_ral != 0 && false {"
+  },
+  {
+   "name": "unassigned_code",
+   "find": "ERROR_NO_UNICODE_TRANSLATION as DWORD",
+   "replace": "ERROR_INVALID_NAME as DWORD"
+  },
+  {
+   "name": "long_label_leak",
+   "find": "if out - out_label > 63 {\n            HeapFree(GetProcessHeap(), 0, norm_str as *mut core::ffi::c_void);",
+   "replace": "if out - out_label > 63 {"
+  }
+ ]
+}

@@ -10,6 +10,6 @@ name = "normaliz"
 path = "src/main.rs"
 
 [dependencies]
-panic-lean = { path = "../panic-lean" }
+panic-common = { path = "../panic-common", features = ["user"] }
 [build-dependencies]
 reactos-link = { path = "../reactos-link" }

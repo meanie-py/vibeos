@@ -216,6 +216,32 @@ def test_a_banked_hand_function_survives_a_replay(tmp_path, monkeypatch):
     assert "args: ..." not in (mods / "f.rs").read_text()
 
 
+def test_a_whole_module_bank_loses_a_table_cppapp_now_renders(tmp_path, monkeypatch):
+    """acppage's whole-module bank kept a model-written g_AllowedExtensions beside the one
+    cppapp later rendered, because apply_hand runs after integrate's duplicate drop."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    state = {"stem": "m", "crate": "m-rust", "stages": []}
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    mods = tmp_path / "sdk" / "lib" / "rust" / "m-rust" / "src" / "m"
+    mods.mkdir(parents=True)
+    (mods / "cpp_classes.rs").write_text("pub static mut g_Table: [*const u16; 2] = [X, Y];\n")
+    banked = (
+        "// Mutable only so it can be a plain static.\n"
+        "pub static mut g_Table: [PCWSTR; 2] = [\n    A,\n    core::ptr::null(),\n];\n\n"
+        "pub fn use_it() {}\n"
+    )
+    (mods / "f.rs").write_text(banked)
+    port.stage_hand("m", ["f.rs:*"])
+    assert port.apply_hand("m") == 1
+    text = (mods / "f.rs").read_text()
+    assert "g_Table" not in text and "pub fn use_it() {}" in text
+    assert "Mutable only" not in text  # its comment goes with it
+    assert port.apply_hand("m") == 1  # idempotent: the bank's copy is dropped again
+    assert "g_Table" not in (mods / "f.rs").read_text()
+
+
 def test_a_hand_bank_over_changed_c_is_refused(tmp_path, monkeypatch):
     """mmc_new's CAddDialog::OnCommand bank kept `new CSnapin(CacheEntry)` through the sync
     that added the node id: a bank replays by NAME, so its C is pinned at capture."""
@@ -1351,6 +1377,28 @@ def test_flip_refuses_a_tu_with_no_rust(tmp_path, monkeypatch):
     (src / "a.rs").write_text("")
     with _pytest.raises(port.PortError, match="no Rust for b.c"):
         port.stage_flip("m")
+
+
+def test_flip_and_data_refuse_while_this_tree_builds(tmp_path, monkeypatch):
+    # normaliz: `port data` commented nameprep.c out under a running arm64 build -> LINK_FAIL.
+    import pytest as _pytest
+    from tests.qemu.cli import hostlock
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    held = [{"held": True, "holder": {"build_dir": str(tmp_path / "build-arm64")}}]
+    monkeypatch.setattr(hostlock, "status", lambda: {"builddir": held})
+    for stage, call in (
+        ("flip", lambda: port.stage_flip("m")),
+        ("data", lambda: port.stage_data("m", "t.c")),
+    ):
+        with _pytest.raises(port.PortError, match=f"port {stage} rewrites CMake inputs"):
+            call()
+    # Another worktree's build, or a released lock, is not ours to wait for.
+    held[:] = [
+        {"held": True, "holder": {"build_dir": str(tmp_path.parent / "other" / "build-arm64")}},
+        {"held": False, "holder": {"build_dir": str(tmp_path / "build-i386")}},
+    ]
+    port._refuse_while_this_tree_builds("flip")
 
 
 def test_flip_finds_a_cppapp_tus_rust_in_its_synthetic_unit(tmp_path, monkeypatch):

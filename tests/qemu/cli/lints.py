@@ -1249,6 +1249,9 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # `V_DISPATCH!(v) as *mut *mut c_void` for the C's `(void**)&V_DISPATCH(v)`: the VARIANT
     # accessor's VALUE passed as an out-pointer. oleacc's Client_EnumVARIANT_Next corrupted
     # the heap that way (the callee stored its interface through garbage). Gated at zero.
+    # A crate root's `#[allow(non_snake_case, ..)]` written OUTER binds to the next `extern
+    # crate`/`use` and allows nothing (version-rust: 248 warnings). Gated at zero.
+    specs.append(("scan_inert_crate_allow", ["MISSING"], "stdout"))
     svo = repo / "tools" / "scan_variant_outptr.py"
     specs.append(
         (
@@ -1284,6 +1287,11 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # invented 23 for the C's 15 and boosted starved threads into the realtime range. The
     # baseline is the triage queue; new findings fail.
     specs.append(("scan_shadowed_c_define", ["MISSING"], "stdout"))
+    # A C RtlMoveMemory/memmove translated as copy_nonoverlapping (native Rust rule,
+    # tools/vibeos-lint/src/rules/move_vs_nonoverlapping.rs): memcpy on overlapping ranges.
+    # classpnp's ClassReadDriveCapacity shifted READ_CAPACITY_DATA inside its own _EX this way.
+    # The baseline is the triage queue (disjoint copies); new findings fail.
+    specs.append(("scan_move_vs_nonoverlapping", ["MISSING"], "stdout"))
     # A named constant cast to a type too narrow for it: rustc's overflow lint covers
     # literals only. disk.sys set SRB_CLASS_FLAGS_PERSISTANT `as USHORT` (= 0), classpnp freed
     # an SRB inside the device extension, 0xC2 on the first flush. Gated at zero.
@@ -1487,6 +1495,12 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_uncalled_ctor_hook", [rustlints.SENTINEL, "scan_uncalled_ctor_hook"], "stdout")
     )
+    # A payload probe calling `x->lpVtbl->M` on an interface mingw declares with
+    # DECLARE_INTERFACE_, whose C vtable lacks IUnknown's slots: the call lands three slots
+    # early. ntobjshex's probe called QueryInterface for GetIconLocation and the fault was
+    # filed against the extension. Baseline is EMPTY. A Rust rule
+    # (tools/vibeos-lint/src/rules/mingw_c_vtable.rs).
+    specs.append(("scan_mingw_c_vtable", [rustlints.SENTINEL, "scan_mingw_c_vtable"], "stdout"))
     # A Rust GUID literal the SDK's DEFINE_GUID gives a different value. stobject's model
     # wrote CGID_ShellServiceObject from memory, one digit off, and the tray never started.
     # A Rust rule (tools/vibeos-lint/src/rules/guid_values.rs).
@@ -1496,6 +1510,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_container_ptr_read", [rustlints.SENTINEL, "scan_container_ptr_read"], "stdout")
     )
+    # A min/max operand cast narrower than its declared type BEFORE the compare. CcZeroData
+    # cut a LONGLONG length to ULONG, so a 4 GiB range was a 0-byte chunk and the loop spun
+    # forever. A Rust rule (tools/vibeos-lint/src/rules/minmax_narrowing.rs).
+    specs.append(("scan_minmax_narrowing", [rustlints.SENTINEL, "scan_minmax_narrowing"], "stdout"))
     # The address of ONE local of type T passed with a length of size_of::<T>() + ...: a C
     # struct-with-trailing-buffer translated as two locals, so the callee's tail writes hit
     # whatever the compiler put next. kernel32's GetFileInformationByHandle wrote the FAT

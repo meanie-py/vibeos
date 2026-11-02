@@ -111,6 +111,7 @@ PORTED = frozenset(
         "scan_bugcheck_codes",
         "scan_byte_step_one",
         "scan_variant_outptr",
+        "scan_inert_crate_allow",
         "scan_byteptr_stride",
         "scan_calloc_elem_type",
         "scan_cdecl_alias",
@@ -141,10 +142,13 @@ PORTED = frozenset(
         "scan_fnptr_abi_transmute",
         "scan_entry_point_cc",
         "scan_uncalled_ctor_hook",
+        "scan_mingw_c_vtable",
         "scan_guid_values",
         "scan_container_ptr_read",
+        "scan_minmax_narrowing",
         "scan_local_overlength",
         "scan_shadowed_c_define",
+        "scan_move_vs_nonoverlapping",
         "scan_hkey_zero_extend",
     }
 )

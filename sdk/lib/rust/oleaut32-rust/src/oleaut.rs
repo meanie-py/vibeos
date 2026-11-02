@@ -59,7 +59,7 @@ const HKEY_CLASSES_ROOT: HKEY = 0x80000000u32 as i32 as isize as usize as HKEY;
 static mut bstr_cache_enabled: BOOL = 0;
 
 static mut cs_bstr_cache: CRITICAL_SECTION = CRITICAL_SECTION {
-    DebugInfo: unsafe { &raw const cs_bstr_cache_dbg as *const _ as *mut _ },
+    DebugInfo: { &raw const cs_bstr_cache_dbg as *const _ as *mut _ },
     LockCount: -1,
     RecursionCount: 0,
     OwningThread: core::ptr::null_mut(),
@@ -70,7 +70,7 @@ static mut cs_bstr_cache: CRITICAL_SECTION = CRITICAL_SECTION {
 static mut cs_bstr_cache_dbg: CRITICAL_SECTION_DEBUG = CRITICAL_SECTION_DEBUG {
     Type: 0,
     CreatorBackTraceIndex: 0,
-    CriticalSection: unsafe { &raw mut cs_bstr_cache },
+    CriticalSection: { &raw mut cs_bstr_cache },
     ProcessLocksList: _LIST_ENTRY {
         Flink: unsafe { &raw mut cs_bstr_cache_dbg.ProcessLocksList },
         Blink: unsafe { &raw mut cs_bstr_cache_dbg.ProcessLocksList },
@@ -123,7 +123,7 @@ static mut bstr_cache: [bstr_cache_entry_t; 0x10000 / BUCKET_SIZE] = [bstr_cache
 }; 0x10000 / BUCKET_SIZE];
 
 static _delimiter: [WCHAR; 2] = ['!' as WCHAR, 0];
-static mut pdelimiter: *const WCHAR = unsafe { &_delimiter[0] };
+static mut pdelimiter: *const WCHAR = &_delimiter[0];
 
 static dispatch_typelib_ps_vtbl: IPSFactoryBufferVtbl = IPSFactoryBufferVtbl {
     QueryInterface: Some(dispatch_typelib_ps_QueryInterface),

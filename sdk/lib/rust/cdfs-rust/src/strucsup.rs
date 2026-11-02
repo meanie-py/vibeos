@@ -208,9 +208,6 @@ extern "C" {
 extern "system" {
     static CdXaId: [u8; 8];
 }
-extern "system" {
-    static CdAudioLabel: [u8; 32];
-}
 extern "C" {
 }
 extern "C" {
@@ -314,8 +311,21 @@ const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000102u32 as i32;
 const IRP_CONTEXT_FLAG_MORE_PROCESSING: u32 = 0x02;
 const IRP_CONTEXT_FLAG_ALLOC_IO: u32 = 0x0100;
 const IRP_CONTEXT_FLAG_ON_STACK: u32 = 0x01;
-const IRP_CONTEXT_FLAGS_CLEAR_ON_POST: u32 = 0x00000008;
-const IRP_CONTEXT_FLAGS_CLEAR_ON_RETRY: u32 = 0x00000010;
+// cdstruc.h's two masks, spelled from the flags as the C spells them. They were 0x08 and
+// 0x10 (FORCE_POST and TOP_LEVEL alone), so a posted request kept WAIT, TOP_LEVEL, IN_FSP,
+// IN_TEARDOWN and DISABLE_POPUPS, and a retry cleared TOP_LEVEL, which it must not.
+const IRP_CONTEXT_FLAGS_CLEAR_ON_POST: u32 = crate::types::IRP_CONTEXT_FLAG_MORE_PROCESSING
+    | crate::types::IRP_CONTEXT_FLAG_WAIT
+    | crate::types::IRP_CONTEXT_FLAG_FORCE_POST
+    | crate::types::IRP_CONTEXT_FLAG_TOP_LEVEL
+    | crate::types::IRP_CONTEXT_FLAG_TOP_LEVEL_CDFS
+    | crate::types::IRP_CONTEXT_FLAG_IN_FSP
+    | crate::types::IRP_CONTEXT_FLAG_IN_TEARDOWN
+    | crate::types::IRP_CONTEXT_FLAG_DISABLE_POPUPS;
+const IRP_CONTEXT_FLAGS_CLEAR_ON_RETRY: u32 = crate::types::IRP_CONTEXT_FLAG_MORE_PROCESSING
+    | crate::types::IRP_CONTEXT_FLAG_IN_TEARDOWN
+    | crate::types::IRP_CONTEXT_FLAG_DISABLE_POPUPS;
+const _: () = assert!(IRP_CONTEXT_FLAGS_CLEAR_ON_POST == 0x2FE && IRP_CONTEXT_FLAGS_CLEAR_ON_RETRY == 0x282);
 
 const IOCTL_CDROM_READ_TOC: u32 = 0x00024000;
 const IOCTL_CDROM_READ_TOC_EX: u32 = 0x24054;
@@ -568,8 +578,10 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
     const VCB_STATE_AUDIO_DISK: u32 = 0x80;
     const FCB_STATE_INITIALIZED: u32 = 0x01;
     const STATUS_DISK_CORRUPT_ERROR: i32 = 0xC0000032u32 as i32;
-    const CdAudioDirentSize: u32 = 32;
-    const CdAudioLabelLength: u32 = 32;
+    // cddata.rs's, as cddata.c computes them: a 58-byte audio dirent and the 16-byte
+    // "Audio CD" label. Local 32s made the root (TrackCount + 2) * 32 and copied 32 bytes
+    // out of the 16-byte label, junk after "Audio CD".
+    use crate::cddata::{CdAudioDirentSize, CdAudioLabel, CdAudioLabelLength};
 
     let mut UnlockVcb: bool = false;
     let mut StartingBlock: u32 = 0;
@@ -719,7 +731,10 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                     (*fcb_hdr(volume_dasd_fcb)).ValidDataLength.QuadPart = (*fcb_hdr(volume_dasd_fcb)).FileSize.QuadPart;
 
                     CdLockFcb(IrpContext, volume_dasd_fcb);
-                    McbEntry = core::ptr::addr_of!((*volume_dasd_fcb).Mcb.McbArray) as *mut CD_MCB_ENTRY;
+                    // The array the field POINTS to (C: Mcb.McbArray). Taking the field's own
+                    // address wrote the 40-byte entry over McbArray itself and the embedded
+                    // entry beside it, leaving McbArray NULL.
+                    McbEntry = (*volume_dasd_fcb).Mcb.McbArray as *mut CD_MCB_ENTRY;
                     (*McbEntry).FileOffset = 0;
                     (*McbEntry).DiskOffset = 0;
                     (*McbEntry).ByteCount = (*fcb_hdr(volume_dasd_fcb)).AllocationSize.QuadPart;
@@ -1634,7 +1649,7 @@ pub unsafe extern "system" fn CdFcbTableCompare(
     Fid1: *mut core::ffi::c_void,
     Fid2: *mut core::ffi::c_void,
 ) -> ntkrnl_sys::ddk::RTL_GENERIC_COMPARE_RESULTS {
-    unsafe { /* PAGED_CODE!(); */ }
+    { /* PAGED_CODE!(); */ }
 
     let _ = FcbTable; // UNREFERENCED_PARAMETER(FcbTable)
 

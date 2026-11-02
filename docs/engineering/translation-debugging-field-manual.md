@@ -1689,6 +1689,16 @@ count or one multiplied by `size_of` (baseline empty).
 of its face-name shifts with the C's argument order and the C's byte count, so each moved the
 string the wrong way by twice its length (`scan_silent_failures` caught the `size_of` count;
 nothing catches the order). Read every `copy`/`copy_nonoverlapping` against its C call.
+**The C can be the one that is wrong, and a faithful translation copies it.** setupapi
+install.c `delete_multi_sz_value` allocated `size * 2` BYTES and then set `dst = buffer + size`
+on a `WCHAR *`. That is `size` WCHARs, which is exactly the end of the block, so every kept
+string was written past the allocation, and `RegSetValueExW` got a WCHAR count as its byte
+count. Its sibling `append_multi_sz_value` wrote `total + sizeof(WCHAR)` where `total` already
+counted the final NUL. That stored one WCHAR of uninitialized heap in the registry, and it read
+back differently every boot. setupapi-rust reproduced both line for line. The modrun setupapi
+suite found the second one when the C and Rust sizes disagreed, and the disagreement then
+flipped direction on the next boot. **When a C/Rust diff flips direction between runs, look
+for uninitialized memory in BOTH**: dump raw bytes, not the decoded value.
 
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 
@@ -2631,6 +2641,11 @@ found 9 real divergences, and most cut a wide operand down before the compare:
 range a 0-byte chunk and spins forever; freeldr's ATAPI `min(len as u16, 0xFFFE)` sends a byte
 count of 0 for a 64 KiB read; atapi's `ATA_LOCAL_BUFFER_SIZE as u8` is 572 → 60. Rule: compare
 at the width the C compares at, THEN narrow the result: `min(a, b as T_wide) as T_narrow`.
+`scan_minmax_narrowing` (`vibeos-cli check`, baseline empty) now gates the narrowing shape where
+it can see the operand's declared width (locals, params, struct fields); `scan_const_narrowing_cast`
+gates the constant case, including the parenthesized `(NAME) as u8` that hid atapi's. Sign flips
+(rebar, the winpos and tui pair) are NOT linted: they need C types, so `-Wsign-compare` on the
+oracle stays the tool for those.
 
 ### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
 **Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a
@@ -9575,6 +9590,13 @@ guarantees** — `copy` and `copy_if_different` differ precisely on whether mtim
   gate.
 - **`#[no_mangle] pub static mut` in a shared lib gives each consumer a PRIVATE data copy.**
 - **A dual-archive cohab runs STALE Rust** when the consumer's DEPENDS list doesn't mirror it.
+- **A `[profile]` edit in `sdk/lib/rust/Cargo.toml` rebuilt only the crates whose sources also
+  changed.** `rust_crate_sources` (the storage/driver `.a` edges) listed each crate's own
+  manifest but not the workspace one that holds `[profile.release.package.*]`: disarming
+  cdrom-rust's `debug-assertions` left cdrom.sys armed on a green warm build, its asserts
+  firing. It now depends on the workspace `Cargo.toml` and `.cargo/config.toml`, as
+  `add_cargo_module` cells already did (`Cargo.lock` stays an explicit caller edge). Settle a doubt with the crate's
+  `.fingerprint/<crate>-*/lib-*.json` `profile` hash and the `.a` mtime.
 - **Editing a kernel C shim silently ships the stale object** (no `rerun-if-changed`).
 - **Smoke "green ×3" lies when conftest nukes only `rust-kernel-target`** (there are five).
 - **New trace points produce nothing in serial** → stale `livecd.iso`.
@@ -9644,6 +9666,23 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### A plain-C probe's COM call faults with an address like 2: mingw's C vtable has no IUnknown slots
+
+**Symptom.** A modrun or payload probe (C, built against llvm-mingw's headers) calls a shell
+interface method and faults at a tiny address, or gets `E_NOINTERFACE` from a method that
+cannot return it. It does this against the C oracle and the Rust alike, which makes it look
+like an extension bug the port inherited.
+**Cause.** mingw-w64 declares many shell interfaces (`IExtractIconW` in shlobj.h among hundreds)
+with `DECLARE_INTERFACE_(IFoo, IUnknown)`, and in C that macro drops the base: the vtable
+holds only the methods the body lists, so `p->lpVtbl->GetIconLocation` is slot 0,
+QueryInterface. ntobjshex's probe passed `GIL_FORSHELL` (2) as the IID pointer, and the fault at
+2 sat in the lane plan as "GetIconLocation faults in the C too" for two weeks. Such an
+interface has no COBJMACROS, which is why the probe reached for `lpVtbl` in the first place.
+**Fix.** Call through a local vtable struct that spells out QueryInterface/AddRef/Release
+(probes/ntobjshex.c's `ExtractIconWSlots`). `scan_mingw_c_vtable` flags any `x->lpVtbl->M` in
+tools/payloads whose `x` is such an interface. When oracle and port fail identically, read
+the caller before blaming the code both run.
 
 ### A resource string is right in the source and mojibake in the binary (llvm-rc ignores `#pragma code_page`)
 
@@ -10573,6 +10612,26 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   same word (`AtomicUsize::from_ptr(..).swap`, `&*(p as *const AtomicI32)`) did NOT panic and
   need no change on x86: they lower to `lock`-prefixed instructions, which take any alignment,
   and rustc's misaligned-deref check skips borrows. Only plain loads and stores trip it.
+- **A caller's buffer the API aligns to ULONG only** (2026-11-01, cdfs/fastfat).
+  `NtQueryDirectoryFile` probes `FileInformation` with `sizeof(ULONG)`, a WoW64 caller's buffer
+  is 4-aligned, and `FILE_*_DIR_INFORMATION` is 8-aligned: every typed field store into the
+  entry is a misaligned deref (fastfat even formed `&mut` to it). Fix: fill an aligned local
+  copy of the fixed part and store its bytes; fields written later go through `addr_of_mut!` +
+  `write_unaligned`. Any FSD output into a USER buffer has this shape; SystemBuffer is aligned.
+- **A packed on-disk record.** FAT's LFN dirent puts `Name1` at byte 1, so a WCHAR-typed
+  `copy_nonoverlapping` of it is misaligned. Copy bytes, as the C's `RtlCopyMemory` does.
+- **A real overlap.** classpnp's `RtlMoveMemory` of READ_CAPACITY_DATA one ULONG up inside its
+  own _EX had become `copy_nonoverlapping` -- memcpy on overlapping ranges, a genuine bug on
+  every arch. `scan_move_vs_nonoverlapping` now pairs each Rust fn with its C twin's moves.
+- **OPEN: a cache-aligned type inside a device extension.** On 64-bit `COMMON_DEVICE_EXTENSION`
+  embeds a `LOOKASIDE_ALIGN` `NPAGED_LOOKASIDE_LIST`, so classpnp/disk/cdrom's extension types
+  are 64/128-aligned while `IoCreateDevice` places extensions 16-aligned, exactly as the C. The
+  first `(*commonExtension).X` panics; those crates stay unarmed (roadmap #72).
+Arming also changes what a FAILED assert does: `nt_assert!` was `debug_assert!`, a panic and a
+halt where the C's DBG `ASSERT` prints and continues. It now reports through `RtlAssert` (still
+`cfg!(debug_assertions)`-gated, evaluated in the calling crate). Its first two fires were real
+bugs: fastfat's `FatNoOpAcquire` set top-level IRP 1 for the C's `FSRTL_CACHE_TOP_LEVEL_IRP`
+(2), and an empty `DbgDoit!` dropped the increment a `cfg(debug_assertions)` decrement paired.
 Triage tip: the i386 HAL loads as `halmp.dll` under the harness label `hal.dll`, and its panic
 text can print garbled; P4 of the `0xE0525354` bugcheck is still the source line.
 
@@ -14173,6 +14232,12 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   instruction bytes.
   > **"Flaky" + byte-identical registers on every hit = a DETERMINISTIC bug on a rarely-taken
   > path.** Hunt for why the path is rare, not for a race.
+
+  EC **0x01** is the same class for WFx: `Instr=0xD503205F` is `wfe`. FEXCore's SpinWaitLock
+  waits on a contended lock with `ldaxr; wfe`, so with SCTLR_EL1.nTWE clear any FEX lock that
+  contends kills the app. On 2026-11-01 that took out taskmgr, osk, devmgmt, rapps and iexplore
+  on appstorm64 (`WritePriorityMutex::lock_shared`). Windows and Linux both let EL0 run WFE, and
+  `KiSystemStartup` now sets nTWE. WFI still traps.
 - **A silent arm64 Rust panic looks like an opaque boot hang** — sample `$pc`; it parks in
   `rust_begin_unwind`. Also: `RtlCreateAtomTable` divided by zero on `NumberOfBuckets == 0`.
 - **arm64-only deadlock from UB**: `&immutable_local as *const T as *mut T` on an in/out FFI

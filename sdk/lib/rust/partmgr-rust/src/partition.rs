@@ -151,6 +151,10 @@ pub unsafe extern "C" fn PartitionCreateDevice(
 
     // Adjust stack size and flags
     (*partitionDevice).StackSize = (*FDObject).StackSize;
+    // And the disk's DMA alignment, which a file system mounted here copies at mount. The C
+    // left it 0, so FAT reported byte alignment for FileAlignmentInformation (Windows 11's
+    // FAT32 reports the disk's: hostapps fsquery.win11.txt).
+    (*partitionDevice).AlignmentRequirement = (*FDObject).AlignmentRequirement;
     (*partitionDevice).Flags |= DO_DIRECT_IO as u32;
 
     // Copy partition information based on style

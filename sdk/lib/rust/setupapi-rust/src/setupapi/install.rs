@@ -829,10 +829,12 @@ unsafe extern "C" fn append_multi_sz_value(
     }
 
     size = size.wrapping_add(str_size.wrapping_mul(core::mem::size_of::<WCHAR>() as DWORD));
+    /* Zeroed, plus one WCHAR of slack: a stored value missing its final NUL still ends the
+     * scan below instead of running off the block. */
     buffer = HeapAlloc(
         GetProcessHeap(),
-        0 as DWORD,
-        (size) as SIZE_T,
+        HEAP_ZERO_MEMORY as DWORD,
+        (size as SIZE_T).wrapping_add(core::mem::size_of::<WCHAR>() as SIZE_T),
     ) as *mut WCHAR;
     if buffer.is_null() {
         return;
@@ -880,13 +882,18 @@ unsafe extern "C" fn append_multi_sz_value(
         }
 
         if total != size {
+            /* Divergence from the C, which writes `total + sizeof(WCHAR)`: `size` came from
+             * RegQueryValueExW and already counts the list's final NUL, and each append adds
+             * exactly what it copied, so the extra WCHAR was uninitialized heap. The modrun
+             * setupapi suite read it back as 0x0072, 0x0038, 0x0063 -- different every run --
+             * and the next append then counted that junk as part of the value. */
             RegSetValueExW(
                 hkey,
                 value,
                 0 as DWORD,
                 REG_MULTI_SZ as DWORD,
                 buffer as *mut BYTE,
-                total.wrapping_add(core::mem::size_of::<WCHAR>() as DWORD),
+                total,
             );
         }
     }
@@ -919,11 +926,16 @@ unsafe extern "C" fn delete_multi_sz_value(hkey: HKEY, value: *const WCHAR, stri
     if type_ != REG_MULTI_SZ {
         return;
     }
-    /* allocate double the size, one for value before and one for after */
+    /* One region for the value as read and one for the result, counted in WCHARs, each with
+     * a WCHAR of slack, zeroed. Divergence from the C: it allocates `size * 2` BYTES and then
+     * starts the output at `buffer + size` -- `size` WCHARs, i.e. exactly the end of the
+     * block -- so every string it kept was written past the allocation, and it handed
+     * RegSetValueExW a WCHAR count where a byte count belongs. */
+    let wchars = size as usize / core::mem::size_of::<WCHAR>();
     buffer = HeapAlloc(
         GetProcessHeap(),
-        0,
-        size.wrapping_mul(2) as SIZE_T,
+        HEAP_ZERO_MEMORY as DWORD,
+        ((2 * wchars + 2) * core::mem::size_of::<WCHAR>()) as SIZE_T,
     ) as *mut WCHAR;
     if buffer.is_null() {
         return;
@@ -940,8 +952,10 @@ unsafe extern "C" fn delete_multi_sz_value(hkey: HKEY, value: *const WCHAR, stri
         {
             break 'done;
         }
+        let out = buffer.add(wchars + 1);
+        let mut removed = false;
         src = buffer;
-        dst = buffer.add(size as usize);
+        dst = out;
         while *src != 0 {
             let mut len: i32 = strlenW(src) as i32 + 1;
             if strcmpiW(src, string) != 0 {
@@ -951,20 +965,21 @@ unsafe extern "C" fn delete_multi_sz_value(hkey: HKEY, value: *const WCHAR, stri
                     (len as usize) * core::mem::size_of::<WCHAR>(),
                 );
                 dst = dst.offset(len as isize);
+            } else {
+                removed = true;
             }
             src = src.offset(len as isize);
         }
         *dst = 0;
         dst = dst.add(1);
-        if dst != buffer.add((2 as usize) * (size as usize)) {
-            /* did we remove something? */
+        if removed {
             RegSetValueExW(
                 hkey,
                 value as LPCWSTR,
                 0,
                 REG_MULTI_SZ,
-                buffer.add(size as usize) as LPBYTE,
-                dst.offset_from(buffer.add(size as usize)) as DWORD,
+                out as LPBYTE,
+                (dst.offset_from(out) as usize * core::mem::size_of::<WCHAR>()) as DWORD,
             );
         }
     }

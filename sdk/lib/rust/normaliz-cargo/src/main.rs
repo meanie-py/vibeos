@@ -10,5 +10,5 @@
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    panic_lean::panic_lean(b"normaliz-cargo\0", info)
+    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
 }

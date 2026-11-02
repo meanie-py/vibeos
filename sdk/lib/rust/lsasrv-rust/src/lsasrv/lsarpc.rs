@@ -1298,7 +1298,9 @@ pub unsafe extern "system" fn LsarLookupSids(
         0,
         0,
     );
-    if !NT_SUCCESS(Status) {
+    // Upstream 006cf40b7e3: NONE_MAPPED still carries a names array (the SIDs as strings) to
+    // hand back; SOME_NOT_MAPPED already passes NT_SUCCESS.
+    if !NT_SUCCESS(Status) && Status != STATUS_NONE_MAPPED {
         return Status;
     }
 

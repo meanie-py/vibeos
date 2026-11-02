@@ -5,7 +5,7 @@ use core::ffi::c_void;
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 
-static mut sample_grabber_activate_funcs: activate_funcs = unsafe {
+static mut sample_grabber_activate_funcs: activate_funcs = {
     activate_funcs {
         create_object: Some(
             sample_grabber_create_object
