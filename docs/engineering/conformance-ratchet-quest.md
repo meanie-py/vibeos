@@ -2188,7 +2188,21 @@ body) reached from csrss. The sweep after it was clean and identical to the firs
    are documented as deliberate there. `rustconv.bank_drift --fleet` reports 1347 of
    19714 banked functions whose C moved since purchase, in 214 files. That is a review
    queue with mixed causes (upstream syncs into dead C, scanner normalizer changes), not a
-   bug list. One found on the way is upstream drift, not a cut: dhcpcsvc-rust's
+   bug list. TRIAGED 2026-11-01 (1356 of 21339 by then): 357 in 48 files are upstream
+   commits merged into the C after its flip (that is `tools/flipped_upstream_drift.py`'s
+   queue, the upstream-sync lane's), 79 are in files never flipped (the C still ships), and
+   935 in 145 files have C untouched since the flip, so the SCANNER changed. Replaying the
+   26 historical scanners (`git archive` each, scan today's C, match the banked hash)
+   reproduced 901 of those 919 moved hashes. Of the 901: 533 differ in whitespace only;
+   23 were bought CUT at `RpcExcept` (the 7 already known, plus 16 in dnsapi, netapi32
+   netlogon/srvsvc and samlib), and every one shipped with its tail, checked call by call;
+   54 were bought with an unresolved `#if` arm, and all 54 Rust bodies take the arm that is
+   live here (33 behavioural, 21 debug-only); the rest are signature normalisation
+   (IN/OUT, CONST, __RPC_USER). No shipping bug. The 18 not reproduced were bought in
+   sibling worktrees with branch-local scanners. One finding: the scanner's lost-definition
+   pass (`_scan_live`) was appending `;` to the last line of a multi-line condition
+   (aclui CheckListWndProc came out `if (...);`), so a re-purchase would have bought a
+   broken body; fixed, with a test. One found on the way is upstream drift, not a cut: dhcpcsvc-rust's
    DhcpRequestParams is a faithful port of the C's old `UNIMPLEMENTED; return 0;`, and
    upstream's c00b0a40358 implementation (client, IDL and the dhcp server's api.c) is in
    `tools/flipped_upstream_drift.py`'s queue. (c) rpc_epmap.c's RpcEpUnregister calls
