@@ -321,6 +321,12 @@ unsafe fn MmDeleteVirtualMappingEx(
         KeInvalidateTlbEntry(Address);
 
         if OldPte.Long != 0 {
+            crate::ke::flightrec::flightrec_log(
+                crate::ke::flightrec::OP_PAGE_UNMAP,
+                Address as usize & !(PAGE_SIZE - 1),
+                PsGetCurrentThread() as usize,
+                OldPte.page_frame_number() as u32,
+            );
             if !WasDirty.is_null() {
                 // Dirty bit is bit 6 on x86/x86_64 -- of the OLD value: the exchange above
                 // has already zeroed *PointerPte. Reading it there reported every page clean,
@@ -665,6 +671,14 @@ unsafe fn MmCreateVirtualMappingUnsafeEx(
     MI_MAKE_HARDWARE_PTE(&mut TempPte, PointerPte, ProtectionMask as ULONG_PTR, Page);
 
     Pte = InterlockedExchangePte(PointerPte, TempPte.Long);
+    // The per-VA ledger arm64/page.rs keeps (see ke/flightrec.rs OP_PAGE_MAP); x86/amd64
+    // kept none, so an amd64 `MmDeleteRmap mapping-not-in-list` had no history to dump.
+    crate::ke::flightrec::flightrec_log(
+        crate::ke::flightrec::OP_PAGE_MAP,
+        Address as usize & !(PAGE_SIZE - 1),
+        PsGetCurrentThread() as usize,
+        Page as u32,
+    );
     if Pte != 0 {
         KeBugCheck(MEMORY_MANAGEMENT);
     }

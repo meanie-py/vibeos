@@ -560,6 +560,12 @@ pub unsafe extern "system" fn MmInsertRmap(mut Page: PFN_NUMBER, Process: PEPROC
     }
 
     MiReleasePfnLock(OldIrql);
+    crate::ke::flightrec::flightrec_log(
+        crate::ke::flightrec::OP_RMAP_INSERT,
+        Address as usize & !(PAGE_SIZE as usize - 1),
+        Process as usize,
+        Page as u32,
+    );
 
     if !RMAP_IS_SEGMENT(Address) {
         PrevSize = InterlockedExchangeAddUL(
@@ -592,6 +598,12 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
                 (*previous_entry).Next = (*current_entry).Next;
             }
             MiReleasePfnLock(OldIrql);
+            crate::ke::flightrec::flightrec_log(
+                crate::ke::flightrec::OP_RMAP_DELETE,
+                Address as usize & !(PAGE_SIZE as usize - 1),
+                Process as usize,
+                Page as u32,
+            );
 
             ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), current_entry as PVOID);
             if !RMAP_IS_SEGMENT(Address) {
@@ -642,6 +654,11 @@ pub unsafe extern "system" fn MmDeleteRmap(Page: PFN_NUMBER, Process: PEPROCESS,
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
+        // Still a bugcheck, as the C. First the per-VA ledger (map/unmap and rmap
+        // insert/delete, all processes), printed after the PFN lock is dropped for the
+        // same reason as above: an amd64 WoW64 teardown hit this with no history at all.
+        MiReleasePfnLock(OldIrql);
+        crate::ke::flightrec::flightrec_dump_object((Address as usize) & !((PAGE_SIZE as usize) - 1), 16);
         KeBugCheck(MEMORY_MANAGEMENT);
     }
 }

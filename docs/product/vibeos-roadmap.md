@@ -624,8 +624,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Not yet triaged. Likely shapes are an increment without its matching decrement
   (map/unmap imbalance) or a PFN read for the wrong PDE. Start with `farm --arches arm64`
   using the conformance payload, and arm the tripwire before reading the dump.
-- **amd64-bios: demand-zero fault on an already-valid PTE (open, found 2026-11-01, one
-  occurrence in 8 boots, needs an MM owner).** A kernel Rust panic after the boot marker, while
+- **amd64-bios: demand-zero fault on an already-valid PTE (FIX LANDING 2026-11-01, smp-bringup;
+  root cause by code reading, the race has not been reproduced on demand).** Cause: the 64-bit
+  self-map branch of `MmArmAccessFault` (a kernel fault on a page-table VA) built user
+  PXE/PPE/PDEs with an unlocked check-then-create, while every other user page-table writer holds
+  the process working-set lock, and `MiMakePdeExistAndMakeValid` -> `MiMakeSystemAddressValid`
+  RELEASES that lock before touching the table, so every ROS `page.rs` mapping (image views) went
+  through the unlocked branch. WoW64 is where 32-bit views and ARM3 private memory share page
+  tables below 4G. Fixed by taking the WS lock there for a user VA at <= APC_LEVEL when the thread
+  holds none; x86/amd64 `page.rs` and `rmap.rs` now log the per-VA ledger the not-in-list guard
+  dumps. Original report: A kernel Rust panic after the boot marker, while
   a WoW64 32-bit app was starting (`[FEX-WOW64C]` lines, then winsxs manifest opens):
   `assertion failed: ((*PointerPte).valid() as usize) == 0` at
   `ntoskrnl-rust/src/ARM3/pagfault.rs:2292` (the `ASSERT` at the top of `MiResolveDemandZeroFault`,
@@ -6893,7 +6901,15 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   (a `LOOKASIDE_ALIGN` lookaside inside it) while `IoCreateDevice` places extensions 16-aligned,
   as the C does; needs a design decision (align extensions in `IoCreateDevice`, or keep these
   crates unarmed). Then freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks),
-  win32k-rust (10) and the remaining drivers. `debug_assert!` is gated on
+  win32k-rust (10) and the remaining drivers. Two armed-fastfat asserts printed twice per amd64-bios boot
+  (`20261101-183850-m41czity`). `cachesup.rs:182` FIXED 2026-11-01: fastfat mounting the BIOS
+  machine's EMPTY floppy got STATUS_NO_MEDIA_IN_DEVICE from MmMakeDataSectionResident, which
+  cc-rust's `CcRosEnsureVacbResident` turned into FALSE (a stale "DUMMY_PSEH: return FALSE
+  instead of raising" stand-in, 11 sites) -- "would block" to a WAIT caller, so fastfat raised
+  STATUS_CANT_WAIT. cc-rust now raises as the C does, releasing its BCB/VACB first.
+  **OWED:** `read.rs:590`, a DASD non-cached read returning STATUS_VERIFY_REQUIRED on the
+  volume's own VerifyThread (`20261101-200736-od_rznoq`); find which IrpContext flag should
+  have set SL_OVERRIDE_VERIFY_VOLUME, and whether the C does the same on an empty floppy. `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of
