@@ -45,9 +45,7 @@ macro_rules! DPRINT1 {
 /// Silenced: `DPRINT` is what `NDEBUG` turns off, and every win32k C file this
 /// crate translates carries `#define NDEBUG`.
 macro_rules! DPRINT {
-    ($($t:tt)*) => {
-        ()
-    };
+    ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) };
 }
 
 // win32k's FIXME is NOT one of the always-on channels the scanner models it as:
@@ -58,21 +56,15 @@ macro_rules! DPRINT {
 /// Channel-gated in the C, and no boot-path process opens the channel.
 // nolint: scan_dropped_prints (channel-gated, ERR-only at boot — see above)
 macro_rules! FIXME {
-    ($($t:tt)*) => {
-        ()
-    };
+    ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) };
 }
 
 /// Channel-gated in the C — see the module note.
 macro_rules! WARN {
-    ($($t:tt)*) => {
-        ()
-    };
+    ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) };
 }
 
 /// Channel-gated in the C — see the module note.
 macro_rules! TRACE {
-    ($($t:tt)*) => {
-        ()
-    };
+    ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) };
 }

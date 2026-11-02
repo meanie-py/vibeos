@@ -15,7 +15,7 @@
 // Wine debug calls are macros in the C++ source. Keep them as macros in Rust too: an
 // out-of-line no-op function is an optimization/ABI barrier and is not equivalent.
 macro_rules! MESSAGE {
-    ($($arg:tt)*) => {{}};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 
 // Wine's ERR/FIXME/WARN/TRACE, shared by every Wine-derived crate.

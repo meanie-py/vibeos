@@ -11,7 +11,7 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // The ROS DPRINT channel. NDEBUG is #defined in the C build, so these compile out. They MUST stay
 // MACROS: an out-of-line no-op fn is an optimization barrier that uncloaks latent ABI mismatches
 // into ud2 (field manual §9.65) — and the dhcpcsvc bug where one became `loop {}` hung the caller.
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! DPRINT  { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
 #[macro_export]
 macro_rules! DPRINT1 {
     ($fmt:literal $(, $arg:expr)* $(,)?) => {

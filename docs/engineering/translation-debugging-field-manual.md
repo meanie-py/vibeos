@@ -2314,6 +2314,17 @@ Three kinds of divergence hide in that, and they are not equally serious:
   wrong pointer type, and 44 parameters the translator had renamed `_riid`, `_This` — because
   with every use swallowed, they really did look unused. A `$($t:tt)*` debug macro is a dropped
   print AND an unchecked expression; use the shared crate.
+  **Channels that stay OFF still check their arguments.** TRACE/WARN, DPRINT, ATLTRACE and the
+  others forward to `win32macros_rust::DBG_TYPECHECK!`, or winedebug-rust's twin of it. It puts
+  `let _ = arg;` in a closure that is never called: names resolve and types check, but nothing is
+  evaluated or codegened, so a debug helper that is declared and never linked still links.
+  `let _ = place` never borrows, so packed fields work. 337 swallowing definitions in 290 files were
+  converted on 2026-11-01. They had hidden 413 errors in 38 crates: about 160 parameters renamed
+  `_x`, 30 `__FUNCTION__` (now the C name as a literal), stale bindgen field paths, ole32's
+  `c_void` `debugstr_*` stubs, and a `debugstr_wn` missing its length. One finding was in the C
+  itself: beepmidi.c calls `CallClient(.., MOM_OPEN, ..)` inside a DPRINT, so with NDEBUG the
+  client is never told. `scan_swallowing_debug_macro` gates the form, and profile_derive emits the
+  checking DPRINT.
 - **The module's own header redefines the macro, and the port took the SDK's spelling.**
   `winddi.h:2816` says `FLOATOBJ_GetFloat(pf)` is `(*(PULONG)(pf))` (the bits, for an i386
   kernel where `FLOATL` is `DWORD`); `win32ss/pch.h:90` redefines it as `(*(pf))` for win32k.

@@ -41,7 +41,7 @@ macro_rules! ClearFlag {
 // fatdata.h's trace macros are `{NOTHING;}` in a free build: the arguments are not even
 // evaluated. They were FFI calls into no-op stubs in rust_cohab_stub.c, ~880 optimization
 // barriers on every path through the driver.
-macro_rules! DebugTrace { ($($t:tt)*) => {}; }
+macro_rules! DebugTrace { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
 macro_rules! DebugUnwind { ($($t:tt)*) => {}; }
 macro_rules! DebugDump { ($($t:tt)*) => {}; }
 macro_rules! DbgDoit { ($($t:tt)*) => {}; }
@@ -74,7 +74,7 @@ macro_rules! TimerStop {
 // KdPrintEx — debug print macro discarded in free builds. A macro, never an out-of-line fn.
 #[macro_export]
 macro_rules! KdPrintEx {
-    ($($arg:tt)*) => {};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 
 // crate-type = staticlib (cohab) → this PE module needs its own panic handler /

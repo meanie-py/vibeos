@@ -46,7 +46,7 @@ static mut InfFileSpecification: [WCHAR; 6] = [
 
 pub const CONTROL_Z: ::core::ffi::c_int = '\u{1a}' as i32;
 
-static mut parser_funcs: [parser_state_func; 9] = unsafe {
+static mut parser_funcs: [parser_state_func; 9] = {
     [
         Some(line_start_state as unsafe extern "C" fn(*mut parser, *const WCHAR) -> *const WCHAR),
         Some(section_name_state as unsafe extern "C" fn(*mut parser, *const WCHAR) -> *const WCHAR),

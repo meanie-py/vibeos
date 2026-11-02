@@ -776,7 +776,7 @@ unsafe fn PROFILE_Load(
                 if !(*key).value.is_null() {
                     debugstr_w((*key).value)
                 } else {
-                    b"(none)\0" as *const u8 as *const WCHAR
+                    b"(none)\0" as *const u8 as *const ::core::ffi::c_char
                 },
             );
         }

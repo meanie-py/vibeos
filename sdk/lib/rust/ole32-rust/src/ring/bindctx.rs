@@ -282,7 +282,7 @@ unsafe extern "system" fn BindCtxImpl_GetRunningObjectTable(
 ) -> HRESULT {
     let _This = impl_from_IBindCtx(iface);
 
-    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const i8, This, pprot);
+    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const i8, _This, pprot);
 
     if pprot.is_null() {
         return E_POINTER;
@@ -428,7 +428,7 @@ unsafe extern "system" fn BindCtxImpl_EnumObjectParam(
 ) -> HRESULT {
     TRACE!(
         b"(%p,%p)\n\0".as_ptr() as *const i8,
-        iface,
+        _iface,
         pszkey,
     );
 

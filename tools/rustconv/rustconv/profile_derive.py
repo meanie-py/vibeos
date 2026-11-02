@@ -4936,8 +4936,12 @@ pub use crate::{ERR, FIXME, TRACE, WARN};"""
 // (field manual §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py
 // rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
 // DPRINT1 PRINTS in this DBG=1 tree, kernel and user mode alike: it comes from
-// win32macros-rust with the other macros.
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+// win32macros-rust with the other macros. DPRINT is off, but its arguments still
+// type-check (DBG_TYPECHECK: a never-called closure), so a stale one is a compile error
+// rather than silently swallowed tokens.
+#[macro_export] macro_rules! DPRINT {
+    ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) };
+}
 #[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
 pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};"""

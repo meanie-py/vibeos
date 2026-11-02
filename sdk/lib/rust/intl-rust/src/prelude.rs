@@ -20,7 +20,7 @@ pub use core::ptr::{addr_of, addr_of_mut};
 extern "C" {
     pub fn DbgPrint(Format: *const c_char, ...) -> u32;
 }
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
 #[macro_export]
 macro_rules! DPRINT1 {
     ($fmt:literal $(, $arg:expr)* $(,)?) => {{

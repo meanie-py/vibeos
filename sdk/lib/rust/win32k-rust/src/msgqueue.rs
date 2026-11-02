@@ -2016,7 +2016,7 @@ unsafe fn co_MsqSendMessage_impl(
             b"Sender Freeing Message %p ptirec %p bit %d list empty %d\n\0".as_ptr() as *const i8,
             Message,
             ptirec,
-            ((*(*ptirec).pcti).fsChangeBits & QS_SENDMESSAGE as u32 != 0) as INT,
+            ((*(*ptirec).pcti).fsChangeBits & QS_SENDMESSAGE as u16 != 0) as INT,
             IsListEmpty(core::ptr::addr_of_mut!((*ptirec).SentMessagesListHead)),
         );
         FreeUserMessage(Message);

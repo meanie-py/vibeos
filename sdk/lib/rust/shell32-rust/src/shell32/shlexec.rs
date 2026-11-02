@@ -1753,7 +1753,7 @@ unsafe extern "C" fn dde_connect(
     if !hDdeData.is_null() {
         DdeFreeDataHandle(hDdeData);
     } else {
-        WARN!(CPP_COM_WSTR_WARN_DdeClientTransaction.as_ptr(), DdeGetLastError(ddeInst));
+        WARN!(b"DdeClientTransaction failed with error %04x\n\0".as_ptr(), DdeGetLastError(ddeInst));
     }
     ret = 33;
 

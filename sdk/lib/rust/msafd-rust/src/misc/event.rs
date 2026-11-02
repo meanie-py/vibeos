@@ -139,7 +139,7 @@ pub unsafe extern "system" fn WSPEnumNetworkEvents(
     let mut Status: NTSTATUS;
     let mut SockEvent: HANDLE = core::ptr::null_mut();
 
-    TRACE!(b"Called (lpNetworkEvents %x)\n\0".as_ptr() as _, lpNetworkEvents);
+    TRACE!(b"Called (lpNetworkEvents %x)\n\0".as_ptr() as *const i8, lpNetworkEvents);
 
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
@@ -237,7 +237,7 @@ pub unsafe extern "system" fn WSPEnumNetworkEvents(
         (*lpNetworkEvents).iErrorCode[FD_GROUP_QOS_BIT as usize] = TranslateNtStatusError(EnumReq.EventStatus[FD_GROUP_QOS_BIT as usize]);
     }
 
-    TRACE!(b"Leaving\n\0".as_ptr() as _);
+    TRACE!(b"Leaving\n\0".as_ptr() as *const i8);
 
     MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, core::ptr::null_mut()) as i32
 }

@@ -15,7 +15,7 @@ use core::ptr::null_mut;
 use super::olesys::*;
 
 macro_rules! TRACE {
-    ($($t:tt)*) => {{}};
+    ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) };
 }
 macro_rules! FIXME {
     ($fmt:literal $(, $e:expr)* $(,)?) => {

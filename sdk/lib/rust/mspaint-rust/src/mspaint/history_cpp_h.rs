@@ -80,7 +80,7 @@ impl ImageModel {
     }
     pub unsafe fn PushImageForUndo__1(&mut self, hbm: HBITMAP) {
         let this_: *mut Self = self;
-        ATLTRACE!(b"%s: %d\n\0".as_ptr() as *const i8, __FUNCTION__, (*this_).m_currInd);
+        ATLTRACE!(b"%s: %d\n\0".as_ptr() as *const i8, b"PushImageForUndo\0".as_ptr(), (*this_).m_currInd);
     
         if hbm.is_null() {
             ShowOutOfMemory();
@@ -98,7 +98,7 @@ impl ImageModel {
     }
     pub unsafe fn PushImageForUndo__2(&mut self, rcPartial: &RECT) {
         let this_: *mut Self = self;
-        ATLTRACE!(b"%s: %d\n\0".as_ptr() as *const i8, __FUNCTION__, (*this_).m_currInd);
+        ATLTRACE!(b"%s: %d\n\0".as_ptr() as *const i8, b"PushImageForUndo\0".as_ptr(), (*this_).m_currInd);
     
         let part: &mut IMAGE_PART = &mut (*this_).m_historyItems[(*this_).m_currInd as usize];
         (*part).clear();
@@ -123,7 +123,7 @@ impl ImageModel {
     }
     pub unsafe fn Undo(&mut self, bClearRedo: BOOL) {
         let this_: *mut Self = self;
-        ATLTRACE!(b"%s: %d\n\0".as_ptr() as *const i8, __FUNCTION__, (*this_).m_undoSteps);
+        ATLTRACE!(b"%s: %d\n\0".as_ptr() as *const i8, b"Undo\0".as_ptr(), (*this_).m_undoSteps);
         if (*this_).CanUndo() == 0 {
             return;
         }
@@ -146,7 +146,7 @@ impl ImageModel {
     }
     pub unsafe fn Redo(&mut self) {
         let this_: *mut Self = self;
-        ATLTRACE!(b"%s: %d\n\0".as_ptr() as *const i8, __FUNCTION__, (*this_).m_redoSteps);
+        ATLTRACE!(b"%s: %d\n\0".as_ptr() as *const i8, b"Redo\0".as_ptr(), (*this_).m_redoSteps);
         if (*this_).CanRedo() == 0 {
             return;
         }

@@ -733,12 +733,12 @@ pub unsafe extern "system" fn FatCheckDirtyBit(
                 && (*IrpContext).MinorFunction == IRP_MN_VERIFY_VOLUME
                 && FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_BOOT_OR_PAGING_FILE) != 0)
             {
-                KdPrintEx!(DPFLTR_FASTFAT_ID, DPFLTR_INFO_LEVEL, (b"FASTFAT: WARNING! Mounting Dirty Volume %Z\0".as_ptr() as *const i8).cast(), &VolumeLabel as *const _UNICODE_STRING);
+                KdPrintEx!(DPFLTR_FASTFAT_ID, DPFLTR_INFO_LEVEL, (b"FASTFAT: WARNING! Mounting Dirty Volume %Z\0".as_ptr() as *const i8).cast::<i8>(), &VolumeLabel as *const _UNICODE_STRING);
                 SetFlag!((*Vcb).VcbState, VCB_STATE_FLAG_MOUNTED_DIRTY);
             }
         } else {
             if FlagOn((*Vcb).VcbState as u32, VCB_STATE_FLAG_MOUNTED_DIRTY) != 0 {
-                KdPrintEx!(DPFLTR_FASTFAT_ID, DPFLTR_INFO_LEVEL, (b"FASTFAT: Volume %Z has been cleaned.\n\0".as_ptr() as *const i8).cast(), &VolumeLabel as *const _UNICODE_STRING);
+                KdPrintEx!(DPFLTR_FASTFAT_ID, DPFLTR_INFO_LEVEL, (b"FASTFAT: Volume %Z has been cleaned.\n\0".as_ptr() as *const i8).cast::<i8>(), &VolumeLabel as *const _UNICODE_STRING);
                 ClearFlag!((*Vcb).VcbState, VCB_STATE_FLAG_MOUNTED_DIRTY as u32);
             } else {
                 let _ = FsRtlBalanceReads((*Vcb).TargetDeviceObject);

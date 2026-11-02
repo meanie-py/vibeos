@@ -2217,7 +2217,7 @@ pub unsafe extern "system" fn FatDeletePackedEa(
     unsafe {
         PAGED_CODE!();
 
-        DebugTrace!(1, Dbg, (b"FatDeletePackedEa, Offset = %08lx\n\0".as_ptr() as *const u8).cast(), Offset);
+        DebugTrace!(1, Dbg, (b"FatDeletePackedEa, Offset = %08lx\n\0".as_ptr() as *const u8).cast::<i8>(), Offset);
 
         let packed_ea: *mut PACKED_EA = (*EaSetHeader).PackedEas.as_mut_ptr().add(Offset as usize) as *mut PACKED_EA;
         let mut packed_ea_size: u32 = 0;
@@ -2236,7 +2236,7 @@ pub unsafe extern "system" fn FatDeletePackedEa(
 
         *PackedEasLength -= packed_ea_size;
 
-        DebugTrace!(-1, Dbg, (b"FatDeletePackedEa -> VOID\n\0".as_ptr() as *const u8).cast(), 0);
+        DebugTrace!(-1, Dbg, (b"FatDeletePackedEa -> VOID\n\0".as_ptr() as *const u8).cast::<i8>(), 0);
 
         UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
     }

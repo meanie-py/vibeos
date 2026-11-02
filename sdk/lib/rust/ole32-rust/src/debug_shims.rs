@@ -56,19 +56,28 @@ pub fn SUCCEEDED(hr: i32) -> bool {
 // wine debugstr_* — consumed only as (no-op) TRACE/WARN varargs.
 static PLACEHOLDER: &[u8] = b"?\0";
 
+// Generic over the argument: the off-channel TRACE/WARN now TYPE-CHECK their arguments
+// (DBG_TYPECHECK), and C passes each of these its own pointer type (a GUID*, a ULONG*, a
+// LONGLONG by value). The `_n` forms take the C's length argument too.
 macro_rules! debugstr_stub {
     ($($name:ident),+ $(,)?) => {$(
-        pub fn $name(_p: *const core::ffi::c_void) -> *const c_char {
+        pub fn $name<T>(_p: T) -> *const c_char {
+            PLACEHOLDER.as_ptr() as *const c_char
+        }
+    )+};
+}
+macro_rules! debugstr_stub_n {
+    ($($name:ident),+ $(,)?) => {$(
+        pub fn $name<T, N>(_p: T, _n: N) -> *const c_char {
             PLACEHOLDER.as_ptr() as *const c_char
         }
     )+};
 }
 
+debugstr_stub_n!(debugstr_an, debugstr_wn);
 debugstr_stub!(
     debugstr_a,
     debugstr_w,
-    debugstr_an,
-    debugstr_wn,
     debugstr_guid,
     debugstr_user_flags,
     debugstr_formatetc,

@@ -3120,7 +3120,7 @@ unsafe extern "C" fn ConvertSJIS2JIS(input: *const i8, count: u32, output: *mut 
 }
 
 unsafe extern "C" fn MultiLanguage_create(pUnkOuter: *mut IUnknown, ppObj: *mut *mut core::ffi::c_void) -> HRESULT {
-    TRACE!(b"Creating MultiLanguage object\n\0".as_ptr().cast());
+    TRACE!(b"Creating MultiLanguage object\n\0".as_ptr().cast::<i8>());
     if !pUnkOuter.is_null() {
         return CLASS_E_NOAGGREGATION;
     }
@@ -3142,7 +3142,7 @@ unsafe extern "C" fn MultiLanguage_create(pUnkOuter: *mut IUnknown, ppObj: *mut 
 
     (*mlang).ref_ = 1;
     *ppObj = core::ptr::addr_of!((*mlang).IMultiLanguage_iface) as *mut core::ffi::c_void;
-    TRACE!(b"returning %p\n\0".as_ptr().cast(), mlang as *mut core::ffi::c_void);
+    TRACE!(b"returning %p\n\0".as_ptr().cast::<i8>(), mlang as *mut core::ffi::c_void);
 
     LockModule();
 

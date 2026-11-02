@@ -219,7 +219,7 @@ pub const CLSCTX_INPROC_SERVER: DWORD = 0x00000001;
 
 #[macro_export]
 macro_rules! UNREFERENCED_PARAMETER {
-    ($($arg:tt)*) => {{}};
+    ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) };
 }
 #[macro_export]
 macro_rules! TRACE_ON {

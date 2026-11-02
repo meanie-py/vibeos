@@ -28,7 +28,5 @@ macro_rules! DPRINT1 {
 
 /// Silenced: every acpi C file this crate translates carries `#define NDEBUG`.
 macro_rules! DPRINT {
-    ($($t:tt)*) => {
-        ()
-    };
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }

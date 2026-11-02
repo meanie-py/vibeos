@@ -283,7 +283,7 @@ static mut DpDeviceMap: [DpDeviceMapEntry; 32] = [
     },
 ];
 
-static mut DpDriverMap: [DpDriverMapEntry; 8] = unsafe {
+static mut DpDriverMap: [DpDriverMapEntry; 8] = {
     [
         DpDriverMapEntry {
             pid: 2 as ULONG,

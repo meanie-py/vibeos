@@ -25,7 +25,7 @@ pub use mmebuddy_macros_rust::VALIDATE_MMSYS_PARAMETER_DBG as VALIDATE_MMSYS_PAR
 // rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
 // DPRINT1 PRINTS in this DBG=1 tree, kernel and user mode alike: it comes from
 // win32macros-rust with the other macros.
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
 #[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
 pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};

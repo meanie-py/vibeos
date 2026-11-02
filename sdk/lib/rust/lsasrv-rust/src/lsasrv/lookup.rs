@@ -2130,7 +2130,7 @@ unsafe fn LsapLookupWellKnownSids(
             (*(*SidEnumBuffer).SidInfo.offset(i as isize)).Sid as PSID,
             &raw mut sid_string,
         );
-        TRACE!(b"Mapping SID: %S\n\0".as_ptr() as _, sid_string);
+        TRACE!(b"Mapping SID: %S\n\0".as_ptr() as *const i8, sid_string);
         LocalFree(sid_string as *mut core::ffi::c_void);
         sid_string = core::ptr::null_mut();
 
@@ -2178,7 +2178,7 @@ unsafe fn LsapLookupWellKnownSids(
                 }
             }
 
-            TRACE!(b"Mapped to: %wZ\n\0".as_ptr() as _, &raw mut name.Name);
+            TRACE!(b"Mapped to: %wZ\n\0".as_ptr() as *const i8, &raw mut name.Name);
             *Mapped = (*Mapped).wrapping_add(1);
         }
     }

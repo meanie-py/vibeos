@@ -12,10 +12,10 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // an out-of-line no-op is an optimization barrier that uncloaks latent ABI mismatches into ud2
 // (field manual §9.65). The WINE_-prefixed spellings are the same macros under their long names.
 
-#[macro_export] macro_rules! WINE_TRACE { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! WINE_ERR   { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! WINE_WARN  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! WINE_FIXME { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! WINE_TRACE { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
+#[macro_export] macro_rules! WINE_ERR   { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
+#[macro_export] macro_rules! WINE_WARN  { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
+#[macro_export] macro_rules! WINE_FIXME { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
 pub use crate::{WINE_ERR, WINE_FIXME, WINE_TRACE, WINE_WARN};
 
 // ================= CRT (cdecl) — msvcrt/ntdll exports ==========================================

@@ -57,9 +57,9 @@ static mut TranslationRegKey: [WCHAR; 25] = [
     0 as ::core::ffi::c_int as WCHAR,
 ];
 
-static mut setupact: HANDLE = unsafe { INVALID_HANDLE_VALUE };
+static mut setupact: HANDLE = INVALID_HANDLE_VALUE;
 
-static mut setuperr: HANDLE = unsafe { INVALID_HANDLE_VALUE };
+static mut setuperr: HANDLE = INVALID_HANDLE_VALUE;
 
 static mut critsect_debug: CRITICAL_SECTION_DEBUG = unsafe { _RTL_CRITICAL_SECTION_DEBUG {
         Type: 0 as WORD,
@@ -74,7 +74,7 @@ static mut critsect_debug: CRITICAL_SECTION_DEBUG = unsafe { _RTL_CRITICAL_SECTI
         __bindgen_anon_1: _RTL_CRITICAL_SECTION_DEBUG__bindgen_ty_1 { Spare: [0; 1] },
     }};
 
-static mut setupapi_cs: CRITICAL_SECTION = unsafe {
+static mut setupapi_cs: CRITICAL_SECTION = {
     _RTL_CRITICAL_SECTION {
         DebugInfo: &raw const critsect_debug as PRTL_CRITICAL_SECTION_DEBUG,
         LockCount: -(1 as ::core::ffi::c_int) as LONG,

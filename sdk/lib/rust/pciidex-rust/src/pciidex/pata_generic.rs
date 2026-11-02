@@ -396,7 +396,7 @@ unsafe extern "C" fn PciIdeAcpiSetTransferMode(
 
     INFO!(
         b"CH %lu: Old timings %-2lX 0:%-3ld 0:%-3ld 1:%-3ld 1:%-3ld\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         (*CurrentMode).ModeFlags,
         (*CurrentMode).Drive[0 as usize].PioSpeed as LONG,
         (*CurrentMode).Drive[0 as usize].DmaSpeed as LONG,
@@ -406,7 +406,7 @@ unsafe extern "C" fn PciIdeAcpiSetTransferMode(
 
     INFO!(
         b"CH %lu: New timings %-2lX 0:%-3ld 0:%-3ld 1:%-3ld 1:%-3ld\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         NewMode.ModeFlags,
         NewMode.Drive[0 as usize].PioSpeed as LONG,
         NewMode.Drive[0 as usize].DmaSpeed as LONG,
@@ -726,7 +726,7 @@ unsafe extern "C" fn PciIdeControllerInitDma(mut Controller: PATA_CONTROLLER) ->
             } else {
                 INFO!(
                     b"CH %lu: %p DMA 0x%02X\n\0" as *const u8 as *const ::core::ffi::c_char,
-                    (*ChanData).Channel,
+                    (*ChanData).__bindgen_anon_1.Channel,
                     (*ChanData).Regs.Dma,
                     DmaStatus as ::core::ffi::c_int,
                 );
@@ -1024,7 +1024,7 @@ unsafe extern "C" fn PataEnableInterrupts(mut ChannelContext: PVOID, mut Enable:
 
     INFO!(
         b"CH %lu: %sable interrupts\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         if Enable != 0 {
             b"En\0".as_ptr() as *const i8
         } else {

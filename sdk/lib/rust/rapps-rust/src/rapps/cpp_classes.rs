@@ -26,7 +26,7 @@ pub unsafe fn cpp_delete<T>(p: *mut T) {
 macro_rules! ATLASSERT { ($($t:tt)*) => {}; }
 pub(crate) use ATLASSERT;
 /// atltrace.h's ATLTRACE: debug output, compiled out in a release ReactOS build. No-op macro.
-macro_rules! ATLTRACE { ($($t:tt)*) => {}; }
+macro_rules! ATLTRACE { ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) }; }
 pub(crate) use ATLTRACE;
 /// A pure virtual reached at runtime: the C++ runtime's `_purecall` terminates the process.
 pub fn cpp_pure_virtual_call(what: &str) -> ! { panic!("pure virtual call: {}", what) }

@@ -3145,7 +3145,7 @@ unsafe fn VARIANT_do_division(
         if di_result.scale > DEC_MAX_SCALE {
             let mut remainder: u8 = 0;
             let _warn_fmt1 = b"result scale is %u, scaling (with loss of significant digits)...\n\0";
-            WARN!(warn_fmt1.as_ptr() as *const i8, di_result.scale);
+            WARN!(_warn_fmt1.as_ptr() as *const i8, di_result.scale);
             while di_result.scale > DEC_MAX_SCALE
                 && VARIANT_int_iszero(di_result.bitsnum.as_ptr(), 3) == 0
             {
@@ -3154,7 +3154,7 @@ unsafe fn VARIANT_do_division(
             }
             if di_result.scale > DEC_MAX_SCALE {
                 let _warn_fmt2 = b"result underflowed, setting to 0\n\0";
-                WARN!(warn_fmt2.as_ptr() as *const i8);
+                WARN!(_warn_fmt2.as_ptr() as *const i8);
                 di_result.scale = 0;
                 di_result.sign = 0;
             } else if remainder >= 5 {
@@ -4376,8 +4376,8 @@ pub unsafe extern "system" fn VarBstrCat(
 ) -> HRESULT {
     TRACE!(
         b"%s,%s,%p\n\0".as_ptr() as *const i8,
-        debugstr_wn(pbstrLeft, SysStringLen(pbstrLeft)) as *const core::ffi::c_void,
-        debugstr_wn(pbstrRight, SysStringLen(pbstrRight)) as *const core::ffi::c_void,
+        debugstr_wn(pbstrLeft, SysStringLen(pbstrLeft) as i32) as *const core::ffi::c_void,
+        debugstr_wn(pbstrRight, SysStringLen(pbstrRight) as i32) as *const core::ffi::c_void,
         pbstrOut as *const core::ffi::c_void,
     );
 
@@ -4425,7 +4425,7 @@ pub unsafe extern "system" fn VarBstrCat(
 
     TRACE!(
         b"%s\n\0".as_ptr() as *const i8,
-        debugstr_wn(*pbstrOut, SysStringLen(*pbstrOut)) as *const core::ffi::c_void,
+        debugstr_wn(*pbstrOut, SysStringLen(*pbstrOut) as i32) as *const core::ffi::c_void,
     );
 
     S_OK
@@ -4440,8 +4440,8 @@ pub unsafe extern "system" fn VarBstrCmp(
 ) -> HRESULT {
     TRACE!(
         b"%s,%s,%d,%08x\n\0".as_ptr() as *const i8,
-        debugstr_wn(pbstrLeft, SysStringLen(pbstrLeft)),
-        debugstr_wn(pbstrRight, SysStringLen(pbstrRight)),
+        debugstr_wn(pbstrLeft, SysStringLen(pbstrLeft) as i32),
+        debugstr_wn(pbstrRight, SysStringLen(pbstrRight) as i32),
         lcid,
         dwFlags,
     );

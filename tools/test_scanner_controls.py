@@ -2477,6 +2477,14 @@ pub unsafe extern "C" fn KdIoPrintf(Format: *const i8, a0: usize, a1: usize) {}
 pub unsafe extern "C" fn _vsnwprintf(b: *mut u16, n: usize, fmt: *const u16, ap: *mut u8) {}
 """
 
+_SWALLOWING_DEBUG_MACRO_BAD = """\
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+"""
+_SWALLOWING_DEBUG_MACRO_GOOD = """\
+#[macro_export] macro_rules! DPRINT {
+    ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) };
+}
+"""
 _INERT_CRATE_ALLOW_BAD = """\
 #![no_std]
 #[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
@@ -3279,6 +3287,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BYTE_STEP_ONE_BAD},
         good={"good.rs": _BYTE_STEP_ONE_GOOD},
+    ),
+    Control(
+        name="scan_swallowing_debug_macro",
+        script="tools/scan_swallowing_debug_macro.py",
+        argv=["--lint"],
+        bad={"bad.rs": _SWALLOWING_DEBUG_MACRO_BAD},
+        good={"good.rs": _SWALLOWING_DEBUG_MACRO_GOOD},
     ),
     Control(
         name="scan_inert_crate_allow",

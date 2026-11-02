@@ -246,7 +246,7 @@ static mut REGSTR_UI_NUMBER_DESC_FORMAT: [WCHAR; 19] = [
     0 as ::core::ffi::c_int as WCHAR,
 ];
 
-static mut PropertyMap: [PropertyMapEntry; 35] = unsafe {
+static mut PropertyMap: [PropertyMapEntry; 35] = {
     [
         PropertyMapEntry {
             regType: REG_SZ as DWORD,
