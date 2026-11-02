@@ -820,6 +820,20 @@ pub fn dispatch(root: &Path, request: &Value) -> Result<Value> {
                 &a.req::<String>(n, "target")?,
             )?)
         }
+        "_cell_is_bodyless" => {
+            let n = bind!(a, "target", "repo");
+            val(proof::cell_is_bodyless(
+                &a.repo(n, root)?,
+                &a.req::<String>(n, "target")?,
+            )?)
+        }
+        "baseline_reusable" => {
+            let n = bind!(a, "targets", "baseline");
+            val(proof::baseline_reusable(
+                &a.req::<Vec<String>>(n, "targets")?,
+                &a.req::<PathBuf>(n, "baseline")?,
+            )?)
+        }
         "_cell_uses_panic_common" => {
             let n = bind!(a, "target", "arch", "repo");
             val(proof::cell_uses_panic_common(

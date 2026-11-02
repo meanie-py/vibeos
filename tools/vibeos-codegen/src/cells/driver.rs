@@ -139,7 +139,16 @@ pub fn prepare_convert(root: &Path, targets: &[String], baseline: &Path) -> Resu
         .iter()
         .map(|t| graph::model(root, t))
         .collect::<Result<_>>()?;
-    let baseline_plan = proof::save_baseline(root, targets, baseline)?;
+    let baseline_plan = if proof::baseline_reusable(targets, baseline)? {
+        let index_path = baseline.join("targets.json");
+        proof::BaselinePlan {
+            copies: vec![],
+            index_text: read(&index_path)?,
+            index_path,
+        }
+    } else {
+        proof::save_baseline(root, targets, baseline)?
+    };
     let apply = plan_apply(root, &cells)?;
     Ok(ConvertPlan {
         targets: targets.to_vec(),
@@ -208,8 +217,17 @@ pub fn ninja(root: &Path, arch: &str, targets: &[String]) -> Result<()> {
                 String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             );
-            let mut tail: Vec<_> = combined.lines().rev().take(15).collect();
-            tail.reverse();
+            let lines: Vec<_> = combined.lines().collect();
+            let error = Regex::new(r"^\s*(error|ld\.lld: error)\b").unwrap();
+            let mut tail: Vec<_> = lines
+                .iter()
+                .copied()
+                .filter(|s| s.starts_with("FAILED:") || error.is_match(s))
+                .take(20)
+                .collect();
+            tail.extend(lines.iter().copied().skip(lines.len().saturating_sub(8)));
+            let mut seen = BTreeSet::new();
+            tail.retain(|s| seen.insert(*s));
             return Err(Error::new(format!(
                 "build-{arch}: `ninja {}` failed:\n{}",
                 args.join(" "),

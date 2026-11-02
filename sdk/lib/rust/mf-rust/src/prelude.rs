@@ -435,7 +435,7 @@ pub static mut __wine_dbch_mfplat: __wine_debug_channel = __wine_debug_channel {
     name: unsafe { ::core::mem::transmute::<[u8; 15], [::core::ffi::c_char; 15]>(*b"\x6d\x66\x70\x6c\x61\x74\x00\x00\x00\x00\x00\x00\x00\x00\x00") },
 };
 pub static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw mut __wine_dbch_mfplat };
+    { &raw mut __wine_dbch_mfplat };
 // ==== end wine debug channels ====
 
 // ==== port resolve: cross-TU definitions (generated) ====

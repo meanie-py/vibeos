@@ -239,7 +239,7 @@ unsafe extern "C" fn CheckInfFile(
         &mut MfgContext,
     ) == 0
     {
-        'done: {
+        {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }

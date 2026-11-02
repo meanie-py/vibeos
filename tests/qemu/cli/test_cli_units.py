@@ -2243,6 +2243,11 @@ def test_rust_source_closure_tracks_shared_dependencies(tmp_path):
         (crate / "Cargo.toml").write_text(f'[package]\nname = "{name}"\n{deps}\n')
         (crate / "src/lib.rs").write_text("")
         (crate / "build.rs").write_text("fn main() {}")
+    # The workspace manifest holds [profile]: a per-package debug-assertions change must
+    # rebuild the .a even when none of its sources changed.
+    (workspace / "Cargo.toml").write_text(
+        "[profile.release.package.leaf]\ndebug-assertions = true\n"
+    )
     helper = Path(__file__).resolve().parents[3] / "sdk/cmake/rust-crate-deps.cmake"
     output = tmp_path / "sources.txt"
     script = tmp_path / "fixture.cmake"
@@ -2257,7 +2262,7 @@ def test_rust_source_closure_tracks_shared_dependencies(tmp_path):
         str(workspace / crate / source)
         for crate in ("leaf", "shared")
         for source in ("src/lib.rs", "Cargo.toml", "build.rs")
-    }
+    } | {str(workspace / "Cargo.toml")}
 
 
 def test_former_cargo_pocs_are_shipping_cmake_targets():
@@ -11735,6 +11740,38 @@ def test_payload_guest_set_from_a_current_build_passes(tmp_path, monkeypatch):
     pc.guest_build_current("appstorm64", tmp_path / "build-amd64")  # no SystemExit
 
 
+def _fake_build(tmp_path, ninja: str, depinfo: str):
+    b = tmp_path / "build-amd64"
+    (b / "dll").mkdir(parents=True)
+    (b / "build.ninja").write_text(ninja)
+    (b / "dll" / "x.dll.d").write_text(depinfo)
+    return b
+
+
+def test_payload_unbuilt_rust_crate_only_when_both_records_are_silent(tmp_path):
+    """An arm64-only crate (wowx64-rust) cannot change what build-amd64 stages, but a crate
+    named by EITHER the ninja graph or cargo's dep-info is compiled there."""
+    pc = _load_payload_compile()
+    b = _fake_build(
+        tmp_path,
+        "build x: CUSTOM /tmp/vibeos/sdk/lib/rust/user32-rust/src/lib.rs\n",
+        "x.dll: /tmp/vibeos/sdk/lib/rust/strsafe-rust/src/lib.rs\n",
+    )
+    unbuilt = pc.unbuilt_rust_crate(b)
+    assert unbuilt("sdk/lib/rust/wowx64-rust/src/callback.rs")
+    assert not unbuilt("sdk/lib/rust/user32-rust/src/lib.rs")  # ninja names it
+    assert not unbuilt("sdk/lib/rust/strsafe-rust/src/lib.rs")  # only cargo names it
+    assert not unbuilt("sdk/lib/rust/Cargo.toml")  # the workspace, not a crate
+    assert not unbuilt("dll/win32/wowx64/CMakeLists.txt")
+
+
+def test_payload_unbuilt_rust_crate_without_build_records_proves_nothing(tmp_path):
+    pc = _load_payload_compile()
+    b = tmp_path / "build-amd64"
+    b.mkdir()
+    assert not pc.unbuilt_rust_crate(b)("sdk/lib/rust/wowx64-rust/src/callback.rs")
+
+
 def test_payload_guest_set_build_dir_must_name_an_arch(tmp_path, monkeypatch):
     pc = _load_payload_compile()
     _fake_receipts(pc, monkeypatch, set())
@@ -12605,6 +12642,43 @@ def test_a_build_input_edited_mid_build_is_named_and_a_doc_is_not(tiny_repo: Pat
     (tiny_repo / "new.c").unlink()
     (tiny_repo / "Cargo.lock").write_text("version = 4\n")
     assert build_mod._inputs_moved(tiny_repo, start) == []
+
+
+def test_a_failure_over_a_moved_tree_is_reclassified_at_finalize(
+    tiny_repo: Path, tmp_path, monkeypatch
+):
+    """A LINK_FAIL from a build whose CMakeLists moved under it (`port data` mid-build) is
+    reported as BUILD_INPUTS_MOVED naming the original verdict; an unmoved failure and a
+    green run keep their own. The hook runs from finalize(), so every early return gets it."""
+    from . import warmth
+    from .artifacts import Run
+
+    monkeypatch.setenv("VIBEOS_ROOT", str(tmp_path / "root"))
+    monkeypatch.setenv("VIBEOS_ARTIFACT_ROOT", str(tmp_path / "art"))
+    start = warmth.worktree_tree(tiny_repo)
+
+    def failed_run() -> Run:
+        run = Run("build", "arm64")
+        run.classification = "LINK_FAIL"
+        run.add(build_mod.Stage("ninja", status="fail"))
+        run.finalize_hooks.append(lambda: build_mod._failure_over_moved_tree(run, tiny_repo, start))
+        return run
+
+    unmoved = failed_run()
+    assert unmoved.finalize(tiny_repo) == 1
+    assert unmoved.classification == "LINK_FAIL"
+
+    green = Run("build", "arm64")
+    (tiny_repo / "a.txt").write_text("edited mid-build\n")
+    build_mod._failure_over_moved_tree(green, tiny_repo, start)
+    assert green.verdict == "OK" and green.classification == ""
+
+    moved = failed_run()
+    assert moved.finalize(tiny_repo) == 1
+    assert moved.classification == "BUILD_INPUTS_MOVED"
+    assert "LINK_FAIL" in moved.stages[-1].detail
+    assert moved.stages[-1].salient == ["a.txt"]
+    assert moved.finalize_hooks == []
 
 
 def test_fex_build_prerequisites_are_named_up_front(tmp_path):

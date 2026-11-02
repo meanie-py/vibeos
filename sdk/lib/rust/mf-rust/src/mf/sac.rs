@@ -24,7 +24,7 @@ pub static mut DEVPKEY_Device_FriendlyName: DEVPROPKEY = _DEVPROPKEY {
     pid: 14 as DEVPROPID,
 };
 
-static mut audio_capture_activate_funcs: activate_funcs = unsafe {
+static mut audio_capture_activate_funcs: activate_funcs = {
     activate_funcs {
         create_object: Some(
             audio_capture_create_object

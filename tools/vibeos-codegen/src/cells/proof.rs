@@ -64,6 +64,36 @@ pub fn cell_crate(root: &Path, target: &str) -> Result<String> {
         "{target}: no add_cargo_module names it"
     )))
 }
+pub fn cell_is_bodyless(root: &Path, target: &str) -> Result<bool> {
+    let p = root
+        .join("sdk/lib/rust")
+        .join(cell_crate(root, target)?)
+        .join("build.rs");
+    if !p.exists() {
+        return Ok(false);
+    }
+    Ok(read(&local(root, &p)?)?.contains("there is no Rust body"))
+}
+/// Existing conversion baselines are immutable on a retry.
+pub fn baseline_reusable(targets: &[String], baseline: &Path) -> Result<bool> {
+    if !ARCHES.iter().all(|a| baseline.join(a).is_dir()) || !baseline.join("targets.json").exists()
+    {
+        return Ok(false);
+    }
+    let index = indexed_baseline(baseline)?;
+    let missing: Vec<_> = targets
+        .iter()
+        .filter(|t| index.get(t.as_str()).is_none())
+        .collect();
+    if !missing.is_empty() {
+        return Err(Error::new(format!(
+            "{} has no baseline for {:?}",
+            baseline.display(),
+            missing
+        )));
+    }
+    Ok(true)
+}
 pub fn cell_uses_panic_common(root: &Path, target: &str, arch: &str) -> Result<bool> {
     let p = root
         .join("sdk/lib/rust")
@@ -229,6 +259,7 @@ pub struct PolicyInput<'a> {
     pub diffs: Vec<String>,
     pub panic_common: bool,
     pub data_size: Option<u32>,
+    pub bodyless_sizes: Option<BTreeMap<String, u32>>,
     pub old_mapped: u64,
     pub new_mapped: u64,
     pub cd_old: Option<BTreeSet<String>>,
@@ -247,6 +278,7 @@ pub fn apply_policy(input: PolicyInput<'_>) -> PolicyResult {
         mut diffs,
         panic_common,
         data_size,
+        bodyless_sizes,
         old_mapped,
         new_mapped,
         cd_old,
@@ -285,6 +317,32 @@ pub fn apply_policy(input: PolicyInput<'_>) -> PolicyResult {
                 .cloned(),
         );
     }
+    let mut shell_eh = BTreeSet::new();
+    if arch == "i386" {
+        if let Some(sizes) = bodyless_sizes {
+            for (name, bound) in [
+                (
+                    ".eh_fram",
+                    constants()["I386_BODYLESS_EH_FRAME_MAX"].as_u64().unwrap() as u32,
+                ),
+                (
+                    ".reloc",
+                    constants()["I386_BODYLESS_RELOC_MAX"].as_u64().unwrap() as u32,
+                ),
+            ] {
+                shell_eh.extend(
+                    diffs
+                        .iter()
+                        .filter(|d| {
+                            d.starts_with(&format!("sections: + {name} "))
+                                && sizes.get(name).is_some_and(|n| *n <= bound)
+                        })
+                        .cloned(),
+                );
+            }
+        }
+    }
+    rsbegin.extend(shell_eh.iter().cloned());
     let unwind: BTreeSet<_> = diffs
         .iter()
         .filter(|d| arch != "i386" && !panic_common && d.starts_with("sections: + .pdata "))
@@ -369,8 +427,18 @@ pub fn apply_policy(input: PolicyInput<'_>) -> PolicyResult {
     if note_txtsetup {
         note.push_str(" (- cab: txtsetup.sif installs it)");
     }
-    if !rsbegin.is_empty() {
+    if rsbegin.difference(&shell_eh).next().is_some() {
         note.push_str(" (+ rsbegin .ctors/.dtors)");
+    }
+    if !shell_eh.is_empty() {
+        note.push_str(&format!(
+            " (+ the shell's i386 {})",
+            shell_eh
+                .iter()
+                .map(|d| d.split_whitespace().nth(2).unwrap())
+                .collect::<Vec<_>>()
+                .join("/")
+        ));
     }
     if !unwind.is_empty() {
         note.push_str(" (+ the lean handler's .pdata)");
@@ -507,6 +575,11 @@ pub fn check(root: &Path, targets: &[String], baseline: &Path) -> Result<CheckRe
                 arch: a,
                 diffs,
                 panic_common: cell_uses_panic_common(root, t, a)?,
+                bodyless_sizes: if a == "i386" && cell_is_bodyless(root, t)? {
+                    Some(new_pe.sections.iter().map(|s| (s.0.clone(), s.2)).collect())
+                } else {
+                    None
+                },
                 data_size: new_pe.sections.iter().find(|s| s.0 == ".data").map(|s| s.2),
                 old_mapped: old.mapped_size(),
                 new_mapped: new_pe.mapped_size(),

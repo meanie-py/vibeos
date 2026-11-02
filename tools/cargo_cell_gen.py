@@ -636,6 +636,10 @@ def cell_crate(target: str, repo: Path = REPO) -> str:
     return _invoke("cell_crate", locals())
 
 
+def _cell_is_bodyless(target: str, repo: Path) -> bool:
+    return _invoke("_cell_is_bodyless", locals())
+
+
 def _cell_uses_panic_common(target: str, arch: str, repo: Path) -> bool:
     return _invoke("_cell_uses_panic_common", locals())
 
@@ -809,8 +813,11 @@ def convert(targets: list[str], baseline: Path | None = None, repo: Path = REPO)
     baseline = baseline or (
         Path.home() / "vibeos-cargo-baselines" / time.strftime("convert-%Y%m%d-%H%M%S")
     )
-    save_baseline(targets, baseline, repo)
-    print(f"baseline: {baseline}")
+    if _rpc("baseline_reusable", {"targets": targets, "baseline": baseline}, repo):
+        print(f"baseline: {baseline} (kept from the first run)")
+    else:
+        save_baseline(targets, baseline, repo)
+        print(f"baseline: {baseline}")
     for cell in cells:
         for path in apply(cell, repo):
             print(f"wrote {path.relative_to(repo)}")

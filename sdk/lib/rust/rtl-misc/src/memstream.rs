@@ -249,11 +249,9 @@ pub unsafe extern "system" fn RtlReadMemoryStream(
         return S_OK;
     }
 
-    let CopyLength: ULONG = if (Available as ULONG) < Length {
-        Available as ULONG
-    } else {
-        Length
-    };
+    // `min(Available, Length)` compares at SIZE_T width in the C; narrowing Available
+    // first turns a stream with 4 GiB + n left into a read of n.
+    let CopyLength: ULONG = core::cmp::min(Available, Length as SIZE_T) as ULONG;
 
     core::ptr::copy(
         (*Stream).Current as *const u8,
@@ -290,7 +288,7 @@ pub unsafe extern "system" fn RtlReadOutOfProcessMemoryStream(
         return S_OK;
     }
 
-    CopyLength = core::cmp::min(Available as ULONG, Length);
+    CopyLength = core::cmp::min(Available, Length as SIZE_T) as ULONG;
 
     Status = NtReadVirtualMemory(
         (*Stream).ProcessHandle,

@@ -24,6 +24,7 @@ fn policy_frozen_python() {
                 .map(|x| x.as_str().unwrap().to_owned())
                 .collect(),
             panic_common: c["panic_common"].as_bool().unwrap(),
+            bodyless_sizes: None,
             data_size: c["data_size"].as_u64().map(|x| x as u32),
             old_mapped: c["old_mapped"].as_u64().unwrap(),
             new_mapped: c["new_mapped"].as_u64().unwrap(),
@@ -75,4 +76,39 @@ fn rejects_unchanged_and_missing() {
     assert_eq!(result.bad, 3);
     assert!(result.records[0].status.starts_with("NO BASELINE (2"));
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn bodyless_i386_section_allowance_is_bounded_and_specific() {
+    for (arch, bodyless, eh, reloc, expected) in [
+        ("i386", true, 0x88, 0x48, 0),
+        ("amd64", true, 0x88, 0x48, 2),
+        ("i386", false, 0x88, 0x48, 2),
+        ("i386", true, 0x401, 0x81, 2),
+    ] {
+        let result = proof::apply_policy(PolicyInput {
+            target: "m",
+            arch,
+            diffs: vec![
+                "sections: + .eh_fram 0x40000040".into(),
+                "sections: + .reloc 0x42000040".into(),
+            ],
+            panic_common: false,
+            data_size: None,
+            bodyless_sizes: bodyless.then(|| {
+                [(".eh_fram".into(), eh), (".reloc".into(), reloc)]
+                    .into_iter()
+                    .collect()
+            }),
+            old_mapped: 100,
+            new_mapped: 100,
+            cd_old: None,
+            cd_new: Default::default(),
+            txtsetup: false,
+        });
+        assert_eq!(result.diffs.len(), expected);
+        if expected == 0 {
+            assert_eq!(result.note, " (+ the shell's i386 .eh_fram/.reloc)");
+        }
+    }
 }

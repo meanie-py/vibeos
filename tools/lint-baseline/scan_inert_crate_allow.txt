@@ -1,0 +1,1 @@
+sdk/lib/rust/msvcrt-crt-rust/src/lib.rs:155: outer `#[allow(dead_code)]` binds to the next `extern crate`/`use` and allows nothing; write `#![allow(..)]`

@@ -4,7 +4,8 @@
 # not staged, and the -E tools do not need it.
 set GNUPGHOME=C:\TEMP\gpghome
 timeout 7zip\7z.exe 1200
-# fsquery.c: what an archiver asks about its output, to diff against winref.
+# fsquery.c: what an archiver asks about its output; Windows 11's answers on FAT32, NTFS and
+# CDFS are in fsquery.win11.txt.
 fsquery\fsquery.exe C:\TEMP X:\reactos\system32\ntdll.dll
 # regsd.c: the hive roots' DACLs, to diff against winref.
 regsd\regsd.exe

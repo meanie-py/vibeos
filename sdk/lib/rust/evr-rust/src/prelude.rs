@@ -236,7 +236,7 @@ pub struct __wine_debug_channel { // wine/debug.h
     pub name: [::core::ffi::c_char; 15],
 }
 pub static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw mut __wine_dbch_evr };
+    { &raw mut __wine_dbch_evr };
 // ==== end wine debug channels ====
 
 // ==== port macros: SDK header macros, lowered from the preprocessor's own expansion (generated -- re-run `rustconv port macros`) ====

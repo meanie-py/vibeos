@@ -116,7 +116,7 @@ pub unsafe extern "system" fn DeleteFileToRecycleBinW(FileName: LPCWSTR) -> i32 
     if hr >= 0 {
         return (TRUE) as i32;
     }
-    if unsafe { HRESULT_FACILITY(hr) } == (FACILITY_WIN32) as i32 {
+    if { HRESULT_FACILITY(hr) } == (FACILITY_WIN32) as i32 {
         unsafe { SetLastError((HRESULT_CODE(hr)) as DWORD) };
     } else {
         unsafe { SetLastError(ERROR_GEN_FAILURE) };

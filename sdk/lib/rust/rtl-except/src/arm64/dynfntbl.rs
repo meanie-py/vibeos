@@ -53,8 +53,8 @@ pub static mut RtlpDynamicFunctionTableLock: RTL_SRWLOCK = RTL_SRWLOCK {
 /// Self-referential list head — same static-initializer relocation the C uses.
 #[no_mangle]
 pub static mut RtlpDynamicFunctionTableList: LIST_ENTRY = LIST_ENTRY {
-    Flink: unsafe { core::ptr::addr_of!(RtlpDynamicFunctionTableList) as *mut LIST_ENTRY },
-    Blink: unsafe { core::ptr::addr_of!(RtlpDynamicFunctionTableList) as *mut LIST_ENTRY },
+    Flink: { core::ptr::addr_of!(RtlpDynamicFunctionTableList) as *mut LIST_ENTRY },
+    Blink: { core::ptr::addr_of!(RtlpDynamicFunctionTableList) as *mut LIST_ENTRY },
 };
 
 #[inline]

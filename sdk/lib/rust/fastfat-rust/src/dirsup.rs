@@ -880,21 +880,24 @@ pub unsafe extern "system" fn FatLocateDirent(
                         } else {
                             ntkrnl_sys::ASSERT!((LfnIndex % 13) == 0 && LfnIndex != 0);
                             LfnIndex -= 13;
+                            // Byte copies, as the C's RtlCopyMemory: the on-disk LFN entry is
+                            // packed and Name1 starts at byte 1, so a WCHAR-typed copy reads
+                            // through a misaligned pointer (caught by the armed UB checks).
 
                             core::ptr::copy_nonoverlapping(
-                                core::ptr::addr_of!((*Lfn).Name1) as *const WCHAR,
-                                (*LongFileName).Buffer.add(LfnIndex as usize),
-                                5usize,
+                                core::ptr::addr_of!((*Lfn).Name1) as *const u8,
+                                (*LongFileName).Buffer.add(LfnIndex as usize).cast::<u8>(),
+                                5 * core::mem::size_of::<WCHAR>(),
                             );
                             core::ptr::copy_nonoverlapping(
-                                core::ptr::addr_of!((*Lfn).Name2) as *const WCHAR,
-                                (*LongFileName).Buffer.add(LfnIndex as usize + 5),
-                                6usize,
+                                core::ptr::addr_of!((*Lfn).Name2) as *const u8,
+                                (*LongFileName).Buffer.add(LfnIndex as usize + 5).cast::<u8>(),
+                                6 * core::mem::size_of::<WCHAR>(),
                             );
                             core::ptr::copy_nonoverlapping(
-                                core::ptr::addr_of!((*Lfn).Name3) as *const WCHAR,
-                                (*LongFileName).Buffer.add(LfnIndex as usize + 11),
-                                2usize,
+                                core::ptr::addr_of!((*Lfn).Name3) as *const u8,
+                                (*LongFileName).Buffer.add(LfnIndex as usize + 11).cast::<u8>(),
+                                2 * core::mem::size_of::<WCHAR>(),
                             );
 
                             Ordinal = (*Lfn).Ordinal;
@@ -920,19 +923,19 @@ pub unsafe extern "system" fn FatLocateDirent(
                         FatEnsureStringBufferEnough((LongFileName).cast(), ((LfnIndex + 13) * 2) as u16);
 
                         core::ptr::copy_nonoverlapping(
-                            core::ptr::addr_of!((*Lfn).Name1) as *const WCHAR,
-                            (*LongFileName).Buffer.add(LfnIndex as usize),
-                            5usize,
+                            core::ptr::addr_of!((*Lfn).Name1) as *const u8,
+                            (*LongFileName).Buffer.add(LfnIndex as usize).cast::<u8>(),
+                            5 * core::mem::size_of::<WCHAR>(),
                         );
                         core::ptr::copy_nonoverlapping(
-                            core::ptr::addr_of!((*Lfn).Name2) as *const WCHAR,
-                            (*LongFileName).Buffer.add(LfnIndex as usize + 5),
-                            6usize,
+                            core::ptr::addr_of!((*Lfn).Name2) as *const u8,
+                            (*LongFileName).Buffer.add(LfnIndex as usize + 5).cast::<u8>(),
+                            6 * core::mem::size_of::<WCHAR>(),
                         );
                         core::ptr::copy_nonoverlapping(
-                            core::ptr::addr_of!((*Lfn).Name3) as *const WCHAR,
-                            (*LongFileName).Buffer.add(LfnIndex as usize + 11),
-                            2usize,
+                            core::ptr::addr_of!((*Lfn).Name3) as *const u8,
+                            (*LongFileName).Buffer.add(LfnIndex as usize + 11).cast::<u8>(),
+                            2 * core::mem::size_of::<WCHAR>(),
                         );
 
                         // Compute Lfn size and check tail

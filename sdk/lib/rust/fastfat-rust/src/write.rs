@@ -1164,7 +1164,7 @@ pub unsafe extern "system" fn FatCommonWrite(
                         let BytesToWrite: u32 = (ByteCount + (SectorSize - 1)) & !(SectorSize - 1);
 
                         if (StartingVbo & (SectorSize - 1)) != 0
-                            || (BytesToWrite != ByteCount && StartingVbo + ByteCount < ValidDataToCheck)
+                            || (BytesToWrite != ByteCount && StartingVbo + ByteCount < ValidDataLength)
                         {
                             ntkrnl_sys::ASSERT!(false);
                             (*p_status) = STATUS_NOT_IMPLEMENTED;

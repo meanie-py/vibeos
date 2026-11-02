@@ -13,7 +13,7 @@ static mut __wine_dbch_netapi32: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_netapi32 as *mut __wine_debug_channel };
+    &raw const __wine_dbch_netapi32 as *mut __wine_debug_channel;
 
 // _ENUM_PHASE was a file-local C `enum { BuiltinPhase, AccountPhase, DonePhase }` (int-sized).
 // Modelled as an int alias + bare consts so the values work as assignments, comparisons, and

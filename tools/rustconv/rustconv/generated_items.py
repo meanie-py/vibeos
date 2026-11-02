@@ -41,6 +41,11 @@ def digest(item: str) -> str:
     return hashlib.sha256(_bare(item).encode()).hexdigest()[:12]
 
 
+def unstamp(text: str) -> str:
+    """`text` with every `// gen:<digest>` stamp removed."""
+    return _STAMP.sub("", text)
+
+
 def stamp(item: str) -> str:
     """`item` with `// gen:<digest>` at the end of its first line."""
     item = _STAMP.sub("", item)
@@ -65,12 +70,15 @@ def preserve(
     split: Callable[[str], dict[str, str]],
     new: dict[str, str],
     epilogue: Callable[[str, str], str] = lambda _n, _t: "",
+    outside: Callable[[str, str], str] = lambda _n, t: t,
 ) -> dict[str, str]:
     """Move the block's hand-edited items above it; return `new` without them.
 
     `split` maps a block body to {name: item text}; `new` is what the stage is about to
     write, stamped. `epilogue(name, item)` is extra text a moved item needs outside the block
-    (the SDK block's `pub use crate::NAME;`, which the block otherwise spells for it).
+    (the SDK block's `pub use crate::NAME;`, which the block otherwise spells for it), and
+    `outside(name, item)` rewraps an item that only parses inside it (an `extern` block's
+    declaration).
     """
     text = prelude.read_text() if prelude.is_file() else ""
     m = re.search(re.escape(begin) + r"\n?(.*?)" + re.escape(end), text, re.S)
@@ -80,7 +88,7 @@ def preserve(
     if not hand:
         return new
     moved = "".join(
-        f"{HAND_NOTE}\n{_STAMP.sub('', hand[n]).rstrip()}\n{epilogue(n, hand[n])}"
+        f"{HAND_NOTE}\n{outside(n, _STAMP.sub('', hand[n]).rstrip())}\n{epilogue(n, hand[n])}"
         for n in sorted(hand)
     )
     body = m.group(1)

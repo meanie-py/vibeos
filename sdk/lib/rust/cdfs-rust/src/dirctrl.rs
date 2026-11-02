@@ -352,6 +352,14 @@ pub unsafe extern "C" fn CdQueryDirectory(
                                 // Zero the base part of the entry.
                                 let dest = (UserBuffer as *mut u8).add(NextEntry as usize);
                                 core::ptr::write_bytes(dest, 0, BaseLength as usize);
+                                // The C fills the fixed part in place, but NtQueryDirectoryFile
+                                // probes the caller's buffer for ULONG alignment only (a WoW64
+                                // caller's is 4-aligned), and these structs are 8-aligned: every
+                                // typed field store there is a misaligned deref in Rust. Fill an
+                                // aligned copy and store its bytes once the short name is in.
+                                let mut stage: FILE_ID_BOTH_DIR_INFORMATION = core::mem::zeroed();
+                                let base = core::ptr::addr_of_mut!(stage) as *mut u8;
+                                ntkrnl_sys::ASSERT!(BaseLength as usize <= core::mem::size_of::<FILE_ID_BOTH_DIR_INFORMATION>());
 
                                 // Populate the buffer based on file information class.
                                 match irp_sp.Parameters.QueryDirectory.FileInformationClass {
@@ -360,9 +368,7 @@ pub unsafe extern "C" fn CdQueryDirectory(
                                     | FileIdBothDirectoryInformation
                                     | FileIdFullDirectoryInformation
                                     | FileDirectoryInformation => {
-                                        DirInfo = (UserBuffer as *mut u8)
-                                            .add(NextEntry as usize)
-                                            as *mut FILE_BOTH_DIR_INFORMATION;
+                                        DirInfo = base as *mut FILE_BOTH_DIR_INFORMATION;
 
                                         let cd_time = (*ThisDirent).CdTime;
                                         CdConvertCdTimeToNtTime(
@@ -393,9 +399,7 @@ pub unsafe extern "C" fn CdQueryDirectory(
                                             (FileNameBytes + SeparatorBytes + VersionStringBytes) as u32;
                                     }
                                     FileNamesInformation => {
-                                        NamesInfo = (UserBuffer as *mut u8)
-                                            .add(NextEntry as usize)
-                                            as *mut FILE_NAMES_INFORMATION;
+                                        NamesInfo = base as *mut FILE_NAMES_INFORMATION;
                                         (*NamesInfo).FileIndex = (*ThisDirent).DirentOffset;
                                         (*NamesInfo).FileNameLength =
                                             (FileNameBytes + SeparatorBytes + VersionStringBytes) as u32;
@@ -406,9 +410,7 @@ pub unsafe extern "C" fn CdQueryDirectory(
                                 // Fill FileId for the two extended classes.
                                 match irp_sp.Parameters.QueryDirectory.FileInformationClass {
                                     FileIdBothDirectoryInformation => {
-                                        IdBothDirInfo = (UserBuffer as *mut u8)
-                                            .add(NextEntry as usize)
-                                            as *mut FILE_ID_BOTH_DIR_INFORMATION;
+                                        IdBothDirInfo = base as *mut FILE_ID_BOTH_DIR_INFORMATION;
                                         CdSetFidFromParentAndDirent(
                                             core::ptr::addr_of_mut!((*IdBothDirInfo).FileId) as *mut i64,
                                             Fcb,
@@ -416,9 +418,7 @@ pub unsafe extern "C" fn CdQueryDirectory(
                                         );
                                     }
                                     FileIdFullDirectoryInformation => {
-                                        IdFullDirInfo = (UserBuffer as *mut u8)
-                                            .add(NextEntry as usize)
-                                            as *mut FILE_ID_FULL_DIR_INFORMATION;
+                                        IdFullDirInfo = base as *mut FILE_ID_FULL_DIR_INFORMATION;
                                         CdSetFidFromParentAndDirent(
                                             core::ptr::addr_of_mut!((*IdFullDirInfo).FileId) as *mut i64,
                                             Fcb,
@@ -492,6 +492,8 @@ pub unsafe extern "C" fn CdQueryDirectory(
                                         }
                                     }
                                 }
+
+                                core::ptr::copy_nonoverlapping(base as *const u8, dest, BaseLength as usize);
 
                                 // Advance to the next entry in the buffer.
                                 FileNameBytes += SeparatorBytes + VersionStringBytes;

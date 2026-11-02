@@ -180,5 +180,7 @@
     "cell": "already a cargo cell on {arch} (add_cargo_module, no cmake link edge)",
     "absent": "not defined on {arch} in this configuration (an if(ARCH ...) gate or a build option such as --rostests)",
     "unknown": "no link edge in build-{arch}/build.ninja"
-  }
+  },
+  "I386_BODYLESS_EH_FRAME_MAX": 1024,
+  "I386_BODYLESS_RELOC_MAX": 128
 }

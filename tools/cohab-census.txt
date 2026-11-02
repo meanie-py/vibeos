@@ -951,6 +951,10 @@ dll/directx/wine/d3dx9_36/d3dx9.cmake	1	# math.c wants M_PI, which <math.h> only
 dll/directx/wine/dmime/CMakeLists.txt	1	# performance.c drives its message pump with a CONDITION_VARIABLE.
 dll/directx/wine/dpnet/CMakeLists.txt	1	# dpnet_main.c guards its one-time init with InitOnceExecuteOnce.
 dll/directx/wine/dwrite/CMakeLists.txt	1	# Wine guards every FreeType backend body in freetype.c with SONAME_LIBFREETYPE (configure
+dll/nls/normaliz/CMakeLists.txt	1	# IdnToAscii.c # replaced by Rust (sdk/lib/rust/normaliz-rust/src/normaliz/IdnToAscii.rs)
+dll/nls/normaliz/CMakeLists.txt	1	# IdnToUnicode.c # replaced by Rust (sdk/lib/rust/normaliz-rust/src/normaliz/IdnToUnicode.rs)
+dll/nls/normaliz/CMakeLists.txt	1	# nameprep.c # replaced by Rust (sdk/lib/rust/normaliz-rust/src/normaliz/nameprep/mod.rs, generated: port data)
+dll/nls/normaliz/CMakeLists.txt	1	# normalize.c # replaced by Rust (sdk/lib/rust/normaliz-rust/src/normaliz/normalize.rs)
 dll/ntdll/CMakeLists.txt	1	# asm = generates the asm includes (ks*.inc / syscalls.inc / sysfuncs.h) the
 dll/ntdll/CMakeLists.txt	1	# dbg/dbgui.c — replaced by Rust (ntdll-rust/src/dbg/dbgui.rs);
 dll/ntdll/CMakeLists.txt	1	# dispatch/dispatch.c — replaced by Rust (ntdll-rust/src/dispatch/mod.rs,

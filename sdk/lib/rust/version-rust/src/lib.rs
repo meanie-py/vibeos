@@ -1,8 +1,8 @@
 #![no_std]
-#[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
-#[allow(dead_code)]
-#[allow(unused_assignments)]
-#[allow(non_camel_case_types)]
+// C's names, as in every translated crate. These were OUTER `#[allow]`s, which attach to the
+// next item (the `extern crate` below) and allowed nothing; dead_code and unused_assignments
+// were the same and stay off, since unused_assignments is a logic signal.
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
 // Wine's ERR/FIXME/WARN/TRACE, shared by every Wine-derived crate. FIXME used to be a
 // local no-op here, but it is ON by default in Wine (libwine's default_flags), so every

@@ -298,7 +298,7 @@ pub fn build_rs(cell: &Cell) -> Result<String> {
             )
         })
         .collect();
-    let tables = if cell.link_order.is_empty() {
+    let tables = if !cell.link_order.values().any(|v| !v.is_empty()) {
         vec![("static_libs", &early), ("late_libs", &late)]
     } else {
         vec![("link_order", &cell.link_order)]
@@ -449,19 +449,19 @@ pub fn build_rs(cell: &Cell) -> Result<String> {
             base
         ));
     }
-    if cell.link_order.is_empty() && early.values().any(|v| !v.is_empty()) {
+    if !cell.link_order.values().any(|v| !v.is_empty()) && early.values().any(|v| !v.is_empty()) {
         l.extend([
             "        // cmake-built static libraries, reused until each has a cargo home.".into(),
             "        .static_libs(static_libs)".into(),
         ]);
     }
-    if cell.link_order.is_empty() && late.values().any(|v| !v.is_empty()) {
+    if !cell.link_order.values().any(|v| !v.is_empty()) && late.values().any(|v| !v.is_empty()) {
         l.extend([
             "        // ...and those cmake linked after the body, in the same order.".into(),
             "        .static_libs_after_body(late_libs)".into(),
         ]);
     }
-    if !cell.link_order.is_empty() {
+    if !!cell.link_order.values().any(|v| !v.is_empty()) {
         l.extend([
             "        // The body, import libs and static libs in cmake's link order: the first"
                 .into(),
@@ -551,7 +551,8 @@ pub fn validate_cell(cell: &Cell, build: bool) -> Result<()> {
                 )));
             }
             if !cell.subsystems.is_empty() && !cell.subsystems.contains_key(arch)
-                || !cell.link_order.is_empty() && !cell.link_order.contains_key(arch)
+                || !!cell.link_order.values().any(|v| !v.is_empty())
+                    && !cell.link_order.contains_key(arch)
                 || !cell.require_defined.is_empty() && !cell.require_defined.contains_key(arch)
                 || !cell.arch_shims.is_empty() && !cell.arch_shims.contains_key(arch)
                 || cell.rc.is_some() && !cell.rc_flags.contains_key(arch)

@@ -2294,9 +2294,11 @@ pub unsafe extern "system" fn FatPreallocateCloseContext(
         &raw mut FatData.GeneralSpinLock as *mut _,
     );
 
-    DbgDoit!((InterlockedIncrement(
-        &raw mut (*Vcb).CloseContextCount as *mut i32,
-    ) as u32) as i32);
+    // C: DbgDoit( InterlockedIncrement(&Vcb->CloseContextCount) ), i.e. under DBG -- the
+    // pair of FatAllocateCloseContext's decrement, which is #[cfg(debug_assertions)]. DbgDoit!
+    // is empty, so once armed the count was decremented and never raised: its 0 != assert.
+    #[cfg(debug_assertions)]
+    InterlockedIncrement(&raw mut (*Vcb).CloseContextCount as *mut i32);
 }
 
 #[no_mangle]

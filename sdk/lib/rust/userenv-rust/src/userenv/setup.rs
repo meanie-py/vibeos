@@ -40,7 +40,7 @@ static REG_PROFILES_DIRECTORY: [u16; 18] = [
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
-static mut UserShellFolders: [FOLDERDATA; 19] = unsafe {
+static mut UserShellFolders: [FOLDERDATA; 19] = {
     [
         _FOLDERDATA {
             lpValueName: win32macros_rust::wide_bytes!(b"A\0p\0p\0D\0a\0t\0a\0\0\0") as LPWSTR,
@@ -197,7 +197,7 @@ static mut UserShellFolders: [FOLDERDATA; 19] = unsafe {
     ]
 };
 
-static mut CommonShellFolders: [FOLDERDATA; 9] = unsafe {
+static mut CommonShellFolders: [FOLDERDATA; 9] = {
     [
         _FOLDERDATA {
             lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0A\0p\0p\0D\0a\0t\0a\0\0\0") as LPWSTR,
@@ -281,7 +281,7 @@ static mut CommonShellFolders: [FOLDERDATA; 9] = unsafe {
 // referenced it) so nothing misbehaved, but a wrong copy of the registry-root table is a trap
 // for the next reader, and `cargo check` cannot see either problem. Collapsed to one table:
 // the correct roots, over the `[u16; N]` statics rather than alignment-1 byte strings.
-static mut StandardProfiles: [PROFILEPARAMS; 2] = unsafe {
+static mut StandardProfiles: [PROFILEPARAMS; 2] = {
     [
         _PROFILEPARAMS {
             pszProfileName: DEFAULT_USER_NAME.as_ptr(),

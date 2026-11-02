@@ -1743,7 +1743,7 @@ unsafe extern "C" fn sink_writer_get_sink_factory_class(url: *const WCHAR, attri
     unsafe extern "C" {
         fn _wcsicmp(a: *const WCHAR, b: *const WCHAR) -> c_int;
     }
-    static mut ext_map: [extension_map; 4] = unsafe {
+    static mut ext_map: [extension_map; 4] = {
         [
             extension_map {
                 ext: RUSTCONV_WSTR_51ABFF51CF66.as_ptr(),
@@ -1763,7 +1763,7 @@ unsafe extern "C" fn sink_writer_get_sink_factory_class(url: *const WCHAR, attri
             },
         ]
     };
-    static mut class_map: [C2RustUnnamed_47; 4] = unsafe {
+    static mut class_map: [C2RustUnnamed_47; 4] = {
         [
             C2RustUnnamed_47 {
                 container: &raw const MFTranscodeContainerType_MPEG4,

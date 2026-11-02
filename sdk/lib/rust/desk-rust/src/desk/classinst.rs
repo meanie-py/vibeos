@@ -37,7 +37,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     if result == 0 {
         rc = (GetLastError()) as i32;
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -66,7 +66,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     if result == 0 {
         rc = (GetLastError()) as i32;
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -93,7 +93,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     if result == 0 {
         rc = (GetLastError()) as i32;
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -121,7 +121,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     if result == 0 {
         rc = (GetLastError()) as i32;
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -156,7 +156,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     if result == 0 && GetLastError() != ERROR_INSUFFICIENT_BUFFER {
         rc = (GetLastError()) as i32;
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -188,7 +188,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     if hInf == INVALID_HANDLE_VALUE {
         rc = (GetLastError()) as i32;
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -226,7 +226,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     if result == 0 {
         rc = (GetLastError()) as i32;
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -255,7 +255,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     );
     if hr < 0 {
         rc = (ERROR_INSUFFICIENT_BUFFER) as i32;
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -289,7 +289,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     if hDriverKey == (INVALID_HANDLE_VALUE).cast() {
         rc = (GetLastError()) as i32;
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -330,7 +330,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     );
     if rc != (ERROR_SUCCESS) as i32 {
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -369,7 +369,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     if result == 0 {
         rc = (GetLastError()) as i32;
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -404,7 +404,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     if result == 0 {
         rc = (GetLastError()) as i32;
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -436,7 +436,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     );
     if rc != (ERROR_SUCCESS) as i32 {
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -467,7 +467,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     );
     if rc != (ERROR_SUCCESS) as i32 {
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -511,7 +511,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         );
         if rc != (ERROR_SUCCESS) as i32 {
             // DPRINT removed
-            'cleanup: loop {
+            loop {
                 if hInf != INVALID_HANDLE_VALUE {
                     SetupCloseInfFile(hInf);
                 }
@@ -541,7 +541,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
         if wIndex == 9999 {
             rc = (ERROR_GEN_FAILURE) as i32;
             // DPRINT removed
-            'cleanup: loop {
+            loop {
                 if hInf != INVALID_HANDLE_VALUE {
                     SetupCloseInfFile(hInf);
                 }
@@ -586,7 +586,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     if result == 0 {
         rc = (GetLastError()) as i32;
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }
@@ -620,7 +620,7 @@ pub unsafe extern "system" fn DisplayClassInstaller(
     );
     if rc != (ERROR_SUCCESS) as i32 {
         // DPRINT removed
-        'cleanup: loop {
+        loop {
             if hInf != INVALID_HANDLE_VALUE {
                 SetupCloseInfFile(hInf);
             }

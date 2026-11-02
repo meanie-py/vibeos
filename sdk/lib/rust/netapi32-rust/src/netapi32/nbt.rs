@@ -8,7 +8,7 @@ pub const TRANSPORT_NBT: [::core::ffi::c_char; 5] =
     unsafe { ::core::mem::transmute::<[u8; 5], [::core::ffi::c_char; 5]>(*b"MNBT\0") };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_netbios as *mut __wine_debug_channel };
+    &raw const __wine_dbch_netbios as *mut __wine_debug_channel;
 
 static mut __wine_dbch_netbios: __wine_debug_channel = unsafe {
     __wine_debug_channel {

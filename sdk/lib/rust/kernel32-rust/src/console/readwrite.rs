@@ -532,7 +532,7 @@ unsafe fn IntReadConsoleOutputCode(
 
     /* Retrieve the results */
     let seh2_result: BOOL;
-    'seh2_try: {
+    {
         let mut seh2_except_triggered = false;
         // _SEH2_TRY
         {

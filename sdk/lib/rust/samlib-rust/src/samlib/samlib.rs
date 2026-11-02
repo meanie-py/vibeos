@@ -925,7 +925,7 @@ pub unsafe extern "system" fn SamLookupIdsInDomain(
         *Names = (MIDL_user_allocate((Count as usize * core::mem::size_of::<RPC_UNICODE_STRING>()) as SIZE_T) as *mut RPC_UNICODE_STRING).cast();
         if (*Names).is_null() {
             Status = STATUS_INSUFFICIENT_RESOURCES;
-            'done: loop {
+            loop {
                 if !NT_SUCCESS(Status) {
                     if !(*Names).is_null() {
                         i = 0;
@@ -963,7 +963,7 @@ pub unsafe extern "system" fn SamLookupIdsInDomain(
             (*(*Names).add(i as usize)).Buffer = MIDL_user_allocate(((*NamesBuffer.Element.add(i as usize)).MaximumLength as usize) as SIZE_T) as LPWSTR;
             if (*(*Names).add(i as usize)).Buffer.is_null() {
                 Status = STATUS_INSUFFICIENT_RESOURCES;
-                'done: loop {
+                loop {
                     if !NT_SUCCESS(Status) {
                         if !(*Names).is_null() {
                             i = 0;
@@ -1014,7 +1014,7 @@ pub unsafe extern "system" fn SamLookupIdsInDomain(
             *Use = MIDL_user_allocate((Count as usize * core::mem::size_of::<SID_NAME_USE>()) as SIZE_T) as PSID_NAME_USE;
             if (*Use).is_null() {
                 Status = STATUS_INSUFFICIENT_RESOURCES;
-                'done: loop {
+                loop {
                     if !NT_SUCCESS(Status) {
                         if !(*Names).is_null() {
                             i = 0;
