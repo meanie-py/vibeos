@@ -153,6 +153,9 @@ unsafe extern "C" fn concat_W(mut buffer: *mut WCHAR, mut src1: *const WCHAR, mu
         if *buffer.offset(-(1 as isize)) != '\\' as WCHAR {
             *buffer = '\\' as WCHAR;
             buffer = buffer.offset(1);
+            /* Divergence from the C: it never re-terminated after the separator, so with no
+             * third part the caller saw whatever the reused FILEPATHS buffer held next. */
+            *buffer = 0;
         }
         if !src2.is_null() {
             while *src2 == '\\' as WCHAR {
@@ -167,6 +170,9 @@ unsafe extern "C" fn concat_W(mut buffer: *mut WCHAR, mut src1: *const WCHAR, mu
         if *buffer.offset(-(1 as isize)) != '\\' as WCHAR {
             *buffer = '\\' as WCHAR;
             buffer = buffer.offset(1);
+            /* Divergence from the C: it never re-terminated after the separator, so with no
+             * third part the caller saw whatever the reused FILEPATHS buffer held next. */
+            *buffer = 0;
         }
         if !src3.is_null() {
             while *src3 == '\\' as WCHAR {
@@ -758,6 +764,14 @@ pub unsafe extern "system" fn SetupQueueCopyIndirectA(params: PSP_FILE_COPY_PARA
     if (*op).src_file.is_null() {
         (*op).src_file = (*op).dst_file;
     }
+    /* A NULL TargetFilename means "the source file name" (SetupQueueCopy docs). The C never
+     * filled it in: the target path ended at the directory, and with concat_W's missing NUL a
+     * second such copy went to the PREVIOUS op's file name (b.txt landed on a2.txt in the
+     * modrun suite, both builds). free_file_op_queue already treats dst_file == src_file as
+     * one allocation. */
+    if (*op).dst_file.is_null() {
+        (*op).dst_file = (*op).src_file;
+    }
     if !(*params).LayoutInf.is_null() {
         get_src_file_info((*params).LayoutInf, op);
         if (*op).dst_path.is_null() {
@@ -828,6 +842,14 @@ pub unsafe extern "system" fn SetupQueueCopyIndirectW(params: PSP_FILE_COPY_PARA
     /* some defaults */
     if (*op).src_file.is_null() {
         (*op).src_file = (*op).dst_file;
+    }
+    /* A NULL TargetFilename means "the source file name" (SetupQueueCopy docs). The C never
+     * filled it in: the target path ended at the directory, and with concat_W's missing NUL a
+     * second such copy went to the PREVIOUS op's file name (b.txt landed on a2.txt in the
+     * modrun suite, both builds). free_file_op_queue already treats dst_file == src_file as
+     * one allocation. */
+    if (*op).dst_file.is_null() {
+        (*op).dst_file = (*op).src_file;
     }
     if !(*params).LayoutInf.is_null() {
         get_src_file_info((*params).LayoutInf, op);
@@ -1585,10 +1607,24 @@ unsafe extern "C" fn do_file_copyW(source: LPCWSTR, target: LPCWSTR, style: DWOR
         style
     );
 
-    /* Get a temp file name */
-    if GetTempPathW(ARRAYSIZE!(TempPath), core::ptr::addr_of_mut!(TempPath) as *mut WCHAR as LPWSTR) == 0 {
-        ERR!(b"GetTempPathW error\n\0".as_ptr() as *const i8);
+    /* Stage the extracted file in the TARGET's directory, not %TEMP%. Divergence from the C
+     * (ReactOS arm), which used GetTempPathW(): on the live boot %TEMP% is X:\reactos\TEMP on
+     * the read-only CD, so every queued copy failed ERROR_ACCESS_DENIED, and wherever %TEMP%
+     * sat on another volume than the target the final MoveFileExW (no COPY_ALLOWED) failed
+     * too. Windows' setupapi does the same: it expands into the destination directory under a
+     * temporary SET*.tmp name and renames it into place. A copy that can succeed at all can
+     * write there. */
+    if strlenW(target) as usize >= TempPath.len() {
+        SetLastError(ERROR_FILENAME_EXCED_RANGE as DWORD);
         return (FALSE) as BOOL;
+    }
+    strcpyW(core::ptr::addr_of_mut!(TempPath) as *mut WCHAR, target);
+    match TempPath.iter().rposition(|&c| c == '\\' as WCHAR) {
+        Some(slash) => TempPath[slash + 1] = 0,
+        None => {
+            TempPath[0] = '.' as WCHAR;
+            TempPath[1] = 0;
+        }
     }
 
     /* Try to open the source file */
@@ -1599,7 +1635,7 @@ unsafe extern "C" fn do_file_copyW(source: LPCWSTR, target: LPCWSTR, style: DWOR
 
     if GetTempFileNameW(
         core::ptr::addr_of_mut!(TempPath) as *mut WCHAR as LPCWSTR,
-        RUSTCONV_WSTR_96A296D224F2.as_ptr(),
+        wz!("SET"),
         0 as UINT,
         core::ptr::addr_of_mut!(TempFile) as *mut WCHAR as LPWSTR,
     ) == 0
@@ -1813,6 +1849,13 @@ unsafe extern "C" fn do_file_copyW(source: LPCWSTR, target: LPCWSTR, style: DWOR
             MOVEFILE_REPLACE_EXISTING as DWORD,
         );
         TRACE!(b"Did copy... rc was %i\n\0".as_ptr() as *const i8, rc);
+    }
+    /* The C left the staged file behind whenever it was not moved into place (a skipped or
+     * failed copy); with it now in the target directory that would litter installs. */
+    if rc == 0 {
+        let err = GetLastError();
+        DeleteFileW(core::ptr::addr_of_mut!(TempFile) as *mut WCHAR as LPCWSTR);
+        SetLastError(err);
     }
 
     /* after copy processing */
