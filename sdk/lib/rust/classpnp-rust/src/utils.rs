@@ -2831,7 +2831,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
     // 1.3 Buffer size
     bufferLength = core::cmp::min(
         (*(*FdoExtension).PrivateFdoData).HwMaxXferLen,
-        maxParameterListLength as u32,
+        maxParameterListLength as u32, // nolint: minmax-narrowing (clamped to u16::MAX above)
     );
     bufferLength = core::cmp::min(
         bufferLength,

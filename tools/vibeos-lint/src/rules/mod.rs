@@ -1,6 +1,7 @@
 //! Register each plugin here; plugins have no subprocess or filesystem scan.
 use crate::Rule;
 pub mod const_narrowing_cast;
+pub mod minmax_narrowing;
 pub mod double_fetch;
 pub mod dowhile_continue;
 pub mod entry_point_cc;
@@ -266,6 +267,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(init_then_move::InitThenMove),
         Box::new(read_after_clear::ReadAfterClear),
         Box::new(const_narrowing_cast::ConstNarrowingCast),
+        Box::new(minmax_narrowing::MinmaxNarrowing),
         Box::new(info_class_literals::InfoClassLiterals),
         Box::new(misaligned_cast::MisalignedCast),
         Box::new(fnptr_abi_transmute::FnptrAbiTransmute),

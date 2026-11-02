@@ -461,10 +461,7 @@ pub unsafe extern "C" fn PopupError(Text: PCCH, Status: PCCH, Ir: PINPUT_RECORD,
         WriteConsoleOutputCharacterA(
             StdOutput,
             Status,
-            min(
-                (strlen(Status)) as _,
-                ((Width as usize - 4) as SIZE_T) as u32,
-            ),
+            min(strlen(Status) as SIZE_T, (Width as SIZE_T).wrapping_sub(4)) as DWORD,
             coPos,
             &mut Written,
         );
