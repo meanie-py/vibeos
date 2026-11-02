@@ -7,7 +7,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from .dead_regions import dead_region_spans, in_dead_region
+from .dead_regions import dead_region_spans, file_scope_defines, in_dead_region
 from .lex_mask import comment_spans, directive_spans, mask_code
 
 
@@ -181,6 +181,25 @@ def _argument_count(masked: str, name_end: int) -> tuple[int, str] | None:
     return None
 
 
+def _defines_above(
+    text: str, tu_source: str, tu_masked: str, pinned: Mapping[str, int]
+) -> frozenset[str]:
+    """`file_scope_defines` at the start of this function's DEFINITION in the TU. The body
+    is not the TU's text verbatim (debug macros are stripped before sealing), so it is found
+    by name: the identifier before the signature's `(`, defined exactly once. Anything else
+    sees no file-scope defines -- every arm they could decide stays optional, as before."""
+    head = text[: text.find("{")] if "{" in text else text
+    # The first candidate defined exactly once: `__declspec(dllexport) int f(` names an
+    # attribute first, which has no definition.
+    for name in re.findall(r"([A-Za-z_]\w*)\s*\(", head):
+        defs = [
+            m.start() for m in re.finditer(rf"\b{re.escape(name)}\s*\([^;{{}}]*\)\s*\{{", tu_masked)
+        ]
+        if len(defs) == 1:
+            return file_scope_defines(tu_source, defs[0], pinned)
+    return frozenset()
+
+
 def seal_calls(
     text: str,
     required_calls: set[str],
@@ -248,8 +267,14 @@ def seal_calls(
         spans.append((match.start(1), match.end(1), name))
 
     # `pinned`: the TU's own defines, which settle some `#if` arms live -- those calls are
-    # required like any other. Without it every arm stays optional (dead_regions).
-    dead_spans = dead_region_spans(text, masked, pinned)
+    # required like any other. Without it every arm stays optional (dead_regions). The
+    # body also sees the TU's file-scope `#define`s above it (beepmidi's CONTINUOUS_NOTES).
+    predefined = (
+        _defines_above(text, tu_source, decl_scope, pinned)
+        if pinned is not None and tu_source
+        else frozenset()
+    )
+    dead_spans = dead_region_spans(text, masked, pinned, predefined)
     result = text
     calls = []
     for index, (start, end, original) in reversed(list(enumerate(spans))):
