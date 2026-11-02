@@ -272,8 +272,7 @@ unsafe fn CcpPinData(
         let mut vacb: PROS_VACB = core::ptr::null_mut();
         let status = CcRosGetVacb(shared_cache_map, r_offset, &mut vacb);
         if status < 0 {
-            // DUMMY_PSEH: ExRaiseStatus would be caught by caller's SEH — return FALSE instead
-            return 0u8;
+            ExRaiseStatus(status);
         }
 
         new_bcb = CcpGetAppropriateBcb(shared_cache_map, vacb, file_offset, length, flags, 1u8) as PINTERNAL_BCB;
@@ -283,12 +282,18 @@ unsafe fn CcpPinData(
         }
     }
 
-    let result = CcRosEnsureVacbResident(
-        (*new_bcb).Vacb,
+    // C: _SEH2_FINALLY { if (!Result) CcUnpinData(...) } -- also on a raise.
+    let result = crate::view::ensure_resident_or(
+        (*new_bcb).Vacb.cast(),
         BooleanFlagOn(flags, PIN_WAIT),
         BooleanFlagOn(flags, PIN_NO_READ),
         vacb_offset,
         length,
+        || {
+            CcUnpinData(core::ptr::addr_of_mut!((*new_bcb).PFCB) as PVOID);
+            *bcb = core::ptr::null_mut();
+            *buffer = core::ptr::null_mut();
+        },
     );
 
     if result == 0 {
@@ -350,18 +355,14 @@ pub unsafe extern "system" fn CcMapData(
         let mut vacb: PROS_VACB = core::ptr::null_mut();
         let status = CcRosGetVacb(shared_cache_map, (*file_offset).QuadPart, &mut vacb);
         if status < 0 {
-            // DUMMY_PSEH: ExRaiseStatus would be caught by caller's SEH — return FALSE instead
-            core::ptr::write_volatile(p_bcb, core::ptr::null_mut());
-            *p_buffer = core::ptr::null_mut();
-            return 0u8;
+            ExRaiseStatus(status);
         }
 
         i_bcb = CcpGetAppropriateBcb(shared_cache_map, vacb, file_offset, length, 0, 0u8) as PINTERNAL_BCB;
         if i_bcb.is_null() {
             CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
             core::ptr::write_volatile(p_bcb, core::ptr::null_mut());
-            *p_buffer = core::ptr::null_mut();
-            return 0u8;
+            ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
         }
     } else {
         (*i_bcb).RefCount += 1;
@@ -371,12 +372,18 @@ pub unsafe extern "system" fn CcMapData(
         );
     }
 
-    let result = CcRosEnsureVacbResident(
-        (*i_bcb).Vacb,
+    // C: _SEH2_FINALLY { if (!Result) { CcpDereferenceBcb; *pBcb = *pBuffer = NULL; } }
+    let result = crate::view::ensure_resident_or(
+        (*i_bcb).Vacb.cast(),
         BooleanFlagOn(flags, MAP_WAIT),
         BooleanFlagOn(flags, MAP_NO_READ),
         vacb_offset,
         length,
+        || {
+            CcpDereferenceBcb(shared_cache_map, i_bcb);
+            core::ptr::write_volatile(p_bcb, core::ptr::null_mut());
+            *p_buffer = core::ptr::null_mut();
+        },
     );
 
     if result == 0 {
