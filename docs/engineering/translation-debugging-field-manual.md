@@ -2641,6 +2641,11 @@ found 9 real divergences, and most cut a wide operand down before the compare:
 range a 0-byte chunk and spins forever; freeldr's ATAPI `min(len as u16, 0xFFFE)` sends a byte
 count of 0 for a 64 KiB read; atapi's `ATA_LOCAL_BUFFER_SIZE as u8` is 572 → 60. Rule: compare
 at the width the C compares at, THEN narrow the result: `min(a, b as T_wide) as T_narrow`.
+`scan_minmax_narrowing` (`vibeos-cli check`, baseline empty) now gates the narrowing shape where
+it can see the operand's declared width (locals, params, struct fields); `scan_const_narrowing_cast`
+gates the constant case, including the parenthesized `(NAME) as u8` that hid atapi's. Sign flips
+(rebar, the winpos and tui pair) are NOT linted: they need C types, so `-Wsign-compare` on the
+oracle stays the tool for those.
 
 ### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
 **Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a

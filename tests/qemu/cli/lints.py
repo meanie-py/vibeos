@@ -1510,6 +1510,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_container_ptr_read", [rustlints.SENTINEL, "scan_container_ptr_read"], "stdout")
     )
+    # A min/max operand cast narrower than its declared type BEFORE the compare. CcZeroData
+    # cut a LONGLONG length to ULONG, so a 4 GiB range was a 0-byte chunk and the loop spun
+    # forever. A Rust rule (tools/vibeos-lint/src/rules/minmax_narrowing.rs).
+    specs.append(("scan_minmax_narrowing", [rustlints.SENTINEL, "scan_minmax_narrowing"], "stdout"))
     # The address of ONE local of type T passed with a length of size_of::<T>() + ...: a C
     # struct-with-trailing-buffer translated as two locals, so the callee's tail writes hit
     # whatever the compiler put next. kernel32's GetFileInformationByHandle wrote the FAT
