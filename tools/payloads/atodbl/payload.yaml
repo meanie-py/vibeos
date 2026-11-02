@@ -10,7 +10,7 @@ build_hint: "tools/payloads/atodbl/build.sh {arch}"
 binaries:
   - src: tools/payloads/atodbl/atodbl-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/atodbl.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/atodbl.exe
 
 test:
   launch_marker: "[ATODBL] done"

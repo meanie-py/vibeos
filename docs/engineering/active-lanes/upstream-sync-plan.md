@@ -89,7 +89,7 @@ path (1b5f5ac0801; ours since 2026-07-13) and diskpart's sizeof(PPARTENTRY) over
 
 | item | upstream | what it needs |
 |---|---|---|
-| Vista users folder (`C:\Users`, ProgramData, Public) | f0a83320d79 | userenv-rust setup/profile/environment AND the hivedef/hivesft/livecd/boot_images half, landed TOGETHER. The hive half was declined alone, because a C:\Users ProfilesDirectory against XP-style profile code meets at first logon. The 79 userenv `verify_translation_literals` baseline lines are this item. |
+| ~~Vista users folder (`C:\Users`, ProgramData, Public)~~ **DONE 2026-11-01** (`7246a5a8d03`) | f0a83320d79 | userenv-rust setup/profile/environment hand-ported together with the hive/livecd/boot_images half (and our own hivesys USERPROFILE/HOMEPATH, livecd_start.cmd). It also fixed a live master regression: the merge took upstream's userenv .rc without its string table, so InitializeProfiles failed on LoadStringW(IDS_PROFILEPATH) on every install. Upstream's table says Music for My Pictures and "Appdata"; corrected here. |
 | Kernel Shim Engine (`ntoskrnl/kse/`, ~1.6K lines) | 6eaa9a97e7a, 1a577262b50, dd91acb1f95, 804d4036c26 | ntoskrnl-rust port; KseInitialize(0/1) in IoInitSystem; apphelp's `sdbread_km` for the driver database (`media/sdb/drvmain.xml`) |
 | RtlFls* (`sdk/lib/rtl/fls.c`) | bf45318bc5b | rtl-rust; flip the nine ntdll.spec lines; kernel32-rust FlsAlloc/FlsFree to route through it |
 | RtlInitializeNtUserPfn / RtlRetrieveNtUserPfn (`ntuserpfn.c`, `ntuserdisp.s`) | 479662b3f0c | rtl-rust; then ntdll.spec + ntdll_vista.spec |
@@ -97,7 +97,7 @@ path (1b5f5ac0801; ours since 2026-07-13) and diskpart's sizeof(PPARTENTRY) over
 | USER32 Wine-11.11 controls (button/combo/edit/listbox/static/mdi/DDE, ~4K lines) | 39fee16a692 | user32-rust; the combo `scan_dropped_null_guard` baseline line is this item |
 | Boot-partition polling (`PollBootPartitionTimeout`, now in the hive at 30 s) | 2b15735e98c | iomgr-rust IopMarkBootPartition. HAZARD: arm64 and MININT boot with no boot device on purpose, and a straight port stalls them 30 s; gate the loop on those first |
 | diskpart volume rework (status column, sort, select by letter, CD/DVD size) | ac1ab9e3043, e386343489c, b6f74c0360a | diskpart-rust partlist/UpdateVolumeInfo; the Status column is empty until then. Upstream's PrintVolume default arm assigns nVolumeType for nVolumeStatus |
-| SHGetKnownFolderItem (Wine-11.16 shellpath) | fe98aaf5443 | shell32-rust; `verify_lost_exports` baseline line |
+| shell32-rust shellpath to Wine-11.16 (Vista CSIDL/KNOWNFOLDER defaults), with SHGetKnownFolderItem | fe98aaf5443 | Until it lands, shell32's built-in defaults are XP names, so livecd.inf names EVERY shell folder under HKCU/HKLM `User Shell Folders` (the key shellpath reads). An install is covered because userenv's setup writes them all. The `verify_lost_exports` baseline line is this item. |
 | KBDCLASS/MOUCLASS port-device IRP support (14 commits) | 7f754b4e420..2349cb9a3bc | kbdclass-rust / mouclass-rust semantic review |
 
 ## Previous sync (2026-10-17: the 2026-10-15 sync LANDED, `7509c4dc796`; follow-ups done)

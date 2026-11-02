@@ -582,6 +582,10 @@ unsafe extern "C" fn SetSystemEnvironment(Environment: *mut PWSTR) -> BOOL {
     1
 }
 
+extern "system" {
+    fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: *mut WCHAR, nSize: DWORD) -> DWORD;
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn CreateEnvironmentBlock(lpEnvironment: *mut LPVOID, hToken: HANDLE, bInherit: BOOL) -> BOOL {
     let mut Status: NTSTATUS;
@@ -629,6 +633,8 @@ pub unsafe extern "system" fn CreateEnvironmentBlock(lpEnvironment: *mut LPVOID,
     Length = 260;
     if GetAllUsersProfileDirectoryW(Buffer.as_mut_ptr(), &mut Length) != 0 {
         SetUserEnvironmentVariable(Environment, ENV_ALLUSERSPROFILE.as_ptr() as LPWSTR, Buffer.as_mut_ptr(), 0);
+        // Upstream f0a83320d79: ALLUSERSPROFILE is ProgramData now, and gets that name too.
+        SetUserEnvironmentVariable(Environment, win32macros_rust::wide_bytes!(b"P\0r\0o\0g\0r\0a\0m\0D\0a\0t\0a\0\0\0") as LPWSTR, Buffer.as_mut_ptr(), 0);
     }
 
     Length = 260;
@@ -650,6 +656,26 @@ pub unsafe extern "system" fn CreateEnvironmentBlock(lpEnvironment: *mut LPVOID,
             SetUserEnvironmentVariable(Environment, ENV_COMMON_PROGRAM_FILES.as_ptr() as LPWSTR, szValue.as_mut_ptr(), 0);
         }
 
+        RegCloseKey(hKey);
+    }
+
+    // PUBLIC, from the ProfileList's Public value (upstream f0a83320d79). Upstream returns FALSE
+    // if the expansion fails, leaking the half-built block; a missing PUBLIC is not worth that.
+    lError = RegOpenKeyExW(
+        HKEY_LOCAL_MACHINE,
+        win32macros_rust::wide_bytes!(b"S\0O\0F\0T\0W\0A\0R\0E\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0W\0i\0n\0d\0o\0w\0s\0 \0N\0T\0\\\0C\0u\0r\0r\0e\0n\0t\0V\0e\0r\0s\0i\0o\0n\0\\\0P\0r\0o\0f\0i\0l\0e\0L\0i\0s\0t\0\0\0") as LPCWSTR,
+        0,
+        KEY_READ as REGSAM,
+        &mut hKey,
+    );
+    if lError == ERROR_SUCCESS as LONG {
+        Length = core::mem::size_of::<[WCHAR; 1024]>() as DWORD;
+        lError = RegQueryValueExW(hKey, win32macros_rust::wide_bytes!(b"P\0u\0b\0l\0i\0c\0\0\0") as LPCWSTR, core::ptr::null_mut(), &mut dwType, szValue.as_mut_ptr() as LPBYTE, &mut Length);
+        if lError == ERROR_SUCCESS as LONG
+            && ExpandEnvironmentStringsW(szValue.as_ptr(), Buffer.as_mut_ptr(), 260) != 0
+        {
+            SetUserEnvironmentVariable(Environment, win32macros_rust::wide_bytes!(b"P\0U\0B\0L\0I\0C\0\0\0") as LPWSTR, Buffer.as_mut_ptr(), 0);
+        }
         RegCloseKey(hKey);
     }
 

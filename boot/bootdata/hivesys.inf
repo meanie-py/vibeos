@@ -1604,10 +1604,10 @@ HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","PATHEXT",0x
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","TEMP",0x00020002,"%SystemRoot%\TEMP"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","TMP",0x00020002,"%SystemRoot%\TEMP"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","windir",0x00020002,"%SystemRoot%"
-HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","USERPROFILE",0x00020002,"%SystemDrive%\Documents and Settings\Administrator"
-HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","ALLUSERSPROFILE",0x00020002,"%SystemDrive%\Documents and Settings\All Users"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","USERPROFILE",0x00020002,"%SystemDrive%\Users\Administrator"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","ALLUSERSPROFILE",0x00020002,"%SystemDrive%\ProgramData"
 HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","HOMEDRIVE",0x00000002,"C:"
-HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","HOMEPATH",0x00020002,"\Documents and Settings\Administrator"
+HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","HOMEPATH",0x00020002,"\Users\Administrator"
 ;HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","SHIMENG_DEBUG_LEVEL",0x00000000,"4"
 ;HKLM,"SYSTEM\CurrentControlSet\Control\Session Manager\Environment","SHIM_DEBUG_LEVEL",0x00000000,"4"
 

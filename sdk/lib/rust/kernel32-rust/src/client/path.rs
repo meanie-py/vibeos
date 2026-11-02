@@ -2211,83 +2211,11 @@ pub unsafe extern "system" fn GetShortPathNameW(
         return 0;
     }
 
-    /* We will be touching removed, removable drives -- don't warn the user */
-    ErrorMode = SetErrorMode((SEM_NOOPENFILEERRORBOX | SEM_FAILCRITICALERRORS) as UINT) as ULONG;
-
-    /* Do a simple check to see if the path exists */
-    if GetFileAttributesW(lpszLongPath) == INVALID_FILE_ATTRIBUTES {
-        /* Windows checks for an application compatibility flag to allow this */
-        if (*NtCurrentTeb()).ProcessEnvironmentBlock.is_null()
-            || ((*(*NtCurrentTeb()).ProcessEnvironmentBlock)
-                .AppCompatFlags
-                .__bindgen_anon_1.LowPart as ULONG
-                & GetShortPathNameNT4 as ULONG)
-                == 0
-        {
-            /* It doesn't, so fail */
-            ReturnLength = 0;
-            // goto Quickie;
-        } else {
-            // continue to next block
-            // fall through to the main logic
-            // We need to handle this with a goto-like structure
-            // Since we can't use goto, we'll use a loop with break
-            // Actually, let's restructure using a block
-            // For now, just fall through
-        }
-    }
-
-    // We need to handle the control flow properly
-    // Let's use a different approach - wrap the main logic in a block
-    // and use break to simulate goto
-
-    // Actually, let's just translate it directly with a loop for goto simulation
-    // But that would be too complex. Let's just use the c2rust approach with a current_block variable
-    // No, let's just translate it faithfully with nested if/else
-
-    // Actually, looking at the C code more carefully, the structure is:
-    // if (GetFileAttributesW fails && (!PEB || !flag)) { goto Quickie; }
-    // Then the rest of the function
-
-    // So let's just do that:
-    if GetFileAttributesW(lpszLongPath) == INVALID_FILE_ATTRIBUTES {
-        if (*NtCurrentTeb()).ProcessEnvironmentBlock.is_null()
-            || ((*(*NtCurrentTeb()).ProcessEnvironmentBlock)
-                .AppCompatFlags
-                .__bindgen_anon_1.LowPart as ULONG
-                & GetShortPathNameNT4 as ULONG)
-                == 0
-        {
-            ReturnLength = 0;
-            // goto Quickie - we'll handle this with a flag
-            // For now, just set ReturnLength and skip the rest
-            // We'll use a different approach
-        }
-    }
-
-    // Let me just translate it more carefully following the c2rust anchor
-    // The anchor uses a current_block variable to simulate goto
-    // Let me do the same
-
-    // Actually, let me just write it out properly
-    // Reset and do it right
-
-    // First, let me handle the goto properly
-    // I'll use a loop { ... break; } structure for the main body
-    // and a separate cleanup section
-
-    // Actually, the simplest faithful translation is to use the same pattern as c2rust
-    // with a current_block variable
-
-    // Let me just write it out cleanly
-    // The function has three goto targets: Quickie, ErrorQuickie, and the main flow
-
-    // I'll use a loop with break for the main flow, and handle cleanup at the end
-
-    // Actually, let me just write it directly without the goto simulation
-    // since the C code is straightforward enough
-
-    // Let me restart the translation properly
+    // An abandoned first attempt at this body used to sit here, and it already called
+    // SetErrorMode(SEM_NOOPENFILEERRORBOX | SEM_FAILCRITICALERRORS). The real body below
+    // then saved THAT mode as the one to restore, so every caller kept SEM_FAILCRITICALERRORS
+    // for good. Explorer inherited it at startup and handed it to every Startup-folder
+    // program (kmtest's ExHardError passed only because of the leak).
 
     // Initialize
     Buffer = core::ptr::null_mut();

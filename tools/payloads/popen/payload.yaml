@@ -10,7 +10,7 @@ build_hint: "tools/payloads/popen/build.sh {arch}"
 binaries:
   - src: tools/payloads/popen/popen-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/popen.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/popen.exe
 
 test:
   launch_marker: "[POPEN] done"

@@ -12,7 +12,7 @@ build_hint: "tools/payloads/crtmath/build.sh {arch}"
 binaries:
   - src: tools/payloads/crtmath/crtmath-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/crtmath.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/crtmath.exe
 
 test:
   launch_marker: "[CRTMATH] done"

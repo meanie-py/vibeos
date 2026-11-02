@@ -12,7 +12,7 @@ build_hint: "tools/payloads/appstorm/build.sh {arch}"
 binaries:
   - src: tools/payloads/appstorm/appstorm-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/appstorm.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/appstorm.exe
 
 test:
   launch_marker: "[APPSTORM] done"

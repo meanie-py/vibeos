@@ -12,7 +12,7 @@ build_hint: "tools/payloads/fwprobe/build.sh {arch}"
 binaries:
   - src: tools/payloads/fwprobe/fwprobe-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/fwprobe.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fwprobe.exe
 
 test:
   launch_marker: "[FWPROBE] done"

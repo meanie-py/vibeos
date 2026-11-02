@@ -10,7 +10,7 @@ build_hint: "tools/payloads/rpmprobe/build.sh {arch}"
 binaries:
   - src: tools/payloads/rpmprobe/rpmprobe-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/rpmprobe.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/rpmprobe.exe
 
 test:
   launch_marker: "[RPMPROBE] done"
