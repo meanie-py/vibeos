@@ -177,3 +177,19 @@ def test_the_arm64_livecd_is_laid_out_by_mkramdisk_into_out(tmp_path, monkeypatc
         "livecd.img",
         "src",
     )
+
+
+def test_a_write_that_would_drop_a_whole_staged_directory_is_refused():
+    have = {
+        "cds": {
+            "livecd": {
+                "entries": [[f"reactos/syswow64/m{i}.dll", "x"] for i in range(12)]
+                + [["reactos/system32/a.dll", "y"]]
+            }
+        }
+    }
+    want = {"cds": {"livecd": {"entries": [["reactos/system32/a.dll", "y"]]}}}
+    assert m.vanished_dirs(have, want) == ["reactos/syswow64"]
+    # a few entries going is an ordinary removal, not a missing stage
+    have["cds"]["livecd"]["entries"] = have["cds"]["livecd"]["entries"][-4:]
+    assert m.vanished_dirs(have, want) == []
