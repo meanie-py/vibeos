@@ -82,7 +82,8 @@ fn main() {
         o => panic!("ntoskrnl-cargo: unsupported arch {o}"),
     };
 
-    let cnt_feats: &[&str] = if cnt_float { &["float"] } else { &[] };
+    // i386 (no float): `ci` = the `_CI*` thunks ntoskrnl.spec exports (ci-thunks).
+    let cnt_feats: &[&str] = if cnt_float { &["float"] } else if arch == "x86" { &["ci"] } else { &[] };
 
     // Header-free C shims (no kernel -I; clang's own stdarg/stddef/stdint).
     // kdbg_rust_shims.c is x86-only — it references the kdbg pager symbols
@@ -127,11 +128,7 @@ fn main() {
     //   amd64 = the __C_specific_handler SEH personality (+ _fltused via shells)
     match arch.as_str() {
         "x86" => c_shims.extend_from_slice(&[
-            "sdk/lib/crt/math/i386/cicos.c",
-            "sdk/lib/crt/math/i386/cisin.c",
-            "sdk/lib/crt/math/i386/cisqrt.c",
-            "sdk/lib/crt/math/i386/cilog.c",
-            "sdk/lib/crt/math/i386/cipow.c",
+            // ci{cos,sin,sqrt,log,pow}.c: the `_CI*` thunks are Rust now (cnt-rust-lib `ci`).
             "sdk/lib/crt/misc/fltused.c",
         ]),
         // seh_poc.c: DUMMY_PSEH verdict PoC (lane dummy-pseh-question) — native
@@ -139,7 +136,7 @@ fn main() {
         // below; benign for the other shims). Includes no headers, so the
         // pseh2.h __try macro layer can't demote it back to DUMMY.
         "x86_64" => c_shims.extend_from_slice(&[
-            "sdk/lib/crt/except/amd64/ehandler.c",
+            // ehandler.c (__C_specific_handler/_local_unwind) is Rust now: rtl-except amd64/ehandler.rs.
             "ntoskrnl/seh_poc.c",
             // Fault-tolerant kernel copy (native SEH, same wiring as seh_poc.c) —
             // the memcpy+0x40 crasher-cluster fix. See ntoskrnl/kmsafecopy.c.

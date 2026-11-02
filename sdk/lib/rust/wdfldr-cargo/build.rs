@@ -32,9 +32,9 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["body", "engine:c:aux_klib", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp", "engine:cntpr_rust"],
-        "x86_64" => &["body", "engine:c:aux_klib", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:c:memcmp", "engine:cntpr_rust"],
-        "aarch64" => &["body", "engine:c:aux_klib", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp", "engine:cntpr_rust"],
+        "x86" => &["body", "engine:crate:aux_klib-rust::TRUE", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp", "engine:cntpr_rust"],
+        "x86_64" => &["body", "engine:crate:aux_klib-rust::TRUE", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:c:memcmp", "engine:cntpr_rust"],
+        "aarch64" => &["body", "engine:crate:aux_klib-rust::TRUE", "engine:c:libcntpr", "engine:pseh", "import:ntoskrnl", "import:hal", "engine:chkstk", "engine:c:memcmp", "engine:cntpr_rust"],
         _ => unreachable!(),
     };
 

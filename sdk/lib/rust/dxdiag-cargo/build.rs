@@ -29,9 +29,9 @@ fn main() {
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["engine:c:dxguid", "engine:c:udmihelp", "engine:c:dmilib", "engine:oldnames"],
-        "x86_64" => &["engine:c:dxguid", "engine:c:udmihelp", "engine:c:dmilib", "engine:oldnames"],
-        "aarch64" => &["engine:c:dxguid", "engine:c:udmihelp", "engine:c:dmilib", "engine:oldnames"],
+        "x86" => &["engine:c:dxguid", "engine:crate:udmihelp-rust::TRUE", "engine:crate:dmilib-rust::TRUE", "engine:oldnames"],
+        "x86_64" => &["engine:c:dxguid", "engine:crate:udmihelp-rust::TRUE", "engine:crate:dmilib-rust::TRUE", "engine:oldnames"],
+        "aarch64" => &["engine:c:dxguid", "engine:crate:udmihelp-rust::TRUE", "engine:crate:dmilib-rust::TRUE", "engine:oldnames"],
         _ => unreachable!(),
     };
 

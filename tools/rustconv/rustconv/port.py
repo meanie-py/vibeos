@@ -2701,7 +2701,19 @@ def _stub_name(state: dict) -> str:
     return "rust_cohab_stub.cpp" if state.get("cpp_tus") else "rust_cohab_stub.c"
 
 
-def _repoint_cargo_cells(target: str, crate: str) -> list[Path]:
+def _kept_c_sources(cml_text: str) -> list[str]:
+    """Compiled `.c` files a flipped CMakeLists still lists besides the cohab stub: a
+    variadic trampoline (`rust_varargs_shim.c`), whose definitions only the cmake target
+    carries."""
+    out = []
+    for line in cml_text.splitlines():
+        m = re.match(r"\s*([\w./${}-]+\.c)\s*$", line)
+        if m and not m.group(1).endswith(("rust_cohab_stub.c",)):
+            out.append(m.group(1))
+    return out
+
+
+def _repoint_cargo_cells(target: str, crate: str, keeps_c: bool = False) -> list[Path]:
     """Point every cargo cell that replays `target`'s C at its Rust archive instead.
 
     A cell takes a cmake static library as `engine:c:<target>`, which replays that target's
@@ -2710,12 +2722,19 @@ def _repoint_cargo_cells(target: str, crate: str) -> list[Path]:
     the flip just declared (`rust_staticlib_variant(... <crate> "" TRUE)`) is spelled
     `engine:crate:<crate>::TRUE`, as tools/cargo_cell_gen.py writes it. Returns the cells
     rewritten.
+
+    A module that KEEPS C (`keeps_c`: shimlib's variadic `SeiDbgPrint` trampoline) needs
+    both: the archive alone left acgenral/aclayers with `SeiDbgPrint` undefined on all
+    three arches, because only the cmake target compiles the trampoline.
     """
-    old, new = f'"engine:c:{target}"', f'"engine:crate:{crate}::TRUE"'
+    old = f'"engine:c:{target}"'
+    new = f'"engine:crate:{crate}::TRUE"'
+    if keeps_c:
+        new = f"{old}, {new}"
     changed = []
     for build_rs in sorted((REPO / "sdk" / "lib" / "rust").glob("*-cargo/build.rs")):
         text = build_rs.read_text()
-        if old in text:
+        if old in text and new not in text:
             build_rs.write_text(text.replace(old, new))
             changed.append(build_rs)
     return changed
@@ -2791,7 +2810,8 @@ def stage_flip(stem: str) -> None:
         )
     _record(state, "flip", started, changed=changed)
     print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
-    for cell in _repoint_cargo_cells(state["target"], state["crate"]):
+    keeps_c = bool(_kept_c_sources(cml.read_text()))
+    for cell in _repoint_cargo_cells(state["target"], state["crate"], keeps_c):
         print(f"flip: {cell.relative_to(REPO)} now links {state['crate']}")
     # A flip leaves the module linked by cmake around the stub; the cargo cell is the next
     # step, and `vibeos-cli check` (scan_cmake_linked_rust) fails until it is taken.

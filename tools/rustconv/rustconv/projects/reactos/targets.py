@@ -1431,6 +1431,10 @@ NATIVE_KERNEL_H = (
     ("tdi", REACTOS_ROOT / "drivers/network/tdi", "misc/tdi.spec"),
     # A static library afd.sys and netio.sys both link.
     ("tdihelpers", REACTOS_ROOT / "drivers/network/tdihelpers", None),
+    # Native tail, batch J (2026-11-01): two driver static libs and the DirectX kernel API.
+    ("aux_klib", REACTOS_ROOT / "sdk/lib/drivers/aux_klib", None),
+    ("wdfdriverentry", REACTOS_ROOT / "sdk/lib/drivers/wdfdriverentry", None),
+    ("dxapi", REACTOS_ROOT / "win32ss/reactx/dxapi", "dxapi.spec"),
 )
 for _name, _dir, _spec in NATIVE_KERNEL_H:
     TARGETS[_name] = Target(

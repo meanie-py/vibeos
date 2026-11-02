@@ -1401,6 +1401,22 @@ def test_flip_and_data_refuse_while_this_tree_builds(tmp_path, monkeypatch):
     port._refuse_while_this_tree_builds("flip")
 
 
+def test_a_flip_that_keeps_c_repoints_cells_to_both(tmp_path, monkeypatch):
+    # shimlib: its variadic trampoline stays C, so consumers need the target AND the crate.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    cell = tmp_path / "sdk/lib/rust/x-cargo/build.rs"
+    cell.parent.mkdir(parents=True)
+    cell.write_text('&["body", "engine:c:shimlib", "import:ntdll"]')
+    cml = "list(APPEND SOURCE\n    # a.c  # replaced by Rust\n    rust_cohab_stub.c\n    rust_varargs_shim.c\n    a.h)\n"
+    assert port._kept_c_sources(cml) == ["rust_varargs_shim.c"]
+    assert port._kept_c_sources(cml.replace("    rust_varargs_shim.c\n", "")) == []
+    port._repoint_cargo_cells("shimlib", "shimlib-rust", keeps_c=True)
+    want = '&["body", "engine:c:shimlib", "engine:crate:shimlib-rust::TRUE", "import:ntdll"]'
+    assert cell.read_text() == want
+    port._repoint_cargo_cells("shimlib", "shimlib-rust", keeps_c=True)  # idempotent
+    assert cell.read_text() == want
+
+
 def test_flip_finds_a_cppapp_tus_rust_in_its_synthetic_unit(tmp_path, monkeypatch):
     # rapps: `appdb.cpp`'s Rust is `appdb_cpp_h.rs`; the preflight looked for `appdb.rs`.
     import pytest as _pytest

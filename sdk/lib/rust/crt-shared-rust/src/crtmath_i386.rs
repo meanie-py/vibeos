@@ -1,6 +1,6 @@
 //! The i386 math entry points every CRT DLL exports and no C compiler emits portably:
-//! `_ftol` (+ `_ftol2`/`_ftol2_sse`), the sixteen `_CI*` x87-stack thunks and the 32
-//! `__libm_sse2_*` SSE-register wrappers. msvcrt, msvcrt20, msvcrt40 and crtdll reach this
+//! `_ftol` (+ `_ftol2`/`_ftol2_sse`) and the 32 `__libm_sse2_*` SSE-register wrappers (the
+//! sixteen `_CI*` x87-stack thunks are the `ci-thunks` crate's). msvcrt, msvcrt20, msvcrt40 and crtdll reach this
 //! crate through msvcrt-crt-rust and ucrtbase through crt-shared-cargo, which is what lets
 //! all five drop crtmath's math/i386/{ftol_asm,ftol2_asm}.s, ci*.c and libm_sse2.c.
 //!
@@ -18,111 +18,8 @@
 // said less than that, which is why the 32-bit host harness (msvcrt-seh-difftest, which
 // builds this crate for i686-unknown-linux-gnu) could not compile the crate at all. msvcrt
 // is only ever built for Windows, so narrowing the predicate loses no product code.
-// macro_rules! mirror of CREATE_FPU_FUNC1(name, call) — math.c:477-511.
-// One double popped off the FPU stack in, one pushed back out.
-macro_rules! create_fpu_func1 {
-    ($name:ident, $call:ident) => {
-        core::arch::global_asm!(
-            ".text",
-            ".align 4",
-            concat!(".globl _", stringify!($name)),
-            concat!(".def _", stringify!($name), "; .scl 2; .type 32; .endef"),
-            concat!("_", stringify!($name), ":"),
-            "pushl   %ebp",
-            "movl    %esp, %ebp",
-            "subl    $68, %esp", // sizeof(double)*8 + sizeof(int)
-            "fstpl   (%esp)",    // store function argument
-            "fwait",
-            "movl    $1, %ecx", // empty FPU stack
-            "1:",
-            "fxam",
-            "fstsw   %ax",
-            "and     $0x4500, %ax",
-            "cmp     $0x4100, %ax",
-            "je      2f",
-            "fstpl    (%esp,%ecx,8)",
-            "fwait",
-            "incl    %ecx",
-            "jmp     1b",
-            "2:",
-            "movl    %ecx, -4(%ebp)",
-            concat!("call    _", stringify!($call)),
-            "movl    -4(%ebp), %ecx",
-            "fstpl   (%esp)", // save result
-            "3:",             // restore FPU stack
-            "decl    %ecx",
-            "fldl    (%esp,%ecx,8)",
-            "cmpl    $0, %ecx",
-            "jne     3b",
-            "leave",
-            "ret",
-            options(att_syntax)
-        );
-    };
-}
-
-// macro_rules! mirror of CREATE_FPU_FUNC2(name, call) — math.c:513-549.
-// Two doubles popped off the FPU stack in (2nd arg deeper), one pushed back out.
-macro_rules! create_fpu_func2 {
-    ($name:ident, $call:ident) => {
-        core::arch::global_asm!(
-            ".text",
-            ".align 4",
-            concat!(".globl _", stringify!($name)),
-            concat!(".def _", stringify!($name), "; .scl 2; .type 32; .endef"),
-            concat!("_", stringify!($name), ":"),
-            "pushl   %ebp",
-            "movl    %esp, %ebp",
-            "subl    $68, %esp", // sizeof(double)*8 + sizeof(int)
-            "fstpl   8(%esp)",   // store function argument
-            "fwait",
-            "fstpl   (%esp)",
-            "fwait",
-            "movl    $2, %ecx", // empty FPU stack
-            "1:",
-            "fxam",
-            "fstsw   %ax",
-            "and     $0x4500, %ax",
-            "cmp     $0x4100, %ax",
-            "je      2f",
-            "fstpl    (%esp,%ecx,8)",
-            "fwait",
-            "incl    %ecx",
-            "jmp     1b",
-            "2:",
-            "movl    %ecx, -4(%ebp)",
-            concat!("call    _", stringify!($call)),
-            "movl    -4(%ebp), %ecx",
-            "fstpl   8(%esp)", // save result
-            "3:",              // restore FPU stack
-            "decl    %ecx",
-            "fldl    (%esp,%ecx,8)",
-            "cmpl    $1, %ecx",
-            "jne     3b",
-            "leave",
-            "ret",
-            options(att_syntax)
-        );
-    };
-}
-
-// math.c:551-566 — the sixteen invocations, same order, same names.
-create_fpu_func1!(_CIacos, acos);
-create_fpu_func1!(_CIasin, asin);
-create_fpu_func1!(_CIatan, atan);
-create_fpu_func2!(_CIatan2, atan2);
-create_fpu_func1!(_CIcos, cos);
-create_fpu_func1!(_CIcosh, cosh);
-create_fpu_func1!(_CIexp, exp);
-create_fpu_func2!(_CIfmod, fmod);
-create_fpu_func1!(_CIlog, log);
-create_fpu_func1!(_CIlog10, log10);
-create_fpu_func2!(_CIpow, pow);
-create_fpu_func1!(_CIsin, sin);
-create_fpu_func1!(_CIsinh, sinh);
-create_fpu_func1!(_CIsqrt, sqrt);
-create_fpu_func1!(_CItan, tan);
-create_fpu_func1!(_CItanh, tanh);
+// The sixteen _CI* thunks live in the `ci-thunks` crate (feature `all`), shared with the
+// i386 kernel and ntdll.
 
 // ============================================================================
 // _ftol -- Wine msvcrt math.c:568-587, moved verbatim from msvcrt-crt-rust's math.rs.

@@ -35,9 +35,9 @@ fn main() {
     };
 
     let static_libs: &[&str] = match arch.as_str() {
-        "x86" => &["engine:c:shimlib"],
-        "x86_64" => &["engine:c:shimlib"],
-        "aarch64" => &["engine:c:shimlib"],
+        "x86" => &["engine:c:shimlib", "engine:crate:shimlib-rust::TRUE"],
+        "x86_64" => &["engine:c:shimlib", "engine:crate:shimlib-rust::TRUE"],
+        "aarch64" => &["engine:c:shimlib", "engine:crate:shimlib-rust::TRUE"],
         _ => unreachable!(),
     };
 

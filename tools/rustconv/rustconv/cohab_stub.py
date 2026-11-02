@@ -20,6 +20,7 @@ brings in (objbase.h declares `DllGetClassObject`).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from .spec_parser import SpecEntry, parse_spec
@@ -38,8 +39,17 @@ _ARCHES = (
 _ANCHOR_HEAD = "/* Every export the .spec requires, referenced from this OBJECT so the module's own"
 
 
+def _c_name(name: str) -> str:
+    """The C symbol a spec name stands for. A spec may spell an export pre-decorated
+    (dxapi.spec's `_DxApi@20`); spec2def maps that to the C function `DxApi`, decorated again
+    only on i386. Using the spec spelling anchored `__DxApi@20@20` on i386 and the i386 name
+    `_DxApi@20` on amd64/arm64, and every arch's dxapi.sys link failed."""
+    m = re.fullmatch(r"[_@]?([A-Za-z_]\w*?)@\d+", name)
+    return m.group(1) if m else name
+
+
 def _i386_symbol(entry: SpecEntry) -> str:
-    name = entry.symbol
+    name = _c_name(entry.symbol)
     size = sum(8 if p in _WIDE_PARAMS else 4 for p in entry.params)
     if entry.convention == "stdcall":
         return f"_{name}@{size}"
@@ -55,7 +65,7 @@ def _symbols(spec: Path, arch: str) -> list[str]:
     for e in parse_spec(spec, arch=arch).values():
         if not e.needs_implementation or e.convention == "extern":
             continue
-        out.append(_i386_symbol(e) if arch == "i386" else e.symbol)
+        out.append(_i386_symbol(e) if arch == "i386" else _c_name(e.symbol))
     return sorted(set(out))
 
 

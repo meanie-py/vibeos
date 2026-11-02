@@ -1,0 +1,16 @@
+# ci-thunks — the i386 `_CI*` x87-stack math thunks (Wine msvcrt math.c's CREATE_FPU_FUNC1/2),
+# shared by every i386 binary that exports them. No dependencies, so the same source builds
+# in the i386 kernel cell (build-std, softfloat) and in user-mode crates alike.
+[package]
+name = "ci-thunks"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+# The five ntoskrnl's and ntdll's cells compiled from crtmath's ci{cos,sin,sqrt,log,pow}.c.
+kernel = []
+# All sixteen, for the CRT DLLs (crt-shared-rust).
+all = ["kernel"]

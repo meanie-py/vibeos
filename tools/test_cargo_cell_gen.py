@@ -603,6 +603,35 @@ def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch):
     ]
 
 
+def test_convert_fails_loud_when_a_new_cells_own_c_has_no_recipe(tmp_path, monkeypatch, capsys):
+    """A cell's `<m>_shims` reaches compile_commands.json only after cmake reconfigures, so
+    refresh_manifests' per-arch skip used to drop its recipe silently (normaliz, batch J)."""
+    for t in ("m", "n"):
+        cell = tmp_path / f"sdk/lib/rust/{t}-cargo"
+        cell.mkdir(parents=True)
+        cell.joinpath("build.rs").write_text(
+            f'.c_from_compile_db("{t}_shims", &["x/rust_cohab_stub.c"])\n'
+            '.c_from_compile_db("libcntpr", &["sdk/lib/crt/a.c"])\n'
+        )
+    for a in g.ARCHES:
+        g.clib_recipe_path(a, "n_shims", tmp_path).parent.mkdir(parents=True, exist_ok=True)
+        g.clib_recipe_path(a, "n_shims", tmp_path).write_text("# n_shims\n")
+    g.clib_recipe_path("arm64", "m_shims", tmp_path).write_text("# m_shims\n")
+    monkeypatch.setattr(g, "model", lambda t, repo: t)
+    monkeypatch.setattr(g, "save_baseline", lambda *a: None)
+    monkeypatch.setattr(g, "apply", lambda c, repo: [])
+    monkeypatch.setattr(g, "_ninja", lambda *a: None)
+    monkeypatch.setattr(g, "check", lambda *a: 0)
+    monkeypatch.setattr(g, "refresh_manifests", lambda repo: None)
+    assert g.convert(["m", "n"], tmp_path / "b", tmp_path) == 1
+    # libcntpr is a shared library, judged by refresh_manifests' own rule, not here.
+    assert g.missing_cell_recipes(["m", "n"], tmp_path) == [
+        ("i386", "m_shims"),
+        ("amd64", "m_shims"),
+    ]
+    assert "clibs/i386/m_shims.recipe" in capsys.readouterr().out
+
+
 def _native_ratchet(root):
     from tests.qemu.cli import rustlints
 
