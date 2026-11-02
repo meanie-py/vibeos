@@ -34,7 +34,6 @@
 #undef FsRtlFastLock
 #undef FsRtlCurrentOplockH
 #undef FsRtlOplockIsSharedRequest
-#undef FsRtlGetSectorSizeInformation
 #undef Add2Ptr
 #undef QuadAlign
 #undef BlockAlignTruncate
@@ -67,7 +66,6 @@
 #undef ObDereferenceObject
 #undef ObfDereferenceObject
 #undef ObfReferenceObject
-#undef SharedSystemTime
 #undef ExGetCurrentResourceThread
 #undef CcIsFileCached
 #undef IoInitializePriorityInfo
@@ -247,17 +245,9 @@ VOID FatReleaseFcb(PIRP_CONTEXT IrpContext, PFCB Fcb)
     ExReleaseResourceLite(FCB_RESOURCE(Fcb));
 }
 
-VOID FatAcquireExclusiveVolume(PIRP_CONTEXT IrpContext, PVCB Vcb)
-{
-    /* Full macro iterates FCBs — simplified: just lock VCB (mount/dismount only) */
-    FatAcquireExclusiveVcb_Real(IrpContext, Vcb, FALSE);
-}
-
-VOID FatReleaseVolume(PIRP_CONTEXT IrpContext, PVCB Vcb)
-{
-    (void)IrpContext;
-    ExReleaseResourceLite(VCB_RESOURCE(Vcb));
-}
+/* FatAcquireExclusiveVolume / FatReleaseVolume -> fastfat-rust resrcsup.rs, which walks every
+ * Fcb as fatprocs.h's macros do (this shim took the Vcb alone, and could not reach the
+ * Fcb fields from here). */
 
 VOID FatConvertToSharedFcb(PIRP_CONTEXT IrpContext, PFCB Fcb)
 {
@@ -325,7 +315,9 @@ VOID FatDeleteResource(PERESOURCE Resource)
  * fastfat-rust/src/seh.rs: the fatprocs.h macros record the status in
  * IrpContext->ExceptionStatus, which FatExceptionFilter and FatProcessException
  * read, and these stubs could not reach the field. */
-VOID __cdecl FatDisableParentCheck(PIRP_CONTEXT IrpContext)  { (void)IrpContext; }
+/* cachesup.c's debug switch: DATA (Rust reads it as a BOOLEAN), not a function. As a
+ * function its first code byte read as TRUE and defeated the parent-check assert. */
+BOOLEAN FatDisableParentCheck = FALSE;
 
 /* NOTE: IO/EX/KE/Ob/FsRtl FORCEINLINE wrappers are in rust_cohab_forceinline.c */
 
@@ -357,7 +349,8 @@ VOID RtlRaiseStatus(NTSTATUS s)    { ExRaiseStatus(s); }
 
 BOOLEAN RtlCheckBit(PRTL_BITMAP h, ULONG pos)
 {
-    return !!(((PULONG)h->Buffer)[pos >> 5] >> (pos & 31));
+    /* The one bit, as rtlfuncs.h's macro: without the & 1 any higher set bit read as set. */
+    return (BOOLEAN)((((PULONG)h->Buffer)[pos >> 5] >> (pos & 31)) & 1);
 }
 
 LUID RtlConvertLongToLuid(LONG v)
@@ -420,12 +413,8 @@ ULONG FAT_LFN_DIRENTS_NEEDED(PUNICODE_STRING Name)
  * 5. Utility helpers
  * ====================================================================== */
 
-/* SharedSystemTime: fastfat reads this as a 64-bit DATA value (the shared system
- * time snapshot), not a function. Provide a real data symbol so the Rust
- * `extern static mut SharedSystemTime: u64` reference resolves to data, not code.
- * NOTE (owed translation fix): the C macro aliases SharedUserData->SystemTime; a
- * static-zero here yields epoch file timestamps. Tracked for a timesup.rs fix. */
-LARGE_INTEGER SharedSystemTime = { 0 };
+/* SharedSystemTime is gone: timesup.rs reads the clock through ntkrnl-sys
+ * ke_query_system_time (the zero here stamped every label dirent 1601). */
 
 LONGLONG ExGetCurrentResourceThread(VOID)
 {
@@ -458,10 +447,12 @@ NTSTATUS IoRetrievePriorityInfo(PIRP a, PFILE_OBJECT b, PETHREAD c, PVOID d)
     return STATUS_SUCCESS;
 }
 
+/* fatprocs.h: 4+1+1+2+NameLength+1+ValueLength. sizeof(FILE_FULL_EA_INFORMATION) is 12
+ * with its tail padding, so the old sizeof-1 form was 3 bytes long and FatAppendPackedEa
+ * over-copied each EA. */
 ULONG SizeOfFullEa(PFILE_FULL_EA_INFORMATION Ea)
 {
-    return (ULONG)(sizeof(FILE_FULL_EA_INFORMATION) - 1 +
-                   Ea->EaNameLength + 1 + Ea->EaValueLength);
+    return (ULONG)(4 + 1 + 1 + 2 + Ea->EaNameLength + 1 + Ea->EaValueLength);
 }
 
 /* SizeOfPackedEa -> now REAL in fastfat-rust easup.rs (shares ea.rs's inline form).
@@ -549,20 +540,9 @@ BOOLEAN FsRtlCurrentOplockH(POPLOCK a)                { (void)a; return FALSE; }
 BOOLEAN FsRtlOplockIsSharedRequest(PIRP a)            { (void)a; return FALSE; }
 BOOLEAN FsRtlCheckLockForOplockRequest(PFILE_LOCK a, PLARGE_INTEGER b) { (void)a;(void)b; return TRUE; }
 
-NTSTATUS FsRtlGetSectorSizeInformation(PDEVICE_OBJECT a, PVOID b)
-{
-    /* PFILE_FS_SECTOR_SIZE_INFORMATION is Vista+ — stub returns defaults */
-    (void)a;
-    if (b) {
-        /* Zero the struct; the first 4 ULONGs are the common fields.
-         * Set LogicalBytesPerSector = 512 (ULONG at offset 0). */
-        ((PULONG)b)[0] = 512; /* LogicalBytesPerSector */
-        ((PULONG)b)[1] = 512; /* PhysicalBytesPerSectorForAtomicity */
-        ((PULONG)b)[2] = 512; /* PhysicalBytesPerSectorForPerformance */
-        ((PULONG)b)[3] = 512; /* Effective */
-    }
-    return STATUS_SUCCESS;
-}
+/* FsRtlGetSectorSizeInformation is no longer stubbed here: ntoskrnl exports the real one
+ * (fsrtl-rust sectorsize.rs). The stub wrote 512 into four of the record's seven fields and
+ * returned success, so FileFsSectorSizeInformation handed back three fields of stale buffer. */
 
 NTSTATUS FsRtlOplockBreakH(
     POPLOCK a, PIRP b, ULONG c, PVOID d,
@@ -575,10 +555,11 @@ NTSTATUS FsRtlOplockBreakH(
 BOOLEAN FsRtlFastLock(
     PFILE_LOCK a, PFILE_OBJECT b, PLARGE_INTEGER c, PLARGE_INTEGER d,
     PEPROCESS e, ULONG f, BOOLEAN g, BOOLEAN h, PIO_STATUS_BLOCK i,
-    PIRP j, BOOLEAN k)
+    PVOID j, BOOLEAN k)
 {
-    (void)a;(void)b;(void)c;(void)d;(void)e;(void)f;(void)g;(void)h;(void)i;(void)j;(void)k;
-    return FALSE;
+    /* The xdk macro: FsRtlPrivateLock with no IRP (ntoskrnl exports it). Returning FALSE
+     * only ever sent fast-I/O locks down the IRP path. */
+    return FsRtlPrivateLock(a, b, c, d, e, f, g, h, i, NULL, j, k);
 }
 
 /* ======================================================================
@@ -603,9 +584,10 @@ VOID FatUpdateIOCountersPCW(PVCB a, BOOLEAN b, ULONG_PTR c) { (void)a;(void)b;(v
  * (FatIsPathnameValid's stub lived further down and is removed there.) */
 /* FatIsVolumeDirty + FatGetStatistics -> now REAL in fastfat-rust fsctrl.rs; stubs
  * removed so the Rust #[no_mangle] definitions win the first-match link. */
-NTSTATUS FatGetVolumeBitmap(PIRP_CONTEXT a, PIRP b)    { (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatGetRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
-NTSTATUS FatQueryRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STUB_BUGCHECK(); return STATUS_SUCCESS; }
+/* FatGetVolumeBitmap / FatGetRetrievalPointers / FatQueryRetrievalPointers -> now REAL in
+ * fastfat-rust fsctrl.rs (hand-translated from fsctrl.c). They were STUB_BUGCHECKs, so a
+ * defrag or backup tool's FSCTL_GET_VOLUME_BITMAP / _GET_RETRIEVAL_POINTERS crashed the
+ * machine. Removed here so the Rust definitions win the first-match link. */
 /* FatMarkHandle — now REAL in fastfat-rust fsctrl.rs (task #50). Stub removed so
  * the Rust #[no_mangle] definition is the sole symbol: this C object links BEFORE
  * libfastfat_rust.a and lld --allow-multiple-definition is FIRST-match, so leaving
@@ -640,7 +622,11 @@ NTSTATUS FatQueryRetrievalPointers(PIRP_CONTEXT a, PIRP b){ (void)a;(void)b; STU
 
 /* FatConstructDot / FatConstructDotDot / FatNotifyReportChange
  * -> rust_cohab_fat.c (real dirsup.c / fatprocs.h macros) */
-__cdecl VOID Fat8QMdot3QM(PVOID a0, PVOID a1) { (void)a0;(void)a1; STUB_BUGCHECK(); }
+/* dirctrl.c's "????????.???" template, which FatQueryDirectory compares the caller's
+ * pattern against to take the match-all path. DATA: as a bugcheck function the compare
+ * read its code bytes and never matched. */
+WCHAR Fat8QMdot3QM[12] = { DOS_QM, DOS_QM, DOS_QM, DOS_QM, DOS_QM, DOS_QM, DOS_QM, DOS_QM,
+                           L'.', DOS_QM, DOS_QM, DOS_QM };
 
 /* FatFsdEntryCount: a FASTFATDBG-only debug counter. The Rust definition is
  * cfg'd out (feature off) but strucsup references it unconditionally. Provide as

@@ -1083,7 +1083,9 @@ pub unsafe extern "C" fn TuiEditBox(MessageText: PCSTR, EditTextBuffer: PCHAR, L
     TuiDrawMsgBoxCommon(MessageText, &mut BoxRect);
 
     EditBoxTextLength = strlen(EditTextBuffer) as ULONG;
-    EditBoxTextLength = min(EditBoxTextLength as i32, (Length - 1) as i32) as ULONG;
+    // C's `min(EditBoxTextLength, Length - 1)` is ULONG vs ULONG: an unsigned compare, so
+    // Length == 0 wraps to ULONG_MAX and keeps the full strlen. Compare unsigned, as the C does.
+    EditBoxTextLength = min(EditBoxTextLength, Length.wrapping_sub(1));
     EditBoxTextPosition = 0;
     EditBoxLine = BoxRect.Bottom as i32 - 2;
     EditBoxStartX = BoxRect.Left as ULONG + 3;

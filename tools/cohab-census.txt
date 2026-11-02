@@ -951,6 +951,10 @@ dll/directx/wine/d3dx9_36/d3dx9.cmake	1	# math.c wants M_PI, which <math.h> only
 dll/directx/wine/dmime/CMakeLists.txt	1	# performance.c drives its message pump with a CONDITION_VARIABLE.
 dll/directx/wine/dpnet/CMakeLists.txt	1	# dpnet_main.c guards its one-time init with InitOnceExecuteOnce.
 dll/directx/wine/dwrite/CMakeLists.txt	1	# Wine guards every FreeType backend body in freetype.c with SONAME_LIBFREETYPE (configure
+dll/nls/normaliz/CMakeLists.txt	1	# IdnToAscii.c # replaced by Rust (sdk/lib/rust/normaliz-rust/src/normaliz/IdnToAscii.rs)
+dll/nls/normaliz/CMakeLists.txt	1	# IdnToUnicode.c # replaced by Rust (sdk/lib/rust/normaliz-rust/src/normaliz/IdnToUnicode.rs)
+dll/nls/normaliz/CMakeLists.txt	1	# nameprep.c # replaced by Rust (sdk/lib/rust/normaliz-rust/src/normaliz/nameprep/mod.rs, generated: port data)
+dll/nls/normaliz/CMakeLists.txt	1	# normalize.c # replaced by Rust (sdk/lib/rust/normaliz-rust/src/normaliz/normalize.rs)
 dll/ntdll/CMakeLists.txt	1	# asm = generates the asm includes (ks*.inc / syscalls.inc / sysfuncs.h) the
 dll/ntdll/CMakeLists.txt	1	# dbg/dbgui.c — replaced by Rust (ntdll-rust/src/dbg/dbgui.rs);
 dll/ntdll/CMakeLists.txt	1	# dispatch/dispatch.c — replaced by Rust (ntdll-rust/src/dispatch/mod.rs,
@@ -1561,14 +1565,25 @@ dll/win32/secur32/CMakeLists.txt	1	# wine/util.c — replaced by Rust (secur32-r
 dll/win32/secur32/CMakeLists.txt	1	# wrapper.c — replaced by Rust (secur32-rust)
 dll/win32/serialui/CMakeLists.txt	1	# serialui.c # replaced by Rust (sdk/lib/rust/serialui-rust/src/serialui/serialui.rs)
 dll/win32/setupapi/CMakeLists.txt	1	# cfgmgr.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# devclass.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# devinst.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# devprop.c — replaced by Rust (setupapi-rust)
 dll/win32/setupapi/CMakeLists.txt	1	# dialog.c — replaced by Rust (setupapi-rust)
 dll/win32/setupapi/CMakeLists.txt	1	# dirid.c — replaced by Rust (setupapi-rust)
 dll/win32/setupapi/CMakeLists.txt	1	# diskspace.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# driver.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# install.c — replaced by Rust (setupapi-rust)
 dll/win32/setupapi/CMakeLists.txt	1	# interface.c — replaced by Rust (setupapi-rust)
-dll/win32/setupapi/CMakeLists.txt	1	# libsetupapi_rust.a carries the TUs flipped so far: cfgmgr.c (whose RpcTryExcept guards
+dll/win32/setupapi/CMakeLists.txt	1	# libsetupapi_rust.a carries every TU of the module: cfgmgr.c (whose RpcTryExcept guards
+dll/win32/setupapi/CMakeLists.txt	1	# misc.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# parser.c — replaced by Rust (setupapi-rust)
 dll/win32/setupapi/CMakeLists.txt	1	# query.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# queue.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# rpc.c — replaced by Rust (setupapi-rust)
 dll/win32/setupapi/CMakeLists.txt	1	# setupcab.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# seventeen. Only the generated pnp_c.c / setupapi_stubs.c are still C.
 dll/win32/setupapi/CMakeLists.txt	1	# stringtable.c — replaced by Rust (setupapi-rust)
+dll/win32/setupapi/CMakeLists.txt	1	# stubs.c — replaced by Rust (setupapi-rust)
 dll/win32/shcore/CMakeLists.txt	1	# Windows; main.c's Wine versions of those are not exported.
 dll/win32/shcore/CMakeLists.txt	1	# combase is not built here (see dll/win32/CMakeLists.txt): what main.c takes from it
 dll/win32/shcore/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/shcore-rust/src/shcore/main.rs)
@@ -2570,6 +2585,11 @@ ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
 ntoskrnl/ntos.cmake	2	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cacheinfo.c # Replaced by Rust (upstream 83a6af0773b)
 ntoskrnl/ntos.cmake	2	#${REACTOS_SOURCE_DIR}/ntoskrnl/ke/x86x64/cpuinfo.c
+ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/kse/driverscope.c
+ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/kse/ignorepooltag.c
+ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/kse/kse.c
+ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/kse/ksedb.c
+ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/kse/versionlie.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
 ntoskrnl/ntos.cmake	1	#${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
@@ -2817,6 +2837,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# encode.c — replaced by Rust implementation (sdk
 sdk/lib/rtl/CMakeLists.txt	1	# env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
 sdk/lib/rtl/CMakeLists.txt	1	# error.c — replaced by Rust implementation (sdk/lib/rust/rtl-error/)
 sdk/lib/rtl/CMakeLists.txt	1	# exception.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
+sdk/lib/rtl/CMakeLists.txt	1	# fls.c (upstream-new 2026-10, bf45318bc5b) — PORT ITEM, not built: RtlFlsAlloc/Free/
 sdk/lib/rtl/CMakeLists.txt	1	# generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
 sdk/lib/rtl/CMakeLists.txt	1	# handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
 sdk/lib/rtl/CMakeLists.txt	1	# heap.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/, Wave HEAP)
@@ -2838,6 +2859,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# memstream.c — replaced by Rust implementation (
 sdk/lib/rtl/CMakeLists.txt	1	# message.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
 sdk/lib/rtl/CMakeLists.txt	1	# network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
 sdk/lib/rtl/CMakeLists.txt	1	# nls.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi + nls_tables)
+sdk/lib/rtl/CMakeLists.txt	1	# ntuserpfn.c + ntuserdisp.s (upstream-new 2026-10, 479662b3f0c) — PORT ITEM, not built:
 sdk/lib/rtl/CMakeLists.txt	1	# path.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PATH)
 sdk/lib/rtl/CMakeLists.txt	1	# ppb.c — replaced by Rust implementation (sdk/lib/rust/rtl-ppb/)
 sdk/lib/rtl/CMakeLists.txt	1	# prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
@@ -2872,6 +2894,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# version.c — replaced by Rust implementation (sd
 sdk/lib/rtl/CMakeLists.txt	1	# wait.c — replaced by Rust implementation (sdk/lib/rust/rtl-sync/, Wave SYNC)
 sdk/lib/rtl/CMakeLists.txt	1	# wine_debug.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
 sdk/lib/rtl/CMakeLists.txt	1	# workitem.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
+sdk/lib/rtl/CMakeLists.txt	1	#fls.c
 sdk/lib/rtl/CMakeLists.txt	1	#memres.c
 sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# atapi.c
 sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# dev_config.c

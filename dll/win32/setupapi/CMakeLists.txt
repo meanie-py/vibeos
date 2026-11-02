@@ -14,32 +14,32 @@ spec2def(setupapi.dll setupapi.spec ADD_IMPORTLIB)
 
 list(APPEND SOURCE
     # cfgmgr.c — replaced by Rust (setupapi-rust)
-    devclass.c
-    devprop.c
-    devinst.c
+    # devclass.c — replaced by Rust (setupapi-rust)
+    # devprop.c — replaced by Rust (setupapi-rust)
+    # devinst.c — replaced by Rust (setupapi-rust)
     # dialog.c — replaced by Rust (setupapi-rust)
     # dirid.c — replaced by Rust (setupapi-rust)
     # diskspace.c — replaced by Rust (setupapi-rust)
-    driver.c
-    install.c
+    # driver.c — replaced by Rust (setupapi-rust)
+    # install.c — replaced by Rust (setupapi-rust)
     # interface.c — replaced by Rust (setupapi-rust)
-    misc.c
-    parser.c
+    # misc.c — replaced by Rust (setupapi-rust)
+    # parser.c — replaced by Rust (setupapi-rust)
     # query.c — replaced by Rust (setupapi-rust)
-    queue.c
+    # queue.c — replaced by Rust (setupapi-rust)
     # setupcab.c — replaced by Rust (setupapi-rust)
     # stringtable.c — replaced by Rust (setupapi-rust)
-    stubs.c
-    rpc.c)
+    # stubs.c — replaced by Rust (setupapi-rust)
+    # rpc.c — replaced by Rust (setupapi-rust)
+    )
 
 list(APPEND PCH_SKIP_SOURCE
     ${CMAKE_CURRENT_BINARY_DIR}/setupapi_stubs.c)
 
 # --- Rust cohabitation (setupapi-rust) ------------------------------------
-# libsetupapi_rust.a carries the TUs flipped so far: cfgmgr.c (whose RpcTryExcept guards
-# compile to nothing under DUMMY_PSEH and are real rpc_try calls in Rust), then dialog,
-# dirid, diskspace, interface, query, setupcab and stringtable. The rest of the module is
-# still the C above.
+# libsetupapi_rust.a carries every TU of the module: cfgmgr.c (whose RpcTryExcept guards
+# compile to nothing under DUMMY_PSEH and are real rpc_try calls in Rust), then the other
+# seventeen. Only the generated pnp_c.c / setupapi_stubs.c are still C.
 set(SETUPAPI_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
 rust_storage_target(SETUPAPI_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-setupapi-target" setupapi-rust)
 set(SETUPAPI_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libsetupapi_rust.a")

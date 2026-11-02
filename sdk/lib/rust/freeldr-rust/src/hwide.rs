@@ -941,7 +941,8 @@ unsafe fn AtapIssuePacketCommand(
 
     (*Request).Flags |= REQUEST_FLAG_AWAIT_CDB;
 
-    ByteCount = min(((*Request).DataTransferLength) as u16 , 0xFFFE);
+    // Clamp the ULONG, then narrow: a 64 KiB transfer cut to u16 first is a 0-byte limit.
+    ByteCount = min((*Request).DataTransferLength, 0xFFFE) as USHORT;
 
     ATA_WRITE((*DeviceUnit).Registers.lm.ByteCountLow, (ByteCount >> 0) as UCHAR);
     ATA_WRITE((*DeviceUnit).Registers.lh.ByteCountHigh, (ByteCount >> 8) as UCHAR);

@@ -9160,13 +9160,13 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   setupapi)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-17 from dll/win32/setupapi/CMakeLists.txt
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-31 from dll/win32/setupapi/CMakeLists.txt
     # (18 compiled TU(s), 211 headers in the include closure, 196 switch constant(s)).
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1
     REAL_UNIONS=1
-    # BLOCKLIST_FUNCS, MEASURED: 231 external prototype(s) declared by the include closure, 18 called but declared nowhere in it.
+    # BLOCKLIST_FUNCS, MEASURED: 232 external prototype(s) declared by the include closure, 18 called but declared nowhere in it.
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
     BLOCKLIST_FUNCS=0
     BLOCKLIST_FUNCS_FROM_CRATE=1
@@ -9181,6 +9181,7 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]lzexpand\.h'
                   --allowlist-file '.*[/\\]mscat\.h'
                   --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*[/\\]objidl\.h'
                   --allowlist-file '.*[/\\]ole2\.h'
                   --allowlist-file '.*[/\\]pnp_c\.h'
                   --allowlist-file '.*[/\\]pseh[/\\]pseh2\.h'
@@ -9191,6 +9192,7 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]setupapi\.h'
                   --allowlist-file '.*[/\\]shellapi\.h'
                   --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shobjidl\.h'
                   --allowlist-file '.*[/\\]softpub\.h'
                   --allowlist-file '.*[/\\]strsafe\.h'
                   --allowlist-file '.*[/\\]wingdi\.h'
@@ -9199,7 +9201,10 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]winsvc\.h'
                   --allowlist-file '.*[/\\]winsvc_undoc\.h'
                   --allowlist-file '.*[/\\]winver\.h'
-                  --allowlist-file '.*setupapi[/\\].*\.h' )
+                  --allowlist-file '.*setupapi[/\\].*\.h'
+                  --allowlist-file '.*[/\\]verrsrc\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/dll/win32/setupapi" -I"${SRC}/build-i386/dll/win32/setupapi" )
@@ -10071,6 +10076,25 @@ case "$DRIVER" in
   # Then dispatch them from the crate: one `mod <stem>;` per island, and each
   # translated module imports from the island its own C include set belongs to
   # (names legitimately overlap between islands — never glob both into scope).
+  normaliz)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-11-01 from dll/nls/normaliz/CMakeLists.txt
+    # (4 compiled TU(s), 73 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 6 external prototype(s) declared by the include closure, 0 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/nls/normaliz"
+    WRAPPER_INC=$'#define WIN32_NO_STATUS\n#include <wine/unicode.h>\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*normaliz[/\\].*\.h' --allowlist-file '.*[/\\]winnls\.h' )
+    EXTRA_INC=( -I"${SRC}/dll/nls/normaliz" -I"${SRC}/build-i386/dll/nls/normaliz" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/vendor/symcrypt/inc" -I"${SRC}/vendor/symcrypt/lib" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

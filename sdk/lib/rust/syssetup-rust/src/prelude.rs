@@ -247,7 +247,7 @@ pub const ENUM_CURRENT_SETTINGS: DWORD = 0xFFFFFFFF; // wingdi.h: ((DWORD)-1)
 pub const GEOCLASS_NATION: SYSGEOCLASS = 16; // winnls.h SYSGEOCLASS enum
 pub const GEO_FRIENDLYNAME: SYSGEOTYPE = 8; // winnls.h SYSGEOTYPE enum
 pub const SC_STATUS_PROCESS_INFO: SC_STATUS_TYPE = 0; // winsvc.h SC_STATUS_TYPE enum
-pub const SPINST_REGISTERCALLBACKAWARE: DWORD = 0x00000400; // setupapi.h
+pub const SPINST_REGISTERCALLBACKAWARE: DWORD = 0x00080000; // setupapi.h:610 (0x400 was no SPINST_ bit at all)
 pub const IDI_WINLOGO: LPCWSTR = 32517 as LPCWSTR; // winuser.h: MAKEINTRESOURCE(32517)
 // winuser.h:881-883, a three-macro chain ending in
 // `DWLP_USER (DWLP_DLGPROC + sizeof(DLGPROC))` — computed, so bindgen emits none of it. Shared,

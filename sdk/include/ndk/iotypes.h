@@ -1102,6 +1102,11 @@ typedef struct _EXTENDED_DEVOBJ_EXTENSION
     PVOID DependencyNode;
 #if (NTDDI_VERSION >= NTDDI_WIN10) || defined(__REACTOS__)
     PVOID InterruptContext;
+    /* VibeOS: upstream's 167c0e97ce5 declared the full public DEVOBJ_EXTENSION (xdk/iotypes.h)
+       with InterruptCount between InterruptContext and VerifierContext, as NT10 lays it out,
+       but left this internal twin without it. The kernel allocates THIS one, so the public
+       view read 4/8 bytes past the allocation and the two disagreed on VerifierContext. */
+    volatile LONG InterruptCount;
 #endif
     PVOID VerifierContext;
 #elif (NTDDI_VERSION >= NTDDI_VISTASP1)
@@ -1121,6 +1126,13 @@ typedef struct _EXTENDED_DRIVER_EXTENSION
     UNICODE_STRING ServiceKeyName;
     PIO_CLIENT_EXTENSION ClientDriverExtension;
     PFS_FILTER_CALLBACKS FsFilterCallbacks;
+#if (NTDDI_VERSION >= NTDDI_WIN8) || defined(__REACTOS__)
+    PVOID KseCallbacks;
+    PVOID DvCallbacks;
+#if (NTDDI_VERSION >= NTDDI_WINBLUE) || defined(__REACTOS__)
+    PVOID VerifierContext;
+#endif
+#endif
 } EXTENDED_DRIVER_EXTENSION, *PEXTENDED_DRIVER_EXTENSION;
 
 #endif // !NTOS_MODE_USER

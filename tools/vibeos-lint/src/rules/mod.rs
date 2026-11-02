@@ -1,10 +1,12 @@
 //! Register each plugin here; plugins have no subprocess or filesystem scan.
 use crate::Rule;
 pub mod const_narrowing_cast;
+pub mod minmax_narrowing;
 pub mod double_fetch;
 pub mod dowhile_continue;
 pub mod entry_point_cc;
 pub mod uncalled_ctor_hook;
+pub mod mingw_c_vtable;
 pub mod guid_values;
 pub mod container_ptr_read;
 pub mod fnptr_abi_transmute;
@@ -17,6 +19,7 @@ pub mod list_walk_from_head;
 pub mod misaligned_cast;
 pub mod read_after_clear;
 pub mod shadowed_c_define;
+pub mod move_vs_nonoverlapping;
 pub mod variadic_array_arg;
 
 pub mod assert_to_ub;
@@ -223,6 +226,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(raw_user_access::RawUserAccess),
         Box::new(safe_probe_deref::SafeProbeDeref),
         Box::new(shadowed_c_define::ShadowedCDefine),
+        Box::new(move_vs_nonoverlapping::MoveVsNonoverlapping),
         Box::new(store_on_failure::StoreOnFailure),
         Box::new(dropped_null_guard::DroppedNullGuard),
         Box::new(ptr_byte_diff::PtrByteDiff),
@@ -268,11 +272,13 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(init_then_move::InitThenMove),
         Box::new(read_after_clear::ReadAfterClear),
         Box::new(const_narrowing_cast::ConstNarrowingCast),
+        Box::new(minmax_narrowing::MinmaxNarrowing),
         Box::new(info_class_literals::InfoClassLiterals),
         Box::new(misaligned_cast::MisalignedCast),
         Box::new(fnptr_abi_transmute::FnptrAbiTransmute),
         Box::new(entry_point_cc::EntryPointCc),
         Box::new(uncalled_ctor_hook::UncalledCtorHook),
+        Box::new(mingw_c_vtable::MingwCVtable),
         Box::new(guid_values::GuidValues),
         Box::new(container_ptr_read::ContainerPtrRead),
     ]

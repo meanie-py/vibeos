@@ -1494,6 +1494,26 @@ const _BLANK: u16 = 0x40;
 const _HEX: u16 = 0x80;
 const _ALPHA: u16 = 0x0100 | _UPPER | _LOWER;
 
+extern "C" {
+    // msvcrt's `size_t wcslen(const wchar_t *)` and `wint_t towlower(wint_t)`, private for
+    // the same reason as iswctype.
+    fn wcslen(s: *const u16) -> usize;
+    fn towlower(c: u16) -> u16;
+}
+
+/// ReactOS `wine/unicode.h:28` — `#define strlenW(s) wcslen((s))` (not Wine's own inline,
+/// which returns `unsigned int`; ours is msvcrt's `size_t`).
+#[inline]
+pub unsafe fn strlenW(s: *const u16) -> usize {
+    unsafe { wcslen(s) }
+}
+
+/// ReactOS `wine/unicode.h:44` — `#define tolowerW(n) towlower((n))`.
+#[inline]
+pub unsafe fn tolowerW(c: u16) -> u16 {
+    unsafe { towlower(c) }
+}
+
 /// `ctype.h:664` — `#define iswalpha(_c) (iswctype(_c,_ALPHA))`. `wint_t` is `u16`.
 #[inline]
 pub unsafe fn iswalpha(c: u16) -> i32 {
@@ -2225,6 +2245,24 @@ pub unsafe fn InterlockedExchangePointer(
 ) -> *mut core::ffi::c_void {
     (*(target as *const core::sync::atomic::AtomicPtr<core::ffi::c_void>))
         .swap(value, core::sync::atomic::Ordering::SeqCst)
+}
+
+/// `InterlockedCompareExchangePointer(Destination, Exchange, Comperand)`: stores `exchange`
+/// only when the slot holds `comperand`, and returns the value it held either way.
+#[inline(always)]
+pub unsafe fn InterlockedCompareExchangePointer(
+    destination: *mut *mut core::ffi::c_void,
+    exchange: *mut core::ffi::c_void,
+    comperand: *mut core::ffi::c_void,
+) -> *mut core::ffi::c_void {
+    match (*(destination as *const core::sync::atomic::AtomicPtr<core::ffi::c_void>)).compare_exchange(
+        comperand,
+        exchange,
+        core::sync::atomic::Ordering::SeqCst,
+        core::sync::atomic::Ordering::SeqCst,
+    ) {
+        Ok(old) | Err(old) => old,
+    }
 }
 
 /// `InterlockedCompareExchange(Destination, Exchange, Comperand)`: stores `exchange` only when

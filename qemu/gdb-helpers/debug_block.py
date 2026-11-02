@@ -276,7 +276,7 @@ OP_NAMES = {
     4: "pushlock-park", 5: "pushlock-satisfied", 6: "pushlock-wake",
     16: "ws-lock-EXCL", 17: "ws-unlock-EXCL",
     32: "LOCKDEP-SELFDEADLOCK", 33: "LOCKDEP-ABBA",
-    48: "page-map", 49: "page-unmap", 50: "page-pte-raw",
+    48: "page-map", 49: "page-unmap", 50: "page-pte-raw", 51: "rmap-insert", 52: "rmap-delete",
     64: "kernel-fault-pc", 65: "kernel-fault-far", 66: "kernel-fault-lr",
     67: "kernel-resume-pc", 68: "kernel-resume-lr", 69: "kernel-data-fixup",
 }

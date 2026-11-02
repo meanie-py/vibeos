@@ -308,7 +308,12 @@ if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
     add_subdirectory(bcryptprimitives)
     add_subdirectory(dwmapi)
     add_subdirectory(ncrypt)
+    # tbs and wevtapi are added above (our Wine-11 imports, Rust-flipped), unconditionally.
 endif()
 
 # rtworkq is built at every DLL_EXPORT_VERSION: mfplat (Media Foundation) imports it.
+# dcomp is added above (our Wine-11 import, Rust-flipped), unconditionally.
 add_subdirectory(rtworkq)
+if(DLL_EXPORT_VERSION GREATER_EQUAL 0x603)
+    add_subdirectory(bcp47langs)
+endif()

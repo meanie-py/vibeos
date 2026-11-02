@@ -404,8 +404,45 @@ def build(args, repo: Path) -> int:
     arch = archcfg.base_arch(args.arch)  # build side keys on the base arch
     cfg = archcfg.arch_build(arch)
     build_dir = repo / f"build-{arch}"
-    run = Run("build", arch)
+    headers_only = bool(getattr(args, "headers_only", False))
+    run = Run("build-headers", arch) if headers_only else Run("build", arch)
     cold = bool(args.clean)
+    if headers_only:
+        run.extra["partial"] = "headers-only"
+        # Do not require an i386 media tree just to configure amd64 headers.
+        # A later full build reconciles this setting back to its requested value.
+        if arch == "amd64":
+            args.no_wow64_stage = True
+        # These options affect later stages which a headers-only build never runs.
+        ignored = (
+            "clean",
+            "extra_target",
+            "check",
+            "no_check",
+            "strict",
+            "keep_going",
+            "artifact_store",
+            "artifact_store_verify",
+            "no_artifact_store",
+            "rust_storage_shards",
+            "rust_body_shards",
+            "incremental",
+        )
+        requested = [
+            "--" + name.replace("_", "-")
+            for name in ignored
+            if getattr(args, name, None) not in (None, False, [])
+        ]
+        if requested:
+            run.classification = "HEADERS_OPTIONS_REFUSED"
+            run.add(
+                Stage(
+                    "preflight",
+                    status="fail",
+                    detail="--headers-only cannot honor " + ", ".join(requested),
+                )
+            )
+            return run.finalize(repo)
 
     # (Historical: --lockdep/--cswitchdep used to fail-fast on arm64 — the
     # instrumentation needed nightly-only link_llvm_intrinsics and the arm64
@@ -458,8 +495,19 @@ def build(args, repo: Path) -> int:
             if not _hold_wow64_source(run, repo, arch, args, reads):
                 return run.finalize(repo)
             with diskspace.reserve(repo, "build"):
-                rc = _build_supervised(args, repo, run, arch, cfg, build_dir, cold)
-            if rc == 0:
+                if headers_only:
+                    # Configure/prime may invalidate existing media even when it fails.
+                    # Invalidate before the first mutation while holding its build lock.
+                    try:
+                        (build_dir / provenance.STAMP_NAME).unlink(missing_ok=True)
+                    except OSError as exc:
+                        run.classification = "HEADERS_STAMP_INVALIDATION_FAIL"
+                        run.add(Stage("preflight", status="fail", detail=str(exc)))
+                        return run.finalize(repo)
+                    rc = _build_locked(args, repo, run, arch, cfg, build_dir, cold)
+                else:
+                    rc = _build_supervised(args, repo, run, arch, cfg, build_dir, cold)
+            if rc == 0 and not headers_only:
                 _trim_own_target(repo)
                 _scheduled_store_gc(args)
             return rc
@@ -486,6 +534,34 @@ def _trim_own_target(repo: Path) -> None:
             )
     except OSError as exc:
         print(f"[trim] skipped: {exc}")
+
+
+def _failure_over_moved_tree(run, repo: Path, start_tree: str | None) -> None:
+    """A finalize hook: reclassify a FAILED build whose inputs moved while it ran.
+
+    The success path refuses to stamp a moved tree, but a failure used to be reported as
+    itself: `port data` commented a TU out of a CMakeLists mid-build, and the arm64 build
+    said LINK_FAIL (the C's callers linked without the tables, the Rust not yet wired)
+    with nothing hinting that the tree had moved. A failure over a moved tree is a failure
+    of neither tree, so say that, and name the original verdict."""
+    if run.verdict in ("OK", "WARN") or run.classification == "BUILD_INPUTS_MOVED":
+        return
+    moved = _inputs_moved(repo, start_tree)
+    if not moved:
+        return
+    was = run.classification or run.verdict
+    run.classification = "BUILD_INPUTS_MOVED"
+    run.add(
+        Stage(
+            "inputs-moved",
+            status="fail",
+            detail=(
+                f"{len(moved)} build input(s) changed while this build ran, so its "
+                f"{was} may be the edit's, not the tree's. Rebuild before diagnosing."
+            ),
+            salient=moved[:8],
+        )
+    )
 
 
 def _inputs_moved(repo: Path, start_tree: str | None) -> list[str]:
@@ -1359,6 +1435,8 @@ def _build_locked(
     except (OSError, RuntimeError, subprocess.SubprocessError):
         start_tree = None
 
+    run.finalize_hooks.append(lambda: _failure_over_moved_tree(run, repo, start_tree))
+
     if not _isolation_preflight(run, repo, build_dir):
         return run.finalize(repo)
     wrapped = _maybe_canonize(
@@ -1438,42 +1516,43 @@ def _build_locked(
     def wrap(cmd: list[str]) -> list[str]:
         return canon.wrap(repo, cmd) if wrapped else cmd
 
-    shards = getattr(args, "rust_storage_shards", None)
-    body_shards = getattr(args, "rust_body_shards", None)
-    storage_options = _storage_options(build_dir, shards, body_shards)
-    artifact_mode = "ON" if artifact_env else "OFF"
-    # Reconcile on every invocation: a plain build turns the opt-in off. Changing
-    # the generated Cargo command makes Ninja invoke Cargo, whose environment
-    # watch reruns build.rs and changes its archive path safely.
-    if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_STORE_MODE") != artifact_mode:
-        storage_options.append(f"-DVIBEOS_ARTIFACT_STORE_MODE={artifact_mode}")
-    artifact_root = str(getattr(args, "artifact_store", "") or "") if artifact_env else ""
-    if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_STORE_ROOT") != artifact_root:
-        storage_options.append(f"-DVIBEOS_ARTIFACT_STORE_ROOT={artifact_root}")
-    verify_nonce = (
-        str(run.dir) if artifact_env and getattr(args, "artifact_store_verify", False) else ""
-    )
-    if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_VERIFY_NONCE") != verify_nonce:
-        storage_options.append(f"-DVIBEOS_ARTIFACT_VERIFY_NONCE={verify_nonce}")
-    toolchain_id = (artifact_env or {}).get("VIBEOS_ARTIFACT_TOOLCHAIN_ID", "")
-    if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_TOOLCHAIN_ID") != toolchain_id:
-        storage_options.append(f"-DVIBEOS_ARTIFACT_TOOLCHAIN_ID={toolchain_id}")
-    if storage_options:
-        cp = run.run(
-            wrap(["cmake", *storage_options, "."]),
-            cwd=build_dir,
-            stage="storage-config",
-            timeout=600,
+    if not getattr(args, "headers_only", False):
+        shards = getattr(args, "rust_storage_shards", None)
+        body_shards = getattr(args, "rust_body_shards", None)
+        storage_options = _storage_options(build_dir, shards, body_shards)
+        artifact_mode = "ON" if artifact_env else "OFF"
+        # Reconcile on every invocation: a plain build turns the opt-in off. Changing
+        # the generated Cargo command makes Ninja invoke Cargo, whose environment
+        # watch reruns build.rs and changes its archive path safely.
+        if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_STORE_MODE") != artifact_mode:
+            storage_options.append(f"-DVIBEOS_ARTIFACT_STORE_MODE={artifact_mode}")
+        artifact_root = str(getattr(args, "artifact_store", "") or "") if artifact_env else ""
+        if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_STORE_ROOT") != artifact_root:
+            storage_options.append(f"-DVIBEOS_ARTIFACT_STORE_ROOT={artifact_root}")
+        verify_nonce = (
+            str(run.dir) if artifact_env and getattr(args, "artifact_store_verify", False) else ""
         )
-        if cp.returncode:
-            run.classification = "CMAKE_CONFIGURE_FAIL"
-            run.add(Stage("storage-config", status="fail", exit=cp.returncode))
-            return run.finalize(repo)
+        if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_VERIFY_NONCE") != verify_nonce:
+            storage_options.append(f"-DVIBEOS_ARTIFACT_VERIFY_NONCE={verify_nonce}")
+        toolchain_id = (artifact_env or {}).get("VIBEOS_ARTIFACT_TOOLCHAIN_ID", "")
+        if _value_in_cache(build_dir, "VIBEOS_ARTIFACT_TOOLCHAIN_ID") != toolchain_id:
+            storage_options.append(f"-DVIBEOS_ARTIFACT_TOOLCHAIN_ID={toolchain_id}")
+        if storage_options:
+            cp = run.run(
+                wrap(["cmake", *storage_options, "."]),
+                cwd=build_dir,
+                stage="storage-config",
+                timeout=600,
+            )
+            if cp.returncode:
+                run.classification = "CMAKE_CONFIGURE_FAIL"
+                run.add(Stage("storage-config", status="fail", exit=cp.returncode))
+                return run.finalize(repo)
 
-    staged = _stage_payloads(run, repo, build_dir, arch)
-    if staged is None:
-        return run.finalize(repo)
-    stamped, _payload_compile = staged
+        staged = _stage_payloads(run, repo, build_dir, arch)
+        if staged is None:
+            return run.finalize(repo)
+        stamped, _payload_compile = staged
 
     if cold:
         _clean(run, repo, arch)
@@ -1544,13 +1623,21 @@ def _build_locked(
     # Deferred staging must not build guests either: they link build-i386's
     # importlibs, which is the tree a deferring caller is rebuilding right now.
     guests_deferred: list[str] = []
-    if arch == "amd64" and not getattr(args, "no_wow64_stage", False):
+    if (
+        arch == "amd64"
+        and not getattr(args, "headers_only", False)
+        and not getattr(args, "no_wow64_stage", False)
+    ):
         refreshed = _refresh_wow64_guests(run, repo)
         if refreshed is False:
             return run.finalize(repo)
         if isinstance(refreshed, list):
             guests_deferred = refreshed
-    if arch == "arm64" and not _refresh_wowx64_cpu(run, repo):
+    if (
+        arch == "arm64"
+        and not getattr(args, "headers_only", False)
+        and not _refresh_wowx64_cpu(run, repo)
+    ):
         return run.finalize(repo)
 
     # --- generated-header barrier ---
@@ -1579,6 +1666,12 @@ def _build_locked(
         )
         return run.finalize(repo)
     run.add(Stage("ninja-prime", status="ok", detail="generated headers"))
+    if getattr(args, "headers_only", False):
+        run.extra["partial"] = "headers-only"
+        run.add(
+            Stage("headers-only", status="warn", detail="partial build; no boot media or stamp")
+        )
+        return run.finalize(repo)
 
     # --- delete outputs the current graph no longer declares ---
     # ninja never removes the output of an edge that has left build.ninja, so a warm

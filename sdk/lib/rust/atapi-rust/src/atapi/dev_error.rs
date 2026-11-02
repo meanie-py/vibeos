@@ -76,7 +76,7 @@ unsafe extern "C" fn AtaDeviceHandleRequestSense(
         RtlCopyMemory!(
             (*Srb).SenseInfoBuffer as *mut core::ffi::c_void,
             (*DevExt).Device.LocalBuffer as *const core::ffi::c_void,
-            min((*Srb).SenseInfoBufferLength, (ATA_LOCAL_BUFFER_SIZE) as u8) as usize,
+            min((*Srb).SenseInfoBufferLength as u32, ATA_LOCAL_BUFFER_SIZE as u32) as usize,
         );
 
         (*Srb).ScsiStatus = (SCSISTAT_CHECK_CONDITION) as u8;

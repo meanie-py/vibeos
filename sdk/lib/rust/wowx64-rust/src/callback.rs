@@ -35,6 +35,33 @@ struct Callout {
     SyscallRsp: u64,
     SyscallService: u64,
     Prev: *mut Callout,
+    /// Profile marks (generic timer): entry, and the start of the nested simulate.
+    T0: u64,
+    TSim: u64,
+}
+
+/// Where a callback's time goes, said with the syscall profile at process exit: `in` is our
+/// entry (saving the guest's state, building its frame), `guest` the nested simulate up to the
+/// guest's NtCallbackReturn (the CPU layer's re-entry, the guest dispatcher and window
+/// procedure, and any syscalls they make), `out` restoring the outer state. The native
+/// kernel's own callout and return are in the outer syscall's `kernel` time.
+pub mod Profile {
+    use core::sync::atomic::{AtomicU64, Ordering};
+    pub static CALLS: AtomicU64 = AtomicU64::new(0);
+    pub static IN: AtomicU64 = AtomicU64::new(0);
+    pub static GUEST: AtomicU64 = AtomicU64::new(0);
+    pub static OUT: AtomicU64 = AtomicU64::new(0);
+
+    #[inline(always)]
+    pub fn Ticks() -> u64 {
+        let T: u64;
+        unsafe { core::arch::asm!("mrs {}, cntvct_el0", out(reg) T, options(nomem, nostack)) };
+        T
+    }
+
+    pub fn Add(Counter: &AtomicU64, T: u64) {
+        Counter.fetch_add(T, Ordering::Relaxed);
+    }
 }
 
 /// `UCALLOUT_FRAME` (ndk/amd64/ketypes.h): what the guest's
@@ -79,6 +106,8 @@ unsafe extern "system" fn WowX64UserCallback(Index: ULONG, Argument: *mut c_void
         SyscallRsp: (*Rec).SyscallRsp,
         SyscallService: (*Rec).SyscallService,
         Prev: *Head(),
+        T0: Profile::Ticks(),
+        TSim: 0,
     };
     // Guest code runs from here until NtCallbackReturn: not parked in a
     // syscall, so a remote sampler is refused rather than shown the outer one.
@@ -108,6 +137,8 @@ unsafe extern "system" fn WowX64UserCallback(Index: ULONG, Argument: *mut c_void
     Run.Rip = KiUserCallbackDispatcher;
     Run.Rsp = Frame as u64;
     (Cpu().SetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), &Run);
+    C.TSim = Profile::Ticks();
+    Profile::Add(&Profile::IN, C.TSim - C.T0);
     (Cpu().Simulate)();
     die(b"guest callback returned without NtCallbackReturn\0");
 }
@@ -119,11 +150,15 @@ pub unsafe fn CallbackReturn(Args: &[u64; crate::syscall::WOWX64_SERVICE_ARGS]) 
         // Not inside a callback we started: let the kernel say so.
         return crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCallbackReturn, Args.as_ptr());
     }
+    let TRet = Profile::Ticks();
     *Head() = (*C).Prev;
     let Rec = crate::thread::Record();
     (*Rec).SyscallService = (*C).SyscallService;
     core::ptr::write_volatile(&mut (*Rec).SyscallRsp, (*C).SyscallRsp);
     (Cpu().SetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), &(*C).Saved);
+    Profile::Add(&Profile::GUEST, TRet - (*C).TSim);
+    Profile::Add(&Profile::OUT, Profile::Ticks() - TRet);
+    Profile::Add(&Profile::CALLS, 1);
     let Status = crate::host::NativeSyscall(crate::syscall::svc::SVC_NtCallbackReturn, Args.as_ptr());
     // Only an error comes back. The guest is now parked on the OUTER syscall,
     // so this status is that syscall's result, which is as good an outcome as

@@ -128,6 +128,148 @@ static IUnknown *create(GCO gco, const CLSID *clsid, const IID *iid, const char 
     return obj;
 }
 
+/* The manager's enumeration (CNetConnectionManager::EnumerateINetConnections) has a silent
+ * `break` at every step, so 0 connections says nothing about which one failed. Replay its
+ * steps against the guest and print each outcome; both variants see the same machine, so the
+ * lines match and say where a connection is lost. iphlpapi and setupapi are loaded by name:
+ * the probe links neither. */
+typedef DWORD(WINAPI *GETIFTABLE)(void *, ULONG *, BOOL);
+typedef DWORD(WINAPI *GETADAPTERSINFO)(void *, ULONG *);
+typedef void *(WINAPI *GETCLASSDEVS)(const GUID *, PCWSTR, HWND, DWORD);
+typedef BOOL(WINAPI *ENUMDEVINFO)(void *, DWORD, void *);
+typedef BOOL(WINAPI *GETDEVREGPROP)(void *, void *, DWORD, DWORD *, BYTE *, DWORD, DWORD *);
+typedef BOOL(WINAPI *DESTROYLIST)(void *);
+
+/* Only the fields read here; IP_ADAPTER_INFO's prefix is the same on every arch. */
+typedef struct AdapterInfo
+{
+    struct AdapterInfo *Next;
+    DWORD ComboIndex;
+    char AdapterName[260];
+    char Description[132];
+    UINT AddressLength;
+    BYTE Address[8];
+    DWORD Index;
+} AdapterInfo;
+
+typedef struct
+{
+    DWORD cbSize;
+    GUID ClassGuid;
+    DWORD DevInst;
+    ULONG_PTR Reserved;
+} DevInfoData;
+
+static void replay_enumeration(void)
+{
+    static const GUID kNetClass = {0x4d36e972, 0xe325, 0x11ce, {0xbf, 0xc1, 0x08, 0x00, 0x2b, 0xe1, 0x03, 0x18}};
+    HMODULE ip = LoadLibraryW(L"iphlpapi.dll"), sa = LoadLibraryW(L"setupapi.dll");
+    GETIFTABLE pGetIfTable = (GETIFTABLE)GetProcAddress(ip, "GetIfTable");
+    GETADAPTERSINFO pGetAdaptersInfo = (GETADAPTERSINFO)GetProcAddress(ip, "GetAdaptersInfo");
+    GETCLASSDEVS pGetClassDevs = (GETCLASSDEVS)GetProcAddress(sa, "SetupDiGetClassDevsW");
+    ENUMDEVINFO pEnum = (ENUMDEVINFO)GetProcAddress(sa, "SetupDiEnumDeviceInfo");
+    GETDEVREGPROP pProp = (GETDEVREGPROP)GetProcAddress(sa, "SetupDiGetDeviceRegistryPropertyW");
+    DESTROYLIST pDestroy = (DESTROYLIST)GetProcAddress(sa, "SetupDiDestroyDeviceInfoList");
+    if (!pGetIfTable || !pGetAdaptersInfo || !pGetClassDevs || !pEnum || !pProp || !pDestroy)
+    {
+        printf("replay imports missing\n");
+        return;
+    }
+    ULONG size = 0;
+    DWORD rc = pGetIfTable(NULL, &size, TRUE);
+    printf("replay iftable probe %lu\n", rc);
+    BYTE *iftable = (BYTE *)HeapAlloc(GetProcessHeap(), 0, size ? size : 1);
+    rc = pGetIfTable(iftable, &size, TRUE);
+    printf("replay iftable %lu entries %lu\n", rc, rc ? 0 : *(DWORD *)iftable);
+    HeapFree(GetProcessHeap(), 0, iftable);
+
+    size = 0;
+    rc = pGetAdaptersInfo(NULL, &size);
+    printf("replay adaptersinfo probe %lu\n", rc);
+    AdapterInfo *adapters = (AdapterInfo *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, size ? size : 1);
+    rc = size ? pGetAdaptersInfo(adapters, &size) : rc;
+    printf("replay adaptersinfo %lu\n", rc);
+    for (AdapterInfo *a = rc ? NULL : adapters; a; a = a->Next)
+        printf("replay adapter index %lu name %s\n", a->Index, a->AdapterName);
+
+    void *info = pGetClassDevs(&kNetClass, NULL, NULL, 2 /* DIGCF_PRESENT */);
+    printf("replay classdevs %s\n", info && info != INVALID_HANDLE_VALUE ? "ok" : "failed");
+    if (!info || info == INVALID_HANDLE_VALUE)
+        return;
+    for (DWORD i = 0;; i++)
+    {
+        DevInfoData dev;
+        ZeroMemory(&dev, sizeof(dev));
+        dev.cbSize = sizeof(dev);
+        if (!pEnum(info, i, &dev))
+        {
+            printf("replay devices %lu (stop %lu)\n", i, GetLastError());
+            break;
+        }
+        WCHAR driver[200];
+        DWORD need = 0;
+        if (!pProp(info, &dev, 9 /* SPDRP_DRIVER */, NULL, (BYTE *)driver, sizeof(driver), &need))
+        {
+            printf("replay device %lu driver failed %lu\n", i, GetLastError());
+            continue;
+        }
+        WCHAR key[260] = L"SYSTEM\\CurrentControlSet\\Control\\Class\\";
+        lstrcatW(key, driver);
+        HKEY hk;
+        LONG lr = RegOpenKeyExW(HKEY_LOCAL_MACHINE, key, 0, KEY_READ, &hk);
+        printf("replay device %lu driver %ls open %ld\n", i, driver, lr);
+        if (lr)
+            continue;
+        WCHAR cfg[50] = L"";
+        DWORD cb = sizeof(cfg);
+        lr = RegQueryValueExW(hk, L"NetCfgInstanceId", NULL, NULL, (BYTE *)cfg, &cb);
+        RegCloseKey(hk);
+        printf("replay device %lu netcfg %ld %ls\n", i, lr, cfg);
+        int matched = 0;
+        for (AdapterInfo *a = rc ? NULL : adapters; a; a = a->Next)
+        {
+            WCHAR name[50];
+            MultiByteToWideChar(CP_ACP, 0, a->AdapterName, -1, name, 50);
+            if (!lstrcmpiW(name, cfg))
+                matched = 1;
+        }
+        printf("replay device %lu adapter match %d\n", i, matched);
+    }
+    pDestroy(info);
+    HeapFree(GetProcessHeap(), 0, adapters);
+
+    /* Where the NIC is, if not in the Net class: every present device that is
+     * a PCI network controller (class code 02, in its compatible ids), with its setup class
+     * and service. */
+    info = pGetClassDevs(NULL, NULL, NULL, 2 /* DIGCF_PRESENT */ | 4 /* DIGCF_ALLCLASSES */);
+    if (!info || info == INVALID_HANDLE_VALUE)
+    {
+        printf("replay alldevs failed\n");
+        return;
+    }
+    for (DWORD i = 0;; i++)
+    {
+        DevInfoData dev;
+        ZeroMemory(&dev, sizeof(dev));
+        dev.cbSize = sizeof(dev);
+        if (!pEnum(info, i, &dev))
+            break;
+        WCHAR hwid[512] = L"", compat[1024] = L"", cls[64] = L"", svc[64] = L"";
+        pProp(info, &dev, 1 /* SPDRP_HARDWAREID */, NULL, (BYTE *)hwid, sizeof(hwid), NULL);
+        pProp(info, &dev, 2 /* SPDRP_COMPATIBLEIDS */, NULL, (BYTE *)compat, sizeof(compat), NULL);
+        BOOL network = FALSE;
+        for (WCHAR *id = compat; *id; id += lstrlenW(id) + 1)
+            network |= wcsncmp(id, L"PCI\\CC_02", 9) == 0;
+        if (!network)
+            continue;
+        pProp(info, &dev, 7 /* SPDRP_CLASS */, NULL, (BYTE *)cls, sizeof(cls), NULL);
+        pProp(info, &dev, 4 /* SPDRP_SERVICE */, NULL, (BYTE *)svc, sizeof(svc), NULL);
+        printf("replay nic %ls class '%ls' service '%ls' classguid %08lx\n", hwid, cls, svc,
+               dev.ClassGuid.Data1);
+    }
+    pDestroy(info);
+}
+
 int main(void)
 {
     WCHAR self[MAX_PATH];
@@ -211,6 +353,7 @@ int main(void)
         }
         printf("manager release %lu\n", mgr->lpVtbl->Release(mgr));
     }
+    replay_enumeration();
 
     /* The Network Connections folder. */
     IShellFolder2 *sf = (IShellFolder2 *)create(gco, &kNetworkConnections,

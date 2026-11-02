@@ -248,7 +248,13 @@ What the C calls out to is the ENVIRONMENT, shared by both sides: `c_env` lists 
 files linked into the reference and the Rust candidate alike, so only the unit under grade
 differs. Every other external becomes a generated trap that aborts with its name
 (`report.c_traps`), so an unmodeled call is loud, never guessed. Neither library may import
-glibc's wide-char family (4-byte `wchar_t`). `version.json` grades `VerQueryValueW` from a whole
+glibc's wide-char family (4-byte `wchar_t`). `"c_env_probe": {"reset": f, "read": g}` names two c_env
+functions, `void f(void)` called before every call and `uint64_t g(void)` after it, whose
+value is compared like a return: state the call leaves in the ENVIRONMENT, such as a Win32
+last-error cell or a count of live heap blocks (`normaliz_ascii.json` packs both, and two of
+its mutants differ only there). A buffer counted in elements wider than a byte takes a
+`{"arg": "cch", "mul": 2}` length; its examples set `cch` to their byte length over `mul`,
+and may name a signed count. `version.json` grades `VerQueryValueW` from a whole
 Wine TU this way; its first run found three shipping bugs.
 
 ## What earns a pass

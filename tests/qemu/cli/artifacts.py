@@ -361,6 +361,10 @@ class Run:
         self.verdict = "OK"
         self.classification = ""
         self.extra: dict = {}  # arbitrary verdict fields (flake rate, frame, …)
+        # Run first thing in finalize(), every exit path included: a command that must
+        # re-judge its own result (build: did the tree move under a failure?) registers
+        # here instead of patching each of its early returns.
+        self.finalize_hooks: list = []
 
     # --- subprocess with full-log capture + command journal ---------------
     def run(
@@ -423,6 +427,9 @@ class Run:
 
     # --- finalize: write summary.json, print bounded summary --------------
     def finalize(self, repo: Path | None = None) -> int:
+        hooks, self.finalize_hooks = self.finalize_hooks, []
+        for hook in hooks:
+            hook()
         dur = time.monotonic() - self.start
         archive_serial(self.dir, self.extra.get("live_log"), self.extra)
         # The summary and the stdout both name full.log; a run that failed before any

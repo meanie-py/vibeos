@@ -17,15 +17,20 @@ use crate::proto::{self, cmd, event};
 
 /// One bit per event, events 0 to 138 (`BWFM_EVENT_MASK_LEN`).
 pub const EVENT_MASK_LEN: usize = 18;
-/// The events a station needs (`bwfm_init`, station mode).
-pub const STATION_EVENTS: [u32; 8] = [
+/// The events a station needs (`bwfm_init`, station mode). The firmware sends only
+/// these: without E_SET_SSID a join it gave up on just runs out the clock, and without
+/// the _IND pair the network's own deauth or disassociation never reaches `link`.
+pub const STATION_EVENTS: [u32; 11] = [
+    event::E_SET_SSID,
     event::E_IF,
     event::E_LINK,
     event::E_AUTH,
     event::E_ASSOC,
     event::E_EAPOL_MSG,
     event::E_DEAUTH,
+    event::E_DEAUTH_IND,
     event::E_DISASSOC,
+    event::E_DISASSOC_IND,
     event::E_ESCAN_RESULT,
 ];
 
@@ -97,6 +102,9 @@ pub struct Bss {
     pub ssid: [u8; 32],
     pub ssid_len: usize,
     pub channel: u8,
+    /// The firmware's own encoding of the channel (band, width, number): what a join
+    /// hands back to it to look on that channel alone.
+    pub chanspec: u16,
     pub rssi: i16,
     pub capability: u16,
     /// Its RSN element (`30 len ...`), whole, when it advertises one.
@@ -110,7 +118,7 @@ pub const RSN_MAX: usize = 64;
 
 impl Default for Bss {
     fn default() -> Self {
-        Self { bssid: [0; 6], ssid: [0; 32], ssid_len: 0, channel: 0, rssi: 0, capability: 0, rsn: [0; RSN_MAX], rsn_len: 0 }
+        Self { bssid: [0; 6], ssid: [0; 32], ssid_len: 0, channel: 0, chanspec: 0, rssi: 0, capability: 0, rsn: [0; RSN_MAX], rsn_len: 0 }
     }
 }
 
@@ -161,6 +169,7 @@ pub fn escan_bss(data: &[u8]) -> impl Iterator<Item = Bss> + '_ {
         b.ssid_len = (rec[18] as usize).min(32);
         b.ssid[..b.ssid_len].copy_from_slice(&rec[19..19 + b.ssid_len]);
         let chanspec = u16::from_le_bytes([rec[72], rec[73]]);
+        b.chanspec = chanspec;
         b.rssi = i16::from_le_bytes([rec[78], rec[79]]);
         b.channel = if rec[88] != 0 { rec[88] } else { chanspec as u8 };
         // The IEs, at their own offset inside this record.
@@ -209,6 +218,14 @@ impl<P: Platform> Bus<P> {
         self.set_var(b"event_msgs", &event_mask(&STATION_EVENTS), &mut each)?;
         self.cmd_set_int(cmd::C_UP, 0, &mut each)?;
         self.cmd_set_int(cmd::C_SET_INFRA, 1, &mut each)
+    }
+
+    /// Take the radio down and bring it up again: what a run of failed joins gets,
+    /// so that nothing the firmware kept from the lost network outlives it.
+    pub fn restart_radio(&mut self, mut each: impl FnMut(Frame)) -> Result<(), Error> {
+        let _ = self.leave();
+        self.cmd_set_int(cmd::C_DOWN, 0, &mut each)?;
+        self.bring_up(each)
     }
 
     /// Scan every channel, handing each network heard to `found` (a network
@@ -327,6 +344,36 @@ mod tests {
         let mut directed = Vec::new();
         bus.scan_for(Some(crate::sim::AP_SSID), |b| directed.push(*b)).unwrap();
         assert!(directed.iter().any(|b| b.ssid() == crate::sim::AP_SSID && b.rsn_len > 0));
+    }
+
+    #[test]
+    fn a_radio_restart_brings_back_a_network_the_station_stopped_hearing() {
+        let mut card = Card::cyw43455();
+        card.ap_hidden = true;
+        card.deaf_until_restarts = 1;
+        let mut bus = running_with(card);
+        bus.bring_up(|_| {}).unwrap();
+        let named = |bus: &mut Bus<Sim>| {
+            let mut hit = false;
+            bus.scan_for(Some(crate::sim::AP_SSID), |b| hit |= b.ssid() == crate::sim::AP_SSID).unwrap();
+            hit
+        };
+        assert!(!named(&mut bus), "unheard by name");
+        bus.restart_radio(|_| {}).unwrap();
+        {
+            let card = bus.chip.sdio.hc.p.card();
+            assert!(card.up && card.infra && card.restarts == 1, "down, then up again in infrastructure mode");
+        }
+        assert!(named(&mut bus), "heard again after the restart");
+    }
+
+    #[test]
+    fn the_firmware_sends_only_the_events_asked_for() {
+        let mut bus = running();
+        bus.set_var(b"event_msgs", &event_mask(&[event::E_LINK]), |_| {}).unwrap();
+        let mut events = 0;
+        bus.scan(|_| events += 1).unwrap_err();
+        assert_eq!(events, 0, "E_ESCAN_RESULT was not asked for, so the scan hears nothing");
     }
 
     #[test]

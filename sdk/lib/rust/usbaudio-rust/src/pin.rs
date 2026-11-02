@@ -1130,7 +1130,9 @@ pub unsafe extern "C" fn PinRenderProcess(
         Offset = TotalPacketSize - (*PinContext).BufferLength;
 
         if (*PinContext).BufferOffset + TotalPacketSize >= (*PinContext).BufferSize {
-            core::ptr::copy_nonoverlapping(
+            // C: RtlMoveMemory -- slides the tail of Buffer down to its start; overlaps
+            // whenever BufferLength exceeds the distance moved.
+            core::ptr::copy(
                 (*PinContext).Buffer.offset(
                     ((*PinContext).BufferOffset - (*PinContext).BufferLength) as isize,
                 ),

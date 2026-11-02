@@ -123,7 +123,7 @@ for A in $ARCHES; do
     GENFLAGS=""; [ "${UCRTDIFF_REVERSE:-0}" = "1" ] && GENFLAGS="--reverse"
     if [ "${UCRTDIFF_REUSE_INPUTS:-0}" != "1" ]; then
         echo "[ucrtdiff] generating $A cases"
-        python3 "$ROOT/tools/gen_ucrt_tier2_cases.py" --arch "$A" --out "$HERE/generated.inc" $GENFLAGS
+        "$ROOT/tools/codegen" ucrt-cases --arch "$A" --out "$HERE/generated.inc" $GENFLAGS
     fi
 
     echo "[ucrtdiff] linking ucrtdiff-$A.exe"

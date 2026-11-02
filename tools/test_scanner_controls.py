@@ -826,12 +826,50 @@ pub unsafe extern "C" fn CreateShellLink() -> i32 {
 # copy of a list the list then freed.
 _CPR_BAD = "fn f() { m.Add(core::ptr::read(l.GetNext(&mut it))); }\n"
 _CPR_GOOD = "fn f() { while let Some(e) = l.RemoveHead() { m.Add(e); } }\n"
+# scan_minmax_narrowing. Seeded from cc's CcZeroData (2026-11-01): a LONGLONG length cut to
+# ULONG before the min, so a 4 GiB range became a 0-byte chunk and the loop never ended.
+_MMN_BAD = (
+    "pub struct LARGE_INTEGER { pub QuadPart: LONGLONG }\n"
+    "fn z(e: *const LARGE_INTEGER, s: *const LARGE_INTEGER) {\n"
+    "    let length = (*e).QuadPart - (*s).QuadPart;\n"
+    "    let c = core::cmp::min(length as ULONG, MAX_ZERO_LENGTH);\n}\n"
+)
+_MMN_GOOD = _MMN_BAD.replace(
+    "min(length as ULONG, MAX_ZERO_LENGTH)", "min(length, MAX_ZERO_LENGTH as LONGLONG) as ULONG"
+)
 # scan_guid_values. Seeded from stobject (2026-10-18): CGID_ShellServiceObject written from
 # memory, Data1 one digit off, so explorer's Exec never started the tray.
 _GUID_SDK = "DEFINE_OLEGUID(CGID_ShellServiceObject, 0x000214D2, 0, 0);\n"
 _GUID_RS = (
     "const CGID_ShellServiceObject: GUID = GUID {{ Data1: {d1}, Data2: 0x0000, Data3: 0x0000, "
     "Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46] }};\n"
+)
+# scan_mingw_c_vtable. Seeded from ntobjshex's probe (2026-11-01): mingw's C-mode
+# IExtractIconW has no IUnknown slots, so lpVtbl->GetIconLocation called QueryInterface.
+_MINGWVT_HEAD = "#define COBJMACROS\n#include <windows.h>\n#include <shlobj.h>\n"
+_MINGWVT_BAD = (
+    _MINGWVT_HEAD
+    + """\
+void f(IExtractIconW *ei, WCHAR *file, int *index, UINT *flags)
+{
+    ei->lpVtbl->GetIconLocation(ei, GIL_FORSHELL, file, MAX_PATH, index, flags);
+}
+"""
+)
+_MINGWVT_GOOD = (
+    _MINGWVT_HEAD
+    + """\
+typedef struct
+{
+    void *QueryInterface, *AddRef, *Release;
+    HRESULT(STDMETHODCALLTYPE *GetIconLocation)(IExtractIconW *, UINT, LPWSTR, UINT, int *, UINT *);
+} Slots;
+void f(IExtractIconW *ei, IShellFolder *sf, WCHAR *file, int *index, UINT *flags)
+{
+    (*(Slots **)ei)->GetIconLocation(ei, GIL_FORSHELL, file, MAX_PATH, index, flags);
+    sf->lpVtbl->Release(sf);
+}
+"""
 )
 # scan_uncalled_ctor_hook. Seeded from acppage (2026-10-17): a hand-banked constructor without
 # cpp_app's `m_psp = T::__psp_init(this_)` prologue line left the PROPSHEETPAGE zeroed.
@@ -3340,6 +3378,12 @@ CONTROLS: list[Control] = [
         good={"sdk/lib/rust/x-rust/src/a.rs": _CPR_GOOD},
     ),
     Control(
+        name="scan_minmax_narrowing",
+        script="tools/vibeos-lint/src/rules/minmax_narrowing.rs",
+        bad={"sdk/lib/rust/x-rust/src/a.rs": _MMN_BAD},
+        good={"sdk/lib/rust/x-rust/src/a.rs": _MMN_GOOD},
+    ),
+    Control(
         name="scan_guid_values",
         script="tools/vibeos-lint/src/rules/guid_values.rs",
         bad={
@@ -3356,6 +3400,12 @@ CONTROLS: list[Control] = [
         script="tools/vibeos-lint/src/rules/local_overlength.rs",
         bad={"vol.rs": _OVERLEN_BAD},
         good={"vol.rs": _OVERLEN_GOOD},
+    ),
+    Control(
+        name="scan_mingw_c_vtable",
+        script="tools/vibeos-lint/src/rules/mingw_c_vtable.rs",
+        bad={"probe.c": _MINGWVT_BAD},
+        good={"probe.c": _MINGWVT_GOOD},
     ),
     Control(
         name="scan_uncalled_ctor_hook",
@@ -3455,6 +3505,13 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_move_vs_nonoverlapping": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/move_vs_nonoverlapping.rs: classpnp's RtlMoveMemory "
+        "lowered to copy_nonoverlapping must be flagged, a kept ptr::copy or a nolint must not, "
+        "and neither must another module's same-named C function."
+    ),
     "scan_shadowed_c_define": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "

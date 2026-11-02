@@ -1,4 +1,10 @@
 mod binding_cli;
+mod build_cli;
+mod compiler_cli;
+mod marshal_cli;
+mod module_cli;
+mod payload_cli;
+mod wow64_cli;
 use std::path::{Path, PathBuf};
 use std::{fs, io::Write};
 use vibeos_codegen::{generate, generate_all, resources, GENERATORS};
@@ -23,6 +29,28 @@ Generators: apisets-table, bugcodes, bugcodes-h, error-tables, winerror-consts,
 
 Binding commands: com-macros, enum-consts, ioctl-consts, ks386-inc, ref-protos,
                   rpc-guards, delaylib. See tools/vibeos-codegen/README.md.
+
+Module commands: cnt, cohab-registry, global-barrier.
+  cnt writes three outputs; --output-dir redirects them.
+  cohab-registry and global-barrier default to stdout; --output/--check select files.
+  cohab-registry --report prints only its summary.
+  global-barrier --source-dir DIR explicitly selects a monolithic crate source root.
+
+WoW64 deep marshalling: marshal report|gen|gen-callback [--build-dir DIR]
+  --build-dir32 selects the i386 build; --check compares generated outputs.
+
+WoW64: wow64-thunks --spec FILE --sysfuncs FILE --arch ARCH [--out-c FILE].
+  --manual-list FILES forces manual stubs; --symbol-prefix selects the table name.
+
+Suite lists: apitest-suites, winetest-suites --arch ARCH.
+  apitest-suites --discover-json --build-dir DIR lists unquarantined binaries.
+
+Build commands: cflags --arch ARCH [--target NAME], baseaddress DIR [-64].
+  cflags --stdout preserves the legacy JSON string/null inspection format.
+
+Compiler commands: ctype-tables, msvcrt-consts, seh-layout, ucrt-cases.
+  CRT probes require local generated headers: build --arch ARCH --headers-only.
+  ucrt-cases requires --arch; --ast-json inspects compiler declarations.
 
 Resource commands: hal-res, ntdll-res, ntoskrnl-res, win32k-res, committed-res.
 --all selects the text recipes above; resources require an explicit command/arch.
@@ -296,6 +324,69 @@ fn run_resources(root: &Path, args: &Args) -> Result<u8, String> {
     Ok(u8::from(stale))
 }
 
+// Dispatch by the command position, never by a filename/option value that
+// happens to share a generator name.
+fn command_name(args: &[String]) -> Option<&str> {
+    let mut args = args.iter();
+    while let Some(arg) = args.next() {
+        if arg == "--all" {
+            return None;
+        }
+        if arg.starts_with('-') {
+            if !arg.contains('=')
+                && [
+                    "--root",
+                    "--input",
+                    "--output",
+                    "--out",
+                    "-o",
+                    "--output-dir",
+                    "--source-dir",
+                    "--header",
+                    "--bindgen",
+                    "--only",
+                    "--prefix",
+                    "--type",
+                    "--arch",
+                    "--cache",
+                    "--out-c",
+                    "--out-h",
+                    "--prelude",
+                    "--clang",
+                    "--ar",
+                    "--def",
+                    "--module",
+                    "--target",
+                    "--build-dir",
+                    "--out-dir",
+                    "--quarantine-dir",
+                    "--skip",
+                    "--repeat",
+                    "--timeout",
+                    "--global-flag",
+                    "--suites",
+                    "--register",
+                    "--spec",
+                    "--sysfuncs",
+                    "--manual-list",
+                    "--symbol-prefix",
+                    "--build-dir32",
+                    "--out-header",
+                    "--headers",
+                    "--export-spec",
+                    "--tu-suffix",
+                ]
+                .contains(&arg.as_str())
+            {
+                args.next();
+            }
+        } else {
+            return Some(arg);
+        }
+    }
+    None
+}
+
 fn main() -> std::process::ExitCode {
     let args: Vec<_> = std::env::args().skip(1).collect();
     if args.iter().any(|s| s == "--help" || s == "-h") {
@@ -307,12 +398,31 @@ fn main() -> std::process::ExitCode {
             .iter()
             .chain(resources::NAMES)
             .chain(binding_cli::NAMES)
+            .chain(module_cli::NAMES)
+            .chain(compiler_cli::NAMES)
+            .chain(build_cli::NAMES)
+            .chain(payload_cli::NAMES)
+            .chain(wow64_cli::NAMES)
+            .chain(marshal_cli::NAMES)
         {
             println!("{name}");
         }
         return 0.into();
     }
-    match if binding_cli::selected(&args) {
+    let name = command_name(&args);
+    match if name.is_some_and(|n| compiler_cli::NAMES.contains(&n)) {
+        compiler_cli::run(args)
+    } else if name.is_some_and(|n| marshal_cli::NAMES.contains(&n)) {
+        marshal_cli::run(args)
+    } else if name.is_some_and(|n| wow64_cli::NAMES.contains(&n)) {
+        wow64_cli::run(args)
+    } else if name.is_some_and(|n| payload_cli::NAMES.contains(&n)) {
+        payload_cli::run(args)
+    } else if name.is_some_and(|n| build_cli::NAMES.contains(&n)) {
+        build_cli::run(args)
+    } else if name.is_some_and(|n| module_cli::NAMES.contains(&n)) {
+        module_cli::run(args)
+    } else if name.is_some_and(|n| binding_cli::NAMES.contains(&n)) {
         binding_cli::run(args)
     } else {
         parse(args).and_then(run)

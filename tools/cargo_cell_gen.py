@@ -29,6 +29,7 @@ import functools
 import json
 import os
 import re
+import struct
 import subprocess
 import sys
 import time
@@ -116,6 +117,17 @@ I386_RSBEGIN_SECTIONS = {
     for name in (".ctors", ".dtors")
     for flags in (0x40000040, 0x48000040)
 }
+# A body-less cell (a C module, no Rust body) on i386 whose C cmake compiled without unwind
+# tables (cmake's PE has no `.eh_frame`) gains one: rsbegin/rsend's frame markers and the
+# shell's panic handler, the same EH-frame machinery as the `.ctors`/`.dtors` above. The C
+# is compiled with cmake's exact flags, so it contributes none; the bound is a backstop
+# (dxapi, kernelbase: 0x88). Nothing unwinds through it (panic=abort, no unwinder).
+I386_BODYLESS_EH_FRAME_MAX = 0x400
+# ...and when cmake's PE had no relocations at all (a C module with no absolute address:
+# kdstub, dxgthk), that machinery is the first thing needing any, so a `.reloc` appears:
+# 0x48 bytes, every entry in .ctors/.dtors/.eh_frame, rsbegin's .data frame object, and
+# rsbegin's registration code (decoded 2026-11-01). It only makes the image relocatable.
+I386_BODYLESS_RELOC_MAX = 0x80
 # rsbegin.o's own `.data` (its frame-object pointers, 0x28 bytes): a section of its own
 # in a module that had none (hidusb, msfs, usbccgp, watchdog).
 I386_RSBEGIN_DATA = 0x28
@@ -144,13 +156,27 @@ TRANSFERRED = (
     "target_compile_options",
     "set_wine_module_fixme",
     "set_wine_module",
+    # kmtests' drivers: _USE_NATIVE_SEH, the out-of-line SEH shims (target_sources) and the
+    # -windows-msvc retarget are all COMPILE settings of the driver's own sources, so the
+    # call moves to the OBJECT library that holds those compiles (a function, so the
+    # compile_commands replay sees the same defines, options and extra source).
+    "kmt_enable_native_seh",
 )
 # Properties that only name the output file, which the cell already takes from the link
 # edge (chcp.com, help.exe for cmd_help), and two the cell has no use for: spoolsv's
 # ENABLE_EXPORTS (its exports come from the .def; its import lib from spec2def
 # ADD_IMPORTLIB, which stays, and the link edge writes no --out-implib) and DEFINE_SYMBOL
-# (a define for the target's own compiles, of which there are none left).
-NAME_PROPERTIES = {"SUFFIX", "OUTPUT_NAME", "PREFIX", "ENABLE_EXPORTS", "DEFINE_SYMBOL"}
+# (a define for the target's own compiles, of which there are none left), and
+# LINKER_LANGUAGE (which language driver cmake links with when the sources do not say: a
+# cell is linked by reactos-link, so the only effect of the property is gone with the link).
+NAME_PROPERTIES = {
+    "SUFFIX",
+    "OUTPUT_NAME",
+    "PREFIX",
+    "ENABLE_EXPORTS",
+    "DEFINE_SYMBOL",
+    "LINKER_LANGUAGE",
+}
 # set_module_type types that link as reactos-link's KernelDll, by add_cargo_module KIND.
 KERNEL_KINDS = ("kernelmodedriver", "kerneldll")
 # Statements naming the target that neither link nor compile it. add_driver_inf's first
@@ -179,6 +205,8 @@ class Link:
     stack: int | None
     inputs: list[str]
     libs: list[str]
+    # `--require-defined=SYM` operands, in link order (ole32's target_link_options).
+    require_defined: tuple[str, ...] = ()
 
 
 @dataclass
@@ -257,6 +285,9 @@ class Cell:
     extra_cd: list[str] = field(default_factory=list)
     # Per arch, the module's part of cmake's windres command (Linker::rc).
     rc_flags: dict = field(default_factory=dict)
+    # Per arch, `-Wl,--require-defined=SYM` operands (target_link_options): symbols the
+    # link must define up front, so the body's definition wins over an import thunk.
+    require_defined: dict[str, list[str]] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------- build graph
@@ -272,17 +303,79 @@ def _ccdb(path: Path) -> list:
     return json.loads(path.read_text())
 
 
+class NoLinkEdge(GenError):
+    """The build has no cmake link edge for the target on one arch. `why` says what is
+    there instead: "cell" (a cargo cell already links it), "absent" (the target is not
+    generated on that arch: an if(ARCH ...) gate or a build option) or "unknown"."""
+
+    def __init__(self, target: str, arch: str, why: str):
+        self.target, self.arch, self.why = target, arch, why
+        super().__init__(f"{target}: {_NO_EDGE_TEXT[why].format(arch=arch)}")
+
+
+_NO_EDGE_TEXT = {
+    "cell": "already a cargo cell on {arch} (add_cargo_module, no cmake link edge)",
+    "absent": "not defined on {arch} in this configuration"
+    " (an if(ARCH ...) gate or a build option such as --rostests)",
+    "unknown": "no link edge in build-{arch}/build.ninja",
+}
+
+
+def _no_edge_why(ninja: str, target: str) -> str:
+    t = re.escape(target)
+    # add_cargo_module: the module is a CUSTOM_COMMAND over its `<target>-cargo` crate.
+    if re.search(rf"^build [^:\n]*: CUSTOM_COMMAND \S*/{t}-cargo/Cargo\.toml", ninja, re.M):
+        return "cell"
+    if not re.search(rf"^build cmake_object_order_depends_target_{t}:", ninja, re.M):
+        return "absent"
+    return "unknown"
+
+
+def _link_edges(target: str, repo: Path) -> dict[str, Link]:
+    """link_edge on every arch, refusing with one message that names each arch's story."""
+    links, miss = {}, {}
+    for a in ARCHES:
+        try:
+            links[a] = link_edge(a, target, repo)
+        except NoLinkEdge as e:
+            miss[a] = e
+    if not miss:
+        return links
+    have = sorted(links)
+    if not have:
+        whys = {e.why for e in miss.values()}
+        if len(whys) == 1:
+            raise GenError(f"{target}: {_NO_EDGE_TEXT[whys.pop()].format(arch='every arch')}")
+        raise GenError(f"{target}: no cmake link edge on any arch ({_why_by_arch(miss)})")
+    if {e.why for e in miss.values()} == {"cell"}:
+        raise GenError(
+            f"{target}: a cargo cell on {sorted(miss)} but still cmake-linked on {have}"
+            f" (a partly converted module is not modelled)"
+        )
+    raise GenError(
+        f"{target}: {_why_by_arch(miss)}, but cmake links it on {have}: the generator needs "
+        f"the same cmake-linked module on every arch"
+    )
+
+
+def _why_by_arch(miss: dict) -> str:
+    return ", ".join(f"{a}: {_NO_EDGE_TEXT[e.why].format(arch=a)}" for a, e in miss.items())
+
+
 def link_edge(arch: str, target: str, repo: Path = REPO) -> Link:
     ninja = _read(repo / f"build-{arch}/build.ninja")
     m = re.search(
         # The config suffix anchors the name: `cmd_\S*` also matched cmd_help's edge.
-        rf"^build (\S+): (C_\w+?)_LINKER__{re.escape(target)}_{CONFIGS}( .*)?\n((?:  .*\n)+)",
+        # `CXX_` is the same link with the C++ driver: a module with any .cpp/.cxx.
+        rf"^build (\S+): C(?:XX)?(_\w+?)_LINKER__{re.escape(target)}_{CONFIGS}"
+        r"( .*)?\n((?:  .*\n)+)",
         ninja,
         re.M,
     )
     if not m:
-        raise GenError(f"{target}: no link edge in build-{arch}/build.ninja (a static lib?)")
-    output, kind, ins, var_block = m.group(1), m.group(2), m.group(3) or "", m.group(4)
+        raise NoLinkEdge(target, arch, _no_edge_why(ninja, target))
+    # CXX_EXECUTABLE normalises to C_EXECUTABLE: the generator reads the kind, not the driver.
+    output, kind, ins, var_block = m.group(1), "C" + m.group(2), m.group(3) or "", m.group(4)
     flags = re.search(r"^  LINK_FLAGS = (.*)$", var_block, re.M)
     flags_s = flags.group(1) if flags else ""
     libs_m = re.search(r"^  LINK_LIBRARIES = (.*)$", var_block, re.M)
@@ -305,6 +398,7 @@ def link_edge(arch: str, target: str, repo: Path = REPO) -> Link:
         int(stack.group(1)) if stack else None,
         ins.split("|")[0].split() + [d for d in defs if d not in ins.split("|")[0].split()],
         libs_m.group(1).split() if libs_m else [],
+        tuple(re.findall(r"--require-defined=([^,\s]+)", flags_s)),
     )
 
 
@@ -687,6 +781,51 @@ def _args(s: str) -> list[str]:
     return re.findall(r'"[^"]*"|\S+', s)
 
 
+def _branches(stmts: list[tuple[int, int, str, str]]) -> list[tuple[tuple[int, int], ...]]:
+    """For each statement, the (if id, branch number) of every if() chain it sits in,
+    outermost first. Flow statements get the path of the chain they belong to."""
+    out: list[tuple[tuple[int, int], ...]] = []
+    stack: list[list[int]] = []
+    nxt = 0
+    for _s, _e, cmd, _raw in stmts:
+        if cmd == "if":
+            stack.append([nxt, 0])
+            nxt += 1
+        elif cmd in ("elseif", "else") and stack:
+            stack[-1][1] += 1
+        out.append(tuple((i, b) for i, b in stack))
+        if cmd == "endif" and stack:
+            stack.pop()
+    return out
+
+
+def _exclusive(p: tuple[tuple[int, int], ...], q: tuple[tuple[int, int], ...]) -> bool:
+    """Whether two statements sit in different branches of one if() chain: at most one of
+    them is ever configured (dbghelp's host-tool library vs its cross-built module)."""
+    for (i, b), (j, c) in zip(p, q, strict=False):
+        if (i, b) != (j, c):
+            return i == j
+    return False
+
+
+def _included_functions(cmake: Path, text: str) -> set[str]:
+    """Names of the function()/macro() the include()d files beside this CMakeLists define."""
+    names: set[str] = set()
+    for _s, _e, cmd, raw in _statements(text):
+        if cmd != "include" or not _args(raw):
+            continue
+        inc = _args(raw)[0].strip('"').replace("${CMAKE_CURRENT_SOURCE_DIR}", str(cmake.parent))
+        path = Path(inc) if inc.startswith("/") else cmake.parent / inc
+        if path.is_file():
+            names |= {
+                m.group(1).lower()
+                for m in re.finditer(
+                    r"(?im)^[ \t]*(?:function|macro)[ \t]*\([ \t]*(\w+)", path.read_text()
+                )
+            }
+    return names
+
+
 def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict:
     """What the CMakeLists says about `target`. `libs` (the link edge's libraries) names
     the body when its rust_staticlib_variant is not called `<target>_rust`: the variant
@@ -709,7 +848,17 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
     variants = {}
     linked = {lib.split("/")[-1] for lib in libs or []}
     defined = False
-    for _s, _e, cmd, raw in _statements(text):
+    stmts = _statements(text)
+    paths = _branches(stmts)
+    home = next(
+        (
+            paths[i]
+            for i, (_s, _e, cmd, raw) in enumerate(stmts)
+            if cmd in ("add_executable", "add_library") and _args(raw)[:1] == [target]
+        ),
+        None,
+    )
+    for idx, (_s, _e, cmd, raw) in enumerate(stmts):
         a = _args(raw)
         if cmd == "rust_staticlib_variant" and len(a) >= 4:
             variants[a[0]] = a
@@ -720,8 +869,12 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
             # (gdi32_vista_static, which gdi32 links) would be left with no sources.
             # Fine when the list holds only placeholders and headers (gdi32_vista_static:
             # one rust_cohab_stub.c): the rewrite spells the list out in that statement.
-            if re.search(r"\$\{(SOURCE|PCH_SKIP_SOURCE)\}", raw) and not _inlinable_source(
-                text, cmake.parent
+            # (A library in the other branch of the target's own if() chain is configured
+            # when the target is not: dbghelp's host-tool dbghelphost, which has its own list.)
+            if (
+                re.search(r"\$\{(SOURCE|PCH_SKIP_SOURCE)\}", raw)
+                and not (home is not None and _exclusive(paths[idx], home))
+                and not _inlinable_source(text, cmake.parent)
             ):
                 facts["unknown"].append(f"{cmd} {a[0] if a else ''} shares ${{SOURCE}}")
             continue
@@ -748,8 +901,34 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
             facts["transfer"].append(raw)
         elif cmd == "set_target_properties" and _names_only(a):
             pass  # the output name comes from the link edge
+        elif cmd == "set_target_cpp_properties":
+            # WITH_EXCEPTIONS/WITH_RTTI flag the target's C++ compiles. model() refuses a
+            # C++ TU the engine would have to compile, so none is left for it to apply to.
+            pass
         elif cmd == "target_link_options" and _subsystem_only(a):
             pass  # the subsystem comes from each arch's link edge
+        elif cmd == "target_link_options" and _require_defined_only(a):
+            # ole32's LINKER:--require-defined=...: the symbols are read back from each
+            # arch's link edge (Link.require_defined), where cmake spelled them per arch.
+            facts["require_defined"] = True
+        elif cmd == "set_subsystem" and len(a) == 2:
+            # Same as `-Wl,--subsystem,<s>:5.01`: model() checks every arch's link edge
+            # carries exactly this, and the cell takes the subsystem from the edge.
+            facts["set_subsystem"] = _subsystem_flag(a[1])
+        elif cmd == "set_entrypoint" and len(a) in (2, 3):
+            # Same as `-Wl,-entry,<sym>`: model() rebuilds the per-arch decoration and
+            # checks it against each link edge's entry.
+            facts["set_entrypoint"] = (a[1], a[2] if len(a) == 3 else None)
+        elif cmd == "link_strict":
+            facts["unknown"].append(
+                "link_strict (the link drops --allow-multiple-definition, so lld rejects any"
+                " duplicate symbol; reactos-link always passes the flag)"
+            )
+        elif cmd == "link_msvcrt_rust_cohab":
+            facts["unknown"].append(
+                "link_msvcrt_rust_cohab (--whole-archive of libmsvcrt_crt_cargo.a, a cmake-built"
+                " archive of another crate; the cell has no whole-archive input)"
+            )
         elif cmd == "add_idl_reg_scripts" and len(a) > 2 and a[1] in REG_SUFFIX:
             # sti's registry resource (`REGINST`, read by DllRegisterServer): the rewrite
             # makes the object alone (add_idl_reg_objects) and the cell links it.
@@ -764,8 +943,26 @@ def cmake_facts(cmake: Path, target: str, libs: list[str] | None = None) -> dict
         # The keyboard layouts are made in a foreach over `${_keyboard_layout}`: there is
         # no statement of the target's own to replace.
         facts["unknown"].append("target made in a loop or function")
-    named = [n for n in variants if n in (f"{target}_rust",) or n.removesuffix("_rust") == target]
-    named = named or [n for n in variants if f"lib{n}.a" in linked]
+        # Which function: the d3dx9_NN/d3dcompiler_NN/d3dx10_NN families call one shared
+        # function (add_d3dx9_target(24)), add_bootvid(lfbbvid ...) names the target in a
+        # call. Rewriting the shared function for one instance would change its siblings.
+        funcs = _included_functions(cmake, text)
+        calls = [
+            f"{c}({' '.join(_args(r))})"
+            for _s, _e, c, r in stmts
+            if c in funcs or (_args(r)[:1] == [target] and c not in REPLACED and c not in KEPT)
+        ]
+        if calls:
+            facts["unknown"].append(
+                f"made by a shared function, not an add_library of its own: {', '.join(calls)}"
+            )
+    # The variant the module links is its body: psapi has psapi_rust (for psapi_static,
+    # which kernel32 links) and psapi_dll_rust (the DLL's, with DllMain), and the DLL links
+    # only the second. Without a link edge to tell, the `<target>_rust` name decides.
+    named = [n for n in variants if f"lib{n}.a" in linked]
+    if len(named) != 1:
+        named = [n for n in variants if n == f"{target}_rust" or n.removesuffix("_rust") == target]
+        named = named or [n for n in variants if f"lib{n}.a" in linked]
     if len(named) == 1:
         a = variants[named[0]]
         feats = a[2].strip('"').replace(";", " ").split()
@@ -882,7 +1079,11 @@ def _inlinable_source(text: str, cmake_dir: Path) -> list[str] | None:
     for x in src:
         if x.endswith((".h", ".hpp")):
             continue
-        if not (x.endswith(".c") and (cmake_dir / x).exists() and _placeholder(cmake_dir / x)):
+        if not (
+            x.endswith((".c", ".cpp", ".cxx", ".cc"))
+            and (cmake_dir / x).exists()
+            and _placeholder(cmake_dir / x)
+        ):
             return None
     return src
 
@@ -935,6 +1136,33 @@ def _subsystem_only(a: list[str]) -> bool:
     return bool(opts) and all(re.fullmatch(r"-Wl,--subsystem,[\w:.]+", o) for o in opts)
 
 
+def _require_defined_only(a: list[str]) -> bool:
+    """target_link_options(<t> PRIVATE "LINKER:--require-defined=A,--require-defined=B")."""
+    opts = [x.strip('"') for x in a[1:] if x not in ("PRIVATE", "PUBLIC")]
+    return bool(opts) and all(
+        re.fullmatch(r"(?:LINKER:|-Wl,)--require-defined=[^,\s]+(?:,--require-defined=[^,\s]+)*", o)
+        for o in opts
+    )
+
+
+def _subsystem_flag(sub: str) -> str:
+    """What gcc.cmake's set_subsystem passes lld: `--subsystem,<name>:5.01` (numeric EFI
+    ids map to names, lld knows no numbers)."""
+    efi = {"10": "efi_application", "11": "efi_boot_service_driver", "12": "efi_runtime_driver"}
+    efi["13"] = "efi_rom"
+    return f"{efi.get(sub, sub)}:5.01"
+
+
+def _entry_symbol(arch: str, sym: str, stack: str | None) -> str:
+    """The `-entry` symbol gcc.cmake's set_entrypoint passes lld: `0` becomes __ImageBase
+    (one more underscore on i386), i386 decorates `_sym[@stack]`, the rest take the name."""
+    if sym == "0":
+        return "___ImageBase" if arch == "i386" else "__ImageBase"
+    if arch != "i386":
+        return sym
+    return f"_{sym}@{stack}" if stack else f"_{sym}"
+
+
 def _names_only(a: list[str]) -> bool:
     """set_target_properties(<t> PROPERTIES K V ...) touching only the output name."""
     if len(a) < 4 or a[1] != "PROPERTIES" or len(a) % 2:
@@ -982,7 +1210,22 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
 
     guards = _enclosing_ifs(text, cell.target)
 
-    for s, e, cmd, raw in _statements(text):
+    all_stmts = _statements(text)
+    paths = _branches(all_stmts)
+    home = next(
+        (
+            paths[i]
+            for i, (_s, _e, c, r) in enumerate(all_stmts)
+            if c in ("add_executable", "add_library") and _args(r)[:1] == [cell.target]
+        ),
+        None,
+    )
+
+    def other_branch(i: int) -> bool:
+        """Statement `i` is in the other branch of the target's own if() chain."""
+        return home is not None and _exclusive(paths[i], home)
+
+    for idx, (s, e, cmd, raw) in enumerate(all_stmts):
         a = _args(raw)
         drop = False
         keep_comment = False
@@ -1015,8 +1258,14 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             transferred.append((cmd, raw))
         if a and a[0] == cell.target and cmd == "set_target_properties" and _names_only(a):
             drop = True
+        if a and a[0] == cell.target and cmd == "set_target_cpp_properties":
+            drop = True  # no C++ TU is compiled for the module any more
         if a and a[0] == cell.target and cmd == "target_link_options" and _subsystem_only(a):
             drop = True  # build.rs sets each arch's subsystem
+        if a and a[0] == cell.target and cmd == "target_link_options" and _require_defined_only(a):
+            drop = True  # build.rs passes each arch's --require-defined (Cell.require_defined)
+        if a and a[0] == cell.target and cmd in ("set_subsystem", "set_entrypoint"):
+            drop = True  # build.rs sets each arch's subsystem and entry point
         if a[:1] == [cell.target] and cmd == "target_sources" and _ssp_objects(a):
             keep.append(text[pos:s])
             keep.append(
@@ -1049,9 +1298,15 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
             and len(a) > 2
             and a[0] == "APPEND"
             and a[1] in ("SOURCE", "PCH_SKIP_SOURCE")
+            and not other_branch(idx)
         ):
             drop = True  # only the replaced add_* consumed these
-        if not drop and "${SOURCE}" in raw and _args(raw)[:1] != [cell.target]:
+        if (
+            not drop
+            and "${SOURCE}" in raw
+            and _args(raw)[:1] != [cell.target]
+            and not other_branch(idx)
+        ):
             # Another target built from the dropped SOURCE list (gdi32_vista_static):
             # cmake_facts accepted it only when the list is placeholders and headers.
             src = _inlinable_source(text, cmake.parent)
@@ -1115,10 +1370,13 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     out = re.sub(r"\n{3,}", "\n\n", out).rstrip() + "\n"
     block = [
         "",
-        f"# {cell.output_name} is all Rust ({cell.body_crate}) and cargo links it:",
+        f"# {cell.output_name} is all Rust ({cell.body_crate}) and cargo links it:"
+        if cell.body_crate
+        else f"# {cell.output_name} is C, and cargo compiles and links it:",
         f"# sdk/lib/rust/{cell.crate} (reactos-link, generated by tools/cargo_cell_gen.py).",
-        "# The C stays on disk, uncompiled.",
     ]
+    if cell.body_crate:
+        block.append("# The C stays on disk, uncompiled.")
     if carried:
         block.append("# The translated C, kept on disk:")
         block += list(dict.fromkeys(carried))
@@ -1211,7 +1469,8 @@ def rewrite_cmake(cmake: Path, cell: Cell) -> str:
     kind = cell.kernel_kind or ("win32exe" if cell.module_kind == "Win32Exe" else "win32dll")
     call = [f"add_cargo_module({cell.target} {cell.crate} {cell.output_name}"]
     call.append(f"    KIND {kind}")
-    call.append(f"    BODY_CRATE {cell.body_crate}")
+    if cell.body_crate:
+        call.append(f"    BODY_CRATE {cell.body_crate}")
     if cell.arch_destinations:
         var = f"{cell.target.upper()}_DESTINATION"
         for i, a in enumerate(ARCHES):
@@ -1441,18 +1700,83 @@ def _placeholder_archive(arch: str, lib: str, repo: Path) -> bool:
     )
 
 
+def source_dir(arch: str, output: str, target: str, repo: Path = REPO) -> Path:
+    """The directory whose CMakeLists.txt defines `target`, absolute.
+
+    The build dir mirrors the source dir only by habit: add_subdirectory(vendor/ac97
+    drivers/wdm/audio/drivers/ac97) and the dll/3rdparty/libpng -> vendor/libpng
+    mirrors put the module's output somewhere its CMakeLists is not. The build wrote
+    the real answer in `<output dir>/cmake_install.cmake` ("Install script for
+    directory: <src>"), rooted at the cache's CMAKE_HOME_DIRECTORY.
+    """
+    out_dir = repo / f"build-{arch}" / Path(output).parent
+    inst = out_dir / "cmake_install.cmake"
+    cache = repo / f"build-{arch}/CMakeCache.txt"
+    if inst.exists() and cache.exists():
+        m = re.match(r"# Install script for directory: (.+)", inst.read_text().split("\n", 1)[0])
+        h = re.search(r"^CMAKE_HOME_DIRECTORY:INTERNAL=(.+)$", _read(cache), re.M)
+        if m and h:
+            try:
+                return repo / Path(m.group(1)).relative_to(h.group(1))
+            except ValueError:
+                pass
+    return repo / Path(output).parent
+
+
+def _check_statement_effects(target: str, facts: dict, links: dict[str, Link]) -> None:
+    """The cell takes subsystem, entry point and --require-defined from each arch's link
+    edge. A set_subsystem/set_entrypoint/target_link_options on the target is accounted
+    for only when the edge shows exactly its effect; anything else (a statement under a
+    condition that is false in this build, or overridden later) is refused."""
+    want = facts.get("set_subsystem")
+    if want:
+        for a, ln in links.items():
+            if ln.subsystem != want:
+                raise GenError(
+                    f"{target}: set_subsystem says {want} but the {a} link has {ln.subsystem}"
+                )
+    ep = facts.get("set_entrypoint")
+    if ep:
+        for a, ln in links.items():
+            if ln.entry != _entry_symbol(a, *ep):
+                raise GenError(
+                    f"{target}: set_entrypoint{ep} says {_entry_symbol(a, *ep)} but the {a} link"
+                    f" has {ln.entry or 'no entry'}"
+                )
+    if facts.get("require_defined") and not all(ln.require_defined for ln in links.values()):
+        raise GenError(f"{target}: target_link_options --require-defined is on no link edge")
+
+
 def model(target: str, repo: Path = REPO) -> Cell:
-    links = {a: link_edge(a, target, repo) for a in ARCHES}
+    links = _link_edges(target, repo)
     first = links["amd64"]
-    cmake_dir = repo / Path(first.output).parent
+    bin_dir = Path(first.output).parent
+    cmake_dir = source_dir("amd64", first.output, target, repo)
+    for a in ARCHES:
+        if source_dir(a, links[a].output, target, repo) != cmake_dir:
+            raise GenError(f"{target}: the source directory differs by arch")
     cmake = cmake_dir / "CMakeLists.txt"
     if not cmake.exists():
         raise GenError(f"{target}: no {cmake.relative_to(repo)}")
     facts = cmake_facts(cmake, target, first.libs)
+    # No Rust body: a C module. The cell compiles its C (c_from_compile_db, then the
+    # engine's recipe) and links it with no Rust archive, so cmake still makes nothing.
+    # Unless something Rust IS built for it by a route the generator cannot read: a custom
+    # `cargo build` command, or a `_rust.a` of the target's own name on the link. A cell
+    # made "body-less" from those would silently drop the Rust, so they stay refused.
+    bodyless = not facts["body"] and not facts.get("custom_body")
+    if bodyless:
+        if re.search(r"\bcargo build\b", cmake.read_text()):
+            raise GenError(
+                f"{target}: no rust_staticlib_variant names its body crate, and its custom"
+                " `cargo build` command is not the one shape _custom_body reads"
+            )
+        own = re.compile(rf"(?:^|/)lib{re.escape(target)}\w*_rust\.a$", re.I)
+        if any(own.search(lib) for a in ARCHES for lib in links[a].libs):
+            raise GenError(f"{target}: links its own Rust archive, but no body is declared")
     if facts["unknown"]:
         raise GenError(f"{target}: unmodelled statements on the target: {facts['unknown']}")
-    if not facts["body"]:
-        raise GenError(f"{target}: no rust_staticlib_variant names its body crate")
+    _check_statement_effects(target, facts, links)
     if facts.get("ssp") and any(
         re.search(
             r"^STACK_PROTECTOR:BOOL=(ON|TRUE|1)$", _read(repo / f"build-{a}/CMakeCache.txt"), re.M
@@ -1479,10 +1803,12 @@ def model(target: str, repo: Path = REPO) -> Cell:
         else:
             module_kind = "Win32Dll"
     else:
+        if first.kind.endswith("STATIC_LIBRARY"):
+            raise GenError(f"{target}: a static library (no PE to link)")
         raise GenError(f"{target}: link kind {first.kind}")
     specs = spec_index(repo)
     custom = facts.get("custom_body")
-    body_ar = custom["archive"] if custom else f"lib{facts['body_var']}.a"
+    body_ar = custom["archive"] if custom else None if bodyless else f"lib{facts['body_var']}.a"
     if custom and module_kind != "KernelDll":
         raise GenError(f"{target}: a custom-command body outside a kernel-mode driver")
     per_arch: dict[str, tuple] = {}
@@ -1511,6 +1837,13 @@ def model(target: str, repo: Path = REPO) -> Cell:
             if m:
                 if m.group(1) in MSVCRTEX:
                     msvcrtex = MSVCRTEX[m.group(1)]
+                # The engine links the Rust CRT that replaces msvcrtex (crt-dllmain-rust,
+                # crt-startup-rust: Linker::msvcrtex_crt) at link_order's "body" item, with
+                # the body. A body-less cell has no body to anchor it, so the CRT goes
+                # where cmake had libmsvcrtex: without it a C DLL has no
+                # _DllMainCRTStartup@12 (cryptdlg, i386, the first body-less pilot).
+                if bodyless and "body" not in seq:
+                    seq.append("body")
                 continue
             # add_delay_importlibs: `lib<x>_delayed.a`, which gen-delaylib.py made
             # from the same implib .def the engine generates.
@@ -1550,7 +1883,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
                 seq.append(lib)
                 if after_body:
                     late[a].append(lib)
-        if not after_body:
+        if not after_body and not bodyless:
             raise GenError(f"{target}: {a} link has no {body_ar}")
         # Matched AFTER the ENGINE_LIBS mapping: once the engine built delayimp_rust itself,
         # the cmake path never reached this list and every new delay-importing cell (cscript)
@@ -1616,7 +1949,7 @@ def model(target: str, repo: Path = REPO) -> Cell:
                 # flex output live in the build dir. The shim is named build-dir
                 # relative, which c_from_compile_db resolves there, and cmake still
                 # generates it (as a source of the <m>_shims OBJECT library).
-                rel = cmake_dir.relative_to(repo) / nm.removesuffix(".obj")
+                rel = bin_dir / nm.removesuffix(".obj")
                 if not all((repo / f"build-{a}" / rel).exists() for a in ARCHES):
                     raise GenError(f"{target}: compiled C {nm} found in no source or build dir")
                 shims.append(rel.as_posix())
@@ -1625,6 +1958,16 @@ def model(target: str, repo: Path = REPO) -> Cell:
             if nm == "rust_cohab_stub.c.obj" and _placeholder(src):
                 continue
             shims.append(src.relative_to(repo).as_posix())
+        elif re.search(r"\.(cpp|cxx|cc)\.obj$", nm):
+            # The engine has a C rule and an asm rule (cflags/), and no C++ one. A C++ TU
+            # that is only the placeholder (an exe's `typedef int x;`) compiles to nothing
+            # and is dropped like the C one; anything else would have to be compiled.
+            src = cmake_dir / nm.removesuffix(".obj")
+            if not (src.exists() and _placeholder(src)):
+                raise GenError(
+                    f"{target}: compiled C++ {nm} (reactos-link compiles C and asm shims only;"
+                    f" cflags/ has no C++ template)"
+                )
         else:
             raise GenError(f"{target}: unmodelled link input {nm}")
     # set_module_type(... UNICODE) is the one target-level define a user module's
@@ -1670,7 +2013,9 @@ def model(target: str, repo: Path = REPO) -> Cell:
                 f"{target}: CD destinations {shipped} leave some of {facts['destinations']} unused"
             )
         per_arch = shipped
-    body, feats, defaults = facts["body"]
+    if bodyless and not shims and not any(arch_shims.values()):
+        raise GenError(f"{target}: no Rust body and no compiled C")
+    body, feats, defaults = facts["body"] or ("", [], True)
     subs = {a: links[a].subsystem or "" for a in ARCHES}
     if len(set(subs.values())) > 1 and not all(subs.values()):
         raise GenError(f"{target}: subsystem set on some arches only {subs}")
@@ -1740,6 +2085,9 @@ def model(target: str, repo: Path = REPO) -> Cell:
         no_cab=facts["no_cab"],
         kernel_kind=facts.get("module_type", "") if module_kind == "KernelDll" else "",
         custom_body=custom or {},
+        require_defined={a: list(links[a].require_defined) for a in ARCHES}
+        if facts.get("require_defined")
+        else {},
     )
 
 
@@ -1781,7 +2129,9 @@ def build_rs(cell: Cell) -> str:
     L = [
         f"//! Cargo-driven `{cell.output_name}` link, generated by tools/cargo_cell_gen.py",
         "//! from the cmake link it replaces.",
-        f"//! The body is {cell.body_crate}; reactos-link builds the PE.",
+        f"//! The body is {cell.body_crate}; reactos-link builds the PE."
+        if cell.body_crate
+        else "//! The module is C, compiled and linked by reactos-link: there is no Rust body.",
         "",
         "use reactos_link::{Linker, ModuleKind"
         + (", MsvcrtexKind" if cell.msvcrtex else "")
@@ -1824,7 +2174,7 @@ def build_rs(cell: Cell) -> str:
     late = {a: cell.late_libs.get(a, []) for a in ARCHES}
     early = {a: [x for x in cell.static_libs[a] if x not in late[a]] for a in ARCHES}
     tables = (("static_libs", early), ("late_libs", late))
-    if cell.link_order:
+    if any(cell.link_order.values()):
         tables = (("link_order", cell.link_order),)
         early = late = {a: [] for a in ARCHES}
     for var, table in tables:
@@ -1834,6 +2184,18 @@ def build_rs(cell: Cell) -> str:
         for a in ARCHES:
             libs = ", ".join(f'"{x}"' for x in table[a])
             L.append(f'        "{TRIPLE[a]}" => &[{libs}],')
+        L.append("        _ => unreachable!(),")
+        L.append("    };")
+        L.append("")
+    if cell.require_defined:
+        L.append(
+            "    // target_link_options(LINKER:--require-defined=...): defined up front, so the"
+        )
+        L.append("    // body's definition wins over an import thunk of the same name.")
+        L.append("    let require_defined: &[&str] = match arch.as_str() {")
+        for a in ARCHES:
+            ops = ", ".join(f'"-Wl,--require-defined={x}"' for x in cell.require_defined[a])
+            L.append(f'        "{TRIPLE[a]}" => &[{ops}],')
         L.append("        _ => unreachable!(),")
         L.append("    };")
         L.append("")
@@ -1856,14 +2218,16 @@ def build_rs(cell: Cell) -> str:
         L.append("    link")
     else:
         L.append("    Linker::new(target_json)")
-    if cell.body_features or not cell.body_defaults:
+    if not cell.body_crate:
+        pass  # a C module: nothing Rust to build
+    elif cell.body_features or not cell.body_defaults:
         feats = ", ".join(f'"{f}"' for f in cell.body_features)
         L.append(
             f'        .rust_lib("{cell.body_crate}", &[{feats}], {str(cell.body_defaults).lower()})'
         )
     else:
         L.append(f'        .rust_staticlib("{cell.body_crate}")')
-    if kernel:
+    if kernel and cell.body_crate:
         # cmake's custom command built it on the builtin triple, not the kernel json.
         L.append("        .rust_user_target()")
     if cell.arch_shims:
@@ -1909,7 +2273,7 @@ def build_rs(cell: Cell) -> str:
     if any(late.values()):
         L.append("        // ...and those cmake linked after the body, in the same order.")
         L.append("        .static_libs_after_body(late_libs)")
-    if cell.link_order:
+    if any(cell.link_order.values()):
         L.append(
             "        // The body, import libs and static libs in cmake's link order: the first"
         )
@@ -1923,6 +2287,8 @@ def build_rs(cell: Cell) -> str:
         L.append(f"        .msvcrtex_crt(MsvcrtexKind::{cell.msvcrtex})")
     if cell.stack:
         L.append(f"        .stack_reserve({cell.stack})")
+    if cell.require_defined:
+        L.append("        .link_args(require_defined)")
     if kernel:
         L.append("        .link(ModuleKind::KernelDll {")
         L.append("            entry: entry.into(),")
@@ -1949,14 +2315,47 @@ def build_rs(cell: Cell) -> str:
 CFG_ARCH = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}
 
 
+def _export_is_import_thunk(code: bytes, machine: int) -> bool:
+    """Whether an export's first bytes are an import thunk (`jmp [__imp_X]`), the stub an
+    import library defines for a symbol: x86/x64 `ff 25`, ARM64 `adrp x16, ...`."""
+    if machine == 0xAA64:
+        return len(code) >= 4 and (int.from_bytes(code[:4], "little") & 0x9F00001F) == 0x90000010
+    return code[:2] == b"\xff\x25"
+
+
 def _exports_bound_to_imports(pe_path: Path) -> set[str]:
-    """Names the cmake-built module both exports and imports."""
+    """Names the cmake-built module exports AS an import thunk: the linker satisfied the
+    export from an import library's stub where the module's own definition should be.
+
+    A name in both tables is not enough. A forwarder (`MFCopyImage mfplat.MFCopyImage`)
+    shares its name with the import of the DLL it forwards to, and a delay-import lib
+    carries a thunk for every function of its DLL, including the ones the module exports
+    as its own stubs (evr, mf): neither is bound. The export's code has to be the thunk."""
     import pe_equiv
 
     pe = pe_equiv.load(pe_path)
-    exported = {e.split(" ", 1)[1].split(" ", 1)[0] for e in pe.exports()}
     imported = {i.split("!", 1)[1] for i in pe.imports()}
-    return exported & imported
+    rva, size = pe.dirs.get("export", (0, 0))
+    if not rva:
+        return set()
+    d = pe.data
+    (_, _, _, _, _, _base, nfun, nnames, afun, anames, aords) = struct.unpack_from(
+        "<IIHHIIIIIII", d, pe.off(rva)
+    )
+    names = {}
+    for i in range(nnames):
+        nrva = struct.unpack_from("<I", d, pe.off(anames) + 4 * i)[0]
+        names[struct.unpack_from("<H", d, pe.off(aords) + 2 * i)[0]] = pe.cstr(nrva)
+    bound = set()
+    for i in range(nfun):
+        frva = struct.unpack_from("<I", d, pe.off(afun) + 4 * i)[0]
+        name = names.get(i)
+        if not frva or name not in imported or rva <= frva < rva + size:
+            continue  # unused, unnamed, not an import's name, or a forwarder
+        off = pe.off(frva)
+        if _export_is_import_thunk(d[off : off + 4], pe.machine):
+            bound.add(name)
+    return bound
 
 
 def carries_panic_handler(pe_path: Path) -> bool:
@@ -2057,7 +2456,7 @@ def apply(cell: Cell, repo: Path = REPO) -> list[Path]:
     crate = repo / "sdk/lib/rust" / cell.crate
     if crate.exists():
         raise GenError(f"{crate.relative_to(repo)} already exists")
-    if not cell.body_crate or not (repo / "sdk/lib/rust" / cell.body_crate).is_dir():
+    if cell.body_crate and not (repo / "sdk/lib/rust" / cell.body_crate).is_dir():
         raise GenError(f"{cell.target}: body crate {cell.body_crate} not in the workspace")
     # Everything is computed before anything is written: a refusal leaves no half-cell.
     new_cmake = rewrite_cmake(cell.cmake_dir / "CMakeLists.txt", cell)
@@ -2108,6 +2507,12 @@ def cell_crate(target: str, repo: Path = REPO) -> str:
         if m:
             return m.group(1)
     raise GenError(f"{target}: no add_cargo_module names it")
+
+
+def _cell_is_bodyless(target: str, repo: Path) -> bool:
+    """A cell generated for a C module with no Rust body (build.rs says so)."""
+    rs = repo / "sdk/lib/rust" / cell_crate(target, repo) / "build.rs"
+    return rs.exists() and "there is no Rust body" in rs.read_text()
 
 
 def _cell_uses_panic_common(target: str, arch: str, repo: Path) -> bool:
@@ -2220,6 +2625,17 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                     and data
                     and data[0][2] == I386_RSBEGIN_DATA
                 }
+            shell_eh = set()
+            if a == "i386" and _cell_is_bodyless(t, repo):
+                sizes = {x[0]: x[2] for x in pe_equiv.load(new).sections}
+                bounds = {".eh_fram": I386_BODYLESS_EH_FRAME_MAX, ".reloc": I386_BODYLESS_RELOC_MAX}
+                shell_eh = {
+                    d
+                    for d in diffs
+                    for name, bound in bounds.items()
+                    if d.startswith(f"sections: + {name} ") and sizes.get(name, bound + 1) <= bound
+                }
+            rsbegin |= shell_eh
             # A panic-lean kernel cell's own handler is a function with an unwind entry:
             # a module cmake linked with none (watchdog) gains a `.pdata`.
             lean_unwind = {
@@ -2295,7 +2711,12 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
             )
             note += " (+ loose on the boot CD)" if loose else ""
             note += " (- cab: txtsetup.sif installs it)" if note_txtsetup else ""
-            note += " (+ rsbegin .ctors/.dtors)" if rsbegin else ""
+            note += " (+ rsbegin .ctors/.dtors)" if rsbegin - shell_eh else ""
+            note += (
+                " (+ the shell's i386 " + "/".join(sorted(d.split()[2] for d in shell_eh)) + ")"
+                if shell_eh
+                else ""
+            )
             note += " (+ the lean handler's .pdata)" if lean_unwind else ""
             note += " (+ __chkstk: frame pointers)" if probes else ""
             note += " (- dead-code import, see DEAD_IMPORTS)" if dead else ""
@@ -3097,7 +3518,15 @@ def _ninja(arch: str, targets: list[str], repo: Path) -> None:
             check=False,
         )
         if cp.returncode:
-            tail = "\n".join((cp.stdout + cp.stderr).splitlines()[-15:])
+            # The tail of a parallel build is other jobs' noise (cargo's "Blocking waiting
+            # for file lock"): name the failed edges and the errors, then the tail.
+            lines = (cp.stdout + cp.stderr).splitlines()
+            errs = [
+                ln
+                for ln in lines
+                if ln.startswith("FAILED:") or re.match(r"\s*(error|ld\.lld: error)\b", ln)
+            ]
+            tail = "\n".join(dict.fromkeys(errs[:20] + lines[-8:]))
             raise GenError(f"build-{arch}: `{' '.join(step)}` failed:\n{tail}")
 
 
@@ -3119,8 +3548,17 @@ def convert(targets: list[str], baseline: Path | None = None, repo: Path = REPO)
     baseline = baseline or (
         Path.home() / "vibeos-cargo-baselines" / time.strftime("convert-%Y%m%d-%H%M%S")
     )
-    save_baseline(targets, baseline, repo)
-    print(f"baseline: {baseline}")
+    if all((baseline / a).is_dir() for a in ARCHES) and (baseline / "targets.json").exists():
+        # A re-run after a failed build: build-<arch> may already hold cell-linked PEs,
+        # so a fresh copy would compare the cells with themselves. Keep the original.
+        index = json.loads((baseline / "targets.json").read_text())
+        missing = [t for t in targets if t not in index]
+        if missing:
+            raise GenError(f"{baseline} has no baseline for {missing}")
+        print(f"baseline: {baseline} (kept from the first run)")
+    else:
+        save_baseline(targets, baseline, repo)
+        print(f"baseline: {baseline}")
     for cell in cells:
         for p in apply(cell, repo):
             print(f"wrote {p.relative_to(repo)}")

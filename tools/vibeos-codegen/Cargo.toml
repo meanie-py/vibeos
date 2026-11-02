@@ -10,3 +10,6 @@ publish = false
 regex = "=1.11.1"
 serde_json = "=1.0.154"
 shlex = "=2.0.1"
+toml = { version = "=0.8.14", default-features = false, features = ["parse"] }
+sha2 = "=0.10.8"
+serde = { version = "=1.0.229", features = ["derive"] }

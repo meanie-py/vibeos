@@ -53,7 +53,8 @@ static CONSTANT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\bconst\s+([A-Za-z_]\w*)\s*:\s*[\w:]+\s*=\s*\(?\s*(-?)\s*(0x[0-9a-fA-F_]+|\d[\d_]*)(?:[iu](?:8|16|32|64|128|size))?\s*\)?\s*(?:as\s+[\w:]+\s*)?;").unwrap()
 });
 static CAST: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"([A-Z_][A-Z0-9_]{2,})\s+as\s+(u8|UCHAR|BYTE|BOOLEAN|i8|CHAR|CCHAR|u16|USHORT|WORD|WCHAR|i16|SHORT|CSHORT)\b").unwrap()
+    // `(NAME) as T` too: atapi's `(ATA_LOCAL_BUFFER_SIZE) as u8` (572 -> 60) hid behind the parens.
+    Regex::new(r"(?:\(\s*(?P<pn>[A-Z_][A-Z0-9_]{2,})\s*\)|(?P<n>[A-Z_][A-Z0-9_]{2,}))\s+as\s+(?P<t>u8|UCHAR|BYTE|BOOLEAN|i8|CHAR|CCHAR|u16|USHORT|WORD|WCHAR|i16|SHORT|CSHORT)\b").unwrap()
 });
 static WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^\w$").unwrap());
 static NOLINT: LazyLock<Regex> =
@@ -157,6 +158,7 @@ fn scan_text(text: &str, masked: &str, values: &Values) -> Vec<(usize, String)> 
     let mut out = Vec::new();
     for m in CAST.captures_iter(masked) {
         let whole = m.get(0).unwrap();
+        let name = m.name("pn").or_else(|| m.name("n")).unwrap().as_str();
         if masked[..whole.start()]
             .chars()
             .next_back()
@@ -167,11 +169,11 @@ fn scan_text(text: &str, masked: &str, values: &Values) -> Vec<(usize, String)> 
         {
             continue;
         }
-        let Some(vals) = values.get(&m[1]).filter(|v| v.len() == 1) else {
+        let Some(vals) = values.get(name).filter(|v| v.len() == 1) else {
             continue;
         };
         let value = vals.first().unwrap();
-        let (bits, signed) = match &m[2] {
+        let (bits, signed) = match &m["t"] {
             "u8" | "UCHAR" | "BYTE" | "BOOLEAN" => (8, false),
             "i8" | "CHAR" | "CCHAR" => (8, true),
             "u16" | "USHORT" | "WORD" | "WCHAR" => (16, false),
@@ -188,7 +190,7 @@ fn scan_text(text: &str, masked: &str, values: &Values) -> Vec<(usize, String)> 
         if NOLINT.is_match(text.lines().nth(line - 1).unwrap_or("")) {
             continue;
         }
-        out.push((line, format!("{} ({}) as {}", &m[1], value.hex(), &m[2])));
+        out.push((line, format!("{} ({}) as {}", name, value.hex(), &m["t"])));
     }
     out
 }
@@ -213,6 +215,8 @@ mod tests {
         );
         let good = "pub const SRB_CLASS_FLAGS_PERSISTANT: u32 = 0x20000000;\npub const EOF: i32 = -1;\npub const BLOCK_UNUSED: u32 = 0xffffffff;\npub unsafe fn flush(srb: *mut SRB) {\n    (*srb).SrbFlags |= SRB_CLASS_FLAGS_PERSISTANT;\n    let weof = EOF as u16;\n    let fill = BLOCK_UNUSED as u8;\n}\n";
         assert!(scan(good).is_empty());
+        let paren = "pub const ATA_LOCAL_BUFFER_SIZE: u32 = 572;\nfn f() { let n = min(len, (ATA_LOCAL_BUFFER_SIZE) as u8); let m = g(ATA_LOCAL_BUFFER_SIZE) as u8; }\n";
+        assert_eq!(scan(paren), vec![(2, "ATA_LOCAL_BUFFER_SIZE (0x23c) as u8".into())]);
     }
     #[test]
     fn ambiguity_comments_nolint_and_qualified_names() {

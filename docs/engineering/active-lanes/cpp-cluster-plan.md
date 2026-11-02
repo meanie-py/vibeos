@@ -58,30 +58,27 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
 
 ## Shell extensions (from 2026-10-17)
 
-**RESUME HERE (2026-10-19):** mmcshext, sendmail, mydocs, acppage, cabview, stobject,
+**RESUME HERE (2026-11-01):** mmcshext, sendmail, mydocs, acppage, cabview, stobject,
 fontext, ntobjshex, netshell and zipfldr are flipped on `atl_rust::dll`, each with a modrun suite
-against its C; `port replay <stem>` rebuilds each at $0. The shell-extension queue is DONE.
-Everything through netshell is on master (4169b433b19); zipfldr is the next merge request.
-Landing is a merge request to the integrator (`merge-integrator` at last contact; find it by
-role). New linters are Rust rules in `tools/vibeos-lint`. Run `check` after a gate's builds,
-not beside them.
+against its C, and all on master; `port replay <stem>` rebuilds each at $0. The shell-extension
+queue is DONE. Landing is a merge request to the integrator (`merge-integrator` at last
+contact; find it by role). New linters are Rust rules in `tools/vibeos-lint`. Run `check` after
+a gate's builds, not beside them.
 
-Owed from zipfldr: extraction, archive creation and delete run only behind UI, so modrun
-reaches none of them; drive `CZipExtract` without its wizard (or a hidden-window harness).
+Closed 2026-11-01: zipfldr's extract/create/delete now run in modrun (a probe thread answers
+the wizard and the confirm box), which found the C leaking every SendTo `CZipCreator` (the
+Rust frees it, declared divergence). ntobjshex's GetIconLocation "fault in the C too" was the
+probe calling through mingw's IUnknown-less C vtable (`scan_mingw_c_vtable`). netshell's 0
+connections is the guest's NIC having no Net-class driver and a non-GUID adapter name; filed
+in the roadmap registry for netstack, not this lane's to fix.
 
-Owed from acppage: regenerating it with today's generator drifts from what was bought (10
-bodies' contracts changed: its module entry points after the gModule reroute, and three page
-methods), so `port replay acppage` would refuse until they are re-bought. The regenerated tree
-was set aside, not applied: stash "cpp-cluster: acppage cppapp regen drift (WCHAR* table bug),
-set aside 2026-10-19". The WCHAR* table bug it showed is fixed in cppapp.
-
-Owed from netshell: its connection manager enumerates 0 connections in the guest in BOTH the
-C and the Rust, though the guest has an e1000; find why (the SetupDi/Network-class path), then
-extend probes/netshell.c to each connection's properties.
-
-Owed from ntobjshex: `CNtObjectFolderExtractIcon::GetIconLocation` faults (address 2: the
-GIL_FORSHELL flag read as a pointer) in the pre-flip C as well as the Rust, so the probe does
-not call it; find whether that is the C++ or the call's ABI.
+acppage's regen drift, owed since 2026-10-19, closed 2026-11-01 at $0: with today's
+cppapp the bought contracts match again (the drift was the WCHAR* table bug, since fixed), and
+`port replay acppage` takes every banked body. The regen brings its glue up to the generator:
+`Create()` re-points `m_psp.lParam`, the titled page init, the rendered `g_AllowedExtensions`.
+Its whole-module hand bank kept putting a model-written copy of that table back after
+integrate dropped it; `apply_hand` now drops rendered duplicates too. The stash
+"cpp-cluster: acppage cppapp regen drift" is superseded and can be dropped.
 
 stobject's review found three pipeline bugs, all fixed at the root: an invented GUID
 (`DECLARING_HEADER_ADDED` + `scan_guid_values`, which also caught acpi's and iomgr's), a

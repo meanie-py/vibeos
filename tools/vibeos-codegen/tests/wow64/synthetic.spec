@@ -1,0 +1,6 @@
+@ stdcall NtFoo(long ptr int64 double word)
+@ stdcall NtManual(int128)
+@ stdcall NtUnknown(long banana)
+@ stdcall -arch=x86_64 NtArch(str wstr)
+@ stdcall -arch=!i386 NtNegative(ptr)
+@ stdcall ZwFoo(long)

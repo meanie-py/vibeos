@@ -2,6 +2,9 @@
 
 use crate::common::*;
 
+/// FS_INFORMATION_CLASS FileFsSectorSizeInformation (Windows 8; ReactOS's headers predate it).
+const FILE_FS_SECTOR_SIZE_INFORMATION: FS_INFORMATION_CLASS = 11;
+
 #[no_mangle]
 pub unsafe extern "system" fn GetFileInformationByHandleEx(
     handle: HANDLE,
@@ -12,8 +15,18 @@ pub unsafe extern "system" fn GetFileInformationByHandleEx(
     let mut io: IO_STATUS_BLOCK = core::mem::zeroed();
 
     let status: NTSTATUS = match class {
+        // FILE_STORAGE_INFO is the volume's FILE_FS_SECTOR_SIZE_INFORMATION, byte for byte
+        // (Windows 11 on FAT32 and NTFS, winref 20261101-115927-xpkh7pa0; Wine does the
+        // same). fastfat and cdfs answer that class through FsRtlGetSectorSizeInformation.
+        FileStorageInfo => NtQueryVolumeInformationFile(
+            handle,
+            &mut io,
+            info,
+            size,
+            FILE_FS_SECTOR_SIZE_INFORMATION,
+        ),
+
         FileRemoteProtocolInfo
-        | FileStorageInfo
         | FileDispositionInfoEx
         | FileRenameInfoEx
         | FileCaseSensitiveInfo

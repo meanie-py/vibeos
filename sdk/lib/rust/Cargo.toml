@@ -1,5 +1,87 @@
 [workspace]
 members = [
+    "xinput9_1_0-cargo",
+    "xinput1_2-cargo",
+    "xinput1_1-cargo",
+    "winusb-cargo",
+    "wing32-cargo",
+    "windowscodecsext-cargo",
+    "vssapi-cargo",
+    "verifier-cargo",
+    "url-cargo",
+    "updspapi-cargo",
+    "traffic-cargo",
+    "streamci-cargo",
+    "sspicli-cargo",
+    "srclient-cargo",
+    "sfcfiles-cargo",
+    "sfc_os-cargo",
+    "sfc-cargo",
+    "sensapi-cargo",
+    "rtworkq-cargo",
+    "riched32-cargo",
+    "query-cargo",
+    "pstorec-cargo",
+    "profmap-cargo",
+    "printui-cargo",
+    "powrprof-cargo",
+    "pidgen-cargo",
+    "olesvr32-cargo",
+    "olepro32-cargo",
+    "olecli32-cargo",
+    "odbccp32-cargo",
+    "odbc32-cargo",
+    "objsel-cargo",
+    "ntprint-cargo",
+    "ntlanman-cargo",
+    "netutils-cargo",
+    "nddeapi-cargo",
+    "msxml6-cargo",
+    "msxml4-cargo",
+    "msxml2-cargo",
+    "msxml-cargo",
+    "msvidc32-cargo",
+    "mssign32-cargo",
+    "msisys-cargo",
+    "msisip-cargo",
+    "msimg32-cargo",
+    "msftedit-cargo",
+    "modemui-cargo",
+    "midimap-cargo",
+    "kdstub-cargo",
+    "dxgthk-cargo",
+    "dxapi-cargo",
+    "mgmtapi-cargo",
+    "mciwave-cargo",
+    "mciseq-cargo",
+    "mciqtz32-cargo",
+    "mcicda-cargo",
+    "localui-cargo",
+    "ksuser-cargo",
+    "kernelbase-cargo",
+    "iccvid-cargo",
+    "getuname-cargo",
+    "fontsub-cargo",
+    "faultrep-cargo",
+    "dxva2-cargo",
+    "dpwsockx-cargo",
+    "dpnhupnp-cargo",
+    "devcpux-cargo",
+    "dbgeng-cargo",
+    "d3d10core-cargo",
+    "d3d10_1-cargo",
+    "cryptui-cargo",
+    "cryptext-cargo",
+    "compstui-cargo",
+    "bthprops-cargo",
+    "bthci-cargo",
+    "bcrypt-cargo",
+    "cryptdlg-cargo",
+    "batt-cargo",
+    "esent-cargo",
+    "dciman32-cargo",
+    "clusapi-cargo",
+    "normaliz-cargo",
     "mstask-cargo",
     "shcore-cargo",
     "hlink-cargo",
@@ -955,6 +1037,7 @@ members = [
     "hlink-rust",
     "shcore-rust",
     "mstask-rust",
+    "normaliz-rust",
 ]
 resolver = "2"
 
@@ -1019,8 +1102,13 @@ debug = 1
 # three already-fixed never-compiled blocks, are in the roadmap entry.
 #
 # ARMED: ntoskrnl-rust (2026-10-16), ex-rust and hal-rust (2026-10-17), ob-rust,
-# ps-rust, se-rust, iomgr-rust, config-rust and cc-rust (2026-10-17). overflow-checks defaults to FOLLOWING debug-assertions and
-# must stay off: the C has no overflow traps.
+# ps-rust, se-rust, iomgr-rust, config-rust and cc-rust (2026-10-17); fastfat, cdfs, storahci,
+# cmlib and afd 2026-11-01, once `nt_assert!` reported through RtlAssert instead of panicking.
+# NOT classpnp, disk or cdrom: on 64-bit, COMMON_DEVICE_EXTENSION embeds a LOOKASIDE_ALIGN
+# (cache-aligned) NPAGED_LOOKASIDE_LIST, so the type is 64/128-aligned while IoCreateDevice
+# places extensions 16-aligned, as the C does -- the UB check halts the first deref
+# (ClassCreateFdo). Owed: a design decision, roadmap #72. overflow-checks defaults to FOLLOWING
+# debug-assertions and must stay off: the C has no overflow traps.
 [profile.release.package.ntoskrnl-rust]
 debug-assertions = true
 overflow-checks = false
@@ -1046,6 +1134,21 @@ overflow-checks = false
 debug-assertions = true
 overflow-checks = false
 [profile.release.package.cc-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.fastfat-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.cdfs-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.storahci-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.cmlib-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.afd-rust]
 debug-assertions = true
 overflow-checks = false
 

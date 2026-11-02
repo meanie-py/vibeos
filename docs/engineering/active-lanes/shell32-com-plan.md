@@ -1,5 +1,24 @@
 # shell32 COM/ATL C++ → Rust (lane: `shell32-com`)
 
+## RESUME HERE (2026-11-01): setupapi full flip submitted to merge-integrator
+
+All 18 setupapi TUs are in setupapi-rust and flipped. The full gate
+`20261101-133030-vbj0pxqz` passed smoke ×3, net, bios, conformance ×3 and stortest ×3.
+Its one red, `lint:source-deferred` SCANNER_ERROR, was a vibeos-lint race (verify_tables
+walked cargo's `target/`), fixed in the same push. Spend: **$0.92** of the $5 Haiku
+budget ($4.08 left). Every paid run is in `tools/rustconv/.responses/2026103*`, and the
+ten modules are hand-banked whole.
+- **Graded in the guest (2026-11-01):** `tools/payloads/modrun/suites/setupapi.yaml` passes on
+  i386/amd64/arm64. It found two C bugs that setupapi-rust had copied: AddReg append stores
+  heap garbage, and DelReg DELSTRING overruns its heap block, which crashed the i386 oracle.
+  Both are fixed in install.rs and submitted after af8e22bafeb.
+- **Next:** merge-integrator's verdicts on both pushes. Still open: the file-queue copy failure
+  on the live boot (roadmap registry), shared by the C.
+- **Owed:** the setupapi modrun suite against its own C (AGENTS step 6:
+  `tools/payloads/modrun/suites/setupapi.yaml`).
+- **Gotcha:** the Bash tool's `grep` is ugrep with `-I`, and it silently skips ISO-8859
+  sources: driver.c, install.c and setupapi_private.h. Use `/usr/bin/grep`.
+
 **Status:** COMPLETE (opened 2026-07-14, closed 2026-07-18). All 33 activatable
 `shell32` object-map entries are Rust-owned. Worktree `vibeos-shell32-com`, branch
 `shell32-com`.

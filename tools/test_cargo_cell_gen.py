@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import cargo_cell_gen as g
@@ -957,3 +959,425 @@ def test_spec_entries_that_reexport_an_import_are_recognized(tmp_path):
         "SymEnumSourceFiles",
     }
     assert g._spec_imported_exports(tmp_path / "missing.spec") == set()
+
+
+def test_a_c_module_with_no_rust_body_is_a_cell_with_no_rust_archive(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_executable(m main.c rsrc.rc)\n"
+        "set_module_type(m win32gui UNICODE)\n"
+        "add_importlibs(m user32 msvcrt kernel32 ntdll)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    rs = g.build_rs(c)
+    assert "rust_staticlib" not in rs and "rust_lib(" not in rs
+    assert "there is no Rust body" in rs
+    assert '"m_shims"' in rs
+    out = g.rewrite_cmake(f, c)
+    assert "BODY_CRATE" not in out
+    assert "is C, and cargo compiles and links it" in out
+    assert "add_library(m_shims OBJECT main.c)" in out
+
+
+# ---------------------------------------------------------------- the build-graph lookup
+
+
+def _fake_build(root: Path, arch: str, ninja: str, installs: dict[str, str] | None = None):
+    """A build-<arch> with the given build.ninja and per-directory cmake_install.cmake."""
+    b = root / f"build-{arch}"
+    b.mkdir(parents=True, exist_ok=True)
+    (b / "build.ninja").write_text(ninja)
+    (b / "CMakeCache.txt").write_text("CMAKE_HOME_DIRECTORY:INTERNAL=/tmp/vibeos\n")
+    for outdir, src in (installs or {}).items():
+        (b / outdir).mkdir(parents=True, exist_ok=True)
+        (b / outdir / "cmake_install.cmake").write_text(
+            f"# Install script for directory: /tmp/vibeos/{src}\n\nset(x 1)\n"
+        )
+
+
+def _edge(out: str, rule: str, target: str, extra: str = "x.obj") -> str:
+    return (
+        f"build {out}: {rule}__{target}_Debug {extra}\n"
+        "  LINK_FLAGS = -Wl,--subsystem,windows:5.01\n"
+        "  LINK_LIBRARIES = a.a\n\n"
+    )
+
+
+def test_a_cxx_link_is_the_same_edge_as_a_c_link(tmp_path):
+    """Any .cpp in a module makes cmake link it with CXX_*_LINKER, which the C-only pattern
+    missed: 40 modules were refused as 'a static lib?' for that alone."""
+    for rule, want in (
+        ("C_EXECUTABLE_LINKER", "C_EXECUTABLE"),
+        ("CXX_EXECUTABLE_LINKER", "C_EXECUTABLE"),
+        ("CXX_MODULE_LIBRARY_LINKER", "C_MODULE_LIBRARY"),
+        ("CXX_SHARED_LIBRARY_LINKER", "C_SHARED_LIBRARY"),
+    ):
+        _fake_build(tmp_path, "amd64", _edge("base/m/m.exe", rule, "m"))
+        link = g.link_edge("amd64", "m", tmp_path)
+        assert link.kind == want and link.output == "base/m/m.exe"
+        g._read.cache_clear()
+
+
+def test_the_link_edge_name_is_anchored_by_the_config(tmp_path):
+    _fake_build(
+        tmp_path,
+        "amd64",
+        _edge("base/m/m_c.exe", "C_EXECUTABLE_LINKER", "m_c")
+        + "build cmake_object_order_depends_target_m: phony\n\n",
+    )
+    with pytest.raises(g.GenError, match="no link edge"):
+        g.link_edge("amd64", "m", tmp_path)
+    g._read.cache_clear()
+
+
+def test_a_missing_link_edge_says_what_is_there_instead(tmp_path):
+    cell = (
+        "build dll/win32/a/a.dll | ${cmake_ninja_workdir}dll/win32/a/a.dll: CUSTOM_COMMAND "
+        "/tmp/vibeos/sdk/lib/rust/a-cargo/Cargo.toml /tmp/vibeos/x\n  COMMAND = c\n\n"
+    )
+    gated = "build cmake_object_order_depends_target_other: phony\n\n"
+    for t, text, why in (("a", cell, "cell"), ("w", gated, "absent")):
+        _fake_build(tmp_path, "i386", text)
+        with pytest.raises(g.NoLinkEdge) as e:
+            g.link_edge("i386", t, tmp_path)
+        assert e.value.why == why
+        g._read.cache_clear()
+    # A target that exists but has no edge of any kind stays the original message.
+    _fake_build(tmp_path, "i386", "build cmake_object_order_depends_target_u: phony\n\n")
+    with pytest.raises(g.NoLinkEdge) as e:
+        g.link_edge("i386", "u", tmp_path)
+    assert e.value.why == "unknown"
+    g._read.cache_clear()
+
+
+def test_a_module_missing_on_some_arches_is_refused_by_arch(tmp_path):
+    """wow64 exists on amd64/arm64 only: the refusal names i386, it is not 'a static lib'."""
+    here = _edge("dll/win32/w/w.dll", "C_MODULE_LIBRARY_LINKER", "w")
+    for a in ("amd64", "arm64"):
+        _fake_build(tmp_path, a, here)
+    _fake_build(tmp_path, "i386", "build cmake_object_order_depends_target_z: phony\n\n")
+    want = r"w: i386: not defined on i386.*cmake links it on \['amd64', 'arm64'\]"
+    with pytest.raises(g.GenError, match=want):
+        g._link_edges("w", tmp_path)
+    g._read.cache_clear()
+
+
+def test_a_module_that_is_a_cell_on_every_arch_is_not_converted_again(tmp_path):
+    cell = (
+        "build dll/win32/a/a.dll | ${cmake_ninja_workdir}dll/win32/a/a.dll: CUSTOM_COMMAND "
+        "/tmp/vibeos/sdk/lib/rust/a-cargo/Cargo.toml\n  COMMAND = c\n\n"
+    )
+    for a in g.ARCHES:
+        _fake_build(tmp_path, a, cell)
+    with pytest.raises(g.GenError, match="already a cargo cell on every arch"):
+        g._link_edges("a", tmp_path)
+    g._read.cache_clear()
+
+
+def test_a_cell_on_some_arches_only_is_a_partial_conversion(tmp_path):
+    cell = (
+        "build d/a.dll | ${w}d/a.dll: CUSTOM_COMMAND "
+        "/tmp/vibeos/sdk/lib/rust/a-cargo/Cargo.toml\n  C = c\n\n"
+    )
+    _fake_build(tmp_path, "i386", cell)
+    for a in ("amd64", "arm64"):
+        _fake_build(tmp_path, a, _edge("d/a.dll", "C_MODULE_LIBRARY_LINKER", "a"))
+    with pytest.raises(g.GenError, match="a cargo cell on \\['i386'\\] but still cmake-linked"):
+        g._link_edges("a", tmp_path)
+    g._read.cache_clear()
+
+
+def test_the_source_dir_is_where_the_build_says_not_where_it_wrote_the_output(tmp_path):
+    """vendor/ac97 builds into drivers/wdm/audio/drivers/ac97 (add_subdirectory with a
+    binary dir) and dll/3rdparty/libpng is vendor/libpng: the output dir has no CMakeLists."""
+    _fake_build(tmp_path, "amd64", "", {"drivers/wdm/audio/drivers/ac97": "vendor/ac97"})
+    got = g.source_dir("amd64", "drivers/wdm/audio/drivers/ac97/ac97.sys", "ac97", tmp_path)
+    assert got == tmp_path / "vendor/ac97"
+    # With no cmake_install.cmake to read, the output dir is the best guess.
+    assert g.source_dir("amd64", "x/y/y.dll", "y", tmp_path) == tmp_path / "x/y"
+    g._read.cache_clear()
+
+
+def test_a_cpp_placeholder_is_dropped_and_real_cpp_is_not(tmp_path):
+    stub = tmp_path / "rust_cohab_stub.cpp"
+    stub.write_text("/* placeholder */\ntypedef int x_t;\n")
+    assert g._placeholder(stub)
+    anchored = tmp_path / "anchored.cpp"
+    anchored.write_text('extern char a __asm__("f");\nstatic const void *const t[] = {&a};\n')
+    assert not g._placeholder(anchored)
+
+
+def test_cpp_properties_are_inert_once_no_cpp_is_compiled(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "set_target_cpp_properties(m WITH_EXCEPTIONS)\n")
+    assert g.cmake_facts(f, "m")["unknown"] == []
+    assert "set_target_cpp_properties" not in g.rewrite_cmake(f, cell(cmake_dir=tmp_path))
+
+
+def test_the_dll_variant_is_the_body_when_the_module_also_has_a_static_one(tmp_path):
+    """psapi: psapi_rust belongs to psapi_static (kernel32 links it), psapi_dll_rust to
+    the DLL. The name rule picked the first and then the i386 link had no libpsapi_rust.a."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        'rust_staticlib_variant(m_rust m-rust "" TRUE)\n'
+        'rust_staticlib_variant(m_dll_rust m-rust "dllmain" TRUE)\n'
+        "add_library(m MODULE ${SOURCE})\n"
+        "target_link_libraries(m ${m_dll_rust_LIB})\n"
+    )
+    facts = g.cmake_facts(f, "m", ["base/m/libm_dll_rust.a"])
+    assert facts["body_var"] == "m_dll_rust" and facts["body"] == ("m-rust", ["dllmain"], True)
+    # Linking neither, the `<target>_rust` name still decides.
+    assert g.cmake_facts(f, "m", [])["body_var"] == "m_rust"
+
+
+def test_only_an_export_that_is_an_import_thunk_counts_as_bound(tmp_path, monkeypatch):
+    """evr and mf export names their delay-import lib also carries (their own stubs, and
+    forwarders to the DLL it imports), which is not a rebound export: only a thunk is."""
+    import pe_equiv
+    from test_pe_equiv import make_pe
+
+    monkeypatch.setattr(pe_equiv.PE, "imports", lambda self: ["delay mfplat.dll!Alpha"])
+    thunk = tmp_path / "thunk.dll"
+    thunk.write_bytes(make_pe(["Alpha", "Beta"], code=b"\xff\x25\0\0\0\0"))
+    real = tmp_path / "real.dll"
+    real.write_bytes(make_pe(["Alpha", "Beta"], code=b"\x55\x48\x89\xe5\xc3"))
+    assert g._exports_bound_to_imports(thunk) == {"Alpha"}  # Beta is not imported
+    assert g._exports_bound_to_imports(real) == set()
+    # ARM64's import thunk opens with `adrp x16, ...`.
+    assert g._export_is_import_thunk((0x90000010).to_bytes(4, "little"), 0xAA64)
+    assert not g._export_is_import_thunk((0xD65F03C0).to_bytes(4, "little"), 0xAA64)
+
+
+# ---- statements that shape the link (set_subsystem, set_entrypoint, ...) ----
+
+
+def _link_edge_with(arch, **kw):
+    base = dict(
+        arch=arch,
+        output="dll/m.dll",
+        kind="C_MODULE_LIBRARY",
+        entry="",
+        subsystem=None,
+        image_base=None,
+        stack=None,
+        inputs=[],
+        libs=[],
+    )
+    base.update(kw)
+    return g.Link(**base)
+
+
+def test_set_subsystem_is_checked_against_every_link_edge(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "set_subsystem(m console)\n")
+    facts = g.cmake_facts(f, "m")
+    assert facts["unknown"] == []
+    assert facts["set_subsystem"] == "console:5.01"
+    ok = {a: _link_edge_with(a, subsystem="console:5.01") for a in g.ARCHES}
+    g._check_statement_effects("m", facts, ok)
+    bad = dict(ok, arm64=_link_edge_with("arm64", subsystem="windows:5.01"))
+    with pytest.raises(g.GenError, match=r"set_subsystem says console:5\.01 but the arm64"):
+        g._check_statement_effects("m", facts, bad)
+    # lld takes no numeric EFI id, so gcc.cmake maps it.
+    assert g._subsystem_flag("10") == "efi_application:5.01"
+
+
+def test_set_entrypoint_is_rebuilt_per_arch_and_checked(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "set_entrypoint(m DllMain 12)\n")
+    facts = g.cmake_facts(f, "m")
+    assert facts["unknown"] == [] and facts["set_entrypoint"] == ("DllMain", "12")
+    assert g._entry_symbol("i386", "DllMain", "12") == "_DllMain@12"
+    assert g._entry_symbol("amd64", "DllMain", "12") == "DllMain"
+    assert g._entry_symbol("i386", "0", None) == "___ImageBase"
+    assert g._entry_symbol("arm64", "0", None) == "__ImageBase"
+    edges = {
+        "i386": _link_edge_with("i386", entry="_DllMain@12"),
+        "amd64": _link_edge_with("amd64", entry="DllMain"),
+        "arm64": _link_edge_with("arm64", entry="DllMain"),
+    }
+    g._check_statement_effects("m", facts, edges)
+    # A guard that is false in this build leaves the other entry on the edge.
+    edges["amd64"] = _link_edge_with("amd64", entry="DllMainCRTStartup")
+    with pytest.raises(g.GenError, match="set_entrypoint"):
+        g._check_statement_effects("m", facts, edges)
+
+
+def test_rewrite_drops_the_subsystem_and_entry_statements_with_their_guard(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        CMAKE
+        + "if(DLL_EXPORT_VERSION LESS 0x600)\n    set_entrypoint(m DllMain 12)\nendif()\n"
+        + "set_subsystem(m console)\n"
+    )
+    out = g.rewrite_cmake(f, cell())
+    assert "set_entrypoint" not in out and "set_subsystem" not in out
+    assert "DLL_EXPORT_VERSION" not in out
+
+
+def test_link_strict_and_the_whole_archive_cohab_are_refused_with_the_reason(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "link_strict(m)\nlink_msvcrt_rust_cohab(m)\n")
+    unknown = g.cmake_facts(f, "m")["unknown"]
+    assert len(unknown) == 2
+    assert "--allow-multiple-definition" in unknown[0]
+    assert "whole-archive" in unknown[1]
+
+
+def test_linker_language_is_not_a_cell_property(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "set_target_properties(m PROPERTIES LINKER_LANGUAGE C)\n")
+    assert g.cmake_facts(f, "m")["unknown"] == []
+    assert "LINKER_LANGUAGE" not in g.rewrite_cmake(f, cell())
+
+
+REQUIRE = (
+    'if(ARCH STREQUAL "i386")\n'
+    '    target_link_options(m PRIVATE "LINKER:--require-defined=_A@4,--require-defined=_B@8")\n'
+    "else()\n"
+    '    target_link_options(m PRIVATE "LINKER:--require-defined=A,--require-defined=B")\n'
+    "endif()\n"
+)
+
+
+def test_require_defined_comes_from_each_link_edge_into_link_args(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + REQUIRE)
+    facts = g.cmake_facts(f, "m")
+    assert facts["unknown"] == [] and facts["require_defined"]
+    edges = {a: _link_edge_with(a, require_defined=("A", "B")) for a in g.ARCHES}
+    edges["i386"] = _link_edge_with("i386", require_defined=("_A@4", "_B@8"))
+    g._check_statement_effects("m", facts, edges)
+    edges["arm64"] = _link_edge_with("arm64")
+    with pytest.raises(g.GenError, match="--require-defined is on no link edge"):
+        g._check_statement_effects("m", facts, edges)
+    out = g.rewrite_cmake(f, cell())
+    assert "require-defined" not in out and "ARCH STREQUAL" not in out
+    rs = g.build_rs(
+        cell(
+            require_defined={
+                "i386": ["_A@4", "_B@8"],
+                "amd64": ["A", "B"],
+                "arm64": ["A", "B"],
+            }
+        )
+    )
+    assert '"x86" => &["-Wl,--require-defined=_A@4", "-Wl,--require-defined=_B@8"],' in rs
+    assert '"x86_64" => &["-Wl,--require-defined=A", "-Wl,--require-defined=B"],' in rs
+    assert ".link_args(require_defined)" in rs
+    assert "require_defined" not in g.build_rs(cell())
+
+
+def test_link_edge_reads_the_require_defined_operands(tmp_path):
+    for a in g.ARCHES:
+        d = tmp_path / f"build-{a}"
+        d.mkdir()
+        (d / "build.ninja").write_text(
+            "build dll/m.dll: C_SHARED_LIBRARY_LINKER__m_Release a.obj\n"
+            "  LINK_FLAGS = -Wl,--require-defined=_X@4,--require-defined=_Y@8"
+            " -Wl,--subsystem,console:5.01\n"
+        )
+    assert g.link_edge("i386", "m", tmp_path).require_defined == ("_X@4", "_Y@8")
+
+
+def test_kmt_native_seh_moves_to_the_object_library(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE + "kmt_enable_native_seh(m)\n")
+    assert g.cmake_facts(f, "m")["unknown"] == []
+    out = g.rewrite_cmake(f, cell(c_shims=["base/m/x.c"]))
+    assert "kmt_enable_native_seh(m_shims)" in out and "kmt_enable_native_seh(m)" not in out
+
+
+DBGHELP = """\
+if(NOT CMAKE_CROSSCOMPILING)
+    list(APPEND SOURCE host.c)
+    add_library(m_host ${SOURCE})
+else()
+    list(APPEND SOURCE a.c)
+    # main.c  # replaced by Rust (sdk/lib/rust/m-rust/src/m/main.rs)
+    rust_staticlib_variant(m_rust m-rust "" TRUE)
+    add_library(m MODULE ${SOURCE})
+    set_module_type(m win32dll)
+    add_importlibs(m kernel32)
+endif()
+"""
+
+
+def test_a_library_in_the_other_branch_does_not_share_the_source_list(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(DBGHELP)
+    # dbghelp's real shape: the module is in the else() of the host tool's if().
+    assert g.cmake_facts(f, "m")["unknown"] == []
+    # The rewrite only wraps a link in a plain if(): swap the branches to rewrite it.
+    host, module = DBGHELP.split("else()\n")
+    host = host.replace("if(NOT CMAKE_CROSSCOMPILING)\n", "")
+    module = module.replace("endif()\n", "")
+    f.write_text(f"if(CMAKE_CROSSCOMPILING)\n{module}else()\n{host}endif()\n")
+    out = g.rewrite_cmake(f, cell(target="m", output_name="m.dll", module_kind="Win32Dll"))
+    # The host tool keeps its own list and library; the module's list goes with its link.
+    assert "list(APPEND SOURCE host.c)" in out and "add_library(m_host ${SOURCE})" in out
+    assert "list(APPEND SOURCE a.c)" not in out
+
+
+def test_a_library_in_the_targets_own_branch_still_shares_it(tmp_path):
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(DBGHELP.replace("else()", "endif()\nif(TRUE)", 1))
+    assert g.cmake_facts(f, "m")["unknown"]
+
+
+def test_a_target_made_by_a_shared_function_names_the_function(tmp_path):
+    (tmp_path / "t.cmake").write_text("function(add_t_target VERSION)\nendfunction()\n")
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text("include(${CMAKE_CURRENT_SOURCE_DIR}/t.cmake)\nadd_t_target(24)\n")
+    unknown = g.cmake_facts(f, "m_24")["unknown"]
+    assert "target made in a loop or function" in unknown
+    assert any("add_t_target(24)" in u for u in unknown)
+    f.write_text("add_bootvid(m x.cmake)\n")
+    assert any("add_bootvid(m x.cmake)" in u for u in g.cmake_facts(f, "m")["unknown"])
+
+
+def test_a_bodyless_cell_is_recognised_by_its_build_script(tmp_path, monkeypatch):
+    crate = tmp_path / "sdk/lib/rust/m-cargo"
+    crate.mkdir(parents=True)
+    monkeypatch.setattr(g, "cell_crate", lambda target, repo: "m-cargo")
+    assert not g._cell_is_bodyless("m", tmp_path)
+    (crate / "build.rs").write_text(g.build_rs(cell(body_crate="", c_shims=["base/m/main.c"])))
+    assert g._cell_is_bodyless("m", tmp_path)
+    (crate / "build.rs").write_text(g.build_rs(cell()))
+    assert not g._cell_is_bodyless("m", tmp_path)
+
+
+def test_a_rerun_keeps_the_first_runs_baseline(tmp_path, monkeypatch):
+    """After a failed build, build-<arch> may hold cell-linked PEs: re-baselining from it
+    would compare the cells with themselves."""
+    saved = []
+    monkeypatch.setattr(g, "model", lambda t, repo: t)
+    monkeypatch.setattr(g, "save_baseline", lambda ts, b, repo: saved.append(b))
+    monkeypatch.setattr(g, "apply", lambda c, repo: [])
+    monkeypatch.setattr(g, "_ninja", lambda a, ts, repo: None)
+    monkeypatch.setattr(g, "check", lambda ts, b, repo: 0)
+    monkeypatch.setattr(g, "refresh_manifests", lambda repo: None)
+    b = tmp_path / "b"
+    for a in g.ARCHES:
+        (b / a).mkdir(parents=True)
+    (b / "targets.json").write_text('{"m": {}}')
+    assert g.convert(["m"], b, tmp_path) == 0 and saved == []
+    with pytest.raises(g.GenError, match="no baseline for"):
+        g.convert(["m", "n"], b, tmp_path)
+
+
+def test_a_failed_build_names_the_failed_edge_not_the_lock_noise(tmp_path, monkeypatch):
+    out = "\n".join(
+        ["[1/9] cargo"] * 3
+        + ["FAILED: drivers/base/kdstub/kdstub.dll", "error[E0425]: cannot find value"]
+        + ["    Blocking waiting for file lock on build directory"] * 20
+    )
+    monkeypatch.setattr(
+        g.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 1, out, "")
+    )
+    (tmp_path / "build-i386").mkdir()
+    with pytest.raises(g.GenError) as e:
+        g._ninja("i386", ["kdstub"], tmp_path)
+    assert "FAILED: drivers/base/kdstub/kdstub.dll" in str(e.value)
+    assert "error[E0425]" in str(e.value)
