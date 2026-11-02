@@ -1,3 +1,4 @@
+import json
 import struct
 import subprocess
 import sys
@@ -574,25 +575,27 @@ def test_convert_models_every_target_before_writing_anything(tmp_path, monkeypat
     assert writes == []
 
 
-def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch):
+@pytest.mark.parametrize("proof_code", [0, 1])
+def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch, proof_code):
     steps = []
     monkeypatch.setattr(g, "model", lambda t, repo: t)
     monkeypatch.setattr(g, "save_baseline", lambda ts, b, repo: steps.append(("baseline", b)))
     monkeypatch.setattr(g, "apply", lambda c, repo: steps.append(("apply", c)) or [])
     monkeypatch.setattr(g, "_ninja", lambda a, ts, repo: steps.append(("ninja", a)))
-    monkeypatch.setattr(g, "check", lambda ts, b, repo: steps.append(("check", b)) or 0)
+    monkeypatch.setattr(g, "check", lambda ts, b, repo: steps.append(("check", b)) or proof_code)
     monkeypatch.setattr(g, "refresh_manifests", lambda repo: steps.append(("manifests", repo)))
-    assert g.convert(["m"], tmp_path / "b", tmp_path) == 0
-    assert steps == [
+    assert g.convert(["m"], tmp_path / "b", tmp_path) == proof_code
+    expected = [
         ("baseline", tmp_path / "b"),
         ("apply", "m"),
         ("ninja", "i386"),
         ("ninja", "amd64"),
         ("ninja", "arm64"),
         ("check", tmp_path / "b"),
-        # What a build with no cmake reads follows the graphs the wave configured.
-        ("manifests", tmp_path),
     ]
+    if proof_code == 0:
+        expected.append(("manifests", tmp_path))
+    assert steps == expected
 
 
 def _native_ratchet(root):
@@ -813,10 +816,11 @@ def test_an_rc_command_the_template_cannot_rebuild_is_refused():
         g.rc_encode(RC_CMD.replace("-DUNICODE -D_UNICODE", "-D_UNICODE -DUNICODE"), TMPL, "amd64")
 
 
-def test_the_rc_template_file_reads_back(tmp_path, monkeypatch):
-    monkeypatch.setattr(g, "rc_template_path", lambda a, repo=g.REPO: tmp_path / f"rc.{a}.flags")
-    (tmp_path / "rc.amd64.flags").write_text(TMPL.text("amd64"))
-    assert g.read_rc_template("amd64") == TMPL
+def test_the_rc_template_file_reads_back(tmp_path):
+    path = g.rc_template_path("amd64", tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(TMPL.text("amd64"))
+    assert g.read_rc_template("amd64", tmp_path) == TMPL
 
 
 def test_rc_object_depends_reads_both_spellings():
@@ -828,7 +832,7 @@ def test_rc_object_depends_reads_both_spellings():
     assert g._rc_object_depends("set_source_files_properties", raw) is None
 
 
-def test_a_fresh_conversion_reads_its_rc_part_from_the_module_compile(monkeypatch):
+def test_a_fresh_conversion_reads_its_rc_part_from_the_module_compile(tmp_path):
     """--convert: the .rc compile is the module target's own (its object path is the marker);
     an arch the module is not built on takes another arch's part."""
     cmds = {
@@ -838,9 +842,14 @@ def test_a_fresh_conversion_reads_its_rc_part_from_the_module_compile(monkeypatc
             {"file": "/tmp/vibeos/base/m/rsrc.rc", "command": RC_CMD.replace("m.dir", "n.dir")}
         ],
     }
-    monkeypatch.setattr(g, "_rc_commands", lambda a, repo=g.REPO: cmds[a])
-    monkeypatch.setattr(g, "read_rc_template", lambda a, repo=g.REPO: TMPL)
-    flags = g.rc_flags_for("base/m/rsrc.rc", "base/m/CMakeFiles/m.dir/rsrc.rc.res")
+    for arch in g.ARCHES:
+        template = g.rc_template_path(arch, tmp_path)
+        template.parent.mkdir(parents=True, exist_ok=True)
+        template.write_text(TMPL.text(arch))
+        build = tmp_path / f"build-{arch}"
+        build.mkdir()
+        (build / "compile_commands.json").write_text(json.dumps(cmds[arch]))
+    flags = g.rc_flags_for("base/m/rsrc.rc", "base/m/CMakeFiles/m.dir/rsrc.rc.res", tmp_path)
     assert flags["amd64"] == flags["i386"] == flags["arm64"]
     assert flags["amd64"].defines == ("UNICODE", "_UNICODE")
 
@@ -879,7 +888,7 @@ def test_a_c_command_out_of_rule_order_is_refused():
         )
 
 
-def test_own_c_moves_a_shims_library_into_the_cell(tmp_path, monkeypatch):
+def test_own_c_moves_a_shims_library_into_the_cell(tmp_path):
     """The OBJECT library leaves cmake; what it linked for usage requirements, what it was
     ordered after and its generated sources order the cell."""
     cml = tmp_path / "base/m/CMakeLists.txt"
@@ -898,13 +907,24 @@ def test_own_c_moves_a_shims_library_into_the_cell(tmp_path, monkeypatch):
         '    Linker::new(t)\n        .c_from_compile_db("m_shims", &["base/m/shim.c", '
         '"base/m/m_s.c"])\n        .link(k);\n}\n'
     )
-    srcs = {a: ["base/m/shim.c", "@build/base/m/m_s.c"] for a in g.ARCHES}
-    monkeypatch.setattr(g, "_cmakelists", lambda repo: [cml])
-    monkeypatch.setattr(
-        g,
-        "c_lib_for",
-        lambda t, repo=g.REPO: (srcs, {a: g.c_encode(C_CMD, CTMPL, "amd64") for a in g.ARCHES}),
-    )
+    for arch in g.ARCHES:
+        template = g.c_template_path(arch, tmp_path)
+        template.parent.mkdir(parents=True, exist_ok=True)
+        template.write_text(CTMPL.text(arch))
+        build = tmp_path / f"build-{arch}"
+        build.mkdir()
+        cmd = C_CMD.replace("build-amd64", f"build-{arch}")
+        generated = f"/tmp/vibeos/build-{arch}/base/m/m_s.c"
+        commands = [
+            {"file": "/tmp/vibeos/base/m/shim.c", "command": cmd},
+            {
+                "file": generated,
+                "command": cmd.replace("/tmp/vibeos/base/m/shim.c", generated).replace(
+                    "shim.c.obj", "m_s.c.obj"
+                ),
+            },
+        ]
+        (build / "compile_commands.json").write_text(json.dumps(commands))
     assert g.own_c(None, tmp_path) == ["m-cargo"]
     out = cml.read_text()
     assert "m_shims" not in out
@@ -1131,17 +1151,25 @@ def test_the_dll_variant_is_the_body_when_the_module_also_has_a_static_one(tmp_p
     assert g.cmake_facts(f, "m", [])["body_var"] == "m_rust"
 
 
-def test_only_an_export_that_is_an_import_thunk_counts_as_bound(tmp_path, monkeypatch):
+def test_only_an_export_that_is_an_import_thunk_counts_as_bound(tmp_path):
     """evr and mf export names their delay-import lib also carries (their own stubs, and
     forwarders to the DLL it imports), which is not a rebound export: only a thunk is."""
-    import pe_equiv
     from test_pe_equiv import make_pe
 
-    monkeypatch.setattr(pe_equiv.PE, "imports", lambda self: ["delay mfplat.dll!Alpha"])
+    def with_import(code):
+        data = bytearray(make_pe(["Alpha", "Beta"], code=code))
+        # Actual delay import, so the parser and thunk check both run.
+        struct.pack_into("<II", data, 0x40 + 24 + 112 + 13 * 8, 0x1100, 64)
+        struct.pack_into("<IIIIIIII", data, 0x500, 1, 0x1180, 0, 0, 0x11A0, 0, 0, 0)
+        data[0x580:0x58B] = b"mfplat.dll\0"
+        struct.pack_into("<QQ", data, 0x5A0, 0x11C0, 0)
+        data[0x5C0:0x5C8] = b"\0\0Alpha\0"
+        return data
+
     thunk = tmp_path / "thunk.dll"
-    thunk.write_bytes(make_pe(["Alpha", "Beta"], code=b"\xff\x25\0\0\0\0"))
+    thunk.write_bytes(with_import(b"\xff\x25\0\0\0\0"))
     real = tmp_path / "real.dll"
-    real.write_bytes(make_pe(["Alpha", "Beta"], code=b"\x55\x48\x89\xe5\xc3"))
+    real.write_bytes(with_import(b"\x55\x48\x89\xe5\xc3"))
     assert g._exports_bound_to_imports(thunk) == {"Alpha"}  # Beta is not imported
     assert g._exports_bound_to_imports(real) == set()
     # ARM64's import thunk opens with `adrp x16, ...`.
