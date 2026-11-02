@@ -602,17 +602,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **setupapi file-queue COPIES fail `ERROR_ACCESS_DENIED` on the live boot (open, found
-  2026-11-01, both the C and setupapi-rust).** In the modrun setupapi suite, the queued delete
-  and rename succeed in the same directory, but both copies raise `SPFILENOTIFY_COPYERROR`
-  err=5. The ReactOS arm of `do_file_copyW` (queue.c) extracts every file through
-  `GetTempFileNameW(GetTempPathW())`, and on the live CD boot `%TEMP%` does not exist: the
-  probe's first run failed to open a file there with `ERROR_PATH_NOT_FOUND`. Separately, the
-  COPYERROR notification for the second file names the FIRST file's target (`a2.txt` for
-  `b.txt`), in both builds. Not yet checked: whether an installed (non-live) system has the
-  same failure, and what device installs from the CD do instead. Repro:
-  `MODRUN_SUITES=setupapi`, then `./vibeos-cli smoke --arch amd64 --payload modrun`, and look
-  for the `copyerror` lines.
+- **setupapi file-queue copies failed on the live boot, and a NULL target name went to the
+  wrong file (FIXED 2026-11-01 in setupapi-rust; the C has all three bugs).** Measured with the
+  modrun setupapi probe: `%TEMP%` = `X:\reactos\TEMP` EXISTS on the x86 live boot, but `X:` is
+  the read-only `/MININT` CD, so creating any file there fails `ERROR_ACCESS_DENIED`. (The first
+  version of this entry said `%TEMP%` did not exist. That was an inference from an
+  `ERROR_PATH_NOT_FOUND`, and it was wrong.) The ReactOS arm of `do_file_copyW` staged every
+  copy through `GetTempFileNameW(GetTempPathW())`, so every queued copy failed; a `%TEMP%` on
+  another volume would also have broken its final `MoveFileExW`, which has no COPY_ALLOWED.
+  The fix stages beside the target, as Windows' setupapi does (`SET*.tmp` in the destination
+  directory), and deletes a staged file that is not moved into place. The same suite caught
+  two more bugs on arm64, whose RAM-disk `%TEMP%` is writable: a NULL `TargetFilename` was
+  never defaulted to the source name, and `concat_W` left the path unterminated, so the second
+  copy (`b.txt`) overwrote the FIRST op's target (`a2.txt`). The livecd environment was left
+  alone: a read-only system volume is the CD's nature, and setupapi was the component that
+  depended on writing there.
 - **arm64 kmtest: `MiIncrementPageTableReferences` counts a page table past 512 (open, found
   2026-11-01, one occurrence, recovered on retry).** A kernel Rust panic in the kmtest sweep:
   `assertion failed: new_val <= ntkrnl_sys::mm::PTE_PER_PAGE as u32` at
