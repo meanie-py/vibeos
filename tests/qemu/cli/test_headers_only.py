@@ -17,6 +17,7 @@ class FakeRun:
         self.classification, self.extra, self.stages = "", {}, []
         self.dir = Path("/tmp/headers-test")
         self.commands = []
+        self.finalize_hooks: list = []
 
     def add(self, stage):
         self.stages.append(stage)

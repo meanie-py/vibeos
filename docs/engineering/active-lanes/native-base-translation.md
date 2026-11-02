@@ -199,9 +199,16 @@ What the batch added to the shared crates and tools:
    **~20,900 non-blank lines in 237 TUs across 122 directories.** Most of the bulk is not
    ours: `dll/win32/wow64` (8,422, fex-arm) and `wow64cpu`, `bootvid` (~1,000,
    control-plane B), `shimgvw` (C++ lane), and the audio `backpln` bits. Ours, by size:
-   - **GUID data libraries:** `uuid`, `strmiids`, `dxguid` (~1,960 lines, all DEFINE_GUID).
-     Blocked on a tool gap: `port data` does not emit header `DEFINE_GUID`s (why cdrom's
-     `guid.c` stayed C). Teaching it to would retire these for $0.
+   - **GUID data libraries:** `uuid`, `strmiids`, `dxguid` (~1,960 lines, 1,841
+     DEFINE_GUIDs). **They stay C (decided 2026-11-01).** Under `INITGUID`, `guiddef.h`
+     defines each GUID `DECLSPEC_SELECTANY`, a COMDAT that every TU including the header
+     with INITGUID may also emit; the linker keeps one. Stable Rust has no weak or
+     selectany definition (the `linkage` attribute is nightly), so Rust copies would be
+     strong symbols and collide with every C or widl TU that still emits the same GUID.
+     The content is pure data with no logic to grade, and most of it is not ours anyway:
+     `dxguid` is Wine's (Julliard/Gouget), `uuid` is mostly widl output from the IDL list
+     in its CMakeLists, and `strmiids`' `evr.c` is Wine's. Teaching `port data` to emit
+     header GUIDs would buy nothing while selectany can't be expressed.
    - **The CRT's own residue:** `crt/math` (43 TUs incl. `arm64/`), `crt/printf`,
      `crt/misc`, `crt/except/amd64`, `crtheap`, `vcstartup`, `gcc-compat`. This is the
      msvcrt lane's, i.e. ours; read the CRT rows in `rust-port-status.md` before
@@ -212,6 +219,60 @@ What the batch added to the shared crates and tools:
      `dmilib`, `wdfdriverentry`, `esent`, `wing32`, `skiplist`, and a few win32ss
      stragglers. One `rustconv port` batch, a few dollars on Haiku.
    Re-measure before starting; the script is in this commit's message.
+9. **Batch J: the small native tail is Rust (2026-11-01, Haiku, $0.13 for 129 calls).**
+   19 modules through `rustconv port`: epsapi, scrnsave, streamci, batt, shimlib,
+   aux_klib, dxapi, acledit, udmihelp, `sdk/lib/nt`, tdilib, ksuser, devcpux, sfc, sfc_os,
+   dmilib, wdfdriverentry, esent, wing32. The 8 PE modules among them (streamci, dxapi,
+   acledit, ksuser, devcpux, sfc, sfc_os, wing32) are cargo-linked, PE-EQUIVALENT to the
+   cmake build on all three arches. Hand fixes worth knowing, all banked with `port hand`:
+   - **An ntoskrnl DATA export goes through its `__imp_` slot.** aux_klib's
+     `KiBugCheckData` came through the island as a plain `extern static`, asking the link
+     for a symbol no driver defines (wdf01000/wdfldr failed). The import is spelled like
+     bootvid's `KeLoaderBlock`: `link_name = "_imp__X"` on i386, `"__imp_X"` elsewhere.
+   - **A spec that pre-decorates its names** (`dxapi.spec`'s `_DxApi@20`) made
+     `cohab_stub` anchor `__DxApi@20@20` on i386 and the i386 spelling on the 64-bit
+     arches. `cohab_stub._c_name` now strips it the way spec2def does.
+   - **`port flip` drops a module's C target even when C stays** (shimlib's varargs shim,
+     batt's and esent's `rust_cohab_stub.c`). `port flip` now repoints the cargo cells
+     that named the old C target to BOTH `engine:c:T` and the body crate when C sources
+     remain (`_repoint_cargo_cells(.., keeps_c)`). Still owed: it does not reshape a
+     module that is itself a C-body cargo cell; batt and esent were done by hand
+     (`<m>-cargo/build.rs`: `.rust_staticlib("<m>-rust")` plus
+     `c_from_compile_db("<m>_shims", [".../rust_cohab_stub.c"])`).
+   - **`scan_bitwise_not_bool` caught a shipped-to-be bug:** devcpux's `AddFeature` came
+     back as `if !*bFirst != 0`, Rust's bitwise NOT of a `BOOL`, true for every value but
+     -1, so every CPU feature got a leading separator. Now `*bFirst == 0`.
+   - The 9 static libraries are baselined in `scan_cmake_linked_rust`, like tdihelpers:
+     `cargo_cell_gen` refuses a static library (no PE to link).
+   - esent's 12 `Jet*` exports lacked `#[no_mangle]`; scrnsave's entry is `wWinMain`;
+     dxapi's `DxApi` calls cdecl handlers through a stdcall PFN, as the C does (comment).
+   **Deferred:** user-mode `lsalib`. Its Rust twin is ntkrnl-sys-bound and needs a crate
+   feature design for a user-mode build. conutils (variadic shims only) and skiplist (a test
+   exe) are not translation targets.
+10. **CRT residue triage (2026-11-01, measured, not guessed).** Item 8 counted ~120
+   compiled TUs under `sdk/lib/crt`. What WINS a link is far less. Method: per arch,
+   `llvm-nm --defined-only -g` each C archive against the Rust archives linked ahead of
+   it, then intersect the C-only names with the PE's export table (`llvm-readobj
+   --coff-exports`); the archives each PE links come from `build.ninja` and the
+   `*-cargo/build.rs` link orders.
+   - **crtmath** is linked only by ucrtbase.dll now (msvcrt takes the cohab). Of its
+     exports, only `_cabs` is served by C on any arch; the rest are shadowed by
+     `crt_shared_cargo`/`msvcrt_shared`.
+   - **libcntpr** (the kernel CRT; no PE links it through cmake, but 22 cargo cells name
+     `engine:c:libcntpr` AHEAD of `cntpr_rust`) defines 30 (arm64) / 42 (amd64) / 98
+     (i386) names. Overlap with Rust: only `atol` and `exp2f`, and there the C wins by
+     order. The rest has no Rust twin:
+     - **ours, to translate:** `_mbstrlen`; `_invoke_matherr`/`__setusermatherr`;
+       winesup's `_atoldbl`/`_internal_handle_float`/`_LIBCNT_locinfo`; the `va_list`
+       printf wrappers (`_vsnprintf`, `vsprintf`, `vprintf`, …); amd64
+       `except/amd64/ehandler.c` (`__C_specific_handler`, `_local_unwind`); i386
+       `math/i386/libm_sse2.c` (`__libm_sse2_*`, ReactOS MIT, SSE2 intrinsics).
+     - **stays C:** the variadic `sprintf`/`_snprintf`/`sscanf`/… (stable Rust cannot
+       define a C variadic); x87 `__CI*` (operands on the x87 stack, asm-shaped); the
+       asm (`chkstk`, `seh.s`, i386 `all*`/`ftol*`); `wine_wctype_table` (Wine's data).
+   - **Also stays C:** `memcmp` (AGENTS.md: LLVM folds a Rust byte loop back into
+     `memcmp`); `vcstartup` (C++ startup objects); `getopt` (libtiff only); `dbgrpt`
+     (C++ lane, and no PE links it now).
 
 ## Not ours: skip these
 

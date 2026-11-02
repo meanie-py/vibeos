@@ -61,6 +61,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "acledit-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "acledit-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "aclui-rust"
 version = "0.1.0"
 dependencies = [
@@ -373,6 +392,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aux_klib-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "avicap32-cargo"
 version = "0.1.0"
 dependencies = [
@@ -409,6 +438,17 @@ version = "0.1.0"
 dependencies = [
  "panic-lean",
  "reactos-link",
+]
+
+[[package]]
+name = "batt-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1517,6 +1557,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "devcpux-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "devcpux-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "devmgmt-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1591,6 +1650,17 @@ dependencies = [
 
 [[package]]
 name = "dllhost-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "dmilib-rust"
 version = "0.1.0"
 dependencies = [
  "conutils-h",
@@ -1685,6 +1755,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "dxapi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "dxapi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "dxdiag-cargo"
 version = "0.1.0"
 dependencies = [
@@ -1754,11 +1842,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "epsapi-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "esent-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-common",
  "reactos-link",
+]
+
+[[package]]
+name = "esent-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -3120,6 +3230,25 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "ksuser-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "ksuser-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -4511,6 +4640,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "nt-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "ntdll-cargo"
 version = "0.1.0"
 dependencies = [
@@ -5848,6 +5988,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e1cf6437eb19a8f4a6cc0f7dca544973b0b78843adbfeb3683d1a94a0024a294"
 
 [[package]]
+name = "scrnsave-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "scsidisk-rust"
 version = "0.1.0"
 
@@ -6088,6 +6239,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "sfc-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "sfc-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "sfc_os-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "sfc_os-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6126,6 +6315,18 @@ dependencies = [
  "va-slots-rust",
  "win32macros-rust",
  "winedebug-rust",
+]
+
+[[package]]
+name = "shimlib-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -6519,6 +6720,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "streamci-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "streamci-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "strsafe-difftest"
 version = "0.1.0"
 dependencies = [
@@ -6792,6 +7012,17 @@ version = "0.1.0"
 dependencies = [
  "ddk-macros-rust",
  "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "tdilib-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
@@ -7077,6 +7308,17 @@ dependencies = [
  "libm",
  "musl-math",
  "varargs-rust",
+]
+
+[[package]]
+name = "udmihelp-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -7591,6 +7833,16 @@ name = "wcwidth-rust"
 version = "0.1.0"
 
 [[package]]
+name = "wdfdriverentry-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "wdfldr-cargo"
 version = "0.1.0"
 dependencies = [
@@ -7861,6 +8113,25 @@ dependencies = [
 
 [[package]]
 name = "winfax-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "wing32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "wing32-rust"
 version = "0.1.0"
 dependencies = [
  "conutils-h",
