@@ -146,10 +146,23 @@ def _artifact_request(root, payload):
             session = _ArtifactSession(root)
             _sessions[key] = session
         try:
-            return session.request(payload)
-        except (OSError, ValueError):
-            session.close()
-            del _sessions[key]
+            response = json.loads(session.request(payload))
+            if not isinstance(response, dict) or set(response) not in ({"ok"}, {"error"}):
+                raise NativeError("native artifact response must contain exactly ok or error")
+            if "error" in response and (
+                not isinstance(response["error"], dict)
+                or not isinstance(response["error"].get("message"), str)
+            ):
+                raise NativeError("native artifact response has an invalid error envelope")
+            return response
+        except BaseException:
+            # An interrupted read may leave a complete earlier response queued.
+            # Reusing that stream could attribute it to the next request.
+            _sessions.pop(key, None)
+            try:
+                session.close()
+            except (OSError, ValueError):
+                pass
             raise
 
 
@@ -157,7 +170,12 @@ def call(op: str, kwargs: dict, root: Path = REPO) -> Any:
     tool = REPO / "tools/build-infra"
     request = json.dumps({"op": op, "kwargs": _json(kwargs)}, ensure_ascii=False)
     if op.startswith("artifact_"):
-        response = json.loads(_artifact_request(root, request))
+        try:
+            response = _artifact_request(root, request)
+        except (OSError, ValueError) as exc:
+            if isinstance(exc, NativeError):
+                raise
+            raise NativeError(f"native build {op}: invalid response: {exc}") from exc
         if not isinstance(response, dict):
             raise NativeError(f"native build {op}: response must be an object")
         if "error" in response:

@@ -534,3 +534,81 @@ def test_native_transport_refuses_source_changes_during_a_request(fixture, tmp_p
     finally:
         release.touch()
         bridge._close_sessions()
+
+
+def test_native_transport_cancellation_cannot_leak_a_response_into_the_next_request(
+    fixture, tmp_path
+):
+    import shlex
+    import signal
+    import threading
+    import time
+    from pathlib import Path
+
+    from tools import build_infra_compat as bridge
+
+    bridge._close_sessions()
+    started, release = tmp_path / "started", tmp_path / "release"
+    cargo = tmp_path / "cargo-controlled"
+    actual = Path.home() / ".rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/cargo"
+    cargo.write_text(
+        "#!/bin/sh\n"
+        f"touch {shlex.quote(str(started))}\n"
+        f"while [ ! -e {shlex.quote(str(release))} ]; do sleep 0.01; done\n"
+        f'exec {shlex.quote(str(actual))} "$@"\n'
+    )
+    cargo.chmod(0o755)
+
+    def interrupt():
+        deadline = time.monotonic() + 20
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if started.exists():
+            os.kill(os.getpid(), signal.SIGINT)
+        time.sleep(0.1)
+        release.touch()
+
+    controller = threading.Thread(target=interrupt)
+    controller.start()
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            bridge.call(
+                "artifact_inputs_discover",
+                {"repo_root": fixture, "body": "body", "workspace": fixture, "cargo": str(cargo)},
+            )
+        assert not bridge._sessions
+        assert (
+            bridge.call("artifact_inputs_canonical", {"value": "next response"})
+            == '"next response"'
+        )
+    finally:
+        release.touch()
+        controller.join(timeout=20)
+        bridge._close_sessions()
+
+
+@pytest.mark.parametrize(
+    "payload", ["malformed", '{"unrelated":1}', '{"error":null}', '{"ok":1,"error":{}}']
+)
+def test_native_transport_discards_malformed_response_streams(tmp_path, monkeypatch, payload):
+    import sys
+
+    from tools import build_infra_compat as bridge
+
+    bridge._close_sessions()
+    (tmp_path / "tools").mkdir()
+    executable = tmp_path / "tools/build-infra"
+    executable.write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        f"for line in sys.stdin:\n    print({payload!r}, flush=True)\n"
+    )
+    executable.chmod(0o755)
+    monkeypatch.setattr(bridge, "REPO", tmp_path)
+    try:
+        with pytest.raises(bridge.NativeError, match="response"):
+            bridge.call(
+                "artifact_inputs_canonical", {"value": "must not be accepted"}, root=tmp_path
+            )
+        assert not bridge._sessions
+    finally:
+        bridge._close_sessions()
