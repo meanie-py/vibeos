@@ -2740,15 +2740,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     serial. That was false. It was read from a stale `qemu/arm64_smoke_live.log` dated
     2026-08-06. In a worktree, pytest's serial lives under `/tmp/pytest-of-*/`. The kmtest
     and stale-payload inferences above it were refuted as well.
-- **shell32's DllRegisterServer returns 0x80070002 (ERROR_FILE_NOT_FOUND) on the livecd, all
-  three arches. UNOWNED** (2026-09-23). Measured by `tools/payloads/regdiff`, identically for
-  the C++ build (`bf5c0d1573f`) and the Rust one, so it predates retiring shell32.cpp. Every
-  object-map script and the typelib registered (the dump holds `HKCR\TypeLib\{50A7E9B0-…}`),
-  and registration stops at the first failure, so the failing step is one of the three extra
-  scripts (IDR_FOLDEROPTIONS / IDR_EXPLORER / IDR_SYSTEMFILEASSOC) or
-  `SHELL_RegisterShellFolders` — the latter is the likelier, on a read-only system drive. No
-  boot notices: the media's hives are prebuilt. Narrow it by printing the HRESULT after each
-  step of `DllRegisterServer` in `shell32/registration.rs` under the regdiff payload.
+- **shell32's DllRegisterServer "returned 0x80070002 on the livecd". FIXED (2026-11-01): it
+  never did; the harness made it fail.** `tools/payloads/regdiff` points HKLM at an EMPTY
+  sandbox key, and `SHELL_RegisterShellFolders` reads through it: userenv's profile lookup
+  wants `HKLM\...\ProfileList` (0x80070002), and once that was seeded,
+  `CreateEnvironmentBlock` wanted the Session Manager environment (0x80070006, a stale last
+  error). regdiff now seeds both, plus CurrentVersion's values, before registering. Measured
+  on i386, amd64 and arm64: the C++ shell32 (`bf5c0d1573f`, no shell32 change) and the Rust one both return
+  S_OK, and their registrations are identical (881 lines; unregister 218). The payload also
+  probes every folder `SHELL_RegisterShellFolders` registers, against the real registry and
+  inside the sandbox; the only failures are My Music/Videos/Pictures, which do not exist on
+  the CD (the probe passes no CREATE). One true but unexercised finding:
+  `ExpandEnvironmentStringsForUserW((HANDLE)-1, ...)` fails ERROR_INVALID_HANDLE, because
+  `CreateEnvironmentBlock` treats SHGetFolderPath's Default User token as a real token. No
+  shell32 path on this boot reaches it, so it is recorded here, not patched.
 - **amd64 payload gate misses a launch marker that IS in its own serial log. UNOWNED**
   (2026-09-23). `smoke --arch amd64 --payload regdiff` failed twice with "'[REGDIFF] done'
   never appeared" after draining its full budget, while `payload/amd64-uefi_serial.log` from
