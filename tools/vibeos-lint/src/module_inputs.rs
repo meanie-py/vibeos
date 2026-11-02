@@ -68,8 +68,14 @@ fn commands(text: &str) -> Vec<(String, String)> {
     out
 }
 fn expand(value: &str, vars: &BTreeMap<String, Vec<String>>) -> Vec<String> {
+    expand_within(value, vars, 8)
+}
+/// `expand` with one budget for the whole expansion: a multi-item list used to restart the
+/// count on every recursion, so a self-referencing `set(IDL_FLAGS ${IDL_FLAGS} -Oicf)` (msi,
+/// rpcrt4) recursed until the stack overflowed and every `vibeos-cli check` aborted.
+fn expand_within(value: &str, vars: &BTreeMap<String, Vec<String>>, budget: usize) -> Vec<String> {
     let mut value = value.to_owned();
-    for _ in 0..8 {
+    for left in (0..budget).rev() {
         let Some(m) = re(r"\$\{(\w+)\}").captures(&value) else {
             return if value.trim_matches('"').is_empty() {
                 vec![]
@@ -87,7 +93,7 @@ fn expand(value: &str, vars: &BTreeMap<String, Vec<String>>) -> Vec<String> {
         } else {
             return repl
                 .iter()
-                .flat_map(|r| expand(&format!("{head}{r}{tail}"), vars))
+                .flat_map(|r| expand_within(&format!("{head}{r}{tail}"), vars, left))
                 .collect();
         }
     }
@@ -496,5 +502,21 @@ impl ModuleModel {
             );
         }
         Self { modules }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_self_referencing_list_variable_expands_without_overflowing() {
+        // msi: set(IDL_FLAGS ${IDL_FLAGS} --prefix-server=s_)
+        let vars = BTreeMap::from([(
+            "IDL_FLAGS".to_owned(),
+            vec!["${IDL_FLAGS}".to_owned(), "--prefix-server=s_".to_owned()],
+        )]);
+        let out = expand("${IDL_FLAGS}", &vars);
+        assert!(out.contains(&"--prefix-server=s_".to_owned()));
     }
 }
