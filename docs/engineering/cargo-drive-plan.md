@@ -438,6 +438,26 @@ extends it from the boot spine to every fully-Rust module.
      booting that `livecd.img` (run 20261031-231043-d6i0arl5).
 6. **Modules that still have C** compile it from cargo, so cmake's last job is the C-only
    tail, then nothing.
+   - **RESUME HERE (parked 2026-11-01 for the XFS migration).** The tail on amd64: about 434
+     PE modules cmake still makes (about 3200 C TUs, 52 with C++), next to about 390 cells, plus
+     about 200 data products (117 .nls, 44 .inf, 27 .lnk, hives, boot blobs). Three branches, none
+     converted yet:
+     - `ctail-bodyless` (fb101198673, vibeos-gicv3): a module with no Rust body becomes a cell
+       that links only its compiled C. 191 of the 270 "no body crate" modules then model.
+       Next: `--convert` the pilot (clusapi dciman32 esent batt cryptdlg dxapi jscript desk —
+       desk is flipped to Rust by some other route, so it should FAIL equivalence: a test of
+       the check) on all 3 arches.
+     - `ctail-lookup` (86123561c5b, vibeos-ctail-lookup): CXX link edges, vendor source dirs via
+       cmake_install.cmake, the body variant the DLL really links, export-thunk detection by
+       code. 17 more model (certmgr certutil cleanmgr ctfmon drwtsn32 evr fltmc mf mmc_new
+       mmcshext mspaint psapi rapps sndrec32 sol spider tracert); not yet re-run on 3 arches.
+     - `ctail-stmts` (a694cca5efe, vibeos-ctail-stmts): set_subsystem/set_entrypoint,
+       --require-defined, kmt_enable_native_seh, dbghelp's shares. Still refused: link_strict
+       and link_msvcrt_rust_cohab (msvcrt, ucrtbase), and the d3dcompiler/d3dx families, which
+       are instances of a shared CMake function and need a one-rewrite, many-crates scheme.
+     - Merge the three, re-model everything on 3 arches, then convert in waves. Gaps after
+       that: C++ (reactos-link has no C++ rule), the wdmdriver/kmdfdriver/nativedll kinds, and
+       kmtests (needs a `--kmtests` build for link edges).
    - **6a, done 2026-10-17: the cells' own C.** cmake's C rule is `<CC> --target=<t>
      <DEFINES> <INCLUDES> <FLAGS> -o <obj> -c <src>` with `<DEFINES>` sorted, so it gets the
      rung-4 treatment: `reactos-link/cflags/c.<arch>.flags` (compiler, standard include

@@ -956,14 +956,6 @@ pub unsafe extern "system" fn CFontsFolder_CreateInstance(
 extern "system" {
     fn SHFree(memory: LPVOID);
     fn ILGetNext(pidl: PCUIDLIST_RELATIVE) -> LPITEMIDLIST;
-    #[link_name = "Shell32RustCoCreateInitSF"]
-    fn SHELL32_CoCreateInitSF(
-        root: LPCITEMIDLIST,
-        clsid: *const GUID,
-        csidl: INT,
-        riid: REFIID,
-        out: *mut *mut core::ffi::c_void,
-    ) -> HRESULT;
 }
 
 extern "C" {
@@ -976,6 +968,8 @@ extern "C" {
 }
 
 use crate::shellcom::*;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::shell32::dllmain::Shell32RustCoCreateInitSF as SHELL32_CoCreateInitSF;
 // The crate's own functions: the definition is the declaration.
 use crate::wine::pidl::ILClone;
 // One declaration per external symbol: island.rs.

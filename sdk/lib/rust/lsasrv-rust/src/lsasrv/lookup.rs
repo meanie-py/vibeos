@@ -2597,7 +2597,10 @@ pub unsafe extern "C" fn LsapLookupSids(
     {
         TRACE!(b"done Status: %lx  Mapped: %lu\n\0".as_ptr() as *const i8, Status, Mapped);
 
-        if !NT_SUCCESS(Status) {
+        // Upstream 006cf40b7e3: a pass that maps none or only some of the SIDs is a partial
+        // result, not a failure. Before it, the last pass's STATUS_NONE_MAPPED freed every
+        // buffer and the caller got no names at all, even for the SIDs earlier passes mapped.
+        if !NT_SUCCESS(Status) && Status != STATUS_NONE_MAPPED && Status != STATUS_SOME_NOT_MAPPED {
             if !DomainsBuffer.is_null() {
                 if !(*DomainsBuffer).Domains.is_null() {
                     MIDL_user_free((*DomainsBuffer).Domains as *mut core::ffi::c_void);
@@ -2608,6 +2611,31 @@ pub unsafe extern "C" fn LsapLookupSids(
                 MIDL_user_free(NamesBuffer as *mut core::ffi::c_void);
             }
         } else {
+            // ...and a SID nothing could name comes back as its string form (S-1-5-...).
+            for i in 0..(*SidEnumBuffer).Entries as usize {
+                let name = NamesBuffer.add(i);
+                if (*name).Use != SidTypeUnknown || !(*name).Name.Buffer.is_null() {
+                    continue;
+                }
+                let mut SidString: UNICODE_STRING = core::mem::zeroed();
+                if !NT_SUCCESS(RtlConvertSidToUnicodeString(
+                    &mut SidString,
+                    (*(*SidEnumBuffer).SidInfo.add(i)).Sid as PSID,
+                    1,
+                )) {
+                    continue;
+                }
+                let buf = MIDL_user_allocate(SidString.Length as usize + core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+                if !buf.is_null() {
+                    core::ptr::copy_nonoverlapping(SidString.Buffer as *const u8, buf as *mut u8, SidString.Length as usize);
+                    *buf.add(SidString.Length as usize / core::mem::size_of::<WCHAR>()) = 0;
+                    (*name).Name.Buffer = buf as _;
+                    (*name).Name.Length = SidString.Length;
+                    (*name).Name.MaximumLength = SidString.Length + core::mem::size_of::<WCHAR>() as u16;
+                }
+                RtlFreeUnicodeString(&mut SidString);
+            }
+
             *ReferencedDomains = DomainsBuffer;
             (*TranslatedNames).Entries = (*SidEnumBuffer).Entries;
             (*TranslatedNames).Names = NamesBuffer;

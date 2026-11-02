@@ -163,8 +163,6 @@ extern "C" {
 // Deterministic COM scaffold for CControlPanelFolder; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -173,7 +171,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -777,6 +775,11 @@ extern "C" {
 }
 
 use crate::island::{GetVersion, CLSID_ShellSearchExt};
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::shell32::shlfolder::SH32_GetDetailsOfPKeyAsVariant_RustBridge as SH32_GetDetailsOfPKeyAsVariant;
 // The crate's own functions: the definition is the declaration.
 use crate::shell32::cidldataobj_free::IDataObject_Constructor;
 use crate::wine::pidl::ILClone;
@@ -866,8 +869,6 @@ extern "system" {
     // GetUIObjectOf(): CCPLExtractIcon_CreateInstance(this, apidl[0], riid, &pObj) (CControlPanelFolder.cpp:486, def:150)
     fn CCPLExtractIcon_CreateInstance_RustBridge(psf: *mut IShellFolder, pidl: LPCITEMIDLIST, riid: REFIID, ppvOut: *mut LPVOID) -> HRESULT;
     // GetDetailsEx()/GetDetailsOf column value bridge — reuse drives' C++ bridge (drives_folder.rs:1412)
-    #[link_name = "SH32_GetDetailsOfPKeyAsVariant_RustBridge"]
-    fn SH32_GetDetailsOfPKeyAsVariant(psf: *mut IShellFolder2, pidl: PCUITEMID_CHILD, pscid: *const SHCOLUMNID, pVar: *mut VARIANT, UseFsColMap: BOOL) -> HRESULT;
 }
 
 pub unsafe fn IsRegItem_body(pidl: LPCITEMIDLIST) -> *mut CLSID {
@@ -1194,7 +1195,7 @@ pub unsafe fn CControlPanelFolder_GetDetailsEx_body(this: *mut CControlPanelFold
         let folder = (*this).m_regFolder;
         return ((*(*folder).lpVtbl).GetDetailsEx)(folder, pidl, pscid, pv);
     }
-    return SH32_GetDetailsOfPKeyAsVariant(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), pidl, pscid, pv, FALSE);
+    return SH32_GetDetailsOfPKeyAsVariant((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), pidl, pscid, pv, FALSE);
 }
 
 pub unsafe fn CControlPanelFolder_GetDetailsOf_body(this: *mut CControlPanelFolder, pidl: PCUITEMID_CHILD, iColumn: UINT, psd: *mut SHELLDETAILS) -> HRESULT {

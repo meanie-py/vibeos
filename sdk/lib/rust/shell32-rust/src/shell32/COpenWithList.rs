@@ -1,4 +1,13 @@
 use crate::prelude::*;
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::memset;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+use crate::island::LoadImageW as LoadImage;
+use crate::island::RegCreateKeyExW;
+use crate::shell32::dllmain::Shell32RustGetCommandStringImpl as SHELL_GetCommandStringImpl;
+use crate::shell32::dllmain::Shell32RustMapContextMenuVerbToCmdId as SHELL_MapContextMenuVerbToCmdId;
 // The crate's own functions: the definition is the declaration.
 use crate::shell32::iconcache::ExtractIconExW;
 use crate::wine::pidl::ILCombine;
@@ -31,8 +40,6 @@ use crate::open_with_menu_support::{
 // Deterministic COM scaffold for COpenWithList; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -41,7 +48,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -241,22 +248,17 @@ pub struct SHELLEXECUTEINFOW {
     pub dwHotKey: DWORD, pub icon_or_monitor: HANDLE, pub hProcess: HANDLE,
 }
 
-#[repr(C)]
-pub struct CMVERBMAP { pub Verb: LPCSTR, pub CmdId: WORD }
+pub use crate::island::CMVERBMAP;
 pub static mut g_VerbMap: [CMVERBMAP; 2] = [
     CMVERBMAP { Verb: b"openas\0".as_ptr() as LPCSTR, CmdId: 0 as WORD },
     CMVERBMAP { Verb: core::ptr::null(), CmdId: 0 as WORD },
 ];
 
 extern "system" {
-    #[link_name = "LoadImageW"] fn LoadImage(instance: HINSTANCE, name: LPCWSTR, kind: UINT, width: INT, height: INT, flags: UINT) -> HANDLE;
-    #[link_name = "RegCreateKeyExW"] fn RegCreateKeyExW(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn GetLastError() -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
-    #[link_name = "Shell32RustMapContextMenuVerbToCmdId"] fn SHELL_MapContextMenuVerbToCmdId(info: LPCMINVOKECOMMANDINFO, map: *const CMVERBMAP) -> INT;
-    #[link_name = "Shell32RustGetCommandStringImpl"] fn SHELL_GetCommandStringImpl(command: SIZE_T, flags: UINT, buffer: LPSTR, capacity: UINT, map: *const CMVERBMAP) -> HRESULT;
 }
 
 extern "C" {
@@ -336,7 +338,6 @@ impl<T> Drop for CComHeapPtr<T> {
 }
 
 extern "C" {
-    fn memset(dst: *mut core::ffi::c_void, value: INT, bytes: usize) -> *mut core::ffi::c_void;
 }
 #[inline]
 unsafe fn CopyMemory<D, S, N: CppComSize>(

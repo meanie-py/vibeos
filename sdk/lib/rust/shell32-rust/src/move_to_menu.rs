@@ -314,8 +314,6 @@ extern "C" {
 // Deterministic COM scaffold for CMoveToMenu; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -324,7 +322,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -610,11 +608,7 @@ pub struct BIND_OPTS {
     pub dwTickCountDeadline: DWORD,
 }
 
-#[repr(C)]
-pub struct CIDA {
-    pub cidl: UINT,
-    pub aoffset: [UINT; 1],
-}
+pub use crate::island::CIDA;
 
 #[repr(C)]
 pub struct DVTARGETDEVICE {
@@ -879,6 +873,15 @@ pub static CPP_COM_WSTR_75DC0A9E9650: [WCHAR; 5] = [0x0020, 0x002E, 0x002E, 0x00
 pub static CPP_COM_WSTR_96A296D224F2: [WCHAR; 1] = [0x0000];
 
 use core::ffi::c_void;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::shell32::shldataobject::CDataObjectHIDA_CreateCIDA_RustBridge as CDataObjectHIDA_CreateCIDA;
+use crate::shell32::shldataobject::CDataObjectHIDA_DestroyCIDA_RustBridge as CDataObjectHIDA_DestroyCIDA;
+use crate::shell32::shldataobject::SHELL_CIDA_ILCloneFull_RustBridge as SHELL_CIDA_ILCloneFull;
+use crate::shell32::shldataobject::SHELL_DataObject_ILCloneFullItem_RustBridge as SHELL_DataObject_ILCloneFullItem;
+use crate::shell32::utils::SHGetNameAndFlagsW_RustBridge as SHGetNameAndFlagsW;
 // The crate's own functions: the definition is the declaration.
 use crate::wine::pidl::ILClone;
 use crate::wine::pidl::SHGetPathFromIDListW;
@@ -924,7 +927,7 @@ pub unsafe fn CMoveToMenu_DoRealFileOp_body(this: *mut CMoveToMenu, pCIDA: *cons
     let mut n = 0;
     while n < (*pCIDA).cidl {
         let pidlCombine = CComHeapPtr::<ITEMIDLIST>::new(
-            SHELL_CIDA_ILCloneFull(pCIDA, n)
+            SHELL_CIDA_ILCloneFull((pCIDA).cast(), n)
         );
         if pidlCombine.is_null() {
             return E_FAIL;
@@ -982,7 +985,7 @@ pub unsafe fn CMoveToMenu_DoRealFileOp_body(this: *mut CMoveToMenu, pCIDA: *cons
 }
 
 pub unsafe fn DoGetFileTitle_body(pCIDA: *const CIDA, strTitle: &mut CStringW) -> HRESULT {
-    let pidlCombine: *mut ITEMIDLIST = SHELL_CIDA_ILCloneFull(pCIDA, 0);
+    let pidlCombine: *mut ITEMIDLIST = SHELL_CIDA_ILCloneFull((pCIDA).cast(), 0);
     if pidlCombine.is_null() {
         return E_OUTOFMEMORY;
     }
@@ -1211,7 +1214,7 @@ pub unsafe fn CMoveToMenu_Initialize_body(this: *mut CMoveToMenu, pidlFolder: PC
         hr = SHILClone(pidlFolder, &mut pidlClone);
         pidlFolder = pidlClone;
     } else {
-        pidlFolder = SHELL_DataObject_ILCloneFullItem(pdtobj, 0);
+        pidlFolder = SHELL_DataObject_ILCloneFullItem((pdtobj).cast(), 0);
         if !pidlFolder.is_null() {
             ILRemoveLastID(pidlFolder);
             hr = S_OK;
@@ -1300,14 +1303,8 @@ extern "system" {
 // ARCH-SPLIT (explorer-sys/src/server.rs precedent): on i386 Get/SetWindowLongPtrW
 // are C macros over Get/SetWindowLongW — the *Ptr exports exist only on 64-bit
 // (user32.spec:400-401,704-705).
-#[cfg(target_arch = "x86")]
-extern "system" {
-}
 #[cfg(not(target_arch = "x86"))]
-extern "system" {
-    fn GetWindowLongPtrW(hWnd: HWND, nIndex: INT) -> LONG_PTR;
-    fn SetWindowLongPtrW(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR;
-}
+use crate::island::{GetWindowLongPtrW, SetWindowLongPtrW};
 #[inline]
 unsafe fn GetWindowLongPtr(hwnd: HWND, index: INT) -> LONG_PTR {
     #[cfg(target_arch = "x86")]
@@ -1334,27 +1331,17 @@ extern "C" {
 extern "system" {
     // EXISTING bridges (created by the CFSFolder/CDesktopFolder landings —
     // spellings copied from desktop_folder.rs:2334-2338):
-    #[link_name = "SHGetNameAndFlagsW_RustBridge"]
-    fn SHGetNameAndFlagsW(pidl: LPCITEMIDLIST, flags: DWORD, text: LPWSTR, cch: UINT, attributes: *mut DWORD) -> HRESULT;
-    #[link_name = "SHELL_DataObject_ILCloneFullItem_RustBridge"]
-    fn SHELL_DataObject_ILCloneFullItem(pDO: *mut IDataObject, Index: UINT) -> PIDLIST_ABSOLUTE;
     // NEW — must be created C++-side (integration TODO). Expected shims, next to
     // SHELL_DataObject_ILCloneFullItem_RustBridge in shldataobject.cpp:
     //   extern "C" PIDLIST_ABSOLUTE WINAPI
     //   SHELL_CIDA_ILCloneFull_RustBridge(const CIDA *pCIDA, UINT Index)
     //       { return SHELL_CIDA_ILCloneFull(pCIDA, Index); }
-    #[link_name = "SHELL_CIDA_ILCloneFull_RustBridge"]
-    fn SHELL_CIDA_ILCloneFull(pCIDA: *const CIDA, Index: UINT) -> PIDLIST_ABSOLUTE;
     //   extern "C" HRESULT WINAPI
     //   CDataObjectHIDA_CreateCIDA_RustBridge(IDataObject *pDataObject, CIDA **ppcida, STGMEDIUM *pmedium)
     //       { return CDataObjectHIDA::CreateCIDA(pDataObject, ppcida, *pmedium); }
-    #[link_name = "CDataObjectHIDA_CreateCIDA_RustBridge"]
-    fn CDataObjectHIDA_CreateCIDA(pDataObject: *mut IDataObject, ppcida: *mut *mut CIDA, pmedium: *mut STGMEDIUM) -> HRESULT;
     //   extern "C" void WINAPI
     //   CDataObjectHIDA_DestroyCIDA_RustBridge(CIDA *pcida, STGMEDIUM *pmedium)
     //       { CDataObjectHIDA::DestroyCIDA(pcida, *pmedium); }
-    #[link_name = "CDataObjectHIDA_DestroyCIDA_RustBridge"]
-    fn CDataObjectHIDA_DestroyCIDA(pcida: *mut CIDA, pmedium: *mut STGMEDIUM);
 }
 
 // shellutils.h:462-466 template SHILClone — header-inline, no export; local impl
@@ -1376,7 +1363,7 @@ impl CDataObjectHIDA {
     pub unsafe fn new(pDataObject: *mut IDataObject) -> Self {
         let mut medium: STGMEDIUM = core::mem::zeroed();
         let mut cida: *mut CIDA = core::ptr::null_mut();
-        let hr = CDataObjectHIDA_CreateCIDA(pDataObject, &mut cida, &mut medium);
+        let hr = CDataObjectHIDA_CreateCIDA((pDataObject).cast(), (&raw mut cida).cast(), &mut medium);
         Self { m_medium: medium, m_cida: cida, m_hr: hr }
     }
     pub fn hr(&self) -> HRESULT { self.m_hr }
@@ -1384,7 +1371,7 @@ impl CDataObjectHIDA {
 }
 impl Drop for CDataObjectHIDA {
     fn drop(&mut self) {
-        unsafe { CDataObjectHIDA_DestroyCIDA(self.m_cida, core::ptr::addr_of_mut!(self.m_medium)); }
+        unsafe { CDataObjectHIDA_DestroyCIDA((self.m_cida).cast(), core::ptr::addr_of_mut!(self.m_medium)); }
     }
 }
 

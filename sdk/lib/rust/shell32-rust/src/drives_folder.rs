@@ -439,8 +439,6 @@ extern "C" {
 // Deterministic COM scaffold for CDrivesFolder; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -449,7 +447,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -1286,6 +1284,22 @@ pub static CPP_COM_WSTR_DFA857FD38EE: [WCHAR; 16] = [0x0025, 0x0063, 0x003A, 0x0
 pub static CPP_COM_WSTR_F3A549CDECCE: [WCHAR; 7] = [0x0020, 0x0028, 0x0025, 0x0063, 0x003A, 0x0029, 0x0000];
 
 use crate::island::{GetVersion, CLSID_ShellSearchExt};
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::GetDriveTypeW as GetDriveType;
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::drives_folder_tu::IsDriveFloppyW_RustBridge as IsDriveFloppyW;
+use crate::drives_folder_tu::SHELL32_IsShellFolderNamespaceItemHidden_RustBridge as SHELL32_IsShellFolderNamespaceItemHidden;
+use crate::shell32::shlfolder::SH32_GetDetailsOfPKeyAsVariant_RustBridge as SH32_GetDetailsOfPKeyAsVariant;
+use crate::shell32::shlfolder::SHELL32_BindToSF_RustBridge as SHELL32_BindToSF;
+use crate::shell32::shlfolder::SHELL32_CompareChildren_RustBridge as SHELL32_CompareChildren;
+use crate::shell32::shlfolder::SHELL32_DefaultContextMenuCallBack_RustBridge as SHELL32_DefaultContextMenuCallBack;
+use crate::shell32::shlfolder::SHELL32_GetDisplayNameOfChild_RustBridge as SHELL32_GetDisplayNameOfChild;
+use crate::shell32::shlfolder::SHELL_CreateSHDESCRIPTIONID_RustBridge as SHELL_CreateSHDESCRIPTIONID;
+use crate::shell32::utils::BindCtx_GetMode_RustBridge as BindCtx_GetMode;
+use crate::shell32::utils::SHELL_ErrorBox_RustBridge as SHELL_ErrorBox;
+use crate::shell32::utils::SHIsFileSysBindCtx_RustBridge as SHIsFileSysBindCtx;
 // The crate's own functions: the definition is the declaration.
 use crate::wine::classes::HLM_GetIconW;
 use crate::shell32::cidldataobj_free::IDataObject_Constructor;
@@ -1321,9 +1335,6 @@ use crate::types::*;
 extern "system" {
     /// winbase.h:1898 `UINT WINAPI GetDriveTypeW(LPCWSTR)`
     fn GetDriveTypeW(lpRootPathName: LPCWSTR) -> UINT;
-    /// C++ `::GetDriveType` resolves to GetDriveTypeW in UNICODE builds (winbase.h:1898)
-    #[link_name = "GetDriveTypeW"]
-    fn GetDriveType(lpRootPathName: LPCWSTR) -> UINT;
     /// winbase.h:2286
     fn GetVolumeInformationW(lpRootPathName: LPCWSTR, lpVolumeNameBuffer: LPWSTR, nVolumeNameSize: DWORD, lpVolumeSerialNumber: LPDWORD, lpMaximumComponentLength: LPDWORD, lpFileSystemFlags: LPDWORD, lpFileSystemNameBuffer: LPWSTR, nFileSystemNameSize: DWORD) -> BOOL;
     /// winbase.h:2276
@@ -1367,28 +1378,6 @@ extern "system" {
     fn CDrivesFolderEnum_CreateInstance_RustBridge(hwndOwner: HWND, dwFlags: DWORD, pRegEnum: *mut IEnumIDList, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT;
     fn CDrivesContextMenu_CreateInstance_RustBridge(pidlFolder: PCIDLIST_ABSOLUTE, hwnd: HWND, cidl: UINT, apidl: PCUITEMID_CHILD_ARRAY, psf: *mut IShellFolder, ppcm: *mut *mut IContextMenu) -> HRESULT;
     fn CDrivesExtractIcon_CreateInstance_RustBridge(psf: *mut IShellFolder, pidl: LPCITEMIDLIST, riid: REFIID, ppvOut: *mut LPVOID) -> HRESULT;
-    #[link_name = "SHELL32_BindToSF_RustBridge"]
-    fn SHELL32_BindToSF(pidlRoot: LPCITEMIDLIST, ppfti: *mut PERSIST_FOLDER_TARGET_INFO, pidl: LPCITEMIDLIST, clsid: *const GUID, riid: REFIID, ppvOut: *mut LPVOID) -> HRESULT;
-    #[link_name = "SHELL32_CompareChildren_RustBridge"]
-    fn SHELL32_CompareChildren(psf: *mut IShellFolder2, lParam: LPARAM, pidl1: LPCITEMIDLIST, pidl2: LPCITEMIDLIST) -> HRESULT;
-    #[link_name = "SHELL32_GetDisplayNameOfChild_RustBridge"]
-    fn SHELL32_GetDisplayNameOfChild(psf: *mut IShellFolder2, pidl: LPCITEMIDLIST, dwFlags: DWORD, strRet: *mut STRRET) -> HRESULT;
-    #[link_name = "SHELL32_DefaultContextMenuCallBack_RustBridge"]
-    fn SHELL32_DefaultContextMenuCallBack(psf: *mut IShellFolder, pdo: *mut IDataObject, msg: UINT) -> HRESULT;
-    #[link_name = "SH32_GetDetailsOfPKeyAsVariant_RustBridge"]
-    fn SH32_GetDetailsOfPKeyAsVariant(psf: *mut IShellFolder2, pidl: PCUITEMID_CHILD, pscid: *const SHCOLUMNID, pVar: *mut VARIANT, UseFsColMap: BOOL) -> HRESULT;
-    #[link_name = "SHELL32_IsShellFolderNamespaceItemHidden_RustBridge"]
-    fn SHELL32_IsShellFolderNamespaceItemHidden(SubKey: LPCWSTR, Clsid: REFCLSID) -> BOOL;
-    #[link_name = "SHELL_ErrorBox_RustBridge"]
-    fn SHELL_ErrorBox(hwndOwner: HWND, Error: UINT) -> UINT;
-    #[link_name = "SHIsFileSysBindCtx_RustBridge"]
-    fn SHIsFileSysBindCtx(pbc: LPBC, pFindData: *mut core::ffi::c_void) -> HRESULT;
-    #[link_name = "BindCtx_GetMode_RustBridge"]
-    fn BindCtx_GetMode(pbc: LPBC, dwDefault: DWORD) -> DWORD;
-    #[link_name = "IsDriveFloppyW_RustBridge"]
-    fn IsDriveFloppyW(pszDriveRoot: LPCWSTR) -> BOOL;
-    #[link_name = "SHELL_CreateSHDESCRIPTIONID_RustBridge"]
-    fn SHELL_CreateSHDESCRIPTIONID(pVar: *mut VARIANT, Id: DWORD, pCLSID: *const CLSID) -> HRESULT;
 }
 
 // ── constants pinned from in-tree headers ───────────────────────────────────────────────
@@ -1863,8 +1852,8 @@ pub unsafe fn CDrivesFolder_BindToObject_v1_body(this: *mut CDrivesFolder, pidl:
         (*this).pidlRoot,
         &mut pfti,
         pidl,
-        core::ptr::addr_of!(CLSID_ShellFSFolder),
-        riid,
+        (core::ptr::addr_of!(CLSID_ShellFSFolder)).cast(),
+        (riid).cast(),
         ppvOut,
     );
     if ((hr) < 0) {
@@ -2012,7 +2001,7 @@ pub unsafe fn CDrivesFolder_CompareIDs_body(this: *mut CDrivesFolder, lParam: LP
     }
 
     if HRESULT_CODE(hres) == 0 {
-        return SHELL32_CompareChildren(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), lParam, pidl1, pidl2);
+        return SHELL32_CompareChildren((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), lParam, pidl1, pidl2);
     }
 
     hres
@@ -2209,7 +2198,7 @@ pub unsafe fn CDrivesFolder_GetDisplayNameOf_body(this: *mut CDrivesFolder, pidl
     }
 
     if _ILIsPidlSimple(pidl) == 0 {
-        return SHELL32_GetDisplayNameOfChild(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), pidl, dwFlags, strRet);
+        return SHELL32_GetDisplayNameOfChild((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), pidl, dwFlags, (strRet).cast());
     } else if _ILIsSpecialFolder(pidl) != 0 {
         let reg_folder = (*this).m_regFolder;
         return ((*(*reg_folder).lpVtbl).GetDisplayNameOf)(reg_folder, pidl, dwFlags, strRet);
@@ -2439,7 +2428,7 @@ pub unsafe fn CDrivesFolder_GetDetailsEx_body(this: *mut CDrivesFolder, pidl: PC
         let reg_folder: *mut IShellFolder2 = (*this).m_regFolder;
         return ((*(*reg_folder).lpVtbl).GetDetailsEx)(reg_folder, pidl, pscid, pv);
     }
-    SH32_GetDetailsOfPKeyAsVariant(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), pidl, pscid, pv, FALSE)
+    SH32_GetDetailsOfPKeyAsVariant((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), pidl, pscid, pv, FALSE)
 }
 
 pub unsafe fn CDrivesFolder_GetDetailsOf_body(this: *mut CDrivesFolder, pidl: PCUITEMID_CHILD, iColumn: UINT, psd: *mut SHELLDETAILS) -> HRESULT {
@@ -2679,5 +2668,5 @@ pub unsafe fn CDrivesFolder_CallBack_body(this: *mut CDrivesFolder, psf: *mut IS
             return S_OK;
         }
     }
-    SHELL32_DefaultContextMenuCallBack(psf, pdtobj, uMsg)
+    SHELL32_DefaultContextMenuCallBack((psf).cast(), (pdtobj).cast(), uMsg)
 }

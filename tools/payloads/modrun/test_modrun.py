@@ -14,6 +14,13 @@ sys.modules[_SPEC.name] = mr
 _SPEC.loader.exec_module(mr)
 
 
+@pytest.fixture(autouse=True)
+def _no_suite_filter(monkeypatch):
+    """MODRUN_SUITES is how a lane grades one module; exported in the shell that runs
+    check-tooling, it narrowed these fixtures' suites to none and failed 8 tests."""
+    monkeypatch.delenv("MODRUN_SUITES", raising=False)
+
+
 @pytest.fixture
 def suites(tmp_path, monkeypatch):
     (tmp_path / "m.yaml").write_text(

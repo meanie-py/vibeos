@@ -19,6 +19,15 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 const CP_UTF8: c_uint = 65001;
 const MB_ERR_INVALID_CHARS: u32 = 0x8;
 const WC_ERR_INVALID_CHARS: u32 = 0x80;
+const CP_UTF7: c_uint = 65000;
+const CP_SYMBOL: c_uint = 42;
+const CP_GB18030: c_uint = 54936;
+
+/// Code pages for which MultiByteToWideChar/WideCharToMultiByte reject any flags at all
+/// (ISO-2022 variants, ISCII, UTF-7, Symbol). Upstream 6c5d21c83d0.
+fn cp_requires_zero_flags(cp: c_uint) -> bool {
+    matches!(cp, 50220 | 50221 | 50222 | 50225 | 50227 | 50229 | 57002..=57011 | CP_UTF7 | CP_SYMBOL)
+}
 
 /// `struct _exception` (math.h).
 #[repr(C)]
@@ -117,7 +126,15 @@ pub unsafe extern "C" fn __acrt_MultiByteToWideChar(
     // MB_ERR_INVALID_CHARS (anything else is ERROR_INVALID_FLAGS), and the CRT's callers
     // all pass MB_PRECOMPOSED. Passed through, every LCMapString/GetStringType for a
     // UTF-8 locale failed, so LC_CTYPE fell back to "C" under setlocale("en_US.UTF-8").
-    let flags = if cp == CP_UTF8 { flags & MB_ERR_INVALID_CHARS } else { flags };
+    // Upstream 6c5d21c83d0 extends that to GB18030 and zeroes the flags for the code pages
+    // that accept none.
+    let flags = if cp == CP_UTF8 || cp == CP_GB18030 {
+        flags & MB_ERR_INVALID_CHARS
+    } else if cp_requires_zero_flags(cp) {
+        0
+    } else {
+        flags
+    };
     MultiByteToWideChar(cp, flags, src, src_len, dst, dst_len)
 }
 
@@ -133,10 +150,19 @@ pub unsafe extern "C" fn __acrt_WideCharToMultiByte(
     default_char: *const c_char,
     used_default: *mut c_int,
 ) -> c_int {
-    // As above: for CP_UTF8 only WC_ERR_INVALID_CHARS is accepted, and the default-char
-    // arguments must be NULL.
-    if cp == CP_UTF8 {
-        return WideCharToMultiByte(cp, flags & WC_ERR_INVALID_CHARS, src, src_len, dst, dst_len, core::ptr::null(), core::ptr::null_mut());
+    // As above: for CP_UTF8 and GB18030 only WC_ERR_INVALID_CHARS is accepted, and for UTF-8
+    // and UTF-7 the default-char arguments must be NULL. Upstream 6c5d21c83d0 masks this
+    // function with MB_ERR_INVALID_CHARS (0x8), which is the MultiByteToWideChar flag; the
+    // WideCharToMultiByte one is WC_ERR_INVALID_CHARS (0x80), so we diverge on purpose.
+    let flags = if cp == CP_UTF8 || cp == CP_GB18030 {
+        flags & WC_ERR_INVALID_CHARS
+    } else if cp_requires_zero_flags(cp) {
+        0
+    } else {
+        flags
+    };
+    if cp == CP_UTF8 || cp == CP_UTF7 {
+        return WideCharToMultiByte(cp, flags, src, src_len, dst, dst_len, core::ptr::null(), core::ptr::null_mut());
     }
     WideCharToMultiByte(cp, flags, src, src_len, dst, dst_len, default_char, used_default)
 }

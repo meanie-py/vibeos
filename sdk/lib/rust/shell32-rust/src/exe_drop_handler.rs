@@ -1,4 +1,6 @@
 use crate::shellcom::*;
+// One declaration per external symbol: win32.rs.
+use crate::win32::ReleaseStgMedium;
 // The crate's own functions: the definition is the declaration.
 use crate::shell32::shlexec::ShellExecuteW;
 // One declaration per external symbol: island.rs.
@@ -118,7 +120,6 @@ extern "system" {
     fn Shell32RustObjectUnlock();
     fn GlobalLock(memory: HGLOBAL) -> *mut c_void;
     fn GlobalUnlock(memory: HGLOBAL) -> BOOL;
-    fn ReleaseStgMedium(medium: *mut STGMEDIUM);
     fn StrChrW(start: LPCWSTR, character: WCHAR) -> LPWSTR;
 }
 
@@ -426,7 +427,7 @@ unsafe fn drop_files(
         let global = medium.u.hGlobal;
         let drop = GlobalLock(global) as LPDROPFILES;
         if drop.is_null() {
-            ReleaseStgMedium(&mut medium);
+            ReleaseStgMedium((&raw mut medium).cast());
             return E_FAIL;
         }
         let mut source = (drop as *mut u8).add((*drop).pFiles as usize) as LPWSTR;
@@ -444,7 +445,7 @@ unsafe fn drop_files(
             source = source.add(1);
         }
         GlobalUnlock(global);
-        ReleaseStgMedium(&mut medium);
+        ReleaseStgMedium((&raw mut medium).cast());
     }
 
     ShellExecuteW(

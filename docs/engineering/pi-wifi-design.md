@@ -251,3 +251,33 @@ only when asked to (`VIBEOS_PI_WIFI_FIRMWARE`), so an image built without it is 
     Run `20261018-224456-m19qzmlp` (serial `serial-20261018-210137`): firmware loaded and verified
     in 124 ms, joined 'Piconet', 4-way handshake in 2793 ms, lease 192.168.1.217 beside the
     GENET's 192.168.1.216; host pings 60/60 (4.98 ms average) and 300/300 of 1390 bytes.
+11. Rejoining after the network goes away (2026-11-01). The first Pi 4 soak (2026-10-18/19,
+    one boot) carried Wi-Fi for 3h44m (28,023 frames, 3 group rekeys) until the router's
+    nightly restart at 02:31 (event 16, reason 2). The router was back in minutes, but the
+    driver took 12 hours and 631 attempts to rejoin: 580 scans did not hear 'Piconet' even
+    by name, and 49 joins found it at about -30 dBm and ran out their 15 s without
+    associating. Then one simply worked. Four changes:
+    - **The event mask** (`STATION_EVENTS`) lacked `E_SET_SSID`, so the firmware never
+      told us a join had failed and every failure was a silent timeout. It lacked
+      `E_DEAUTH_IND` and `E_DISASSOC_IND` too, which `link.rs` handles but never received.
+      The simulator now drops unmasked events as firmware does, so a missing one fails a
+      host test instead of passing it.
+    - **A radio restart** (`Bus::restart_radio`: disassociate, `C_DOWN`, then `bring_up`)
+      after every 5 failed joins in a row, so nothing the firmware kept from the lost
+      network can outlive it.
+    - **Joining a hidden network at its access point** when it does not answer by name but
+      the access point it was last joined at still beacons (same BSSID, empty SSID).
+    - **The log says why**: each failed join names the firmware's last `E_AUTH`/`E_ASSOC`
+      failure, and every 10th failure lists the scan, so a network that is gone and a radio
+      that stopped hearing it read differently.
+    Seen with these in (2026-11-01, a cold boot, same router): the access point beacons
+    `<hidden>` at -32 dBm on channel 10 the whole time, beside its sister network on
+    `...:20`, yet a directed probe for 'Piconet' almost never gets an answer, the firmware's
+    join ends `E_SET_SSID` status 3 (no networks), and a radio restart changes nothing. So
+    it was not firmware state. The join now hands the firmware the scan's chanspec (one
+    `chanspec_list` entry, as brcmfmac does when the channel is known), which cut its join
+    scan from 2.7 s to 94 ms and changed nothing else: still status 3. With `hidden=1` and no
+    access point joined yet, the strongest nameless WPA2 access point is tried. What is left
+    is the access point not answering this station by name at all. Open: whether the router
+    is ignoring this MAC (a client blocklist after the 631 failed joins of 10-19 would look
+    exactly like this, and lift by itself).

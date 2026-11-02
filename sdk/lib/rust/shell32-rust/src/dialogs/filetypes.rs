@@ -1,5 +1,9 @@
 // rustconv-assembly: class:_FILE_TYPE_ENTRY
 use crate::prelude::*;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+use crate::island::RegCreateKeyExW as RegCreateKeyEx;
 // The crate's own functions: the definition is the declaration.
 use crate::shell32::iconcache::ExtractIconExW;
 // One declaration per external symbol: island.rs.
@@ -18,8 +22,6 @@ use crate::win32::max;
 // Deterministic COM scaffold for _FILE_TYPE_ENTRY; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -28,7 +30,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -449,11 +451,14 @@ macro_rules! ASSERT { ($($arg:tt)*) => {{}}; }
 
 macro_rules! LOWORD { ($value:expr) => { (($value as usize) & 0xffff) as UINT }; }
 
+// winuser.h: on 32-bit the *Ptr forms are macros over the *Long* exports.
+#[cfg(not(target_pointer_width = "32"))]
+use crate::island::{GetWindowLongPtrW, SetWindowLongPtrW};
+#[cfg(target_pointer_width = "32")]
+use crate::island::{GetWindowLongW as GetWindowLongPtrW, SetWindowLongW as SetWindowLongPtrW};
+
 extern "system" {
-    #[cfg_attr(target_pointer_width = "32", link_name = "GetWindowLongW")] fn GetWindowLongPtrW(window: HWND, index: INT) -> LONG_PTR;
-    #[cfg_attr(target_pointer_width = "32", link_name = "SetWindowLongW")] fn SetWindowLongPtrW(window: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
     fn ExpandEnvironmentStringsW(source: LPCWSTR, dest: LPWSTR, size: DWORD) -> DWORD;
-    #[link_name = "RegCreateKeyExW"] fn RegCreateKeyEx(key: HKEY, subkey: LPCWSTR, reserved: DWORD, class: LPWSTR, options: DWORD, access: REGSAM, security: LPVOID, result: PHKEY, disposition: LPDWORD) -> LONG;
     fn SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn StrChrW(text: LPCWSTR, ch: WCHAR) -> LPWSTR;

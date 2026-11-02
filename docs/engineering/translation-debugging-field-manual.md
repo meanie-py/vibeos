@@ -923,6 +923,19 @@ kind of residue (2026-10-17, about 30 crates):
   disagreed with their OWN crate's definition: shell32's `SHGetSetSettings` took shellord's
   bit-exact SHELLSTATE while every caller held the island's, and `SH_CreatePropertySheetPageEx`
   took a bare fn where the header says `DLGPROC`. Retype the definition to the header's types.
+- **A `#[link_name = "T"]` alias is the same symbol under another Rust name.** shell32's 99
+  `_RustBridge` aliases once bound C++ forwarders that have since moved into Rust, and kernel32
+  calls went through `#[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(..)` in 60 modules, each
+  with its own SIZE_T. `extern_to_use.py <src> --bridges` turns each into
+  `use crate::<home>::T as N;`, where home is the crate's own `#[no_mangle]` definition, or the
+  island when it declares T on all three arches. It never binds a crate fn that is not exported
+  under T (shell32's generic `cfs_folder::HeapAlloc` helper is not kernel32's), never rewrites
+  inside a `#[cfg]` extern block (an i386-only `GetWindowLongW` alias), and never touches T's
+  own module, where the bridge calls the real N. struct_to_island used to skip any `I`/`C` name
+  as COM; it skipped CIDA (7 copies, all missing shlobj.h's pshpack1) and CMINVOKECOMMANDINFO
+  too. COM is now told by a `lpVtbl` field. A kept copy under ANOTHER name (control.rs
+  `AppletInfo` = cpanel.h `applet_info`) now also holds every struct that embeds it, matched by
+  field list.
 - **ntdll-sys aliases are not the canonical spelling.** On 64-bit, `SIZE_T`/`WPARAM`/`LPARAM` are
   `u64`/`i64`, while most canonical declarations spell them `usize`/`isize`. They have the same
   width on every arch but are different Rust types. Rewrite each call site from rustc's own span
@@ -1676,6 +1689,16 @@ count or one multiplied by `size_of` (baseline empty).
 of its face-name shifts with the C's argument order and the C's byte count, so each moved the
 string the wrong way by twice its length (`scan_silent_failures` caught the `size_of` count;
 nothing catches the order). Read every `copy`/`copy_nonoverlapping` against its C call.
+**The C can be the one that is wrong, and a faithful translation copies it.** setupapi
+install.c `delete_multi_sz_value` allocated `size * 2` BYTES and then set `dst = buffer + size`
+on a `WCHAR *`. That is `size` WCHARs, which is exactly the end of the block, so every kept
+string was written past the allocation, and `RegSetValueExW` got a WCHAR count as its byte
+count. Its sibling `append_multi_sz_value` wrote `total + sizeof(WCHAR)` where `total` already
+counted the final NUL. That stored one WCHAR of uninitialized heap in the registry, and it read
+back differently every boot. setupapi-rust reproduced both line for line. The modrun setupapi
+suite found the second one when the C and Rust sizes disagreed, and the disagreement then
+flipped direction on the next boot. **When a C/Rust diff flips direction between runs, look
+for uninitialized memory in BOTH**: dump raw bytes, not the decoded value.
 
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 
@@ -2609,8 +2632,15 @@ cast to one side.
 **Finding the rest:** clang's `-Wsign-compare` on the C oracle flags exactly this. Run it over
 a module's `<target>_c` compile commands and keep the lines that call `min`/`max`. Across all
 53 oracle modules (2026-10-18) that is 24 sites in comctl32 and 2 in credui, and this was the
-only mistranslated one. Modules with no oracle are unaudited. A rebar section in the modrun
+only mistranslated one. A rebar section in the modrun
 comctl32 probe (`probes/comctl32.c`) now diffs the band and bar heights against the C.
+**The commoner variant is a NARROWING cast, not a sign flip.** A grep audit of every
+non-oracle `min`/`max` that casts an operand (2026-11-01, ~380 sites, each read against the C)
+found 9 real divergences, and most cut a wide operand down before the compare:
+`CcZeroData`'s `min(Length as ULONG, MAX_ZERO_LENGTH)` with a LONGLONG `Length` makes a 4 GiB
+range a 0-byte chunk and spins forever; freeldr's ATAPI `min(len as u16, 0xFFFE)` sends a byte
+count of 0 for a 64 KiB read; atapi's `ATA_LOCAL_BUFFER_SIZE as u8` is 572 → 60. Rule: compare
+at the width the C compares at, THEN narrow the result: `min(a, b as T_wide) as T_narrow`.
 
 ### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
 **Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a
@@ -3585,6 +3615,21 @@ its bounds check, `STG_E_READFAULT`. Wine's stg_prop test crashed on the NULL st
 The tell was a probe, not a read: ReadAt never failed, the file was the right size, and the
 structure was logically empty. **When a parser and its writer disagree, diff their offset
 lists — the writer is usually the named one.**
+
+### A `FIELD_OFFSET` in a c2rust file-scope table is amd64's number on every arch
+**Symptom:** a static table built from `FIELD_OFFSET`/`offsetof` shows up as
+`8 as ::core::ffi::c_ulonglong as LONG`. That is c2rust's spelling of a folded `size_t`
+on a 64-bit target. setupapi's `InstallParamsData` stored the offset of
+`ClassInstallParams.AddPropertyPageData` as 8. The field follows one pointer, so it is 4
+on i386, and every DIF_ADDPROPERTYPAGE_ADVANCED install-params read on i386 would have
+gone through the wrong slot. **Cause:** the "compiler-exact" c2rust preamble is exact only
+for the arch it was transpiled on. **Fix:**
+`core::mem::offset_of!(Struct, field) as LONG`. The audit already sends these tables to
+"table UNVERIFIED (read by hand)", so the review is where this gets caught. Find them
+with `grep -rnE '[0-9]+ as ::core::ffi::c_ulonglong as '`. Only a struct with a
+pointer-width member before the field is wrong. On 2026-10-31, inetmib1's MIB rows,
+winspool's `DEVMODE` sizes and kernel32's `ACCESS_ALLOWED_ACE.SidStart` all hit this
+grep, and none of them hold a pointer, so all are correct.
 
 ### A C `0` handle sentinel translated as `INVALID_HANDLE_VALUE`
 `StgCreateDocfileOnILockBytes` calls `Storage_Construct(0, 0, plkbyt, ...)`; the translation
@@ -9609,6 +9654,23 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### A plain-C probe's COM call faults with an address like 2: mingw's C vtable has no IUnknown slots
+
+**Symptom.** A modrun or payload probe (C, built against llvm-mingw's headers) calls a shell
+interface method and faults at a tiny address, or gets `E_NOINTERFACE` from a method that
+cannot return it. It does this against the C oracle and the Rust alike, which makes it look
+like an extension bug the port inherited.
+**Cause.** mingw-w64 declares many shell interfaces (`IExtractIconW` in shlobj.h among hundreds)
+with `DECLARE_INTERFACE_(IFoo, IUnknown)`, and in C that macro drops the base: the vtable
+holds only the methods the body lists, so `p->lpVtbl->GetIconLocation` is slot 0,
+QueryInterface. ntobjshex's probe passed `GIL_FORSHELL` (2) as the IID pointer, and the fault at
+2 sat in the lane plan as "GetIconLocation faults in the C too" for two weeks. Such an
+interface has no COBJMACROS, which is why the probe reached for `lpVtbl` in the first place.
+**Fix.** Call through a local vtable struct that spells out QueryInterface/AddRef/Release
+(probes/ntobjshex.c's `ExtractIconWSlots`). `scan_mingw_c_vtable` flags any `x->lpVtbl->M` in
+tools/payloads whose `x` is such an interface. When oracle and port fail identically, read
+the caller before blaming the code both run.
 
 ### A resource string is right in the source and mojibake in the binary (llvm-rc ignores `#pragma code_page`)
 

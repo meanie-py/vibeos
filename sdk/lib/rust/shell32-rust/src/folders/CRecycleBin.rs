@@ -14,6 +14,8 @@ pub static CPP_COM_WSTR_F51AA22D711D: [WCHAR; 5] = [0x0043, 0x003A, 0x005C, 0x00
 // rather than joined: carrying both makes every shared name ambiguous (E0659) at 70+ sites.
 // See prelude.rs, and CNetFolder.rs for the same note.
 use core::ffi::c_void;
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::PlaySoundW;
 // One declaration per external symbol: island.rs.
 use crate::island::GetDefaultRecycleBin;
 use crate::island::StrRetToBufW;
@@ -48,8 +50,6 @@ use crate::shell32::shlfileop::SHELL32_FileOperation;
 pub const SND_ASYNC: DWORD = 0x0001;
 
 unsafe extern "system" {
-    /// winmm.dll. shell32 links winmm for the "empty recycle bin" sound.
-    fn PlaySoundW(pszSound: LPCWSTR, hmod: HMODULE, fdwSound: DWORD) -> BOOL;
 }
 
 unsafe extern "system" {
@@ -476,7 +476,7 @@ unsafe extern "C" fn CreateFileOpStrings(cidl: UINT, apidl: PCUITEMID_CHILD_ARRA
     let mut cb2: SIZE_T;
     let mut cbPath: SIZE_T;
 
-    'outer: loop {
+    loop {
         if i >= cidl as SIZE_T {
             break;
         }

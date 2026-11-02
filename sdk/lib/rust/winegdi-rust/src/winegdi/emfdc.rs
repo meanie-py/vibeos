@@ -2374,7 +2374,9 @@ pub unsafe extern "C" fn EMFDC_PlgBlt(
             x_min = min(x_min, (*points.offset(i as isize)).x as ::core::ffi::c_int);
             y_min = min(y_min, (*points.offset(i as isize)).y as ::core::ffi::c_int);
             x_max = max(x_max, (*points.offset(i as isize)).x as ::core::ffi::c_int);
-            y_max = max(y_min, (*points.offset(i as isize)).y as ::core::ffi::c_int);
+            // The C reads `y_max = max( y_min, points[i].y )`, a typo against its three siblings:
+            // it drops every earlier point's bottom, so the bounds lose all but the last y.
+            y_max = max(y_max, (*points.offset(i as isize)).y as ::core::ffi::c_int);
             i += 1;
         }
         (*emr).rclBounds.left = x_min as LONG;

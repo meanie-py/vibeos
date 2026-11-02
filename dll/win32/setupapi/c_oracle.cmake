@@ -2,6 +2,12 @@
 # CMakeLists changes. The module's pre-flip C as setupapi_c:
 # the runtime oracle the Rust is diffed against (tools/payloads/modrun). Built only
 # on request (`ninja <target>_c`), never shipped.
+set(PCH_SKIP_SOURCE_C_ORACLE
+    ${CMAKE_CURRENT_BINARY_DIR}/setupapi_stubs.c
+)
+set(SETUPAPI_RUST_LIB_C_ORACLE
+    "${CMAKE_CURRENT_BINARY_DIR}/libsetupapi_rust.a"
+)
 set(SOURCE_C_ORACLE
     cfgmgr.c
     devclass.c
@@ -22,7 +28,7 @@ set(SOURCE_C_ORACLE
     stubs.c
     rpc.c
 )
-add_library(setupapi_c MODULE EXCLUDE_FROM_ALL ${SOURCE_C_ORACLE} ${PCH_SKIP_SOURCE} ${CMAKE_CURRENT_BINARY_DIR}/pnp_c.c setupapi.rc ${CMAKE_CURRENT_BINARY_DIR}/setupapi.def)
+add_library(setupapi_c MODULE EXCLUDE_FROM_ALL ${SOURCE_C_ORACLE} ${PCH_SKIP_SOURCE_C_ORACLE} ${CMAKE_CURRENT_BINARY_DIR}/pnp_c.c setupapi.rc ${CMAKE_CURRENT_BINARY_DIR}/setupapi.def)
 set_module_type(setupapi_c win32dll UNICODE)
 target_link_libraries(setupapi_c uuid wine ${PSEH_LIB} oldnames)
 add_delay_importlibs(setupapi_c comdlg32 shell32 winspool.drv wintrust)

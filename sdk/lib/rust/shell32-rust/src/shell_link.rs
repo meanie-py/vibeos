@@ -517,10 +517,6 @@ pub struct volume_info {
 // Deterministic COM scaffold for CShellLink; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"]
-    fn Win32HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"]
-    fn Win32HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -531,7 +527,7 @@ impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 impl CppComSize for i32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    Win32HeapAlloc(heap, flags, bytes.cpp_com_size())
+    Win32HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -1729,6 +1725,22 @@ pub static CPP_COM_WSTR_FB47CCC40FE6: [WCHAR; 3] = [0x0025, 0x0073, 0x0000];
 pub static CPP_COM_WSTR_FE706C396A0C: [WCHAR; 5] = [0x002E, 0x006C, 0x006E, 0x006B, 0x0000];
 
 use core::ffi::c_void;
+// One declaration per external symbol: win32.rs.
+use crate::win32::ReleaseStgMedium;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::GetDateFormatW as Win32GetDateFormatW;
+use crate::island::GetFullPathNameW as Win32GetFullPathNameW;
+use crate::island::GetShortPathNameW as Win32GetShortPathNameW;
+use crate::island::GetVolumeInformationW as Win32GetVolumeInformationW;
+use crate::island::HeapAlloc as Win32HeapAlloc;
+use crate::island::HeapFree as Win32HeapFree;
+use crate::island::MultiByteToWideChar as Win32MultiByteToWideChar;
+use crate::island::PrivateExtractIconsW as Win32PrivateExtractIconsW;
+use crate::island::SHExpandEnvironmentStringsW as Win32SHExpandEnvironmentStringsW;
+use crate::island::WideCharToMultiByte as Win32WideCharToMultiByte;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::shell32::changenotify::SHChangeNotify as Win32SHChangeNotify;
+use crate::shell32::utils::CShellLink_SHGetNameAndFlagsW_RustBridge as SHGetNameAndFlagsW;
 // The crate's own functions: the definition is the declaration.
 use crate::shell32::iconcache::ExtractIconExW;
 use crate::wine::classes::HLM_GetIconW;
@@ -5072,43 +5084,21 @@ extern "system" {
     fn GetFileAttributesW(path: LPCWSTR) -> DWORD;
     fn FindClose(handle: HANDLE) -> BOOL;
     fn DeleteFileW(path: LPCWSTR) -> BOOL;
-    #[link_name = "GetFullPathNameW"]
-    fn Win32GetFullPathNameW(name: LPCWSTR, length: DWORD, buffer: LPWSTR, file_part: *mut LPWSTR) -> DWORD;
-    #[link_name = "GetShortPathNameW"]
-    fn Win32GetShortPathNameW(long: LPCWSTR, short: LPWSTR, cch: DWORD) -> DWORD;
     fn GetDriveTypeW(root: LPCWSTR) -> UINT;
-    #[link_name = "GetVolumeInformationW"]
-    fn Win32GetVolumeInformationW(root: LPCWSTR, name: LPWSTR, name_cch: DWORD, serial: LPDWORD,
-                             max_len: LPDWORD, flags: LPDWORD, fs_name: LPWSTR, fs_cch: DWORD) -> BOOL;
-    #[link_name = "MultiByteToWideChar"]
-    fn Win32MultiByteToWideChar(page: UINT, flags: DWORD, multi: LPCSTR, multi_len: INT,
-                           wide: LPWSTR, wide_len: INT) -> INT;
-    #[link_name = "WideCharToMultiByte"]
-    fn Win32WideCharToMultiByte(page: UINT, flags: DWORD, wide: LPCWSTR, wide_len: INT, multi: LPSTR,
-                           multi_len: INT, default_char: LPCSTR, used_default: *mut BOOL) -> INT;
     fn GetVersion() -> DWORD;
     fn FileTimeToSystemTime(file_time: *const FILETIME, system_time: *mut SYSTEMTIME) -> BOOL;
-    #[link_name = "GetDateFormatW"]
-    fn Win32GetDateFormatW(locale: LCID, flags: DWORD, date: *const SYSTEMTIME, format: LPCWSTR,
-                      buffer: LPWSTR, cch: INT) -> INT;
     // user32 (winuser.h)
     #[link_name = "PostMessageW"] // UNICODE build: PostMessage => PostMessageW
     fn PostMessage(hwnd: HWND, msg: UINT, wparam: WPARAM, lparam: LPARAM) -> BOOL;
     fn GetKeyState(key: INT) -> SHORT;
     fn GetSysColor(index: INT) -> COLORREF;
-    #[link_name = "PrivateExtractIconsW"]
-    fn Win32PrivateExtractIconsW(path: LPCWSTR, index: INT, cx: INT, cy: INT, icons: *mut HICON,
-                            ids: *mut UINT, count: UINT, flags: UINT) -> UINT;
     // gdi32 (wingdi.h)
     fn DeleteObject(object: HGDIOBJ) -> BOOL;
     // comctl32 (commctrl.h/prsht.h)
     // ole32 (objbase.h/combaseapi.h)
-    fn ReleaseStgMedium(medium: *mut STGMEDIUM);
     // advapi32 (appmgmt.h:46)
     fn CommandLineFromMsiDescriptor(descriptor: LPWSTR, command_line: LPWSTR, cch: *mut DWORD) -> DWORD;
     // shell32 public exports (shellapi.h/shlobj.h)
-    #[link_name = "SHChangeNotify"]
-    fn Win32SHChangeNotify(event: LONG, flags: UINT, item1: LPCVOID, item2: LPCVOID);
     fn ILLoadFromStream(stream: *mut IStream, pidl: *mut LPITEMIDLIST) -> HRESULT;
     fn ILSaveToStream(stream: *mut IStream, pidl: LPCITEMIDLIST) -> HRESULT;
     fn SHOpenFolderAndSelectItems(folder: PCIDLIST_ABSOLUTE, cidl: UINT,
@@ -5118,8 +5108,6 @@ extern "system" {
     fn SHSimpleIDListFromPathW(path: LPCWSTR) -> LPITEMIDLIST;
     fn PathResolveW(path: LPWSTR, dirs: *mut LPCWSTR, flags: DWORD) -> BOOL;
     // shlwapi (shlwapi.h; SHExpand/SHAnsi/datablocks: reactos/shlwapi_undoc.h:140-164)
-    #[link_name = "SHExpandEnvironmentStringsW"]
-    fn Win32SHExpandEnvironmentStringsW(src: LPCWSTR, dst: LPWSTR, cch: DWORD) -> DWORD;
     fn SHAnsiToUnicode(src: LPCSTR, dst: LPWSTR, cch: INT) -> DWORD;
     fn PathFileExistsW(path: LPCWSTR) -> BOOL;
     fn PathFileExistsAndAttributesW(path: LPCWSTR, attributes: *mut DWORD) -> BOOL;
@@ -5140,19 +5128,9 @@ extern "system" {
 // winuser.h: on win32 the *Ptr forms are macro aliases of the LONG forms —
 // bind to the real 32-bit exports there (user_notification.rs precedent).
 #[cfg(target_pointer_width = "64")]
-extern "system" {
-    #[link_name = "GetWindowLongPtrW"]
-    fn GetWindowLongPtr(hwnd: HWND, index: INT) -> LONG_PTR;
-    #[link_name = "SetWindowLongPtrW"]
-    fn SetWindowLongPtr(hwnd: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
-}
+use crate::island::{GetWindowLongPtrW as GetWindowLongPtr, SetWindowLongPtrW as SetWindowLongPtr};
 #[cfg(target_pointer_width = "32")]
-extern "system" {
-    #[link_name = "GetWindowLongW"]
-    fn GetWindowLongPtr(hwnd: HWND, index: INT) -> LONG_PTR;
-    #[link_name = "SetWindowLongW"]
-    fn SetWindowLongPtr(hwnd: HWND, index: INT, value: LONG_PTR) -> LONG_PTR;
-}
+use crate::island::{GetWindowLongW as GetWindowLongPtr, SetWindowLongW as SetWindowLongPtr};
 
 extern "C" {
     // msvcrt (cdecl)
@@ -5171,9 +5149,6 @@ extern "C" {
 // must live in an extern "system" block: on i386 the reference must decorate as
 // `_CShellLink_SHGetNameAndFlagsW_RustBridge@20` to match the C++ definition.
 extern "system" {
-    #[link_name = "CShellLink_SHGetNameAndFlagsW_RustBridge"]
-    fn SHGetNameAndFlagsW(pidl: LPCITEMIDLIST, flags: DWORD, text: LPWSTR, cch: UINT,
-                          attributes: *mut DWORD) -> HRESULT;
 }
 
 

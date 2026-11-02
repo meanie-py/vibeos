@@ -181,7 +181,7 @@ impl CNetConnectionPropertyUi {
             return;
         }
 
-        while true {
+        loop {
             let mut pNCfgComp: CComPtr<INetCfgComponent> = CComPtr::new();
             let mut pCompBind: CComPtr<INetCfgComponentBindings> = CComPtr::new();
             let mut pAdapterCfgComp: CComPtr<INetCfgComponent> = CComPtr::new();

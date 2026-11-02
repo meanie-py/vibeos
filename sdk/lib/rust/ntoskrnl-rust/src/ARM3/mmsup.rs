@@ -109,6 +109,10 @@ pub unsafe extern "system" fn MmAdjustWorkingSetSize(
         );
     }
 
+    // Signed clamps, which is what the C means and not what it does: its
+    // `max((SSIZE_T)Ws->WorkingSetSize - MinimumWorkingSetSize, 0)` subtracts a SIZE_T, so the
+    // compare goes unsigned and never clamps, and the two lines then cancel the min-WS delta
+    // exactly, leaving MmPagesAboveWsMinimum never updated at all.
     let ws_size = (*ws).WorkingSetSize as isize;
     delta += core::cmp::max(ws_size - minimum_working_set_size as isize, 0);
 

@@ -94,7 +94,7 @@ pub struct CLayerStringList {
     pub m_layer: TAGID,
 }
 
-unsafe extern "system" fn CLayerStringList__IEnumString_QueryInterface(This: *mut IEnumString, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerStringList, __base1)) as *mut CLayerStringList)).QueryInterface(&*riid, ppvObject) }
+unsafe extern "system" fn CLayerStringList__IEnumString_QueryInterface(This: *mut IEnumString, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerStringList, __base1)) as *mut CLayerStringList)).QueryInterface(riid, ppvObject) }
 unsafe extern "system" fn CLayerStringList__IEnumString_AddRef(This: *mut IEnumString) -> ULONG { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerStringList, __base1)) as *mut CLayerStringList)).AddRef() }
 unsafe extern "system" fn CLayerStringList__IEnumString_Release(This: *mut IEnumString) -> ULONG { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerStringList, __base1)) as *mut CLayerStringList)).Release() }
 unsafe extern "system" fn CLayerStringList__IEnumString_Next(This: *mut IEnumString, celt: ULONG, rgelt: *mut LPOLESTR, pceltFetched: *mut ULONG) -> HRESULT { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerStringList, __base1)) as *mut CLayerStringList)).Next(celt, rgelt, pceltFetched) }
@@ -170,12 +170,12 @@ pub struct CLayerUIPropPage {
     pub m_RegistryCustomLayers: CSimpleArray<CString>,
 }
 
-unsafe extern "system" fn CLayerUIPropPage__IShellExtInit_QueryInterface(This: *mut IShellExtInit, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerUIPropPage, __base3)) as *mut CLayerUIPropPage)).QueryInterface(&*riid, ppvObject) }
+unsafe extern "system" fn CLayerUIPropPage__IShellExtInit_QueryInterface(This: *mut IShellExtInit, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerUIPropPage, __base3)) as *mut CLayerUIPropPage)).QueryInterface(riid, ppvObject) }
 unsafe extern "system" fn CLayerUIPropPage__IShellExtInit_AddRef(This: *mut IShellExtInit) -> ULONG { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerUIPropPage, __base3)) as *mut CLayerUIPropPage)).AddRef() }
 unsafe extern "system" fn CLayerUIPropPage__IShellExtInit_Release(This: *mut IShellExtInit) -> ULONG { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerUIPropPage, __base3)) as *mut CLayerUIPropPage)).Release() }
 unsafe extern "system" fn CLayerUIPropPage__IShellExtInit_Initialize(This: *mut IShellExtInit, pidlFolder: PCIDLIST_ABSOLUTE, pdtobj: *mut IDataObject, hkeyProgID: HKEY) -> HRESULT { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerUIPropPage, __base3)) as *mut CLayerUIPropPage)).Initialize(pidlFolder, pdtobj, hkeyProgID) }
 pub static CLayerUIPropPage__IShellExtInit_VTBL: IShellExtInitVtbl = IShellExtInitVtbl { QueryInterface: Some(CLayerUIPropPage__IShellExtInit_QueryInterface), AddRef: Some(CLayerUIPropPage__IShellExtInit_AddRef), Release: Some(CLayerUIPropPage__IShellExtInit_Release), Initialize: Some(CLayerUIPropPage__IShellExtInit_Initialize) };
-unsafe extern "system" fn CLayerUIPropPage__IShellPropSheetExt_QueryInterface(This: *mut IShellPropSheetExt, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerUIPropPage, __base4)) as *mut CLayerUIPropPage)).QueryInterface(&*riid, ppvObject) }
+unsafe extern "system" fn CLayerUIPropPage__IShellPropSheetExt_QueryInterface(This: *mut IShellPropSheetExt, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerUIPropPage, __base4)) as *mut CLayerUIPropPage)).QueryInterface(riid, ppvObject) }
 unsafe extern "system" fn CLayerUIPropPage__IShellPropSheetExt_AddRef(This: *mut IShellPropSheetExt) -> ULONG { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerUIPropPage, __base4)) as *mut CLayerUIPropPage)).AddRef() }
 unsafe extern "system" fn CLayerUIPropPage__IShellPropSheetExt_Release(This: *mut IShellPropSheetExt) -> ULONG { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerUIPropPage, __base4)) as *mut CLayerUIPropPage)).Release() }
 unsafe extern "system" fn CLayerUIPropPage__IShellPropSheetExt_AddPages(This: *mut IShellPropSheetExt, pfnAddPage: LPFNSVADDPROPSHEETPAGE, lParam: LPARAM) -> HRESULT { (*((This as *mut u8).sub(core::mem::offset_of!(CLayerUIPropPage, __base4)) as *mut CLayerUIPropPage)).AddPages(pfnAddPage, lParam) }
@@ -288,8 +288,13 @@ impl CLayerUIPropPage {
     pub unsafe fn __psp_init(this_: *mut CLayerUIPropPage) -> atl_rust::win::PropSheetPage {
         atl_rust::win::property_page_init(this_, 100 as u16, core::ptr::null())
     }
+    /// `CPropertyPageImpl(lpszTitle)`: the same, titled (PSP_USETITLE).
+    pub unsafe fn __psp_init_titled(this_: *mut CLayerUIPropPage, title: *const u16) -> atl_rust::win::PropSheetPage {
+        atl_rust::win::property_page_init(this_, 100 as u16, title)
+    }
     /// rosdlgs.h `CPropertyPageImpl::Create`: `::CreatePropertySheetPage(&m_psp)`.
     pub unsafe fn Create(&mut self) -> HPROPSHEETPAGE {
+        self.m_psp.lParam = self as *mut Self as _;
         atl_rust::win::create_property_page_from(&self.m_psp) as HPROPSHEETPAGE
     }
     /// A page is not a modal dialog: the C++ `EndDialog` is `return FALSE`.
@@ -439,6 +444,12 @@ pub static ObjectMap: [atl_rust::dll::ObjMapEntry; 2] = [
     atl_rust::dll::ObjMapEntry::END,
 ];
 pub static mut gModule: atl_rust::dll::CComModule = atl_rust::dll::CComModule::new();
+static G_ALLOWEDEXTENSIONS__W0: [u16; 5] = [46, 101, 120, 101, 0];
+static G_ALLOWEDEXTENSIONS__W1: [u16; 5] = [46, 109, 115, 105, 0];
+static G_ALLOWEDEXTENSIONS__W2: [u16; 5] = [46, 112, 105, 102, 0];
+static G_ALLOWEDEXTENSIONS__W3: [u16; 5] = [46, 98, 97, 116, 0];
+static G_ALLOWEDEXTENSIONS__W4: [u16; 5] = [46, 99, 109, 100, 0];
+pub static mut g_AllowedExtensions: [*const WCHAR; 6] = [G_ALLOWEDEXTENSIONS__W0.as_ptr() as _, G_ALLOWEDEXTENSIONS__W1.as_ptr() as _, G_ALLOWEDEXTENSIONS__W2.as_ptr() as _, G_ALLOWEDEXTENSIONS__W3.as_ptr() as _, G_ALLOWEDEXTENSIONS__W4.as_ptr() as _, core::ptr::null_mut()];
 
 pub const IDD: CLayerUIPropPage__bindgen_ty_1 = CLayerUIPropPage_IDD;
 pub type _CreatorClass = CLayerUIPropPage__CreatorClass;

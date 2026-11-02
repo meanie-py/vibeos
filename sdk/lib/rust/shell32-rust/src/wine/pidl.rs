@@ -23,6 +23,8 @@
 #![allow(non_upper_case_globals)]
 
 use crate::types::*;
+// One declaration per external symbol: win32.rs.
+use crate::win32::ReleaseStgMedium;
 // The crate's own functions: the definition is the declaration.
 use crate::wine::shellole::SHAlloc;
 use crate::desktop_folder_tu::SHGetDesktopFolder;
@@ -153,11 +155,7 @@ struct WIN32_FIND_DATAA {
 }
 
 /// CIDA / *LPIDA (shlobj.h): { UINT cidl; UINT aoffset[1]; }
-#[repr(C)]
-pub struct CIDA {
-    pub cidl: UINT,
-    pub aoffset: [UINT; 1],
-}
+pub use crate::island::CIDA;
 
 // ── imports (resolved from shell32's import libs + its own exports at link) ──────────────
 extern "system" {
@@ -1516,7 +1514,6 @@ extern "system" {
     fn GlobalLock(memory: HGLOBAL) -> LPVOID;
     fn GlobalUnlock(memory: HGLOBAL) -> BOOL;
     fn RegisterClipboardFormatW(fmt: LPCWSTR) -> UINT;
-    fn ReleaseStgMedium(pmedium: *mut STGMEDIUM);
     fn lstrlenA(s: LPCSTR) -> INT;
 }
 
