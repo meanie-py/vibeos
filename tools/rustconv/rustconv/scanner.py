@@ -1950,10 +1950,13 @@ def _scan_live(path: Path, live: str, result: ScanResult, lost: set[str]) -> Sca
     live = re.sub(r"(?m)^[ \t]*#[ \t]*(?:if|ifdef|ifndef|elif|else|endif)\b.*$", "", live)
     # An indented statement macro written without its `;` (`GET_CB(OpenThemeData)` --
     # the macro brings its own) makes tree-sitter fold the next definition into an ERROR.
+    # Only a line whose parens BALANCE is a whole call: `abs(ScrollDelta) >= WHEEL_DELTA)` is
+    # the last line of a multi-line `if (` and matched too, so aclui's CheckListWndProc came
+    # out as `if (...);` and a re-purchase would have made its scroll body unconditional.
     live = re.sub(
         r"(?m)^([ \t]+(?!(?:if|while|for|switch|return|sizeof|else)\b)"
         r"[A-Za-z_]\w*\s*\([^;{}\n]*\))[ \t]*$",
-        r"\1;",
+        lambda m: m[1] + ";" if m[1].count("(") == m[1].count(")") else m[0],
         live,
     )
     retry = _scan_file(path, force_cpp=False, _resolve_reactos=False, _text=live)
