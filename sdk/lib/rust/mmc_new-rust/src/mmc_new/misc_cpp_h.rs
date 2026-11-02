@@ -87,21 +87,21 @@ pub unsafe extern "C" fn CmdIdToViewMode(CmdId: UINT) -> LISTVIEW_MODE {
 #[no_mangle]
 pub unsafe extern "C" fn ViewModeToString(ListViewMode: LISTVIEW_MODE) -> LPWSTR {
     match ListViewMode {
-        0 => { // ListView_SmallIcons (value assumed)
+        ListView_SmallIcons => {
             return CPP_COM_WSTR_BF3C1AE071C4.as_ptr() as LPWSTR;
         }
-        1 => { // ListView_LargeIcons (value assumed)
+        ListView_LargeIcons => {
             return CPP_COM_WSTR_5FFE2A98CFCF.as_ptr() as LPWSTR;
         }
-        2 => { // ListView_List (value assumed)
+        ListView_List => {
             return CPP_COM_WSTR_84FEB4D52CDE.as_ptr() as LPWSTR;
         }
-        // default: falls into ListView_Detail
-        _ => { // ListView_Detail (value assumed: 3)
+        // `default:` shares ListView_Detail's case. misc.cpp's trailing `return L"-1"` after
+        // the switch is unreachable and not carried.
+        _ => {
             return CPP_COM_WSTR_B305364C27DB.as_ptr() as LPWSTR;
         }
     }
-    return CPP_COM_WSTR_0ACAC64D15DA.as_ptr() as LPWSTR;
 }
 #[no_mangle]
 pub unsafe extern "C" fn StringToViewMode(ViewMode: LPWSTR) -> LISTVIEW_MODE {
@@ -127,7 +127,8 @@ pub unsafe extern "C" fn ViewModeToStyle(ListViewMode: LISTVIEW_MODE) -> DWORD {
         ListView_List => {
             return LVS_LIST;
         }
-        _ | ListView_Detail => {
+        // ListView_Detail, and `default:` with it.
+        _ => {
             return LVS_REPORT;
         }
     }

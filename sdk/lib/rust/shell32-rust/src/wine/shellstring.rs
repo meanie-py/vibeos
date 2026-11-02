@@ -22,10 +22,7 @@ pub type LPSTRRET = *mut STRRET;
 
 pub use crate::island::SHITEMID;
 
-#[repr(C)]
-pub struct ITEMIDLIST {
-    pub mkid: SHITEMID,
-}
+pub use crate::island::ITEMIDLIST;
 
 // STRRET_TYPE (shtypes.idl)
 const STRRET_WSTR: UINT = 0; // shtypes.idl

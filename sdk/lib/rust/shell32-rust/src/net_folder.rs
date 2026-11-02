@@ -147,8 +147,6 @@ extern "C" {
 // Deterministic COM scaffold for CNetFolder; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -157,7 +155,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -593,8 +591,6 @@ pub static NetworkPlacesSFHeader: [shvheader; 4] = [
 ];
 
 extern "system" {
-    #[link_name = "GetFileAttributesW"]
-    fn GetFileAttributes(path: LPCWSTR) -> DWORD;
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
     fn CNetFolder_ILCreateFromNetworkPlaceW_RustBridge(path: LPCWSTR) -> LPITEMIDLIST;
@@ -678,6 +674,10 @@ extern "C" {
 pub static CPP_COM_WSTR_EB4CE2024A43: [WCHAR; 7] = [0x0046, 0x006F, 0x006C, 0x0064, 0x0065, 0x0072, 0x0000];
 
 use core::ffi::c_void;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::GetFileAttributesW as GetFileAttributes;
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
 // The crate's own functions: the definition is the declaration.
 use crate::wine::pidl::ILClone;
 use crate::def_view::SHCreateShellFolderView;

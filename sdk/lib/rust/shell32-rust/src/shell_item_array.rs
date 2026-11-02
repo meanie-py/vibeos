@@ -474,19 +474,11 @@ extern "C" {
     pub static IID_IStream: IID;
 }
 
-#[repr(C)]
-pub struct CIDA {
-    pub cidl: UINT,
-    pub aoffset: [UINT; 1],
-}
+pub use crate::island::CIDA;
 
 // Deterministic COM scaffold for CShellItemArray; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"]
-    fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"]
-    fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -505,7 +497,7 @@ impl CppComSize for u32 {
 }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -774,14 +766,6 @@ extern "system" {
         child: LPCITEMIDLIST,
         item: *mut *mut IShellItem,
     ) -> HRESULT;
-    #[link_name = "CDataObjectHIDA_CreateCIDA_RustBridge"]
-    fn CDataObjectHIDA_CreateCIDA(
-        data: *mut IDataObject,
-        cida: *mut *mut CIDA,
-        medium: *mut STGMEDIUM,
-    ) -> HRESULT;
-    #[link_name = "CDataObjectHIDA_DestroyCIDA_RustBridge"]
-    fn CDataObjectHIDA_DestroyCIDA(cida: *mut CIDA, medium: *mut STGMEDIUM);
 }
 
 extern "C" {
@@ -822,6 +806,12 @@ impl<T> Drop for CppComPtrGuard<T> {
 }
 
 use crate::shellcom::*;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::shell32::shldataobject::CDataObjectHIDA_CreateCIDA_RustBridge as CDataObjectHIDA_CreateCIDA;
+use crate::shell32::shldataobject::CDataObjectHIDA_DestroyCIDA_RustBridge as CDataObjectHIDA_DestroyCIDA;
 // The crate's own functions: the definition is the declaration.
 use crate::wine::pidl::ILClone;
 use crate::wine::pidl::ILCombine;
@@ -850,7 +840,7 @@ pub unsafe fn CShellItemArray_ctor_body(this: *mut CShellItemArray) -> () {
 }
 
 pub unsafe fn CShellItemArray_dtor_body(this: *mut CShellItemArray) -> () {
-    CDataObjectHIDA_DestroyCIDA((*this).m_pCIDA, core::ptr::addr_of_mut!((*this).m_Medium));
+    CDataObjectHIDA_DestroyCIDA(((*this).m_pCIDA).cast(), core::ptr::addr_of_mut!((*this).m_Medium));
 }
 
 pub unsafe fn CShellItemArray_Initialize_body(
@@ -859,7 +849,7 @@ pub unsafe fn CShellItemArray_Initialize_body(
 ) -> HRESULT {
     CDataObjectHIDA_CreateCIDA(
         pdo,
-        core::ptr::addr_of_mut!((*this).m_pCIDA),
+        core::ptr::addr_of_mut!((*this).m_pCIDA).cast(),
         core::ptr::addr_of_mut!((*this).m_Medium),
     )
 }

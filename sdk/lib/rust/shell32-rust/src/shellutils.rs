@@ -12,6 +12,8 @@
 //! C++ has (two threads may both call RegisterClipboardFormatW, which returns the same atom).
 
 use core::ffi::c_void;
+// One declaration per external symbol: win32.rs.
+pub use crate::win32::ReleaseStgMedium;
 // The crate's own functions: the definition is the declaration.
 pub use crate::wine::shellole::SHAlloc;
 // One declaration per external symbol: island.rs.
@@ -40,8 +42,6 @@ use crate::shellcom::IDataObject;
 pub const STG_E_INVALIDHANDLE: HRESULT = 0x8003_0006u32 as HRESULT;
 
 extern "system" {
-    /// ole32. Not in the island's closure because shell32's TUs reach it through ole2.h.
-    pub fn ReleaseStgMedium(pmedium: *mut STGMEDIUM);
 }
 
 /// `CFSTR_SHELLIDLISTW` = "Shell IDList Array" (shlobj.h CF_IDLIST).

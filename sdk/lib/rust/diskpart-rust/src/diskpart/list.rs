@@ -391,18 +391,22 @@ pub unsafe extern "C" fn PrintVolume(VolumeEntry: PVOLENTRY) {
         ARRAYSIZE!(szSizeBuffer),
     );
 
+    // Upstream (ac1ab9e3043..208bb7f59f9) renamed these to the volume-specific IDs and added a
+    // Status column fed by VOLENTRY.VolumeStatus. That field is only set by the partlist.c /
+    // UpdateVolumeInfo half of the rework, which is not ported yet, so the column stays empty
+    // here rather than reporting a zeroed status as "Healthy" for every volume.
     szInfoBuffer[0] = UNICODE_NULL;
     if (*VolumeEntry).IsSystem != 0 {
         LoadStringW(
             GetModuleHandle(core::ptr::null_mut()),
-            IDS_INFO_SYSTEM,
+            IDS_INFO_VOLUME_SYSTEM,
             szInfoBuffer.as_mut_ptr(),
             (ARRAYSIZE!(szInfoBuffer)) as i32,
         );
     } else if (*VolumeEntry).IsBoot != 0 {
         LoadStringW(
             GetModuleHandle(core::ptr::null_mut()),
-            IDS_INFO_BOOT,
+            IDS_INFO_VOLUME_BOOT,
             szInfoBuffer.as_mut_ptr(),
             (ARRAYSIZE!(szInfoBuffer)) as i32,
         );

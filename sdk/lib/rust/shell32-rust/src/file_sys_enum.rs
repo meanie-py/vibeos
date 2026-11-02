@@ -28,8 +28,6 @@ extern "C" {
 // Deterministic COM scaffold for CFileSysEnum; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -38,7 +36,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -545,7 +543,10 @@ extern "system" {
 }
 
 extern "C" {
-    #[link_name = "CPrinterFolder_CompareDetails_RustBridge"] fn SHELL32_CompareDetails(folder: *mut IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
+    // CPrinterFolder.cpp's C-linkage forwarder to the C++ SHELL32_CompareDetails; the one
+    // declaration the folder enumerators share, typed with shellcom's interface.
+    #[link_name = "CPrinterFolder_CompareDetails_RustBridge"]
+    pub fn SHELL32_CompareDetails(folder: *mut crate::shellcom::IShellFolder2, lparam: LPARAM, left: PCUIDLIST_RELATIVE, right: PCUIDLIST_RELATIVE) -> HRESULT;
     #[link_name = "memcpy"] fn cpp_com_memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, bytes: usize) -> *mut core::ffi::c_void;
     // wsprintfW is variadic, so it must be declared `extern "C"` (Rust variadics only support
     // the C calling convention) even though the real symbol is WINAPI/stdcall.
@@ -559,7 +560,6 @@ unsafe fn memcpy<D, S, N: CppComSize>(dst: *mut D, src: *const S, bytes: N) -> *
 
 extern "system" {
     #[link_name = "SHFree"] fn cpp_com_SHFree(memory: LPVOID);
-    #[link_name = "SHAlloc"] fn cpp_com_SHAlloc(bytes: SIZE_T) -> LPVOID;
 }
 #[inline]
 unsafe fn SHFree<T>(memory: *mut T) { cpp_com_SHFree(memory.cast()); }
@@ -600,7 +600,6 @@ extern "C" {
 }
 
 extern "C" {
-    fn memset(dst: *mut core::ffi::c_void, value: INT, bytes: usize) -> *mut core::ffi::c_void;
 }
 #[inline]
 unsafe fn CopyMemory<D, S, N: CppComSize>(
@@ -671,6 +670,12 @@ pub static CPP_COM_WSTR_C14D9C3E5FFD: [WCHAR; 67] = [0x0053, 0x006F, 0x0066, 0x0
 pub static CPP_COM_WSTR_C245AFF91259: [WCHAR; 2] = [0x002E, 0x0000];
 
 use core::ffi::c_void;
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::memset;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+use crate::wine::shellole::SHAlloc as cpp_com_SHAlloc;
 // The crate's own functions: the definition is the declaration.
 use crate::wine::classes::HLM_GetIconW;
 use crate::wine::pidl::ILClone;

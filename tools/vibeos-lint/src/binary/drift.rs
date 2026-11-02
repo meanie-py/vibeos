@@ -1,5 +1,4 @@
 use crate::binary::{BinaryContext, CheckOutput};
-use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -97,27 +96,6 @@ fn compare_text(committed: &Path, fresh: &str) -> Result<bool, String> {
 fn read_bytes(path: &Path) -> Result<Vec<u8>, String> {
     fs::read(path).map_err(|e| format!("{}: {e}", path.display()))
 }
-fn write_json_command(root: &Path, script: &str, args: &[String]) -> Result<Value, String> {
-    let output = command(
-        root,
-        &python(),
-        &[
-            vec![root.join(script).to_string_lossy().into_owned()],
-            args.to_vec(),
-        ]
-        .concat(),
-        Some(root),
-    )?;
-    if !output.status.success() {
-        return Err(format!(
-            "{} failed: {}",
-            script,
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-    serde_json::from_slice(&output.stdout)
-        .map_err(|e| format!("{} returned invalid JSON: {e}", script))
-}
 
 fn check_geninc_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Result<(), String> {
     let Some((_, triple, ksf)) = GENINC.iter().find(|(a, _, _)| *a == arch) else {
@@ -207,16 +185,11 @@ fn emit_ks(asmdef: &[u8]) -> Result<String, String> {
 
 fn check_cflags_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Result<(), String> {
     for target in ["genincdata"] {
-        let args = cmd_args(&["--stdout", "--target", target, "--arch", arch]);
-        let value = write_json_command(&ctx.root, "tools/gen_cflags.py", &args)?;
         let name = format!("{target}.{arch}");
-        if value.is_null() {
+        let Some(expected) = vibeos_codegen::cflags::generate(&ctx.root, arch, target)? else {
             add(rows, "cflags", name, SKIP, format!("no build-{arch}"));
             continue;
-        }
-        let expected = value
-            .as_str()
-            .ok_or("gen_cflags JSON output must be a string or null")?;
+        };
         let committed = ctx.root.join(format!(
             "sdk/lib/rust/reactos-link/cflags/{target}.{arch}.flags",
         ));
@@ -227,7 +200,7 @@ fn check_cflags_arch(ctx: &BinaryContext, arch: &str, rows: &mut Vec<Row>) -> Re
                 rows,
                 "cflags",
                 name,
-                if compare_text(&committed, expected)? {
+                if compare_text(&committed, &expected)? {
                     OK
                 } else {
                     DRIFT
@@ -620,7 +593,7 @@ pub fn run(ctx: &BinaryContext) -> Result<CheckOutput, String> {
         "\n  {checked} OK, {drift} DRIFT, {skipped} skipped (no build dir)\n"
     ));
     if drift > 0 {
-        out.push_str("\nDRIFT — committed fallback(s) are STALE vs cmake. Regenerate:\n  cflags  → python3 tools/gen_cflags.py [--arch …]\n  .res    → python3 tools/gen_committed_res.py [--arch …]\n  geninc  → self-hosted; if it drifts, the genincdata flags are stale\n            (python3 tools/gen_cflags.py --target genincdata) or a\n            ks*.template.h / genincdata.c change altered the .asmdef\n  widl .rs→ reactos-link RPC replay (see cargo-drive-cmake-off-roadmap WS3)\n  layout  → sdk/lib/rust/ntkrnl-sys/generate_bindings.sh, install the staged\n            bindgen_*.rs, then verify_sizes.py + tools/verify_offsets.py\n");
+        out.push_str("\nDRIFT — committed fallback(s) are STALE vs cmake. Regenerate:\n  cflags  → tools/codegen cflags --arch <arch>\n  .res    → python3 tools/gen_committed_res.py [--arch …]\n  geninc  → self-hosted; if it drifts, the genincdata flags are stale\n            (tools/codegen cflags --arch <arch> --target genincdata) or a\n            ks*.template.h / genincdata.c change altered the .asmdef\n  widl .rs→ reactos-link RPC replay (see cargo-drive-cmake-off-roadmap WS3)\n  layout  → sdk/lib/rust/ntkrnl-sys/generate_bindings.sh, install the staged\n            bindgen_*.rs, then verify_sizes.py + tools/verify_offsets.py\n");
         return Ok(CheckOutput::new(out, 1));
     }
     if checked == 0 {

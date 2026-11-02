@@ -423,8 +423,6 @@ extern "C" {
 // Deterministic COM scaffold for CDesktopFolder; method bodies are generated separately.
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
-    #[link_name = "HeapAlloc"] fn cpp_com_HeapAlloc(heap: HANDLE, flags: DWORD, bytes: usize) -> *mut core::ffi::c_void;
-    #[link_name = "HeapFree"] fn cpp_com_HeapFree(heap: HANDLE, flags: DWORD, memory: *mut core::ffi::c_void) -> BOOL;
     fn Shell32RustObjectLock();
     fn Shell32RustObjectUnlock();
 }
@@ -433,7 +431,7 @@ impl CppComSize for usize { fn cpp_com_size(self) -> usize { self } }
 impl CppComSize for u32 { fn cpp_com_size(self) -> usize { self as usize } }
 #[inline]
 unsafe fn HeapAlloc<N: CppComSize>(heap: HANDLE, flags: DWORD, bytes: N) -> *mut core::ffi::c_void {
-    cpp_com_HeapAlloc(heap, flags, bytes.cpp_com_size())
+    cpp_com_HeapAlloc(heap, flags, (bytes.cpp_com_size()) as _)
 }
 #[inline]
 unsafe fn HeapFree<T>(heap: HANDLE, flags: DWORD, memory: *mut T) -> BOOL {
@@ -1013,7 +1011,6 @@ extern "system" {
     fn lstrlenW(text: LPCWSTR) -> INT;
     fn CoTaskMemFree(memory: LPVOID);
     fn SHStrDupW(source: LPCWSTR, out: *mut LPWSTR) -> HRESULT;
-    #[link_name = "Shell32RustCoCreateInitSF"] fn SHELL32_CoCreateInitSF(root: LPCITEMIDLIST, clsid: *const GUID, csidl: INT, riid: REFIID, out: *mut *mut core::ffi::c_void) -> HRESULT;
 }
 
 extern "C" {
@@ -1111,6 +1108,23 @@ pub static CPP_COM_WSTR_19AD2888CFA5: [WCHAR; 9] = [0x0064, 0x0065, 0x0073, 0x00
 pub static CPP_COM_WSTR_EB4CE2024A43: [WCHAR; 7] = [0x0046, 0x006F, 0x006C, 0x0064, 0x0065, 0x0072, 0x0000];
 
 use core::ffi::c_void;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::island::HeapAlloc as cpp_com_HeapAlloc;
+use crate::island::HeapFree as cpp_com_HeapFree;
+use crate::shell32::dllmain::Shell32RustCoCreateInitSF as SHELL32_CoCreateInitSF;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::shell32::shldataobject::SHELL_DataObject_ILCloneFullItem_RustBridge as SHELL_DataObject_ILCloneFullItem;
+use crate::shell32::shlfolder::AddClassKeyToArray_RustBridge as AddClassKeyToArray;
+use crate::shell32::shlfolder::AddClsidKeyToArray_RustBridge as AddClsidKeyToArray;
+use crate::shell32::shlfolder::AddFSClassKeysToArray_RustBridge as AddFSClassKeysToArray;
+use crate::shell32::shlfolder::SHELL32_DefaultContextMenuCallBack_RustBridge as SHELL32_DefaultContextMenuCallBack;
+use crate::shell32::shlfolder::SHELL32_GetDisplayNameOfChild_RustBridge as SHELL32_GetDisplayNameOfChild;
+use crate::shell32::shlfolder::SHELL32_ShowPropertiesDialog_RustBridge as SHELL32_ShowPropertiesDialog;
+use crate::shell32::utils::BindCtx_ContainsObject_RustBridge as BindCtx_ContainsObject;
+use crate::shell32::utils::SHGetNameAndFlagsW_RustBridge as SHGetNameAndFlagsW;
+use crate::shell32::utils::SHIsFileSysBindCtx_RustBridge as SHIsFileSysBindCtx;
+use crate::shell32::utils::SHSkipJunctionBinding_RustBridge as SHSkipJunctionBinding;
+use crate::shell32::utils::Shell_FailForceReturn_RustBridge as Shell_FailForceReturn;
 // The crate's own functions: the definition is the declaration.
 use crate::shell32::cidldataobj_free::IDataObject_Constructor;
 use crate::wine::pidl::ILClone;
@@ -1891,7 +1905,7 @@ pub unsafe fn CDesktopFolder_GetUIObjectOf_body(this: *mut CDesktopFolder, hwndO
         } else {
             let mut keys: CRegKeyHandleArray = CRegKeyHandleArray::default();
             if self_flag != 0 {
-                AddClsidKeyToArray(core::ptr::addr_of!(CLSID_ShellDesktop), keys.hKeys.as_mut_ptr(), &mut keys.cKeys);
+                AddClsidKeyToArray((core::ptr::addr_of!(CLSID_ShellDesktop)).cast(), keys.hKeys.as_mut_ptr(), &mut keys.cKeys);
                 AddClassKeyToArray(CPP_COM_WSTR_EB4CE2024A43.as_ptr(), keys.hKeys.as_mut_ptr(), &mut keys.cKeys);
             } else if cidl > 0 {
                 AddFSClassKeysToArray(cidl, apidl, keys.hKeys.as_mut_ptr(), &mut keys.cKeys);
@@ -1976,7 +1990,7 @@ pub unsafe fn CDesktopFolder_GetDisplayNameOf_body(this: *mut CDesktopFolder, pi
         return E_INVALIDARG;
     }
     if _ILIsPidlSimple(pidl) == 0 {
-        return SHELL32_GetDisplayNameOfChild(core::ptr::addr_of_mut!((*this).IShellFolder2_iface), pidl, dwFlags, strRet);
+        return SHELL32_GetDisplayNameOfChild((core::ptr::addr_of_mut!((*this).IShellFolder2_iface)).cast(), pidl, dwFlags, (strRet).cast());
     } else if _ILIsDesktop(pidl) != 0 {
         if IS_SHGDN_DESKTOPABSOLUTEPARSING(dwFlags) != 0 {
             return SHSetStrRet(strRet, (*this).sPathTarget);
@@ -2132,11 +2146,11 @@ pub unsafe fn CDesktopFolder_CallBack_body(this: *mut CDesktopFolder, psf: *mut 
         && wParam == (if !pdtobj.is_null() { DFM_CMD_PROPERTIES } else { IDC_PROPERTIES }) as WPARAM
     {
         if !pdtobj.is_null() {
-            let pidl = SHELL_DataObject_ILCloneFullItem(pdtobj, 0);
+            let pidl = SHELL_DataObject_ILCloneFullItem((pdtobj).cast(), 0);
             let bIsSelf = _ILIsDesktop(pidl);
             ILFree(pidl);
             if bIsSelf == 0 {
-                return SHELL32_ShowPropertiesDialog(pdtobj);
+                return SHELL32_ShowPropertiesDialog((pdtobj).cast());
             }
         }
         let result = SHELL_ExecuteControlPanelCPL(hwndOwner, CPP_COM_WSTR_19AD2888CFA5.as_ptr());
@@ -2168,7 +2182,7 @@ pub unsafe fn CDesktopFolder_CallBack_body(this: *mut CDesktopFolder, psf: *mut 
         return S_OK;
     }
 
-    SHELL32_DefaultContextMenuCallBack(psf, pdtobj, uMsg)
+    SHELL32_DefaultContextMenuCallBack((psf).cast(), (pdtobj).cast(), uMsg)
 }
 
 // ===================== CDesktopFolder deterministic substrate closure =====================
@@ -2288,29 +2302,5 @@ extern "system" {
     fn CDesktopFolder_CreateShellFolderView_RustBridge(psf: *mut IShellFolder, ppvOut: *mut *mut core::ffi::c_void) -> HRESULT;
     fn CFSFolder_GetFSColumnDetails_RustBridge(iColumn: UINT, sd: *mut SHELLDETAILS) -> HRESULT;
     fn CFSFolder_GetDefaultFSColumnState_RustBridge(iColumn: UINT, csFlags: *mut SHCOLSTATEF) -> HRESULT;
-    #[link_name = "AddClsidKeyToArray_RustBridge"]
-    fn AddClsidKeyToArray(clsid: REFCLSID, array: *mut HKEY, cKeys: *mut UINT) -> LONG;
-    #[link_name = "BindCtx_ContainsObject_RustBridge"]
-    fn BindCtx_ContainsObject(pBindCtx: LPBC, pszName: LPCWSTR) -> BOOL;
-    #[link_name = "SHSkipJunctionBinding_RustBridge"]
-    fn SHSkipJunctionBinding(pbc: LPBC, pclsid: *mut CLSID) -> BOOL;
-    #[link_name = "Shell_FailForceReturn_RustBridge"]
-    fn Shell_FailForceReturn(hr: HRESULT) -> BOOL;
-    #[link_name = "SHELL32_ShowPropertiesDialog_RustBridge"]
-    fn SHELL32_ShowPropertiesDialog(pdo: *mut IDataObject) -> HRESULT;
-    #[link_name = "SHELL_DataObject_ILCloneFullItem_RustBridge"]
-    fn SHELL_DataObject_ILCloneFullItem(pDO: *mut IDataObject, Index: UINT) -> PIDLIST_ABSOLUTE;
-    #[link_name = "SHGetNameAndFlagsW_RustBridge"]
-    fn SHGetNameAndFlagsW(pidl: LPCITEMIDLIST, flags: DWORD, text: LPWSTR, cch: UINT, attributes: *mut DWORD) -> HRESULT;
     // EXISTING — created by the CFSFolder landing:
-    #[link_name = "AddClassKeyToArray_RustBridge"]
-    fn AddClassKeyToArray(szClass: LPCWSTR, array: *mut HKEY, cKeys: *mut UINT) -> LONG;
-    #[link_name = "AddFSClassKeysToArray_RustBridge"]
-    fn AddFSClassKeysToArray(cidl: UINT, apidl: PCUITEMID_CHILD_ARRAY, array: *mut HKEY, cKeys: *mut UINT);
-    #[link_name = "SHELL32_GetDisplayNameOfChild_RustBridge"]
-    fn SHELL32_GetDisplayNameOfChild(psf: *mut IShellFolder2, pidl: LPCITEMIDLIST, dwFlags: DWORD, strRet: *mut STRRET) -> HRESULT;
-    #[link_name = "SHELL32_DefaultContextMenuCallBack_RustBridge"]
-    fn SHELL32_DefaultContextMenuCallBack(psf: *mut IShellFolder, pdo: *mut IDataObject, msg: UINT) -> HRESULT;
-    #[link_name = "SHIsFileSysBindCtx_RustBridge"]
-    fn SHIsFileSysBindCtx(pbc: LPBC, pfd: *mut core::ffi::c_void) -> HRESULT;
 }

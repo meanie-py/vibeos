@@ -5744,6 +5744,7 @@ def test_conformance_parser_detects_crash_regression(tmp_path):
 @pytest.fixture
 def cohab_repo(tmp_path: Path, monkeypatch) -> Path:
     """A fake arm64 tree with the full staticlib-cohab chain for one crate."""
+    monkeypatch.setattr(provenance, "cargo_module_rels", lambda repo: [])
     r = tmp_path / "repo"
     crate = r / "sdk" / "lib" / "rust" / "widget-rust" / "src"
     crate.mkdir(parents=True)
@@ -5821,6 +5822,20 @@ def test_cohab_same_stem_other_binary_is_not_stale(cohab_repo: Path):
     for f in ("libwidget_rust.a", "widget.sys"):
         os.utime(mod / f, (6000, 6000))  # the kernel crate changed and its .sys relinked
     assert _cohab(cohab_repo) == []
+
+
+def test_cohab_cargo_linked_binary_ignores_cmake_staticlib(cohab_repo: Path, monkeypatch):
+    """user32_vista.dll is linked by its cargo cell from the crate as an rlib, while the
+    CMake user32_vista_static target still builds libuser32_vista_rust.a beside it. That
+    archive finishing after the cargo link is not a missed relink (arm64, 2026-11-01)."""
+    monkeypatch.setattr(provenance, "cargo_module_rels", lambda repo: ["drivers/widget/widget.sys"])
+    mod = cohab_repo / "build-arm64" / "drivers" / "widget"
+    os.utime(mod / "libwidget_rust.a", (6000, 6000))
+    assert _cohab(cohab_repo) == []
+    # The cargo-linked shape still owes the binary-vs-source rule.
+    os.utime(cohab_repo / "sdk/lib/rust/widget-rust/src/lib.rs", (7000, 7000))
+    r = _cohab(cohab_repo)
+    assert r and ".rs newer than the built binary" in r[0], r
 
 
 def test_cohab_cargo_output_missing_is_stale(cohab_repo: Path):
@@ -8630,7 +8645,8 @@ def test_difftest_covers_the_seh_layout_guardian(tmp_path: Path):
     (seh / "seh_layout.h").write_text("")
     argv = dict(difftest_mod.generated_checks(tmp_path))["layout:seh-i386"]
     assert argv[-1] == "--check"
-    assert argv[-2].endswith("gen_msvcrt_seh_layout.py")
+    assert argv[-2] == "seh-layout"
+    assert argv[0].endswith("tools/codegen")
 
 
 def test_difftest_a_stale_generated_header_fails_the_run(tmp_path, monkeypatch):

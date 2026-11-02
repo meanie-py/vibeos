@@ -574,6 +574,7 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
     build_dir = repo / f"build-{archcfg.base_arch(arch)}"
     reasons = []
     index = None  # built on the first crate that needs it, then shared by all of them
+    cargo_rels = None  # likewise
     for rel in boot_set_cohab_rels(repo, arch):
         crate = _crate_for_rel(repo, rel)
         assert crate is not None  # boot_set_cohab_rels only returns mapped rels
@@ -587,8 +588,16 @@ def cohab_staleness_reasons(repo: Path, arch: str) -> list[str]:
         if index is None:
             index = _StaticlibIndex(repo, build_dir)
         cargo_out, copied = _crate_staticlibs(repo, build_dir, crate, index)
+        if cargo_rels is None:
+            cargo_rels = set(cargo_module_rels(repo))
 
-        if cargo_out is None and copied is None:
+        # A cargo-linked binary consumes its crate as an rlib, never the CMake
+        # staticlib — which can still exist beside it for another consumer
+        # (user32_vista.dll is linked by user32_vista-cargo, while
+        # user32_vista_static still builds libuser32_vista_rust.a). Comparing the
+        # binary to that archive reported "never relinked" on a fresh arm64 build
+        # whose archive merely finished 7s after the cargo link (2026-11-01).
+        if (cargo_out is None and copied is None) or rel in cargo_rels:
             # No staticlib anywhere in this crate's chain => it is not a
             # staticlib-cohab at all but a cargo-LINKED module (ntoskrnl-cargo /
             # win32k produce the binary directly through reactos-link, consuming

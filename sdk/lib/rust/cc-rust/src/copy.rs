@@ -657,7 +657,7 @@ pub unsafe extern "system" fn CcZeroData(
 
         let mdl = IoAllocateMdl(
             core::ptr::null_mut(),
-            core::cmp::min(length as ULONG, MAX_ZERO_LENGTH),
+            core::cmp::min(length, MAX_ZERO_LENGTH as LONGLONG) as ULONG,
             0u8,
             0u8,
             core::ptr::null_mut(),
@@ -673,8 +673,10 @@ pub unsafe extern "system" fn CcZeroData(
         }
         (*mdl).MdlFlags |= MDL_PAGES_LOCKED as i16;
 
+        // Compare at LONGLONG width as the C does: narrowing `length` first makes a 4 GiB range
+        // a 0-byte chunk, and `length -= 0` then spins forever.
         while length > 0 {
-            let current_length = core::cmp::min(length as ULONG, MAX_ZERO_LENGTH);
+            let current_length = core::cmp::min(length, MAX_ZERO_LENGTH as LONGLONG) as ULONG;
             (*mdl).ByteCount = current_length;
 
             KeInitializeEvent(core::ptr::addr_of_mut!(event), _EVENT_TYPE_NotificationEvent, 0u8);
@@ -719,7 +721,7 @@ pub unsafe extern "system" fn CcZeroData(
 
     while write_offset.QuadPart < (*end_offset).QuadPart {
         let vacb_offset = (write_offset.QuadPart % VACB_MAPPING_GRANULARITY as LONGLONG) as ULONG;
-        let vacb_length = core::cmp::min(length as ULONG, VACB_MAPPING_GRANULARITY - vacb_offset);
+        let vacb_length = core::cmp::min(length, (VACB_MAPPING_GRANULARITY - vacb_offset) as LONGLONG) as ULONG;
 
         let mut vacb: PROS_VACB = core::ptr::null_mut();
         let status = CcRosGetVacb(shared_cache_map, write_offset.QuadPart, core::ptr::addr_of_mut!(vacb));

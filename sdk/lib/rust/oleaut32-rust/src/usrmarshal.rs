@@ -573,7 +573,7 @@ pub unsafe extern "system" fn VARIANT_UserMarshal(
                 Pos = VARIANT_UserMarshal(pFlags, Pos, *V_VARIANTREF_ref(pvar) );
             }
             x if x == VT_UNKNOWN as USHORT => {
-                Pos = interface_user_marshal(pFlags, Pos, &IID_IUnknown, (*V_UNKNOWN_ref(pvar)));
+                Pos = interface_user_marshal(pFlags, Pos, &IID_IUnknown, *V_UNKNOWN_ref(pvar) );
             }
             x if x == (VT_UNKNOWN | VT_BYREF) as USHORT => {
                 Pos = interface_user_marshal(pFlags, Pos, &IID_IUnknown, *(*V_UNKNOWNREF_ref(pvar)));

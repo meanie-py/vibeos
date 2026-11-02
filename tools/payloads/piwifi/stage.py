@@ -37,4 +37,12 @@ def stage_entries(arch: str) -> list[dict]:
         if not cfg.is_file():
             sys.exit(f"piwifi: VIBEOS_WIFI_CONFIG={wifi} is not a file")
         out.append({"src": str(cfg), "dest": "bin/wifi.txt"})
+    else:
+        # The network is baked in here, at build time: setting VIBEOS_WIFI_CONFIG for
+        # `pi4 boot` later does nothing, and the driver then sits disconnected.
+        print(
+            "piwifi: VIBEOS_WIFI_CONFIG is unset, so this image joins no network "
+            "(set it for the BUILD, not the boot)",
+            file=sys.stderr,
+        )
     return out

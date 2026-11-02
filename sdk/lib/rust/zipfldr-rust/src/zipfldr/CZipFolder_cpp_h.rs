@@ -879,7 +879,8 @@ impl CZipFolder {
                 return SHCreateFileExtractIconW(core::ptr::addr_of!((*zipEntry).Name).cast(), dwAttributes, riid, ppvOut);
             }
         }
-        else if IsEqualGUID!(&(*riid), &(IID_IContextMenu)) && cidl >= 0 {
+        else if IsEqualGUID!(&(*riid), &(IID_IContextMenu)) {
+            // CZipFolder.cpp tests `cidl >= 0` here too: always true for a UINT, so dropped.
             // Context menu of an object inside the zip
             let zipEntry: *const ZipPidlEntry = _ZipFromIL(*apidl);
             if !zipEntry.is_null() {

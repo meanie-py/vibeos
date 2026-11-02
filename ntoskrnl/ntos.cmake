@@ -205,6 +205,15 @@ list(APPEND SOURCE
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/time.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
+    # kse/ (upstream-new 2026-10, the Kernel Shim Engine: driver-database matching plus the
+    #   IgnoreFreePoolTag and KmWin2k3VersionLie shims) is a PORT ITEM for ntoskrnl-rust, not
+    #   new C. Upstream's IoInitSystem calls KseInitialize(0/1), and its ntoskrnl links
+    #   apphelp's sdbread_km; neither is wired here until the Rust port lands.
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kse/kse.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kse/ksedb.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kse/driverscope.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kse/ignorepooltag.c
+    #${REACTOS_SOURCE_DIR}/ntoskrnl/kse/versionlie.c
     # lpc/ — replaced by Rust (ntoskrnl-rust/src/lpc/)
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
     #${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c

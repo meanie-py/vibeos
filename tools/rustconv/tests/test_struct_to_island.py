@@ -106,3 +106,42 @@ def test_rename_and_packing_correction_swap_the_rest_stay(tmp_path):
     # island type would collide.
     assert "pub struct REGFOLDERINFO" in text
     assert any("REGFOLDERINFO" in k and "implements" in k for k in kept)
+
+
+def test_a_data_record_with_an_I_or_C_prefix_is_not_mistaken_for_com(tmp_path):
+    src = _crate(tmp_path)
+    for arch in s2i.ARCHES:
+        p = src / f"island_{arch}.rs"
+        p.write_text(
+            p.read_text()
+            + "#[repr(C, packed)]\npub struct CIDA {\n    pub cidl: UINT,\n}\n"
+            + "#[repr(C)]\npub struct IUnknown {\n    pub lpVtbl: *const IUnknownVtbl,\n}\n"
+        )
+    (src / "hand.rs").write_text(
+        "#[repr(C)]\npub struct CIDA {\n    pub cidl: UINT,\n}\n"
+        "#[repr(C)]\npub struct IUnknown {\n    pub lpVtbl: *const IUnknownVtbl,\n}\n"
+    )
+    text = s2i.plan(src, "island", None)[0]["hand"]
+    assert "pub use crate::island::CIDA;" in text
+    assert "pub struct IUnknown" in text
+
+
+def test_a_kept_copy_under_another_name_holds_the_struct_that_embeds_it(tmp_path):
+    # control.rs's `AppletInfo` is wine/cpanel.h's `struct applet_info`: swapping CPlApplet
+    # would turn `.info` into the island's type under the code's feet.
+    src = _crate(tmp_path)
+    island = (
+        "#[repr(C)]\npub struct applet_info {\n    pub idIcon: UINT,\n}\n"
+        "#[repr(C)]\npub struct CPlApplet {\n    pub count: UINT,\n"
+        "    pub info: [applet_info; 1usize],\n}\n"
+    )
+    for arch in s2i.ARCHES:
+        (src / f"island_{arch}.rs").write_text(island)
+    (src / "hand.rs").write_text(
+        "#[repr(C)]\npub struct AppletInfo {\n    pub idIcon: UINT,\n}\n"
+        "#[repr(C)]\npub struct CPlApplet {\n    pub count: UINT,\n"
+        "    pub info: [AppletInfo; 1],\n}\n"
+    )
+    changed, _, kept = s2i.plan(src, "island", None)
+    assert "hand" not in changed
+    assert any("CPlApplet" in k for k in kept)

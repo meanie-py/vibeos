@@ -37,7 +37,10 @@ const INPUTS: &[SourceSet] = &[
         &["c", "h", "cpp", "hpp"],
         &[],
     )
-    .with_pruning(&[]),
+    // sdk/lib holds cargo's sdk/lib/rust/target, whose build scripts create and delete
+    // scratch C (cc's detect_compiler_family.c) under a concurrent build: an unpruned walk
+    // listed one, it vanished before the read, and the whole source check died SCANNER_ERROR.
+    .with_pruning(&["target"]),
 ];
 impl Rule for VerifyTables {
     fn name(&self) -> &'static str {
@@ -632,6 +635,16 @@ fn py_hex(v: &Big) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sdk_lib_tables_never_read_cargo_output() {
+        let set = INPUTS.iter().find(|s| s.name == "tables-c-sdk-lib").unwrap();
+        assert!(set.accepts(Path::new("sdk/lib/rtl/a.c"), false));
+        assert!(!set.accepts(
+            Path::new("sdk/lib/rust/target/release/build/x/out/detect_compiler_family.c"),
+            false
+        ));
+        assert!(!set.visits(Path::new("sdk/lib/rust/target"), false));
+    }
     #[test]
     fn evaluator_supports_arbitrary_python_integer_ops() {
         let d = BTreeMap::new();

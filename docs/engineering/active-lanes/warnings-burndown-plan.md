@@ -9,7 +9,7 @@ the genuine-signal warnings are audited and fixed, and — critically — the fi
 **stay** fixed (no blanket re-suppression). Incremental, per-crate, each cluster gated ×3
 and landed on its own so conflicts stay localized and every step is revertible.
 
-## RESUME HERE (updated 2026-10-17)
+## RESUME HERE (updated 2026-11-01)
 
 **State.** The 2026-10-17 census read **2,349 sites (48 UB, 1,072 LOGIC, 1,229 NOISE)**,
 down from 7,215. It covered 695 fresh units; the only stale one was reactos-link, a host tool
@@ -60,10 +60,18 @@ no new warnings. Order of operations, each one a tool:
 5. crate-repair between each step (`raw_pointer_cast` no longer bridges two distinct named
    pointees).
 
+**2026-11-01: shell32 and menuband at ZERO warnings on all three arches** (cargo check).
+shell32's last 36 clashes:
+- `extern_to_use.py --bridges`: link_name aliases became `use .. as N` of the crate's own export
+  or the island's declaration.
+- struct_to_island's COM test was a name prefix, so it had skipped CIDA ×7 (header packing) and
+  CMINVOKECOMMANDINFO. It now tests for a `lpVtbl` field.
+- external symbols the island lacks were collapsed with `--to prelude|win32`.
+- Get/SetWindowLongPtr*: arch-gated island imports. dialogs.rs had declared the *Ptr*
+  forms unconditionally, which i386 does not export.
+
 **Owed, roughly in priority order:**
-- **The rest of `clashing_extern`:** shell32's 36 are `#[link_name = "..._RustBridge"]`
-  aliases that `extern_to_use` KEEPs (a link name is a different symbol), plus the
-  GetWindowLongPtr* pairs (island `extern "C"` on 64-bit vs `system`). `extern_to_use` gaps:
+- **The rest of `clashing_extern`** (outside shell32; re-run the census). `extern_to_use` gaps:
   - it does not collapse two declarations in the SAME file under different inline mods
     (rtl-strings' `cabi/mod.rs` was done by hand);
   - it does not see that a definition is cfg-gated (cdrom's i386-only `KeQueryTickCount`

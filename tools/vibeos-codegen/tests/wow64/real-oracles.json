@@ -1,0 +1,38 @@
+{
+  "ntdll/arm64": {
+    "sha256": "1739a9d7cdc48d03d66678876a58b4fe1ce20b9a0a9fd7068de2f2263fdbbddd",
+    "count": 303,
+    "manual": 133,
+    "first": "NtAcceptConnectPort"
+  },
+  "ntdll/amd64": {
+    "sha256": "5326d8320a7541a2c7028f40921f0b032af90db3e8f7d90ab3f83cae6dce3549",
+    "count": 303,
+    "manual": 133,
+    "first": "NtAcceptConnectPort"
+  },
+  "ntdll/i386": {
+    "sha256": "04b4ea09509d57438e711a8cfa84cb85e6694db4d7c75f99bc2f960878aa9fb2",
+    "count": 303,
+    "manual": 133,
+    "first": "NtAcceptConnectPort"
+  },
+  "win32k/arm64": {
+    "sha256": "9e51ecb85d376e14bc1862c5bec3493574ffe022c8473d6e0f4d82775a3d9666",
+    "count": 740,
+    "manual": 124,
+    "first": "NtGdiAbortDoc"
+  },
+  "win32k/amd64": {
+    "sha256": "0a1c0fe8c47e05f8dcc44000f320478af5c3fd7329095e29b154c394c93fda86",
+    "count": 740,
+    "manual": 124,
+    "first": "NtGdiAbortDoc"
+  },
+  "win32k/i386": {
+    "sha256": "86ab4bc8b06df3c557e8feef03f26d15593d656a899241be501229811a735541",
+    "count": 740,
+    "manual": 124,
+    "first": "NtGdiAbortDoc"
+  }
+}

@@ -61,7 +61,7 @@ SRC_IN_COMMENT = re.compile(
     r"^\s*#.*?[A-Za-z0-9_${}/.+-]*[A-Za-z0-9_+-]\.(?:c|cpp|cxx|cc|S|s|asm|inc)\b"
 )
 
-SKIP_DIRS = {".git", "build", "output", "target", "__pycache__", ".claude"}
+SKIP_DIRS = {".cache", ".git", "build", "output", "target", "__pycache__", ".claude"}
 
 
 def cmake_files(root: Path = REPO) -> list[Path]:

@@ -50,3 +50,12 @@ def test_a_guarded_undef_is_vacuous():
     assert not real(pre)
     assert real("#ifdef X\nstatic int y = 1;\n#endif\n"), "a conditional's body still counts"
     assert real("#undef X\n#define X 3\n")
+
+
+def test_specifiers_split_off_a_function_definition_are_vacuous():
+    # setupapi stubs.c: the scanner left `WINSETUPAPI BOOL` at file scope and the model said so
+    tu = "WINSETUPAPI BOOL WINAPI SetupDiGetDeviceInterfaceAlias(IN HDEVINFO h)\n{\n}\n"
+    assert not real("WINSETUPAPI BOOL", tu)
+    assert real("WINSETUPAPI BOOL", "WINSETUPAPI BOOL Flag;\n"), "a variable is content"
+    assert real("static int\nCounter = 0;\n", "static int Counter = 0;\n")
+    assert real("WINSETUPAPI BOOL"), "without the TU text it is not provably a fragment"

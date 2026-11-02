@@ -837,14 +837,8 @@ extern "system" {
 }
 
 // GetWindowLongPtr/SetWindowLongPtr: real exports differ per pointer width.
-#[cfg(target_pointer_width = "32")]
-extern "system" {
-}
 #[cfg(target_pointer_width = "64")]
-extern "system" {
-    fn GetWindowLongPtrW(h: HWND, idx: c_int) -> LONG_PTR;
-    fn SetWindowLongPtrW(h: HWND, idx: c_int, val: LONG_PTR) -> LONG_PTR;
-}
+use crate::island::{GetWindowLongPtrW, SetWindowLongPtrW};
 #[cfg(target_pointer_width = "32")]
 #[inline]
 unsafe fn get_window_long_ptr(h: HWND, idx: c_int) -> LONG_PTR {

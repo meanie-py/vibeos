@@ -1092,15 +1092,18 @@ pub const IDS_SETID_INVALID_TYPE: u32 = 4453;
 pub const IDS_UNIQUID_DISK_INVALID_STYLE: u32 = 4500;
 pub const IDS_STATUS_YES: u32 = 31;
 pub const IDS_STATUS_NO: u32 = 32;
-pub const IDS_STATUS_DISK_HEALTHY: u32 = 33;
-pub const IDS_STATUS_DISK_SICK: u32 = 34;
-pub const IDS_STATUS_UNAVAILABLE: u32 = 35;
-pub const IDS_STATUS_ONLINE: u32 = 36;
-pub const IDS_STATUS_OFFLINE: u32 = 37;
-pub const IDS_STATUS_NO_MEDIA: u32 = 38;
-pub const IDS_INFO_BOOT: u32 = 39;
-pub const IDS_INFO_SYSTEM: u32 = 40;
-pub const IDS_MSG_ARG_SYNTAX_ERROR: u32 = 41;
+pub const IDS_STATUS_ONLINE: u32 = 33;
+pub const IDS_STATUS_OFFLINE: u32 = 34;
+pub const IDS_STATUS_VOLUME_HEALTHY: u32 = 35;
+pub const IDS_STATUS_VOLUME_FAILED: u32 = 36;
+pub const IDS_STATUS_VOLUME_NO_MEDIA: u32 = 37;
+pub const IDS_STATUS_VOLUME_REBUILD: u32 = 38;
+pub const IDS_STATUS_VOLUME_UNUSABLE: u32 = 39;
+pub const IDS_INFO_VOLUME_BOOT: u32 = 40;
+pub const IDS_INFO_VOLUME_SYSTEM: u32 = 41;
+pub const IDS_INFO_VOLUME_HIDDEN: u32 = 42;
+pub const IDS_INFO_VOLUME_OFFLINE: u32 = 43;
+pub const IDS_MSG_ARG_SYNTAX_ERROR: u32 = 55;
 pub const IDS_HELP_ACTIVE: u32 = 58;
 pub const IDS_HELP_ADD: u32 = 59;
 pub const IDS_HELP_ASSIGN: u32 = 60;
@@ -4474,6 +4477,14 @@ pub const _VOLUME_TYPE_VOLUME_TYPE_UNKNOWN: _VOLUME_TYPE = 3;
 pub type _VOLUME_TYPE = ::core::ffi::c_uint;
 pub use self::_VOLUME_TYPE as VOLUME_TYPE;
 pub type PVOLUME_TYPE = *mut _VOLUME_TYPE;
+pub const _VOLUME_STATUS_VOLUME_STATUS_HEALTHY: _VOLUME_STATUS = 0;
+pub const _VOLUME_STATUS_VOLUME_STATUS_FAILED: _VOLUME_STATUS = 1;
+pub const _VOLUME_STATUS_VOLUME_STATUS_NO_MEDIA: _VOLUME_STATUS = 2;
+pub const _VOLUME_STATUS_VOLUME_STATUS_REBUILD: _VOLUME_STATUS = 3;
+pub const _VOLUME_STATUS_VOLUME_STATUS_UNUSABLE: _VOLUME_STATUS = 4;
+pub type _VOLUME_STATUS = ::core::ffi::c_uint;
+pub use self::_VOLUME_STATUS as VOLUME_STATUS;
+pub type PVOLUME_STATUS = *mut _VOLUME_STATUS;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MBR_PARTITION_DATA {
@@ -4590,6 +4601,7 @@ pub struct _VOLENTRY {
     pub BytesPerSector: ULONG,
     pub IsSystem: BOOL,
     pub IsBoot: BOOL,
+    pub VolumeStatus: VOLUME_STATUS,
     pub pExtents: PVOLUME_DISK_EXTENTS,
 }
 pub type VOLENTRY = _VOLENTRY;

@@ -404,6 +404,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "batt-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "beep-cargo"
 version = "0.1.0"
 dependencies = [
@@ -914,6 +922,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "clusapi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "cmboot-rust"
 version = "0.1.0"
 dependencies = [
@@ -1224,6 +1240,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cryptdlg-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "cryptlib-rust"
 version = "0.1.0"
 dependencies = [
@@ -1327,6 +1351,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "dciman32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -1719,6 +1751,14 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "esent-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]

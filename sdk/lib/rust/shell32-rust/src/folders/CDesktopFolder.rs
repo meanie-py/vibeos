@@ -1,5 +1,7 @@
 // rustconv-assembly: free-functions
 use crate::prelude::*;
+// Renamed imports of each symbol's one declaration: a crate export or the island's.
+use crate::drives_folder_tu::SHELL32_IsShellFolderNamespaceItemHidden_RustBridge as SHELL32_IsShellFolderNamespaceItemHidden;
 // The crate's own functions: the definition is the declaration.
 use crate::reg_folder::CRegFolder_CreateInstance;
 use crate::wine::shellpath::SHGetSpecialFolderPathW;
@@ -404,8 +406,6 @@ pub static CPP_COM_WSTR_CLASSICSTARTMENU: [WCHAR; 34] = [
 ];
 
 extern "system" {
-    #[link_name = "SHELL32_IsShellFolderNamespaceItemHidden_RustBridge"]
-    fn SHELL32_IsShellFolderNamespaceItemHidden(SubKey: LPCWSTR, Clsid: REFCLSID) -> BOOL;
 }
 
 // C++ `HRESULT WINAPI CDesktopFolderViewCB::ShouldShow(IShellFolder*, PCIDLIST_ABSOLUTE,

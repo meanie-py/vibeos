@@ -98,6 +98,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_codegen.py"),
     (".", ".", "tools/test_resource_codegen.py"),
     (".", ".", "tools/test_binding_codegen.py"),
+    (".", ".", "tools/test_module_codegen.py"),
     (".", ".", "tools/test_gen_rpc_guards.py"),
     (".", ".", "tools/test_rpc_try_wrap.py"),
     # The characterisation driver's accusation rule. Its failure mode is to
@@ -168,6 +169,8 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_link_pulls.py"),
     (".", ".", "tools/test_ninja_closure_prune.py"),
     (".", ".", "tools/test_gen_ctype_tables.py"),
+    (".", ".", "tools/test_compiler_codegen.py"),
+    (".", ".", "tools/test_build_codegen.py"),
     (".", ".", "tools/test_verify_ucrtbase_cohab.py"),
     (".", ".", "tools/test_ucrt_tier2_refset.py"),
     # The sharded sweep's completeness oracle. Its failure mode is FALSE

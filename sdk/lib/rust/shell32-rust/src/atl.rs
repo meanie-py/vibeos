@@ -46,6 +46,8 @@
 //! so `CComPtr` is only ever instantiated over interface types.
 
 use core::ffi::c_void;
+// One declaration per external symbol: prelude.rs.
+use crate::prelude::malloc;
 use core::marker::PhantomData;
 
 use crate::island::{
@@ -61,7 +63,6 @@ const LMEM_FIXED: u32 = 0x0000;
 const LMEM_MOVEABLE: u32 = 0x0002;
 
 extern "C" {
-    fn malloc(size: usize) -> *mut c_void;
     fn realloc(p: *mut c_void, size: usize) -> *mut c_void;
     fn free(p: *mut c_void);
 }
