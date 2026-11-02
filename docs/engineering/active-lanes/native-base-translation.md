@@ -192,8 +192,26 @@ What the batch added to the shared crates and tools:
      broker lock, and `build` reclassifies any FAILURE over a moved tree as
      BUILD_INPUTS_MOVED naming the original verdict (a `Run.finalize_hooks` entry, so every
      early return gets it; the success path already refused to stamp a moved tree).
-8. Pick the next native area from `rust-port-status.md` (what is still C and not on the
-   skip list below).
+8. **Survey: the native C still compiled (2026-11-01, amd64 `compile_commands.json`).**
+   Excluding vendored trees, `sdk/tools`, rostests, and every module DIRECTORY whose sources
+   carry a Wine marker (a debug channel, a `wine/` include, a Wine/CodeWeavers notice; a
+   per-file test let mshtml, `directx/wine` and setupapi through via their precomp.h):
+   **~20,900 non-blank lines in 237 TUs across 122 directories.** Most of the bulk is not
+   ours: `dll/win32/wow64` (8,422, fex-arm) and `wow64cpu`, `bootvid` (~1,000,
+   control-plane B), `shimgvw` (C++ lane), and the audio `backpln` bits. Ours, by size:
+   - **GUID data libraries:** `uuid`, `strmiids`, `dxguid` (~1,960 lines, all DEFINE_GUID).
+     Blocked on a tool gap: `port data` does not emit header `DEFINE_GUID`s (why cdrom's
+     `guid.c` stayed C). Teaching it to would retire these for $0.
+   - **The CRT's own residue:** `crt/math` (43 TUs incl. `arm64/`), `crt/printf`,
+     `crt/misc`, `crt/except/amd64`, `crtheap`, `vcstartup`, `gcc-compat`. This is the
+     msvcrt lane's, i.e. ours; read the CRT rows in `rust-port-status.md` before
+     starting, since some are deliberately C (startup, compiler support).
+   - **A tail of small native libs and DLLs, 60-420 lines each:** `epsapi`, `lsalib`,
+     `scrnsave`, `streamci`, `batt`, `shimlib`, `aux_klib`, `dxapi`, `acledit`,
+     `udmihelp`, `sdk/lib/nt`, `tdilib`, `conutils`, `ksuser`, `devcpux`, `sfc`, `sfc_os`,
+     `dmilib`, `wdfdriverentry`, `esent`, `wing32`, `skiplist`, and a few win32ss
+     stragglers. One `rustconv port` batch, a few dollars on Haiku.
+   Re-measure before starting; the script is in this commit's message.
 
 ## Not ours: skip these
 
