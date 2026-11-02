@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import atexit
+import contextlib
 import dataclasses
 import inspect
 import json
+import os
 import subprocess
 import sys
+import tempfile
+import threading
 import types
 import typing
 from pathlib import Path
@@ -20,6 +25,8 @@ class NativeError(ValueError):
 
 
 def _json(value: Any) -> Any:
+    if isinstance(value, bytes):
+        return list(value)
     if isinstance(value, Path):
         return str(value)
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
@@ -31,9 +38,133 @@ def _json(value: Any) -> Any:
     return value
 
 
+class _ArtifactSession:
+    def __init__(self, root):
+        self.owner = os.getpid()
+        self.signature = _source_signature()
+        self.environment = dict(os.environ)
+        self.resources = contextlib.ExitStack()
+        # The stream outlives this method; session.close owns the ExitStack.
+        self.errors = self.resources.enter_context(tempfile.TemporaryFile(mode="w+t"))  # noqa: SIM115
+        self.process = subprocess.Popen(
+            [str(REPO / "tools/build-infra"), "--root", str(root), "--api-jsonl"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=self.errors,
+            text=True,
+            bufsize=1,
+            env=self.environment,
+        )
+
+    def close(self):
+        process = self.process
+        if process.stdin:
+            process.stdin.close()
+        if self.owner == os.getpid():
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+        if process.stdout:
+            process.stdout.close()
+        self.resources.close()
+
+    def request(self, payload):
+        process = self.process
+        if process.stdin is None or process.stdout is None:
+            raise NativeError("native artifact transport has no pipes")
+        process.stdin.write(payload + "\n")
+        process.stdin.flush()
+        line = process.stdout.readline()
+        if not line:
+            self.errors.seek(0)
+            raise NativeError("native artifact transport ended: " + self.errors.read().strip())
+        if self.signature != _source_signature():
+            raise NativeError(
+                "native build sources changed during artifact request; retry after edits finish"
+            )
+        return line
+
+
+def _source_signature():
+    # Transport freshness only: the native tool owns descriptors and input policy.
+    sources = REPO / "tools/vibeos-build"
+    paths = [REPO / "tools/build-infra", Path(__file__)]
+    if sources.is_dir():
+        paths.extend([REPO / "rust-toolchain.toml", sources / "Cargo.toml", sources / "Cargo.lock"])
+        paths.extend(p for p in (sources / "src").rglob("*") if p.is_file())
+    records = []
+    for path in sorted(paths):
+        info = path.stat()
+        records.append(
+            (str(path), info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        )
+    return tuple(records)
+
+
+_sessions = {}
+_session_lock = threading.RLock()
+
+
+def _close_sessions():
+    for session in list(_sessions.values()):
+        try:
+            session.close()
+        except (OSError, ValueError):
+            pass
+    _sessions.clear()
+
+
+def _after_fork():
+    global _session_lock
+    # Close inherited pipe copies, without terminating the parent's server.
+    _close_sessions()
+    _session_lock = threading.RLock()
+
+
+atexit.register(_close_sessions)
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_after_fork)
+
+
+def _artifact_request(root, payload):
+    with _session_lock:
+        key = str(root)
+        session = _sessions.get(key)
+        if session and (
+            session.signature != _source_signature() or session.environment != dict(os.environ)
+        ):
+            session.close()
+            del _sessions[key]
+            session = None
+        if session is None:
+            session = _ArtifactSession(root)
+            _sessions[key] = session
+        try:
+            return session.request(payload)
+        except (OSError, ValueError):
+            session.close()
+            del _sessions[key]
+            raise
+
+
 def call(op: str, kwargs: dict, root: Path = REPO) -> Any:
     tool = REPO / "tools/build-infra"
     request = json.dumps({"op": op, "kwargs": _json(kwargs)}, ensure_ascii=False)
+    if op.startswith("artifact_"):
+        response = json.loads(_artifact_request(root, request))
+        if not isinstance(response, dict):
+            raise NativeError(f"native build {op}: response must be an object")
+        if "error" in response:
+            raise NativeError(response["error"]["message"])
+        if "ok" not in response:
+            raise NativeError(f"native build {op}: response lacks result")
+        return response["ok"]
     try:
         proc = subprocess.run(
             [str(tool), "--root", str(root), "--api-json"],
@@ -104,3 +235,18 @@ def invoke(
         if error_type is NativeError:
             raise
         raise error_type(str(exc)) from exc
+
+
+def implementation_identity() -> dict:
+    """Native policy identity; source changes deliberately invalidate old artifact actions."""
+    result = call("artifact_implementation_identity", {})
+    result.pop("executable")
+    return result
+
+
+def implementation_watches() -> list[str]:
+    """Watch the executing binary and source inputs available in source distributions."""
+    result = call("artifact_implementation_identity", {})
+    paths = [Path(result["executable"]), Path(__file__)]
+    paths.extend(REPO / name for name in result["sources"] if (REPO / name).is_file())
+    return [str(path) for path in paths]

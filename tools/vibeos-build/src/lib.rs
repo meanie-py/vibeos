@@ -90,3 +90,13 @@ pub mod ninja;
 pub mod process;
 pub mod sdk_api;
 pub mod sdk_recipe;
+
+pub mod artifact_config;
+pub mod artifact_fs;
+
+pub mod artifact_api;
+pub mod artifact_inputs;
+pub mod artifact_worker;
+
+pub mod artifact_economics;
+pub mod artifact_history;

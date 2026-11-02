@@ -87,6 +87,9 @@ fn main() {{
         "artifact_store",
     ):
         write(f"tools/{name}.py", "# fixture implementation watch\n")
+    from tools.test_artifact_inputs import install_native_artifact_tool
+
+    install_native_artifact_tool(root)
     # The shipping Rust module launches this fake helper through its actual
     # command/protocol. It computes fresh watches every time, including new
     # nested source membership, using shipping runtime._watches.

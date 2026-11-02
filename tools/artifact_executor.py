@@ -23,7 +23,7 @@ import sys
 import time
 from pathlib import Path
 
-from tools import artifact_inputs, artifact_worker
+from tools import artifact_inputs, artifact_worker, build_infra_compat
 from tools.artifact_inputs import _toml, canonical, discover, tomllib
 from tools.artifact_worker import capture
 
@@ -102,8 +102,10 @@ def implementation_identity() -> dict:
     """Hash the implementation that interprets and projects compiler inputs."""
     return {
         "executor_source": file_digest(Path(__file__)),
+        "native_build_policy": build_infra_compat.implementation_identity(),
         "support_sources": {
             "tools/artifact_inputs.py": file_digest(Path(artifact_inputs.__file__)),
+            "tools/build_infra_compat.py": file_digest(Path(build_infra_compat.__file__)),
             "tools/artifact_worker.py": file_digest(Path(artifact_worker.__file__)),
         },
     }
@@ -284,14 +286,14 @@ def normalize(snapshot: Path, projection: dict, destination: Path) -> dict:
         shutil.copyfile(snapshot / relative, destination / relative)
     selected = descriptor["request"]["package"]
 
-    def relative(key):
+    def relative_package(key):
         return Path(key).relative_to(WORKSPACE).as_posix()
 
     root_lines = [
         "[workspace]",
         'resolver = "2"',
-        "members = " + _toml([relative(selected)]),
-        "exclude = " + _toml([relative(key) for key in candidates if key != selected]),
+        "members = " + _toml([relative_package(selected)]),
+        "exclude = " + _toml([relative_package(key) for key in candidates if key != selected]),
     ]
     root_lines.append("[profile." + descriptor["request"]["profile"] + "]")
     root_lines.extend(

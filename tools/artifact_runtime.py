@@ -450,6 +450,9 @@ def _watches(repo, discovery):
             if Path(directory).is_absolute() or ".." in Path(directory).parts:
                 raise RuntimeError_("discovery membership directory escapes package")
             paths.add(repo / relative / directory)
+    from tools import build_infra_compat
+
+    paths.update(Path(p) for p in build_infra_compat.implementation_watches())
     paths.add(repo / "rust-toolchain.toml")
     for name in (
         "artifact_runtime",

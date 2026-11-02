@@ -30,6 +30,7 @@ def write_config(directory, text, name="config.toml"):
     "text",
     [
         "[profile.release]\nopt-level=3\n",
+        "[target.x86_64-pc-windows-gnu]\nlinker=1979-05-27T07:32:00Z\n",
         '[build]\nrustflags=["--cfg=changed"]\n',
         '[env]\nOBSERVED="changed"\n',
         '[source.crates-io]\nreplace-with="elsewhere"\n',
@@ -115,12 +116,8 @@ def test_actual_cwd_requires_audited_scope_and_canonical_same_checkout(
     monkeypatch.setattr(guard, "CANONICAL_ROOT", alias)
     with pytest.raises(guard.ConfigError, match="does not mount"):
         guard.mapped_cwd(config_repo, alias / "build-amd64", kernel=False)
-    real_samefile = guard.os.path.samefile
-    monkeypatch.setattr(
-        guard.os.path,
-        "samefile",
-        lambda a, b: True if Path(a) == alias and Path(b) == config_repo else real_samefile(a, b),
-    )
+    alias.rmdir()
+    alias.symlink_to(config_repo, target_is_directory=True)
     assert (
         guard.mapped_cwd(config_repo, alias / "build-amd64", kernel=False)
         == config_repo / "build-amd64"

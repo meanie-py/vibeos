@@ -44,6 +44,9 @@ def source_tree(root):
         destination = root / "tools" / (name + ".py")
         destination.parent.mkdir(exist_ok=True)
         shutil.copyfile(ROOT / "tools" / destination.name, destination)
+    from tools.test_artifact_inputs import install_native_artifact_tool
+
+    install_native_artifact_tool(root)
     broker = root / ".cache/host-jobs/host-jobs"
     broker.parent.mkdir(parents=True)
     shutil.copy2(ROOT / ".cache/host-jobs/host-jobs", broker)

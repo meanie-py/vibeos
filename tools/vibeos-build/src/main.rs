@@ -2,12 +2,12 @@ use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
     fs,
-    io::{Read, Write},
+    io::{BufRead, Read, Write},
     path::{Path, PathBuf},
     process::{Command, ExitCode},
 };
 use vibeos_build::{self as b, Error, Result};
-const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR] [--allow-drop]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads a single compatibility request from stdin. Inspect/check modes never write.\n";
+const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  artifact-economics INVENTORY REPO OUTPUT [--eligibility-top N --scratch DIR] [--cargo PATH]\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR] [--allow-drop]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads one request; --api-jsonl serves newline-delimited requests until EOF. Inspect/check modes never write.\n";
 fn atomic(path: &Path, bytes: &[u8], serial: usize) -> Result<()> {
     if path.is_symlink() {
         return Err(Error::new(format!(
@@ -100,6 +100,7 @@ fn api(root: &Path, r: &Value) -> Result<Value> {
         s if s.starts_with("cell_") || s.starts_with("media_") => {
             b::manifest_api::dispatch(root, r)
         }
+        s if s.starts_with("artifact_") => b::artifact_api::dispatch(root, r),
         s if s.starts_with("sdk_") => b::sdk_api::dispatch(root, r),
         s if s.starts_with("ninja_") || s.starts_with("link_") => b::helper_api::dispatch(root, r),
         _ => Err(Error::new(format!("unknown build operation {op}"))),
@@ -181,10 +182,15 @@ fn run() -> Result<u8> {
     let mut command = None;
     let mut rest = Vec::new();
     let mut api_json = false;
+    let mut api_lines = false;
     while let Some(a) = args.next() {
         match a.as_str() {
             "--root" => root = args.next().ok_or("--root requires DIR")?.into(),
             "--api-json" => api_json = true,
+            "--api-jsonl" => {
+                api_json = true;
+                api_lines = true;
+            }
             "--help" | "-h" if command.is_none() => {
                 print!("{HELP}");
                 return Ok(0);
@@ -212,6 +218,22 @@ fn run() -> Result<u8> {
         if command.is_some() || !rest.is_empty() {
             return Err("--api-json requires no command/options".into());
         }
+        if api_lines {
+            let stdin = std::io::stdin();
+            let mut stdout = std::io::stdout().lock();
+            for line in stdin.lock().lines() {
+                let result = serde_json::from_str(&line?)
+                    .map_err(Error::from)
+                    .and_then(|r| api(&root, &r));
+                let response = match result {
+                    Ok(v) => json!({"ok":v}),
+                    Err(e) => json!({"error":e}),
+                };
+                writeln!(stdout, "{response}")?;
+                stdout.flush()?;
+            }
+            return Ok(0);
+        }
         let mut text = String::new();
         std::io::stdin().read_to_string(&mut text)?;
         let v = serde_json::from_str(&text)
@@ -227,6 +249,9 @@ fn run() -> Result<u8> {
         return Ok(0);
     }
     let command = command.ok_or("missing build command (use --help)")?;
+    if command == "artifact-economics" {
+        return b::artifact_economics::cli(&rest);
+    }
     if command == "link-guard" {
         return Ok(b::link_guard::execute(&root, &rest)?.clamp(0, 255) as u8);
     }

@@ -1,6 +1,8 @@
 # Build infrastructure migration to Rust
 
-Batches 1–2 implemented on `lint-rs`, 2026-11-01; remaining batches are planned.
+Batches 1–3 implemented on `lint-rs`; batches 4–6 remain planned.
+Batch 3 adds native configuration audits, input projections, verified snapshots,
+historical capture and artifact economics (2026-11-02).
 The native commands and compatibility boundaries are documented in
 [`tools/vibeos-build/README.md`](../../tools/vibeos-build/README.md). Host capacity
 is unchanged; no performance gain is claimed before measurement.
@@ -53,7 +55,7 @@ parity oracle. Do not maintain two evolving implementations.
    two Python reporter calls from native Cargo-cell conversion once their native
    replacements are available, without adding a dependency cycle between the two
    libraries. Factor shared facts into a lower layer if necessary.
-3. **Artifact descriptors and snapshots.** Port config audit, input discovery, verified
+3. **Artifact descriptors and snapshots (implemented).** Port config audit, input discovery, verified
    capture, historical capture and economics/report consumers. Compare canonical JSON
    bytes and key derivation under a fixed fixture implementation identity, including
    Unicode escaping, integer handling, environment,
