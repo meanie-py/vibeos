@@ -628,8 +628,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Not yet triaged. Likely shapes are an increment without its matching decrement
   (map/unmap imbalance) or a PFN read for the wrong PDE. Start with `farm --arches arm64`
   using the conformance payload, and arm the tripwire before reading the dump.
-- **Guard page in a section view loses the view's data (open, found 2026-11-02, smp-bringup
-  owns).** kmtest ZwMapViewOfSection maps a view `PAGE_GUARD | PAGE_READWRITE` and expects the
+- **Guard page in a section view loses the view's data (FIXED 2026-11-02, smp-bringup).** kmtest ZwMapViewOfSection maps a view `PAGE_GUARD | PAGE_READWRITE` and expects the
   first touch to raise STATUS_GUARD_PAGE_VIOLATION and the second to succeed. MmArmAccessFault's
   guard path asserts `ProtoPte == NULL` (pagfault.rs ~2478; upstream's C asserts the same, i.e. it
   never supported this), then writes a plain soft PTE: the prototype linkage is gone and the
@@ -639,6 +638,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   a lookup-needed prototype PTE carrying the protection minus GUARD, AND make the re-fault path
   honour that PTE's protection instead of overwriting it from the VAD via MiCheckVirtualAddress
   (else the guard re-raises forever). That second half touches every section-view fault.
+  Done as described; amd64 conformance 107/107, ZwMapViewOfSection 135/0 and MmSection 250/4
+  (both the baseline), no kernel assertion (`20261102-022452-stmb0kb8-conformance-amd64`).
 - **amd64-bios: demand-zero fault on an already-valid PTE (FIX LANDING 2026-11-01, smp-bringup;
   root cause by code reading, the race has not been reproduced on demand).** Cause: the 64-bit
   self-map branch of `MmArmAccessFault` (a kernel fault on a page-table VA) built user

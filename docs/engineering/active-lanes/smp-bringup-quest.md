@@ -16,9 +16,7 @@ Nothing in flight; nothing dirty. Landed or queued this session (verify with
    rmap events): read that first.
 2. DONE 2026-11-02 (verify with `git log origin/master`): `read.rs:590` (a negated assert) and
    classpnp/disk/cdrom arming (device extensions cache-aligned at `DeviceObject + 1`).
-3. **Guard page in a section view** (roadmap Known bugs, "Guard page in a section view loses the
-   view's data"): the next MM fix; design is in the entry.
-4. #72 tail: freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks), win32k-rust (10),
+3. #72 tail: freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks), win32k-rust (10),
    remaining drivers; then the 78-entry `scan_move_vs_nonoverlapping` baseline review.
 
 ## Mission
