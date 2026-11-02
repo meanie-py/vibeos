@@ -802,7 +802,7 @@ unsafe fn DoChangePassword(pgContext: *mut _GINA_CONTEXT, hwndDlg: HWND) -> BOOL
                            MB_OK | MB_ICONEXCLAMATION,
                            IDS_CHANGEPWDTITLE as u32,
                            IDS_NONMATCHINGPASSWORDS as u32);
-        'done: {
+        {
             SecureZeroMemory(OldPassword.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
             SecureZeroMemory(NewPassword1.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
             SecureZeroMemory(NewPassword2.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
@@ -833,7 +833,7 @@ unsafe fn DoChangePassword(pgContext: *mut _GINA_CONTEXT, hwndDlg: HWND) -> BOOL
     RequestBuffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, RequestBufferSize as usize) as *mut _MSV1_0_CHANGEPASSWORD_REQUEST;
     if RequestBuffer.is_null() {
         ERR!(b"HeapAlloc failed\n\0".as_ptr() as PCHAR);
-        'done2: {
+        {
             SecureZeroMemory(OldPassword.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
             SecureZeroMemory(NewPassword1.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
             SecureZeroMemory(NewPassword2.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
@@ -897,7 +897,7 @@ unsafe fn DoChangePassword(pgContext: *mut _GINA_CONTEXT, hwndDlg: HWND) -> BOOL
 
     if ConnectToLsa(pgContext) != ERROR_SUCCESS.try_into().unwrap() {
         ERR!(b"ConnectToLsa() failed\n\0".as_ptr() as PCHAR);
-        'done3: {
+        {
             SecureZeroMemory(OldPassword.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
             SecureZeroMemory(NewPassword1.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
             SecureZeroMemory(NewPassword2.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
@@ -928,7 +928,7 @@ unsafe fn DoChangePassword(pgContext: *mut _GINA_CONTEXT, hwndDlg: HWND) -> BOOL
                                           &mut ProtocolStatus);
     if !NT_SUCCESS(Status) {
         ERR!(b"LsaCallAuthenticationPackage failed (Status 0x%08lx)\n\0".as_ptr() as PCHAR, Status);
-        'done4: {
+        {
             SecureZeroMemory(OldPassword.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
             SecureZeroMemory(NewPassword1.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
             SecureZeroMemory(NewPassword2.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
@@ -952,7 +952,7 @@ unsafe fn DoChangePassword(pgContext: *mut _GINA_CONTEXT, hwndDlg: HWND) -> BOOL
 
     if !NT_SUCCESS(ProtocolStatus) {
         TRACE!(b"LsaCallAuthenticationPackage failed (ProtocolStatus 0x%08lx)\n\0".as_ptr() as PCHAR, ProtocolStatus);
-        'done5: {
+        {
             SecureZeroMemory(OldPassword.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
             SecureZeroMemory(NewPassword1.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());
             SecureZeroMemory(NewPassword2.as_mut_ptr() as *mut core::ffi::c_void, core::mem::size_of::<[u16; 256]>());

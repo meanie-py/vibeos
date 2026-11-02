@@ -1604,7 +1604,7 @@ unsafe extern "C" fn topology_node_set_object(
     mut node: *mut topology_node,
     mut object: *mut IUnknown,
 ) -> HRESULT {
-    static mut iids: [*const GUID; 3] = unsafe {
+    static mut iids: [*const GUID; 3] = {
         [
             &raw const IID_IPersist,
             &raw const IID_IPersistStorage,

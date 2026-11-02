@@ -170,6 +170,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_ninja_closure_prune.py"),
     (".", ".", "tools/test_gen_ctype_tables.py"),
     (".", ".", "tools/test_compiler_codegen.py"),
+    (".", ".", "tools/test_marshal_codegen.py"),
     (".", ".", "tools/test_build_codegen.py"),
     (".", ".", "tools/test_verify_ucrtbase_cohab.py"),
     (".", ".", "tools/test_ucrt_tier2_refset.py"),

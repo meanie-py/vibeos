@@ -2721,7 +2721,38 @@ def _repoint_cargo_cells(target: str, crate: str) -> list[Path]:
     return changed
 
 
+def _refuse_while_this_tree_builds(stage: str) -> None:
+    """`flip` and `data` rewrite a module's CMakeLists, which a running build of THIS tree
+    reads mid-flight: `port data` once commented `nameprep.c` out under an arm64 build, whose
+    normaliz.dll then linked without the tables and failed LINK_FAIL. Held build-dir locks
+    are the host broker's (tests/qemu/cli/hostlock.py), keyed by each build dir's real path;
+    another worktree's build is not ours to wait for."""
+    import sys
+
+    # The broker module from this checkout (its lock protocol is fleet-wide); REPO, the
+    # invoked tree, is only what the held locks are compared against.
+    checkout = str(Path(__file__).resolve().parents[3])
+    if checkout not in sys.path:
+        sys.path.insert(0, checkout)
+    try:
+        from tests.qemu.cli import hostlock
+    except ImportError as exc:  # the broker is the only source; never guess "not building"
+        raise PortError(f"port {stage}: cannot read the build-dir locks ({exc})") from exc
+    root = REPO.resolve()
+    busy = sorted(
+        e["holder"].get("build_dir", "?")
+        for e in hostlock.status()["builddir"]
+        if e["held"] and Path(e["holder"].get("build_dir", "/")).resolve().parent == root
+    )
+    if busy:
+        raise PortError(
+            f"port {stage} rewrites CMake inputs while this tree is building "
+            f"({', '.join(busy)}); wait for the build to finish, then re-run"
+        )
+
+
 def stage_flip(stem: str) -> None:
+    _refuse_while_this_tree_builds("flip")
     started = time.time()
     state = load_state(stem)
     # Never flip a TU that has no Rust: its C would leave the build with nothing in its place.
@@ -2790,6 +2821,7 @@ def stage_data(stem: str, tu_arg: str) -> None:
     """
     from . import c_data_port as cdp
 
+    _refuse_while_this_tree_builds("data")
     started = time.time()
     state = load_state(stem)
     module = REPO / state["module_dir"]
@@ -5462,6 +5494,9 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     # ...and never a name another part of the prelude now DEFINES: the wine-channel block
     # writes `__wine_dbch___default = &__wine_dbch_ch` beside the `extern` DECLARATION a
     # copy brought from appwiz, and the pair was E0428 forever (shsvcs, netlogon).
+    # Before re-deriving the block from the tree: an item a person edited inside it is moved
+    # out above it (and from then on is "defined outside", so the generator leaves it).
+    prelude_resolve.preserve_hand_edits(prelude)
     defined_elsewhere = _prelude_definitions_outside_consensus(prelude)
     # A name the bodies only ever CALL AS A MACRO (`FIXME!(..)`) is never satisfied by a fn:
     # srvsvc got mlang's stray `fn FIXME(format, ...)` declaration where the SDK alias pass

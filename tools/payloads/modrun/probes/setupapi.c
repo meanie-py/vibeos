@@ -257,6 +257,65 @@ static const char DRV[] =
     "Mfg=\"Modrun Mfg\"\r\n"
     "Dev=\"Modrun Device\"\r\n";
 
+/* Where a temp file can go on this boot: setupapi's do_file_copyW stages every copy through
+ * GetTempFileNameW(GetTempPathW()), so a missing or read-only %TEMP% fails every queued copy. */
+static void envprobe(const WCHAR *label, const WCHAR *dir)
+{
+    WCHAR p[MAX_PATH], f[MAX_PATH];
+    DWORD a;
+    HANDLE h;
+    printf("env %ls=", label);
+    pw(dir);
+    lstrcpyW(p, dir);
+    for (;;)
+    {
+        size_t n = wcslen(p);
+        while (n > 3 && p[n - 1] == L'\\')
+            p[--n] = 0;
+        a = GetFileAttributesW(p);
+        if (a != INVALID_FILE_ATTRIBUTES || n <= 3)
+            break;
+        printf(" missing:");
+        pw(p);
+        if (!wcsrchr(p, L'\\'))
+            break;
+        *wcsrchr(p, L'\\') = 0;
+    }
+    printf(" exists:");
+    pw(p);
+    printf(" attr=%#lx", a);
+    lstrcpyW(f, dir);
+    if (f[wcslen(f) - 1] != L'\\')
+        lstrcatW(f, L"\\");
+    lstrcatW(f, L"mrsa_probe.tmp");
+    h = CreateFileW(f, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_FLAG_DELETE_ON_CLOSE, NULL);
+    printf(" create=%s", h != INVALID_HANDLE_VALUE ? "ok" : "fail");
+    if (h == INVALID_HANDLE_VALUE)
+        printf(" err=%lu", GetLastError());
+    else
+        CloseHandle(h);
+    printf("\n");
+}
+
+static void environment(void)
+{
+    static const WCHAR *vars[] = {L"TEMP", L"TMP", L"USERPROFILE", L"SystemRoot"};
+    WCHAR v[MAX_PATH];
+    DWORD i;
+    for (i = 0; i < 4; i++)
+    {
+        if (GetEnvironmentVariableW(vars[i], v, MAX_PATH))
+            envprobe(vars[i], v);
+        else
+            printf("env %ls unset\n", vars[i]);
+    }
+    GetTempPathW(MAX_PATH, v);
+    envprobe(L"GetTempPath", v);
+    GetEnvironmentVariableW(L"SystemRoot", v, MAX_PATH);
+    lstrcatW(v, L"\\TEMP");
+    envprobe(L"SystemRootTEMP", v);
+}
+
 static void strings(void)
 {
     HSTRING_TABLE_ t = ppSetupStringTableInitialize(), d;
@@ -950,6 +1009,8 @@ int main(void)
     write_file(inf_path, INF);
     write_file(drv_path, DRV);
 
+    environment();
+    fflush(stdout);
     strings();
     fflush(stdout);
     misc();

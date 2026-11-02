@@ -581,8 +581,14 @@ runs it.
   `NtQueryInformationByName` (kernel32 builds the stat records from basic/standard/internal/
   attribute-tag queries); `FileCaseSensitiveByNameInfo` reads ERROR_INVALID_PARAMETER where
   Windows says ERROR_ACCESS_DENIED for the same files, and why Windows refuses it is not
-  known. Still owed: `FileStorageInfo`/`FileAlignmentInfo` on fastfat and cdfs (winref
-  answers both, we give ERROR_NOT_SUPPORTED and 0); SVCFAIL on i386 and arm64.
+  known. `FileStorageInfo`/`FileAlignmentInfo` are done too (2026-11-01), graded by fsquery
+  against `fsquery.win11.txt`: FileStorageInfo is the volume's FileFsSectorSizeInformation,
+  which needed the I/O manager's query-class table extended to Windows 10's classes (10-15),
+  a real `FsRtlGetSectorSizeInformation` (fsrtl-rust; fastfat's C glue had a fake that filled
+  4 of 7 fields), and both file systems' WIN8 arm turned on. The CD now matches Windows byte
+  for byte; FAT differs only by TRIM_ENABLED, a property of Windows' disk. Alignment is the
+  disk driver's own (uniata: 3) now that scsiport's LUNs and partmgr's partitions inherit it
+  (Windows' storage stack reports 1). Still owed: SVCFAIL on i386 and arm64.
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
   applet): exactly one stub is reached, the SEH smoke probe's deliberate

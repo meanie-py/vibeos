@@ -1314,7 +1314,7 @@ unsafe extern "C" fn IsConsoleBoot() -> i32 {
                        KEY_QUERY_VALUE,
                        &mut hControlKey);
     if rc != (ERROR_SUCCESS) as i32 {
-        'cleanup: loop {
+        loop {
             if !hControlKey.is_null() {
                 RegCloseKey(hControlKey);
             }
@@ -1327,7 +1327,7 @@ unsafe extern "C" fn IsConsoleBoot() -> i32 {
 
     rc = ReadRegSzKey(hControlKey, w!("SystemStartOptions") as LPCWSTR, &mut pwszSystemStartOptions);
     if rc != (ERROR_SUCCESS) as i32 {
-        'cleanup: loop {
+        loop {
             if !hControlKey.is_null() {
                 RegCloseKey(hControlKey);
             }
@@ -1347,7 +1347,7 @@ unsafe extern "C" fn IsConsoleBoot() -> i32 {
         if _wcsicmp(pwszCurrentOption, w!("CONSOLE") as LPCWSTR) == 0 {
             // DPRINT removed
             bConsoleBoot = (TRUE) as i32;
-            'cleanup: loop {
+            loop {
                 if !hControlKey.is_null() {
                     RegCloseKey(hControlKey);
                 }
@@ -1360,7 +1360,7 @@ unsafe extern "C" fn IsConsoleBoot() -> i32 {
         pwszCurrentOption = if !pwszNextOption.is_null() { pwszNextOption.offset(1) } else { core::ptr::null_mut() };
     }
 
-    'cleanup: loop {
+    loop {
         if !hControlKey.is_null() {
             RegCloseKey(hControlKey);
         }

@@ -807,7 +807,7 @@ unsafe extern "C" fn AccpOpenNamedObject(
             ) as LPWSTR;
             if lpPath.is_null() {
                 Ret = GetLastError();
-                return 'Cleanup: {
+                return {
                     if !lpPath.is_null() && lpPath != pObjectName {
                         LocalFree(lpPath as HLOCAL);
                     }
@@ -836,7 +836,7 @@ unsafe extern "C" fn AccpOpenNamedObject(
             ) == 0
             {
                 Ret = ERROR_INVALID_NAME;
-                return 'Cleanup: {
+                return {
                     if !lpPath.is_null() && lpPath != pObjectName {
                         LocalFree(lpPath as HLOCAL);
                     }
@@ -912,7 +912,7 @@ unsafe extern "C" fn AccpOpenNamedObject(
                 lpRootKeyName = wcschr(lpPath.offset(2 as isize), 0x5C);
                 if lpRootKeyName.is_null() {
                     Ret = ERROR_INVALID_PARAMETER;
-                    return 'Cleanup: {
+                    return {
                         if !lpPath.is_null() && lpPath != pObjectName {
                             LocalFree(lpPath as HLOCAL);
                         }
@@ -944,7 +944,7 @@ unsafe extern "C" fn AccpOpenNamedObject(
 
             if hRootKey.is_null() {
                 Ret = ERROR_INVALID_PARAMETER;
-                return 'Cleanup: {
+                return {
                     if !lpPath.is_null() && lpPath != pObjectName {
                         LocalFree(lpPath as HLOCAL);
                     }
@@ -956,7 +956,7 @@ unsafe extern "C" fn AccpOpenNamedObject(
                 Ret = RegConnectRegistry(lpMachineName, hRootKey, Handle2 as PHKEY) as DWORD;
 
                 if Ret != ERROR_SUCCESS {
-                    return 'Cleanup: {
+                    return {
                         if !lpPath.is_null() && lpPath != pObjectName {
                             LocalFree(lpPath as HLOCAL);
                         }
@@ -979,7 +979,7 @@ unsafe extern "C" fn AccpOpenNamedObject(
                     RegCloseKey(*Handle2 as HKEY);
                 }
 
-                return 'Cleanup: {
+                return {
                     if !lpPath.is_null() && lpPath != pObjectName {
                         LocalFree(lpPath as HLOCAL);
                     }
@@ -1002,7 +1002,7 @@ unsafe extern "C" fn AccpOpenNamedObject(
                 lpServiceName = wcschr(lpPath.offset(2 as isize), 0x5C);
                 if lpServiceName.is_null() {
                     Ret = ERROR_INVALID_PARAMETER;
-                    return 'Cleanup: {
+                    return {
                         if !lpPath.is_null() && lpPath != pObjectName {
                             LocalFree(lpPath as HLOCAL);
                         }
@@ -1021,7 +1021,7 @@ unsafe extern "C" fn AccpOpenNamedObject(
             if (*Handle2).is_null() {
                 Ret = GetLastError();
 
-                return 'Cleanup: {
+                return {
                     if !lpPath.is_null() && lpPath != pObjectName {
                         LocalFree(lpPath as HLOCAL);
                     }
@@ -1036,7 +1036,7 @@ unsafe extern "C" fn AccpOpenNamedObject(
 
                 CloseServiceHandle(*Handle2 as SC_HANDLE);
 
-                return 'Cleanup: {
+                return {
                     if !lpPath.is_null() && lpPath != pObjectName {
                         LocalFree(lpPath as HLOCAL);
                     }
@@ -1210,7 +1210,7 @@ pub unsafe extern "system" fn AccRewriteSetEntriesInAcl(
         ) == 0
         {
             Ret = GetLastError();
-            'Cleanup: loop {
+            loop {
                 if !pKeepAce.is_null() && pKeepAce != KeepAceBuf.as_mut_ptr() {
                     LocalFree(pKeepAce as HLOCAL);
                 }
@@ -1235,7 +1235,7 @@ pub unsafe extern "system" fn AccRewriteSetEntriesInAcl(
             ) as *mut BOOLEAN;
             if pKeepAce.is_null() {
                 Ret = ERROR_NOT_ENOUGH_MEMORY;
-                'Cleanup: loop {
+                loop {
                     if !pKeepAce.is_null() && pKeepAce != KeepAceBuf.as_mut_ptr() {
                         LocalFree(pKeepAce as HLOCAL);
                     }
@@ -1279,7 +1279,7 @@ pub unsafe extern "system" fn AccRewriteSetEntriesInAcl(
             &mut needToClean,
         );
         if Ret != ERROR_SUCCESS {
-            'Cleanup: loop {
+            loop {
                 if !pKeepAce.is_null() && pKeepAce != KeepAceBuf.as_mut_ptr() {
                     LocalFree(pKeepAce as HLOCAL);
                 }
@@ -1314,7 +1314,7 @@ pub unsafe extern "system" fn AccRewriteSetEntriesInAcl(
                     }
                     if GetAce(OldAcl, j, &mut pAce as *mut _ as *mut LPVOID) == 0 {
                         Ret = GetLastError();
-                        'Cleanup: loop {
+                        loop {
                             if !pKeepAce.is_null() && pKeepAce != KeepAceBuf.as_mut_ptr() {
                                 LocalFree(pKeepAce as HLOCAL);
                             }
@@ -1364,7 +1364,7 @@ pub unsafe extern "system" fn AccRewriteSetEntriesInAcl(
     }
 
     if SizeInformation.AclBytesInUse == 0 {
-        'Cleanup: loop {
+        loop {
             if !pKeepAce.is_null() && pKeepAce != KeepAceBuf.as_mut_ptr() {
                 LocalFree(pKeepAce as HLOCAL);
             }
@@ -1387,7 +1387,7 @@ pub unsafe extern "system" fn AccRewriteSetEntriesInAcl(
     pNew = LocalAlloc(LMEM_FIXED, (SizeInformation.AclBytesInUse as usize) as SIZE_T) as PACL;
     if pNew.is_null() {
         Ret = ERROR_NOT_ENOUGH_MEMORY;
-        'Cleanup: loop {
+        loop {
             if !pKeepAce.is_null() && pKeepAce != KeepAceBuf.as_mut_ptr() {
                 LocalFree(pKeepAce as HLOCAL);
             }
@@ -1407,7 +1407,7 @@ pub unsafe extern "system" fn AccRewriteSetEntriesInAcl(
     }
     if InitializeAcl(pNew, SizeInformation.AclBytesInUse, ACL_REVISION) == 0 {
         Ret = GetLastError();
-        'Cleanup: loop {
+        loop {
             if !pKeepAce.is_null() && pKeepAce != KeepAceBuf.as_mut_ptr() {
                 LocalFree(pKeepAce as HLOCAL);
             }
@@ -1436,7 +1436,7 @@ pub unsafe extern "system" fn AccRewriteSetEntriesInAcl(
                 &mut needToClean,
             );
             if Ret != ERROR_SUCCESS {
-                'Cleanup: loop {
+                loop {
                     if !pKeepAce.is_null() && pKeepAce != KeepAceBuf.as_mut_ptr() {
                         LocalFree(pKeepAce as HLOCAL);
                     }
@@ -1479,7 +1479,7 @@ pub unsafe extern "system" fn AccRewriteSetEntriesInAcl(
             }
             if bRet == 0 {
                 Ret = GetLastError();
-                'Cleanup: loop {
+                loop {
                     if !pKeepAce.is_null() && pKeepAce != KeepAceBuf.as_mut_ptr() {
                         LocalFree(pKeepAce as HLOCAL);
                     }
@@ -1513,7 +1513,7 @@ pub unsafe extern "system" fn AccRewriteSetEntriesInAcl(
                 &mut needToClean,
             );
             if Ret != ERROR_SUCCESS {
-                'Cleanup: loop {
+                loop {
                     if !pKeepAce.is_null() && pKeepAce != KeepAceBuf.as_mut_ptr() {
                         LocalFree(pKeepAce as HLOCAL);
                     }
@@ -1556,7 +1556,7 @@ pub unsafe extern "system" fn AccRewriteSetEntriesInAcl(
             }
             if bRet == 0 {
                 Ret = GetLastError();
-                'Cleanup: loop {
+                loop {
                     if !pKeepAce.is_null() && pKeepAce != KeepAceBuf.as_mut_ptr() {
                         LocalFree(pKeepAce as HLOCAL);
                     }

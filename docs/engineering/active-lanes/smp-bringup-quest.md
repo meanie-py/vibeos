@@ -3,6 +3,26 @@
 **Status: QUEST (2026-07-10, lane `smp-bringup`, worktree
 `~/Projects/os-playground/vibeos-smp`). Handoff doc — read fully before starting.**
 
+## RESUME HERE (parked 2026-11-01, Sunday)
+
+Nothing in flight; nothing dirty. Landed or queued this session (verify with
+`git log origin/master` before trusting): #72a freeldr KSEG0 tables (landed, 31610459d67);
+#72 fs-tail arming fa8be8a9203 (batch 68); MM self-map WS-lock fix + cc raise semantics
+5c1bb095b90 (heads batch 69). Owed, in order:
+1. **The amd64-bios `-smp 2` WoW64 MM signatures** (roadmap "amd64-bios: demand-zero fault on an
+   already-valid PTE"): the fix was found by code reading and was never reproduced on demand.
+   If either signature recurs on a tree that has 5c1bb095b90, the x86 `MmDeleteRmap` guard now
+   dumps the per-VA ledger (`page-map`/`rmap-insert`/`rmap-delete`, thread field = process for
+   rmap events): read that first.
+2. **#72 `read.rs:590`** (fastfat, amd64-bios only): STATUS_VERIFY_REQUIRED on the VerifyThread.
+   fastfat sets IRP_CONTEXT_FLAG_OVERRIDE_VERIFY and SL_OVERRIDE_VERIFY_VOLUME like the C, and
+   classpnp/cdrom honour the flag like the C, by reading. Next: trace which device and layer
+   returns it (`ClassSendSrbSynchronous ... srbstat=12h` precedes it), then compare with the C.
+3. **#72 classpnp/disk/cdrom arming**: needs the user's call: align device extensions to
+   `SYSTEM_CACHE_ALIGNMENT_SIZE` in `IoCreateDevice`, or keep those crates unarmed.
+4. #72 tail: freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks), win32k-rust (10),
+   remaining drivers; then the 78-entry `scan_move_vs_nonoverlapping` baseline review.
+
 ## Mission
 
 vibeos is uniprocessor on every arch. That means **every spinlock, queued spinlock,

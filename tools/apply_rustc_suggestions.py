@@ -50,11 +50,44 @@ Edit = tuple[int, int, str]  # (byte_start, byte_end, replacement)
 REFUSED_REPLACEMENT = re.compile(r"\bf(32|64)::(from|to)_bits\b")
 
 
+# Two NOISE lints rustc reports with no fix at all, though the fix is a pure deletion at
+# the primary span: an unused `'label:` and the `unsafe` keyword of an unnecessary block
+# (what is left, `{ .. }`, is the same block). Each is offered as a DERIVED edit, settled
+# against the file's own bytes in `derive` (any other text at the span: no edit), and goes
+# through the same every-arch agreement as rustc's own fixes.
+DERIVED = {"unused_labels", "unused_unsafe"}
+_DERIVED_TAIL = {
+    "unused_labels": (re.compile(rb"'\w+"), re.compile(rb"[ \t]*:[ \t]*")),
+    "unused_unsafe": (re.compile(rb"unsafe"), re.compile(rb"[ \t]*(?=\{)")),
+}
+
+
+def derive(b: bytes, e: Edit) -> Edit | None:
+    """A derived edit's real byte range, or None when the span is not that lint's shape."""
+    s, end, rep = e
+    if not rep.startswith("\0"):
+        return e
+    head, tail = _DERIVED_TAIL[rep[1:]]
+    if not head.fullmatch(b, s, end):
+        return None
+    m = tail.match(b, end)
+    if not m or (rep[1:] == "unused_unsafe" and m.end() == end and b[end : end + 1] != b"{"):
+        return None
+    return (s, m.end(), "")
+
+
 def _suggestions(diag: dict) -> list[tuple[str, Edit]]:
     """(file, edit) pairs of one diagnostic's machine-applicable fix, or [] if it has none
     or touches a macro expansion."""
     if any(sp.get("expansion") for sp in diag.get("spans", [])):
         return []
+    code = (diag.get("code") or {}).get("code")
+    if code in DERIVED:
+        prim = [sp for sp in diag.get("spans", []) if sp.get("is_primary")]
+        if len(prim) != 1:
+            return []
+        sp = prim[0]
+        return [(sp["file_name"], (sp["byte_start"], sp["byte_end"], "\0" + code))]
     out = []
     stack = list(diag.get("children", []))
     while stack:
@@ -196,6 +229,7 @@ def main(argv: list[str]) -> int:
             skipped_generated += len(edits)
             continue
         b = p.read_bytes()
+        edits = [d for d in (derive(b, e) for e in edits) if d is not None]
         b = apply_edits(b, edits)
         n += len(edits)
         print(f"{f}: {len(edits)} edit(s)")

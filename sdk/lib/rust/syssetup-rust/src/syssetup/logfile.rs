@@ -111,7 +111,7 @@ pub unsafe extern "C" fn pSetupDebugPrint_v(
             ((FORMAT_BUFFER_SIZE * core::mem::size_of::<u16>()) as u32) as SIZE_T,
         ) as PWSTR;
         if pszFormatBuffer.is_null() {
-            'done: loop {
+            loop {
                 if !pszOutputBuffer.is_null() {
                     HeapFree(GetProcessHeap(), 0, pszOutputBuffer as *mut _);
                 }
@@ -136,7 +136,7 @@ pub unsafe extern "C" fn pSetupDebugPrint_v(
         ((LINE_BUFFER_SIZE * core::mem::size_of::<u16>()) as u32) as SIZE_T,
     ) as PWSTR;
     if pszLineBuffer.is_null() {
-        'done: loop {
+        loop {
             if !pszOutputBuffer.is_null() {
                 HeapFree(GetProcessHeap(), 0, pszOutputBuffer as *mut _);
             }
@@ -177,7 +177,7 @@ pub unsafe extern "C" fn pSetupDebugPrint_v(
         (ulOutputSize) as SIZE_T,
     ) as PSTR;
     if pszOutputBuffer.is_null() {
-        'done: loop {
+        loop {
             if !pszOutputBuffer.is_null() {
                 HeapFree(GetProcessHeap(), 0, pszOutputBuffer as *mut _);
             }

@@ -75,6 +75,11 @@ pub unsafe extern "C" fn PdoCreateLunDevice(
     (*LunExtension).RequestTimeout = -1;
     (*LunExtension).MaxQueueCount = 256;
     KeInitializeDeviceQueue(&raw mut (*LunExtension).DeviceQueue);
+    // The LUN inherits the adapter's DMA alignment, as a Windows port driver's LUNs do. The C
+    // left it 0, and disk and cdrom copy it from this PDO, and every file system from them,
+    // so FileAlignmentInformation reported byte alignment for a disk that needs more (Windows
+    // 11 reports 1 on FAT32, NTFS and CDFS: hostapps fsquery.win11.txt).
+    (*LunPDO).AlignmentRequirement = (*(*DeviceExtension).Common.DeviceObject).AlignmentRequirement;
     (*LunPDO).Flags |= DO_DIRECT_IO;
     (*LunPDO).Flags &= !DO_DEVICE_INITIALIZING;
     LunPDO

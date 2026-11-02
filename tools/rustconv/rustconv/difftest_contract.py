@@ -669,6 +669,7 @@ def load_contract(path: Path) -> dict:
             "c_allow_ub",
             "c_host_profile",
             "c_env",
+            "c_env_probe",
         },
         "contract",
     )
@@ -738,6 +739,21 @@ def load_contract(path: Path) -> dict:
     if not isinstance(env, list) or len(env) > 16:
         raise ContractError("c_env must list up to 16 reviewed C files")
     data["c_env"] = [str((path.parent / item).resolve(strict=True)) for item in env]
+    # State the environment holds after a call -- a Win32 last-error cell -- is part of the
+    # result. `c_env_probe` names two c_env functions, `void reset(void)` called before each
+    # call and `uint64_t read(void)` after it, and the read value is compared like a return.
+    if "c_env_probe" in data:
+        probe = data["c_env_probe"]
+        if (
+            not isinstance(probe, dict)
+            or set(probe) != {"reset", "read"}
+            or not all(isinstance(v, str) and IDENT.fullmatch(v) for v in probe.values())
+        ):
+            raise ContractError('c_env_probe must be {"reset": ident, "read": ident}')
+        if not data["c_env"]:
+            raise ContractError("c_env_probe requires c_env (both sides must share the probe)")
+        if data["scope"] != "stateless-host":
+            raise ContractError("c_env_probe is supported for stateless-host only")
     # Windows C routinely reads a WORD/ULONG through a byte pointer at any offset. That is
     # UB, and UBSan's alignment check kills the reference on every such input, so the
     # source could never be graded. Waiving it is a declared, reported property of the
@@ -1042,9 +1058,12 @@ def load_contract(path: Path) -> dict:
                 scalar = scalars[length]
                 for value in scalar["values"] + scalar.get("random_range", []):
                     _int(value, 0, 65536, "buffer length")
+            elif isinstance(length, dict) and length.get("arg") in scalars:
+                # A count of elements wider than a byte (WCHARs: {"arg": "cch", "mul": 2}).
+                validate_extent(length, scalars)
             else:
                 raise ContractError(
-                    "length must be a scalar argument name or fixed nonnegative size"
+                    "length must be a scalar argument name, {arg, add, mul} or fixed size"
                 )
         if isinstance(result, dict) and result["type"] == "owned_bytes":
             length = result["length"]
@@ -1386,17 +1405,30 @@ def validate_byte_examples(arg: dict, args: list[dict]) -> None:
     # version block whose size is implied by its own header) the example IS the buffer.
     length = arg.get("length")
     limit = 65536
+    unit = 1
     if length is not None:
+        # An example sets its length scalar, so the length must name one exactly, or as a
+        # count of `mul`-byte elements (a signed count is fine: the example's is >= 0).
+        if isinstance(length, dict) and set(length) == {"arg", "mul"}:
+            unit = length["mul"]
+            length = length["arg"]
         scalar = (
             next((a for a in args if a["name"] == length), None)
             if isinstance(length, str)
             else None
         )
-        if scalar is None or scalar["type"] not in ("u8", "u16", "u32", "u64", "usize"):
-            raise ContractError(
-                f"{arg['name']}: examples need a length named by an unsigned scalar"
-            )
-        limit = min(TYPES[scalar["type"]][3], limit)
+        if scalar is None or scalar["type"] not in (
+            "u8",
+            "u16",
+            "u32",
+            "u64",
+            "usize",
+            "i16",
+            "i32",
+            "i64",
+        ):
+            raise ContractError(f"{arg['name']}: examples need a length named by an integer scalar")
+        limit = min(TYPES[scalar["type"]][3] * unit, limit)
     elif not arg["examples_only"]:
         raise ContractError(f"{arg['name']}: examples without a length argument need examples_only")
     for example in examples:
@@ -1405,6 +1437,8 @@ def validate_byte_examples(arg: dict, args: list[dict]) -> None:
         except (TypeError, ValueError) as exc:
             raise ContractError(f"{arg['name']}: example is not hex") from exc
         _int(len(payload), 0, limit, f"{arg['name']} example length")
+        if len(payload) % unit:
+            raise ContractError(f"{arg['name']}: example is not a whole number of elements")
 
 
 def validate_c_pointer(arg: dict) -> None:
@@ -1453,7 +1487,7 @@ def validate_c_pointer(arg: dict) -> None:
 
 def extent(value: Any, values: dict) -> int:
     if isinstance(value, dict):
-        return values[value["arg"]] + value["add"]
+        return values[value["arg"]] * value.get("mul", 1) + value.get("add", 0)
     return values[value] if isinstance(value, str) else value
 
 
@@ -1462,9 +1496,12 @@ def validate_extent(value: Any, scalars: dict) -> None:
         _int(value, 0, 65536, "extent")
         return
     if isinstance(value, dict):
-        _keys(value, {"arg", "add"}, set(), "extent")
+        _keys(value, {"arg"}, {"add", "mul"}, "extent")
         name = value["arg"]
-        _int(value["add"], -65536, 65536, "extent addend")
+        if "add" not in value and "mul" not in value:
+            raise ContractError("an {arg} extent needs add or mul; name the scalar directly")
+        _int(value.get("add", 0), -65536, 65536, "extent addend")
+        _int(value.get("mul", 1), 1, 16, "extent multiplier")
     else:
         name = value
     if not isinstance(name, str) or name not in scalars:
@@ -1733,11 +1770,12 @@ def generate_cases(data: dict) -> list[dict]:
                 payload = bytes.fromhex(example)
                 seen_rows = set()
                 for scalar_row in scalar_rows:
-                    values = (
-                        {**scalar_row, arg["length"]: len(payload)}
-                        if "length" in arg
-                        else dict(scalar_row)
-                    )
+                    values = dict(scalar_row)
+                    if isinstance(arg.get("length"), dict):
+                        unit = arg["length"]["mul"]
+                        values[arg["length"]["arg"]] = len(payload) // unit
+                    elif "length" in arg:
+                        values[arg["length"]] = len(payload)
                     key = tuple(sorted(values.items()))
                     if key in seen_rows:
                         continue
@@ -2692,6 +2730,25 @@ def emit_wrappers(
                     "}",
                 ]
             )
+    if "c_env_probe" in data:
+        # Exported through wrappers: a cdylib exports only Rust's own #[no_mangle] items,
+        # not the C env objects linked into it.
+        reset, read = data["c_env_probe"]["reset"], data["c_env_probe"]["read"]
+        c += [
+            f"void {reset}(void);",
+            f"uint64_t {read}(void);",
+            f"void diff_probe_reset(void) {{ {reset}(); }}",
+            f"uint64_t diff_probe_read(void) {{ return {read}(); }}",
+        ]
+        rust += [
+            f'extern "C" {{ fn {reset}(); fn {read}() -> u64; }}',
+            '#[no_mangle] pub unsafe extern "C" fn diff_probe_reset() {',
+            f"  unsafe {{ {reset}() }}",
+            "}",
+            '#[no_mangle] pub unsafe extern "C" fn diff_probe_read() -> u64 {',
+            f"  unsafe {{ {read}() }}",
+            "}",
+        ]
     if data["scope"] == "stateful-host":
         rust.extend(_rust_fixture_runtime(data, cases))
     return "\n".join(c) + "\n", "\n".join(rust) + "\n"
@@ -2940,6 +2997,11 @@ def worker(contract: Path, corpus: Path, library: Path, case_index: int | None =
             owned_releasers.append(releaser)
         else:
             owned_releasers.append(None)
+    probe_reset = probe_read = None
+    if "c_env_probe" in data:
+        probe_reset, probe_read = dll.diff_probe_reset, dll.diff_probe_read
+        probe_reset.argtypes, probe_reset.restype = [], None
+        probe_read.argtypes, probe_read.restype = [], ctypes.c_uint64
     corpus_rows = json.loads(corpus.read_text())
     if data["scope"] == "stateful-host":
         if case_index is None or not 0 <= case_index < len(corpus_rows):
@@ -2996,9 +3058,12 @@ def worker(contract: Path, corpus: Path, library: Path, case_index: int | None =
                     start, length = binding["offset"], binding["length"]
                     writable[binding["allocation"]][start : start + length] = bytes([1]) * length
             # These markers distinguish a native-call fault from setup/observation failures.
+            if probe_reset is not None:
+                probe_reset()
             print(json.dumps({"event": "call", "case": index}), flush=True)
             result = funcs[case["function"]](*args)
             print(json.dumps({"event": "returned", "case": index}), flush=True)
+            env_state = probe_read() if probe_read is not None else None
             violations = []
             if isinstance(fn["return"], dict) and fn["return"]["type"] == "owned_cstr":
                 if result is None:
@@ -3114,6 +3179,8 @@ def worker(contract: Path, corpus: Path, library: Path, case_index: int | None =
                 "buffers": buffers,
                 "violations": violations,
             }
+            if env_state is not None:
+                observation["env"] = env_state
             if pointer_outputs:
                 observation["pointer_outputs"] = pointer_outputs
             if pointer_field_outputs:
@@ -3310,6 +3377,8 @@ def _execute(
                 expected.add("pointer_outputs")
             if pointer_fields:
                 expected.add("pointer_fields")
+            if contract is not None and "c_env_probe" in contract:
+                expected.add("env")
             if event == "call" and phase == "ready":
                 phase = "calling"
             elif event == "returned" and phase == "calling":

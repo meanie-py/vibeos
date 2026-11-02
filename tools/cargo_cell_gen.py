@@ -117,6 +117,17 @@ I386_RSBEGIN_SECTIONS = {
     for name in (".ctors", ".dtors")
     for flags in (0x40000040, 0x48000040)
 }
+# A body-less cell (a C module, no Rust body) on i386 whose C cmake compiled without unwind
+# tables (cmake's PE has no `.eh_frame`) gains one: rsbegin/rsend's frame markers and the
+# shell's panic handler, the same EH-frame machinery as the `.ctors`/`.dtors` above. The C
+# is compiled with cmake's exact flags, so it contributes none; the bound is a backstop
+# (dxapi, kernelbase: 0x88). Nothing unwinds through it (panic=abort, no unwinder).
+I386_BODYLESS_EH_FRAME_MAX = 0x400
+# ...and when cmake's PE had no relocations at all (a C module with no absolute address:
+# kdstub, dxgthk), that machinery is the first thing needing any, so a `.reloc` appears:
+# 0x48 bytes, every entry in .ctors/.dtors/.eh_frame, rsbegin's .data frame object, and
+# rsbegin's registration code (decoded 2026-11-01). It only makes the image relocatable.
+I386_BODYLESS_RELOC_MAX = 0x80
 # rsbegin.o's own `.data` (its frame-object pointers, 0x28 bytes): a section of its own
 # in a module that had none (hidusb, msfs, usbccgp, watchdog).
 I386_RSBEGIN_DATA = 0x28
@@ -2163,7 +2174,7 @@ def build_rs(cell: Cell) -> str:
     late = {a: cell.late_libs.get(a, []) for a in ARCHES}
     early = {a: [x for x in cell.static_libs[a] if x not in late[a]] for a in ARCHES}
     tables = (("static_libs", early), ("late_libs", late))
-    if cell.link_order:
+    if any(cell.link_order.values()):
         tables = (("link_order", cell.link_order),)
         early = late = {a: [] for a in ARCHES}
     for var, table in tables:
@@ -2262,7 +2273,7 @@ def build_rs(cell: Cell) -> str:
     if any(late.values()):
         L.append("        // ...and those cmake linked after the body, in the same order.")
         L.append("        .static_libs_after_body(late_libs)")
-    if cell.link_order:
+    if any(cell.link_order.values()):
         L.append(
             "        // The body, import libs and static libs in cmake's link order: the first"
         )
@@ -2498,6 +2509,12 @@ def cell_crate(target: str, repo: Path = REPO) -> str:
     raise GenError(f"{target}: no add_cargo_module names it")
 
 
+def _cell_is_bodyless(target: str, repo: Path) -> bool:
+    """A cell generated for a C module with no Rust body (build.rs says so)."""
+    rs = repo / "sdk/lib/rust" / cell_crate(target, repo) / "build.rs"
+    return rs.exists() and "there is no Rust body" in rs.read_text()
+
+
 def _cell_uses_panic_common(target: str, arch: str, repo: Path) -> bool:
     main = repo / "sdk/lib/rust" / cell_crate(target, repo) / "src/main.rs"
     text = main.read_text() if main.exists() else ""
@@ -2608,6 +2625,17 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
                     and data
                     and data[0][2] == I386_RSBEGIN_DATA
                 }
+            shell_eh = set()
+            if a == "i386" and _cell_is_bodyless(t, repo):
+                sizes = {x[0]: x[2] for x in pe_equiv.load(new).sections}
+                bounds = {".eh_fram": I386_BODYLESS_EH_FRAME_MAX, ".reloc": I386_BODYLESS_RELOC_MAX}
+                shell_eh = {
+                    d
+                    for d in diffs
+                    for name, bound in bounds.items()
+                    if d.startswith(f"sections: + {name} ") and sizes.get(name, bound + 1) <= bound
+                }
+            rsbegin |= shell_eh
             # A panic-lean kernel cell's own handler is a function with an unwind entry:
             # a module cmake linked with none (watchdog) gains a `.pdata`.
             lean_unwind = {
@@ -2683,7 +2711,12 @@ def check(targets: list[str], baseline: Path, repo: Path = REPO) -> int:
             )
             note += " (+ loose on the boot CD)" if loose else ""
             note += " (- cab: txtsetup.sif installs it)" if note_txtsetup else ""
-            note += " (+ rsbegin .ctors/.dtors)" if rsbegin else ""
+            note += " (+ rsbegin .ctors/.dtors)" if rsbegin - shell_eh else ""
+            note += (
+                " (+ the shell's i386 " + "/".join(sorted(d.split()[2] for d in shell_eh)) + ")"
+                if shell_eh
+                else ""
+            )
             note += " (+ the lean handler's .pdata)" if lean_unwind else ""
             note += " (+ __chkstk: frame pointers)" if probes else ""
             note += " (- dead-code import, see DEAD_IMPORTS)" if dead else ""
@@ -3485,7 +3518,15 @@ def _ninja(arch: str, targets: list[str], repo: Path) -> None:
             check=False,
         )
         if cp.returncode:
-            tail = "\n".join((cp.stdout + cp.stderr).splitlines()[-15:])
+            # The tail of a parallel build is other jobs' noise (cargo's "Blocking waiting
+            # for file lock"): name the failed edges and the errors, then the tail.
+            lines = (cp.stdout + cp.stderr).splitlines()
+            errs = [
+                ln
+                for ln in lines
+                if ln.startswith("FAILED:") or re.match(r"\s*(error|ld\.lld: error)\b", ln)
+            ]
+            tail = "\n".join(dict.fromkeys(errs[:20] + lines[-8:]))
             raise GenError(f"build-{arch}: `{' '.join(step)}` failed:\n{tail}")
 
 
@@ -3507,8 +3548,17 @@ def convert(targets: list[str], baseline: Path | None = None, repo: Path = REPO)
     baseline = baseline or (
         Path.home() / "vibeos-cargo-baselines" / time.strftime("convert-%Y%m%d-%H%M%S")
     )
-    save_baseline(targets, baseline, repo)
-    print(f"baseline: {baseline}")
+    if all((baseline / a).is_dir() for a in ARCHES) and (baseline / "targets.json").exists():
+        # A re-run after a failed build: build-<arch> may already hold cell-linked PEs,
+        # so a fresh copy would compare the cells with themselves. Keep the original.
+        index = json.loads((baseline / "targets.json").read_text())
+        missing = [t for t in targets if t not in index]
+        if missing:
+            raise GenError(f"{baseline} has no baseline for {missing}")
+        print(f"baseline: {baseline} (kept from the first run)")
+    else:
+        save_baseline(targets, baseline, repo)
+        print(f"baseline: {baseline}")
     for cell in cells:
         for p in apply(cell, repo):
             print(f"wrote {p.relative_to(repo)}")

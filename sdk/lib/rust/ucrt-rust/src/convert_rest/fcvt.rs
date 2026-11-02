@@ -98,7 +98,7 @@ unsafe fn internal_to_string(
         return r;
     }
 
-    let capped_digits = core::cmp::min(requested_digits, (buffer_count - 2) as c_int);
+    let capped_digits = core::cmp::min(requested_digits, (buffer_count - 2) as c_int); // nolint: minmax-narrowing (the C narrows too: `static_cast<int>(buffer_count - 2)`)
 
     let e = __acrt_fp_strflt_to_string(buffer, buffer_count, capped_digits, strflt, TRAILING, ROUNDING_LEGACY, ptd);
     if e != 0 {
@@ -228,7 +228,7 @@ unsafe fn ecvt_s_internal(
 
     let e = internal_to_string(buffer, buffer_count, &mut strflt, requested_digits, decimal_point, sign, ptd);
 
-    let capped_digits = core::cmp::min(requested_digits, (buffer_count - 2) as c_int);
+    let capped_digits = core::cmp::min(requested_digits, (buffer_count - 2) as c_int); // nolint: minmax-narrowing (the C narrows too: `static_cast<int>(buffer_count - 2)`)
     if capped_digits >= 0 && *buffer.add(capped_digits as usize) != 0 {
         *buffer.add(capped_digits as usize) = 0;
     }

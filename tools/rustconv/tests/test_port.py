@@ -1379,6 +1379,28 @@ def test_flip_refuses_a_tu_with_no_rust(tmp_path, monkeypatch):
         port.stage_flip("m")
 
 
+def test_flip_and_data_refuse_while_this_tree_builds(tmp_path, monkeypatch):
+    # normaliz: `port data` commented nameprep.c out under a running arm64 build -> LINK_FAIL.
+    import pytest as _pytest
+    from tests.qemu.cli import hostlock
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    held = [{"held": True, "holder": {"build_dir": str(tmp_path / "build-arm64")}}]
+    monkeypatch.setattr(hostlock, "status", lambda: {"builddir": held})
+    for stage, call in (
+        ("flip", lambda: port.stage_flip("m")),
+        ("data", lambda: port.stage_data("m", "t.c")),
+    ):
+        with _pytest.raises(port.PortError, match=f"port {stage} rewrites CMake inputs"):
+            call()
+    # Another worktree's build, or a released lock, is not ours to wait for.
+    held[:] = [
+        {"held": True, "holder": {"build_dir": str(tmp_path.parent / "other" / "build-arm64")}},
+        {"held": False, "holder": {"build_dir": str(tmp_path / "build-i386")}},
+    ]
+    port._refuse_while_this_tree_builds("flip")
+
+
 def test_flip_finds_a_cppapp_tus_rust_in_its_synthetic_unit(tmp_path, monkeypatch):
     # rapps: `appdb.cpp`'s Rust is `appdb_cpp_h.rs`; the preflight looked for `appdb.rs`.
     import pytest as _pytest

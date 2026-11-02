@@ -258,12 +258,12 @@ pub static mut RtlpDphPageHeapList: LIST_ENTRY = unsafe { core::mem::zeroed() };
 pub static mut RtlpDphPageHeapListInitialized: BOOLEAN = 0u8;
 pub static mut _RtlpDphPageHeapListLock: HEAP_LOCK = unsafe { core::mem::zeroed() };
 pub static mut RtlpDphPageHeapListLock: PHEAP_LOCK =
-    unsafe { core::ptr::addr_of_mut!(_RtlpDphPageHeapListLock) };
+    { core::ptr::addr_of_mut!(_RtlpDphPageHeapListLock) };
 pub static mut RtlpDphPageHeapListLength: ULONG = 0;
 pub static mut RtlpDphTargetDllsUnicode: _UNICODE_STRING = unsafe { core::mem::zeroed() };
 pub static mut _RtlpDphDelayedFreeQueueLock: HEAP_LOCK = unsafe { core::mem::zeroed() };
 pub static mut RtlpDphDelayedFreeQueueLock: PHEAP_LOCK =
-    unsafe { core::ptr::addr_of_mut!(_RtlpDphDelayedFreeQueueLock) };
+    { core::ptr::addr_of_mut!(_RtlpDphDelayedFreeQueueLock) };
 pub static mut RtlpDphDelayedFreeQueue: LIST_ENTRY = unsafe { core::mem::zeroed() };
 pub static mut RtlpDphDelayedTemporaryPushList: SLIST_HEADER = unsafe { core::mem::zeroed() };
 pub static mut RtlpDphMemoryUsedByDelayedFreeBlocks: SIZE_T = 0;

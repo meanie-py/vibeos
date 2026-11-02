@@ -187,7 +187,7 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
 
                     hDC = GetDC(core::ptr::null_mut());
                     if hDC == core::ptr::null_mut() {
-                        'Cleanup: loop {
+                        loop {
                             if hFont != core::ptr::null_mut() { DeleteObject((hFont).cast()); }
                             if hLogoDC != core::ptr::null_mut() { DeleteDC(hLogoDC); }
                             if hCreditsDC != core::ptr::null_mut() { DeleteDC(hCreditsDC); }
@@ -202,7 +202,7 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
                         hLogoDC = CreateCompatibleDC(hCreditsDC);
 
                         if hCreditsDC == core::ptr::null_mut() || hLogoDC == core::ptr::null_mut() {
-                            'Cleanup: loop {
+                            loop {
                                 if hFont != core::ptr::null_mut() { DeleteObject((hFont).cast()); }
                                 if hLogoDC != core::ptr::null_mut() { DeleteDC(hLogoDC); }
                                 if hCreditsDC != core::ptr::null_mut() { DeleteDC(hCreditsDC); }
@@ -217,7 +217,7 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
 
                             hFont = CreateFontIndirect(&mut ncm.lfMessageFont);
                             if hFont == core::ptr::null_mut() {
-                                'Cleanup: loop {
+                                loop {
                                     if hFont != core::ptr::null_mut() { DeleteObject((hFont).cast()); }
                                     if hLogoDC != core::ptr::null_mut() { DeleteDC(hLogoDC); }
                                     if hCreditsDC != core::ptr::null_mut() { DeleteDC(hCreditsDC); }
@@ -234,7 +234,7 @@ pub unsafe extern "system" fn RosImageProc(hwnd: HWND, uMsg: u32, wParam: WPARAM
 
                                 hCreditsBitmap = CreateBitmap((*pImgInfo).cxSource, (2 * (*pImgInfo).cySource) + iDevsHeight + 1, ((*pImgInfo).iPlanes) as UINT, ((*pImgInfo).iBits) as UINT, core::ptr::null_mut());
                                 if hCreditsBitmap == core::ptr::null_mut() {
-                                    'Cleanup: loop {
+                                    loop {
                                         if hFont != core::ptr::null_mut() { DeleteObject((hFont).cast()); }
                                         if hLogoDC != core::ptr::null_mut() { DeleteDC(hLogoDC); }
                                         if hCreditsDC != core::ptr::null_mut() { DeleteDC(hCreditsDC); }

@@ -12,7 +12,7 @@ static mut __wine_dbch_ole: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_ole as *mut __wine_debug_channel };
+    &raw const __wine_dbch_ole as *mut __wine_debug_channel;
 
 pub const MAXSINKS: i32 = 10;
 

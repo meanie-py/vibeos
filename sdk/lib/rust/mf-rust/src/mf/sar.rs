@@ -123,7 +123,7 @@ pub static mut IID_IAudioStreamVolume: GUID = _GUID {
     ],
 };
 
-static mut sar_activate_funcs: activate_funcs = unsafe {
+static mut sar_activate_funcs: activate_funcs = {
     activate_funcs {
         create_object: Some(
             sar_create_object

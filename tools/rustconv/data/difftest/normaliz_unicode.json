@@ -1,0 +1,174 @@
+{
+ "version": 1,
+ "scope": "stateless-host",
+ "memory": "guard-pages",
+ "c_host_profile": "reactos-amd64",
+ "c_env": [
+  "normaliz_env.c",
+  "../../../../dll/nls/normaliz/nameprep.c"
+ ],
+ "c_env_probe": {
+  "reset": "normaliz_env_reset",
+  "read": "normaliz_env_read"
+ },
+ "rust_support": {
+  "prelude": "normaliz_prelude.rs"
+ },
+ "c_prelude": "normaliz_env.h",
+ "seed": 261102,
+ "random_cases": 128,
+ "validity": "Genuine dll/nls/normaliz/IdnToUnicode.c (Wine-derived, whole TU, reactos-amd64 host profile) against the shipping normaliz-rust IdnToUnicode.rs, whole module, with normaliz_prelude.rs as its `crate::prelude`; environment and probe as in normaliz_ascii.json. The output buffer is NULL or 64 WCHARs: the C bounds its punycode insert by cchASCIIChar (the INPUT length) and writes past a shorter output buffer, a documented divergence the Rust fixes by checking cchUnicodeChar. Since decoded output is never longer than its input and inputs here are at most 64 WCHARs, the two checks agree on this domain. The small-buffer paths of IdnToUnicode are therefore not graded. Inputs are the curated examples only (RFC 3492 encodings of real labels, made by Python's punycode codec, with uppercase, trailing-dot, embedded-NUL, STD3 and malformed-punycode variants): an input of just L\"\\0\" makes the C read lpASCIICharStr[-1] under IDN_USE_STD3_ASCII_RULES (an empty first label's 'last character'), a fault the Rust fixes, and seeded patterns generate it.",
+ "c_source": "../../../../dll/nls/normaliz/IdnToUnicode.c",
+ "rust_source": "../../../../sdk/lib/rust/normaliz-rust/src/normaliz/IdnToUnicode.rs",
+ "functions": [
+  {
+   "c": "IdnToUnicode",
+   "rust": "candidate::IdnToUnicode",
+   "rust_abi": "system",
+   "return": "i32",
+   "c_return_type": "int",
+   "args": [
+    {
+     "name": "flags",
+     "type": "u32",
+     "values": [
+      0,
+      1,
+      2,
+      3,
+      4
+     ],
+     "random_range": [
+      0,
+      3
+     ]
+    },
+    {
+     "name": "src",
+     "type": "const_bytes",
+     "c_type": "LPCWSTR",
+     "rust_type": "*const u16",
+     "align": 2,
+     "length": {
+      "arg": "src_cch",
+      "mul": 2
+     },
+     "examples": [
+      "610062006300",
+      "6100620063000000",
+      "61002e006200",
+      "61002e002e006200",
+      "2e00",
+      "58004e002d002d00420043004800450052002d004b00560041002e0064006500",
+      "2d0061006200",
+      "610062002d00",
+      "61005f006200",
+      "780000007900",
+      "610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100",
+      "6100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100610061006100",
+      "78006e002d002d00",
+      "78006e002d002d002d00610062006300",
+      "78006e002d002d0061002d00",
+      "78006e002d002d00610062002100",
+      "e900",
+      "78006e002d002d00620063006800650072002d006b0076006100",
+      "78006e002d002d00620063006800650072002d006b00760061002e006a007000",
+      "78006e002d002d00620063006800650072002d006b00760061000000",
+      "58004e002d002d00420043004800450052002d004b0056004100",
+      "78006e002d002d006d006e006300680065006e002d00330079006100",
+      "78006e002d002d006d006e006300680065006e002d003300790061002e006a007000",
+      "78006e002d002d006d006e006300680065006e002d003300790061000000",
+      "58004e002d002d004d004e004300480045004e002d00330059004100",
+      "78006e002d002d006900680071007700630072006200340063007600380061003800640071006700300035003600700071006a0079006500",
+      "78006e002d002d006900680071007700630072006200340063007600380061003800640071006700300035003600700071006a00790065002e006a007000",
+      "78006e002d002d006900680071007700630072006200340063007600380061003800640071006700300035003600700071006a00790065000000",
+      "58004e002d002d004900480051005700430052004200340043005600380041003800440051004700300035003600500051004a0059004500",
+      "78006e002d002d006500670062007000640061006a00360062007500340062007800660067006500680066007600770078006e00",
+      "78006e002d002d006500670062007000640061006a00360062007500340062007800660067006500680066007600770078006e002e006a007000",
+      "78006e002d002d006500670062007000640061006a00360062007500340062007800660067006500680066007600770078006e000000",
+      "58004e002d002d004500470042005000440041004a00360042005500340042005800460047004500480046005600570058004e00",
+      "78006e002d002d007700670076003700310061003100310039006500",
+      "78006e002d002d0077006700760037003100610031003100390065002e006a007000",
+      "78006e002d002d0077006700760037003100610031003100390065000000",
+      "58004e002d002d005700470056003700310041003100310039004500",
+      "78006e002d002d0036006c006100",
+      "78006e002d002d0036006c0061002e006a007000",
+      "78006e002d002d0036006c0061000000",
+      "58004e002d002d0036004c004100",
+      "78006e002d002d003900630061006100610061006100610061006100610061006100610061006100610061006100610061006100",
+      "78006e002d002d0039006300610061006100610061006100610061006100610061006100610061006100610061006100610061002e006a007000",
+      "78006e002d002d0039006300610061006100610061006100610061006100610061006100610061006100610061006100610061000000",
+      "58004e002d002d003900430041004100410041004100410041004100410041004100410041004100410041004100410041004100",
+      "78006e002d002d006100620063002d002d00650070006100",
+      "78006e002d002d006100620063002d002d006500700061002e006a007000",
+      "78006e002d002d006100620063002d002d006500700061000000",
+      "58004e002d002d004100420043002d002d00450050004100",
+      "78006e002d002d0033006500300062006b00340037006200720037006b00",
+      "78006e002d002d0033006500300062006b00340037006200720037006b002e006a007000",
+      "78006e002d002d0033006500300062006b00340037006200720037006b000000",
+      "58004e002d002d0033004500300042004b00340037004200520037004b00"
+     ],
+     "examples_only": true
+    },
+    {
+     "name": "src_cch",
+     "type": "i32",
+     "values": [
+      0,
+      1,
+      3
+     ],
+     "random_range": [
+      0,
+      24
+     ]
+    },
+    {
+     "name": "dst",
+     "type": "bytes",
+     "c_type": "LPWSTR",
+     "rust_type": "*mut u16",
+     "align": 2,
+     "length": {
+      "arg": "dst_cch",
+      "mul": 2
+     },
+     "nullable": true
+    },
+    {
+     "name": "dst_cch",
+     "type": "i32",
+     "values": [
+      64
+     ],
+     "random_range": [
+      64,
+      64
+     ]
+    }
+   ]
+  }
+ ],
+ "mutants": [
+  {
+   "name": "digit_offset",
+   "find": "(ch as INT) - ('0' as INT) + ('z' as INT) - ('a' as INT)\n                        + 1",
+   "replace": "(ch as INT) - ('0' as INT) + ('z' as INT) - ('a' as INT)\n                        + 2"
+  },
+  {
+   "name": "prefix_x",
+   "find": "tolowerW(*lpASCIICharStr.offset(label_start as isize)) as WCHAR != 'x' as WCHAR",
+   "replace": "tolowerW(*lpASCIICharStr.offset(label_start as isize)) as WCHAR != 'y' as WCHAR"
+  },
+  {
+   "name": "label_limit",
+   "find": "if label_end - label_start > 63 {",
+   "replace": "if label_end - label_start > 64 {"
+  },
+  {
+   "name": "unassigned_ok",
+   "find": "== 1\n            {",
+   "replace": "== 9\n            {"
+  }
+ ]
+}

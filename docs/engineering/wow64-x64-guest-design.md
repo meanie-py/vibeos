@@ -75,7 +75,13 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    function that measures its argument) are asm now (`memops.rs`, 2026-10-17). Owed: the
    compare/search loops (`strcmp`, `wcschr`, ...), which are still unoptimised Rust; measure
    first.
-4. win32k callbacks cost ~2x native under FEX.
+4. win32k callbacks: measured 2026-11-01 with `sysbench` (`20261101-195336-5ayk4877`), not
+   the ~2x native once assumed. The bench process made 18,437 callbacks. Our side of each costs
+   6.0 us in (save the guest state, build its frame) and 4.7 us out, against 41.2 us of guest
+   time under FEX. That is ~8% of a `user_wnd` create/destroy, and `user_wnd` itself is 1254 us
+   under FEX against 1225 us native arm64. The GetContext/SetContext/nested-Simulate shape is
+   not where the time goes; the guest's own window procedures are. The `[WOWX64] pid N callback
+   profile` line reports it at every process exit. One run on a loaded host.
 5. An appstorm64 sweep on a quiet host, re-timed against the per-syscall numbers.
 6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
    file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
@@ -85,8 +91,8 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    ("No Menu!!"). Open: iexplore at 1152M once failed to close (a thread that never finished
    exiting after a live HTTPS connection; netstack's IRPs are cancellable, so not that); an
    arm64 BUGCHECK 0xA at high IRQL in a timer DPC, with the fault one page above SP
-   (`20261016-233339-xs4f9y8m`), not seen again in 8,000+ reclaims since. Item 4's callback cost
-   looks structural: one GetContext, two SetContext and a nested Simulate per callback.
+   (`20261016-233339-xs4f9y8m`), not seen again in 8,000+ reclaims since. Neither showed in
+   two 1152M appstorm64 runs on 2026-11-01 (`20261101-164629-bykd7liv`, 55/55 each).
 
 They are graded where the media carries them (`tests/qemu/cli/ladder.py` `STAGED_LADDER`): they
 need build-amd64 to exist at all, so an arm64-only tree does not owe them. `hello64` (no

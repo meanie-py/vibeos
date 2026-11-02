@@ -237,22 +237,17 @@ pub fn compute_thunk_table(
     table: &str,
     arch: &str,
 ) -> Result<HashMap<String, bool>, String> {
-    let (spec, sys, manuals): (&str, &str, &[&str]) = match table {
-        "win32k" => (
-            "win32ss/win32u/win32u.spec",
-            "win32ss/w32ksvc32.h",
-            &[
-                "tools/wow64gen/manual-win32k.txt",
-                "tools/wow64gen/automarshal-win32k.txt",
-            ],
-        ),
-        "ntdll" => (
-            "dll/ntdll/def/ntdll.spec",
-            "ntoskrnl/include/sysfuncs.h",
-            &["tools/wow64gen/manual.txt"],
-        ),
-        _ => return Err(format!("unknown thunk table {table}")),
-    };
+    let cfg = metadata()["AUDIT_TABLES"]
+        .get(table)
+        .ok_or_else(|| format!("unknown thunk table {table}"))?;
+    let spec = cfg["spec"].as_str().ok_or("missing table spec")?;
+    let sys = cfg["sysfuncs"].as_str().ok_or("missing table services")?;
+    let manuals = cfg["manual_lists"]
+        .as_array()
+        .ok_or("missing manual lists")?
+        .iter()
+        .map(|p| p.as_str().ok_or("invalid manual list"))
+        .collect::<Result<Vec<_>, _>>()?;
     let paths: Vec<_> = manuals.iter().map(|p| root.join(p)).collect();
     let manual = load_manual_lists(&paths)?;
     let specs = read_spec(&root.join(spec), arch, &manual)?;
@@ -345,3 +340,15 @@ pub fn emit_c(
 
 #[cfg(test)]
 mod tests;
+
+/// Shared source/probe recipes for flat thunks, deep marshalling and audits.
+pub fn metadata() -> &'static serde_json::Value {
+    static CONFIG: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
+    CONFIG.get_or_init(|| {
+        let mut cfg: serde_json::Value =
+            serde_json::from_str(include_str!("config.json")).expect("committed WoW64 recipes");
+        cfg["WIN32K_TUS"] = cfg["AUDIT_TABLES"]["win32k"]["tus"].clone();
+        cfg["NTDLL_TU"] = cfg["AUDIT_TABLES"]["ntdll"]["tus"][0][1].clone();
+        cfg
+    })
+}

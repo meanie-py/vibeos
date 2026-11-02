@@ -1048,13 +1048,13 @@ unsafe fn IntResolveDesktop_impl(
             Status = STATUS_NAME_TOO_LONG;
             break 'quit;
         }
-        StrSize = core::cmp::max(StrSize, MemSize as u16);
+        StrSize = core::cmp::max(StrSize, MemSize as u16); // nolint: minmax-narrowing (the C narrows too: desktop.c `(USHORT)MemSize`)
 
         MemSize = core::cmp::max(
             DesktopName.Length as usize + core::mem::size_of::<u16>(),
             8 * core::mem::size_of::<u16>(),
         );
-        StrSize = core::cmp::max(StrSize, MemSize as u16);
+        StrSize = core::cmp::max(StrSize, MemSize as u16); // nolint: minmax-narrowing (the C narrows too: desktop.c `(USHORT)MemSize`)
 
         MemSize = align_up(
             core::mem::size_of::<_OBJECT_ATTRIBUTES>(),

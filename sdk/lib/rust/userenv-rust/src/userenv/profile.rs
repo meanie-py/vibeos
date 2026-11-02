@@ -1766,7 +1766,7 @@ pub unsafe extern "system" fn GetProfileType(pdwFlags: PDWORD) -> BOOL {
 
     }
 
-    'block: {
+    {
         if !hProfileKey.is_null() {
             RegCloseKey(hProfileKey);
         }

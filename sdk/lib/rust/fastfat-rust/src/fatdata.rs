@@ -600,7 +600,9 @@ pub unsafe extern "system" fn FatCompleteRequest_Real(
     }
 
     if !Irp.is_null() {
-        if (Status < 0) && ((*Irp).Flags & IRP_INPUT_OPERATION) != 0 {
+        // NT_ERROR (severity 3), as fatdata.c: a warning such as STATUS_BUFFER_OVERFLOW
+        // keeps its byte count. `< 0` also caught warnings and zeroed Information.
+        if (Status as u32 >> 30) == 3 && ((*Irp).Flags & IRP_INPUT_OPERATION) != 0 {
             (*Irp).IoStatus.Information = 0;
         }
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;

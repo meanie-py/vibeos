@@ -13,7 +13,7 @@ static mut __wine_dbch_netbios: __wine_debug_channel = unsafe {
 };
 
 static mut __wine_dbch___default: *mut __wine_debug_channel =
-    unsafe { &raw const __wine_dbch_netbios as *mut __wine_debug_channel };
+    &raw const __wine_dbch_netbios as *mut __wine_debug_channel;
 
 #[repr(C)]
 pub struct NBCmdQueue {
