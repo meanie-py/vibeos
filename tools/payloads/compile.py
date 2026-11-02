@@ -134,7 +134,9 @@ def unbuilt_rust_crate(build_dir: Path):
     own records must be silent about the crate: the ninja graph, which can miss a cargo
     edge, and cargo's dep-info files, which list every source it actually compiled."""
     ninja = list(build_dir.glob("*.ninja"))
-    if not ninja or not any(build_dir.rglob("*.d")):
+    # any() stops at the first hit, and CMake keeps depfiles under build-<arch>/CMakeFiles/d/,
+    # so this never descends the tree.
+    if not ninja or not any(build_dir.rglob("*.d")):  # unpruned-walk: intentional
         return lambda p: False  # no build records to consult: nothing is provably unbuilt
     seen: dict[str, bool] = {}
 
