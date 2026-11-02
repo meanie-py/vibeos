@@ -20,6 +20,8 @@ with output/refusal fixtures. Existing Python modules are compatibility adapters
 | `cell-manifest --write\|--check [--arch ARCH]` | Discover and serialize Cargo cells | `cell_manifest.py` |
 | `media-manifest --write\|--check [--arch ARCH]` | Discover and serialize CD/CAB recipes | `media_manifest.py` |
 | `sdk-recipe --write\|--check [--arch ARCH]` | Capture/factor SDK and host-tool recipes from Ninja | `sdk_recipe.py` |
+| `artifact-executor [OPTIONS]` | Prepare and execute a captured body in the isolated worker | `artifact_executor.py` |
+| `artifact-runtime request\|repair --supervisor FILE ...` | Serve supervised immutable-body consumers or exact missing-blob repair | `artifact_runtime.py` |
 | `artifact-economics INVENTORY REPO OUTPUT [--eligibility-top N --scratch DIR]` | Attribute snapshots and model archive storage without changing the store | `artifact_economics.py` |
 
 Use `--root DIR` to select a checkout. Manifest/recipe metadata operations select all
@@ -69,15 +71,42 @@ retain their signatures through the JSON transport. Canonical identity bytes pre
 sorted ASCII JSON, arbitrary-size integers and Python float spelling. Discovery still
 provides evidence only; it never authorizes a cache hit or compiler execution by itself.
 
-Artifact adapters reuse a newline-delimited `--api-jsonl` process per Python process and
-selected root. Calls are serialized, environment/source changes restart the server, and
-a source change during a request refuses its result. Forked children close inherited
-pipe copies and start their own server. The single-request `--api-json` interface remains.
+Metadata adapters reuse a newline-delimited `--api-jsonl` process per Python process
+and selected root. Environment/source changes restart that metadata server; changes during
+a request refuse its result. Forked children close inherited pipe copies. The single-request
+`--api-json` interface remains. Owned sessions, consumer guards and transactions use separate
+bounded connections so contenders cannot block a producer's publication on the same stream.
+These connections retain explicitly inheritable admission descriptors until work ends;
+long-lived metadata processes do not retain them. Supervisor configuration audits obtain
+the parent's current environment at each boundary without restarting its owned lease.
 
 The executor now keys native policy fingerprints and the compatibility transport alongside
 its own sources. This deliberately changes action identities: old clients keep their old
 objects, while new requests refill compatible actions. No live store is migrated, flushed
 or rewritten. Build watches include the actual native executable and its source inputs.
 
-The immutable artifact store/executor/runtime and Cargo orchestration remain Python
-implementations for later batches in [the migration plan](../../docs/engineering/build-infra-rust-plan.md).
+Store locking, publication, sessions/refs, repair, recovery and GC now live in Rust, as do
+the isolated executor and supervisor. The v1 store layout and mixed-client publication
+contract are preserved. Lock order remains consumer → action → GC; GC never waits on a
+producer. Partial publications expose no action index, and failed or corrupt requests
+retain evidence. Python store builders remain callbacks over a native two-phase transaction;
+Python does not implement publication or verification.
+
+Cargo consumers call `tools/build-infra artifact-runtime request` directly. An explicit
+`VIBEOS_ARTIFACT_TOOL` overrides that helper path; failure is final. The Python executor and
+runtime entry points exec the same native commands. The native supervisor owns leases,
+configuration audits, receipts and acceptance. The existing host-jobs broker and externally
+held disk reservation continue to own resource admission.
+
+Native helpers watch their owner through pidfds and process-start identity, avoiding PID
+reuse and thread-lifetime mistakes. Executor cancellation stops only its owned process
+session. A namespace guardian observes abrupt executor death and reaps the isolated worker;
+compiler subprocesses receive the explicit worker environment rather than supervision
+metadata. Missing isolation or lifetime support fails the operation.
+
+Private Rust `RunHost`/`RuntimeHost` test implementations replace Python algorithm monkeypatches;
+production APIs have no fault-injection switches. See the
+[coverage mapping](../../docs/engineering/artifact-native-test-coverage.md) for preserved
+failure controls and real-process tests. Cargo orchestration, remaining media staging and
+build-policy extraction remain for batches 5–6 of
+[the migration plan](../../docs/engineering/build-infra-rust-plan.md).

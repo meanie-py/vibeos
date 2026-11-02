@@ -41,20 +41,23 @@ def test_rust_consumer_without_a_supervisor_builds_privately_and_forwards_reques
     (package / "__init__.py").touch()
     archive = tmp_path / "immutable.a"
     archive.write_bytes(b"fixture")
-    helper = package / "artifact_runtime.py"
+    helper = package / "artifact-helper"
     helper.write_text(
+        f"#!{sys.executable}\n"
         "import sys\n"
+        "assert sys.argv[1:3] == ['artifact-runtime', 'request']\n"
         "assert '--no-default-features' in sys.argv\n"
         "assert sys.argv[sys.argv.index('--features')+1] == 'crtexe'\n"
         "assert '--flags=' in sys.argv\n"
         f"print('archive\\t{archive}')\n"
         f"print('watch\\t{tmp_path}')\n"
     )
-    env.update(VIBEOS_ARTIFACT_SUPERVISOR="/supervisor.json", VIBEOS_ARTIFACT_PYTHON=sys.executable)
+    helper.chmod(0o755)
+    env.update(VIBEOS_ARTIFACT_SUPERVISOR="/supervisor.json", VIBEOS_ARTIFACT_TOOL=str(helper))
     result = subprocess.run(command, env=env, capture_output=True, text=True, check=True)
     assert f"cargo:rerun-if-changed={tmp_path}" in result.stdout
     assert str(archive) in result.stdout
-    helper.write_text("raise RuntimeError('corrupt blob')\n")
+    helper.write_text(f"#!{sys.executable}\nraise RuntimeError('corrupt blob')\n")
     result = subprocess.run(command, env=env, capture_output=True, text=True)
     assert result.returncode != 0 and "corrupt blob" in result.stderr
 

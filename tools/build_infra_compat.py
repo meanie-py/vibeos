@@ -14,6 +14,7 @@ import tempfile
 import threading
 import types
 import typing
+import weakref
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +22,9 @@ REPO = Path(__file__).resolve().parent.parent
 
 
 class NativeError(ValueError):
-    pass
+    def __init__(self, message, kind=None):
+        super().__init__(message)
+        self.kind = kind
 
 
 def _json(value: Any) -> Any:
@@ -38,8 +41,23 @@ def _json(value: Any) -> Any:
     return value
 
 
+def _inherited_descriptors():
+    """Forward explicitly inheritable permits to bounded resource-owning commands."""
+    result = []
+    for name in os.listdir("/proc/self/fd"):
+        fd = int(name)
+        if fd < 3:
+            continue
+        try:
+            if os.get_inheritable(fd):
+                result.append(fd)
+        except OSError:
+            continue  # A different thread closed a descriptor during enumeration.
+    return tuple(result)
+
+
 class _ArtifactSession:
-    def __init__(self, root):
+    def __init__(self, root, mode="--api-jsonl", inherit_resources=False):
         self.owner = os.getpid()
         self.signature = _source_signature()
         self.environment = dict(os.environ)
@@ -47,13 +65,21 @@ class _ArtifactSession:
         # The stream outlives this method; session.close owns the ExitStack.
         self.errors = self.resources.enter_context(tempfile.TemporaryFile(mode="w+t"))  # noqa: SIM115
         self.process = subprocess.Popen(
-            [str(REPO / "tools/build-infra"), "--root", str(root), "--api-jsonl"],
+            [
+                str(REPO / "tools/build-infra"),
+                "--root",
+                str(root),
+                "--client-pid",
+                str(os.getpid()),
+                mode,
+            ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=self.errors,
             text=True,
             bufsize=1,
             env=self.environment,
+            pass_fds=_inherited_descriptors() if inherit_resources else (),
         )
 
     def close(self):
@@ -66,7 +92,7 @@ class _ArtifactSession:
             except subprocess.TimeoutExpired:
                 process.terminate()
                 try:
-                    process.wait(timeout=2)
+                    process.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
@@ -89,6 +115,91 @@ class _ArtifactSession:
                 "native build sources changed during artifact request; retry after edits finish"
             )
         return line
+
+
+_dedicated = weakref.WeakSet()
+
+
+class DedicatedSession:
+    """One native resource lifetime, independent of unrelated blocking store clients."""
+
+    def __init__(self, command, root=REPO):
+        self._session = _ArtifactSession(root, command, inherit_resources=True)
+        self._lock = threading.RLock()
+        self.closed = False
+        _dedicated.add(self)
+
+    @property
+    def fd(self):
+        stream = self._session.process.stdin
+        return stream.fileno() if stream and not self.closed else None
+
+    def close(self):
+        if not self.closed:
+            self.closed = True
+            self._session.close()
+            _dedicated.discard(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_exception):
+        self.close()
+
+    def call(self, op, arguments, callbacks=None) -> Any:
+        if self.closed or self._session.owner != os.getpid():
+            raise NativeError("native resource connection is closed or belongs to another process")
+        with self._lock:
+            if self.closed or self._session.owner != os.getpid():
+                raise NativeError(
+                    "native resource connection is closed or belongs to another process"
+                )
+            if self._session.signature != _source_signature():
+                self.close()
+                raise NativeError("native resource source changed; reopen the resource")
+            saved_error = None
+            try:
+                payload = json.dumps({"op": op, "kwargs": _json(arguments)}, ensure_ascii=False)
+                while True:
+                    response = json.loads(self._session.request(payload))
+                    if isinstance(response, dict) and set(response) == {"callback"}:
+                        callback = response["callback"]
+                        try:
+                            if callbacks is None or callback["kind"] not in callbacks:
+                                raise NativeError(
+                                    "native resource requested an unavailable callback"
+                                )
+                            value = callbacks[callback["kind"]](callback["arguments"])
+                            payload = json.dumps(
+                                {"callback_result": _json(value)}, ensure_ascii=False
+                            )
+                        except BaseException as error:
+                            saved_error = error
+                            payload = json.dumps(
+                                {
+                                    "callback_error": {
+                                        "kind": type(error).__name__,
+                                        "message": str(error),
+                                    }
+                                }
+                            )
+                        continue
+                    if not isinstance(response, dict) or set(response) not in ({"ok"}, {"error"}):
+                        raise NativeError("invalid native resource response envelope")
+                    if "error" in response and (
+                        not isinstance(response["error"], dict)
+                        or not isinstance(response["error"].get("message"), str)
+                    ):
+                        raise NativeError("invalid native resource error envelope")
+                    break
+                if saved_error is not None:
+                    raise saved_error
+            except BaseException:
+                self.close()
+                raise
+            if "error" in response:
+                raise NativeError(response["error"]["message"], response["error"].get("kind"))
+            return response["ok"]
 
 
 def _source_signature():
@@ -118,6 +229,11 @@ def _close_sessions():
         except (OSError, ValueError):
             pass
     _sessions.clear()
+    for connection in list(_dedicated):
+        try:
+            connection.close()
+        except (OSError, ValueError):
+            pass
 
 
 def _after_fork():
@@ -179,7 +295,7 @@ def call(op: str, kwargs: dict, root: Path = REPO) -> Any:
         if not isinstance(response, dict):
             raise NativeError(f"native build {op}: response must be an object")
         if "error" in response:
-            raise NativeError(response["error"]["message"])
+            raise NativeError(response["error"]["message"], response["error"].get("kind"))
         if "ok" not in response:
             raise NativeError(f"native build {op}: response lacks result")
         return response["ok"]
@@ -190,6 +306,7 @@ def call(op: str, kwargs: dict, root: Path = REPO) -> Any:
             text=True,
             capture_output=True,
             check=False,
+            pass_fds=_inherited_descriptors(),
         )
     except OSError as exc:
         raise NativeError(f"cannot launch native build tool: {exc}") from exc
@@ -202,7 +319,7 @@ def call(op: str, kwargs: dict, root: Path = REPO) -> Any:
     if not isinstance(response, dict):
         raise NativeError(f"native build {op}: response must be an object")
     if "error" in response:
-        raise NativeError(response["error"]["message"])
+        raise NativeError(response["error"]["message"], response["error"].get("kind"))
     if proc.returncode or "ok" not in response:
         raise NativeError(f"native build {op}: exit {proc.returncode}: {proc.stderr.strip()}")
     return response["ok"]
@@ -252,7 +369,9 @@ def invoke(
     except NativeError as exc:
         if error_type is NativeError:
             raise
-        raise error_type(str(exc)) from exc
+        converted = error_type(str(exc))
+        converted.kind = exc.kind
+        raise converted from exc
 
 
 def implementation_identity() -> dict:

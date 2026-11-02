@@ -14,7 +14,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 from pathlib import Path
 
@@ -1396,7 +1395,7 @@ def _build_supervised(args, repo: Path, run, arch: str, cfg, build_dir: Path, co
                 cold,
                 artifact_env={
                     "VIBEOS_ARTIFACT_SUPERVISOR": str(supervisor),
-                    "VIBEOS_ARTIFACT_PYTHON": sys.executable,
+                    "VIBEOS_ARTIFACT_TOOL": str(repo / "tools/build-infra"),
                     "VIBEOS_ARTIFACT_TOOLCHAIN_ID": json.loads(supervisor.read_text())[
                         "toolchain_key"
                     ],

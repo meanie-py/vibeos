@@ -5,7 +5,6 @@ import json
 import os
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 from tools.artifact_executor import PIN
@@ -66,9 +65,8 @@ def test_four_real_consumers_two_source_roots_compile_once_and_keep_direct_archi
 
         def consume(index):
             command = [
-                sys.executable,
-                "-m",
-                "tools.artifact_runtime",
+                str(ROOT / "tools/build-infra"),
+                "artifact-runtime",
                 "request",
                 "--supervisor",
                 str(a if index % 2 == 0 else b),

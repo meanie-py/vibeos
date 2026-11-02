@@ -73,6 +73,7 @@ pub fn get(
     println!("cargo:rerun-if-env-changed=VIBEOS_ARTIFACT_STORE_ROOT");
     println!("cargo:rerun-if-env-changed=VIBEOS_ARTIFACT_VERIFY_NONCE");
     println!("cargo:rerun-if-env-changed=VIBEOS_ARTIFACT_TOOLCHAIN_ID");
+    println!("cargo:rerun-if-env-changed=VIBEOS_ARTIFACT_TOOL");
     match env::var("VIBEOS_ARTIFACT_STORE_MODE").as_deref() {
         Err(_) | Ok("OFF") | Ok("") => return None,
         Ok("ON") => {},
@@ -95,12 +96,12 @@ pub fn get(
         println!("cargo:warning=artifact store: no vibeos-cli build supervisor; building {body} privately");
         return None;
     };
-    let python = env::var_os("VIBEOS_ARTIFACT_PYTHON")
-        .expect("artifact store supervisor did not supply its Python interpreter");
+    let tool = env::var_os("VIBEOS_ARTIFACT_TOOL")
+        .map(PathBuf::from).unwrap_or_else(|| repo.join("tools/build-infra"));
     let consumer = format!("cargo:{package}|{}|{body}|{features:?}|{default_features}|{kernel}",
         env::var("OUT_DIR").expect("OUT_DIR"));
-    let mut command = Command::new(python);
-    command.current_dir(repo).args(["-m", "tools.artifact_runtime", "request"])
+    let mut command = Command::new(tool);
+    command.current_dir(repo).args(["artifact-runtime", "request"])
         .arg("--supervisor").arg(supervisor)
         .arg("--cargo-cwd").arg(cargo_cwd)
         .arg("--body").arg(body).arg("--consumer").arg(consumer)

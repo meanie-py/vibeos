@@ -53,6 +53,10 @@ pub fn dispatch(_root: &Path, request: &Value) -> Result<Value> {
     }
     let a = Args(kw);
     match op {
+        s if s.starts_with("artifact_executor_") || s.starts_with("artifact_runtime_") => {
+            crate::artifact_execution_api::dispatch(request)
+        }
+        s if s.starts_with("artifact_store_") => crate::artifact_store_api::stateless(request),
         "artifact_inputs_canonical" => {
             Ok(json!(crate::json::canonical(&a.req::<Value>("value")?)?))
         }
@@ -220,6 +224,34 @@ pub fn implementation_identity() -> Result<Value> {
     use sha2::{Digest, Sha256};
     let sources = [
         (
+            "tools/vibeos-build/src/artifact_store.rs",
+            include_bytes!("artifact_store.rs").as_slice(),
+        ),
+        (
+            "tools/vibeos-build/src/artifact_store_api.rs",
+            include_bytes!("artifact_store_api.rs").as_slice(),
+        ),
+        (
+            "tools/vibeos-build/src/artifact_executor.rs",
+            include_bytes!("artifact_executor.rs").as_slice(),
+        ),
+        (
+            "tools/vibeos-build/src/artifact_runtime.rs",
+            include_bytes!("artifact_runtime.rs").as_slice(),
+        ),
+        (
+            "tools/vibeos-build/src/artifact_execution_api.rs",
+            include_bytes!("artifact_execution_api.rs").as_slice(),
+        ),
+        (
+            "tools/vibeos-build/src/artifact_lifetime.rs",
+            include_bytes!("artifact_lifetime.rs").as_slice(),
+        ),
+        (
+            "tools/vibeos-build/src/artifact_requirements.json",
+            include_bytes!("artifact_requirements.json").as_slice(),
+        ),
+        (
             "tools/vibeos-build/src/lib.rs",
             include_bytes!("lib.rs").as_slice(),
         ),
@@ -267,4 +299,37 @@ pub fn implementation_identity() -> Result<Value> {
     Ok(
         json!({"schema":"vibeos-artifact-native-policy-v1","sources":hashes,"executable":std::env::current_exe()?}),
     )
+}
+
+/// Emit the executing tool and policy inputs available in a source distribution.
+/// Binary-only installations remain valid: the executing immutable bytes are watched.
+pub fn implementation_watches(repo: &Path) -> Result<Vec<PathBuf>> {
+    let identity = implementation_identity()?;
+    let mut paths = std::collections::BTreeSet::new();
+    paths.insert(std::env::current_exe()?);
+    for name in identity["sources"]
+        .as_object()
+        .ok_or("native source identity missing")?
+        .keys()
+    {
+        let path = repo.join(name);
+        if path.is_file() {
+            paths.insert(path);
+        }
+    }
+    for name in [
+        "artifact_runtime.py",
+        "artifact_inputs.py",
+        "artifact_executor.py",
+        "artifact_worker.py",
+        "artifact_store.py",
+        "artifact_config.py",
+        "build_infra_compat.py",
+    ] {
+        let path = repo.join("tools").join(name);
+        if path.is_file() {
+            paths.insert(path);
+        }
+    }
+    Ok(paths.into_iter().collect())
 }

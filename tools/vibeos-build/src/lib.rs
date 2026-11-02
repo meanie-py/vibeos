@@ -6,12 +6,29 @@ use std::{
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Error {
     pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
 }
 impl Error {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            kind: None,
         }
+    }
+}
+impl Error {
+    pub fn classified(kind: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            kind: Some(kind.into()),
+        }
+    }
+}
+impl Error {
+    pub fn with_kind(mut self, kind: impl Into<String>) -> Self {
+        self.kind = Some(kind.into());
+        self
     }
 }
 impl fmt::Display for Error {
@@ -100,3 +117,13 @@ pub mod artifact_worker;
 
 pub mod artifact_economics;
 pub mod artifact_history;
+
+pub mod artifact_store;
+pub mod artifact_store_api;
+
+pub mod artifact_executor;
+pub mod artifact_runtime;
+
+pub mod artifact_lifetime;
+
+pub mod artifact_execution_api;

@@ -1,6 +1,6 @@
 # Build infrastructure migration to Rust
 
-Batches 1–3 implemented on `lint-rs`; batches 4–6 remain planned.
+Batches 1–4 implemented on `lint-rs`; batches 5–6 remain planned.
 Batch 3 adds native configuration audits, input projections, verified snapshots,
 historical capture and artifact economics (2026-11-02).
 The native commands and compatibility boundaries are documented in
@@ -61,7 +61,7 @@ parity oracle. Do not maintain two evolving implementations.
    Unicode escaping, integer handling, environment,
    symlinks, renamed libraries, embedded inputs and mutation during capture. Discovery
    remains a candidate calculation; it never independently authorizes a cache hit.
-4. **Artifact store and execution.** Port atomic publication, sessions/refs, lock and
+4. **Artifact store and execution (implemented).** Port atomic publication, sessions/refs, lock and
    lease protocols, recovery/repair and GC; then the isolated executor and supervisor.
    Preserve lock order (consumer -> action -> GC), release permits on failure, and
    retain externally held disk admission. Exercise competing writers, cancellation,

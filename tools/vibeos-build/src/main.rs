@@ -7,7 +7,7 @@ use std::{
     process::{Command, ExitCode},
 };
 use vibeos_build::{self as b, Error, Result};
-const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  artifact-economics INVENTORY REPO OUTPUT [--eligibility-top N --scratch DIR] [--cargo PATH]\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR] [--allow-drop]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads one request; --api-jsonl serves newline-delimited requests until EOF. Inspect/check modes never write.\n";
+const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  artifact-executor [--repo DIR --store DIR --toolchain DIR --body NAME --output DIR]\n  artifact-runtime request|repair --supervisor FILE [OPTIONS]\n  artifact-economics INVENTORY REPO OUTPUT [--eligibility-top N --scratch DIR] [--cargo PATH]\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR] [--allow-drop]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads one request; --api-jsonl serves newline-delimited requests until EOF. Inspect/check modes never write.\n";
 fn atomic(path: &Path, bytes: &[u8], serial: usize) -> Result<()> {
     if path.is_symlink() {
         return Err(Error::new(format!(
@@ -183,8 +183,17 @@ fn run() -> Result<u8> {
     let mut rest = Vec::new();
     let mut api_json = false;
     let mut api_lines = false;
+    let mut client_pid: Option<u32> = None;
     while let Some(a) = args.next() {
         match a.as_str() {
+            "--client-pid" => {
+                client_pid = Some(
+                    args.next()
+                        .ok_or("--client-pid requires PID")?
+                        .parse()
+                        .map_err(|_| Error::new("invalid native client PID"))?,
+                )
+            }
             "--root" => root = args.next().ok_or("--root requires DIR")?.into(),
             "--api-json" => api_json = true,
             "--api-jsonl" => {
@@ -204,6 +213,12 @@ fn run() -> Result<u8> {
             }
             _ => rest.push(a),
         }
+    }
+    if let Some(pid) = client_pid {
+        if unsafe { libc::getppid() } != pid as libc::pid_t {
+            return Err("native helper client is no longer its parent".into());
+        }
+        b::artifact_lifetime::watch_owner(pid)?;
     }
     let root = if api_json {
         if root.is_absolute() {
@@ -249,6 +264,36 @@ fn run() -> Result<u8> {
         return Ok(0);
     }
     let command = command.ok_or("missing build command (use --help)")?;
+    if command == "artifact-executor" {
+        return b::artifact_executor::cli(&rest);
+    }
+    if command == "artifact-runtime" {
+        let parent = unsafe { libc::getppid() } as u32;
+        if parent < 2 {
+            return Err("artifact runtime client exited before startup".into());
+        }
+        b::artifact_lifetime::watch_owner(parent)?;
+        return b::artifact_runtime::cli(&rest);
+    }
+    if command == "artifact-supervisor-service" {
+        return b::artifact_execution_api::serve();
+    }
+    if command == "artifact-store-service" {
+        return b::artifact_store_api::serve();
+    }
+    if command == "artifact-store-copy" {
+        if rest.len() != 2 {
+            return Err("artifact-store-copy requires source and destination fd".into());
+        }
+        return b::artifact_store_api::copy_fds(
+            rest[0]
+                .parse()
+                .map_err(|_| Error::new("invalid source fd"))?,
+            rest[1]
+                .parse()
+                .map_err(|_| Error::new("invalid destination fd"))?,
+        );
+    }
     if command == "artifact-economics" {
         return b::artifact_economics::cli(&rest);
     }

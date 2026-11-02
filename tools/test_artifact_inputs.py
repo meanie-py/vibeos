@@ -612,3 +612,37 @@ def test_native_transport_discards_malformed_response_streams(tmp_path, monkeypa
         assert not bridge._sessions
     finally:
         bridge._close_sessions()
+
+
+@pytest.mark.parametrize("resource_owned", [False, True])
+def test_native_transport_preserves_bounded_permits_without_leaking_them_to_metadata(
+    tmp_path, resource_owned
+):
+    import fcntl
+
+    from tools import build_infra_compat as bridge
+
+    bridge._close_sessions()
+    path = tmp_path / "inherited-admission.lock"
+    permit = path.open("w+")
+    fcntl.flock(permit, fcntl.LOCK_EX)
+    os.set_inheritable(permit.fileno(), True)
+    connection = None
+    try:
+        if resource_owned:
+            connection = bridge.DedicatedSession("--api-jsonl")
+            assert connection.call("artifact_inputs_canonical", {"value": 1}) == "1"
+        else:
+            assert bridge.call("artifact_inputs_canonical", {"value": 1}) == "1"
+        permit.close()
+        with path.open("r+") as contender:
+            if resource_owned:
+                with pytest.raises(BlockingIOError):
+                    fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                connection.close()
+            fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        permit.close()
+        if connection:
+            connection.close()
+        bridge._close_sessions()

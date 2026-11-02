@@ -1,4 +1,9 @@
-"""Real-process tests of immutable publication, supervisor lifetime and GC."""
+"""Real-process tests of native publication, supervisor lifetime and GC.
+
+Collision, crash-after-rename, disk-full and copy-refusal injection now live in
+tools/vibeos-build/src/artifact_store.rs. This suite keeps the process and
+observable-contract tests at the public compatibility boundary.
+"""
 
 import concurrent.futures
 import json
@@ -14,7 +19,6 @@ import pytest
 from tools import artifact_store as implementation
 from tools.artifact_store import (
     ActionConflict,
-    BlobCollision,
     BuildResult,
     CorruptStore,
     Output,
@@ -311,19 +315,6 @@ def test_corrupt_entry_never_silently_rebuilds(store, tmp_path, corruption):
             )
 
 
-def test_digest_collision_compares_actual_bytes(store, monkeypatch):
-    identity = "a" * 64
-    monkeypatch.setattr(implementation, "_digest_file", lambda path: (identity, 4))
-    with store.session() as session:
-        first = store.lookup_or_build(DESCRIPTOR, build_bytes(b"aaaa"), session=session)
-        with pytest.raises(BlobCollision):
-            store.lookup_or_build(
-                {**DESCRIPTOR, "variant": 2}, build_bytes(b"bbbb"), session=session
-            )
-        assert first.blob_path.read_bytes() == b"aaaa"
-        assert not store._action_path(action_key({**DESCRIPTOR, "variant": 2})).exists()
-
-
 def test_invalid_output_and_symlink_source_fail_before_publication(store, tmp_path):
     with store.session() as session:
         with pytest.raises(StoreError):
@@ -471,23 +462,23 @@ def test_concurrent_cold_verification_compares_once_per_supervisor(store):
         assert len({result.blob_path for result in results}) == 1
 
 
-def test_restore_refs_verifies_shared_action_once(store, monkeypatch):
+def test_restore_refs_returns_one_verified_handle_per_shared_action(store):
+    # Exact hash-count instrumentation lives in the native Store unit test.
     with store.session() as session:
         handle = store.lookup_or_build(DESCRIPTOR, build_bytes(), session=session)
         for consumer in ("a", "b", "c"):
             session.bind("lane", consumer, handle.action_key)
-    original_digest = implementation._digest_file
-    reads = []
-
-    def counted(path):
-        reads.append(path)
-        return original_digest(path)
-
-    monkeypatch.setattr(implementation, "_digest_file", counted)
     with store.session() as supervisor:
         restored = store.restore_refs("lane", session=supervisor)
         assert len(restored) == 1
-    assert reads == [handle.blob_path]
+        assert restored[0].action_key == handle.action_key
+        assert restored[0].blob_path.read_bytes() == b"archive bytes"
+        assert len(store.list_refs("lane")) == 3
+        # Caching within one restore cannot authorize a later read of changed bytes.
+        handle.blob_path.chmod(0o644)
+        handle.blob_path.write_bytes(b"corrupt between restore requests")
+        with pytest.raises(CorruptStore):
+            store.restore_refs("lane", session=supervisor)
 
 
 def test_explicit_missing_blob_repair_preserves_manifest(store):
@@ -526,58 +517,6 @@ def test_failed_scratch_has_bounded_gc_retention_with_live_owner(store):
             store.lookup_or_build(DESCRIPTOR, lambda _: BuildResult({}), session=session)
         report = store.gc(apply=True, grace_seconds=0)
         assert len(report["staging"]) == 1
-
-
-def killed_during_publication(root, ready, release):
-    original = implementation._rename_noreplace
-
-    def interrupted(source, destination):
-        published = original(source, destination)
-        if published and "/blobs/sha256/" in str(destination):
-            ready.put(str(destination))
-            release.wait()
-        return published
-
-    implementation._rename_noreplace = interrupted
-    store = Store(Path(root))
-    with store.session() as session:
-        store.lookup_or_build(DESCRIPTOR, build_bytes(), session=session)
-
-
-def test_kill_after_blob_rename_never_exposes_partial_action(tmp_path):
-    context = mp.get_context("spawn")
-    ready, release = context.Queue(), context.Event()
-    process = context.Process(
-        target=killed_during_publication, args=(str(tmp_path / "store"), ready, release)
-    )
-    process.start()
-    blob = Path(ready.get(timeout=20))
-    assert blob.read_bytes() == b"archive bytes"
-    process.kill()
-    process.join(timeout=20)
-    store = Store(tmp_path / "store")
-    assert not list((store.base / "actions").iterdir())
-    report = store.gc(apply=True, grace_seconds=0)
-    assert len(report["blobs"]) == len(report["staging"]) == 1
-    assert not blob.exists()
-    with store.session() as session:
-        assert store.lookup_or_build(DESCRIPTOR, build_bytes(), session=session).blob_path.exists()
-
-
-def test_disk_full_manifest_publication_exposes_no_action(store, monkeypatch):
-    original = implementation._write_new
-
-    def no_manifest(path, payload):
-        if path.name == "action.json":
-            raise OSError(28, "No space left on device")
-        original(path, payload)
-
-    monkeypatch.setattr(implementation, "_write_new", no_manifest)
-    with store.session() as session:
-        with pytest.raises(OSError, match="No space"):
-            store.lookup_or_build(DESCRIPTOR, build_bytes(), session=session)
-        assert not store.manifest_path(action_key(DESCRIPTOR)).exists()
-        assert len(store.gc(apply=True, grace_seconds=0)["blobs"]) == 1
 
 
 def test_status_counts_filesystem_bytes_and_stable_lock_objects(store):
@@ -682,18 +621,17 @@ def test_gc_keeps_a_young_dead_ref(store):
     assert not report["dead_refs"] and not report["actions"]
 
 
-def test_gc_hashes_only_the_blobs_it_deletes(store, monkeypatch):
-    """Kept blobs are verified where they are consumed; hashing all of them here held the
-    GC lock for minutes."""
+def test_gc_keeps_protected_blobs_without_certifying_their_content(store):
+    # Native instrumentation also checks that zero hashes are spent on kept blobs.
     with store.session() as session:
-        store.lookup_or_build(DESCRIPTOR, build_bytes(), session=session)
-        hashed = []
-        original = implementation._digest_file
-        monkeypatch.setattr(
-            implementation, "_digest_file", lambda path: hashed.append(path) or original(path)
-        )
+        handle = store.lookup_or_build(DESCRIPTOR, build_bytes(), session=session)
+        handle.blob_path.chmod(0o644)
+        handle.blob_path.write_bytes(b"changed protected bytes")
         assert not store.gc(apply=True, grace_seconds=0)["blobs"]
-    assert hashed == []
+        assert handle.blob_path.read_bytes() == b"changed protected bytes"
+        # Consumption, rather than accounting/GC, is responsible for verification.
+        with pytest.raises(CorruptStore):
+            store.lookup(handle.action_key, session=session)
 
 
 def test_lane_ref_alive_maps_the_canonical_out_dir_back_to_the_lane(tmp_path):
@@ -725,17 +663,12 @@ def test_scheduled_gc_runs_once_per_interval_and_honours_the_kill_switch(store):
     assert scheduled_gc(root, force=True) is None
 
 
-def test_clone_or_copy_copies_and_falls_back_when_the_kernel_refuses(tmp_path, monkeypatch):
+def test_clone_or_copy_transfers_open_fds_through_the_native_tool(tmp_path):
+    # The kernel-refusal errno controls are native unit tests, below the RPC seam.
     src = tmp_path / "src"
     src.write_bytes(os.urandom(3 * 1024 * 1024 + 17))
-    for name, refuse in (("cloned", False), ("copied", True)):
-        if refuse:
-
-            def refused(*_args):
-                raise OSError(implementation.errno.EXDEV, "cross-device")
-
-            monkeypatch.setattr(implementation.os, "copy_file_range", refused)
-        dst = tmp_path / name
-        with src.open("rb") as incoming, dst.open("xb") as outgoing:
-            implementation._clone_or_copy(incoming, outgoing)
-        assert dst.read_bytes() == src.read_bytes()
+    dst = tmp_path / "copied"
+    with src.open("rb") as incoming, dst.open("xb") as outgoing:
+        implementation._clone_or_copy(incoming, outgoing)
+        assert not incoming.closed and not outgoing.closed
+    assert dst.read_bytes() == src.read_bytes()

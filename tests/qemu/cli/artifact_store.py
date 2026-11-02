@@ -152,9 +152,8 @@ def body_command(args, repo: Path) -> int:
             ) as supervisor,
         ):
             command = [
-                sys.executable,
-                "-m",
-                "tools.artifact_runtime",
+                str(repo / "tools/build-infra"),
+                "artifact-runtime",
                 "request",
                 "--supervisor",
                 str(supervisor),
@@ -228,9 +227,8 @@ def repair_command(args, repo: Path) -> int:
             ) as supervisor,
         ):
             command = [
-                sys.executable,
-                "-m",
-                "tools.artifact_runtime",
+                str(repo / "tools/build-infra"),
+                "artifact-runtime",
                 "repair",
                 "--supervisor",
                 str(supervisor),
