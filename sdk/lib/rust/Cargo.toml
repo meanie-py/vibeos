@@ -1106,7 +1106,10 @@ debug = 1
 # cmlib and afd 2026-11-01, once `nt_assert!` reported through RtlAssert instead of panicking.
 # classpnp, disk and cdrom followed once IoCreateDevice cache-aligned device extensions and the
 # pool honoured the *CacheAligned pool types: on 64-bit COMMON_DEVICE_EXTENSION embeds a
-# LOOKASIDE_ALIGN lookaside (64/128-aligned), which the C's 16-aligned placement never gave it. overflow-checks defaults to FOLLOWING
+# LOOKASIDE_ALIGN lookaside (64/128-aligned), which the C's 16-aligned placement never gave it.
+# NOT freeldr-rust: armed, the BIOS loader's PE grew to 0x7fc00 against MAX_FREELDR_PE_SIZE
+# 0x77000 (35840 bytes over; every BIOS boot would bugcheck). Its 19 cfg(debug_assertions) blocks
+# stay unbuilt until the loader has the room (2026-11-02). overflow-checks defaults to FOLLOWING
 # debug-assertions and must stay off: the C has no overflow traps.
 [profile.release.package.ntoskrnl-rust]
 debug-assertions = true

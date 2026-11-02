@@ -10653,7 +10653,10 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   `ASSERT!`/`NT_ASSERT!` with its C twin's.
 Arming also changes what a FAILED assert does: `nt_assert!` was `debug_assert!`, a panic and a
 halt where the C's DBG `ASSERT` prints and continues. It now reports through `RtlAssert` (still
-`cfg!(debug_assertions)`-gated, evaluated in the calling crate). Its first two fires were real
+`cfg!(debug_assertions)`-gated, evaluated in the calling crate). ntoskrnl-rust's own `ASSERT!` was the
+same `debug_assert!` and followed on 2026-11-02, after kmtest's ZwMapViewOfSection guard-page
+view bugchecked on pagfault.rs's `ASSERT(ProtoPte == NULL)`, which the C prints and then handles
+as a guard-page violation. Its first two fires were real
 bugs: fastfat's `FatNoOpAcquire` set top-level IRP 1 for the C's `FSRTL_CACHE_TOP_LEVEL_IRP`
 (2), and an empty `DbgDoit!` dropped the increment a `cfg(debug_assertions)` decrement paired.
 Triage tip: the i386 HAL loads as `halmp.dll` under the harness label `hal.dll`, and its panic
