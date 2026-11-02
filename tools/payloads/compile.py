@@ -125,6 +125,40 @@ def _load_by_path(modname: str, path: Path):
     return mod
 
 
+def unbuilt_rust_crate(build_dir: Path):
+    """A predicate: is this path inside a Rust crate that `build_dir` never compiles?
+
+    Such an edit cannot change a program that build stages. The arm64-only wowx64-rust
+    is the case that made this matter: every edit to it demanded a 19-minute amd64
+    rebuild before an x86-64 guest payload would stage (2026-11-01). Both of the build's
+    own records must be silent about the crate: the ninja graph, which can miss a cargo
+    edge, and cargo's dep-info files, which list every source it actually compiled."""
+    ninja = list(build_dir.glob("*.ninja"))
+    if not ninja or not any(build_dir.rglob("*.d")):
+        return lambda p: False  # no build records to consult: nothing is provably unbuilt
+    seen: dict[str, bool] = {}
+
+    def unbuilt(path: str) -> bool:
+        parts = path.split("/")
+        if len(parts) < 5 or parts[:3] != ["sdk", "lib", "rust"]:
+            return False
+        crate = "/".join(parts[:4]) + "/"
+        if crate not in seen:
+            named = any(crate in p.read_text(errors="ignore") for p in ninja)
+            if not named:
+                rc = subprocess.run(
+                    ["grep", "-rqF", "--include=*.d", crate, str(build_dir)],
+                    check=False,
+                ).returncode
+                if rc > 1:
+                    die(f"cannot search {build_dir} dep-info for {crate} (grep rc={rc})")
+                named = rc == 0
+            seen[crate] = not named
+        return seen[crate]
+
+    return unbuilt
+
+
 def guest_build_current(name: str, build_dir: Path) -> None:
     """Die unless `build_dir` was built from the current working tree.
 
@@ -138,8 +172,14 @@ def guest_build_current(name: str, build_dir: Path) -> None:
         die(f"payload {name!r}: guest set build_dir {build_dir.name!r} is not build-<arch>")
     warmth = _load_by_path("_payload_warmth", REPO / "tests/qemu/cli/warmth.py")
     docs_only = _load_by_path("_payload_docs_only", REPO / "tools/docs_only.py")
+    unbuilt = unbuilt_rust_crate(build_dir)
     try:
-        stale = warmth.missing(REPO, warmth.worktree_tree(REPO), (arch,), docs_only.is_inert)
+        stale = warmth.missing(
+            REPO,
+            warmth.worktree_tree(REPO),
+            (arch,),
+            lambda p: docs_only.is_inert(p) or unbuilt(p),
+        )
     except Exception as exc:
         die(f"payload {name!r}: cannot read the {arch} build receipts: {exc}")
     if stale:
