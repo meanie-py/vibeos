@@ -10474,6 +10474,78 @@ case "$DRIVER" in
     EXTRA_INC=( -I"${SRC}/dll/win32/esent" -I"${SRC}/build-i386/dll/win32/esent" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  wow64|wow64-types_1)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-11-02 from dll/win32/wow64/CMakeLists.txt
+    # (6 compiled TU(s), 142 headers in the include closure, 32 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 154 external prototype(s) declared by the include closure, 40 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/wow64"
+    case "$DRIVER" in
+      # island types — 5 TU(s):
+      # wow64.c wow64_callback.c wow64_cb_automarshal.c wow64_manual.c wow64_pfnmap.c
+      wow64)
+        WRAPPER_INC=$'#define WIN32_NO_STATUS\n#define _INC_WINDOWS\n#define COM_NO_WINDOWS_H\n#include <windef.h>\n#include <winbase.h>\n#include <wingdi.h>\n#include <winuser.h>\n#include <imm.h>\n#include <immdev.h>\n#include <imm32_undoc.h>\n#include <ndk/rtlfuncs.h>\n#include <ntusrtyp.h>\n#include <ntuser.h>\n#include <stdint.h>\n#include "wow64_btcpu.h"'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]imm32_undoc\.h' --allowlist-file '.*[/\\]imm\.h'
+                      --allowlist-file '.*[/\\]immdev\.h'
+                      --allowlist-file '.*[/\\]ntuser\.h'
+                      --allowlist-file '.*[/\\]ntusrtyp\.h'
+                      --allowlist-file '.*[/\\]rtlfuncs\.h'
+                      --allowlist-file '.*[/\\]wingdi\.h'
+                      --allowlist-file '.*wow64[/\\].*\.h'
+                      --allowlist-file '.*[/\\]winnt\.h' )
+        ;;
+      # island types_1 — 1 TU(s):
+      # wow64_automarshal.c
+      wow64-types_1)
+        WRAPPER_INC=$'#include <stdarg.h>\n#define WIN32_NO_STATUS\n#include <windef.h>\n#include <winnt.h>\n#include <ndk/ntndk.h>\n#include "wow64_status.h"'
+        ALLOW_FILES=( --allowlist-file '.*[/\\]rtlfuncs\.h' --allowlist-file '.*wow64[/\\].*\.h'
+                      --allowlist-file '.*[/\\]winnt\.h' )
+        ;;
+    esac
+    EXTRA_INC=( -I"${SRC}/dll/win32/wow64" -I"${SRC}/build-amd64/dll/win32/wow64" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" -I"${SRC}/win32ss/include" -I"${SRC}/sdk/include/reactos/subsys" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/wow64-rust/src}"
+    ;;
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh wow64
+  #   TYPES_STEM=types_1 gen_driver_types.sh wow64-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh wow64
+  #   TYPES_STEM=types_1 gen_driver_types.sh wow64-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh wow64
+  #   TYPES_STEM=types_1 gen_driver_types.sh wow64-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh wow64
+  #   TYPES_STEM=types_1 gen_driver_types.sh wow64-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

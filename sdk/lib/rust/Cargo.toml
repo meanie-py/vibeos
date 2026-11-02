@@ -990,6 +990,7 @@ members = [
     "wdfdriverentry-rust",
     "esent-rust",
     "wing32-rust",
+    "wow64-rust",
 ]
 resolver = "2"
 

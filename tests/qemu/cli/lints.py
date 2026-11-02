@@ -854,6 +854,12 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # `size_of_val(&p)` on a raw pointer measures the pointer, not the C's `sizeof(*p)`:
+    # wow64's AFD select marshaller under-allocated by half and overran the 64-bit heap.
+    specs.append(("scan_sizeof_pointer", ["MISSING"], "stdout"))
+    # A C `extern` variable re-defined as a private static in a second module: wow64's
+    # BTCpuSetContext copy stayed None and every i386 guest died after its loader.
+    specs.append(("scan_extern_copy", ["MISSING"], "stdout"))
     # A C bitfield reached by bit index (`_bitfield_1.set(0, 1, v)`) instead of bindgen's named
     # accessor: atapi passed a page code as the width (a panic), the ARM3 session code swapped
     # Initialized and DeletePending at all four sites.

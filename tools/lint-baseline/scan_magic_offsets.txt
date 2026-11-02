@@ -75,3 +75,38 @@
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1316: let p = (pfn as *mut u8).add(MMPFN_ORIGINAL_PTE_OFFSET);
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1364: let p = (pfn as *const u8).add(MMPFN_U3_OFFSET + 2);
 [U8_BYTE_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ARM3/helpers.rs:1371: let p = (pfn as *mut u8).add(MMPFN_U3_OFFSET + 2);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:1119: .offset(0x30 as isize)
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:1554: Peb64 = *((NtCurrentTeb() as PBYTE).offset(0x60 as isize) as *mut PBYTE);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:1791: *(XSave.offset(0x00 as isize) as *mut USHORT) = 0x027F as USHORT;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:1792: *(XSave.offset(0x18 as isize) as *mut ULONG) = 0x00001F80 as ULONG;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:1824: *(Teb32.offset(0x04 as isize) as *mut ULONG) = StackBase; /* NtTib.StackBase (high) */
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:1825: *(Teb32.offset(0x08 as isize) as *mut ULONG) = StackLimit; /* NtTib.StackLimit (low) */
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:1836: *(Teb32.offset(0xE0C as isize) as *mut ULONG) = DeallocationStack; /* TEB32.DeallocationStack */
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:2520: || *(Teb32.offset(0x30 as isize) as *mut ULONG) != Peb32 as ULONG
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:2532: ImageBase32 = *((Peb32 as PBYTE).offset(0x08 as isize) as *mut ULONG);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:2878: ApcStack.offset(0x40000 as isize).offset(-(0x100 as isize)),
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:676: let mut Peb: PBYTE = *((NtCurrentTeb() as PBYTE).add(0x60 as usize) as *mut PBYTE);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64.rs:678: *(Peb.add(0x30 as usize) as *mut PVOID)
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:3928: let mut Prm: *const ULONG = Rec32.offset(0x14 as isize) as *const ULONG; /* ExceptionInformation */
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:7982: == *((NtCurrentTeb() as PBYTE).offset(0x40 as isize) as *const ULONGLONG)
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8659: StrBase = if (*((&raw mut Hdr32 as *mut u8).offset(0x08 as isize) as *mut ULONG)
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8675: *((&raw mut Blk64 as *mut u8).offset(0x0c as isize) as *mut ULONG) =
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8676: *((&raw mut Hdr32 as *mut u8).offset(0x0c as isize) as *mut ULONG);
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8680: *((&raw mut Blk64 as *mut u8).offset(0x00 as isize) as *mut ULONG) =
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8682: *((&raw mut Blk64 as *mut u8).offset(0x04 as isize) as *mut ULONG) =
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8684: *((&raw mut Blk64 as *mut u8).offset(0x08 as isize) as *mut ULONG) =
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8685: *((&raw mut Hdr32 as *mut u8).offset(0x08 as isize) as *mut ULONG)
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8690: *((&raw mut Blk64 as *mut u8).offset(0x10 as isize) as *mut ULONGLONG) =
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8691: *((&raw mut Hdr32 as *mut u8).offset(0x10 as isize) as *mut ULONG)
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8694: *((&raw mut Blk64 as *mut u8).offset(0x18 as isize) as *mut ULONG) =
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8695: *((&raw mut Hdr32 as *mut u8).offset(0x14 as isize) as *mut ULONG);
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8697: *((&raw mut Blk64 as *mut u8).offset(0x20 as isize) as *mut ULONGLONG) =
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8698: *((&raw mut Hdr32 as *mut u8).offset(0x18 as isize) as *mut ULONG)
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8701: *((&raw mut Blk64 as *mut u8).offset(0x28 as isize) as *mut ULONGLONG) =
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8702: *((&raw mut Hdr32 as *mut u8).offset(0x1c as isize) as *mut ULONG)
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8705: *((&raw mut Blk64 as *mut u8).offset(0x30 as isize) as *mut ULONGLONG) =
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8706: *((&raw mut Hdr32 as *mut u8).offset(0x20 as isize) as *mut ULONG)
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8724: *((&raw mut Blk64 as *mut u8).offset(0x48 as isize) as *mut ULONGLONG) =
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8725: *((&raw mut Hdr32 as *mut u8).offset(0x2c as isize) as *mut ULONG)
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8773: *((&raw mut Blk64 as *mut u8).offset(0x80 as isize) as *mut ULONGLONG) =
+[U8_BYTE_ARITH] sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs:8774: *((&raw mut Hdr32 as *mut u8).offset(0x48 as isize) as *mut ULONG)

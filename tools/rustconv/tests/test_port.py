@@ -890,6 +890,35 @@ def test_a_derive_mode_override_is_remembered_for_later_stages(tmp_path, monkeyp
     assert port.recorded_mode(mod, None) is True  # the CLI omits --target for a lone target
 
 
+def test_derive_reads_a_64bit_only_module_on_an_arch_that_builds_it(tmp_path, monkeypatch):
+    """wow64.dll's whole target sits inside `if(ARCH STREQUAL "arm64" OR ARCH STREQUAL
+    "amd64")`; derive was hard-wired to i386 and refused it as having no add_library()."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    mod = tmp_path / "dll" / "w64"
+    mod.mkdir(parents=True)
+    (mod / "CMakeLists.txt").write_text(
+        'if(ARCH STREQUAL "arm64" OR ARCH STREQUAL "amd64")\n'
+        "add_library(w64 MODULE a.c)\nset_module_type(w64 win32dll)\nendif()\n"
+    )
+    (mod / "a.c").write_text("int a(void) { return 0; }\n")
+    assert port._home_arch(mod, None) == "amd64"
+    (mod / "CMakeLists.txt").write_text("set(X 1)\n")
+    with pytest.raises(port.pd.ProfileDeriveError, match="no add_library"):
+        port._home_arch(mod, None)
+
+
+def test_keep_c_tus_are_split_out_before_the_island_is_derived(tmp_path, monkeypatch):
+    """A kept-C TU must not shape the island: wow64_thunks.c #includes a codegen table whose
+    typedefs broke the whole wrapper when it was derived over every compiled TU."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    tus = [tmp_path / "dll/w64" / n for n in ("a.c", "thunks.c", "win32k.c")]
+    rest, stay = port._keep_c_split(tus, {"thunks.c", "dll/w64/win32k.c"}, "w64")
+    assert [p.name for p in rest] == ["a.c"]
+    assert [p.name for p in stay] == ["thunks.c", "win32k.c"]
+    with pytest.raises(port.PortError, match="names no compiled TU"):
+        port._keep_c_split(tus, {"gone.c"}, "w64")
+
+
 def test_token_pasting_macros_and_their_callers_are_hand_ports():
     from types import SimpleNamespace as M
 

@@ -608,6 +608,24 @@ def _unroll_target_foreach(text: str) -> str:
     return _FOREACH_RE.sub(unroll, text)
 
 
+_ARCH_TEST = r'ARCH\s+STREQUAL\s+"?(\w+)"?'
+
+
+def _arch_or_chain(cond: str) -> set[str] | None:
+    """The arches an `if()` admits when it is decided by ARCH, else None: every test of an
+    `ARCH STREQUAL "<a>" OR ...` chain, or a leading ARCH test. Reading only the first test
+    sent wow64's `if(ARCH STREQUAL "arm64" OR ARCH STREQUAL "amd64")` dead on amd64, hiding
+    its target."""
+    parts = re.split(r"\s+OR\s+", cond.strip())
+    tests = [re.fullmatch(_ARCH_TEST, part.strip()) for part in parts]
+    if len(parts) > 1 and all(tests):
+        return {m.group(1) for m in tests if m}
+    # Anything else keeps the historical reading: a condition that STARTS with an ARCH
+    # test is decided by that test alone.
+    m = re.match(_ARCH_TEST, cond.strip())
+    return {m.group(1)} if m else None
+
+
 def _read_with_includes(path: Path, _seen: frozenset[Path] = frozenset()) -> str:
     """`_read`, but splicing `include(<file>.cmake)` in at the include site.
 
@@ -1041,9 +1059,9 @@ def parse_cmakelists(
     for name, raw, _line in _cmake_commands(text):
         args_raw = _split_args(raw)
         if name == "if":
-            m = re.match(r'ARCH\s+STREQUAL\s+"?(\w+)"?', raw.strip())
-            if m:
-                cond_stack.append(None if m.group(1) == arch else "__dead__")
+            arches = _arch_or_chain(raw)
+            if arches is not None:
+                cond_stack.append(None if arch in arches else "__dead__")
             else:
                 cond_stack.append(raw.strip())
             continue

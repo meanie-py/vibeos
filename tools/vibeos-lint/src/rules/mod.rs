@@ -14,6 +14,8 @@ pub mod hresult_literals;
 pub mod info_class_literals;
 pub mod init_then_move;
 pub mod let_shadow;
+pub mod sizeof_pointer;
+pub mod extern_copy;
 pub mod list_walk_from_head;
 pub mod misaligned_cast;
 pub mod read_after_clear;
@@ -262,6 +264,8 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(dowhile_continue::DowhileContinue),
         Box::new(variadic_array_arg::VariadicArrayArg),
         Box::new(let_shadow::LetShadow),
+        Box::new(sizeof_pointer::SizeofPointer),
+        Box::new(extern_copy::ExternCopy),
         Box::new(double_fetch::DoubleFetch),
         Box::new(hresult_literals::HresultLiterals),
         Box::new(init_then_move::InitThenMove),

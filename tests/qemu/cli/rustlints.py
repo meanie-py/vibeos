@@ -131,6 +131,8 @@ PORTED = frozenset(
         "scan_dowhile_continue",
         "scan_variadic_array_arg",
         "scan_let_shadow",
+        "scan_sizeof_pointer",
+        "scan_extern_copy",
         "scan_double_fetch",
         "scan_hresult_literals",
         "scan_init_then_move",

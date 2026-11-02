@@ -8490,6 +8490,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wow64-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "wowx64-cargo"
 version = "0.1.0"
 dependencies = [

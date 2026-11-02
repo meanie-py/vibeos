@@ -315,6 +315,46 @@ What the batch added to the shared crates and tools:
    ci_thunks;`: since edition 2018 rustc only loads a dependency something references,
    and nothing calls a `global_asm!`-only crate.
 
+13. **wow64.dll is Rust (2026-11-02, Haiku, $0.75; fex lane's code, owner-approved, fex agreed
+   the boundary).** `wow64.c`, `wow64_manual.c` (7K lines of 32<->64 marshallers),
+   `wow64_callback.c`, both automarshal TUs and `wow64_pfnmap.c` -> `wow64-rust`.
+   `wow64_thunks.c` and `wow64_win32k.c` stay C (`--keep-c`): they are dispatchers that
+   `#include` the codegen-emitted `*.gen.c` syscall tables. **Owed:** have `codegen
+   wow64-thunks` emit Rust so they can follow. The crate is empty on i386 (wow64.dll is
+   built for amd64 and arm64 only), so the i386 workspace check stays green. amd64 ladder
+   13/13 through it. Still cmake-linked: `cargo_cell_gen` refuses a module not built on
+   every arch (owed; baselined in `scan_cmake_linked_rust`).
+   - **Ladder bugs, both classes now lints.** (1) The C defines the BTCpu function
+     pointers once in `wow64.c` and declares them `extern` elsewhere; the Rust gave
+     `wow64_manual.rs` and `wow64_callback.rs` their own never-assigned `static mut`
+     copies, so `NtContinue` returned STATUS_INVALID_PARAMETER and every i386 guest died
+     right after its loader. New `scan_extern_copy` (vibeos-lint) flags a private static
+     shadowing a crate's `#[no_mangle]` one; tree-wide it found 18 more, about 11 of them
+     real (the module's C declares the name `extern`): cmd `bTitleSet`, comctl32
+     `uDragListMessage`, dhcpcsvc `hAdapterStateChangedEvent`, fontview `g_NumFonts`, ndis
+     `CancelId`, win32k `gxcoTrivial`/`g_PointZero`, winspool `hinstWinSpool`, appwiz
+     `hApplet`, cc `LazyWriter`, opengl32 `ContextListHead`. **Owed next: fix those and
+     drop them from the baseline.** (2) `sizeof(*p)` came back as `size_of_val(&p)`, the
+     size of the POINTER: the AFD select marshaller allocated 8+8n bytes for a 24+16n
+     buffer and `select()` overran the 64-bit heap. New `scan_sizeof_pointer`. All 71
+     `size_of_val(&*p)` sites became `size_of::<T>()` too: `&*p` builds a reference from
+     a null or misaligned guest pointer, which C's unevaluated `sizeof` never does.
+   - **The 32-bit AFD structs are `packed(4)`** (`pshpack4` in the C; `scan_pack_drift`).
+   - **Arch arms the translation flattened**, fixed by a cargo-check pass: the
+     `PrepareForException` hook and `Wow64pCpuGetContext32`'s `ESP += 4` are not-arm64;
+     `Wow64ApcRoutine`'s dispatch-RSP write-back is amd64-only; setjmp/longjmp are
+     per-arch `#[unsafe(naked)]`; `WOW64_CPU_DLL`/`WOW64_NATIVE_MACHINE` are per-arch.
+   - **Tool fixes it forced:** `profile_derive` reads `if(ARCH STREQUAL a OR ARCH
+     STREQUAL b)` (it took only the first test, so the target vanished on amd64); `port
+     derive` picks the first arch that defines the target instead of hard-wired i386;
+     `--keep-c` TUs no longer shape the island (the kept dispatchers' generated tables
+     broke the wrapper); a UTF-8 C narrow literal copied into `b"..."` is escaped to its
+     bytes before the audit parses it (`byte_literals.py`). c2rust refused five
+     marshallers over block-scope `extern` VARIABLES (clang links later declarations to
+     the first, block-scope one), so `wow64_manual.c` declares them once at file scope.
+     `Wow64LdrpInitialize` was adopted from its stored reject for $0 after repairing the
+     one call token it spelled by name.
+
 
 ## Not ours: skip these
 

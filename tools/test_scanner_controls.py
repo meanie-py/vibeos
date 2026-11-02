@@ -2775,7 +2775,57 @@ pub unsafe fn load() {
 //         SystemParametersInfoW(SPI_SETSCREENSAVETIMEOUT, 600, 0, SPIF_UPDATEINIFILE);
 """
 
+# scan_sizeof_pointer. Seeded from wow64's AFD select marshaller (2026-11-02): C
+# `sizeof(*P64)` came back as `size_of_val(&P64)`, the size of the pointer, and select()
+# overran the 64-bit heap.
+_SIZEOFPTR_BAD = """\
+unsafe fn sel(n: usize) -> *mut u8 {
+    let mut P64: *mut Hdr64 = core::ptr::null_mut();
+    P64 = alloc(core::mem::size_of_val(&P64) + n * 16) as *mut Hdr64;
+    P64 as *mut u8
+}
+"""
+_SIZEOFPTR_GOOD = """\
+unsafe fn sel(n: usize) -> *mut u8 {
+    let mut P64: *mut Hdr64 = core::ptr::null_mut();
+    P64 = alloc(core::mem::size_of::<Hdr64>() + n * 16) as *mut Hdr64;
+    P64 as *mut u8
+}
+"""
+# scan_extern_copy. Seeded from wow64 (2026-11-02): the C's `extern` BTCpuSetContext became a
+# second, never-assigned static in wow64_manual.rs, so NtContinue always failed.
+_EXTCOPY_HOME = """\
+#[no_mangle]
+pub static mut Wow64pBTCpuSetContext: Option<unsafe extern "C" fn()> = None;
+"""
+_EXTCOPY_BAD = """\
+pub static mut Wow64pBTCpuSetContext: Option<unsafe extern "C" fn()> = None;
+"""
+_EXTCOPY_GOOD = """\
+use crate::wow64::Wow64pBTCpuSetContext;
+"""
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_sizeof_pointer",
+        script="tools/scan_sizeof_pointer.py",
+        argv=["--lint"],
+        bad={"sdk/lib/rust/w-rust/src/afd.rs": _SIZEOFPTR_BAD},
+        good={"sdk/lib/rust/w-rust/src/afd.rs": _SIZEOFPTR_GOOD},
+    ),
+    Control(
+        name="scan_extern_copy",
+        script="tools/scan_extern_copy.py",
+        argv=["--lint"],
+        bad={
+            "sdk/lib/rust/w-rust/src/wow64.rs": _EXTCOPY_HOME,
+            "sdk/lib/rust/w-rust/src/manual.rs": _EXTCOPY_BAD,
+        },
+        good={
+            "sdk/lib/rust/w-rust/src/wow64.rs": _EXTCOPY_HOME,
+            "sdk/lib/rust/w-rust/src/manual.rs": _EXTCOPY_GOOD,
+        },
+    ),
     Control(
         name="scan_byteptr_stride",
         script="tools/scan_byteptr_stride.py",

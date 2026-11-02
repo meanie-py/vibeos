@@ -26,6 +26,16 @@ ULONG WINAPI DbgPrint(_In_z_ _Printf_format_string_ PCSTR Format, ...);
 
 int Wow64pStrEq(const char *a, const char *b);
 
+/* Variables wow64.c and wow64_callback.c define, declared ONCE here at file scope. They
+ * used to be block-scope `extern`s inside the functions that read them; clang links every
+ * later redeclaration to that first, block-scope one, and c2rust then refuses each reader
+ * ("name not declared"), so rustconv had no anchor for five live marshallers. */
+extern LONG (WINAPI *Wow64pBTCpuNotifyMap)(PVOID, PVOID, PVOID, SIZE_T, ULONG, ULONG);
+extern LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
+extern LONG (WINAPI *Wow64pBTCpuGetContext)(HANDLE, HANDLE, PVOID, PVOID);
+extern PVOID Wow64pKiUserExceptionDispatcher32;
+extern ULONG Wow64TraceSyscalls;
+
 /* ---- host (64-bit) Nt* prototypes we marshal into ----------------------- */
 NTSTATUS WINAPI NtQueryVirtualMemory(HANDLE ProcessHandle, PVOID BaseAddress,
                                      ULONG MemoryInformationClass,
@@ -1815,8 +1825,6 @@ static NTSTATUS Wow64Manual_NtMapViewOfSection(ULONG *a)
         if (NtQuerySection(Section, 1 /* SectionImageInformation */, ImageInfo,
                            sizeof(ImageInfo), NULL) >= 0)
         {
-            extern LONG (WINAPI *Wow64pBTCpuNotifyMap)(PVOID, PVOID, PVOID,
-                                                       SIZE_T, ULONG, ULONG);
             extern VOID Wow64pPatchTransitionSlot(PVOID MBase, SIZE_T MSize);
             if (Wow64pBTCpuNotifyMap)
                 Wow64pBTCpuNotifyMap(NULL, Base, NULL, Size, Type, Protect);
@@ -2643,7 +2651,6 @@ static NTSTATUS Wow64Manual_NtSetTimer(ULONG *a)
  * returning "success" here resumes the guest at the new Eip. */
 static NTSTATUS Wow64Manual_NtContinue(ULONG *a)
 {
-    extern LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
     extern int Wow64pCompleteGuestApc(ULONG Context32, BOOLEAN TestAlert);
     PVOID Ctx32 = (PVOID)(ULONG_PTR)a[0];
 
@@ -2672,13 +2679,9 @@ static NTSTATUS Wow64Manual_NtContinue(ULONG *a)
 #define WOW64_CTX32_ESP  0xC4
 static NTSTATUS Wow64Manual_NtRaiseException(ULONG *a)
 {
-    extern LONG (WINAPI *Wow64pBTCpuSetContext)(HANDLE, HANDLE, PVOID, PVOID);
-    extern LONG (WINAPI *Wow64pBTCpuGetContext)(HANDLE, HANDLE, PVOID, PVOID);
-    extern PVOID Wow64pKiUserExceptionDispatcher32;
     extern ULONG Wow64pBuildGuestExceptionFrame(const void *Rec32,
                                                 const void *Ctx32, ULONG Below);
     extern NTSTATUS WINAPI NtTerminateProcess(HANDLE Process, LONG ExitStatus);
-    extern ULONG Wow64TraceSyscalls;
     const BYTE *Rec32 = (const BYTE *)(ULONG_PTR)a[0];
     const BYTE *Ctx32 = (const BYTE *)(ULONG_PTR)a[1];
     ULONG FirstChance = a[2];
@@ -3969,7 +3972,6 @@ static NTSTATUS Wow64Manual_NtUserCreateDesktop(ULONG *a)
 /* Shared-icon cache diagnosis: a WOW64 app whose LR_SHARED icons never match re-creates them on
  * every paint and exhausts the GDI quota. Log what the two cache calls actually carry. Behind the
  * syscall-trace switch: a line per icon lookup is ~1500 lines a sweep once the cache works. */
-extern ULONG Wow64TraceSyscalls;
 
 static void Wow64pTraceCurIcon(const char *What, ULONG Mod32, ULONG Rsrc32, LONG *Param,
                                ULONG Flags, ULONG Ret)
@@ -5963,8 +5965,6 @@ typedef struct { ULONG uFlags, uTimeout; ULONGLONG Result; }  WOW64_MC_DSM64; /*
 
 /* Largest Size64 in the generated table; asserted at runtime below. */
 #define WOW64_MC_PAYLOAD64_MAX 64
-
-extern ULONG Wow64TraceSyscalls;
 
 /* FNIDs for which lParam IS this message's payload buffer and win32k consumes
  * it synchronously — the SendMessage family (which copies it into pool around

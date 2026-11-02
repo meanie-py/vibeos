@@ -1857,7 +1857,14 @@ dll/win32/wlnotify/CMakeLists.txt	1	# wlnotify.c # replaced by Rust (sdk/lib/rus
 dll/win32/wmiutils/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/wmiutils-rust/src/wmiutils/main.rs)
 dll/win32/wmiutils/CMakeLists.txt	1	# path.c # replaced by Rust (sdk/lib/rust/wmiutils-rust/src/wmiutils/path.rs)
 dll/win32/wmiutils/CMakeLists.txt	1	# statuscode.c # replaced by Rust (sdk/lib/rust/wmiutils-rust/src/wmiutils/statuscode.rs)
+dll/win32/wow64/CMakeLists.txt	1	# Every translation unit is Rust now (wow64-rust, `rustconv port`) except wow64_thunks.c, wow64_win32k.c,
 dll/win32/wow64/CMakeLists.txt	1	# contributes argument types only. wow64.c #includes the output.
+dll/win32/wow64/CMakeLists.txt	1	# wow64.c # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64.rs)
+dll/win32/wow64/CMakeLists.txt	1	# wow64_automarshal.c # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64_automarshal.rs)
+dll/win32/wow64/CMakeLists.txt	1	# wow64_callback.c # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64_callback.rs)
+dll/win32/wow64/CMakeLists.txt	1	# wow64_cb_automarshal.c # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64_cb_automarshal.rs)
+dll/win32/wow64/CMakeLists.txt	1	# wow64_manual.c # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs)
+dll/win32/wow64/CMakeLists.txt	1	# wow64_pfnmap.c # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64_pfnmap.rs)
 dll/win32/ws2_32/CMakeLists.txt	1	# never-delete rule. (src/scihlpr.c was already not compiled — it stays that way.)
 dll/win32/ws2_32/CMakeLists.txt	1	# src/addrconv.c src/addrinfo.c src/async.c src/bhook.c src/dcatalog.c src/dcatitem.c
 dll/win32/ws2_32/CMakeLists.txt	1	# src/addrconv.c — replaced by Rust (ws2_32-rust src/addrconv.rs — inet_addr/ntoa/pton/ntop + hton/ntoh family)
