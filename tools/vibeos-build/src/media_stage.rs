@@ -531,6 +531,12 @@ fn read_manifest(cache: &Path) -> Result<Value> {
     }
 }
 pub fn strip_cli(repo: &Path, args: &[String]) -> Result<u8> {
+    if args.iter().any(|s| s == "--help" || s == "-h") {
+        println!("Usage: strip-cd-media (--file FILE | --lst FILE --out FILE) --cache DIR --objcopy TOOL");
+        return Ok(0);
+    }
+    let expanded = option_values(args);
+    let args = expanded.as_slice();
     let mut values = BTreeMap::new();
     let mut i = 0;
     while i < args.len() {
@@ -615,7 +621,25 @@ pub fn strip_cli(repo: &Path, args: &[String]) -> Result<u8> {
     println!("strip_cd_media: {count} PE entries staged");
     Ok(0)
 }
+fn option_values(args: &[String]) -> Vec<String> {
+    args.iter()
+        .flat_map(|s| {
+            if s.starts_with("--") {
+                if let Some((key, value)) = s.split_once('=') {
+                    return vec![key.into(), value.into()];
+                }
+            }
+            vec![s.clone()]
+        })
+        .collect()
+}
 pub fn ramdisk_cli(args: &[String]) -> Result<u8> {
+    if args.iter().any(|s| s == "--help" || s == "-h") {
+        println!("Usage: ramdisk-tree LIST... --out DIR [--canon FROM TO]");
+        return Ok(0);
+    }
+    let expanded = option_values(args);
+    let args = expanded.as_slice();
     let mut lists = Vec::new();
     let mut out = None;
     let mut canon = None;

@@ -143,6 +143,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_lint_facts.py"),
     (".", ".", "tools/test_cargo_link_context.py"),
     (".", ".", "tools/test_cargo_orchestrate.py"),
+    (".", ".", "tools/test_cargo_orchestrate_native.py"),
     (".", ".", "tools/test_rust_storage.py"),
     (".", ".", "tools/test_rust_storage_report.py"),
     (".", ".", "tools/test_artifact_inputs.py"),

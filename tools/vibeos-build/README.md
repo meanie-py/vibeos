@@ -20,6 +20,7 @@ with output/refusal fixtures. Existing Python modules are compatibility adapters
 | `cell-manifest --write\|--check [--arch ARCH]` | Discover and serialize Cargo cells | `cell_manifest.py` |
 | `media-manifest --write\|--check [--arch ARCH]` | Discover and serialize CD/CAB recipes | `media_manifest.py` |
 | `sdk-recipe --write\|--check [--arch ARCH]` | Capture/factor SDK and host-tool recipes from Ninja | `sdk_recipe.py` |
+| `cargo-orchestrate --arch ARCH [--manifest] [--list] [--dry-run] [TARGET...]` | Plan Cargo cells, reuse SDK inputs, supervise producers and post-link/copy declared outputs | `cargo_orchestrate.py` |
 | `strip-cd-media --lst FILE --out FILE --cache DIR --objcopy TOOL` | Strip media copies and publish checked PE checksums; `--file FILE` selects single-file mode | `strip_cd_media.py` |
 | `ramdisk-tree LIST... --out DIR [--canon FROM TO]` | Validate and stage the case-folded ramdisk graft tree | `ramdisk_tree.py` |
 | `artifact-executor [OPTIONS]` | Prepare and execute a captured body in the isolated worker | `artifact_executor.py` |
@@ -109,8 +110,7 @@ metadata. Missing isolation or lifetime support fails the operation.
 Private Rust `RunHost`/`RuntimeHost` test implementations replace Python algorithm monkeypatches;
 production APIs have no fault-injection switches. See the
 [coverage mapping](../../docs/engineering/artifact-native-test-coverage.md) for preserved
-failure controls and real-process tests. Cargo orchestration, remaining media staging and
-build-policy extraction remain for batches 5–6 of
+failure controls and real-process tests. Build-policy extraction and rollout remain for batch 6 of
 [the migration plan](../../docs/engineering/build-infra-rust-plan.md).
 
 Media stripping and ramdisk tree staging run directly from CMake and `mkramdisk.sh`.
@@ -125,3 +125,18 @@ padding bytes on unaligned images. Original build binaries retain their debug se
 Payload selection, stamps, foreign-build freshness and collision policy remain owned by
 `tools/payloads/compile.py media-manifest`; the native strip command calls that explicit
 interface and propagates failures. Payload tooling remains tracked for its later phase.
+
+Cargo orchestration now owns legacy and committed-manifest planning, i386 target-content
+isolation, generated SDK/version headers, native SDK recipe replay, bounded parallel
+producer groups, post-link/copy ordering, verification and source provenance. It reuses
+the host-jobs broker's existing lock and source stamp. Each producer has an owned worker
+session, streams live output and exits with its parent; parallel cells do not share a
+process-global signal handler. The compiler, pefixup, strip and the existing i386 forwarding
+repair tool remain explicit tool authorities; their failures abort the build. No Python
+orchestration algorithm remains behind the compatibility facade.
+
+Frozen Python planning/header controls and real producer/cancellation tests live in
+`cargo_orchestrate.rs` and `tools/test_cargo_orchestrate_native.py`. Media controls in
+`tools/test_strip_cd_media.py` include real LLVM stripping of all three PE architectures,
+cache content/policy changes, producer failure and atomic-output refusal; the ramdisk
+suite retains overlay/collision controls and checks destination/alias protection.

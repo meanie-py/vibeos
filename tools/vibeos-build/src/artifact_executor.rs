@@ -1330,7 +1330,8 @@ fn capture_command(
         stderr: String::from_utf8_lossy(&stderr).into_owned(),
     })
 }
-fn namespace_command(command: &mut Command) -> Result<u8> {
+/// Supervise one producer with inherited stdout/stderr, preserving live logs without buffering.
+pub fn supervised_status(command: &mut Command) -> Result<u8> {
     let _signals = SignalGuard::install()?;
     crate::artifact_lifetime::watch_owner(unsafe { libc::getppid() } as u32)?;
     let mut child = OwnedWorker::spawn_command(command, Stdio::inherit(), Stdio::inherit())?;
@@ -1355,7 +1356,7 @@ fn namespace_command(command: &mut Command) -> Result<u8> {
     })
 }
 pub fn namespace_worker(config_path: &Path, probe: bool) -> Result<u8> {
-    namespace_command(&mut command(&unshare_launch(config_path, probe)?)?)
+    supervised_status(&mut command(&unshare_launch(config_path, probe)?)?)
 }
 /// Host effects are injectable only through the Rust library, never worker configuration/RPC.
 /// Shipping callers use RealHost; controls can exercise every supervision failure stage.
@@ -2489,7 +2490,7 @@ mod tests {
                 "artifact_executor::tests::inside_worker_harness",
                 "--nocapture",
             ]);
-        match namespace_command(&mut command) {
+        match supervised_status(&mut command) {
             Ok(code) => std::process::exit(code as i32),
             Err(error) => {
                 eprintln!("{:?}: {}", error.kind, error.message);

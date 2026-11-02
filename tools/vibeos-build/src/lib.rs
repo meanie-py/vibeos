@@ -129,3 +129,5 @@ pub mod artifact_lifetime;
 pub mod artifact_execution_api;
 
 pub mod media_stage;
+
+pub mod cargo_orchestrate;

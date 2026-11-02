@@ -7,7 +7,7 @@ use std::{
     process::{Command, ExitCode},
 };
 use vibeos_build::{self as b, Error, Result};
-const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  ramdisk-tree LIST... --out DIR [--canon FROM TO]\n  strip-cd-media --lst FILE --out FILE --cache DIR --objcopy TOOL\n  artifact-executor [--repo DIR --store DIR --toolchain DIR --body NAME --output DIR]\n  artifact-runtime request|repair --supervisor FILE [OPTIONS]\n  artifact-economics INVENTORY REPO OUTPUT [--eligibility-top N --scratch DIR] [--cargo PATH]\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR] [--allow-drop]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads one request; --api-jsonl serves newline-delimited requests until EOF. Inspect/check modes never write.\n";
+const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  cargo-orchestrate --arch ARCH [--manifest] [--list] [--dry-run] [TARGET...]\n  ramdisk-tree LIST... --out DIR [--canon FROM TO]\n  strip-cd-media --lst FILE --out FILE --cache DIR --objcopy TOOL\n  artifact-executor [--repo DIR --store DIR --toolchain DIR --body NAME --output DIR]\n  artifact-runtime request|repair --supervisor FILE [OPTIONS]\n  artifact-economics INVENTORY REPO OUTPUT [--eligibility-top N --scratch DIR] [--cargo PATH]\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR] [--allow-drop]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads one request; --api-jsonl serves newline-delimited requests until EOF. Inspect/check modes never write.\n";
 fn atomic(path: &Path, bytes: &[u8], serial: usize) -> Result<()> {
     if path.is_symlink() {
         return Err(Error::new(format!(
@@ -81,6 +81,7 @@ fn api(root: &Path, r: &Value) -> Result<Value> {
             .ok_or_else(|| Error::new(format!("missing {key}")))
     };
     match op {
+        s if s.starts_with("cargo_orchestrate_") => b::cargo_orchestrate::dispatch(root, r),
         "cargo_local_closure" => Ok(serde_json::to_value(b::cargo::local_closure(
             &required("metadata")?,
             &serde_json::from_value::<Vec<String>>(required("roots")?)?,
@@ -265,12 +266,21 @@ fn run() -> Result<u8> {
         return Ok(0);
     }
     let command = command.ok_or("missing build command (use --help)")?;
-    if matches!(command.as_str(), "ramdisk-tree" | "strip-cd-media") {
+    if matches!(
+        command.as_str(),
+        "ramdisk-tree" | "strip-cd-media" | "cargo-orchestrate"
+    ) {
         let parent = unsafe { libc::getppid() } as u32;
         if parent < 2 {
             return Err("native media owner exited before startup".into());
         }
         b::artifact_lifetime::watch_owner(parent)?;
+    }
+    if command == "cargo-orchestrate" {
+        return b::cargo_orchestrate::cli(&root, &rest);
+    }
+    if command == "cargo-orchestrate-worker" {
+        return b::cargo_orchestrate::worker_cli(&rest);
     }
     if command == "ramdisk-tree" {
         return b::media_stage::ramdisk_cli(&rest);
