@@ -416,6 +416,7 @@ members = [
     "blrtl-rust",
     "byteswap",
     "cnt-ctype",
+    "ci-thunks",
     "cnt-difftest",
     "serial-acpi-difftest",
     "cnt-rust",

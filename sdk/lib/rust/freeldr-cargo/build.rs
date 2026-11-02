@@ -83,13 +83,8 @@ fn main() {
     match arch.as_str() {
         "x86" => libcntpr_c.extend_from_slice(&[
             "sdk/lib/crt/math/nexttowardf.c",
-            "sdk/lib/crt/math/i386/ci.c",
-            "sdk/lib/crt/math/i386/cicos.c",
-            "sdk/lib/crt/math/i386/cilog.c",
-            "sdk/lib/crt/math/i386/cipow.c",
-            "sdk/lib/crt/math/i386/cisin.c",
-            "sdk/lib/crt/math/i386/cisqrt.c",
-            "sdk/lib/crt/math/i386/libm_sse2.c",
+            // ci*.c and libm_sse2.c dropped: nothing here calls `_CI*`/`__libm_sse2_*`
+            // (clang never emits them; libcntpr.cmake removes them on i386 too).
         ]),
         // amd64: ehandler.c dropped. No boot-loader code references __C_specific_handler
         // (no SEH here; the link resolves without it, 2026-11-02); the OS gets the Rust

@@ -277,11 +277,7 @@ What the batch added to the shared crates and tools:
        both nightly; they are `va_start; streamout(...)` shells over the Rust engine.
        Also the asm (`chkstk`, `seh.s`, i386 `all*`/`ftol*`), `wine_wctype_table`
        (Wine's data), and `atol.c`, which also defines `_atoldbl` (no Rust twin yet).
-     - **owed, i386 kernel side:** `math/i386/ci*.c` (`__CI*`) and `libm_sse2.c`
-       (`__libm_sse2_*`), compiled into the i386 kernel cells, freeldr, rosload and
-       libcntpr. The user-mode CRT DLLs already get both from Rust `global_asm!`
-       (`crt-shared-rust/src/crtmath_i386.rs`); the kernel can reuse those bodies once
-       they are split out of that user-mode crate. No purchase needed.
+     - **i386 `_CI*` / `__libm_sse2_*`:** done, item 12.
    - **Also stays C:** `memcmp` (~340 PEs per arch; AGENTS.md: LLVM folds a Rust byte
      loop back into `memcmp`); `vcstartup` (C++ startup objects, linked by avifil32 and
      d2d1 only); `getopt` (libtiff only). `dbgrpt` and `chkesp` reach no PE.
@@ -303,6 +299,21 @@ What the batch added to the shared crates and tools:
      reconfigures, so normaliz's and batch J's eight `*_shims.recipe` sets were never
      written. `convert` now fails loud naming each missing (arch, library) and the fix
      (`missing_cell_recipes`); the missing recipes are committed.
+
+12. **The i386 `_CI*` thunks are Rust everywhere (2026-11-02, $0).** Wine's
+   CREATE_FPU_FUNC1/2 `global_asm!` thunks moved out of `crt-shared-rust` into a
+   dependency-free `ci-thunks` crate: feature `all` (sixteen) for the CRT DLLs, `kernel`
+   (cos, sin, sqrt, log, pow) for ntoskrnl and ntdll, which take it through
+   `cnt-rust-lib`'s new `ci` feature on i386 only. Their cells drop crtmath's
+   `ci{cos,sin,sqrt,log,pow}.c`. These thunks also spill and restore the rest of the
+   caller's x87 stack around the call, where the C only popped the operand. Export
+   counts are unchanged (ntoskrnl 3, ntdll 5, msvcrt/ucrtbase 16), and ntoskrnl's
+   `_CIsqrt` disassembles to the `fxam` spill loop calling the kernel's `_sqrt`.
+   Nothing else reached them: no compiler we use emits `_CI*` or `__libm_sse2_*`, so
+   libcntpr (i386 REMOVE_ITEM) and freeldr/rosload/uefildr drop `ci*.c` and
+   `libm_sse2.c` and still link. Both consumers name it with `extern crate
+   ci_thunks;`: since edition 2018 rustc only loads a dependency something references,
+   and nothing calls a `global_asm!`-only crate.
 
 
 ## Not ours: skip these
