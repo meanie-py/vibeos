@@ -142,7 +142,7 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bootcd.cmake.lst "${CMAKE_CURRENT_BINARY_
 # Same debug-strip pass as livecd below (reactos.cab contents are NOT stripped
 # — cabman compresses from the .dff list; only direct NO_CAB grafts are).
 add_custom_target(bootcd
-    COMMAND ${CMAKE_COMMAND} -E env python3 ${REACTOS_SOURCE_DIR}/tools/strip_cd_media.py
+    COMMAND ${REACTOS_SOURCE_DIR}/tools/build-infra strip-cd-media
         --lst ${CMAKE_CURRENT_BINARY_DIR}/bootcd.$<CONFIG>.lst
         --out ${CMAKE_CURRENT_BINARY_DIR}/bootcd.stripped.lst
         --cache ${CMAKE_CURRENT_BINARY_DIR}/stripped
@@ -162,7 +162,7 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bootcdregtest.cmake.lst "")
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bootcdregtest.cmake.lst "${CMAKE_CURRENT_BINARY_DIR}/empty\n")
 
 add_custom_target(bootcdregtest
-    COMMAND ${CMAKE_COMMAND} -E env python3 ${REACTOS_SOURCE_DIR}/tools/strip_cd_media.py
+    COMMAND ${REACTOS_SOURCE_DIR}/tools/build-infra strip-cd-media
         --lst ${CMAKE_CURRENT_BINARY_DIR}/bootcdregtest.$<CONFIG>.lst
         --out ${CMAKE_CURRENT_BINARY_DIR}/bootcdregtest.stripped.lst
         --cache ${CMAKE_CURRENT_BINARY_DIR}/stripped
@@ -201,7 +201,7 @@ if(ARCH STREQUAL "arm64")
     add_custom_target(livecd)
 else()
     add_custom_target(livecd
-        COMMAND ${CMAKE_COMMAND} -E env python3 ${REACTOS_SOURCE_DIR}/tools/strip_cd_media.py
+        COMMAND ${REACTOS_SOURCE_DIR}/tools/build-infra strip-cd-media
             --lst ${CMAKE_CURRENT_BINARY_DIR}/livecd.$<CONFIG>.lst
             --out ${CMAKE_CURRENT_BINARY_DIR}/livecd.stripped.lst
             --cache ${CMAKE_CURRENT_BINARY_DIR}/stripped

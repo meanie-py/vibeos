@@ -69,7 +69,8 @@ def load_spec(name: str) -> dict:
     spec_path = PAYLOADS_DIR / name / "payload.yaml"
     if not spec_path.is_file():
         die(
-            f"unknown payload {name!r} (no {spec_path}). Available: {', '.join(available()) or '<none>'}"
+            f"unknown payload {name!r} (no {spec_path}). "
+            f"Available: {', '.join(available()) or '<none>'}"
         )
     try:
         spec = yaml.safe_load(spec_path.read_text())
@@ -106,7 +107,8 @@ def load_spec(name: str) -> dict:
             or not g["roots"]
         ):
             die(
-                f"{spec_path}: each guest_sets entry needs `build_dir`, `dest` and a non-empty `roots`: {g!r}"
+                f"{spec_path}: each guest_sets entry needs `build_dir`, `dest` "
+                f"and a non-empty `roots`: {g!r}"
             )
         if g["dest"].startswith(("/", "\\")) or ".." in g["dest"]:
             die(f"{spec_path}: guest_sets dest must be a relative guest path: {g['dest']!r}")
@@ -445,7 +447,7 @@ def ensure_built(names: list[str], arch: str) -> list[str]:
     stale payload has no build.sh to run."""
     expanded: list[tuple[str, str]] = []
     for name in names:
-        for build in borrowed_builds(name, arch) + [(name, arch)]:
+        for build in [*borrowed_builds(name, arch), (name, arch)]:
             if build not in expanded:
                 expanded.append(build)
     # A payload only BORROWED from (not selected itself) needs only the files the borrower
@@ -560,6 +562,9 @@ def main(argv: list[str] | None = None) -> int:
         f"BUILD_DIR/{STAMP_NAME} (written by vibeos-cli build)",
     )
 
+    media = sub.add_parser("media-manifest", help="payload grafts for a stripped media list")
+    media.add_argument("--output", required=True, type=Path)
+
     st = sub.add_parser(
         "stamp",
         help=f"persist the env's payload selection to BUILD_DIR/{STAMP_NAME}",
@@ -569,6 +574,17 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("list", help="print available payload names")
 
     args = ap.parse_args(argv)
+
+    if args.cmd == "media-manifest":
+        match = re.search(r"^(.*build-(amd64|i386|arm64))", str(args.output.resolve()))
+        build_dir = Path(match.group(1)) if match else None
+        names = resolve_payloads(build_dir)
+        if names:
+            if match is None:
+                die(f"payloads selected but cannot infer media arch from {args.output}")
+            for dest, src in manifest(names, match.group(2)).items():
+                print(f"{dest}={src}")
+        return 0
 
     if args.cmd == "list":
         for n in available():

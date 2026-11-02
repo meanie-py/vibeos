@@ -1,6 +1,6 @@
 # Build infrastructure migration to Rust
 
-Batches 1–4 implemented on `lint-rs`; batches 5–6 remain planned.
+Batches 1–4 implemented on `lint-rs`; batch 5 is in progress and batch 6 remains planned.
 Batch 3 adds native configuration audits, input projections, verified snapshots,
 historical capture and artifact economics (2026-11-02).
 The native commands and compatibility boundaries are documented in
@@ -69,7 +69,7 @@ parity oracle. Do not maintain two evolving implementations.
    store for mixed-client tests. Deliberately version changed implementation identity;
    budget the resulting cache refill and retain old objects for old clients. Do not
    flush or rewrite the live fleet store to make parity easier.
-5. **Cargo orchestration and media staging.** Port target planning, generated SDK reuse,
+5. **Cargo orchestration and media staging (in progress).** Port target planning, generated SDK reuse,
    build/post-link/copy ordering, strip/media/ramdisk staging and provenance. Require
    declared outputs to exist and verify hashes/dependencies. Wire the native mechanisms
    under the existing build CLI; preserve refusal of stale media and mutable sibling

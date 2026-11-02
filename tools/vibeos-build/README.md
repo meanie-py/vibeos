@@ -20,6 +20,8 @@ with output/refusal fixtures. Existing Python modules are compatibility adapters
 | `cell-manifest --write\|--check [--arch ARCH]` | Discover and serialize Cargo cells | `cell_manifest.py` |
 | `media-manifest --write\|--check [--arch ARCH]` | Discover and serialize CD/CAB recipes | `media_manifest.py` |
 | `sdk-recipe --write\|--check [--arch ARCH]` | Capture/factor SDK and host-tool recipes from Ninja | `sdk_recipe.py` |
+| `strip-cd-media --lst FILE --out FILE --cache DIR --objcopy TOOL` | Strip media copies and publish checked PE checksums; `--file FILE` selects single-file mode | `strip_cd_media.py` |
+| `ramdisk-tree LIST... --out DIR [--canon FROM TO]` | Validate and stage the case-folded ramdisk graft tree | `ramdisk_tree.py` |
 | `artifact-executor [OPTIONS]` | Prepare and execute a captured body in the isolated worker | `artifact_executor.py` |
 | `artifact-runtime request\|repair --supervisor FILE ...` | Serve supervised immutable-body consumers or exact missing-blob repair | `artifact_runtime.py` |
 | `artifact-economics INVENTORY REPO OUTPUT [--eligibility-top N --scratch DIR]` | Attribute snapshots and model archive storage without changing the store | `artifact_economics.py` |
@@ -110,3 +112,16 @@ production APIs have no fault-injection switches. See the
 failure controls and real-process tests. Cargo orchestration, remaining media staging and
 build-policy extraction remain for batches 5–6 of
 [the migration plan](../../docs/engineering/build-infra-rust-plan.md).
+
+Media stripping and ramdisk tree staging run directly from CMake and `mkramdisk.sh`.
+Ramdisk planning rejects missing inputs, escaping destinations and file/directory
+collisions before replacing an existing tree; later lists retain overlay precedence.
+Strip cache names remain `sha1(source-path)[:12]-basename` for FEX compatibility. SHA-256
+checks source, tool, native policy and twin bytes before reuse, so old metadata-only
+entries refresh once. Source/tool changes during production cannot replace a completed
+twin. Malformed cache manifests and unsuccessful or invalid producer output fail the
+operation. The checksum uses actual file length; the old helper incorrectly counted
+padding bytes on unaligned images. Original build binaries retain their debug sections.
+Payload selection, stamps, foreign-build freshness and collision policy remain owned by
+`tools/payloads/compile.py media-manifest`; the native strip command calls that explicit
+interface and propagates failures. Payload tooling remains tracked for its later phase.

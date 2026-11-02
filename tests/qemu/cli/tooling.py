@@ -132,6 +132,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_apply_rustc_suggestions.py"),
     (".", ".", "tools/test_extern_to_use.py"),
     (".", ".", "tools/test_ramdisk_tree.py"),
+    (".", ".", "tools/test_strip_cd_media.py"),
     # The callee pass of the user-pointer lint: its quieting rules (kernel arm,
     # early return, scoped rebind, null guard) each hid or invented rows once.
     # The double-fetch lint's quieting rules (sibling arms, early-exit branch,
