@@ -10646,7 +10646,7 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
 - **What the alignment checks found once they could run:** six classpnp sites cast the
   `DEVICE_OBJECT` to the FDO extension (`DeviceObject as *mut FUNCTIONAL_DEVICE_EXTENSION` for
   the C's `DeviceObject->DeviceExtension`), writing a spinlock and flags into the device object.
-  Grep a translated driver for a device-object variable cast to an extension type.
+  `scan_devobj_as_extension` now gates the class at zero.
 - **A negated assert, dormant until armed.** fastfat's `FatCommonRead` asserted
   `!(cur != VerifyThread || Status != VERIFY_REQUIRED)` for the C's un-negated condition, so it
   fired on every I/O error (an empty CD drive). `scan_assert_negated_vs_c` compares each

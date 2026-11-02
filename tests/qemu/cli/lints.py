@@ -1296,6 +1296,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # tools/vibeos-lint/src/rules/assert_negated_vs_c.rs). fastfat's FatCommonRead wrapped the
     # C's VerifyThread assert in `!( )`, so it fired on every legitimate I/O failure once armed.
     specs.append(("scan_assert_negated_vs_c", ["MISSING"], "stdout"))
+    # A DEVICE_OBJECT pointer cast to a device-extension type for the C's ->DeviceExtension
+    # (native Rust rule, tools/vibeos-lint/src/rules/devobj_as_extension.rs): six classpnp sites
+    # wrote the release-queue spinlock into the device object. Gated at zero.
+    specs.append(("scan_devobj_as_extension", ["MISSING"], "stdout"))
     # A named constant cast to a type too narrow for it: rustc's overflow lint covers
     # literals only. disk.sys set SRB_CLASS_FLAGS_PERSISTANT `as USHORT` (= 0), classpnp freed
     # an SRB inside the device extension, 0xC2 on the first flush. Gated at zero.

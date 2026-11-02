@@ -16,9 +16,7 @@ Nothing in flight; nothing dirty. Landed or queued this session (verify with
    rmap events): read that first.
 2. DONE 2026-11-02 (verify with `git log origin/master`): `read.rs:590` (a negated assert) and
    classpnp/disk/cdrom arming (device extensions cache-aligned at `DeviceObject + 1`).
-3. **A lint for "device object cast to an extension type"** (six classpnp sites, field manual
-   "Arming `debug-assertions` also arms rustc's UB checks").
-4. #72 tail: freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks), win32k-rust (10),
+3. #72 tail: freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks), win32k-rust (10),
    remaining drivers; then the 78-entry `scan_move_vs_nonoverlapping` baseline review.
 
 ## Mission
