@@ -1104,10 +1104,9 @@ debug = 1
 # ARMED: ntoskrnl-rust (2026-10-16), ex-rust and hal-rust (2026-10-17), ob-rust,
 # ps-rust, se-rust, iomgr-rust, config-rust and cc-rust (2026-10-17); fastfat, cdfs, storahci,
 # cmlib and afd 2026-11-01, once `nt_assert!` reported through RtlAssert instead of panicking.
-# NOT classpnp, disk or cdrom: on 64-bit, COMMON_DEVICE_EXTENSION embeds a LOOKASIDE_ALIGN
-# (cache-aligned) NPAGED_LOOKASIDE_LIST, so the type is 64/128-aligned while IoCreateDevice
-# places extensions 16-aligned, as the C does -- the UB check halts the first deref
-# (ClassCreateFdo). Owed: a design decision, roadmap #72. overflow-checks defaults to FOLLOWING
+# classpnp, disk and cdrom followed once IoCreateDevice cache-aligned device extensions and the
+# pool honoured the *CacheAligned pool types: on 64-bit COMMON_DEVICE_EXTENSION embeds a
+# LOOKASIDE_ALIGN lookaside (64/128-aligned), which the C's 16-aligned placement never gave it. overflow-checks defaults to FOLLOWING
 # debug-assertions and must stay off: the C has no overflow traps.
 [profile.release.package.ntoskrnl-rust]
 debug-assertions = true
@@ -1149,6 +1148,15 @@ overflow-checks = false
 debug-assertions = true
 overflow-checks = false
 [profile.release.package.afd-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.classpnp-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.disk-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.cdrom-rust]
 debug-assertions = true
 overflow-checks = false
 

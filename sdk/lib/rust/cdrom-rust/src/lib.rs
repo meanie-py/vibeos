@@ -12,6 +12,21 @@
 //! wdfdriverentry stub (FxDriverEntry) stays the linker entry point and binds the
 //! framework before invoking this crate's DriverEntry.
 
+// cdrom.h / classp.h `FREE_POOL(p)`: `if (p != NULL) { ExFreePool(p); p = NULL; }`. A MACRO, because
+// it NULLS ITS ARGUMENT; the `fn FREE_POOL(PVOID)` the translation used freed and left the place
+// dangling (cdrom's DeviceInitializeGesn left Gesn.Buffer pointing at freed pool, caught by its
+// NT_ASSERT once the crate was armed). Frees through the crate's FREE_POOL fn, then nulls.
+#[allow(unused_macros)]
+macro_rules! FREE_POOL {
+    ($p:expr) => {{
+        let __freed = ($p) as *mut core::ffi::c_void;
+        if !__freed.is_null() {
+            FREE_POOL(__freed);
+            $p = core::ptr::null_mut();
+        }
+    }};
+}
+
 // NT_ASSERT is a checked-build assertion (wdm.h): its operand is never evaluated in a free
 // build. It was an extern `fn`, so every call evaluated its argument out of line (cachesup.rs
 // documents a fault that caused). `debug_assert!` type-checks it and evaluates nothing here.

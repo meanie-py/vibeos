@@ -6901,10 +6901,15 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   WoW64 user buffer; fastfat's LFN copy was WCHAR-typed on a packed record, `FatNoOpAcquire`
   set top-level IRP 1 for `FSRTL_CACHE_TOP_LEVEL_IRP`, and an empty `DbgDoit!` dropped a DBG
   increment; and a workspace `[profile]` edit never rebuilt `rust_crate_sources` edges.
-  **OWED:** classpnp, disk and cdrom -- on 64-bit `COMMON_DEVICE_EXTENSION` is 64/128-aligned
-  (a `LOOKASIDE_ALIGN` lookaside inside it) while `IoCreateDevice` places extensions 16-aligned,
-  as the C does; needs a design decision (align extensions in `IoCreateDevice`, or keep these
-  crates unarmed). Then freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks),
+  **classpnp, disk and cdrom ARMED 2026-11-01** once device extensions were cache-aligned
+  (on 64-bit `COMMON_DEVICE_EXTENSION` holds a `LOOKASIDE_ALIGN` lookaside). The extension stays
+  at `DeviceObject + 1` -- KMDF's fxdevice.cpp asserts that arithmetic, so padding it away broke
+  a de-facto ABI -- and `ObpAllocateObject` places device objects so that address is on a cache
+  line (`ExpAllocatePoolWithTagAlignedAt`); the pool also honours the `*CacheAligned` pool types
+  now, which the C ignores. Found on the way: six classpnp sites cast the DEVICE_OBJECT itself to
+  the FDO extension (release-queue lock and flags written into the device object), and
+  `FREE_POOL` was a fn that freed without nulling its argument (121 sites in cdrom/classpnp/disk;
+  cdrom's Gesn.Buffer dangled after a failed GESN probe). Then freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks),
   win32k-rust (10) and the remaining drivers. Two armed-fastfat asserts printed twice per amd64-bios boot
   (`20261101-183850-m41czity`). `cachesup.rs:182` FIXED 2026-11-01: fastfat mounting the BIOS
   machine's EMPTY floppy got STATUS_NO_MEDIA_IN_DEVICE from MmMakeDataSectionResident, which

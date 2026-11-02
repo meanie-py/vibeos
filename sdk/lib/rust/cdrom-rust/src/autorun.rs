@@ -1238,8 +1238,8 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
         if !irp.is_null() {
             IoFreeIrp(irp);
         }
-        FREE_POOL(senseBuffer);
-        FREE_POOL(mediaChangeInfo as *mut core::ffi::c_void);
+        FREE_POOL!(senseBuffer);
+        FREE_POOL!(mediaChangeInfo);
     }
 
     status
@@ -1598,7 +1598,7 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
             (*irp).MdlAddress = core::ptr::null_mut();
         }
 
-        FREE_POOL((*info).Gesn.Buffer as *mut core::ffi::c_void);
+        FREE_POOL!((*info).Gesn.Buffer);
         (*info).Gesn.Supported = 0;   // FALSE
         (*info).Gesn.EventMask = 0;
         (*info).Gesn.BufferSize = 0;
@@ -2077,7 +2077,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
 
     // Cleanup
     {
-        FREE_POOL(device_string.Buffer as *mut core::ffi::c_void);
+        FREE_POOL!(device_string.Buffer);
         if !device_unicode_string.Buffer.is_null() {
             RtlFreeUnicodeString(&raw mut device_unicode_string as *mut _);
         }
@@ -2327,7 +2327,7 @@ pub unsafe extern "C" fn DeviceReleaseMcnResources(
         // PAGED_CODE assertion: ASSERT(FALSE)
     }
 
-    let info = (*DeviceExtension).MediaChangeDetectionInfo;
+    let mut info = (*DeviceExtension).MediaChangeDetectionInfo;
     if info.is_null() {
         return;
     }
@@ -2340,15 +2340,15 @@ pub unsafe extern "C" fn DeviceReleaseMcnResources(
 
     IoFreeIrp((*info).MediaChangeSyncIrp);
 
-    FREE_POOL((*info).Gesn.Buffer as *mut core::ffi::c_void);
-    FREE_POOL((*info).SenseBuffer as *mut core::ffi::c_void);
+    FREE_POOL!((*info).Gesn.Buffer);
+    FREE_POOL!((*info).SenseBuffer);
 
     if !(*info).DisplayStateCallbackHandle.is_null() {
         PoUnregisterPowerSettingCallback((*info).DisplayStateCallbackHandle);
         (*info).DisplayStateCallbackHandle = core::ptr::null_mut();
     }
 
-    FREE_POOL(info as *mut core::ffi::c_void);
+    FREE_POOL!(info);
 
     (*DeviceExtension).MediaChangeDetectionInfo = core::ptr::null_mut();
 }

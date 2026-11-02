@@ -1873,8 +1873,12 @@ false positive — the translator mirrors the C control flow, so the two frees l
 mutually-exclusive `match` arms, on either side of a `break 'switch`/`continue 'retry`, or the
 "use after free" is a pointer-*value* compare evaluated before the free. classpnp's
 `ClassDeviceControl` alone threw 52 such false hits. The blanket `macro_rules!`-that-nulls
-migration was considered and rejected: ~100 call sites would need the `FREE_POOL!` form, cast
-stripping, and assignable lvalues, to fix zero live bugs. Audit per site; don't migrate.
+migration was considered and rejected then as fixing zero live bugs -- **and that audit had a
+blind spot: a freed FIELD.** A per-fn same-pointer scan cannot see a struct field left dangling
+for someone else to find later. cdrom's `DeviceInitializeGesn` frees `info->Gesn.Buffer` on a
+failed GESN probe and the caller then asserts it is NULL (2026-11-01, live once cdrom was armed).
+MIGRATED the same day: `FREE_POOL!` frees through the crate's fn and nulls the place, 121 sites
+in cdrom/classpnp/disk (casts stripped, 14 bindings made `mut`, one ULONG_PTR field written out).
 
 ### NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust `[§9.65]`
 **It cannot be done correctly.** LLVM folds any byte-copy loop back into a call to the function
@@ -10623,10 +10627,16 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
 - **A real overlap.** classpnp's `RtlMoveMemory` of READ_CAPACITY_DATA one ULONG up inside its
   own _EX had become `copy_nonoverlapping` -- memcpy on overlapping ranges, a genuine bug on
   every arch. `scan_move_vs_nonoverlapping` now pairs each Rust fn with its C twin's moves.
-- **OPEN: a cache-aligned type inside a device extension.** On 64-bit `COMMON_DEVICE_EXTENSION`
-  embeds a `LOOKASIDE_ALIGN` `NPAGED_LOOKASIDE_LIST`, so classpnp/disk/cdrom's extension types
-  are 64/128-aligned while `IoCreateDevice` places extensions 16-aligned, exactly as the C. The
-  first `(*commonExtension).X` panics; those crates stay unarmed (roadmap #72).
+- **A cache-aligned type inside a device extension.** On 64-bit `COMMON_DEVICE_EXTENSION` embeds
+  a `LOOKASIDE_ALIGN` lookaside, so classpnp's extension types are 64/128-aligned while the C's
+  `IoCreateDevice` gave 16. Do NOT move the extension off `DeviceObject + 1` to align it: KMDF
+  (`vendor/wdf/shared/core/fxdevice.cpp`) finds its WDM extension by that arithmetic and asserts
+  it. `ObpAllocateObject` instead carves the pool block so `DeviceObject + 1` is on a cache line,
+  and the pool honours `*CacheAligned` pool types (classpnp's `PNL_SLIST_HEADER` array).
+- **What the alignment checks found once they could run:** six classpnp sites cast the
+  `DEVICE_OBJECT` to the FDO extension (`DeviceObject as *mut FUNCTIONAL_DEVICE_EXTENSION` for
+  the C's `DeviceObject->DeviceExtension`), writing a spinlock and flags into the device object.
+  Grep a translated driver for a device-object variable cast to an extension type.
 Arming also changes what a FAILED assert does: `nt_assert!` was `debug_assert!`, a panic and a
 halt where the C's DBG `ASSERT` prints and continues. It now reports through `RtlAssert` (still
 `cfg!(debug_assertions)`-gated, evaluated in the calling crate). Its first two fires were real
