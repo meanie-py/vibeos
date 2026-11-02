@@ -2172,8 +2172,12 @@ body) reached from csrss. The sweep after it was clean and identical to the firs
    Wine's setupapi suite gives byte-identical output on the Rust and on the pre-flip C
    (payloads `setupapiwinetest` / `setupapiwinetestc`; 461 lines, devinst 481/197 on both).
    The C payload has to import the C as setupapc.dll, because setupapi is a KnownDLL; its
-   build.sh says why. STILL OWED from that work: (a) the same before/after on i386, where
-   rpc_try takes the fs:[0] path. (b) DONE 2026-10-17: the scanner-cut audit. 7 functions were bought from a cut body;
+   build.sh says why. From that work: (a) DONE 2026-11-01: the same before/after on i386, where
+   rpc_try takes the fs:[0] path, now over all 8 ported TUs. The two runs' 512 `[APITEST` lines
+   are identical apart from pids (devinst 481/197, diskspace 380/147, parser 932/2, setupcab
+   68/18, ...; Rust 20261101-210519-b9rix5jx, C 20261101-211155-tuk5675o, the C exe imports only
+   setupapc.dll). The serial is in the run's `payload/i386-uefi_serial.log`, not its top-level
+   serial.log, which is the smoke boot. (b) DONE 2026-10-17: the scanner-cut audit. 7 functions were bought from a cut body;
    winspool's GetMonitorUI really shipped without its tail and is hand-completed, and the
    other six were whole. The same pass found 15 RPC calls the 2026-10-17 sweep missed
    (dhcpcsvc 4, advapi32 shutdown 3, netapi32 misc/schedule/wksta_new 7, dnsapi 1), now
