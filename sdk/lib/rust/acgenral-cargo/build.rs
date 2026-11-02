@@ -89,9 +89,9 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["body", "engine:c:shimlib", "import:uxtheme", "import:kernel32", "import:ntdll"],
-        "x86_64" => &["body", "engine:c:shimlib", "import:uxtheme", "import:kernel32", "import:ntdll"],
-        "aarch64" => &["body", "engine:c:shimlib", "import:uxtheme", "import:kernel32", "import:ntdll"],
+        "x86" => &["body", "engine:c:shimlib", "engine:crate:shimlib-rust::TRUE", "import:uxtheme", "import:kernel32", "import:ntdll"],
+        "x86_64" => &["body", "engine:c:shimlib", "engine:crate:shimlib-rust::TRUE", "import:uxtheme", "import:kernel32", "import:ntdll"],
+        "aarch64" => &["body", "engine:c:shimlib", "engine:crate:shimlib-rust::TRUE", "import:uxtheme", "import:kernel32", "import:ntdll"],
         _ => unreachable!(),
     };
 

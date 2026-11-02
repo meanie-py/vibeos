@@ -13,14 +13,10 @@
 // to `macro_rules!` per AGENTS.md §"Translating a plain-C module", step 2.
 // Defined at crate root (before module declarations) so they're in scope for all modules.
 macro_rules! TRACE {
-    ($($arg:tt)*) => {
-        ()
-    };
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 macro_rules! WARN {
-    ($($arg:tt)*) => {
-        ()
-    };
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 
 #[path = "mlang/mlang.rs"]

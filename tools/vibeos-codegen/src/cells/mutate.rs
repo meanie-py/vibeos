@@ -189,6 +189,7 @@ pub fn drop_shims_in(
     Ok(rx(r"\n{3,}").replace_all(&out, "\n\n").into_owned())
 }
 pub fn drop_res_in(text: &str, cmake: &Path, target: &str) -> Result<String> {
+    let lists = super::graph::list_vars(text);
     let (mut out, mut pos, mut deps) = (String::new(), 0, Vec::new());
     for (s, e, cmd, raw) in statements(text) {
         let a = args(&raw);
@@ -199,7 +200,8 @@ pub fn drop_res_in(text: &str, cmake: &Path, target: &str) -> Result<String> {
             }
             if let Some(d) = rd {
                 deps.extend(
-                    d.into_iter()
+                    super::graph::expand(&d, &lists)?
+                        .into_iter()
                         .filter(|x| x.contains("CMAKE_CURRENT_BINARY_DIR")),
                 );
             }

@@ -29,9 +29,9 @@ fn main() {
     };
 
     let late_libs: &[&str] = match arch.as_str() {
-        "x86" => &["engine:c:scrnsave", "engine:oldnames"],
-        "x86_64" => &["engine:c:scrnsave", "engine:oldnames"],
-        "aarch64" => &["engine:c:scrnsave", "engine:oldnames"],
+        "x86" => &["engine:crate:scrnsave-rust::TRUE", "engine:oldnames"],
+        "x86_64" => &["engine:crate:scrnsave-rust::TRUE", "engine:oldnames"],
+        "aarch64" => &["engine:crate:scrnsave-rust::TRUE", "engine:oldnames"],
         _ => unreachable!(),
     };
 

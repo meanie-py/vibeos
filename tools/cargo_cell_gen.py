@@ -800,6 +800,33 @@ def refresh_manifests(repo: Path = REPO) -> None:
     return _invoke("refresh_manifests", locals())
 
 
+_GENEX_REFS: dict[Path, dict[str, list[str]]] = {}  # Native requests are stateless.
+
+
+def _obj_source(cmake_dir: Path, obj: str) -> Path:
+    return _invoke("_obj_source", locals())
+
+
+def _shim_name(c: str, cell: Cell) -> str:
+    return _invoke("_shim_name", locals())
+
+
+def _target_file_refs(repo: Path) -> dict[str, list[str]]:
+    return _invoke("_target_file_refs", locals())
+
+
+def _list_vars(text: str) -> dict[str, list[str]]:
+    return _invoke("_list_vars", locals())
+
+
+def _expand(items: list[str], lists: dict[str, list[str]]) -> list[str]:
+    return _invoke("_expand", locals())
+
+
+def missing_cell_recipes(targets: list[str], repo: Path = REPO) -> list[tuple[str, str]]:
+    return _invoke("missing_cell_recipes", locals())
+
+
 # The old functions were cached; each native request is stateless.
 for _name in ("_read", "_ccdb", "_library_index", "spec_index", "txtsetup_files"):
     globals()[_name].cache_clear = _no_cache
@@ -819,6 +846,8 @@ def convert(targets: list[str], baseline: Path | None = None, repo: Path = REPO)
         save_baseline(targets, baseline, repo)
         print(f"baseline: {baseline}")
     for cell in cells:
+        rewrite_cmake(cell.cmake_dir / "CMakeLists.txt", cell)
+    for cell in cells:
         for path in apply(cell, repo):
             print(f"wrote {path.relative_to(repo)}")
     for arch in ARCHES:
@@ -827,7 +856,15 @@ def convert(targets: list[str], baseline: Path | None = None, repo: Path = REPO)
     result = check(targets, baseline, repo)
     if result == 0:
         refresh_manifests(repo)
-    return result
+    missing = missing_cell_recipes(targets, repo)
+    for arch, lib in missing:
+        print(
+            f"ERROR: no clibs/{arch}/{lib}.recipe for a cell this wave built on {arch}: "
+            "cmake has not configured that library yet, "
+            "so its compile_commands.json entry is missing.\n"
+            f"  fix: ./vibeos-cli build --arch {arch}, then tools/cargo_cell_gen.py --clib-recipes"
+        )
+    return result or int(bool(missing))
 
 
 def main(argv: list[str] | None = None) -> int:

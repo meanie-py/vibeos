@@ -196,6 +196,12 @@ pub fn run_convert<H: ConvertHost>(
     if result.bad == 0 {
         host.refresh(root)?;
     }
+    let missing = missing_cell_recipes(root, &plan.targets)?;
+    if !missing.is_empty() {
+        return Err(Error::new(missing.iter().map(|(arch,lib)| format!(
+            "no clibs/{arch}/{lib}.recipe for a cell this wave built on {arch}: cmake has not configured that library yet; run ./vibeos-cli build --arch {arch}, then tools/cargo_cell_gen.py --clib-recipes"
+        )).collect::<Vec<_>>().join("\n")));
+    }
     Ok(result)
 }
 /// Run the same configured-graph build entry point as Python; no shell interpolation.
@@ -298,4 +304,37 @@ pub fn c_templates(root: &Path) -> Result<RecipePlan> {
         );
     }
     Ok(plan)
+}
+
+/// A newly built cell must have recipes for each of its own C libraries on every arch.
+pub fn missing_cell_recipes(root: &Path, targets: &[String]) -> Result<Vec<(String, String)>> {
+    let pattern = Regex::new(r#"\.c_from_compile_db\(\s*"(\w+)""#)?;
+    let shared = super::constants()["SHARED_C_LIBS"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let mut out = Vec::new();
+    for target in targets {
+        let path = root
+            .join("sdk/lib/rust")
+            .join(proof::cell_crate(root, target)?)
+            .join("build.rs");
+        if !path.exists() {
+            continue;
+        }
+        let text = read(&local(root, &path)?)?;
+        let libs: BTreeSet<_> = pattern
+            .captures_iter(&text)
+            .map(|c| c[1].to_owned())
+            .filter(|l| !shared.iter().any(|s| s.as_str() == Some(l)))
+            .collect();
+        for arch in ARCHES {
+            for lib in &libs {
+                if !recipes::clib_recipe_path(arch, lib, root).exists() {
+                    out.push((arch.to_owned(), lib.clone()));
+                }
+            }
+        }
+    }
+    Ok(out)
 }

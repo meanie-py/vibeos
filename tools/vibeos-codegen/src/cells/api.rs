@@ -381,6 +381,43 @@ pub fn dispatch(root: &Path, request: &Value) -> Result<Value> {
             let n = bind!(a, "repo");
             val(graph::library_index(&a.repo(n, root)?)?)
         }
+        "_obj_source" => {
+            let n = bind!(a, "cmake_dir", "obj");
+            val(graph::obj_source(
+                &a.req::<PathBuf>(n, "cmake_dir")?,
+                &a.req::<String>(n, "obj")?,
+            ))
+        }
+        "_shim_name" => {
+            let n = bind!(a, "c", "cell");
+            val(graph::shim_name(
+                root,
+                &a.req::<String>(n, "c")?,
+                &a.req::<Cell>(n, "cell")?,
+            ))
+        }
+        "_target_file_refs" => {
+            let n = bind!(a, "repo");
+            val(graph::target_file_refs(&a.repo(n, root)?)?)
+        }
+        "_list_vars" => {
+            let n = bind!(a, "text");
+            val(graph::list_vars(&a.req::<String>(n, "text")?))
+        }
+        "_expand" => {
+            let n = bind!(a, "items", "lists");
+            val(graph::expand(
+                &a.req::<Vec<String>>(n, "items")?,
+                &a.req::<BTreeMap<String, Vec<String>>>(n, "lists")?,
+            )?)
+        }
+        "missing_cell_recipes" => {
+            let n = bind!(a, "targets", "repo");
+            val(super::driver::missing_cell_recipes(
+                &a.repo(n, root)?,
+                &a.req::<Vec<String>>(n, "targets")?,
+            )?)
+        }
         "_statements" => {
             let n = bind!(a, "text");
             val(graph::statements(&a.req::<String>(n, "text")?))

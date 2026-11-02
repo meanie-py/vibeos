@@ -209,7 +209,8 @@ pub const COMMON_STYLES: u32 = CCS_TOP
 
 // Prototypes of static functions TOOLBAR_* are skipped (defined by function pipeline).
 
-pub static mut uDragListMessage: UINT = 0;
+// The C declares this `extern`; one definition lives in draglist.rs (scan_extern_copy).
+use crate::comctl32::draglist::uDragListMessage;
 
 
 const VK_MENU: i32 = 0x12;

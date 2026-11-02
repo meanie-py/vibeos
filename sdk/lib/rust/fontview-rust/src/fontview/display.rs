@@ -67,7 +67,8 @@ pub const SPACING2: i32 = 5;
 // LF_FULLFACESIZE is the standard Win32 value. MAX_FORMAT, MAX_STRING and MAX_SIZES are
 // assumed and must be checked against the original resource/header definitions.
 
-pub static mut g_NumFonts: i32 = 0;
+// The C declares this `extern`; one definition lives in fontview.rs (scan_extern_copy).
+use crate::fontview::fontview::g_NumFonts;
 pub static mut g_FontTitle: [WCHAR; (MAX_STRING as usize)] = [0; (MAX_STRING as usize)];
 
 // DisplayProc is a prototype only (LRESULT __stdcall DisplayProc(HWND, UINT, WPARAM, LPARAM));

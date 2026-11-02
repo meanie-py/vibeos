@@ -19,7 +19,7 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // built -DCMAKE_BUILD_TYPE=Debug, i.e. -DDBG=1. Both stay MACROS, never out-of-line
 // fns (field manual §9.65: a no-op fn is an optimization barrier). The C passes
 // __RELFILE__/__LINE__ as two extra varargs; file!()/line!() fold into the literal.
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
 // ntdll exports DbgPrint; every usermode DLL links it.
 extern "C" {
     pub fn DbgPrint(Format: *const c_char, ...) -> u32;

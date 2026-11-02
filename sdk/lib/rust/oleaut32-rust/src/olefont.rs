@@ -1322,7 +1322,7 @@ fn OLEFontImpl_AddRefHfont(
 ) -> HRESULT {
     let _this: *mut OLEFontImpl = impl_from_IFont(iface);
 
-    TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, this, hfont);
+    TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, _this, hfont);
 
     if hfont.is_null() {
         return E_INVALIDARG;
@@ -1338,7 +1338,7 @@ fn OLEFontImpl_ReleaseHfont(
 ) -> HRESULT {
     let _this: *mut OLEFontImpl = impl_from_IFont(iface);
 
-    TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, this, hfont);
+    TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, _this, hfont);
 
     if hfont.is_null() {
         return E_INVALIDARG;
@@ -1455,7 +1455,7 @@ fn OLEFontImpl_GetTypeInfo(
     let _this = impl_from_IDispatch(iface);
     TRACE!(
         b"(%p, iTInfo=%d, lcid=%04x, %p)\n\0".as_ptr() as *const i8,
-        this,
+        _this,
         iTInfo,
         lcid as i32,
         ppTInfo,
@@ -1507,7 +1507,7 @@ fn OLEFontImpl_GetIDsOfNames(
 
     TRACE!(
         b"(%p,%s,%p,cNames=%d,lcid=%04x,%p)\n\0".as_ptr() as *const i8,
-        this,
+        _this,
         debugstr_guid(riid),
         rgszNames,
         cNames,
@@ -2935,7 +2935,7 @@ fn SFCF_QueryInterface(
 
     TRACE!(
         b"(%p)->(%s, %p)\n\0".as_ptr() as *const i8,
-        This,
+        _This,
         debugstr_guid(riid as *const CLSID),
         obj,
     );

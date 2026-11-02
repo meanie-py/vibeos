@@ -117,7 +117,8 @@ extern "C" {
     // — use the 1:1 identity page matrix (see dclife.rs DC_vInitDc note).
     static gmxWorldToPageDefault: MATRIX;
 }
-static mut g_PointZero: POINTL = POINTL { x: 0, y: 0 };
+// The C declares this `extern`; one definition lives in utils.rs (scan_extern_copy).
+use crate::utils::g_PointZero;
 
 // Dropped file globals (C: static const UNICODE_STRING = RTL_CONSTANT_STRING(L"...")).
 static DosPathPrefix_W: [u16; 5] = [0x005c, 0x003f, 0x003f, 0x005c, 0x0000];

@@ -11,6 +11,8 @@ use std::{
 pub const CDS: [&str; 3] = ["livecd", "bootcd", "bootcdregtest"];
 pub const CAB: &str = "build:reactos.cab";
 pub const CAB_INF: &str = "build:boot/bootdata/packages/reactos.inf";
+/// A populated two-level destination is a staged set, rather than one module.
+pub const STAGE_MIN: usize = 10;
 pub const PACKAGES: &str = "{BUILD}/boot/bootdata/packages";
 pub fn manifest_path(a: &str, root: &Path) -> PathBuf {
     root.join(format!("boot/media/{a}.json"))
@@ -568,13 +570,70 @@ pub fn assemble(
     )?;
     Ok(image)
 }
-pub fn write_plan(root: &Path, arches: &[String]) -> Result<BTreeMap<PathBuf, String>> {
+/// Whole staged destination directories present in `have` and absent in `want`.
+pub fn vanished_dirs(have: &Value, want: &Value) -> Result<Vec<String>> {
+    fn dirs(manifest: &Value) -> Result<BTreeMap<String, usize>> {
+        let mut counts = BTreeMap::new();
+        for cd in cds_values(manifest)? {
+            let Some(entries) = cd.get("entries") else {
+                continue;
+            };
+            for entry in array(entries, "entries")? {
+                let dest = if entry[0].is_null() {
+                    ""
+                } else {
+                    string(&entry[0], "destination")?
+                };
+                let parts: Vec<_> = dest.split('/').collect();
+                if parts.len() > 2 {
+                    *counts.entry(parts[..2].join("/")).or_insert(0) += 1;
+                }
+            }
+        }
+        Ok(counts)
+    }
+    let have = dirs(have)?;
+    let want = dirs(want)?;
+    Ok(have
+        .into_iter()
+        .filter_map(|(dir, n)| (n >= STAGE_MIN && !want.contains_key(&dir)).then_some(dir))
+        .collect())
+}
+
+fn plan(root: &Path, arches: &[String], guard_drop: bool) -> Result<BTreeMap<PathBuf, String>> {
     let mut out = BTreeMap::new();
     for a in arches {
-        out.insert(
-            manifest_path(a, root),
-            render(&committed(&derive(a, root)?, a)?)?,
-        );
+        let path = manifest_path(a, root);
+        let want = committed(&derive(a, root)?, a)?;
+        if guard_drop && path.exists() {
+            let gone = vanished_dirs(&load(a, root)?, &want)?;
+            if !gone.is_empty() {
+                return Err(Error::new(format!(
+                    "{}: build-{a} carries nothing under {}, which the committed manifest fills; a build configured without that stage (amd64's SysWOW64 needs build-i386 first) would write a smaller manifest. Build the stage, or pass --allow-drop if it is removed.",
+                    path.strip_prefix(root).unwrap_or(&path).display(), gone.join(", ")
+                )));
+            }
+        }
+        out.insert(path, render(&want)?);
     }
     Ok(out)
+}
+
+/// Derive comparison bytes without applying the write-only stage-loss guard.
+pub fn check_plan(root: &Path, arches: &[String]) -> Result<BTreeMap<PathBuf, String>> {
+    plan(root, arches, false)
+}
+
+/// Native callers, including Cargo-cell refresh, preserve populated staged sets.
+pub fn write_plan(root: &Path, arches: &[String]) -> Result<BTreeMap<PathBuf, String>> {
+    write_plan_with_options(root, arches, false)
+}
+
+/// The explicit CLI override for a deliberately removed stage.
+pub fn write_plan_with_options(
+    root: &Path,
+    arches: &[String],
+    allow_drop: bool,
+) -> Result<BTreeMap<PathBuf, String>> {
+    plan(root, arches, !allow_drop)
 }

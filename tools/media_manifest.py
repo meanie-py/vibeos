@@ -37,6 +37,7 @@ _metadata_names = {
     "CAB": "plain",
     "CAB_INF": "plain",
     "PACKAGES": "plain",
+    "STAGE_MIN": "plain",
     "CELLS_STAMP": "plain",
     "COMMITTED_ROSTESTS": "tuple",
     "_ROSTEST_SRC": "regex",
@@ -106,6 +107,13 @@ def derive(arch: str, repo: Path = REPO) -> dict:
 def committed(m: dict, arch: str = "") -> dict:
     _invoke("media_committed", locals())
     return m
+
+
+def vanished_dirs(have: dict, want: dict) -> list[str]:
+    return _coerce(
+        _invoke("media_vanished_dirs", locals(), None),
+        typing.get_type_hints(vanished_dirs).get("return", typing.Any),
+    )
 
 
 def render(m: dict) -> str:

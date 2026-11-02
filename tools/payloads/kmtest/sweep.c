@@ -118,7 +118,12 @@ int main(void)
      * would leave a crashing child waiting on a dialog nobody answers. This mode is
      * inherited by every process spawned from here, which then exits with its
      * exception code instead -- as an unattended run on Windows does. */
-    SetErrorMode(SetErrorMode(0) | SEM_NOGPFAULTERRORBOX);
+    /* rosautotest's non-interactive mode (CWineTest.cpp), which the suites are written
+     * against: SEM_FAILCRITICALERRORS too. kmtest's ExHardError expects an invalid
+     * ValidResponseOptions to come back ResponseReturnToCaller, which only holds when the
+     * kernel does not forward the error to csrss. Until 2026-11-02 this bit arrived by
+     * accident, leaked into explorer by kernel32's GetShortPathNameW and inherited from it. */
+    SetErrorMode(SetErrorMode(0) | SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     char windir[MAX_PATH], listpath[MAX_PATH], exepath[MAX_PATH];
     char line[128];
     FILE *f;

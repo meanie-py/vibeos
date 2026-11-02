@@ -482,7 +482,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
             (*driverExtension).WorkingSet = info;
             info = core::ptr::null_mut();
         } else {
-            FREE_POOL(info as *mut core::ffi::c_void);
+            FREE_POOL!(info);
         }
     } else if IsEqualGUID(Guid, core::ptr::addr_of!(ClassGuidSenseInfo2)) != 0 {
         let infoOriginal = Data as *mut CLASS_INTERPRET_SENSE_INFO2;
@@ -531,7 +531,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
             (*driverExtension).InterpretSenseInfo = info;
             info = core::ptr::null_mut();
         } else {
-            FREE_POOL(info as *mut core::ffi::c_void);
+            FREE_POOL!(info);
         }
     } else if IsEqualGUID(Guid, core::ptr::addr_of!(ClassGuidSrbSupport)) != 0 {
         let srbSupport = *(Data as *const ULONG);
@@ -570,9 +570,9 @@ pub unsafe extern "system" fn ClassUnload(DriverObject: PDRIVER_OBJECT) {
     if let Some(unload_fn) = (*driverExtension).InitData.ClassUnload {
         unload_fn(DriverObject);
     }
-    FREE_POOL((*driverExtension).WorkingSet as *mut core::ffi::c_void);
-    FREE_POOL((*driverExtension).InterpretSenseInfo as *mut core::ffi::c_void);
-    FREE_POOL((*driverExtension).RegistryPath.Buffer as *mut core::ffi::c_void);
+    FREE_POOL!((*driverExtension).WorkingSet);
+    FREE_POOL!((*driverExtension).InterpretSenseInfo);
+    FREE_POOL!((*driverExtension).RegistryPath.Buffer);
     (*driverExtension).RegistryPath.Length = 0;
     (*driverExtension).RegistryPath.MaximumLength = 0;
     if (*driverExtension).EtwHandle != 0 {
@@ -860,7 +860,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                 let remove_type = (*irp_stack).MinorFunction;
 
                 if is_fdo != 0 && remove_type == IRP_MN_SURPRISE_REMOVAL {
-                    let fdo_extension = DeviceObject as *mut FUNCTIONAL_DEVICE_EXTENSION;
+                    let fdo_extension = (*DeviceObject).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION;
                     let fdo_data = (*fdo_extension).PrivateFdoData;
                     let mut log_surprise_remove = 1u8;
                     let bus_type = (*(*fdo_extension).DeviceDescriptor).BusType;
@@ -1147,14 +1147,14 @@ pub unsafe extern "system" fn ClassDispatchPnp(
 
                     DeviceUsageTypeBoot => {
                         if is_fdo != 0 {
-                            let fdo_data = (*(DeviceObject as *mut FUNCTIONAL_DEVICE_EXTENSION)).PrivateFdoData;
+                            let fdo_data = (*((*DeviceObject).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION)).PrivateFdoData;
                             if !fdo_data.is_null()
                                 && (*fdo_data).HotplugInfo.DeviceHotplug != 0
                             {
                                 (*fdo_data).HotplugInfo.DeviceHotplug = 0u8;
                                 (*fdo_data).HotplugInfo.MediaRemovable = 0u8;
                                 ClassSetDeviceParameter(
-                                    DeviceObject as *mut FUNCTIONAL_DEVICE_EXTENSION,
+                                    (*DeviceObject).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION,
                                     crate::glue::regw::CLASSP_REG_SUBKEY_NAME.as_ptr() as PWSTR,
                                     crate::glue::regw::CLASSP_REG_REMOVAL_POLICY_VALUE_NAME.as_ptr() as PWSTR,
                                     RemovalPolicyExpectOrderlyRemoval,
@@ -1186,7 +1186,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                     );
                 } else {
                     let device_capabilities = (*irp_stack).Parameters.DeviceCapabilities.Capabilities;
-                    let fdo_extension = DeviceObject as *mut FUNCTIONAL_DEVICE_EXTENSION;
+                    let fdo_extension = (*DeviceObject).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION;
                     let fdo_data = (*fdo_extension).PrivateFdoData;
 
                     status = ClassForwardIrpSynchronous(common_extension, Irp);
@@ -1319,9 +1319,9 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
 
             status = ClasspInitializeTimer(fdo_extension);
             if !NT_SUCCESS(status) {
-                FREE_POOL((*fdo_extension).PrivateFdoData as *mut c_void);
+                FREE_POOL!((*fdo_extension).PrivateFdoData);
                 #[cfg(ntddi_ge_ntddi_winthreshold)]
-                FREE_POOL((*fdo_extension).AdditionalFdoData as *mut c_void);
+                FREE_POOL!((*fdo_extension).AdditionalFdoData);
                 TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_PNP, b"ClassPnpStartDevice: Failed to initialize tick timer\n\0".as_ptr() as PCHAR);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
@@ -1335,9 +1335,9 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             }
             if (*fdo_extension).FunctionSupportInfo == core::ptr::null_mut() {
                 ClasspDeleteTimer(fdo_extension);
-                FREE_POOL((*fdo_extension).PrivateFdoData as *mut c_void);
+                FREE_POOL!((*fdo_extension).PrivateFdoData);
                 #[cfg(ntddi_ge_ntddi_winthreshold)]
-                FREE_POOL((*fdo_extension).AdditionalFdoData as *mut c_void);
+                FREE_POOL!((*fdo_extension).AdditionalFdoData);
                 TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_PNP, b"ClassPnpStartDevice: Cannot allocate for FunctionSupportInfo\n\0".as_ptr() as PCHAR);
                 return STATUS_INSUFFICIENT_RESOURCES;
             }
@@ -2058,7 +2058,7 @@ pub unsafe extern "system" fn ClassReadDriveCapacity(Fdo: PDEVICE_OBJECT) -> NTS
 pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
     unsafe {
         let fdo_extension = (*Fdo).DeviceExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION;
-        let context = ExAllocatePoolWithTag(
+        let mut context = ExAllocatePoolWithTag(
             NonPagedPoolNx,
             core::mem::size_of::<COMPLETION_CONTEXT>(),
             0x36634353, // '6CcS'
@@ -2088,7 +2088,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
             );
 
             if !NT_SUCCESS(status) {
-                FREE_POOL(context as *mut c_void);
+                FREE_POOL!(context);
                 NT_ASSERT!(0u8);
                 return;
             }
@@ -2148,7 +2148,7 @@ pub unsafe extern "system" fn ClassAsynchronousCompletion(
     Irp: *mut _IRP,
     Context: *mut core::ffi::c_void,
 ) -> i32 {
-    let context = Context as *mut _COMPLETION_CONTEXT;
+    let mut context = Context as *mut _COMPLETION_CONTEXT;
 
     if context.is_null() {
         return STATUS_INVALID_PARAMETER;
@@ -2196,7 +2196,7 @@ pub unsafe extern "system" fn ClassAsynchronousCompletion(
     }
 
     ClassReleaseRemoveLock(DeviceObject, Irp);
-    FREE_POOL((context).cast());
+    FREE_POOL!(context);
     IoFreeIrp(Irp);
 
     STATUS_MORE_PROCESSING_REQUIRED
@@ -2461,7 +2461,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     const DISPATCH_LEVEL: KIRQL = 2;
 
     let irpStack = IoGetCurrentIrpStackLocation(Irp);
-    let srb = Context as PSCSI_REQUEST_BLOCK;
+    let mut srb = Context as PSCSI_REQUEST_BLOCK;
     let fdoExtension = (*Fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
     let fdoData = (*fdoExtension).PrivateFdoData;
     let mut status: NTSTATUS = STATUS_SUCCESS;
@@ -2591,7 +2591,7 @@ pub unsafe extern "system" fn ClassIoComplete(
             ClassFreeOrReuseSrb(fdoExtension, srb);
         } else {
             TracePrint(4, 0x00000001, b"ClassIoComplete is freeing an SRB (possibly) on behalf of another driver.\0" as *const u8 as *const i8);
-            FREE_POOL(srb as PVOID);
+            FREE_POOL!(srb);
         }
     } else {
         TracePrint(4, 0x00000001,

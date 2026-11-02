@@ -106,6 +106,19 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
     });
     let guards = enclosing_ifs(&text, &cell.target)?;
     let paths = branches(&stmts);
+    let rc_lists = super::graph::list_vars(&text);
+    let if_raw: Vec<_> = stmts
+        .iter()
+        .filter(|(_, _, c, _)| c == "if")
+        .map(|(_, _, _, r)| r)
+        .collect();
+    let shim_root = if cell.cmake_dir.is_absolute() {
+        cell.cmake_dir
+            .ancestors()
+            .find(|p| p.join("sdk/lib/rust").is_dir())
+    } else {
+        None
+    };
     let home = stmts
         .iter()
         .enumerate()
@@ -146,7 +159,8 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             if let Some(deps) = rc_deps(cmd, raw) {
                 drop = true;
                 rc_gen_deps.extend(
-                    deps.into_iter()
+                    super::graph::expand(&deps, &rc_lists)?
+                        .into_iter()
                         .filter(|d| d.contains("CMAKE_CURRENT_BINARY_DIR")),
                 );
             }
@@ -169,7 +183,22 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         }
         if target && list_has(&cmd.to_lowercase(), "TRANSFERRED") {
             drop = true;
-            transferred.push((cmd.clone(), raw.clone()));
+            let h = home.as_deref().unwrap_or(&[]);
+            if !paths[idx].starts_with(h) {
+                return Err(Error::new(format!(
+                    "{}: `{cmd}` sits outside its target's if() branch",
+                    cell.target
+                )));
+            }
+            let extra = &paths[idx][h.len()..];
+            if extra.iter().any(|(_, branch)| *branch != 0) {
+                return Err(Error::new(format!(
+                    "{}: `{cmd}` on the target is in an elseif/else branch",
+                    cell.target
+                )));
+            }
+            let conditions: Vec<String> = extra.iter().map(|(i, _)| if_raw[*i].clone()).collect();
+            transferred.push((cmd.clone(), raw.clone(), conditions));
         }
         if target && cmd == "set_target_properties" && names_only(&a) {
             drop = true
@@ -364,7 +393,9 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
                 } else if cell.foreign.contains(c) {
                     format!("${{REACTOS_SOURCE_DIR}}/{c}")
                 } else {
-                    basename(c)
+                    shim_root
+                        .map(|root| super::graph::shim_name(root, c, cell))
+                        .unwrap_or_else(|| basename(c))
                 }
             })
             .collect();
@@ -380,7 +411,9 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
                     block.push(format!(
                         "    list(APPEND {var} {})",
                         list.iter()
-                            .map(|c| basename(c))
+                            .map(|c| shim_root
+                                .map(|root| super::graph::shim_name(root, c, cell))
+                                .unwrap_or_else(|| basename(c)))
                             .collect::<Vec<_>>()
                             .join(" ")
                     ));
@@ -425,8 +458,15 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         block
             .push("# How cmake compiled the target's sources, now on the OBJECT libraries.".into());
         for lib in &objlibs {
-            for (cmd, raw) in &transferred {
-                let ln = retarget(cmd, raw, lib);
+            for (cmd, raw, conditions) in &transferred {
+                let mut ln = retarget(cmd, raw, lib);
+                for condition in conditions.iter().rev() {
+                    ln = format!(
+                        "if({})\n    {}\nendif()",
+                        condition.trim(),
+                        ln.replace('\n', "\n    ")
+                    );
+                }
                 if lib == &shims {
                     shim_lines.push(ln)
                 } else {

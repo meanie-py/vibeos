@@ -23,7 +23,7 @@ binaries:
   # reactos/) into the folder AutoStartupApplications walks.
   - src: tools/payloads/httpd/httpd-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/httpd.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/httpd.exe
 
 test:
   # Needs a NIC + the payload hostfwd: boot the -net arch variant.

@@ -442,6 +442,7 @@ def _boot_vm(
                 or _virtio_mmio_check(text, arch)
                 or _ahci_irq_check(_qemu_stderr(vm))
                 or _ata_health_check(text)
+                or _kernel_assert_check(text)
                 or _legide_check(text)
             )
             if smp_fail is not None:
@@ -913,10 +914,30 @@ def _payload_stage(
         (ln for ln in reversed(tail) if " passed" in ln or " failed" in ln or " error" in ln),
         tail[-1] if tail else "",
     )
-    if proc.returncode == 0:
+    kernel_assert = next(
+        (
+            hit
+            for log in sorted(payload_dir.glob("*_serial.log"))
+            if (hit := _kernel_assert_check(log.read_text(errors="replace")))
+        ),
+        None,
+    )
+    if proc.returncode == 0 and kernel_assert:
+        # The suite passed, but the guest's kernel failed an assertion that used to bugcheck it.
+        if run.classification in ("", "NET_FLAKE"):
+            run.classification = kernel_assert["classification"]
+        run.add(
+            Stage(
+                stage,
+                status="fail",
+                detail=f"payload suite ({payloads}) passed with a failed kernel assertion",
+                salient=[*kernel_assert["salient"], f"serial + pytest.log: {payload_dir}"],
+            )
+        )
+    elif proc.returncode == 0:
         run.add(Stage(stage, status="ok", detail=summary.strip("= ")))
     else:
-        crash = _payload_crash(repo, arch, payload_dir)
+        crash = _payload_crash(repo, arch, payload_dir) or kernel_assert
         if crash and run.classification in ("", "NET_FLAKE"):
             run.classification = crash["classification"]
         run.add(
@@ -1073,6 +1094,18 @@ def _ata_health_check(text: str) -> dict | None:
             ],
         }
     return None
+
+
+def _kernel_assert_check(text: str) -> dict | None:
+    """Fail a run in which an ntoskrnl assertion failed, wherever its old panic would have
+    (triage.KERNEL_ASSERT_RE)."""
+    asserts = triage.kernel_asserts(text)
+    if not asserts:
+        return None
+    return {
+        "classification": "KERNEL_ASSERT",
+        "salient": [f"{len(asserts)} kernel assertion(s) failed", *asserts[:4]],
+    }
 
 
 _LEGIDE_FORCED = "LEGIDE_DETECT: probing"

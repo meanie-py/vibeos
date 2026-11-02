@@ -10308,6 +10308,40 @@ def test_ahci_irq_check_reads_qemus_trace_not_the_driver(monkeypatch):
     assert smoke_mod._ahci_irq_check(firmware + done * 40) is None
 
 
+def test_kernel_assert_check_keeps_the_old_bugcheck_verdict():
+    """ntoskrnl's ASSERT! now prints and continues; a failed one must still fail the run, as
+    the panic it replaced did, or the next MM invariant break boots green."""
+    from . import smoke as smoke_mod
+
+    fired = "*** ASSERT FAILED: ProtoPte.is_null() at ntoskrnl-rust/src/ARM3/pagfault.rs:2478\n"
+    bad = smoke_mod._kernel_assert_check("boot noise\n" + fired)
+    assert bad and bad["classification"] == "KERNEL_ASSERT"
+    assert "1 kernel assertion(s) failed" in bad["salient"][0]
+    # Drivers' and ntkrnl-sys's asserts printed before this change too; they keep their own checks.
+    assert (
+        smoke_mod._kernel_assert_check("*** ASSERT FAILED: x at fastfat-rust/src/a.rs:1\n") is None
+    )
+    assert (
+        smoke_mod._kernel_assert_check("*** ASSERT FAILED: y at ntkrnl-sys/src/mm.rs:954\n") is None
+    )
+    assert smoke_mod._kernel_assert_check("") is None
+
+
+def test_conformance_round_with_a_kernel_assert_is_not_clean():
+    """The sweep completes now that a failed ntoskrnl ASSERT continues; the round must still
+    land in the bugcheck family it used to, not read clean."""
+    from .conformance import round_shape
+
+    serial = (
+        "[KMTEST:BEGIN ZwMapViewOfSection]\n"
+        "*** ASSERT FAILED: ProtoPte.is_null() at ntoskrnl-rust/src/ARM3/pagfault.rs:2478\n"
+    )
+    done = "[KMTEST-SWEEP] done"
+    assert round_shape(None, [{"status": "OK"}], done, [], serial) == "A:kernel-assert"
+    assert round_shape("0x1E", [], None, [], serial) == "A:bugcheck 0x1E"
+    assert round_shape(None, [{"status": "OK"}], done, [], "[KMTEST:BEGIN x]\n") == "clean"
+
+
 def test_ata_health_check_fails_a_lost_interrupt():
     """A timed-out ATA request is reset and retried and the boot carries on, so the
     desktop alone would hide an ISR that never ran."""
@@ -11644,6 +11678,37 @@ def test_payload_stale_binary_is_rebuilt_before_staging(tmp_path, monkeypatch):
     assert exe.read_text().strip() == "built"
     assert pc.stale_binaries("demo", "arm64") == []
     assert pc.ensure_built(["demo"], "arm64") == []  # fresh: no rebuild
+
+
+def test_payload_gitignored_output_is_not_a_source(tmp_path, monkeypatch):
+    """regdiff's build.sh writes `regdiff-base-<arch>.txt` beside each arch's DLL. Read as a
+    SOURCE, one arch's stamp made every other arch's binaries stale, and build.sh then
+    refused (it needs REGDIFF_BASE). A gitignored file is an output, never a source."""
+    import os
+    import subprocess
+
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    d = payloads / "demo"
+    d.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (d / ".gitignore").write_text("demo-*.exe\nstamp-*.txt\n")
+    (d / "payload.yaml").write_text(
+        "name: demo\nbinaries:\n  - src: tools/payloads/demo/demo-{arch}.exe\n    dest: demo.exe\n"
+    )
+    (d / "demo.c").write_text("int main(void){return 0;}")
+    exe = d / "demo-amd64.exe"
+    exe.write_text("built")
+    for src in ("demo.c", "payload.yaml", ".gitignore"):
+        os.utime(d / src, (1_000_000, 1_000_000))
+    os.utime(exe, (2_000_000, 2_000_000))
+    (d / "stamp-arm64.txt").write_text("written by the arm64 build, after amd64's exe")
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+
+    assert pc.stale_binaries("demo", "amd64") == []
+    os.utime(d / "demo.c", None)  # a real source edit still counts
+    assert pc.stale_binaries("demo", "amd64") == [exe.resolve()]
 
 
 def test_payload_list_older_than_its_generator_fails_loud(tmp_path, monkeypatch):

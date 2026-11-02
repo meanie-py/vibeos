@@ -1221,7 +1221,7 @@ fn RunningObjectTableImpl_EnumRunning(
     let mut interface_list: *mut InterfaceList = core::ptr::null_mut();
     let mut hr: HRESULT;
 
-    TRACE!(b"(%p, %p)\n\0".as_ptr(), This, ppenumMoniker);
+    TRACE!(b"(%p, %p)\n\0".as_ptr(), _This, ppenumMoniker);
 
     *ppenumMoniker = core::ptr::null_mut();
 
@@ -1975,7 +1975,7 @@ fn MonikerMarshalInner_QueryInterface(
         IMarshal_AddRef(core::ptr::addr_of_mut!((*This).IMarshal_iface));
         return S_OK;
     }
-    FIXME!(b"No interface for %s\n\0".as_ptr(), debugstr_guid((riid).cast()));
+    FIXME!(b"No interface for %s\n\0".as_ptr(), debugstr_guid(riid));
     E_NOINTERFACE
 }
 }

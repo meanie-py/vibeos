@@ -52,7 +52,7 @@ use ntkrnl_sys::constants::{
 
 // pdo.c's own DBGPRINT, not debug.h's: it is `#define DBGPRINT(...)` behind an
 // `#if 0`, so it is off in the C too. DPRINT/DPRINT1 come from `crate::dprint`.
-macro_rules! DBGPRINT { ($($t:tt)*) => {} }
+macro_rules! DBGPRINT { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }} }
 
 // ---------------------------------------------------------------------------
 // Constants not present in ntkrnl-sys (#defines / enum variants the bindgen

@@ -57,10 +57,10 @@ use msft::TLB_ReadTypeLib;
 use writer::CreateTypeLib2;
 
 macro_rules! TRACE {
-    ($($t:tt)*) => {{}};
+    ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) };
 }
 macro_rules! WARN {
-    ($($t:tt)*) => {{}};
+    ($($t:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($t)*) };
 }
 macro_rules! ERR {
     ($fmt:literal $(, $e:expr)* $(,)?) => {

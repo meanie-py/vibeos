@@ -1104,7 +1104,7 @@ unsafe extern "C" fn AtaAhciPmpPhyCheckDevicePresence(
         if (SataStatus & AHCI_PXSSTS_DET_MASK) != AHCI_PXSSTS_DET_NO_DEVICE {
             INFO!(
                 b"CH %lu: PMP device %lu link up %08lx\n\0".as_ptr() as *const i8,
-                ChanData.Channel,
+                (*ChanData).__bindgen_anon_1.Channel,
                 PortNumber,
                 SataStatus,
             );
@@ -1115,7 +1115,7 @@ unsafe extern "C" fn AtaAhciPmpPhyCheckDevicePresence(
     }
     INFO!(
         b"CH %lu: PMP device %lu not connected %08lx\n\0".as_ptr() as *const i8,
-        ChanData.Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         PortNumber,
         SataStatus,
     );
@@ -1146,7 +1146,7 @@ unsafe extern "C" fn AtaAhciPmpPhyWaitForReady(
         if SataStatus & AHCI_PXSSTS_DET_MASK == AHCI_PXSSTS_DET_PHY_OK {
             INFO!(
                 b"CH %lu: PMP device %lu link up %08lx\n\0".as_ptr() as *const i8,
-                ChanData.Channel,
+                (*ChanData).__bindgen_anon_1.Channel,
                 PortNumber,
                 SataStatus,
             );
@@ -1157,7 +1157,7 @@ unsafe extern "C" fn AtaAhciPmpPhyWaitForReady(
     }
     INFO!(
         b"CH %lu: PMP device %lu unable to establish link %08lx\n\0".as_ptr() as *const i8,
-        ChanData.Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         PortNumber,
         SataStatus,
     );

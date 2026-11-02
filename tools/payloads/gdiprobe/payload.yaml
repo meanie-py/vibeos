@@ -11,7 +11,7 @@ build_hint: "tools/payloads/gdiprobe/build.sh {arch}"
 binaries:
   - src: tools/payloads/gdiprobe/gdiprobe-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/gdiprobe.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/gdiprobe.exe
 
 test:
   launch_marker: "[GDIPROBE] done"

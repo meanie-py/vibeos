@@ -10,7 +10,7 @@ build_hint: "tools/payloads/matherrs/build.sh {arch}"
 binaries:
   - src: tools/payloads/matherrs/matherrs-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/matherrs.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/matherrs.exe
 
 test:
   launch_marker: "[MATHERRS] done"

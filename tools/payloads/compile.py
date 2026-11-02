@@ -289,7 +289,7 @@ def manifest(names: list[str], arch: str) -> dict[str, Path]:
         for b in binaries(spec, arch):
             src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
             # root: reactos (default) grafts under reactos/; root: image grafts
-            # at the media root (e.g. the Profiles/.../StartUp autostart folder).
+            # at the media root (e.g. the ProgramData/.../Startup autostart folder).
             prefix = "reactos/" if b.get("root", "reactos") == "reactos" else ""
             dest = prefix + str(b["dest"]).replace("\\", "/").lstrip("/")
             if dest in entries:
@@ -346,6 +346,28 @@ def stale_generator(src: Path) -> Path | None:
     return None
 
 
+def _git_ignored(pdir: Path) -> set[Path]:
+    """Files under `pdir` that git ignores, i.e. BUILD OUTPUTS, never sources.
+
+    The suffix filter in stale_binaries cannot see an output with a source-like name.
+    regdiff's build.sh writes `regdiff-base-<arch>.txt` beside the DLL it copies, so one
+    arch's build made every OTHER arch's binaries "older than a source" and refused to
+    stage them, and the stamp written after its own copy did the same to its own arch.
+    Ignored == generated is the rule this repo already keeps (every payload's binaries are
+    gitignored). A failed `git` answers "nothing ignored", the behaviour before this."""
+    try:
+        cp = subprocess.run(
+            ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "--", "."],
+            cwd=pdir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {(pdir / line).resolve() for line in cp.stdout.splitlines() if line}
+
+
 def stale_binaries(name: str, arch: str) -> list[Path]:
     """The payload's binaries for `arch` that are missing or older than its sources.
 
@@ -358,6 +380,7 @@ def stale_binaries(name: str, arch: str) -> list[Path]:
     """
     spec = load_spec(name)
     pdir = PAYLOADS_DIR / name
+    ignored = _git_ignored(pdir)
     srcs = [
         p
         for p in pdir.rglob("*")
@@ -365,6 +388,7 @@ def stale_binaries(name: str, arch: str) -> list[Path]:
         and "__pycache__" not in p.parts
         and not p.name.startswith(".")
         and p.suffix.lower() not in (".exe", ".dll", ".png", ".log")
+        and p.resolve() not in ignored
     ]
     srcs += list(PAYLOADS_DIR.glob("*.h"))
     newest = max((p.stat().st_mtime for p in srcs), default=0.0)

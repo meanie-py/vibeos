@@ -125,7 +125,7 @@ macro_rules! UNIMPLEMENTED_DBGBREAK {
 /// C macro `RD_TRACE(s)` is `((void)0)` — a pure no-op.
 #[macro_export]
 macro_rules! RD_TRACE {
-    ($($t:tt)*) => {{ }};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 
 /// NUL-terminated UTF-16 (C `L"..."`) compile-time literal → `*const u16`.

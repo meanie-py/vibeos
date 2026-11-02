@@ -169,6 +169,127 @@ static void walk(HKEY key, const char *root, const WCHAR *path, lines_t *out)
 
 /* ---- child ------------------------------------------------------------------------------ */
 
+typedef BOOL (WINAPI *expand_fn)(HANDLE, LPCWSTR, LPWSTR, DWORD);
+typedef HRESULT (WINAPI *folder_fn)(HWND, int, HANDLE, DWORD, LPWSTR);
+
+/* Every folder SHELL_RegisterShellFolders registers, asked for (without CSIDL_FLAG_CREATE,
+ * so nothing is written) with the tokens it uses: -1 (Default User) and NULL for the user
+ * set, NULL for the common set; plus the environment expansion behind them. Only failures
+ * are printed. `where` says which registry it ran against. */
+static void probe_folders(const char *where, folder_fn folder)
+{
+    static const int user_ids[] = { 0x02, 0x05, 0x06, 0x1a, 0x07, 0x08, 0x09, 0x0b, 0x0d, 0x0e,
+                                    0x10, 0x13, 0x15, 0x1b, 0x1c, 0x20, 0x21, 0x22, 0x27, 0x14,
+                                    0x30 };
+    static const int common_ids[] = { 0x16, 0x17, 0x18, 0x19, 0x1f, 0x23, 0x2d, 0x2e, 0x2f,
+                                      0x35, 0x36, 0x37 };
+    WCHAR buf[MAX_PATH];
+    HMODULE ue = LoadLibraryA("userenv.dll");
+    expand_fn expand = ue ? (expand_fn)GetProcAddress(ue, "ExpandEnvironmentStringsForUserW") : NULL;
+    if (!expand || !folder) {
+        DbgPrint("[REGDIFF] probe %s FAIL: no userenv/SHGetFolderPathW\n", where);
+        return;
+    }
+    for (int t = 0; t < 2; t++) {
+        HANDLE tok = t ? (HANDLE)(LONG_PTR)-1 : NULL;
+        SetLastError(0);
+        BOOL ok = expand(tok, L"%USERPROFILE%", buf, MAX_PATH);
+        if (!ok)
+            DbgPrint("[REGDIFF] probe %s ExpandEnvironmentStringsForUserW(token=%d) gle=%lu\n",
+                     where, t ? -1 : 0, GetLastError());
+        for (size_t k = 0; k < sizeof(user_ids) / sizeof(user_ids[0]); k++) {
+            HRESULT hr = folder(NULL, user_ids[k], tok, 0, buf);
+            if (FAILED(hr))
+                DbgPrint("[REGDIFF] probe %s user csidl=0x%02x token=%d hr=0x%08lx\n", where,
+                         user_ids[k], t ? -1 : 0, (unsigned long)hr);
+        }
+    }
+    for (size_t k = 0; k < sizeof(common_ids) / sizeof(common_ids[0]); k++) {
+        HRESULT hr = folder(NULL, common_ids[k], NULL, 0, buf);
+        if (FAILED(hr))
+            DbgPrint("[REGDIFF] probe %s common csidl=0x%02x hr=0x%08lx\n", where, common_ids[k],
+                     (unsigned long)hr);
+    }
+    DbgPrint("[REGDIFF] probe %s done\n", where);
+}
+
+
+/* Copies `src`'s values, and with `subkeys` its whole subtree, into `dst`. */
+static LONG copy_tree(HKEY src, HKEY dst, BOOL subkeys)
+{
+    DWORD nsub = 0, maxsub = 0, nval = 0, maxname = 0, maxdata = 0;
+    LONG err = RegQueryInfoKeyW(src, NULL, NULL, NULL, &nsub, &maxsub, NULL, &nval, &maxname,
+                                &maxdata, NULL, NULL);
+    if (err != ERROR_SUCCESS)
+        return err;
+    WCHAR *name = (WCHAR *)malloc((maxname + maxsub + 2) * sizeof(WCHAR));
+    BYTE *data = (BYTE *)malloc(maxdata + 8);
+    for (DWORD i = 0; i < nval && err == ERROR_SUCCESS; i++) {
+        DWORD cchName = maxname + 1, cb = maxdata + 4, type = 0;
+        err = RegEnumValueW(src, i, name, &cchName, NULL, &type, data, &cb);
+        if (err == ERROR_SUCCESS)
+            err = RegSetValueExW(dst, name, 0, type, data, cb);
+    }
+    for (DWORD i = 0; subkeys && i < nsub && err == ERROR_SUCCESS; i++) {
+        DWORD cch = maxname + maxsub + 1;
+        HKEY s, d;
+        err = RegEnumKeyExW(src, i, name, &cch, NULL, NULL, NULL, NULL);
+        if (err == ERROR_SUCCESS)
+            err = RegOpenKeyExW(src, name, 0, KEY_READ, &s);
+        if (err == ERROR_SUCCESS) {
+            err = RegCreateKeyExW(dst, name, 0, NULL, 0, KEY_ALL_ACCESS, NULL, &d, NULL);
+            if (err == ERROR_SUCCESS) {
+                err = copy_tree(s, d, TRUE);
+                RegCloseKey(d);
+            }
+            RegCloseKey(s);
+        }
+    }
+    free(data);
+    free(name);
+    return err;
+}
+
+/* The sandbox must still hold what the registrar READS. SHELL_RegisterShellFolders resolves
+ * the profile folders through userenv, which reads HKLM\...\ProfileList; against an empty
+ * HKLM that is ERROR_FILE_NOT_FOUND, and DllRegisterServer returned 0x80070002 here on every
+ * arch, for the C++ shell32 and the Rust alike -- the harness's failure, not shell32's. The
+ * environment expansion behind it (userenv's CreateEnvironmentBlock) also reads the Session
+ * Manager environment and CurrentVersion's ProgramFilesDir/CommonFilesDir. Those two are
+ * copied VALUES ONLY: their subkeys (Explorer\Shell Folders among them) are what
+ * registration writes, and seeding them would hide its writes from the dump. Both children
+ * get the same seed, so it cancels out of the diff. Fails loud: an unseeded run would diff
+ * as SAME while measuring nothing past the first profile lookup. */
+static const struct { const WCHAR *path; BOOL subkeys; } g_seeds[] = {
+    { L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList", TRUE },
+    { L"SYSTEM\\CurrentControlSet\\Control\\Session Manager\\Environment", FALSE },
+    { L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion", FALSE },
+};
+
+static BOOL seed_sandbox(HKEY sandbox_hklm, const char *mode)
+{
+    for (size_t i = 0; i < sizeof(g_seeds) / sizeof(g_seeds[0]); i++) {
+        HKEY src, dst;
+        LONG err = RegOpenKeyExW(HKEY_LOCAL_MACHINE, g_seeds[i].path, 0, KEY_READ, &src);
+        if (err == ERROR_SUCCESS) {
+            err = RegCreateKeyExW(sandbox_hklm, g_seeds[i].path, 0, NULL, 0, KEY_ALL_ACCESS,
+                                  NULL, &dst, NULL);
+            if (err == ERROR_SUCCESS) {
+                err = copy_tree(src, dst, g_seeds[i].subkeys);
+                RegCloseKey(dst);
+            }
+            RegCloseKey(src);
+        }
+        if (err != ERROR_SUCCESS) {
+            char u8[256];
+            WideCharToMultiByte(CP_UTF8, 0, g_seeds[i].path, -1, u8, sizeof(u8), NULL, NULL);
+            DbgPrint("[REGDIFF] FAIL %s: cannot seed the sandbox's HKLM\\%s = %ld\n", mode, u8, err);
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
 /* Fails loud: if an override does not take, DllRegisterServer writes the REAL registry and
  * the dump comes back empty — which would diff as SAME. That is how this harness first met
  * advapi32's zero-extended HKEY_* constants on amd64. */
@@ -260,8 +381,13 @@ static int child(const char *mode, const char *dllA)
         }
     }
 
+    if (!seed_sandbox(sandbox[1], mode))
+        return 6;
     if (!override_all(sandbox))
         return 5;
+    char where[32];
+    snprintf(where, sizeof(where), "%s-sandbox", mode);
+    probe_folders(where, (folder_fn)GetProcAddress(m, "SHGetFolderPathW"));
     HRESULT hr = doreg();
     restore_all();
     dump_to(sandbox, "reg", hr);
@@ -378,6 +504,9 @@ static int run_child(const char *self, const char *mode, const char *dll, dumps_
     return (int)code;
 }
 
+/* SHELL_RegisterShellFolders registers the Default User's folders, which SHGetFolderPath
+ * spells as the token (HANDLE)-1. Asked against the REAL registry (no sandbox), so a
+ * failure here is the system's, not this harness's. */
 int main(int argc, char **argv)
 {
     /* An unhandled exception now reaches UnhandledExceptionFilter, whose fault box
@@ -394,6 +523,8 @@ int main(int argc, char **argv)
     snprintf(olddll, sizeof(olddll), "%s\\regdiff-base.dll", sysdir);
     snprintf(newdll, sizeof(newdll), "%s\\shell32.dll", sysdir);
     DbgPrint("[REGDIFF] start: old=%s new=%s\n", olddll, newdll);
+    HMODULE sh = LoadLibraryA("shell32.dll");
+    probe_folders("real", sh ? (folder_fn)GetProcAddress(sh, "SHGetFolderPathW") : NULL);
 
     dumps_t o = { 0 }, n = { 0 };
     int ro = run_child(self, "old", olddll, &o);

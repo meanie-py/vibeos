@@ -11,7 +11,7 @@ build_hint: "tools/payloads/ndisprobe/build.sh {arch}"
 binaries:
   - src: tools/payloads/ndisprobe/ndisprobe-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/ndisprobe.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/ndisprobe.exe
 
 test:
   launch_marker: "[NDISPROBE] done"

@@ -7,7 +7,7 @@ use std::{
     process::{Command, ExitCode},
 };
 use vibeos_build::{self as b, Error, Result};
-const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads a single compatibility request from stdin. Inspect/check modes never write.\n";
+const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR] [--allow-drop]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads a single compatibility request from stdin. Inspect/check modes never write.\n";
 fn atomic(path: &Path, bytes: &[u8], serial: usize) -> Result<()> {
     if path.is_symlink() {
         return Err(Error::new(format!(
@@ -112,6 +112,7 @@ struct Options {
     positionals: Vec<String>,
     values: BTreeMap<String, String>,
     delete: bool,
+    allow_drop: bool,
 }
 fn parse(raw: Vec<String>) -> Result<Options> {
     let mut o = Options::default();
@@ -135,6 +136,7 @@ fn parse(raw: Vec<String>) -> Result<Options> {
                 o.mode = a;
             }
             "--delete" => o.delete = true,
+            "--allow-drop" => o.allow_drop = true,
             "--arch" => o.arches.extend(
                 args.next()
                     .ok_or("--arch requires ARCH")?
@@ -252,6 +254,9 @@ fn run() -> Result<u8> {
     {
         return Err("manifest modes and architectures require a manifest/recipe command".into());
     }
+    if o.allow_drop && (command != "media-manifest" || o.mode != "--write") {
+        return Err("--allow-drop requires media-manifest --write".into());
+    }
     if o.delete && command != "ninja-prune" {
         return Err("--delete requires ninja-prune".into());
     }
@@ -360,7 +365,10 @@ fn run() -> Result<u8> {
             }
             let plan = match command.as_str() {
                 "cell-manifest" => b::cell_manifest::write_plan(&root, &arches)?,
-                "media-manifest" => b::media_manifest::write_plan(&root, &arches)?,
+                "media-manifest" if o.mode == "--write" => {
+                    b::media_manifest::write_plan_with_options(&root, &arches, o.allow_drop)?
+                }
+                "media-manifest" => b::media_manifest::check_plan(&root, &arches)?,
                 _ => b::sdk_recipe::write_plan(&root, &arches)?
                     .into_iter()
                     .map(|r| (r.path, r.text))

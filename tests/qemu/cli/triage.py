@@ -173,6 +173,17 @@ def wedge_evidence(serial: str) -> dict:
     }
 
 
+# ntoskrnl-rust's ASSERT! reports through RtlAssert and continues, as the C's DBG ASSERT does.
+# It used to panic, so every failed kernel assertion was a BUGCHECK the harness failed on; smoke
+# and conformance keep that verdict through this (the registered MM entries were found that way).
+KERNEL_ASSERT_RE = re.compile(r"\*\*\* ASSERT FAILED: .* at ntoskrnl-rust/")
+
+
+def kernel_asserts(serial: str) -> list[str]:
+    """The failed ntoskrnl assertions a run printed, one stripped line each."""
+    return [ln.strip() for ln in serial.splitlines() if KERNEL_ASSERT_RE.search(ln)]
+
+
 def post_boot_check(serial: str, debugcon_raw: str | None = None) -> dict | None:
     """Scan a boot that REACHED its marker (including the settle-window serial)
     for fatal signals the marker race can hide: a BugCheck or Rust panic that

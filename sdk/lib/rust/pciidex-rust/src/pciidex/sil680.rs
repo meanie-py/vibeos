@@ -251,7 +251,7 @@ pub unsafe extern "C" fn Sil680GetControllerProperties(
         if Config & (SIL_CFG_CABLE_80 as u8) == 0 {
             INFO!(
                 b"CH %lu: BIOS detected 40-conductor cable\n\0".as_ptr() as *const i8,
-                (*ChanData).Channel,
+                (*ChanData).__bindgen_anon_1.Channel,
             );
             (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
         }

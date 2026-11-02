@@ -10,6 +10,8 @@ extern crate cnt_rust;
 // ctype is a separate crate (keeps cnt-rust's cgu layout untouched);
 // pull its #[no_mangle] libcntpr-replacement symbols into this .a.
 extern crate cnt_ctype;
+#[cfg(feature = "ci")]
+extern crate ci_thunks;
 
 // `rust_eh_personality` stub. The precompiled `core` /
 // `compiler_builtins` rlibs ship panic=unwind (we don't rebuild std on

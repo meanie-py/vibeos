@@ -27,7 +27,8 @@ extern "system" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub static mut gxcoTrivial: XCLIPOBJ = unsafe { core::mem::zeroed() };
+// The C declares this `extern`; one definition lives in bitblt.rs (the initialized trivial clip; this copy was ZEROED, so its rclBounds were empty) (scan_extern_copy).
+use crate::bitblt::gxcoTrivial;
 
 unsafe fn CalculateCoordinates(
     pbltdata: *mut BLTDATA,
@@ -360,7 +361,7 @@ pub unsafe extern "system" fn IntEngBitBlt(
     }
 
     if pco_mut.is_null() {
-        pco_mut = &gxcoTrivial as *const CLIPOBJ as *mut CLIPOBJ;
+        pco_mut = core::ptr::addr_of_mut!(gxcoTrivial) as *mut CLIPOBJ;
     }
 
     if (*pco_mut).iDComplexity != DC_TRIVIAL {
@@ -370,7 +371,7 @@ pub unsafe extern "system" fn IntEngBitBlt(
     }
 
     if (*pco_mut).iDComplexity == DC_RECT {
-        pco_mut = &gxcoTrivial as *const CLIPOBJ as *mut CLIPOBJ;
+        pco_mut = core::ptr::addr_of_mut!(gxcoTrivial) as *mut CLIPOBJ;
     }
 
     ptOffset.x = rcClipped.left - (*prclTrg).left;

@@ -447,7 +447,7 @@ pub unsafe extern "system" fn FatLookupLastMcbEntry(
     *Vbo = (LiVbo as u32) << mcb_scale_log2;
 
     if (LiLbo as u32) != u32::MAX {
-        *Lbo = ((LiLbo as u32) << mcb_scale_log2) as u64;
+        *Lbo = (LiLbo as u64) << mcb_scale_log2;
         *Lbo += (mcb_scale_modulo) as u64;
         *Vbo += mcb_scale_modulo;
     } else {
@@ -682,9 +682,11 @@ pub unsafe extern "system" fn FatVerifyVolume(
             }
 
             *BootSector_ptr = FsRtlAllocatePoolWithTag(
-                0x204 /* NonPagedPoolNxCacheAligned */,
+                // fatprocs.h: NonPagedPoolNxCacheAligned is NonPagedPoolCacheAligned (4) under
+                // __REACTOS__; 0x204 is Windows 8's NX pool type, which this kernel does not have.
+                4 /* NonPagedPoolNxCacheAligned */,
                 ROUND_TO_PAGES(SectorSize as usize) as u32,
-                0x46495346 /* TAG_VERIFY_BOOTSECTOR */,
+                0x73746146 /* TAG_VERIFY_BOOTSECTOR 'staF' */,
             ) as *mut PACKED_BOOT_SECTOR;
 
             if FatPerformVerifyDiskRead(
@@ -750,9 +752,9 @@ pub unsafe extern "system" fn FatVerifyVolume(
             RootDirectorySize = root_dir_size;
 
             *RootDirectory_ptr = FsRtlAllocatePoolWithTag(
-                0x200,
-                (((ROUND_TO_PAGES((((RootDirectorySize as usize) as u32) as u32) as usize) as u32) as usize)) as u32,
-                0x46495352 /* TAG_VERIFY_ROOTDIR */,
+                4 /* NonPagedPoolNxCacheAligned, as above */,
+                ROUND_TO_PAGES(RootDirectorySize as usize) as u32,
+                0x72746146 /* TAG_VERIFY_ROOTDIR 'rtaF' */,
             ) as *mut DIRENT;
 
             if !IsBpbFat32(&raw const (*BootSector).PackedBpb) {
@@ -11855,9 +11857,9 @@ pub unsafe extern "system" fn FatMountVolume(
     let mut PartitionInformation: PARTITION_INFORMATION_EX = core::mem::zeroed();
     let StatusPartInfo: NTSTATUS;
 
-    DebugTrace!(1, Dbg, b"FatMountVolume\n\0".as_ptr() as _, 0);
-    DebugTrace!(0, Dbg, b"TargetDeviceObject = %p\n\0".as_ptr() as _, TargetDeviceObject as ULONG_PTR);
-    DebugTrace!(0, Dbg, b"Vpb                = %p\n\0".as_ptr() as _, Vpb as ULONG_PTR);
+    DebugTrace!(1, Dbg, b"FatMountVolume\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, Dbg, b"TargetDeviceObject = %p\n\0".as_ptr() as *const i8, TargetDeviceObject as ULONG_PTR);
+    DebugTrace!(0, Dbg, b"Vpb                = %p\n\0".as_ptr() as *const i8, Vpb as ULONG_PTR);
 
     NT_ASSERT!((FlagOn(((*IrpContext).Flags) as u32, IRP_CONTEXT_FLAG_WAIT) != 0) as u32);
     NT_ASSERT!((FatDeviceIsFatFsdo(FsDeviceObject) != 0) as u32);
@@ -12017,7 +12019,7 @@ pub unsafe extern "system" fn FatMountVolume(
         });
 
         if (*p_boot_bcb).is_null() || FatIsBootSectorFat(BootSector) == 0 {
-            DebugTrace!(0, Dbg, b"Not a Fat Volume\n\0".as_ptr() as _, 0);
+            DebugTrace!(0, Dbg, b"Not a Fat Volume\n\0".as_ptr() as *const i8, 0);
             *p_status = STATUS_UNRECOGNIZED_VOLUME;
             return;
         }
@@ -12030,7 +12032,7 @@ pub unsafe extern "system" fn FatMountVolume(
             && (**p_vcb).Bpb.Sectors != 0
             && (**p_vcb).Bpb.Sectors < 0x80
         {
-            DebugTrace!(0, Dbg, b"OS/2 Boot Manager volume detected, volume not mounted. \n\0".as_ptr() as _, 0);
+            DebugTrace!(0, Dbg, b"OS/2 Boot Manager volume detected, volume not mounted. \n\0".as_ptr() as *const i8, 0);
             *p_status = STATUS_UNRECOGNIZED_VOLUME;
             return;
         }
@@ -12179,7 +12181,7 @@ pub unsafe extern "system" fn FatMountVolume(
         if (*p_do_a_remount) != 0 {
             let IrpVpb: *mut PVPB;
 
-            DebugTrace!(0, Dbg, b"Doing a remount\n\0".as_ptr() as _, 0);
+            DebugTrace!(0, Dbg, b"Doing a remount\n\0".as_ptr() as *const i8, 0);
 
             (**p_vcb).TargetDeviceObject = (**p_old_vcb).TargetDeviceObject;
             (**p_old_vcb).TargetDeviceObject = TargetDeviceObject;
@@ -12216,7 +12218,7 @@ pub unsafe extern "system" fn FatMountVolume(
                 FileSizes.FileSize.QuadPart = 0x40000 + 0x1000;
                 FileSizes.ValidDataLength = FatMaxLarge;
 
-                DebugTrace!(0, Dbg, b"Truncate and reinitialize the volume file\n\0".as_ptr() as _, 0);
+                DebugTrace!(0, Dbg, b"Truncate and reinitialize the volume file\n\0".as_ptr() as *const i8, 0);
 
                 FatInitializeCacheMap(
                     (**p_old_vcb).VirtualVolumeFile,
@@ -12241,7 +12243,7 @@ pub unsafe extern "system" fn FatMountVolume(
             return;
         }
 
-        DebugTrace!(0, Dbg, b"Mount a new volume\n\0".as_ptr() as _, 0);
+        DebugTrace!(0, Dbg, b"Mount a new volume\n\0".as_ptr() as *const i8, 0);
 
         if FatIsFat32(*p_vcb) == 0 {
             let mut TempDirent: DIRENT = core::mem::zeroed();
@@ -12316,7 +12318,7 @@ pub unsafe extern "system" fn FatMountVolume(
             SetFlag!((**p_real_device).Flags, DO_VERIFY_VOLUME);
         }
         FatReleaseGlobal(IrpContext);
-        DebugTrace!(-1, Dbg, b"FatMountVolume -> %08lx\n\0".as_ptr() as _, (*p_status) as ULONG);
+        DebugTrace!(-1, Dbg, b"FatMountVolume -> %08lx\n\0".as_ptr() as *const i8, (*p_status) as ULONG);
         {
             unsafe extern "C" {
             }
@@ -12379,7 +12381,7 @@ pub unsafe extern "system" fn FatFsdFileSystemControl(
     let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
 
-    DebugTrace!(1, Dbg, b"FatFsdFileSystemControl\n\0".as_ptr() as _, 0);
+    DebugTrace!(1, Dbg, b"FatFsdFileSystemControl\n\0".as_ptr() as *const i8, 0);
 
     //  Mount and verify come in without a file object and are allowed to block.
     let Wait: BOOLEAN = if (*IoGetCurrentIrpStackLocation(Irp)).FileObject.is_null() {
@@ -12420,7 +12422,7 @@ pub unsafe extern "system" fn FatFsdFileSystemControl(
     if TopLevel != 0 { IoSetTopLevelIrp(core::ptr::null_mut()); }
     FsRtlExitFileSystem();
 
-    DebugTrace!(-1, Dbg, b"FatFsdFileSystemControl -> %08lx\n\0".as_ptr() as _, Status);
+    DebugTrace!(-1, Dbg, b"FatFsdFileSystemControl -> %08lx\n\0".as_ptr() as *const i8, Status);
 
     Status
 }

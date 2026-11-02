@@ -28,7 +28,5 @@ macro_rules! DPRINT1 {
 
 /// Silenced: pci.c, fdo.c and pdo.c all carry `#define NDEBUG`.
 macro_rules! DPRINT {
-    ($($t:tt)*) => {
-        ()
-    };
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }

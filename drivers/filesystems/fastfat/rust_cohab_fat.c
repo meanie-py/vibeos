@@ -168,8 +168,7 @@ NTSTATUS FsRtlCheckOplockEx(POPLOCK Oplock, PIRP Irp, ULONG Flags,
  * ====================================================================== */
 
 
-/* CollectReadStats: FAT IO statistics accounting — no-op when stats disabled. */
-VOID CollectReadStats(PVCB Vcb, ULONG OpenType, ULONG BytesRead) { (void)Vcb; (void)OpenType; (void)BytesRead; }
+/* CollectReadStats -> fastfat-rust/src/stats.rs */
 
 /* FatLowLevelReadWrite: the read/write primitive — the fatprocs.h macro is simply
  * IoCallDriver(DeviceObject, Irp). (Hand-author wrongly bugcheck-stubbed it.) */

@@ -583,10 +583,10 @@ pub unsafe extern "C" fn AtaFdoPnp(
 
     INFO!(
         b"(%p, %p) Ch.%lu %s\n\0".as_ptr() as *const i8,
-        (*ChanExt).Common.Self,
+        (*ChanExt).Common.Self_,
         Irp,
         (*ChanExt).DeviceObjectNumber,
-        GetIRPMinorFunctionString(IoGetCurrentIrpStackLocation(Irp).MinorFunction),
+        GetIRPMinorFunctionString((*IoGetCurrentIrpStackLocation(Irp)).MinorFunction),
     );
 
     Status = IoAcquireRemoveLock(&mut (*ChanExt).Common.RemoveLock, (Irp).cast());

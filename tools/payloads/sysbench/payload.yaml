@@ -14,7 +14,7 @@ build_hint: "tools/payloads/sysbench/build.sh arm64 && tools/payloads/sysbench/b
 binaries:
   - src: tools/payloads/sysbench/sysbench-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/sysbench.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/sysbench.exe
   - src: tools/payloads/sysbench/sysbench-{arch}.exe
     build_arch: amd64
     dest: sysbench64.exe

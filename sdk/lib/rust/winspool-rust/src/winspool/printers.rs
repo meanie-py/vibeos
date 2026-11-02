@@ -39,7 +39,8 @@ extern "C" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub static mut hinstWinSpool: HINSTANCE = core::ptr::null_mut();
+// The C declares this `extern`; one definition lives in main.rs (scan_extern_copy).
+use crate::winspool::main::hinstWinSpool;
 
 pub type DEVICECAPABILITIES = Option<unsafe extern "system" fn(HANDLE, PWSTR, WORD, PVOID, PDEVMODEW) -> DWORD>;
 pub static mut fpDeviceCapabilities: DEVICECAPABILITIES = None;

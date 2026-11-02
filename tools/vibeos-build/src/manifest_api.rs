@@ -209,6 +209,13 @@ pub fn dispatch(root: &Path, request: &Value) -> Result<Value> {
                 &a.opt::<String>(n, "arch", String::new())?,
             )
         }
+        "media_vanished_dirs" => {
+            let n = bind!(a, "have", "want");
+            val(m::vanished_dirs(
+                &a.req::<Value>(n, "have")?,
+                &a.req::<Value>(n, "want")?,
+            )?)
+        }
         "media_render" => {
             let n = bind!(a, "m");
             val(m::render(&a.req::<Value>(n, "m")?)?)
@@ -281,7 +288,7 @@ pub fn dispatch(root: &Path, request: &Value) -> Result<Value> {
         "media_constants" => {
             a.bind(&[])?;
             Ok(
-                json!({"ARCHES":crate::ARCHES,"CDS":m::CDS,"CANON":"/tmp/vibeos","CONFIG":"Debug","CAB":m::CAB,"CAB_INF":m::CAB_INF,"PACKAGES":m::PACKAGES,"CELLS_STAMP":".cells.json","COMMITTED_ROSTESTS":["kmtests","testdata"],"_ROSTEST_SRC":r"(?:^|/)modules/rostests/([^/]+)/","REPO":root}),
+                json!({"ARCHES":crate::ARCHES,"CDS":m::CDS,"CANON":"/tmp/vibeos","CONFIG":"Debug","CAB":m::CAB,"CAB_INF":m::CAB_INF,"PACKAGES":m::PACKAGES,"STAGE_MIN":m::STAGE_MIN,"CELLS_STAMP":".cells.json","COMMITTED_ROSTESTS":["kmtests","testdata"],"_ROSTEST_SRC":r"(?:^|/)modules/rostests/([^/]+)/","REPO":root}),
             )
         }
         _ => Err(Error::new(format!("unknown manifest operation {}", a.op))),

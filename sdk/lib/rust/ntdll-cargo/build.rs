@@ -53,7 +53,8 @@ fn main() {
     // call (without it the arm64 link fails `undefined symbol: format_float`).
     // i386 (x86) omits float — its no-SSE softfloat build takes the C residual
     // format_float.c/format_floatw.c from liblibcntpr.a instead.
-    let cnt_feats: &[&str] = if arch == "x86" { &[] } else { &["float"] };
+    // i386: `ci` = the five `_CI*` thunks ntdll.spec exports (ci-thunks).
+    let cnt_feats: &[&str] = if arch == "x86" { &["ci"] } else { &["float"] };
 
     let stem = match arch.as_str() {
         "x86" => "i386",
@@ -200,15 +201,11 @@ fn main() {
     ];
     match arch.as_str() {
         "x86" => ndll_shims.extend_from_slice(&[
-            "sdk/lib/crt/math/i386/cicos.c",
-            "sdk/lib/crt/math/i386/cisin.c",
-            "sdk/lib/crt/math/i386/cisqrt.c",
-            "sdk/lib/crt/math/i386/cilog.c",
-            "sdk/lib/crt/math/i386/cipow.c",
+            // ci{cos,sin,sqrt,log,pow}.c: the `_CI*` thunks are Rust now (cnt-rust-lib `ci`).
             "sdk/lib/crt/misc/fltused.c",
         ]),
         "x86_64" => ndll_shims.extend_from_slice(&[
-            "sdk/lib/crt/except/amd64/ehandler.c",
+            // ehandler.c (__C_specific_handler/_local_unwind) is Rust now: rtl-except amd64/ehandler.rs.
             "sdk/lib/crt/misc/fltused.c",
         ]),
         // arm64: user-mode SEH / fault-delivery self-test (FEX bring-up rung 0e,

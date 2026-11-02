@@ -292,7 +292,11 @@ fn cmake_files(root: &Path) -> Result<Vec<PathBuf>> {
                 .map_err(|e| Error::new(e.to_string()))?
                 .is_dir()
             {
-                if dir == root && (name.starts_with("build-") || name.starts_with('.')) {
+                if dir == root
+                    && (name.starts_with("build-")
+                        || name.starts_with('.')
+                        || name == "cmake-off-out")
+                {
                     continue;
                 }
                 visit(root, &path, out)?;
@@ -1171,6 +1175,18 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         }
     }
     let cmake = cmake_dir.join("CMakeLists.txt");
+    let refs = target_file_refs(root)?;
+    let others: Vec<_> = refs
+        .get(target)
+        .into_iter()
+        .flatten()
+        .filter(|p| root.join(p) != cmake)
+        .collect();
+    if !others.is_empty() {
+        return Err(Error::new(format!(
+            "{target}: other CMakeLists read its file via $<TARGET_FILE...>: {others:?}"
+        )));
+    }
     let facts = cmake_facts(&cmake, target, &first.libs)?;
     let cmtext = read(&cmake)?;
     let custom = &facts["custom_body"];
@@ -1439,7 +1455,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             if common.contains(name) {
                 continue;
             }
-            let src = cmake_dir.join(name.trim_end_matches(".obj"));
+            let src = obj_source(&cmake_dir, obj);
             if !re(r"\.(c|s|S)\.obj$").is_match(name) || !src.exists() {
                 return Err(Error::new(format!(
                     "{target}: link inputs differ by arch {by_arch:?}"
@@ -1472,7 +1488,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
                 .ok_or_else(|| Error::new(format!("{target}: a .def without a spec2def()")))?;
             cell.spec = Some((rel(root, &cmake_dir.join(&cap[2]))?, cap[1].into()));
         } else if name.ends_with(".c.obj") {
-            let mut src = cmake_dir.join(name.trim_end_matches(".obj"));
+            let mut src = obj_source(&cmake_dir, obj);
             if let Some(m) = re(r"\.dir/((?:__/)+.*)\.obj$").captures(obj) {
                 src = cmake_dir.join(m[1].replace("__/", "../"));
                 cell.foreign.push(rel(root, &src)?);
@@ -1498,7 +1514,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             }
             cell.c_shims.push(rel(root, &src)?);
         } else if re(r"\.(cpp|cxx|cc)\.obj$").is_match(name) {
-            let src = cmake_dir.join(name.trim_end_matches(".obj"));
+            let src = obj_source(&cmake_dir, obj);
             if !src.exists() || !placeholder(&local(root, &src)?)? {
                 return Err(Error::new(format!("{target}: compiled C++ {name} (reactos-link compiles C and asm shims only; cflags/ has no C++ template)")));
             }
@@ -1672,5 +1688,91 @@ pub fn spec_imported_exports(path: &Path) -> Result<std::collections::BTreeSet<S
             out.insert(c[1].to_owned());
         }
     }
+    Ok(out)
+}
+
+/// Resolve the object path under its target directory, preserving source subdirectories.
+pub fn obj_source(cmake_dir: &Path, obj: &str) -> PathBuf {
+    let path = re(r"/CMakeFiles/[^/]+\.dir/(.+)\.obj$")
+        .captures(obj)
+        .map(|c| c[1].to_owned())
+        .unwrap_or_else(|| {
+            obj.rsplit('/')
+                .next()
+                .unwrap_or(obj)
+                .trim_end_matches(".obj")
+                .to_owned()
+        });
+    cmake_dir.join(path)
+}
+pub fn shim_name(root: &Path, source: &str, cell: &super::Cell) -> String {
+    let dir = cell.cmake_dir.strip_prefix(root).ok();
+    dir.and_then(|d| Path::new(source).strip_prefix(d).ok())
+        .unwrap_or_else(|| {
+            Path::new(source)
+                .file_name()
+                .map(Path::new)
+                .unwrap_or(Path::new(source))
+        })
+        .to_string_lossy()
+        .into_owned()
+}
+pub fn target_file_refs(root: &Path) -> Result<BTreeMap<String, Vec<String>>> {
+    let pattern = re(r"\$<TARGET_(?:LINKER_)?FILE(?:_DIR|_NAME)?:([A-Za-z0-9_.+-]+)>");
+    let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for path in cmake_files(root)? {
+        let text = read(&path)?;
+        for cap in pattern.captures_iter(&text) {
+            let files = out.entry(cap[1].to_owned()).or_default();
+            let relative = path
+                .strip_prefix(root)
+                .unwrap()
+                .to_string_lossy()
+                .into_owned();
+            if !files.contains(&relative) {
+                files.push(relative);
+            }
+        }
+    }
+    Ok(out)
+}
+pub fn list_vars(text: &str) -> BTreeMap<String, Vec<String>> {
+    let mut out = BTreeMap::new();
+    for (_, _, cmd, raw) in statements(text) {
+        let a = args(&raw);
+        if cmd == "set" && !a.is_empty() {
+            out.insert(a[0].clone(), a[1..].to_vec());
+        } else if cmd == "list" && a.len() > 1 && a[0] == "APPEND" {
+            out.entry(a[1].clone())
+                .or_insert_with(Vec::new)
+                .extend_from_slice(&a[2..]);
+        }
+    }
+    out
+}
+pub fn expand(items: &[String], lists: &BTreeMap<String, Vec<String>>) -> Result<Vec<String>> {
+    fn visit(
+        items: &[String],
+        lists: &BTreeMap<String, Vec<String>>,
+        stack: &mut Vec<String>,
+        out: &mut Vec<String>,
+    ) -> Result<()> {
+        for item in items {
+            let name = item.strip_prefix("${").and_then(|s| s.strip_suffix('}'));
+            if let Some((name, values)) = name.and_then(|n| lists.get(n).map(|v| (n, v))) {
+                if stack.iter().any(|s| s == name) || stack.len() >= 128 {
+                    return Err(Error::new(format!("recursive CMake list variable: {name}")));
+                }
+                stack.push(name.to_owned());
+                visit(values, lists, stack, out)?;
+                stack.pop();
+            } else {
+                out.push(item.clone());
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    visit(items, lists, &mut Vec::new(), &mut out)?;
     Ok(out)
 }

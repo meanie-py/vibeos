@@ -11,7 +11,7 @@ build_hint: "tools/payloads/wakeprobe/build.sh {arch}"
 binaries:
   - src: tools/payloads/wakeprobe/wakeprobe-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/wakeprobe.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/wakeprobe.exe
 
 test:
   launch_marker: "[WAKEPROBE] done"

@@ -15,11 +15,15 @@ pub mod hresult_literals;
 pub mod info_class_literals;
 pub mod init_then_move;
 pub mod let_shadow;
+pub mod sizeof_pointer;
+pub mod extern_copy;
 pub mod list_walk_from_head;
 pub mod misaligned_cast;
 pub mod read_after_clear;
 pub mod shadowed_c_define;
 pub mod move_vs_nonoverlapping;
+pub mod assert_negated_vs_c;
+pub mod devobj_as_extension;
 pub mod variadic_array_arg;
 
 pub mod assert_to_ub;
@@ -30,6 +34,7 @@ pub mod byte_step_one;
 pub mod variant_outptr;
 pub mod byteptr_stride;
 pub mod inert_crate_allow;
+pub mod swallowing_debug_macro;
 pub mod calloc_elem_type;
 pub mod cdecl_alias;
 pub mod containing_record_null;
@@ -227,6 +232,8 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(safe_probe_deref::SafeProbeDeref),
         Box::new(shadowed_c_define::ShadowedCDefine),
         Box::new(move_vs_nonoverlapping::MoveVsNonoverlapping),
+        Box::new(assert_negated_vs_c::AssertNegatedVsC),
+        Box::new(devobj_as_extension::DevobjAsExtension),
         Box::new(store_on_failure::StoreOnFailure),
         Box::new(dropped_null_guard::DroppedNullGuard),
         Box::new(ptr_byte_diff::PtrByteDiff),
@@ -254,6 +261,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(gmem_flags::GmemFlags),
         Box::new(byteptr_stride::ByteptrStride),
         Box::new(inert_crate_allow::InertCrateAllow),
+        Box::new(swallowing_debug_macro::SwallowingDebugMacro),
         Box::new(noop_goto::NoopGoto),
         Box::new(cdecl_alias::CdeclAlias),
         Box::new(narrow_vs_wide_literal::NarrowVsWideLiteral),
@@ -267,6 +275,8 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(dowhile_continue::DowhileContinue),
         Box::new(variadic_array_arg::VariadicArrayArg),
         Box::new(let_shadow::LetShadow),
+        Box::new(sizeof_pointer::SizeofPointer),
+        Box::new(extern_copy::ExternCopy),
         Box::new(double_fetch::DoubleFetch),
         Box::new(hresult_literals::HresultLiterals),
         Box::new(init_then_move::InitThenMove),
