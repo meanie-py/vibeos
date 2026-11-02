@@ -107,6 +107,29 @@ def derive_cab(arch: str, build: Path, ninja: str, cells: set[str]) -> dict:
     }
 
 
+#: A destination directory this full in the committed manifest is a staged set (SysWOW64,
+#: winsxs, the FEX guests), not a module: all of it vanishing means the build lacks the stage.
+STAGE_MIN = 10
+
+
+def vanished_dirs(have: dict, want: dict) -> list[str]:
+    """Destination directories (two levels deep) that `have` fills with at least STAGE_MIN
+    entries and `want` leaves empty. On 2026-11-02 a headers-only amd64 configure made
+    --write drop 213 SysWOW64/winsxs/FEX lines from boot/media/amd64.json without a word."""
+
+    def dirs(m: dict) -> dict[str, int]:
+        n: dict[str, int] = {}
+        for c in m["cds"].values():
+            for dest, _src in c.get("entries", []):
+                parts = (dest or "").split("/")
+                if len(parts) > 2:
+                    n["/".join(parts[:2])] = n.get("/".join(parts[:2]), 0) + 1
+        return n
+
+    h, w = dirs(have), dirs(want)
+    return sorted(d for d, k in h.items() if k >= STAGE_MIN and d not in w)
+
+
 def derive(arch: str, repo: Path = REPO) -> dict:
     build = repo / f"build-{arch}"
     ninja = (build / "build.ninja").read_text()
@@ -372,6 +395,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--cd", choices=CDS, default="livecd")
     ap.add_argument("--out", type=Path)
     ap.add_argument("--cells", type=Path)
+    ap.add_argument(
+        "--allow-drop",
+        action="store_true",
+        help="--write even when a whole destination directory disappears",
+    )
     args = ap.parse_args(argv)
     if args.assemble:
         if not args.out or not args.arch or len(args.arch) != 1:
@@ -401,6 +429,14 @@ def main(argv: list[str] | None = None) -> int:
         text = render(want)
         path = manifest_path(arch)
         if args.write:
+            gone = vanished_dirs(load(arch), want) if path.exists() else []
+            if gone and not args.allow_drop:
+                raise MediaError(
+                    f"{path.relative_to(REPO)}: build-{arch} carries nothing under "
+                    f"{', '.join(gone)}, which the committed manifest fills; a build configured "
+                    "without that stage (amd64's SysWOW64 needs build-i386 first) would write a "
+                    "smaller manifest. Build the stage, or pass --allow-drop if it is removed."
+                )
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
             print(f"wrote {path.relative_to(REPO)}")
