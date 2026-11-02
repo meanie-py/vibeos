@@ -716,6 +716,11 @@ def _conformance_once(args, repo: Path) -> int:
         return 2
     serial_text = read_serial(log_path)
     results, done_line, bugcheck = parser.parse(serial_text)
+    from . import triage as _triage_ka
+
+    # A failed ntoskrnl assertion now prints and continues instead of bugchecking, so the
+    # sweep completes; without this the round would read clean where it used to read A:bugcheck.
+    kernel_asserts = _triage_ka.kernel_asserts(serial_text)
 
     lines = [parser.fmt(r) for r in results]
     ok = sum(1 for r in results if r["status"] == "OK")
@@ -890,6 +895,7 @@ def _conformance_once(args, repo: Path) -> int:
         "bad": bad,
         "sweep_done": done_line,
         "bugcheck": bugcheck,
+        "kernel_asserts": kernel_asserts,
         "sweep_rc": sweep_rc,
         "elapsed_s": round(elapsed, 1),
         "have_baseline": have_baseline,
@@ -1011,6 +1017,13 @@ def _conformance_once(args, repo: Path) -> int:
         return 0
     if new_passes:
         print(f"  NEW PASSES ({len(new_passes)}): {', '.join(new_passes)}")
+    if kernel_asserts:
+        print(f"  KERNEL ASSERTIONS FAILED ({len(kernel_asserts)}):")
+        for line in kernel_asserts[:8]:
+            print(f"    {line}")
+        if args.gate:
+            print("  === CONFORMANCE GATE RED (a kernel assertion that used to bugcheck) ===")
+            return 1
     if regressions:
         print(f"  RATCHET REGRESSIONS ({len(regressions)}):")
         for reg in regressions:
@@ -1037,6 +1050,11 @@ def round_shape(bugcheck, results: list, done_line, regressions: list, serial_te
     guest_serial = any(ln.strip() and not ln.startswith("#") for ln in serial_text.splitlines())
     if bugcheck:
         return f"A:bugcheck {bugcheck}"
+    from . import triage as _triage_ka
+
+    if _triage_ka.kernel_asserts(serial_text):
+        # What an ntoskrnl ASSERT failure was until it stopped bugchecking: same family.
+        return "A:kernel-assert"
     if not guest_serial:
         return "L:no-guest-serial"
     if not results:

@@ -10656,7 +10656,10 @@ halt where the C's DBG `ASSERT` prints and continues. It now reports through `Rt
 `cfg!(debug_assertions)`-gated, evaluated in the calling crate). ntoskrnl-rust's own `ASSERT!` was the
 same `debug_assert!` and followed on 2026-11-02, after kmtest's ZwMapViewOfSection guard-page
 view bugchecked on pagfault.rs's `ASSERT(ProtoPte == NULL)`, which the C prints and then handles
-as a guard-page violation. Its first two fires were real
+as a guard-page violation. A printed ntoskrnl assert must not boot green, so the harness keeps
+the old verdict: smoke classifies `*** ASSERT FAILED: ... at ntoskrnl-rust/` as `KERNEL_ASSERT`,
+a payload that passes with one fails its stage, and conformance files the round `A:kernel-assert`
+and turns `--gate` red (`triage.kernel_asserts`). Its first two fires were real
 bugs: fastfat's `FatNoOpAcquire` set top-level IRP 1 for the C's `FSRTL_CACHE_TOP_LEVEL_IRP`
 (2), and an empty `DbgDoit!` dropped the increment a `cfg(debug_assertions)` decrement paired.
 Triage tip: the i386 HAL loads as `halmp.dll` under the harness label `hal.dll`, and its panic
