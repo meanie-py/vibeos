@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from . import buildbench
 
 REPO = Path(__file__).resolve().parents[3]
@@ -207,7 +209,8 @@ def test_worker_receipt_preserves_signal_and_launch_errors(tmp_path):
     )
     assert proc.returncode == 127
     assert json.loads(missing.read_text())["exit_code"] == 127
-    assert "build-bench-launch-error" in proc.stderr
+    assert "missing-executable" in proc.stderr
+    assert "launch_error" in json.loads(missing.read_text())
 
 
 def test_child_status_and_missing_summary_refusals(tmp_path):
@@ -317,3 +320,164 @@ def test_facade_routes_args_and_inherited_descriptors(tmp_path, monkeypatch):
         "--output",
         str(tmp_path / "r.json"),
     ]
+
+
+def _fixture_alive(identity):
+    try:
+        fields = Path(f"/proc/{identity['pid']}/stat").read_text().rsplit(")", 1)[1].split()
+        return fields[19] == identity["start_ticks"] and fields[0] not in ("Z", "X")
+    except FileNotFoundError:
+        return False
+
+
+_SLEEP_CHILD = """import os,sys,json,time,signal
+if sys.argv[2]=='stubborn': signal.signal(signal.SIGTERM,signal.SIG_IGN)
+identity={'pid':os.getpid(),'start_ticks':open('/proc/self/stat').read().rsplit(')',1)[1].split()[19]}
+open(sys.argv[1],'w').write(json.dumps(identity))
+time.sleep(60)
+"""
+
+
+def _child_family(pidfile, stubborn, kill_runner):
+    program = """import os,subprocess,sys,time,signal
+p=subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2],sys.argv[3]])
+while not os.path.exists(sys.argv[2]): time.sleep(.01)
+if sys.argv[4]=='kill': os.kill(os.getppid(),signal.SIGKILL)
+p.wait()
+"""
+    return [
+        sys.executable,
+        "-c",
+        program,
+        _SLEEP_CHILD,
+        str(pidfile),
+        "stubborn" if stubborn else "normal",
+        "kill" if kill_runner else "wait",
+    ]
+
+
+@pytest.mark.parametrize("stubborn", [False, True])
+def test_killed_runner_cannot_leave_a_grandchild_alive(tmp_path, stubborn):
+    import os
+    import signal
+
+    pidfile = tmp_path / "grandchild.json"
+    identity = None
+    try:
+        row = buildbench._run_child(
+            "runner-loss",
+            _child_family(pidfile, stubborn, True),
+            tmp_path,
+            tmp_path / "runner-loss.log",
+        )
+        identity = json.loads(pidfile.read_text())
+        assert row["exit_code"] == 1 and row["worker_exit_code"] == -9
+        assert not _fixture_alive(identity)
+    finally:
+        if identity and _fixture_alive(identity):
+            os.kill(identity["pid"], signal.SIGKILL)
+
+
+def test_controller_sigkill_stops_a_stubborn_grandchild(tmp_path):
+    import os
+    import signal
+    import time
+
+    pidfile = tmp_path / "grandchild.json"
+    process = subprocess.Popen(
+        [
+            str(TOOL),
+            "build-bench-worker",
+            str(tmp_path / "receipt"),
+            *_child_family(pidfile, True, False),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    identity = None
+    try:
+        deadline = time.monotonic() + 10
+        while not pidfile.exists() and time.monotonic() < deadline:
+            assert process.poll() is None
+            time.sleep(0.01)
+        identity = json.loads(pidfile.read_text())
+        process.kill()
+        process.wait(timeout=5)
+        deadline = time.monotonic() + 8
+        while _fixture_alive(identity) and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert not _fixture_alive(identity)
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5)
+        if identity and _fixture_alive(identity):
+            os.kill(identity["pid"], signal.SIGKILL)
+
+
+@pytest.mark.parametrize("code", [0, 7])
+def test_detached_cache_service_keeps_its_separate_lifetime(tmp_path, code):
+    import os
+    import signal
+
+    pidfile = tmp_path / "service.json"
+    program = """import os,sys,time,json
+from pathlib import Path
+pid=os.fork()
+if pid==0:
+ os.setsid()
+ null=os.open(os.devnull,os.O_RDWR)
+ for fd in (0,1,2): os.dup2(null,fd)
+ identity={'pid':os.getpid(),'start_ticks':open('/proc/self/stat').read().rsplit(')',1)[1].split()[19]}
+ open(sys.argv[1],'w').write(json.dumps(identity))
+ time.sleep(60)
+ os._exit(0)
+while not os.path.exists(sys.argv[1]): time.sleep(.01)
+root=Path(os.environ['VIBEOS_ARTIFACT_ROOT'])/'run'
+root.mkdir(parents=True)
+(root/'summary.json').write_text('{"verdict":"OK"}')
+sys.exit(int(sys.argv[2]))
+"""
+    identity = None
+    try:
+        row = buildbench._run_child(
+            "service",
+            [sys.executable, "-c", program, str(pidfile), str(code)],
+            tmp_path,
+            tmp_path / "service.log",
+        )
+        identity = json.loads(pidfile.read_text())
+        assert row["exit_code"] == code and _fixture_alive(identity)
+    finally:
+        if identity and _fixture_alive(identity):
+            os.kill(identity["pid"], signal.SIGKILL)
+
+
+def test_worker_forwards_child_options_and_closes_private_receipt_fd(tmp_path):
+    receipt = tmp_path / "receipt.json"
+    program = """import os,sys
+assert sys.argv[1:]==['--root','child-value','--client-pid','child-token']
+for fd in os.listdir('/proc/self/fd'):
+ try: path=os.readlink('/proc/self/fd/'+fd)
+ except FileNotFoundError: continue
+ assert path != os.environ['PRIVATE_RECEIPT_PATH'], (fd,path)
+"""
+    result = subprocess.run(
+        [
+            str(TOOL),
+            "build-bench-worker",
+            str(receipt),
+            sys.executable,
+            "-c",
+            program,
+            "--root",
+            "child-value",
+            "--client-pid",
+            "child-token",
+        ],
+        env=dict(os.environ, PRIVATE_RECEIPT_PATH=str(receipt)),
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(receipt.read_text()) == {"exit_code": 0}

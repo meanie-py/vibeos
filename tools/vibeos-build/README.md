@@ -171,3 +171,12 @@ activation/pause orchestration; `hostlock.py` retains legacy/QEMU admission adap
 `cachecfg.py` contains DTO/presentation only, `hostjobs.py` delegates provisioning and
 environment/status mechanisms, and `buildbench.py` delegates trial execution/sampling.
 Those control-plane adapters remain for the CLI/QEMU phases of the tooling migration.
+
+Dedicated command workers now keep a private runner session behind a controller. The
+controller observes exit with `waitid(..., WNOWAIT)`, so the runner's PID remains reserved
+until its group has stopped. Killing a runner cannot strand its ordinary grandchildren;
+stubborn groups escalate from TERM to KILL. Detached services keep their own sessions
+and are preserved, including on command failure. Receipt descriptors close before compiler
+exec, worker argv is forwarded literally, and launch diagnostics travel in structured
+receipts. Cache discovery uses the caller's execute permission rather than merely finding
+any execute bit on the file.

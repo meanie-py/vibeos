@@ -429,28 +429,10 @@ pub fn worker_cli(argv: &[String]) -> Result<u8> {
     let receipt = Path::new(&argv[0]);
     let mut file = OpenOptions::new()
         .write(true)
+        .read(true)
         .create_new(true)
         .open(receipt)?;
-    let code =
-        match crate::artifact_executor::supervised_code(Command::new(&argv[1]).args(&argv[2..])) {
-            Ok(code) => code,
-            Err(e)
-                if e.message.contains("No such file or directory")
-                    || e.message.contains("Permission denied") =>
-            {
-                eprintln!("[build-bench-launch-error] {e}");
-                127
-            }
-            Err(e) => return Err(e),
-        };
-    serde_json::to_writer(&mut file, &json!({"exit_code":code}))?;
-    file.write_all(b"\n")?;
-    file.sync_all()?;
-    Ok(if code < 0 {
-        (128 - code).min(255) as u8
-    } else {
-        code.min(255) as u8
-    })
+    crate::process_guard::controller(&argv[1..], &mut file)
 }
 fn error_row(
     spec: &ChildSpec,
@@ -520,11 +502,26 @@ fn run_child(root: &Path, spec: &ChildSpec, log: &Path, pids: Arc<Mutex<BTreeSet
         let worker_code = status
             .code()
             .unwrap_or_else(|| -status.signal().unwrap_or(1));
-        let receipt_code = crate::artifact_fs::verified_read(&receipt, "benchmark worker receipt")
+        let receipt_value = crate::artifact_fs::verified_read(&receipt, "benchmark worker receipt")
             .ok()
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+        let receipt_code = receipt_value
+            .as_ref()
             .and_then(|value| value["exit_code"].as_i64())
             .and_then(|value| i32::try_from(value).ok());
+        let reported_worker = receipt_value
+            .as_ref()
+            .filter(|value| value["child_status_unknown"] == true)
+            .and_then(|value| value["worker_exit_code"].as_i64())
+            .and_then(|n| i32::try_from(n).ok())
+            .filter(|&code| {
+                (if code < 0 {
+                    (128_i64 - i64::from(code)).min(255) as i32
+                } else {
+                    code.min(255)
+                }) == worker_code
+            })
+            .unwrap_or(worker_code);
         let valid_code = receipt_code.filter(|&code| {
             let expected = if code < 0 {
                 (128_i64 - i64::from(code)).min(255) as i32
@@ -574,15 +571,11 @@ fn run_child(root: &Path, spec: &ChildSpec, log: &Path, pids: Arc<Mutex<BTreeSet
             row["artifact_error"] = json!(e);
         }
         if valid_code.is_none() {
-            row["worker_exit_code"] = json!(worker_code);
+            row["worker_exit_code"] = json!(reported_worker);
         }
         if code == 127 {
-            let text = fs::read_to_string(log)?;
-            if let Some(message) = text
-                .lines()
-                .find_map(|line| line.strip_prefix("[build-bench-launch-error] "))
-            {
-                row["launch_error"] = json!(message);
+            if let Some(message) = receipt_value.as_ref().and_then(|v| v.get("launch_error")) {
+                row["launch_error"] = message.clone();
             }
         }
         Ok(row)

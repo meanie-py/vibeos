@@ -233,3 +233,24 @@ def test_stale_worktrees_do_not_block_the_cutover(trial, monkeypatch):
     monkeypatch.setattr(buildpolicy.os, "cpu_count", lambda: 24)
     buildpolicy.activate(trial, trial)
     assert buildpolicy.read(trial) == buildpolicy.TRIAL
+
+
+def test_native_cache_discovery_uses_callers_execute_permission(tmp_path):
+    import os
+    import shutil
+
+    from tools import build_infra_compat as native
+
+    tool = tmp_path / "ccache"
+    tool.write_text("#!/bin/sh\nexit 0\n")
+    # An execute bit for another permission class is insufficient for this owner.
+    tool.chmod(0o010)
+    plan = native.call(
+        "build_policy_cache_make", {"repo": tmp_path, "environment": {"PATH": str(tmp_path)}}
+    )
+    assert plan["ccache_bin"] == shutil.which("ccache", path=str(tmp_path))
+    tool.chmod(0o700)
+    plan = native.call(
+        "build_policy_cache_make", {"repo": tmp_path, "environment": {"PATH": str(tmp_path)}}
+    )
+    assert plan["ccache_bin"] == str(tool) and os.access(tool, os.X_OK)

@@ -170,8 +170,8 @@ pub fn fleet_root(repo: &Path, env: &Environment) -> Result<PathBuf> {
     };
     Ok(lane.parent().unwrap_or(&lane).to_owned())
 }
-fn which(name: &str, env: &Environment) -> Option<String> {
-    use std::os::unix::fs::PermissionsExt;
+fn which(name: &str, env: &Environment) -> Result<Option<String>> {
+    use std::os::unix::ffi::OsStrExt;
     let path = env
         .get("PATH")
         .cloned()
@@ -182,13 +182,15 @@ fn which(name: &str, env: &Environment) -> Option<String> {
         } else {
             dir.join(name)
         };
-        if fs::metadata(&candidate)
-            .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        let name = std::ffi::CString::new(candidate.as_os_str().as_bytes())
+            .map_err(|_| Error::new("cache executable path contains NUL"))?;
+        if fs::metadata(&candidate).is_ok_and(|m| m.is_file())
+            && unsafe { libc::access(name.as_ptr(), libc::X_OK) } == 0
         {
-            return Some(candidate.to_string_lossy().into_owned());
+            return Ok(Some(candidate.to_string_lossy().into_owned()));
         }
     }
-    None
+    Ok(None)
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CacheEnv {
@@ -204,8 +206,8 @@ pub fn cache_make(repo: &Path, env: &Environment) -> Result<CacheEnv> {
         ccache_dir: root.join("ccache"),
         sccache_dir: root.join("sccache"),
         root,
-        ccache_bin: which("ccache", env),
-        sccache_bin: which("sccache", env),
+        ccache_bin: which("ccache", env)?,
+        sccache_bin: which("sccache", env)?,
     })
 }
 pub fn cache_environment(cache: &CacheEnv) -> Environment {

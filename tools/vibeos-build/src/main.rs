@@ -210,7 +210,13 @@ fn run() -> Result<u8> {
             }
             s if command.is_none() && !s.starts_with('-') => {
                 command = Some(a.clone());
-                if a == "link-guard" {
+                if matches!(
+                    a.as_str(),
+                    "link-guard"
+                        | "owned-command-fd"
+                        | "cargo-orchestrate-worker"
+                        | "build-bench-worker"
+                ) {
                     rest.extend(args);
                     break;
                 }
@@ -277,6 +283,9 @@ fn run() -> Result<u8> {
             return Err("native media owner exited before startup".into());
         }
         b::artifact_lifetime::watch_owner(parent)?;
+    }
+    if command == "owned-command-fd" {
+        return b::process_guard::runner(&rest);
     }
     if command == "build-bench" {
         return b::build_bench::cli(&root, &rest);

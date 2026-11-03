@@ -2175,9 +2175,7 @@ pub fn worker_cli(argv: &[String]) -> Result<u8> {
         return Err(Error::new("cargo orchestrator worker lost its parent"));
     }
     crate::artifact_lifetime::watch_owner(parent)?;
-    crate::artifact_executor::supervised_status(
-        std::process::Command::new(&argv[0]).args(&argv[1..]),
-    )
+    crate::process_guard::controller(argv, &mut tempfile::tempfile()?)
 }
 
 #[cfg(test)]
