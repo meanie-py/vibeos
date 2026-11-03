@@ -224,6 +224,14 @@ pub fn implementation_identity() -> Result<Value> {
     use sha2::{Digest, Sha256};
     let sources = [
         (
+            "tools/host-jobs/src/build_policy.rs",
+            include_bytes!("../../host-jobs/src/build_policy.rs").as_slice(),
+        ),
+        (
+            "tools/vibeos-build/src/build_policy.rs",
+            include_bytes!("build_policy.rs").as_slice(),
+        ),
+        (
             "tools/vibeos-build/src/artifact_store.rs",
             include_bytes!("artifact_store.rs").as_slice(),
         ),

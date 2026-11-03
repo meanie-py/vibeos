@@ -7,7 +7,7 @@ use std::{
     process::{Command, ExitCode},
 };
 use vibeos_build::{self as b, Error, Result};
-const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  cargo-orchestrate --arch ARCH [--manifest] [--list] [--dry-run] [TARGET...]\n  ramdisk-tree LIST... --out DIR [--canon FROM TO]\n  strip-cd-media --lst FILE --out FILE --cache DIR --objcopy TOOL\n  artifact-executor [--repo DIR --store DIR --toolchain DIR --body NAME --output DIR]\n  artifact-runtime request|repair --supervisor FILE [OPTIONS]\n  artifact-economics INVENTORY REPO OUTPUT [--eligibility-top N --scratch DIR] [--cargo PATH]\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR] [--allow-drop]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads one request; --api-jsonl serves newline-delimited requests until EOF. Inspect/check modes never write.\n";
+const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  build-bench --arches ARCH... [--clean] [--repeat N] [--output FILE]\n  cargo-orchestrate --arch ARCH [--manifest] [--list] [--dry-run] [TARGET...]\n  ramdisk-tree LIST... --out DIR [--canon FROM TO]\n  strip-cd-media --lst FILE --out FILE --cache DIR --objcopy TOOL\n  artifact-executor [--repo DIR --store DIR --toolchain DIR --body NAME --output DIR]\n  artifact-runtime request|repair --supervisor FILE [OPTIONS]\n  artifact-economics INVENTORY REPO OUTPUT [--eligibility-top N --scratch DIR] [--cargo PATH]\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR] [--allow-drop]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads one request; --api-jsonl serves newline-delimited requests until EOF. Inspect/check modes never write.\n";
 fn atomic(path: &Path, bytes: &[u8], serial: usize) -> Result<()> {
     if path.is_symlink() {
         return Err(Error::new(format!(
@@ -102,6 +102,8 @@ fn api(root: &Path, r: &Value) -> Result<Value> {
             b::manifest_api::dispatch(root, r)
         }
         s if s.starts_with("artifact_") => b::artifact_api::dispatch(root, r),
+        s if s.starts_with("build_bench_") => b::build_bench::dispatch(root, r),
+        s if s.starts_with("build_policy_") => b::build_policy::dispatch(r),
         s if s.starts_with("stage_") => b::media_stage::api(r),
         s if s.starts_with("sdk_") => b::sdk_api::dispatch(root, r),
         s if s.starts_with("ninja_") || s.starts_with("link_") => b::helper_api::dispatch(root, r),
@@ -268,13 +270,19 @@ fn run() -> Result<u8> {
     let command = command.ok_or("missing build command (use --help)")?;
     if matches!(
         command.as_str(),
-        "ramdisk-tree" | "strip-cd-media" | "cargo-orchestrate"
+        "ramdisk-tree" | "strip-cd-media" | "cargo-orchestrate" | "build-bench"
     ) {
         let parent = unsafe { libc::getppid() } as u32;
         if parent < 2 {
             return Err("native media owner exited before startup".into());
         }
         b::artifact_lifetime::watch_owner(parent)?;
+    }
+    if command == "build-bench" {
+        return b::build_bench::cli(&root, &rest);
+    }
+    if command == "build-bench-worker" {
+        return b::build_bench::worker_cli(&rest);
     }
     if command == "cargo-orchestrate" {
         return b::cargo_orchestrate::cli(&root, &rest);

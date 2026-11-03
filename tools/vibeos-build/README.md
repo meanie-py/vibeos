@@ -20,6 +20,7 @@ with output/refusal fixtures. Existing Python modules are compatibility adapters
 | `cell-manifest --write\|--check [--arch ARCH]` | Discover and serialize Cargo cells | `cell_manifest.py` |
 | `media-manifest --write\|--check [--arch ARCH]` | Discover and serialize CD/CAB recipes | `media_manifest.py` |
 | `sdk-recipe --write\|--check [--arch ARCH]` | Capture/factor SDK and host-tool recipes from Ninja | `sdk_recipe.py` |
+| `build-bench --arches ARCH... [--clean] [--repeat N] [--output FILE]` | Run the build/lint trial graph with durable child receipts and independent resource samples | `tests/qemu/cli/buildbench.py` |
 | `cargo-orchestrate --arch ARCH [--manifest] [--list] [--dry-run] [TARGET...]` | Plan Cargo cells, reuse SDK inputs, supervise producers and post-link/copy declared outputs | `cargo_orchestrate.py` |
 | `strip-cd-media --lst FILE --out FILE --cache DIR --objcopy TOOL` | Strip media copies and publish checked PE checksums; `--file FILE` selects single-file mode | `strip_cd_media.py` |
 | `ramdisk-tree LIST... --out DIR [--canon FROM TO]` | Validate and stage the case-folded ramdisk graft tree | `ramdisk_tree.py` |
@@ -110,7 +111,7 @@ metadata. Missing isolation or lifetime support fails the operation.
 Private Rust `RunHost`/`RuntimeHost` test implementations replace Python algorithm monkeypatches;
 production APIs have no fault-injection switches. See the
 [coverage mapping](../../docs/engineering/artifact-native-test-coverage.md) for preserved
-failure controls and real-process tests. Build-policy extraction and rollout remain for batch 6 of
+failure controls and real-process tests. Build-policy extraction is implemented; rollout measurements remain tracked in
 [the migration plan](../../docs/engineering/build-infra-rust-plan.md).
 
 Media stripping and ramdisk tree staging run directly from CMake and `mkramdisk.sh`.
@@ -140,3 +141,33 @@ Frozen Python planning/header controls and real producer/cancellation tests live
 `tools/test_strip_cd_media.py` include real LLVM stripping of all three PE architectures,
 cache content/policy changes, producer failure and atomic-output refusal; the ramdisk
 suite retains overlay/collision controls and checks destination/alias protection.
+
+Build policy planning now lives in `build_policy.rs`. Capacity validation and arithmetic
+are shared from `tools/host-jobs/src/build_policy.rs`; that broker remains the single
+admission authority. No capacity, memory, priority, cache-size or Cargo fanout defaults
+change in this port. Invalid or unrepresentable capacity fails closed. The launcher,
+Python transport and linter fingerprints include the shared policy source.
+
+Native plans select fleet cache roots, preserve wrapper chaining and parent ownership,
+construct cache/build/broker environments, parse cache counters, select Ninja limits,
+read CMake settings and avoid redundant storage reconfiguration. The 114-case frozen
+Python oracle is in `tests/fixtures/build-policy-python.json`. Parent environment and
+CPU observations cross the adapter explicitly; long-lived metadata helpers do not
+retain inherited build permits. Broker provisioning captures compiler output separately
+from JSON protocol replies and preserves the existing source stamp and flock.
+
+The native benchmark uses the same `vibeos-cli build` and lint entry points as normal
+work. It refuses dirty source, duplicate outputs, missing/failed child summaries, absent
+media and arm64 boot files, OOM counter increases, and changed source or capacity during
+measurement. Workers preserve raw signal status in separate owned receipts and stream
+live logs. Samples include host meminfo/vmstat/PSI, available cgroup counters and summed
+RSS of the sampled child process trees; shared pages can count in several processes and
+short peaks between samples can be missed. Host availability includes unrelated work.
+These are observations with their method, not a claimed speedup or a private memory cap.
+
+Python retains argument routing, Run/Stage rendering and the existing build control
+flow. `buildpolicy.py` retains actual policy-lock lifetimes, heal/mirror and drained
+activation/pause orchestration; `hostlock.py` retains legacy/QEMU admission adapters.
+`cachecfg.py` contains DTO/presentation only, `hostjobs.py` delegates provisioning and
+environment/status mechanisms, and `buildbench.py` delegates trial execution/sampling.
+Those control-plane adapters remain for the CLI/QEMU phases of the tooling migration.

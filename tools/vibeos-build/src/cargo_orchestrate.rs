@@ -1517,7 +1517,17 @@ pub fn ensure_host_jobs(root: &Path) -> Result<PathBuf> {
         ];
         let mut cmd = cargo_worker_command(root, &argv)?;
         cmd.current_dir(root).env_remove("RUSTUP_TOOLCHAIN");
-        checked(&mut cmd)?;
+        // This path is also called through JSONL: tool output belongs in diagnostics,
+        // never on the protocol stream. The worker still owns cancellation/descendants.
+        let output = cmd.output()?;
+        if !output.status.success() {
+            return Err(Error::new(format!(
+                "host-jobs bootstrap failed ({}): {}{}",
+                output.status,
+                String::from_utf8_lossy(&output.stderr),
+                String::from_utf8_lossy(&output.stdout)
+            )));
+        }
         fs::rename(&temp, &target)?;
         fs::write(stamp, digest)?;
         Ok(())

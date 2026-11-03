@@ -1,5 +1,7 @@
 //! Process-scoped compiler admission. Locks, not PID existence, are authoritative.
 mod admission;
+#[allow(dead_code)]
+mod build_policy;
 mod cache_memory;
 mod memory;
 mod profiles;
@@ -175,11 +177,7 @@ fn inherit(fd: RawFd) -> io::Result<()> {
 }
 fn positive(key: &str, default: usize) -> io::Result<usize> {
     match env::var(key) {
-        Ok(s) => s
-            .parse::<usize>()
-            .ok()
-            .filter(|n| *n > 0)
-            .ok_or_else(|| io::Error::other(format!("{key} must be positive"))),
+        Ok(s) => build_policy::positive(key, &s).map_err(io::Error::other),
         Err(env::VarError::NotPresent) => Ok(default),
         Err(e) => Err(io::Error::other(e)),
     }

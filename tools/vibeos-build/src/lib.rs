@@ -131,3 +131,7 @@ pub mod artifact_execution_api;
 pub mod media_stage;
 
 pub mod cargo_orchestrate;
+
+pub mod build_policy;
+
+pub mod build_bench;

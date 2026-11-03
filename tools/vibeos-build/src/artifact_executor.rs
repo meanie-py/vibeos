@@ -1331,7 +1331,7 @@ fn capture_command(
     })
 }
 /// Supervise one producer with inherited stdout/stderr, preserving live logs without buffering.
-pub fn supervised_status(command: &mut Command) -> Result<u8> {
+pub fn supervised_code(command: &mut Command) -> Result<i32> {
     let _signals = SignalGuard::install()?;
     crate::artifact_lifetime::watch_owner(unsafe { libc::getppid() } as u32)?;
     let mut child = OwnedWorker::spawn_command(command, Stdio::inherit(), Stdio::inherit())?;
@@ -1348,7 +1348,11 @@ pub fn supervised_status(command: &mut Command) -> Result<u8> {
         child.signal_group(libc::SIGTERM);
     }
     child.stop()?;
-    let code = operation?;
+    operation
+}
+/// CLI exit code for the same streaming producer boundary.
+pub fn supervised_status(command: &mut Command) -> Result<u8> {
+    let code = supervised_code(command)?;
     Ok(if code < 0 {
         (128 - code).min(255) as u8
     } else {
