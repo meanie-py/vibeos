@@ -92,10 +92,12 @@ after, and the live policy file retained the SHA-256 above.
 | Kernel OOM-kill delta | 0 | 0 |
 | Samples at nominal 200 ms | 12,653 | 5,942 |
 
-The refill produced 314 i386, 341 amd64 and 342 arm64 bodies; its AMD64 restage
-produced none. The reuse repeat produced no bodies: i386 and arm64 made no artifact
-requests, while each AMD64 build/restage recorded 886 hits and seven explicitly
-ineligible requests. Thus reuse still includes wrapper, link and staging work. Reducing
+The artifact store recorded 314 i386, 341 amd64 and 342 arm64 producer calls during
+refill; its AMD64 restage recorded none. The reuse repeat recorded no artifact-store
+producer calls: i386 and arm64 made no artifact requests, while each AMD64 build/restage
+recorded 886 hits and seven explicitly ineligible requests. Those ineligible requests
+retain the existing build path; zero store producers does not prove zero compilation
+outside the store. Reuse also includes wrapper, link and staging work. Reducing
 that AMD64 churn is a measured follow-up, not a claimed improvement in this migration.
 These repeats have different cache histories; their timings are not an old-versus-new
 implementation comparison. Other lanes were active; source and tooling gates also ran
