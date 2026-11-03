@@ -18,6 +18,7 @@
 # The two that drifted are stamped inline (IoFilesystem, MmMapLockedPagesSpecifyCache)
 # — a note that records stop code + mechanism survives; one that records a symbol
 # offset or a source line does not.
+CcZeroData
 CmSecurity
 ExCallback
 ExDoubleList
