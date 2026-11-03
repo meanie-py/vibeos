@@ -57,7 +57,7 @@ translation was edited or regenerated.
 The cache/job/environment plans also match 114 frozen Python cases from revision
 `781252da0f4d2e8513efa428b594d9d51c486cae`.
 
-## Hardening and remaining measurements
+## Hardened warm-output trials
 
 Fault injection after the cold checkpoint exposed two edge cases: selecting a cache
 executable whose execute bit belonged to another permission class, and a SIGKILLed
@@ -65,8 +65,53 @@ worker stranding a grandchild. Both are addressed by caller-permission checks an
 private-session controller/runner boundary. Tests cover raw signal receipts, whole-group
 cleanup, stubborn children, untouched detached services and private receipt FD closure.
 The cold observations above identify their exact earlier revision; they do not claim to
-measure later hardening commits. Warm-output/refill and steady-warm trials on the hardened
-checkpoint are still owed before this rollout record is complete.
+measure later hardening commits.
+
+Revision `08f120e4c90cad8015a7586b073386a77a323c66`, clean tree throughout,
+2026-11-02 local time (2026-11-03 UTC), same pinned tools and unchanged capacity:
+
+```sh
+/usr/bin/time -v ./vibeos-cli build-bench --arches i386 amd64 arm64 --repeat 2 \
+  --output .cache/build-infra/phase6-warm.json
+```
+
+Both repeats passed all builds, AMD64 guest restaging, early/deferred source checks
+and architecture checks. The first repeat refilled changed artifact-policy entries;
+the second reused the resulting store. Source and policy snapshots matched before and
+after, and the live policy file retained the SHA-256 above.
+
+| Measurement | Refill repeat | Reuse repeat |
+| --- | ---: | ---: |
+| Total wall time | 2699.99 s | 1222.79 s |
+| i386 build | 1721.00 s | 106.80 s |
+| amd64 build | 2098.44 s | 637.44 s |
+| arm64 build | 1719.11 s | 86.59 s |
+| AMD64 guest restage | 376.65 s | 496.62 s |
+| Sampled maximum summed child-tree RSS | 18.658 GiB | 5.960 GiB |
+| Minimum host MemAvailable | 17.467 GiB | 32.554 GiB |
+| Kernel OOM-kill delta | 0 | 0 |
+| Samples at nominal 200 ms | 12,653 | 5,942 |
+
+The refill produced 314 i386, 341 amd64 and 342 arm64 bodies; its AMD64 restage
+produced none. The reuse repeat produced no bodies: i386 and arm64 made no artifact
+requests, while each AMD64 build/restage recorded 886 hits and seven explicitly
+ineligible requests. Thus reuse still includes wrapper, link and staging work. Reducing
+that AMD64 churn is a measured follow-up, not a claimed improvement in this migration.
+These repeats have different cache histories; their timings are not an old-versus-new
+implementation comparison. Other lanes were active; source and tooling gates also ran
+alongside the refill repeat.
+
+The independent procps/direct-meminfo sampler covered 3570 rows over 3622.86 s,
+starting after the benchmark began: maximum summed tree RSS 18.385 GiB and minimum
+host availability 17.557 GiB. The shared-page and sampling caveats above still apply.
+GNU time separately reported maximum RSS 5,819,504 KiB; this per-process high-water
+measurement is not the simultaneous sum of the descendant tree. Its elapsed time
+was 1:05:25, exit zero.
+
+Evidence: `.cache/build-infra/phase6-warm.json`, `phase6-warm-run{01,02}/`,
+`phase6-warm-independent.jsonl` and `phase6-warm-time.log`. These runs validate the
+hardened build/check path; the desktop smokes above belong to the earlier cold checkpoint.
+The integrator still owns the final merged-tree cold gate and three desktop smokes.
 
 Python argument routing, Run/Stage presentation, policy-lock lifetimes and drained fleet
 activation remain supported control-plane adapters until the CLI/QEMU phases. No new

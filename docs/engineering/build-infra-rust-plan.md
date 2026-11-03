@@ -1,7 +1,8 @@
 # Build infrastructure migration to Rust
 
-Batches 1–5 implemented on `lint-rs`. Batch 6 native mechanisms are implemented;
-rollout measurements are in progress.
+Batches 1–6 implemented on `lint-rs`. Cold/warm trials, independent memory readings
+and cross-root invalidation controls are recorded in
+[the rollout evidence](build-infra-rust-rollout.md).
 Batch 3 adds native configuration audits, input projections, verified snapshots,
 historical capture and artifact economics (2026-11-02).
 The native commands and compatibility boundaries are documented in
@@ -76,7 +77,7 @@ parity oracle. Do not maintain two evolving implementations.
    under the existing build CLI; preserve refusal of stale media and mutable sibling
    build inputs. Missing tools, failed producers and invalid dependency data stop the
    requested operation instead of falling back to an unchecked build path.
-6. **Build policy extraction and rollout (mechanisms implemented; trials in progress).** Move build-specific job/cache/environment
+6. **Build policy extraction and rollout (implemented).** Move build-specific job/cache/environment
    planning behind the native API while keeping the CLI's reporting contract. Preserve
    host-jobs protocol, memory limits and lease ownership. Move any policy genuinely
    shared by scheduling clients into the existing broker/library rather than copying
