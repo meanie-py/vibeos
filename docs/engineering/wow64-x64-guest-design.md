@@ -62,15 +62,14 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    (appstorm64 at 2G: 35 -> 50 MB per app), so 1G appstorm64 media, whose ramdisk leaves a
    129 MB limit, now runs out there: at 1024M iexplore under FEX is refused and dies, and so
    does a ladder run on that media (apc32). Plain `VIBEOS_FEX=1` media and 1088M+ are clean.
-   The crash on refusal is FEX's, owed: FEX's
-   CPU layer faults when a commit is refused while setting up a new guest thread
-   (`20261017-062113-2pae52ry`): rpmalloc's `span_allocate_page` calls the `memory_commit` hook
-   (a VIBEOS patch; FEXCore `AllocatorHooks.cpp` `FEX_rp_memory_commit`), which returns `void`,
-   and then writes the page header into memory that was never committed. The fix is in
-   `vendor/fex`, whose CLAUDE.md forbids AI-written code, so it is for a human or upstream. Seen as an
-   apc32 AV when a ladder ran on 1G appstorm64 media, whose ramdisk leaves a 137 MB commit
-   limit with appstorm running beside the guests. On plain `VIBEOS_FEX=1` media the ladder is
-   green with the charging.
+   A refused commit kills the FEX thread that hit it. rpmalloc used to write its page header
+   into the uncommitted memory (`os_mcommit` returns `void` and only asserts, compiled out;
+   FEX's `FEX_rp_memory_commit` hook is Linux-only). Since 2026-11-02 rpmalloc reports the
+   refusal and `malloc` returns NULL (vendor-patches/fex.md, "checked commit"), but FEXCore's C++
+   callers do not check, so the thread dies at the NULL store instead (apc32 in
+   `CreateX87StackOptimizationPass`, `20261102-234710-fdmni2t4`). That is environment-limited: a
+   129 MB limit beside the 800 MB ramdisk with no pagefile. On plain `VIBEOS_FEX=1` media the
+   ladder is green with the charging.
 3. The cnt CRT's NUL scans (`cstr_slice`/`wcstr_slice`, under strlen, wcslen and every string
    function that measures its argument) are asm now (`memops.rs`, 2026-10-17). Owed: the
    compare/search loops (`strcmp`, `wcschr`, ...), which are still unoptimised Rust; measure
@@ -82,7 +81,16 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    under FEX against 1225 us native arm64. The GetContext/SetContext/nested-Simulate shape is
    not where the time goes; the guest's own window procedures are. The `[WOWX64] pid N callback
    profile` line reports it at every process exit. One run on a loaded host.
-5. An appstorm64 sweep on a quiet host, re-timed against the per-syscall numbers.
+5. appstorm64 re-timed on a quiet host (2026-11-02, `20261102-232530-avjdzjn4`, 55/55): 581 s
+   of app time against 751 s on a host at load ~40 the day before (1.29x; servman 2.1x, rapps
+   77 -> 47 s). Across its 87 x64 processes, guest code under FEX between syscalls took 241 s, our
+   wowx64 side 27 s, and callback dispatch 0.3 s over 23,020 callbacks. Of the 27 s, ~15 s is
+   `NtAllocateVirtualMemory` and `NtFreeVirtualMemory` (0x12, 0x57: ~1.5 ms each, against
+   ~1.5 us for a typical win32k call). That time is inside the CPU layer's notifications
+   (`tools/fex/wowx64fex/Module.cpp` `BTCpu64NotifyMemoryAlloc`/`Free`): the before-call takes
+   `ThreadCreationMutex` and holds it across the native call, and the after-call runs FEX's
+   `InvalidationTracker`. Owed: time those two apart. The wowx64 bracket cannot tell a mutex
+   wait from the tracker's scan.
 6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
    file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
    `MiFlushTbAndCapture` stopped flushing the whole TLB once per re-protected page on arm64:

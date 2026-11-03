@@ -318,6 +318,13 @@ def check_tooling(args, repo: Path) -> int:
                     "tools/vibeos-build/Cargo.toml",
                     "--target-dir",
                     ".cache/vibeos-build/target",
+                    # One test thread. Several tests assert that gc sees a just-released
+                    # flock as free. A sibling test thread that forks a child in the same
+                    # process holds a duplicate of every fd until that child execs, so the
+                    # lock reads as held for a moment. That failed two gates (batches
+                    # 76 and 77) with 0 != 1 in two different tests.
+                    "--",
+                    "--test-threads=1",
                 ],
                 {},
             )

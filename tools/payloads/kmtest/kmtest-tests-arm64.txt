@@ -4,6 +4,7 @@
 # arm64 runs kmtest_drv with native SEH + truthful bugcheck reporting (§9.54),
 # so its crasher set should track amd64's. Started as a copy of the amd64 list;
 # arm64-specific quarantines get added as the sweep surfaces them.
+CcZeroData
 CmSecurity
 ExCallback
 ExDoubleList
