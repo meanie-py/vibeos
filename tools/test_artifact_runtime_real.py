@@ -109,3 +109,120 @@ def test_four_real_consumers_two_source_roots_compile_once_and_keep_direct_archi
     Store(store_root).gc(apply=True, grace_seconds=0)
     assert archive.is_file()
     assert os.stat(archive).st_mode & 0o222 == 0
+
+
+def test_real_policy_rollout_source_dependency_embedded_and_cross_root_reuse(tmp_path):
+    """Real compiler/cache ladder; synthetic sources keep paid translations untouched."""
+    import time
+
+    from tests.qemu.cli import hostjobs
+    from tools import artifact_executor as executor
+    from tools import artifact_runtime as runtime
+
+    lanes = [tmp_path / "lane-a", tmp_path / "lane-b"]
+    for lane in lanes:
+        source_tree(lane)
+        workspace = lane / "sdk/lib/rust"
+        (workspace / "Cargo.toml").write_text(
+            '[workspace]\nmembers=["beep-rust","shared"]\nresolver="2"\n'
+            '[profile.release]\npanic="abort"\n'
+        )
+        (workspace / "Cargo.lock").write_text(
+            'version=4\n[[package]]\nname="beep-rust"\nversion="0.1.0"\n'
+            'dependencies=["shared"]\n[[package]]\nname="shared"\nversion="0.1.0"\n'
+        )
+        body = workspace / "beep-rust"
+        with (body / "Cargo.toml").open("a") as stream:
+            stream.write('\n[dependencies]\nshared={path="../shared"}\n')
+        (workspace / "shared/src").mkdir(parents=True)
+        (workspace / "shared/Cargo.toml").write_text(
+            '[package]\nname="shared"\nversion="0.1.0"\nedition="2021"\n'
+        )
+        (workspace / "shared/src/lib.rs").write_text("#![no_std]\npub const VALUE:u32=7;\n")
+        (body / "src/lib.rs").write_text(
+            '#![no_std]\n#[no_mangle] pub extern "C" fn fixture_value()->u32 '
+            '{shared::VALUE + include_bytes!("payload.bin")[0] as u32}\n'
+            "#[panic_handler] fn panic(_: &core::panic::PanicInfo)->! {loop {}}\n"
+        )
+        (body / "src/payload.bin").write_bytes(b"\x01")
+    store = tmp_path / "store"
+    observations = []
+    for arch in ("i386", "amd64", "arm64"):
+        contexts = []
+        started = time.monotonic()
+        for index, lane in enumerate(lanes):
+            context = tmp_path / f"context-{arch}-{index}"
+            contexts.append((lane, context))
+        with (
+            runtime.supervise(
+                lanes[0], store, Path.home() / ".rustup/toolchains" / PIN, contexts[0][1], arch=arch
+            ) as first,
+            runtime.supervise(
+                lanes[1], store, Path.home() / ".rustup/toolchains" / PIN, contexts[1][1], arch=arch
+            ) as second,
+        ):
+            flags = executor.FLAGS[(arch, False)]
+
+            def consume(supervisor, lane, step, *, arch=arch, flags=flags):
+                command = [
+                    str(ROOT / "tools/build-infra"),
+                    "artifact-runtime",
+                    "request",
+                    "--supervisor",
+                    str(supervisor),
+                    "--body",
+                    "beep-rust",
+                    "--consumer",
+                    f"rollout:{arch}:{step}",
+                    "--arch",
+                    arch,
+                    "--target",
+                    executor.TARGETS[arch],
+                    "--flags=" + flags,
+                ]
+                env = hostjobs.environment(lane, dict(os.environ), canonical=False)
+                child = subprocess.run(
+                    command, env=env, cwd=ROOT, capture_output=True, text=True, timeout=120
+                )
+                assert child.returncode == 0, child.stderr
+                archive = next(
+                    line.split("\t", 1)[1]
+                    for line in child.stdout.splitlines()
+                    if line.startswith("archive\t")
+                )
+                assert Path(archive).read_bytes().startswith(b"!<arch>\n")
+                return archive
+
+            original = consume(first, lanes[0], "initial")
+            assert consume(second, lanes[1], "cross-root") == original
+            assert consume(first, lanes[0], "warm") == original
+            body = lanes[0] / "sdk/lib/rust/beep-rust/src/lib.rs"
+            initial_body = body.read_text()
+            body.write_text(initial_body.replace("shared::VALUE +", "1 + shared::VALUE +"))
+            edited = consume(first, lanes[0], "source-edit")
+            assert edited != original
+            dependency = lanes[0] / "sdk/lib/rust/shared/src/lib.rs"
+            dependency.write_text("#![no_std]\npub const VALUE:u32=8;\n")
+            dependent = consume(first, lanes[0], "dependency-edit")
+            assert dependent not in (original, edited)
+            payload = lanes[0] / "sdk/lib/rust/beep-rust/src/payload.bin"
+            payload.write_bytes(b"\x02")
+            embedded = consume(first, lanes[0], "embedded-edit")
+            assert embedded not in (original, edited, dependent)
+            assert consume(second, lanes[1], "unchanged-other-lane") == original
+        receipts = [
+            json.loads(p.read_text())
+            for _lane, context in contexts
+            for p in context.glob("*/activity/*.json")
+        ]
+        assert len(receipts) == 7
+        assert sum(r["builder_calls"] for r in receipts) == 4
+        assert sum(bool(r["hit"]) for r in receipts) == 3
+        observations.append(
+            {"arch": arch, "seconds": time.monotonic() - started, "builder_calls": 4, "hits": 3}
+        )
+        # Restore only the fresh fixture for the next architecture's identical ladder.
+        body.write_text(initial_body)
+        dependency.write_text("#![no_std]\npub const VALUE:u32=7;\n")
+        payload.write_bytes(b"\x01")
+    print("real policy rollout: " + json.dumps(observations, sort_keys=True))

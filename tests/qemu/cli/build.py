@@ -17,6 +17,8 @@ import subprocess
 import time
 from pathlib import Path
 
+from tools import build_infra_compat as native
+
 from . import (
     archcfg,
     cachecfg,
@@ -89,18 +91,7 @@ def source_date_epoch(repo: Path) -> str | None:
     version.cmake (→ buildno.h version resources) and clang's `__DATE__`/`__TIME__`
     (e.g. ntoskrnl/ex/xipdisp.c) — both honor the SOURCE_DATE_EPOCH env var. Returns
     None outside a git repo (caller leaves the env untouched)."""
-    try:
-        cp = subprocess.run(
-            ["git", "log", "-1", "--format=%ct"],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    ts = cp.stdout.strip()
-    return ts if cp.returncode == 0 and ts.isdigit() else None
+    return native.call("build_policy_source_date_epoch", {"repo": repo})
 
 
 NINJA_TIMEOUT_ENV = "VIBEOS_BUILD_TIMEOUT"
@@ -227,20 +218,9 @@ def _clean(run: Run, repo: Path, arch: str) -> None:
 
 
 def _ccache_already_enabled(build_dir: Path) -> bool:
-    # Both spellings count: an interactive `-DENABLE_CCACHE=1` caches as
-    # UNINITIALIZED=1 (the canonize configure does this); option() sets BOOL=ON.
-    # Missing either → a needless full reconfigure on EVERY build.
-    cache = build_dir / "CMakeCache.txt"
-    if not cache.is_file():
-        return False
-    try:
-        text = cache.read_text(errors="ignore")
-    except OSError:
-        return False
-    return any(
-        line.startswith("ENABLE_CCACHE:") and line.split("=", 1)[-1] in ("ON", "1", "TRUE")
-        for line in text.splitlines()
-    )
+    return native.call(
+        "build_policy_cmake_value", {"build": build_dir, "key": "ENABLE_CCACHE"}
+    ) in ("ON", "1", "TRUE")
 
 
 def _setup_cache(
@@ -359,9 +339,7 @@ def _ninja_did_work(stdout: str) -> int:
     ninja says "no work to do" that is authoritative regardless of what it printed
     above. An always->=1 count would have made this signal useless in exactly the
     direction that hides the bug it exists to expose."""
-    if "ninja: no work to do." in stdout:
-        return 0
-    return len(re.findall(r"^\[([1-9]\d*)/\d+\]", stdout, re.MULTILINE))
+    return native.call("build_policy_ninja_work", {"text": stdout})
 
 
 def _ninja_jobs() -> list[str]:
@@ -382,21 +360,25 @@ def _ninja_jobs() -> list[str]:
     survives for the one case it might matter again — build ∥ a WHPX boot, which is real
     hardware-virt and does contend — but even there the hostlock CPU-lease pool is the
     right throttle, not a blunt `-j` cap. Set VIBEOS_BUILD_CORE_RESERVE>0 to re-enable."""
-    policy = hostlock.buildpolicy.read(hostlock.POLICY_DIR)
-    if policy:
-        return ["-j", str(policy["ninja_jobs"])]
-    reserve = int(os.environ.get("VIBEOS_BUILD_CORE_RESERVE", "0"))
-    n = os.cpu_count() or 0
-    if reserve <= 0 or n <= reserve:
-        return []
-    return ["-j", str(n - reserve)]
+    return native.call(
+        "build_policy_ninja_jobs",
+        {
+            "policy": hostlock.buildpolicy.read(hostlock.POLICY_DIR),
+            "environment": dict(os.environ),
+            "cpus": os.cpu_count() or 0,
+        },
+    )
 
 
 def _policy_build_env(env: dict | None) -> dict | None:
-    policy = hostlock.buildpolicy.read(hostlock.POLICY_DIR)
-    if policy is None:
-        return env
-    return dict(os.environ if env is None else env, CARGO_BUILD_JOBS=str(policy["cargo_jobs"]))
+    return native.call(
+        "build_policy_build_env",
+        {
+            "policy": hostlock.buildpolicy.read(hostlock.POLICY_DIR),
+            "env": env,
+            "environment": dict(os.environ),
+        },
+    )
 
 
 def build(args, repo: Path) -> int:
@@ -622,42 +604,25 @@ def _scheduled_store_gc(args) -> None:
 
 
 def _flag_in_cache(build_dir: Path, flag: str) -> bool:
-    cache = build_dir / "CMakeCache.txt"
-    try:
-        for line in cache.read_text(errors="ignore").splitlines():
-            if line.startswith(f"{flag}:"):
-                return line.split("=", 1)[-1].strip() in ("ON", "1", "TRUE")
-    except OSError:
-        pass
-    return False
+    return _value_in_cache(build_dir, flag) in ("ON", "1", "TRUE")
 
 
 def _value_in_cache(build_dir: Path, var: str) -> str:
     """The cached STRING value of `var`, or "" when absent. Mirrors
     _flag_in_cache; separate because an empty string and OFF are different
     answers and conflating them would make "clear the quarantine" a no-op."""
-    cache = build_dir / "CMakeCache.txt"
-    try:
-        text = cache.read_text(errors="ignore")
-    except OSError:
-        return ""
-    for line in text.splitlines():
-        if line.startswith(f"{var}:"):
-            return line.split("=", 1)[1].strip() if "=" in line else ""
-    return ""
+    return native.call("build_policy_cmake_value", {"build": build_dir, "key": var})
 
 
 def _storage_options(build_dir: Path, shards: int | None, body_shards: int | None) -> list[str]:
-    # Repeating a persistent setting must not touch CMakeCache.txt: every Cargo
-    # link script watches it, so an unnecessary configure relinks the whole OS.
-    return [
-        f"-D{key}={value}"
-        for key, value in (
-            ("VIBEOS_RUST_STORAGE_SHARDS", shards),
-            ("VIBEOS_RUST_BODY_SHARDS", body_shards),
-        )
-        if value is not None and _value_in_cache(build_dir, key) != str(value)
-    ]
+    return native.call(
+        "build_policy_storage_options",
+        {
+            "build": build_dir,
+            "shards": shards,
+            "body_shards": body_shards,
+        },
+    )
 
 
 def _maybe_canonize(

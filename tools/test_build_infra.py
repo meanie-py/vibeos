@@ -111,6 +111,9 @@ def test_launcher_caches_provisioning_and_preserves_inherited_fds(tmp_path):
         (src.parent / name).write_text("fixture")
     source = src / "main.rs"
     source.write_text("fixture")
+    shared = tools / "host-jobs/src/build_policy.rs"
+    shared.parent.mkdir(parents=True)
+    shared.write_text("capacity fixture")
     cargo = tmp_path / "bin/cargo"
     cargo.parent.mkdir()
     cargo.write_text(
@@ -146,3 +149,31 @@ def test_launcher_caches_provisioning_and_preserves_inherited_fds(tmp_path):
     source.write_text("changed")
     invoke()
     assert builds.read_text() == "xx"
+    shared.write_text("updated shared capacity contract")
+    invoke()
+    assert builds.read_text() == "xxx"
+
+
+def test_native_broker_bootstrap_keeps_compiler_output_out_of_json_protocol(tmp_path, monkeypatch):
+    from tools import build_infra_compat as native
+
+    assert run("--help").returncode == 0
+    source = tmp_path / "tools/host-jobs/src"
+    source.mkdir(parents=True)
+    (source / "main.rs").write_text("fixture source")
+    (tmp_path / "rust-toolchain.toml").write_text('[toolchain]\nchannel="stable"\n')
+    fakebin = tmp_path / "bin"
+    fakebin.mkdir()
+    compiler = fakebin / "rustc"
+    compiler.write_text(
+        "#!/bin/sh\necho compiler-progress\n"
+        'while [ "$#" -gt 0 ]; do if [ "$1" = -o ]; then shift; out=$1; fi; shift; done\n'
+        'printf "#!/bin/sh\\nexit 0\\n" > "$out"\nchmod +x "$out"\n'
+    )
+    compiler.chmod(0o755)
+    import os
+
+    monkeypatch.setenv("PATH", str(fakebin) + os.pathsep + os.environ["PATH"])
+    produced = Path(native.call("build_policy_ensure_host_jobs", {"repo": tmp_path}))
+    assert produced == tmp_path / ".cache/host-jobs/host-jobs"
+    assert produced.read_text() == "#!/bin/sh\nexit 0\n"

@@ -209,6 +209,9 @@ def _source_signature():
     if sources.is_dir():
         paths.extend([REPO / "rust-toolchain.toml", sources / "Cargo.toml", sources / "Cargo.lock"])
         paths.extend(p for p in (sources / "src").rglob("*") if p.is_file())
+        shared = REPO / "tools/host-jobs/src/build_policy.rs"
+        if shared.is_file():
+            paths.append(shared)
     records = []
     for path in sorted(paths):
         info = path.stat()
@@ -285,7 +288,7 @@ def _artifact_request(root, payload):
 def call(op: str, kwargs: dict, root: Path = REPO) -> Any:
     tool = REPO / "tools/build-infra"
     request = json.dumps({"op": op, "kwargs": _json(kwargs)}, ensure_ascii=False)
-    if op.startswith("artifact_"):
+    if op.startswith(("artifact_", "build_policy_")):
         try:
             response = _artifact_request(root, request)
         except (OSError, ValueError) as exc:

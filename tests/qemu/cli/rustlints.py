@@ -174,6 +174,7 @@ def ensure(repo: Path) -> Path:
             codegen / "Cargo.toml",
             build_library / "Cargo.toml",
             build_library / "Cargo.lock",
+            repo / "tools/host-jobs/src/build_policy.rs",
             *sorted(source_files(build_library / "src", "*")),
             *sorted(source_files(codegen / "src", "*")),
             repo / "rust-toolchain.toml",

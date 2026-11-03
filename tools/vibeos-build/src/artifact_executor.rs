@@ -1194,13 +1194,23 @@ fn check_interrupted() -> Result<()> {
 /// Only children created in their own new session are ever selected for termination.
 struct OwnedWorker {
     child: Child,
+    group: libc::pid_t,
 }
 impl OwnedWorker {
     fn spawn(args: &[String], stdout: Stdio, stderr: Stdio) -> Result<Self> {
         Self::spawn_command(&mut command(args)?, stdout, stderr)
     }
     fn spawn_command(command: &mut Command, stdout: Stdio, stderr: Stdio) -> Result<Self> {
+        Self::spawn_scope(command, stdout, stderr, true)
+    }
+    fn spawn_scope(
+        command: &mut Command,
+        stdout: Stdio,
+        stderr: Stdio,
+        session: bool,
+    ) -> Result<Self> {
         command.stdout(stdout).stderr(stderr);
+        let current_group = unsafe { libc::getpgrp() };
         let expected_parent = std::process::id() as libc::pid_t;
         unsafe {
             command.pre_exec(move || {
@@ -1218,27 +1228,39 @@ impl OwnedWorker {
                 if libc::getppid() != expected_parent {
                     libc::_exit(125);
                 }
-                if libc::setsid() < 0 {
+                if session && libc::setsid() < 0 {
                     Err(std::io::Error::last_os_error())
                 } else {
                     Ok(())
                 }
             });
         }
-        Ok(Self {
-            child: command.spawn()?,
-        })
+        let child = command.spawn().map_err(|error| {
+            Error::classified(
+                "LaunchError",
+                format!(
+                    "cannot launch {}: {error}",
+                    command.get_program().to_string_lossy()
+                ),
+            )
+        })?;
+        let group = if session {
+            child.id() as libc::pid_t
+        } else {
+            current_group
+        };
+        Ok(Self { child, group })
     }
     fn signal_group(&self, signal: libc::c_int) {
         unsafe {
-            libc::kill(-(self.child.id() as libc::pid_t), signal);
+            libc::kill(-self.group, signal);
         }
     }
     fn stop(&mut self) -> Result<()> {
         if self.child.try_wait()?.is_some() {
             return Ok(());
         }
-        let pid = self.child.id() as libc::pid_t;
+        let pid = self.group;
         unsafe { libc::kill(-pid, libc::SIGTERM) };
         let started = Instant::now();
         loop {
@@ -1331,10 +1353,20 @@ fn capture_command(
     })
 }
 /// Supervise one producer with inherited stdout/stderr, preserving live logs without buffering.
-pub fn supervised_status(command: &mut Command) -> Result<u8> {
+pub fn supervised_code(command: &mut Command) -> Result<i32> {
+    supervised_code_scope(command, true)
+}
+/// Runner-only variant: the controller already created our private session.
+pub fn supervised_group_code(command: &mut Command) -> Result<i32> {
+    if unsafe { libc::getpgrp() } != std::process::id() as i32 {
+        return Err(fail("runner does not own its group"));
+    }
+    supervised_code_scope(command, false)
+}
+fn supervised_code_scope(command: &mut Command, session: bool) -> Result<i32> {
     let _signals = SignalGuard::install()?;
     crate::artifact_lifetime::watch_owner(unsafe { libc::getppid() } as u32)?;
-    let mut child = OwnedWorker::spawn_command(command, Stdio::inherit(), Stdio::inherit())?;
+    let mut child = OwnedWorker::spawn_scope(command, Stdio::inherit(), Stdio::inherit(), session)?;
     let operation = (|| -> Result<i32> {
         loop {
             check_interrupted()?;
@@ -1344,11 +1376,27 @@ pub fn supervised_status(command: &mut Command) -> Result<u8> {
             std::thread::sleep(Duration::from_millis(20));
         }
     })();
+    if !session {
+        // Group termination includes the runner. Its result is already captured;
+        // ignore self-directed cleanup signals until the guard restores handlers.
+        let mut ignored: libc::sigaction = unsafe { std::mem::zeroed() };
+        ignored.sa_sigaction = libc::SIG_IGN;
+        unsafe { libc::sigemptyset(&mut ignored.sa_mask) };
+        if unsafe { libc::sigaction(libc::SIGTERM, &ignored, std::ptr::null_mut()) } != 0
+            || unsafe { libc::sigaction(libc::SIGINT, &ignored, std::ptr::null_mut()) } != 0
+        {
+            return Err(std::io::Error::last_os_error().into());
+        }
+    }
     if operation.as_ref().map_or(true, |code| *code != 0) {
         child.signal_group(libc::SIGTERM);
     }
     child.stop()?;
-    let code = operation?;
+    operation
+}
+/// CLI exit code for the same streaming producer boundary.
+pub fn supervised_status(command: &mut Command) -> Result<u8> {
+    let code = supervised_code(command)?;
     Ok(if code < 0 {
         (128 - code).min(255) as u8
     } else {

@@ -287,7 +287,8 @@ def test_bootstrap_failure_is_scanner_error(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "changed_input", ["rust", "conventions", "grants", "engines", "codegen", "template", "build"]
+    "changed_input",
+    ["rust", "conventions", "grants", "engines", "codegen", "template", "build", "capacity"],
 )
 def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, changed_input):
     monkeypatch.setattr(rustlints.hostjobs, "ensure", lambda repo: Path("/fixture/host-jobs"))
@@ -305,6 +306,9 @@ def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, c
     (buildlib / "src/lib.rs").write_text("pub fn plan() {}")
     (buildlib / "Cargo.toml").write_text("[package]\nname='build'\nversion='0.1.0'\n")
     (buildlib / "Cargo.lock").write_text("")
+    capacity = tmp_path / "tools/host-jobs/src/build_policy.rs"
+    capacity.parent.mkdir(parents=True)
+    capacity.write_text("pub const VERSION: u64 = 1;\n")
     (tmp_path / "rust-toolchain.toml").write_text("[toolchain]\nchannel='stable'\n")
     conventions = tmp_path / "tools/rustconv/rustconv/conventions.py"
     conventions.parent.mkdir(parents=True)
@@ -334,6 +338,8 @@ def test_bootstrap_rejects_sources_changed_during_build(tmp_path, monkeypatch, c
                 engines.write_text('ENGINE_LIBS = {"libfixture.a": "engine:fixture"}\n')
             elif changed_input == "codegen":
                 (codegen / "src/lib.rs").write_text("pub fn changed() {}")
+            elif changed_input == "capacity":
+                capacity.write_text("pub const VERSION: u64 = 2;\n")
             elif changed_input == "build":
                 (buildlib / "src/lib.rs").write_text("pub fn changed() {}")
             else:
