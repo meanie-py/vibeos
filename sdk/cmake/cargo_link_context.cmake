@@ -12,6 +12,20 @@
 function(reactos_cargo_link_context workspace crate arch output_dir)
     get_property(_configured GLOBAL PROPERTY _REACTOS_CARGO_POOL_CONFIGURED)
     if(NOT _configured)
+        # Cargo must not watch CMakeCache.txt: a media-only toggle rewrites it
+        # and relinks every consumer. file(GENERATE) preserves the timestamp
+        # when a value is unchanged. Keep each watch as narrow as its reader.
+        foreach(_option IN ITEMS ENABLE_CCACHE _WINKD_ GDB)
+            string(TOUPPER "${${_option}}" _value)
+            set(_value_bool 0)
+            # Preserve reactos-link's existing accepted true spellings.
+            if(_value MATCHES "^(1|ON|TRUE|YES|Y)$")
+                set(_value_bool 1)
+            endif()
+            file(GENERATE
+                OUTPUT "${CMAKE_BINARY_DIR}/CMakeFiles/reactos-link-config/${_option}"
+                CONTENT "${_value_bool}\n")
+        endforeach()
         include(ProcessorCount)
         ProcessorCount(_cpus)
         if(_cpus LESS 1)

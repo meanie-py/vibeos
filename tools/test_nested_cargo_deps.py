@@ -180,3 +180,103 @@ sys.exit(subprocess.call(sys.argv[1:]))
     build(150)
     write("shared/Cargo.toml", p.read_text().replace('default = ["extra"]', "default = []"))
     build(60)
+
+
+def test_cmake_boolean_changes_rebuild_only_readers(tmp_path):
+    """Media-only reconfiguration must not relink Cargo cells; real flags must."""
+    root = tmp_path / "config inputs with spaces"
+    root.mkdir()
+    source = REPO / "sdk/lib/rust/reactos-link/src/cmake_config.rs"
+    context = REPO / "sdk/cmake/cargo_link_context.cmake"
+    options = {"ccache": "ENABLE_CCACHE", "winkd": "_WINKD_", "gdb": "GDB"}
+    (root / "Cargo.toml").write_text(
+        '[workspace]\nmembers=["ccache", "winkd", "gdb"]\nresolver="2"\n'
+    )
+    commands = []
+    for package, option in options.items():
+        crate = root / package
+        (crate / "src").mkdir(parents=True)
+        (crate / "Cargo.toml").write_text(
+            f'[package]\nname="{package}"\nversion="0.1.0"\nedition="2021"\n'
+        )
+        (crate / "src/main.rs").write_text('fn main() { println!("{}", env!("VALUE")); }')
+        (crate / "build.rs").write_text(
+            f'#[path="{source}"] mod cmake_config;\n'
+            "fn main() {\n"
+            'let root = std::path::PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());\n'
+            'let build = root.parent().unwrap().join("build");\n'
+            f'let value = cmake_config::read(&build, "{option}").unwrap();\n'
+            'println!("cargo:rustc-env=VALUE={}", value.unwrap());\n'
+            'let count = root.join("invocations");\n'
+            "let old = std::fs::read_to_string(&count).unwrap_or_default();\n"
+            'std::fs::write(count, old + "run\\n").unwrap();\n'
+            "}\n"
+        )
+        commands.append(
+            f'''set(binary "${{CMAKE_BINARY_DIR}}/{package}-cargo/debug/{package}")
+add_custom_command(OUTPUT "${{CMAKE_BINARY_DIR}}/{package}"
+ COMMAND cargo build --offline -p {package} --target-dir "${{CMAKE_BINARY_DIR}}/{package}-cargo"
+ COMMAND "${{CMAKE_COMMAND}}" -E copy "${{binary}}" "${{CMAKE_BINARY_DIR}}/{package}"
+ COMMAND "{REPO}/tools/build-infra" retarget-depfile
+   --source "${{binary}}.d" --cargo-output "${{binary}}"
+   --target "${{CMAKE_BINARY_DIR}}/{package}" --output "${{CMAKE_BINARY_DIR}}/{package}.d"
+ DEPFILE "${{CMAKE_BINARY_DIR}}/{package}.d"
+ DEPENDS "${{CMAKE_SOURCE_DIR}}/{package}/build.rs" "{source}"
+ WORKING_DIRECTORY "${{CMAKE_SOURCE_DIR}}" VERBATIM)
+add_custom_target({package}_target ALL DEPENDS "${{CMAKE_BINARY_DIR}}/{package}")
+'''
+        )
+    (root / "CMakeLists.txt").write_text(
+        "cmake_minimum_required(VERSION 3.20)\nproject(config_inputs NONE)\n"
+        "cmake_policy(SET CMP0116 NEW)\n"
+        'option(ENABLE_CCACHE "cache" OFF)\noption(_WINKD_ "kd" OFF)\noption(GDB "gdb" OFF)\n'
+        'set(MEDIA_ONLY OFF CACHE BOOL "unrelated media staging")\n'
+        f'include("{context}")\n'
+        'reactos_cargo_link_context("${CMAKE_SOURCE_DIR}" fixture amd64 ignored)\n'
+        + "".join(commands)
+    )
+    env = dict(os.environ, RUSTC_WRAPPER="", CARGO_BUILD_RUSTC_WRAPPER="", CARGO_INCREMENTAL="0")
+    for key in ("RUSTFLAGS", "CARGO_ENCODED_RUSTFLAGS", "CARGO_BUILD_TARGET", "RUSTUP_TOOLCHAIN"):
+        env.pop(key, None)
+
+    def run(*argv):
+        result = subprocess.run(argv, cwd=root, env=env, capture_output=True, text=True, timeout=90)
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result.stdout
+
+    def configure(*args):
+        run("cmake", "-S", ".", "-B", "build", "-G", "Ninja", *args)
+
+    def build(expected_counts, expected_values):
+        run("ninja", "-C", "build", "-j", "1")
+        assert {
+            name: len((root / name / "invocations").read_text().splitlines()) for name in options
+        } == dict(zip(options, expected_counts, strict=True))
+        assert [run(str(root / "build" / name)).strip() for name in options] == expected_values
+
+    configure()
+    build([1, 1, 1], ["false", "false", "false"])
+    configure("-DMEDIA_ONLY=ON")
+    build([1, 1, 1], ["false", "false", "false"])
+    configure("-DENABLE_CCACHE=ON")
+    build([2, 1, 1], ["true", "false", "false"])
+    configure("-D_WINKD_=ON")
+    build([2, 2, 1], ["true", "true", "false"])
+    configure("-DGDB=ON")
+    build([2, 2, 2], ["true", "true", "true"])
+    configure("-DENABLE_CCACHE=OFF", "-D_WINKD_=OFF", "-DGDB=OFF")
+    build([3, 3, 3], ["false", "false", "false"])
+    # Identical configuration leaves both projection and Cargo outputs fresh.
+    configure()
+    build([3, 3, 3], ["false", "false", "false"])
+
+
+def test_cmake_boolean_projection_refusals(tmp_path):
+    binary = tmp_path / "cmake-config-tests"
+    source = REPO / "sdk/lib/rust/reactos-link/src/cmake_config.rs"
+    for command in (
+        ["rustc", "--edition=2021", "--test", str(source), "-o", str(binary)],
+        [str(binary)],
+    ):
+        result = subprocess.run(command, cwd=REPO, capture_output=True, text=True, timeout=90)
+        assert result.returncode == 0, result.stdout + result.stderr

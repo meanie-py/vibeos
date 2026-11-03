@@ -83,3 +83,25 @@ Whole-build permits have since been replaced with runnable compiler/linker
 admission; see [host job scheduling](host-job-scheduling.md). The cron continues
 normally, with integration work participating in the shared execution budget
 once it updates its checkout.
+
+## CMake option projections for Cargo links
+
+The shared link engine previously emitted a watch on all of `CMakeCache.txt` when
+reading `ENABLE_CCACHE`, `_WINKD_` or `GDB`. That put the cache into 366 AMD64 PE
+depfiles in the batch-6 rollout tree. Switching `VIBEOS_WOW64_NO_STAGE` during guest
+restaging then invalidated those links even though their inputs were unchanged.
+The recorded reuse restage executed 400 Ninja edges and 886 artifact-store hits,
+with no store producer calls (`phase6-warm-run02/build-amd64-restage.artifacts/`).
+
+CMake now generates a separate Boolean input for each option under
+`CMakeFiles/reactos-link-config/`, preserving its timestamp when its content is
+unchanged. Each link watches only the options it reads. Existing true spellings
+and unconfigured pure-Cargo defaults are preserved. A configured build with a
+missing or malformed projection fails with a reconfigure diagnostic.
+
+The real CMake/Ninja/Cargo fixture in `tools/test_nested_cargo_deps.py` reproduced
+all three consumers rerunning after a media-only option change with the broad
+watch. It now proves that unrelated reconfiguration runs none of them, each real
+option rebuilds only its reader, and turning options off updates executable
+behavior. Identical reconfiguration is also a no-op. Native refusal tests cover
+missing, corrupt and unknown inputs.
