@@ -90,7 +90,7 @@ The shared link engine previously emitted a watch on all of `CMakeCache.txt` whe
 reading `ENABLE_CCACHE`, `_WINKD_` or `GDB`. That put the cache into 366 AMD64 PE
 depfiles in the batch-6 rollout tree. Switching `VIBEOS_WOW64_NO_STAGE` during guest
 restaging then invalidated those links even though their inputs were unchanged.
-The recorded reuse restage executed 400 Ninja edges and 886 artifact-store hits,
+The recorded reuse restage logged 368 Cargo-link edges and 886 artifact-store hits,
 with no store producer calls (`phase6-warm-run02/build-amd64-restage.artifacts/`).
 
 CMake now generates a separate Boolean input for each option under
@@ -121,3 +121,12 @@ Missing or unequal snapshot inputs also refuse depfile publication. The real
 fixture counts both Ninja edges and Cargo build-script runs, checks executable
 behavior after a genuine compile-command change, and confirms that identical
 reconfiguration executes no link edge.
+
+The combined fix passed two real three-architecture trials at
+`df08aa31d3d37abb46105b4c844513661c09c956`. The steady AMD64 restage logged five
+Cargo-link edges versus 368 previously; its main Ninja phase took 19.8 s versus
+406.6 s. The full warm suite took 311.41 s versus 1222.79 s. Methods, cache histories,
+smoke evidence and timing limitations are in
+[the rollout record](build-infra-rust-rollout.md#warm-invalidation-follow-up).
+Five Cargo links remain (`services`, `winlogon`, `urlmon`, `ntoskrnl`, `ntkrnlmp`);
+investigating their individual generated inputs is tracked as follow-up work.
