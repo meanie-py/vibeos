@@ -57,16 +57,22 @@ def _inherited_descriptors():
 
 
 class _ArtifactSession:
+    def tool_path(self):
+        return REPO / "tools/build-infra"
+
+    def source_signature(self):
+        return _source_signature()
+
     def __init__(self, root, mode="--api-jsonl", inherit_resources=False):
         self.owner = os.getpid()
-        self.signature = _source_signature()
+        self.signature = self.source_signature()
         self.environment = dict(os.environ)
         self.resources = contextlib.ExitStack()
         # The stream outlives this method; session.close owns the ExitStack.
         self.errors = self.resources.enter_context(tempfile.TemporaryFile(mode="w+t"))  # noqa: SIM115
         self.process = subprocess.Popen(
             [
-                str(REPO / "tools/build-infra"),
+                str(self.tool_path()),
                 "--root",
                 str(root),
                 "--client-pid",
@@ -110,7 +116,7 @@ class _ArtifactSession:
         if not line:
             self.errors.seek(0)
             raise NativeError("native artifact transport ended: " + self.errors.read().strip())
-        if self.signature != _source_signature():
+        if self.signature != self.source_signature():
             raise NativeError(
                 "native build sources changed during artifact request; retry after edits finish"
             )
@@ -123,8 +129,8 @@ _dedicated = weakref.WeakSet()
 class DedicatedSession:
     """One native resource lifetime, independent of unrelated blocking store clients."""
 
-    def __init__(self, command, root=REPO):
-        self._session = _ArtifactSession(root, command, inherit_resources=True)
+    def __init__(self, command, root=REPO, *, session_factory=None):
+        self._session = (session_factory or _ArtifactSession)(root, command, inherit_resources=True)
         self._lock = threading.RLock()
         self.closed = False
         _dedicated.add(self)
@@ -154,7 +160,7 @@ class DedicatedSession:
                 raise NativeError(
                     "native resource connection is closed or belongs to another process"
                 )
-            if self._session.signature != _source_signature():
+            if self._session.signature != self._session.source_signature():
                 self.close()
                 raise NativeError("native resource source changed; reopen the resource")
             saved_error = None
@@ -288,7 +294,7 @@ def _artifact_request(root, payload):
 def call(op: str, kwargs: dict, root: Path = REPO) -> Any:
     tool = REPO / "tools/build-infra"
     request = json.dumps({"op": op, "kwargs": _json(kwargs)}, ensure_ascii=False)
-    if op.startswith(("artifact_", "build_policy_")):
+    if op.startswith(("artifact_", "build_policy_", "provenance_")):
         try:
             response = _artifact_request(root, request)
         except (OSError, ValueError) as exc:
@@ -365,7 +371,7 @@ def coerce(value, annotation) -> Any:
 
 
 def invoke(
-    op: str, args: dict, root: Path | None = None, *, error_type: type[NativeError] = NativeError
+    op: str, args: dict, root: Path | None = None, *, error_type: type[Exception] = NativeError
 ) -> Any:
     try:
         return call(op, args, root=Path(root) if root is not None else REPO)
@@ -373,7 +379,7 @@ def invoke(
         if error_type is NativeError:
             raise
         converted = error_type(str(exc))
-        converted.kind = exc.kind
+        setattr(converted, "kind", exc.kind)
         raise converted from exc
 
 

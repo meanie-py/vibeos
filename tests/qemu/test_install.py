@@ -414,9 +414,10 @@ def _boot(config: ArchConfig, work: Path) -> tuple[QemuVM, str, str | None]:
     cli_cfg = cli_config.load(PROJECT_DIR)
     # The fleet's 30-minute QEMU lifetime cap is below a TCG install's stage-1 time (run 22
     # was killed mid-registry-page). Raise it for THIS VM only, as vm.py asks of a long run:
-    # start() reads it for the watchdog and the lock file's deadline, then it is restored.
-    cap = vm_mod.MAX_VM_LIFETIME_SECONDS
-    vm_mod.MAX_VM_LIFETIME_SECONDS = max(cap, int(config.boot_timeout) + 900)
+    # The native owner binds this budget to the VM and its guardian deadline.
+    lifetime = max(
+        int(os.environ.get("VIBEOS_QEMU_MAX_LIFETIME", "1800")), int(config.boot_timeout) + 900
+    )
     # Every gated boot launches through the shared retry: a QEMU that never connects its
     # serial socket under host load is the HOST, and run 5 of this test died of exactly that.
     started, _attempts, launch_exc = launch_with_retry(
@@ -426,12 +427,12 @@ def _boot(config: ArchConfig, work: Path) -> tuple[QemuVM, str, str | None]:
             backend=cli_cfg.get("qemu.backend", "native"),
             windows=cli_cfg.get("qemu.windows", {}),
             serial_log=work / f"{work.name}_serial.log",
+            max_lifetime=lifetime,
         ),
         {},
         lambda msg: print(f"[install] {msg}"),
         "launch",
     )
-    vm_mod.MAX_VM_LIFETIME_SECONDS = cap
     if launch_exc is not None:
         raise launch_exc
     assert started is not None

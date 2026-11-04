@@ -102,151 +102,16 @@ ASSERT_FAIL = re.compile(r"^(\S+\.(?:c|cpp|h):\d+): Test failed:")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ratchet import BAD, compare, fmt, load_baseline  # noqa: E402
+from ratchet import _call as _native_call  # noqa: E402
+from ratchet import _rows as _native_rows  # noqa: E402
 
 
 def parse(log_text: str):
-    """Return (results, meta). results is one dict per launched subtest."""
-    results: dict[str, dict] = {}
-    order: list[str] = []
-    meta = {"done": None, "bugcheck": None, "suites": {}, "nosubtests": {}}
-
-    def row(name: str) -> dict:
-        if name not in results:
-            results[name] = {
-                "name": name,
-                "status": "NO-END",
-                "pass": 0,
-                "fail": 0,
-                "skip": 0,
-                "todo": 0,
-                "exit": None,
-                "errors": 0,
-                "asserts": set(),
-            }
-            order.append(name)
-        return results[name]
-
-    def drop(name: str) -> None:
-        """Forget a row entirely (used for enumeration rows that succeeded)."""
-        if name in results:
-            del results[name]
-            order.remove(name)
-
-    for line in log_text.splitlines():
-        m = ENUMERATE.search(line)
-        if m:
-            # In flight until the suite enumerates, reports NOSUBTESTS, or times
-            # out. Deliberately NOT kept once it resolves: a per-suite row that
-            # always says OK would add ~60 identities to the floor that assert
-            # nothing about the OS.
-            row(f"{m.group(1)} <enumeration>")
-            continue
-
-        m = SUITE.search(line)
-        if m:
-            meta["suites"][m.group(1)] = int(m.group(2))
-            drop(f"{m.group(1)} <enumeration>")
-            continue
-
-        m = NOSUBTESTS.search(line)
-        if m:
-            meta["nosubtests"][m.group(1)] = (int(m.group(2)), m.group(3).strip())
-            drop(f"{m.group(1)} <enumeration>")
-            continue
-
-        m = SKIP.search(line)
-        if m:
-            row(f"{m.group(1)} {m.group(2)}")["status"] = "SKIP"
-            continue
-
-        m = LAUNCH.search(line)
-        if m:
-            row(f"{m.group(1)} {m.group(2)}")
-            continue
-
-        m = FAILSTART.search(line)
-        if m:
-            row(m.group(1))["status"] = "FAILSTART"
-            continue
-
-        m = ENUM_TIMEOUT.search(line)
-        if m:
-            # Suite-level: nothing was enumerated, so there is no subtest to
-            # name. Recorded against the suite alone so it still shows up as
-            # bad, without inventing an identity.
-            suite = m.group(1) or m.group(2)
-            row(f"{suite} <enumeration>")["status"] = "ENUM-TIMEOUT"
-            continue
-
-        m = TIMEOUT.search(line)
-        if m:
-            row(f"{m.group(1)} {m.group(2)}")["status"] = "TIMEOUT"
-            continue
-
-        m = EXIT.search(line)
-        if m:
-            r = row(f"{m.group(1)} {m.group(2)}")
-            r["exit"] = int(m.group(3))
-            if r["status"] == "NO-END":
-                # exit seen but no summary line: the child died or printed
-                # nothing parseable. Leave NO-END; it is in BAD and gates.
-                pass
-            else:
-                r["status"] = "OK" if r["exit"] == 0 else "FAIL-EXIT"
-            continue
-
-        m = CHILD.search(line)
-        if m:
-            r = row(f"{m.group(1)} {m.group(2)}")
-            body = m.group(3)
-            s = SUMMARY.match(body)
-            if s:
-                executed, todo, failures, skipped = (int(x) for x in s.groups())
-                r["fail"] = failures
-                r["todo"] = todo
-                r["skip"] = skipped
-                # wine counts EXECUTED, not passed; pass is the remainder. A
-                # `todo` is neither: it is an expected failure the framework
-                # already discounts.
-                r["pass"] = max(executed - failures, 0)
-                # A summary line means the subtest reached its own end. The exit
-                # code decides OK vs FAIL-EXIT, and may arrive after this line.
-                r["status"] = "OK" if (r["exit"] in (None, 0)) else "FAIL-EXIT"
-                continue
-            a = ASSERT_FAIL.match(body)
-            if a:
-                r["asserts"].add(a.group(1))
-            continue
-
-        m = DONE.search(line)
-        if m:
-            meta["done"] = m.group(1)
-            continue
-
-        m = BUGCHECK.search(line)
-        if m:
-            meta["bugcheck"] = m.group(1)
-            # Whatever was mid-flight when the machine died owns the crash.
-            # The test is "the sweep never saw it exit", NOT "it looked bad":
-            # a subtest can print its own summary line and THEN take the kernel
-            # down on teardown, and reading that as OK is a false green -- the
-            # first draft of this parser scored `afd_apitest send` OK on the
-            # very boot whose BUGCHECK it caused.
-            # ...but only a row still IN FLIGHT can own it. A status the sweep
-            # already resolved -- it skipped it, timed it out and terminated it,
-            # or failed to enumerate it and moved to the next suite -- means the
-            # sweep was past that subtest when the machine died. Overwriting
-            # those is the same "blame whatever was last" error this harness has
-            # made at every other layer: it handed a BUGCHECK to msgina's
-            # enumeration timeout, a suite that never ran a single subtest.
-            # If nothing is in flight the crash stays unattributed, which is the
-            # honest answer.
-            for name in reversed(order):
-                if results[name]["exit"] is None and results[name]["status"] not in RESOLVED:
-                    results[name]["status"] = "CRASH"
-                    break
-
-    return [results[n] for n in order], meta
+    rows, *metadata = _native_call("apitest", text=log_text)
+    metadata[0]["nosubtests"] = {
+        name: tuple(value) for name, value in metadata[0]["nosubtests"].items()
+    }
+    return (_native_rows(rows), *metadata)
 
 
 def main() -> int:
@@ -282,21 +147,15 @@ def main() -> int:
         print(f"# NOSUBTESTS {suite} exit={code} {first}")
 
     if args.write_baseline:
-        keep = dict(base)
-        for r in results:
-            if args.only and r["name"] not in args.only:
-                continue
-            keep[r["name"]] = r
-        rows = []
-        for name in sorted(keep):
-            r = keep[name]
-            rows.append(fmt(r) if isinstance(r.get("asserts"), set) else _refmt(name, r))
-        args.write_baseline.write_text(
-            "# apitest conformance baseline — parse_apitest_serial.py format\n"
-            + "\n".join(rows)
-            + "\n"
+        count = _native_call(
+            "write_cli_baseline",
+            kind="apitest",
+            path=str(args.write_baseline),
+            results=results,
+            base=base,
+            only=args.only,
         )
-        print(f"# wrote {args.write_baseline} ({len(keep)} row(s))")
+        print(f"# wrote {args.write_baseline} ({count} row(s))")
 
     if args.baseline:
         regressions = compare(results, base)
@@ -310,19 +169,7 @@ def main() -> int:
 
 
 def _refmt(name: str, b: dict) -> str:
-    """Re-emit a baseline row we did not re-run, exactly as it was loaded."""
-    line = (
-        f"{name} {b['status']} pass={b.get('pass', 0)} "
-        f"fail={b.get('fail', 0)} skip={b.get('skip', 0)}"
-    )
-    if "exit" in b:
-        line += f" exit={b['exit']}"
-    if b.get("errors"):
-        line += f" errors={b['errors']}"
-    flaky = b.get("flaky", set())
-    for a in sorted(b.get("asserts") or ()):
-        line += f"\n    assert{'?' if a in flaky else ''} {a}"
-    return line
+    return _native_call("refmt", name=name, base=b)
 
 
 if __name__ == "__main__":

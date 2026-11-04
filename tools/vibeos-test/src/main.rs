@@ -1,0 +1,193 @@
+use serde_json::{json, Value};
+use std::{
+    io::{BufRead, Write},
+    path::{Path, PathBuf},
+};
+use vibeos_test::{
+    callback::{Callback, Host},
+    vm::VmManager,
+    Error, Result,
+};
+
+struct Runtime<'a> {
+    root: &'a Path,
+    vms: &'a mut VmManager,
+    owner: u32,
+    input: &'a mut dyn BufRead,
+    output: &'a mut dyn Write,
+}
+impl Host for Runtime<'_> {
+    fn call(&mut self, operation: &str, mut arguments: Value) -> Result<Value> {
+        if operation == "vm_create" {
+            let map = arguments
+                .as_object_mut()
+                .ok_or("VM arguments must be an object")?;
+            let config = if map.get("config").is_some_and(Value::is_object) {
+                map.get_mut("config").unwrap().as_object_mut().unwrap()
+            } else {
+                map
+            };
+            config.entry("owner_pid").or_insert(json!(self.owner));
+        }
+        let request = json!({"op":operation,"kwargs":arguments});
+        match operation {
+            "command"
+            | "log"
+            | "stage"
+            | "set_run"
+            | "get_run"
+            | "finalize"
+            | "print"
+            | "env"
+            | "payload_stamp"
+            | "host_quiet"
+            | "debug_owner"
+            | "ledger_append"
+            | "create_run_dir"
+            | "conformance_signatures"
+            | "ladder_clock"
+            | "ladder_read_serial"
+            | "launch_make"
+            | "launch_start"
+            | "launch_stop"
+            | "launch_log" => Callback {
+                input: self.input,
+                output: self.output,
+            }
+            .call(operation, request["kwargs"].clone()),
+            "vm_reap_orphan_qemus" | "vm_process_cpu_pct" | "vm_per_arch_cap" => {
+                vibeos_test::lifecycle::dispatch(self.root, &request)
+            }
+            op if op.starts_with("portlease_")
+                || op.starts_with("vm_")
+                || op.starts_with("serial_")
+                || op.starts_with("qmp_") =>
+            {
+                self.vms.handle(self.root, &request)
+            }
+            op if op.starts_with("verdict_debugcon_") => {
+                vibeos_test::debugcon::dispatch(self.root, &request)
+            }
+            op if op.starts_with("verdict_") => vibeos_test::verdict::dispatch(self.root, &request),
+            op if op.starts_with("backend_") => vibeos_test::backend::dispatch(self.root, &request),
+            op if op.starts_with("conformance_parse_") => {
+                vibeos_test::conformance::dispatch(self.root, &request)
+            }
+            op if op.starts_with("provenance_") => {
+                vibeos_build::provenance::dispatch(self.root, &request)
+            }
+            "test_launch_retry" => vibeos_test::lifecycle::launch_retry(self, &request["kwargs"]),
+            "smoke_fixture" | "smoke_settle_script" | "smoke_launch_script" => {
+                vibeos_test::smoke_fixtures::dispatch(self.root, &request)
+            }
+            "smoke_one_boot" | "smoke_watch_script" => {
+                vibeos_test::smoke::dispatch(self.root, &request, self)
+            }
+            op if op.starts_with("smoke_check_") => {
+                vibeos_test::smoke_checks::dispatch(self.root, &request)
+            }
+            op if op.starts_with("smoke_") => {
+                vibeos_test::smoke_run::dispatch(self.root, &request, self)
+            }
+            op if op.starts_with("checkpoint_") => {
+                vibeos_test::checkpoint::dispatch(self.root, &request)
+            }
+            "ladder_watch" => vibeos_test::ladder_watch::dispatch(self.root, &request, self),
+            op if op.starts_with("ladder_") => vibeos_test::ladder::dispatch(self.root, &request),
+            op if op.starts_with("farm_") => vibeos_test::farm::dispatch(self.root, &request, self),
+            op if op.starts_with("conformance_") => {
+                vibeos_test::conformance_run::dispatch(self.root, &request, self)
+            }
+
+            _ => Err(Error::new(format!("unknown test operation {operation}"))),
+        }
+    }
+}
+fn dispatch(host: &mut Runtime<'_>, request: &Value) -> Result<Value> {
+    let op = request["op"].as_str().ok_or("missing test operation")?;
+    match op {
+        "test_version" => Ok(json!({"version":1,"native":true})),
+        _ => host.call(
+            op,
+            request.get("kwargs").cloned().unwrap_or_else(|| json!({})),
+        ),
+    }
+}
+fn run() -> Result<u8> {
+    let mut args = std::env::args().skip(1);
+    let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut lines = false;
+    let mut owner = None;
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--root" => root = PathBuf::from(args.next().ok_or("--root requires a directory")?),
+            "--client-pid" => {
+                owner = Some(
+                    args.next()
+                        .ok_or("--client-pid requires a PID")?
+                        .parse::<u32>()
+                        .map_err(|_| Error::new("invalid client PID"))?,
+                )
+            }
+            "--api-jsonl" | "--resource-jsonl" => lines = true,
+            "--api-json" => {}
+            "vm-guardian" => {
+                return vibeos_test::vm::guardian_worker(Path::new(
+                    &args.next().ok_or("VM guardian requires descriptor")?,
+                ))
+            }
+            "--help" | "-h" => {
+                println!("Usage: tools/test-infra [--root DIR] [--client-pid PID] --api-json|--api-jsonl|--resource-jsonl");
+                return Ok(0);
+            }
+            _ => return Err(Error::new(format!("unknown test option {arg}"))),
+        }
+    }
+    let owner = owner.unwrap_or(unsafe { libc::getppid() } as u32);
+    vibeos_build::artifact_lifetime::watch_owner(owner)?;
+    let input = std::io::stdin();
+    let mut input = input.lock();
+    let output = std::io::stdout();
+    let mut output = output.lock();
+    let mut vms = VmManager::default();
+    loop {
+        let mut line = String::new();
+        if input.read_line(&mut line)? == 0 {
+            break;
+        }
+        let result = match serde_json::from_str::<Value>(&line) {
+            Ok(request) => dispatch(
+                &mut Runtime {
+                    root: &root,
+                    vms: &mut vms,
+                    owner,
+                    input: &mut input,
+                    output: &mut output,
+                },
+                &request,
+            ),
+            Err(error) => Err(error.into()),
+        };
+        let response = match result {
+            Ok(value) => json!({"ok":value}),
+            Err(error) => json!({"error":{"message":error.message,"kind":error.kind}}),
+        };
+        serde_json::to_writer(&mut output, &response)?;
+        output.write_all(b"\n")?;
+        output.flush()?;
+        if !lines {
+            break;
+        }
+    }
+    vms.shutdown_all()?;
+    Ok(0)
+}
+fn main() -> std::process::ExitCode {
+    match run() {
+        Ok(code) => std::process::ExitCode::from(code),
+        Err(error) => {
+            eprintln!("test-infra: {error}");
+            std::process::ExitCode::from(2)
+        }
+    }
+}

@@ -376,12 +376,14 @@ class Run:
         timeout: float | None = None,
     ) -> subprocess.CompletedProcess:
         t0 = time.monotonic()
+        timed_out = False
         try:
             cp = subprocess.run(
                 cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout
             )
             out, err, rc = cp.stdout, cp.stderr, cp.returncode
         except subprocess.TimeoutExpired as e:
+            timed_out = True
             # text=True yields str, but TimeoutExpired types stdout/stderr as
             # str|bytes|None — coerce defensively so the full-log writes are str.
             def _as_str(s: str | bytes | None) -> str:
@@ -409,6 +411,7 @@ class Run:
                     f.write("\n--- stderr ---\n" + err)
             with open(self.commands_log, "a") as f:
                 f.write(json.dumps({"cmd": cmd, "cwd": str(cwd or ""), **timing}) + "\n")
+        setattr(cp, "_vibeos_timed_out", timed_out)
         return cp
 
     def log(self, text: str, header: str | None = None) -> None:

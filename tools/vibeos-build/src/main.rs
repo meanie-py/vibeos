@@ -110,6 +110,7 @@ fn api(root: &Path, r: &Value) -> Result<Value> {
         s if s.starts_with("artifact_") => b::artifact_api::dispatch(root, r),
         s if s.starts_with("build_bench_") => b::build_bench::dispatch(root, r),
         s if s.starts_with("build_policy_") => b::build_policy::dispatch(r),
+        s if s.starts_with("provenance_") => b::provenance::dispatch(root, r),
         s if s.starts_with("stage_") => b::media_stage::api(r),
         s if s.starts_with("sdk_") => b::sdk_api::dispatch(root, r),
         s if s.starts_with("ninja_") || s.starts_with("link_") => b::helper_api::dispatch(root, r),
