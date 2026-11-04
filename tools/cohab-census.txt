@@ -952,6 +952,17 @@ dll/directx/ksuser/CMakeLists.txt	1	# ksuser.c # replaced by Rust (sdk/lib/rust/
 dll/directx/wine/d3dx9_36/d3dx9.cmake	1	# math.c wants M_PI, which <math.h> only exposes on request here.
 dll/directx/wine/dmime/CMakeLists.txt	1	# performance.c drives its message pump with a CONDITION_VARIABLE.
 dll/directx/wine/dpnet/CMakeLists.txt	1	# dpnet_main.c guards its one-time init with InitOnceExecuteOnce.
+dll/directx/wine/dsound/CMakeLists.txt	1	# buffer.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/buffer.rs)
+dll/directx/wine/dsound/CMakeLists.txt	1	# capture.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/capture.rs)
+dll/directx/wine/dsound/CMakeLists.txt	1	# dsound.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/dsound.rs)
+dll/directx/wine/dsound/CMakeLists.txt	1	# dsound_convert.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/dsound_convert.rs)
+dll/directx/wine/dsound/CMakeLists.txt	1	# dsound_main.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/dsound_main.rs)
+dll/directx/wine/dsound/CMakeLists.txt	1	# duplex.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/duplex.rs)
+dll/directx/wine/dsound/CMakeLists.txt	1	# guid.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/guid.rs)
+dll/directx/wine/dsound/CMakeLists.txt	1	# mixer.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/mixer.rs)
+dll/directx/wine/dsound/CMakeLists.txt	1	# primary.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/primary.rs)
+dll/directx/wine/dsound/CMakeLists.txt	1	# propset.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/propset.rs)
+dll/directx/wine/dsound/CMakeLists.txt	1	# sound3d.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/sound3d.rs)
 dll/directx/wine/dwrite/CMakeLists.txt	1	# Wine guards every FreeType backend body in freetype.c with SONAME_LIBFREETYPE (configure
 dll/nls/normaliz/CMakeLists.txt	1	# IdnToAscii.c # replaced by Rust (sdk/lib/rust/normaliz-rust/src/normaliz/IdnToAscii.rs)
 dll/nls/normaliz/CMakeLists.txt	1	# IdnToUnicode.c # replaced by Rust (sdk/lib/rust/normaliz-rust/src/normaliz/IdnToUnicode.rs)

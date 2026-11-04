@@ -2592,24 +2592,20 @@ def _explode_inline_sources(cml: str, target: str) -> str:
     head, args = call[: call.index("(") + 1], call[call.index("(") + 1 : call.rindex(")")].split()
     if not any(a.endswith((".c", ".cpp")) for a in args[1:]):
         return cml
-    keep = [a for a in args[1:] if a.upper() in ("WIN32", "MODULE", "SHARED", "STATIC")]
+    keep = [a for a in args[1:] if a.upper() in ("WIN32", "MODULE", "SHARED", "STATIC", "OBJECT")]
     rest = [a for a in args[1:] if a not in keep]
     first = " ".join([head + args[0], *keep])
     body = "".join(f"\n    {a}" for a in rest)
     return cml[: m.start()] + f"{first}{body})" + cml[m.end() :]
 
 
-def flip_cmake(cml: str, state: dict) -> str:
-    """The module's CMakeLists with every translated TU replaced by the Rust staticlib.
-
-    The cohab flip, as setuplib, usetup and diskpart all did it by hand: each TU's source line
-    is commented out naming its `.rs` (the C stays on disk), a one-line stub TU keeps the
-    target non-empty, and the target links `rust_staticlib_variant`'s archive. Idempotent; a
-    TU missing from the source list is an error, never a skip.
-    """
-    stem, crate, target = state["stem"], state["crate"], state["target"]
+def _comment_out_tus(cml: str, state: dict, list_target: str) -> str:
+    """Each translated TU's source line commented out naming its `.rs` (the C stays on disk),
+    plus the stub TU (and the variadic trampolines) that keep the list non-empty. Shared by
+    both flip layouts; `list_target` is the target whose source list holds the TUs. A TU
+    missing from the source list is an error, never a skip."""
     module = REPO / state["module_dir"]
-    lines = _explode_inline_sources(cml, target).split("\n")
+    lines = _explode_inline_sources(cml, list_target).split("\n")
     last = None
     for tu in state["tus"]:
         # `../marshalling.c` (spoolss): a TU shared upward is listed relative to the module,
@@ -2665,6 +2661,23 @@ def flip_cmake(cml: str, state: dict) -> str:
             count=1,
             flags=re.M,
         )
+    return text
+
+
+def flip_cmake(cml: str, state: dict) -> str:
+    """The module's CMakeLists with every translated TU replaced by the Rust staticlib.
+
+    The cohab flip, as setuplib, usetup and diskpart all did it by hand: each TU's source line
+    is commented out naming its `.rs` (the C stays on disk), a one-line stub TU keeps the
+    target non-empty, and the target links `rust_staticlib_variant`'s archive. Idempotent; a
+    TU missing from the source list is an error, never a skip. A module a cargo cell already
+    links (`add_cargo_module` + its `<target>_shims` OBJECT library) takes `_flip_cell`'s
+    shape instead.
+    """
+    stem, crate, target = state["stem"], state["crate"], state["target"]
+    if _body_less_cell(cml, target):
+        return _flip_cell_cmake(cml, state)
+    text = _comment_out_tus(cml, state, target)
     variant = f"{stem}_rust"
     if f"rust_staticlib_variant({variant} " not in text:
         add = re.search(rf"^add_(?:executable|library)\(\s*{re.escape(target)}\b", text, re.M)
@@ -2730,6 +2743,106 @@ def flip_cmake(cml: str, state: dict) -> str:
                 flags=re.M,
             )
     return text
+
+
+def _body_less_cell(cml: str, target: str) -> str | None:
+    """The cargo cell crate when `target` is already linked by one (the body-less waves:
+    `add_cargo_module(<target> <target>-cargo ..)` over a `<target>_shims` OBJECT library
+    holding the C), else None. dsound was converted this way BEFORE it was translated, so
+    the classic flip found no `add_library(dsound MODULE ..)` source list to edit."""
+    m = re.search(rf"^add_cargo_module\(\s*{re.escape(target)}\s+(\S+-cargo)\b", cml, re.M)
+    if m and re.search(rf"^add_library\(\s*{re.escape(target)}_shims\s+OBJECT\b", cml, re.M):
+        return m.group(1)
+    return None
+
+
+def _flip_cell_cmake(cml: str, state: dict) -> str:
+    """The body-less flip, cmake half: the TUs leave the shims list, the cell names its
+    BODY_CRATE (what gcc.cmake's DEPENDS closure and the cell generator both read). The
+    shape mstask reached the other way round (flipped first, made body-less after)."""
+    target, crate = state["target"], state["crate"]
+    text = _comment_out_tus(cml, state, f"{target}_shims")
+    text = re.sub(
+        r"^# (\S+) is C, and cargo compiles and links it:$",
+        rf"# \1 is all Rust ({crate}) and cargo links it:",
+        text,
+        count=1,
+        flags=re.M,
+    )
+    m = re.search(rf"^add_cargo_module\(\s*{re.escape(target)}\b[^)]*\)", text, re.M | re.S)
+    if m is None:
+        raise PortError(f"flip: no add_cargo_module({target}) in the CMakeLists")
+    call = m.group(0)
+    if re.search(r"\bBODY_CRATES?\b", call):
+        if not re.search(rf"\bBODY_CRATE\s+{re.escape(crate)}\b", call):
+            raise PortError(f"flip: add_cargo_module({target}) already names another body")
+        return text
+    kind = re.search(r"^(\s*)KIND\s+\S+[ \t]*$", call, re.M)
+    if kind is None:
+        raise PortError(f"flip: add_cargo_module({target}) has no KIND line to follow")
+    at = m.start() + kind.end()
+    return text[:at] + f"\n{kind.group(1)}BODY_CRATE {crate}" + text[at:]
+
+
+def _flip_cell_build_rs(build_rs: str, state: dict, cml: str) -> str:
+    """The body-less flip, cell half: link the Rust archive, compile only what the shims list
+    still holds, and give a float-passing user crate SSE on i386 (calc-cargo's
+    `body_rustflags`). `body` moves to the front of the link order, where the generator
+    puts a Rust body (mstask-cargo)."""
+    target, crate = state["target"], state["crate"]
+    module_rel = state["module_dir"]
+    if f'.rust_staticlib("{crate}")' in build_rs:
+        return build_rs
+    out = build_rs.replace(
+        "//! The module is C, compiled and linked by reactos-link: there is no Rust body.",
+        f"//! The body is {crate}; reactos-link builds the PE.",
+    )
+    # To the list's OWN closing line: each flipped TU's comment holds a `(...rs)` of its own.
+    shims = re.search(
+        rf"^add_library\(\s*{re.escape(target)}_shims\s+OBJECT\b(.*?)^\s*\)",
+        cml,
+        re.M | re.S,
+    )
+    # Whole live lines only (the flip exploded the list one source per line): a flipped TU
+    # is `# buffer.c  # replaced by Rust (..)`.
+    live = [
+        f"{module_rel}/{ln.strip()}"
+        for ln in (shims.group(1).splitlines() if shims else [])
+        if re.fullmatch(r"\s*[\w./-]+\.(?:c|cpp)\s*", ln)
+    ]
+    if not live:
+        raise PortError(f"flip: {target}_shims lists no live source after the flip")
+    c_call = re.compile(rf'(\.c_from_compile_db\("{re.escape(target)}_shims", &\[)[^\]]*(\]\))')
+    if not c_call.search(out):
+        raise PortError(f"flip: {target}'s cell has no c_from_compile_db({target}_shims, ..)")
+    listed = ", ".join(f'"{p}"' for p in live)
+    out = c_call.sub(lambda m: m.group(1) + listed + m.group(2), out, count=1)
+    if "    Linker::new(target_json)\n" not in out:
+        raise PortError(f"flip: {target}'s cell has no `Linker::new(target_json)` to extend")
+    if state.get("usermode", True) and _crate_uses_float(crate):
+        head = (
+            "    // The body passes floats by value: i386 user code needs SSE (see oleaut32).\n"
+            "    let body_rustflags = match arch.as_str() {\n"
+            '        "x86" => Some("-C target-feature=+sse,+sse2"),\n'
+            "        _ => None,\n"
+            "    };\n"
+            "    let mut link = Linker::new(target_json);\n"
+            "    if let Some(flags) = body_rustflags {\n"
+            "        link = link.rust_build_rustflags(flags);\n"
+            "    }\n"
+            "    link\n"
+        )
+    else:
+        head = "    Linker::new(target_json)\n"
+    out = out.replace(
+        "    Linker::new(target_json)\n", head + f'        .rust_staticlib("{crate}")\n', 1
+    )
+    out = re.sub(
+        r'(=> &\[)((?:"[^"]*", )*?)"body", ',
+        lambda m: m.group(1) + '"body", ' + m.group(2),
+        out,
+    )
+    return out
 
 
 def _crate_uses_float(crate: str) -> bool:
@@ -2864,6 +2977,16 @@ def stage_flip(stem: str) -> None:
         )
     _record(state, "flip", started, changed=changed)
     print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
+    own_cell = _body_less_cell(cml.read_text(), state["target"])
+    if own_cell:
+        build_rs = REPO / "sdk" / "lib" / "rust" / own_cell / "build.rs"
+        text = build_rs.read_text()
+        flipped = _flip_cell_build_rs(text, state, cml.read_text())
+        if flipped != text:
+            build_rs.write_text(flipped)
+            print(f"flip: {build_rs.relative_to(REPO)} now links {state['crate']}")
+        print("next: ./vibeos-cli build on each arch, then ./vibeos-cli gate")
+        return
     keeps_c = bool(_kept_c_sources(cml.read_text()))
     for cell in _repoint_cargo_cells(state["target"], state["crate"], keeps_c):
         print(f"flip: {cell.relative_to(REPO)} now links {state['crate']}")
