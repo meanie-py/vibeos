@@ -1842,6 +1842,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "dinput-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "dinput-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
+]
+
+[[package]]
 name = "disk-cargo"
 version = "0.1.0"
 dependencies = [

@@ -1300,10 +1300,17 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
                 continue;
             }
             if let Some(c) = re(r"^libmsvcrtex_(\w+)\.a$").captures(name) {
-                crt = super::constants()["MSVCRTEX"]
+                // A DLL links TWO: libmsvcrtex_dll.a (the startup) and libmsvcrtex_dllmain.a
+                // (the default DllMain, msvcrtex.cmake). Only the startup names a kind, and
+                // an unmapped companion must not clobber it: dinput's link listed dllmain
+                // last, so the cell came out with no CRT startup and failed to link
+                // (`undefined symbol: _DllMainCRTStartup@12`).
+                if let Some(kind) = super::constants()["MSVCRTEX"]
                     .get(&c[1])
                     .and_then(|v| v.as_str())
-                    .map(str::to_owned);
+                {
+                    crt = Some(kind.to_owned());
+                }
                 if bodyless && !seq.contains(&"body".to_string()) {
                     seq.push("body".into());
                 }
