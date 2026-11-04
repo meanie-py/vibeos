@@ -2025,3 +2025,44 @@ def test_a_guid_the_island_defers_to_the_prelude_gets_storage(tmp_path, monkeypa
     block, refused = port.initguid_storage({"module_dir": "dll/ds"}, crate, crate / "src" / "ds")
     assert "pub static IID_IDsDriverNotify: GUID = GUID { Data1: 0x00363EF44" in block
     assert refused == []
+
+
+def test_a_body_less_module_flips_into_its_cargo_cell(tmp_path, monkeypatch):
+    # dsound was made body-less (cargo links its C from dsound_shims) BEFORE it was
+    # translated: the classic flip found no add_library(dsound MODULE ..) list and refused.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "_crate_uses_float", lambda crate: True)
+    monkeypatch.setattr(port, "_flip_output", lambda state, tu: tmp_path / f"r/{Path(tu).stem}.rs")
+    (tmp_path / "dll/ds").mkdir(parents=True)
+    state = {
+        "stem": "ds",
+        "crate": "ds-rust",
+        "target": "ds",
+        "module_dir": "dll/ds",
+        "tus": ["dll/ds/a.c", "dll/ds/b.c"],
+        "usermode": True,
+    }
+    cml = (
+        "# ds.dll is C, and cargo compiles and links it:\n"
+        "add_library(ds_shims OBJECT a.c b.c)\n"
+        "add_cargo_module(ds ds-cargo ds.dll\n    KIND win32dll\n    DESTINATION x)\n"
+    )
+    new = port.flip_cmake(cml, state)
+    assert "# ds.dll is all Rust (ds-rust) and cargo links it:" in new
+    assert "    # a.c  # replaced by Rust (r/a.rs)" in new and "    rust_cohab_stub.c" in new
+    assert "    KIND win32dll\n    BODY_CRATE ds-rust\n" in new
+    assert port.flip_cmake(new, state) == new  # idempotent
+    build_rs = (
+        "//! The module is C, compiled and linked by reactos-link: there is no Rust body.\n"
+        '        "x86" => &["engine:uuid", "import:ntdll", "body", "engine:oldnames"],\n'
+        "    Linker::new(target_json)\n"
+        '        .c_from_compile_db("ds_shims", &["dll/ds/a.c", "dll/ds/b.c"])\n'
+    )
+    out = port._flip_cell_build_rs(build_rs, state, new)
+    assert (
+        '.rust_staticlib("ds-rust")' in out
+        and '"x86" => Some("-C target-feature=+sse,+sse2")' in out
+    )
+    assert '.c_from_compile_db("ds_shims", &["dll/ds/rust_cohab_stub.c"])' in out
+    assert '&["body", "engine:uuid", "import:ntdll", "engine:oldnames"]' in out
+    assert port._flip_cell_build_rs(out, state, new) == out
