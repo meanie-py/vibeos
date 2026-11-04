@@ -1,0 +1,14 @@
+--- a/src/convert_type.rs
++++ b/src/convert_type.rs
+@@ -507,6 +507,11 @@
+                 self.knr_function_type_with_parameters(ctxt, *ctype, params)
+             }
+             CTypeKind::TypeOf(ty) => self.knr_function_type_with_parameters(ctxt, ty, params),
++            // vibeos: a calling-convention attribute (__stdcall) wraps the function type in
++            // an AttributedType; it is transparent here exactly as it is in convert().
++            CTypeKind::Attributed(ty, _) => {
++                self.knr_function_type_with_parameters(ctxt, ty.ctype, params)
++            }
+ 
+             CTypeKind::Typedef(decl) => match &ctxt.index(decl).kind {
+                 CDeclKind::Typedef { typ, .. } => {

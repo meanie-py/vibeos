@@ -11846,28 +11846,60 @@ def _fake_build(tmp_path, ninja: str, depinfo: str):
     return b
 
 
-def test_payload_unbuilt_rust_crate_only_when_both_records_are_silent(tmp_path):
-    """An arm64-only crate (wowx64-rust) cannot change what build-amd64 stages, but a crate
-    named by EITHER the ninja graph or cargo's dep-info is compiled there."""
+def test_payload_unreferenced_by_build_only_when_every_record_is_silent(tmp_path, monkeypatch):
+    """An arm64-only crate (wowx64-rust) or CPU layer (tools/fex/wowx64fex) cannot change what
+    build-amd64 stages, but a path named by ANY of the build's records is read there: the
+    ninja graph, ninja's dependency log (C headers), or cargo's dep-info, which spells paths
+    under the worktree's own root as well as /tmp/vibeos/."""
     pc = _load_payload_compile()
     b = _fake_build(
         tmp_path,
-        "build x: CUSTOM /tmp/vibeos/sdk/lib/rust/user32-rust/src/lib.rs\n",
-        "x.dll: /tmp/vibeos/sdk/lib/rust/strsafe-rust/src/lib.rs\n",
+        "rule CUSTOM\n  command = true\n"
+        "build x: CUSTOM /tmp/vibeos/sdk/lib/rust/user32-rust/src/lib.rs "
+        "/tmp/vibeos/tools/fex/wow64-closure.py\n",
+        "x.dll: /home/someone/worktree/sdk/lib/rust/strsafe-rust/src/lib.rs\n",
     )
-    unbuilt = pc.unbuilt_rust_crate(b)
+    real_run = pc.subprocess.run
+
+    def run(cmd, *a, **kw):
+        if cmd[:1] == ["ninja"]:  # the dependency log names one header
+            return pc.subprocess.CompletedProcess(
+                cmd, 0, stdout="x.obj: #deps 1\n    /tmp/vibeos/tools/fex/shared.h\n", stderr=""
+            )
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(pc.subprocess, "run", run)
+    unbuilt = pc.unreferenced_by_build(b)
     assert unbuilt("sdk/lib/rust/wowx64-rust/src/callback.rs")
+    assert unbuilt("tools/fex/wowx64fex/Module.cpp")
     assert not unbuilt("sdk/lib/rust/user32-rust/src/lib.rs")  # ninja names it
-    assert not unbuilt("sdk/lib/rust/strsafe-rust/src/lib.rs")  # only cargo names it
+    assert not unbuilt("sdk/lib/rust/strsafe-rust/src/lib.rs")  # only cargo, other root
+    assert not unbuilt("tools/fex/wow64-closure.py")  # the build runs it
+    assert not unbuilt("tools/fex/shared.h")  # only the dependency log
     assert not unbuilt("sdk/lib/rust/Cargo.toml")  # the workspace, not a crate
-    assert not unbuilt("dll/win32/wowx64/CMakeLists.txt")
+    assert not unbuilt("dll/win32/wowx64/CMakeLists.txt")  # outside both scopes
 
 
-def test_payload_unbuilt_rust_crate_without_build_records_proves_nothing(tmp_path):
+def test_payload_unreferenced_by_build_without_build_records_proves_nothing(tmp_path):
     pc = _load_payload_compile()
     b = tmp_path / "build-amd64"
     b.mkdir()
-    assert not pc.unbuilt_rust_crate(b)("sdk/lib/rust/wowx64-rust/src/callback.rs")
+    assert not pc.unreferenced_by_build(b)("sdk/lib/rust/wowx64-rust/src/callback.rs")
+
+
+def test_payload_unreferenced_by_build_dies_when_the_deps_log_is_unreadable(tmp_path, monkeypatch):
+    pc = _load_payload_compile()
+    b = _fake_build(tmp_path, "rule CUSTOM\n  command = true\n", "x.dll: nothing\n")
+    real_run = pc.subprocess.run
+
+    def run(cmd, *a, **kw):
+        if cmd[:1] == ["ninja"]:
+            return pc.subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(pc.subprocess, "run", run)
+    with pytest.raises(SystemExit):
+        pc.unreferenced_by_build(b)("tools/fex/wowx64fex/Module.cpp")
 
 
 def test_payload_guest_set_build_dir_must_name_an_arch(tmp_path, monkeypatch):

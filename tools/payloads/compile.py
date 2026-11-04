@@ -127,38 +127,63 @@ def _load_by_path(modname: str, path: Path):
     return mod
 
 
-def unbuilt_rust_crate(build_dir: Path):
-    """A predicate: is this path inside a Rust crate that `build_dir` never compiles?
+def unreferenced_by_build(build_dir: Path):
+    """A predicate: is this path one that `build_dir`'s build never reads?
 
-    Such an edit cannot change a program that build stages. The arm64-only wowx64-rust
-    is the case that made this matter: every edit to it demanded a 19-minute amd64
-    rebuild before an x86-64 guest payload would stage (2026-11-01). Both of the build's
-    own records must be silent about the crate: the ninja graph, which can miss a cargo
-    edge, and cargo's dep-info files, which list every source it actually compiled."""
+    Such an edit cannot change a program that build stages, and the build itself would
+    rebuild nothing for it. Two kinds of path qualify. One is a Rust crate under
+    sdk/lib/rust/<crate>/, judged by its directory so that a new file counts with the crate:
+    the arm64-only wowx64-rust demanded a 19-minute amd64 rebuild before an x86-64 guest
+    payload would stage (2026-11-01). The other is a file under tools/fex/, judged by its own
+    path: the arm64 CPU layer tools/fex/wowx64fex did the same (2026-11-03), while
+    tools/fex/wow64-closure.py is read by the amd64 build and stays live. Every one of the
+    build's records must be silent: the ninja graph, which can miss a cargo edge; ninja's
+    dependency log, which holds the headers C sources include; and cargo's dep-info files,
+    which list every source cargo compiled. The needle is the repo path behind a `/`, because
+    the records spell it under both /tmp/vibeos/ and the worktree's own absolute path (cargo's
+    dep-info, 2026-11-03): matching only one spelling would miss crates the build compiles."""
     ninja = list(build_dir.glob("*.ninja"))
     # any() stops at the first hit, and CMake keeps depfiles under build-<arch>/CMakeFiles/d/,
     # so this never descends the tree.
     if not ninja or not any(build_dir.rglob("*.d")):  # unpruned-walk: intentional
         return lambda p: False  # no build records to consult: nothing is provably unbuilt
+    records: list[str] = []
     seen: dict[str, bool] = {}
+
+    def text() -> list[str]:
+        if not records:
+            records.extend(p.read_text(errors="ignore") for p in ninja)
+            deps = subprocess.run(
+                ["ninja", "-C", str(build_dir), "-t", "deps"],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if deps.returncode != 0:
+                die(f"cannot read {build_dir}'s ninja dependency log (rc={deps.returncode})")
+            records.append(deps.stdout)
+        return records
 
     def unbuilt(path: str) -> bool:
         parts = path.split("/")
-        if len(parts) < 5 or parts[:3] != ["sdk", "lib", "rust"]:
+        if len(parts) >= 5 and parts[:3] == ["sdk", "lib", "rust"]:
+            needle = "/" + "/".join(parts[:4]) + "/"
+        elif len(parts) >= 3 and parts[:2] == ["tools", "fex"]:
+            needle = "/" + path
+        else:
             return False
-        crate = "/".join(parts[:4]) + "/"
-        if crate not in seen:
-            named = any(crate in p.read_text(errors="ignore") for p in ninja)
+        if needle not in seen:
+            named = any(needle in t for t in text())
             if not named:
                 rc = subprocess.run(
-                    ["grep", "-rqF", "--include=*.d", crate, str(build_dir)],
+                    ["grep", "-rqF", "--include=*.d", needle, str(build_dir)],
                     check=False,
                 ).returncode
                 if rc > 1:
-                    die(f"cannot search {build_dir} dep-info for {crate} (grep rc={rc})")
+                    die(f"cannot search {build_dir} dep-info for {needle} (grep rc={rc})")
                 named = rc == 0
-            seen[crate] = not named
-        return seen[crate]
+            seen[needle] = not named
+        return seen[needle]
 
     return unbuilt
 
@@ -176,7 +201,7 @@ def guest_build_current(name: str, build_dir: Path) -> None:
         die(f"payload {name!r}: guest set build_dir {build_dir.name!r} is not build-<arch>")
     warmth = _load_by_path("_payload_warmth", REPO / "tests/qemu/cli/warmth.py")
     docs_only = _load_by_path("_payload_docs_only", REPO / "tools/docs_only.py")
-    unbuilt = unbuilt_rust_crate(build_dir)
+    unbuilt = unreferenced_by_build(build_dir)
     try:
         stale = warmth.missing(
             REPO,

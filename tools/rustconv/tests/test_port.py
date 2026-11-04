@@ -1961,3 +1961,28 @@ def test_a_helper_passing_an_atl_class_gets_the_rust_abi(tmp_path):
     assert 'unsafe extern "C" fn Crc(' in text, "no ATL class: untouched"
     assert 'pub unsafe extern "C" fn Exported(' in text, "an export keeps its ABI"
     assert 'unsafe extern "C" fn Callback(' in text, "taken as a fn pointer: kept"
+
+
+def test_identical_anonymous_twins_agree_and_differing_twins_refuse(tmp_path, monkeypatch):
+    # dsound.c's two debug-dump flags[] tables: two anonymous structs, the same text.
+    from rustconv import c2rust_anchor
+
+    twin = (
+        "pub struct C2RustUnnamed_{n} {{\n    pub mask: DWORD,\n    pub name: *const c_char,\n}}\n"
+    )
+    texts = {"i386": twin.format(n=11) + twin.format(n=12)}
+    texts["amd64"] = twin.format(n=30) + twin.format(n=31)
+    texts["arm64"] = twin.format(n=29) + twin.format(n=30)
+    monkeypatch.setattr(c2rust_anchor, "_native_text", lambda f, arch: texts[arch])
+    want = {
+        "C2RustUnnamed_30": frozenset({"mask", "name"}),
+        "C2RustUnnamed_31": frozenset({"mask", "name"}),
+    }
+    agreed, differs = c2rust_anchor.anonymous_types(tmp_path / "dsound.c", want)
+    assert differs == {}
+    assert "pub struct C2RustUnnamed_31 {" in agreed["C2RustUnnamed_31"]
+    assert "pub mask: DWORD" in agreed["C2RustUnnamed_30"]
+    # Same field NAMES, different types: which one was meant is a guess, so refuse.
+    texts["amd64"] = twin.format(n=30) + twin.format(n=31).replace("DWORD", "ULONG")
+    agreed, differs = c2rust_anchor.anonymous_types(tmp_path / "dsound.c", want)
+    assert agreed == {} and set(differs) == set(want)
