@@ -1081,6 +1081,39 @@ def test_cargo_link_fresh_binary_not_stale(cargo_link_repo: Path):
     assert provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64") == []
 
 
+def test_compile_snapshot_cannot_hide_unbuilt_command_changes(cargo_link_repo: Path):
+    repo = cargo_link_repo
+    build = repo / "build-amd64"
+    raw = build / "compile_commands.json"
+    snapshot = build / "reactos-link-compile-commands.json"
+    exe = build / "bar/bar.exe"
+    dep = build / "bar/bar.exe.d"
+    raw.write_text("original commands\n")
+    snapshot.write_text(raw.read_text())
+    dep.write_text(dep.read_text().splitlines()[0] + " " + str(snapshot) + "\n")
+    for path in (
+        raw,
+        snapshot,
+        repo / "sdk/lib/rust/bar-rust/src/lib.rs",
+        repo / "sdk/lib/rust/bar-rust/Cargo.toml",
+    ):
+        os.utime(path, (1000, 1000))
+    os.utime(exe, (2000, 2000))
+    assert provenance.cargo_link_staleness_reasons(repo, "amd64") == []
+    # Byte changes must fail even if all timestamps appear older than the PE.
+    raw.write_text("new command flags\n")
+    os.utime(raw, (1500, 1500))
+    with pytest.raises(provenance.ProvenanceError, match=r"snapshot.*differs"):
+        provenance.cargo_link_staleness_reasons(repo, "amd64")
+    verdict = provenance.check_staleness(repo, "amd64")
+    assert not verdict.fresh
+    assert any("snapshot" in reason and "differs" in reason for reason in verdict.reasons)
+    # A byte-identical CMake rewrite is harmless even with a newer timestamp.
+    raw.write_text(snapshot.read_text())
+    os.utime(raw, (3000, 3000))
+    assert provenance.cargo_link_staleness_reasons(repo, "amd64") == []
+
+
 def test_cargo_link_stale_binary_flagged_x86(cargo_link_repo: Path):
     """The crux of the 2026-07-04 incident: a fresh ISO around a stale cargo-linked
     PE, on x86 (which the cohab net exempts). Tier-1 fingerprint matches the stamp,

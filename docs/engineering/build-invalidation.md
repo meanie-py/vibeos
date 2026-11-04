@@ -105,3 +105,19 @@ watch. It now proves that unrelated reconfiguration runs none of them, each real
 option rebuilds only its reader, and turning options off updates executable
 behavior. Identical reconfiguration is also a no-op. Native refusal tests cover
 missing, corrupt and unknown inputs.
+
+CMake also rewrites `compile_commands.json` on identical reconfiguration. A real
+CMake control recorded the same SHA-256 with a changed mtime. The link graph now
+has one `copy_if_different` producer for a stable copy of that database. Ninja
+restat leaves its consumers fresh when commands are unchanged. The Rust depfile
+retargeter verifies exact byte equality before substituting this declared input
+in the copied PE rule. Cargo retains its full original database watch, including
+for direct invocations. Other prerequisites and phony rules remain intact.
+
+The native provenance check compares the snapshot against the current database
+before accepting a build or boot. A changed database therefore fails verification
+until Ninja has propagated it, even if timestamps appear older than the PE.
+Missing or unequal snapshot inputs also refuse depfile publication. The real
+fixture counts both Ninja edges and Cargo build-script runs, checks executable
+behavior after a genuine compile-command change, and confirms that identical
+reconfiguration executes no link edge.

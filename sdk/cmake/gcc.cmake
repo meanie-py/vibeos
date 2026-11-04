@@ -1144,6 +1144,8 @@ function(add_cargo_module _target _crate _output)
         COMMAND "${_retarget_depfile}" retarget-depfile
             --source "${_cargo_depfile}" --cargo-output "${_cargo_exe}"
             --target "${_dep_target}" --output "${_out}.d"
+            --dependency-source "${CMAKE_BINARY_DIR}/compile_commands.json"
+            --dependency-snapshot "${CMAKE_BINARY_DIR}/reactos-link-compile-commands.json"
         DEPENDS ${_srcs} ${_postdep} ${_acm_EXTRA_DEPENDS} ${_retarget_depfile_inputs}
         DEPFILE "${_out}.d"
         JOB_POOL vibeos_cargo_links
@@ -1154,6 +1156,7 @@ function(add_cargo_module _target _crate _output)
         cmake_policy(POP)
     endif()
     add_custom_target(${_target} ALL DEPENDS ${_outs})
+    add_dependencies(${_target} reactos_cargo_compile_db)
     set_property(TARGET ${_target} PROPERTY CARGO_OUTPUTS ${_outs})
 
     if(NOT _acm_NO_CD)
