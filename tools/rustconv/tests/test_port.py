@@ -2066,3 +2066,83 @@ def test_a_body_less_module_flips_into_its_cargo_cell(tmp_path, monkeypatch):
     assert '.c_from_compile_db("ds_shims", &["dll/ds/rust_cohab_stub.c"])' in out
     assert '&["body", "engine:uuid", "import:ntdll", "engine:oldnames"]' in out
     assert port._flip_cell_build_rs(out, state, new) == out
+
+
+def test_a_dead_tu_is_recorded_not_a_module_wide_refusal(capsys):
+    # dinput: four joystick/effect TUs >90% inside a FALSE `#if`. translate already scoped
+    # DEAD_TU to its own file (24dad9bc219); derive refused every TU in the module.
+    from types import SimpleNamespace
+
+    from rustconv.profile_derive import Finding
+
+    dead = Finding("error", "DEAD_TU", "j.c is 92% dead", subject="dll/x/j.c")
+    port._gate_derive_errors(SimpleNamespace(errors=[dead]))
+    assert "NOT BLOCKING" in capsys.readouterr().out
+    other = Finding("error", "MISSING_CONST", "boom")
+    with pytest.raises(port.PortError, match="MISSING_CONST|boom"):
+        port._gate_derive_errors(SimpleNamespace(errors=[dead, other]))
+
+
+def test_a_fact_the_first_tu_cannot_evaluate_is_retried_in_the_next(tmp_path, monkeypatch):
+    # dinput's DIJOFS_X: data_formats.c (a data TU, two targets) said "not an integer
+    # constant expression"; joystick.c evaluates it. Code TUs are tried first.
+    from types import SimpleNamespace
+
+    from rustconv import sdk_facts
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    (tmp_path / "m").mkdir()
+    (tmp_path / "m/data.c").write_text("int a = DIJOFS_X;\n")
+    (tmp_path / "m/joy.c").write_text("int b = DIJOFS_X;\n")
+    prelude = tmp_path / "prelude.rs"
+    prelude.write_text("")
+    asked: list[str] = []
+
+    def fake(repo, tu, names):
+        asked.append(Path(tu).name)
+        if Path(tu).name == "joy.c":
+            fact = SimpleNamespace(name="DIJOFS_X", value=0, c_type="LONG|long", literal=None)
+            return SimpleNamespace(facts=[fact], unresolved={})
+        return SimpleNamespace(facts=[], unresolved={"DIJOFS_X": "not an integer constant"})
+
+    monkeypatch.setattr(sdk_facts, "resolve", fake)
+    monkeypatch.setattr(port, "_island_constants", lambda state: set())
+    monkeypatch.setattr(port, "_own_object_macros", lambda state: set())
+    monkeypatch.setattr(port, "_known_types", lambda state: set())
+    state = {"tus": ["m/data.c", "m/joy.c"], "data_tus": ["m/data.c"], "usermode": True}
+    assert port._resolve_facts(state, prelude, ["DIJOFS_X"]) == []
+    assert asked == ["joy.c"]  # the code TU first, so the data TU is never needed
+    assert "DIJOFS_X" in prelude.read_text()
+    state["data_tus"] = []
+    (tmp_path / "m/joy.c").write_text("int b = DIJOFS_X;\n")
+    prelude.write_text("")
+    asked.clear()
+    assert port._resolve_facts(state, prelude, ["DIJOFS_X"]) == []
+    assert asked == ["data.c", "joy.c"]  # refused in the first, answered by the next
+
+
+def test_an_array_size_compare_against_a_widened_index_is_widened(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_crate_dir", lambda state: tmp_path)
+    m = tmp_path / "src" / "d"
+    m.mkdir(parents=True)
+    (m / "a.rs").write_text(
+        "while (i as usize) < ARRAY_SIZE!(devs) { }\n"
+        "if (j as usize) >= ARRAY_SIZE!(t) as usize { }\n"
+    )
+    assert port._widen_array_size_compares({"stem": "d"}) == 1
+    text = (m / "a.rs").read_text()
+    assert "(i as usize) < ARRAY_SIZE!(devs) as usize" in text
+    assert "ARRAY_SIZE!(t) as usize as usize" not in text
+
+
+def test_a_module_list_twin_of_winelist_is_dropped(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_crate_dir", lambda state: tmp_path)
+    (tmp_path / "Cargo.toml").write_text('winelist-rust = { path = "../winelist-rust" }\n')
+    m = tmp_path / "src" / "d"
+    m.mkdir(parents=True)
+    (m / "a.rs").write_text(
+        "use x;\n#[repr(C)]\npub struct list {\n    pub next: *mut list,\n"
+        "    pub prev: *mut list,\n}\n\npub struct Keep;\n"
+    )
+    assert port._drop_wine_list_twins({"stem": "d"}) == ["a"]
+    assert (m / "a.rs").read_text() == "use x;\npub struct Keep;\n"

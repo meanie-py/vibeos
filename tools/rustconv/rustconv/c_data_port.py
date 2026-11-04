@@ -44,6 +44,7 @@ naming the declaration, never a silent zero.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass, field, replace
@@ -453,6 +454,11 @@ class Ctx:
     helpers: set[str] = field(default_factory=set)  # const helpers the output needs
     flex: dict[str, str] = field(default_factory=dict)  # flexible-array struct name -> its text
     layouts: dict[str, dict] = field(default_factory=dict)  # clang's record layouts (bytes)
+    argv: list[str] = field(default_factory=list)  # the TU's compile command, this arch
+    # A macro-produced offsetof's place among those sharing its expansion line (node id ->
+    # (file, line, index)), and the TU's preprocessed lines -- see `_macro_offsetof`.
+    offsetof_slots: dict[str, tuple[str, int, int]] = field(default_factory=dict)
+    pp_lines: dict[tuple[str, int], str] | None = None
 
     def text(self, node: dict) -> tuple[str | None, bytes]:
         r = node.get("range", {})
@@ -621,6 +627,89 @@ def _anon_layout(lay: dict, key: str) -> dict | None:
     return None
 
 
+def _offsetof_slots(ast: dict, sources: dict[str, bytes]) -> dict[str, tuple[str, int, int]]:
+    """Each OffsetOfExpr a MACRO produced, keyed by node id: (expansion file, line, its index
+    among the macro offsetofs expanded on that line, in source order).
+
+    dinput's `DIJOFS_X` is `FIELD_OFFSET(DIJOYSTATE, lX)`: the node's expansion location is
+    the bare `DIJOFS_X` (no call to read) and its spelling location is winnt.h's definition,
+    whose text says `type` and `field`. Only the preprocessed line holds the real arguments.
+    """
+    found: list[tuple[str, int, int, int, str]] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, dict):
+            if node.get("kind") == "OffsetOfExpr":
+                begin = node.get("range", {}).get("begin", {})
+                exp, spell = begin.get("expansionLoc"), begin.get("spellingLoc")
+                if exp and spell and "offset" in exp:
+                    f = exp.get("_file")
+                    if f and (spell.get("_file") != f or spell.get("offset") != exp["offset"]):
+                        src = sources.setdefault(f, Path(f).read_bytes())
+                        line = src[: exp["offset"]].count(b"\n") + 1
+                        found.append((f, line, exp["offset"], spell.get("offset", 0), node["id"]))
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(ast)
+    out: dict[str, tuple[str, int, int]] = {}
+    seen: dict[tuple[str, int], int] = {}
+    for f, line, _eo, _so, nid in sorted(found):
+        if nid in out:
+            continue
+        k = seen.get((f, line), 0)
+        out[nid] = (f, line, k)
+        seen[(f, line)] = k + 1
+    return out
+
+
+_LINE_MARKER = re.compile(r'^# (\d+) "((?:[^"\\]|\\.)*)"')
+
+
+def _preprocessed_lines(argv: list[str]) -> dict[tuple[str, int], str]:
+    """(file, line) -> the text `clang -E` gives that source line, by its line markers."""
+    proc = subprocess.run(
+        [*ma._without_outputs(argv), "-E", "-o", "-"], capture_output=True, check=False
+    )
+    if proc.returncode != 0:
+        raise DataPortError(f"clang -E failed:\n{proc.stderr.decode()[:600]}")
+    out: dict[tuple[str, int], str] = {}
+    f, line = "", 0
+    for text in proc.stdout.decode(errors="replace").split("\n"):
+        m = _LINE_MARKER.match(text)
+        if m:
+            f, line = os.path.realpath(m.group(2).replace("\\\\", "\\")), int(m.group(1))
+            continue
+        key = (f, line)
+        out[key] = out[key] + " " + text if key in out else text
+        line += 1
+    return out
+
+
+def _macro_offsetof(n: dict, ctx: Ctx) -> str:
+    """The preprocessed `__builtin_offsetof(T, m)` text of a macro-produced offsetof."""
+    f, line, k = ctx.offsetof_slots[n["id"]]
+    if ctx.pp_lines is None:
+        ctx.pp_lines = _preprocessed_lines(ctx.argv)
+    text = ctx.pp_lines.get((os.path.realpath(f), line), "")
+    calls = []
+    for m in re.finditer(r"__builtin_offsetof\s*\(", text):
+        depth, j = 1, m.end()
+        while j < len(text) and depth:
+            depth += {"(": 1, ")": -1}.get(text[j], 0)
+            j += 1
+        calls.append(" ".join(text[m.start() : j].split()))
+    if k >= len(calls):
+        raise DataPortError(
+            f"{ctx.where}: offsetof #{k} on {Path(f).name}:{line}: the preprocessed line has "
+            f"{len(calls)} __builtin_offsetof"
+        )
+    return calls[k]
+
+
 def _offsetof(n: dict) -> int:
     """`offsetof(T, a.b)` / `FIELD_OFFSET(T, a.b)`: clang's JSON prints an OffsetOfExpr with
     no value and no operands, so the TYPE and MEMBER PATH are read from the call's source text
@@ -629,13 +718,18 @@ def _offsetof(n: dict) -> int:
     lay = _ARCH["layouts"]
     if ctx is None or lay is None:
         raise DataPortError("offsetof outside a TU render: no clang layouts to read")
-    text = _call_text(n, ctx)
-    m = re.search(r"\(\s*(.+?)\s*,\s*([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)\s*\)\s*\)?$", text)
+    text = _macro_offsetof(n, ctx) if n.get("id") in ctx.offsetof_slots else _call_text(n, ctx)
+    # A member path may index an array (DIJOFS_SLIDER's `rglVSlider[0]`, after the macro).
+    seg = r"[A-Za-z_]\w*(?:\s*\[\s*\d+\s*\])?"
+    m = re.search(rf"\(\s*(.+?)\s*,\s*({seg}(?:\s*\.\s*{seg})*)\s*\)\s*\)?$", text)
     if m is None:
         raise DataPortError(f"{ctx.where}: cannot read the type and member of `{text[:80]}`")
     qual = m.group(1)
     total = 0
-    for member in re.split(r"\s*\.\s*", m.group(2)):
+    for part in re.split(r"\s*\.\s*", m.group(2)):
+        pm = re.fullmatch(r"([A-Za-z_]\w*)(?:\s*\[\s*(\d+)\s*\])?", part)
+        assert pm is not None
+        member, index = pm.group(1), pm.group(2)
         key = desugar(qual)
         rec = ctx.records.get(qual) or ctx.records.get(key)
         info = lay.get(key) or _anon_layout(lay, key)
@@ -649,6 +743,14 @@ def _offsetof(n: dict) -> int:
             raise DataPortError(f"{ctx.where}: offsetof({qual}, {member}) is a bit-field")
         total += info["bit_offsets"][i] // 8
         qual = rec.fields[i].qual
+        if index is not None:
+            arr = re.fullmatch(r"(.+?)\s*\[(\d+)\]", desugar(qual))
+            if arr is None:
+                raise DataPortError(f"{ctx.where}: offsetof index into non-array {qual!r}")
+            if int(index) >= int(arr.group(2)):
+                raise DataPortError(f"{ctx.where}: offsetof {member}[{index}] is out of bounds")
+            qual = arr.group(1)
+            total += int(index) * c_sizeof(qual)
     return total
 
 
@@ -1244,6 +1346,8 @@ def tables(
     island = crate_src / f"types_{arch}.rs"
     ctx = Ctx({}, records(ast), _island_consts(crate_src, arch), macros, set())
     ctx.layouts = record_layouts(argv)
+    ctx.argv = list(argv)
+    ctx.offsetof_slots = _offsetof_slots(ast, ctx.sources)
     _ARCH["layouts"] = ctx.layouts
     _ARCH["ctx"] = ctx
     _ARCH["ptr"] = 8 if arch in ("amd64", "arm64") else 4

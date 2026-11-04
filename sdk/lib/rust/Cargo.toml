@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "dinput-cargo",
     "setup-cargo",
     "sehtest-cargo",
     "nettest-cargo",
@@ -1146,6 +1147,7 @@ members = [
     "esent-rust",
     "wing32-rust",
     "wow64-rust",
+    "dinput-rust",
 ]
 resolver = "2"
 

@@ -10585,6 +10585,42 @@ case "$DRIVER" in
   # Then dispatch them from the crate: one `mod <stem>;` per island, and each
   # translated module imports from the island its own C include set belongs to
   # (names legitimately overlap between islands — never glob both into scope).
+  dinput)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-11-03 from dll/directx/wine/dinput/CMakeLists.txt
+    # (11 compiled TU(s), 194 headers in the include closure, 84 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 87 external prototype(s) declared by the include closure, 90 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    DRIVER_DIR="${SRC}/dll/directx/wine/dinput"
+    WRAPPER_INC=$'#include "precomp.h"\n#include <stdio.h>\n#include <assert.h>\n#include "config.h"\n#include "wine/port.h"\n#include <stdarg.h>\n#include <string.h>\n#include <time.h>\n# include <unistd.h>\n# include <sys/time.h>\n#include <fcntl.h>\n#include <errno.h>\n#define COBJMACROS\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#include "wine/unicode.h"\n#include "wine/list.h"\n#include "objbase.h"\n#include "dinput_private.h"\n#include "device_private.h"\n#include "joystick_private.h"\n#include "resource.h"\n#include "wine/heap.h"\n#include "wine/asm.h"\n#include "windef.h"\n#include "winbase.h"\n#include "wingdi.h"\n#include "wine/winternl.h"\n#include "winreg.h"\n#include "winuser.h"\n#include "winerror.h"\n#include "rpcproxy.h"\n#include "initguid.h"\n#include "devguid.h"\n#include "dinputd.h"\n#include "dinput.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]config\.h' --allowlist-file '.*[/\\]devguid\.h'
+                  --allowlist-file '.*[/\\]dinput\.h'
+                  --allowlist-file '.*[/\\]dinputd\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*[/\\]psdk[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]rpcproxy\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]unknwn\.h'
+                  --allowlist-file '.*[/\\]winerror\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*dinput[/\\].*\.h' )
+    # wine/list.h: `struct list` and its helpers are winelist-rust's.
+    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )
+    # wine/winternl.h's BOOL prototypes for what ntdll returns as BOOLEAN.
+    EXTRA_BL_ITEMS=( list RtlEqualPrefixSid RtlEqualSid RtlQueryPerformanceCounter RtlQueryPerformanceFrequency )
+    EXTRA_INC=( -I"${SRC}/dll/directx/wine/dinput" -I"${SRC}/build-i386/dll/directx/wine/dinput" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DDIRECTINPUT_VERSION=0x0700 -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D__WINESRC__ -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

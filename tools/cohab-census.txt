@@ -950,6 +950,17 @@ dll/cpl/wined3dcfg/CMakeLists.txt	1	# general.c # replaced by Rust (sdk/lib/rust
 dll/cpl/wined3dcfg/CMakeLists.txt	1	# wined3dcfg.c # replaced by Rust (sdk/lib/rust/wined3dcfg-rust/src/wined3dcfg/wined3dcfg.rs)
 dll/directx/ksuser/CMakeLists.txt	1	# ksuser.c # replaced by Rust (sdk/lib/rust/ksuser-rust/src/ksuser/ksuser.rs)
 dll/directx/wine/d3dx9_36/d3dx9.cmake	1	# math.c wants M_PI, which <math.h> only exposes on request here.
+dll/directx/wine/dinput/CMakeLists.txt	1	# config.c # replaced by Rust (sdk/lib/rust/dinput-rust/src/dinput/config.rs)
+dll/directx/wine/dinput/CMakeLists.txt	1	# data_formats.c # replaced by Rust (sdk/lib/rust/dinput-rust/src/dinput/data_formats/mod.rs, generated: port data)
+dll/directx/wine/dinput/CMakeLists.txt	1	# device.c # replaced by Rust (sdk/lib/rust/dinput-rust/src/dinput/device.rs)
+dll/directx/wine/dinput/CMakeLists.txt	1	# dinput_main.c # replaced by Rust (sdk/lib/rust/dinput-rust/src/dinput/dinput_main.rs)
+dll/directx/wine/dinput/CMakeLists.txt	1	# effect_linuxinput.c # replaced by Rust (sdk/lib/rust/dinput-rust/src/dinput/effect_linuxinput/mod.rs, generated: port data)
+dll/directx/wine/dinput/CMakeLists.txt	1	# joystick.c # replaced by Rust (sdk/lib/rust/dinput-rust/src/dinput/joystick.rs)
+dll/directx/wine/dinput/CMakeLists.txt	1	# joystick_linux.c # replaced by Rust (sdk/lib/rust/dinput-rust/src/dinput/joystick_linux/mod.rs, generated: port data)
+dll/directx/wine/dinput/CMakeLists.txt	1	# joystick_linuxinput.c # replaced by Rust (sdk/lib/rust/dinput-rust/src/dinput/joystick_linuxinput/mod.rs, generated: port data)
+dll/directx/wine/dinput/CMakeLists.txt	1	# joystick_osx.c # replaced by Rust (sdk/lib/rust/dinput-rust/src/dinput/joystick_osx/mod.rs, generated: port data)
+dll/directx/wine/dinput/CMakeLists.txt	1	# keyboard.c # replaced by Rust (sdk/lib/rust/dinput-rust/src/dinput/keyboard.rs)
+dll/directx/wine/dinput/CMakeLists.txt	1	# mouse.c # replaced by Rust (sdk/lib/rust/dinput-rust/src/dinput/mouse.rs)
 dll/directx/wine/dmime/CMakeLists.txt	1	# performance.c drives its message pump with a CONDITION_VARIABLE.
 dll/directx/wine/dpnet/CMakeLists.txt	1	# dpnet_main.c guards its one-time init with InitOnceExecuteOnce.
 dll/directx/wine/dsound/CMakeLists.txt	1	# buffer.c # replaced by Rust (sdk/lib/rust/dsound-rust/src/dsound/buffer.rs)
