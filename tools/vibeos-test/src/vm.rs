@@ -1843,6 +1843,47 @@ pub struct VmManager {
     media_locks: HashMap<u64, backend::MediaLock>,
 }
 impl VmManager {
+    // Add inside impl VmManager. Original protocol_handle and VM-owned file mode
+    // remain unchanged; Runtime routes only explicit standalone alive_probe requests.
+    pub fn serial_with_probe(
+        &mut self,
+        request: &Value,
+        probe: &mut dyn FnMut() -> Result<bool>,
+    ) -> Result<Value> {
+        let a = request.get("kwargs").unwrap_or(request);
+        let id = a["id"].as_u64().ok_or("missing protocol client id")?;
+        let serial = self.serials.get_mut(&id).ok_or("unknown serial client")?;
+        if let Some(alive) = a["alive"].as_bool() {
+            serial.set_external_alive(alive);
+        }
+        let timeout = dur(a["timeout"].as_f64().unwrap_or(10.0))?;
+        Ok(match request["op"].as_str().unwrap_or("") {
+            "serial_accept" => {
+                serial.accept_with_probe(timeout, Some(probe))?;
+                Value::Null
+            }
+            "serial_read_until" => json!(serial.read_until_with_probe(
+                a["marker"].as_str().ok_or("missing marker")?,
+                timeout,
+                Some(probe)
+            )?),
+            "serial_read_until_idle" => json!(serial.read_until_idle_with_probe(
+                dur(a["idle_seconds"].as_f64().unwrap_or(5.0))?,
+                timeout,
+                a["min_bytes"].as_u64().unwrap_or(1024) as usize,
+                Some(probe)
+            )?),
+            "serial_read_available" => {
+                json!(serial.read_available_with_probe(timeout, Some(probe))?)
+            }
+            _ => {
+                return Err(Error::new(
+                    "alive probing is supported only for standalone serial waits",
+                ))
+            }
+        })
+    }
+
     pub fn new() -> Self {
         Self::default()
     }

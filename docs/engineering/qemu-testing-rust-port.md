@@ -52,3 +52,9 @@ cargo test --offline --locked --jobs 1 \
 suites and the existing Python fixture tests. Full validation also requires the
 source gate and real desktop smoke on i386, amd64 and arm64. Native unit controls
 alone do not establish boot compatibility.
+
+Standalone file transports evaluate caller liveness predicates through explicit
+callbacks inside native waits. Required serial-log failures stay visible to every
+consuming read before a marker can succeed; the drainer preserves raw evidence
+until teardown. Command reports carry an explicit timeout bit, including when a
+program itself returns exit code 124.

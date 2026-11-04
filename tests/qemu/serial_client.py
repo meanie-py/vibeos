@@ -21,15 +21,37 @@ class SerialClient:
         self._alive = None
 
     def _call(self, suffix, **kwargs):
-        if self._alive is not None:
-            kwargs["alive"] = bool(self._alive())
+        callbacks = None
+        predicate = self._alive
+        if predicate is not None:
+            kwargs["alive"] = bool(predicate())
+            if self._vm_id is None and suffix in {
+                "accept",
+                "read_until",
+                "read_until_idle",
+                "read_available",
+            }:
+                kwargs["alive_probe"] = True
+                callbacks = {"serial_alive": lambda _arguments: bool(predicate())}
         op = f"serial_{suffix}" if self._vm_id is None else f"vm_serial_{suffix}"
         with self._lock:
             try:
                 return self._session.call(
-                    op, {"id": self._id if self._vm_id is None else self._vm_id, **kwargs}
+                    op,
+                    {"id": self._id if self._vm_id is None else self._vm_id, **kwargs},
+                    callbacks=callbacks,
                 )
             except NativeError as exc:
+                if exc.kind == "OSError":
+                    try:
+                        state = self._session.call(
+                            "serial_snapshot" if self._vm_id is None else "vm_serial_snapshot",
+                            {"id": self._id if self._vm_id is None else self._vm_id},
+                        )
+                        self.partial_output = state["partial_output"]
+                    except (NativeError, OSError):
+                        pass
+                    raise OSError(str(exc)) from exc
                 if "timed out" in str(exc).lower() or "timeout" in str(exc).lower():
                     self.partial_output = self._state().get("partial_output", "")
                     raise TimeoutError(str(exc)) from exc

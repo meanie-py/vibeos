@@ -379,7 +379,7 @@ def invoke(
         if error_type is NativeError:
             raise
         converted = error_type(str(exc))
-        setattr(converted, "kind", exc.kind)
+        typing.cast(Any, converted).kind = exc.kind
         raise converted from exc
 
 

@@ -1930,12 +1930,14 @@ def test_command_timings_survive_failures(monkeypatch, failure):
         "start_seconds": 2.0,
         "seconds": 3.5,
         "exit": {None: 0, "timeout": 124, "missing": 127}[failure],
+        "timed_out": failure == "timeout",
     }
     summary = json.loads((run.dir / "summary.json").read_text())
     assert summary["command_timings"] == [expected]
     journal = json.loads(run.commands_log.read_text())
     assert all(journal[key] == value for key, value in expected.items())
     assert cp.returncode == expected["exit"]
+    assert cp.timed_out == expected["timed_out"]
 
 
 def test_rust_source_closure_tracks_shared_dependencies(tmp_path):

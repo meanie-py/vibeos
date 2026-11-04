@@ -161,6 +161,11 @@ fn watch(
                 }
             }
             Err(error) => {
+                // The host failed to preserve explicitly requested evidence.
+                // This is not a guest death verdict and must retain its I/O kind.
+                if error.kind.as_deref() == Some("OSError") {
+                    return Err(error);
+                }
                 let mut diag = state.diagnostics(start.elapsed().as_secs_f64());
                 diag["serial_error"] = json!(error.message);
                 return Ok(("dead".into(), state.buffer, diag));
@@ -805,5 +810,50 @@ mod tests {
         assert!(state.feed(0.1, "booting").unwrap().is_none());
         assert_eq!(state.feed(2.0, "").unwrap(), Some("timeout"));
         assert_eq!(state.diagnostics(2.0)["early_hang"], true);
+    }
+}
+
+// Append to smoke.rs after integrating the OSError watch propagation branch.
+#[cfg(test)]
+mod serial_log_failure_controls {
+    use super::*;
+    struct FailedSerial {
+        kind: &'static str,
+    }
+    impl Host for FailedSerial {
+        fn call(&mut self, op: &str, _args: Value) -> Result<Value> {
+            assert_eq!(op, "vm_poll_serial");
+            Err(Error::new("serial tee /dev/full: No space left on device").with_kind(self.kind))
+        }
+    }
+    #[test]
+    fn host_log_io_failure_is_not_graded_as_guest_death() {
+        let error = watch(
+            &mut FailedSerial { kind: "OSError" },
+            1,
+            "READY",
+            None,
+            1.,
+            0.,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind.as_deref(), Some("OSError"));
+        assert!(error.message.contains("/dev/full"));
+    }
+    #[test]
+    fn ordinary_serial_closure_retains_guest_death_behavior() {
+        let (outcome, _, diag) = watch(
+            &mut FailedSerial {
+                kind: "ConnectionError",
+            },
+            1,
+            "READY",
+            None,
+            1.,
+            0.,
+        )
+        .unwrap();
+        assert_eq!(outcome, "dead");
+        assert!(diag["serial_error"].as_str().is_some());
     }
 }

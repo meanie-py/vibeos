@@ -2,8 +2,6 @@
 use crate::{Error, Result};
 use regex::Regex;
 use serde_json::{json, Value};
-#[cfg(test)]
-use std::path::PathBuf;
 use std::{
     collections::BTreeMap,
     fs,

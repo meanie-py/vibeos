@@ -58,6 +58,21 @@ impl Host for Runtime<'_> {
             "vm_reap_orphan_qemus" | "vm_process_cpu_pct" | "vm_per_arch_cap" => {
                 vibeos_test::lifecycle::dispatch(self.root, &request)
             }
+            // Add BEFORE the existing broad vm_/serial_/qmp_ arm in Runtime::call.
+            // Callback borrows only the runtime's IO, while serial_with_probe borrows Manager.
+            op if op.starts_with("serial_") && request["kwargs"]["alive_probe"] == true => {
+                let mut callback = Callback {
+                    input: self.input,
+                    output: self.output,
+                };
+                let mut probe = || -> Result<bool> {
+                    callback
+                        .call("serial_alive", json!({}))?
+                        .as_bool()
+                        .ok_or_else(|| Error::new("serial_alive callback must return a boolean"))
+                };
+                self.vms.serial_with_probe(&request, &mut probe)
+            }
             op if op.starts_with("portlease_")
                 || op.starts_with("vm_")
                 || op.starts_with("serial_")

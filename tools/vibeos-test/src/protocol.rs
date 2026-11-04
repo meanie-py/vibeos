@@ -177,12 +177,24 @@ impl SerialClient {
         Ok(p)
     }
     pub fn set_tee(&mut self, path: &Path, header: &str) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+        let result = (|| -> std::io::Result<()> {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut f = File::create(path)?;
+            f.write_all(header.as_bytes())?;
+            f.flush()?;
+            Ok(())
+        })();
+        if let Err(e) = result {
+            let message = format!("serial tee {}: {e}", path.display());
+            self.shared
+                .lock()
+                .unwrap()
+                .error
+                .get_or_insert(message.clone());
+            return Err(Error::new(message).with_kind("OSError"));
         }
-        let mut f = File::create(path)?;
-        f.write_all(header.as_bytes())?;
-        f.flush()?;
         self.tee = Some(path.into());
         Ok(())
     }
@@ -194,6 +206,19 @@ impl SerialClient {
         self.alive = Some(alive);
     }
     pub fn accept(&mut self, timeout: Duration) -> Result<()> {
+        self.accept_with_probe(timeout, None)
+    }
+    fn refresh_liveness(&self, probe: &mut Option<&mut dyn FnMut() -> Result<bool>>) -> Result<()> {
+        if let Some(callback) = probe.as_mut() {
+            self.set_external_alive((**callback)()?);
+        }
+        Ok(())
+    }
+    pub fn accept_with_probe(
+        &mut self,
+        timeout: Duration,
+        mut probe: Option<&mut dyn FnMut() -> Result<bool>>,
+    ) -> Result<()> {
         if self.reader.is_some() {
             return Err("serial drainer already started".into());
         }
@@ -202,6 +227,10 @@ impl SerialClient {
         if let Some(path) = &self.file {
             let end = Instant::now() + timeout;
             while !path.exists() {
+                self.refresh_liveness(&mut probe)?;
+                if !self.external_alive.load(Ordering::Acquire) && !path.exists() {
+                    return Err("Serial file producer exited before creating its output".into());
+                }
                 if Instant::now() >= end {
                     return Err(Error::new(format!(
                         "QEMU did not create {} within {}s",
@@ -229,10 +258,27 @@ impl SerialClient {
         let alive = self.alive.clone();
         let external_alive = self.external_alive.clone();
         self.reader = Some(thread::spawn(move || {
-            let mut tee = tee.and_then(|p| OpenOptions::new().append(true).open(p).ok());
+            let tee_path = tee;
+            let mut tee = match tee_path
+                .as_ref()
+                .map(|p| OpenOptions::new().append(true).open(p))
+            {
+                Some(Ok(file)) => Some(file),
+                Some(Err(e)) => {
+                    shared.lock().unwrap().error.get_or_insert_with(|| {
+                        format!("serial tee {}: {e}", tee_path.as_ref().unwrap().display())
+                    });
+                    None
+                }
+                None => None,
+            };
             let mut first = None;
             let mut bol = true;
             let mut buf = [0u8; 65536];
+            // A producer may append its final bytes between read(0) and the
+            // liveness observation. Re-read once AFTER observing its death;
+            // only an EOF beyond that fence proves every final byte drained.
+            let mut producer_finished = false;
             while !closed.load(Ordering::Acquire) {
                 let result = if let Some(s) = &mut stream {
                     s.read(&mut buf)
@@ -241,12 +287,18 @@ impl SerialClient {
                 };
                 match result {
                     Ok(0) => {
-                        if file.is_some()
-                            && external_alive.load(Ordering::Acquire)
-                            && alive.as_ref().is_some_and(|a| a())
-                        {
-                            thread::sleep(Duration::from_millis(50));
-                            continue;
+                        if file.is_some() {
+                            if external_alive.load(Ordering::Acquire)
+                                && alive.as_ref().is_some_and(|a| a())
+                            {
+                                producer_finished = false;
+                                thread::sleep(Duration::from_millis(50));
+                                continue;
+                            }
+                            if !producer_finished {
+                                producer_finished = true;
+                                continue;
+                            }
                         }
                         if let Ok(mut b) = shared.lock() {
                             b.dead = true;
@@ -255,12 +307,7 @@ impl SerialClient {
                     }
                     Ok(n) => {
                         let now = Instant::now();
-                        let tail = {
-                            let mut b = shared.lock().unwrap();
-                            b.bytes.extend_from_slice(&buf[..n]);
-                            b.last = now;
-                            b.bytes[b.bytes.len().saturating_sub(n + 80)..].to_vec()
-                        };
+                        let mut tee_error = None;
                         if let Some(f) = &mut tee {
                             let mut text = Vec::new();
                             if stamp {
@@ -277,10 +324,26 @@ impl SerialClient {
                             } else {
                                 text.extend_from_slice(&buf[..n]);
                             }
-                            if f.write_all(&text).and_then(|_| f.flush()).is_err() {
+                            if let Err(e) = f.write_all(&text).and_then(|_| f.flush()) {
+                                tee_error = Some(format!(
+                                    "serial tee {}: {e}",
+                                    tee_path.as_ref().unwrap().display()
+                                ));
                                 tee = None;
                             }
                         }
+                        // Publish each raw chunk and its log-I/O result under
+                        // one mutex. No waiter can observe READY before learning
+                        // that the requested durable write failed.
+                        let tail = {
+                            let mut b = shared.lock().unwrap();
+                            b.bytes.extend_from_slice(&buf[..n]);
+                            b.last = now;
+                            if let Some(message) = tee_error {
+                                b.error.get_or_insert(message);
+                            }
+                            b.bytes[b.bytes.len().saturating_sub(n + 80)..].to_vec()
+                        };
                         if let Some(s) = &mut stream {
                             if tail.windows(5).any(|x| x == b"kdb:>") {
                                 let _ = s.write_all(b"cont\n");
@@ -304,7 +367,7 @@ impl SerialClient {
                             break;
                         }
                         if let Ok(mut b) = shared.lock() {
-                            b.error = Some(e.to_string());
+                            b.error.get_or_insert_with(|| e.to_string());
                         }
                         thread::sleep(Duration::from_millis(50));
                     }
@@ -318,10 +381,23 @@ impl SerialClient {
         (latin1(&b.bytes), b.last.elapsed(), b.dead)
     }
     pub fn read_until(&mut self, marker: &str, timeout: Duration) -> Result<String> {
+        self.read_until_with_probe(marker, timeout, None)
+    }
+    pub fn read_until_with_probe(
+        &mut self,
+        marker: &str,
+        timeout: Duration,
+        mut probe: Option<&mut dyn FnMut() -> Result<bool>>,
+    ) -> Result<String> {
         let start = self.pos;
         let end = Instant::now() + timeout;
         loop {
+            self.refresh_liveness(&mut probe)?;
             let b = self.shared.lock().unwrap();
+            if let Some(message) = &b.error {
+                self.partial_output = latin1(&b.bytes[start..]);
+                return Err(Error::new(message.clone()).with_kind("OSError"));
+            }
             let window = latin1(&b.bytes[start..]);
             if let Some(index) = window.find(marker) {
                 let end_byte = index + marker.len();
@@ -352,10 +428,24 @@ impl SerialClient {
         timeout: Duration,
         min_bytes: usize,
     ) -> Result<String> {
+        self.read_until_idle_with_probe(idle, timeout, min_bytes, None)
+    }
+    pub fn read_until_idle_with_probe(
+        &mut self,
+        idle: Duration,
+        timeout: Duration,
+        min_bytes: usize,
+        mut probe: Option<&mut dyn FnMut() -> Result<bool>>,
+    ) -> Result<String> {
         let start = self.pos;
         let end = Instant::now() + timeout;
         loop {
+            self.refresh_liveness(&mut probe)?;
             let b = self.shared.lock().unwrap();
+            if let Some(message) = &b.error {
+                self.partial_output = latin1(&b.bytes[start..]);
+                return Err(Error::new(message.clone()).with_kind("OSError"));
+            }
             let window = latin1(&b.bytes[start..]);
             let done = b.bytes.len() - start >= min_bytes && b.last.elapsed() >= idle
                 || b.dead && !window.is_empty();
@@ -363,7 +453,12 @@ impl SerialClient {
                 self.pos = b.bytes.len();
                 return Ok(window);
             }
+            let dead = b.dead;
             drop(b);
+            if probe.is_some() && dead {
+                self.partial_output = window;
+                return Err("Serial socket closed".into());
+            }
             if Instant::now() >= end {
                 self.partial_output = window;
                 return Err("Timed out waiting for serial idle".into());
@@ -372,15 +467,31 @@ impl SerialClient {
         }
     }
     pub fn read_available(&mut self, timeout: Duration) -> Result<String> {
+        self.read_available_with_probe(timeout, None)
+    }
+    pub fn read_available_with_probe(
+        &mut self,
+        timeout: Duration,
+        mut probe: Option<&mut dyn FnMut() -> Result<bool>>,
+    ) -> Result<String> {
         let end = Instant::now() + timeout;
         loop {
+            self.refresh_liveness(&mut probe)?;
             let b = self.shared.lock().unwrap();
+            if let Some(message) = &b.error {
+                self.partial_output = latin1(&b.bytes[self.pos..]);
+                return Err(Error::new(message.clone()).with_kind("OSError"));
+            }
             if b.bytes.len() > self.pos {
                 let out = latin1(&b.bytes[self.pos..]);
                 self.pos = b.bytes.len();
                 return Ok(out);
             }
+            let dead = b.dead;
             drop(b);
+            if probe.is_some() && dead {
+                return Ok(String::new());
+            }
             if Instant::now() >= end {
                 return Ok(String::new());
             }
@@ -686,5 +797,106 @@ mod tests {
         assert_eq!(client.saw_event("STOP").unwrap()["event"], "STOP");
         client.close();
         server.join().unwrap();
+    }
+}
+
+// Append to protocol.rs. Uses the same native wait/parser and lifetime drainer.
+#[cfg(test)]
+mod serial_probe_controls {
+    use super::*;
+    #[test]
+    fn file_death_fence_rereads_bytes_appended_after_the_first_eof() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("serial");
+        fs::write(&path, b"before\n").unwrap();
+        let final_path = path.clone();
+        let appended = Arc::new(AtomicBool::new(false));
+        let flag = appended.clone();
+        let mut serial = SerialClient::new();
+        serial.follow_file(
+            &path,
+            Arc::new(move || {
+                // Runs precisely after read(0) but before the producer-dead branch.
+                // Final bytes must be read again, never discarded as stale EOF.
+                if !flag.swap(true, Ordering::AcqRel) {
+                    let mut f = OpenOptions::new().append(true).open(&final_path).unwrap();
+                    f.write_all(b"FINAL\n").unwrap();
+                    f.flush().unwrap();
+                }
+                false
+            }),
+        );
+        serial.accept(Duration::from_secs(1)).unwrap();
+        assert_eq!(
+            serial.read_until("FINAL", Duration::from_secs(1)).unwrap(),
+            "before\nFINAL"
+        );
+        serial.close();
+    }
+    #[test]
+    fn blocking_native_wait_refreshes_a_live_probe_and_preserves_partials() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("serial");
+        fs::write(&path, b"partial progress").unwrap();
+        let mut serial = SerialClient::new();
+        serial.follow_file(&path, Arc::new(|| true));
+        serial.accept(Duration::from_secs(1)).unwrap();
+        let start = Instant::now();
+        let mut calls = 0;
+        let mut probe = || {
+            calls += 1;
+            Ok(start.elapsed() < Duration::from_millis(50))
+        };
+        let error = serial
+            .read_until_with_probe("never", Duration::from_millis(800), Some(&mut probe))
+            .unwrap_err();
+        assert!(error.to_string().contains("closed"));
+        assert!(calls > 1);
+        assert_eq!(serial.partial_output, "partial progress");
+        serial.close();
+    }
+}
+
+// Append to protocol.rs. All I/O uses the actual native socket/file drainer.
+#[cfg(test)]
+mod serial_tee_controls {
+    use super::*;
+    #[test]
+    fn failed_log_cannot_publish_a_successful_marker_and_does_not_stop_draining() {
+        let d = tempfile::tempdir().unwrap();
+        let socket = d.path().join("serial.sock");
+        let mut serial = SerialClient::new();
+        serial.set_tee(Path::new("/dev/full"), "").unwrap();
+        serial.listen(&socket).unwrap();
+        let mut writer = UnixStream::connect(&socket).unwrap();
+        serial.accept(Duration::from_secs(1)).unwrap();
+        writer.write_all(b"READY\n").unwrap();
+        let error = serial
+            .read_until("READY", Duration::from_secs(1))
+            .unwrap_err();
+        assert_eq!(error.kind.as_deref(), Some("OSError"));
+        assert!(error.message.contains("serial tee /dev/full:"));
+        assert!(serial.partial_output.contains("READY"));
+        writer
+            .write_all(b"raw evidence after failure\nEND")
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !serial.snapshot().0.ends_with("END") && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(5));
+        }
+        let (raw, _, dead) = serial.snapshot();
+        assert!(raw.ends_with("END"));
+        assert!(!dead);
+        assert!(serial
+            .read_available(Duration::ZERO)
+            .unwrap_err()
+            .message
+            .contains("/dev/full"));
+        assert!(serial
+            .read_until_idle(Duration::ZERO, Duration::from_secs(1), 0)
+            .unwrap_err()
+            .message
+            .contains("/dev/full"));
+        serial.close();
     }
 }
