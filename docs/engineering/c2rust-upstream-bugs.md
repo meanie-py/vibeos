@@ -145,13 +145,17 @@ declared local label. Ordinary labels are unaffected.
 
 ## What this costs *us*
 
-**Every `_SEH2_TRY` file is un-anchorable — 260 `.c` files.** Under `_USE_DUMMY_PSEH=1` (our
-default on all three arches) `sdk/lib/pseh/include/pseh/pseh2.h:117` expands `_SEH2_TRY` to a
-block opening with `__label__ __pseh_try_end;`, so §2 fires on every one of them. This is not a
-translation-quality issue — it is a hard "no c2rust anchor available", and `--c2rust` correctly
-HARD FAILS (`C2RustError`) rather than silently degrading to an unanchored LLM translation.
-
-`_SEH2_TRY` is also why the ws2_32 lane's `enumprot.c` / `sockctrl.c` could not be anchored.
+**§2 is WORKED AROUND in our flags, not patched (since 2026-09-19, `7e1d98d7c85`).** Under
+`_USE_DUMMY_PSEH=1` (our default on all three arches) `sdk/lib/pseh/include/pseh/pseh2.h:117`
+expands `_SEH2_TRY` to a block opening with `__label__ __pseh_try_end;`, which made every
+`_SEH2_TRY` file (wine's `__TRY` too) un-anchorable. `c2rust_anchor._PSEH_VARIANTS` now
+redefines `_SEH2_TRY`/`_EXCEPT`/`_FINALLY`/`_END` without the declaration -- behaviour-identical,
+since the dummy except arm is never entered -- trying a labelled form (so `_SEH2_LEAVE` keeps a
+target) before a label-free one. A TU is only refused when neither compiles: several TRY chains
+in one function AND a `_SEH2_LEAVE`. Measured then: 53 of 54 SEH-using TUs anchor. Re-checked
+2026-11-03 for the DirectX slice: wine's ddraw.c and main.c (the only SEH users among dsound,
+dinput, ddraw, d3d8, d3d9, wined3d) anchor on i386, amd64 and arm64. Patching c2rust would
+only buy that last rare shape, so it is not carried.
 
 **§1 is now CARRIED (2026-11-03).** 0.22.1 is still the latest release and upstream `master`
 (ac687698, 2026-10-26) still lacks the arm, so the tree pins 0.22.1 + `tools/c2rust/attributed-knr.patch`:
@@ -161,9 +165,9 @@ HARD FAILS (`C2RustError`) rather than silently degrading to an unanchored LLM t
 stock install hard-fails with the fix command instead of silently banking i386-less anchors.
 Drop the patch when a release carries the fix.
 
-**Options for §2, none taken yet:**
-* Preprocess `_SEH2_*` away before anchoring (changes the code c2rust sees — the anchor would
-  no longer correspond to the source we are translating; probably not worth it).
+**Other options for §2 (not needed while the flags workaround holds):**
+* Patch the exporter to emit `LabelDecl` (real work in c2rust-ast-exporter's C++), which
+  would also anchor the multi-TRY + `_SEH2_LEAVE` shape the flags cannot.
 * File both upstream and wait. §1 is a one-liner a maintainer can take immediately.
 
 ## Reproducing from this repo
