@@ -105,7 +105,9 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    exiting after a live HTTPS connection; netstack's IRPs are cancellable, so not that); an
    arm64 BUGCHECK 0xA at high IRQL in a timer DPC, with the fault one page above SP
    (`20261016-233339-xs4f9y8m`), not seen again in 8,000+ reclaims since. Neither showed in
-   two 1152M appstorm64 runs on 2026-11-01 (`20261101-164629-bykd7liv`, 55/55 each).
+   two 1152M appstorm64 runs on 2026-11-01 (`20261101-164629-bykd7liv`, 55/55 each), nor in three
+   at 1088M on 2026-11-03 (`20261103-194817-ll97ya56`, 55/55, ~11 repurposes each). Those runs
+   bottomed at ~18k available pages against October's 10-14k, so they pressed reclaim less.
 
 They are graded where the media carries them (`tests/qemu/cli/ladder.py` `STAGED_LADDER`): they
 need build-amd64 to exist at all, so an arm64-only tree does not owe them. `hello64` (no
