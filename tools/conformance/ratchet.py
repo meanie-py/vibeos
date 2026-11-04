@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from tools import test_infra_compat as native
+from tools import qemu_infra_compat as native
 
 BAD = {"CRASH", "TIMEOUT", "FAILSTART", "NO-END", "INCOMPLETE", "ENUM-TIMEOUT"}
 

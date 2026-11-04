@@ -11,8 +11,8 @@ import tempfile
 from pathlib import Path
 
 from tools import build_infra_compat as transport
-from tools import test_infra_compat as native
-from tools.test_infra_runner import Bindings, request_options
+from tools import qemu_infra_compat as native
+from tools.qemu_infra_runner import Bindings, request_options
 
 
 def _publish(path: Path, value):

@@ -18,7 +18,7 @@ import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from tools import test_infra_compat as native
+from tools import qemu_infra_compat as native
 
 # Past this, "nearest preceding symbol" stops being evidence. A PE's symbol
 # table omits plenty (static helpers, thunks, data-only regions), so some symbol

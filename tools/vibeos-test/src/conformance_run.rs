@@ -1164,4 +1164,30 @@ mod controller_fixture_tests {
         assert_eq!(f.host.sweeps, 0);
         assert!(f.host.ledgers.is_empty());
     }
+    // Insert inside conformance_run::controller_fixture_tests (uses its real Fixture).
+    #[test]
+    fn ledger_records_the_kernel_observed_in_serial_instead_of_the_smp_flag() {
+        // The shipped MP kernel is often booted with no explicit --smp at all.
+        let mut mp = Fixture::new(
+            None,
+            vec![format!(
+        "[FLDR] load /reactos/system32/ntkrnlmp.exe\n[FLDR] load /reactos/system32/halmp.dll\n{}",
+        serial("A",10,0)
+    )],
+        );
+        mp.options["args"]["smp"] = json!(0);
+        let r = mp.run();
+        assert_eq!(r["rounds"][0]["smp"], 0);
+        assert_eq!(r["rounds"][0]["mp_kernel"], true);
+        assert_eq!(mp.host.ledgers[0]["extra"]["mp_kernel"], true);
+
+        // Preserve the existing missing-witness behavior: the loader check refuses
+        // an OBSERVED wrong pair; an absent loader witness is not guessed from flags.
+        let mut unwitnessed = Fixture::new(None, vec![serial("A", 10, 0)]);
+        unwitnessed.options["args"]["smp"] = json!(1);
+        let r = unwitnessed.run();
+        assert_eq!(r["rounds"][0]["smp"], 1);
+        assert_eq!(r["rounds"][0]["mp_kernel"], false);
+        assert_eq!(unwitnessed.host.ledgers[0]["extra"]["mp_kernel"], false);
+    }
 }

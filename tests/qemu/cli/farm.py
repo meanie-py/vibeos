@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from tools import test_infra_compat as native
-from tools.test_infra_runner import run_controller
+from tools import qemu_infra_compat as native
+from tools.qemu_infra_runner import run_controller
 
 FARM_DIR = Path.home() / "vibeos-flake-farm"
 CORPUS = FARM_DIR / "corpus.jsonl"

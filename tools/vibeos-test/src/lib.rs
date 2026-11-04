@@ -18,6 +18,7 @@ pub mod lifecycle;
 pub mod media;
 pub mod portlease;
 pub mod protocol;
+pub mod publication;
 pub mod screenshot;
 pub mod smoke;
 pub mod smoke_checks;

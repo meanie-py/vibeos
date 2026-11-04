@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from tools import test_infra_compat as native
+from tools import qemu_infra_compat as native
 
 CATALOG_DIR = Path(__file__).resolve().parents[2] / "tools/rustconv/data"
 

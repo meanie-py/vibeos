@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
-from tools.test_infra_compat import DedicatedSession, NativeError
+from tools.qemu_infra_compat import DedicatedSession, NativeError
 
 
 @contextmanager

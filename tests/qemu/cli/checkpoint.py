@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 from types import SimpleNamespace
 
-from tools import test_infra_compat as native
+from tools import qemu_infra_compat as native
 
 from ..qmp_client import QmpError
 from ..vm import QemuVM, get_arch_config

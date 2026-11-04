@@ -9,52 +9,11 @@ it down.
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, cast
 
-from tests.qemu.cli import gdbengine, smoke
-from tools import test_infra_compat as native
+from tests.qemu.cli import gdbengine
+from tools import qemu_infra_compat as native
 
 # ---- _boot_vm: which outcomes keep the VM ----------------------------------------
-
-
-class _FakeVM:
-    def __init__(self) -> None:
-        self.stopped = 0
-
-    def stop(self) -> None:
-        self.stopped += 1
-
-    def read_debugcon(self) -> bytes:
-        return b""
-
-    def debugcon_report(self):
-        return None
-
-    def report_replay_break(self) -> str:
-        return ""
-
-
-def _drive(tmp_path, monkeypatch, *, attach: bool, watch, classify=None, fail_on="BOOM"):
-    fake = _FakeVM()
-    kept: list[str] = []
-    monkeypatch.setattr(smoke, "launch_with_retry", lambda *a, **k: (fake, 1, None))
-    monkeypatch.setattr(smoke, "_watch", watch)
-    monkeypatch.setattr(smoke, "_screenshot", lambda *a, **k: "")
-    monkeypatch.setattr(
-        smoke.triage,
-        "classify",
-        classify or (lambda *a, **k: {"classification": "X", "salient": []}),
-    )
-    monkeypatch.setattr(smoke.triage, "symbolicate_pc", lambda *a, **k: "")
-    monkeypatch.setattr(smoke, "_keep_for_debug", lambda run, vm, *a: kept.append("kept"))
-    run = SimpleNamespace(dir=tmp_path, log=lambda *a, **k: None, extra={}, add=lambda st: None)
-    repo = Path(__file__).resolve().parents[3]
-    res = smoke._boot_vm(
-        cast("Any", run), repo, "amd64", until="", fail_on=fail_on, idx=0, total=1, attach=attach
-    )
-    return res, fake, kept
 
 
 def test_a_failed_verdict_keeps_the_vm_with_the_flag(tmp_path):

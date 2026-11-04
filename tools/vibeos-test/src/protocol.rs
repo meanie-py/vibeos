@@ -112,6 +112,7 @@ impl Listener {
 fn latin1(bytes: &[u8]) -> String {
     bytes.iter().map(|b| char::from(*b)).collect()
 }
+#[cfg(test)]
 fn unicode_offset(text: &str, count: usize) -> usize {
     text.char_indices()
         .nth(count)

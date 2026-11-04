@@ -1409,7 +1409,28 @@ impl Vm {
             Ok(s) => self.boot_output = s,
             Err(e) => {
                 self.boot_output = self.serial.partial_output.clone();
-                let _ = self.save_hang_state("boot-wait timeout");
+                if e.message.to_ascii_lowercase().contains("closed") {
+                    let deadline = Instant::now() + Duration::from_millis(250);
+                    let exit = loop {
+                        let exit = self.poll_exit()?;
+                        if exit.is_some() || Instant::now() >= deadline {
+                            break exit;
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    };
+                    let state = exit
+                        .map(|code| format!("exited with code {code}"))
+                        .unwrap_or_else(|| "still running".into());
+                    return Err(Error::new(format!(
+                        "{}; QEMU {state}\nQEMU stderr:\n{}",
+                        e.message,
+                        self.stderr_tail()
+                    ))
+                    .with_kind("ConnectionError"));
+                }
+                if e.message.to_ascii_lowercase().contains("timed out") {
+                    let _ = self.save_hang_state("boot-wait timeout");
+                }
                 return Err(e);
             }
         }
@@ -1954,6 +1975,8 @@ impl VmManager {
                 | "vm_arch_config"
                 | "vm_prepare_config"
                 | "vm_env_options"
+                | "vm_echo_ports"
+                | "vm_guestfwd_echo_opts"
                 | "vm_smp_count"
                 | "vm_smp_boot_timeout"
                 | "vm_unique_ports"

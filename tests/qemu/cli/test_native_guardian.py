@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.test_infra_compat import REPO, DedicatedSession
+from tools.qemu_infra_compat import REPO, DedicatedSession
 
 from .test_native_vm import create, gone, wait_gone
 from .test_native_vm import fake_config as _fake_config

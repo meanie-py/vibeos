@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.test_infra_compat import DedicatedSession
+from tools.qemu_infra_compat import DedicatedSession
 
 from .test_native_vm import create
 from .test_native_vm import fake_config as _fake_config

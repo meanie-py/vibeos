@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from contextlib import contextmanager
 
-from tools.test_infra_compat import DedicatedSession, call
+from tools.qemu_infra_compat import DedicatedSession, call
 
 
 def _call(name, **kwargs):

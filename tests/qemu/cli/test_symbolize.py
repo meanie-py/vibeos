@@ -151,33 +151,21 @@ def test_index_is_stale_when_the_media_is_newer(tmp_path):
     assert symbolize.index_is_stale(repo, "amd64") is False
 
 
-def test_module_override_falls_back_to_live_nm_for_an_unindexed_module(tmp_path, monkeypatch):
-    # Modules on a shared image base carry no rows in the index by design -- an
-    # address cannot identify them. But --module supplies that identity, so the
-    # only thing missing is symbols, and one nm answers it. Before this
-    # fallback, --module returned "no symbol table entry" for exactly the
-    # modules it exists to serve: wow64.dll shares 0x180000000 with 7 others,
-    # and the WoW64 lane's addresses all live in it.
+def test_module_override_falls_back_to_live_nm_for_an_unindexed_module(tmp_path):
     repo = _index(
         tmp_path,
         [_mod(0x180000000, 0x180040000, "wow64.dll", "shared")],
         ["other.dll\t0000000000401000\tx\t-"],
     )
-    called: list[tuple[str, int]] = []
-
-    def fake_live(_repo, _arch, mod, addr):
-        called.append((mod.name, addr))
-        return ("Wow64pUserCallbackCommon", 0x180017BE0, "wow64_callback.c:346")
-
-    monkeypatch.setattr(symbolize, "lookup_symbol_live", fake_live)
+    calls = _live_authority(
+        repo, "wow64.dll\t180017be0\tWow64pUserCallbackCommon\twow64_callback.c:346"
+    )
     out = symbolize.resolve(repo, "amd64", 0x180017C18, want_module="wow64.dll")
-    assert called == [("wow64.dll", 0x180017C18)]
+    assert calls.read_text().splitlines() == ["amd64", "--one", str(repo / "build-amd64/wow64.dll")]
     assert "wow64.dll!Wow64pUserCallbackCommon+0x38" in out
 
 
-def test_live_nm_is_NOT_used_without_an_explicit_module(tmp_path, monkeypatch):
-    # The fallback must not turn an honest "ambiguous" into a guess: without
-    # --module we still do not know which of the sharing modules it is.
+def test_live_nm_is_NOT_used_without_an_explicit_module(tmp_path):
     repo = _index(
         tmp_path,
         [
@@ -186,12 +174,9 @@ def test_live_nm_is_NOT_used_without_an_explicit_module(tmp_path, monkeypatch):
         ],
         [],
     )
-    monkeypatch.setattr(
-        symbolize,
-        "lookup_symbol_live",
-        lambda *a: (_ for _ in ()).throw(AssertionError("must not nm on an ambiguous address")),
-    )
+    calls = _live_authority(repo, "unexpected\t180017be0\tWrong\t-")
     assert "ambiguous" in symbolize.resolve(repo, "amd64", 0x180017C18)
+    assert not calls.exists(), "ambiguous addresses must never invoke the live-symbol authority"
 
 
 def _copies(tmp_path: Path, contents: list[bytes]) -> Path:
@@ -204,22 +189,24 @@ def _copies(tmp_path: Path, contents: list[bytes]) -> Path:
     return _index(tmp_path, mods, [])
 
 
-def test_byte_identical_copies_are_one_module(tmp_path, monkeypatch):
-    # browseui.dll is staged twice (dll/win32/browseui and base/shell/filebrowser). Two index
-    # rows for the SAME bytes are not an ambiguity, and refusing them hid a crash's caller.
+def test_byte_identical_copies_are_one_module(tmp_path):
     repo = _copies(tmp_path, [b"same", b"same"])
-    seen = []
-
-    def _live(_repo, _arch, mod, _addr):
-        seen.append(mod.path)
-        return ("OnDestroy", 0x7FF62047050, "-")
-
-    monkeypatch.setattr(symbolize, "lookup_symbol_live", _live)
+    calls = _live_authority(repo, "browseui.dll\t7ff62047050\tOnDestroy\t-")
     out = symbolize.resolve(repo, "amd64", 0x7FF620473A2)
     assert "browseui.dll!OnDestroy+0x352" in out
-    assert len(seen) == 1
+    assert len(calls.read_text().splitlines()) == 3, "one authority call with arch/--one/image"
 
 
 def test_different_copies_on_one_base_stay_ambiguous(tmp_path):
     repo = _copies(tmp_path, [b"one", b"two"])
     assert "ambiguous" in symbolize.resolve(repo, "amd64", 0x7FF620473A2)
+
+
+def _live_authority(repo, row):
+    import shlex
+
+    calls = repo / "calls"
+    (repo / "qemu/build-user-index.sh").write_text(
+        f"printf '%s\\n' \"$@\" >> {shlex.quote(str(calls))}\nprintf '%s\\n' {shlex.quote(row)}\n"
+    )
+    return calls

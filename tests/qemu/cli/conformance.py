@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 
-from tools import test_infra_compat as native
-from tools.test_infra_runner import run_controller
+from tools import qemu_infra_compat as native
+from tools.qemu_infra_runner import run_controller
 
 SUITE = "kmtest"
 
@@ -146,3 +146,9 @@ def _seed_asserts_from_rounds(args, repo: Path) -> int:
         arch=args.arch.split("-")[0],
         extra=_options(repo),
     )
+
+
+def _run_dir(arch: str) -> Path:
+    from .artifacts import create_run_dir
+
+    return create_run_dir("conformance", arch)

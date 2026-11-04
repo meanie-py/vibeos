@@ -28,8 +28,14 @@ def request_options(args, repo: Path, run: Run | None = None) -> dict:
 class Bindings:
     def __init__(self, repo: Path, run: Run | None):
         self.repo = repo
-        self.run = run
+        self._run = run
         self.finalized = False
+
+    @property
+    def run(self) -> Run:
+        if self._run is None:
+            raise RuntimeError("native operation requires an owned Run reporter")
+        return self._run
 
     def state(self, _arguments=None):
         return {
@@ -67,7 +73,7 @@ class Bindings:
             "returncode": result.returncode,
             "stdout": result.stdout,
             "stderr": result.stderr,
-            "timed_out": getattr(result, "_vibeos_timed_out", False),
+            "timed_out": getattr(result, "timed_out", False),
         }
 
     def stage(self, arguments):
@@ -137,7 +143,7 @@ class Bindings:
 
 
 def native_run_call(run, repo, op, kwargs):
-    from tools import test_infra_compat as native
+    from tools import qemu_infra_compat as native
 
     bindings = Bindings(repo, run)
     with native.DedicatedSession(root=repo) as session:
@@ -145,7 +151,7 @@ def native_run_call(run, repo, op, kwargs):
 
 
 def run_controller(op, args, repo, *, command, arch, extra=None):
-    from tools import test_infra_compat as native
+    from tools import qemu_infra_compat as native
 
     run = Run(command=command, arch=arch)
     bindings = Bindings(repo, run)

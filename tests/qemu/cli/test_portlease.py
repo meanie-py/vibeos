@@ -17,7 +17,7 @@ from ..portlease import launch_lock
 @pytest.fixture(scope="module", autouse=True)
 def provision_native_lock_owner():
     # Provision before measuring child startup and lock exclusion deadlines.
-    from tools.test_infra_compat import DedicatedSession
+    from tools.qemu_infra_compat import DedicatedSession
 
     with DedicatedSession() as session:
         assert session.call("test_version", {})["native"] is True

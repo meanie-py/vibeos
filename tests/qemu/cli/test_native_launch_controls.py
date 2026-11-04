@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.qemu import vm as vm_module
-from tools.test_infra_compat import DedicatedSession, NativeError
+from tools.qemu_infra_compat import DedicatedSession, NativeError
 
 from .test_native_vm import create
 from .test_native_vm import fake_config as _fake_config
@@ -83,7 +83,7 @@ def test_native_retry_controller_uses_fresh_owned_sessions(
 
 
 def test_native_allocator_skips_duplicate_candidates_and_refuses_constant_picker():
-    from tools.test_infra_compat import call
+    from tools.qemu_infra_compat import call
 
     assert call("vm_unique_ports", {"candidates": [45000, 45000, 45001], "count": 2}) == [
         45000,

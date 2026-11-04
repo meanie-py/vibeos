@@ -6,7 +6,7 @@ import os
 import time
 from pathlib import Path
 
-from tools import test_infra_compat as native
+from tools import qemu_infra_compat as native
 
 ALSO_ACCEPTED: dict[str, frozenset[int]] = {}
 

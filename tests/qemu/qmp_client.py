@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import threading
 
-from tools.test_infra_compat import DedicatedSession, NativeError
+from tools.qemu_infra_compat import DedicatedSession, NativeError
 
 
 class QmpError(Exception):

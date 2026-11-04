@@ -40,10 +40,15 @@ _RUFF_ROOTS = [
     "tools/rustconv/rustconv",
     "tests/qemu",
     "tools/fex",
-    "tools/test_infra_compat.py",
-    "tools/test_infra_runner.py",
+    "tools/qemu_infra_compat.py",
+    "tools/qemu_infra_runner.py",
 ]
-_PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu"]
+_PYRIGHT_ROOTS = [
+    "tools/rustconv/rustconv",
+    "tests/qemu",
+    "tools/qemu_infra_compat.py",
+    "tools/qemu_infra_runner.py",
+]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),

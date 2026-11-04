@@ -6,6 +6,7 @@ Normal boots never import this module. Launch policy and process ownership remai
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 
@@ -47,7 +48,13 @@ def prepare(request: dict) -> dict:
             rr.assert_same_shape(trace, argv)
             want = rr.env_break()
             if want is not None:
-                result["rr_break_icount"] = rr.snap_break_icount(trace, want)
+                snapped = rr.snap_break_icount(trace, want)
+                if snapped != want:
+                    print(
+                        f"[rr-break] {want} is mid-chunk; using next boundary {snapped}",
+                        file=sys.stderr,
+                    )
+                result["rr_break_icount"] = snapped
         rr.note_run(trace, mode=mode, serial_log=request["live_log"])
         result.update(boot_timeout_min=1800.0, hang_silence_min=600.0)
         if sampler:
@@ -115,6 +122,9 @@ def sidecar(request: dict) -> dict:
             Path(request["work"]),
         )
         thread.join()
+        error = getattr(thread, "error", None)
+        if error is not None:
+            raise RuntimeError(f"requested RR sampler failed: {error}") from error
         return {}
     if request["kind"] == "pc":
         qmp = QmpClient()

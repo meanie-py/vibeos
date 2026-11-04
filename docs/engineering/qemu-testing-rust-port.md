@@ -2,8 +2,8 @@
 
 `tools/test-infra` provisions the pinned stable `vibeos-test` binary. The existing
 `vibeos-cli` commands and Python test APIs are compatibility entry points;
-`tools/test_infra_compat.py` owns the typed transport, and
-`tools/test_infra_runner.py` binds CLI configuration and Run/Stage presentation.
+`tools/qemu_infra_compat.py` owns the typed transport, and
+`tools/qemu_infra_runner.py` binds CLI configuration and Run/Stage presentation.
 
 The native modules own these mechanisms:
 
@@ -13,6 +13,8 @@ The native modules own these mechanisms:
 - `verdict`, `debugcon`, `conformance`, `ladder`, `smoke_checks`: serial decoding,
   crash precedence, symbol resolution, assertion identity and baseline ratchets,
   guest verdicts and requested hardware checks.
+- `publication`: verified local byte publication, immutable cache pins and pruning.
+  Windows wrappers retain strict Windows-visible path validation.
 - `config`, `media`, `backend`, `protocol`, `admission`, `vm`, `lifecycle`: launch
   plans, media preparation, QMP/serial streams, shared admission and VM ownership.
 - `smoke`, `smoke_run`, `ladder_watch`, `farm`, `conformance_run`: bounded watches,

@@ -15,9 +15,6 @@ fn text<'a>(env: &'a BTreeMap<String, String>, key: &str) -> &'a str {
 fn enabled(env: &BTreeMap<String, String>, key: &str) -> bool {
     matches!(text(env, key), "1" | "true" | "yes")
 }
-fn path(p: &Path) -> String {
-    p.to_string_lossy().into_owned()
-}
 fn number(env: &BTreeMap<String, String>, key: &str, default: u64) -> Result<u64> {
     let raw = text(env, key);
     if raw.is_empty() {
@@ -313,6 +310,25 @@ fn firmware(src: &Path, out: &Path) -> Result<()> {
     }
     media::qcow2_from_raw(src, out)
 }
+pub fn gic_version(env: &BTreeMap<String, String>) -> Result<u64> {
+    match number(env, "VIBEOS_QEMU_GIC", 2)? {
+        v @ (2 | 3) => Ok(v),
+        _ => Err("VIBEOS_QEMU_GIC must be 2 or 3".into()),
+    }
+}
+pub const ECHO_PORTS: &[(&str, u16)] = &[
+    ("netstack-outbound", 9999),
+    ("tdi-selftest", 9998),
+    ("usermode-winsock", 9997),
+];
+pub fn guestfwd_echo_opts(addr: &str) -> String {
+    let mut ports = ECHO_PORTS.iter().map(|(_, p)| *p).collect::<Vec<_>>();
+    ports.sort_unstable();
+    ports
+        .iter()
+        .map(|p| format!(",guestfwd=tcp:{addr}:{p}-cmd:cat"))
+        .collect()
+}
 pub fn machine_args(arch: &str, env: &BTreeMap<String, String>) -> Result<Vec<String>> {
     let arm = arch.starts_with("arm64");
     let hazards = hostile_hazards(env)?;
@@ -342,10 +358,8 @@ pub fn machine_args(arch: &str, env: &BTreeMap<String, String>) -> Result<Vec<St
         ]
     };
     if arm {
-        match text(env, "VIBEOS_QEMU_GIC") {
-            "" | "2" => {}
-            "3" => machine[1].push_str(",gic-version=3,its=on"),
-            _ => return Err("VIBEOS_QEMU_GIC must be 2 or 3".into()),
+        if gic_version(env)? == 3 {
+            machine[1].push_str(",gic-version=3,its=on");
         }
         if enabled(env, "VIBEOS_QEMU_SMMU") {
             machine[1].push_str(",iommu=smmuv3");
@@ -953,7 +967,7 @@ pub fn network_args_with(
     let echo = pick()?;
     let tdi = pick()?;
     let payload = pick()?;
-    Ok((vec!["-device".into(),"virtio-net-pci,disable-legacy=on,netdev=net0,id=vnet0".into(),"-netdev".into(),format!("user,id=net0,hostfwd=tcp:127.0.0.1:{echo}-:7777,hostfwd=tcp:127.0.0.1:{tdi}-:8888,hostfwd=tcp:127.0.0.1:{payload}-:8080,guestfwd=tcp:10.0.2.100:9997-cmd:cat,guestfwd=tcp:10.0.2.100:9998-cmd:cat,guestfwd=tcp:10.0.2.100:9999-cmd:cat")],json!({"echo_hostfwd_port":echo,"tdi_srv_hostfwd_port":tdi,"payload_hostfwd_port":payload,"ECHO_GUEST_PORT":7777,"TDI_SRV_GUEST_PORT":8888,"PAYLOAD_GUEST_PORT":8080,"GUESTFWD_ADDR":"10.0.2.100"})))
+    Ok((vec!["-device".into(),"virtio-net-pci,disable-legacy=on,netdev=net0,id=vnet0".into(),"-netdev".into(),format!("user,id=net0,hostfwd=tcp:127.0.0.1:{echo}-:7777,hostfwd=tcp:127.0.0.1:{tdi}-:8888,hostfwd=tcp:127.0.0.1:{payload}-:8080{}",guestfwd_echo_opts("10.0.2.100"))],json!({"echo_hostfwd_port":echo,"tdi_srv_hostfwd_port":tdi,"payload_hostfwd_port":payload,"ECHO_GUEST_PORT":7777,"TDI_SRV_GUEST_PORT":8888,"PAYLOAD_GUEST_PORT":8080,"GUESTFWD_ADDR":"10.0.2.100"})))
 }
 
 pub fn dispatch(root: &Path, request: &Value) -> Result<Value> {
@@ -1022,8 +1036,15 @@ pub fn dispatch(root: &Path, request: &Value) -> Result<Value> {
             )?;
             Value::Null
         }
+        "vm_echo_ports" => json!(ECHO_PORTS
+            .iter()
+            .map(|(name, port)| (*name, *port))
+            .collect::<BTreeMap<_, _>>()),
+        "vm_guestfwd_echo_opts" => json!(guestfwd_echo_opts(
+            a["addr"].as_str().ok_or("missing guestfwd address")?
+        )),
         "vm_env_options" => {
-            json!({"smp":smp_count(&env)?,"gic":number(&env,"VIBEOS_QEMU_GIC",2)?,"smmu":enabled(&env,"VIBEOS_QEMU_SMMU"),"cpu":env.get("VIBEOS_QEMU_CPU"),"boot_nvme":enabled(&env,"VIBEOS_QEMU_BOOT_NVME"),"headless":enabled(&env,"VIBEOS_QEMU_HEADLESS"),"stortest":enabled(&env,"VIBEOS_QEMU_STORTEST"),"writable_root":enabled(&env,"VIBEOS_WRITABLE_ROOT"),"icount_shift":if text(&env,"VIBEOS_QEMU_ICOUNT_SHIFT").is_empty(){None}else{let v=number(&env,"VIBEOS_QEMU_ICOUNT_SHIFT",0)?;if v>10{return Err("icount shift must be 0..10".into());}Some(v)},"tcg_thread":match text(&env,"VIBEOS_TCG_THREAD"){""=>None,"single"=>Some("single"),"multi"=>Some("multi"),_=>return Err("VIBEOS_TCG_THREAD must be single or multi".into())},"timeout_scale":float(&env,"VIBEOS_BOOT_TIMEOUT_SCALE",1.0)?})
+            json!({"smp":smp_count(&env)?,"gic":gic_version(&env)?,"smmu":enabled(&env,"VIBEOS_QEMU_SMMU"),"cpu":env.get("VIBEOS_QEMU_CPU"),"boot_nvme":enabled(&env,"VIBEOS_QEMU_BOOT_NVME"),"headless":enabled(&env,"VIBEOS_QEMU_HEADLESS"),"stortest":enabled(&env,"VIBEOS_QEMU_STORTEST"),"writable_root":enabled(&env,"VIBEOS_WRITABLE_ROOT"),"icount_shift":if text(&env,"VIBEOS_QEMU_ICOUNT_SHIFT").is_empty(){None}else{let v=number(&env,"VIBEOS_QEMU_ICOUNT_SHIFT",0)?;if v>10{return Err("icount shift must be 0..10".into());}Some(v)},"tcg_thread":match text(&env,"VIBEOS_TCG_THREAD"){""=>None,"single"=>Some("single"),"multi"=>Some("multi"),_=>return Err("VIBEOS_TCG_THREAD must be single or multi".into())},"timeout_scale":float(&env,"VIBEOS_BOOT_TIMEOUT_SCALE",1.0)?})
         }
         "vm_tripwire_args" => json!(tripwire_args(&env)?),
         "vm_make_spcr" => {

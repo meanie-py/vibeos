@@ -2,13 +2,13 @@
 use crate::{Error, Result};
 use regex::Regex;
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
+#[cfg(test)]
+use std::path::PathBuf;
 use std::{
     collections::BTreeMap,
-    fs::{self, File, OpenOptions},
-    io::{Read, Write},
-    os::unix::{fs::MetadataExt, io::AsRawFd},
-    path::{Path, PathBuf},
+    fs,
+    io::Read,
+    path::Path,
     process::{Command, Stdio},
     thread,
     time::{Duration, Instant, SystemTime},
@@ -75,24 +75,6 @@ fn ps(script: &str) -> Result<String> {
     }
     Ok(out)
 }
-fn identity(m: &fs::Metadata) -> (u64, u64, u64, i64, i64, i64, i64) {
-    (
-        m.dev(),
-        m.ino(),
-        m.len(),
-        m.mtime(),
-        m.mtime_nsec(),
-        m.ctime(),
-        m.ctime_nsec(),
-    )
-}
-fn same_file(a: &Path, b: &Path) -> bool {
-    match (fs::metadata(a), fs::metadata(b)) {
-        (Ok(a), Ok(b)) => a.dev() == b.dev() && a.ino() == b.ino(),
-        _ => false,
-    }
-}
-
 pub fn win_path(path: &Path) -> Result<String> {
     let s = path.to_str().ok_or("non-UTF8 Windows staging path")?;
     let b = s.as_bytes();
@@ -108,210 +90,13 @@ pub fn win_path(path: &Path) -> Result<String> {
     ))
 }
 
+pub use crate::publication::{prune_media_cache, MediaLock};
+
 pub fn stage_file(src: &Path, staging: &Path) -> Result<String> {
-    fs::create_dir_all(staging)?;
-    let name = src.file_name().ok_or("staging source has no basename")?;
-    let dst = staging.join(name);
-    if same_file(src, &dst) {
-        return win_path(&dst);
-    }
-    let before = fs::metadata(src)?;
-    let mut temporary = tempfile::NamedTempFile::new_in(staging)?;
-    let mut input = File::open(src)?;
-    let mut buf = [0u8; 16 * 1024];
-    loop {
-        let n = input.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        temporary.write_all(&buf[..n])?;
-    }
-    temporary.flush()?;
-    if identity(&before) != identity(&fs::metadata(src)?)
-        || temporary.as_file().metadata()?.len() != before.len()
-    {
-        return Err(Error::new(format!(
-            "QEMU staging input changed while copying: {}",
-            src.display()
-        )));
-    }
-    fs::set_permissions(temporary.path(), before.permissions())?;
-    let times = std::fs::FileTimes::new()
-        .set_accessed(before.accessed()?)
-        .set_modified(before.modified()?);
-    temporary.as_file().set_times(times)?;
-    temporary
-        .persist(&dst)
-        .map_err(|e| Error::new(format!("publish staging {}: {}", dst.display(), e.error)))?;
-    win_path(&dst)
+    win_path(&crate::publication::stage_file(src, staging)?)
 }
-
-pub struct MediaLock(File);
-impl MediaLock {
-    pub fn acquire(name: &str, root: Option<&Path>) -> Result<Self> {
-        if name.contains('/') || name.contains('\\') {
-            return Err("invalid media lock name".into());
-        }
-        let root = root
-            .map(Path::to_owned)
-            .unwrap_or_else(|| {
-                PathBuf::from(
-                    std::env::var("VIBEOS_HOSTLOCK_DIR")
-                        .unwrap_or_else(|_| "/tmp/vibeos-qemu-locks/host".into()),
-                )
-            })
-            .join("media");
-        fs::create_dir_all(&root)?;
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .read(true)
-            .open(root.join(name))?;
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
-            return Err(std::io::Error::last_os_error().into());
-        }
-        Ok(Self(file))
-    }
-}
-impl Drop for MediaLock {
-    fn drop(&mut self) {
-        unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
-    }
-}
-
-pub fn prune_media_cache(cache: &Path, keep: &Path) -> Result<()> {
-    let re = Regex::new(r"^[0-9a-f]{64}-.+$")?;
-    let mut entries = Vec::new();
-    let mut total = 0u64;
-    for e in fs::read_dir(cache)? {
-        let e = e?;
-        if !re.is_match(&e.file_name().to_string_lossy()) {
-            continue;
-        }
-        let m = match e.metadata() {
-            Ok(m) => m,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => return Err(e.into()),
-        };
-        total = total.saturating_add(m.len());
-        entries.push((m.mtime(), m.mtime_nsec(), m.len(), m.nlink(), e.path()));
-    }
-    entries.sort();
-    for (_, _, size, links, path) in entries {
-        if total <= 2 * 1024u64.pow(3) {
-            break;
-        }
-        if path == keep || links > 1 {
-            continue;
-        }
-        match fs::remove_file(&path) {
-            Ok(()) => total = total.saturating_sub(size),
-            Err(e)
-                if matches!(
-                    e.kind(),
-                    std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied
-                ) => {}
-            Err(e) => return Err(e.into()),
-        }
-    }
-    Ok(())
-}
-fn pin(src: &Path, before: &fs::Metadata, entry: &Path, staging: &Path) -> Result<bool> {
-    if !entry.try_exists()? {
-        return Ok(false);
-    }
-    if fs::metadata(entry)?.len() != before.len() {
-        return Err(Error::new(format!(
-            "QEMU read-only media cache is damaged: {}",
-            entry.display()
-        )));
-    }
-    if identity(before) != identity(&fs::metadata(src)?) {
-        return Err(Error::new(format!(
-            "QEMU staging input changed before pinning: {}",
-            src.display()
-        )));
-    }
-    fs::create_dir_all(staging)?;
-    let pinned = staging.join(src.file_name().ok_or("media source has no basename")?);
-    if pinned.try_exists()? {
-        if !same_file(&pinned, entry) {
-            return Err(Error::new(format!(
-                "Conflicting read-only staging basename: {}",
-                pinned.display()
-            )));
-        }
-    } else {
-        fs::hard_link(entry, &pinned)?;
-    }
-    let file = OpenOptions::new().write(true).open(entry)?;
-    file.set_times(fs::FileTimes::new().set_modified(SystemTime::now()))?;
-    prune_media_cache(entry.parent().ok_or("cache entry lacks parent")?, entry)?;
-    Ok(true)
-}
-
 pub fn stage_readonly_file(src: &Path, staging: &Path) -> Result<String> {
-    let before = fs::metadata(src)?;
-    let mut input = File::open(src)?;
-    let mut digest = Sha256::new();
-    let mut buf = [0u8; 1024 * 1024];
-    loop {
-        let n = input.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        digest.update(&buf[..n]);
-    }
-    if identity(&before) != identity(&fs::metadata(src)?) {
-        return Err(Error::new(format!(
-            "QEMU staging input changed while hashing: {}",
-            src.display()
-        )));
-    }
-    let cache = staging
-        .parent()
-        .ok_or("staging root has no parent")?
-        .join("media-cache-v1");
-    let basename = src
-        .file_name()
-        .ok_or("media source has no basename")?
-        .to_string_lossy();
-    let entry = cache.join(format!("{:x}-{basename}", digest.finalize()));
-    {
-        let _lock = MediaLock::acquire("cache.lock", None)?;
-        fs::create_dir_all(&cache)?;
-        if pin(src, &before, &entry, staging)? {
-            return win_path(&staging.join(src.file_name().unwrap()));
-        }
-    }
-    let key = format!("{:x}", Sha256::digest(entry.to_string_lossy().as_bytes()));
-    let _fill = MediaLock::acquire(&format!("fill-{key}.lock"), None)?;
-    {
-        let _lock = MediaLock::acquire("cache.lock", None)?;
-        if pin(src, &before, &entry, staging)? {
-            return win_path(&staging.join(src.file_name().unwrap()));
-        }
-    }
-    let private = tempfile::Builder::new()
-        .prefix(&format!(".populate-v2-{}-", std::process::id()))
-        .tempdir_in(&cache)?;
-    stage_file(src, private.path())?;
-    {
-        let _lock = MediaLock::acquire("cache.lock", None)?;
-        if identity(&before) != identity(&fs::metadata(src)?) {
-            return Err(Error::new(format!(
-                "QEMU staging input changed before publication: {}",
-                src.display()
-            )));
-        }
-        if !entry.try_exists()? {
-            fs::rename(private.path().join(src.file_name().unwrap()), &entry)?;
-        }
-        if !pin(src, &before, &entry, staging)? {
-            return Err("QEMU cache entry disappeared under lock".into());
-        }
-    }
-    win_path(&staging.join(src.file_name().unwrap()))
+    win_path(&crate::publication::stage_readonly_file(src, staging)?)
 }
 
 pub fn windows_qemu_bin(native: &str, dir: &Path, accel: &str) -> String {
@@ -536,6 +321,14 @@ pub fn dispatch(_root: &Path, r: &Value) -> Result<Value> {
     };
     Ok(match r["op"].as_str().unwrap_or("") {
         "backend_win_path" => json!(win_path(Path::new(s("path")?))?),
+        "backend_publish_file" => json!(crate::publication::stage_file(
+            Path::new(s("src")?),
+            Path::new(s("staging")?)
+        )?),
+        "backend_publish_readonly_file" => json!(crate::publication::stage_readonly_file(
+            Path::new(s("src")?),
+            Path::new(s("staging")?)
+        )?),
         "backend_stage_file" => json!(stage_file(Path::new(s("src")?), Path::new(s("staging")?))?),
         "backend_stage_readonly_file" => json!(stage_readonly_file(
             Path::new(s("src")?),

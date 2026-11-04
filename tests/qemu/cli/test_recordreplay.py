@@ -351,16 +351,6 @@ def test_env_hook_parses_mode_and_dir(monkeypatch):
     assert rr.env_request() == ("replay", Path("/home/x/vibeos-rr/t1"))
 
 
-def test_vm_applies_the_transform_only_when_asked(monkeypatch, tmp_path):
-    """The hook lives in the launch path every boot goes through, so `off` has to
-    mean untouched — not `mostly untouched`."""
-    from ..vm import QemuVM
-
-    monkeypatch.delenv(rr.ENV_VAR, raising=False)
-    cmd = ["qemu-system-aarch64", "-M", "virt"]
-    assert QemuVM._apply_record_replay(object.__new__(QemuVM), cmd) is cmd
-
-
 def test_a_changed_device_set_is_refused_on_replay(tmp_path):
     """A trace recorded with one device set, replayed against another, aborts deep in
     the run with a message about event ordering — which reads as rr being flaky
@@ -379,28 +369,6 @@ def test_a_changed_device_set_is_refused_on_replay(tmp_path):
     now, _ = rr.transform(grown, mode="replay", trace_dir=trace, stage=False)
     with pytest.raises(rr.RecordReplayError, match="does not match the recording"):
         rr.assert_same_shape(trace, now)
-
-
-def test_pristine_is_frozen_after_the_recording_not_before(tmp_path, monkeypatch):
-    """`rrsnapshot=init` writes the vmstate snapshot INTO the qcow2 during the
-    recording. Media frozen before the boot do not contain it, so restoring them
-    would leave every replay with no snapshot to load — and the failure surfaces as
-    a replay that starts and then diverges, not as a missing-file error.
-
-    So the launch-path hook must NOT freeze; the CLI verb freezes on the way out.
-    """
-    import inspect
-
-    from ..vm import QemuVM
-
-    src = inspect.getsource(QemuVM._apply_record_replay)
-    assert "snapshot_pristine" not in src, (
-        "the launch hook froze pristine/ — that captures media from BEFORE the "
-        "recording wrote its init snapshot"
-    )
-    from . import rrcmd
-
-    assert "snapshot_pristine" in inspect.getsource(rrcmd.cmd_record)
 
 
 def test_media_are_named_after_their_source(tmp_path):
@@ -538,51 +506,6 @@ def test_last_run_missing_is_an_error_not_a_silent_pass(tmp_path):
     trace.mkdir()
     with pytest.raises(rr.RecordReplayError, match="launch hook did not run"):
         rr.last_run(trace)
-
-
-def test_rr_runs_get_a_watchdog_budget_matched_to_how_slow_they_are(tmp_path, monkeypatch):
-    """A replay waits out each recorded I/O completion instead of taking the host's,
-    so it is quiet for longer than plain TCG ever is. The stock 120s silence
-    watchdog aborted a perfectly healthy arm64 replay as HANG_TIMEOUT."""
-    from ..vm import Arm64Config, QemuVM
-
-    trace = tmp_path / "t"
-    trace.mkdir()
-    cmd = _base_cmd(tmp_path)
-    rec, _ = rr.transform(cmd, mode="record", trace_dir=trace, stage=False)
-    rr.write_manifest(trace, arch="arm64", argv=rec, media={})
-
-    vm = object.__new__(QemuVM)
-    vm._backend = "native"
-    vm.live_log_path = tmp_path / "serial.log"
-
-    vm.config = Arm64Config(boot_timeout=540.0, hang_silence_seconds=120.0)
-    monkeypatch.setenv(rr.ENV_VAR, f"replay:{trace}")
-    monkeypatch.setenv(rr.SHIFT_ENV_VAR, "3")
-    vm._apply_record_replay(cmd)
-    assert vm.config.boot_timeout >= 1800.0
-    assert vm.config.hang_silence_seconds >= 600.0
-
-
-def test_a_config_with_the_watchdog_off_stays_off(tmp_path, monkeypatch):
-    """0 means disabled, not `unset` — raising it would ARM a watchdog the arch
-    config deliberately turned off."""
-    from ..vm import Arm64Config, QemuVM
-
-    trace = tmp_path / "t"
-    trace.mkdir()
-    cmd = _base_cmd(tmp_path)
-    rec, _ = rr.transform(cmd, mode="record", trace_dir=trace, stage=False)
-    rr.write_manifest(trace, arch="arm64", argv=rec, media={})
-
-    vm = object.__new__(QemuVM)
-    vm._backend = "native"
-    vm.live_log_path = tmp_path / "serial.log"
-
-    vm.config = Arm64Config(boot_timeout=540.0, hang_silence_seconds=0.0)
-    monkeypatch.setenv(rr.ENV_VAR, f"replay:{trace}")
-    vm._apply_record_replay(cmd)
-    assert vm.config.hang_silence_seconds == 0.0
 
 
 def test_a_short_replay_is_not_reported_as_a_pass(tmp_path, monkeypatch):
@@ -728,61 +651,6 @@ def test_no_arch_config_smuggles_in_a_host_path_we_cannot_pin(config, tmp_path):
         if info["copied"]:
             continue
         assert info["sha256"], f"{name} is an overlay with no source digest — it can rot silently"
-
-
-def test_the_hook_demotes_x86_to_tcg_itself(tmp_path, monkeypatch):
-    """x86 boots `-accel kvm -cpu host` by default, and KVM has no instruction
-    counter. If the hook did not demote, every `rr record --arch amd64` would die
-    on the transform's refusal and the operator would be left to find the knob.
-    `-cpu host` has to go with it — it is a KVM host-passthrough concept.
-    """
-    from ..vm import Amd64UefiConfig, QemuVM
-
-    trace = tmp_path / "t"
-    trace.mkdir()
-    vm = object.__new__(QemuVM)
-    vm._backend = "native"
-    vm.live_log_path = tmp_path / "serial.log"
-    vm.config = Amd64UefiConfig()
-
-    cmd = [
-        "qemu-system-x86_64",
-        "-accel",
-        "kvm",
-        "-cpu",
-        "host",
-        "-drive",
-        f"id=scratch,if=none,format=qcow2,file={tmp_path}/scratch.qcow2",
-        # virtio, not the real config's ide-cd: this test is about the ACCELERATOR,
-        # and an ide-cd would (correctly) be refused before the accel is visible.
-        "-device",
-        "virtio-blk-pci,drive=scratch",
-    ]
-    (tmp_path / "scratch.qcow2").write_bytes(b"\0" * 64)
-    monkeypatch.setenv(rr.ENV_VAR, f"record:{trace}")
-    out = vm._apply_record_replay(cmd)
-    assert "kvm" not in out
-    assert "tcg" in " ".join(out)
-    assert "host" not in out, "-cpu host survived the demotion; TCG cannot honour it"
-
-
-def test_arm64_keeps_its_cpu_model_through_the_hook(tmp_path, monkeypatch):
-    """The demotion is an x86 rewrite. Applied to arm64 it would strip
-    `-cpu cortex-a72`, leaving the guest on QEMU's default model — the same
-    carve-out _build_windows_cmd already makes."""
-    from ..vm import Arm64Config, QemuVM
-
-    trace = tmp_path / "t"
-    trace.mkdir()
-    vm = object.__new__(QemuVM)
-    vm._backend = "native"
-    vm.live_log_path = tmp_path / "serial.log"
-    vm.config = Arm64Config()
-
-    cmd = _base_cmd(tmp_path)
-    monkeypatch.setenv(rr.ENV_VAR, f"record:{trace}")
-    out = vm._apply_record_replay(cmd)
-    assert "cortex-a72" in out
 
 
 # --- telling a WEDGED replay from a slow one -----------------------------
@@ -1324,53 +1192,6 @@ def test_env_break_refuses_junk_rather_than_silently_not_breaking(monkeypatch):
         rr.env_break()
 
 
-def test_arm_replay_break_snaps_and_arms_through_the_harness_qmp(tmp_path, monkeypatch, capsys):
-    """The vm.py hook: a mid-chunk request must be snapped forward before it ever
-    reaches QEMU, because arming it unsnapped aborts the whole replay."""
-    from tests.qemu.vm import QemuVM
-
-    trace = _replay_log(tmp_path, _insn(100) + _insn(100))
-    monkeypatch.setenv(rr.BREAK_ENV_VAR, "150")
-
-    armed = []
-
-    class FakeQmp:
-        def execute(self, name, **kw):
-            armed.append((name, kw))
-
-    vm = QemuVM.__new__(QemuVM)  # no QEMU, no sockets — only the hook logic under test
-    vm.on_qmp_ready = None
-    vm._arm_replay_break(rr, trace)
-    assert vm.on_qmp_ready is not None
-    vm.on_qmp_ready(FakeQmp())
-    assert armed == [("replay-break", {"icount": 200})]
-    assert "mid-chunk" in capsys.readouterr().err
-
-
-def test_arm_replay_break_is_a_no_op_when_nothing_asked_for_one(tmp_path, monkeypatch):
-    from tests.qemu.vm import QemuVM
-
-    trace = _replay_log(tmp_path, _insn(100))
-    monkeypatch.delenv(rr.BREAK_ENV_VAR, raising=False)
-    vm = QemuVM.__new__(QemuVM)
-    vm.on_qmp_ready = None
-    vm._arm_replay_break(rr, trace)
-    assert vm.on_qmp_ready is None
-
-
-def test_arm_replay_break_refuses_an_icount_past_the_end(tmp_path, monkeypatch):
-    """Better to fail at arming than to boot a whole replay whose break can never
-    fire and looks identical to one that was never set."""
-    from tests.qemu.vm import QemuVM
-
-    trace = _replay_log(tmp_path, _insn(100))
-    monkeypatch.setenv(rr.BREAK_ENV_VAR, "999999")
-    vm = QemuVM.__new__(QemuVM)
-    vm.on_qmp_ready = None
-    with pytest.raises(rr.RecordReplayError, match="past the end"):
-        vm._arm_replay_break(rr, trace)
-
-
 def _shutdown(eid: int = 14) -> bytes:
     return bytes([eid])
 
@@ -1418,39 +1239,6 @@ def test_an_unfinalised_but_provably_complete_trace_is_not_refused(tmp_path):
     stump = _replay_log(other, _insn(10) + _insn(10))
     rr.write_manifest(stump, arch="arm64", argv=[], media={})
     assert any("finalised" in w for w in rr.check_trace(stump))
-
-
-def test_report_replay_break_says_whether_it_fired(tmp_path, monkeypatch):
-    """A paused replay and a wedged one look identical from outside — frozen
-    serial, busy QEMU — so the STOP event is the only thing that tells them
-    apart."""
-    from tests.qemu.qmp_client import QmpClient
-    from tests.qemu.vm import QemuVM
-
-    trace = _replay_log(tmp_path, _insn(100) + _insn(100))
-    monkeypatch.setenv(rr.BREAK_ENV_VAR, "200")
-
-    vm = QemuVM.__new__(QemuVM)
-    vm.on_qmp_ready = None
-    assert vm.report_replay_break() == ""  # nothing armed: silent
-
-    vm._arm_replay_break(rr, trace)
-    vm.qmp = QmpClient()
-    assert "did NOT fire" in vm.report_replay_break()
-
-    vm.qmp.events.append({"event": "STOP"})
-    assert vm.report_replay_break() == "[rr] replay-break FIRED: guest stopped at icount 200"
-
-
-def test_a_vm_with_no_break_armed_reports_nothing(tmp_path, monkeypatch):
-    """smoke's triage calls report_replay_break() on every hang. It must be silent
-    for ordinary boots, which is what lets it sit on the shared path."""
-    from tests.qemu.vm import QemuVM
-
-    monkeypatch.delenv(rr.BREAK_ENV_VAR, raising=False)
-    vm = QemuVM.__new__(QemuVM)
-    vm.on_qmp_ready = None
-    assert vm.report_replay_break() == ""
 
 
 # --- reading a wedge: which event did the replay stop on -------------------

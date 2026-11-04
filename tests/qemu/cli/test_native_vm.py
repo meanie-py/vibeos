@@ -12,7 +12,7 @@ import pytest
 
 from tests.qemu.qmp_client import QmpClient
 from tests.qemu.serial_client import SerialClient
-from tools.test_infra_compat import DedicatedSession
+from tools.qemu_infra_compat import DedicatedSession
 
 
 @pytest.fixture

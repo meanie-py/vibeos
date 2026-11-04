@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from tools.test_infra_compat import REPO, DedicatedSession, NativeError, call
+from tools.qemu_infra_compat import REPO, DedicatedSession, NativeError, call
 
 from .qmp_client import QmpClient
 from .serial_client import SerialClient
@@ -24,7 +24,6 @@ STORTEST_LABEL = "VIBEUSB"
 STORTEST_MARKER = b"vibeos usb e2e marker\r\n"
 HOSTILE_UART = 0x5000
 HOSTILE_UART_IRQ = 5
-GUESTFWD_ECHO_PORTS = {"netstack-outbound": 9999, "tdi-selftest": 9998, "usermode-winsock": 9997}
 HANG_RESAMPLE_SECONDS = 5.0
 
 
@@ -41,6 +40,13 @@ def _call(name, **kwargs):
         }:
             raise RuntimeError(str(exc)) from exc
         raise
+
+
+GUESTFWD_ECHO_PORTS = _call("echo_ports")
+
+
+def _guestfwd_echo_opts(addr):
+    return _call("guestfwd_echo_opts", addr=addr)
 
 
 def _option(name):

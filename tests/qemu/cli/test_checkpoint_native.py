@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tools.test_infra_compat import DedicatedSession, NativeError, call
+from tools.qemu_infra_compat import DedicatedSession, NativeError, call
 
 
 @pytest.fixture

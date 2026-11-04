@@ -6,7 +6,7 @@ import os
 import threading
 import time
 
-from tools.test_infra_compat import DedicatedSession, NativeError
+from tools.qemu_infra_compat import DedicatedSession, NativeError
 
 
 class SerialClient:
@@ -34,6 +34,16 @@ class SerialClient:
                     self.partial_output = self._state().get("partial_output", "")
                     raise TimeoutError(str(exc)) from exc
                 if "closed" in str(exc).lower() or "exited" in str(exc).lower():
+                    # Read the failure's native partial buffer without recursively
+                    # invoking this exception adapter if the transport itself died.
+                    try:
+                        state = self._session.call(
+                            "serial_snapshot" if self._vm_id is None else "vm_serial_snapshot",
+                            {"id": self._id if self._vm_id is None else self._vm_id},
+                        )
+                        self.partial_output = state["partial_output"]
+                    except (NativeError, OSError):
+                        pass
                     raise ConnectionError(str(exc)) from exc
                 raise
 
@@ -65,7 +75,10 @@ class SerialClient:
         return self._call("read_available", timeout=timeout)
 
     def send(self, data):
-        self._call("send", data=list(data))
+        try:
+            self._call("send", data=list(data))
+        except NativeError as exc:
+            raise OSError(str(exc)) from exc
 
     def _state(self):
         return self._call("snapshot")

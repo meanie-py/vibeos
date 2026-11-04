@@ -25,7 +25,7 @@ import pytest
 from tests.qemu import backend as be_mod
 from tests.qemu import qmp_client, serial_client
 from tests.qemu import vm as vm_mod
-from tools import test_infra_compat as native
+from tools import qemu_infra_compat as native
 
 from . import build as build_mod
 from . import config as config_mod
@@ -308,25 +308,6 @@ def test_smp_patch_is_idempotent_on_arm64_media(tmp_path: Path):
     src = tmp_path / "boot.img"
     src.write_bytes(_fake_boot_img(default_os=b"ReactOS_Arm64_MP"))
     assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
-
-
-def _stub_mcopy(monkeypatch, ini_text: str = "[FREELOADER]\n/SOS /RDPATH=x\n"):
-    """Stand in for mcopy: extraction writes the ini out, write-back is a no-op.
-
-    The real transform needs a FAT image; what these tests are about is the
-    CACHING, so the FAT plumbing is stubbed and the calls are recorded.
-    """
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append(list(cmd))
-        # `mcopy -o -i IMG ::/freeldr.ini OUT` — the extraction direction
-        if cmd[-2].startswith("::"):
-            Path(cmd[-1]).write_text(ini_text)
-        return subprocess.CompletedProcess(cmd, 0, b"", b"")
-
-    monkeypatch.setattr(vm_mod.subprocess, "run", fake_run)
-    return calls
 
 
 def test_mp_entry_names_are_equal_length_to_the_defaults_they_replace():
@@ -2195,16 +2176,6 @@ def test_per_arch_cap_env_overrides(monkeypatch):
     assert vm.per_arch_cap("arm64") == 2
 
 
-def _bare_vm(arch: str):
-    """An uninitialized QemuVM carrying only what the slot methods touch."""
-    v = vm.QemuVM.__new__(vm.QemuVM)
-    v.config = types.SimpleNamespace(arch=arch)  # type: ignore[assignment]
-    v._slot_fd = None
-    v._arch_slot_fd = None
-    v._cpu_lease_fd = None
-    return v
-
-
 # --- host CPU broker: boot-side lease wiring (vm.py) ------------------------
 
 
@@ -2217,18 +2188,6 @@ class _Reader:
 
     def read(self) -> bytes:
         return self._data
-
-
-def _launch_vm(backend: str, tmp_path: Path):
-    """A bare QemuVM carrying only what _launch_qemu touches."""
-    v = vm.QemuVM.__new__(vm.QemuVM)
-    v._backend = backend
-    v.live_log_path = tmp_path / "serial.log"
-    v.config = vm_mod.get_arch_config("amd64-uefi")
-    v._proc = None
-    v._early_stderr = ""
-    v._gdb = False
-    return v
 
 
 # --- gdbengine: the Python gdb engine's pure logic (no QEMU) ---------------
@@ -2937,24 +2896,6 @@ def test_the_three_echo_consumers_never_share_a_port():
     opts = vm_mod._guestfwd_echo_opts("10.0.2.100")
     for port in ports.values():
         assert opts.count(f":{port}-cmd:cat") == 1
-
-
-def test_free_tcp_port_windows_picker_hook():
-    # Native (no hook): a WSL-stack bind picks a real ephemeral port.
-    assert vm._windows_port_picker is None
-    p = vm._free_tcp_port()
-    assert 1024 < p < 65536
-    # windows-host: _free_tcp_port delegates to the injected picker (which, in the
-    # real backend, picks a Windows-stack-free port so QEMU.exe's 0.0.0.0 hostfwd
-    # binds — the WSL stack is a different stack under NAT). Mock it; restore after.
-    try:
-        vm._windows_port_picker = lambda: 49999
-        assert vm._free_tcp_port() == 49999
-    finally:
-        vm._windows_port_picker = None
-    # restored -> back to the WSL pick
-    assert vm._windows_port_picker is None
-    assert 1024 < vm._free_tcp_port() < 65536
 
 
 def test_backend_stage_media_paths_arm64_drives():
@@ -10087,29 +10028,6 @@ def test_the_up_kernel_is_opt_in_only_and_nothing_automated_opts_in():
     assert not stale, f"these still reference the retired MP opt-in knob: {stale}"
 
 
-def test_ledger_records_the_kernel_it_OBSERVED_not_the_flag():
-    """`mp_kernel` must come from the serial, never from `--smp`.
-
-    It was `bool(smp)`, which was accurate only while `--smp N` was the sole way
-    to get MP media. Since the MP promotion a DEFAULT boot runs ntkrnlmp.exe with
-    smp unset, so the flag-derived value recorded every default MP round as UP --
-    and `mp_kernel` is the field every flake-rate query filters on, so the damage
-    is silent and retroactive: the rounds still happen, they just stop counting.
-
-    The same inference-as-observation bug already cost an A/B once (see the note
-    beside the field), which is why this is pinned rather than left to review.
-    """
-    import inspect
-
-    from . import conformance as conf
-
-    src = inspect.getsource(conf)
-    assert '"mp_kernel": "ntkrnlmp.exe" in serial_text' in src, (
-        "mp_kernel must be read off the boot's serial"
-    )
-    assert '"mp_kernel": bool(smp)' not in src, "mp_kernel regressed to the flag"
-
-
 def test_fatal_scanner_diagnostic_cannot_be_baselined(tmp_path, monkeypatch):
     cp = subprocess.CompletedProcess(
         ["scanner"], 1, "header already baselined\n", "FATAL: missing generated headers\n"
@@ -10257,132 +10175,12 @@ def test_zombie_check_is_false_where_proc_is_absent(tmp_path, monkeypatch):
     assert not killvm._pid_is_zombie(1)
 
 
-def test_qmp_client_keeps_events_instead_of_discarding_them():
-    """_recv_json must skip events to find a reply, and used to drop them on the
-    way past. That threw away STOP, which is the only notification QEMU sends when
-    a replay-break fires — leaving a paused replay indistinguishable from a wedged
-    one, since both show a frozen serial log and a busy CPU."""
-    from tests.qemu.qmp_client import QmpClient
-
-    c = QmpClient()
-    feed = [
-        {"event": "RESUME"},
-        {"return": {}},
-        {"event": "STOP", "timestamp": {"seconds": 7}},
-        {"return": {"icount": 42}},
-    ]
-    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
-
-    assert c._recv_json() == {"return": {}}
-    assert c._recv_json() == {"return": {"icount": 42}}
-    assert [e["event"] for e in c.events] == ["RESUME", "STOP"]
-    assert c.saw_event("STOP") == {"event": "STOP", "timestamp": {"seconds": 7}}
-    assert c.saw_event("SHUTDOWN") is None
-
-
-def test_qmp_event_retention_is_bounded():
-    """A long boot emits plenty; this is a diagnostic tail, not a log."""
-    from tests.qemu.qmp_client import QmpClient
-
-    c = QmpClient()
-    feed = [{"event": f"E{i}"} for i in range(300)] + [{"return": {}}]
-    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
-    c._recv_json()
-    assert len(c.events) == 256
-    assert c.saw_event("E299") is not None
-    assert c.saw_event("E0") is None  # fell off the tail
-
-
 @pytest.mark.parametrize("arch", ["amd64-uefi-net", "i386-uefi-net", "amd64-test"])
 def test_per_arch_cap_includes_variants(arch, monkeypatch):
     monkeypatch.setenv("VIBEOS_QEMU_PER_ARCH_CAP", "2")
     monkeypatch.delenv("VIBEOS_QEMU_CAP_AMD64", raising=False)
     monkeypatch.delenv("VIBEOS_QEMU_CAP_I386", raising=False)
     assert vm_mod.per_arch_cap(arch) == 2
-
-
-@pytest.mark.parametrize(
-    "arch,available,expected",
-    [
-        ("amd64-uefi", True, "whpx"),
-        ("amd64-uefi", False, "tcg"),
-        ("arm64", True, "tcg"),
-    ],
-)
-def test_start_resolves_accel_before_admission(arch, available, expected, monkeypatch):
-    v = _bare_vm(arch)
-    v._backend = "windows-host"
-    v._win = {"accel": "whpx"}
-    v._win_accel = "tcg"
-    monkeypatch.setattr(be_mod, "whpx_available", lambda: available)
-    observations = []
-    monkeypatch.setattr(v, "_acquire_slot", lambda: observations.append(v._win_accel))
-    monkeypatch.setattr(v, "_acquire_cpu_lease", lambda: observations.append(v._boot_is_tcg()))
-    monkeypatch.setattr(vm_mod, "launch_lock", contextlib.nullcontext)
-    monkeypatch.setattr(v, "_prepare_launch", lambda: None)
-    monkeypatch.setattr(v, "_start_with_ports", lambda: None)
-    v.start()
-    assert observations == [expected, expected == "tcg"]
-
-
-def test_boot_eof_preserves_serial_and_reports_process_exit(monkeypatch, tmp_path):
-    from types import SimpleNamespace
-
-    v = _bare_vm("amd64")
-    v.config = vm_mod.get_arch_config("amd64-uefi")
-
-    def eof(*args, **kwargs):
-        raise ConnectionError("Serial socket closed")
-
-    monkeypatch.setattr(
-        v,
-        "serial",
-        SimpleNamespace(read_until=eof, partial_output="firmware breadcrumb"),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        v,
-        "_proc",
-        SimpleNamespace(poll=lambda: 1, wait=lambda **_: 1, returncode=1),
-        raising=False,
-    )
-    v._stderr_path = tmp_path / "stderr.log"
-    (tmp_path / "stderr.log").write_text("WHPX fatal error")
-    v._early_stderr = ""
-    with pytest.raises(RuntimeError, match="QEMU exited with code 1") as error:
-        v.wait_for_boot()
-    assert "WHPX fatal error" in str(error.value)
-    assert v._boot_output == "firmware breadcrumb"
-
-
-def test_qemu_stderr_cannot_fill_a_pipe_and_stall(tmp_path, monkeypatch):
-    import sys
-
-    v = _launch_vm("native", tmp_path)
-    monkeypatch.setattr(
-        v,
-        "_build_native_cmd",
-        lambda: [sys.executable, "-c", "import sys; sys.stderr.write('x' * 131072)"],
-    )
-    v._launch_qemu()
-    assert v._proc is not None
-    try:
-        assert v._proc.wait(timeout=5) == 0
-        assert (tmp_path / "amd64-uefi_qemu.stderr.log").stat().st_size == 131072
-        assert v._read_qemu_stderr() == "x" * 65536
-    finally:
-        if v._proc.poll() is None:
-            v._proc.kill()
-            v._proc.wait()
-
-
-def test_serial_eof_retains_partial_output():
-    client = serial_client.SerialClient()
-    client._buf = "firmware reached the loader"
-    client._sock_dead = True
-    with pytest.raises(ConnectionError):
-        client.read_until("shell ready", timeout=0.1)
-    assert client.partial_output == "firmware reached the loader"
 
 
 # --- land: the SOURCE-lint preflight ---------------------------------------
@@ -10752,214 +10550,7 @@ def test_gdb_engine_names_the_missing_gdb(monkeypatch):
 # --- the orphan reaper: it deletes locks and kills processes, so pin every rule ----------
 
 
-@pytest.fixture
-def reaper(tmp_path, monkeypatch):
-    """vm.reap_orphan_qemus against a private lock dir + runs dir, with liveness and the
-    kill stubbed: `alive` is the set of live pids, `kills` records every kill_one call."""
-    from . import killvm
-
-    locks, runs = tmp_path / "locks", tmp_path / "runs"
-    locks.mkdir()
-    runs.mkdir()
-    monkeypatch.setattr(vm_mod, "LOCK_DIR", locks)
-    monkeypatch.setenv("RUNS_DIR", str(runs))
-    alive: set[int] = set()
-    kills: list[dict] = []
-    outcome = {"line": "SIGTERM qemu_pid=?"}
-    monkeypatch.setattr(vm_mod, "_pid_alive", lambda pid: pid in alive)
-    monkeypatch.setattr(vm_mod, "_proc_is_qemu", lambda pid: pid in alive)
-
-    def fake_kill(info):
-        kills.append(info)
-        return outcome["line"]
-
-    monkeypatch.setattr(killvm, "kill_one", fake_kill)
-    return locks, runs, alive, kills, outcome
-
-
-def _lock(locks: Path, name: str, **info) -> Path:
-    p = locks / f"{name}.json"
-    p.write_text(json.dumps(info))
-    return p
-
-
-def test_reaper_never_touches_a_live_owner_within_its_cap(reaper):
-    locks, _, alive, kills, _ = reaper
-    alive.update({100, 200})
-    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200, deadline=time.time() + 600)
-    assert vm_mod.reap_orphan_qemus() == []
-    assert lf.exists() and kills == []
-
-
-def test_reaper_kills_past_the_cap_even_with_a_live_owner(reaper):
-    locks, _, alive, kills, _ = reaper
-    alive.update({100, 200})
-    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200, deadline=time.time() - 1)
-    vm_mod.reap_orphan_qemus()
-    assert [k["qemu_pid"] for k in kills] == [200] and not lf.exists()
-
-
-def test_reaper_kills_windows_host_vms_by_uid_even_when_the_shim_is_gone(reaper):
-    """The shim pid dying says nothing about qemu.exe. The old reaper saw a dead pid,
-    deleted the lock, and left the Windows-side VM unmanaged."""
-    locks, _, _, kills, _ = reaper
-    lf = _lock(locks, "w", launcher_pid=100, qemu_pid=200, cmd=["qemu.exe", "-name", "u-123"])
-    vm_mod.reap_orphan_qemus()
-    assert len(kills) == 1 and not lf.exists()
-
-
-def test_reaper_keeps_the_lock_when_the_kill_fails(reaper):
-    locks, _, alive, _, outcome = reaper
-    alive.add(200)
-    outcome["line"] = "STILL ALIVE after SIGTERM+SIGKILL qemu_pid=200"
-    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200)
-    actions = vm_mod.reap_orphan_qemus()
-    assert lf.exists(), "a lock must never be dropped for a VM that may still run"
-    assert actions and actions[0].startswith("FAILED")
-
-
-def test_reaper_leaves_a_fresh_unparseable_lock_alone(reaper):
-    """Unknown is not stale: the jq-less reap.sh read every field as empty and purged
-    every live VM's lock on each new smoke."""
-    locks, _, _, kills, _ = reaper
-    lf = locks / "torn.json"
-    lf.write_text("{half a lo")
-    assert vm_mod.reap_orphan_qemus() == []
-    assert lf.exists() and kills == []
-
-
-def test_reaper_dry_run_changes_nothing(reaper):
-    locks, _, alive, kills, _ = reaper
-    alive.add(200)
-    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200)
-    actions = vm_mod.reap_orphan_qemus(dry_run=True)
-    assert lf.exists() and kills == [] and actions[0].startswith("DRY-RUN")
-
-
-def test_reaper_walks_debug_toolkit_manifests(reaper):
-    _, runs, alive, kills, _ = reaper
-    alive.update({300, 301, 302, 999})
-
-    def manifest(rid, **info):
-        (runs / rid).mkdir()
-        (runs / rid / "manifest.json").write_text(json.dumps(info))
-
-    manifest("orphan", qemu_pid=300, owner_pid=4242)  # owner dead
-    manifest("owned", qemu_pid=301, owner_pid=999)  # owner alive
-    manifest("stopped", qemu_pid=302, owner_pid=4242, stopped_at="2026-09-26T00:00:00")
-    manifest("legacy", qemu_pid=302)  # no owner recorded, within cap
-    (runs / "torn").mkdir()
-    (runs / "torn" / "manifest.json").write_text("{")
-    vm_mod.reap_orphan_qemus()
-    assert [k["qemu_pid"] for k in kills] == [300]
-
-
 # --- vm: output printed before the `ready` snapshot is boot output, never flushed -------
-
-
-class _SnapshotSerial:
-    """read_until / read_until_idle / read_available over a scripted stream, with the
-    real SerialClient's consume semantics: a TimeoutError does NOT consume."""
-
-    def __init__(self, boot: str, settle: str, settle_times_out: bool) -> None:
-        self.buf, self.pos = boot + settle, 0
-        self.boot, self.settle_times_out = boot, settle_times_out
-
-    def read_until(self, marker: str, timeout: float = 0) -> str:
-        end = self.buf.index(marker) + len(marker)
-        out, self.pos = self.buf[self.pos : end], end
-        return out
-
-    def read_until_idle(self, idle_seconds: float = 0, timeout: float = 0, min_bytes: int = 0):
-        if self.settle_times_out:
-            raise TimeoutError("never idle")
-        out, self.pos = self.buf[self.pos :], len(self.buf)
-        return out
-
-    def read_available(self, timeout: float = 0) -> str:
-        out, self.pos = self.buf[self.pos :], len(self.buf)
-        return out
-
-
-class _FakeQmp:
-    def hmp(self, cmd: str) -> str:
-        return ""
-
-
-@pytest.mark.parametrize("settle_times_out", [True, False])
-def test_a_payload_marker_printed_during_the_settle_survives_the_snapshot_restore(
-    monkeypatch, settle_times_out
-):
-    """The ucrtdiff/oldcrt hang: the marker arrived during the settle, the settle timed
-    out because the payload was chatty, and restore_snapshot's flush ate it."""
-    monkeypatch.setattr(vm_mod.time, "sleep", lambda s: None)
-    vm = object.__new__(vm_mod.QemuVM)
-    vm.config = cast(
-        Any,
-        type(
-            "C", (), {"boot_marker": "shell ready", "boot_timeout": 1, "desktop_settle_seconds": 5}
-        )(),
-    )
-    vm.serial = cast(
-        Any, _SnapshotSerial("...shell ready", "\n[UCRTDIFF] done\n", settle_times_out)
-    )
-    vm.qmp = cast(Any, _FakeQmp())
-    vm._boot_output = ""
-    vm.wait_for_boot()
-    vm.save_snapshot("ready")
-    vm.restore_snapshot("ready")  # the autouse fixture, before the first test
-    assert "[UCRTDIFF] done" in vm._boot_output
-
-
-class _GuestSerial:
-    """A serial line fed by a fake guest: `print` appends, reads consume."""
-
-    def __init__(self) -> None:
-        self.buf, self.pos = "", 0
-
-    def read_available(self, timeout: float = 0) -> str:
-        out, self.pos = self.buf[self.pos :], len(self.buf)
-        return out
-
-
-class _GuestQmp:
-    """HMP with a guest behind it: output already crossing the socket when `stop` lands,
-    and a snapshot taken mid-payload that re-prints the payload's last line on load."""
-
-    def __init__(self, serial: _GuestSerial, in_flight: str, replay: str) -> None:
-        self.serial, self.in_flight, self.replay = serial, in_flight, replay
-        self.running, self.seen = True, []
-
-    def hmp(self, cmd: str) -> str:
-        self.seen.append(cmd)
-        if cmd == "stop":
-            self.running = False
-            self.serial.buf += self.in_flight
-            self.in_flight = ""
-        elif cmd == "cont":
-            self.running = True
-        elif cmd.startswith("loadvm"):
-            assert not self.running, "loadvm on a running guest races the drain"
-            self.serial.buf += self.replay
-        return ""
-
-
-def test_a_marker_printed_around_the_snapshot_reaches_the_test(monkeypatch):
-    """arm64 -smp 4 rpmprobe, 2026-10-07: `[RPMPROBE] done` landed between the last
-    boot read and savevm, and the restored guest re-printed it at once. The old restore
-    flushed after loadvm and ate both, so the payload failed with the marker in its own
-    serial log. Pausing the guest closes both gaps."""
-    monkeypatch.setattr(vm_mod.time, "sleep", lambda s: None)
-    vm = object.__new__(vm_mod.QemuVM)
-    serial = _GuestSerial()
-    qmp = _GuestQmp(serial, "[RPMPROBE] done\n", "[RPMPROBE] done\n")
-    vm.serial, vm.qmp = cast(Any, serial), cast(Any, qmp)
-    vm._boot_output = "...shell ready\n"
-    vm.save_snapshot("ready")
-    assert "[RPMPROBE] done" in vm._boot_output
-    vm.restore_snapshot("ready")
-    assert "[RPMPROBE] done" in serial.read_available()
-    assert qmp.running and qmp.seen[-1] == "cont"
 
 
 def _load_payload_compile():
@@ -12169,3 +11760,17 @@ def _cpu_deadline_fixture(repo, stored, live):
         },
         root=repo,
     )
+
+
+def test_command_exit_124_is_distinct_from_an_owned_timeout(tmp_path, monkeypatch):
+    import sys
+
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    run = Run("smoke", "amd64")
+    exited = run.run([sys.executable, "-c", "raise SystemExit(124)"])
+    expired = run.run([sys.executable, "-c", "import time; time.sleep(2)"], timeout=0.02)
+    assert exited.returncode == expired.returncode == 124
+    assert exited.timed_out is False and expired.timed_out is True
+    assert [row["timed_out"] for row in run.command_timings] == [False, True]

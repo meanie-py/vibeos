@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
+from tools.qemu_infra_compat import call
+
 from .. import vm
+from .native_preparation_fixture import preparation_tree as _preparation_tree
+from .native_preparation_fixture import request
+
+preparation_tree = _preparation_tree
 
 
 def test_hazard_selection(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,3 +68,32 @@ def test_arm64_hazards_reach_the_machine(monkeypatch: pytest.MonkeyPatch) -> Non
     # machine_args itself is never mutated: a later plain boot stays plain.
     plain = vm.Arm64Config().machine_args
     assert plain[plain.index("-cpu") + 1] == "cortex-a72"
+
+
+def test_arm64_hostile_profile_reaches_the_native_prepared_plan(
+    preparation_tree, tmp_path, monkeypatch
+):
+    repo, _trace = preparation_tree
+    monkeypatch.setenv("VIBEOS_QEMU_HOSTILE", "a76,el2,mem")
+    plan = call("vm_prepare_config", request(repo, tmp_path / "arm64-plan"), root=repo)
+    args = plan["arch_args"]
+    assert args[args.index("-M") + 1] == "virt,virtualization=on"
+    assert args[args.index("-cpu") + 1] == "cortex-a76"
+    assert args[args.index("-m") + 1] == "6G"
+
+
+def test_x86_hostile_uart_and_spcr_are_one_native_plan(preparation_tree, tmp_path, monkeypatch):
+    repo, _trace = preparation_tree
+    monkeypatch.setenv("VIBEOS_QEMU_HOSTILE", "q35,serial,mem,novga")
+    plan = call(
+        "vm_prepare_config", request(repo, tmp_path / "x86-plan", arch="amd64-uefi"), root=repo
+    )
+    args = plan["arch_args"]
+    assert args[args.index("-M") + 1] == "q35"
+    assert args[args.index("-m") + 1] == "6G"
+    assert args[args.index("-vga") + 1] == "none" and "ramfb" in args
+    assert plan["serial_args"] == ["-device", "isa-serial,chardev=ser0,iobase=0x5000,irq=5"]
+    table = Path(args[args.index("-acpitable") + 1].removeprefix("file="))
+    data = table.read_bytes()
+    assert int.from_bytes(data[44:52], "little") == 0x5000 and data[53] == 5
+    assert sum(data) & 0xFF == 0

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from tools import test_infra_compat as native
+from tools import qemu_infra_compat as native
 
 KERNEL_ASSERT_RE = re.compile(r"\*\*\* ASSERT FAILED: .* at ntoskrnl-rust/")
 _MAX_SANE_SYMBOL_OFFSET = 0x20000

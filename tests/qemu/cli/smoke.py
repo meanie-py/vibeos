@@ -7,12 +7,14 @@ import os
 import sys
 from pathlib import Path
 
-from tools import test_infra_compat as native
-from tools.test_infra_runner import native_run_call as _native_run_call
+from tools import qemu_infra_compat as native
+from tools.qemu_infra_runner import native_run_call as _native_run_call
 
 from . import archcfg
 from . import config as cli_config
 from .artifacts import Run, Stage
+
+_NVME_PUBLISHED = "[NVME] controller 0: namespace 1 published as a disk"
 
 
 def _booted_kernel(text: str) -> str | None:
