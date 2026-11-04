@@ -1954,3 +1954,16 @@ def test_only_exported_macros_are_reexported(tmp_path):
     from rustconv.profile_derive import exported_macro_names
 
     assert exported_macro_names(tmp_path) == ["HIWORD", "ZeroMemory"]
+
+
+def test_a_guid_only_tu_is_recognised():
+    guid_c = (
+        "/* DO NOT USE THE PRECOMPILED HEADER FOR THIS FILE! */\n#define WIN32_NO_STATUS\n"
+        "#include <windef.h>\n#include <dsound.h>\n#include <initguid.h>\n"
+        "#include <dsdriver.h>\n\n/* NO CODE HERE */\n"
+    )
+    from rustconv import profile_derive
+
+    assert profile_derive._guid_only_tu(guid_c)
+    assert not profile_derive._guid_only_tu(guid_c + "int x;\n")
+    assert not profile_derive._guid_only_tu("#include <windef.h>\n")

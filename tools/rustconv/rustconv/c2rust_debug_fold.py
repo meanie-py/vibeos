@@ -32,8 +32,11 @@ import re
 # (26 of dsound's 77 blocks). So the condition is taken as text and checked for its parts
 # in `_cond_ok`, and only the spellings below are tolerated in the rest -- the call's shape
 # (class, channel, file, function, line, literal format) is still required exactly.
-_C = r"(?:::)?core::ffi::c_\w+"
-_CSTR = rf"b\"[^\"]*\\0\" as \*const u8 as \*const {_C}"
+# ...and the model also spells the C types as Rust primitives: `as *const i8`, `120 as i32`,
+# `1252i32` (the 12 blocks dsound's first fold still missed).
+_C = r"(?:(?:(?:::)?core::ffi::)?c_\w+|i8|u8|i32|u32)"
+_PTR = rf"(?: as \*const u8| \.as_ptr\(\)) as \*const {_C}"
+_CSTR = rf"b\"[^\"]*\\0\"{_PTR}"
 _TEMPLATE = (
     r"\bif (?P<cond>[^{};]*?) \{ "
     # c2rust numbers the locals of the second and later blocks (`__dbch_0`, `__dbcl_1`).
@@ -42,8 +45,8 @@ _TEMPLATE = (
     r"ros_dbg_log\( \(?(?P=cl)\)?(?: as \w+)?, (?P=ch), "
     rf"{_CSTR}, "
     rf"{_CSTR}, "
-    rf"\d+ as {_C}, "
-    rf"b\"(?P<fmt>(?:\\.|[^\"\\])*)\\0\" as \*const u8 as \*const {_C},?"
+    rf"\d+(?: as {_C}|i32)?, "
+    rf"b\"(?P<fmt>(?:\\.|[^\"\\])*)\\0\"{_PTR},?"
     r"(?P<args>[^;]*?)\); \}"
 )
 _BLOCK = re.compile(_TEMPLATE.replace(" ", r"\s*"), re.S)
@@ -85,7 +88,9 @@ def fold(text: str) -> tuple[str, int]:
 # the const is worse than dead: dsound's mixer.rs came back with `__WINE_DBCL_TRACE = 4`
 # (wine/debug.h says 3), which tested the wrong channel bit in every block it guarded.
 _LOCAL_CLASS_CONST = re.compile(
-    r"(?m)^[ \t]*(?:pub(?:\([^)]*\))?\s+)?const\s+(?P<name>__WINE_DBCL_\w+)"
+    # with its `#[allow(..)]` and resolve's `// NAME` banner, which would otherwise dangle
+    r"(?m)^(?:[ \t]*(?:#\[allow\([^)]*\)\]|// __WINE_DBCL_\w+)[ \t]*\n)*"
+    r"[ \t]*(?:pub(?:\([^)]*\))?\s+)?const\s+(?P<name>__WINE_DBCL_\w+)"
     r"\s*:[^=;]*=[^;]*;[ \t]*\n"
 )
 _LOGGER_DECL = re.compile(
@@ -106,11 +111,15 @@ def fold_module(text: str) -> tuple[str, int, list[str]]:
     `fold` handles (a named channel) still needs both."""
     new, n = fold(text)
     dropped: list[str] = []
-    for m in list(_LOCAL_CLASS_CONST.finditer(new)):
-        rest = new[: m.start()] + new[m.end() :]
-        if not _named(rest, m.group("name")):
+    # All of a name's definitions at once: sound3d had the model's AND resolve's copy, and
+    # each one "named" the other, so neither was ever dropped (E0428 on the pair).
+    for name in dict.fromkeys(m.group("name") for m in _LOCAL_CLASS_CONST.finditer(new)):
+        rest = _LOCAL_CLASS_CONST.sub(
+            lambda m, name=name: "" if m.group("name") == name else m.group(0), new
+        )
+        if not _named(rest, name):
             new = rest
-            dropped.append(m.group("name"))
+            dropped.append(name)
     for m in list(_LOGGER_DECL.finditer(new)):
         rest = new[: m.start()] + new[m.end() :]
         if not _named(rest, "ros_dbg_log"):

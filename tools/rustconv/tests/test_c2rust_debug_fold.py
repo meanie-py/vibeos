@@ -138,3 +138,53 @@ def test_a_block_whose_condition_tests_another_class_is_left_alone():
     }
 """
     assert fold(src) == (src, 0)
+
+
+def test_rust_primitive_spellings_fold_too():
+    # dsound's sound3d: `*const i8`, `120 as i32`, `1252i32` instead of c_char / c_int.
+    text = (
+        "    if (*__wine_dbch___default).flags as i32 & (1 as i32) << __WINE_DBCL_TRACE as i32 != 0 {\n"
+        "        let __dbch: *mut __wine_debug_channel = __wine_dbch___default;\n"
+        "        let __dbcl: __wine_debug_class = __WINE_DBCL_TRACE;\n"
+        "        ros_dbg_log(\n            (__dbcl) as u32,\n            __dbch,\n"
+        '            b"dll/directx/wine/dsound/sound3d.c\\0"\n'
+        "                as *const u8 as *const i8,\n"
+        '            b"VectorBetweenTwoPoints\\0" as *const u8 as *const i8,\n'
+        "            1252i32,\n"
+        '            b"A (%f)\\n\\0" as *const u8 as *const i8,\n'
+        "            (*a).x as f64,\n        );\n    }\n"
+    )
+    out, n = fold(text)
+    assert n == 1
+    assert out.strip() == 'WINE_TRACE!("A (%f)\\n", (*a).x as f64);'
+
+
+def test_duplicate_scaffolding_consts_drop_together():
+    # sound3d: the model's const and resolve's copy, each "naming" the other.
+    from rustconv.c2rust_debug_fold import fold_module
+
+    text = (
+        "use crate::prelude::*;\n"
+        "#[allow(non_upper_case_globals)]\n"
+        "pub const __WINE_DBCL_TRACE: __wine_debug_class = 3;\n\n"
+        "// __WINE_DBCL_TRACE\n"
+        "pub const __WINE_DBCL_TRACE: __wine_debug_class = 3;\n"
+        "fn f() {}\n"
+    )
+    out, n, dropped = fold_module(text)
+    assert dropped == ["__WINE_DBCL_TRACE"]
+    assert out == "use crate::prelude::*;\n\nfn f() {}\n"
+
+
+def test_as_ptr_spelt_strings_fold():
+    text = (
+        "if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_TRACE as i32) != 0 {\n"
+        "    let __dbch: *mut __wine_debug_channel = __wine_dbch___default;\n"
+        "    let __dbcl: __wine_debug_class = __WINE_DBCL_TRACE;\n"
+        "    ros_dbg_log((__dbcl) as u32, __dbch,\n"
+        '        b"dll/directx/wine/dsound/duplex.c\\0"\n            .as_ptr() as *const i8,\n'
+        '        b"F\\0".as_ptr() as *const i8, 209i32,\n'
+        '        b"(%p)\\n\\0".as_ptr() as *const i8, This,\n    );\n}\n'
+    )
+    out, n = fold(text)
+    assert n == 1 and out.strip() == 'WINE_TRACE!("(%p)\\n", This);'

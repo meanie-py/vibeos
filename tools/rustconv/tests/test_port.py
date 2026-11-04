@@ -1062,6 +1062,17 @@ def test_reactos_gates_are_settled_to_the_live_arm(tmp_path):
     assert 'feature = "reactos"' not in out
 
 
+def test_file_inside_concat_stays_a_literal(tmp_path):
+    # dsound: C's `__FILE__ ": DirectSoundDevice.mixlock"` -> concat!(__FILE__, ".."), and the
+    # pointer form of file!() inside it is "expected a literal".
+    rs = tmp_path / "s.rs"
+    rs.write_text('fn f() { x = concat!(__FILE__, ": lock\\0").as_ptr(); g(__FILE__, h(1)); }\n')
+    assert port._builtin_location_macros(rs) == 2
+    out = rs.read_text()
+    assert 'concat!(file!(), ": lock\\0").as_ptr()' in out
+    assert 'g(concat!(file!(), "\\0").as_ptr(), h(1))' in out
+
+
 def test_file_and_line_are_rusts_own(tmp_path):
     # regedit: `pub const __LINE__: i32 = 7` came from the clang facts probe.
     rs = tmp_path / "s.rs"
@@ -1986,3 +1997,72 @@ def test_identical_anonymous_twins_agree_and_differing_twins_refuse(tmp_path, mo
     texts["amd64"] = twin.format(n=30) + twin.format(n=31).replace("DWORD", "ULONG")
     agreed, differs = c2rust_anchor.anonymous_types(tmp_path / "dsound.c", want)
     assert agreed == {} and set(differs) == set(want)
+
+
+def test_a_guid_the_island_defers_to_the_prelude_gets_storage(tmp_path, monkeypatch):
+    # dsound: the island said `pub use crate::prelude::IID_IDsDriverNotify;` and nothing was
+    # ever written there (E0432). A deferred name that is not a GUID is skipped, not refused.
+    import subprocess
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    mod = tmp_path / "dll" / "ds"
+    mod.mkdir(parents=True)
+    (mod / "guid.c").write_text("#include <initguid.h>\n#include <dsdriver.h>\n")
+    (tmp_path / "dsdriver.h").write_text(
+        "DEFINE_GUID(IID_IDsDriverNotify, 0x00363EF44, 0x3B57, 0x11D3, "
+        "0xAC, 0x79, 0x00, 0x10, 0x5A, 0x01, 0x7f, 0xe1);\n"
+    )
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    crate = tmp_path / "ds-rust"
+    (crate / "src" / "ds").mkdir(parents=True)
+    (crate / "src" / "types_amd64.rs").write_text(
+        "pub use crate::prelude::IID_IDsDriverNotify;\npub use crate::prelude::__wine_dbch_ds;\n"
+    )
+    (crate / "src" / "ds" / "capture.rs").write_text(
+        "fn f() { q(&IID_IDsDriverNotify); g(__wine_dbch_ds); }\n"
+    )
+    block, refused = port.initguid_storage({"module_dir": "dll/ds"}, crate, crate / "src" / "ds")
+    assert "pub static IID_IDsDriverNotify: GUID = GUID { Data1: 0x00363EF44" in block
+    assert refused == []
+
+
+def test_a_body_less_module_flips_into_its_cargo_cell(tmp_path, monkeypatch):
+    # dsound was made body-less (cargo links its C from dsound_shims) BEFORE it was
+    # translated: the classic flip found no add_library(dsound MODULE ..) list and refused.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "_crate_uses_float", lambda crate: True)
+    monkeypatch.setattr(port, "_flip_output", lambda state, tu: tmp_path / f"r/{Path(tu).stem}.rs")
+    (tmp_path / "dll/ds").mkdir(parents=True)
+    state = {
+        "stem": "ds",
+        "crate": "ds-rust",
+        "target": "ds",
+        "module_dir": "dll/ds",
+        "tus": ["dll/ds/a.c", "dll/ds/b.c"],
+        "usermode": True,
+    }
+    cml = (
+        "# ds.dll is C, and cargo compiles and links it:\n"
+        "add_library(ds_shims OBJECT a.c b.c)\n"
+        "add_cargo_module(ds ds-cargo ds.dll\n    KIND win32dll\n    DESTINATION x)\n"
+    )
+    new = port.flip_cmake(cml, state)
+    assert "# ds.dll is all Rust (ds-rust) and cargo links it:" in new
+    assert "    # a.c  # replaced by Rust (r/a.rs)" in new and "    rust_cohab_stub.c" in new
+    assert "    KIND win32dll\n    BODY_CRATE ds-rust\n" in new
+    assert port.flip_cmake(new, state) == new  # idempotent
+    build_rs = (
+        "//! The module is C, compiled and linked by reactos-link: there is no Rust body.\n"
+        '        "x86" => &["engine:uuid", "import:ntdll", "body", "engine:oldnames"],\n'
+        "    Linker::new(target_json)\n"
+        '        .c_from_compile_db("ds_shims", &["dll/ds/a.c", "dll/ds/b.c"])\n'
+    )
+    out = port._flip_cell_build_rs(build_rs, state, new)
+    assert (
+        '.rust_staticlib("ds-rust")' in out
+        and '"x86" => Some("-C target-feature=+sse,+sse2")' in out
+    )
+    assert '.c_from_compile_db("ds_shims", &["dll/ds/rust_cohab_stub.c"])' in out
+    assert '&["body", "engine:uuid", "import:ntdll", "engine:oldnames"]' in out
+    assert port._flip_cell_build_rs(out, state, new) == out
