@@ -89,8 +89,13 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    ~1.5 us for a typical win32k call). That time is inside the CPU layer's notifications
    (`tools/fex/wowx64fex/Module.cpp` `BTCpu64NotifyMemoryAlloc`/`Free`): the before-call takes
    `ThreadCreationMutex` and holds it across the native call, and the after-call runs FEX's
-   `InvalidationTracker`. Owed: time those two apart. The wowx64 bracket cannot tell a mutex
-   wait from the tracker's scan.
+   `InvalidationTracker`. Timed apart 2026-11-03 (`[WOWX64FEX] pid N memory ...` at every exit;
+   `20261103-190626-re2fnx9_`, host at load ~55, so absolute times are high): alloc waited
+   473 us a call for the mutex against 5 us in the tracker, free 583 us against 37 us, protect
+   ~1 us either way. It is lock contention, not the scan. Every bracket holds the mutex across
+   its native call, so each thread's alloc/free serializes behind whichever thread is in the
+   kernel, and `BTCpu64NotifyReadFile` holds it (with the code-invalidation mutex) across a
+   whole read. Owed: hold time per bracket, to say which holder the waiters queue behind.
 6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
    file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
    `MiFlushTbAndCapture` stopped flushing the whole TLB once per re-protected page on arm64:
