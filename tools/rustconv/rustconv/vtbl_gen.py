@@ -253,8 +253,18 @@ def _field_declarator_name(node, src: bytes) -> str | None:
     return None
 
 
+#: A calling-convention macro inside a function-pointer declarator, `(WINAPI *Begin)(..)`:
+#: tree-sitter reads WINAPI as an identifier there and digs the PARAMETER names out instead
+#: (d3d9_main.c's IDirect3DShaderValidator9Vtbl came back as `out, iface, iface, arg3, ..`
+#: -- 11 "fields" for 6 slots). It names no slot, so it is blanked before parsing.
+_FNPTR_CONV = re.compile(
+    r"\(\s*(?:WINAPI|WINAPIV|CALLBACK|APIENTRY|STDMETHODCALLTYPE|__stdcall|__cdecl)\s*\*"
+)
+
+
 def _c_struct_fields_in(text: str, struct_name: str) -> list[VtblField] | None:
     """Field order of `struct <struct_name> { .. }` in C text (plain fn pointers)."""
+    text = _FNPTR_CONV.sub("(*", text)
     tree = _ts_parse(text.encode())
     src = text.encode()
     found: list[VtblField] | None = None
@@ -413,6 +423,11 @@ def find_vtbl_tables(
     if rust_sources is None and c_headers is None:
         # Default: look for vtbl struct declarations next to the C file.
         c_headers = sorted(c_path.parent.glob("*.h"))
+    # ...and in the C file ITSELF, always: d3d9_main.c declares its private
+    # `struct IDirect3DShaderValidator9Vtbl` right above the table that fills it, and the
+    # resolver, never shown the .c, refused d3d9_main.c ("cannot resolve field order").
+    if c_path not in (c_headers or []):
+        c_headers = [*(c_headers or []), c_path]
     resolver = resolver or FieldOrderResolver(
         arch=arch, rust_sources=rust_sources, c_headers=c_headers
     )

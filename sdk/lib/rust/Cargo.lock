@@ -1533,11 +1533,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "d3d8-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "wined3d-h",
+ "winelist-rust",
+]
+
+[[package]]
 name = "d3d9-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-common",
  "reactos-link",
+]
+
+[[package]]
+name = "d3d9-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "wined3d-h",
+ "winelist-rust",
 ]
 
 [[package]]

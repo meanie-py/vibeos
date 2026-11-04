@@ -325,6 +325,24 @@ def derive(
 _RECORDED_ERRORS = ("SWITCH_CONST_IN_BASE_HEADER", "DEAD_TU")
 
 
+#: C's `enum X` / `struct X` where Rust wants a TYPE: after `->`, `:`, a raw-pointer kind,
+#: `as` or `<`. Never valid Rust there, and always the bare name.
+_C_TAG_IN_TYPE = re.compile(
+    r"(->\s*|:\s*|\*const\s+|\*mut\s+|\bas\s+|<\s*)(?:enum|struct|union)\s+(?=[A-Za-z_])"
+)
+
+
+def _strip_c_tag_keywords(text: str) -> str:
+    """d3d8_private.h's `wined3d_device_type_from_d3d` came back from the macros stage as
+    `-> enum wined3d_device_type`: one syntax error in the prelude, so rustc saw no prelude at
+    all and every module reported its DWORD and HRESULT missing (4783 errors). Applied at
+    render, like fix_macro_calls, so the bank stays as bought."""
+    # ...and `as core` / C `float` (see _never_rust_types): the same model slips, in a body
+    # the macros stage bought (d3d9's prelude: `(usage & (D3DUSAGE_WRITEONLY as core))`).
+    text = _AS_CORE.sub("as _", _C_TAG_IN_TYPE.sub(r"\1", text))
+    return _C_FLOAT_TYPE.sub(lambda m: "f32" if m.group(1) == "float" else "f64", text)
+
+
 def _gate_derive_errors(dp: pd.DerivedProfile) -> None:
     """Refuse on profile_derive's blocking errors -- but a DEAD_TU is ABOUT one file.
 
@@ -812,6 +830,13 @@ def _type_defined_in(text: str, name: str) -> bool:
     )
 
 
+#: `wine/` headers that are a MODULE's client API, not platform: no -sys crate owns them.
+#: wine/wined3d.h is wined3d.dll's interface, which ddraw, d3d8 and d3d9 all consume; d3d9
+#: and d3d8 reached its types (wined3d_resource, wined3d_adapter, ..) only through their
+#: private headers, and resolve refused to island it ("a base header"): 89 errors in d3d9.
+_CLIENT_API_HEADERS = frozenset({"wine/wined3d.h"})
+
+
 def _resolve_island_types(state: dict, names: set[str]) -> set[str]:
     """A TYPE the C sees through an SDK header's own includes -- setuplib's MOUNTDEV_NAME, in
     ddk/mountmgr.h, reached via <mountdev.h> -- is outside the derived allowlist by design
@@ -821,6 +846,16 @@ def _resolve_island_types(state: dict, names: set[str]) -> set[str]:
     regenerated. A name defined in several headers, or in a base platform header the -sys
     crate owns, is reported instead. Returns the names the new island should now provide.
     """
+    if not names:
+        return set()
+    # A name the Rust CALLS is a function, never a type: d3d8's `strlen(message)` came in as
+    # a "type" and wspiapi.h was islanded for it -- `_type_defined_in`'s `} .. name ..;` shape
+    # matched one of that header's inline function bodies.
+    called = set()
+    for path in _stem_sources(state):
+        code = path.read_text(errors="replace")
+        called |= {n for n in names if re.search(rf"(?<![\w:]){re.escape(n)}\s*\(", code)}
+    names = set(names) - called
     if not names:
         return set()
     dp = derive(REPO / state["module_dir"], state.get("target"))
@@ -843,7 +878,9 @@ def _resolve_island_types(state: dict, names: set[str]) -> set[str]:
                 print(f"resolve: type {n} is defined in several headers ({where}); hand-pick")
             continue
         ref = refs[0]
-        if ref.kind in ("crt", "toolchain") or ref.name.startswith(("ndk/", "wine/")):
+        if (
+            ref.kind in ("crt", "toolchain") or ref.name.startswith(("ndk/", "wine/"))
+        ) and ref.name not in _CLIENT_API_HEADERS:
             print(f"resolve: type {n} is in {ref.name}, a base header -- the -sys crate's job")
             continue
         if "sdk/lib/atl/" in ref.path.as_posix():
@@ -3389,7 +3426,8 @@ _RAW_FIELD = re.compile(r"(?m)^(?P<lead>\s*pub\s+)r#(?P<kw>[a-z_]\w*)(?P<colon>\
 #: `(i as usize) < ARRAY_SIZE!(x)`: the model widened the index for a `.len()` it imagined,
 #: but win32macros' ARRAY_SIZE! is C's `unsigned` (`u32`), so the comparison is E0308.
 _ARRAY_SIZE_CMP = re.compile(
-    r"(\(\s*[\w.()*\[\]]+\s+as\s+usize\s*\)\s*(?:<|<=|>|>=|==|!=)\s*)"
+    # `(i as usize) <` or, unparenthesized, `state as usize >=` (d3d8/d3d9).
+    r"((?:\(\s*[\w.()*\[\]]+\s+as\s+usize\s*\)|\b\w+\s+as\s+usize)\s*(?:<|<=|>|>=|==|!=)\s*)"
     # One level of nesting: ddraw's `ARRAY_SIZE!((*state).textures)`.
     r"((?:ARRAY_SIZE|ARRAYSIZE|_countof)!\((?:[^()]|\([^()]*\))*\))(?!\s*as\b)"
 )
@@ -3494,6 +3532,141 @@ def _drop_wine_list_twins(state: dict) -> list[str]:
             path.write_text(new)
             out.append(path.stem)
     return out
+
+
+_STRUCT_DEF = re.compile(r"(?ms)^pub (?:struct|union) (\w+) \{(.*?)^\}")
+_FIELD_DEF = re.compile(r"(?m)^\s*pub (\w+):\s*([\w:]+)")
+
+
+def _anon_literals_to_named(state: dict) -> int:
+    """c2rust's data static builds a field with its anonymous `C2RustUnnamed_19 { .. }` while
+    the module's own struct declares that field as a named type (`u: tss_lookup_u`): d3d8's
+    29-row tss_lookup table, one E0308 per row. When the named type has EXACTLY the anonymous
+    one's field names, the literal is that type -- the same layout, field for field -- and is
+    respelled; anything else is left for review."""
+    n = 0
+    for path in sorted(_stem_sources(state)):
+        text = path.read_text()
+        defs = {m.group(1): m.group(2) for m in _STRUCT_DEF.finditer(text)}
+        fields_of = {k: [f for f, _ in _FIELD_DEF.findall(v)] for k, v in defs.items()}
+        new = text
+        for owner, body in defs.items():
+            for field, ty in _FIELD_DEF.findall(body):
+                if ty not in fields_of or ty.startswith("C2RustUnnamed"):
+                    continue
+                pat = re.compile(
+                    rf"(\b{owner}\s*\{{[^{{}}]*?\b{field}:\s*)(C2RustUnnamed_\w+)(\s*\{{)"
+                )
+
+                def repl(m: re.Match, ty: str = ty, fields_of: dict = fields_of) -> str:
+                    anon = m.group(2)
+                    if sorted(fields_of.get(anon, [])) != sorted(fields_of[ty]):
+                        return m.group(0)
+                    return m.group(1) + ty + m.group(3)
+
+                new, k = pat.subn(repl, new)
+                n += k
+        if new != text:
+            path.write_text(new)
+    return n
+
+
+_AS_CORE = re.compile(r"\bas core\b(?!::)")
+_C_FLOAT_TYPE = re.compile(
+    r"(?:(?<=:\s)|(?<=\*const )|(?<=\*mut )|(?<=as )|(?<=-> )|(?<=<))(float|double)\b(?!\s*\()"
+)
+
+
+def _never_rust_types(state: dict) -> int:
+    """Two spellings that are never valid Rust and have one reading each:
+
+    - `x as core` -- the model truncated `core::ffi::c_int` and kept the crate name (dinput,
+      ddraw, d3d8, d3d9). `as _` lets the use site pick the type, as C's implicit conversion
+      does there.
+    - C's `float` / `double` in a type position -- `segment_count: *const float` (d3d8, d3d9):
+      Rust's names are `f32` / `f64`."""
+    n = 0
+    for path in sorted(_stem_sources(state)):
+        text = path.read_text()
+        new, a = _AS_CORE.subn("as _", text)
+        new, b = _C_FLOAT_TYPE.subn(lambda m: "f32" if m.group(1) == "float" else "f64", new)
+        if a or b:
+            path.write_text(new)
+            n += a + b
+    return n
+
+
+_PUB_ENUM_CONST = re.compile(r"(?m)^pub const ([A-Z][A-Z0-9_]*): [\w:]+ = ([^;]+);[^\n]*\n")
+
+
+def _drop_island_enum_twins(state: dict) -> list[str]:
+    """A module's own `pub const NAME: i32 = 18;` for an enum constant its island already
+    defines (bindgen spells it `<enum>_NAME`): the model re-declared wined3d.h's whole
+    texture-stage enum in d3d9's device.rs from memory, and got WINED3D_TSS_INVALID wrong
+    (18; wined3d.h says ~0U). The island is the authority; `port resolve` aliases its value
+    in. A twin whose value DIFFERED is named, so a recalled constant cannot go quiet."""
+    crate = _crate_dir(state)
+    island = "\n".join(
+        p.read_text(errors="replace") for p in sorted((crate / "src").glob("types_*.rs"))
+    )
+    enum_values: dict[str, str] = {}
+    # bindgen wraps a long one after the colon (WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS).
+    for m in re.finditer(
+        r"(?m)^pub const (\w+?)_([A-Z][A-Z0-9_]*):\s*[\w:]+\s*=\s*([^;]+);", island
+    ):
+        enum_values.setdefault(m.group(2), m.group(3).strip())
+    dropped: list[str] = []
+    for path in sorted(_stem_sources(state)):
+        text = path.read_text()
+
+        def drop(m: re.Match, path: Path = path) -> str:
+            name, value = m.group(1), m.group(2).strip()
+            if name not in enum_values:
+                return m.group(0)
+            if value.lstrip("(").rstrip(")") != enum_values[name]:
+                print(
+                    f"integrate: {path.name}: {name} = {value} recalled by the model; the "
+                    f"island says {enum_values[name]} -- the island's wins"
+                )
+            dropped.append(name)
+            return ""
+
+        new = _PUB_ENUM_CONST.sub(drop, text)
+        if new != text:
+            path.write_text(new)
+    return dropped
+
+
+_SIBLING_USE = re.compile(r"(?m)^use crate::(\w+)::(\w+)::(\w+);[^\n]*\n")
+
+
+def _drop_dangling_sibling_uses(state: dict) -> list[str]:
+    """A model-written `use crate::d3d9::buffer::__wine_dbch_default;` for a name the
+    sibling module does not define (E0432; the channel lives in the prelude). A file-scope
+    line, so no hand bank can keep it fixed -- every replay brought it back."""
+    src = _crate_dir(state) / "src"
+    dropped: list[str] = []
+    for path in sorted(_stem_sources(state)):
+        text = path.read_text()
+
+        def drop(m: re.Match, path: Path = path) -> str:
+            stem, mod, name = m.groups()
+            target = src / stem / f"{mod}.rs"
+            if not target.is_file():
+                target = src / stem / mod / "mod.rs"
+            if not target.is_file():
+                return m.group(0)
+            body = target.read_text(errors="replace")
+            item = r"\b(?:fn|static|const|struct|union|enum|type|macro_rules!)\s+(?:mut\s+)?"
+            if re.search(item + re.escape(name) + r"\b", body):
+                return m.group(0)
+            dropped.append(f"{path.stem}: {mod}::{name}")
+            return ""
+
+        new = _SIBLING_USE.sub(drop, text)
+        if new != text:
+            path.write_text(new)
+    return dropped
 
 
 def _widen_array_size_compares(state: dict) -> int:
@@ -5461,6 +5634,26 @@ def stage_integrate(stem: str) -> None:
     changed += nulls
     if nulls:
         print(f"integrate: {nulls} offsetof-through-null place(s) as core::mem::offset_of!")
+    dangling = _drop_dangling_sibling_uses(state)
+    changed += len(dangling)
+    if dangling:
+        print(
+            f"integrate: import(s) of a name the sibling module never defines, dropped: {dangling}"
+        )
+    enum_twins = _drop_island_enum_twins(state)
+    changed += len(enum_twins)
+    if enum_twins:
+        print(
+            f"integrate: {len(enum_twins)} module const(s) the island has as enum values, dropped"
+        )
+    never = _never_rust_types(state)
+    changed += never
+    if never:
+        print(f"integrate: {never} never-Rust type spelling(s) (`as core`, C float/double) fixed")
+    anons = _anon_literals_to_named(state)
+    changed += anons
+    if anons:
+        print(f"integrate: {anons} c2rust anonymous literal(s) respelled as the field's named type")
     twins = _drop_wine_list_twins(state)
     changed += len(twins)
     if twins:
@@ -7813,7 +8006,9 @@ def stage_macros(
         n for n in ported if macros[n].kind == "macro"
     }
     ported = {
-        n: fix_macro_calls(text, rust_macros, {n} if macros[n].kind == "fn" else set())[0]
+        n: _strip_c_tag_keywords(
+            fix_macro_calls(text, rust_macros, {n} if macros[n].kind == "fn" else set())[0]
+        )
         for n, text in ported.items()
     }
     items = generated_items.preserve(

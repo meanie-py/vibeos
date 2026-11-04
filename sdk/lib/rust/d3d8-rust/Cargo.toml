@@ -1,0 +1,20 @@
+# d3d8-rust — see src/lib.rs for the module map.
+[package]
+name = "d3d8-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "d3d8_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+conutils-h = { path = "../conutils-h" }
+strsafe-rust = { path = "../strsafe-rust" }
+wined3d-h = { path = "../wined3d-h" }
+winelist-rust = { path = "../winelist-rust" }
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }
+win32macros-rust = { path = "../win32macros-rust" }

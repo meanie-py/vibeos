@@ -1150,6 +1150,8 @@ members = [
     "dinput-rust",
     "ddraw-rust",
     "wined3d-h",
+    "d3d8-rust",
+    "d3d9-rust",
 ]
 resolver = "2"
 

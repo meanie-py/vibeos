@@ -290,6 +290,15 @@ RE_EMPTY_ATTR = re.compile(
     r"\bDECLSPEC_HIDDEN\b|\bDATA_SEG\(\s*\"[^\"]*\"\s*\)|\b[A-Z][A-Z0-9]*_PAGED_DATA\b"
 )
 
+# `DECLSPEC_HOTPATCH` (wine/config.h: `__attribute__((__ms_hook_prologue__))`) is a hot-patch
+# prologue with no calling-convention or signature meaning. After a POINTER return --
+# `IDirect3D8 * WINAPI DECLSPEC_HOTPATCH Direct3DCreate8(UINT)` -- tree-sitter finds no
+# function at all, and d3d8/d3d9's main.c were refused before payment ("C definitions absent
+# from translation plan"). Blanked ONLY in that shape: the scanned text is part of the resume
+# cache key, and the 50 `HRESULT WINAPI DECLSPEC_HOTPATCH` methods that do parse are already
+# banked in ddraw and dinput (blanking them all re-keyed 33 bodies).
+RE_HOTPATCH_AFTER_PTR = re.compile(r"(\*\s*(?:WINAPI|CALLBACK|__stdcall)\s+)DECLSPEC_HOTPATCH\b")
+
 # ATL spells in-class COM method definitions as macro declarators:
 #
 #     STDMETHOD(QueryService)(REFGUID svc, REFIID riid, void **ppv) override
@@ -332,6 +341,7 @@ def _blank_memmodel(text: str) -> str:
     """Blank the empty `FAR`/`NEAR`/`DECLSPEC_HIDDEN` decorations and normalise `CONST`
     so tree-sitter can parse the declaration. All are no-op/aliased Win32 macros with no
     ABI meaning, and each one tree-sitter does not know costs a whole declaration."""
+    text = RE_HOTPATCH_AFTER_PTR.sub(r"\1", text)
     return RE_UPPER_CONST.sub("const", RE_EMPTY_ATTR.sub("", RE_EMPTY_MEMMODEL.sub("", text)))
 
 
