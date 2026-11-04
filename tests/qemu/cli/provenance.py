@@ -20,6 +20,8 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tools import build_infra_compat as native
+
 from . import archcfg
 
 STAMP_NAME = ".vibeos-build-stamp.json"
@@ -903,6 +905,10 @@ def cargo_link_staleness_reasons(repo: Path, arch: str) -> list[str]:
         if scope is None:
             return []  # no manifest yet — media absent, other checks report that
     reasons = []
+    try:
+        native.call("depfile_check_compile_snapshot", {"build": build_dir})
+    except native.NativeError as error:
+        raise ProvenanceError(f"cannot verify compile commands: {error}; run `build`") from error
     for rel in cargo_module_rels(repo):
         if rel not in scope:
             continue

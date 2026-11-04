@@ -118,3 +118,62 @@ The integrator still owns the final merged-tree cold gate and three desktop smok
 Python argument routing, Run/Stage presentation, policy-lock lifetimes and drained fleet
 activation remain supported control-plane adapters until the CLI/QEMU phases. No new
 scheduler or capacity tuning is part of this migration.
+
+## Warm invalidation follow-up
+
+Revision `df08aa31d3d37abb46105b4c844513661c09c956`, 2026-11-03 local time
+(2026-11-04 UTC). The tree stayed clean at that revision throughout both repeats:
+
+```sh
+./vibeos-cli build-bench --arches i386 amd64 arm64 --repeat 2 \
+  --output .cache/build-infra/phase7-fixed-warm.json
+```
+
+Both repeats passed all builds, guest restaging and source/architecture checks.
+The first repeat took 1916.14 s and included native-policy cache refill; old store
+objects were retained. Neither repeat recorded an OOM kill. Capacity values and
+the live policy SHA-256 above were unchanged, and no cache was flushed.
+
+The table compares repeat 2 against the earlier repeat 2 at `08f120e4c90`:
+
+| Observed measurement | Earlier reuse | Current reuse |
+| --- | ---: | ---: |
+| Complete three-architecture suite | 1222.79 s | 311.41 s |
+| AMD64 initial build | 637.44 s | 138.29 s |
+| AMD64 guest restage | 496.62 s | 82.95 s |
+| Restage main Ninja phase | 406.6 s | 19.8 s |
+| Logged Cargo-link edges per AMD64 build/restage | 368 | 5 |
+| Artifact requests per AMD64 build/restage | 893 | 35 |
+| Store hits per AMD64 build/restage | 886 | 31 |
+| Explicitly ineligible requests per AMD64 build/restage | 7 | 4 |
+| Store producer calls in reuse repeat | 0 | 0 |
+
+Times come from the benchmark's owned child receipts and each child's `full.log`;
+Cargo-link counts come from the logged Ninja progress lines, not its planned-work
+denominator, which shrinks when restat prunes unchanged consumers. Store counts
+come from supervisor activity receipts. Neither i386 nor arm64 made artifact
+requests in either reuse repeat. Ineligible requests retain their existing build
+path; zero store producers does not prove zero compilation outside the store.
+These are observations on a shared host at different revisions. Other lanes were
+active, and gates ran alongside the first repeat; no isolated wall-time speedup is
+claimed. The CMake/Ninja/Cargo fixture supplies the controlled invalidation proof:
+identical reconfiguration runs no link edge, while Boolean and genuine compile
+command changes rebuild readers and update executable behavior.
+
+`check` and all 118 `check-tooling` checks passed on the measured runtime revision.
+The 21 focused dependency/context tests, 13 provenance controls and native depfile
+snapshot test passed, including refusal to boot changed commands hidden behind an
+old snapshot. Evidence is under `.cache/build-infra/phase7-fixed-*`; the earlier
+`phase7-warm.json` is an interrupted investigation probe, not a successful trial.
+
+All three subsequent desktop smoke markers passed and screenshots were inspected.
+Each summary is WARN solely because these were warm builds:
+
+- i386: `/tmp/vibeos-cli/20261103-200443-i13h8gnx-smoke-i386`, boot reached.
+- amd64: `/tmp/vibeos-cli/20261103-200443-7br23k8c-smoke-amd64`, boot reached;
+  16 network tests passed in 55.18 s.
+- arm64: `/tmp/vibeos-cli/20261103-200443-1brvojlt-smoke-arm64`, boot reached.
+
+The integrator retains the final merged-tree cold gate and three desktop smokes.
+The five remaining AMD64 Cargo-link edges are tracked in the
+[build invalidation notes](build-invalidation.md#cmake-option-projections-for-cargo-links).

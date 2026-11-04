@@ -7,7 +7,7 @@ use std::{
     process::{Command, ExitCode},
 };
 use vibeos_build::{self as b, Error, Result};
-const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  build-bench --arches ARCH... [--clean] [--repeat N] [--output FILE]\n  cargo-orchestrate --arch ARCH [--manifest] [--list] [--dry-run] [TARGET...]\n  ramdisk-tree LIST... --out DIR [--canon FROM TO]\n  strip-cd-media --lst FILE --out FILE --cache DIR --objcopy TOOL\n  artifact-executor [--repo DIR --store DIR --toolchain DIR --body NAME --output DIR]\n  artifact-runtime request|repair --supervisor FILE [OPTIONS]\n  artifact-economics INVENTORY REPO OUTPUT [--eligibility-top N --scratch DIR] [--cargo PATH]\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR] [--allow-drop]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads one request; --api-jsonl serves newline-delimited requests until EOF. Inspect/check modes never write.\n";
+const HELP:&str="Usage: tools/build-infra [--root DIR] COMMAND [OPTIONS]\n\nCommands:\n  build-bench --arches ARCH... [--clean] [--repeat N] [--output FILE]\n  cargo-orchestrate --arch ARCH [--manifest] [--list] [--dry-run] [TARGET...]\n  ramdisk-tree LIST... --out DIR [--canon FROM TO]\n  strip-cd-media --lst FILE --out FILE --cache DIR --objcopy TOOL\n  artifact-executor [--repo DIR --store DIR --toolchain DIR --body NAME --output DIR]\n  artifact-runtime request|repair --supervisor FILE [OPTIONS]\n  artifact-economics INVENTORY REPO OUTPUT [--eligibility-top N --scratch DIR] [--cargo PATH]\n  cargo-depgraph --manifest FILE --packages NAME...\n  retarget-depfile --source FILE --cargo-output FILE --target FILE --output FILE\n    [--dependency-source FILE --dependency-snapshot FILE]\n  ninja-prune BUILD TARGET... [--canon-root DIR] [--delete]\n  link-guard LLD_ARGS...\n  cell-manifest --write|--check [--arch ARCH]\n  media-manifest --write|--check|--assemble [--arch ARCH] [--cd livecd] [--out DIR] [--cells DIR] [--allow-drop]\n  sdk-recipe --write|--check|--run [--arch ARCH] [--gen DIR]\n\n--api-json reads one request; --api-jsonl serves newline-delimited requests until EOF. Inspect/check modes never write.\n";
 fn atomic(path: &Path, bytes: &[u8], serial: usize) -> Result<()> {
     if path.is_symlink() {
         return Err(Error::new(format!(
@@ -98,6 +98,12 @@ fn api(root: &Path, r: &Value) -> Result<Value> {
             &serde_json::from_value::<String>(required("cargo_output")?)?,
             &serde_json::from_value::<String>(required("copied_output")?)?
         )?)),
+        "depfile_check_compile_snapshot" => {
+            b::depfile::check_compile_snapshot(&serde_json::from_value::<PathBuf>(required(
+                "build",
+            )?)?)?;
+            Ok(Value::Null)
+        }
         s if s.starts_with("cell_") || s.starts_with("media_") => {
             b::manifest_api::dispatch(root, r)
         }
@@ -158,8 +164,18 @@ fn parse(raw: Vec<String>) -> Result<Options> {
                     return Err("--packages requires names".into());
                 }
             }
-            "--manifest" | "--source" | "--cargo-output" | "--target" | "--output"
-            | "--canon-root" | "--cd" | "--out" | "--cells" | "--gen" => {
+            "--manifest"
+            | "--source"
+            | "--cargo-output"
+            | "--target"
+            | "--output"
+            | "--dependency-source"
+            | "--dependency-snapshot"
+            | "--canon-root"
+            | "--cd"
+            | "--out"
+            | "--cells"
+            | "--gen" => {
                 let v = args
                     .next()
                     .ok_or_else(|| Error::new(format!("{a} requires a value")))?;
@@ -348,7 +364,14 @@ fn run() -> Result<u8> {
     let o = parse(rest.clone())?;
     let allowed: &[&str] = match command.as_str() {
         "cargo-depgraph" => &["--manifest"],
-        "retarget-depfile" => &["--source", "--cargo-output", "--target", "--output"],
+        "retarget-depfile" => &[
+            "--source",
+            "--cargo-output",
+            "--target",
+            "--output",
+            "--dependency-source",
+            "--dependency-snapshot",
+        ],
         "ninja-prune" => &["--canon-root"],
         "cell-manifest" => &[],
         "media-manifest" => &["--cd", "--out", "--cells"],
@@ -395,8 +418,27 @@ fn run() -> Result<u8> {
         }
         "retarget-depfile" => {
             let text = b::read(Path::new(req(&o, "--source")?))?;
-            let new =
+            let mut new =
                 b::depfile::retarget(&text, req(&o, "--cargo-output")?, req(&o, "--target")?)?;
+            match (
+                o.values.get("--dependency-source"),
+                o.values.get("--dependency-snapshot"),
+            ) {
+                (None, None) => {}
+                (Some(source), Some(snapshot)) => {
+                    new = b::depfile::snapshot_dependency(
+                        &new,
+                        Path::new(source),
+                        Path::new(snapshot),
+                    )?;
+                }
+                _ => {
+                    return Err(
+                        "--dependency-source and --dependency-snapshot must be passed together"
+                            .into(),
+                    )
+                }
+            }
             atomic(Path::new(req(&o, "--output")?), new.as_bytes(), 0)?;
         }
         "ninja-prune" => {

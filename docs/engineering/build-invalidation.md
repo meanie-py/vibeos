@@ -83,3 +83,50 @@ Whole-build permits have since been replaced with runnable compiler/linker
 admission; see [host job scheduling](host-job-scheduling.md). The cron continues
 normally, with integration work participating in the shared execution budget
 once it updates its checkout.
+
+## CMake option projections for Cargo links
+
+The shared link engine previously emitted a watch on all of `CMakeCache.txt` when
+reading `ENABLE_CCACHE`, `_WINKD_` or `GDB`. That put the cache into 366 AMD64 PE
+depfiles in the batch-6 rollout tree. Switching `VIBEOS_WOW64_NO_STAGE` during guest
+restaging then invalidated those links even though their inputs were unchanged.
+The recorded reuse restage logged 368 Cargo-link edges and 886 artifact-store hits,
+with no store producer calls (`phase6-warm-run02/build-amd64-restage.artifacts/`).
+
+CMake now generates a separate Boolean input for each option under
+`CMakeFiles/reactos-link-config/`, preserving its timestamp when its content is
+unchanged. Each link watches only the options it reads. Existing true spellings
+and unconfigured pure-Cargo defaults are preserved. A configured build with a
+missing or malformed projection fails with a reconfigure diagnostic.
+
+The real CMake/Ninja/Cargo fixture in `tools/test_nested_cargo_deps.py` reproduced
+all three consumers rerunning after a media-only option change with the broad
+watch. It now proves that unrelated reconfiguration runs none of them, each real
+option rebuilds only its reader, and turning options off updates executable
+behavior. Identical reconfiguration is also a no-op. Native refusal tests cover
+missing, corrupt and unknown inputs.
+
+CMake also rewrites `compile_commands.json` on identical reconfiguration. A real
+CMake control recorded the same SHA-256 with a changed mtime. The link graph now
+has one `copy_if_different` producer for a stable copy of that database. Ninja
+restat leaves its consumers fresh when commands are unchanged. The Rust depfile
+retargeter verifies exact byte equality before substituting this declared input
+in the copied PE rule. Cargo retains its full original database watch, including
+for direct invocations. Other prerequisites and phony rules remain intact.
+
+The native provenance check compares the snapshot against the current database
+before accepting a build or boot. A changed database therefore fails verification
+until Ninja has propagated it, even if timestamps appear older than the PE.
+Missing or unequal snapshot inputs also refuse depfile publication. The real
+fixture counts both Ninja edges and Cargo build-script runs, checks executable
+behavior after a genuine compile-command change, and confirms that identical
+reconfiguration executes no link edge.
+
+The combined fix passed two real three-architecture trials at
+`df08aa31d3d37abb46105b4c844513661c09c956`. The steady AMD64 restage logged five
+Cargo-link edges versus 368 previously; its main Ninja phase took 19.8 s versus
+406.6 s. The full warm suite took 311.41 s versus 1222.79 s. Methods, cache histories,
+smoke evidence and timing limitations are in
+[the rollout record](build-infra-rust-rollout.md#warm-invalidation-follow-up).
+Five Cargo links remain (`services`, `winlogon`, `urlmon`, `ntoskrnl`, `ntkrnlmp`);
+investigating their individual generated inputs is tracked as follow-up work.

@@ -180,3 +180,12 @@ and are preserved, including on command failure. Receipt descriptors close befor
 exec, worker argv is forwarded literally, and launch diagnostics travel in structured
 receipts. Cache discovery uses the caller's execute permission rather than merely finding
 any execute bit on the file.
+
+The `retarget-depfile` command accepts paired `--dependency-source` and
+`--dependency-snapshot` options. It checks exact byte equality before substituting
+that prerequisite in the copied PE rule; other inputs and Cargo's original depfile
+are preserved. CMake uses this for its stable compile-command snapshot, whose
+producer runs before Cargo links. Provenance calls `depfile_check_compile_snapshot`
+before accepting a Cargo-linked media tree, so an unbuilt command change fails
+rather than being hidden by the snapshot. Missing or unequal inputs never publish
+a new depfile.
