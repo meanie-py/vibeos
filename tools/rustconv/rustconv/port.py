@@ -1849,10 +1849,16 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
     ):
         return "", []
     declared: set[str] = set()
+    deferred: set[str] = set()
     for island in (crate / "src").glob("types_*.rs"):
-        declared |= set(
-            re.findall(r"^\s*pub static (\w+): GUID;", island.read_text(errors="replace"), re.M)
-        )
+        text = island.read_text(errors="replace")
+        declared |= set(re.findall(r"^\s*pub static (\w+): GUID;", text, re.M))
+        # An island that already DEFERS a name to the prelude (`pub use crate::prelude::X;`)
+        # is waiting on exactly this block: dsound's IID_IDsDriverPropertySet/Notify were
+        # spelled that way, never counted as declared, so got no storage and E0432'd. Only a
+        # name with one DEFINE_GUID value in the tree gets storage, so a non-GUID is inert.
+        deferred |= set(re.findall(r"^\s*pub use crate::prelude::(\w+);", text, re.M))
+    declared |= deferred
     body = "\n".join(p.read_text(errors="replace") for p in sorted(modules_dir.glob("*.rs")))
     own = set(re.findall(r"\bstatic\s+(?:mut\s+)?(\w+)\s*:", body))
     # The prelude's SDK aliases count as references: sxs names `CLSID_DOMDocument`, which
@@ -1914,6 +1920,8 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
                 if m.group(1) in spelled:
                     d4 = ", ".join(re.findall(r"0x[0-9A-Fa-f]+", m.group(5)))
                     values.add((m.group(2), m.group(3), m.group(4), d4))
+        if not values and name in deferred:
+            continue  # deferred to the prelude for another reason (a debug channel): not a GUID
         if len(values) != 1:
             refused.append(name)
             continue
@@ -4175,6 +4183,25 @@ _BUILTIN_FILE = re.compile(r'(?<![\w"])__FILE__(?![\w"])')
 _BUILTIN_LINE = re.compile(r'(?<![\w"])__LINE__(?![\w"])')
 
 
+def _inside_concat(text: str, at: int) -> bool:
+    """Is `at` a direct argument of a `concat!(..)`? There C's `__FILE__ ": lock"` is already
+    being joined into one literal, so it wants bare `file!()`: the NUL-terminated pointer
+    form is not a literal, and dsound's `concat!(concat!(file!(), "\\0").as_ptr(), ": ..")`
+    was a compile error ("expected a literal") at both of its critical-section names."""
+    depth = 0
+    for i in range(at - 1, -1, -1):
+        c = text[i]
+        if c == ")":
+            depth += 1
+        elif c == "(":
+            if depth == 0:
+                return text[:i].rstrip().endswith("concat!")
+            depth -= 1
+        elif c in ";{}":
+            return False
+    return False
+
+
 def _builtin_location_macros(path: Path) -> int:
     """`__FILE__` / `__LINE__` -> `file!()` / `line!()` (NUL-terminated for C's `char *`).
     regedit's settings.rs passed both to DbgPrint's `%s:%d`."""
@@ -4182,7 +4209,12 @@ def _builtin_location_macros(path: Path) -> int:
     code = _strip_rust_comments(text)
     if "__FILE__" not in code and "__LINE__" not in code:
         return 0
-    new, a = _BUILTIN_FILE.subn(lambda _m: 'concat!(file!(), "\\0").as_ptr()', text)
+    new, a = _BUILTIN_FILE.subn(
+        lambda m: (
+            "file!()" if _inside_concat(m.string, m.start()) else 'concat!(file!(), "\\0").as_ptr()'
+        ),
+        text,
+    )
     new, b = _BUILTIN_LINE.subn("(line!() as ::core::ffi::c_int)", new)
     if new != text:
         path.write_text(new)

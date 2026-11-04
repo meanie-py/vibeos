@@ -2382,6 +2382,52 @@ def _c_truthiness_rule(
             skipped.append(Skipped(RULE_C_TRUTHINESS, "macro_or_unbalanced", file_name, line))
             continue
         text = data[start:end].decode("utf-8", "replace")
+        # rustc blames the WHOLE `assert!(x as i32)` for its condition (span == the invocation,
+        # verified on 1.92), so the argument check above cannot see it, and wrapping the
+        # call's `()` fixed nothing: dsound's mixer grew 115 `)) != false` layers, one per
+        # pass. The conversion belongs on the condition argument.
+        if to_bool:
+            m_assert = re.fullmatch(r"((?:debug_)?assert!\s*\()(.*)\)", text, re.S)
+            if m_assert:
+                inner = masked[start + m_assert.end(1) : end - 1]
+                depth, cut = 0, len(inner)
+                for i, ch in enumerate(inner):
+                    if ch in b"([{":
+                        depth += 1
+                    elif ch in b")]}":
+                        depth -= 1
+                    elif ch == ord(",") and depth == 0:
+                        cut = i
+                        break
+                a_start = start + m_assert.end(1)
+                raw = data[a_start : a_start + cut]
+                lead = len(raw) - len(raw.lstrip())
+                arg_b = raw.strip()
+                arg = arg_b.decode("utf-8", "replace")
+                cast = re.fullmatch(r"(\(.*\))\s+as\s+(?:u8|i8|u16|i16|u32|i32|u64|i64)", arg, re.S)
+                if cast and _balanced(cast.group(1).encode()):
+                    # `(cond) as i32`: a condition the translation cast to C's int -- drop it.
+                    replacement = cast.group(1)
+                else:
+                    replacement = f"(({arg}) != 0)"
+                edits.append(
+                    Edit(
+                        file_name=file_name,
+                        byte_start=a_start + lead,
+                        byte_end=a_start + lead + len(arg_b),
+                        replacement=replacement,
+                        rule=RULE_C_TRUTHINESS,
+                        authority=(
+                            f"rustc: `{m_assert.group(1).rstrip('( ')}` wants a `bool` condition,"
+                            f" found `{found}`; C's assert tests `!= 0`"
+                        ),
+                        original=arg,
+                        line=line,
+                        column=int(span.get("column_start") or 0),
+                        targets=(ctx.target,),
+                    )
+                )
+                continue
         # Idempotent: never wrap a conversion this rule already wrote.
         # Per direction: a `(x != 0)` the to-bool direction wrote is done, but the same text is
         # exactly what a from-bool site holds (atapi.h's IS_ATAPI: `(f & ATAPI) != 0` into a

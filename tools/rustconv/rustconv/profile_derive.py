@@ -1816,6 +1816,23 @@ def _foreign_build_flags(
     return frozenset(out)
 
 
+#: wine/winternl.h prototypes whose return type disagrees with ReactOS ntdll's definition.
+WINE_WINTERNL_BOOL_DRIFT = (
+    "RtlEqualPrefixSid",
+    "RtlEqualSid",
+    "RtlQueryPerformanceCounter",
+    "RtlQueryPerformanceFrequency",
+)
+
+
+def _guid_only_tu(text: str) -> bool:
+    """A TU that includes <initguid.h> (or defines INITGUID) and holds no code at all."""
+    code = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
+    if not re.search(r'#\s*include\s*[<"]initguid\.h[>"]|#\s*define\s+INITGUID\b', code):
+        return False
+    return all(not ln.strip() or ln.lstrip().startswith("#") for ln in code.splitlines())
+
+
 def _prologue_lines(text: str) -> list[str]:
     """The TU's lines up to its last `#include` before the first real code line."""
     lines = text.splitlines()
@@ -3870,6 +3887,20 @@ def derive(
                 )
             )
             lines = [ln for ln in lines if not _CHARSET_TOGGLE_RE.match(ln)]
+        if len(tus) > 1 and _guid_only_tu(_read(tu)):
+            # dsound's guid.c: `<dsound.h>`, `<initguid.h>`, `<dsdriver.h>` and no code. Merged
+            # FIRST, it put dsdriver.h ahead of dsound_private.h's `#define NONAMELESSSTRUCT`,
+            # so the island had the anonymous member where every code TU says `prop.s.Set`.
+            # Its GUIDs get storage from `port resolve`, never through the island.
+            findings.append(
+                Finding(
+                    "info",
+                    "INITGUID_TU_SKIPPED",
+                    f"{_rel(tu, repo_root)} only instantiates GUIDs; its prologue is left out "
+                    "of the wrapper so the code TUs' include order wins",
+                )
+            )
+            continue
         merge_prologue(wrapper, lines)
     flipped_tus = {tus[i] for i in flipped}
     if module.pch_header is not None and any(t not in module.pch_skip for t in tus):
@@ -4279,6 +4310,14 @@ def emit_profile(dp: DerivedProfile) -> str:
         out.append("    # wine/list.h: `struct list` and its helpers are winelist-rust's.")
         bl_items.append("list")
         out.append("    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )")
+    if m.is_usermode and any(
+        str(h).replace("\\", "/").endswith("/wine/winternl.h") for h in dp.closure.headers
+    ):
+        # wine/winternl.h declares these `BOOL` (4 bytes); ReactOS ntdll DEFINES them `BOOLEAN`
+        # (rtl-strings, ntdll-rust's wow64shim), so a caller would test three garbage bytes
+        # (scan_bool_width, 12 findings on dsound). No wine module calls them: keep them out.
+        out.append("    # wine/winternl.h's BOOL prototypes for what ntdll returns as BOOLEAN.")
+        bl_items += list(WINE_WINTERNL_BOOL_DRIFT)
     raii = local_raii_types(m) if cpp else []
     if raii:
         out.append(
