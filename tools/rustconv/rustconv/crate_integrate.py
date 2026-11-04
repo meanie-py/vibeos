@@ -677,6 +677,11 @@ def fix_macro_calls(src: str, macros: set[str], defined: set[str]) -> tuple[str,
             # macro): `fn DPRINT1!(` is not Rust. integrate() drops such decls as provided.
             if re.search(r"\bfn\s+$", masked[max(0, m.start() - 16) : m.start()]):
                 continue
+            # A PATH or METHOD call is never the C macro: ddraw's `core::cmp::max(a, b)`
+            # (windef.h has a `max` macro) became `core::cmp::max!(`, and `x.max(y)` would
+            # have become `x.max!(`.
+            if re.search(r"(?:::|\.)\s*$", masked[max(0, m.start() - 8) : m.start()]):
+                continue
             src = src[: m.start()] + f"{name}!(" + src[m.end() :]
             count += 1
         if count:

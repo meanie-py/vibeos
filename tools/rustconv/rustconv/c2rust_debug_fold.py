@@ -35,7 +35,9 @@ import re
 # ...and the model also spells the C types as Rust primitives: `as *const i8`, `120 as i32`,
 # `1252i32` (the 12 blocks dsound's first fold still missed).
 _C = r"(?:(?:(?:::)?core::ffi::)?c_\w+|i8|u8|i32|u32)"
-_PTR = rf"(?: as \*const u8| \.as_ptr\(\)) as \*const {_C}"
+# ...or cast straight from the byte array (`b"..\0" as *const i8`, ddraw's surface.rs), which
+# is not even valid Rust; folding it away is the only fix it needs.
+_PTR = rf"(?:(?: as \*const u8| \.as_ptr\(\)))? as \*const {_C}"
 _CSTR = rf"b\"[^\"]*\\0\"{_PTR}"
 _TEMPLATE = (
     r"\bif (?P<cond>[^{};]*?) \{ "

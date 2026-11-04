@@ -351,3 +351,14 @@ def test_a_type_the_prelude_reexports_from_this_module_is_kept(tmp_path):
     out, _ = integrate(src, crate, module="unit")
     assert "pub type LPFNCONSTRUCTOR" in out
     assert "pub type Elsewhere" not in out  # another module's: still the prelude's to supply
+
+
+def test_a_path_or_method_call_is_not_the_c_macro():
+    # ddraw: windef.h's `max` macro is in the prelude; `core::cmp::max(a, b)` became
+    # `core::cmp::max!(`, and a method `.max(` would have become `.max!(`.
+    from rustconv.crate_integrate import fix_macro_calls
+
+    src = "let n = core::cmp::max(a, b); let m = x.max(y); let k = max(p, q);\n"
+    out, fixed = fix_macro_calls(src, {"max"}, set())
+    assert out == "let n = core::cmp::max(a, b); let m = x.max(y); let k = max!(p, q);\n"
+    assert fixed == ["max×1"]

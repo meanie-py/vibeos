@@ -1666,6 +1666,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ddraw-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "wined3d-h",
+ "winelist-rust",
+]
+
+[[package]]
 name = "ddrawex-cargo"
 version = "0.1.0"
 dependencies = [
@@ -9228,6 +9241,10 @@ dependencies = [
  "panic-common",
  "reactos-link",
 ]
+
+[[package]]
+name = "wined3d-h"
+version = "0.1.0"
 
 [[package]]
 name = "wined3dcfg-cargo"

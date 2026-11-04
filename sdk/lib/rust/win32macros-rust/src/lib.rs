@@ -1314,6 +1314,85 @@ pub unsafe fn wine_dbgstr_guid<T>(id: *const T) -> *const core::ffi::c_char {
     }
 }
 
+/// xdk/rtlfuncs.h `RtlSecureZeroMemory`, a FORCEINLINE no DLL exports -- so ntdll-sys's bindgen
+/// declaration of it links nothing (ddraw: `undefined symbol: _RtlSecureZeroMemory`, all three
+/// arches). credui and pdh each carried a copy of this; the third consumer moved it here.
+/// Volatile stores, so the clear of a secret cannot be dropped as a dead write (the reason
+/// the function exists) -- and never a plain byte loop, which LLVM folds into `memset`.
+///
+/// Generic over the length: each island's `SIZE_T` is its own `ULONG_PTR` (`c_ulong` on
+/// i386, `c_ulonglong` on 64-bit), never `usize`, so a fixed parameter type fits no caller.
+#[inline]
+pub unsafe fn RtlSecureZeroMemory<L: Into<u64>>(
+    Buffer: *mut core::ffi::c_void,
+    Length: L,
+) -> *mut core::ffi::c_void {
+    let p = Buffer as *mut u8;
+    for i in 0..Length.into() as usize {
+        unsafe { core::ptr::write_volatile(p.add(i), 0) };
+    }
+    Buffer
+}
+
+/// winbase.h: `#define SecureZeroMemory RtlSecureZeroMemory`.
+#[inline(always)]
+pub unsafe fn SecureZeroMemory<L: Into<u64>>(
+    Buffer: *mut core::ffi::c_void,
+    Length: L,
+) -> *mut core::ffi::c_void {
+    unsafe { RtlSecureZeroMemory(Buffer, Length) }
+}
+
+/// windef.h `RECT`: four `LONG`s on every target, so the helpers below read any island's.
+#[repr(C)]
+struct RectLayout {
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+}
+
+/// wine/debug.h:218 `wine_dbgstr_rect`, an inline no library exports (ddraw: 18 callers).
+/// Generic over the pointee, as `wine_dbgstr_guid` is, so each island's own `RECT` passes in.
+pub unsafe fn wine_dbgstr_rect<T>(rect: *const T) -> *const core::ffi::c_char {
+    if rect.is_null() {
+        return c"(null)".as_ptr();
+    }
+    let r = unsafe { &*(rect as *const RectLayout) };
+    unsafe {
+        wine_dbg_sprintf(
+            c"(%ld,%ld)-(%ld,%ld)".as_ptr(),
+            r.left as core::ffi::c_long,
+            r.top as core::ffi::c_long,
+            r.right as core::ffi::c_long,
+            r.bottom as core::ffi::c_long,
+        )
+    }
+}
+
+/// wine/debug.h:194 `wine_dbgstr_fourcc`: `'DXT1'` when all four bytes print, else hex.
+/// `#[inline]` like every helper here that calls an import: a plain `pub fn` is compiled into
+/// this rlib, and its `wine_dbg_sprintf` reference then reached apphelp, which imports none
+/// (`undefined symbol: _wine_dbg_sprintf` on all three arches).
+#[inline]
+pub unsafe fn wine_dbgstr_fourcc(fourcc: u32) -> *const core::ffi::c_char {
+    let s = fourcc.to_le_bytes();
+    if fourcc == 0 {
+        return c"''".as_ptr();
+    }
+    // C's isprint() in the "C" locale: 0x20..=0x7e.
+    if s.iter().all(|&b| (0x20..=0x7e).contains(&b)) {
+        return unsafe { wine_dbg_sprintf(c"'%.4s'".as_ptr(), s.as_ptr() as *const core::ffi::c_char) };
+    }
+    unsafe { wine_dbg_sprintf(c"0x%08x".as_ptr(), fourcc as core::ffi::c_uint) }
+}
+
+/// wine/debug.h:397 `debugstr_fourcc(cc)` is `wine_dbgstr_fourcc(cc)`.
+#[inline(always)]
+pub unsafe fn debugstr_fourcc(cc: u32) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_fourcc(cc) }
+}
+
 /// wine/debug.h:392 `debugstr_guid(id)` is `wine_dbgstr_guid(id)`.
 #[inline(always)]
 pub unsafe fn debugstr_guid<T>(id: *const T) -> *const core::ffi::c_char {
@@ -2079,6 +2158,18 @@ macro_rules! WINE_ERR { ($($a:tt)*) => { $crate::__wine_dprintf!(1, __wine_dbch_
 macro_rules! WINE_WARN { ($($a:tt)*) => { $crate::__wine_dprintf!(2, __wine_dbch___default, $($a)*) }; }
 #[macro_export]
 macro_rules! WINE_TRACE { ($($a:tt)*) => { $crate::__wine_dprintf!(3, __wine_dbch___default, $($a)*) }; }
+// wine/debug.h's NAMED-channel forms, `ERR_(winediag)("..")`: the channel is token-pasted
+// to `__wine_dbch_winediag`, which no macro_rules! can do, so these take that static by name
+// (`port integrate` rewrites `ERR_!(winediag, ..)` to `WINE_ERR_!(__wine_dbch_winediag, ..)`;
+// `port resolve` then writes the channel's storage, as for the default one).
+#[macro_export]
+macro_rules! WINE_ERR_ { ($ch:ident, $($a:tt)*) => { $crate::__wine_dprintf!(1, &raw mut $ch, $($a)*) }; }
+#[macro_export]
+macro_rules! WINE_WARN_ { ($ch:ident, $($a:tt)*) => { $crate::__wine_dprintf!(2, &raw mut $ch, $($a)*) }; }
+#[macro_export]
+macro_rules! WINE_FIXME_ { ($ch:ident, $($a:tt)*) => { $crate::__wine_dprintf!(0, &raw mut $ch, $($a)*) }; }
+#[macro_export]
+macro_rules! WINE_TRACE_ { ($ch:ident, $($a:tt)*) => { $crate::__wine_dprintf!(3, &raw mut $ch, $($a)*) }; }
 
 // `__WINE_IS_DEBUG_ON(dbcl, &__wine_dbch_##ch)`, as an `int` like the C. The argument is the
 // channel STATIC (`TRACE_ON!(__wine_dbch_extrac32)`): macro_rules cannot paste `##ch`, so

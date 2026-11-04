@@ -2423,6 +2423,14 @@ def stage_translate(
             f"translate: {Path(tu).name}: rc={proc.returncode} ${cost:.4f} "
             f"{status} ({round(time.time() - t0)}s)"
         )
+        if status == "NO BODY":
+            # The worker's own verdicts, not just "NO BODY": ddraw's executebuffer.c said only
+            # that while its log held `d3d_execute_buffer_execute: ... truncated output at
+            # 32768 tokens -- Raise RUSTCONV_CLAUDE_MAX_TOKENS` (or `--skip-fn` it).
+            failed = sorted(set(re.findall(r"(?m)^  - (\w+: .+)$", log.read_text())))
+            for line in failed:
+                print(f"translate:   {line}")
+            print(f"translate:   full log: {log}")
     if units_override is not None:
         if recorded_headers is None:
             state.pop("header_tus", None)
@@ -3382,7 +3390,8 @@ _RAW_FIELD = re.compile(r"(?m)^(?P<lead>\s*pub\s+)r#(?P<kw>[a-z_]\w*)(?P<colon>\
 #: but win32macros' ARRAY_SIZE! is C's `unsigned` (`u32`), so the comparison is E0308.
 _ARRAY_SIZE_CMP = re.compile(
     r"(\(\s*[\w.()*\[\]]+\s+as\s+usize\s*\)\s*(?:<|<=|>|>=|==|!=)\s*)"
-    r"((?:ARRAY_SIZE|ARRAYSIZE|_countof)!\([^()]*\))(?!\s*as\b)"
+    # One level of nesting: ddraw's `ARRAY_SIZE!((*state).textures)`.
+    r"((?:ARRAY_SIZE|ARRAYSIZE|_countof)!\((?:[^()]|\([^()]*\))*\))(?!\s*as\b)"
 )
 
 
@@ -3391,6 +3400,54 @@ def _stem_sources(state: dict) -> list[Path]:
     from tools.source_walk import source_files
 
     return list(source_files(_crate_dir(state) / "src" / state["stem"]))
+
+
+_STR_LIT = r'"(?:[^"\\\n]|\\.)*"'
+_ADJACENT_STRINGS = re.compile(rf"(?<![\w#'])({_STR_LIT})(\s+)({_STR_LIT})")
+
+
+_NAMED_CHANNEL = re.compile(r"\b(ERR|WARN|FIXME|TRACE)_!?\(\s*([A-Za-z_]\w*)\s*,")
+
+
+def _named_channel_debug(state: dict) -> int:
+    """wine/debug.h `ERR_(winediag)("..")` as `WINE_ERR_!(__wine_dbch_winediag, "..")`.
+
+    The model writes it `ERR_!(winediag, ..)` or `TRACE_(fps, ..)`; the channel name is
+    token-pasted in C, so win32macros' named forms take the channel STATIC, whose storage
+    `port resolve` writes once the Rust names it (ddraw: winediag in device.c, fps in
+    surface.c)."""
+    n = 0
+    for path in sorted(_stem_sources(state)):
+        text = path.read_text()
+        new, k = _NAMED_CHANNEL.subn(
+            lambda m: f"WINE_{m.group(1)}_!(__wine_dbch_{m.group(2)},", text
+        )
+        if k:
+            path.write_text(new)
+            n += k
+    return n
+
+
+def _join_adjacent_strings(state: dict) -> int:
+    """C's `"abc " "def"` (translation-phase concatenation) as one Rust literal.
+
+    ddraw's surface.rs kept `WARN!("... VIDEOMEMORY " "or DDSCAPS_SYSTEMMEMORY ...")`: a
+    syntax error, so rustc stopped before type-checking and the crate reported ONE error.
+    Two plain string literals with only whitespace between them are never valid Rust, so
+    joining them changes no program that compiled. Prefixed literals (b"", c"", r"") are
+    left alone; the lookbehind keeps a literal's own prefix out of the match."""
+    n = 0
+    for path in sorted(_stem_sources(state)):
+        text = path.read_text()
+        new = text
+        while True:
+            new2, k = _ADJACENT_STRINGS.subn(lambda m: m.group(1)[:-1] + m.group(3)[1:], new)
+            if not k:
+                break
+            new, n = new2, n + k
+        if new != text:
+            path.write_text(new)
+    return n
 
 
 def _null_offsets_to_offset_of(state: dict) -> int:
@@ -5390,6 +5447,16 @@ def stage_integrate(stem: str) -> None:
     changed += len(placeholders)
     if placeholders:
         print(f"integrate: `static X: () = ();` placeholders dropped in {', '.join(placeholders)}")
+    named = _named_channel_debug(state)
+    changed += named
+    if named:
+        print(
+            f"integrate: {named} named-channel debug call(s) as WINE_<CLS>_!(__wine_dbch_<ch>, ..)"
+        )
+    joined = _join_adjacent_strings(state)
+    changed += joined
+    if joined:
+        print(f"integrate: {joined} C adjacent string literal(s) joined")
     nulls = _null_offsets_to_offset_of(state)
     changed += nulls
     if nulls:
@@ -6276,6 +6343,9 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     type_gaps = set(res.undefined) | {
         n for n, why in res.conflicting.items() if why.startswith("a type")
     }
+    collided = _resolve_tag_value_collisions(state)
+    if collided:
+        print(f"resolve: C struct tag == static name, c2rust's struct as `<name>_tag`: {collided}")
     found = _resolve_local_types(state, prelude, type_gaps)
     _resolve_anonymous_types(state)
     align_definition_abis(state)
@@ -6883,6 +6953,81 @@ def align_definition_returns(state: dict) -> dict[str, list[str]]:
     for fname, fns in sorted(changed.items()):
         print(f"resolve: {fname}: signature set from the C prototype for {', '.join(fns)}")
     return changed
+
+
+_SAME_NAME_STATIC = re.compile(r"(?m)^pub static (?:mut )?(?P<n>[A-Za-z_]\w*): (?:\[\s*)?(?P=n)\b")
+
+
+def _same_modulo_anon(per_arch: str | None, module_text: str) -> str | None:
+    """One arch's text of an item whose arches differ ONLY in c2rust's anonymous-type numbers
+    (`C2RustUnnamed_72` on amd64, another on i386), when the module defines exactly that
+    arch's names -- the arch its data statics were harvested from. Else None."""
+    if not per_arch:
+        return None
+    texts = dict(x.split(":", 1) for x in per_arch.split("\0") if ":" in x)
+    masked = {re.sub(r"\bC2RustUnnamed\w*", "ANON", v) for v in texts.values()}
+    if len(masked) != 1:
+        return None
+    for v in texts.values():
+        anons = set(re.findall(r"\bC2RustUnnamed\w*", v))
+        if anons and all(
+            re.search(rf"(?m)^\s*pub (?:struct|union) {a}\b", module_text) for a in anons
+        ):
+            return v
+    return None
+
+
+def _resolve_tag_value_collisions(state: dict) -> list[str]:
+    """C's `static const struct tss_lookup {..} tss_lookup[] = {..}`: tags and variables are
+    separate C namespaces, Rust's types and values are not. c2rust's data static names the
+    struct after itself (`static mut tss_lookup: [tss_lookup; 25]`), the struct was never
+    imported (its name is the static's), and ddraw's 30 `tss_lookup` errors followed.
+
+    c2rust's struct comes in under `<name>_tag` (its layout, from the TU's own anchor), and
+    the module's TYPE positions are retargeted -- annotations, `*const`/`*mut`, generics,
+    `as`, `[T; N]` and struct literals -- while value uses (`tss_lookup[i]`,
+    `addr_of!(tss_lookup)`) keep the static. Returns the names handled."""
+    from . import c2rust_anchor
+
+    done: list[str] = []
+    for tu in state["tus"]:
+        path = _tu_output(state, tu)
+        if not path.is_file():
+            continue
+        text = path.read_text()
+        names = {
+            m.group("n")
+            for m in _SAME_NAME_STATIC.finditer(text)
+            if not re.search(rf"(?m)^\s*pub (?:struct|union|type) {m.group('n')}\b", text)
+        }
+        if not names:
+            continue
+        agreed, differs = c2rust_anchor.local_types(REPO / tu, names)
+        new = text
+        for name in sorted(names):
+            item = agreed.get(name) or _same_modulo_anon(differs.get(name), text)
+            if item is None or not re.search(rf"\b(?:struct|union) {name}\b", item):
+                print(
+                    f"resolve: {path.name}: `{name}` is a static AND its own type; no "
+                    "single c2rust layout to import -- hand-port it"
+                )
+                continue
+            tag = f"{name}_tag"
+            item = re.sub(rf"\b(struct|union) {name}\b", rf"\1 {tag}", item)
+            type_pos = re.compile(
+                rf"(?:(?<=:\s)|(?<=\*const )|(?<=\*mut )|(?<=<)|(?<=as )|(?<=\[))"
+                rf"{name}\b(?!\s*\[)|\b{name}(?=\s*\{{)"
+            )
+            new = type_pos.sub(tag, new)
+            # The static itself keeps its value name: only its TYPE was retargeted above.
+            new = re.sub(rf"(?m)^pub static (mut )?{tag}:", rf"pub static \1{name}:", new)
+            head = re.match(r"(?:(?:use |#!\[|//)[^\n]*\n|\n)*", new)
+            at = head.end() if head else 0
+            new = new[:at] + item.rstrip() + "\n\n" + new[at:]
+            done.append(name)
+        if new != text:
+            path.write_text(new)
+    return done
 
 
 def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str]:

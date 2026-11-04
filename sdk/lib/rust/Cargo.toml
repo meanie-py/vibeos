@@ -1148,6 +1148,8 @@ members = [
     "wing32-rust",
     "wow64-rust",
     "dinput-rust",
+    "ddraw-rust",
+    "wined3d-h",
 ]
 resolver = "2"
 

@@ -2128,11 +2128,13 @@ def test_an_array_size_compare_against_a_widened_index_is_widened(tmp_path, monk
     (m / "a.rs").write_text(
         "while (i as usize) < ARRAY_SIZE!(devs) { }\n"
         "if (j as usize) >= ARRAY_SIZE!(t) as usize { }\n"
+        "while (k as usize) < ARRAY_SIZE!((*state).textures) { }\n"
     )
-    assert port._widen_array_size_compares({"stem": "d"}) == 1
+    assert port._widen_array_size_compares({"stem": "d"}) == 2
     text = (m / "a.rs").read_text()
     assert "(i as usize) < ARRAY_SIZE!(devs) as usize" in text
     assert "ARRAY_SIZE!(t) as usize as usize" not in text
+    assert "(k as usize) < ARRAY_SIZE!((*state).textures) as usize" in text
 
 
 def test_a_module_list_twin_of_winelist_is_dropped(tmp_path, monkeypatch):
@@ -2146,3 +2148,50 @@ def test_a_module_list_twin_of_winelist_is_dropped(tmp_path, monkeypatch):
     )
     assert port._drop_wine_list_twins({"stem": "d"}) == ["a"]
     assert (m / "a.rs").read_text() == "use x;\npub struct Keep;\n"
+
+
+def test_c_adjacent_string_literals_are_joined(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "a.rs"])
+    (tmp_path / "a.rs").write_text(
+        'WARN!("used with VIDEOMEMORY "\n        "or SYSTEMMEMORY.\\n");\n'
+        'f("a", "b"); g(b"x" ); h("one" "two" "three");\n'
+    )
+    assert port._join_adjacent_strings({}) == 3
+    out = (tmp_path / "a.rs").read_text()
+    assert 'WARN!("used with VIDEOMEMORY or SYSTEMMEMORY.\\n");' in out
+    assert 'f("a", "b")' in out and 'h("onetwothree")' in out
+
+
+def test_a_struct_tag_named_like_its_static_is_imported_as_tag(tmp_path, monkeypatch):
+    # ddraw's `static const struct tss_lookup {..} tss_lookup[]`: one name, two C namespaces.
+    from rustconv import c2rust_anchor
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "_tu_output", lambda state, tu: tmp_path / "device.rs")
+    (tmp_path / "device.rs").write_text(
+        "use crate::prelude::*;\npub union C2RustUnnamed_72 { pub a: i32 }\n"
+        "pub static mut tss_lookup: [tss_lookup; 2] = [tss_lookup { s: 0 }, tss_lookup { s: 1 }];\n"
+        "fn f() { let l: *const tss_lookup = addr_of!(tss_lookup[1]); g(ARRAY_SIZE!(tss_lookup)); }\n"
+    )
+    per = (
+        "amd64:pub struct tss_lookup {\n    pub u: C2RustUnnamed_72,\n}\0"
+        "i386:pub struct tss_lookup {\n    pub u: C2RustUnnamed_70,\n}"
+    )
+    monkeypatch.setattr(c2rust_anchor, "local_types", lambda c, n: ({}, {"tss_lookup": per}))
+    assert port._resolve_tag_value_collisions({"tus": ["dll/device.c"]}) == ["tss_lookup"]
+    out = (tmp_path / "device.rs").read_text()
+    assert "pub struct tss_lookup_tag {\n    pub u: C2RustUnnamed_72," in out
+    assert "pub static mut tss_lookup: [tss_lookup_tag; 2] = [tss_lookup_tag { s: 0 }" in out
+    assert "let l: *const tss_lookup_tag = addr_of!(tss_lookup[1])" in out
+    assert "ARRAY_SIZE!(tss_lookup)" in out
+
+
+def test_named_channel_debug_calls_take_the_channel_static(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "a.rs"])
+    (tmp_path / "a.rs").write_text(
+        'ERR_!(winediag, "no 3d\\n");\nTRACE_(fps, "%p\\n", d);\nTRACE!("keep\\n");\n'
+    )
+    assert port._named_channel_debug({}) == 2
+    out = (tmp_path / "a.rs").read_text()
+    assert 'WINE_ERR_!(__wine_dbch_winediag, "no 3d\\n");' in out
+    assert 'WINE_TRACE_!(__wine_dbch_fps, "%p\\n", d);' in out and 'TRACE!("keep\\n")' in out
