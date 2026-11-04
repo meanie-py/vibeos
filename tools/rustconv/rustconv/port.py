@@ -41,6 +41,7 @@ from pathlib import Path
 
 from . import (
     bank_import,
+    c2rust_debug_fold,
     cohab_stub,
     crate_integrate,
     dead_regions,
@@ -3141,6 +3142,45 @@ _UNIT_PLACEHOLDER = re.compile(
 )
 
 
+_RAW_FIELD = re.compile(r"(?m)^(?P<lead>\s*pub\s+)r#(?P<kw>[a-z_]\w*)(?P<colon>\s*:)")
+
+
+def _unify_keyword_fields(state: dict) -> tuple[list[str], list[str]]:
+    """A C field named like a Rust keyword (`LONG ref;`) declared `r#ref` but read `.ref_`.
+
+    bindgen and c2rust both escape such a field with a trailing underscore, so a body written
+    from the anchor reads `(*This).ref_`; a struct the MODEL declared itself spells it
+    `pub r#ref:`. dsound's duplex.c lost all 15 refcount reads that way (E0609). The crate's
+    own accesses decide: a field only ever read as `.X_` is renamed to that spelling. One
+    read both ways is left alone and reported -- that needs a look, not a rename.
+    Returns (renamed field names, conflicting field names)."""
+    outputs = [p for p in (_tu_output(state, tu) for tu in _units(state)) if p.is_file()]
+    texts = {p: p.read_text() for p in outputs}
+    joined = "\n".join(texts.values())
+    kws = {m.group("kw") for t in texts.values() for m in _RAW_FIELD.finditer(t)}
+    rename, conflict = set(), []
+    for kw in sorted(kws):
+        escaped = re.search(rf"\.{re.escape(kw)}_\b", joined) is not None
+        raw = re.search(rf"\.r#{re.escape(kw)}\b", joined) is not None
+        if escaped and raw:
+            conflict.append(kw)
+        elif escaped:
+            rename.add(kw)
+    if rename:
+        for p, t in texts.items():
+            new = _RAW_FIELD.sub(
+                lambda m: (
+                    f"{m.group('lead')}{m.group('kw')}_{m.group('colon')}"
+                    if m.group("kw") in rename
+                    else m.group(0)
+                ),
+                t,
+            )
+            if new != t:
+                p.write_text(new)
+    return sorted(rename), conflict
+
+
 def _strip_unit_placeholders(state: dict) -> list[str]:
     """Drop every `static NAME: () = ();` (and its attributes) from the module's outputs --
     its UNITS: a cppapp module's are the synthetic headers, and walking only `tus` left
@@ -4974,6 +5014,19 @@ def stage_integrate(stem: str) -> None:
                 print(
                     f"integrate: {path.stem}: WARNING: offset table left as c2rust folded it: {why}"
                 )
+        # c2rust's expansion of wine/debug.h's TRACE/WARN/FIXME/ERR, which a body copied from
+        # its anchor keeps verbatim (85 blocks across dsound's 10 TUs), back to the prelude's
+        # macro -- and the local `__WINE_DBCL_*` / `ros_dbg_log` scaffolding with it.
+        text = path.read_text()
+        folded_text, folded, scaffolding = c2rust_debug_fold.fold_module(text)
+        if folded or scaffolding:
+            path.write_text(folded_text)
+            changed += 1
+            print(
+                f"integrate: {path.stem}: {folded} expanded wine debug block(s) folded to the "
+                f"macro"
+                + (f"; dropped {', '.join(sorted(set(scaffolding)))}" if scaffolding else "")
+            )
         defaults = default_arm.rewrite_file(path)
         if defaults:
             changed += 1
@@ -5003,6 +5056,18 @@ def stage_integrate(stem: str) -> None:
     changed += len(placeholders)
     if placeholders:
         print(f"integrate: `static X: () = ();` placeholders dropped in {', '.join(placeholders)}")
+    renamed, kw_conflict = _unify_keyword_fields(state)
+    changed += len(renamed)
+    if renamed:
+        print(
+            "integrate: keyword-named field(s) declared `r#X` but read `.X_` renamed to the "
+            f"escaped spelling: {', '.join(renamed)}"
+        )
+    if kw_conflict:
+        print(
+            "integrate: WARNING: field(s) read both as `.r#X` and `.X_` -- review: "
+            + ", ".join(kw_conflict)
+        )
     channels = _wine_channel_macro_calls(state, crate)
     changed += len(channels)
     if channels:

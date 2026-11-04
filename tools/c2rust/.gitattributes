@@ -1,0 +1,2 @@
+# A unified diff's blank context line is a lone space; that is format, not a mistake.
+*.patch -whitespace

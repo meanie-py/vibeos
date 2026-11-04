@@ -153,8 +153,15 @@ HARD FAILS (`C2RustError`) rather than silently degrading to an unanchored LLM t
 
 `_SEH2_TRY` is also why the ws2_32 lane's `enumprot.c` / `sockctrl.c` could not be anchored.
 
-**Options, none taken yet:**
-* Vendor the §1 patch (verified) and carry it; §2 needs real exporter work upstream.
+**§1 is now CARRIED (2026-11-03).** 0.22.1 is still the latest release and upstream `master`
+(ac687698, 2026-10-26) still lacks the arm, so the tree pins 0.22.1 + `tools/c2rust/attributed-knr.patch`:
+`bash tools/c2rust/install.sh` fetches the crate (sha256-pinned), patches it and `cargo install`s it
+`--locked` into `~/.cargo/bin`. `c2rust_anchor` refuses a stock binary by transpiling
+`tools/c2rust/repro-stdcall.c` (a version string cannot tell patched from stock), so a lane on a
+stock install hard-fails with the fix command instead of silently banking i386-less anchors.
+Drop the patch when a release carries the fix.
+
+**Options for §2, none taken yet:**
 * Preprocess `_SEH2_*` away before anchoring (changes the code c2rust sees — the anchor would
   no longer correspond to the source we are translating; probably not worth it).
 * File both upstream and wait. §1 is a one-liner a maintainer can take immediately.

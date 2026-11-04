@@ -56,3 +56,85 @@ def test_both_blocks_fold_to_the_macro():
 def test_a_named_channel_is_left_alone():
     named = SRC.replace("__wine_dbch___default", "__wine_dbch_richedit")
     assert fold(named) == (named, 0)
+
+
+def test_fold_module_drops_the_scaffolding_nothing_names_any_more():
+    """dsound's mixer.rs (2026-11-02): the blocks came with a local `__WINE_DBCL_TRACE = 4`
+    (wine/debug.h says 3) and an extern `ros_dbg_log`. Folded, both are dead -- and the const
+    was wrong -- so both go; the prelude's macro carries the real class."""
+    from rustconv.c2rust_debug_fold import fold_module
+
+    src = (
+        "use crate::prelude::*;\n"
+        'extern "C" {\n'
+        "    fn ros_dbg_log( cls: __wine_debug_class, ch: *mut __wine_debug_channel, "
+        "file: *const ::core::ffi::c_char, func: *const ::core::ffi::c_char, "
+        "line: ::core::ffi::c_int, fmt: *const ::core::ffi::c_char, ... );\n"
+        "}\n"
+        "\n"
+        "const __WINE_DBCL_TRACE: __wine_debug_class = 4;\n"
+        'pub unsafe extern "C" fn f(v: *mut c_void) {\n' + SRC + "}\n"
+    )
+    new, n, dropped = fold_module(src)
+    assert n == 2
+    assert "ros_dbg_log" not in new and "__WINE_DBCL" not in new
+    assert 'extern "C" {' not in new
+    assert sorted(dropped) == ["__WINE_DBCL_TRACE", "ros_dbg_log"]
+
+
+def test_fold_module_keeps_scaffolding_a_named_channel_still_uses():
+    from rustconv.c2rust_debug_fold import fold_module
+
+    src = (
+        'extern "C" {\n    fn ros_dbg_log(cls: __wine_debug_class, ...);\n}\n'
+        "const __WINE_DBCL_TRACE: __wine_debug_class = 3;\n"
+        "fn g() { if (*__wine_dbch_other).flags & 1 << __WINE_DBCL_TRACE != 0 "
+        "{ ros_dbg_log(__WINE_DBCL_TRACE, __wine_dbch_other); } }\n"
+    )
+    new, n, dropped = fold_module(src)
+    assert (new, n, dropped) == (src, 0, [])
+
+
+def test_model_respelt_blocks_fold_too():
+    """dsound mixer.rs: the model kept the block but added parens, addr_of!, `core::ffi`
+    without `::`, and `(__dbcl) as u32` -- 26 of 77 blocks missed the literal template."""
+    src = """
+    if ((*(*core::ptr::addr_of!(__wine_dbch___default))).flags as ::core::ffi::c_int
+        & ((1 as ::core::ffi::c_int) << (__WINE_DBCL_TRACE as ::core::ffi::c_int)))
+        != 0
+    {
+        let __dbch: *mut __wine_debug_channel = core::ptr::addr_of_mut!(__wine_dbch___default);
+        let __dbcl: __wine_debug_class = __WINE_DBCL_TRACE;
+        ros_dbg_log(
+            (__dbcl) as u32,
+            __dbch,
+            b"dll/directx/wine/dsound/mixer.c\\0"
+                as *const u8 as *const ::core::ffi::c_char,
+            b"DSOUND_RecalcFreqAcc\\0" as *const u8 as *const ::core::ffi::c_char,
+            150 as ::core::ffi::c_int,
+            b"New freqadjust: %04x\\n\\0" as *const u8
+                as *const core::ffi::c_char,
+            (*dsb).freqAccNext,
+        );
+    }
+"""
+    out, n = fold(src)
+    assert n == 1
+    assert out.strip() == 'WINE_TRACE!("New freqadjust: %04x\\n", (*dsb).freqAccNext);'
+
+
+def test_a_block_whose_condition_tests_another_class_is_left_alone():
+    """The `if` must test the same class the block logs at: a TRACE log behind a WARN test
+    is not a plain TRACE and must not fold."""
+    src = """
+    if (*__wine_dbch___default).flags as ::core::ffi::c_int
+        & (1 as ::core::ffi::c_int) << __WINE_DBCL_WARN as ::core::ffi::c_int != 0
+    {
+        let __dbch: *mut __wine_debug_channel = __wine_dbch___default;
+        let __dbcl: __wine_debug_class = __WINE_DBCL_TRACE;
+        ros_dbg_log(__dbcl, __dbch, b"f.c\\0" as *const u8 as *const ::core::ffi::c_char,
+            b"F\\0" as *const u8 as *const ::core::ffi::c_char, 1 as ::core::ffi::c_int,
+            b"x\\n\\0" as *const u8 as *const ::core::ffi::c_char);
+    }
+"""
+    assert fold(src) == (src, 0)
