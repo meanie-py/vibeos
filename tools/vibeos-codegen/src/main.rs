@@ -1,5 +1,6 @@
 mod binding_cli;
 mod build_cli;
+mod cell_cli;
 mod compiler_cli;
 mod marshal_cli;
 mod module_cli;
@@ -29,6 +30,10 @@ Generators: apisets-table, bugcodes, bugcodes-h, error-tables, winerror-consts,
 
 Binding commands: com-macros, enum-consts, ioctl-consts, ks386-inc, ref-protos,
                   rpc-guards, delaylib. See tools/vibeos-codegen/README.md.
+
+Cargo cell command: cargo-cell TARGET... [--apply | --convert].
+  --survey, --check DIR, --save-baseline DIR, --own-rc, --own-c, --remap,
+  --rc-template, --c-template, --clib-recipes and --reshell DIR are supported.
 
 Module commands: cnt, cohab-registry, global-barrier.
   cnt writes three outputs; --output-dir redirects them.
@@ -404,13 +409,16 @@ fn main() -> std::process::ExitCode {
             .chain(payload_cli::NAMES)
             .chain(wow64_cli::NAMES)
             .chain(marshal_cli::NAMES)
+            .chain(cell_cli::NAMES)
         {
             println!("{name}");
         }
         return 0.into();
     }
     let name = command_name(&args);
-    match if name.is_some_and(|n| compiler_cli::NAMES.contains(&n)) {
+    match if name.is_some_and(|n| cell_cli::NAMES.contains(&n)) {
+        cell_cli::run(args)
+    } else if name.is_some_and(|n| compiler_cli::NAMES.contains(&n)) {
         compiler_cli::run(args)
     } else if name.is_some_and(|n| marshal_cli::NAMES.contains(&n)) {
         marshal_cli::run(args)

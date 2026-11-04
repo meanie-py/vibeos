@@ -233,7 +233,7 @@ pub unsafe extern "system" fn WSPRecv(
     let Socket: PSOCKET_INFORMATION;
     let NumberOfBytesRead: DWORD;
 
-    TRACE!(b"WSPRecv(%x)\n\0".as_ptr() as _, Handle);
+    TRACE!(b"WSPRecv(%x)\n\0".as_ptr() as *const i8, Handle);
 
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
@@ -309,7 +309,7 @@ pub unsafe extern "system" fn WSPRecv(
         IOSB = core::ptr::addr_of_mut!(DummyIOSB);
     } else {
         if ((*(*Socket).SharedData).CreateFlags & SO_SYNCHRONOUS_NONALERT) != 0 {
-            TRACE!(b"Opened without flag WSA_FLAG_OVERLAPPED. Do nothing.\n\0".as_ptr() as _);
+            TRACE!(b"Opened without flag WSA_FLAG_OVERLAPPED. Do nothing.\n\0".as_ptr() as *const i8);
             NtClose(SockEvent);
             return MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, lpNumberOfBytesRead) as i32;
         }
@@ -374,7 +374,7 @@ pub unsafe extern "system" fn WSPRecv(
     NtClose(SockEvent);
 
     if Status == STATUS_PENDING {
-        TRACE!(b"Leaving (Pending)\n\0".as_ptr() as _);
+        TRACE!(b"Leaving (Pending)\n\0".as_ptr() as *const i8);
         return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32;
     }
 
@@ -403,7 +403,7 @@ pub unsafe extern "system" fn WSPRecv(
         SockReenableAsyncSelectEvent(Socket as PVOID, FD_READ as LONG);
     }
 
-    TRACE!(b"Leaving (%lx %ld)\n\0".as_ptr() as _, Status, NumberOfBytesRead);
+    TRACE!(b"Leaving (%lx %ld)\n\0".as_ptr() as *const i8, Status, NumberOfBytesRead);
     return MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesRead, lpNumberOfBytesRead) as i32;
 }
 #[no_mangle]
@@ -641,7 +641,7 @@ pub unsafe extern "system" fn WSPSend(
     let Socket: PSOCKET_INFORMATION;
     let mut NumberOfBytesSent: DWORD;
 
-    TRACE!(b"WSPSend(%x)\n\0".as_ptr() as _, Handle);
+    TRACE!(b"WSPSend(%x)\n\0".as_ptr() as *const i8, Handle);
 
     Socket = GetSocketStructure(Handle);
     if Socket.is_null() {
@@ -700,7 +700,7 @@ pub unsafe extern "system" fn WSPSend(
         IOSB = core::ptr::addr_of_mut!(DummyIOSB);
     } else {
         if ((*(*Socket).SharedData).CreateFlags & SO_SYNCHRONOUS_NONALERT) != 0 {
-            TRACE!(b"Opened without flag WSA_FLAG_OVERLAPPED. Do nothing.\n\0".as_ptr() as _);
+            TRACE!(b"Opened without flag WSA_FLAG_OVERLAPPED. Do nothing.\n\0".as_ptr() as *const i8);
             NtClose(SockEvent);
             return MsafdReturnWithErrno(STATUS_SUCCESS, lpErrno, 0, lpNumberOfBytesSent) as i32;
         }
@@ -771,7 +771,7 @@ pub unsafe extern "system" fn WSPSend(
     NtClose(SockEvent);
 
     if Status == STATUS_PENDING {
-        TRACE!(b"Leaving (Pending)\n\0".as_ptr() as _);
+        TRACE!(b"Leaving (Pending)\n\0".as_ptr() as *const i8);
         return MsafdReturnWithErrno(Status, lpErrno, 0, core::ptr::null_mut()) as i32;
     }
 
@@ -779,7 +779,7 @@ pub unsafe extern "system" fn WSPSend(
 
     SockReenableAsyncSelectEvent(Socket as PVOID, FD_WRITE as LONG);
 
-    TRACE!(b"Leaving (%lx %ld)\n\0".as_ptr() as _, Status, NumberOfBytesSent);
+    TRACE!(b"Leaving (%lx %ld)\n\0".as_ptr() as *const i8, Status, NumberOfBytesSent);
     let __rv = MsafdReturnWithErrno(Status, lpErrno, NumberOfBytesSent, lpNumberOfBytesSent) as i32;
     return __rv;
 }

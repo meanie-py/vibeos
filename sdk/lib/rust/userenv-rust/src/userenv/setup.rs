@@ -3,322 +3,110 @@ use crate::prelude::*;
 use crate::userenv::directory::CreateDirectoryW;
 use crate::prelude::RegOpenKeyExW;
 use crate::prelude::RegCloseKey;
-use core::ffi::c_void;
-
 
 extern "system" {
-    // ARRAYSIZE removed: a MACRO, not a linkable fn (no live call sites in this module).
     fn ExpandEnvironmentStringsW(lpSrc: LPCWSTR, lpDst: *mut WCHAR, cchDst: DWORD) -> DWORD;
     fn GetLastError() -> DWORD;
-    fn LoadStringW(hInstance: *mut core::ffi::c_void, uID: UINT, lpBuffer: *mut WCHAR, cchBufferMax: core::ffi::c_int) -> core::ffi::c_int;
     fn RegSetValueExW(hKey: HKEY, lpValueName: LPCWSTR, Reserved: DWORD, dwType: DWORD, lpData: *const BYTE, cbData: DWORD) -> LONG;
     fn SetLastError(dwErrCode: DWORD);
-    // hInstance removed: it is the DLL's HINSTANCE data global (userenv.c), NOT a function —
-    // the c2rust output emitted `hInstance()` calls; those now read the static (see the call site).
+}
+extern "C" {
+    fn wcslen(s: LPCWSTR) -> usize;
 }
 
-// L"\"
-static PATH_SEP_BACKSLASH: [u16; 2] = [b'\\' as u16, 0];
-// L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList"
-static PROFILE_LIST_KEY: [u16; 57] = [
-    b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16,
-    b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16,
-    b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16, b'i' as u16,
-    b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b' ' as u16, b'N' as u16,
-    b'T' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16,
-    b'n' as u16, b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16,
-    b'o' as u16, b'n' as u16, b'\\' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16,
-    b'i' as u16, b'l' as u16, b'e' as u16, b'L' as u16, b'i' as u16, b's' as u16, b't' as u16,
-    0,
-];
-// L"ProfilesDirectory"
-static REG_PROFILES_DIRECTORY: [u16; 18] = [
-    b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16,
-    b's' as u16, b'D' as u16, b'i' as u16, b'r' as u16, b'e' as u16, b'c' as u16, b't' as u16,
-    b'o' as u16, b'r' as u16, b'y' as u16, 0,
-];
+// An ASCII literal as a NUL-terminated, 2-byte-aligned UTF-16 static, built at compile time.
+macro_rules! w {
+    ($s:expr $(,)?) => {{
+        const INPUT: &[u8] = $s.as_bytes();
+        static OUT: [u16; INPUT.len() + 1] = {
+            let mut out = [0u16; INPUT.len() + 1];
+            let mut i = 0;
+            while i < INPUT.len() {
+                assert!(INPUT[i] < 0x80, "w!() takes ASCII literals only");
+                out[i] = INPUT[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        OUT.as_ptr()
+    }};
+}
 
-// ---- file-scope preamble (translated) ----
-// @c2rust file-scope data (compiler-exact tables/statics)
-static mut UserShellFolders: [FOLDERDATA; 19] = {
-    [
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"A\0p\0p\0D\0a\0t\0a\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"A\0p\0p\0l\0i\0c\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0") as LPWSTR,
-            uId: IDS_APPDATA as UINT,
-            bHidden: TRUE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"D\0e\0s\0k\0t\0o\0p\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"D\0e\0s\0k\0t\0o\0p\0\0\0") as LPWSTR,
-            uId: IDS_DESKTOP as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0") as LPWSTR,
-            uId: IDS_FAVORITES as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"P\0e\0r\0s\0o\0n\0a\0l\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"M\0y\0 \0D\0o\0c\0u\0m\0e\0n\0t\0s\0\0\0") as LPWSTR,
-            uId: IDS_MYDOCUMENTS as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"N\0e\0t\0H\0o\0o\0d\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"N\0e\0t\0H\0o\0o\0d\0\0\0") as LPWSTR,
-            uId: IDS_NETHOOD as UINT,
-            bHidden: TRUE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"P\0r\0i\0n\0t\0H\0o\0o\0d\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"P\0r\0i\0n\0t\0H\0o\0o\0d\0\0\0") as LPWSTR,
-            uId: IDS_PRINTHOOD as UINT,
-            bHidden: TRUE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"R\0e\0c\0e\0n\0t\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"R\0e\0c\0e\0n\0t\0\0\0") as LPWSTR,
-            uId: IDS_RECENT as UINT,
-            bHidden: TRUE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"S\0e\0n\0d\0T\0o\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"S\0e\0n\0d\0T\0o\0\0\0") as LPWSTR,
-            uId: IDS_SENDTO as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0") as LPWSTR,
-            uId: IDS_TEMPLATES as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0") as LPWSTR,
-            uId: IDS_STARTMENU as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"P\0r\0o\0g\0r\0a\0m\0s\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\0\0") as LPWSTR,
-            uId: IDS_PROGRAMS as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0u\0p\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\\\0S\0t\0a\0r\0t\0u\0p\0\0\0") as LPWSTR,
-            uId: IDS_STARTUP as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\0\0") as LPWSTR,
-            uId: IDS_LOCALSETTINGS as UINT,
-            bHidden: TRUE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0A\0p\0p\0D\0a\0t\0a\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0A\0p\0p\0l\0i\0c\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0") as LPWSTR,
-            uId: IDS_LOCALAPPDATA as UINT,
-            bHidden: TRUE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"T\0e\0m\0p\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0T\0e\0m\0p\0\0\0") as LPWSTR,
-            uId: IDS_TEMP as UINT,
-            bHidden: FALSE,
-            bShellFolder: FALSE,
-            bUserShellFolder: FALSE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"C\0a\0c\0h\0e\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0T\0e\0m\0p\0o\0r\0a\0r\0y\0 \0I\0n\0t\0e\0r\0n\0e\0t\0 \0F\0i\0l\0e\0s\0\0\0") as LPWSTR,
-            uId: IDS_CACHE as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"H\0i\0s\0t\0o\0r\0y\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"L\0o\0c\0a\0l\0 \0S\0e\0t\0t\0i\0n\0g\0s\0\\\0H\0i\0s\0t\0o\0r\0y\0\0\0") as LPWSTR,
-            uId: IDS_HISTORY as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0o\0k\0i\0e\0s\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"C\0o\0o\0k\0i\0e\0s\0\0\0") as LPWSTR,
-            uId: IDS_COOKIES as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
-            lpPath: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
-            uId: -(1 as ::core::ffi::c_int) as UINT,
-            bHidden: FALSE,
-            bShellFolder: FALSE,
-            bUserShellFolder: FALSE,
-        },
-    ]
-};
-
-static mut CommonShellFolders: [FOLDERDATA; 9] = {
-    [
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0A\0p\0p\0D\0a\0t\0a\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"A\0p\0p\0l\0i\0c\0a\0t\0i\0o\0n\0 \0D\0a\0t\0a\0\0\0") as LPWSTR,
-            uId: IDS_APPDATA as UINT,
-            bHidden: TRUE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0D\0e\0s\0k\0t\0o\0p\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"D\0e\0s\0k\0t\0o\0p\0\0\0") as LPWSTR,
-            uId: IDS_DESKTOP as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"F\0a\0v\0o\0r\0i\0t\0e\0s\0\0\0") as LPWSTR,
-            uId: IDS_FAVORITES as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0D\0o\0c\0u\0m\0e\0n\0t\0s\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"M\0y\0 \0D\0o\0c\0u\0m\0e\0n\0t\0s\0\0\0") as LPWSTR,
-            uId: IDS_MYDOCUMENTS as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"T\0e\0m\0p\0l\0a\0t\0e\0s\0\0\0") as LPWSTR,
-            uId: IDS_TEMPLATES as UINT,
-            bHidden: TRUE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\0\0") as LPWSTR,
-            uId: IDS_STARTMENU as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0P\0r\0o\0g\0r\0a\0m\0s\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\0\0") as LPWSTR,
-            uId: IDS_PROGRAMS as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: win32macros_rust::wide_bytes!(b"C\0o\0m\0m\0o\0n\0 \0S\0t\0a\0r\0t\0u\0p\0\0\0") as LPWSTR,
-            lpPath: win32macros_rust::wide_bytes!(b"S\0t\0a\0r\0t\0 \0M\0e\0n\0u\0\\\0P\0r\0o\0g\0r\0a\0m\0s\0\\\0S\0t\0a\0r\0t\0u\0p\0\0\0") as LPWSTR,
-            uId: IDS_STARTUP as UINT,
-            bHidden: FALSE,
-            bShellFolder: TRUE,
-            bUserShellFolder: TRUE,
-        },
-        _FOLDERDATA {
-            lpValueName: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
-            lpPath: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
-            uId: -(1 as ::core::ffi::c_int) as UINT,
-            bHidden: FALSE,
-            bShellFolder: FALSE,
-            bUserShellFolder: FALSE,
-        },
-    ]
-};
-
-// The C has ONE StandardProfiles table (setup.c:81). This crate shipped TWO: this one, and a
-// `standardProfiles` differing only in case, built from the aligned statics below but carrying
-// hRootKey `transmute(-2147483646)` / `transmute(-2147483648)` -- HKEY_LOCAL_MACHINE and
-// HKEY_CLASSES_ROOT, where the C says HKEY_USERS and HKEY_LOCAL_MACHINE. It was dead (nothing
-// referenced it) so nothing misbehaved, but a wrong copy of the registry-root table is a trap
-// for the next reader, and `cargo check` cannot see either problem. Collapsed to one table:
-// the correct roots, over the `[u16; N]` statics rather than alignment-1 byte strings.
-static mut StandardProfiles: [PROFILEPARAMS; 2] = {
-    [
-        _PROFILEPARAMS {
-            pszProfileName: DEFAULT_USER_NAME.as_ptr(),
-            pszProfileRegValue: DEFAULT_USER_PROFILE_VALUE.as_ptr(),
-            pszEnvVar: ENV_USERPROFILE2.as_ptr(),
-            pszEnvVarProfilePath: ENV_USERPROFILE_PCT.as_ptr(),
-            pFolderList: &raw const UserShellFolders as PFOLDERDATA,
-            hRootKey: HKEY_USERS,
-            pszShellFoldersKey: DEFAULT_SHELL_FOLDERS_KEY.as_ptr(),
-            pszUserShellFoldersKey: DEFAULT_USER_SHELL_FOLDERS_KEY.as_ptr(),
-        },
-        _PROFILEPARAMS {
-            pszProfileName: ALL_USERS_NAME.as_ptr(),
-            pszProfileRegValue: ALL_USERS_PROFILE_VALUE.as_ptr(),
-            pszEnvVar: ENV_ALLUSERSPROFILE2.as_ptr(),
-            pszEnvVarProfilePath: ENV_ALLUSERSPROFILE_PCT.as_ptr(),
-            pFolderList: &raw const CommonShellFolders as PFOLDERDATA,
-            hRootKey: HKEY_LOCAL_MACHINE,
-            pszShellFoldersKey: SHELL_FOLDERS_KEY.as_ptr(),
-            pszUserShellFoldersKey: USER_SHELL_FOLDERS_KEY2.as_ptr(),
-        },
-    ]
-};
-
-pub type FOLDERDATA = _FOLDERDATA;
-pub type PROFILEPARAMS = _PROFILEPARAMS;
-
+// Upstream f0a83320d79 ("Use Vista style users folder") retired the localized folder-name
+// string table (resources.h IDS_*): every folder below is now named by its table entry alone,
+// under %SystemDrive%\Users and %SystemDrive%\ProgramData.
 #[repr(C)]
 pub struct _FOLDERDATA {
-    pub lpValueName: LPWSTR,
-    pub lpPath: LPWSTR,
-    pub uId: u32,
-    pub bHidden: i32,
-    pub bShellFolder: i32,
-    pub bUserShellFolder: i32,
+    pub lpValueName: LPCWSTR,
+    pub lpPath: LPCWSTR,
+    pub bHidden: BOOL,
+    pub bShellFolder: BOOL,
+    pub bUserShellFolder: BOOL,
+    /// Created under ProgramData rather than the profile (the Public profile's start menu and
+    /// templates live there on Vista and later).
+    pub bProgramData: BOOL,
 }
-pub type PFOLDERDATA = *mut _FOLDERDATA;
+pub type FOLDERDATA = _FOLDERDATA;
+pub type PFOLDERDATA = *const _FOLDERDATA;
+// The tables are read-only, and LPCWSTR is a raw pointer, which is not Sync.
+unsafe impl Sync for _FOLDERDATA {}
+
+const fn fd(name: LPCWSTR, path: LPCWSTR, hidden: bool, shell: bool, user_shell: bool, program_data: bool) -> FOLDERDATA {
+    _FOLDERDATA {
+        lpValueName: name,
+        lpPath: path,
+        bHidden: hidden as BOOL,
+        bShellFolder: shell as BOOL,
+        bUserShellFolder: user_shell as BOOL,
+        bProgramData: program_data as BOOL,
+    }
+}
+const END: FOLDERDATA = fd(core::ptr::null(), core::ptr::null(), false, false, false, false);
+
+// Two corrections to upstream's table: its "My Pictures" entry says L"Music", and its Temp and
+// Cache paths spell "Appdata" (harmless on a case-insensitive volume, but the registry shows it).
+static UserShellFolders: [FOLDERDATA; 26] = [
+    fd(w!("AppData Root"), w!("AppData"), true, false, false, false),
+    fd(w!("AppData"), w!("AppData\\Roaming"), false, true, true, false),
+    fd(w!("Desktop"), w!("Desktop"), false, true, true, false),
+    fd(w!("{374DE290-123F-4565-9164-39C4925E467B}"), w!("Downloads"), false, true, true, false),
+    fd(w!("Favorites"), w!("Favorites"), false, true, true, false),
+    fd(w!("Personal"), w!("Documents"), false, true, true, false),
+    fd(w!("My Music"), w!("Music"), false, true, true, false),
+    fd(w!("My Pictures"), w!("Pictures"), false, true, true, false),
+    fd(w!("My Video"), w!("Videos"), false, true, true, false),
+    fd(w!("NetHood"), w!("AppData\\Roaming\\Microsoft\\Windows\\Network Shortcuts"), true, true, true, false),
+    fd(w!("PrintHood"), w!("AppData\\Roaming\\Microsoft\\Windows\\Printer Shortcuts"), true, true, true, false),
+    fd(w!("Recent"), w!("AppData\\Roaming\\Microsoft\\Windows\\Recent"), true, true, true, false),
+    fd(w!("SendTo"), w!("AppData\\Roaming\\Microsoft\\Windows\\SendTo"), false, true, true, false),
+    fd(w!("CD Burning"), w!("AppData\\Roaming\\Microsoft\\Windows\\Burn\\Burn"), false, true, true, false),
+    fd(w!("Templates"), w!("Templates"), false, true, true, false),
+    fd(w!("Start Menu"), w!("AppData\\Roaming\\Microsoft\\Windows\\Start Menu"), false, true, true, false),
+    fd(w!("Programs"), w!("AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs"), false, true, true, false),
+    fd(w!("Administrative Tools"), w!("AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Administrative Tools"), false, true, true, false),
+    fd(w!("Startup"), w!("AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup"), false, true, true, false),
+    fd(w!("Local AppData"), w!("AppData\\Local"), false, true, true, false),
+    fd(w!("{A520A1A4-1780-4FF6-BD18-167343C5AF16}"), w!("AppData\\LocalLow"), false, false, false, false),
+    fd(w!("Temp"), w!("AppData\\Local\\Temp"), false, false, false, false),
+    fd(w!("Cache"), w!("AppData\\Local\\Microsoft\\Windows\\INetCache"), false, true, true, false),
+    fd(w!("History"), w!("AppData\\Local\\Microsoft\\Windows\\History"), false, true, true, false),
+    fd(w!("Cookies"), w!("AppData\\Local\\Microsoft\\Windows\\INetCookies"), false, true, true, false),
+    END,
+];
+
+static CommonShellFolders: [FOLDERDATA; 11] = [
+    fd(w!("{3D644C9B-1FB8-4f30-9B45-F670235F79C0}"), w!("Downloads"), false, true, true, false),
+    fd(w!("Common Desktop"), w!("Desktop"), false, true, true, false),
+    fd(w!("Common Documents"), w!("Documents"), false, true, true, false),
+    fd(w!("Common Templates"), w!("Microsoft\\Windows\\Templates"), true, true, true, true),
+    fd(w!("Common Start Menu"), w!("Microsoft\\Windows\\Start Menu"), false, true, true, true),
+    fd(w!("Common Programs"), w!("Microsoft\\Windows\\Start Menu\\Programs"), false, true, true, true),
+    fd(w!("Common Startup"), w!("Microsoft\\Windows\\Start Menu\\Programs\\Startup"), false, true, true, true),
+    fd(w!("CommonMusic"), w!("Music"), false, true, true, false),
+    fd(w!("CommonPictures"), w!("Pictures"), false, true, true, false),
+    fd(w!("CommonVideo"), w!("Videos"), false, true, true, false),
+    END,
+];
 
 #[repr(C)]
 pub struct _PROFILEPARAMS {
@@ -331,579 +119,303 @@ pub struct _PROFILEPARAMS {
     pub pszShellFoldersKey: LPCWSTR,
     pub pszUserShellFoldersKey: LPCWSTR,
 }
-pub type PPROFILEPARAMS = *mut _PROFILEPARAMS;
+pub type PROFILEPARAMS = _PROFILEPARAMS;
+pub type PPROFILEPARAMS = *const _PROFILEPARAMS;
+unsafe impl Sync for _PROFILEPARAMS {}
 
-// L"Default User"
-static DEFAULT_USER_NAME: [u16; 13] = [
-    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16,
-    b' ' as u16, b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16, 0,
-];
-// L"DefaultUserProfile"
-static DEFAULT_USER_PROFILE_VALUE: [u16; 19] = [
-    b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16, b't' as u16,
-    b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16, b'P' as u16, b'r' as u16, b'o' as u16,
-    b'f' as u16, b'i' as u16, b'l' as u16, b'e' as u16, 0,
-];
-// L"USERPROFILE"
-static ENV_USERPROFILE2: [u16; 12] = [
-    b'U' as u16, b'S' as u16, b'E' as u16, b'R' as u16, b'P' as u16, b'R' as u16, b'O' as u16,
-    b'F' as u16, b'I' as u16, b'L' as u16, b'E' as u16, 0,
-];
-// L"%USERPROFILE%"
-static ENV_USERPROFILE_PCT: [u16; 14] = [
-    b'%' as u16, b'U' as u16, b'S' as u16, b'E' as u16, b'R' as u16, b'P' as u16, b'R' as u16,
-    b'O' as u16, b'F' as u16, b'I' as u16, b'L' as u16, b'E' as u16, b'%' as u16, 0,
-];
-// L".Default\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders"
-static DEFAULT_SHELL_FOLDERS_KEY: [u16; 74] = [
-    b'.' as u16, b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16,
-    b't' as u16, b'\\' as u16, b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16,
-    b'A' as u16, b'R' as u16, b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16,
-    b'r' as u16, b'o' as u16, b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16,
-    b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16,
-    b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16,
-    b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16,
-    b'n' as u16, b'\\' as u16, b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16,
-    b'r' as u16, b'e' as u16, b'r' as u16, b'\\' as u16, b'S' as u16, b'h' as u16, b'e' as u16,
-    b'l' as u16, b'l' as u16, b' ' as u16, b'F' as u16, b'o' as u16, b'l' as u16, b'd' as u16,
-    b'e' as u16, b'r' as u16, b's' as u16, 0,
-];
-// L".Default\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders"
-static DEFAULT_USER_SHELL_FOLDERS_KEY: [u16; 79] = [
-    b'.' as u16, b'D' as u16, b'e' as u16, b'f' as u16, b'a' as u16, b'u' as u16, b'l' as u16,
-    b't' as u16, b'\\' as u16, b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16,
-    b'A' as u16, b'R' as u16, b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16,
-    b'r' as u16, b'o' as u16, b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16,
-    b'W' as u16, b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16,
-    b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16,
-    b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16,
-    b'n' as u16, b'\\' as u16, b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16,
-    b'r' as u16, b'e' as u16, b'r' as u16, b'\\' as u16, b'U' as u16, b's' as u16, b'e' as u16,
-    b'r' as u16, b' ' as u16, b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16,
-    b' ' as u16, b'F' as u16, b'o' as u16, b'l' as u16, b'd' as u16, b'e' as u16, b'r' as u16,
-    b's' as u16, 0,
-];
-// L"All Users"
-static ALL_USERS_NAME: [u16; 10] = [
-    b'A' as u16, b'l' as u16, b'l' as u16, b' ' as u16, b'U' as u16, b's' as u16, b'e' as u16,
-    b'r' as u16, b's' as u16, 0,
-];
-// L"AllUsersProfile"
-static ALL_USERS_PROFILE_VALUE: [u16; 16] = [
-    b'A' as u16, b'l' as u16, b'l' as u16, b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16,
-    b's' as u16, b'P' as u16, b'r' as u16, b'o' as u16, b'f' as u16, b'i' as u16, b'l' as u16,
-    b'e' as u16, 0,
-];
-// L"ALLUSERSPROFILE"
-static ENV_ALLUSERSPROFILE2: [u16; 16] = [
-    b'A' as u16, b'L' as u16, b'L' as u16, b'U' as u16, b'S' as u16, b'E' as u16, b'R' as u16,
-    b'S' as u16, b'P' as u16, b'R' as u16, b'O' as u16, b'F' as u16, b'I' as u16, b'L' as u16,
-    b'E' as u16, 0,
-];
-// L"%ALLUSERSPROFILE%"
-static ENV_ALLUSERSPROFILE_PCT: [u16; 18] = [
-    b'%' as u16, b'A' as u16, b'L' as u16, b'L' as u16, b'U' as u16, b'S' as u16, b'E' as u16,
-    b'R' as u16, b'S' as u16, b'P' as u16, b'R' as u16, b'O' as u16, b'F' as u16, b'I' as u16,
-    b'L' as u16, b'E' as u16, b'%' as u16, 0,
-];
-// L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders"
-static SHELL_FOLDERS_KEY: [u16; 65] = [
-    b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16,
-    b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16,
-    b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16, b'i' as u16,
-    b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b'\\' as u16, b'C' as u16,
-    b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'V' as u16,
-    b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'\\' as u16,
-    b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16, b'r' as u16, b'e' as u16,
-    b'r' as u16, b'\\' as u16, b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16,
-    b' ' as u16, b'F' as u16, b'o' as u16, b'l' as u16, b'd' as u16, b'e' as u16, b'r' as u16,
-    b's' as u16, 0,
-];
-// L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders"
-static USER_SHELL_FOLDERS_KEY2: [u16; 70] = [
-    b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16,
-    b'E' as u16, b'\\' as u16, b'M' as u16, b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16,
-    b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16, b'i' as u16,
-    b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b'\\' as u16, b'C' as u16,
-    b'u' as u16, b'r' as u16, b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'V' as u16,
-    b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16, b'n' as u16, b'\\' as u16,
-    b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16, b'r' as u16, b'e' as u16,
-    b'r' as u16, b'\\' as u16, b'U' as u16, b's' as u16, b'e' as u16, b'r' as u16, b' ' as u16,
-    b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16, b' ' as u16, b'F' as u16,
-    b'o' as u16, b'l' as u16, b'd' as u16, b'e' as u16, b'r' as u16, b's' as u16, 0,
+// The C has ONE StandardProfiles table, rooted at HKEY_USERS and HKEY_LOCAL_MACHINE. (This
+// crate once shipped a dead second copy with the wrong roots; keep it at one.)
+static StandardProfiles: [PROFILEPARAMS; 2] = [
+    _PROFILEPARAMS {
+        pszProfileName: w!("Default"),
+        pszProfileRegValue: w!("Default"),
+        pszEnvVar: w!("USERPROFILE"),
+        pszEnvVarProfilePath: w!("%USERPROFILE%"),
+        pFolderList: UserShellFolders.as_ptr(),
+        hRootKey: HKEY_USERS,
+        pszShellFoldersKey: w!(".Default\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders"),
+        pszUserShellFoldersKey: w!(".Default\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders"),
+    },
+    _PROFILEPARAMS {
+        pszProfileName: w!("Public"),
+        pszProfileRegValue: w!("Public"),
+        pszEnvVar: w!("PUBLIC"),
+        pszEnvVarProfilePath: w!("%PUBLIC%"),
+        pFolderList: CommonShellFolders.as_ptr(),
+        hRootKey: HKEY_LOCAL_MACHINE,
+        pszShellFoldersKey: w!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders"),
+        pszUserShellFoldersKey: w!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders"),
+    },
 ];
 
+const CCH: usize = MAX_PATH as usize;
+const CB: usize = CCH * core::mem::size_of::<WCHAR>();
 
-// IDS_PROFILEPATH comes from the prelude (resources.h: 1). A local copy here said 0, a
-// resource that does not exist: LoadStringW failed and GUI setup stopped at
-// "InitializeProfiles() failed" on every install.
-unsafe extern "C" fn CreateStandardProfile(
+/// `base` + `\` + `tail` into `dst`.
+unsafe fn join(dst: &mut [WCHAR; CCH], base: LPCWSTR, tail: LPCWSTR) {
+    StringCbCopyW(dst.as_mut_ptr(), CB, base);
+    StringCbCatW(dst.as_mut_ptr(), CB, w!("\\"));
+    StringCbCatW(dst.as_mut_ptr(), CB, tail);
+}
+
+/// Create `Path` and any missing parents. Upstream's version strips the last component with
+/// PathCchRemoveFileSpec (pathcch_static, which userenv does not link here); for a path this
+/// function builds, that is "cut at the last backslash".
+unsafe fn CreateDirectoryRecursive(Path: LPCWSTR, SecurityAttributes: LPSECURITY_ATTRIBUTES) -> BOOL {
+    if Path.is_null() || *Path == 0 {
+        return FALSE;
+    }
+    if CreateDirectoryW(Path, core::ptr::null_mut()) != 0 {
+        return TRUE;
+    }
+    let Error = GetLastError();
+    if Error == ERROR_ALREADY_EXISTS {
+        return TRUE;
+    }
+    if Error != ERROR_PATH_NOT_FOUND {
+        return FALSE;
+    }
+
+    let mut Parent: [WCHAR; CCH] = [0; CCH];
+    let len = wcslen(Path);
+    if len >= CCH {
+        return FALSE;
+    }
+    core::ptr::copy_nonoverlapping(Path, Parent.as_mut_ptr(), len);
+    let Some(cut) = Parent[..len].iter().rposition(|&c| c == b'\\' as u16) else {
+        return FALSE;
+    };
+    // A root ("C:\") has no parent to create.
+    if cut == 0 || Parent[cut - 1] == b':' as u16 {
+        return FALSE;
+    }
+    Parent[cut] = 0;
+
+    if CreateDirectoryRecursive(Parent.as_ptr(), SecurityAttributes) == 0 {
+        return FALSE;
+    }
+    if CreateDirectoryW(Path, SecurityAttributes) != 0 {
+        return TRUE;
+    }
+    (GetLastError() == ERROR_ALREADY_EXISTS) as BOOL
+}
+
+unsafe fn CreateStandardProfile(
     pszProfilesPath: LPCWSTR,
-    hProfileListKey: HKEY,
+    pszProgramDataPath: LPCWSTR,
     pProfileParams: PPROFILEPARAMS,
 ) -> BOOL {
     let mut Error: LONG;
     let mut lpFolderData: PFOLDERDATA;
     let mut hKey: HKEY = core::ptr::null_mut();
-    let mut dwLength: DWORD;
-    let mut szProfilePath: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
-    let mut szBuffer: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    let mut szProfilePath: [WCHAR; CCH] = [0; CCH];
+    let mut szBuffer: [WCHAR; CCH] = [0; CCH];
 
-    // C: the profile NAME goes into szBuffer, which the path below is built from. Copied into
-    // szProfilePath (overwritten on the next line), szBuffer stayed empty and "Default User" /
-    // "All Users" were created as the profiles directory itself.
-    StringCbCopyW(
-        szBuffer.as_mut_ptr(),
-        core::mem::size_of_val(&szBuffer),
-        (*pProfileParams).pszProfileName,
-    );
+    // The profile NAME goes into szBuffer, which the path is built from (and which
+    // AppendSystemPostfix extends if the directory already exists).
+    StringCbCopyW(szBuffer.as_mut_ptr(), CB, (*pProfileParams).pszProfileName);
+    join(&mut szProfilePath, pszProfilesPath, szBuffer.as_ptr());
 
-    StringCbCopyW(
-        szProfilePath.as_mut_ptr(),
-        core::mem::size_of_val(&szProfilePath),
-        pszProfilesPath,
-    );
-    StringCbCatW(
-        szProfilePath.as_mut_ptr(),
-        core::mem::size_of_val(&szProfilePath),
-        PATH_SEP_BACKSLASH.as_ptr() as LPCWSTR,
-    );
-    StringCbCatW(
-        szProfilePath.as_mut_ptr(),
-        core::mem::size_of_val(&szProfilePath),
-        szBuffer.as_mut_ptr(),
-    );
-
-    if CreateDirectoryW(szProfilePath.as_mut_ptr(), core::ptr::null_mut()) == 0 {
+    // FIXME: Security!
+    if CreateDirectoryW(szProfilePath.as_ptr(), core::ptr::null_mut()) == 0 {
         if GetLastError() != ERROR_ALREADY_EXISTS {
-            DPRINT1!("CreateStandardProfile step 1", GetLastError());
-
-            return FALSE as BOOL;
+            DPRINT1!("CreateStandardProfile: profile directory", GetLastError());
+            return FALSE;
         }
-
-        if AppendSystemPostfix(szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as DWORD) == 0 {
-            DPRINT1!("CreateStandardProfile step 2", GetLastError());
-
-            return FALSE as BOOL;
+        if AppendSystemPostfix(szBuffer.as_mut_ptr(), CCH as DWORD) == 0 {
+            DPRINT1!("CreateStandardProfile: AppendSystemPostfix", GetLastError());
+            return FALSE;
         }
-
-        StringCbCopyW(
-            szProfilePath.as_mut_ptr(),
-            core::mem::size_of_val(&szProfilePath),
-            pszProfilesPath,
-        );
-        StringCbCatW(
-            szProfilePath.as_mut_ptr(),
-            core::mem::size_of_val(&szProfilePath),
-            PATH_SEP_BACKSLASH.as_ptr() as LPCWSTR,
-        );
-        StringCbCatW(
-            szProfilePath.as_mut_ptr(),
-            core::mem::size_of_val(&szProfilePath),
-            szBuffer.as_mut_ptr(),
-        );
-
-        if CreateDirectoryW(szProfilePath.as_mut_ptr(), core::ptr::null_mut()) == 0 {
-            if GetLastError() != ERROR_ALREADY_EXISTS {
-                DPRINT1!("CreateStandardProfile step 3", GetLastError());
-
-                return FALSE as BOOL;
-            }
+        join(&mut szProfilePath, pszProfilesPath, szBuffer.as_ptr());
+        if CreateDirectoryW(szProfilePath.as_ptr(), core::ptr::null_mut()) == 0
+            && GetLastError() != ERROR_ALREADY_EXISTS
+        {
+            DPRINT1!("CreateStandardProfile: postfixed profile directory", GetLastError());
+            return FALSE;
         }
     }
 
-    dwLength = ((wcslen(szBuffer.as_mut_ptr()) + 1) * core::mem::size_of::<WCHAR>()) as DWORD;
-    Error = RegSetValueExW(
-        hProfileListKey,
-        (*pProfileParams).pszProfileRegValue,
-        0,
-        REG_SZ,
-        szBuffer.as_mut_ptr() as LPBYTE,
-        dwLength,
-    );
-    if Error != ERROR_SUCCESS as LONG {
-        SetLastError(Error as DWORD);
-        DPRINT1!("CreateStandardProfile step 4", GetLastError());
+    // USERPROFILE / PUBLIC for the rest of setup. (The DefaultUserProfile / AllUsersProfile
+    // registry values are gone: the ProfileList's Default and Public values hold full paths.)
+    SetEnvironmentVariableW((*pProfileParams).pszEnvVar, szProfilePath.as_ptr());
 
-        return FALSE as BOOL;
-    }
-
-    SetEnvironmentVariableW((*pProfileParams).pszEnvVar, szProfilePath.as_mut_ptr());
+    let folder_base = |f: PFOLDERDATA, profile: &[WCHAR; CCH]| -> LPCWSTR {
+        if (*f).bProgramData != 0 { pszProgramDataPath } else { profile.as_ptr() }
+    };
 
     lpFolderData = (*pProfileParams).pFolderList;
     while !(*lpFolderData).lpValueName.is_null() {
-        StringCbCopyW(
-            szBuffer.as_mut_ptr(),
-            core::mem::size_of_val(&szBuffer),
-            szProfilePath.as_mut_ptr(),
-        );
-        StringCbCatW(
-            szBuffer.as_mut_ptr(),
-            core::mem::size_of_val(&szBuffer),
-            PATH_SEP_BACKSLASH.as_ptr() as LPCWSTR,
-        );
-
-        dwLength = wcslen(szBuffer.as_mut_ptr()) as DWORD;
-        if LoadStringW(
-            hInstance as *mut core::ffi::c_void,
-            (*lpFolderData).uId,
-            szBuffer.as_mut_ptr().add(dwLength as usize),
-            ((core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - dwLength as usize) as i32,
-        ) == 0
+        join(&mut szBuffer, folder_base(lpFolderData, &szProfilePath), (*lpFolderData).lpPath);
+        // FIXME: Security!
+        if CreateDirectoryRecursive(szBuffer.as_ptr(), core::ptr::null_mut()) == 0
+            && GetLastError() != ERROR_ALREADY_EXISTS
         {
-            StringCbCatW(
-                szBuffer.as_mut_ptr(),
-                core::mem::size_of_val(&szBuffer),
-                (*lpFolderData).lpPath,
-            );
+            DPRINT1!("CreateStandardProfile: folder", GetLastError());
+            return FALSE;
         }
-
-        if CreateDirectoryW(szBuffer.as_mut_ptr(), core::ptr::null_mut()) == 0 {
-            if GetLastError() != ERROR_ALREADY_EXISTS {
-                DPRINT1!("CreateStandardProfile step 5", GetLastError());
-
-                return FALSE as BOOL;
-            }
-        }
-
         if (*lpFolderData).bHidden != 0 {
-            SetFileAttributesW(szBuffer.as_mut_ptr(), FILE_ATTRIBUTE_HIDDEN);
+            SetFileAttributesW(szBuffer.as_ptr(), FILE_ATTRIBUTE_HIDDEN);
         }
-
-        lpFolderData = lpFolderData.offset(1);
+        lpFolderData = lpFolderData.add(1);
     }
 
-    Error = RegOpenKeyExW(
-        (*pProfileParams).hRootKey,
-        (*pProfileParams).pszShellFoldersKey,
-        0,
-        KEY_SET_VALUE,
-        &mut hKey,
-    );
+    // Shell Folders: expanded paths, REG_SZ.
+    Error = RegOpenKeyExW((*pProfileParams).hRootKey, (*pProfileParams).pszShellFoldersKey, 0, KEY_SET_VALUE, &mut hKey);
     if Error != ERROR_SUCCESS as LONG {
         SetLastError(Error as DWORD);
-        DPRINT1!("CreateStandardProfile step 6", GetLastError());
-
-        return FALSE as BOOL;
+        DPRINT1!("CreateStandardProfile: open Shell Folders", Error);
+        return FALSE;
     }
-
     lpFolderData = (*pProfileParams).pFolderList;
     while !(*lpFolderData).lpValueName.is_null() {
         if (*lpFolderData).bShellFolder != 0 {
-            StringCbCopyW(
-                szBuffer.as_mut_ptr(),
-                core::mem::size_of_val(&szBuffer),
-                szProfilePath.as_mut_ptr(),
-            );
-            StringCbCatW(
-                szBuffer.as_mut_ptr(),
-                core::mem::size_of_val(&szBuffer),
-                PATH_SEP_BACKSLASH.as_ptr() as LPCWSTR,
-            );
-
-            dwLength = wcslen(szBuffer.as_mut_ptr()) as DWORD;
-            if LoadStringW(
-                hInstance as *mut core::ffi::c_void,
-                (*lpFolderData).uId,
-                szBuffer.as_mut_ptr().add(dwLength as usize),
-                ((core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - dwLength as usize) as i32,
-            ) == 0
-            {
-                StringCbCatW(
-                    szBuffer.as_mut_ptr(),
-                    core::mem::size_of_val(&szBuffer),
-                    (*lpFolderData).lpPath,
-                );
-            }
-
-            dwLength = ((wcslen(szBuffer.as_mut_ptr()) + 1) * core::mem::size_of::<WCHAR>()) as DWORD;
-            Error = RegSetValueExW(
-                hKey,
-                (*lpFolderData).lpValueName,
-                0,
-                REG_SZ,
-                szBuffer.as_mut_ptr() as LPBYTE,
-                dwLength,
-            );
+            join(&mut szBuffer, folder_base(lpFolderData, &szProfilePath), (*lpFolderData).lpPath);
+            let cb = ((wcslen(szBuffer.as_ptr()) + 1) * core::mem::size_of::<WCHAR>()) as DWORD;
+            Error = RegSetValueExW(hKey, (*lpFolderData).lpValueName, 0, REG_SZ, szBuffer.as_ptr() as *const BYTE, cb);
             if Error != ERROR_SUCCESS as LONG {
                 RegCloseKey(hKey);
                 SetLastError(Error as DWORD);
-                DPRINT1!("CreateStandardProfile step 7", GetLastError());
-
-                return FALSE as BOOL;
+                DPRINT1!("CreateStandardProfile: set Shell Folders value", Error);
+                return FALSE;
             }
         }
-
-        lpFolderData = lpFolderData.offset(1);
+        lpFolderData = lpFolderData.add(1);
     }
-
     RegCloseKey(hKey);
 
-    Error = RegOpenKeyExW(
-        (*pProfileParams).hRootKey,
-        (*pProfileParams).pszUserShellFoldersKey,
-        0,
-        KEY_SET_VALUE,
-        &mut hKey,
-    );
+    // User Shell Folders: %USERPROFILE% / %PUBLIC% / %ProgramData% relative, REG_EXPAND_SZ.
+    Error = RegOpenKeyExW((*pProfileParams).hRootKey, (*pProfileParams).pszUserShellFoldersKey, 0, KEY_SET_VALUE, &mut hKey);
     if Error != ERROR_SUCCESS as LONG {
         SetLastError(Error as DWORD);
-        DPRINT1!("CreateStandardProfile step 8", GetLastError());
-
-        return FALSE as BOOL;
+        DPRINT1!("CreateStandardProfile: open User Shell Folders", Error);
+        return FALSE;
     }
-
     lpFolderData = (*pProfileParams).pFolderList;
     while !(*lpFolderData).lpValueName.is_null() {
         if (*lpFolderData).bUserShellFolder != 0 {
-            StringCbCopyW(
-                szBuffer.as_mut_ptr(),
-                core::mem::size_of_val(&szBuffer),
-                (*pProfileParams).pszEnvVarProfilePath,
-            );
-            StringCbCatW(
-                szBuffer.as_mut_ptr(),
-                core::mem::size_of_val(&szBuffer),
-                PATH_SEP_BACKSLASH.as_ptr() as LPCWSTR,
-            );
-
-            dwLength = wcslen(szBuffer.as_mut_ptr()) as DWORD;
-            if LoadStringW(
-                hInstance as *mut core::ffi::c_void,
-                (*lpFolderData).uId,
-                szBuffer.as_mut_ptr().add(dwLength as usize),
-                ((core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) - dwLength as usize) as i32,
-            ) == 0
-            {
-                StringCbCatW(
-                    szBuffer.as_mut_ptr(),
-                    core::mem::size_of_val(&szBuffer),
-                    (*lpFolderData).lpPath,
-                );
-            }
-
-            dwLength = ((wcslen(szBuffer.as_mut_ptr()) + 1) * core::mem::size_of::<WCHAR>()) as DWORD;
-            Error = RegSetValueExW(
-                hKey,
-                (*lpFolderData).lpValueName,
-                0,
-                REG_EXPAND_SZ,
-                szBuffer.as_mut_ptr() as LPBYTE,
-                dwLength,
-            );
+            let base = if (*lpFolderData).bProgramData != 0 { w!("%ProgramData%") } else { (*pProfileParams).pszEnvVarProfilePath };
+            join(&mut szBuffer, base, (*lpFolderData).lpPath);
+            let cb = ((wcslen(szBuffer.as_ptr()) + 1) * core::mem::size_of::<WCHAR>()) as DWORD;
+            Error = RegSetValueExW(hKey, (*lpFolderData).lpValueName, 0, REG_EXPAND_SZ, szBuffer.as_ptr() as *const BYTE, cb);
             if Error != ERROR_SUCCESS as LONG {
                 RegCloseKey(hKey);
                 SetLastError(Error as DWORD);
-                DPRINT1!("CreateStandardProfile step 9", GetLastError());
-
-                return FALSE as BOOL;
+                DPRINT1!("CreateStandardProfile: set User Shell Folders value", Error);
+                return FALSE;
             }
         }
-
-        lpFolderData = lpFolderData.offset(1);
+        lpFolderData = lpFolderData.add(1);
     }
-
     RegCloseKey(hKey);
 
-    TRUE as BOOL
+    TRUE
+}
+
+/// Expand `unexpanded` into `expanded`, create it, and store the unexpanded form as `value`
+/// under the ProfileList key (REG_EXPAND_SZ).
+unsafe fn create_root(hKey: HKEY, value: LPCWSTR, unexpanded: LPCWSTR, expanded: &mut [WCHAR; CCH], hidden: bool) -> BOOL {
+    if ExpandEnvironmentStringsW(unexpanded, expanded.as_mut_ptr(), CCH as DWORD) == 0 {
+        DPRINT1!("InitializeProfiles: ExpandEnvironmentStringsW", GetLastError());
+        return FALSE;
+    }
+    // FIXME: Security!
+    if CreateDirectoryW(expanded.as_ptr(), core::ptr::null_mut()) == 0 && GetLastError() != ERROR_ALREADY_EXISTS {
+        DPRINT1!("InitializeProfiles: CreateDirectoryW", GetLastError());
+        return FALSE;
+    }
+    if hidden {
+        SetFileAttributesW(expanded.as_ptr(), FILE_ATTRIBUTE_HIDDEN);
+    }
+    let cb = ((wcslen(unexpanded) + 1) * core::mem::size_of::<WCHAR>()) as DWORD;
+    let Error = RegSetValueExW(hKey, value, 0, REG_EXPAND_SZ, unexpanded as *const BYTE, cb);
+    if Error != ERROR_SUCCESS as LONG {
+        DPRINT1!("InitializeProfiles: RegSetValueExW", Error);
+        SetLastError(Error as DWORD);
+        return FALSE;
+    }
+    TRUE
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
-    let mut Error: LONG = 0;
     let mut hKey: HKEY = core::ptr::null_mut();
-    let mut dwLength: DWORD = 0;
-    let mut szProfilesPath: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
-    let mut szBuffer: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    let mut szProfilesPath: [WCHAR; CCH] = [0; CCH];
+    let mut szProgramDataPath: [WCHAR; CCH] = [0; CCH];
 
-    // The unexpanded path goes into szBuffer (stored in the registry as REG_EXPAND_SZ) and is
-    // expanded INTO szProfilesPath below. Loaded into szProfilesPath instead, the expansion of
-    // the still-empty szBuffer overwrote it with "", CreateDirectoryW("") failed, and GUI setup
-    // stopped at "InitializeProfiles() failed / Rebooting now!" on every install.
-    if LoadStringW(
-        hInstance as *mut core::ffi::c_void,
-        IDS_PROFILEPATH,
-        szBuffer.as_mut_ptr(),
-        MAX_PATH as core::ffi::c_int,
-    ) == 0
-    {
-        DPRINT1!("LoadStringW(IDS_PROFILEPATH)", GetLastError());
-        return 0;
-    }
-
-    Error = RegOpenKeyExW(
+    let Error = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        PROFILE_LIST_KEY.as_ptr() as LPCWSTR,
+        w!("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList"),
         0,
         KEY_SET_VALUE,
         &mut hKey,
     );
     if Error != ERROR_SUCCESS as LONG {
-        DPRINT1!("RegOpenKeyExW(ProfileList)", Error);
+        DPRINT1!("InitializeProfiles: RegOpenKeyExW(ProfileList)", Error);
         SetLastError(Error as DWORD);
-        return 0;
+        return FALSE;
     }
 
-    if ExpandEnvironmentStringsW(
-        szBuffer.as_mut_ptr(),
-        szProfilesPath.as_mut_ptr(),
-        MAX_PATH,
-    ) == 0
-    {
-        DPRINT1!("ExpandEnvironmentStringsW", GetLastError());
-        RegCloseKey(hKey);
-        return 0;
-    }
-
-    if CreateDirectoryW(szProfilesPath.as_mut_ptr(), core::ptr::null_mut()) == 0 {
-        if GetLastError() != ERROR_ALREADY_EXISTS {
-            DPRINT1!("CreateDirectoryW(profiles directory)", GetLastError());
-            RegCloseKey(hKey);
-            return 0;
+    // The fixed Vista roots. Before f0a83320d79 the profiles root was the localized
+    // IDS_PROFILEPATH string; that resource is gone, and loading it is what failed.
+    let ok = 'init: {
+        if create_root(hKey, w!("ProgramData"), w!("%SystemDrive%\\ProgramData"), &mut szProgramDataPath, true) == 0
+            || create_root(hKey, w!("ProfilesDirectory"), w!("%SystemDrive%\\Users"), &mut szProfilesPath, false) == 0
+        {
+            break 'init false;
         }
-    }
-
-    dwLength = ((wcslen(szBuffer.as_mut_ptr()) + 1) * core::mem::size_of::<WCHAR>()) as DWORD;
-    Error = RegSetValueExW(
-        hKey,
-        REG_PROFILES_DIRECTORY.as_ptr() as LPCWSTR,
-        0,
-        REG_EXPAND_SZ,
-        szBuffer.as_mut_ptr() as *const BYTE,
-        dwLength,
-    );
-    if Error != ERROR_SUCCESS as LONG {
-        DPRINT1!("RegSetValueExW(ProfilesDirectory)", Error);
-        RegCloseKey(hKey);
-        SetLastError(Error as DWORD);
-        return 0;
-    }
-
-    if CreateStandardProfile(
-        szProfilesPath.as_mut_ptr(),
-        hKey,
-        &mut StandardProfiles[0],
-    ) == 0
-    {
-        DPRINT1!("CreateStandardProfile(Default User)", GetLastError());
-        RegCloseKey(hKey);
-        return 0;
-    }
-
-    if CreateStandardProfile(
-        szProfilesPath.as_mut_ptr(),
-        hKey,
-        &mut StandardProfiles[1],
-    ) == 0
-    {
-        DPRINT1!("CreateStandardProfile(All Users)", GetLastError());
-        RegCloseKey(hKey);
-        return 0;
-    }
+        if CreateStandardProfile(szProfilesPath.as_ptr(), szProgramDataPath.as_ptr(), &StandardProfiles[0]) == 0 {
+            DPRINT1!("CreateStandardProfile(Default)", GetLastError());
+            break 'init false;
+        }
+        if CreateStandardProfile(szProfilesPath.as_ptr(), szProgramDataPath.as_ptr(), &StandardProfiles[1]) == 0 {
+            DPRINT1!("CreateStandardProfile(Public)", GetLastError());
+            break 'init false;
+        }
+        true
+    };
 
     RegCloseKey(hKey);
-
-    return 1;
+    ok as BOOL
 }
-#[no_mangle]
-pub unsafe extern "C" fn UpdateUsersShellFolderSettings(
-    lpUserProfilePath: LPCWSTR,
-    hUserKey: HKEY,
-) -> BOOL {
-    let mut szBuffer: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
-    let mut dwLength: u32;
-    let mut lpFolderData: *mut _FOLDERDATA;
-    let mut hFoldersKey: HKEY = core::ptr::null_mut();
-    let mut Error: i32;
 
-    // L"SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders"
-    static SHELL_FOLDERS_KEY_BUF: [u16; 65] = [
-        b'S' as u16, b'O' as u16, b'F' as u16, b'T' as u16, b'W' as u16, b'A' as u16, b'R' as u16, b'E' as u16, b'\\' as u16, b'M' as u16,
-        b'i' as u16, b'c' as u16, b'r' as u16, b'o' as u16, b's' as u16, b'o' as u16, b'f' as u16, b't' as u16, b'\\' as u16, b'W' as u16,
-        b'i' as u16, b'n' as u16, b'd' as u16, b'o' as u16, b'w' as u16, b's' as u16, b'\\' as u16, b'C' as u16, b'u' as u16, b'r' as u16,
-        b'r' as u16, b'e' as u16, b'n' as u16, b't' as u16, b'V' as u16, b'e' as u16, b'r' as u16, b's' as u16, b'i' as u16, b'o' as u16,
-        b'n' as u16, b'\\' as u16, b'E' as u16, b'x' as u16, b'p' as u16, b'l' as u16, b'o' as u16, b'r' as u16, b'e' as u16, b'r' as u16,
-        b'\\' as u16, b'S' as u16, b'h' as u16, b'e' as u16, b'l' as u16, b'l' as u16, b' ' as u16, b'F' as u16, b'o' as u16, b'l' as u16,
-        b'd' as u16, b'e' as u16, b'r' as u16, b's' as u16, 0,
-    ];
-    Error = RegOpenKeyExW(
+#[no_mangle]
+pub unsafe extern "C" fn UpdateUsersShellFolderSettings(lpUserProfilePath: LPCWSTR, hUserKey: HKEY) -> BOOL {
+    let mut szBuffer: [WCHAR; CCH] = [0; CCH];
+    let mut hFoldersKey: HKEY = core::ptr::null_mut();
+
+    let mut Error = RegOpenKeyExW(
         hUserKey,
-        SHELL_FOLDERS_KEY_BUF.as_ptr() as *const u16 as LPCWSTR,
+        w!("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders"),
         0,
         KEY_SET_VALUE,
         &mut hFoldersKey,
-    ) as i32;
-    if Error != ERROR_SUCCESS as i32 {
-        SetLastError(Error as u32);
-        return 0;
+    );
+    if Error != ERROR_SUCCESS as LONG {
+        SetLastError(Error as DWORD);
+        return FALSE;
     }
 
-    lpFolderData = core::ptr::addr_of_mut!(UserShellFolders[0]);
+    let mut lpFolderData: PFOLDERDATA = UserShellFolders.as_ptr();
     while !(*lpFolderData).lpValueName.is_null() {
         if (*lpFolderData).bShellFolder != 0 {
-            StringCbCopyW(
-                core::ptr::addr_of_mut!(szBuffer) as *mut u16,
-                core::mem::size_of_val(&szBuffer),
-                lpUserProfilePath,
-            );
-            // L"\"
-            static BACKSLASH_W: [u16; 2] = [b'\\' as u16, 0];
-            StringCbCatW(
-                core::ptr::addr_of_mut!(szBuffer) as *mut u16,
-                core::mem::size_of_val(&szBuffer),
-                BACKSLASH_W.as_ptr() as *const u16,
-            );
-
-            dwLength = wcslen(core::ptr::addr_of_mut!(szBuffer) as *mut u16) as u32;
-            if LoadStringW(
-                hInstance as *mut core::ffi::c_void,
-                (*lpFolderData).uId,
-                (core::ptr::addr_of_mut!(szBuffer) as *mut u16).offset(dwLength as isize),
-                (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<u16>() - dwLength as usize) as i32,
-            ) == 0
-            {
-                StringCbCatW(
-                    core::ptr::addr_of_mut!(szBuffer) as *mut u16,
-                    core::mem::size_of_val(&szBuffer),
-                    (*lpFolderData).lpPath,
-                );
-            }
-
-            dwLength = ((wcslen(core::ptr::addr_of_mut!(szBuffer) as *mut u16) + 1) * core::mem::size_of::<u16>()) as u32;
-            Error = RegSetValueExW(
-                hFoldersKey,
-                (*lpFolderData).lpValueName,
-                0,
-                REG_SZ,
-                core::ptr::addr_of_mut!(szBuffer) as *mut u16 as LPBYTE,
-                dwLength,
-            ) as i32;
-            if Error != ERROR_SUCCESS as i32 {
+            join(&mut szBuffer, lpUserProfilePath, (*lpFolderData).lpPath);
+            let cb = ((wcslen(szBuffer.as_ptr()) + 1) * core::mem::size_of::<WCHAR>()) as DWORD;
+            Error = RegSetValueExW(hFoldersKey, (*lpFolderData).lpValueName, 0, REG_SZ, szBuffer.as_ptr() as *const BYTE, cb);
+            if Error != ERROR_SUCCESS as LONG {
                 RegCloseKey(hFoldersKey);
-                SetLastError(Error as u32);
-                return 0;
+                SetLastError(Error as DWORD);
+                return FALSE;
             }
         }
-
-        lpFolderData = lpFolderData.offset(1);
+        lpFolderData = lpFolderData.add(1);
     }
 
     RegCloseKey(hFoldersKey);
-
-    return 1;
+    TRUE
 }
-// enforce_import_abi: moved 1 import decl(s) into the extern block their
-// exporting DLL's .spec requires: wcslen->C.
-// The CRT is cdecl, Win32 is stdcall, and the C source does not say which is which —
-// a wrong guess is a silent i386 stack walk on every call. The .spec is the truth.
-extern "C" {
-    fn wcslen(s: LPCWSTR) -> usize;
-}
-
-
 
 // ============================================================================
-// ORIGINAL C SOURCE
+// ORIGINAL C SOURCE (dll/win32/userenv/setup.c, upstream f0a83320d79)
 // ============================================================================
 //
 // /*
@@ -926,50 +438,59 @@ extern "C" {
 // {
 //     LPWSTR lpValueName;
 //     LPWSTR lpPath;
-//     UINT uId;
 //     BOOL bHidden;
 //     BOOL bShellFolder;
 //     BOOL bUserShellFolder;
+//     BOOL bProgramData;
 // } FOLDERDATA, *PFOLDERDATA;
 //
 //
 // static FOLDERDATA
 // UserShellFolders[] =
 // {
-//     {L"AppData", L"Application Data", IDS_APPDATA, TRUE, TRUE, TRUE},
-//     {L"Desktop", L"Desktop", IDS_DESKTOP, FALSE, TRUE, TRUE},
-//     {L"Favorites", L"Favorites", IDS_FAVORITES, FALSE, TRUE, TRUE},
-//     {L"Personal", L"My Documents", IDS_MYDOCUMENTS, FALSE, TRUE, TRUE},
-//     {L"NetHood", L"NetHood", IDS_NETHOOD, TRUE, TRUE, TRUE},
-//     {L"PrintHood", L"PrintHood", IDS_PRINTHOOD, TRUE, TRUE, TRUE},
-//     {L"Recent", L"Recent", IDS_RECENT, TRUE, TRUE, TRUE},
-//     {L"SendTo", L"SendTo", IDS_SENDTO, FALSE, TRUE, TRUE},
-//     {L"Templates", L"Templates", IDS_TEMPLATES, FALSE, TRUE, TRUE},
-//     {L"Start Menu", L"Start Menu", IDS_STARTMENU, FALSE, TRUE, TRUE},
-//     {L"Programs", L"Start Menu\\Programs", IDS_PROGRAMS, FALSE, TRUE, TRUE},
-//     {L"Startup", L"Start Menu\\Programs\\Startup", IDS_STARTUP, FALSE, TRUE, TRUE},
-//     {L"Local Settings", L"Local Settings", IDS_LOCALSETTINGS, TRUE, TRUE, TRUE},
-//     {L"Local AppData", L"Local Settings\\Application Data", IDS_LOCALAPPDATA, TRUE, TRUE, TRUE},
-//     {L"Temp", L"Local Settings\\Temp", IDS_TEMP, FALSE, FALSE, FALSE},
-//     {L"Cache", L"Local Settings\\Temporary Internet Files", IDS_CACHE, FALSE, TRUE, TRUE},
-//     {L"History", L"Local Settings\\History", IDS_HISTORY, FALSE, TRUE, TRUE},
-//     {L"Cookies", L"Cookies", IDS_COOKIES, FALSE, TRUE, TRUE},
-//     {NULL, NULL, -1, FALSE, FALSE, FALSE}
+//     {L"AppData Root", L"AppData", TRUE, FALSE, FALSE, FALSE},
+//     {L"AppData", L"AppData\\Roaming", FALSE, TRUE, TRUE, FALSE},
+//     {L"Desktop", L"Desktop", FALSE, TRUE, TRUE, FALSE},
+//     {L"{374DE290-123F-4565-9164-39C4925E467B}", L"Downloads", FALSE, TRUE, TRUE, FALSE},
+//     {L"Favorites", L"Favorites", FALSE, TRUE, TRUE, FALSE},
+//     {L"Personal", L"Documents", FALSE, TRUE, TRUE, FALSE},
+//     {L"My Music", L"Music", FALSE, TRUE, TRUE, FALSE},
+//     {L"My Pictures", L"Music", FALSE, TRUE, TRUE, FALSE},
+//     {L"My Video", L"Videos", FALSE, TRUE, TRUE, FALSE},
+//     {L"NetHood", L"AppData\\Roaming\\Microsoft\\Windows\\Network Shortcuts", TRUE, TRUE, TRUE, FALSE},
+//     {L"PrintHood", L"AppData\\Roaming\\Microsoft\\Windows\\Printer Shortcuts", TRUE, TRUE, TRUE, FALSE},
+//     {L"Recent", L"AppData\\Roaming\\Microsoft\\Windows\\Recent", TRUE, TRUE, TRUE, FALSE},
+//     {L"SendTo", L"AppData\\Roaming\\Microsoft\\Windows\\SendTo", FALSE, TRUE, TRUE, FALSE},
+//     {L"CD Burning", L"AppData\\Roaming\\Microsoft\\Windows\\Burn\\Burn", FALSE, TRUE, TRUE, FALSE},
+//     {L"Templates", L"Templates", FALSE, TRUE, TRUE, FALSE},
+//     {L"Start Menu", L"AppData\\Roaming\\Microsoft\\Windows\\Start Menu", FALSE, TRUE, TRUE, FALSE},
+//     {L"Programs", L"AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs", FALSE, TRUE, TRUE, FALSE},
+//     {L"Administrative Tools", L"AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Administrative Tools", FALSE, TRUE, TRUE, FALSE},
+//     {L"Startup", L"AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup", FALSE, TRUE, TRUE, FALSE},
+//     {L"Local AppData", L"AppData\\Local", FALSE, TRUE, TRUE, FALSE},
+//     {L"{A520A1A4-1780-4FF6-BD18-167343C5AF16}", L"AppData\\LocalLow", FALSE, FALSE, FALSE, FALSE},
+//     {L"Temp", L"Appdata\\Local\\Temp", FALSE, FALSE, FALSE, FALSE},
+//     {L"Cache", L"Appdata\\Local\\Microsoft\\Windows\\INetCache", FALSE, TRUE, TRUE, FALSE},
+//     {L"History", L"AppData\\Local\\Microsoft\\Windows\\History", FALSE, TRUE, TRUE, FALSE},
+//     {L"Cookies", L"AppData\\Local\\Microsoft\\Windows\\INetCookies", FALSE, TRUE, TRUE, FALSE},
+//     {NULL, NULL, FALSE, FALSE, FALSE, FALSE}
 // };
 //
 //
 // static FOLDERDATA
 // CommonShellFolders[] =
 // {
-//     {L"Common AppData", L"Application Data", IDS_APPDATA, TRUE, TRUE, TRUE},
-//     {L"Common Desktop", L"Desktop", IDS_DESKTOP, FALSE, TRUE, TRUE},
-//     {L"Common Favorites", L"Favorites", IDS_FAVORITES, FALSE, TRUE, TRUE},
-//     {L"Common Documents", L"My Documents", IDS_MYDOCUMENTS, FALSE, TRUE, TRUE},
-//     {L"Common Templates", L"Templates", IDS_TEMPLATES, TRUE, TRUE, TRUE},
-//     {L"Common Start Menu", L"Start Menu", IDS_STARTMENU, FALSE, TRUE, TRUE},
-//     {L"Common Programs", L"Start Menu\\Programs", IDS_PROGRAMS, FALSE, TRUE, TRUE},
-//     {L"Common Startup", L"Start Menu\\Programs\\Startup", IDS_STARTUP, FALSE, TRUE, TRUE},
-//     {NULL, NULL, -1, FALSE, FALSE, FALSE}
+//     {L"{3D644C9B-1FB8-4f30-9B45-F670235F79C0}", L"Downloads", FALSE, TRUE, TRUE, FALSE},
+//     {L"Common Desktop", L"Desktop", FALSE, TRUE, TRUE, FALSE},
+//     {L"Common Documents", L"Documents", FALSE, TRUE, TRUE, FALSE},
+//     {L"Common Templates", L"Microsoft\\Windows\\Templates", TRUE, TRUE, TRUE, TRUE},
+//     {L"Common Start Menu", L"Microsoft\\Windows\\Start Menu", FALSE, TRUE, TRUE, TRUE},
+//     {L"Common Programs", L"Microsoft\\Windows\\Start Menu\\Programs", FALSE, TRUE, TRUE, TRUE},
+//     {L"Common Startup", L"Microsoft\\Windows\\Start Menu\\Programs\\Startup", FALSE, TRUE, TRUE, TRUE},
+//     {L"CommonMusic", L"Music", FALSE, TRUE, TRUE, FALSE},
+//     {L"CommonPictures", L"Pictures", FALSE, TRUE, TRUE, FALSE},
+//     {L"CommonVideo", L"Videos", FALSE, TRUE, TRUE, FALSE},
+//     {NULL, NULL, FALSE, FALSE, FALSE, FALSE}
 // };
 //
 //
@@ -990,7 +511,7 @@ extern "C" {
 // StandardProfiles[] =
 // {
 //     {
-//         L"Default User", L"DefaultUserProfile",
+//         L"Default", L"Default",
 //         L"USERPROFILE", L"%USERPROFILE%",
 //         UserShellFolders,
 //         HKEY_USERS,
@@ -998,8 +519,8 @@ extern "C" {
 //         L".Default\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders"
 //     },
 //     {
-//         L"All Users", L"AllUsersProfile",
-//         L"ALLUSERSPROFILE", L"%ALLUSERSPROFILE%",
+//         L"Public", L"Public",
+//         L"PUBLIC", L"%PUBLIC%",
 //         CommonShellFolders,
 //         HKEY_LOCAL_MACHINE,
 //         L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Shell Folders",
@@ -1007,12 +528,53 @@ extern "C" {
 //     },
 // };
 //
+// static BOOL
+// CreateDirectoryRecursive(
+//     _In_ PCWSTR Path,
+//     _In_ LPSECURITY_ATTRIBUTES SecurityAttributes)
+// {
+//     WCHAR Parent[MAX_PATH];
+//     DWORD Error;
+//
+//     if (!Path || !*Path)
+//         return FALSE;
+//
+//     if (CreateDirectoryW(Path, NULL))
+//         return TRUE;
+//
+//     Error = GetLastError();
+//
+//     if (Error == ERROR_ALREADY_EXISTS)
+//         return TRUE;
+//
+//     if (Error != ERROR_PATH_NOT_FOUND)
+//         return FALSE;
+//
+//     if (FAILED(StringCchCopyW(Parent, ARRAYSIZE(Parent), Path)))
+//         return FALSE;
+//
+//     if (FAILED(PathCchRemoveFileSpec(Parent, ARRAYSIZE(Parent))))
+//         return FALSE;
+//
+//     if (!Parent[0] || !lstrcmpW(Parent, Path))
+//         return FALSE;
+//
+//     if (!CreateDirectoryRecursive(Parent, SecurityAttributes))
+//         return FALSE;
+//
+//     if (CreateDirectoryW(Path, SecurityAttributes))
+//         return TRUE;
+//
+//     return GetLastError() == ERROR_ALREADY_EXISTS;
+// }
 //
 // static
 // BOOL
-// CreateStandardProfile(IN LPCWSTR pszProfilesPath,
-//                       IN HKEY hProfileListKey,
-//                       IN PPROFILEPARAMS pProfileParams)
+// CreateStandardProfile(
+//     _In_ LPCWSTR pszProfilesPath,
+//     _In_ LPCWSTR pszProgramDataPath,
+//     _In_ HKEY hProfileListKey,
+//     _In_ PPROFILEPARAMS pProfileParams)
 // {
 //     LONG Error;
 //     PFOLDERDATA lpFolderData;
@@ -1065,22 +627,6 @@ extern "C" {
 //         }
 //     }
 //
-//     /* Set 'DefaultUserProfile' / 'AllUsersProfile' value */
-//     /* Store the default user / all users profile path in the registry */
-//     dwLength = (wcslen(szBuffer) + 1) * sizeof(WCHAR);
-//     Error = RegSetValueExW(hProfileListKey,
-//                            pProfileParams->pszProfileRegValue,
-//                            0,
-//                            REG_SZ,
-//                            (LPBYTE)szBuffer,
-//                            dwLength);
-//     if (Error != ERROR_SUCCESS)
-//     {
-//         DPRINT1("Error: %lu\n", Error);
-//         SetLastError((DWORD)Error);
-//         return FALSE;
-//     }
-//
 //     /* Set 'Default User' / 'All Users' profile */
 //     SetEnvironmentVariableW(pProfileParams->pszEnvVar, szProfilePath);
 //
@@ -1095,26 +641,24 @@ extern "C" {
 //     lpFolderData = pProfileParams->pFolderList;
 //     while (lpFolderData->lpValueName != NULL)
 //     {
-//         StringCbCopyW(szBuffer, sizeof(szBuffer), szProfilePath);
-//         StringCbCatW(szBuffer, sizeof(szBuffer), L"\\");
-//
-//         /* Append the folder name */
-//         dwLength = wcslen(szBuffer);
-//         if (!LoadStringW(hInstance,
-//                          lpFolderData->uId,
-//                          &szBuffer[dwLength],
-//                          ARRAYSIZE(szBuffer) - dwLength))
+//         if (lpFolderData->bProgramData)
 //         {
-//             /* Use the default name instead */
-//             StringCbCatW(szBuffer, sizeof(szBuffer), lpFolderData->lpPath);
+//             StringCbCopyW(szBuffer, sizeof(szBuffer), pszProgramDataPath);
+//         }
+//         else
+//         {
+//             StringCbCopyW(szBuffer, sizeof(szBuffer), szProfilePath);
 //         }
 //
+//         StringCbCatW(szBuffer, sizeof(szBuffer), L"\\");
+//         StringCbCatW(szBuffer, sizeof(szBuffer), lpFolderData->lpPath);
+//
 //         // FIXME: Security!
-//         if (!CreateDirectoryW(szBuffer, NULL))
+//         if (!CreateDirectoryRecursive(szBuffer, NULL))
 //         {
 //             if (GetLastError() != ERROR_ALREADY_EXISTS)
 //             {
-//                 DPRINT1("Error: %lu\n", GetLastError());
+//                 DPRINT1("Failed to create %ws, error: %lu\n", szBuffer, GetLastError());
 //                 return FALSE;
 //             }
 //         }
@@ -1146,19 +690,17 @@ extern "C" {
 //     {
 //         if (lpFolderData->bShellFolder)
 //         {
-//             StringCbCopyW(szBuffer, sizeof(szBuffer), szProfilePath);
-//             StringCbCatW(szBuffer, sizeof(szBuffer), L"\\");
-//
-//             /* Append the folder name */
-//             dwLength = wcslen(szBuffer);
-//             if (!LoadStringW(hInstance,
-//                              lpFolderData->uId,
-//                              &szBuffer[dwLength],
-//                              ARRAYSIZE(szBuffer) - dwLength))
+//             if (lpFolderData->bProgramData)
 //             {
-//                 /* Use the default name instead */
-//                 StringCbCatW(szBuffer, sizeof(szBuffer), lpFolderData->lpPath);
+//                 StringCbCopyW(szBuffer, sizeof(szBuffer), pszProgramDataPath);
 //             }
+//             else
+//             {
+//                 StringCbCopyW(szBuffer, sizeof(szBuffer), szProfilePath);
+//             }
+//             
+//             StringCbCatW(szBuffer, sizeof(szBuffer), L"\\");
+//             StringCbCatW(szBuffer, sizeof(szBuffer), lpFolderData->lpPath);
 //
 //             dwLength = (wcslen(szBuffer) + 1) * sizeof(WCHAR);
 //             Error = RegSetValueExW(hKey,
@@ -1199,19 +741,12 @@ extern "C" {
 //     {
 //         if (lpFolderData->bUserShellFolder)
 //         {
-//             StringCbCopyW(szBuffer, sizeof(szBuffer), pProfileParams->pszEnvVarProfilePath);
+//             if (lpFolderData->bProgramData)
+//                 StringCbCopyW(szBuffer, sizeof(szBuffer), L"%ProgramData%");
+//             else
+//                 StringCbCopyW(szBuffer, sizeof(szBuffer), pProfileParams->pszEnvVarProfilePath);
 //             StringCbCatW(szBuffer, sizeof(szBuffer), L"\\");
-//
-//             /* Append the folder name */
-//             dwLength = wcslen(szBuffer);
-//             if (!LoadStringW(hInstance,
-//                              lpFolderData->uId,
-//                              &szBuffer[dwLength],
-//                              ARRAYSIZE(szBuffer) - dwLength))
-//             {
-//                 /* Use the default name instead */
-//                 StringCbCatW(szBuffer, sizeof(szBuffer), lpFolderData->lpPath);
-//             }
+//             StringCbCatW(szBuffer, sizeof(szBuffer), lpFolderData->lpPath);
 //
 //             dwLength = (wcslen(szBuffer) + 1) * sizeof(WCHAR);
 //             Error = RegSetValueExW(hKey,
@@ -1246,19 +781,10 @@ extern "C" {
 //     HKEY hKey;
 //     DWORD dwLength;
 //     WCHAR szProfilesPath[MAX_PATH];
+//     WCHAR szProgramDataPath[MAX_PATH];
 //     WCHAR szBuffer[MAX_PATH];
 //
 //     DPRINT("InitializeProfiles()\n");
-//
-//     /* Load profiles directory path */
-//     if (!LoadStringW(hInstance,
-//                      IDS_PROFILEPATH,
-//                      szBuffer,
-//                      ARRAYSIZE(szBuffer)))
-//     {
-//         DPRINT1("Error: %lu\n", GetLastError());
-//         return FALSE;
-//     }
 //
 //     Error = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
 //                           L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList",
@@ -1272,7 +798,45 @@ extern "C" {
 //         return FALSE;
 //     }
 //
-//     /* Expand it */
+//     /* Create ProgramData directory */
+//     StringCchCopyW(szBuffer, _countof(szBuffer), L"%SystemDrive%\\ProgramData");
+//     if (!ExpandEnvironmentStringsW(szBuffer,
+//                                    szProgramDataPath,
+//                                    ARRAYSIZE(szProgramDataPath)))
+//     {
+//         DPRINT1("Error: %lu\n", GetLastError());
+//         RegCloseKey(hKey);
+//         return FALSE;
+//     }
+//     if (!CreateDirectoryW(szProgramDataPath, NULL))
+//     {
+//         if (GetLastError() != ERROR_ALREADY_EXISTS)
+//         {
+//             DPRINT1("Error: %lu\n", GetLastError());
+//             RegCloseKey(hKey);
+//             return FALSE;
+//         }
+//     }
+//     SetFileAttributesW(szProgramDataPath, FILE_ATTRIBUTE_HIDDEN);
+//
+//     /* Store the profiles directory path (unexpanded) in the registry */
+//     dwLength = (wcslen(szBuffer) + 1) * sizeof(WCHAR);
+//     Error = RegSetValueExW(hKey,
+//                            L"ProgramData",
+//                            0,
+//                            REG_EXPAND_SZ,
+//                            (LPBYTE)szBuffer,
+//                            dwLength);
+//     if (Error != ERROR_SUCCESS)
+//     {
+//         DPRINT1("Error: %lu\n", Error);
+//         RegCloseKey(hKey);
+//         SetLastError((DWORD)Error);
+//         return FALSE;
+//     }
+//
+//     /* Expand users path */
+//     wcscpy(szBuffer, L"%SystemDrive%\\Users");
 //     if (!ExpandEnvironmentStringsW(szBuffer,
 //                                    szProfilesPath,
 //                                    ARRAYSIZE(szProfilesPath)))
@@ -1311,7 +875,7 @@ extern "C" {
 //     }
 //
 //     /* Create 'Default User' profile directory path */
-//     if (!CreateStandardProfile(szProfilesPath, hKey, &StandardProfiles[0]))
+//     if (!CreateStandardProfile(szProfilesPath, szProgramDataPath, hKey, &StandardProfiles[0]))
 //     {
 //         DPRINT1("CreateStandardProfile(L\"%S\") failed.\n", StandardProfiles[0].pszProfileName);
 //         RegCloseKey(hKey);
@@ -1319,7 +883,7 @@ extern "C" {
 //     }
 //
 //     /* Create 'All Users' profile directory path */
-//     if (!CreateStandardProfile(szProfilesPath, hKey, &StandardProfiles[1]))
+//     if (!CreateStandardProfile(szProfilesPath, szProgramDataPath, hKey, &StandardProfiles[1]))
 //     {
 //         DPRINT1("CreateStandardProfile(L\"%S\") failed.\n", StandardProfiles[1].pszProfileName);
 //         RegCloseKey(hKey);
@@ -1371,17 +935,7 @@ extern "C" {
 //         {
 //             StringCbCopyW(szBuffer, sizeof(szBuffer), lpUserProfilePath);
 //             StringCbCatW(szBuffer, sizeof(szBuffer), L"\\");
-//
-//             /* Append the folder name */
-//             dwLength = wcslen(szBuffer);
-//             if (!LoadStringW(hInstance,
-//                              lpFolderData->uId,
-//                              &szBuffer[dwLength],
-//                              ARRAYSIZE(szBuffer) - dwLength))
-//             {
-//                 /* Use the default name instead */
-//                 StringCbCatW(szBuffer, sizeof(szBuffer), lpFolderData->lpPath);
-//             }
+//             StringCbCatW(szBuffer, sizeof(szBuffer), lpFolderData->lpPath);
 //
 //             DPRINT("%S: %S\n", lpFolderData->lpValueName, szBuffer);
 //
@@ -1412,7 +966,4 @@ extern "C" {
 // }
 //
 // /* EOF */
-//
-// ============================================================================
 // END ORIGINAL C SOURCE
-// ============================================================================

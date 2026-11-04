@@ -18,7 +18,7 @@ build_hint: "tools/payloads/neonctx/build.sh {arch}"
 binaries:
   - src: tools/payloads/neonctx/neonctx-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/neonctx.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/neonctx.exe
 
 test:
   launch_marker: "[NEONCTX] done"

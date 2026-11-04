@@ -33,3 +33,18 @@ def test_a_statement_macro_without_its_semicolon_does_not_swallow_the_next_funct
     )
     names = {f.name for f in scan_file(c).functions}
     assert {"Theme_Start", "Theme_Stop"} <= names
+
+
+def test_the_last_line_of_a_multiline_condition_gets_no_semicolon(tmp_path: Path):
+    # aclui's checklist.c: `abs(ScrollDelta) >= WHEEL_DELTA)` closes a two-line `if (` and is
+    # shaped like a statement macro, so the recovery pass made it `if (...);`.
+    c = tmp_path / "wheel.c"
+    c.write_text(
+        "#define GET_CB(n) p_##n = 0;\n"
+        "void Theme_Start(void)\n{\n    GET_CB(OpenThemeData)\n    GET_CB(CloseThemeData)\n}\n\n"
+        "void Wheel(int lines, int delta)\n{\n"
+        "    if (lines != 0 &&\n        abs(delta) >= WHEEL_DELTA)\n    {\n        scroll();\n    }\n}\n"
+    )
+    bodies = {f.name: f.body_text for f in scan_file(c).functions}
+    assert "Wheel" in bodies
+    assert "WHEEL_DELTA)\n" in bodies["Wheel"] and "WHEEL_DELTA);" not in bodies["Wheel"]

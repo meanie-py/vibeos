@@ -188,7 +188,7 @@ unsafe extern "system" fn ClientIdentity_QueryInterface(
         hr: S_OK,
     };
 
-    TRACE!("%s\n", debugstr_guid(riid));
+    TRACE!("%s\n", crate::prelude::debugstr_guid(riid));
 
     let hr = iface.QueryMultipleInterfaces(1, &mut mqi);
     *ppv = mqi.pItf as *mut c_void;
@@ -235,7 +235,7 @@ unsafe extern "system" fn ClientIdentity_QueryMultipleInterfaces(
      * interfaces and also interfaces exposed by the proxy manager */
     for i in 0..cMQIs {
         let mqi = pMQIs.add(i as usize);
-        TRACE!("iid[%d] = %s\n", i, debugstr_guid((*mqi).pIID));
+        TRACE!("iid[%d] = %s\n", i, crate::prelude::debugstr_guid((*mqi).pIID));
         (*mqi).hr = proxy_manager_query_local_interface(
             This,
             (*mqi).pIID,
@@ -417,7 +417,7 @@ unsafe extern "system" fn Proxy_MarshalInterface(
     let mut hr: HRESULT;
     let mut ifproxy_p: *mut ifproxy = core::ptr::null_mut();
 
-    TRACE!("(...,%s,...)\n", debugstr_guid(riid));
+    TRACE!("(...,%s,...)\n", crate::prelude::debugstr_guid(riid));
 
     hr = proxy_manager_find_ifproxy(This, riid, &mut ifproxy_p);
     if SUCCEEDED(hr) {
@@ -541,7 +541,7 @@ unsafe extern "system" fn Proxy_UnmarshalInterface(
     let This = impl_from_IMarshal(iface);
     let mut marshal: *mut IMarshal = core::ptr::null_mut();
 
-    TRACE!("(%p, %p, %s, %p)\n", This, pStm, wine_dbgstr_guid(riid), ppv);
+    TRACE!("(%p, %p, %s, %p)\n", This, pStm, crate::prelude::wine_dbgstr_guid(riid), ppv);
 
     let mut hr = StdMarshalImpl_Construct(
         &IID_IMarshal,
@@ -974,7 +974,7 @@ unsafe fn proxy_manager_query_local_interface(
     riid: REFIID,
     ppv: *mut *mut c_void,
 ) -> HRESULT {
-    TRACE!("%s\n", debugstr_guid(riid));
+    TRACE!("%s\n", crate::prelude::debugstr_guid(riid));
 
     if IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IMultiQI) {
         *ppv = core::ptr::addr_of_mut!((*This).IMultiQI_iface) as *mut c_void;
@@ -1370,7 +1370,7 @@ unsafe extern "system" fn StdMarshalImpl_MarshalInterface(
     let mut res: ULONG = 0;
     let mut objref: OBJREF = core::mem::zeroed();
 
-    TRACE!("(...,%s,...)\n", debugstr_guid(riid));
+    TRACE!("(...,%s,...)\n", crate::prelude::debugstr_guid(riid));
 
     let apt = apartment_get_current_or_mta();
     if apt.is_null() {
@@ -1509,7 +1509,7 @@ unsafe fn std_unmarshal_interface(
     let mut hres: HRESULT;
     let mut oxid: OXID = 0;
 
-    TRACE!("(...,%s,....)\n", debugstr_guid(riid));
+    TRACE!("(...,%s,....)\n", crate::prelude::debugstr_guid(riid));
 
     /* we need an apartment to unmarshal into */
     let apt = apartment_get_current_or_mta();

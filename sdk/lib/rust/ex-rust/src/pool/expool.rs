@@ -1076,8 +1076,106 @@ pub unsafe extern "system" fn ExGetPoolTagInfo(
 // ExAllocatePoolWithTag — the main pool allocation function
 // ============================================================================
 
+/// Cache-line size the `*CacheAligned` pool types promise (`SYSTEM_CACHE_ALIGNMENT_SIZE`).
+#[cfg(target_arch = "aarch64")]
+const POOL_CACHE_ALIGNMENT: SIZE_T = 128;
+#[cfg(not(target_arch = "aarch64"))]
+const POOL_CACHE_ALIGNMENT: SIZE_T = 64;
+
+/// DIVERGES from the C, which ignores `CACHE_ALIGNED_POOL_MASK` below a page: a
+/// `NonPagedPoolCacheAligned` caller got 16-byte alignment. Drivers allocate DDK types declared
+/// cache-aligned from those pool types (classpnp's `PNL_SLIST_HEADER` array is
+/// `DECLSPEC_CACHEALIGN` and comes from `NonPagedPoolNxCacheAligned`), so the alignment the
+/// header promised was never there. As Windows does, carve the aligned block out of a larger one:
+/// the body starts at the first cache line at least two pool blocks in, and the leading fragment
+/// (two or more blocks, so the free path can list it) goes back through `ExFreePoolWithTag`.
 #[no_mangle]
 pub unsafe extern "system" fn ExAllocatePoolWithTag(
+    pool_type: POOL_TYPE,
+    number_of_bytes: SIZE_T,
+    tag: ULONG,
+) -> PVOID {
+    if pool_type & CACHE_ALIGNED_POOL_MASK as POOL_TYPE == 0 {
+        return exp_allocate_pool_unaligned(pool_type, number_of_bytes, tag);
+    }
+    exp_allocate_pool_aligned_at(pool_type, number_of_bytes, tag, 0)
+}
+
+/// A pool block whose `block + offset` is cache-line aligned. ObpAllocateObject uses it so that
+/// a device object's extension -- `DeviceObject + 1`, which KMDF relies on and which drivers may
+/// compute -- lands on a cache line without moving it (see iomgr-rust IoCreateDevice).
+/// Falls back to the plain placement where no carving is possible: quota allocations (their
+/// billing pointer is at the block's end), big-page allocations (page-granular), special pool,
+/// and an offset that is not a multiple of the pool block size.
+#[no_mangle]
+pub unsafe extern "system" fn ExpAllocatePoolWithTagAlignedAt(
+    pool_type: POOL_TYPE,
+    number_of_bytes: SIZE_T,
+    tag: ULONG,
+    offset: SIZE_T,
+) -> PVOID {
+    exp_allocate_pool_aligned_at(pool_type, number_of_bytes, tag, offset)
+}
+
+unsafe fn exp_allocate_pool_aligned_at(
+    pool_type: POOL_TYPE,
+    number_of_bytes: SIZE_T,
+    tag: ULONG,
+    offset: SIZE_T,
+) -> PVOID {
+    let slack = POOL_CACHE_ALIGNMENT + 2 * POOL_BLOCK_SIZE;
+    if pool_type & QUOTA_POOL_MASK != 0
+        || number_of_bytes + slack > POOL_MAX_ALLOC
+        || offset % POOL_BLOCK_SIZE != 0
+    {
+        return exp_allocate_pool_unaligned(pool_type, number_of_bytes, tag);
+    }
+
+    let p = exp_allocate_pool_unaligned(pool_type, number_of_bytes + slack, tag);
+    if p.is_null() || (p as SIZE_T + offset) & (POOL_CACHE_ALIGNMENT - 1) == 0 || PAGE_ALIGN(p as usize) == p as usize {
+        // Already aligned, a big-page allocation, or a failure.
+        return p;
+    }
+    if ExpPoolFlags & (POOL_FLAG_VERIFIER | POOL_FLAG_SPECIAL_POOL) != 0 && MmIsSpecialPoolAddress(p) != 0 {
+        return p;
+    }
+
+    let entry = pool_entry(p);
+    // The first body address at least two blocks in (so the leading fragment can be listed
+    // when freed) whose `+ offset` is on a cache line.
+    let aligned = (((p as SIZE_T + 2 * POOL_BLOCK_SIZE + offset + POOL_CACHE_ALIGNMENT - 1)
+        & !(POOL_CACHE_ALIGNMENT - 1))
+        - offset) as PVOID;
+    let lead = ((aligned as SIZE_T - p as SIZE_T) / POOL_BLOCK_SIZE) as u16;
+    let pool_desc = PoolVector[(pool_type & BASE_POOL_TYPE_MASK) as usize];
+
+    let old_irql = ex_lock_pool(pool_desc);
+    let total = (*entry).BlockSize();
+    let new_entry = pool_block(entry, lead as isize);
+    (*new_entry).Ulong1 = (*entry).Ulong1;
+    (*new_entry).PoolTag = (*entry).PoolTag;
+    (*new_entry).set_PreviousSize(lead);
+    (*new_entry).set_BlockSize(total - lead);
+    let next = pool_block(new_entry, (total - lead) as isize);
+    if PAGE_ALIGN(next as usize) != next as usize {
+        (*next).set_PreviousSize(total - lead);
+    }
+    (*entry).set_BlockSize(lead);
+    ex_unlock_pool(pool_desc, old_irql);
+
+    // The fragment is accounted as its own allocation so that freeing it leaves the tag's and
+    // the descriptor's alloc/free counts balanced.
+    ExpInsertPoolTracker(tag, lead as SIZE_T * POOL_BLOCK_SIZE, pool_type);
+    InterlockedIncrement(&mut (*pool_desc).RunningAllocs as *mut ULONG as *mut LONG);
+    InterlockedExchangeAddSizeT(
+        &mut (*pool_desc).TotalBytes as *mut SIZE_T as *mut _,
+        (lead as SIZE_T * POOL_BLOCK_SIZE) as _,
+    );
+    ExFreePoolWithTag(p, tag);
+    aligned
+}
+
+unsafe fn exp_allocate_pool_unaligned(
     pool_type: POOL_TYPE,
     mut number_of_bytes: SIZE_T,
     tag: ULONG,

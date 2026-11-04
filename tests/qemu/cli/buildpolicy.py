@@ -10,9 +10,12 @@ from contextlib import ExitStack, contextmanager
 from functools import wraps
 from pathlib import Path
 
-VERSION = 1
+from tools import build_infra_compat as native
+
+_constants = native.call("build_policy_constants", {})
+VERSION = _constants["version"]
 _guards: dict = {}
-TRIAL = {"version": VERSION, "leases": 6, "max_builds": 3, "ninja_jobs": 6, "cargo_jobs": 1}
+TRIAL = _constants["trial"]
 
 POLICY_NAME = "build-policy.json"
 EXAMPLE_NAME = "build-policy.example.json"
@@ -33,19 +36,7 @@ def main_worktree(repo: Path) -> Path:
     worktree's `.git` is a FILE reading `gitdir: <main>/.git/worktrees/<name>`, so the
     shared root is recoverable with one small read and no subprocess.
     """
-    dot = repo / ".git"
-    if dot.is_dir():
-        return repo
-    try:
-        line = dot.read_text().strip()
-    except OSError:
-        return repo
-    if line.startswith("gitdir:"):
-        gitdir = Path(line.removeprefix("gitdir:").strip())
-        for parent in gitdir.parents:
-            if parent.name == ".git":
-                return parent.parent
-    return repo
+    return Path(native.call("build_policy_main_worktree", {"repo": repo}))
 
 
 def durable_dir() -> Path:
@@ -119,23 +110,10 @@ class PolicyError(RuntimeError):
 
 
 def read(root: Path) -> dict | None:
-    path = root / POLICY_NAME
-    if not path.exists() and not path.is_symlink():
-        return None
     try:
-        value = json.loads(path.read_text())
-    except (OSError, ValueError) as exc:
-        raise PolicyError(f"unreadable host build policy: {path}: {exc}") from exc
-    if (
-        not isinstance(value, dict)
-        or set(value) != set(TRIAL)
-        or any(type(v) is not int or v <= 0 for v in value.values())
-        or value["version"] != VERSION
-        or value["leases"] % value["max_builds"]
-        or value["cargo_jobs"] != 1
-    ):
-        raise PolicyError(f"invalid host build policy: {path}")
-    return value
+        return native.call("build_policy_read", {"root": root})
+    except native.NativeError as exc:
+        raise PolicyError(str(exc)) from exc
 
 
 @contextmanager
@@ -157,12 +135,22 @@ def guard(fn):
         policy = manager.__enter__()
         try:
             if policy:
-                if "leases" in kwargs and kwargs["leases"] != policy["leases"]:
-                    raise PolicyError("per-client lease override conflicts with host policy")
-                kwargs["leases"] = policy["leases"]
                 kind = args[0] if args else kwargs.get("kind", "")
-                if fn.__name__ == "acquire_cpu_share" and kind.startswith("build:"):
-                    kwargs["n"] = policy["leases"] // policy["max_builds"]
+                try:
+                    kwargs.update(
+                        native.call(
+                            "build_policy_admission",
+                            {
+                                "policy": policy,
+                                "has_override": "leases" in kwargs,
+                                "leases_override": kwargs.get("leases"),
+                                "build_share": fn.__name__ == "acquire_cpu_share"
+                                and kind.startswith("build:"),
+                            },
+                        )
+                    )
+                except native.NativeError as error:
+                    raise PolicyError(str(error)) from error
             result = fn(*args, **kwargs)
             if result is None:
                 if policy:
@@ -257,11 +245,12 @@ def activate(repo: Path, root: Path, *, rollback: bool = False) -> None:
         reasons = blockers(repo)
         if reasons:
             raise RuntimeError("policy cutover refused:\n" + "\n".join(reasons))
-        value = dict(TRIAL)
-        if rollback:
-            value.update(leases=4, max_builds=2)
-        if value["max_builds"] * value["ninja_jobs"] > (os.cpu_count() or 1):
-            raise RuntimeError("trial job budget exceeds visible CPU count")
+        try:
+            value = native.call(
+                "build_policy_trial", {"rollback": rollback, "cpus": os.cpu_count() or 1}
+            )
+        except native.NativeError as error:
+            raise RuntimeError(str(error)) from error
         path = root / POLICY_NAME
         temp = root / f"build-policy.{os.getpid()}.tmp"
         try:

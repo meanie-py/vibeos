@@ -52,17 +52,23 @@ add_custom_command(
     VERBATIM
     COMMENT "wow64gen: generating WoW64 win32k thunk table")
 
+# Every translation unit is Rust now (wow64-rust, `rustconv port`) except wow64_thunks.c, wow64_win32k.c,
+# kept C by `port derive --keep-c`; the C stays on disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(wow64_rust wow64-rust "" TRUE)
 add_library(wow64 MODULE
-    wow64.c
+    # wow64.c  # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64.rs)
     wow64_thunks.c
     wow64_win32k.c
-    wow64_manual.c
-    wow64_automarshal.c
-    wow64_cb_automarshal.c
-    wow64_callback.c
-    wow64_pfnmap.c
+    # wow64_manual.c  # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64_manual.rs)
+    # wow64_automarshal.c  # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64_automarshal.rs)
+    # wow64_cb_automarshal.c  # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64_cb_automarshal.rs)
+    # wow64_callback.c  # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64_callback.rs)
+    # wow64_pfnmap.c  # replaced by Rust (sdk/lib/rust/wow64-rust/src/wow64/wow64_pfnmap.rs)
+    rust_cohab_stub.c
     wow64.rc
     ${CMAKE_CURRENT_BINARY_DIR}/wow64.def)
+add_dependencies(wow64 rust_wow64_rust)
+target_link_libraries(wow64 ${wow64_rust_LIB})
 target_include_directories(wow64 PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 # Only the pfnmap source reads SERVERINFO, so only it gets the win32k headers.
 set_property(SOURCE wow64_pfnmap.c APPEND PROPERTY INCLUDE_DIRECTORIES

@@ -2477,6 +2477,14 @@ pub unsafe extern "C" fn KdIoPrintf(Format: *const i8, a0: usize, a1: usize) {}
 pub unsafe extern "C" fn _vsnwprintf(b: *mut u16, n: usize, fmt: *const u16, ap: *mut u8) {}
 """
 
+_SWALLOWING_DEBUG_MACRO_BAD = """\
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+"""
+_SWALLOWING_DEBUG_MACRO_GOOD = """\
+#[macro_export] macro_rules! DPRINT {
+    ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) };
+}
+"""
 _INERT_CRATE_ALLOW_BAD = """\
 #![no_std]
 #[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
@@ -2798,7 +2806,57 @@ pub unsafe fn load() {
 //         SystemParametersInfoW(SPI_SETSCREENSAVETIMEOUT, 600, 0, SPIF_UPDATEINIFILE);
 """
 
+# scan_sizeof_pointer. Seeded from wow64's AFD select marshaller (2026-11-02): C
+# `sizeof(*P64)` came back as `size_of_val(&P64)`, the size of the pointer, and select()
+# overran the 64-bit heap.
+_SIZEOFPTR_BAD = """\
+unsafe fn sel(n: usize) -> *mut u8 {
+    let mut P64: *mut Hdr64 = core::ptr::null_mut();
+    P64 = alloc(core::mem::size_of_val(&P64) + n * 16) as *mut Hdr64;
+    P64 as *mut u8
+}
+"""
+_SIZEOFPTR_GOOD = """\
+unsafe fn sel(n: usize) -> *mut u8 {
+    let mut P64: *mut Hdr64 = core::ptr::null_mut();
+    P64 = alloc(core::mem::size_of::<Hdr64>() + n * 16) as *mut Hdr64;
+    P64 as *mut u8
+}
+"""
+# scan_extern_copy. Seeded from wow64 (2026-11-02): the C's `extern` BTCpuSetContext became a
+# second, never-assigned static in wow64_manual.rs, so NtContinue always failed.
+_EXTCOPY_HOME = """\
+#[no_mangle]
+pub static mut Wow64pBTCpuSetContext: Option<unsafe extern "C" fn()> = None;
+"""
+_EXTCOPY_BAD = """\
+pub static mut Wow64pBTCpuSetContext: Option<unsafe extern "C" fn()> = None;
+"""
+_EXTCOPY_GOOD = """\
+use crate::wow64::Wow64pBTCpuSetContext;
+"""
+
 CONTROLS: list[Control] = [
+    Control(
+        name="scan_sizeof_pointer",
+        script="tools/scan_sizeof_pointer.py",
+        argv=["--lint"],
+        bad={"sdk/lib/rust/w-rust/src/afd.rs": _SIZEOFPTR_BAD},
+        good={"sdk/lib/rust/w-rust/src/afd.rs": _SIZEOFPTR_GOOD},
+    ),
+    Control(
+        name="scan_extern_copy",
+        script="tools/scan_extern_copy.py",
+        argv=["--lint"],
+        bad={
+            "sdk/lib/rust/w-rust/src/wow64.rs": _EXTCOPY_HOME,
+            "sdk/lib/rust/w-rust/src/manual.rs": _EXTCOPY_BAD,
+        },
+        good={
+            "sdk/lib/rust/w-rust/src/wow64.rs": _EXTCOPY_HOME,
+            "sdk/lib/rust/w-rust/src/manual.rs": _EXTCOPY_GOOD,
+        },
+    ),
     Control(
         name="scan_byteptr_stride",
         script="tools/scan_byteptr_stride.py",
@@ -3281,6 +3339,13 @@ CONTROLS: list[Control] = [
         good={"good.rs": _BYTE_STEP_ONE_GOOD},
     ),
     Control(
+        name="scan_swallowing_debug_macro",
+        script="tools/scan_swallowing_debug_macro.py",
+        argv=["--lint"],
+        bad={"bad.rs": _SWALLOWING_DEBUG_MACRO_BAD},
+        good={"good.rs": _SWALLOWING_DEBUG_MACRO_GOOD},
+    ),
+    Control(
         name="scan_inert_crate_allow",
         script="tools/scan_inert_crate_allow.py",
         argv=["--lint"],
@@ -3505,6 +3570,20 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_devobj_as_extension": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/devobj_as_extension.rs: classpnp's `Fdo as "
+        "PFUNCTIONAL_DEVICE_EXTENSION` must be flagged, `(*Fdo).DeviceExtension as ...` and a "
+        "nolint must not."
+    ),
+    "scan_assert_negated_vs_c": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/assert_negated_vs_c.rs: fastfat's negated VerifyThread "
+        "NT_ASSERT must be flagged, the faithful one must not, and neither must another "
+        "module's same-named C function."
+    ),
     "scan_move_vs_nonoverlapping": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "

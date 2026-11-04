@@ -407,3 +407,4 @@ RtlCaptureContextUM OK pass=265 fail=10 skip=0 exit=0
     assert RtlCaptureContext.c:155
 ExPushLock OK pass=1134 fail=0 skip=0 exit=0
 IoDeviceProperty OK pass=653 fail=0 skip=0 exit=0
+CcZeroData OK pass=32 fail=0 skip=0 exit=0

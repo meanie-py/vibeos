@@ -704,7 +704,7 @@ pub unsafe extern "C" fn _initterm_e(
             if res != 0 {
                 TRACE!(
                     "function %p failed: %#x\n",
-                    *table as *const (),
+                    f as *const (),
                     res
                 );
             }

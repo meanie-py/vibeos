@@ -640,7 +640,7 @@ pub unsafe extern "system" fn SafeArrayGetLBound(
 
 #[no_mangle]
 pub unsafe extern "system" fn SafeArrayGetDim(psa: *mut SAFEARRAY) -> UINT {
-    TRACE!(b"(%p) returning %d\n\0".as_ptr() as PCHAR, psa, if !psa.is_null() { (*psa).cDims } else { 0u32 });
+    TRACE!(b"(%p) returning %d\n\0".as_ptr() as PCHAR, psa, if !psa.is_null() { (*psa).cDims } else { 0u16 });
     if !psa.is_null() { (*psa).cDims as UINT } else { 0 }
 }
 

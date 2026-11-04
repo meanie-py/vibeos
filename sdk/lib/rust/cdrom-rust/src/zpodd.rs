@@ -194,7 +194,7 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
         if tempStatus >= 0 {
             DeviceMarkActive(DeviceExtension, 1, 0);
         }
-        FREE_POOL(zpoddInfo as *mut c_void);
+        FREE_POOL!(zpoddInfo);
     }
 
     return STATUS_SUCCESS;
@@ -403,11 +403,11 @@ pub unsafe extern "C" fn DeviceReleaseZPODDResources(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) {
     // PAGED_CODE(); // macro omitted — no behavioral effect in free builds
-    let zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
+    let mut zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
 
     if !zpoddInfo.is_null() {
-        FREE_POOL((*zpoddInfo).GetConfigurationBuffer as *mut core::ffi::c_void);
-        FREE_POOL(zpoddInfo as *mut core::ffi::c_void);
+        FREE_POOL!((*zpoddInfo).GetConfigurationBuffer);
+        FREE_POOL!(zpoddInfo);
     }
 
     return;

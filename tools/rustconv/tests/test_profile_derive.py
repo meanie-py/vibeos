@@ -222,6 +222,21 @@ def test_arch_conditional_sources_resolve_against_the_requested_arch(tmp_path):
     assert [p.name for p in amd64.compiled_tus] == ["main.c"]
 
 
+def test_an_or_chain_of_arch_tests_admits_every_named_arch(tmp_path):
+    """wow64's `if(ARCH STREQUAL "arm64" OR ARCH STREQUAL "amd64")` wraps its whole target;
+    reading only the first test made it dead on amd64 ("no add_library() found")."""
+    cmake = (
+        'if(ARCH STREQUAL "arm64" OR ARCH STREQUAL "amd64")\n'
+        "add_library(widget MODULE main.c)\nset_module_type(widget win32dll)\nendif()\n"
+    )
+    root = _basic_module(tmp_path, cmake=cmake)
+    for arch in ("arm64", "amd64"):
+        dp = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root, arch=arch)
+        assert [p.name for p in dp.compiled_tus] == ["main.c"]
+    with pytest.raises(ProfileDeriveError, match="no add_library"):
+        parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root, arch="i386")
+
+
 def test_ambiguous_target_fails_loudly(tmp_path):
     cmake = (
         "list(APPEND SOURCE main.c)\n"

@@ -794,27 +794,27 @@ pub unsafe extern "C" fn AtaPortSendRequest(
         INFO!(
             b"CH %lu: Send CDB %u %02x:%02x:%02x:%02x:%02x:%02x:%02x\n\0".as_ptr() as *const i8,
             (*PortData).PortNumber,
-            (*DevExt).Device.AtaScsiAddress.TargetId,
-            (*Request).Cdb[0],
-            (*Request).Cdb[1],
-            (*Request).Cdb[2],
-            (*Request).Cdb[3],
-            (*Request).Cdb[4],
-            (*Request).Cdb[5],
-            (*Request).Cdb[6],
+            (&(*DevExt).Device.AtaScsiAddress).TargetId,
+            (*Request).__bindgen_anon_2.Cdb[0],
+            (*Request).__bindgen_anon_2.Cdb[1],
+            (*Request).__bindgen_anon_2.Cdb[2],
+            (*Request).__bindgen_anon_2.Cdb[3],
+            (*Request).__bindgen_anon_2.Cdb[4],
+            (*Request).__bindgen_anon_2.Cdb[5],
+            (*Request).__bindgen_anon_2.Cdb[6],
         );
     } else {
         INFO!(
             b"CH %lu: Send TF %u %02x:%02x:%02x:%02x:%02x:%02x:%02x\n\0".as_ptr() as *const i8,
             (*PortData).PortNumber,
-            (*DevExt).Device.AtaScsiAddress.TargetId,
-            (*Request).TaskFile.Command,
-            (*Request).TaskFile.Feature,
-            (*Request).TaskFile.SectorCount,
-            (*Request).TaskFile.LowLba,
-            (*Request).TaskFile.MidLba,
-            (*Request).TaskFile.HighLba,
-            (*Request).TaskFile.DriveSelect,
+            (&(*DevExt).Device.AtaScsiAddress).TargetId,
+            (*Request).__bindgen_anon_2.TaskFile.__bindgen_anon_1.Command,
+            (*Request).__bindgen_anon_2.TaskFile.__bindgen_anon_2.Feature,
+            (*Request).__bindgen_anon_2.TaskFile.SectorCount,
+            (*Request).__bindgen_anon_2.TaskFile.LowLba,
+            (*Request).__bindgen_anon_2.TaskFile.MidLba,
+            (*Request).__bindgen_anon_2.TaskFile.HighLba,
+            (*Request).__bindgen_anon_2.TaskFile.DriveSelect,
         );
     }
 

@@ -10,7 +10,7 @@ build_hint: "tools/payloads/vaentry/build.sh {arch}"
 binaries:
   - src: tools/payloads/vaentry/vaentry-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/vaentry.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/vaentry.exe
 
 test:
   launch_marker: "[VAENTRY] done"

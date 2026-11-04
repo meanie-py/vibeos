@@ -11,7 +11,7 @@ build_hint: "tools/payloads/fsprobe/build.sh {arch}"
 binaries:
   - src: tools/payloads/fsprobe/fsprobe-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/fsprobe.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fsprobe.exe
 
 test:
   launch_marker: "[FSPROBE] done"

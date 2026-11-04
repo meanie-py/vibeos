@@ -39,7 +39,7 @@
 // no-op macro that swallows its arguments so call sites compile away.
 #[macro_export]
 macro_rules! KDDBGPRINT {
-    ($($arg:tt)*) => {{}};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 
 // kdgdb.h FORCEINLINE helpers that live in no .c file (so were never

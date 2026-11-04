@@ -819,7 +819,7 @@ unsafe fn handle_gdb_remove_breakpoint(
             if Handle == 0 {
                 KDDBGPRINT!(
                     b"Received %s, but breakpoint was never inserted ?!\n\0".as_ptr() as *const i8,
-                    gdb_input as *const i8,
+                    gdb_input.as_ptr(),
                 );
                 return LOOP_IF_SUCCESS(send_gdb_packet(b"E01\0".as_ptr() as *mut i8));
             }
@@ -835,7 +835,7 @@ unsafe fn handle_gdb_remove_breakpoint(
 
     KDDBGPRINT!(
         b"Unhandled 'Z' packet: %s\n\0".as_ptr() as *const i8,
-        gdb_input as *const i8,
+        gdb_input.as_ptr(),
     );
     return LOOP_IF_SUCCESS(send_gdb_packet(b"E01\0".as_ptr() as *mut i8));
 }

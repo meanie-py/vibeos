@@ -50,6 +50,42 @@ fn blank(text: &str, pattern: &Regex) -> String {
 pub fn blank_c(text: &str) -> String {
     blank(text, &C_IGNORED)
 }
+/// `blank_c`, plus every `#elif`/`#else` arm blanked so only the first branch of each
+/// preprocessor chain remains. Function bodies often balance their braces only per branch
+/// (`#if X { ... #else { ... #endif }`), and `defined_names` stops at the first body whose braces
+/// do not match: fastfat's `FatCommonRead` made the whole rest of read.c invisible to every
+/// C-twin rule. Used to LOCATE definitions only; bodies keep every arm (see from_files).
+pub fn blank_c_first_branch(text: &str) -> String {
+    blank_c_first_branch_of_blanked(&blank_c(text))
+}
+fn blank_c_first_branch_of_blanked(blanked: &str) -> String {
+    let mut out = String::with_capacity(blanked.len());
+    // One entry per open conditional: is this line inside a later (#elif/#else) arm?
+    let mut alternate: Vec<bool> = Vec::new();
+    for line in blanked.split_inclusive('\n') {
+        let directive = line.trim_start().strip_prefix('#').map(|d| d.trim_start());
+        let word = directive.map(|d| d.split(|c: char| !c.is_ascii_alphabetic()).next().unwrap_or(""));
+        match word {
+            Some("if" | "ifdef" | "ifndef") => alternate.push(false),
+            Some("elif" | "else") => {
+                if let Some(top) = alternate.last_mut() {
+                    *top = true;
+                }
+            }
+            Some("endif") => {
+                alternate.pop();
+            }
+            _ => {}
+        }
+        let hidden = alternate.iter().any(|&a| a) || matches!(word, Some("elif" | "else" | "endif"));
+        if hidden {
+            out.extend(line.chars().map(|c| if c == '\n' { '\n' } else { ' ' }));
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
+}
 pub fn blank_rust(text: &str) -> String {
     blank(text, &RS_IGNORED)
 }
@@ -309,11 +345,19 @@ impl CIndex {
             // unrelated functions merely because both live in that checkout.
             blanked.insert(file.path.clone(), blank_c(&file.text));
         }
+        // Find definitions in the first-branch text (braces balance there), then cut each body
+        // from the full text at the same span -- blanking preserves offsets -- so rules that read
+        // a twin's `#else` arms (cfg_vs_c) still see them.
         let parsed: Vec<Vec<Function>> = blanked
             .par_iter()
-            .map(|(path, text)| {
-                let names = defined_names(text).into_iter().collect();
-                c_functions(text, path, &names)
+            .map(|(path, full)| {
+                let first = blank_c_first_branch_of_blanked(full);
+                let names = defined_names(&first).into_iter().collect();
+                let mut functions = c_functions(&first, path, &names);
+                for f in &mut functions {
+                    f.body = full[f.body_start..f.body_start + f.body.len()].to_owned();
+                }
+                functions
             })
             .collect();
         let mut definitions: HashMap<String, Vec<Function>> = HashMap::new();

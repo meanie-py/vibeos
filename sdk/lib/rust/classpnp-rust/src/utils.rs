@@ -1120,7 +1120,7 @@ pub unsafe extern "C" fn ClasspDuidGetDriveLayout(
         break 'exit;
     }
 
-    FREE_POOL((layoutEx).cast());
+    FREE_POOL!(layoutEx);
     status
 }
 #[no_mangle]
@@ -1431,7 +1431,7 @@ pub unsafe extern "C" fn ClasspWriteCacheProperty(
         break 'write_cache_exit;
     }
 
-    FREE_POOL((modeData).cast());
+    FREE_POOL!(modeData);
     (*Irp).IoStatus.Information = ((information) as u64) as _;
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
@@ -2268,7 +2268,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
     (*fdo_extension.FunctionSupportInfo).LBProvisioningData.CommandStatus = status;
 
     // Free buffer
-    FREE_POOL(data_buffer);
+    FREE_POOL!(data_buffer);
 
     status
 }
@@ -2479,7 +2479,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
         (*block_limits_data).CommandStatus = status;
     }
 
-    FREE_POOL(data_buffer);
+    FREE_POOL!(data_buffer);
     status
 }
 #[no_mangle]
@@ -4712,7 +4712,7 @@ unsafe fn ValidPersistentReserveType(Type: UCHAR) -> BOOLEAN {
 pub unsafe extern "C" fn ClasspPersistentReserve(
     DeviceObject: *mut DEVICE_OBJECT,
     Irp: *mut IRP,
-    Srb: *mut SCSI_REQUEST_BLOCK,
+    mut Srb: *mut SCSI_REQUEST_BLOCK,
 ) -> NTSTATUS {
     let irpStack = IoGetCurrentIrpStackLocation(Irp);
     let mut cdb: *mut CDB = core::ptr::null_mut();
@@ -4728,7 +4728,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
         status = STATUS_INFO_LENGTH_MISMATCH;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         (*Irp).IoStatus.Information = 0;
-        FREE_POOL((Srb).cast());
+        FREE_POOL!(Srb);
         ClassReleaseRemoveLock(DeviceObject, Irp);
         ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         return status;
@@ -4738,7 +4738,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
         status = STATUS_INVALID_USER_BUFFER;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
         (*Irp).IoStatus.Information = 0;
-        FREE_POOL((Srb).cast());
+        FREE_POOL!(Srb);
         ClassReleaseRemoveLock(DeviceObject, Irp);
         ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
         return status;
@@ -4771,7 +4771,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
         if !NT_SUCCESS(status) {
             (*Irp).IoStatus.__bindgen_anon_1.Status = status;
             (*Irp).IoStatus.Information = 0;
-            FREE_POOL((Srb).cast());
+            FREE_POOL!(Srb);
             ClassReleaseRemoveLock(DeviceObject, Irp);
             ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
             return status;
@@ -4813,7 +4813,7 @@ pub unsafe extern "C" fn ClasspPersistentReserve(
         if !NT_SUCCESS(status) {
             (*Irp).IoStatus.__bindgen_anon_1.Status = status;
             (*Irp).IoStatus.Information = 0;
-            FREE_POOL((Srb).cast());
+            FREE_POOL!(Srb);
             ClassReleaseRemoveLock(DeviceObject, Irp);
             ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
             return status;
@@ -5903,7 +5903,7 @@ pub unsafe extern "C" fn ClasspGetHwFirmwareInfo(
                 ioStatus.__bindgen_anon_1.Status,
                 iteration as u32,
             );
-            FREE_POOL(firmwareInfo as *mut c_void);
+            FREE_POOL!(firmwareInfo);
             return ioStatus.__bindgen_anon_1.Status;
         }
 
@@ -5931,7 +5931,7 @@ pub unsafe extern "C" fn ClasspGetHwFirmwareInfo(
                 (*firmwareInfo).ImagePayloadMaxSize,
             );
 
-            FREE_POOL(firmwareInfo as *mut c_void);
+            FREE_POOL!(firmwareInfo);
             return STATUS_UNSUCCESSFUL;
         }
 
@@ -5945,7 +5945,7 @@ pub unsafe extern "C" fn ClasspGetHwFirmwareInfo(
                         * ((*firmwareInfo).SlotCount - 1),
             );
 
-            FREE_POOL(firmwareInfo as *mut c_void);
+            FREE_POOL!(firmwareInfo);
             iteration += 1;
             continue 'retry;
         }
@@ -5968,9 +5968,9 @@ pub unsafe extern "C" fn ClasspGetHwFirmwareInfo(
     } else if oldState == Supported {
         let cachedInfo = (*(*fdoExtension).FunctionSupportInfo).HwFirmwareInfo;
         (*(*fdoExtension).FunctionSupportInfo).HwFirmwareInfo = firmwareInfo;
-        FREE_POOL(cachedInfo as *mut c_void);
+        FREE_POOL!(cachedInfo);
     } else {
-        FREE_POOL(firmwareInfo as *mut c_void);
+        FREE_POOL!(firmwareInfo);
     }
 
     KeReleaseInStackQueuedSpinLock(&mut lockHandle);
@@ -6173,7 +6173,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
             IoCopyCurrentIrpStackLocationToNext(Irp);
             ClassReleaseRemoveLock(DeviceObject, Irp);
             status = IoCallDriver((*commonExtension).LowerDeviceObject, Irp);
-            FREE_POOL((Srb).cast());
+            FREE_POOL!(Srb);
             return status;
         }
 
@@ -6264,7 +6264,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
             status = STATUS_INSUFFICIENT_RESOURCES;
 
             if firmwareImageBuffer != (*firmwareDownload).ImageBuffer {
-                FREE_POOL(firmwareImageBuffer as *mut core::ffi::c_void);
+                FREE_POOL!(firmwareImageBuffer);
             }
 
             break 'exit status;
@@ -6333,7 +6333,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
 
         if status != STATUS_PENDING {
             if firmwareImageBuffer != (*firmwareDownload).ImageBuffer {
-                FREE_POOL(firmwareImageBuffer as *mut core::ffi::c_void);
+                FREE_POOL!(firmwareImageBuffer);
             }
             // Srb has been freed, null it to prevent double free later
             // (but Srb is a local pointer, we just skip freeing it)
@@ -6369,7 +6369,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
     (*Irp).IoStatus.__bindgen_anon_1.Status = result;
     ClassReleaseRemoveLock(DeviceObject, Irp);
     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
-    FREE_POOL((Srb).cast());
+    FREE_POOL!(Srb);
     result
 }
 // dead: C is #if (NTDDI_VERSION >= NTDDI_WINTHRESHOLD), classpnp builds at WIN8
@@ -6401,7 +6401,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareActivateProcess(
         IoCopyCurrentIrpStackLocationToNext(Irp);
         ClassReleaseRemoveLock(DeviceObject, Irp);
         let status = IoCallDriver((*common_extension).LowerDeviceObject, Irp);
-        FREE_POOL((srb).cast());
+        FREE_POOL!(srb);
         return status;
     }
 
@@ -6509,7 +6509,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareActivateProcess(
     (*Irp).IoStatus.__bindgen_anon_1.Status = status;
     ClassReleaseRemoveLock(DeviceObject, Irp);
     ClassCompleteRequest(DeviceObject, Irp, IO_NO_INCREMENT);
-    FREE_POOL((srb).cast());
+    FREE_POOL!(srb);
     status
 }
 #[no_mangle]

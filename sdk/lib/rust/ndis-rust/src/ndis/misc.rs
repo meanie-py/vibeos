@@ -13,7 +13,8 @@ static mut NDIS_FILE_FOLDER: [WCHAR; 30] = unsafe {
     )
 };
 
-pub static mut CancelId: LONG = 0;
+// The C declares this `extern`; one definition lives in main.rs (scan_extern_copy).
+use crate::ndis::main::CancelId;
 
 #[repr(C)]
 pub struct NDIS_HANDLE_OBJECT {

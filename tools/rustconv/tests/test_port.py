@@ -890,6 +890,35 @@ def test_a_derive_mode_override_is_remembered_for_later_stages(tmp_path, monkeyp
     assert port.recorded_mode(mod, None) is True  # the CLI omits --target for a lone target
 
 
+def test_derive_reads_a_64bit_only_module_on_an_arch_that_builds_it(tmp_path, monkeypatch):
+    """wow64.dll's whole target sits inside `if(ARCH STREQUAL "arm64" OR ARCH STREQUAL
+    "amd64")`; derive was hard-wired to i386 and refused it as having no add_library()."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    mod = tmp_path / "dll" / "w64"
+    mod.mkdir(parents=True)
+    (mod / "CMakeLists.txt").write_text(
+        'if(ARCH STREQUAL "arm64" OR ARCH STREQUAL "amd64")\n'
+        "add_library(w64 MODULE a.c)\nset_module_type(w64 win32dll)\nendif()\n"
+    )
+    (mod / "a.c").write_text("int a(void) { return 0; }\n")
+    assert port._home_arch(mod, None) == "amd64"
+    (mod / "CMakeLists.txt").write_text("set(X 1)\n")
+    with pytest.raises(port.pd.ProfileDeriveError, match="no add_library"):
+        port._home_arch(mod, None)
+
+
+def test_keep_c_tus_are_split_out_before_the_island_is_derived(tmp_path, monkeypatch):
+    """A kept-C TU must not shape the island: wow64_thunks.c #includes a codegen table whose
+    typedefs broke the whole wrapper when it was derived over every compiled TU."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    tus = [tmp_path / "dll/w64" / n for n in ("a.c", "thunks.c", "win32k.c")]
+    rest, stay = port._keep_c_split(tus, {"thunks.c", "dll/w64/win32k.c"}, "w64")
+    assert [p.name for p in rest] == ["a.c"]
+    assert [p.name for p in stay] == ["thunks.c", "win32k.c"]
+    with pytest.raises(port.PortError, match="names no compiled TU"):
+        port._keep_c_split(tus, {"gone.c"}, "w64")
+
+
 def test_token_pasting_macros_and_their_callers_are_hand_ports():
     from types import SimpleNamespace as M
 
@@ -1410,6 +1439,22 @@ def test_flip_and_data_refuse_while_this_tree_builds(tmp_path, monkeypatch):
         {"held": False, "holder": {"build_dir": str(tmp_path / "build-i386")}},
     ]
     port._refuse_while_this_tree_builds("flip")
+
+
+def test_a_flip_that_keeps_c_repoints_cells_to_both(tmp_path, monkeypatch):
+    # shimlib: its variadic trampoline stays C, so consumers need the target AND the crate.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    cell = tmp_path / "sdk/lib/rust/x-cargo/build.rs"
+    cell.parent.mkdir(parents=True)
+    cell.write_text('&["body", "engine:c:shimlib", "import:ntdll"]')
+    cml = "list(APPEND SOURCE\n    # a.c  # replaced by Rust\n    rust_cohab_stub.c\n    rust_varargs_shim.c\n    a.h)\n"
+    assert port._kept_c_sources(cml) == ["rust_varargs_shim.c"]
+    assert port._kept_c_sources(cml.replace("    rust_varargs_shim.c\n", "")) == []
+    port._repoint_cargo_cells("shimlib", "shimlib-rust", keeps_c=True)
+    want = '&["body", "engine:c:shimlib", "engine:crate:shimlib-rust::TRUE", "import:ntdll"]'
+    assert cell.read_text() == want
+    port._repoint_cargo_cells("shimlib", "shimlib-rust", keeps_c=True)  # idempotent
+    assert cell.read_text() == want
 
 
 def test_flip_finds_a_cppapp_tus_rust_in_its_synthetic_unit(tmp_path, monkeypatch):

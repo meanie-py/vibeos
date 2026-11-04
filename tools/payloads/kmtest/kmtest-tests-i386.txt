@@ -4,6 +4,7 @@
 # i386 runs kmtest_drv under DUMMY_PSEH (native SEH is amd64/arm64-only — see
 # conformance-ratchet-quest.md M1 note), so it has a SUPERSET of amd64's
 # structural crashers. Quarantines below carry the amd64 set + i386-only extras.
+CcZeroData
 CmSecurity
 ExCallback
 ExDoubleList

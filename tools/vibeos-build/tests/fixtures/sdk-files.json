@@ -1,0 +1,6 @@
+{
+  "tools/canon-run.sh": "#!/bin/sh\ncase \"$*\" in\n *host-tools/bin*) printf '%s\\n' '\"/tmp/vibeos/.cache/host-jobs/host-jobs\" --kind compile -- /usr/bin/cc -c x.c' 'cd /tmp/vibeos/build-amd64/host-tools/bin && /usr/bin/cmake -E touch tool' ;;\n *) printf '%s\\n' 'cd /tmp/vibeos/sdk/include && /tmp/vibeos/build-amd64/host-tools/bin/widl -I/a -I/b -I/c -I/d -h -o /tmp/vibeos/build-amd64/x.h x.idl' 'cd /tmp/vibeos/sdk/include && /tmp/vibeos/build-amd64/host-tools/bin/widl -I/a -I/b -I/c -I/d -h -o /tmp/vibeos/build-amd64/y.h y.idl' 'cd /x && /usr/bin/flex -o/tmp/vibeos/build-amd64/a.c a.l' 'cd /x && /usr/bin/clang -c a.c' ;;\nesac\n",
+  "build-amd64/build.ninja": "\nbuild x: CUSTOM_COMMAND sdk/include/x | sdk/include/y || rust_foo /foreign\n  COMMAND = thing\n  DESC = Cargo-linking something\n",
+  "sdk/lib/rust/generated/amd64.host.cmds": "touch sub/dir/tool.o\n",
+  "sdk/lib/rust/generated/amd64.cmds": "cd {BUILD}/sdk/include/psdk && touch {BUILD}/a/b/c.h\n"
+}

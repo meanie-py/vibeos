@@ -1,3 +1,4 @@
+import json
 import struct
 import subprocess
 import sys
@@ -574,25 +575,67 @@ def test_convert_models_every_target_before_writing_anything(tmp_path, monkeypat
     assert writes == []
 
 
-def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch):
+class _Cell:
+    """The two Cell fields convert() reads before apply()."""
+
+    def __init__(self, target, cmake_dir):
+        self.target, self.cmake_dir = target, cmake_dir
+
+
+@pytest.mark.parametrize("proof_code", [0, 1])
+def test_convert_runs_the_wave_in_order(tmp_path, monkeypatch, proof_code):
     steps = []
-    monkeypatch.setattr(g, "model", lambda t, repo: t)
+    monkeypatch.setattr(g, "model", lambda t, repo: _Cell(t, tmp_path))
+    monkeypatch.setattr(g, "rewrite_cmake", lambda f, c: "")
     monkeypatch.setattr(g, "save_baseline", lambda ts, b, repo: steps.append(("baseline", b)))
-    monkeypatch.setattr(g, "apply", lambda c, repo: steps.append(("apply", c)) or [])
+    monkeypatch.setattr(g, "apply", lambda c, repo: steps.append(("apply", c.target)) or [])
     monkeypatch.setattr(g, "_ninja", lambda a, ts, repo: steps.append(("ninja", a)))
-    monkeypatch.setattr(g, "check", lambda ts, b, repo: steps.append(("check", b)) or 0)
+    monkeypatch.setattr(g, "check", lambda ts, b, repo: steps.append(("check", b)) or proof_code)
     monkeypatch.setattr(g, "refresh_manifests", lambda repo: steps.append(("manifests", repo)))
-    assert g.convert(["m"], tmp_path / "b", tmp_path) == 0
-    assert steps == [
+    assert g.convert(["m"], tmp_path / "b", tmp_path) == proof_code
+    expected = [
         ("baseline", tmp_path / "b"),
         ("apply", "m"),
         ("ninja", "i386"),
         ("ninja", "amd64"),
         ("ninja", "arm64"),
         ("check", tmp_path / "b"),
-        # What a build with no cmake reads follows the graphs the wave configured.
-        ("manifests", tmp_path),
     ]
+    if proof_code == 0:
+        expected.append(("manifests", tmp_path))
+    assert steps == expected
+
+
+def test_convert_fails_loud_when_a_new_cells_own_c_has_no_recipe(tmp_path, monkeypatch, capsys):
+    """A cell's `<m>_shims` reaches compile_commands.json only after cmake reconfigures, so
+    refresh_manifests' per-arch skip used to drop its recipe silently (normaliz, batch J)."""
+    for t in ("m", "n"):
+        cell = tmp_path / f"sdk/lib/rust/{t}-cargo"
+        cell.mkdir(parents=True)
+        cell.joinpath("build.rs").write_text(
+            f'.c_from_compile_db("{t}_shims", &["x/rust_cohab_stub.c"])\n'
+            '.c_from_compile_db("libcntpr", &["sdk/lib/crt/a.c"])\n'
+        )
+    for a in g.ARCHES:
+        g.clib_recipe_path(a, "n_shims", tmp_path).parent.mkdir(parents=True, exist_ok=True)
+        g.clib_recipe_path(a, "n_shims", tmp_path).write_text("# n_shims\n")
+    g.clib_recipe_path("arm64", "m_shims", tmp_path).write_text("# m_shims\n")
+    monkeypatch.setattr(g, "save_baseline", lambda *a: None)
+    monkeypatch.setattr(g, "apply", lambda c, repo: [])
+    # convert() dry-runs every cmake rewrite before applying any (ctail wave 4), reading
+    # each cell's cmake_dir: model a real cell and stub the rewrite itself.
+    monkeypatch.setattr(g, "model", lambda t, repo: _Cell(t, tmp_path))
+    monkeypatch.setattr(g, "rewrite_cmake", lambda *a: None)
+    monkeypatch.setattr(g, "_ninja", lambda *a: None)
+    monkeypatch.setattr(g, "check", lambda *a: 0)
+    monkeypatch.setattr(g, "refresh_manifests", lambda repo: None)
+    assert g.convert(["m", "n"], tmp_path / "b", tmp_path) == 1
+    # libcntpr is a shared library, judged by refresh_manifests' own rule, not here.
+    assert g.missing_cell_recipes(["m", "n"], tmp_path) == [
+        ("i386", "m_shims"),
+        ("amd64", "m_shims"),
+    ]
+    assert "clibs/i386/m_shims.recipe" in capsys.readouterr().out
 
 
 def _native_ratchet(root):
@@ -813,10 +856,11 @@ def test_an_rc_command_the_template_cannot_rebuild_is_refused():
         g.rc_encode(RC_CMD.replace("-DUNICODE -D_UNICODE", "-D_UNICODE -DUNICODE"), TMPL, "amd64")
 
 
-def test_the_rc_template_file_reads_back(tmp_path, monkeypatch):
-    monkeypatch.setattr(g, "rc_template_path", lambda a, repo=g.REPO: tmp_path / f"rc.{a}.flags")
-    (tmp_path / "rc.amd64.flags").write_text(TMPL.text("amd64"))
-    assert g.read_rc_template("amd64") == TMPL
+def test_the_rc_template_file_reads_back(tmp_path):
+    path = g.rc_template_path("amd64", tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text(TMPL.text("amd64"))
+    assert g.read_rc_template("amd64", tmp_path) == TMPL
 
 
 def test_rc_object_depends_reads_both_spellings():
@@ -828,7 +872,7 @@ def test_rc_object_depends_reads_both_spellings():
     assert g._rc_object_depends("set_source_files_properties", raw) is None
 
 
-def test_a_fresh_conversion_reads_its_rc_part_from_the_module_compile(monkeypatch):
+def test_a_fresh_conversion_reads_its_rc_part_from_the_module_compile(tmp_path):
     """--convert: the .rc compile is the module target's own (its object path is the marker);
     an arch the module is not built on takes another arch's part."""
     cmds = {
@@ -838,9 +882,14 @@ def test_a_fresh_conversion_reads_its_rc_part_from_the_module_compile(monkeypatc
             {"file": "/tmp/vibeos/base/m/rsrc.rc", "command": RC_CMD.replace("m.dir", "n.dir")}
         ],
     }
-    monkeypatch.setattr(g, "_rc_commands", lambda a, repo=g.REPO: cmds[a])
-    monkeypatch.setattr(g, "read_rc_template", lambda a, repo=g.REPO: TMPL)
-    flags = g.rc_flags_for("base/m/rsrc.rc", "base/m/CMakeFiles/m.dir/rsrc.rc.res")
+    for arch in g.ARCHES:
+        template = g.rc_template_path(arch, tmp_path)
+        template.parent.mkdir(parents=True, exist_ok=True)
+        template.write_text(TMPL.text(arch))
+        build = tmp_path / f"build-{arch}"
+        build.mkdir()
+        (build / "compile_commands.json").write_text(json.dumps(cmds[arch]))
+    flags = g.rc_flags_for("base/m/rsrc.rc", "base/m/CMakeFiles/m.dir/rsrc.rc.res", tmp_path)
     assert flags["amd64"] == flags["i386"] == flags["arm64"]
     assert flags["amd64"].defines == ("UNICODE", "_UNICODE")
 
@@ -879,7 +928,7 @@ def test_a_c_command_out_of_rule_order_is_refused():
         )
 
 
-def test_own_c_moves_a_shims_library_into_the_cell(tmp_path, monkeypatch):
+def test_own_c_moves_a_shims_library_into_the_cell(tmp_path):
     """The OBJECT library leaves cmake; what it linked for usage requirements, what it was
     ordered after and its generated sources order the cell."""
     cml = tmp_path / "base/m/CMakeLists.txt"
@@ -898,13 +947,24 @@ def test_own_c_moves_a_shims_library_into_the_cell(tmp_path, monkeypatch):
         '    Linker::new(t)\n        .c_from_compile_db("m_shims", &["base/m/shim.c", '
         '"base/m/m_s.c"])\n        .link(k);\n}\n'
     )
-    srcs = {a: ["base/m/shim.c", "@build/base/m/m_s.c"] for a in g.ARCHES}
-    monkeypatch.setattr(g, "_cmakelists", lambda repo: [cml])
-    monkeypatch.setattr(
-        g,
-        "c_lib_for",
-        lambda t, repo=g.REPO: (srcs, {a: g.c_encode(C_CMD, CTMPL, "amd64") for a in g.ARCHES}),
-    )
+    for arch in g.ARCHES:
+        template = g.c_template_path(arch, tmp_path)
+        template.parent.mkdir(parents=True, exist_ok=True)
+        template.write_text(CTMPL.text(arch))
+        build = tmp_path / f"build-{arch}"
+        build.mkdir()
+        cmd = C_CMD.replace("build-amd64", f"build-{arch}")
+        generated = f"/tmp/vibeos/build-{arch}/base/m/m_s.c"
+        commands = [
+            {"file": "/tmp/vibeos/base/m/shim.c", "command": cmd},
+            {
+                "file": generated,
+                "command": cmd.replace("/tmp/vibeos/base/m/shim.c", generated).replace(
+                    "shim.c.obj", "m_s.c.obj"
+                ),
+            },
+        ]
+        (build / "compile_commands.json").write_text(json.dumps(commands))
     assert g.own_c(None, tmp_path) == ["m-cargo"]
     out = cml.read_text()
     assert "m_shims" not in out
@@ -1131,17 +1191,25 @@ def test_the_dll_variant_is_the_body_when_the_module_also_has_a_static_one(tmp_p
     assert g.cmake_facts(f, "m", [])["body_var"] == "m_rust"
 
 
-def test_only_an_export_that_is_an_import_thunk_counts_as_bound(tmp_path, monkeypatch):
+def test_only_an_export_that_is_an_import_thunk_counts_as_bound(tmp_path):
     """evr and mf export names their delay-import lib also carries (their own stubs, and
     forwarders to the DLL it imports), which is not a rebound export: only a thunk is."""
-    import pe_equiv
     from test_pe_equiv import make_pe
 
-    monkeypatch.setattr(pe_equiv.PE, "imports", lambda self: ["delay mfplat.dll!Alpha"])
+    def with_import(code):
+        data = bytearray(make_pe(["Alpha", "Beta"], code=code))
+        # Actual delay import, so the parser and thunk check both run.
+        struct.pack_into("<II", data, 0x40 + 24 + 112 + 13 * 8, 0x1100, 64)
+        struct.pack_into("<IIIIIIII", data, 0x500, 1, 0x1180, 0, 0, 0x11A0, 0, 0, 0)
+        data[0x580:0x58B] = b"mfplat.dll\0"
+        struct.pack_into("<QQ", data, 0x5A0, 0x11C0, 0)
+        data[0x5C0:0x5C8] = b"\0\0Alpha\0"
+        return data
+
     thunk = tmp_path / "thunk.dll"
-    thunk.write_bytes(make_pe(["Alpha", "Beta"], code=b"\xff\x25\0\0\0\0"))
+    thunk.write_bytes(with_import(b"\xff\x25\0\0\0\0"))
     real = tmp_path / "real.dll"
-    real.write_bytes(make_pe(["Alpha", "Beta"], code=b"\x55\x48\x89\xe5\xc3"))
+    real.write_bytes(with_import(b"\x55\x48\x89\xe5\xc3"))
     assert g._exports_bound_to_imports(thunk) == {"Alpha"}  # Beta is not imported
     assert g._exports_bound_to_imports(real) == set()
     # ARM64's import thunk opens with `adrp x16, ...`.
@@ -1337,10 +1405,9 @@ def test_a_target_made_by_a_shared_function_names_the_function(tmp_path):
     assert any("add_bootvid(m x.cmake)" in u for u in g.cmake_facts(f, "m")["unknown"])
 
 
-def test_a_bodyless_cell_is_recognised_by_its_build_script(tmp_path, monkeypatch):
+def test_a_bodyless_cell_is_recognised_by_its_build_script(tmp_path):
     crate = tmp_path / "sdk/lib/rust/m-cargo"
     crate.mkdir(parents=True)
-    monkeypatch.setattr(g, "cell_crate", lambda target, repo: "m-cargo")
     assert not g._cell_is_bodyless("m", tmp_path)
     (crate / "build.rs").write_text(g.build_rs(cell(body_crate="", c_shims=["base/m/main.c"])))
     assert g._cell_is_bodyless("m", tmp_path)
@@ -1352,7 +1419,8 @@ def test_a_rerun_keeps_the_first_runs_baseline(tmp_path, monkeypatch):
     """After a failed build, build-<arch> may hold cell-linked PEs: re-baselining from it
     would compare the cells with themselves."""
     saved = []
-    monkeypatch.setattr(g, "model", lambda t, repo: t)
+    monkeypatch.setattr(g, "model", lambda t, repo: _Cell(t, tmp_path))
+    monkeypatch.setattr(g, "rewrite_cmake", lambda f, c: "")
     monkeypatch.setattr(g, "save_baseline", lambda ts, b, repo: saved.append(b))
     monkeypatch.setattr(g, "apply", lambda c, repo: [])
     monkeypatch.setattr(g, "_ninja", lambda a, ts, repo: None)
@@ -1367,17 +1435,158 @@ def test_a_rerun_keeps_the_first_runs_baseline(tmp_path, monkeypatch):
         g.convert(["m", "n"], b, tmp_path)
 
 
-def test_a_failed_build_names_the_failed_edge_not_the_lock_noise(tmp_path, monkeypatch):
+def test_a_failed_build_names_the_failed_edge_not_the_lock_noise(tmp_path):
     out = "\n".join(
         ["[1/9] cargo"] * 3
         + ["FAILED: drivers/base/kdstub/kdstub.dll", "error[E0425]: cannot find value"]
         + ["    Blocking waiting for file lock on build directory"] * 20
     )
-    monkeypatch.setattr(
-        g.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 1, out, "")
-    )
+    script = tmp_path / "tools/canon-run.sh"
+    script.parent.mkdir()
+    # Exercise the native subprocess capture with a deterministic failing build tool.
+    import shlex
+
+    script.write_text("printf '%s\\n' " + shlex.quote(out) + "\nexit 1\n")
     (tmp_path / "build-i386").mkdir()
     with pytest.raises(g.GenError) as e:
         g._ninja("i386", ["kdstub"], tmp_path)
     assert "FAILED: drivers/base/kdstub/kdstub.dll" in str(e.value)
     assert "error[E0425]" in str(e.value)
+
+
+def test_a_rewrite_refusal_writes_no_cell(tmp_path, monkeypatch):
+    """One target's CMakeLists refusing must stop the wave before any cell is written."""
+    applied = []
+
+    class C:
+        def __init__(self, t):
+            self.target, self.cmake_dir = t, tmp_path
+
+    def rewrite(f, c):
+        if c.target == "bad":
+            raise g.GenError("bad: its link is in an elseif/else branch")
+        return ""
+
+    monkeypatch.setattr(g, "model", lambda t, repo: C(t))
+    monkeypatch.setattr(g, "rewrite_cmake", rewrite)
+    monkeypatch.setattr(g, "save_baseline", lambda ts, b, repo: None)
+    monkeypatch.setattr(g, "apply", lambda c, repo: applied.append(c.target) or [])
+    with pytest.raises(g.GenError, match="elseif"):
+        g.convert(["good", "bad"], tmp_path / "b", tmp_path)
+    assert applied == []
+
+
+def test_a_target_another_cmakelists_reads_by_genex_is_found(tmp_path):
+    (tmp_path / "a").mkdir()
+    (tmp_path / "b").mkdir()
+    (tmp_path / "a/CMakeLists.txt").write_text("add_executable(filebrowser main.c)\n")
+    (tmp_path / "b/CMakeLists.txt").write_text(
+        "add_custom_command(TARGET rshell POST_BUILD\n"
+        '  COMMAND x "$<TARGET_FILE_DIR:filebrowser>/y")\n'
+    )
+    g._GENEX_REFS.pop(tmp_path, None)
+    assert g._target_file_refs(tmp_path) == {"filebrowser": ["b/CMakeLists.txt"]}
+
+
+def test_a_conditional_compile_setting_keeps_its_condition(tmp_path):
+    """libxslt's MSVC-only /wd4267 was moved out of its if(MSVC) onto the OBJECT library
+    unconditionally and broke clang; it must keep the if()s it sat under."""
+    f = tmp_path / "CMakeLists.txt"
+    body = (
+        "add_executable(m main.c rsrc.rc)\n"
+        "set_module_type(m win32gui UNICODE)\n"
+        "if(MSVC)\n"
+        '    if(ARCH STREQUAL "amd64")\n'
+        "        target_compile_options(m PRIVATE /wd4267)\n"
+        "    endif()\n"
+        "endif()\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    f.write_text(body)
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    i = out.index("target_compile_options(m_shims PRIVATE /wd4267)")
+    assert out.rfind("if(MSVC)", 0, i) != -1
+    assert out.rfind('if(ARCH STREQUAL "amd64")', 0, i) > out.rfind("if(MSVC)", 0, i)
+    f.write_text(body.replace('    if(ARCH STREQUAL "amd64")\n', "else()\n    if(1)\n"))
+    with pytest.raises(g.GenError, match="elseif/else branch"):
+        g.rewrite_cmake(f, c)
+
+
+def test_an_object_in_a_subdirectory_maps_to_that_subdirectorys_source():
+    d = Path("/r/dll/win32/crypt32")
+    obj = "dll/win32/crypt32/CMakeFiles/crypt32.dir/reactos/unixlib.c.obj"
+    assert g._obj_source(d, obj) == d / "reactos/unixlib.c"
+    assert g._obj_source(d, "dll/win32/crypt32/CMakeFiles/crypt32.dir/str.c.obj") == d / "str.c"
+    c = cell(cmake_dir=g.REPO / "dll/win32/crypt32", target="crypt32")
+    assert g._shim_name("dll/win32/crypt32/reactos/unixlib.c", c) == "reactos/unixlib.c"
+
+
+def test_a_generated_rc_input_behind_a_list_variable_orders_the_cell():
+    text = (
+        "list(APPEND m_rc_deps\n"
+        "    ${CMAKE_CURRENT_SOURCE_DIR}/m.rgs\n"
+        "    ${CMAKE_CURRENT_BINARY_DIR}/m_v1.tlb)\n"
+    )
+    deps = g._expand(["${m_rc_deps}"], g._list_vars(text))
+    assert deps == ["${CMAKE_CURRENT_SOURCE_DIR}/m.rgs", "${CMAKE_CURRENT_BINARY_DIR}/m_v1.tlb"]
+
+
+@pytest.mark.parametrize("kind", ["FILE", "FILE_DIR", "LINKER_FILE_NAME"])
+def test_model_refuses_another_cmake_consumer_before_conversion(tmp_path, kind):
+    _ratchet_fixture(tmp_path)
+    assert g.model("foo", tmp_path).target == "foo"
+    _cml(tmp_path, "consumer", f'add_custom_target(copy COMMAND x "$<TARGET_{kind}:foo>")\n')
+    with pytest.raises(g.GenError, match="other CMakeLists read its file"):
+        g.model("foo", tmp_path)
+    assert (tmp_path / "sdk/lib/rust/foo-cargo/build.rs").read_text() == "fn main() {}\n"
+
+
+def test_model_and_rewrite_preserve_nested_sources_with_colliding_basenames(tmp_path):
+    _ratchet_fixture(tmp_path)
+    source = tmp_path / "foo/reactos/unixlib.c"
+    source.parent.mkdir()
+    source.write_text("int nested(void) { return 7; }\n")
+    (tmp_path / "foo/unixlib.c").write_text("int wrong(void) { return 8; }\n")
+    for arch in g.ARCHES:
+        ninja = tmp_path / f"build-{arch}/build.ninja"
+        ninja.write_text(
+            ninja.read_text().replace("rust_cohab_stub.c.obj", "reactos/unixlib.c.obj")
+        )
+    c = g.model("foo", tmp_path)
+    assert c.c_shims == ["foo/reactos/unixlib.c"]
+    out = g.rewrite_cmake(tmp_path / "foo/CMakeLists.txt", c)
+    assert "add_library(foo_shims OBJECT reactos/unixlib.c)" in out
+
+
+def test_resource_dependency_lists_survive_both_native_rewriters(tmp_path):
+    deps = (
+        "set(first ${CMAKE_CURRENT_BINARY_DIR}/m.tlb)\n"
+        "set(all_deps ${first})\n"
+        "list(APPEND all_deps ${CMAKE_CURRENT_BINARY_DIR}/extra.tlb)\n"
+        "set_source_files_properties(rsrc.rc PROPERTIES OBJECT_DEPENDS ${all_deps})\n"
+    )
+    cmake = tmp_path / "CMakeLists.txt"
+    cmake.write_text(CMAKE + deps)
+    out = g.rewrite_cmake(cmake, cell())
+    assert (
+        "EXTRA_DEPENDS psdk ${CMAKE_CURRENT_BINARY_DIR}/m.tlb ${CMAKE_CURRENT_BINARY_DIR}/extra.tlb"
+        in out
+    )
+    cmake.write_text(
+        "add_library(m_res OBJECT rsrc.rc)\n"
+        "add_cargo_module(m m-cargo m.exe\n    KIND win32exe\n    EXTRA_DEPENDS m_res psdk)\n"
+        + deps
+    )
+    g._rpc("_drop_res_in", {"cmake": cmake, "target": "m_res"}, tmp_path)
+    out = cmake.read_text()
+    assert "OBJECT_DEPENDS" not in out
+    assert (
+        "EXTRA_DEPENDS psdk ${CMAKE_CURRENT_BINARY_DIR}/m.tlb ${CMAKE_CURRENT_BINARY_DIR}/extra.tlb"
+        in out
+    )
+    cmake.write_text(CMAKE + deps + "set(first ${all_deps})\n")
+    before = cmake.read_bytes()
+    with pytest.raises(g.GenError, match="recursive CMake list variable"):
+        g.rewrite_cmake(cmake, cell())
+    assert cmake.read_bytes() == before

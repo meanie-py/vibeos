@@ -188,14 +188,14 @@ pub unsafe extern "system" fn VfatFormat(
             }
         }
 
-        DPRINT!("PartitionType 0x%x\n", PartitionInfo.Mbr.PartitionType);
+        DPRINT!("PartitionType 0x%x\n", PartitionInfo.__bindgen_anon_1.Mbr.PartitionType);
         DPRINT!("StartingOffset %I64d\n", PartitionInfo.StartingOffset.QuadPart);
         DPRINT!("PartitionLength %I64d\n", PartitionInfo.PartitionLength.QuadPart);
-        DPRINT!("HiddenSectors %lu\n", PartitionInfo.Mbr.HiddenSectors);
+        DPRINT!("HiddenSectors %lu\n", PartitionInfo.__bindgen_anon_1.Mbr.HiddenSectors);
         DPRINT!("PartitionNumber %d\n", PartitionInfo.PartitionNumber);
-        DPRINT!("BootIndicator 0x%x\n", PartitionInfo.Mbr.BootIndicator);
+        DPRINT!("BootIndicator 0x%x\n", PartitionInfo.__bindgen_anon_1.Mbr.BootIndicator);
         DPRINT!("RewritePartition %d\n", PartitionInfo.RewritePartition);
-        DPRINT!("RecognizedPartition %d\n", PartitionInfo.Mbr.RecognizedPartition);
+        DPRINT!("RecognizedPartition %d\n", PartitionInfo.__bindgen_anon_1.Mbr.RecognizedPartition);
     } else if PartitionInfo.PartitionStyle == PARTITION_STYLE_GPT {
         if PartitionInfo.PartitionLength.QuadPart < (4200 * 1024) {
             /* FAT12 CHS partition (disk is smaller than 4.1MB) */

@@ -12,7 +12,7 @@ build_hint: "tools/payloads/oldcrt/build.sh {arch}"
 binaries:
   - src: tools/payloads/oldcrt/oldcrt-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/oldcrt.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/oldcrt.exe
 
 test:
   launch_marker: "[OLDCRT] done"

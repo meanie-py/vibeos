@@ -199,9 +199,16 @@ What the batch added to the shared crates and tools:
    **~20,900 non-blank lines in 237 TUs across 122 directories.** Most of the bulk is not
    ours: `dll/win32/wow64` (8,422, fex-arm) and `wow64cpu`, `bootvid` (~1,000,
    control-plane B), `shimgvw` (C++ lane), and the audio `backpln` bits. Ours, by size:
-   - **GUID data libraries:** `uuid`, `strmiids`, `dxguid` (~1,960 lines, all DEFINE_GUID).
-     Blocked on a tool gap: `port data` does not emit header `DEFINE_GUID`s (why cdrom's
-     `guid.c` stayed C). Teaching it to would retire these for $0.
+   - **GUID data libraries:** `uuid`, `strmiids`, `dxguid` (~1,960 lines, 1,841
+     DEFINE_GUIDs). **They stay C (decided 2026-11-01).** Under `INITGUID`, `guiddef.h`
+     defines each GUID `DECLSPEC_SELECTANY`, a COMDAT that every TU including the header
+     with INITGUID may also emit; the linker keeps one. Stable Rust has no weak or
+     selectany definition (the `linkage` attribute is nightly), so Rust copies would be
+     strong symbols and collide with every C or widl TU that still emits the same GUID.
+     The content is pure data with no logic to grade, and most of it is not ours anyway:
+     `dxguid` is Wine's (Julliard/Gouget), `uuid` is mostly widl output from the IDL list
+     in its CMakeLists, and `strmiids`' `evr.c` is Wine's. Teaching `port data` to emit
+     header GUIDs would buy nothing while selectany can't be expressed.
    - **The CRT's own residue:** `crt/math` (43 TUs incl. `arm64/`), `crt/printf`,
      `crt/misc`, `crt/except/amd64`, `crtheap`, `vcstartup`, `gcc-compat`. This is the
      msvcrt lane's, i.e. ours; read the CRT rows in `rust-port-status.md` before
@@ -212,6 +219,151 @@ What the batch added to the shared crates and tools:
      `dmilib`, `wdfdriverentry`, `esent`, `wing32`, `skiplist`, and a few win32ss
      stragglers. One `rustconv port` batch, a few dollars on Haiku.
    Re-measure before starting; the script is in this commit's message.
+9. **Batch J: the small native tail is Rust (2026-11-01, Haiku, $0.13 for 129 calls).**
+   19 modules through `rustconv port`: epsapi, scrnsave, streamci, batt, shimlib,
+   aux_klib, dxapi, acledit, udmihelp, `sdk/lib/nt`, tdilib, ksuser, devcpux, sfc, sfc_os,
+   dmilib, wdfdriverentry, esent, wing32. The 8 PE modules among them (streamci, dxapi,
+   acledit, ksuser, devcpux, sfc, sfc_os, wing32) are cargo-linked, PE-EQUIVALENT to the
+   cmake build on all three arches. Hand fixes worth knowing, all banked with `port hand`:
+   - **An ntoskrnl DATA export goes through its `__imp_` slot.** aux_klib's
+     `KiBugCheckData` came through the island as a plain `extern static`, asking the link
+     for a symbol no driver defines (wdf01000/wdfldr failed). The import is spelled like
+     bootvid's `KeLoaderBlock`: `link_name = "_imp__X"` on i386, `"__imp_X"` elsewhere.
+   - **A spec that pre-decorates its names** (`dxapi.spec`'s `_DxApi@20`) made
+     `cohab_stub` anchor `__DxApi@20@20` on i386 and the i386 spelling on the 64-bit
+     arches. `cohab_stub._c_name` now strips it the way spec2def does.
+   - **`port flip` drops a module's C target even when C stays** (shimlib's varargs shim,
+     batt's and esent's `rust_cohab_stub.c`). `port flip` now repoints the cargo cells
+     that named the old C target to BOTH `engine:c:T` and the body crate when C sources
+     remain (`_repoint_cargo_cells(.., keeps_c)`). Still owed: it does not reshape a
+     module that is itself a C-body cargo cell; batt and esent were done by hand
+     (`<m>-cargo/build.rs`: `.rust_staticlib("<m>-rust")` plus
+     `c_from_compile_db("<m>_shims", [".../rust_cohab_stub.c"])`).
+   - **`scan_bitwise_not_bool` caught a shipped-to-be bug:** devcpux's `AddFeature` came
+     back as `if !*bFirst != 0`, Rust's bitwise NOT of a `BOOL`, true for every value but
+     -1, so every CPU feature got a leading separator. Now `*bFirst == 0`.
+   - The 9 static libraries are baselined in `scan_cmake_linked_rust`, like tdihelpers:
+     `cargo_cell_gen` refuses a static library (no PE to link).
+   - esent's 12 `Jet*` exports lacked `#[no_mangle]`; scrnsave's entry is `wWinMain`;
+     dxapi's `DxApi` calls cdecl handlers through a stdcall PFN, as the C does (comment).
+   **Deferred:** user-mode `lsalib`. Its Rust twin is ntkrnl-sys-bound and needs a crate
+   feature design for a user-mode build. conutils (variadic shims only) and skiplist (a test
+   exe) are not translation targets.
+10. **CRT residue triage (2026-11-01, measured, not guessed).** Item 8 counted ~120
+   compiled TUs under `sdk/lib/crt`. What WINS a link is far less. Method: per arch,
+   `llvm-nm --defined-only -g` each C archive against the Rust archives linked ahead of
+   it, then intersect the C-only names with the PE's export table (`llvm-readobj
+   --coff-exports`); the archives each PE links come from `build.ninja` and the
+   `*-cargo/build.rs` link orders.
+   - **crtmath is linked by NO PE on any arch.** ucrtbase.dll's `build.ninja` edge lists
+     `libcrtmath.a` only as an IMPLICIT dependency (after the `|`); its real link line is
+     `ucrtbase_stubs.rs.obj` + `crt_shared_cargo` + kernel32/ntdll. Reading the implicit
+     deps as inputs (as this item first did) makes `_cabs` look like crtmath's C, when
+     ucrtbase.spec's `-stub _cabs` is served by the spec2def stub; a Rust `_cabs` then
+     fails the link as a duplicate. Measure link inputs from the explicit inputs and
+     `LINK_LIBRARIES` only.
+   - **libcntpr** (the kernel CRT; no PE links it through cmake, but 22 cargo cells name
+     `engine:c:libcntpr` AHEAD of `cntpr_rust`; 17-20 PEs per arch link it) defines 30 (arm64) / 42 (amd64) / 98
+     (i386) names. Overlap with Rust: only `atol` and `exp2f`, and there the C wins by
+     order. The rest has no Rust twin:
+     - **amd64 `except/amd64/ehandler.c`** (`__C_specific_handler`, `_local_unwind`):
+       live, ours (ReactOS MIT), compiled into ntoskrnl's and ntdll's cells, freeldr,
+       rosload and libcntpr. The one substantive piece: Rust now (item 11).
+     - **never linked:** `_mbstrlen`, `exp2f`, `_invoke_matherr`/`__setusermatherr`, and
+       winesup's `_internal_handle_float` have no callers (libcntpr.cmake's own notes),
+       so their archive members are never pulled. Not worth buying.
+     - **stays C:** every printf/scanf shell, the `va_list` ones included. Defining a C
+       variadic needs `c_variadic` and consuming a `va_list` needs `core::ffi::VaList`,
+       both nightly; they are `va_start; streamout(...)` shells over the Rust engine.
+       Also the asm (`chkstk`, `seh.s`, i386 `all*`/`ftol*`), `wine_wctype_table`
+       (Wine's data), and `atol.c`, which also defines `_atoldbl` (no Rust twin yet).
+     - **i386 `_CI*` / `__libm_sse2_*`:** done, item 12.
+   - **Also stays C:** `memcmp` (~340 PEs per arch; AGENTS.md: LLVM folds a Rust byte
+     loop back into `memcmp`); `vcstartup` (C++ startup objects, linked by avifil32 and
+     d2d1 only); `getopt` (libtiff only). `dbgrpt` and `chkesp` reach no PE.
+11. **amd64 `__C_specific_handler` is Rust (2026-11-02, $0, hand port).** `ehandler.c` →
+   `rtl-except/src/amd64/ehandler.rs` (`__C_specific_handler`, `_local_unwind`), which
+   ntoskrnl and ntdll link through rtl-rust; both still export it. The C left every list:
+   ntoskrnl's two cells, ntdll's, libcntpr (amd64 REMOVE_ITEM, and its clib recipe), and
+   freeldr/rosload/uefildr, which never referenced it (no SEH in the boot loaders; they
+   link without it). Drivers that took the C statically from libcntpr now import it from
+   ntoskrnl, as Windows drivers do. Gate ×3 green
+   (`/tmp/vibeos-cli/20261102-001430-k2z_6ff8-gate-i386+amd64+arm64`); amd64 boots to the
+   desktop through it. It is NOT the arm64 handler (`arm64/except.rs`), which is a
+   different algorithm: this one bumps `ScopeIndex` before each scope, stops a target
+   unwind at the scope containing the target or whose `__except` is the target, and
+   filters on any `HandlerAddress` other than the literal 1.
+   - **`cargo_cell_gen --convert` dropped new cells' recipes silently.** Its
+     `refresh_manifests` skips a library with no compile command (fine for a library
+     absent on some arch), but a converted cell's own `<m>_shims` has none until cmake
+     reconfigures, so normaliz's and batch J's eight `*_shims.recipe` sets were never
+     written. `convert` now fails loud naming each missing (arch, library) and the fix
+     (`missing_cell_recipes`); the missing recipes are committed.
+
+12. **The i386 `_CI*` thunks are Rust everywhere (2026-11-02, $0).** Wine's
+   CREATE_FPU_FUNC1/2 `global_asm!` thunks moved out of `crt-shared-rust` into a
+   dependency-free `ci-thunks` crate: feature `all` (sixteen) for the CRT DLLs, `kernel`
+   (cos, sin, sqrt, log, pow) for ntoskrnl and ntdll, which take it through
+   `cnt-rust-lib`'s new `ci` feature on i386 only. Their cells drop crtmath's
+   `ci{cos,sin,sqrt,log,pow}.c`. These thunks also spill and restore the rest of the
+   caller's x87 stack around the call, where the C only popped the operand. Export
+   counts are unchanged (ntoskrnl 3, ntdll 5, msvcrt/ucrtbase 16), and ntoskrnl's
+   `_CIsqrt` disassembles to the `fxam` spill loop calling the kernel's `_sqrt`.
+   Nothing else reached them: no compiler we use emits `_CI*` or `__libm_sse2_*`, so
+   libcntpr (i386 REMOVE_ITEM) and freeldr/rosload/uefildr drop `ci*.c` and
+   `libm_sse2.c` and still link. Both consumers name it with `extern crate
+   ci_thunks;`: since edition 2018 rustc only loads a dependency something references,
+   and nothing calls a `global_asm!`-only crate.
+
+13. **wow64.dll is Rust (2026-11-02, Haiku, $0.75; fex lane's code, owner-approved, fex agreed
+   the boundary).** `wow64.c`, `wow64_manual.c` (7K lines of 32<->64 marshallers),
+   `wow64_callback.c`, both automarshal TUs and `wow64_pfnmap.c` -> `wow64-rust`.
+   `wow64_thunks.c` and `wow64_win32k.c` stay C (`--keep-c`): they are dispatchers that
+   `#include` the codegen-emitted `*.gen.c` syscall tables. **Owed:** have `codegen
+   wow64-thunks` emit Rust so they can follow. The crate is empty on i386 (wow64.dll is
+   built for amd64 and arm64 only), so the i386 workspace check stays green. amd64 ladder
+   13/13 through it. Still cmake-linked: `cargo_cell_gen` refuses a module not built on
+   every arch (owed; baselined in `scan_cmake_linked_rust`).
+   - **Ladder bugs, both classes now lints.** (1) The C defines the BTCpu function
+     pointers once in `wow64.c` and declares them `extern` elsewhere; the Rust gave
+     `wow64_manual.rs` and `wow64_callback.rs` their own never-assigned `static mut`
+     copies, so `NtContinue` returned STATUS_INVALID_PARAMETER and every i386 guest died
+     right after its loader. New `scan_extern_copy` (vibeos-lint) flags a private static
+     shadowing a crate's `#[no_mangle]` one; tree-wide it found 18 more. 11 were real (the module's C
+     declares the name `extern`) and are FIXED (2026-11-02): each private copy now
+     imports the one definition. Six were live bugs: cmd `bTitleSet` (the title command's
+     flag never reached cmd.c), comctl32 `uDragListMessage`, dhcpcsvc
+     `hAdapterStateChangedEvent` (the prelude re-exported the COPY, so every module but
+     adapter.rs used it), ndis `CancelId`, winspool `hinstWinSpool` (a null instance
+     for resource loads), win32k `gxcoTrivial` (bitblt_new's copy was ZEROED, so a
+     blit without a clip got empty rclBounds instead of LONG_MIN..LONG_MAX), and cc
+     `LazyWriter` (view.rs's ScanActive was always 0, so every dirtied VACB rescheduled
+     the lazy-write scan). Dead copies, unified anyway: appwiz `hApplet`, fontview
+     `g_NumFonts`, opengl32 `ContextListHead`, win32k `g_PointZero`. The 7 left in the
+     baseline are not copies: arch twins (hal arm64/x86, kiinit amd64/arm64), a C
+     `static` of its own (hal rtctimer, freeldr vidfb's FrameBufferData), a per-TU wine
+     debug channel, and csrsrv's SessionId (csrsrv and basesrv are separate DLLs in C).
+     (2) `sizeof(*p)` came back as `size_of_val(&p)`, the
+     size of the POINTER: the AFD select marshaller allocated 8+8n bytes for a 24+16n
+     buffer and `select()` overran the 64-bit heap. New `scan_sizeof_pointer`. All 71
+     `size_of_val(&*p)` sites became `size_of::<T>()` too: `&*p` builds a reference from
+     a null or misaligned guest pointer, which C's unevaluated `sizeof` never does.
+   - **The 32-bit AFD structs are `packed(4)`** (`pshpack4` in the C; `scan_pack_drift`).
+   - **Arch arms the translation flattened**, fixed by a cargo-check pass: the
+     `PrepareForException` hook and `Wow64pCpuGetContext32`'s `ESP += 4` are not-arm64;
+     `Wow64ApcRoutine`'s dispatch-RSP write-back is amd64-only; setjmp/longjmp are
+     per-arch `#[unsafe(naked)]`; `WOW64_CPU_DLL`/`WOW64_NATIVE_MACHINE` are per-arch.
+   - **Tool fixes it forced:** `profile_derive` reads `if(ARCH STREQUAL a OR ARCH
+     STREQUAL b)` (it took only the first test, so the target vanished on amd64); `port
+     derive` picks the first arch that defines the target instead of hard-wired i386;
+     `--keep-c` TUs no longer shape the island (the kept dispatchers' generated tables
+     broke the wrapper); a UTF-8 C narrow literal copied into `b"..."` is escaped to its
+     bytes before the audit parses it (`byte_literals.py`). c2rust refused five
+     marshallers over block-scope `extern` VARIABLES (clang links later declarations to
+     the first, block-scope one), so `wow64_manual.c` declares them once at file scope.
+     `Wow64LdrpInitialize` was adopted from its stored reject for $0 after repairing the
+     one call token it spelled by name.
+
 
 ## Not ours: skip these
 

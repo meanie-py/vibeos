@@ -67,9 +67,9 @@ pub fn NT_SUCCESS(status: NTSTATUS) -> bool {
 
 // ---- no-op Wine debug shims (TRACE/ERR/WARN/FIXME are DPRINT-class no-ops) ----
 #[macro_export]
-macro_rules! WINE_TRACE { ($($t:tt)*) => {{}}; }
+macro_rules! WINE_TRACE { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
 #[macro_export]
-macro_rules! WINE_ERR { ($($t:tt)*) => {{}}; }
+macro_rules! WINE_ERR { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
 
 // ---- WLX GINA dispatch ABI: curated re-export from winlogon-sys (NOT a glob —
 // globbing winlogon_sys::nt would collide with the ntdll_sys::nt glob on shared

@@ -15,7 +15,7 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
 // DPRINT1 PRINTS in this DBG=1 tree, kernel and user mode alike: it comes from
 // win32macros-rust with the other macros.
-#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) }; }
 #[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
 pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};
@@ -182,6 +182,7 @@ extern "C" {
 }
 extern "system" {
     pub fn CreateStatusWindowW(style: LONG, lpszText: LPCWSTR, hwndParent: HWND, wID: UINT) -> HWND; // sndvol32.c
+    pub fn GetLastError() -> DWORD; // sndvol32.c (its DPRINTs)
     pub fn DefWindowProcW(_: HWND, _: UINT, _: WPARAM, _: LPARAM) -> LRESULT; // sndvol32.c
     pub fn DialogBoxParamW(_: HINSTANCE, _: LPCWSTR, _: HWND, _: DLGPROC, _: LPARAM) -> INT_PTR; // sndvol32.c
     pub fn DispatchMessageW(_: *const MSG) -> LRESULT; // sndvol32.c

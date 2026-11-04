@@ -149,6 +149,13 @@ pub fn wine_dbgstr_longlong(ll: u64) -> *const c_char {
     unsafe { win32macros_rust::wine_dbgstr_longlong(ll) }
 }
 
+/// wine/debug.h `wine_dbgstr_rect`, named only by olepicture's off-channel TRACE (type-checked,
+/// never evaluated: DBG_TYPECHECK). win32macros-rust has no rect formatter to forward to, so this
+/// returns a placeholder rather than invent one; give it a body if an ON channel ever uses it.
+pub fn wine_dbgstr_rect<T>(_rect: *const T) -> *const c_char {
+    b"(rect)\0".as_ptr() as *const c_char
+}
+
 // Reached only inside TRACE!/WARN!, whose tokens are discarded: no live call exists to give
 // them a real signature to match (`debugstr_an`/`debugstr_wn` take a length the C passes).
 macro_rules! debugstr_stub {

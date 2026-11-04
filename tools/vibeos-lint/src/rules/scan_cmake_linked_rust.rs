@@ -26,67 +26,40 @@ fn re(p: &str) -> Regex {
     crate::regexes::cached(p).expect("valid cmake-linked-rust regex")
 }
 
-const CARGO_CELL_GEN_SOURCE: &str = include_str!("../../../cargo_cell_gen.py");
-
 struct EngineTables {
     libs: BTreeMap<String, String>,
     deps: BTreeMap<String, String>,
 }
 
-static ENGINE_TABLES: LazyLock<Result<EngineTables, String>> =
-    LazyLock::new(|| parse_engine_tables(CARGO_CELL_GEN_SOURCE));
+static ENGINE_TABLES: LazyLock<Result<EngineTables, String>> = LazyLock::new(|| {
+    let tables = vibeos_codegen::cells::constants();
+    let parse = |name: &str| -> Result<BTreeMap<String, String>, String> {
+        let table: BTreeMap<String, String> = serde_json::from_value(tables[name].clone())
+            .map_err(|e| format!("Cargo cell {name}: {e}"))?;
+        if table.is_empty() {
+            return Err(format!("Cargo cell {name} is empty"));
+        }
+        Ok(table)
+    };
+    Ok(EngineTables {
+        libs: parse("ENGINE_LIBS")?,
+        deps: parse("ENGINE_LIB_DEPS")?,
+    })
+});
 
-/// Parsed directly from cargo_cell_gen.py so the checker cannot silently drift from
-/// the converter's hand-maintained archive maps.
+/// The checker and converter use the same native archive maps.
 pub fn engine_table() -> Result<&'static BTreeMap<String, String>, String> {
     ENGINE_TABLES
         .as_ref()
-        .map(|tables| &tables.libs)
+        .map(|t| &t.libs)
         .map_err(Clone::clone)
 }
 
 pub fn engine_deps_table() -> Result<&'static BTreeMap<String, String>, String> {
     ENGINE_TABLES
         .as_ref()
-        .map(|tables| &tables.deps)
+        .map(|t| &t.deps)
         .map_err(Clone::clone)
-}
-
-fn parse_engine_tables(source: &str) -> Result<EngineTables, String> {
-    fn parse(source: &str, name: &str) -> Result<BTreeMap<String, String>, String> {
-        let start = source
-            .find(&format!("{name} = {{"))
-            .ok_or_else(|| format!("cargo_cell_gen.py has no {name} dictionary"))?;
-        let tail = &source[start..];
-        let end = tail
-            .find("\n}")
-            .ok_or_else(|| format!("cargo_cell_gen.py {name} dictionary is unterminated"))?;
-        let body = &tail[tail.find('\n').unwrap_or(0) + 1..end];
-        let entry = re(r#"^\s*"([^"]+)"\s*:\s*"([^"]+)"\s*,?\s*$"#);
-        let mut rows = BTreeMap::new();
-        for line in body.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let caps = entry
-                .captures(line)
-                .ok_or_else(|| format!("unrecognized {name} dictionary row: {line}"))?;
-            let key = caps[1].to_owned();
-            let value = caps[2].to_owned();
-            if rows.insert(key.clone(), value).is_some() {
-                return Err(format!("duplicate {name} dictionary key {key}"));
-            }
-        }
-        if rows.is_empty() {
-            return Err(format!("cargo_cell_gen.py {name} dictionary is empty"));
-        }
-        Ok(rows)
-    }
-    Ok(EngineTables {
-        libs: parse(source, "ENGINE_LIBS")?,
-        deps: parse(source, "ENGINE_LIB_DEPS")?,
-    })
 }
 
 fn read(path: &Path) -> Result<String, String> {
@@ -1818,13 +1791,5 @@ add_custom_target(rust_foo DEPENDS ${{LIB}})
             deps.get("engine:c:libcntpr").map(String::as_str),
             Some("psdk asm")
         );
-    }
-    #[test]
-    fn engine_table_parser_fails_on_unknown_rows_and_duplicate_keys() {
-        assert!(parse_engine_tables(
-            "ENGINE_LIBS = {\n    UNKNOWN\n}\nENGINE_LIB_DEPS = {\n    \"x\": \"y\"\n}"
-        )
-        .is_err());
-        assert!(parse_engine_tables("ENGINE_LIBS = {\n    \"x\": \"y\"\n    \"x\": \"z\"\n}\nENGINE_LIB_DEPS = {\n    \"x\": \"y\"\n}").is_err());
     }
 }

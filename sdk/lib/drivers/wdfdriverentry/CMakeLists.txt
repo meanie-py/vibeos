@@ -1,6 +1,14 @@
 remove_definitions(-D_WIN32_WINNT=0x502)
 
-add_library(wdfdriverentry STATIC wdfdriverentry.c)
+# Every translation unit is Rust now (wdfdriverentry-rust, `rustconv port`); the C stays on
+# disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(wdfdriverentry_rust wdfdriverentry-rust "" TRUE)
+add_library(wdfdriverentry STATIC
+    # wdfdriverentry.c  # replaced by Rust (sdk/lib/rust/wdfdriverentry-rust/src/wdfdriverentry/wdfdriverentry.rs)
+    rust_cohab_stub.c
+    )
+add_dependencies(wdfdriverentry rust_wdfdriverentry_rust)
+target_link_libraries(wdfdriverentry ${wdfdriverentry_rust_LIB})
 add_dependencies(wdfdriverentry xdk)
 
 if(GCC)

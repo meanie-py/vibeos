@@ -1,0 +1,60 @@
+{
+  "manifest": "include rules.ninja\nbuild app.exe | app.map: LINK app.obj || gen.h\nbuild app.obj: CC app.c\nbuild gen.h: GEN\nbuild dead.o: CC dead.c\nbuild sp$ ace.obj: CC sp$ ace.c\nbuild livecd: phony app.exe\n",
+  "edges": [
+    [
+      [
+        "app.exe",
+        "app.map"
+      ],
+      [
+        "app.obj",
+        "gen.h"
+      ]
+    ],
+    [
+      [
+        "app.obj"
+      ],
+      [
+        "app.c"
+      ]
+    ],
+    [
+      [
+        "gen.h"
+      ],
+      []
+    ],
+    [
+      [
+        "dead.o"
+      ],
+      [
+        "dead.c"
+      ]
+    ],
+    [
+      [
+        "sp ace.obj"
+      ],
+      [
+        "sp ace.c"
+      ]
+    ],
+    [
+      [
+        "livecd"
+      ],
+      [
+        "app.exe"
+      ]
+    ]
+  ],
+  "plan": [
+    [
+      "dead.o",
+      "sp ace.obj"
+    ],
+    []
+  ]
+}

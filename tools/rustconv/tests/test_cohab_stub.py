@@ -42,3 +42,16 @@ def test_only_a_generated_stub_counts_as_regenerable(tmp_path):
     assert is_generated(full, "mod", "mod-rust")
     assert not is_generated("/* mine */\n", "mod", "mod-rust")
     assert not is_generated(stub_text("mod", "mod-rust", None) + "int x;\n", "mod", "mod-rust")
+
+
+def test_a_pre_decorated_spec_name_anchors_the_c_symbol(tmp_path):
+    """dxapi.spec spells `_DxApi@20`; spec2def maps it to C's `DxApi`, re-decorated on i386."""
+    from rustconv import cohab_stub
+
+    spec = tmp_path / "m.spec"
+    spec.write_text("@ stdcall _DxApi@20(long ptr long ptr long)\n@ stdcall Plain(ptr)\n")
+    text = cohab_stub.stub_text("m", "m-rust", spec)
+    i386, rest = text.split("#elif defined(__x86_64__)", 1)
+    assert '__asm__("_DxApi@20")' in i386 and '__asm__("_Plain@4")' in i386
+    assert '__asm__("DxApi")' in rest and '__asm__("Plain")' in rest
+    assert "@20@20" not in text and '"_DxApi@20"' not in rest

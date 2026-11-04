@@ -748,6 +748,33 @@ macro_rules! InitializeObjectAttributes {
 
 // ================= ntdef.h / debug.h — assertions, strings, pointer and page helpers ==========
 
+/// The arguments of a debug macro whose channel is OFF (`TRACE`/`WARN`, a stubbed `DPRINT`),
+/// TYPE-CHECKED but never evaluated or emitted. They sit in a closure that is never called:
+/// the closure body is name-resolved and type-checked like any code, but no call means no codegen,
+/// so a debug helper that is declared and never linked still links. A swallowing
+/// `($($t:tt)*) => {{}}` compiles nothing, so a stale argument (a renamed local, a field
+/// that moved) rots silently, and every value computed only for a trace reads as unused.
+/// No catch-all arm: a call that is not `fmt, args..` must fail, not vanish.
+#[macro_export]
+macro_rules! DBG_TYPECHECK {
+    () => {{}};
+    ($fmt:expr $(, $arg:expr)* $(,)?) => {{
+        let _ = || {
+            // wine/debug.h's string helpers, in scope for the check even in a crate that
+            // never imported them (a stale `debugstr_w` was the commonest rotted argument).
+            #[allow(unused_imports)]
+            use $crate::{debugstr_a, debugstr_an, debugstr_guid, debugstr_w, debugstr_wn};
+            #[allow(unused_unsafe)]
+            unsafe {
+                // `let _ = place;` binds nothing: no read, no move, no borrow, so a packed
+                // field or a moved local is fine, and the name still resolves and type-checks.
+                let _ = $fmt;
+                $(let _ = $arg;)*
+            }
+        };
+    }};
+}
+
 /// shellutils.h:88 `FAILED_UNEXPECTEDLY(hr)` -- `_ROS_FAILED_HELPER`, i.e. `FAILED(hr)` plus a
 /// debug trace of the failing expression. The VALUE is `FAILED`; the trace is not carried.
 /// C also calls it as a bare statement for the trace alone (fontext, stobject), so the value

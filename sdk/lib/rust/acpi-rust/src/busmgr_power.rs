@@ -27,7 +27,7 @@ use acpica_sys::{AcpiEvaluateObject, AcpiGetName};
 use acpica_sys::{ACPI_SINGLE_NAME, ACPI_TYPE_INTEGER};
 
 // ACPI_DEBUG_PRINT / ACPI_FUNCTION_TRACE / ACPI_MODULE_NAME are no-ops (NDEBUG).
-macro_rules! ACPI_DEBUG_PRINT { ($($t:tt)*) => {}; }
+macro_rules! ACPI_DEBUG_PRINT { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
 
 // strcpy from the CRT (used for resource.name and acpi_device_name/class).
 extern "C" {

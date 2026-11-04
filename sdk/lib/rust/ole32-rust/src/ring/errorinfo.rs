@@ -195,7 +195,7 @@ stdmethod! { fn IErrorInfoImpl_GetDescription(
 ) -> HRESULT {
     let This = impl_from_IErrorInfo(iface);
 
-    TRACE!(b"(%p)->(pBstrDescription=%p)\n\0".as_ptr() as _, This, pBstrDescription);
+    TRACE!(b"(%p)->(pBstrDescription=%p)\n\0".as_ptr() as *const i8, This, pBstrDescription);
     if pBstrDescription.is_null() {
         return E_INVALIDARG;
     }

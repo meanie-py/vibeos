@@ -57,6 +57,7 @@ from .bank_audit import exported_symbols
 from .bank_audit import format_report as format_bank_report
 from .batch_runner import TranslationResult, submit_batch, submit_single
 from .body_audit import main as body_audit_main
+from .byte_literals import escape_nonascii_byte_strings
 from .c2rust_anchor import C2RustError, CompiledOut, build_anchor_map, build_preamble
 from .c_body_checks import body_findings, control_flow_findings, parse_findings
 from .c_defs import c_functions
@@ -1067,6 +1068,8 @@ def _unseal_worker(
     and it always was.
     """
     rust = restore_requested_name(scrub_comment_token_echoes(rust), dep.name)
+    # A UTF-8 C narrow literal copied into `b"..."` does not parse; its bytes do.
+    rust = escape_nonascii_byte_strings(rust)
     # Sealed tokens the model omitted that live only in code the build never executes
     # (`#if`-disabled arms, DUMMY_PSEH except-blocks). Accepted, but printed: relaxing a
     # guarantee silently is the failure mode sealing exists to prevent (dead_regions.py).

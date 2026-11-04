@@ -29,6 +29,7 @@ use crate::verfysup::IsFileDeleted;
 use crate::timesup::{FatGetCurrentFatTime, FatNtTimeToFatTime};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
+use crate::glue::TAG_BCB;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExFreePool, ExIsResourceAcquiredExclusiveLite, ExIsResourceAcquiredSharedLite, ExReleaseResourceLite, LARGE_INTEGER, LARGE_MCB, OEM_STRING, PFILE_OBJECT, PLARGE_INTEGER, PLONGLONG, POEM_STRING, PUNICODE_STRING, RtlAreBitsClear, RtlAreBitsSet, RtlDowncaseUnicodeString, RtlFindClearBits, RtlOemStringToCountedUnicodeString, RtlSetBits, RtlUpcaseUnicodeString};
@@ -1728,7 +1729,7 @@ pub unsafe extern "system" fn FatUpdateDirentFromFcb(
         || UpdateLastWriteTime != 0
         || UpdateLastAccessTime != 0
     {
-        DebugTrace!(0, Dbg, (b"Update Time and/or file size on File/Dir\n".as_ptr() as *const u8).cast(), 0);
+        DebugTrace!(0, Dbg, (b"Update Time and/or file size on File/Dir\n".as_ptr() as *const u8).cast::<i8>(), 0);
 
         // try { try { ... } except (FsRtlIsNtstatusExpected(code)) { FatResetExceptionState }
         // } finally { FatUnpinBcb }

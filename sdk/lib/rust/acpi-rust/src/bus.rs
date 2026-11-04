@@ -86,7 +86,7 @@ fn ACPI_FAILURE(s: ACPI_STATUS) -> bool {
 
 // ---- ACPICA debug macros — no-ops under the driver's NDEBUG build. ----
 macro_rules! ACPI_DEBUG_PRINT {
-    ($($t:tt)*) => {};
+    () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }};
 }
 pub const ACPI_DB_INFO: u32 = 0;
 pub const ACPI_DB_ERROR: u32 = 0;

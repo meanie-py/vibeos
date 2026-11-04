@@ -4,7 +4,8 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
-pub static mut bTitleSet: BOOL = 0;
+// The C declares this `extern`; one definition lives in cmd.rs (scan_extern_copy).
+use crate::cmd::cmd::bTitleSet;
 #[no_mangle]
 pub unsafe extern "C" fn cmd_title(mut param: LPTSTR) -> INT {
     /* Do nothing if no args */

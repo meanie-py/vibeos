@@ -112,6 +112,7 @@ PORTED = frozenset(
         "scan_byte_step_one",
         "scan_variant_outptr",
         "scan_inert_crate_allow",
+        "scan_swallowing_debug_macro",
         "scan_byteptr_stride",
         "scan_calloc_elem_type",
         "scan_cdecl_alias",
@@ -132,6 +133,8 @@ PORTED = frozenset(
         "scan_dowhile_continue",
         "scan_variadic_array_arg",
         "scan_let_shadow",
+        "scan_sizeof_pointer",
+        "scan_extern_copy",
         "scan_double_fetch",
         "scan_hresult_literals",
         "scan_init_then_move",
@@ -149,6 +152,8 @@ PORTED = frozenset(
         "scan_local_overlength",
         "scan_shadowed_c_define",
         "scan_move_vs_nonoverlapping",
+        "scan_assert_negated_vs_c",
+        "scan_devobj_as_extension",
         "scan_hkey_zero_extend",
     }
 )
@@ -158,6 +163,7 @@ SENTINEL = "VIBEOS_LINT"
 def ensure(repo: Path) -> Path:
     source = repo / "tools/vibeos-lint"
     codegen = repo / "tools/vibeos-codegen"
+    build_library = repo / "tools/vibeos-build"
     target = repo / ".cache/vibeos-lint/vibeos-lint"
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -166,6 +172,10 @@ def ensure(repo: Path) -> Path:
             source / "Cargo.toml",
             source / "Cargo.lock",
             codegen / "Cargo.toml",
+            build_library / "Cargo.toml",
+            build_library / "Cargo.lock",
+            repo / "tools/host-jobs/src/build_policy.rs",
+            *sorted(source_files(build_library / "src", "*")),
             *sorted(source_files(codegen / "src", "*")),
             repo / "rust-toolchain.toml",
             repo / "tools/rustconv/rustconv/conventions.py",

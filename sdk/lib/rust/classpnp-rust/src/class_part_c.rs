@@ -479,7 +479,7 @@ pub unsafe extern "C" fn ClasspReleaseQueue(
 ) {
     let mut irpStack: PIO_STACK_LOCATION;
     let mut irp: PIRP;
-    let fdoExtension = Fdo as *mut FUNCTIONAL_DEVICE_EXTENSION;
+    let fdoExtension = (*Fdo).DeviceExtension as *mut FUNCTIONAL_DEVICE_EXTENSION;
     let lowerDevice: PDEVICE_OBJECT;
     let mut srb: PSTORAGE_REQUEST_BLOCK_HEADER;
     let mut currentIrql: KIRQL = 0;
@@ -569,7 +569,10 @@ pub unsafe extern "C" fn ClasspReleaseQueue(
 pub unsafe extern "C" fn ClasspAllocateReleaseRequest(
     Fdo: PDEVICE_OBJECT
 ) -> NTSTATUS {
-    let fdoExtension = Fdo as PFUNCTIONAL_DEVICE_EXTENSION;
+    // C: Fdo->DeviceExtension. Six classpnp sites cast the DEVICE_OBJECT itself, so this
+    // release-queue lock and its flags were written into the device object; the crate's
+    // alignment checks caught it once device extensions became cache-aligned.
+    let fdoExtension = (*Fdo).DeviceExtension as PFUNCTIONAL_DEVICE_EXTENSION;
 
     KeInitializeSpinLock(core::ptr::addr_of_mut!((*fdoExtension).ReleaseQueueSpinLock));
 
@@ -595,7 +598,7 @@ pub unsafe extern "C" fn ClasspFreeReleaseRequest(
 
     if !(*fdoExtension).ReleaseQueueIrp.is_null() {
         if (*fdoExtension).ReleaseQueueIrpFromPool != 0 {
-            FREE_POOL((*fdoExtension).ReleaseQueueIrp as PVOID);
+            FREE_POOL!((*fdoExtension).ReleaseQueueIrp);
         } else {
             IoFreeIrp((*fdoExtension).ReleaseQueueIrp);
         }
@@ -605,7 +608,7 @@ pub unsafe extern "C" fn ClasspFreeReleaseRequest(
     if !(*fdoExtension).PrivateFdoData.is_null() &&
        (*(*fdoExtension).PrivateFdoData).ReleaseQueueIrpAllocated != 0 {
 
-        FREE_POOL((*(*fdoExtension).PrivateFdoData).ReleaseQueueIrp as PVOID);
+        FREE_POOL!((*(*fdoExtension).PrivateFdoData).ReleaseQueueIrp);
         (*(*fdoExtension).PrivateFdoData).ReleaseQueueIrpAllocated = 0;
     }
 }
@@ -776,7 +779,7 @@ pub unsafe extern "C" fn ClasspGetLBProvisioningInfo(
                                       srbSize,
                                       core::ptr::addr_of_mut!((*(*FdoExtension).FunctionSupportInfo).BlockLimitsData));
 
-    FREE_POOL((srb).cast());
+    FREE_POOL!(srb);
 
     return STATUS_SUCCESS;
 }

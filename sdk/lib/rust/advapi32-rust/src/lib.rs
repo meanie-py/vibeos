@@ -18,10 +18,10 @@
 // out in the C too). Defined at crate root before the body modules so textual
 // macro scoping makes them visible to every translated file.
 // Lowercase aliases — some translated files emit `trace!`/`warn!`/etc.
-macro_rules! trace { ($($arg:tt)*) => {{}}; }
-macro_rules! warn { ($($arg:tt)*) => {{}}; }
-macro_rules! err { ($($arg:tt)*) => {{}}; }
-macro_rules! fixme { ($($arg:tt)*) => {{}}; }
+macro_rules! trace { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
+macro_rules! warn { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
+macro_rules! err { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
+macro_rules! fixme { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }}; }
 
 // Compile-time UTF-16 NUL-terminated literal: `wide!("Software")` → &'static [u16; N]
 // (no alloc; the #![no_std] crate has no Vec). Replaces the c2rust

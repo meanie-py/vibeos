@@ -515,7 +515,7 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: PDEVICE_OBJECT) -> PTRANSFER_PAC
                     TRACE_FLAG_RW,
                     b"Failed to allocate SRB.\0" as *const u8 as *const i8 as PCCHAR,
                 );
-                FREE_POOL((newPkt).cast());
+                FREE_POOL!(newPkt);
                 newPkt = core::ptr::null_mut();
             }
         }
@@ -633,7 +633,7 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: PDEVICE_OBJECT) -> PTRANSFER_PAC
     } else {
         // free all resources in reverse order
         if !newPkt.is_null() {
-            FREE_POOL(((*newPkt).RetryHistory).cast());
+            FREE_POOL!((*newPkt).RetryHistory);
             if !(*newPkt).PartialMdl.is_null() {
                 IoFreeMdl((*newPkt).PartialMdl);
             }
@@ -641,9 +641,9 @@ pub unsafe extern "C" fn NewTransferPacket(Fdo: PDEVICE_OBJECT) -> PTRANSFER_PAC
                 IoFreeIrp((*newPkt).Irp);
             }
             if !(*newPkt).Srb.is_null() {
-                FREE_POOL(((*newPkt).Srb).cast());
+                FREE_POOL!((*newPkt).Srb);
             }
-            FREE_POOL((newPkt).cast());
+            FREE_POOL!(newPkt);
             newPkt = core::ptr::null_mut();
         }
     }

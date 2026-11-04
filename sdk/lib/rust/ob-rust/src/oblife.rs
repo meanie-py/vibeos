@@ -82,6 +82,10 @@ extern "system" {
 extern "C" {
     static mut NtGlobalFlag: ULONG;
     static mut PsThreadType: POBJECT_TYPE;
+    static mut IoDeviceObjectType: POBJECT_TYPE;
+}
+extern "system" {
+    fn ExpAllocatePoolWithTagAlignedAt(PoolType: POOL_TYPE, NumberOfBytes: SIZE_T, Tag: ULONG, Offset: SIZE_T) -> PVOID;
 }
 
 // DEBUG: UART trace for crash diagnosis
@@ -622,7 +626,20 @@ unsafe fn ObpAllocateObject(
 
     let FinalSize = QuotaSize + HandleSize + NameSize + CreatorSize + core::mem::offset_of!(_OBJECT_HEADER, Body) as ULONG;
 
-    Header = ExAllocatePoolWithTag(PoolType, (FinalSize + ObjectSize) as usize, Tag) as POBJECT_HEADER;
+    // DIVERGES from the C: a device object's block is placed so that its extension, at
+    // `DeviceObject + 1` (the layout KMDF and drivers rely on), starts on a cache line. The DDK
+    // declares cache-aligned types drivers embed there (classpnp's COMMON_DEVICE_EXTENSION holds
+    // a LOOKASIDE_ALIGN lookaside on 64-bit), and the plain pool placement never honoured them.
+    Header = if !ObjectType.is_null() && ObjectType == IoDeviceObjectType {
+        ExpAllocatePoolWithTagAlignedAt(
+            PoolType,
+            (FinalSize + ObjectSize) as usize,
+            Tag,
+            FinalSize as SIZE_T + core::mem::size_of::<ntkrnl_sys::ddk::_DEVICE_OBJECT>(),
+        ) as POBJECT_HEADER
+    } else {
+        ExAllocatePoolWithTag(PoolType, (FinalSize + ObjectSize) as usize, Tag) as POBJECT_HEADER
+    };
     if Header.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }

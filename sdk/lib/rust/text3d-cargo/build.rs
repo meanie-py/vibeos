@@ -29,9 +29,9 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["body", "engine:c:scrnsave", "import:user32", "import:gdi32", "import:opengl32", "import:glu32", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
-        "x86_64" => &["body", "engine:c:scrnsave", "import:user32", "import:gdi32", "import:opengl32", "import:glu32", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
-        "aarch64" => &["body", "engine:c:scrnsave", "import:user32", "import:gdi32", "import:opengl32", "import:glu32", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
+        "x86" => &["body", "engine:crate:scrnsave-rust::TRUE", "import:user32", "import:gdi32", "import:opengl32", "import:glu32", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
+        "x86_64" => &["body", "engine:crate:scrnsave-rust::TRUE", "import:user32", "import:gdi32", "import:opengl32", "import:glu32", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
+        "aarch64" => &["body", "engine:crate:scrnsave-rust::TRUE", "import:user32", "import:gdi32", "import:opengl32", "import:glu32", "import:advapi32", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:oldnames"],
         _ => unreachable!(),
     };
 

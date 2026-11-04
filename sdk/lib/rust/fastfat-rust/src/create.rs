@@ -1,5 +1,6 @@
 #[allow(unused_imports)] use crate::{TimerStart, TimerStop};
 #[allow(unused_imports)] use crate::{NT_ASSERT};
+use crate::stats::{CollectCreateHitStatistics, CollectCreateStatistics};
 use ntkrnl_sys::globals::*;
 // One declaration per external symbol: externs.rs.
 use crate::externs::FAT_LFN_DIRENTS_NEEDED;
@@ -162,8 +163,6 @@ extern "system" {
     fn RtlUpcaseUnicodeString( Dest: *mut _UNICODE_STRING, Src: *mut _UNICODE_STRING, Allocate: BOOLEAN, ) -> NTSTATUS;
     fn RtlUpcaseUnicodeStringToCountedOemString( Dest: *mut OEM_STRING, Src: *mut _UNICODE_STRING, Allocate: BOOLEAN, ) -> NTSTATUS;
     fn RtlMoveMemory(Dest: *mut u8, Src: *const u8, Length: u32);
-    fn CollectCreateHitStatistics(Vcb: *mut VCB);
-    fn CollectCreateStatistics(Vcb: *mut VCB, Status: NTSTATUS);
     fn FsRtlExitFileSystem();
 }
 extern "C" {

@@ -1067,6 +1067,25 @@ page_initial_commit_size(uint32_t page_type, size_t page_size) {
 	return page_type_commits_per_block(page_type) ? global_config.page_size : page_size;
 }
 
+// VIBEOS PATCH (checked commit): rpmalloc's memory_commit returns void, and os_mcommit only
+// asserts on a refused VirtualAlloc (ENABLE_ASSERTS=0 here), so every caller wrote its page or
+// span header into memory that was never committed and the CPU layer died on the access
+// violation. Each commit that is followed by a write now goes through this, and a refusal
+// leaves the structure as it was so malloc returns NULL. A custom memory interface (FEX
+// installs one only off Windows) keeps upstream's unchecked call.
+static inline int
+memory_commit_checked(void* address, size_t size) {
+#if PLATFORM_WINDOWS && ENABLE_DECOMMIT
+	if (global_memory_interface->memory_commit == os_mcommit) {
+		if (global_config.disable_decommit)
+			return 1;
+		return VirtualAlloc(address, size, MEM_COMMIT, PAGE_READWRITE) != 0;
+	}
+#endif
+	global_memory_interface->memory_commit(address, size);
+	return 1;
+}
+
 static inline void
 page_decommit_memory_pages(page_t* page) {
 	if (page->is_decommitted)
@@ -1077,14 +1096,15 @@ page_decommit_memory_pages(page_t* page) {
 	page->is_decommitted = 1;
 }
 
-static inline void
+static inline int
 page_commit_memory_pages(page_t* page) {
 	if (!page->is_decommitted)
-		return;
+		return 1;
 	void* extra_page = pointer_offset(page, global_config.page_size);
 	size_t extra_page_size = page_get_size(page) - global_config.page_size;
-	if (!page_type_commits_per_block(page->page_type)) // VIBEOS PATCH: per-block pages commit as blocks are handed out
-		global_memory_interface->memory_commit(extra_page, extra_page_size);
+	if (!page_type_commits_per_block(page->page_type) && // VIBEOS PATCH: per-block pages commit as blocks are handed out
+	    !memory_commit_checked(extra_page, extra_page_size))  // VIBEOS PATCH (checked commit): stays decommitted
+		return 0;
 	page->is_decommitted = 0;
 #if ENABLE_DECOMMIT
 #if !defined(__APPLE__)
@@ -1096,6 +1116,7 @@ page_commit_memory_pages(page_t* page) {
 	page->is_zero = 1;
 #endif
 #endif
+	return 1;
 }
 
 static void
@@ -1344,8 +1365,9 @@ span_allocate_page(span_t* span) {
 
 #if ENABLE_DECOMMIT
 	// The first page is always committed on initial span map of memory
-	if (span->page_initialized)
-		global_memory_interface->memory_commit(page, page_initial_commit_size(span->page_type, span->page_size)); // VIBEOS PATCH
+	if (span->page_initialized &&
+	    !memory_commit_checked(page, page_initial_commit_size(span->page_type, span->page_size))) // VIBEOS PATCH
+		return 0; // VIBEOS PATCH (checked commit): the span is unchanged, its next page still uncommitted
 #endif
 	++span->page_initialized;
 
@@ -1597,7 +1619,10 @@ heap_get_span(heap_t* heap, page_type_t page_type) {
 			page_address_mask = LARGE_PAGE_MASK;
 		}
 #if ENABLE_DECOMMIT
-		global_memory_interface->memory_commit(span, page_initial_commit_size(page_type, page_size)); // VIBEOS PATCH
+		if (!memory_commit_checked(span, page_initial_commit_size(page_type, page_size))) { // VIBEOS PATCH
+			global_memory_interface->memory_unmap(span, offset, mapped_size); // VIBEOS PATCH (checked commit)
+			return 0;
+		}
 #endif
 		span->heap = heap;
 		span->page_type = page_type;
@@ -1643,8 +1668,13 @@ heap_get_page_generic(heap_t* heap, uint32_t size_class) {
 	// Check if there is a free page
 	page_t* page = heap->page_free[page_type];
 	if (EXPECTED(page != 0)) {
+		// VIBEOS PATCH (checked commit): recommit while the page is still on the free list, so a
+		// refusal leaves it there, decommitted, and malloc returns NULL.
+		int was_decommitted = page->is_decommitted;
+		if (UNEXPECTED(!page_commit_memory_pages(page)))
+			return 0;
 		heap->page_free[page_type] = page->next;
-		if (page->is_decommitted == 0) {
+		if (was_decommitted == 0) {
 			rpmalloc_assert(heap->page_free_commit_count[page_type] > 0, "Free committed page count out of sync");
 			--heap->page_free_commit_count[page_type];
 		}
@@ -1666,6 +1696,8 @@ heap_get_page_generic(heap_t* heap, uint32_t size_class) {
 	span_t* span = heap_get_span(heap, page_type);
 	if (EXPECTED(span != 0)) {
 		page = span_allocate_page(span);
+		if (UNEXPECTED(page == 0)) // VIBEOS PATCH (checked commit)
+			return 0;
 		heap_make_free_page_available(page->heap, size_class, page);
 	}
 
@@ -1715,7 +1747,10 @@ heap_allocate_block_huge(heap_t* heap, size_t size, unsigned int zero) {
 	if (block) {
 		span_t* span = block;
 #if ENABLE_DECOMMIT
-		global_memory_interface->memory_commit(span, alloc_size);
+		if (!memory_commit_checked(span, alloc_size)) { // VIBEOS PATCH (checked commit)
+			global_memory_interface->memory_unmap(span, offset, mapped_size);
+			return 0;
+		}
 #endif
 		span->heap = heap;
 		span->page_type = PAGE_HUGE;

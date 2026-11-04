@@ -68,6 +68,7 @@ pub const STATUS_DISK_FULL: i32 = 0xC000007F_u32 as i32;
 pub const STATUS_FILE_CORRUPT_ERROR: i32 = 0xC0000102_u32 as i32;
 pub const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016_u32 as i32;
 pub const STATUS_UNMAPPABLE_CHARACTER: i32 = 0xC0000162_u32 as i32;
+pub const TAG_BCB: u32 = 0x62746146; // nolint: const-contradiction ('btaF' -- fastfat/nodetype.h:157; ntkrnl-sys's TAG_BCB is the cache manager's 'CcBc')
 pub const TAG_CCB: u32 = 0x43746146; // nolint: const-contradiction ('CtaF' -- fastfat/nodetype.h:151; cdfs' is 'ccdC')
 pub const TAG_EA_DATA: u32 = 0x64746146;  // 'dtaF'
 pub const TAG_ERESOURCE: u32 = 0x45746146;  // 'EtaF'

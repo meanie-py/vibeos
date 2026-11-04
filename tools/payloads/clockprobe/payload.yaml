@@ -15,7 +15,7 @@ build_hint: "tools/payloads/clockprobe/build.sh {arch}"
 binaries:
   - src: tools/payloads/clockprobe/clockprobe-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/clockprobe.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/clockprobe.exe
 
 test:
   launch_marker: "[CLOCKPROBE] done"

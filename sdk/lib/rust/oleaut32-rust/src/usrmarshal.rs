@@ -181,7 +181,7 @@ pub unsafe extern "system" fn BSTR_UserSize(
 
     TRACE!(
         b"(%x,%d,%p) => %p\n\0".as_ptr() as *const i8,
-        *pFlags,
+        *_pFlags,
         Start,
         pstr,
         *pstr,
@@ -204,7 +204,7 @@ pub unsafe extern "system" fn BSTR_UserMarshal(_pFlags: *mut ULONG, mut Buffer: 
 
     let len: DWORD = SysStringByteLen(*pstr);
 
-    TRACE!(b"(%x,%p,%p) => %p\n\0".as_ptr() as *const i8, *pFlags, Buffer, pstr, *pstr);
+    TRACE!(b"(%x,%p,%p) => %p\n\0".as_ptr() as *const i8, *_pFlags, Buffer, pstr, *pstr);
     if !(*pstr).is_null() {
         TRACE!(b"string=%s\n\0".as_ptr() as *const i8, debugstr_w(*pstr));
     }
@@ -233,7 +233,7 @@ pub unsafe extern "system" fn BSTR_UserUnmarshal(
     
     TRACE!(
         b"(%x,%p,%p) => %p\n\0".as_ptr() as *const i8,
-        *pFlags,
+        *_pFlags,
         Buffer,
         pstr,
         *pstr,
@@ -278,7 +278,7 @@ pub unsafe extern "system" fn BSTR_UserUnmarshal(
 pub unsafe extern "system" fn BSTR_UserFree(_pFlags: *mut ULONG, pstr: *mut BSTR) {
     TRACE!(
         b"(%x,%p) => %p\n\0".as_ptr() as *const i8,
-        *pFlags,
+        *_pFlags,
         pstr,
         *pstr,
     );
@@ -496,7 +496,7 @@ pub unsafe extern "system" fn VARIANT_UserMarshal(
         Buffer,
         pvar,
     );
-    TRACE!(b"vt=%04x\n\0".as_ptr() as *const i8, (*V_VT_ref(pvar)));
+    TRACE!(b"vt=%04x\n\0".as_ptr() as *const i8, *V_VT_ref(pvar));
 
     let mut aligned_buffer = Buffer;
     ALIGN_POINTER!(aligned_buffer, 7);
@@ -516,8 +516,8 @@ pub unsafe extern "system" fn VARIANT_UserMarshal(
     }
 
     Pos = header.offset(1) as *mut u8;
-    type_size = get_type_size(pFlags, *V_VT_ref(pvar) );
-    align = get_type_alignment(pFlags, *V_VT_ref(pvar) ) as i32;
+    type_size = get_type_size(pFlags, *V_VT_ref(pvar));
+    align = get_type_alignment(pFlags, *V_VT_ref(pvar)) as i32;
     ALIGN_POINTER!(Pos, align);
 
     if (*header).vt & VT_BYREF as USHORT != 0 {
@@ -770,7 +770,7 @@ pub unsafe extern "system" fn VARIANT_UserFree(pFlags: *mut ULONG, pvar: *mut VA
     let mut ref_: LPVOID = core::ptr::null_mut();
 
     TRACE!(b"(%x,%p)\n\0".as_ptr(), *pFlags, pvar);
-    TRACE!(b"vt=%04x\n\0".as_ptr(), (*V_VT_ref(pvar)));
+    TRACE!(b"vt=%04x\n\0".as_ptr(), *V_VT_ref(pvar));
 
     if (vt & VT_BYREF) != 0 {
         ref_ = (*pvar).n1.n2.n3.byref;
@@ -1157,9 +1157,9 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
     let vt: VARTYPE;
     let wiresab: *mut SAFEARRAYBOUND;
 
-    TRACE!(b"(\0".as_ptr() as _);
+    TRACE!(b"(\0".as_ptr() as *const i8);
     dump_user_flags(pFlags);
-    TRACE!(b", %p, %p\n\0".as_ptr() as _, Buffer, ppsa);
+    TRACE!(b", %p, %p\n\0".as_ptr() as *const i8, Buffer, ppsa);
 
     ALIGN_POINTER!(Buffer, 3);
     ptr = *(Buffer as *mut ULONG);
@@ -1169,7 +1169,7 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
         SafeArrayDestroy(*ppsa);
         *ppsa = core::ptr::null_mut();
 
-        TRACE!(b"NULL safe array unmarshaled\n\0".as_ptr() as _);
+        TRACE!(b"NULL safe array unmarshaled\n\0".as_ptr() as *const i8);
 
         return Buffer;
     }
@@ -1330,7 +1330,7 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
         }
     }
 
-    TRACE!(b"safe array unmarshaled: %p\n\0".as_ptr() as _, *ppsa);
+    TRACE!(b"safe array unmarshaled: %p\n\0".as_ptr() as *const i8, *ppsa);
 
     return Buffer;
 }
@@ -2279,7 +2279,7 @@ pub unsafe extern "system" fn ITypeInfo_ReleaseTypeAttr_Proxy(
     pTypeAttr: *mut TYPEATTR,
 ) {
     
-    TRACE!(b"(%p, %p)\n\0".as_ptr(), This, pTypeAttr);
+    TRACE!(b"(%p, %p)\n\0".as_ptr(), _This, pTypeAttr);
     free_embedded_typedesc(core::ptr::addr_of_mut!((*pTypeAttr).tdescAlias));
     CoTaskMemFree(pTypeAttr as LPVOID);
 }
@@ -2295,7 +2295,7 @@ pub unsafe extern "system" fn ITypeInfo_ReleaseFuncDesc_Proxy(
     _This: *mut ITypeInfo,
     pFuncDesc: *mut FUNCDESC) {
     let mut param: SHORT;
-    TRACE!(b"(%p, %p)\n\0".as_ptr() as PCHAR, This, pFuncDesc);
+    TRACE!(b"(%p, %p)\n\0".as_ptr() as PCHAR, _This, pFuncDesc);
 
     param = 0;
     while param < (*pFuncDesc).cParams {
@@ -2326,7 +2326,7 @@ pub unsafe extern "system" fn ITypeInfo_ReleaseVarDesc_Proxy(
     _This: *mut ITypeInfo,
     pVarDesc: *mut VARDESC,
 ) {
-    TRACE!(b"(%p, %p)\n\0".as_ptr() as PCHAR, This, pVarDesc);
+    TRACE!(b"(%p, %p)\n\0".as_ptr() as PCHAR, _This, pVarDesc);
 
     CoTaskMemFree((*pVarDesc).lpstrSchema as LPVOID);
 
@@ -2613,7 +2613,7 @@ pub unsafe extern "system" fn ITypeLib_ReleaseTLibAttr_Proxy(
     _This: *mut ITypeLib,
     pTLibAttr: *mut TLIBATTR,
 ) {
-    TRACE!(b"(%p, %p)\n\0".as_ptr() as *const i8, This, pTLibAttr);
+    TRACE!(b"(%p, %p)\n\0".as_ptr() as *const i8, _This, pTLibAttr);
     CoTaskMemFree(pTLibAttr as LPVOID);
 }
 #[no_mangle]

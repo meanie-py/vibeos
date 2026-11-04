@@ -92,5 +92,6 @@ undname = []
 ucrtsupport = []
 
 [dependencies]
+ci-thunks = { path = "../ci-thunks", features = ["all"] }
 winedebug-rust = { path = "../winedebug-rust" }
 msvcrt-sys = { path = "../msvcrt-sys" }

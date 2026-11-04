@@ -13,7 +13,7 @@ build_hint: "tools/payloads/dispprobe/build.sh {arch}"
 binaries:
   - src: tools/payloads/dispprobe/dispprobe-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/dispprobe.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/dispprobe.exe
 
 test:
   launch_marker: "[DISPPROBE] done"

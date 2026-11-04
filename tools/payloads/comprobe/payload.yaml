@@ -12,7 +12,7 @@ build_hint: "tools/payloads/comprobe/build.sh {arch}"
 binaries:
   - src: tools/payloads/comprobe/comprobe-{arch}.exe
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/comprobe.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/comprobe.exe
 
 test:
   launch_marker: "[COMPROBE] done"

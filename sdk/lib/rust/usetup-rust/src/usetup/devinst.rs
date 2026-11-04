@@ -617,7 +617,7 @@ unsafe extern "system" fn PnpEventThread(Parameter: PVOID) -> ULONG {
             let mut len: ULONG;
             let mut DeviceIdLength: ULONG;
 
-            DPRINT!("Device enumerated: %S\n", (*PnpEvent).TargetDevice.DeviceIds);
+            DPRINT!("Device enumerated: %S\n", (*PnpEvent).__bindgen_anon_1.TargetDevice.DeviceIds);
 
             DeviceIdLength = (wcslen(((*PnpEvent).__bindgen_anon_1.TargetDevice.DeviceIds).as_ptr())) as _;
             if DeviceIdLength != 0 {

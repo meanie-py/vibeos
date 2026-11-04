@@ -85,7 +85,7 @@ unsafe fn GetConsoleInputBufferMode(Console: PCONSRV_CONSOLE) -> u32 {
 extern "C" {
     fn DbgPrint(Format: *const core::ffi::c_char, ...) -> u32;
 }
-macro_rules! DPRINT  { ($($t:tt)*) => { () } }
+macro_rules! DPRINT  { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }} }
 macro_rules! DPRINT1 {
     ($fmt:literal $(, $arg:expr)* $(,)?) => {
         unsafe {

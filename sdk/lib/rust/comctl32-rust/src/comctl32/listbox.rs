@@ -3511,7 +3511,7 @@ unsafe extern "system" fn LISTBOX_WindowProc(hwnd: HWND, msg: UINT, wParam: WPAR
 
     TRACE!(
         b"[%p]: msg %#x wp %08lx lp %08lx\n\0".as_ptr() as *const ::core::ffi::c_char,
-        (*descr).self_0,
+        (*descr).self_,
         msg,
         wParam,
         lParam,

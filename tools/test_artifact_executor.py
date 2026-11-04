@@ -1,16 +1,32 @@
-"""Semantic worker projection and real namespace negative controls, no compiles."""
+"""Native executor API, projection and real namespace controls; no body compiles.
+
+The implementation-injection controls moved into artifact_executor.rs::tests:
+- test_run_failure_is_final_and_retains_stage_evidence,
+  test_run_success_records_verified_inputs_and_actual_tool_postcheck, and
+  test_changed_inputs_after_compile_are_rejected are covered by
+  supervision_success_failure_and_postcheck_controls_preserve_final_evidence.
+- prepared_integrity_rejects_all_prior_mutation_classes_before_launch covers the
+  complete native integrity matrix; public mutation/refusal controls stay here too.
+- real_signals_stop_only_the_owned_session and
+  abrupt_owner_death_controls_stop_workers_and_release_inherited_lease exercise
+  live processes, cancellation and inherited admission-lease cleanup.
+
+Native RunHost injection replaces patching Python transport functions; the API
+controls below call the shipping native implementation without substituted policy.
+"""
 
 import json
 import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from tools import artifact_executor as executor
-from tools.artifact_executor import WORKSPACE, file_digest, launch, normalize, run
+from tools.artifact_executor import WORKSPACE, launch, normalize, run
 
 
 def write(root, relative, text):
@@ -94,11 +110,8 @@ def test_real_namespace_hides_host_and_rejects_source_writes_and_network(tmp_pat
         "env": {"ONLY_EXPLICIT": "1"},
         "argv": [],
     }
-    # Bootstrap needs repository Python modules before chroot; they are never
-    # mounted into the worker. Derive their repository path from loaded module.
-    import tools.artifact_inputs
-
-    config["repo"] = str(Path(tools.artifact_inputs.__file__).resolve().parents[1])
+    # The native bootstrap does not mount the source checkout into the worker.
+    config["repo"] = str(executor.IMPLEMENTATION_REPO.resolve())
     for name in ("root", "projection", "toolchain", "target", "cargo-home", "home", "scratch"):
         path = tmp_path / name
         path.mkdir()
@@ -128,9 +141,7 @@ def test_cold_compile_refuses_existing_evidence(tmp_path, monkeypatch):
     monkeypatch.setenv("VIBEOS_HOST_JOB_HELD", "1")
     report = {
         "compile_status": "success",
-        "context": {
-            "execution_policy": {"executor_source": file_digest(Path(run.__code__.co_filename))}
-        },
+        "context": {"execution_policy": executor.implementation_identity()},
     }
     (tmp_path / "report.json").write_text(json.dumps(report))
     with pytest.raises(RuntimeError, match="refusing to overwrite evidence"):
@@ -149,11 +160,10 @@ def test_executor_change_refuses_prepared_recipe(tmp_path, monkeypatch):
         run(tmp_path)
 
 
-def test_executed_child_receives_explicit_environment_only(tmp_path, monkeypatch):
-    import tools.artifact_inputs
-
+@pytest.mark.parametrize("entry_point", ["launch", "inside"])
+def test_executed_child_receives_explicit_environment_only(tmp_path, monkeypatch, entry_point):
     config = {
-        "repo": str(Path(tools.artifact_inputs.__file__).resolve().parents[1]),
+        "repo": str(executor.IMPLEMENTATION_REPO.resolve()),
         "env": {"EXPECTED_ONLY": "declared-value"},
         "argv": ["/toolchain/bin/cargo"],
     }
@@ -171,7 +181,35 @@ def test_executed_child_receives_explicit_environment_only(tmp_path, monkeypatch
     config_path = tmp_path / "worker.json"
     config_path.write_text(json.dumps(config))
     monkeypatch.setenv("UNDECLARED_HOST_SENTINEL", "must-not-reach-executed-child")
-    result = subprocess.run(launch(config_path), capture_output=True, text=True, check=False)
+    if entry_point == "launch":
+        command = launch(config_path)
+        payload = None
+    else:
+        # Public inside() hands its DTO across exec using a one-shot memfd.
+        # Exercise that compatibility boundary from the real namespace entry.
+        command = [
+            "unshare",
+            "--user",
+            "--map-root-user",
+            "--mount",
+            "--net",
+            "--pid",
+            "--fork",
+            "--kill-child",
+            sys.executable,
+            "-c",
+            "import json,sys; from tools.artifact_executor import inside; "
+            "inside(json.load(sys.stdin))",
+        ]
+        payload = json.dumps(config)
+    result = subprocess.run(
+        command,
+        input=payload,
+        cwd=executor.IMPLEMENTATION_REPO.resolve(),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert result.returncode == 0, result.stderr
     assert result.stdout == "EXPECTED_ONLY=declared-value\n"
 
@@ -204,9 +242,8 @@ def prepared(tmp_path, provisioned):
     return output, report, toolchain, tool
 
 
-def test_provisioned_prepare_matches_lookup_context_and_does_not_rehash(prepared, monkeypatch):
+def test_provisioned_prepare_matches_lookup_context_and_detaches_receipt(prepared):
     output, report, toolchain, tool = prepared
-    monkeypatch.setattr(executor, "provision", lambda _: pytest.fail("duplicate full provision"))
     assert executor.request_context(toolchain, tool, "body") == report["context"]
     assert report["toolchain_hash_mode"] == "supervisor-provided"
     assert executor.validate_prepared(output, report)
@@ -224,8 +261,13 @@ def test_relocated_source_repo_does_not_supply_bootstrap_imports(prepared):
     assert not (analyzed / "tools").exists()
     assert report["graph_validation"]["status"] == "identical"
     command = executor.launch(output / "worker.json", True)
-    assert str(executor.IMPLEMENTATION_REPO) in command
+    assert Path(command[0]).is_absolute() and Path(command[0]).is_file()
     assert str(analyzed) not in command
+    environment = dict(os.environ)
+    environment.pop("PYTHONPATH", None)
+    result = subprocess.run(command, env=environment, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["host_checkout_hidden"]
 
 
 @pytest.mark.parametrize(
@@ -281,150 +323,19 @@ def test_prepared_inputs_reject_mutation_before_launch(prepared, monkeypatch, mu
         report["context"]["effective_config"]["argv"].append("--features=changed")
         (output / "report.json").write_text(json.dumps(report))
     monkeypatch.setenv("VIBEOS_HOST_JOB_HELD", "1")
-    monkeypatch.setattr(executor, "launch", lambda *_: pytest.fail("changed inputs reached worker"))
     with pytest.raises(RuntimeError):
         executor.run(output)
     failed = json.loads((output / "report.json").read_text())
     assert failed["compile_status"] == "failed"
     assert failed["failure_stage"] == "prepared-input-validation"
-
-
-def fake_worker(output, *, exit_code=0, sleep=False):
-    archive = output / "target/x86_64-pc-windows-gnu/release/libbody.a"
-    script = (
-        "from pathlib import Path; import sys,time; "
-        "p=Path(sys.argv[1]); p.parent.mkdir(parents=True); "
-        "p.write_bytes(b'!<arch>\\nfixture'); "
-        + ("time.sleep(30); " if sleep else "")
-        + f"sys.exit({exit_code})"
-    )
-    return [executor.sys.executable, "-c", script, str(archive)]
-
-
-@pytest.mark.parametrize(
-    "failure", ["probe", "compile-launch", "compile", "tool-postcheck", "sampling", "interrupt"]
-)
-def test_run_failure_is_final_and_retains_stage_evidence(prepared, monkeypatch, failure):
-    output, _, _, _ = prepared
-    monkeypatch.setenv("VIBEOS_HOST_JOB_HELD", "1")
-
-    def worker_launch(_, probe=False):
-        if probe:
-            if failure == "probe":
-                return [
-                    executor.sys.executable,
-                    "-c",
-                    "import sys; sys.stderr.write('probe failed');sys.exit(17)",
-                ]
-            return [executor.sys.executable, "-c", "print('{}')"]
-        if failure == "compile-launch":
-            return [str(output / "does-not-exist")]
-        return fake_worker(
-            output,
-            exit_code=13 if failure == "compile" else 0,
-            sleep=failure in {"sampling", "interrupt"},
-        )
-
-    monkeypatch.setattr(executor, "launch", worker_launch)
-    if failure == "tool-postcheck":
-
-        def broken_provision(_):
-            raise RuntimeError("provision postcheck failed")
-
-        monkeypatch.setattr(executor, "provision", broken_provision)
-    if failure in {"sampling", "interrupt"}:
-
-        def broken_accounting(_):
-            if failure == "interrupt":
-                raise KeyboardInterrupt()
-            raise RuntimeError("sampling failed")
-
-        monkeypatch.setattr(executor, "allocated", broken_accounting)
-    expected = KeyboardInterrupt if failure == "interrupt" else Exception
-    with pytest.raises(expected):
-        executor.run(output)
-    failed = json.loads((output / "report.json").read_text())
-    assert failed["compile_status"] == ("interrupted" if failure == "interrupt" else "failed")
-    stages = {
-        "probe": "isolation-probe",
-        "compile-launch": "compile-launch",
-        "compile": "compile",
-        "tool-postcheck": "toolchain-postcheck",
-        "sampling": "compile",
-        "interrupt": "compile",
-    }
-    assert failed["failure_stage"] == stages[failure]
-    if failure == "probe":
-        assert failed["failure"]["stderr"] == "probe failed"
-    if failure in {"sampling", "interrupt"}:
-        assert failed["exit_code"] is not None
-
-
-def test_run_success_records_verified_inputs_and_actual_tool_postcheck(prepared, monkeypatch):
-    output, _, _, tool = prepared
-    monkeypatch.setenv("VIBEOS_HOST_JOB_HELD", "1")
-    monkeypatch.setattr(
-        executor,
-        "launch",
-        lambda _, probe=False: (
-            [executor.sys.executable, "-c", "print('{}')"] if probe else fake_worker(output)
-        ),
-    )
-    calls = []
-
-    def verified_toolchain(_):
-        calls.append(True)
-        return tool
-
-    monkeypatch.setattr(executor, "provision", verified_toolchain)
-    result = executor.run(output)
-    assert calls == [True]
-    assert result["compile_status"] == "success"
-    assert result["prepared_input_validation"] == "identical"
-    assert result["toolchain_postcheck"] == "identical"
-    assert result["archive"]["sha256"]
-
-
-@pytest.mark.parametrize("changed", ["projection", "config", "toolchain"])
-def test_changed_inputs_after_compile_are_rejected(prepared, monkeypatch, changed):
-    output, _, _, tool = prepared
-    monkeypatch.setenv("VIBEOS_HOST_JOB_HELD", "1")
-
-    def worker_launch(_, probe=False):
-        if probe:
-            return [executor.sys.executable, "-c", "print('{}')"]
-        command = fake_worker(output)
-        if changed == "projection":
-            source = output / "projection" / WORKSPACE / "body/src/lib.rs"
-            command[2] = command[2].replace(
-                "sys.exit(0)",
-                f"Path({str(source)!r}).write_text('changed during build');sys.exit(0)",
-            )
-        elif changed == "config":
-            config = output / "worker.json"
-            command[2] = command[2].replace(
-                "sys.exit(0)", f"Path({str(config)!r}).write_text('{{}}');sys.exit(0)"
-            )
-        return command
-
-    monkeypatch.setattr(executor, "launch", worker_launch)
-    if changed == "toolchain":
-        altered = json.loads(json.dumps(tool))
-        altered["rustc"] = "changed native toolchain identity"
-        monkeypatch.setattr(executor, "provision", lambda _: altered)
-    with pytest.raises(RuntimeError, match="changed"):
-        executor.run(output)
-    report = json.loads((output / "report.json").read_text())
-    assert report["compile_status"] == "failed"
-    assert report["failure_stage"] == (
-        "toolchain-postcheck" if changed == "toolchain" else "prepared-input-postcheck"
-    )
+    assert "isolation_probe" not in failed
+    assert list((output / "target").iterdir()) == []
 
 
 def test_each_architecture_recipe_compiles_its_own_triple_with_its_audited_flags(provisioned):
     toolchain, tool = provisioned
     amd64 = executor.request_context(toolchain, tool, "body", kernel=True)
-    # The amd64 recipe is unchanged by the per-arch table, so its existing actions stay hits.
+    # Explicit and default amd64 selections describe the same native recipe.
     assert amd64 == executor.request_context(
         toolchain,
         tool,
@@ -445,6 +356,17 @@ def test_each_architecture_recipe_compiles_its_own_triple_with_its_audited_flags
     assert "i686-pc-windows-gnu" in i386["effective_config"]["argv"]
     assert i386["environment"]["RUSTFLAGS"].startswith("-C target-feature=-sse,-sse2 -C dlltool=")
     assert i386 != amd64
+    for arch, triple in executor.TARGETS.items():
+        for kernel in (False, True):
+            flags = executor.FLAGS[(arch, kernel)]
+            context = executor.request_context(
+                toolchain, tool, "body", kernel=kernel, target=triple, flags=flags
+            )
+            assert context["target"] == {"builtin": triple}
+            assert triple in context["effective_config"]["argv"]
+            assert context["effective_flags"] == (
+                (flags + " " if flags else "") + "-C dlltool=/native-tools/bin/llvm-dlltool"
+            )
     # Flags from another arch's recipe, or none at all where SSE must be off, are refused.
     for target, flags in (("i686-pc-windows-gnu", ""), ("x86_64-pc-windows-gnu", "-C opt-level=3")):
         with pytest.raises(RuntimeError, match="unaudited RUSTFLAGS"):

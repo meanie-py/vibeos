@@ -118,7 +118,7 @@ use crate::types::{SCSI_PASS_THROUGH32};
 
 // TracePrint — telemetry no-op (matches ddk_shims/ETW no-op convention); macro swallows the
 // C double-paren `TracePrint!((lvl, flag, fmt, args))` form.
-macro_rules! TracePrint { ($($t:tt)*) => {{}} }
+macro_rules! TracePrint { () => {{}}; ($fmt:expr $(, $arg:expr)* $(,)?) => {{ let _ = || { #[allow(unused_unsafe)] unsafe { let _ = $fmt; $(let _ = $arg;)* } }; }} }
 extern "C" {
     
     
@@ -295,7 +295,7 @@ pub unsafe extern "C" fn InterpretSenseInfoWithoutHistory(
 #[no_mangle]
 pub unsafe extern "C" fn ClassFreeOrReuseSrb(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION,
-    Srb: PSCSI_REQUEST_BLOCK,
+    mut Srb: PSCSI_REQUEST_BLOCK,
 ) {
     let commonExt = FdoExtension as PCOMMON_DEVICE_EXTENSION;
 
@@ -309,7 +309,7 @@ pub unsafe extern "C" fn ClassFreeOrReuseSrb(
             TRACE_FLAG_GENERAL,
             b"ClassFreeOrReuseSrb: someone is trying to use an uninitialized SrbLookasideList !!!\0".as_ptr() as PCHAR,
         ));
-        FREE_POOL(Srb as PVOID);
+        FREE_POOL!(Srb);
     }
 }
 #[no_mangle]
@@ -403,7 +403,7 @@ pub unsafe extern "C" fn ClassRetrieveDeviceRelations(
 
     let relationsSize: ULONG;
     let mut deviceRelations: PDEVICE_RELATIONS = core::ptr::null_mut();
-    let oldRelations: PDEVICE_RELATIONS = *DeviceRelations;
+    let mut oldRelations: PDEVICE_RELATIONS = *DeviceRelations;
 
     let status: NTSTATUS;
 
@@ -458,7 +458,7 @@ pub unsafe extern "C" fn ClassRetrieveDeviceRelations(
             i += 1;
         }
 
-        FREE_POOL(oldRelations as PVOID);
+        FREE_POOL!(oldRelations);
     }
 
     nextChild = (*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().ChildList as PPHYSICAL_DEVICE_EXTENSION;
@@ -547,8 +547,8 @@ pub unsafe extern "C" fn ClasspGetBlockDeviceTokenLimitsInfo(
 
         status = STATUS_INSUFFICIENT_RESOURCES;
         'exit: loop {
-            FREE_POOL(dataBuffer);
-            FREE_POOL(srb as PVOID);
+            FREE_POOL!(dataBuffer);
+            FREE_POOL!(srb);
             (*(*fdoExtension).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus = status;
 
             TracePrint!((TRACE_LEVEL_VERBOSE,
@@ -579,8 +579,8 @@ pub unsafe extern "C" fn ClasspGetBlockDeviceTokenLimitsInfo(
 
         status = STATUS_INSUFFICIENT_RESOURCES;
         'exit: loop {
-            FREE_POOL(dataBuffer);
-            FREE_POOL(srb as PVOID);
+            FREE_POOL!(dataBuffer);
+            FREE_POOL!(srb);
             (*(*fdoExtension).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus = status;
 
             TracePrint!((TRACE_LEVEL_VERBOSE,
@@ -713,8 +713,8 @@ pub unsafe extern "C" fn ClasspGetBlockDeviceTokenLimitsInfo(
         status = STATUS_DEVICE_FEATURE_NOT_SUPPORTED;
     }
 
-    FREE_POOL(dataBuffer);
-    FREE_POOL(srb as PVOID);
+    FREE_POOL!(dataBuffer);
+    FREE_POOL!(srb);
     (*(*fdoExtension).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus = status;
 
     TracePrint!((TRACE_LEVEL_VERBOSE,
@@ -785,7 +785,7 @@ pub unsafe extern "C" fn ClasspRefreshFunctionSupportInfo(
         KeReleaseInStackQueuedSpinLock(&mut lockHandle);
     }
 
-    FREE_POOL(srb as PVOID);
+    FREE_POOL!(srb);
     status
 }
 #[no_mangle]
@@ -995,7 +995,7 @@ pub unsafe extern "system" fn ClassLogThresholdEvent(
 
     ClassReleaseRemoveLock(DeviceObject, workItem as PIRP);
 
-    FREE_POOL(srb as PVOID);
+    FREE_POOL!(srb);
 
     if !workItem.is_null() {
         IoFreeWorkItem(workItem);

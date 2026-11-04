@@ -398,12 +398,12 @@ unsafe extern "C" fn AtaAhciCreateChannelData(Controller: PATA_CONTROLLER) -> NT
             && ((*Controller).AhciCapabilities & AHCI_CAP_FBSS) != 0
             && (CmdStatus & AHCI_PXCMD_FBSCP) != 0
         {
-            INFO!("CH %lu: FBS supported\n", (*ChanData).Channel);
+            INFO!("CH %lu: FBS supported\n", (*ChanData).__bindgen_anon_1.Channel);
             (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_HAS_FBS;
         }
 
         if AtaAhciIsPortRemovable((*Controller).AhciCapabilities, CmdStatus) != 0 {
-            INFO!("CH %lu: Port is external\n", (*ChanData).Channel);
+            INFO!("CH %lu: Port is external\n", (*ChanData).__bindgen_anon_1.Channel);
             (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_IS_EXTERNAL;
         }
 

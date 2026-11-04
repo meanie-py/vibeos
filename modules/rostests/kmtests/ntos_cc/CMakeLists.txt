@@ -96,3 +96,18 @@ add_importlibs(ccsetfilesizes_drv ntoskrnl hal)
 target_compile_definitions(ccsetfilesizes_drv PRIVATE KMT_STANDALONE_DRIVER)
 #add_pch(ccsetfilesizes_drv ../include/kmt_test.h)
 add_rostests_file(TARGET ccsetfilesizes_drv)
+
+#
+# CcZeroData
+#
+list(APPEND CCZERODATA_DRV_SOURCE
+    ../kmtest_drv/kmtest_standalone.c
+    CcZeroData_drv.c)
+
+add_library(cczerodata_drv MODULE ${CCZERODATA_DRV_SOURCE})
+set_module_type(cczerodata_drv kernelmodedriver)
+kmt_enable_native_seh(cczerodata_drv)
+target_link_libraries(cczerodata_drv kmtest_printf ${PSEH_LIB})
+add_importlibs(cczerodata_drv ntoskrnl hal)
+target_compile_definitions(cczerodata_drv PRIVATE KMT_STANDALONE_DRIVER)
+add_rostests_file(TARGET cczerodata_drv)

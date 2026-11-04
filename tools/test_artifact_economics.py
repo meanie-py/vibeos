@@ -123,42 +123,46 @@ def test_missing_hashes_are_explicitly_incomplete(tmp_path):
     assert report["all_bodies_archive_only_model"]["verified_exclusive_snapshot_inodes"] == 0
 
 
-def test_optional_source_discovery_uses_actual_request_and_no_context(tmp_path, monkeypatch):
-    import sys
-    import types
+def test_optional_source_discovery_uses_actual_request_and_no_context(tmp_path):
+    from pathlib import Path
 
     repo, root, _ = fixture(tmp_path, force=True, static=False)
-    (repo / "tools").mkdir()
-    (repo / "tools/artifact_inputs.py").write_text("# fixture source descriptor\n")
-    calls = []
-    fake = types.ModuleType("tools.artifact_inputs")
-
-    def discover(path, body, context, **kwargs):
-        calls.append((path, body, context, kwargs))
-        return {
-            "eligible": True,
-            "action_key": None,
-            "source_projection_key": "fixture",
-            "reasons": [],
-            "provenance": {"fixture": True},
-        }
-
-    fake.discover = discover
-    monkeypatch.setitem(sys.modules, "tools.artifact_inputs", fake)
+    workspace = repo / "sdk/lib/rust"
+    (workspace / "Cargo.toml").write_text('[workspace]\nresolver="2"\nmembers=["body-rust"]\n')
+    (workspace / "Cargo.lock").write_text(
+        'version=4\n[[package]]\nname="body-rust"\nversion="0.1.0"\n'
+    )
+    body = workspace / "body-rust"
+    with (body / "Cargo.toml").open("a") as stream:
+        stream.write("[features]\nfeature=[]\n")
+    (body / "src").mkdir()
+    (body / "src/lib.rs").write_text("pub fn fixture() {}\n")
+    cargo = str(Path.home() / ".rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/cargo")
     report = analyze(
         inventory.measure(root, detailed=True),
         repo,
         eligibility_top=1,
-        cargo="fixture-cargo",
+        cargo=cargo,
         scratch=tmp_path / "scratch",
     )
-    path, body, context, options = calls[0]
-    assert path == repo and body == "body-rust" and context == {}
-    assert options == {
-        "features": ("feature",),
+    source_id, discovery = next(iter(report["source_discovery"].items()))
+    assert json.loads(source_id) == {
+        "body": "body-rust",
+        "features": ["feature"],
         "default_features": False,
         "force_staticlib": True,
-        "cargo": "fixture-cargo",
     }
+    command = discovery["provenance"]["resolution"]["command"]
+    assert command[0] == cargo
+    assert command[command.index("--features") + 1] == "feature"
+    assert "--no-default-features" in command
     assert report["source_eligible_archive_only_model"]["snapshot_inodes"] == 1
-    assert next(iter(report["source_discovery"].values()))["action_key"] is None
+    assert discovery["action_key"] is None
+    assert set(discovery["missing_context"]) == {
+        "target",
+        "effective_flags",
+        "effective_config",
+        "toolchain",
+        "environment",
+        "execution_policy",
+    }

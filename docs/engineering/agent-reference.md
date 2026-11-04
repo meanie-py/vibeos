@@ -9,6 +9,9 @@ them still reads true. The behavioural rules stayed behind in `AGENTS.md`.
 Read this when you need a command, a path, or a platform detail. Related deeper docs:
 `build-system.md`, `rust-in-kernel.md`, `rustconv-pipeline.md`, `kernel-debugging-infra.md`,
 `tests/qemu/cli/README.md`, `qemu/README.md`.
+Native lint and generator authoring: `tools/vibeos-lint/README.md` and
+`tools/vibeos-codegen/README.md`. Next tooling phase:
+[`build-infra-rust-plan.md`](build-infra-rust-plan.md).
 
 ---
 

@@ -105,34 +105,31 @@ set(ISO_VOLNAME      "ReactOS")         # For both the Volume ID and the Volume 
 
 # Create user profile directories in the LiveImage
 function(add_allusers_profile_dirs _image_filelist _rootdir)
-    file(APPEND ${_image_filelist} "${_rootdir}/All Users/Application Data=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/All Users/Documents/My Music=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/All Users/Documents/My Pictures=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/All Users/Documents/My Videos=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/All Users/Favorites=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/All Users/My Documents=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/All Users/Start Menu/Programs/StartUp=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/All Users/Templates=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/Public/Music=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/Public/Pictures=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/Public/Videos=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/Public/Favorites=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/Public/Documents=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/Public/Templates=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
 endfunction()
 function(add_user_profile_dirs _image_filelist _rootdir _username)
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Application Data=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Application Data/Microsoft/Internet Explorer/Quick Launch=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Cookies=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/AppData=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/AppData/Roaming/Microsoft/Internet Explorer/Quick Launch=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/AppData/Roaming/Microsoft/Windows/Network Shortcuts=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/AppData/Roaming/Microsoft/Windows/Printer Shortcuts=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/AppData/Local/Microsoft/Windows/INetCookies=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/AppData/Local/Microsoft/Windows/INetCache=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
     file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Desktop=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
     file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Favorites=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Local Settings/Application Data=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Local Settings/History=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Local Settings/Temporary Internet Files=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/My Music=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/My Pictures=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/My Videos=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/NetHood=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/PrintHood=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Recent=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/SendTo=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Start Menu/Programs=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Start Menu/Programs/Administrative Tools=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
-    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Start Menu/Programs/StartUp=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/AppData/Local/Microsoft/Windows/History=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Music=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Pictures=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Videos=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/AppData/Roaming/Microsoft/Windows/Start Menu/Programs/Startup=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/AppData/Roaming/Microsoft/Windows/SendTo=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+    file(APPEND ${_image_filelist} "${_rootdir}/${_username}/AppData/Roaming/Microsoft/Windows/Recent=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+
     file(APPEND ${_image_filelist} "${_rootdir}/${_username}/Templates=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
 endfunction()
 
@@ -145,7 +142,7 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bootcd.cmake.lst "${CMAKE_CURRENT_BINARY_
 # Same debug-strip pass as livecd below (reactos.cab contents are NOT stripped
 # — cabman compresses from the .dff list; only direct NO_CAB grafts are).
 add_custom_target(bootcd
-    COMMAND ${CMAKE_COMMAND} -E env python3 ${REACTOS_SOURCE_DIR}/tools/strip_cd_media.py
+    COMMAND ${REACTOS_SOURCE_DIR}/tools/build-infra strip-cd-media
         --lst ${CMAKE_CURRENT_BINARY_DIR}/bootcd.$<CONFIG>.lst
         --out ${CMAKE_CURRENT_BINARY_DIR}/bootcd.stripped.lst
         --cache ${CMAKE_CURRENT_BINARY_DIR}/stripped
@@ -165,7 +162,7 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bootcdregtest.cmake.lst "")
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/bootcdregtest.cmake.lst "${CMAKE_CURRENT_BINARY_DIR}/empty\n")
 
 add_custom_target(bootcdregtest
-    COMMAND ${CMAKE_COMMAND} -E env python3 ${REACTOS_SOURCE_DIR}/tools/strip_cd_media.py
+    COMMAND ${REACTOS_SOURCE_DIR}/tools/build-infra strip-cd-media
         --lst ${CMAKE_CURRENT_BINARY_DIR}/bootcdregtest.$<CONFIG>.lst
         --out ${CMAKE_CURRENT_BINARY_DIR}/bootcdregtest.stripped.lst
         --cache ${CMAKE_CURRENT_BINARY_DIR}/stripped
@@ -188,8 +185,9 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/livecd.cmake.lst "${CMAKE_CURRENT_BINARY_
 file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/livecd.cmake.lst "reactos/TEMP=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
 
 # Create user profile directories
-add_allusers_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/livecd.cmake.lst "Profiles")
-add_user_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/livecd.cmake.lst "Profiles" "Default User")
+file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/livecd.cmake.lst "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+add_allusers_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/livecd.cmake.lst "Users")
+add_user_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/livecd.cmake.lst "Users" "Default")
 
 # Graft debug-stripped PE twins onto the CD instead of the build binaries:
 # the boot set is 70-92% DWARF that the PE loader never maps but freeldr
@@ -203,7 +201,7 @@ if(ARCH STREQUAL "arm64")
     add_custom_target(livecd)
 else()
     add_custom_target(livecd
-        COMMAND ${CMAKE_COMMAND} -E env python3 ${REACTOS_SOURCE_DIR}/tools/strip_cd_media.py
+        COMMAND ${REACTOS_SOURCE_DIR}/tools/build-infra strip-cd-media
             --lst ${CMAKE_CURRENT_BINARY_DIR}/livecd.$<CONFIG>.lst
             --out ${CMAKE_CURRENT_BINARY_DIR}/livecd.stripped.lst
             --cache ${CMAKE_CURRENT_BINARY_DIR}/stripped
@@ -224,8 +222,9 @@ file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/hybridcd.cmake.lst "")
 file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/hybridcd.cmake.lst "${CMAKE_CURRENT_BINARY_DIR}/empty\n")
 
 # Create user profile directories
-add_allusers_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/hybridcd.cmake.lst "livecd/Profiles")
-add_user_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/hybridcd.cmake.lst "livecd/Profiles" "Default User")
+file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/hybridcd.cmake.lst "livecd/ProgramData/Microsoft/Windows/Start Menu/Programs/Startup=${CMAKE_CURRENT_BINARY_DIR}/empty\n")
+add_allusers_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/hybridcd.cmake.lst "livecd/Users")
+add_user_profile_dirs(${CMAKE_CURRENT_BINARY_DIR}/hybridcd.cmake.lst "livecd/Users" "Default")
 
 add_custom_target(hybridcd
     COMMAND native-mkisofs -quiet -o ${REACTOS_BINARY_DIR}/hybridcd.iso -iso-level 4

@@ -42,12 +42,12 @@ def test_the_shared_widl_run_is_named_once(monkeypatch):
     assert [ln.replace("{WIDL}", out[0][len("{WIDL} = ") :]) for ln in out[1:]] == lines
 
 
-def test_a_replay_makes_the_directories_ninja_would(tmp_path, monkeypatch):
+def test_a_replay_makes_the_directories_ninja_would(tmp_path):
     gen, repo = tmp_path / "gen", tmp_path / "repo"
-    paths = {False: tmp_path / "sdk.cmds", True: tmp_path / "host.cmds"}
+    paths = {h: s.recipe_path("amd64", h, repo) for h in (False, True)}
+    paths[False].parent.mkdir(parents=True)
     paths[True].write_text("touch sub/dir/tool.o\n")
     paths[False].write_text("cd {BUILD}/sdk/include/psdk && touch {BUILD}/a/b/c.h\n")
-    monkeypatch.setattr(s, "recipe_path", lambda arch, host=False, repo=None: paths[host])
     s.run("amd64", gen, repo)
     assert (gen / "host-tools/bin/sub/dir/tool.o").exists()
     assert (gen / "a/b/c.h").exists()

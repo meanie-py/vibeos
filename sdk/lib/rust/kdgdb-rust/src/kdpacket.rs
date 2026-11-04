@@ -164,7 +164,7 @@ unsafe fn send_kd_state_change(StateChange: *mut DBGKD_ANY_WAIT_STATE_CHANGE) {
             CurrentStateChange = *StateChange;
             KDDBGPRINT!(
                 b"Exception 0x%08x in thread p%p.%p.\n\0".as_ptr() as PCHAR,
-                (*StateChange).__bindgen_anon_1.Exception.ExceptionRecord.ExceptionCode,
+                (*StateChange).u.Exception.ExceptionRecord.ExceptionCode,
                 PsGetThreadProcessId(Thread),
                 PsGetThreadId(Thread)
             );

@@ -854,6 +854,12 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # `size_of_val(&p)` on a raw pointer measures the pointer, not the C's `sizeof(*p)`:
+    # wow64's AFD select marshaller under-allocated by half and overran the 64-bit heap.
+    specs.append(("scan_sizeof_pointer", ["MISSING"], "stdout"))
+    # A C `extern` variable re-defined as a private static in a second module: wow64's
+    # BTCpuSetContext copy stayed None and every i386 guest died after its loader.
+    specs.append(("scan_extern_copy", ["MISSING"], "stdout"))
     # A C bitfield reached by bit index (`_bitfield_1.set(0, 1, v)`) instead of bindgen's named
     # accessor: atapi passed a page code as the width (a panic), the ARM3 session code swapped
     # Initialized and DeletePending at all four sites.
@@ -1252,6 +1258,9 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # A crate root's `#[allow(non_snake_case, ..)]` written OUTER binds to the next `extern
     # crate`/`use` and allows nothing (version-rust: 248 warnings). Gated at zero.
     specs.append(("scan_inert_crate_allow", ["MISSING"], "stdout"))
+    # An off debug macro written `($($t:tt)*) => {{}}` compiles none of its arguments, so they
+    # rot (65 stale calls behind one shared TRACE). Off forms forward to DBG_TYPECHECK.
+    specs.append(("scan_swallowing_debug_macro", ["MISSING"], "stdout"))
     svo = repo / "tools" / "scan_variant_outptr.py"
     specs.append(
         (
@@ -1292,6 +1301,14 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # classpnp's ClassReadDriveCapacity shifted READ_CAPACITY_DATA inside its own _EX this way.
     # The baseline is the triage queue (disjoint copies); new findings fail.
     specs.append(("scan_move_vs_nonoverlapping", ["MISSING"], "stdout"))
+    # A translated ASSERT whose condition is the NEGATION of its C twin's (native Rust rule,
+    # tools/vibeos-lint/src/rules/assert_negated_vs_c.rs). fastfat's FatCommonRead wrapped the
+    # C's VerifyThread assert in `!( )`, so it fired on every legitimate I/O failure once armed.
+    specs.append(("scan_assert_negated_vs_c", ["MISSING"], "stdout"))
+    # A DEVICE_OBJECT pointer cast to a device-extension type for the C's ->DeviceExtension
+    # (native Rust rule, tools/vibeos-lint/src/rules/devobj_as_extension.rs): six classpnp sites
+    # wrote the release-queue spinlock into the device object. Gated at zero.
+    specs.append(("scan_devobj_as_extension", ["MISSING"], "stdout"))
     # A named constant cast to a type too narrow for it: rustc's overflow lint covers
     # literals only. disk.sys set SRB_CLASS_FLAGS_PERSISTANT `as USHORT` (= 0), classpnp freed
     # an SRB inside the device extension, 0xC2 on the first flush. Gated at zero.

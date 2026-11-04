@@ -1109,7 +1109,7 @@ pub unsafe extern "system" fn DiskEnableInfoExceptions(
     let mut status: NTSTATUS = STATUS_NOT_SUPPORTED;
     let mut modeDataSize: u32 = MODE_DATA_SIZE;
 
-    let modeData: *mut MODE_PARAMETER_HEADER = ExAllocatePoolWithTag(
+    let mut modeData: *mut MODE_PARAMETER_HEADER = ExAllocatePoolWithTag(
         (NonPagedPoolNxCacheAligned) as u32,
         (modeDataSize) as usize,
         0x78456944u32,
@@ -1141,7 +1141,7 @@ pub unsafe extern "system" fn DiskEnableInfoExceptions(
             b"DiskEnableInfoExceptions: does NOT support SMART for device %p\n\0".as_ptr() as *const i8,
             (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DeviceObject,
         );
-        FREE_POOL(modeData as *mut core::ffi::c_void);
+        FREE_POOL!(modeData);
         return STATUS_NOT_SUPPORTED;
     }
 
@@ -1159,7 +1159,7 @@ pub unsafe extern "system" fn DiskEnableInfoExceptions(
             b"DiskEnableInfoExceptions: does NOT support DEXCPT bit for device %p\n\0".as_ptr() as *const i8,
             (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DeviceObject,
         );
-        FREE_POOL(modeData as *mut core::ffi::c_void);
+        FREE_POOL!(modeData);
         return STATUS_NOT_SUPPORTED;
     }
 
@@ -1181,7 +1181,7 @@ pub unsafe extern "system" fn DiskEnableInfoExceptions(
 
     if !NT_SUCCESS(status) || pageData.is_null() {
         NT_ASSERT!(((NT_SUCCESS(status) as i32) != 0 && !pageData.is_null()) as i32);
-        FREE_POOL(modeData as *mut core::ffi::c_void);
+        FREE_POOL!(modeData);
         return STATUS_NOT_SUPPORTED;
     }
 
@@ -1192,7 +1192,7 @@ pub unsafe extern "system" fn DiskEnableInfoExceptions(
             b"DiskEnableInfoExceptions: MRIE field is 0 and is not changeable for device %p\n\0".as_ptr() as *const i8,
             (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DeviceObject,
         );
-        FREE_POOL(modeData as *mut core::ffi::c_void);
+        FREE_POOL!(modeData);
         return STATUS_NOT_SUPPORTED;
     }
 
@@ -1223,7 +1223,7 @@ pub unsafe extern "system" fn DiskEnableInfoExceptions(
         }
     }
 
-    FREE_POOL(modeData as *mut core::ffi::c_void);
+    FREE_POOL!(modeData);
     status
 }
 
@@ -1987,20 +1987,20 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
     // Free resources
     if senseBuffer != originalSenseInfoBuffer {
         if !originalSenseInfoBuffer.is_null() {
-            FREE_POOL(originalSenseInfoBuffer);
+            FREE_POOL!(originalSenseInfoBuffer);
             originalSenseInfoBuffer = core::ptr::null_mut(); // not really needed but anchor does it
         }
     }
     if !senseBuffer.is_null() {
-        FREE_POOL(senseBuffer);
+        FREE_POOL!(senseBuffer);
         senseBuffer = core::ptr::null_mut();
     }
     if !dataBuffer.is_null() {
-        FREE_POOL(dataBuffer);
+        FREE_POOL!(dataBuffer);
         dataBuffer = core::ptr::null_mut();
     }
     if !srb.is_null() {
-        FREE_POOL(srb as *mut core::ffi::c_void);
+        FREE_POOL!(srb);
         srb = core::ptr::null_mut();
     }
 

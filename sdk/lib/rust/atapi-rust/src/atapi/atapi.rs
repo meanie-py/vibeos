@@ -738,7 +738,7 @@ pub unsafe extern "system" fn AtaAddChannel(
 
     INFO!(
         b"%s(%p, %p) '%wZ'\n\0".as_ptr() as PCSTR,
-        __FUNCTION__,
+        b"AtaAddChannel\0".as_ptr() as *const i8,
         DriverObject as *mut core::ffi::c_void,
         PhysicalDeviceObject as *mut core::ffi::c_void,
         core::ptr::addr_of!(DeviceName),

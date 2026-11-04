@@ -66,12 +66,16 @@ def test_drift_counts_one_new_cell_as_one():
     assert m.drift([a, b], [changed]) == ["- b-cargo", "~ a-cargo"]
 
 
-def test_a_configured_graph_wins_over_the_committed_copy(tmp_path, monkeypatch):
-    """cmake still owns cells: with a graph, a merge's new cell is seen before anyone
-    regenerates the committed manifest."""
-    monkeypatch.setattr(m, "derive", lambda arch, repo: [{"crate": "from-graph"}])
-    monkeypatch.setattr(m, "load", lambda arch, repo: [{"crate": "committed"}])
+def test_a_configured_graph_wins_over_the_committed_copy(tmp_path):
+    path = m.manifest_path("amd64", tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_text('{"crate": "committed"}\n')
     assert m.current("amd64", tmp_path) == [{"crate": "committed"}]
-    (tmp_path / "build-amd64").mkdir()
-    (tmp_path / "build-amd64/build.ninja").write_text("")
-    assert m.current("amd64", tmp_path) == [{"crate": "from-graph"}]
+    build = tmp_path / "build-amd64"
+    build.mkdir()
+    command = COMMAND.replace("build-i386", "build-amd64")
+    (build / "build.ninja").write_text(
+        "\nbuild drivers/beep/beep.sys: CUSTOM_COMMAND\n"
+        f"  COMMAND = {command}\n  DESC = Cargo-linking beep\n"
+    )
+    assert [c["crate"] for c in m.current("amd64", tmp_path)] == ["beep-cargo"]

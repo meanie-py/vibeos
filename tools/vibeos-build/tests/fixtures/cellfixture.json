@@ -1,0 +1,27 @@
+{
+  "outs": "drivers/beep/beep.sys ",
+  "command": "cd /tmp/vibeos/sdk/lib/rust && /usr/bin/cmake -E env \"RUSTFLAGS=-C force-frame-pointers=yes\" CARGO_TARGET_DIR=/tmp/vibeos/sdk/lib/rust/target/cell-link-v1-i386-3 cargo build --release --target i686-pc-windows-gnu -p beep-cargo --bin beep && /usr/bin/cmake -E copy /tmp/vibeos/sdk/lib/rust/target/cell-link-v1-i386-3/i686-pc-windows-gnu/release/beep.exe /tmp/vibeos/build-i386/drivers/beep/beep.sys && /tmp/vibeos/build-i386/host-tools/bin/pefixup --kernelmodedriver /tmp/vibeos/build-i386/drivers/beep/beep.sys && /usr/bin/cmake -E env python3 /tmp/vibeos/sdk/tools/fix_lld_forwarding.py /tmp/vibeos/build-i386/drivers/beep/beep.sys",
+  "arch": "i386",
+  "expected": {
+    "crate": "beep-cargo",
+    "target": "i686-pc-windows-gnu",
+    "build_std": false,
+    "env": {
+      "RUSTFLAGS": "-C force-frame-pointers=yes"
+    },
+    "target_dir": "cell-link-v1-i386-3",
+    "bins": [
+      "beep"
+    ],
+    "outputs": [
+      {
+        "bin": "beep",
+        "out": "drivers/beep/beep.sys",
+        "post": [
+          "pefixup --kernelmodedriver",
+          "fix_lld_forwarding"
+        ]
+      }
+    ]
+  }
+}

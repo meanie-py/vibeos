@@ -6,7 +6,8 @@ extern "system" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub static mut hApplet: HINSTANCE = core::ptr::null_mut();
+// The C declares this `extern`; one definition lives in appwiz.rs (scan_extern_copy).
+pub use crate::appwiz::appwiz::hApplet;
 
 pub const ADDON_GECKO: addon_t = 0;
 pub const ADDON_MONO: addon_t = 1;

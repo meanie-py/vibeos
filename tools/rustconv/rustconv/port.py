@@ -231,14 +231,36 @@ def _renamed_stem(module_dir: Path, target: str | None) -> str | None:
     return None
 
 
+def _home_arch(module_dir: Path, target: str | None) -> str:
+    """The first of i386, amd64, arm64 whose reading of the module's CMakeLists defines a
+    target. i386 was hard-wired, so a module built only for 64-bit (wow64.dll, inside
+    `if(ARCH STREQUAL "arm64" OR ARCH STREQUAL "amd64")`) was refused as having no
+    add_library() at all."""
+    cml = module_dir / "CMakeLists.txt"
+    last: pd.ProfileDeriveError | None = None
+    for arch in ("i386", "amd64", "arm64"):
+        try:
+            pd.parse_cmakelists(cml.resolve(), REPO, arch=arch, target=target)
+            return arch
+        except pd.ProfileDeriveError as e:
+            if "no add_library" not in str(e):
+                return arch  # a different refusal: let derive report it on the usual arch
+            last = e
+    assert last is not None
+    raise last
+
+
 def derive(
     module_dir: Path,
     target: str | None,
-    arch: str = "i386",
+    arch: str | None = None,
     usermode: bool | None = None,
     stem: str | None = None,
+    sources: tuple[Path, ...] = (),
 ) -> pd.DerivedProfile:
     require_built(module_dir)
+    if arch is None:
+        arch = _home_arch(module_dir, target)
     if usermode is None:
         usermode = recorded_mode(module_dir, target)
     if stem is None:
@@ -280,6 +302,7 @@ def derive(
             usermode=usermode,
             flipped_sources=bool(restored),
             stem=stem,
+            sources=sources,
         )
     except pd.ProfileDeriveError as e:
         # After the cohab flip the module compiles only its rust_*.c scaffolding; the C the
@@ -478,6 +501,16 @@ def _stem_hint(stem: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "_", re.sub(r"^([0-9]+)(.*)$", r"\2\1", stem))
 
 
+def _keep_c_split(tus: list[Path], held: set[str], stem: str) -> tuple[list[Path], list[Path]]:
+    """(the TUs this port translates, the --keep-c TUs that stay C). `held` names TUs by
+    file name or repo path; one that names no compiled TU is refused, never ignored."""
+    stay = [p for p in tus if p.name in held or str(p.relative_to(REPO)) in held]
+    named = {p.name for p in stay} | {str(p.relative_to(REPO)) for p in stay}
+    if held - named:
+        raise PortError(f"derive: {stem}: --keep-c names no compiled TU: {sorted(held - named)}")
+    return [p for p in tus if p not in stay], stay
+
+
 def stage_derive(
     module_dir: Path,
     target: str | None,
@@ -502,6 +535,14 @@ def stage_derive(
             f"letter and only letters, digits, `_` and `-`): re-run with --stem <name>, "
             f"e.g. --stem {hint}"
         )
+    # --keep-c TUs stay C, so they must not shape the island either: wow64_thunks.c keeps
+    # the codegen-emitted `wow64_thunks.gen.c` table it #includes, and with it in the
+    # wrapper the whole island failed to compile. Re-derive over the TUs this port buys.
+    held_early = set(load_state(stem).get("keep_c", [])) | set(keep_c or [])
+    early_stay: list[Path] = []
+    if held_early:
+        rest, early_stay = _keep_c_split(list(dp.module.compiled_tus), held_early, stem)
+        dp = derive(module_dir, target, usermode=usermode, stem=stem, sources=tuple(rest))
     _add_island_headers(dp, load_state(stem).get("island_headers", {}))
     arm = pd.emit_profile(dp)
     if not arm.lstrip().startswith(f"{stem})") and "|" not in arm.split(")", 1)[0]:
@@ -589,10 +630,14 @@ def stage_derive(
         prior["keep_c"] = sorted(set(prior.get("keep_c", [])) | set(keep_c))
     held = set(prior.get("keep_c", []))
     if held:
-        unknown = held - {p.name for p in kept} - {str(p.relative_to(REPO)) for p in kept}
-        if unknown:
-            raise PortError(f"derive: {stem}: --keep-c names no compiled TU: {sorted(unknown)}")
-        stay = [p for p in kept if p.name in held or str(p.relative_to(REPO)) in held]
+        # The island derive above already left these out of dp (and so out of `kept`).
+        stay = list(early_stay)
+        stay += [p for p in kept if p.name in held or str(p.relative_to(REPO)) in held]
+        named = {p.name for p in stay} | {str(p.relative_to(REPO)) for p in stay}
+        if held - named:
+            raise PortError(
+                f"derive: {stem}: --keep-c names no compiled TU: {sorted(held - named)}"
+            )
         kept = [p for p in kept if p not in stay]
         print(
             f"derive: {stem}: {len(stay)} TU(s) kept C by --keep-c: "
@@ -2710,7 +2755,19 @@ def _stub_name(state: dict) -> str:
     return "rust_cohab_stub.cpp" if state.get("cpp_tus") else "rust_cohab_stub.c"
 
 
-def _repoint_cargo_cells(target: str, crate: str) -> list[Path]:
+def _kept_c_sources(cml_text: str) -> list[str]:
+    """Compiled `.c` files a flipped CMakeLists still lists besides the cohab stub: a
+    variadic trampoline (`rust_varargs_shim.c`), whose definitions only the cmake target
+    carries."""
+    out = []
+    for line in cml_text.splitlines():
+        m = re.match(r"\s*([\w./${}-]+\.c)\s*$", line)
+        if m and not m.group(1).endswith(("rust_cohab_stub.c",)):
+            out.append(m.group(1))
+    return out
+
+
+def _repoint_cargo_cells(target: str, crate: str, keeps_c: bool = False) -> list[Path]:
     """Point every cargo cell that replays `target`'s C at its Rust archive instead.
 
     A cell takes a cmake static library as `engine:c:<target>`, which replays that target's
@@ -2719,12 +2776,19 @@ def _repoint_cargo_cells(target: str, crate: str) -> list[Path]:
     the flip just declared (`rust_staticlib_variant(... <crate> "" TRUE)`) is spelled
     `engine:crate:<crate>::TRUE`, as tools/cargo_cell_gen.py writes it. Returns the cells
     rewritten.
+
+    A module that KEEPS C (`keeps_c`: shimlib's variadic `SeiDbgPrint` trampoline) needs
+    both: the archive alone left acgenral/aclayers with `SeiDbgPrint` undefined on all
+    three arches, because only the cmake target compiles the trampoline.
     """
-    old, new = f'"engine:c:{target}"', f'"engine:crate:{crate}::TRUE"'
+    old = f'"engine:c:{target}"'
+    new = f'"engine:crate:{crate}::TRUE"'
+    if keeps_c:
+        new = f"{old}, {new}"
     changed = []
     for build_rs in sorted((REPO / "sdk" / "lib" / "rust").glob("*-cargo/build.rs")):
         text = build_rs.read_text()
-        if old in text:
+        if old in text and new not in text:
             build_rs.write_text(text.replace(old, new))
             changed.append(build_rs)
     return changed
@@ -2800,7 +2864,8 @@ def stage_flip(stem: str) -> None:
         )
     _record(state, "flip", started, changed=changed)
     print(f"flip: {cml.relative_to(REPO)} {'rewritten' if changed else 'already flipped'}")
-    for cell in _repoint_cargo_cells(state["target"], state["crate"]):
+    keeps_c = bool(_kept_c_sources(cml.read_text()))
+    for cell in _repoint_cargo_cells(state["target"], state["crate"], keeps_c):
         print(f"flip: {cell.relative_to(REPO)} now links {state['crate']}")
     # A flip leaves the module linked by cmake around the stub; the cargo cell is the next
     # step, and `vibeos-cli check` (scan_cmake_linked_rust) fails until it is taken.

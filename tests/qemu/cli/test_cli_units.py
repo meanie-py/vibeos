@@ -10308,6 +10308,40 @@ def test_ahci_irq_check_reads_qemus_trace_not_the_driver(monkeypatch):
     assert smoke_mod._ahci_irq_check(firmware + done * 40) is None
 
 
+def test_kernel_assert_check_keeps_the_old_bugcheck_verdict():
+    """ntoskrnl's ASSERT! now prints and continues; a failed one must still fail the run, as
+    the panic it replaced did, or the next MM invariant break boots green."""
+    from . import smoke as smoke_mod
+
+    fired = "*** ASSERT FAILED: ProtoPte.is_null() at ntoskrnl-rust/src/ARM3/pagfault.rs:2478\n"
+    bad = smoke_mod._kernel_assert_check("boot noise\n" + fired)
+    assert bad and bad["classification"] == "KERNEL_ASSERT"
+    assert "1 kernel assertion(s) failed" in bad["salient"][0]
+    # Drivers' and ntkrnl-sys's asserts printed before this change too; they keep their own checks.
+    assert (
+        smoke_mod._kernel_assert_check("*** ASSERT FAILED: x at fastfat-rust/src/a.rs:1\n") is None
+    )
+    assert (
+        smoke_mod._kernel_assert_check("*** ASSERT FAILED: y at ntkrnl-sys/src/mm.rs:954\n") is None
+    )
+    assert smoke_mod._kernel_assert_check("") is None
+
+
+def test_conformance_round_with_a_kernel_assert_is_not_clean():
+    """The sweep completes now that a failed ntoskrnl ASSERT continues; the round must still
+    land in the bugcheck family it used to, not read clean."""
+    from .conformance import round_shape
+
+    serial = (
+        "[KMTEST:BEGIN ZwMapViewOfSection]\n"
+        "*** ASSERT FAILED: ProtoPte.is_null() at ntoskrnl-rust/src/ARM3/pagfault.rs:2478\n"
+    )
+    done = "[KMTEST-SWEEP] done"
+    assert round_shape(None, [{"status": "OK"}], done, [], serial) == "A:kernel-assert"
+    assert round_shape("0x1E", [], None, [], serial) == "A:bugcheck 0x1E"
+    assert round_shape(None, [{"status": "OK"}], done, [], "[KMTEST:BEGIN x]\n") == "clean"
+
+
 def test_ata_health_check_fails_a_lost_interrupt():
     """A timed-out ATA request is reset and retried and the boot carries on, so the
     desktop alone would hide an ISR that never ran."""
@@ -11779,28 +11813,60 @@ def _fake_build(tmp_path, ninja: str, depinfo: str):
     return b
 
 
-def test_payload_unbuilt_rust_crate_only_when_both_records_are_silent(tmp_path):
-    """An arm64-only crate (wowx64-rust) cannot change what build-amd64 stages, but a crate
-    named by EITHER the ninja graph or cargo's dep-info is compiled there."""
+def test_payload_unreferenced_by_build_only_when_every_record_is_silent(tmp_path, monkeypatch):
+    """An arm64-only crate (wowx64-rust) or CPU layer (tools/fex/wowx64fex) cannot change what
+    build-amd64 stages, but a path named by ANY of the build's records is read there: the
+    ninja graph, ninja's dependency log (C headers), or cargo's dep-info, which spells paths
+    under the worktree's own root as well as /tmp/vibeos/."""
     pc = _load_payload_compile()
     b = _fake_build(
         tmp_path,
-        "build x: CUSTOM /tmp/vibeos/sdk/lib/rust/user32-rust/src/lib.rs\n",
-        "x.dll: /tmp/vibeos/sdk/lib/rust/strsafe-rust/src/lib.rs\n",
+        "rule CUSTOM\n  command = true\n"
+        "build x: CUSTOM /tmp/vibeos/sdk/lib/rust/user32-rust/src/lib.rs "
+        "/tmp/vibeos/tools/fex/wow64-closure.py\n",
+        "x.dll: /home/someone/worktree/sdk/lib/rust/strsafe-rust/src/lib.rs\n",
     )
-    unbuilt = pc.unbuilt_rust_crate(b)
+    real_run = pc.subprocess.run
+
+    def run(cmd, *a, **kw):
+        if cmd[:1] == ["ninja"]:  # the dependency log names one header
+            return pc.subprocess.CompletedProcess(
+                cmd, 0, stdout="x.obj: #deps 1\n    /tmp/vibeos/tools/fex/shared.h\n", stderr=""
+            )
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(pc.subprocess, "run", run)
+    unbuilt = pc.unreferenced_by_build(b)
     assert unbuilt("sdk/lib/rust/wowx64-rust/src/callback.rs")
+    assert unbuilt("tools/fex/wowx64fex/Module.cpp")
     assert not unbuilt("sdk/lib/rust/user32-rust/src/lib.rs")  # ninja names it
-    assert not unbuilt("sdk/lib/rust/strsafe-rust/src/lib.rs")  # only cargo names it
+    assert not unbuilt("sdk/lib/rust/strsafe-rust/src/lib.rs")  # only cargo, other root
+    assert not unbuilt("tools/fex/wow64-closure.py")  # the build runs it
+    assert not unbuilt("tools/fex/shared.h")  # only the dependency log
     assert not unbuilt("sdk/lib/rust/Cargo.toml")  # the workspace, not a crate
-    assert not unbuilt("dll/win32/wowx64/CMakeLists.txt")
+    assert not unbuilt("dll/win32/wowx64/CMakeLists.txt")  # outside both scopes
 
 
-def test_payload_unbuilt_rust_crate_without_build_records_proves_nothing(tmp_path):
+def test_payload_unreferenced_by_build_without_build_records_proves_nothing(tmp_path):
     pc = _load_payload_compile()
     b = tmp_path / "build-amd64"
     b.mkdir()
-    assert not pc.unbuilt_rust_crate(b)("sdk/lib/rust/wowx64-rust/src/callback.rs")
+    assert not pc.unreferenced_by_build(b)("sdk/lib/rust/wowx64-rust/src/callback.rs")
+
+
+def test_payload_unreferenced_by_build_dies_when_the_deps_log_is_unreadable(tmp_path, monkeypatch):
+    pc = _load_payload_compile()
+    b = _fake_build(tmp_path, "rule CUSTOM\n  command = true\n", "x.dll: nothing\n")
+    real_run = pc.subprocess.run
+
+    def run(cmd, *a, **kw):
+        if cmd[:1] == ["ninja"]:
+            return pc.subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(pc.subprocess, "run", run)
+    with pytest.raises(SystemExit):
+        pc.unreferenced_by_build(b)("tools/fex/wowx64fex/Module.cpp")
 
 
 def test_payload_guest_set_build_dir_must_name_an_arch(tmp_path, monkeypatch):

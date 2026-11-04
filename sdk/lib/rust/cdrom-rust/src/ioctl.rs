@@ -3881,7 +3881,7 @@ pub unsafe extern "C" fn RequestHandleMountQuerySuggestedLinkName(
         *name_ptr.add(13) = ':' as u16;
     }
 
-    FREE_POOL(valueName as *mut core::ffi::c_void);
+    FREE_POOL!(valueName);
 
     status
 }
@@ -7001,7 +7001,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
                 // else TracePrint!(...) omitted
             }
 
-            FREE_POOL(keyHeader as *mut core::ffi::c_void);
+            FREE_POOL!(keyHeader);
             return status;
         }
 

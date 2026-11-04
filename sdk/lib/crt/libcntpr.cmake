@@ -181,6 +181,32 @@ if(NOT ARCH STREQUAL "i386")
     )
 endif()
 
+# amd64 SEH personality: __C_specific_handler + _local_unwind are Rust in
+# rtl-except (amd64/ehandler.rs), which ntoskrnl and ntdll link. A driver
+# that linked the C copy from here now imports them from ntoskrnl, which
+# exports both (ntoskrnl.spec), as Windows drivers do.
+if(ARCH STREQUAL "amd64")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        except/amd64/ehandler.c
+    )
+endif()
+
+# i386 x87/SSE2 entry points: the `_CI*` thunks are Rust (ci-thunks, which ntoskrnl and
+# ntdll take through cnt-rust-lib's `ci` feature, the only two that export them), and no
+# compiler we use emits a call to `_CI*` or `__libm_sse2_*` (MSVC does; clang does not).
+# So no driver or boot loader reaches these; dropping them is link-tested on all cells.
+if(ARCH STREQUAL "i386")
+    list(REMOVE_ITEM LIBCNTPR_SOURCE
+        math/i386/ci.c
+        math/i386/cicos.c
+        math/i386/cilog.c
+        math/i386/cipow.c
+        math/i386/cisin.c
+        math/i386/cisqrt.c
+        math/i386/libm_sse2.c
+    )
+endif()
+
 # Wave MATH-TIERC (sub-wave 1): sin/cos/sqrt/sqrtf → cnt-rust (float
 # feature, amd64/arm64; i386 keeps its x87 *_asm.s). sin/cos are the same
 # portable math/{sin,cos}.c on both arches → one Rust impl, bit-exact.

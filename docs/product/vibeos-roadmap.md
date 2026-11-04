@@ -628,6 +628,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Not yet triaged. Likely shapes are an increment without its matching decrement
   (map/unmap imbalance) or a PFN read for the wrong PDE. Start with `farm --arches arm64`
   using the conformance payload, and arm the tripwire before reading the dump.
+- **Guard page in a section view loses the view's data (FIXED 2026-11-02, smp-bringup).** kmtest ZwMapViewOfSection maps a view `PAGE_GUARD | PAGE_READWRITE` and expects the
+  first touch to raise STATUS_GUARD_PAGE_VIOLATION and the second to succeed. MmArmAccessFault's
+  guard path asserts `ProtoPte == NULL` (pagfault.rs ~2478; upstream's C asserts the same, i.e. it
+  never supported this), then writes a plain soft PTE: the prototype linkage is gone and the
+  second touch DEMAND-ZEROES, so the view reads zeros instead of the file (the test does not
+  check the bytes, which is why it "passes"). Was a BUGCHECK while ntoskrnl's ASSERT! panicked
+  (2/2 standalone kmtest runs, 0/9 in a gate); now `KERNEL_ASSERT` / `A:kernel-assert`. Fix: write
+  a lookup-needed prototype PTE carrying the protection minus GUARD, AND make the re-fault path
+  honour that PTE's protection instead of overwriting it from the VAD via MiCheckVirtualAddress
+  (else the guard re-raises forever). That second half touches every section-view fault.
+  Done as described; amd64 conformance 107/107, ZwMapViewOfSection 135/0 and MmSection 250/4
+  (both the baseline), no kernel assertion (`20261102-022452-stmb0kb8-conformance-amd64`).
 - **amd64-bios: demand-zero fault on an already-valid PTE (FIX LANDING 2026-11-01, smp-bringup;
   root cause by code reading, the race has not been reproduced on demand).** Cause: the 64-bit
   self-map branch of `MmArmAccessFault` (a kernel fault on a page-table VA) built user
@@ -690,24 +702,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `0x7FFB7...` DLL as the null write above. PTE `0x00C0000034BB0743` is valid when reported. Same
   serial capture, third boot.
 
-- **fastfat/cdfs translation audit: half of each driver only grep-scanned (owed, found
-  2026-11-01, research).** Three Sonnet agents compared the early DeepSeek translations
-  against the in-tree C; everything they confirmed is fixed (win11-flip, see its commits).
-  Compared function by function: fastfat's C glue (`rust_cohab_*.c`), FSCTL dispatch, lock,
-  volume-info, completion and exception paths, allocsup, the FileInformation handlers, the
-  write/read cores; cdfs's dirent/path-table/name/mount/read/allocation/query paths. ONLY
-  scanned (constants, call-multiset diffs, cfg gates), so still owed a line-by-line read:
-  fastfat `FatCommonCreate` and the open paths, `FatCreateVcb`/`FatDeleteVcb`/
-  `FatCreateFcb`, `FatVerifyVcb`/`FatPerformVerify`, `FatMoveFile`, `FatDismountVolume`,
-  `FatSetRenameInfo`/`FatRenameEAs`/directory defrag, the rest of deviosup/cachesup/easup,
-  lockctrl, filobsup, pnp, shutdown, acchksup, fatinit; cdfs create, cleanup, close,
-  lockctrl, pnp, verfysup (`CdVerifyVolume`), devctrl, workque, fspdisp, shutdown,
-  prefxsup, write, and the tails of `CdLookupAllocation` and strucsup. Known left as-is:
-  fastfat's oplock stand-ins (`FsRtlOplockBreakH` SUCCESS, `FsRtlCheckOplockEx` ignoring
-  Flags: ntoskrnl stubs them at 0xA00+), `KeAcquireSpinLockRaiseToDpc` in
-  `rust_cohab_fat.c` (raises IRQL, takes no lock: UP-only), cdfs's `FsRtlIsLeadDbcsCharacter`
-  stand-in (always FALSE, DBCS OEM code pages), `RtlOemStringToCountedUnicodeSize` (Length*2,
-  SBCS-only), and the lost file/line in `FatBugCheck`/`CdBugCheck` parameter 1.
+- **fastfat/cdfs translation audit (line-by-line read DONE 2026-11-01, research).** Two rounds
+  of Sonnet agents compared the early DeepSeek translations against the in-tree C, function by
+  function, across both drivers; every confirmed finding is fixed (win11-flip, fsaudit-2). The
+  second round found: CDFS refused every device IOCTL on a volume handle (`TypeOfOpen != 0`
+  for `!= UserVolumeOpen`), never tore down a not-mounted volume from the close queue
+  (`VcbMounted` read as 0), and gave the PnP swap VPB `VPB_MOUNTED` instead of
+  `VPB_REMOVE_PENDING` (a boolean `FlagOn`); fastfat truncated `FatLookupLastMcbEntry`'s LBO
+  to 32 bits, tested the wrong BPB field in `IsBpbFat32`, asked for Windows 8 NX pool types in
+  `FatVerifyVolume`, and counted no create/read/disk statistics (empty C stand-ins, now
+  `stats.rs`). Findings the agents raised that are NOT bugs here: open-coded asserts and
+  `DbgBreakPoint`s that mirror `NT_ASSERT` -- this build is `DBG=1`, so the C's asserts are
+  live too. Still open, as decisions rather than bugs: cdfs's `FILE_OPEN_REQUIRING_OPLOCK`
+  block is `#[cfg(any())]` although the crate builds `ntddi_win8` (its FCB oplock layout is
+  the pre-WIN8 one); fastfat's `FatCommonCreateCallout` lacks the C's try/except but is dead
+  below WINTHRESHOLD. Known left as-is: fastfat's oplock stand-ins (`FsRtlOplockBreakH`
+  SUCCESS, `FsRtlCheckOplockEx` ignoring Flags: ntoskrnl stubs them at 0xA00+),
+  `KeAcquireSpinLockRaiseToDpc` in `rust_cohab_fat.c` (raises IRQL, takes no lock: UP-only),
+  cdfs's `FsRtlIsLeadDbcsCharacter` stand-in (always FALSE, DBCS OEM code pages),
+  `RtlOemStringToCountedUnicodeSize` (Length*2, SBCS-only), and the lost file/line in
+  `FatBugCheck`/`CdBugCheck` parameter 1.
 - **amd64 STATUS_NONEXISTENT_SECTOR in-page error, 0x1E during the boot WoW64 self-tests
   (open flake, seen once 2026-11-01, research).** hostapps `20261101-123017-7ue7skcb`:
   `[MM] Failed to page data in! st=c0000015 off=10000` while `apc32.exe` created threads,
@@ -772,17 +786,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   output is parked in stash "smp-bringup: syssetup island full regen (33 errors/arch),
   2026-10-17".
 
-- **arm64 FEX: a guest dies when a commit is refused; appstorm64 at 1024M is 53/54 (open,
-  found 2026-10-17, human-only).** On 1G `VIBEOS_PAYLOAD=appstorm64` media, the ramdisk leaves
-  a 129 MB commit limit. Since copy-on-write and paged pool were charged (`203a6c64d51`, a
-  steady ~15 MB), FEX's peaks reach it. iexplore under FEX is refused 16 pages, faults in the
-  CPU layer and never closes (`20261017-141001-or20qi28`). A ladder run on that media loses
-  apc32 the same way (`20261017-141001-lz2_v41g`). Cause: rpmalloc's `span_allocate_page`
-  calls the VIBEOS `memory_commit` hook (FEXCore `AllocatorHooks.cpp`
-  `FEX_rp_memory_commit`), which returns `void`, and then writes into memory that was never
-  committed. The fix belongs in `vendor/fex`, whose CLAUDE.md forbids AI-written code. Plain
-  `VIBEOS_FEX=1` media (the gate's ladder) and appstorm64 at 1088M and 2G are clean. Details:
-  `docs/engineering/wow64-x64-guest-design.md`, resume item 2.
+- **arm64 FEX: a guest dies when a commit is refused at the limit (open, found 2026-10-17;
+  environment-limited).** On 1G `VIBEOS_PAYLOAD=appstorm64` media, the ramdisk leaves a
+  129 MB commit limit and no pagefile, and FEX's peaks reach it. In October the refusal killed
+  iexplore (`20261017-141001-or20qi28`, 53/54). rpmalloc then wrote its page header into the
+  uncommitted memory, because `os_mcommit` returns `void` and only asserts (compiled out). Since
+  2026-11-02 rpmalloc reports the refusal and `malloc` returns NULL (vendor-patches/fex.md,
+  "checked commit"). The guest still dies, one frame later: FEXCore's C++ callers do not check,
+  e.g. `CreateX87StackOptimizationPass` stores through the NULL (apc32,
+  `20261102-234710-fdmni2t4`; appstorm64 itself 55/55 there). The kernel's `[MM] commit limit:
+  refused N pages` line just before names the cause. Windows would grow its pagefile at this
+  point; surviving it here needs a pagefile on ramdisk boots or bigger media, not a FEX fix.
+  Plain `VIBEOS_FEX=1` media and appstorm64 at 1088M and 2G are clean.
 
 - **`SHFileOperationW(FO_COPY)` with progress UI crashes on i386 (open, found 2026-10-17,
   cpp-cluster).** mydocs' drop handler copies the dropped files with `FOF_ALLOWUNDO |
@@ -1863,9 +1878,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   IsConsoleMode calling NtUserCreateMenu, amd64 MAX_SYSCALL_PARAM_SIZE, smss's RESERVE_1MB
   setting NX, fastfat/cdfs MDL flags, TOKEN_HAS_ADMIN_GROUP), the legitimate ones (freeldr's
   ARC codes, driver-local ERROR levels) carry a `nolint` with their reason. The baseline is
-  empty: any new disagreement fails `vibeos-cli check`. Still owed from the sweep: fastfat's
-  `KeExpandKernelStackAndCalloutEx` extern takes `StackSize: u32` where the C has SIZE_T
-  (harmless while the shim ignores it).
+  empty: any new disagreement fails `vibeos-cli check`. (The sweep's last owed item, fastfat's
+  `KeExpandKernelStackAndCalloutEx` `StackSize: u32`, is fixed: the extern takes SIZE_T.)
 - **Hardware faults in a Rust try body: all three arches catch a breakpoint; arm64's
   access violation too** (2026-09-27). The per-boot
   `[SEH-TRY] rust hw faults` self-test (ex-rust init.rs: an int3/brk, an access violation
@@ -6906,19 +6920,28 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   WoW64 user buffer; fastfat's LFN copy was WCHAR-typed on a packed record, `FatNoOpAcquire`
   set top-level IRP 1 for `FSRTL_CACHE_TOP_LEVEL_IRP`, and an empty `DbgDoit!` dropped a DBG
   increment; and a workspace `[profile]` edit never rebuilt `rust_crate_sources` edges.
-  **OWED:** classpnp, disk and cdrom -- on 64-bit `COMMON_DEVICE_EXTENSION` is 64/128-aligned
-  (a `LOOKASIDE_ALIGN` lookaside inside it) while `IoCreateDevice` places extensions 16-aligned,
-  as the C does; needs a design decision (align extensions in `IoCreateDevice`, or keep these
-  crates unarmed). Then freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks),
+  **classpnp, disk and cdrom ARMED 2026-11-01** once device extensions were cache-aligned
+  (on 64-bit `COMMON_DEVICE_EXTENSION` holds a `LOOKASIDE_ALIGN` lookaside). The extension stays
+  at `DeviceObject + 1` -- KMDF's fxdevice.cpp asserts that arithmetic, so padding it away broke
+  a de-facto ABI -- and `ObpAllocateObject` places device objects so that address is on a cache
+  line (`ExpAllocatePoolWithTagAlignedAt`); the pool also honours the `*CacheAligned` pool types
+  now, which the C ignores. Found on the way: six classpnp sites cast the DEVICE_OBJECT itself to
+  the FDO extension (release-queue lock and flags written into the device object), and
+  `FREE_POOL` was a fn that freed without nulling its argument (121 sites in cdrom/classpnp/disk;
+  cdrom's Gesn.Buffer dangled after a failed GESN probe). Then freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks),
   win32k-rust (10) and the remaining drivers. Two armed-fastfat asserts printed twice per amd64-bios boot
   (`20261101-183850-m41czity`). `cachesup.rs:182` FIXED 2026-11-01: fastfat mounting the BIOS
   machine's EMPTY floppy got STATUS_NO_MEDIA_IN_DEVICE from MmMakeDataSectionResident, which
   cc-rust's `CcRosEnsureVacbResident` turned into FALSE (a stale "DUMMY_PSEH: return FALSE
   instead of raising" stand-in, 11 sites) -- "would block" to a WAIT caller, so fastfat raised
   STATUS_CANT_WAIT. cc-rust now raises as the C does, releasing its BCB/VACB first.
-  **OWED:** `read.rs:590`, a DASD non-cached read returning STATUS_VERIFY_REQUIRED on the
-  volume's own VerifyThread (`20261101-200736-od_rznoq`); find which IrpContext flag should
-  have set SL_OVERRIDE_VERIFY_VOLUME, and whether the C does the same on an empty floppy. `debug_assert!` is gated on
+  `read.rs:590` FIXED 2026-11-02: not a verify problem at all -- a probe showed
+  STATUS_NO_MEDIA_IN_DEVICE on an empty CD drive with no VerifyThread set. The translation had
+  wrapped the C's `NT_ASSERT(cur != Vcb->VerifyThread || Status != STATUS_VERIFY_REQUIRED)` in
+  `!( )` at all three FatCommonRead sites, so it fired on every legitimate I/O failure. New rule
+  `scan_assert_negated_vs_c`; it needed the C-twin index to stop losing every function after
+  one whose braces balance only per `#if` arm (read.c lost all of FatCommonRead onward). With
+  that, amd64-bios boots with no assert at all (`20261102-003650-2roxoi97`). `debug_assert!` is gated on
   `cfg(debug_assertions)`; `sdk/lib/rust/Cargo.toml`'s `[profile.release]` never sets it, so
   cargo's release default (off) applies and every kernel crate builds `--release`. Meanwhile
   `CMakeLists.txt:233` sets `-DDBG=1`, so the C original calls `RtlAssert`. **The mirror of

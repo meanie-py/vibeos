@@ -17,7 +17,7 @@ binaries:
   - src: tools/payloads/appstorm/appstorm-{arch}.exe
     build_arch: amd64
     root: image
-    dest: Profiles/All Users/Start Menu/Programs/StartUp/appstorm.exe
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/appstorm.exe
   # The amd64 side-by-side assemblies. An x86-64 process's activation context asks for
   # processorArchitecture amd64, and the arm64 media carries only arm64 assemblies, so every
   # comctl32 v6 / gdiplus activation in a guest failed ("CreateActCtxW failed ... err=2").

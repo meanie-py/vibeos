@@ -87,12 +87,15 @@ fn main() {{
         "artifact_store",
     ):
         write(f"tools/{name}.py", "# fixture implementation watch\n")
+    from tools.test_artifact_inputs import install_native_artifact_tool
+
+    install_native_artifact_tool(root)
     # The shipping Rust module launches this fake helper through its actual
     # command/protocol. It computes fresh watches every time, including new
     # nested source membership, using shipping runtime._watches.
     write(
-        "tools/artifact_runtime.py",
-        f"""
+        "tools/artifact-helper",
+        f"""#!{sys.executable}
 import hashlib
 import importlib.util
 import json
@@ -145,6 +148,7 @@ print("archive\\t"+str(archive))
 for path in watches:print("watch\\t"+path)
 """,
     )
+    (root / "tools/artifact-helper").chmod(0o755)
     write(
         "CMakeLists.txt",
         f'''
@@ -173,7 +177,7 @@ add_custom_target(app_target ALL DEPENDS "${{CMAKE_BINARY_DIR}}/app")
         VIBEOS_ARTIFACT_STORE_MODE="ON",
         VIBEOS_ARTIFACT_STORE_ROOT=str(immutable),
         VIBEOS_ARTIFACT_SUPERVISOR=str(tmp_path / "fake-supervisor.json"),
-        VIBEOS_ARTIFACT_PYTHON=sys.executable,
+        VIBEOS_ARTIFACT_TOOL=str(root / "tools/artifact-helper"),
         VIBEOS_ARTIFACT_TOOLCHAIN_ID="fixture",
         VIBEOS_ARTIFACT_VERIFY_NONCE="",
     )
