@@ -67,12 +67,8 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 // ================= wow64 hand declarations =====================================================
 // `VOID` is a #define in the SDK, so the island never carries it.
 pub type VOID = c_void;
-// Defined by the KEPT-C wow64_thunks.c (the syscall-trace switch); every Rust reader imports it.
-extern "C" {
-    pub static mut Wow64TraceSyscalls: ULONG;
-    // wow64_thunks.c (kept C): the generated syscall table's dispatcher.
-    pub fn Wow64DispatchSystemService(ServiceNumber: ULONG, Arguments: PULONG) -> LONG;
-}
+// The syscall-trace switch and the generated table's dispatcher (wow64_thunks.rs).
+pub use crate::wow64::wow64_thunks::{Wow64DispatchSystemService, Wow64TraceSyscalls};
 
 // wow64.c's WOW64_HOST_PC(Ctx): the host CONTEXT's program counter, per arch (the macros
 // stage refused it for having two definitions; these are the C's two arms).
@@ -182,12 +178,20 @@ pub use conutils_h::{AnsiText, Binary, CON_STREAM, CON_STREAM_MODE, CON_WRITE_FU
 
 // ==== port facts: constants evaluated by clang from the C headers (generated -- `rustconv port resolve`) ====
 pub const WOW64_AUTOMARSHAL_UNIMPL: NTSTATUS = 0xC0BBBBBB_u32 as NTSTATUS; // clang, wow64_manual.c
-pub const WOW64_CB_SIZE32__WINDOWPOS: i32 = 0x1C; // clang, wow64_callback.c
-pub const WOW64_CB_SIZE32_tagCOPYDATASTRUCT: i32 = 0xC; // clang, wow64_callback.c
-pub const WOW64_CB_SIZE32_tagNCCALCSIZE_PARAMS: i32 = 0x34; // clang, wow64_callback.c
-pub const WOW64_CB_SIZE64__WINDOWPOS: i32 = 0x28; // clang, wow64_callback.c
-pub const WOW64_CB_SIZE64_tagCOPYDATASTRUCT: i32 = 0x18; // clang, wow64_callback.c
-pub const WOW64_CB_SIZE64_tagNCCALCSIZE_PARAMS: i32 = 0x38; // clang, wow64_callback.c
+// wow64_status.h's other two codes and its WOW64_IS_UNIMPL.
+pub const WOW64_STATUS_INVALID_SYSTEM_SERVICE: NTSTATUS = 0xC000001C_u32 as NTSTATUS;
+pub const WOW64_MANUAL_UNIMPL: NTSTATUS = 0x7FFFFFFF;
+#[inline]
+pub fn WOW64_IS_UNIMPL(st: NTSTATUS) -> bool {
+    st == WOW64_MANUAL_UNIMPL || st == WOW64_AUTOMARSHAL_UNIMPL
+}
+// The callback marshal table's type and sizes: generated with it (wow64_cb_automarshal.rs).
+pub use crate::wow64::wow64_cb_automarshal::{
+    _WOW64_CB_MARSHAL, PWOW64_CB_MARSHAL, WOW64_CB_MARSHAL, WOW64_CB_SIZE32__WINDOWPOS,
+    WOW64_CB_SIZE32_tagCOPYDATASTRUCT, WOW64_CB_SIZE32_tagNCCALCSIZE_PARAMS,
+    WOW64_CB_SIZE64__WINDOWPOS, WOW64_CB_SIZE64_tagCOPYDATASTRUCT,
+    WOW64_CB_SIZE64_tagNCCALCSIZE_PARAMS,
+};
 // ==== end port facts ====
 
 // ==== port local types: types the module's .c files define, laid out by c2rust (generated -- `rustconv port resolve`) ====
@@ -318,8 +322,6 @@ pub struct WC64 {
 }
 // WOW64INFO_FEX: c2rust, wow64.c
 pub type WOW64INFO_FEX = _WOW64INFO_FEX;
-// WOW64_CB_MARSHAL: c2rust, wow64_manual.c
-pub type WOW64_CB_MARSHAL = _WOW64_CB_MARSHAL;
 // _WOW64INFO_FEX: c2rust, wow64.c
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -332,18 +334,6 @@ pub struct _WOW64INFO_FEX {
     pub CrossProcessWorkList: ULONGLONG,
     pub NativeMachineType: USHORT,
     pub EmulatedMachineType: USHORT,
-}
-// _WOW64_CB_MARSHAL: c2rust, wow64_cb_automarshal.c
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct _WOW64_CB_MARSHAL {
-    pub Msg: ::core::ffi::c_uint,
-    pub Size32: ::core::ffi::c_uint,
-    pub Size64: ::core::ffi::c_uint,
-    pub Down:
-        Option<unsafe extern "C" fn(*const ::core::ffi::c_uchar, *mut ::core::ffi::c_uchar) -> ()>,
-    pub Up:
-        Option<unsafe extern "C" fn(*const ::core::ffi::c_uchar, *mut ::core::ffi::c_uchar) -> ()>,
 }
 // ==== end port local types ====
 

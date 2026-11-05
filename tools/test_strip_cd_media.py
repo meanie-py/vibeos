@@ -229,7 +229,7 @@ def test_actual_llvm_objcopy_strips_all_arch_images_and_recomputes_checksum(
 
 
 def test_media_payload_cli_uses_stamp_and_requires_an_arch_only_when_selected(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, capsys
 ):
     import importlib.util
 
@@ -241,15 +241,19 @@ def test_media_payload_cli_uses_stamp_and_requires_an_arch_only_when_selected(
     spec.loader.exec_module(payloads)
     monkeypatch.delenv("VIBEOS_PAYLOAD", raising=False)
     monkeypatch.delenv("VIBEOS_DOOM", raising=False)
-    observed = []
-    monkeypatch.setattr(
-        payloads, "manifest", lambda names, arch: observed.append((names, arch)) or {}
+    monkeypatch.setattr(payloads, "REPO", tmp_path)
+    source = tmp_path / "sample.exe"
+    source.write_bytes(b"payload")
+    spec_dir = tmp_path / "tools/payloads/from-stamp"
+    spec_dir.mkdir(parents=True)
+    (spec_dir / "payload.yaml").write_text(
+        "name: from-stamp\nbinaries: [{src: sample.exe, dest: bin/sample.exe}]\n"
     )
     build = tmp_path / "build-i386"
     build.mkdir()
     (build / "payload-selection.json").write_text('{"payloads":["from-stamp"]}')
     assert payloads.main(["media-manifest", "--output", str(build / "boot/output.lst")]) == 0
-    assert observed == [(["from-stamp"], "i386")]
+    assert capsys.readouterr().out.strip() == f"reactos/bin/sample.exe={source}"
     monkeypatch.setenv("VIBEOS_PAYLOAD", "")
     assert payloads.main(["media-manifest", "--output", str(tmp_path / "output.lst")]) == 0
     monkeypatch.setenv("VIBEOS_PAYLOAD", "selected")

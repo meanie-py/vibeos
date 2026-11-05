@@ -595,25 +595,18 @@ pub fn strip_cli(repo: &Path, args: &[String]) -> Result<u8> {
         }
         lines.push(line.into());
     }
-    // Payloads retain their own freshness, foreign-build and collision checks.
-    let payload = crate::artifact_executor::supervised_output(
-        Command::new("python3")
-            .arg(repo.join("tools/payloads/compile.py"))
-            .args(["media-manifest", "--output"])
-            .arg(out),
-        Some(Duration::from_secs(600)),
-    )?;
-    if payload.code != 0 {
-        return Err(Error::new(format!(
-            "payload manifest failed: {}",
-            payload.stderr
-        )));
-    }
-    for line in payload.stdout.lines() {
-        if !line.contains('=') {
-            return Err("payload compiler emitted a malformed graft".into());
-        }
-        lines.push(line.into());
+    // The shared native payload compiler owns freshness, foreign-build and collision checks.
+    let env: serde_json::Value =
+        serde_json::to_value(std::env::vars().collect::<BTreeMap<_, _>>())?;
+    let payload = crate::payload_build::media_manifest(repo, out, &env)?;
+    for (destination, source) in payload
+        .as_object()
+        .ok_or("payload manifest is not a mapping")?
+    {
+        lines.push(format!(
+            "{destination}={}",
+            source.as_str().ok_or("payload source is not a path")?
+        ));
     }
     inventory.unchanged()?;
     atomic(&cache.join(MANIFEST), &serde_json::to_vec(&manifest)?)?;

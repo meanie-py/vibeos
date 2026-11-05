@@ -104,6 +104,7 @@ _PYTEST_SUITES = [
     # entries blaming whichever subtest was in flight. Only a chatty-guest test
     # distinguishes the two implementations.
     (".", ".", "tools/test_payload_drain.py"),
+    (".", ".", "tools/test_payload_native.py"),
     (".", ".", "tools/test_wine_registry_resources.py"),
     (".", ".", "tools/test_gen_delaylib.py"),
     (".", ".", "tools/test_gen_apisets_table.py"),

@@ -942,6 +942,15 @@ function(add_cargo_module _target _crate _output)
     if(NOT _acm_uses_crt EQUAL -1)
         list(APPEND _acm_BODY_CRATES crt-startup-rust crt-dllmain-rust crt0-rust)
     endif()
+    # Same shape for delay imports: reactos-link's delay_import_lib() runs `tools/codegen
+    # delaylib` and tells cargo to rerun on the generator's sources, so a codegen edit (any
+    # of it: cnt, delay, ...) left control.exe/iexplore.exe/cscript.exe stale with no ninja
+    # edge to relink them -- BUILD_INCOMPLETE until the outputs were deleted.
+    string(FIND "${_acm_buildrs}" "delay_import_lib" _acm_uses_delay)
+    if(NOT _acm_uses_delay EQUAL -1)
+        vibeos_codegen_dependencies(_acm_codegen_deps)
+        list(APPEND _srcs ${_acm_codegen_deps})
+    endif()
     # Follow Cargo path dependencies TRANSITIVELY, not just the crates named in
     # BODY_CRATES. A declaration names the crate that holds the module's bodies,
     # but those bodies call into sibling crates by path, and editing one of THOSE

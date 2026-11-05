@@ -307,3 +307,468 @@ pub(crate) unsafe fn str_len16(p: *const u16) -> usize {
     core::arch::asm!("repne scasw", inout("edi") p => _, inout("ecx") usize::MAX => c, in("ax") 0u16, options(nostack, readonly));
     !c - 1
 }
+
+// ---------------------------------------------------------------------------------------------
+// Compare and search scans (strcmp, strncmp, _stricmp, _strnicmp, strchr and their wide twins).
+// The `core_rs::string` bodies are the contract, but compiled here (no LLVM passes) a slice loop
+// cost 7.5 ns an element against 0.25 for the C: 10x at 8 characters, 30x at 256
+// (`cnt-difftest --test perf`). So the scan is asm and returns WHERE it stopped, and the result
+// is worked out once, in Rust, from the two elements there.
+//
+// `*_mismatch*(a, b, n)` returns the first index below `n` at which the elements differ or are
+// both NUL, or `n`. The `_ci` forms compare after folding ASCII A..Z to a..z, and nothing else
+// (the libcntpr NT `_stricmp_nt.c` / `_wcsicmp_nt.c` rule, wide included). `*_chr*(s, c)` returns
+// the index of the first element equal to `c` or NUL. Every access is one element at its own
+// alignment, so these never read past the terminator or the count.
+// ---------------------------------------------------------------------------------------------
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) unsafe fn str_mismatch8(a: *const u8, b: *const u8, n: usize) -> usize {
+    let mut p = a;
+    if n != 0 {
+        core::arch::asm!(
+            "2:",
+            "ldrb {t:w}, [{p}]",
+            "ldrb {u:w}, [{q}]",
+            "cmp {t:w}, {u:w}",
+            "b.ne 9f",
+            "cbz {t:w}, 9f",
+            "add {p}, {p}, #1",
+            "add {q}, {q}, #1",
+            "subs {n}, {n}, #1",
+            "b.ne 2b",
+            "9:",
+            p = inout(reg) p,
+            q = inout(reg) b => _,
+            n = inout(reg) n => _,
+            t = out(reg) _,
+            u = out(reg) _,
+            options(nostack, readonly),
+        );
+    }
+    p as usize - a as usize
+}
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) unsafe fn str_mismatch16(a: *const u16, b: *const u16, n: usize) -> usize {
+    let mut p = a;
+    if n != 0 {
+        core::arch::asm!(
+            "2:",
+            "ldrh {t:w}, [{p}]",
+            "ldrh {u:w}, [{q}]",
+            "cmp {t:w}, {u:w}",
+            "b.ne 9f",
+            "cbz {t:w}, 9f",
+            "add {p}, {p}, #2",
+            "add {q}, {q}, #2",
+            "subs {n}, {n}, #1",
+            "b.ne 2b",
+            "9:",
+            p = inout(reg) p,
+            q = inout(reg) b => _,
+            n = inout(reg) n => _,
+            t = out(reg) _,
+            u = out(reg) _,
+            options(nostack, readonly),
+        );
+    }
+    (p as usize - a as usize) / 2
+}
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) unsafe fn str_mismatch_ci8(a: *const u8, b: *const u8, n: usize) -> usize {
+    let mut p = a;
+    if n != 0 {
+        core::arch::asm!(
+            "2:",
+            "ldrb {t:w}, [{p}]",
+            "ldrb {u:w}, [{q}]",
+            "sub {v:w}, {t:w}, #65",
+            "cmp {v:w}, #25",
+            "add {v:w}, {t:w}, #32",
+            "csel {t:w}, {v:w}, {t:w}, ls",
+            "sub {v:w}, {u:w}, #65",
+            "cmp {v:w}, #25",
+            "add {v:w}, {u:w}, #32",
+            "csel {u:w}, {v:w}, {u:w}, ls",
+            "cmp {t:w}, {u:w}",
+            "b.ne 9f",
+            "cbz {t:w}, 9f",
+            "add {p}, {p}, #1",
+            "add {q}, {q}, #1",
+            "subs {n}, {n}, #1",
+            "b.ne 2b",
+            "9:",
+            p = inout(reg) p,
+            q = inout(reg) b => _,
+            n = inout(reg) n => _,
+            t = out(reg) _,
+            u = out(reg) _,
+            v = out(reg) _,
+            options(nostack, readonly),
+        );
+    }
+    p as usize - a as usize
+}
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) unsafe fn str_mismatch_ci16(a: *const u16, b: *const u16, n: usize) -> usize {
+    let mut p = a;
+    if n != 0 {
+        core::arch::asm!(
+            "2:",
+            "ldrh {t:w}, [{p}]",
+            "ldrh {u:w}, [{q}]",
+            "sub {v:w}, {t:w}, #65",
+            "cmp {v:w}, #25",
+            "add {v:w}, {t:w}, #32",
+            "csel {t:w}, {v:w}, {t:w}, ls",
+            "sub {v:w}, {u:w}, #65",
+            "cmp {v:w}, #25",
+            "add {v:w}, {u:w}, #32",
+            "csel {u:w}, {v:w}, {u:w}, ls",
+            "cmp {t:w}, {u:w}",
+            "b.ne 9f",
+            "cbz {t:w}, 9f",
+            "add {p}, {p}, #2",
+            "add {q}, {q}, #2",
+            "subs {n}, {n}, #1",
+            "b.ne 2b",
+            "9:",
+            p = inout(reg) p,
+            q = inout(reg) b => _,
+            n = inout(reg) n => _,
+            t = out(reg) _,
+            u = out(reg) _,
+            v = out(reg) _,
+            options(nostack, readonly),
+        );
+    }
+    (p as usize - a as usize) / 2
+}
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) unsafe fn str_chr8(s: *const u8, c: u8) -> usize {
+    let mut p = s;
+    core::arch::asm!(
+        "2:",
+        "ldrb {t:w}, [{p}]",
+        "cmp {t:w}, {c:w}",
+        "b.eq 9f",
+        "cbz {t:w}, 9f",
+        "add {p}, {p}, #1",
+        "b 2b",
+        "9:",
+        p = inout(reg) p,
+        c = in(reg) c as u32,
+        t = out(reg) _,
+        options(nostack, readonly),
+    );
+    p as usize - s as usize
+}
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) unsafe fn str_chr16(s: *const u16, c: u16) -> usize {
+    let mut p = s;
+    core::arch::asm!(
+        "2:",
+        "ldrh {t:w}, [{p}]",
+        "cmp {t:w}, {c:w}",
+        "b.eq 9f",
+        "cbz {t:w}, 9f",
+        "add {p}, {p}, #2",
+        "b 2b",
+        "9:",
+        p = inout(reg) p,
+        c = in(reg) c as u32,
+        t = out(reg) _,
+        options(nostack, readonly),
+    );
+    (p as usize - s as usize) / 2
+}
+
+// x86 and x86-64 share text: `{r}` is the pointer-width register on each, and five operands fit
+// i386's free set (eax, ebx, ecx, edx, edi; LLVM keeps esi and ebp). The case fold runs only
+// once the raw elements differ.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub(crate) unsafe fn str_mismatch8(a: *const u8, b: *const u8, n: usize) -> usize {
+    let mut p = a;
+    if n != 0 {
+        core::arch::asm!(
+            "2:",
+            "movzx {t:e}, byte ptr [{p}]",
+            "movzx {u:e}, byte ptr [{q}]",
+            "cmp {t:e}, {u:e}",
+            "jne 9f",
+            "test {t:e}, {t:e}",
+            "jz 9f",
+            "add {p}, 1",
+            "add {q}, 1",
+            "sub {n}, 1",
+            "jnz 2b",
+            "9:",
+            p = inout(reg) p,
+            q = inout(reg) b => _,
+            n = inout(reg) n => _,
+            t = out(reg) _,
+            u = out(reg) _,
+            options(nostack, readonly),
+        );
+    }
+    p as usize - a as usize
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub(crate) unsafe fn str_mismatch16(a: *const u16, b: *const u16, n: usize) -> usize {
+    let mut p = a;
+    if n != 0 {
+        core::arch::asm!(
+            "2:",
+            "movzx {t:e}, word ptr [{p}]",
+            "movzx {u:e}, word ptr [{q}]",
+            "cmp {t:e}, {u:e}",
+            "jne 9f",
+            "test {t:e}, {t:e}",
+            "jz 9f",
+            "add {p}, 2",
+            "add {q}, 2",
+            "sub {n}, 1",
+            "jnz 2b",
+            "9:",
+            p = inout(reg) p,
+            q = inout(reg) b => _,
+            n = inout(reg) n => _,
+            t = out(reg) _,
+            u = out(reg) _,
+            options(nostack, readonly),
+        );
+    }
+    (p as usize - a as usize) / 2
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub(crate) unsafe fn str_mismatch_ci8(a: *const u8, b: *const u8, n: usize) -> usize {
+    let mut p = a;
+    if n != 0 {
+        core::arch::asm!(
+            "2:",
+            "movzx {t:e}, byte ptr [{p}]",
+            "movzx {u:e}, byte ptr [{q}]",
+            "cmp {t:e}, {u:e}",
+            "je 6f",
+            "cmp {t:e}, 65",
+            "jb 3f",
+            "cmp {t:e}, 90",
+            "ja 3f",
+            "add {t:e}, 32",
+            "3:",
+            "cmp {u:e}, 65",
+            "jb 4f",
+            "cmp {u:e}, 90",
+            "ja 4f",
+            "add {u:e}, 32",
+            "4:",
+            "cmp {t:e}, {u:e}",
+            "jne 9f",
+            "6:",
+            "test {t:e}, {t:e}",
+            "jz 9f",
+            "add {p}, 1",
+            "add {q}, 1",
+            "sub {n}, 1",
+            "jnz 2b",
+            "9:",
+            p = inout(reg) p,
+            q = inout(reg) b => _,
+            n = inout(reg) n => _,
+            t = out(reg) _,
+            u = out(reg) _,
+            options(nostack, readonly),
+        );
+    }
+    p as usize - a as usize
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub(crate) unsafe fn str_mismatch_ci16(a: *const u16, b: *const u16, n: usize) -> usize {
+    let mut p = a;
+    if n != 0 {
+        core::arch::asm!(
+            "2:",
+            "movzx {t:e}, word ptr [{p}]",
+            "movzx {u:e}, word ptr [{q}]",
+            "cmp {t:e}, {u:e}",
+            "je 6f",
+            "cmp {t:e}, 65",
+            "jb 3f",
+            "cmp {t:e}, 90",
+            "ja 3f",
+            "add {t:e}, 32",
+            "3:",
+            "cmp {u:e}, 65",
+            "jb 4f",
+            "cmp {u:e}, 90",
+            "ja 4f",
+            "add {u:e}, 32",
+            "4:",
+            "cmp {t:e}, {u:e}",
+            "jne 9f",
+            "6:",
+            "test {t:e}, {t:e}",
+            "jz 9f",
+            "add {p}, 2",
+            "add {q}, 2",
+            "sub {n}, 1",
+            "jnz 2b",
+            "9:",
+            p = inout(reg) p,
+            q = inout(reg) b => _,
+            n = inout(reg) n => _,
+            t = out(reg) _,
+            u = out(reg) _,
+            options(nostack, readonly),
+        );
+    }
+    (p as usize - a as usize) / 2
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub(crate) unsafe fn str_chr8(s: *const u8, c: u8) -> usize {
+    let mut p = s;
+    core::arch::asm!(
+        "2:",
+        "movzx {t:e}, byte ptr [{p}]",
+        "cmp {t:e}, {c:e}",
+        "je 9f",
+        "test {t:e}, {t:e}",
+        "jz 9f",
+        "add {p}, 1",
+        "jmp 2b",
+        "9:",
+        p = inout(reg) p,
+        c = in(reg) c as u32 as usize,
+        t = out(reg) _,
+        options(nostack, readonly),
+    );
+    p as usize - s as usize
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+pub(crate) unsafe fn str_chr16(s: *const u16, c: u16) -> usize {
+    let mut p = s;
+    core::arch::asm!(
+        "2:",
+        "movzx {t:e}, word ptr [{p}]",
+        "cmp {t:e}, {c:e}",
+        "je 9f",
+        "test {t:e}, {t:e}",
+        "jz 9f",
+        "add {p}, 2",
+        "jmp 2b",
+        "9:",
+        p = inout(reg) p,
+        c = in(reg) c as u32 as usize,
+        t = out(reg) _,
+        options(nostack, readonly),
+    );
+    (p as usize - s as usize) / 2
+}
+
+// The shims' bodies (manifest `fast_path`). NULL reads as the empty string, as `cstr_slice` has
+// it; the result is the `core_rs::string` / `wstring` body's, worked out at the stopping index.
+
+const NUL8: &u8 = &0;
+const NUL16: &u16 = &0;
+
+fn fold(c: i32) -> i32 {
+    if (65..=90).contains(&c) {
+        c + 32
+    } else {
+        c
+    }
+}
+
+pub(crate) unsafe fn fast_strcmp(a: *const u8, b: *const u8) -> i32 {
+    fast_strncmp(a, b, usize::MAX)
+}
+
+pub(crate) unsafe fn fast_strncmp(a: *const u8, b: *const u8, n: usize) -> i32 {
+    let a = if a.is_null() { NUL8 as *const u8 } else { a };
+    let b = if b.is_null() { NUL8 as *const u8 } else { b };
+    let i = str_mismatch8(a, b, n);
+    if i == n {
+        return 0;
+    }
+    (*a.add(i) as i8 as i32) - (*b.add(i) as i8 as i32)
+}
+
+pub(crate) unsafe fn fast_wcscmp(a: *const u16, b: *const u16) -> i32 {
+    fast_wcsncmp(a, b, usize::MAX)
+}
+
+pub(crate) unsafe fn fast_wcsncmp(a: *const u16, b: *const u16, n: usize) -> i32 {
+    let a = if a.is_null() { NUL16 as *const u16 } else { a };
+    let b = if b.is_null() { NUL16 as *const u16 } else { b };
+    let i = str_mismatch16(a, b, n);
+    if i == n {
+        return 0;
+    }
+    (*a.add(i) as i32) - (*b.add(i) as i32)
+}
+
+pub(crate) unsafe fn fast_stricmp(a: *const u8, b: *const u8) -> i32 {
+    fast_strnicmp(a, b, usize::MAX)
+}
+
+pub(crate) unsafe fn fast_strnicmp(a: *const u8, b: *const u8, n: usize) -> i32 {
+    let a = if a.is_null() { NUL8 as *const u8 } else { a };
+    let b = if b.is_null() { NUL8 as *const u8 } else { b };
+    let i = str_mismatch_ci8(a, b, n);
+    if i == n {
+        return 0;
+    }
+    // A fold moves only A..Z, which are positive as signed char, so folding the signed value
+    // is the C's `chr1 - chr2` after its own fold.
+    fold(*a.add(i) as i8 as i32) - fold(*b.add(i) as i8 as i32)
+}
+
+pub(crate) unsafe fn fast_wcsicmp(a: *const u16, b: *const u16) -> i32 {
+    fast_wcsnicmp(a, b, usize::MAX)
+}
+
+pub(crate) unsafe fn fast_wcsnicmp(a: *const u16, b: *const u16, n: usize) -> i32 {
+    let a = if a.is_null() { NUL16 as *const u16 } else { a };
+    let b = if b.is_null() { NUL16 as *const u16 } else { b };
+    let i = str_mismatch_ci16(a, b, n);
+    if i == n {
+        return 0;
+    }
+    fold(*a.add(i) as i32) - fold(*b.add(i) as i32)
+}
+
+/// `c` is cut to `char` first (tcschr.h's `_TCHAR cc = c`); c == 0 finds the terminator. NULL
+/// searches nothing and returns NULL either way (the slice shim's `s.add(0)`).
+pub(crate) unsafe fn fast_strchr(s: *const u8, c: i32) -> *mut u8 {
+    if s.is_null() {
+        return core::ptr::null_mut();
+    }
+    let i = str_chr8(s, c as u8);
+    if *s.add(i) == c as u8 {
+        s.add(i) as *mut u8
+    } else {
+        core::ptr::null_mut()
+    }
+}
+
+pub(crate) unsafe fn fast_wcschr(s: *const u16, c: u16) -> *mut u16 {
+    if s.is_null() {
+        return core::ptr::null_mut();
+    }
+    let i = str_chr16(s, c);
+    if *s.add(i) == c {
+        s.add(i) as *mut u16
+    } else {
+        core::ptr::null_mut()
+    }
+}

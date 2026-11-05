@@ -9,8 +9,12 @@ pub struct VerifySvcNumbering;
 fn table_re() -> &'static Regex {
     static R: OnceLock<Regex> = OnceLock::new();
     R.get_or_init(|| {
-        crate::regexes::cached(r#"^\s*\{\s*"([^"]+)",\s*(?:\S+|0),\s*\d+\s*\},\s*/\* \[(\d+)\]"#)
-            .unwrap()
+        // The committed Rust table row, or the C one the generator also knows how to write.
+        crate::regexes::cached(concat!(
+            r#"^\s*(?:WOW64_THUNK_ENTRY \{ Name: c"([^"]+)"\.as_ptr\(\), Thunk: [^,]+, Slots: \d+ \}, // \[(\d+)\]"#,
+            r#"|\{\s*"([^"]+)",\s*(?:\S+|0),\s*\d+\s*\},\s*/\* \[(\d+)\])"#
+        ))
+        .unwrap()
     })
 }
 fn label_re() -> &'static Regex {
@@ -24,6 +28,14 @@ fn eax_re() -> &'static Regex {
     R.get_or_init(|| crate::regexes::cached(r"movl\s+\$0x(1[0-9a-f]{3}),\s*%eax").unwrap())
 }
 
+/// (name, index) from either table spelling.
+fn row<'a>(m: &regex::Captures<'a>) -> (&'a str, &'a str) {
+    match (m.get(1), m.get(2)) {
+        (Some(n), Some(i)) => (n.as_str(), i.as_str()),
+        _ => (m.get(3).unwrap().as_str(), m.get(4).unwrap().as_str()),
+    }
+}
+
 impl Rule for VerifySvcNumbering {
     fn needs_workspace_rust(&self) -> bool {
         false
@@ -33,7 +45,8 @@ impl Rule for VerifySvcNumbering {
     }
     fn run(&self, corpus: &Corpus) -> Result<Vec<String>, String> {
         let root = &corpus.root;
-        let generated = root.join("build-arm64/dll/win32/wow64/wow64_win32k_thunks.gen.c");
+        // The table that ships: committed, so it is present whether or not anything is built.
+        let generated = root.join("sdk/lib/rust/wow64-rust/src/wow64/gen/wow64_win32k_thunks.rs");
         let base32 = root.join("build-i386");
         let dlls = [
             base32.join("win32ss/user/user32/user32.dll"),
@@ -55,10 +68,11 @@ impl Rule for VerifySvcNumbering {
         let mut table = BTreeMap::new();
         for line in table_text.lines() {
             if let Some(m) = table_re().captures(line) {
-                let idx = m[2]
+                let (name, idx) = row(&m);
+                let idx = idx
                     .parse::<u32>()
                     .map_err(|e| format!("bad syscall index: {e}"))?;
-                table.insert(idx, m[1].to_owned());
+                table.insert(idx, name.to_owned());
             }
         }
         let mut stubs = BTreeMap::new();
@@ -128,13 +142,19 @@ mod tests {
         let m = table_re()
             .captures("{ \"NtUserFoo\", wow64_thunk_NtUserFoo, 2 }, /* [551] */")
             .unwrap();
-        assert_eq!(&m[1], "NtUserFoo");
-        assert_eq!(&m[2], "551");
+        assert_eq!(row(&m), ("NtUserFoo", "551"));
         let manual = table_re()
             .captures("{ \"NtUserBar\", 0, 15 }, /* [342] MANUAL */")
             .unwrap();
-        assert_eq!(&manual[1], "NtUserBar");
-        assert_eq!(&manual[2], "342");
+        assert_eq!(row(&manual), ("NtUserBar", "342"));
+        let rs = table_re()
+            .captures("    WOW64_THUNK_ENTRY { Name: c\"NtUserFoo\".as_ptr(), Thunk: Some(wow64_thunk_NtUserFoo), Slots: 2 }, // [551]")
+            .unwrap();
+        assert_eq!(row(&rs), ("NtUserFoo", "551"));
+        let rs_manual = table_re()
+            .captures("    WOW64_THUNK_ENTRY { Name: c\"NtUserBar\".as_ptr(), Thunk: None, Slots: 15 }, // [342] MANUAL: x")
+            .unwrap();
+        assert_eq!(row(&rs_manual), ("NtUserBar", "342"));
     }
     #[test]
     fn disassembly_parsers_match_the_original_stub_forms() {

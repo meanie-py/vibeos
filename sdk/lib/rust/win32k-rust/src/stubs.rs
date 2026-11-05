@@ -700,14 +700,14 @@ pub unsafe extern "system" fn NtGdiGetUFI(
     pcjDV: *mut ULONG,
     pulBaseCheckSum: *mut ULONG,
     pfl: *mut FLONG,
-) -> BOOLEAN {
+) -> BOOL {
     DbgPrint(
         b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
         b"stubs.c\0".as_ptr() as PCHAR,
         line!() as i32,
         b"NtGdiGetUFI\0".as_ptr() as PCHAR,
     );
-    0u8
+    0
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiColorCorrectPalette(
@@ -1121,14 +1121,14 @@ pub unsafe extern "system" fn NtGdiGetUFIPathname(
     pvView: *mut core::ffi::c_void,
     pbTTC: *mut u8,
     piTTC: *mut u32,
-) -> u8 {
+) -> BOOL {
     DbgPrint(
         b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
         file!().as_ptr() as PCHAR,
         line!() as i32,
         b"NtGdiGetUFIPathname\0".as_ptr() as PCHAR,
     );
-    0u8
+    0
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiGetEmbedFonts() -> ULONG {

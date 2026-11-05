@@ -74,6 +74,26 @@ fn shim(name: &str, m: &Value) -> Result<String, String> {
         return Ok(format!("/// `{sig}`\n/// preserved misfeature: {misf}\n#[no_mangle]\npub unsafe extern \"C\" fn {name}(base: *mut core::ffi::c_void, num: usize, width: usize, cmp: super::CntCmpFn) -> {rt} {{\n    super::qsort_rs(base as *mut u8, num, width, cmp);\n}}\n"));
     }
     let params = signature::parse_params(sig)?;
+    // `fast_path`: the export calls a hand-written body in cabi/memops.rs with its own
+    // arguments. `core_fn` stays the contract (cnt-difftest grades the export against the C);
+    // this is for hot rows whose slice form costs ~10x the C under no LLVM passes.
+    if let Some(fast) = m.get("fast_path").and_then(Value::as_str) {
+        let misf = m
+            .get("preserved_misfeature")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        let decl = params
+            .iter()
+            .map(|(t, n)| Ok(format!("{n}: {}", signature::rs_ty(t)?)))
+            .collect::<Result<Vec<_>, String>>()?
+            .join(", ");
+        let args = params
+            .iter()
+            .map(|(_, n)| n.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Ok(format!("/// `{sig}`\n/// preserved misfeature: {misf}\n/// body: memops.rs `{fast}`, the `core_fn` contract as an asm scan\n#[no_mangle]\npub unsafe extern \"C\" fn {name}({decl}) -> {rt} {{\n    super::{fast}({args})\n}}\n"));
+    }
     match families::render(name, m, &params, rt)? {
         Some(s) => Ok(s),
         None => generic::render(name, m, &params, rt),

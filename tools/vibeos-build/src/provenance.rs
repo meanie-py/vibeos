@@ -351,7 +351,7 @@ fn match_component(tokens: &[GlobToken], value: &str) -> bool {
         &mut BTreeMap::new(),
     )
 }
-fn path_glob(parts: &[(bool, Vec<GlobToken>)], values: &[String]) -> bool {
+fn path_glob(parts: &[(bool, Vec<GlobToken>)], values: &[String], anchored: bool) -> bool {
     fn run(parts: &[(bool, Vec<GlobToken>)], v: &[String], i: usize, j: usize) -> bool {
         if i == parts.len() {
             return j == v.len();
@@ -361,14 +361,19 @@ fn path_glob(parts: &[(bool, Vec<GlobToken>)], values: &[String]) -> bool {
         }
         j < v.len() && match_component(&parts[i].1, &v[j]) && run(parts, v, i + 1, j + 1)
     }
-    (0..=values.len()).any(|start| run(parts, values, 0, start))
+    if anchored {
+        run(parts, values, 0, 0)
+    } else {
+        (0..=values.len()).any(|start| run(parts, values, 0, start))
+    }
 }
-fn walk_once(root: &Path, pattern: &str, out: &mut Vec<PathBuf>) -> Result<()> {
+fn walk_once(root: &Path, pattern: &str, out: &mut Vec<PathBuf>, anchored: bool) -> Result<()> {
     fn walk(
         base: &Path,
         dir: &Path,
         parts: &[(bool, Vec<GlobToken>)],
         dir_only: bool,
+        anchored: bool,
         out: &mut Vec<PathBuf>,
     ) -> Result<()> {
         match fs::metadata(dir) {
@@ -387,11 +392,11 @@ fn walk_once(root: &Path, pattern: &str, out: &mut Vec<PathBuf>) -> Result<()> {
                 .components()
                 .map(|c| c.as_os_str().to_string_lossy().into_owned())
                 .collect();
-            if path_glob(parts, &values) && (!dir_only || path.is_dir()) {
+            if path_glob(parts, &values, anchored) && (!dir_only || path.is_dir()) {
                 out.push(path.clone());
             }
             if meta.is_dir() {
-                walk(base, &path, parts, dir_only, out)?;
+                walk(base, &path, parts, dir_only, anchored, out)?;
             }
         }
         Ok(())
@@ -412,7 +417,7 @@ fn walk_once(root: &Path, pattern: &str, out: &mut Vec<PathBuf>) -> Result<()> {
     if recursive_dirs && parts.iter().all(|(recursive, _)| *recursive) && root.is_dir() {
         out.push(root.to_owned());
     }
-    walk(root, root, &parts, dir_only, out)
+    walk(root, root, &parts, dir_only, anchored, out)
 }
 // Replace production rglob_stable with this helper + wrapper, then append tests.
 // Fault injection is native test-only; no request operation accepts fake walk results.
@@ -428,7 +433,12 @@ fn retry_walk(mut attempt: impl FnMut(&mut Vec<PathBuf>) -> Result<()>) -> Resul
     unreachable!()
 }
 pub fn rglob_stable(root: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
-    retry_walk(|out| walk_once(root, pattern, out))
+    retry_walk(|out| walk_once(root, pattern, out, false))
+}
+
+/// Anchored Path.glob semantics for declarative host application staging.
+pub fn glob_stable(root: &Path, pattern: &str) -> Result<Vec<PathBuf>> {
+    retry_walk(|out| walk_once(root, pattern, out, true))
 }
 
 pub fn discover_rust_targets(build: &Path) -> Result<Vec<PathBuf>> {
@@ -1757,7 +1767,8 @@ mod tests {
         let parts = vec![(false, glob_tokens("nested")), (false, glob_tokens("*.rs"))];
         assert!(path_glob(
             &parts,
-            &["prefix".into(), "nested".into(), "item.rs".into()]
+            &["prefix".into(), "nested".into(), "item.rs".into()],
+            false
         ));
     }
     #[test]

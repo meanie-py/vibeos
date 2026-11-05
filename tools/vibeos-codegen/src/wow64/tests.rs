@@ -118,3 +118,35 @@ fn legacy_classifier_and_duplicate_service_behavior() {
     assert_eq!(table[0].slots, 2);
     assert!(table[0].needs_manual());
 }
+
+#[test]
+fn rust_table_widens_like_the_c_and_keeps_manual_rows() {
+    let manual = HashSet::from(["NtB".to_owned()]);
+    let spec = "@ stdcall NtA(ptr long word s_long int64 double)\n@ stdcall NtB(ptr)\n";
+    let rows = order_by_sysfuncs(
+        &[("NtA".into(), 8), ("NtB".into(), 1)],
+        &parse_spec(spec, "amd64", &manual),
+    );
+    let rs = rust::emit_rs(&rows, "fixture", "Fix").unwrap();
+    assert!(rs.contains(
+        "fn NtA(_: *mut c_void, _: usize, _: usize, _: isize, _: u64, _: f64) -> i32;"
+    ));
+    // Slots follow the dwords each token consumes: int64 and double take two.
+    assert!(rs.contains("NtA(ptr(a, 0), long(a, 1), word(a, 2), s_long(a, 3), int64(a, 4), double(a, 6))"));
+    assert!(rs.contains("Name: c\"NtA\".as_ptr(), Thunk: Some(wow64_thunk_NtA), Slots: 8 }, // [0]"));
+    assert!(rs.contains("Name: c\"NtB\".as_ptr(), Thunk: None, Slots: 1 }, // [1] MANUAL:"));
+    assert!(!rs.contains("fn wow64_thunk_NtB"));
+    assert!(rs.contains("pub const FixCount: u32 = 2;"));
+}
+
+#[test]
+fn committed_rust_tables_match_their_sources() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    for (rel, text) in render_rust_tables(&root).unwrap() {
+        let on_disk = fs::read_to_string(root.join(&rel)).unwrap();
+        assert!(
+            on_disk == text,
+            "{rel} is stale: run tools/codegen wow64-thunks --emit-rs"
+        );
+    }
+}

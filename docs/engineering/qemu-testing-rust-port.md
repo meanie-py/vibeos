@@ -58,3 +58,15 @@ callbacks inside native waits. Required serial-log failures stay visible to ever
 consuming read before a marker can succeed; the drainer preserves raw evidence
 until teardown. Command reports carry an explicit timeout bit, including when a
 program itself returns exit code 124.
+
+Payload specifications are parsed by `vibeos-build::payload_spec` for build and
+smoke consumers. `vibeos-test::payload` owns launch/idle budgets, verdict-line
+completion, silence samples, serial-triggered screenshots, render deltas, input
+scripts, retries, VM survival checks and concurrent HTTP body/accounting checks.
+`tests/qemu/test_payload.py` supplies VM I/O and pytest outcomes. Rendering uses
+native PPM decoding and PNG publication, so missing Pillow cannot skip a gate.
+The modrun host grader is native too; unknown providers or graders fail loudly.
+
+Payload media staging, borrowed-output rebuilds, cross-architecture guest build
+receipts and complete PE closures live in `vibeos-build`. The Pi 4/5 physical-bench
+controllers and their serial/HTTP/TFTP services remain a separate migration chunk.

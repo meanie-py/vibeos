@@ -318,9 +318,15 @@ What the batch added to the shared crates and tools:
 13. **wow64.dll is Rust (2026-11-02, Haiku, $0.75; fex lane's code, owner-approved, fex agreed
    the boundary).** `wow64.c`, `wow64_manual.c` (7K lines of 32<->64 marshallers),
    `wow64_callback.c`, both automarshal TUs and `wow64_pfnmap.c` -> `wow64-rust`.
-   `wow64_thunks.c` and `wow64_win32k.c` stay C (`--keep-c`): they are dispatchers that
-   `#include` the codegen-emitted `*.gen.c` syscall tables. **Owed:** have `codegen
-   wow64-thunks` emit Rust so they can follow. The crate is empty on i386 (wow64.dll is
+   `wow64_thunks.c` and `wow64_win32k.c` stayed C at first: they are dispatchers that
+   `#include` the codegen-emitted `*.gen.c` syscall tables. **DONE 2026-11-04:** `codegen
+   wow64-thunks --emit-rs` writes both tables as committed Rust (`wow64-rust/src/wow64/gen/`,
+   drift-checked by the build), the dispatchers are hand-ported, and `marshal gen` /
+   `gen-callback` now emit the Rust twins of the two automarshal TUs from the same walk
+   that writes the C (the Haiku translations of those were replaced by generator output,
+   so re-running the generator can no longer leave the shipping copy stale).
+   `verify_svc_numbering` and the marshalgen audit's crosscheck now read the committed
+   Rust table instead of `build-*/…gen.c`. The crate is empty on i386 (wow64.dll is
    built for amd64 and arm64 only), so the i386 workspace check stays green. amd64 ladder
    13/13 through it. Still cmake-linked: `cargo_cell_gen` refuses a module not built on
    every arch (owed; baselined in `scan_cmake_linked_rust`).

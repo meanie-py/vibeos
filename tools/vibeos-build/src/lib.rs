@@ -138,3 +138,12 @@ pub mod build_bench;
 
 pub mod process_guard;
 pub mod provenance;
+
+pub mod payload_build;
+pub mod payload_closure;
+pub mod payload_modrun;
+pub mod payload_pe;
+pub mod payload_providers;
+pub mod payload_spec;
+
+pub mod payload_firmware;

@@ -7,7 +7,6 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use yaml_rust::{Yaml, YamlLoader};
 fn text<'a>(v: &'a Value, k: &str) -> &'a str {
     v.get(k).and_then(Value::as_str).unwrap_or("")
 }
@@ -274,35 +273,28 @@ struct PayloadPlan {
     extra: Vec<String>,
     refusal: Option<String>,
 }
-fn yaml_number(v: &Yaml) -> Result<f64> {
+fn spec_number(v: &Value) -> Result<f64> {
+    v.as_f64()
+        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        .ok_or_else(|| Error::new("payload launch_drain_secs is not numeric"))
+}
+fn spec_string(v: &Value) -> String {
     match v {
-        Yaml::Integer(n) => Ok(*n as f64),
-        Yaml::Real(s) | Yaml::String(s) => s
-            .parse()
-            .map_err(|_| Error::new("payload launch_drain_secs is not numeric")),
-        _ => Err("payload launch_drain_secs is not numeric".into()),
+        Value::String(s) => s.clone(),
+        Value::Null => "None".into(),
+        Value::Bool(b) => if *b { "True" } else { "False" }.into(),
+        _ => v.to_string(),
     }
 }
-fn yaml_string(v: &Yaml) -> String {
+fn spec_truthy(v: &Value) -> bool {
     match v {
-        Yaml::String(s) | Yaml::Real(s) => s.clone(),
-        Yaml::Integer(n) => n.to_string(),
-        Yaml::Boolean(b) => if *b { "True" } else { "False" }.into(),
-        Yaml::Null => "None".into(),
-        Yaml::BadValue => String::new(),
-        _ => format!("{v:?}"),
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64() != Some(0.),
+        Value::String(s) => !s.is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        Value::Object(o) => !o.is_empty(),
     }
-}
-fn yaml_truthy(v: &Yaml) -> bool {
-    !matches!(v, Yaml::Null | Yaml::BadValue | Yaml::Boolean(false))
-        && match v {
-            Yaml::Integer(n) => *n != 0,
-            Yaml::Real(s) => s.parse::<f64>().map(|n| n != 0.0).unwrap_or(true),
-            Yaml::String(s) => !s.is_empty(),
-            Yaml::Array(a) => !a.is_empty(),
-            Yaml::Hash(h) => !h.is_empty(),
-            _ => true,
-        }
 }
 fn payload_plan(
     root: &Path,
@@ -327,39 +319,36 @@ fn payload_plan(
         if !path.is_file() {
             continue;
         }
-        let docs = YamlLoader::load_from_str(&fs::read_to_string(&path)?)
-            .map_err(|e| Error::new(format!("{}: {e}", path.display())))?;
-        let doc = docs.first().unwrap_or(&Yaml::Null);
-        if !matches!(doc, Yaml::Null | Yaml::Hash(_)) {
+        let doc = vibeos_build::payload_spec::parse_file(&path)?;
+        if !doc.is_null() && !doc.is_object() {
             return Err(Error::new(format!(
                 "{} must contain a mapping",
                 path.display()
             )));
         }
         let test = &doc["test"];
-        if !matches!(test, Yaml::Null | Yaml::BadValue | Yaml::Hash(_)) {
+        if !test.is_null() && !test.is_object() {
             return Err(Error::new(format!(
                 "{}.test must contain a mapping",
                 path.display()
             )));
         }
-        let drain = if matches!(test["launch_drain_secs"], Yaml::BadValue) {
-            30.
-        } else {
-            yaml_number(&test["launch_drain_secs"])?
+        let drain = match test.get("launch_drain_secs") {
+            Some(v) => spec_number(v)?,
+            None => 30.,
         };
         if !drain.is_finite() || drain < 0. {
             return Err("payload launch_drain_secs must be finite and non-negative".into());
         }
         p.drain = p.drain.max(drain);
-        let memory = yaml_string(&test["vm_memory"]);
+        let memory = test.get("vm_memory").map(spec_string).unwrap_or_default();
         if smoke_checks::mem_mb(&memory)? > smoke_checks::mem_mb(&p.memory)? {
             p.memory = memory
         }
-        if yaml_truthy(&test["qemu_extra_args"]) {
-            p.extra.push(yaml_string(&test["qemu_extra_args"]))
+        if spec_truthy(&test["qemu_extra_args"]) {
+            p.extra.push(spec_string(&test["qemu_extra_args"]))
         }
-        if yaml_truthy(&test["net"]) && !p.pytest_arch.ends_with("-net") {
+        if spec_truthy(&test["net"]) && !p.pytest_arch.ends_with("-net") {
             if p.pytest_arch == "amd64-bios" {
                 p.refusal=Some(format!("payload {name} declares net: true and there is no amd64-bios-net boot config; run it with --arch amd64"));
                 return Ok(p);
