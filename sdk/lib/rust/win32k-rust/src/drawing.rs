@@ -29,9 +29,9 @@ const M_PI: f64 = core::f64::consts::PI;
 // Macro (not fn): a Rust fn returning f64 by value hits the SIMD-f64 ABI error on no-SSE i386.
 #[allow(unused_macros)]
 macro_rules! DEGREES_TO_RADIANS { ($deg:expr) => { ($deg as f64) * 2.0 * M_PI / 360.0 }; }
-// ASSERT_DC_PREPARED — debug assert; no-op.
+// ASSERT_DC_PREPARED (dc.h): NT_ASSERT(pdc->fs & DC_PREPARED).
 #[inline(always)]
-unsafe fn ASSERT_DC_PREPARED(_dc: *mut DC) {}
+unsafe fn ASSERT_DC_PREPARED(dc: *mut DC) { NT_ASSERT!(((*dc).fs & DC_PREPARED as i32) != 0); }
 
 // ---- file-scope preamble (translated) ----
 #[derive(Copy, Clone)]
