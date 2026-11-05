@@ -2262,3 +2262,19 @@ def test_a_dangling_sibling_import_is_dropped(tmp_path, monkeypatch):
     monkeypatch.setattr(port, "_stem_sources", lambda state: [m / "vd.rs"])
     assert port._drop_dangling_sibling_uses({}) == ["vd: buffer::__wine_dbch_default"]
     assert (m / "vd.rs").read_text() == "use crate::d3d9::buffer::real;\nfn f() {}\n"
+
+
+def test_a_module_own_cast_macro_is_not_left_to_the_sdk_lowering(monkeypatch):
+    # d3d8_private.h: `#define D3DFMT_RESZ MAKEFOURCC('R','E','S','Z')`.
+    from rustconv import sdk_macros
+
+    monkeypatch.setattr(
+        sdk_macros,
+        "object_expansions",
+        lambda repo, tu, names: {n: "((DWORD)(BYTE)('R') | 0)" for n in names},
+    )
+    monkeypatch.setattr(port, "_module_own_defines", lambda state: {"D3DFMT_RESZ"})
+    state = {"tus": ["m/a.c"], "module_dir": "m"}
+    assert port._cast_topped_sdk_macros(state, {"D3DFMT_RESZ", "HKEY_CURRENT_USER"}) == {
+        "HKEY_CURRENT_USER"
+    }

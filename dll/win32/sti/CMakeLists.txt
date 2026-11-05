@@ -12,7 +12,6 @@ list(APPEND SOURCE
     )
 
 add_idl_reg_objects(sti registry sti_wia.idl)
- # CORE-5743: No ARRAY_SIZE and CONST_VTABLE
 
 include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle
 

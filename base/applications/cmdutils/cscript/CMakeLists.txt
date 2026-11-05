@@ -5,7 +5,6 @@ include_directories(${wscript_folder})
 add_idl_headers(cscript_idlheader ihost.idl)
 # rsrc.rc embeds the typelib (Linker::rc compiles it): the cell depends on it below.
 add_typelib(ihost.idl)
- # CORE-5743: No ARRAY_SIZE macro
 
 include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle
 

@@ -1,8 +1,6 @@
 add_definitions(-DDIRECTINPUT_VERSION=0x0700)
 spec2def(dinput.dll dinput.spec ADD_IMPORTLIB)
 
- # CORE-5743: No ARRAY_SIZE macro
-
 add_library(dinput_data_formats data_formats.c)
 add_dependencies(dinput_data_formats psdk)
 set_wine_module_FIXME(dinput_data_formats) # CORE-5743: No ARRAY_SIZE macro

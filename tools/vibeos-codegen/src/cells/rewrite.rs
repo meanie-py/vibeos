@@ -198,7 +198,12 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
                 )));
             }
             let conditions: Vec<String> = extra.iter().map(|(i, _)| if_raw[*i].clone()).collect();
-            transferred.push((cmd.clone(), raw.clone(), conditions));
+            transferred.push((
+                cmd.clone(),
+                raw.clone(),
+                conditions,
+                same_line_comment(&text, *e),
+            ));
         }
         if target && cmd == "set_target_properties" && names_only(&a) {
             drop = true
@@ -296,6 +301,14 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             );
         }
         pos = *e;
+        if drop {
+            // `set_wine_module_FIXME(t) # CORE-5743: No ARRAY_SIZE macro`: the statement span
+            // ends at `)`, so the comment used to survive the drop as an indented orphan line
+            // (76 cells). A transferred call carries it to its re-emitted copy instead.
+            if let Some(c) = same_line_comment(&text, pos) {
+                pos += text[pos..].find('#').unwrap_or(0) + c.len();
+            }
+        }
     }
     keep.push_str(&text[pos..]);
     let mut out = keep.trim_start_matches('\n').to_owned();
@@ -458,8 +471,11 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         block
             .push("# How cmake compiled the target's sources, now on the OBJECT libraries.".into());
         for lib in &objlibs {
-            for (cmd, raw, conditions) in &transferred {
+            for (cmd, raw, conditions, comment) in &transferred {
                 let mut ln = retarget(cmd, raw, lib);
+                if let Some(c) = comment {
+                    ln = format!("{ln} {c}");
+                }
                 for condition in conditions.iter().rev() {
                     ln = format!(
                         "if({})\n    {}\nendif()",
@@ -652,4 +668,27 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         block = lines;
     }
     Ok(out + &block.join("\n") + "\n")
+}
+
+/// The `# ...` that ends the line a statement closed on (`foo(x) # why`), without its newline;
+/// None when the statement's own end consumed the newline or anything but blanks precedes `#`.
+fn same_line_comment(text: &str, end: usize) -> Option<String> {
+    let rest = &text[end..];
+    let line = &rest[..rest.find('\n').unwrap_or(rest.len())];
+    let trimmed = line.trim_start_matches([' ', '\t']);
+    (end > 0 && !text[..end].ends_with('\n') && trimmed.starts_with('#'))
+        .then(|| trimmed.trim_end().to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_line_comment;
+    #[test]
+    fn same_line_comment_is_only_the_closing_lines_comment() {
+        let t = "f(a) # why\ng(b)\nh(c)  #x  \n";
+        assert_eq!(same_line_comment(t, 4).as_deref(), Some("# why"));
+        assert_eq!(same_line_comment(t, 20).as_deref(), Some("#x"));
+        assert_eq!(same_line_comment(t, 16), None); // g(b)'s span took its newline
+        assert_eq!(same_line_comment("f(a) g(b) # no\n", 4), None);
+    }
 }

@@ -1,7 +1,6 @@
 spec2def(wmiutils.dll wmiutils.spec)
 
 add_idl_reg_objects(wmiutils registry wmiutils_classes.idl)
- # CORE-5743: No CONST_VTABLE
 
 include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle
 
