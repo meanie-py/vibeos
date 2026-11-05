@@ -10,7 +10,9 @@ from pathlib import Path
 def stage_entries(arch: str) -> list[dict]:
     root = os.environ.get("VIBEOS_CHROME_DIR")
     if not root:
-        sys.exit("chrome: set VIBEOS_CHROME_DIR to a Chrome for Testing folder (the one holding chrome.exe)")
+        sys.exit(
+            "chrome: set VIBEOS_CHROME_DIR to a Chrome for Testing folder (the one holding chrome.exe)"
+        )
     src = Path(root).expanduser()
     if not (src / "chrome.exe").is_file():
         sys.exit(f"chrome: {src} has no chrome.exe")

@@ -388,7 +388,9 @@ def module_specs(root: Path = ROOT) -> dict[str, list[Path]]:
     return dict(out)
 
 
-_IF_VERSION = re.compile(r"^\s*if\s*\(\s*DLL_EXPORT_VERSION\s+GREATER_EQUAL\s+(0x[0-9A-Fa-f]+|\d+)\s*\)", re.I)
+_IF_VERSION = re.compile(
+    r"^\s*if\s*\(\s*DLL_EXPORT_VERSION\s+GREATER_EQUAL\s+(0x[0-9A-Fa-f]+|\d+)\s*\)", re.I
+)
 _SUBDIR = re.compile(r"^\s*(#\s*)?add_subdirectory\s*\(\s*([^\s$)]+)")
 
 
@@ -1199,9 +1201,7 @@ def gap(
             if not system(dll):
                 continue  # a third-party DLL the app expects from elsewhere: not ours
             specs = modules.get(dll)
-            if not specs or all(
-                any(parent in unbuilt for parent in sp.parents) for sp in specs
-            ):
+            if not specs or all(any(parent in unbuilt for parent in sp.parents) for sp in specs):
                 missing_module[dll].add(app)
                 continue
             key = (specs[0], arch)

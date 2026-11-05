@@ -538,7 +538,7 @@ def test_unbuilt_dirs_reads_version_gates_and_commented_subdirs(tmp_path):
     (top / "CMakeLists.txt").write_text(
         "add_subdirectory(always)\n"
         "#add_subdirectory(commented)\n"
-        "if(ARCH STREQUAL \"amd64\")\n"
+        'if(ARCH STREQUAL "amd64")\n'
         "    add_subdirectory(archonly)\n"
         "endif()\n"
         "if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)\n"
