@@ -29,11 +29,16 @@ def test_lease_take_refuse_renew_drop() -> None:
     assert pi4lease.current() == {} and pi4lease.describe({}) == "free"
 
 
-def test_expired_or_garbage_lease_is_free(lock_dir: Path) -> None:
+def test_expired_lease_is_free_but_corrupt_lease_refuses_control(lock_dir: Path) -> None:
     pi4lease.lease_file().write_text(json.dumps({"owner": "/x", "expires": time.time() - 1}))
     assert pi4lease.current() == {}
     assert pi4lease.take("/lanes/b", 5)[0]
     pi4lease.lease_file().write_text("{not json")
+    with pytest.raises(ValueError, match="cannot trust"):
+        pi4lease.current()
+    with pytest.raises(ValueError, match="cannot trust"):
+        pi4lease.take("/lanes/a")
+    assert pi4lease.drop("/lanes/a", force=True)[0]
     assert pi4lease.current() == {}
 
 

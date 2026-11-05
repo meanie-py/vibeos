@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Bootstrap the portable physical-bench mechanisms on pinned stable Rust.
+set -euo pipefail
+repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+platform=linux
+windows=false
+if [[ ${1:-} == --windows-path ]]; then
+    windows=true
+    platform=windows
+    shift
+fi
+cache="$repo/.cache/vibeos-bench/$platform"
+target="$repo/.cache/vibeos-bench/target"
+source_key() {
+    (
+        cd "$repo"
+        sha256sum rust-toolchain.toml tools/bench-infra tools/vibeos-bench/Cargo.toml tools/vibeos-bench/Cargo.lock
+        rg --files -0 tools/vibeos-bench/src | LC_ALL=C sort -z | xargs -0 -r sha256sum
+    ) | sha256sum | cut -d ' ' -f 1
+}
+name=vibeos-bench
+$windows && name=bench-infra.exe
+mkdir -p "$cache"
+exec {provision_lock}>"$cache/provision.lock"
+flock "$provision_lock"
+key=$(source_key)
+if [[ ! -x "$cache/$name" || ! -f "$cache/source.sha256" || $(<"$cache/source.sha256") != "$key" ]]; then
+    (
+        unset RUSTUP_TOOLCHAIN RUSTC CARGO_BUILD_RUSTC RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_TARGET
+        unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS RUSTC_BOOTSTRAP CARGO_MAKEFLAGS MAKEFLAGS MFLAGS
+        toolchain=$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' "$repo/rust-toolchain.toml")
+        [[ -n "$toolchain" ]] || { echo 'bench-infra: missing pinned Rust channel' >&2; exit 2; }
+        export RUSTUP_TOOLCHAIN="$toolchain"
+        extra=()
+        if $windows; then
+            export CARGO_TARGET_X86_64_PC_WINDOWS_GNULLVM_LINKER="$repo/.build-tools/llvm-mingw/bin/x86_64-w64-mingw32-clang"
+            # LLVM ships both import and static unwind libraries. Keep deployment a single exe.
+            export RUSTFLAGS="-C target-feature=+crt-static -C link-arg=-static"
+            extra=(--target x86_64-pc-windows-gnullvm)
+        fi
+        cargo build --quiet --offline --locked --release --jobs 1 --manifest-path "$repo/tools/vibeos-bench/Cargo.toml" --target-dir "$target" "${extra[@]}"
+    )
+    [[ $(source_key) == "$key" ]] || { echo 'bench-infra: sources changed during provisioning; retry after edits finish' >&2; exit 2; }
+    source_binary="$target/release/vibeos-bench"
+    $windows && source_binary="$target/x86_64-pc-windows-gnullvm/release/vibeos-bench.exe"
+    cp "$source_binary" "$cache/$name.tmp.$$"
+    chmod +x "$cache/$name.tmp.$$"
+    mv "$cache/$name.tmp.$$" "$cache/$name"
+    printf '%s\n' "$key" > "$cache/source.sha256.tmp.$$"
+    mv "$cache/source.sha256.tmp.$$" "$cache/source.sha256"
+fi
+flock -u "$provision_lock"
+exec {provision_lock}>&-
+if $windows; then
+    printf '%s\n' "$cache/$name"
+else
+    exec "$cache/$name" --root "$repo" "$@"
+fi
