@@ -45,33 +45,22 @@ pub unsafe extern "system" fn FsRecIsFatVolume(
         core::mem::size_of::<BIOS_PARAMETER_BLOCK>(),
     );
 
-    // FatUnpackBios expanded inline
-    unsafe {
-        *(&raw mut Bpb.BytesPerSector as *mut u16) = *(&(*PackedBootSector).PackedBpb.BytesPerSector
-            as *const _ as *const u16);
-        *(&raw mut Bpb.SectorsPerCluster as *mut u8) = *(&(*PackedBootSector).PackedBpb.SectorsPerCluster
-            as *const _ as *const u8);
-        *(&raw mut Bpb.ReservedSectors as *mut u16) = *(&(*PackedBootSector).PackedBpb.ReservedSectors
-            as *const _ as *const u16);
-        *(&raw mut Bpb.Fats as *mut u8) = *(&(*PackedBootSector).PackedBpb.Fats as *const _
-            as *const u8);
-        *(&raw mut Bpb.RootEntries as *mut u16) = *(&(*PackedBootSector).PackedBpb.RootEntries
-            as *const _ as *const u16);
-        *(&raw mut Bpb.Sectors as *mut u16) = *(&(*PackedBootSector).PackedBpb.Sectors as *const _
-            as *const u16);
-        *(&raw mut Bpb.Media as *mut u8) = *(&(*PackedBootSector).PackedBpb.Media as *const _
-            as *const u8);
-        *(&raw mut Bpb.SectorsPerFat as *mut u16) = *(&(*PackedBootSector).PackedBpb.SectorsPerFat
-            as *const _ as *const u16);
-        *(&raw mut Bpb.SectorsPerTrack as *mut u16) = *(&(*PackedBootSector).PackedBpb.SectorsPerTrack
-            as *const _ as *const u16);
-        *(&raw mut Bpb.Heads as *mut u16) = *(&(*PackedBootSector).PackedBpb.Heads as *const _
-            as *const u16);
-        *(&raw mut Bpb.HiddenSectors as *mut u32) = *(&(*PackedBootSector).PackedBpb.HiddenSectors
-            as *const _ as *const u32);
-        *(&raw mut Bpb.LargeSectors as *mut u32) = *(&(*PackedBootSector).PackedBpb.LargeSectors
-            as *const _ as *const u32);
-    }
+    // FatUnpackBios expanded inline. The PACKED_BPB fields are UCHAR arrays at odd offsets
+    // (BytesPerSector at 0x0b): the C's CopyUchar2/CopyUchar4 copy BYTES, so read them
+    // unaligned -- a typed u16 deref is a misaligned-pointer panic once UB checks are armed.
+    let p = core::ptr::addr_of!((*PackedBootSector).PackedBpb);
+    Bpb.BytesPerSector = core::ptr::read_unaligned(core::ptr::addr_of!((*p).BytesPerSector) as *const u16);
+    Bpb.SectorsPerCluster = core::ptr::read_unaligned(core::ptr::addr_of!((*p).SectorsPerCluster) as *const u8);
+    Bpb.ReservedSectors = core::ptr::read_unaligned(core::ptr::addr_of!((*p).ReservedSectors) as *const u16);
+    Bpb.Fats = core::ptr::read_unaligned(core::ptr::addr_of!((*p).Fats) as *const u8);
+    Bpb.RootEntries = core::ptr::read_unaligned(core::ptr::addr_of!((*p).RootEntries) as *const u16);
+    Bpb.Sectors = core::ptr::read_unaligned(core::ptr::addr_of!((*p).Sectors) as *const u16);
+    Bpb.Media = core::ptr::read_unaligned(core::ptr::addr_of!((*p).Media) as *const u8);
+    Bpb.SectorsPerFat = core::ptr::read_unaligned(core::ptr::addr_of!((*p).SectorsPerFat) as *const u16);
+    Bpb.SectorsPerTrack = core::ptr::read_unaligned(core::ptr::addr_of!((*p).SectorsPerTrack) as *const u16);
+    Bpb.Heads = core::ptr::read_unaligned(core::ptr::addr_of!((*p).Heads) as *const u16);
+    Bpb.HiddenSectors = core::ptr::read_unaligned(core::ptr::addr_of!((*p).HiddenSectors) as *const u32);
+    Bpb.LargeSectors = core::ptr::read_unaligned(core::ptr::addr_of!((*p).LargeSectors) as *const u32);
 
     if Bpb.Sectors != 0 {
         Bpb.LargeSectors = 0u32;

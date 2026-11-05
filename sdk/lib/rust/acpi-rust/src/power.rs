@@ -49,9 +49,7 @@ use ntkrnl_sys::ddk::{
     _DEVICE_POWER_STATE_PowerDeviceD3 as PowerDeviceD3,
 };
 
-macro_rules! ASSERT {
-    ($($t:tt)*) => {};
-}
+macro_rules! ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
 
 // ---- ACPI sleep/device-state constants (actypes.h). ACPI_STATE_D0..D3 already
 // defined in bus.rs; redefine the S-states + UNKNOWN here (file-local; values

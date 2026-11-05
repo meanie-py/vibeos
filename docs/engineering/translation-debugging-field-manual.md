@@ -10663,6 +10663,10 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   `write_unaligned`. Any FSD output into a USER buffer has this shape; SystemBuffer is aligned.
 - **A packed on-disk record.** FAT's LFN dirent puts `Name1` at byte 1, so a WCHAR-typed
   `copy_nonoverlapping` of it is misaligned. Copy bytes, as the C's `RtlCopyMemory` does.
+  Same for the boot sector's `PACKED_BIOS_PARAMETER_BLOCK` (2026-11-05, fs_rec): its fields are
+  UCHAR arrays at odd offsets (`BytesPerSector` at 0x0b), and an inlined `FatUnpackBios` read them
+  as `*(&field as *const _ as *const u16)`, which bugchecked every i386/amd64 boot once armed. The
+  C's `CopyUchar2` is a byte copy: use `read_unaligned` or `u16::from_le_bytes` (ramdisk's version).
 - **A real overlap.** classpnp's `RtlMoveMemory` of READ_CAPACITY_DATA one ULONG up inside its
   own _EX had become `copy_nonoverlapping` -- memcpy on overlapping ranges, a genuine bug on
   every arch. `scan_move_vs_nonoverlapping` now pairs each Rust fn with its C twin's moves.

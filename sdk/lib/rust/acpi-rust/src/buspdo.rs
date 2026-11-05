@@ -48,9 +48,7 @@ extern "system" {
 }
 
 // NT_ASSERT maps to the no-op ASSERT helper (kept from the substrate).
-macro_rules! NT_ASSERT {
-    ($($t:tt)*) => {};
-}
+macro_rules! NT_ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
 
 // ---- CRT string helpers (real libc, declared — never the empty-body stubs,
 // which silently break ID matching). swprintf is C-variadic. ----
