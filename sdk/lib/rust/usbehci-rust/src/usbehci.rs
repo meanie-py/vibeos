@@ -1577,7 +1577,7 @@ pub unsafe extern "system" fn EHCI_TakeControlHC(EhciExtension: PEHCI_EXTENSION)
         core::mem::size_of::<EHCI_LEGACY_EXTENDED_CAPABILITY>() as ULONG,
     );
 
-    *(core::ptr::addr_of_mut!(EndTime) as *mut ULONG64) = *(SharedSystemTimePtr());
+    *(core::ptr::addr_of_mut!(EndTime) as *mut ULONG64) = core::ptr::read_unaligned(SharedSystemTimePtr());
     EndTime.QuadPart += (100 * 10000) as i64;
 
     loop {
@@ -1588,7 +1588,7 @@ pub unsafe extern "system" fn EHCI_TakeControlHC(EhciExtension: PEHCI_EXTENSION)
             OffsetEECP as ULONG,
             core::mem::size_of::<EHCI_LEGACY_EXTENDED_CAPABILITY>() as ULONG,
         );
-        *(core::ptr::addr_of_mut!(CurrentTime) as *mut ULONG64) = *(SharedSystemTimePtr());
+        *(core::ptr::addr_of_mut!(CurrentTime) as *mut ULONG64) = core::ptr::read_unaligned(SharedSystemTimePtr());
 
         if LegacyCapability.c2rust_unnamed.BiosOwnedSemaphore() != 0 {
             break;

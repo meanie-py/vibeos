@@ -597,7 +597,7 @@ pub unsafe extern "system" fn USBPORT_DoIdleNotificationCallback(Context: PVOID)
     PdoExtension = (*PdoDevice).DeviceExtension as PUSBPORT_RHDEVICE_EXTENSION;
 
     // KeQuerySystemTime(&CurrentTime) expanded inline
-    *((core::ptr::addr_of_mut!(CurrentTime)) as *mut u64) = *(SharedSystemTimePtr() as *mut u64);
+    *((core::ptr::addr_of_mut!(CurrentTime)) as *mut u64) = core::ptr::read_unaligned(SharedSystemTimePtr() as *const u64);
 
     if (*FdoExtension).IdleTime.QuadPart == 0
         || ((CurrentTime.QuadPart - (*FdoExtension).IdleTime.QuadPart) / 10000) >= 500
