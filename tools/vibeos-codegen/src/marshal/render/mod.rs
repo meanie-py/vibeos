@@ -111,6 +111,29 @@ pub fn flat_arg_exprs(proto: &Proto, db: &Db) -> Option<(Vec<String>, usize)> {
     }
     Some((out, slot))
 }
+/// `flat_arg_exprs` in Rust spelling (same slots, same widening).
+fn flat_arg_exprs_rs(proto: &Proto, db: &Db) -> Option<Vec<String>> {
+    let pair = |lo: usize| format!("(*a.add({lo}) as u64 | (*a.add({}) as u64) << 32)", lo + 1);
+    let (mut out, mut slot) = (Vec::new(), 0);
+    for p in &proto.params {
+        let n = param_slots32(p, db);
+        match n {
+            1 => out.push(format!("*a.add({slot}) as i32 as i64 as u64")),
+            2 => out.push(pair(slot)),
+            3 | 4 => {
+                out.push(pair(slot));
+                out.push(if n == 4 {
+                    pair(slot + 2)
+                } else {
+                    format!("*a.add({}) as u64", slot + 2)
+                });
+            }
+            _ => return None,
+        }
+        slot += n;
+    }
+    Some(out)
+}
 pub fn is_deref_pointer(ctype: &str, db: &Db) -> bool {
     let t = norm_type(ctype);
     let re = Regex::new(r"\[\d*\]$").unwrap();
@@ -148,7 +171,7 @@ pub fn gen_struct_marshaller(
     emitted: &mut Emitted,
     out: &mut Vec<String>,
 ) -> bool {
-    pair(r32, r64, d32, d64, emitted, out, false)
+    pair(r32, r64, d32, d64, emitted, &mut Dual::c_only(out), false)
 }
 /// Emit callback down/up pair. Pointer fields are preserved on the up leg.
 pub fn gen_cb_pair(
@@ -159,7 +182,22 @@ pub fn gen_cb_pair(
     emitted: &mut Emitted,
     out: &mut Vec<String>,
 ) -> bool {
-    pair(r32, r64, d32, d64, emitted, out, true)
+    pair(r32, r64, d32, d64, emitted, &mut Dual::c_only(out), true)
+}
+/// The C text and its Rust twin, built by the same walk so they cannot disagree.
+struct Dual<'a> {
+    c: &'a mut Vec<String>,
+    rs: Vec<String>,
+}
+impl<'a> Dual<'a> {
+    fn c_only(c: &'a mut Vec<String>) -> Self {
+        Dual { c, rs: Vec::new() }
+    }
+}
+/// One marshalling step, rendered both ways. `(c, rs)` per leg.
+type Step = (String, String);
+fn step(c: String, rs: String) -> Step {
+    (c, rs)
 }
 fn pair(
     r32: &Record,
@@ -167,7 +205,7 @@ fn pair(
     d32: &Db,
     d64: &Db,
     emitted: &mut Emitted,
-    out: &mut Vec<String>,
+    out: &mut Dual,
     callback: bool,
 ) -> bool {
     let tag = ctag(r32);
@@ -189,6 +227,7 @@ fn pair(
             s64 = e64;
         }
         let cmt = format!(" /* {} */", a.name);
+        let rc = format!(" // {}", a.name);
         if s32 == s64 {
             if !callback
                 && i == 0
@@ -196,33 +235,44 @@ fn pair(
                 && s32 == 4
                 && ["cbSize", "lStructSize", "dwSize", "Size", "Length"].contains(&a.name.as_str())
             {
-                first.push(format!(
-                    "    WowAmSizeIn(d + {o64}, s + {o32}, {}, {});{cmt}",
-                    r32.size, r64.size
+                first.push(step(
+                    format!("    WowAmSizeIn(d + {o64}, s + {o32}, {}, {});{cmt}", r32.size, r64.size),
+                    format!("    WowAmSizeIn(d.add({o64}), s.add({o32}), {}, {});{rc}", r32.size, r64.size),
                 ));
-                second.push(format!(
-                    "    WowAmSizeOut(d + {o32}, s + {o64}, {}, {});{cmt}",
-                    r32.size, r64.size
+                second.push(step(
+                    format!("    WowAmSizeOut(d + {o32}, s + {o64}, {}, {});{cmt}", r32.size, r64.size),
+                    format!("    WowAmSizeOut(d.add({o32}), s.add({o64}), {}, {});{rc}", r32.size, r64.size),
                 ));
-            } else if callback {
-                first.push(format!("    WowCbCpy(d + {o32}, s + {o64}, {s32});{cmt}"));
-                second.push(format!("    WowCbCpy(d + {o64}, s + {o32}, {s32});{cmt}"));
             } else {
-                first.push(format!("    WowAmCpy(d + {o64}, s + {o32}, {s32});{cmt}"));
-                second.push(format!("    WowAmCpy(d + {o32}, s + {o64}, {s32});{cmt}"));
+                let f = if callback { "WowCbCpy" } else { "WowAmCpy" };
+                let (dn, sn) = if callback { (o32, o64) } else { (o64, o32) };
+                first.push(step(
+                    format!("    {f}(d + {dn}, s + {sn}, {s32});{cmt}"),
+                    format!("    {f}(d.add({dn}), s.add({sn}), {s32});{rc}"),
+                ));
+                second.push(step(
+                    format!("    {f}(d + {sn}, s + {dn}, {s32});{cmt}"),
+                    format!("    {f}(d.add({sn}), s.add({dn}), {s32});{rc}"),
+                ));
             }
             continue;
         }
         if (s32, s64) == (4, 8) {
             if callback {
-                first.push(format!("    WowCbNx(d + {o32}, s + {o64});{cmt}"));
+                first.push(step(
+                    format!("    WowCbNx(d + {o32}, s + {o64});{cmt}"),
+                    format!("    WowCbNx(d.add({o32}), s.add({o64}));{rc}"),
+                ));
                 if is_deref_pointer(&a.ctype, d32) {
-                    second.push(format!(
-                        "    /* {}: kernel pointer preserved (guest value is scratch) */",
-                        a.name
+                    second.push(step(
+                        format!("    /* {}: kernel pointer preserved (guest value is scratch) */", a.name),
+                        format!("    // {}: kernel pointer preserved (guest value is scratch)", a.name),
                     ));
                 } else {
-                    second.push(format!("    WowCbSx(d + {o64}, s + {o32});{cmt}"));
+                    second.push(step(
+                        format!("    WowCbSx(d + {o64}, s + {o32});{cmt}"),
+                        format!("    WowCbSx(d.add({o64}), s.add({o32}));{rc}"),
+                    ));
                 }
             } else {
                 if let Some(p) = resolve_pointee(&a.ctype, d32) {
@@ -233,8 +283,14 @@ fn pair(
                         return false;
                     }
                 }
-                first.push(format!("    WowAmSx(d + {o64}, s + {o32});{cmt}"));
-                second.push(format!("    WowAmNx(d + {o32}, s + {o64});{cmt}"));
+                first.push(step(
+                    format!("    WowAmSx(d + {o64}, s + {o32});{cmt}"),
+                    format!("    WowAmSx(d.add({o64}), s.add({o32}));{rc}"),
+                ));
+                second.push(step(
+                    format!("    WowAmNx(d + {o32}, s + {o64});{cmt}"),
+                    format!("    WowAmNx(d.add({o32}), s.add({o64}));{rc}"),
+                ));
             }
             continue;
         }
@@ -247,29 +303,55 @@ fn pair(
                     return false;
                 }
                 let nt = ctag(&n32);
-                if callback {
-                    first.push(format!("    WowCbDown_{nt}(s + {o64}, d + {o32});{cmt}"));
-                    second.push(format!("    WowCbUp_{nt}(s + {o32}, d + {o64});{cmt}"));
+                let (fd, fu, a1, a2) = if callback {
+                    ("WowCbDown", "WowCbUp", o64, o32)
                 } else {
-                    first.push(format!("    WowAmIn_{nt}(s + {o32}, d + {o64});{cmt}"));
-                    second.push(format!("    WowAmOut_{nt}(s + {o64}, d + {o32});{cmt}"));
-                }
+                    ("WowAmIn", "WowAmOut", o32, o64)
+                };
+                first.push(step(
+                    format!("    {fd}_{nt}(s + {a1}, d + {a2});{cmt}"),
+                    format!("    {fd}_{nt}(s.add({a1}), d.add({a2}));{rc}"),
+                ));
+                second.push(step(
+                    format!("    {fu}_{nt}(s + {a2}, d + {a1});{cmt}"),
+                    format!("    {fu}_{nt}(s.add({a2}), d.add({a1}));{rc}"),
+                ));
                 continue;
             }
         }
         emitted.remove(tag);
         return false;
     }
+    let join = |v: &[Step], rs: bool| {
+        v.iter()
+            .map(|(c, r)| if rs { r.as_str() } else { c.as_str() })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let (first_rs, second_rs) = (join(&first, true), join(&second, true));
+    let (first, second) = (join(&first, false), join(&second, false));
     if callback {
-        out.push(format!("/* {}: 32-bit {}b <-> 64-bit {}b */\nvoid WowCbDown_{tag}(const unsigned char *s, unsigned char *d)\n{{\n    WowCbZero(d, {});\n{}\n}}\n\nvoid WowCbUp_{tag}(const unsigned char *s, unsigned char *d)\n{{\n{}\n}}\n\n",r32.name,r32.size,r64.size,r32.size,first.join("\n"),second.join("\n")));
+        out.rs.push(format!(
+            "// {}: 32-bit {}b <-> 64-bit {}b\npub unsafe extern \"C\" fn WowCbDown_{tag}(s: *const u8, d: *mut u8) {{\n    WowCbZero(d, {});\n{first_rs}\n}}\n\npub unsafe extern \"C\" fn WowCbUp_{tag}(s: *const u8, d: *mut u8) {{\n{second_rs}\n}}\n\n",
+            r32.name, r32.size, r64.size, r32.size
+        ));
     } else {
-        out.push(format!("/* {}: {} -> {} bytes */\nstatic void WowAmIn_{tag}(const unsigned char *s, unsigned char *d)\n{{\n    WowAmZero(d, {});\n{}\n}}\n\nstatic void WowAmOut_{tag}(const unsigned char *s, unsigned char *d)\n{{\n{}\n}}\n",r32.name,r32.size,r64.size,r64.size,first.join("\n"),second.join("\n")));
+        out.rs.push(format!(
+            "// {}: {} -> {} bytes\nunsafe fn WowAmIn_{tag}(s: *const u8, d: *mut u8) {{\n    WowAmZero(d, {});\n{first_rs}\n}}\n\nunsafe fn WowAmOut_{tag}(s: *const u8, d: *mut u8) {{\n{second_rs}\n}}\n",
+            r32.name, r32.size, r64.size, r64.size
+        ));
+    }
+    if callback {
+        out.c.push(format!("/* {}: 32-bit {}b <-> 64-bit {}b */\nvoid WowCbDown_{tag}(const unsigned char *s, unsigned char *d)\n{{\n    WowCbZero(d, {});\n{}\n}}\n\nvoid WowCbUp_{tag}(const unsigned char *s, unsigned char *d)\n{{\n{}\n}}\n\n",r32.name,r32.size,r64.size,r32.size,first,second));
+    } else {
+        out.c.push(format!("/* {}: {} -> {} bytes */\nstatic void WowAmIn_{tag}(const unsigned char *s, unsigned char *d)\n{{\n    WowAmZero(d, {});\n{}\n}}\n\nstatic void WowAmOut_{tag}(const unsigned char *s, unsigned char *d)\n{{\n{}\n}}\n",r32.name,r32.size,r64.size,r64.size,first,second));
     }
     true
 }
 #[derive(Debug, serde::Serialize)]
 pub struct Generated {
     pub c: String,
+    pub rs: String,
     pub thunks: usize,
     pub struct_pairs: usize,
     pub skipped: Vec<String>,
@@ -287,6 +369,7 @@ pub fn generate(
     let mut emitted = Emitted::default();
     let (mut structs, mut thunks, mut dispatch, mut skipped) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut structs_rs, mut thunks_rs, mut dispatch_rs) = (Vec::new(), Vec::new(), Vec::new());
     for name in manual {
         if hand_written.contains(name) {
             continue;
@@ -311,7 +394,10 @@ pub fn generate(
                 let r64 =
                     resolve_pointee(&prm.ctype, d64).or_else(|| resolve_exact(&prm.ctype, d64));
                 if let (Some(r32), Some(r64)) = (r32, r64) {
-                    if !gen_struct_marshaller(&r32, &r64, d32, d64, &mut emitted, &mut structs) {
+                    let mut sink = Dual::c_only(&mut structs);
+                    let ok_pair = pair(&r32, &r64, d32, d64, &mut emitted, &mut sink, false);
+                    structs_rs.append(&mut sink.rs);
+                    if !ok_pair {
                         skipped.push(format!(
                             "{name}: {} not generatable (deep pointee)",
                             ctag(&r32)
@@ -338,7 +424,9 @@ pub fn generate(
             skipped.push(format!("{name}: by-value struct > 16 bytes"));
             continue;
         };
+        let mut exprs_rs = flat_arg_exprs_rs(p, d32).expect("same slots as flat_arg_exprs");
         let (mut decls, mut pre, mut post) = (Vec::new(), Vec::new(), Vec::new());
+        let (mut decls_rs, mut pre_rs, mut post_rs) = (Vec::new(), Vec::new(), Vec::new());
         let mut slot = 0;
         for (i, (prm, info)) in p.params.iter().zip(plan.iter()).enumerate() {
             let n = param_slots32(prm, d32);
@@ -358,6 +446,15 @@ pub fn generate(
                     post.push(format!("    if (g{i}) WowAmOut_{tag}(b{i}, (unsigned char *)(ULONG_PTR)a[{slot}]);"));
                 }
                 exprs[i] = format!("(g{i} ? (ULONGLONG)(ULONG_PTR)b{i} : 0)");
+                decls_rs.push(format!("    let mut b{i} = Aligned16([0u8; {}]);", r64.size));
+                decls_rs.push(format!("    let g{i} = *a.add({slot}) as usize as *const u8;"));
+                pre_rs.push(format!(
+                    "    if !g{i}.is_null() {{\n        WowAmIn_{tag}(g{i}, b{i}.0.as_mut_ptr());\n    }}"
+                ));
+                if !is_const {
+                    post_rs.push(format!("    if !g{i}.is_null() {{\n        WowAmOut_{tag}(b{i}.0.as_ptr(), *a.add({slot}) as usize as *mut u8);\n    }}"));
+                }
+                exprs_rs[i] = format!("if g{i}.is_null() {{ 0 }} else {{ b{i}.0.as_mut_ptr() as u64 }}");
             }
             slot += n;
         }
@@ -380,6 +477,24 @@ pub fn generate(
         }
         thunk.push_str("    return (NTSTATUS)(ULONG)r;\n}\n");
         thunks.push(thunk);
+        let mut t = format!(
+            "unsafe extern \"C\" fn WowAmThunk_{name}(a: *mut u32) -> i32 {{\n    unsafe extern \"system\" {{\n        fn {name}({}) -> u64;\n    }}\n",
+            vec!["_: u64"; exprs_rs.len()].join(", ")
+        );
+        for block in [&decls_rs, &pre_rs] {
+            if !block.is_empty() {
+                t.push_str(&(block.join("\n") + "\n"));
+            }
+        }
+        t.push_str(&format!("    let r = {name}({});\n", exprs_rs.join(", ")));
+        if !post_rs.is_empty() {
+            t.push_str(&(post_rs.join("\n") + "\n"));
+        }
+        t.push_str("    r as u32 as i32\n}\n\n");
+        thunks_rs.push(t);
+        dispatch_rs.push(format!(
+            "    if WowAmStrEq(Name, c\"{name}\") {{\n        return WowAmThunk_{name}(Arguments);\n    }}"
+        ));
         dispatch.push(format!(
             "    if (WowAmStrEq(Name, \"{name}\"))\n        return WowAmThunk_{name}(Arguments);"
         ));
@@ -389,9 +504,21 @@ pub fn generate(
     c.push('\n');
     c.push_str(&thunks.concat());
     c.push_str(&format!("\nNTSTATUS Wow64AutoMarshalDispatch(const char *Name, ULONG *Arguments)\n{{\n{}\n    return WOW64_AUTOMARSHAL_UNIMPL;\n}}\n",dispatch.join("\n")));
+    let mut rs = include_str!("_gen_prelude_rs.txt").to_owned();
+    rs.push_str(&structs_rs.join("\n"));
+    rs.push('\n');
+    rs.push_str(&thunks_rs.concat());
+    rs.push_str(&format!(
+        "pub unsafe extern \"C\" fn Wow64AutoMarshalDispatch(Name: *const c_char, Arguments: *mut u32) -> i32 {{\n{}\n    WOW64_AUTOMARSHAL_UNIMPL\n}}\n",
+        dispatch_rs.join("\n")
+    ));
     if !skipped.is_empty() {
         let mut sorted = skipped.clone();
         sorted.sort();
+        rs.push_str(&format!(
+            "\n// NOT generated (still loud NEEDS_MANUAL stubs):\n{}\n",
+            sorted.iter().map(|s| format!("//   {s}")).collect::<Vec<_>>().join("\n")
+        ));
         c.push_str(&format!(
             "\n/* NOT generated (still loud NEEDS_MANUAL stubs):\n{}\n */\n",
             sorted
@@ -403,6 +530,7 @@ pub fn generate(
     }
     Generated {
         c,
+        rs,
         thunks: thunks.len(),
         struct_pairs: emitted.0.len(),
         skipped,
@@ -421,6 +549,7 @@ const CB_TYPE:&str="typedef struct _WOW64_CB_MARSHAL {\n    unsigned int Msg;\n 
 #[derive(Debug, serde::Serialize)]
 pub struct CallbackGenerated {
     pub c: String,
+    pub rs: String,
     pub header: String,
     pub table_messages: usize,
     pub struct_pairs: usize,
@@ -428,6 +557,7 @@ pub struct CallbackGenerated {
 pub fn generate_callback(d32: &Db, d64: &Db) -> Result<CallbackGenerated, String> {
     let mut emitted = Emitted::default();
     let (mut pairs, mut rows, mut failed) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut pairs_rs, mut rows_rs) = (Vec::new(), Vec::new());
     for (name, value, st) in CB_TABLE {
         let (Some(r32), Some(r64)) = (resolve_exact(st, d32), resolve_exact(st, d64)) else {
             failed.push(format!("{st}: not in layout dump"));
@@ -438,7 +568,10 @@ pub fn generate_callback(d32: &Db, d64: &Db) -> Result<CallbackGenerated, String
             failed.push(format!("{st}: SEMANTIC ({})", v.detail));
             continue;
         }
-        if !gen_cb_pair(&r32, &r64, d32, d64, &mut emitted, &mut pairs) {
+        let mut sink = Dual::c_only(&mut pairs);
+        let ok_pair = pair(&r32, &r64, d32, d64, &mut emitted, &mut sink, true);
+        pairs_rs.append(&mut sink.rs);
+        if !ok_pair {
             failed.push(format!("{st}: pair not generatable"));
             continue;
         }
@@ -447,13 +580,20 @@ pub fn generate_callback(d32: &Db, d64: &Db) -> Result<CallbackGenerated, String
             "    {{ 0x{value:04X} /* {name} */, {}, {}, WowCbDown_{tag}, WowCbUp_{tag} }},",
             r32.size, r64.size
         ));
+        rows_rs.push(format!(
+            "    WOW64_CB_MARSHAL {{ Msg: 0x{value:04X} /* {name} */, Size32: {}, Size64: {}, Down: Some(WowCbDown_{tag}), Up: Some(WowCbUp_{tag}) }},",
+            r32.size, r64.size
+        ));
     }
     for st in CB_EXTRA {
         let (Some(r32), Some(r64)) = (resolve_exact(st, d32), resolve_exact(st, d64)) else {
             failed.push(format!("{st}: not in layout dump"));
             continue;
         };
-        if !gen_cb_pair(&r32, &r64, d32, d64, &mut emitted, &mut pairs) {
+        let mut sink = Dual::c_only(&mut pairs);
+        let ok_pair = pair(&r32, &r64, d32, d64, &mut emitted, &mut sink, true);
+        pairs_rs.append(&mut sink.rs);
+        if !ok_pair {
             failed.push(format!("{st}: pair not generatable"));
         }
     }
@@ -466,8 +606,24 @@ pub fn generate_callback(d32: &Db, d64: &Db) -> Result<CallbackGenerated, String
     let decls=emitted.0.iter().map(|(t,(s32,s64))|format!("void WowCbDown_{t}(const unsigned char *s, unsigned char *d);\nvoid WowCbUp_{t}(const unsigned char *s, unsigned char *d);\n#define WOW64_CB_SIZE32_{t} {s32}\n#define WOW64_CB_SIZE64_{t} {s64}")).collect::<Vec<_>>().join("\n");
     let header=format!("/* wow64_cb_automarshal.h — GENERATED by marshalgen. DO NOT EDIT. */\n#ifndef WOW64_CB_AUTOMARSHAL_H\n#define WOW64_CB_AUTOMARSHAL_H\n\n{CB_TYPE}const WOW64_CB_MARSHAL *Wow64CbFindMarshal(unsigned int Msg);\n\n{decls}\n\n#endif /* WOW64_CB_AUTOMARSHAL_H */\n");
     let c=format!("{}{}{CB_TYPE}static const WOW64_CB_MARSHAL Wow64CbMarshalTable[] = {{\n{}\n}};\n\nconst WOW64_CB_MARSHAL *Wow64CbFindMarshal(unsigned int Msg)\n{{\n    unsigned int i;\n    for (i = 0; i < sizeof(Wow64CbMarshalTable) /\n                    sizeof(Wow64CbMarshalTable[0]); i++)\n        if (Wow64CbMarshalTable[i].Msg == Msg)\n            return &Wow64CbMarshalTable[i];\n    return 0;\n}}\n",include_str!("_cb_prelude.txt"),pairs.concat(),rows.join("\n"));
+    let sizes = emitted
+        .0
+        .iter()
+        .map(|(t, (s32, s64))| {
+            format!("pub const WOW64_CB_SIZE32_{t}: i32 = {s32};\npub const WOW64_CB_SIZE64_{t}: i32 = {s64};")
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let rs = format!(
+        "{}{sizes}\n\n{}static Wow64CbMarshalTable: [WOW64_CB_MARSHAL; {}] = [\n{}\n];\n\npub unsafe extern \"C\" fn Wow64CbFindMarshal(Msg: c_uint) -> *const WOW64_CB_MARSHAL {{\n    for m in &Wow64CbMarshalTable {{\n        if m.Msg == Msg {{\n            return m;\n        }}\n    }}\n    core::ptr::null()\n}}\n",
+        include_str!("_cb_prelude_rs.txt"),
+        pairs_rs.concat(),
+        rows_rs.len(),
+        rows_rs.join("\n")
+    );
     Ok(CallbackGenerated {
         c,
+        rs,
         header,
         table_messages: rows.len(),
         struct_pairs: emitted.0.len(),

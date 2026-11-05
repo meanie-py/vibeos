@@ -10,6 +10,9 @@ use vibeos_codegen::{
     wow64,
 };
 pub const NAMES: &[&str] = &["marshal"];
+/// The shipping Rust twins of the two C outputs (wow64-rust modules).
+const RS_AUTOMARSHAL: &str = "sdk/lib/rust/wow64-rust/src/wow64/wow64_automarshal.rs";
+const RS_CALLBACK: &str = "sdk/lib/rust/wow64-rust/src/wow64/wow64_cb_automarshal.rs";
 type Db = HashMap<String, Record>;
 fn field<'a>(v: &'a Value, k: &str) -> Result<&'a str, String> {
     v.get(k)
@@ -211,6 +214,7 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
     let mut exports = "win32ss/win32u/win32u.spec".to_owned();
     let mut manual_list = "tools/wow64gen/manual-win32k.txt".to_owned();
     let mut out_set = false;
+    let mut out_rs: Option<String> = None;
     let mut supplied = Vec::new();
     let expanded = raw
         .into_iter()
@@ -233,6 +237,7 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
             "--manual-list",
             "--out",
             "--out-header",
+            "--out-rs",
             "--tu-suffix",
         ]
         .contains(&arg.as_str())
@@ -255,6 +260,7 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
                 out_set = true;
             }
             "--out-header" => out_header = args.next().ok_or("--out-header requires FILE")?,
+            "--out-rs" => out_rs = Some(args.next().ok_or("--out-rs requires FILE")?),
             "--tu-suffix" => {
                 let value = args.next().ok_or("--tu-suffix requires NAME")?;
                 if value != "user32_layout_probe.c" {
@@ -293,9 +299,11 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
                 "--export-spec",
                 "--manual-list",
                 "--out",
+                "--out-rs",
             ]
             .contains(&flag.as_str()),
-            _ => ["--build-dir", "--build-dir32", "--out", "--out-header"].contains(&flag.as_str()),
+            _ => ["--build-dir", "--build-dir32", "--out", "--out-header", "--out-rs"]
+                .contains(&flag.as_str()),
         };
         if !allowed {
             return Err(format!("{flag} is not supported by marshal {mode}"));
@@ -340,6 +348,8 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
         );
         outputs.push((path(&root, &out), g.c));
         outputs.push((path(&root, &out_header), g.header));
+        let rs = out_rs.as_deref().unwrap_or(RS_CALLBACK);
+        outputs.push((path(&root, rs), g.rs));
     } else {
         let mut text = Vec::new();
         for h in headers.split(',') {
@@ -425,6 +435,8 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
             g.skipped.len()
         );
         outputs.push((dest, g.c));
+        let rs = out_rs.as_deref().unwrap_or(RS_AUTOMARSHAL);
+        outputs.push((path(&root, rs), g.rs));
     }
     let mut stale = false;
     for (i, (file, text)) in outputs.iter().enumerate() {
@@ -434,6 +446,9 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
                 stale = true;
             }
         } else {
+            if let Some(dir) = file.parent() {
+                fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            }
             crate::write_atomic(file, text.as_bytes(), i)?;
         }
     }

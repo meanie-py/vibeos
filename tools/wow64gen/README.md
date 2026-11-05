@@ -9,6 +9,19 @@ API as a JSON bridge. Select local builds with `--build-dir` and `--build-dir32`
 use `--out` / `--out-header` for candidates and `--check` to compare without writing.
 Generated thunk bytes and guest service numbering are preserved.
 
+**The shipping output is Rust.** wow64.dll is all Rust (`sdk/lib/rust/wow64-rust`), so:
+
+- Stage one: `tools/codegen wow64-thunks --emit-rs` writes both syscall tables as
+  committed modules under `sdk/lib/rust/wow64-rust/src/wow64/gen/` (inputs come from
+  the `AUDIT_TABLES` rows in `tools/vibeos-codegen/src/wow64/config.json`). One file
+  serves amd64 and arm64, and the generator refuses to write it if the two arches' tables
+  ever differ. The build runs it with `--check` and fails on drift, so after editing a
+  `.spec`, a service list or a manual list, regenerate and commit. `--out-c` still emits
+  the C table for the bridge and its tests.
+- Stage two: `marshal gen` / `gen-callback` write the Rust twin of each C file
+  (`wow64_automarshal.rs`, `wow64_cb_automarshal.rs`) from the same walk; `--out-rs`
+  redirects it and `--check` compares all outputs.
+
 Re-runnable, deterministic codegen that turns our `.spec` syscall table into the
 C thunk table `wow64.dll` dispatches through. Part of WoW64 Phase D
 (`docs/engineering/active-lanes/wow64-plan.md`).

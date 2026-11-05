@@ -47,7 +47,7 @@ impl Rule for BoolWidth {
     fn run(&self, corpus: &Corpus) -> Result<Vec<String>, String> {
         let rust: Vec<_> = corpus
             .sources("bool-width-rust")
-            .filter(|f| !skip(&f.path))
+            .filter(|f| !skip(&f.path) && !f.declares_generic_externs())
             .collect();
         let mut narrow = BTreeMap::<String, (String, String)>::new();
         let mut wide_defs = HashSet::new();

@@ -62,8 +62,8 @@ def test_native_svc_check_rejects_a_guest_syscall_routed_to_its_neighbor(tmp_pat
         return dest
 
     table = write(
-        "build-arm64/dll/win32/wow64/wow64_win32k_thunks.gen.c",
-        '{ "NtUserFixture", 0, 1 }, /* [0] MANUAL */\n',
+        "sdk/lib/rust/wow64-rust/src/wow64/gen/wow64_win32k_thunks.rs",
+        '    WOW64_THUNK_ENTRY { Name: c"NtUserFixture".as_ptr(), Thunk: None, Slots: 1 }, // [0] MANUAL: x\n',
     )
     for dll in ("win32ss/user/user32/user32.dll", "win32ss/gdi/gdi32/gdi32.dll"):
         write(f"build-i386/{dll}", "fixture PE; disassembly supplied by the test tool\n")
@@ -74,7 +74,7 @@ def test_native_svc_check_rejects_a_guest_syscall_routed_to_its_neighbor(tmp_pat
     objdump.chmod(0o755)
     result = _native_fixture(tmp_path, "verify_svc_numbering")
     assert result.returncode == 0 and not result.stdout, result.stderr
-    table.write_text('{ "NtUserNeighbor", 0, 1 }, /* [0] MANUAL */\n')
+    table.write_text('    WOW64_THUNK_ENTRY { Name: c"NtUserNeighbor".as_ptr(), Thunk: None, Slots: 1 }, // [0] MANUAL: x\n')
     result = _native_fixture(tmp_path, "verify_svc_numbering")
     assert result.returncode != 0 and "misrouted" in result.stderr
     assert "guest calls NtUserFixture" in result.stderr
@@ -133,8 +133,8 @@ def test_native_marshal_audit_checks_layouts_and_rejects_stale_table(tmp_path):
         "SCALAR_WIDEN -> SIZE_T: 4->8 scalar pointee"
     )
     generated = write(
-        "build-amd64/dll/win32/wow64/wow64_win32k_thunks.gen.c",
-        '{ "NtUserFixture", 0, 1 }, /* [0] MANUAL */\n',
+        "sdk/lib/rust/wow64-rust/src/wow64/gen/wow64_win32k_thunks.rs",
+        '    WOW64_THUNK_ENTRY { Name: c"NtUserFixture".as_ptr(), Thunk: None, Slots: 1 }, // [0] MANUAL: x\n',
     )
     result = _native_fixture(tmp_path, "marshalgen_audit")
     assert result.returncode != 0 and "stale" in result.stderr.lower()

@@ -13,10 +13,14 @@ fn read(root: &Path, rel: &str) -> Result<String, String> {
     })
 }
 pub fn parse_table_artifact(text: &str) -> HashMap<String, bool> {
+    // The committed Rust table row, or the C one the generator can also write.
+    let rs = re(r#"^\s*WOW64_THUNK_ENTRY \{ Name: c"([^"]+)"\.as_ptr\(\), Thunk: (None|Some\(\w+\)),"#);
     let pat = re(r#"^\s*\{\s*"([^"]+)"\s*,\s*(\w+),\s*\d+\s*\},"#);
     let mut out = HashMap::new();
     for line in text.lines() {
-        if let Some(m) = pat.captures(line) {
+        if let Some(m) = rs.captures(line) {
+            out.insert(m[1].to_owned(), &m[2] != "None");
+        } else if let Some(m) = pat.captures(line) {
             out.insert(m[1].to_owned(), &m[2] != "0");
         }
     }
@@ -50,7 +54,7 @@ pub fn crosscheck(
         .take(12)
         .map(|(n, c, b)| {
             format!(
-                "    {n}: sources say {}, built table says {}",
+                "    {n}: sources say {}, table says {}",
                 if *c { "FLAT" } else { "marshalled" },
                 if *b { "FLAT" } else { "marshalled" }
             )
@@ -62,7 +66,7 @@ pub fn crosscheck(
     } else {
         String::new()
     };
-    Err(format!("audit {tname}: the BUILT thunk table disagrees with the checked-in sources on {} syscall(s) — {} is STALE.\n{lines}{more}\nRebuild before trusting this lint (`./vibeos-cli build --arch <a>`). Reporting stale findings here is how already-fixed sites get re-blessed into the baseline.",diffs.len(),path.display()))
+    Err(format!("audit {tname}: the committed thunk table disagrees with its sources on {} syscall(s) — {} is STALE.\n{lines}{more}\nRegenerate it before trusting this lint (`tools/codegen wow64-thunks --emit-rs`). Reporting stale findings here is how already-fixed sites get re-blessed into the baseline.",diffs.len(),path.display()))
 }
 
 fn build_dir(root: &Path, requested: Option<&str>, candidates: &[&str]) -> Option<PathBuf> {
@@ -135,7 +139,8 @@ pub fn audit(
             })
             .collect::<Result<Vec<_>, String>>()?;
         let table = compute_thunk_table(root, tname, arch)?;
-        let genpath = b64.join(gen_rel);
+        // The committed table, so it is checked whether or not this tree is built.
+        let genpath = root.join(gen_rel);
         if genpath.is_file() {
             crate::probe::local(root, &genpath)?;
             let text = fs::read_to_string(&genpath)
