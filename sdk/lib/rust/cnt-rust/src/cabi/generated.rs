@@ -486,11 +486,10 @@ mod m_stricmp {
 
     /// `int __cdecl _stricmp(char const* _String1, char const* _String2)`
     /// preserved misfeature: ASCII-only A..Z fold (locale-independent, NT variant — NOT the toupper() stricmp.c); signed-char raw difference, not clamped
+    /// body: memops.rs `fast_stricmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _stricmp(_String1: *const u8, _String2: *const u8) -> i32 {
-        let _String1_s = cstr_slice(_String1);
-        let _String2_s = cstr_slice(_String2);
-        crate::core_rs::string::cmp_ci(_String1_s, _String2_s)
+        super::super::fast_stricmp(_String1, _String2)
     }
 
 }
@@ -519,11 +518,10 @@ mod m_strnicmp {
 
     /// `int __cdecl _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)`
     /// preserved misfeature: as _stricmp + count-bounded; n==0 → 0 (while(remaining--!=0)); equal-NUL still breaks early within n
+    /// body: memops.rs `fast_strnicmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _strnicmp(_String1: *const u8, _String2: *const u8, _MaxCount: usize) -> i32 {
-        let _String1_s = cstr_slice_bounded(_String1, _MaxCount);
-        let _String2_s = cstr_slice_bounded(_String2, _MaxCount);
-        crate::core_rs::string::ncmp_ci(_String1_s, _String2_s, _MaxCount)
+        super::super::fast_strnicmp(_String1, _String2, _MaxCount)
     }
 
 }
@@ -810,11 +808,10 @@ mod m_wcsicmp {
 
     /// `int __cdecl _wcsicmp(wchar_t const* _String1, wchar_t const* _String2)`
     /// preserved misfeature: ASCII-only A..Z fold (no Unicode/locale); RAW u16 difference promoted to int (value-preserving, NOT signed-16, NOT clamped to {-1,0,1})
+    /// body: memops.rs `fast_wcsicmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _wcsicmp(_String1: *const u16, _String2: *const u16) -> i32 {
-        let _String1_s = wcstr_slice(_String1);
-        let _String2_s = wcstr_slice(_String2);
-        crate::core_rs::wstring::cmp_ci(_String1_s, _String2_s)
+        super::super::fast_wcsicmp(_String1, _String2)
     }
 
 }
@@ -844,11 +841,10 @@ mod m_wcsnicmp {
 
     /// `int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)`
     /// preserved misfeature: as _wcsicmp + count-bounded; n==0 → 0; equal-NUL breaks early within n
+    /// body: memops.rs `fast_wcsnicmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _wcsnicmp(_String1: *const u16, _String2: *const u16, _MaxCount: usize) -> i32 {
-        let _String1_s = wcstr_slice_bounded(_String1, _MaxCount);
-        let _String2_s = wcstr_slice_bounded(_String2, _MaxCount);
-        crate::core_rs::wstring::ncmp_ci(_String1_s, _String2_s, _MaxCount)
+        super::super::fast_wcsnicmp(_String1, _String2, _MaxCount)
     }
 
 }
@@ -1291,13 +1287,10 @@ mod mstrchr {
 
     /// `char *strchr(const char *s, int c)`
     /// preserved misfeature: the terminating NUL is a valid target: c==0 returns ptr to the NUL (Some(len)), not NULL; c truncated to char
+    /// body: memops.rs `fast_strchr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn strchr(s: *const u8, c: i32) -> *mut u8 {
-        let s_s = cstr_slice(s);
-        match crate::core_rs::string::find_char(s_s, c as i32) {
-            Some(i) => s.add(i) as *mut u8,
-            None => core::ptr::null_mut(),
-        }
+        super::super::fast_strchr(s, c)
     }
 
 }
@@ -1309,11 +1302,10 @@ mod mstrcmp {
 
     /// `int strcmp(const char *a, const char *b)`
     /// preserved misfeature: returns signed byte difference (sign-only is portable; magnitude is ReactOS-specific) — pin exact value
+    /// body: memops.rs `fast_strcmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn strcmp(a: *const u8, b: *const u8) -> i32 {
-        let a_s = cstr_slice(a);
-        let b_s = cstr_slice(b);
-        crate::core_rs::string::cmp(a_s, b_s)
+        super::super::fast_strcmp(a, b)
     }
 
 }
@@ -1394,11 +1386,10 @@ mod mstrncmp {
 
     /// `int strncmp(const char *s1, const char *s2, size_t n)`
     /// preserved misfeature: signed-char diff (tcsncmp.h _TCHAR=signed char); n==0→0; stops at first NUL
+    /// body: memops.rs `fast_strncmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn strncmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
-        let s1_s = cstr_slice_bounded(s1, n);
-        let s2_s = cstr_slice_bounded(s2, n);
-        crate::core_rs::string::ncmp(s1_s, s2_s, n)
+        super::super::fast_strncmp(s1, s2, n)
     }
 
 }
@@ -1695,13 +1686,10 @@ mod mwcschr {
 
     /// `wchar_t* wcschr(const wchar_t *s, wchar_t c)`
     /// preserved misfeature: terminating NUL is a valid target: c==0 → ptr to the NUL (tcschr.h); _XINT=wchar_t (no truncation, unlike strchr's char cast)
+    /// body: memops.rs `fast_wcschr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn wcschr(s: *const u16, c: u16) -> *mut u16 {
-        let s_s = wcstr_slice(s);
-        match crate::core_rs::string::find_char(s_s, c as i32) {
-            Some(i) => s.add(i) as *mut u16,
-            None => core::ptr::null_mut(),
-        }
+        super::super::fast_wcschr(s, c)
     }
 
 }
@@ -1713,11 +1701,10 @@ mod mwcscmp {
 
     /// `int wcscmp(const wchar_t *s1, const wchar_t *s2)`
     /// preserved misfeature: raw element difference *s1-*s2 with wchar_t unsigned 16-bit (value-preserving to int) — NOT signed-char like strcmp, NOT clamped
+    /// body: memops.rs `fast_wcscmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn wcscmp(s1: *const u16, s2: *const u16) -> i32 {
-        let s1_s = wcstr_slice(s1);
-        let s2_s = wcstr_slice(s2);
-        crate::core_rs::string::cmp(s1_s, s2_s)
+        super::super::fast_wcscmp(s1, s2)
     }
 
 }
@@ -1798,11 +1785,10 @@ mod mwcsncmp {
 
     /// `int wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n)`
     /// preserved misfeature: unsigned-u16 diff; n==0→0; stops at first NUL (tcsncmp.h)
+    /// body: memops.rs `fast_wcsncmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn wcsncmp(s1: *const u16, s2: *const u16, n: usize) -> i32 {
-        let s1_s = wcstr_slice_bounded(s1, n);
-        let s2_s = wcstr_slice_bounded(s2, n);
-        crate::core_rs::string::ncmp(s1_s, s2_s, n)
+        super::super::fast_wcsncmp(s1, s2, n)
     }
 
 }
