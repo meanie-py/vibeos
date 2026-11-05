@@ -14,6 +14,15 @@ import pytest
 from ..portlease import launch_lock
 
 
+@pytest.fixture(scope="module", autouse=True)
+def provision_native_lock_owner():
+    # Provision before measuring child startup and lock exclusion deadlines.
+    from tools.qemu_infra_compat import DedicatedSession
+
+    with DedicatedSession() as session:
+        assert session.call("test_version", {})["native"] is True
+
+
 @pytest.fixture(autouse=True)
 def isolated_lock(tmp_path, monkeypatch):
     monkeypatch.setenv("VIBEOS_HOSTLOCK_DIR", str(tmp_path))
@@ -99,20 +108,3 @@ def test_exception_releases_lock():
 def test_invalid_timeout_fails(timeout):
     with pytest.raises(ValueError, match="finite and nonnegative"), launch_lock(timeout=timeout):
         pytest.fail("accepted invalid timeout")
-
-
-def test_one_launch_never_assigns_same_port_twice(monkeypatch):
-    from tests.qemu import vm
-
-    candidates = iter([45000, 45000, 45001])
-    monkeypatch.setattr(vm, "_selected_launch_ports", set())
-    assert vm._unique_launch_port(lambda: next(candidates)) == 45000
-    assert vm._unique_launch_port(lambda: next(candidates)) == 45001
-
-
-def test_duplicate_port_allocator_fails_loudly(monkeypatch):
-    from tests.qemu import vm
-
-    monkeypatch.setattr(vm, "_selected_launch_ports", {45000})
-    with pytest.raises(RuntimeError, match="already assigned"):
-        vm._unique_launch_port(lambda: 45000)

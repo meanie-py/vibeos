@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Bootstrap the pinned native test harness, including its shared build library.
+set -euo pipefail
+repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cache="$repo/.cache/vibeos-test"
+target="$repo/.cache/vibeos-build/target"
+source_key() {
+    (
+        cd "$repo"
+        sha256sum rust-toolchain.toml tools/host-jobs/src/build_policy.rs
+        for crate in vibeos-test vibeos-build; do
+            sha256sum "tools/$crate/Cargo.toml" "tools/$crate/Cargo.lock"
+            rg --files -0 "tools/$crate/src" | LC_ALL=C sort -z | xargs -0 -r sha256sum
+        done
+    ) | sha256sum | cut -d ' ' -f 1
+}
+mkdir -p "$cache"
+key=$(source_key)
+if [[ -x "$cache/vibeos-test" && -f "$cache/source.sha256" && $(<"$cache/source.sha256") == "$key" ]]; then
+    exec "$cache/vibeos-test" --root "$repo" "$@"
+fi
+exec {provision_lock}>"$cache/provision.lock"
+flock "$provision_lock"
+key=$(source_key)
+if [[ ! -x "$cache/vibeos-test" || ! -f "$cache/source.sha256" || $(<"$cache/source.sha256") != "$key" ]]; then
+    (
+    unset RUSTUP_TOOLCHAIN RUSTC CARGO_BUILD_RUSTC RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_TARGET
+    unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS RUSTC_BOOTSTRAP CARGO_MAKEFLAGS MAKEFLAGS MFLAGS
+    toolchain=$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' "$repo/rust-toolchain.toml")
+    [[ -n "$toolchain" ]] || { echo "test-infra: missing pinned Rust channel" >&2; exit 2; }
+    export RUSTUP_TOOLCHAIN="$toolchain"
+    cargo build --quiet --offline --locked --release --jobs 1 \
+        --manifest-path "$repo/tools/vibeos-test/Cargo.toml" --target-dir "$target"
+    )
+    [[ $(source_key) == "$key" ]] || { echo "test-infra: sources changed during provisioning; retry after edits finish" >&2; exit 2; }
+    cp "$target/release/vibeos-test" "$cache/vibeos-test.tmp.$$"
+    mv "$cache/vibeos-test.tmp.$$" "$cache/vibeos-test"
+    printf '%s\n' "$key" > "$cache/source.sha256.tmp.$$"
+    mv "$cache/source.sha256.tmp.$$" "$cache/source.sha256"
+fi
+flock -u "$provision_lock"
+exec {provision_lock}>&-
+exec "$cache/vibeos-test" --root "$repo" "$@"

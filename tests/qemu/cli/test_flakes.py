@@ -4,6 +4,8 @@ pass/fail tally or a naive grader got wrong on the real fleet history."""
 import json
 import subprocess
 
+from tools import qemu_infra_compat as native
+
 from . import artifacts, flakes
 from .artifacts import Run, Stage
 
@@ -265,21 +267,33 @@ def test_a_round_with_no_guest_serial_is_not_a_lost_boot():
     assert flakes.conformance_signatures({"shape": "L:no-guest-serial"}) == ["L:no-guest-serial"]
 
 
-def test_every_gated_boot_path_launches_through_the_retry():
-    """The retry lived in cli/smoke.py, so the pytest `vm` fixture (conformance, the
-    payload suites, the net suite) kept a bare `vm.start()` and lost rounds to the
-    exact socket flake smoke had already fixed. Pin both call sites to the shared one."""
-    import inspect
+def test_every_gated_boot_path_launches_through_the_retry(tmp_path):
     from pathlib import Path
 
-    from .. import conftest
-    from . import smoke
+    from tests.qemu import conftest
 
     fixture = Path(conftest.__file__).read_text()
     body = fixture[fixture.index("def vm(") : fixture.index("\ndef ", fixture.index("def vm(") + 1)]
     assert "launch_with_retry(" in body
     assert "vm.start()" not in body
-    assert "launch_with_retry(" in inspect.getsource(smoke._boot_vm)
+    out = native.call(
+        "smoke_fixture",
+        {
+            "mode": "one_boot",
+            "chunks": ["READY\n"],
+            "options": {
+                "arch": "amd64",
+                "run_dir": str(tmp_path / "run"),
+                "launch_retry_seconds": 0,
+            },
+            "responses": {"vm_start": [{"error": "transient socket flake"}]},
+        },
+        root=tmp_path,
+    )
+    assert out["result"]["ok"] is True
+    assert out["result"]["timings"]["launch_attempts"] == 2
+    assert out["created"] == 2
+    assert sum(c["op"] == "vm_stop" for c in out["calls"]) == 2
 
 
 def test_no_build_refuses_media_without_the_sweep(tmp_path):
@@ -305,32 +319,50 @@ def test_no_build_refuses_media_without_the_sweep(tmp_path):
     assert media_payload_gap(tmp_path) is None
 
 
-def test_conformance_strips_every_host_stamp_the_tee_writes(tmp_path):
-    # The real tee, fed awkward chunk boundaries: mid-line, and between a CR and
-    # its LF (the tee stamps after either). Parsing must see the guest's bytes.
+def test_conformance_strips_every_host_stamp_the_tee_writes(tmp_path, monkeypatch):
+    import socket
+
+    import pytest
+
     from ..serial_client import SerialClient
     from . import conformance
 
+    monkeypatch.setenv("VIBEOS_SERIAL_TIMESTAMPS", "1")
     guest = "".join(
         f"[KMTEST:BEGIN T{i}]\r\nT{i}.c:{i}: Test failed: x\r\n"
         f"[KMTEST:END T{i} pass={i} fail=1 skip=0]\n"
         for i in range(40)
     )
-    tee = SerialClient.__new__(SerialClient)
-    tee._tee_t0, tee._tee_at_bol = None, True
-    cuts, pos, out = [3, 17, 1, 40, 2, 9], 0, []
-    while pos < len(guest):
-        step = cuts[len(out) % len(cuts)]
-        out.append(tee._stamp_tee_text(guest[pos : pos + step]))
-        pos += step
-    stamped = "".join(out)
-    assert stamped != guest and "\r[+" in stamped  # the CR-LF split did occur
-    plain, log = tmp_path / "plain.log", tmp_path / "arm64_serial.log"
-    plain.write_bytes(guest.encode("latin-1"))
-    log.write_bytes(stamped.encode("latin-1"))
-    # Byte-for-byte what an unstamped round would have parsed.
-    assert conformance.read_serial(log) == plain.read_text(errors="replace")
-    assert conformance.read_serial(plain) == plain.read_text(errors="replace")
+    log = tmp_path / "arm64_serial.log"
+    client = SerialClient()
+    writer = socket.socket(socket.AF_UNIX)
+    try:
+        client.set_tee(log)
+        client.listen(tmp_path / "serial.sock")
+        writer.connect(str(tmp_path / "serial.sock"))
+        client.accept(timeout=1)
+        cuts, pos, count = [3, 17, 1, 40, 2, 9], 0, 0
+        while pos < len(guest):
+            chunk = guest[pos : pos + cuts[count % len(cuts)]]
+            writer.sendall(chunk.encode("latin-1"))
+            received = ""
+            while len(received) < len(chunk):
+                received += client.read_available(timeout=1)
+            assert received == chunk
+            pos += len(chunk)
+            count += 1
+        writer.close()
+        with pytest.raises(ConnectionError):
+            client.read_until("no more output", timeout=1)
+        stamped = log.read_bytes().decode("latin-1")
+        assert stamped != guest and "\r[+" in stamped
+        plain = tmp_path / "plain.log"
+        plain.write_bytes(guest.encode("latin-1"))
+        assert conformance.read_serial(log) == plain.read_text(errors="replace")
+        assert conformance.read_serial(plain) == plain.read_text(errors="replace")
+    finally:
+        writer.close()
+        client.close()
 
 
 def test_conformance_boots_ask_for_a_quiet_boot_and_keep_the_callers_tripwire():

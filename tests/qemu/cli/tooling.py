@@ -36,8 +36,19 @@ _PYRIGHT = str(_VBIN / "pyright")
 # tests/qemu was linted only below cli/, so the harness core -- vm.py, backend.py and
 # test_smoke.py itself -- carried 29 findings, including two `assert False` in the
 # north-star test that `python -O` strips. The whole tree is ruff- and format-checked;
-_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu", "tools/fex"]
-_PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu"]
+_RUFF_ROOTS = [
+    "tools/rustconv/rustconv",
+    "tests/qemu",
+    "tools/fex",
+    "tools/qemu_infra_compat.py",
+    "tools/qemu_infra_runner.py",
+]
+_PYRIGHT_ROOTS = [
+    "tools/rustconv/rustconv",
+    "tests/qemu",
+    "tools/qemu_infra_compat.py",
+    "tools/qemu_infra_runner.py",
+]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
@@ -304,6 +315,26 @@ def check_tooling(args, repo: Path) -> int:
     )
     # 4. pytest
     if not args.no_tests:
+        checks.append(
+            (
+                "rust:vibeos-test",
+                [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--jobs",
+                    "1",
+                    "--manifest-path",
+                    "tools/vibeos-test/Cargo.toml",
+                    "--target-dir",
+                    ".cache/vibeos-build/target",
+                    "--",
+                    "--test-threads=1",
+                ],
+                {},
+            )
+        )
         checks.append(
             (
                 "rust:vibeos-build",
