@@ -54,6 +54,12 @@ def test_native_artifact_checks_preserve_missing_build_skips_without_a_workspace
     assert result.returncode == 0 and not result.stdout, result.stderr
 
 
+def _table_row(name):
+    """One row of the committed Rust thunk table (wow64-rust/src/wow64/gen/)."""
+    entry = f'Name: c"{name}".as_ptr(), Thunk: None, Slots: 1'
+    return f"    WOW64_THUNK_ENTRY {{ {entry} }}, // [0] MANUAL\n"
+
+
 def test_native_svc_check_rejects_a_guest_syscall_routed_to_its_neighbor(tmp_path):
     def write(path, text):
         dest = tmp_path / path
@@ -63,7 +69,7 @@ def test_native_svc_check_rejects_a_guest_syscall_routed_to_its_neighbor(tmp_pat
 
     table = write(
         "sdk/lib/rust/wow64-rust/src/wow64/gen/wow64_win32k_thunks.rs",
-        '    WOW64_THUNK_ENTRY { Name: c"NtUserFixture".as_ptr(), Thunk: None, Slots: 1 }, // [0] MANUAL: x\n',
+        _table_row("NtUserFixture"),
     )
     for dll in ("win32ss/user/user32/user32.dll", "win32ss/gdi/gdi32/gdi32.dll"):
         write(f"build-i386/{dll}", "fixture PE; disassembly supplied by the test tool\n")
@@ -74,7 +80,7 @@ def test_native_svc_check_rejects_a_guest_syscall_routed_to_its_neighbor(tmp_pat
     objdump.chmod(0o755)
     result = _native_fixture(tmp_path, "verify_svc_numbering")
     assert result.returncode == 0 and not result.stdout, result.stderr
-    table.write_text('    WOW64_THUNK_ENTRY { Name: c"NtUserNeighbor".as_ptr(), Thunk: None, Slots: 1 }, // [0] MANUAL: x\n')
+    table.write_text(_table_row("NtUserNeighbor"))
     result = _native_fixture(tmp_path, "verify_svc_numbering")
     assert result.returncode != 0 and "misrouted" in result.stderr
     assert "guest calls NtUserFixture" in result.stderr
@@ -134,7 +140,7 @@ def test_native_marshal_audit_checks_layouts_and_rejects_stale_table(tmp_path):
     )
     generated = write(
         "sdk/lib/rust/wow64-rust/src/wow64/gen/wow64_win32k_thunks.rs",
-        '    WOW64_THUNK_ENTRY { Name: c"NtUserFixture".as_ptr(), Thunk: None, Slots: 1 }, // [0] MANUAL: x\n',
+        _table_row("NtUserFixture"),
     )
     result = _native_fixture(tmp_path, "marshalgen_audit")
     assert result.returncode != 0 and "stale" in result.stderr.lower()
