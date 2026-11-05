@@ -548,6 +548,11 @@ def _emit(node: Node) -> tuple[str, str | None]:
     then reports a mismatch, which is the loud outcome."""
     k = node.kind
     if k == "num":
+        # A bare literal too gets the type C gives it: d3d8types.h's D3DPS_VERSION is
+        # `(0xFFFF0000|((_Major)<<8)|(_Minor))`, and `0xFFFF0000` unsuffixed was inferred as
+        # i32 at the call site -- overflowing_literals on all three arches.
+        if re.fullmatch(r"0[xX][0-9a-fA-F]+|0[0-7]*|[1-9][0-9]*", node.text):
+            return _c_literal(node.text), None
         return node.text, None
     if k in ("ident", "param"):
         return node.text, None

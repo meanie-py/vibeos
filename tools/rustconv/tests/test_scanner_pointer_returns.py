@@ -69,3 +69,15 @@ def test_declspec_hidden_does_not_break_the_declaration_after_it(tmp_path: Path)
     )
     assert [f.name for f in scan.functions] == ["go"]
     assert scan.unextracted == []
+
+
+def test_declspec_hotpatch_does_not_hide_the_function(tmp_path: Path):
+    """d3d8/d3d9: `IDirect3D8 * WINAPI DECLSPEC_HOTPATCH Direct3DCreate8(UINT)` parsed as
+    no function, and translate refused the TU before payment."""
+    scan = _scan(
+        tmp_path,
+        "IDirect3D8 * WINAPI DECLSPEC_HOTPATCH Direct3DCreate8(UINT sdk_version)\n"
+        "{\n    return 0;\n}\n",
+    )
+    assert [f.name for f in scan.functions] == ["Direct3DCreate8"]
+    assert "DECLSPEC_HOTPATCH" not in scan.functions[0].return_type

@@ -434,3 +434,31 @@ def test_a_struct_tagged_table_is_found(tmp_path: Path):
     )
     tables = find_vtbl_tables(c)
     assert [(t.name, len(t.slots)) for t in tables] == [("olecallbackVtbl", 3)]
+
+
+def test_a_dll_private_vtbl_struct_in_the_tu_itself_resolves(tmp_path):
+    # d3d9_main.c declares `struct IDirect3DShaderValidator9Vtbl` above its table, each slot
+    # `RET (WINAPI *Name)(..)` with parameter lists that wrap. The resolver never read the .c,
+    # and once it did, WINAPI inside the declarator made it read the PARAMETER names.
+    from rustconv.vtbl_gen import find_vtbl_tables
+
+    c = tmp_path / "d3d9_main.c"
+    c.write_text(
+        "typedef struct V V;\n"
+        "struct VVtbl\n{\n"
+        "    HRESULT (WINAPI *QueryInterface)(V *iface, REFIID iid, void **out);\n"
+        "    ULONG (WINAPI *AddRef)(V *iface);\n"
+        "    HRESULT (WINAPI *Begin)(V *iface,\n            void *context, DWORD_PTR arg3);\n"
+        "};\n"
+        "static HRESULT WINAPI v_qi(V *i, REFIID r, void **o) { return 0; }\n"
+        "static ULONG WINAPI v_addref(V *i) { return 1; }\n"
+        "static HRESULT WINAPI v_begin(V *i, void *c, DWORD_PTR a) { return 0; }\n"
+        "static const struct VVtbl v_vtbl =\n{\n    v_qi,\n    v_addref,\n    v_begin,\n};\n"
+    )
+    tables = find_vtbl_tables(c, rust_sources=[], c_headers=[])
+    assert [t.name for t in tables] == ["v_vtbl"]
+    assert [(s.field, s.value) for s in tables[0].slots] == [
+        ("QueryInterface", "v_qi"),
+        ("AddRef", "v_addref"),
+        ("Begin", "v_begin"),
+    ]

@@ -115,6 +115,10 @@ class Bindings:
         }
 
     def ledger(self, arguments):
+        # The native side names the repo it ran against (conformance_run.rs sends
+        # "repo"); this host owns it, so take ours and drop theirs. Passing both
+        # was a TypeError that turned every conformance lane red.
+        arguments = {k: v for k, v in arguments.items() if k != "repo"}
         ledger_append(self.repo, **arguments)
 
     def conformance_signatures(self, arguments):

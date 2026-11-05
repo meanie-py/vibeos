@@ -2066,3 +2066,199 @@ def test_a_body_less_module_flips_into_its_cargo_cell(tmp_path, monkeypatch):
     assert '.c_from_compile_db("ds_shims", &["dll/ds/rust_cohab_stub.c"])' in out
     assert '&["body", "engine:uuid", "import:ntdll", "engine:oldnames"]' in out
     assert port._flip_cell_build_rs(out, state, new) == out
+
+
+def test_a_dead_tu_is_recorded_not_a_module_wide_refusal(capsys):
+    # dinput: four joystick/effect TUs >90% inside a FALSE `#if`. translate already scoped
+    # DEAD_TU to its own file (24dad9bc219); derive refused every TU in the module.
+    from types import SimpleNamespace
+
+    from rustconv.profile_derive import Finding
+
+    dead = Finding("error", "DEAD_TU", "j.c is 92% dead", subject="dll/x/j.c")
+    port._gate_derive_errors(SimpleNamespace(errors=[dead]))
+    assert "NOT BLOCKING" in capsys.readouterr().out
+    other = Finding("error", "MISSING_CONST", "boom")
+    with pytest.raises(port.PortError, match="MISSING_CONST|boom"):
+        port._gate_derive_errors(SimpleNamespace(errors=[dead, other]))
+
+
+def test_a_fact_the_first_tu_cannot_evaluate_is_retried_in_the_next(tmp_path, monkeypatch):
+    # dinput's DIJOFS_X: data_formats.c (a data TU, two targets) said "not an integer
+    # constant expression"; joystick.c evaluates it. Code TUs are tried first.
+    from types import SimpleNamespace
+
+    from rustconv import sdk_facts
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    (tmp_path / "m").mkdir()
+    (tmp_path / "m/data.c").write_text("int a = DIJOFS_X;\n")
+    (tmp_path / "m/joy.c").write_text("int b = DIJOFS_X;\n")
+    prelude = tmp_path / "prelude.rs"
+    prelude.write_text("")
+    asked: list[str] = []
+
+    def fake(repo, tu, names):
+        asked.append(Path(tu).name)
+        if Path(tu).name == "joy.c":
+            fact = SimpleNamespace(name="DIJOFS_X", value=0, c_type="LONG|long", literal=None)
+            return SimpleNamespace(facts=[fact], unresolved={})
+        return SimpleNamespace(facts=[], unresolved={"DIJOFS_X": "not an integer constant"})
+
+    monkeypatch.setattr(sdk_facts, "resolve", fake)
+    monkeypatch.setattr(port, "_island_constants", lambda state: set())
+    monkeypatch.setattr(port, "_own_object_macros", lambda state: set())
+    monkeypatch.setattr(port, "_known_types", lambda state: set())
+    state = {"tus": ["m/data.c", "m/joy.c"], "data_tus": ["m/data.c"], "usermode": True}
+    assert port._resolve_facts(state, prelude, ["DIJOFS_X"]) == []
+    assert asked == ["joy.c"]  # the code TU first, so the data TU is never needed
+    assert "DIJOFS_X" in prelude.read_text()
+    state["data_tus"] = []
+    (tmp_path / "m/joy.c").write_text("int b = DIJOFS_X;\n")
+    prelude.write_text("")
+    asked.clear()
+    assert port._resolve_facts(state, prelude, ["DIJOFS_X"]) == []
+    assert asked == ["data.c", "joy.c"]  # refused in the first, answered by the next
+
+
+def test_an_array_size_compare_against_a_widened_index_is_widened(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_crate_dir", lambda state: tmp_path)
+    m = tmp_path / "src" / "d"
+    m.mkdir(parents=True)
+    (m / "a.rs").write_text(
+        "while (i as usize) < ARRAY_SIZE!(devs) { }\n"
+        "if (j as usize) >= ARRAY_SIZE!(t) as usize { }\n"
+        "while (k as usize) < ARRAY_SIZE!((*state).textures) { }\n"
+        "if state as usize >= ARRAY_SIZE!(tss_lookup) { }\n"
+    )
+    assert port._widen_array_size_compares({"stem": "d"}) == 3
+    text = (m / "a.rs").read_text()
+    assert "(i as usize) < ARRAY_SIZE!(devs) as usize" in text
+    assert "ARRAY_SIZE!(t) as usize as usize" not in text
+    assert "(k as usize) < ARRAY_SIZE!((*state).textures) as usize" in text
+    assert "state as usize >= ARRAY_SIZE!(tss_lookup) as usize" in text
+
+
+def test_a_module_list_twin_of_winelist_is_dropped(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_crate_dir", lambda state: tmp_path)
+    (tmp_path / "Cargo.toml").write_text('winelist-rust = { path = "../winelist-rust" }\n')
+    m = tmp_path / "src" / "d"
+    m.mkdir(parents=True)
+    (m / "a.rs").write_text(
+        "use x;\n#[repr(C)]\npub struct list {\n    pub next: *mut list,\n"
+        "    pub prev: *mut list,\n}\n\npub struct Keep;\n"
+    )
+    assert port._drop_wine_list_twins({"stem": "d"}) == ["a"]
+    assert (m / "a.rs").read_text() == "use x;\npub struct Keep;\n"
+
+
+def test_c_adjacent_string_literals_are_joined(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "a.rs"])
+    (tmp_path / "a.rs").write_text(
+        'WARN!("used with VIDEOMEMORY "\n        "or SYSTEMMEMORY.\\n");\n'
+        'f("a", "b"); g(b"x" ); h("one" "two" "three");\n'
+    )
+    assert port._join_adjacent_strings({}) == 3
+    out = (tmp_path / "a.rs").read_text()
+    assert 'WARN!("used with VIDEOMEMORY or SYSTEMMEMORY.\\n");' in out
+    assert 'f("a", "b")' in out and 'h("onetwothree")' in out
+
+
+def test_a_struct_tag_named_like_its_static_is_imported_as_tag(tmp_path, monkeypatch):
+    # ddraw's `static const struct tss_lookup {..} tss_lookup[]`: one name, two C namespaces.
+    from rustconv import c2rust_anchor
+
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "_tu_output", lambda state, tu: tmp_path / "device.rs")
+    (tmp_path / "device.rs").write_text(
+        "use crate::prelude::*;\npub union C2RustUnnamed_72 { pub a: i32 }\n"
+        "pub static mut tss_lookup: [tss_lookup; 2] = [tss_lookup { s: 0 }, tss_lookup { s: 1 }];\n"
+        "fn f() { let l: *const tss_lookup = addr_of!(tss_lookup[1]); g(ARRAY_SIZE!(tss_lookup)); }\n"
+    )
+    per = (
+        "amd64:pub struct tss_lookup {\n    pub u: C2RustUnnamed_72,\n}\0"
+        "i386:pub struct tss_lookup {\n    pub u: C2RustUnnamed_70,\n}"
+    )
+    monkeypatch.setattr(c2rust_anchor, "local_types", lambda c, n: ({}, {"tss_lookup": per}))
+    assert port._resolve_tag_value_collisions({"tus": ["dll/device.c"]}) == ["tss_lookup"]
+    out = (tmp_path / "device.rs").read_text()
+    assert "pub struct tss_lookup_tag {\n    pub u: C2RustUnnamed_72," in out
+    assert "pub static mut tss_lookup: [tss_lookup_tag; 2] = [tss_lookup_tag { s: 0 }" in out
+    assert "let l: *const tss_lookup_tag = addr_of!(tss_lookup[1])" in out
+    assert "ARRAY_SIZE!(tss_lookup)" in out
+
+
+def test_named_channel_debug_calls_take_the_channel_static(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "a.rs"])
+    (tmp_path / "a.rs").write_text(
+        'ERR_!(winediag, "no 3d\\n");\nTRACE_(fps, "%p\\n", d);\nTRACE!("keep\\n");\n'
+    )
+    assert port._named_channel_debug({}) == 2
+    out = (tmp_path / "a.rs").read_text()
+    assert 'WINE_ERR_!(__wine_dbch_winediag, "no 3d\\n");' in out
+    assert 'WINE_TRACE_!(__wine_dbch_fps, "%p\\n", d);' in out and 'TRACE!("keep\\n")' in out
+
+
+def test_c_tag_keywords_in_type_positions_are_dropped():
+    src = (
+        "pub unsafe fn f(t: D3DDEVTYPE) -> enum wined3d_device_type { x as enum foo }\n"
+        "pub struct S { pub p: *mut struct list, pub q: Option<union U> }\n"
+    )
+    out = port._strip_c_tag_keywords(src)
+    assert "-> wined3d_device_type {" in out and "x as foo" in out
+    assert "pub struct S {" in out and "*mut list" in out and "Option<U>" in out
+
+
+def test_an_anonymous_literal_takes_the_named_field_type(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "d.rs"])
+    (tmp_path / "d.rs").write_text(
+        "pub union C2RustUnnamed_19 {\n    pub texture_state: i32,\n    pub sampler_state: i32,\n}\n"
+        "pub union tss_lookup_u {\n    pub texture_state: i32,\n    pub sampler_state: i32,\n}\n"
+        "pub struct tss_lookup {\n    pub sampler_state: BOOL,\n    pub u: tss_lookup_u,\n}\n"
+        "static mut T: [tss_lookup; 1] = [tss_lookup { sampler_state: 0, u: C2RustUnnamed_19 {"
+        " texture_state: 1 } }];\n"
+    )
+    assert port._anon_literals_to_named({}) == 1
+    assert "u: tss_lookup_u { texture_state: 1 }" in (tmp_path / "d.rs").read_text()
+
+
+def test_never_rust_type_spellings_are_fixed(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "d.rs"])
+    (tmp_path / "d.rs").write_text(
+        "if (u & (X as core)) != 0 {}\nfn f(s: *const float, d: double) -> float { core::ffi::c_int }\n"
+        "let floaty = float_value(2);\n"
+    )
+    assert port._never_rust_types({}) == 4
+    out = (tmp_path / "d.rs").read_text()
+    assert "(X as _)" in out and "s: *const f32, d: f64) -> f32 { core::ffi::c_int }" in out
+    assert "let floaty = float_value(2);" in out
+
+
+def test_a_module_twin_of_an_island_enum_constant_is_dropped(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(port, "_crate_dir", lambda state: tmp_path)
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "src/d/device.rs"])
+    (tmp_path / "src/d").mkdir(parents=True)
+    (tmp_path / "src/types_i386.rs").write_text(
+        "pub const wined3d_texture_stage_state_WINED3D_TSS_COLOR_OP: wined3d_texture_stage_state = 0;\n"
+        "pub const wined3d_texture_stage_state_WINED3D_TSS_INVALID: wined3d_texture_stage_state = 4294967295;\n"
+    )
+    (tmp_path / "src/d/device.rs").write_text(
+        "pub const WINED3D_TSS_COLOR_OP: i32 = 0;\npub const WINED3D_TSS_INVALID: i32 = 18;\n"
+        "pub const MY_OWN: i32 = 3;\n"
+    )
+    assert port._drop_island_enum_twins({}) == ["WINED3D_TSS_COLOR_OP", "WINED3D_TSS_INVALID"]
+    assert (tmp_path / "src/d/device.rs").read_text() == "pub const MY_OWN: i32 = 3;\n"
+    assert "WINED3D_TSS_INVALID = 18 recalled by the model" in capsys.readouterr().out
+
+
+def test_a_dangling_sibling_import_is_dropped(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_crate_dir", lambda state: tmp_path)
+    m = tmp_path / "src" / "d3d9"
+    m.mkdir(parents=True)
+    (m / "buffer.rs").write_text("pub unsafe fn real() {}\n")
+    (m / "vd.rs").write_text(
+        "use crate::d3d9::buffer::__wine_dbch_default;\nuse crate::d3d9::buffer::real;\nfn f() {}\n"
+    )
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [m / "vd.rs"])
+    assert port._drop_dangling_sibling_uses({}) == ["vd: buffer::__wine_dbch_default"]
+    assert (m / "vd.rs").read_text() == "use crate::d3d9::buffer::real;\nfn f() {}\n"

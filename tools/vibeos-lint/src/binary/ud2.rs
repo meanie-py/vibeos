@@ -73,6 +73,12 @@ const NORETURN_CALLEES: &[&str] = &[
 fn known_driver(name: &str) -> &'static [&'static str] {
     if name == "rosload.exe" || name == "freeldr.exe" {
         &["LoadAndBootWindowsCommon"]
+    } else if name == "ddraw.dll" {
+        // `match fvf & D3DFVF_POSITION_MASK` (0xe): the jump table is indexed by an EVEN value,
+        // so LLVM points its impossible odd slots at a `ud2` placed after the `ret` -- an
+        // unreachable switch target, not a CC/signature fold (disassembled 2026-11-04, i386
+        // and amd64). The C compiles the same switch to a table whose holes are its default.
+        &["get_flexible_vertex_size"]
     } else {
         &[]
     }
@@ -482,6 +488,15 @@ mod tests {
         assert_eq!(f[0]["expected"], true);
         assert_eq!(f[1]["expected"], false);
         assert_eq!(f[2]["expected"], true);
+    }
+    #[test]
+    fn ddraw_jump_table_hole_is_a_known_residual() {
+        let input = "0001 <_get_flexible_vertex_size>:\n  1: c3 retl\n  2: 0f 0b ud2\n";
+        let f = facts(input.lines().map(str::to_owned), "i386", Some("ddraw.dll"));
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0]["known_cgu"], true);
+        let other = facts(input.lines().map(str::to_owned), "i386", Some("d3d9.dll"));
+        assert_eq!(other[0]["known_cgu"], false, "the residual is ddraw's alone");
     }
     #[test]
     fn driver_noreturn_and_known_exception() {

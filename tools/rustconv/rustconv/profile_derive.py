@@ -1159,6 +1159,17 @@ def parse_cmakelists(
         raise ProfileDeriveError(f"{cmake}: no target {target!r} (have: {', '.join(targets)})")
     for cell in cargo_user:
         shims = f"{cell}_shims"
+        # A body-less cell's C is its shims OBJECT library's, which the cargo link replays:
+        # ddraw (the mainline's body-less waves converted it BEFORE it was translated) derived
+        # as "compiles no in-tree .c" and pointed at `--target ddraw_shims`, which names the
+        # crate, the state and the flip after the wrong target.
+        if shims in targets:
+            # Never the cohab scaffolding a FLIPPED cell keeps there (rust_cohab_stub.c).
+            live = [
+                s for s in targets[shims][1] if s.upper() != "OBJECT" and not is_shim_tu(Path(s))
+            ]
+            kind, own = targets[cell]
+            targets[cell] = (kind, own + [s for s in live if s not in own])
         per_target_defs.setdefault(cell, []).extend(per_target_defs.get(shims, []))
         link_deps.setdefault(cell, []).extend(link_deps.get(shims, []))
         unicode = "-DUNICODE" in per_target_defs[cell]
@@ -5099,6 +5110,20 @@ pub use crate::types::*;
 pub use core::ffi::{{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c_void}};
 // C's `size_t`: bindgen spells it `usize` inline, so no island carries the name the C uses.
 pub type size_t = usize;
+// <stdint.h>/<stddef.h> names: no island allowlists those headers (ddraw used 26 of them).
+// Fixed-width, so identical on every target; an island that does carry one shadows nothing
+// (a glob import never conflicts with an item the prelude defines).
+pub type int8_t = i8;
+pub type int16_t = i16;
+pub type int32_t = i32;
+pub type int64_t = i64;
+pub type uint8_t = u8;
+pub type uint16_t = u16;
+pub type uint32_t = u32;
+pub type uint64_t = u64;
+pub type intptr_t = isize;
+pub type uintptr_t = usize;
+pub type ptrdiff_t = isize;
 pub use core::ptr::{{addr_of, addr_of_mut}};
 
 // ================= debug ======================================================================
