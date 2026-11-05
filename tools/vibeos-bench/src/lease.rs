@@ -45,6 +45,21 @@ pub fn board(env: &Env) -> Result<String> {
     Ok(name.into())
 }
 pub fn lease_name(env: &Env) -> Result<String> {
+    // When gear is moved between boards, both names must contend for one lease.
+    if let Some(name) = env.get("VIBEOS_BENCH_LEASE") {
+        if name.is_empty()
+            || name.len() > 80
+            || name == "."
+            || name == ".."
+            || !name
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        {
+            return Err("VIBEOS_BENCH_LEASE must be a simple nonempty lease name".into());
+        }
+        board(env)?;
+        return Ok(name.clone());
+    }
     let b = board(env)?;
     Ok(if b == "pi4" { "optiplex".into() } else { b })
 }
@@ -346,6 +361,18 @@ mod tests {
         assert!(take("b", 1., "", &pi5, 2).unwrap().0);
         assert!(!drop("b", false, &opt).unwrap().0);
         assert!(drop("a", false, &opt).unwrap().0);
+    }
+    #[test]
+    fn moved_gear_shares_its_original_lease() {
+        let d = tempfile::tempdir().unwrap();
+        let original = env(d.path(), "pi4");
+        let mut moved = env(d.path(), "pi5");
+        moved.insert("VIBEOS_BENCH_LEASE".into(), "optiplex".into());
+        assert!(take("lane-a", 1., "hardware move", &original, 1).unwrap().0);
+        assert!(!take("lane-b", 1., "", &moved, 2).unwrap().0);
+        assert!(take("lane-a", 1., "", &moved, 1).unwrap().0);
+        moved.insert("VIBEOS_BENCH_LEASE".into(), "../escape".into());
+        assert!(lease_file(&moved).is_err());
     }
     #[test]
     fn renewal_does_not_shorten_and_corruption_refuses() {

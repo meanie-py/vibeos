@@ -147,3 +147,12 @@ inside the Broadcom controller's registers, and the first read there returns 0xD
 and leaves an SError pending. The loader keeps that OEM on a quirk list and reports no
 MCFG (`arm64_serial_acpi.rs`); before it did, every boot ended in BUGCHECK 0x80 at the
 kernel's first `_enable`.
+
+### Shared gear after the 2026-11-05 move
+
+The user moved the Pi 4 bench's shared gear back to Pi 5. HDMI confirmed the
+`vibeos-pi5` Linux stager. Until its assignment is configured permanently, select
+`PI5_PICO_HOST=picousb`, `PI5_PLUG=shellyplugusg4-acebe6f18e28`, and
+`PI5_HDMI_VID=534d`. Set `VIBEOS_BENCH_LEASE=optiplex` as well: that is the shared
+gear's existing lease alias, so Pi 4 and Pi 5 callers cannot control it concurrently.
+Do not use the Pi 4 command defaults against the moved gear.

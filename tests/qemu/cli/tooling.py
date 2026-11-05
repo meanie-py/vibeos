@@ -318,6 +318,26 @@ def check_tooling(args, repo: Path) -> int:
     if not args.no_tests:
         checks.append(
             (
+                "rust:vibeos-bench",
+                [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--jobs",
+                    "1",
+                    "--manifest-path",
+                    "tools/vibeos-bench/Cargo.toml",
+                    "--target-dir",
+                    ".cache/vibeos-bench/target",
+                    "--",
+                    "--test-threads=1",
+                ],
+                {},
+            )
+        )
+        checks.append(
+            (
                 "rust:vibeos-test",
                 [
                     "cargo",

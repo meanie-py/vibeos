@@ -68,5 +68,43 @@ native PPM decoding and PNG publication, so missing Pillow cannot skip a gate.
 The modrun host grader is native too; unknown providers or graders fail loudly.
 
 Payload media staging, borrowed-output rebuilds, cross-architecture guest build
-receipts and complete PE closures live in `vibeos-build`. The Pi 4/5 physical-bench
-controllers and their serial/HTTP/TFTP services remain a separate migration chunk.
+receipts and complete PE closures live in `vibeos-build`.
+
+Physical Pi 4/5 bench controllers, doctor checks, staging and boot verdicts live in
+`vibeos-test::bench*`. They consume the maintained arm64 build configuration and
+use `vibeos-build::provenance` before staging. Shell scripts retain external device
+commands. Python entry points adapt CLI options and reports.
+
+`tools/bench-infra` provisions portable `vibeos-bench` services: raw Pico TCP UART
+capture, serial arrival-time reports, read-only HTTP ranges and TFTP transfers.
+HTTP and TFTP run as Windows executables because the Pi cannot reach WSL NAT.
+`tools/bench-infra --windows-path` builds the Windows LLVM target; install its
+pinned standard library with `rustup target add --toolchain 1.92.0
+x86_64-pc-windows-gnullvm`. The Linux and Windows caches have separate publication
+locks and source receipts. Native bench tests run through `check-tooling`.
+
+Bench leases remain shared with existing device tools, including the conservative
+Pi 4/OptiPlex alias. Unreadable or corrupt lease state refuses control; inspect it
+and use an explicit force-drop to recover it. Native serial receipts include the
+Linux process start ticks, configured host and capture directory so a reused PID
+cannot validate another listener. Hardware validation still requires a real lease,
+fresh payload, new serial slice and HDMI evidence; host fixtures do not substitute
+for a physical boot.
+
+Service mutations take the bench lease and a per-bench service lock. Windows
+launchers publish full process ownership before the controller confirms listening
+sockets; Linux interop launch stubs are then reaped independently of the server.
+CIM start times are compared at their microsecond precision against opened Windows
+process handles. Firewall migration changes only the application filter of the two
+existing named Pi 4 rules and verifies that their network scope is unchanged.
+`pi4 services recover --pid PID --started TICKS` explicitly recovers an interrupted
+native launch after inspecting that exact process; ordinary commands refuse an
+unowned matching process. `--allow-stale` remains an explicit bench debugging
+override and is recorded in payload manifests; it cannot bypass a broken provenance
+oracle or a lease refusal.
+
+When physical gear moves between boards, set `VIBEOS_BENCH_LEASE` to its original
+lease name alongside the destination board's plug/Pico configuration. This keeps
+both board names contending for one physical resource; it does not change which
+board owns the payload or logs. For the Pi 4 gear's existing conservative alias,
+that shared lease name is `optiplex`.

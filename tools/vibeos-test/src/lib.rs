@@ -28,3 +28,12 @@ pub mod smoke_fixtures;
 pub mod smoke_run;
 pub mod verdict;
 pub mod vm;
+
+pub mod bench;
+pub mod bench_boot;
+pub mod bench_helpers;
+pub mod bench_lease_commands;
+pub mod bench_readonly;
+pub mod bench_stage;
+
+pub mod bench_services_control;

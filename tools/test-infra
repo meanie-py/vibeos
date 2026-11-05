@@ -8,7 +8,7 @@ source_key() {
     (
         cd "$repo"
         sha256sum rust-toolchain.toml tools/host-jobs/src/build_policy.rs
-        for crate in vibeos-test vibeos-build; do
+        for crate in vibeos-test vibeos-build vibeos-bench; do
             sha256sum "tools/$crate/Cargo.toml" "tools/$crate/Cargo.lock"
             rg --files -0 "tools/$crate/src" | LC_ALL=C sort -z | xargs -0 -r sha256sum
         done

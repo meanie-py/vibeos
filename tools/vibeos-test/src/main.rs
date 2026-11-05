@@ -31,6 +31,20 @@ impl Host for Runtime<'_> {
         }
         let request = json!({"op":operation,"kwargs":arguments});
         match operation {
+            "bench_medium_state" | "bench_drop_state" => Callback {
+                input: self.input,
+                output: self.output,
+            }
+            .call(operation, request["kwargs"].clone()),
+            op if op.starts_with("bench_service_") => {
+                vibeos_test::bench_services_control::dispatch(self.root, &request, self)
+            }
+            op if op.starts_with("bench_stage_") => {
+                vibeos_test::bench_stage::dispatch(self.root, &request)
+            }
+            op if op.starts_with("bench_") => {
+                vibeos_test::bench::dispatch(self.root, &request, self)
+            }
             "payload_download"
             | "payload_print"
             | "payload_sleep"

@@ -17,7 +17,7 @@ NativeError = transport.NativeError
 
 def _source_signature():
     paths = [REPO / "tools/test-infra", Path(__file__), Path(transport.__file__)]
-    for name in ("vibeos-test", "vibeos-build"):
+    for name in ("vibeos-test", "vibeos-build", "vibeos-bench"):
         crate = REPO / "tools" / name
         paths.extend((crate / "Cargo.toml", crate / "Cargo.lock"))
         paths.extend(p for p in (crate / "src").rglob("*") if p.is_file())
