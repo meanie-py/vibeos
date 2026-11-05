@@ -46,6 +46,15 @@ pub fn rc_template_path(arch: &str, root: &Path) -> PathBuf {
 pub fn c_template_path(arch: &str, root: &Path) -> PathBuf {
     root.join(format!("sdk/lib/rust/reactos-link/cflags/c.{arch}.flags"))
 }
+/// cmake's C++ rule: the C rule's exact shape (`clang++ --target= <defines> <-I> <flags>
+/// -o <obj> -c <src>`) with its own compiler, `-std`, libc++ `-isystem` and `-fno-rtti`.
+pub fn cxx_template_path(arch: &str, root: &Path) -> PathBuf {
+    root.join(format!("sdk/lib/rust/reactos-link/cflags/cxx.{arch}.flags"))
+}
+/// A source cmake compiles with its C++ rule.
+pub fn is_cxx_source(file: &str) -> bool {
+    file.ends_with(".cpp") || file.ends_with(".cxx") || file.ends_with(".cc")
+}
 pub fn asm_template_path(arch: &str, root: &Path) -> PathBuf {
     root.join(format!("sdk/lib/rust/reactos-link/cflags/asm.{arch}.flags"))
 }
@@ -148,7 +157,10 @@ impl RcTemplate {
 }
 impl CTemplate {
     pub fn text(&self, arch: &str) -> String {
-        let mut out=vec![format!("# cmake's C rule, the part every C compile in the tree shares ({arch}). Generated"),"# by python3 tools/cargo_cell_gen.py --c-template from build-<arch>/compile_commands.json;".into(),"# reactos-link's Linker::c_compiled adds the library's own includes, flags and defines.".into()];
+        self.text_for(arch, "C")
+    }
+    pub fn text_for(&self, arch: &str, rule: &str) -> String {
+        let mut out=vec![format!("# cmake's {rule} rule, the part every {rule} compile in the tree shares ({arch}). Generated"),"# by python3 tools/cargo_cell_gen.py --c-template from build-<arch>/compile_commands.json;".into(),"# reactos-link's Linker::c_compiled adds the library's own includes, flags and defines.".into()];
         for (name, toks) in [
             ("cc", vec![self.cc.clone()]),
             ("target", vec![self.target.clone()]),
@@ -483,6 +495,7 @@ fn entries(arch: &str, root: &Path, kind: &str) -> Result<Vec<(String, String)>>
         let accept = match kind {
             "rc" => file.ends_with(".rc") && cmd.contains("windres"),
             "c" => file.ends_with(".c") && cmd.contains(" --target="),
+            "cxx" => is_cxx_source(file) && cmd.contains(" --target="),
             "asm" => {
                 (file.ends_with(".s") || file.ends_with(".S"))
                     && cmd.contains(" -x assembler-with-cpp ")
@@ -559,7 +572,13 @@ pub fn read_rc_template(arch: &str, root: &Path) -> Result<RcTemplate> {
     })
 }
 pub fn read_c_template(arch: &str, root: &Path) -> Result<CTemplate> {
-    let s = sections(&c_template_path(arch, root), "c")?;
+    read_cc_template(&c_template_path(arch, root))
+}
+pub fn read_cxx_template(arch: &str, root: &Path) -> Result<CTemplate> {
+    read_cc_template(&cxx_template_path(arch, root))
+}
+fn read_cc_template(path: &Path) -> Result<CTemplate> {
+    let s = sections(path, "c")?;
     Ok(CTemplate {
         cc: first(&s, "cc")?,
         target: first(&s, "target")?,
@@ -641,16 +660,27 @@ pub fn derive_rc_template(arch: &str, root: &Path) -> Result<RcTemplate> {
     })
 }
 pub fn derive_c_template(arch: &str, root: &Path) -> Result<CTemplate> {
-    let parts: Vec<_> = entries(arch, root, "c")?
+    derive_cc_template(arch, root, "c")
+}
+/// None when the build compiles no C++ at all (nothing then needs the template).
+pub fn derive_cxx_template(arch: &str, root: &Path) -> Result<Option<CTemplate>> {
+    if entries(arch, root, "cxx")?.is_empty() {
+        return Ok(None);
+    }
+    derive_cc_template(arch, root, "cxx").map(Some)
+}
+fn derive_cc_template(arch: &str, root: &Path, kind: &str) -> Result<CTemplate> {
+    let rule = if kind == "cxx" { "C++" } else { "C" };
+    let parts: Vec<_> = entries(arch, root, kind)?
         .iter()
         .filter_map(|(_, cmd)| c_parts(cmd).ok())
         .collect();
     let f = parts
         .first()
-        .ok_or_else(|| fail(format!("build-{arch}: no C commands")))?;
+        .ok_or_else(|| fail(format!("build-{arch}: no {rule} commands")))?;
     if parts.iter().any(|p| p.cc != f.cc || p.target != f.target) {
         return Err(fail(format!(
-            "build-{arch}: C compiler or --target differs by target"
+            "build-{arch}: {rule} compiler or --target differs by target"
         )));
     }
     Ok(CTemplate {
@@ -791,6 +821,7 @@ pub fn clib_recipe(arch: &str, target: &str, root: &Path) -> Result<String> {
         "# {target} ({arch}), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes"
     )];
     let mut seen = HashSet::new();
+    let mut cxx: Option<CTemplate> = None;
     for e in compile_db(root, arch)? {
         let cmd = e.get("command").and_then(|s| s.as_str()).unwrap_or("");
         let file = e
@@ -804,6 +835,13 @@ pub fn clib_recipe(arch: &str, target: &str, root: &Path) -> Result<String> {
             ("c", c_encode(cmd, &ct, arch)?)
         } else if file.ends_with(".s") || file.ends_with(".S") {
             ("asm", asm_encode(cmd, &at, arch)?)
+        } else if is_cxx_source(file) {
+            // vcstartup (avifil32's and d2d1's startup) is 6 .cpp of 16 sources: refusing them
+            // stopped every tree-wide refresh, and left those cells unbuildable without cmake.
+            if cxx.is_none() {
+                cxx = Some(read_cxx_template(arch, root)?);
+            }
+            ("cxx", c_encode(cmd, cxx.as_ref().unwrap(), arch)?)
         } else {
             return Err(fail(format!("{target}: unmodelled source {file}")));
         };

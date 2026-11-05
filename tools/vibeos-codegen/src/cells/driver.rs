@@ -302,6 +302,10 @@ pub fn c_templates(root: &Path) -> Result<RecipePlan> {
             recipes::asm_template_path(a, root),
             recipes::derive_asm_template(a, root)?.text(a),
         );
+        if let Some(x) = recipes::derive_cxx_template(a, root)? {
+            plan.edits
+                .insert(recipes::cxx_template_path(a, root), x.text_for(a, "C++"));
+        }
     }
     Ok(plan)
 }

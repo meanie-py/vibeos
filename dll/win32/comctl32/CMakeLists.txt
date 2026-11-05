@@ -51,7 +51,6 @@ list(APPEND SOURCE
 
 add_cd_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/${WINARCH}_microsoft.windows.common-controls_6595b64144ccf1df_5.82.2600.2982_none_deadbeef.manifest DESTINATION reactos/winsxs/manifests FOR all)
 add_cd_file(FILE ${CMAKE_CURRENT_SOURCE_DIR}/${WINARCH}_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef.manifest DESTINATION reactos/winsxs/manifests FOR all)
- # CORE-5743: No ARRAY_SIZE macro
 
 include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle
 

@@ -657,3 +657,47 @@ def test_a_delay_imported_library_is_an_export_authority(tmp_path):
     subprocess.run(["git", "-C", str(repo), "add", "-A"], check=True)
     names = pr.module_exports(repo / "app", repo)
     assert names is not None and {"Sleep", "SelectPartition"} <= names
+
+
+def test_a_consensus_copy_nothing_names_is_not_live(tmp_path):
+    from rustconv.prelude_resolve import BEGIN, END, Item, live_copies
+
+    src = tmp_path / "src"
+    (src / "m").mkdir(parents=True)
+    prelude = src / "prelude.rs"
+    prelude.write_text(
+        f"{BEGIN}\npub const HEIGHT: u32 = 1;\npub type PT = *mut T;\npub struct T;\n{END}\n"
+    )
+    (src / "m" / "a.rs").write_text("fn f(p: PT) {}\n")
+
+    def item(text: str) -> Item:
+        return Item(kind="const", text=text, abi=None, path="x")
+
+    copied = {
+        "HEIGHT": item("pub const HEIGHT: u32 = 1;"),
+        "PT": item("pub type PT = *mut T;"),
+        "T": item("pub struct T;"),
+    }
+    # PT is named by a body, T only through PT's own text; HEIGHT only by its own block line.
+    assert live_copies(copied, src, prelude) == {"PT", "T"}
+
+
+def test_a_copy_a_dependency_macro_expands_to_is_live(tmp_path):
+    from rustconv.prelude_resolve import Item, live_copies
+
+    dep = tmp_path / "macros" / "src"
+    dep.mkdir(parents=True)
+    (dep / "lib.rs").write_text(
+        "macro_rules! WINE_FIXME { ($($t:tt)*) => {{ ros_dbg_log(0, $($t)*) }} }\n"
+        "pub fn not_a_macro() { never_expanded(); }\n"
+    )
+    crate = tmp_path / "m-rust"
+    (crate / "src").mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[dependencies]\nmacros = { path = "../macros" }\n')
+    prelude = crate / "src" / "prelude.rs"
+    prelude.write_text("")
+    copied = {
+        n: Item(kind="fn", text=f"pub fn {n}();", abi="C", path="x")
+        for n in ("ros_dbg_log", "never_expanded")
+    }
+    assert live_copies(copied, crate / "src", prelude) == {"ros_dbg_log"}

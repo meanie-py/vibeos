@@ -18,7 +18,6 @@ set(_converted_file ${CMAKE_CURRENT_BINARY_DIR}/urlmon_utf16.inf)
 utf16le_convert(${_source_file} ${_converted_file})
 
 add_idl_reg_objects(urlmon registry urlmon_urlmon.idl)
- # CORE-5743: No ARRAY_SIZE macro
 
 # Upstream solves the "CMake cannot escape a GUID on the command line" problem with a
 # second `-include clsid.h`. We already solve it by GENERATING proxy_clsid.h above and

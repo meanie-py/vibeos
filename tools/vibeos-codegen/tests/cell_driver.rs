@@ -48,6 +48,34 @@ fn frozen_apply_and_refusal() {
     assert!(driver::plan_apply(&root, &[c]).is_err());
     std::fs::remove_dir_all(root).unwrap();
 }
+#[test]
+fn a_dropped_calls_same_line_comment_goes_with_it() {
+    // 76 cells kept ` # CORE-5743: No ARRAY_SIZE macro` as an indented orphan line after
+    // `set_wine_module_FIXME(t) # CORE-5743: ...` was transferred away.
+    let f: serde_json::Value = serde_json::from_str(include_str!("cells/apply.json")).unwrap();
+    let root = std::env::temp_dir().join(format!("driver-comment-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("base/m")).unwrap();
+    std::fs::create_dir_all(root.join("sdk/lib/rust/m-rust")).unwrap();
+    let cmake = f["cmake"].as_str().unwrap().replace(
+        "set_module_type(m win32gui)\n",
+        "set_module_type(m win32gui)\nset_wine_module_FIXME(m) # CORE-5743: No ARRAY_SIZE macro\n",
+    );
+    std::fs::write(root.join("base/m/CMakeLists.txt"), cmake).unwrap();
+    std::fs::write(
+        root.join("sdk/lib/rust/Cargo.toml"),
+        f["workspace"].as_str().unwrap(),
+    )
+    .unwrap();
+    let c: Cell = serde_json::from_value(f["cell"].clone()).unwrap();
+    let plan = driver::plan_apply(&root, &[c]).unwrap();
+    let out = &plan.edits[&root.join("base/m/CMakeLists.txt")];
+    assert!(!out.contains("CORE-5743"), "{out}");
+    assert_eq!(
+        out,
+        f["expected"]["base/m/CMakeLists.txt"].as_str().unwrap()
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
 #[derive(Default)]
 struct Host {
     events: Vec<String>,

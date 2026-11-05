@@ -5956,11 +5956,18 @@ def _private_types(item: prelude_resolve.Item, visible: set[str]) -> set[str]:
 
 def _cast_topped_sdk_macros(state: dict, names: set[str]) -> set[str]:
     """The constant-looking `names` that are SDK object macros whose expansion is a cast
-    (`((HKEY)(LONG_PTR)(LONG)0x80000000)`), agreed on every arch -- see stage_resolve."""
+    (`((HKEY)(LONG_PTR)(LONG)0x80000000)`), agreed on every arch -- see stage_resolve.
+
+    Never the module's OWN `#define`: the macros stage lowers SDK headers only, so d3d8/d3d9's
+    `#define D3DFMT_RESZ MAKEFOURCC('R','E','S','Z')` (a cast-topped expansion) was left to a
+    stage that never takes it, and resolve dropped it unreported every round. Clang's facts
+    evaluate it like the module's other constants."""
     from .macro_authority import MacroAuthorityError
     from .sdk_macros import object_expansions
 
     wanted = {n for n in names if prelude_resolve.looks_constant(n)}
+    if wanted and state.get("module_dir"):
+        wanted -= _module_own_defines(state)
     if not wanted or not state.get("tus"):
         return set()
     try:
@@ -6195,6 +6202,13 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     # resolved afresh.
     for name in _cast_topped_sdk_macros(state, set(copied)):
         del copied[name]
+    live = prelude_resolve.live_copies(copied, crate / "src", prelude)
+    if dead := sorted(set(copied) - live):
+        print(
+            f"resolve: {len(dead)} consensus cop(ies) nothing names any more, dropped: "
+            f"{', '.join(dead[:12])}{' ...' if len(dead) > 12 else ''}"
+        )
+        copied = {k: v for k, v in copied.items() if k in live}
     fresh = prelude_resolve.workspace_items(set(copied), workspace, crate)
     visible_types = _visible_type_names(crate)
     for name in list(copied):
