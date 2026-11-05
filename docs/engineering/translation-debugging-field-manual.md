@@ -10648,6 +10648,13 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
 - **A real overlap.** classpnp's `RtlMoveMemory` of READ_CAPACITY_DATA one ULONG up inside its
   own _EX had become `copy_nonoverlapping` -- memcpy on overlapping ranges, a genuine bug on
   every arch. `scan_move_vs_nonoverlapping` now pairs each Rust fn with its C twin's moves.
+- **A C-shaped pointer walk out of a fixed stack array** (2026-11-05, win32k). On arm64, where
+  `unreachable` lowers to `b .` (no trap-unreachable), `REGION_bMakeSimpleFrameRgn`'s
+  `COPY_RECTS` loop over its `[RECTL; 4]` local became a branch-to-self in `GreCreateFrameRgn`
+  once the UB checks were armed. The loop count was re-read through `prgn` (`rdh.nCount`), so
+  LLVM could not bound it, and walking past the 4-entry alloca was provably UB. The build's
+  `scan_ud2` flags it (`UNEXPECTED driver spins`). Fix: copy the locally known count as one bounded
+  `copy_nonoverlapping`.
 - **A cache-aligned type inside a device extension.** On 64-bit `COMMON_DEVICE_EXTENSION` embeds
   a `LOOKASIDE_ALIGN` lookaside, so classpnp's extension types are 64/128-aligned while the C's
   `IoCreateDevice` gave 16. Do NOT move the extension off `DeviceObject + 1` to align it: KMDF

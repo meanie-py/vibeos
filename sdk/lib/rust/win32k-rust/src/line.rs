@@ -44,8 +44,8 @@ fn ROP2_TO_MIX(rop2: u8) -> MIX { ((rop2 as MIX) << 8) | (rop2 as MIX) }
 // min/max macros.
 #[inline(always)] fn min(a: i32, b: i32) -> i32 { if a < b { a } else { b } }
 #[inline(always)] fn max(a: i32, b: i32) -> i32 { if a > b { a } else { b } }
-// ASSERT_DC_PREPARED — debug assert; no-op.
-#[inline(always)] unsafe fn ASSERT_DC_PREPARED(_dc: PDC) {}
+// ASSERT_DC_PREPARED (dc.h): NT_ASSERT(pdc->fs & DC_PREPARED).
+#[inline(always)] unsafe fn ASSERT_DC_PREPARED(dc: PDC) { NT_ASSERT!(((*dc).fs & DC_PREPARED as i32) != 0); }
 // PATH_IsPathOpen (path.h macro) — inline over _DCLEVEL.
 #[inline(always)]
 unsafe fn PATH_IsPathOpen(dclevel: *mut c_void) -> BOOL {

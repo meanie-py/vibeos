@@ -1577,15 +1577,11 @@ unsafe fn REGION_bMakeSimpleFrameRgn(
             return 0u8;
         }
 
-        let mut xDest = (*prgn).Buffer;
-        let mut xSrc = arcl.as_ptr();
-        let mut xRects = (*prgn).rdh.nCount;
-        while xRects > 0 {
-            *xDest = *xSrc;
-            xDest = xDest.offset(1);
-            xSrc = xSrc.offset(1);
-            xRects -= 1;
-        }
+        // COPY_RECTS(prgn->Buffer, arcl, prgn->rdh.nCount). Copy the `i` rects actually built
+        // (nCount == i, at most arcl.len()) as a slice: the C-shaped pointer walk re-read nCount
+        // through prgn, and with UB checks armed LLVM folded the walk past the 4-entry stack
+        // array into an `unreachable` -- a branch-to-self spin on arm64 (2026-11-05).
+        core::ptr::copy_nonoverlapping(arcl.as_ptr(), (*prgn).Buffer, (i as usize).min(arcl.len()));
     }
 
     1u8

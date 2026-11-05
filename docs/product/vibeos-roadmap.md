@@ -6929,7 +6929,10 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   the FDO extension (release-queue lock and flags written into the device object), and
   `FREE_POOL` was a fn that freed without nulling its argument (121 sites in cdrom/classpnp/disk;
   cdrom's Gesn.Buffer dangled after a failed GESN probe). Then freeldr-rust (19 never-compiled `cfg(debug_assertions)` blocks),
-  win32k-rust (10) and the remaining drivers. Two armed-fastfat asserts printed twice per amd64-bios boot
+  win32k-rust (**ARMED 2026-11-05**: its DC_PREPARED and per-type lock-count blocks compile; the no-op
+  `ASSERT_DC_PREPARED` fns, `ASSERT_REFS_CO` and rtl_text's panicking `debug_assert!`s now report through
+  `nt_assert!`; the UB checks turned a COPY_RECTS walk out of a stack array into an arm64 spin, fixed)
+  and the remaining drivers. Two armed-fastfat asserts printed twice per amd64-bios boot
   (`20261101-183850-m41czity`). `cachesup.rs:182` FIXED 2026-11-01: fastfat mounting the BIOS
   machine's EMPTY floppy got STATUS_NO_MEDIA_IN_DEVICE from MmMakeDataSectionResident, which
   cc-rust's `CcRosEnsureVacbResident` turned into FALSE (a stale "DUMMY_PSEH: return FALSE
