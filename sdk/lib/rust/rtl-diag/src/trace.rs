@@ -12,6 +12,28 @@ pub static mut RtlpUnloadEventTraceIndex: UINT = 0;
 pub unsafe extern "system" fn RtlGetUnloadEventTrace() -> PRTL_UNLOAD_EVENT_TRACE {
     (&raw mut RtlpUnloadEventTrace).cast::<RTL_UNLOAD_EVENT_TRACE>()
 }
+static mut RtlpUnloadEventTraceElementSize: ULONG = core::mem::size_of::<RTL_UNLOAD_EVENT_TRACE>() as ULONG;
+static mut RtlpUnloadEventTraceElementCount: ULONG = RTL_UNLOAD_EVENT_TRACE_NUMBER as ULONG;
+static mut RtlpUnloadEventTracePointer: PRTL_UNLOAD_EVENT_TRACE = core::ptr::null_mut();
+
+/// Vista's form of RtlGetUnloadEventTrace: where the element size, the element count and the
+/// trace live, so a debugger or crash reporter can read them out of another process. Note the
+/// third output is a pointer to a VARIABLE holding the array's address (one more indirection
+/// than the first two), as on Windows and in Wine; crashpad reads it that way. Chrome calls it
+/// through a pointer it never checks, so without the export every Chrome process crashed on a
+/// call to address 0 as its crash reporter started recording unloaded modules.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetUnloadEventTraceEx(
+    ElementSize: *mut *mut ULONG,
+    ElementCount: *mut *mut ULONG,
+    EventTrace: *mut *mut PVOID,
+) {
+    RtlpUnloadEventTracePointer = RtlGetUnloadEventTrace();
+    *ElementSize = &raw mut RtlpUnloadEventTraceElementSize;
+    *ElementCount = &raw mut RtlpUnloadEventTraceElementCount;
+    *EventTrace = (&raw mut RtlpUnloadEventTracePointer).cast::<PVOID>();
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn LdrpRecordUnloadEvent(LdrEntry: PLDR_DATA_TABLE_ENTRY) {
     let NtHeaders: PIMAGE_NT_HEADERS;

@@ -641,6 +641,9 @@
 @ stdcall RtlAddAuditAccessObjectAce(ptr long long long ptr ptr ptr long long)
 @ stdcall -stub RtlAddCompoundAce(ptr long long long ptr ptr)
 @ stdcall -arch=x86_64,arm64 RtlAddFunctionTable(ptr long long)
+@ stdcall -arch=x86_64,arm64 RtlAddGrowableFunctionTable(ptr ptr long long ptr ptr)
+@ stdcall -arch=x86_64,arm64 RtlDeleteGrowableFunctionTable(ptr)
+@ stdcall -arch=x86_64,arm64 RtlGrowFunctionTable(ptr long)
 @ stdcall -stub -version=0x600+ RtlAddMandatoryAce(ptr long long long long ptr) ; not present in Win11
 @ stdcall RtlAddRefActivationContext(ptr)
 @ stdcall RtlAddRefMemoryStream(ptr)
@@ -922,9 +925,10 @@
 @ stdcall -stub -version=0x600+ RtlGetThreadPreferredUILanguages(long long ptr ptr)
 @ stdcall -stub -version=0x600+ RtlGetUILanguageInfo(long ptr long ptr ptr)
 @ stdcall RtlGetUnloadEventTrace()
-@ stdcall -stub -version=0x600+ RtlGetUnloadEventTraceEx(ptr ptr ptr)
+@ stdcall RtlGetUnloadEventTraceEx(ptr ptr ptr)
 @ stdcall RtlGetUserInfoHeap(ptr long ptr ptr ptr)
 @ stdcall -stub -version=0x600+ RtlGetUserPreferredUILanguages(long ptr ptr ptr ptr)
+@ stdcall RtlGetDeviceFamilyInfoEnum(ptr ptr ptr)
 @ stdcall RtlGetVersion(ptr)
 @ stdcall RtlHashUnicodeString(ptr long long ptr)
 @ stdcall -stub -version=0x600+ RtlHeapTrkInitialize(ptr)
@@ -2158,7 +2162,6 @@
 @ stub -version=0xA00+ PssNtWalkSnapshot
 @ stub -version=0xA00+ RtlAcquireReleaseSRWLockExclusive
 @ stub -version=0xA00+ RtlAddAccessFilterAce
-@ stub -arch=win64 -version=0xA00+ RtlAddGrowableFunctionTable
 @ stub -version=0xA00+ RtlAddIntegrityLabelToBoundaryDescriptor
 @ stub -version=0xA00+ RtlAddProcessTrustLabelAce
 @ stub -version=0xA00+ RtlAddResourceAttributeAce
@@ -2214,7 +2217,6 @@
 @ stub -version=0xA00+ RtlDecompressBufferEx
 @ stub -version=0xA00+ RtlDelayExecution
 @ stub -version=0xA00+ RtlDeleteElementGenericTableAvlEx
-@ stub -arch=win64 -version=0xA00+ RtlDeleteGrowableFunctionTable
 @ stub -version=0xA00+ RtlDeleteHashTable
 @ stub -arch=win64 -version=0xA00+ RtlDeleteUmsCompletionList
 @ stub -arch=win64 -version=0xA00+ RtlDeleteUmsThreadContext
@@ -2274,7 +2276,6 @@
 @ stub -version=0xA00+ RtlGetCurrentServiceSessionId
 @ stub -version=0xA00+ RtlGetCurrentThreadPrimaryGroup
 @ stub -arch=win64 -version=0xA00+ RtlGetCurrentUmsThread
-@ stub -version=0xA00+ RtlGetDeviceFamilyInfoEnum
 @ stub -version=0xA00+ RtlGetEnabledExtendedFeatures
 @ stub -version=0xA00+ RtlGetExePath
 @ stub -version=0xA00+ RtlGetExtendedContextLength
@@ -2305,7 +2306,6 @@
 @ stub -version=0xA00+ RtlGetThreadWorkOnBehalfTicket
 @ stub -version=0xA00+ RtlGetTokenNamedObjectPath
 @ stub -arch=win64 -version=0xA00+ RtlGetUmsCompletionListEvent
-@ stub -arch=win64 -version=0xA00+ RtlGrowFunctionTable
 @ stub -version=0xA00+ RtlGuardCheckLongJumpTarget
 @ stub -version=0xA00+ RtlIncrementCorrelationVector
 @ stub -version=0xA00+ RtlInitEnumerationHashTable

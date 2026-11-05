@@ -182,6 +182,33 @@ pub unsafe extern "system" fn RtlGetNtVersionNumbers(
     }
 }
 
+/// Windows 10's `VOID RtlGetDeviceFamilyInfoEnum(ULONGLONG *UAPInfo, ULONG *DeviceFamily,
+/// ULONG *DeviceForm)`: the version this process sees, packed major.minor.build.revision into
+/// 16-bit fields, and what kind of device it is. Windows 11 answers family 3
+/// (DEVICEFAMILYINFOENUM_DESKTOP) and form 0 (DEVICEFAMILYDEVICEFORM_UNKNOWN) on a desktop, so
+/// those are ours; there is no update revision to report, so that field is 0. Chrome's
+/// base::win calls it through GetProcAddress and PCHECKs the lookup, so without it the
+/// browser died with "The specified procedure could not be found".
+#[no_mangle]
+pub unsafe extern "system" fn RtlGetDeviceFamilyInfoEnum(
+    pullUAPInfo: *mut u64,
+    pulDeviceFamily: *mut ULONG,
+    pulDeviceForm: *mut ULONG,
+) {
+    let peb = NtCurrentPeb();
+    if !pullUAPInfo.is_null() {
+        *pullUAPInfo = ((*peb).OSMajorVersion as u64 & 0xFFFF) << 48
+            | ((*peb).OSMinorVersion as u64 & 0xFFFF) << 32
+            | ((*peb).OSBuildNumber as u64 & 0xFFFF) << 16;
+    }
+    if !pulDeviceFamily.is_null() {
+        *pulDeviceFamily = 3; // DEVICEFAMILYINFOENUM_DESKTOP
+    }
+    if !pulDeviceForm.is_null() {
+        *pulDeviceForm = 0; // DEVICEFAMILYDEVICEFORM_UNKNOWN
+    }
+}
+
 /// C: `NTSTATUS NTAPI RtlGetVersion(PRTL_OSVERSIONINFOW lpVersionInformation)`.
 /// User-mode counterpart of ntoskrnl's RtlGetVersion. @implemented.
 #[no_mangle]

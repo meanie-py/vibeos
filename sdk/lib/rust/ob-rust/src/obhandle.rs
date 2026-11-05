@@ -461,6 +461,40 @@ unsafe fn ObpChargeQuotaForObject(
     STATUS_SUCCESS
 }
 
+/// Whether a creator's SACL is one only `SeSecurityPrivilege` may set. NT 5.2 says yes for any
+/// SACL, so its ObpValidateAccessMask demands ACCESS_SYSTEM_SECURITY whenever SE_SACL_PRESENT is
+/// set. Vista split the SACL: a mandatory-label ACE (type 0x11) is integrity policy, not audit,
+/// and any caller may put one on an object it creates (Windows enforces only that the label is
+/// no higher than its own, and we have no integrity levels to compare). Chrome's crashpad
+/// creates its pipe with a SACL holding exactly one untrusted-level label, and on the 5.2 rule
+/// CreateNamedPipe failed with ERROR_PRIVILEGE_NOT_HELD and Chrome died at startup. So a SACL
+/// still needs the privilege when it is NULL, empty, malformed, or holds any audit/alarm ACE.
+unsafe fn ObpSaclNeedsSecurityPrivilege(sd: PISECURITY_DESCRIPTOR) -> bool {
+    const SYSTEM_MANDATORY_LABEL_ACE_TYPE: u8 = 0x11;
+    let sacl = ntkrnl_sys::inline::se::SepGetSaclFromDescriptor(sd) as *const u8;
+    if sacl.is_null() {
+        return true;
+    }
+    let acl_size = core::ptr::read_unaligned(sacl.add(2) as *const u16) as usize;
+    let ace_count = core::ptr::read_unaligned(sacl.add(4) as *const u16) as usize;
+    if ace_count == 0 {
+        return true;
+    }
+    let mut off = 8usize; // sizeof(ACL)
+    for _ in 0..ace_count {
+        if off + 4 > acl_size {
+            return true;
+        }
+        let ace_type = *sacl.add(off);
+        let ace_size = core::ptr::read_unaligned(sacl.add(off + 2) as *const u16) as usize;
+        if ace_type != SYSTEM_MANDATORY_LABEL_ACE_TYPE || ace_size < 4 {
+            return true;
+        }
+        off += ace_size;
+    }
+    false
+}
+
 unsafe fn ObpValidateAccessMask(access_state: PACCESS_STATE) -> NTSTATUS {
     let security_descriptor: PISECURITY_DESCRIPTOR;
 
@@ -468,6 +502,7 @@ unsafe fn ObpValidateAccessMask(access_state: PACCESS_STATE) -> NTSTATUS {
     if !security_descriptor.is_null() {
         if ((*security_descriptor).Control & SE_SACL_PRESENT != 0)
             && ((*access_state).PreviouslyGrantedAccess & ACCESS_SYSTEM_SECURITY == 0)
+            && ObpSaclNeedsSecurityPrivilege(security_descriptor)
         {
             (*access_state).RemainingDesiredAccess |= ACCESS_SYSTEM_SECURITY;
         }
@@ -2200,7 +2235,13 @@ pub unsafe extern "system" fn ObInsertObject(
     }
 
     previous_mode = KeGetPreviousMode();
-    if ((*object_type).TypeInfo.SecurityRequired == 0) && object_name.is_null() {
+    // A descriptor the creator passed is kept even on an unnamed object of a type that needs
+    // none (Windows does; measured by tools/payloads/chrome/secprobe). The C dropped it with
+    // the fast path, so an unnamed section made with an EMPTY DACL had no descriptor at all,
+    // and a read-only handle to it duplicated straight back to FILE_MAP_WRITE: Chrome's shared
+    // memory checks exactly that refusal and its browser CHECK-failed on every region.
+    let explicit_sd = !(*object_create_info).SecurityDescriptor.is_null();
+    if ((*object_type).TypeInfo.SecurityRequired == 0) && object_name.is_null() && !explicit_sd {
         *handle = core::ptr::null_mut();
         (*object_header).__bindgen_anon_2.ObjectCreateInfo = core::ptr::null_mut();
 
@@ -2305,7 +2346,7 @@ pub unsafe extern "system" fn ObInsertObject(
     }
 
     if insert_object == object {
-        if !object_name.is_null() || (*object_type).TypeInfo.SecurityRequired != 0 {
+        if !object_name.is_null() || (*object_type).TypeInfo.SecurityRequired != 0 || explicit_sd {
             if !object_name_info.is_null() && !(*object_name_info).Directory.is_null() {
                 ObGetObjectSecurity(
                     (*object_name_info).Directory as *mut core::ffi::c_void,

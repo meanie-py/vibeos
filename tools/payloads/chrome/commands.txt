@@ -1,0 +1,16 @@
+# chrome sweep list. "<exe under X:\reactos\bin> <command line>"; children start in C:\TEMP
+# (cwd.txt), the writable volume, which is why the profile goes there: X: is read-only.
+# Rung 1 passes when the dump carries "js ran: 42", which only the renderer's V8 can write.
+# pipeprobe.c: crashpad's CreateNamedPipe and variants; Windows' answers in pipeprobe.win11.txt.
+pipeprobe\pipeprobe.exe
+# tlsprobe.c: implicit TLS in a LoadLibrary'd DLL; Windows' answers in tlsprobe.win11.txt.
+tlsprobe\tlsprobe.exe
+# secprobe.c: a section handle as Chrome's shared memory checks it; Windows' answers in secprobe.win11.txt.
+secprobe\secprobe.exe
+# Chrome's child processes do not write to the sweep's pipe, so the whole tree logs to a file
+# that catfile prints afterwards (it runs even when Chrome is killed at the timeout).
+timeout chrome\chrome.exe 900
+chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --log-file=C:\TEMP\chrome_debug.log --v=1 --user-data-dir=C:\TEMP\chrome-profile --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
+catfile\catfile.exe C:\TEMP\chrome_debug.log
+# A crash Crashpad catches never reaches the kernel's print; its minidumps land here.
+dumpinfo\dumpinfo.exe C:\TEMP\chrome-profile\Crashpad\reports

@@ -297,3 +297,78 @@ pub unsafe extern "system" fn RtlpLookupDynamicFunctionEntry(
 
     foundEntry
 }
+
+// ---- Growable function tables (Windows 8) ----
+// A JIT registers one table for a code range up front and raises its entry count in place as
+// it emits functions (V8 does this for every isolate). Chrome resolves the export once and calls
+// it unchecked, so without it every renderer, GPU and utility process called address 0 at
+// start-up. The table is an ordinary entry on the dynamic list: its range is the caller's, not
+// derived from the entries (most of which do not exist yet), and the handle the caller keeps is
+// the entry itself. The count is only raised under the list lock, so a lookup never reads past
+// the entries published so far.
+
+/// `DWORD RtlAddGrowableFunctionTable(PVOID *DynamicTable, PRUNTIME_FUNCTION FunctionTable,
+/// DWORD EntryCount, DWORD MaximumEntryCount, ULONG_PTR RangeBase, ULONG_PTR RangeEnd)`.
+/// Returns an NTSTATUS (0 on success), as Windows does.
+#[no_mangle]
+pub unsafe extern "system" fn RtlAddGrowableFunctionTable(
+    DynamicTable: *mut PVOID,
+    FunctionTable: PRUNTIME_FUNCTION,
+    EntryCount: ULONG,
+    MaximumEntryCount: ULONG,
+    RangeBase: ULONG64,
+    RangeEnd: ULONG64,
+) -> ULONG {
+    const STATUS_INVALID_PARAMETER_: ULONG = 0xC000_000D;
+    const STATUS_NO_MEMORY_: ULONG = 0xC000_0017;
+    if DynamicTable.is_null() || FunctionTable.is_null() || EntryCount > MaximumEntryCount || RangeEnd <= RangeBase {
+        return STATUS_INVALID_PARAMETER_;
+    }
+    let dynamicTable = RtlpAllocateMemory(
+        core::mem::size_of::<DYNAMIC_FUNCTION_TABLE>() as SIZE_T,
+        TAG_RTLDYNFNTBL,
+    ) as *mut DYNAMIC_FUNCTION_TABLE;
+    if dynamicTable.is_null() {
+        return STATUS_NO_MEMORY_;
+    }
+    core::ptr::write_bytes(dynamicTable as *mut u8, 0, core::mem::size_of::<DYNAMIC_FUNCTION_TABLE>());
+    (*dynamicTable).FunctionTable = FunctionTable;
+    (*dynamicTable).EntryCount = EntryCount;
+    (*dynamicTable).BaseAddress = RangeBase;
+    (*dynamicTable).MinimumAddress = RangeBase;
+    (*dynamicTable).MaximumAddress = RangeEnd;
+    (*dynamicTable).Callback = None;
+    (*dynamicTable).Context = core::ptr::null_mut();
+    (*dynamicTable).OutOfProcessCallbackDll = core::ptr::null_mut();
+    (*dynamicTable).Type = FUNCTION_TABLE_TYPE::RF_SORTED;
+    RtlpInsertDynamicFunctionTable(dynamicTable);
+    *DynamicTable = dynamicTable as PVOID;
+    0
+}
+
+/// `VOID RtlGrowFunctionTable(PVOID DynamicTable, DWORD NewEntryCount)`: the caller has written
+/// entries up to NewEntryCount into the array it registered; publish them.
+#[no_mangle]
+pub unsafe extern "system" fn RtlGrowFunctionTable(DynamicTable: PVOID, NewEntryCount: ULONG) {
+    if DynamicTable.is_null() {
+        return;
+    }
+    AcquireDynamicFunctionTableLockExclusive();
+    let table = DynamicTable as *mut DYNAMIC_FUNCTION_TABLE;
+    if NewEntryCount > (*table).EntryCount {
+        (*table).EntryCount = NewEntryCount;
+    }
+    ReleaseDynamicFunctionTableLockExclusive();
+}
+
+/// `VOID RtlDeleteGrowableFunctionTable(PVOID DynamicTable)`.
+#[no_mangle]
+pub unsafe extern "system" fn RtlDeleteGrowableFunctionTable(DynamicTable: PVOID) {
+    if DynamicTable.is_null() {
+        return;
+    }
+    AcquireDynamicFunctionTableLockExclusive();
+    RemoveEntryList(core::ptr::addr_of_mut!((*(DynamicTable as *mut DYNAMIC_FUNCTION_TABLE)).ListEntry));
+    ReleaseDynamicFunctionTableLockExclusive();
+    RtlpFreeMemory(DynamicTable, TAG_RTLDYNFNTBL);
+}

@@ -901,6 +901,41 @@ Rungs 1–3 are mostly user-mode Wine plumbing: probably the fastest "wow" in th
 doc. Chrome also ships native ARM64 Windows builds, so the arm64 port is a real target
 too: Chrome on a Pi.
 
+### Rung 1 status (2026-11-05): browser and renderers start; the page dump never arrives
+
+`tools/payloads/chrome` boots Chrome for Testing 157 (x64, staged from `VIBEOS_CHROME_DIR`,
+never committed) under the sweep runner on amd64 with `--headless --no-sandbox --disable-gpu
+--dump-dom` of a local page whose script writes `js ran: 42`. Its static imports had no gap;
+every blocker was at run time. In the order Chrome hit them (each a probe in the payload
+beside Windows 11's answers where the bug was ours to measure):
+
+1. `bcryptprimitives.dll` was built only at 0x600+; `base::RandBytes` LoadLibrary's it and CHECKs.
+2. Crashpad's pipe carries a SACL holding one mandatory label: `ObpValidateAccessMask` demanded
+   SeSecurityPrivilege for any SACL (`pipeprobe`).
+3. `RtlGetUnloadEventTraceEx` was missing and called unchecked: a call to address 0.
+4. chrome.dll is LoadLibrary'd and uses implicit TLS: the loader gave TLS only to modules present
+   at start, and never allocated `SizeOfZeroFill` (`tlsprobe`).
+5. `GetThreadPreferredUILanguages` was a stub; Chrome CHECKs a non-empty list.
+6. Its delay-load failure hook crashes on any DLL that will not load: `dwmapi`/`ncrypt` were
+   0x600+ only. `win10_surface.py gap` had called delay-imports of gated modules satisfied.
+7. `RtlGetDeviceFamilyInfoEnum` (PCHECKed lookup).
+8. ntdll_vista's own `LdrpHeap` was never set, so `LdrRegisterDllNotification` faulted.
+9. The SRW lock only ever spun: on one CPU the browser livelocked on a lock a lower-priority
+   thread held. Waiters now yield, then sleep.
+10. An unnamed object dropped the descriptor its creator passed, so a read-only handle to a
+    section made with an empty DACL duplicated back to FILE_MAP_WRITE (`secprobe`); Chrome's
+    shared memory CHECKs that refusal.
+11. `RtlAddGrowableFunctionTable` & co. (V8's JIT unwind data): every child called address 0.
+
+**Now:** the browser runs to its main loop, creates the profile and the browser-window
+keepalive, and starts GPU, utility and two renderer processes, which initialize; then every
+browser thread is idle in an ordinary wait and nothing more happens before the 900 s timeout.
+Next: what the renderers wait on (the sweep runner samples only its own child, not the
+browser's children), most likely Mojo's named-pipe + IOCP channel. Non-fatal errors still in
+the log: `WSALookupServiceBegin` 10014, DNS registry watch, no Core Audio (`mmdevapi` unbuilt),
+"Unsupported version: 42.4.17". `dumpinfo` reads Crashpad's minidumps in the guest, since a
+crash Crashpad catches never reaches the kernel's own print.
+
 ---
 
 ## The test bench: OptiPlex 7010 (homelab)

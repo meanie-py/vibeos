@@ -15,6 +15,10 @@ add_subdirectory(avicap32)
 add_subdirectory(avifil32)
 add_subdirectory(batt)
 add_subdirectory(bcrypt)
+# bcryptprimitives is Windows 7's, but it is a leaf whose one real export (ProcessPrng)
+# wraps RtlGenRandom, so 2003-era programs never see it. Chrome's base::RandBytes
+# LoadLibrary's it and CHECKs, so without it Chrome dies before its first line of output.
+add_subdirectory(bcryptprimitives)
 add_subdirectory(beepmidi)
 add_subdirectory(bluetoothapis)
 add_subdirectory(browseui)
@@ -303,11 +307,13 @@ add_subdirectory(xinput9_1_0)
 add_subdirectory(xmllite)
 add_subdirectory(xolehlp)
 
+# dwmapi and ncrypt are Vista's, built at every version: Chrome delay-imports both, and its
+# delay-load failure hook crashes the browser on any DLL that will not load.
+add_subdirectory(dwmapi)
+add_subdirectory(ncrypt)
+
 if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)
     add_subdirectory(avrt)
-    add_subdirectory(bcryptprimitives)
-    add_subdirectory(dwmapi)
-    add_subdirectory(ncrypt)
     # tbs and wevtapi are added above (our Wine-11 imports, Rust-flipped), unconditionally.
 endif()
 

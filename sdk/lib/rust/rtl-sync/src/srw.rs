@@ -6,6 +6,33 @@ use ntkrnl_sys::ddk::PRTL_SRWLOCK;
 // the cluster's atomics substrate (ntkrnl-sys only surfaces the base CAS).
 use crate::atomics::*;
 
+/// One step of an SRW wait. ReactOS's srw.c only ever spins (`YieldProcessor`, a `pause`), so a
+/// waiter never gives up the CPU: on one processor, a waiter that outranks the lock's owner
+/// spins forever, because the owner never runs to release it. Chrome hung exactly so, its
+/// browser and one more thread spinning in RtlAcquireSRWLockExclusive for twelve minutes on
+/// a lock a lower-priority thread held. Windows spins briefly and then blocks, so this spins
+/// briefly, then yields to equal priority, then sleeps a tick, which lets ANY ready thread run.
+/// Only the waiting changes, not the lock word, so every SRW implementation in the process
+/// (ntdll's and ntdll_vista's) still agrees on it. The kernel copy keeps the plain spin: it
+/// may run at raised IRQL, where sleeping is not allowed.
+#[inline]
+unsafe fn SrwBackoff(spins: &mut u32) {
+    *spins = spins.saturating_add(1);
+    #[cfg(not(feature = "kernel"))]
+    {
+        if *spins > 128 {
+            let mut interval = ntkrnl_sys::ddk::LARGE_INTEGER { QuadPart: -10_000 }; // 1 ms
+            ntkrnl_sys::ddk::NtDelayExecution(0, &mut interval);
+            return;
+        }
+        if *spins > 64 {
+            ntkrnl_sys::ddk::NtYieldExecution();
+            return;
+        }
+    }
+    YieldProcessor();
+}
+
 // ntdll-internal NTSTATUS (not surfaced by ntkrnl-sys::constants)
 const STATUS_RESOURCE_NOT_OWNED: NTSTATUS = 0xC0000264u32 as NTSTATUS;
 
@@ -172,6 +199,7 @@ unsafe fn RtlpReleaseWaitBlockLock(SRWLock: PRTL_SRWLOCK) {
 unsafe fn RtlpAcquireWaitBlockLock(SRWLock: PRTL_SRWLOCK) -> PRTLP_SRWLOCK_WAITBLOCK {
     let mut PrevValue: LONG_PTR;
 
+    let mut spins: u32 = 0;
     loop {
         PrevValue = InterlockedOrPointer(
             core::ptr::addr_of_mut!((*SRWLock).Ptr),
@@ -182,7 +210,7 @@ unsafe fn RtlpAcquireWaitBlockLock(SRWLock: PRTL_SRWLOCK) -> PRTLP_SRWLOCK_WAITB
             break;
         }
 
-        YieldProcessor();
+        SrwBackoff(&mut spins);
     }
 
     if (PrevValue & RTL_SRWLOCK_CONTENDED as LONG_PTR) == 0
@@ -202,6 +230,7 @@ unsafe fn RtlpAcquireSRWLockExclusiveWait(
 ) {
     let mut CurrentValue: isize;
 
+    let mut spins: u32 = 0;
     loop {
         CurrentValue = *(core::ptr::addr_of!((*SRWLock).Ptr) as *const isize);
         if (CurrentValue & RTL_SRWLOCK_SHARED as isize) == 0 {
@@ -214,7 +243,7 @@ unsafe fn RtlpAcquireSRWLockExclusiveWait(
             }
         }
 
-        YieldProcessor();
+        SrwBackoff(&mut spins);
     }
 }
 
@@ -226,12 +255,14 @@ unsafe fn RtlpAcquireSRWLockSharedWait(
     WakeChain: PRTLP_SRWLOCK_SHARED_WAKE,
 ) {
     if !FirstWait.is_null() {
+        let mut spins: u32 = 0;
         while (*WakeChain).Wake == 0 {
-            YieldProcessor();
+            SrwBackoff(&mut spins);
         }
     } else {
         let mut CurrentValue: LONG_PTR;
 
+        let mut spins: u32 = 0;
         loop {
             CurrentValue = *(core::ptr::addr_of!((*SRWLock).Ptr) as *const LONG_PTR);
             if (CurrentValue & RTL_SRWLOCK_SHARED as LONG_PTR) != 0 {
@@ -247,7 +278,7 @@ unsafe fn RtlpAcquireSRWLockSharedWait(
                 }
             }
 
-            YieldProcessor();
+            SrwBackoff(&mut spins);
         }
     }
 }
@@ -267,6 +298,7 @@ pub unsafe extern "system" fn RtlAcquireSRWLockShared(SRWLock: PRTL_SRWLOCK) {
     let mut Shared: PRTLP_SRWLOCK_WAITBLOCK;
     let mut FirstWait: PRTLP_SRWLOCK_WAITBLOCK;
 
+    let mut spins: u32 = 0;
     loop {
         CurrentValue = *(core::ptr::addr_of!((*SRWLock).Ptr) as *const isize);
 
@@ -422,7 +454,7 @@ pub unsafe extern "system" fn RtlAcquireSRWLockShared(SRWLock: PRTL_SRWLOCK) {
             }
         }
 
-        YieldProcessor();
+        SrwBackoff(&mut spins);
     }
 }
 
@@ -433,6 +465,7 @@ pub unsafe extern "system" fn RtlReleaseSRWLockShared(SRWLock: PRTL_SRWLOCK) {
     let mut WaitBlock: PRTLP_SRWLOCK_WAITBLOCK;
     let LastShared: bool;
 
+    let mut spins: u32 = 0;
     loop {
         CurrentValue = *(core::ptr::addr_of!((*SRWLock).Ptr) as *const isize);
 
@@ -475,7 +508,7 @@ pub unsafe extern "system" fn RtlReleaseSRWLockShared(SRWLock: PRTL_SRWLOCK) {
             RtlRaiseStatus(STATUS_RESOURCE_NOT_OWNED);
         }
 
-        YieldProcessor();
+        SrwBackoff(&mut spins);
     }
 }
 
@@ -493,6 +526,7 @@ pub unsafe extern "system" fn RtlAcquireSRWLockExclusive(SRWLock: PRTL_SRWLOCK) 
         let mut CurrentValue: isize;
         let mut NewValue: isize;
 
+        let mut spins: u32 = 0;
         loop {
             CurrentValue = *(core::ptr::addr_of!((*SRWLock).Ptr) as *const isize);
 
@@ -596,7 +630,7 @@ pub unsafe extern "system" fn RtlAcquireSRWLockExclusive(SRWLock: PRTL_SRWLOCK) 
                 }
             }
 
-            YieldProcessor();
+            SrwBackoff(&mut spins);
         }
     }
 }
@@ -607,6 +641,7 @@ pub unsafe extern "system" fn RtlReleaseSRWLockExclusive(SRWLock: PRTL_SRWLOCK) 
     let mut NewValue: LONG_PTR;
     let mut WaitBlock: PRTLP_SRWLOCK_WAITBLOCK;
 
+    let mut spins: u32 = 0;
     loop {
         CurrentValue = *(core::ptr::addr_of!((*SRWLock).Ptr) as *const LONG_PTR);
 
@@ -638,7 +673,7 @@ pub unsafe extern "system" fn RtlReleaseSRWLockExclusive(SRWLock: PRTL_SRWLOCK) 
             RtlRaiseStatus(STATUS_RESOURCE_NOT_OWNED);
         }
 
-        YieldProcessor();
+        SrwBackoff(&mut spins);
     }
 }
 

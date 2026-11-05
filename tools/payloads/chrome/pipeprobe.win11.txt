@@ -1,0 +1,9 @@
+[PIPEPROBE] GetVersion 6.2 build 9200
+[PIPEPROBE] k32 no security attributes             -> ok (err 0)
+[PIPEPROBE] k32 label untrusted mask 0 (crashpad)  -> ok (err 0)
+[PIPEPROBE] k32 label low mask 0                   -> ok (err 0)
+[PIPEPROBE] k32 label low NO_WRITE_UP              -> ok (err 0)
+[PIPEPROBE] k32 label untrusted, not first         -> ok (err 0)
+[PIPEPROBE] nt  no descriptor                      -> 0x00000000
+[PIPEPROBE] nt  label untrusted mask 0 (crashpad)  -> 0x00000000
+[PIPEPROBE] done

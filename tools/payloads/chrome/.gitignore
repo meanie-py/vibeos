@@ -1,0 +1,6 @@
+pipeprobe-*.exe
+catfile-*.exe
+dumpinfo-*.exe
+tlsprobe-*.exe
+tlsdll-*.dll
+secprobe-*.exe
