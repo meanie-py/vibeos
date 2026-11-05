@@ -71,9 +71,13 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    129 MB limit beside the 800 MB ramdisk with no pagefile. On plain `VIBEOS_FEX=1` media the
    ladder is green with the charging.
 3. The cnt CRT's NUL scans (`cstr_slice`/`wcstr_slice`, under strlen, wcslen and every string
-   function that measures its argument) are asm now (`memops.rs`, 2026-10-17). Owed: the
-   compare/search loops (`strcmp`, `wcschr`, ...), which are still unoptimised Rust; measure
-   first.
+   function that measures its argument) are asm now (`memops.rs`, 2026-10-17), and so are the
+   compare/search loops (2026-11-04): `strcmp`, `strncmp`, `_stricmp`, `_strnicmp`, `strchr` and
+   their wide twins, through the manifest's `fast_path`. Measured first, host-side against the
+   genuine libcntpr C under the shipping `-C no-prepopulate-passes`
+   (`cnt-difftest --test perf`): the slice bodies were 6-10x the C at 8 characters and 20-30x at
+   256 (`strcmp` 1.9 us against 63 ns); the asm scans are 1.0-1.9x, `_stricmp` 3.2x at 8
+   characters on call overhead. Still slice loops: `strrchr`, `strstr`, `strspn` and the rest.
 4. win32k callbacks: measured 2026-11-01 with `sysbench` (`20261101-195336-5ayk4877`), not
    the ~2x native once assumed. The bench process made 18,437 callbacks. Our side of each costs
    6.0 us in (save the guest state, build its frame) and 4.7 us out, against 41.2 us of guest
@@ -89,13 +93,18 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    ~1.5 us for a typical win32k call). That time is inside the CPU layer's notifications
    (`tools/fex/wowx64fex/Module.cpp` `BTCpu64NotifyMemoryAlloc`/`Free`): the before-call takes
    `ThreadCreationMutex` and holds it across the native call, and the after-call runs FEX's
-   `InvalidationTracker`. Timed apart 2026-11-03 (`[WOWX64FEX] pid N memory ...` at every exit;
-   `20261103-190626-re2fnx9_`, host at load ~55, so absolute times are high): alloc waited
-   473 us a call for the mutex against 5 us in the tracker, free 583 us against 37 us, protect
-   ~1 us either way. It is lock contention, not the scan. Every bracket holds the mutex across
-   its native call, so each thread's alloc/free serializes behind whichever thread is in the
-   kernel, and `BTCpu64NotifyReadFile` holds it (with the code-invalidation mutex) across a
-   whole read. Owed: hold time per bracket, to say which holder the waiters queue behind.
+   `InvalidationTracker`. Timed apart 2026-11-03 at load ~55 (`20261103-190626-re2fnx9_`): alloc
+   waited 473 us a call for the mutex, free 583 us. **Re-read 2026-11-04 with every holder of the
+   mutex timed** (`[WOWX64FEX] pid N lock <kind>: calls, contended; hold, wait, blocked others`
+   at every exit; `20261104-231509-c10ex3ir`, 51/51 apps): that wait was ONE process, the
+   `fault64` ladder guest, whose rung 3b races guest AVs against a VirtualAlloc/VirtualFree
+   thread on purpose. 452 contended acquires there waited 30 s, ~66 ms each, while no holder held
+   longer than ~1 ms (mapview 725 us a call, unmap and free ~300 us, an AV 6 us). The other 79 x64
+   processes had no contended acquire at all, and outside fault64 0x12/0x57 cost 43-55 us a call
+   in wowx64. So the apps do not queue on this lock. What fault64 shows instead is that our SRW
+   lock (`rtl-sync/src/srw.rs`, upstream `srw.c`) only spins: a contended waiter loops on
+   `YieldProcessor()` and never blocks, so on the one-vCPU arm64 VM it burns its quantum before
+   the holder can run again. Owed: an SRW wait that yields or blocks.
 6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
    file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
    `MiFlushTbAndCapture` stopped flushing the whole TLB once per re-protected page on arm64:
@@ -351,8 +360,8 @@ A plain guest syscall now costs what a native one does, within the noise: FEX's 
 CPU layer's Notify brackets on memory calls. Native got faster too: win32k was bound on
 byte-at-a-time copies. An empty `PeekMessage` takes ~50 ms on both sides; that is upstream's
 `ZwYieldExecution` without `PM_NOYIELD`, giving a quantum to any ready thread, not a defect.
-Owed: the CRT compare/search loops (the NUL scans are asm since 2026-10-17); the applet
-sweep on a quiet host, re-timed against these numbers.
+The CRT compare/search loops went to asm on 2026-11-04 (item 3 above); the applet sweep was
+re-timed on 2026-11-02 (item 5).
 
 **Then (2026-10-08, evening): taskmgr.** Two bugs in taskmgr itself, both upstream, both visible
 only when the guest is slow:

@@ -802,6 +802,24 @@ fn wcstr(rng: &mut Rng, max: usize) -> Vec<u16> {
 /// `wcstr` (incl. >0xFF, never folded). Pins the raw (un-clamped)
 /// difference + the n==0/NUL-break bounds against compiled _*_nt.c.
 fn diff_icmp() {
+    // The fold edges, which random strings rarely put at the mismatch: each side of A..Z
+    // ('@' 0x40 / '`' 0x60, '[' 0x5B / '{' 0x7B), the ends of the range, and high bytes whose
+    // low seven bits are a letter (never folded). The asm scans in memops.rs fold by range.
+    let edge: &[u8] = b"@`AaZz[{\xC1\xE1\xDA\xFA";
+    for &x in edge {
+        for &y in edge {
+            for tail in [0u8, b'q'] {
+                let (a, b) = ([b'k', x, tail, 0], [b'K', y, tail, 0]);
+                let (wa, wb) = ([b'k' as u16, x as u16 | 0x100 * (x >> 7) as u16, tail as u16, 0], [b'K' as u16, y as u16, tail as u16, 0]);
+                unsafe {
+                    assert_eq!(cabi::_stricmp(a.as_ptr(), b.as_ptr()), ref_stricmp(a.as_ptr(), b.as_ptr()), "_stricmp {a:?} {b:?}");
+                    assert_eq!(cabi::_strnicmp(a.as_ptr(), b.as_ptr(), 2), ref_strnicmp(a.as_ptr(), b.as_ptr(), 2), "_strnicmp {a:?} {b:?}");
+                    assert_eq!(cabi::_wcsicmp(wa.as_ptr(), wb.as_ptr()), ref_wcsicmp(wa.as_ptr(), wb.as_ptr()), "_wcsicmp {wa:?} {wb:?}");
+                    assert_eq!(cabi::_wcsnicmp(wa.as_ptr(), wb.as_ptr(), 2), ref_wcsnicmp(wa.as_ptr(), wb.as_ptr(), 2), "_wcsnicmp {wa:?} {wb:?}");
+                }
+            }
+        }
+    }
     let mut rng = Rng(0x1cb0_5d33_u64);
     for _ in 0..9000 {
         // narrow _stricmp / _strnicmp
@@ -989,6 +1007,23 @@ fn diff_mbcp() {
 /// `core_rs::string` impl over `Elem`; the diff pins each variant
 /// vs the genuine tcs*.h logic header instantiated narrow/wide.
 fn diff_tcs_family() {
+    // A mismatch at every position against every count, so the bound is pinned exactly: random
+    // strings mostly differ at index 0, where an off-by-one count cannot show.
+    for at in 0..6usize {
+        let mut a = *b"abcdef\0";
+        let b = *b"abcdef\0";
+        a[at] = b'X';
+        let (wa, wb) = (a.map(|c| c as u16 | 0x400), b.map(|c| c as u16 | 0x400));
+        let (wa, wb) = (wa.map(|c| if c == 0x400 { 0 } else { c }), wb.map(|c| if c == 0x400 { 0 } else { c }));
+        for n in 0..9usize {
+            unsafe {
+                assert_eq!(cabi::strncmp(a.as_ptr(), b.as_ptr(), n), ref_strncmp(a.as_ptr(), b.as_ptr(), n), "strncmp at={at} n={n}");
+                assert_eq!(cabi::wcsncmp(wa.as_ptr(), wb.as_ptr(), n), ref_wcsncmp(wa.as_ptr(), wb.as_ptr(), n), "wcsncmp at={at} n={n}");
+                assert_eq!(cabi::_strnicmp(a.as_ptr(), b.as_ptr(), n), ref_strnicmp(a.as_ptr(), b.as_ptr(), n), "_strnicmp at={at} n={n}");
+                assert_eq!(cabi::_wcsnicmp(wa.as_ptr(), wb.as_ptr(), n), ref_wcsnicmp(wa.as_ptr(), wb.as_ptr(), n), "_wcsnicmp at={at} n={n}");
+            }
+        }
+    }
     let mut rng = Rng(0x7c5f_a311_u64);
     let off16 = |p: *mut u16, base: *const u16| {
         if p.is_null() {
