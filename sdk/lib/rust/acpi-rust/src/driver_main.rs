@@ -61,9 +61,7 @@ use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoMarkIrpPending};
 use ntkrnl_sys::inline::ex::ExInitializeFastMutex;
 use ntkrnl_sys::inline::common::InitializeObjectAttributes;
 
-macro_rules! ASSERT {
-    ($($t:tt)*) => {};
-}
+macro_rules! ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
 
 // ---- ACPICA result macro (acexcep.h): SUCCESS(a)=!(a). AE_OK==0. ----
 #[inline]
