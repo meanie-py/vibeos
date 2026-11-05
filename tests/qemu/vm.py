@@ -381,7 +381,13 @@ class QemuVM:
 
     @property
     def scratch_path(self):
-        return self.work_dir / "scratch.qcow2"
+        # On the windows-host backend QEMU runs against the STAGED copies, so the
+        # scratch disk and its sibling sticks (usbdisk.qcow2, ...) that the guest
+        # writes live in the staging dir. The work_dir originals stay pristine:
+        # reading them made stortest see no WRITETST.TXT on any arch.
+        staging = getattr(self, "_win_staging", None)
+        base = staging if staging is not None else self.work_dir
+        return base / "scratch.qcow2"
 
     def _sync(self, handles):
         for key in ("gdb_host", "gdb_port", "net_host", "launch_timings"):
