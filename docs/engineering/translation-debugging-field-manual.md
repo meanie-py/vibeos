@@ -487,6 +487,18 @@ next read `size_of::<_LIST_ENTRY>()` into a single `Flink`), so every EnumProces
 GetModuleBaseName call wrote ~0x50 bytes over its stack locals and survived on layout luck. The
 tell is an out-buffer `&raw mut X as LPVOID` whose size names a struct while `X` is a pointer;
 a 20-line regex over the tree found no other site (2026-10-14).
+**And the repair can be the bug.** `pointer_depth`'s raw-pointer rule ("a `size_of::<*mut T>()`
+is a misread `sizeof(*x)`") fired in any C function that took no `sizeof` of a pointer it could
+recognise, and four DirectX bodies the model had RIGHT were "restored" to the struct: ddraw's
+`sizeof(clipper->IDirectDrawClipper_iface.lpVtbl)` became the 9-slot vtable (SecureZeroMemory ran
+36/72 bytes past the field: modrun's ddraw grade crashed in free()), and d3d8/d3d9's
+`calloc(n, sizeof(*d3d->wined3d_outputs))` -- a `struct wined3d_output **` -- became
+`size_of::<wined3d_output>()`, an opaque struct bindgen sizes **0**, so n pointers were stored
+into a zero-byte block (latent only because Direct3DCreate failed earlier on the VM's GL). The
+rule now needs positive evidence: `sizeof(*V)` of a plain `V` declared through a pointer typedef
+with no further star. A member expression, a double pointer, or no dereferencing `sizeof` at all
+leaves the model's pointer size alone. Sweep for it with the banks: a body whose response says
+`size_of::<*mut T>` and whose shipped copy says `size_of::<T>` (2026-11-04: 7 hits, 5 wrong).
 **One level too DEEP shrinks an array.** wscript's `calloc(argc, sizeof(*strs))` (`strs` a
 `BSTR *`) came back as `size_of::<OLECHAR>()`, the element's element. Every multi-argument
 `WScript.Echo` overran the array and dropped its second argument, and the host crashed a few
@@ -1131,7 +1143,13 @@ C: no `WINAPI`, no `STDMETHODCALLTYPE`. On i386 that is caller-and-callee disagr
 pops the arguments, once per `ShellExecuteEx`. The rule is mechanical — **a fn-pointer typedef
 inherits its convention from the C declaration's macro, and the absence of one means cdecl.**
 `extern "system"` is not a safe default; it is a decision. Check every `pub type X = Option<...>`
-in translated output against the `typedef` in the C tail.
+in translated output against the `typedef` in the C tail. **Mechanized (2026-11-04):** `port integrate` gives every
+`type X = [Option<]unsafe extern "..." fn` the convention of the module's own C `typedef R (CC *X)`
+(none or a cdecl macro = `"C"`, a stdcall one = `"system"`), after dsound's
+`typedef HRESULT (*FnCreateInstance)` came back `"system"`: its class-factory table transmutes
+`extern "C"` creators into it, and every i386 `CreateInstance` returned 8 bytes off (modrun).
+`scan_fnptr_abi_transmute` now also flags an `extern "C"` fn transmuted into a stdcall ALIAS,
+including the `Option<..>` / `Some(f as ..)` spelling.
 
 **And the mirror image: a callback DEFINITION that lost the convention it did have.** Same file
 class, opposite direction, and it does not even need a typedef — `dialogs/drive.cpp`'s

@@ -1,0 +1,20 @@
+# ddraw (dll/directx/wine/ddraw -> ddraw-rust). Smoke never loads DirectDraw; this drives
+# system-memory surfaces (descriptions, pixel formats, locks, fill/stretch/BltFast blits checked
+# by pixel hash, colour keys, palettes, clippers), caps, modes, the v1->v2/v4 interface chain,
+# and Direct3D7 vertex buffers, whose sizes are ddraw's own FVF arithmetic.
+# One probe (probes/ddraw.c), staged twice: as ddraw_c.exe it loads the pre-flip C (ddraw_c.dll, from
+# c_oracle.cmake) beside it, under any other name the system ddraw.dll. Both print values only,
+# so the outputs must match byte for byte.
+module: ddraw
+variants:
+  c: '%SystemRoot%\bin\modrun\ddraw_c.exe'
+  rust: '%SystemRoot%\bin\modrun\ddraw_probe.exe'
+ninja: [ddraw_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/ddraw-{arch}.exe', dest: bin/modrun/ddraw_c.exe}
+  - {src: 'tools/payloads/modrun/probes/ddraw-{arch}.exe', dest: bin/modrun/ddraw_probe.exe}
+  - {src: 'build-{arch}/dll/directx/wine/ddraw/ddraw_c.dll', dest: bin/modrun/ddraw_c.dll}
+cases:
+  - id: logic
+    expect: ['createex hr=00000000', 'surf 565 hr=00000000', 'probe done']
+    timeout: 240

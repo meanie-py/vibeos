@@ -814,7 +814,7 @@ pub unsafe extern "C" fn d3d9_init(
 
     (*d3d9).wined3d_outputs = calloc(
         (output_count as usize) as _,
-        (::core::mem::size_of::<wined3d_output>() as usize) as _,
+        (::core::mem::size_of::<*mut wined3d_output>() as usize) as _,
     ) as *mut *mut wined3d_output;
     if (*d3d9).wined3d_outputs.is_null() {
         wined3d_decref((*d3d9).wined3d);

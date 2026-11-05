@@ -82,9 +82,13 @@ unsafe extern "system" fn ddraw_clipper_Release(iface: *mut IDirectDrawClipper) 
             DeleteObject((*clipper).region as HGDIOBJ);
         }
         /* make sure the object is no longer considered valid */
+        // sizeof(clipper->IDirectDrawClipper_iface.lpVtbl): the POINTER. The translation took
+        // the pointee's size (the 9-slot vtable struct), zeroed 36/72 bytes past the 4/8 bytes
+        // of the field, ran off the end of the clipper's heap block, and every last Release
+        // crashed in free() (modrun ddraw.logic).
         SecureZeroMemory(
             core::ptr::addr_of_mut!((*clipper).IDirectDrawClipper_iface.lpVtbl) as PVOID,
-            core::mem::size_of::<IDirectDrawClipperVtbl>() as SIZE_T,
+            core::mem::size_of::<*const IDirectDrawClipperVtbl>() as SIZE_T,
         );
         free(clipper as *mut ::core::ffi::c_void);
     }

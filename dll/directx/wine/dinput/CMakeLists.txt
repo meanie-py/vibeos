@@ -30,3 +30,5 @@ add_cargo_module(dinput dinput-cargo dinput.dll
     BODY_CRATE dinput-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS dinput_shims psdk uuid_sources)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

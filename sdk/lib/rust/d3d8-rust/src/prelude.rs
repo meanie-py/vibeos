@@ -91,7 +91,7 @@ pub const D3D8_HANDLE_FREE: d3d8_handle_type = d3d8_handle_type_D3D8_HANDLE_FREE
 pub const D3D8_HANDLE_PS: d3d8_handle_type = d3d8_handle_type_D3D8_HANDLE_PS; // island enum // gen:75dbed2503ef
 pub const D3D8_HANDLE_SB: d3d8_handle_type = d3d8_handle_type_D3D8_HANDLE_SB; // island enum // gen:9c2052215a7f
 pub const D3D8_HANDLE_VS: d3d8_handle_type = d3d8_handle_type_D3D8_HANDLE_VS; // island enum // gen:98696988b670
-pub const D3DCREATE_MULTITHREADED: i32 = 4; // evr-rust/src/prelude.rs // gen:443a574cb4f7
+pub const D3DCREATE_MULTITHREADED: i32 = 4; // d3d9-rust/src/prelude.rs // gen:7db74cd43d56
 pub const D3DFMT_A1R5G5B5: _D3DFORMAT = _D3DFORMAT_D3DFMT_A1R5G5B5; // island enum // gen:6f9a88590099
 pub const D3DFMT_A2B10G10R10: _D3DFORMAT = _D3DFORMAT_D3DFMT_A2B10G10R10; // island enum // gen:bb0e3657ab41
 pub const D3DFMT_A2W10V10U10: _D3DFORMAT = _D3DFORMAT_D3DFMT_A2W10V10U10; // island enum // gen:79e10536f3e8
@@ -193,11 +193,11 @@ pub const D3DVSD_TOKEN_NOP: _D3DVSD_TOKENTYPE = _D3DVSD_TOKENTYPE_D3DVSD_TOKEN_N
 pub const D3DVSD_TOKEN_STREAM: _D3DVSD_TOKENTYPE = _D3DVSD_TOKENTYPE_D3DVSD_TOKEN_STREAM; // island enum // gen:1706b0349502
 pub const D3DVSD_TOKEN_STREAMDATA: _D3DVSD_TOKENTYPE = _D3DVSD_TOKENTYPE_D3DVSD_TOKEN_STREAMDATA; // island enum // gen:5e9010c401ca
 pub const D3DVSD_TOKEN_TESSELLATOR: _D3DVSD_TOKENTYPE = _D3DVSD_TOKENTYPE_D3DVSD_TOKEN_TESSELLATOR; // island enum // gen:8e92d6f6d5a9
-pub const D3DVTXPCAPS_DIRECTIONALLIGHTS: u32 = 8; // ddraw-rust/src/prelude.rs // gen:f8d029552ca3
-pub const D3DVTXPCAPS_LOCALVIEWER: u32 = 32; // ddraw-rust/src/prelude.rs // gen:5fa996aa1bec
-pub const D3DVTXPCAPS_MATERIALSOURCE7: u32 = 2; // ddraw-rust/src/prelude.rs // gen:7ae6465519ee
-pub const D3DVTXPCAPS_POSITIONALLIGHTS: u32 = 16; // ddraw-rust/src/prelude.rs // gen:a1f7c4fc2b79
-pub const D3DVTXPCAPS_TEXGEN: u32 = 1; // ddraw-rust/src/prelude.rs // gen:d5014ef378e7
+pub const D3DVTXPCAPS_DIRECTIONALLIGHTS: u32 = 8; // d3d9-rust/src/prelude.rs // gen:62bcd6464521
+pub const D3DVTXPCAPS_LOCALVIEWER: u32 = 32; // d3d9-rust/src/prelude.rs // gen:dd0d4cd9311a
+pub const D3DVTXPCAPS_MATERIALSOURCE7: u32 = 2; // d3d9-rust/src/prelude.rs // gen:5354de73c83c
+pub const D3DVTXPCAPS_POSITIONALLIGHTS: u32 = 16; // d3d9-rust/src/prelude.rs // gen:f34c17fea36e
+pub const D3DVTXPCAPS_TEXGEN: u32 = 1; // d3d9-rust/src/prelude.rs // gen:690240211c10
 pub const FALSE: u32 = 0; // at-rust/src/types_amd64.rs // gen:58c6c88227ec
 pub const TRUE: u32 = 1; // at-rust/src/types_amd64.rs // gen:798e790b3940
 pub const WINED3DFMT_A8_UNORM: wined3d_format_id = wined3d_format_id_WINED3DFMT_A8_UNORM; // island enum // gen:b852344850b7
@@ -320,7 +320,7 @@ pub const WINED3D_TSS_TEXTURE_TRANSFORM_FLAGS: wined3d_texture_stage_state = win
 extern "C" {
     pub fn calloc(arg1: ::core::ffi::c_uint, arg2: ::core::ffi::c_uint) -> *mut ::core::ffi::c_void; // msvcrt-sys/src/bindgen_i386.rs // gen:d3193c100ce5
     pub fn free(p: *mut c_void); // activeds-rust/src/prelude.rs // gen:0ad441c3c230
-    pub fn isprint(c: c_int) -> c_int; // dhcpcsvc-rust/src/prelude.rs // gen:633921836be0
+    pub fn isprint(c: c_int) -> c_int; // d3d9-rust/src/prelude.rs // gen:c088d5c257f2
     pub fn malloc(size: usize) -> *mut c_void; // activeds-rust/src/prelude.rs // gen:86a212c6fd14
     pub fn realloc(p: *mut c_void, size: usize) -> *mut c_void; // activeds-rust/src/prelude.rs // gen:ce18447a16eb
 }

@@ -2278,3 +2278,34 @@ def test_a_module_own_cast_macro_is_not_left_to_the_sdk_lowering(monkeypatch):
     assert port._cast_topped_sdk_macros(state, {"D3DFMT_RESZ", "HKEY_CURRENT_USER"}) == {
         "HKEY_CURRENT_USER"
     }
+
+
+def test_a_fn_pointer_alias_takes_its_c_typedefs_convention(tmp_path, monkeypatch):
+    # dsound: `typedef HRESULT (*FnCreateInstance)(..)` is cdecl; it came back extern "system".
+    mod = tmp_path / "dll" / "m"
+    mod.mkdir(parents=True)
+    (mod / "a.c").write_text(
+        "typedef  HRESULT (*FnCreateInstance)(REFIID riid, LPVOID *ppobj);\n"
+        "typedef void (CALLBACK *Notify)(DWORD);\n"
+        "typedef int (WINAPIV *Vararg)(const char *, ...);\n"
+        "#ifdef X\ntypedef int (*Both)(void);\n#else\ntypedef int (WINAPI *Both)(void);\n#endif\n"
+    )
+    rs = tmp_path / "a.rs"
+    rs.write_text(
+        'pub type FnCreateInstance = Option<unsafe extern "system" fn(riid: REFIID) -> HRESULT>;\n'
+        'pub type Notify = Option<unsafe extern "C" fn(DWORD)>;\n'
+        'type Vararg = unsafe extern "C" fn(*const i8) -> i32;\n'
+        'pub type Both = Option<unsafe extern "C" fn() -> i32>;\n'
+    )
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [rs])
+    fixed = port._fix_fnptr_alias_abis({"module_dir": "dll/m"})
+    assert fixed == [
+        'a: FnCreateInstance extern "system" -> "C"',
+        'a: Notify extern "C" -> "system"',
+    ]
+    out = rs.read_text()
+    assert 'FnCreateInstance = Option<unsafe extern "C" fn' in out
+    assert 'Notify = Option<unsafe extern "system" fn' in out
+    assert 'type Vararg = unsafe extern "C" fn' in out  # WINAPIV is cdecl: already right
+    assert 'Both = Option<unsafe extern "C" fn' in out  # two ways in the C: left alone

@@ -1,0 +1,20 @@
+# dsound (dll/directx/wine/dsound -> dsound-rust). The VM has no audio device, so this grades
+# what needs none: enumeration, GetDeviceID, the class factory and uninitialized-object
+# paths, the private property set and the create calls' failure codes. The mixer, format
+# conversion and 3D code are unreachable without a wave device: owed until the VM has one.
+# One probe (probes/dsound.c), staged twice: as dsound_c.exe it loads the pre-flip C (dsound_c.dll, from
+# c_oracle.cmake) beside it, under any other name the system dsound.dll. Both print values only,
+# so the outputs must match byte for byte.
+module: dsound
+variants:
+  c: '%SystemRoot%\bin\modrun\dsound_c.exe'
+  rust: '%SystemRoot%\bin\modrun\dsound_probe.exe'
+ninja: [dsound_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/dsound-{arch}.exe', dest: bin/modrun/dsound_c.exe}
+  - {src: 'tools/payloads/modrun/probes/dsound-{arch}.exe', dest: bin/modrun/dsound_probe.exe}
+  - {src: 'build-{arch}/dll/directx/wine/dsound/dsound_c.dll', dest: bin/modrun/dsound_c.dll}
+cases:
+  - id: logic
+    expect: ['probe done']
+    timeout: 120
