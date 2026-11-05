@@ -851,6 +851,7 @@ impl Rule for ExternDeclDrift {
         let files = c
             .sources("drift_rust")
             .filter(|f| f.path.extension().is_some_and(|e| e == "rs"))
+            .filter(|f| !f.declares_generic_externs())
             .collect::<Vec<_>>();
         // Each file is independent during AST fact extraction. Bounded chunks
         // cap concurrent large bindgen parses while ordered collection preserves

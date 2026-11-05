@@ -342,24 +342,32 @@ def test_shipping_cmake_tracks_native_generator_and_template_inputs(tmp_path):
         "add_importlibs add_dependencies add_cd_file rust_staticlib_variant target_link_libraries)\n"
         "function(${cmd})\nendfunction()\nendforeach()\n"
         'include("${REACTOS_SOURCE_DIR}/dll/win32/wow64/CMakeLists.txt")\n'
-        "add_custom_target(thunks ALL DEPENDS ${_wow64_thunks} ${_wow64_w32k_thunks})\n"
+        "add_custom_target(thunks ALL DEPENDS ${_wow64_thunks_check})\n"
     )
     build = tmp_path / "build"
 
-    def command(*args):
+    def command(*args, ok=True):
         result = subprocess.run(args, capture_output=True, text=True, check=False, timeout=180)
-        assert result.returncode == 0, result.stdout + result.stderr
-        return result.stdout
+        if ok:
+            assert result.returncode == 0, result.stdout + result.stderr
+        return result
 
+    # The tables are committed source: generate them into the fixture tree first.
+    command(str(binary), "--root", str(source), "wow64-thunks", "--emit-rs")
     command("cmake", "-S", str(source), "-B", str(build), "-G", "Ninja")
-    first = command("ninja", "-C", str(build), "-v")
-    assert first.count(" --spec ") == 2
-    assert "no work to do" in command("ninja", "-C", str(build), "-v")
-    for name in ["wow64_thunks.gen.c", "wow64_win32k_thunks.gen.c"]:
-        assert (build / name).is_file() and "WOW64_THUNK_ENTRY" in (build / name).read_text()
-    template = source / "tools/vibeos-codegen/src/wow64/header.txt"
+    first = command("ninja", "-C", str(build), "-v").stdout
+    assert first.count(" --emit-rs --check ") == 1
+    assert "no work to do" in command("ninja", "-C", str(build), "-v").stdout
+    # The check reruns when the generator changes...
+    template = source / "tools/vibeos-codegen/src/wow64/rust.rs"
     time.sleep(0.02)
     template.write_text(template.read_text() + "\n")
-    rerun = command("ninja", "-C", str(build), "-v")
-    assert rerun.count(" --spec ") == 2
-    assert "no work to do" in command("ninja", "-C", str(build), "-v")
+    rerun = command("ninja", "-C", str(build), "-v").stdout
+    assert rerun.count(" --emit-rs --check ") == 1
+    assert "no work to do" in command("ninja", "-C", str(build), "-v").stdout
+    # ...and FAILS the build when an input moved without a regenerate.
+    manual = source / "tools/wow64gen/manual.txt"
+    time.sleep(0.02)
+    manual.write_text(manual.read_text() + "NtAcceptConnectPort\n")
+    drift = command("ninja", "-C", str(build), "-v", ok=False)
+    assert drift.returncode != 0 and "DRIFT" in drift.stdout + drift.stderr

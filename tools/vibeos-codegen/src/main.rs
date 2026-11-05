@@ -44,7 +44,7 @@ Module commands: cnt, cohab-registry, global-barrier.
 WoW64 deep marshalling: marshal report|gen|gen-callback [--build-dir DIR]
   --build-dir32 selects the i386 build; --check compares generated outputs.
 
-WoW64: wow64-thunks --spec FILE --sysfuncs FILE --arch ARCH [--out-c FILE].
+WoW64: wow64-thunks --spec FILE --sysfuncs FILE --arch ARCH [--out-c FILE], or wow64-thunks --emit-rs [--check].
   --manual-list FILES forces manual stubs; --symbol-prefix selects the table name.
 
 Suite lists: apitest-suites, winetest-suites --arch ARCH.

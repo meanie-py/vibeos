@@ -745,7 +745,7 @@ pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
     mut XOffset: i32,
     YOffset: i32,
     UnsafePoint: LPPOINT,
-) -> u8 {
+) -> BOOL {
     let dc: PDC;
     let pdcattr: PDC_ATTR;
     let mut Status: i32 = STATUS_SUCCESS;
@@ -753,7 +753,7 @@ pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
     dc = DC_LockDc(hDC);
     if dc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0u8;
+        return 0;
     }
     pdcattr = (*dc).pdcattr;
 
@@ -781,7 +781,7 @@ pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
             DC_UnlockDc(dc);
-            return 0u8;
+            return 0;
         }
     }
 
@@ -794,7 +794,7 @@ pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
 
     DC_UnlockDc(dc);
 
-    1u8
+    1
 }
 
 #[cfg(not(target_arch = "x86"))]
@@ -804,7 +804,7 @@ pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
     mut XOffset: i32,
     YOffset: i32,
     UnsafePoint: LPPOINT,
-) -> u8 {
+) -> BOOL {
     let dc: PDC;
     let pdcattr: PDC_ATTR;
     let mut Status: i32 = STATUS_SUCCESS;
@@ -812,7 +812,7 @@ pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
     dc = DC_LockDc(hDC);
     if dc.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0u8;
+        return 0;
     }
     pdcattr = (*dc).pdcattr;
 
@@ -840,7 +840,7 @@ pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
             DC_UnlockDc(dc);
-            return 0u8;
+            return 0;
         }
     }
 
@@ -853,7 +853,7 @@ pub unsafe extern "system" fn NtGdiOffsetViewportOrgEx(
 
     DC_UnlockDc(dc);
 
-    1u8
+    1
 }
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -1142,17 +1142,17 @@ pub unsafe extern "system" fn NtGdiScaleWindowExtEx(
     Ynum: i32,
     Ydenom: i32,
     pSize: LPSIZE,
-) -> u8 {
+) -> BOOL {
     let pDC: PDC;
     let pdcattr: PDC_ATTR;
-    let mut Ret: u8 = 0u8;
+    let mut Ret: BOOL = 0;
     let mut X: i32;
     let Y: i32;
 
     pDC = DC_LockDc(hDC);
     if pDC.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0u8;
+        return 0;
     }
     pdcattr = (*pDC).pdcattr;
 
@@ -1182,7 +1182,7 @@ pub unsafe extern "system" fn NtGdiScaleWindowExtEx(
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
             DC_UnlockDc(pDC);
-            return 0u8;
+            return 0;
         }
     }
 
@@ -1202,12 +1202,12 @@ pub unsafe extern "system" fn NtGdiScaleWindowExtEx(
                         | WORLD_XFORM_CHANGED
                         | DEVICE_TO_WORLD_INVALID;
 
-                    Ret = 1u8;
+                    Ret = 1;
                 }
             }
         }
     } else {
-        Ret = 1u8;
+        Ret = 1;
     }
 
     DC_UnlockDc(pDC);
@@ -1223,17 +1223,17 @@ pub unsafe extern "system" fn NtGdiScaleWindowExtEx(
     Ynum: i32,
     Ydenom: i32,
     pSize: LPSIZE,
-) -> u8 {
+) -> BOOL {
     let pDC: PDC;
     let pdcattr: PDC_ATTR;
-    let mut Ret: u8 = 0u8;
+    let mut Ret: BOOL = 0;
     let mut X: i32;
     let Y: i32;
 
     pDC = DC_LockDc(hDC);
     if pDC.is_null() {
         EngSetLastError(ERROR_INVALID_HANDLE);
-        return 0u8;
+        return 0;
     }
     pdcattr = (*pDC).pdcattr;
 
@@ -1263,7 +1263,7 @@ pub unsafe extern "system" fn NtGdiScaleWindowExtEx(
         if !NT_SUCCESS(Status) {
             SetLastNtError(Status);
             DC_UnlockDc(pDC);
-            return 0u8;
+            return 0;
         }
     }
 
@@ -1283,12 +1283,12 @@ pub unsafe extern "system" fn NtGdiScaleWindowExtEx(
                         | WORLD_XFORM_CHANGED
                         | DEVICE_TO_WORLD_INVALID;
 
-                    Ret = 1u8;
+                    Ret = 1;
                 }
             }
         }
     } else {
-        Ret = 1u8;
+        Ret = 1;
     }
 
     DC_UnlockDc(pDC);

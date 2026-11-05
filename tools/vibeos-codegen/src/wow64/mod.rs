@@ -231,12 +231,8 @@ pub fn load_manual_lists(paths: &[impl AsRef<Path>]) -> Result<HashSet<String>, 
     }
     Ok(out)
 }
-/// Convenience for the shared source-derived marshalgen audit.
-pub fn compute_thunk_table(
-    root: &Path,
-    table: &str,
-    arch: &str,
-) -> Result<HashMap<String, bool>, String> {
+/// The ordered table rows for one `AUDIT_TABLES` entry, from the checked-in sources.
+pub fn table_rows(root: &Path, table: &str, arch: &str) -> Result<Vec<Syscall>, String> {
     let cfg = metadata()["AUDIT_TABLES"]
         .get(table)
         .ok_or_else(|| format!("unknown thunk table {table}"))?;
@@ -251,14 +247,45 @@ pub fn compute_thunk_table(
     let paths: Vec<_> = manuals.iter().map(|p| root.join(p)).collect();
     let manual = load_manual_lists(&paths)?;
     let specs = read_spec(&root.join(spec), arch, &manual)?;
+    if specs.is_empty() {
+        return Err(format!("wow64gen: no Nt* syscalls found in {spec}"));
+    }
     let services = read_sysfuncs(&root.join(sys))?;
-    Ok(order_by_sysfuncs(&services, &specs)
+    if services.is_empty() {
+        return Err(format!("wow64gen: no SVC_ entries found in {sys}"));
+    }
+    Ok(order_by_sysfuncs(&services, &specs))
+}
+/// Convenience for the shared source-derived marshalgen audit.
+pub fn compute_thunk_table(
+    root: &Path,
+    table: &str,
+    arch: &str,
+) -> Result<HashMap<String, bool>, String> {
+    Ok(table_rows(root, table, arch)?
         .into_iter()
         .map(|s| {
             let live = !s.needs_manual();
             (s.name, live)
         })
         .collect())
+}
+/// Every committed Rust table, rendered: (repo-relative output path, text). wow64.dll is
+/// built for amd64 and arm64 and the file serves both, so the two must agree.
+pub fn render_rust_tables(root: &Path) -> Result<Vec<(String, String)>, String> {
+    let mut out = Vec::new();
+    for (table, prefix, path) in rust::RUST_TABLES {
+        let amd64 = rust::emit_rs(&table_rows(root, table, "amd64")?, table, prefix)?;
+        let arm64 = rust::emit_rs(&table_rows(root, table, "arm64")?, table, prefix)?;
+        if amd64 != arm64 {
+            return Err(format!(
+                "wow64gen: the {table} table differs between amd64 and arm64; one committed \
+                 Rust table cannot serve both -- give {path} a per-arch twin"
+            ));
+        }
+        out.push((path.to_string(), amd64));
+    }
+    Ok(out)
 }
 /// Emit the exact C text; `spec` and `out` are caller-supplied provenance spellings.
 pub fn emit_c(
@@ -337,6 +364,8 @@ pub fn emit_c(
     buf.extend(["};".into(),String::new(),format!("static const unsigned {symbol_prefix}Count = sizeof({symbol_prefix}Table) / sizeof({symbol_prefix}Table[0]);"),String::new()]);
     Ok(buf.join("\n"))
 }
+
+pub mod rust;
 
 #[cfg(test)]
 mod tests;
