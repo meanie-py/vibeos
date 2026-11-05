@@ -1234,7 +1234,8 @@ debug = 1
 # ftfd, ndisuio, netstack, tdihelpers, csq, wmilib, wpprecorder, kdcom, kdcom-serial, kdgdb, kdvm,
 # kdbg, nmidebug, rossym, evtlib, hidparse, hidparser, ntoskrnl_vista, ntoskrnl-vista, arbiter,
 # sptilib, vdm, cport, bwfm). Still unarmed: cmboot-rust, va-slots-rust and ntkrnl-sys, which
-# freeldr links, and the rtl-* family ntdll shares.
+# freeldr links. Batch 4 (2026-11-05): the rtl-* family behind rtl-rust, shared by ntoskrnl and
+# ntdll -- but NOT rtl-diag and rtl-strings, which freeldr links through blrtl.
 # NOT freeldr-rust: armed, the BIOS loader's PE grew to 0x7fc00 against MAX_FREELDR_PE_SIZE
 # 0x77000 (35840 bytes over; every BIOS boot would bugcheck). Its 19 cfg(debug_assertions) blocks
 # stay unbuilt until the loader has the room (2026-11-02). overflow-checks defaults to FOLLOWING
@@ -1609,6 +1610,60 @@ overflow-checks = false
 debug-assertions = true
 overflow-checks = false
 [profile.release.package.rtlk-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-actctx]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-bootdata]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-error]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-except]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-heap]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-heappage]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-heapuser]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-misc]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-ppb]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-propvar]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-rangelist]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-rxact]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-sync]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-sysvol]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-threadpool]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-version]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-vista-rust]
 debug-assertions = true
 overflow-checks = false
 
