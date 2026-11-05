@@ -61,18 +61,9 @@ pub unsafe fn PsGetCurrentProcess() -> ntkrnl_sys::ddk::PEPROCESS {
 // RtlCopyMemory / RtlZeroMemory — RtlpfuncS macros routed to the rtl module impls.
 pub use ntkrnl_sys::rtl::{RtlCopyMemory, RtlZeroMemory};
 
-// KeQueryTickCount / SharedSystemTime — KUSER_SHARED_DATA macros (xdk/<arch>/ke.h).
-// The translation took the amd64/arm64 macro form: KeQueryTickCount reads the
-// 64-bit SharedTickCount (KI_USER_SHARED_DATA + 0x320); KeQuerySystemTime was
-// inlined by the translator as `*dst = *(SharedSystemTime as *mut u64)`, where
-// SharedSystemTime = KI_USER_SHARED_DATA + 0x14. KUSER_SHARED_DATA has the same
-// layout on all 3 arches, so route both through ntkrnl_sys::mm::KI_USER_SHARED_DATA
-// (the per-arch base const). Provided as glue so the symbols resolve.
-// KI_USER_SHARED_DATA is ntkrnl_sys::mm::ULONG_PTR (= usize); keep that width so
-// the `+ offset` arithmetic and the later `as *mut/* const` casts type-check.
-pub const SharedSystemTime: usize =
-    ntkrnl_sys::mm::KI_USER_SHARED_DATA as usize + 0x14;
-
+// KeQueryTickCount -- KUSER_SHARED_DATA macro (xdk/<arch>/ke.h): the 64-bit SharedTickCount at
+// KI_USER_SHARED_DATA + 0x320 (8-aligned). KeQuerySystemTime goes through
+// ntkrnl_sys::ke::ke_query_system_time(): SystemTime at +0x14 is only 4-aligned.
 #[inline]
 pub unsafe fn KeQueryTickCount(current_count: *mut i64) {
     const SHARED_TICK_COUNT: usize =

@@ -3570,6 +3570,13 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_shared_system_time": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/shared_system_time.rs: usbport's `*(SharedSystemTimePtr() "
+        "as *mut ULONG64)` and classpnp's zeroed `SharedSystemTime` static must be flagged, a "
+        "read_unaligned read and ke_query_system_time() must not."
+    ),
     "scan_devobj_as_extension": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "

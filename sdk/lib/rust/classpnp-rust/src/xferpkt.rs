@@ -113,8 +113,6 @@ extern "C" {
     fn SimpleInitSlistHdr(header: *mut SINGLE_LIST_ENTRY);
     fn SimplePushSlist(header: *mut SINGLE_LIST_ENTRY, entry: PSINGLE_LIST_ENTRY);
     fn SimplePopSlist(header: *mut SINGLE_LIST_ENTRY) -> PSINGLE_LIST_ENTRY;
-    
-    static SharedSystemTime: LARGE_INTEGER;
 }
 unsafe extern "system" {
     fn KeQueryHighestNodeNumber() -> USHORT;
@@ -1354,10 +1352,7 @@ pub unsafe extern "system" fn TransferPktComplete(
                         .wrapping_sub(1);
                     if (*fdoData).NumHighPriorityPagingIo == 0 {
                         // Inline KeQuerySystemTime
-                        (*fdoData).ThrottleStopTime.QuadPart =
-                            core::ptr::read_volatile(
-                                core::ptr::addr_of!(SharedSystemTime.QuadPart),
-                            );
+                        (*fdoData).ThrottleStopTime.QuadPart = ntkrnl_sys::ke::ke_query_system_time();
                         let period_quad = (*fdoData).ThrottleStopTime.QuadPart
                             - (*fdoData).ThrottleStartTime.QuadPart;
                         (*fdoData).LongestThrottlePeriod.QuadPart =

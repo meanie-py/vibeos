@@ -6932,7 +6932,12 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   win32k-rust (**ARMED 2026-11-05**: its DC_PREPARED and per-type lock-count blocks compile; the no-op
   `ASSERT_DC_PREPARED` fns, `ASSERT_REFS_CO` and rtl_text's panicking `debug_assert!`s now report through
   `nt_assert!`; the UB checks turned a COPY_RECTS walk out of a stack array into an arm64 spin, fixed)
-  and the remaining drivers. Two armed-fastfat asserts printed twice per amd64-bios boot
+  and the remaining drivers: **43 driver crates ARMED 2026-11-05** (fs_rec's packed BPB read; the
+  integrator fixed usb's SystemTime reads forward), then **63 more** -- the ntoskrnl-linked
+  subsystems and the driver tail (SystemTime in ksecdd, classpnp's zeroed `SharedSystemTime`
+  global, uniata CDB reads, tdihelpers/netstack EA-packed transport addresses; new lint
+  `scan_shared_system_time`). Still unarmed: freeldr and what it links (cmboot, va-slots,
+  ntkrnl-sys) for its size budget, and the rtl-* crates ntdll shares. Two armed-fastfat asserts printed twice per amd64-bios boot
   (`20261101-183850-m41czity`). `cachesup.rs:182` FIXED 2026-11-01: fastfat mounting the BIOS
   machine's EMPTY floppy got STATUS_NO_MEDIA_IN_DEVICE from MmMakeDataSectionResident, which
   cc-rust's `CcRosEnsureVacbResident` turned into FALSE (a stale "DUMMY_PSEH: return FALSE

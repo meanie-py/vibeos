@@ -10667,6 +10667,18 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   UCHAR arrays at odd offsets (`BytesPerSector` at 0x0b), and an inlined `FatUnpackBios` read them
   as `*(&field as *const _ as *const u16)`, which bugchecked every i386/amd64 boot once armed. The
   C's `CopyUchar2` is a byte copy: use `read_unaligned` or `u16::from_le_bytes` (ramdisk's version).
+- **`KUSER_SHARED_DATA.SystemTime` read as a u64** (2026-11-05, usbport/usbehci/usbuhci/ksecdd).
+  It is a `KSYSTEM_TIME` at +0x14, 4-aligned; the 64-bit `KeQuerySystemTime` macro's
+  `*(PULONG64)&SharedUserData->SystemTime` is legal on the hardware and UB as a Rust deref.
+  Call `ntkrnl_sys::ke::ke_query_system_time()`. The same expansion also produced invented
+  `SharedSystemTime` GLOBALS defined as a static zero (classpnp, earlier fastfat), so the
+  module's system time read 1601 on every arch. `scan_shared_system_time` gates both.
+- **An object packed after a variable-length field by construction.** A
+  `FILE_FULL_EA_INFORMATION`'s value follows `EaName` plus its NUL, so tdihelpers' context
+  pointer and the `TRANSPORT_ADDRESS` it hands to netstack sit at odd offsets; SCSI CDB fields
+  (uniata's `MOV_DD_SWP`/`MOV_DW_SWP`) are byte arrays too. Every reader and writer of such a
+  field goes through `read_unaligned`/`write_unaligned`, including shared helpers like
+  `TaLengthOfAddress` that look innocent because their usual callers pass aligned pool.
 - **A real overlap.** classpnp's `RtlMoveMemory` of READ_CAPACITY_DATA one ULONG up inside its
   own _EX had become `copy_nonoverlapping` -- memcpy on overlapping ranges, a genuine bug on
   every arch. `scan_move_vs_nonoverlapping` now pairs each Rust fn with its C twin's moves.
