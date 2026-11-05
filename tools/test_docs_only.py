@@ -210,3 +210,8 @@ def test_the_hook_exempts_docs_WITHOUT_any_gate_stamp(tmp_path):
         "a top-level `if not valid_trees:` bails before the docs-only exemption is "
         f"reached, so a documentation push with no fresh gate is refused: {tops}"
     )
+
+
+def test_cmake_source_list_is_a_build_input_despite_txt_suffix():
+    assert not docs_only(["CMakeLists.txt"])
+    assert not docs_only(["sdk/lib/CMakeLists.txt"])

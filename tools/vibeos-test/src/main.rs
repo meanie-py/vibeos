@@ -31,7 +31,18 @@ impl Host for Runtime<'_> {
         }
         let request = json!({"op":operation,"kwargs":arguments});
         match operation {
-            "command"
+            "payload_download"
+            | "payload_print"
+            | "payload_sleep"
+            | "payload_qmp"
+            | "payload_screendump"
+            | "payload_cpu_state"
+            | "payload_save_hang"
+            | "payload_read"
+            | "payload_clock"
+            | "payload_on_output"
+            | "payload_on_silence"
+            | "command"
             | "log"
             | "stage"
             | "set_run"
@@ -84,6 +95,9 @@ impl Host for Runtime<'_> {
                 vibeos_test::debugcon::dispatch(self.root, &request)
             }
             op if op.starts_with("verdict_") => vibeos_test::verdict::dispatch(self.root, &request),
+            op if op.starts_with("payload_") => {
+                vibeos_test::payload::dispatch(self.root, &request, self)
+            }
             op if op.starts_with("backend_") => vibeos_test::backend::dispatch(self.root, &request),
             op if op.starts_with("conformance_parse_") => {
                 vibeos_test::conformance::dispatch(self.root, &request)

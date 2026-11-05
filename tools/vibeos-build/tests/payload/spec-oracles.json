@@ -1,0 +1,1738 @@
+{
+  "apitest": {
+    "yaml": "# apitest conformance payload — the user-mode sibling of ../kmtest.\n#\n# The apitest binaries themselves (*_apitest.exe + their testdata) are staged to\n# reactos/bin by add_rostests_file when the build dir has ENABLE_ROSTESTS=ON\n# (`./vibeos-cli build --arch X --rostests`; note this is the FULL rostests\n# switch, ~128 executables, not the cheap ENABLE_ROSTESTS_KMTESTS the kmtest\n# payload rides on). This payload grafts:\n#   * apitest-sweep.exe into the All Users Startup folder — a native\n#     GUI-subsystem exe, because a .cmd there dies silently: explorer's\n#     AutoStartupApplications walk uses ShellExecuteExW, which never spawns\n#     cmd.exe for a script.\n#   * apitest-suites-{arch}.txt staged in-guest as bin/apitest-suites.txt.\n#     GENERATED, not committed — `python3 tools/payloads/apitest/gen_suites.py\n#     --arch X` derives it from the binaries the build produced. The kmtest\n#     list is committed and that is how upstream's ExPushLock kmtest went a\n#     whole merge without ever being launched, against a sweep reporting\n#     `launched=91 ok=91 bad=0`.\n#\n# Unlike kmtest, the child processes report through wine/test.h's\n# winetest_vprintf -> fprintf(stdout), not through the debug serial, so the\n# sweep pipes each suite's stdout+stderr and re-emits it as\n# [APITEST:<suite>] lines. See sweep.c for why that is the whole reason this\n# is a separate runner.\n#\n# Booting a rostests-less build with this payload fails loudly on serial\n# ([APITEST-SWEEP] launch FAILED / FATAL: cannot open ...) — no silent pass.\nname: apitest\ndescription: user-mode NT/Win32 API conformance tests (apitests) — piped-stdout sweep autostart\n\nbuild_hint: \"tools/payloads/apitest/build.sh {arch} && python3 tools/payloads/apitest/gen_suites.py --arch {arch}\"\n\nbinaries:\n  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/apitest/apitest-suites-{arch}.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/apitest/apitest-skip-{arch}.txt\n    dest: bin/apitest-skip.txt\n\ntest:\n  # One process per suite, 300s cap each. ~128 suites, so budget generously:\n  # SCM gate + N suites. WALL-CLOCK SECONDS -- and that is load-bearing here:\n  # while the drain was an iteration count this sweep, the chattiest payload\n  # after procstorm, got 12-28 minutes out of a declared 7200 and was truncated\n  # mid-run every single time. Keep any driver's own timeout ABOVE this number,\n  # or the driver becomes the real bound and the truncation comes back.\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 7200\n  # Stop after this much TOTAL SILENCE. A healthy sweep prints a launch/exit\n  # pair per subtest and caps each child at 120s, so it is never quiet for long;\n  # ten minutes of nothing means the guest or the sweep parent is wedged.\n  # Without this a wedge cost the whole 7200s budget -- three rounds in a row\n  # sat reading nothing from 19:01 to 21:01. It is also the only signal that\n  # positively implicates the GUEST rather than the rig, so the driver's\n  # quarantine rule is built on it.\n  launch_idle_secs: 600\n",
+    "spec": {
+      "name": "apitest",
+      "description": "user-mode NT/Win32 API conformance tests (apitests) — piped-stdout sweep autostart",
+      "build_hint": "tools/payloads/apitest/build.sh {arch} && python3 tools/payloads/apitest/gen_suites.py --arch {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/apitest/apitest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/apitest/apitest-suites-{arch}.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/apitest/apitest-skip-{arch}.txt",
+          "dest": "bin/apitest-skip.txt"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 7200,
+        "launch_idle_secs": 600
+      }
+    }
+  },
+  "appstorm": {
+    "yaml": "# appstorm — do the stock GUI apps and control-panel applets open, draw and close?\n#   tools/payloads/appstorm/build.sh <arch>\n#   VIBEOS_PAYLOAD=appstorm ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload appstorm\n# Each app gets a screenshot, shot-NN-<name>.png in the run's artifact dir (shot_prefix below),\n# and a \"[APPSTORM] app <name> PASS|FAIL ...\" line; FAIL = no window, hung, crashed, error box.\nname: appstorm\ndescription: launch ~40 stock apps and applets, check each window, screenshot it, close it; then scripted scenarios\n\nbuild_hint: \"tools/payloads/appstorm/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/appstorm/appstorm-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/appstorm.exe\n\ntest:\n  launch_marker: \"[APPSTORM] done\"\n  shot_prefix: \"[APPSTORM] shot \"\n  pass_marker: \"[APPSTORM] done VERDICT=PASS\"\n  launch_drain_secs: 3600\n",
+    "spec": {
+      "name": "appstorm",
+      "description": "launch ~40 stock apps and applets, check each window, screenshot it, close it; then scripted scenarios",
+      "build_hint": "tools/payloads/appstorm/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/appstorm/appstorm-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/appstorm.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APPSTORM] done",
+        "shot_prefix": "[APPSTORM] shot ",
+        "pass_marker": "[APPSTORM] done VERDICT=PASS",
+        "launch_drain_secs": 3600
+      }
+    }
+  },
+  "appstorm64": {
+    "yaml": "# appstorm64 — appstorm's whole sweep as an x86-64 GUEST on arm64: the stock amd64 build of\n# every app and applet, run under FEX (wowx64). arm64 only, and only on VIBEOS_FEX=1 media.\n#   tools/payloads/appstorm/build.sh amd64   (rebuilt automatically when stale)\n#   VIBEOS_FEX=1 VIBEOS_PAYLOAD=appstorm64 ./vibeos-cli build --arch arm64   (needs build-amd64)\n#   ./vibeos-cli smoke --arch arm64 --payload appstorm64\n# appstorm-amd64.exe autostarts from the StartUp folder as an x86-64 process, so every app it\n# launches by name resolves through the guest's system32 -> sysamd64 redirect to the amd64\n# copy staged below. appstorm checks each launched process's machine against its own, so an\n# app that ran native instead is a FAIL, not a pass.\nname: appstorm64\ndescription: appstorm's app and applet sweep, every app the stock amd64 build, under FEX on arm64\narches: [arm64]\n\nbuild_hint: \"tools/payloads/appstorm/build.sh amd64\"\n\nbinaries:\n  - src: tools/payloads/appstorm/appstorm-{arch}.exe\n    build_arch: amd64\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/appstorm.exe\n  # The amd64 side-by-side assemblies. An x86-64 process's activation context asks for\n  # processorArchitecture amd64, and the arm64 media carries only arm64 assemblies, so every\n  # comctl32 v6 / gdiplus activation in a guest failed (\"CreateActCtxW failed ... err=2\").\n  # winsxs is outside system32, so these are found by their own names, not by the redirect.\n  - src: dll/win32/comctl32/amd64_microsoft.windows.common-controls_6595b64144ccf1df_5.82.2600.2982_none_deadbeef.manifest\n    dest: winsxs/manifests/amd64_microsoft.windows.common-controls_6595b64144ccf1df_5.82.2600.2982_none_deadbeef.manifest\n  - src: build-amd64/dll/win32/comctl32/comctl32.dll\n    dest: winsxs/amd64_microsoft.windows.common-controls_6595b64144ccf1df_5.82.2600.2982_none_deadbeef/comctl32.dll\n  - src: dll/win32/comctl32/amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef.manifest\n    dest: winsxs/manifests/amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef.manifest\n  - src: build-amd64/dll/win32/comctl32/comctl32.dll\n    dest: winsxs/amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef/comctl32.dll\n  - src: dll/win32/gdiplus/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.0.14393.0_none_deadbeef.manifest\n    dest: winsxs/manifests/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.0.14393.0_none_deadbeef.manifest\n  - src: build-amd64/dll/win32/gdiplus/gdiplus.dll\n    dest: winsxs/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.0.14393.0_none_deadbeef/gdiplus.dll\n  - src: dll/win32/gdiplus/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.7601.23038_none_deadbeef.manifest\n    dest: winsxs/manifests/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.7601.23038_none_deadbeef.manifest\n  - src: build-amd64/dll/win32/gdiplus/gdiplus.dll\n    dest: winsxs/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.7601.23038_none_deadbeef/gdiplus.dll\n\n# The apps and applets appstorm launches, plus everything they import, out of build-amd64.\n# rundll32 hosts every applet control.exe opens. The .cpl files and the modules at the END of\n# the list are loaded by name at run time, so no import walk finds them:\n#   lpk         the language pack user32/gdi32 load by name; refused, they retry on every\n#               text call (18929 refusals, each a blocking serial line, in one sweep)\n#   apphelp     kernel32's app-compat check at every process create\n#   schannel    secur32's TLS provider (rapps's database download is https)\n#   rsaenh      the crypto provider schannel's CryptAcquireContext opens by its registry\n#               \"Image Path\", which rsaenh writes itself at registration (rsaenh.rgs), so no\n#               INF names it for tools/fex/wow64-closure.py to derive\n#   actxprxy    the COM proxy iexplore marshals its browser object through\n#   mshtml      ieframe's document object\n#   rosbrand    shell32's About-box branding, named by a string literal in shell32\n#   dpwsockx    dxdiag's DirectPlay provider\n#   batt bthci  device-class property pages devmgmt loads from the class keys\n#   msvfw32     comctl32's animation control (SysAnimate32) decodes its AVI through it;\n#               refused, cleanmgr's progress dialog never created and cleanmgr waited forever\n# wowx64 logs every module it refuses an x86-64 guest (\"a foreign-machine DLL in system32:\n# NOT FOUND\"); that is how each of these was found. winmm's Drivers32 set is derived by\n# tools/fex/wow64-closure.py instead.\nguest_sets:\n  - build_dir: build-amd64\n    dest: sysamd64\n    roots:\n      - base/applications/notepad/notepad.exe\n      - base/applications/calc/calc.exe\n      - base/applications/regedit/regedit.exe\n      - base/applications/taskmgr/taskmgr.exe\n      - base/shell/cmd/cmd.exe\n      - base/applications/mspaint/mspaint.exe\n      - base/applications/wordpad/wordpad.exe\n      - base/applications/charmap/charmap.exe\n      - base/applications/games/winmine/winmine.exe\n      - base/applications/games/solitaire/sol.exe\n      - base/applications/games/spider/spider.exe\n      - base/applications/winver/winver.exe\n      - base/applications/clipbrd/clipbrd.exe\n      - base/applications/sndvol32/sndvol32.exe\n      - base/applications/magnify/magnify.exe\n      - base/applications/osk/osk.exe\n      - base/applications/mscutils/eventvwr/eventvwr.exe\n      - base/applications/mscutils/devmgmt/devmgmt.exe\n      - base/applications/mscutils/servman/servman.exe\n      - base/applications/msconfig/msconfig.exe\n      - base/applications/dxdiag/dxdiag.exe\n      - base/applications/rapps/rapps.exe\n      - base/applications/cleanmgr/cleanmgr/cleanmgr.exe\n      # appstorm's list grew these (aa6a2359ed3) after this set was written; left out,\n      # each ran as native arm64 and was scored FAIL for the machine mismatch.\n      - base/applications/mscutils/certmgr/certmgr.exe\n      - base/applications/mmc_new/mmc_new.exe\n      - base/applications/drwtsn32/drwtsn32.exe\n      - base/applications/mplay32/mplay32.exe\n      - base/applications/sndrec32/sndrec32.exe\n      - base/shell/explorer/explorer.exe\n      - base/applications/iexplore/iexplore.exe\n      - base/applications/control/control.exe\n      - base/system/rundll32/rundll32.exe\n      - dll/cpl/desk/desk.cpl\n      - dll/cpl/sysdm/sysdm.cpl\n      - dll/cpl/timedate/timedate.cpl\n      - dll/cpl/intl/intl.cpl\n      - dll/cpl/main/main.cpl\n      - dll/cpl/mmsys/mmsys.cpl\n      - dll/cpl/appwiz/appwiz.cpl\n      - dll/cpl/ncpa/ncpa.cpl\n      - dll/cpl/access/access.cpl\n      - dll/cpl/powercfg/powercfg.cpl\n      - dll/cpl/inetcpl/inetcpl.cpl\n      - dll/cpl/joy/joy.cpl\n      - dll/cpl/openglcfg/openglcfg.cpl\n      - dll/cpl/wined3dcfg/wined3dcfg.cpl\n      - dll/cpl/console/console.dll\n      - dll/cpl/hotplug/hotplug.dll\n      - dll/win32/lpk/lpk.dll\n      - dll/appcompat/apphelp/apphelp.dll\n      - dll/win32/schannel/schannel.dll\n      - dll/win32/rsaenh/rsaenh.dll\n      - dll/win32/actxprxy/actxprxy.dll\n      - dll/win32/mshtml/mshtml.dll\n      - dll/branding/rosbrand/rosbrand.dll\n      - dll/directx/wine/dpwsockx/dpwsockx.dll\n      - dll/win32/batt/batt.dll\n      - dll/win32/bthci/bthci.dll\n      - dll/win32/msvfw32/msvfw32.dll\n\ntest:\n  launch_marker: \"[APPSTORM] done\"\n  shot_prefix: \"[APPSTORM] shot \"\n  pass_marker: \"[APPSTORM] done VERDICT=PASS\"\n  launch_drain_secs: 7200\n  # 1G (the arm64 default) runs out: the FEX guests already resident (x86 Doom and the\n  # ladder) leave ~30MB free before the sweep starts, the livecd has no pagefile, and each\n  # x86-64 app keeps ~1MB more (appstorm's availMB column). Owed: that per-app drift, and a\n  # kernel that bugchecks 0x7A on an exhausted machine rather than failing the allocation.\n  vm_memory: 2G\n",
+    "spec": {
+      "name": "appstorm64",
+      "description": "appstorm's app and applet sweep, every app the stock amd64 build, under FEX on arm64",
+      "arches": [
+        "arm64"
+      ],
+      "build_hint": "tools/payloads/appstorm/build.sh amd64",
+      "binaries": [
+        {
+          "src": "tools/payloads/appstorm/appstorm-{arch}.exe",
+          "build_arch": "amd64",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/appstorm.exe"
+        },
+        {
+          "src": "dll/win32/comctl32/amd64_microsoft.windows.common-controls_6595b64144ccf1df_5.82.2600.2982_none_deadbeef.manifest",
+          "dest": "winsxs/manifests/amd64_microsoft.windows.common-controls_6595b64144ccf1df_5.82.2600.2982_none_deadbeef.manifest"
+        },
+        {
+          "src": "build-amd64/dll/win32/comctl32/comctl32.dll",
+          "dest": "winsxs/amd64_microsoft.windows.common-controls_6595b64144ccf1df_5.82.2600.2982_none_deadbeef/comctl32.dll"
+        },
+        {
+          "src": "dll/win32/comctl32/amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef.manifest",
+          "dest": "winsxs/manifests/amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef.manifest"
+        },
+        {
+          "src": "build-amd64/dll/win32/comctl32/comctl32.dll",
+          "dest": "winsxs/amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef/comctl32.dll"
+        },
+        {
+          "src": "dll/win32/gdiplus/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.0.14393.0_none_deadbeef.manifest",
+          "dest": "winsxs/manifests/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.0.14393.0_none_deadbeef.manifest"
+        },
+        {
+          "src": "build-amd64/dll/win32/gdiplus/gdiplus.dll",
+          "dest": "winsxs/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.0.14393.0_none_deadbeef/gdiplus.dll"
+        },
+        {
+          "src": "dll/win32/gdiplus/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.7601.23038_none_deadbeef.manifest",
+          "dest": "winsxs/manifests/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.7601.23038_none_deadbeef.manifest"
+        },
+        {
+          "src": "build-amd64/dll/win32/gdiplus/gdiplus.dll",
+          "dest": "winsxs/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.7601.23038_none_deadbeef/gdiplus.dll"
+        }
+      ],
+      "guest_sets": [
+        {
+          "build_dir": "build-amd64",
+          "dest": "sysamd64",
+          "roots": [
+            "base/applications/notepad/notepad.exe",
+            "base/applications/calc/calc.exe",
+            "base/applications/regedit/regedit.exe",
+            "base/applications/taskmgr/taskmgr.exe",
+            "base/shell/cmd/cmd.exe",
+            "base/applications/mspaint/mspaint.exe",
+            "base/applications/wordpad/wordpad.exe",
+            "base/applications/charmap/charmap.exe",
+            "base/applications/games/winmine/winmine.exe",
+            "base/applications/games/solitaire/sol.exe",
+            "base/applications/games/spider/spider.exe",
+            "base/applications/winver/winver.exe",
+            "base/applications/clipbrd/clipbrd.exe",
+            "base/applications/sndvol32/sndvol32.exe",
+            "base/applications/magnify/magnify.exe",
+            "base/applications/osk/osk.exe",
+            "base/applications/mscutils/eventvwr/eventvwr.exe",
+            "base/applications/mscutils/devmgmt/devmgmt.exe",
+            "base/applications/mscutils/servman/servman.exe",
+            "base/applications/msconfig/msconfig.exe",
+            "base/applications/dxdiag/dxdiag.exe",
+            "base/applications/rapps/rapps.exe",
+            "base/applications/cleanmgr/cleanmgr/cleanmgr.exe",
+            "base/applications/mscutils/certmgr/certmgr.exe",
+            "base/applications/mmc_new/mmc_new.exe",
+            "base/applications/drwtsn32/drwtsn32.exe",
+            "base/applications/mplay32/mplay32.exe",
+            "base/applications/sndrec32/sndrec32.exe",
+            "base/shell/explorer/explorer.exe",
+            "base/applications/iexplore/iexplore.exe",
+            "base/applications/control/control.exe",
+            "base/system/rundll32/rundll32.exe",
+            "dll/cpl/desk/desk.cpl",
+            "dll/cpl/sysdm/sysdm.cpl",
+            "dll/cpl/timedate/timedate.cpl",
+            "dll/cpl/intl/intl.cpl",
+            "dll/cpl/main/main.cpl",
+            "dll/cpl/mmsys/mmsys.cpl",
+            "dll/cpl/appwiz/appwiz.cpl",
+            "dll/cpl/ncpa/ncpa.cpl",
+            "dll/cpl/access/access.cpl",
+            "dll/cpl/powercfg/powercfg.cpl",
+            "dll/cpl/inetcpl/inetcpl.cpl",
+            "dll/cpl/joy/joy.cpl",
+            "dll/cpl/openglcfg/openglcfg.cpl",
+            "dll/cpl/wined3dcfg/wined3dcfg.cpl",
+            "dll/cpl/console/console.dll",
+            "dll/cpl/hotplug/hotplug.dll",
+            "dll/win32/lpk/lpk.dll",
+            "dll/appcompat/apphelp/apphelp.dll",
+            "dll/win32/schannel/schannel.dll",
+            "dll/win32/rsaenh/rsaenh.dll",
+            "dll/win32/actxprxy/actxprxy.dll",
+            "dll/win32/mshtml/mshtml.dll",
+            "dll/branding/rosbrand/rosbrand.dll",
+            "dll/directx/wine/dpwsockx/dpwsockx.dll",
+            "dll/win32/batt/batt.dll",
+            "dll/win32/bthci/bthci.dll",
+            "dll/win32/msvfw32/msvfw32.dll"
+          ]
+        }
+      ],
+      "test": {
+        "launch_marker": "[APPSTORM] done",
+        "shot_prefix": "[APPSTORM] shot ",
+        "pass_marker": "[APPSTORM] done VERDICT=PASS",
+        "launch_drain_secs": 7200,
+        "vm_memory": "2G"
+      }
+    }
+  },
+  "atodbl": {
+    "yaml": "# atodbl — why msvcrt string.c:3522 fails on i386: an emulator SAHF bug, not _atodbl.\n#   tools/payloads/atodbl/build.sh {arch}\n#   VIBEOS_PAYLOAD=atodbl ./vibeos-cli build --arch {arch}\n#   ./vibeos-cli smoke --arch {arch} --payload atodbl\nname: atodbl\ndescription: \"msvcrt string.c:3522 on i386: _atodbl vs the emulator (SAHF after a logic op)\"\n\nbuild_hint: \"tools/payloads/atodbl/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/atodbl/atodbl-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/atodbl.exe\n\ntest:\n  launch_marker: \"[ATODBL] done\"\n  pass_marker: \"[ATODBL] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "atodbl",
+      "description": "msvcrt string.c:3522 on i386: _atodbl vs the emulator (SAHF after a logic op)",
+      "build_hint": "tools/payloads/atodbl/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/atodbl/atodbl-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/atodbl.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[ATODBL] done",
+        "pass_marker": "[ATODBL] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "c99math": {
+    "yaml": "# c99math — ucrtbase's C99 math functions (ucrt-rust c99math.rs over the libm crate), value + errno.\n#   tools/payloads/c99math/build.sh {arch}\n#   VIBEOS_PAYLOAD=c99math ./vibeos-cli build --arch {arch}\n#   ./vibeos-cli smoke --arch {arch} --payload c99math\nname: c99math\ndescription: ucrtbase acosh/erfc/tgamma/lround/remainder/... values and errno against glibc and the UCRT contract\n\nbuild_hint: \"tools/payloads/c99math/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/c99math/c99math-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/c99math.exe\n\ntest:\n  launch_marker: \"[C99MATH] done\"\n  pass_marker: \"[C99MATH] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "c99math",
+      "description": "ucrtbase acosh/erfc/tgamma/lround/remainder/... values and errno against glibc and the UCRT contract",
+      "build_hint": "tools/payloads/c99math/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/c99math/c99math-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/c99math.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[C99MATH] done",
+        "pass_marker": "[C99MATH] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "changewinetest": {
+    "yaml": "# Wine's directory change-notification tests, run by the apitest sweep runner.\n#\n# kernel32:change (FindFirstChangeNotification, ReadDirectoryChangesW) and ntdll:change\n# (NtNotifyChangeDirectoryFile) drive FsRtlNotifyFilterChangeDirectory and\n# FsRtlNotifyFilterReportChange end to end, through fastfat. Smoke never waits on a\n# notification, so nothing else exercises them. Written 2026-10-17 when the Rust report\n# function was found to be an empty placeholder: every watch pended until cancelled.\nname: changewinetest\ndescription: Wine kernel32/ntdll change-notification tests under the apitest sweep runner\n\nbuild_hint: \"tools/payloads/apitest/build.sh {arch} && python3 tools/payloads/apitest/gen_suites.py --arch {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites kernel32,ntdll --only kernel32:change --only ntdll:change --register '' --out-dir tools/payloads/changewinetest\"\n\nbinaries:\n  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/changewinetest/winetest-suites-{arch}.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/changewinetest/winetest-skip-{arch}.txt\n    dest: bin/apitest-skip.txt\n  - src: tools/payloads/changewinetest/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: build-{arch}/modules/rostests/winetests/kernel32/kernel32_winetest.exe\n    dest: bin/kernel32_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/ntdll/ntdll_winetest.exe\n    dest: bin/ntdll_winetest.exe\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 900\n  launch_idle_secs: 300\n",
+    "spec": {
+      "name": "changewinetest",
+      "description": "Wine kernel32/ntdll change-notification tests under the apitest sweep runner",
+      "build_hint": "tools/payloads/apitest/build.sh {arch} && python3 tools/payloads/apitest/gen_suites.py --arch {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites kernel32,ntdll --only kernel32:change --only ntdll:change --register '' --out-dir tools/payloads/changewinetest",
+      "binaries": [
+        {
+          "src": "tools/payloads/apitest/apitest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/changewinetest/winetest-suites-{arch}.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/changewinetest/winetest-skip-{arch}.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/changewinetest/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/kernel32/kernel32_winetest.exe",
+          "dest": "bin/kernel32_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/ntdll/ntdll_winetest.exe",
+          "dest": "bin/ntdll_winetest.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 900,
+        "launch_idle_secs": 300
+      }
+    }
+  },
+  "clockprobe": {
+    "yaml": "# clockprobe — do QPC, GetTickCount and interrupt time agree across a Sleep(500), and does a\n# 10 ms periodic pool timer on a one-thread pool keep up? (mf.c:4553's shape.)\n#   tools/payloads/clockprobe/build.sh <arch>\n#   VIBEOS_PAYLOAD=clockprobe ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload clockprobe\n# Rounds 10-19 run beside a normal-priority spinning thread. Reference (2026-10-17, same TCG):\n#   Windows 11 (winref): 22-29 callbacks per round under the hog (18-23 ms each).\n#   vibeos (ProductType=ServerNT, 12-tick fixed quantums): 3 per round (~188 ms each).\n# Idle rounds should read 32 callbacks (15.6 ms, one per clock tick) on both.\nname: clockprobe\ndescription: compare the guest clocks and a 10 ms pool timer's callback rate\n\nbuild_hint: \"tools/payloads/clockprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/clockprobe/clockprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/clockprobe.exe\n\ntest:\n  launch_marker: \"[CLOCKPROBE] done\"\n  pass_marker: \"[CLOCKPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "clockprobe",
+      "description": "compare the guest clocks and a 10 ms pool timer's callback rate",
+      "build_hint": "tools/payloads/clockprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/clockprobe/clockprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/clockprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[CLOCKPROBE] done",
+        "pass_marker": "[CLOCKPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "comprobe": {
+    "yaml": "# comprobe — where does cross-thread COM marshalling break, and does SHObjectProperties hang?\n#   tools/payloads/comprobe/build.sh <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload comprobe\n# Per-interface proxy/stub lookups, an IDataObject marshalled to a second STA and called through\n# the proxy, then SHObjectProperties on a file with a 20s window dump.\n# Verdict: \"[COMPROBE] done VERDICT=PASS|FAIL\".\nname: comprobe\ndescription: COM proxy/stub lookup, cross-apartment IDataObject, and SHObjectProperties\n\nbuild_hint: \"tools/payloads/comprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/comprobe/comprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/comprobe.exe\n\ntest:\n  launch_marker: \"[COMPROBE] done\"\n  shot_prefix: \"[COMPROBE] shot \"\n  launch_drain_secs: 900\n",
+    "spec": {
+      "name": "comprobe",
+      "description": "COM proxy/stub lookup, cross-apartment IDataObject, and SHObjectProperties",
+      "build_hint": "tools/payloads/comprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/comprobe/comprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/comprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[COMPROBE] done",
+        "shot_prefix": "[COMPROBE] shot ",
+        "launch_drain_secs": 900
+      }
+    }
+  },
+  "cplreuse": {
+    "yaml": "# cplreuse — does a DLL load hang when it reuses a VA another DLL just vacated?\n#   tools/payloads/cplreuse/build.sh <arch>\n#   VIBEOS_PAYLOAD=cplreuse ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload cplreuse\n# Loads and frees the stock applets in Control Panel's order (all link at 0x10000000); a\n# watchdog names the load that stalls.\nname: cplreuse\ndescription: load/free each .cpl in turn and flag a load that stops making progress\n\nbuild_hint: \"tools/payloads/cplreuse/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/cplreuse/cplreuse-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/cplreuse.exe\n\ntest:\n  launch_marker: \"[CPLREUSE] done\"\n  pass_marker: \"[CPLREUSE] done VERDICT=PASS\"\n  launch_drain_secs: 1200\n",
+    "spec": {
+      "name": "cplreuse",
+      "description": "load/free each .cpl in turn and flag a load that stops making progress",
+      "build_hint": "tools/payloads/cplreuse/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/cplreuse/cplreuse-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/cplreuse.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[CPLREUSE] done",
+        "pass_marker": "[CPLREUSE] done VERDICT=PASS",
+        "launch_drain_secs": 1200
+      }
+    }
+  },
+  "cpuprof": {
+    "yaml": "# cpuprof — what is burning CPU in the minutes after boot?\n#   tools/payloads/cpuprof/build.sh <arch>\n#   VIBEOS_PAYLOAD=cpuprof ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload cpuprof\n# Every 10s for 4 minutes: processes and threads that used >=200ms of CPU in the interval,\n# with each thread's start address (symbolize with `vibeos-cli sym`).\nname: cpuprof\ndescription: per-interval CPU consumers (process and thread) for 4 minutes after boot\n\nbuild_hint: \"tools/payloads/cpuprof/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/cpuprof/cpuprof-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/cpuprof.exe\n\ntest:\n  launch_marker: \"[CPUPROF] done\"\n  launch_drain_secs: 900\n",
+    "spec": {
+      "name": "cpuprof",
+      "description": "per-interval CPU consumers (process and thread) for 4 minutes after boot",
+      "build_hint": "tools/payloads/cpuprof/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/cpuprof/cpuprof-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/cpuprof.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[CPUPROF] done",
+        "launch_drain_secs": 900
+      }
+    }
+  },
+  "crtmath": {
+    "yaml": "# crtmath — the i386 math entry points (_ftol*, _CI*, __libm_sse2_*) through all five\n# CRT DLLs' export tables, with their real register conventions, plus ucrtbase's\n# _chgsign/_controlfp_s/exp2f/nexttowardf and the _HUGE exports.\n#   tools/payloads/crtmath/build.sh i386\n#   VIBEOS_PAYLOAD=crtmath ./vibeos-cli build --arch i386\n#   ./vibeos-cli smoke --arch i386 --payload crtmath\nname: crtmath\ndescription: i386 _ftol/_CI*/__libm_sse2_* through msvcrt, msvcrt20, msvcrt40, crtdll and ucrtbase (i386)\n\nbuild_hint: \"tools/payloads/crtmath/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/crtmath/crtmath-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/crtmath.exe\n\ntest:\n  launch_marker: \"[CRTMATH] done\"\n  pass_marker: \"[CRTMATH] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "crtmath",
+      "description": "i386 _ftol/_CI*/__libm_sse2_* through msvcrt, msvcrt20, msvcrt40, crtdll and ucrtbase (i386)",
+      "build_hint": "tools/payloads/crtmath/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/crtmath/crtmath-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/crtmath.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[CRTMATH] done",
+        "pass_marker": "[CRTMATH] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "d3dwinetest": {
+    "yaml": "# Wine's conformance suites for the Direct3D 10/11 family (d3d11, dxgi, d2d1, dwrite),\n# which is built at every DLL_EXPORT_VERSION since 2026-10-17. Before that a default build\n# had no d3d11.dll and a program took its fallback; now D3D11CreateDevice goes to wined3d,\n# so these suites say whether it answers honestly (a device that works, or a clean\n# failure) rather than one that half-works.\n#\n# The list is olewinetest's gen_suites.py pointed at these suites; see that payload for\n# why children start on C:.\nname: d3dwinetest\ndescription: Wine d3d11 + dxgi + d2d1 + dwrite conformance suites under the apitest sweep runner\n\nbuild_hint: \"tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites d3d11,dxgi,d2d1,dwrite --register '' --out-dir tools/payloads/d3dwinetest\"\n\nbinaries:\n  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/d3dwinetest/winetest-suites-{arch}.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/d3dwinetest/winetest-skip-{arch}.txt\n    dest: bin/apitest-skip.txt\n  - src: tools/payloads/d3dwinetest/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: build-{arch}/modules/rostests/winetests/d3d11/d3d11_winetest.exe\n    dest: bin/d3d11_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/dxgi/dxgi_winetest.exe\n    dest: bin/dxgi_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/d2d1/d2d1_winetest.exe\n    dest: bin/d2d1_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/dwrite/dwrite_winetest.exe\n    dest: bin/dwrite_winetest.exe\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  # dwrite's font test runs up to 1800s (gen_suites SLOW_SUITES) and prints only its\n  # failures and a summary, so serial silence through it is not a wedge.\n  launch_idle_secs: 2000\n  launch_drain_secs: 7200\n",
+    "spec": {
+      "name": "d3dwinetest",
+      "description": "Wine d3d11 + dxgi + d2d1 + dwrite conformance suites under the apitest sweep runner",
+      "build_hint": "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites d3d11,dxgi,d2d1,dwrite --register '' --out-dir tools/payloads/d3dwinetest",
+      "binaries": [
+        {
+          "src": "tools/payloads/apitest/apitest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/d3dwinetest/winetest-suites-{arch}.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/d3dwinetest/winetest-skip-{arch}.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/d3dwinetest/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/d3d11/d3d11_winetest.exe",
+          "dest": "bin/d3d11_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/dxgi/dxgi_winetest.exe",
+          "dest": "bin/dxgi_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/d2d1/d2d1_winetest.exe",
+          "dest": "bin/d2d1_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/dwrite/dwrite_winetest.exe",
+          "dest": "bin/dwrite_winetest.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_idle_secs": 2000,
+        "launch_drain_secs": 7200
+      }
+    }
+  },
+  "delayimp": {
+    "yaml": "# delayimp — Wine's ucrtbase conformance suite (and the ucrtbase apitest) in the\n# guest, against ucrtbase.dll as built: all ucrt-rust since 2026-10-03.\n#   tools/payloads/delayimp/build.sh i386\n#   VIBEOS_PAYLOAD=delayimp ./vibeos-cli build --arch i386\n#   ./vibeos-cli smoke --arch i386 --payload delayimp\n# Rides the apitest sweep runner (one process per subtest, stdout piped to the\n# serial as [APITEST:<suite>] lines); see ../apitest/sweep.c.\nname: delayimp\ndescription: sdk delay-import apitests (nohook/globalhook/runtimehook) against the Rust delay-load runtime (i386)\n\nbuild_hint: \"tools/payloads/delayimp/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/delayimp/sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/delayimp/suites.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/delayimp/skip.txt\n    dest: bin/apitest-skip.txt\n  # Children start on the writable FAT scratch disk: X: is the CDFS boot image.\n  - src: tools/payloads/delayimp/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: tools/payloads/delayimp/delayimp_nohook_apitest.exe\n    dest: bin/delayimp_nohook_apitest.exe\n  - src: tools/payloads/delayimp/delayimp_globalhook_apitest.exe\n    dest: bin/delayimp_globalhook_apitest.exe\n  - src: tools/payloads/delayimp/delayimp_runtimehook_apitest.exe\n    dest: bin/delayimp_runtimehook_apitest.exe\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 1800\n  launch_idle_secs: 600\n",
+    "spec": {
+      "name": "delayimp",
+      "description": "sdk delay-import apitests (nohook/globalhook/runtimehook) against the Rust delay-load runtime (i386)",
+      "build_hint": "tools/payloads/delayimp/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/delayimp/sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/delayimp/suites.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/delayimp/skip.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/delayimp/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "tools/payloads/delayimp/delayimp_nohook_apitest.exe",
+          "dest": "bin/delayimp_nohook_apitest.exe"
+        },
+        {
+          "src": "tools/payloads/delayimp/delayimp_globalhook_apitest.exe",
+          "dest": "bin/delayimp_globalhook_apitest.exe"
+        },
+        {
+          "src": "tools/payloads/delayimp/delayimp_runtimehook_apitest.exe",
+          "dest": "bin/delayimp_runtimehook_apitest.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 1800,
+        "launch_idle_secs": 600
+      }
+    }
+  },
+  "dispprobe": {
+    "yaml": "# dispprobe — does oleaut32's DispCallFunc (Rust, per-arch global_asm! call_method trampolines\n# transcribed from Wine) marshal every argument and return type correctly?\n#   tools/payloads/dispprobe/build.sh <arch>\n#   VIBEOS_PAYLOAD=dispprobe ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload dispprobe\n# Upstream's asm thunks.c was declined on the assumption dispcall.rs replaces it; nothing in\n# the tree had ever called it.\nname: dispprobe\ndescription: call DispCallFunc across arg counts, int/float mixes, return types and a vtable\n\nbuild_hint: \"tools/payloads/dispprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/dispprobe/dispprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/dispprobe.exe\n\ntest:\n  launch_marker: \"[DISPPROBE] done\"\n  pass_marker: \"[DISPPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "dispprobe",
+      "description": "call DispCallFunc across arg counts, int/float mixes, return types and a vtable",
+      "build_hint": "tools/payloads/dispprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/dispprobe/dispprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/dispprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[DISPPROBE] done",
+        "pass_marker": "[DISPPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "doom": {
+    "yaml": "# Doom foreign-binary payload — the original one-off this harness generalizes.\n# Design doc: docs/engineering/payload-harness-design.md\n# Bring-up story: docs/engineering/doom-on-vibeos.md\n#\n# Build-time consumer: tools/payloads/compile.py (staging manifest).\n# Test-time consumer: tests/qemu/test_payload.py (interprets `test:` below).\n# Enable in an image:  VIBEOS_PAYLOAD=doom ./vibeos-cli build --arch <arch>\n#                      (legacy alias: VIBEOS_DOOM=1)\nname: doom\ndescription: doomgeneric (Win32 GDI backend) + shareware WAD — adversarial-compat demo\n\nbuild_hint: \"tools/doom/build.sh {arch}\"\n\nbinaries:\n  - src: tools/doom/doom-{arch}.exe\n    dest: system32/doom.exe\n  - src: tools/doom/doom1.wad\n    dest: system32/doom1.wad\n\nautostart:\n  - cmd: doom.exe\n    mode: demo\n    # Run-key emission is blocked on the amd64 ProcessStartupItems fix\n    # (task #24 / design doc Workstream A). Until then winlogon's\n    # file-presence check (DoomStaged -> TryStartDoom) launches it; staging\n    # dest system32/doom.exe is what arms that path.\n    via: legacy-winlogon\n\ntest:\n  # Serial marker proving the launcher actually spawned the exe\n  # ([WINLOGON] on arm64 / [USERINIT] on x86 both emit it).\n  launch_marker: \"doom.exe created\"\n  launch_drain_secs: 30    # launcher may fire after the boot marker\n\n  xfail:\n    i386: >-\n      i386 can't load a keyboard layout at boot: LoadKeyboardLayoutW ->\n      NtCreateSection(SEC_IMAGE) deadlocks in the i386 Rust MM, so winlogon\n      skips it; win32k drops every key at 'NO keyboard layout'. Flip to a\n      hard assert once fixed (task #19).\n\n  # Gate 2 — the game is drawing frames (attract demo animates the screen).\n  renders:\n    settle: 3              # window come-up after boot marker\n    gap: 2.0               # seconds between the two compared screendumps\n    frame_delta_min: 0.02  # attract demo animates ~50%; tray clock <<0.1%\n\n  # Gate 3 — PLAYABLE: keys reach the game. Click into the window for focus\n  # (exercises the mouse chain), then menu-drive a new game; an idle E1M1\n  # first-person view is near-static vs the ~50%-delta attract demo.\n  input:\n    settle: 3\n    focus: click-center    # rel-mouse sweep to top-left, recenter, left-click\n    drive:\n      - keys: [esc, ret, ret, ret]   # menu / New Game / episode / skill\n        gap: 0.7\n      - wait: 2.0                    # level load + first frame\n    oracle:\n      frame_delta_static_max: 0.012  # status-bar face + palette dither budget\n      gap: 1.5\n      survives: true                 # QMP query-status still running at end\n    retries: 3             # foreground can lag post-restore; ESC also\n    on_retry:              # closes a stray menu before the re-attempt\n      - keys: [esc]\n        gap: 0.7\n      - focus: click-center\n",
+    "spec": {
+      "name": "doom",
+      "description": "doomgeneric (Win32 GDI backend) + shareware WAD — adversarial-compat demo",
+      "build_hint": "tools/doom/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/doom/doom-{arch}.exe",
+          "dest": "system32/doom.exe"
+        },
+        {
+          "src": "tools/doom/doom1.wad",
+          "dest": "system32/doom1.wad"
+        }
+      ],
+      "autostart": [
+        {
+          "cmd": "doom.exe",
+          "mode": "demo",
+          "via": "legacy-winlogon"
+        }
+      ],
+      "test": {
+        "launch_marker": "doom.exe created",
+        "launch_drain_secs": 30,
+        "xfail": {
+          "i386": "i386 can't load a keyboard layout at boot: LoadKeyboardLayoutW -> NtCreateSection(SEC_IMAGE) deadlocks in the i386 Rust MM, so winlogon skips it; win32k drops every key at 'NO keyboard layout'. Flip to a hard assert once fixed (task #19)."
+        },
+        "renders": {
+          "settle": 3,
+          "gap": 2.0,
+          "frame_delta_min": 0.02
+        },
+        "input": {
+          "settle": 3,
+          "focus": "click-center",
+          "drive": [
+            {
+              "keys": [
+                "esc",
+                "ret",
+                "ret",
+                "ret"
+              ],
+              "gap": 0.7
+            },
+            {
+              "wait": 2.0
+            }
+          ],
+          "oracle": {
+            "frame_delta_static_max": 0.012,
+            "gap": 1.5,
+            "survives": true
+          },
+          "retries": 3,
+          "on_retry": [
+            {
+              "keys": [
+                "esc"
+              ],
+              "gap": 0.7
+            },
+            {
+              "focus": "click-center"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "fatprobe": {
+    "yaml": "# fatprobe — the fastfat paths the ucrtbase Tier-2 grader bugchecked arm64 on\n# (FsRtlCheckOplock, 0x23): MoveFileExW of an existing file, and a create/delete run.\n#   tools/payloads/fatprobe/build.sh <arch>\n#   VIBEOS_PAYLOAD=fatprobe ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload fatprobe\nname: fatprobe\ndescription: rename and create/delete files in the temp dir; a bugcheck here is the fastfat oplock bug\n\nbuild_hint: \"tools/payloads/fatprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/fatprobe/fatprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fatprobe.exe\n\ntest:\n  launch_marker: \"[FATPROBE] done\"\n  pass_marker: \"[FATPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "fatprobe",
+      "description": "rename and create/delete files in the temp dir; a bugcheck here is the fastfat oplock bug",
+      "build_hint": "tools/payloads/fatprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/fatprobe/fatprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fatprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[FATPROBE] done",
+        "pass_marker": "[FATPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "fenv": {
+    "yaml": "# fenv — ucrtbase's fenv.h family (ucrt-rust fenv.rs) graded by Wine's test_fenv.\n#   tools/payloads/fenv/build.sh {arch}\n#   VIBEOS_PAYLOAD=fenv ./vibeos-cli build --arch {arch}\n#   ./vibeos-cli smoke --arch {arch} --payload fenv\nname: fenv\ndescription: ucrtbase fegetenv/fesetenv/fesetround/... against Wine's test_fenv expectations\n\nbuild_hint: \"tools/payloads/fenv/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/fenv/fenv-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fenv.exe\n\ntest:\n  launch_marker: \"[FENV] done\"\n  pass_marker: \"[FENV] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "fenv",
+      "description": "ucrtbase fegetenv/fesetenv/fesetround/... against Wine's test_fenv expectations",
+      "build_hint": "tools/payloads/fenv/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/fenv/fenv-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fenv.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[FENV] done",
+        "pass_marker": "[FENV] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "fpctrl": {
+    "yaml": "# fpctrl — does ucrtbase's own FP control family answer as msvcrt.dll's does?\n#   tools/payloads/fpctrl/build.sh {arm64|amd64}\n#   VIBEOS_PAYLOAD=fpctrl ./vibeos-cli build --arch arm64\n#   ./vibeos-cli smoke --arch arm64 --payload fpctrl\n# arm64 and amd64: until 2026-10-03 arm64 ucrtbase forwarded _clearfp/_control87/_controlfp/\n# _statusfp into msvcrt.dll (ucrt-rust's fpctrl_arm64.rs replaced the forward); amd64's came\n# from sdk/lib/crt's MXCSR C until fpctrl_amd64.rs. msvcrt.dll's bodies are the oracle.\nname: fpctrl\ndescription: ucrtbase FP control/status family vs msvcrt.dll's on the same FP unit (arm64, amd64)\n\nbuild_hint: \"tools/payloads/fpctrl/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/fpctrl/fpctrl-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fpctrl.exe\n\ntest:\n  launch_marker: \"[FPCTRL] done\"\n  pass_marker: \"[FPCTRL] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "fpctrl",
+      "description": "ucrtbase FP control/status family vs msvcrt.dll's on the same FP unit (arm64, amd64)",
+      "build_hint": "tools/payloads/fpctrl/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/fpctrl/fpctrl-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fpctrl.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[FPCTRL] done",
+        "pass_marker": "[FPCTRL] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "fsprobe": {
+    "yaml": "# fsprobe — the fastfat operations that bugchecked the guest in FsRtlCheckOplock (renames,\n# a create/delete run). Each step announces itself first, so a bugcheck names its operation.\n#   tools/payloads/fsprobe/build.sh <arch>\n#   VIBEOS_PAYLOAD=fsprobe ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload fsprobe\nname: fsprobe\ndescription: rename and create/delete on fastfat, one announced step at a time\n\nbuild_hint: \"tools/payloads/fsprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/fsprobe/fsprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fsprobe.exe\n\ntest:\n  launch_marker: \"[FSPROBE] done\"\n  pass_marker: \"[FSPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "fsprobe",
+      "description": "rename and create/delete on fastfat, one announced step at a time",
+      "build_hint": "tools/payloads/fsprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/fsprobe/fsprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fsprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[FSPROBE] done",
+        "pass_marker": "[FSPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "fwprobe": {
+    "yaml": "# fwprobe — does GetSystemFirmwareTable answer for every provider Windows has?\n#   tools/payloads/fwprobe/build.sh <arch>\n#   VIBEOS_PAYLOAD=fwprobe ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload fwprobe\n# 'RSMB': one table (ID 0) holding the raw SMBIOS structures behind the 8-byte header.\n# 'ACPI': every table the XSDT/RSDT lists plus the DSDT, each fetched whole with a zero checksum.\nname: fwprobe\ndescription: enumerate and fetch the RSMB and ACPI firmware tables, checking each\n\nbuild_hint: \"tools/payloads/fwprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/fwprobe/fwprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fwprobe.exe\n\ntest:\n  launch_marker: \"[FWPROBE] done\"\n  pass_marker: \"[FWPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 120\n",
+    "spec": {
+      "name": "fwprobe",
+      "description": "enumerate and fetch the RSMB and ACPI firmware tables, checking each",
+      "build_hint": "tools/payloads/fwprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/fwprobe/fwprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/fwprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[FWPROBE] done",
+        "pass_marker": "[FWPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 120
+      }
+    }
+  },
+  "gdiprobe": {
+    "yaml": "# gdiprobe — is a memory DC's world transform identity, as dwrite's bitmap render target expects?\n# (dwrite font.c:1397/1411/1420 read a non-identity GetWorldTransform on that DC.)\n#   tools/payloads/gdiprobe/build.sh <arch>\n#   VIBEOS_PAYLOAD=gdiprobe ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload gdiprobe\nname: gdiprobe\ndescription: read a memory DC's world transform through dwrite's render-target setup steps\n\nbuild_hint: \"tools/payloads/gdiprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/gdiprobe/gdiprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/gdiprobe.exe\n\ntest:\n  launch_marker: \"[GDIPROBE] done\"\n  pass_marker: \"[GDIPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 120\n",
+    "spec": {
+      "name": "gdiprobe",
+      "description": "read a memory DC's world transform through dwrite's render-target setup steps",
+      "build_hint": "tools/payloads/gdiprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/gdiprobe/gdiprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/gdiprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[GDIPROBE] done",
+        "pass_marker": "[GDIPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 120
+      }
+    }
+  },
+  "hostapps": {
+    "yaml": "# hostapps — real third-party programs from the host's Program Files, run under the apitest\n# sweep runner (one command line per list entry, stdout and exit code captured). The stub-hit\n# report only means something over third-party programs (modern-windows-compat-roadmap,\n# \"Seed the stub-hit report\"), and this is the first payload that runs any.\n# Their binaries are not ours to commit, so stage.py copies them from the host at build time:\n#   [VIBEOS_HOST_APPS_ROOT=<dir, default /mnt/c/Program Files>] \\\n#   VIBEOS_PAYLOAD=hostapps ./vibeos-cli build --arch amd64\n#   ./vibeos-cli smoke --arch amd64 --payload hostapps\n#   python3 tools/stub_hits.py /tmp/vibeos-cli/<run>/payload/amd64-uefi_serial.log\n# apps.txt says which folders and files; commands.txt is the sweep list.\nbuild_hint: \"tools/payloads/hostapps/build.sh {arch}\"\nname: hostapps\ndescription: run real third-party programs (7-Zip, CMake, GnuPG) from the host's Program Files\narches: [amd64]\n\nbinaries:\n  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/hostapps/commands.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/hostapps/skip.txt\n    dest: bin/apitest-skip.txt\n  - src: tools/payloads/hostapps/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: tools/payloads/hostapps/fsquery-{arch}.exe\n    dest: bin/fsquery/fsquery.exe\n  - src: tools/payloads/hostapps/regsd-{arch}.exe\n    dest: bin/regsd/regsd.exe\n  - src: tools/payloads/hostapps/w11api-{arch}.exe\n    dest: bin/w11api/w11api.exe\n  - src: tools/payloads/hostapps/w11tok-{arch}.exe\n    dest: bin/w11tok/w11tok.exe\nbinaries_from: tools/payloads/hostapps/stage.py\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_idle_secs: 1200\n  launch_drain_secs: 3600\n  # 7-Zip sizes its buffers from the RAM it sees; at the smoke default (512M) archiving\n  # failed \"Can't allocate required memory\", which is not the bug class we are after.\n  vm_memory: 2G\n",
+    "spec": {
+      "build_hint": "tools/payloads/hostapps/build.sh {arch}",
+      "name": "hostapps",
+      "description": "run real third-party programs (7-Zip, CMake, GnuPG) from the host's Program Files",
+      "arches": [
+        "amd64"
+      ],
+      "binaries": [
+        {
+          "src": "tools/payloads/apitest/apitest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/hostapps/commands.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/hostapps/skip.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/hostapps/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "tools/payloads/hostapps/fsquery-{arch}.exe",
+          "dest": "bin/fsquery/fsquery.exe"
+        },
+        {
+          "src": "tools/payloads/hostapps/regsd-{arch}.exe",
+          "dest": "bin/regsd/regsd.exe"
+        },
+        {
+          "src": "tools/payloads/hostapps/w11api-{arch}.exe",
+          "dest": "bin/w11api/w11api.exe"
+        },
+        {
+          "src": "tools/payloads/hostapps/w11tok-{arch}.exe",
+          "dest": "bin/w11tok/w11tok.exe"
+        }
+      ],
+      "binaries_from": "tools/payloads/hostapps/stage.py",
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_idle_secs": 1200,
+        "launch_drain_secs": 3600,
+        "vm_memory": "2G"
+      }
+    }
+  },
+  "httpd": {
+    "yaml": "# httpd stress payload — the netstack load gate (payload-harness quest #2).\n# Design doc: docs/engineering/payload-harness-design.md.\n#\n# vibehttpd (vibehttpd.c, built by build.sh) is a deliberately NON-foreign\n# threaded HTTP server using only the proven winsock surface (blocking\n# sockets, thread-per-connection): the gate measures the KERNEL under load —\n# afd handle churn, IRP cancellation, nonpaged pool, accept backlog — not\n# unimplemented winsock features.\n#\n# Autostart is the REAL Windows mechanism: a copy in the All Users Startup\n# folder, walked by explorer's AutoStartupApplications (instrumented — every\n# launch prints [EXPLORER] startup: runCmd). This doubles as the automated\n# regression gate for the amd64 ProcessStartupItems flake (Workstream A).\nname: httpd\ndescription: threaded winsock HTTP server + host-side tcp_hammer — netstack stress gate\n\nbuild_hint: \"tools/payloads/httpd/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/httpd/httpd-{arch}.exe\n    dest: system32/httpd.exe\n  # Startup-folder autostart: same exe, grafted at the IMAGE root (not under\n  # reactos/) into the folder AutoStartupApplications walks.\n  - src: tools/payloads/httpd/httpd-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/httpd.exe\n\ntest:\n  # Needs a NIC + the payload hostfwd: boot the -net arch variant.\n  net: true\n  launch_marker: \"[HTTPD] listening on :8080\"\n  launch_drain_secs: 60          # explorer startup-folder walk runs post-shell\n  tcp_hammer:\n    guest_port: 8080             # forwarded from vm.config.payload_hostfwd_port\n    threads: 16                  # concurrent host connections\n    requests: 20                 # per thread, mixed / + /data?n=<size> (checksummed)\n    data_sizes: [1, 512, 4096, 65536]\n    status_check: true           # /status requests= must cover every 200 we got\n",
+    "spec": {
+      "name": "httpd",
+      "description": "threaded winsock HTTP server + host-side tcp_hammer — netstack stress gate",
+      "build_hint": "tools/payloads/httpd/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/httpd/httpd-{arch}.exe",
+          "dest": "system32/httpd.exe"
+        },
+        {
+          "src": "tools/payloads/httpd/httpd-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/httpd.exe"
+        }
+      ],
+      "test": {
+        "net": true,
+        "launch_marker": "[HTTPD] listening on :8080",
+        "launch_drain_secs": 60,
+        "tcp_hammer": {
+          "guest_port": 8080,
+          "threads": 16,
+          "requests": 20,
+          "data_sizes": [
+            1,
+            512,
+            4096,
+            65536
+          ],
+          "status_check": true
+        }
+      }
+    }
+  },
+  "k32winetest": {
+    "yaml": "# Wine's kernel32 conformance suite. Its `version` subtest is the oracle for the version\n# flip: test_pe_os_version copies itself beside a .manifest declaring chosen supportedOS\n# GUIDs and checks what GetVersionEx/RtlGetVersion/VerifyVersionInfo report, which is\n# Windows' manifest rule (an undeclared process is told 6.2). It passes unchanged on the\n# Windows 11 host (156 checks, 0 failures, 2026-10-17).\n#\n# The list is olewinetest's gen_suites.py pointed at kernel32; --only narrows it to a\n# subtest. Children start on C: (the writable scratch disk) because the version test\n# writes its exe copies and manifests to the current directory.\nname: k32winetest\ndescription: Wine kernel32 conformance suite under the apitest sweep runner\n\nbuild_hint: \"tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites kernel32 --only kernel32:version --register '' --out-dir tools/payloads/k32winetest\"\n\nbinaries:\n  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/k32winetest/winetest-suites-{arch}.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/k32winetest/winetest-skip-{arch}.txt\n    dest: bin/apitest-skip.txt\n  - src: tools/payloads/k32winetest/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: build-{arch}/modules/rostests/winetests/kernel32/kernel32_winetest.exe\n    dest: bin/kernel32_winetest.exe\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 3600\n  launch_idle_secs: 600\n",
+    "spec": {
+      "name": "k32winetest",
+      "description": "Wine kernel32 conformance suite under the apitest sweep runner",
+      "build_hint": "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites kernel32 --only kernel32:version --register '' --out-dir tools/payloads/k32winetest",
+      "binaries": [
+        {
+          "src": "tools/payloads/apitest/apitest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/k32winetest/winetest-suites-{arch}.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/k32winetest/winetest-skip-{arch}.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/k32winetest/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/kernel32/kernel32_winetest.exe",
+          "dest": "bin/kernel32_winetest.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 3600,
+        "launch_idle_secs": 600
+      }
+    }
+  },
+  "kmtest": {
+    "yaml": "# kmtest conformance payload — conformance-ratchet quest M2.\n# Design doc: docs/engineering/conformance-ratchet-quest.md.\n#\n# The kmtest binaries themselves (kmtest_.exe, kmtest_drv.sys + helper\n# drivers) are staged to reactos/bin by add_rostests_file when the build dir\n# has ENABLE_ROSTESTS(_KMTESTS)=ON. This payload grafts:\n#   * kmtest-sweep.exe into the All Users Startup folder (the real Windows\n#     autostart mechanism, walked by explorer's AutoStartupApplications; a\n#     native GUI-subsystem exe — a .cmd there dies silently, ShellExecuteExW\n#     on scripts from the startup walk never spawns cmd.exe)\n#   * kmtest-tests-{arch}.txt (the PER-ARCH sweep list) staged in-guest as\n#     bin/kmtest-tests.txt. Per-arch because i386 runs kmtest_drv under\n#     DUMMY_PSEH (native SEH is amd64/arm64-only) → a strictly larger set of\n#     structural crashers than amd64, so quarantines diverge by arch.\n# Booting a rostests-less build with this payload fails loudly on serial\n# ([KMTEST-SWEEP] launch FAILED) — no silent degradation.\nname: kmtest\ndescription: kernel-mode NT API conformance tests (kmtests) — serial-teed sweep autostart\n\nbuild_hint: \"tools/payloads/kmtest/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/kmtest/kmtest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/kmtest-sweep.exe\n  - src: tools/payloads/kmtest/kmtest-tests-{arch}.txt\n    dest: bin/kmtest-tests.txt\n\ntest:\n  # The sweep gates on SC_AutoStartComplete, then runs one kmtest_.exe per\n  # listed test (180s per-test cap). Budget generously: gate + N tests.\n  launch_marker: \"[KMTEST-SWEEP] done\"\n  launch_drain_secs: 5400\n  # Sample every vCPU each 20 s of serial silence (silence-samples.txt in the\n  # run dir). Diagnostic only: arm64 NpfsConnect goes quiet ~95 s per round\n  # with the clock ticking and nothing scheduled, then recovers -- no hang\n  # path ever fires, so the only chance to see what holds the CPU is DURING it.\n  silence_sample_secs: 20\n",
+    "spec": {
+      "name": "kmtest",
+      "description": "kernel-mode NT API conformance tests (kmtests) — serial-teed sweep autostart",
+      "build_hint": "tools/payloads/kmtest/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/kmtest/kmtest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/kmtest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/kmtest/kmtest-tests-{arch}.txt",
+          "dest": "bin/kmtest-tests.txt"
+        }
+      ],
+      "test": {
+        "launch_marker": "[KMTEST-SWEEP] done",
+        "launch_drain_secs": 5400,
+        "silence_sample_secs": 20
+      }
+    }
+  },
+  "locking": {
+    "yaml": "# locking — _locking's retry contract (1 s apart, ten tries, EDEADLOCK) in ucrtbase.dll and\n# msvcrt.dll, graded against the documented behaviour; too slow for ucrtdiff's 8 s budget.\n#   tools/payloads/locking/build.sh {arch}\n#   VIBEOS_PAYLOAD=locking ./vibeos-cli build --arch {arch}\n#   ./vibeos-cli smoke --arch {arch} --payload locking\nname: locking\ndescription: _locking retry/EDEADLOCK contract in ucrtbase and msvcrt\n\nbuild_hint: \"tools/payloads/locking/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/locking/locking-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/locking.exe\n\ntest:\n  launch_marker: \"[LOCKING] done\"\n  pass_marker: \"[LOCKING] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "locking",
+      "description": "_locking retry/EDEADLOCK contract in ucrtbase and msvcrt",
+      "build_hint": "tools/payloads/locking/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/locking/locking-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/locking.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[LOCKING] done",
+        "pass_marker": "[LOCKING] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "matherrs": {
+    "yaml": "# matherrs — Wine's ucrtbase test_math_errors, one DbgPrint per call (finds misc's hang).\n#   tools/payloads/matherrs/build.sh {arch}\n#   VIBEOS_PAYLOAD=matherrs ./vibeos-cli build --arch {arch}\n#   ./vibeos-cli smoke --arch {arch} --payload matherrs\nname: matherrs\ndescription: Wine ucrtbase test_math_errors (errno + _matherr per math function), traced\n\nbuild_hint: \"tools/payloads/matherrs/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/matherrs/matherrs-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/matherrs.exe\n\ntest:\n  launch_marker: \"[MATHERRS] done\"\n  pass_marker: \"[MATHERRS] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "matherrs",
+      "description": "Wine ucrtbase test_math_errors (errno + _matherr per math function), traced",
+      "build_hint": "tools/payloads/matherrs/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/matherrs/matherrs-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/matherrs.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[MATHERRS] done",
+        "pass_marker": "[MATHERRS] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "mfwinetest": {
+    "yaml": "# Wine's own conformance suites for the Media Foundation stack (mfplat, mf) and the small\n# Win10 DLLs imported with it (mfplat, rtworkq, wevtapi, qwave), run by the\n# apitest sweep runner. These modules are Wine imports, so Wine's suites are\n# both their spec and the before/after oracle for their Rust translation.\n#\n# The list is olewinetest's gen_suites.py pointed at these suites; see that\n# payload for why the list registers DLLs first and why children start on C:.\nname: mfwinetest\ndescription: Wine mfplat + mf + rtworkq + wevtapi + qwave conformance suites under the apitest sweep runner\n\nbuild_hint: \"tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites mfplat,mf,rtworkq,wevtapi,qwave --register mf,mfreadwrite,evr --skip mf:transform --out-dir tools/payloads/mfwinetest\"\n\nbinaries:\n  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/mfwinetest/winetest-suites-{arch}.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/mfwinetest/winetest-skip-{arch}.txt\n    dest: bin/apitest-skip.txt\n  - src: tools/payloads/mfwinetest/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: build-{arch}/modules/rostests/winetests/mfplat/mfplat_winetest.exe\n    dest: bin/mfplat_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/mf/mf_winetest.exe\n    dest: bin/mf_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/rtworkq/rtworkq_winetest.exe\n    dest: bin/rtworkq_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/wevtapi/wevtapi_winetest.exe\n    dest: bin/wevtapi_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/qwave/qwave_winetest.exe\n    dest: bin/qwave_winetest.exe\n  - src: build-{arch}/base/system/regsvr32/regsvr32.exe\n    dest: bin/regsvr32.exe\n  - src: build-{arch}/base/applications/cmdutils/reg/reg.exe\n    dest: bin/reg.exe\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 3600\n  launch_idle_secs: 600\n",
+    "spec": {
+      "name": "mfwinetest",
+      "description": "Wine mfplat + mf + rtworkq + wevtapi + qwave conformance suites under the apitest sweep runner",
+      "build_hint": "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites mfplat,mf,rtworkq,wevtapi,qwave --register mf,mfreadwrite,evr --skip mf:transform --out-dir tools/payloads/mfwinetest",
+      "binaries": [
+        {
+          "src": "tools/payloads/apitest/apitest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/mfwinetest/winetest-suites-{arch}.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/mfwinetest/winetest-skip-{arch}.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/mfwinetest/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/mfplat/mfplat_winetest.exe",
+          "dest": "bin/mfplat_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/mf/mf_winetest.exe",
+          "dest": "bin/mf_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/rtworkq/rtworkq_winetest.exe",
+          "dest": "bin/rtworkq_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/wevtapi/wevtapi_winetest.exe",
+          "dest": "bin/wevtapi_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/qwave/qwave_winetest.exe",
+          "dest": "bin/qwave_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/base/system/regsvr32/regsvr32.exe",
+          "dest": "bin/regsvr32.exe"
+        },
+        {
+          "src": "build-{arch}/base/applications/cmdutils/reg/reg.exe",
+          "dest": "bin/reg.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 3600,
+        "launch_idle_secs": 600
+      }
+    }
+  },
+  "modrun": {
+    "yaml": "# modrun — translated modules at runtime, the shipped Rust diffed against its pre-flip C.\n#   VIBEOS_PAYLOAD=modrun ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload modrun\n#   re-grade a saved boot:  python3 tools/payloads/modrun/modrun.py grade <full.log> --arch <arch>\n# Adding a module is a suites/<module>.yaml (see modrun.py) plus, for an oracle,\n# `python -m rustconv.c_oracle <module dir>`. The guest only runs and reports; the host grades.\nname: modrun\ndescription: run each suite's commands under the Rust module and its C oracle, diff the output\n\nbuild_hint: \"tools/payloads/modrun/build.sh {arch}\"\n# build.sh's ninja step must run every build: the probes link the Rust crates, which can change\n# with no file in this directory changing.\nrebuild: always\n\nbinaries:\n  - src: tools/payloads/modrun/modrun-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/modrun.exe\n  - src: tools/payloads/modrun/modrun-{arch}.txt\n    dest: bin/modrun.txt\n# Each suite's `stage:` list (oracle and probe exes from build-<arch>).\nbinaries_from: tools/payloads/modrun/modrun.py\n\ntest:\n  launch_marker: \"[MODRUN] done\"\n  launch_drain_secs: 1200\n  launch_idle_secs: 300\n  grader: tools/payloads/modrun/modrun.py\n",
+    "spec": {
+      "name": "modrun",
+      "description": "run each suite's commands under the Rust module and its C oracle, diff the output",
+      "build_hint": "tools/payloads/modrun/build.sh {arch}",
+      "rebuild": "always",
+      "binaries": [
+        {
+          "src": "tools/payloads/modrun/modrun-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/modrun.exe"
+        },
+        {
+          "src": "tools/payloads/modrun/modrun-{arch}.txt",
+          "dest": "bin/modrun.txt"
+        }
+      ],
+      "binaries_from": "tools/payloads/modrun/modrun.py",
+      "test": {
+        "launch_marker": "[MODRUN] done",
+        "launch_drain_secs": 1200,
+        "launch_idle_secs": 300,
+        "grader": "tools/payloads/modrun/modrun.py"
+      }
+    }
+  },
+  "msvcrtwine": {
+    "yaml": "# msvcrtwine — Wine's msvcrt conformance suite (and the msvcrt apitest) in the guest,\n# against msvcrt.dll as built. Made to grade the 2026-10-03 i386 SSE2 switch as an A/B.\n#   tools/payloads/msvcrtwine/build.sh i386\n#   VIBEOS_PAYLOAD=msvcrtwine ./vibeos-cli build --arch i386\n#   ./vibeos-cli smoke --arch i386 --payload msvcrtwine\n# Rides the apitest sweep runner (one process per subtest, stdout piped to the\n# serial as [APITEST:<suite>] lines); see ../apitest/sweep.c.\nname: msvcrtwine\ndescription: Wine msvcrt conformance + msvcrt apitest against the Rust msvcrt (i386)\n\nbuild_hint: \"tools/payloads/msvcrtwine/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/msvcrtwine/sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/msvcrtwine/suites.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/msvcrtwine/skip.txt\n    dest: bin/apitest-skip.txt\n  # Children start on the writable FAT scratch disk: X: is the CDFS boot image.\n  - src: tools/payloads/msvcrtwine/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: tools/payloads/msvcrtwine/msvcrt_winetest.exe\n    dest: bin/msvcrt_winetest.exe\n  - src: tools/payloads/msvcrtwine/msvcrt_apitest.exe\n    dest: bin/msvcrt_apitest.exe\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 1800\n  launch_idle_secs: 600\n",
+    "spec": {
+      "name": "msvcrtwine",
+      "description": "Wine msvcrt conformance + msvcrt apitest against the Rust msvcrt (i386)",
+      "build_hint": "tools/payloads/msvcrtwine/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/msvcrtwine/sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/msvcrtwine/suites.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/msvcrtwine/skip.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/msvcrtwine/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "tools/payloads/msvcrtwine/msvcrt_winetest.exe",
+          "dest": "bin/msvcrt_winetest.exe"
+        },
+        {
+          "src": "tools/payloads/msvcrtwine/msvcrt_apitest.exe",
+          "dest": "bin/msvcrt_apitest.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 1800,
+        "launch_idle_secs": 600
+      }
+    }
+  },
+  "ndisprobe": {
+    "yaml": "# ndisprobe — ndis.sys end to end through a real miniport, via ndisuio: bind, open, OID\n# query/set, raw send, raw receive (an ARP round trip to slirp's gateway).\n#   tools/payloads/ndisprobe/build.sh <arch>\n#   VIBEOS_PAYLOAD=ndisprobe ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload ndisprobe\nname: ndisprobe\ndescription: ndis.sys bind, OID, send and receive through e1000 and ndisuio\n\nbuild_hint: \"tools/payloads/ndisprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/ndisprobe/ndisprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/ndisprobe.exe\n\ntest:\n  launch_marker: \"[NDISPROBE] done\"\n  pass_marker: \"[NDISPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 300\n  # A NIC an NDIS miniport drives and netstack does not: QEMU's 82544GC (PCI 8086:100C) is\n  # in nete1000.inf on every arch. netstack claims only 100E/100F; rtl8139's driver handles\n  # port BARs only, which arm64's virt machine maps as memory.\n  qemu_extra_args: \"-nic user,model=e1000-82544gc\"\n",
+    "spec": {
+      "name": "ndisprobe",
+      "description": "ndis.sys bind, OID, send and receive through e1000 and ndisuio",
+      "build_hint": "tools/payloads/ndisprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/ndisprobe/ndisprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/ndisprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[NDISPROBE] done",
+        "pass_marker": "[NDISPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 300,
+        "qemu_extra_args": "-nic user,model=e1000-82544gc"
+      }
+    }
+  },
+  "neonctx": {
+    "yaml": "# neonctx — do the arm64 V registers survive an exception and NtContinue?\n#\n# Loads a pattern into v0-v31, faults, and a vectored handler resumes with\n# EXCEPTION_CONTINUE_EXECUTION after scribbling over the live registers and editing\n# CONTEXT.V[31]. Passes only if the handler SAW the pattern in its CONTEXT, the resumed\n# code gets the pattern back, v31 carries the edit, and FPCR round-trips. Before 2026-09-25\n# the kernel dispatched exceptions with CONTROL|INTEGER only and NtContinue's exit\n# (KiExceptionExit) skipped the NEON restore, so all four failed.\n#\n#   tools/payloads/neonctx/build.sh arm64\n#   ./vibeos-cli smoke --arch arm64 --payload neonctx\n# Verdict line: \"[NEONCTX] done VERDICT=PASS|FAIL\". arm64 only.\nname: neonctx\ndescription: arm64 V0-V31/FPCR through an exception, the handler's CONTEXT, and NtContinue\n\nbuild_hint: \"tools/payloads/neonctx/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/neonctx/neonctx-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/neonctx.exe\n\ntest:\n  launch_marker: \"[NEONCTX] done\"\n  launch_drain_secs: 600\n",
+    "spec": {
+      "name": "neonctx",
+      "description": "arm64 V0-V31/FPCR through an exception, the handler's CONTEXT, and NtContinue",
+      "build_hint": "tools/payloads/neonctx/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/neonctx/neonctx-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/neonctx.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[NEONCTX] done",
+        "launch_drain_secs": 600
+      }
+    }
+  },
+  "netprobe": {
+    "yaml": "# netprobe — the client network path rapps' database download takes, one layer at a time:\n# DNS, a raw TCP connect, then wininet over http and https. Each step prints its exact error.\n#   tools/payloads/netprobe/build.sh <arch>\n#   VIBEOS_PAYLOAD=netprobe ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload netprobe\nname: netprobe\ndescription: DNS, TCP connect and wininet http/https to the rapps database host\n\nbuild_hint: \"tools/payloads/netprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/netprobe/netprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/netprobe.exe\n\ntest:\n  launch_marker: \"[NETPROBE] done\"\n  pass_marker: \"[NETPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 1200\n",
+    "spec": {
+      "name": "netprobe",
+      "description": "DNS, TCP connect and wininet http/https to the rapps database host",
+      "build_hint": "tools/payloads/netprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/netprobe/netprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/netprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[NETPROBE] done",
+        "pass_marker": "[NETPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 1200
+      }
+    }
+  },
+  "oldcrt": {
+    "yaml": "# oldcrt — do msvcrt20/msvcrt40/crtdll load and answer correctly on their Rust cohab?\n#   tools/payloads/oldcrt/build.sh i386\n#   VIBEOS_PAYLOAD=oldcrt ./vibeos-cli build --arch i386\n#   ./vibeos-cli smoke --arch i386 --payload oldcrt\n# i386 ONLY: the three legacy DLLs are not built on amd64/arm64. msvcrt.dll is probed\n# too, as the control.\nname: oldcrt\ndescription: legacy CRT DLLs (msvcrt20/msvcrt40/crtdll) load and answer, on their Rust cohab (i386)\n\nbuild_hint: \"tools/payloads/oldcrt/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/oldcrt/oldcrt-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/oldcrt.exe\n\ntest:\n  launch_marker: \"[OLDCRT] done\"\n  pass_marker: \"[OLDCRT] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "oldcrt",
+      "description": "legacy CRT DLLs (msvcrt20/msvcrt40/crtdll) load and answer, on their Rust cohab (i386)",
+      "build_hint": "tools/payloads/oldcrt/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/oldcrt/oldcrt-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/oldcrt.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[OLDCRT] done",
+        "pass_marker": "[OLDCRT] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "olewinetest": {
+    "yaml": "# Wine's own ole32/oleaut32 conformance suites, run by the apitest sweep runner.\n#\n# Why this exists: ole32 and oleaut32 are Rust ports of the PRE-wine-10.0 C, and\n# upstream's wine-10.0 syncs (5f6b295cb90, e05d78ede06) landed on the dead C\n# afterwards. Porting that delta needs a before/after oracle, and the best one\n# is Wine's own tests for exactly these modules. The full rostests corpus is\n# not a usable vehicle (--rostests does not build on every arch, and it stages\n# 128 suites), so this payload stages just the two suites from a build dir that\n# has them (any earlier `vibeos-cli build --arch X --rostests`) and reuses the\n# apitest sweep runner, which already pipes each child's stdout to serial as\n# [APITEST:<suite> <subtest>] lines.\n#\n# Wine test executables do nothing useful without a subtest name, so the list\n# is one `<suite>.exe <subtest>` line per test: gen_suites.py reads each\n# suite's testlist.c.\nname: olewinetest\ndescription: Wine ole32 + oleaut32 conformance suites under the apitest sweep runner\n\nbuild_hint: \"tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch}\"\n\nbinaries:\n  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/olewinetest/winetest-suites-{arch}.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/olewinetest/winetest-skip-{arch}.txt\n    dest: bin/apitest-skip.txt\n  # Children start on the writable FAT scratch disk: X: is the CDFS boot image,\n  # and typelib/vartype create their test typelibs with GetTempFileName(\".\").\n  - src: tools/payloads/olewinetest/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: build-{arch}/modules/rostests/winetests/oleaut32/oleaut32_winetest.exe\n    dest: bin/oleaut32_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/ole32/ole32_winetest.exe\n    dest: bin/ole32_winetest.exe\n  # The live CD's hives are prebuilt and never run DllRegisterServer (syssetup's\n  # RegisterDlls is an install step), so the classes these suites create\n  # (CLSID_StdFont, StdPicture, the PS factories) are absent and the tests fail\n  # on REGDB_E_CLASSNOTREG instead of on our code. The list opens by\n  # registering both DLLs, as an installed system already has.\n  - src: build-{arch}/base/system/regsvr32/regsvr32.exe\n    dest: bin/regsvr32.exe\n  # gen_suites.py --global-flag writes reg.exe steps (page heap etc. per suite).\n  - src: build-{arch}/base/applications/cmdutils/reg/reg.exe\n    dest: bin/reg.exe\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 3600\n  launch_idle_secs: 600\n",
+    "spec": {
+      "name": "olewinetest",
+      "description": "Wine ole32 + oleaut32 conformance suites under the apitest sweep runner",
+      "build_hint": "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/apitest/apitest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/olewinetest/winetest-suites-{arch}.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/olewinetest/winetest-skip-{arch}.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/olewinetest/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/oleaut32/oleaut32_winetest.exe",
+          "dest": "bin/oleaut32_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/ole32/ole32_winetest.exe",
+          "dest": "bin/ole32_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/base/system/regsvr32/regsvr32.exe",
+          "dest": "bin/regsvr32.exe"
+        },
+        {
+          "src": "build-{arch}/base/applications/cmdutils/reg/reg.exe",
+          "dest": "bin/reg.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 3600,
+        "launch_idle_secs": 600
+      }
+    }
+  },
+  "piwifi": {
+    "yaml": "# piwifi — the Raspberry Pis' Wi-Fi firmware (CYW43455), which VibeOS does not ship. A build\n# that wants Pi Wi-Fi fetches it from Raspberry Pi's firmware-nonfree at a pinned commit,\n# checks the pinned SHA-256s (tools/fetch_pi_wifi_firmware.py) and stages it where bwfm.sys\n# loads it, \\SystemRoot\\System32\\drivers\\cyw43455\\:\n#   VIBEOS_PAYLOAD=piwifi ./vibeos-cli build --arch arm64\n# The download lands in $VIBEOS_PI_WIFI_FIRMWARE, else ~/.cache/vibeos/cyw43455, and is\n# reused while its hashes still match. Images built without this payload, the published\n# ones included, carry no Cypress file: bwfm.sys then logs that the firmware is missing.\n# VIBEOS_WIFI_CONFIG names the network file (ssid=, psk=), staged as \\SystemRoot\\bin\\wifi.txt.\nname: piwifi\ndescription: fetch the Pis' CYW43455 Wi-Fi firmware (not shipped) and stage it for bwfm.sys\narches: [arm64]\n\nbinaries: []\nbinaries_from: tools/payloads/piwifi/stage.py\n\ntest:\n  launch_marker: \"[BWFM] firmware\"\n  pass_marker: \"[BWFM] firmware running\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "piwifi",
+      "description": "fetch the Pis' CYW43455 Wi-Fi firmware (not shipped) and stage it for bwfm.sys",
+      "arches": [
+        "arm64"
+      ],
+      "binaries": [],
+      "binaries_from": "tools/payloads/piwifi/stage.py",
+      "test": {
+        "launch_marker": "[BWFM] firmware",
+        "pass_marker": "[BWFM] firmware running",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "popen": {
+    "yaml": "# popen — why msvcrt _popen fails with EACCES in Wine misc.c:375 (the misc subtest then dies).\n#   tools/payloads/popen/build.sh {arch}\n#   VIBEOS_PAYLOAD=popen ./vibeos-cli build --arch {arch}\n#   ./vibeos-cli smoke --arch {arch} --payload popen\nname: popen\ndescription: \"msvcrt _popen errno probe (Wine misc.c:375)\"\n\nbuild_hint: \"tools/payloads/popen/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/popen/popen-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/popen.exe\n\ntest:\n  launch_marker: \"[POPEN] done\"\n  pass_marker: \"[POPEN] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "popen",
+      "description": "msvcrt _popen errno probe (Wine misc.c:375)",
+      "build_hint": "tools/payloads/popen/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/popen/popen-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/popen.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[POPEN] done",
+        "pass_marker": "[POPEN] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "portwinetest": {
+    "yaml": "# Wine's conformance suites for the Wine DLLs ported to Rust by the upstream-sync lane, under\n# the apitest sweep runner: each module's own winetest grades the Rust that replaced its C.\n# Add a suite here (binaries + --suites) when a module is flipped.\n#\n# The list is olewinetest's gen_suites.py pointed at these suites; see that payload for why\n# children start on C:.\nname: portwinetest\ndescription: Wine conformance suites for the Rust-ported Wine DLLs (pdh, wtsapi32, imagehlp, credui, ntdsapi, jsproxy, sti, wmiutils, sxs, inetmib1, twain_32, activeds, xinput1_3, msrle32, oledlg, propsys, cryptnet, oleacc, hlink, shcore, mstask)\n\nbuild_hint: \"tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites pdh,wtsapi32,imagehlp,credui,ntdsapi,jsproxy,sti,wmiutils,sxs,inetmib1,twain_32,activeds,xinput1_3,msrle32,oledlg,propsys,cryptnet,oleacc,hlink,shcore,mstask --register '' --out-dir tools/payloads/portwinetest\"\n\nbinaries:\n  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/portwinetest/winetest-suites-{arch}.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/portwinetest/winetest-skip-{arch}.txt\n    dest: bin/apitest-skip.txt\n  - src: tools/payloads/portwinetest/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: build-{arch}/modules/rostests/winetests/pdh/pdh_winetest.exe\n    dest: bin/pdh_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/wtsapi32/wtsapi32_winetest.exe\n    dest: bin/wtsapi32_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/imagehlp/imagehlp_winetest.exe\n    dest: bin/imagehlp_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/credui/credui_winetest.exe\n    dest: bin/credui_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/ntdsapi/ntdsapi_winetest.exe\n    dest: bin/ntdsapi_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/jsproxy/jsproxy_winetest.exe\n    dest: bin/jsproxy_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/sti/sti_winetest.exe\n    dest: bin/sti_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/wmiutils/wmiutils_winetest.exe\n    dest: bin/wmiutils_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/sxs/sxs_winetest.exe\n    dest: bin/sxs_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/inetmib1/inetmib1_winetest.exe\n    dest: bin/inetmib1_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/twain_32/twain_32_winetest.exe\n    dest: bin/twain_32_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/activeds/activeds_winetest.exe\n    dest: bin/activeds_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/xinput1_3/xinput1_3_winetest.exe\n    dest: bin/xinput1_3_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/msrle32/msrle32_winetest.exe\n    dest: bin/msrle32_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/oledlg/oledlg_winetest.exe\n    dest: bin/oledlg_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/propsys/propsys_winetest.exe\n    dest: bin/propsys_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/cryptnet/cryptnet_winetest.exe\n    dest: bin/cryptnet_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/oleacc/oleacc_winetest.exe\n    dest: bin/oleacc_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/hlink/hlink_winetest.exe\n    dest: bin/hlink_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/shcore/shcore_winetest.exe\n    dest: bin/shcore_winetest.exe\n  - src: build-{arch}/modules/rostests/winetests/mstask/mstask_winetest.exe\n    dest: bin/mstask_winetest.exe\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 900\n",
+    "spec": {
+      "name": "portwinetest",
+      "description": "Wine conformance suites for the Rust-ported Wine DLLs (pdh, wtsapi32, imagehlp, credui, ntdsapi, jsproxy, sti, wmiutils, sxs, inetmib1, twain_32, activeds, xinput1_3, msrle32, oledlg, propsys, cryptnet, oleacc, hlink, shcore, mstask)",
+      "build_hint": "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites pdh,wtsapi32,imagehlp,credui,ntdsapi,jsproxy,sti,wmiutils,sxs,inetmib1,twain_32,activeds,xinput1_3,msrle32,oledlg,propsys,cryptnet,oleacc,hlink,shcore,mstask --register '' --out-dir tools/payloads/portwinetest",
+      "binaries": [
+        {
+          "src": "tools/payloads/apitest/apitest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/portwinetest/winetest-suites-{arch}.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/portwinetest/winetest-skip-{arch}.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/portwinetest/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/pdh/pdh_winetest.exe",
+          "dest": "bin/pdh_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/wtsapi32/wtsapi32_winetest.exe",
+          "dest": "bin/wtsapi32_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/imagehlp/imagehlp_winetest.exe",
+          "dest": "bin/imagehlp_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/credui/credui_winetest.exe",
+          "dest": "bin/credui_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/ntdsapi/ntdsapi_winetest.exe",
+          "dest": "bin/ntdsapi_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/jsproxy/jsproxy_winetest.exe",
+          "dest": "bin/jsproxy_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/sti/sti_winetest.exe",
+          "dest": "bin/sti_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/wmiutils/wmiutils_winetest.exe",
+          "dest": "bin/wmiutils_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/sxs/sxs_winetest.exe",
+          "dest": "bin/sxs_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/inetmib1/inetmib1_winetest.exe",
+          "dest": "bin/inetmib1_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/twain_32/twain_32_winetest.exe",
+          "dest": "bin/twain_32_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/activeds/activeds_winetest.exe",
+          "dest": "bin/activeds_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/xinput1_3/xinput1_3_winetest.exe",
+          "dest": "bin/xinput1_3_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/msrle32/msrle32_winetest.exe",
+          "dest": "bin/msrle32_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/oledlg/oledlg_winetest.exe",
+          "dest": "bin/oledlg_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/propsys/propsys_winetest.exe",
+          "dest": "bin/propsys_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/cryptnet/cryptnet_winetest.exe",
+          "dest": "bin/cryptnet_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/oleacc/oleacc_winetest.exe",
+          "dest": "bin/oleacc_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/hlink/hlink_winetest.exe",
+          "dest": "bin/hlink_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/shcore/shcore_winetest.exe",
+          "dest": "bin/shcore_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/mstask/mstask_winetest.exe",
+          "dest": "bin/mstask_winetest.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 900
+      }
+    }
+  },
+  "procstorm": {
+    "yaml": "# procstorm — #39 amplifier (smp-bringup lane).\n#\n# The #39 wedge fires at most once per boot at the first user-mode service\n# start, near a 2% rate, so soaking costs ~50 boots per sample. The evidence\n# points at PROCESS CREATION as the rare event (the offending protection mask\n# is 0 = MM_ZERO_ACCESS, a field nobody filled in, produced while building a\n# fresh address space), so this payload builds address spaces in bulk: it\n# spawns itself as a do-nothing child N times (VIBEOS_PROCSTORM_N, default\n# 1000) from the All Users Startup folder.\n#\n# A clean storm is a real result, not a null one: it says the bug needs\n# something specific to the first service start rather than process creation\n# in general.\nname: procstorm\ndescription: spawn N throwaway processes to amplify the #39 address-space-setup wedge\n\nbuild_hint: \"tools/payloads/procstorm/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/procstorm/procstorm-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/procstorm.exe\n\ntest:\n  # launch_drain_secs is WALL-CLOCK SECONDS. It used to be a read-iteration\n  # count -- serial_output(timeout=1.0) returns immediately when bytes are\n  # already waiting, so a chatty payload burned the budget in a fraction of the\n  # stated time. This payload is the chattiest there is (every spawn makes the\n  # kernel's own [PS] tracing emit a burst) and hit it first: 2400 \"seconds\"\n  # were spent in 175s, cutting the storm off at 500/1000. The number below was\n  # inflated to 60000 to compensate; test_payload.py now bounds the drain by the\n  # clock, so it is back to a real duration. The marker ends the boot early.\n  launch_marker: \"[PROCSTORM] done\"\n  launch_drain_secs: 1800\n",
+    "spec": {
+      "name": "procstorm",
+      "description": "spawn N throwaway processes to amplify the",
+      "build_hint": "tools/payloads/procstorm/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/procstorm/procstorm-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/procstorm.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[PROCSTORM] done",
+        "launch_drain_secs": 1800
+      }
+    }
+  },
+  "regcapture": {
+    "yaml": "# regcapture — what does setup's COM registration phase WRITE, per DLL?\n#\n# Runs syssetup.inf's registration sections ([EarlyRegisterDlls], [OleControlDlls],\n# [TypeLibraries]) in-guest, each entry in a child process against an in-process registry\n# sandbox (RegOverridePredefKey, as ../regdiff does), and streams what each wrote as INF AddReg\n# lines. The per-entry \"lines=N\" is the point: it is how ole32's DllRegisterServer was found\n# writing NOTHING while returning S_OK (its registry resources had been lost in an upstream\n# sync; tools/test_wine_registry_resources.py now guards that).\n#   tools/payloads/regcapture/build.sh <arch>\n#   VIBEOS_PAYLOAD=regcapture ./vibeos-cli build --arch <arch>\n#   VIBEOS_QEMU_MAX_LIFETIME=10800 ./vibeos-cli smoke --arch <arch> --payload regcapture\nname: regcapture\ndescription: run syssetup.inf's registration sections in a sandbox and stream the writes as INF\n\nbuild_hint: \"tools/payloads/regcapture/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/regcapture/regcapture-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/regcapture.exe\n  # The capture reads the registration list from the image's own syssetup.inf, and the\n  # curated arm64 ramdisk does not carry one. Same file everywhere, so staging it is harmless.\n  - src: media/inf/syssetup.inf\n    dest: inf/syssetup.inf\n\ntest:\n  launch_marker: \"[REGCAP] done\"\n  # ~50s per DLL under TCG (a child process each, and every line crosses the serial port),\n  # so a full capture outlives the default 30-minute QEMU lifetime: run it with\n  # VIBEOS_QEMU_MAX_LIFETIME=10800.\n  launch_drain_secs: 10800\n",
+    "spec": {
+      "name": "regcapture",
+      "description": "run syssetup.inf's registration sections in a sandbox and stream the writes as INF",
+      "build_hint": "tools/payloads/regcapture/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/regcapture/regcapture-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/regcapture.exe"
+        },
+        {
+          "src": "media/inf/syssetup.inf",
+          "dest": "inf/syssetup.inf"
+        }
+      ],
+      "test": {
+        "launch_marker": "[REGCAP] done",
+        "launch_drain_secs": 10800
+      }
+    }
+  },
+  "regdiff": {
+    "yaml": "# regdiff — does a DLL's replacement register the same thing?\n#\n# Retiring shell32.cpp moved shell32's DllRegisterServer from ATL's static registrar\n# (compiled into the C++) to atl100.dll's registrar parsing the same .rgs scripts. The media's\n# hives are prebuilt, so no boot ever exercises that path; this payload measures it instead.\n# It runs the BASELINE shell32 (staged as system32\\regdiff-base.dll) and this tree's\n# shell32.dll each in a child process with HKCR/HKLM/HKCU/HKU overridden into sandbox keys,\n# dumps what DllRegisterServer wrote and what DllUnregisterServer left, and diffs the two.\n#\n#   REGDIFF_BASE=<baseline checkout> tools/payloads/regdiff/build.sh <arch>\n#   VIBEOS_PAYLOAD=regdiff ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload regdiff\n# Verdict line: \"[REGDIFF] done VERDICT=SAME|DIFFERENT|ERROR\"; each difference is printed\n# above it as \"[REGDIFF] <phase> -|+ <line>\" (- only in the baseline, + only in the new DLL).\nname: regdiff\ndescription: diff DllRegisterServer/DllUnregisterServer output of shell32 against a baseline build\n\nbuild_hint: \"REGDIFF_BASE=<baseline checkout> tools/payloads/regdiff/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/regdiff/regdiff-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/regdiff.exe\n  - src: tools/payloads/regdiff/regdiff-base-{arch}.dll\n    dest: system32/regdiff-base.dll\n\ntest:\n  launch_marker: \"[REGDIFF] done\"\n  launch_drain_secs: 600\n",
+    "spec": {
+      "name": "regdiff",
+      "description": "diff DllRegisterServer/DllUnregisterServer output of shell32 against a baseline build",
+      "build_hint": "REGDIFF_BASE=<baseline checkout> tools/payloads/regdiff/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/regdiff/regdiff-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/regdiff.exe"
+        },
+        {
+          "src": "tools/payloads/regdiff/regdiff-base-{arch}.dll",
+          "dest": "system32/regdiff-base.dll"
+        }
+      ],
+      "test": {
+        "launch_marker": "[REGDIFF] done",
+        "launch_drain_secs": 600
+      }
+    }
+  },
+  "regstress": {
+    "yaml": "# regstress — several threads growing, shrinking and reading values under different keys of ONE\n# hive at once, so HvAllocateCell/HvpAddBin run concurrently. Meant for `--smp 2`: on one CPU\n# the hive-lock race (cmlib-rust hivelock.rs) almost never opens.\n#   tools/payloads/regstress/build.sh {arch}\n#   VIBEOS_PAYLOAD=regstress ./vibeos-cli build --arch {arch}\n#   ./vibeos-cli smoke --arch {arch} --payload regstress --smp 2\nname: regstress\ndescription: concurrent registry writers and readers in one hive (hive cell-map locking)\n\nbuild_hint: \"tools/payloads/regstress/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/regstress/regstress-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/regstress.exe\n\ntest:\n  launch_marker: \"[REGSTRESS] done\"\n  pass_marker: \"[REGSTRESS] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "regstress",
+      "description": "concurrent registry writers and readers in one hive (hive cell-map locking)",
+      "build_hint": "tools/payloads/regstress/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/regstress/regstress-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/regstress.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[REGSTRESS] done",
+        "pass_marker": "[REGSTRESS] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "rpmprobe": {
+    "yaml": "# rpmprobe — Read/WriteProcessMemory across the end of committed memory must fail, not bugcheck.\n#   tools/payloads/rpmprobe/build.sh <arch>\n#   VIBEOS_PAYLOAD=rpmprobe ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload rpmprobe\nname: rpmprobe\ndescription: ReadProcessMemory/WriteProcessMemory over an uncommitted page returns an error\n\nbuild_hint: \"tools/payloads/rpmprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/rpmprobe/rpmprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/rpmprobe.exe\n\ntest:\n  launch_marker: \"[RPMPROBE] done\"\n  pass_marker: \"[RPMPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 600\n",
+    "spec": {
+      "name": "rpmprobe",
+      "description": "ReadProcessMemory/WriteProcessMemory over an uncommitted page returns an error",
+      "build_hint": "tools/payloads/rpmprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/rpmprobe/rpmprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/rpmprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[RPMPROBE] done",
+        "pass_marker": "[RPMPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 600
+      }
+    }
+  },
+  "setupapiwinetest": {
+    "yaml": "# Wine's setupapi conformance suite, run by the apitest sweep runner.\n#\n# setupapi is being ported TU by TU (cfgmgr.c first, 2026-10-17), and smoke never reaches\n# the CM_* or SetupDi* surface. Wine's own suite is the oracle: devinst and misc call the\n# CM_* functions cfgmgr.c implements. The list is olewinetest's gen_suites.py pointed at\n# setupapi (see build_hint); see olewinetest/payload.yaml for why children start on C:.\n#\n# Before/after: payload `setupapiwinetestc` runs this same list against the pre-flip C.\n# Measured 2026-10-17 on amd64 with cfgmgr.c ported: the two runs' 461 output lines are\n# identical (devinst 481/197, diskspace 380/147, install 86/11, ...). Every failure is the\n# C's own, so the residue is the environment and the C, not the translation.\nname: setupapiwinetest\ndescription: Wine setupapi conformance suite under the apitest sweep runner\n\nbuild_hint: \"tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites setupapi --register '' --out-dir tools/payloads/setupapiwinetest\"\n\nbinaries:\n  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/setupapiwinetest/winetest-suites-{arch}.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/setupapiwinetest/winetest-skip-{arch}.txt\n    dest: bin/apitest-skip.txt\n  - src: tools/payloads/setupapiwinetest/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: build-{arch}/modules/rostests/winetests/setupapi/setupapi_winetest.exe\n    dest: bin/setupapi_winetest.exe\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 3600\n  launch_idle_secs: 600\n",
+    "spec": {
+      "name": "setupapiwinetest",
+      "description": "Wine setupapi conformance suite under the apitest sweep runner",
+      "build_hint": "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites setupapi --register '' --out-dir tools/payloads/setupapiwinetest",
+      "binaries": [
+        {
+          "src": "tools/payloads/apitest/apitest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/setupapiwinetest/winetest-suites-{arch}.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/setupapiwinetest/winetest-skip-{arch}.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/setupapiwinetest/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/setupapi/setupapi_winetest.exe",
+          "dest": "bin/setupapi_winetest.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 3600,
+        "launch_idle_secs": 600
+      }
+    }
+  },
+  "setupapiwinetestc": {
+    "yaml": "# setupapi's runtime oracle: Wine's setupapi suite (setupapiwinetest's list) against the\n# pre-flip C of the TUs setupapi-rust has taken over. build.sh builds setupapi_c.dll\n# (`python -m rustconv.c_oracle dll/win32/setupapi`) and a copy of the test exe that\n# imports it as setupapc.dll; build.sh says why the rename is the only way past the\n# KnownDLL. Diff the [APITEST:...] lines of the two runs: they should be identical.\nname: setupapiwinetestc\ndescription: Wine setupapi conformance suite against setupapi's pre-flip C (the Rust port's oracle)\n\nbuild_hint: \"generate setupapiwinetest's list first (its build_hint); build.sh {arch} does the rest\"\n\nbinaries:\n  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/setupapiwinetest/winetest-suites-{arch}.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/setupapiwinetest/winetest-skip-{arch}.txt\n    dest: bin/apitest-skip.txt\n  - src: tools/payloads/setupapiwinetest/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: tools/payloads/setupapiwinetestc/setupapi_winetest_c-{arch}.exe\n    dest: bin/setupapi_winetest.exe\n  - src: tools/payloads/setupapiwinetestc/setupapi_c-{arch}.dll\n    dest: bin/setupapc.dll\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 3600\n  launch_idle_secs: 600\n",
+    "spec": {
+      "name": "setupapiwinetestc",
+      "description": "Wine setupapi conformance suite against setupapi's pre-flip C (the Rust port's oracle)",
+      "build_hint": "generate setupapiwinetest's list first (its build_hint); build.sh {arch} does the rest",
+      "binaries": [
+        {
+          "src": "tools/payloads/apitest/apitest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/setupapiwinetest/winetest-suites-{arch}.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/setupapiwinetest/winetest-skip-{arch}.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/setupapiwinetest/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "tools/payloads/setupapiwinetestc/setupapi_winetest_c-{arch}.exe",
+          "dest": "bin/setupapi_winetest.exe"
+        },
+        {
+          "src": "tools/payloads/setupapiwinetestc/setupapi_c-{arch}.dll",
+          "dest": "bin/setupapc.dll"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 3600,
+        "launch_idle_secs": 600
+      }
+    }
+  },
+  "shelltail": {
+    "yaml": "# shelltail — does shell32's former C/C++ glue behave the same now that it is Rust?\n#\n# On 2026-09-24 shell32's last five non-Rust files moved to Rust: three ATL window classes\n# (property-sheet and Folder Options owner stubs, the old-style change-notify broker), the\n# variadic ShellMessageBoxA, and the StringCchPrintfW trampoline. No boot exercises most of\n# them, so this A/Bs them against a baseline shell32 (staged as system32\\shelltail-base.dll)\n# in two child processes and also checks absolute expectations on the new DLL.\n#\n#   SHELLTAIL_BASE=<baseline checkout> tools/payloads/shelltail/build.sh <arch>\n#   VIBEOS_PAYLOAD=shelltail ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload shelltail\n# Verdict line: \"[SHELLTAIL] done VERDICT=SAME|DIFFERENT|ERROR\"; each difference is printed\n# above it as \"[SHELLTAIL] - <old line>\" / \"[SHELLTAIL] + <new line>\".\nname: shelltail\ndescription: A/B shell32's ATL stub windows, ShellMessageBoxA and the broker against a baseline build\n\nbuild_hint: \"SHELLTAIL_BASE=<baseline checkout> tools/payloads/shelltail/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/shelltail/shelltail-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/shelltail.exe\n  - src: tools/payloads/shelltail/shelltail-base-{arch}.dll\n    dest: system32/shelltail-base.dll\n\ntest:\n  launch_marker: \"[SHELLTAIL] done\"\n  # Ten child processes, each a fresh GUI process under TCG, and the amd64 guest runs the\n  # chatty WoW64 ladder alongside. Measured: ~16 min alone on amd64, and just over 30 min\n  # with all three arches booting at once (the verdict landed after a 1800s drain).\n  launch_drain_secs: 3600\n",
+    "spec": {
+      "name": "shelltail",
+      "description": "A/B shell32's ATL stub windows, ShellMessageBoxA and the broker against a baseline build",
+      "build_hint": "SHELLTAIL_BASE=<baseline checkout> tools/payloads/shelltail/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/shelltail/shelltail-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/shelltail.exe"
+        },
+        {
+          "src": "tools/payloads/shelltail/shelltail-base-{arch}.dll",
+          "dest": "system32/shelltail-base.dll"
+        }
+      ],
+      "test": {
+        "launch_marker": "[SHELLTAIL] done",
+        "launch_drain_secs": 3600
+      }
+    }
+  },
+  "sysbench": {
+    "yaml": "# sysbench — the cost of one system call, native arm64 against an x86-64 guest under FEX.\n# arm64 only, and only on VIBEOS_FEX=1 media (the second row is an emulated process).\n#   tools/payloads/sysbench/build.sh arm64 && tools/payloads/sysbench/build.sh amd64\n#   VIBEOS_FEX=1 VIBEOS_PAYLOAD=sysbench ./vibeos-cli build --arch arm64   (needs build-amd64)\n#   ./vibeos-cli smoke --arch arm64 --payload sysbench\n# The native build autostarts, runs the ladder, then launches the amd64 build (staged beside\n# the Windows directory, reached by full path) and waits for its rows. See sysbench.c.\nname: sysbench\ndescription: per-operation syscall cost, native arm64 vs an x86-64 guest under FEX\narches: [arm64]\n\nbuild_hint: \"tools/payloads/sysbench/build.sh arm64 && tools/payloads/sysbench/build.sh amd64\"\n\nbinaries:\n  - src: tools/payloads/sysbench/sysbench-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/sysbench.exe\n  - src: tools/payloads/sysbench/sysbench-{arch}.exe\n    build_arch: amd64\n    dest: sysbench64.exe\n\n# The guest's DLLs: the x86-64 ntdll, kernel32, user32 and gdi32 and what they import.\nguest_sets:\n  - build_dir: build-amd64\n    dest: sysamd64\n    roots:\n      - win32ss/user/user32/user32.dll\n      - win32ss/gdi/gdi32/gdi32.dll\n\ntest:\n  launch_marker: \"[SYSBENCH] done\"\n  pass_marker: \"[SYSBENCH] done VERDICT=PASS\"\n  launch_drain_secs: 900\n",
+    "spec": {
+      "name": "sysbench",
+      "description": "per-operation syscall cost, native arm64 vs an x86-64 guest under FEX",
+      "arches": [
+        "arm64"
+      ],
+      "build_hint": "tools/payloads/sysbench/build.sh arm64 && tools/payloads/sysbench/build.sh amd64",
+      "binaries": [
+        {
+          "src": "tools/payloads/sysbench/sysbench-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/sysbench.exe"
+        },
+        {
+          "src": "tools/payloads/sysbench/sysbench-{arch}.exe",
+          "build_arch": "amd64",
+          "dest": "sysbench64.exe"
+        }
+      ],
+      "guest_sets": [
+        {
+          "build_dir": "build-amd64",
+          "dest": "sysamd64",
+          "roots": [
+            "win32ss/user/user32/user32.dll",
+            "win32ss/gdi/gdi32/gdi32.dll"
+          ]
+        }
+      ],
+      "test": {
+        "launch_marker": "[SYSBENCH] done",
+        "pass_marker": "[SYSBENCH] done VERDICT=PASS",
+        "launch_drain_secs": 900
+      }
+    }
+  },
+  "tpprobe": {
+    "yaml": "# tpprobe — does the Vista threadpool (kernel32_vista Create*/Submit*/WaitFor* over ntdll_vista's\n# Tp*, the rtl-threadpool crate) actually run callbacks?\n#   tools/payloads/tpprobe/build.sh <arch>\n#   VIBEOS_PAYLOAD=tpprobe ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload tpprobe\n# Work, simple callback, timer, wait, and a private pool with a cleanup group; a watchdog\n# names the stage that stops making progress.\nname: tpprobe\ndescription: drive each Vista threadpool object type and check its callbacks ran\n\nbuild_hint: \"tools/payloads/tpprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/tpprobe/tpprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/tpprobe.exe\n\ntest:\n  launch_marker: \"[TPPROBE] done\"\n  pass_marker: \"[TPPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 600\n",
+    "spec": {
+      "name": "tpprobe",
+      "description": "drive each Vista threadpool object type and check its callbacks ran",
+      "build_hint": "tools/payloads/tpprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/tpprobe/tpprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/tpprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[TPPROBE] done",
+        "pass_marker": "[TPPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 600
+      }
+    }
+  },
+  "ucrtdiff": {
+    "yaml": "# ucrtdiff — Tier 2 ucrt difftest payload.\n#\n# Grades our shipping ucrtbase.dll against the genuine Microsoft UCRT C, IN THE\n# GUEST, where both sides are Windows and `long` is 32 bits on every arch. The\n# host tier (sdk/lib/rust/ucrt-difftest) cannot reach these families at all: it\n# runs on Linux, where `long` is 64 bits, which silently mis-grades ~188 public\n# declarations including the whole strtol/atol family.\n#\n# The exe links two implementations of the same exports -- libucrt_ref.a\n# (Microsoft's objects, exports renamed ref_* by tools/ucrt_tier2_refset.py)\n# and the ucrtbase import lib -- so `ref_strtol` is Microsoft's body and\n# `strtol` is whatever we ship. Design:\n# docs/engineering/active-lanes/ucrt-tier2-difftest-design.md.\n#\n# GUI subsystem and a direct ucrtbase.dll import are both enforced by build.sh:\n# a console exe launched from explorer's startup walk gets no CSRSS console and\n# dies silently, and linking the api-ms-win-crt-* sets instead of ucrtbase.dll\n# would make the bare side stop being OUR DLL -- the harness would then grade\n# Microsoft's C against Microsoft's C and pass vacuously.\nname: ucrtdiff\ndescription: Tier 2 ucrt difftest — shipping ucrtbase.dll vs the genuine Microsoft C, in-guest\n\nbuild_hint: \"tools/payloads/ucrtdiff/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/ucrtdiff/ucrtdiff-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/ucrtdiff.exe\n\ntest:\n  # The drain is a READ-ITERATION count, not seconds (see procstorm's note), and\n  # the loop returns immediately whenever bytes are already waiting -- so a CHATTY\n  # payload burns iterations fast. This one emits a progress line per export plus a\n  # line per failing row, and 224 exports swept over the full corpora is a lot of\n  # both, so 3000 was plainly too low. NOTE it is NOT established that this is what\n  # ends the run: raising it to 60000 did not move the stopping point, which is still\n  # export 39. What IS established is that the harness no longer CRASHES there -- when\n  # a body really dies the system keeps logging after it (17 further lines), and since\n  # the thread-state fix the serial log instead ENDS at the last [UCRTDIFF] line (1),\n  # which is the signature of the boot being cut off rather than the payload faulting.\n  # The remaining suspect is total runtime against the VM lifetime, not this counter.\n  launch_marker: \"[UCRTDIFF] done\"\n  # WALL-CLOCK seconds since drain_for_marker was fixed (the note above predates it):\n  # 60000 meant 16.7 hours, and it also sets pytest's --timeout, so the 2026-09-26\n  # marker-eating hang ran each shard to the full VM lifetime. A shard's own budget is\n  # UCRTDIFF_BUDGET_MS (420 s by default); this is that plus boot-to-launch slack.\n  launch_drain_secs: 900\n",
+    "spec": {
+      "name": "ucrtdiff",
+      "description": "Tier 2 ucrt difftest — shipping ucrtbase.dll vs the genuine Microsoft C, in-guest",
+      "build_hint": "tools/payloads/ucrtdiff/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/ucrtdiff/ucrtdiff-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/ucrtdiff.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[UCRTDIFF] done",
+        "launch_drain_secs": 900
+      }
+    }
+  },
+  "ucrtwine": {
+    "yaml": "# ucrtwine — Wine's ucrtbase conformance suite (and the ucrtbase apitest) in the\n# guest, against ucrtbase.dll as built: all ucrt-rust since 2026-10-03.\n#   tools/payloads/ucrtwine/build.sh i386\n#   VIBEOS_PAYLOAD=ucrtwine ./vibeos-cli build --arch i386\n#   ./vibeos-cli smoke --arch i386 --payload ucrtwine\n# Rides the apitest sweep runner (one process per subtest, stdout piped to the\n# serial as [APITEST:<suite>] lines); see ../apitest/sweep.c.\nname: ucrtwine\ndescription: Wine ucrtbase conformance + ucrtbase apitest against the Rust ucrtbase (i386)\n\nbuild_hint: \"tools/payloads/ucrtwine/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/ucrtwine/sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/ucrtwine/suites.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/ucrtwine/skip.txt\n    dest: bin/apitest-skip.txt\n  # Children start on the writable FAT scratch disk: X: is the CDFS boot image.\n  - src: tools/payloads/ucrtwine/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: tools/payloads/ucrtwine/ucrtbase_winetest.exe\n    dest: bin/ucrtbase_winetest.exe\n  - src: tools/payloads/ucrtwine/ucrtbase_apitest.exe\n    dest: bin/ucrtbase_apitest.exe\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 1800\n  launch_idle_secs: 600\n",
+    "spec": {
+      "name": "ucrtwine",
+      "description": "Wine ucrtbase conformance + ucrtbase apitest against the Rust ucrtbase (i386)",
+      "build_hint": "tools/payloads/ucrtwine/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/ucrtwine/sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/ucrtwine/suites.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/ucrtwine/skip.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/ucrtwine/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "tools/payloads/ucrtwine/ucrtbase_winetest.exe",
+          "dest": "bin/ucrtbase_winetest.exe"
+        },
+        {
+          "src": "tools/payloads/ucrtwine/ucrtbase_apitest.exe",
+          "dest": "bin/ucrtbase_apitest.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 1800,
+        "launch_idle_secs": 600
+      }
+    }
+  },
+  "ucrtwineab": {
+    "yaml": "# ucrtwineab — the B side of ../ucrtwine: the same suites against the\n# PRE-TAKEOVER ucrtbase.dll (Microsoft's C, 24089de2c88, the commit before\n# ucrt-rust existed), staged beside the tests in bin/ so the loader picks it\n# over system32's. A failure both sides share is not a Rust regression.\n#   git worktree add --detach ../vibeos-ucrt-baseline 24089de2c88\n#   (cd ../vibeos-ucrt-baseline && ./vibeos-cli build --arch i386)\n#   cp ../vibeos-ucrt-baseline/build-i386/dll/win32/ucrtbase/ucrtbase.dll \\\n#      tools/payloads/ucrtwine/ucrtbase-baseline-i386.dll\n#   tools/payloads/ucrtwine/build.sh i386\n#   VIBEOS_PAYLOAD=ucrtwineab ./vibeos-cli build --arch i386\n#   ./vibeos-cli smoke --arch i386 --payload ucrtwineab\nname: ucrtwineab\ndescription: ucrtwine against the pre-takeover (Microsoft C) ucrtbase.dll, staged beside the tests\n\nbuild_hint: \"tools/payloads/ucrtwine/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/ucrtwine/sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/ucrtwine/suites.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/ucrtwine/skip.txt\n    dest: bin/apitest-skip.txt\n  # Children start on the writable FAT scratch disk: X: is the CDFS boot image.\n  - src: tools/payloads/ucrtwine/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: tools/payloads/ucrtwine/ucrtbase_winetest.exe\n    dest: bin/ucrtbase_winetest.exe\n  - src: tools/payloads/ucrtwine/ucrtbase_apitest.exe\n    dest: bin/ucrtbase_apitest.exe\n  - src: tools/payloads/ucrtwine/ucrtbase-baseline-{arch}.dll\n    dest: bin/ucrtbase.dll\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 1800\n  launch_idle_secs: 600\n",
+    "spec": {
+      "name": "ucrtwineab",
+      "description": "ucrtwine against the pre-takeover (Microsoft C) ucrtbase.dll, staged beside the tests",
+      "build_hint": "tools/payloads/ucrtwine/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/ucrtwine/sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/ucrtwine/suites.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/ucrtwine/skip.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/ucrtwine/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "tools/payloads/ucrtwine/ucrtbase_winetest.exe",
+          "dest": "bin/ucrtbase_winetest.exe"
+        },
+        {
+          "src": "tools/payloads/ucrtwine/ucrtbase_apitest.exe",
+          "dest": "bin/ucrtbase_apitest.exe"
+        },
+        {
+          "src": "tools/payloads/ucrtwine/ucrtbase-baseline-{arch}.dll",
+          "dest": "bin/ucrtbase.dll"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 1800,
+        "launch_idle_secs": 600
+      }
+    }
+  },
+  "vaentry": {
+    "yaml": "# vaentry — user32 vaentryA/W (Rust naked variadic thunks) across register/stack boundaries.\n#   tools/payloads/vaentry/build.sh {arch}\n#   VIBEOS_PAYLOAD=vaentry ./vibeos-cli build --arch {arch}\n#   ./vibeos-cli smoke --arch {arch} --payload vaentry\nname: vaentry\ndescription: \"msvcrt + ucrtbase C ... exports as varargs-rust va_entry! thunks (Rust)\"\n\nbuild_hint: \"tools/payloads/vaentry/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/vaentry/vaentry-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/vaentry.exe\n\ntest:\n  launch_marker: \"[VAENTRY] done\"\n  pass_marker: \"[VAENTRY] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "vaentry",
+      "description": "msvcrt + ucrtbase C ... exports as varargs-rust va_entry! thunks (Rust)",
+      "build_hint": "tools/payloads/vaentry/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/vaentry/vaentry-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/vaentry.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[VAENTRY] done",
+        "pass_marker": "[VAENTRY] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  },
+  "vendordrv": {
+    "yaml": "# vendordrv — a vendor's Windows driver package, installed by our PnP the way Windows would:\n# its INF and the files it copies go into reactos/inf/, where newdev finds a matching INF\n# and copies from beside it. The .sys and .dll are also pre-placed in system32\\drivers and\n# system32, since the live image's system volume is read-only and the copy itself fails. Vendor binaries are not ours to commit, so the files come\n# from a host directory named at build time:\n#   VIBEOS_VENDOR_DRIVERS=<dir with the .inf, .sys, ...> \\\n#   VIBEOS_PAYLOAD=ndisprobe,vendordrv ./vibeos-cli build --arch amd64\n# An `ndisprobe.txt` in that directory (\"arp <target ip> <sender ip>\") goes to\n# reactos/bin/, pointing ndisprobe's ARP at a real LAN instead of QEMU's slirp.\n# VIBEOS_VENDOR_PREFER=1 makes the vendor INF win a tie with an inbox INF claiming the same\n# hardware ID (stage.py says why); without it QEMU's e1000 goes to our own nete1000.inf.\nname: vendordrv\ndescription: stage a vendor driver package (INF + files) from VIBEOS_VENDOR_DRIVERS\n\nbinaries: []\nbinaries_from: tools/payloads/vendordrv/stage.py\n\ntest:\n  launch_marker: \"[NDISPROBE] done\"\n  pass_marker: \"[NDISPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 600\n",
+    "spec": {
+      "name": "vendordrv",
+      "description": "stage a vendor driver package (INF + files) from VIBEOS_VENDOR_DRIVERS",
+      "binaries": [],
+      "binaries_from": "tools/payloads/vendordrv/stage.py",
+      "test": {
+        "launch_marker": "[NDISPROBE] done",
+        "pass_marker": "[NDISPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 600
+      }
+    }
+  },
+  "wakeprobe": {
+    "yaml": "# wakeprobe — how long a readied thread waits before it runs: plain event hand-off, a pool\n# work item, a pool work item beside a blocked pool, and the event hand-off beside a spinner.\n#   tools/payloads/wakeprobe/build.sh <arch>\n#   VIBEOS_PAYLOAD=wakeprobe ./vibeos-cli build --arch <arch>\n#   ./vibeos-cli smoke --arch <arch> --payload wakeprobe\nname: wakeprobe\ndescription: time thread wake-up latency over events and the Vista threadpool\n\nbuild_hint: \"tools/payloads/wakeprobe/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/wakeprobe/wakeprobe-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/wakeprobe.exe\n\ntest:\n  launch_marker: \"[WAKEPROBE] done\"\n  pass_marker: \"[WAKEPROBE] done VERDICT=PASS\"\n  launch_drain_secs: 600\n",
+    "spec": {
+      "name": "wakeprobe",
+      "description": "time thread wake-up latency over events and the Vista threadpool",
+      "build_hint": "tools/payloads/wakeprobe/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/wakeprobe/wakeprobe-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/wakeprobe.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[WAKEPROBE] done",
+        "pass_marker": "[WAKEPROBE] done VERDICT=PASS",
+        "launch_drain_secs": 600
+      }
+    }
+  },
+  "wmiwinetest": {
+    "yaml": "# Wine's wbemprox conformance suite (WMI's provider, synced to Wine 11.19), run by the apitest\n# sweep runner. wbemprox is a Wine import, so Wine's suite is its spec; mi.dll (Management\n# Infrastructure, built on wbemprox) adds its own suite here when it lands.\n#\n# The list is olewinetest's gen_suites.py pointed at these suites; see that payload for why\n# the list registers DLLs first and why children start on C:.\nname: wmiwinetest\ndescription: Wine wbemprox conformance suite under the apitest sweep runner\n\nbuild_hint: \"tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites wbemprox --register X:\\\\reactos\\\\system32\\\\wbem\\\\wbemprox --out-dir tools/payloads/wmiwinetest\"\n\nbinaries:\n  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe\n  - src: tools/payloads/wmiwinetest/winetest-suites-{arch}.txt\n    dest: bin/apitest-suites.txt\n  - src: tools/payloads/wmiwinetest/winetest-skip-{arch}.txt\n    dest: bin/apitest-skip.txt\n  - src: tools/payloads/wmiwinetest/cwd.txt\n    dest: bin/apitest-cwd.txt\n  - src: build-{arch}/modules/rostests/winetests/wbemprox/wbemprox_winetest.exe\n    dest: bin/wbemprox_winetest.exe\n  - src: build-{arch}/base/system/regsvr32/regsvr32.exe\n    dest: bin/regsvr32.exe\n  - src: build-{arch}/base/applications/cmdutils/reg/reg.exe\n    dest: bin/reg.exe\n\ntest:\n  launch_marker: \"[APITEST-SWEEP] done\"\n  launch_drain_secs: 3600\n  launch_idle_secs: 600\n",
+    "spec": {
+      "name": "wmiwinetest",
+      "description": "Wine wbemprox conformance suite under the apitest sweep runner",
+      "build_hint": "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites wbemprox --register X:\\reactos\\system32\\wbem\\wbemprox --out-dir tools/payloads/wmiwinetest",
+      "binaries": [
+        {
+          "src": "tools/payloads/apitest/apitest-sweep-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe"
+        },
+        {
+          "src": "tools/payloads/wmiwinetest/winetest-suites-{arch}.txt",
+          "dest": "bin/apitest-suites.txt"
+        },
+        {
+          "src": "tools/payloads/wmiwinetest/winetest-skip-{arch}.txt",
+          "dest": "bin/apitest-skip.txt"
+        },
+        {
+          "src": "tools/payloads/wmiwinetest/cwd.txt",
+          "dest": "bin/apitest-cwd.txt"
+        },
+        {
+          "src": "build-{arch}/modules/rostests/winetests/wbemprox/wbemprox_winetest.exe",
+          "dest": "bin/wbemprox_winetest.exe"
+        },
+        {
+          "src": "build-{arch}/base/system/regsvr32/regsvr32.exe",
+          "dest": "bin/regsvr32.exe"
+        },
+        {
+          "src": "build-{arch}/base/applications/cmdutils/reg/reg.exe",
+          "dest": "bin/reg.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[APITEST-SWEEP] done",
+        "launch_drain_secs": 3600,
+        "launch_idle_secs": 600
+      }
+    }
+  },
+  "wsprintf": {
+    "yaml": "# wsprintf — user32 wsprintfA/W (Rust naked variadic thunks) across register/stack boundaries.\n#   tools/payloads/wsprintf/build.sh {arch}\n#   VIBEOS_PAYLOAD=wsprintf ./vibeos-cli build --arch {arch}\n#   ./vibeos-cli smoke --arch {arch} --payload wsprintf\nname: wsprintf\ndescription: \"user32 wsprintfA/W naked variadic thunks (Rust)\"\n\nbuild_hint: \"tools/payloads/wsprintf/build.sh {arch}\"\n\nbinaries:\n  - src: tools/payloads/wsprintf/wsprintf-{arch}.exe\n    root: image\n    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/wsprintf.exe\n\ntest:\n  launch_marker: \"[WSPRINTF] done\"\n  pass_marker: \"[WSPRINTF] done PASS\"\n  launch_drain_secs: 300\n",
+    "spec": {
+      "name": "wsprintf",
+      "description": "user32 wsprintfA/W naked variadic thunks (Rust)",
+      "build_hint": "tools/payloads/wsprintf/build.sh {arch}",
+      "binaries": [
+        {
+          "src": "tools/payloads/wsprintf/wsprintf-{arch}.exe",
+          "root": "image",
+          "dest": "ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/wsprintf.exe"
+        }
+      ],
+      "test": {
+        "launch_marker": "[WSPRINTF] done",
+        "pass_marker": "[WSPRINTF] done PASS",
+        "launch_drain_secs": 300
+      }
+    }
+  }
+}

@@ -1,635 +1,148 @@
 #!/usr/bin/env python3
-"""Payload compiler — resolve tools/payloads/<name>/payload.yaml into build inputs.
-
-Design doc: docs/engineering/payload-harness-design.md. A payload is a
-declarative spec for a guest test/demo app: which binaries to graft onto the
-boot media, how it autostarts, and how the harness drives + judges it. This
-script is the BUILD-TIME consumer: it turns specs into a flat staging manifest
-for the two media paths (qemu/mkramdisk.sh for the arm64 ramdisk,
-tools/strip_cd_media.py for the x86 livecd). The TEST-TIME consumer is
-tests/qemu/test_payload.py, which interprets the same YAML directly.
-
-Usage:
-    compile.py manifest --arch arm64 --payloads doom[,httpd,...]
-        -> stdout, one line per file:  reactos/system32/doom.exe=/abs/src/path
-    compile.py list
-        -> available payload names
-
-Spec keys beyond `binaries: [{src, dest, root}]` and `test:`:
-  * a binaries entry's `build_arch`: the arch its `{arch}` src is built for, when it is
-    not the media's (appstorm64 stages the AMD64 appstorm onto arm64 media);
-  * `guest_sets: [{build_dir, dest, roots}]`: programs out of ANOTHER arch's build tree
-    plus their complete import closure (tools/fex/wow64-closure.py), staged under
-    reactos/<dest> (the x86-64 guest's sysamd64);
-  * `test.vm_memory` (read by cli/smoke.py, not here): the guest RAM the payload needs.
-
-Fail-loud rules (the house rule — no silent degradation):
-  * unknown payload name, missing payload.yaml, malformed spec  -> exit 1
-  * a spec'd src file missing on disk                           -> exit 1
-    (with the payload's build_hint so the fix is one paste away)
-  * two payloads grafting the same dest                         -> exit 1
-
-Env resolution (shared by both media paths so aliasing lives in ONE place):
-    compile.py manifest --arch X --payloads-from-env
-reads VIBEOS_PAYLOAD (comma-separated names) and maps the legacy VIBEOS_DOOM=1
-flag to the `doom` payload. No payloads selected -> empty output, exit 0
-(media stays byte-identical to an unstaged build).
-
-Python: runs under system python3 (>=3.8) — used from cmake custom commands
-and shell; keep stdlib + PyYAML only.
-"""
+"""Transport for the native payload compiler."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import re
-import subprocess
 import sys
 from pathlib import Path
-
-import yaml
 
 PAYLOADS_DIR = Path(__file__).resolve().parent
 REPO = PAYLOADS_DIR.parent.parent
 ARCHES = ("i386", "amd64", "arm64")
+STAMP_NAME = "payload-selection.json"
 
 
-def die(msg: str) -> NoReturn:  # noqa: F821 - py3.8 compat, no typing import needed
+def die(msg):
     print(f"payloads/compile.py: ERROR: {msg}", file=sys.stderr)
     raise SystemExit(1)
 
 
-def available() -> list[str]:
-    return sorted(p.parent.name for p in PAYLOADS_DIR.glob("*/payload.yaml"))
+sys.path.insert(0, str(REPO))
+from tools.build_infra_compat import NativeError, call  # noqa: E402
 
 
-def load_spec(name: str) -> dict:
-    spec_path = PAYLOADS_DIR / name / "payload.yaml"
-    if not spec_path.is_file():
-        die(
-            f"unknown payload {name!r} (no {spec_path}). "
-            f"Available: {', '.join(available()) or '<none>'}"
-        )
+def _call(op, **kwargs):
     try:
-        spec = yaml.safe_load(spec_path.read_text())
-    except yaml.YAMLError as e:
-        die(f"{spec_path}: YAML parse error: {e}")
-    if not isinstance(spec, dict):
-        die(f"{spec_path}: top level must be a mapping")
-    if spec.get("name") != name:
-        die(f"{spec_path}: name: {spec.get('name')!r} != directory name {name!r}")
-    binaries = spec.get("binaries")
-    # Empty only when a `binaries_from` module stages everything (vendordrv: files from a
-    # host directory, which no spec can name ahead of time).
-    if not isinstance(binaries, list) or not (binaries or spec.get("binaries_from")):
-        die(f"{spec_path}: `binaries` must be a non-empty list (or empty beside `binaries_from`)")
-    for b in binaries:
-        if not isinstance(b, dict) or "src" not in b or "dest" not in b:
-            die(f"{spec_path}: each binaries entry needs `src` and `dest`: {b!r}")
-        dest = str(b["dest"])
-        if dest.startswith(("/", "\\")) or ".." in dest:
-            die(f"{spec_path}: dest must be a relative guest path: {dest!r}")
-        if b.get("build_arch", ARCHES[0]) not in ARCHES:
-            die(f"{spec_path}: build_arch must be one of {ARCHES}: {b!r}")
-        if b.get("root", "reactos") not in ("reactos", "image"):
-            die(f"{spec_path}: root must be `reactos` (default) or `image`: {b!r}")
-    sets = spec.get("guest_sets", [])
-    if not isinstance(sets, list):
-        die(f"{spec_path}: `guest_sets` must be a list")
-    for g in sets:
-        if (
-            not isinstance(g, dict)
-            or not isinstance(g.get("build_dir"), str)
-            or not isinstance(g.get("dest"), str)
-            or not isinstance(g.get("roots"), list)
-            or not g["roots"]
-        ):
-            die(
-                f"{spec_path}: each guest_sets entry needs `build_dir`, `dest` "
-                f"and a non-empty `roots`: {g!r}"
-            )
-        if g["dest"].startswith(("/", "\\")) or ".." in g["dest"]:
-            die(f"{spec_path}: guest_sets dest must be a relative guest path: {g['dest']!r}")
-    return spec
+        return call("payload_build_" + op, kwargs, root=REPO)
+    except NativeError as exc:
+        die(str(exc))
 
 
-def _load_by_path(modname: str, path: Path):
-    """A module loaded from a file, without putting its directory on sys.path."""
-    import importlib.util
-
-    mod_spec = importlib.util.spec_from_file_location(modname, path)
-    if mod_spec is None or mod_spec.loader is None:
-        die(f"cannot load {path}")
-    mod = importlib.util.module_from_spec(mod_spec)
-    mod_spec.loader.exec_module(mod)
-    return mod
+def available():
+    return _call("available")
 
 
-def unreferenced_by_build(build_dir: Path):
-    """A predicate: is this path one that `build_dir`'s build never reads?
-
-    Such an edit cannot change a program that build stages, and the build itself would
-    rebuild nothing for it. Two kinds of path qualify. One is a Rust crate under
-    sdk/lib/rust/<crate>/, judged by its directory so that a new file counts with the crate:
-    the arm64-only wowx64-rust demanded a 19-minute amd64 rebuild before an x86-64 guest
-    payload would stage (2026-11-01). The other is a file under tools/fex/, judged by its own
-    path: the arm64 CPU layer tools/fex/wowx64fex did the same (2026-11-03), while
-    tools/fex/wow64-closure.py is read by the amd64 build and stays live. Every one of the
-    build's records must be silent: the ninja graph, which can miss a cargo edge; ninja's
-    dependency log, which holds the headers C sources include; and cargo's dep-info files,
-    which list every source cargo compiled. The needle is the repo path behind a `/`, because
-    the records spell it under both /tmp/vibeos/ and the worktree's own absolute path (cargo's
-    dep-info, 2026-11-03): matching only one spelling would miss crates the build compiles."""
-    ninja = list(build_dir.glob("*.ninja"))
-    # any() stops at the first hit, and CMake keeps depfiles under build-<arch>/CMakeFiles/d/,
-    # so this never descends the tree.
-    if not ninja or not any(build_dir.rglob("*.d")):  # unpruned-walk: intentional
-        return lambda p: False  # no build records to consult: nothing is provably unbuilt
-    records: list[str] = []
-    seen: dict[str, bool] = {}
-
-    def text() -> list[str]:
-        if not records:
-            records.extend(p.read_text(errors="ignore") for p in ninja)
-            deps = subprocess.run(
-                ["ninja", "-C", str(build_dir), "-t", "deps"],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if deps.returncode != 0:
-                die(f"cannot read {build_dir}'s ninja dependency log (rc={deps.returncode})")
-            records.append(deps.stdout)
-        return records
-
-    def unbuilt(path: str) -> bool:
-        parts = path.split("/")
-        if len(parts) >= 5 and parts[:3] == ["sdk", "lib", "rust"]:
-            needle = "/" + "/".join(parts[:4]) + "/"
-        elif len(parts) >= 3 and parts[:2] == ["tools", "fex"]:
-            needle = "/" + path
-        else:
-            return False
-        if needle not in seen:
-            named = any(needle in t for t in text())
-            if not named:
-                rc = subprocess.run(
-                    ["grep", "-rqF", "--include=*.d", needle, str(build_dir)],
-                    check=False,
-                ).returncode
-                if rc > 1:
-                    die(f"cannot search {build_dir} dep-info for {needle} (grep rc={rc})")
-                named = rc == 0
-            seen[needle] = not named
-        return seen[needle]
-
-    return unbuilt
+def load_spec(name):
+    return _call("load_spec", name=name)
 
 
-def guest_build_current(name: str, build_dir: Path) -> None:
-    """Die unless `build_dir` was built from the current working tree.
-
-    A guest set stages ANOTHER arch's build outputs, and nothing in this arch's build
-    rebuilds them: an appstorm64 run once tested a taskmgr.exe four hours older than the
-    fix it was meant to check. The answer comes from the build receipts `land` reads
-    (tests/qemu/cli/warmth.py): some `vibeos-cli build` of that arch must have seen this
-    tree, up to documentation-only differences."""
-    arch = build_dir.name.removeprefix("build-")
-    if arch not in ARCHES:
-        die(f"payload {name!r}: guest set build_dir {build_dir.name!r} is not build-<arch>")
-    warmth = _load_by_path("_payload_warmth", REPO / "tests/qemu/cli/warmth.py")
-    docs_only = _load_by_path("_payload_docs_only", REPO / "tools/docs_only.py")
-    unbuilt = unreferenced_by_build(build_dir)
-    try:
-        stale = warmth.missing(
-            REPO,
-            warmth.worktree_tree(REPO),
-            (arch,),
-            lambda p: docs_only.is_inert(p) or unbuilt(p),
-        )
-    except Exception as exc:
-        die(f"payload {name!r}: cannot read the {arch} build receipts: {exc}")
-    if stale:
-        die(
-            f"payload {name!r}: {build_dir.name} was not built from this tree, so its guest "
-            f"set would stage stale programs. Build it first: ./vibeos-cli build --arch {arch}"
-        )
+def binaries(spec, arch):
+    return _call("binaries", spec=spec, arch=arch)
 
 
-def guest_set(name: str, g: dict) -> dict[str, Path]:
-    """A guest_sets entry -> {file name: host path}: its root programs and their
-    COMPLETE import closure out of another arch's build tree (a guest process's
-    DLLs, e.g. the amd64 set an x86-64 guest on arm64 loads from sysamd64).
-    tools/fex/wow64-closure.py computes it and refuses a partial closure, for the
-    reason it spells out: a half-bound module crashes at first call."""
-    build_dir = REPO / g["build_dir"]
-    if not build_dir.is_dir():
-        die(f"payload {name!r}: guest set needs {build_dir} (./vibeos-cli build --arch ...)")
-    guest_build_current(name, build_dir)
-    cp = subprocess.run(
-        [
-            sys.executable,
-            str(REPO / "tools/fex/wow64-closure.py"),
-            "--include-prestaged",
-            "--emit-roots",
-            "--build-dir",
-            str(build_dir),
-            *[str(r) for r in g["roots"]],
-        ],
-        capture_output=True,
-        text=True,
-    )
-    if cp.returncode != 0:
-        die(f"payload {name!r}: guest set closure failed:\n{cp.stderr.strip()}")
-    files: dict[str, Path] = {}
-    for line in cp.stdout.splitlines():
-        if line.strip():
-            fname, path = line.split("\t", 1)
-            files[fname] = Path(path)
-    return files
+def unreferenced_by_build(build_dir):
+    return lambda path: _call("unreferenced_by_build", build_dir=build_dir, path=path)
 
 
-def _from_module(spec: dict):
-    """The spec's `binaries_from` module, loaded (None when it names none)."""
-    src = spec.get("binaries_from")
-    if not src:
-        return None
-    import importlib.util
-
-    path = REPO / str(src)
-    mod_spec = importlib.util.spec_from_file_location(f"payload_from_{path.stem}", path)
-    if mod_spec is None or mod_spec.loader is None or not path.is_file():
-        die(f"payload {spec['name']!r}: binaries_from {src!r} is not a python file")
-    mod = importlib.util.module_from_spec(mod_spec)
-    sys.modules[mod_spec.name] = mod  # dataclasses look their module up while executing
-    mod_spec.loader.exec_module(mod)
-    return mod
+def guest_build_current(name, build_dir):
+    return _call("guest_build_current", name=name, build_dir=build_dir)
 
 
-def ninja_targets(names: list[str], arch: str) -> list[str]:
-    """Build-dir targets the selected payloads stage (a spec's `ninja_targets`, plus its
-    `binaries_from` module's `ninja_targets(arch)`). `vibeos-cli build` keeps them in the
-    closure it prunes to: they are EXCLUDE_FROM_ALL oracles nothing else depends on, and
-    arm64's ramdisk is assembled after the prune."""
-    out: list[str] = []
-    for name in names:
-        spec = load_spec(name)
-        out += [str(t) for t in spec.get("ninja_targets") or []]
-        mod = _from_module(spec)
-        if mod is not None and hasattr(mod, "ninja_targets"):
-            out += list(mod.ninja_targets(arch))
-    return list(dict.fromkeys(out))
+def guest_set(name, g):
+    return {k: Path(v) for k, v in _call("guest_set", name=name, guest=g).items()}
 
 
-def binaries(spec: dict, arch: str) -> list[dict]:
-    """The spec's `binaries`, plus what its `binaries_from` module stages for `arch`.
-
-    `binaries_from: <path to a .py>` names a module whose `stage_entries(arch)` returns more
-    entries of the same schema -- modrun's suites each stage their own oracle and probe
-    exes, so adding a module's runtime test never edits the payload.yaml.
-    """
-    out = list(spec["binaries"])
-    mod = _from_module(spec)
-    if mod is not None:
-        src = spec["binaries_from"]
-        for b in mod.stage_entries(arch):
-            if not isinstance(b, dict) or "src" not in b or "dest" not in b:
-                die(f"payload {spec['name']!r}: {src} staged an entry without src/dest: {b!r}")
-            out.append(b)
-    return out
+def stale_generator(src):
+    result = _call("stale_generator", src=src)
+    return Path(result) if result is not None else None
 
 
-def manifest(names: list[str], arch: str) -> dict[str, Path]:
-    """dest (graft path, e.g. reactos/system32/doom.exe) -> absolute host src."""
-    if arch not in ARCHES:
-        die(f"unknown arch {arch!r} (expected one of {ARCHES})")
-    entries: dict[str, Path] = {}
-    owner: dict[str, str] = {}
-    for name in names:
-        spec = load_spec(name)
-        arches = spec.get("arches")
-        if arches is not None and arch not in arches:
-            die(f"payload {name!r} does not support arch {arch!r} (spec says arches: {arches})")
-        hint = spec.get("build_hint", "").format(arch=arch)
-        for b in binaries(spec, arch):
-            src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
-            # root: reactos (default) grafts under reactos/; root: image grafts
-            # at the media root (e.g. the ProgramData/.../Startup autostart folder).
-            prefix = "reactos/" if b.get("root", "reactos") == "reactos" else ""
-            dest = prefix + str(b["dest"]).replace("\\", "/").lstrip("/")
-            if dest in entries:
-                die(
-                    f"dest collision on {dest!r}: payloads "
-                    f"{owner[dest]!r} and {name!r} both graft it"
-                )
-            if not src.is_file():
-                die(
-                    f"payload {name!r}: src missing: {src}"
-                    + (f"\n  build it first: {hint}" if hint else "")
-                )
-            gen = stale_generator(src)
-            if gen is not None:
-                die(
-                    f"payload {name!r}: {src} is older than its generator {gen}; regenerate it"
-                    + (f"\n  {hint}" if hint else "")
-                )
-            entries[dest] = src
-            owner[dest] = name
-        for g in spec.get("guest_sets", []):
-            for fname, src in guest_set(name, g).items():
-                dest = "reactos/" + g["dest"].replace("\\", "/").strip("/") + "/" + fname
-                if dest in entries and entries[dest] != src:
-                    die(
-                        f"dest collision on {dest!r}: payloads "
-                        f"{owner[dest]!r} and {name!r} both graft it"
-                    )
-                entries[dest] = src
-                owner[dest] = name
-    return entries
+def ninja_targets(names, arch):
+    return _call("ninja_targets", names=names, arch=arch)
 
 
-def stale_generator(src: Path) -> Path | None:
-    """The generator a staged list names in its "GENERATED by" header, when that generator
-    is newer than the list. The lists are gitignored, so nothing regenerates one when its
-    generator changes: d3dwinetest staged a list from before gen_suites.py learned per-suite
-    timeouts, and dwrite's font suite was killed at 120 s instead of 1800 s (2026-10-18)."""
-    if src.suffix.lower() != ".txt":
-        return None
-    try:
-        with src.open(encoding="utf-8", errors="replace") as f:
-            head = "".join(f.readline() for _ in range(4))
-    except OSError:
-        return None
-    if "GENERATED by" not in head:
-        return None
-    m = re.search(r"tools/\S+?\.py", head)
-    if m is None:
-        return None
-    gen = REPO / m.group(0)
-    if gen.is_file() and gen.stat().st_mtime > src.stat().st_mtime:
-        return gen
-    return None
+def stale_binaries(name, arch):
+    return [Path(p) for p in _call("stale_binaries", name=name, arch=arch)]
 
 
-def _git_ignored(pdir: Path) -> set[Path]:
-    """Files under `pdir` that git ignores, i.e. BUILD OUTPUTS, never sources.
-
-    The suffix filter in stale_binaries cannot see an output with a source-like name.
-    regdiff's build.sh writes `regdiff-base-<arch>.txt` beside the DLL it copies, so one
-    arch's build made every OTHER arch's binaries "older than a source" and refused to
-    stage them, and the stamp written after its own copy did the same to its own arch.
-    Ignored == generated is the rule this repo already keeps (every payload's binaries are
-    gitignored). A failed `git` answers "nothing ignored", the behaviour before this."""
-    try:
-        cp = subprocess.run(
-            ["git", "ls-files", "--others", "--ignored", "--exclude-standard", "--", "."],
-            cwd=pdir,
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return set()
-    return {(pdir / line).resolve() for line in cp.stdout.splitlines() if line}
+def borrowed_builds(name, arch):
+    return [tuple(p) for p in _call("borrowed_builds", name=name, arch=arch)]
 
 
-def stale_binaries(name: str, arch: str) -> list[Path]:
-    """The payload's binaries for `arch` that are missing or older than its sources.
-
-    Sources are the payload directory's own files (build.sh, *.c, *.h, ...) plus the
-    headers shared by every payload (tools/payloads/*.h). The binaries are gitignored
-    build outputs, so without this a worktree that built one once kept staging it across
-    every later edit to its source: appstorm's new fastfat raise check (2026-09-26) booted
-    as the OLD binary and printed the old SKIP line. The conformance suite had the same
-    bug in the gate (gate.py `_ensure_suite_binaries`).
-    """
-    spec = load_spec(name)
-    pdir = PAYLOADS_DIR / name
-    ignored = _git_ignored(pdir)
-    srcs = [
-        p
-        for p in pdir.rglob("*")
-        if p.is_file()
-        and "__pycache__" not in p.parts
-        and not p.name.startswith(".")
-        and p.suffix.lower() not in (".exe", ".dll", ".png", ".log")
-        and p.resolve() not in ignored
-    ]
-    srcs += list(PAYLOADS_DIR.glob("*.h"))
-    newest = max((p.stat().st_mtime for p in srcs), default=0.0)
-    resolved_srcs = {p.resolve() for p in srcs}
-    out = []
-    for b in binaries(spec, arch):
-        src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
-        # Only binaries built from this payload's own directory (never a shared artifact
-        # like a build-dir DLL, which ninja owns).
-        # A `binaries` entry that is itself a committed source (kmtest's
-        # kmtest-tests-<arch>.txt) is data, not a build output: build.sh never writes it.
-        if src in resolved_srcs:
-            continue
-        if pdir.resolve() in src.parents and (not src.is_file() or src.stat().st_mtime < newest):
-            out.append(src)
-    return out
+def borrowed_owners(name, arch):
+    return _call("borrowed_owners", name=name, arch=arch)
 
 
-def borrowed_builds(name: str, arch: str) -> list[tuple[str, str]]:
-    """(owner, arch) for every other payload whose build outputs `name` stages for `arch`
-    media (e.g. every Wine-suite payload borrows tools/payloads/apitest/apitest-sweep-<arch>.exe).
-    The arch is the entry's `build_arch` when it has one: appstorm64 stages the AMD64
-    appstorm onto arm64 media, so judging the owner's arm64 output would pass a stale
-    x86-64 binary. stale_binaries only judges a payload's OWN outputs, so without this a
-    borrowed binary was staged however stale: olewinetest booted a sweep runner built before
-    sweep.c learned apitest-cwd.txt, and the suites' scratch files went to the read-only CD
-    (2026-10-04)."""
-    builds: list[tuple[str, str]] = []
-    for b in binaries(load_spec(name), arch):
-        src = (REPO / str(b["src"]).format(arch=b.get("build_arch", arch))).resolve()
-        try:
-            owner = src.relative_to(PAYLOADS_DIR.resolve()).parts[0]
-        except ValueError:
-            continue  # not under tools/payloads (a build-dir artifact ninja owns)
-        build = (owner, str(b.get("build_arch", arch)))
-        if (
-            owner != name
-            and build not in builds
-            and (PAYLOADS_DIR / owner / "payload.yaml").is_file()
-        ):
-            builds.append(build)
-    return builds
+def ensure_built(names, arch):
+    return _call("ensure_built", names=names, arch=arch)
 
 
-def borrowed_owners(name: str, arch: str) -> list[str]:
-    """The owners borrowed_builds names, once each."""
-    return list(dict.fromkeys(owner for owner, _ in borrowed_builds(name, arch)))
+def manifest(names, arch):
+    return {k: Path(v) for k, v in _call("manifest", names=names, arch=arch).items()}
 
 
-def ensure_built(names: list[str], arch: str) -> list[str]:
-    """Rebuild every selected payload whose binaries are stale (see stale_binaries) with
-    its own build.sh, and first every payload whose outputs they borrow
-    (borrowed_owners). Returns the names rebuilt; dies loudly if a build fails or a
-    stale payload has no build.sh to run."""
-    expanded: list[tuple[str, str]] = []
-    for name in names:
-        for build in [*borrowed_builds(name, arch), (name, arch)]:
-            if build not in expanded:
-                expanded.append(build)
-    # A payload only BORROWED from (not selected itself) needs only the files the borrower
-    # stages to be fresh. hostapps stages apitest's sweep runner, and judging all of
-    # apitest's outputs refused a fresh worktree over apitest-suites-<arch>.txt, which only
-    # an --apitests build can generate (2026-10-19).
-    own = {(n, arch) for n in names}
-    wanted: dict[tuple[str, str], set[Path]] = {}
-    for name in names:
-        for b in binaries(load_spec(name), arch):
-            a = str(b.get("build_arch", arch))
-            src = (REPO / str(b["src"]).format(arch=a)).resolve()
-            try:
-                owner = src.relative_to(PAYLOADS_DIR.resolve()).parts[0]
-            except ValueError:
-                continue
-            wanted.setdefault((owner, a), set()).add(src)
-    rebuilt = []
-    for name, arch in expanded:
-        stale = stale_binaries(name, arch)
-        if (name, arch) not in own:
-            stale = [p for p in stale if p in wanted.get((name, arch), set())]
-        # `rebuild: always`: build.sh does incremental work this mtime check cannot see
-        # (modrun's ninja step relinks probes against Rust crates that live elsewhere).
-        if not stale and load_spec(name).get("rebuild") != "always":
-            continue
-        script = PAYLOADS_DIR / name / "build.sh"
-        if not script.is_file():
-            die(
-                f"payload {name!r}: {(stale or ['its build'])[0]} is stale or missing "
-                f"and there is no {script}"
-            )
-        cp = subprocess.run(
-            ["bash", str(script), arch], cwd=str(REPO), capture_output=True, text=True
-        )
-        if cp.returncode != 0:
-            tail = "\n".join((cp.stderr or cp.stdout or "(no output)").strip().splitlines()[-5:])
-            die(f"payload {name!r}: build.sh {arch} failed:\n{tail}")
-        still = stale_binaries(name, arch)
-        if (name, arch) not in own:
-            still = [p for p in still if p in wanted.get((name, arch), set())]
-        if still:
-            die(f"payload {name!r}: build.sh {arch} succeeded but {still[0]} is still stale")
-        rebuilt.append(name)
-    return rebuilt
+def _env(environ):
+    return {k: environ[k] for k in ("VIBEOS_PAYLOAD", "VIBEOS_DOOM") if k in environ}
 
 
-def resolve_env_payloads(environ=os.environ) -> list[str]:
-    """VIBEOS_PAYLOAD=a,b,c plus the legacy VIBEOS_DOOM=1 alias -> ordered names."""
-    names = [n.strip() for n in environ.get("VIBEOS_PAYLOAD", "").split(",") if n.strip()]
-    if environ.get("VIBEOS_DOOM", "0") == "1" and "doom" not in names:
-        names.append("doom")
-    return names
+def resolve_env_payloads(environ=os.environ):
+    return _call("resolve_env_payloads", environ=_env(environ))
 
 
-STAMP_NAME = "payload-selection.json"
-
-
-def stamp_path(build_dir: Path) -> Path:
+def stamp_path(build_dir):
     return Path(build_dir) / STAMP_NAME
 
 
-def write_stamp(build_dir: Path, environ=os.environ) -> list[str]:
-    """Persist the env's payload selection into the build dir (ALWAYS — set or
-    cleared). Media content must be a declared property of the build tree, not
-    of whatever env a later rebuild happens to run under: the 2026-07-07 doom
-    clobber (smoke's net stage re-ran `ninja livecd` without VIBEOS_PAYLOAD and
-    silently produced doom-less media between two payload-gated boots) is the
-    incident this prevents."""
-    names = resolve_env_payloads(environ)
-    stamp_path(build_dir).write_text(json.dumps({"payloads": names}) + "\n")
-    return names
+def read_stamp(build_dir):
+    return _call("read_stamp", build_dir=build_dir)
 
 
-def read_stamp(build_dir: Path) -> list[str]:
-    try:
-        data = json.loads(stamp_path(build_dir).read_text())
-    except OSError:
-        return []
-    except ValueError as e:
-        die(f"corrupt {stamp_path(build_dir)}: {e} (delete it or re-run vibeos-cli build)")
-    names = data.get("payloads", [])
-    if not isinstance(names, list):
-        die(f"corrupt {stamp_path(build_dir)}: `payloads` must be a list")
-    return [str(n) for n in names]
+def write_stamp(build_dir, environ=os.environ):
+    return _call("write_stamp", build_dir=build_dir, environ=_env(environ))
 
 
-def resolve_payloads(build_dir: Path | None, environ=os.environ) -> list[str]:
-    """Env wins when the operator expressed ANY selection (VIBEOS_PAYLOAD set —
-    even set-empty — or the VIBEOS_DOOM alias); otherwise fall back to the
-    build-dir stamp so env-less rebuilds (conftest, raw ninja, the smoke net
-    stage) reproduce the same media instead of silently reverting it."""
-    if "VIBEOS_PAYLOAD" in environ or environ.get("VIBEOS_DOOM", "0") == "1":
-        return resolve_env_payloads(environ)
-    if build_dir is not None:
-        return read_stamp(build_dir)
-    return []
+def resolve_payloads(build_dir, environ=os.environ):
+    return _call("resolve_payloads", build_dir=build_dir, environ=_env(environ))
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-
-    m = sub.add_parser("manifest", help="print dest=src staging lines")
+    m = sub.add_parser("manifest")
     m.add_argument("--arch", required=True, choices=ARCHES)
     sel = m.add_mutually_exclusive_group(required=True)
-    sel.add_argument("--payloads", help="comma-separated payload names")
-    sel.add_argument(
-        "--payloads-auto",
-        metavar="BUILD_DIR",
-        help="resolve from VIBEOS_PAYLOAD/VIBEOS_DOOM env when set, else from "
-        f"BUILD_DIR/{STAMP_NAME} (written by vibeos-cli build)",
-    )
-
-    media = sub.add_parser("media-manifest", help="payload grafts for a stripped media list")
+    sel.add_argument("--payloads")
+    sel.add_argument("--payloads-auto")
+    media = sub.add_parser("media-manifest")
     media.add_argument("--output", required=True, type=Path)
-
-    st = sub.add_parser(
-        "stamp",
-        help=f"persist the env's payload selection to BUILD_DIR/{STAMP_NAME}",
-    )
+    st = sub.add_parser("stamp")
     st.add_argument("--build-dir", required=True)
-
-    sub.add_parser("list", help="print available payload names")
-
+    sub.add_parser("list")
     args = ap.parse_args(argv)
-
-    if args.cmd == "media-manifest":
-        match = re.search(r"^(.*build-(amd64|i386|arm64))", str(args.output.resolve()))
-        build_dir = Path(match.group(1)) if match else None
-        names = resolve_payloads(build_dir)
-        if names:
-            if match is None:
-                die(f"payloads selected but cannot infer media arch from {args.output}")
-            for dest, src in manifest(names, match.group(2)).items():
-                print(f"{dest}={src}")
-        return 0
-
     if args.cmd == "list":
-        for n in available():
-            print(n)
+        for name in available():
+            print(name)
         return 0
-
     if args.cmd == "stamp":
-        names = write_stamp(Path(args.build_dir))
+        names = write_stamp(args.build_dir)
         print(f"payloads: {','.join(names) if names else '<none>'}")
         return 0
-
-    if args.payloads_auto:
-        names = resolve_payloads(Path(args.payloads_auto))
-    else:
-        names = [n.strip() for n in args.payloads.split(",") if n.strip()]
-    if not names:
-        return 0  # nothing selected -> nothing staged, media byte-identical
-
-    for dest, src in manifest(names, args.arch).items():
-        print(f"{dest}={src}")
+    if args.cmd == "media-manifest":
+        entries = _call("media_manifest", output=args.output, environ=_env(os.environ))
+        for dest, src in entries.items():
+            print(f"{dest}={src}")
+        return 0
+    names = (
+        resolve_payloads(Path(args.payloads_auto))
+        if args.payloads_auto
+        else [n.strip() for n in args.payloads.split(",") if n.strip()]
+    )
+    arch = args.arch
+    if names:
+        for dest, src in manifest(names, arch).items():
+            print(f"{dest}={src}")
     return 0
 
 
