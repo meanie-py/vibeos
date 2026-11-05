@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Provision once per source revision, then exec the native build mechanisms directly.
+set -euo pipefail
+repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cache="$repo/.cache/vibeos-build"
+source_key() {
+    (
+        cd "$repo"
+        sha256sum rust-toolchain.toml tools/vibeos-build/Cargo.toml tools/vibeos-build/Cargo.lock
+        if [[ -f tools/host-jobs/src/build_policy.rs ]]; then sha256sum tools/host-jobs/src/build_policy.rs; fi
+        rg --files -0 tools/vibeos-build/src | LC_ALL=C sort -z | xargs -0 -r sha256sum
+    ) | sha256sum | cut -d ' ' -f 1
+}
+mkdir -p "$cache"
+key=$(source_key)
+if [[ -x "$cache/vibeos-build" && -f "$cache/source.sha256" && $(<"$cache/source.sha256") == "$key" ]]; then
+    exec "$cache/vibeos-build" --root "$repo" "$@"
+fi
+exec {provision_lock}>"$cache/provision.lock"
+flock "$provision_lock"
+key=$(source_key)
+if [[ ! -x "$cache/vibeos-build" || ! -f "$cache/source.sha256" || $(<"$cache/source.sha256") != "$key" ]]; then
+    (
+    unset RUSTUP_TOOLCHAIN RUSTC CARGO_BUILD_RUSTC RUSTC_WRAPPER CARGO_BUILD_RUSTC_WRAPPER CARGO_BUILD_TARGET
+    unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS RUSTC_BOOTSTRAP CARGO_MAKEFLAGS MAKEFLAGS MFLAGS
+    toolchain=$(sed -n 's/^channel *= *"\([^"]*\)".*/\1/p' "$repo/rust-toolchain.toml")
+    [[ -n "$toolchain" ]] || { echo "build-infra: missing pinned Rust channel" >&2; exit 2; }
+    export RUSTUP_TOOLCHAIN="$toolchain"
+    cargo build --quiet --offline --locked --release --jobs 1 \
+        --manifest-path "$repo/tools/vibeos-build/Cargo.toml" --target-dir "$cache/target"
+    )
+    [[ $(source_key) == "$key" ]] || { echo "build-infra: sources changed during provisioning; retry after edits finish" >&2; exit 2; }
+    cp "$cache/target/release/vibeos-build" "$cache/vibeos-build.tmp.$$"
+    mv "$cache/vibeos-build.tmp.$$" "$cache/vibeos-build"
+    printf '%s\n' "$key" > "$cache/source.sha256.tmp.$$"
+    mv "$cache/source.sha256.tmp.$$" "$cache/source.sha256"
+fi
+flock -u "$provision_lock"
+exec {provision_lock}>&-
+exec "$cache/vibeos-build" --root "$repo" "$@"

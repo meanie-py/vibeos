@@ -786,17 +786,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   output is parked in stash "smp-bringup: syssetup island full regen (33 errors/arch),
   2026-10-17".
 
-- **arm64 FEX: a guest dies when a commit is refused; appstorm64 at 1024M is 53/54 (open,
-  found 2026-10-17, human-only).** On 1G `VIBEOS_PAYLOAD=appstorm64` media, the ramdisk leaves
-  a 129 MB commit limit. Since copy-on-write and paged pool were charged (`203a6c64d51`, a
-  steady ~15 MB), FEX's peaks reach it. iexplore under FEX is refused 16 pages, faults in the
-  CPU layer and never closes (`20261017-141001-or20qi28`). A ladder run on that media loses
-  apc32 the same way (`20261017-141001-lz2_v41g`). Cause: rpmalloc's `span_allocate_page`
-  calls the VIBEOS `memory_commit` hook (FEXCore `AllocatorHooks.cpp`
-  `FEX_rp_memory_commit`), which returns `void`, and then writes into memory that was never
-  committed. The fix belongs in `vendor/fex`, whose CLAUDE.md forbids AI-written code. Plain
-  `VIBEOS_FEX=1` media (the gate's ladder) and appstorm64 at 1088M and 2G are clean. Details:
-  `docs/engineering/wow64-x64-guest-design.md`, resume item 2.
+- **arm64 FEX: a guest dies when a commit is refused at the limit (open, found 2026-10-17;
+  environment-limited).** On 1G `VIBEOS_PAYLOAD=appstorm64` media, the ramdisk leaves a
+  129 MB commit limit and no pagefile, and FEX's peaks reach it. In October the refusal killed
+  iexplore (`20261017-141001-or20qi28`, 53/54). rpmalloc then wrote its page header into the
+  uncommitted memory, because `os_mcommit` returns `void` and only asserts (compiled out). Since
+  2026-11-02 rpmalloc reports the refusal and `malloc` returns NULL (vendor-patches/fex.md,
+  "checked commit"). The guest still dies, one frame later: FEXCore's C++ callers do not check,
+  e.g. `CreateX87StackOptimizationPass` stores through the NULL (apc32,
+  `20261102-234710-fdmni2t4`; appstorm64 itself 55/55 there). The kernel's `[MM] commit limit:
+  refused N pages` line just before names the cause. Windows would grow its pagefile at this
+  point; surviving it here needs a pagefile on ramdisk boots or bigger media, not a FEX fix.
+  Plain `VIBEOS_FEX=1` media and appstorm64 at 1088M and 2G are clean.
 
 - **`SHFileOperationW(FO_COPY)` with progress UI crashes on i386 (open, found 2026-10-17,
   cpp-cluster).** mydocs' drop handler copies the dropped files with `FOF_ALLOWUNDO |

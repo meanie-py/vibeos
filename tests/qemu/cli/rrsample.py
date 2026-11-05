@@ -429,6 +429,10 @@ def replay_loop(fp: _Fingerprinter, trace: Path) -> None:
     print(f"[rr-diverge] verdict written to {verdict_path}", file=sys.stderr)
 
 
+class _SamplerThread(threading.Thread):
+    error: BaseException | None = None
+
+
 def start(mode: str, value: str, trace: Path, argv: list[str], sock_path: Path, work: Path):
     """Start the sampler/checker thread for this VM. Returns the thread."""
     fp = _Fingerprinter(sock_path, ram_ranges(argv), work, trace / RAM_STORE)
@@ -443,6 +447,7 @@ def start(mode: str, value: str, trace: Path, argv: list[str], sock_path: Path, 
         try:
             target()
         except BaseException as exc:
+            t.error = exc
             # A thread's exception otherwise surfaces only as a pytest warning in the
             # boot's own log, and `rr diverge` can say nothing but "no verdict".
             # It lost a whole replay to an undecodable event that way.
@@ -465,7 +470,7 @@ def start(mode: str, value: str, trace: Path, argv: list[str], sock_path: Path, 
                 )
             raise
 
-    t = threading.Thread(target=_run, name=f"rr-sample-{mode}", daemon=True)
+    t = _SamplerThread(target=_run, name=f"rr-sample-{mode}", daemon=True)
     t.start()
     return t
 

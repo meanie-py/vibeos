@@ -109,3 +109,37 @@ def test_canonical_build_root_is_mapped_back(tmp_path):
     out = tmp_path / "tree"
     build([lst], out, ("/tmp/vibeos/", f"{tmp_path}/src/"))
     assert (out / "reactos/a.dll").resolve() == a
+
+
+def test_refusals_preserve_previous_tree_and_cannot_escape_or_alias_inputs(tmp_path):
+    source = _src(tmp_path, "a", b"original")
+    out = tmp_path / "tree"
+    good = _lst(tmp_path, "good.lst", [f"reactos/a={source}"])
+    assert build([good], out, None) == 8
+    for dest in ("../escape", "reactos/../../escape", "reactos//bad", "reactos/./bad"):
+        bad = _lst(tmp_path, "bad.lst", [f"{dest}={source}"])
+        assert build([bad], out, None) == -1
+        assert (out / "reactos/a").read_bytes() == b"original"
+    assert build([good], source.parent, None) == -1
+    assert source.read_bytes() == b"original"
+
+
+def test_file_directory_collision_fails_before_replacing_output(tmp_path):
+    source = _src(tmp_path, "a")
+    out = tmp_path / "tree"
+    out.mkdir()
+    (out / "previous").write_text("complete")
+    bad = _lst(tmp_path, "bad.lst", [f"reactos/x={source}", f"REACTOS/X/y={source}"])
+    assert build([bad], out, None) == -1
+    assert (out / "previous").read_text() == "complete"
+
+
+def test_empty_directory_case_and_nested_files_share_one_spelling(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    source = _src(tmp_path, "a")
+    grafts = _lst(tmp_path, "case.lst", [f"reactos/Fonts={empty}", f"REACTOS/fonts/a={source}"])
+    out = tmp_path / "tree"
+    assert build([grafts], out, None) == source.stat().st_size
+    assert [p.name for p in out.iterdir()] == ["reactos"]
+    assert [p.name for p in (out / "reactos").iterdir()] == ["Fonts"]

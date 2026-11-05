@@ -2,6 +2,12 @@
 
 One stable Rust host binary owns lint check logic. Source plugins live in `src/rules/`;
 artifact and standalone diagnostic plugins live in `src/binary/`.
+New checks, including ad-hoc source/diagnostic scanners, belong in these Rust modules;
+do not add Python checker implementations. Register source gates with the native rule
+registry and CLI routing, and include positive, negative and failure controls. The
+`test_plugin_inventory_matches_gate` test checks that every gated source rule is native.
+Generators use the shared native library and `tools/codegen`; see
+[`../vibeos-codegen/README.md`](../vibeos-codegen/README.md).
 
 Use the front door, which provisions the binary offline:
 
@@ -28,11 +34,12 @@ Cache hits revalidate input/tool metadata; baselines and allowlists are applied 
 Failed extraction never publishes a record; corruption is an error. `VIBEOS_BINARY_CACHE=0`
 disables persistent reuse. Large disassemblies are released between checks.
 
-Clang, rustc, Cargo and binutils remain compiler/tool authorities. Artifact drift checks
-invoke existing Python **generators** into temporary outputs or request read-only recipes;
-Rust compares their results with the committed artifacts. Generator implementation, the
-Python CLI and migration reports are separate migrations. `rust_warning_census.py` remains
-a reporting utility; its gate's deny policy lives in Rust.
+Clang, rustc, Cargo and binutils remain compiler/tool authorities. Generator logic lives
+in `vibeos-codegen`: drift checks use its library or invoke retained compatibility
+entry points and compare results with committed artifacts. Legacy bindgen/layout
+oracles remain external tools. The Python CLI and migration reports are separate
+migrations. `rust_warning_census.py` remains a reporting utility; its gate's deny policy
+lives in Rust.
 
 For parity against historical scanner bytes (including retired imports):
 

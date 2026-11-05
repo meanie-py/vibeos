@@ -1954,3 +1954,36 @@ def test_only_exported_macros_are_reexported(tmp_path):
     from rustconv.profile_derive import exported_macro_names
 
     assert exported_macro_names(tmp_path) == ["HIWORD", "ZeroMemory"]
+
+
+def test_a_guid_only_tu_is_recognised():
+    guid_c = (
+        "/* DO NOT USE THE PRECOMPILED HEADER FOR THIS FILE! */\n#define WIN32_NO_STATUS\n"
+        "#include <windef.h>\n#include <dsound.h>\n#include <initguid.h>\n"
+        "#include <dsdriver.h>\n\n/* NO CODE HERE */\n"
+    )
+    from rustconv import profile_derive
+
+    assert profile_derive._guid_only_tu(guid_c)
+    assert not profile_derive._guid_only_tu(guid_c + "int x;\n")
+    assert not profile_derive._guid_only_tu("#include <windef.h>\n")
+
+
+def test_a_body_less_cell_owns_its_shims_sources(tmp_path):
+    # ddraw: made body-less (cargo replays ddraw_shims' compile) BEFORE translation. The
+    # module target compiled "no in-tree .c" and derive pointed at --target ddraw_shims.
+    from rustconv.profile_derive import parse_cmakelists
+
+    mod = tmp_path / "dll" / "ddraw"
+    mod.mkdir(parents=True)
+    for name in ("ddraw.c", "main.c", "rust_cohab_stub.c"):
+        (mod / name).write_text("")
+    (mod / "CMakeLists.txt").write_text(
+        "add_library(ddraw_shims OBJECT ddraw.c main.c rust_cohab_stub.c)\n"
+        "target_compile_definitions(ddraw_shims PRIVATE UNICODE _UNICODE)\n"
+        "add_cargo_module(ddraw ddraw-cargo ddraw.dll\n    KIND win32dll\n"
+        "    DESTINATION reactos/system32)\n"
+    )
+    m = parse_cmakelists(mod / "CMakeLists.txt", tmp_path, arch="amd64", target="ddraw")
+    assert sorted(p.name for p in m.compiled_tus) == ["ddraw.c", "main.c"]
+    assert m.name == "ddraw" and m.module_type == "win32dll" and m.unicode

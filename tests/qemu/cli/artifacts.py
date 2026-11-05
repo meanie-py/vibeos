@@ -340,6 +340,10 @@ def ledger_append(
         pass  # the ledger is telemetry; it must never break a build/smoke
 
 
+class CommandResult(subprocess.CompletedProcess[str]):
+    timed_out: bool = False
+
+
 class Run:
     """One command execution: owns the artifact dir, the full log, and the
     structured summary."""
@@ -374,14 +378,17 @@ class Run:
         env: dict | None = None,
         stage: str | None = None,
         timeout: float | None = None,
-    ) -> subprocess.CompletedProcess:
+    ) -> CommandResult:
         t0 = time.monotonic()
+        timed_out = False
         try:
             cp = subprocess.run(
                 cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout
             )
             out, err, rc = cp.stdout, cp.stderr, cp.returncode
         except subprocess.TimeoutExpired as e:
+            timed_out = True
+
             # text=True yields str, but TimeoutExpired types stdout/stderr as
             # str|bytes|None — coerce defensively so the full-log writes are str.
             def _as_str(s: str | bytes | None) -> str:
@@ -399,6 +406,7 @@ class Run:
                 "start_seconds": round(t0 - self.start, 6),
                 "seconds": round(dt, 6),
                 "exit": rc,
+                "timed_out": timed_out,
             }
             self.command_timings.append(timing)
             with open(self.full_log, "a") as f:
@@ -409,7 +417,9 @@ class Run:
                     f.write("\n--- stderr ---\n" + err)
             with open(self.commands_log, "a") as f:
                 f.write(json.dumps({"cmd": cmd, "cwd": str(cwd or ""), **timing}) + "\n")
-        return cp
+        result = CommandResult(cp.args, cp.returncode, cp.stdout, cp.stderr)
+        result.timed_out = timed_out
+        return result
 
     def log(self, text: str, header: str | None = None) -> None:
         with self._log_lock, open(self.full_log, "a") as f:

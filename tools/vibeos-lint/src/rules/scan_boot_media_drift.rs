@@ -117,11 +117,11 @@ fn audit(cmake: &str, ram: &str) -> Vec<String> {
     let lays = crate::regexes::cached(r"livecd\.\w+\.lst")
         .unwrap()
         .is_match(ram)
-        && ram.contains("ramdisk_tree.py");
+        && (ram.contains("ramdisk_tree.py") || ram.contains("ramdisk-tree"));
     if !lays {
         let mut h: Vec<_> = live.keys().cloned().collect();
         h.sort();
-        out.push(format!("{RAM}:1: [RAMDISK_NOT_FROM_LIVECD] the ramdisk is not built from the livecd list (no livecd.<config>.lst laid out by tools/ramdisk_tree.py), so nothing makes it carry the {} hive(s) the livecd stages ({}); a missing one is FABRICATED empty at boot",live.len(),h.join(", ")));
+        out.push(format!("{RAM}:1: [RAMDISK_NOT_FROM_LIVECD] the ramdisk is not built from the livecd list (no livecd.<config>.lst laid out by the ramdisk staging tool), so nothing makes it carry the {} hive(s) the livecd stages ({}); a missing one is FABRICATED empty at boot",live.len(),h.join(", ")));
         count += 1;
     }
     out.push(String::new());
@@ -196,6 +196,11 @@ mod tests {
         );
         assert!(x.last().unwrap().contains("findings=0"));
         assert!(!x.join("\n").contains("BCD"));
+        let native = audit(
+            CM,
+            "LIVECD_LST=livecd.Debug.lst\ntools/build-infra ramdisk-tree",
+        );
+        assert!(native.last().unwrap().contains("findings=0"));
     }
     #[test]
     fn hand_staged_ramdisk_and_output_drift_report() {

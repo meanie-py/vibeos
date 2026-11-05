@@ -6,6 +6,7 @@ Run: <venv>/bin/python -m pytest tests/qemu/cli/test_cli_units.py -q
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -24,6 +25,7 @@ import pytest
 from tests.qemu import backend as be_mod
 from tests.qemu import qmp_client, serial_client
 from tests.qemu import vm as vm_mod
+from tools import qemu_infra_compat as native
 
 from . import build as build_mod
 from . import config as config_mod
@@ -308,89 +310,6 @@ def test_smp_patch_is_idempotent_on_arm64_media(tmp_path: Path):
     assert vm_mod.smp_selected_iso(src, tmp_path / "work") == src
 
 
-def _stub_mcopy(monkeypatch, ini_text: str = "[FREELOADER]\n/SOS /RDPATH=x\n"):
-    """Stand in for mcopy: extraction writes the ini out, write-back is a no-op.
-
-    The real transform needs a FAT image; what these tests are about is the
-    CACHING, so the FAT plumbing is stubbed and the calls are recorded.
-    """
-    calls: list[list[str]] = []
-
-    def fake_run(cmd, **kwargs):
-        calls.append(list(cmd))
-        # `mcopy -o -i IMG ::/freeldr.ini OUT` — the extraction direction
-        if cmd[-2].startswith("::"):
-            Path(cmd[-1]).write_text(ini_text)
-        return subprocess.CompletedProcess(cmd, 0, b"", b"")
-
-    monkeypatch.setattr(vm_mod.subprocess, "run", fake_run)
-    return calls
-
-
-def test_testkernel_boot_img_is_built_once_and_reused(tmp_path: Path, monkeypatch):
-    """This copied 280 MiB on every construction of the config. The transform is
-    deterministic, so every copy held identical bytes. The second call must reuse."""
-    src = tmp_path / "boot.img"
-    src.write_bytes(b"BOOTIMG" * 100)
-    work = tmp_path / "work"
-    work.mkdir()
-    calls = _stub_mcopy(monkeypatch)
-
-    first = vm_mod.testkernel_boot_img(src, work)
-    assert first.exists()
-    assert first != src, "must not mutate the build tree's media"
-    built = len(calls)
-    assert built > 0
-
-    second = vm_mod.testkernel_boot_img(src, work)
-    assert second == first
-    assert len(calls) == built, "second boot rebuilt the image instead of reusing it"
-
-
-def test_testkernel_boot_img_rekeys_when_the_source_changes(tmp_path: Path, monkeypatch):
-    """A rebuild re-stages boot.img. Reusing the old variant would boot stale
-    media, which is the one failure worse than the copying it replaces."""
-    src = tmp_path / "boot.img"
-    src.write_bytes(b"OLD")
-    work = tmp_path / "work"
-    work.mkdir()
-    _stub_mcopy(monkeypatch)
-
-    old = vm_mod.testkernel_boot_img(src, work)
-    src.write_bytes(b"NEWER-AND-LONGER")
-    os.utime(src, (1, 1))
-    new = vm_mod.testkernel_boot_img(src, work)
-
-    assert new != old, "a re-staged boot.img must produce a new cache key"
-    assert not old.exists(), "the stale variant should be pruned"
-
-
-def test_testkernel_boot_img_never_writes_the_shared_file_in_place(tmp_path: Path, monkeypatch):
-    """AGENTS.md records SIGBUS from a tool rewriting a shared inode under a
-    sibling's mapping. Building via a temp + os.replace means an already-open
-    boot keeps a valid inode, so guard that the staging path is what gets
-    written and the shared name only ever appears via replace."""
-    src = tmp_path / "boot.img"
-    src.write_bytes(b"BOOTIMG")
-    work = tmp_path / "work"
-    work.mkdir()
-    _stub_mcopy(monkeypatch)
-
-    replaced: list[tuple[str, str]] = []
-    real_replace = os.replace
-    monkeypatch.setattr(
-        vm_mod.os,
-        "replace",
-        lambda a, b: (replaced.append((str(a), str(b))), real_replace(a, b))[1],
-    )
-
-    out = vm_mod.testkernel_boot_img(src, work)
-    assert len(replaced) == 1, "the shared image must appear via exactly one atomic replace"
-    staged, final = replaced[0]
-    assert str(out) == final
-    assert "staging" in staged, "content must be built at a private path first"
-
-
 def test_mp_entry_names_are_equal_length_to_the_defaults_they_replace():
     """The in-place poke can pad a shorter replacement but never a longer one, and
     arm64 relies on an exact-length swap. Guard the table itself so renaming one
@@ -590,9 +509,8 @@ def test_run_tolerates_declared_nonzero_codes(tiny_repo: Path):
         provenance._run(["git", "grep", "-l", "zzz-absent"], tiny_repo)
 
 
-def test_check_staleness_reports_oracle_failure_rather_than_raising(tmp_path: Path, monkeypatch):
-    """A broken oracle must be reported AS a broken oracle — not laundered into a
-    confident "source changed since build", and not escaping as a traceback."""
+def test_check_staleness_reports_oracle_failure_rather_than_raising(tmp_path: Path):
+    """A real nonrepository makes native git fail, without patching its Python facade."""
     bd = tmp_path / "build-amd64"
     bd.mkdir()
     media = bd / "livecd.iso"
@@ -603,19 +521,14 @@ def test_check_staleness_reports_oracle_failure_rather_than_raising(tmp_path: Pa
         git_fingerprint="gf",
         rust_src_hash="rs",
         boot_media="build-amd64/livecd.iso",
-        boot_media_sha=provenance._sha256_file(media),
+        boot_media_sha=hashlib.sha256(b"iso").hexdigest(),
         cold=True,
     ).write(bd)
-    monkeypatch.setattr(
-        provenance,
-        "git_fingerprint",
-        lambda *a, **k: (_ for _ in ()).throw(provenance.ProvenanceError("git exploded")),
-    )
     st = provenance.check_staleness(tmp_path, "amd64")
     assert not st.fresh
-    assert any("provenance oracle FAILED" in r and "git exploded" in r for r in st.reasons), (
-        st.reasons
-    )
+    assert not st.media_missing, "a broken oracle is distinct from absent media"
+    assert any("provenance oracle FAILED" in r and "git" in r for r in st.reasons), st.reasons
+    assert not any(r == "source changed since build" for r in st.reasons)
 
 
 def test_ps_does_not_report_a_zombie_qemu_as_alive(monkeypatch):
@@ -907,23 +820,30 @@ def test_crate_for_stem_separator_normalization(arm64_cohab_repo: Path):
     assert provenance._crate_for_stem(arm64_cohab_repo, "nonexistent") is None
 
 
-def test_a_binary_with_its_extension_in_its_name_maps_to_its_own_crate(monkeypatch):
-    """wdmaud.drv's Path.stem is `wdmaud` -- wdmaud.SYS's crate -- so a kernel-crate rebuild
-    reported wdmaud.drv "never relinked" against an archive it does not link (arm64,
-    2026-10-17). The crate port names it with the dot as `_` wins; the stem is the fallback."""
-    crates = {
-        "wdmaud": Path("wdmaud-rust"),
-        "wdmaud_drv": Path("wdmaud_drv-rust"),
-        "kernel32": Path("kernel32-rust"),
-    }
-    monkeypatch.setattr(provenance, "_crate_for_stem", lambda _repo, stem: crates.get(stem))
-    repo = Path("/r")
-    drv = "dll/win32/wdmaud.drv/wdmaud.drv"
-    sys_ = "drivers/wdm/audio/legacy/wdmaud/wdmaud.sys"
-    assert provenance._crate_for_rel(repo, drv) == Path("wdmaud_drv-rust")
-    assert provenance._crate_for_rel(repo, sys_) == Path("wdmaud-rust")
-    k32 = "dll/win32/kernel32/kernel32.dll"
-    assert provenance._crate_for_rel(repo, k32) == Path("kernel32-rust")
+def test_a_binary_with_its_extension_in_its_name_maps_to_its_own_crate(tmp_path: Path):
+    """Drive native workspace/CMake crate discovery, including the dot-extension collision."""
+    repo = tmp_path / "repo"
+    workspace = repo / "sdk/lib/rust"
+    for name in ("wdmaud-rust", "wdmaud_drv-rust", "kernel32-rust"):
+        crate = workspace / name
+        crate.mkdir(parents=True)
+        (crate / "Cargo.toml").write_text(f'[package]\nname="{name}"\n')
+    (workspace / "Cargo.toml").write_text(
+        '[workspace]\nmembers=["wdmaud-rust","wdmaud_drv-rust","kernel32-rust"]\n'
+    )
+    (repo / "CMakeLists.txt").write_text(
+        "# native crate linkage inventory\nset(BODIES wdmaud-rust wdmaud_drv-rust kernel32-rust)\n"
+    )
+    _git(repo, "init", "-q")
+    _git(repo, "add", "-A")
+    drv = repo / "sdk/lib/rust/wdmaud_drv-rust"
+    kernel = repo / "sdk/lib/rust/wdmaud-rust"
+    assert provenance._crate_for_rel(repo, "dll/win32/wdmaud.drv/wdmaud.drv") == drv
+    assert provenance._crate_for_rel(repo, "drivers/wdm/audio/legacy/wdmaud/wdmaud.sys") == kernel
+    assert (
+        provenance._crate_for_rel(repo, "dll/win32/kernel32/kernel32.dll")
+        == workspace / "kernel32-rust"
+    )
     assert provenance._crate_for_rel(repo, "dll/win32/other/other.dll") is None
 
 
@@ -1079,6 +999,39 @@ def test_cargo_link_fresh_binary_not_stale(cargo_link_repo: Path):
     os.utime(crate / "Cargo.toml", (1000, 1000))  # .toml is a workspace src too
     os.utime(exe, (2000, 2000))
     assert provenance.cargo_link_staleness_reasons(cargo_link_repo, "amd64") == []
+
+
+def test_compile_snapshot_cannot_hide_unbuilt_command_changes(cargo_link_repo: Path):
+    repo = cargo_link_repo
+    build = repo / "build-amd64"
+    raw = build / "compile_commands.json"
+    snapshot = build / "reactos-link-compile-commands.json"
+    exe = build / "bar/bar.exe"
+    dep = build / "bar/bar.exe.d"
+    raw.write_text("original commands\n")
+    snapshot.write_text(raw.read_text())
+    dep.write_text(dep.read_text().splitlines()[0] + " " + str(snapshot) + "\n")
+    for path in (
+        raw,
+        snapshot,
+        repo / "sdk/lib/rust/bar-rust/src/lib.rs",
+        repo / "sdk/lib/rust/bar-rust/Cargo.toml",
+    ):
+        os.utime(path, (1000, 1000))
+    os.utime(exe, (2000, 2000))
+    assert provenance.cargo_link_staleness_reasons(repo, "amd64") == []
+    # Byte changes must fail even if all timestamps appear older than the PE.
+    raw.write_text("new command flags\n")
+    os.utime(raw, (1500, 1500))
+    with pytest.raises(provenance.ProvenanceError, match=r"snapshot.*differs"):
+        provenance.cargo_link_staleness_reasons(repo, "amd64")
+    verdict = provenance.check_staleness(repo, "amd64")
+    assert not verdict.fresh
+    assert any("snapshot" in reason and "differs" in reason for reason in verdict.reasons)
+    # A byte-identical CMake rewrite is harmless even with a newer timestamp.
+    raw.write_text(snapshot.read_text())
+    os.utime(raw, (3000, 3000))
+    assert provenance.cargo_link_staleness_reasons(repo, "amd64") == []
 
 
 def test_cargo_link_stale_binary_flagged_x86(cargo_link_repo: Path):
@@ -1561,271 +1514,34 @@ def test_kernel_runtime_base_is_the_last_reported_base_or_empty():
 
 
 def test_cpu_state_prefers_the_capture_taken_at_the_deadline(tmp_path):
-    # wait_for_boot samples the instant the boot times out. Re-sampling later
-    # would agree on a true hang but disagree on a merely-slow boot, which by
-    # then has moved on — reporting the wrong place as "where it was stuck".
-    from . import smoke as smoke_mod
-
-    class _StubVm:
-        hang_cpu_state = "CPU#0\nPC=ffff800004001234\n"
-
-        def capture_cpu_state(self):
-            raise AssertionError("must not re-sample when the deadline capture exists")
-
-    path, lines = smoke_mod._cpu_state(
-        _StubVm(),  # type: ignore[arg-type]
+    out = _cpu_deadline_fixture(
         tmp_path,
-        tmp_path,
-        "arm64",
-        "",
+        "CPU#0\nPC=ffff800004001234\n",
+        {"error": "must not re-sample when the deadline capture exists"},
     )
-    assert lines == ["CPU#0 0xffff800004001234 -> (unresolved)"]
+    assert "hang: CPU#0 0xffff800004001234 -> (unresolved)" in out["result"]["salient"]
+    path = out["result"]["cpu_state"]
     assert path and Path(path).read_text().startswith("CPU#0")
+    assert not any(c["op"] == "vm_capture_cpu_state" for c in out["calls"])
+    ops = [c["op"] for c in out["calls"]]
+    assert ops.index("vm_get_hang_cpu_state") < ops.index("vm_screendump"), (
+        "capture before later diagnostics"
+    )
 
 
 def test_cpu_state_falls_back_to_a_live_sample(tmp_path):
-    from . import smoke as smoke_mod
-
-    class _StubVm:
-        hang_cpu_state = ""
-
-        def capture_cpu_state(self):
-            return "CPU#0\nPC=ffff8000040567ac\n"
-
-    _path, lines = smoke_mod._cpu_state(
-        _StubVm(),  # type: ignore[arg-type]
-        tmp_path,
-        tmp_path,
-        "arm64",
-        "",
+    out = _cpu_deadline_fixture(tmp_path, "", "CPU#0\nPC=ffff8000040567ac\n")
+    assert "hang: CPU#0 0xffff8000040567ac -> (unresolved)" in out["result"]["salient"]
+    assert sum(c["op"] == "vm_capture_cpu_state" for c in out["calls"]) == 1
+    ops = [c["op"] for c in out["calls"]]
+    assert ops.index("vm_capture_cpu_state") < ops.index("vm_screendump"), (
+        "fallback also samples at deadline"
     )
-    assert lines == ["CPU#0 0xffff8000040567ac -> (unresolved)"]
-
-
-def _hang_vm(work: Path, artifact: Path | None, capture):
-    """A QemuVM with only what save_hang_state touches — no QEMU, no __init__."""
-    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
-    v.work_dir = work
-    v.artifact_dir = artifact
-    v.hang_cpu_state = ""
-    v.config = vm_mod.ArchConfig(
-        arch="arm64", qemu_bin="x", machine_args=[], memory="1G", boot_marker="m"
-    )
-    v.capture_cpu_state = capture  # type: ignore[method-assign]
-    return v
 
 
 @pytest.fixture
 def _no_resample_wait(monkeypatch):
     monkeypatch.setattr(vm_mod, "HANG_RESAMPLE_SECONDS", 0.0)
-
-
-def test_save_hang_state_also_lands_in_the_durable_artifact_dir(tmp_path, _no_resample_wait):
-    # The bug this closes: work_dir under the pytest `vm` fixture is a tmp_path
-    # that pytest prunes to the last 3 runs, so a capture written only there is
-    # deleted by unrelated later runs. Callers owning a durable run dir set
-    # VIBEOS_ARTIFACT_DIR and must get their own copy.
-    work, art = tmp_path / "w", tmp_path / "run"
-    work.mkdir()
-    v = _hang_vm(work, art, lambda: "CPU#0\nPC=ffff800004001234\n")
-    v.save_hang_state("sweep drain")
-
-    for d in (work, art):
-        body = (d / "hang-cpustate.txt").read_text()
-        assert "PC=ffff800004001234" in body
-        # The phase is what tells a bare file in a run dir WHICH stall it is.
-        assert "sweep drain" in body
-        assert "arch=arm64" in body
-
-
-def test_save_hang_state_separates_a_frozen_box_from_a_blocked_one(tmp_path, _no_resample_wait):
-    # The whole point of two samples: a dead clock and a thread blocked forever
-    # both park every vCPU in the idle loop and are indistinguishable in ONE
-    # dump. Only "did the PC move" tells them apart, and it has to be decided
-    # while the guest is alive, so the artifact must carry the verdict.
-    frozen = _hang_vm(tmp_path / "a", None, lambda: "CPU#0\nPC=ffff800004001234\n")
-    frozen.save_hang_state("sweep drain")
-    assert "FROZEN" in (tmp_path / "a" / "hang-cpustate.txt").read_text()
-
-    pcs = iter(["CPU#0\nPC=ffff800004001234\n", "CPU#0\nPC=ffff8000040099f0\n"])
-    moving = _hang_vm(tmp_path / "b", None, lambda: next(pcs))
-    moving.save_hang_state("sweep drain")
-    assert "EXECUTING" in (tmp_path / "b" / "hang-cpustate.txt").read_text()
-
-
-def test_save_hang_state_uses_the_guest_clock_when_pcs_match(tmp_path, _no_resample_wait):
-    # An idle box parks every vCPU on its `wfi` between ticks, so identical PCs
-    # are what a HEALTHY idle box looks like too. The 2026-10-06 arm64 -smp 2
-    # wedge read "FROZEN — nothing was scheduled" on PCs alone. The clock decides.
-    def sample(t):
-        return f"CPU#0\nPC=fffff800421ac784\n=== guest clock ===\nInterruptTime=0x{t:x} (x)\n"
-
-    clocks = iter([sample(10_000_000), sample(60_000_000)])
-    idle = _hang_vm(tmp_path / "idle", None, lambda: next(clocks))
-    idle.save_hang_state("payload")
-    body = (tmp_path / "idle" / "hang-cpustate.txt").read_text()
-    assert "IDLE-BLOCKED" in body and "advanced 5000ms" in body
-
-    dead = _hang_vm(tmp_path / "dead", None, lambda: sample(10_000_000))
-    dead.save_hang_state("payload")
-    body = (tmp_path / "dead" / "hang-cpustate.txt").read_text()
-    assert "FROZEN —" in body and "did not advance" in body
-
-    unread = _hang_vm(tmp_path / "unread", None, lambda: "CPU#0\nPC=fffff800421ac784\n")
-    unread.save_hang_state("payload")
-    assert "FROZEN?" in (tmp_path / "unread" / "hang-cpustate.txt").read_text()
-
-
-def test_read_guest_clock_parses_kuser_interrupt_time():
-    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
-    v.config = vm_mod.ArchConfig(
-        arch="arm64", qemu_bin="x", machine_args=[], memory="1G", boot_marker="m"
-    )
-    seen = []
-
-    class _Qmp:
-        def hmp(self, cmd):
-            seen.append(cmd)
-            return "fffff78000000008: 0x9502f900 0x00000002 0x00000002"
-
-    v.qmp = _Qmp()  # type: ignore[assignment]
-    out = v._read_guest_clock()
-    assert seen == ["x /3wx 0xfffff78000000008", "x /1wx 0xfffff78000000320"]
-    assert triage.guest_interrupt_time(out) == 0x2_9502F900
-    assert "TickCount=0x9502f900" in out
-
-    class _Torn:
-        def hmp(self, cmd):
-            return "fffff78000000008: 0x00000010 0x00000003 0x00000002"
-
-    v.qmp = _Torn()  # type: ignore[assignment]
-    assert triage.guest_interrupt_time(v._read_guest_clock()) is None
-
-
-def test_save_hang_state_names_a_kernel_fault_loop_at_a_user_pc(tmp_path, _no_resample_wait):
-    # The third reading of "the PC never moved": a same-EL instruction abort
-    # the handler keeps resolving as spurious, eret'ing straight back to the
-    # same PC. Two samples cannot separate that from a dead clock — but the
-    # arm64 register dump can: kernel EL (PSTATE M != 0) with a PC in the user
-    # half. Five real captures said FROZEN before this existed.
-    dump = "CPU#0\n PC=0000000000010000 X00=0\nPSTATE=0000000020000345 --C- EL1h\n"
-    v = _hang_vm(tmp_path / "loop", None, lambda: dump)
-    v.save_hang_state("boot-wait timeout")
-    body = (tmp_path / "loop" / "hang-cpustate.txt").read_text()
-    assert "FAULT-LOOP" in body and "CPU#0 pc=0x0000000000010000" in body
-    # The plain readings must not be promoted: a kernel PC at EL1 is FROZEN...
-    idle = "CPU#0\n PC=fffff80042192824 X00=0\nPSTATE=0000000020000345 --C- EL1h\n"
-    v = _hang_vm(tmp_path / "idle", None, lambda: idle)
-    v.save_hang_state("boot-wait timeout")
-    assert "FAULT-LOOP" not in (tmp_path / "idle" / "hang-cpustate.txt").read_text()
-    # ...and a user PC at EL0 is a user thread, which is fine.
-    user = "CPU#0\n PC=0000000000010000 X00=0\nPSTATE=0000000060000000 -ZC- EL0t\n"
-    v = _hang_vm(tmp_path / "user", None, lambda: user)
-    v.save_hang_state("boot-wait timeout")
-    assert "FAULT-LOOP" not in (tmp_path / "user" / "hang-cpustate.txt").read_text()
-
-
-def test_capture_cpu_state_disassembles_at_every_pc():
-    # A register dump says WHERE a vCPU is; only the code there says what it is
-    # doing (wfi / b . / an unfetchable page). One `x /6i` per vCPU, at that
-    # vCPU's own PC, after the register dump it was parsed from.
-    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
-    seen = []
-
-    class _Qmp:
-        def hmp(self, cmd):
-            seen.append(cmd)
-            if cmd == "info registers -a":
-                return "CPU#0\n PC=fffff80042192824\nCPU#1\n PC=0000000000010000\n"
-            if cmd.startswith("x /6i"):
-                return f"disasm for {cmd}"
-            return "ok"
-
-    v.qmp = _Qmp()  # type: ignore[assignment]
-    out = v.capture_cpu_state()
-    assert seen[-2:] == ["x /6i 0xfffff80042192824", "x /6i 0x0000000000010000"]
-    assert "=== CPU#1 x /6i 0x0000000000010000 ===" in out
-
-
-def test_capture_cpu_state_reads_the_memory_under_every_stack_pointer():
-    # The decisive test for a wedge parked on a stack access: can the MONITOR
-    # read the page, using the guest's own translation? Unreadable means the
-    # page is gone and the guest is re-faulting on it forever; readable means
-    # the fault is not a translation fault. Nothing inside the guest can answer
-    # that, because the guest is what is stuck.
-    v = vm_mod.QemuVM.__new__(vm_mod.QemuVM)
-    seen = []
-
-    class _Qmp:
-        def hmp(self, cmd):
-            seen.append(cmd)
-            if cmd == "info registers -a":
-                return " PC=fffff8004219280c  SP=ffff800004a26a00\nCPU#0 header above\n"
-            return "ok"
-
-    # One CPU, banner first so the slicer credits it.
-    class _Qmp2(_Qmp):
-        def hmp(self, cmd):
-            seen.append(cmd)
-            if cmd == "info registers -a":
-                return "CPU#0\n PC=fffff8004219280c X00=0\n SP=ffff800004a26a00\n"
-            return "ok"
-
-    v.qmp = _Qmp2()  # type: ignore[assignment]
-    out = v.capture_cpu_state()
-    assert "x /23gx 0xffff800004a26a00" in seen
-    assert "=== CPU#0 stack x /23gx 0xffff800004a26a00 ===" in out
-    # The stack read must come AFTER the register dump it was parsed from.
-    assert seen.index("info registers -a") < seen.index("x /23gx 0xffff800004a26a00")
-
-
-def test_capture_cpu_state_walks_the_frame_pointer_chain(tmp_path):
-    # The 23-word stack window ended before the frame that had disabled
-    # interrupts in the 2026-10-05 MmPfnLock/TB-shootdown deadlock; the chain walk
-    # is the backtrace. It must read through the vCPU's own translation (`cpu N`
-    # first), follow ascending links, and stop on a null one.
-    v = _hang_vm(tmp_path, None, lambda: "")
-    del v.capture_cpu_state  # the real method, not the stub
-    mem = {
-        0xFFFFF88075571800: (0xFFFFF88075571870, 0xFFFFF80000461A42),
-        0xFFFFF88075571870: (0xFFFFF880755718F0, 0xFFFFF800005D0001),
-        0xFFFFF880755718F0: (0, 0xFFFFF80000600002),
-    }
-    seen = []
-
-    class _Qmp:
-        def hmp(self, cmd):
-            seen.append(cmd)
-            if cmd == "info registers -a":
-                return "CPU#0\nRIP=fffff80000463c52 RSP=fffff880755717c0\nRBP=fffff88075571800\n"
-            if cmd.startswith("x /2gx 0x"):
-                a = int(cmd.split("0x", 1)[1], 16)
-                nxt, ret = mem[a]
-                return f"{a:016x}: 0x{nxt:016x} 0x{ret:016x}"
-            return "ok"
-
-    v.qmp = _Qmp()  # type: ignore[assignment]
-    out = v.capture_cpu_state()
-    assert "=== CPU#0 frames (frame-pointer chain) ===" in out
-    assert "  #0 fp=fffff88075571800 ret=fffff80000461a42" in out
-    assert "  #2 fp=fffff880755718f0 ret=fffff80000600002" in out
-    assert "(end: null frame pointer)" in out
-    assert seen.index("cpu 0") < seen.index("x /2gx 0xfffff88075571800")
-    assert [f for f in triage.cpu_frames(out) if f[1] == 1] == [(0, 1, "fffff800005d0001")]
-
-
-def test_save_hang_state_survives_a_dead_monitor(tmp_path, _no_resample_wait):
-    # A diagnostic that raises on an already-failing run destroys the failure it
-    # was there to explain, so a dead QMP must degrade to a note in the file —
-    # and must NOT report FROZEN, which two empty samples would otherwise imply.
-    def _boom():
-        raise RuntimeError("qmp gone")
-
-    v = _hang_vm(tmp_path, None, _boom)
-    v.save_hang_state("boot-wait timeout")
-    body = (tmp_path / "hang-cpustate.txt").read_text()
-    assert "capture failed" in body
-    assert "UNKNOWN" in body and "FROZEN" not in body
 
 
 def test_the_drain_finishes_the_marker_line_before_returning():
@@ -1952,14 +1668,6 @@ def test_a_crashed_payload_does_not_capture_a_hang():
     with pytest.raises(AssertionError):
         payload_mod.test_payload_launched(_StubVm(), "arm64", "kmtest", spec)  # type: ignore[arg-type]
     assert calls == []
-
-
-def test_conformance_points_the_sweep_at_its_run_dir():
-    # conformance shells out to pytest, so the run dir can only reach the VM
-    # through the environment. If this wiring is dropped, hang captures silently
-    # go back to the prunable pytest tmp_path and the run dir holds serial only.
-    src = Path(conformance_mod.__file__).read_text()
-    assert 'env["VIBEOS_ARTIFACT_DIR"] = str(run_dir)' in src
 
 
 def test_triage_kernel_panic_via_debugcon():
@@ -2222,12 +1930,14 @@ def test_command_timings_survive_failures(monkeypatch, failure):
         "start_seconds": 2.0,
         "seconds": 3.5,
         "exit": {None: 0, "timeout": 124, "missing": 127}[failure],
+        "timed_out": failure == "timeout",
     }
     summary = json.loads((run.dir / "summary.json").read_text())
     assert summary["command_timings"] == [expected]
     journal = json.loads(run.commands_log.read_text())
     assert all(journal[key] == value for key, value in expected.items())
     assert cp.returncode == expected["exit"]
+    assert cp.timed_out == expected["timed_out"]
 
 
 def test_rust_source_closure_tracks_shared_dependencies(tmp_path):
@@ -2468,115 +2178,7 @@ def test_per_arch_cap_env_overrides(monkeypatch):
     assert vm.per_arch_cap("arm64") == 2
 
 
-def _bare_vm(arch: str):
-    """An uninitialized QemuVM carrying only what the slot methods touch."""
-    v = vm.QemuVM.__new__(vm.QemuVM)
-    v.config = types.SimpleNamespace(arch=arch)  # type: ignore[assignment]
-    v._slot_fd = None
-    v._arch_slot_fd = None
-    v._cpu_lease_fd = None
-    return v
-
-
-def test_arch_slot_serializes_same_arch(tmp_path, monkeypatch):
-    monkeypatch.setattr(vm, "SLOT_DIR", tmp_path)
-    monkeypatch.setattr(vm, "QEMU_QUEUE_TIMEOUT", 0.0)  # second boot fails fast
-    for var in ("VIBEOS_QEMU_PER_ARCH_CAP", "VIBEOS_QEMU_CAP_I386"):
-        monkeypatch.delenv(var, raising=False)
-
-    first = _bare_vm("i386")
-    first._acquire_arch_slot()
-    assert first._arch_slot_fd is not None  # holds the single i386 slot
-
-    # A second i386 boot can't get the cap-1 slot → queues → times out.
-    second = _bare_vm("i386-uefi-net")
-    with pytest.raises(TimeoutError):
-        second._acquire_arch_slot()
-    assert second._arch_slot_fd is None
-
-    # Cross-arch is uncapped → arm64 acquires immediately alongside i386.
-    other = _bare_vm("arm64")
-    other._acquire_arch_slot()
-    assert other._arch_slot_fd is None  # cap 0: no lock taken, no contention
-
-    # Free the first → the queued arch is available again.
-    first._release_slot()
-    third = _bare_vm("i386")
-    third._acquire_arch_slot()
-    assert third._arch_slot_fd is not None
-    third._release_slot()
-
-
 # --- host CPU broker: boot-side lease wiring (vm.py) ------------------------
-def test_boot_is_tcg_native_arm64_yes(monkeypatch):
-    v = _bare_vm("arm64")
-    v._backend = "native"
-    assert v._boot_is_tcg() is True  # no aarch64 KVM in WSL2 → always TCG
-
-
-def test_boot_is_tcg_native_x86_follows_kvm(monkeypatch):
-    v = _bare_vm("amd64")
-    v._backend = "native"
-    monkeypatch.setattr(vm.Path, "exists", lambda self: True)  # /dev/kvm present
-    assert v._boot_is_tcg() is False  # KVM → no CPU lease
-    monkeypatch.setattr(vm.Path, "exists", lambda self: False)  # no /dev/kvm
-    assert v._boot_is_tcg() is True  # QEMU degrades to TCG → CPU-heavy
-
-
-def test_boot_is_tcg_windows_host_whpx_no(monkeypatch):
-    v = _bare_vm("amd64")
-    v._backend = "windows-host"
-    v._win_accel = "whpx"
-    assert v._boot_is_tcg() is False  # hardware virt on the Windows host → no lease
-    v._win_accel = "tcg"
-    assert v._boot_is_tcg() is True
-
-
-def test_acquire_cpu_lease_tcg_takes_then_release(tmp_path, monkeypatch):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    v = _bare_vm("arm64")
-    v._backend = "native"
-    v.work_dir = tmp_path
-    v._acquire_cpu_lease()
-    assert v._cpu_lease_fd is not None  # a TCG boot holds one CPU permit
-    v._release_slot()  # _release_slot also drops the CPU lease
-    assert v._cpu_lease_fd is None
-
-
-def test_acquire_cpu_lease_kvm_takes_nothing(tmp_path, monkeypatch):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    v = _bare_vm("amd64")
-    v._backend = "native"
-    v.work_dir = tmp_path
-    monkeypatch.setattr(vm.Path, "exists", lambda self: True)  # /dev/kvm present → KVM
-    v._acquire_cpu_lease()
-    assert v._cpu_lease_fd is None  # KVM boot takes no CPU lease
-
-
-def test_acquire_cpu_lease_noop_when_broker_disabled(tmp_path, monkeypatch):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "0")
-    v = _bare_vm("arm64")
-    v._backend = "native"
-    v.work_dir = tmp_path
-    v._acquire_cpu_lease()
-    assert v._cpu_lease_fd is None  # broker off → no lease even for a TCG boot
-
-
-def test_acquire_cpu_lease_soft_fails_on_timeout(tmp_path, monkeypatch, capsys):
-    """When no permit is free (an exclusive build holds the pool), the boot lease times out
-    → warn + proceed UNLOCKED, never wedging the boot (the writer-takes-all soft-fail seam)."""
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    monkeypatch.setattr(hl_mod, "acquire_cpu_lease", lambda *a, **k: None)  # simulate timeout
-    v = _bare_vm("arm64")
-    v._backend = "native"
-    v.work_dir = tmp_path
-    v._acquire_cpu_lease()
-    assert v._cpu_lease_fd is None  # never wedged
-    assert "proceeding UNLOCKED" in capsys.readouterr().out
 
 
 # --- windows-host hostfwd-bind TOCTOU launch retry -------------------------
@@ -2588,207 +2190,6 @@ class _Reader:
 
     def read(self) -> bytes:
         return self._data
-
-
-class _FakeProc:
-    """subprocess.Popen stand-in for _launch_qemu tests."""
-
-    def __init__(self, stderr: bytes = b""):
-        self.stderr = _Reader(stderr)
-
-
-def _launch_vm(backend: str, tmp_path: Path):
-    """A bare QemuVM carrying only what _launch_qemu touches."""
-    v = vm.QemuVM.__new__(vm.QemuVM)
-    v._backend = backend
-    v.live_log_path = tmp_path / "serial.log"
-    v.config = vm_mod.get_arch_config("amd64-uefi")
-    v._proc = None
-    v._early_stderr = ""
-    v._gdb = False
-    return v
-
-
-def test_launch_qemu_retries_hostfwd_bind_race(monkeypatch, tmp_path):
-    v = _launch_vm("windows-host", tmp_path)
-    monkeypatch.setattr(
-        v,
-        "_build_windows_cmd",
-        lambda: ["qemu", "-netdev", "user,id=n,hostfwd=tcp:0.0.0.0:1234-:7777"],
-    )
-    procs = [_FakeProc(), _FakeProc(), _FakeProc()]
-    launched: list = []
-
-    def fake_popen(cmd, **kw):
-        p = procs[len(launched)]
-        launched.append(p)
-        return p
-
-    monkeypatch.setattr(vm.subprocess, "Popen", fake_popen)
-    # first two attempts lose the port race, third launches clean (None = healthy)
-    seq = iter([vm.HOSTFWD_BIND_ERROR + " 'tcp:0.0.0.0:1234'", vm.HOSTFWD_BIND_ERROR, None])
-    monkeypatch.setattr(v, "_early_exit_stderr", lambda proc, budget=2.0: next(seq))
-    discarded: list = []
-    monkeypatch.setattr(v, "_discard_failed_launch", discarded.append)
-
-    cmd = v._launch_qemu()
-    assert "hostfwd=" in " ".join(cmd)
-    assert v._proc is procs[2]  # the healthy (3rd) attempt
-    assert discarded == [procs[0], procs[1]]  # first two torn down
-    assert len(launched) == 3
-
-
-def test_launch_qemu_healthy_first_try_no_retry(monkeypatch, tmp_path):
-    v = _launch_vm("windows-host", tmp_path)
-    monkeypatch.setattr(
-        v, "_build_windows_cmd", lambda: ["qemu", "-netdev", "user,hostfwd=tcp:0.0.0.0:9-:9"]
-    )
-    proc = _FakeProc()
-    launched: list = []
-    monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: launched.append(proc) or proc)
-    monkeypatch.setattr(v, "_early_exit_stderr", lambda p, budget=2.0: None)
-    monkeypatch.setattr(
-        v, "_discard_failed_launch", lambda p: pytest.fail("healthy launch must not discard")
-    )
-    v._launch_qemu()
-    assert v._proc is proc
-    assert len(launched) == 1
-
-
-def test_launch_qemu_non_hostfwd_skips_poll(monkeypatch, tmp_path):
-    # native (or any non-hostfwd) config: launch once, never poll for the bind race.
-    v = _launch_vm("native", tmp_path)
-    monkeypatch.setattr(v, "_build_native_cmd", lambda: ["qemu", "-M", "pc"])
-    proc = _FakeProc()
-    monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: proc)
-    monkeypatch.setattr(
-        v, "_early_exit_stderr", lambda *a, **k: pytest.fail("must not poll a non-hostfwd cmd")
-    )
-    cmd = v._launch_qemu()
-    assert v._proc is proc
-    assert cmd == ["qemu", "-M", "pc"]
-
-
-def test_launch_qemu_non_bind_early_exit_is_not_retried(monkeypatch, tmp_path):
-    # QEMU dies early for some OTHER reason → not the flake: keep the proc (the normal
-    # start path surfaces it), stash stderr, do NOT retry.
-    v = _launch_vm("windows-host", tmp_path)
-    monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
-    proc = _FakeProc()
-    monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: proc)
-    monkeypatch.setattr(v, "_early_exit_stderr", lambda p, budget=2.0: "bad -drive: No such file")
-    monkeypatch.setattr(v, "_discard_failed_launch", lambda p: pytest.fail("must not retry"))
-    v._launch_qemu()
-    assert v._proc is proc
-    assert v._early_stderr == "bad -drive: No such file"
-
-
-def test_launch_qemu_raises_after_exhausting_retries(monkeypatch, tmp_path):
-    monkeypatch.setattr(vm, "HOSTFWD_LAUNCH_RETRIES", 2)
-    v = _launch_vm("windows-host", tmp_path)
-    monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
-    monkeypatch.setattr(vm.subprocess, "Popen", lambda cmd, **kw: _FakeProc())
-    monkeypatch.setattr(v, "_early_exit_stderr", lambda p, budget=2.0: vm.HOSTFWD_BIND_ERROR)
-    monkeypatch.setattr(v, "_discard_failed_launch", lambda p: None)
-    with pytest.raises(RuntimeError, match="hostfwd-bind failed after 2"):
-        v._launch_qemu()
-
-
-def test_launch_qemu_retries_gdb_bind_race(monkeypatch, tmp_path):
-    # A windows-host gdbstub binds a Windows-stack port with the same pick-then-bind
-    # TOCTOU as a hostfwd → must be retried with a fresh port (no hostfwd present).
-    v = _launch_vm("windows-host", tmp_path)
-    v._gdb = True
-    monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "-gdb", "tcp:0.0.0.0:1234"])
-    procs = [_FakeProc(), _FakeProc()]
-    launched: list = []
-
-    def fake_popen(cmd, **kw):
-        p = procs[len(launched)]
-        launched.append(p)
-        return p
-
-    monkeypatch.setattr(vm.subprocess, "Popen", fake_popen)
-    seq = iter([vm.GDB_BIND_ERROR + " on device 'tcp:0.0.0.0:1234'", None])
-    monkeypatch.setattr(v, "_early_exit_stderr", lambda proc, budget=2.0: next(seq))
-    discarded: list = []
-    monkeypatch.setattr(v, "_discard_failed_launch", discarded.append)
-
-    cmd = v._launch_qemu()
-    assert "-gdb" in cmd
-    assert v._proc is procs[1]  # healthy 2nd attempt
-    assert discarded == [procs[0]]  # first (raced) torn down
-
-
-def test_launch_qemu_retries_chardev_connect_failure(monkeypatch, tmp_path):
-    # The WSL2 localhost relay can refuse a `server=off` chardev's dial to a listener
-    # we bound moments earlier. QEMU dies before any guest code and the whole net suite
-    # reports 15 errors from that one dead launch, so it must be retried on a fresh
-    # port like the two bind races either side of it.
-    v = _launch_vm("windows-host", tmp_path)
-    monkeypatch.setattr(v, "_build_windows_cmd", lambda: ["qemu", "hostfwd=tcp:0.0.0.0:1-:1"])
-    procs = [_FakeProc(), _FakeProc()]
-    launched: list = []
-
-    def fake_popen(cmd, **kw):
-        p = procs[len(launched)]
-        launched.append(p)
-        return p
-
-    monkeypatch.setattr(vm.subprocess, "Popen", fake_popen)
-    seq = iter(
-        [
-            "-chardev socket,id=gf2,host=127.0.0.1,port=58627,server=off: "
-            "Failed to connect to '127.0.0.1:58627': Unknown error",
-            None,
-        ]
-    )
-    monkeypatch.setattr(v, "_early_exit_stderr", lambda proc, budget=2.0: next(seq))
-    discarded: list = []
-    monkeypatch.setattr(v, "_discard_failed_launch", discarded.append)
-
-    v._launch_qemu()
-    assert v._proc is procs[1]
-    assert discarded == [procs[0]]
-
-
-def _gdb_vm(gdb: bool = False, wait: bool = False, backend: str = "native"):
-    v = vm.QemuVM.__new__(vm.QemuVM)
-    v._backend = backend
-    v._gdb = gdb
-    v._gdb_wait = wait
-    v.gdb_port = None
-    return v
-
-
-def test_gdb_args_off_emits_nothing():
-    assert _gdb_vm(gdb=False)._gdb_args(win_stack=False) == []
-    assert _gdb_vm(gdb=False)._gdb_args(win_stack=True) == []  # even on the win path
-
-
-def test_gdb_args_native_binds_loopback():
-    v = _gdb_vm(gdb=True)
-    a = v._gdb_args(win_stack=False)
-    assert a[0] == "-gdb" and a[1].startswith("tcp:127.0.0.1:") and "-S" not in a
-    assert v.gdb_port is not None and str(v.gdb_port) in a[1]
-
-
-def test_gdb_args_wait_adds_dash_S():
-    assert _gdb_vm(gdb=True, wait=True)._gdb_args(win_stack=False)[-1] == "-S"
-
-
-def test_gdb_args_windows_binds_wildcard_on_windows_port(monkeypatch):
-    # windows-host: QEMU.exe is the gdb SERVER → bind 0.0.0.0 on a WINDOWS-picked port.
-    monkeypatch.setattr(be_mod, "windows_free_tcp_port", lambda: 54321)
-    v = _gdb_vm(gdb=True, backend="windows-host")
-    assert v._gdb_args(win_stack=True) == ["-gdb", "tcp:0.0.0.0:54321"]
-    assert v.gdb_port == 54321
-
-
-def test_gdb_host_native_vs_windows(monkeypatch):
-    assert _gdb_vm(backend="native").gdb_host == "127.0.0.1"
-    monkeypatch.setattr(be_mod, "gateway_ip", lambda: "172.26.176.1")
-    assert _gdb_vm(backend="windows-host").gdb_host == "172.26.176.1"
 
 
 # --- gdbengine: the Python gdb engine's pure logic (no QEMU) ---------------
@@ -3101,30 +2502,6 @@ def test_gdbengine_run_until_builds_break_and_then(monkeypatch):
     assert "bt-tagged 10" in ex and "triage-bugcheck" in ex
     assert captured["timeout"] == 30 + 30  # in-gdb budget + teardown headroom
     assert out == "BREAKPOINT HIT"
-
-
-def test_early_exit_stderr_reports_exit_vs_healthy(tmp_path):
-    v = vm.QemuVM.__new__(vm.QemuVM)
-    v._stderr_path = tmp_path / "stderr.log"
-    (tmp_path / "stderr.log").write_text("Could not set up host forwarding rule 'tcp:0.0.0.0:1234'")
-
-    class Exited:
-        stderr = _Reader(b"Could not set up host forwarding rule 'tcp:0.0.0.0:1234'")
-
-        def poll(self):
-            return 1
-
-    out = v._early_exit_stderr(Exited(), budget=0.3)  # type: ignore[arg-type]
-    assert "host forwarding" in (out or "")
-
-    class Alive:
-        stderr = None
-
-        def poll(self):
-            return None
-
-    alive = v._early_exit_stderr(Alive(), budget=0.15)  # type: ignore[arg-type]
-    assert alive is None
 
 
 # --- prune: idle-worktree GC eligibility gates -----------------------------
@@ -3521,24 +2898,6 @@ def test_the_three_echo_consumers_never_share_a_port():
     opts = vm_mod._guestfwd_echo_opts("10.0.2.100")
     for port in ports.values():
         assert opts.count(f":{port}-cmd:cat") == 1
-
-
-def test_free_tcp_port_windows_picker_hook():
-    # Native (no hook): a WSL-stack bind picks a real ephemeral port.
-    assert vm._windows_port_picker is None
-    p = vm._free_tcp_port()
-    assert 1024 < p < 65536
-    # windows-host: _free_tcp_port delegates to the injected picker (which, in the
-    # real backend, picks a Windows-stack-free port so QEMU.exe's 0.0.0.0 hostfwd
-    # binds — the WSL stack is a different stack under NAT). Mock it; restore after.
-    try:
-        vm._windows_port_picker = lambda: 49999
-        assert vm._free_tcp_port() == 49999
-    finally:
-        vm._windows_port_picker = None
-    # restored -> back to the WSL pick
-    assert vm._windows_port_picker is None
-    assert 1024 < vm._free_tcp_port() < 65536
 
 
 def test_backend_stage_media_paths_arm64_drives():
@@ -5184,57 +4543,96 @@ class _FakeVM:
 
 
 def test_watch_early_hang_aborts_on_silence():
-    # boot emits once, then goes silent → watchdog trips well before `timeout`
-    vm = _FakeVM(["[SMSS] boot\n"], hang_silence=0.1)
-    t0 = time.monotonic()
-    outcome, _buf, diag = smoke_mod._watch(vm, until="NEVER", fail_on=None, timeout=30)  # type: ignore[arg-type]
-    assert outcome == "timeout"
-    assert diag["early_hang"] is True
-    assert diag["silent_s"] >= 0.1
-    assert time.monotonic() - t0 < 5, "must fail FAST, not wait the full timeout"
+    out = native.call(
+        "smoke_watch_script",
+        {
+            "until": "NEVER",
+            "timeout": 30,
+            "hang_silence": 0.1,
+            "chunks": [
+                {"time": 0.01, "text": "[SMSS] boot\n"},
+                {"time": 0.2, "text": ""},
+                {"time": 30, "text": "TOO LATE"},
+            ],
+        },
+    )
+    assert out["outcome"] == "timeout"
+    assert out["diag"]["early_hang"] is True
+    assert out["diag"]["silent_s"] >= 0.1
+    assert out["diag"]["silent_s"] < 5, "must fail FAST, not wait the full timeout"
+    assert "TOO LATE" not in out["text"]
 
 
 def test_watch_reaches_marker_before_hang():
-    vm = _FakeVM(["boot\n", "[EXPLORER] _tWinMain entered\n"], hang_silence=0.1)
-    outcome, _buf, _diag = smoke_mod._watch(
-        vm,  # type: ignore[arg-type]
-        until="_tWinMain entered",
-        fail_on=None,
-        timeout=30,
+    out = native.call(
+        "smoke_watch_script",
+        {
+            "until": "_tWinMain entered",
+            "timeout": 30,
+            "hang_silence": 0.1,
+            "chunks": [
+                {"time": 0.01, "text": "boot\n"},
+                {"time": 0.02, "text": "[EXPLORER] _tWinMain entered\n"},
+            ],
+        },
     )
-    assert outcome == "reached"
+    assert out["outcome"] == "reached"
 
 
 def test_watch_no_early_hang_when_disabled():
-    # hang_silence=0 disables the watchdog → runs to the (short) deadline
-    vm = _FakeVM(["x\n"], hang_silence=0.0)
-    outcome, _buf, diag = smoke_mod._watch(vm, until="NEVER", fail_on=None, timeout=0.3)  # type: ignore[arg-type]
-    assert outcome == "timeout"
-    assert diag["early_hang"] is False
+    out = native.call(
+        "smoke_watch_script",
+        {
+            "until": "NEVER",
+            "timeout": 0.3,
+            "hang_silence": 0,
+            "chunks": [
+                {"time": 0.01, "text": "x\n"},
+                {"time": 0.2, "text": ""},
+                {"time": 0.3, "text": ""},
+            ],
+        },
+    )
+    assert out["outcome"] == "timeout"
+    assert out["diag"]["early_hang"] is False
+    assert out["diag"]["silent_s"] >= 0.29
 
 
 def test_settle_watch_keeps_serial_and_sees_milestone():
-    # settle serial is KEPT (for the post-marker health scan) and the milestone
-    # is detected — previously the drain discarded everything it read.
-    vm = _FakeVM(["taskbar building...\n", "[WIN32K] shell ready\n"], hang_silence=0.0)
-    text, seen = smoke_mod._settle_watch(vm, 0.15, "shell ready", grace=0.1)  # type: ignore[arg-type]
-    assert "shell ready" in text
-    assert seen is True
+    out = native.call(
+        "smoke_settle_script",
+        {
+            "seconds": 0.15,
+            "milestone": "shell ready",
+            "grace": 0.1,
+            "chunks": ["taskbar building...\n", "[WIN32K] shell ready\n"],
+        },
+    )
+    assert "shell ready" in out["result"]["text"]
+    assert "taskbar building" in out["result"]["text"]
+    assert out["result"]["seen"] is True
 
 
 def test_settle_watch_milestone_missing_after_grace():
-    vm = _FakeVM(["taskbar building...\n"], hang_silence=0.0)
-    t0 = time.monotonic()
-    text, seen = smoke_mod._settle_watch(vm, 0.1, "shell ready", grace=0.2)  # type: ignore[arg-type]
-    assert seen is False
-    assert "taskbar" in text
-    assert time.monotonic() - t0 < 5
+    out = native.call(
+        "smoke_settle_script",
+        {
+            "seconds": 0.1,
+            "milestone": "shell ready",
+            "grace": 0.2,
+            "chunks": ["taskbar building...\n"],
+        },
+    )
+    assert out["result"]["seen"] is False
+    assert "taskbar" in out["result"]["text"]
+    assert 0.3 <= out["seconds"] < 5
 
 
 def test_settle_watch_no_milestone_required():
-    vm = _FakeVM(["whatever\n"], hang_silence=0.0)
-    text, seen = smoke_mod._settle_watch(vm, 0.1, None)  # type: ignore[arg-type]
-    assert seen is True and "whatever" in text
+    out = native.call(
+        "smoke_settle_script", {"seconds": 0.1, "milestone": None, "chunks": ["whatever\n"]}
+    )
+    assert out["result"]["seen"] is True and "whatever" in out["result"]["text"]
 
 
 # --- hostlock: build(cpuheavy) vs boot(bootcpu) pools are DECOUPLED --------
@@ -5552,72 +4950,6 @@ def _conf_repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def test_conformance_arch_normalization():
-    m = conformance_mod._PYTEST_ARCH
-    assert m.get("amd64", "amd64") == "amd64-uefi"
-    assert m.get("i386", "i386") == "i386-uefi"
-    assert m.get("arm64", "arm64") == "arm64"  # arm64 is itself
-    assert m.get("amd64-uefi", "amd64-uefi") == "amd64-uefi"  # suffixed passes through
-
-
-def test_conformance_asks_the_build_for_the_kmtest_corpus(monkeypatch, tmp_path):
-    """conformance must pass --kmtests, and must never opt out to the UP kernel.
-
-    Both cmake options gating the corpus default OFF, so a build dir this worktree
-    just created has no tests in it; the old preflight only refused when a cache
-    existed and said OFF, and returned None — sailing through — when there was no
-    cache at all. The arm64 half is the tail of the MP-media work: every media now
-    carries both kernel/HAL pairs and the MP one is the shipped default, so a
-    media re-roll buys nothing. The UP half is the live assertion now: `--up-kernel`
-    must never appear, because conformance is one of the automated paths that
-    exists to test what we SHIP, and UP is a dead branch.
-
-    Nothing here may depend on the ambient checkout being provisioned: the merge
-    queue gates in a fresh worktree that legitimately lacks the gitignored payload
-    exes (see the note in test_worktree_provisioning_preflight).
-    """
-    from types import SimpleNamespace
-
-    seen: list[list[str]] = []
-    monkeypatch.setattr(conformance_mod, "_worktree_provisioning_gaps", lambda *_a: [])
-    monkeypatch.setattr(conformance_mod, "_load_parser", lambda _r: object())
-    monkeypatch.setattr(conformance_mod, "_run_dir", lambda _a: tmp_path)
-    monkeypatch.setattr(
-        conformance_mod.subprocess,
-        "run",
-        lambda cmd, **kw: (seen.append(cmd), SimpleNamespace(returncode=1))[1],
-    )
-    for arch in ("i386", "arm64"):
-        seen.clear()
-        args = SimpleNamespace(
-            arch=arch, smp=2, no_build=False, write_baseline=False, only=None, timeout=None
-        )
-        assert conformance_mod._conformance_once(args, tmp_path) == 1  # bailed on our stub
-        assert seen and "--kmtests" in seen[0], seen
-        assert "--up-kernel" not in seen[0], f"{arch}: conformance must not test the UP kernel"
-
-
-def test_conformance_only_without_write_baseline_refuses_before_building(monkeypatch, tmp_path):
-    """A mistyped `--only` used to be refused AFTER a full kmtest build and sweep (exit 2,
-    no verdict); it must cost nothing."""
-    from types import SimpleNamespace
-
-    seen: list[list[str]] = []
-    monkeypatch.setattr(conformance_mod, "_worktree_provisioning_gaps", lambda *_a: [])
-    monkeypatch.setattr(conformance_mod, "_load_parser", lambda _r: object())
-    monkeypatch.setattr(conformance_mod, "_run_dir", lambda _a: tmp_path)
-    monkeypatch.setattr(
-        conformance_mod.subprocess,
-        "run",
-        lambda cmd, **kw: (seen.append(cmd), SimpleNamespace(returncode=0))[1],
-    )
-    args = SimpleNamespace(
-        arch="i386", smp=0, no_build=False, write_baseline=False, only=["X"], timeout=None
-    )
-    assert conformance_mod._conformance_once(args, tmp_path) == 2
-    assert seen == []
-
-
 def test_worktree_provisioning_preflight(tmp_path):
     gaps = conformance_mod._worktree_provisioning_gaps(tmp_path, "arm64")
     blob = "\n".join(gaps)
@@ -5651,75 +4983,6 @@ def test_worktree_provisioning_preflight(tmp_path):
     assert conformance_mod._worktree_provisioning_gaps(ok, "arm64") == []
 
 
-def _drive_soak(monkeypatch, launched_per_round, repeat=20):
-    """Run conformance()'s repeat loop with a stubbed sweep, returning how many
-    rounds it actually ran. `launched_per_round` supplies each round's launched
-    count (last value repeats)."""
-    calls = {"n": 0}
-    monkeypatch.setattr(conformance_mod, "_ROUNDS", [], raising=False)
-
-    def fake_once(args, repo):
-        i = calls["n"]
-        calls["n"] += 1
-        n = launched_per_round[min(i, len(launched_per_round) - 1)]
-        conformance_mod._ROUNDS.append({"shape": "x", "launched": n})
-        return 0 if n else 1
-
-    monkeypatch.setattr(conformance_mod, "_conformance_once", fake_once)
-
-    class A:
-        arch = "arm64"
-        no_build = False
-        repeat = 0
-
-    a = A()
-    a.repeat = repeat
-    conformance_mod.conformance(a, Path("/nonexistent"))
-    return calls["n"]
-
-
-def test_soak_aborts_when_the_media_launches_NOTHING(monkeypatch):
-    # An unprovisioned worktree banked 38 launched=0 rounds into the SHARED
-    # ledger in about a minute. Every further round is noise in someone else's
-    # denominator, so the loop must stop rather than run its full repeat count.
-    ran = _drive_soak(monkeypatch, [0], repeat=20)
-    assert ran == 3, f"expected abort after 3 consecutive no-launch rounds, ran {ran}"
-
-
-def test_soak_does_NOT_abort_on_isolated_no_launch_rounds(monkeypatch):
-    # launched=0 is also a GENUINE face — the smp corpus records 13 of them — so
-    # a lone one must still be recorded and the soak must continue. Only a
-    # consecutive run means the media itself is broken.
-    ran = _drive_soak(monkeypatch, [0, 91, 0, 91, 0, 91, 91, 91], repeat=8)
-    assert ran == 8, f"isolated no-launch rounds must not end the soak, ran {ran}"
-
-
-def test_soak_aborts_when_its_build_round_fails(monkeypatch):
-    # Only round 1 builds; later rounds set no_build. A failed build used to
-    # carry on, so rounds 2..N booted the PREVIOUS media and banked its
-    # bugchecks as measurements of a kernel fix that was never built.
-    calls = {"n": 0}
-    monkeypatch.setattr(conformance_mod, "_ROUNDS", [], raising=False)
-
-    def fake_once(args, repo):
-        calls["n"] += 1
-        if not args.no_build:
-            return 1  # build failed: no round recorded
-        conformance_mod._ROUNDS.append({"shape": "A:bugcheck", "launched": 0})
-        return 1
-
-    monkeypatch.setattr(conformance_mod, "_conformance_once", fake_once)
-
-    class A:
-        arch = "arm64"
-        no_build = False
-        repeat = 3
-
-    conformance_mod.conformance(A(), Path("/nonexistent"))
-    assert calls["n"] == 1, "rounds after a failed build boot stale media"
-    assert conformance_mod._ROUNDS == []
-
-
 def test_conformance_parser_detects_crash_regression(tmp_path):
     parser = conformance_mod._load_parser(_conf_repo_root())
     log = (
@@ -5747,31 +5010,37 @@ def test_conformance_parser_detects_crash_regression(tmp_path):
 
 
 @pytest.fixture
-def cohab_repo(tmp_path: Path, monkeypatch) -> Path:
-    """A fake arm64 tree with the full staticlib-cohab chain for one crate."""
-    monkeypatch.setattr(provenance, "cargo_module_rels", lambda repo: [])
+def cohab_repo(tmp_path: Path) -> Path:
+    """Real Git index and staticlib chain; no Python discovery substitutes."""
     r = tmp_path / "repo"
-    crate = r / "sdk" / "lib" / "rust" / "widget-rust" / "src"
+    crate = r / "sdk/lib/rust/widget-rust/src"
     crate.mkdir(parents=True)
     (crate.parent / "Cargo.toml").write_text("[package]\nname='widget-rust'\n")
     (crate / "lib.rs").write_text("// v1\n")
-    mod = r / "build-arm64" / "drivers" / "widget"
-    cargo_out = mod / "rust-widget-target" / "aarch64-pc-windows-gnullvm" / "release"
-    cargo_out.mkdir(parents=True)
-    (r / "build-arm64" / "boot").mkdir(parents=True)
-    (r / "build-arm64" / "boot" / "livecd.Debug.lst").write_text(
+    mod = r / "build-arm64/drivers/widget"
+    cargo = mod / "rust-widget-target/aarch64-pc-windows-gnullvm/release"
+    cargo.mkdir(parents=True)
+    (r / "build-arm64/boot").mkdir(parents=True)
+    (r / "build-arm64/boot/livecd.Debug.lst").write_text(
         "reactos/system32/drivers/widget.sys=/tmp/vibeos/build-arm64/drivers/widget/widget.sys\n"
     )
+    (r / "drivers/widget").mkdir(parents=True)
+    (r / "drivers/widget/CMakeLists.txt").write_text(
+        "# staticlib cohab; deliberately no add_cargo_module\nset(BODY widget-rust)\n"
+    )
+    (r / ".gitignore").write_text("build-*/\n")
+    _git(r, "init", "-q")
+    _git(r, "add", "-A")
     for p, t in (
         (crate / "lib.rs", 1000),
-        (cargo_out / "libwidget_rust.a", 2000),
+        (cargo / "libwidget_rust.a", 2000),
         (mod / "libwidget_rust.a", 2000),
         (mod / "widget.sys", 2000),
     ):
-        p.parent.mkdir(parents=True, exist_ok=True)
         if not p.exists():
             p.write_bytes(b"x")
         os.utime(p, (t, t))
+    assert provenance.cargo_module_rels(r) == []
     return r
 
 
@@ -5829,18 +5098,21 @@ def test_cohab_same_stem_other_binary_is_not_stale(cohab_repo: Path):
     assert _cohab(cohab_repo) == []
 
 
-def test_cohab_cargo_linked_binary_ignores_cmake_staticlib(cohab_repo: Path, monkeypatch):
-    """user32_vista.dll is linked by its cargo cell from the crate as an rlib, while the
-    CMake user32_vista_static target still builds libuser32_vista_rust.a beside it. That
-    archive finishing after the cargo link is not a missed relink (arm64, 2026-11-01)."""
-    monkeypatch.setattr(provenance, "cargo_module_rels", lambda repo: ["drivers/widget/widget.sys"])
-    mod = cohab_repo / "build-arm64" / "drivers" / "widget"
+def test_cohab_cargo_linked_binary_ignores_cmake_staticlib(cohab_repo: Path):
+    """Native Git/CMake detection must recognize the cargo link before judging staticlibs."""
+    cmake = cohab_repo / "drivers/widget/CMakeLists.txt"
+    cmake.write_text(
+        "add_cargo_module(widget widget-cargo widget.sys\n"
+        "    KIND kernelmod\n    BODY_CRATE widget-rust)\n"
+    )
+    _git(cohab_repo, "add", "drivers/widget/CMakeLists.txt")
+    assert provenance.cargo_module_rels(cohab_repo) == ["drivers/widget/widget.sys"]
+    mod = cohab_repo / "build-arm64/drivers/widget"
     os.utime(mod / "libwidget_rust.a", (6000, 6000))
     assert _cohab(cohab_repo) == []
-    # The cargo-linked shape still owes the binary-vs-source rule.
     os.utime(cohab_repo / "sdk/lib/rust/widget-rust/src/lib.rs", (7000, 7000))
-    r = _cohab(cohab_repo)
-    assert r and ".rs newer than the built binary" in r[0], r
+    reasons = _cohab(cohab_repo)
+    assert reasons and ".rs newer than the built binary" in reasons[0], reasons
 
 
 def test_cohab_cargo_output_missing_is_stale(cohab_repo: Path):
@@ -9222,45 +8494,25 @@ def test_no_literals_requested_is_a_no_op_not_a_failure(tmp_path):
     assert provenance.probes_missing_from_media(tmp_path, "i386", ["  "]) == []
 
 
-def test_rglob_stable_survives_a_directory_vanishing_mid_walk(tmp_path, monkeypatch):
-    """A parallel gate's `--clean` build deletes a sibling arch's cargo target dir while
-    another arch's smoke is walking it. pathlib raises FileNotFoundError from inside the
-    generator; the walk must be redone, not abandoned half-finished."""
-    from tests.qemu.cli import provenance
-
-    (tmp_path / "aarch64-pc-windows-gnullvm").mkdir()
-    (tmp_path / "aarch64-pc-windows-gnullvm" / "libfoo_rust.a").write_text("x")
-
-    real_rglob = Path.rglob
-    calls = {"n": 0}
-
-    def flaky(self, pattern):
-        calls["n"] += 1
-        if calls["n"] == 1:
-            # First walk races the concurrent build and dies part-way through.
-            yield from ()
-            raise FileNotFoundError(2, "No such file or directory", str(tmp_path / "i686-kernel"))
-        yield from real_rglob(self, pattern)
-
-    monkeypatch.setattr(Path, "rglob", flaky)
-    found = provenance.rglob_stable(tmp_path, "libfoo_rust.a")
-
-    assert calls["n"] == 2, "the racing walk must be redone, not swallowed"
-    assert [p.name for p in found] == ["libfoo_rust.a"]
+def test_rglob_stable_collects_native_tree_without_following_sibling_links(tmp_path: Path):
+    """Actual filesystem traversal stays confined even with generated sibling archives."""
+    root = tmp_path / "selected"
+    own = root / "aarch64-pc-windows-gnullvm/libfoo_rust.a"
+    own.parent.mkdir(parents=True)
+    own.write_bytes(b"own")
+    sibling = tmp_path / "other-worktree"
+    sibling.mkdir()
+    (sibling / "libfoo_rust.a").write_bytes(b"foreign")
+    (root / "foreign-target").symlink_to(sibling, target_is_directory=True)
+    assert provenance.rglob_stable(root, "libfoo_rust.a") == [own]
 
 
-def test_rglob_stable_reraises_when_the_tree_is_genuinely_broken(tmp_path, monkeypatch):
-    """Retries are for a transient race. A directory that is ALWAYS unreadable is a real
-    fault, and returning a silently-short list would read as a staleness verdict."""
-    from tests.qemu.cli import provenance
-
-    def always_fails(self, pattern):
-        yield from ()
-        raise PermissionError(13, "Permission denied", str(tmp_path))
-
-    monkeypatch.setattr(Path, "rglob", always_fails)
+def test_rglob_stable_reraises_when_the_tree_is_genuinely_broken(tmp_path: Path):
+    """A real symlink cycle fails loudly; there is no fabricated Path.rglob exception."""
+    cycle = tmp_path / "cycle"
+    cycle.symlink_to("cycle")
     with pytest.raises(OSError):
-        provenance.rglob_stable(tmp_path, "libfoo_rust.a")
+        provenance.rglob_stable(cycle, "libfoo_rust.a")
 
 
 # --- scan_boot_media_drift: the two boot media must stage the same CM hives ------
@@ -10778,29 +10030,6 @@ def test_the_up_kernel_is_opt_in_only_and_nothing_automated_opts_in():
     assert not stale, f"these still reference the retired MP opt-in knob: {stale}"
 
 
-def test_ledger_records_the_kernel_it_OBSERVED_not_the_flag():
-    """`mp_kernel` must come from the serial, never from `--smp`.
-
-    It was `bool(smp)`, which was accurate only while `--smp N` was the sole way
-    to get MP media. Since the MP promotion a DEFAULT boot runs ntkrnlmp.exe with
-    smp unset, so the flag-derived value recorded every default MP round as UP --
-    and `mp_kernel` is the field every flake-rate query filters on, so the damage
-    is silent and retroactive: the rounds still happen, they just stop counting.
-
-    The same inference-as-observation bug already cost an A/B once (see the note
-    beside the field), which is why this is pinned rather than left to review.
-    """
-    import inspect
-
-    from . import conformance as conf
-
-    src = inspect.getsource(conf)
-    assert '"mp_kernel": "ntkrnlmp.exe" in serial_text' in src, (
-        "mp_kernel must be read off the boot's serial"
-    )
-    assert '"mp_kernel": bool(smp)' not in src, "mp_kernel regressed to the flag"
-
-
 def test_fatal_scanner_diagnostic_cannot_be_baselined(tmp_path, monkeypatch):
     cp = subprocess.CompletedProcess(
         ["scanner"], 1, "header already baselined\n", "FATAL: missing generated headers\n"
@@ -10948,132 +10177,12 @@ def test_zombie_check_is_false_where_proc_is_absent(tmp_path, monkeypatch):
     assert not killvm._pid_is_zombie(1)
 
 
-def test_qmp_client_keeps_events_instead_of_discarding_them():
-    """_recv_json must skip events to find a reply, and used to drop them on the
-    way past. That threw away STOP, which is the only notification QEMU sends when
-    a replay-break fires — leaving a paused replay indistinguishable from a wedged
-    one, since both show a frozen serial log and a busy CPU."""
-    from tests.qemu.qmp_client import QmpClient
-
-    c = QmpClient()
-    feed = [
-        {"event": "RESUME"},
-        {"return": {}},
-        {"event": "STOP", "timestamp": {"seconds": 7}},
-        {"return": {"icount": 42}},
-    ]
-    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
-
-    assert c._recv_json() == {"return": {}}
-    assert c._recv_json() == {"return": {"icount": 42}}
-    assert [e["event"] for e in c.events] == ["RESUME", "STOP"]
-    assert c.saw_event("STOP") == {"event": "STOP", "timestamp": {"seconds": 7}}
-    assert c.saw_event("SHUTDOWN") is None
-
-
-def test_qmp_event_retention_is_bounded():
-    """A long boot emits plenty; this is a diagnostic tail, not a log."""
-    from tests.qemu.qmp_client import QmpClient
-
-    c = QmpClient()
-    feed = [{"event": f"E{i}"} for i in range(300)] + [{"return": {}}]
-    c._recv_one_json = lambda: feed.pop(0)  # type: ignore[method-assign]
-    c._recv_json()
-    assert len(c.events) == 256
-    assert c.saw_event("E299") is not None
-    assert c.saw_event("E0") is None  # fell off the tail
-
-
 @pytest.mark.parametrize("arch", ["amd64-uefi-net", "i386-uefi-net", "amd64-test"])
 def test_per_arch_cap_includes_variants(arch, monkeypatch):
     monkeypatch.setenv("VIBEOS_QEMU_PER_ARCH_CAP", "2")
     monkeypatch.delenv("VIBEOS_QEMU_CAP_AMD64", raising=False)
     monkeypatch.delenv("VIBEOS_QEMU_CAP_I386", raising=False)
     assert vm_mod.per_arch_cap(arch) == 2
-
-
-@pytest.mark.parametrize(
-    "arch,available,expected",
-    [
-        ("amd64-uefi", True, "whpx"),
-        ("amd64-uefi", False, "tcg"),
-        ("arm64", True, "tcg"),
-    ],
-)
-def test_start_resolves_accel_before_admission(arch, available, expected, monkeypatch):
-    v = _bare_vm(arch)
-    v._backend = "windows-host"
-    v._win = {"accel": "whpx"}
-    v._win_accel = "tcg"
-    monkeypatch.setattr(be_mod, "whpx_available", lambda: available)
-    observations = []
-    monkeypatch.setattr(v, "_acquire_slot", lambda: observations.append(v._win_accel))
-    monkeypatch.setattr(v, "_acquire_cpu_lease", lambda: observations.append(v._boot_is_tcg()))
-    monkeypatch.setattr(vm_mod, "launch_lock", contextlib.nullcontext)
-    monkeypatch.setattr(v, "_prepare_launch", lambda: None)
-    monkeypatch.setattr(v, "_start_with_ports", lambda: None)
-    v.start()
-    assert observations == [expected, expected == "tcg"]
-
-
-def test_boot_eof_preserves_serial_and_reports_process_exit(monkeypatch, tmp_path):
-    from types import SimpleNamespace
-
-    v = _bare_vm("amd64")
-    v.config = vm_mod.get_arch_config("amd64-uefi")
-
-    def eof(*args, **kwargs):
-        raise ConnectionError("Serial socket closed")
-
-    monkeypatch.setattr(
-        v,
-        "serial",
-        SimpleNamespace(read_until=eof, partial_output="firmware breadcrumb"),
-        raising=False,
-    )
-    monkeypatch.setattr(
-        v,
-        "_proc",
-        SimpleNamespace(poll=lambda: 1, wait=lambda **_: 1, returncode=1),
-        raising=False,
-    )
-    v._stderr_path = tmp_path / "stderr.log"
-    (tmp_path / "stderr.log").write_text("WHPX fatal error")
-    v._early_stderr = ""
-    with pytest.raises(RuntimeError, match="QEMU exited with code 1") as error:
-        v.wait_for_boot()
-    assert "WHPX fatal error" in str(error.value)
-    assert v._boot_output == "firmware breadcrumb"
-
-
-def test_qemu_stderr_cannot_fill_a_pipe_and_stall(tmp_path, monkeypatch):
-    import sys
-
-    v = _launch_vm("native", tmp_path)
-    monkeypatch.setattr(
-        v,
-        "_build_native_cmd",
-        lambda: [sys.executable, "-c", "import sys; sys.stderr.write('x' * 131072)"],
-    )
-    v._launch_qemu()
-    assert v._proc is not None
-    try:
-        assert v._proc.wait(timeout=5) == 0
-        assert (tmp_path / "amd64-uefi_qemu.stderr.log").stat().st_size == 131072
-        assert v._read_qemu_stderr() == "x" * 65536
-    finally:
-        if v._proc.poll() is None:
-            v._proc.kill()
-            v._proc.wait()
-
-
-def test_serial_eof_retains_partial_output():
-    client = serial_client.SerialClient()
-    client._buf = "firmware reached the loader"
-    client._sock_dead = True
-    with pytest.raises(ConnectionError):
-        client.read_until("shell ready", timeout=0.1)
-    assert client.partial_output == "firmware reached the loader"
 
 
 # --- land: the SOURCE-lint preflight ---------------------------------------
@@ -11411,15 +10520,26 @@ def test_launch_attempts_stays_small_enough_not_to_slow_a_broken_launch():
     assert vm_mod.LAUNCH_RETRY_SECONDS <= 5
 
 
-def test_launch_failure_still_reports_LAUNCH_FAIL_with_the_attempt_count():
-    import inspect
-
-    from tests.qemu.cli import smoke as smoke_mod
-
-    src = inspect.getsource(smoke_mod._boot_vm)
-    assert '"classification": "LAUNCH_FAIL"' in src
-    assert '"launch_attempts": attempts' in src
-    assert "launch attempts, all failed" in src
+def test_launch_failure_still_reports_LAUNCH_FAIL_with_the_attempt_count(tmp_path):
+    out = native.call(
+        "smoke_fixture",
+        {
+            "mode": "one_boot",
+            "options": {
+                "run_dir": str(tmp_path / "run"),
+                "arch": "arm64",
+                "launch_attempts": 3,
+                "launch_retry_seconds": 0,
+            },
+            "responses": {"vm_start": [{"error": "host refused QEMU"}] * 3},
+        },
+        root=tmp_path,
+    )
+    assert out["result"]["classification"] == "LAUNCH_FAIL"
+    assert out["result"]["launch_attempts"] == 3
+    assert "3 launch attempts, all failed" in out["result"]["salient"]
+    assert sum(c["op"] == "vm_stop" for c in out["calls"]) == 3
+    assert sum(c["op"] == "vm_close" for c in out["calls"]) == 3
 
 
 def test_gdb_engine_names_the_missing_gdb(monkeypatch):
@@ -11432,214 +10552,7 @@ def test_gdb_engine_names_the_missing_gdb(monkeypatch):
 # --- the orphan reaper: it deletes locks and kills processes, so pin every rule ----------
 
 
-@pytest.fixture
-def reaper(tmp_path, monkeypatch):
-    """vm.reap_orphan_qemus against a private lock dir + runs dir, with liveness and the
-    kill stubbed: `alive` is the set of live pids, `kills` records every kill_one call."""
-    from . import killvm
-
-    locks, runs = tmp_path / "locks", tmp_path / "runs"
-    locks.mkdir()
-    runs.mkdir()
-    monkeypatch.setattr(vm_mod, "LOCK_DIR", locks)
-    monkeypatch.setenv("RUNS_DIR", str(runs))
-    alive: set[int] = set()
-    kills: list[dict] = []
-    outcome = {"line": "SIGTERM qemu_pid=?"}
-    monkeypatch.setattr(vm_mod, "_pid_alive", lambda pid: pid in alive)
-    monkeypatch.setattr(vm_mod, "_proc_is_qemu", lambda pid: pid in alive)
-
-    def fake_kill(info):
-        kills.append(info)
-        return outcome["line"]
-
-    monkeypatch.setattr(killvm, "kill_one", fake_kill)
-    return locks, runs, alive, kills, outcome
-
-
-def _lock(locks: Path, name: str, **info) -> Path:
-    p = locks / f"{name}.json"
-    p.write_text(json.dumps(info))
-    return p
-
-
-def test_reaper_never_touches_a_live_owner_within_its_cap(reaper):
-    locks, _, alive, kills, _ = reaper
-    alive.update({100, 200})
-    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200, deadline=time.time() + 600)
-    assert vm_mod.reap_orphan_qemus() == []
-    assert lf.exists() and kills == []
-
-
-def test_reaper_kills_past_the_cap_even_with_a_live_owner(reaper):
-    locks, _, alive, kills, _ = reaper
-    alive.update({100, 200})
-    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200, deadline=time.time() - 1)
-    vm_mod.reap_orphan_qemus()
-    assert [k["qemu_pid"] for k in kills] == [200] and not lf.exists()
-
-
-def test_reaper_kills_windows_host_vms_by_uid_even_when_the_shim_is_gone(reaper):
-    """The shim pid dying says nothing about qemu.exe. The old reaper saw a dead pid,
-    deleted the lock, and left the Windows-side VM unmanaged."""
-    locks, _, _, kills, _ = reaper
-    lf = _lock(locks, "w", launcher_pid=100, qemu_pid=200, cmd=["qemu.exe", "-name", "u-123"])
-    vm_mod.reap_orphan_qemus()
-    assert len(kills) == 1 and not lf.exists()
-
-
-def test_reaper_keeps_the_lock_when_the_kill_fails(reaper):
-    locks, _, alive, _, outcome = reaper
-    alive.add(200)
-    outcome["line"] = "STILL ALIVE after SIGTERM+SIGKILL qemu_pid=200"
-    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200)
-    actions = vm_mod.reap_orphan_qemus()
-    assert lf.exists(), "a lock must never be dropped for a VM that may still run"
-    assert actions and actions[0].startswith("FAILED")
-
-
-def test_reaper_leaves_a_fresh_unparseable_lock_alone(reaper):
-    """Unknown is not stale: the jq-less reap.sh read every field as empty and purged
-    every live VM's lock on each new smoke."""
-    locks, _, _, kills, _ = reaper
-    lf = locks / "torn.json"
-    lf.write_text("{half a lo")
-    assert vm_mod.reap_orphan_qemus() == []
-    assert lf.exists() and kills == []
-
-
-def test_reaper_dry_run_changes_nothing(reaper):
-    locks, _, alive, kills, _ = reaper
-    alive.add(200)
-    lf = _lock(locks, "a", launcher_pid=100, qemu_pid=200)
-    actions = vm_mod.reap_orphan_qemus(dry_run=True)
-    assert lf.exists() and kills == [] and actions[0].startswith("DRY-RUN")
-
-
-def test_reaper_walks_debug_toolkit_manifests(reaper):
-    _, runs, alive, kills, _ = reaper
-    alive.update({300, 301, 302, 999})
-
-    def manifest(rid, **info):
-        (runs / rid).mkdir()
-        (runs / rid / "manifest.json").write_text(json.dumps(info))
-
-    manifest("orphan", qemu_pid=300, owner_pid=4242)  # owner dead
-    manifest("owned", qemu_pid=301, owner_pid=999)  # owner alive
-    manifest("stopped", qemu_pid=302, owner_pid=4242, stopped_at="2026-09-26T00:00:00")
-    manifest("legacy", qemu_pid=302)  # no owner recorded, within cap
-    (runs / "torn").mkdir()
-    (runs / "torn" / "manifest.json").write_text("{")
-    vm_mod.reap_orphan_qemus()
-    assert [k["qemu_pid"] for k in kills] == [300]
-
-
 # --- vm: output printed before the `ready` snapshot is boot output, never flushed -------
-
-
-class _SnapshotSerial:
-    """read_until / read_until_idle / read_available over a scripted stream, with the
-    real SerialClient's consume semantics: a TimeoutError does NOT consume."""
-
-    def __init__(self, boot: str, settle: str, settle_times_out: bool) -> None:
-        self.buf, self.pos = boot + settle, 0
-        self.boot, self.settle_times_out = boot, settle_times_out
-
-    def read_until(self, marker: str, timeout: float = 0) -> str:
-        end = self.buf.index(marker) + len(marker)
-        out, self.pos = self.buf[self.pos : end], end
-        return out
-
-    def read_until_idle(self, idle_seconds: float = 0, timeout: float = 0, min_bytes: int = 0):
-        if self.settle_times_out:
-            raise TimeoutError("never idle")
-        out, self.pos = self.buf[self.pos :], len(self.buf)
-        return out
-
-    def read_available(self, timeout: float = 0) -> str:
-        out, self.pos = self.buf[self.pos :], len(self.buf)
-        return out
-
-
-class _FakeQmp:
-    def hmp(self, cmd: str) -> str:
-        return ""
-
-
-@pytest.mark.parametrize("settle_times_out", [True, False])
-def test_a_payload_marker_printed_during_the_settle_survives_the_snapshot_restore(
-    monkeypatch, settle_times_out
-):
-    """The ucrtdiff/oldcrt hang: the marker arrived during the settle, the settle timed
-    out because the payload was chatty, and restore_snapshot's flush ate it."""
-    monkeypatch.setattr(vm_mod.time, "sleep", lambda s: None)
-    vm = object.__new__(vm_mod.QemuVM)
-    vm.config = cast(
-        Any,
-        type(
-            "C", (), {"boot_marker": "shell ready", "boot_timeout": 1, "desktop_settle_seconds": 5}
-        )(),
-    )
-    vm.serial = cast(
-        Any, _SnapshotSerial("...shell ready", "\n[UCRTDIFF] done\n", settle_times_out)
-    )
-    vm.qmp = cast(Any, _FakeQmp())
-    vm._boot_output = ""
-    vm.wait_for_boot()
-    vm.save_snapshot("ready")
-    vm.restore_snapshot("ready")  # the autouse fixture, before the first test
-    assert "[UCRTDIFF] done" in vm._boot_output
-
-
-class _GuestSerial:
-    """A serial line fed by a fake guest: `print` appends, reads consume."""
-
-    def __init__(self) -> None:
-        self.buf, self.pos = "", 0
-
-    def read_available(self, timeout: float = 0) -> str:
-        out, self.pos = self.buf[self.pos :], len(self.buf)
-        return out
-
-
-class _GuestQmp:
-    """HMP with a guest behind it: output already crossing the socket when `stop` lands,
-    and a snapshot taken mid-payload that re-prints the payload's last line on load."""
-
-    def __init__(self, serial: _GuestSerial, in_flight: str, replay: str) -> None:
-        self.serial, self.in_flight, self.replay = serial, in_flight, replay
-        self.running, self.seen = True, []
-
-    def hmp(self, cmd: str) -> str:
-        self.seen.append(cmd)
-        if cmd == "stop":
-            self.running = False
-            self.serial.buf += self.in_flight
-            self.in_flight = ""
-        elif cmd == "cont":
-            self.running = True
-        elif cmd.startswith("loadvm"):
-            assert not self.running, "loadvm on a running guest races the drain"
-            self.serial.buf += self.replay
-        return ""
-
-
-def test_a_marker_printed_around_the_snapshot_reaches_the_test(monkeypatch):
-    """arm64 -smp 4 rpmprobe, 2026-10-07: `[RPMPROBE] done` landed between the last
-    boot read and savevm, and the restored guest re-printed it at once. The old restore
-    flushed after loadvm and ate both, so the payload failed with the marker in its own
-    serial log. Pausing the guest closes both gaps."""
-    monkeypatch.setattr(vm_mod.time, "sleep", lambda s: None)
-    vm = object.__new__(vm_mod.QemuVM)
-    serial = _GuestSerial()
-    qmp = _GuestQmp(serial, "[RPMPROBE] done\n", "[RPMPROBE] done\n")
-    vm.serial, vm.qmp = cast(Any, serial), cast(Any, qmp)
-    vm._boot_output = "...shell ready\n"
-    vm.save_snapshot("ready")
-    assert "[RPMPROBE] done" in vm._boot_output
-    vm.restore_snapshot("ready")
-    assert "[RPMPROBE] done" in serial.read_available()
-    assert qmp.running and qmp.seen[-1] == "cont"
 
 
 def _load_payload_compile():
@@ -11813,28 +10726,60 @@ def _fake_build(tmp_path, ninja: str, depinfo: str):
     return b
 
 
-def test_payload_unbuilt_rust_crate_only_when_both_records_are_silent(tmp_path):
-    """An arm64-only crate (wowx64-rust) cannot change what build-amd64 stages, but a crate
-    named by EITHER the ninja graph or cargo's dep-info is compiled there."""
+def test_payload_unreferenced_by_build_only_when_every_record_is_silent(tmp_path, monkeypatch):
+    """An arm64-only crate (wowx64-rust) or CPU layer (tools/fex/wowx64fex) cannot change what
+    build-amd64 stages, but a path named by ANY of the build's records is read there: the
+    ninja graph, ninja's dependency log (C headers), or cargo's dep-info, which spells paths
+    under the worktree's own root as well as /tmp/vibeos/."""
     pc = _load_payload_compile()
     b = _fake_build(
         tmp_path,
-        "build x: CUSTOM /tmp/vibeos/sdk/lib/rust/user32-rust/src/lib.rs\n",
-        "x.dll: /tmp/vibeos/sdk/lib/rust/strsafe-rust/src/lib.rs\n",
+        "rule CUSTOM\n  command = true\n"
+        "build x: CUSTOM /tmp/vibeos/sdk/lib/rust/user32-rust/src/lib.rs "
+        "/tmp/vibeos/tools/fex/wow64-closure.py\n",
+        "x.dll: /home/someone/worktree/sdk/lib/rust/strsafe-rust/src/lib.rs\n",
     )
-    unbuilt = pc.unbuilt_rust_crate(b)
+    real_run = pc.subprocess.run
+
+    def run(cmd, *a, **kw):
+        if cmd[:1] == ["ninja"]:  # the dependency log names one header
+            return pc.subprocess.CompletedProcess(
+                cmd, 0, stdout="x.obj: #deps 1\n    /tmp/vibeos/tools/fex/shared.h\n", stderr=""
+            )
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(pc.subprocess, "run", run)
+    unbuilt = pc.unreferenced_by_build(b)
     assert unbuilt("sdk/lib/rust/wowx64-rust/src/callback.rs")
+    assert unbuilt("tools/fex/wowx64fex/Module.cpp")
     assert not unbuilt("sdk/lib/rust/user32-rust/src/lib.rs")  # ninja names it
-    assert not unbuilt("sdk/lib/rust/strsafe-rust/src/lib.rs")  # only cargo names it
+    assert not unbuilt("sdk/lib/rust/strsafe-rust/src/lib.rs")  # only cargo, other root
+    assert not unbuilt("tools/fex/wow64-closure.py")  # the build runs it
+    assert not unbuilt("tools/fex/shared.h")  # only the dependency log
     assert not unbuilt("sdk/lib/rust/Cargo.toml")  # the workspace, not a crate
-    assert not unbuilt("dll/win32/wowx64/CMakeLists.txt")
+    assert not unbuilt("dll/win32/wowx64/CMakeLists.txt")  # outside both scopes
 
 
-def test_payload_unbuilt_rust_crate_without_build_records_proves_nothing(tmp_path):
+def test_payload_unreferenced_by_build_without_build_records_proves_nothing(tmp_path):
     pc = _load_payload_compile()
     b = tmp_path / "build-amd64"
     b.mkdir()
-    assert not pc.unbuilt_rust_crate(b)("sdk/lib/rust/wowx64-rust/src/callback.rs")
+    assert not pc.unreferenced_by_build(b)("sdk/lib/rust/wowx64-rust/src/callback.rs")
+
+
+def test_payload_unreferenced_by_build_dies_when_the_deps_log_is_unreadable(tmp_path, monkeypatch):
+    pc = _load_payload_compile()
+    b = _fake_build(tmp_path, "rule CUSTOM\n  command = true\n", "x.dll: nothing\n")
+    real_run = pc.subprocess.run
+
+    def run(cmd, *a, **kw):
+        if cmd[:1] == ["ninja"]:
+            return pc.subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
+        return real_run(cmd, *a, **kw)
+
+    monkeypatch.setattr(pc.subprocess, "run", run)
+    with pytest.raises(SystemExit):
+        pc.unreferenced_by_build(b)("tools/fex/wowx64fex/Module.cpp")
 
 
 def test_payload_guest_set_build_dir_must_name_an_arch(tmp_path, monkeypatch):
@@ -12040,61 +10985,40 @@ def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatc
     assert pc.ensure_built(["demo"], "amd64") == []
 
 
-def test_a_driver_fault_is_not_resolved_against_the_kernel_index(tmp_path, monkeypatch):
-    """The banner said win32k.sys+0x1234 and triage resolved 0x400000+0x1234 in
-    the NTOSKRNL index -- some kernel symbol always sorts below any address, so
-    that named a real-looking, wrong function. A driver RVA goes to the driver's
-    own symbols, and an unindexed driver says so instead of guessing."""
+def test_a_driver_fault_is_not_resolved_against_the_kernel_index(tmp_path):
     serial = (
         "*** BUGCHECK: 0x0000003B (0xc0000005, 0xfffff96000011234, 0x0, 0x0)\n"
         "***   P2 = win32k.sys+0x1234\n"
     )
-    called = []
-    monkeypatch.setattr(triage, "_resolve_addr", lambda *a, **k: called.append(a) or "KERNEL")
+    tool = _symbol_authority(tmp_path)
+    tool.write_text("exit 91\n")
     out = triage.symbolicate_pc(tmp_path, "amd64", serial)
-    assert called == []
     assert out is not None and "win32k.sys+0x1234" in out and "not in the amd64 user index" in out
-
-    (tmp_path / "qemu").mkdir()
-    (tmp_path / "qemu" / "modules-amd64.tsv").write_text(
+    (tmp_path / "qemu/modules-amd64.tsv").write_text(
         "0000000000010000\t0000000000672000\twin32k.sys\tbuild-amd64/win32ss/win32k.sys\tshared\n"
     )
-    seen = {}
-
-    def _resolve(repo, arch, addr, want_module=None):
-        seen.update(addr=addr, want=want_module)
-        return "win32k.sys!Foo+0x4"
-
-    from tests.qemu.cli import symbolize
-
-    monkeypatch.setattr(symbolize, "resolve", _resolve)
+    (tmp_path / "qemu/build-user-index.sh").write_text(
+        "printf 'win32k.sys\\t00011230\\tFoo\\t-\\n'\n"
+    )
     out = triage.symbolicate_pc(tmp_path, "amd64", serial)
-    assert seen == {"addr": 0x10000 + 0x1234, "want": "win32k.sys"}
     assert out is not None and out.endswith("win32k.sys!Foo+0x4")
 
 
-def test_the_kernel_flavor_comes_from_the_banner_module(tmp_path, monkeypatch):
+def test_the_kernel_flavor_comes_from_the_banner_module(tmp_path):
     serial = "***   P2 = ntkrnlmp.exe+0x3788\n*** BUGCHECK: 0x0000001E (0, 0, 0, 0)\n"
-    got = {}
-    monkeypatch.setattr(triage, "faulting_pc", lambda s: "0xfffff80042193788")
-    monkeypatch.setattr(triage, "_resolve_addr", lambda r, a, pc, **k: got.update(pc=pc, **k))
-    triage.symbolicate_pc(tmp_path, "amd64", serial)
-    assert got["mp"] is True and got["pc"] == hex(0x400000 + 0x3788)
+    _symbol_authority(tmp_path)
+    out = triage.symbolicate_pc(tmp_path, "amd64", serial)
+    assert out is not None and "--mp" in out and hex(0x400000 + 0x3788) in out
 
 
-def test_an_mp_kernel_listed_as_ntoskrnl_still_resolves_against_ntkrnlmp(tmp_path, monkeypatch):
-    """The loader lists ntkrnlmp.exe under the name ntoskrnl.exe, so the i386 banner
-    reads `ntoskrnl.exe+RVA` on an MP boot. Keying the flavor on that name alone
-    resolved every i386 MP fault against the UP binary; freeldr's load line decides."""
+def test_an_mp_kernel_listed_as_ntoskrnl_still_resolves_against_ntkrnlmp(tmp_path):
     serial = (
         "[FLDR] load multi(0)disk(0)cdrom(0)\\reactos\\system32\\ntkrnlmp.exe\n"
         "***   P2 = ntoskrnl.exe+0x1262d8\n*** BUGCHECK: 0x0000001E (0, 0, 0, 0)\n"
     )
-    got = {}
-    monkeypatch.setattr(triage, "faulting_pc", lambda s: "0x805eb2d8")
-    monkeypatch.setattr(triage, "_resolve_addr", lambda r, a, pc, **k: got.update(pc=pc, **k))
-    triage.symbolicate_pc(tmp_path, "i386", serial)
-    assert got["mp"] is True and got["pc"] == hex(0x400000 + 0x1262D8)
+    _symbol_authority(tmp_path)
+    out = triage.symbolicate_pc(tmp_path, "i386", serial)
+    assert out is not None and "--mp" in out and hex(0x400000 + 0x1262D8) in out
 
 
 def test_gate_restages_amd64_wow64_only_after_i386_is_built(tmp_path, monkeypatch):
@@ -12422,34 +11346,6 @@ def test_an_identity_cut_short_by_an_interleaved_print_is_the_floor_identity():
     assert run("Other.c:20") == ["Example: NEW failing assertion Other.c:20"]
 
 
-def test_polite_farm_waits_for_the_fleet_then_boots(monkeypatch):
-    """`farm --polite` must not start a boot while a land gates or another agent
-    boots, and must start one as soon as the host is quiet."""
-    from . import farm as farm_mod
-
-    busy = iter([({"kind": "land"}, []), ({}, [{"pid": 1}]), ({}, [])])
-    state = {}
-
-    def step():
-        state["cur"] = next(busy)
-
-    step()
-    monkeypatch.setattr(farm_mod.hostlock, "land_holder", lambda: state["cur"][0])
-    monkeypatch.setattr(farm_mod.hostlock, "foreign_boot_holders", lambda _pid: state["cur"][1])
-    sleeps = []
-    monkeypatch.setattr(farm_mod.time, "sleep", lambda s: (sleeps.append(s), step()))
-    assert farm_mod._wait_for_quiet_host("amd64", farm_mod.time.monotonic() + 3600)
-    assert len(sleeps) == 2
-
-
-def test_polite_farm_gives_up_at_the_deadline(monkeypatch):
-    from . import farm as farm_mod
-
-    monkeypatch.setattr(farm_mod.hostlock, "land_holder", lambda: {"kind": "land"})
-    monkeypatch.setattr(farm_mod.hostlock, "foreign_boot_holders", lambda _pid: [])
-    assert not farm_mod._wait_for_quiet_host("amd64", farm_mod.time.monotonic() - 1)
-
-
 def test_build_classifier_reads_the_FAILED_edge_not_the_whole_log():
     """2026-10-05: a concurrent i386 --clean deleted kernel32.dll under the amd64
     mkisofs edge, and the summary said CARGO_CHECK_FAIL with three `'error: {`
@@ -12575,57 +11471,38 @@ def test_payload_vm_memory_sizes_compare_numerically():
     assert max("1536M", "2G", "", key=smoke_mod._mem_mb) == "2G"
 
 
-def test_smoke_vm_memory_beats_the_payloads_declaration(tmp_path, monkeypatch):
-    """A low-memory sweep (smoke --vm-memory 768M) must boot at 768M even though appstorm64
-    declares vm_memory: 2G; without --vm-memory the declaration still applies."""
-    spec = tmp_path / "tools" / "payloads" / "big" / "payload.yaml"
+def test_smoke_vm_memory_beats_the_payloads_declaration(tmp_path):
+    spec = tmp_path / "tools/payloads/big/payload.yaml"
     spec.parent.mkdir(parents=True)
     spec.write_text("test:\n  vm_memory: 2G\n")
-    seen: list[str] = []
-
-    def fake_run(cmd, **kw):
-        seen.append(kw["env"].get("VIBEOS_QEMU_MEMORY", ""))
-        raise subprocess.TimeoutExpired(cmd, 1)
-
-    monkeypatch.setattr(smoke_mod.subprocess, "run", fake_run)
-    monkeypatch.delenv("VIBEOS_QEMU_MEMORY", raising=False)
-    run = Run("smoke", "arm64", ts=1700000000)
-    smoke_mod._payload_stage(run, tmp_path, "arm64", "big", vm_memory_override="768M")
-    smoke_mod._payload_stage(run, tmp_path, "arm64", "big")
-    assert seen == ["768M", "2G"]
+    out1 = _payload_fixture(tmp_path, vm_memory_override="768M")
+    out2 = _payload_fixture(tmp_path)
+    commands = [
+        next(c["kwargs"] for c in out["calls"] if c["op"] == "command") for out in (out1, out2)
+    ]
+    assert [c["env"].get("VIBEOS_QEMU_MEMORY", "") for c in commands] == ["768M", "2G"]
 
 
-def test_smoke_payload_boots_the_smokes_firmware_variant(tmp_path, monkeypatch):
-    """`smoke --arch amd64-bios --payload X` must run X under SeaBIOS: the payload stage used to
-    map the base arch to amd64-uefi, so every BIOS payload verdict was a UEFI one."""
-    spec = tmp_path / "tools" / "payloads" / "p" / "payload.yaml"
+def test_smoke_payload_boots_the_smokes_firmware_variant(tmp_path):
+    spec = tmp_path / "tools/payloads/p/payload.yaml"
     spec.parent.mkdir(parents=True)
     spec.write_text("test:\n  launch_drain_secs: 10\n")
-    seen: list[str] = []
-
-    def fake_run(cmd, **kw):
+    seen = []
+    for arch, boot_arch in (("amd64", "amd64-bios"), ("amd64", "amd64-uefi"), ("i386", None)):
+        out = _payload_fixture(tmp_path, payloads="p", arch=arch, boot_arch=boot_arch)
+        cmd = next(c["kwargs"]["argv"] for c in out["calls"] if c["op"] == "command")
         seen.append(cmd[cmd.index("--arch") + 1])
-        raise subprocess.TimeoutExpired(cmd, 1)
-
-    monkeypatch.setattr(smoke_mod.subprocess, "run", fake_run)
-    run = Run("smoke", "amd64-bios", ts=1700000000)
-    smoke_mod._payload_stage(run, tmp_path, "amd64", "p", boot_arch="amd64-bios")
-    smoke_mod._payload_stage(run, tmp_path, "amd64", "p", boot_arch="amd64-uefi")
-    smoke_mod._payload_stage(run, tmp_path, "i386", "p")
     assert seen == ["amd64-bios", "amd64-uefi", "i386-uefi"]
 
 
-def test_smoke_net_payload_refuses_the_bios_boot(tmp_path, monkeypatch):
-    """There is no amd64-bios-net config: a net payload on the BIOS boot fails loud instead of
-    falling back to the UEFI net boot."""
-    spec = tmp_path / "tools" / "payloads" / "n" / "payload.yaml"
+def test_smoke_net_payload_refuses_the_bios_boot(tmp_path):
+    spec = tmp_path / "tools/payloads/n/payload.yaml"
     spec.parent.mkdir(parents=True)
     spec.write_text("test:\n  net: true\n")
-    monkeypatch.setattr(smoke_mod.subprocess, "run", lambda *a, **k: pytest.fail("must not boot"))
-    run = Run("smoke", "amd64-bios", ts=1700000000)
-    smoke_mod._payload_stage(run, tmp_path, "amd64", "n", boot_arch="amd64-bios")
-    assert run.stages[-1].status == "fail"
-    assert "amd64-bios-net" in run.stages[-1].detail
+    out = _payload_fixture(tmp_path, payloads="n", arch="amd64", boot_arch="amd64-bios")
+    assert not any(c["op"] == "command" for c in out["calls"]), "must not boot"
+    assert out["run"]["stages"][-1]["status"] == "fail"
+    assert "amd64-bios-net" in out["run"]["stages"][-1]["detail"]
 
 
 def test_qemu_memory_override_is_validated(monkeypatch):
@@ -12638,21 +11515,24 @@ def test_qemu_memory_override_is_validated(monkeypatch):
         vm_mod.get_arch_config("arm64")
 
 
-def test_payload_crash_is_triaged_with_the_booted_kernel(tmp_path, monkeypatch):
-    # A BUGCHECK in the payload VM must name itself (and be symbolicated now, against the
-    # build that booted), not hide behind "payload suite FAILED" / the net stage's NET_FLAKE.
-    from . import triage as triage_mod
+def test_payload_crash_is_triaged_with_the_booted_kernel(tmp_path):
+    from tests.qemu.cli import smoke as smoke_mod
 
-    (tmp_path / "amd64-uefi_serial.log").write_text(
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    tool = _symbol_authority(repo)
+    tool.write_text("printf '00000000\\tMmCreatePeb+1\\t-\\n'\n")
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    (logs / "amd64-uefi_serial.log").write_text(
         "PathName: X:\\\n\n*** BUGCHECK: 0x0000001E (0xffffffffc0000006, 0xfffff800004ef96e, "
         "0xfffff880759b3680, 0x0000000000000000)\n***   P2 = ntoskrnl.exe+0xEF96E\n"
     )
-    monkeypatch.setattr(triage_mod, "symbolicate_pc", lambda repo, arch, text: "MmCreatePeb+0x1")
-    crash = smoke_mod._payload_crash(Path("."), "amd64", tmp_path)
+    crash = smoke_mod._payload_crash(repo, "amd64", logs)
     assert crash is not None and crash["classification"] == "BUGCHECK"
-    assert crash["salient"][-1] == "MmCreatePeb+0x1"
-    (tmp_path / "amd64-uefi_serial.log").write_text("[MODRUN] exit x rust rc=0x0 ms=1 records=0\n")
-    assert smoke_mod._payload_crash(Path("."), "amd64", tmp_path) is None
+    assert "MmCreatePeb+1" in crash["salient"][-1]
+    (logs / "amd64-uefi_serial.log").write_text("[MODRUN] exit x rust rc=0x0 ms=1 records=0\n")
+    assert smoke_mod._payload_crash(repo, "amd64", logs) is None
 
 
 def test_scan_const_contradictions_keys_associated_consts_by_their_type(tmp_path):
@@ -12786,35 +11666,29 @@ def test_payload_not_in_media_advice_keeps_rostests_for_a_winetest_payload(tmp_p
     assert smoke_mod._payload_build_flags(tmp_path, ["plain"]) == ""
 
 
-def test_external_media_is_admitted_only_on_a_matching_stamp(tmp_path, monkeypatch):
-    """`smoke --media`: an image from tools/media_manifest.py --assemble boots only when its
-    stamp names this arch, the livecd, the image's bytes and this tree's source."""
-    import hashlib
-    import json
-
-    from tests.qemu.cli import provenance
-
-    monkeypatch.setattr(provenance, "tree_content_hash", lambda repo, paths: "src")
-    image = tmp_path / "livecd.iso"
-    assert provenance.external_media_problems(tmp_path, "amd64", image) == [
+def test_external_media_is_admitted_only_on_a_matching_stamp(tiny_repo: Path, tmp_path: Path):
+    """An external image must match actual native Git source content and media bytes."""
+    image = tmp_path / "external/livecd.iso"
+    image.parent.mkdir()
+    assert provenance.external_media_problems(tiny_repo, "amd64", image) == [
         f"{image}: no such image"
     ]
     image.write_bytes(b"iso")
-    assert "missing" in provenance.external_media_problems(tmp_path, "amd64", image)[0]
+    assert "missing" in provenance.external_media_problems(tiny_repo, "amd64", image)[0]
     stamp = {
         "arch": "amd64",
         "cd": "livecd",
         "sha256": hashlib.sha256(b"iso").hexdigest(),
-        "source": "src",
+        "source": provenance.tree_content_hash(tiny_repo, [".", *provenance.NON_BUILD_PATHSPEC]),
     }
-    (tmp_path / "livecd.provenance.json").write_text(json.dumps(stamp))
-    assert provenance.external_media_problems(tmp_path, "amd64", image) == []
-    assert provenance.external_media_problems(tmp_path, "i386", image)
+    image.with_suffix(".provenance.json").write_text(json.dumps(stamp))
+    assert provenance.external_media_problems(tiny_repo, "amd64", image) == []
+    assert provenance.external_media_problems(tiny_repo, "i386", image)
     image.write_bytes(b"other")
-    assert "changed since" in provenance.external_media_problems(tmp_path, "amd64", image)[0]
+    assert "changed since" in provenance.external_media_problems(tiny_repo, "amd64", image)[0]
     image.write_bytes(b"iso")
-    monkeypatch.setattr(provenance, "tree_content_hash", lambda repo, paths: "moved")
-    assert "another source tree" in provenance.external_media_problems(tmp_path, "amd64", image)[0]
+    (tiny_repo / "a.txt").write_text("actual source moved\n")
+    assert "another source tree" in provenance.external_media_problems(tiny_repo, "amd64", image)[0]
 
 
 def test_a_build_starts_the_dedup_pass_only_where_the_service_exists(tmp_path, monkeypatch):
@@ -12838,3 +11712,67 @@ def test_a_build_starts_the_dedup_pass_only_where_the_service_exists(tmp_path, m
     assert calls == [["sudo", "-n", "systemctl", "start", "--no-block", "vibeos-dedup.service"]]
     fail = True
     assert build_mod.kick_dedup().status == "warn"
+
+
+def _symbol_authority(repo):
+    qemu = repo / "qemu"
+    qemu.mkdir(exist_ok=True)
+    tool = qemu / "addr2sym.sh"
+    tool.write_text('#!/bin/sh\nprintf "ARGS:%s\\n" "$*"\n')
+    return tool
+
+
+def _payload_fixture(repo, **kwargs):
+    options = {
+        "run_dir": str(repo / "run"),
+        "arch": "arm64",
+        "payloads": "big",
+        "env": {},
+        **kwargs,
+    }
+    return native.call(
+        "smoke_fixture",
+        {
+            "mode": "operation",
+            "operation": "smoke_run_payload_stage",
+            "options": options,
+            "responses": {
+                "command": [{"returncode": 124, "stdout": "", "stderr": "", "timed_out": True}]
+            },
+        },
+        root=repo,
+    )
+
+
+def _cpu_deadline_fixture(repo, stored, live):
+    return native.call(
+        "smoke_fixture",
+        {
+            "mode": "one_boot",
+            "chunks": ["booting\n"],
+            "config": {
+                "boot_marker": "NEVER",
+                "boot_timeout": 0.01,
+                "hang_silence_seconds": 0,
+                "desktop_settle_seconds": 0,
+                "required_milestones": [],
+            },
+            "options": {"arch": "arm64", "run_dir": str(repo / "run"), "launch_retry_seconds": 0},
+            "responses": {"vm_get_hang_cpu_state": [stored], "vm_capture_cpu_state": [live]},
+        },
+        root=repo,
+    )
+
+
+def test_command_exit_124_is_distinct_from_an_owned_timeout(tmp_path, monkeypatch):
+    import sys
+
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path)
+    run = Run("smoke", "amd64")
+    exited = run.run([sys.executable, "-c", "raise SystemExit(124)"])
+    expired = run.run([sys.executable, "-c", "import time; time.sleep(2)"], timeout=0.02)
+    assert exited.returncode == expired.returncode == 124
+    assert exited.timed_out is False and expired.timed_out is True
+    assert [row["timed_out"] for row in run.command_timings] == [False, True]

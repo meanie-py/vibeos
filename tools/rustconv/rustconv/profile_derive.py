@@ -1159,6 +1159,17 @@ def parse_cmakelists(
         raise ProfileDeriveError(f"{cmake}: no target {target!r} (have: {', '.join(targets)})")
     for cell in cargo_user:
         shims = f"{cell}_shims"
+        # A body-less cell's C is its shims OBJECT library's, which the cargo link replays:
+        # ddraw (the mainline's body-less waves converted it BEFORE it was translated) derived
+        # as "compiles no in-tree .c" and pointed at `--target ddraw_shims`, which names the
+        # crate, the state and the flip after the wrong target.
+        if shims in targets:
+            # Never the cohab scaffolding a FLIPPED cell keeps there (rust_cohab_stub.c).
+            live = [
+                s for s in targets[shims][1] if s.upper() != "OBJECT" and not is_shim_tu(Path(s))
+            ]
+            kind, own = targets[cell]
+            targets[cell] = (kind, own + [s for s in live if s not in own])
         per_target_defs.setdefault(cell, []).extend(per_target_defs.get(shims, []))
         link_deps.setdefault(cell, []).extend(link_deps.get(shims, []))
         unicode = "-DUNICODE" in per_target_defs[cell]
@@ -1832,6 +1843,23 @@ def _foreign_build_flags(
         if grep(_FLAG_IN_CMAKE_RE.format(macro), "*CMakeLists.txt", "*.cmake"):
             out.add(macro)
     return frozenset(out)
+
+
+#: wine/winternl.h prototypes whose return type disagrees with ReactOS ntdll's definition.
+WINE_WINTERNL_BOOL_DRIFT = (
+    "RtlEqualPrefixSid",
+    "RtlEqualSid",
+    "RtlQueryPerformanceCounter",
+    "RtlQueryPerformanceFrequency",
+)
+
+
+def _guid_only_tu(text: str) -> bool:
+    """A TU that includes <initguid.h> (or defines INITGUID) and holds no code at all."""
+    code = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
+    if not re.search(r'#\s*include\s*[<"]initguid\.h[>"]|#\s*define\s+INITGUID\b', code):
+        return False
+    return all(not ln.strip() or ln.lstrip().startswith("#") for ln in code.splitlines())
 
 
 def _prologue_lines(text: str) -> list[str]:
@@ -3888,6 +3916,20 @@ def derive(
                 )
             )
             lines = [ln for ln in lines if not _CHARSET_TOGGLE_RE.match(ln)]
+        if len(tus) > 1 and _guid_only_tu(_read(tu)):
+            # dsound's guid.c: `<dsound.h>`, `<initguid.h>`, `<dsdriver.h>` and no code. Merged
+            # FIRST, it put dsdriver.h ahead of dsound_private.h's `#define NONAMELESSSTRUCT`,
+            # so the island had the anonymous member where every code TU says `prop.s.Set`.
+            # Its GUIDs get storage from `port resolve`, never through the island.
+            findings.append(
+                Finding(
+                    "info",
+                    "INITGUID_TU_SKIPPED",
+                    f"{_rel(tu, repo_root)} only instantiates GUIDs; its prologue is left out "
+                    "of the wrapper so the code TUs' include order wins",
+                )
+            )
+            continue
         merge_prologue(wrapper, lines)
     flipped_tus = {tus[i] for i in flipped}
     if module.pch_header is not None and any(t not in module.pch_skip for t in tus):
@@ -4297,6 +4339,14 @@ def emit_profile(dp: DerivedProfile) -> str:
         out.append("    # wine/list.h: `struct list` and its helpers are winelist-rust's.")
         bl_items.append("list")
         out.append("    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )")
+    if m.is_usermode and any(
+        str(h).replace("\\", "/").endswith("/wine/winternl.h") for h in dp.closure.headers
+    ):
+        # wine/winternl.h declares these `BOOL` (4 bytes); ReactOS ntdll DEFINES them `BOOLEAN`
+        # (rtl-strings, ntdll-rust's wow64shim), so a caller would test three garbage bytes
+        # (scan_bool_width, 12 findings on dsound). No wine module calls them: keep them out.
+        out.append("    # wine/winternl.h's BOOL prototypes for what ntdll returns as BOOLEAN.")
+        bl_items += list(WINE_WINTERNL_BOOL_DRIFT)
     raii = local_raii_types(m) if cpp else []
     if raii:
         out.append(
@@ -5060,6 +5110,20 @@ pub use crate::types::*;
 pub use core::ffi::{{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c_void}};
 // C's `size_t`: bindgen spells it `usize` inline, so no island carries the name the C uses.
 pub type size_t = usize;
+// <stdint.h>/<stddef.h> names: no island allowlists those headers (ddraw used 26 of them).
+// Fixed-width, so identical on every target; an island that does carry one shadows nothing
+// (a glob import never conflicts with an item the prelude defines).
+pub type int8_t = i8;
+pub type int16_t = i16;
+pub type int32_t = i32;
+pub type int64_t = i64;
+pub type uint8_t = u8;
+pub type uint16_t = u16;
+pub type uint32_t = u32;
+pub type uint64_t = u64;
+pub type intptr_t = isize;
+pub type uintptr_t = usize;
+pub type ptrdiff_t = isize;
 pub use core::ptr::{{addr_of, addr_of_mut}};
 
 // ================= debug ======================================================================

@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -35,8 +36,19 @@ _PYRIGHT = str(_VBIN / "pyright")
 # tests/qemu was linted only below cli/, so the harness core -- vm.py, backend.py and
 # test_smoke.py itself -- carried 29 findings, including two `assert False` in the
 # north-star test that `python -O` strips. The whole tree is ruff- and format-checked;
-_RUFF_ROOTS = ["tools/rustconv/rustconv", "tests/qemu", "tools/fex"]
-_PYRIGHT_ROOTS = ["tools/rustconv/rustconv", "tests/qemu"]
+_RUFF_ROOTS = [
+    "tools/rustconv/rustconv",
+    "tests/qemu",
+    "tools/fex",
+    "tools/qemu_infra_compat.py",
+    "tools/qemu_infra_runner.py",
+]
+_PYRIGHT_ROOTS = [
+    "tools/rustconv/rustconv",
+    "tests/qemu",
+    "tools/qemu_infra_compat.py",
+    "tools/qemu_infra_runner.py",
+]
 # (package_dir, pythonpath, pytest_target) — pytest needs each package importable.
 _PYTEST_SUITES = [
     ("tools/rustconv", "tools/rustconv", "tests"),
@@ -96,6 +108,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_gen_delaylib.py"),
     (".", ".", "tools/test_gen_apisets_table.py"),
     (".", ".", "tools/test_codegen.py"),
+    (".", ".", "tools/test_build_infra.py"),
     (".", ".", "tools/test_resource_codegen.py"),
     (".", ".", "tools/test_binding_codegen.py"),
     (".", ".", "tools/test_module_codegen.py"),
@@ -130,6 +143,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_apply_rustc_suggestions.py"),
     (".", ".", "tools/test_extern_to_use.py"),
     (".", ".", "tools/test_ramdisk_tree.py"),
+    (".", ".", "tools/test_strip_cd_media.py"),
     # The callee pass of the user-pointer lint: its quieting rules (kernel arm,
     # early return, scoped rebind, null guard) each hid or invented rows once.
     # The double-fetch lint's quieting rules (sibling arms, early-exit branch,
@@ -140,6 +154,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_lint_facts.py"),
     (".", ".", "tools/test_cargo_link_context.py"),
     (".", ".", "tools/test_cargo_orchestrate.py"),
+    (".", ".", "tools/test_cargo_orchestrate_native.py"),
     (".", ".", "tools/test_rust_storage.py"),
     (".", ".", "tools/test_rust_storage_report.py"),
     (".", ".", "tools/test_artifact_inputs.py"),
@@ -252,7 +267,20 @@ def _run(
     env = None
     if env_pp is not None:
         env = {**os.environ, "PYTHONPATH": str(repo / env_pp)}
-    proc = subprocess.run(cmd, cwd=cwd or repo, env=env, capture_output=True, text=True)
+    if label.startswith("pytest:"):
+        # Parallel suites must not share pytest-current or retention cleanup.
+        # Add the ephemeral argument here, below the receipt's stable command key.
+        # /tmp/vibeos is reserved for canonical compiler-path remapping.
+        with tempfile.TemporaryDirectory(prefix="pytest-tooling-") as temporary:
+            proc = subprocess.run(
+                [*cmd, "--basetemp", str(Path(temporary) / "run")],
+                cwd=cwd or repo,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+    else:
+        proc = subprocess.run(cmd, cwd=cwd or repo, env=env, capture_output=True, text=True)
     out = (proc.stdout + proc.stderr).strip()
     return label, proc.returncode == 0, out
 
@@ -287,6 +315,51 @@ def check_tooling(args, repo: Path) -> int:
     )
     # 4. pytest
     if not args.no_tests:
+        checks.append(
+            (
+                "rust:vibeos-test",
+                [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--jobs",
+                    "1",
+                    "--manifest-path",
+                    "tools/vibeos-test/Cargo.toml",
+                    "--target-dir",
+                    ".cache/vibeos-build/target",
+                    "--",
+                    "--test-threads=1",
+                ],
+                {},
+            )
+        )
+        checks.append(
+            (
+                "rust:vibeos-build",
+                [
+                    "cargo",
+                    "test",
+                    "--offline",
+                    "--locked",
+                    "--jobs",
+                    "1",
+                    "--manifest-path",
+                    "tools/vibeos-build/Cargo.toml",
+                    "--target-dir",
+                    ".cache/vibeos-build/target",
+                    # One test thread. Several tests assert that gc sees a just-released
+                    # flock as free. A sibling test thread that forks a child in the same
+                    # process holds a duplicate of every fd until that child execs, so the
+                    # lock reads as held for a moment. That failed two gates (batches
+                    # 76 and 77) with 0 != 1 in two different tests.
+                    "--",
+                    "--test-threads=1",
+                ],
+                {},
+            )
+        )
         checks.append(
             (
                 "rust:vibeos-codegen",

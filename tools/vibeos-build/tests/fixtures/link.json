@@ -1,0 +1,81 @@
+{
+  "judgments": [
+    {
+      "symbol": "foo",
+      "kept": "a.c.obj",
+      "dropped": "b.rs.obj",
+      "kept_kind": "local",
+      "dropped_kind": "local",
+      "verdict": "error:two local definitions, kept by link order"
+    },
+    {
+      "symbol": "__udivti3",
+      "kept": "compiler_builtins-foo.o",
+      "dropped": "libclang_rt.builtins-x86.a(x.o)",
+      "kept_kind": "runtime",
+      "dropped_kind": "runtime",
+      "verdict": "ok:toolchain runtime twice"
+    },
+    {
+      "symbol": "_Unwind_Resume",
+      "kept": "body.o",
+      "dropped": "libunwind.a(x.o)",
+      "kept_kind": "local",
+      "dropped_kind": "runtime",
+      "verdict": "error:a local copy was kept over the toolchain runtime"
+    },
+    {
+      "symbol": "_memcpy",
+      "kept": "copy.c",
+      "dropped": "compiler_builtins-x.o",
+      "kept_kind": "local",
+      "dropped_kind": "runtime",
+      "verdict": "ok:the CRT's own mem* over compiler_builtins' copy"
+    },
+    {
+      "symbol": "SHLockShared",
+      "kept": "a.delay.o",
+      "dropped": "body.o",
+      "kept_kind": "import",
+      "dropped_kind": "local",
+      "verdict": "error:an import was kept over a local definition"
+    },
+    {
+      "symbol": "RtlAssert",
+      "kept": "body.o",
+      "dropped": "ntoskrnl.exe",
+      "kept_kind": "local",
+      "dropped_kind": "import",
+      "verdict": "ok:import"
+    },
+    {
+      "symbol": "_vibeos_va_arg_i32",
+      "kept": "x/rust_varargs_shim.c",
+      "dropped": "y/rust_varargs_shim.c",
+      "kept_kind": "local",
+      "dropped_kind": "local",
+      "verdict": "ok:rustconv varargs puller (one generated body)"
+    },
+    {
+      "symbol": "__rustc::rust_begin_unwind",
+      "kept": "a.o",
+      "dropped": "b.o",
+      "kept_kind": "local",
+      "dropped_kind": "local",
+      "verdict": "ok:Rust panic runtime"
+    }
+  ],
+  "stderr": "ld.lld: warning: duplicate symbol: DeviceEvtIoInCallerContext\n>>> defined at /foo.c:506\n>>>            dir/foo.o\n>>> defined at foo.rs:1566\n>>>            libfoo.a(foo.o)\n",
+  "parsed": [
+    [
+      "DeviceEvtIoInCallerContext",
+      "/foo.c:506 | dir/foo.o",
+      "foo.rs:1566 | libfoo.a(foo.o)"
+    ]
+  ],
+  "outputs": [
+    "x/rapps.exe",
+    "x.dll",
+    "?"
+  ]
+}

@@ -68,6 +68,7 @@ def generate(source: Path, module: Path, arch: str, output: Path) -> Path:
     binary = shutil.which("c2rust")
     if binary is None:
         raise ValueError("c2rust is required; no model fallback")
+    c2rust_anchor.require_patched(binary)
     output.mkdir(parents=True, exist_ok=False)
     derived = profile_derive.to_json(profile)
     durable_json(output / "profile.json", derived)

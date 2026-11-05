@@ -12,6 +12,32 @@
 function(reactos_cargo_link_context workspace crate arch output_dir)
     get_property(_configured GLOBAL PROPERTY _REACTOS_CARGO_POOL_CONFIGURED)
     if(NOT _configured)
+        # Cargo must not watch CMakeCache.txt: a media-only toggle rewrites it
+        # and relinks every consumer. file(GENERATE) preserves the timestamp
+        # when a value is unchanged. Keep each watch as narrow as its reader.
+        foreach(_option IN ITEMS ENABLE_CCACHE _WINKD_ GDB)
+            string(TOUPPER "${${_option}}" _value)
+            set(_value_bool 0)
+            # Preserve reactos-link's existing accepted true spellings.
+            if(_value MATCHES "^(1|ON|TRUE|YES|Y)$")
+                set(_value_bool 1)
+            endif()
+            file(GENERATE
+                OUTPUT "${CMAKE_BINARY_DIR}/CMakeFiles/reactos-link-config/${_option}"
+                CONTENT "${_value_bool}\n")
+        endforeach()
+        # CMake rewrites compile_commands.json even when its bytes are identical.
+        # Ninja's restat propagates only genuine command changes to link edges.
+        add_custom_command(
+            OUTPUT "${CMAKE_BINARY_DIR}/reactos-link-compile-commands.json"
+            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${CMAKE_BINARY_DIR}/compile_commands.json"
+                "${CMAKE_BINARY_DIR}/reactos-link-compile-commands.json"
+            DEPENDS "${CMAKE_BINARY_DIR}/compile_commands.json"
+            COMMENT "Refreshing stable Cargo compile commands"
+            VERBATIM)
+        add_custom_target(reactos_cargo_compile_db
+            DEPENDS "${CMAKE_BINARY_DIR}/reactos-link-compile-commands.json")
         include(ProcessorCount)
         ProcessorCount(_cpus)
         if(_cpus LESS 1)

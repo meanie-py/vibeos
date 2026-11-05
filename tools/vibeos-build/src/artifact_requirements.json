@@ -1,0 +1,16 @@
+{
+  "build_supported": false,
+  "required_before_build": [
+    "Key only captured immutable bytes; do not claim atomic original-checkout provenance",
+    "Use caller's exact reactos-link invocation and staticlib mode; kernel body is kernel-rust",
+    "Reduce workspace membership without changing projected normal dependency/features/profile semantics",
+    "Provision or project unused dev dependency resolution; original lock/manifests may require registry caches",
+    "Mount captured sources read-only at /tmp/vibeos inside private user/mount/network namespace",
+    "Use a minimal filesystem root; unshare around the ordinary host root does not restrict reads",
+    "Identify and mount actual compiler/Cargo/sysroot/target libraries/runtime loader read-only",
+    "Private writable target, Cargo home, HOME and tmp; explicit environment; no host sccache daemon",
+    "Acquire host-jobs admission before compilation; capture and compiler outputs included in disk admission",
+    "Observe file reads and compiler commands; reject undeclared reads before output acceptance",
+    "Revalidate current lane inputs against captured projection before accepting build result"
+  ]
+}

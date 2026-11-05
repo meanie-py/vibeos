@@ -1,0 +1,186 @@
+{
+  "PANIC_COMMON_IMPORTS": [
+    "msvcrt.dll!memcmp",
+    "msvcrt.dll!memcpy",
+    "msvcrt.dll!memmove",
+    "msvcrt.dll!memset",
+    "ntdll.dll!DbgPrint",
+    "ntdll.dll!NtTerminateProcess",
+    "ntdll.dll!RtlWalkFrameChain",
+    "ntdll.dll!memcmp",
+    "ntdll.dll!memcpy",
+    "ntdll.dll!memmove",
+    "ntdll.dll!memset"
+  ],
+  "DEAD_IMPORTS": {
+    "sndvol32": [
+      "kernel32.dll!FormatMessageW"
+    ]
+  },
+  "REBOUND_EXPORTS": {
+    "user32_vista": [
+      "GetDpiForSystem",
+      "GetDpiForWindow"
+    ]
+  },
+  "STACK_PROBE_IMPORTS": [
+    "kernel32.dll!__chkstk",
+    "ntdll.dll!__chkstk"
+  ],
+  "I386_RSBEGIN_DATA": 40,
+  "REPLACED": [
+    "add_executable",
+    "add_library",
+    "set_module_type",
+    "add_importlibs",
+    "add_delay_importlibs",
+    "target_link_libraries",
+    "add_pch",
+    "add_cd_file",
+    "add_dependencies"
+  ],
+  "TRANSFERRED": [
+    "target_compile_definitions",
+    "target_include_directories",
+    "target_compile_options",
+    "set_wine_module_fixme",
+    "set_wine_module",
+    "kmt_enable_native_seh"
+  ],
+  "NAME_PROPERTIES": [
+    "DEFINE_SYMBOL",
+    "ENABLE_EXPORTS",
+    "LINKER_LANGUAGE",
+    "OUTPUT_NAME",
+    "PREFIX",
+    "SUFFIX"
+  ],
+  "KERNEL_KINDS": [
+    "kernelmodedriver",
+    "kerneldll"
+  ],
+  "KEPT": [
+    "project",
+    "add_driver_inf"
+  ],
+  "REG_SUFFIX": {
+    "registry": "_r",
+    "regtypelib": "_t",
+    "winrt": "_w"
+  },
+  "ENGINE_LIBS": {
+    "sdk/lib/crt/CMakeFiles/oldnames.dir/oldnames.a": "engine:oldnames",
+    "sdk/lib/crt/libchkstk.a": "engine:chkstk",
+    "sdk/lib/pseh/libpseh.a": "engine:pseh",
+    "sdk/lib/libwine/libwine.a": "engine:wine",
+    "sdk/lib/conutils/libconutils.a": "engine:conutils",
+    "sdk/lib/conutils/libconutils_rust.a": "engine:conutils_rust",
+    "sdk/lib/uuid/libuuid.a": "engine:uuid",
+    "sdk/lib/delayimp/libdelayimp_rust.a": "engine:delayimp_rust",
+    "sdk/lib/evtlib/libevtlib_rust.a": "engine:evtlib_rust",
+    "sdk/lib/skiplist/libskiplist_rust.a": "engine:skiplist_rust",
+    "dll/win32/hid/libhid_hidparser_rust.a": "engine:hid_hidparser_rust",
+    "sdk/lib/evtlib/libevtlib.a": "engine:c:evtlib",
+    "sdk/lib/skiplist/libskiplist16.a": "engine:c:skiplist16",
+    "sdk/lib/udmihelp/libudmihelp.a": "engine:c:udmihelp",
+    "sdk/lib/dmilib/libdmilib.a": "engine:c:dmilib",
+    "sdk/lib/dxguid/libdxguid.a": "engine:c:dxguid",
+    "sdk/lib/tzlib/libtzlib.a": "engine:c:tzlib",
+    "sdk/lib/tzlib/libtzlib_rust.a": "engine:tzlib_rust",
+    "sdk/lib/scrnsave/libscrnsave.a": "engine:c:scrnsave",
+    "dll/appcompat/shims/shimlib/libshimlib.a": "engine:c:shimlib",
+    "win32ss/user/winsrv/concfg/libconcfg.a": "engine:c:concfg",
+    "win32ss/user/winsrv/concfg/libconcfg_rust.a": "engine:concfg_rust",
+    "win32ss/libwin32ksys.a": "engine:c:win32ksys",
+    "dll/opengl/mesa/libmesa.a": "engine:c:mesa",
+    "sdk/lib/3rdparty/zlib/libzlib_solo.a": "engine:c:zlib_solo",
+    "sdk/lib/inflib/libinflib_rust.a": "engine:inflib_rust",
+    "sdk/lib/crt/libmemcmp.a": "engine:c:memcmp",
+    "sdk/lib/crt/liblibcntpr.a": "engine:c:libcntpr",
+    "sdk/lib/crt/libcntpr_rust.a": "engine:cntpr_rust",
+    "sdk/lib/cryptlib/libcryptlib_rust.a": "engine:cryptlib_rust",
+    "sdk/lib/drivers/sptilib/libsptilib_rust.a": "engine:sptilib_rust",
+    "sdk/lib/ioevent/libioevent.a": "engine:c:ioevent",
+    "sdk/lib/wdmguid/libwdmguid.a": "engine:c:wdmguid",
+    "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista_rust.a": "engine:ntoskrnl_vista_rust",
+    "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista_utf8.a": "engine:ntoskrnl_vista_utf8",
+    "sdk/lib/3rdparty/freetype/libfreetype.a": "engine:c:freetype",
+    "sdk/lib/vcruntime/libsetjmp.a": "engine:c:setjmp",
+    "sdk/lib/drivers/aux_klib/libaux_klib.a": "engine:c:aux_klib"
+  },
+  "ENGINE_LIB_DEPS": {
+    "engine:wine": "psdk",
+    "engine:conutils": "xdk",
+    "engine:uuid": "uuid_sources",
+    "engine:c:evtlib": "xdk",
+    "engine:c:skiplist16": "psdk",
+    "engine:c:udmihelp": "psdk",
+    "engine:c:dmilib": "psdk",
+    "engine:c:dxguid": "psdk",
+    "engine:c:tzlib": "xdk",
+    "engine:c:scrnsave": "psdk",
+    "engine:c:shimlib": "xdk",
+    "engine:c:concfg": "xdk",
+    "engine:c:win32ksys": "asm",
+    "engine:c:mesa": "psdk",
+    "engine:c:memcmp": "psdk",
+    "engine:c:libcntpr": "psdk asm",
+    "engine:c:ioevent": "xdk",
+    "engine:c:wdmguid": "psdk",
+    "engine:c:freetype": "psdk",
+    "engine:c:setjmp": "psdk asm",
+    "engine:c:aux_klib": "xdk"
+  },
+  "TRIPLE": {
+    "i386": "x86",
+    "amd64": "x86_64",
+    "arm64": "aarch64"
+  },
+  "TARGET": {
+    "i386": "i686-pc-windows-gnu",
+    "amd64": "x86_64-pc-windows-gnu",
+    "arm64": "aarch64-pc-windows-gnullvm"
+  },
+  "MSVCRTEX": {
+    "wexe": "ExeWide",
+    "exe": "ExeAnsi",
+    "dll": "Dll"
+  },
+  "CONFIGS": "(?:Debug|Release|RelWithDebInfo|MinSizeRel)",
+  "CFG_ARCH": {
+    "i386": "x86",
+    "amd64": "x86_64",
+    "arm64": "aarch64"
+  },
+  "CANON": "/tmp/vibeos",
+  "SIZE_SLACK": 16384,
+  "I386_RSBEGIN_SECTIONS": [
+    "sections: + .ctors 0x40000040",
+    "sections: + .ctors 0x48000040",
+    "sections: + .dtors 0x40000040",
+    "sections: + .dtors 0x48000040"
+  ],
+  "SHARED_C_LIBS": [
+    "blrtl",
+    "libcntpr",
+    "rtl",
+    "win32k_residue"
+  ],
+  "RC_HEAD": [
+    "-O",
+    "coff",
+    "--codepage=65001"
+  ],
+  "ASM_HEAD": [
+    "-x",
+    "assembler-with-cpp"
+  ],
+  "ASM_TAIL": "-D__ASM__",
+  "_NO_EDGE_TEXT": {
+    "cell": "already a cargo cell on {arch} (add_cargo_module, no cmake link edge)",
+    "absent": "not defined on {arch} in this configuration (an if(ARCH ...) gate or a build option such as --rostests)",
+    "unknown": "no link edge in build-{arch}/build.ninja"
+  },
+  "I386_BODYLESS_EH_FRAME_MAX": 1024,
+  "I386_BODYLESS_RELOC_MAX": 128
+}

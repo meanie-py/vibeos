@@ -46,6 +46,67 @@ _DB_BUILD_DIRS = ["build-amd64", "build-arm64", "build-i386"]
 # bind of exactly this tree, so the rewrite is a plain prefix swap.
 _CANON_ROOT = os.environ.get("VIBEOS_CANON", "/tmp/vibeos").rstrip("/")
 
+# STOCK c2rust 0.22.1 — the latest release, and upstream master is no better as of
+# 2026-10-26 — panics whenever C takes the address of a __stdcall function, which is every
+# COM vtable and every WndProc (docs/engineering/c2rust-upstream-bugs.md §1). The tree pins a
+# patched build: `bash tools/c2rust/install.sh`. A stock binary must be REFUSED, not used: on
+# i386 it yields no anchor at all, the cross-arch type comparison then has a hole, and two
+# lanes on two binaries would bank different anchors for the same source. The probe is the
+# reproducer itself — asking the binary its version cannot tell patched from stock.
+_STDCALL_REPRO = REACTOS_ROOT / "tools" / "c2rust" / "repro-stdcall.c"
+_PATCH_PROBED: dict[tuple[str, int, int], str | None] = {}
+
+
+def unpatched_reason(binary: str) -> str | None:
+    """None when `binary` transpiles the __stdcall reproducer; otherwise why it is refused.
+
+    Probed once per (path, mtime, size), so reinstalling mid-process is noticed."""
+    real = os.path.realpath(binary)
+    try:
+        st = os.stat(real)
+    except OSError as e:
+        return f"cannot stat {real}: {e}"
+    key = (real, st.st_mtime_ns, st.st_size)
+    if key in _PATCH_PROBED:
+        return _PATCH_PROBED[key]
+    reason: str | None = None
+    with tempfile.TemporaryDirectory(prefix="c2rust_probe_") as tmp:
+        src = Path(tmp) / "repro.c"
+        shutil.copyfile(_STDCALL_REPRO, src)
+        try:
+            proc = subprocess.run(
+                [
+                    binary,
+                    "transpile",
+                    "--output-dir",
+                    f"{tmp}/out",
+                    str(src),
+                    "--",
+                    "--target=i686-w64-mingw32",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (OSError, subprocess.TimeoutExpired) as e:
+            reason = f"probe could not run {real}: {e}"
+        else:
+            if not (Path(tmp) / "out" / "src" / "repro.rs").exists():
+                reason = (
+                    f"{real} is a STOCK c2rust: it panics on the address of a __stdcall "
+                    f"function ({_c2rust_reason(proc.stderr, proc.stdout)}). "
+                    "fix: bash tools/c2rust/install.sh"
+                )
+    _PATCH_PROBED[key] = reason
+    return reason
+
+
+def require_patched(binary: str) -> None:
+    """HARD FAIL on a stock c2rust (see `_STDCALL_REPRO`)."""
+    reason = unpatched_reason(binary)
+    if reason:
+        raise C2RustError(reason)
+
 
 def _decanon(s: str) -> str:
     """Map canonical-build paths back onto this checkout (no-op if absent).
@@ -463,7 +524,12 @@ def _transpile_text(
     result: str | None = None
     if shutil.which("c2rust") is None:
         _TRANSPILE_CACHE[key] = None
-        _fail("binary not on PATH (install c2rust, or pass --no-c2rust to translate pure-LLM)")
+        _fail("binary not on PATH (bash tools/c2rust/install.sh, or pass --no-c2rust)")
+        return None
+    unpatched = unpatched_reason(shutil.which("c2rust") or "c2rust")
+    if unpatched:
+        _TRANSPILE_CACHE[key] = None
+        _fail(unpatched)
         return None
     candidates = _find_db_entries(c_file, arch)
     if not candidates:
@@ -1146,11 +1212,17 @@ def anonymous_types(
             bodies |= {re.sub(r"\bC2RustUnnamed\w*", "\0", h, count=1) for h in hits}
             counts.append(len(hits))
         nested = any(_ANON_TYPE_RE.search(b.replace("\0", "")) for b in bodies)
-        # Exactly one match on EVERY arch. The miss used to be recorded as a body string,
-        # `"0 candidates"`, and when every arch missed alike the set held that one string --
-        # "agreed" -- and it was written into mmc's mscfile.rs as the type (E: expected item).
-        if not want or any(c != 1 for c in counts) or len(bodies) != 1 or nested:
-            differs[name] = f"fields {sorted(want)}: {len(bodies)} distinct match(es)"
+        # At least one match on EVERY arch, and every match the SAME text. Several hits are
+        # fine when they are byte-identical: dsound.c's two debug-dump `flags[]` tables are
+        # both `struct {DWORD mask; const char *name;}`, so whichever the name meant, the
+        # definition is that one text -- there is nothing to guess. A miss used to be
+        # recorded as a body string, `"0 candidates"`, and when every arch missed alike the
+        # set held that one string -- "agreed" -- and it was written into mmc's mscfile.rs
+        # as the type (E: expected item); a zero count still refuses.
+        if not want or any(c == 0 for c in counts) or len(bodies) != 1 or nested:
+            differs[name] = (
+                f"fields {sorted(want)}: {len(bodies)} distinct match(es), per arch {counts}"
+            )
             continue
         agreed[name] = bodies.pop().replace("\0", name)
     return agreed, differs

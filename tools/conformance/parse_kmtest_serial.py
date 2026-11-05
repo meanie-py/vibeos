@@ -99,9 +99,7 @@ BUGCHECK = re.compile(r"\*\*\* BUGCHECK: (0x[0-9A-Fa-f]+)")
 # Kmtests are C++ too: upstream made ObTypes a .cpp (synced 2026-09-21), and a `.c`-only
 # pattern silently dropped every one of its identities from the ratchet while its counts
 # still parsed, so nothing looked wrong.
-ASSERT_FAIL = re.compile(
-    r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*\.c(?:pp)?:\d+): Test failed:"
-)
+ASSERT_FAIL = re.compile(r"(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9_]*\.c(?:pp)?:\d+): Test failed:")
 
 # The floor semantics live in ratchet.py, shared with the apitest parser; only
 # the markers above are kmtest-specific. The sys.path insert is load-bearing:
@@ -112,6 +110,8 @@ ASSERT_FAIL = re.compile(
 # out about at runtime.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ratchet import BAD, compare, fmt, load_baseline  # noqa: E402
+from ratchet import _call as _native_call  # noqa: E402
+from ratchet import _rows as _native_rows  # noqa: E402
 
 END_PREFIX = "KMTEST:END "
 # The conformance harness stamps every serial line `[+  128.268] `; a spliced
@@ -120,198 +120,12 @@ TIMESTAMP = re.compile(r"^\[\+\s*\d+(?:\.\d+)?\]\s?")
 
 
 def splice_split_end_markers(lines):
-    """Rejoin an END marker that another print cut in two.
-
-    The END line comes from the user-mode sweep and the kernel prints on the same
-    serial port, so another line can land anywhere in the MIDDLE of it, carrying
-    the rest of the marker to the start of a later line (i386, verbatim):
-
-        [KMTEST:END ExHardE[EXIT-THR] image=SERVICES.EXE exit_status=0x0 crit=0
-        rror pass=30 fail=0 skip=0]
-
-        [+  100.629] [KMTEST:END FsRterr:ole:compobj apartment not initialised
-        [+  100.631] lExpression pass=57 fail=0 skip=0]
-
-        [+  136.864] [KMTEST:END ObQuery pass=(drivers/storage/port/scsiport/ioctl.c:609) unknown ioctl code: 0x7C0C8
-        [+  136.866] 19 fail=0 skip=0]
-
-    Unrepaired, such a test reads as NO-END, which the ratchet calls a regression.
-    The repair is narrow on purpose: some prefix of the marker fragment, plus the
-    start of one of the next three lines (after its timestamp), must form a
-    COMPLETE END marker naming the test that was launched. With no launch seen,
-    only the cut at the intruder's `[` is tried. Otherwise nothing changes. The
-    rejoined marker goes in as its own line where its tail was; the intruding
-    text is left where it was.
-    """
-    out = list(lines)
-    launched = None
-    for i, line in enumerate(out):
-        m = LAUNCH.search(line) or BEGIN.search(line)
-        if m:
-            launched = m.group(1)
-        at = line.find(END_PREFIX)
-        if at < 0 or END.search(line):
-            continue
-        frag = line[at:]
-        if launched:
-            cuts = range(len(frag), len(END_PREFIX) - 1, -1)
-        else:
-            bracket = frag.find("[")
-            cuts = (bracket if bracket > 0 else len(frag),)
-        for k in range(i + 1, min(i + 4, len(out))):
-            body = TIMESTAMP.sub("", out[k], count=1)
-            hit = None
-            for c in cuts:
-                m = END.match(frag[:c] + body)
-                # The tail must finish the marker, and spell the launched test.
-                if m and m.end() > c and launched in (None, m.group(1)):
-                    hit = (m.group(0), body[m.end() - c :])
-                    break
-            if hit:
-                marker, rest = hit
-                out[k : k + 1] = [marker] + ([rest] if rest.strip() else [])
-                break
-    return out
+    return _native_call("splice_end", lines=lines)
 
 
 def parse(log_text):
-    """Return (results: list[dict], done_line: str|None, bugcheck: str|None)."""
-    results = []
-    current = None  # the test whose launch we've seen but not exit/timeout
-    done_line = None
-    bugcheck = None
-    for line in splice_split_end_markers(log_text.splitlines()):
-        m = LAUNCH.search(line)
-        if not m:
-            b = BEGIN.search(line)
-            if b and (current is None or current["name"] != b.group(1)):
-                # The launch marker was lost. A record still open here lost its
-                # exit marker too, and is not guessed to have passed.
-                if current and current["status"] is None:
-                    current["status"] = "INCOMPLETE"
-                m = b
-        if m:
-            if current and current["status"] is None:
-                # Launched again, or the next test launched, with no exit marker for this
-                # one: the record is open and stays unknown, not a status-less row. (The
-                # Windows reference sweep re-runs a test the VM died under.)
-                current["status"] = "INCOMPLETE"
-            current = {
-                "name": m.group(1),
-                "status": None,
-                "pass": 0,
-                "fail": 0,
-                "skip": 0,
-                "exit": None,
-                "errors": 0,
-                "end_seen": False,
-                "asserts": set(),
-            }
-            results.append(current)
-            continue
-        m = FAILSTART.search(line)
-        if m:
-            results.append(
-                {
-                    "name": m.group(1),
-                    "status": "FAILSTART",
-                    "pass": 0,
-                    "fail": 0,
-                    "skip": 0,
-                    "exit": None,
-                    "errors": 0,
-                    "end_seen": False,
-                    "asserts": set(),
-                }
-            )
-            current = None
-            continue
-        m = END.search(line)
-        if m and current and m.group(1) == current["name"]:
-            current["pass"], current["fail"], current["skip"] = (
-                int(m.group(2)),
-                int(m.group(3)),
-                int(m.group(4)),
-            )
-            current["end_seen"] = True
-            continue
-        hits = ASSERT_FAIL.findall(line)
-        if hits and current:
-            # Attributed to the launched test, not to the next END: a test that
-            # CRASHes or TIMEOUTs never emits END, and attributing on END alone
-            # would bleed its failures into whichever test ends next. That
-            # misattribution is real — a 595-run arm64 soak shows ExPools.c lines
-            # surfacing under ExSequencedList exactly when the run ahead died.
-            current["asserts"].update(hits)
-            continue
-        if current and ERROR.search(line):
-            current["errors"] += 1
-            continue
-        m = EXIT.search(line)
-        if m and current and m.group(1) == current["name"]:
-            current["exit"] = int(m.group(2))
-            if current["end_seen"]:
-                current["status"] = "OK" if current["exit"] == 0 else "FAIL-EXIT"
-            else:
-                current["status"] = "NO-END"
-            current = None
-            continue
-        m = TIMEOUT.search(line)
-        if m and current and m.group(1) == current["name"]:
-            current["status"] = "TIMEOUT"
-            current = None
-            continue
-        m = DONE.search(line)
-        if m:
-            done_line = m.group(1)
-            # The first complete sweep is authoritative. On arm64 the sweep exe
-            # can re-autostart after finishing (the guest keeps draining), and a
-            # second, partial re-run would otherwise clobber the early tests'
-            # clean results with INCOMPLETE/None. A mid-run BUGCHECK emits no DONE,
-            # so CRASH handling above is unaffected; single-run x86 has nothing
-            # after DONE, so this is a no-op there.
-            break
-        m = BUGCHECK.search(line)
-        if m:
-            # A guest bugcheck ends the sweep, so there is one; the Windows reference
-            # sweep reboots and carries on, so every bugcheck crashes ITS in-flight test.
-            # The summary keeps the first.
-            if bugcheck is None:
-                bugcheck = m.group(1)
-            if current and current["status"] is None:
-                current["status"] = "CRASH"
-                current = None
-    if current and current["status"] is None:
-        current["status"] = "INCOMPLETE"  # log truncated mid-test, no bugcheck seen
-
-    # Collapse duplicate test names into one entry each. A test can be launched
-    # more than once within a sweep when a transient (e.g. the netstack-TDI
-    # self-test) makes an early attempt not complete and the runner re-reaches
-    # it; the incomplete first attempt (None/INCOMPLETE) must not mask the clean
-    # later pass. Keep the most-complete result per name, preserving first-seen
-    # order. A genuinely flaky test (real CRASH on some runs) is caught later by
-    # the design's >=3-run stability check + flaky.txt, not hidden here.
-    RANK = {
-        "OK": 6,
-        "FAIL-EXIT": 5,
-        "NO-END": 4,
-        "TIMEOUT": 3,
-        "CRASH": 3,
-        "FAILSTART": 2,
-        "INCOMPLETE": 1,
-        None: 0,
-    }
-    best, order = {}, []
-    for r in results:
-        n = r["name"]
-        if n not in best:
-            best[n] = r
-            order.append(n)
-        elif RANK.get(r["status"], 0) > RANK.get(best[n]["status"], 0):
-            best[n] = r
-    results = [best[n] for n in order]
-
-    return results, done_line, bugcheck
+    rows, *metadata = _native_call("kmtest", text=log_text)
+    return (_native_rows(rows), *metadata)
 
 
 def main():
@@ -335,10 +149,8 @@ def main():
     )
 
     if args.write_baseline:
-        Path(args.write_baseline).write_text(
-            "# kmtest conformance baseline — parse_kmtest_serial.py format\n"
-            + "\n".join(lines)
-            + "\n"
+        _native_call(
+            "write_cli_baseline", kind="kmtest", path=str(args.write_baseline), results=results
         )
         print(f"# baseline written: {args.write_baseline}")
 

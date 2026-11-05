@@ -1,0 +1,15 @@
+# wined3d-h — wine/wined3d.h's static inline helpers, once, for every wined3d client crate
+# (ddraw, d3d8, d3d9, ...). See src/lib.rs for why half of it is a macro.
+[package]
+name = "wined3d-h"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]

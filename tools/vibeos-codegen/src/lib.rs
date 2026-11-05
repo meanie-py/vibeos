@@ -1,6 +1,7 @@
 //! Deterministic host-side generators. Rendering is shared with drift checks.
 pub mod asm;
 pub mod baseaddress;
+pub mod cells;
 pub mod cflags;
 pub mod cnt;
 pub mod cohab_registry;

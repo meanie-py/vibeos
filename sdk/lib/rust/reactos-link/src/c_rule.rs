@@ -68,6 +68,8 @@ fn parse_template(path: &Path) -> CTemplate {
 /// One source of a shared library's recipe (`clibs/<arch>/<target>.recipe`).
 struct RecipeLine {
     asm: bool,
+    /// cmake's C++ rule (`cxx`): the C rule's shape, compiled with the `cxx` template.
+    cxx: bool,
     src: String,
     includes: Vec<String>,
     flags: Vec<String>,
@@ -86,11 +88,12 @@ fn parse_recipe(path: &Path) -> Vec<RecipeLine> {
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(|l| {
             let f: Vec<&str> = l.split('\t').collect();
-            if f.len() != 5 || !matches!(f[0], "c" | "asm") {
+            if f.len() != 5 || !matches!(f[0], "c" | "cxx" | "asm") {
                 panic!("{}: malformed recipe line {l:?}", path.display());
             }
             RecipeLine {
                 asm: f[0] == "asm",
+                cxx: f[0] == "cxx",
                 src: f[1].to_string(),
                 includes: words(f[2]),
                 flags: words(f[3]),
@@ -214,6 +217,8 @@ impl Linker {
         };
         let (cpath, ct) = self.template("c");
         let (apath, at) = self.template("asm");
+        // Only a library with C++ in it reads (and so needs) the C++ template.
+        let cxx = lines.iter().any(|l| l.cxx).then(|| self.template("cxx"));
         let root = self.rc_build_root();
         // An asm source reading the generated ks*.inc (`@build/sdk/include/asm`), with no
         // cmake build to have made it: the engine's self-hosted geninc output, put where
@@ -245,8 +250,12 @@ impl Linker {
                 c.args(self.asm_tail(&at, line, &root));
                 c
             } else {
-                let mut c = Command::new(self.subst(&ct.cc, &root));
-                c.args(self.c_head(&ct, &line.includes, &line.flags, &line.defines, &root));
+                let t = match (&cxx, line.cxx) {
+                    (Some((_, xt)), true) => xt,
+                    _ => &ct,
+                };
+                let mut c = Command::new(self.subst(&t.cc, &root));
+                c.args(self.c_head(t, &line.includes, &line.flags, &line.defines, &root));
                 c.arg("-o").arg(&obj);
                 c
             };
@@ -262,7 +271,7 @@ impl Linker {
             println!("cargo:rerun-if-changed={}", src.display());
             objs.push(obj);
         }
-        for p in [&rpath, &cpath, &apath] {
+        for p in [&rpath, &cpath, &apath].into_iter().chain(cxx.as_ref().map(|(p, _)| p)) {
             println!("cargo:rerun-if-changed={}", p.display());
         }
         let lib_a = self.obj_dir().join(format!("lib{tag}.a"));

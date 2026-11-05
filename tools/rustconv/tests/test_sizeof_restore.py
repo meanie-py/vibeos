@@ -45,3 +45,20 @@ def test_a_type_in_a_later_macro_slot_is_not_a_dropped_sizeof(tmp_path):
     assert "n = core::mem::size_of::<WAVEFORMATEXTENSIBLE>() as u32;" in out
     assert "CONTAINING_RECORD!(format, WAVEFORMATEXTENSIBLE, Format)" in out
     assert fixed == ["F: sizeof(WAVEFORMATEXTENSIBLE) x1"]
+
+
+def test_a_type_alias_is_not_a_dropped_sizeof(tmp_path):
+    """ddraw: `type STRUCT = DDSURFACEDESC2;` (the C's `#define STRUCT`) beside a real
+    `sizeof(DDSURFACEDESC2)`; the alias became `= core::mem::size_of::<..>()`."""
+    c = tmp_path / "utils.c"
+    c.write_text("void F(void)\n{\n    n = sizeof(DDSURFACEDESC2);\n}\n")
+    rust = (
+        'pub unsafe extern "C" fn F() {\n'
+        "    type STRUCT = DDSURFACEDESC2;\n"
+        "    n = DDSURFACEDESC2 as DWORD;\n"
+        "}\n"
+    )
+    out, fixed = sizeof_restore.restore(rust, c, {"DDSURFACEDESC2"})
+    assert "type STRUCT = DDSURFACEDESC2;" in out
+    assert "n = core::mem::size_of::<DDSURFACEDESC2>() as DWORD;" in out
+    assert fixed == ["F: sizeof(DDSURFACEDESC2) x1"]

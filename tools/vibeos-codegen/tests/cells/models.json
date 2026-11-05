@@ -1,0 +1,173 @@
+[
+  {
+    "name": "model",
+    "files": {
+      "app/CMakeLists.txt": "add_executable(foo foo.c)\nset_module_type(foo nativecui)\n",
+      "app/foo.c": "int main(void) { return 0; }\n",
+      "build-i386/build.ninja": "build app/foo.exe: C_EXECUTABLE_LINKER__foo_Release app/CMakeFiles/foo.dir/foo.c.obj\n  LINK_FLAGS = -entry,main --subsystem,native:5.01\n  LINK_LIBRARIES =\n",
+      "build-amd64/build.ninja": "build app/foo.exe: C_EXECUTABLE_LINKER__foo_Release app/CMakeFiles/foo.dir/foo.c.obj\n  LINK_FLAGS = -entry,main --subsystem,native:5.01\n  LINK_LIBRARIES =\n",
+      "build-arm64/build.ninja": "build app/foo.exe: C_EXECUTABLE_LINKER__foo_Release app/CMakeFiles/foo.dir/foo.c.obj\n  LINK_FLAGS = -entry,main --subsystem,native:5.01\n  LINK_LIBRARIES =\n",
+      "build-i386/boot/livecd.Release.lst": "",
+      "build-amd64/boot/livecd.Release.lst": "",
+      "build-arm64/boot/livecd.Release.lst": ""
+    },
+    "expected": {
+      "target": "foo",
+      "cmake_dir": "app",
+      "output_name": "foo.exe",
+      "module_kind": "Win32Exe",
+      "entries": {
+        "i386": "main",
+        "amd64": "main",
+        "arm64": "main"
+      },
+      "subsystem": "native:5.01",
+      "image_base": {
+        "i386": null,
+        "amd64": null,
+        "arm64": null
+      },
+      "stack": null,
+      "body_crate": "",
+      "body_features": [],
+      "body_defaults": true,
+      "import_libs": [],
+      "msvcrtex": null,
+      "static_libs": {
+        "i386": [],
+        "amd64": [],
+        "arm64": []
+      },
+      "spec": null,
+      "spec_stubs": false,
+      "c_shims": [
+        "app/foo.c"
+      ],
+      "rc": null,
+      "rc_defines": [],
+      "destinations": [],
+      "name_on_cd": null,
+      "panics": {
+        "i386": false,
+        "amd64": false,
+        "arm64": false
+      },
+      "body_var": "",
+      "late_libs": {
+        "i386": [],
+        "amd64": [],
+        "arm64": []
+      },
+      "delay_import_libs": [],
+      "generated": [],
+      "foreign": [],
+      "import_order": [],
+      "notes": [],
+      "body_rustflags": {},
+      "body_env_block": "",
+      "arch_destinations": {},
+      "link_order": {
+        "i386": [],
+        "amd64": [],
+        "arm64": []
+      },
+      "no_cab": false,
+      "kernel_kind": "",
+      "custom_body": {},
+      "arch_shims": {},
+      "subsystems": {},
+      "extra_cd": [],
+      "rc_flags": {},
+      "require_defined": {}
+    }
+  },
+  {
+    "name": "rustmodel",
+    "files": {
+      "app/CMakeLists.txt": "rust_staticlib_variant(foo_rust foo-rust \"foo;bar\" TRUE)\nadd_library(foo SHARED rust_cohab_stub.c)\nset_module_type(foo win32dll)\n",
+      "app/rust_cohab_stub.c": "typedef int placeholder;\n",
+      "build-i386/build.ninja": "build app/foo.dll: C_SHARED_LIBRARY_LINKER__foo_Release app/CMakeFiles/foo.dir/rust_cohab_stub.c.obj\n  LINK_FLAGS = -entry,DllMain --subsystem,windows:5.01 --require-defined=Foo\n  LINK_LIBRARIES = app/libfoo_rust.a\n",
+      "build-amd64/build.ninja": "build app/foo.dll: C_SHARED_LIBRARY_LINKER__foo_Release app/CMakeFiles/foo.dir/rust_cohab_stub.c.obj\n  LINK_FLAGS = -entry,DllMain --subsystem,windows:5.01 --require-defined=Foo\n  LINK_LIBRARIES = app/libfoo_rust.a\n",
+      "build-arm64/build.ninja": "build app/foo.dll: C_SHARED_LIBRARY_LINKER__foo_Release app/CMakeFiles/foo.dir/rust_cohab_stub.c.obj\n  LINK_FLAGS = -entry,DllMain --subsystem,windows:5.01 --require-defined=Foo\n  LINK_LIBRARIES = app/libfoo_rust.a\n",
+      "build-i386/boot/livecd.Release.lst": "",
+      "build-amd64/boot/livecd.Release.lst": "",
+      "build-arm64/boot/livecd.Release.lst": ""
+    },
+    "expected": {
+      "target": "foo",
+      "cmake_dir": "app",
+      "output_name": "foo.dll",
+      "module_kind": "Win32Dll",
+      "entries": {
+        "i386": "DllMain",
+        "amd64": "DllMain",
+        "arm64": "DllMain"
+      },
+      "subsystem": "windows:5.01",
+      "image_base": {
+        "i386": null,
+        "amd64": null,
+        "arm64": null
+      },
+      "stack": null,
+      "body_crate": "foo-rust",
+      "body_features": [
+        "foo",
+        "bar"
+      ],
+      "body_defaults": true,
+      "import_libs": [],
+      "msvcrtex": null,
+      "static_libs": {
+        "i386": [],
+        "amd64": [],
+        "arm64": []
+      },
+      "spec": null,
+      "spec_stubs": false,
+      "c_shims": [],
+      "rc": null,
+      "rc_defines": [],
+      "destinations": [],
+      "name_on_cd": null,
+      "panics": {
+        "i386": false,
+        "amd64": false,
+        "arm64": false
+      },
+      "body_var": "foo_rust",
+      "late_libs": {
+        "i386": [],
+        "amd64": [],
+        "arm64": []
+      },
+      "delay_import_libs": [],
+      "generated": [],
+      "foreign": [],
+      "import_order": [],
+      "notes": [],
+      "body_rustflags": {},
+      "body_env_block": "",
+      "arch_destinations": {},
+      "link_order": {
+        "i386": [
+          "body"
+        ],
+        "amd64": [
+          "body"
+        ],
+        "arm64": [
+          "body"
+        ]
+      },
+      "no_cab": false,
+      "kernel_kind": "",
+      "custom_body": {},
+      "arch_shims": {},
+      "subsystems": {},
+      "extra_cd": [],
+      "rc_flags": {},
+      "require_defined": {}
+    }
+  }
+]

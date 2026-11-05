@@ -25,6 +25,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 use std::sync::{Arc, Mutex};
 
+mod cmake_config;
+
 /// One link argument for THIS link: `rustc-link-arg`, or `rustc-link-arg-bin=<bin>=`
 /// when the Linker drives one bin of a family package (see `Linker::for_bin`).
 macro_rules! link_arg {
@@ -2535,16 +2537,9 @@ impl Linker {
         self.cmake_cache_bool("ENABLE_CCACHE").unwrap_or(false)
     }
 
-    /// A BOOL from the configured build's CMakeCache.txt; None with no configured build.
+    /// A projected CMake BOOL; None with no configured build.
     fn cmake_cache_bool(&self, name: &str) -> Option<bool> {
-        let cache = self.build_dir.join("CMakeCache.txt");
-        println!("cargo:rerun-if-changed={}", cache.display());
-        let text = std::fs::read_to_string(cache).ok()?;
-        let line = text.lines().find(|l| l.starts_with(&format!("{name}:")))?;
-        Some(matches!(
-            line.rsplit('=').next().map(str::to_ascii_uppercase).as_deref(),
-            Some("1" | "ON" | "TRUE" | "YES" | "Y")
-        ))
+        cmake_config::read(&self.build_dir, name).unwrap_or_else(|e| panic!("reactos-link: {e}"))
     }
 
     /// A `static_libs` entry's archive: `engine:<name>` is built here (`engine_lib`),

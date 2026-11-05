@@ -4,6 +4,12 @@
 also lives in a library: the linter's committed-header drift check calls it directly.
 The former Python entry points delegate to this binary; they contain no generation logic.
 
+For new generators, add the implementation under `src/`, expose it through the library
+when checks or other tools need the same facts, and register a command in the existing
+binary. Add meaningful output/refusal fixtures and document the command here. Do not
+create another Python generator implementation or a separate binary per recipe.
+Preserve existing Python importers with thin compatibility adapters when necessary.
+
 ```sh
 tools/codegen --list
 tools/codegen --all --check          # compare all 11 outputs, without writing
@@ -342,12 +348,58 @@ regenerate 0.4.17, differing in four version-metadata bytes per blob (two fixed-
 fields and two UTF-16 digits). Regenerating those four blobs and gating all three
 architectures remains owed; this generator port leaves the committed blobs unchanged.
 
-These remain Python implementations; the native generators above do not replace them.
+## Cargo cell conversion
 
-| Group | Entry points |
-| --- | --- |
-| Build graph/configuration | `cargo_cell_gen.py` |
-| Translation pipeline | `rustconv/gen_enum_constants.py`, `rustconv/gen_kmdf_dispatch.py`, bindgen postprocessors, and rustconv's generation modules; retain for the C-to-Rust tooling phase |
+`tools/codegen cargo-cell TARGET...` reads this checkout's configured three-architecture
+Ninja graphs and prints the proposed Rust build script and CMake rewrite. It does not
+write unless an explicit mutation operation is selected:
 
-The remaining build-graph generator is `cargo_cell_gen.py`; its conversion,
-recipe extraction and public Python APIs need a coordinated port with their callers.
+```sh
+tools/codegen cargo-cell --survey
+tools/codegen cargo-cell module_name                 # inspect only
+tools/codegen cargo-cell --save-baseline DIR module_name
+tools/codegen cargo-cell --apply module_name
+tools/codegen cargo-cell --check DIR module_name
+# Complete conversion wave: baseline, apply, targeted rebuilds, PE proof, manifests.
+tools/codegen cargo-cell --convert --baseline DIR module_name
+```
+
+`--own-rc`, `--own-c`, and `--remap` update existing cells (optionally selected by
+`*-cargo` crate name). `--rc-template`, `--c-template` (including assembly), and
+`--clib-recipes` regenerate the engine's compile recipes. `--reshell DIR TARGET...`
+selects existing cells' panic handlers from baseline PEs. Choose one operation per
+invocation. Missing graphs, ambiguous links, unsupported CMake statements, or invalid
+recipes fail explicitly. An absent library on one architecture is reported when
+regenerating C recipes; other recipe errors abort the operation.
+
+The implementation in `src/cells/` owns CMake parsing, link/model discovery, C/RC/assembly
+recipes, Rust rendering, edit planning, and the bounded PE contract reader. A conversion
+models every target and plans its edits before writing any cell. Existing body crates are
+preserved; existing output crates are refused. Writes replace each file atomically, with
+no promise of rollback across files after an I/O failure. Output symlinks and mutable
+build inputs outside the selected checkout are refused. Immutable PE baseline directories
+may be outside the checkout.
+
+Conversion regenerates the canonical Ninja graph and builds its selected targets on all
+three architectures before checking exports, imports, resources, header contract, mapped
+size, and CD placement against the saved baselines. Unchanged or missing binaries cannot
+pass as relinked cells. Accepted panic-handler, probe, and rsbegin differences retain the
+previous explicit policy. Failed proof returns nonzero and leaves the manifest refresh
+undone. The native `vibeos-build` manifest library prepares cell/media manifests after a
+successful proof; all manifest and C-recipe rendering finishes before refresh writes.
+Conversion itself spends no translation API money.
+
+`cargo_cell_gen.py` retains dataclasses and import signatures as a JSON compatibility
+facade; its command line replaces itself with the native command. Its callable `convert`
+retains a small orchestration adapter for existing Python importers. Generation and all
+parsing remain native. The lint ratchet reads the same native archive maps directly,
+without extracting Python source. `_majority_run` remains available to `sdk_recipe.py`.
+
+Validation includes the original generator tests through that facade, frozen Python
+oracles for renderers, complete C-only/Rust models, PE contracts and comparison policy,
+and conversion ordering/refusal tests. PE fixtures contain actual delay imports and
+resource directories. No shipping module is converted as part of this tooling migration.
+
+The remaining Python generation helpers are in the translation pipeline:
+`rustconv/gen_enum_constants.py`, `rustconv/gen_kmdf_dispatch.py`, bindgen postprocessors,
+and rustconv's generation modules. They remain for the C-to-Rust tooling phase.

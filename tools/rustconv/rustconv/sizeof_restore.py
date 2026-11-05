@@ -73,6 +73,11 @@ def restore(rust: str, c_file: Path, types: set[str]) -> tuple[str, list[str]]:
                 # `FIELD_OFFSET!(DATATYPES_INFO_1W, pName)` (winprint) is not a sizeof.
                 if _in_macro_args(m.string, m.start()):
                     return m.group(0)
+                # ...and so does a type alias: ddraw's `type STRUCT = DDSURFACEDESC2;` (C's
+                # `#define STRUCT DDSURFACEDESC2` around its dump tables) became
+                # `type STRUCT = core::mem::size_of::<DDSURFACEDESC2>();`.
+                if re.search(r"\btype\s+[A-Za-z_]\w*\s*=\s*$", m.string[: m.start()]):
+                    return m.group(0)
                 count += 1
                 return f"{m.group(1)}core::mem::size_of::<{t}>()"
 

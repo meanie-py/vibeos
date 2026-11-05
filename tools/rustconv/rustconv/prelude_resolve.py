@@ -582,6 +582,66 @@ def foreign_types(text: str, visible: set[str]) -> set[str]:
     return out
 
 
+def _rs_files(root: Path) -> list[Path]:
+    """`root`'s .rs files, never descending into a cargo target dir (tools.source_walk)."""
+    try:
+        from tools.source_walk import source_files
+    except ModuleNotFoundError:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+        from tools.source_walk import source_files
+    return list(source_files(root, "*.rs"))
+
+
+def dependency_macro_bodies(crate_dir: Path) -> list[str]:
+    """The `macro_rules!` definitions of every path dependency in `crate_dir`'s Cargo.toml:
+    text that expands inside this crate, so a name it uses is this crate's to provide."""
+    manifest = crate_dir / "Cargo.toml"
+    if not manifest.is_file():
+        return []
+    out: list[str] = []
+    for rel in re.findall(r'path\s*=\s*"([^"]+)"', manifest.read_text()):
+        src = (crate_dir / rel / "src").resolve()
+        for rs in sorted(_rs_files(src)) if src.is_dir() else []:
+            text = rs.read_text(errors="replace")
+            for m in re.finditer(r"macro_rules!\s*\w+\s*\{", text):
+                depth, i = 1, m.end()
+                while i < len(text) and depth:
+                    depth += (text[i] == "{") - (text[i] == "}")
+                    i += 1
+                out.append(text[m.end() : i])
+    return out
+
+
+def live_copies(copied: dict[str, Item], crate_src: Path, prelude: Path) -> set[str]:
+    """The block's copies something still names: a crate source outside the block, or (to a
+    fixpoint) another live copy's own text. A copy outlives the code that wanted it otherwise
+    -- ddraw kept consensus HEIGHT/WIDTH consts long after the bodies stopped naming them,
+    and a dead copy is still a wrong neighbour's value one edit away from being used.
+    Over-approximate by design (a word in a comment keeps a copy). A path dependency's
+    `macro_rules!` bodies count as the crate's own text: win32macros' WINE_FIXME! expands to
+    `__wine_dbg_get_channel_flags(..)` and `ros_dbg_log(..)` at the call site, and without
+    them dsound's every resolve round dropped both and re-copied them a pass later."""
+    ident = re.compile(r"\b[A-Za-z_]\w*\b")
+    words: set[str] = set()
+    for body in dependency_macro_bodies(crate_src.parent):
+        words |= set(ident.findall(body))
+    for rs in _rs_files(crate_src):
+        text = rs.read_text(errors="replace")
+        if rs == prelude:
+            text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), "", text, flags=re.S)
+        words |= set(ident.findall(text))
+    live = {k for k in copied if k in words}
+    todo = list(live)
+    while todo:
+        for w in set(ident.findall(copied[todo.pop()].text)):
+            if w in copied and w not in live:
+                live.add(w)
+                todo.append(w)
+    return live
+
+
 def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
     """The definition the tree agrees on, or (None, why not).
 

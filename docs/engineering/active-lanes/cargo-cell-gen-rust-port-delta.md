@@ -1,5 +1,11 @@
 # cargo_cell_gen: behaviour the Rust port must carry
 
+The Rust port now carries items 1–12 below, including wave 4 from `f1d2c6ff0a6`.
+The compatibility tests run against the native implementation. Conversion also refuses
+missing recipes for a newly built cell’s own C libraries (`86ea9f4e40e`); native manifest
+refresh preserves the media staged-directory guard (`1f2e9344078`). Deliberate stage removal
+requires `tools/build-infra media-manifest --write --allow-drop`.
+
 lint-rs `93d5def2dfe` ports `tools/cargo_cell_gen.py` to `vibeos-codegen` from master
 `613f7f991d1`. The body-less (C-only) cell waves changed the Python after that base, so a port
 that starts from `613f7f991d1` silently drops the items below. Each is the scar of a real

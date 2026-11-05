@@ -1,4 +1,3 @@
- # CORE-5743: No ARRAY_SIZE macro
 
 include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle
 

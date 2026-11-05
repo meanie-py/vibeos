@@ -7,9 +7,7 @@ from pathlib import Path
 import pytest
 
 from tools import artifact_config as guard
-from tools import test_artifact_runtime as adapter_tests
-
-harness = adapter_tests.harness
+from tools import artifact_runtime as runtime
 
 
 @pytest.fixture
@@ -30,6 +28,7 @@ def write_config(directory, text, name="config.toml"):
     "text",
     [
         "[profile.release]\nopt-level=3\n",
+        "[target.x86_64-pc-windows-gnu]\nlinker=1979-05-27T07:32:00Z\n",
         '[build]\nrustflags=["--cfg=changed"]\n',
         '[env]\nOBSERVED="changed"\n',
         '[source.crates-io]\nreplace-with="elsewhere"\n',
@@ -115,71 +114,52 @@ def test_actual_cwd_requires_audited_scope_and_canonical_same_checkout(
     monkeypatch.setattr(guard, "CANONICAL_ROOT", alias)
     with pytest.raises(guard.ConfigError, match="does not mount"):
         guard.mapped_cwd(config_repo, alias / "build-amd64", kernel=False)
-    real_samefile = guard.os.path.samefile
-    monkeypatch.setattr(
-        guard.os.path,
-        "samefile",
-        lambda a, b: True if Path(a) == alias and Path(b) == config_repo else real_samefile(a, b),
-    )
+    alias.rmdir()
+    alias.symlink_to(config_repo, target_is_directory=True)
     assert (
         guard.mapped_cwd(config_repo, alias / "build-amd64", kernel=False)
         == config_repo / "build-amd64"
     )
 
 
-@pytest.fixture
-def guarded_api(harness):
-    (harness.repo / "tools/artifact_config.py").write_text("# guarded helper\n")
-    return harness
-
-
-def test_added_forbidden_config_blocks_fresh_no_request_supervisor(guarded_api):
-    api = guarded_api
-    with adapter_tests.supervise(api):
-        pass
-    before = api.executor.provisions
-    write_config(api.repo / "sdk/lib/rust/beep-rust/.cargo", "[profile.release]\nopt-level=3\n")
-    with pytest.raises(guard.ConfigError), adapter_tests.supervise(api):
+def test_added_forbidden_config_blocks_fresh_no_request_supervisor(config_repo, tmp_path):
+    broker = config_repo / ".cache/host-jobs/host-jobs"
+    broker.parent.mkdir(parents=True)
+    broker.write_text("#!/bin/sh\nexit 99\n")
+    broker.chmod(0o755)
+    write_config(config_repo / "sdk/lib/rust/body/.cargo", "[profile.release]\nopt-level=3\n")
+    context = tmp_path / "context"
+    with (
+        pytest.raises(guard.ConfigError),
+        runtime.supervise(config_repo, tmp_path / "store", tmp_path / "absent-toolchain", context),
+    ):
         pytest.fail("fresh Cargo bypassed supervisor ambient configuration audit")
-    assert api.executor.provisions == before
-    summary = json.loads((api.context / "summary.json").read_text())
+    summary = json.loads((context / "summary.json").read_text())
     assert summary["config_preflight"] == "failed" and summary["status"] == "failed"
+    assert "provision_seconds" not in summary["timings"]
 
 
-def test_supervisor_postcheck_detects_added_config_without_request(guarded_api):
-    api = guarded_api
-    with pytest.raises(guard.ConfigError), adapter_tests.supervise(api):
-        write_config(api.repo / "build-amd64/.cargo", '[env]\nOBSERVED="changed"\n')
-    summary = json.loads((api.context / "summary.json").read_text())
-    assert summary["config_postcheck"] == "failed"
+def test_supervisor_postcheck_observes_new_parent_environment_without_request(
+    tmp_path, monkeypatch
+):
+    # Exercise the shipping Python -> native callback after the service has started.
+    # Remaining config/compiler fault combinations use native RuntimeHost controls.
+    from tools.artifact_executor import PIN
+    from tools.test_artifact_runtime_real import source_tree
 
-
-def test_request_rechecks_config_after_hit_before_binding(guarded_api):
-    api = guarded_api
-    with pytest.raises(guard.ConfigError), adapter_tests.supervise(api) as supervisor:
-        adapter_tests.request(api, supervisor)
-        api.store.before_lookup = lambda: write_config(
-            api.repo / "build-amd64/.cargo", '[build]\nrustflags=["--cfg=changed"]\n'
-        )
-        adapter_tests.request(api, supervisor, "cargo:must-not-bind")
-    assert (str(api.repo), "cargo:must-not-bind") not in api.store.refs
-
-
-def test_inert_config_edit_keeps_hit_and_registers_existing_file_watch(guarded_api):
-    api = guarded_api
-    path = write_config(
-        api.repo / "sdk/lib/rust/.cargo", '[target.x86_64-pc-windows-gnu]\nlinker="first"\n'
-    )
-    with adapter_tests.supervise(api) as supervisor:
-        first = adapter_tests.request(api, supervisor, cargo_cwd=api.repo / "sdk/lib/rust")
-        path.write_text('[target.x86_64-pc-windows-gnu]\nlinker="second"\n')
-        second = adapter_tests.request(
-            api, supervisor, "cargo:second", cargo_cwd=api.repo / "sdk/lib/rust"
-        )
-        assert first["action_key"] == second["action_key"]
-        assert second["hit"] and second["builder_calls"] == 0
-        assert str(path) in second["watches"]
-        assert str(api.repo / "tools/artifact_config.py") in second["watches"]
+    repo = tmp_path / "lane"
+    source_tree(repo)
+    context = tmp_path / "context"
+    toolchain = Path.home() / ".rustup/toolchains" / PIN
+    with (
+        pytest.raises(guard.ConfigError),
+        runtime.supervise(repo, tmp_path / "store", toolchain, context),
+    ):
+        monkeypatch.setenv("CARGO_PROFILE_RELEASE_OPT_LEVEL", "1")
+    summary = json.loads((context / "summary.json").read_text())
+    assert summary["config_preflight"] == "valid"
+    assert summary["config_postcheck"] == "failed" and summary["status"] == "failed"
+    assert summary["requests"]["requested"] == 0
 
 
 def test_the_engine_gate_audits_the_flags_the_worker_compiles_with():

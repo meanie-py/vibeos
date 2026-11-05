@@ -1,0 +1,80 @@
+[
+  {
+    "name": "i386",
+    "target": "m",
+    "arch": "i386",
+    "diffs": [
+      "sections: + .ctors 0x40000040",
+      "sections: + .data 0xc0000040",
+      "imports: + ntdll.dll!memcpy",
+      "exports: - Critical"
+    ],
+    "panic_common": true,
+    "data_size": 40,
+    "old_mapped": 100,
+    "new_mapped": 100,
+    "cd_old": null,
+    "cd_new": [],
+    "txtsetup": false,
+    "expected": "m              i386   DIFFERENT\n    exports: - Critical\n\n1 problem(s)\n"
+  },
+  {
+    "name": "lean",
+    "target": "m",
+    "arch": "amd64",
+    "diffs": [
+      "sections: + .pdata 0x40000040",
+      "imports: - x.dll!Unused",
+      "imports: + ntdll.dll!__chkstk"
+    ],
+    "panic_common": false,
+    "data_size": null,
+    "old_mapped": 100,
+    "new_mapped": 100,
+    "cd_old": [
+      "livecd:a",
+      "cab:1"
+    ],
+    "cd_new": [
+      "livecd:a",
+      "bootcd:b"
+    ],
+    "txtsetup": true,
+    "expected": "m              amd64  EQUIVALENT (+ loose on the boot CD) (- cab: txtsetup.sif installs it) (+ the lean handler's .pdata) (+ __chkstk: frame pointers) (- 1 imports only the panic path reached)\n\n0 problem(s)\n"
+  },
+  {
+    "name": "rebound",
+    "target": "user32_vista",
+    "arch": "arm64",
+    "diffs": [
+      "imports: - user32.dll!GetDpiForSystem",
+      "imports: + x.dll!New",
+      "sections: + .text 0x60000020",
+      "exports: - Missing"
+    ],
+    "panic_common": true,
+    "data_size": null,
+    "old_mapped": 100,
+    "new_mapped": 50000,
+    "cd_old": [
+      "livecd:a"
+    ],
+    "cd_new": [],
+    "txtsetup": false,
+    "expected": "user32_vista   arm64  DIFFERENT\n    exports: - Missing\n    cd: - livecd:a\n\n1 problem(s)\n"
+  },
+  {
+    "name": "size",
+    "target": "m",
+    "arch": "amd64",
+    "diffs": [],
+    "panic_common": true,
+    "data_size": null,
+    "old_mapped": 100,
+    "new_mapped": 50000,
+    "cd_old": null,
+    "cd_new": [],
+    "txtsetup": false,
+    "expected": "m              amd64  DIFFERENT\n    size: mapped image grew 48 KB (slack 16)\n\n1 problem(s)\n"
+  }
+]

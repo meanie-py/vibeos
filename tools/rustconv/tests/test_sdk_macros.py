@@ -366,3 +366,10 @@ def test_a_braced_guid_macro_is_a_guid_const():
         "Data3: 0x101a, Data4: [0xa5, 0xf1, 0x02, 0x60, 0x8c, 0x9e, 0xeb, 0xac] };"
     )
     assert guid_initializer("X", "{1, 2}") is None
+
+
+def test_a_bare_literal_beyond_int_is_cs_unsigned_int():
+    """d3d8types.h D3DPS_VERSION: `0xFFFF0000` unsuffixed was inferred i32 at the call site."""
+    out = low("((0xFFFF0000|((__rcv_p0__)<<8))|(__rcv_p1__))")
+    assert "0xFFFF0000u32" in out
+    assert "0xFFu32" not in low("(0xFF)")

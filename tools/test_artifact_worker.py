@@ -63,26 +63,5 @@ def test_capture_rejects_live_repository_destination_and_ineligible(fixture, tmp
         capture(fixture, "body", CONTEXT, tmp_path / "captured", workspace=fixture)
 
 
-@pytest.mark.parametrize("empty_directory", [False, True])
-def test_capture_detects_membership_change_after_initial_copy(
-    fixture, tmp_path, monkeypatch, empty_directory
-):
-    from tools import artifact_worker
-
-    original_copy = artifact_worker._verified_copy
-    changed = False
-
-    def changing_copy(source, output, expected):
-        nonlocal changed
-        result = original_copy(source, output, expected)
-        if not changed:
-            if empty_directory:
-                (fixture / "dep/empty-directory-during-capture").mkdir()
-            else:
-                write(fixture, "dep/added-during-capture", "membership changed")
-            changed = True
-        return result
-
-    monkeypatch.setattr(artifact_worker, "_verified_copy", changing_copy)
-    with pytest.raises(SnapshotError, match="inventory changed"):
-        capture(fixture, "body", CONTEXT, tmp_path / "captured", workspace=fixture)
+# Source/directory mutations during native capture are exercised at the actual
+# copy boundary in artifact_worker.rs::tests::capture_rejects_membership_changes.

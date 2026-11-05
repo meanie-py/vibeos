@@ -1,0 +1,1940 @@
+{
+  "oracle_revision": "781252da0f4d2e8513efa428b594d9d51c486cae",
+  "cases": [
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": ""
+        },
+        "flag": null
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": ""
+        },
+        "flag": false
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": ""
+        },
+        "flag": true
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "0"
+        },
+        "flag": null
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "0"
+        },
+        "flag": false
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "0"
+        },
+        "flag": true
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "false"
+        },
+        "flag": null
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "false"
+        },
+        "flag": false
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "false"
+        },
+        "flag": true
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "FALSE"
+        },
+        "flag": null
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "FALSE"
+        },
+        "flag": false
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "FALSE"
+        },
+        "flag": true
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "no"
+        },
+        "flag": null
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "no"
+        },
+        "flag": false
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "no"
+        },
+        "flag": true
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "off"
+        },
+        "flag": null
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "off"
+        },
+        "flag": false
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "off"
+        },
+        "flag": true
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "1"
+        },
+        "flag": null
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "1"
+        },
+        "flag": false
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "1"
+        },
+        "flag": true
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "true"
+        },
+        "flag": null
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "true"
+        },
+        "flag": false
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "true"
+        },
+        "flag": true
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "yes"
+        },
+        "flag": null
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "yes"
+        },
+        "flag": false
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": "yes"
+        },
+        "flag": true
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": " false "
+        },
+        "flag": null
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": " false "
+        },
+        "flag": false
+      },
+      "expected": false
+    },
+    {
+      "op": "build_policy_cache_enabled",
+      "kwargs": {
+        "environment": {
+          "VIBEOS_BUILD_CACHE": " false "
+        },
+        "flag": true
+      },
+      "expected": true
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/main",
+        "environment": {}
+      },
+      "expected": "/fixture/fleet"
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/main",
+        "environment": {
+          "VIBEOS_ROOT": "/fixture/shared"
+        }
+      },
+      "expected": "/fixture/shared"
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/main",
+        "environment": {
+          "VIBEOS_ROOT": "~/shared",
+          "HOME": "/fixture/home"
+        }
+      },
+      "expected": "/fixture/home/shared"
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/lane/.claude/worktrees/a/.claude/worktrees/b",
+        "environment": {}
+      },
+      "expected": "/fixture/fleet"
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/lane/.claude/worktrees/a/.claude/worktrees/b",
+        "environment": {
+          "VIBEOS_ROOT": "/fixture/shared"
+        }
+      },
+      "expected": "/fixture/shared"
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/lane/.claude/worktrees/a/.claude/worktrees/b",
+        "environment": {
+          "VIBEOS_ROOT": "~/shared",
+          "HOME": "/fixture/home"
+        }
+      },
+      "expected": "/fixture/home/shared"
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/main/.git/vibeos-premerge/lane",
+        "environment": {}
+      },
+      "expected": "/fixture/fleet"
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/main/.git/vibeos-premerge/lane",
+        "environment": {
+          "VIBEOS_ROOT": "/fixture/shared"
+        }
+      },
+      "expected": "/fixture/shared"
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/main/.git/vibeos-premerge/lane",
+        "environment": {
+          "VIBEOS_ROOT": "~/shared",
+          "HOME": "/fixture/home"
+        }
+      },
+      "expected": "/fixture/home/shared"
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/unicode-\u03bb",
+        "environment": {}
+      },
+      "expected": "/fixture/fleet"
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/unicode-\u03bb",
+        "environment": {
+          "VIBEOS_ROOT": "/fixture/shared"
+        }
+      },
+      "expected": "/fixture/shared"
+    },
+    {
+      "op": "build_policy_cache_root",
+      "kwargs": {
+        "repo": "/fixture/fleet/unicode-\u03bb",
+        "environment": {
+          "VIBEOS_ROOT": "~/shared",
+          "HOME": "/fixture/home"
+        }
+      },
+      "expected": "/fixture/home/shared"
+    },
+    {
+      "op": "build_policy_cache_env",
+      "kwargs": {
+        "cache": {
+          "root": "/fixture/fleet",
+          "ccache_dir": "/fixture/fleet/ccache",
+          "sccache_dir": "/fixture/fleet/sccache",
+          "ccache_bin": null,
+          "sccache_bin": null
+        }
+      },
+      "expected": {}
+    },
+    {
+      "op": "build_policy_cache_env",
+      "kwargs": {
+        "cache": {
+          "root": "/fixture/fleet",
+          "ccache_dir": "/fixture/fleet/ccache",
+          "sccache_dir": "/fixture/fleet/sccache",
+          "ccache_bin": "/bin/ccache",
+          "sccache_bin": null
+        }
+      },
+      "expected": {
+        "CCACHE_DIR": "/fixture/fleet/ccache",
+        "CCACHE_BASEDIR": "/fixture/fleet",
+        "CCACHE_NOHASHDIR": "true",
+        "CCACHE_SLOPPINESS": "time_macros",
+        "CCACHE_MAXSIZE": "50G",
+        "CCACHE_TEMPDIR": "/fixture/fleet/ccache/tmp"
+      }
+    },
+    {
+      "op": "build_policy_cache_env",
+      "kwargs": {
+        "cache": {
+          "root": "/fixture/fleet",
+          "ccache_dir": "/fixture/fleet/ccache",
+          "sccache_dir": "/fixture/fleet/sccache",
+          "ccache_bin": null,
+          "sccache_bin": "/bin/sccache"
+        }
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/bin/sccache",
+        "SCCACHE_DIR": "/fixture/fleet/sccache",
+        "SCCACHE_CACHE_SIZE": "150G",
+        "CARGO_INCREMENTAL": "0"
+      }
+    },
+    {
+      "op": "build_policy_cache_env",
+      "kwargs": {
+        "cache": {
+          "root": "/fixture/fleet",
+          "ccache_dir": "/fixture/fleet/ccache",
+          "sccache_dir": "/fixture/fleet/sccache",
+          "ccache_bin": "/bin/ccache",
+          "sccache_bin": "/bin/sccache"
+        }
+      },
+      "expected": {
+        "CCACHE_DIR": "/fixture/fleet/ccache",
+        "CCACHE_BASEDIR": "/fixture/fleet",
+        "CCACHE_NOHASHDIR": "true",
+        "CCACHE_SLOPPINESS": "time_macros",
+        "CCACHE_MAXSIZE": "50G",
+        "CCACHE_TEMPDIR": "/fixture/fleet/ccache/tmp",
+        "RUSTC_WRAPPER": "/bin/sccache",
+        "SCCACHE_DIR": "/fixture/fleet/sccache",
+        "SCCACHE_CACHE_SIZE": "150G",
+        "CARGO_INCREMENTAL": "0"
+      }
+    },
+    {
+      "op": "build_policy_sccache_stats",
+      "kwargs": {
+        "text": "not json"
+      },
+      "expected": {}
+    },
+    {
+      "op": "build_policy_sccache_stats",
+      "kwargs": {
+        "text": "{}"
+      },
+      "expected": {
+        "requests": 0,
+        "hits": 0,
+        "misses": 0,
+        "hit_rate": 0.0,
+        "non_cacheable": 0,
+        "non_cacheable_reasons": {},
+        "cache_errors": 0,
+        "compilations": 0
+      }
+    },
+    {
+      "op": "build_policy_sccache_stats",
+      "kwargs": {
+        "text": "{\"stats\": {\"compile_requests\": 20, \"cache_hits\": {\"counts\": {\"Rust\": 12, \"C/C++\": 2}}, \"cache_misses\": {\"counts\": {\"Rust\": 6}}, \"requests_not_cacheable\": 4, \"not_cached\": {\"crate-type\": 4}, \"cache_errors\": 1, \"compilations\": 16}}"
+      },
+      "expected": {
+        "requests": 20,
+        "hits": 14,
+        "misses": 6,
+        "hit_rate": 0.7,
+        "non_cacheable": 4,
+        "non_cacheable_reasons": {
+          "crate-type": 4
+        },
+        "cache_errors": 1,
+        "compilations": 16
+      }
+    },
+    {
+      "op": "build_policy_sccache_stats",
+      "kwargs": {
+        "text": "{\"cache_hits\": 5, \"cache_misses\": 0}"
+      },
+      "expected": {
+        "requests": 0,
+        "hits": 5,
+        "misses": 0,
+        "hit_rate": 1.0,
+        "non_cacheable": 0,
+        "non_cacheable_reasons": {},
+        "cache_errors": 0,
+        "compilations": 0
+      }
+    },
+    {
+      "op": "build_policy_sccache_stats",
+      "kwargs": {
+        "text": "{\"stats\": {\"cache_hits\": {\"counts\": \"wrong\"}, \"cache_misses\": {\"Rust\": 2, \"invalid\": 3.5}}}"
+      },
+      "expected": {
+        "requests": 0,
+        "hits": 0,
+        "misses": 2,
+        "hit_rate": 0.0,
+        "non_cacheable": 0,
+        "non_cacheable_reasons": {},
+        "cache_errors": 0,
+        "compilations": 0
+      }
+    },
+    {
+      "op": "build_policy_ccache_stats",
+      "kwargs": {
+        "text": ""
+      },
+      "expected": {
+        "hits": 0,
+        "misses": 0,
+        "hit_rate": 0.0
+      }
+    },
+    {
+      "op": "build_policy_ccache_stats",
+      "kwargs": {
+        "text": "direct_cache_hit\t7\npreprocessed_cache_hit\t3\ncache_miss\t10\nprimary_storage_hit\t99\n"
+      },
+      "expected": {
+        "hits": 10,
+        "misses": 10,
+        "hit_rate": 0.5
+      }
+    },
+    {
+      "op": "build_policy_ccache_stats",
+      "kwargs": {
+        "text": "malformed\ncache_miss\tbad\n"
+      },
+      "expected": {
+        "hits": 0,
+        "misses": 0,
+        "hit_rate": 0.0
+      }
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": null,
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "0"
+        },
+        "cpus": 0
+      },
+      "expected": []
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": null,
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "0"
+        },
+        "cpus": 4
+      },
+      "expected": []
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": null,
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "0"
+        },
+        "cpus": 32
+      },
+      "expected": []
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": null,
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "8"
+        },
+        "cpus": 0
+      },
+      "expected": []
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": null,
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "8"
+        },
+        "cpus": 4
+      },
+      "expected": []
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": null,
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "8"
+        },
+        "cpus": 32
+      },
+      "expected": [
+        "-j",
+        "24"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": null,
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "-1"
+        },
+        "cpus": 0
+      },
+      "expected": []
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": null,
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "-1"
+        },
+        "cpus": 4
+      },
+      "expected": []
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": null,
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "-1"
+        },
+        "cpus": 32
+      },
+      "expected": []
+    },
+    {
+      "op": "build_policy_build_env",
+      "kwargs": {
+        "policy": null,
+        "env": null,
+        "environment": {
+          "EXPLICIT_AMBIENT": "kept"
+        }
+      },
+      "expected": null
+    },
+    {
+      "op": "build_policy_build_env",
+      "kwargs": {
+        "policy": null,
+        "env": {},
+        "environment": {
+          "EXPLICIT_AMBIENT": "kept"
+        }
+      },
+      "expected": {}
+    },
+    {
+      "op": "build_policy_build_env",
+      "kwargs": {
+        "policy": null,
+        "env": {
+          "CARGO_BUILD_JOBS": "24",
+          "RUSTC_WRAPPER": "cache"
+        },
+        "environment": {
+          "EXPLICIT_AMBIENT": "kept"
+        }
+      },
+      "expected": {
+        "CARGO_BUILD_JOBS": "24",
+        "RUSTC_WRAPPER": "cache"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {},
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": null
+      },
+      "expected": {
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "sccache"
+        },
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": null
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "sccache",
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "CARGO_BUILD_RUSTC_WRAPPER": "cache"
+        },
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": null
+      },
+      "expected": {
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "cache",
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+          "VIBEOS_INNER_RUSTC_WRAPPER": "stale"
+        },
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": null
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {},
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": null
+      },
+      "expected": {
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "sccache"
+        },
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": null
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "sccache",
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "CARGO_BUILD_RUSTC_WRAPPER": "cache"
+        },
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": null
+      },
+      "expected": {
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "cache",
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+          "VIBEOS_INNER_RUSTC_WRAPPER": "stale"
+        },
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": null
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build"
+      }
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "0"
+        },
+        "cpus": 0
+      },
+      "expected": [
+        "-j",
+        "6"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "0"
+        },
+        "cpus": 4
+      },
+      "expected": [
+        "-j",
+        "6"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "0"
+        },
+        "cpus": 32
+      },
+      "expected": [
+        "-j",
+        "6"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "8"
+        },
+        "cpus": 0
+      },
+      "expected": [
+        "-j",
+        "6"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "8"
+        },
+        "cpus": 4
+      },
+      "expected": [
+        "-j",
+        "6"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "8"
+        },
+        "cpus": 32
+      },
+      "expected": [
+        "-j",
+        "6"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "-1"
+        },
+        "cpus": 0
+      },
+      "expected": [
+        "-j",
+        "6"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "-1"
+        },
+        "cpus": 4
+      },
+      "expected": [
+        "-j",
+        "6"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "-1"
+        },
+        "cpus": 32
+      },
+      "expected": [
+        "-j",
+        "6"
+      ]
+    },
+    {
+      "op": "build_policy_build_env",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "env": null,
+        "environment": {
+          "EXPLICIT_AMBIENT": "kept"
+        }
+      },
+      "expected": {
+        "EXPLICIT_AMBIENT": "kept",
+        "CARGO_BUILD_JOBS": "1"
+      }
+    },
+    {
+      "op": "build_policy_build_env",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "env": {},
+        "environment": {
+          "EXPLICIT_AMBIENT": "kept"
+        }
+      },
+      "expected": {
+        "CARGO_BUILD_JOBS": "1"
+      }
+    },
+    {
+      "op": "build_policy_build_env",
+      "kwargs": {
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        },
+        "env": {
+          "CARGO_BUILD_JOBS": "24",
+          "RUSTC_WRAPPER": "cache"
+        },
+        "environment": {
+          "EXPLICIT_AMBIENT": "kept"
+        }
+      },
+      "expected": {
+        "CARGO_BUILD_JOBS": "1",
+        "RUSTC_WRAPPER": "cache"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {},
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        }
+      },
+      "expected": {
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "18",
+        "VIBEOS_HOST_CPU_LEASES": "6"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "sccache"
+        },
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        }
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "sccache",
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "18",
+        "VIBEOS_HOST_CPU_LEASES": "6"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "CARGO_BUILD_RUSTC_WRAPPER": "cache"
+        },
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        }
+      },
+      "expected": {
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "cache",
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "18",
+        "VIBEOS_HOST_CPU_LEASES": "6"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+          "VIBEOS_INNER_RUSTC_WRAPPER": "stale"
+        },
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        }
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "18",
+        "VIBEOS_HOST_CPU_LEASES": "6"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {},
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        }
+      },
+      "expected": {
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "18",
+        "VIBEOS_HOST_CPU_LEASES": "6"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "sccache"
+        },
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        }
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "sccache",
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "18",
+        "VIBEOS_HOST_CPU_LEASES": "6"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "CARGO_BUILD_RUSTC_WRAPPER": "cache"
+        },
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        }
+      },
+      "expected": {
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "cache",
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "18",
+        "VIBEOS_HOST_CPU_LEASES": "6"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+          "VIBEOS_INNER_RUSTC_WRAPPER": "stale"
+        },
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "cargo_jobs": 1,
+          "leases": 6,
+          "max_builds": 3,
+          "ninja_jobs": 6,
+          "version": 1
+        }
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "18",
+        "VIBEOS_HOST_CPU_LEASES": "6"
+      }
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "0"
+        },
+        "cpus": 0
+      },
+      "expected": [
+        "-j",
+        "4"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "0"
+        },
+        "cpus": 4
+      },
+      "expected": [
+        "-j",
+        "4"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "0"
+        },
+        "cpus": 32
+      },
+      "expected": [
+        "-j",
+        "4"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "8"
+        },
+        "cpus": 0
+      },
+      "expected": [
+        "-j",
+        "4"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "8"
+        },
+        "cpus": 4
+      },
+      "expected": [
+        "-j",
+        "4"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "8"
+        },
+        "cpus": 32
+      },
+      "expected": [
+        "-j",
+        "4"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "-1"
+        },
+        "cpus": 0
+      },
+      "expected": [
+        "-j",
+        "4"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "-1"
+        },
+        "cpus": 4
+      },
+      "expected": [
+        "-j",
+        "4"
+      ]
+    },
+    {
+      "op": "build_policy_ninja_jobs",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "environment": {
+          "VIBEOS_BUILD_CORE_RESERVE": "-1"
+        },
+        "cpus": 32
+      },
+      "expected": [
+        "-j",
+        "4"
+      ]
+    },
+    {
+      "op": "build_policy_build_env",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "env": null,
+        "environment": {
+          "EXPLICIT_AMBIENT": "kept"
+        }
+      },
+      "expected": {
+        "EXPLICIT_AMBIENT": "kept",
+        "CARGO_BUILD_JOBS": "1"
+      }
+    },
+    {
+      "op": "build_policy_build_env",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "env": {},
+        "environment": {
+          "EXPLICIT_AMBIENT": "kept"
+        }
+      },
+      "expected": {
+        "CARGO_BUILD_JOBS": "1"
+      }
+    },
+    {
+      "op": "build_policy_build_env",
+      "kwargs": {
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        },
+        "env": {
+          "CARGO_BUILD_JOBS": "24",
+          "RUSTC_WRAPPER": "cache"
+        },
+        "environment": {
+          "EXPLICIT_AMBIENT": "kept"
+        }
+      },
+      "expected": {
+        "CARGO_BUILD_JOBS": "1",
+        "RUSTC_WRAPPER": "cache"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {},
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        }
+      },
+      "expected": {
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "4",
+        "VIBEOS_HOST_CPU_LEASES": "4"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "sccache"
+        },
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        }
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "sccache",
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "4",
+        "VIBEOS_HOST_CPU_LEASES": "4"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "CARGO_BUILD_RUSTC_WRAPPER": "cache"
+        },
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        }
+      },
+      "expected": {
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "cache",
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "4",
+        "VIBEOS_HOST_CPU_LEASES": "4"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+          "VIBEOS_INNER_RUSTC_WRAPPER": "stale"
+        },
+        "canonical": null,
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        }
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_HOST_JOBS": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/fixture/lane/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "4",
+        "VIBEOS_HOST_CPU_LEASES": "4"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {},
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        }
+      },
+      "expected": {
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "4",
+        "VIBEOS_HOST_CPU_LEASES": "4"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "sccache"
+        },
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        }
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "sccache",
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "4",
+        "VIBEOS_HOST_CPU_LEASES": "4"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "CARGO_BUILD_RUSTC_WRAPPER": "cache"
+        },
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        }
+      },
+      "expected": {
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_INNER_RUSTC_WRAPPER": "cache",
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "4",
+        "VIBEOS_HOST_CPU_LEASES": "4"
+      }
+    },
+    {
+      "op": "build_policy_host_env",
+      "kwargs": {
+        "repo": "/fixture/lane",
+        "environment": {
+          "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+          "VIBEOS_INNER_RUSTC_WRAPPER": "stale"
+        },
+        "canonical": "/tmp/vibeos",
+        "run_dir": "/fixture/run",
+        "owner": 4242,
+        "class": "build",
+        "policy": {
+          "version": 1,
+          "leases": 4,
+          "max_builds": 1,
+          "ninja_jobs": 4,
+          "cargo_jobs": 1
+        }
+      },
+      "expected": {
+        "RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "VIBEOS_HOST_JOBS": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_RUSTC_WRAPPER": "/tmp/vibeos/.cache/host-jobs/host-jobs",
+        "CARGO_BUILD_JOBS": "1",
+        "VIBEOS_JOB_REPO": "/fixture/lane",
+        "VIBEOS_JOB_OWNER_PID": "4242",
+        "VIBEOS_JOB_RUN": "/fixture/run",
+        "VIBEOS_JOB_CLASS": "build",
+        "VIBEOS_HOST_JOB_SLOTS": "4",
+        "VIBEOS_HOST_CPU_LEASES": "4"
+      }
+    }
+  ]
+}

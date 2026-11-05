@@ -148,7 +148,7 @@ done
 # Its paths are written against the canonical build root (tools/canon-run.sh), which
 # is only mounted while a build runs; map them back to this worktree.
 sed "s#=/tmp/vibeos/#=$PROJECT_DIR/#; s#^/tmp/vibeos/#$PROJECT_DIR/#" "$LIVECD_LST" > "$LST_DIR/ramdisk-livecd.lst"
-python3 "$PROJECT_DIR/tools/strip_cd_media.py" --lst "$LST_DIR/ramdisk-livecd.lst" \
+"$PROJECT_DIR/tools/build-infra" strip-cd-media --lst "$LST_DIR/ramdisk-livecd.lst" \
     --out "$LST_DIR/ramdisk-livecd.stripped.lst" \
     --cache "$STRIP_CACHE" --objcopy "$STRIP_OBJCOPY" || exit 1
 
@@ -230,7 +230,7 @@ if [ -s "$PAYLOAD_LST" ]; then
 fi
 
 # --- Lay it out and build the image -------------------------------------------
-TREE_BYTES=$(python3 "$PROJECT_DIR/tools/ramdisk_tree.py" --out "$STAGE_DIR" \
+TREE_BYTES=$("$PROJECT_DIR/tools/build-infra" ramdisk-tree --out "$STAGE_DIR" \
     "$LST_DIR/ramdisk-livecd.stripped.lst" "$OVERLAY_LST" "$PAYLOAD_LST") || exit 1
 
 # Sized to the content: the FAT overhead at one sector per cluster is ~2%, and the

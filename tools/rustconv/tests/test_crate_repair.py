@@ -3023,6 +3023,31 @@ def test_truthiness_converts_a_foreign_macros_argument_not_its_result():
     assert [e.replacement for e in plan.edits] == ["((ok as INT) != 0)"]
 
 
+def test_truthiness_converts_an_assert_blamed_as_a_whole():
+    """rustc 1.92 blames the WHOLE `assert!((c) as i32)` (span == its own expansion site), so
+    the argument case above never fires: dsound's mixer grew 115 `)) != false` layers."""
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    for body, want in (
+        (b"assert!((a >= b) as i32)", "(a >= b)"),
+        (b'debug_assert!(n, "msg")', "((n) != 0)"),
+    ):
+        src = b"fn f() {\n    " + body + b";\n}\n"
+        at = src.index(body)
+        whole = _span(
+            "src/a.rs", at, at + len(body), is_primary=True, label="expected `bool`, found `i32`"
+        )
+        whole["expansion"] = {
+            "span": _span("src/a.rs", at, at + len(body), line=2),
+            "macro_decl_name": body.split(b"!")[0].decode() + "!",
+        }
+        diag = _diag("mismatched types", code="E0308", spans=[whole])
+        plan = propose_edits(
+            [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS]
+        )
+        assert [e.replacement for e in plan.edits] == [want], body
+
+
 def test_fn_item_cast_drops_the_cast_off_some_f():
     """ndis: `DriverUnload = Some(MainUnload) as PDRIVER_UNLOAD` -- `as` never converts
     between Option types, even with identical signatures; `Some(f)` coerces by itself."""

@@ -1101,7 +1101,13 @@ function(add_cargo_module _target _crate _output)
 
     # Cargo exports native and nested-Rust inputs through the outer depfile.
     set(_cargo_depfile "${_cargo_target_dir}/${_stem}/release/${_bin}.d")
-    set(_retarget_depfile "${REACTOS_SOURCE_DIR}/tools/retarget_cargo_depfile.py")
+    set(_retarget_depfile "${REACTOS_SOURCE_DIR}/tools/build-infra")
+    # Preserve invalidation when the retarget implementation changes. The Python
+    # facade is no longer the program executed by this edge.
+    set(_retarget_depfile_inputs "${_retarget_depfile}")
+    foreach(_input IN ITEMS Cargo.toml Cargo.lock src/lib.rs src/main.rs src/depfile.rs)
+        list(APPEND _retarget_depfile_inputs "${REACTOS_SOURCE_DIR}/tools/vibeos-build/${_input}")
+    endforeach()
     set(_dep_target "${_out}")
     if(POLICY CMP0116)
         cmake_policy(PUSH)
@@ -1135,10 +1141,12 @@ function(add_cargo_module _target _crate _output)
                 -p ${_crate} ${_bin_args}
                 --manifest-path ${_ws}/Cargo.toml
         ${_per_out}
-        COMMAND ${CMAKE_COMMAND} -E env python3 "${_retarget_depfile}"
+        COMMAND "${_retarget_depfile}" retarget-depfile
             --source "${_cargo_depfile}" --cargo-output "${_cargo_exe}"
             --target "${_dep_target}" --output "${_out}.d"
-        DEPENDS ${_srcs} ${_postdep} ${_acm_EXTRA_DEPENDS} "${_retarget_depfile}"
+            --dependency-source "${CMAKE_BINARY_DIR}/compile_commands.json"
+            --dependency-snapshot "${CMAKE_BINARY_DIR}/reactos-link-compile-commands.json"
+        DEPENDS ${_srcs} ${_postdep} ${_acm_EXTRA_DEPENDS} ${_retarget_depfile_inputs}
         DEPFILE "${_out}.d"
         JOB_POOL vibeos_cargo_links
         WORKING_DIRECTORY ${_ws}
@@ -1148,6 +1156,7 @@ function(add_cargo_module _target _crate _output)
         cmake_policy(POP)
     endif()
     add_custom_target(${_target} ALL DEPENDS ${_outs})
+    add_dependencies(${_target} reactos_cargo_compile_db)
     set_property(TARGET ${_target} PROPERTY CARGO_OUTPUTS ${_outs})
 
     if(NOT _acm_NO_CD)

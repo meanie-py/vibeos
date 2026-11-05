@@ -26,30 +26,105 @@ import re
 # Written with single spaces; each space then matches any run of whitespace, since rustfmt
 # breaks c2rust's long lines wherever the width runs out (`let __dbcl_7: __wine_debug_class =`
 # with its value on the next line).
+#
+# A body the MODEL wrote from the anchor keeps the block but respells it: extra parentheses,
+# `core::ffi` without the leading `::`, `addr_of!(__wine_dbch___default)`, `(__dbcl) as u32`
+# (26 of dsound's 77 blocks). So the condition is taken as text and checked for its parts
+# in `_cond_ok`, and only the spellings below are tolerated in the rest -- the call's shape
+# (class, channel, file, function, line, literal format) is still required exactly.
+# ...and the model also spells the C types as Rust primitives: `as *const i8`, `120 as i32`,
+# `1252i32` (the 12 blocks dsound's first fold still missed).
+_C = r"(?:(?:(?:::)?core::ffi::)?c_\w+|i8|u8|i32|u32)"
+# ...or cast straight from the byte array (`b"..\0" as *const i8`, ddraw's surface.rs), which
+# is not even valid Rust; folding it away is the only fix it needs.
+_PTR = rf"(?:(?: as \*const u8| \.as_ptr\(\)))? as \*const {_C}"
+_CSTR = rf"b\"[^\"]*\\0\"{_PTR}"
 _TEMPLATE = (
-    r"if \(\*__wine_dbch___default\)\.flags as ::core::ffi::c_int "
-    r"& \(1 as ::core::ffi::c_int\) << __WINE_DBCL_(?P<cls>TRACE|WARN|FIXME|ERR) "
-    r"as ::core::ffi::c_int != 0 \{ "
+    r"\bif (?P<cond>[^{};]*?) \{ "
     # c2rust numbers the locals of the second and later blocks (`__dbch_0`, `__dbcl_1`).
-    r"let (?P<ch>__dbch(?:_\d+)?): \*mut __wine_debug_channel = __wine_dbch___default; "
-    r"let (?P<cl>__dbcl(?:_\d+)?): __wine_debug_class = __WINE_DBCL_(?P=cls); "
-    r"ros_dbg_log\( (?P=cl), (?P=ch), "
-    r"b\"[^\"]*\\0\" as \*const u8 as \*const ::core::ffi::c_char, "
-    r"b\"[^\"]*\\0\" as \*const u8 as \*const ::core::ffi::c_char, "
-    r"\d+ as ::core::ffi::c_int, "
-    r"b\"(?P<fmt>(?:\\.|[^\"\\])*)\\0\" as \*const u8 as \*const ::core::ffi::c_char,?"
+    r"let (?P<ch>__dbch(?:_\d+)?): \*mut __wine_debug_channel = [^;]*?__wine_dbch___default[^;]*?; "
+    r"let (?P<cl>__dbcl(?:_\d+)?): __wine_debug_class = __WINE_DBCL_(?P<cls>TRACE|WARN|FIXME|ERR); "
+    r"ros_dbg_log\( \(?(?P=cl)\)?(?: as \w+)?, (?P=ch), "
+    rf"{_CSTR}, "
+    rf"{_CSTR}, "
+    rf"\d+(?: as {_C}|i32)?, "
+    rf"b\"(?P<fmt>(?:\\.|[^\"\\])*)\\0\"{_PTR},?"
     r"(?P<args>[^;]*?)\); \}"
 )
 _BLOCK = re.compile(_TEMPLATE.replace(" ", r"\s*"), re.S)
 
 
+def _cond_ok(cond: str, cls: str) -> bool:
+    """The `if` really is `channel.flags & (1 << class) != 0` for THIS block's class."""
+    flat = re.sub(r"\s+", "", cond)
+    return (
+        "__wine_dbch___default" in flat
+        and ").flags" in flat
+        and f"<<(__WINE_DBCL_{cls}" in flat.replace("<<__WINE", "<<(__WINE")
+        and flat.endswith("!=0")
+        and "&&" not in flat
+        and "||" not in flat
+    )
+
+
 def fold(text: str) -> tuple[str, int]:
     """(new text, number of blocks folded)."""
 
+    count = 0
+
     def one(m: re.Match) -> str:
+        nonlocal count
+        if not _cond_ok(m.group("cond"), m.group("cls")):
+            return m.group(0)
+        count += 1
         args = m.group("args").strip().rstrip(",").strip()
         args = re.sub(r"\s*\n\s*", " ", args)
         tail = f", {args}" if args else ""
         return f'WINE_{m.group("cls")}!("{m.group("fmt")}"{tail});'
 
-    return _BLOCK.subn(one, text)
+    return _BLOCK.sub(one, text), count
+
+
+# The scaffolding a translated module declares for the expanded blocks: the enum value as a
+# local const and the logger as an extern. Once the blocks are folded nothing names them, and
+# the const is worse than dead: dsound's mixer.rs came back with `__WINE_DBCL_TRACE = 4`
+# (wine/debug.h says 3), which tested the wrong channel bit in every block it guarded.
+_LOCAL_CLASS_CONST = re.compile(
+    # with its `#[allow(..)]` and resolve's `// NAME` banner, which would otherwise dangle
+    r"(?m)^(?:[ \t]*(?:#\[allow\([^)]*\)\]|// __WINE_DBCL_\w+)[ \t]*\n)*"
+    r"[ \t]*(?:pub(?:\([^)]*\))?\s+)?const\s+(?P<name>__WINE_DBCL_\w+)"
+    r"\s*:[^=;]*=[^;]*;[ \t]*\n"
+)
+_LOGGER_DECL = re.compile(
+    r"(?m)^[ \t]*(?:pub\s+)?fn\s+ros_dbg_log\s*\((?:[^;]*)\)\s*(?:->[^;]*)?;[ \t]*\n"
+)
+_EMPTY_EXTERN = re.compile(r'(?m)^[ \t]*(?:unsafe\s+)?extern\s+"C"\s*\{\s*\}[ \t]*\n')
+
+
+def _named(text: str, name: str) -> bool:
+    return re.search(rf"\b{re.escape(name)}\b", text) is not None
+
+
+def fold_module(text: str) -> tuple[str, int, list[str]]:
+    """Fold every expanded block, then drop the scaffolding nothing references any more.
+
+    Returns (new text, blocks folded, scaffolding names dropped). A local const or the logger
+    declaration is kept while anything still names it -- a block outside the exact shape
+    `fold` handles (a named channel) still needs both."""
+    new, n = fold(text)
+    dropped: list[str] = []
+    # All of a name's definitions at once: sound3d had the model's AND resolve's copy, and
+    # each one "named" the other, so neither was ever dropped (E0428 on the pair).
+    for name in dict.fromkeys(m.group("name") for m in _LOCAL_CLASS_CONST.finditer(new)):
+        rest = _LOCAL_CLASS_CONST.sub(
+            lambda m, name=name: "" if m.group("name") == name else m.group(0), new
+        )
+        if not _named(rest, name):
+            new = rest
+            dropped.append(name)
+    for m in list(_LOGGER_DECL.finditer(new)):
+        rest = new[: m.start()] + new[m.end() :]
+        if not _named(rest, "ros_dbg_log"):
+            new = _EMPTY_EXTERN.sub("", rest)
+            dropped.append("ros_dbg_log")
+    return new, n, dropped

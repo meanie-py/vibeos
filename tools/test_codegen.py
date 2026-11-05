@@ -166,3 +166,70 @@ def test_output_filename_may_share_a_generator_name(tmp_path):
     result = run("lcid", "--output", "seh-layout", cwd=tmp_path)
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "seh-layout").read_text() == run("lcid", "--stdout").stdout
+
+
+def _cell_checkout(root):
+    import json
+
+    fixtures = REPO / "tools/vibeos-codegen/tests/cells"
+    case = json.loads((fixtures / "models.json").read_text())[0]
+    for rel, text in case["files"].items():
+        path = root / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+    pe = bytes(json.loads((fixtures / "pe.json").read_text())[0]["data"])
+    for arch in ("i386", "amd64", "arm64"):
+        output = root / f"build-{arch}/app/foo.exe"
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(pe)
+    rust = root / "sdk/lib/rust"
+    rust.mkdir(parents=True)
+    (rust / "Cargo.toml").write_text("[workspace]\nmembers = [\n]\n")
+    return rust
+
+
+def test_cargo_cell_cli_inspects_then_applies_without_rewriting_sources(tmp_path):
+    rust = _cell_checkout(tmp_path)
+    source = tmp_path / "app/foo.c"
+    before = source.read_bytes()
+    result = run("cargo-cell", "--root", tmp_path, "foo")
+    assert result.returncode == 0, result.stderr
+    assert "foo-cargo/build.rs" in result.stdout
+    assert not (rust / "foo-cargo").exists()
+    result = run("cargo-cell", "--root", tmp_path, "--apply", "foo")
+    assert result.returncode == 0, result.stderr
+    assert (rust / "foo-cargo/src/main.rs").is_file()
+    assert '"foo-cargo"' in (rust / "Cargo.toml").read_text()
+    assert "add_cargo_module(foo foo-cargo" in (tmp_path / "app/CMakeLists.txt").read_text()
+    assert source.read_bytes() == before
+
+
+def test_cargo_cell_wave_refusal_writes_nothing(tmp_path):
+    rust = _cell_checkout(tmp_path)
+    before = (tmp_path / "app/CMakeLists.txt").read_bytes()
+    result = run("cargo-cell", "--root", tmp_path, "--apply", "foo", "missing")
+    assert result.returncode != 0
+    assert "missing" in result.stderr
+    assert not (rust / "foo-cargo").exists()
+    assert (tmp_path / "app/CMakeLists.txt").read_bytes() == before
+
+
+def test_cargo_cell_refuses_foreign_build_symlink(tmp_path):
+    root = tmp_path / "checkout"
+    _cell_checkout(root)
+    foreign = tmp_path / "foreign"
+    shutil.move(str(root / "build-arm64"), foreign)
+    (root / "build-arm64").symlink_to(foreign, target_is_directory=True)
+    result = run("cargo-cell", "--root", root, "--apply", "foo")
+    assert result.returncode != 0
+    assert "outside" in result.stderr or "escapes" in result.stderr
+    assert not (root / "sdk/lib/rust/foo-cargo").exists()
+
+
+@pytest.mark.parametrize(
+    "args",
+    [["--apply"], ["--convert"], ["--check", "missing"], ["--own-c", "--survey"]],
+)
+def test_cargo_cell_rejects_incomplete_or_conflicting_modes(args):
+    result = run("cargo-cell", *args)
+    assert result.returncode != 0

@@ -396,3 +396,253 @@ def test_unchanged_is_true_until_any_input_moves(fixture):
 def test_unchanged_never_vouches_for_an_unstamped_or_ineligible_discovery():
     assert not unchanged({"eligible": True, "provenance": {}})
     assert not unchanged({"eligible": False, "provenance": {"stamps": {"/": [0]}}})
+
+
+def install_native_artifact_tool(root):
+    """Install the shipping native executable in a disposable helper distribution."""
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[1]
+    subprocess.run([str(repo / "tools/build-infra"), "--help"], check=True, capture_output=True)
+    tools = root / "tools"
+    tools.mkdir(exist_ok=True)
+    shutil.copy2(repo / "tools/build_infra_compat.py", tools / "build_infra_compat.py")
+    shutil.copy2(repo / ".cache/vibeos-build/vibeos-build", tools / "build-infra")
+
+
+def test_native_canonical_bytes_match_python_for_unicode_large_integers_and_floats():
+    import hashlib
+    import json
+    import random
+
+    from artifact_inputs import canonical, digest
+
+    rng = random.Random(419)
+    numbers = [0.0, -0.0, 1e-7, 1e-6, 1e-5, 1e-4, 1e15, 1e16, 1e20, 5e-324, 1.7976931348623157e308]
+    numbers += [rng.uniform(-1, 1) * 10.0 ** rng.randint(-300, 300) for _ in range(100)]
+    value = {"unicode": "café\n雪😀", "integers": [-(2**200), 2**200], "floats": numbers}
+    expected = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
+    assert canonical(value) == expected
+    assert digest(value) == hashlib.sha256(expected).hexdigest()
+
+
+def test_native_transport_reuses_a_server_and_restarts_for_source_or_environment_changes(
+    tmp_path, monkeypatch
+):
+    import concurrent.futures
+    import json
+
+    from tools import build_infra_compat as bridge
+
+    install_native_artifact_tool(tmp_path)
+    bridge._close_sessions()
+    monkeypatch.setattr(bridge, "REPO", tmp_path)
+    sources = tmp_path / "tools/vibeos-build"
+    (sources / "src").mkdir(parents=True)
+    (sources / "Cargo.toml").write_text("fixture source fingerprint")
+    (sources / "Cargo.lock").write_text("fixture lock fingerprint")
+    (tmp_path / "rust-toolchain.toml").write_text("fixture pin fingerprint")
+    policy = sources / "src/policy.rs"
+    policy.write_text("first")
+
+    def request(index):
+        return bridge.call(
+            "artifact_inputs_canonical", {"value": {"index": index}}, root=tmp_path
+        ).encode("ascii")
+
+    try:
+        assert request(0) == b'{"index":0}'
+        server = bridge._sessions[str(tmp_path)].process.pid
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as workers:
+            results = list(workers.map(request, range(24)))
+        assert [json.loads(row) for row in results] == [{"index": i} for i in range(24)]
+        assert bridge._sessions[str(tmp_path)].process.pid == server
+        child = os.fork()
+        if child == 0:
+            try:
+                assert request(24) == b'{"index":24}'
+                bridge._close_sessions()
+                os._exit(0)
+            except BaseException:
+                os._exit(1)
+        _, status = os.waitpid(child, 0)
+        assert os.waitstatus_to_exitcode(status) == 0
+        assert bridge._sessions[str(tmp_path)].process.poll() is None
+        with pytest.raises(bridge.NativeError):
+            bridge.call("artifact_inputs__toml", {"value": None}, root=tmp_path)
+        assert request(25) == b'{"index":25}'
+        policy.write_text("second")
+        assert request(26) == b'{"index":26}'
+        replacement = bridge._sessions[str(tmp_path)].process.pid
+        assert replacement != server
+        monkeypatch.setenv("NATIVE_ARTIFACT_ENV_FRESHNESS", "changed")
+        assert request(27) == b'{"index":27}'
+        assert bridge._sessions[str(tmp_path)].process.pid != replacement
+    finally:
+        bridge._close_sessions()
+
+
+def test_native_transport_refuses_source_changes_during_a_request(fixture, tmp_path, monkeypatch):
+    import concurrent.futures
+    import time
+    from pathlib import Path
+
+    from tools import build_infra_compat as bridge
+
+    installation = tmp_path / "native-distribution"
+    installation.mkdir()
+    install_native_artifact_tool(installation)
+    bridge._close_sessions()
+    monkeypatch.setattr(bridge, "REPO", installation)
+    started, release = tmp_path / "started", tmp_path / "release"
+    cargo = tmp_path / "cargo-controlled"
+    actual = Path.home() / ".rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/cargo"
+    import shlex
+
+    cargo.write_text(
+        "#!/bin/sh\n"
+        f"touch {shlex.quote(str(started))}\n"
+        f"while [ ! -e {shlex.quote(str(release))} ]; do sleep 0.01; done\n"
+        f'exec {shlex.quote(str(actual))} "$@"\n'
+    )
+    cargo.chmod(0o755)
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            pending = executor.submit(
+                bridge.call,
+                "artifact_inputs_discover",
+                {"repo_root": fixture, "body": "body", "workspace": fixture, "cargo": str(cargo)},
+                root=installation,
+            )
+            deadline = time.monotonic() + 20
+            while not started.exists() and not pending.done() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            # Replacing the installed binary atomically changes its identity without
+            # modifying the running executable's mapped inode.
+            binary = installation / "tools/build-infra"
+            replacement = binary.with_name("replacement")
+            shutil.copy2(binary, replacement)
+            os.replace(replacement, binary)
+            release.touch()
+            assert started.exists(), "native operation never reached its declared Cargo producer"
+            with pytest.raises(bridge.NativeError, match="sources changed during artifact request"):
+                pending.result(timeout=20)
+        assert bridge.call(
+            "artifact_inputs_discover",
+            {"repo_root": fixture, "body": "body", "workspace": fixture, "cargo": str(cargo)},
+        )["eligible"]
+    finally:
+        release.touch()
+        bridge._close_sessions()
+
+
+def test_native_transport_cancellation_cannot_leak_a_response_into_the_next_request(
+    fixture, tmp_path
+):
+    import shlex
+    import signal
+    import threading
+    import time
+    from pathlib import Path
+
+    from tools import build_infra_compat as bridge
+
+    bridge._close_sessions()
+    started, release = tmp_path / "started", tmp_path / "release"
+    cargo = tmp_path / "cargo-controlled"
+    actual = Path.home() / ".rustup/toolchains/1.92.0-x86_64-unknown-linux-gnu/bin/cargo"
+    cargo.write_text(
+        "#!/bin/sh\n"
+        f"touch {shlex.quote(str(started))}\n"
+        f"while [ ! -e {shlex.quote(str(release))} ]; do sleep 0.01; done\n"
+        f'exec {shlex.quote(str(actual))} "$@"\n'
+    )
+    cargo.chmod(0o755)
+
+    def interrupt():
+        deadline = time.monotonic() + 20
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        if started.exists():
+            os.kill(os.getpid(), signal.SIGINT)
+        time.sleep(0.1)
+        release.touch()
+
+    controller = threading.Thread(target=interrupt)
+    controller.start()
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            bridge.call(
+                "artifact_inputs_discover",
+                {"repo_root": fixture, "body": "body", "workspace": fixture, "cargo": str(cargo)},
+            )
+        assert not bridge._sessions
+        assert (
+            bridge.call("artifact_inputs_canonical", {"value": "next response"})
+            == '"next response"'
+        )
+    finally:
+        release.touch()
+        controller.join(timeout=20)
+        bridge._close_sessions()
+
+
+@pytest.mark.parametrize(
+    "payload", ["malformed", '{"unrelated":1}', '{"error":null}', '{"ok":1,"error":{}}']
+)
+def test_native_transport_discards_malformed_response_streams(tmp_path, monkeypatch, payload):
+    import sys
+
+    from tools import build_infra_compat as bridge
+
+    bridge._close_sessions()
+    (tmp_path / "tools").mkdir()
+    executable = tmp_path / "tools/build-infra"
+    executable.write_text(
+        f"#!{sys.executable}\nimport sys\n"
+        f"for line in sys.stdin:\n    print({payload!r}, flush=True)\n"
+    )
+    executable.chmod(0o755)
+    monkeypatch.setattr(bridge, "REPO", tmp_path)
+    try:
+        with pytest.raises(bridge.NativeError, match="response"):
+            bridge.call(
+                "artifact_inputs_canonical", {"value": "must not be accepted"}, root=tmp_path
+            )
+        assert not bridge._sessions
+    finally:
+        bridge._close_sessions()
+
+
+@pytest.mark.parametrize("resource_owned", [False, True])
+def test_native_transport_preserves_bounded_permits_without_leaking_them_to_metadata(
+    tmp_path, resource_owned
+):
+    import fcntl
+
+    from tools import build_infra_compat as bridge
+
+    bridge._close_sessions()
+    path = tmp_path / "inherited-admission.lock"
+    permit = path.open("w+")
+    fcntl.flock(permit, fcntl.LOCK_EX)
+    os.set_inheritable(permit.fileno(), True)
+    connection = None
+    try:
+        if resource_owned:
+            connection = bridge.DedicatedSession("--api-jsonl")
+            assert connection.call("artifact_inputs_canonical", {"value": 1}) == "1"
+        else:
+            assert bridge.call("artifact_inputs_canonical", {"value": 1}) == "1"
+        permit.close()
+        with path.open("r+") as contender:
+            if resource_owned:
+                with pytest.raises(BlockingIOError):
+                    fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                connection.close()
+            fcntl.flock(contender, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        permit.close()
+        if connection:
+            connection.close()
+        bridge._close_sessions()
