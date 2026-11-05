@@ -573,25 +573,120 @@ pub unsafe extern "system" fn GetFileMUIPath(
     SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
     0
 }
+// The preferred-UI-language lists (Vista). One language is installed and nothing can set a
+// per-thread or per-process list, so every query answers with the user's UI language, as an ID
+// ("0409", MUI_LANGUAGE_ID) or a name ("en-US", MUI_LANGUAGE_NAME, the default), in Windows'
+// double-NUL list. ReactOS and Wine left the thread one unimplemented; Chrome's
+// base::win::i18n CHECKs that the list is non-empty and died at startup.
+const MUI_LANGUAGE_ID: DWORD = 0x4;
+const MUI_LANGUAGE_NAME: DWORD = 0x8;
+const MUI_MERGE_SYSTEM_FALLBACK: DWORD = 0x10;
+const MUI_MERGE_USER_FALLBACK: DWORD = 0x20;
+const MUI_THREAD_LANGUAGES: DWORD = 0x40;
+const MUI_MACHINE_LANGUAGE_SETTINGS: DWORD = 0x400;
+const MUI_CONSOLE_FILTER: DWORD = 0x100;
+const MUI_COMPLEX_SCRIPT_FILTER: DWORD = 0x200;
+const MUI_RESET_FILTERS: DWORD = 0x001;
+const LOCALE_SISO639LANGNAME: LCTYPE = 0x59;
+const LOCALE_SISO3166CTRYNAME: LCTYPE = 0x5a;
+
+/// `lang` as its list entry (no terminator) into `out`; the length in WCHARs.
+unsafe fn ui_language_entry(lang: LANGID, by_name: bool, out: &mut [WCHAR; 32]) -> usize {
+    if !by_name {
+        let hex = b"0123456789ABCDEF";
+        for i in 0..4 {
+            out[i] = hex[((lang >> (12 - 4 * i)) & 0xF) as usize] as WCHAR;
+        }
+        return 4;
+    }
+    let lcid = lang as LCID; // MAKELCID(lang, SORT_DEFAULT)
+    let n = GetLocaleInfoW(lcid, LOCALE_SISO639LANGNAME, out.as_mut_ptr(), 16);
+    if n <= 1 {
+        return 0;
+    }
+    let mut len = (n - 1) as usize;
+    let mut ctry = [0 as WCHAR; 16];
+    let m = GetLocaleInfoW(lcid, LOCALE_SISO3166CTRYNAME, ctry.as_mut_ptr(), 16);
+    if m > 1 {
+        out[len] = b'-' as WCHAR;
+        len += 1;
+        for i in 0..(m - 1) as usize {
+            out[len + i] = ctry[i];
+        }
+        len += (m - 1) as usize;
+    }
+    len
+}
+
+/// The shared tail: validate the output pair, then write one language (or none) as a list.
+unsafe fn write_ui_language_list(
+    flags: DWORD,
+    include: bool,
+    count: PULONG,
+    buffer: PWSTR,
+    size: PULONG,
+) -> BOOL {
+    if count.is_null() || size.is_null() || (flags & MUI_LANGUAGE_ID != 0 && flags & MUI_LANGUAGE_NAME != 0) {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+    if *size != 0 && buffer.is_null() {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+    let mut entry = [0 as WCHAR; 32];
+    let len = if include { ui_language_entry(GetUserDefaultUILanguage(), flags & MUI_LANGUAGE_ID == 0, &mut entry) } else { 0 };
+    // "en-US\0\0" with one entry; an empty list is just "\0\0" (Windows' answer for a thread
+    // with no languages of its own).
+    let need = if len == 0 { 2 } else { len + 2 } as ULONG;
+    *count = if len == 0 { 0 } else { 1 };
+    if buffer.is_null() || *size == 0 {
+        *size = need;
+        return 1;
+    }
+    if *size < need {
+        *size = need;
+        SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return 0;
+    }
+    core::ptr::copy_nonoverlapping(entry.as_ptr(), buffer, len);
+    *buffer.add(len) = 0;
+    *buffer.add(need as usize - 1) = 0;
+    *size = need;
+    1
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn GetSystemPreferredUILanguages(
-    _dwFlags: DWORD,
-    _pulNumLanguages: PULONG,
-    _pwszLanguagesBuffer: PWSTR,
-    _pcchLanguagesBuffer: PULONG,
+    dwFlags: DWORD,
+    pulNumLanguages: PULONG,
+    pwszLanguagesBuffer: PWSTR,
+    pcchLanguagesBuffer: PULONG,
 ) -> BOOL {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    0
+    if dwFlags & !(MUI_LANGUAGE_ID | MUI_LANGUAGE_NAME | MUI_MACHINE_LANGUAGE_SETTINGS) != 0 {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+    write_ui_language_list(dwFlags, true, pulNumLanguages, pwszLanguagesBuffer, pcchLanguagesBuffer)
 }
 #[no_mangle]
 pub unsafe extern "system" fn GetThreadPreferredUILanguages(
-    _dwFlags: DWORD,
-    _pulNumLanguages: PULONG,
-    _pwszLanguagesBuffer: PWSTR,
-    _pcchLanguagesBuffer: PULONG,
+    dwFlags: DWORD,
+    pulNumLanguages: PULONG,
+    pwszLanguagesBuffer: PWSTR,
+    pcchLanguagesBuffer: PULONG,
 ) -> BOOL {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    0
+    let valid = MUI_LANGUAGE_ID | MUI_LANGUAGE_NAME | MUI_MERGE_SYSTEM_FALLBACK | MUI_MERGE_USER_FALLBACK
+        | MUI_THREAD_LANGUAGES | MUI_CONSOLE_FILTER | MUI_COMPLEX_SCRIPT_FILTER | MUI_RESET_FILTERS;
+    if dwFlags & !valid != 0 {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+    // No thread ever has its own list (SetThreadPreferredUILanguages keeps none), so the thread
+    // languages alone are empty; any fallback merge, or no selector at all, brings in the user's.
+    let only_thread = dwFlags & MUI_THREAD_LANGUAGES != 0
+        && dwFlags & (MUI_MERGE_SYSTEM_FALLBACK | MUI_MERGE_USER_FALLBACK) == 0;
+    write_ui_language_list(dwFlags, !only_thread, pulNumLanguages, pwszLanguagesBuffer, pcchLanguagesBuffer)
 }
 #[no_mangle]
 pub unsafe extern "system" fn GetThreadUILanguage() -> LANGID {
@@ -613,13 +708,16 @@ pub unsafe extern "system" fn GetUILanguageInfo(
 }
 #[no_mangle]
 pub unsafe extern "system" fn GetUserPreferredUILanguages(
-    _dwFlags: DWORD,
-    _pulNumLanguages: PULONG,
-    _pwszLanguagesBuffer: PWSTR,
-    _pcchLanguagesBuffer: PULONG,
+    dwFlags: DWORD,
+    pulNumLanguages: PULONG,
+    pwszLanguagesBuffer: PWSTR,
+    pcchLanguagesBuffer: PULONG,
 ) -> BOOL {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED);
-    0
+    if dwFlags & !(MUI_LANGUAGE_ID | MUI_LANGUAGE_NAME) != 0 {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+    write_ui_language_list(dwFlags, true, pulNumLanguages, pwszLanguagesBuffer, pcchLanguagesBuffer)
 }
 #[no_mangle]
 pub unsafe extern "system" fn SetThreadPreferredUILanguages(

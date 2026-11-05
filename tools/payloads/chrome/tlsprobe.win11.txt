@@ -1,0 +1,7 @@
+[TLSPROBE] LoadLibrary ok
+[TLSPROBE] tls callbacks run at load: 1
+[TLSPROBE] main thread    seed=42 zeros_clean=1 after_set=43
+[TLSPROBE] early thread   seed=42 zeros_clean=1 after_set=43
+[TLSPROBE] late thread    seed=42 zeros_clean=1 after_set=43
+[TLSPROBE] main again     seed=43 zeros_clean=0 after_set=44
+[TLSPROBE] done

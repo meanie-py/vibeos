@@ -530,3 +530,23 @@ def test_module_specs_finds_a_module_built_through_a_cmake_function(tmp_path):
     specs = w.module_specs(tmp_path)
     assert specs["plain.dll"] == [(lit / "plain.spec").resolve()]
     assert specs["d3dcompiler_47.dll"] == [(fn / "d3dcompiler_47.spec").resolve()]
+
+
+def test_unbuilt_dirs_reads_version_gates_and_commented_subdirs(tmp_path):
+    top = tmp_path / "dll" / "win32"
+    top.mkdir(parents=True)
+    (top / "CMakeLists.txt").write_text(
+        "add_subdirectory(always)\n"
+        "#add_subdirectory(commented)\n"
+        "if(ARCH STREQUAL \"amd64\")\n"
+        "    add_subdirectory(archonly)\n"
+        "endif()\n"
+        "if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)\n"
+        "    add_subdirectory(vista)\n"
+        "else()\n"
+        "    add_subdirectory(xponly)\n"
+        "endif()\n"
+    )
+    got = {p.name for p in w.unbuilt_dirs(0x502, tmp_path)}
+    assert got == {"commented", "vista"}
+    assert {p.name for p in w.unbuilt_dirs(0x600, tmp_path)} == {"commented", "xponly"}

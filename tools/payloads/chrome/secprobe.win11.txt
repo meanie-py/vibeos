@@ -1,0 +1,23 @@
+[SECPROBE] CreateFileMapping ok (0)
+[SECPROBE] writable               basic st=0x00000000 granted=0x000f0007 len=56
+[SECPROBE] writable               type st=0x00000000 name=Section
+[SECPROBE] writable               section st=0x00000000 attrs=0x08000000 size=65536
+[SECPROBE] dup read|query         basic st=0x00000000 granted=0x00000005 len=56
+[SECPROBE] dup read|query         type st=0x00000000 name=Section
+[SECPROBE] dup read|query         section st=0x00000000 attrs=0x08000000 size=65536
+[SECPROBE] dup same access        basic st=0x00000000 granted=0x000f0007 len=56
+[SECPROBE] dup same access        type st=0x00000000 name=Section
+[SECPROBE] dup same access        section st=0x00000000 attrs=0x08000000 size=65536
+[SECPROBE] map read-only dup ok (0)
+[SECPROBE] map it for write refused (5)
+[SECPROBE] empty-DACL section ok (0)
+[SECPROBE] empty-DACL writable    basic st=0x00000000 granted=0x000f0007 len=56
+[SECPROBE] empty-DACL writable    type st=0x00000000 name=Section
+[SECPROBE] empty-DACL writable    section st=0x00000000 attrs=0x08000000 size=65536
+[SECPROBE] query, NULL ResultLength st=0x00000000
+[SECPROBE] empty-DACL read-only   basic st=0x00000000 granted=0x00000005 len=56
+[SECPROBE] empty-DACL read-only   type st=0x00000000 name=Section
+[SECPROBE] empty-DACL read-only   section st=0x00000000 attrs=0x08000000 size=65536
+[SECPROBE] upgrade writable to WRITE ok (0)
+[SECPROBE] upgrade read-only to WRITE refused (5)
+[SECPROBE] done

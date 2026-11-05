@@ -50,6 +50,14 @@ pub unsafe extern "system" fn DllMain(
     _lp_reserved: *mut c_void,
 ) -> i32 {
     if dw_reason == DLL_PROCESS_ATTACH {
+        // This module's LdrpHeap is its OWN global, not ntdll's, and nothing assigned it
+        // (upstream's DllMain.c does not either), so the first LdrRegisterDllNotification
+        // called RtlAllocateHeap(NULL, ...) and faulted at 0x74. Chrome's browser process
+        // registers one and died there. The process heap is what ntdll's loader heap is
+        // for this purpose; allocations and frees here both go through this one handle.
+        if super::ldr::ldrinit::LdrpHeap.is_null() {
+            super::ldr::ldrinit::LdrpHeap = (*ntdll_sys::nt::NtCurrentPeb()).ProcessHeap;
+        }
         LdrDisableThreadCalloutsForDll(h_dll);
         RtlpInitializeKeyedEvent();
         let status = RtlpInitializeLocaleTable();
