@@ -35,3 +35,5 @@ add_cargo_module(d3d9 d3d9-cargo d3d9.dll
     BODY_CRATE d3d9-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS d3d9_shims psdk uuid_sources)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

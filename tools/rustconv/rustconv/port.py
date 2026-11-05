@@ -3637,6 +3637,71 @@ def _drop_island_enum_twins(state: dict) -> list[str]:
     return dropped
 
 
+_C_FNPTR_TYPEDEF = re.compile(r"\btypedef\s+[\w\s*]+?\(\s*(?:(\w+)\s+)?\*\s*(\w+)\s*\)\s*\(", re.S)
+_STDCALL_WORDS = frozenset(
+    {
+        "WINAPI",
+        "CALLBACK",
+        "STDMETHODCALLTYPE",
+        "APIENTRY",
+        "NTAPI",
+        "__stdcall",
+        "PASCAL",
+        "STDAPICALLTYPE",
+        "WSAAPI",
+        "RPC_ENTRY",
+    }
+)
+_CDECL_WORDS = frozenset({"WINAPIV", "__cdecl", "CDECL", "STDAPIVCALLTYPE", "STDMETHODVCALLTYPE"})
+_RUST_FNPTR_ALIAS = re.compile(
+    r'(?m)^(\s*(?:pub(?:\([^)]*\))?\s+)?type\s+(\w+)\s*=\s*(?:Option<\s*)?unsafe\s+extern\s+)"(\w+)"'
+)
+
+
+def _c_fnptr_typedef_abis(state: dict) -> dict[str, str]:
+    """`typedef R (CC *Name)(..)` in the module's own C, as the Rust ABI it means: no
+    convention (or a cdecl one) is "C", a stdcall one "system". A name typedef'd two ways
+    (an #ifdef'd pair) is left out -- nothing here can say which the build saw."""
+    module_dir = REPO / state["module_dir"]
+    seen: dict[str, set[str]] = {}
+    for pat in ("*.c", "*.h"):
+        for f in sorted(module_dir.rglob(pat)):
+            for m in _C_FNPTR_TYPEDEF.finditer(f.read_text(errors="replace")):
+                cc, name = m.group(1), m.group(2)
+                if cc and cc not in _STDCALL_WORDS | _CDECL_WORDS:
+                    continue  # a word that is no calling convention: not this shape
+                seen.setdefault(name, set()).add("system" if cc in _STDCALL_WORDS else "C")
+    return {n: next(iter(a)) for n, a in seen.items() if len(a) == 1}
+
+
+def _fix_fnptr_alias_abis(state: dict) -> list[str]:
+    """A translated `type Name = Option<unsafe extern "X" fn ..>` whose C typedef says the other
+    convention. dsound's `typedef HRESULT (*FnCreateInstance)(..)` (cdecl) came back
+    `extern "system"`; its class-factory table transmutes its `extern "C"` creators into it,
+    so on i386 every CreateInstance returned with the stack 8 bytes off and crashed (modrun
+    dsound.logic). amd64 and arm64 have one convention, which is why only i386 saw it. A
+    file-scope item, so no hand bank keeps it fixed: a replay brings the model's back."""
+    want = _c_fnptr_typedef_abis(state)
+    fixed: list[str] = []
+    if not want:
+        return fixed
+    for path in sorted(_stem_sources(state)):
+        text = path.read_text()
+
+        def repl(m: re.Match, path: Path = path) -> str:
+            name, abi = m.group(2), m.group(3)
+            right = want.get(name)
+            if right is None or abi == right or abi not in ("C", "system"):
+                return m.group(0)
+            fixed.append(f'{path.stem}: {name} extern "{abi}" -> "{right}"')
+            return f'{m.group(1)}"{right}"'
+
+        new = _RUST_FNPTR_ALIAS.sub(repl, text)
+        if new != text:
+            path.write_text(new)
+    return fixed
+
+
 _SIBLING_USE = re.compile(r"(?m)^use crate::(\w+)::(\w+)::(\w+);[^\n]*\n")
 
 
@@ -5634,6 +5699,10 @@ def stage_integrate(stem: str) -> None:
     changed += nulls
     if nulls:
         print(f"integrate: {nulls} offsetof-through-null place(s) as core::mem::offset_of!")
+    abis = _fix_fnptr_alias_abis(state)
+    changed += len(abis)
+    if abis:
+        print(f"integrate: fn-pointer alias(es) given their C typedef's convention: {abis}")
     dangling = _drop_dangling_sibling_uses(state)
     changed += len(dangling)
     if dangling:

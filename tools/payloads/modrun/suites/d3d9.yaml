@@ -1,0 +1,21 @@
+# d3d9 (dll/directx/wine/d3d9 -> d3d9-rust). Smoke never loads Direct3D 9; this drives its
+# front end over the same C wined3d: adapter and mode enumeration, the CheckDeviceFormat matrix
+# (65 formats x 7 resource types x 13 usages), caps, device state get/set including every
+# texture-stage state, transforms, resources and their descriptions, vertex declarations and
+# state blocks.
+# One probe (probes/d3d9.c), staged twice: as d3d9_c.exe it loads the pre-flip C (d3d9_c.dll, from
+# c_oracle.cmake) beside it, under any other name the system d3d9.dll. Both print values only,
+# so the outputs must match byte for byte.
+module: d3d9
+variants:
+  c: '%SystemRoot%\bin\modrun\d3d9_c.exe'
+  rust: '%SystemRoot%\bin\modrun\d3d9_probe.exe'
+ninja: [d3d9_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/d3d9_c.exe}
+  - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/d3d9_probe.exe}
+  - {src: 'build-{arch}/dll/directx/wine/d3d9/d3d9_c.dll', dest: bin/modrun/d3d9_c.dll}
+cases:
+  - id: logic
+    expect: ['create 1', 'adapters 1', 'fmt 00000015', 'probe done']
+    timeout: 300

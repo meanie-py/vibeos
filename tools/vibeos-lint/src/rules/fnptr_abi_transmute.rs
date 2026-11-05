@@ -11,6 +11,7 @@ struct Patterns {
     transmute: Regex,
     typed: Regex,
     ntapi: Regex,
+    system_alias: Regex,
 }
 impl Patterns {
     fn new() -> Self {
@@ -24,8 +25,14 @@ impl Patterns {
             transmute: re(
                 r"transmute(?:::<[^>]*>)?\(\s*(\w+)\s+as\s+\*(?:const|mut)\s*(?:\(\)|c_void|core::ffi::c_void|std::ffi::c_void)\s*\)",
             ),
+            // The source may be wrapped in Option<..> and the argument in Some(f as ..):
+            // dsound's class-factory table, `transmute::<Option<unsafe extern "C" fn(..) ->
+            // HRESULT>, FnCreateInstance>(Some(DSOUND_Create as ..))`.
             typed: re(
-                r#"transmute::<\s*(?:unsafe\s+)?extern\s+"C"\s+fn\s*\((?:[^()]|\([^()]*\))*\)(?:\s*->\s*[^,>]+)?\s*,\s*([^>]*?)>\s*\(\s*(\w+)\s*\)"#,
+                r#"transmute::<\s*(?:Option<\s*)?(?:unsafe\s+)?extern\s+"C"\s+fn\s*\((?:[^()]|\([^()]*\))*\)(?:\s*->\s*[^,>]+)?\s*>?\s*,\s*([^>]*?)>\s*\(\s*(?:Some\(\s*)?(\w+)\b"#,
+            ),
+            system_alias: re(
+                r#"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?type\s+(\w+)\s*=\s*(?:Option<\s*)?(?:unsafe\s+)?extern\s+"system"\s+fn\b"#,
             ),
             ntapi: re(r"\b((?:Io|Ke|Ex|Ps|Ob|FsRtl|Cc|Mm|Po)[A-Z]\w*)\s*\($"),
         }
@@ -89,6 +96,11 @@ fn index(texts: &[&str], p: &Patterns) -> HashMap<String, u8> {
             let external = m.get(1).is_some() || foreign(text, m.get(0).unwrap().end() - 1);
             *abi.entry(m[2].to_owned()).or_default() |= if external { 2 } else { 1 };
         }
+        // A fn-pointer ALIAS that is stdcall: transmuting an extern "C" fn into it is the same
+        // i386 stack skew as naming `extern "system"` inline (keyed apart from functions).
+        for m in p.system_alias.captures_iter(text) {
+            abi.insert(format!("type {}", &m[1]), 4);
+        }
     }
     abi
 }
@@ -109,7 +121,9 @@ fn scan(text: &str, abi: &HashMap<String, u8>, p: &Patterns) -> Vec<(usize, Stri
         }
     }
     for m in p.typed.captures_iter(text) {
+        let target = m[1].trim().trim_end_matches(',').trim();
         if !m[1].contains("extern \"system\"")
+            && abi.get(&format!("type {target}")) != Some(&4)
             && !enclosing_call(text, m.get(0).unwrap().start(), p)
         {
             continue;
@@ -206,6 +220,19 @@ mod tests {
             findings(&["transmute::<extern \"C\" fn(P),extern \"system\" fn(P)>(F)"]).len(),
             1
         );
+    }
+    #[test]
+    fn a_stdcall_alias_target_and_option_wrapped_source() {
+        // dsound-rust: the creators are extern "C", FnCreateInstance said "system".
+        let table = "pfn: ::core::mem::transmute::<\n    Option<unsafe extern \"C\" fn(*const IID, *mut P) -> HRESULT>,\n    FnCreateInstance,\n>(Some(\n    DSOUND_Create as unsafe extern \"C\" fn(*const IID, *mut P) -> HRESULT,\n)),";
+        let alias = |abi: &str| {
+            format!("pub type FnCreateInstance = Option<unsafe extern \"{abi}\" fn(riid: REFIID) -> HRESULT>;")
+        };
+        assert_eq!(
+            findings(&[&alias("system"), table]),
+            vec![(1, "DSOUND_Create (extern \"C\" re-typed NTAPI)".to_owned())]
+        );
+        assert!(findings(&[&alias("C"), table]).is_empty());
     }
     #[test]
     fn suppression_and_statement_boundaries() {

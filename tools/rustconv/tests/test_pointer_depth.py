@@ -64,6 +64,32 @@ def test_size_of_a_raw_pointer_is_the_pointee_unless_the_c_measures_a_pointer():
         assert pd.repair(rust, decls, TYPES, TARGETS)[0] == rust
 
 
+def test_size_of_a_raw_pointer_needs_a_dereferenced_sizeof_in_the_c():
+    # ddraw clipper.c: SecureZeroMemory(&clipper->iface.lpVtbl, sizeof(clipper->iface.lpVtbl))
+    # -- the POINTER. The model wrote size_of::<*const Vtbl>(); "restoring" the pointee zeroed
+    # the whole 9-slot vtable struct's worth of bytes past the field and crashed in free().
+    c = (
+        "VOID\nRel(PFOO Foo)\n{\n"
+        "    SecureZeroMemory(&Foo->iface.lpVtbl, sizeof(Foo->iface.lpVtbl));\n}\n"
+    )
+    rust = (
+        'unsafe extern "C" fn Rel(Foo: PFOO) {\n'
+        "    SecureZeroMemory(p, core::mem::size_of::<*const _FOO>());\n}\n"
+    )
+    decls = {"Rel": pd.c_declarations("Rel", [("PFOO", "Foo")], c, TYPES)}
+    assert pd.repair(rust, decls, TYPES, TARGETS)[0] == rust
+    # d3d8 directx.c: calloc(n, sizeof(*d3d8->wined3d_outputs)), a `struct wined3d_output **`
+    # -- the element is a pointer; the opaque struct bindgen sizes 0 is not what was meant.
+    for deref in ("sizeof(*Foo->outputs)", "sizeof(*Pp)"):
+        c3 = f"VOID\nRel(PFOO Foo)\n{{\n    PFOO *Pp;\n    Alloc(n, {deref});\n}}\n"
+        decls = {"Rel": pd.c_declarations("Rel", [("PFOO", "Foo")], c3, TYPES)}
+        assert pd.repair(rust, decls, TYPES, TARGETS)[0] == rust, deref
+    # No sizeof at all in the C: nothing a pointer size could be a misreading of.
+    c2 = "VOID\nRel(PFOO Foo)\n{\n    Use(Foo);\n}\n"
+    decls = {"Rel": pd.c_declarations("Rel", [("PFOO", "Foo")], c2, TYPES)}
+    assert pd.repair(rust, decls, TYPES, TARGETS)[0] == rust
+
+
 def test_an_element_size_of_a_pointer_array_is_kept():
     # atapi: RTL_NUMBER_OF(PCSTR[]) is size_of::<[PCSTR; 4]>() / size_of::<PCSTR>(); the
     # macro hides the C's sizeof(arr[0]), so the array of PFOO is the witness.

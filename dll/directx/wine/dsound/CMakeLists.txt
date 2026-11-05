@@ -29,3 +29,5 @@ add_cargo_module(dsound dsound-cargo dsound.dll
     BODY_CRATE dsound-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS dsound_shims psdk uuid_sources)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

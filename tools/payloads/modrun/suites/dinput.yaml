@@ -1,0 +1,20 @@
+# dinput (dll/directx/wine/dinput -> dinput-rust). Smoke never loads DirectInput; this drives
+# the system keyboard and mouse through what needs no input: enumeration, caps, objects, the
+# data-format parser (hand-built and malformed formats), properties, cooperative levels,
+# acquire and an idle state read (relative mouse only, so the cursor's position is no input).
+# One probe (probes/dinput.c), staged twice: as dinput_c.exe it loads the pre-flip C (dinput_c.dll, from
+# c_oracle.cmake) beside it, under any other name the system dinput.dll. Both print values only,
+# so the outputs must match byte for byte.
+module: dinput
+variants:
+  c: '%SystemRoot%\bin\modrun\dinput_c.exe'
+  rust: '%SystemRoot%\bin\modrun\dinput_probe.exe'
+ninja: [dinput_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/dinput-{arch}.exe', dest: bin/modrun/dinput_c.exe}
+  - {src: 'tools/payloads/modrun/probes/dinput-{arch}.exe', dest: bin/modrun/dinput_probe.exe}
+  - {src: 'build-{arch}/dll/directx/wine/dinput/dinput_c.dll', dest: bin/modrun/dinput_c.dll}
+cases:
+  - id: logic
+    expect: ['create v7 hr=00000000', 'keyboard hr=00000000', 'probe done']
+    timeout: 120

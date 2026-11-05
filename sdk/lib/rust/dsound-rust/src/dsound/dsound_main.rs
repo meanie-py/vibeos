@@ -166,7 +166,7 @@ pub struct morecontext {
 }
 pub type Pmorecontext = *mut morecontext;
 
-pub type FnCreateInstance = Option<unsafe extern "system" fn(riid: REFIID, ppobj: *mut LPVOID) -> HRESULT>;
+pub type FnCreateInstance = Option<unsafe extern "C" fn(riid: REFIID, ppobj: *mut LPVOID) -> HRESULT>;
 
 #[repr(C)]
 pub struct IClassFactoryImpl {
