@@ -268,6 +268,15 @@ def _run(
     env = None
     if env_pp is not None:
         env = {**os.environ, "PYTHONPATH": str(repo / env_pp)}
+    if label == "pytest:tools/test_lint_facts.py":
+        # This control needs the native scanner. Cold compilation and waiting for
+        # its shared provision lock are setup, not the test's 300-second budget.
+        from .rustlints import ensure
+
+        try:
+            ensure(repo)
+        except (OSError, RuntimeError, ValueError) as error:
+            return label, False, f"native lint provisioning failed: {error}"
     if label.startswith("pytest:"):
         # Parallel suites must not share pytest-current or retention cleanup.
         # Add the ephemeral argument here, below the receipt's stable command key.

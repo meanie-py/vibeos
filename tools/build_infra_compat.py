@@ -208,23 +208,43 @@ class DedicatedSession:
             return response["ok"]
 
 
+def _signature_records(paths, source_roots):
+    """Read each source's identity once, retaining every callback's freshness fence."""
+    records = []
+
+    def record(path, info):
+        records.append(
+            (str(path), info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
+        )
+
+    def walk(directory):
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if entry.is_dir(follow_symlinks=False):
+                    walk(entry.path)
+                elif entry.is_file():
+                    record(entry.path, entry.stat())
+
+    for path in paths:
+        record(path, path.stat())
+    for directory in source_roots:
+        walk(directory)
+    # Path component order matches the old sorted(Path) tokens, including nested paths.
+    return tuple(sorted(records, key=lambda row: Path(row[0]).parts))
+
+
 def _source_signature():
     # Transport freshness only: the native tool owns descriptors and input policy.
     sources = REPO / "tools/vibeos-build"
     paths = [REPO / "tools/build-infra", Path(__file__)]
+    directories = []
     if sources.is_dir():
         paths.extend([REPO / "rust-toolchain.toml", sources / "Cargo.toml", sources / "Cargo.lock"])
-        paths.extend(p for p in (sources / "src").rglob("*") if p.is_file())
+        directories.append(sources / "src")
         shared = REPO / "tools/host-jobs/src/build_policy.rs"
         if shared.is_file():
             paths.append(shared)
-    records = []
-    for path in sorted(paths):
-        info = path.stat()
-        records.append(
-            (str(path), info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-        )
-    return tuple(records)
+    return _signature_records(paths, directories)
 
 
 _sessions = {}

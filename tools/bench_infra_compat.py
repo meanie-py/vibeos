@@ -17,21 +17,13 @@ NativeError = transport.NativeError
 
 def _source_signature():
     paths = [REPO / "tools/bench-infra", Path(__file__), Path(transport.__file__)]
+    directories = []
     for name in ("vibeos-bench",):
         crate = REPO / "tools" / name
         paths.extend((crate / "Cargo.toml", crate / "Cargo.lock"))
-        paths.extend(p for p in (crate / "src").rglob("*") if p.is_file())
+        directories.append(crate / "src")
     paths.extend((REPO / "rust-toolchain.toml", REPO / "tools/host-jobs/src/build_policy.rs"))
-    return tuple(
-        (
-            str(p),
-            *(
-                getattr(p.stat(), k)
-                for k in ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
-            ),
-        )
-        for p in sorted(paths)
-    )
+    return transport._signature_records(paths, directories)
 
 
 class _Session(transport._ArtifactSession):
