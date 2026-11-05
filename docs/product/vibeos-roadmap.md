@@ -6937,7 +6937,9 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   subsystems and the driver tail (SystemTime in ksecdd, classpnp's zeroed `SharedSystemTime`
   global, uniata CDB reads, tdihelpers/netstack EA-packed transport addresses; new lint
   `scan_shared_system_time`). Still unarmed: freeldr and what it links (cmboot, va-slots,
-  ntkrnl-sys) for its size budget, and the rtl-* crates ntdll shares. Two armed-fastfat asserts printed twice per amd64-bios boot
+  ntkrnl-sys) for its size budget. **rtl-* ARMED 2026-11-05** (18 crates behind rtl-rust, kernel and
+  ntdll alike; clean on smoke x3 and conformance amd64/arm64), except rtl-diag and rtl-strings, which
+  freeldr links through blrtl. Two armed-fastfat asserts printed twice per amd64-bios boot
   (`20261101-183850-m41czity`). `cachesup.rs:182` FIXED 2026-11-01: fastfat mounting the BIOS
   machine's EMPTY floppy got STATUS_NO_MEDIA_IN_DEVICE from MmMakeDataSectionResident, which
   cc-rust's `CcRosEnsureVacbResident` turned into FALSE (a stale "DUMMY_PSEH: return FALSE
