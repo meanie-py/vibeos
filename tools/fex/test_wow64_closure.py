@@ -83,27 +83,32 @@ def test_missing_inf_is_loud_not_a_silent_static_only_closure(tmp_path):
         w.declared_modules(tmp_path, "media/inf/nettcpip.inf", _WS2)
 
 
-def _run(tmp_path, monkeypatch, built, capsys, extra=()):
-    """Drive main() over a fake build tree whose root imports ws2_32."""
+def _write_pe(path, imports=None):
+    from tools.payloads.test_pecheck import _pe
+
+    path.write_bytes(_pe(imports=imports or {}))
+    return path
+
+
+def _closure_tree(tmp_path, monkeypatch):
     build = tmp_path / "build-i386"
     build.mkdir()
-    index = {}
-    for name in built:
-        p = build / name
-        p.write_bytes(b"MZ")
-        index[name] = p
-    root = build / "guest.exe"
-    root.write_bytes(b"MZ")
+    monkeypatch.setattr(w, "_REPO", tmp_path)
+    return build
 
-    imports = {"guest.exe": ["ws2_32.dll"]}
-    monkeypatch.setattr(w, "find_objdump", lambda _p: "objdump")
-    monkeypatch.setattr(w, "index_build", lambda *_a, **_k: index)
-    monkeypatch.setattr(w, "imports_of", lambda _o, pe: imports.get(pe.name, []))
-    decls = {
-        _WS2: {"msafd.dll": "nettcpip.inf PackedCatalogItem"},
-        _MSAFD: {"wshtcpip.dll": "nettcpip.inf HelperDllName"},
-    }
-    monkeypatch.setattr(w, "declared_modules", lambda _p, _i, kinds: decls[kinds])
+
+def _run(tmp_path, monkeypatch, built, capsys, extra=()):
+    """Drive the shipping native closure over actual PE and catalog bytes."""
+    build = _closure_tree(tmp_path, monkeypatch)
+    for name in built:
+        _write_pe(build / name)
+    root = _write_pe(build / "guest.exe", {"ws2_32.dll": ["socket"]})
+    _inf(
+        tmp_path,
+        '"PackedCatalogItem",0x00000001,\\\n'
+        + _PACKED
+        + '"HelperDllName",0x00000000,"wshtcpip.dll"\n',
+    )
     monkeypatch.setattr(
         sys, "argv", ["wow64-closure", str(root), "--build-dir", str(build), *extra]
     )
@@ -169,6 +174,7 @@ def _pe_with_delay_descr(name: bytes, attrs: int = 1, exec_section: bool = False
     struct.pack_into("<I", img, 0x3C, pe_off)
     img[pe_off : pe_off + 4] = b"PE\0\0"
     struct.pack_into("<HH12xH", img, pe_off + 4, 0x14C, 1, opt_size)
+    struct.pack_into("<H", img, pe_off + 24, 0x10B)
     struct.pack_into("<I", img, pe_off + 24 + 56, 0x2000)  # SizeOfImage
     sh = pe_off + 24 + opt_size
     img[sh : sh + 8] = b".rdata\0\0"
@@ -198,25 +204,17 @@ def test_a_lookalike_that_is_not_a_descriptor_is_ignored(tmp_path):
 def test_delay_imports_are_walked_like_imports(tmp_path, monkeypatch, capsys):
     """The regression itself: a module reached only through a delay import
     must be staged, and a missing one must fail as loudly as any import."""
-    build = tmp_path / "build-i386"
-    build.mkdir()
-    root = build / "app.exe"
-    root.write_bytes(b"MZ")
+    build = _closure_tree(tmp_path, monkeypatch)
+    root = _write_pe(build / "app.exe", {"rpcrt4.dll": ["RpcCall"]})
     rpc = build / "rpcrt4.dll"
     rpc.write_bytes(_pe_with_delay_descr(b"wininet.dll"))
-    net = build / "wininet.dll"
-    net.write_bytes(b"MZ")
-    index = {"rpcrt4.dll": rpc, "wininet.dll": net}
-    monkeypatch.setattr(w, "find_objdump", lambda _p: "objdump")
-    monkeypatch.setattr(w, "index_build", lambda *_a, **_k: index)
-    monkeypatch.setattr(w, "string_referenced", lambda _pe, _i: set())
-    monkeypatch.setattr(w, "imports_of", lambda _o, pe: ["rpcrt4.dll"] if pe == root else [])
+    net = _write_pe(build / "wininet.dll")
     monkeypatch.setattr(sys, "argv", ["wow64-closure", str(root), "--build-dir", str(build)])
     assert w.main() == 0
     staged = {ln.split("\t")[0] for ln in capsys.readouterr().out.splitlines() if "\t" in ln}
     assert "wininet.dll" in staged, "a delay-imported module was dropped from the closure"
 
-    del index["wininet.dll"]
+    net.unlink()
     assert w.main() == 1
     assert "UNRESOLVED import wininet.dll" in capsys.readouterr().err
 
@@ -224,21 +222,11 @@ def test_delay_imports_are_walked_like_imports(tmp_path, monkeypatch, capsys):
 def test_library_literals_follows_a_runtime_load_inside_a_library(tmp_path, monkeypatch, capsys):
     """comctl32 LoadLibrary's msvfw32 by name; only a library-wide literal
     scan sees it. Off by default (the arm64 ramdisk has no room), on for amd64."""
-    build = tmp_path / "build-i386"
-    build.mkdir()
-    root = build / "app.exe"
-    root.write_bytes(b"MZ")
-    cc = build / "comctl32.dll"
-    cc.write_bytes(b"MZ")
-    vfw = build / "msvfw32.dll"
-    vfw.write_bytes(b"MZ")
-    index = {"comctl32.dll": cc, "msvfw32.dll": vfw}
-    monkeypatch.setattr(w, "find_objdump", lambda _p: "objdump")
-    monkeypatch.setattr(w, "index_build", lambda *_a, **_k: index)
-    monkeypatch.setattr(
-        w, "string_referenced", lambda pe, _i: {"msvfw32.dll"} if pe == cc else set()
-    )
-    monkeypatch.setattr(w, "imports_of", lambda _o, pe: ["comctl32.dll"] if pe == root else [])
+    build = _closure_tree(tmp_path, monkeypatch)
+    root = _write_pe(build / "app.exe", {"comctl32.dll": ["InitCommonControls"]})
+    cc = _write_pe(build / "comctl32.dll")
+    cc.write_bytes(cc.read_bytes() + b"msvfw32.dll\0")
+    _write_pe(build / "msvfw32.dll")
 
     def staged(*flags):
         monkeypatch.setattr(
@@ -294,42 +282,23 @@ def test_index_never_reads_a_livecd_rw_staging_copy(tmp_path):
 
 
 def test_export_forwarders_are_walked_like_imports(tmp_path, monkeypatch, capsys):
-    """advapi32 forwards RegDeleteTreeW to advapi32_vista; a module that binds it
-    makes the loader load advapi32_vista. Unstaged, every 32-bit guest died at load
-    with STATUS_ENTRYPOINT_NOT_FOUND (the 2026-10-12 merge-queue rejection)."""
-    sys.path.insert(0, os.path.join(_REPO, "tools"))
-    import win10_surface as ws
+    import struct
 
-    build = tmp_path / "build-i386"
-    build.mkdir()
-    root = build / "app.exe"
-    root.write_bytes(b"MZ")
-    adv = build / "advapi32.dll"
-    adv.write_bytes(b"MZ")
-    vista = build / "advapi32_vista.dll"
-    vista.write_bytes(b"MZ")
-    index = {"advapi32.dll": adv, "advapi32_vista.dll": vista}
-
-    def fake_pe(p):
-        pe = ws.PE("i386")
-        if pathlib.Path(p) == adv:
-            pe.exports = {
-                "RegDeleteTreeW": ws.Export(
-                    "RegDeleteTreeW", forward="advapi32_vista.RegDeleteTreeW"
-                )
-            }
-        return pe
-
-    monkeypatch.setattr(ws, "read_pe_file", fake_pe)
-    monkeypatch.setattr(w, "find_objdump", lambda _p: "objdump")
-    monkeypatch.setattr(w, "index_build", lambda *_a, **_k: index)
-    monkeypatch.setattr(w, "string_referenced", lambda _pe, _i: set())
-    monkeypatch.setattr(w, "imports_of", lambda _o, pe: ["advapi32.dll"] if pe == root else [])
+    build = _closure_tree(tmp_path, monkeypatch)
+    root = _write_pe(build / "app.exe", {"shim.dll": ["Forward"]})
+    shim = _write_pe(build / "shim.dll")
+    data = bytearray(shim.read_bytes())
+    struct.pack_into("<II", data, 0x58 + 96, 0x1000, 0x180)
+    struct.pack_into("<II", data, 0x58 + 104, 0, 0)
+    struct.pack_into("<I", data, 0x200 + 20, 1)
+    struct.pack_into("<I", data, 0x200 + 28, 0x1040)
+    struct.pack_into("<I", data, 0x240, 0x1060)
+    data[0x260 : 0x260 + len(b"other.Func\0")] = b"other.Func\0"
+    shim.write_bytes(data)
+    other = _write_pe(build / "other.dll")
     monkeypatch.setattr(sys, "argv", ["wow64-closure", str(root), "--build-dir", str(build)])
     assert w.main() == 0
-    staged = {ln.split("\t")[0] for ln in capsys.readouterr().out.splitlines() if "\t" in ln}
-    assert "advapi32_vista.dll" in staged, "a forwarder's target was dropped from the closure"
-
-    del index["advapi32_vista.dll"]
+    assert "other.dll\t" in capsys.readouterr().out
+    other.unlink()
     assert w.main() == 1
-    assert "UNRESOLVED import advapi32_vista.dll" in capsys.readouterr().err
+    assert "UNRESOLVED import other.dll" in capsys.readouterr().err

@@ -189,3 +189,12 @@ producer runs before Cargo links. Provenance calls `depfile_check_compile_snapsh
 before accepting a Cargo-linked media tree, so an unbuilt command change fails
 rather than being hidden by the snapshot. Missing or unequal inputs never publish
 a new depfile.
+
+Payload mechanisms live in `payload_spec`, `payload_build`, `payload_pe`,
+`payload_closure`, `payload_modrun`, `payload_providers` and `payload_firmware`.
+The existing compiler, PE checker, closure, modrun and firmware-fetch commands
+are Python transport adapters. Native providers cover host applications, vendor
+drivers, modrun suites and verified Pi Wi-Fi firmware. New payload mechanisms
+belong in these modules; application contracts remain declarative YAML. Firmware
+hash failures preserve existing cached files, and guest-set staging still
+requires the other architecture's build receipt and complete dependency closure.

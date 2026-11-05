@@ -2,7 +2,7 @@
 use crate::{Error, Result};
 use std::{fs, io::Read, path::Path};
 
-pub fn convert(source: &Path, destination: &Path) -> Result<()> {
+pub fn load_rgb(source: &Path) -> Result<(u32, u32, Vec<u8>)> {
     let mut bytes = Vec::new();
     fs::File::open(source)?
         .take(512 * 1024 * 1024 + 1)
@@ -63,6 +63,11 @@ pub fn convert(source: &Path, destination: &Path) -> Result<()> {
     if bytes.len().checked_sub(at) != Some(expected) {
         return Err("PPM pixel data size does not match its header".into());
     }
+    Ok((width, height, bytes[at..].to_vec()))
+}
+
+pub fn convert(source: &Path, destination: &Path) -> Result<()> {
+    let (width, height, pixels) = load_rgb(source)?;
     let parent = destination
         .parent()
         .ok_or("PNG destination has no parent")?;
@@ -77,7 +82,7 @@ pub fn convert(source: &Path, destination: &Path) -> Result<()> {
             .write_header()
             .map_err(|e| Error::new(format!("PNG header: {e}")))?;
         writer
-            .write_image_data(&bytes[at..])
+            .write_image_data(&pixels)
             .map_err(|e| Error::new(format!("PNG pixels: {e}")))?;
     }
     temporary.as_file().sync_all()?;

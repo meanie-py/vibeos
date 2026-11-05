@@ -81,6 +81,15 @@ fn api(root: &Path, r: &Value) -> Result<Value> {
             .ok_or_else(|| Error::new(format!("missing {key}")))
     };
     match op {
+        s if s.starts_with("payload_firmware_") => b::payload_firmware::dispatch(root, r),
+        s if s.starts_with("payload_build_") => b::payload_build::dispatch(root, r),
+        s if s.starts_with("payload_pe_") => b::payload_pe::dispatch(root, r),
+        s if s.starts_with("payload_providers_") => b::payload_providers::dispatch(root, r),
+        s if s.starts_with("payload_closure_") => {
+            let mut request = kw.clone();
+            request["op"] = json!(s.trim_start_matches("payload_closure_"));
+            b::payload_closure::dispatch(root, &request)
+        }
         s if s.starts_with("cargo_orchestrate_") => b::cargo_orchestrate::dispatch(root, r),
         "cargo_local_closure" => Ok(serde_json::to_value(b::cargo::local_closure(
             &required("metadata")?,

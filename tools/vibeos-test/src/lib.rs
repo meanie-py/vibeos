@@ -16,6 +16,7 @@ pub mod ladder_watch;
 pub mod launch_policy;
 pub mod lifecycle;
 pub mod media;
+pub mod payload;
 pub mod portlease;
 pub mod protocol;
 pub mod publication;

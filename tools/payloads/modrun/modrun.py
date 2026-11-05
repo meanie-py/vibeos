@@ -1,347 +1,94 @@
 #!/usr/bin/env python3
-"""modrun host side: suites -> the guest's case list, and the guest's serial -> a verdict.
-
-A suite (tools/payloads/modrun/suites/<module>.yaml) is a module's runtime test:
-
-    module: diskpart
-    variants:                      # run in this order, same stdin; the FIRST is the reference
-      c: '%SystemRoot%\\bin\\modrun\\diskpart_c.exe'     # the pre-flip C (rustconv.c_oracle)
-      rust: '%SystemRoot%\\system32\\diskpart.exe'       # what ships
-    ninja: [diskpart_c]            # build-dir targets build.sh builds before staging
-    stage:                         # extra files for the media, same schema as payload binaries
-      - {src: 'build-{arch}/base/system/diskpart/diskpart_c.exe', dest: bin/modrun/diskpart_c.exe}
-    normalize: [['regex', 'replacement']]   # applied to every variant before the diff
-    arches: [amd64, arm64]         # optional; default all
-    cases:
-      - id: list
-        stdin: [list disk, exit]   # or args: '/s ...'
-        expect: ['Disk 0']         # substrings every variant must print
-        timeout: 60
-        xfail: 'why'               # a known bug: reported XFAIL; passing is then a failure
-        diverge:                   # a DELIBERATE difference from the oracle (the Rust exceeds
-          - why: 'UEFI system disk'  # the C): matching lines are dropped from the diff, the
-            rust: '^sysfind '        # case still has to match on everything else, and an entry
-                                     # that matches nothing fails (it went stale)
-        arches: [amd64]            # optional, prefix-matched against the boot arch
-
-The grader passes a case when every variant ran to completion (no crash, no timeout),
-printed every `expect`, and -- with an oracle -- printed exactly what the reference did
-and exited the same. A suite without an oracle variant is an expectations-only test.
-
-    modrun.py gen --arch amd64          # writes modrun-amd64.txt
-    modrun.py ninja --arch amd64        # the ninja targets the suites need
-    modrun.py grade full.log --arch amd64-uefi
-"""
-
-from __future__ import annotations
+"""Compatibility facade for the native modrun suite compiler and grader."""
 
 import argparse
-import difflib
-import os
-import re
+import re as re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import yaml
-
 HERE = Path(__file__).resolve().parent
+REPO = HERE.parents[2]
 SUITES = HERE / "suites"
-_LINE = re.compile(r"\[MODRUN:([^:\]]+):([^:\]]+):(\d+)(\+?):([0-9a-f]{4})\] ?(.*)")
-_EXIT = re.compile(r"\[MODRUN\] exit (\S+) (\S+) rc=(\S+) ms=(\d+) records=(\d+)(.*)")
-_STATUS_CRASH = 0xC0000000
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+from tools.build_infra_compat import call  # noqa: E402
 
 
 @dataclass
 class Case:
     id: str
     suite: str
-    variants: dict[str, str]
+    variants: dict
     args: str = ""
-    stdin: list[str] = field(default_factory=list)
-    expect: list[str] = field(default_factory=list)
+    stdin: list = field(default_factory=list)
+    expect: list = field(default_factory=list)
     timeout: int = 60
-    normalize: list[tuple[str, str]] = field(default_factory=list)
+    normalize: list = field(default_factory=list)
     xfail: str = ""
-    # (why, {variant: line regex}): lines the variants are EXPECTED to disagree on.
-    diverge: list[tuple[str, dict[str, str]]] = field(default_factory=list)
+    diverge: list = field(default_factory=list)
 
 
-def _on(arches: list[str] | None, arch: str) -> bool:
-    return not arches or any(arch.startswith(a) for a in arches)
-
-
-def load_suites() -> dict[str, dict]:
-    out = {}
-    for path in sorted(SUITES.glob("*.yaml")):
-        spec = yaml.safe_load(path.read_text())
-        if not isinstance(spec, dict) or spec.get("module") != path.stem:
-            raise SystemExit(f"modrun: {path}: `module:` must be {path.stem!r}")
-        if not spec.get("variants") or not spec.get("cases"):
-            raise SystemExit(f"modrun: {path}: needs `variants` and `cases`")
-        out[path.stem] = spec
-    # MODRUN_SUITES=mmcshext[,..]: grade one module without booting through all thirty. Set it
-    # for the build (case list and staging) AND the smoke (the grader), or the grader expects
-    # cases the media never ran.
-    only = [s for s in os.environ.get("MODRUN_SUITES", "").split(",") if s]
-    if only:
-        missing = sorted(set(only) - set(out))
-        if missing:
-            raise SystemExit(f"modrun: MODRUN_SUITES names no suite: {', '.join(missing)}")
-        out = {k: v for k, v in out.items() if k in only}
-    return out
-
-
-def cases(arch: str) -> list[Case]:
-    """Every case that runs on `arch` (a media arch like amd64, or a boot arch like amd64-uefi)."""
-    out = []
-    for name, spec in load_suites().items():
-        if not _on(spec.get("arches"), arch):
-            continue
-        norm = [(str(a), str(b)) for a, b in spec.get("normalize") or []]
-        for c in spec["cases"]:
-            if not _on(c.get("arches"), arch):
-                continue
-            out.append(
-                Case(
-                    id=f"{name}.{c['id']}",
-                    suite=name,
-                    variants=dict(c.get("variants") or spec["variants"]),
-                    args=str(c.get("args", "")),
-                    stdin=[str(s) for s in c.get("stdin") or []],
-                    expect=[str(s) for s in c.get("expect") or []],
-                    timeout=int(c.get("timeout", spec.get("timeout", 60))),
-                    normalize=norm + [(str(a), str(b)) for a, b in c.get("normalize") or []],
-                    xfail=str(c.get("xfail", "")),
-                    diverge=[
-                        (str(d["why"]), {str(k): str(v) for k, v in d.items() if k != "why"})
-                        for d in c.get("diverge") or []
-                    ],
-                )
-            )
-    return out
-
-
-def case_file(arch: str) -> str:
-    lines = [f"# GENERATED by tools/payloads/modrun/modrun.py gen --arch {arch}"]
-    for c in cases(arch):
-        lines.append(f"case {c.id}")
-        for name, exe in c.variants.items():
-            lines.append(f"variant {name} {exe}{' ' + c.args if c.args else ''}")
-        lines += [f"stdin {s}" for s in c.stdin]
-        lines += [f"timeout {c.timeout}", "end"]
-    return "\n".join(lines) + "\n"
-
-
-def stage_entries(arch: str) -> list[dict]:
-    """compile.py `binaries_from`: what the suites graft onto `arch`'s media.
-
-    Once per destination: the CLI-tool suites share tools/payloads/modrun/data/ and each
-    stages what it reads. Two different sources for one destination is a suite bug."""
-    out: dict[str, dict] = {}
-    for spec in load_suites().values():
-        if not _on(spec.get("arches"), arch):
-            continue
-        for b in spec.get("stage") or []:
-            seen = out.setdefault(b["dest"], b)
-            if seen["src"] != b["src"]:
-                raise SystemExit(f"modrun: {b['dest']} staged from {seen['src']} and {b['src']}")
-    return list(out.values())
-
-
-def ninja_targets(arch: str) -> list[str]:
-    return [
-        t
-        for spec in load_suites().values()
-        if _on(spec.get("arches"), arch)
-        for t in spec.get("ninja") or []
-    ]
-
-
-def checksum(text: str, seq: int) -> int:
-    """modrun.c's: FNV-1a over the record's bytes, seeded with its sequence number."""
-    h = 0x811C9DC5 ^ seq
-    for b in text.encode("utf-8", "surrogateescape"):
-        h = ((h ^ b) * 0x01000193) & 0xFFFFFFFF
-    return (h ^ (h >> 16)) & 0xFFFF
-
-
-def _readings(text: str) -> tuple[str, ...]:
-    """The record as sent, whichever way the host decoded the serial bytes. The live harness
-    (tests/qemu/serial_client.py) decodes LATIN-1, a saved log is read as UTF-8: a guest
-    line holding `thr\u0398e` arrives as `thr\xce\x98e` in the first, and the UTF-8 checksum
-    the guest computed matched neither copy -- every non-ASCII line read as transport loss."""
+def _call(op, **kwargs):
     try:
-        return (text.encode("latin-1").decode("utf-8"), text)
-    except UnicodeError:
-        return (text,)
+        return call("payload_providers_" + op, {"suites": SUITES, **kwargs}, REPO)
+    except ValueError as e:
+        raise SystemExit(str(e)) from e
 
 
-def parse(serial: str) -> tuple[dict, dict]:
-    """(case, variant) -> output lines, and (case, variant) -> (rc, ms, flags).
-
-    The serial interleaves other writers into a record and can drop one, so each record
-    arrives twice with a sequence number and checksum: the first intact copy wins. A record
-    with no intact copy leaves a gap, reported in flags as `LOST=<n>` -- transport loss, which
-    must never be graded as the program printing something different."""
-    records: dict[tuple[str, str], dict[int, tuple[str, bool]]] = {}
-    exits: dict[tuple[str, str], tuple[str, int, str]] = {}
-    totals: dict[tuple[str, str], int] = {}
-    # Split on LF only: a record can END in CR -- more.com writes CR CR LF, the guest strips
-    # one CR and checksums `one\r` -- and splitlines() ate it, so every one of its records
-    # read as lost. Whether the serial added a CR of its own is settled by the checksum.
-    for line in serial.split("\n"):
-        raw = line.rstrip("\r")
-        m = _EXIT.search(raw)
-        if m:
-            key = (m.group(1), m.group(2))
-            exits[key] = (m.group(3), int(m.group(4)), m.group(6).strip())
-            totals[key] = int(m.group(5))
-            continue
-        m = _LINE.search(line)
-        if m:
-            seq, want = int(m.group(3)), int(m.group(5), 16)
-            text = next(
-                (
-                    t
-                    for t in _readings(m.group(6))
-                    for t in (t, t[:-1])
-                    if checksum(t, seq) == want
-                ),
-                None,
-            )
-            if text is None:
-                continue  # a torn copy; its twin may be whole
-            records.setdefault((m.group(1), m.group(2)), {}).setdefault(
-                seq, (text, bool(m.group(4)))
-            )
-    out: dict[tuple[str, str], list[str]] = {}
-    for key, (rc, ms, flags) in list(exits.items()):
-        got = records.get(key, {})
-        lost = [s for s in range(totals[key]) if s not in got]
-        if lost:
-            exits[key] = (rc, ms, f"{flags} LOST={len(lost)}@{lost[0]}".strip())
-        lines, cur = [], ""
-        for s in range(totals[key]):
-            text, more = got.get(s, ("", False))
-            cur += text
-            if not more:
-                lines.append(cur)
-                cur = ""
-        out[key] = lines
-    return out, exits
+def load_suites():
+    return dict(_call("load_suites"))
 
 
-def _normal(lines: list[str], rules: list[tuple[str, str]]) -> list[str]:
-    text = [ln.rstrip() for ln in lines]
-    for pat, repl in rules:
-        text = [re.sub(pat, repl, ln) for ln in text]
-    while text and not text[-1]:
-        text.pop()
-    return text
+def cases(arch):
+    out = []
+    for c in _call("cases", arch=arch):
+        c["variants"] = dict(c["variants"])
+        c["normalize"] = [tuple(x) for x in c["normalize"]]
+        c["diverge"] = [(why, pats) for why, pats in c["diverge"]]
+        out.append(Case(**c))
+    return out
 
 
-def grade(serial: str, arch: str) -> tuple[list[str], list[str]]:
-    """(report lines, failures) for one boot's serial."""
-    out, exits = parse(serial)
-    # The guest announces each case it read from the media's list. A case this tree's suites
-    # name but the guest never announced, in a run that reached `done`, was not ON the media:
-    # the suite changed after the build. Reported as "guest died", it sent a hunt after a
-    # crash that never happened (cscript's regsvr32 cases, graded against an older arm64 ISO).
-    announced = set(re.findall(r"\[MODRUN\] case (\S+) variants=", serial))
-    finished = "[MODRUN] done cases=" in serial
-    report, failures = [], []
-    for c in cases(arch):
-        why: list[str] = []
-        ref_name = next(iter(c.variants))
-        ref: list[str] | None = None
-        ref_rc = None
-        hits = [0] * len(c.diverge)
-        for v in c.variants:
-            ex = exits.get((c.id, v))
-            if ex is None and finished and c.id not in announced:
-                why.append(
-                    f"{v}: not on the media (the suite changed after it was built; rebuild "
-                    f"with VIBEOS_PAYLOAD=modrun ./vibeos-cli build --arch <arch>)"
-                )
-                continue
-            if ex is None:
-                why.append(f"{v}: never finished (no exit line: guest died, or modrun stopped)")
-                continue
-            rc, ms, flags = ex
-            if rc == "LAUNCH":
-                why.append(f"{v}: could not be launched ({flags})")
-                continue
-            if "TIMEOUT" in flags:
-                why.append(f"{v}: TIMEOUT after {ms}ms (thread dump in the serial)")
-            if "TRUNCATED" in flags:
-                why.append(f"{v}: output over 1 MiB, truncated")
-            if "LOST=" in flags:
-                why.append(
-                    f"{v}: TRANSPORT: the serial lost both copies of a record "
-                    f"({flags.split('LOST=')[1].split()[0]}); output not graded"
-                )
-                continue
-            code = int(rc, 16)
-            # 0xFFFFFFFF is `return -1` (fc's FCRET_INVALID on every usage error), not an
-            # NTSTATUS: its facility bits are all set, which no exception code uses.
-            if code >= _STATUS_CRASH and code != 0xFFFFFFFF and "TIMEOUT" not in flags:
-                why.append(f"{v}: crashed, exit 0x{code:08x}")
-            lines = _normal(out.get((c.id, v), []), c.normalize)
-            for e in c.expect:
-                if not any(e in ln for ln in lines):
-                    why.append(f"{v}: never printed {e!r}")
-            # Declared divergences leave the diff (the expects above saw every line).
-            kept = []
-            for ln in lines:
-                matched = [
-                    i
-                    for i, (_, pats) in enumerate(c.diverge)
-                    if v in pats and re.search(pats[v], ln)
-                ]
-                for i in matched:
-                    hits[i] += 1
-                if not matched:
-                    kept.append(ln)
-            lines = kept
-            if ref is None:
-                ref, ref_rc = lines, code
-                continue
-            if code != ref_rc:
-                why.append(f"{v}: exit 0x{code:08x}, {ref_name} exited 0x{ref_rc:08x}")
-            if lines != ref:
-                diff = list(difflib.unified_diff(ref, lines, ref_name, v, n=2, lineterm=""))
-                why.append(f"{v}: output differs from {ref_name}:\n    " + "\n    ".join(diff[:60]))
-        for (dwhy, _), hit in zip(c.diverge, hits, strict=True):
-            if not hit:
-                why.append(f"diverge {dwhy!r} matched no line: the difference is gone, drop it")
-        n = len(out.get((c.id, ref_name), []))
-        # A known bug stays visible without failing the run, and its fix announces itself:
-        # an xfail case that passes is a FAIL until the suite stops expecting the bug.
-        if c.xfail and why:
-            report.append(f"XFAIL {c.id} ({c.xfail})")
-            report += [f"  {w}" for w in why]
-            continue
-        if c.xfail:
-            failures.append(f"{c.id}: XPASS -- drop its `xfail:` ({c.xfail})")
-            report.append(f"XPASS {c.id}: remove the xfail")
-            continue
-        if why:
-            failures.append(f"{c.id}: " + "; ".join(w.split("\n")[0] for w in why))
-            report.append(f"FAIL {c.id}")
-            report += [f"  {w}" for w in why]
-        else:
-            note = f", {len(c.diverge)} declared divergence(s)" if c.diverge else ""
-            report.append(f"PASS {c.id} ({len(c.variants)} variant(s), {n} line(s) each{note})")
-    return report, failures
+def case_file(arch):
+    return _call("case_file", arch=arch)
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+def stage_entries(arch):
+    return _call("stage_entries", spec="modrun", arch=arch)
+
+
+def ninja_targets(arch):
+    return _call("ninja_targets", spec="modrun", arch=arch)
+
+
+def checksum(text, seq):
+    return _call("checksum", text=text, seq=seq)
+
+
+def _wire_serial(serial):
+    try:
+        serial.encode("utf-8")
+        return serial
+    except UnicodeEncodeError:
+        return serial.encode("utf-8", errors="surrogateescape").decode("latin-1")
+
+
+def parse(serial):
+    out, exits = _call("parse", serial=_wire_serial(serial))
+    return ({(a, b): v for a, b, v in out}, {(a, b): tuple(v) for a, b, v in exits})
+
+
+def grade(serial, arch):
+    return tuple(_call("grade", serial=_wire_serial(serial), arch=arch))
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("gen", "ninja"):
         sub.add_parser(name).add_argument("--arch", required=True)
-    g = sub.add_parser("grade", help="grade a boot's serial log (full.log, serial.log)")
+    g = sub.add_parser("grade")
     g.add_argument("log", type=Path)
     g.add_argument("--arch", required=True)
     args = ap.parse_args(argv)
@@ -352,14 +99,13 @@ def main(argv: list[str] | None = None) -> int:
     elif args.cmd == "ninja":
         print(" ".join(ninja_targets(args.arch)))
     else:
-        # Bytes, not read_text(): universal newlines turn a record's own CR into a line
-        # break, and more.com's every record (`one\r`) then reads as lost.
-        log = args.log.read_bytes().decode("utf-8", errors="surrogateescape")
-        report, failures = grade(log, args.arch)
+        report, failures = grade(
+            args.log.read_bytes().decode("utf-8", errors="surrogateescape"), args.arch
+        )
         print("\n".join(report))
-        cases_n = sum(r.startswith(("PASS", "FAIL", "XFAIL", "XPASS")) for r in report)
-        print(f"modrun: {cases_n} case(s), {len(failures)} failed")
-        return 1 if failures else 0
+        count = sum(r.startswith(("PASS", "FAIL", "XFAIL", "XPASS")) for r in report)
+        print(f"modrun: {count} case(s), {len(failures)} failed")
+        return int(bool(failures))
     return 0
 
 

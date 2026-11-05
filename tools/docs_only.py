@@ -51,7 +51,9 @@ INERT_SUFFIXES = frozenset(
 def is_inert(path: str) -> bool:
     """True when this one path is content nothing ever runs."""
     lowered = path.lower()
-    return any(lowered.endswith(suffix) for suffix in INERT_SUFFIXES)
+    return lowered.rsplit("/", 1)[-1] != "cmakelists.txt" and any(
+        lowered.endswith(suffix) for suffix in INERT_SUFFIXES
+    )
 
 
 def docs_only(paths) -> bool:

@@ -10682,22 +10682,33 @@ def test_payload_borrower_needs_only_what_it_stages(tmp_path, monkeypatch):
     assert pc.ensure_built(["user"], "amd64") == []
 
 
-def _fake_receipts(pc, monkeypatch, stale_arches):
-    """compile.py's receipt modules replaced: `missing` answers `stale_arches`."""
-    import types
+def _payload_receipts(pc, monkeypatch, stale_arches, repo):
+    """Actual Git trees and build receipts, consumed by the native freshness guard."""
+    import subprocess
 
-    seen = {}
+    from . import warmth
 
-    def missing(repo, tree, arches, is_inert, **kw):
-        seen["arches"] = arches
-        return [a for a in arches if a in stale_arches]
-
-    fakes = {
-        "_payload_warmth": types.SimpleNamespace(missing=missing, worktree_tree=lambda repo: "T"),
-        "_payload_docs_only": types.SimpleNamespace(is_inert=lambda p: False),
-    }
-    monkeypatch.setattr(pc, "_load_by_path", lambda modname, path: fakes[modname])
-    return seen
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "source.c").write_text("before\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "seed",
+        ],
+        cwd=repo,
+        check=True,
+    )
+    warmth.record(repo, "amd64")
+    if stale_arches:
+        (repo / "source.c").write_text("after\n")
+    monkeypatch.setattr(pc, "REPO", repo)
 
 
 def test_payload_guest_set_from_a_stale_build_dies(tmp_path, monkeypatch, capsys):
@@ -10705,17 +10716,30 @@ def test_payload_guest_set_from_a_stale_build_dies(tmp_path, monkeypatch, capsys
     rebuilds: an appstorm64 run tested a taskmgr.exe older than the fix it was checking.
     No receipt for this tree on that arch -> refuse, naming the build to run."""
     pc = _load_payload_compile()
-    seen = _fake_receipts(pc, monkeypatch, {"amd64"})
+    _payload_receipts(pc, monkeypatch, {"amd64"}, tmp_path)
     with pytest.raises(SystemExit):
         pc.guest_build_current("appstorm64", tmp_path / "build-amd64")
-    assert seen["arches"] == ("amd64",)
     assert "./vibeos-cli build --arch amd64" in capsys.readouterr().err
 
 
 def test_payload_guest_set_from_a_current_build_passes(tmp_path, monkeypatch):
     pc = _load_payload_compile()
-    _fake_receipts(pc, monkeypatch, set())
+    _payload_receipts(pc, monkeypatch, set(), tmp_path)
     pc.guest_build_current("appstorm64", tmp_path / "build-amd64")  # no SystemExit
+
+
+def _payload_ninja_process(repo, monkeypatch, code, output):
+    import os
+    import sys
+
+    directory = repo / "fixture-bin"
+    directory.mkdir()
+    executable = directory / "ninja"
+    executable.write_text(
+        f"#!{sys.executable}\nimport sys\nprint({output!r}, end='')\nsys.exit({code})\n"
+    )
+    executable.chmod(0o755)
+    monkeypatch.setenv("PATH", str(directory) + os.pathsep + os.environ["PATH"])
 
 
 def _fake_build(tmp_path, ninja: str, depinfo: str):
@@ -10739,16 +10763,9 @@ def test_payload_unreferenced_by_build_only_when_every_record_is_silent(tmp_path
         "/tmp/vibeos/tools/fex/wow64-closure.py\n",
         "x.dll: /home/someone/worktree/sdk/lib/rust/strsafe-rust/src/lib.rs\n",
     )
-    real_run = pc.subprocess.run
-
-    def run(cmd, *a, **kw):
-        if cmd[:1] == ["ninja"]:  # the dependency log names one header
-            return pc.subprocess.CompletedProcess(
-                cmd, 0, stdout="x.obj: #deps 1\n    /tmp/vibeos/tools/fex/shared.h\n", stderr=""
-            )
-        return real_run(cmd, *a, **kw)
-
-    monkeypatch.setattr(pc.subprocess, "run", run)
+    _payload_ninja_process(
+        tmp_path, monkeypatch, 0, "x.obj: #deps 1\n    /tmp/vibeos/tools/fex/shared.h\n"
+    )
     unbuilt = pc.unreferenced_by_build(b)
     assert unbuilt("sdk/lib/rust/wowx64-rust/src/callback.rs")
     assert unbuilt("tools/fex/wowx64fex/Module.cpp")
@@ -10770,21 +10787,14 @@ def test_payload_unreferenced_by_build_without_build_records_proves_nothing(tmp_
 def test_payload_unreferenced_by_build_dies_when_the_deps_log_is_unreadable(tmp_path, monkeypatch):
     pc = _load_payload_compile()
     b = _fake_build(tmp_path, "rule CUSTOM\n  command = true\n", "x.dll: nothing\n")
-    real_run = pc.subprocess.run
-
-    def run(cmd, *a, **kw):
-        if cmd[:1] == ["ninja"]:
-            return pc.subprocess.CompletedProcess(cmd, 1, stdout="", stderr="boom")
-        return real_run(cmd, *a, **kw)
-
-    monkeypatch.setattr(pc.subprocess, "run", run)
+    _payload_ninja_process(tmp_path, monkeypatch, 1, "")
     with pytest.raises(SystemExit):
         pc.unreferenced_by_build(b)("tools/fex/wowx64fex/Module.cpp")
 
 
 def test_payload_guest_set_build_dir_must_name_an_arch(tmp_path, monkeypatch):
     pc = _load_payload_compile()
-    _fake_receipts(pc, monkeypatch, set())
+    _payload_receipts(pc, monkeypatch, set(), tmp_path)
     with pytest.raises(SystemExit):
         pc.guest_build_current("appstorm64", tmp_path / "somewhere-else")
 
