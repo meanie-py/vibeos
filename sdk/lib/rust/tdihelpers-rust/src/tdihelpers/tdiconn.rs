@@ -30,7 +30,8 @@ pub unsafe extern "C" fn TdiAddressSizeFromType(AddressType: UINT) -> UINT {
 }
 #[no_mangle]
 pub unsafe extern "C" fn TaLengthOfAddress(Addr: PTA_ADDRESS) -> UINT {
-    let mut AddrLen: UINT = (*Addr).AddressLength as UINT;
+    // A TRANSPORT_ADDRESS carried as an EA value (TdiOpenAddressFile) sits at an odd offset.
+    let mut AddrLen: UINT = core::ptr::read_unaligned(core::ptr::addr_of!((*Addr).AddressLength)) as UINT;
 
     if AddrLen == 0 {
         return 0;

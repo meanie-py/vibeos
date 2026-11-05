@@ -388,6 +388,51 @@ def module_specs(root: Path = ROOT) -> dict[str, list[Path]]:
     return dict(out)
 
 
+_IF_VERSION = re.compile(
+    r"^\s*if\s*\(\s*DLL_EXPORT_VERSION\s+GREATER_EQUAL\s+(0x[0-9A-Fa-f]+|\d+)\s*\)", re.I
+)
+_SUBDIR = re.compile(r"^\s*(#\s*)?add_subdirectory\s*\(\s*([^\s$)]+)")
+
+
+def unbuilt_dirs(version: int, root: Path = ROOT) -> set[Path]:
+    """Directories whose `add_subdirectory` the default build never reaches.
+
+    A `.spec` on disk is not a module in the image: dwmapi, ncrypt and mmdevapi all have one,
+    and `gap` reported Chrome's delay-imports of them as satisfied while the build left them
+    out (behind `if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)`, or commented out), so the
+    browser died in its delay-load failure hook with the census saying nothing was missing.
+    Only those two shapes are read; any other `if` (an arch test, say) counts as built, so
+    this can only move a module from built to unbuilt where the CMake says so literally.
+    """
+    out: set[Path] = set()
+    for top in MODULE_TREES:
+        for cm in (root / top).rglob("CMakeLists.txt"):
+            stack: list[bool | None] = []  # per open if(): gated-out, or None if not a version test
+            for line in cm.read_text(errors="replace").splitlines():
+                code = line.split("#", 1)[0] if not _SUBDIR.match(line) else line
+                m = _IF_VERSION.match(code)
+                if m:
+                    stack.append(int(m.group(1), 0) > version)
+                    continue
+                if re.match(r"^\s*if\s*\(", code):
+                    stack.append(None)
+                    continue
+                if re.match(r"^\s*else\s*\(", code) and stack:
+                    if stack[-1] is not None:
+                        stack[-1] = not stack[-1]
+                    continue
+                if re.match(r"^\s*elseif\s*\(", code) and stack:
+                    stack[-1] = None
+                    continue
+                if re.match(r"^\s*endif\s*\(", code) and stack:
+                    stack.pop()
+                    continue
+                sm = _SUBDIR.match(line)
+                if sm and (sm.group(1) or any(g for g in stack)):
+                    out.add((cm.parent / sm.group(2)).resolve())
+    return out
+
+
 def declared_names(spec: Path) -> set[str]:
     """Every name the spec declares under ANY version or arch, generated block excluded.
 
@@ -1091,6 +1136,7 @@ def gap(
     """Rank every system import the corpus makes that our default build does not export."""
     version = export_version(root)
     modules = module_specs(root)
+    unbuilt = unbuilt_dirs(version, root)
     win = Path(ref["windows"])
     images = list(iter_images(corpus))
     private: dict[str, set[str]] = defaultdict(set)  # app -> dll names it ships itself
@@ -1155,7 +1201,7 @@ def gap(
             if not system(dll):
                 continue  # a third-party DLL the app expects from elsewhere: not ours
             specs = modules.get(dll)
-            if not specs:
+            if not specs or all(any(parent in unbuilt for parent in sp.parents) for sp in specs):
                 missing_module[dll].add(app)
                 continue
             key = (specs[0], arch)

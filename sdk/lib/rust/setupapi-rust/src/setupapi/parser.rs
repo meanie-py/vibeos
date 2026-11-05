@@ -285,7 +285,8 @@ unsafe extern "C" fn add_section(file: *mut inf_file, name: *const WCHAR) -> ::c
         (*file).sections = grow_array(
             (*file).sections as *mut ::core::ffi::c_void,
             &raw mut (*file).alloc_sections,
-            ::core::mem::size_of::<section>() as size_t,
+            // sizeof(file->sections[0]): `sections` is `struct section **`, so a POINTER.
+            ::core::mem::size_of::<*mut section>() as size_t,
         ) as *mut *mut section;
         if (*file).sections.is_null() {
             return -1;
@@ -1240,7 +1241,7 @@ unsafe extern "C" fn parse_buffer(
             0 as DWORD,
             (*file).sections as PVOID,
             ((*file).nb_sections as SIZE_T)
-                .wrapping_mul(core::mem::size_of::<section>() as SIZE_T),
+                .wrapping_mul(core::mem::size_of::<*mut section>() as SIZE_T),
         ) as *mut *mut section;
         (*file).alloc_sections = (*file).nb_sections;
     }

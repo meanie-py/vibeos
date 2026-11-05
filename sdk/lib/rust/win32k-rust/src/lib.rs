@@ -55,13 +55,15 @@ macro_rules! fastcall_fn {
 // none lowers them to an empty fn -- which evaluates the operands the C macro discards.
 macro_rules! NT_ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
 macro_rules! ASSERT_REFS_CO {
-    ($obj:expr $(,)?) => {
-        debug_assert!(
-            unsafe { (*($obj as win32k_sys::win32k::PHEAD)).cLockObj } >= 1,
-            "ASSERT_REFS_CO: obj {:p}",
-            $obj
-        )
-    };
+    ($obj:expr $(,)?) => {{
+        // userfuncs.h: unconditional ref check, ERR + ASSERT(FALSE) on failure.
+        let obj = $obj;
+        let r#ref = unsafe { (*(obj as win32k_sys::win32k::PHEAD)).cLockObj };
+        if !(r#ref >= 1) {
+            unsafe { ERR!("ASSERT: obj 0x%p, refs %ld\n", obj, r#ref) };
+            NT_ASSERT!(false);
+        }
+    }};
 }
 
 #[macro_use]

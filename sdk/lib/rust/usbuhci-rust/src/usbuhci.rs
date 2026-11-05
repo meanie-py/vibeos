@@ -884,7 +884,7 @@ pub unsafe extern "system" fn UhciStopController(
     WRITE_PORT_USHORT(CommandReg, Command.AsUSHORT);
 
     // KeQuerySystemTime(&EndTime)
-    *(core::ptr::addr_of_mut!(EndTime) as *mut u64) = *(SharedSystemTimePtr() as *mut u64);
+    *(core::ptr::addr_of_mut!(EndTime) as *mut u64) = core::ptr::read_unaligned(SharedSystemTimePtr() as *const u64);
     EndTime.QuadPart += 100 * 1000;
 
     loop {
@@ -894,7 +894,7 @@ pub unsafe extern "system" fn UhciStopController(
         }
 
         // KeQuerySystemTime(&CurrentTime)
-        *(core::ptr::addr_of_mut!(CurrentTime) as *mut u64) = *(SharedSystemTimePtr() as *mut u64);
+        *(core::ptr::addr_of_mut!(CurrentTime) as *mut u64) = core::ptr::read_unaligned(SharedSystemTimePtr() as *const u64);
 
         if CurrentTime.QuadPart >= EndTime.QuadPart {
             DbgBreakPoint();

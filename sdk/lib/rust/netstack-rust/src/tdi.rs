@@ -255,12 +255,14 @@ pub unsafe fn parse_ta(ta: *const u8) -> Option<([u8; 4], u16)> {
     if ta.is_null() {
         return None;
     }
-    let count = *(ta as *const i32);
+    // The caller-supplied TRANSPORT_ADDRESS is not guaranteed aligned (armed arm64 smoke
+    // faulted reading `count` at an odd address): read its fields unaligned.
+    let count = core::ptr::read_unaligned(ta as *const i32);
     if count < 1 {
         return None;
     }
     let addr = ta.add(core::mem::size_of::<i32>()) as *const TA_ADDRESS;
-    if (*addr).AddressType != TDI_ADDRESS_TYPE_IP {
+    if core::ptr::read_unaligned(core::ptr::addr_of!((*addr).AddressType)) != TDI_ADDRESS_TYPE_IP {
         return None;
     }
     // The TDI_ADDRESS_IP that follows the TA_ADDRESS header is BYTE-PACKED:

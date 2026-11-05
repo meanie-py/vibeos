@@ -591,7 +591,7 @@ pub unsafe extern "C" fn d3d9_caps_from_wined3dcaps(
     (*caps).TextureCaps &=
         (D3DPTEXTURECAPS_PERSPECTIVE | D3DPTEXTURECAPS_POW2 | D3DPTEXTURECAPS_ALPHA |
         D3DPTEXTURECAPS_SQUAREONLY | D3DPTEXTURECAPS_TEXREPEATNOTSCALEDBYSIZE |
-        D3DPTEXTURECAPS_ALPHAPALETTE | (D3DPTEXTURECAPS_NONPOW2CONDITIONAL as u32) |
+        D3DPTEXTURECAPS_ALPHAPALETTE | D3DPTEXTURECAPS_NONPOW2CONDITIONAL |
         D3DPTEXTURECAPS_PROJECTED | D3DPTEXTURECAPS_CUBEMAP | (D3DPTEXTURECAPS_VOLUMEMAP as u32) |
         (D3DPTEXTURECAPS_MIPMAP as u32) | (D3DPTEXTURECAPS_MIPVOLUMEMAP as u32) | (D3DPTEXTURECAPS_MIPCUBEMAP as u32) |
         (D3DPTEXTURECAPS_CUBEMAP_POW2 as u32) | (D3DPTEXTURECAPS_VOLUMEMAP_POW2 as u32) | (D3DPTEXTURECAPS_NOPROJECTEDBUMPENV as u32)) as DWORD;
@@ -1248,7 +1248,7 @@ unsafe extern "C" fn d3d9_device_get_swapchains(device: *mut d3d9_device) -> HRE
     let new_swapchain_count: UINT = wined3d_device_get_swapchain_count((*device).wined3d_device);
 
     (*device).implicit_swapchains = malloc(
-        (new_swapchain_count as usize).wrapping_mul(core::mem::size_of::<wined3d_swapchain>()),
+        (new_swapchain_count as usize).wrapping_mul(core::mem::size_of::<*mut wined3d_swapchain>()),
     ) as *mut *mut wined3d_swapchain;
     if (*device).implicit_swapchains.is_null() {
         return E_OUTOFMEMORY;
@@ -1358,7 +1358,7 @@ unsafe extern "C" fn d3d9_device_reset(
     if extended != 0 {
         old_backbuffers = malloc(
             (old_swapchain_desc.backbuffer_count as size_t)
-                .wrapping_mul(core::mem::size_of::<d3d9_surface>() as size_t),
+                .wrapping_mul(core::mem::size_of::<*mut d3d9_surface>() as size_t),
         ) as *mut *mut d3d9_surface;
         if old_backbuffers.is_null() {
             wined3d_mutex_unlock();

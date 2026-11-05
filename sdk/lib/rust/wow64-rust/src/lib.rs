@@ -2,9 +2,8 @@
 //! staticlib → libwow64_rust.a, cohab-linked into the cmake-built wow64
 //! (usermode module type `win32dll`).
 //!
-//! Module map mirrors the CMakeLists source list exactly — the 6 TU(s)
-//! the build actually compiles. Generated sources (none)
-//! stay C and link alongside.
+//! Module map mirrors the CMakeLists source list: all 8 TUs, plus the generator's
+//! syscall tables under `wow64::gen` (committed, drift-checked by the build).
 #![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
@@ -29,6 +28,14 @@ pub mod wow64 {
     pub mod wow64_cb_automarshal;
     pub mod wow64_callback;
     pub mod wow64_pfnmap;
+    pub mod wow64_thunks;
+    pub mod wow64_win32k;
+    /// Committed generator output (`tools/codegen wow64-thunks --emit-rs`); the build
+    /// fails on drift.
+    pub mod gen {
+        pub mod wow64_thunks;
+        pub mod wow64_win32k_thunks;
+    }
 }
 
 // staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.

@@ -154,6 +154,7 @@ PORTED = frozenset(
         "scan_move_vs_nonoverlapping",
         "scan_assert_negated_vs_c",
         "scan_devobj_as_extension",
+        "scan_shared_system_time",
         "scan_hkey_zero_extend",
     }
 )

@@ -461,7 +461,8 @@ unsafe fn DECREASE_THREAD_LOCK_COUNT(hobj: HANDLE) {
     if !pti.is_null() {
         #[cfg(debug_assertions)]
         {
-            (*pti).acExclusiveLockCount[((hobj as ULONG_PTR >> 16) & 0x1f) as usize] -= 1;
+            let index = ((hobj as usize) >> 16) & 0x1f;
+            (*pti).acExclusiveLockCount[index] = (*pti).acExclusiveLockCount[index].wrapping_sub(1);
         }
         (*pti).cExclusiveLocks -= 1;
     }

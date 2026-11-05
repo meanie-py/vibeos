@@ -491,7 +491,7 @@ pub unsafe extern "C" fn d3d8_init(d3d8: *mut d3d8) -> BOOL {
 
     (*d3d8).wined3d_outputs = calloc(
         (output_count as size_t) as _,
-        (::core::mem::size_of::<wined3d_output>() as size_t) as _,
+        (::core::mem::size_of::<*mut wined3d_output>() as size_t) as _,
     ) as *mut *mut wined3d_output;
     if (*d3d8).wined3d_outputs.is_null() {
         wined3d_decref((*d3d8).wined3d);

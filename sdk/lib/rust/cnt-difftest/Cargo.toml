@@ -40,3 +40,9 @@ cc = "1"
 name = "diff"
 path = "tests/diff.rs"
 harness = false
+
+# Throughput vs the genuine C; harness = false for the same getenv reason as `diff`.
+[[test]]
+name = "perf"
+path = "tests/perf.rs"
+harness = false

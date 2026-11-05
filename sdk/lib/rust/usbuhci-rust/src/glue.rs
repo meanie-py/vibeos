@@ -60,6 +60,8 @@ pub unsafe fn KeQuerySystemTime(current_time: *mut ntkrnl_sys::ddk::_LARGE_INTEG
 
 // ---- uhci-specific shims ----
 pub const MAXUSHORT: ::core::ffi::c_int = 0xFFFF;
+// KSYSTEM_TIME at KUSER_SHARED_DATA+0x14 is only 4-aligned: read it with
+// core::ptr::read_unaligned, never `*ptr` (armed debug-assertions panic on that).
 #[inline] pub unsafe fn SharedSystemTimePtr() -> *mut ULONG64 {
     let SharedUserData = ntkrnl_sys::mm::KI_USER_SHARED_DATA as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
     core::ptr::addr_of_mut!((*SharedUserData).SystemTime) as *mut ULONG64

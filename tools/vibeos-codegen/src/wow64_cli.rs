@@ -91,13 +91,13 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
         .collect::<Vec<_>>();
     let (mut spec, mut services, mut arch, mut out, mut manual, mut prefix) =
         (None, None, None, None, None, "Wow64Thunk".to_owned());
-    let (mut check, mut stats, mut api_json) = (false, false, false);
+    let (mut check, mut stats, mut api_json, mut emit_rs) = (false, false, false, false);
+    let mut root: Option<PathBuf> = None;
     let mut args = expanded.into_iter();
     while let Some(arg) = args.next() {
         match arg.as_str() {
-            "--root" => {
-                args.next().ok_or("--root requires DIR")?;
-            }
+            "--root" => root = Some(args.next().ok_or("--root requires DIR")?.into()),
+            "--emit-rs" => emit_rs = true,
             "wow64-thunks" => {}
             "--spec" => spec = Some(args.next().ok_or("--spec requires FILE")?),
             "--sysfuncs" => services = Some(args.next().ok_or("--sysfuncs requires FILE")?),
@@ -124,6 +124,14 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
             return Err("--api-json cannot be combined with generation options".into());
         }
         return api();
+    }
+    if emit_rs {
+        if spec.is_some() || services.is_some() || arch.is_some() || out.is_some() || manual.is_some()
+            || stats || prefix != "Wow64Thunk"
+        {
+            return Err("--emit-rs takes its inputs from the committed table config; only --check combines with it".into());
+        }
+        return emit_rust(&root.ok_or("--emit-rs requires --root (tools/codegen passes it)")?, check);
     }
     let spec = spec.ok_or("wow64-thunks requires --spec")?;
     let services = services.ok_or("wow64-thunks requires --sysfuncs")?;
@@ -179,4 +187,25 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
         );
     }
     Ok(0)
+}
+
+/// Write (or with `check`, compare) every committed Rust thunk table.
+fn emit_rust(root: &std::path::Path, check: bool) -> Result<u8, String> {
+    let mut drift = false;
+    for (rel, text) in wow64::render_rust_tables(root)? {
+        let path = root.join(&rel);
+        if check {
+            if fs::read(&path).ok().as_deref() != Some(text.as_bytes()) {
+                eprintln!("DRIFT: {rel} -- regenerate with: tools/codegen wow64-thunks --emit-rs");
+                drift = true;
+            }
+        } else {
+            if let Some(dir) = path.parent() {
+                fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            }
+            crate::write_atomic(&path, text.as_bytes(), 0)?;
+            eprintln!("wow64gen: wrote {rel}");
+        }
+    }
+    Ok(u8::from(drift))
 }

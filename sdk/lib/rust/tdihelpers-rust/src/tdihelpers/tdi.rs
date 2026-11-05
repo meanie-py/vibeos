@@ -283,7 +283,9 @@ pub unsafe extern "C" fn TdiOpenConnectionEndpointFile(
         .offset(TDI_CONNECTION_CONTEXT_LENGTH as isize + 1 as isize)
         as *mut PVOID; /* 0-terminated */
     /* FIXME: Allocate context area */
-    *ContextArea = core::ptr::null_mut();
+    // The EA value follows EaName + its NUL, so it is unaligned by construction (the C's typed
+    // store relies on x86/arm64 tolerating that); a typed Rust store is UB and panicked once armed.
+    core::ptr::write_unaligned(ContextArea, core::ptr::null_mut());
     Status = TdiOpenDevice(
         DeviceName,
         EaLength,

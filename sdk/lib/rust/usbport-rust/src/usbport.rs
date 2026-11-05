@@ -1546,7 +1546,7 @@ pub unsafe extern "system" fn USBPORT_WorkerThread(StartContext: PVOID) {
 
     loop {
         // KeQuerySystemTime(&OldTime);
-        *(core::ptr::addr_of_mut!(OldTime) as *mut ULONG64) = *(SharedSystemTimePtr() as *mut ULONG64);
+        *(core::ptr::addr_of_mut!(OldTime) as *mut ULONG64) = core::ptr::read_unaligned(SharedSystemTimePtr() as *const ULONG64);
 
         KeWaitForSingleObject(
             core::ptr::addr_of_mut!((*FdoExtension).WorkerThreadEvent) as PVOID,
@@ -1564,7 +1564,7 @@ pub unsafe extern "system" fn USBPORT_WorkerThread(StartContext: PVOID) {
         }
 
         // KeQuerySystemTime(&NewTime);
-        *(core::ptr::addr_of_mut!(NewTime) as *mut ULONG64) = *(SharedSystemTimePtr() as *mut ULONG64);
+        *(core::ptr::addr_of_mut!(NewTime) as *mut ULONG64) = core::ptr::read_unaligned(SharedSystemTimePtr() as *const ULONG64);
 
         KeAcquireSpinLock(
             (core::ptr::addr_of_mut!((*FdoExtension).WorkerThreadEventSpinLock) as *mut usize),

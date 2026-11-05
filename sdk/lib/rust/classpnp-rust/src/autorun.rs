@@ -42,9 +42,6 @@ use crate::srblib::{SrbGetSenseInfoBuffer, SrbGetSenseInfoBufferLength, SrbSetSc
 use crate::glue::{_PREDICT_FAILURE_METHOD_FailurePredictionNone};
 
 extern "C" {
-    static SharedSystemTime: LARGE_INTEGER;
-}
-extern "C" {
     fn TracePrint(Level: ULONG, Flags: ULONG, Format: PCCHAR, ...);
     fn StorDebugPrint(Level: ULONG, Flags: ULONG, Format: PCCHAR, ...);
     
@@ -511,9 +508,8 @@ pub unsafe extern "C" fn ClasspInterpretGesnData(
                 externalData.Request =
                     ((((*externalInfo).Request[0] as i32) << 8)
                         | (((*externalInfo).Request[1] as i32) & 0xff)) as USHORT;
-                // KeQuerySystemTime expanded: assign SharedSystemTime
-                (*(&raw mut externalData.SystemTime as *mut ULONG64)) =
-                    *(&raw const SharedSystemTime as *const LARGE_INTEGER as *const ULONG64) ;
+                // KeQuerySystemTime(&externalData.SystemTime)
+                externalData.SystemTime.QuadPart = ntkrnl_sys::ke::ke_query_system_time();
                 externalData.SystemTime.QuadPart *= KeQueryTimeIncrement() as LONGLONG;
                 TracePrint(
                     (4i32) as u32,
@@ -3255,7 +3251,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
 
         ObDereferenceObject(topOfStack as PVOID);
 
-        (*Info).LastFailurePredictionQueryTime = SharedSystemTime;
+        (*Info).LastFailurePredictionQueryTime.QuadPart = ntkrnl_sys::ke::ke_query_system_time();
 
         if NT_SUCCESS(activateStatus) {
             ClasspPowerIdleDevice(DeviceObject);
@@ -3403,8 +3399,7 @@ pub unsafe extern "system" fn ClassSetFailurePredictionPoll(
             );
             (*info).WorkQueueItem = core::ptr::null_mut::<_IO_WORKITEM>();
             (*info).Period = DEFAULT_FAILURE_PREDICTION_PERIOD;
-            (*(core::ptr::addr_of_mut!((*info).LastFailurePredictionQueryTime) as *mut u64)) =
-                *(core::ptr::addr_of!(SharedSystemTime) as *const u64);
+            (*info).LastFailurePredictionQueryTime.QuadPart = ntkrnl_sys::ke::ke_query_system_time();
         } else {
             return STATUS_SUCCESS;
         }
@@ -3477,7 +3472,7 @@ pub unsafe extern "C" fn ClasspFailurePredictionPeriodMissed(
     );
 
     // KeQuerySystemTime(&currentTime) inline expansion
-    currentTime = *(core::ptr::addr_of!(SharedSystemTime) as *const LARGE_INTEGER);
+    currentTime.QuadPart = ntkrnl_sys::ke::ke_query_system_time();
 
     timeDifference.QuadPart = currentTime.QuadPart
         - (*(*FdoExtension).FailurePredictionInfo)

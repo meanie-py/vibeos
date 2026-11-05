@@ -939,6 +939,16 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
             if ((*LdrEntry).Flags & LDRP_ENTRY_PROCESSED) == 0 {
                 LdrpInitSecurityCookie(LdrEntry);
 
+                // A null Context is a load after process start: give a TLS directory its
+                // index and blocks now, before its callbacks and DllMain run (Vista's rule;
+                // NT 5.2 left such a DLL reading slot 0, the EXE's block).
+                if Context.is_null() {
+                    let TlsStatus = crate::ldr::tlsdyn::LdrpHandleDynamicTls(LdrEntry);
+                    if !NT_SUCCESS(TlsStatus) {
+                        DbgPrint(b"LDR: TLS for a dynamically loaded DLL failed, Status=0x%08lx\n\0".as_ptr() as *const i8, TlsStatus);
+                    }
+                }
+
                 if !(*LdrEntry).EntryPoint.is_null() {
                     *LdrRootEntry.add(i as usize) = LdrEntry;
                     i += 1;
@@ -1017,7 +1027,8 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
                 );
 
                 // _SEH2_TRY body
-                if (*LdrEntry).TlsIndex != 0 && !Context.is_null() {
+                // Dynamically loaded TLS DLLs get their callbacks too, as on Vista.
+                if (*LdrEntry).TlsIndex != 0 {
                     LdrpCallTlsInitializers(LdrEntry, DLL_PROCESS_ATTACH);
                 }
 
@@ -1402,7 +1413,6 @@ pub unsafe extern "system" fn LdrpAllocateTls() -> NTSTATUS {
     let mut NextEntry: PLIST_ENTRY;
     let ListHead: PLIST_ENTRY;
     let mut TlsData: *mut LDRP_TLS_DATA;
-    let mut TlsDataSize: SIZE_T;
     let TlsVector: *mut PVOID;
 
     if LdrpNumberOfTlsEntries == 0 {
@@ -1427,19 +1437,11 @@ pub unsafe extern "system" fn LdrpAllocateTls() -> NTSTATUS {
             as *mut LDRP_TLS_DATA;
         NextEntry = (*NextEntry).Flink;
 
-        TlsDataSize = ((*TlsData).TlsDirectory.EndAddressOfRawData
-            - (*TlsData).TlsDirectory.StartAddressOfRawData) as SIZE_T;
         let idx = (*TlsData).TlsDirectory.Characteristics as isize;
-        *TlsVector.offset(idx) = RtlAllocateHeap(RtlGetProcessHeap(), 0, TlsDataSize as _);
+        *TlsVector.offset(idx) = crate::ldr::tlsdyn::LdrpAllocateTlsBlock(core::ptr::addr_of!((*TlsData).TlsDirectory));
         if (*TlsVector.offset(idx)).is_null() {
             return STATUS_NO_MEMORY;
         }
-
-        RtlCopyMemory(
-            *TlsVector.offset(idx),
-            (*TlsData).TlsDirectory.StartAddressOfRawData as *const c_void,
-            TlsDataSize as usize,
-        );
     }
 
     STATUS_SUCCESS

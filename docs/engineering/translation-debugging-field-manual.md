@@ -487,6 +487,18 @@ next read `size_of::<_LIST_ENTRY>()` into a single `Flink`), so every EnumProces
 GetModuleBaseName call wrote ~0x50 bytes over its stack locals and survived on layout luck. The
 tell is an out-buffer `&raw mut X as LPVOID` whose size names a struct while `X` is a pointer;
 a 20-line regex over the tree found no other site (2026-10-14).
+**And the repair can be the bug.** `pointer_depth`'s raw-pointer rule ("a `size_of::<*mut T>()`
+is a misread `sizeof(*x)`") fired in any C function that took no `sizeof` of a pointer it could
+recognise, and four DirectX bodies the model had RIGHT were "restored" to the struct: ddraw's
+`sizeof(clipper->IDirectDrawClipper_iface.lpVtbl)` became the 9-slot vtable (SecureZeroMemory ran
+36/72 bytes past the field: modrun's ddraw grade crashed in free()), and d3d8/d3d9's
+`calloc(n, sizeof(*d3d->wined3d_outputs))` -- a `struct wined3d_output **` -- became
+`size_of::<wined3d_output>()`, an opaque struct bindgen sizes **0**, so n pointers were stored
+into a zero-byte block (latent only because Direct3DCreate failed earlier on the VM's GL). The
+rule now needs positive evidence: `sizeof(*V)` of a plain `V` declared through a pointer typedef
+with no further star. A member expression, a double pointer, or no dereferencing `sizeof` at all
+leaves the model's pointer size alone. Sweep for it with the banks: a body whose response says
+`size_of::<*mut T>` and whose shipped copy says `size_of::<T>` (2026-11-04: 7 hits, 5 wrong).
 **One level too DEEP shrinks an array.** wscript's `calloc(argc, sizeof(*strs))` (`strs` a
 `BSTR *`) came back as `size_of::<OLECHAR>()`, the element's element. Every multi-argument
 `WScript.Echo` overran the array and dropped its second argument, and the host crashed a few
@@ -1131,7 +1143,13 @@ C: no `WINAPI`, no `STDMETHODCALLTYPE`. On i386 that is caller-and-callee disagr
 pops the arguments, once per `ShellExecuteEx`. The rule is mechanical — **a fn-pointer typedef
 inherits its convention from the C declaration's macro, and the absence of one means cdecl.**
 `extern "system"` is not a safe default; it is a decision. Check every `pub type X = Option<...>`
-in translated output against the `typedef` in the C tail.
+in translated output against the `typedef` in the C tail. **Mechanized (2026-11-04):** `port integrate` gives every
+`type X = [Option<]unsafe extern "..." fn` the convention of the module's own C `typedef R (CC *X)`
+(none or a cdecl macro = `"C"`, a stdcall one = `"system"`), after dsound's
+`typedef HRESULT (*FnCreateInstance)` came back `"system"`: its class-factory table transmutes
+`extern "C"` creators into it, and every i386 `CreateInstance` returned 8 bytes off (modrun).
+`scan_fnptr_abi_transmute` now also flags an `extern "C"` fn transmuted into a stdcall ALIAS,
+including the `Option<..>` / `Some(f as ..)` spelling.
 
 **And the mirror image: a callback DEFINITION that lost the convention it did have.** Same file
 class, opposite direction, and it does not even need a typedef — `dialogs/drive.cpp`'s
@@ -10645,9 +10663,32 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   `write_unaligned`. Any FSD output into a USER buffer has this shape; SystemBuffer is aligned.
 - **A packed on-disk record.** FAT's LFN dirent puts `Name1` at byte 1, so a WCHAR-typed
   `copy_nonoverlapping` of it is misaligned. Copy bytes, as the C's `RtlCopyMemory` does.
+  Same for the boot sector's `PACKED_BIOS_PARAMETER_BLOCK` (2026-11-05, fs_rec): its fields are
+  UCHAR arrays at odd offsets (`BytesPerSector` at 0x0b), and an inlined `FatUnpackBios` read them
+  as `*(&field as *const _ as *const u16)`, which bugchecked every i386/amd64 boot once armed. The
+  C's `CopyUchar2` is a byte copy: use `read_unaligned` or `u16::from_le_bytes` (ramdisk's version).
+- **`KUSER_SHARED_DATA.SystemTime` read as a u64** (2026-11-05, usbport/usbehci/usbuhci/ksecdd).
+  It is a `KSYSTEM_TIME` at +0x14, 4-aligned; the 64-bit `KeQuerySystemTime` macro's
+  `*(PULONG64)&SharedUserData->SystemTime` is legal on the hardware and UB as a Rust deref.
+  Call `ntkrnl_sys::ke::ke_query_system_time()`. The same expansion also produced invented
+  `SharedSystemTime` GLOBALS defined as a static zero (classpnp, earlier fastfat), so the
+  module's system time read 1601 on every arch. `scan_shared_system_time` gates both.
+- **An object packed after a variable-length field by construction.** A
+  `FILE_FULL_EA_INFORMATION`'s value follows `EaName` plus its NUL, so tdihelpers' context
+  pointer and the `TRANSPORT_ADDRESS` it hands to netstack sit at odd offsets; SCSI CDB fields
+  (uniata's `MOV_DD_SWP`/`MOV_DW_SWP`) are byte arrays too. Every reader and writer of such a
+  field goes through `read_unaligned`/`write_unaligned`, including shared helpers like
+  `TaLengthOfAddress` that look innocent because their usual callers pass aligned pool.
 - **A real overlap.** classpnp's `RtlMoveMemory` of READ_CAPACITY_DATA one ULONG up inside its
   own _EX had become `copy_nonoverlapping` -- memcpy on overlapping ranges, a genuine bug on
   every arch. `scan_move_vs_nonoverlapping` now pairs each Rust fn with its C twin's moves.
+- **A C-shaped pointer walk out of a fixed stack array** (2026-11-05, win32k). On arm64, where
+  `unreachable` lowers to `b .` (no trap-unreachable), `REGION_bMakeSimpleFrameRgn`'s
+  `COPY_RECTS` loop over its `[RECTL; 4]` local became a branch-to-self in `GreCreateFrameRgn`
+  once the UB checks were armed. The loop count was re-read through `prgn` (`rdh.nCount`), so
+  LLVM could not bound it, and walking past the 4-entry alloca was provably UB. The build's
+  `scan_ud2` flags it (`UNEXPECTED driver spins`). Fix: copy the locally known count as one bounded
+  `copy_nonoverlapping`.
 - **A cache-aligned type inside a device extension.** On 64-bit `COMMON_DEVICE_EXTENSION` embeds
   a `LOOKASIDE_ALIGN` lookaside, so classpnp's extension types are 64/128-aligned while the C's
   `IoCreateDevice` gave 16. Do NOT move the extension off `DeviceObject + 1` to align it: KMDF

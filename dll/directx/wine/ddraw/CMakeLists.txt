@@ -39,3 +39,5 @@ add_cargo_module(ddraw ddraw-cargo ddraw.dll
     BODY_CRATE ddraw-rust
     DESTINATION reactos/system32
     EXTRA_DEPENDS ddraw_shims psdk ddraw_r ${DDRAW_REUSED} uuid_sources)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

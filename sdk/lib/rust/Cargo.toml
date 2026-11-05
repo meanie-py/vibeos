@@ -1221,6 +1221,21 @@ debug = 1
 # classpnp, disk and cdrom followed once IoCreateDevice cache-aligned device extensions and the
 # pool honoured the *CacheAligned pool types: on 64-bit COMMON_DEVICE_EXTENSION embeds a
 # LOOKASIDE_ALIGN lookaside (64/128-aligned), which the C's 16-aligned placement never gave it.
+# win32k-rust 2026-11-04: its DC_PREPARED / per-type lock-count blocks and ASSERT_DC_PREPARED live.
+# 2026-11-05, the driver tail: pnpmgr, pci, atapi, pciidex, storport, pcix, scsiport, hidusb,
+# hidclass, kbdhid, mouhid, kbdclass, mouclass, i8042prt, ks, blue, e1000, rtl8139, usbport, usbhub,
+# usbehci, usbohci, usbuhci, usbxhci, usbstor, usbccgp, acpi, npfs, msfs, mup, fltmgr, mountmgr,
+# ramdisk, vioblk, nvme, swenum, null, beep, fs_rec, ndis, tdi, netio, po, wdfldr (most already used
+# the always-live ntkrnl_sys::ASSERT!, so for them this arms the UB checks).
+# 2026-11-05, batch 3: the ntoskrnl-linked subsystems (fsrtl dbgk lpc kd kd64 inbv vf wmi fstub
+# rtlk) and the rest of the kernel-mode drivers (partmgr, serial, framebuf, bootvid, condrv, ksecdd,
+# uniata, buslogic, legide, pciide, pciidex-legacy, atapi-legacy, sdhc, pl011, arm64input, sysfb,
+# watchdog, processr, usbd, usbdex, usbaudio, portcls, kmixer, sysaudio, wdmaud, mmixer, dxg, bmfd,
+# ftfd, ndisuio, netstack, tdihelpers, csq, wmilib, wpprecorder, kdcom, kdcom-serial, kdgdb, kdvm,
+# kdbg, nmidebug, rossym, evtlib, hidparse, hidparser, ntoskrnl_vista, ntoskrnl-vista, arbiter,
+# sptilib, vdm, cport, bwfm). Still unarmed: cmboot-rust, va-slots-rust and ntkrnl-sys, which
+# freeldr links. Batch 4 (2026-11-05): the rtl-* family behind rtl-rust, shared by ntoskrnl and
+# ntdll -- but NOT rtl-diag and rtl-strings, which freeldr links through blrtl.
 # NOT freeldr-rust: armed, the BIOS loader's PE grew to 0x7fc00 against MAX_FREELDR_PE_SIZE
 # 0x77000 (35840 bytes over; every BIOS boot would bugcheck). Its 19 cfg(debug_assertions) blocks
 # stay unbuilt until the loader has the room (2026-11-02). overflow-checks defaults to FOLLOWING
@@ -1274,6 +1289,381 @@ overflow-checks = false
 debug-assertions = true
 overflow-checks = false
 [profile.release.package.cdrom-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.win32k-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.pnpmgr-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.pci-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.atapi-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.pciidex-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.storport-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.pcix-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.scsiport-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.hidusb-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.hidclass-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.kbdhid-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.mouhid-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.kbdclass-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.mouclass-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.i8042prt-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.ks-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.blue-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.e1000-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl8139-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.usbport-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.usbhub-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.usbehci-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.usbohci-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.usbuhci-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.usbxhci-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.usbstor-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.usbccgp-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.acpi-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.npfs-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.msfs-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.mup-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.fltmgr-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.mountmgr-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.ramdisk-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.vioblk-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.nvme-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.swenum-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.null-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.beep-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.fs_rec-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.ndis-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.tdi-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.netio-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.po-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.wdfldr-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.fsrtl-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.dbgk-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.lpc-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.kd-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.kd64-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.inbv-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.vf-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.wmi-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.fstub-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.partmgr-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.serial-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.framebuf-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.bootvid-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.condrv-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.ksecdd-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.uniata-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.buslogic-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.legide-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.pciide-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.pciidex-legacy-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.atapi-legacy-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.sdhc-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.pl011-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.arm64input-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.sysfb-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.watchdog-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.processr-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.usbd-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.usbdex-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.usbaudio-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.portcls-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.kmixer-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.sysaudio-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.wdmaud-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.mmixer-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.dxg-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.bmfd-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.ftfd-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.ndisuio-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.netstack-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.tdihelpers-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.csq-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.wmilib-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.wpprecorder-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.kdcom-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.kdcom-serial-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.kdgdb-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.kdvm-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.kdbg-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.nmidebug-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rossym-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.evtlib-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.hidparse-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.hidparser-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.ntoskrnl_vista-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.ntoskrnl-vista-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.arbiter-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.sptilib-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.vdm-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.cport-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.bwfm-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtlk-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-rust]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-actctx]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-bootdata]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-error]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-except]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-heap]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-heappage]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-heapuser]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-misc]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-ppb]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-propvar]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-rangelist]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-rxact]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-sync]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-sysvol]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-threadpool]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-version]
+debug-assertions = true
+overflow-checks = false
+[profile.release.package.rtl-vista-rust]
 debug-assertions = true
 overflow-checks = false
 

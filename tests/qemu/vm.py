@@ -331,6 +331,18 @@ class QemuVM:
             config._up_boot_timeout = config.boot_timeout
             config._up_hang_silence_seconds = config.hang_silence_seconds
         self.work_dir = Path(work_dir)
+        # The run's durable artifact dir, when the caller owns one (vibeos-cli exports it):
+        # payload screenshots and silence samples go here, since pytest prunes work_dir. The
+        # native port dropped this and test_payload.py's two readers raised AttributeError at
+        # the first `[APPSTORM] shot` line.
+        self.artifact_dir: Path | None = None
+        _art = os.environ.get("VIBEOS_ARTIFACT_DIR", "").strip()
+        if _art:
+            try:
+                self.artifact_dir = Path(_art)
+                self.artifact_dir.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                self.artifact_dir = None
         self._backend = backend
         self._win = windows or {}
         self._session = DedicatedSession()

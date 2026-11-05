@@ -41,9 +41,9 @@ unsafe fn InsertHeadList(lh: PLIST_ENTRY, entry: PLIST_ENTRY) {
 unsafe fn RtlCopyMemory(dst: *mut c_void, src: *const c_void, len: usize) {
     core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, len);
 }
-// ASSERT_DC_PREPARED is a debug ASSERT in C — no-op (DUMMY_PSEH / NDEBUG).
+// ASSERT_DC_PREPARED (dc.h): NT_ASSERT(pdc->fs & DC_PREPARED).
 #[inline(always)]
-unsafe fn ASSERT_DC_PREPARED(_dc: PDC) {}
+unsafe fn ASSERT_DC_PREPARED(dc: PDC) { NT_ASSERT!(((*dc).fs & DC_PREPARED as i32) != 0); }
 // LANGID bit macros (winnt.h)
 #[inline(always)]
 fn PRIMARYLANGID(lgid: u16) -> u32 { (lgid & 0x3ff) as u32 }

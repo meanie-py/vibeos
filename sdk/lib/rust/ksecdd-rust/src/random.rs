@@ -89,8 +89,9 @@ pub unsafe extern "system" fn KsecGatherEntropyData(
     (*EntropyData).CurrentThreadId = PsGetCurrentThreadId();
     KeQueryTickCount(core::ptr::addr_of_mut!((*EntropyData).TickCount) as *mut i64);
     /* KeQuerySystemTime expansion */
-    *(core::ptr::addr_of_mut!((*EntropyData).SystemTime) as *mut u64) =
-        *(SharedSystemTime as *mut u64);
+    // SystemTime sits at KUSER_SHARED_DATA+0x14, 4-aligned: a typed u64 deref is UB (it panicked
+    // once the crate was armed). The shared helper reads it the way the C macro means.
+    *(core::ptr::addr_of_mut!((*EntropyData).SystemTime) as *mut i64) = ntkrnl_sys::ke::ke_query_system_time();
     (*EntropyData).PerformanceCounter =
         KeQueryPerformanceCounter(core::ptr::addr_of_mut!((*EntropyData).PerformanceFrequency));
 

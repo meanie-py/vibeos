@@ -10,9 +10,28 @@ use crate::parser_h::{
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: bool = true;
 
+// DIVERGENCE from context.c: the C packs the root collection at RawData (offset 4, after
+// `ULONG Size`) and every later report/sub-collection at a 4-byte-granular offset, so on
+// amd64/arm64 every HID_COLLECTION / HID_REPORT read through the context is a misaligned
+// pointer dereference (UB; armed debug-assertions panic on it — HidPDescription kmtest,
+// hidparser api.rs `(*Collection).Usage`). We align RawData and pad every stored chunk to
+// CTX_ALIGN. CTX_ALIGN is 4 on i386, where the layout and PreparsedDataLength stay
+// byte-identical to the C; only 64-bit contexts grow by the padding.
 #[repr(C)]
 pub union HID_COLLECTION_CONTEXT_anon_0 {
     pub RawData: [u8; 1],
+    _align: [usize; 0],
+}
+
+const CTX_ALIGN: u32 = {
+    let c = core::mem::align_of::<HID_COLLECTION>();
+    let r = core::mem::align_of::<HID_REPORT>();
+    (if c > r { c } else { r }) as u32
+};
+
+#[inline]
+const fn ctx_align_up(x: u32) -> u32 {
+    x.wrapping_add(CTX_ALIGN - 1) & !(CTX_ALIGN - 1)
 }
 
 #[repr(C)]
@@ -26,18 +45,24 @@ pub type PHID_COLLECTION_CONTEXT = *mut HID_COLLECTION_CONTEXT;
 // Translated from context.c (grinder left it as an extern stub — body dropped).
 #[no_mangle]
 pub unsafe extern "C" fn HidParser_CalculateCollectionSize(Collection: *mut HID_COLLECTION) -> u32 {
-    let mut Size: u32 = core::mem::size_of::<HID_COLLECTION>() as u32;
+    // collection header plus its offset table, padded (see CTX_ALIGN)
+    let mut Size: u32 = ctx_align_up(
+        (core::mem::size_of::<HID_COLLECTION>() as u32).wrapping_add(
+            ((*Collection).ReportCount.wrapping_add((*Collection).NodeCount))
+                .wrapping_mul(core::mem::size_of::<ULONG>() as u32),
+        ),
+    );
 
     // add size required for the number of report items
     let mut Index: u32 = 0;
     while Index < (*Collection).ReportCount {
         // ASSERT(Collection->Reports[Index]->ItemCount);
         let Report = *(*Collection).Reports.add(Index as usize);
-        Size = Size.wrapping_add(
+        Size = Size.wrapping_add(ctx_align_up(
             (core::mem::size_of::<HID_REPORT>() as u32).wrapping_add(
                 (*Report).ItemCount.wrapping_mul(core::mem::size_of::<HID_REPORT_ITEM>() as u32),
             ),
-        );
+        ));
         Index = Index.wrapping_add(1);
     }
 
@@ -49,12 +74,6 @@ pub unsafe extern "C" fn HidParser_CalculateCollectionSize(Collection: *mut HID_
         ));
         Index = Index.wrapping_add(1);
     }
-
-    // append size for the offset
-    Size = Size.wrapping_add(
-        ((*Collection).ReportCount.wrapping_add((*Collection).NodeCount))
-            .wrapping_mul(core::mem::size_of::<ULONG>() as u32),
-    );
 
     Size
 }
@@ -94,11 +113,11 @@ pub unsafe extern "C" fn HidParser_StoreCollection(
         core::mem::size_of::<HID_COLLECTION>() as u32,
     );
 
-    CollectionSize = (core::mem::size_of::<HID_COLLECTION>() as u32).wrapping_add(
+    CollectionSize = ctx_align_up((core::mem::size_of::<HID_COLLECTION>() as u32).wrapping_add(
         (core::mem::size_of::<u32>() as u32).wrapping_mul(
             ((*Collection).ReportCount).wrapping_add((*Collection).NodeCount)
         )
-    );
+    ));
 
     CurrentOffset = CurrentOffset.wrapping_add(CollectionSize);
 
@@ -136,7 +155,7 @@ pub unsafe extern "C" fn HidParser_StoreCollection(
         );
 
         *(&raw mut (*TargetCollection).Offsets as *mut u32).add(Index as usize) = CurrentOffset;
-        CurrentOffset = CurrentOffset.wrapping_add(ReportSize);
+        CurrentOffset = CurrentOffset.wrapping_add(ctx_align_up(ReportSize));
 
         Index = Index.wrapping_add(1);
     }

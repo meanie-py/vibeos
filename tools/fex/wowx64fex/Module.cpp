@@ -142,6 +142,78 @@ std::mutex ThreadCreationMutex;
 // Map of TIDs to their FEX thread state, `ThreadCreationMutex` must be locked when accessing
 std::unordered_map<DWORD, FEXCore::Core::InternalThreadState*> Threads;
 
+// Who holds ThreadCreationMutex, and for how long, said at process exit beside wowx64's syscall
+// profile. Every holder goes through Acquire/Release (or Held), so `hold` is per holder kind, and
+// a contended wait is charged twice: to the kind that waited, and as `blocked` to the kind it
+// found holding the lock. The holder is sampled just before blocking, so a lock that changes
+// hands during the wait charges the first holder only. `track` is a memory call's after-call
+// InvalidationTracker work, part of its hold; the native call between Before and After is the
+// rest of a bracket's hold, and wowx64's `kernel`.
+namespace LockProfile {
+enum Kind { Alloc, Protect, Free, ReadFile, MapView, Unmap, Fault, Flush, Dirty, ThreadInit, ThreadTerm, Kinds };
+std::atomic<uint64_t> Calls[Kinds], Contended[Kinds], Wait[Kinds], Hold[Kinds], Blocked[Kinds], Track[Kinds];
+std::atomic<int> Holder {Kinds}; // written only by the holder
+uint64_t HeldSince;              // read and written only under the lock
+
+uint64_t Ticks() {
+  uint64_t T;
+  asm volatile("mrs %0, cntvct_el0" : "=r"(T));
+  return T;
+}
+
+void Acquire(Kind K) {
+  if (!ThreadCreationMutex.try_lock()) {
+    const uint64_t T0 = Ticks();
+    const int Behind = Holder.load(std::memory_order_relaxed);
+    ThreadCreationMutex.lock();
+    const uint64_t W = Ticks() - T0;
+    Contended[K].fetch_add(1, std::memory_order_relaxed);
+    Wait[K].fetch_add(W, std::memory_order_relaxed);
+    if (Behind < Kinds) {
+      Blocked[Behind].fetch_add(W, std::memory_order_relaxed);
+    }
+  }
+  HeldSince = Ticks();
+  Holder.store(K, std::memory_order_relaxed);
+  Calls[K].fetch_add(1, std::memory_order_relaxed);
+}
+
+void Release(Kind K) {
+  Hold[K].fetch_add(Ticks() - HeldSince, std::memory_order_relaxed);
+  Holder.store(Kinds, std::memory_order_relaxed);
+  ThreadCreationMutex.unlock();
+}
+
+struct Held {
+  Kind K;
+  explicit Held(Kind K)
+    : K(K) {
+    Acquire(K);
+  }
+  ~Held() {
+    Release(K);
+  }
+};
+
+void Report() {
+  uint64_t Freq;
+  asm volatile("mrs %0, cntfrq_el0" : "=r"(Freq));
+  static const char* const Names[Kinds] {"alloc", "protect", "free",  "readfile", "mapview",   "unmap",
+                                         "fault", "flush",   "dirty", "threadinit", "threadterm"};
+  const auto Us = [&](const std::atomic<uint64_t>& T) { return T.load(std::memory_order_relaxed) * 1000000 / Freq; };
+  for (int K = 0; K < Kinds && Freq; K++) {
+    const uint64_t N = Calls[K].load(std::memory_order_relaxed);
+    if (N == 0) {
+      continue;
+    }
+    DbgPrint("[WOWX64FEX] pid %u lock %s: %I64u calls, %I64u contended; hold %I64u us (track %I64u), wait %I64u us, "
+             "blocked others %I64u us\n",
+             static_cast<unsigned>(GetCurrentProcessId()), Names[K], N, Contended[K].load(std::memory_order_relaxed),
+             Us(Hold[K]), Us(Track[K]), Us(Wait[K]), Us(Blocked[K]));
+  }
+}
+} // namespace LockProfile
+
 ThreadData* GetThreadData() {
   return static_cast<ThreadData*>(reinterpret_cast<__TEB*>(NtCurrentTeb())->WOW32Reserved);
 }
@@ -509,7 +581,7 @@ NTSTATUS BTCpu64ProcessInit(const WOWX64_HOST_SERVICES* Services) {
 }
 
 NTSTATUS BTCpu64ThreadInit() {
-  std::scoped_lock Lock(ThreadCreationMutex);
+  LockProfile::Held Lock(LockProfile::ThreadInit);
   FEX::Windows::InitCRTThread();
   auto* Thread = CTX->CreateThread(0, 0);
 
@@ -564,7 +636,7 @@ void BTCpu64ThreadTerm(HANDLE Thread, NTSTATUS ExitStatus) {
 
   FEXCore::Core::InternalThreadState* ThreadState;
   {
-    std::scoped_lock Lock(ThreadCreationMutex);
+    LockProfile::Held Lock(LockProfile::ThreadTerm);
     auto it = Threads.find(TID);
     if (it == Threads.end()) {
       return; // never a guest thread, or already cleaned up
@@ -607,13 +679,9 @@ std::vector<HANDLE> TermVictims;
 bool TermLocked = false;
 } // namespace
 
-namespace MemProfile {
-void Report();
-} // namespace MemProfile
-
 void BTCpu64ProcessTerm(HANDLE Process, BOOL After, NTSTATUS Status) {
   if (!Process && !After) {
-    MemProfile::Report();
+    LockProfile::Report();
   }
   if (Process) {
     return; // only "every other thread" (NULL) kills threads that may hold our locks
@@ -764,7 +832,7 @@ static bool BTCpu64ResetToConsistentStateImpl(EXCEPTION_POINTERS* Ptrs) {
       return true;
     }
 
-    std::scoped_lock Lock(ThreadCreationMutex);
+    LockProfile::Held Lock(LockProfile::Fault);
     if (InvalidationTracker->HandleRWXAccessViolation(Thread, Context->Pc, FaultAddress)) {
       if (CTX->IsAddressInCodeBuffer(Thread, Context->Pc) && !CTX->IsCurrentBlockSingleInst(Thread) &&
           CTX->IsAddressInCurrentBlock(Thread, FaultAddress & FEXCore::Utils::FEX_PAGE_MASK, FEXCore::Utils::FEX_PAGE_SIZE)) {
@@ -816,7 +884,7 @@ NTSTATUS BTCpu64ResetToConsistentState(EXCEPTION_POINTERS* Ptrs) {
 }
 
 void BTCpu64FlushInstructionCache2(const void* Address, SIZE_T Size) {
-  std::scoped_lock Lock(ThreadCreationMutex);
+  LockProfile::Held Lock(LockProfile::Flush);
   InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), false);
 }
 
@@ -824,7 +892,7 @@ void BTCpu64FlushInstructionCache2(const void* Address, SIZE_T Size) {
 // the store, so drop any code translated from the range. WOW64/Module.cpp's
 // BTCpuNotifyMemoryDirty.
 void BTCpu64NotifyMemoryDirty(void* Address, SIZE_T Size) {
-  std::scoped_lock Lock(ThreadCreationMutex);
+  LockProfile::Held Lock(LockProfile::Dirty);
   InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), false);
 }
 
@@ -839,116 +907,77 @@ void BTCpu64NotifyReadFile(HANDLE Handle, void* Address, SIZE_T Size, BOOL After
   }
   auto& InLockedRWXRead = static_cast<FrontendThreadData*>(TD->ThreadState->FrontendPtr)->InLockedRWXRead;
   if (!After) {
-    ThreadCreationMutex.lock();
+    LockProfile::Acquire(LockProfile::ReadFile);
     CTX->GetCodeInvalidationMutex().lock();
     if (InvalidationTracker->BeginUntrackedWriteLocked(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size))) {
       InLockedRWXRead = true;
     } else {
       CTX->GetCodeInvalidationMutex().unlock();
-      ThreadCreationMutex.unlock();
+      LockProfile::Release(LockProfile::ReadFile);
     }
   } else {
     if (InLockedRWXRead) {
       InLockedRWXRead = false;
       CTX->GetCodeInvalidationMutex().unlock();
-      ThreadCreationMutex.unlock();
+      LockProfile::Release(LockProfile::ReadFile);
     }
   }
 }
-
-// Where a bracketed memory syscall's CPU-layer time goes, said at process exit beside wowx64's
-// syscall profile: `wait` is the before-call's ThreadCreationMutex acquisition, `track` the
-// after-call's InvalidationTracker work. The native call between them is wowx64's `kernel`.
-namespace MemProfile {
-enum Kind { Alloc, Protect, Free, Kinds };
-std::atomic<uint64_t> Calls[Kinds], Wait[Kinds], Track[Kinds];
-
-uint64_t Ticks() {
-  uint64_t T;
-  asm volatile("mrs %0, cntvct_el0" : "=r"(T));
-  return T;
-}
-
-void Lock(Kind K) {
-  const uint64_t T0 = Ticks();
-  ThreadCreationMutex.lock();
-  Wait[K].fetch_add(Ticks() - T0, std::memory_order_relaxed);
-}
-
-void Report() {
-  uint64_t Freq;
-  asm volatile("mrs %0, cntfrq_el0" : "=r"(Freq));
-  static const char* const Names[Kinds] {"alloc", "protect", "free"};
-  for (int K = 0; K < Kinds; K++) {
-    const uint64_t N = Calls[K].load(std::memory_order_relaxed);
-    if (N == 0 || Freq == 0) {
-      continue;
-    }
-    const auto Us = [&](uint64_t T) { return T * 1000000 / Freq; };
-    DbgPrint("[WOWX64FEX] pid %u memory %s: %I64u calls; wait %I64u us, track %I64u us\n",
-             static_cast<unsigned>(GetCurrentProcessId()), Names[K], N, Us(Wait[K].load(std::memory_order_relaxed)),
-             Us(Track[K].load(std::memory_order_relaxed)));
-  }
-}
-} // namespace MemProfile
 
 void BTCpu64NotifyMemoryAlloc(void* Address, SIZE_T Size, ULONG Type, ULONG Prot, BOOL After, ULONG Status) {
   if (!After) {
-    MemProfile::Lock(MemProfile::Alloc);
+    LockProfile::Acquire(LockProfile::Alloc);
   } else {
-    const uint64_t T0 = MemProfile::Ticks();
+    const uint64_t T0 = LockProfile::Ticks();
     // MEM_RESET(_UNDO) ignores the passed permissions
     if (!Status && !(Type & (MEM_RESET | MEM_RESET_UNDO))) {
       InvalidationTracker->HandleMemoryProtectionNotification(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), Prot);
     }
-    MemProfile::Track[MemProfile::Alloc].fetch_add(MemProfile::Ticks() - T0, std::memory_order_relaxed);
-    MemProfile::Calls[MemProfile::Alloc].fetch_add(1, std::memory_order_relaxed);
-    ThreadCreationMutex.unlock();
+    LockProfile::Track[LockProfile::Alloc].fetch_add(LockProfile::Ticks() - T0, std::memory_order_relaxed);
+    LockProfile::Release(LockProfile::Alloc);
   }
 }
 
 void BTCpu64NotifyMemoryProtect(void* Address, SIZE_T Size, ULONG NewProt, BOOL After, ULONG Status) {
   if (!After) {
-    MemProfile::Lock(MemProfile::Protect);
+    LockProfile::Acquire(LockProfile::Protect);
   } else {
-    const uint64_t T0 = MemProfile::Ticks();
+    const uint64_t T0 = LockProfile::Ticks();
     if (!Status) {
       InvalidationTracker->HandleMemoryProtectionNotification(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), NewProt);
     }
-    MemProfile::Track[MemProfile::Protect].fetch_add(MemProfile::Ticks() - T0, std::memory_order_relaxed);
-    MemProfile::Calls[MemProfile::Protect].fetch_add(1, std::memory_order_relaxed);
-    ThreadCreationMutex.unlock();
+    LockProfile::Track[LockProfile::Protect].fetch_add(LockProfile::Ticks() - T0, std::memory_order_relaxed);
+    LockProfile::Release(LockProfile::Protect);
   }
 }
 
 void BTCpu64NotifyMemoryFree(void* Address, SIZE_T Size, ULONG FreeType, BOOL After, ULONG Status) {
   if (!After) {
-    MemProfile::Lock(MemProfile::Free);
+    LockProfile::Acquire(LockProfile::Free);
   } else {
-    const uint64_t T0 = MemProfile::Ticks();
+    const uint64_t T0 = LockProfile::Ticks();
     if (!Status) {
       InvalidationTracker->InvalidateAlignedInterval(reinterpret_cast<uint64_t>(Address), static_cast<uint64_t>(Size), true);
     }
-    MemProfile::Track[MemProfile::Free].fetch_add(MemProfile::Ticks() - T0, std::memory_order_relaxed);
-    MemProfile::Calls[MemProfile::Free].fetch_add(1, std::memory_order_relaxed);
-    ThreadCreationMutex.unlock();
+    LockProfile::Track[LockProfile::Free].fetch_add(LockProfile::Ticks() - T0, std::memory_order_relaxed);
+    LockProfile::Release(LockProfile::Free);
   }
 }
 
 NTSTATUS BTCpu64NotifyMapViewOfSection(void* Unk1, void* Address, void* Unk2, SIZE_T Size, ULONG AllocType, ULONG Prot) {
-  std::scoped_lock Lock(ThreadCreationMutex);
+  LockProfile::Held Lock(LockProfile::MapView);
   HandleImageMap(reinterpret_cast<uint64_t>(Address));
   return STATUS_SUCCESS;
 }
 
 void BTCpu64NotifyUnmapViewOfSection(void* Address, BOOL After, ULONG Status) {
   if (!After) {
-    ThreadCreationMutex.lock();
+    LockProfile::Acquire(LockProfile::Unmap);
     auto [Start, Size] = InvalidationTracker->InvalidateContainingSection(reinterpret_cast<uint64_t>(Address), true);
     if (Size) {
       HandleImageUnmap(Start, Size);
     }
   } else {
-    ThreadCreationMutex.unlock();
+    LockProfile::Release(LockProfile::Unmap);
   }
 }

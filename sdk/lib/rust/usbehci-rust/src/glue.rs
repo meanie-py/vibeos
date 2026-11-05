@@ -12,6 +12,8 @@ pub use crate::types::EHCI_QUEUE_TD as EHCI_HW_TD; // EHCI_HCD_TD.HwTD type (Nex
 
 // ---- SharedSystemTime — &KI_USER_SHARED_DATA.SystemTime (the KeQuerySystemTime macro source) ----
 #[inline]
+// KSYSTEM_TIME at KUSER_SHARED_DATA+0x14 is only 4-aligned: read it with
+// core::ptr::read_unaligned, never `*ptr` (armed debug-assertions panic on that).
 pub unsafe fn SharedSystemTimePtr() -> *mut ntkrnl_sys::ddk::ULONG64 {
     let SharedUserData = ntkrnl_sys::mm::KI_USER_SHARED_DATA as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
     core::ptr::addr_of_mut!((*SharedUserData).SystemTime) as *mut ntkrnl_sys::ddk::ULONG64

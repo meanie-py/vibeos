@@ -1309,6 +1309,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # (native Rust rule, tools/vibeos-lint/src/rules/devobj_as_extension.rs): six classpnp sites
     # wrote the release-queue spinlock into the device object. Gated at zero.
     specs.append(("scan_devobj_as_extension", ["MISSING"], "stdout"))
+    # KeQuerySystemTime expanded as a typed u64 read of KUSER_SHARED_DATA.SystemTime (+0x14,
+    # 4-aligned), or through an invented zeroed `SharedSystemTime` global (native Rust rule,
+    # tools/vibeos-lint/src/rules/shared_system_time.rs). Armed usb/ksecdd bugchecked on it.
+    specs.append(("scan_shared_system_time", ["MISSING"], "stdout"))
     # A named constant cast to a type too narrow for it: rustc's overflow lint covers
     # literals only. disk.sys set SRB_CLASS_FLAGS_PERSISTANT `as USHORT` (= 0), classpnp freed
     # an SRB inside the device extension, 0xC2 on the first flush. Gated at zero.

@@ -72,6 +72,9 @@ class CFunctionDecls:
     member_uses: tuple[tuple[str, int], ...] = ()
     #: `(case, label)` per `switch` arm that ends in an unconditional `goto`; see goto_arm.py.
     goto_arms: tuple[tuple[str, str], ...] = ()
+    #: the C takes `sizeof` of a DEREFERENCE (`sizeof(*p)`, `sizeof *p`) somewhere in it -- the
+    #: one shape a pointer-sized `size_of::<*mut T>()` can be a misreading of.
+    sizeof_deref: bool = False
 
 
 def _split_commas(text: str) -> list[str]:
@@ -131,6 +134,22 @@ def c_declarations(
         t for t in re.findall(r"\bsizeof\s*\(\s*([A-Za-z_]\w*)\s*\)", body) if t in types
     )
     raw = re.search(r"\bsizeof\s*\(\s*(?:const\s+)?[A-Za-z_]\w*\s*\*", body) is not None
+    # `sizeof(a->f)` / `sizeof(a.f)`: a member of unknown type may be a pointer too, and its
+    # size meant -- ddraw's `sizeof(clipper->IDirectDrawClipper_iface.lpVtbl)` was "restored"
+    # to the 9-slot vtable struct and SecureZeroMemory ran 36/72 bytes off the heap block.
+    raw = raw or re.search(r"\bsizeof\s*\(\s*[A-Za-z_]\w*\s*(?:->|\.)", body) is not None
+    # The evidence for a pointee: `sizeof(*V)` of a plain V this function declares through a
+    # pointer typedef with no further star -- one level, so `*V` IS the struct. Not a member
+    # (`sizeof(*d3d8->wined3d_outputs)`, a `struct wined3d_output **`) and not a double
+    # pointer: d3d8/d3d9 sized their output and swapchain POINTER arrays by the opaque
+    # struct (bindgen size 0) and d3d9's back-buffer array by d3d9_surface.
+    deref = any(
+        (names.get(a or b) or ("", -1))[1] == 0 and (names.get(a or b) or ("", 0))[0] in types
+        for a, b in re.findall(
+            r"\bsizeof\s*(?:\(\s*\*\s*([A-Za-z_]\w*)\s*\)|\*\s*([A-Za-z_]\w*)\b(?!\s*(?:->|\.|\[)))",
+            body,
+        )
+    )
     # `sizeof(p)` / `sizeof p` of a pointer VARIABLE means a pointer size too.
     for v in re.findall(r"\bsizeof\s*(?:\(\s*([A-Za-z_]\w*)\s*\)|\s([A-Za-z_]\w*)\b)", body):
         typ, depth = names.get(v[0] or v[1], ("", 0))
@@ -156,6 +175,7 @@ def c_declarations(
         idents,
         tuple(sorted(uses.items())),
         goto_arm.c_goto_arms(body),
+        deref,
     )
 
 
@@ -232,7 +252,7 @@ def repair(
                 - {"c_void", "core", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "usize"}
                 - set(re.findall(r"\[\s*\*(?:mut|const)\s+([A-Za-z_]\w*)\s*;", body))
             )
-            if not c.sizeof_types and not c.sizeof_raw_pointer
+            if not c.sizeof_types and not c.sizeof_raw_pointer and c.sizeof_deref
             else []
         )
         if not wrong and ret_typ is None and not sized and not raw_sized:

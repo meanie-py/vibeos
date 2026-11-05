@@ -544,7 +544,9 @@ use core::sync::atomic::{AtomicI32, Ordering};
 }
 
 // ============================ data symbols ============================
-#[no_mangle] pub static mut SharedSystemTime: LARGE_INTEGER = unsafe { core::mem::zeroed() };
+// No `SharedSystemTime` global: it was defined here as a static ZERO, so every KeQuerySystemTime
+// expansion in classpnp (failure-prediction period, throttle stats, autorun timestamps) read 1601.
+// Those sites call ntkrnl_sys::ke::ke_query_system_time(), as fastfat's timesup.rs does.
 
 /// utils.c ClasspDeviceCopyOffloadProperty — StorageDeviceCopyOffloadProperty
 /// query handler. This was a hand-written link-gap stub that answered every

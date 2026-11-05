@@ -64,9 +64,6 @@ macro_rules! w {
 
 
 extern "C" {
-    static SharedSystemTime: LARGE_INTEGER;
-}
-extern "C" {
 }
 unsafe extern "system" {
     fn IsEqualGUID(Guid1: *const _GUID, Guid2: *const _GUID) -> bool;
@@ -741,8 +738,8 @@ pub unsafe extern "C" fn ConvertTickToDateTime(
 
     maxInc = KeQueryTimeIncrement();
 
-    // KeQuerySystemTime expansion: read the global SharedSystemTime
-    nowTime.QuadPart = SharedSystemTime.QuadPart;
+    // KeQuerySystemTime(&nowTime)
+    nowTime.QuadPart = ntkrnl_sys::ke::ke_query_system_time();
 
     time.QuadPart = nowTime.QuadPart
         - ((nowTick.QuadPart as i64 - Tick.QuadPart as i64) * (maxInc as i64));
@@ -901,7 +898,7 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
             | WNODE_FLAG_STATIC_INSTANCE_NAMES) as u32;
 
         // Expand KeQuerySystemTime: directly copy the shared system time
-        (*event).WnodeHeader.__bindgen_anon_2.bindgen_union_field = SharedSystemTime.QuadPart as u64;
+        (*event).WnodeHeader.__bindgen_anon_2.bindgen_union_field = ntkrnl_sys::ke::ke_query_system_time() as u64;
 
         (*event).InstanceIndex = InstanceIndex;
         (*event).SizeDataBlock = data_size;

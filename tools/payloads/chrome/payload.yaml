@@ -1,0 +1,45 @@
+# chrome — Google Chrome, unchanged, on the modern-windows-compat roadmap's Chrome ladder
+# (docs/engineering/modern-windows-compat-roadmap.md, "Boss 3"). Rung 1 is a headless DOM
+# dump of a local page: no sandbox, no GPU, no network. Chrome is Google's, not ours to
+# commit, so stage.py copies a Chrome for Testing folder (the portable build Google ships
+# for automation; no installer, no updater) named at build time:
+#   VIBEOS_CHROME_DIR=<dir holding chrome.exe> VIBEOS_PAYLOAD=chrome ./vibeos-cli build --arch amd64
+#   ./vibeos-cli smoke --arch amd64 --payload chrome
+# Get one: https://googlechromelabs.github.io/chrome-for-testing/ (win64 `chrome` zip).
+build_hint: "tools/payloads/chrome/build.sh {arch}"
+name: chrome
+description: Google Chrome for Testing, headless DOM dump (Chrome ladder rung 1)
+arches: [amd64]
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe
+  - src: tools/payloads/chrome/commands.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/chrome/skip.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/chrome/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: tools/payloads/chrome/pipeprobe-{arch}.exe
+    dest: bin/pipeprobe/pipeprobe.exe
+  - src: tools/payloads/chrome/catfile-{arch}.exe
+    dest: bin/catfile/catfile.exe
+  - src: tools/payloads/chrome/dumpinfo-{arch}.exe
+    dest: bin/dumpinfo/dumpinfo.exe
+  - src: tools/payloads/chrome/tlsprobe-{arch}.exe
+    dest: bin/tlsprobe/tlsprobe.exe
+  - src: tools/payloads/chrome/tlsdll-{arch}.dll
+    dest: bin/tlsprobe/tlsdll.dll
+  - src: tools/payloads/chrome/secprobe-{arch}.exe
+    dest: bin/secprobe/secprobe.exe
+  - src: tools/payloads/chrome/hello.html
+    dest: bin/chrome-pages/hello.html
+binaries_from: tools/payloads/chrome/stage.py
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_idle_secs: 1200
+  launch_drain_secs: 3600
+  # Chrome's browser + renderer + utility processes want far more than the 512M default.
+  vm_memory: 4G

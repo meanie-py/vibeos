@@ -485,7 +485,7 @@ pub unsafe extern "system" fn IdeReadWrite(
 unsafe fn read_cdb10(startingSector: &mut ULONGLONG, AtaReq: PATA_REQ, cdb: PCDB) {
     *startingSector = dd_swap((*cdb).CDB10.as_ref().LBA.as_ptr()) as ULONGLONG;
     (*ata_req_core(AtaReq)).bcount =
-        RtlUshortByteSwap(*((*cdb).CDB10.as_ref().TransferBlocks.as_ptr() as *const USHORT)) as ULONG;
+        RtlUshortByteSwap(core::ptr::read_unaligned((*cdb).CDB10.as_ref().TransferBlocks.as_ptr() as *const USHORT)) as ULONG;
 }
 // MOV_DD_SWP(startingSector, CDB12READWRITE.LBA); MOV_DD_SWP(bcount, NumOfBlocks)
 unsafe fn read_cdb12(startingSector: &mut ULONGLONG, AtaReq: PATA_REQ, cdb: PCDB) {
@@ -499,16 +499,18 @@ unsafe fn read_cdb12(startingSector: &mut ULONGLONG, AtaReq: PATA_REQ, cdb: PCDB
             .as_ptr(),
     );
 }
-// MOV_DD_SWP target read: byte-swap a 4-byte big-endian field
+// MOV_DD_SWP target read: byte-swap a 4-byte big-endian field. CDB fields are byte arrays at
+// unaligned offsets (CDB10.LBA is bytes 2..6; the i386 boot faulted on a 2-aligned LBA pointer):
+// read unaligned, as the C's byte-wise MOV_DD_SWP does -- a typed ULONG deref is UB.
 #[inline(always)]
 unsafe fn dd_swap(p: *const UCHAR) -> ULONG {
-    RtlUlongByteSwap(*(p as *const ULONG))
+    RtlUlongByteSwap(core::ptr::read_unaligned(p as *const ULONG))
 }
 // MOV_QD_SWP target read: an 8-byte big-endian field (two dwords swapped & reordered)
 #[inline(always)]
 unsafe fn qd_swap(p: *const UCHAR) -> ULONGLONG {
-    let lo = RtlUlongByteSwap(*((p as *const ULONG).add(1))) as ULONGLONG;
-    let hi = RtlUlongByteSwap(*(p as *const ULONG)) as ULONGLONG;
+    let lo = RtlUlongByteSwap(core::ptr::read_unaligned((p as *const ULONG).add(1))) as ULONGLONG;
+    let hi = RtlUlongByteSwap(core::ptr::read_unaligned(p as *const ULONG)) as ULONGLONG;
     lo | (hi << 32)
 }
 
@@ -548,7 +550,7 @@ pub unsafe extern "system" fn IdeVerify(
         x if x == SCSIOP_VERIFY => {
             startingSector = dd_swap((*cdb).CDB10.as_ref().LBA.as_ptr()) as ULONGLONG;
             sectorCount =
-                RtlUshortByteSwap(*((*cdb).CDB10.as_ref().TransferBlocks.as_ptr() as *const USHORT)) as ULONG;
+                RtlUshortByteSwap(core::ptr::read_unaligned((*cdb).CDB10.as_ref().TransferBlocks.as_ptr() as *const USHORT)) as ULONG;
         }
         x if x == SCSIOP_VERIFY12 => {
             startingSector =
@@ -704,7 +706,7 @@ pub unsafe extern "system" fn AtapiSendCommand(
             }
             x if x == SCSIOP_READ || x == SCSIOP_WRITE => {
                 (*ata_req_core(AtaReq)).bcount =
-                    RtlUshortByteSwap(*((*cdb).CDB10.as_ref().TransferBlocks.as_ptr() as *const USHORT))
+                    RtlUshortByteSwap(core::ptr::read_unaligned((*cdb).CDB10.as_ref().TransferBlocks.as_ptr() as *const USHORT))
                         as ULONG;
                 // GetLba
                 (*ata_req_core(AtaReq)).lba =
@@ -2514,7 +2516,7 @@ unsafe fn atapi_startio_dispatch(
                             let src = (core::ptr::addr_of!((*LunExt).IdentifyData.ModelNumber) as *const UCHAR)
                                 .add(j as usize);
                             let dst = (&mut vendorId[j as usize]) as *mut CCHAR as *mut USHORT;
-                            *dst = RtlUshortByteSwap(*(src as *const USHORT));
+                            core::ptr::write_unaligned(dst, RtlUshortByteSwap(core::ptr::read_unaligned(src as *const USHORT)));
                             j += 2;
                         }
 

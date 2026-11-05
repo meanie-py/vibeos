@@ -1804,7 +1804,8 @@ pub unsafe extern "system" fn AtapiHwInitialize__(
                 // MOV_DW_SWP(vendorId[j], ((PUCHAR)ModelNumber)[j])
                 let src = (core::ptr::addr_of!((*LunExt).IdentifyData.ModelNumber) as *const UCHAR).add(j as usize);
                 let dst = (&mut vendorId[j as usize]) as *mut CCHAR as *mut USHORT;
-                *dst = RtlUshortByteSwap(*(src as *const USHORT));
+                // CHAR array: byte-aligned on both sides, as the C's byte-wise MOV_DW_SWP assumes.
+                core::ptr::write_unaligned(dst, RtlUshortByteSwap(core::ptr::read_unaligned(src as *const USHORT)));
                 j += 2;
             }
 
