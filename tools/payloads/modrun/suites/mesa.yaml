@@ -1,0 +1,21 @@
+# The guest's modern GL: Mesa softpipe (tools/mesa/build-mesa.sh), staged as an app-local
+# opengl32 beside the d3d probes. Not a Rust-vs-C grade -- the d3d suites' `device` cases stand
+# on this GL, so it gets a sanity gate of its own: the same draw, reached two ways, must agree.
+# Both load opengl32 at runtime as wined3d does (Mesa's implicit TLS then comes from the
+# loader's dynamic-TLS path); staged as glsanity_thread.exe it draws on a thread created
+# after the load. Two full rounds (window, context, draw, teardown): wined3d inits twice per
+# probe, and on i386 the second init's first draw faulted.
+module: mesa
+variants:
+  loader: '%SystemRoot%\bin\modrun\gl\glsanity.exe'
+  thread: '%SystemRoot%\bin\modrun\gl\glsanity_thread.exe'
+stage:
+  - {src: 'tools/payloads/modrun/probes/glsanity-{arch}.exe', dest: bin/modrun/gl/glsanity.exe}
+  - {src: 'tools/payloads/modrun/probes/glsanity-{arch}.exe', dest: bin/modrun/gl/glsanity_thread.exe}
+  - {src: '.cache/mesa/{arch}/opengl32.dll', dest: bin/modrun/gl/opengl32.dll}
+  - {src: '.cache/mesa/{arch}/libgallium_wgl.dll', dest: bin/modrun/gl/libgallium_wgl.dll}
+  - {src: '.cache/mesa/{arch}/libz-1.dll', dest: bin/modrun/gl/libz-1.dll}
+cases:
+  - id: draw
+    expect: ['round 2', 'context 1', 'renderer softpipe', 'immediate ok err=0', 'probe done']
+    timeout: 300

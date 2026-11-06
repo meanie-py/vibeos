@@ -103,6 +103,103 @@ static void format_matrix(IDirect3D9 *d3d)
     }
 }
 
+/* The render target's pixels, read back through a sysmem copy, as one checksum. */
+static void rt_hash(IDirect3DDevice9 *dev, const char *tag)
+{
+    IDirect3DSurface9 *rt, *copy;
+    D3DLOCKED_RECT lr;
+    HRESULT hr;
+
+    if (FAILED(IDirect3DDevice9_GetRenderTarget(dev, 0, &rt)))
+        return;
+    hr = IDirect3DDevice9_CreateOffscreenPlainSurface(dev, 64, 64, D3DFMT_X8R8G8B8, D3DPOOL_SYSTEMMEM, &copy, NULL);
+    if (SUCCEEDED(hr))
+    {
+        hr = IDirect3DDevice9_GetRenderTargetData(dev, rt, copy);
+        printf("%s readback hr=%08lx", tag, (unsigned long)hr);
+        if (SUCCEEDED(hr) && SUCCEEDED(IDirect3DSurface9_LockRect(copy, &lr, NULL, D3DLOCK_READONLY)))
+        {
+            /* X8: the unused byte is undefined, so hash colour bytes only. */
+            unsigned long h = 2166136261u;
+            int x, y;
+            for (y = 0; y < 64; y++)
+                for (x = 0; x < 64; x++)
+                {
+                    DWORD p = ((DWORD *)((BYTE *)lr.pBits + y * lr.Pitch))[x] & 0xffffff;
+                    h = (h ^ p) * 16777619u;
+                }
+            printf(" hash=%08lx corner=%06lx centre=%06lx", h, ((DWORD *)lr.pBits)[0] & 0xffffff,
+                   ((DWORD *)((BYTE *)lr.pBits + 32 * lr.Pitch))[32] & 0xffffff);
+            IDirect3DSurface9_UnlockRect(copy);
+        }
+        printf("\n");
+        IDirect3DSurface9_Release(copy);
+    }
+    IDirect3DSurface9_Release(rt);
+}
+
+/* Only reachable with a real 3D device (the gl case): d3d9's draw paths -- the UP streaming
+ * buffers, FVF-to-declaration conversion, texture binding -- with the result read back. */
+static void render(IDirect3DDevice9 *dev)
+{
+    struct { float x, y, z, rhw; DWORD c; } tri[3] = {
+        {8.0f, 56.0f, 0.5f, 1.0f, 0xffff0000},
+        {32.0f, 4.0f, 0.5f, 1.0f, 0xff00ff00},
+        {56.0f, 56.0f, 0.5f, 1.0f, 0xff0000ff}};
+    struct { float x, y, z, rhw, u, v; } quad[4] = {
+        {0.0f, 0.0f, 0.1f, 1.0f, 0.0f, 0.0f}, {64.0f, 0.0f, 0.1f, 1.0f, 1.0f, 0.0f},
+        {0.0f, 64.0f, 0.1f, 1.0f, 0.0f, 1.0f}, {64.0f, 64.0f, 0.1f, 1.0f, 1.0f, 1.0f}};
+    WORD idx[6] = {0, 1, 2, 2, 1, 3};
+    IDirect3DTexture9 *tex;
+    D3DLOCKED_RECT lr;
+    RECT r = {16, 16, 48, 32};
+    D3DRECT dr = {40, 40, 60, 60};
+    HRESULT hr;
+    int x, y;
+
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_ZENABLE, D3DZB_FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_LIGHTING, FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, D3DCULL_NONE);
+    HR("r clear", IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0xff203040, 1.0f, 0));
+    rt_hash(dev, "r cleared");
+    HR("r clear rect", IDirect3DDevice9_Clear(dev, 1, &dr, D3DCLEAR_TARGET, 0xffc0c0c0, 1.0f, 0));
+    rt_hash(dev, "r rect");
+    HR("r begin", IDirect3DDevice9_BeginScene(dev));
+    HR("r fvf", IDirect3DDevice9_SetFVF(dev, D3DFVF_XYZRHW | D3DFVF_DIFFUSE));
+    HR("r tri", IDirect3DDevice9_DrawPrimitiveUP(dev, D3DPT_TRIANGLELIST, 1, tri, sizeof(tri[0])));
+    HR("r end", IDirect3DDevice9_EndScene(dev));
+    rt_hash(dev, "r triangle");
+
+    hr = IDirect3DDevice9_CreateTexture(dev, 8, 8, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &tex, NULL);
+    HR("r tex", hr);
+    if (SUCCEEDED(hr))
+    {
+        if (SUCCEEDED(IDirect3DTexture9_LockRect(tex, 0, &lr, NULL, 0)))
+        {
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                    ((DWORD *)((BYTE *)lr.pBits + y * lr.Pitch))[x] = ((x ^ y) & 1) ? 0xffffffff : 0xff800000;
+            IDirect3DTexture9_UnlockRect(tex, 0);
+        }
+        IDirect3DDevice9_SetTexture(dev, 0, (IDirect3DBaseTexture9 *)tex);
+        IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+        IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+        IDirect3DDevice9_BeginScene(dev);
+        HR("r quad fvf", IDirect3DDevice9_SetFVF(dev, D3DFVF_XYZRHW | D3DFVF_TEX1));
+        HR("r quad", IDirect3DDevice9_DrawIndexedPrimitiveUP(dev, D3DPT_TRIANGLELIST, 0, 4, 2, idx,
+                                                              D3DFMT_INDEX16, quad, sizeof(quad[0])));
+        IDirect3DDevice9_EndScene(dev);
+        rt_hash(dev, "r textured");
+        IDirect3DDevice9_SetTexture(dev, 0, NULL);
+        printf("  r tex release %lu\n", IDirect3DTexture9_Release(tex));
+    }
+    HR("r scissor on", IDirect3DDevice9_SetRenderState(dev, D3DRS_SCISSORTESTENABLE, TRUE));
+    HR("r scissor", IDirect3DDevice9_SetScissorRect(dev, &r));
+    HR("r clear scissored", IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0xff00ffff, 1.0f, 0));
+    rt_hash(dev, "r scissored");
+    HR("r present", IDirect3DDevice9_Present(dev, NULL, NULL, NULL, NULL));
+}
+
 static void device(IDirect3D9 *d3d, HWND hwnd)
 {
     D3DPRESENT_PARAMETERS pp;
@@ -163,6 +260,18 @@ static void device(IDirect3D9 *d3d, HWND hwnd)
         return;
 
     printf("available mem nonzero %d\n", IDirect3DDevice9_GetAvailableTextureMem(dev) != 0);
+    if (dx_invalid)
+    {
+        /* Stage 8 is past the state block: the C reads the neighbouring slot as the value. */
+        for (s = 0; s < 34; s++)
+        {
+            v = 0xdeadbeef;
+            hr = IDirect3DDevice9_GetTextureStageState(dev, 8, (D3DTEXTURESTAGESTATETYPE)s, &v);
+            printf("tss 8.%lu hr=%08lx v=%lx\n", s, (unsigned long)hr, v);
+        }
+        printf("device release %lu\n", IDirect3DDevice9_Release(dev));
+        return;
+    }
     HR("test coop", IDirect3DDevice9_TestCooperativeLevel(dev));
     printf("swapchains %u\n", IDirect3DDevice9_GetNumberOfSwapChains(dev));
 
@@ -178,7 +287,7 @@ static void device(IDirect3D9 *d3d, HWND hwnd)
     HR("rs set cull", IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, D3DCULL_CW));
     IDirect3DDevice9_GetRenderState(dev, D3DRS_CULLMODE, &v);
     printf("rs cull back %lx\n", v);
-    for (i = 0; i < 9; i++)
+    for (i = 0; i < 8; i++) /* stage 8 is dx_invalid's */
         for (s = 0; s < 34; s++)
         {
             v = 0xdeadbeef;
@@ -367,20 +476,17 @@ static void device(IDirect3D9 *d3d, HWND hwnd)
         IDirect3DSurface9_Release(surf);
         IDirect3DSurface9_Release(surf);
     }
+    render(dev);
     printf("device release %lu\n", IDirect3DDevice9_Release(dev));
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     CREATE9 create;
     IDirect3D9 *d3d;
     HWND hwnd;
 
-    /* The guest's GL is Mesa's software renderer, which wined3d's GL backend refuses (no
-     * ARB_fragment_shader): Direct3DCreate then returns NULL under both variants and nothing
-     * past it runs. wined3d's no3d renderer needs no GPU, reads this from msvcrt's
-     * environment (shared with this exe), and is the same C under both. */
-    _putenv("WINE_D3D_CONFIG=renderer=no3d");
+    dx_renderer(argc, argv);
     dx_load(L"d3d9");
     create = (CREATE9)dx_proc("Direct3DCreate9");
     printf("create bad sdk %d\n", create(1) != NULL);

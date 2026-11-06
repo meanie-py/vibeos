@@ -25,6 +25,15 @@ for SRC in "$HERE"/probes/*.c; do
         -Wl,--subsystem,console
     python3 "$(dirname "$HERE")/pecheck.py" "$OUT" --tag modrun-probe --forbid-dll api-ms-win-crt
 done
+# The d3d `gl` cases stage a modern software GL beside their probes (the system opengl32 is
+# GL 1.1, which wined3d refuses). Built out of band and cached, so this is a copy after the
+# first time; only a selected suite that stages it pays for it.
+# (Captured first: grep -q closing the pipe early would SIGPIPE python, and pipefail would
+# then read a match as no match.)
+STAGED="$(python3 "$HERE/modrun.py" stage --arch "$A")"
+if grep -q '^\.cache/mesa/' <<<"$STAGED"; then
+    bash "$ROOT/tools/mesa/build-mesa.sh" "$A"
+fi
 TARGETS="$(python3 "$HERE/modrun.py" ninja --arch "$A")"
 if [ -n "$TARGETS" ]; then
     # The oracles and probes are EXCLUDE_FROM_ALL: nothing else builds them. Incremental, so

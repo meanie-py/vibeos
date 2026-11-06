@@ -86,7 +86,7 @@ def grade(serial, arch):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    for name in ("gen", "ninja"):
+    for name in ("gen", "ninja", "stage"):
         sub.add_parser(name).add_argument("--arch", required=True)
     g = sub.add_parser("grade")
     g.add_argument("log", type=Path)
@@ -98,6 +98,9 @@ def main(argv=None):
         print(f"modrun: {path.name}: {len(cases(args.arch))} case(s)")
     elif args.cmd == "ninja":
         print(" ".join(ninja_targets(args.arch)))
+    elif args.cmd == "stage":
+        for e in stage_entries(args.arch):
+            print(e["src"])
     else:
         report, failures = grade(
             args.log.read_bytes().decode("utf-8", errors="surrogateescape"), args.arch

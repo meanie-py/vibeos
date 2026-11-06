@@ -26,3 +26,14 @@ test:
   launch_drain_secs: 1200
   launch_idle_secs: 300
   grader: tools/payloads/modrun/modrun.py
+  # A sound card, so dsound's device paths (buffers, mixer, converters, 3D) are reachable: AC97
+  # is the one the tree has a driver for on all three arches (vendor/ac97). Its output goes
+  # nowhere; the dsound suite grades API results and that playback advances, not samples.
+  # A fixed, high PCI slot: auto-assigned, it takes the next free one and shifts the devices
+  # after it -- on arm64 the virtio boot disk, whose saved UEFI boot entry then names a slot
+  # with nothing in it, and the firmware falls through to PXE.
+  qemu_extra_args: "-audiodev none,id=modrun_snd -device AC97,audiodev=modrun_snd,addr=0x1e"
+  # The d3d gl cases load Mesa (an 18 MB image). At the 512M default the kernel ran out of
+  # memory creating its image section -- and BUGCHECKed 0x1E on the uncaught STATUS_NO_MEMORY
+  # instead of failing the load, which is its own bug (roadmap "Known bugs").
+  vm_memory: 1536M

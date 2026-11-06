@@ -1208,11 +1208,14 @@ trees:
     upstream: Microsoft Windows-driver-samples
     license: MIT
     license_file: vendor/ac97/license.txt
-    modified: unknown
+    modified: "lightly"  # VIBEOS PATCH: ac97.inf gains an [Intel.NTARM64] models section
     reason: >
       Microsoft's AC'97 WDM audio sample, with Intel-copyright portions. Not a
       translation target: there is no ac97-rust and the roadmap does not list it.
     review: >
+      PATCHED 2026-11-05: ac97.inf decorated its models for NTAMD64/NTIA64/NTARM only, and a
+      64-bit platform takes no undecorated fallback, so the card had no driver on arm64 (the
+      modrun dsound suite boots with one). [Intel.NTARM64] copies the NTARM device list.
       FOUND 2026-09-20 by the widened `_FOREIGN_HOLDER`. It had been invisible to
       `--suspects` for the life of the registry because every file says
       "Copyright (c) 1998-2000 Microsoft Corporation" and the pattern only matched

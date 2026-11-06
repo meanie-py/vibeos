@@ -104,8 +104,9 @@ pub fn read_stamp(dir: &Path) -> Result<Vec<String>> {
         ))
     })
 }
-fn stale(root: &Path, name: &str, arch: &str) -> Result<Vec<PathBuf>> {
-    let spec = payload_spec::load(root, name)?;
+/// The payload's source files: everything under its directory that is not a build output
+/// (gitignored, or a binary extension), plus the shared `tools/payloads/*.h`.
+fn payload_sources(root: &Path, name: &str) -> Result<Vec<PathBuf>> {
     let dir = root.join("tools/payloads").join(name);
     let ignored = Command::new("git")
         .args([
@@ -136,6 +137,22 @@ fn stale(root: &Path, name: &str, arch: &str) -> Result<Vec<PathBuf>> {
         }
     }
     files.retain(|p| !ignored.contains(&resolved(root, &p.to_string_lossy())));
+    Ok(files)
+}
+/// The newest source and its mtime: what a "still stale" output is measured against, so the
+/// error can name it (a concurrent build of another arch once tripped this, and the message
+/// said only which output was stale -- not which file was newer).
+fn newest_source(root: &Path, name: &str) -> Result<Option<(PathBuf, std::time::SystemTime)>> {
+    Ok(payload_sources(root, name)?
+        .into_iter()
+        .filter_map(|p| Some((fs::metadata(&p).ok()?.modified().ok()?, p)))
+        .max_by_key(|(t, _)| *t)
+        .map(|(t, p)| (p, t)))
+}
+fn stale(root: &Path, name: &str, arch: &str) -> Result<Vec<PathBuf>> {
+    let spec = payload_spec::load(root, name)?;
+    let dir = root.join("tools/payloads").join(name);
+    let files = payload_sources(root, name)?;
     let newest = files
         .iter()
         .filter_map(|p| fs::metadata(p).ok()?.modified().ok())
@@ -293,9 +310,18 @@ fn ensure(root: &Path, selected: &[String], arch: &str) -> Result<Vec<String>> {
             still.retain(|p| wanted.get(&pair).is_some_and(|w| w.contains(p)));
         }
         if let Some(p) = still.first() {
+            let age = |t: std::time::SystemTime| {
+                t.duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64())
+            };
+            let out_t = fs::metadata(p).and_then(|m| m.modified()).ok().map(age);
+            let newer = newest_source(root, &name)?
+                .map(|(s, t)| format!("{} (mtime {:.3})", s.display(), age(t)))
+                .unwrap_or_else(|| "no source".into());
             return Err(err(format!(
-                "payload {name:?}: build.sh {a} succeeded but {} is still stale",
-                p.display()
+                "payload {name:?}: build.sh {a} succeeded but {} is still stale (mtime {}): \
+                 newer than it is {newer}",
+                p.display(),
+                out_t.map_or("missing".into(), |t| format!("{t:.3}"))
             )));
         }
         rebuilt.push(name);

@@ -1631,6 +1631,23 @@ pub unsafe extern "C" fn DirectSoundDevice_CreateSoundBuffer(
             }
         }
 
+        // Divergence: the C goes on to IDirectSoundBufferImpl_Create, whose buffer length is
+        // `dwBufferBytes % nBlockAlign` -- a format with no frame size (0 channels, or ADPCM's
+        // 4-bit mono) divides by zero and the C oracle faults (modrun's dsound `invalid`
+        // case). Windows rejects such a format; so does this.
+        if (*(*dsbd).lpwfxFormat).nBlockAlign == 0 {
+            WARN!("invalid parameter: nBlockAlign is 0\n");
+            return DSERR_INVALIDPARAM;
+        }
+        // Divergence: likewise a rate SetFrequency would refuse (the C's own range check, in
+        // buffer.c). Created at 0 Hz, freqAdjust is 0 and DSOUND_secpos_to_bufpos divides by
+        // it while the mixer is set up.
+        let rate = (*(*dsbd).lpwfxFormat).nSamplesPerSec;
+        if rate < DSBFREQUENCY_MIN as DWORD || rate > DSBFREQUENCY_MAX as DWORD {
+            WARN!("invalid parameter: nSamplesPerSec %u\n", rate);
+            return DSERR_INVALIDPARAM;
+        }
+
         if from8 != 0
             && ((*dsbd).dwFlags & DSBCAPS_CTRL3D) != 0
             && ((*(*dsbd).lpwfxFormat).nChannels != 1)

@@ -576,6 +576,15 @@ pytest tests/qemu/test_smoke.py -v --arch i386 -k "sacred_primitives or no_unexp
 
 Smoke/CLI harness internals (`vm.py`/`conftest.py`/`serial_client.py`/`qmp_client.py`/`debugcon.py`, boot media, QEMU backends + acceleration (windows-host TCG default / native KVM / WHPX opt-in), resource caps, debugcon boot tracing, test lifecycle): `tests/qemu/cli/README.md`.
 
+### Guest-side grading: modrun's devices and the guest GL
+
+`--payload modrun` (`tools/payloads/modrun/`) boots with 1.5G and an AC97 sound card pinned at
+PCI slot 0x1e (`payload.yaml`), so dsound reaches a real wave device on x86. The d3d8/d3d9
+`device` cases and the `mesa` suite need a modern GL: `tools/mesa/build-mesa.sh <arch>` builds
+Mesa softpipe (pinned by sha256, cached under `~/.cache/vibeos-mesa/<key>`) into
+`.cache/mesa/<arch>/`; modrun's `build.sh` runs it whenever a selected suite stages from there.
+It is app-local (beside the probes in `bin\modrun\gl\`), never in the OS image.
+
 ## Kernel/HAL bindgen staging
 
 `bash sdk/lib/rust/ntkrnl-sys/generate_bindings.sh` stages all three kernel

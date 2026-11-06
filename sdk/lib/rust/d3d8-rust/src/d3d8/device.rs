@@ -2902,8 +2902,24 @@ unsafe extern "system" fn d3d8_device_GetTextureStageState(
 
     l = (core::ptr::addr_of!(tss_lookup) as *const tss_lookup).add(state as usize);
 
-    wined3d_mutex_lock();
+    // Divergence: the C indexes both arrays unchecked -- a stage past the state block reads
+    // its neighbour, and the two unused slots (0 and 12) map to WINED3D_TSS_INVALID (~0u),
+    // so GetTextureStageState(0, 0) reads texture_states[0][0xffffffff] and the C oracle
+    // faults (modrun's d3d8 device case). Both are invalid here, like an invalid state.
     device_state = (*device).stateblock_state;
+    let ok = if (*l).sampler_state != 0 {
+        let s = &(*device_state).sampler_states;
+        (stage as usize) < s.len() && ((*l).u.sampler_state as usize) < s[0].len()
+    } else {
+        let s = &(*device_state).texture_states;
+        (stage as usize) < s.len() && ((*l).u.texture_state as usize) < s[0].len()
+    };
+    if !ok {
+        WARN!("Invalid stage %u or state %#x.\n", stage, state);
+        return D3D_OK;
+    }
+
+    wined3d_mutex_lock();
     if (*l).sampler_state != 0 {
         *value =
             (*device_state).sampler_states[stage as usize][(*l).u.sampler_state as usize] as DWORD;
