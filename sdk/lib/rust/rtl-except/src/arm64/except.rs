@@ -320,7 +320,9 @@ pub unsafe extern "system" fn RtlDispatchException(
     if RtlpGetMode() == UserMode
         && RtlCallVectoredExceptionHandlers(ExceptionRecord, Context) != 0
     {
-        /* A handler returned EXCEPTION_CONTINUE_EXECUTION — resume. */
+        /* A handler returned EXCEPTION_CONTINUE_EXECUTION: run the vectored
+         * continue handlers, as the C does on i386 and amd64, then resume. */
+        RtlCallVectoredContinueHandlers(ExceptionRecord, Context);
         return 1;
     }
 

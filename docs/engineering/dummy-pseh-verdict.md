@@ -199,16 +199,17 @@ we keep.
 
 ### D. User-mode status (for completeness)
 
-`KiUserExceptionDispatcher` (asm, i386/amd64) carries the deliberate
-DUMMY_PSEH swallow: continuable software exceptions `< 0xC0000000` are
-resumed (DbgPrint, RPC raises, breakpoints skip the int3), everything
-`>= 0xC0000000` or non-continuable goes second-chance. The dispatcher-side
-machinery would run a real handler end-to-end if one existed; what's
-degraded today is module-side: `IsBad*Ptr` can't detect bad pointers
-(forced-dead except), advapi32/ws2_32/psapi param probes crash the caller,
-and **first-chance VEH is compiled out** (shared librtl is built as
-`_NTOSKRNL_`; `RtlCallVectoredExceptionHandlers` elided —
-`rtl-except/src/amd64/except.rs:28`). Known TODO: nested-exception
+`KiUserExceptionDispatcher` (asm, i386/amd64) no longer carries the old
+DUMMY_PSEH swallow that resumed continuable software exceptions `< 0xC0000000`:
+an exception no handler takes goes second-chance via `ZwRaiseException`, as on
+Windows. The dispatcher-side machinery runs a real handler
+end-to-end; what's degraded is module-side: `IsBad*Ptr` can't detect bad
+pointers (forced-dead except), advapi32/ws2_32/psapi param probes crash the
+caller. **First-chance VEH works on all three arches since 2026-11-05**: the C
+compiled it out (librtl is built `_NTOSKRNL_`), and rtl-except now gates it on
+`RtlpGetMode() == UserMode` instead (`tools/payloads/vehprobe` grades it). VEH
+needs no `__try`, so it is the one module-side catch mechanism that works today.
+Known TODO: nested-exception
 disposition `debugbreak()`s (`amd64/unwind.rs:689,844`).
 
 **Consequence for RPC clients: a failed call kills the caller with exit code 1.** The `RpcExcept`

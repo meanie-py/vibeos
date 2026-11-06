@@ -22,7 +22,7 @@ EXTERN RtlRaiseStatus:PROC
  * non-NULL) BEFORE RtlDispatchException, passing (ExceptionRecord, Context).
  * wow64.dll installs its handler here at process bootstrap (E5) — this is the
  * real-Windows dispatch point into the 32-bit guest's own SEH, and it does not
- * depend on VEH (which this build's _NTOSKRNL_ RtlDispatchException elides).
+ * depend on VEH (which RtlDispatchException runs next, first-chance, in user mode).
  * PUBLIC + spec-exported so wow64.dll can write the slot via GetProcAddress. */
 PUBLIC Wow64PrepareForException
 Wow64PrepareForException:

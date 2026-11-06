@@ -39,6 +39,10 @@ extern "system" {
     /// asm (i386) — note the `p`; this is NOT RtlCaptureContext.
     fn RtlpCaptureContext(ContextRecord: PCONTEXT);
     /// rtl-diag vectoreh.rs
+    fn RtlCallVectoredExceptionHandlers(
+        ExceptionRecord: PEXCEPTION_RECORD,
+        Context: PCONTEXT,
+    ) -> BOOLEAN;
     fn RtlCallVectoredContinueHandlers(ExceptionRecord: PEXCEPTION_RECORD, Context: PCONTEXT);
     /// Tiny asm helper standing in for `_ReturnAddress()` (see global_asm! below).
     fn RtlpGetReturnAddress() -> PVOID;
@@ -109,11 +113,23 @@ pub unsafe extern "system" fn RtlDispatchException(
     let mut StackHigh: ULONG_PTR = 0;
 
     /*
-     * The C source guards an early RtlCallVectoredExceptionHandlers dispatch
-     * with `#ifndef _NTOSKRNL_` — but librtl always builds with -D_NTOSKRNL_
-     * (sdk/lib/rtl/CMakeLists.txt add_definitions), so that block is dead
-     * code in the only variant ever built and is omitted here.
+     * First-chance vectored handlers, user mode only. The C guards this with
+     * `#ifndef _NTOSKRNL_`, and librtl is only ever built with -D_NTOSKRNL_,
+     * so the compiled C NEVER called VEH — in ntdll either: no x86 user-mode
+     * AddVectoredExceptionHandler handler ever ran. That is a C defect (the
+     * guard means "not in the kernel", and ntdll is not the kernel), so this
+     * diverges and decides at run time instead, as arm64 does: RtlpGetMode()
+     * is KernelMode in ntoskrnl, which therefore never touches the TEB-based
+     * VEH lock the guard exists to keep it away from.
      */
+    if RtlpGetMode() == UserMode && RtlCallVectoredExceptionHandlers(ExceptionRecord, Context) != 0
+    {
+        /* Exception handled, now call vectored continue handlers */
+        RtlCallVectoredContinueHandlers(ExceptionRecord, Context);
+
+        /* Continue execution */
+        return 1;
+    }
 
     /* Get the current stack limits and registration frame */
     RtlpGetStackLimits(&mut StackLow, &mut StackHigh);

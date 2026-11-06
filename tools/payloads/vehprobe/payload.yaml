@@ -1,0 +1,19 @@
+# vehprobe — does user mode call vectored exception handlers (fault, order, continue handlers,
+# removal, a continued RaiseException) on every arch?
+#   tools/payloads/vehprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=vehprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload vehprobe
+name: vehprobe
+description: grade user-mode vectored exception dispatch
+
+build_hint: "tools/payloads/vehprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/vehprobe/vehprobe-{arch}.exe
+    root: image
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/vehprobe.exe
+
+test:
+  launch_marker: "[VEHPROBE] done"
+  pass_marker: "[VEHPROBE] done VERDICT=PASS"
+  launch_drain_secs: 300
