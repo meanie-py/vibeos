@@ -34,7 +34,14 @@ pub fn no_edge_why(ninja: &str, target: &str) -> &'static str {
         "unknown"
     }
 }
+/// A model built from a build.ninja of the previous configure is a model of the previous
+/// tree; refuse it (vibeos_build::ninja::require_configured).
+fn require_configured(root: &Path, arch: &str) -> Result<()> {
+    let build = local(root, &root.join(format!("build-{arch}")))?;
+    vibeos_build::ninja::require_configured(&build, root).map_err(|e| Error::new(e.to_string()))
+}
 pub fn link_edge(root: &Path, arch: &str, target: &str) -> Result<Link> {
+    require_configured(root, arch)?;
     let path = local(root, &root.join(format!("build-{arch}/build.ninja")))?;
     let ninja = read(&path)?;
     let pattern = format!(
@@ -607,6 +614,7 @@ pub fn spec_index(root: &Path) -> Result<BTreeMap<String, Option<(String, String
     );
     let mut built: BTreeMap<String, BTreeSet<(String, String)>> = BTreeMap::new();
     for arch in ARCHES {
+        require_configured(root, arch)?;
         let path = local(root, &root.join(format!("build-{arch}/build.ninja")))?;
         for c in pattern.captures_iter(&read(&path)?) {
             let mut parts = Vec::new();
