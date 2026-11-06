@@ -58,10 +58,7 @@ static void emit(const char *Format, ...)
 #define SAY(...) emit("[APITEST-SWEEP] " __VA_ARGS__)
 #include "../stackdump.h"
 
-/* A TIMEOUT used to arrive with nothing but its name: errorinfo and tmarshal hung for
- * weeks with no clue where. Dump every thread of the child before killing it; feed the
- * addresses to `vibeos-cli sym`. */
-static void dump_child_threads(DWORD pid)
+static void dump_process_threads(DWORD pid)
 {
     THREADENTRY32 te = { sizeof te };
     HANDLE s = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
@@ -71,6 +68,77 @@ static void dump_child_threads(DWORD pid)
         if (te.th32OwnerProcessID == pid)
             dump_thread(pid, te.th32ThreadID);
     CloseHandle(s);
+}
+
+#define MAX_TREE 64
+
+/* The child and every process it started, transitively. A multi-process program (Chrome's
+ * browser hands the page to renderer, GPU and utility processes) can hang in a grandchild
+ * while the child itself only waits for it; sampling the child alone showed nothing but
+ * ordinary waits. Parent links are read from one snapshot; a pid reused after its parent
+ * exited could be swept in, which is harmless here (we only print and then kill a tree we
+ * are about to abandon anyway). */
+static int collect_tree(DWORD root, DWORD *pids, char (*names)[64])
+{
+    PROCESSENTRY32 pe = { sizeof pe };
+    int n = 1;
+    pids[0] = root;
+    names[0][0] = 0;
+    HANDLE s = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (s == INVALID_HANDLE_VALUE)
+        return n;
+    for (int grew = 1; grew && n < MAX_TREE;)
+    {
+        grew = 0;
+        for (BOOL k = Process32First(s, &pe); k && n < MAX_TREE; k = Process32Next(s, &pe))
+        {
+            int in = 0, parent_in = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if (pids[i] == pe.th32ProcessID)
+                    in = 1;
+                if (pids[i] == pe.th32ParentProcessID)
+                    parent_in = 1;
+            }
+            if (pe.th32ProcessID == root)
+                lstrcpynA(names[0], pe.szExeFile, 64);
+            if (!in && parent_in && pe.th32ProcessID != 0)
+            {
+                pids[n] = pe.th32ProcessID;
+                lstrcpynA(names[n], pe.szExeFile, 64);
+                n++;
+                grew = 1;
+            }
+        }
+    }
+    CloseHandle(s);
+    return n;
+}
+
+/* A TIMEOUT used to arrive with nothing but its name: errorinfo and tmarshal hung for
+ * weeks with no clue where. Dump every thread of the child and of its descendants, then
+ * kill the descendants (the caller kills the child); feed the addresses to `vibeos-cli sym`.
+ * Killing the tree matters for the next command too: a leftover renderer keeps the profile
+ * locked and its handles open. */
+static void dump_child_threads(DWORD pid)
+{
+    DWORD pids[MAX_TREE];
+    char names[MAX_TREE][64];
+    int n = collect_tree(pid, pids, names);
+    for (int i = 0; i < n; i++)
+    {
+        SAY("process %lu (%s)%s\n", (unsigned long)pids[i], names[i], i ? "" : " [child]");
+        dump_process_threads(pids[i]);
+    }
+    for (int i = n - 1; i > 0; i--)
+    {
+        HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, pids[i]);
+        if (h)
+        {
+            TerminateProcess(h, 0xDEAD);
+            CloseHandle(h);
+        }
+    }
 }
 
 #define PER_SUBTEST_TIMEOUT_MS (120u * 1000u)

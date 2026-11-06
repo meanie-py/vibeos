@@ -33,6 +33,8 @@ binaries:
     dest: bin/tlsprobe/tlsdll.dll
   - src: tools/payloads/chrome/secprobe-{arch}.exe
     dest: bin/secprobe/secprobe.exe
+  - src: tools/payloads/chrome/iocpprobe-{arch}.exe
+    dest: bin/iocpprobe/iocpprobe.exe
   - src: tools/payloads/chrome/hello.html
     dest: bin/chrome-pages/hello.html
 binaries_from: tools/payloads/chrome/stage.py

@@ -901,7 +901,7 @@ Rungs 1–3 are mostly user-mode Wine plumbing: probably the fastest "wow" in th
 doc. Chrome also ships native ARM64 Windows builds, so the arm64 port is a real target
 too: Chrome on a Pi.
 
-### Rung 1 status (2026-11-05): browser and renderers start; the page dump never arrives
+### Rung 1 status (2026-11-05): the page dumps in one process; multi-process idles
 
 `tools/payloads/chrome` boots Chrome for Testing 157 (x64, staged from `VIBEOS_CHROME_DIR`,
 never committed) under the sweep runner on amd64 with `--headless --no-sandbox --disable-gpu
@@ -927,14 +927,25 @@ beside Windows 11's answers where the bug was ours to measure):
     shared memory CHECKs that refusal.
 11. `RtlAddGrowableFunctionTable` & co. (V8's JIT unwind data): every child called address 0.
 
-**Now:** the browser runs to its main loop, creates the profile and the browser-window
-keepalive, and starts GPU, utility and two renderer processes, which initialize; then every
-browser thread is idle in an ordinary wait and nothing more happens before the 900 s timeout.
-Next: what the renderers wait on (the sweep runner samples only its own child, not the
-browser's children), most likely Mojo's named-pipe + IOCP channel. Non-fatal errors still in
-the log: `WSALookupServiceBegin` 10014, DNS registry watch, no Core Audio (`mmdevapi` unbuilt),
-"Unsupported version: 42.4.17". `dumpinfo` reads Crashpad's minidumps in the guest, since a
-crash Crashpad catches never reaches the kernel's own print.
+**Rung 1 passes in one process (2026-11-05).** With `--single-process` added, Chrome prints the
+page's DOM including the script's `js ran: 42`, so V8 ran the page: about 6 minutes under TCG on
+one CPU. The payload runs this as run B.
+
+**Still open: multi-process (run A).** The browser starts GPU, network-service, storage-service
+and three renderer processes, then everything idles until the timeout. The cause is one
+process: the **storage service** logs "Terminating current process after N seconds with no
+connection" (`content/child/child_thread_impl.cc`) and exits. With the default 15 s the network
+service did the same, but given `--ipc-connection-timeout=120` it connected and the storage
+service still did not, so the network service was only slow and the storage service's
+connection is never made. Ruled out: overlapped named pipes on a completion port, the way Mojo
+uses them, in-process and through an inherited handle (`iocpprobe`, identical to Windows 11).
+Next: what the browser sends the storage service first that it sends no other child.
+
+On a timeout the sweep runner now dumps the threads of the child's whole process tree, not
+just the child, and kills the descendants. Non-fatal errors still in the log:
+`WSALookupServiceBegin` 10014, DNS registry watch, no Core Audio (`mmdevapi` unbuilt),
+"Unsupported version: 42.4.17", `RegisterApplicationRestart`. `dumpinfo` reads Crashpad's
+minidumps in the guest, since a crash Crashpad catches never reaches the kernel's own print.
 
 ---
 

@@ -1,25 +1,16 @@
-"""chrome's staging: a Chrome for Testing folder from the host, copied whole."""
+"""Compatibility facade for the native chrome provider (vibeos-build payload_providers.rs)."""
 
-from __future__ import annotations
-
-import os
 import sys
 from pathlib import Path
 
+REPO = Path(__file__).resolve().parents[3]
+if str(REPO) not in sys.path:
+    sys.path.insert(0, str(REPO))
+from tools.build_infra_compat import call  # noqa: E402
 
-def stage_entries(arch: str) -> list[dict]:
-    root = os.environ.get("VIBEOS_CHROME_DIR")
-    if not root:
-        sys.exit(
-            "chrome: set VIBEOS_CHROME_DIR to a Chrome for Testing folder (the one holding chrome.exe)"
-        )
-    src = Path(root).expanduser()
-    if not (src / "chrome.exe").is_file():
-        sys.exit(f"chrome: {src} has no chrome.exe")
-    # Chrome finds its .pak, locales and the versioned manifest beside chrome.exe, so the
-    # whole tree goes over with its layout intact.
-    return [
-        {"src": str(p), "dest": f"bin/chrome/{p.relative_to(src).as_posix()}"}
-        for p in sorted(src.rglob("*"))
-        if p.is_file()
-    ]
+
+def stage_entries(arch):
+    try:
+        return call("payload_providers_stage_entries", {"spec": "chrome", "arch": arch}, REPO)
+    except ValueError as e:
+        raise SystemExit(str(e)) from e

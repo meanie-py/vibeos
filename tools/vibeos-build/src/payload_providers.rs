@@ -205,11 +205,54 @@ fn piwifi() -> Result<Vec<Value>> {
     Ok(out)
 }
 
+/// Chrome for Testing, copied whole from the host folder `VIBEOS_CHROME_DIR` names (never
+/// committed or hosted: the user accepts Google's terms by downloading it). Chrome finds its
+/// .pak files, locales and versioned manifest beside chrome.exe, so the layout goes over intact.
+fn chrome() -> Result<Vec<Value>> {
+    let dir = env::var("VIBEOS_CHROME_DIR").ok().filter(|s| !s.is_empty()).ok_or_else(|| {
+        Error::new("chrome: set VIBEOS_CHROME_DIR to a Chrome for Testing folder (the one holding chrome.exe)")
+    })?;
+    let src = home_path(&dir);
+    if !src.join("chrome.exe").is_file() {
+        return Err(Error::new(format!(
+            "chrome: {} has no chrome.exe",
+            src.display()
+        )));
+    }
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+        for e in fs::read_dir(dir)? {
+            let p = e?.path();
+            if p.is_dir() {
+                walk(&p, out)?
+            } else if p.is_file() {
+                out.push(p)
+            }
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    walk(&src, &mut files)?;
+    files.sort();
+    Ok(files
+        .iter()
+        .map(|p| {
+            let rel = p.strip_prefix(&src).unwrap_or(p);
+            let rel = rel
+                .components()
+                .map(|c| c.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/");
+            entry(p, format!("bin/chrome/{rel}"))
+        })
+        .collect())
+}
+
 pub fn stage_entries(root: &Path, spec: &str, arch: &str) -> Result<Vec<Value>> {
     match spec {
         "vendordrv" | "tools/payloads/vendordrv/stage.py" => vendordrv(),
         "hostapps" | "tools/payloads/hostapps/stage.py" => hostapps(root),
         "piwifi" | "tools/payloads/piwifi/stage.py" => piwifi(),
+        "chrome" | "tools/payloads/chrome/stage.py" => chrome(),
         "modrun" | "tools/payloads/modrun/modrun.py" => {
             crate::payload_modrun::stage_entries(&root.join("tools/payloads/modrun/suites"), arch)
         }
@@ -226,7 +269,9 @@ pub fn ninja_targets(root: &Path, spec: &str, arch: &str) -> Result<Vec<String>>
         | "hostapps"
         | "tools/payloads/hostapps/stage.py"
         | "piwifi"
-        | "tools/payloads/piwifi/stage.py" => Ok(Vec::new()),
+        | "tools/payloads/piwifi/stage.py"
+        | "chrome"
+        | "tools/payloads/chrome/stage.py" => Ok(Vec::new()),
         _ => Err(Error::new(format!("unknown ninja provider: {spec}"))),
     }
 }

@@ -4,3 +4,4 @@ dumpinfo-*.exe
 tlsprobe-*.exe
 tlsdll-*.dll
 secprobe-*.exe
+iocpprobe-*.exe
