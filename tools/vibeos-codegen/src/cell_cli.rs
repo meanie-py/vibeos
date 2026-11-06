@@ -256,7 +256,7 @@ fn run_inner(raw: Vec<String>) -> Result<u8> {
                 dir = Some(PathBuf::from(args.next().ok_or("operation requires DIR")?));
             }
             "--apply" | "--survey" | "--convert" | "--own-rc" | "--own-c" | "--clib-recipes"
-            | "--c-template" | "--rc-template" | "--remap" => {
+            | "--clib-recipes-check" | "--c-template" | "--rc-template" | "--remap" => {
                 if !mode.is_empty() {
                     return Err("choose one Cargo cell operation".into());
                 }
@@ -333,6 +333,28 @@ fn run_inner(raw: Vec<String>) -> Result<u8> {
                 println!("{n}")
             }
         }
+        "--clib-recipes-check" => {
+            // Recipes are DERIVED from cmake's compile commands, and nothing re-derived them
+            // when a CMake flag moved (pseh's include went from -isystem to -I, 2026-11-06;
+            // 380 recipes drifted). A drifted recipe only bites a cmake-off build, which is
+            // why it went unnoticed. `check` runs the same test as vibeos-lint's
+            // clib_recipes_fresh.
+            if !targets.is_empty() {
+                return Err("--clib-recipes-check does not accept targets".into());
+            }
+            let drift = driver::recipe_drift(&root)?;
+            for d in &drift {
+                println!("{d}");
+            }
+            if !drift.is_empty() {
+                return Err(format!(
+                    "{} recipe(s) drifted; regenerate: tools/codegen cargo-cell --clib-recipes",
+                    drift.len()
+                )
+                .into());
+            }
+            eprintln!("recipes match cmake's compiles");
+        }
         "--clib-recipes" | "--rc-template" | "--c-template" => {
             if !targets.is_empty() {
                 return Err("template/recipe operations do not accept targets".into());
@@ -345,6 +367,12 @@ fn run_inner(raw: Vec<String>) -> Result<u8> {
             write_edits(&root, &p.edits)?;
             for k in p.edits.keys() {
                 println!("wrote {}", k.strip_prefix(&root).unwrap_or(k).display())
+            }
+            if mode == "--clib-recipes" && p.failed.is_empty() {
+                for path in driver::orphan_recipes(&root, &p) {
+                    std::fs::remove_file(&path)?;
+                    println!("removed {}", path.strip_prefix(&root).unwrap_or(&path).display())
+                }
             }
             for n in p.skipped {
                 eprintln!("{n}")

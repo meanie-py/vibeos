@@ -3605,6 +3605,14 @@ UNCOVERED: dict[str, str] = {
         "THREAD_BOOST_PRIORITY = 23 must be flagged, its fix through a Rust local must not, "
         "and neither must another module's same-named macro."
     ),
+    "clib_recipes_fresh": (
+        "it derives every recipe from the configured build-<arch>/compile_commands.json, which a "
+        "fixture directory does not have. Its behaviour was driven on a real tree when it "
+        "landed: one recipe edited (-std=gnu99 -> gnu11) is reported `differs from cmake's "
+        "compile`, `tools/codegen cargo-cell --clib-recipes` restores it, and the six recipes "
+        "of libraries that became Rust crates (scrnsave, dmilib, udmihelp, blrtl, aux_klib, nt) "
+        "are reported `no cell links this library` until the writer removes them."
+    ),
     "scan_cmake_linked_rust": (
         "it models modules from build-amd64/build.ninja and the tree's own CMakeLists through "
         "cargo_cell_gen.survey, so a fixture directory has nothing to survey. The labelling is "

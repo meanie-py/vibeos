@@ -370,6 +370,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_cmake_linked_rust", [py, str(ccl)] if ccl.is_file() else ["MISSING"], "stdout")
     )
+    # Cargo-drive: reactos-link/clibs/<arch>/*.recipe are DERIVED from cmake's compile
+    # commands, and nothing re-derived them when a CMake flag moved (pseh went -isystem ->
+    # -I on 2026-11-06 and ~380 recipes drifted unseen: a drifted recipe only breaks a
+    # cmake-off build). Each stdout line is a recipe that differs, is missing, or that no
+    # cell reads; the fix is `tools/codegen cargo-cell --clib-recipes`. Reads the configured
+    # build-<arch> compile databases, so it is a deferred check. Baseline is EMPTY.
+    cgn = repo / "tools" / "codegen"
+    specs.append(
+        (
+            "clib_recipes_fresh",
+            ["bash", str(cgn), "cargo-cell", "--clib-recipes-check"]
+            if cgn.is_file()
+            else ["MISSING"],  # replaced by the native vibeos-lint rule (rustlints.PORTED)
+            "stdout",
+        )
+    )
     # atl_rust's CAtlList::GetNext returns the element's SLOT; casting it instead of
     # dereferencing compiles for a list of pointers and reads list-node memory as the object
     # (mmc_new, 2026-10-17). Baseline is EMPTY.

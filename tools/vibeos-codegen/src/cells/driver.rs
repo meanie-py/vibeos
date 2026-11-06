@@ -298,6 +298,47 @@ pub struct RecipePlan {
     /// unmodelled library (ole32's per-source defines) used to block every recipe.
     pub failed: Vec<String>,
 }
+/// Committed recipes no cell build script names any more (a C library that became a Rust
+/// crate, like scrnsave/dmilib/udmihelp/blrtl): `--clib-recipes` removes them and
+/// `--clib-recipes-check` reports them, so the directory is exactly what the cells read.
+pub fn orphan_recipes(root: &Path, plan: &RecipePlan) -> Vec<PathBuf> {
+    let dir = root.join("sdk/lib/rust/reactos-link/clibs");
+    let mut out = Vec::new();
+    for a in ARCHES {
+        if let Ok(rd) = std::fs::read_dir(dir.join(a)) {
+            for e in rd.flatten() {
+                let path = e.path();
+                if path.extension().is_some_and(|x| x == "recipe") && !plan.edits.contains_key(&path) {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    out.sort();
+    out
+}
+/// Each committed recipe that is not exactly what cmake's compile derives today, one line
+/// per file: differs, missing, or read by no cell. Empty means the recipes are current.
+pub fn recipe_drift(root: &Path) -> Result<Vec<String>> {
+    let p = clib_recipes(root)?;
+    if !p.failed.is_empty() {
+        return Err(Error::new(format!("{}\nrecipes not derivable", p.failed.join("\n"))));
+    }
+    let rel = |path: &Path| path.strip_prefix(root).unwrap_or(path).display().to_string();
+    let mut drift = Vec::new();
+    for (path, text) in &p.edits {
+        match std::fs::read_to_string(path) {
+            Ok(old) if &old == text => {}
+            Ok(_) => drift.push(format!("{}: differs from cmake's compile", rel(path))),
+            Err(_) => drift.push(format!("{}: missing", rel(path))),
+        }
+    }
+    for path in orphan_recipes(root, &p) {
+        drift.push(format!("{}: no cell links this library", rel(&path)));
+    }
+    drift.sort();
+    Ok(drift)
+}
 pub fn clib_recipes(root: &Path) -> Result<RecipePlan> {
     let mut plan = RecipePlan::default();
     let targets = recipes::engine_c_targets(root)?;

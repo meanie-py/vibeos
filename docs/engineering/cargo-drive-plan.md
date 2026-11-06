@@ -474,7 +474,8 @@ extends it from the boot spine to every fully-Rust module.
          libtiff (`remove_target_compile_option`), wow64cpu (amd64 only).
      - **Generator, now Rust (`vibeos-codegen`):** `--convert` names every refusal before
        writing and builds with `ninja -k 0`, naming every failed cell. `--clib-recipes`
-       writes every recipe it can and fails naming the rest; a source's own
+       writes every recipe it can, removes recipes no cell reads, and fails naming the
+       rest (`check`'s `clib_recipes_fresh` fails on any drift since 2026-11-06); a source's own
        `COMPILE_DEFINITIONS` (appended after cmake's sorted run) is a recipe `+NAME` define.
        Run it as a release build (`cargo build --release` into `.cache/vibeos-codegen`): the
        `tools/codegen` debug build takes ~20 s CPU per module, which an 86-module wave
