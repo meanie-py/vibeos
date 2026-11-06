@@ -1384,7 +1384,7 @@ impl Vm {
         for child in &mut self.sidecars {
             if let Some(state) = child.try_wait()? {
                 if !state.success() {
-                    return Err(Error::new(format!("requested VM diagnostic failed ({state}); see vm_diagnostic_sidecar.stderr.log")));
+                    return Err(Error::new(format!("requested VM diagnostic failed ({state}); see vm_diagnostic_sidecar-*.json and vm_diagnostic_sidecar.stderr.log")).with_kind("DiagnosticError"));
                 }
             }
         }

@@ -169,8 +169,8 @@ guest write/readback, and host readback. Evidence:
 The saved `vibeusb.img` independently contains the expected `WRITETST.TXT` bytes
 (`MTOOLS_SKIP_CHECK=1 mtype -i <image> ::WRITETST.TXT`).
 
-The subsequent `pi5 boot --stortest --drop-medium` remains a **failing kernel
-regression to investigate**, not a completed coverage item:
+The initial `pi5 boot --stortest --drop-medium` exposed a kernel regression
+before the empty-chain guard tested below:
 `/tmp/vibeos-cli/20261106-135349-0wjdkx7o-pi5-boot-arm64`, preserved under
 `~/vibeos-flake-farm/fails/auto/20261106-135349-0wjdkx7o-pi5-boot-arm64-HANG_TIMEOUT`.
 It reached both desktop markers and the APC-disabled inline hard-error path,
@@ -186,3 +186,16 @@ chain was empty. The old host summary labels it `HANG_TIMEOUT`.
 The host now recognizes an intact bugcheck parameter sidecar when the numeric
 banner is damaged and checks crashes during the storage wait after desktop.
 Do not treat a successful ordinary storage run as coverage of medium removal.
+
+On `c69d034c25f0`, ordinary storage passed again at
+`/tmp/vibeos-cli/20261106-160546-7q2gz017-pi5-boot-arm64`; its saved image was
+independently read with mtools and contains the expected 43-byte text.
+Medium removal then passed at
+`/tmp/vibeos-cli/20261106-162126-40y583_v-pi5-boot-arm64`: the host dropped its own
+medium, both desktop markers appeared, and the guest completed with the expected
+`FAIL: no VIBEUSB volume found after 120s`. Raw UART records 60 inline APC-disabled
+hard-error completions and one `[DEFER] CPU0 empty deferred-ready drain after
+caller precheck`, with no bugcheck. The saved HDMI frame shows the desktop.
+The empty-chain guard therefore executed during this successful reproduction;
+this does not establish why the original chain became empty. The warm-build warning
+is retained. Pi 4 physical coverage remains owed while its gear is on Pi 5.

@@ -1307,3 +1307,60 @@ def test_event_name_refuses_to_invent_a_name_it_does_not_know(tmp_path):
     assert rr.event_name(33).startswith("EVENT_CHECKPOINT")
     assert rr.event_name(26) == "id 26"
     assert rr.event_name(29) == "id 29"
+
+
+@pytest.mark.parametrize("sampler_error", [False, True])
+def test_record_preserves_guest_crash_trace_but_fails_requested_diagnostic_error(
+    tmp_path, monkeypatch, sampler_error
+):
+    from types import SimpleNamespace
+
+    from . import rrcmd
+
+    monkeypatch.delenv("VIBEOS_QEMU_PC_SAMPLE", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_RR_SAMPLE", raising=False)
+    trace = tmp_path / "controlled-record"
+    work = tmp_path / "boot"
+    work.mkdir()
+    (work / "serial.log").write_text("*** BUGCHECK 0xA\n")
+
+    def boot(cmd, **kwargs):
+        if "env" in kwargs:
+            rr.write_manifest(trace, arch="arm64", argv=[], media={})
+            (trace / "replay.bin").write_bytes(b"useful crash recording")
+            (trace / "last-run.json").write_text(
+                json.dumps({"mode": "record", "serial_log": str(work / "serial.log")})
+            )
+            (trace / "samples.jsonl").write_text(
+                json.dumps(
+                    {
+                        "icount": 12,
+                        "regs": "CPU#0 PC=0",
+                        "mem": [{"base": 0, "hashes": ["878633aa32a3b150"]}],
+                    }
+                )
+                + "\n"
+            )
+            if sampler_error:
+                (work / "vm_diagnostic_sidecar-rr.json").write_text(
+                    json.dumps({"error": {"kind": "QmpTransport", "message": "controlled timeout"}})
+                )
+        return SimpleNamespace(returncode=1, stdout="", stderr="")
+
+    monkeypatch.setattr(rrcmd.subprocess, "run", boot)
+    monkeypatch.setattr(rrcmd, "await_trace_quiescence", lambda trace: 22)
+    args = SimpleNamespace(
+        root=str(tmp_path),
+        name=trace.name,
+        arch="arm64",
+        payload="none",
+        smp=1,
+        shift=rr.DEFAULT_ICOUNT_SHIFT,
+        sample=10,
+        build=False,
+        timeout=60,
+    )
+    assert rrcmd.cmd_record(args, tmp_path) == (2 if sampler_error else 0)
+    assert json.loads((trace / "manifest.json").read_text())["finalised"]
+    assert json.loads((trace / "record-diagnostics.json").read_text())["ok"] is (not sampler_error)
+    assert (trace / "record-serial.log").read_text().startswith("*** BUGCHECK")

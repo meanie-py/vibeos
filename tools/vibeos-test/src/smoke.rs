@@ -163,7 +163,7 @@ fn watch(
             Err(error) => {
                 // The host failed to preserve explicitly requested evidence.
                 // This is not a guest death verdict and must retain its I/O kind.
-                if error.kind.as_deref() == Some("OSError") {
+                if matches!(error.kind.as_deref(), Some("OSError" | "DiagnosticError")) {
                     return Err(error);
                 }
                 let mut diag = state.diagnostics(start.elapsed().as_secs_f64());
@@ -839,6 +839,21 @@ mod serial_log_failure_controls {
         .unwrap_err();
         assert_eq!(error.kind.as_deref(), Some("OSError"));
         assert!(error.message.contains("/dev/full"));
+    }
+    #[test]
+    fn requested_diagnostic_failure_is_not_graded_as_guest_death() {
+        let error = watch(
+            &mut FailedSerial {
+                kind: "DiagnosticError",
+            },
+            1,
+            "READY",
+            None,
+            1.,
+            0.,
+        )
+        .unwrap_err();
+        assert_eq!(error.kind.as_deref(), Some("DiagnosticError"));
     }
     #[test]
     fn ordinary_serial_closure_retains_guest_death_behavior() {

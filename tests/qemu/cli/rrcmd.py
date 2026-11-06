@@ -226,6 +226,18 @@ def cmd_record(args, repo: Path) -> int:
             file=sys.stderr,
         )
         return 1
+    diagnostics = _native_call(
+        "validate_record_diagnostics",
+        trace_dir=trace,
+        ram=bool(env.get(rrsample.SAMPLE_ENV_VAR, "").strip()),
+        pc=bool(env.get("VIBEOS_QEMU_PC_SAMPLE", "").strip()),
+    )
+    if not diagnostics["ok"]:
+        print(
+            f"[rr] requested diagnostics failed: {diagnostics['error']}; trace retained at {trace}",
+            file=sys.stderr,
+        )
+        return 2
     print(f"[rr] replay it:  ./vibeos-cli rr replay {trace.name}")
     return 0
 

@@ -274,6 +274,110 @@ pub fn prune(root: &Path, keep: usize, names: &[String], apply: bool) -> Result<
     }
     Ok(json!({"count":count,"keep":keep,"doomed":doomed,"bytes":total,"applied":apply}))
 }
+
+/// A useful guest-crash recording can succeed, but explicitly requested host
+/// evidence must exist. Keep this verdict separate from trace finalisation.
+pub fn validate_record_diagnostics(trace: &Path, ram: bool, pc: bool) -> Result<Value> {
+    use std::io::{BufRead, BufReader};
+    let check = || -> Result<Value> {
+        let mut counts = serde_json::Map::new();
+        if ram || pc {
+            let run = record_replay::last_run(trace)?;
+            if run["mode"] != "record" {
+                return Err("diagnostics belong to a non-record run".into());
+            }
+            let serial = Path::new(
+                run["serial_log"]
+                    .as_str()
+                    .ok_or("record has no serial path")?,
+            );
+            let work = serial.parent().ok_or("record serial has no directory")?;
+            for (requested, kind, path) in [
+                (ram, "rr", trace.join("samples.jsonl")),
+                (pc, "pc", work.join("pcsamples.jsonl")),
+            ] {
+                if !requested {
+                    continue;
+                }
+                let result = work.join(format!("vm_diagnostic_sidecar-{kind}.json"));
+                if result.is_file() && fs::metadata(&result)?.len() > 0 {
+                    let value: Value = serde_json::from_slice(&fs::read(&result)?)?;
+                    if let Some(error) = value.get("error") {
+                        return Err(format!("requested {kind} sampler failed: {error}").into());
+                    }
+                }
+                let mut count = 0u64;
+                for line in BufReader::new(fs::File::open(&path).map_err(|e| {
+                    Error::new(format!(
+                        "requested {kind} samples unavailable at {}: {e}",
+                        path.display()
+                    ))
+                })?)
+                .lines()
+                {
+                    let row: Value = serde_json::from_str(&line?)?;
+                    let valid = if kind == "rr" {
+                        row["icount"].as_u64().is_some()
+                            && row["regs"].as_str().is_some_and(|s| !s.trim().is_empty())
+                            && row["mem"].as_array().is_some_and(|regions| {
+                                !regions.is_empty()
+                                    && regions.iter().all(|region| {
+                                        region["base"].as_u64().is_some()
+                                            && region["hashes"].as_array().is_some_and(|hashes| {
+                                                !hashes.is_empty()
+                                                    && hashes.iter().all(|h| {
+                                                        h.as_str().is_some_and(|s| {
+                                                            s.len() == 16
+                                                                && s.bytes()
+                                                                    .all(|b| b.is_ascii_hexdigit())
+                                                        })
+                                                    })
+                                            })
+                                    })
+                            })
+                    } else {
+                        row["cpu"].as_u64().is_some()
+                            && row["t"].as_f64().is_some()
+                            && row["pc"].as_str().is_some_and(|s| {
+                                !s.is_empty()
+                                    && s.trim_start_matches("0x")
+                                        .bytes()
+                                        .all(|b| b.is_ascii_hexdigit())
+                            })
+                    };
+                    if !valid {
+                        return Err(format!(
+                            "malformed requested {kind} sample {} at {}",
+                            count + 1,
+                            path.display()
+                        )
+                        .into());
+                    }
+                    count += 1;
+                }
+                if count == 0 {
+                    return Err(format!(
+                        "requested {kind} sampler produced no samples at {}",
+                        path.display()
+                    )
+                    .into());
+                }
+                counts.insert(kind.into(), json!(count));
+            }
+        }
+        Ok(json!({"ok":true,"samples":counts}))
+    };
+    let verdict = match check() {
+        Ok(value) => value,
+        Err(error) => json!({"ok":false,"error":error.message}),
+    };
+    fs::write(
+        trace.join("record-diagnostics.json"),
+        format!("{}\n", serde_json::to_string_pretty(&verdict)?),
+    )?;
+    Ok(verdict)
+}
+
 pub fn dispatch(request: &Value, host: &mut dyn Host) -> Result<Value> {
     let a = &request["kwargs"];
     let op = text(request, "op")?.trim_start_matches("rr_cli_");
@@ -288,6 +392,11 @@ pub fn dispatch(request: &Value, host: &mut dyn Host) -> Result<Value> {
             a["settle"].as_f64().unwrap_or(6.0),
             a["limit"].as_f64().unwrap_or(420.0)
         )?),
+        "validate_record_diagnostics" => validate_record_diagnostics(
+            trace,
+            a["ram"].as_bool().unwrap_or(false),
+            a["pc"].as_bool().unwrap_or(false),
+        )?,
         "keep_serial" => keep_serial(trace, text(a, "name")?, text(a, "expect_mode")?)?,
         "guest_lines" => json!(guest_lines(Path::new(text(a, "path")?))?),
         "serial_divergence" => json!(serial_divergence(
@@ -332,5 +441,55 @@ mod tests {
         symlink(target.path(), root.path().join("outside")).unwrap();
         assert!(prune(root.path(), 0, &[], true).is_err());
         assert!(target.path().join("manifest.json").is_file());
+    }
+}
+
+#[cfg(test)]
+mod diagnostic_record_tests {
+    use super::*;
+    #[test]
+    fn requested_evidence_must_exist_and_worker_failure_wins() {
+        let temp = tempfile::tempdir().unwrap();
+        let trace = temp.path();
+        let work = trace.join("boot");
+        fs::create_dir(&work).unwrap();
+        fs::write(
+            trace.join("last-run.json"),
+            json!({"mode":"record","serial_log":work.join("serial.log")}).to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            validate_record_diagnostics(trace, false, false).unwrap()["ok"],
+            true
+        );
+        fs::write(trace.join("samples.jsonl"), "").unwrap();
+        assert_eq!(
+            validate_record_diagnostics(trace, true, false).unwrap()["ok"],
+            false
+        );
+        fs::write(trace.join("samples.jsonl"),format!("{}\n",json!({"icount":12,"regs":"CPU#0 PC=0","mem":[{"base":0,"hashes":["878633aa32a3b150"]}]}))).unwrap();
+        // A bugcheck in serial is useful trace content, independent of host evidence.
+        fs::write(work.join("serial.log"), "*** BUGCHECK 0xA").unwrap();
+        assert_eq!(
+            validate_record_diagnostics(trace, true, false).unwrap()["ok"],
+            true
+        );
+        fs::write(
+            work.join("vm_diagnostic_sidecar-rr.json"),
+            json!({"error":{"kind":"QmpTransport","message":"timeout"}}).to_string(),
+        )
+        .unwrap();
+        let bad = validate_record_diagnostics(trace, true, false).unwrap();
+        assert_eq!(bad["ok"], false);
+        assert!(bad["error"].as_str().unwrap().contains("timeout"));
+        fs::write(
+            work.join("pcsamples.jsonl"),
+            format!("{}\n", json!({"cpu":0,"t":0.0,"pc":"fffff80000400000"})),
+        )
+        .unwrap();
+        assert_eq!(
+            validate_record_diagnostics(trace, false, true).unwrap()["ok"],
+            true
+        );
     }
 }

@@ -138,3 +138,11 @@ lease name alongside the destination board's plug/Pico configuration. This keeps
 both board names contending for one physical resource; it does not change which
 board owns the payload or logs. For the Pi 4 gear's existing conservative alias,
 that shared lease name is `optiplex`.
+
+Bulk RAM capture uses FIFO readiness polling and a bounded transfer deadline;
+interactive QMP requests recover their normal timeout after each transfer.
+`rr record` publishes `record-diagnostics.json` separately from trace finalisation.
+Requested RAM/PC sampling must produce valid rows, and a worker error fails the
+command even if earlier samples exist. A guest bugcheck can still yield a useful,
+successful recording when the requested host diagnostics completed. Host sampler
+failures propagate as diagnostic errors rather than guest-death classifications.

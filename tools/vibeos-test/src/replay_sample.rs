@@ -12,7 +12,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File, OpenOptions},
     io::{Read, Write},
-    os::unix::fs::OpenOptionsExt,
+    os::unix::{fs::OpenOptionsExt, io::AsRawFd},
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -21,6 +21,26 @@ use std::{
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
+// A FIFO normally holds only a few KiB. Sleeping per empty read throttles a
+// GiB capture to minutes; poll wakes as soon as QEMU supplies the next bytes.
+fn wait_readable(input: &File) -> Result<()> {
+    let mut fd = libc::pollfd {
+        fd: input.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    let rc = unsafe { libc::poll(&mut fd, 1, 100) };
+    if rc < 0 {
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(error.into());
+        }
+    }
+    if fd.revents & (libc::POLLERR | libc::POLLNVAL) != 0 {
+        return Err("pmemsave FIFO poll failed".into());
+    }
+    Ok(())
+}
 pub const CHUNK: usize = 1 << 20;
 pub const SAMPLES_FILE: &str = "samples.jsonl";
 pub const VERDICT_FILE: &str = "diverge.json";
@@ -339,11 +359,12 @@ impl Fingerprinter {
                         return Err("pmemsave aborted".into());
                     }
                     match input.read(&mut chunk[filled..]) {
-                        Ok(0) => thread::sleep(Duration::from_millis(5)),
+                        Ok(0) => wait_readable(&input)?,
                         Ok(n) => filled += n,
                         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                            thread::sleep(Duration::from_millis(5))
+                            wait_readable(&input)?
                         }
+                        Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
                         Err(e) => return Err(e.into()),
                     }
                     if Instant::now() > deadline {
@@ -357,9 +378,10 @@ impl Fingerprinter {
         });
         let result = self
             .qmp
-            .execute(
+            .execute_with_timeout(
                 "pmemsave",
                 json!({"val":base,"size":length,"filename":fifo}),
+                Duration::from_secs(120),
             )
             .map_err(qerr);
         if result.is_err() {
@@ -805,5 +827,75 @@ mod tests {
             fp.qmp.close();
             server.join().unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod bulk_qemu_control {
+    use super::*;
+    #[test]
+    #[ignore = "requires installed qemu-system-aarch64; explicitly run for bulk transfer changes"]
+    fn real_qemu_gib_ram_capture_is_bounded_and_complete() {
+        use std::process::{Child, Command, Stdio};
+        struct Owned(Child);
+        impl Drop for Owned {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let socket = temp.path().join("qmp.sock");
+        let _child = Owned(
+            Command::new("qemu-system-aarch64")
+                .args([
+                    "-M",
+                    "virt",
+                    "-cpu",
+                    "cortex-a57",
+                    "-m",
+                    "1024",
+                    "-S",
+                    "-accel",
+                    "tcg,thread=single",
+                    "-display",
+                    "none",
+                    "-nic",
+                    "none",
+                    "-qmp",
+                ])
+                .arg(format!("unix:{},server=on,wait=off", socket.display()))
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::inherit())
+                .spawn()
+                .unwrap(),
+        );
+        let mut fp = Fingerprinter::new(vec![], temp.path(), &temp.path().join("ram")).unwrap();
+        fp.connect(&socket, Duration::from_secs(5)).unwrap();
+        let start = Instant::now();
+        let hashes = fp.hash_range(0x40000000, 1 << 30).unwrap();
+        assert_eq!(hashes.len(), 1024);
+        let zero = vec![0; CHUNK];
+        let reference = temp.path().join("first.raw");
+        fp.qmp
+            .execute(
+                "pmemsave",
+                json!({"val":0x40000000u64,"size":CHUNK,"filename":reference}),
+            )
+            .unwrap();
+        assert!(
+            load(&fp.store, &hashes[0]).unwrap().unwrap() == fs::read(reference).unwrap(),
+            "FIFO and regular-file RAM captures differ"
+        );
+        assert!(
+            load(&fp.store, &hashes[1023]).unwrap().unwrap() == zero,
+            "last RAM chunk is not zero"
+        );
+        assert!(hashes[1..].iter().all(|h| h == &hashes[1023]));
+        eprintln!(
+            "real QEMU 1GiB FIFO capture: {:.3}s",
+            start.elapsed().as_secs_f64()
+        );
     }
 }
