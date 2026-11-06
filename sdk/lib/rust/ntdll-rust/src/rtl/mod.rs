@@ -10,6 +10,9 @@ pub mod procnum; // NtGetCurrentProcessorNumberEx (no kernel service; built over
 #[cfg(all(target_arch = "x86", not(feature = "vista")))]
 pub mod slistex; // RtlInterlockedPushListSListEx: i386's stdcall face of the fastcall body
 pub mod ktm;
+#[cfg(not(feature = "vista"))]
+pub mod fls; // RtlFls* (upstream fls.c, compiled into rtl): ntdll.dll only, spec-gated 0x600+/0xA00+
+pub mod ntuserpfn; // Rtl*NtUserPfn (upstream rtl_vista): ntdll_vista.spec exports it, ntdll.spec at 0x600+
 pub mod libsupp;
 #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
 pub mod wow64shim; // WOW64 host surface, arm64+amd64 (docs/engineering/wow64-plan.md Phase A/E)

@@ -19,11 +19,22 @@ const TRUE: BOOL = 1;
 const EXCEPTION_CHAIN_END: *mut _EXCEPTION_REGISTRATION_RECORD =
     !0usize as *mut _EXCEPTION_REGISTRATION_RECORD;
 
-// PEB.FlsCallback is typed `*mut PVOID` by bindgen, but the slots hold
-// PFLS_CALLBACK_FUNCTION values (C indexes it as such). View it that way.
+// PEB.FlsCallback is typed `*mut PVOID` by bindgen. Its slots are Windows' FLS_CALLBACK_INFO
+// pairs { Callback, Unknown }, the layout ntdll's RtlFlsAlloc/RtlFlsFree use (ntdll-rust
+// rtl/fls.rs, upstream fls.c). The C here indexes it as single pointers, so a process that
+// reaches both families (Vista+ kernel32 routes FlsAlloc/FlsFree to ntdll while keeping
+// this BaseRundownFls) would read the callback for slot n from slot n/2. One layout for both.
+#[repr(C)]
+struct FLS_CALLBACK_INFO {
+    Callback: PFLS_CALLBACK_FUNCTION,
+    Unknown: PVOID,
+}
+
+/// The callback of FLS slot `index`.
 #[inline]
-unsafe fn fls_callbacks(Peb: PPEB) -> *mut PFLS_CALLBACK_FUNCTION {
-    (*Peb).FlsCallback as *mut PFLS_CALLBACK_FUNCTION
+unsafe fn fls_callbacks(Peb: PPEB, index: u32) -> *mut PFLS_CALLBACK_FUNCTION {
+    let slots = (*Peb).FlsCallback as *mut FLS_CALLBACK_INFO;
+    core::ptr::addr_of_mut!((*slots.add(index as usize)).Callback)
 }
 
 #[no_mangle]
@@ -42,7 +53,7 @@ pub unsafe extern "system" fn BaseRundownFls(FlsData: PVOID) {
 
     n = 1;
     while n <= FlsHighIndex {
-        lpCallback = *fls_callbacks(NtCurrentPeb()).add(n as usize);
+        lpCallback = *fls_callbacks(NtCurrentPeb(), n);
         if lpCallback.is_some() && !(*core::ptr::addr_of!((*pFlsData).Data).cast::<PVOID>().add(n as usize)).is_null() {
             (lpCallback.unwrap())(*core::ptr::addr_of!((*pFlsData).Data).cast::<PVOID>().add(n as usize));
         }
@@ -299,7 +310,7 @@ pub unsafe extern "system" fn FlsAlloc(lpCallback: PFLS_CALLBACK_FUNCTION) -> DW
             (*Peb).FlsCallback = RtlAllocateHeap(
                 RtlGetProcessHeap(),
                 HEAP_ZERO_MEMORY,
-                ((FLS_MAXIMUM_AVAILABLE as usize) * core::mem::size_of::<LPVOID>()) as SIZE_T,
+                ((FLS_MAXIMUM_AVAILABLE as usize) * core::mem::size_of::<FLS_CALLBACK_INFO>()) as SIZE_T,
             ) as *mut _;
             (*Peb).FlsCallback.is_null()
         }
@@ -329,7 +340,7 @@ pub unsafe extern "system" fn FlsAlloc(lpCallback: PFLS_CALLBACK_FUNCTION) -> DW
                 }
 
                 *core::ptr::addr_of_mut!((*pFlsData).Data).cast::<PVOID>().add(dwFlsIndex as usize) = core::ptr::null_mut();
-                *fls_callbacks(Peb).add(dwFlsIndex as usize) = lpCallback;
+                *fls_callbacks(Peb, dwFlsIndex) = lpCallback;
 
                 if dwFlsIndex > (*Peb).FlsHighIndex {
                     (*Peb).FlsHighIndex = dwFlsIndex;
@@ -363,7 +374,7 @@ pub unsafe extern "system" fn FlsFree(dwFlsIndex: DWORD) -> BOOL {
             let lpCallback: PFLS_CALLBACK_FUNCTION;
 
             RtlClearBits(((*Peb).FlsBitmap as PRTL_BITMAP), dwFlsIndex, 1);
-            lpCallback = *fls_callbacks(Peb).add(dwFlsIndex as usize);
+            lpCallback = *fls_callbacks(Peb, dwFlsIndex);
 
             Entry = (*Peb).FlsListHead.Flink;
             while Entry != &mut (*Peb).FlsListHead as *mut _ as PLIST_ENTRY {
@@ -380,7 +391,7 @@ pub unsafe extern "system" fn FlsFree(dwFlsIndex: DWORD) -> BOOL {
                 }
                 Entry = (*Entry).Flink;
             }
-            *fls_callbacks(Peb).add(dwFlsIndex as usize) = None;
+            *fls_callbacks(Peb, dwFlsIndex) = None;
         } else {
             SetLastError(ERROR_INVALID_PARAMETER);
         }
