@@ -53,7 +53,7 @@ unsafe fn rtl_check_bit(bitmap: *const ntkrnl_sys::ddk::RTL_BITMAP, bit_number: 
 // hivedata.h cell-index field masks.
 const HCELL_OFFSET_MASK: u32 = 0x0000_0fff;
 
-const CMLIB_HCELL_DEBUG: u32 = 0;
+const CMLIB_HCELL_DEBUG: u32 = 0x01; // cmlib.h trace mask
 
 // ── HvpGetCellHeader (static __inline) — resolve an HCELL_INDEX to its PHCELL ──
 unsafe fn HvpGetCellHeader(RegistryHive: *mut HHIVE, CellIndex: HCELL_INDEX) -> *mut HCELL {

@@ -576,7 +576,7 @@ pub unsafe extern "system" fn FltpCancelMessageWaiter(Csq: PIO_CSQ, Irp: PIRP) {
     IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
 }
 unsafe fn CreateClientPort(mut FileObject: PFILE_OBJECT, mut Irp: PIRP) -> NTSTATUS {
-    const FLT_PORT_ALL_ACCESS: u32 = STANDARD_RIGHTS_ALL | 0x1ff;
+    const FLT_PORT_ALL_ACCESS: u32 = STANDARD_RIGHTS_ALL | 0x0001; // fltkernel.h: FLT_PORT_CONNECT | STANDARD_RIGHTS_ALL
     const STATUS_CONNECTION_COUNT_LIMIT: NTSTATUS = 0xC0000246u32 as NTSTATUS;
 
     let mut ServerPortObject: PFLT_SERVER_PORT_OBJECT = core::ptr::null_mut();

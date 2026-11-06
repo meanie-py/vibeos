@@ -125,7 +125,7 @@ pub unsafe extern "C" fn IniReadSettingByNumber(
     ValueSize: ULONG,
 ) -> BOOLEAN {
 
-    const DPRINT_INIFILE: ULONG = 0;
+    const DPRINT_INIFILE: ULONG = 4; // debug.h
 
     TRACE!(".001 NameSize = %d ValueSize = %d\n", NameSize, ValueSize);
     TRACE!("IniReadSettingByNumber() SectionId = 0x%x\n", SectionId);

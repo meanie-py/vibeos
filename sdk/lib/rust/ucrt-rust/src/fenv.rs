@@ -74,7 +74,7 @@ const _DN_FLUSH_OPERANDS_SAVE_RESULTS: u32 = 0x200_0000;
 const _DN_SAVE_OPERANDS_FLUSH_RESULTS: u32 = 0x300_0000;
 
 /// `FE_ALL_EXCEPT` (Wine's fenv.h: the five `_SW_*` exception bits).
-const FE_ALL_EXCEPT: u32 = 0x1f;
+const FE_ALL_EXCEPT: u32 = 0x1f;  // nolint: shadowed-c-define (MSVC/ucrt ABI value (Wine fenv.h/math.h); sdk/include/crt is the mingw x87 layout)
 
 /// `fenv_t`: `{ unsigned long _Fe_ctl, _Fe_stat; }`, both in the encoded form.
 #[repr(C)]

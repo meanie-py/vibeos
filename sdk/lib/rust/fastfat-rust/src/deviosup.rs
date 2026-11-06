@@ -2218,7 +2218,7 @@ pub unsafe extern "system" fn FatBuildZeroMdl(
 // ==== re-stitched (genuine drop, authoritative) ====
 #[no_mangle]
 pub unsafe extern "system" fn FatWaitSync(IrpContext: *mut IRP_CONTEXT) {
-    const Dbg: i32 = 0;
+    const Dbg: i32 = 0x10000000; // deviosup.c
     const Executive: u32 = 0; // KWAIT_REASON::Executive
     // PAGED_CODE() omitted (no-op in free build)
 

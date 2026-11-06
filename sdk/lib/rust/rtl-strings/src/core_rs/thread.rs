@@ -104,17 +104,17 @@ pub struct THREAD_BASIC_INFORMATION {
 /// i386: `sizeof(CONTEXT)` = 716. amd64: 1232. arm64 (CHPE/Win11
 /// flavor): 880; ReactOS uses the standard ARM64 layout = 912.
 #[cfg(target_arch = "x86")]
-pub const CONTEXT_SIZE: usize = 716;
+pub const CONTEXT_SIZE: usize = 716;  // nolint: shadowed-c-define (sizeof(CONTEXT) for this arch; tdiinfo.h CONTEXT_SIZE is an unrelated TDI field width)
 #[cfg(target_arch = "x86_64")]
-pub const CONTEXT_SIZE: usize = 1232;
+pub const CONTEXT_SIZE: usize = 1232;  // nolint: shadowed-c-define (sizeof(CONTEXT) for this arch; tdiinfo.h CONTEXT_SIZE is an unrelated TDI field width)
 #[cfg(target_arch = "aarch64")]
-pub const CONTEXT_SIZE: usize = 912;
+pub const CONTEXT_SIZE: usize = 912;  // nolint: shadowed-c-define (sizeof(CONTEXT) for this arch; tdiinfo.h CONTEXT_SIZE is an unrelated TDI field width)
 
 /// `CONTEXT_SIZE` for the host build (rtl-difftest target_os="linux"
 /// etc.). Wave THR has no diff harness so this is unreachable, but
 /// the struct still needs to compile. Pick the largest of the three.
 #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
-pub const CONTEXT_SIZE: usize = 1232;
+pub const CONTEXT_SIZE: usize = 1232;  // nolint: shadowed-c-define (sizeof(CONTEXT) for this arch; tdiinfo.h CONTEXT_SIZE is an unrelated TDI field width)
 
 /// `ROUND_UP(n, multiple)` from ntdef.h — bytes / pages alignment.
 /// `multiple` is a power of two.

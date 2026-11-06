@@ -1565,7 +1565,7 @@ pub unsafe extern "C" fn CdMountVolume(
     const CDROM_DISK_AUDIO_TRACK: u32 = 0x00000001; // ntddcdrm.h
     const FILE_DEVICE_CD_ROM_FILE_SYSTEM: u32 = 3; // winioctl.h
     const FILE_DEVICE_DISK_FILE_SYSTEM: u32 = 8; // winioctl.h
-    const SYNCHRONIZATION_EVENT: u32 = 1; // SynchronizationEvent
+    const SYNCHRONIZATION_EVENT: u32 = 1; // SynchronizationEvent  // nolint: shadowed-c-define (KEVENT_TYPE SynchronizationEvent; video.h numbers VideoPort events differently)
     // CTL_CODE(dev,func,meth,acc) = (dev<<16)|(acc<<14)|(func<<2)|meth
     const IOCTL_DISK_CHECK_VERIFY: u32 = (7 << 16) | (1 << 14) | (0x200 << 2);
     const IOCTL_CDROM_GET_DRIVE_GEOMETRY: u32 = (2 << 16) | (1 << 14) | (0x13 << 2);

@@ -168,7 +168,7 @@ const WM_CTLCOLOR: UINT = 0x0019; // windowsx.h
 const WC_DIALOG: usize = 0x8002; // winuser.h MAKEINTATOM(0x8002)
 const RT_DIALOG: usize = 5; // winuser.h MAKEINTRESOURCE(5)
 const CW_USEDEFAULT: INT = 0x8000_0000u32 as i32; // winuser.h ((int)0x80000000)
-const CW_USEDEFAULT16: i32 = 0x8000; // wine ((short)0x8000)
+const CW_USEDEFAULT16: i32 = -0x8000; // undocuser.h ((short)0x8000), sign-extended like the C
 const HWND_TOPMOST: HWND = -1isize as HWND; // winuser.h ((HWND)-1)
 const HWND_BROADCAST: HWND = 0xffff as HWND; // winuser.h ((HWND)0xffff)
 

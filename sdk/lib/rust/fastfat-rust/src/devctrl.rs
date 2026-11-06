@@ -190,7 +190,7 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
     let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
 
-    const Dbg: u32 = 0; // placeholder for DEBUG_TRACE_DEVCTRL
+    const Dbg: u32 = 0x10000; // devctrl.c
 
     PAGED_CODE!();
     DebugTrace!(1, Dbg, b"FatFsdDeviceControl\n\0".as_ptr() as *const i8, 0);

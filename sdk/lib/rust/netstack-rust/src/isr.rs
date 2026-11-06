@@ -39,7 +39,7 @@ use crate::serial::nsprint;
 
 const LEVEL_SENSITIVE: u32 = 0; // _KINTERRUPT_MODE_LevelSensitive (c_uint)
 const LATCHED: u32 = 1; // _KINTERRUPT_MODE_Latched
-const SYNCHRONIZATION_EVENT: u32 = 1; // _EVENT_TYPE_SynchronizationEvent (c_uint)
+const SYNCHRONIZATION_EVENT: u32 = 1; // _EVENT_TYPE_SynchronizationEvent (c_uint)  // nolint: shadowed-c-define (KEVENT_TYPE SynchronizationEvent; video.h numbers VideoPort events differently)
 
 /// What a backend's `ack` found in its device's interrupt status.
 #[derive(Clone, Copy, PartialEq)]

@@ -302,7 +302,7 @@ pub extern "C" fn tgammaf(x: f32) -> f32 {
 // ── exponent extraction ──────────────────────────────────────────────────────
 
 const FP_ILOGB0: c_int = -0x7fff_ffff - 1;
-const FP_ILOGBNAN: c_int = 0x7fff_ffff;
+const FP_ILOGBNAN: c_int = 0x7fff_ffff;  // nolint: shadowed-c-define (MSVC/ucrt ABI value (Wine fenv.h/math.h); sdk/include/crt is the mingw x87 layout)
 
 /// `ilogb`: Microsoft's `FP_ILOGBNAN` is `INT_MAX`; musl's (and `libm`'s) is `INT_MIN`.
 #[no_mangle]

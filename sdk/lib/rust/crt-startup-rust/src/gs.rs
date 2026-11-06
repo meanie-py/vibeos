@@ -69,11 +69,11 @@ pub unsafe extern "C" fn __security_init_cookie() {
 
 // ---- GS failure path (off the boot path) ----------------------------
 #[cfg(target_arch = "x86_64")]
-const CONTEXT_SIZE: usize = 0x4D0;
+const CONTEXT_SIZE: usize = 0x4D0;  // nolint: shadowed-c-define (sizeof(CONTEXT) for this arch; tdiinfo.h CONTEXT_SIZE is an unrelated TDI field width)
 #[cfg(target_arch = "x86")]
-const CONTEXT_SIZE: usize = 0x2CC;
+const CONTEXT_SIZE: usize = 0x2CC;  // nolint: shadowed-c-define (sizeof(CONTEXT) for this arch; tdiinfo.h CONTEXT_SIZE is an unrelated TDI field width)
 #[cfg(target_arch = "aarch64")]
-const CONTEXT_SIZE: usize = 0x390;
+const CONTEXT_SIZE: usize = 0x390;  // nolint: shadowed-c-define (sizeof(CONTEXT) for this arch; tdiinfo.h CONTEXT_SIZE is an unrelated TDI field width)
 
 #[repr(C, align(16))]
 struct ContextBuf([u8; CONTEXT_SIZE]);

@@ -122,7 +122,7 @@ const HID_REPORT_TYPE_OUTPUT: u8 = 0x02;
 const HID_REPORT_TYPE_FEATURE: u8 = 0x04;
 const TRUE: u8 = 1;
 const FALSE: u8 = 0;
-const COLLECTION_LOGICAL: u8 = 1;
+const COLLECTION_LOGICAL: u8 = 2; // parser.h (1 is COLLECTION_APPLICATION)
 
 // Item size array (external static, defined in file scope)
 #[no_mangle]

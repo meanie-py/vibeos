@@ -92,8 +92,20 @@ fn name(path: &Path) -> Result<String> {
         .map(str::to_owned)
         .ok_or_else(|| fail(format!("non-UTF8 executor path: {}", path.display())))
 }
+static IMPLEMENTATION_REPO: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+/// The repo this process serves, from `--root` (tools/build-infra always passes it). The
+/// compile-time CARGO_MANIFEST_DIR is only the fallback: build-infra can provision the binary
+/// inside a canon-run bind mount, which baked `/tmp/vibeos/tools/vibeos-build/../..` into it, and
+/// every later build outside a mount then failed ARTIFACT_STORE_FAIL "No such file or directory"
+/// opening .build-tools/llvm-mingw (2026-11-05).
+pub fn set_implementation_repo(root: &Path) {
+    let _ = IMPLEMENTATION_REPO.set(root.to_path_buf());
+}
 pub fn implementation_repo() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
+    IMPLEMENTATION_REPO
+        .get()
+        .cloned()
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.."))
 }
 pub fn flags(architecture: &str, kernel: bool) -> Result<&'static str> {
     match (architecture, kernel) {

@@ -211,7 +211,7 @@ pub unsafe extern "system" fn FatQueryBasicInfo(
     Buffer: PFILE_BASIC_INFORMATION,
     Length: *mut i32,
 ) {
-    const Dbg: u32 = 0; // DEBUG_TRACE_FILEINFO
+    const Dbg: u32 = 0x200; // fileinfo.c
     const FAT_NTC_ROOT_DCB: u16 = 0x0504; // placeholder – match actual node type
     const FCB_STATE_TEMPORARY: u32 = 0x20; // placeholder – actual value as defined
     const FILE_ATTRIBUTE_TEMPORARY: u32 = 0x100;

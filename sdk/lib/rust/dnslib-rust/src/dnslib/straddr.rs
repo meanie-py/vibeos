@@ -45,7 +45,7 @@ extern "system" {
 }
 
 const AF_UNSPEC: u16 = 0;
-const INET6_ADDRSTRLEN: usize = 46;
+const INET6_ADDRSTRLEN: usize = 65; // ws2ipdef.h (46 is the POSIX value)
 const ANSI_NAME_LEN: usize = INET6_ADDRSTRLEN + 10;
 const WSA_INVALID_PARAMETER: u32 = 87;
 const INADDR_NONE: u32 = 0xFFFF_FFFF;

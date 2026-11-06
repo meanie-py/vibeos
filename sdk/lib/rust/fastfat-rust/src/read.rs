@@ -314,7 +314,7 @@ pub unsafe extern "system" fn FatPostStackOverflowRead(
     Irp: PIRP,
     Fcb: PFCB,
 ) -> NTSTATUS {
-    const Dbg: u32 = 0;
+    const Dbg: u32 = 0x1000; // read.c
     const NotificationEvent: u32 = 0;
     const Executive: i32 = 0;
     const KernelMode: u32 = 0;

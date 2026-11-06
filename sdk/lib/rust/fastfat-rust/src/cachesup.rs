@@ -1367,7 +1367,7 @@ pub unsafe extern "system" fn FatSetDirtyBcb(
     const VCB_STATE_FLAG_MOUNTED_DIRTY: u32 = 0x10;
     const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02;
     const VolumeDirty: u32 = 1;
-    const Dbg: u32 = 0;
+    const Dbg: u32 = 0x4000000; // cachesup.c
     // DebugTrace calls preserved
     DebugTrace!(
         1,

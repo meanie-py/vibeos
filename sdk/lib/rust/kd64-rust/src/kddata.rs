@@ -184,9 +184,9 @@ const KGDT_TSS: u16 = 0x28;
 #[cfg(target_arch = "x86_64")]
 const KGDT64_R0_CODE: u16 = 0x10;
 #[cfg(target_arch = "x86_64")]
-const KGDT64_R3_DATA: u16 = 0x2B;
+const KGDT64_R3_DATA: u16 = 0x28; // ketypes.h, no RPL bits (kddata.c passes it raw)
 #[cfg(target_arch = "x86_64")]
-const KGDT64_R3_CODE: u16 = 0x33;
+const KGDT64_R3_CODE: u16 = 0x30; // ketypes.h
 #[cfg(target_arch = "x86_64")]
 const KGDT64_SYS_TSS: u16 = 0x40;
 

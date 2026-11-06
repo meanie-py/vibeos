@@ -4,3 +4,10 @@
 #[cfg(target_arch = "x86_64")]   #[path = "types_amd64.rs"] mod types_arch;
 #[cfg(target_arch = "aarch64")]  #[path = "types_arm64.rs"] mod types_arch;
 pub use types_arch::*;
+
+/// comctl32.h, under `__REACTOS__`: `#undef COMCTL32_VERSION` then `#define COMCTL32_VERSION 5`
+/// ("really ComCtl32 v5.82, the last one not supporting SxS"). The island above carries the PSDK's
+/// 6 although it has the same block's COMCTL32_VERSION_MINOR 82, so DllGetVersion reported 6.82 and
+/// listview/rebar CCM_SETVERSION accepted v6. This explicit item shadows the glob re-export; drop
+/// it once the island carries 5.
+pub const COMCTL32_VERSION: u32 = 5; // nolint: const-contradiction (overrides the island on purpose, see above)

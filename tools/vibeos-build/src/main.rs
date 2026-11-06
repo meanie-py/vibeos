@@ -265,6 +265,7 @@ fn run() -> Result<u8> {
     } else {
         root.canonicalize()?
     };
+    b::artifact_executor::set_implementation_repo(&root);
     if api_json {
         if command.is_some() || !rest.is_empty() {
             return Err("--api-json requires no command/options".into());

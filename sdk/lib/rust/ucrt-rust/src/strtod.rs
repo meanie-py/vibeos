@@ -32,9 +32,9 @@ const ERANGE: c_int = 34;
 
 // fenv.h / float.h: _RC_NEAR, _RC_DOWN, _RC_UP, _RC_CHOP.
 const FE_TONEAREST: c_int = 0x000;
-const FE_DOWNWARD: c_int = 0x100;
-const FE_UPWARD: c_int = 0x200;
-const FE_TOWARDZERO: c_int = 0x300;
+const FE_DOWNWARD: c_int = 0x100;  // nolint: shadowed-c-define (MSVC/ucrt ABI value (Wine fenv.h/math.h); sdk/include/crt is the mingw x87 layout)
+const FE_UPWARD: c_int = 0x200;  // nolint: shadowed-c-define (MSVC/ucrt ABI value (Wine fenv.h/math.h); sdk/include/crt is the mingw x87 layout)
+const FE_TOWARDZERO: c_int = 0x300;  // nolint: shadowed-c-define (MSVC/ucrt ABI value (Wine fenv.h/math.h); sdk/include/crt is the mingw x87 layout)
 
 extern "C" {
     fn _errno() -> *mut c_int;

@@ -921,7 +921,7 @@ pub unsafe extern "system" fn HvInitialize(
 ) -> NTSTATUS {
     // Local constants
     const HIVE_NOLAZYFLUSH: u32 = 2;
-    const NTDDI_VERSION: u32 = 0x05010000; // assumed XP
+    const NTDDI_VERSION: u32 = 0x05020400; // nolint: const-contradiction (cmlib.h pins NTDDI_WS03SP4 for the hive code)
     let Hive: *mut HHIVE = RegistryHive;
     let mut Status: NTSTATUS;
     // RtlZeroMemory(Hive, sizeof(HHIVE)).
