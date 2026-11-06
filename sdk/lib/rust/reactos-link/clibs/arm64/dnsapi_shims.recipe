@@ -1,0 +1,2 @@
+# dnsapi_shims (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	@build/dll/win32/dnsapi/dnsrslvr_c.c	@build/dll/win32/dnsapi dll/win32/dnsapi @std vendor/opengl-headers/include vendor/libdxg/include dll/win32/dnsapi/include sdk/include/reactos/idl vendor/adns/src vendor/adns/adns_win32	-isystem {REPO}/sdk/lib/pseh/include -std=gnu99 @core	ADNS_JGAA_WIN32 WINVER=0x502 _CRT_DECLARE_NONSTDC_NAMES=1 _CRT_NONSTDC_NO_DEPRECATE _CRT_NO_POSIX_ERROR_CODES _DLL _WIN32_WINNT=0x502 __USE_CRTIMP

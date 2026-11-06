@@ -438,24 +438,45 @@ extends it from the boot spine to every fully-Rust module.
      booting that `livecd.img` (run 20261031-231043-d6i0arl5).
 6. **Modules that still have C** compile it from cargo, so cmake's last job is the C-only
    tail, then nothing.
-   - **RESUME HERE (2026-11-02).** Body-less (C-only) cells: a module with no Rust body
-     becomes a cell that compiles and links only its C. Waves 1-3 (81 modules) are on master
-     and boot on all 3 arches; wave 4 (87: mshtml, msi, windowscodecs, wininet, ...) is
-     `ctail-wave4` @ d312177dd14, queued (once held for a kmtest ExHardError regression that
-     turned out not to be it). Every cell is pe_equiv-equivalent to cmake's link per arch.
-     - **15 held, back on cmake**, each needing generator work: dbghelp (link in an else
-       branch), filebrowser (read via `$<TARGET_FILE_DIR:>`), crypt32 (subdirectory sources:
-       now fixed, just reconvert), uxtheme (two specs), rpcrt4 (link error), dinput,
-       dinput8, d3dwine (resources missing), libpng, libjpeg, libxslt (exports missing),
-       mbedtls (an import missing), msxml3, wuapi, xolehlp (link cmake-built libiconv /
-       psdk GUID libs the library index does not model).
-     - **The generator is being ported to Rust** (lint-rs `93d5def2dfe`, held).
-       `docs/engineering/active-lanes/cargo-cell-gen-rust-port-delta.md` lists the 12
-       behaviour changes it must carry. Make further generator changes in the Rust once it
-       lands, not in the Python.
-     - **After that:** C++ (about 30 modules; reactos-link has no C++ rule yet, an engine-side
-       job that can start before the port), the wdmdriver/kmdfdriver/nativedll kinds,
-       kmtests (needs `--kmtests` builds), and the data products (.nls/.inf/.lnk/hives).
+   - **RESUME HERE (2026-11-06).** Waves 1-4 (168 body-less C modules) are on master. Wave
+     5/6 (`ctail-held`) converts 61 more, each `pe_equiv`-equivalent to cmake's link on all
+     3 arches: 38 cmake-linked Rust DLLs (advapi32, user32, ole32, setupapi, ws2_32, ...
+     their hand-written `add_custom_command(cargo build ...)` body is now modelled), 17
+     C-less DLLs (.def + .res + static libs: cfgmgr32, icmp, regapi, ...) and 6 earlier
+     holds (crypt32, evr, mf, mfreadwrite, psapi, dwrite). Cells 461/464/466 -> 523/526/528
+     (i386/amd64/arm64). Find what is left with
+     `tools/codegen cargo-cell <target>` per module; `--survey` sees only placeholder-stub
+     modules, not the custom-command ones.
+     - **Held, back on cmake, with the reason** (`git stash list | grep ctail-held` keeps the
+       generated cells of the last three groups):
+       - dbghelp, libtirpc: a statement in an `elseif`/`else` branch (rewrite refuses).
+       - fusion: its C is the sibling static lib `fusion_common`, whose generated
+         `fusion_stubs.c` the cell's engine library lacks (undefined `@ stub` exports).
+       - comcat, msxml3r, mycomput, security, softpub, tapiui, themeui, wmi: cmake's link
+         imports no ntdll, which the Rust shell's panic path needs (model refuses).
+       - lz32, rsabase, shdoclc, shfolder: `ENTRYPOINT 0`, no code; the cell adds `.text`
+         and an import directory (pe_equiv DIFFERENT). Needs a shell-less cell kind.
+       - d3dwine, dinput8 (resources missing), libjpeg, libpng, libxslt (exports
+         missing), mbedtls (an import missing): model clean, link not equivalent.
+       - gdi32 (`libatan2_rust.a`), msxml3 (`libiconv.a`), wuapi (`libwuguid.a`), xolehlp
+         (`libadsiid.a`): equivalent, but link a cmake-built archive the engine cannot build
+         (`scan_cmake_linked_rust`). Give each archive an `engine:` home, then reconvert.
+       - rpcrt4: link-guard rejects duplicate `DllGetClassObject`/`*ErrorInfo`
+         (proxy.dlldata.c vs the static libs).
+       - kernel32, lsasrv, samsrv: several Rust bodies (more than one `cargo build`);
+         oleaut32: a RUSTFLAGS shape; ws2help: entry point set_entrypoint vs DllMainCRTStartup.
+       - filebrowser (`$<TARGET_FILE_DIR:>`), uxtheme (two specs), glu32 (shared SOURCE),
+         libtiff (`remove_target_compile_option`), wow64cpu (amd64 only).
+     - **Generator, now Rust (`vibeos-codegen`):** `--convert` names every refusal before
+       writing and builds with `ninja -k 0`, naming every failed cell. `--clib-recipes`
+       writes every recipe it can and fails naming the rest; a source's own
+       `COMPILE_DEFINITIONS` (appended after cmake's sorted run) is a recipe `+NAME` define.
+       Run it as a release build (`cargo build --release` into `.cache/vibeos-codegen`): the
+       `tools/codegen` debug build takes ~20 s CPU per module, which an 86-module wave
+       multiplies past an hour.
+     - **After that:** C++ (about 50 modules; reactos-link has no C++ rule yet), the
+       wdmdriver/kmdfdriver/nativedll kinds, kmtests (needs `--kmtests` builds), and the
+       data products (.nls/.inf/.lnk/hives).
    - **6a, done 2026-10-17: the cells' own C.** cmake's C rule is `<CC> --target=<t>
      <DEFINES> <INCLUDES> <FLAGS> -o <obj> -c <src>` with `<DEFINES>` sorted, so it gets the
      rung-4 treatment: `reactos-link/cflags/c.<arch>.flags` (compiler, standard include

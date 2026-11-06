@@ -271,6 +271,9 @@ pub fn ninja(root: &Path, arch: &str, targets: &[String]) -> Result<()> {
 pub struct RecipePlan {
     pub edits: BTreeMap<PathBuf, String>,
     pub skipped: Vec<String>,
+    /// Targets whose recipe could not be derived. The others are still written: one
+    /// unmodelled library (ole32's per-source defines) used to block every recipe.
+    pub failed: Vec<String>,
 }
 pub fn clib_recipes(root: &Path) -> Result<RecipePlan> {
     let mut plan = RecipePlan::default();
@@ -285,7 +288,7 @@ pub fn clib_recipes(root: &Path) -> Result<RecipePlan> {
                 Err(e) if e.message == format!("{t}: no sources on {a}") => {
                     plan.skipped.push(format!("{a} {t}: {e}"))
                 }
-                Err(e) => return Err(e),
+                Err(e) => plan.failed.push(format!("{a} {t}: {e}")),
             }
         }
     }

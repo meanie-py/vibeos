@@ -930,12 +930,25 @@ def test_a_c_command_is_the_template_plus_the_library_part():
     assert g.c_decode(f, CTMPL, "amd64") == C_CMD.split()[: C_CMD.split().index("-o")]
 
 
+def test_a_source_define_cmake_appends_is_kept_after_the_sorted_run():
+    # ole32's stubmanager_seh.c: set_source_files_properties(... COMPILE_DEFINITIONS
+    # _USE_NATIVE_SEH) lands after cmake's sorted target defines, not sorted in.
+    cmd = C_CMD.replace("-D__REACTOS__ ", "-D__REACTOS__ -DSEH ")
+    f = g.c_encode(cmd, CTMPL, "amd64")
+    assert f.defines == ("UNICODE", "+SEH")
+    assert g.c_decode(f, CTMPL, "amd64") == cmd.split()[: cmd.split().index("-o")]
+
+
 def test_a_c_command_out_of_rule_order_is_refused():
     import pytest
 
-    with pytest.raises(g.GenError, match="not sorted"):
+    # Disorder inside the sorted run itself is not cmake's rule (here the global define it
+    # moved no longer sits in the sorted run, so the template no longer explains it).
+    with pytest.raises(g.GenError, match=r"not sorted|lacks the global define"):
         g.c_encode(
-            C_CMD.replace("-DUNICODE -D__REACTOS__", "-D__REACTOS__ -DUNICODE"), CTMPL, "amd64"
+            C_CMD.replace("-DDBG=1 -DUNICODE -D__REACTOS__", "-DUNICODE -DDBG=1 -D__REACTOS__"),
+            CTMPL,
+            "amd64",
         )
 
 
@@ -1472,9 +1485,7 @@ def test_a_wave_build_keeps_going_and_names_every_failed_cell(tmp_path):
     log = tmp_path / "args"
     failed = "".join(f"FAILED: m{i}.dll\\n" for i in range(25))
     script.write_text(
-        f'echo "$*" >> {log}\n'
-        '[ "$2" = build.ninja ] && exit 0\n'
-        f"printf '{failed}'\nexit 1\n"
+        f'echo "$*" >> {log}\n[ "$2" = build.ninja ] && exit 0\nprintf \'{failed}\'\nexit 1\n'
     )
     (tmp_path / "build-i386").mkdir()
     with pytest.raises(g.GenError) as e:

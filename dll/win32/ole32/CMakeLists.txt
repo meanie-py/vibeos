@@ -1,4 +1,3 @@
-
 remove_definitions(-D_WIN32_WINNT=0x502)
 add_definitions(-D_WIN32_WINNT=0x600)
 
@@ -70,91 +69,39 @@ if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
     set_source_files_properties(rpcss_seh.c PROPERTIES COMPILE_DEFINITIONS _USE_NATIVE_SEH)
 endif()
 
-list(APPEND PCH_SKIP_SOURCE
-    stubmanager_seh.c
-    rpcss_seh.c
-    guid.c
-    ${CMAKE_CURRENT_BINARY_DIR}/dcom_p.c
-    ${CMAKE_CURRENT_BINARY_DIR}/ole32_objidl_p.c
-    ${CMAKE_CURRENT_BINARY_DIR}/ole32_oleidl_p.c
-    ${CMAKE_CURRENT_BINARY_DIR}/ole32_unknwn_p.c
-    ${CMAKE_CURRENT_BINARY_DIR}/ole32_stubs.c
-    ${CMAKE_CURRENT_BINARY_DIR}/proxy.dlldata.c)
-
-
 # --- Rust cohabitation (ole32-rust) -----------------------------------------
 # Build libole32_rust.a from the workspace crate (STANDARD user-mode per-arch
 # targets; advapi32-rust pattern). The #[no_mangle] bodies replace the
 # commented-out .c TUs above; lld first-match (--allow-multiple-definition)
 # lets the staticlib's panic_handler/eh_personality coexist with the C cohab.
 # Plan: docs/engineering/active-lanes/ole-com-translation-audit.md.
-set(OLE32_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-rust_storage_target(OLE32_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-ole32-target" ole32-rust)
-set(OLE32_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libole32_rust.a")
-if(ARCH STREQUAL "i386")
-    set(OLE32_RUST_TARGET "i686-pc-windows-gnu")
-elseif(ARCH STREQUAL "amd64")
-    set(OLE32_RUST_TARGET "x86_64-pc-windows-gnu")
-elseif(ARCH STREQUAL "arm64")
-    set(OLE32_RUST_TARGET "aarch64-pc-windows-gnullvm")
-endif()
-rust_crate_sources(OLE32_RUST_SRCS "${OLE32_RUST_WORKSPACE_DIR}" ole32-rust)
-add_custom_command(
-    OUTPUT ${OLE32_RUST_LIB}
-    # No RUSTC_BOOTSTRAP: ole32-rust builds on plain stable. The ring's debug shims are
-    # deliberately NOT C-variadic (see debug_shims.rs) precisely so this stays true —
-    # the stable-toolchain lane removed the nightly-feature surface workspace-wide and
-    # this crate must not re-introduce it.
-    COMMAND ${CMAKE_COMMAND} -E env
-        CARGO_TARGET_DIR=${OLE32_RUST_TARGET_DIR}
-        cargo build --release --target ${OLE32_RUST_TARGET}
-            -p ole32-rust
-            --manifest-path ${OLE32_RUST_WORKSPACE_DIR}/Cargo.toml
-    COMMAND ${CMAKE_COMMAND} -E copy
-        ${OLE32_RUST_TARGET_DIR}/${OLE32_RUST_TARGET}/release/libole32_rust.a
-        ${OLE32_RUST_LIB}
-    DEPENDS ${OLE32_RUST_SRCS}
-            ${OLE32_RUST_WORKSPACE_DIR}/ole32-rust/Cargo.toml
-    WORKING_DIRECTORY ${OLE32_RUST_WORKSPACE_DIR}
-    COMMENT "Building ole32-rust (${OLE32_RUST_TARGET})"
-    VERBATIM)
-add_custom_target(rust_ole32 DEPENDS ${OLE32_RUST_LIB})
+
 # -----------------------------------------------------------------------------
 
-add_library(ole32 MODULE
-    ${SOURCE}
-    ${PCH_SKIP_SOURCE}
-    ole32res.rc
-    ${CMAKE_CURRENT_BINARY_DIR}/dcom_i.c
-    ${CMAKE_CURRENT_BINARY_DIR}/irot_c.c
-    ${CMAKE_CURRENT_BINARY_DIR}/irpcss_c.c
-    ${CMAKE_CURRENT_BINARY_DIR}/ole32.def)
-
-set_module_type(ole32 win32dll)
 # The proxy/stub registration (every Interface\{iid}\ProxyStubClsid32 that CoGetPSClsid reads)
 # is generated from the IDL: upstream 7675017f60d deleted the hand-written .rgs resources from
 # ole32res.rc and added this line, and the upstream sync kept the .rc change but lost the line.
 # DllRegisterServer then wrote nothing and returned S_OK, so no interface could be marshalled.
-add_idl_reg_scripts(ole32 registry dcom.idl ole32_objidl.idl ole32_oleidl.idl ole32_unknwn.idl)
-# OLE32_RUST_LIB first so its #[no_mangle] bodies win over any lingering C.
-target_link_libraries(ole32 ${OLE32_RUST_LIB} wine uuid ${PSEH_LIB} oldnames)
-# oleaut32's delay-import lib is ONE object holding a thunk for every oleaut32 export,
-# including the three it forwards back to us (`-import` in oleaut32.spec). It gets
-# loaded for SysAllocString long before the .def exports are resolved, so its thunks
-# took Get/Set/CreateErrorInfo and the Rust errorinfo bodies were never linked: ole32
-# exported jumps into oleaut32, which jumped straight back -- an endless tail-call
-# loop for any caller. Make them undefined up front so the Rust archive, read first,
-# supplies them. `-u` will not do: lld's MinGW driver maps it to -includeoptional,
-# resolved too late to matter; --require-defined is a real -include.
-# (--allow-multiple-definition is why the clash was silent.)
-if(ARCH STREQUAL "i386")
-    target_link_options(ole32 PRIVATE "LINKER:--require-defined=_CreateErrorInfo@4,--require-defined=_GetErrorInfo@8,--require-defined=_SetErrorInfo@8")
-else()
-    target_link_options(ole32 PRIVATE "LINKER:--require-defined=CreateErrorInfo,--require-defined=GetErrorInfo,--require-defined=SetErrorInfo")
-endif()
-add_delay_importlibs(ole32 oleaut32)
-add_importlibs(ole32 advapi32 user32 gdi32 rpcrt4 msvcrt kernel32 kernel32_vista ntdll)
-add_dependencies(ole32 ole32idl rust_ole32)
-add_pch(ole32 precomp.h "${PCH_SKIP_SOURCE}")
-add_cd_file(TARGET ole32 DESTINATION reactos/system32 FOR all)
-set_wine_module_FIXME(ole32) # CORE-5743: No ARRAY_SIZE and CONST_VTABLE
+add_idl_reg_objects(ole32 registry dcom.idl ole32_objidl.idl ole32_oleidl.idl ole32_unknwn.idl)
+
+# ole32.dll is all Rust (ole32-rust) and cargo links it:
+# sdk/lib/rust/ole32-cargo (reactos-link, generated by tools/cargo_cell_gen.py).
+# The C stays on disk, uncompiled.
+# The C still compiled, in an OBJECT library whose compile the cargo link replays.
+# How cmake compiled the target's sources, now on the OBJECT libraries.
+# Generated inputs those compiles read, ordered before them.
+add_library(ole32_shims OBJECT stubmanager_seh.c rpcss_seh.c guid.c ${CMAKE_CURRENT_BINARY_DIR}/dcom_p.c ${CMAKE_CURRENT_BINARY_DIR}/ole32_objidl_p.c ${CMAKE_CURRENT_BINARY_DIR}/ole32_oleidl_p.c ${CMAKE_CURRENT_BINARY_DIR}/ole32_unknwn_p.c ${CMAKE_CURRENT_BINARY_DIR}/proxy.dlldata.c ${CMAKE_CURRENT_BINARY_DIR}/dcom_i.c ${CMAKE_CURRENT_BINARY_DIR}/irot_c.c ${CMAKE_CURRENT_BINARY_DIR}/irpcss_c.c)
+target_link_libraries(ole32_shims PRIVATE wine uuid oldnames libadvapi32 libuser32 libgdi32 librpcrt4 libmsvcrt libkernel32 libkernel32_vista libntdll)
+set_wine_module_fixme(ole32_shims) # CORE-5743: No ARRAY_SIZE and CONST_VTABLE
+add_dependencies(ole32_shims ole32idl)
+set(OLE32_REUSED
+    ${CMAKE_BINARY_DIR}/dll/win32/ole32/dcom_r.o
+    ${CMAKE_BINARY_DIR}/dll/win32/ole32/ole32_objidl_r.o
+    ${CMAKE_BINARY_DIR}/dll/win32/ole32/ole32_oleidl_r.o
+    ${CMAKE_BINARY_DIR}/dll/win32/ole32/ole32_unknwn_r.o)
+add_cargo_module(ole32 ole32-cargo ole32.dll
+    KIND win32dll
+    BODY_CRATE ole32-rust
+    DESTINATION reactos/system32
+    DELAY_IMPORTS
+    EXTRA_DEPENDS ole32_shims psdk ole32_r ${OLE32_REUSED} uuid_sources)

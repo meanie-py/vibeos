@@ -2487,9 +2487,22 @@ impl Linker {
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or_else(|| panic!("bad source path {}", abs.display()));
-            let obj = out_sub.join(format!("{stem}.o"));
-            if objs.contains(&obj) {
-                panic!("{name}: two sources compile to {} — objects are named by stem", obj.display());
+            // Objects are named by stem; a second source with the same stem (crypt32's
+            // store.c and reactos/store.c) takes its parent directories as a prefix, nearest
+            // first, until the name is free. Deterministic, since sources come in cmake order.
+            let mut obj = out_sub.join(format!("{stem}.o"));
+            let mut prefix = String::new();
+            let mut parents = abs.parent().into_iter().flat_map(|p| p.ancestors());
+            while objs.contains(&obj) {
+                let dir = parents
+                    .next()
+                    .and_then(|d| d.file_name())
+                    .and_then(|d| d.to_str())
+                    .unwrap_or_else(|| {
+                        panic!("{name}: two sources compile to {}", obj.display())
+                    });
+                prefix = format!("{dir}_{prefix}");
+                obj = out_sub.join(format!("{prefix}{stem}.o"));
             }
             let args = transform_cc(&cmd, obj.to_str().expect("utf8 obj path"));
             // cmake compiles through ccache (RULE_LAUNCH_COMPILE) and compile_commands.json

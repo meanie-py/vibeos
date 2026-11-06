@@ -1610,8 +1610,9 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     // What such a cell cannot do is link without ntdll: the Rust shell's panic path
     // calls DbgPrint and NtTerminateProcess, so a module importing nothing (msxml3r,
     // mycomput, tapiui, themeui) or not ntdll (comcat, security, softpub, wmi) fails
-    // ld with both undefined. Refuse it here, by name, rather than mid-wave.
-    if bodyless {
+    // ld with both undefined. Refuse it here, by name, rather than mid-wave. (Observed only
+    // for C-less cells, so scoped to them; one with C of its own would fail ld the same way.)
+    if bodyless && cell.c_shims.is_empty() && cell.arch_shims.values().all(Vec::is_empty) {
         let missing: Vec<_> = cell
             .link_order
             .iter()

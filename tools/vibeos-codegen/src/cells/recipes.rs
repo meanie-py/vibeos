@@ -293,11 +293,21 @@ pub fn c_parts(cmd: &str) -> Result<CParts> {
             t.last().unwrap()
         )));
     }
-    if !sorted(&defs) {
+    // cmake's <DEFINES> is the sorted target set, then a source's own
+    // COMPILE_DEFINITIONS appended unsorted (ole32's stubmanager_seh.c:
+    // ..., -D__x86_64__, -D_USE_NATIVE_SEH). The appended run is marked `+-D...` and
+    // stays after the sorted run; c_encode's round trip proves the split.
+    let k = (1..defs.len())
+        .find(|&j| defs[j - 1] > defs[j])
+        .unwrap_or(defs.len());
+    if !sorted(&defs[..k]) || defs[k..].iter().any(|d| defs[..k].contains(d)) {
         return Err(fail(format!(
             "{}: <DEFINES> not sorted, the rule this models",
             t[o + 3]
         )));
+    }
+    for d in &mut defs[k..] {
+        *d = format!("+{d}");
     }
     Ok(CParts {
         cc: t[0].clone(),
@@ -357,9 +367,20 @@ pub fn asm_parts(cmd: &str) -> Result<CParts> {
 pub fn c_decode(f: &CFlags, t: &CTemplate, arch: &str) -> Vec<String> {
     let mut out = vec![flag_dec(&t.cc, arch), t.target.clone()];
     let mut defs = t.defines.clone();
-    defs.extend(f.defines.iter().map(|s| format!("-D{s}")));
+    defs.extend(
+        f.defines
+            .iter()
+            .filter(|s| !s.starts_with('+'))
+            .map(|s| format!("-D{s}")),
+    );
     defs.sort();
     out.extend(defs);
+    out.extend(
+        f.defines
+            .iter()
+            .filter_map(|s| s.strip_prefix('+'))
+            .map(|s| format!("-D{s}")),
+    );
     for inc in &f.includes {
         for d in if inc == "@std" {
             t.std.as_slice()
@@ -396,7 +417,14 @@ pub fn c_encode(cmd: &str, t: &CTemplate, arch: &str) -> Result<CFlags> {
     let f = CFlags {
         includes: inc,
         flags,
-        defines: left.iter().map(|s| s[2..].into()).collect(),
+        // `-DX` -> `X`; an appended source define `+-DX` -> `+X`.
+        defines: left
+            .iter()
+            .map(|s| match s.strip_prefix('+') {
+                Some(d) => format!("+{}", &d[2..]),
+                None => s[2..].into(),
+            })
+            .collect(),
     };
     let orig = tokens(cmd)?;
     let o = orig
