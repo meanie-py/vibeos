@@ -127,6 +127,8 @@ pub fn survey_report(rows: &[(String, String)]) -> String {
 #[derive(Debug)]
 pub struct ConvertPlan {
     pub targets: Vec<String>,
+    /// Per arch, the wave's targets built there (a gated cell is absent on some).
+    pub targets_by_arch: BTreeMap<String, Vec<String>>,
     pub baseline_dir: PathBuf,
     pub baseline: proof::BaselinePlan,
     pub apply: ApplyPlan,
@@ -150,8 +152,20 @@ pub fn prepare_convert(root: &Path, targets: &[String], baseline: &Path) -> Resu
         proof::save_baseline(root, targets, baseline)?
     };
     let apply = plan_apply(root, &cells)?;
+    let targets_by_arch = ARCHES
+        .into_iter()
+        .map(|a| {
+            let on: Vec<String> = cells
+                .iter()
+                .filter(|c| c.arches().contains(&a))
+                .map(|c| c.target.clone())
+                .collect();
+            (a.to_owned(), on)
+        })
+        .collect();
     Ok(ConvertPlan {
         targets: targets.to_vec(),
+        targets_by_arch,
         baseline_dir: baseline.to_owned(),
         baseline: baseline_plan,
         apply,
@@ -188,8 +202,17 @@ pub fn run_convert<H: ConvertHost>(
         ));
     }
     for arch in ARCHES {
-        host.ninja(root, arch, &plan.targets)?;
-        host.log(&format!("built {} cell(s) on {arch}", plan.targets.len()));
+        let on = plan
+            .targets_by_arch
+            .get(arch)
+            .cloned()
+            .unwrap_or_else(|| plan.targets.clone());
+        if on.is_empty() {
+            host.log(&format!("no cell of this wave is built on {arch}"));
+            continue;
+        }
+        host.ninja(root, arch, &on)?;
+        host.log(&format!("built {} cell(s) on {arch}", on.len()));
     }
     let result = host.check(root, &plan.targets, &plan.baseline_dir)?;
     host.log(&result.report());
@@ -310,6 +333,23 @@ pub fn c_templates(root: &Path) -> Result<RecipePlan> {
     Ok(plan)
 }
 
+/// The arches a rendered build.rs links on: the arms of its target match. One naming no
+/// arm at all is not narrowed (every arch is owed a recipe), so an unreadable build
+/// script can only make the check stricter.
+pub fn built_arches(build_rs: &str) -> Vec<&'static str> {
+    let named: Vec<_> = ARCHES
+        .into_iter()
+        .filter(|a| {
+            let triple = super::constants()["TRIPLE"][*a].as_str().unwrap_or("?");
+            build_rs.contains(&format!("        \"{triple}\" => (\""))
+        })
+        .collect();
+    if named.is_empty() {
+        ARCHES.to_vec()
+    } else {
+        named
+    }
+}
 /// A newly built cell must have recipes for each of its own C libraries on every arch.
 pub fn missing_cell_recipes(root: &Path, targets: &[String]) -> Result<Vec<(String, String)>> {
     let pattern = Regex::new(r#"\.c_from_compile_db\(\s*"(\w+)""#)?;
@@ -332,7 +372,7 @@ pub fn missing_cell_recipes(root: &Path, targets: &[String]) -> Result<Vec<(Stri
             .map(|c| c[1].to_owned())
             .filter(|l| !shared.iter().any(|s| s.as_str() == Some(l)))
             .collect();
-        for arch in ARCHES {
+        for arch in built_arches(&text) {
             for lib in &libs {
                 if !recipes::clib_recipe_path(arch, lib, root).exists() {
                     out.push((arch.to_owned(), lib.clone()));

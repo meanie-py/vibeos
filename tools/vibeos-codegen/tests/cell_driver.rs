@@ -114,6 +114,7 @@ impl ConvertHost for Host {
 fn plan() -> ConvertPlan {
     ConvertPlan {
         targets: vec!["x".into()],
+        targets_by_arch: Default::default(),
         baseline_dir: PathBuf::from("base"),
         baseline: proof::BaselinePlan {
             copies: vec![],

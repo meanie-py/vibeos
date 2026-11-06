@@ -31,6 +31,19 @@ fn indexed_baseline(baseline: &Path) -> Result<serde_json::Value> {
         Ok(serde_json::json!({}))
     }
 }
+/// The arches a baseline holds `target` on: those its index names, or every arch for an
+/// index written before gated cells (which always held all three).
+pub fn indexed_arches(index: &serde_json::Value, target: &str) -> Vec<&'static str> {
+    let named: Vec<_> = ARCHES
+        .into_iter()
+        .filter(|a| index[target][*a].as_str().is_some_and(|x| !x.is_empty()))
+        .collect();
+    if named.is_empty() {
+        ARCHES.to_vec()
+    } else {
+        named
+    }
+}
 fn rel_output(s: &str) -> Result<&Path> {
     let p = Path::new(s);
     if p.as_os_str().is_empty()
@@ -76,11 +89,17 @@ pub fn cell_is_bodyless(root: &Path, target: &str) -> Result<bool> {
 }
 /// Existing conversion baselines are immutable on a retry.
 pub fn baseline_reusable(targets: &[String], baseline: &Path) -> Result<bool> {
-    if !ARCHES.iter().all(|a| baseline.join(a).is_dir()) || !baseline.join("targets.json").exists()
-    {
+    if !baseline.join("targets.json").exists() {
         return Ok(false);
     }
     let index = indexed_baseline(baseline)?;
+    if !targets
+        .iter()
+        .flat_map(|t| indexed_arches(&index, t))
+        .all(|a| baseline.join(a).is_dir())
+    {
+        return Ok(false);
+    }
     let missing: Vec<_> = targets
         .iter()
         .filter(|t| index.get(t.as_str()).is_none())
@@ -154,9 +173,11 @@ pub struct ReshellPlan {
 }
 pub fn reshell(root: &Path, targets: &[String], baseline: &Path) -> Result<ReshellPlan> {
     let mut plan = ReshellPlan::default();
+    let index = indexed_baseline(baseline)?;
     for t in targets {
         let mut panics = BTreeMap::new();
-        for a in ARCHES {
+        let arches = indexed_arches(&index, t);
+        for a in arches.iter().copied() {
             let olds = baseline_pe(baseline, a, t)?;
             if olds.len() != 1 {
                 return Err(Error::new(format!(
@@ -181,6 +202,11 @@ pub fn reshell(root: &Path, targets: &[String], baseline: &Path) -> Result<Reshe
         let cell = Cell {
             target: t.clone(),
             panics: panics.clone(),
+            arches: if arches.len() == ARCHES.len() {
+                vec![]
+            } else {
+                arches.iter().map(|a| a.to_string()).collect()
+            },
             ..Cell::default()
         };
         plan.edits.insert(
@@ -221,8 +247,9 @@ pub fn save_baseline(root: &Path, targets: &[String], baseline: &Path) -> Result
     let mut index = indexed_baseline(baseline)?;
     let mut copies = Vec::new();
     for t in targets {
-        for a in ARCHES {
-            let out = graph::link_edge(root, a, t)?.output;
+        for (a, link) in graph::link_edges_gated(root, t)? {
+            let a = a.as_str();
+            let out = link.output;
             let src = root.join(format!("build-{a}")).join(rel_output(&out)?);
             if !src.is_file() {
                 return Err(Error::new(format!(
@@ -502,7 +529,7 @@ pub fn check(root: &Path, targets: &[String], baseline: &Path) -> Result<CheckRe
     let index = indexed_baseline(baseline)?;
     let mut records = Vec::new();
     for t in targets {
-        for a in ARCHES {
+        for a in indexed_arches(&index, t) {
             let olds = baseline_pe(baseline, a, t)?;
             let mut record = CheckRecord {
                 target: t.clone(),

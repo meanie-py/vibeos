@@ -1,6 +1,6 @@
 {"config": "Debug", "cds": {
  "bootcd": {
-  "command": "cd {BUILD}/boot && /usr/bin/cmake -E env python3 {REPO}/tools/strip_cd_media.py --lst {BUILD}/boot/bootcd.Debug.lst --out {BUILD}/boot/bootcd.stripped.lst --cache {BUILD}/boot/stripped --objcopy {REPO}/.build-tools/llvm-mingw/bin/i686-w64-mingw32-objcopy && {BUILD}/host-tools/bin/mkisofs -quiet -o {BUILD}/bootcd.iso -iso-level 4 -publisher \"ReactOS Project\" -preparer \"ReactOS Project\" -volid ReactOS -volset ReactOS -eltorito-boot loader/isoboot.bin -no-emul-boot -boot-load-size 4 -eltorito-alt-boot -eltorito-platform efi -eltorito-boot loader/efisys.bin -no-emul-boot -hide boot.catalog -sort {BUILD}/boot/bootfiles.sort -no-cache-inodes -graft-points -path-list {BUILD}/boot/bootcd.stripped.lst && {BUILD}/host-tools/bin/isohybrid -b {BUILD}/boot/freeldr/bootsect/isombr.bin -t 0x96 {BUILD}/bootcd.iso",
+  "command": "cd {BUILD}/boot && {REPO}/tools/build-infra strip-cd-media --lst {BUILD}/boot/bootcd.Debug.lst --out {BUILD}/boot/bootcd.stripped.lst --cache {BUILD}/boot/stripped --objcopy {REPO}/.build-tools/llvm-mingw/bin/i686-w64-mingw32-objcopy && {BUILD}/host-tools/bin/mkisofs -quiet -o {BUILD}/bootcd.iso -iso-level 4 -publisher \"ReactOS Project\" -preparer \"ReactOS Project\" -volid ReactOS -volset ReactOS -eltorito-boot loader/isoboot.bin -no-emul-boot -boot-load-size 4 -eltorito-alt-boot -eltorito-platform efi -eltorito-boot loader/efisys.bin -no-emul-boot -hide boot.catalog -sort {BUILD}/boot/bootfiles.sort -no-cache-inodes -graft-points -path-list {BUILD}/boot/bootcd.stripped.lst && {BUILD}/host-tools/bin/isohybrid -b {BUILD}/boot/freeldr/bootsect/isombr.bin -t 0x96 {BUILD}/bootcd.iso",
   "entries": [
    [null, "build:boot/empty"],
    ["loader/efisys.bin", "build:boot/efisys.bin"],
@@ -190,6 +190,7 @@
    ["reactos/system32/ddraw.dll", "cell:dll/directx/wine/ddraw/ddraw.dll"],
    ["reactos/system32/ddrawex.dll", "cell:dll/directx/wine/ddrawex/ddrawex.dll"],
    ["reactos/system32/devenum.dll", "cell:dll/directx/wine/devenum/devenum.dll"],
+   ["reactos/system32/dinput.dll", "cell:dll/directx/wine/dinput/dinput.dll"],
    ["reactos/system32/dmband.dll", "cell:dll/directx/wine/dmband/dmband.dll"],
    ["reactos/system32/dmcompos.dll", "cell:dll/directx/wine/dmcompos/dmcompos.dll"],
    ["reactos/system32/dmime.dll", "cell:dll/directx/wine/dmime/dmime.dll"],
@@ -605,7 +606,7 @@
   ]
  },
  "bootcdregtest": {
-  "command": "cd {BUILD}/boot && /usr/bin/cmake -E env python3 {REPO}/tools/strip_cd_media.py --lst {BUILD}/boot/bootcdregtest.Debug.lst --out {BUILD}/boot/bootcdregtest.stripped.lst --cache {BUILD}/boot/stripped --objcopy {REPO}/.build-tools/llvm-mingw/bin/i686-w64-mingw32-objcopy && {BUILD}/host-tools/bin/mkisofs -quiet -o {BUILD}/bootcdregtest.iso -iso-level 4 -publisher \"ReactOS Project\" -preparer \"ReactOS Project\" -volid ReactOS -volset ReactOS -eltorito-boot loader/isobtrt.bin -no-emul-boot -boot-load-size 4 -eltorito-alt-boot -eltorito-platform efi -eltorito-boot loader/efisys.bin -no-emul-boot -hide boot.catalog -sort {BUILD}/boot/bootfiles.sort -no-cache-inodes -graft-points -path-list {BUILD}/boot/bootcdregtest.stripped.lst && {BUILD}/host-tools/bin/isohybrid -b {BUILD}/boot/freeldr/bootsect/isombr.bin -t 0x96 {BUILD}/bootcdregtest.iso",
+  "command": "cd {BUILD}/boot && {REPO}/tools/build-infra strip-cd-media --lst {BUILD}/boot/bootcdregtest.Debug.lst --out {BUILD}/boot/bootcdregtest.stripped.lst --cache {BUILD}/boot/stripped --objcopy {REPO}/.build-tools/llvm-mingw/bin/i686-w64-mingw32-objcopy && {BUILD}/host-tools/bin/mkisofs -quiet -o {BUILD}/bootcdregtest.iso -iso-level 4 -publisher \"ReactOS Project\" -preparer \"ReactOS Project\" -volid ReactOS -volset ReactOS -eltorito-boot loader/isobtrt.bin -no-emul-boot -boot-load-size 4 -eltorito-alt-boot -eltorito-platform efi -eltorito-boot loader/efisys.bin -no-emul-boot -hide boot.catalog -sort {BUILD}/boot/bootfiles.sort -no-cache-inodes -graft-points -path-list {BUILD}/boot/bootcdregtest.stripped.lst && {BUILD}/host-tools/bin/isohybrid -b {BUILD}/boot/freeldr/bootsect/isombr.bin -t 0x96 {BUILD}/bootcdregtest.iso",
   "entries": [
    [null, "build:boot/empty"],
    ["loader/efisys.bin", "build:boot/efisys.bin"],
@@ -788,6 +789,7 @@
    ["reactos/system32/ddraw.dll", "cell:dll/directx/wine/ddraw/ddraw.dll"],
    ["reactos/system32/ddrawex.dll", "cell:dll/directx/wine/ddrawex/ddrawex.dll"],
    ["reactos/system32/devenum.dll", "cell:dll/directx/wine/devenum/devenum.dll"],
+   ["reactos/system32/dinput.dll", "cell:dll/directx/wine/dinput/dinput.dll"],
    ["reactos/system32/dmband.dll", "cell:dll/directx/wine/dmband/dmband.dll"],
    ["reactos/system32/dmcompos.dll", "cell:dll/directx/wine/dmcompos/dmcompos.dll"],
    ["reactos/system32/dmime.dll", "cell:dll/directx/wine/dmime/dmime.dll"],
@@ -1203,7 +1205,7 @@
   ]
  },
  "livecd": {
-  "command": "cd {BUILD}/boot && /usr/bin/cmake -E env python3 {REPO}/tools/strip_cd_media.py --lst {BUILD}/boot/livecd.Debug.lst --out {BUILD}/boot/livecd.stripped.lst --cache {BUILD}/boot/stripped --objcopy {REPO}/.build-tools/llvm-mingw/bin/i686-w64-mingw32-objcopy && {BUILD}/host-tools/bin/mkisofs -quiet -o {BUILD}/livecd.iso -iso-level 4 -publisher \"ReactOS Project\" -preparer \"ReactOS Project\" -volid ReactOS -volset ReactOS -eltorito-boot loader/isoboot.bin -no-emul-boot -boot-load-size 4 -eltorito-alt-boot -eltorito-platform efi -eltorito-boot loader/efisys.bin -no-emul-boot -hide boot.catalog -sort {BUILD}/boot/bootfiles.sort -no-cache-inodes -graft-points -path-list {BUILD}/boot/livecd.stripped.lst && {BUILD}/host-tools/bin/isohybrid -b {BUILD}/boot/freeldr/bootsect/isombr.bin -t 0x96 {BUILD}/livecd.iso",
+  "command": "cd {BUILD}/boot && {REPO}/tools/build-infra strip-cd-media --lst {BUILD}/boot/livecd.Debug.lst --out {BUILD}/boot/livecd.stripped.lst --cache {BUILD}/boot/stripped --objcopy {REPO}/.build-tools/llvm-mingw/bin/i686-w64-mingw32-objcopy && {BUILD}/host-tools/bin/mkisofs -quiet -o {BUILD}/livecd.iso -iso-level 4 -publisher \"ReactOS Project\" -preparer \"ReactOS Project\" -volid ReactOS -volset ReactOS -eltorito-boot loader/isoboot.bin -no-emul-boot -boot-load-size 4 -eltorito-alt-boot -eltorito-platform efi -eltorito-boot loader/efisys.bin -no-emul-boot -hide boot.catalog -sort {BUILD}/boot/bootfiles.sort -no-cache-inodes -graft-points -path-list {BUILD}/boot/livecd.stripped.lst && {BUILD}/host-tools/bin/isohybrid -b {BUILD}/boot/freeldr/bootsect/isombr.bin -t 0x96 {BUILD}/livecd.iso",
   "entries": [
    [null, "build:boot/empty"],
    ["reactos/TEMP", "build:boot/empty"],
@@ -1519,7 +1521,7 @@
    ["reactos/system32/ddraw.dll", "cell:dll/directx/wine/ddraw/ddraw.dll"],
    ["reactos/system32/ddrawex.dll", "cell:dll/directx/wine/ddrawex/ddrawex.dll"],
    ["reactos/system32/devenum.dll", "cell:dll/directx/wine/devenum/devenum.dll"],
-   ["reactos/system32/dinput.dll", "build:dll/directx/wine/dinput/dinput.dll"],
+   ["reactos/system32/dinput.dll", "cell:dll/directx/wine/dinput/dinput.dll"],
    ["reactos/system32/dinput8.dll", "build:dll/directx/wine/dinput8/dinput8.dll"],
    ["reactos/system32/dmband.dll", "cell:dll/directx/wine/dmband/dmband.dll"],
    ["reactos/system32/dmcompos.dll", "cell:dll/directx/wine/dmcompos/dmcompos.dll"],
@@ -2307,6 +2309,7 @@
    ["reactos/bin/ccpinmappeddata_drv.sys", "build:modules/rostests/kmtests/ntos_cc/ccpinmappeddata_drv.sys"],
    ["reactos/bin/ccpinread_drv.sys", "build:modules/rostests/kmtests/ntos_cc/ccpinread_drv.sys"],
    ["reactos/bin/ccsetfilesizes_drv.sys", "build:modules/rostests/kmtests/ntos_cc/ccsetfilesizes_drv.sys"],
+   ["reactos/bin/cczerodata_drv.sys", "build:modules/rostests/kmtests/ntos_cc/cczerodata_drv.sys"],
    ["reactos/bin/iocreatefile_drv.sys", "build:modules/rostests/kmtests/ntos_io/iocreatefile_drv.sys"],
    ["reactos/bin/iodeviceobject_drv.sys", "build:modules/rostests/kmtests/ntos_io/iodeviceobject_drv.sys"],
    ["reactos/bin/iohelper_drv.sys", "build:modules/rostests/kmtests/ntos_io/iohelper_drv.sys"],
@@ -2620,7 +2623,7 @@
    ["cell:dll/directx/wine/ddraw/ddraw.dll", "2"],
    ["cell:dll/directx/wine/ddrawex/ddrawex.dll", "2"],
    ["cell:dll/directx/wine/devenum/devenum.dll", "2"],
-   ["build:dll/directx/wine/dinput/dinput.dll", "2"],
+   ["cell:dll/directx/wine/dinput/dinput.dll", "2"],
    ["build:dll/directx/wine/dinput8/dinput8.dll", "2"],
    ["cell:dll/directx/wine/dmband/dmband.dll", "2"],
    ["cell:dll/directx/wine/dmcompos/dmcompos.dll", "2"],
@@ -3350,6 +3353,7 @@
    ["build:modules/rostests/kmtests/ntos_cc/ccpinmappeddata_drv.sys", "7"],
    ["build:modules/rostests/kmtests/ntos_cc/ccpinread_drv.sys", "7"],
    ["build:modules/rostests/kmtests/ntos_cc/ccsetfilesizes_drv.sys", "7"],
+   ["build:modules/rostests/kmtests/ntos_cc/cczerodata_drv.sys", "7"],
    ["build:modules/rostests/kmtests/ntos_io/iocreatefile_drv.sys", "7"],
    ["build:modules/rostests/kmtests/ntos_io/iodeviceobject_drv.sys", "7"],
    ["build:modules/rostests/kmtests/ntos_io/iohelper_drv.sys", "7"],

@@ -339,7 +339,7 @@ def test_shipping_cmake_tracks_native_generator_and_template_inputs(tmp_path):
         "cmake_minimum_required(VERSION 3.20)\nproject(ThunkFixture NONE)\n"
         'set(ARCH amd64)\nset(REACTOS_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")\n'
         "foreach(cmd spec2def add_library target_include_directories set_module_type "
-        "add_importlibs add_dependencies add_cd_file rust_staticlib_variant target_link_libraries)\n"
+        "add_importlibs add_dependencies add_cd_file add_cargo_module target_link_libraries)\n"
         "function(${cmd})\nendfunction()\nendforeach()\n"
         'include("${REACTOS_SOURCE_DIR}/dll/win32/wow64/CMakeLists.txt")\n'
         "add_custom_target(thunks ALL DEPENDS ${_wow64_thunks_check})\n"

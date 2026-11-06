@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "wow64-cargo",
     "dinput-cargo",
     "setup-cargo",
     "sehtest-cargo",

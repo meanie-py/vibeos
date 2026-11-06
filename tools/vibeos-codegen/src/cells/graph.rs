@@ -106,7 +106,8 @@ pub fn link_edge(root: &Path, arch: &str, target: &str) -> Result<Link> {
         require_defined,
     })
 }
-pub fn link_edges(root: &Path, target: &str) -> Result<BTreeMap<String, Link>> {
+type Missing = Vec<(&'static str, String)>;
+fn link_edges_partial(root: &Path, target: &str) -> Result<(BTreeMap<String, Link>, Missing)> {
     let mut links = BTreeMap::new();
     let mut missing = Vec::new();
     for arch in ARCHES {
@@ -118,9 +119,95 @@ pub fn link_edges(root: &Path, target: &str) -> Result<BTreeMap<String, Link>> {
             Err(e) => return Err(e),
         }
     }
+    Ok((links, missing))
+}
+pub fn link_edges(root: &Path, target: &str) -> Result<BTreeMap<String, Link>> {
+    let (links, missing) = link_edges_partial(root, target)?;
     if missing.is_empty() {
         return Ok(links);
     }
+    Err(missing_edges_error(target, &links, &missing))
+}
+/// The links of a module, which may be absent on some arches only when the module's own
+/// CMakeLists says so: every `if()` enclosing its add_library/add_executable must be a
+/// pure `ARCH STREQUAL "<a>" [OR ...]` test, and together they must name exactly the
+/// arches cmake linked it on. Absence for any other reason (a build option such as
+/// --rostests, a gated add_subdirectory upstream) stays a refusal, since a cell built
+/// from it would silently drop the module from an arch that should have it.
+pub fn link_edges_gated(root: &Path, target: &str) -> Result<BTreeMap<String, Link>> {
+    let (links, missing) = link_edges_partial(root, target)?;
+    if missing.is_empty() {
+        return Ok(links);
+    }
+    if links.is_empty() || missing.iter().any(|(_, w)| w != "absent") {
+        return Err(missing_edges_error(target, &links, &missing));
+    }
+    let (arch, link) = links.iter().next().unwrap();
+    let cmake = source_dir(root, arch, &link.output, target)?.join("CMakeLists.txt");
+    let gate = arch_gate(&read(&cmake)?, target).map_err(|why| {
+        Error::new(format!(
+            "{}\n  and the arch set is not proven by {}: {why}",
+            missing_edges_error(target, &links, &missing),
+            cmake.display()
+        ))
+    })?;
+    let have: Vec<&str> = links.keys().map(String::as_str).collect();
+    let mut want: Vec<&str> = gate.iter().map(String::as_str).collect();
+    want.sort();
+    let mut have_sorted = have.clone();
+    have_sorted.sort();
+    if want != have_sorted {
+        return Err(Error::new(format!(
+            "{target}: its if(ARCH ...) gate names {want:?} but cmake links it on {have_sorted:?}"
+        )));
+    }
+    Ok(links)
+}
+/// The arch set an `if(ARCH STREQUAL ...)` nest grants `target`'s add_library/add_executable.
+pub fn arch_gate(text: &str, target: &str) -> std::result::Result<Vec<String>, String> {
+    let term = re(r#"^ARCH\s+STREQUAL\s+"?(\w+)"?$"#);
+    let mut stack: Vec<Option<BTreeMap<String, ()>>> = Vec::new();
+    for (_, _, cmd, raw) in statements(text) {
+        match cmd.as_str() {
+            "if" => {
+                let parsed: Option<BTreeMap<String, ()>> = raw
+                    .split(" OR ")
+                    .map(|t| term.captures(t.trim()).map(|c| (c[1].to_owned(), ())))
+                    .collect();
+                stack.push(parsed);
+            }
+            "elseif" | "else" => return Err(format!("an {cmd}() in an enclosing block is not modelled")),
+            "endif" => {
+                stack.pop();
+            }
+            "add_library" | "add_executable"
+                if args(&raw).first().map(String::as_str) == Some(target) =>
+            {
+                if stack.is_empty() {
+                    return Err(format!("its {cmd}({target} ...) is not inside an if()"));
+                }
+                let mut out: Option<Vec<String>> = None;
+                for cond in &stack {
+                    let set = cond.as_ref().ok_or_else(|| {
+                        "an enclosing if() is not a pure ARCH STREQUAL test".to_owned()
+                    })?;
+                    let names: Vec<String> = set.keys().cloned().collect();
+                    if let Some(n) = names.iter().find(|n| !ARCHES.contains(&n.as_str())) {
+                        return Err(format!("the gate names an unknown arch {n}"));
+                    }
+                    out = Some(match out {
+                        None => names,
+                        Some(prev) => prev.into_iter().filter(|a| names.contains(a)).collect(),
+                    });
+                }
+                return Ok(out.unwrap_or_default());
+            }
+            _ => {}
+        }
+    }
+    Err(format!("no add_library/add_executable({target} ...)"))
+}
+fn missing_edges_error(target: &str, links: &BTreeMap<String, Link>, missing: &Missing) -> Error {
     let have: Vec<_> = links.keys().map(String::as_str).collect();
     let whys: Vec<_> = missing
         .iter()
@@ -147,9 +234,9 @@ pub fn link_edges(root: &Path, target: &str) -> Result<BTreeMap<String, Link>> {
         m.sort();
         format!("{target}: a cargo cell on {} but still cmake-linked on {} (a partly converted module is not modelled)",pylist(m),pylist(have))
     } else {
-        format!("{target}: {}, but cmake links it on {}: the generator needs the same cmake-linked module on every arch",whys.join(", "),pylist(have))
+        format!("{target}: {}, but cmake links it on {}: the generator needs the same cmake-linked module on every arch, unless an if(ARCH ...) gate in its own CMakeLists names the arches",whys.join(", "),pylist(have))
     };
-    Err(Error::new(msg))
+    Error::new(msg)
 }
 /// CMake calls with byte offsets suitable for rewriting UTF-8 input.
 pub type Statement = (usize, usize, String, String);
@@ -903,6 +990,8 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
             if let Some((flags, block)) = body_env(&text, &a[4..]) {
                 f["body_rustflags"] = json!(flags);
                 f["body_env_block"] = json!(block);
+            } else if let Some(deps) = body_depends(&text, &a[4..]) {
+                f["body_depends"] = json!(deps);
             } else {
                 f["unknown"].as_array_mut().unwrap().push(json!(format!(
                     "rust_staticlib_variant extras [{}]",
@@ -932,6 +1021,43 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
     Ok(f)
 }
 
+/// rust_staticlib_variant extras that are only file DEPENDS: each a `${VAR}` set to the
+/// OUTPUT of an add_custom_command in the same CMakeLists (wow64's thunk-table drift
+/// check). The cell keeps the command and hands the file to add_cargo_module's
+/// EXTRA_DEPENDS, so the check still runs before the body builds and a failure still
+/// stops the link.
+pub fn body_depends(text: &str, extras: &[String]) -> Option<Vec<String>> {
+    let var_re = re(r"^\$\{(\w+)\}$");
+    let outputs: Vec<Vec<String>> = statements(text)
+        .into_iter()
+        .filter(|(_, _, cmd, _)| cmd == "add_custom_command")
+        .map(|(_, _, _, raw)| {
+            let a = args(&raw);
+            let start = a.iter().position(|x| x == "OUTPUT").map_or(a.len(), |i| i + 1);
+            a[start..]
+                .iter()
+                .take_while(|x| x.chars().any(|c| c.is_ascii_lowercase()) || x.contains('$') || x.contains('/'))
+                .cloned()
+                .collect()
+        })
+        .collect();
+    let mut out = Vec::new();
+    for extra in extras {
+        let var = &var_re.captures(extra)?[1];
+        let sets: Vec<_> = statements(text)
+            .into_iter()
+            .filter(|(_, _, cmd, raw)| cmd == "set" && args(raw).first().map(String::as_str) == Some(var))
+            .collect();
+        if sets.len() != 1 || args(&sets[0].3).len() != 2 {
+            return None;
+        }
+        if !outputs.iter().any(|o| o.contains(extra)) {
+            return None;
+        }
+        out.push(extra.clone());
+    }
+    (!out.is_empty()).then_some(out)
+}
 pub fn body_env(text: &str, extras: &[String]) -> Option<(BTreeMap<String, String>, String)> {
     if extras.len() != 1 {
         return None;
@@ -1164,10 +1290,16 @@ fn rel(root: &Path, p: &Path) -> Result<String> {
 }
 pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     use std::collections::BTreeSet;
-    let links = link_edges(root, target)?;
-    let first = &links["amd64"];
-    let cmake_dir = source_dir(root, "amd64", &first.output, target)?;
-    for a in ARCHES {
+    let links = link_edges_gated(root, target)?;
+    let arches: Vec<&'static str> = ARCHES
+        .into_iter()
+        .filter(|a| links.contains_key(*a))
+        .collect();
+    // amd64 is the reference arch whenever the module is built there.
+    let primary = if links.contains_key("amd64") { "amd64" } else { arches[0] };
+    let first = &links[primary];
+    let cmake_dir = source_dir(root, primary, &first.output, target)?;
+    for a in arches.iter().copied() {
         if source_dir(root, a, &links[a].output, target)? != cmake_dir {
             return Err(Error::new(format!(
                 "{target}: the source directory differs by arch"
@@ -1217,7 +1349,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     }
     check_statement_effects(target, &facts, &links)?;
     if facts["ssp"] == true {
-        for a in ARCHES {
+        for a in arches.iter().copied() {
             let p = local(root, &root.join(format!("build-{a}/CMakeCache.txt")))?;
             if re(r"(?m)^STACK_PROTECTOR:BOOL=(ON|TRUE|1)$").is_match(&read(&p)?) {
                 return Err(Error::new(format!(
@@ -1278,7 +1410,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     let mut per: BTreeMap<String, Per> = BTreeMap::new();
     let mut orders = BTreeMap::new();
     let mut late = BTreeMap::new();
-    for a in ARCHES {
+    for a in arches.iter().copied() {
         let mut imports = Vec::new();
         let mut delayed = Vec::new();
         let mut static_libs = Vec::new();
@@ -1381,7 +1513,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         late.insert(a.to_owned(), late_a);
         per.insert(a.into(), (imports, static_libs, crt, delayed, order));
     }
-    let main = &per["amd64"];
+    let main = &per[primary];
     if per
         .values()
         .any(|v| v.0 != main.0 || v.2 != main.2 || v.3 != main.3 || v.4 != main.4)
@@ -1399,6 +1531,9 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         .to_string_lossy()
         .into_owned();
     cell.module_kind = kind.into();
+    if arches.len() != ARCHES.len() {
+        cell.arches = arches.iter().map(|a| a.to_string()).collect();
+    }
     cell.entries = links
         .iter()
         .map(|(a, l)| (a.clone(), l.entry.clone()))
@@ -1432,6 +1567,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     cell.body_var = facts["body_var"].as_str().unwrap_or("").into();
     cell.body_rustflags = serde_json::from_value(facts["body_rustflags"].clone())?;
     cell.body_env_block = facts["body_env_block"].as_str().unwrap_or("").into();
+    cell.body_depends = strings(&facts["body_depends"]);
     cell.custom_body = if custom.is_null() {
         serde_json::json!({})
     } else {
@@ -1449,14 +1585,14 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             )
         })
         .collect();
-    let common: BTreeSet<String> = by_arch["amd64"]
+    let common: BTreeSet<String> = by_arch[primary]
         .iter()
-        .filter(|n| ARCHES.iter().all(|a| by_arch[*a].contains(n)))
+        .filter(|n| arches.iter().all(|a| by_arch[*a].contains(n)))
         .cloned()
         .collect();
     let mut arch_shims: BTreeMap<String, Vec<String>> =
-        ARCHES.iter().map(|a| (a.to_string(), Vec::new())).collect();
-    for a in ARCHES {
+        arches.iter().map(|a| (a.to_string(), Vec::new())).collect();
+    for a in arches.iter().copied() {
         for obj in &links[a].inputs {
             let name = obj.rsplit('/').next().unwrap_or(obj);
             if common.contains(name) {
@@ -1479,12 +1615,12 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             continue;
         }
         if name.ends_with(".rc.res") {
-            cell.rc = Some(super::recipes::rc_command("amd64", obj, root)?.0);
+            cell.rc = Some(super::recipes::rc_command(primary, obj, root)?.0);
             rc_obj = obj.clone();
         } else if name.ends_with("_stubs.rs.obj") || name.ends_with("_stubs.c.obj") {
             cell.spec_stubs = true;
         } else if strings(&facts["reg_objects"]).contains(&name.to_owned()) {
-            for a in ARCHES {
+            for a in arches.iter().copied() {
                 cell.static_libs.get_mut(a).unwrap().insert(0, obj.clone());
                 cell.link_order.get_mut(a).unwrap().insert(0, obj.clone());
             }
@@ -1502,7 +1638,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             }
             if !src.exists() {
                 let generated = bin_dir.join(name.trim_end_matches(".obj"));
-                for a in ARCHES {
+                for a in arches.iter().copied() {
                     local(root, &root.join(format!("build-{a}")).join(&generated)).map_err(
                         |_| {
                             Error::new(format!(
@@ -1544,7 +1680,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     }
     cell.destinations = strings(&facts["destinations"]);
     let mut shipped = BTreeMap::new();
-    for a in ARCHES {
+    for a in arches.iter().copied() {
         let dirs = cd_dirs(root, a, &links[a].output)?;
         if cell.destinations.is_empty() {
             if !dirs.is_empty() {
@@ -1620,7 +1756,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         cell.subsystems = subs;
     }
     let mut panics = BTreeMap::new();
-    for a in ARCHES {
+    for a in arches.iter().copied() {
         let pe = local(
             root,
             &root.join(format!("build-{a}")).join(&links[a].output),
