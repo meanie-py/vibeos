@@ -412,9 +412,11 @@ fn link_edge(repo: &Path, arch: &str, target: &str) -> Result<Link, String> {
         .captures(vars)
         .map(|c| c[1].split_whitespace().map(str::to_owned).collect())
         .unwrap_or_default();
+    // The LAST entry flag, as lld takes it (set_entrypoint follows the default).
     let entry = re(r"-entry,(\S+)")
-        .captures(&flags)
-        .or_else(|| re(r"-Wl,-e,(\S+)").captures(&flags))
+        .captures_iter(&flags)
+        .last()
+        .or_else(|| re(r"-Wl,-e,(\S+)").captures_iter(&flags).last())
         .map(|c| c[1].to_owned())
         .unwrap_or_default();
     let subsystem = re(r"--subsystem,([\w:.]+)")

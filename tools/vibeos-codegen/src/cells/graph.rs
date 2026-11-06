@@ -49,6 +49,15 @@ fn obj_key(obj: &str) -> String {
         None => obj.rsplit('/').next().unwrap_or(obj).to_owned(),
     }
 }
+/// The link's entry symbol: the LAST entry flag, as lld takes it. set_entrypoint appends
+/// `-entry,<sym>` after the module type's default (ws2help: `-entry,_DllMainCRTStartup@12
+/// ... -entry,_Ws2HelpDllMain@12`), and reading the first gave ws2help the wrong entry.
+pub fn link_entry(flags: &str) -> String {
+    let last = |pattern: &str| re(pattern).captures_iter(flags).last().map(|x| x[1].to_owned());
+    last(r"-entry,(\S+)")
+        .or_else(|| last(r"-Wl,-e,(\S+)"))
+        .unwrap_or_default()
+}
 pub fn link_edge(root: &Path, arch: &str, target: &str) -> Result<Link> {
     require_configured(root, arch)?;
     let path = local(root, &root.join(format!("build-{arch}/build.ninja")))?;
@@ -76,10 +85,11 @@ pub fn link_edge(root: &Path, arch: &str, target: &str) -> Result<Link> {
             "{target}: lld --delayload is not modelled (add_delay_importlibs is)"
         )));
     }
+    // The LAST entry flag, as lld takes it: set_entrypoint appends `-entry,<sym>` after the
+    // module type's default (ws2help: `-entry,_DllMainCRTStartup@12 ... -entry,
+    // _Ws2HelpDllMain@12`), and reading the first gave ws2help the wrong entry.
     let capture = |pattern: &str| re(pattern).captures(&flags).map(|x| x[1].to_owned());
-    let entry = capture(r"-entry,(\S+)")
-        .or_else(|| capture(r"-Wl,-e,(\S+)"))
-        .unwrap_or_default();
+    let entry = link_entry(&flags);
     let subsystem = re(r"--subsystem,([\w:.]+)")
         .captures_iter(&flags)
         .last()
@@ -705,10 +715,7 @@ pub fn check_statement_effects(
             }
         }
     }
-    if let Some(ep) = facts["set_entrypoint"]
-        .as_array()
-        .filter(|_| facts["set_entrypoint_conditional"] != true)
-    {
+    if let Some(ep) = facts["set_entrypoint"].as_array() {
         if let Some(sym) = ep.first().and_then(|v| v.as_str()) {
             for (a, ln) in links {
                 let want = entry_symbol(a, sym, ep.get(1).and_then(|v| v.as_str()));
@@ -910,12 +917,6 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
             f["set_subsystem"] = json!(subsystem_flag(&a[1]));
         } else if cmd == "set_entrypoint" && (a.len() == 2 || a.len() == 3) {
             f["set_entrypoint"] = json!([Some(&a[1]), a.get(2)]);
-            // Under an if() the target does not share (ws2help: only when
-            // DLL_EXPORT_VERSION < 0x600, so not on amd64), the statement does not say what
-            // every arch links; the cell takes each arch's entry from its link edge.
-            if home.as_ref().is_some_and(|h| &paths[i] != h) {
-                f["set_entrypoint_conditional"] = json!(true);
-            }
         } else if cmd == "target_sources"
             && a.len() == 3
             && a[1] == "PRIVATE"
@@ -1377,7 +1378,7 @@ fn custom_body_command(text: &str, raw: &str) -> Option<serde_json::Value> {
         flags = env_flags.clone();
     }
     Some(
-        serde_json::json!({"crate":&c[5],"archive":&c[9],"rustflags":flags.into_iter().filter(|(_,v)|!v.is_empty()).collect::<BTreeMap<_,_>>(),"vars":vars,"custom_target":&custom[1],"depends":depends_targets(&format!("DEPENDS {}", &c["more"]))}),
+        serde_json::json!({"crate":&c[5],"archive":&c[9],"rustflags":flags.into_iter().filter(|(_,v)|!v.is_empty()).collect::<BTreeMap<_,_>>(),"vars":vars,"output_var":&c[1],"custom_target":&custom[1],"depends":depends_targets(&format!("DEPENDS {}", &c["more"]))}),
     )
 }
 pub fn placeholder_archive(root: &Path, arch: &str, lib: &str) -> Result<bool> {
@@ -2169,22 +2170,12 @@ mod multi_body_tests {
     }
 
     #[test]
-    fn a_set_entrypoint_under_an_if_the_target_does_not_share_is_conditional() {
-        let dir = std::env::temp_dir().join(format!("vibeos-codegen-ep-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let cm = dir.join("CMakeLists.txt");
-        std::fs::write(
-            &cm,
-            "add_library(w MODULE w.rc)\nset_module_type(w win32dll)\n\
-             if(DLL_EXPORT_VERSION LESS 0x600)\n    set_entrypoint(w WDllMain 12)\nendif()\n",
-        )
-        .unwrap();
-        let f = super::cmake_facts(&cm, "w", &[]).unwrap();
-        assert_eq!(f["set_entrypoint_conditional"], true);
-        std::fs::write(&cm, "add_library(w MODULE w.rc)\nset_entrypoint(w WDllMain 12)\n").unwrap();
-        let f = super::cmake_facts(&cm, "w", &[]).unwrap();
-        assert!(f["set_entrypoint_conditional"].is_null());
-        std::fs::remove_dir_all(&dir).ok();
+    fn the_entry_is_the_last_entry_flag_as_lld_takes_it() {
+        let flags = "-nostdlib -Wl,-entry,_DllMainCRTStartup@12 -Wl,--image-base,0x7bdc0000 \
+                     -Wl,-entry,_Ws2HelpDllMain@12 dll/win32/ws2help/ws2help.def";
+        assert_eq!(super::link_entry(flags), "_Ws2HelpDllMain@12");
+        assert_eq!(super::link_entry("-Wl,-entry,DllMainCRTStartup"), "DllMainCRTStartup");
+        assert_eq!(super::link_entry("-nostdlib"), "");
     }
 
     #[test]

@@ -442,6 +442,35 @@ def test_a_driver_rewrite_drops_its_body_command_and_keeps_its_inf(tmp_path):
     assert "KIND kernelmodedriver" in out and "    NO_CAB" in out
 
 
+def test_a_custom_body_another_target_still_reads_keeps_its_command(tmp_path):
+    # ws2help: its archive also feeds the INTERFACE ws2help_static that other modules link.
+    f = tmp_path / "CMakeLists.txt"
+    text = (
+        DRIVER
+        + "add_library(d_static INTERFACE)\n"
+        + "target_link_libraries(d_static INTERFACE ${D_RUST_LIB})\n"
+    )
+    f.write_text(text)
+    c = cell(
+        target="d",
+        cmake_dir=tmp_path,
+        output_name="d.sys",
+        module_kind="KernelDll",
+        kernel_kind="kernelmodedriver",
+        custom_body=g._custom_body(text),
+        body_crate="d-rust",
+        destinations=["reactos/system32/drivers"],
+        no_cab=True,
+        static_libs={a: [] for a in g.ARCHES},
+        msvcrtex=None,
+        rc=None,
+    )
+    out = g.rewrite_cmake(f, c)
+    assert "cargo build" in out and "add_custom_target(rust_d DEPENDS ${D_RUST_LIB})" in out
+    assert "target_link_libraries(d_static INTERFACE ${D_RUST_LIB})" in out
+    assert "add_cargo_module(d d-cargo" in out
+
+
 def _driver_cell(tmp_path):
     return cell(
         target="d",

@@ -104,6 +104,22 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             && cmd != "rust_staticlib_variant"
             && body_re.is_match(raw)
     });
+    // A custom-command body whose archive another statement still reads (ws2help's
+    // INTERFACE ws2help_static forwards ${WS2HELP_RUST_LIB} to other modules) keeps its
+    // command, custom target and variables; the cell builds the body itself either way.
+    let custom_shared = cell.custom_body["output_var"].as_str().is_some_and(|v| {
+        let used = format!("${{{v}}}");
+        let own_target = cell.custom_body["custom_target"].as_str().unwrap_or("");
+        stmts.iter().any(|(_, _, cmd, raw)| {
+            let a = args(raw);
+            raw.contains(&used)
+                && a.first() != Some(&cell.target)
+                && !(cmd == "add_custom_command" && re(r"\bcargo build\b").is_match(raw))
+                && !(cmd == "add_custom_target" && a.first().map(String::as_str) == Some(own_target))
+                && !(["set", "rust_storage_target", "rust_crate_sources"].contains(&cmd.as_str())
+                    && a.first().map(String::as_str) == Some(v))
+        })
+    });
     let guards = enclosing_ifs(&text, &cell.target)?;
     let paths = branches(&stmts);
     let rc_lists = super::graph::list_vars(&text);
@@ -232,7 +248,8 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             continue;
         }
         let vars = cell.custom_body.get("vars").and_then(|v| v.as_array());
-        let custom = !cell.custom_body.is_null()
+        let custom = !custom_shared
+            && !cell.custom_body.is_null()
             && cell.custom_body.as_object().is_some_and(|o| !o.is_empty());
         if custom
             && ((["set", "rust_storage_target", "rust_crate_sources"].contains(&cmd.as_str())
@@ -338,7 +355,12 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             )));
         }
     }
-    if let Some(vs) = cell.custom_body.get("vars").and_then(|v| v.as_array()) {
+    if let Some(vs) = cell
+        .custom_body
+        .get("vars")
+        .and_then(|v| v.as_array())
+        .filter(|_| !custom_shared)
+    {
         for v in vs.iter().filter_map(|v| v.as_str()) {
             if out.contains(&format!("${{{v}}}")) {
                 return Err(Error::new(format!(

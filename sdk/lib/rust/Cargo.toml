@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "ws2help-cargo",
     "oleaut32-cargo",
     "samsrv-cargo",
     "lsasrv-cargo",

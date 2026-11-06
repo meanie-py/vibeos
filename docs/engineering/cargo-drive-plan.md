@@ -471,11 +471,10 @@ extends it from the boot spine to every fully-Rust module.
          module may link its archive (kernel32_vista links kernel32's vista/shared).)
        - (oleaut32: converted 2026-11-06; its `-E env ${OLEAUT32_RUST_ENV}` list form, with
          the i386 RUSTFLAGS appended under `if(ARCH ...)`, is modelled.)
-       - ws2help: its archive also feeds the INTERFACE `ws2help_static` other modules link, so
-         the rewrite refuses to drop its cargo command ("something else still uses
-         ${WS2HELP_RUST_LIB}"). Needs the rewrite to KEEP a body command whose output is still
-         read, as it already does for kernel32's vista/shared. (Its conditional
-         set_entrypoint is handled now.)
+       - (ws2help: converted 2026-11-06. Two fixes: a link's entry is its LAST `-entry`
+         flag, as lld takes it (set_entrypoint appends one after the default, and reading
+         the first gave it DllMainCRTStartup); and a custom body whose archive another
+         statement still reads (the INTERFACE `ws2help_static`) keeps its cargo command.)
        - filebrowser (`$<TARGET_FILE_DIR:>`), uxtheme (two specs), glu32 (shared SOURCE),
          libtiff (`remove_target_compile_option`), wow64cpu (amd64 only).
      - **Generator, now Rust (`vibeos-codegen`):** `--convert` names every refusal before

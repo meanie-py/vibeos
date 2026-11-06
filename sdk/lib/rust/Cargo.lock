@@ -10372,6 +10372,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ws2help-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "ws2help-rust"
 version = "0.1.0"
 dependencies = [
