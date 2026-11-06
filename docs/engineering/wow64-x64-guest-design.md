@@ -114,8 +114,15 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    in wowx64. So the apps do not queue on this lock. What fault64 shows instead is that our SRW
    lock (`rtl-sync/src/srw.rs`, upstream `srw.c`) only spins: a contended waiter loops on
    `YieldProcessor()` and never blocks, so on the one-vCPU arm64 VM it burns its quantum before
-   the holder can run again. The Chrome lane fixed the wait in `244c0422339` (`SrwBackoff`: 64
-   spins, then 64 `NtYieldExecution`, then 1 ms sleeps; user mode only).
+   the holder can run again. The Chrome lane changed the wait in `244c0422339` (`SrwBackoff`: 64
+   spins, then 64 `NtYieldExecution`, then 1 ms sleeps; user mode only), which ends a waiter
+   starving its owner. It did NOT change fault64: re-measured 2026-11-05 with it in the tree
+   (`20261105-204820-babcf_n4`, appstorm64 green), alloc 101 contended / 7.0 s, free 100 / 6.5 s,
+   fault 201 / 14.0 s, still ~69 ms an acquire, and still no other process contended. Inferred,
+   not measured: srw.c hands the lock to the first waiter on release, so a waiter asleep in its
+   1 ms `NtDelayExecution` (a timer tick in practice) already owns it, and the other thread
+   queues behind a sleeping owner, a tick per handoff. Owed: a real block (keyed event or
+   wait-on-thread-id) that the releaser wakes, instead of a waiter that polls.
 6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
    file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
    `MiFlushTbAndCapture` stopped flushing the whole TLB once per re-protected page on arm64:
