@@ -234,6 +234,15 @@ unsafe extern "C" fn RemoveTimer(pTmr: PTIMER) -> BOOL {
 unsafe fn RemoveTimer_impl(pTmr: PTIMER) -> BOOL {
     let mut Ret: BOOL = 0;
     if !pTmr.is_null() {
+        // A timer that fired (TMRF_READY: cTimersReady counted it and QS_TIMER is set) but
+        // whose WM_TIMER was never posted gives its count back here, the way PostTimerMessages
+        // does when it posts one. timer.c leaves it counted; that was invisible while
+        // IntMsqClearWakeMask zeroed every wake bit after each wait, and is a QS_TIMER bit set
+        // forever now that it does not: every MWMO_INPUTAVAILABLE wait would return at once.
+        if ((*pTmr).flags & TMRF_READY as u32) != 0 && !(*pTmr).pti.is_null() && !(*(*pTmr).pti).pcti.is_null() {
+            (*pTmr).flags &= !(TMRF_READY as u32);
+            ClearMsgBitsMask((*pTmr).pti, QS_TIMER as UINT);
+        }
         RemoveEntryList(core::ptr::addr_of_mut!((*pTmr).ptmrList) as _);
         if (*pTmr).pWnd.is_null() && ((*pTmr).flags & TMRF_SYSTEM as u32) == 0 {
             let ulBitmapIndex: ULONG = (MAX_WINDOW_LESS_TIMER_ID - (*pTmr).nID as u32) as ULONG;

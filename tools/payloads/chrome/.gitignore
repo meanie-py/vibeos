@@ -5,3 +5,5 @@ tlsprobe-*.exe
 tlsdll-*.dll
 secprobe-*.exe
 iocpprobe-*.exe
+dupprobe-*.exe
+msgprobe-*.exe
