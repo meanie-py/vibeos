@@ -464,8 +464,12 @@ extends it from the boot spine to every fully-Rust module.
          `scan_cmake_linked_rust` hit usually needs only that table entry.)
        - rpcrt4: link-guard rejects duplicate `DllGetClassObject`/`*ErrorInfo`
          (proxy.dlldata.c vs the static libs).
-       - kernel32, lsasrv, samsrv: several Rust bodies (more than one `cargo build`);
-         oleaut32: a RUSTFLAGS shape; ws2help: entry point set_entrypoint vs DllMainCRTStartup.
+       - (kernel32, lsasrv, samsrv: converted 2026-11-06. A module with several `cargo
+         build` commands takes the one whose archive is `lib<target>_rust.a` as its body;
+         each other plain one becomes `engine:crate:<crate>::TRUE`, its bare DEPENDS
+         targets order the cell, and its command stays in the CMakeLists because another
+         module may link its archive (kernel32_vista links kernel32's vista/shared).)
+       - oleaut32: a RUSTFLAGS shape; ws2help: entry point set_entrypoint vs DllMainCRTStartup.
        - filebrowser (`$<TARGET_FILE_DIR:>`), uxtheme (two specs), glu32 (shared SOURCE),
          libtiff (`remove_target_compile_option`), wow64cpu (amd64 only).
      - **Generator, now Rust (`vibeos-codegen`):** `--convert` names every refusal before

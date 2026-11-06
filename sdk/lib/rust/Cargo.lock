@@ -3879,6 +3879,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kernel32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "kernel32-rust"
 version = "0.1.0"
 dependencies = [
@@ -4231,6 +4239,14 @@ dependencies = [
  "lsass-sys",
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "lsasrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -7311,6 +7327,14 @@ dependencies = [
  "panic-common",
  "win32macros-rust",
  "winedebug-rust",
+]
+
+[[package]]
+name = "samsrv-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
