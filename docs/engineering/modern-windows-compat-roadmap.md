@@ -901,7 +901,7 @@ Rungs 1–3 are mostly user-mode Wine plumbing: probably the fastest "wow" in th
 doc. Chrome also ships native ARM64 Windows builds, so the arm64 port is a real target
 too: Chrome on a Pi.
 
-### Rung 1 status (2026-11-06): the page dumps in one process; multi-process hangs
+### Rung 1 status (2026-11-06): PASSES, multi-process as Chrome runs by default
 
 `tools/payloads/chrome` boots Chrome for Testing 157 (x64, staged from `VIBEOS_CHROME_DIR`,
 never committed) under the sweep runner on amd64 with `--headless --no-sandbox --disable-gpu
@@ -927,31 +927,38 @@ beside Windows 11's answers where the bug was ours to measure):
     shared memory CHECKs that refusal.
 11. `RtlAddGrowableFunctionTable` & co. (V8's JIT unwind data): every child called address 0.
 
-**Rung 1 passes in one process, most of the time (2026-11-06).** With `--single-process`,
-Chrome prints the page's DOM including the script's `js ran: 42`, so V8 ran the page: 4-6 minutes
-under TCG on one CPU. It did so on 4 of 5 boots; on the other it hung like multi-process does.
+12. `UnregisterWaitEx(wait, event)` never signaled the caller's event unless a callback was
+    running at that instant (`rtl-sync/src/wait.rs`, faithful to ReactOS's `wait.c`).
+    `base::win::ObjectWatcher::StopWatching` passes its own event and then waits on it, so the
+    browser UI thread blocked for good under `child_process_launcher.cc`; the network and
+    storage services, never told they were connected, then exited after
+    `--ipc-connection-timeout` (`waitprobe`).
 
-**Multi-process (the default) hangs** with every thread of every process blocked in an ordinary
-wait. It hangs whether or not the network and storage services were connected (on some boots
-they never get the browser's connection and exit after the `--ipc-connection-timeout`; on others
-both connect), so that is a symptom. A hang that strikes sometimes in one process and every time
-in eight looks like a lost wake-up. Measured against Windows 11 and ruled out, each by a probe in
-the payload:
+**Rung 1 passes (2026-11-06) in the default multi-process mode.** Chrome prints the page's DOM
+including the script's `js ran: 42` and exits 0: about 2.5 minutes under TCG on one CPU, against
+4-6 minutes for `--single-process` (which also passes). Before fix 12 multi-process hung every
+time, every thread blocked in an ordinary wait.
+
+How fix 12 was found without chrome.dll symbols (Google's symbol server has none for this
+build): `sample` showed the browser UI thread in `WaitForSingleObjectEx` called straight from
+chrome.dll, not in its message pump. The return addresses on its raw stack fall in functions
+whose string references (`FROM_HERE` file names, trace-event names) name them:
+`WaitableEvent::Wait` <- `object_watcher.cc` `StopWatching` <- `child_process_launcher.cc`.
+Ruled out on the way, each by a probe measured against Windows 11:
 - overlapped named pipes on a completion port, in-process and through an inherited handle
   (`iocpprobe`);
 - moving sections, events and pipe ends between processes as Mojo's broker does, including
   `DUPLICATE_CLOSE_SOURCE` out of a child and two children joined by a pipe (`dupprobe`);
 - Chrome's UI-thread pump (`msgprobe`). This one found a real bug: win32k zeroed the queue's
   wake bits at the end of every `MsgWaitForMultipleObjectsEx`, so a message still queued could
-  be invisible to the next `MWMO_INPUTAVAILABLE` wait. Fixed in `win32k-rust/src/msgqueue.rs`;
-  not the whole hang. Still different from Windows: a message already peeked at counts as new
-  again (a spurious wake only).
-Also read and found sound: the condition variable (`rtl-sync/src/condvar.rs`) and keyed events,
-whose waiters match per process. Owed and not yet tied to the hang: `CreateProcess` accepts an
-extended attribute list but applies none of it (no `HANDLE_LIST`, so every child inherits every
-inheritable handle the browser holds at that moment; `kernel32-rust/src/proc_create.rs`).
-Next: name the wait each process is in. Without chrome.dll symbols a stack says little, so the
-lead is Chrome's own state: `--enable-logging` with `--trace-startup`, or a probe per Mojo step.
+  be invisible to the next `MWMO_INPUTAVAILABLE` wait (fixed, `win32k-rust/src/msgqueue.rs`).
+  Still different from Windows: a message already peeked at counts as new again (a spurious
+  wake only).
+
+Owed: `CreateProcess` accepts an extended attribute list but applies none of it (no
+`HANDLE_LIST`, so every child inherits every inheritable handle the browser holds at that
+moment; `kernel32-rust/src/proc_create.rs`). Next rung: a real page over the network, and the
+sandbox (`--no-sandbox` is still required).
 
 On a timeout the sweep runner dumps the threads of the child's whole process tree and kills the
 descendants; `sample <exe> <secs>` takes the same look mid-run without killing, adding each

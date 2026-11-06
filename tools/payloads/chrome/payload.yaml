@@ -39,6 +39,8 @@ binaries:
     dest: bin/dupprobe/dupprobe.exe
   - src: tools/payloads/chrome/msgprobe-{arch}.exe
     dest: bin/msgprobe/msgprobe.exe
+  - src: tools/payloads/chrome/waitprobe-{arch}.exe
+    dest: bin/waitprobe/waitprobe.exe
   - src: tools/payloads/chrome/hello.html
     dest: bin/chrome-pages/hello.html
 binaries_from: tools/payloads/chrome/stage.py
