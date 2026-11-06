@@ -18,6 +18,20 @@ def free_port(kind):
         return sock.getsockname()[1]
 
 
+@pytest.fixture(scope="module", autouse=True)
+def provisioned():
+    # bench-infra compiles vibeos-bench (--release --jobs 1) on first use after a source
+    # change. Pay that here, so the 30 s "did not start" deadlines time the server and not
+    # cargo: on a fresh merge under check-tooling load the build alone outran them.
+    subprocess.run(
+        [str(EXECUTABLE), "--help"],
+        cwd=ROOT,
+        check=True,
+        stdout=subprocess.DEVNULL,
+        timeout=1800,
+    )
+
+
 @pytest.fixture
 def launch(tmp_path):
     processes = []
