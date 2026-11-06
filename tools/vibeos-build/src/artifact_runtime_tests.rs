@@ -666,8 +666,14 @@ fn native_broker_command_is_compile_only_and_uses_native_executor() {
     let args = fs::read_to_string(&log).unwrap();
     let args: Vec<_> = args.lines().collect();
     assert_eq!(&args[..3], &["--kind", "compile", "--"]);
-    assert_eq!(&args[4..6], &["artifact-executor", "run"]);
-    assert_eq!(args[6], output.to_str().unwrap());
+    // The child serves this repo explicitly, never its compile-time default.
+    assert_eq!(args[4], "--root");
+    assert_eq!(
+        args[5],
+        crate::artifact_executor::implementation_repo().to_str().unwrap()
+    );
+    assert_eq!(&args[6..8], &["artifact-executor", "run"]);
+    assert_eq!(args[8], output.to_str().unwrap());
 }
 #[test]
 fn missing_only_repair_restores_exact_bytes_without_creating_consumer() {

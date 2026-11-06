@@ -781,6 +781,13 @@ fn execute_with(
     command
         .args(["--kind", "compile", "--"])
         .arg(std::env::current_exe()?)
+        // The child must serve THIS repo. Without --root it falls back to the compile-time
+        // CARGO_MANIFEST_DIR, which is /tmp/vibeos/tools/vibeos-build/../.. when build-infra
+        // was provisioned inside a canon-run mount: every fresh tree then failed "isolated
+        // compiler failed (2) ... No such file or directory" while the integration tree,
+        // provisioned outside a mount, passed (2026-11-06).
+        .arg("--root")
+        .arg(executor::implementation_repo())
         .args(["artifact-executor", "run"])
         .arg(out);
     let result = executor::supervised_output(&mut command, None)?;

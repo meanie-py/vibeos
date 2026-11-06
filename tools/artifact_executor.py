@@ -162,9 +162,19 @@ def inside(config: dict, *, probe=False):
             stream.write(payload)
         os.lseek(fd, 0, os.SEEK_SET)
         os.set_inheritable(fd, True)
+        # --root as the native namespace entry passes it: without one the binary
+        # canonicalizes its compile-time default, which does not exist when it was
+        # provisioned inside a canon-run mount ("build-infra: No such file or directory").
         os.execv(
             binary,
-            [binary, "artifact-executor", "inside-fd-probe" if probe else "inside-fd", str(fd)],
+            [
+                binary,
+                "--root",
+                "/",
+                "artifact-executor",
+                "inside-fd-probe" if probe else "inside-fd",
+                str(fd),
+            ],
         )
     finally:
         os.close(fd)
