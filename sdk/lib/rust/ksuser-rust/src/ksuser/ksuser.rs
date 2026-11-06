@@ -175,11 +175,12 @@ pub unsafe extern "system" fn KsCreatePin(
 
     BufferSize = BufferSize.wrapping_add((*DataFormat).__bindgen_anon_1.FormatSize);
 
-    let KSSTRING_Pin_local: [u16; 4] = ['P' as u16, 'i' as u16, 'n' as u16, 0];
-
+    // KSSTRING_Pin is the pin create item's GUID string, which ks.sys matches the create
+    // against. This once passed a local L"Pin" -- the macro's NAME, not its value -- so every
+    // pin create from user mode failed ERROR_GEN_FAILURE and no waveOut device could open.
     return KsiCreateObjectType(
         FilterHandle,
-        KSSTRING_Pin_local.as_ptr() as LPWSTR,
+        KSSTRING_Pin.as_ptr() as LPWSTR,
         Connect as PVOID,
         BufferSize,
         DesiredAccess,

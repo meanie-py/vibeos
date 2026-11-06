@@ -72,6 +72,80 @@ static void adapter(IDirect3D8 *d3d)
     }
 }
 
+/* The lockable back buffer's colour bytes as one checksum. */
+static void bb_hash(IDirect3DDevice8 *dev, const char *tag)
+{
+    IDirect3DSurface8 *bb;
+    D3DLOCKED_RECT lr;
+    HRESULT hr;
+    int x, y;
+
+    if (FAILED(IDirect3DDevice8_GetBackBuffer(dev, 0, D3DBACKBUFFER_TYPE_MONO, &bb)))
+        return;
+    hr = IDirect3DSurface8_LockRect(bb, &lr, NULL, D3DLOCK_READONLY);
+    printf("%s lock hr=%08lx", tag, (unsigned long)hr);
+    if (SUCCEEDED(hr))
+    {
+        unsigned long h = 2166136261u;
+        for (y = 0; y < 64; y++)
+            for (x = 0; x < 64; x++)
+                h = (h ^ (((DWORD *)((BYTE *)lr.pBits + y * lr.Pitch))[x] & 0xffffff)) * 16777619u;
+        printf(" hash=%08lx centre=%06lx", h, ((DWORD *)((BYTE *)lr.pBits + 32 * lr.Pitch))[32] & 0xffffff);
+        IDirect3DSurface8_UnlockRect(bb);
+    }
+    printf("\n");
+    IDirect3DSurface8_Release(bb);
+}
+
+/* Only reachable with a real 3D device (the gl case): d3d8's draw paths, through an FVF and
+ * through a declaration-only vertex shader -- d3d8's own token parser feeding the draw. */
+static void render(IDirect3DDevice8 *dev)
+{
+    struct { float x, y, z, rhw; DWORD c; } tri[3] = {
+        {4.0f, 60.0f, 0.5f, 1.0f, 0xffffff00},
+        {32.0f, 2.0f, 0.5f, 1.0f, 0xff00ffff},
+        {60.0f, 60.0f, 0.5f, 1.0f, 0xffff00ff}};
+    struct { float x, y, z; DWORD c; } tri3[3] = {
+        {-0.5f, -0.5f, 0.5f, 0xff102030}, {0.0f, 0.5f, 0.5f, 0xff405060}, {0.5f, -0.5f, 0.5f, 0xff708090}};
+    DWORD decl[] = {D3DVSD_STREAM(0), D3DVSD_REG(D3DVSDE_POSITION, D3DVSDT_FLOAT3),
+                    D3DVSD_REG(D3DVSDE_DIFFUSE, D3DVSDT_D3DCOLOR), D3DVSD_END()};
+    D3DVIEWPORT8 vp = {0, 0, 64, 64, 0.0f, 1.0f};
+    D3DMATRIX id;
+    DWORD vs = 0;
+    HRESULT hr;
+
+    memset(&id, 0, sizeof(id));
+    id._11 = id._22 = id._33 = id._44 = 1.0f;
+    IDirect3DDevice8_SetViewport(dev, &vp);
+    IDirect3DDevice8_SetTransform(dev, D3DTS_WORLD, &id);
+    IDirect3DDevice8_SetTransform(dev, D3DTS_VIEW, &id);
+    IDirect3DDevice8_SetTransform(dev, D3DTS_PROJECTION, &id);
+    IDirect3DDevice8_SetRenderState(dev, D3DRS_ZENABLE, D3DZB_FALSE);
+    IDirect3DDevice8_SetRenderState(dev, D3DRS_LIGHTING, FALSE);
+    IDirect3DDevice8_SetRenderState(dev, D3DRS_CULLMODE, D3DCULL_NONE);
+    HR("r clear", IDirect3DDevice8_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0xff336699, 1.0f, 0));
+    bb_hash(dev, "r cleared");
+    IDirect3DDevice8_BeginScene(dev);
+    HR("r fvf", IDirect3DDevice8_SetVertexShader(dev, D3DFVF_XYZRHW | D3DFVF_DIFFUSE));
+    HR("r tri", IDirect3DDevice8_DrawPrimitiveUP(dev, D3DPT_TRIANGLELIST, 1, tri, sizeof(tri[0])));
+    IDirect3DDevice8_EndScene(dev);
+    bb_hash(dev, "r triangle");
+    hr = IDirect3DDevice8_CreateVertexShader(dev, decl, NULL, &vs, 0);
+    HR("r decl vs", hr);
+    if (SUCCEEDED(hr))
+    {
+        IDirect3DDevice8_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0xff000000, 1.0f, 0);
+        IDirect3DDevice8_BeginScene(dev);
+        HR("r set decl vs", IDirect3DDevice8_SetVertexShader(dev, vs));
+        HR("r tri decl", IDirect3DDevice8_DrawPrimitiveUP(dev, D3DPT_TRIANGLELIST, 1, tri3, sizeof(tri3[0])));
+        IDirect3DDevice8_EndScene(dev);
+        bb_hash(dev, "r transformed");
+        IDirect3DDevice8_SetVertexShader(dev, D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+        HR("r delete decl vs", IDirect3DDevice8_DeleteVertexShader(dev, vs));
+    }
+    HR("r present", IDirect3DDevice8_Present(dev, NULL, NULL, NULL, NULL));
+}
+
 static void device(IDirect3D8 *d3d, HWND hwnd)
 {
     D3DPRESENT_PARAMETERS pp;
@@ -109,6 +183,8 @@ static void device(IDirect3D8 *d3d, HWND hwnd)
     pp.EnableAutoDepthStencil = TRUE;
     pp.AutoDepthStencilFormat = D3DFMT_D24S8;
     pp.hDeviceWindow = hwnd;
+    /* render() reads the back buffer: d3d8 has no GetRenderTargetData. */
+    pp.Flags = D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
     hr = IDirect3D8_CreateDevice(d3d, 0, D3DDEVTYPE_HAL, hwnd, D3DCREATE_SOFTWARE_VERTEXPROCESSING,
                                  &pp, &dev);
     HR("create device", hr);
@@ -122,6 +198,20 @@ static void device(IDirect3D8 *d3d, HWND hwnd)
     }
     if (FAILED(hr))
         return;
+    if (dx_invalid)
+    {
+        /* Stage 8, and the unused slots 0 and 12 (WINED3D_TSS_INVALID, ~0u, in the C's lookup:
+         * GetTextureStageState(0, 0) reads texture_states[0][0xffffffff] and faults). */
+        static const DWORD bad[][2] = {{8, 1}, {8, 13}, {0, 0}, {0, 12}};
+        for (i = 0; i < sizeof(bad) / sizeof(bad[0]); i++)
+        {
+            v = 0xdeadbeef;
+            hr = IDirect3DDevice8_GetTextureStageState(dev, bad[i][0], (D3DTEXTURESTAGESTATETYPE)bad[i][1], &v);
+            printf("tss %lu.%lu hr=%08lx v=%lx\n", bad[i][0], bad[i][1], (unsigned long)hr, v);
+        }
+        printf("device release %lu\n", IDirect3DDevice8_Release(dev));
+        return;
+    }
     HR("test coop", IDirect3DDevice8_TestCooperativeLevel(dev));
 
     for (s = 0; s < 180; s++)
@@ -130,15 +220,19 @@ static void device(IDirect3D8 *d3d, HWND hwnd)
         if (SUCCEEDED(IDirect3DDevice8_GetRenderState(dev, (D3DRENDERSTATETYPE)s, &v)))
             printf("rs %lu=%lx\n", s, v);
     }
-    for (i = 0; i < 9; i++)
-        for (s = 0; s < 32; s++)
+    for (i = 0; i < 8; i++) /* stage 8, and states 0 and 12, are dx_invalid's */
+        for (s = 1; s < 32; s++)
         {
+            if (s == 12)
+                continue;
             v = 0xdeadbeef;
             hr = IDirect3DDevice8_GetTextureStageState(dev, i, (D3DTEXTURESTAGESTATETYPE)s, &v);
             printf("tss %lu.%lu hr=%08lx v=%lx\n", i, s, (unsigned long)hr, v);
         }
-    for (s = 0; s < 32; s++)
+    for (s = 1; s < 32; s++)
     {
+        if (s == 12)
+            continue;
         hr = IDirect3DDevice8_SetTextureStageState(dev, 2, (D3DTEXTURESTAGESTATETYPE)s, 3);
         v = 0xdeadbeef;
         IDirect3DDevice8_GetTextureStageState(dev, 2, (D3DTEXTURESTAGESTATETYPE)s, &v);
@@ -245,20 +339,17 @@ static void device(IDirect3D8 *d3d, HWND hwnd)
         printf("bb %ux%u fmt=%d usage=%lx\n", sd.Width, sd.Height, sd.Format, sd.Usage);
         IDirect3DSurface8_Release(surf);
     }
+    render(dev);
     printf("device release %lu\n", IDirect3DDevice8_Release(dev));
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     CREATE8 create;
     IDirect3D8 *d3d;
     HWND hwnd;
 
-    /* The guest's GL is Mesa's software renderer, which wined3d's GL backend refuses (no
-     * ARB_fragment_shader): Direct3DCreate then returns NULL under both variants and nothing
-     * past it runs. wined3d's no3d renderer needs no GPU, reads this from msvcrt's
-     * environment (shared with this exe), and is the same C under both. */
-    _putenv("WINE_D3D_CONFIG=renderer=no3d");
+    dx_renderer(argc, argv);
     dx_load(L"d3d8");
     create = (CREATE8)dx_proc("Direct3DCreate8");
     printf("create bad sdk %d\n", create(1) != NULL);

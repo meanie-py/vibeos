@@ -3209,9 +3209,17 @@ unsafe extern "system" fn d3d9_device_GetTextureStageState(
         return D3D_OK;
     }
 
+    // Divergence: the C indexes texture_states[stage] unchecked, so stage 8 reads the
+    // neighbouring state as the answer (modrun's d3d9 device case caught the Rust panicking
+    // there). A stage the state block has no slot for is invalid, like an invalid state.
+    let states = &(*(*device).stateblock_state).texture_states;
+    if stage as usize >= states.len() {
+        WARN!("Invalid stage %u passed.\n", stage);
+        return D3D_OK;
+    }
+
     wined3d_mutex_lock();
-    *value = (*(*device).stateblock_state).texture_states[stage as usize]
-        [tss_lookup[state as usize] as usize] as DWORD;
+    *value = states[stage as usize][tss_lookup[state as usize] as usize] as DWORD;
     wined3d_mutex_unlock();
 
     return D3D_OK;

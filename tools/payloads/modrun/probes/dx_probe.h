@@ -10,6 +10,7 @@
 #define INITGUID
 #include <windows.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static HMODULE dx_dll;
@@ -18,6 +19,8 @@ static HMODULE dx_dll;
 static inline void dx_load(const wchar_t *dll)
 {
     wchar_t self[MAX_PATH], name[64];
+    /* Unbuffered: a crash then cuts the output at the call that crashed, not at a 4K boundary. */
+    setvbuf(stdout, NULL, _IONBF, 0);
     DWORD len = GetModuleFileNameW(NULL, self, MAX_PATH);
     if (len > 6 && !lstrcmpiW(self + len - 6, L"_c.exe"))
     {
@@ -79,6 +82,24 @@ static inline unsigned long dx_hash(const void *p, size_t size)
     while (size--)
         h = (h ^ *b++) * 16777619u;
     return h;
+}
+
+/* wined3d's renderer, from the case's argument. The default is no3d: it needs no GPU, so the
+ * front end's logic is graded on any guest. `gl` selects the GL renderer, which only works
+ * where the suite stages a modern GL beside the exe (tools/mesa/build-mesa.sh: the system
+ * opengl32 is GL 1.1, and wined3d refuses it); that case's `expect` then demands a created
+ * device, so a quiet fall back to no3d fails instead of grading nothing. wined3d reads this
+ * from msvcrt's environment, shared with this exe, and is the same C under both variants. */
+/* `gl invalid`: only the out-of-range calls (dx_invalid), which each suite grades in a case of
+ * their own -- the C oracle reads past its state arrays on them, and d3d8's faults. */
+static int dx_invalid;
+
+static inline void dx_renderer(int argc, char **argv)
+{
+    int gl = argc > 1 && !strcmp(argv[1], "gl");
+    dx_invalid = argc > 2 && !strcmp(argv[2], "invalid");
+    _putenv(gl ? "WINE_D3D_CONFIG=renderer=gl" : "WINE_D3D_CONFIG=renderer=no3d");
+    printf("renderer %s\n", gl ? "gl" : "no3d");
 }
 
 #define HR(tag, expr) printf("%s hr=%08lx\n", tag, (unsigned long)(HRESULT)(expr))

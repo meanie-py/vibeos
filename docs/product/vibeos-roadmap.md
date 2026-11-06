@@ -615,6 +615,45 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `global_asm!`, from the i386 version plus the x64/arm64 non-volatile register sets: the FIBER
   CONTEXT save/restore and the TEB stack, FLS and activation-context fields). Then the same
   payload is the oracle.
+- **i386: wined3d's GL adapter init faults inside Mesa's `_mesa_Vertex3f` (open, found
+  2026-11-05).** Both variants of the d3d8/d3d9 `device` cases, so it is below the front ends:
+  the second `Direct3DCreate9` in a process (the probe calls it first with a bad SDK version)
+  dies in wined3d's `match_broken_arb_fog` quirk test, on `glVertex3f`, at `movss %xmm2,
+  (%edx)` with EDX = 0 -- Mesa's immediate-mode vertex buffer is unmapped. The crash PC was
+  located by matching the guest's register state against every 64K load base of an
+  unstripped build of the same libgallium. Ruled out: the loader's dynamic TLS, context
+  teardown and re-creation, and wined3d's attribs sequence (4.4, 4.4 forward-compatible,
+  3.2), all exercised by the `mesa` suite's `glsanity` probe, which passes on i386 with the
+  host's pixel hash; that sequence yields a 3.3 core context, in which `match_broken_arb_fog`
+  should not run at all, so wined3d on i386 is reaching a legacy context by some other route.
+  Next: print wined3d's selected GL version and context flags (a TRACE in
+  `wined3d_caps_gl_ctx_create_attribs`). The i386 `device` cases are scoped out meanwhile.
+- **arm64: PCI I/O-space BARs are never translated, so a port-I/O PCI device cannot work
+  (open, found 2026-11-05).** The AC97 binds on arm64 (after its INF gained an NTARM64 models
+  section) and then fails START: `AC97 Common: PrimaryCodecReady timed out!`. On arm64
+  `READ_PORT_*`/`WRITE_PORT_*` (`hal-rust/src/arm64/halstubs.rs`) are plain volatile
+  dereferences, which is right only for an address the HAL has translated into the PCIe host
+  bridge's memory-mapped PIO window and the driver has mapped; the AC97's port resources reach
+  it untranslated (`0xc000`-style port numbers). Windows on ARM translates port resources to
+  memory (`CM_RESOURCE_PORT_MEMORY`) in HalTranslateBusAddress / the PCI arbiter. Until then
+  the modrun dsound suite grades only its device-free half on arm64 (`logic-nodevice`).
+- **A second KS pin create on the AC97's render pin never completes (open, found 2026-11-05).**
+  After winmm's `waveOutOpen`/`waveOutClose` creates and closes pin 0 (portcls logs
+  `CPortPinWaveCyclic::Init Status 0 PinId 0`), a direct `KsCreatePin` on the same pin blocks in
+  `NtCreateFile` indefinitely; nothing spins (the vCPU samples are elsewhere). A
+  single-instance pin should FAIL the second create, so either the close left the instance
+  held or a create path waits instead of failing; the stack is ks-rust / portcls / ac97.
+  Repro: `dsound_probe.exe ks` from `tools/payloads/modrun/probes/dsound.c` (no suite case
+  runs it). Artifact: `/tmp/vibeos-cli/20261105-204803-oonv142k-smoke-amd64`.
+- **Running out of memory while creating an image section BUGCHECKs 0x1E instead of failing
+  the load (open, found 2026-11-05).** At the default 512M, the first modrun process to load
+  Mesa's 18 MB `libgallium_wgl.dll` (the d3d8 `device` case) died with an uncaught
+  `STATUS_NO_MEMORY` (0xC0000017) raised in kernel mode; the raise logger's frames name
+  `PeFmtCreateSection`, `MiAllocatePagesForMdl` and `NtReadFile`, but they are stack-scanned and
+  the reported raise site is not a call, so the raising frame is unconfirmed. Windows fails the
+  `NtCreateSection`/`LdrLoadDll` with the status. Repro: drop `vm_memory: 1536M` from
+  `tools/payloads/modrun/payload.yaml`, `MODRUN_SUITES=d3d8`, boot amd64. Artifact:
+  `/tmp/vibeos-cli/20261105-195149-61405khw-smoke-amd64`. modrun now boots with 1.5G.
 - **setupapi file-queue copies failed on the live boot, and a NULL target name went to the
   wrong file (FIXED 2026-11-01 in setupapi-rust; the C has all three bugs).** Measured with the
   modrun setupapi probe: `%TEMP%` = `X:\reactos\TEMP` EXISTS on the x86 live boot, but `X:` is

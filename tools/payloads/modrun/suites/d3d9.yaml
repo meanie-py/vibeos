@@ -15,7 +15,40 @@ stage:
   - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/d3d9_c.exe}
   - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/d3d9_probe.exe}
   - {src: 'build-{arch}/dll/directx/wine/d3d9/d3d9_c.dll', dest: bin/modrun/d3d9_c.dll}
+  # The device case: the same pair beside Mesa softpipe (tools/mesa/build-mesa.sh), which
+  # wined3d's GL renderer accepts. opengl32 is not a KnownDLL, so the exe's directory wins.
+  - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/gl/d3d9_c.exe}
+  - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/gl/d3d9_probe.exe}
+  - {src: 'build-{arch}/dll/directx/wine/d3d9/d3d9_c.dll', dest: bin/modrun/gl/d3d9_c.dll}
+  - {src: '.cache/mesa/{arch}/opengl32.dll', dest: bin/modrun/gl/opengl32.dll}
+  - {src: '.cache/mesa/{arch}/libgallium_wgl.dll', dest: bin/modrun/gl/libgallium_wgl.dll}
+  - {src: '.cache/mesa/{arch}/libz-1.dll', dest: bin/modrun/gl/libz-1.dll}
 cases:
   - id: logic
     expect: ['create 1', 'adapters 1', 'fmt 00000015', 'probe done']
     timeout: 300
+  # A real device: state, resources and draws, read back. `expect` demands the device and a
+  # draw, so a GL that wined3d refuses (falling back to no3d) fails here, not passes vacuously.
+  - id: device
+    arches: [amd64, arm64]  # i386: wined3d's GL init faults in Mesa (roadmap "Known bugs")
+    variants:
+      c: '%SystemRoot%\bin\modrun\gl\d3d9_c.exe'
+      rust: '%SystemRoot%\bin\modrun\gl\d3d9_probe.exe'
+    args: gl
+    expect: ['renderer gl', 'create device hr=00000000', 'r triangle readback hr=00000000', 'probe done']
+    timeout: 900
+  # Only the out-of-range stage. The C indexes texture_states[8] unchecked and returns the
+  # neighbouring slot; the Rust rejects the stage and leaves the value alone. (Before that fix
+  # the Rust panicked here: index out of bounds, len 8, index 8.)
+  - id: device-invalid
+    arches: [amd64, arm64]  # i386: wined3d's GL init faults in Mesa (roadmap "Known bugs")
+    variants:
+      c: '%SystemRoot%\bin\modrun\gl\d3d9_c.exe'
+      rust: '%SystemRoot%\bin\modrun\gl\d3d9_probe.exe'
+    args: gl invalid
+    expect: ['renderer gl', 'create device hr=00000000', 'probe done']
+    timeout: 600
+    diverge:
+    - why: "the C reads texture_states[8], past the state block; the Rust rejects stage 8"
+      c: '^tss 8\.'
+      rust: '^tss 8\.\d+ hr=00000000 v=deadbeef$'

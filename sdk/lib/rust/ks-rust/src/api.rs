@@ -462,7 +462,8 @@ pub unsafe extern "system" fn KsAllocateObjectHeader(
         RtlCopyUnicodeString(&mut (*ObjectHeader).ObjectClass, &(*(*IoStack).FileObject).FileName);
     }
 
-    core::ptr::copy_nonoverlapping(Table, &mut (*ObjectHeader).DispatchTable, core::mem::size_of::<KSDISPATCH_TABLE>() / core::mem::size_of::<PVOID>());
+    // One table: the count is in KSDISPATCH_TABLEs (C: RtlCopyMemory of sizeof(KSDISPATCH_TABLE)).
+    core::ptr::copy_nonoverlapping(Table, &mut (*ObjectHeader).DispatchTable, 1);
 
     if ItemsCount != 0 && !ItemsList.is_null() {
         let Status = KspAddCreateItemToList(&mut (*ObjectHeader).ItemList, ItemsCount, ItemsList);

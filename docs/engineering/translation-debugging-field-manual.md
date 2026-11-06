@@ -1702,6 +1702,14 @@ under the `modrun` payload) bugchecked. The disassembly says it outright (`shl $
 (%rax,%rax,2)` before `memcpy`). `scan_typed_byte_copy` gates the general form: an explicit
 non-byte cast, or `_` resolved through the source variable's declared type, with a byte-named
 count or one multiplied by `size_of` (baseline empty).
+**A ratio of sizes is not an element count either.** ks's `KsAllocateObjectHeader` copied its
+dispatch table with `copy_nonoverlapping(Table, &mut (*Hdr).DispatchTable,
+size_of::<KSDISPATCH_TABLE>() / size_of::<PVOID>())`: the table's size in WORDS, used as a count
+of TABLES, so ten tables went into a header holding one, over the `ItemList` initialised just
+before. The next `InsertTailList` faulted: BUGCHECK 0x1E the first time a sound card loaded
+(modrun's AC97). The lint missed it because it exempted any count divided by a `size_of` (right
+for `bytes / size_of::<T>()`); it now flags the element type's own size as a dividend unless it
+is also the divisor (`size_of::<T>() * n / size_of::<T>()` cancels to `n`, and is right).
 **And the ORDER flips too.** `RtlMoveMemory(dst, src, bytes)` is destination-first;
 `core::ptr::copy(src, dst, count)` is source-first. imm32's `Imm32FixLogFont` translated both
 of its face-name shifts with the C's argument order and the C's byte count, so each moved the

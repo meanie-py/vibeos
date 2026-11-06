@@ -729,10 +729,16 @@ unsafe extern "system" fn PrimaryBufferImpl_SetVolume(
     /* **** */
     EnterCriticalSection(core::ptr::addr_of_mut!((*device).mixlock));
 
-    waveOutGetVolume((*device).hwo, &mut ampfactors);
-    (*device).volpan.dwTotalLeftAmpFactor = ampfactors & 0xffff;
-    (*device).volpan.dwTotalRightAmpFactor = ampfactors >> 16;
-    DSOUND_AmpFactorToVolPan(core::ptr::addr_of_mut!((*device).volpan));
+    // Divergence (all four volume/pan paths): the C decodes `ampfactors` whether or not
+    // waveOutGetVolume succeeded, so on a device without a volume control (this guest's
+    // AC97 answers MMSYSERR_INVALPARAM) it turns an uninitialised stack word into the
+    // volume -- -1295 on one i386 run, -10000 on amd64. A failed read keeps the volume and
+    // pan last set, which is what Windows reports.
+    if waveOutGetVolume((*device).hwo, &mut ampfactors) == MMSYSERR_NOERROR {
+        (*device).volpan.dwTotalLeftAmpFactor = ampfactors & 0xffff;
+        (*device).volpan.dwTotalRightAmpFactor = ampfactors >> 16;
+        DSOUND_AmpFactorToVolPan(core::ptr::addr_of_mut!((*device).volpan));
+    }
     if vol != (*device).volpan.lVolume {
         (*device).volpan.lVolume = vol;
         DSOUND_RecalcVolPan(core::ptr::addr_of_mut!((*device).volpan));
@@ -776,10 +782,11 @@ unsafe extern "system" fn PrimaryBufferImpl_GetVolume(
     }
 
     if (*device).hwbuf.is_null() {
-        waveOutGetVolume((*device).hwo, core::ptr::addr_of_mut!(ampfactors));
-        (*device).volpan.dwTotalLeftAmpFactor = ampfactors & 0xffff;
-        (*device).volpan.dwTotalRightAmpFactor = ampfactors >> 16;
-        DSOUND_AmpFactorToVolPan(core::ptr::addr_of_mut!((*device).volpan));
+        if waveOutGetVolume((*device).hwo, core::ptr::addr_of_mut!(ampfactors)) == MMSYSERR_NOERROR {
+            (*device).volpan.dwTotalLeftAmpFactor = ampfactors & 0xffff;
+            (*device).volpan.dwTotalRightAmpFactor = ampfactors >> 16;
+            DSOUND_AmpFactorToVolPan(core::ptr::addr_of_mut!((*device).volpan));
+        }
     }
     *vol = (*device).volpan.lVolume;
     return (DS_OK) as HRESULT;
@@ -1097,10 +1104,11 @@ unsafe extern "system" fn PrimaryBufferImpl_SetPan(
     EnterCriticalSection(core::ptr::addr_of_mut!((*device).mixlock));
 
     if (*device).hwbuf.is_null() {
-        waveOutGetVolume((*device).hwo, core::ptr::addr_of_mut!(ampfactors));
-        (*device).volpan.dwTotalLeftAmpFactor = ampfactors & 0xffff;
-        (*device).volpan.dwTotalRightAmpFactor = ampfactors >> 16;
-        DSOUND_AmpFactorToVolPan(core::ptr::addr_of_mut!((*device).volpan));
+        if waveOutGetVolume((*device).hwo, core::ptr::addr_of_mut!(ampfactors)) == MMSYSERR_NOERROR {
+            (*device).volpan.dwTotalLeftAmpFactor = ampfactors & 0xffff;
+            (*device).volpan.dwTotalRightAmpFactor = ampfactors >> 16;
+            DSOUND_AmpFactorToVolPan(core::ptr::addr_of_mut!((*device).volpan));
+        }
     }
     if pan != (*device).volpan.lPan {
         (*device).volpan.lPan = pan;
@@ -1146,10 +1154,11 @@ unsafe extern "system" fn PrimaryBufferImpl_GetPan(
     }
 
     if (*device).hwbuf.is_null() {
-        waveOutGetVolume((*device).hwo, core::ptr::addr_of_mut!(ampfactors));
-        (*device).volpan.dwTotalLeftAmpFactor = ampfactors & 0xffff;
-        (*device).volpan.dwTotalRightAmpFactor = ampfactors >> 16;
-        DSOUND_AmpFactorToVolPan(core::ptr::addr_of_mut!((*device).volpan));
+        if waveOutGetVolume((*device).hwo, core::ptr::addr_of_mut!(ampfactors)) == MMSYSERR_NOERROR {
+            (*device).volpan.dwTotalLeftAmpFactor = ampfactors & 0xffff;
+            (*device).volpan.dwTotalRightAmpFactor = ampfactors >> 16;
+            DSOUND_AmpFactorToVolPan(core::ptr::addr_of_mut!((*device).volpan));
+        }
     }
     *pan = (*device).volpan.lPan;
     return (DS_OK) as HRESULT;

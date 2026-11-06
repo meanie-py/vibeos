@@ -204,6 +204,26 @@ fn element_type(
         (uncast, false)
     }
 }
+/// `size_of::<elem>()` somewhere in `count` other than as a divisor, and no division by it
+/// either: `size_of::<T>() * n / size_of::<T>()` cancels to `n`, which is right (kernel32's
+/// console handler table and consrv's CHAR_INFO rows are written that way).
+fn own_size_dividend(count: &str, elem: &str) -> bool {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex(r"(/\s*\(?\s*)?(?:core::|std::)?(?:mem::)?size_of\s*::<\s*([^>]+?)\s*>")
+    });
+    let (mut dividend, mut divisor) = (false, false);
+    for c in re.captures_iter(count) {
+        if leaf(c.get(2).unwrap().as_str()) == elem {
+            if c.get(1).is_some() {
+                divisor = true
+            } else {
+                dividend = true
+            }
+        }
+    }
+    dividend && !divisor
+}
 fn scan_text(text: &str) -> Vec<(usize, String, String)> {
     let p = patterns();
     let mut out = Vec::new();
@@ -224,6 +244,19 @@ fn scan_text(text: &str) -> Vec<(usize, String, String)> {
         };
         if byte_type(&elem) || wide_type(&elem) || (write && matches!(count.trim(), "1" | "1usize"))
         {
+            continue;
+        }
+        // The element type's OWN size as a dividend (not the divisor) is never an element
+        // count: `size_of::<T>() / size_of::<PVOID>()` is T's size in words, and passed as a
+        // count of T it copies that many whole T. ks's KsAllocateObjectHeader copied its
+        // KSDISPATCH_TABLE this way -- ten tables into a header holding one, over the
+        // ItemList it had just initialised: BUGCHECK 0x1E as soon as a sound card loaded.
+        // `divided` below exempts any division, so this must be checked first.
+        if own_size_dividend(count, &elem) {
+            let n = line(text, m.start());
+            if !p.nolint.is_match(text.lines().nth(n - 1).unwrap_or("")) {
+                out.push((n, elem, normalize(count)));
+            }
             continue;
         }
         if !(p.times_sizeof.is_match(count)
@@ -255,6 +288,16 @@ mod tests {
     fn _typedbyte_good() {
         let text = "pub unsafe fn f(Irp: PIRP, size: usize, h: *const HDR, out: *mut u8) {\n    let mut layoutEx: *mut _DRIVE_LAYOUT_INFORMATION_EX = core::ptr::null_mut();\n    core::ptr::copy_nonoverlapping(\n        layoutEx as *const u8,\n        (*Irp).AssociatedIrp.SystemBuffer as *mut u8,\n        size,\n    );\n    core::ptr::copy_nonoverlapping(h as *const HDR as *const u8, out, (*h).HeaderSize as usize);\n}\npub unsafe fn g(a: *const ENTRY, b: *mut ENTRY, OldListSize: u32) {\n    core::ptr::copy_nonoverlapping(a, b, OldListSize as usize);\n}\n";
         assert!(scan_text(text).is_empty());
+    }
+    #[test]
+    fn an_element_types_own_size_divided_into_words_is_flagged() {
+        let bad = "pub unsafe fn f(Table: *mut KSDISPATCH_TABLE, H: PKSIOBJECT_HEADER) {\n    core::ptr::copy_nonoverlapping(Table, &mut (*H).DispatchTable, core::mem::size_of::<KSDISPATCH_TABLE>() / core::mem::size_of::<PVOID>());\n}\n";
+        assert_eq!(scan_text(bad).len(), 1);
+        // Bytes divided by the element size is an element count, and stays exempt.
+        let good = "pub unsafe fn g(a: *const ENTRY, b: *mut ENTRY, cb: usize) {\n    core::ptr::copy_nonoverlapping(a, b, cb / core::mem::size_of::<ENTRY>());\n}\n";
+        assert!(scan_text(good).is_empty());
+        let cancels = "pub unsafe fn h(a: *const ROUTINE, b: *mut ROUTINE, n: u32) {\n    core::ptr::copy_nonoverlapping(a, b, (core::mem::size_of::<ROUTINE>() * n as usize) / core::mem::size_of::<ROUTINE>());\n}\n";
+        assert!(scan_text(cancels).is_empty());
     }
     #[test]
     fn turbofish_inference_and_count_controls() {

@@ -1,7 +1,10 @@
-# dsound (dll/directx/wine/dsound -> dsound-rust). The VM has no audio device, so this grades
-# what needs none: enumeration, GetDeviceID, the class factory and uninitialized-object
-# paths, the private property set and the create calls' failure codes. The mixer, format
-# conversion and 3D code are unreachable without a wave device: owed until the VM has one.
+# dsound (dll/directx/wine/dsound -> dsound-rust). modrun boots with an AC97 (payload.yaml), so
+# beside enumeration, GetDeviceID, the class factory, the uninitialized-object paths and the
+# private property set, this drives the device: buffer creation and its format validation,
+# primary and secondary buffer state, locks, notifications, duplication, the 3D buffer and
+# listener, and a short play of every format through the mixer, resampler and converters.
+# Playback is real time, so only order-free facts are printed. `device present` is required:
+# a guest that loses the sound device fails here instead of skipping the mixer quietly.
 # One probe (probes/dsound.c), staged twice: as dsound_c.exe it loads the pre-flip C (dsound_c.dll, from
 # c_oracle.cmake) beside it, under any other name the system dsound.dll. Both print values only,
 # so the outputs must match byte for byte.
@@ -16,5 +19,32 @@ stage:
   - {src: 'build-{arch}/dll/directx/wine/dsound/dsound_c.dll', dest: bin/modrun/dsound_c.dll}
 cases:
   - id: logic
-    expect: ['probe done']
+    arches: [i386, amd64]
+    expect: ['device present', 'probe done']
+    timeout: 300
+    diverge: &volume
+    # The guest AC97 has no volume control (waveOutGetVolume: MMSYSERR_INVALPARAM, which the
+    # probe prints for both); the C decodes the uninitialised result anyway, the Rust keeps
+    # the -600 just set.
+    - why: "the C reads waveOutGetVolume's output on failure: an uninitialised stack word"
+      c: '^  prim vol '
+      rust: '^  prim vol -600$'
+  # arm64 binds the AC97 (its INF now has an NTARM64 section) but the codec never answers:
+  # the HAL does not translate PCI I/O BARs into the host bridge's PIO window, so READ_PORT_*
+  # dereferences a raw port number (roadmap "Known bugs"). Until it does, arm64 grades the
+  # device-free half, and says so -- this case fails the day a device appears.
+  - id: logic-nodevice
+    arches: [arm64]
+    expect: ['no device: mixer not graded', 'probe done']
+    timeout: 300
+  # Only the formats the C divides by zero on: no frame size (nBlockAlign 0: zero channels,
+  # 4-bit mono ADPCM -- dwBufferBytes % nBlockAlign), and 0 Hz (freqAdjust 0, divided by in
+  # DSOUND_secpos_to_bufpos). The C faults 0xc0000094; the Rust rejects them
+  # DSERR_INVALIDPARAM, as Windows does. (Before that fix it panicked on both.)
+  - id: invalid
+    arches: [i386, amd64]
+    args: invalid
+    expect: ['device present', 'probe done']
     timeout: 120
+    xfail: "the C oracle divides by zero on a format with nBlockAlign 0 or a 0 Hz rate"
+    diverge: *volume
