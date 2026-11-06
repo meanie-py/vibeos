@@ -29,6 +29,10 @@ mod cmake_config;
 
 /// One link argument for THIS link: `rustc-link-arg`, or `rustc-link-arg-bin=<bin>=`
 /// when the Linker drives one bin of a family package (see `Linker::for_bin`).
+/// The link-guard flag behind [`Linker::shell_less`]. Keep in step with
+/// `tools/vibeos-build/src/link_guard.rs`, which strips it before lld sees it.
+pub const SHELL_LESS_FLAG: &str = "--vibeos-shell-less";
+
 macro_rules! link_arg {
     ($s:expr, $($fmt:tt)*) => { $s.emit_link_arg(&format!($($fmt)*)) };
 }
@@ -609,6 +613,8 @@ pub struct Linker {
     ks_includes: native_deps::InvocationOutput,
     /// Raw link arguments appended after the kind's own (see `link_args`).
     extra_link_args: Vec<String>,
+    /// See [`Linker::shell_less`].
+    shell_less: bool,
     /// The bin this link builds, when the package has several (see `for_bin`).
     bin: Option<String>,
 }
@@ -677,6 +683,7 @@ impl Linker {
             stack_reserve: None,
             ks_includes: Default::default(),
             extra_link_args: Vec::new(),
+            shell_less: false,
             bin: None,
         }
     }
@@ -695,6 +702,22 @@ impl Linker {
     /// the shared body crate is built once. Intermediate files go in a per-bin dir.
     pub fn for_bin(mut self, name: &str) -> Self {
         self.bin = Some(name.to_string());
+        self
+    }
+
+    /// Link nothing rustc contributes: no bin object (its panic handler), no
+    /// `symbols.o`, no sysroot `rsbegin.o`/`rsend.o`, no rlib. The PE is then exactly
+    /// what the engine links, which is cmake's link: a module with no code of its own
+    /// (a forwarder like rsabase, a resource DLL like shdoclc) has no `.text`, and one
+    /// importing no ntdll (comcat, wmi) does not gain a `DbgPrint` import.
+    ///
+    /// rustc puts those objects on every link line and lld's COFF gc cannot drop them
+    /// (rsbegin's sections are not COMDAT, and the bin's handler is a rooted lang
+    /// item), so the engine asks the link-guard (`tools/build-infra link-guard`, the
+    /// `--ld-path` of every PE link) to remove them: [`SHELL_LESS_FLAG`]. The guard
+    /// fails the link if it finds none, so a change in rustc's link line is loud.
+    pub fn shell_less(mut self) -> Self {
+        self.shell_less = true;
         self
     }
 
@@ -1734,7 +1757,9 @@ impl Linker {
             // Our cells are panic=abort and link no libgcc (its stub is empty, above),
             // so nothing ever unwinds and there is no unwinder to register with. Give
             // the two calls no-op bodies; an undefined-symbol error is the alternative.
-            if self.arch.name == "i386" {
+            // A shell-less link drops rsbegin.o, so it needs no registration stub
+            // (which would itself be the module's only `.text`).
+            if self.arch.name == "i386" && !self.shell_less {
                 let src = stub_dir.join("eh_frame_register.c");
                 std::fs::write(
                     &src,
@@ -1755,6 +1780,8 @@ impl Linker {
                     .unwrap_or_else(|e| panic!("eh_frame_register: {}: {e}", clang.display()));
                 assert!(st.success(), "eh_frame_register: compile failed");
                 link_arg!(self, "{}", obj.display());
+            }
+            if self.arch.name == "i386" {
                 // rsbegin/rsend's `.ctors`/`.dtors` entry each become a 4-byte section
                 // (lld's MinGW writer makes those sections itself, so no /MERGE reaches
                 // them). crt-startup-rust walks __CTOR_LIST__ and calls the no-op above.
@@ -1960,6 +1987,9 @@ impl Linker {
         }
         for a in &self.extra_link_args {
             link_arg!(self, "{a}");
+        }
+        if self.shell_less {
+            link_arg!(self, "-Wl,{SHELL_LESS_FLAG}");
         }
         link_arg!(self, "-Wl,-e,{entry}");
         // Emit an explicit base only when the module pins one; otherwise the

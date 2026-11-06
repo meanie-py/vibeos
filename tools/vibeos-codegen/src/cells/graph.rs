@@ -1891,25 +1891,13 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     }
     // A body-less module with no C of its own is still a module: its .def (forwarders,
     // data exports), its .res and the static libraries it links (comcat's
-    // wine_dll_register) are the whole link. 26 such DLLs (comcat, lz32, shdoclc, ...)
-    // were refused here; --convert's pe_equiv check against cmake's link is the guard.
-    // What such a cell cannot do is link without ntdll: the Rust shell's panic path
-    // calls DbgPrint and NtTerminateProcess, so a module importing nothing (msxml3r,
-    // mycomput, tapiui, themeui) or not ntdll (comcat, security, softpub, wmi) fails
-    // ld with both undefined. Refuse it here, by name, rather than mid-wave. (Observed only
-    // for C-less cells, so scoped to them; one with C of its own would fail ld the same way.)
+    // wine_dll_register) are the whole link. Such a cell is shell-less: rustc's bin
+    // (its panic handler, which calls DbgPrint and NtTerminateProcess, and i386's
+    // rsbegin/rsend) stays out of the link, so a module with no code gains no `.text`
+    // and one importing no ntdll (comcat, msxml3r, wmi) still links. --convert's
+    // pe_equiv check against cmake's link is the guard.
     if bodyless && cell.c_shims.is_empty() && cell.arch_shims.values().all(Vec::is_empty) {
-        let missing: Vec<_> = cell
-            .link_order
-            .iter()
-            .filter(|(_, order)| !order.iter().any(|x| x == "import:ntdll"))
-            .map(|(a, _)| a.clone())
-            .collect();
-        if !missing.is_empty() {
-            return Err(Error::new(format!(
-                "{target}: a body-less cell links the Rust shell, which needs ntdll (DbgPrint, NtTerminateProcess), but cmake's link imports no ntdll on {missing:?}"
-            )));
-        }
+        cell.shell_less = true;
     }
     let subs: BTreeMap<_, _> = links
         .iter()

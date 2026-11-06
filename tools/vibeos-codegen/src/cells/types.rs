@@ -104,6 +104,12 @@ pub struct Cell {
     /// add_cargo_module EXTRA_DEPENDS.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub body_depends: Vec<String>,
+    /// A body-less module with no C of its own (a forwarder like rsabase, a resource
+    /// DLL like shdoclc, comcat's .def over a static lib): its link takes nothing from
+    /// rustc's bin, so the PE has no `.text` or ntdll import cmake's did not
+    /// (reactos-link `Linker::shell_less`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub shell_less: bool,
 }
 impl Default for Cell {
     fn default() -> Self {
@@ -151,6 +157,7 @@ impl Default for Cell {
             require_defined: Default::default(),
             arches: Default::default(),
             body_depends: Default::default(),
+            shell_less: false,
         }
     }
 }

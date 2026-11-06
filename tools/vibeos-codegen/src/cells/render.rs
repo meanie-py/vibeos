@@ -158,6 +158,9 @@ pub fn user_panic_deps(cell: &Cell) -> String {
     out
 }
 pub fn panic_deps(cell: &Cell) -> String {
+    if cell.shell_less {
+        return "[dependencies]\npanic-lean = { path = \"../panic-lean\" }\n".into();
+    }
     if cell.module_kind == "KernelDll" {
         if cell.panics.values().all(|v| *v) {
             "[dependencies]\npanic-common = { path = \"../panic-common\", features = [\"kernel\"] }\n".into()
@@ -179,6 +182,11 @@ pub fn main_rs(cell: &Cell) -> Result<String> {
     validate_cell(cell, false)?;
     let arches = cell.arches();
     let full: Vec<_> = arches.iter().copied().filter(|a| cell.panics[*a]).collect();
+    if cell.shell_less {
+        return Ok(format!(
+            "{MAIN_RS_HEAD}    // A shell-less cell: link-guard drops this bin's objects from the link\n    // (reactos-link Linker::shell_less), so this handler is never in the PE.\n    let _ = info;\n    panic_lean::panic_fastfail()\n}}\n"
+        ));
+    }
     if cell.module_kind == "KernelDll" && full.is_empty() {
         return Ok(format!(
             "{MAIN_RS_HEAD}    let _ = info;\n    panic_lean::panic_fastfail()\n}}\n"
@@ -495,6 +503,13 @@ pub fn build_rs(cell: &Cell) -> Result<String> {
     }
     if let Some(m) = &cell.msvcrtex {
         l.push(format!("        .msvcrtex_crt(MsvcrtexKind::{m})"));
+    }
+    if cell.shell_less {
+        l.extend([
+            "        // No code of its own: link nothing from rustc's bin (its panic".into(),
+            "        // handler, i386's rsbegin/rsend), so the PE is cmake's.".into(),
+            "        .shell_less()".into(),
+        ]);
     }
     if let Some(s) = cell.stack.filter(|s| *s != 0) {
         l.push(format!("        .stack_reserve({s})"));
