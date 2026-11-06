@@ -18,7 +18,7 @@ use crate::atomics::*;
 #[inline]
 unsafe fn SrwBackoff(spins: &mut u32) {
     *spins = spins.saturating_add(1);
-    #[cfg(not(feature = "kernel"))]
+    #[cfg(not(feature = "ntoskrnl"))]
     {
         if *spins > 128 {
             let mut interval = ntkrnl_sys::ddk::LARGE_INTEGER { QuadPart: -10_000 }; // 1 ms
@@ -38,14 +38,13 @@ unsafe fn SrwBackoff(spins: &mut u32) {
 /// it to `WAKE_SLEEPING`, and a releaser that finds that value wakes it with the keyed event
 /// (process-wide, key = the word's address, which keyed events require to be even).
 ///
-/// srw.c only ever polls this word, and the backoff above made a long poll sleep 1 ms at a
-/// time, which in practice is a timer tick. The lock is already handed to the waiter by then,
-/// so every handoff to a waiter that happened to be asleep held the lock for a tick with nobody
-/// running it: fault64's VirtualAlloc thread against its AV storm waited ~69 ms an acquire on
-/// one vCPU (appstorm64 20261105-204820-babcf_n4). Blocking makes the handoff wake the waiter
-/// at once, as Windows does.
+/// srw.c only ever polls this word, so a waiter can only spin, yield or sleep until the
+/// releaser sets it; one that sleeps keeps the lock it was handed idle for a timer tick.
+/// Blocking makes the handoff wake the waiter at once, as Windows does. (Until 2026-11-06
+/// none of this user-mode path was in ntdll: it was gated on `not(feature = "kernel")`, which
+/// ntdll's link turns on, so ntdll spun like the kernel. The kernel's copy is `ntoskrnl`.)
 const WAKE_SET: i32 = 1;
-#[cfg(not(feature = "kernel"))]
+#[cfg(not(feature = "ntoskrnl"))]
 const WAKE_SLEEPING: i32 = 2;
 
 #[inline]
@@ -56,16 +55,25 @@ unsafe fn WakeWord<'a>(Wake: *mut LONG) -> &'a core::sync::atomic::AtomicI32 {
 /// Wait until `Wake` is set: spin and yield as `SrwBackoff` does, then block. The kernel copy
 /// keeps spinning (raised IRQL may not sleep), so it never publishes `WAKE_SLEEPING`.
 // the kernel copy only spins, so its count is never read
-#[cfg_attr(feature = "kernel", allow(unused_variables, unused_assignments))]
+#[cfg_attr(feature = "ntoskrnl", allow(unused_variables, unused_assignments))]
 unsafe fn SrwWaitForWake(Wake: *mut LONG) {
     use core::sync::atomic::Ordering;
     let word = WakeWord(Wake);
+    // On one processor a spin cannot see the owner release, and an NtYieldExecution only
+    // hands the CPU to the owner, which releases, sets `Wake` and runs on to the end of its
+    // quantum before this thread looks again. Block straight away there, as critical
+    // sections do (SpinCount 0) and Windows does. Blocking at once, fault64 on the one-vCPU
+    // arm64 VM waits 1-3 ms a contended acquire with ~0.8 ms release-to-run (KEYEDWAKE=1,
+    // 20261106-141646-a730z4ru); the spin-only copy it had before waited ~41 ms.
+    #[cfg(not(feature = "ntoskrnl"))]
+    let mut spins: u32 = if crate::shared::RtlpUniprocessor() { 128 } else { 0 };
+    #[cfg(feature = "ntoskrnl")]
     let mut spins: u32 = 0;
     loop {
         if word.load(Ordering::Acquire) == WAKE_SET {
             return;
         }
-        #[cfg(not(feature = "kernel"))]
+        #[cfg(not(feature = "ntoskrnl"))]
         if spins >= 128 {
             if word
                 .compare_exchange(0, WAKE_SLEEPING, Ordering::AcqRel, Ordering::Acquire)
@@ -83,7 +91,7 @@ unsafe fn SrwWaitForWake(Wake: *mut LONG) {
             continue;
         }
         spins += 1;
-        #[cfg(not(feature = "kernel"))]
+        #[cfg(not(feature = "ntoskrnl"))]
         if spins > 64 {
             ntkrnl_sys::ddk::NtYieldExecution();
             continue;
@@ -98,7 +106,7 @@ unsafe fn SrwWaitForWake(Wake: *mut LONG) {
 unsafe fn SrwSignalWake(Wake: *mut LONG) {
     use core::sync::atomic::Ordering;
     let _old = WakeWord(Wake).swap(WAKE_SET, Ordering::AcqRel);
-    #[cfg(not(feature = "kernel"))]
+    #[cfg(not(feature = "ntoskrnl"))]
     if _old == WAKE_SLEEPING {
         ntkrnl_sys::ddk::NtReleaseKeyedEvent(
             core::ptr::null_mut(),

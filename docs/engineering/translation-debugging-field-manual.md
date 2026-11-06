@@ -10080,6 +10080,25 @@ writes `Wake` into a frame that has returned. Unmodified, the lock deadlocked or
 inside `RtlAcquireSRWLockExclusive` in 3 of 3 contended runs. No C difftest finds this class:
 the C has the same bugs, and single-threaded rows never race. A sync primitive needs a stress
 harness with a watchdog, run both on every CPU and pinned to one.
+
+### A harness-green path that never reached the binary: `feature = "kernel"` is not kernel mode
+**Symptom.** A fix that its host harness proves changes nothing in the guest, run after run.
+rtl-sync's SRW lock got a yield-and-sleep backoff (`244c0422339`) and then a keyed-event wait;
+`rtl-sync-difftest` saw hundreds of thousands of keyed waits, while fault64 still waited ~41 ms
+per contended acquire and the kernel's `KEYEDWAKE=1` probe saw zero keyed waits in the process.
+**Cause.** Both lived under `#[cfg(not(feature = "kernel"))]`, read as "user mode". In the rtl
+crates `kernel = ["cabi"]` only switches on the `#[no_mangle]` export surface, and rtl-rust's
+DEFAULT features include it, which is what `ntdll-cargo` links. So ntdll compiled the kernel's
+spin-only copy; only the harness (built without the feature) ever ran the other one. The
+disassembly says it in one look: arm64 ntdll's `RtlAcquireSRWLockExclusive` was a bare `yield`
+loop with no call in it.
+**Fix.** A feature that names the copy: `ntoskrnl` (rtl-sync, forwarded by rtl-rust), asked for
+only by the ntoskrnl/ntkrnlmp links. `scan_kernel_feature_mode` (vibeos-check) flags
+`feature = "kernel"` in any crate rtl-rust's `kernel` turns on, while ntdll gets its defaults;
+rtl-strings' existing uses, which deliberately mean "not the host difftest", are baselined.
+Before trusting a harness about shipped behaviour, disassemble the shipped symbol once.
+With the wait really in ntdll, fault64's contended acquires fell from ~41 ms to 1-3 ms and
+its alloc/free/fault throughput rose ~6x in the same storm window (`20261106-141646-a730z4ru`).
 ### A differential harness that cannot see its two sides diverge in STATE will report state differences as BEHAVIOUR differences
 **Symptom.** A perf/conformance row fails hard and reproducibly — `towlower` 10.8x TOO SLOW,
 all 3 passes, flat 44 MiB/s across a 65536x size range, calibration twins clean at 1.01x — and

@@ -65,6 +65,8 @@
 //!   MEMCENSUS=1         a line splitting physical memory by what holds it at every
 //!                       process's address-space teardown (ARM3/census.rs), for a
 //!                       sweep that loses free memory the commit charge cannot see.
+//!   KEYEDWAKE=1         release-to-run time of keyed-event waiters (ex-rust
+//!                       keyedevt.rs), one line per 64 wakes in a process.
 //!   RUSTPANIC_SELFTEST=1  deliberate Rust panic!() at arm time — proves the
 //!                       shared panic handler (panic-common): expect the
 //!                       "*** RUST PANIC in ntoskrnl …" report + backtrace,
@@ -104,6 +106,9 @@ extern "system" {
 /// so it is one byte and the rest stays out of the hot path until it is set.
 #[no_mangle]
 pub static mut VibeSvcTraceArmed: u8 = 0;
+/// KEYEDWAKE: read by ex-rust keyedevt.rs at every keyed-event release and wake.
+#[no_mangle]
+pub static mut VibeKeyedWakeArmed: u8 = 0;
 static mut SVCFAIL_IMAGE: [u8; 15] = [0; 15];
 static mut SVCFAIL_IMAGE_LEN: usize = 0;
 /// A runaway retry loop must not bury the boot log.
@@ -410,6 +415,11 @@ unsafe fn apply_token(tok: &[u8]) {
         if val == b"1" {
             crate::ARM3::census::MEMCENSUS_ARMED.store(true, core::sync::atomic::Ordering::Relaxed);
             DbgPrint(b"[TRIPWIRE] memory census armed: a [MEMCENSUS] line at every process teardown\n\0".as_ptr());
+        }
+    } else if let Some(val) = token_val(tok, b"KEYEDWAKE") {
+        if val == b"1" {
+            VibeKeyedWakeArmed = 1;
+            DbgPrint(b"[TRIPWIRE] keyed-event wake timing armed: a [KEYEDWAKE] line per 64 wakes in a process\n\0".as_ptr());
         }
     } else if let Some(val) = token_val(tok, b"SVCFAIL") {
         // Log every system call from the named image (a case-insensitive prefix of its

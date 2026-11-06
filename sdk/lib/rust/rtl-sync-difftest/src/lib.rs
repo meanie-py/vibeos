@@ -4,6 +4,13 @@
 
 #[path = "../../rtl-sync/src/atomics.rs"]
 pub mod atomics;
+/// Stands in for rtl-sync's `shared`: the PEB's processor count, set per round.
+pub mod shared {
+    pub static UNIPROCESSOR: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+    pub unsafe fn RtlpUniprocessor() -> bool {
+        UNIPROCESSOR.load(core::sync::atomic::Ordering::Relaxed)
+    }
+}
 #[path = "../../rtl-sync/src/srw.rs"]
 pub mod srw;
 

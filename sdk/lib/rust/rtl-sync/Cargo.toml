@@ -20,6 +20,10 @@ path = "src/lib.rs"
 # The #[no_mangle] extern "system" shim layer (the kernel/ntdll link surface).
 cabi = []
 kernel = ["cabi"]
+# ntoskrnl: THIS copy runs in the kernel. Not `kernel`, which only names the export surface and
+# which ntdll gets too (rtl-rust's default features), so a `not(feature = "kernel")` user-mode
+# path never reached a shipping ntdll: srw.rs's backoff and its keyed-event wait were host-only.
+ntoskrnl = ["kernel"]
 # vista: the standalone ntdll_vista.dll forwarder link surface — only
 # srw/condvar/runonce/locale (+ shared/atomics). critical/wait are NOT compiled;
 # condvar's RtlEnter/LeaveCriticalSection resolve as ntdll.dll imports (matches

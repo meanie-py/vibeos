@@ -127,15 +127,21 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    then blocks on the keyed event keyed by its own `Wake` word and the releaser wakes it
    (`srw.rs` `SrwWaitForWake`/`SrwSignalWake`), and the host stress harness written for it
    (`rtl-sync-difftest`) found three upstream srw.c bugs that deadlock or corrupt the lock under
-   real contention (field manual, "The oracle is the C, and the C is WRONG"). **That inference
-   was wrong for fault64:** re-measured with the blocking wait (`20261106-001310-2_jgd6dh`,
-   appstorm64 green), alloc 97 contended / 7.1 s, free 97 / 7.1 s, fault 194 / 14.2 s, still
-   ~73 ms an acquire with holds this short (fault 3.4 ms over 824). The DLL imports only ntdll,
-   and libc++'s Windows `std::mutex` is an SRWLOCK, so the path is the changed one. Inferred
-   next, not measured: on one vCPU the woken waiter is only readied (ex-rust keyedevt.rs
-   releases with priority increment 0) and waits out the quanta of fault64's CPU-bound AV-storm
-   and churn threads, a scheduling cost, not a lock cost. Still no other process contends. Owed:
-   time release-to-run for one wake, then decide whether a wait boost belongs in the release.
+   real contention (field manual, "The oracle is the C, and the C is WRONG"). **Both inferences were
+   wrong, and so was the premise:** neither the backoff nor the keyed-event wait had ever been in
+   ntdll. srw.rs gated them on `not(feature = "kernel")`, and ntdll links rtl-sync WITH `kernel`,
+   which there only means the export surface (field manual, "A harness-green path that never
+   reached the binary"). Arm64 ntdll's `RtlAcquireSRWLockExclusive` was a bare `yield` loop. On
+   one vCPU that costs each contended acquire the rest of the holder's quantum: a spinning waiter
+   hands the CPU over, the holder releases and runs on. Fixed 2026-11-06 with an `ntoskrnl`
+   feature for the kernel's copy, and a waiter on a uniprocessor now blocks at once (as critical
+   sections already did). Measured with the new `KEYEDWAKE=1` tripwire (release-to-run of
+   keyed-event waiters, `ex-rust/keyedevt.rs`; `20261106-141646-a730z4ru`, ladder 27/27):
+   fault64's alloc 73 contended / 85 ms, free 67 / 191 ms, fault 143 / 205 ms, 1-3 ms an acquire
+   against ~41, while the same storm window did ~6x the calls (alloc 1765 against 300). Its
+   release-to-run averages 0.7-1.1 ms with no boost, so a wait boost in the keyed-event release
+   is not needed for it. fault32 (x86 guest) shows 10-17 ms phases, max ~22 ms (a quantum), which
+   a boost might shorten; not measured further.
 6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
    file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
    `MiFlushTbAndCapture` stopped flushing the whole TLB once per re-protected page on arm64:

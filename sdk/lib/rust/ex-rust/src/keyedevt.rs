@@ -74,13 +74,102 @@ static mut ExpKeyedEventMapping: _GENERIC_MAPPING = _GENERIC_MAPPING {
     GenericAll: KEYEDEVENT_ALL_ACCESS,
 };
 
-extern "system" {
-    fn KeGetPreviousMode() -> KPROCESSOR_MODE;
-    fn ProbeForRead(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
-    fn ProbeForWrite(Address: PVOID, Length: SIZE_T, Alignment: ULONG);
+// KEYEDWAKE=1 (tripwire.rs): how long a released waiter takes to run. The releaser
+// stamps the waiter's slot with the performance counter just before it releases the
+// waiter's semaphore; the waiter reads it back when its wait returns. One line per 64
+// wakes per process: the release-to-run time, and the woken thread's priority against
+// its base -- the question being whether a readied waiter queues behind CPU-bound
+// threads of its own priority. Debug-only: slots collide on a hash and are dropped then.
+extern "C" {
+    static VibeKeyedWakeArmed: u8;
+}
+const WAKE_SLOTS: usize = 64;
+static mut WAKE_SLOT_THREAD: [usize; WAKE_SLOTS] = [0; WAKE_SLOTS];
+static mut WAKE_SLOT_STAMP: [i64; WAKE_SLOTS] = [0; WAKE_SLOTS];
+// Per process, so wakes in csrss and the rest do not reset fault64's tally between lines.
+const WAKE_PROCS: usize = 8;
+#[derive(Clone, Copy)]
+struct WakeTally {
+    process: usize,
+    count: u32,
+    boosted: u32,
+    sum: i64,
+    max: i64,
+}
+static mut WAKE_TALLY: [WakeTally; WAKE_PROCS] =
+    [WakeTally { process: 0, count: 0, boosted: 0, sum: 0, max: 0 }; WAKE_PROCS];
+
+fn wake_slot(thread: usize) -> usize {
+    (thread >> 6) % WAKE_SLOTS
 }
 
-// CODE_SEG("INIT")
+unsafe fn wake_stamp(thread: PETHREAD) {
+    if core::ptr::read_volatile(core::ptr::addr_of!(VibeKeyedWakeArmed)) == 0 {
+        return;
+    }
+    let i = wake_slot(thread as usize);
+    WAKE_SLOT_STAMP[i] = ntkrnl_sys::ddk::KeQueryPerformanceCounter(core::ptr::null_mut()).QuadPart;
+    WAKE_SLOT_THREAD[i] = thread as usize;
+}
+
+unsafe fn wake_read(thread: PETHREAD) {
+    if core::ptr::read_volatile(core::ptr::addr_of!(VibeKeyedWakeArmed)) == 0 {
+        return;
+    }
+    let mut freq: LARGE_INTEGER = core::mem::zeroed();
+    let now = ntkrnl_sys::ddk::KeQueryPerformanceCounter(&mut freq).QuadPart;
+    let i = wake_slot(thread as usize);
+    if WAKE_SLOT_THREAD[i] != thread as usize {
+        return;
+    }
+    WAKE_SLOT_THREAD[i] = 0;
+    let freq = freq.QuadPart;
+    if freq <= 0 {
+        return;
+    }
+    let us = (now - WAKE_SLOT_STAMP[i]) * 1_000_000 / freq;
+    let process = PsGetCurrentProcess() as usize;
+    let tallies = &mut *core::ptr::addr_of_mut!(WAKE_TALLY);
+    // this process's tally, else a free one, else the one with the fewest wakes
+    let mut pick = 0;
+    for (j, t) in tallies.iter().enumerate() {
+        if t.process == process {
+            pick = j;
+            break;
+        }
+        if t.count < tallies[pick].count || t.process == 0 {
+            pick = j;
+        }
+    }
+    let t = &mut tallies[pick];
+    if t.process != process {
+        *t = WakeTally { process, count: 0, boosted: 0, sum: 0, max: 0 };
+    }
+    t.count += 1;
+    t.sum += us;
+    if us > t.max {
+        t.max = us;
+    }
+    let tcb = core::ptr::addr_of!((*thread).Tcb);
+    if (*tcb).Priority > (*tcb).BasePriority {
+        t.boosted += 1;
+    }
+    if t.count == 64 {
+        let p = process as *mut _EPROCESS;
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[KEYEDWAKE] %.15s pid=%Iu wakes=64 release-to-run avg=%Iu us max=%Iu us boosted=%lu prio=%d base=%d\n\0".as_ptr() as _,
+            (*p).ImageFileName.as_ptr(),
+            (*p).UniqueProcessId as usize,
+            (t.sum / 64) as usize,
+            t.max as usize,
+            t.boosted,
+            (*tcb).Priority as i32,
+            (*tcb).BasePriority as i32,
+        );
+        *t = WakeTally { process, count: 0, boosted: 0, sum: 0, max: 0 };
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn ExpInitializeKeyedEventImplementation() -> BOOLEAN {
     let mut ObjectTypeInitializer: _OBJECT_TYPE_INITIALIZER = core::mem::zeroed();
@@ -195,6 +284,7 @@ pub unsafe extern "system" fn ExpReleaseOrWaitForKeyedEvent(
             RemoveEntryList(core::ptr::addr_of_mut!((*Thread).__bindgen_anon_1.KeyedWaitChain));
             InitializeListHead(core::ptr::addr_of_mut!((*Thread).__bindgen_anon_1.KeyedWaitChain));
 
+            wake_stamp(Thread);
             KeReleaseSemaphore(
                 core::ptr::addr_of_mut!((*Thread).__bindgen_anon_4.KeyedWaitSemaphore),
                 0i32,
@@ -232,6 +322,10 @@ pub unsafe extern "system" fn ExpReleaseOrWaitForKeyedEvent(
         Alertable,
         Timeout,
     );
+
+    if Status == STATUS_SUCCESS {
+        wake_read(CurrentThread);
+    }
 
     if Status != STATUS_SUCCESS {
         KeEnterCriticalRegion();

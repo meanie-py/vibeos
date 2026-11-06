@@ -171,14 +171,14 @@ fn round(name: &str, threads: usize, iters: u64, pinned: bool) {
          waits, {:.2} s",
         t0.elapsed().as_secs_f64()
     );
-    if cfg!(feature = "kernel") {
+    if cfg!(feature = "ntoskrnl") {
         assert_eq!(waits, 0, "{name}: the kernel copy must never block");
     }
     ROUNDS.fetch_add(1, Ordering::Relaxed);
 }
 
 fn main() {
-    if cfg!(feature = "kernel") {
+    if cfg!(feature = "ntoskrnl") {
         // spin-only: more spinners than CPUs, or one CPU, measures the host's timeslice, not the
         // lock, so the kernel copy gets the rounds where every thread can run
         round("all CPUs, 4 threads", 4, 40_000, false);
@@ -188,6 +188,11 @@ fn main() {
         round("all CPUs, 32 threads", 32, 4_000, false);
         round("CPU 0, 4 threads", 4, 10_000, true);
         round("CPU 0, 16 threads", 16, 2_000, true);
+        // what the one-vCPU VM runs: the PEB says one processor, so every waiter blocks at once
+        rtl_sync_difftest::shared::UNIPROCESSOR.store(true, Ordering::Relaxed);
+        round("uniprocessor, CPU 0, 4 threads", 4, 10_000, true);
+        round("uniprocessor, all CPUs, 8 threads", 8, 10_000, false);
+        rtl_sync_difftest::shared::UNIPROCESSOR.store(false, Ordering::Relaxed);
         // per round a quiet host can go without a block; over all four it cannot
         assert!(
             KEYED_WAITS.load(Ordering::Relaxed) > 0,
