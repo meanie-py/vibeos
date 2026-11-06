@@ -55,7 +55,7 @@ pub struct _PRODUCT_OPTION_DATA {
 }
 pub type PRODUCT_OPTION_DATA = _PRODUCT_OPTION_DATA;
 
-pub static s_ProductOptionData: SyncTable<[PRODUCT_OPTION_DATA; 2]> = SyncTable([
+pub static s_ProductOptionData: SyncTable<[PRODUCT_OPTION_DATA; INSTALLATION_TYPE_MAX as usize]> = SyncTable([
     PRODUCT_OPTION_DATA {
         ProductSuite: w!("Terminal Server\0"),
         ProductType: w!("ServerNT"),
@@ -70,7 +70,21 @@ pub static s_ProductOptionData: SyncTable<[PRODUCT_OPTION_DATA; 2]> = SyncTable(
         CSDVersion: 0,
         LogonType: 1,
     },
+    // INSTALLATION_TYPE_SERVER_CORE: the Server row.
+    PRODUCT_OPTION_DATA {
+        ProductSuite: w!("Terminal Server\0"),
+        ProductType: w!("ServerNT"),
+        ReportAsWorkstation: 0,
+        CSDVersion: 0,
+        LogonType: 0,
+    },
 ]);
+
+/// wizard.c `InstallationTypes[INSTALLATION_TYPE_MAX]`, written to CurrentVersion\InstallationType.
+pub static InstallationTypes: SyncTable<[LPCWSTR; INSTALLATION_TYPE_MAX as usize]> =
+    SyncTable([w!("Server"), w!("Client"), w!("Server Core")]);
+
+pub static s_szCurrentVersion: [WCHAR; 45] = wide!("SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion");
 
 pub static s_DefaultSoundEvents: SyncTable<[[LPCWSTR; 2]; 25]> = SyncTable([
     [
@@ -653,7 +667,7 @@ unsafe extern "system" fn AckPageDlgProc(
                         PSWIZB_BACK | PSWIZB_NEXT,
                     );
                     if (*pSetupData).UnattendSetup != 0 {
-                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as c_int, (IDD_PRODUCT) as LONG_PTR);
+                        SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as c_int, (IDD_INSTALLATION) as LONG_PTR);
                         return TRUE;
                     }
                 }
@@ -765,7 +779,7 @@ unsafe extern "system" fn AckPageDlgProc(
                         PSWIZB_BACK | PSWIZB_NEXT,
                     );
                     if (*pSetupData).UnattendSetup != 0 {
-                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((IDD_PRODUCT)) as LONG_PTR);
+                        SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((IDD_INSTALLATION)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
                 }
@@ -876,7 +890,7 @@ unsafe extern "C" fn DoWriteSoundEvents(
 
     (error == (ERROR_SUCCESS) as i32) as BOOL
 }
-unsafe extern "C" fn DoWriteProductOption(nOption: PRODUCT_OPTION) -> BOOL {
+unsafe extern "C" fn DoWriteInstallationType(nOption: INSTALLATION_TYPE) -> BOOL {
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut error: LONG;
     let mut pszData: LPCWSTR;
@@ -955,10 +969,32 @@ unsafe extern "C" fn DoWriteProductOption(nOption: PRODUCT_OPTION) -> BOOL {
             break 'Error;
         }
 
-        if nOption == PRODUCT_OPTION_WORKSTATION {
+        if nOption == INSTALLATION_TYPE_WORKSTATION {
             DoWriteSoundEvents(HKEY_CURRENT_USER, s_szDefaultSoundEvents.as_ptr(), s_DefaultSoundEvents.as_ptr() as *const *const [LPCWSTR; 2], _countof!(s_DefaultSoundEvents));
             DoWriteSoundEvents(HKEY_CURRENT_USER, s_szExplorerSoundEvents.as_ptr(), s_ExplorerSoundEvents.as_ptr() as *const *const [LPCWSTR; 2], _countof!(s_ExplorerSoundEvents));
         }
+
+        if nOption == INSTALLATION_TYPE_SERVER_CORE {
+            // Set the shell to the command prompt (hKey is still the Winlogon key).
+            let szShell: [WCHAR; 8] = wide!("cmd.exe");
+            cbData = core::mem::size_of_val(&szShell) as u32;
+            error = RegSetValueExW(hKey, w!("Shell") as LPCWSTR, 0, (REG_SZ) as u32, szShell.as_ptr() as *const BYTE, cbData);
+            if error != 0 {
+                break 'Error;
+            }
+        }
+
+        // The C reopens hKey here without closing the Winlogon key, leaking it; close it first.
+        RegCloseKey(hKey);
+        hKey = core::ptr::null_mut();
+        error = RegOpenKeyExW(HKEY_LOCAL_MACHINE, s_szCurrentVersion.as_ptr(), 0, KEY_WRITE, &mut hKey);
+        if error != 0 {
+            break 'Error;
+        }
+
+        let pszType: LPCWSTR = InstallationTypes[nOption as usize];
+        cbData = ((lstrlenW(pszType) + 1) as u32) * core::mem::size_of::<WCHAR>() as u32;
+        error = RegSetValueExW(hKey, w!("InstallationType") as LPCWSTR, 0, (REG_SZ) as u32, pszType as *const BYTE, cbData);
     }
 
     if !hKey.is_null() {
@@ -967,16 +1003,20 @@ unsafe extern "C" fn DoWriteProductOption(nOption: PRODUCT_OPTION) -> BOOL {
 
     (error == (ERROR_SUCCESS) as i32) as BOOL
 }
-unsafe extern "C" fn OnChooseOption(hwndDlg: HWND, nOption: PRODUCT_OPTION) {
+unsafe extern "C" fn OnChooseInstallationType(hwndDlg: HWND, nOption: INSTALLATION_TYPE) {
     let mut szText: [WCHAR; 256] = [0; 256];
 
     match nOption {
-        PRODUCT_OPTION_SERVER => {
-            LoadStringW(hDllInstance, (IDS_PRODUCTSERVERINFO) as u32, szText.as_mut_ptr(), (_countof!(szText)) as i32);
+        INSTALLATION_TYPE_SERVER => {
+            LoadStringW(hDllInstance, (IDS_INSTALLATIONSERVERINFO) as u32, szText.as_mut_ptr(), (_countof!(szText)) as i32);
         }
 
-        PRODUCT_OPTION_WORKSTATION => {
-            LoadStringW(hDllInstance, (IDS_PRODUCTWORKSTATIONINFO) as u32, szText.as_mut_ptr(), (_countof!(szText)) as i32);
+        INSTALLATION_TYPE_WORKSTATION => {
+            LoadStringW(hDllInstance, (IDS_INSTALLATIONWORKSTATIONINFO) as u32, szText.as_mut_ptr(), (_countof!(szText)) as i32);
+        }
+
+        INSTALLATION_TYPE_SERVER_CORE => {
+            LoadStringW(hDllInstance, (IDS_INSTALLATIONSERVERCOREINFO) as u32, szText.as_mut_ptr(), (_countof!(szText)) as i32);
         }
 
         _ => {
@@ -984,10 +1024,10 @@ unsafe extern "C" fn OnChooseOption(hwndDlg: HWND, nOption: PRODUCT_OPTION) {
         }
     }
 
-    SetDlgItemTextW(hwndDlg, (IDC_PRODUCT_DESCRIPTION) as i32, szText.as_ptr());
+    SetDlgItemTextW(hwndDlg, (IDC_INSTALLATION_DESCRIPTION) as i32, szText.as_ptr());
 }
 #[cfg(target_arch = "x86")]
-unsafe extern "system" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn InstallTypePageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let mut lpnm: LPNMHDR;
     let mut pSetupData: PSETUPDATA;
     let mut iItem: INT;
@@ -1004,32 +1044,39 @@ unsafe extern "system" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: 
 
             LoadStringW(hDllInstance, IDS_DEFAULT, szDefault.as_mut_ptr(), (_countof!(szDefault)) as i32);
 
-            LoadStringW(hDllInstance, IDS_PRODUCTSERVERNAME, szText.as_mut_ptr(), (_countof!(szText)) as i32);
-            if PRODUCT_OPTION_DEFAULT == PRODUCT_OPTION_SERVER {
+            LoadStringW(hDllInstance, IDS_INSTALLATIONSERVERNAME, szText.as_mut_ptr(), (_countof!(szText)) as i32);
+            if INSTALLATION_TYPE_DEFAULT == INSTALLATION_TYPE_SERVER {
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, w!(" ") as LPCWSTR);
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, szDefault.as_ptr());
             }
-            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_ADDSTRING, 0, szText.as_ptr() as LPARAM);
+            SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, CB_ADDSTRING, 0, szText.as_ptr() as LPARAM);
 
-            LoadStringW(hDllInstance, IDS_PRODUCTWORKSTATIONNAME, szText.as_mut_ptr(), (_countof!(szText)) as i32);
-            if PRODUCT_OPTION_DEFAULT == PRODUCT_OPTION_WORKSTATION {
+            LoadStringW(hDllInstance, IDS_INSTALLATIONWORKSTATIONNAME, szText.as_mut_ptr(), (_countof!(szText)) as i32);
+            if INSTALLATION_TYPE_DEFAULT == INSTALLATION_TYPE_WORKSTATION {
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, w!(" ") as LPCWSTR);
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, szDefault.as_ptr());
             }
-            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_ADDSTRING, 0, szText.as_ptr() as LPARAM);
+            SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, CB_ADDSTRING, 0, szText.as_ptr() as LPARAM);
 
-            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_SETCURSEL, PRODUCT_OPTION_DEFAULT, 0);
-            OnChooseOption(hwndDlg, PRODUCT_OPTION_DEFAULT);
+            LoadStringW(hDllInstance, IDS_INSTALLATIONSERVERCORENAME, szText.as_mut_ptr(), (_countof!(szText)) as i32);
+            if INSTALLATION_TYPE_DEFAULT == INSTALLATION_TYPE_SERVER_CORE {
+                StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, w!(" ") as LPCWSTR);
+                StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, szDefault.as_ptr());
+            }
+            SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, CB_ADDSTRING, 0, szText.as_ptr() as LPARAM);
+
+            SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, CB_SETCURSEL, INSTALLATION_TYPE_DEFAULT, 0);
+            OnChooseInstallationType(hwndDlg, INSTALLATION_TYPE_DEFAULT);
 
             hIcon = LoadIcon(core::ptr::null_mut(), IDI_WINLOGO);
-            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_ICON) as i32, STM_SETICON, hIcon as WPARAM, 0);
+            SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_ICON) as i32, STM_SETICON, hIcon as WPARAM, 0);
             return TRUE;
         }
 
         WM_COMMAND => {
-            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && IDC_PRODUCT_OPTIONS == LOWORD!(wParam) as u32 {
-                iItem = SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_GETCURSEL, 0, 0);
-                OnChooseOption(hwndDlg, iItem as PRODUCT_OPTION);
+            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && IDC_INSTALLATION_TYPES == LOWORD!(wParam) as u32 {
+                iItem = SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, CB_GETCURSEL, 0, 0);
+                OnChooseInstallationType(hwndDlg, iItem as INSTALLATION_TYPE);
             }
         }
 
@@ -1040,17 +1087,17 @@ unsafe extern "system" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: 
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                     if (*pSetupData).UnattendSetup != 0 {
-                        OnChooseOption(hwndDlg, (*pSetupData).ProductOption);
-                        DoWriteProductOption((*pSetupData).ProductOption);
+                        OnChooseInstallationType(hwndDlg, (*pSetupData).InstallationType);
+                        DoWriteInstallationType((*pSetupData).InstallationType);
                         SetWindowLongPtr(hwndDlg, (DWLP_MSGRESULT) as c_int, (IDD_LOCALEPAGE) as LONG_PTR);
                         return TRUE;
                     }
                 }
 
                 PSN_WIZNEXT => {
-                    iItem = SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_GETCURSEL, 0, 0);
-                    (*pSetupData).ProductOption = iItem as PRODUCT_OPTION;
-                    DoWriteProductOption((*pSetupData).ProductOption);
+                    iItem = SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, CB_GETCURSEL, 0, 0);
+                    (*pSetupData).InstallationType = iItem as INSTALLATION_TYPE;
+                    DoWriteInstallationType((*pSetupData).InstallationType);
                 }
 
                 PSN_WIZBACK => {
@@ -1068,7 +1115,7 @@ unsafe extern "system" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: 
 }
 
 #[cfg(not(target_arch = "x86"))]
-unsafe extern "system" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
+unsafe extern "system" fn InstallTypePageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> INT_PTR {
     let mut lpnm: LPNMHDR;
     let mut pSetupData: PSETUPDATA;
     let mut iItem: INT;
@@ -1085,32 +1132,39 @@ unsafe extern "system" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: 
 
             LoadStringW(hDllInstance, (IDS_DEFAULT) as u32, szDefault.as_mut_ptr(), (_countof!(szDefault)) as i32);
 
-            LoadStringW(hDllInstance, (IDS_PRODUCTSERVERNAME) as u32, szText.as_mut_ptr(), (_countof!(szText)) as i32);
-            if PRODUCT_OPTION_DEFAULT == PRODUCT_OPTION_SERVER {
+            LoadStringW(hDllInstance, (IDS_INSTALLATIONSERVERNAME) as u32, szText.as_mut_ptr(), (_countof!(szText)) as i32);
+            if INSTALLATION_TYPE_DEFAULT == INSTALLATION_TYPE_SERVER {
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, w!(" ") as LPCWSTR);
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, szDefault.as_ptr());
             }
-            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, (CB_ADDSTRING) as u32, 0, szText.as_ptr() as LPARAM);
+            SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, (CB_ADDSTRING) as u32, 0, szText.as_ptr() as LPARAM);
 
-            LoadStringW(hDllInstance, (IDS_PRODUCTWORKSTATIONNAME) as u32, szText.as_mut_ptr(), (_countof!(szText)) as i32);
-            if PRODUCT_OPTION_DEFAULT == PRODUCT_OPTION_WORKSTATION {
+            LoadStringW(hDllInstance, (IDS_INSTALLATIONWORKSTATIONNAME) as u32, szText.as_mut_ptr(), (_countof!(szText)) as i32);
+            if INSTALLATION_TYPE_DEFAULT == INSTALLATION_TYPE_WORKSTATION {
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, w!(" ") as LPCWSTR);
                 StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, szDefault.as_ptr());
             }
-            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, (CB_ADDSTRING) as u32, 0, szText.as_ptr() as LPARAM);
+            SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, (CB_ADDSTRING) as u32, 0, szText.as_ptr() as LPARAM);
 
-            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, CB_SETCURSEL, (PRODUCT_OPTION_DEFAULT) as u64, 0);
-            OnChooseOption(hwndDlg, PRODUCT_OPTION_DEFAULT);
+            LoadStringW(hDllInstance, (IDS_INSTALLATIONSERVERCORENAME) as u32, szText.as_mut_ptr(), (_countof!(szText)) as i32);
+            if INSTALLATION_TYPE_DEFAULT == INSTALLATION_TYPE_SERVER_CORE {
+                StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, w!(" ") as LPCWSTR);
+                StringCchCatW(szText.as_mut_ptr(), (_countof!(szText)) as usize, szDefault.as_ptr());
+            }
+            SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, (CB_ADDSTRING) as u32, 0, szText.as_ptr() as LPARAM);
+
+            SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, CB_SETCURSEL, (INSTALLATION_TYPE_DEFAULT) as u64, 0);
+            OnChooseInstallationType(hwndDlg, INSTALLATION_TYPE_DEFAULT);
 
             hIcon = LoadIcon(core::ptr::null_mut(), IDI_WINLOGO);
-            SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_ICON) as i32, (STM_SETICON) as u32, hIcon as WPARAM, 0);
+            SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_ICON) as i32, (STM_SETICON) as u32, hIcon as WPARAM, 0);
             return (TRUE) as i64;
         }
 
         WM_COMMAND => {
-            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && IDC_PRODUCT_OPTIONS == LOWORD!(wParam) as u32 {
-                iItem = (SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, (CB_GETCURSEL) as u32, 0, 0)) as i32;
-                OnChooseOption(hwndDlg, iItem as PRODUCT_OPTION);
+            if HIWORD!(wParam) == (CBN_SELCHANGE) as u16 && IDC_INSTALLATION_TYPES == LOWORD!(wParam) as u32 {
+                iItem = (SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, (CB_GETCURSEL) as u32, 0, 0)) as i32;
+                OnChooseInstallationType(hwndDlg, iItem as INSTALLATION_TYPE);
             }
         }
 
@@ -1121,17 +1175,17 @@ unsafe extern "system" fn ProductPageDlgProc(hwndDlg: HWND, uMsg: UINT, wParam: 
                 PSN_SETACTIVE => {
                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
                     if (*pSetupData).UnattendSetup != 0 {
-                        OnChooseOption(hwndDlg, (*pSetupData).ProductOption);
-                        DoWriteProductOption((*pSetupData).ProductOption);
+                        OnChooseInstallationType(hwndDlg, (*pSetupData).InstallationType);
+                        DoWriteInstallationType((*pSetupData).InstallationType);
                         SetWindowLongPtr(hwndDlg, ((DWLP_MSGRESULT)) as c_int, ((IDD_LOCALEPAGE)) as LONG_PTR);
                         return (TRUE) as i64;
                     }
                 }
 
                 PSN_WIZNEXT => {
-                    iItem = (SendDlgItemMessageW(hwndDlg, (IDC_PRODUCT_OPTIONS) as i32, (CB_GETCURSEL) as u32, 0, 0)) as i32;
-                    (*pSetupData).ProductOption = iItem as PRODUCT_OPTION;
-                    DoWriteProductOption((*pSetupData).ProductOption);
+                    iItem = (SendDlgItemMessageW(hwndDlg, (IDC_INSTALLATION_TYPES) as i32, (CB_GETCURSEL) as u32, 0, 0)) as i32;
+                    (*pSetupData).InstallationType = iItem as INSTALLATION_TYPE;
+                    DoWriteInstallationType((*pSetupData).InstallationType);
                 }
 
                 PSN_WIZBACK => {
@@ -3548,14 +3602,7 @@ unsafe extern "system" fn FinishDlgProc(
         WM_INITDIALOG => {
             let SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
 
-            if (*SetupData).UnattendSetup == 0 || (*SetupData).DisableGeckoInst == 0 {
-                Control_RunDLLW(
-                    hwndDlg,
-                    core::ptr::null_mut(),
-                    w!("appwiz.cpl,,install_gecko") as LPCWSTR,
-                    SW_SHOW as i32,
-                );
-            }
+            // a4b6fe9630e: the Wine Gecko prompt is gone (RAPPS downloads add-ons instead).
 
             SendDlgItemMessage(
                 hwndDlg,
@@ -3653,14 +3700,7 @@ unsafe extern "system" fn FinishDlgProc(
         WM_INITDIALOG => {
             let SetupData = (*(lParam as LPPROPSHEETPAGE)).lParam as PSETUPDATA;
 
-            if (*SetupData).UnattendSetup == 0 || (*SetupData).DisableGeckoInst == 0 {
-                Control_RunDLLW(
-                    hwndDlg,
-                    core::ptr::null_mut(),
-                    w!("appwiz.cpl,,install_gecko") as LPCWSTR,
-                    (SW_SHOW) as i32,
-                );
-            }
+            // a4b6fe9630e: the Wine Gecko prompt is gone (RAPPS downloads add-ons instead).
 
             SendDlgItemMessage(
                 hwndDlg,
@@ -4109,18 +4149,18 @@ pub unsafe extern "C" fn ProcessUnattendSection(pSetupData: PSETUPDATA) {
         ) == 0
         {
             (*pSetupData).DisableAutoDaylightTimeSet = (_wtoi(szValue.as_ptr())) as u32;
-        } else if _wcsicmp(szName.as_ptr(), w!("DisableGeckoInst") as LPCWSTR)
+        } else if _wcsicmp(szName.as_ptr(), w!("RappsDownload") as LPCWSTR)
             == 0
         {
             if _wcsicmp(szValue.as_ptr(), w!("yes") as LPCWSTR) == 0 {
-                (*pSetupData).DisableGeckoInst = (TRUE) as i32;
+                (*pSetupData).RappsDownload = (TRUE) as i32;
             } else {
-                (*pSetupData).DisableGeckoInst = (FALSE) as i32;
+                (*pSetupData).RappsDownload = (FALSE) as i32;
             }
-        } else if _wcsicmp(szName.as_ptr(), w!("ProductOption") as LPCWSTR)
+        } else if _wcsicmp(szName.as_ptr(), w!("InstallationType") as LPCWSTR)
             == 0
         {
-            (*pSetupData).ProductOption = _wtoi(szValue.as_ptr()) as PRODUCT_OPTION;
+            (*pSetupData).InstallationType = _wtoi(szValue.as_ptr()) as INSTALLATION_TYPE;
         }
 
         if SetupFindNextLine(&mut InfContext, &mut InfContext) == 0 {
@@ -4745,7 +4785,7 @@ pub unsafe extern "C" fn InstallWizard() {
         }
         return;
     }
-    (*pSetupData).ProductOption = PRODUCT_OPTION_DEFAULT;
+    (*pSetupData).InstallationType = INSTALLATION_TYPE_DEFAULT;
 
     hNetShell = LoadLibraryW(w!("netshell.dll") as LPCWSTR);
     if !hNetShell.is_null() {
@@ -4818,10 +4858,10 @@ pub unsafe extern "C" fn InstallWizard() {
     nPages += 1;
 
     psp.dwFlags = (PSP_DEFAULT | PSP_USEHEADERTITLE | PSP_USEHEADERSUBTITLE) as u32;
-    psp.pszHeaderTitle = MAKEINTRESOURCE!(IDS_PRODUCTTITLE);
-    psp.pszHeaderSubTitle = MAKEINTRESOURCE!(IDS_PRODUCTSUBTITLE);
-    psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE!(IDD_PRODUCT);
-    psp.pfnDlgProc = Some(ProductPageDlgProc);
+    psp.pszHeaderTitle = MAKEINTRESOURCE!(IDS_INSTALLATIONTITLE);
+    psp.pszHeaderSubTitle = MAKEINTRESOURCE!(IDS_INSTALLATIONSUBTITLE);
+    psp.__bindgen_anon_1.pszTemplate = MAKEINTRESOURCE!(IDD_INSTALLATION);
+    psp.pfnDlgProc = Some(InstallTypePageDlgProc);
     *phpage.offset(nPages as isize) = CreatePropertySheetPage(&psp);
     nPages += 1;
 
@@ -5298,7 +5338,7 @@ pub unsafe extern "C" fn InstallWizard() {
 //                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
 //                     if (pSetupData->UnattendSetup)
 //                     {
-//                         SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, IDD_PRODUCT);
+//                         SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, IDD_INSTALLATION);
 //                         return TRUE;
 //                     }
 //                     break;
@@ -5462,7 +5502,7 @@ pub unsafe extern "C" fn InstallWizard() {
 // }
 //
 // static BOOL
-// DoWriteProductOption(PRODUCT_OPTION nOption)
+// DoWriteInstallationType(PRODUCT_OPTION nOption)
 // {
 //     HKEY hKey;
 //     LONG error;
@@ -5559,7 +5599,7 @@ pub unsafe extern "C" fn InstallWizard() {
 //         goto Error;
 //     }
 //
-//     if (nOption == PRODUCT_OPTION_WORKSTATION)
+//     if (nOption == INSTALLATION_TYPE_WORKSTATION)
 //     {
 //         /* Write system sound events values for Workstation */
 //         DoWriteSoundEvents(HKEY_CURRENT_USER, s_szDefaultSoundEvents, s_DefaultSoundEvents, _countof!(s_DefaultSoundEvents));
@@ -5574,30 +5614,30 @@ pub unsafe extern "C" fn InstallWizard() {
 // }
 //
 // static void
-// OnChooseOption(HWND hwndDlg, PRODUCT_OPTION nOption)
+// OnChooseInstallationType(HWND hwndDlg, PRODUCT_OPTION nOption)
 // {
 //     WCHAR szText[256];
 //     ASSERT(0 <= nOption && nOption < _countof!(s_ProductOptionData));
 //
 //     switch (nOption)
 //     {
-//         case PRODUCT_OPTION_SERVER:
-//             LoadStringW(hDllInstance, IDS_PRODUCTSERVERINFO, szText, _countof!(szText));
+//         case INSTALLATION_TYPE_SERVER:
+//             LoadStringW(hDllInstance, IDS_INSTALLATIONSERVERINFO, szText, _countof!(szText));
 //             break;
 //
-//         case PRODUCT_OPTION_WORKSTATION:
-//             LoadStringW(hDllInstance, IDS_PRODUCTWORKSTATIONINFO, szText, _countof!(szText));
+//         case INSTALLATION_TYPE_WORKSTATION:
+//             LoadStringW(hDllInstance, IDS_INSTALLATIONWORKSTATIONINFO, szText, _countof!(szText));
 //             break;
 //
 //         default:
 //             return;
 //     }
 //
-//     SetDlgItemTextW(hwndDlg, IDC_PRODUCT_DESCRIPTION, szText);
+//     SetDlgItemTextW(hwndDlg, IDC_INSTALLATION_DESCRIPTION, szText);
 // }
 //
 // static INT_PTR __stdcall
-// ProductPageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+// InstallTypePageDlgProc(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 // {
 //     LPNMHDR lpnm;
 //     PSETUPDATA pSetupData;
@@ -5616,35 +5656,35 @@ pub unsafe extern "C" fn InstallWizard() {
 //
 //             LoadStringW(hDllInstance, IDS_DEFAULT, szDefault, _countof!(szDefault));
 //
-//             LoadStringW(hDllInstance, IDS_PRODUCTSERVERNAME, szText, _countof!(szText));
-//             if (PRODUCT_OPTION_DEFAULT == PRODUCT_OPTION_SERVER)
+//             LoadStringW(hDllInstance, IDS_INSTALLATIONSERVERNAME, szText, _countof!(szText));
+//             if (INSTALLATION_TYPE_DEFAULT == INSTALLATION_TYPE_SERVER)
 //             {
 //                 StringCchCatW(szText, _countof!(szText), L" ");
 //                 StringCchCatW(szText, _countof!(szText), szDefault);
 //             }
-//             SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_OPTIONS, CB_ADDSTRING, 0, (LPARAM)szText);
+//             SendDlgItemMessageW(hwndDlg, IDC_INSTALLATION_TYPES, CB_ADDSTRING, 0, (LPARAM)szText);
 //
-//             LoadStringW(hDllInstance, IDS_PRODUCTWORKSTATIONNAME, szText, _countof!(szText));
-//             if (PRODUCT_OPTION_DEFAULT == PRODUCT_OPTION_WORKSTATION)
+//             LoadStringW(hDllInstance, IDS_INSTALLATIONWORKSTATIONNAME, szText, _countof!(szText));
+//             if (INSTALLATION_TYPE_DEFAULT == INSTALLATION_TYPE_WORKSTATION)
 //             {
 //                 StringCchCatW(szText, _countof!(szText), L" ");
 //                 StringCchCatW(szText, _countof!(szText), szDefault);
 //             }
-//             SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_OPTIONS, CB_ADDSTRING, 0, (LPARAM)szText);
+//             SendDlgItemMessageW(hwndDlg, IDC_INSTALLATION_TYPES, CB_ADDSTRING, 0, (LPARAM)szText);
 //
-//             SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_OPTIONS, CB_SETCURSEL, PRODUCT_OPTION_DEFAULT, 0);
-//             OnChooseOption(hwndDlg, PRODUCT_OPTION_DEFAULT);
+//             SendDlgItemMessageW(hwndDlg, IDC_INSTALLATION_TYPES, CB_SETCURSEL, INSTALLATION_TYPE_DEFAULT, 0);
+//             OnChooseInstallationType(hwndDlg, INSTALLATION_TYPE_DEFAULT);
 //
 //             hIcon = LoadIcon(NULL, IDI_WINLOGO);
-//             SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_ICON, STM_SETICON, (WPARAM)hIcon, 0);
+//             SendDlgItemMessageW(hwndDlg, IDC_INSTALLATION_ICON, STM_SETICON, (WPARAM)hIcon, 0);
 //             return TRUE;
 //         }
 //
 //         case WM_COMMAND:
-//             if (HIWORD!(wParam) == CBN_SELCHANGE && IDC_PRODUCT_OPTIONS == LOWORD!(wParam) as u32)
+//             if (HIWORD!(wParam) == CBN_SELCHANGE && IDC_INSTALLATION_TYPES == LOWORD!(wParam) as u32)
 //             {
-//                 iItem = SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_OPTIONS, CB_GETCURSEL, 0, 0);
-//                 OnChooseOption(hwndDlg, (PRODUCT_OPTION)iItem);
+//                 iItem = SendDlgItemMessageW(hwndDlg, IDC_INSTALLATION_TYPES, CB_GETCURSEL, 0, 0);
+//                 OnChooseInstallationType(hwndDlg, (PRODUCT_OPTION)iItem);
 //             }
 //             break;
 //
@@ -5659,17 +5699,17 @@ pub unsafe extern "C" fn InstallWizard() {
 //                     PropSheet_SetWizButtons!(GetParent(hwndDlg), PSWIZB_BACK | PSWIZB_NEXT);
 //                     if (pSetupData->UnattendSetup)
 //                     {
-//                         OnChooseOption(hwndDlg, pSetupData->ProductOption);
-//                         DoWriteProductOption(pSetupData->ProductOption);
+//                         OnChooseInstallationType(hwndDlg, pSetupData->ProductOption);
+//                         DoWriteInstallationType(pSetupData->ProductOption);
 //                         SetWindowLongPtr(hwndDlg, DWLP_MSGRESULT, IDD_LOCALEPAGE);
 //                         return TRUE;
 //                     }
 //                     break;
 //
 //                 case PSN_WIZNEXT:
-//                     iItem = SendDlgItemMessageW(hwndDlg, IDC_PRODUCT_OPTIONS, CB_GETCURSEL, 0, 0);
+//                     iItem = SendDlgItemMessageW(hwndDlg, IDC_INSTALLATION_TYPES, CB_GETCURSEL, 0, 0);
 //                     pSetupData->ProductOption = (PRODUCT_OPTION)iItem;
-//                     DoWriteProductOption(pSetupData->ProductOption);
+//                     DoWriteInstallationType(pSetupData->ProductOption);
 //                     break;
 //
 //                 case PSN_WIZBACK:
@@ -8217,7 +8257,7 @@ pub unsafe extern "C" fn InstallWizard() {
 //                     MB_ICONERROR | MB_OK);
 //         goto done;
 //     }
-//     pSetupData->ProductOption = PRODUCT_OPTION_DEFAULT;
+//     pSetupData->ProductOption = INSTALLATION_TYPE_DEFAULT;
 //
 //     hNetShell = LoadLibraryW(L"netshell.dll");
 //     if (hNetShell != NULL)
@@ -8270,10 +8310,10 @@ pub unsafe extern "C" fn InstallWizard() {
 //
 //     /* Create the Product page */
 //     psp.dwFlags = PSP_DEFAULT | PSP_USEHEADERTITLE | PSP_USEHEADERSUBTITLE;
-//     psp.pszHeaderTitle = MAKEINTRESOURCE!(IDS_PRODUCTTITLE);
-//     psp.pszHeaderSubTitle = MAKEINTRESOURCE!(IDS_PRODUCTSUBTITLE);
-//     psp.pszTemplate = MAKEINTRESOURCE!(IDD_PRODUCT);
-//     psp.pfnDlgProc = ProductPageDlgProc;
+//     psp.pszHeaderTitle = MAKEINTRESOURCE!(IDS_INSTALLATIONTITLE);
+//     psp.pszHeaderSubTitle = MAKEINTRESOURCE!(IDS_INSTALLATIONSUBTITLE);
+//     psp.pszTemplate = MAKEINTRESOURCE!(IDD_INSTALLATION);
+//     psp.pfnDlgProc = InstallTypePageDlgProc;
 //     phpage[nPages++] = CreatePropertySheetPage(&psp);
 //
 //     /* Create the Locale page */

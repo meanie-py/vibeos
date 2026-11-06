@@ -218,13 +218,15 @@ pub use crate::types::{
     _USER_INFORMATION_CLASS_UserNameInformation as UserNameInformation,
     _USER_INFORMATION_CLASS_UserSetPasswordInformation as UserSetPasswordInformation,
 };
-// syssetup's own enum (sdk/include/reactos/libs/syssetup/syssetup.h:27), same prefixing rule.
-// The default is Workstation, as the header now says (INSTALLATION_TYPE_DEFAULT): we report
-// Windows 11, a client. The island predates that and still carries DEFAULT = SERVER.
-pub const PRODUCT_OPTION_DEFAULT: crate::types::_PRODUCT_OPTION = PRODUCT_OPTION_WORKSTATION;
+// syssetup's own enum (sdk/include/reactos/libs/syssetup/syssetup.h:26), same prefixing rule.
+// Upstream 34bf566dd91 renamed PRODUCT_OPTION to INSTALLATION_TYPE and added Server Core; the
+// default is Workstation (we report Windows 11, a client).
 pub use crate::types::{
-    _PRODUCT_OPTION_PRODUCT_OPTION_SERVER as PRODUCT_OPTION_SERVER,
-    _PRODUCT_OPTION_PRODUCT_OPTION_WORKSTATION as PRODUCT_OPTION_WORKSTATION,
+    _INSTALLATION_TYPE_INSTALLATION_TYPE_DEFAULT as INSTALLATION_TYPE_DEFAULT,
+    _INSTALLATION_TYPE_INSTALLATION_TYPE_MAX as INSTALLATION_TYPE_MAX,
+    _INSTALLATION_TYPE_INSTALLATION_TYPE_SERVER as INSTALLATION_TYPE_SERVER,
+    _INSTALLATION_TYPE_INSTALLATION_TYPE_SERVER_CORE as INSTALLATION_TYPE_SERVER_CORE,
+    _INSTALLATION_TYPE_INSTALLATION_TYPE_WORKSTATION as INSTALLATION_TYPE_WORKSTATION,
 };
 
 // ================= constants bindgen cannot fold ==============================================
@@ -440,9 +442,15 @@ pub use crate::IPersistFile_Save;
 pub use crate::syssetup::install::{InstallStartMenuItems, RegisterTypeLibraries};
 pub use crate::syssetup::strsafe::{StringCbCopyW, StringCchCatW, StringCchCopyW};
 // pSetupDebugPrint is NOT re-exported from logfile: the crate only defines the fixed-arity twin
-// `pSetupDebugPrint_v`. The variadic entry point is rust_varargs_shim.c's, and the island already
-// declares it (`unsafe extern "C" { pub fn pSetupDebugPrint(.., ...) }`), so it arrives with the
-// rest of `crate::types::*`.
+// `pSetupDebugPrint_v`. The variadic entry point is rust_varargs_shim.c's. The island used to
+// declare it; the 2026-11-06 regeneration no longer emits it (nor kernel32's
+// SetTimeZoneInformation), so both are declared here, from syssetup.h:87 and winbase.h.
+unsafe extern "C" {
+    pub fn pSetupDebugPrint(pszFileName: PCWSTR, nLineNumber: INT, pszTag: PCWSTR, pszMessage: PCWSTR, ...);
+}
+unsafe extern "system" {
+    pub fn SetTimeZoneInformation(lpTimeZoneInformation: *const TIME_ZONE_INFORMATION) -> BOOL;
+}
 pub use crate::syssetup::logfile::{InitializeSetupActionLog, TerminateSetupActionLog};
 pub use crate::syssetup::netinstall::InstallNetworkComponent;
 pub use crate::syssetup::security::{

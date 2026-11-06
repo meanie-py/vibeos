@@ -62,9 +62,9 @@ just text, and our Rust still carries the old version.
 
 | Lead | What upstream did | Why it matters |
 |---|---|---|
-| `syssetup/wizard.rs` — keyboard layout | `d482579dff3` "Fix retrieval of the currently active keyboard layout ID and its name (#9420)" | Our Rust still has the **pre-fix** logic. Named as a fix by upstream, so this is the classic oracle shape. |
-| `syssetup/wizard.rs` + `install.rs` — Gecko | `a4b6fe9630e` revamped the Finish page and **removed the Gecko installer**, replacing `appwiz.cpl,,install_gecko` with `RappsDownload` | Our Rust still invokes the old path on an unattended finish. |
-| `syssetup/install.rs` — TCP/IP at setup | New block installs and starts `MS_TCPIP` / `Tcpip` / `Dhcp` / `Dnscache` during `InstallReactOS()` | **We do not do this at all.** A missing setup step, not a wrong one. |
+| `syssetup/wizard.rs` — keyboard layout | `d482579dff3` "Fix retrieval of the currently active keyboard layout ID and its name (#9420)" | **Already ported** (checked 2026-11-06, smp-bringup): `SetKeyboardLayoutName` reads `HKCU\Keyboard Layout\Preload` + `Substitutes` like the fixed C. |
+| `syssetup/wizard.rs` + `install.rs` — Gecko | `a4b6fe9630e` revamped the Finish page and **removed the Gecko installer**, replacing `appwiz.cpl,,install_gecko` with `RappsDownload` | **Partly ported (smp-bringup, 2026-11-06):** the Gecko prompt is gone and unattend reads `RappsDownload`. Still OWED by smp-bringup: `InstallOptionalComponents` (RAPPS download + `6117b1bdefe` winevdm) and the `SaveSettings` security step in `ItemCompletionThread` (`55f9484b958`), so `RappsDownload` is parsed but nothing reads it yet. |
+| `syssetup/install.rs` — TCP/IP at setup | New block installs and starts `MS_TCPIP` / `Tcpip` / `Dhcp` / `Dnscache` during `InstallReactOS()` | **Already ported** (checked 2026-11-06, smp-bringup): install.rs installs `MS_TCPIP` and starts the services. |
 | `umpnpmgr/umpnpmgr.rs` — MiniNT detection | `b1bd421163b` replaced parsing `SystemStartOptions` for `MININT` with testing for the `SYSTEM\CurrentControlSet\Control\MiniNT` key (`g_IsLiveMedium` → `g_IsMiniNT`) | A redesign, not a fix — worth deciding which detection is actually robust before porting. |
 
 Two more that are new capability rather than bug leads, recorded so nobody re-derives them:
@@ -302,6 +302,14 @@ A few headline items:
 | +3/−3 | `dll/win32/netcfgx/installer.c` | `**unpaired**` |
 
 ## `syssetup-rust` — 5 files
+
+Owned by smp-bringup since 2026-11-06. Ported then: `34bf566dd91` (install type, Server Core,
+`InstallationType` registry value, unattend key), the Gecko removal of `a4b6fe9630e`, and the island
+regeneration. Still owed, each verified absent from the Rust: `30b02d038e0` (GuiUnattended
+`DetachedProgram`, SetupParams `UserExecute`), `2885d40937f` (ComputerName `*` = random),
+`InstallOptionalComponents` + `SaveSettings` (`a4b6fe9630e`, `6117b1bdefe`, `55f9484b958`), and the
+Back/Next visibility changes (`ShowDlgItem(ID_WIZBACK)`) on the Welcome/Process/Finish pages.
+
 | +/- | C file | Rust |
 |---|---|---|
 | +393/−168 | `dll/win32/syssetup/wizard.c` | `**unpaired**` |

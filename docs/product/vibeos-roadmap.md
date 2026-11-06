@@ -801,12 +801,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   UNVERIFIED. A C-oracle swap of notify.c does not link, because the kernel's cargo cell does
   not take ntos.cmake objects. At least ntdll 279-280 is the C's own behaviour:
   NotifyChange->BufferLength is fixed at the first watch, which had length 0.
-- **syssetup's bindgen island needs a real regeneration (owed, 2026-10-17).** It predates
-  upstream 5653298fed6 renumbering `resource.h`. The 11 stale ids (swapped check/arrow icons,
-  off-by-one task bitmaps and checkboxes, IDS_DEFAULT) are hand-corrected in `types_*.rs`.
-  `gen_driver_types.sh syssetup` regenerates the island but leaves 33 errors per arch. That
-  output is parked in stash "smp-bringup: syssetup island full regen (33 errors/arch),
-  2026-10-17".
+- **syssetup trails upstream's C (owed, smp-bringup).** The island was regenerated on 2026-11-06,
+  replacing the 11 hand-corrected ids; the crate then needed `34bf566dd91` (Server Core install type)
+  and the Gecko removal ported, both done. Our bootcd unattend.inf now says `InstallationType = 1`
+  (Workstation, what `ProductOption = 1` meant) and `RappsDownload = no`. The remaining upstream
+  syssetup commits are listed under `syssetup-rust` in
+  `docs/engineering/active-lanes/upstream-sync-phase4-review-queue.md`.
 
 - **arm64 FEX: a guest dies when a commit is refused at the limit (open, found 2026-10-17;
   environment-limited).** On 1G `VIBEOS_PAYLOAD=appstorm64` media, the ramdisk leaves a
