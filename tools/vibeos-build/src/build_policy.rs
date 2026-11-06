@@ -89,7 +89,7 @@ pub fn policy_dir(repo: &Path) -> Result<PathBuf> {
         None => main_worktree(repo),
     }
 }
-fn expand_user(path: &str, env: &Environment) -> Result<PathBuf> {
+pub(crate) fn expand_user(path: &str, env: &Environment) -> Result<PathBuf> {
     if !path.starts_with('~') {
         return Ok(path.into());
     }

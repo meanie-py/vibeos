@@ -116,6 +116,12 @@ impl Host for Runtime<'_> {
             op if op.starts_with("conformance_parse_") => {
                 vibeos_test::conformance::dispatch(self.root, &request)
             }
+            op if op.starts_with("characterize_") => {
+                vibeos_test::characterize::dispatch(self.root, &request, self)
+            }
+            op if op.starts_with("wine_failures_") => {
+                vibeos_test::wine_failures::dispatch(self.root, &request)
+            }
             op if op.starts_with("provenance_") => {
                 vibeos_build::provenance::dispatch(self.root, &request)
             }

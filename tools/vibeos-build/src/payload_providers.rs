@@ -205,11 +205,56 @@ fn piwifi() -> Result<Vec<Value>> {
     Ok(out)
 }
 
+fn chrome() -> Result<Vec<Value>> {
+    let value = env::var("VIBEOS_CHROME_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| {
+            Error::new(
+        "chrome: set VIBEOS_CHROME_DIR to a Chrome for Testing folder (the one holding chrome.exe)")
+        })?;
+    let root = crate::build_policy::expand_user(&value, &env::vars().collect())?;
+    if !root.join("chrome.exe").is_file() {
+        return Err(Error::new(format!(
+            "chrome: {} has no chrome.exe",
+            root.display()
+        )));
+    }
+    fn collect(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
+        for item in fs::read_dir(dir)? {
+            let item = item?;
+            let path = item.path();
+            if item.file_type()?.is_dir() {
+                collect(&path, files)?;
+            } else if path.is_file() {
+                files.push(path);
+            }
+        }
+        Ok(())
+    }
+    let mut files = Vec::new();
+    collect(&root, &mut files)?;
+    files.sort_by(|a, b| a.components().cmp(b.components()));
+    Ok(files
+        .iter()
+        .map(|p| {
+            entry(
+                p,
+                format!(
+                    "bin/chrome/{}",
+                    p.strip_prefix(&root).unwrap().to_string_lossy()
+                ),
+            )
+        })
+        .collect())
+}
+
 pub fn stage_entries(root: &Path, spec: &str, arch: &str) -> Result<Vec<Value>> {
     match spec {
         "vendordrv" | "tools/payloads/vendordrv/stage.py" => vendordrv(),
         "hostapps" | "tools/payloads/hostapps/stage.py" => hostapps(root),
         "piwifi" | "tools/payloads/piwifi/stage.py" => piwifi(),
+        "chrome" | "tools/payloads/chrome/stage.py" => chrome(),
         "modrun" | "tools/payloads/modrun/modrun.py" => {
             crate::payload_modrun::stage_entries(&root.join("tools/payloads/modrun/suites"), arch)
         }
@@ -226,7 +271,9 @@ pub fn ninja_targets(root: &Path, spec: &str, arch: &str) -> Result<Vec<String>>
         | "hostapps"
         | "tools/payloads/hostapps/stage.py"
         | "piwifi"
-        | "tools/payloads/piwifi/stage.py" => Ok(Vec::new()),
+        | "tools/payloads/piwifi/stage.py"
+        | "chrome"
+        | "tools/payloads/chrome/stage.py" => Ok(Vec::new()),
         _ => Err(Error::new(format!("unknown ninja provider: {spec}"))),
     }
 }

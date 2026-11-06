@@ -70,6 +70,23 @@ The modrun host grader is native too; unknown providers or graders fail loudly.
 Payload media staging, borrowed-output rebuilds, cross-architecture guest build
 receipts and complete PE closures live in `vibeos-build`.
 
+`vibeos-test::characterize` owns the apitest characterization loop, worst-result
+merging, fault attribution and cumulative same-suite stop guard. Its Python entry
+point retains CLI parsing and uses the existing command/report bindings. Each
+round supplies its own `VIBEOS_ARTIFACT_DIR`; a missing serial is an error, never
+a reason to select the newest unrelated pytest log. Evidence is archived before
+quarantine writes, and an archive failure or existing destination fails loudly.
+The payload drain, pytest and VM watchdog bounds remain 7200, 7800 and 8400 seconds.
+Reproduction runs retain their partial-coverage warning and quarantine opt-out.
+Resolved timeouts and failed launches cannot be accused of a later bugcheck merely
+because they have no exit marker; only a still-in-flight row is eligible.
+
+Wine `todo_wine`/`todo_wine_if` source attribution lives in
+`vibeos-test::wine_failures`; the report entry point only formats native results.
+Chrome's host installation provider joins hostapps, vendor drivers and Pi Wi-Fi
+under `vibeos-build::payload_providers`, so native payload builds accept its
+`binaries_from` entry without executing Python providers.
+
 Physical Pi 4/5 bench controllers, doctor checks, staging and boot verdicts live in
 `vibeos-test::bench*`. They consume the maintained arm64 build configuration and
 use `vibeos-build::provenance` before staging. Shell scripts retain external device

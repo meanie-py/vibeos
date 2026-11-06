@@ -33,7 +33,7 @@ def test_block_lines_only():
     assert 5 not in inside and 11 not in inside and 13 not in inside
 
 
-def test_todo_if_is_its_own_bucket():
+def test_todo_if_is_its_own_bucket(tmp_path, monkeypatch):
     inside = todo_lines(SRC, TODO_IF_RE)
     assert inside == {13, 16}
     log = (
@@ -42,6 +42,27 @@ def test_todo_if_is_its_own_bucket():
     )
     import classify_failures as cf
 
-    cf.Source.get = lambda self, suite, name: (SRC, todo_lines(SRC), inside)
+    source = tmp_path / "modules/rostests/winetests/x/x.c"
+    source.parent.mkdir(parents=True)
+    source.write_text("\n".join(SRC))
+    monkeypatch.setattr(cf, "REPO", tmp_path)
     ((todo, todo_if, real, _),) = classify(log).values()
     assert (todo, todo_if, real) == (0, 1, 1)
+
+
+def test_native_classification_counts_repeats_and_ignores_missing_sources(tmp_path, monkeypatch):
+    import classify_failures as cf
+
+    p = tmp_path / "modules/rostests/winetests/x/x.c"
+    p.parent.mkdir(parents=True)
+    p.write_text("todo_wine {\n ok(a);\n}\ntodo_wine_if(a) ok(b);\nok(c);\n")
+    monkeypatch.setattr(cf, "REPO", tmp_path)
+    text = (
+        "".join(f"[APITEST:x_winetest.exe t] x.c:{n}: Test failed: message\n" for n in [2, 4, 5, 5])
+        + "[APITEST:missing_winetest.exe t] missing.c:1: Test failed: ignored\n"
+    )
+    result = cf.classify(text)
+    assert list(result) == ["x:x.c"]
+    todo, conditional, real, detail = result["x:x.c"]
+    assert (todo, conditional, real) == (1, 1, 2)
+    assert detail[(5, "message")] == 2

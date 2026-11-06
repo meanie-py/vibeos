@@ -74,3 +74,43 @@ def test_the_default_is_INNOCENT() -> None:
     and required nothing to do so.
     """
     assert should_quarantine(None, "") is False
+
+
+def test_characterization_resource_owns_round_evidence_and_callbacks(tmp_path):
+    from tools import qemu_infra_compat as native
+
+    (tmp_path / "tools/payloads/apitest").mkdir(parents=True)
+    commands = []
+
+    def command(arguments):
+        commands.append(arguments)
+        if arguments["stage"] == "characterize:boot":
+            directory = Path(arguments["env"]["VIBEOS_ARTIFACT_DIR"])
+            (directory / "amd64-uefi_serial.log").write_text(
+                "[APITEST-SWEEP] launch demo.exe test\n"
+                "[APITEST:demo.exe test] test: 1 test executed "
+                "(0 marked as todo, 0 failures), 0 skipped.\n"
+                "[APITEST-SWEEP] exit demo.exe test code=0\n"
+                "[APITEST-SWEEP] done total=1\n"
+            )
+        return {"returncode": 0, "stdout": "", "stderr": "", "timed_out": False}
+
+    with native.DedicatedSession(tmp_path) as session:
+        result = session.call(
+            "characterize_run",
+            {
+                "args": {
+                    "arch": "amd64",
+                    "rounds": 1,
+                    "artifact_dir": tmp_path / "evidence",
+                    "out": tmp_path / "result.txt",
+                },
+                "env": {},
+                "python": "pytest-authority",
+            },
+            callbacks={"command": command, "print": lambda _: None, "stage": lambda _: None},
+        )
+    assert result["complete"] is True
+    assert len(commands) == 3
+    assert Path(result["rounds"][0]["serial"]).is_file()
+    assert "demo.exe test OK pass=1" in (tmp_path / "result.txt").read_text()

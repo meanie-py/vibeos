@@ -107,3 +107,51 @@ def test_saved_invalid_utf8_serial_reaches_the_native_modrun_grader(tmp_path):
     )
     out, _ = module.parse(log.decode("utf-8", errors="surrogateescape"))
     assert out[("m.x", "c")] == ["good"]
+
+
+def test_chrome_provider_preserves_tree_and_python_path_order(tmp_path, monkeypatch):
+    product = tmp_path / "Chrome"
+    (product / "alpha").mkdir(parents=True)
+    (product / "locales").mkdir()
+    for name in ["chrome.exe", "alpha.pak", "alpha/child.dat", "locales/en-US.pak", ".hidden"]:
+        (product / name).write_bytes(b"fixture")
+    (product / "linked-file").symlink_to(product / "chrome.exe")
+    (product / "linked-dir").symlink_to(product / "locales", target_is_directory=True)
+    (product / "dangling").symlink_to(product / "absent")
+    monkeypatch.setenv("VIBEOS_CHROME_DIR", str(product))
+    entries = call("payload_providers_stage_entries", {"spec": "chrome", "arch": "amd64"}, ROOT)
+    expected = [
+        {"src": str(p), "dest": "bin/chrome/" + p.relative_to(product).as_posix()}
+        for p in sorted(product.rglob("*"))
+        if p.is_file()
+    ]
+    assert entries == expected
+    directory = tmp_path / "tools/payloads/chrome"
+    directory.mkdir(parents=True)
+    (directory / "payload.yaml").write_text(
+        "name: chrome\narches: [amd64]\nbinaries: []\n"
+        "binaries_from: tools/payloads/chrome/stage.py\n"
+    )
+    assert (
+        call(
+            "payload_build_binaries",
+            {
+                "spec": call("payload_build_load_spec", {"name": "chrome"}, tmp_path),
+                "arch": "amd64",
+            },
+            tmp_path,
+        )
+        == expected
+    )
+    assert (
+        call("payload_build_ninja_targets", {"names": ["chrome"], "arch": "amd64"}, tmp_path) == []
+    )
+
+
+def test_chrome_provider_requires_an_explicit_complete_installation(tmp_path, monkeypatch):
+    monkeypatch.delenv("VIBEOS_CHROME_DIR", raising=False)
+    with pytest.raises(NativeError, match="set VIBEOS_CHROME_DIR"):
+        call("payload_providers_stage_entries", {"spec": "chrome", "arch": "amd64"}, ROOT)
+    monkeypatch.setenv("VIBEOS_CHROME_DIR", str(tmp_path))
+    with pytest.raises(NativeError, match=r"has no chrome\.exe"):
+        call("payload_providers_stage_entries", {"spec": "chrome", "arch": "amd64"}, ROOT)

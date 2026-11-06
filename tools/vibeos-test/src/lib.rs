@@ -5,6 +5,7 @@ pub mod admission;
 mod admission_controls;
 pub mod backend;
 pub mod callback;
+pub mod characterize;
 pub mod checkpoint;
 pub mod config;
 pub mod conformance;
@@ -28,6 +29,7 @@ pub mod smoke_fixtures;
 pub mod smoke_run;
 pub mod verdict;
 pub mod vm;
+pub mod wine_failures;
 
 pub mod bench;
 pub mod bench_boot;
