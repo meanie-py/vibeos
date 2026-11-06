@@ -533,7 +533,10 @@ pub fn cargo_source(ninja: &str, arch: &str, rel: &Path) -> Option<PathBuf> {
     re(&pat).captures(ninja).map(|c| PathBuf::from(&c[1]))
 }
 fn relinked_by_cargo(root: &Path, arch: &str, rel: &Path, baseline_pe: &Path) -> Result<bool> {
-    let ninja = read(&root.join(format!("build-{arch}/build.ninja")))?;
+    // No build.ninja: nothing built the cell, so nothing relinked it.
+    let Ok(ninja) = std::fs::read_to_string(root.join(format!("build-{arch}/build.ninja"))) else {
+        return Ok(false);
+    };
     let Some(src) = cargo_source(&ninja, arch, rel) else {
         return Ok(false);
     };

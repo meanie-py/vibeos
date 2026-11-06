@@ -1109,7 +1109,9 @@ def test_a_shell_less_cell_takes_nothing_from_rustcs_bin():
     assert "panic_lean::panic_fastfail()" in g.main_rs(c)
     toml = g.cargo_toml(c)
     assert "panic-lean" in toml and "panic-common" not in toml
-    assert ".shell_less()" not in g.build_rs(cell(body_crate="", static_libs={a: [] for a in g.ARCHES}))
+    assert ".shell_less()" not in g.build_rs(
+        cell(body_crate="", static_libs={a: [] for a in g.ARCHES})
+    )
 
 
 # ---------------------------------------------------------------- the build-graph lookup
