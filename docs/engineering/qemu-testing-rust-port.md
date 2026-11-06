@@ -157,3 +157,10 @@ unique RAM chunks. Trace: `~/vibeos-rr/native-diag-bulk-20261106-1634-arm64`;
 boot evidence: `/tmp/vibeos-cli/20261106-163427-aioj3w4p-smoke-arm64`.
 Trace finalisation and recording diagnostics passed; this records evidence about
 recording, not a claim that playback reached desktop.
+
+Finite replay comparison workers finish before smoke tears down a desktop VM;
+continuous PC workers remain tied to VM lifetime. The VM lifetime watchdog still
+bounds comparison completion, and worker failures remain diagnostic errors.
+A finished comparison loop is not proof of equivalence: uncertain, skipped,
+empty or partially compared fingerprint sets produce an inconclusive verdict and
+CLI exit 2. `all_matched` requires every requested fingerprint to match exactly.

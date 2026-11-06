@@ -397,6 +397,7 @@ pub fn dispatch(request: &Value, host: &mut dyn Host) -> Result<Value> {
             a["ram"].as_bool().unwrap_or(false),
             a["pc"].as_bool().unwrap_or(false),
         )?,
+        "divergence_status" => crate::replay_sample::comparison_status(&a["verdict"])?,
         "keep_serial" => keep_serial(trace, text(a, "name")?, text(a, "expect_mode")?)?,
         "guest_lines" => json!(guest_lines(Path::new(text(a, "path")?))?),
         "serial_divergence" => json!(serial_divergence(

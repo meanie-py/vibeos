@@ -1380,6 +1380,51 @@ impl Vm {
             json!({"argv":read_json(&self.descriptor).ok().and_then(|v|v.get("argv").cloned()).unwrap_or_else(||json!([])),"qemu_pid":self.pid,"gdb_host":self.gdb_host,"gdb_port":self.gdb_port,"net_host":self.net_host,"win_uid":self.uid,"staging":self.staging,"live_log":self.config.live_log,"launch_timings":self.launch_timings,"boot_output":self.boot_output,"config":self.config,"network":self.network,"capture_plan":self.capture_plan,"admission":self.admission.as_ref().map(Admission::receipt)}),
         )
     }
+
+    /// Continuous samplers end with the VM. A requested replay comparison has
+    /// finite work and must finish before a desktop verdict tears its VM down.
+    pub fn finish_diagnostics(&mut self) -> Result<Value> {
+        let checks: Vec<usize> = self.diagnostics["sidecars"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+            .filter(|(_, p)| p["kind"] == "rr" && p["value"] == "check")
+            .map(|(i, _)| i)
+            .collect();
+        if checks.is_empty() {
+            if self.env("VIBEOS_QEMU_RR_SAMPLE") == Some("check") {
+                return Err(Error::new("requested replay comparison has no worker")
+                    .with_kind("DiagnosticError"));
+            }
+            return Ok(json!({"checkers":0}));
+        }
+        let deadline = read_json(&self.descriptor)?["deadline"]
+            .as_f64()
+            .ok_or("VM owner omitted lifetime deadline")?;
+        for &index in &checks {
+            let child = self
+                .sidecars
+                .get_mut(index)
+                .ok_or("requested replay comparison worker missing")?;
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    if !status.success() {
+                        return Err(Error::new(format!("requested replay comparison failed ({status}); see vm_diagnostic_sidecar-rr.json")).with_kind("DiagnosticError"));
+                    }
+                    break;
+                }
+                if now() >= deadline {
+                    return Err(
+                        Error::new("requested replay comparison exceeded VM lifetime")
+                            .with_kind("DiagnosticError"),
+                    );
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+        Ok(json!({"checkers":checks.len()}))
+    }
     pub fn poll_exit(&mut self) -> Result<Option<i32>> {
         for child in &mut self.sidecars {
             if let Some(state) = child.try_wait()? {
@@ -2161,6 +2206,7 @@ impl VmManager {
             "vm_wait_exit" => json!(vm.wait_exit(a["timeout"].as_f64().unwrap_or(20.0))?),
             op if op.starts_with("vm_checkpoint_") => crate::checkpoint::dispatch_vm(vm, op, a)?,
             "vm_poll_exit" => json!(vm.poll_exit()?),
+            "vm_finish_diagnostics" => vm.finish_diagnostics()?,
             "vm_stderr_tail" | "vm_stderr" => json!(vm.stderr_tail()),
             "vm_stop" => {
                 vm.stop()?;

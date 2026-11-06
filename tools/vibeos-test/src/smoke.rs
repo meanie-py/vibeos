@@ -534,6 +534,14 @@ pub fn one_boot(root: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
                 log(host, &format!("{label} ladder serial"), tail(&more, 8000))?;
             }
         }
+        if outcome == "reached" && env["VIBEOS_QEMU_RR_SAMPLE"] == "check" {
+            let checking = Instant::now();
+            vm(host, "vm_finish_diagnostics", id, json!({}))?;
+            timings.insert(
+                "diagnostics_seconds".into(),
+                json!(rounded(checking.elapsed().as_secs_f64())),
+            );
+        }
         let shot = screenshot(host, id, &work, root, boot_arch)?;
         if arch != "arm64" {
             if let Ok(stats) = vm(host, "vm_qmp_hmp", id, json!({"command":"info irq"})) {

@@ -244,3 +244,25 @@ def test_diagnostic_workers_publish_separate_results(diag_config):
             time.sleep(0.02)
         results = [json.loads(p.read_text())["ok"] for p in paths]
         assert results == [{"kind": "pc", "samples": 123456}, {"kind": "rr", "samples": 1}]
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_finite_replay_checker_finishes_before_vm_teardown(diag_config, tmp_path, failed):
+    finished = tmp_path / "comparison-finished"
+    diag_config["env"].update(
+        DIAG_MODE="finish-fail" if failed else "finish",
+        DIAG_FINISHED=str(finished),
+        VIBEOS_QEMU_RR_SAMPLE="check",
+    )
+    with DedicatedSession() as session:
+        vm = create(session, diag_config)
+        session.call("vm_start", {"id": vm})
+        if failed:
+            with pytest.raises(NativeError, match="requested replay comparison failed"):
+                session.call("vm_finish_diagnostics", {"id": vm})
+        else:
+            assert session.call("vm_finish_diagnostics", {"id": vm}) == {"checkers": 1}
+        assert finished.read_text() == "complete"
+        # The continuous PC worker must not hold up finite checker completion.
+        if not failed:
+            assert session.call("vm_poll_exit", {"id": vm}) is None

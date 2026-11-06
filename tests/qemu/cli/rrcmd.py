@@ -485,8 +485,9 @@ def cmd_diverge(args, repo: Path) -> int:
         for line in (v.get("wedge_regs") or "").splitlines()[:4]:
             print(f"[rr]     {line.strip()}")
         return 1
-    print("[rr]   every compared fingerprint matched")
-    return 0
+    status = _native_call("divergence_status", verdict=v)
+    print(f"[rr]   {status['message']}")
+    return status["exit"]
 
 
 def cmd_list(args, repo: Path) -> int:

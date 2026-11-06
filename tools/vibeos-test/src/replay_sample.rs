@@ -577,8 +577,10 @@ pub fn replay_loop(fp: &mut Fingerprinter, trace: &Path) -> Result<Value> {
         verdict["error"] = json!(e.message);
         completed = false;
     }
+    verdict["completed"] = json!(completed);
+    verdict["all_matched"] = json!(comparison_status(&verdict)?["exit"] == 0);
     if completed {
-        verdict["all_matched"] = json!(true);
+        verdict.as_object_mut().unwrap().remove("attempting");
     }
     write_json(&path, &verdict)?;
     if verdict.get("first_mismatch").is_some() || verdict.get("error").is_some() {
@@ -587,6 +589,41 @@ pub fn replay_loop(fp: &mut Fingerprinter, trace: &Path) -> Result<Value> {
     eprintln!("[rr-diverge] verdict written to {}", path.display());
     Ok(verdict)
 }
+
+/// Finishing a comparison loop does not make uncertain checkpoints equal.
+pub fn comparison_status(verdict: &Value) -> Result<Value> {
+    if verdict.get("first_mismatch").is_some_and(|v| !v.is_null())
+        || verdict.get("error").is_some_and(|v| !v.is_null())
+    {
+        return Ok(json!({"exit":1,"message":"record/replay comparison failed"}));
+    }
+    let samples = verdict["samples"]
+        .as_u64()
+        .ok_or("comparison omitted sample count")?;
+    let compared = verdict["compared"]
+        .as_u64()
+        .ok_or("comparison omitted compared count")?;
+    let uncertain = verdict["inconclusive"]
+        .as_array()
+        .ok_or("comparison omitted inconclusive checkpoints")?
+        .len() as u64;
+    let skipped = verdict["skipped"]
+        .as_array()
+        .ok_or("comparison omitted skipped checkpoints")?
+        .len() as u64;
+    if uncertain > compared || compared > samples || skipped > samples - compared {
+        return Err("inconsistent comparison coverage counts".into());
+    }
+    let exact = compared - uncertain;
+    let matched = samples > 0
+        && exact == samples
+        && skipped == 0
+        && verdict["completed"].as_bool() != Some(false);
+    Ok(
+        json!({"exit":if matched {0}else{2},"exact_matches":exact,"message":if matched {format!("all {samples} fingerprints matched")}else{format!("INCONCLUSIVE: {exact}/{samples} fingerprints matched exactly; {uncertain} uncertain, {skipped} skipped, {} not compared. Full equivalence is unproven.",samples-compared-skipped)}}),
+    )
+}
+
 pub fn run(a: &Value) -> Result<Value> {
     let mode = string(a, "mode")?;
     let trace = Path::new(string(a, "trace")?);
@@ -897,5 +934,28 @@ mod bulk_qemu_control {
             "real QEMU 1GiB FIFO capture: {:.3}s",
             start.elapsed().as_secs_f64()
         );
+    }
+}
+
+#[cfg(test)]
+mod comparison_coverage_controls {
+    use super::*;
+    #[test]
+    fn uncertain_or_partial_comparisons_never_claim_equivalence() {
+        let mut verdict =
+            json!({"samples":2,"compared":2,"inconclusive":[],"skipped":[],"completed":true});
+        assert_eq!(comparison_status(&verdict).unwrap()["exit"], 0);
+        verdict["inconclusive"] = json!([{"icount":1},{"icount":2}]);
+        let result = comparison_status(&verdict).unwrap();
+        assert_eq!(result["exit"], 2);
+        assert_eq!(result["exact_matches"], 0);
+        verdict["inconclusive"] = json!([]);
+        verdict["compared"] = json!(1);
+        verdict["skipped"] = json!([{"icount":2}]);
+        assert_eq!(comparison_status(&verdict).unwrap()["exit"], 2);
+        verdict["samples"] = json!(0);
+        verdict["compared"] = json!(0);
+        verdict["skipped"] = json!([]);
+        assert_eq!(comparison_status(&verdict).unwrap()["exit"], 2);
     }
 }
