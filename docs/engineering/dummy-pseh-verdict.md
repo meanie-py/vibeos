@@ -1,6 +1,7 @@
 # DUMMY_PSEH Verdict — Replace the Semantics in Rust, Not the Mechanism in C
 
-Last updated 2026-07-06 (lane `dummy-pseh-question`). Companion to
+Last updated 2026-11-06 (status section, lane `cpp-cluster`); verdict 2026-07-06 (lane
+`dummy-pseh-question`). Companion to
 [pseh-elimination.md](archive/pseh-elimination.md) (the layer map this supersedes in
 direction) and [kernel-exception-handling.md](archive/kernel-exception-handling.md)
 (the deferred trap-to-panic bridge — still deferred, see Tier 2).
@@ -219,6 +220,36 @@ and `ExitProcess(1)`. Nothing crashes, so no second chance is logged; the only t
 line. On amd64, wordpad and winver died this way for as long as the spooler was down, because
 winspool's printer calls went to a server that was not listening. Until the class-2 `try_` work
 reaches rpcrt4, a dead RPC server means every one of its clients dies.
+
+## Status (2026-11-06) — measured, not remembered
+
+The inventory is a lint: **`scan_dead_seh_handlers`** lists every shipping Rust function whose C
+twin has an `__except` (or `RpcExcept`) while the Rust catches nothing. Its baseline,
+`tools/lint-baseline/scan_dead_seh_handlers.txt`, is the remaining work; `check` fails on any new
+row. Each row is tagged by where the twin runs and what its try body does:
+
+| | `raise` (callee raises by contract) | `probe` (C probes user memory) | `other` (bare deref, or a raise further down) |
+|---|---|---|---|
+| kernel | 14 | 4 | 56 |
+| rtl (both) | 0 | 0 | 18 |
+| user | 1 | 0 | 142 |
+
+235 in all. `raise` means a raiser the Rust still CALLS: a port that turned the C's own
+`RtlRaiseStatus` into `return Err` has converted the contract and needs only a probe. Burn-down order: kernel `raise` first (one call from user mode bugchecks the box:
+that is how `ReleaseSemaphore` past the maximum was found), then kernel `probe`/`other`, then
+user mode (the process dies, not the machine). `tools/payloads/sehprobe` exercises the
+user-reachable kernel rows on all three arches; extend it with each fix.
+
+What already landed, which the plan below predates:
+- Step 1 is effectively done: 18 crates call `MmTryProbeAndLockPages`, and the direct
+  `MmProbeAndLockPages` calls left sit inside `try_except`/`try_finally` (cdfs, fastfat, tdi).
+- Real catches exist on both sides: `ntkrnl_sys::seh` (kernel, 2026-09-26) and `ntdll_sys::seh`
+  (`try_except`, `rpc_try`; user mode), and first-chance VEH runs on all three arches
+  (2026-11-05).
+- Step 5's lint is `scan_dead_seh_handlers` (above) beside `scan_raising_probes`; the older
+  `scan_dropped_seh_pairs` reads zero only because it matches five raisers per FILE.
+- 2026-11-06: the Nt* raise catches (semaphore, mutant, suspend, signal-and-wait, waits) and
+  the pipe/mailslot timeout probes. Roadmap: "One user-mode `ReleaseSemaphore` past the maximum".
 
 ## The program — Tier 1: convert raise contracts to `Result` (do this)
 

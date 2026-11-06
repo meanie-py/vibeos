@@ -310,7 +310,7 @@ pub unsafe extern "system" fn NtReleaseMutant(
         }
     }
 
-    let Status = ObReferenceObjectByHandle(
+    let mut Status = ObReferenceObjectByHandle(
         MutantHandle,
         0,
         ExMutantObjectType,
@@ -320,10 +320,21 @@ pub unsafe extern "system" fn NtReleaseMutant(
     );
 
     if Status >= 0 {
-        let Prev = KeReleaseMutant(Mutant, 1, 0u8, 0u8);
-
-        if !PreviousCount.is_null() {
-            write_user_nofail(PreviousCount, Prev, PreviousMode);
+        /* KeReleaseMutant RAISES STATUS_MUTANT_NOT_OWNED (or STATUS_ABANDONED) by contract;
+         * the C catches it here with ExSystemExceptionFilter. Without the catch, releasing a
+         * mutex another thread owns bugchecked the kernel. */
+        let mut Prev: LONG = 0;
+        match ntkrnl_sys::seh::try_except(
+            &mut Prev,
+            |prev| *prev = KeReleaseMutant(Mutant, 1, 0u8, 0u8),
+            |_, _| crate::harderr::ExSystemExceptionFilter(),
+        ) {
+            Ok(()) => {
+                if !PreviousCount.is_null() {
+                    write_user_nofail(PreviousCount, Prev, PreviousMode);
+                }
+            }
+            Err(code) => Status = code,
         }
 
         ObDereferenceObject(Mutant as PVOID);

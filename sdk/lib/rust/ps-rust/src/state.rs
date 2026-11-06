@@ -44,6 +44,27 @@ pub unsafe extern "system" fn PsResumeThread(
     STATUS_SUCCESS
 }
 
+
+/// ntstatus.h; not in ntkrnl-sys's island (ke/thrdobj.rs, which raises it, defines it too).
+const STATUS_SUSPEND_COUNT_EXCEEDED: NTSTATUS = 0xC000004Au32 as NTSTATUS;
+
+/// KeSuspendThread RAISES STATUS_SUSPEND_COUNT_EXCEEDED past MAXIMUM_SUSPEND_COUNT; the C
+/// catches exactly that code around both calls. Without the catch, a 128th SuspendThread from
+/// user mode bugchecked the kernel.
+unsafe fn suspend_caught(thread: PETHREAD, old_count: &mut u32) -> Result<(), NTSTATUS> {
+    ntkrnl_sys::seh::try_except(
+        old_count,
+        |c| *c = KeSuspendThread(core::ptr::addr_of_mut!((*thread).Tcb) as PKTHREAD),
+        |_, pointers| {
+            if ntkrnl_sys::seh::exception_code(pointers) == STATUS_SUSPEND_COUNT_EXCEEDED {
+                ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER
+            } else {
+                ntkrnl_sys::seh::EXCEPTION_CONTINUE_SEARCH
+            }
+        },
+    )
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn PsSuspendThread(
     thread: PETHREAD,
@@ -55,14 +76,19 @@ pub unsafe extern "system" fn PsSuspendThread(
     let mut old_count = 0u32;
 
     if thread == PsGetCurrentThread() {
-        old_count = KeSuspendThread(core::ptr::addr_of_mut!((*thread).Tcb) as PKTHREAD);
+        if let Err(code) = suspend_caught(thread, &mut old_count) {
+            status = code;
+        }
     } else {
         if ExAcquireRundownProtection(core::ptr::addr_of_mut!((*thread).RundownProtect)) != 0 {
             if (*thread).__bindgen_anon_7.__bindgen_anon_1.Terminated() != 0 {
                 status = STATUS_THREAD_IS_TERMINATING;
             } else {
-                old_count = KeSuspendThread(core::ptr::addr_of_mut!((*thread).Tcb) as PKTHREAD);
+                if let Err(code) = suspend_caught(thread, &mut old_count) {
+                    status = code;
+                }
 
+                /* Checked whether or not the suspend raised, as the C does */
                 if (*thread).__bindgen_anon_7.__bindgen_anon_1.Terminated() != 0 {
                     KeForceResumeThread(core::ptr::addr_of_mut!((*thread).Tcb) as PKTHREAD);
                     status = STATUS_THREAD_IS_TERMINATING;

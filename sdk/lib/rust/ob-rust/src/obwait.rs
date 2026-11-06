@@ -21,6 +21,32 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+/* ntstatus.h; not in ntkrnl-sys's island. */
+const STATUS_MUTANT_LIMIT_EXCEEDED: NTSTATUS = 0xC0000191u32 as NTSTATUS;
+const STATUS_ABANDONED: NTSTATUS = 0x00000080;
+const STATUS_MUTANT_NOT_OWNED: NTSTATUS = 0xC0000046u32 as NTSTATUS;
+const STATUS_SEMAPHORE_LIMIT_EXCEEDED: NTSTATUS = 0xC0000047u32 as NTSTATUS;
+
+/// `__try { f() } __except (code in codes ? EXECUTE_HANDLER : CONTINUE_SEARCH)`, the filter
+/// every raising call in this file has in the C. KeWaitFor* raise STATUS_MUTANT_LIMIT_EXCEEDED
+/// and KeReleaseSemaphore/KeReleaseMutant raise their limit and ownership codes, BY CONTRACT;
+/// without the catch a user-mode SignalObjectAndWait on a full semaphore bugchecked (0x1E).
+unsafe fn catching<T: Copy + Default>(codes: &[NTSTATUS], f: impl FnOnce() -> T) -> Result<T, NTSTATUS> {
+    let mut out = T::default();
+    ntkrnl_sys::seh::try_except(
+        &mut out,
+        |o| *o = f(),
+        |_, pointers| {
+            if codes.contains(&ntkrnl_sys::seh::exception_code(pointers)) {
+                ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER
+            } else {
+                ntkrnl_sys::seh::EXCEPTION_CONTINUE_SEARCH
+            }
+        },
+    )?;
+    Ok(out)
+}
+
 const MAXIMUM_WAIT_OBJECTS: ULONG = 64;
 const THREAD_WAIT_OBJECTS: ULONG = 3;
 const TAG_WAIT: ULONG = 0x74696157; // 'Wait'
@@ -225,7 +251,26 @@ pub unsafe extern "system" fn NtWaitForMultipleObjects(
             LockInUse = 0u8;
             KeLeaveCriticalRegion();
 
-            Status = KeWaitForMultipleObjects(
+            Status = catching(&[STATUS_MUTANT_LIMIT_EXCEEDED], || {
+                KeWaitForMultipleObjects(
+                    ObjectCount,
+                    WaitObjects.as_mut_ptr(),
+                    WaitType,
+                    UserRequest,
+                    PreviousMode,
+                    Alertable,
+                    TimeOut,
+                    WaitBlockArray,
+                )
+            })
+            .unwrap_or_else(|code| code);
+        }
+    } else if i >= ObjectCount {
+        LockInUse = 0u8;
+        KeLeaveCriticalRegion();
+
+        Status = catching(&[STATUS_MUTANT_LIMIT_EXCEEDED], || {
+            KeWaitForMultipleObjects(
                 ObjectCount,
                 WaitObjects.as_mut_ptr(),
                 WaitType,
@@ -234,22 +279,9 @@ pub unsafe extern "system" fn NtWaitForMultipleObjects(
                 Alertable,
                 TimeOut,
                 WaitBlockArray,
-            );
-        }
-    } else if i >= ObjectCount {
-        LockInUse = 0u8;
-        KeLeaveCriticalRegion();
-
-        Status = KeWaitForMultipleObjects(
-            ObjectCount,
-            WaitObjects.as_mut_ptr(),
-            WaitType,
-            UserRequest,
-            PreviousMode,
-            Alertable,
-            TimeOut,
-            WaitBlockArray,
-        );
+            )
+        })
+        .unwrap_or_else(|code| code);
     }
 
     while ReferencedObjects > 0 {
@@ -332,13 +364,16 @@ pub unsafe extern "system" fn NtWaitForSingleObject(
             WaitableObject = ((Object as ULONG_PTR) + (WaitableObject as ULONG_PTR)) as PVOID;
         }
 
-        Status = KeWaitForSingleObject(
-            WaitableObject,
-            UserRequest,
-            PreviousMode,
-            Alertable,
-            TimeOut,
-        );
+        Status = catching(&[STATUS_MUTANT_LIMIT_EXCEEDED], || {
+            KeWaitForSingleObject(
+                WaitableObject,
+                UserRequest,
+                PreviousMode,
+                Alertable,
+                TimeOut,
+            )
+        })
+        .unwrap_or_else(|code| code);
 
         ObDereferenceObject(Object);
     } else {
@@ -421,27 +456,38 @@ pub unsafe extern "system" fn NtSignalAndWaitForSingleObject(
             Status = STATUS_SUCCESS;
         }
     } else if Type == ExMutantObjectType {
-        KeReleaseMutant(SignalObj as *mut _KMUTANT, MUTANT_INCREMENT, 0u8, 1u8);
-        Status = STATUS_SUCCESS;
+        Status = match catching(&[STATUS_ABANDONED, STATUS_MUTANT_NOT_OWNED], || {
+            KeReleaseMutant(SignalObj as *mut _KMUTANT, MUTANT_INCREMENT, 0u8, 1u8)
+        }) {
+            Ok(_) => STATUS_SUCCESS,
+            Err(code) => code,
+        };
     } else if Type == ExSemaphoreObjectType {
         if (PreviousMode != 0) && ((HandleInfo.GrantedAccess & SEMAPHORE_MODIFY_STATE) == 0) {
             Status = STATUS_ACCESS_DENIED;
         } else {
-            KeReleaseSemaphore(SignalObj as *mut _KSEMAPHORE, SEMAPHORE_INCREMENT, 1, 1u8);
-            Status = STATUS_SUCCESS;
+            Status = match catching(&[STATUS_SEMAPHORE_LIMIT_EXCEEDED], || {
+                KeReleaseSemaphore(SignalObj as *mut _KSEMAPHORE, SEMAPHORE_INCREMENT, 1, 1u8)
+            }) {
+                Ok(_) => STATUS_SUCCESS,
+                Err(code) => code,
+            };
         }
     } else {
         Status = STATUS_OBJECT_TYPE_MISMATCH;
     }
 
     if Status >= 0 {
-        Status = KeWaitForSingleObject(
-            WaitableObject,
-            UserRequest,
-            PreviousMode,
-            Alertable,
-            TimeOut,
-        );
+        Status = catching(&[STATUS_MUTANT_LIMIT_EXCEEDED], || {
+            KeWaitForSingleObject(
+                WaitableObject,
+                UserRequest,
+                PreviousMode,
+                Alertable,
+                TimeOut,
+            )
+        })
+        .unwrap_or_else(|code| code);
     }
 
     ObDereferenceObject(SignalObj);
