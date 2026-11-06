@@ -558,7 +558,7 @@ def cmd_info(args, repo: Path) -> int:
         for w in warnings:
             print(f"    {w}")
     else:
-        print("warnings:        none — should replay faithfully")
+        print("warnings:        none — trace guards passed")
     return 0
 
 

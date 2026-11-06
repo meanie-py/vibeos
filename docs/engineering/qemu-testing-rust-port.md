@@ -146,3 +146,14 @@ Requested RAM/PC sampling must produce valid rows, and a worker error fails the
 command even if earlier samples exist. A guest bugcheck can still yield a useful,
 successful recording when the requested host diagnostics completed. Host sampler
 failures propagate as diagnostic errors rather than guest-death classifications.
+
+Smoke refreshes its watch configuration from the launched VM's handles, so
+record/replay's extended watchdog budgets reach the outer watch as well as the VM.
+A control reproduces the pre-launch/post-launch configuration mismatch.
+
+On `15634cca5810`, a real ARM64 recording reached desktop with 12 RAM fingerprints
+and 108 PC samples. Independent Python zlib/BLAKE2b8 decoding verified all 883
+unique RAM chunks. Trace: `~/vibeos-rr/native-diag-bulk-20261106-1634-arm64`;
+boot evidence: `/tmp/vibeos-cli/20261106-163427-aioj3w4p-smoke-arm64`.
+Trace finalisation and recording diagnostics passed; this records evidence about
+recording, not a claim that playback reached desktop.

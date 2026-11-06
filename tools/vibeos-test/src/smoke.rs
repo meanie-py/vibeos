@@ -416,9 +416,21 @@ pub fn one_boot(root: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
                 "launch_start" => {
                     let id = self.session.as_ref().ok_or("VM factory omitted session")?.0;
                     match vm(self.host, "vm_start", id, json!({})) {
-                        Ok(handles) => Ok(
-                            json!({"timings":handles.get("launch_timings").cloned().unwrap_or_else(||json!({}))}),
-                        ),
+                        Ok(handles) => {
+                            // Diagnostic preparation can extend replay budgets at
+                            // launch. The watch must use that effective config,
+                            // rather than the snapshot taken before vm_start.
+                            if let Some(config) = handles.get("config") {
+                                if !config.is_object() {
+                                    return Err("launched VM configuration is not an object".into());
+                                }
+                                self.session.as_mut().ok_or("VM factory omitted session")?.1 =
+                                    config.clone();
+                            }
+                            Ok(
+                                json!({"timings":handles.get("launch_timings").cloned().unwrap_or_else(||json!({}))}),
+                            )
+                        }
                         Err(error) => Ok(json!({"error":error.message})),
                     }
                 }
@@ -870,5 +882,21 @@ mod serial_log_failure_controls {
         .unwrap();
         assert_eq!(outcome, "dead");
         assert!(diag["serial_error"].as_str().is_some());
+    }
+}
+
+#[cfg(test)]
+mod effective_launch_config_controls {
+    use super::*;
+    #[test]
+    fn watcher_uses_post_launch_configuration() {
+        let root = tempfile::tempdir().unwrap();
+        let result=crate::smoke_fixtures::dispatch(root.path(),&json!({"op":"smoke_script","kwargs":{
+            "mode":"one_boot", "options":{"arch":"i386","run_dir":root.path()},
+            "config":{"boot_marker":"BEFORE","boot_timeout":0.01,"hang_silence_seconds":0.0},
+            "responses":{"vm_start":[{"value":{"config":{"boot_marker":"AFTER","boot_timeout":0.1,"hang_silence_seconds":0.0}}}]},
+            "chunks":["AFTER\n"]
+        }})).unwrap();
+        assert_eq!(result["result"]["ok"], true, "{result}");
     }
 }
