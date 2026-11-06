@@ -82,8 +82,49 @@ pub fn output_of(argv: &[String]) -> String {
     }
     "?".into()
 }
+/// The flag reactos-link's `Linker::shell_less` passes (its `SHELL_LESS_FLAG`).
+pub const SHELL_LESS_FLAG: &str = "--vibeos-shell-less";
+
+/// Whether `arg` is an input rustc put on the link line rather than the engine: the
+/// bin crate's codegen units, rustc's `symbols.o`, the sysroot's `rsbegin.o`/`rsend.o`,
+/// and every rlib (the bin's dependencies, `core`, `compiler_builtins`).
+pub fn is_rustc_input(arg: &str) -> bool {
+    !arg.starts_with('-')
+        && re(r"(\.rcgu\.o|[/\\]rustc[^/\\]*[/\\]symbols\.o|[/\\]lib[/\\]rustlib[/\\][^/\\]+[/\\]lib[/\\](self-contained[/\\])?rs(begin|end)\.o|\.rlib)$")
+            .is_match(arg)
+}
+
+/// A shell-less link's argv: `argv` without [`SHELL_LESS_FLAG`] and without rustc's
+/// inputs. `None` when the flag is absent. Refuses when the flag is present but no
+/// bin object is found, or a response file hides the inputs: either way rustc's link
+/// line has changed shape, and linking it unfiltered would ship the shell silently.
+pub fn shell_less(argv: &[String]) -> Result<Option<Vec<String>>> {
+    if !argv.iter().any(|a| a == SHELL_LESS_FLAG) {
+        return Ok(None);
+    }
+    if let Some(rsp) = argv.iter().find(|a| a.starts_with('@')) {
+        return Err(Error::new(format!(
+            "link-guard: {SHELL_LESS_FLAG} link reads a response file ({rsp}), which may hold rustc's inputs; expand it here before filtering"
+        )));
+    }
+    let kept: Vec<String> = argv
+        .iter()
+        .filter(|a| *a != SHELL_LESS_FLAG && !is_rustc_input(a))
+        .cloned()
+        .collect();
+    if !argv.iter().any(|a| a.ends_with(".rcgu.o")) {
+        return Err(Error::new(format!(
+            "link-guard: {SHELL_LESS_FLAG} link of {} has no rustc bin object (*.rcgu.o) to drop; rustc's link line changed",
+            output_of(argv)
+        )));
+    }
+    Ok(Some(kept))
+}
+
 /// Run the real linker, relay its output, append duplicate JSON, and refuse unsafe links.
 pub fn execute(root: &Path, argv: &[String]) -> Result<i32> {
+    let filtered = shell_less(argv)?;
+    let argv = filtered.as_deref().unwrap_or(argv);
     let lld = std::env::var_os("VIBEOS_REAL_LLD")
         .filter(|x| !x.is_empty())
         .map(std::path::PathBuf::from)
@@ -178,4 +219,56 @@ pub fn execute(root: &Path, argv: &[String]) -> Result<i32> {
         }
     }
     Ok(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn v(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+    #[test]
+    fn a_link_without_the_flag_is_untouched() {
+        assert_eq!(shell_less(&v(&["-o", "a.exe", "x.rcgu.o"])).unwrap(), None);
+    }
+    #[test]
+    fn a_shell_less_link_drops_only_rustcs_inputs() {
+        let sys = "/r/lib/rustlib/i686-pc-windows-gnu/lib";
+        let argv = v(&[
+            "-m", "i386pe",
+            &format!("{sys}/rsbegin.o"),
+            "/t/deps/lz32-0ab.lz32.1c2d-cgu.0.rcgu.o",
+            "/tmp/rustcAbC12/symbols.o",
+            "/t/deps/libpanic_lean-9f.rlib",
+            &format!("{sys}/libcore-1.rlib"),
+            "/t/build/lz32-cargo-1/out/lz32.res.o",
+            "/b/dll/win32/lz32/lz32.def",
+            "/t/build/lz32-cargo-1/out/libkernel32.a",
+            "--vibeos-shell-less",
+            "-e", "___ImageBase",
+            &format!("{sys}/rsend.o"),
+            "-o", "/t/deps/lz32-0ab.exe",
+        ]);
+        assert_eq!(
+            shell_less(&argv).unwrap().unwrap(),
+            v(&[
+                "-m", "i386pe",
+                "/t/build/lz32-cargo-1/out/lz32.res.o",
+                "/b/dll/win32/lz32/lz32.def",
+                "/t/build/lz32-cargo-1/out/libkernel32.a",
+                "-e", "___ImageBase",
+                "-o", "/t/deps/lz32-0ab.exe",
+            ])
+        );
+    }
+    #[test]
+    fn a_shell_less_link_with_no_bin_object_is_refused() {
+        let e = shell_less(&v(&["--vibeos-shell-less", "-o", "a.exe", "a.o"])).unwrap_err();
+        assert!(e.to_string().contains("no rustc bin object"), "{e}");
+    }
+    #[test]
+    fn a_shell_less_link_through_a_response_file_is_refused() {
+        let e = shell_less(&v(&["--vibeos-shell-less", "@/tmp/x.rsp"])).unwrap_err();
+        assert!(e.to_string().contains("response file"), "{e}");
+    }
 }

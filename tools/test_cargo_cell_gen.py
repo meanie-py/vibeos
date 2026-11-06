@@ -1093,6 +1093,27 @@ def test_a_c_module_with_no_rust_body_is_a_cell_with_no_rust_archive(tmp_path):
     assert "add_library(m_shims OBJECT main.c)" in out
 
 
+def test_a_shell_less_cell_takes_nothing_from_rustcs_bin():
+    """A forwarder or resource DLL (rsabase, shdoclc) has no code: the bin's panic
+    handler and i386's rsbegin gave it a .text and an ntdll import cmake's had not."""
+    c = cell(
+        body_crate="",
+        msvcrtex=None,
+        shell_less=True,
+        output_name="m.dll",
+        module_kind="Win32Dll",
+        entries={a: "__ImageBase" for a in g.ARCHES},
+        static_libs={a: [] for a in g.ARCHES},
+    )
+    assert ".shell_less()" in g.build_rs(c)
+    assert "panic_lean::panic_fastfail()" in g.main_rs(c)
+    toml = g.cargo_toml(c)
+    assert "panic-lean" in toml and "panic-common" not in toml
+    assert ".shell_less()" not in g.build_rs(
+        cell(body_crate="", static_libs={a: [] for a in g.ARCHES})
+    )
+
+
 # ---------------------------------------------------------------- the build-graph lookup
 
 
