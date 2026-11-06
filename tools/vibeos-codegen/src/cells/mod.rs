@@ -79,6 +79,15 @@ pub fn local(root: &Path, p: &Path) -> Result<PathBuf> {
     Ok(crate::probe::local(root, p)?)
 }
 pub fn compile_db(root: &Path, arch: &str) -> Result<Vec<serde_json::Value>> {
+    // compile_commands.json is written at configure time, like build.ninja: after a merge
+    // it describes the PREVIOUS tree. clib_recipes_fresh read one and reported 45 recipes
+    // as drifted that a reconfigure turned green (batch 113). Refuse with the reconfigure
+    // command instead. (A fixture with no build.ninja has no configure to be stale against.)
+    let build = root.join(format!("build-{arch}"));
+    if build.join("build.ninja").is_file() {
+        vibeos_build::ninja::require_configured(&local(root, &build)?, root)
+            .map_err(|e| Error::new(e.to_string()))?;
+    }
     let file = local(
         root,
         &root.join(format!("build-{arch}/compile_commands.json")),

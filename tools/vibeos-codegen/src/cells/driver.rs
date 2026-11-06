@@ -340,6 +340,14 @@ pub fn recipe_drift(root: &Path) -> Result<Vec<String>> {
     Ok(drift)
 }
 pub fn clib_recipes(root: &Path) -> Result<RecipePlan> {
+    // A stale configure is one fact, not one failure per library: say it once, up front.
+    for a in ARCHES {
+        let build = root.join(format!("build-{a}"));
+        if build.join("build.ninja").is_file() {
+            vibeos_build::ninja::require_configured(&local(root, &build)?, root)
+                .map_err(|e| Error::new(e.to_string()))?;
+        }
+    }
     let mut plan = RecipePlan::default();
     let targets = recipes::engine_c_targets(root)?;
     for a in ARCHES {
