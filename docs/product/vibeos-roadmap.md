@@ -602,19 +602,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **Fibers do not work on amd64 or arm64 (open, found 2026-11-05, upstream-sync lane).** Both
-  routines that a fiber switch needs are unimplemented on 64-bit: `SwitchToFiber` and
-  `BaseFiberStartup` in `dll/win32/kernel32/client/amd64/fiber.S` are `UNIMPLEMENTED` stubs (the
-  stub's print itself faults, in `vDbgPrintExWithPrefixInternal`, with 0xC0000005), and arm64's
-  are `brk #0xf000`. Only i386's `fiber.S` is real. So any 64-bit program crashes on its first
-  `SwitchToFiber`. This came with the fork, and upstream has the same TODO. Measured with
-  `--payload k32winetest` (`kernel32:fiber`): amd64 crashes in `test_FiberHandling` at RIP
-  `7ffb7008201` both with and without the 2026-11-05 FLS re-indexing (runs
-  `20261105-230606-fa6xw9dp` / `20261105-231539-j9huaaaf`), and i386 runs 180 checks with
-  0 failures (`20261105-234632-8nz45m6e`). Fix: write both routines for amd64 and arm64 (Rust
-  `global_asm!`, from the i386 version plus the x64/arm64 non-volatile register sets: the FIBER
-  CONTEXT save/restore and the TEB stack, FLS and activation-context fields). Then the same
-  payload is the oracle.
+- **Fibers did not work on amd64 or arm64 (FIXED 2026-11-06, upstream-sync lane).** Both
+  routines a fiber switch needs were unimplemented on 64-bit: amd64's `fiber.S` was an
+  `UNIMPLEMENTED` stub (whose own print faulted, 0xC0000005) and arm64's `brk #0xf000`; upstream
+  has the same TODO. Now SwitchToFiber and BaseFiberStartup are naked Rust functions in
+  kernel32-rust `client/fiber.rs` for both arches, with every FIBER/TEB/CONTEXT offset from
+  `offset_of!` (the .S are out of the build). Graded with `--payload k32winetest`
+  (`kernel32:fiber`, built with the new `build --winetests kernel32`): 180 checks, 0 failures,
+  1 skip (RtlFlsAlloc, unexported at 0x502) on i386, amd64 and arm64 alike; amd64 had crashed in
+  test_FiberHandling before (`20261105-230606-fa6xw9dp`). ReactOS's copy of the test skipped
+  `test_fiber_actctx`'s switch on amd64; that guard is removed. The first arm64 winetest grade
+  anywhere: `--rostests` cannot produce arm64 media (ntdll_winetest and a dozen apitests do not
+  compile there), hence `--winetests`.
 - **i386: a second wined3d in one process cannot create a GL context, and the legacy fallback
   then faults in Mesa (open, found 2026-11-05, root-caused 2026-11-06).** Found by the d3d8/d3d9
   `device` cases, both variants, so below the front ends. The traced i386 case

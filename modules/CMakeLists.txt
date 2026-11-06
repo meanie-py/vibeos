@@ -18,13 +18,20 @@ option(ENABLE_ROSTESTS_KMTESTS "Enable building only kmtests from the ReactOS te
 # is a toolchain limitation rather than anything we can patch. Without this
 # option the apitest conformance payload could never produce media.
 option(ENABLE_ROSTESTS_APITESTS "Enable building only apitests from the ReactOS test suite" OFF)
+# Named winetest suites only (`vibeos-cli build --winetests "kernel32 user32"`), each from
+# winetests/<suite>, at the same paths the full corpus puts them. A payload grades ONE
+# module's suite, and the full corpus cannot produce media wherever any unrelated suite
+# fails to build: on arm64 ntdll_winetest and a dozen apitests do, so no arm64 winetest
+# payload had ever reached an image (rust-port-status.md: "arm64 not graded" for three
+# porting batches running). Space-separated; reconciled every build like ENABLE_ROSTESTS.
+set(ROSTESTS_WINETESTS "" CACHE STRING "Space-separated winetests/<suite> names to build without the rest of the test corpus")
 option(ENABLE_WALLPAPERS "Integrate wallpapers into the built ISOs" OFF)
 
 if(ENABLE_ROSAPPS)
     add_subdirectory(rosapps)
 endif()
 
-if(ENABLE_ROSTESTS OR ENABLE_ROSTESTS_KMTESTS OR ENABLE_ROSTESTS_APITESTS)
+if(ENABLE_ROSTESTS OR ENABLE_ROSTESTS_KMTESTS OR ENABLE_ROSTESTS_APITESTS OR ROSTESTS_WINETESTS)
     add_subdirectory(rostests)
 endif()
 

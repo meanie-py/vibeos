@@ -1,0 +1,2 @@
+X:\reactos\TEMP
+stage

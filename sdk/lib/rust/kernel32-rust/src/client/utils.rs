@@ -543,21 +543,17 @@ extern "system" {
     fn BaseFiberStartup();
 }
 
-#[cfg(target_arch = "x86_64")]
-extern "C" {
+// BaseThreadStartup (thread.rs) / BaseProcessStartup (proc_helpers.rs), taken by address.
+// BaseFiberStartup is the naked entry in fiber.rs on both 64-bit arches.
+// extern "system" as they are defined (thread.rs / proc_helpers.rs); on 64-bit it is the
+// same ABI as "C", but scan_cc_mismatch compares the spelling across arches.
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+extern "system" {
     fn BaseThreadStartup();
-    fn BaseFiberStartup();
     fn BaseProcessStartup();
 }
-
-// arm64: BaseThreadStartup (thread.rs) / BaseProcessStartup (proc_helpers.rs) /
-// BaseFiberStartup (client/arm64/fiber.S). extern "C"==extern "system" here.
-#[cfg(target_arch = "aarch64")]
-extern "C" {
-    fn BaseThreadStartup();
-    fn BaseFiberStartup();
-    fn BaseProcessStartup();
-}
+#[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+use crate::client::fiber::BaseFiberStartup;
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
@@ -683,6 +679,9 @@ pub unsafe extern "system" fn BaseInitializeContext(
     } else if ContextType == 2 {
         /* For Fibers */
         (*Context).Rip = BaseFiberStartup as ULONG_PTR as DWORD64;
+        /* SwitchToFiber loads the x87 control word from here (fldcw); the zeroed CONTEXT
+           would unmask every x87 exception. 0x27F is the default (all masked, 53-bit). */
+        (*Context).__bindgen_anon_1.FltSave.ControlWord = 0x27F;
     } else {
         /* For first thread in a Process */
         (*Context).Rip = BaseProcessStartup as ULONG_PTR as DWORD64;
