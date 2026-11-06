@@ -1257,6 +1257,7 @@ dll/win32/jsproxy/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/jsp
 dll/win32/kernel32/CMakeLists.txt	1	# --allow-multiple-definition needed since every proc.c symbol was removed).
 dll/win32/kernel32/CMakeLists.txt	1	# The *ansi.c files are upstream splitting the ANSI wrappers out of TUs we have
 dll/win32/kernel32/CMakeLists.txt	1	# client/actctx.c — replaced by Rust
+dll/win32/kernel32/CMakeLists.txt	1	# client/amd64/fiber.S, client/arm64/fiber.S — replaced by Rust: SwitchToFiber and
 dll/win32/kernel32/CMakeLists.txt	1	# client/appcache.c — replaced by Rust
 dll/win32/kernel32/CMakeLists.txt	1	# client/atom.c — replaced by Rust (kernel32-rust/src/client/atom.rs)
 dll/win32/kernel32/CMakeLists.txt	1	# client/compname.c — replaced by Rust

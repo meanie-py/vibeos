@@ -41,8 +41,8 @@ fn main() {
             "kernel32_shims",
             match arch.as_str() {
                 "x86" => &["dll/win32/kernel32/client/dep.c", "dll/win32/kernel32/client/i386/fiber.S", "dll/win32/kernel32/client/i386/thread.S"],
-                "x86_64" => &["dll/win32/kernel32/client/dep.c", "dll/win32/kernel32/client/amd64/fiber.S"],
-                "aarch64" => &["dll/win32/kernel32/client/dep.c", "dll/win32/kernel32/client/arm64/fiber.S"],
+                "x86_64" => &["dll/win32/kernel32/client/dep.c"],
+                "aarch64" => &["dll/win32/kernel32/client/dep.c"],
                 _ => unreachable!(),
             },
         )

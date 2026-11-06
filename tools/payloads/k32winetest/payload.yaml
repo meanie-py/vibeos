@@ -10,7 +10,7 @@
 name: k32winetest
 description: Wine kernel32 conformance suite under the apitest sweep runner
 
-build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites kernel32 --only kernel32:version --register '' --out-dir tools/payloads/k32winetest"
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --winetests kernel32 && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites kernel32 --only kernel32:version --register '' --out-dir tools/payloads/k32winetest"
 
 binaries:
   - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
@@ -20,10 +20,15 @@ binaries:
     dest: bin/apitest-suites.txt
   - src: tools/payloads/k32winetest/winetest-skip-{arch}.txt
     dest: bin/apitest-skip.txt
-  - src: tools/payloads/k32winetest/cwd.txt
+  # The children's writable directory, per arch: C:\TEMP is the IDE temp disk, which only
+  # x86 boots get (vibeos-test config.rs temp_disk_args); arm64 has no C: at all, and its
+  # X: ramdisk is writable, so it stages to X:\reactos\TEMP.
+  - src: tools/payloads/k32winetest/cwd-{arch}.txt
     dest: bin/apitest-cwd.txt
-  - src: build-{arch}/modules/rostests/winetests/kernel32/kernel32_winetest.exe
-    dest: bin/kernel32_winetest.exe
+# kernel32_winetest.exe itself is NOT listed: the build stages it at reactos/bin when built
+# with `--winetests kernel32` (or `--rostests`), which build_hint asks for. Listing it here as
+# well names reactos/bin/kernel32_winetest.exe twice, and on arm64 the ramdisk carries the
+# stripped copy, so the two differ in bytes and the ramdisk restage refuses.
 
 test:
   launch_marker: "[APITEST-SWEEP] done"
