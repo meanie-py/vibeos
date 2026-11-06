@@ -316,6 +316,7 @@ pub fn parse_ulong_wide(s: &[u16], base: i32) -> WcstoulRes {
 pub trait Cu: Copy {
     fn u(self) -> u32;
 }
+
 impl Cu for u8 {
     #[inline]
     fn u(self) -> u32 {
@@ -339,66 +340,37 @@ fn sp(c: u32) -> bool {
 /// `(base, negative, index, first_char)`.
 #[inline]
 fn bsd_prologue<C: Cu>(s: &[C], mut base: i32) -> (i32, bool, usize, u32) {
-    let at = |i: usize| -> u32 {
-        if i < s.len() {
-            s[i].u()
-        } else {
-            0
-        }
-    };
+    // Each read is written out rather than through an `at(i)` closure: under the shipping
+    // `-C no-prepopulate-passes` nothing inlines, so a closure is a real call per character,
+    // the same cost the digit loop lost.
+    let n = s.len();
     let mut i = 0usize;
     let mut c;
     loop {
-        c = at(i);
+        c = if i < n { s[i].u() } else { 0 };
         i += 1;
-        if !sp(c) {
+        if !(c == 0x20 || (c >= 0x09 && c <= 0x0d)) {
             break;
         }
     }
     let mut neg = false;
-    if c == b'-' as u32 {
-        neg = true;
-        c = at(i);
-        i += 1;
-    } else if c == b'+' as u32 {
-        c = at(i);
+    if c == b'-' as u32 || c == b'+' as u32 {
+        neg = c == b'-' as u32;
+        c = if i < n { s[i].u() } else { 0 };
         i += 1;
     }
-    if (base == 0 || base == 16) && c == b'0' as u32 && (at(i) == b'x' as u32 || at(i) == b'X' as u32)
-    {
-        c = at(i + 1);
-        i += 2;
-        base = 16;
+    if (base == 0 || base == 16) && c == b'0' as u32 {
+        let x = if i < n { s[i].u() } else { 0 };
+        if x == b'x' as u32 || x == b'X' as u32 {
+            c = if i + 1 < n { s[i + 1].u() } else { 0 };
+            i += 2;
+            base = 16;
+        }
     }
     if base == 0 {
         base = if c == b'0' as u32 { 8 } else { 10 };
     }
     (base, neg, i, c)
-}
-
-/// One BSD digit step: classify `c` (ASCII digit / a-z / A-Z) → value,
-/// or `None` to stop. Faithful to `strtol.c`'s `c -= '0'` /
-/// `c -= isupper ? 'A'-10 : 'a'-10` then the `c >= base` break.
-///
-/// Written as bare compares returning -1 to stop, not `RangeInclusive::contains` and an
-/// `Option`: cnt-rust ships with no LLVM passes, so each of those is a real call, and strtol
-/// spent ~11 ns a digit (7-8x the C) mostly classifying it (`cnt-difftest --test perf`).
-#[inline]
-fn bsd_digit(c: u32, base: i32) -> i64 {
-    let v: i64 = if c >= b'0' as u32 && c <= b'9' as u32 {
-        (c - b'0' as u32) as i64
-    } else if c >= b'A' as u32 && c <= b'Z' as u32 {
-        (c - b'A' as u32) as i64 + 10
-    } else if c >= b'a' as u32 && c <= b'z' as u32 {
-        (c - b'a' as u32) as i64 + 10
-    } else {
-        return -1;
-    };
-    if v >= base as i64 {
-        -1
-    } else {
-        v
-    }
 }
 
 /// `strtol`/`wcstol` result. `value` is the 32-bit Windows `long`
@@ -426,8 +398,21 @@ pub fn parse_long_bsd<C: Cu>(s: &[C], base: i32) -> LongRes {
     let mut acc: i64 = 0;
     let mut any: i32 = 0;
     loop {
-        let d = bsd_digit(c, base);
-        if d < 0 {
+        // One BSD digit (strtol.c's `c -= '0'` / `c -= isupper ? 'A'-10 : 'a'-10`, then the
+        // `c >= base` break), as bare compares written into the loop. cnt-rust ships with no
+        // LLVM passes, so `RangeInclusive::contains`, an `Option`, a closure and even an
+        // `#[inline]` helper are each a real call per character (`cnt-difftest --test perf`
+        // with RUSTFLAGS="-C no-prepopulate-passes": strtol ~110 ns, then ~50 with a helper).
+        let d: i64 = if c >= b'0' as u32 && c <= b'9' as u32 {
+            (c - b'0' as u32) as i64
+        } else if c >= b'A' as u32 && c <= b'Z' as u32 {
+            (c - b'A' as u32) as i64 + 10
+        } else if c >= b'a' as u32 && c <= b'z' as u32 {
+            (c - b'a' as u32) as i64 + 10
+        } else {
+            break;
+        };
+        if d >= base as i64 {
             break;
         }
         if any < 0 || acc > cutoff || (acc == cutoff && d > cutlim) {
@@ -474,8 +459,21 @@ pub fn parse_u64_bsd<C: Cu>(s: &[C], base: i32) -> U64Res {
     let mut acc: u64 = 0;
     let mut any: i32 = 0;
     loop {
-        let d = bsd_digit(c, base);
-        if d < 0 {
+        // One BSD digit (strtol.c's `c -= '0'` / `c -= isupper ? 'A'-10 : 'a'-10`, then the
+        // `c >= base` break), as bare compares written into the loop. cnt-rust ships with no
+        // LLVM passes, so `RangeInclusive::contains`, an `Option`, a closure and even an
+        // `#[inline]` helper are each a real call per character (`cnt-difftest --test perf`
+        // with RUSTFLAGS="-C no-prepopulate-passes": strtol ~110 ns, then ~50 with a helper).
+        let d: i64 = if c >= b'0' as u32 && c <= b'9' as u32 {
+            (c - b'0' as u32) as i64
+        } else if c >= b'A' as u32 && c <= b'Z' as u32 {
+            (c - b'A' as u32) as i64 + 10
+        } else if c >= b'a' as u32 && c <= b'z' as u32 {
+            (c - b'a' as u32) as i64 + 10
+        } else {
+            break;
+        };
+        if d >= base as i64 {
             break;
         }
         if any < 0 || acc > cutoff || (acc == cutoff && d > cutlim) {

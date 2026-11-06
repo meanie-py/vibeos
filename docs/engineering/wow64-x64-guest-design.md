@@ -88,8 +88,13 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    once the bounded helper went to asm). `strtol`/`wcstol` were ~110 ns against ~16 on the
    bench's fixed 10-character number (7-8x, ~11 ns a digit: `RangeInclusive::contains`, an
    `Option` and a closure per character, each a real call under no LLVM passes); bare compares
-   in `radix.rs` `bsd_digit` bring them to ~47 ns, 2.7-3.1x. The rest is per call (prologue,
-   shim), not per digit.
+   in `radix.rs` `bsd_digit` bring them to ~47 ns, 2.7-3.1x. Measured again 2026-11-06 in
+   instructions, which host load cannot move (`CNT_PERF_ONLY=strtol CNT_PERF_SIDE=cnt perf stat
+   -e instructions:u`, see perf.rs): 656 a call against the C's 312. The rest was NOT mostly
+   per call, as this line used to say: of ~30 real calls a ten-digit strtol makes, ~20 are per
+   digit (`bsd_digit`, `Cu::u`). Writing the digit classification and the prologue's reads into
+   the loops: 565 (wcstol 565 against 335). What is left per digit is `Cu::u` and the bounds
+   check, which `core_rs`'s no-`unsafe` rule keeps; per call, `cstr_slice` and the shim.
 4. win32k callbacks: measured 2026-11-01 with `sysbench` (`20261101-195336-5ayk4877`), not
    the ~2x native once assumed. The bench process made 18,437 callbacks. Our side of each costs
    6.0 us in (save the guest state, build its frame) and 4.7 us out, against 41.2 us of guest

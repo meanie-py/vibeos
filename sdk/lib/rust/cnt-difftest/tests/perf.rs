@@ -53,11 +53,35 @@ use cnt_rust::cabi::{
 };
 
 /// Best-of-BEST_OF ns per call, alternating sides each round so drift hits both.
+/// On a loaded host the nanoseconds are noise; count instructions instead, one row and one
+/// side at a time, which load cannot move:
+///   CNT_PERF_ONLY=strtol CNT_PERF_SIDE=cnt perf stat -e instructions:u <the perf binary>
+/// (and `CNT_PERF_SIDE=c`, and `CNT_PERF_ONLY=none` for the fixed setup cost). Each selected
+/// side runs `iters * 7` calls per length.
+/// On a loaded host the nanoseconds are noise; count instructions instead, one row and one
+/// side at a time, which load cannot move:
+///   CNT_PERF_ONLY=strtol CNT_PERF_SIDE=cnt perf stat -e instructions:u <the perf binary>
+/// (and `CNT_PERF_SIDE=c`, and `CNT_PERF_ONLY=none` for the fixed cost of the run). Each
+/// selected side makes `iters * 7` calls per length.
+fn selected(name: &str, side: &str) -> bool {
+    // Not `env::var`: this binary exports cnt's `strlen`/`strncmp`, and glibc's `getenv`
+    // binds to them, so the lookup came back empty. `vars_os` walks `environ` in Rust.
+    let get = |k: &str| std::env::vars_os().find(|(n, _)| n == k).map(|(_, v)| v);
+    let row = get("CNT_PERF_ONLY").map_or(true, |o| o == name);
+    row && get("CNT_PERF_SIDE").map_or(true, |s| s == side)
+}
+
 fn pair(name: &str, len: usize, iters: u32, c: &dyn Fn(), r: &dyn Fn()) -> f64 {
     const BEST_OF: usize = 7;
     let (mut bc, mut br) = (f64::MAX, f64::MAX);
+    if !selected(name, "c") && !selected(name, "cnt") {
+        return 0.0;
+    }
     for _ in 0..BEST_OF {
-        for (f, best) in [(c, &mut bc), (r, &mut br)] {
+        for (f, best, side) in [(c, &mut bc, "c"), (r, &mut br, "cnt")] {
+            if !selected(name, side) {
+                continue;
+            }
             let t = Instant::now();
             for _ in 0..iters {
                 f();
