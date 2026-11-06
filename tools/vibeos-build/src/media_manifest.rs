@@ -159,7 +159,41 @@ pub fn committed(m: &Value, a: &str) -> Result<Value> {
         }
         return Err(Error::new(msg));
     }
-    Ok(m.clone())
+    Ok(without_local_stages(m))
+}
+/// The committed lists describe the DEFAULT image, so entries a configure stages from local
+/// state are left out of them (and out of what --check compares):
+/// - kmtests/testdata, which ENABLE_ROSTESTS_KMTESTS adds (the integration tree runs with it
+///   ON for conformance; the committed lists never carried them);
+/// - repo files under a gitignored `build-*` directory other than build-<arch> (wow64cpu's
+///   `if(EXISTS ${REACTOS_SOURCE_DIR}/build-fex-hello/<guest>.exe)` stages whatever FEX
+///   guests that checkout happens to have built: 14 such entries were committed in amd64.json).
+/// Excluded entries are counted on stderr, never dropped silently.
+pub fn without_local_stages(m: &Value) -> Value {
+    let rostest = Regex::new(r"(?:^|[:/])modules/rostests/(?:kmtests|testdata)/").unwrap();
+    let local = Regex::new(r"^repo:build-[^/]+/").unwrap();
+    let arch_build = Regex::new(r"^repo:build-(?:i386|amd64|arm64)/").unwrap();
+    let mut out = m.clone();
+    let mut dropped = 0usize;
+    if let Some(cds) = out["cds"].as_object_mut() {
+        for spec in cds.values_mut() {
+            if let Some(entries) = spec["entries"].as_array_mut() {
+                entries.retain(|e| {
+                    let src = e.get(1).and_then(Value::as_str).unwrap_or("");
+                    let keep = !(rostest.is_match(src)
+                        || (local.is_match(src) && !arch_build.is_match(src)));
+                    if !keep {
+                        dropped += 1;
+                    }
+                    keep
+                });
+            }
+        }
+    }
+    if dropped > 0 {
+        eprintln!("media-manifest: left {dropped} locally-staged entries (kmtests/testdata, build-fex-hello and similar) out of the committed lists");
+    }
+    out
 }
 pub fn render(m: &Value) -> Result<String> {
     let mut out = vec![format!(
@@ -637,4 +671,38 @@ pub fn write_plan_with_options(
     allow_drop: bool,
 ) -> Result<BTreeMap<PathBuf, String>> {
     plan(root, arches, !allow_drop)
+}
+
+#[cfg(test)]
+mod local_stage_tests {
+    use super::without_local_stages;
+    use serde_json::json;
+
+    #[test]
+    fn locally_staged_entries_never_reach_the_committed_lists() {
+        let m = json!({"config": "Debug", "cds": {"livecd": {"command": [], "entries": [
+            ["reactos/system32/kernel32.dll", "cell:dll/win32/kernel32/kernel32.dll"],
+            ["reactos/syswow64/calc.exe", "repo:build-i386/base/applications/calc/calc.exe"],
+            ["reactos/system32/hello64.exe", "repo:build-fex-hello/hello64.exe"],
+            ["reactos/bin/kmtest_drv.sys", "build:modules/rostests/kmtests/kmtest_drv/kmtest_drv.sys"],
+            ["reactos/bin/testdata/x", "build:modules/rostests/testdata/x"],
+            ["reactos/system32/drivers/etc/hosts", "repo:boot/bootdata/hosts"]
+        ]}}});
+        let out = without_local_stages(&m);
+        let srcs: Vec<_> = out["cds"]["livecd"]["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e[1].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            srcs,
+            [
+                "cell:dll/win32/kernel32/kernel32.dll",
+                // An arch build dir is the wow64 staging, not local state.
+                "repo:build-i386/base/applications/calc/calc.exe",
+                "repo:boot/bootdata/hosts"
+            ]
+        );
+    }
 }
