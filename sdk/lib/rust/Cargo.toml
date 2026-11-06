@@ -1239,7 +1239,11 @@ debug = 1
 # ntdll -- but NOT rtl-diag and rtl-strings, which freeldr links through blrtl.
 # NOT freeldr-rust: armed, the BIOS loader's PE grew to 0x7fc00 against MAX_FREELDR_PE_SIZE
 # 0x77000 (35840 bytes over; every BIOS boot would bugcheck). Its 19 cfg(debug_assertions) blocks
-# stay unbuilt until the loader has the room (2026-11-02). overflow-checks defaults to FOLLOWING
+# stay unbuilt until the loader has the room (2026-11-02). Measured 2026-11-05 (amd64 armed): as-is
+# 0x7d600; -C opt-level=z (it is already =s, from freeldr-cargo/build.rs RUSTFLAGS, so a profile
+# opt-level here is ignored) 0x7b800; plus codegen-units=1 0x7a600 -- still 0x3600 over. That run
+# is branch smp-bringup-freeldr-arming-wip: cgu=1 needs the dead ntldr modules gated out, because
+# one archive member can no longer hide their unresolved references. overflow-checks defaults to FOLLOWING
 # debug-assertions and must stay off: the C has no overflow traps.
 [profile.release.package.ntoskrnl-rust]
 debug-assertions = true
