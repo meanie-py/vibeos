@@ -800,7 +800,11 @@ unsafe extern "system" fn AckPageDlgProc(
 unsafe extern "C" fn DoWriteSoundEvents(
     hKey: HKEY,
     lpSubkey: LPCWSTR,
-    lpEventsArray: *const *const [LPCWSTR; 2],
+    // C: `LPCWSTR lpEventsArray[][2]`, a pointer to [LPCWSTR; 2]. It was `*const *const`, so each
+    // entry's first string was dereferenced as the array and ExpandEnvironmentStringsW read
+    // ".Default"'s characters as a pointer: setup.exe died in RtlInitUnicodeString on every
+    // Workstation install (install-smoke stage 2, 2026-11-06).
+    lpEventsArray: *const [LPCWSTR; 2],
     dwSize: DWORD,
 ) -> BOOL {
     let mut hRootKey: HKEY = core::ptr::null_mut();
@@ -826,7 +830,7 @@ unsafe extern "C" fn DoWriteSoundEvents(
     i = 0;
     while i < dwSize {
         if ExpandEnvironmentStringsW(
-            (*(*lpEventsArray.add(i as usize)))[1],
+            (*lpEventsArray.add(i as usize))[1],
             szDest.as_mut_ptr(),
             _countof!(szDest),
         ) == 0
@@ -843,7 +847,7 @@ unsafe extern "C" fn DoWriteSoundEvents(
 
         error = RegOpenKeyExW(
             hRootKey,
-            (*(*lpEventsArray.add(i as usize)))[0],
+            (*lpEventsArray.add(i as usize))[0],
             0,
             KEY_READ,
             &mut hEventKey,
@@ -866,13 +870,13 @@ unsafe extern "C" fn DoWriteSoundEvents(
             continue;
         }
 
-        cbData = ((lstrlenW((*(*lpEventsArray.add(i as usize)))[1]) + 1) * (core::mem::size_of::<WCHAR>() as DWORD) as i32) as u32;
+        cbData = ((lstrlenW((*lpEventsArray.add(i as usize))[1]) + 1) * (core::mem::size_of::<WCHAR>() as DWORD) as i32) as u32;
         error = RegSetValueExW(
             hDefaultKey,
             core::ptr::null(),
             0,
             (REG_EXPAND_SZ) as u32,
-            (*(*lpEventsArray.add(i as usize)))[1] as *const BYTE,
+            (*lpEventsArray.add(i as usize))[1] as *const BYTE,
             cbData,
         );
         RegCloseKey(hDefaultKey);
@@ -970,8 +974,8 @@ unsafe extern "C" fn DoWriteInstallationType(nOption: INSTALLATION_TYPE) -> BOOL
         }
 
         if nOption == INSTALLATION_TYPE_WORKSTATION {
-            DoWriteSoundEvents(HKEY_CURRENT_USER, s_szDefaultSoundEvents.as_ptr(), s_DefaultSoundEvents.as_ptr() as *const *const [LPCWSTR; 2], _countof!(s_DefaultSoundEvents));
-            DoWriteSoundEvents(HKEY_CURRENT_USER, s_szExplorerSoundEvents.as_ptr(), s_ExplorerSoundEvents.as_ptr() as *const *const [LPCWSTR; 2], _countof!(s_ExplorerSoundEvents));
+            DoWriteSoundEvents(HKEY_CURRENT_USER, s_szDefaultSoundEvents.as_ptr(), s_DefaultSoundEvents.as_ptr(), _countof!(s_DefaultSoundEvents));
+            DoWriteSoundEvents(HKEY_CURRENT_USER, s_szExplorerSoundEvents.as_ptr(), s_ExplorerSoundEvents.as_ptr(), _countof!(s_ExplorerSoundEvents));
         }
 
         if nOption == INSTALLATION_TYPE_SERVER_CORE {
