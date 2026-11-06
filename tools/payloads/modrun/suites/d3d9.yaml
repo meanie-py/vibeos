@@ -1,5 +1,5 @@
 # d3d9 (dll/directx/wine/d3d9 -> d3d9-rust). Smoke never loads Direct3D 9; this drives its
-# front end over the same C wined3d: adapter and mode enumeration, the CheckDeviceFormat matrix
+# front end over wined3d (d3dwine.dll): adapter and mode enumeration, the CheckDeviceFormat matrix
 # (65 formats x 7 resource types x 13 usages), caps, device state get/set including every
 # texture-stage state, transforms, resources and their descriptions, vertex declarations and
 # state blocks.
@@ -8,18 +8,28 @@
 # so the outputs must match byte for byte.
 module: d3d9
 variants:
-  c: '%SystemRoot%\bin\modrun\d3d9_c.exe'
+  c: '%SystemRoot%\bin\modrun\dx_c\d3d9_c.exe'
   rust: '%SystemRoot%\bin\modrun\d3d9_probe.exe'
-ninja: [d3d9_c]
+ninja: [d3d9_c, d3dwine_c]
+# Each variant runs on its OWN wined3d: the C one (d3dwine_c, the pre-flip oracle) is staged as
+# d3dwine.dll beside the _c.exe in dx_c\ and gl_c\, and wined3d is not a KnownDLL, so the
+# exe's directory wins; the probe exe beside no wined3d loads the system one, the Rust once
+# wined3d flips. The probe's dx_wined3d() refuses to run on the wrong one, so after the flip
+# the cases still compare the C stack with the Rust stack, not the Rust with itself.
 stage:
-  - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/d3d9_c.exe}
+  - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/dx_c/d3d9_c.exe}
+  - {src: 'build-{arch}/dll/directx/wine/d3d9/d3d9_c.dll', dest: bin/modrun/dx_c/d3d9_c.dll}
+  - {src: 'build-{arch}/dll/directx/wine/wined3d/d3dwine_c.dll', dest: bin/modrun/dx_c/d3dwine.dll}
   - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/d3d9_probe.exe}
-  - {src: 'build-{arch}/dll/directx/wine/d3d9/d3d9_c.dll', dest: bin/modrun/d3d9_c.dll}
-  # The device case: the same pair beside Mesa softpipe (tools/mesa/build-mesa.sh), which
-  # wined3d's GL renderer accepts. opengl32 is not a KnownDLL, so the exe's directory wins.
-  - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/gl/d3d9_c.exe}
+  # The device cases: the same pairs beside Mesa softpipe (tools/mesa/build-mesa.sh), which
+  # wined3d's GL renderer accepts. opengl32 is not a KnownDLL either.
+  - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/gl_c/d3d9_c.exe}
+  - {src: 'build-{arch}/dll/directx/wine/d3d9/d3d9_c.dll', dest: bin/modrun/gl_c/d3d9_c.dll}
+  - {src: 'build-{arch}/dll/directx/wine/wined3d/d3dwine_c.dll', dest: bin/modrun/gl_c/d3dwine.dll}
   - {src: 'tools/payloads/modrun/probes/d3d9-{arch}.exe', dest: bin/modrun/gl/d3d9_probe.exe}
-  - {src: 'build-{arch}/dll/directx/wine/d3d9/d3d9_c.dll', dest: bin/modrun/gl/d3d9_c.dll}
+  - {src: '.cache/mesa/{arch}/opengl32.dll', dest: bin/modrun/gl_c/opengl32.dll}
+  - {src: '.cache/mesa/{arch}/libgallium_wgl.dll', dest: bin/modrun/gl_c/libgallium_wgl.dll}
+  - {src: '.cache/mesa/{arch}/libz-1.dll', dest: bin/modrun/gl_c/libz-1.dll}
   - {src: '.cache/mesa/{arch}/opengl32.dll', dest: bin/modrun/gl/opengl32.dll}
   - {src: '.cache/mesa/{arch}/libgallium_wgl.dll', dest: bin/modrun/gl/libgallium_wgl.dll}
   - {src: '.cache/mesa/{arch}/libz-1.dll', dest: bin/modrun/gl/libz-1.dll}
@@ -30,20 +40,32 @@ cases:
   # A real device: state, resources and draws, read back. `expect` demands the device and a
   # draw, so a GL that wined3d refuses (falling back to no3d) fails here, not passes vacuously.
   - id: device
-    arches: [amd64, arm64]  # i386: wined3d's GL init faults in Mesa (roadmap "Known bugs")
+    arches: [amd64, arm64]  # i386: a second wined3d init runs out of address space (roadmap "Known bugs")
     variants:
-      c: '%SystemRoot%\bin\modrun\gl\d3d9_c.exe'
+      c: '%SystemRoot%\bin\modrun\gl_c\d3d9_c.exe'
       rust: '%SystemRoot%\bin\modrun\gl\d3d9_probe.exe'
     args: gl
     expect: ['renderer gl', 'create device hr=00000000', 'r triangle readback hr=00000000', 'probe done']
     timeout: 900
+  # i386 only, with wined3d's TRACE and the probe's address-space report on the serial line:
+  # the open GL-init fault (roadmap "Known bugs"), kept running so its evidence is in every
+  # i386 modrun log until it is fixed.
+  - id: device-i386
+    arches: [i386]
+    variants:
+      c: '%SystemRoot%\bin\modrun\gl_c\d3d9_c.exe'
+      rust: '%SystemRoot%\bin\modrun\gl\d3d9_probe.exe'
+    args: gl trace
+    expect: ['renderer gl', 'create device hr=00000000', 'probe done']
+    timeout: 600
+    xfail: "i386: the second wined3d init finds 1.5G of address space still reserved, cannot create a GL context, and faults on its legacy fallback (roadmap Known bugs)"
   # Only the out-of-range stage. The C indexes texture_states[8] unchecked and returns the
   # neighbouring slot; the Rust rejects the stage and leaves the value alone. (Before that fix
   # the Rust panicked here: index out of bounds, len 8, index 8.)
   - id: device-invalid
-    arches: [amd64, arm64]  # i386: wined3d's GL init faults in Mesa (roadmap "Known bugs")
+    arches: [amd64, arm64]  # i386: a second wined3d init runs out of address space (roadmap "Known bugs")
     variants:
-      c: '%SystemRoot%\bin\modrun\gl\d3d9_c.exe'
+      c: '%SystemRoot%\bin\modrun\gl_c\d3d9_c.exe'
       rust: '%SystemRoot%\bin\modrun\gl\d3d9_probe.exe'
     args: gl invalid
     expect: ['renderer gl', 'create device hr=00000000', 'probe done']

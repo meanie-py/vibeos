@@ -325,11 +325,39 @@ def reflip(old: str, cml: str) -> str:
     return "\n".join(out) + "\n"
 
 
-def write(module_dir: Path, *, check: bool = False) -> bool:
-    """Write (or with check, compare) the module's oracle. True when already current."""
+def all_flipped(cml: str) -> str:
+    """`cml` as its full flip would leave it: every TU of every source list (and of every
+    `add_executable`/`add_library` itself) commented out as replaced by Rust.
+
+    The pre-flip oracle. A module paid for as one big translation (wined3d, 86K lines) wants
+    its oracle wired, staged and shown to agree with itself BEFORE the purchase; once the
+    flip lands both sides of a suite would otherwise load the same Rust DLL and agree
+    vacuously. Marking every TU yields exactly the text the real flip's oracle will be, so
+    the regeneration `port flip` runs is a no-op."""
+    tus = {
+        w
+        for cmd in commands(cml)
+        if cmd.name in ("list", "set", "add_executable", "add_library")
+        for w in _words(cmd.args)
+        if re.fullmatch(r"[\w./-]+\.(?:c|cc|cpp|cxx)", w) and not Path(w).name.startswith("rust_")
+    }
+    marks = "\n".join(f"# {t}  # replaced by Rust" for t in sorted(tus))
+    return reflip(cml, marks)
+
+
+def write(module_dir: Path, *, check: bool = False, pre_flip: bool = False) -> bool:
+    """Write (or with check, compare) the module's oracle. True when already current.
+
+    `pre_flip` oracles a module nothing of which is flipped yet (see all_flipped). Once its
+    oracle is included, an unflipped CMakeLists keeps regenerating that way, so `--check`
+    stays meaningful through the window between wiring the oracle and buying the Rust."""
     cml_path = module_dir / "CMakeLists.txt"
     cml = cml_path.read_text()
-    want = generate(reflip(pre_cargo(cml_path), cml) if "add_cargo_module(" in cml else cml)
+    text = reflip(pre_cargo(cml_path), cml) if "add_cargo_module(" in cml else cml
+    unflipped = not source_lists(text) and not inline_sources(text)
+    if unflipped and (pre_flip or f"include({ORACLE_FILE})" in cml):
+        text = all_flipped(text)
+    want = generate(text)
     path = module_dir / ORACLE_FILE
     current = path.is_file() and path.read_text() == want and f"include({ORACLE_FILE})" in cml
     if check or current:
@@ -346,11 +374,16 @@ def main(argv: list[str] | None = None) -> int:
         "module", nargs="+", type=Path, help="module directory (holding CMakeLists.txt)"
     )
     ap.add_argument("--check", action="store_true", help="exit 1 if an oracle is missing or stale")
+    ap.add_argument(
+        "--pre-flip",
+        action="store_true",
+        help="oracle a module before its flip: the C it ships now, as the full flip will leave it",
+    )
     args = ap.parse_args(argv)
     stale = 0
     for module in args.module:
         try:
-            ok = write(module, check=args.check)
+            ok = write(module, check=args.check, pre_flip=args.pre_flip)
         except OracleError as e:
             print(f"c_oracle: {module}: {e}", file=sys.stderr)
             return 1

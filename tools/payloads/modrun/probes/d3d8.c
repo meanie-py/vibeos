@@ -97,6 +97,76 @@ static void bb_hash(IDirect3DDevice8 *dev, const char *tag)
     IDirect3DSurface8_Release(bb);
 }
 
+/* Hand-assembled shader bytecode, as d3d8 takes it: no dcl instructions (the declaration
+ * tokens bind the registers), so d3d8's own function-token walk and wined3d's sm1 parser and
+ * GLSL generator all sit between these tokens and the read-back pixels. */
+static const DWORD vs11[] = {
+    0xfffe0101,                                     /* vs_1_1 */
+    0x00000001, 0xc00f0000, 0x90e40000,             /* mov oPos, v0 */
+    0x00000005, 0xd00f0000, 0x90e40005, 0xa0e40000, /* mul oD0, v5, c0 */
+    0x0000ffff};
+static const DWORD ps11[] = {
+    0xffff0101,                                     /* ps_1_1 */
+    0x00000005, 0x800f0000, 0x90e40000, 0xa0e40001, /* mul r0, v0, c1 */
+    0x0000ffff};
+
+static void shaders(IDirect3DDevice8 *dev, DWORD *decl, const void *verts, UINT stride)
+{
+    static const float c0[4] = {1.0f, 0.5f, 2.0f, 1.0f}, c1[4] = {0.5f, 1.0f, 1.0f, 1.0f};
+    DWORD vs = 0, ps = 0, buf[32];
+    float back[8];
+    DWORD size;
+    HRESULT hr;
+
+    hr = IDirect3DDevice8_CreateVertexShader(dev, decl, vs11, &vs, 0);
+    HR("s vs11", hr);
+    if (FAILED(hr))
+        return;
+    size = 0;
+    HR("  vs func size", IDirect3DDevice8_GetVertexShaderFunction(dev, vs, NULL, &size));
+    memset(buf, 0, sizeof(buf));
+    if (size <= sizeof(buf))
+        IDirect3DDevice8_GetVertexShaderFunction(dev, vs, buf, &size);
+    printf("  vs func %lu hash %08lx\n", size, dx_hash(buf, size <= sizeof(buf) ? size : 0));
+    hr = IDirect3DDevice8_CreatePixelShader(dev, ps11, &ps);
+    HR("s ps11", hr);
+    if (SUCCEEDED(hr))
+    {
+        size = 0;
+        HR("  ps func size", IDirect3DDevice8_GetPixelShaderFunction(dev, ps, NULL, &size));
+        printf("  ps func %lu\n", size);
+    }
+    HR("s vsconst", IDirect3DDevice8_SetVertexShaderConstant(dev, 0, c0, 1));
+    HR("s psconst", IDirect3DDevice8_SetPixelShaderConstant(dev, 1, c1, 1));
+    HR("s vsconst far", IDirect3DDevice8_SetVertexShaderConstant(dev, 96, c0, 1));
+    memset(back, 0xcc, sizeof(back));
+    HR("s get vsconst", IDirect3DDevice8_GetVertexShaderConstant(dev, 0, back, 2));
+    dx_words("  c", back, sizeof(back));
+    memset(back, 0xcc, sizeof(back));
+    HR("s get psconst", IDirect3DDevice8_GetPixelShaderConstant(dev, 1, back, 1));
+    dx_words("  p", back, 16);
+
+    IDirect3DDevice8_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0xff000000, 1.0f, 0);
+    IDirect3DDevice8_BeginScene(dev);
+    HR("s set vs", IDirect3DDevice8_SetVertexShader(dev, vs));
+    HR("s vs draw", IDirect3DDevice8_DrawPrimitiveUP(dev, D3DPT_TRIANGLELIST, 1, verts, stride));
+    IDirect3DDevice8_EndScene(dev);
+    bb_hash(dev, "s vs11");
+    if (ps)
+    {
+        IDirect3DDevice8_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0xff000000, 1.0f, 0);
+        IDirect3DDevice8_BeginScene(dev);
+        HR("s set ps", IDirect3DDevice8_SetPixelShader(dev, ps));
+        HR("s ps draw", IDirect3DDevice8_DrawPrimitiveUP(dev, D3DPT_TRIANGLELIST, 1, verts, stride));
+        IDirect3DDevice8_EndScene(dev);
+        bb_hash(dev, "s vs11 ps11");
+        IDirect3DDevice8_SetPixelShader(dev, 0);
+        HR("s delete ps", IDirect3DDevice8_DeletePixelShader(dev, ps));
+    }
+    IDirect3DDevice8_SetVertexShader(dev, D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
+    HR("s delete vs", IDirect3DDevice8_DeleteVertexShader(dev, vs));
+}
+
 /* Only reachable with a real 3D device (the gl case): d3d8's draw paths, through an FVF and
  * through a declaration-only vertex shader -- d3d8's own token parser feeding the draw. */
 static void render(IDirect3DDevice8 *dev)
@@ -143,6 +213,7 @@ static void render(IDirect3DDevice8 *dev)
         IDirect3DDevice8_SetVertexShader(dev, D3DFVF_XYZRHW | D3DFVF_DIFFUSE);
         HR("r delete decl vs", IDirect3DDevice8_DeleteVertexShader(dev, vs));
     }
+    shaders(dev, decl, tri3, sizeof(tri3[0]));
     HR("r present", IDirect3DDevice8_Present(dev, NULL, NULL, NULL, NULL));
 }
 
@@ -351,8 +422,17 @@ int main(int argc, char **argv)
 
     dx_renderer(argc, argv);
     dx_load(L"d3d8");
+    dx_wined3d();
     create = (CREATE8)dx_proc("Direct3DCreate8");
-    printf("create bad sdk %d\n", create(1) != NULL);
+    /* wined3d ignores the SDK version, so this is a whole second d3d8 with its own wined3d
+     * adapter; leaked, it left the i386 guest's next adapter init unable to create any GL
+     * context (ERROR_NOT_ENOUGH_MEMORY) -- roadmap "Known bugs". */
+    dx_vm("start");
+    d3d = create(1);
+    printf("create bad sdk %d\n", d3d != NULL);
+    if (d3d)
+        printf("bad sdk release %lu\n", IDirect3D8_Release(d3d));
+    dx_vm("after first");
     d3d = create(D3D_SDK_VERSION);
     printf("create %d\n", d3d != NULL);
     if (!d3d)

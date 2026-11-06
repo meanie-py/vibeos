@@ -1146,7 +1146,12 @@ def parse_cmakelists(
     if not targets:
         raise ProfileDeriveError(f"{cmake}: no add_library()/add_executable() found")
     if target is None:
-        if len(targets) == 1:
+        # c_oracle's `<t>_c` twin (c_oracle.cmake, included from the CMakeLists) builds the
+        # same TUs and never owns the island: wined3d's d3dwine + d3dwine_c read as ambiguous.
+        owners = [t for t in targets if not (t.endswith("_c") and t[:-2] in targets)]
+        if len(owners) == 1:
+            target = owners[0]
+        elif len(targets) == 1:
             target = next(iter(targets))
         elif module_dir.name in targets:
             target = module_dir.name

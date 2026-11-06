@@ -23,7 +23,10 @@ binaries_from: tools/payloads/modrun/modrun.py
 
 test:
   launch_marker: "[MODRUN] done"
-  launch_drain_secs: 1200
+  # The d3d `gl` cases are the long pole: wined3d's GL init over Mesa softpipe under TCG costs
+  # about two minutes per process, and there are seven such cases of two variants each --
+  # about 20 minutes on amd64 before any other suite runs.
+  launch_drain_secs: 3000
   launch_idle_secs: 300
   grader: tools/payloads/modrun/modrun.py
   # A sound card, so dsound's device paths (buffers, mixer, converters, 3D) are reachable: AC97

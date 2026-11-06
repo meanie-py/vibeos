@@ -585,6 +585,14 @@ Mesa softpipe (pinned by sha256, cached under `~/.cache/vibeos-mesa/<key>`) into
 `.cache/mesa/<arch>/`; modrun's `build.sh` runs it whenever a selected suite stages from there.
 It is app-local (beside the probes in `bin\modrun\gl\`), never in the OS image.
 
+The d3d8, d3d9 and ddraw suites run each variant on its OWN wined3d: the C side lives in
+`bin\modrun\dx_c\` (no3d) and `gl_c\` (Mesa), with `d3dwine_c` (the pre-flip oracle) staged
+there as `d3dwine.dll` -- not a KnownDLL, so the exe's directory wins -- and the probe's
+`dx_wined3d()` exits unless each side loaded the wined3d it should. `gl trace` adds wined3d's
+TRACE to the serial (libwine reads `DEBUGCHANNEL` from the process environment). The `gl` cases
+cost about two minutes per process under TCG, so the payload's `launch_drain_secs` is 3000.
+`MODRUN_SUITES` is read at BUILD time (it writes the case list), not at smoke time.
+
 ## Kernel/HAL bindgen staging
 
 `bash sdk/lib/rust/ntkrnl-sys/generate_bindings.sh` stages all three kernel
