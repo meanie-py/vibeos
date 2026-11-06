@@ -1200,6 +1200,14 @@ name = "com-sys"
 version = "0.1.0"
 
 [[package]]
+name = "comcat-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "comctl32-cargo"
 version = "0.1.0"
 dependencies = [
@@ -4290,6 +4298,14 @@ name = "luid"
 version = "0.1.0"
 
 [[package]]
+name = "lz32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "magnify-cargo"
 version = "0.1.0"
 dependencies = [
@@ -5302,6 +5318,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "msxml3r-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "msxml4-cargo"
 version = "0.1.0"
 dependencies = [
@@ -5343,6 +5367,14 @@ version = "0.1.0"
 dependencies = [
  "cc",
  "musl-math",
+]
+
+[[package]]
+name = "mycomput-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -6994,6 +7026,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rsabase-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "rsaenh-cargo"
 version = "0.1.0"
 dependencies = [
@@ -7576,6 +7616,14 @@ name = "secur32-sys"
 version = "0.1.0"
 
 [[package]]
+name = "security-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "sehtest-cargo"
 version = "0.1.0"
 dependencies = [
@@ -7818,6 +7866,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "shdoclc-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "shell32-rust"
 version = "0.1.0"
 dependencies = [
@@ -7828,6 +7884,14 @@ dependencies = [
  "va-slots-rust",
  "win32macros-rust",
  "winedebug-rust",
+]
+
+[[package]]
+name = "shfolder-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -8016,6 +8080,14 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "winedebug-rust",
+]
+
+[[package]]
+name = "softpub-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -8471,6 +8543,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tapiui-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "taskkill-cargo"
 version = "0.1.0"
 dependencies = [
@@ -8679,6 +8759,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "themeui-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -10155,6 +10243,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "wmi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]

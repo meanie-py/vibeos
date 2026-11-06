@@ -1,5 +1,17 @@
 [workspace]
 members = [
+    "wmi-cargo",
+    "themeui-cargo",
+    "tapiui-cargo",
+    "softpub-cargo",
+    "security-cargo",
+    "mycomput-cargo",
+    "msxml3r-cargo",
+    "comcat-cargo",
+    "shfolder-cargo",
+    "shdoclc-cargo",
+    "rsabase-cargo",
+    "lz32-cargo",
     "ws2help-cargo",
     "oleaut32-cargo",
     "samsrv-cargo",
