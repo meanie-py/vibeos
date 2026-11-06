@@ -705,7 +705,10 @@ pub fn check_statement_effects(
             }
         }
     }
-    if let Some(ep) = facts["set_entrypoint"].as_array() {
+    if let Some(ep) = facts["set_entrypoint"]
+        .as_array()
+        .filter(|_| facts["set_entrypoint_conditional"] != true)
+    {
         if let Some(sym) = ep.first().and_then(|v| v.as_str()) {
             for (a, ln) in links {
                 let want = entry_symbol(a, sym, ep.get(1).and_then(|v| v.as_str()));
@@ -907,6 +910,12 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
             f["set_subsystem"] = json!(subsystem_flag(&a[1]));
         } else if cmd == "set_entrypoint" && (a.len() == 2 || a.len() == 3) {
             f["set_entrypoint"] = json!([Some(&a[1]), a.get(2)]);
+            // Under an if() the target does not share (ws2help: only when
+            // DLL_EXPORT_VERSION < 0x600, so not on amd64), the statement does not say what
+            // every arch links; the cell takes each arch's entry from its link edge.
+            if home.as_ref().is_some_and(|h| &paths[i] != h) {
+                f["set_entrypoint_conditional"] = json!(true);
+            }
         } else if cmd == "target_sources"
             && a.len() == 3
             && a[1] == "PRIVATE"
@@ -1282,8 +1291,37 @@ fn depends_targets(raw: &str) -> Vec<String> {
         .map(str::to_owned)
         .collect()
 }
+/// oleaut32's form: `-E env ${X_ENV} cargo build ...`, with `set(X_ENV
+/// CARGO_TARGET_DIR=${D})` and, under `if(ARCH STREQUAL "<a>")`, `list(APPEND X_ENV
+/// "RUSTFLAGS=...")`. Returns the env variable, the command with the variable expanded to
+/// its CARGO_TARGET_DIR, and the per-arch RUSTFLAGS; None for any other use of the variable.
+fn env_list(text: &str, raw: &str) -> Option<(String, String, BTreeMap<String, String>)> {
+    let var = re(r"-E\s+env\s+\$\{(\w+)\}\s+cargo\s+build").captures(raw)?[1].to_owned();
+    let v = regex::escape(&var);
+    let set = re(&format!(r"(?m)^[ \t]*set\(\s*{v}\s+CARGO_TARGET_DIR=\$\{{(\w+)\}}\s*\)[ \t]*$"));
+    let dir = set.captures(text)?[1].to_owned();
+    let append = re(&format!(
+        r#"(?m)^[ \t]*if\(ARCH STREQUAL "(\w+)"\)\n[ \t]*list\(APPEND {v} "RUSTFLAGS=([^"]*)"\)\n[ \t]*endif\(\)"#
+    ));
+    let mut flags = BTreeMap::new();
+    for c in append.captures_iter(text) {
+        flags.insert(c[1].to_owned(), c[2].to_owned());
+    }
+    // Every other mention of the variable is unmodelled: the set, the appends and the
+    // command's own use are all there may be.
+    let uses = re(&format!(r"\b{v}\b")).find_iter(text).count();
+    if uses != 1 + flags.len() + 1 {
+        return None;
+    }
+    let expanded = raw.replacen(&format!("${{{var}}}"), &format!("CARGO_TARGET_DIR=${{{dir}}}"), 1);
+    Some((var, expanded, flags))
+}
 fn custom_body_command(text: &str, raw: &str) -> Option<serde_json::Value> {
-    let raw = raw.to_owned();
+    let env = env_list(text, raw);
+    if env.is_none() && re(r"-E\s+env\s+\$\{").is_match(raw) {
+        return None;
+    }
+    let raw = env.as_ref().map(|e| e.1.clone()).unwrap_or_else(|| raw.to_owned());
     let pattern = re(
         r#"(?x)^\s*OUTPUT\s+\$\{(\w+)\}\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+env\s+CARGO_TARGET_DIR=\$\{(\w+)\}\s+(?:RUSTFLAGS=\$\{(\w+)\}\s+)?cargo\s+build\s+--release\s+--target\s+\$\{(\w+)\}\s+-p\s+([\w-]+)\s+--manifest-path\s+\$\{(\w+)\}/Cargo\.toml\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+copy(?:_if_different)?\s+\$\{(\w+)\}/\$\{(\w+)\}/release/(lib\w+\.a)\s+\$\{(\w+)\}\s+DEPENDS\s+\$\{(\w+)\}\s+\$\{(\w+)\}/([\w-]+)/Cargo\.toml(?P<more>(?:\s+[^\s]+?)*?)\s+WORKING_DIRECTORY\s+\$\{(\w+)\}\s+COMMENT\s+"[^"]*"(?:\s+VERBATIM)?\s*$"#,
     );
@@ -1328,11 +1366,16 @@ fn custom_body_command(text: &str, raw: &str) -> Option<serde_json::Value> {
         regex::escape(&c[1])
     ));
     let custom = target_re.captures(text)?;
-    let vars: Vec<_> = [c.get(1), c.get(2), c.get(3), c.get(4), c.get(6), c.get(11)]
+    let mut vars: Vec<_> = [c.get(1), c.get(2), c.get(3), c.get(4), c.get(6), c.get(11)]
         .into_iter()
         .flatten()
         .map(|m| m.as_str())
         .collect();
+    let mut flags = flags;
+    if let Some((var, _, env_flags)) = &env {
+        vars.push(var.as_str());
+        flags = env_flags.clone();
+    }
     Some(
         serde_json::json!({"crate":&c[5],"archive":&c[9],"rustflags":flags.into_iter().filter(|(_,v)|!v.is_empty()).collect::<BTreeMap<_,_>>(),"vars":vars,"custom_target":&custom[1],"depends":depends_targets(&format!("DEPENDS {}", &c["more"]))}),
     )
@@ -2098,6 +2141,50 @@ mod multi_body_tests {
         assert!(custom_body_for(&flagged, "m").is_none());
         // No command is the target's own body.
         assert!(custom_body_for(&module(), "other").is_none());
+    }
+
+    #[test]
+    fn an_env_list_carries_its_target_dir_and_per_arch_rustflags() {
+        // oleaut32: `-E env ${X_ENV} cargo build`, the env a list with an i386 RUSTFLAGS.
+        let body = cmd("MRUST", "m-rust", "libm_rust.a", "").replace(
+            "-E env\n        CARGO_TARGET_DIR=${MRUST_DIR}\n",
+            "-E env\n        ${MRUST_ENV}\n",
+        );
+        let text = format!(
+            "set(M_WS \"${{CMAKE_SOURCE_DIR}}/sdk/lib/rust\")\n\
+             if(ARCH STREQUAL \"i386\")\n    set(M_TARGET \"i686-pc-windows-gnu\")\n\
+             elseif(ARCH STREQUAL \"amd64\")\n    set(M_TARGET \"x86_64-pc-windows-gnu\")\n\
+             elseif(ARCH STREQUAL \"arm64\")\n    set(M_TARGET \"aarch64-pc-windows-gnullvm\")\nendif()\n\
+             set(MRUST_ENV CARGO_TARGET_DIR=${{MRUST_DIR}})\n\
+             if(ARCH STREQUAL \"i386\")\n    list(APPEND MRUST_ENV \"RUSTFLAGS=-C target-feature=+sse,+sse2\")\nendif()\n{body}"
+        );
+        let v = super::custom_body(&text).expect("models");
+        assert_eq!(v["crate"], "m-rust");
+        assert_eq!(v["rustflags"]["i386"], "-C target-feature=+sse,+sse2");
+        assert!(v["rustflags"].get("amd64").is_none());
+        assert!(v["vars"].as_array().unwrap().iter().any(|x| x == "MRUST_ENV"));
+        // Any other use of the env variable is unmodelled.
+        let extra = text.replace("endif()\nrust_storage", "endif()\nmessage(${MRUST_ENV})\nrust_storage");
+        assert!(super::custom_body(&extra).is_none());
+    }
+
+    #[test]
+    fn a_set_entrypoint_under_an_if_the_target_does_not_share_is_conditional() {
+        let dir = std::env::temp_dir().join(format!("vibeos-codegen-ep-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cm = dir.join("CMakeLists.txt");
+        std::fs::write(
+            &cm,
+            "add_library(w MODULE w.rc)\nset_module_type(w win32dll)\n\
+             if(DLL_EXPORT_VERSION LESS 0x600)\n    set_entrypoint(w WDllMain 12)\nendif()\n",
+        )
+        .unwrap();
+        let f = super::cmake_facts(&cm, "w", &[]).unwrap();
+        assert_eq!(f["set_entrypoint_conditional"], true);
+        std::fs::write(&cm, "add_library(w MODULE w.rc)\nset_entrypoint(w WDllMain 12)\n").unwrap();
+        let f = super::cmake_facts(&cm, "w", &[]).unwrap();
+        assert!(f["set_entrypoint_conditional"].is_null());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

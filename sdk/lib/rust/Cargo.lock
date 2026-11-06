@@ -6076,6 +6076,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oleaut32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "oleaut32-rust"
 version = "0.1.0"
 dependencies = [

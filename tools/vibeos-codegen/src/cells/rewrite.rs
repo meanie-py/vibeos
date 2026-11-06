@@ -238,6 +238,11 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             && ((["set", "rust_storage_target", "rust_crate_sources"].contains(&cmd.as_str())
                 && !a.is_empty()
                 && vars.is_some_and(|vs| vs.iter().any(|v| v.as_str() == Some(&a[0]))))
+                // oleaut32's per-arch `list(APPEND OLEAUT32_RUST_ENV "RUSTFLAGS=...")`.
+                || (cmd == "list"
+                    && a.len() > 1
+                    && a[0] == "APPEND"
+                    && vars.is_some_and(|vs| vs.iter().any(|v| v.as_str() == Some(&a[1]))))
                 || (cmd == "add_custom_command"
                     && re(r"\bcargo build\b").is_match(raw)
                     && cell.custom_body["crate"].as_str().is_some_and(|k| {

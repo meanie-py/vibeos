@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "oleaut32-cargo",
     "samsrv-cargo",
     "lsasrv-cargo",
     "kernel32-cargo",
