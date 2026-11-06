@@ -333,7 +333,7 @@ pub fn source_hash(root: &Path) -> Result<String> {
     let guard = Scratch(dir);
     let temp = guard.0.join("index");
     if index.is_file() {
-        std::fs::copy(index, &temp)?;
+        crate::copy_git_index(&index, &temp)?;
     }
     git(root, &["add", "-A"], Some(&temp))?;
     let data = git(

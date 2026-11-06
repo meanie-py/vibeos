@@ -64,6 +64,18 @@ impl From<regex::Error> for Error {
 }
 pub type Result<T> = std::result::Result<T, Error>;
 pub const ARCHES: [&str; 3] = ["i386", "amd64", "arm64"];
+/// Copy a git index to a scratch GIT_INDEX_FILE keeping its mtime. git treats an entry whose
+/// file mtime is not older than the index as "racily clean" and re-hashes it; a plain copy
+/// stamps the scratch index NOW, so a same-size edit made in the same second as the last
+/// `git add` looks clean to it once a second has passed, and the tree it writes is stale.
+pub fn copy_git_index(real: &Path, scratch: &Path) -> std::io::Result<()> {
+    std::fs::copy(real, scratch)?;
+    let modified = std::fs::metadata(real)?.modified()?;
+    std::fs::File::options()
+        .write(true)
+        .open(scratch)?
+        .set_modified(modified)
+}
 pub fn read(path: &Path) -> Result<String> {
     std::fs::read(path)
         .map(|b| String::from_utf8_lossy(&b).into_owned())
@@ -147,3 +159,41 @@ pub mod payload_providers;
 pub mod payload_spec;
 
 pub mod payload_firmware;
+
+#[cfg(test)]
+mod index_copy_tests {
+    use std::{fs, path::Path, process::Command, thread::sleep, time::Duration};
+
+    fn git(dir: &Path, args: &[&str], index: Option<&Path>) -> String {
+        let mut c = Command::new("git");
+        c.current_dir(dir).args(args);
+        c.env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t");
+        c.env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t");
+        if let Some(i) = index {
+            c.env("GIT_INDEX_FILE", i);
+        }
+        let o = c.output().unwrap();
+        assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+        String::from_utf8(o.stdout).unwrap().trim().to_owned()
+    }
+
+    #[test]
+    fn a_scratch_index_sees_a_same_size_edit_made_with_the_last_git_add() {
+        let repo = tempfile::tempdir().unwrap();
+        let r = repo.path();
+        git(r, &["init", "-q"], None);
+        fs::write(r.join("a.txt"), "aaaa\n").unwrap();
+        git(r, &["add", "a.txt"], None);
+        // Same second as the add, same size: only a re-hash can see it.
+        fs::write(r.join("a.txt"), "bbbb\n").unwrap();
+        sleep(Duration::from_millis(1100));
+        let tmp = tempfile::tempdir().unwrap();
+        let scratch = tmp.path().join("index");
+        super::copy_git_index(&r.join(".git/index"), &scratch).unwrap();
+        git(r, &["add", "-A"], Some(&scratch));
+        let tree = git(r, &["write-tree"], Some(&scratch));
+        let blob = git(r, &["rev-parse", &format!("{tree}:a.txt")], None);
+        let want = git(r, &["hash-object", "a.txt"], None);
+        assert_eq!(blob, want, "the scratch index kept the pre-edit blob");
+    }
+}

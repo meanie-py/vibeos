@@ -505,17 +505,9 @@ fn guest_current(root: &Path, name: &str, build: &Path) -> Result<()> {
     let real = git(root, &["rev-parse", "--git-path", "index"], None)?;
     let real = root.join(real);
     if real.is_file() {
-        fs::copy(&real, &index).map_err(err)?;
-        // Keep the real index's mtime. git treats an entry whose file mtime is not older
-        // than the index as "racily clean" and re-hashes it; fs::copy stamps the copy NOW,
-        // so a same-size edit made in the same second as the last `git add` looked clean
-        // to the copy once a second had passed, and a stale guest was accepted.
-        let modified = fs::metadata(&real).and_then(|m| m.modified()).map_err(err)?;
-        fs::File::options()
-            .write(true)
-            .open(&index)
-            .and_then(|f| f.set_modified(modified))
-            .map_err(err)?;
+        // Keeps the real index's mtime: a fresh one made a same-size edit in the last
+        // `git add`'s second look clean, and a stale guest was accepted.
+        crate::copy_git_index(&real, &index).map_err(err)?;
     }
     git(root, &["add", "-A"], Some(&index))?;
     let tree = git(root, &["write-tree"], Some(&index))?;

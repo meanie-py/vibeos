@@ -218,7 +218,7 @@ pub fn tree_content_hash(repo: &Path, scope: &[String]) -> Result<String> {
     let tmp = tempfile::Builder::new().prefix("vibeos-prov-").tempdir()?;
     let scratch = tmp.path().join("index");
     if index.is_file() {
-        fs::copy(index, &scratch)?;
+        crate::copy_git_index(&index, &scratch)?;
     }
     let mut env: BTreeMap<String, String> = request_env();
     env.insert("GIT_INDEX_FILE".into(), pathstr(&scratch));
