@@ -39,6 +39,7 @@ PORTED = frozenset(
         "lint_kernel",
         "cohab_census",
         "scan_boot_media_drift",
+        "scan_inf_unbuilt_dlls",
         "null_offset_to_offset_of",
         "scan_magic_offsets",
         "scan_silent_failures",

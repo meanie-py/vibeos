@@ -137,6 +137,7 @@ pub mod cohab_census;
 pub mod lint_kernel;
 pub mod null_offset_to_offset_of;
 pub mod scan_boot_media_drift;
+pub mod scan_inf_unbuilt_dlls;
 pub mod verify_ffi;
 pub mod verify_lost_exports;
 
@@ -173,6 +174,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(lint_kernel::LintKernel),
         Box::new(cohab_census::CohabCensus),
         Box::new(scan_boot_media_drift::ScanBootMediaDrift),
+        Box::new(scan_inf_unbuilt_dlls::ScanInfUnbuiltDlls),
         Box::new(null_offset_to_offset_of::NullOffsetToOffsetOf),
         Box::new(verify_ffi::VerifyFfi),
         Box::new(verify_lost_exports::VerifyLostExports),

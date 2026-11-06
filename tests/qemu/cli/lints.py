@@ -1329,6 +1329,11 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # 4-aligned), or through an invented zeroed `SharedSystemTime` global (native Rust rule,
     # tools/vibeos-lint/src/rules/shared_system_time.rs). Armed usb/ksecdd bugchecked on it.
     specs.append(("scan_shared_system_time", ["MISSING"], "stdout"))
+    # An INF RegisterDlls entry naming a DLL some arch's install media does not carry (native
+    # Rust rule, tools/vibeos-lint/src/rules/scan_inf_unbuilt_dlls.rs). Setup's LoadLibrary then
+    # puts up a modal box and an unattended install hangs: syssetup.inf's uiautomationcore.dll
+    # after the 2026-10 upstream merge hung every install-smoke on the Finishing page.
+    specs.append(("scan_inf_unbuilt_dlls", ["MISSING"], "stdout"))
     # A named constant cast to a type too narrow for it: rustc's overflow lint covers
     # literals only. disk.sys set SRB_CLASS_FLAGS_PERSISTANT `as USHORT` (= 0), classpnp freed
     # an SRB inside the device extension, 0xC2 on the first flush. Gated at zero.

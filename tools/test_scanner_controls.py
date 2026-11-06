@@ -3570,6 +3570,14 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_inf_unbuilt_dlls": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/scan_inf_unbuilt_dlls.rs: syssetup.inf's "
+        "uiautomationcore.dll (unbuilt on every arch) and a wbem DLL missing on one arch must "
+        "be flagged, a section no RegisterDlls names must not, and an empty reference is "
+        "NO_REFERENCE rather than a silent pass."
+    ),
     "scan_shared_system_time": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "
