@@ -428,6 +428,10 @@ def _boot(config: ArchConfig, work: Path) -> tuple[QemuVM, str, str | None]:
             windows=cli_cfg.get("qemu.windows", {}),
             serial_log=work / f"{work.name}_serial.log",
             max_lifetime=lifetime,
+            # The guardian deletes windows-host staging the moment QEMU exits; stage 1 exits
+            # by rebooting and then copies the disk it wrote OUT of staging, which was gone:
+            # FileNotFoundError on install.qcow2 after a successful text setup (2026-11-06).
+            retain_staging=True,
         ),
         {},
         lambda msg: print(f"[install] {msg}"),

@@ -185,6 +185,16 @@ pub fn run(raw: Vec<String>) -> Result<u8, String> {
             }
         } else {
             crate::write_atomic(path, text.as_bytes(), i)?;
+            // write_atomic leaves an identical file untouched, but payloads/compile judges these
+            // lists stale when their generator script is NEWER (payload_build.rs stale_generator).
+            // A merge that touched gen_suites.py then made a regenerated, byte-identical list stay
+            // stale forever and PAYLOAD_BUILD_FAIL every build (2026-11-06). These outputs are
+            // gitignored payload inputs, so stamping them now costs no rebuild elsewhere.
+            fs::File::options()
+                .write(true)
+                .open(path)
+                .and_then(|f| f.set_modified(std::time::SystemTime::now()))
+                .map_err(|e| format!("{}: {e}", path.display()))?;
         }
     }
     if !check {

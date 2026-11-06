@@ -15,12 +15,10 @@ EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/smbios.rs: 'ABIT' appears 3x here and 2
 EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/smbios.rs: 'http://www.abit.com.tw/' appears 1x here and 0x in smbios.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'SeBackupPrivilege' appears 2x here and 0x in install.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: '\\\\$winnt$.inf' appears 1x here and 0x in install.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'DisableGeckoInst' appears 1x here and 0x in wizard.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'END_SECTION' appears 3x here and 1x in wizard.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'InstallWizard' appears 4x here and 2x in wizard.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Installation Sources' appears 5x here and 3x in wizard.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'ProductOption' appears 1x here and 0x in wizard.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'appwiz.cpl,,install_gecko' appears 1x here and 0x in wizard.c
+EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Terminal Server' appears 3x here and 2x in wizard.c
 EXTRA: sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/umpnpmgr.rs: 'MININT' appears 1x here and 0x in umpnpmgr.c
 EXTRA: sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/umpnpmgr.rs: 'SYSTEM\\\\CurrentControlSet\\\\Control' appears 1x here and 0x in umpnpmgr.c
 EXTRA: sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/umpnpmgr.rs: 'SystemStartOptions' appears 1x here and 0x in umpnpmgr.c
@@ -114,20 +112,10 @@ MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/security.rs: 'Security Log' app
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/security.rs: 'System Access' appears 4x in security.c and 3x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/security.rs: 'System Log' appears 2x in security.c and 1x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/security.rs: 'defltwk.inf' appears 2x in security.c and 1x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: ' ' appears 4x in wizard.c and 3x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: '0000' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Client' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'InstallationType' appears 2x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'RappsDownload' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'SOFTWARE\\\\Microsoft\\\\Windows NT\\\\CurrentVersion' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Server Core' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Server' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'ServerNT' appears 2x in wizard.c and 1x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'SetupParams' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Shell' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'UserExecute' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'You must enter a password !' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'cmd.exe' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/umpnpmgr.rs: 'SYSTEM\\\\CurrentControlSet\\\\Control\\\\MiniNT' appears 1x in umpnpmgr.c and 0x here
 MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Appdata\\\\Local\\\\Microsoft\\\\Windows\\\\INetCache' appears 1x in setup.c and 0x here
 MISSING: sdk/lib/rust/userenv-rust/src/userenv/setup.rs: 'Appdata\\\\Local\\\\Temp' appears 1x in setup.c and 0x here
