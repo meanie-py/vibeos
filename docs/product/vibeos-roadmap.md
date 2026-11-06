@@ -668,17 +668,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   raised the rate or this was bad luck. The WoW64 thunk generator lint-rs moved to Rust emits
   byte-identical tables (NT 303 and win32k 740 syscalls, checked against master's Python), so
   it is not the thunks.
-- **x86 user mode never calls vectored exception handlers (open, found 2026-11-01, needs
-  an owner: rtl-except + wow64).** i386's and amd64's Rust `RtlDispatchException` drop the
-  `RtlCallVectoredExceptionHandlers` call, faithfully: the C guards it with `#ifndef
-  _NTOSKRNL_`, and librtl only ever builds with `-D_NTOSKRNL_`
-  (`sdk/lib/rust/rtl-except/src/{i386,amd64}/except.rs` say so). arm64 calls them, gated on
-  `RtlpGetMode() == UserMode`. Seen in the guest: a probe's `AddVectoredExceptionHandler`
-  handler never ran on i386, and the fault ended the process (`20261101-132440-czxr3qjn`). The
-  fix is arm64's gate on the other two, but it would wake handlers that have never run there,
-  wow64's `Wow64pVeh` on amd64 among them, which deliberately goes through
-  `Wow64PrepareForException` instead (`dll/ntdll/dispatch/amd64/dispatch.S`). It needs smoke
-  and the wow64 suites, not a drive-by.
+- **x86 user mode never called vectored exception handlers — FIXED 2026-11-05 (cpp-cluster).**
+  i386's and amd64's Rust `RtlDispatchException` dropped the `RtlCallVectoredExceptionHandlers`
+  call, faithfully: the C guards it with `#ifndef _NTOSKRNL_`, and librtl only ever builds with
+  `-D_NTOSKRNL_`, so ntdll lost it too. Both now gate on `RtlpGetMode() == UserMode` as arm64
+  did, and amd64 runs the post-unwind continue handlers again; arm64's first-chance path now
+  runs the continue handlers too, as the C does. Graded by `tools/payloads/vehprobe` (fault,
+  order, continue, remove, continued raise): all PASS on i386 and amd64
+  (`20261105-232703-488lty8l`, `20261105-232853-gqxpxny4`); arm64 passes the four fault cases
+  and HANGs the raise, the open arm64 `RtlRaiseException` bug below
+  (`20261105-233150-dbuff_ay`). wow64's `Wow64pVeh` now runs on amd64; the amd64 ladder is
+  13/13 PASS on it (`20261105-233955-5l_obhz3`), and the arm64 FEX ladder 13/13 + x86-64
+  11/11 (`20261105-234852-0qxo29e9`).
+- **ntdll's `RtlDosSearchPath_Ustr` never applies SxS redirection (open, found 2026-11-05,
+  rtl).** Same cause as the vectored-handler bug above: the branch (`sdk/lib/rtl/path.c`, `if
+  (Flags & 1)`) is `#ifndef _NTOSKRNL_`, and the one librtl both ntoskrnl and ntdll link is
+  built with `-D_NTOSKRNL_`, so ntdll ships without it. It cannot take the VEH fix (a
+  `RtlpGetMode()` check), because `RtlDosApplyFileIsolationRedirection_Ustr` is ntdll-only and
+  the kernel link would fail; it needs an indirection the kernel resolves to a stub, or ntdll
+  building its own copy of the function. Not yet seen in the guest: no caller with flag 1 has
+  been graded.
 - **netshell lists no connections: the guest's NIC has no driver in the Net class (open, found
   2026-11-01, netstack).** The connection manager in both C and Rust walks
   `SetupDiGetClassDevs(GUID_DEVCLASS_NET, DIGCF_PRESENT)`, which returns no devices. The
@@ -1216,7 +1225,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   probably the arm64 `RtlUnwindEx` / `__C_specific_handler` path when the dispatch context's
   first frame is the `__try` function itself rather than `RtlRaiseException` (the old shape
   always had one extra frame to unwind first). Start there, with (2) and a probe that continues
-  a raise (`fired == 1 && returned`).
+  a raise (`fired == 1 && returned`). That probe now exists: `tools/payloads/vehprobe`'s `raise`
+  case, which PASSes on i386 and amd64 and on arm64 reports `raise HANG (... trace
+  'FFFFFFFFFFFFFFF')`, the handler re-entered until the timeout (`20261105-233150-dbuff_ay`).
+  It is excluded from arm64's verdict only until this is fixed; drop that `#if` with the fix.
 - **arm64: synchronous IRP completions ran late, into dead stack frames** (FIXED 2026-10-06).
   The HAL drained APCs under a per-CPU flag that stayed set across a thread switch inside a
   normal kernel APC, so other threads' `IopCompleteRequest` APCs waited for a later IRQL drop
@@ -2513,8 +2525,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Worth remembering as a shape: the i386 and arm64 media are assembled by DIFFERENT
   pipelines, so "it is in the CD file list" proves nothing about arm64. Check the media
   the arch actually boots (`arm64_launch.json` names it).
-  This had blocked Tier-2 ucrt difftesting, which must run on arm64 because VEH
-  first-chance dispatch is wired only there.
+  This had blocked Tier-2 ucrt difftesting, which must run on arm64 because its fault guard
+  resumes by skipping one fixed-length instruction (VEH itself fires on all three arches since
+  2026-11-05).
 - **`SHObjectProperties` on a file hangs in ole32 marshalling. FIXED 2026-09-25**, and it was
   five bugs deep. Right-click > Properties now opens a correct sheet (name, type, location, size,
   dates, attributes) on i386; `tools/payloads/comprobe` checks it end to end with a screenshot.

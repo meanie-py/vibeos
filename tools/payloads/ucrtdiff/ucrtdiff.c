@@ -305,11 +305,10 @@ static const char *label_idx(size_t i)
  * redirects the faulting context is the only mechanism that works, and it is plain
  * Win32 on all three arches.
  *
- * IT ONLY FIRES ON arm64, WHICH IS WHY TIER 2 RUNS THERE. RtlDispatchException's
- * RtlCallVectoredExceptionHandlers block is `#ifndef _NTOSKRNL_` and librtl always
- * builds with -D_NTOSKRNL_, so first-chance VEH dispatch is dead code on i386 and
- * amd64 -- rtl-except/src/{i386,amd64}/except.rs say so outright. arm64 has it wired
- * and proved: "[SEH-POC-U] VEH on hardware AV: fired=1 resumed=1 (PASS)".
+ * IT ONLY RESUMES ON arm64, WHICH IS WHY TIER 2 RUNS THERE. Until 2026-11-05 VEH did
+ * not even fire on i386 and amd64 (the C compiled the dispatch out under _NTOSKRNL_);
+ * it does now on all three arches (tools/payloads/vehprobe grades it). What x86 still
+ * lacks is the RESUME step below: skipping a faulting instruction needs its length.
  *
  * The guard has a POSITIVE CONTROL: a synthetic body that always faults runs first,
  * and the run refuses to grade if it is not caught. A guard that has never fired is a
@@ -357,7 +356,7 @@ static int ucrtdiff_is_owner(void)
  * on while grading it. Instead the handler does what seh_poc_user.c proved works here:
  * ADVANCE THE PC PAST THE FAULTING INSTRUCTION and resume. arm64 instructions are a
  * fixed 4 bytes, so that is exact (it is also why this is arm64-only; x86's
- * variable-length encoding has no such step, and VEH does not fire there anyway).
+ * variable-length encoding has no such step without an instruction-length decoder).
  *
  * Skipping one instruction does not by itself end the sweep, so the handler also raises
  * g_fault_flag, and every generated loop tests it. The body limps at most to the next
@@ -25585,17 +25584,13 @@ static int ucrtdiff_main(void)
         return 1;
     }
     if (!guard_selftest()) {
-        /* On i386 and amd64 this is EXPECTED and is why Tier 2 runs on arm64.
-         * RtlDispatchException's RtlCallVectoredExceptionHandlers block is
-         * `#ifndef _NTOSKRNL_`, and librtl always builds with -D_NTOSKRNL_, so the
-         * first-chance VEH dispatch is dead code in the only variant ever built --
-         * see sdk/lib/rust/rtl-except/src/{i386,amd64}/except.rs, which say so
-         * outright. Only arm64 has it wired (proved by dll/ntdll/seh_poc_user.c:
-         * "VEH on hardware AV: fired=1 resumed=1"). Without it one faulting body
-         * ends the run and hides every export after it, so refuse to grade rather
-         * than produce a table that silently stops partway. */
+        /* The handler only resumes on arm64 (see ucrtdiff_veh: x86 has no fixed
+         * instruction length to skip), so on i386 and amd64 the deliberate fault
+         * goes unhandled. Without a working guard one faulting body ends the run
+         * and hides every export after it, so refuse to grade rather than produce
+         * a table that silently stops partway. */
         DbgPrint("[UCRTDIFF] FATAL: the fault guard did not catch a deliberate fault. "
-                 "VEH first-chance dispatch is only wired on arm64 (rtl-except); "
+                 "The guard can only resume on arm64; "
                  "run this payload with --arch arm64\n");
         DbgPrint("[UCRTDIFF] done cases=0 dll_fail=1 rust_fail=1\n");
         return 1;

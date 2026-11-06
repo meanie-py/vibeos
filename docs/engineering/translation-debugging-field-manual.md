@@ -16813,6 +16813,21 @@ their output byte-for-byte over a generated corpus rather than trusting a spot c
 symptom→cause→fix cases are folded into the sections above (constants, element-vs-byte counts,
 `n`-suffixed scans, slice-vs-single-pass).
 
+### librtl's `#ifndef _NTOSKRNL_` blocks are dead in ntdll too
+**Symptom:** a user-mode feature that ntdll should have never happens, on some arches only:
+an `AddVectoredExceptionHandler` handler never runs and the fault ends the process (i386 and
+amd64, until 2026-11-05).
+**Cause:** librtl is ONE static library shared by ntoskrnl and ntdll, and
+`sdk/lib/rtl/CMakeLists.txt` builds it with `-D_NTOSKRNL_` (and `-D_NTDLLBUILD_`) for both. So a
+`#ifndef _NTOSKRNL_` block meaning "user mode only" is compiled out of ntdll as well. A
+faithful Rust port then omits it, correctly matching the compiled C and wrongly matching what
+the C means.
+**Fix:** decide at run time with `RtlpGetMode() == UserMode` (ntoskrnl's returns KernelMode),
+as `rtl-except/src/*/except.rs` now do, and say in a comment that this diverges from the C.
+This does not work when the guarded code calls an ntdll-only symbol, because the kernel link
+then fails. That is `path.c`'s SxS branch in `RtlDosSearchPath_Ustr`, still C and still dead
+in ntdll (roadmap). Grep `sdk/lib/rtl` for `_NTOSKRNL_` before trusting a port of it.
+
 ## Translating a COM DLL with a private header (ole32/oleaut32-class)
 
 **The model owns bodies — never interfaces, vtables, offsets, lifetime, or activation.** Asking
