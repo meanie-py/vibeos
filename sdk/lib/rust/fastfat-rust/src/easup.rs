@@ -122,7 +122,7 @@ pub unsafe extern "system" fn FatGetEaLength(
     Dirent: *mut DIRENT,
     EaLength: *mut u32,
 ) {
-    const Dbg: i32 = 0; // DEBUG_TRACE_EA
+    const Dbg: i32 = 0x100; // easup.c
     const STATUS_NO_EAS_ON_FILE: i32 = 0xC0000052_u32 as i32;
 
     let mut EaBcb: *mut BCB = core::ptr::null_mut();
@@ -261,7 +261,7 @@ pub unsafe extern "system" fn FatGetNeedEaCount(
         );
 
         // PAGED_CODE();  -- left as comment, expands to nothing in release
-        const Dbg: u32 = 0; // DEBUG_TRACE_EA
+        const Dbg: u32 = 0x100; // easup.c
         DebugTrace!(1, Dbg, b"FatGetNeedEaCount ...\n\0".as_ptr() as *const i8 , 0i32);
 
         if (*Dirent).__bindgen_anon_1.bindgen_union_field == 0 {

@@ -260,7 +260,9 @@ pub const RESOURCE_LIST_TAG: u32 = 0x526C7472; // clang, ndis.c
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const CmResourceShareShared: _CM_SHARE_DISPOSITION = _CM_SHARE_DISPOSITION_CmResourceShareShared; // island enum
-pub const DEFAULT_INTERRUPT_MASK: u32 = 32919; // e1000-rust/src/types_amd64.rs
+// rtlhw.h: RXOK|RXERR|TXOK|TXERR|RXOVRFLW|RXUNDRUN|FIFOOVR|PCSTMOUT|PCIERR. It was e1000's
+// 0x8097, which left TX-error, RX-underrun/link-change, FIFO-overflow and PCS-timeout masked.
+pub const DEFAULT_INTERRUPT_MASK: u32 = 0xC07F;
 pub const NdisHardwareStatusReady: _NDIS_HARDWARE_STATUS = _NDIS_HARDWARE_STATUS_NdisHardwareStatusReady; // island enum
 pub const NdisInterfacePci: _NDIS_INTERFACE_TYPE = _NDIS_INTERFACE_TYPE_NdisInterfacePci; // island enum
 pub const NdisMediaStateConnected: _NDIS_MEDIA_STATE = _NDIS_MEDIA_STATE_NdisMediaStateConnected; // island enum

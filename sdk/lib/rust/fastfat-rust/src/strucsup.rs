@@ -1163,7 +1163,7 @@ pub unsafe extern "system" fn FatCreateDcb(
     const FAT_NTC_DCB: u32 = 0x0503;
     const FcbGood: u32 = 1;
     const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
-    const Dbg: u32 = 0;
+    const Dbg: u32 = 0x20000000; // strucsup.c
 
     let mut Dcb: *mut DCB = core::ptr::null_mut();
     let mut UnwindStorage: [*mut core::ffi::c_void; 2] = [core::ptr::null_mut(), core::ptr::null_mut()];

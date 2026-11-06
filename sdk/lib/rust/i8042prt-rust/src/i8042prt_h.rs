@@ -625,7 +625,7 @@ pub type PSERVICE_CALLBACK_ROUTINE = Option<
 // ---- ntddclas.h: system power-button flags ----
 pub const SYS_BUTTON_POWER: u32 = 0x00000001; // ntddclas.h:23
 pub const SYS_BUTTON_SLEEP: u32 = 0x00000002; // ntddclas.h:24
-pub const SYS_BUTTON_WAKE: u32 = 0x00000004; // ntddclas.h:25
+pub const SYS_BUTTON_WAKE: u32 = 0x80000000; // poclass.h (0x4 is SYS_BUTTON_LID)
 
 // ---- ntddmou.h: mouse indicator / button / wheel flags (LastX/ButtonFlags) ----
 pub const MOUSE_MOVE_RELATIVE: u16 = 0x0000; // ntddmou.h (MOUSE_INPUT_DATA.Flags)

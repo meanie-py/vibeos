@@ -175,7 +175,7 @@ pub unsafe extern "system" fn FatFastUnlockSingle(
     DeviceObject: PDEVICE_OBJECT,
 ) -> i32 {
 
-    const Dbg: u32 = 0; // DEBUG_TRACE_LOCKCTRL
+    const Dbg: u32 = 0x800; // lockctrl.c
     const UserFileOpen: i32 = crate::types::_TYPE_OF_OPEN_UserFileOpen as i32; // 2 — bindgen ground truth
 
     let mut Results: i32 = 0;
@@ -348,7 +348,7 @@ pub unsafe extern "system" fn FatCommonLockControl(
     const IRP_MN_LOCK: u32 = 0x01;
     type TYPE_OF_OPEN = u32;
     const UserFileOpen: TYPE_OF_OPEN = crate::types::_TYPE_OF_OPEN_UserFileOpen as TYPE_OF_OPEN; // 2 — bindgen ground truth
-    const Dbg: u32 = 0; // DEBUG_TRACE_LOCKCTRL placeholder
+    const Dbg: u32 = 0x800; // lockctrl.c
 
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let IrpSp: PIO_STACK_LOCATION;

@@ -235,7 +235,7 @@ pub unsafe extern "system" fn FatFsdWrite(
     const FSRTL_MOD_WRITE_TOP_LEVEL_IRP: u32 = 0x03;
     const IRP_MN_COMPLETE: u32 = 0x04;
     const STATUS_PENDING: i32 = 0x103;
-    const Dbg: u32 = 1;
+    const Dbg: u32 = 0x4000; // write.c
 
     let mut fcb: *mut FCB;
     let mut status: i32 = 0;

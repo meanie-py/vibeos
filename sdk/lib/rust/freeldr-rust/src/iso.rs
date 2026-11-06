@@ -113,7 +113,7 @@ pub type PISO_FILE_INFO = *mut _ISO_FILE_INFO;
 pub static mut IsoVolumes: [PISO_VOLUME_INFO; MAX_FDS] = [core::ptr::null_mut(); MAX_FDS];
 pub const ISO_ATTR_HIDDEN: UCHAR = 0x01;
 pub const ISO_ATTR_DIRECTORY: UCHAR = 0x02;
-pub const SECTOR_SIZE: ULONG = SECTORSIZE;
+pub const SECTOR_SIZE: ULONG = SECTORSIZE;  // nolint: shadowed-c-define (iso.c SECTORSIZE (2048); fs.h SECTOR_SIZE is the 512-byte disk sector)
 
 extern "C" {
     fn ArcSeek(DeviceId: ULONG, Position: *mut LARGE_INTEGER, SeekMode: ULONG) -> ARC_STATUS;

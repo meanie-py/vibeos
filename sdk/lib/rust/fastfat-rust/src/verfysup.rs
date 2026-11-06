@@ -90,8 +90,8 @@ extern "system" {
 }
 
 // ---- file-scope preamble (translated) ----
-pub const BugCheckFileId: u32 = /* FAT_BUG_CHECK_VERFYSUP */ 0;
-pub const Dbg: u32 = /* DEBUG_TRACE_VERFYSUP */ 0;
+pub const BugCheckFileId: u32 = 0x1e0000; // verfysup.c
+pub const Dbg: u32 = 0x2000000; // verfysup.c
 // ---- re-stitched from bank: 20260612-145724-verfysup.c/06_FatResetFcb.rs ----
 
 const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02;
@@ -1004,7 +1004,7 @@ pub unsafe extern "system" fn FatMarkFcbCondition(
     FcbCondition: i32,
     Recursive: i32,
 ) {
-    const Dbg: u32 = /* DEBUG_TRACE_VERFYSUP */ 0;
+    const Dbg: u32 = 0x2000000; // verfysup.c
     const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02;
     const FCB_STATE_PAGING_FILE: u32 = 0x04;
     const FAT_NTC_FCB: i16 = 0x0502;
@@ -1115,7 +1115,7 @@ pub unsafe extern "system" fn FatMarkVolume(
     const FSINFO_SECTOR_BEGIN_SIGNATURE: u32 = 0x41615252;
     const FSINFO_SIGNATURE: u32 = 0x61417272;
     const FSINFO_SECTOR_END_SIGNATURE: u32 = 0xAA550000;
-    const Dbg: u32 = 0;
+    const Dbg: u32 = 0x2000000; // verfysup.c
     let mut Sector: *mut u8 = core::ptr::null_mut();
     let mut Bcb: *mut BCB = core::ptr::null_mut();
     let mut Event: KEVENT = core::mem::zeroed();

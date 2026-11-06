@@ -79,6 +79,6 @@ pub type RC4_CONTEXT = _RC4_CONTEXT;
 pub type MV_U8 = u8;
 pub type MV_U32 = u32;
 
-pub const MAXBC: usize = 8;
+pub const MAXBC: usize = 128 / 32; // mvAesAlg.h
 pub const MAXKC: usize = 8;
 pub const MAXROUNDS: usize = 14;

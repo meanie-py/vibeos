@@ -65,7 +65,7 @@ pub const INT_READ_READY: u32 = 1 << 5;
 /// An SDIO card's interrupt (DAT1 in 4-bit mode). Not latched: it reads set for
 /// as long as the card holds the line, and clears when the card's source does.
 pub const INT_CARD: u32 = 1 << 8;
-pub const INT_ERROR: u32 = 1 << 15;
+pub const INT_ERROR: u32 = 1 << 15;  // nolint: shadowed-c-define (SDHCI normal-interrupt-status bit, not intsafe.h)
 pub const INT_ERRORS: u32 = 0x03FF_0000; // command and data errors, auto CMD12, ADMA
 pub const INT_CMD_TIMEOUT: u32 = 1 << 16;
 /// The status bits to latch: the normal ones we poll for, and every error.

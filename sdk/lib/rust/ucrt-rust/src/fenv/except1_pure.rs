@@ -2,11 +2,11 @@
 //! `except1_ladder` test can include it on the host (`#[path]`) and grade it.
 #![allow(dead_code)]
 
-pub const FE_INVALID: u32 = 0x10;
-pub const FE_DIVBYZERO: u32 = 0x08;
-pub const FE_OVERFLOW: u32 = 0x04;
-pub const FE_UNDERFLOW: u32 = 0x02;
-pub const FE_INEXACT: u32 = 0x01;
+pub const FE_INVALID: u32 = 0x10;  // nolint: shadowed-c-define (MSVC/ucrt ABI value (Wine fenv.h/math.h); sdk/include/crt is the mingw x87 layout)
+pub const FE_DIVBYZERO: u32 = 0x08;  // nolint: shadowed-c-define (MSVC/ucrt ABI value (Wine fenv.h/math.h); sdk/include/crt is the mingw x87 layout)
+pub const FE_OVERFLOW: u32 = 0x04;  // nolint: shadowed-c-define (MSVC/ucrt ABI value (Wine fenv.h/math.h); sdk/include/crt is the mingw x87 layout)
+pub const FE_UNDERFLOW: u32 = 0x02;  // nolint: shadowed-c-define (MSVC/ucrt ABI value (Wine fenv.h/math.h); sdk/include/crt is the mingw x87 layout)
+pub const FE_INEXACT: u32 = 0x01;  // nolint: shadowed-c-define (MSVC/ucrt ABI value (Wine fenv.h/math.h); sdk/include/crt is the mingw x87 layout)
 
 pub const EXCEPTION_FLT_DIVIDE_BY_ZERO: u32 = 0xC000_008E;
 pub const EXCEPTION_FLT_INEXACT_RESULT: u32 = 0xC000_008F;

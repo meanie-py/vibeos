@@ -1089,7 +1089,7 @@ pub mod externs {
         ) -> i32;
     }
     /// `SHREGSET_FORCE_HKCU` — shlwapi.h.
-    pub const SHREGSET_FORCE_HKCU: UINT = 0x0000_0001;
+    pub const SHREGSET_FORCE_HKCU: UINT = 0x0000_0002; // 0x1 is SHREGSET_HKCU
 
     // shlwapi wnsprintfW is cdecl-variadic.
     extern "C" {

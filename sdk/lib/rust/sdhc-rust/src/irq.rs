@@ -21,7 +21,7 @@ use crate::print::sdprint;
 
 const LEVEL_SENSITIVE: u32 = 0; // _KINTERRUPT_MODE_LevelSensitive
 const LATCHED: u32 = 1; // _KINTERRUPT_MODE_Latched
-const SYNCHRONIZATION_EVENT: u32 = 1; // _EVENT_TYPE_SynchronizationEvent
+const SYNCHRONIZATION_EVENT: u32 = 1; // _EVENT_TYPE_SynchronizationEvent  // nolint: shadowed-c-define (KEVENT_TYPE SynchronizationEvent; video.h numbers VideoPort events differently)
 const STATUS_TIMEOUT: i32 = 0x0000_0102;
 
 /// INT_STATUS and INT_SIGNAL, as host.rs names them.

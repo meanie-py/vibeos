@@ -55,7 +55,7 @@ pub unsafe extern "system" fn FatFsdShutdown(
 ) -> NTSTATUS {
 
     // Use `const Dbg: u32 = 0;` for the trace flag; the original was DEBUG_TRACE_SHUTDOWN.
-    const Dbg: u32 = 0;
+    const Dbg: u32 = 0x20000; // shutdown.c
 
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let mut IrpContext: *mut IRP_CONTEXT = core::ptr::null_mut();

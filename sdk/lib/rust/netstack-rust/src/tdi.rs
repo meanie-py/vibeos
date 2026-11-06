@@ -41,7 +41,7 @@ pub const EA_CONNECTION_CONTEXT: &[u8] = b"ConnectionContext";
 
 // ReceiveFlags passed to a TDI_EVENT_RECEIVE indication (ndis/tdi.h).
 pub const TDI_RECEIVE_NORMAL: u32 = 0x0020;
-pub const TDI_RECEIVE_ENTIRE_MESSAGE: u32 = 0x0100;
+pub const TDI_RECEIVE_ENTIRE_MESSAGE: u32 = 0x0400; // tdi.h
 
 /// PTDI_IND_RECEIVE (sdk/include/ddk/tdikrnl.h) — the upcall the transport makes
 /// into AFD when stream data arrives on a connection. NTAPI = `extern "system"`

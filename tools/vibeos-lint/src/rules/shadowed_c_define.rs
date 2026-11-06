@@ -461,6 +461,17 @@ fn type_bits(ty: &str) -> Option<u32> {
     })
 }
 
+/// Width and signedness of a narrowing C cast target; wider or unknown types are `None`.
+fn c_cast(ty: &str) -> Option<(u32, bool)> {
+    Some(match ty {
+        "UCHAR" | "BYTE" | "BOOLEAN" | "UINT8" => (8, false),
+        "CHAR" | "char" | "SCHAR" | "INT8" => (8, true),
+        "USHORT" | "WORD" | "WCHAR" | "UINT16" => (16, false),
+        "SHORT" | "short" | "INT16" => (16, true),
+        _ => return None,
+    })
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Dialect {
     C,
@@ -657,7 +668,7 @@ impl Parser<'_> {
                 self.pos += 1;
                 // A C cast `(TYPE)x`: a lone identifier in parens followed by an operand.
                 if self.d == Dialect::C {
-                    if let (Some(Tok::Id(_)), Some(Tok::Op(")"))) = (
+                    if let (Some(Tok::Id(ty)), Some(Tok::Op(")"))) = (
                         self.toks.get(self.pos).cloned(),
                         self.toks.get(self.pos + 1).cloned(),
                     ) {
@@ -671,7 +682,17 @@ impl Parser<'_> {
                         );
                         if operand_follows {
                             self.pos += 2;
-                            return self.unary();
+                            let v = self.unary()?;
+                            // A narrowing cast truncates, and a signed one sign-extends:
+                            // srb.h `SP_UNTAGGED ((UCHAR) ~0)` is 0xff, undocuser.h
+                            // `CW_USEDEFAULT16 ((short)0x8000)` is -32768. Other casts pass through.
+                            return Some(match c_cast(&ty) {
+                                Some((bits, signed)) => {
+                                    let m = v & ((1i128 << bits) - 1);
+                                    if signed && m >> (bits - 1) & 1 == 1 { m - (1i128 << bits) } else { m }
+                                }
+                                None => v,
+                            });
                         }
                     }
                 }
@@ -763,10 +784,10 @@ mod tests {
     fn width_and_casts_compare_like_the_type() {
         let d = defs(&[(
             "a.h",
-            "#define STATUS_X ((NTSTATUS)0xC0000005L)\n#define ALL (~0)\n",
+            "#define STATUS_X ((NTSTATUS)0xC0000005L)\n#define ALL (~0)\n#define TAG ((UCHAR) ~0)\n#define DEF16 ((short)0x8000)\n",
         )]);
         assert!(scan_rust(
-            "pub const STATUS_X: NTSTATUS = 0xC0000005u32 as i32;\nconst ALL: u32 = 0xFFFF_FFFF;",
+            "pub const STATUS_X: NTSTATUS = 0xC0000005u32 as i32;\nconst ALL: u32 = 0xFFFF_FFFF;\nconst TAG: ULONG = 0xFF;\nconst DEF16: c_int = 0xffff8000u32 as c_int;",
             &d,
             None
         )

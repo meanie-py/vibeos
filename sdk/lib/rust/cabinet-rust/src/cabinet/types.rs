@@ -165,7 +165,7 @@ pub const tcompTYPE_MSZIP: u32 = 0x00000001;
 // ---- status values ----
 pub const statusFile: i32 = 0;
 pub const statusFolder: u32 = 1;
-pub const statusCabinet: u32 = 0x0003;
+pub const statusCabinet: u32 = 2; // fci.h: statusFile 0, statusFolder 1, statusCabinet 2
 
 // ---- ZIP/MSZIP constants ----
 pub const ZIPWSIZE: u32 = 0x8000;

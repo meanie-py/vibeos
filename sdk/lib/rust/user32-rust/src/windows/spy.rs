@@ -32,7 +32,7 @@ const SPY_MAX_MSGNUM: UINT = WM_USER;
 const SPY_INDENT_UNIT: INT = 4;
 
 // SPY_EnterMessage iFlag values (spy.h)
-const SPY_DISPATCHMESSAGE: INT = 0x0100;
+const SPY_DISPATCHMESSAGE: INT = 0x0101; // user32p.h
 const SPY_SENDMESSAGE: INT = 0x0103; // user32 spy.c: 0x0103; was 0x102
 const SPY_DEFWNDPROC: INT = 0x0105; // user32 spy.c: 0x0105; was 0x104
 // SPY_ExitMessage iFlag values

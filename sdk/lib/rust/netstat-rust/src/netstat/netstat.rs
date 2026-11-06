@@ -135,8 +135,8 @@ pub static mut TcpState: [PCWSTR; 13] = unsafe {
 };
 
 pub const IP: i32 = 0;
-pub const TCP: i32 = 1;
-pub const UDP: i32 = 2;
+pub const TCP: i32 = 1;  // nolint: shadowed-c-define (netstat protocol index, not rnr20lib.h)
+pub const UDP: i32 = 2;  // nolint: shadowed-c-define (netstat protocol index, not rnr20lib.h)
 pub const ICMP: i32 = 3;
 #[no_mangle]
 pub unsafe extern "C" fn DoFormatMessage(ErrorCode: DWORD) {

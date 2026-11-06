@@ -45,11 +45,7 @@ pub const KDP_MSG_BUFFER_SIZE: usize = 4096;
 pub const KD_DEFAULT_LOG_BUFFER_SIZE: usize = 0x1000;
 
 /// KD_HIGHEST_USER_BREAKPOINT_ADDRESS
-#[cfg(target_arch = "aarch64")]
-pub const KD_HIGHEST_USER_BREAKPOINT_ADDRESS: ULONG_PTR = 0x0000FFFFFFFFFFFF;
-#[cfg(target_arch = "x86_64")]
-pub const KD_HIGHEST_USER_BREAKPOINT_ADDRESS: ULONG_PTR = 0x0000FFFFFFFFFFFF;
-#[cfg(target_arch = "x86")]
+/// kd64.h: 0x60000000 on every arch (shared-DLL breakpoints count as global).
 pub const KD_HIGHEST_USER_BREAKPOINT_ADDRESS: ULONG_PTR = 0x60000000;
 
 /// MAX_KD_COMPONENT_TABLE_ENTRIES = DPFLTR_ENDOFTABLE_ID + 1 = 156

@@ -221,7 +221,7 @@ pub unsafe extern "system" fn Extract(dest: *mut SESSION, szCabName: *const i8) 
     const E_FAIL: i32 = 0x80004005u32 as i32;
     const E_OUTOFMEMORY: i32 = 0x8007000Eu32 as i32;
     const INVALID_FILE_ATTRIBUTES: u32 = 0xFFFFFFFF;
-    const cpuUNKNOWN: u32 = 0;
+    const cpuUNKNOWN: u32 = 0xFFFF_FFFF; // fdi.h: (-1), "FDI does detection"
 
     let mut res: i32 = S_OK;
     let mut hfdi: *mut core::ffi::c_void;

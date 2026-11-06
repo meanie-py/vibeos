@@ -40,12 +40,11 @@ struct BREAKPOINT_ENTRY {
     Content: KD_BREAKPOINT_TYPE,
 }
 
-// Architecture-specific highest user breakpoint address
-#[cfg(target_pointer_width = "64")]
-const KD_HIGHEST_USER_BREAKPOINT_ADDRESS: PVOID = 0x000007FFFFFFFFFF as PVOID;
-
-#[cfg(target_pointer_width = "32")]
-const KD_HIGHEST_USER_BREAKPOINT_ADDRESS: PVOID = 0x7FFFFFFF as PVOID;
+// kd64.h: one value on every arch, 0x60000000, "the limit starting which we consider that
+// breakpoint addresses are either in system space, or in user space but inside shared DLLs".
+// Below it a breakpoint is per-process (KdpAddBreakpoint records the DirectoryTableBase);
+// MmHighestUserAddress-like values here made shared-DLL breakpoints per-process too.
+const KD_HIGHEST_USER_BREAKPOINT_ADDRESS: PVOID = 0x60000000 as PVOID;
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpAddBreakpoint(Address: PVOID) -> ULONG {

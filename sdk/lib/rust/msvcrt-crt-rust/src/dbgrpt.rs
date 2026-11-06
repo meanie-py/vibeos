@@ -47,7 +47,7 @@ const _CRTDBG_FILE_STDERR: isize = -5;
 const _CRTDBG_REPORT_FILE: isize = -6;
 const IDABORT: i32 = 3;
 const IDRETRY: i32 = 4;
-const SIGABRT: i32 = 22;
+const SIGABRT: i32 = 22;  // nolint: shadowed-c-define (msvcrt's 22 (msvcrt-sys island, what the Rust raise() matches); crt/signal.h's 6 is SIGABRT_COMPAT)
 const DBGRPT_MAX_BUFFER_SIZE: usize = 4096;
 /// `_countof(DBGRPT_ASSERT_PREFIX_MESSAGE)`, terminator included.
 const ASSERT_PREFIX_COUNT: usize = "Assertion failed: ".len() + 1;

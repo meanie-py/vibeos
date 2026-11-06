@@ -50,7 +50,7 @@ unsafe extern "C" fn KdbSymPrintAddress(_addr: *mut c_void, _frame: *mut c_void)
     0 // fallback to hex
 }
 
-const MAXLEN: usize = 15;
+const MAXLEN: usize = 20; // i386-dis.c
 
 const PREFIX_REPZ: u32 = 1;
 const PREFIX_REPNZ: u32 = 2;
@@ -148,10 +148,17 @@ const R_DI_REG: i32 = 139;
 
 const INDIR_DX_REG: i32 = 150;
 
-const FLOATCODE: i32 = 1000;
-const USE_GROUPS: i32 = 1001;
-const USE_PREFIX_USER_TABLE: i32 = 1002;
-const X86_64_SPECIAL: i32 = 1003;
+// i386-dis.c: FLOATCODE 1, USE_GROUPS 2, USE_PREFIX_USER_TABLE 3, X86_64_SPECIAL 4, carried in
+// bytemode1 of a NULL-name entry with the table index in the NEXT operand slot (`GRP1b` is
+// `NULL, NULL, USE_GROUPS, NULL, 0, ...`). Here the index is packed into the low byte of bytemode1
+// (`GRP1B = USE_GROUPS | 0`), so each kind sits above it. The earlier 1000..1003 values could not
+// hold an index (`1001 | 2 == 1003 == X86_64_SPECIAL`) and the decoder read the index from
+// bytemode2, which is the following operand's mode: every group opcode decoded wrong.
+const DIS_KIND_MASK: i32 = !0xff;
+const FLOATCODE: i32 = 0x100; // nolint: shadowed-c-define (re-encoded: index in the low byte, see above)
+const USE_GROUPS: i32 = 0x200; // nolint: shadowed-c-define (re-encoded, see above)
+const USE_PREFIX_USER_TABLE: i32 = 0x300; // nolint: shadowed-c-define (re-encoded, see above)
+const X86_64_SPECIAL: i32 = 0x400; // nolint: shadowed-c-define (re-encoded, see above)
 
 #[derive(Clone, Copy)]
 enum Op {
@@ -1894,10 +1901,22 @@ impl Disassembler {
         }
     }
 
+    /// KdbPuts takes a C string; the prefix and mnemonic names are Rust `&str`s with no NUL, so
+    /// handing their `as_ptr()` straight to it printed on through the rest of the string table.
+    fn puts_str(s: &str) {
+        let mut tmp = [0u8; 64];
+        let n = s.len().min(tmp.len() - 1);
+        tmp[..n].copy_from_slice(&s.as_bytes()[..n]);
+        unsafe { KdbPuts(tmp.as_ptr() as PCSTR); }
+    }
+
     fn oappend_to_op(&mut self, s: &str) {
         let bytes = s.as_bytes();
         let len = bytes.len();
-        let idx = self.op_ad;
+        // C writes operand N's text to opNout while op_ad counts DOWN (op1: op_ad 2, op2: 1,
+        // op3: 0) and indexes only op_address/op_index/op_riprel. Using op_ad as the text slot
+        // printed every operand list reversed in both syntaxes (`add 0x1,eax`).
+        let idx = 2 - self.op_ad;
         if self.op_out_len[idx] + len < self.op_out[idx].len() {
             self.op_out[idx][self.op_out_len[idx]..self.op_out_len[idx] + len].copy_from_slice(bytes);
             self.op_out_len[idx] += len;
@@ -3241,7 +3260,7 @@ impl Disassembler {
                     if !silent {
                         let name = self.prefix_name(self.the_buffer[0]).unwrap_or("");
                         if !name.is_empty() {
-                            unsafe { KdbPuts(name.as_ptr() as PCSTR); }
+                            Self::puts_str(name);
                         } else {
                             { crate::kdb_printf!(b".byte 0x%x\0", self.the_buffer[0] as u32); }
                         }
@@ -3251,11 +3270,13 @@ impl Disassembler {
                 return -1;
             }
         };
+        // i386-dis.c: enter and bound print their operands in Intel order in both syntaxes.
+        self.two_source_ops = b == 0x62 || b == 0xc8;
 
         if self.prefixes & PREFIX_FWAIT != 0 && (b < 0xd8 || b > 0xdf) {
             if !silent {
                 let name = self.prefix_name(0x9b).unwrap_or("<internal disassembler error>");
-                unsafe { KdbPuts(name.as_ptr() as PCSTR); }
+                Self::puts_str(name);
             }
             return 1;
         }
@@ -3320,9 +3341,10 @@ impl Disassembler {
         } else {
             let mut current_dp = dp;
             if dp.name.is_none() {
-                match dp.bytemode1 {
+                let table = (dp.bytemode1 & 0xff) as usize;
+                match dp.bytemode1 & DIS_KIND_MASK {
                     USE_GROUPS => {
-                        current_dp = &GRPS[(dp.bytemode2 & 0xff) as usize][self.reg as usize];
+                        current_dp = &GRPS[table][self.reg as usize];
                     }
                     USE_PREFIX_USER_TABLE => {
                         let mut index = 0;
@@ -3340,10 +3362,10 @@ impl Disassembler {
                                 }
                             }
                         }
-                        current_dp = &PREFIX_USER_TABLE[dp.bytemode2 as usize][index];
+                        current_dp = &PREFIX_USER_TABLE[table][index];
                     }
                     X86_64_SPECIAL => {
-                        current_dp = &X86_64_TABLE[dp.bytemode2 as usize][if self.r#mode_64bit { 1 } else { 0 }];
+                        current_dp = &X86_64_TABLE[table][if self.r#mode_64bit { 1 } else { 0 }];
                     }
                     _ => self.oappend("<internal disassembler error>"),
                 }
@@ -3364,12 +3386,13 @@ impl Disassembler {
         if !silent {
             if self.prefixes & !self.used_prefixes != 0 {
                 let name = self.prefix_name(self.the_buffer[0] as u8).unwrap_or("<internal disassembler error>");
-                unsafe { KdbPuts(name.as_ptr() as PCSTR); }
+                Self::puts_str(name);
                 return 1;
             }
             if self.rex & !self.rex_used != 0 {
                 let name = self.prefix_name(self.rex | 0x40).unwrap_or("<internal disassembler error>");
-                { crate::kdb_printf!(b"%s \0", name.as_ptr() as PCSTR); }
+                Self::puts_str(name);
+                Self::puts_str(" ");
             }
 
             // Output padding
@@ -3396,11 +3419,13 @@ impl Disassembler {
             }
 
             let mut needcomma = false;
-            for &idx in &[first, second, third] {
+            // C checks op_index[p]/op_riprel[p] by print POSITION p (after the intel swap above),
+            // not by the text slot being printed.
+            for (p, &idx) in [first, second, third].iter().enumerate() {
                 if self.op_out_len[idx] > 0 {
                     if needcomma { unsafe { KdbPuts(",\0".as_ptr() as PCSTR); } }
-                    if self.op_index[idx] != -1 && !self.op_riprel[self.op_index[idx] as usize] {
-                        unsafe { KdbSymPrintAddress(self.op_address[self.op_index[idx] as usize] as *mut c_void, ptr::null_mut()); }
+                    if self.op_index[p] != -1 && !self.op_riprel[p] {
+                        unsafe { KdbSymPrintAddress(self.op_address[self.op_index[p] as usize] as *mut c_void, ptr::null_mut()); }
                     } else {
                         let mut tmp = [0u8; 101];
                         tmp[..self.op_out_len[idx]].copy_from_slice(&self.op_out[idx][..self.op_out_len[idx]]);

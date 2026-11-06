@@ -174,7 +174,7 @@ const _O_TRUNC: i32 = 0x0200;
 const _O_BINARY: i32 = 0x8000;
 const _S_IREAD: i32 = 0x0100;
 const _S_IWRITE: i32 = 0x0080;
-const statusCabinet: u32 = 0x0003;
+const statusCabinet: u32 = 2; // fci.h
 // TCOMP (USHORT), like the field it is compared with and stored into. It was u32 and nobody
 // noticed because its only use sat behind a cfg that was never set.
 const tcompTYPE_MSZIP: TCOMP = 0x00000001;

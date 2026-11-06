@@ -886,7 +886,7 @@ pub unsafe extern "system" fn FatAddFileAllocation(
     DesiredAllocationSize: u32,
 ) {
     // Gap constants (unknown values; preserve names)
-    const Dbg: u32 = 0; // DEBUG_TRACE_ALLOCSUP
+    const Dbg: u32 = 0x200000; // allocsup.c
     const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
     const FcbGood: u32 = 1;
     const FCB_STATE_FLUSH_FAT: u32 = 0x10;

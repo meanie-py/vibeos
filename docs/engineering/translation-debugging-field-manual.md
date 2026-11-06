@@ -3506,6 +3506,12 @@ set ONE definition beside its consumer and import it; a deliberate divergence ta
 `// nolint: shadowed-c-define (why)` on the const's line. A generated bindgen island goes STALE the same
 way when upstream renumbers a header after generation: syssetup's showed swapped icons for
 two months. The rule checks islands against their module's own tree for exactly that.
+Two more sources from the 2026-11-05 baseline triage (109 to 3): a prelude constant BORROWED
+from a sibling crate's island by name, which rtl8139's `DEFAULT_INTERRUPT_MASK` took from e1000
+(0x8097 against rtlhw.h's 0xC07F, so TX-error and link-change interrupts stayed masked), and an
+island that kept the PSDK value of a macro its module `#undef`s and redefines (comctl32's
+`COMCTL32_VERSION` 6, so DllGetVersion said 6.82 where the C says 5.82). The rule now applies a
+narrowing C cast, so `((UCHAR) ~0)` is 0xff and `((short)0x8000)` is -32768.
 - **Fix deterministically:** `ntkrnl_sys::bugcodes::NAME` from `tools/gen_bugcodes.py`;
   `tools/rustconv/rustconv/verify_constants.py` (`--enums`, `--fix`) against a header catalog;
   `tools/scan_bugcheck_codes.py` (empty baseline, gate-wired).
