@@ -768,7 +768,7 @@ pub unsafe extern "C" fn DiskPerformSmartCommand(
 
     // Build SrbControl header
     (*SrbControl).HeaderLength = core::mem::size_of::<SRB_IO_CONTROL>() as u32;
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         b"SCSIDISK\0".as_ptr() as *const u8,
         core::ptr::addr_of_mut!((*SrbControl).Signature) as *mut u8,
         8,
@@ -2685,7 +2685,7 @@ pub unsafe extern "system" fn DiskFdoQueryWmiDataBlock(
                 match current_block_78 {
                     3229571381435211107 => {}
                     _ => {
-                        core::ptr::copy_nonoverlapping(
+                        core::ptr::copy(
                             &(*fdoExtension).DiskGeometry as *const DISK_GEOMETRY as *const u8,
                             Buffer,
                             core::mem::size_of::<DISK_GEOMETRY>(),

@@ -830,7 +830,7 @@ pub unsafe extern "system" fn GetAddrInfoW(
                 if (**pptResult).ai_canonname.is_null() {
                     iError = EAI_MEMORY as i32;
                 } else {
-                    core::ptr::copy_nonoverlapping(
+                    core::ptr::copy(
                         CanonicalName.as_ptr(),
                         (**pptResult).ai_canonname,
                         wcslen(CanonicalName.as_mut_ptr()) as usize,
@@ -1047,7 +1047,7 @@ pub unsafe extern "system" fn GetNameInfoW(
                 }
             }
 
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 pSockaddr as *const u8,
                 core::ptr::addr_of_mut!(Address) as *mut u8,
                 AddressLength as usize,

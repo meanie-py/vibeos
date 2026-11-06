@@ -296,7 +296,7 @@ pub unsafe extern "system" fn IKsFilterFactory_fnInitialize(
     if (*This).FilterFactory.FilterDescriptor.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         Descriptor as *const u8,
         (*This).FilterFactory.FilterDescriptor as *mut u8,
         core::mem::size_of::<KSFILTER_DESCRIPTOR>(),
@@ -516,7 +516,7 @@ pub unsafe extern "C" fn KspCacheAddData(
     ntkrnl_sys::ASSERT!((*Descriptor).DataOffset.wrapping_add(Length) < (*Descriptor).DataLength);
 
     /* copy to data blob */
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         Data as *const u8,
         (*Descriptor).DataCache.offset((*Descriptor).DataOffset as isize),
         Length as usize,
@@ -643,7 +643,7 @@ pub unsafe extern "system" fn KsFilterFactoryUpdateCacheData(
             let mut Medium: KSPCACHE_MEDIUM = core::mem::zeroed();
             let MediumOffset: PULONG = Descriptor.FilterData.offset(Descriptor.FilterOffset as isize) as PULONG;
 
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 &(*(*(*FilterDescriptor).PinDescriptors.offset(Index as isize)).PinDescriptor.Mediums.offset(SubIndex as isize)).Set as *const _ as *const u8,
                 &mut Medium.Medium as *mut _ as *mut u8,
                 core::mem::size_of::<GUID>(),

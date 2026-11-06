@@ -629,7 +629,7 @@ pub unsafe extern "system" fn IKsPin_PinAllocatorFramingPropertyHandler(
         } else if Size > (*IoStack).Parameters.DeviceIoControl.OutputBufferLength {
             Status = STATUS_BUFFER_TOO_SMALL;
         } else {
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 ((*((*This).Pin.Descriptor)).AllocatorFraming) as *const u8,
                 Data as *mut u8,
                 Size as usize,
@@ -674,7 +674,7 @@ pub unsafe extern "system" fn IKsPin_PinDataFormatPropertyHandler(
             (*Irp).IoStatus.Information = (*(*This).Pin.ConnectionFormat).__bindgen_anon_1.as_ref().FormatSize as _;
             Status = STATUS_BUFFER_TOO_SMALL;
         } else {
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 (*This).Pin.ConnectionFormat as *const u8,
                 Data as *mut u8,
                 (*(*This).Pin.ConnectionFormat).__bindgen_anon_1.as_ref().FormatSize as usize,
@@ -692,7 +692,7 @@ pub unsafe extern "system" fn IKsPin_PinDataFormatPropertyHandler(
                 0,
             );
             if NT_SUCCESS(Status) {
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     Data as *const u8,
                     (*This).Pin.ConnectionFormat as *mut u8,
                     (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize,
@@ -1547,7 +1547,7 @@ pub unsafe extern "system" fn KsStreamPointerClone(
         .__bindgen_anon_1
         .DriverContext[0] = RefCount as PVOID;
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         CurFrame as *const u8,
         NewFrame as *mut u8,
         core::mem::size_of::<KSISTREAM_POINTER>(),
@@ -2216,7 +2216,7 @@ pub unsafe extern "C" fn KspCreatePin(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         Descriptor as *const u8,
         (*This).Pin.Descriptor as *mut u8,
         core::mem::size_of::<KSPIN_DESCRIPTOR_EX>(),
@@ -2249,17 +2249,17 @@ pub unsafe extern "C" fn KspCreatePin(
     (*This).Pin.Communication = (*Descriptor).PinDescriptor.Communication;
     (*This).Pin.ConnectionIsExternal = 0u8;
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         &(*Connect).Interface as *const _ as *const u8,
         &mut (*This).Pin.ConnectionInterface as *mut _ as *mut u8,
         core::mem::size_of::<KSPIN_INTERFACE>(),
     );
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         &(*Connect).Medium as *const _ as *const u8,
         &mut (*This).Pin.ConnectionMedium as *mut _ as *mut u8,
         core::mem::size_of::<KSPIN_MEDIUM>(),
     );
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         &(*Connect).Priority as *const _ as *const u8,
         &mut (*This).Pin.ConnectionPriority as *mut _ as *mut u8,
         core::mem::size_of::<KSPRIORITY>(),
@@ -2280,7 +2280,7 @@ pub unsafe extern "C" fn KspCreatePin(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         DataFormat as *const u8,
         (*This).Pin.ConnectionFormat as *mut u8,
         (*DataFormat).__bindgen_anon_1.as_ref().FormatSize as usize,

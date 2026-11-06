@@ -1256,7 +1256,7 @@ pub unsafe extern "system" fn FilterGeneralComponentIdHandler(
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
     if (*This).Filter.Descriptor.as_ref().unwrap().ComponentId != core::ptr::null_mut() {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             (*This).Filter.Descriptor.as_ref().unwrap().ComponentId as *const u8,
             Data as *mut u8,
             core::mem::size_of::<KSCOMPONENTID>(),
@@ -1490,7 +1490,7 @@ pub unsafe extern "C" fn IKsFilter_CreateDescriptors(
             return Status;
         }
 
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             (*FilterDescriptor).PinDescriptors,
             (*(*This).Filter.Descriptor).PinDescriptors as *mut _,
             ((*FilterDescriptor).PinDescriptorSize.wrapping_mul((*FilterDescriptor).PinDescriptorsCount)) as usize,
@@ -1547,7 +1547,7 @@ pub unsafe extern "C" fn IKsFilter_CreateDescriptors(
         Index = 0;
         while Index < (*FilterDescriptor).NodeDescriptorsCount {
             if !(*NodeDescriptor).Type.is_null() {
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     (*NodeDescriptor).Type,
                     (*This).Topology.TopologyNodes.add(Index as usize) as *mut GUID,
                     1, // one GUID — size_of here copied 16 GUIDs
@@ -1555,7 +1555,7 @@ pub unsafe extern "C" fn IKsFilter_CreateDescriptors(
             }
 
             if !(*NodeDescriptor).Name.is_null() {
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     (*NodeDescriptor).Name,
                     (*This).Topology.TopologyNodesNames.add(Index as usize) as *mut GUID,
                     1, // one GUID — size_of here copied 16 GUIDs
@@ -1596,7 +1596,7 @@ pub unsafe extern "C" fn IKsFilter_CopyFilterDescriptor(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         FilterDescriptor as *const u8,
         (*This).Filter.Descriptor as *mut u8,
         core::mem::size_of::<KSFILTER_DESCRIPTOR>(),
@@ -2051,7 +2051,7 @@ pub unsafe extern "system" fn KsFilterAddTopologyConnections(
         return Status;
     }
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         NewTopologyConnections,
         (*((*This).Filter.Descriptor)).Connections.offset((*((*This).Filter.Descriptor)).ConnectionsCount as isize) as *mut _,
         NewConnectionsCount as usize,
@@ -2140,7 +2140,7 @@ pub unsafe extern "system" fn KsFilterCreatePinFactory(
         return Status;
     }
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         InPinDescriptor,
         (*(*This).Filter.Descriptor).PinDescriptors.add((*(*This).Filter.Descriptor).PinDescriptorsCount as usize) as *mut _,
         1,

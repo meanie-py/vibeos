@@ -347,7 +347,7 @@ pub unsafe extern "system" fn WsThreadBlobToHostent(
     }
 
     if !(*Thread).Hostent.is_null() {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             (*Blob).pBlobData as *const u8,
             (*Thread).Hostent as *mut u8,
             (*Blob).cbSize as usize,
@@ -371,7 +371,7 @@ pub unsafe extern "system" fn WsThreadBlobToServent(
     }
 
     if !(*Thread).Servent.is_null() {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             (*Blob).pBlobData as *const u8,
             (*Thread).Servent as *mut u8,
             (*Blob).cbSize as usize,

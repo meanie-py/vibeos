@@ -740,7 +740,7 @@ unsafe extern "system" fn PiAttachFilterDriversCallback(
     Status = IopGetRegistryValue(serviceHandle, b"S\0t\0a\0r\0t\0\0\0" as *const u8 as PWSTR, &mut kvInfo as *mut _);
     if Status >= 0 {
         if (*kvInfo).Type == REG_DWORD {
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 (kvInfo as ULONG_PTR + (*kvInfo).DataOffset as ULONG_PTR) as *const u8,
                 &mut startType as *mut _ as *mut u8,
                 core::mem::size_of::<SERVICE_LOAD_TYPE>(),

@@ -48,7 +48,7 @@ pub unsafe extern "system" fn ProtocolInfoFromContext(
     if ((*Context).BufferUsed + (core::mem::size_of::<WSAPROTOCOL_INFOW>() as u32))
         <= (*Context).BufferLength
     {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             ProtocolInfo,
             (((*Context).ProtocolBuffer as usize) + ((*Context).BufferUsed as usize)) as LPWSAPROTOCOL_INFOW,
             1,
@@ -205,7 +205,7 @@ pub unsafe extern "system" fn WSAEnumProtocolsA(
     i = 0;
     while i < count {
         let dest_offset = core::mem::size_of::<WSAPROTOCOL_INFOA>() - core::mem::size_of_val(&(*lpProtocolBuffer.offset(i as isize)).szProtocol);
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             protocolInfoW.offset(i as isize) as *const u8,
             lpProtocolBuffer.offset(i as isize) as *mut u8,
             dest_offset,

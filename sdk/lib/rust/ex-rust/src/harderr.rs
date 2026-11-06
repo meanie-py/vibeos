@@ -209,7 +209,7 @@ unsafe fn ExpRaiseHardError(
     KeQuerySystemTime(core::ptr::addr_of_mut!((*Message).ErrorTime) as *mut ntkrnl_sys::ddk::_LARGE_INTEGER);
 
     if !Parameters.is_null() {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             Parameters as *const u8,
             (*Message).Parameters.as_mut_ptr() as *mut u8,
             core::mem::size_of::<ULONG_PTR>() * NumberOfParameters as usize,
@@ -327,7 +327,7 @@ pub unsafe extern "system" fn ExRaiseHardError(
                     // C's RtlCopyMemory of 0 bytes, UB for copy_nonoverlapping
                     // (kmtest ExHardError trips the armed check on it).
                     if CapturedParams[i].MaximumLength != 0 {
-                        core::ptr::copy_nonoverlapping(
+                        core::ptr::copy(
                             CapturedParams[i].Buffer as *const u8,
                             BufferBase as *mut u8,
                             CapturedParams[i].MaximumLength as usize,
@@ -335,7 +335,7 @@ pub unsafe extern "system" fn ExRaiseHardError(
                     }
 
                     CapturedParams[i].Buffer = BufferBase;
-                    core::ptr::copy_nonoverlapping(
+                    core::ptr::copy(
                         core::ptr::addr_of!(CapturedParams[i]) as *const u8,
                         core::ptr::addr_of_mut!((*UserParams).Strings[i]) as *mut u8,
                         core::mem::size_of::<UNICODE_STRING>(),

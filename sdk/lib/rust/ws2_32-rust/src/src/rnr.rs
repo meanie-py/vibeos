@@ -678,7 +678,7 @@ pub unsafe extern "system" fn NSProviderInfoFromContext(
     infoW.dwVersion = (*Entry).Version;
     infoW.fActive = (*Entry).Enabled as i32;
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         core::ptr::addr_of!((*Entry).ProviderId) as *const u8,
         core::ptr::addr_of_mut!(infoW.NSProviderId) as *mut u8,
         core::mem::size_of::<LPGUID>(),
@@ -697,7 +697,7 @@ pub unsafe extern "system" fn NSProviderInfoFromContext(
         .wrapping_add(size2 as u32)
         <= (*Context).BufferLength
     {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             core::ptr::addr_of!(infoW) as *const u8,
             ((*Context).ProtocolBuffer as usize)
                 .wrapping_add((*Context).BufferUsed as usize) as *mut u8,
@@ -706,7 +706,7 @@ pub unsafe extern "system" fn NSProviderInfoFromContext(
 
         if size2 != 0 {
             if (*Context).Unicode != 0 {
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     (*Entry).ProviderName as *const u8,
                     ((*Context).ProtocolBuffer as usize)
                         .wrapping_add((*Context).BufferUsed as usize)

@@ -1051,7 +1051,7 @@ pub unsafe extern "system" fn HalpGetPCIData(
             Len = Length;
         }
 
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             PciBuffer.as_ptr().add(Offset as usize),
             Buffer as *mut u8,
             Len as usize,
@@ -1136,7 +1136,7 @@ pub unsafe extern "system" fn HalpSetPCIData(
                 Len = Length;
             }
 
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 Buffer as *const u8,
                 PciBuffer.as_mut_ptr().add(Offset as usize),
                 Len as usize,

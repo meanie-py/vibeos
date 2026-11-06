@@ -832,7 +832,7 @@ pub unsafe extern "system" fn KsAllocateExtraData(
     let Header = (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const KSSTREAM_HEADER;
     let mut Index = 0;
     while Index < Count {
-        core::ptr::copy_nonoverlapping(Header.add(Index as usize) as *const u8, Buffer as *mut u8, core::mem::size_of::<KSSTREAM_HEADER>());
+        core::ptr::copy(Header.add(Index as usize) as *const u8, Buffer as *mut u8, core::mem::size_of::<KSSTREAM_HEADER>());
         Index += 1;
     }
     if !NT_SUCCESS(Status) {

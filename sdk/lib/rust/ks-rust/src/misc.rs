@@ -86,7 +86,7 @@ pub unsafe extern "C" fn KspCopyCreateRequest(
     if Buffer.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         (*((*IoStack).FileObject)).FileName.Buffer.add(ObjectLength / 2) as *const core::ffi::c_void,
         Buffer,
         ParametersLength,

@@ -105,7 +105,7 @@ pub unsafe extern "system" fn KspCreateObjectType(
     RtlAppendUnicodeToString(&mut Name, ObjectType);
     RtlAppendUnicodeToString(&mut Name, L!("\\\0").as_ptr() as PCWSTR);
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         CreateParameters as *const u8,
         Name.Buffer.offset((Name.Length as usize / core::mem::size_of::<WCHAR>()) as isize) as *mut u8,
         CreateParametersSize as usize,
@@ -273,7 +273,7 @@ pub unsafe extern "system" fn KsTopologyPropertyHandler(
                         Status = STATUS_BUFFER_OVERFLOW;
                         FreeItem(KeyInfo as *mut core::ffi::c_void);
                     } else {
-                        core::ptr::copy_nonoverlapping(
+                        core::ptr::copy(
                             &(*KeyInfo).Data as *const _ as *const u8,
                             (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
                             (*KeyInfo).DataLength as usize,

@@ -306,7 +306,7 @@ pub unsafe extern "system" fn IKsAllocator_fnDeviceIoControl(
             }
 
             let State = (*Irp).UserBuffer as PKSSTREAMALLOCATOR_STATUS;
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 &raw const (*This).Status as *const u8,
                 State as *mut u8,
                 core::mem::size_of::<KSSTREAMALLOCATOR_STATUS>(),
@@ -674,7 +674,7 @@ pub unsafe extern "system" fn KsCreateDefaultAllocatorEx(
         );
     }
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         AllocatorFraming as *const u8,
         &mut (*Allocator).Status.Framing as *mut _ as *mut u8,
         core::mem::size_of::<KSALLOCATOR_FRAMING>(),

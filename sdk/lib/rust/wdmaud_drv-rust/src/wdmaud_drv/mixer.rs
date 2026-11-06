@@ -192,7 +192,7 @@ pub unsafe extern "C" fn PerformChannelConversion(
         let Out = BufferOut.add(Frame * NewFrame);
         for Channel in 0..NewChannels as usize {
             let Source = Channel % OldChannels as usize;
-            core::ptr::copy_nonoverlapping(In.add(Source * Width), Out.add(Channel * Width), Width);
+            core::ptr::copy(In.add(Source * Width), Out.add(Channel * Width), Width);
         }
     }
     *Result = BufferOut as PVOID;

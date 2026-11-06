@@ -2016,7 +2016,7 @@ pub unsafe extern "fastcall" fn xHalIoReadPartitionTable(
                     break;
                 }
 
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     *PartitionBuffer as *const u8,
                     DriveLayoutInfo as *mut u8,
                     BufferSize as usize,
@@ -2381,7 +2381,7 @@ pub unsafe extern "C" fn xHalIoReadPartitionTable(
                     break;
                 }
 
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     *PartitionBuffer as *const u8,
                     DriveLayoutInfo as *mut u8,
                     BufferSize as usize,

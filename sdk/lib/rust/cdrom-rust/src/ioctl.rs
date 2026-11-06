@@ -551,7 +551,7 @@ pub unsafe extern "C" fn ReadQChannel(
         }
 
         // Copy our buffer into users.
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             subQPtr as *const u8,
             userChannelData as *mut u8,
             (*(*DeviceExtension).ScratchContext.ScratchSrb).DataTransferLength as usize,
@@ -659,7 +659,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
         // RtlMoveMemory(header, ..., ...) -> copy_nonoverlapping
         let src = (*(*DeviceExtension).ScratchContext.ScratchSrb).DataBuffer;
         let len = (*(*DeviceExtension).ScratchContext.ScratchSrb).DataTransferLength;
-        core::ptr::copy_nonoverlapping(src as *const u8, header as *mut u8, len as usize);
+        core::ptr::copy(src as *const u8, header as *mut u8, len as usize);
 
         TracePrint!(
             0x02,

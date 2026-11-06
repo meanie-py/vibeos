@@ -670,7 +670,7 @@ pub unsafe extern "system" fn GetModuleFileNameA(
         }
 
         /* Now copy back to the caller amount he asked */
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             FilenameA.Buffer as *const u8,
             lpFilename as *mut u8,
             LengthToCopy as usize,

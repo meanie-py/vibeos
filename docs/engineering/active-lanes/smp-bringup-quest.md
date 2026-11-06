@@ -15,7 +15,8 @@ the integrator (check whether it landed). Owed, in order:
    tree that has 5c1bb095b90, read the x86 `MmDeleteRmap` per-VA ledger dump first.
 2. #72 remainder: freeldr-rust and what it links (cmboot-rust, va-slots-rust, ntkrnl-sys,
    rtl-diag, rtl-strings via blrtl) are blocked on freeldr's PE size budget (0x7fc00 armed vs
-   0x77000). Then the 78-entry `scan_move_vs_nonoverlapping` baseline review.
+   0x77000). The 78-entry `scan_move_vs_nonoverlapping` baseline is DONE (2026-11-05): all 112
+   copies that came from a C `RtlMoveMemory` are `core::ptr::copy` now, baseline empty.
 3. Any armed crate the default smoke never loads can still hold a UB-check panic; conformance and
    stortest have found the two (hidparser, usb) that smoke missed. Classify a `RUST PANIC ...
    misaligned pointer dereference` by the field-manual entry "Arming `debug-assertions` also arms

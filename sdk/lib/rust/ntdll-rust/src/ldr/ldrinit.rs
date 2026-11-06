@@ -623,7 +623,7 @@ pub unsafe extern "system" fn LdrQueryImageFileKeyOption(
     if NT_SUCCESS(Status) {
         if (*KeyValueInformation).Type == REG_BINARY {
             if !Buffer.is_null() && (*KeyValueInformation).DataLength <= BufferSize {
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     core::ptr::addr_of!((*KeyValueInformation).Data) as *const u8,
                     Buffer as *mut u8,
                     (*KeyValueInformation).DataLength as usize,
@@ -643,7 +643,7 @@ pub unsafe extern "system" fn LdrQueryImageFileKeyOption(
                     && BufferSize == core::mem::size_of::<ULONG>() as ULONG
                     && (*KeyValueInformation).DataLength <= BufferSize
                 {
-                    core::ptr::copy_nonoverlapping(
+                    core::ptr::copy(
                         core::ptr::addr_of!((*KeyValueInformation).Data) as *const u8,
                         Buffer as *mut u8,
                         (*KeyValueInformation).DataLength as usize,
@@ -677,7 +677,7 @@ pub unsafe extern "system" fn LdrQueryImageFileKeyOption(
                     BufferSize = (*KeyValueInformation).DataLength;
                 }
 
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     core::ptr::addr_of!((*KeyValueInformation).Data) as *const u8,
                     Buffer as *mut u8,
                     BufferSize as usize,
@@ -2453,7 +2453,7 @@ pub unsafe extern "system" fn LdrpInitializeProcess(
                 // FIXME
             }
 
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 (*SharedUserData).NtSystemRoot.as_ptr() as *const u8,
                 CurrentDirectory.Buffer as *mut u8,
                 3 * core::mem::size_of::<WCHAR>(),

@@ -421,7 +421,7 @@ pub unsafe extern "system" fn KsFastPropertyHandler(
     Mode = ExGetPreviousMode();
 
     if Mode == 0i8 {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             Property as *const u8,
             &mut PropRequest as *mut KSPROPERTY as *mut u8,
             core::mem::size_of::<KSPROPERTY>(),

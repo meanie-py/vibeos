@@ -11893,7 +11893,7 @@ pub unsafe extern "C" fn DiskIoctlSmartGetVersion(
     // Fill in srbControl fields
     (*srbControl).HeaderLength = core::mem::size_of::<SRB_IO_CONTROL>() as u32;
     // RtlMoveMemory(Signature, "SCSIDISK", 8) — 8 bytes copy
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         b"SCSIDISK\0".as_ptr() as *const u8 as *const core::ffi::c_void,
         &raw mut (*srbControl).Signature as *mut u8 as *mut core::ffi::c_void,
         8usize,
@@ -11923,7 +11923,7 @@ pub unsafe extern "C" fn DiskIoctlSmartGetVersion(
     if status >= 0 {
         // Success
         buffer = (srbControl as *mut u8).offset((*srbControl).HeaderLength as isize);
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             buffer as *const core::ffi::c_void,
             (*Irp).AssociatedIrp.SystemBuffer as *mut core::ffi::c_void,
             core::mem::size_of::<GETVERSIONINPARAMS>(),
@@ -12571,7 +12571,7 @@ pub unsafe extern "C" fn DiskIoctlUpdateDriveSize(
 
     if status >= 0 {
         // Copy drive geometry information from the device extension
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             core::ptr::addr_of!((*fdoExtension).DiskGeometry) as *const core::ffi::c_void,
             (*Irp).AssociatedIrp.SystemBuffer as *mut core::ffi::c_void,
             core::mem::size_of::<DISK_GEOMETRY>(),

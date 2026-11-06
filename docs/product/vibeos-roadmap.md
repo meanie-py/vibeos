@@ -6915,8 +6915,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   afd ARMED 2026-11-01**, after `nt_assert!` stopped panicking (it reports through RtlAssert and
   continues, as the C's DBG ASSERT). Found: classpnp `ClassReadDriveCapacity`, classpnp
   `ClasspPersistentReserve` and usbaudio `PinRenderProcess` lowered an overlapping
-  `RtlMoveMemory` to `copy_nonoverlapping` (new rule `scan_move_vs_nonoverlapping`, 78 baselined
-  disjoint copies to review); cdfs/fastfat stored 8-aligned dir-info structs into a 4-aligned
+  `RtlMoveMemory` to `copy_nonoverlapping` (new rule `scan_move_vs_nonoverlapping`; its 78-entry
+  baseline was cleared 2026-11-05 by lowering all 112 C moves to `core::ptr::copy`); cdfs/fastfat stored 8-aligned dir-info structs into a 4-aligned
   WoW64 user buffer; fastfat's LFN copy was WCHAR-typed on a packed record, `FatNoOpAcquire`
   set top-level IRP 1 for `FSRTL_CACHE_TOP_LEVEL_IRP`, and an empty `DbgDoit!` dropped a DBG
   increment; and a workspace `[profile]` edit never rebuilt `rust_crate_sources` edges.

@@ -182,7 +182,7 @@ pub unsafe extern "C" fn DdGetFreeHandle(objType: UCHAR) -> HANDLE {
             return core::ptr::null_mut();
         }
 
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             gpentDdHmgr as *const u8,
             mAllocMem as *mut u8,
             core::mem::size_of::<DD_ENTRY>() * gcSizeDdHmgr as usize,

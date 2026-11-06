@@ -739,7 +739,7 @@ pub unsafe extern "C" fn FdoIoctlDiskGetDriveLayout(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         partitionList as *const u8,
         (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
         size,
