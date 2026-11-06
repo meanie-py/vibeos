@@ -33,16 +33,27 @@ import bisect
 import itertools
 import json
 import os
-import re
-import shutil
 import subprocess
 import sys
 import threading
 import time
 from pathlib import Path
 
+from tools import qemu_infra_compat as native
+
 from . import recordreplay as rr  # re-exported for the arg parser
 from . import rrsample
+
+
+def _native_call(operation, *, callbacks=None, **kwargs):
+    try:
+        if callbacks is not None:
+            with native.DedicatedSession() as session:
+                return session.call("rr_cli_" + operation, kwargs, callbacks=callbacks)
+        return native.call("rr_cli_" + operation, kwargs)
+    except native.NativeError as error:
+        raise rr.RecordReplayError(str(error)) from error
+
 
 # Traces are expensive (a full boot each) and worth keeping across reboots, so
 # they do NOT live in /tmp.
@@ -77,24 +88,7 @@ def _root(args) -> Path:
 
 
 def _resolve_trace(args) -> Path:
-    """Accept a bare trace name or a path; `latest` picks the newest."""
-    raw = str(args.trace)
-    p = Path(raw)
-    if p.is_dir():
-        return p
-    root = _root(args)
-    if raw == "latest":
-        traces = sorted(
-            (d for d in root.glob("*") if (d / "manifest.json").is_file()),
-            key=lambda d: d.stat().st_mtime,
-        )
-        if not traces:
-            raise rr.RecordReplayError(f"no traces under {root}")
-        return traces[-1]
-    cand = root / raw
-    if cand.is_dir():
-        return cand
-    raise rr.RecordReplayError(f"no such trace: {raw} (looked in {root})")
+    return Path(_native_call("resolve_trace", trace_root=_root(args), raw=str(args.trace)))
 
 
 def _head_sha(repo: Path) -> str:
@@ -237,119 +231,24 @@ def cmd_record(args, repo: Path) -> int:
 
 
 def await_trace_quiescence(trace: Path, *, settle: float = 6.0, limit: float = 420.0) -> int:
-    """Block until the recording has actually finished, and return the final size.
-
-    The boot command returning does NOT mean QEMU has exited. `vibeos-cli
-    conformance` hands back as soon as its sweep is parsed, while the VM is still
-    shutting down — measured on a kmtest recording: the command returned at
-    05:28:38, the guest's serial finished at 05:29:23, and the trace finished at
-    05:29:39. Finalising at the first of those three froze pristine/ mid-record,
-    copied a 1,456-byte transcript for what became a 240,750-byte boot, and
-    reported "trace 0MB" for what became 10.6MB.
-
-    Every one of those is silent and each poisons something different: a
-    mid-record pristine/ may not carry the `init` snapshot every replay loads, and
-    a truncated record-serial.log is what `rr verify` diffs against — the same
-    false-green class as reading the serial path from the manifest.
-
-    Smoke never showed it because its harness waits for its own VM. kmtest is the
-    payload this lane is actually chartered for, so this mattered.
-    """
-    rrbin = trace / "replay.bin"
-    last, stable_since = -1, time.time()
-    deadline = time.time() + limit
-    while time.time() < deadline:
-        size = rrbin.stat().st_size if rrbin.is_file() else 0
-        if size != last:
-            last, stable_since = size, time.time()
-        elif time.time() - stable_since >= settle:
-            return size
-        time.sleep(2.0)
-    print(
-        f"[rr] WARNING: trace still growing after {limit:.0f}s; finalising anyway "
-        f"at {last:,} bytes — it may be truncated.",
-        file=sys.stderr,
-    )
-    return last
+    """Refuse finalization unless the native monotonic wait observes a stable trace."""
+    return _native_call("await_quiescence", trace_dir=trace, settle=settle, limit=limit)
 
 
 def _keep_serial(trace: Path, name: str, *, expect_mode: str) -> Path | None:
-    """Copy the run that JUST happened into the trace under `name`.
-
-    The path comes from last-run.json, which the launch hook rewrites on every
-    run — not from the manifest, which is the recording's pin and which a replay
-    never touches. Reading it from the manifest handed a replay the RECORD's own
-    transcript, so `verify` compared a file with itself and reported VERIFIED on
-    a replay that had hung at a fifth of the recording's output.
-
-    `expect_mode` is the guard for the same class of mistake: if the last run
-    through this trace was not the mode we think we just ran, we are about to
-    grade the wrong boot.
-    """
-    try:
-        run = rr.last_run(trace)
-    except rr.RecordReplayError:
-        return None
-    if run.get("mode") != expect_mode:
-        print(
-            f"[rr] refusing to keep serial: last run through this trace was "
-            f"{run.get('mode')!r}, expected {expect_mode!r}",
-            file=sys.stderr,
-        )
-        return None
-    src = Path(run.get("serial_log", ""))
-    if not src.is_file():
-        return None
-    dst = trace / name
-    shutil.copy2(src, dst)
-    return dst
-
-
-_HOST_STAMP = re.compile(r"\[\+\s*\d+\.\d+\] ?")
+    result = _native_call("keep_serial", trace_dir=trace, name=name, expect_mode=expect_mode)
+    if result.get("warning"):
+        print(result["warning"], file=sys.stderr)
+    return Path(result["path"]) if result["path"] else None
 
 
 def _guest_lines(p: Path) -> list[str]:
-    """The guest's own serial output, with the harness's banner dropped.
-
-    The live log opens with a `# vibeos smoke live serial ... pid(launcher)=N ...
-    started <time>` header written by the HARNESS, not the guest. It differs on
-    every run by construction, so diffing it would make `verify` report a
-    divergence on line 1 of every trace — a self-inflicted false positive that
-    would discredit the one check that proves the tool works.
-    """
-    lines = p.read_text(errors="replace").splitlines()
-    i = 0
-    while i < len(lines) and (not lines[i].strip() or lines[i].startswith("#")):
-        i += 1
-    # The tee also stamps `[+ secs]` host time onto the stream, at host-timed chunk
-    # arrivals, so both the stamps and where they fall differ on every run. Diffing
-    # them made `verify` report "DIVERGED at serial line 2" on every arm64 trace —
-    # the same self-inflicted false positive as the banner, arriving later. Strip
-    # them and compare the guest's own bytes. A stamp that lands between a `\r` and
-    # its `\n` leaves an empty line on one side only, so blank lines are dropped too.
-    text = _HOST_STAMP.sub("", "\n".join(lines[i:])).replace("\r", "\n")
-    return [ln for ln in text.splitlines() if ln.strip()]
+    return _native_call("guest_lines", path=p)
 
 
 def _serial_divergence(a: list[str], b: list[str]) -> tuple[int, str] | None:
-    """First line where two transcripts differ, or None if one is a prefix of the
-    other. A prefix is not a divergence: a replay that was stopped early, or a
-    record whose tail was still being flushed, both produce one."""
-    for n, (x, y) in enumerate(zip(a, b, strict=False), 1):
-        # The harness's serial socket can connect a few bytes into the guest's
-        # output ("UEFI firmware" captured as "FI firmware"), so the FIRST line may
-        # be truncated at its front on either side. That is capture, not the guest.
-        if n == 1 and (x.endswith(y) or y.endswith(x)):
-            continue
-        # Likewise the LAST line of the shorter transcript: the harness quits QEMU
-        # the moment it has its verdict, mid-print. A whole-kmtest replay agreed for
-        # 18,286 lines and was reported DIVERGED on the 18,287th, which was "[".
-        last = n == min(len(a), len(b))
-        if last and (x.startswith(y) or y.startswith(x)):
-            continue
-        if x != y:
-            return n, f"record: {x[:160]}\nreplay: {y[:160]}"
-    return None
+    result = _native_call("serial_divergence", record=a, replay=b)
+    return tuple(result) if result is not None else None
 
 
 def cmd_verify(args, repo: Path) -> int:
@@ -404,33 +303,31 @@ def cmd_verify(args, repo: Path) -> int:
 
 
 class _TraceProgress:
-    """Samples how far the replaying QEMU has read into replay.bin.
-
-    Exists so a replay that stops can SAY WHY. Without it the operator gets a
-    bare HANG_TIMEOUT and no way to tell "be patient" from "this trace will not
-    replay" — and the two call for opposite responses. A frozen read position
-    with the CPU pinned means QEMU is executing and consuming no further recorded
-    events; more waiting buys nothing.
-    """
+    """Thread/DTO adapter for the native trace progress watcher."""
 
     def __init__(self, trace: Path, period: float = 20.0) -> None:
-        self.trace = trace
-        self.period = period
+        self.trace, self.period = trace, period
         self.total = (trace / "replay.bin").stat().st_size
-        self.max_pos = 0
-        self.stalled_for = 0.0
+        self.max_pos, self.stalled_for = 0, 0.0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._error: BaseException | None = None
 
     def _run(self) -> None:
-        last = -1
-        while not self._stop.wait(self.period):
-            pos = rr.trace_read_position(self.trace)
-            if pos is None:
-                continue
-            self.max_pos = max(self.max_pos, pos)
-            self.stalled_for = self.stalled_for + self.period if pos == last else 0.0
-            last = pos
+        try:
+            result = _native_call(
+                "watch_progress",
+                trace_dir=self.trace,
+                period=self.period,
+                callbacks={"rr_cli_alive": lambda _: not self._stop.is_set()},
+            )
+            self.total, self.max_pos, self.stalled_for = (
+                result["total"],
+                result["max_pos"],
+                result["stalled_for"],
+            )
+        except BaseException as error:
+            self._error = error
 
     def __enter__(self) -> _TraceProgress:
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -440,20 +337,17 @@ class _TraceProgress:
     def __exit__(self, *exc) -> None:
         self._stop.set()
         if self._thread:
-            self._thread.join(timeout=2)
+            self._thread.join(timeout=10)
+            if self._thread.is_alive():
+                raise rr.RecordReplayError("native trace progress watcher did not stop")
+        if self._error and exc[0] is None:
+            raise self._error
 
     def report(self) -> str | None:
-        if not self.total or not self.max_pos:
-            return None
-        pct = 100.0 * self.max_pos / self.total
-        if self.stalled_for >= 60.0:
-            return (
-                f"replay WEDGED: read {self.max_pos:,} of {self.total:,} trace bytes "
-                f"({pct:.1f}%) and stopped consuming events for {self.stalled_for:.0f}s "
-                "while QEMU kept running. This trace will not get further; waiting "
-                "longer does not help. See docs/engineering/qemu-record-replay.md."
-            )
-        return f"replay consumed {self.max_pos:,} of {self.total:,} trace bytes ({pct:.1f}%)"
+        return _native_call(
+            "progress_report",
+            state=dict(total=self.total, max_pos=self.max_pos, stalled_for=self.stalled_for),
+        )
 
 
 def cmd_replay(args, repo: Path) -> int:
@@ -585,79 +479,39 @@ def cmd_diverge(args, repo: Path) -> int:
 
 def cmd_list(args, repo: Path) -> int:
     root = _root(args)
-    if not root.is_dir():
-        print(f"no traces (root {root} does not exist)")
-        return 0
-    rows = []
-    for d in sorted(root.iterdir()):
-        mp = d / "manifest.json"
-        if not mp.is_file():
-            continue
-        try:
-            m = json.loads(mp.read_text())
-        except Exception:
-            continue
-        rrbin = d / "replay.bin"
-        size = rrbin.stat().st_size if rrbin.is_file() else 0
-        total = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
-        rows.append(
-            (
-                d.name,
-                m.get("arch", "?"),
-                m.get("payload", "?"),
-                m.get("boot_rc", "?"),
-                f"{size / 1e6:.0f}M",
-                f"{total / 1e6:.0f}M",
-                m.get("created", "?"),
-            )
-        )
+    rows = _native_call("inventory", trace_root=root)
     if not rows:
         print(f"no traces under {root}")
         return 0
     print(f"{'trace':<40} {'arch':<6} {'payload':<8} {'rc':<4} {'rr':<6} {'total':<7} created")
-    for r in rows:
-        print(f"{r[0]:<40} {r[1]:<6} {r[2]:<8} {r[3]!s:<4} {r[4]:<6} {r[5]:<7} {r[6]}")
+    for row in rows:
+        m = row["manifest"]
+        print(
+            f"{row['name']:<40} {m.get('arch', '?'):<6} {m.get('payload', '?'):<8} "
+            f"{m.get('boot_rc', '?')!s:<4} {row['bytes'] / 1e6:<6.0f} "
+            f"{row['total'] / 1e6:<7.0f} {m.get('created', '?')}"
+        )
     return 0
 
 
 def cmd_prune(args, repo: Path) -> int:
-    """Delete old traces, newest-first retention. DRY-RUN by default.
-
-    Traces are big and nothing was reclaiming them: a kmtest capture is ~1.4GB
-    (489MB of trace plus its media, twice, counting pristine/), and a handful of
-    experiment traces had the disk at 89% within a night. `vibeos-cli prune`
-    reclaims build and boot artifacts and does not know about ~/vibeos-rr at all,
-    so this is the only thing that will.
-
-    Dry-run by default and `--apply` to act, matching `vibeos-cli prune` — a
-    trace costs a full boot to make, so deleting one should take the same
-    deliberate second keystroke.
-    """
-    root = _root(args)
-    if not root.is_dir():
-        print(f"no traces (root {root} does not exist)")
-        return 0
-    traces = sorted(
-        (d for d in root.iterdir() if (d / "manifest.json").is_file()),
-        key=lambda d: d.stat().st_mtime,
-        reverse=True,
+    result = _native_call(
+        "prune",
+        trace_root=_root(args),
+        keep=max(0, int(args.keep)),
+        names=args.name or [],
+        apply=args.apply,
     )
-    keep = max(0, int(args.keep))
-    doomed = traces[keep:]
-    if args.name:
-        doomed = [d for d in traces if d.name in set(args.name)]
-    if not doomed:
-        print(f"{len(traces)} trace(s), keeping {keep} — nothing to prune")
+    if not result["doomed"]:
+        print(f"{result['count']} trace(s), keeping {result['keep']} — nothing to prune")
         return 0
-    total = 0
-    for d in doomed:
-        size = sum(f.stat().st_size for f in d.rglob("*") if f.is_file())
-        total += size
-        print(f"{'DELETE' if args.apply else 'would delete'} {d.name:<34} {size / 1e6:8.0f}MB")
-        if args.apply:
-            shutil.rmtree(d, ignore_errors=True)
+    for row in result["doomed"]:
+        print(
+            f"{'DELETE' if args.apply else 'would delete'} {row['name']:<34} "
+            f"{row['total'] / 1e6:8.0f}MB"
+        )
     verb = "freed" if args.apply else "would free"
-    print(f"{verb} {total / 1e9:.2f}GB across {len(doomed)} trace(s)")
+    print(f"{verb} {result['bytes'] / 1e9:.2f}GB across {len(result['doomed'])} trace(s)")
     if not args.apply:
         print("re-run with --apply to actually delete")
     return 0

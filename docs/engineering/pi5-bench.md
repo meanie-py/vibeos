@@ -1,8 +1,9 @@
 # Raspberry Pi 5 bench
 
-> **No bench since 2026-10-18:** its plug, Pico, capture card and Ethernet moved to the
-> Pi 4. `tools/pi5/env.sh` points at `none.invalid` until `PI5_PLUG` and
-> `PI5_PICO_HOST` name new ones.
+> **2026-11-06:** the Pi 4 gear is currently connected to the Pi 5. Its default
+> configuration remains unset; select the actual plug/Pico/stager explicitly and
+> use `VIBEOS_BENCH_LEASE=optiplex` so both board names share the physical lease.
+> Pi 4 hardware validation remains owed when its gear is returned.
 
 The Pi 4 bench's twin (`docs/engineering/pi4-bench.md`): same lease, plug, Pico and
 capture-card machinery, pointed at the other board by `tools/pi5/env.sh`. What is
@@ -159,3 +160,29 @@ The user moved the Pi 4 bench's shared gear back to Pi 5. HDMI confirmed the
 `PI5_HDMI_VID=534d`. Set `VIBEOS_BENCH_LEASE=optiplex` as well: that is the shared
 gear's existing lease alias, so Pi 4 and Pi 5 callers cannot control it concurrently.
 Do not use the Pi 4 command defaults against the moved gear.
+
+## Current physical coverage (2026-11-06)
+
+On clean `ce8eb64610bb`, the native `pi5 boot --stortest` passed desktop,
+guest write/readback, and host readback. Evidence:
+`/tmp/vibeos-cli/20261106-134606-hafby0td-pi5-boot-arm64`.
+The saved `vibeusb.img` independently contains the expected `WRITETST.TXT` bytes
+(`MTOOLS_SKIP_CHECK=1 mtype -i <image> ::WRITETST.TXT`).
+
+The subsequent `pi5 boot --stortest --drop-medium` remains a **failing kernel
+regression to investigate**, not a completed coverage item:
+`/tmp/vibeos-cli/20261106-135349-0wjdkx7o-pi5-boot-arm64`, preserved under
+`~/vibeos-flake-farm/fails/auto/20261106-135349-0wjdkx7o-pi5-boot-arm64-HANG_TIMEOUT`.
+It reached both desktop markers and the APC-disabled inline hard-error path,
+then stopped without a stortest verdict. Its HDMI frame shows stop `0xA`
+(address 0, IRQL 12, read, PC `fffff8001a91e7cc`). The serial banner is interleaved,
+but its intact parameter sidecar names `ntoskrnl.exe+0x6F7CC`. The exact built PE's
+MP symbol table and DWARF resolve that RVA to
+`KiProcessDeferredReadyListInner`, `ke/thrdschd.rs:229` (`ldr x20,[x20]`,
+advancing the detached deferred-ready chain). The UART loader line names
+`ntkrnlmp.exe`; use `build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe` with link address
+`0x46f7cc`, not the UP kernel. This locates the null dereference, not why the
+chain was empty. The old host summary labels it `HANG_TIMEOUT`.
+The host now recognizes an intact bugcheck parameter sidecar when the numeric
+banner is damaged and checks crashes during the storage wait after desktop.
+Do not treat a successful ordinary storage run as coverage of medium removal.

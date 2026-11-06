@@ -352,6 +352,10 @@ impl Drop for ImageServer {
 
 /// Grade the medium drop without conflating a lost server with a kernel result.
 pub fn grade_drop(text: &str, dropped: bool, server_lost: bool) -> Value {
+    let crash = crate::verdict::post_boot_check(text, "", &crate::verdict::known_flakes());
+    if !crash.is_null() {
+        return json!({"classification":crash["classification"],"stage":"drop-medium","status":"fail","detail":"guest crashed during medium removal","salient":crash["salient"]});
+    }
     let (verdict, lines) = stortest_verdict(text);
     let tail: Vec<_> = lines
         .iter()
@@ -832,4 +836,20 @@ pub fn stortest_readback(
         .join()
         .map_err(|_| Error::new("mtype stderr reader failed"))??;
     Ok(if status.success() { Some(bytes) } else { None })
+}
+
+#[cfg(test)]
+mod late_storage_crash_tests {
+    use super::*;
+    #[test]
+    fn crash_after_desktop_beats_storage_success_and_timeout() {
+        let crash = "[EXPLORER] _tWinMain entered\nshell ready\n***   P4 = ntoskrnl.exe+0x6F7CC\n";
+        for tail in ["", "[STORTEST] ALL OK drive D:\n"] {
+            assert_eq!(
+                grade_drop(&format!("{crash}{HARD_ERROR_INLINE}\n{tail}"), true, false)
+                    ["classification"],
+                "BUGCHECK"
+            );
+        }
+    }
 }

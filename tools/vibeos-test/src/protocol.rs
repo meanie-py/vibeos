@@ -547,6 +547,17 @@ impl Default for QmpClient {
         Self::new()
     }
 }
+fn qmp_io_error(error: std::io::Error) -> Error {
+    use std::io::ErrorKind;
+    let closed = matches!(
+        error.kind(),
+        ErrorKind::BrokenPipe
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::UnexpectedEof
+    );
+    Error::new(error.to_string()).with_kind(if closed { "QmpClosed" } else { "QmpTransport" })
+}
 impl QmpClient {
     pub fn new() -> Self {
         Self {
@@ -611,9 +622,10 @@ impl QmpClient {
                 .stream
                 .as_mut()
                 .ok_or("QMP not connected")?
-                .read(&mut buf)?;
+                .read(&mut buf)
+                .map_err(qmp_io_error)?;
             if n == 0 {
-                return Err("QMP socket closed".into());
+                return Err(Error::new("QMP socket closed").with_kind("QmpClosed"));
             }
             self.buffer.extend_from_slice(&buf[..n]);
             if self.buffer.len() > 16 * 1024 * 1024 {
@@ -637,7 +649,8 @@ impl QmpClient {
         self.stream
             .as_mut()
             .ok_or("QMP not connected")?
-            .write_all(&bytes)?;
+            .write_all(&bytes)
+            .map_err(qmp_io_error)?;
         Ok(())
     }
     fn checked(command: &str, v: Value) -> Result<Value> {

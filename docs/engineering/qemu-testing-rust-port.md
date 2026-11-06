@@ -34,11 +34,19 @@ handoff transfers ownership. Existing host-jobs and hostlock capacity policies
 remain authoritative; the native implementation speaks their existing protocols.
 Admission timeout refuses launch. It does not run a VM without a lease.
 
-The diagnostics bridge deliberately still invokes the existing record/replay and
-sampling command authorities. It calls their trace/shape guards, and Rust owns the
-resulting sidecars and QMP lifetime. Full migration of those CLI diagnostics belongs
-with the later control-plane work. There is no Python fallback when a native
-operation fails.
+`record_replay`, `pc_sample`, `replay_sample`, and `diagnostics` own trace
+transforms, media/shape/finalization guards, replay decoding, per-vCPU sampling,
+symbol attribution, and guest-state fingerprints. VM diagnostic workers execute
+`vibeos-test --diagnostic-worker` directly with the existing parent-death and
+sidecar-health checks. Python modules retain compatibility DTOs and QMP bindings;
+there is no Python fallback. Replay events cross that compatibility API in bounded
+pages; native divergence checks stream the trace directly. RAM fingerprints stream
+through a FIFO in 1 MiB chunks and preserve Python's BLAKE2b-8/zlib artifact format.
+
+`rr_cli` owns trace lookup, retention, transcript normalization/comparison,
+quiescence, and progress monitoring. A quiescence timeout refuses finalization.
+The remaining `rrcmd.py` command composition and report presentation are the next
+control-plane chunk; they still use the same guarded smoke/conformance entry points.
 
 Native tests run with:
 

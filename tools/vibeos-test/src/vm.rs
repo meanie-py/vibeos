@@ -903,24 +903,19 @@ impl Vm {
         crate::config::apply_stress_knobs(&cmd, &self.config.arch, &self.config.env)
     }
     fn diagnostic_process(&self, op: &str, payload: &Value) -> Result<Child> {
-        let python = self
-            .config
-            .env
-            .get("VIBEOS_TEST_PYTHON")
-            .cloned()
-            .unwrap_or_else(|| {
-                let venv = self.repo.join(".venv/bin/python");
-                if venv.is_file() {
-                    venv.to_string_lossy().into_owned()
-                } else {
-                    "python3".into()
-                }
-            });
         let out = self.config.work_dir.join(format!("{op}.json"));
         let err = self.config.work_dir.join(format!("{op}.stderr.log"));
-        let mut command = Command::new(python);
+        let mut command =
+            if let Some(authority) = self.config.env.get("VIBEOS_TEST_DIAGNOSTIC_AUTHORITY") {
+                let mut c = Command::new(authority);
+                c.arg(op);
+                c
+            } else {
+                let mut c = Command::new(std::env::current_exe()?);
+                c.args(["--diagnostic-worker", op]);
+                c
+            };
         command
-            .args(["-m", "tests.qemu.native_worker", op])
             .current_dir(&self.repo)
             .envs(&self.config.env)
             .stdin(Stdio::piped())

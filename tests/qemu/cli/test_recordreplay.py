@@ -831,9 +831,9 @@ def test_record_waits_for_the_trace_to_stop_growing(tmp_path):
     assert size == 5000, "returned before the trace stopped growing"
 
 
-def test_quiescence_gives_up_loudly_rather_than_hanging(tmp_path, capsys):
+def test_quiescence_refuses_finalizing_a_trace_that_never_settles(tmp_path):
     """A trace that never settles must not block a recording forever — but the
-    caller has to be told the finalised trace may be truncated."""
+    caller must receive a failure before it can finalize a truncated trace."""
     from . import rrcmd
 
     trace = tmp_path / "t"
@@ -853,9 +853,13 @@ def test_quiescence_gives_up_loudly_rather_than_hanging(tmp_path, capsys):
 
     t = threading.Thread(target=grow, daemon=True)
     t.start()
-    rrcmd.await_trace_quiescence(trace, settle=5.0, limit=1.0)
-    stop = True
-    assert "still growing" in capsys.readouterr().err
+    try:
+        with pytest.raises(rr.RecordReplayError, match="refusing to finalise"):
+            rrcmd.await_trace_quiescence(trace, settle=5.0, limit=1.0)
+    finally:
+        stop = True
+        t.join(timeout=2)
+    assert not t.is_alive()
 
 
 # --- reclaiming disk ------------------------------------------------------
