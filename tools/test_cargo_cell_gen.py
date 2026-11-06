@@ -403,6 +403,17 @@ def test_a_driver_custom_command_is_its_body():
     assert g._custom_body(DRIVER.replace("-p d-rust", "-p d-rust --features x")) is None
 
 
+def test_a_custom_command_without_rustflags_is_its_body():
+    # 38 cohab DLLs (version, advapi32, user32, ...) pass no RUSTFLAGS= at all; the
+    # matcher used to require one and refused every one of them.
+    text = DRIVER.replace("        RUSTFLAGS=${D_RUST_RUSTFLAGS}\n", "")
+    assert "RUSTFLAGS=" not in text
+    body = g._custom_body(text)
+    assert body is not None and body["crate"] == "d-rust"
+    assert body["rustflags"] == {} and body["custom_target"] == "rust_d"
+    assert "D_RUST_RUSTFLAGS" not in body["vars"]
+
+
 def test_a_driver_rewrite_drops_its_body_command_and_keeps_its_inf(tmp_path):
     f = tmp_path / "CMakeLists.txt"
     # The header comment sits on the body's first set(): it outlives the statements
