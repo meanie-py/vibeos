@@ -2918,7 +2918,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# encode.c — replaced by Rust implementation (sdk
 sdk/lib/rtl/CMakeLists.txt	1	# env.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave ENV)
 sdk/lib/rtl/CMakeLists.txt	1	# error.c — replaced by Rust implementation (sdk/lib/rust/rtl-error/)
 sdk/lib/rtl/CMakeLists.txt	1	# exception.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
-sdk/lib/rtl/CMakeLists.txt	1	# fls.c (upstream-new 2026-10, bf45318bc5b) — PORT ITEM, not built: RtlFlsAlloc/Free/
+sdk/lib/rtl/CMakeLists.txt	1	# fls.c (upstream bf45318bc5b) — replaced by Rust: ntdll-rust src/rtl/fls.rs (user-mode
 sdk/lib/rtl/CMakeLists.txt	1	# generictable.c — replaced by Rust implementation (sdk/lib/rust/generictable/)
 sdk/lib/rtl/CMakeLists.txt	1	# handle.c — replaced by Rust implementation (sdk/lib/rust/handle/)
 sdk/lib/rtl/CMakeLists.txt	1	# heap.c — replaced by Rust implementation (sdk/lib/rust/rtl-heap/, Wave HEAP)
@@ -2940,7 +2940,7 @@ sdk/lib/rtl/CMakeLists.txt	1	# memstream.c — replaced by Rust implementation (
 sdk/lib/rtl/CMakeLists.txt	1	# message.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
 sdk/lib/rtl/CMakeLists.txt	1	# network.c — replaced by Rust implementation (sdk/lib/rust/network/, Wave NET: RtlIpv4*/RtlIpv6*)
 sdk/lib/rtl/CMakeLists.txt	1	# nls.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi + nls_tables)
-sdk/lib/rtl/CMakeLists.txt	1	# ntuserpfn.c + ntuserdisp.s (upstream-new 2026-10, 479662b3f0c) — PORT ITEM, not built:
+sdk/lib/rtl/CMakeLists.txt	1	# ntuserpfn.c + ntuserdisp.s (upstream 479662b3f0c) — replaced by Rust: ntdll-rust
 sdk/lib/rtl/CMakeLists.txt	1	# path.c — replaced by Rust implementation (sdk/lib/rust/rtl-strings/ cabi, Wave PATH)
 sdk/lib/rtl/CMakeLists.txt	1	# ppb.c — replaced by Rust implementation (sdk/lib/rust/rtl-ppb/)
 sdk/lib/rtl/CMakeLists.txt	1	# prefix.c — replaced by Rust implementation (sdk/lib/rust/prefix/)
