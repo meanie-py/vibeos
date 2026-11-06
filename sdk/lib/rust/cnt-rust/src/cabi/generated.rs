@@ -432,14 +432,14 @@ mod m_memicmp {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_memicmp;
+
     /// `int _memicmp(const void *s1, const void *s2, size_t n)`
     /// preserved misfeature: ASCII toupper fold (a..z only; >=0x80 untouched) for the COMPARE but returns the RAW unfolded unsigned-char diff *p1-*p2 (not the folded one); n==0 → 0; NULL s1 or s2 → _NLSCMPERROR (0x7fffffff) when n!=0, else 0 (the C's OSMajorVersion>=6 guard, validated unconditionally; _LIBCNT_ INVALID_PMT is a no-op)
+    /// body: memops.rs `fast_memicmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _memicmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32 {
-        if s1.is_null() || s2.is_null() { return if n != 0 { 0x7fff_ffff } else { 0 }; }
-        let s1_s = raw_slice(s1 as *const u8, n);
-        let s2_s = raw_slice(s2 as *const u8, n);
-        crate::core_rs::mem::icmp(s1_s, s2_s)
+        fast_memicmp(s1, s2, n)
     }
 
 }
@@ -484,12 +484,14 @@ mod m_stricmp {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_stricmp;
+
     /// `int __cdecl _stricmp(char const* _String1, char const* _String2)`
     /// preserved misfeature: ASCII-only A..Z fold (locale-independent, NT variant — NOT the toupper() stricmp.c); signed-char raw difference, not clamped
     /// body: memops.rs `fast_stricmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _stricmp(_String1: *const u8, _String2: *const u8) -> i32 {
-        super::super::fast_stricmp(_String1, _String2)
+        fast_stricmp(_String1, _String2)
     }
 
 }
@@ -499,14 +501,14 @@ mod m_strlwr {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_strlwr;
+
     /// `char *_strlwr(char *_String)`
     /// preserved misfeature: ASCII-only (literal 'A'..'Z'); NO NULL guard (<string.h>, not precomp) → NULL crashes in C, never fuzzed; signed-char compare is moot for ASCII range
+    /// body: memops.rs `fast_strlwr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _strlwr(_String: *mut u8) -> *mut u8 {
-        let n = cstr_slice(_String as *const u8).len();
-        let s = raw_mut_slice(_String, n);
-        crate::core_rs::casemap::lower_ascii(s);
-        _String
+        fast_strlwr(_String)
     }
 
 }
@@ -516,12 +518,14 @@ mod m_strnicmp {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_strnicmp;
+
     /// `int __cdecl _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)`
     /// preserved misfeature: as _stricmp + count-bounded; n==0 → 0 (while(remaining--!=0)); equal-NUL still breaks early within n
     /// body: memops.rs `fast_strnicmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _strnicmp(_String1: *const u8, _String2: *const u8, _MaxCount: usize) -> i32 {
-        super::super::fast_strnicmp(_String1, _String2, _MaxCount)
+        fast_strnicmp(_String1, _String2, _MaxCount)
     }
 
 }
@@ -646,15 +650,14 @@ mod m_strupr {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_strupr;
+
     /// `char *_strupr(char *_String)`
     /// preserved misfeature: ASCII-only; NULL-guarded: _invalid_parameter(NULL,L"_strupr",..) then return NULL (handler is a relaxed no-op slot under _LIBCNT_, observable result = NULL)
+    /// body: memops.rs `fast_strupr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _strupr(_String: *mut u8) -> *mut u8 {
-        if _String.is_null() { return core::ptr::null_mut(); }
-        let n = cstr_slice(_String as *const u8).len();
-        let s = raw_mut_slice(_String, n);
-        crate::core_rs::casemap::upper_ascii(s);
-        _String
+        fast_strupr(_String)
     }
 
 }
@@ -806,12 +809,14 @@ mod m_wcsicmp {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_wcsicmp;
+
     /// `int __cdecl _wcsicmp(wchar_t const* _String1, wchar_t const* _String2)`
     /// preserved misfeature: ASCII-only A..Z fold (no Unicode/locale); RAW u16 difference promoted to int (value-preserving, NOT signed-16, NOT clamped to {-1,0,1})
     /// body: memops.rs `fast_wcsicmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _wcsicmp(_String1: *const u16, _String2: *const u16) -> i32 {
-        super::super::fast_wcsicmp(_String1, _String2)
+        fast_wcsicmp(_String1, _String2)
     }
 
 }
@@ -821,15 +826,14 @@ mod m_wcslwr {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_wcslwr;
+
     /// `wchar_t *_wcslwr(wchar_t *_String)`
     /// preserved misfeature: wide but ASCII-ONLY fold (C tests 'A'..'Z' only — À etc. NOT folded); NULL-guarded → NULL
+    /// body: memops.rs `fast_wcslwr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _wcslwr(_String: *mut u16) -> *mut u16 {
-        if _String.is_null() { return core::ptr::null_mut(); }
-        let n = wcstr_slice(_String as *const u16).len();
-        let s = wraw_mut_slice(_String, n);
-        crate::core_rs::casemap::lower_ascii(s);
-        _String
+        fast_wcslwr(_String)
     }
 
 }
@@ -839,12 +843,14 @@ mod m_wcsnicmp {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_wcsnicmp;
+
     /// `int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)`
     /// preserved misfeature: as _wcsicmp + count-bounded; n==0 → 0; equal-NUL breaks early within n
     /// body: memops.rs `fast_wcsnicmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _wcsnicmp(_String1: *const u16, _String2: *const u16, _MaxCount: usize) -> i32 {
-        super::super::fast_wcsnicmp(_String1, _String2, _MaxCount)
+        fast_wcsnicmp(_String1, _String2, _MaxCount)
     }
 
 }
@@ -934,14 +940,14 @@ mod m_wcsupr {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_wcsupr;
+
     /// `wchar_t *_wcsupr(wchar_t *_String)`
     /// preserved misfeature: wide but ASCII-ONLY fold; NO NULL guard (<string.h>) → NULL crashes in C, never fuzzed
+    /// body: memops.rs `fast_wcsupr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn _wcsupr(_String: *mut u16) -> *mut u16 {
-        let n = wcstr_slice(_String as *const u16).len();
-        let s = wraw_mut_slice(_String, n);
-        crate::core_rs::casemap::upper_ascii(s);
-        _String
+        fast_wcsupr(_String)
     }
 
 }
@@ -1140,15 +1146,14 @@ mod mmemchr {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_memchr;
+
     /// `void* __cdecl memchr(const void *s, int c, size_t n)`
     /// preserved misfeature: n==0 → return NULL without deref; signed-char vs int compare (high-bit c)
+    /// body: memops.rs `fast_memchr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn memchr(s: *const core::ffi::c_void, c: i32, n: usize) -> *mut core::ffi::c_void {
-        let s_s = raw_slice(s as *const u8, n);
-        match crate::core_rs::mem::chr(s_s, c as i32) {
-            Some(i) => s.add(i) as *mut core::ffi::c_void,
-            None => core::ptr::null_mut(),
-        }
+        fast_memchr(s, c, n)
     }
 
 }
@@ -1158,13 +1163,14 @@ mod mmemcmp {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_memcmp;
+
     /// `int __cdecl memcmp(const void *s1, const void *s2, size_t n)`
     /// preserved misfeature: UNSIGNED-char diff, raw (not clamped to {-1,0,1}): 0xFF vs 0x00 → 255
+    /// body: memops.rs `fast_memcmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32 {
-        let s1_s = raw_slice(s1 as *const u8, n);
-        let s2_s = raw_slice(s2 as *const u8, n);
-        crate::core_rs::mem::cmp(s1_s, s2_s)
+        fast_memcmp(s1, s2, n)
     }
 
 }
@@ -1285,12 +1291,14 @@ mod mstrchr {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_strchr;
+
     /// `char *strchr(const char *s, int c)`
     /// preserved misfeature: the terminating NUL is a valid target: c==0 returns ptr to the NUL (Some(len)), not NULL; c truncated to char
     /// body: memops.rs `fast_strchr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn strchr(s: *const u8, c: i32) -> *mut u8 {
-        super::super::fast_strchr(s, c)
+        fast_strchr(s, c)
     }
 
 }
@@ -1300,12 +1308,14 @@ mod mstrcmp {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_strcmp;
+
     /// `int strcmp(const char *a, const char *b)`
     /// preserved misfeature: returns signed byte difference (sign-only is portable; magnitude is ReactOS-specific) — pin exact value
     /// body: memops.rs `fast_strcmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn strcmp(a: *const u8, b: *const u8) -> i32 {
-        super::super::fast_strcmp(a, b)
+        fast_strcmp(a, b)
     }
 
 }
@@ -1333,13 +1343,14 @@ mod mstrcspn {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_strcspn;
+
     /// `size_t strcspn(const char *s, const char *reject)`
     /// preserved misfeature: complement of strspn (_x inverted); empty reject → strlen(s)
+    /// body: memops.rs `fast_strcspn`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn strcspn(s: *const u8, reject: *const u8) -> usize {
-        let s_s = cstr_slice(s);
-        let reject_s = cstr_slice(reject);
-        crate::core_rs::string::span_out(s_s, reject_s) as usize
+        fast_strcspn(s, reject)
     }
 
 }
@@ -1384,12 +1395,14 @@ mod mstrncmp {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_strncmp;
+
     /// `int strncmp(const char *s1, const char *s2, size_t n)`
     /// preserved misfeature: signed-char diff (tcsncmp.h _TCHAR=signed char); n==0→0; stops at first NUL
     /// body: memops.rs `fast_strncmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn strncmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
-        super::super::fast_strncmp(s1, s2, n)
+        fast_strncmp(s1, s2, n)
     }
 
 }
@@ -1431,16 +1444,14 @@ mod mstrpbrk {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_strpbrk;
+
     /// `char* strpbrk(const char *s1, const char *s2)`
     /// preserved misfeature: first s1 char in s2 else NULL; empty s2→NULL. strpbrk.c's 3+-char path bitmap is sized by BIT_SIZE=sizeof(unsigned long)*8 (LP32=32 on target). Core models the correct first-in-set; diff fuzzes set≤2 only (the strchr fast paths — host-correct; 3+ UBs `1<<>=32` on LP64 host, unfuzzable, same caveat class as itoa long-family / strtoul ULONG_MAX). set size doesn't change find_any's code path so ≤2 fully pins it.
+    /// body: memops.rs `fast_strpbrk`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn strpbrk(s1: *const u8, s2: *const u8) -> *mut u8 {
-        let s1_s = cstr_slice(s1);
-        let s2_s = cstr_slice(s2);
-        match crate::core_rs::string::find_any(s1_s, s2_s) {
-            Some(i) => s1.add(i) as *mut u8,
-            None => core::ptr::null_mut(),
-        }
+        fast_strpbrk(s1, s2)
     }
 
 }
@@ -1450,15 +1461,14 @@ mod mstrrchr {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_strrchr;
+
     /// `char *strrchr(const char *s, int c)`
     /// preserved misfeature: last occurrence; c==0 → ptr to terminating NUL (Some(len)); c truncated to char
+    /// body: memops.rs `fast_strrchr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn strrchr(s: *const u8, c: i32) -> *mut u8 {
-        let s_s = cstr_slice(s);
-        match crate::core_rs::string::find_last_char(s_s, c as i32) {
-            Some(i) => s.add(i) as *mut u8,
-            None => core::ptr::null_mut(),
-        }
+        fast_strrchr(s, c)
     }
 
 }
@@ -1468,13 +1478,14 @@ mod mstrspn {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_strspn;
+
     /// `size_t strspn(const char *s, const char *accept)`
     /// preserved misfeature: bitmap over unsigned-char (0..255); empty accept → 0; NUL terminates both (never in set)
+    /// body: memops.rs `fast_strspn`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn strspn(s: *const u8, accept: *const u8) -> usize {
-        let s_s = cstr_slice(s);
-        let accept_s = cstr_slice(accept);
-        crate::core_rs::string::span_in(s_s, accept_s) as usize
+        fast_strspn(s, accept)
     }
 
 }
@@ -1484,16 +1495,14 @@ mod mstrstr {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_strstr;
+
     /// `char *strstr(const char *hay, const char *needle)`
     /// preserved misfeature: empty needle → returns hay (Some(0)), not NULL
+    /// body: memops.rs `fast_strstr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn strstr(hay: *const u8, needle: *const u8) -> *mut u8 {
-        let hay_s = cstr_slice(hay);
-        let needle_s = cstr_slice(needle);
-        match crate::core_rs::string::find_sub(hay_s, needle_s) {
-            Some(i) => hay.add(i) as *mut u8,
-            None => core::ptr::null_mut(),
-        }
+        fast_strstr(hay, needle)
     }
 
 }
@@ -1684,12 +1693,14 @@ mod mwcschr {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_wcschr;
+
     /// `wchar_t* wcschr(const wchar_t *s, wchar_t c)`
     /// preserved misfeature: terminating NUL is a valid target: c==0 → ptr to the NUL (tcschr.h); _XINT=wchar_t (no truncation, unlike strchr's char cast)
     /// body: memops.rs `fast_wcschr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn wcschr(s: *const u16, c: u16) -> *mut u16 {
-        super::super::fast_wcschr(s, c)
+        fast_wcschr(s, c)
     }
 
 }
@@ -1699,12 +1710,14 @@ mod mwcscmp {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_wcscmp;
+
     /// `int wcscmp(const wchar_t *s1, const wchar_t *s2)`
     /// preserved misfeature: raw element difference *s1-*s2 with wchar_t unsigned 16-bit (value-preserving to int) — NOT signed-char like strcmp, NOT clamped
     /// body: memops.rs `fast_wcscmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn wcscmp(s1: *const u16, s2: *const u16) -> i32 {
-        super::super::fast_wcscmp(s1, s2)
+        fast_wcscmp(s1, s2)
     }
 
 }
@@ -1732,13 +1745,14 @@ mod mwcscspn {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_wcscspn;
+
     /// `size_t wcscspn(const wchar_t *str, const wchar_t *reject)`
     /// preserved misfeature: wide twin of strcspn; empty reject → wcslen
+    /// body: memops.rs `fast_wcscspn`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn wcscspn(str: *const u16, reject: *const u16) -> usize {
-        let str_s = wcstr_slice(str);
-        let reject_s = wcstr_slice(reject);
-        crate::core_rs::string::span_out(str_s, reject_s) as usize
+        fast_wcscspn(str, reject)
     }
 
 }
@@ -1783,12 +1797,14 @@ mod mwcsncmp {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_wcsncmp;
+
     /// `int wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n)`
     /// preserved misfeature: unsigned-u16 diff; n==0→0; stops at first NUL (tcsncmp.h)
     /// body: memops.rs `fast_wcsncmp`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn wcsncmp(s1: *const u16, s2: *const u16, n: usize) -> i32 {
-        super::super::fast_wcsncmp(s1, s2, n)
+        fast_wcsncmp(s1, s2, n)
     }
 
 }
@@ -1830,15 +1846,14 @@ mod mwcsrchr {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_wcsrchr;
+
     /// `wchar_t* wcsrchr(const wchar_t *s, wchar_t c)`
     /// preserved misfeature: last occurrence; c==0 → ptr to terminating NUL (tcsrchr.h); _XINT=wchar_t
+    /// body: memops.rs `fast_wcsrchr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn wcsrchr(s: *const u16, c: u16) -> *mut u16 {
-        let s_s = wcstr_slice(s);
-        match crate::core_rs::string::find_last_char(s_s, c as i32) {
-            Some(i) => s.add(i) as *mut u16,
-            None => core::ptr::null_mut(),
-        }
+        fast_wcsrchr(s, c)
     }
 
 }
@@ -1848,13 +1863,14 @@ mod mwcsspn {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_wcsspn;
+
     /// `size_t wcsspn(const wchar_t *str, const wchar_t *accept)`
     /// preserved misfeature: wide twin of strspn (linear-scan membership, same result); empty accept → 0
+    /// body: memops.rs `fast_wcsspn`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn wcsspn(str: *const u16, accept: *const u16) -> usize {
-        let str_s = wcstr_slice(str);
-        let accept_s = wcstr_slice(accept);
-        crate::core_rs::string::span_in(str_s, accept_s) as usize
+        fast_wcsspn(str, accept)
     }
 
 }
@@ -1864,16 +1880,14 @@ mod mwcsstr {
     #[allow(unused_imports)]
     use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
+    use super::super::fast_wcsstr;
+
     /// `wchar_t* wcsstr(const wchar_t *s, const wchar_t *b)`
     /// preserved misfeature: empty needle → NULL (the while(*x) body never runs for 0-len b) — DISTINCT from narrow strstr empty→hay
+    /// body: memops.rs `fast_wcsstr`, the `core_fn` contract as an asm scan
     #[no_mangle]
     pub unsafe extern "C" fn wcsstr(s: *const u16, b: *const u16) -> *mut u16 {
-        let s_s = wcstr_slice(s);
-        let b_s = wcstr_slice(b);
-        match crate::core_rs::string::find_sub_strict(s_s, b_s) {
-            Some(i) => s.add(i) as *mut u16,
-            None => core::ptr::null_mut(),
-        }
+        fast_wcsstr(s, b)
     }
 
 }

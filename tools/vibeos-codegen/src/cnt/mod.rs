@@ -92,7 +92,9 @@ fn shim(name: &str, m: &Value) -> Result<String, String> {
             .map(|(_, n)| n.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        return Ok(format!("/// `{sig}`\n/// preserved misfeature: {misf}\n/// body: memops.rs `{fast}`, the `core_fn` contract as an asm scan\n#[no_mangle]\npub unsafe extern \"C\" fn {name}({decl}) -> {rt} {{\n    super::{fast}({args})\n}}\n"));
+        // The body is named through a `use`, not a `super::` path in the fn: rustconv's
+        // difftest contracts select the fn alone and refuse relative paths inside it.
+        return Ok(format!("use super::{fast};\n\n/// `{sig}`\n/// preserved misfeature: {misf}\n/// body: memops.rs `{fast}`, the `core_fn` contract as an asm scan\n#[no_mangle]\npub unsafe extern \"C\" fn {name}({decl}) -> {rt} {{\n    {fast}({args})\n}}\n"));
     }
     match families::render(name, m, &params, rt)? {
         Some(s) => Ok(s),
@@ -206,6 +208,29 @@ mod tests {
         assert!(outputs[0]
             .1
             .contains("crate::core_rs::string::ncmp(left_s, right_s, limit)"));
+    }
+    #[test]
+    fn fast_path_names_its_body_through_a_use() {
+        let manifest = fixture(
+            "nul_in",
+            "int custom(const char *s, int c)",
+            "usize",
+            "string::len_of",
+        ) + "fast_path = \"fast_custom\"\n";
+        let generated = &render(&manifest).unwrap()[0].1;
+        assert!(generated.contains("    use super::super::fast_custom;\n"));
+        assert!(
+            generated.contains("pub unsafe extern \"C\" fn custom(s: *const u8, c: i32) -> i32 {")
+        );
+        // the fn body itself: a bare call, which a difftest contract can select on its own
+        let body = generated
+            .split("-> i32 {")
+            .nth(1)
+            .unwrap()
+            .split('}')
+            .next()
+            .unwrap();
+        assert_eq!(body.trim(), "fast_custom(s, c)");
     }
     #[test]
     fn unsupported_patterns_and_types_fail() {

@@ -32,16 +32,8 @@ pub(crate) unsafe fn cstr_slice_bounded<'a>(p: *const u8, cap: usize) -> &'a [u8
     if p.is_null() {
         return &[];
     }
-    let mut n = 0usize;
-    while n < cap && *p.add(n) != 0 {
-        n += 1;
-        // see cstr_slice: defeat the host loop-idiom strlen miscompile.
-        #[cfg(target_os = "linux")]
-        {
-            n = core::hint::black_box(n);
-        }
-    }
-    core::slice::from_raw_parts(p, n)
+    // asm, as cstr_slice's (memops.rs `mem_chr8`, a NUL search bounded by `cap`).
+    core::slice::from_raw_parts(p, mem_chr8(p, 0, cap))
 }
 
 /// Wide twin of `cstr_slice`: NUL-terminated `*const u16` → content
@@ -61,11 +53,7 @@ pub(crate) unsafe fn wcstr_slice_bounded<'a>(p: *const u16, cap: usize) -> &'a [
     if p.is_null() {
         return &[];
     }
-    let mut n = 0usize;
-    while n < cap && *p.add(n) != 0 {
-        n += 1;
-    }
-    core::slice::from_raw_parts(p, n)
+    core::slice::from_raw_parts(p, mem_chr16(p, 0, cap))
 }
 
 #[inline]
