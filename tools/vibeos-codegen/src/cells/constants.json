@@ -106,7 +106,11 @@
     "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista_utf8.a": "engine:ntoskrnl_vista_utf8",
     "sdk/lib/3rdparty/freetype/libfreetype.a": "engine:c:freetype",
     "sdk/lib/vcruntime/libsetjmp.a": "engine:c:setjmp",
-    "sdk/lib/drivers/aux_klib/libaux_klib.a": "engine:c:aux_klib"
+    "sdk/lib/drivers/aux_klib/libaux_klib.a": "engine:c:aux_klib",
+    "sdk/lib/crt/libatan2_rust.a": "engine:atan2_rust",
+    "sdk/lib/3rdparty/libwin-iconv/libiconv.a": "engine:c:iconv-static",
+    "sdk/include/psdk/libwuguid.a": "engine:c:wuguid",
+    "sdk/include/psdk/libadsiid.a": "engine:c:adsiid"
   },
   "ENGINE_LIB_DEPS": {
     "engine:wine": "psdk",
@@ -129,7 +133,10 @@
     "engine:c:wdmguid": "psdk",
     "engine:c:freetype": "psdk",
     "engine:c:setjmp": "psdk asm",
-    "engine:c:aux_klib": "xdk"
+    "engine:c:aux_klib": "xdk",
+    "engine:c:iconv-static": "psdk",
+    "engine:c:wuguid": "psdk",
+    "engine:c:adsiid": "psdk"
   },
   "TRIPLE": {
     "i386": "x86",

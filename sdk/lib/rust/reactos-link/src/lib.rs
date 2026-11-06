@@ -2609,6 +2609,14 @@ impl Linker {
                 self.engine_crate("cnt-rust-lib", feats, true)
             }
             "skiplist_rust" => self.engine_crate("skiplist-rust", &[], true),
+            // sdk/lib/crt/math/math.cmake: `rust_staticlib_variant(atan2_rust atan2-rust ""
+            // TRUE ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")` on i386 (libm's f64 code
+            // needs SSE2, as msvcrt-crt-rust), no ENV elsewhere. gdi32 links it by path.
+            "atan2_rust" => {
+                let flags = i386.then_some("-C target-feature=+sse,+sse2");
+                let stem = self.arch.rust_user_target;
+                self.build_rust_crate_as("atan2-rust", &[], true, stem, false, flags, true)
+            }
             "tzlib_rust" => self.engine_crate("tzlib-rust", &[], true),
             // concfg-rust is an rlib (winsrv-rust's dependency); cmake builds the
             // console CPL's archive with `cargo rustc --crate-type staticlib

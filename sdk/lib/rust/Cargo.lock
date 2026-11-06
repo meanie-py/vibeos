@@ -2944,6 +2944,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "gdi32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "gdi32-rust"
 version = "0.1.0"
 dependencies = [
@@ -5263,6 +5271,14 @@ dependencies = [
 
 [[package]]
 name = "msxml2-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "msxml3-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-lean",
@@ -10428,6 +10444,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wuapi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "wuauserv-cargo"
 version = "0.1.0"
 dependencies = [
@@ -10539,6 +10563,14 @@ dependencies = [
 
 [[package]]
 name = "xmllite-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "xolehlp-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-common",

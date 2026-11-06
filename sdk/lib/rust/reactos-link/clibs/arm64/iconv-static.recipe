@@ -1,0 +1,2 @@
+# iconv-static (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	vendor/libwin-iconv/win_iconv.c	@build/sdk/lib/3rdparty/libwin-iconv vendor/libwin-iconv @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _WIN32_WINNT=0x502

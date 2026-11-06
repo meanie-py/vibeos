@@ -1,0 +1,2 @@
+# wuguid (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	@build/sdk/include/psdk/wuapi_i.c	@build/sdk/include/psdk sdk/include/psdk sdk/include sdk/include/ddk sdk/include/ndk sdk/include/reactos sdk/include/reactos/libs sdk/include/vcruntime sdk/include/winrt @build/sdk/include @build/sdk/include/ddk @build/sdk/include/dxsdk @build/sdk/include/reactos @build/sdk/include/reactos/mc sdk/include/dxsdk sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 @core	WINVER=0x502 _MIDL_USE_GUIDDEF_ _WIN32_WINNT=0x502

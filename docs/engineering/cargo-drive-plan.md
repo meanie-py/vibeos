@@ -458,9 +458,10 @@ extends it from the boot spine to every fully-Rust module.
          and an import directory (pe_equiv DIFFERENT). Needs a shell-less cell kind.
        - d3dwine, dinput8 (resources missing), libjpeg, libpng, libxslt (exports
          missing), mbedtls (an import missing): model clean, link not equivalent.
-       - gdi32 (`libatan2_rust.a`), msxml3 (`libiconv.a`), wuapi (`libwuguid.a`), xolehlp
-         (`libadsiid.a`): equivalent, but link a cmake-built archive the engine cannot build
-         (`scan_cmake_linked_rust`). Give each archive an `engine:` home, then reconvert.
+       - (gdi32, msxml3, wuapi, xolehlp: converted 2026-11-06 once their archives got engine
+         homes: `engine:atan2_rust`, `engine:c:iconv-static`, `engine:c:wuguid`,
+         `engine:c:adsiid` in constants.json's ENGINE_LIBS. An archive behind a
+         `scan_cmake_linked_rust` hit usually needs only that table entry.)
        - rpcrt4: link-guard rejects duplicate `DllGetClassObject`/`*ErrorInfo`
          (proxy.dlldata.c vs the static libs).
        - kernel32, lsasrv, samsrv: several Rust bodies (more than one `cargo build`);

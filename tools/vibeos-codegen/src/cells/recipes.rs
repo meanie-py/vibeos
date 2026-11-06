@@ -909,7 +909,7 @@ pub fn engine_c_targets(root: &Path) -> Result<Vec<String>> {
             }
         }
     }
-    let eng = Regex::new(r#""engine:c:(\w+)""#)?;
+    let eng = Regex::new(r#""engine:c:([\w.+-]+)""#)?;
     let call = Regex::new(r#"\.c_from_compile_db\(\s*"(\w+)""#)?;
     let mut names: BTreeSet<_> = ["wine", "uuid", "conutils"]
         .into_iter()

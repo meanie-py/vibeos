@@ -1,5 +1,9 @@
 [workspace]
 members = [
+    "xolehlp-cargo",
+    "wuapi-cargo",
+    "msxml3-cargo",
+    "gdi32-cargo",
     "wow64-cargo",
     "slbcsp-cargo",
     "sccbase-cargo",
