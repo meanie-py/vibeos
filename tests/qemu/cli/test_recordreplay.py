@@ -1325,7 +1325,10 @@ def test_record_preserves_guest_crash_trace_but_fails_requested_diagnostic_error
     (work / "serial.log").write_text("*** BUGCHECK 0xA\n")
 
     def boot(cmd, **kwargs):
+        if "--version" in cmd:
+            return SimpleNamespace(returncode=0, stdout="QEMU emulator version 8.2.2", stderr="")
         if "env" in kwargs:
+            (trace / "media").mkdir()
             rr.write_manifest(trace, arch="arm64", argv=[], media={})
             (trace / "replay.bin").write_bytes(b"useful crash recording")
             (trace / "last-run.json").write_text(
