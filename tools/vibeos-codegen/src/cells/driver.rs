@@ -227,7 +227,11 @@ pub fn ninja(root: &Path, arch: &str, targets: &[String]) -> Result<()> {
     let build = root.join(format!("build-{arch}"));
     local(root, &build)?;
     let script = local(root, &root.join("tools/canon-run.sh"))?;
-    for args in [vec!["build.ninja".to_owned()], targets.to_vec()] {
+    // `-k 0` on the cells: a wave's failures are independent, and stopping at the first
+    // two (fusion, msxml3r) left the rest of an 85-module wave unbuilt and unknown.
+    let mut cells = vec!["-k".to_owned(), "0".to_owned()];
+    cells.extend(targets.iter().cloned());
+    for args in [vec!["build.ninja".to_owned()], cells] {
         let output = Command::new("bash")
             .arg(&script)
             .arg("ninja")
@@ -243,12 +247,13 @@ pub fn ninja(root: &Path, arch: &str, targets: &[String]) -> Result<()> {
             );
             let lines: Vec<_> = combined.lines().collect();
             let error = Regex::new(r"^\s*(error|ld\.lld: error)\b").unwrap();
+            // Every FAILED edge, then the first errors: with -k 0 there can be many.
             let mut tail: Vec<_> = lines
                 .iter()
                 .copied()
-                .filter(|s| s.starts_with("FAILED:") || error.is_match(s))
-                .take(20)
+                .filter(|s| s.starts_with("FAILED:"))
                 .collect();
+            tail.extend(lines.iter().copied().filter(|s| error.is_match(s)).take(20));
             tail.extend(lines.iter().copied().skip(lines.len().saturating_sub(8)));
             let mut seen = BTreeSet::new();
             tail.retain(|s| seen.insert(*s));

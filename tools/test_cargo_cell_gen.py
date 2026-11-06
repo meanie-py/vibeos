@@ -1465,6 +1465,24 @@ def test_a_failed_build_names_the_failed_edge_not_the_lock_noise(tmp_path):
     assert "error[E0425]" in str(e.value)
 
 
+def test_a_wave_build_keeps_going_and_names_every_failed_cell(tmp_path):
+    # An 85-module wave stopped at its first two failures; the rest went unbuilt.
+    script = tmp_path / "tools/canon-run.sh"
+    script.parent.mkdir()
+    log = tmp_path / "args"
+    failed = "".join(f"FAILED: m{i}.dll\\n" for i in range(25))
+    script.write_text(
+        f'echo "$*" >> {log}\n'
+        '[ "$2" = build.ninja ] && exit 0\n'
+        f"printf '{failed}'\nexit 1\n"
+    )
+    (tmp_path / "build-i386").mkdir()
+    with pytest.raises(g.GenError) as e:
+        g._ninja("i386", ["a", "b"], tmp_path)
+    assert log.read_text().splitlines() == ["ninja build.ninja", "ninja -k 0 a b"]
+    assert all(f"FAILED: m{i}.dll" in str(e.value) for i in range(25))
+
+
 def test_a_rewrite_refusal_writes_no_cell(tmp_path, monkeypatch):
     """One target's CMakeLists refusing must stop the wave before any cell is written."""
     applied = []
