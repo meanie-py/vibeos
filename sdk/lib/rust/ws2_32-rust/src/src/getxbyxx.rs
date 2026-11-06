@@ -625,7 +625,7 @@ pub unsafe extern "system" fn WSAAsyncGetHostByAddr(
     }
 
     AddressCopy = AsyncBlock.offset(1) as *mut core::ffi::c_void;
-    core::ptr::copy_nonoverlapping(Address as *const u8, AddressCopy as *mut u8, Length as usize);
+    core::ptr::copy(Address as *const u8, AddressCopy as *mut u8, Length as usize);
 
     (*AsyncBlock).Operation = WsAsyncGetHostByAddr;
     (*AsyncBlock).__bindgen_anon_1.GetHost.as_mut().hWnd = hWnd;

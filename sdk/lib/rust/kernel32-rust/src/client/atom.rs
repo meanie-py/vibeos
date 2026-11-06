@@ -338,7 +338,7 @@ pub unsafe extern "system" fn InternalGetAtomName(
                 .wrapping_div(core::mem::size_of::<WCHAR>() as usize) as DWORD;
 
             if AtomNameString != AtomName as PWSTR {
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     AtomNameString as *const core::ffi::c_void,
                     AtomName as *mut core::ffi::c_void,
                     AtomNameLength as usize,

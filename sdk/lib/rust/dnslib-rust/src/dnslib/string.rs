@@ -66,7 +66,7 @@ pub unsafe extern "system" fn Dns_StringCopy(
             ) as u32 + 1;
         } else if output_type == UnicodeString {
             let byte_count = (string_size as usize) * 2;
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 string as *const u8,
                 destination as *mut u8,
                 byte_count,
@@ -77,7 +77,7 @@ pub unsafe extern "system" fn Dns_StringCopy(
         }
     } else if input_type == AnsiString {
         if output_type == AnsiString {
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 string as *const u8,
                 destination as *mut u8,
                 string_size as usize,

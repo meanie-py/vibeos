@@ -1923,7 +1923,7 @@ unsafe fn AddConsoleCtrlHandler(HandlerRoutine: PHANDLER_ROUTINE) -> BOOL {
             return 0;
         }
 
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             CtrlHandlers,
             NewCtrlHandlers,
             (core::mem::size_of::<PHANDLER_ROUTINE>() * NrCtrlHandlers as usize) / core::mem::size_of::<PHANDLER_ROUTINE>(),

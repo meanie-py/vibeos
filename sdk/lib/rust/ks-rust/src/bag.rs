@@ -328,13 +328,13 @@ pub unsafe extern "system" fn _KsEdit(
 
         if !(*PointerToPointerToItem).is_null() {
             if OldSize >= NewSize {
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     *PointerToPointerToItem as *const u8,
                     Item as *mut u8,
                     NewSize as usize,
                 );
             } else {
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     *PointerToPointerToItem as *const u8,
                     Item as *mut u8,
                     OldSize as usize,

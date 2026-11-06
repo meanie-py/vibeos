@@ -849,7 +849,7 @@ pub unsafe extern "system" fn LdrpCheckForKnownDll(
                 break 'failure;
             }
 
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 DllNameUnic.Buffer as *const u8,
                 (*BaseDllName).Buffer as *mut u8,
                 DllNameUnic.MaximumLength as usize,
@@ -870,7 +870,7 @@ pub unsafe extern "system" fn LdrpCheckForKnownDll(
                 break 'failure;
             }
 
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 LdrpKnownDllPath.Buffer as *const u8,
                 (*FullDllName).Buffer as *mut u8,
                 LdrpKnownDllPath.Length as usize,
@@ -887,7 +887,7 @@ pub unsafe extern "system" fn LdrpCheckForKnownDll(
             DllNameUnic.MaximumLength =
                 DllNameUnic.Length + core::mem::size_of::<u16>() as u16;
 
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 (*BaseDllName).Buffer as *const u8,
                 p1 as *mut u8,
                 (*BaseDllName).MaximumLength as usize,

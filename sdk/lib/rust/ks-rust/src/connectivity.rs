@@ -527,7 +527,7 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
                             RtlStringFromGUID(&(*dr).__bindgen_anon_1.as_ref().Specifier, &mut GuidString);
 
                             let format_size = (*dr).__bindgen_anon_1.as_ref().FormatSize;
-                            core::ptr::copy_nonoverlapping(
+                            core::ptr::copy(
                                 dr as *const u8,
                                 DataPtr,
                                 format_size as usize,
@@ -582,7 +582,7 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
                 (*Irp).IoStatus.Information = Size as _;
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else {
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     (*Descriptor).Category as *const u8,
                     Buffer as *mut u8,
                     core::mem::size_of::<GUID>(),
@@ -613,7 +613,7 @@ pub unsafe extern "system" fn KspPinPropertyHandler(
                     Status = STATUS_BUFFER_OVERFLOW;
                     FreeItem(KeyInfo as PVOID);
                 } else {
-                    core::ptr::copy_nonoverlapping(
+                    core::ptr::copy(
                         &(*KeyInfo).Data as *const _ as *const u8,
                         (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
                         (*KeyInfo).DataLength as usize,
@@ -750,7 +750,7 @@ pub unsafe extern "system" fn KsPinDataIntersection(
                 (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_BUFFER_TOO_SMALL;
                 return STATUS_BUFFER_TOO_SMALL;
             }
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 DataRange as *const u8,
                 (*Irp).UserBuffer as *mut u8,
                 core::mem::size_of::<KSDATARANGE>(),
@@ -803,7 +803,7 @@ pub unsafe extern "system" fn KsHandleSizedListQuery(
     }
 
     if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength >= Size {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             DataItems,
             Item.offset(1) as *mut core::ffi::c_void,
             (DataItemSize.wrapping_mul(DataItemsCount)) as usize,

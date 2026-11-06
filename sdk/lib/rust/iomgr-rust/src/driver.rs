@@ -472,7 +472,7 @@ pub unsafe extern "C" fn IopGetDriverNames(
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             ((kvInfo as ULONG_PTR) + (*kvInfo).DataOffset as ULONG_PTR) as *const u8,
             driverName.Buffer as *mut u8,
             driverName.Length as usize,
@@ -529,7 +529,7 @@ pub unsafe extern "C" fn IopGetDriverNames(
             return STATUS_ILL_FORMED_SERVICE_ENTRY;
         }
 
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             ((kvInfo as ULONG_PTR) + (*kvInfo).DataOffset as ULONG_PTR) as *const u8,
             &mut driverType as *mut ULONG as *mut u8,
             core::mem::size_of::<ULONG>(),
@@ -567,7 +567,7 @@ pub unsafe extern "C" fn IopGetDriverNames(
             }
             return STATUS_INSUFFICIENT_RESOURCES;
         }
-        core::ptr::copy_nonoverlapping(serviceName.Buffer as *const u8, buf as *mut u8, serviceName.Length as usize);
+        core::ptr::copy(serviceName.Buffer as *const u8, buf as *mut u8, serviceName.Length as usize);
         (*ServiceName).MaximumLength = serviceName.Length;
         (*ServiceName).Length = serviceName.Length;
         (*ServiceName).Buffer = buf;
@@ -988,7 +988,7 @@ unsafe fn IopInitializeBuiltinDriver(BootLdrEntry: PLDR_DATA_TABLE_ENTRY) -> BOO
             return deviceAdded;
         }
 
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             ((kvInfo as ULONG_PTR) + (*kvInfo).DataOffset as ULONG_PTR) as *const u8,
             &mut instanceCount as *mut ULONG as *mut u8,
             core::mem::size_of::<ULONG>(),
@@ -1021,7 +1021,7 @@ unsafe fn IopInitializeBuiltinDriver(BootLdrEntry: PLDR_DATA_TABLE_ENTRY) -> BOO
             instancePath.MaximumLength = (*kvInfo).DataLength as USHORT;
             instancePath.Buffer = ExAllocatePoolWithTag(NonPagedPool, instancePath.MaximumLength as usize, TAG_IO) as *mut u16;
             if !instancePath.Buffer.is_null() {
-                core::ptr::copy_nonoverlapping(
+                core::ptr::copy(
                     ((kvInfo as ULONG_PTR) + (*kvInfo).DataOffset as ULONG_PTR) as *const u8,
                     instancePath.Buffer as *mut u8,
                     instancePath.Length as usize,
@@ -2227,7 +2227,7 @@ pub unsafe extern "C" fn IopLoadDriver(ServiceHandle: HANDLE, DriverObject: *mut
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             ((kvInfo as ULONG_PTR) + (*kvInfo).DataOffset as ULONG_PTR) as *const u8,
             ImagePath.Buffer as *mut u8,
             ImagePath.Length as usize,

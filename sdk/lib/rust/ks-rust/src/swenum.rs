@@ -386,7 +386,7 @@ pub unsafe extern "system" fn KspCreateDeviceAssociation(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         &InterfaceGUID as *const GUID,
         &mut (*CurEntry).InterfaceGuid as *mut GUID,
         1,
@@ -838,7 +838,7 @@ pub unsafe extern "C" fn KspQueryBusInformation(
 
     (*BusInformation).BusNumber = 0;
     (*BusInformation).LegacyBusType = InterfaceTypeUndefined;
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         &KSMEDIUMSETID_Standard as *const _ as *const u8,
         &mut (*BusInformation).BusTypeGuid as *mut _ as *mut u8,
         core::mem::size_of::<GUID>(),

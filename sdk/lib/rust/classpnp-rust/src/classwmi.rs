@@ -768,7 +768,7 @@ pub unsafe extern "C" fn ConvertTickToDateTime(
     );
 
     // RtlMoveMemory expansion: copy 25 WCHARs
-    core::ptr::copy_nonoverlapping::<u16>(outDateTime.as_ptr(), String, 25);
+    core::ptr::copy::<u16>(outDateTime.as_ptr(), String, 25);
 
     String
 }

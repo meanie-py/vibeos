@@ -2055,7 +2055,7 @@ pub unsafe extern "system" fn GetLongPathNameA(
 
     Result = LongPathAnsi.Length as ULONG;
     if !lpszLongPath.is_null() && cchBuffer > LongPathAnsi.Length as ULONG {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             LongPathAnsi.Buffer,
             lpszLongPath,
             LongPathAnsi.Length as usize,
@@ -2152,7 +2152,7 @@ pub unsafe extern "system" fn GetShortPathNameA(
 
     Result = ShortPathAnsi.Length as ULONG;
     if !lpszShortPath.is_null() && cchBuffer > ShortPathAnsi.Length as DWORD {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             ShortPathAnsi.Buffer as *const core::ffi::c_void,
             lpszShortPath as *mut core::ffi::c_void,
             ShortPathAnsi.Length as usize,

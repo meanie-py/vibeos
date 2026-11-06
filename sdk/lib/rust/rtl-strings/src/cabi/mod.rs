@@ -5639,7 +5639,7 @@ pub unsafe extern "system" fn RtlSetEnvironmentVariable(
 
                 if !env.is_null() {
                     let pre_len = ((hole as usize) - (env as usize)) / 2;
-                    core::ptr::copy_nonoverlapping(env, new_env, pre_len);
+                    core::ptr::copy(env, new_env, pre_len);
                     hole = new_env.add(pre_len);
                 } else {
                     tail = new_env;
@@ -5670,12 +5670,12 @@ pub unsafe extern "system" fn RtlSetEnvironmentVariable(
 
         // Copy in the name (if inserting) and the value.
         if f != 0 {
-            core::ptr::copy_nonoverlapping((*name).Buffer, hole, ((*name).Length / 2) as usize);
+            core::ptr::copy((*name).Buffer, hole, ((*name).Length / 2) as usize);
             hole = hole.add(((*name).Length / 2) as usize);
             *hole = b'=' as u16;
             hole = hole.add(1);
         }
-        core::ptr::copy_nonoverlapping((*value).Buffer, hole, ((*value).Length / 2) as usize);
+        core::ptr::copy((*value).Buffer, hole, ((*value).Length / 2) as usize);
         hole = hole.add(((*value).Length / 2) as usize);
         *hole = 0;
     } else {

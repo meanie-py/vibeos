@@ -299,17 +299,17 @@ pub unsafe extern "C" fn MMixerOpenMidiPin(
     DataFormat = PinConnect.offset(1 as isize) as PKSDATAFORMAT;
 
     /* initialize data format */
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         &raw const KSDATAFORMAT_TYPE_MUSIC as *const u8,
         &raw mut (*DataFormat).c2rust_unnamed.MajorFormat as *mut u8,
         core::mem::size_of::<GUID>(),
     );
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         &raw const KSDATAFORMAT_SUBTYPE_MIDI as *const u8,
         &raw mut (*DataFormat).c2rust_unnamed.SubFormat as *mut u8,
         core::mem::size_of::<GUID>(),
     );
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         &raw const KSDATAFORMAT_SPECIFIER_NONE as *const u8,
         &raw mut (*DataFormat).c2rust_unnamed.Specifier as *mut u8,
         core::mem::size_of::<GUID>(),

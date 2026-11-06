@@ -178,7 +178,7 @@ pub unsafe extern "system" fn KspMethodHandlerWithAllocator(
         Guid = (*Irp).UserBuffer as LPGUID;
         Index = 0;
         while Index < MethodSetsCount {
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 (*MethodSet.add(Index as usize)).Set,
                 &mut *Guid.add(Index as usize) as *mut GUID,
                 1,
@@ -235,7 +235,7 @@ pub unsafe extern "system" fn KsFastMethodHandler(
     Mode = ExGetPreviousMode();
 
     if Mode == 0i8 {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             Method as *const u8,
             &mut MethodRequest as *mut KSMETHOD as *mut u8,
             core::mem::size_of::<KSMETHOD>(),

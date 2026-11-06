@@ -73,7 +73,7 @@ pub unsafe extern "system" fn KsLoadResource(
         if NT_SUCCESS(Status) {
             Result = AllocateItem(PoolType, Size as usize);
             if !Result.is_null() {
-                core::ptr::copy_nonoverlapping(Data, Result, Size as usize);
+                core::ptr::copy(Data, Result, Size as usize);
                 *Resource = Result;
                 if !ResourceSize.is_null() {
                     *ResourceSize = Size;

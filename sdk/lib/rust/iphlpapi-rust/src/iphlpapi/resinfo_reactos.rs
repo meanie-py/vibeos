@@ -105,7 +105,7 @@ pub unsafe extern "C" fn EnumNameServers(
         if !comma.is_null() {
             length = (comma as *const u16).offset_from(start as *const u16) as u32;
 
-            core::ptr::copy_nonoverlapping(start, buffer.as_mut_ptr(), length as usize);
+            core::ptr::copy(start, buffer.as_mut_ptr(), length as usize);
             buffer[length as usize] = 0;
             if let Some(cb) = CallbackRoutine {
                 cb(InterfaceName, buffer.as_mut_ptr(), ServerCallbackContext);

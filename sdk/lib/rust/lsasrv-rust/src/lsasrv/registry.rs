@@ -115,7 +115,7 @@ pub unsafe extern "C" fn LsapRegEnumerateSubKey(
 
     if NT_SUCCESS(Status) {
         if (*KeyInfo).NameLength < Length.wrapping_mul(core::mem::size_of::<u16>() as ULONG) {
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 core::ptr::addr_of!((*KeyInfo).Name) as *const u8,
                 Buffer as *mut u8,
                 (*KeyInfo).NameLength as usize,
@@ -388,7 +388,7 @@ pub unsafe extern "C" fn LsapRegQueryValue(
     }
 
     if NT_SUCCESS(Status) && !Data.is_null() {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             (*ValueInfo).Data.as_ptr() as *const u8,
             Data as *mut u8,
             (*ValueInfo).DataLength as usize,

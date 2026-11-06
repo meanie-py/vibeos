@@ -2560,7 +2560,7 @@ pub unsafe extern "system" fn CreateProcessInternalA(
     let mut StartupInfo: STARTUPINFOW = core::mem::zeroed();
 
     /* Copy Startup Info */
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         lpStartupInfo as *const u8,
         &mut StartupInfo as *mut STARTUPINFOW as *mut u8,
         core::mem::size_of::<STARTUPINFOA>(),

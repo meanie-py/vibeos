@@ -1586,14 +1586,14 @@ pub unsafe extern "C" fn KspCopyMethodSets(
     let mut bFound: u8;
 
     if AutomationTableA.is_null() {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             (*AutomationTableB).MethodSets as *const u8,
             (*Table).MethodSets as *mut u8,
             core::mem::size_of::<KSMETHOD_SET>() * (*AutomationTableB).MethodSetsCount as usize,
         );
         return STATUS_SUCCESS;
     } else if AutomationTableB.is_null() {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             (*AutomationTableA).MethodSets as *const u8,
             (*Table).MethodSets as *mut u8,
             core::mem::size_of::<KSMETHOD_SET>() * (*AutomationTableA).MethodSetsCount as usize,
@@ -1601,7 +1601,7 @@ pub unsafe extern "C" fn KspCopyMethodSets(
         return STATUS_SUCCESS;
     }
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         (*AutomationTableA).MethodSets as *const u8,
         (*Table).MethodSets as *mut u8,
         core::mem::size_of::<KSMETHOD_SET>() * (*AutomationTableA).MethodSetsCount as usize,
@@ -1625,7 +1625,7 @@ pub unsafe extern "C" fn KspCopyMethodSets(
         }
 
         if bFound == 0u8 {
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 (*AutomationTableB).MethodSets.add(Index as usize) as *const KSMETHOD_SET as *const u8,
                 (*Table).MethodSets.add(Count as usize) as *mut KSMETHOD_SET as *mut u8,
                 core::mem::size_of::<KSMETHOD_SET>(),
@@ -1715,14 +1715,14 @@ pub unsafe extern "C" fn KspCopyPropertySets(
     let mut Status: NTSTATUS;
 
     if AutomationTableA.is_null() {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             (*AutomationTableB).PropertySets as *const u8,
             (*Table).PropertySets as *mut KSPROPERTY_SET as *mut u8,
             ((*AutomationTableB).PropertySetsCount as usize) * core::mem::size_of::<KSPROPERTY_SET>(),
         );
         return STATUS_SUCCESS;
     } else if AutomationTableB.is_null() {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             (*AutomationTableA).PropertySets as *const u8,
             (*Table).PropertySets as *mut KSPROPERTY_SET as *mut u8,
             ((*AutomationTableA).PropertySetsCount as usize) * core::mem::size_of::<KSPROPERTY_SET>(),
@@ -1730,7 +1730,7 @@ pub unsafe extern "C" fn KspCopyPropertySets(
         return STATUS_SUCCESS;
     }
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         (*AutomationTableA).PropertySets as *const u8,
         (*Table).PropertySets as *mut KSPROPERTY_SET as *mut u8,
         ((*AutomationTableA).PropertySetsCount as usize) * core::mem::size_of::<KSPROPERTY_SET>(),
@@ -1754,7 +1754,7 @@ pub unsafe extern "C" fn KspCopyPropertySets(
         }
 
         if bFound == 0u8 {
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 (*AutomationTableB).PropertySets.add(Index as usize),
                 (*Table).PropertySets.add(Count as usize) as *mut KSPROPERTY_SET,
                 1, // one KSPROPERTY_SET — size_of here copied size_of() elements
@@ -1789,14 +1789,14 @@ pub unsafe extern "C" fn KspCopyEventSets(
     let mut bFound: u8;
 
     if AutomationTableA.is_null() {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             (*AutomationTableB).EventSets as *const u8,
             (*Table).EventSets as *mut u8,
             core::mem::size_of::<KSEVENT_SET>() * (*AutomationTableB).EventSetsCount as usize,
         );
         return STATUS_SUCCESS;
     } else if AutomationTableB.is_null() {
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             (*AutomationTableA).EventSets as *const u8,
             (*Table).EventSets as *mut u8,
             core::mem::size_of::<KSEVENT_SET>() * (*AutomationTableA).EventSetsCount as usize,
@@ -1804,7 +1804,7 @@ pub unsafe extern "C" fn KspCopyEventSets(
         return STATUS_SUCCESS;
     }
 
-    core::ptr::copy_nonoverlapping(
+    core::ptr::copy(
         (*AutomationTableA).EventSets as *const u8,
         (*Table).EventSets as *mut u8,
         core::mem::size_of::<KSEVENT_SET>() * (*AutomationTableA).EventSetsCount as usize,
@@ -1829,7 +1829,7 @@ pub unsafe extern "C" fn KspCopyEventSets(
         }
 
         if bFound == 0u8 {
-            core::ptr::copy_nonoverlapping(
+            core::ptr::copy(
                 &(*((*AutomationTableB).EventSets as *const KSEVENT_SET).add(Index as usize)) as *const KSEVENT_SET as *const u8,
                 &mut (*((*Table).EventSets as *mut KSEVENT_SET).add(Count as usize)) as *mut KSEVENT_SET as *mut u8,
                 core::mem::size_of::<KSEVENT_SET>(),

@@ -82,7 +82,7 @@ pub unsafe extern "C" fn KspRegisterDeviceInterfaces(
             return Status;
         }
 
-        core::ptr::copy_nonoverlapping(
+        core::ptr::copy(
             Categories.offset(Index as isize) as *const u8,
             &mut (*SymEntry).DeviceInterfaceClass as *mut _ as *mut u8,
             core::mem::size_of::<CLSID>(),

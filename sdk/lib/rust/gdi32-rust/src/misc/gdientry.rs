@@ -1280,7 +1280,7 @@ pub unsafe extern "system" fn bDDCreateSurface(
     SurfaceLocal.dwFlags = (*pSurface).dwFlags;
 
     /* Set up SurfaceMore struct */
-    copy_nonoverlapping(
+    core::ptr::copy(
         addr_of!((*pSurface).ddckCKDestBlt) as *const u8,
         addr_of_mut!(SurfaceMore.ddsCapsEx) as *mut u8,
         size_of::<DDSCAPSEX>(),

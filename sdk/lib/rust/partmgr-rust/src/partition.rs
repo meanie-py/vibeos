@@ -953,7 +953,7 @@ pub unsafe extern "C" fn PartitionHandleDeviceControl(DeviceObject: PDEVICE_OBJE
                         (*partExt).__bindgen_anon_1.Gpt.as_mut().PartitionType = (*inputBuffer).__bindgen_anon_1.Gpt.PartitionType;
                         (*partExt).__bindgen_anon_1.Gpt.as_mut().PartitionId = (*inputBuffer).__bindgen_anon_1.Gpt.PartitionId;
                         (*partExt).__bindgen_anon_1.Gpt.as_mut().Attributes = (*inputBuffer).__bindgen_anon_1.Gpt.Attributes as u64;
-                        core::ptr::copy_nonoverlapping(
+                        core::ptr::copy(
                             (*inputBuffer).__bindgen_anon_1.Gpt.Name.as_ptr(),
                             (*partExt).__bindgen_anon_1.Gpt.as_mut().Name.as_mut_ptr(),
                             36,
