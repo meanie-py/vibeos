@@ -1,5 +1,8 @@
 [workspace]
 members = [
+    "samsrv-cargo",
+    "lsasrv-cargo",
+    "kernel32-cargo",
     "xolehlp-cargo",
     "wuapi-cargo",
     "msxml3-cargo",

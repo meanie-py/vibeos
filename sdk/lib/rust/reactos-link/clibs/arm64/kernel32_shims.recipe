@@ -1,0 +1,3 @@
+# kernel32_shims (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	dll/win32/kernel32/client/dep.c	@build/dll/win32/kernel32 dll/win32/kernel32 @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/include/reactos/subsys	-std=gnu99 @core	WINVER=0x502 _KERNEL32_ _WIN32_WINNT=0x502
+asm	dll/win32/kernel32/client/arm64/fiber.S	sdk/include/asm @build/sdk/include/asm @build/dll/win32/kernel32 dll/win32/kernel32 @std sdk/include/reactos/subsys	@core	_KERNEL32_

@@ -1,2 +1,2 @@
 # kernelbase_shims (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
-c	dll/win32/kernelbase/dllmain.c	@build/dll/win32/kernelbase dll/win32/kernelbase @std vendor/opengl-headers/include vendor/libdxg/include	-isystem {REPO}/sdk/lib/pseh/include -std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x600 _WIN32_WINNT=0x600
+c	dll/win32/kernelbase/dllmain.c	@build/dll/win32/kernelbase dll/win32/kernelbase @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x600 _WIN32_WINNT=0x600

@@ -40,6 +40,15 @@ fn require_configured(root: &Path, arch: &str) -> Result<()> {
     let build = local(root, &root.join(format!("build-{arch}")))?;
     vibeos_build::ninja::require_configured(&build, root).map_err(|e| Error::new(e.to_string()))
 }
+/// A link input named by its path inside the target's object dir (`client/i386/fiber.S.obj`),
+/// else by file name: kernel32 compiles client/{i386,amd64,arm64}/fiber.S, the SAME object
+/// name from a different source per arch, which by file name alone read as one common input.
+fn obj_key(obj: &str) -> String {
+    match obj.split_once(".dir/") {
+        Some((_, rest)) => rest.to_owned(),
+        None => obj.rsplit('/').next().unwrap_or(obj).to_owned(),
+    }
+}
 pub fn link_edge(root: &Path, arch: &str, target: &str) -> Result<Link> {
     require_configured(root, arch)?;
     let path = local(root, &root.join(format!("build-{arch}/build.ninja")))?;
@@ -1016,9 +1025,12 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
             .as_array_mut()
             .unwrap()
             .push(json!(format!("several bodies {named:?}")));
-    } else if let Some(custom) = custom_body(&text) {
+    } else if let Some(custom) = custom_body_for(&text, target) {
         f["body"] = json!([custom["crate"], [], true]);
         f["body_rustflags"] = custom["rustflags"].clone();
+        if let Some(d) = custom["depends"].as_array().filter(|d| !d.is_empty()) {
+            f["body_depends"] = json!(d);
+        }
         f["custom_body"] = custom;
     } else if re(r"\bcargo build\b").is_match(&text) {
         f["unknown"]
@@ -1183,19 +1195,97 @@ pub fn arch_values(text: &str, var: &str) -> BTreeMap<String, String> {
     }
     out
 }
-pub fn custom_body(text: &str) -> Option<serde_json::Value> {
-    let cmds: Vec<_> = statements(text)
+fn cargo_commands(text: &str) -> Vec<String> {
+    statements(text)
         .into_iter()
         .filter(|(_, _, cmd, raw)| {
             cmd == "add_custom_command" && re(r"\bcargo build\b").is_match(raw)
         })
-        .collect();
+        .map(|(_, _, _, raw)| re(r"#[^\n]*").replace_all(&raw, "").into_owned())
+        .collect()
+}
+/// The one custom `cargo build` body of a module that has exactly one.
+pub fn custom_body(text: &str) -> Option<serde_json::Value> {
+    let cmds = cargo_commands(text);
     if cmds.len() != 1 {
         return None;
     }
-    let raw = re(r"#[^\n]*").replace_all(&cmds[0].3, "").into_owned();
+    custom_body_command(text, &cmds[0])
+}
+/// A module with SEVERAL custom `cargo build` commands (kernel32: kernel32-rust plus the
+/// vista and shared archives kernel32_vista also links; lsasrv/samsrv: the body plus a
+/// stub crate). The body is the command whose archive is `lib<target>_rust.a`; every
+/// other one must be a plain `cargo build -p <crate>` (no RUSTFLAGS, no features), which
+/// the engine repeats as `engine:crate:<crate>::TRUE`. The bare cmake targets in their
+/// DEPENDS (native-widl, lsasrv_c) order the cell. Those commands stay in the CMakeLists
+/// (another module may link their archive), and so do the variables they use.
+pub fn custom_body_for(text: &str, target: &str) -> Option<serde_json::Value> {
+    let cmds = cargo_commands(text);
+    if cmds.len() < 2 {
+        return custom_body(text);
+    }
+    let archive = re(r"/release/(lib\w+\.a)\s");
+    let own = format!("lib{target}_rust.a");
+    let (body, rest): (Vec<_>, Vec<_>) = cmds
+        .iter()
+        .partition(|raw| archive.captures(raw).is_some_and(|c| c[1] == own));
+    if body.len() != 1 {
+        return None;
+    }
+    let mut v = custom_body_command(text, body[0])?;
+    let mut extra = Vec::new();
+    let mut deps = Vec::new();
+    for raw in &rest {
+        if raw.contains("RUSTFLAGS=") || raw.contains("--features") || raw.contains("--no-default") {
+            return None;
+        }
+        let krate = re(r"\s-p\s+([\w-]+)").captures(raw)?[1].to_owned();
+        let ar = archive.captures(raw)?[1].to_owned();
+        extra.push(serde_json::json!({"crate": krate, "archive": ar}));
+        deps.extend(depends_targets(raw));
+    }
+    // Keep every variable a remaining command still reads.
+    let used: Vec<String> = rest
+        .iter()
+        .flat_map(|r| re(r"\$\{(\w+)\}").captures_iter(r).map(|c| c[1].to_owned()).collect::<Vec<_>>())
+        .collect();
+    let vars: Vec<serde_json::Value> = v["vars"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|x| x.as_str().is_some_and(|n| !used.iter().any(|u| u == n)))
+        .collect();
+    v["vars"] = serde_json::json!(vars);
+    v["extra"] = serde_json::json!(extra);
+    let mut all: Vec<String> = v["depends"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+        .unwrap_or_default();
+    for d in deps {
+        if !all.contains(&d) {
+            all.push(d);
+        }
+    }
+    v["depends"] = serde_json::json!(all);
+    Some(v)
+}
+/// The bare cmake targets among a custom command's DEPENDS (not paths, not variables).
+fn depends_targets(raw: &str) -> Vec<String> {
+    let Some(rest) = raw.split_once("DEPENDS") else {
+        return Vec::new();
+    };
+    rest.1
+        .split_whitespace()
+        .take_while(|t| !["WORKING_DIRECTORY", "COMMENT", "VERBATIM", "BYPRODUCTS"].contains(t))
+        .filter(|t| !t.contains('/') && !t.contains("${") && !t.contains('.'))
+        .map(str::to_owned)
+        .collect()
+}
+fn custom_body_command(text: &str, raw: &str) -> Option<serde_json::Value> {
+    let raw = raw.to_owned();
     let pattern = re(
-        r#"(?x)^\s*OUTPUT\s+\$\{(\w+)\}\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+env\s+CARGO_TARGET_DIR=\$\{(\w+)\}\s+(?:RUSTFLAGS=\$\{(\w+)\}\s+)?cargo\s+build\s+--release\s+--target\s+\$\{(\w+)\}\s+-p\s+([\w-]+)\s+--manifest-path\s+\$\{(\w+)\}/Cargo\.toml\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+copy(?:_if_different)?\s+\$\{(\w+)\}/\$\{(\w+)\}/release/(lib\w+\.a)\s+\$\{(\w+)\}\s+DEPENDS\s+\$\{(\w+)\}\s+\$\{(\w+)\}/([\w-]+)/Cargo\.toml\s+WORKING_DIRECTORY\s+\$\{(\w+)\}\s+COMMENT\s+"[^"]*"(?:\s+VERBATIM)?\s*$"#,
+        r#"(?x)^\s*OUTPUT\s+\$\{(\w+)\}\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+env\s+CARGO_TARGET_DIR=\$\{(\w+)\}\s+(?:RUSTFLAGS=\$\{(\w+)\}\s+)?cargo\s+build\s+--release\s+--target\s+\$\{(\w+)\}\s+-p\s+([\w-]+)\s+--manifest-path\s+\$\{(\w+)\}/Cargo\.toml\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+copy(?:_if_different)?\s+\$\{(\w+)\}/\$\{(\w+)\}/release/(lib\w+\.a)\s+\$\{(\w+)\}\s+DEPENDS\s+\$\{(\w+)\}\s+\$\{(\w+)\}/([\w-]+)/Cargo\.toml(?P<more>(?:\s+[^\s]+?)*?)\s+WORKING_DIRECTORY\s+\$\{(\w+)\}\s+COMMENT\s+"[^"]*"(?:\s+VERBATIM)?\s*$"#,
     );
     let c = pattern.captures(&raw)?;
     if c[2] != c[7]
@@ -1203,7 +1293,7 @@ pub fn custom_body(text: &str) -> Option<serde_json::Value> {
         || c[1] != c[10]
         || c[6] != c[12]
         || c[5] != c[13]
-        || c[6] != c[14]
+        || c[6] != c[15]
     {
         return None;
     }
@@ -1244,7 +1334,7 @@ pub fn custom_body(text: &str) -> Option<serde_json::Value> {
         .map(|m| m.as_str())
         .collect();
     Some(
-        serde_json::json!({"crate":&c[5],"archive":&c[9],"rustflags":flags.into_iter().filter(|(_,v)|!v.is_empty()).collect::<BTreeMap<_,_>>(),"vars":vars,"custom_target":&custom[1]}),
+        serde_json::json!({"crate":&c[5],"archive":&c[9],"rustflags":flags.into_iter().filter(|(_,v)|!v.is_empty()).collect::<BTreeMap<_,_>>(),"vars":vars,"custom_target":&custom[1],"depends":depends_targets(&format!("DEPENDS {}", &c["more"]))}),
     )
 }
 pub fn placeholder_archive(root: &Path, arch: &str, lib: &str) -> Result<bool> {
@@ -1497,9 +1587,20 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             {
                 continue;
             }
-            let lib = engine_lib(raw, &index)
-                .map(|x| x.0)
-                .unwrap_or_else(|| raw.clone());
+            // An archive of one of the module's other custom `cargo build` commands
+            // (kernel32's vista/shared, lsasrv's lsa-stub): the engine builds that crate.
+            let extra_crate = custom["extra"].as_array().and_then(|xs| {
+                xs.iter().find_map(|x| {
+                    let ar = x["archive"].as_str()?;
+                    (raw.rsplit('/').next() == Some(ar))
+                        .then(|| format!("engine:crate:{}::TRUE", x["crate"].as_str().unwrap_or("")))
+                })
+            });
+            let lib = extra_crate.unwrap_or_else(|| {
+                engine_lib(raw, &index)
+                    .map(|x| x.0)
+                    .unwrap_or_else(|| raw.clone())
+            });
             if !static_libs.contains(&lib) {
                 static_libs.push(lib.clone());
                 seq.push(lib.clone());
@@ -1588,10 +1689,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         .map(|(a, l)| {
             (
                 a.clone(),
-                l.inputs
-                    .iter()
-                    .map(|o| o.rsplit('/').next().unwrap_or(o).to_owned())
-                    .collect(),
+                l.inputs.iter().map(|o| obj_key(o)).collect(),
             )
         })
         .collect();
@@ -1605,7 +1703,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     for a in arches.iter().copied() {
         for obj in &links[a].inputs {
             let name = obj.rsplit('/').next().unwrap_or(obj);
-            if common.contains(name) {
+            if common.contains(&obj_key(obj)) {
                 continue;
             }
             let src = obj_source(&cmake_dir, obj);
@@ -1621,7 +1719,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     let bin_dir = Path::new(&first.output).parent().unwrap_or(Path::new(""));
     for obj in &first.inputs {
         let name = obj.rsplit('/').next().unwrap_or(obj);
-        if !common.contains(name) {
+        if !common.contains(&obj_key(obj)) {
             continue;
         }
         if name.ends_with(".rc.res") {
@@ -1945,4 +2043,69 @@ pub fn expand(items: &[String], lists: &BTreeMap<String, Vec<String>>) -> Result
     let mut out = Vec::new();
     visit(items, lists, &mut Vec::new(), &mut out)?;
     Ok(out)
+}
+
+#[cfg(test)]
+mod multi_body_tests {
+    use super::{custom_body_for, obj_key};
+
+    fn cmd(var: &str, krate: &str, lib: &str, more: &str) -> String {
+        format!(
+            "rust_storage_target({var}_DIR \"${{CMAKE_CURRENT_BINARY_DIR}}/t\" {krate})\n\
+             set({var}_LIB \"${{CMAKE_CURRENT_BINARY_DIR}}/{lib}\")\n\
+             add_custom_command(\n    OUTPUT ${{{var}_LIB}}\n    COMMAND ${{CMAKE_COMMAND}} -E env\n\
+             \x20       CARGO_TARGET_DIR=${{{var}_DIR}}\n\
+             \x20       cargo build --release --target ${{M_TARGET}}\n            -p {krate}\n\
+             \x20           --manifest-path ${{M_WS}}/Cargo.toml\n\
+             \x20   COMMAND ${{CMAKE_COMMAND}} -E copy\n\
+             \x20       ${{{var}_DIR}}/${{M_TARGET}}/release/{lib}\n        ${{{var}_LIB}}\n\
+             \x20   DEPENDS ${{{var}_SRCS}}\n            ${{M_WS}}/{krate}/Cargo.toml{more}\n\
+             \x20   WORKING_DIRECTORY ${{M_WS}}\n    COMMENT \"Building {krate}\"\n    VERBATIM)\n\
+             add_custom_target(rust_{var} DEPENDS ${{{var}_LIB}})\n"
+        )
+    }
+
+    fn module() -> String {
+        let mut t = String::from(
+            "set(M_WS \"${CMAKE_SOURCE_DIR}/sdk/lib/rust\")\n\
+             if(ARCH STREQUAL \"i386\")\n    set(M_TARGET \"i686-pc-windows-gnu\")\n\
+             elseif(ARCH STREQUAL \"amd64\")\n    set(M_TARGET \"x86_64-pc-windows-gnu\")\n\
+             elseif(ARCH STREQUAL \"arm64\")\n    set(M_TARGET \"aarch64-pc-windows-gnullvm\")\nendif()\n",
+        );
+        t += &cmd("STUB", "m-stub", "libm_stub.a", "\n            native-widl\n            m_c");
+        t += &cmd("MRUST", "m-rust", "libm_rust.a", "\n            ${M_WS}/m-sys/Cargo.toml");
+        t
+    }
+
+    #[test]
+    fn the_body_is_the_command_named_for_the_target_and_the_rest_are_engine_crates() {
+        let v = custom_body_for(&module(), "m").expect("models");
+        assert_eq!(v["crate"], "m-rust");
+        assert_eq!(v["archive"], "libm_rust.a");
+        assert_eq!(v["extra"][0]["crate"], "m-stub");
+        assert_eq!(v["extra"][0]["archive"], "libm_stub.a");
+        let deps: Vec<_> = v["depends"].as_array().unwrap().iter().map(|d| d.as_str().unwrap()).collect();
+        assert_eq!(deps, ["native-widl", "m_c"]);
+        // Variables the stub's command still reads stay in the CMakeLists.
+        let vars: Vec<_> = v["vars"].as_array().unwrap().iter().map(|d| d.as_str().unwrap()).collect();
+        assert!(!vars.contains(&"M_WS") && !vars.contains(&"M_TARGET"), "{vars:?}");
+        assert!(vars.contains(&"MRUST_LIB") && vars.contains(&"MRUST_DIR"), "{vars:?}");
+    }
+
+    #[test]
+    fn an_extra_command_with_its_own_rustflags_or_features_is_refused() {
+        let flagged = module().replace("-p m-stub", "-p m-stub --features x");
+        assert!(custom_body_for(&flagged, "m").is_none());
+        // No command is the target's own body.
+        assert!(custom_body_for(&module(), "other").is_none());
+    }
+
+    #[test]
+    fn objects_are_keyed_by_their_path_in_the_target_dir() {
+        let a = "dll/win32/kernel32/CMakeFiles/kernel32.dir/client/i386/fiber.S.obj";
+        let b = "dll/win32/kernel32/CMakeFiles/kernel32.dir/client/amd64/fiber.S.obj";
+        assert_ne!(obj_key(a), obj_key(b));
+        assert_eq!(obj_key(a), "client/i386/fiber.S.obj");
+        assert_eq!(obj_key("x/libfoo.a"), "libfoo.a");
+    }
 }

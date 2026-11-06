@@ -238,7 +238,13 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             && ((["set", "rust_storage_target", "rust_crate_sources"].contains(&cmd.as_str())
                 && !a.is_empty()
                 && vars.is_some_and(|vs| vs.iter().any(|v| v.as_str() == Some(&a[0]))))
-                || (cmd == "add_custom_command" && re(r"\bcargo build\b").is_match(raw))
+                || (cmd == "add_custom_command"
+                    && re(r"\bcargo build\b").is_match(raw)
+                    && cell.custom_body["crate"].as_str().is_some_and(|k| {
+                        // Only the body's own command: a module's other cargo commands
+                        // (kernel32's vista/shared archives) may feed other modules.
+                        re(&format!(r"\s-p\s+{}\s", regex::escape(k))).is_match(raw)
+                    }))
                 || (cmd == "add_custom_target"
                     && a.first()
                         .is_some_and(|s| cell.custom_body["custom_target"].as_str() == Some(s))))
