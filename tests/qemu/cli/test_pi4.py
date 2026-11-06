@@ -87,12 +87,14 @@ def test_wait_for_desktop_reads_only_this_boot(tmp_path: Path) -> None:
     serial.write_bytes(b"old boot shell ready\n")
     start = serial.stat().st_size
     with open(serial, "ab") as f:
-        f.write(b"[KERNEL] up\n[EXPLORER] shell ready\n")
+        f.write(b"[KERNEL] up\n[WIN32K] shell ready\n[EXPLORER] _tWinMain entered\n")
     text, reached = pi4.wait_for_desktop(serial, start, timeout=1)
     assert reached and "old boot" not in text
     serial.write_bytes(b"shell ready from before\n")
     text, reached = pi4.wait_for_desktop(serial, serial.stat().st_size, timeout=0.1)
     assert not reached and text == ""
+    serial.write_bytes(b"[WIN32K] shell ready\n")
+    assert not pi4.wait_for_desktop(serial, 0, timeout=0)[1]
 
 
 def test_serial_tail_reads_from_offset_and_stamps_split_lines(tmp_path: Path) -> None:
