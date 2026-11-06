@@ -174,6 +174,7 @@ pub fn derive(arch_name: &str, root: &Path) -> Result<Vec<Value>> {
             p.display()
         )));
     }
+    crate::ninja::require_configured(&local(root, &root.join(format!("build-{arch_name}")))?, root)?;
     let text = read(&local(root, &p)?)?;
     let pattern = Regex::new(
         r"\nbuild ([^\n]*?): CUSTOM_COMMAND[^\n]*\n  COMMAND = ([^\n]*)\n  DESC = Cargo-linking ([^\n]*)",

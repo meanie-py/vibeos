@@ -332,3 +332,138 @@ pub fn delete(build: &Path, plan: &Plan) -> Result<usize> {
     }
     Ok(paths.len())
 }
+
+/// Hard fail when `build/build.ninja` predates an input of its own regeneration edge
+/// (a CMakeLists.txt, a .cmake module, CMakeCache.txt), i.e. when ninja would re-run cmake
+/// before building anything. Readers that derive state from build.ninja (the cell and
+/// media manifests, the cell generator) otherwise emit a plan of the PREVIOUS configure
+/// without a word: after a merge, `cell-manifest --write` silently wrote master's cells
+/// and dropped a wave's 61. The regeneration edge is restat, so ninja's own record of
+/// build.ninja's mtime (.ninja_log) can be newer than the file; the newer of the two
+/// counts, as in ninja. A build.ninja with no regeneration edge (a test fixture) is
+/// accepted. Each build directory is checked once per process.
+pub fn require_configured(build: &Path, canon_root: &Path) -> Result<()> {
+    use std::sync::{Mutex, OnceLock};
+    static DONE: OnceLock<Mutex<BTreeSet<PathBuf>>> = OnceLock::new();
+    let done = DONE.get_or_init(|| Mutex::new(BTreeSet::new()));
+    if done.lock().unwrap().contains(build) {
+        return Ok(());
+    }
+    let manifest = build.join("build.ninja");
+    let text = read(&manifest)?;
+    let Some(edge) = logical_lines(&text)
+        .into_iter()
+        .find(|l| l.starts_with("build build.ninja:"))
+    else {
+        done.lock().unwrap().insert(build.to_owned());
+        return Ok(());
+    };
+    let implicit = edge.split_once(" | ").map(|(_, r)| r).unwrap_or("");
+    let implicit = implicit.split(" || ").next().unwrap_or("");
+    let mtime = |p: &Path| -> Option<u128> {
+        let t = std::fs::metadata(p).ok()?.modified().ok()?;
+        Some(t.duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos())
+    };
+    let mut reference = mtime(&manifest).unwrap_or(0);
+    if let Ok(log) = std::fs::read_to_string(build.join(".ninja_log")) {
+        for line in log.lines() {
+            let f: Vec<_> = line.split('\t').collect();
+            if f.len() == 5 && f[3] == "build.ninja" {
+                if let Ok(m) = f[2].parse::<u128>() {
+                    reference = reference.max(m);
+                }
+            }
+        }
+    }
+    let mut newer = Vec::new();
+    for raw in split(implicit) {
+        let input = unescape(&raw);
+        let path = match input.strip_prefix("/tmp/vibeos/") {
+            Some(rel) => canon_root.join(rel),
+            None if Path::new(&input).is_absolute() => PathBuf::from(&input),
+            None => build.join(&input),
+        };
+        match mtime(&path) {
+            Some(m) if m <= reference => {}
+            Some(_) => newer.push(input),
+            None => newer.push(format!("{input} (missing)")),
+        }
+    }
+    if !newer.is_empty() {
+        let name = build
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        return Err(Error::new(format!(
+            "{name}/build.ninja is older than {} of its cmake inputs ({}{}): it describes the \
+             previous configure. Reconfigure first: (cd {name} && bash ../tools/canon-run.sh \
+             ninja build.ninja)",
+            newer.len(),
+            newer.iter().take(3).cloned().collect::<Vec<_>>().join(", "),
+            if newer.len() > 3 { ", ..." } else { "" }
+        )));
+    }
+    done.lock().unwrap().insert(build.to_owned());
+    Ok(())
+}
+
+#[cfg(test)]
+mod configured_tests {
+    use super::require_configured;
+    use std::{fs, thread::sleep, time::Duration};
+
+    fn tree(name: &str) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("m")).unwrap();
+        fs::write(root.path().join("m/CMakeLists.txt"), "add_library(m)\n").unwrap();
+        sleep(Duration::from_millis(20));
+        let build = root.path().join(name);
+        fs::create_dir_all(&build).unwrap();
+        fs::write(
+            build.join("build.ninja"),
+            "build build.ninja: RERUN_CMAKE CMakeFiles/cmake.verify_globs | \
+             /tmp/vibeos/m/CMakeLists.txt CMakeCache.txt\n",
+        )
+        .unwrap();
+        fs::write(build.join("CMakeCache.txt"), "").unwrap();
+        // The cache is written after build.ninja here; date build.ninja through the log.
+        sleep(Duration::from_millis(20));
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        fs::write(
+            build.join(".ninja_log"),
+            format!("# ninja log v5\n0\t1\t{now}\tbuild.ninja\tabc\n"),
+        )
+        .unwrap();
+        root
+    }
+
+    #[test]
+    fn a_configure_newer_than_every_input_passes() {
+        let root = tree("build-amd64");
+        require_configured(&root.path().join("build-amd64"), root.path()).unwrap();
+    }
+
+    #[test]
+    fn a_cmakelists_edited_after_the_configure_is_refused() {
+        let root = tree("build-i386");
+        sleep(Duration::from_millis(20));
+        fs::write(root.path().join("m/CMakeLists.txt"), "add_library(m n.c)\n").unwrap();
+        let e = require_configured(&root.path().join("build-i386"), root.path())
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("/tmp/vibeos/m/CMakeLists.txt"), "{e}");
+        assert!(e.contains("canon-run.sh ninja build.ninja"), "{e}");
+    }
+
+    #[test]
+    fn a_build_ninja_without_a_regeneration_edge_is_not_a_configure() {
+        let root = tempfile::tempdir().unwrap();
+        let build = root.path().join("build-arm64");
+        fs::create_dir_all(&build).unwrap();
+        fs::write(build.join("build.ninja"), "build a.exe: LINK a.o\n").unwrap();
+        require_configured(&build, root.path()).unwrap();
+    }
+}

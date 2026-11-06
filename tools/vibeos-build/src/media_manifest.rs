@@ -81,6 +81,7 @@ pub fn derive_cab(
 pub fn derive(a: &str, root: &Path) -> Result<Value> {
     arch(a)?;
     let build = root.join(format!("build-{a}"));
+    crate::ninja::require_configured(&local(root, &build)?, root)?;
     let ninja = read(&local(root, &build.join("build.ninja"))?)?;
     let mut cells = BTreeSet::new();
     for cell in cell_manifest::current(a, root)? {
