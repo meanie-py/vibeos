@@ -505,7 +505,17 @@ fn guest_current(root: &Path, name: &str, build: &Path) -> Result<()> {
     let real = git(root, &["rev-parse", "--git-path", "index"], None)?;
     let real = root.join(real);
     if real.is_file() {
-        fs::copy(real, &index).map_err(err)?;
+        fs::copy(&real, &index).map_err(err)?;
+        // Keep the real index's mtime. git treats an entry whose file mtime is not older
+        // than the index as "racily clean" and re-hashes it; fs::copy stamps the copy NOW,
+        // so a same-size edit made in the same second as the last `git add` looked clean
+        // to the copy once a second had passed, and a stale guest was accepted.
+        let modified = fs::metadata(&real).and_then(|m| m.modified()).map_err(err)?;
+        fs::File::options()
+            .write(true)
+            .open(&index)
+            .and_then(|f| f.set_modified(modified))
+            .map_err(err)?;
     }
     git(root, &["add", "-A"], Some(&index))?;
     let tree = git(root, &["write-tree"], Some(&index))?;
@@ -892,6 +902,16 @@ mod tests {
         let build = root.join("build-amd64");
         fs::create_dir_all(build.join("obj")).unwrap();
         (tmp, build)
+    }
+    #[test]
+    fn receipt_sees_a_same_size_edit_made_with_the_last_git_add() {
+        let (tmp, build) = fixture();
+        let root = tmp.path();
+        fs::write(root.join("code.c"), "int y;\n").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        // The edit lands in the same second as the fixture's `git add`; the check runs in a
+        // later one. A fresh-mtime index copy made git trust the stale stat data here.
+        assert!(guest_current(root, "demo", &build).is_err(), "same-size edit missed");
     }
     #[test]
     fn receipt_rejects_code_and_cmake_but_accepts_docs() {
