@@ -831,7 +831,10 @@ C object's `.rdata` holds are present, NUL-terminated, in each arch's Rust-linke
   with those TUs restored and the Rust pieces dropped, into `c_oracle.cmake`
   (`EXCLUDE_FROM_ALL`, never shipped). A target that links the flipped one gets a twin too,
   so a probe exe linked to `setuplib_static` comes in a C build for free. Works for any of
-  the ~86 flipped modules; `--check` reports a stale oracle.
+  the ~86 flipped modules; `--check` reports a stale oracle. `--pre-flip` oracles a module
+  BEFORE its flip (every TU marked as the full flip will mark it; the result is byte-identical,
+  so `port flip`'s regeneration is a no-op): wire and stage the oracle, and show the suite
+  agreeing with itself C-against-C, before buying the translation (wined3d, 2026-11-06).
 - **The runner.** `modrun.exe` (Startup folder) runs each case's variants -- reference first
   -- with the same stdin, pipes their output to the serial, and judges nothing. `modrun.py`
   diffs the variants (after the suite's `normalize` rules), checks `expect` substrings and

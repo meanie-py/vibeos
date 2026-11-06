@@ -213,6 +213,220 @@ static void surfaces(IDirectDraw7 *dd)
            IDirectDrawSurface7_Release(b));
 }
 
+/* The render target's colour bytes as one checksum (X8: the unused byte is undefined). */
+static void rt_hash7(IDirectDrawSurface7 *s, const char *tag)
+{
+    DDSURFACEDESC2 sd;
+    unsigned long h = 2166136261u;
+    HRESULT hr;
+    DWORD x, y;
+
+    memset(&sd, 0, sizeof(sd));
+    sd.dwSize = sizeof(sd);
+    hr = IDirectDrawSurface7_Lock(s, NULL, &sd, DDLOCK_WAIT | DDLOCK_READONLY, NULL);
+    printf("%s lock hr=%08lx", tag, (unsigned long)hr);
+    if (SUCCEEDED(hr))
+    {
+        for (y = 0; y < sd.dwHeight; y++)
+            for (x = 0; x < sd.dwWidth; x++)
+                h = (h ^ (((DWORD *)((BYTE *)sd.lpSurface + y * sd.lPitch))[x] & 0xffffff)) * 16777619u;
+        printf(" hash=%08lx centre=%06lx", h,
+               ((DWORD *)((BYTE *)sd.lpSurface + 32 * sd.lPitch))[32] & 0xffffff);
+        IDirectDrawSurface7_Unlock(s, NULL);
+    }
+    printf("\n");
+}
+
+static IDirectDrawSurface7 *surface7(IDirectDraw7 *dd, const char *tag, DWORD caps, DWORD caps2,
+                                     DWORD size, DWORD alpha)
+{
+    DDSURFACEDESC2 sd;
+    IDirectDrawSurface7 *s = NULL;
+    HRESULT hr;
+
+    memset(&sd, 0, sizeof(sd));
+    sd.dwSize = sizeof(sd);
+    sd.dwFlags = DDSD_CAPS | DDSD_WIDTH | DDSD_HEIGHT | DDSD_PIXELFORMAT;
+    sd.ddsCaps.dwCaps = caps;
+    sd.ddsCaps.dwCaps2 = caps2;
+    sd.dwWidth = sd.dwHeight = size;
+    sd.ddpfPixelFormat.dwSize = sizeof(DDPIXELFORMAT);
+    sd.ddpfPixelFormat.dwFlags = DDPF_RGB | (alpha ? DDPF_ALPHAPIXELS : 0);
+    sd.ddpfPixelFormat.dwRGBBitCount = 32;
+    sd.ddpfPixelFormat.dwRBitMask = 0xff0000;
+    sd.ddpfPixelFormat.dwGBitMask = 0xff00;
+    sd.ddpfPixelFormat.dwBBitMask = 0xff;
+    sd.ddpfPixelFormat.dwRGBAlphaBitMask = alpha;
+    hr = IDirectDraw7_CreateSurface(dd, &sd, &s, NULL);
+    HR(tag, hr);
+    return SUCCEEDED(hr) ? s : NULL;
+}
+
+/* Only with the GL renderer (the device case): a Direct3D7 HAL device on a video-memory
+ * render target -- ddraw's whole draw path into wined3d: device caps, transforms, lights and
+ * materials, texture-stage state, a managed texture, strided UP and vertex-buffer draws, each
+ * read back by hash. */
+static void device7(IDirectDraw7 *dd, IDirect3D7 *d3d)
+{
+    struct { float x, y, z, rhw; DWORD c; } tri[3] = {
+        {6.0f, 58.0f, 0.5f, 1.0f, 0xffff8000},
+        {32.0f, 6.0f, 0.5f, 1.0f, 0xff00ff80},
+        {58.0f, 58.0f, 0.5f, 1.0f, 0xff8000ff}};
+    struct { float x, y, z, rhw, u, v; } quad[4] = {
+        {0.0f, 0.0f, 0.1f, 1.0f, 0.0f, 0.0f}, {64.0f, 0.0f, 0.1f, 1.0f, 1.0f, 0.0f},
+        {0.0f, 64.0f, 0.1f, 1.0f, 0.0f, 1.0f}, {64.0f, 64.0f, 0.1f, 1.0f, 1.0f, 1.0f}};
+    struct { float x, y, z, nx, ny, nz; } lit[3] = {
+        {-0.5f, -0.5f, 0.5f, 0.0f, 0.0f, -1.0f}, {0.0f, 0.5f, 0.5f, 0.0f, 0.0f, -1.0f},
+        {0.5f, -0.5f, 0.5f, 0.0f, 0.0f, -1.0f}};
+    WORD idx[6] = {0, 1, 2, 2, 1, 3};
+    IDirectDrawSurface7 *rt, *tex;
+    IDirect3DDevice7 *dev;
+    IDirect3DVertexBuffer7 *vb;
+    D3DVERTEXBUFFERDESC vd;
+    D3DDEVICEDESC7 desc;
+    D3DMATRIX m, back;
+    D3DLIGHT7 light;
+    D3DMATERIAL7 mat;
+    D3DVIEWPORT7 vp;
+    DDSURFACEDESC2 sd;
+    DWORD v, x, y;
+    BOOL on;
+    void *data;
+    HRESULT hr;
+
+    rt = surface7(dd, "d rt", DDSCAPS_OFFSCREENPLAIN | DDSCAPS_3DDEVICE | DDSCAPS_VIDEOMEMORY, 0, 64, 0);
+    if (!rt)
+        return;
+    hr = IDirect3D7_CreateDevice(d3d, &IID_IDirect3DHALDevice, rt, &dev);
+    HR("d create device", hr);
+    if (FAILED(hr))
+    {
+        printf("  d rt release %lu\n", IDirectDrawSurface7_Release(rt));
+        return;
+    }
+    memset(&desc, 0, sizeof(desc));
+    HR("d caps", IDirect3DDevice7_GetCaps(dev, &desc));
+    printf("  devcaps=%lx tri raster=%lx zcmp=%lx tex=%lx filter=%lx fvf=%lx stages=%u tex=%u\n",
+           desc.dwDevCaps, desc.dpcTriCaps.dwRasterCaps, desc.dpcTriCaps.dwZCmpCaps,
+           desc.dpcTriCaps.dwTextureCaps, desc.dpcTriCaps.dwTextureFilterCaps, desc.dwFVFCaps,
+           desc.wMaxTextureBlendStages, desc.wMaxSimultaneousTextures);
+    printf("  lights=%lu clip=%u vtxcaps=%lx\n", desc.dwMaxActiveLights, desc.wMaxUserClipPlanes,
+           desc.dwVertexProcessingCaps);
+
+    memset(&vp, 0, sizeof(vp));
+    vp.dwWidth = vp.dwHeight = 64;
+    vp.dvMaxZ = 1.0f;
+    HR("d viewport", IDirect3DDevice7_SetViewport(dev, &vp));
+    memset(&m, 0, sizeof(m));
+    m._11 = 2.0f; m._22 = 0.5f; m._33 = 1.0f; m._44 = 1.0f; m._41 = 0.25f;
+    HR("d world", IDirect3DDevice7_SetTransform(dev, D3DTRANSFORMSTATE_WORLD, &m));
+    HR("d multiply", IDirect3DDevice7_MultiplyTransform(dev, D3DTRANSFORMSTATE_WORLD, &m));
+    memset(&back, 0xcc, sizeof(back));
+    HR("d get world", IDirect3DDevice7_GetTransform(dev, D3DTRANSFORMSTATE_WORLD, &back));
+    dx_words("  w", &back, sizeof(back));
+    memset(&m, 0, sizeof(m));
+    m._11 = m._22 = m._33 = m._44 = 1.0f;
+    IDirect3DDevice7_SetTransform(dev, D3DTRANSFORMSTATE_WORLD, &m);
+    IDirect3DDevice7_SetTransform(dev, D3DTRANSFORMSTATE_VIEW, &m);
+    IDirect3DDevice7_SetTransform(dev, D3DTRANSFORMSTATE_PROJECTION, &m);
+
+    memset(&light, 0, sizeof(light));
+    light.dltType = D3DLIGHT_DIRECTIONAL;
+    light.dcvDiffuse.r = 1.0f; light.dcvDiffuse.g = 0.5f; light.dcvDiffuse.b = 0.25f;
+    light.dvDirection.z = 1.0f;
+    HR("d set light", IDirect3DDevice7_SetLight(dev, 0, &light));
+    HR("d enable light", IDirect3DDevice7_LightEnable(dev, 0, TRUE));
+    HR("d enable light 9", IDirect3DDevice7_LightEnable(dev, 9, TRUE));
+    on = 0xcc;
+    HR("d light enabled", IDirect3DDevice7_GetLightEnable(dev, 9, &on));
+    printf("  on %d\n", on);
+    memset(&light, 0xcc, sizeof(light));
+    HR("d get light 9", IDirect3DDevice7_GetLight(dev, 9, &light));
+    dx_words("  l", &light, sizeof(light));
+    HR("d light bad", IDirect3DDevice7_SetLight(dev, 1, NULL));
+    memset(&mat, 0, sizeof(mat));
+    mat.dcvDiffuse.r = mat.dcvDiffuse.g = mat.dcvDiffuse.b = mat.dcvDiffuse.a = 1.0f;
+    mat.dcvAmbient.b = 0.5f;
+    HR("d material", IDirect3DDevice7_SetMaterial(dev, &mat));
+    IDirect3DDevice7_SetRenderState(dev, D3DRENDERSTATE_AMBIENT, 0xff202020);
+
+    HR("d zenable", IDirect3DDevice7_SetRenderState(dev, D3DRENDERSTATE_ZENABLE, D3DZB_FALSE));
+    HR("d cull", IDirect3DDevice7_SetRenderState(dev, D3DRENDERSTATE_CULLMODE, D3DCULL_NONE));
+    v = 0xdeadbeef;
+    HR("d get cull", IDirect3DDevice7_GetRenderState(dev, D3DRENDERSTATE_CULLMODE, &v));
+    printf("  cull %lx\n", v);
+    HR("d tss", IDirect3DDevice7_SetTextureStageState(dev, 0, D3DTSS_COLOROP, D3DTOP_MODULATE));
+    v = 0xdeadbeef;
+    HR("d get tss", IDirect3DDevice7_GetTextureStageState(dev, 0, D3DTSS_MAGFILTER, &v));
+    printf("  magfilter %lx\n", v);
+
+    HR("d clear", IDirect3DDevice7_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0xff304050, 1.0f, 0));
+    rt_hash7(rt, "d cleared");
+    HR("d begin", IDirect3DDevice7_BeginScene(dev));
+    IDirect3DDevice7_SetRenderState(dev, D3DRENDERSTATE_LIGHTING, FALSE);
+    HR("d tri", IDirect3DDevice7_DrawPrimitive(dev, D3DPT_TRIANGLELIST, D3DFVF_XYZRHW | D3DFVF_DIFFUSE,
+                                               tri, 3, 0));
+    HR("d end", IDirect3DDevice7_EndScene(dev));
+    rt_hash7(rt, "d triangle");
+
+    IDirect3DDevice7_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0xff000000, 1.0f, 0);
+    IDirect3DDevice7_BeginScene(dev);
+    IDirect3DDevice7_SetRenderState(dev, D3DRENDERSTATE_LIGHTING, TRUE);
+    HR("d lit", IDirect3DDevice7_DrawPrimitive(dev, D3DPT_TRIANGLELIST, D3DFVF_XYZ | D3DFVF_NORMAL,
+                                               lit, 3, 0));
+    IDirect3DDevice7_EndScene(dev);
+    rt_hash7(rt, "d lit");
+    IDirect3DDevice7_SetRenderState(dev, D3DRENDERSTATE_LIGHTING, FALSE);
+
+    memset(&vd, 0, sizeof(vd));
+    vd.dwSize = sizeof(vd);
+    vd.dwFVF = D3DFVF_XYZRHW | D3DFVF_DIFFUSE;
+    vd.dwNumVertices = 3;
+    hr = IDirect3D7_CreateVertexBuffer(d3d, &vd, &vb, 0);
+    HR("d vb", hr);
+    if (SUCCEEDED(hr))
+    {
+        if (SUCCEEDED(IDirect3DVertexBuffer7_Lock(vb, DDLOCK_WAIT | DDLOCK_WRITEONLY, &data, NULL)))
+        {
+            memcpy(data, tri, sizeof(tri));
+            ((DWORD *)data)[4] = 0xff40ff40;
+            IDirect3DVertexBuffer7_Unlock(vb);
+        }
+        IDirect3DDevice7_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0xff000000, 1.0f, 0);
+        IDirect3DDevice7_BeginScene(dev);
+        HR("d draw vb", IDirect3DDevice7_DrawPrimitiveVB(dev, D3DPT_TRIANGLELIST, vb, 0, 3, 0));
+        IDirect3DDevice7_EndScene(dev);
+        rt_hash7(rt, "d vb");
+        printf("  d vb release %lu\n", IDirect3DVertexBuffer7_Release(vb));
+    }
+
+    tex = surface7(dd, "d tex", DDSCAPS_TEXTURE, DDSCAPS2_TEXTUREMANAGE, 8, 0xff000000);
+    if (tex)
+    {
+        memset(&sd, 0, sizeof(sd));
+        sd.dwSize = sizeof(sd);
+        if (SUCCEEDED(IDirectDrawSurface7_Lock(tex, NULL, &sd, DDLOCK_WAIT, NULL)))
+        {
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                    ((DWORD *)((BYTE *)sd.lpSurface + y * sd.lPitch))[x] = ((x ^ y) & 1) ? 0xffffffff : 0xff008040;
+            IDirectDrawSurface7_Unlock(tex, NULL);
+        }
+        HR("d set tex", IDirect3DDevice7_SetTexture(dev, 0, tex));
+        IDirect3DDevice7_SetTextureStageState(dev, 0, D3DTSS_MINFILTER, D3DTFN_POINT);
+        IDirect3DDevice7_SetTextureStageState(dev, 0, D3DTSS_MAGFILTER, D3DTFG_POINT);
+        IDirect3DDevice7_BeginScene(dev);
+        HR("d quad", IDirect3DDevice7_DrawIndexedPrimitive(dev, D3DPT_TRIANGLELIST, D3DFVF_XYZRHW | D3DFVF_TEX1,
+                                                           quad, 4, idx, 6, 0));
+        IDirect3DDevice7_EndScene(dev);
+        rt_hash7(rt, "d textured");
+        IDirect3DDevice7_SetTexture(dev, 0, NULL);
+        printf("  d tex release %lu\n", IDirectDrawSurface7_Release(tex));
+    }
+    printf("  d device release %lu\n", IDirect3DDevice7_Release(dev));
+    printf("  d rt release %lu\n", IDirectDrawSurface7_Release(rt));
+}
+
 static void d3d7(IDirectDraw7 *dd)
 {
     static const DWORD fvfs[] = {
@@ -258,10 +472,12 @@ static void d3d7(IDirectDraw7 *dd)
         }
         printf("\n");
     }
+    if (dx_gl)
+        device7(dd, d3d);
     printf("d3d7 release %lu\n", IDirect3D7_Release(d3d));
 }
 
-int main(void)
+int main(int argc, char **argv)
 {
     CREATEEX createex;
     CREATE create;
@@ -276,7 +492,11 @@ int main(void)
     HWND hwnd;
     HRESULT hr;
 
+    /* The logic case runs on wined3d's default renderer, as it always has; `gl` adds the device. */
+    if (argc > 1)
+        dx_renderer(argc, argv);
     dx_load(L"ddraw");
+    dx_wined3d();
     createex = (CREATEEX)dx_proc("DirectDrawCreateEx");
     create = (CREATE)dx_proc("DirectDrawCreate");
     HR("enumerate", ((ENUMA)dx_proc("DirectDrawEnumerateA"))(drv_cb, NULL));
