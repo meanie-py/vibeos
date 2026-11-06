@@ -135,10 +135,28 @@ pub fn prepare_convert(root: &Path, targets: &[String], baseline: &Path) -> Resu
     if targets.is_empty() {
         return Err(Error::new("--convert needs at least one target"));
     }
-    let cells: Vec<Cell> = targets
-        .iter()
-        .map(|t| graph::model(root, t))
-        .collect::<Result<_>>()?;
+    // Model and dry-run the rewrite of EVERY target before refusing, and name all the
+    // refusals at once: stopping at the first made a 17-module wave cost one baseline
+    // build round per refused module (dbghelp, then libtirpc, ...).
+    let mut cells = Vec::new();
+    let mut refused = Vec::new();
+    for t in targets {
+        match graph::model(root, t) {
+            Ok(cell) => match plan_apply(root, std::slice::from_ref(&cell)) {
+                Ok(_) => cells.push(cell),
+                Err(e) => refused.push(e.to_string()),
+            },
+            Err(e) => refused.push(e.to_string()),
+        }
+    }
+    if !refused.is_empty() {
+        return Err(Error::new(format!(
+            "{}\n{} of {} targets refused; nothing was written",
+            refused.join("\n"),
+            refused.len(),
+            targets.len()
+        )));
+    }
     let baseline_plan = if proof::baseline_reusable(targets, baseline)? {
         let index_path = baseline.join("targets.json");
         proof::BaselinePlan {
