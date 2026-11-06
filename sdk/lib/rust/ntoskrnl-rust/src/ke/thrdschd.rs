@@ -197,6 +197,19 @@ unsafe fn KiProcessDeferredReadyListInner(Prcb: PKPRCB) {
     ListEntry = (*Prcb).DeferredReadyListHead.Next;
     (*Prcb).DeferredReadyListHead.Next = core::ptr::null_mut();
 
+    // Divergence from C's asserted non-empty precondition: arm64's DPC drains
+    // test the list before enabling IRQs/raising to SYNCH_LEVEL; that precheck
+    // does not prove our detached head is non-empty. Empty is drained, so do not
+    // enter the C do/while with a NULL node (Pi 5 medium removal, 2026-11-06:
+    // IRQL_NOT_LESS_OR_EQUAL at ListEntry->Next). Keep a witness for this path.
+    if ListEntry.is_null() {
+        crate::dbg_print!(
+            b"[DEFER] CPU%u empty deferred-ready drain after caller precheck\n\0",
+            (*Prcb).Number as u32,
+        );
+        return;
+    }
+
     // §9.56 tripwire 0x5B — deferred-chain CYCLE detector. SwapListEntry.Next
     // is the WaitListEntry.Flink union byte-for-byte: one foreign write to a
     // parked deferred node cycles the chain, and this walk would then insert
