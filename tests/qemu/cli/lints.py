@@ -1274,6 +1274,9 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # A crate root's `#[allow(non_snake_case, ..)]` written OUTER binds to the next `extern
     # crate`/`use` and allows nothing (version-rust: 248 warnings). Gated at zero.
     specs.append(("scan_inert_crate_allow", ["MISSING"], "stdout"))
+    # `feature = "kernel"` in an rtl crate is the export surface, which ntdll also links, so a
+    # `not(kernel)` user-mode path never shipped (rtl-sync's SRW wait). Kernel mode is `ntoskrnl`.
+    specs.append(("scan_kernel_feature_mode", ["MISSING"], "stdout"))
     # An off debug macro written `($($t:tt)*) => {{}}` compiles none of its arguments, so they
     # rot (65 stale calls behind one shared TRACE). Off forms forward to DBG_TYPECHECK.
     specs.append(("scan_swallowing_debug_macro", ["MISSING"], "stdout"))

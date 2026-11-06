@@ -2485,6 +2485,19 @@ _SWALLOWING_DEBUG_MACRO_GOOD = """\
     ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) };
 }
 """
+_KFM_MANIFEST = """\
+[features]
+default = ["kernel", "heaplist"]
+kernel = ["rtl-sync/kernel"]
+"""
+_KFM_BAD = """\
+#[cfg(not(feature = "kernel"))]
+fn block() {}
+"""
+_KFM_GOOD = """\
+#[cfg(not(feature = "ntoskrnl"))]
+fn block() {}
+"""
 _INERT_CRATE_ALLOW_BAD = """\
 #![no_std]
 #[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
@@ -3346,6 +3359,19 @@ CONTROLS: list[Control] = [
         good={"good.rs": _SWALLOWING_DEBUG_MACRO_GOOD},
     ),
     Control(
+        name="scan_kernel_feature_mode",
+        script="tools/scan_kernel_feature_mode.py",
+        argv=["--lint"],
+        bad={
+            "sdk/lib/rust/rtl-rust/Cargo.toml": _KFM_MANIFEST,
+            "sdk/lib/rust/rtl-sync/src/srw.rs": _KFM_BAD,
+        },
+        good={
+            "sdk/lib/rust/rtl-rust/Cargo.toml": _KFM_MANIFEST,
+            "sdk/lib/rust/rtl-sync/src/srw.rs": _KFM_GOOD,
+        },
+    ),
+    Control(
         name="scan_inert_crate_allow",
         script="tools/scan_inert_crate_allow.py",
         argv=["--lint"],
@@ -3864,6 +3890,7 @@ def _run(ctl: Control, root: Path) -> tuple[int, str]:
                 "scan_export_shadows",
                 "strip_msvc_cmake",
                 "vendored_registry",
+                "scan_kernel_feature_mode",
             }
             else REPO
         )

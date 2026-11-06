@@ -78,3 +78,10 @@ pub unsafe fn GetProcessHeap() -> *mut c_void {
 pub unsafe fn LongToPtr(l: i32) -> *mut c_void {
     l as isize as *mut c_void
 }
+
+/// One processor: a lock waiter has nothing to spin for, because the owner cannot run until
+/// the waiter gives up the CPU. srw.rs and critical.rs block at once there (Windows does too).
+#[allow(non_snake_case)]
+pub unsafe fn RtlpUniprocessor() -> bool {
+    (*(*NtCurrentTeb()).ProcessEnvironmentBlock).NumberOfProcessors <= 1
+}
