@@ -1,7 +1,8 @@
 /* dumpinfo: summarize every minidump in a directory to stdout, so a crash that Crashpad caught
  * (and so never reached the kernel's unhandled-exception print) is readable from the serial:
  * the exception record, the faulting thread's RIP/RSP, the module list, and every stack slot
- * of that thread pointing into a module (as module+offset). Raw MINIDUMP_* parsing, no
+ * of that thread pointing into a module (as module+offset), and Crashpad's annotations (Chrome's
+ * crash keys: a DumpWithoutCrashing, code 0x0517a7ed, says why only there). Raw parsing, no
  * dbghelp: the guest's dbghelp is not the thing under test. Usage: dumpinfo <dir> */
 #include <windows.h>
 #include <stdio.h>
@@ -37,6 +38,52 @@ static int where(ULONG64 a, char *out, int n)
     return 0;
 }
 
+/* Bytes at an RVA, or NULL when the span is outside the file. */
+static BYTE *at(DWORD rva, DWORD len) { return rva < gn && len <= gn - rva ? g + rva : NULL; }
+
+/* MinidumpUTF8String {DWORD length; char bytes[]} / MinidumpByteArray, printed as text. */
+static void putbytes(DWORD rva)
+{
+    DWORD *len = (DWORD *)at(rva, 4), i; BYTE *b;
+    if (!len || !(b = at(rva + 4, *len))) { printf("?"); return; }
+    for (i = 0; i < *len && i < 400; i++) putchar(b[i] >= 0x20 && b[i] < 0x7f ? b[i] : '.');
+}
+
+/* MinidumpSimpleStringDictionary {count; {key rva, value rva}[]}. */
+static void dict(const char *what, DWORD rva, DWORD size)
+{
+    DWORD *n = (DWORD *)at(rva, 4), i, *kv;
+    if (!size || !n || !(kv = (DWORD *)at(rva + 4, *n * 8))) return;
+    for (i = 0; i < *n; i++) {
+        printf("[DUMPINFO] %s ", what); putbytes(kv[2 * i]); printf(" = "); putbytes(kv[2 * i + 1]); printf("\n");
+    }
+}
+
+/* The Crashpad info stream (0x43500001): process-wide simple annotations, then per module its
+ * simple annotations and annotation objects ({name rva; WORD type, reserved; value rva}). */
+static void crashpad(DWORD rva, DWORD size)
+{
+    DWORD *ci = (DWORD *)at(rva, size >= 52 ? 52 : 0), *ml, i, j;
+    if (!ci) return;
+    /* version, report_id[4], client_id[4], simple_annotations {size, rva}, module_list {size, rva} */
+    dict("annotation", ci[10], ci[9]);
+    if (!ci[11] || !(ml = (DWORD *)at(ci[12], 4))) return;
+    for (i = 0; i < ml[0]; i++) {
+        DWORD *ent = (DWORD *)at(ci[12] + 4 + i * 12, 12), *m, *al;
+        char nm[128] = "?";
+        if (!ent || !(m = (DWORD *)at(ent[2], 28))) continue;
+        if (ent[0] < nmods) modname(mods[ent[0]].NameRva, nm, sizeof nm);
+        dict(nm, m[4], m[3]);
+        if (m[5] && (al = (DWORD *)at(m[6], 4)))
+            for (j = 0; j < al[0]; j++) {
+                DWORD *a = (DWORD *)at(m[6] + 4 + j * 12, 12);
+                if (!a) break;
+                printf("[DUMPINFO] %s key ", nm); putbytes(a[0]);
+                printf(" (type %lu) = ", a[1] & 0xffff); putbytes(a[2]); printf("\n");
+            }
+    }
+}
+
 static void one(const char *path)
 {
     HANDLE f = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, NULL, OPEN_EXISTING, 0, NULL);
@@ -53,6 +100,8 @@ static void one(const char *path)
         if (d[i].Type == 6) e = (Exc *)(g + d[i].Rva);
         if (d[i].Type == 3) { nthr = *(DWORD *)(g + d[i].Rva); thr = (Thr *)(g + d[i].Rva + 4); }
     }
+    for (i = 0; i < h->NStreams; i++)
+        if (d[i].Type == 0x43500001) crashpad(d[i].Rva, d[i].Size);
     for (i = 0; i < nmods; i++) { modname(mods[i].NameRva, w, sizeof(w)); printf("[DUMPINFO] module %016llx %08lx %s\n", (unsigned long long)mods[i].Base, mods[i].Size, w); }
     if (!e) { printf("[DUMPINFO] no exception stream\n"); return; }
     w[0] = 0; where(e->Addr, w, sizeof(w));

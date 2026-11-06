@@ -9,16 +9,23 @@ tlsprobe\tlsprobe.exe
 secprobe\secprobe.exe
 # iocpprobe.c: Mojo's overlapped named pipes on a completion port; Windows' answers in iocpprobe.win11.txt.
 iocpprobe\iocpprobe.exe
+# dupprobe.c: Mojo's broker moving sections and pipe ends between processes; Windows' answers in dupprobe.win11.txt.
+dupprobe\dupprobe.exe
+# msgprobe.c: Chrome's UI message pump and its one posted kMsgHaveWork; Windows' answers in msgprobe.win11.txt.
+msgprobe\msgprobe.exe
 # Chrome's child processes do not write to the sweep's pipe, so the whole tree logs to a file
 # that catfile prints afterwards (it runs even when Chrome is killed at the timeout).
 timeout chrome\chrome.exe 420
-# Run A: the network and storage services exited after "15 seconds with no connection" while the
-# browser idled; this lengthens that timer to tell a slow browser from a connection never made.
-chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --log-file=C:\TEMP\chrome_a.log --v=1 --ipc-connection-timeout=120 --user-data-dir=C:\TEMP\chrome-a --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
-catfile\catfile.exe C:\TEMP\chrome_a.log
-# A crash Crashpad catches never reaches the kernel's print; its minidumps land here.
-dumpinfo\dumpinfo.exe C:\TEMP\chrome-a\Crashpad\reports
-# Run B: one process, so no cross-process IPC at all.
-chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --log-file=C:\TEMP\chrome_b.log --v=1 --single-process --user-data-dir=C:\TEMP\chrome-b --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
+# Look at the whole tree while the utility processes still wait for their connection.
+sample chrome\chrome.exe 75
+# --ipc-connection-timeout: a child that is not connected in 15 s exits, and one CPU under TCG is slow.
+# A crash Crashpad catches never reaches the kernel's print, so dumpinfo reads its minidumps.
+# Run M: multi-process, as Chrome runs by default. Hangs with every thread blocked, whether or not
+# the network and storage services got their connection (they sometimes do not).
+chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --ipc-connection-timeout=120 --log-file=C:\TEMP\chrome_m.log --v=1 --user-data-dir=C:\TEMP\chrome-m --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
+catfile\catfile.exe C:\TEMP\chrome_m.log
+dumpinfo\dumpinfo.exe C:\TEMP\chrome-m\Crashpad\reports
+# Run B: one process. Dumps the page most of the time (4 of 5 boots).
+chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --ipc-connection-timeout=120 --log-file=C:\TEMP\chrome_b.log --v=1 --single-process --user-data-dir=C:\TEMP\chrome-b --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
 catfile\catfile.exe C:\TEMP\chrome_b.log
 dumpinfo\dumpinfo.exe C:\TEMP\chrome-b\Crashpad\reports

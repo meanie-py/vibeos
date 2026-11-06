@@ -64,10 +64,16 @@ static void dump_process_threads(DWORD pid)
     HANDLE s = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
     if (s == INVALID_HANDLE_VALUE)
         return;
+    int found = 0;
     for (BOOL k = Thread32First(s, &te); k; k = Thread32Next(s, &te))
         if (te.th32OwnerProcessID == pid)
+        {
+            found++;
             dump_thread(pid, te.th32ThreadID);
+        }
     CloseHandle(s);
+    if (!found)
+        SAY("  no threads of %lu in the thread snapshot\n", (unsigned long)pid);
 }
 
 #define MAX_TREE 64
@@ -78,6 +84,7 @@ static void dump_process_threads(DWORD pid)
  * ordinary waits. Parent links are read from one snapshot; a pid reused after its parent
  * exited could be swept in, which is harmless here (we only print and then kill a tree we
  * are about to abandon anyway). */
+static DWORD tree_threads[64];
 static int collect_tree(DWORD root, DWORD *pids, char (*names)[64])
 {
     PROCESSENTRY32 pe = { sizeof pe };
@@ -101,10 +108,14 @@ static int collect_tree(DWORD root, DWORD *pids, char (*names)[64])
                     parent_in = 1;
             }
             if (pe.th32ProcessID == root)
+            {
                 lstrcpynA(names[0], pe.szExeFile, 64);
+                tree_threads[0] = pe.cntThreads;
+            }
             if (!in && parent_in && pe.th32ProcessID != 0)
             {
                 pids[n] = pe.th32ProcessID;
+                tree_threads[n] = pe.cntThreads;
                 lstrcpynA(names[n], pe.szExeFile, 64);
                 n++;
                 grew = 1;
@@ -115,22 +126,162 @@ static int collect_tree(DWORD root, DWORD *pids, char (*names)[64])
     return n;
 }
 
+typedef LONG (WINAPI *NtQueryInformationProcess_t)(HANDLE, int, PVOID, ULONG, PULONG);
+typedef LONG (WINAPI *NtQueryObject_t)(HANDLE, int, PVOID, ULONG, PULONG);
+
+/* The process's command line, read out of its PEB (ProcessParameters->CommandLine). */
+static int read_cmdline(HANDLE ph, WCHAR *out, SIZE_T cap)
+{
+    static NtQueryInformationProcess_t qip;
+    struct { LONG Exit; PVOID Peb; ULONG_PTR Affinity, Pri, Pid, Parent; } pbi;
+    PVOID params = NULL;
+    struct { USHORT Len, Max; ULONG_PTR Buf; } us; /* UNICODE_STRING, natural alignment */
+    SIZE_T n;
+    if (!qip)
+        qip = (NtQueryInformationProcess_t)(void *)GetProcAddress(GetModuleHandleA("ntdll"), "NtQueryInformationProcess");
+    if (!qip || qip(ph, 0, &pbi, sizeof pbi, NULL) < 0 || !pbi.Peb)
+        return 0;
+    /* PEB.ProcessParameters, then RTL_USER_PROCESS_PARAMETERS.CommandLine. */
+    if (!ReadProcessMemory(ph, (char *)pbi.Peb + 4 * sizeof(PVOID), &params, sizeof params, &n) || !params)
+        return 0;
+    if (!ReadProcessMemory(ph, (char *)params + (sizeof(PVOID) == 8 ? 0x70 : 0x40), &us, sizeof us, &n))
+        return 0;
+    n = us.Len / 2 < cap - 1 ? us.Len / 2 : cap - 1;
+    if (!ReadProcessMemory(ph, (PVOID)us.Buf, out, n * 2, &n))
+        return 0;
+    out[n / 2] = 0;
+    return 1;
+}
+
+/* What the handle OpenProcess gave us actually refers to, when its PEB could not be read. */
+static void report_basic(HANDLE ph)
+{
+    static NtQueryInformationProcess_t qip;
+    struct { LONG Exit; PVOID Peb; ULONG_PTR Affinity, Pri, Pid, Parent; } pbi = { 0 };
+    LONG st;
+    PVOID probe = NULL;
+    SIZE_T n = 0;
+    if (!qip)
+        qip = (NtQueryInformationProcess_t)(void *)GetProcAddress(GetModuleHandleA("ntdll"), "NtQueryInformationProcess");
+    st = qip ? qip(ph, 0, &pbi, sizeof pbi, NULL) : -1;
+    BOOL rd = pbi.Peb && ReadProcessMemory(ph, pbi.Peb, &probe, sizeof probe, &n);
+    SAY("  cmdline unreadable: basic info status %08lx pid=%lu parent=%lu exit=%08lx peb=%p; PEB read %s (%lu)\n",
+        (unsigned long)st, (unsigned long)pbi.Pid, (unsigned long)pbi.Parent, (unsigned long)pbi.Exit, pbi.Peb,
+        rd ? "ok" : "FAILED", rd ? 0 : GetLastError());
+}
+
+/* Chromium hands each child its IPC pipe as --mojo-platform-channel-handle=N (inherited, so N
+ * is a handle value IN THE CHILD). Say what N actually is there: a child whose N is not its
+ * pipe never gets its connection. */
+static void report_mojo_handle(HANDLE ph, const WCHAR *cmd)
+{
+    static NtQueryObject_t qo;
+    const WCHAR *p = wcsstr(cmd, L"--mojo-platform-channel-handle=");
+    HANDLE h = NULL;
+    union { BYTE b[1024]; struct { USHORT Len, Max; WCHAR *Buf; } s; } info;
+    char type[64] = "?", name[200] = "";
+    if (!p)
+        return;
+    ULONG_PTR v = (ULONG_PTR)_wcstoui64(p + 31, NULL, 10);
+    if (!DuplicateHandle(ph, (HANDLE)v, GetCurrentProcess(), &h, 0, FALSE, DUPLICATE_SAME_ACCESS))
+    {
+        SAY("  mojo handle %lu: NOT VALID in the child (DuplicateHandle %lu)\n", (unsigned long)v, GetLastError());
+        return;
+    }
+    if (!qo)
+        qo = (NtQueryObject_t)(void *)GetProcAddress(GetModuleHandleA("ntdll"), "NtQueryObject");
+    if (qo && qo(h, 2 /* ObjectTypeInformation */, &info, sizeof info, NULL) >= 0)
+        WideCharToMultiByte(CP_ACP, 0, info.s.Buf, info.s.Len / 2, type, sizeof type - 1, NULL, NULL), type[sizeof type - 1] = 0;
+    if (qo && qo(h, 1 /* ObjectNameInformation */, &info, sizeof info, NULL) >= 0 && info.s.Buf)
+        WideCharToMultiByte(CP_ACP, 0, info.s.Buf, info.s.Len / 2, name, sizeof name - 1, NULL, NULL), name[sizeof name - 1] = 0;
+    {
+        DWORD avail = 0;
+        BOOL pk = PeekNamedPipe(h, NULL, 0, NULL, &avail, NULL);
+        SAY("  mojo handle %lu: %s %s, PeekNamedPipe=%d avail=%lu (err %lu)\n", (unsigned long)v, type, name,
+            pk, avail, pk ? 0 : GetLastError());
+    }
+    CloseHandle(h);
+}
+
+typedef BOOL (WINAPI *SdToSddl_t)(PSECURITY_DESCRIPTOR, DWORD, SECURITY_INFORMATION, LPSTR *, PULONG);
+
+/* A process we cannot open: say why, and what its descriptor grants (READ_CONTROL, which the
+ * owner always holds, is enough to read it). Chrome's utility processes were unopenable while
+ * its renderers were not, and the thread dump skips what it cannot open without a word. */
+static void report_unopenable(DWORD pid)
+{
+    DWORD err = GetLastError();
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    DWORD code = 0, need = 0;
+    SAY("  OpenProcess(VM_READ|QUERY|DUP_HANDLE) failed: %lu; QUERY_LIMITED %s (%lu)\n", err,
+        h ? "ok" : "failed", h ? 0 : GetLastError());
+    if (h)
+    {
+        GetExitCodeProcess(h, &code);
+        SAY("  exit code %lu%s\n", code, code == STILL_ACTIVE ? " (running)" : "");
+        CloseHandle(h);
+    }
+    h = OpenProcess(READ_CONTROL, FALSE, pid);
+    if (!h)
+    {
+        SAY("  READ_CONTROL also refused: %lu\n", GetLastError());
+        return;
+    }
+    GetKernelObjectSecurity(h, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION, NULL, 0, &need);
+    if (need && need < 4096)
+    {
+        static BYTE sd[4096];
+        static SdToSddl_t to_sddl;
+        LPSTR str = NULL;
+        if (!to_sddl)
+            to_sddl = (SdToSddl_t)(void *)GetProcAddress(LoadLibraryA("advapi32.dll"),
+                                                         "ConvertSecurityDescriptorToStringSecurityDescriptorA");
+        if (GetKernelObjectSecurity(h, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION, sd, need, &need)
+            && to_sddl && to_sddl(sd, 1, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | LABEL_SECURITY_INFORMATION, &str, NULL))
+        {
+            SAY("  descriptor %.300s\n", str);
+            LocalFree(str);
+        }
+        else
+            SAY("  descriptor unreadable: %lu\n", GetLastError());
+    }
+    CloseHandle(h);
+}
+
 /* A TIMEOUT used to arrive with nothing but its name: errorinfo and tmarshal hung for
- * weeks with no clue where. Dump every thread of the child and of its descendants, then
- * kill the descendants (the caller kills the child); feed the addresses to `vibeos-cli sym`.
- * Killing the tree matters for the next command too: a leftover renderer keeps the profile
- * locked and its handles open. */
-static void dump_child_threads(DWORD pid)
+ * weeks with no clue where. Dump every thread of the child and of its descendants, with each
+ * one's command line; feed the addresses to `vibeos-cli sym`. With `kill`, also kill the
+ * descendants (the caller kills the child): a leftover renderer keeps the profile locked and
+ * its handles open for the next command. */
+static void dump_tree(DWORD pid, int kill)
 {
     DWORD pids[MAX_TREE];
     char names[MAX_TREE][64];
+    static WCHAR cmd[2048];
     int n = collect_tree(pid, pids, names);
     for (int i = 0; i < n; i++)
     {
-        SAY("process %lu (%s)%s\n", (unsigned long)pids[i], names[i], i ? "" : " [child]");
+        HANDLE ph = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION | PROCESS_DUP_HANDLE, FALSE, pids[i]);
+        SAY("process %lu (%s) threads=%lu%s\n", (unsigned long)pids[i], names[i], (unsigned long)tree_threads[i],
+            i ? "" : " [child]");
+        if (ph && !read_cmdline(ph, cmd, sizeof cmd / sizeof cmd[0]))
+            report_basic(ph);
+        else if (ph)
+        {
+            char a[400];
+            const WCHAR *t = wcsstr(cmd, L"--type=");
+            WideCharToMultiByte(CP_ACP, 0, t ? t : cmd, -1, a, sizeof a - 1, NULL, NULL);
+            a[sizeof a - 1] = 0;
+            SAY("  cmdline %.300s\n", a);
+            report_mojo_handle(ph, cmd);
+        }
+        if (!ph)
+            report_unopenable(pids[i]);
+        if (ph)
+            CloseHandle(ph);
         dump_process_threads(pids[i]);
     }
-    for (int i = n - 1; i > 0; i--)
+    for (int i = n - 1; kill && i > 0; i--)
     {
         HANDLE h = OpenProcess(PROCESS_TERMINATE, FALSE, pids[i]);
         if (h)
@@ -140,6 +291,8 @@ static void dump_child_threads(DWORD pid)
         }
     }
 }
+
+static DWORD sample_ms(const char *suite);
 
 #define PER_SUBTEST_TIMEOUT_MS (120u * 1000u)
 #define MAX_TIMEOUTS           32
@@ -435,10 +588,24 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
     thread = CreateThread(NULL, 0, pump, ctx, 0, NULL);
 
     emit("[APITEST-SWEEP] waiting %s (%lums)\n", suite, (unsigned long)timeout_ms);
-    wait = WaitForSingleObject(pi.hProcess, timeout_ms);
+    {
+        DWORD at = sample_ms(suite);
+        wait = WAIT_TIMEOUT;
+        if (at && at < timeout_ms)
+        {
+            wait = WaitForSingleObject(pi.hProcess, at);
+            if (wait == WAIT_TIMEOUT)
+            {
+                SAY("sample at %lus\n", (unsigned long)(at / 1000u));
+                dump_tree(pi.dwProcessId, 0);
+            }
+        }
+        if (wait == WAIT_TIMEOUT)
+            wait = WaitForSingleObject(pi.hProcess, at && at < timeout_ms ? timeout_ms - at : timeout_ms);
+    }
     if (wait == WAIT_TIMEOUT)
     {
-        dump_child_threads(pi.dwProcessId);
+        dump_tree(pi.dwProcessId, 1);
         TerminateProcess(pi.hProcess, 0xDEAD);
         WaitForSingleObject(pi.hProcess, 10000);
     }
@@ -467,6 +634,7 @@ static struct
 {
     char Suite[MAX_SUBTEST_NAME];
     DWORD Ms;
+    DWORD SampleMs; /* `sample <suite.exe> <seconds>`: dump the tree then, without killing it */
 } Timeouts[MAX_TIMEOUTS];
 static int TimeoutCount;
 
@@ -482,8 +650,21 @@ static DWORD subtest_timeout_ms(const char *suite)
     return PER_SUBTEST_TIMEOUT_MS;
 }
 
-/* Returns 0 for a malformed directive; the caller says so out loud. */
-static int set_timeout(const char *args)
+static DWORD sample_ms(const char *suite)
+{
+    int i;
+
+    for (i = 0; i < TimeoutCount; ++i)
+    {
+        if (_stricmp(Timeouts[i].Suite, suite) == 0)
+            return Timeouts[i].SampleMs;
+    }
+    return 0;
+}
+
+/* Returns 0 for a malformed directive; the caller says so out loud. `sample` sets when to take
+ * a look at the tree, `timeout` when to give up on it; one entry per suite holds both. */
+static int set_timeout_or_sample(const char *args, int sample)
 {
     char suite[MAX_SUBTEST_NAME];
     unsigned long secs;
@@ -495,9 +676,16 @@ static int set_timeout(const char *args)
     if (i == MAX_TIMEOUTS)
         return 0;
     if (i == TimeoutCount)
+    {
         ++TimeoutCount;
+        Timeouts[i].Ms = PER_SUBTEST_TIMEOUT_MS;
+        Timeouts[i].SampleMs = 0;
+    }
     _snprintf(Timeouts[i].Suite, sizeof(Timeouts[i].Suite), "%s", suite);
-    Timeouts[i].Ms = (DWORD)(secs * 1000ul);
+    if (sample)
+        Timeouts[i].SampleMs = (DWORD)(secs * 1000ul);
+    else
+        Timeouts[i].Ms = (DWORD)(secs * 1000ul);
     return 1;
 }
 
@@ -844,10 +1032,19 @@ int main(void)
         }
         if (!strncmp(line, "timeout ", 8))
         {
-            if (set_timeout(line + 8))
+            if (set_timeout_or_sample(line + 8, 0))
                 emit("[APITEST-SWEEP] timeout %s\n", line + 8);
             else
                 emit("[APITEST-SWEEP] BAD timeout line (want: timeout SUITE.exe SECONDS): %s\n",
+                         line);
+            continue;
+        }
+        if (!strncmp(line, "sample ", 7))
+        {
+            if (set_timeout_or_sample(line + 7, 1))
+                emit("[APITEST-SWEEP] sample %s\n", line + 7);
+            else
+                emit("[APITEST-SWEEP] BAD sample line (want: sample SUITE.exe SECONDS): %s\n",
                          line);
             continue;
         }

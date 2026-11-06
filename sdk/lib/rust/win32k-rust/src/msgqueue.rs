@@ -799,9 +799,15 @@ unsafe fn IntMsqClearWakeMaskImpl() -> BOOL {
     if Win32Thread.is_null() || (*Win32Thread).MessageQueue.is_null() {
         return 0;
     }
-    // Very hacky, but that is what they do.
-    (*(*Win32Thread).pcti).fsWakeBits = 0;
-
+    // DIVERGES from msgqueue.c, which zeroes fsWakeBits here ("Very hacky, but that is what
+    // they do"). fsWakeBits says what is IN the queue: MsqWakeQueue sets a bit as a message
+    // arrives and ClearMsgBitsMask drops it when the last one leaves. Zeroing it at the end of
+    // every wait made a message that was still queued invisible to the next
+    // MWMO_INPUTAVAILABLE wait once anything cleared its change bit: a post, then an unrelated
+    // wait that timed out, then GetQueueStatus left both words 0 and the next wait slept with
+    // the message in the queue, where Windows returns at once (tools/payloads/chrome/msgprobe,
+    // case 2). Chrome hands its UI thread work through ONE posted kMsgHaveWork and posts no
+    // other until that one is handled, so the browser stopped for good.
     IdlePong();
 
     1

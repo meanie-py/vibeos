@@ -1,0 +1,13 @@
+[MSG] message window: ok
+[MSG] 1 peeked, then wait INPUTAVAILABLE: 0
+[MSG] 1 same message, wait without the flag: timeout
+[MSG] 2 posted, wait on QS_TIMER only: timeout
+[MSG] 2 GetQueueStatus(QS_POSTMESSAGE) = 00080008
+[MSG] 2 then wait QS_ALLINPUT INPUTAVAILABLE: 0
+[MSG] 2 PeekMessage finds it: 1
+[MSG] 3 first wait: 0
+[MSG] 3 second wait, message still queued: 0
+[MSG] 3 GetQueueStatus(QS_ALLINPUT) = 00080008
+[MSG] 4 stress: lost wake-ups 0 (message then found by Peek: 0)
+[MSG] 4 stress: all work handled: yes
+[MSG] done

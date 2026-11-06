@@ -35,6 +35,10 @@ binaries:
     dest: bin/secprobe/secprobe.exe
   - src: tools/payloads/chrome/iocpprobe-{arch}.exe
     dest: bin/iocpprobe/iocpprobe.exe
+  - src: tools/payloads/chrome/dupprobe-{arch}.exe
+    dest: bin/dupprobe/dupprobe.exe
+  - src: tools/payloads/chrome/msgprobe-{arch}.exe
+    dest: bin/msgprobe/msgprobe.exe
   - src: tools/payloads/chrome/hello.html
     dest: bin/chrome-pages/hello.html
 binaries_from: tools/payloads/chrome/stage.py

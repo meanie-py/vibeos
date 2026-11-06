@@ -1,0 +1,14 @@
+[DUP] A section rw into child: map rw: ok, read "parent!", wrote child!!
+[DUP] A parent now reads "child!!"
+[DUP] B section ro into child, mapped for write: map rw: err 5
+[DUP] B same handle mapped for read: map ro: ok, read "child!!"
+[DUP] C DuplicateHandle out of child with CLOSE_SOURCE: ok=1 err=0
+[DUP] C SetEvent on ours: 1
+[DUP] C child waits on its now-closed handle: wait: 4294967295 (err 6)
+[DUP] C our own 32 handles still valid: 32
+[DUP] D child waits on our signalled event: wait: 0 (err 0)
+[DUP] E pipe pair: server ok, client ok
+[DUP] E child X (server end): pipe s: sent hi, got yo (2 bytes)
+[DUP] E child Y (client end): pipe c: got hi (2 bytes), sent yo
+[DUP] children exited: 0 0
+[DUP] done
