@@ -7,6 +7,8 @@ These tests invoke native mechanisms rather than injecting Python stores.
 import fcntl
 import json
 import os
+import select
+import signal
 import subprocess
 import sys
 import time
@@ -253,12 +255,13 @@ def test_direct_native_request_dies_with_cargo_owner_while_waiting_for_store_loc
             )
             assert owner.stdout is not None
             pid = int(owner.stdout.readline())
+            pidfd = os.pidfd_open(pid)
+            watcher = select.poll()
+            watcher.register(pidfd, select.POLLIN)
 
             def alive():
-                try:
-                    return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z"
-                except FileNotFoundError:
-                    return False
+                # Exit stays observable even if /proc disappears or the PID is reused.
+                return not watcher.poll(0)
 
             try:
                 deadline = time.monotonic() + 10
@@ -279,8 +282,13 @@ def test_direct_native_request_dies_with_cargo_owner_while_waiting_for_store_loc
                 if owner.poll() is None:
                     owner.kill()
                     owner.wait(timeout=5)
-                if alive():
-                    os.kill(pid, 9)  # Exact fixture child, never a process-name selector.
+                try:
+                    if alive():
+                        signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass  # It exited between the probe and the signal.
+                finally:
+                    os.close(pidfd)
                 owner.stdout.close()
                 if owner.stdin is not None:
                     owner.stdin.close()
