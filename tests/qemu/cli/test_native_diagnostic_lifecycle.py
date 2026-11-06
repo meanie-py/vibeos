@@ -224,5 +224,23 @@ def test_shipping_native_pc_worker_samples_or_reports_failed_registers(diag_conf
                     break
                 assert time.monotonic() < deadline, "empty register sampler failed silently"
                 time.sleep(0.02)
-            reply = json.loads((work / "vm_diagnostic_sidecar.json").read_text())
+            reply = json.loads((work / "vm_diagnostic_sidecar-pc.json").read_text())
             assert "CPU" in reply["error"]["message"]
+
+
+def test_diagnostic_workers_publish_separate_results(diag_config):
+    diag_config["env"]["DIAG_MODE"] = "two-results"
+    with DedicatedSession() as session:
+        vm = create(session, diag_config)
+        session.call("vm_start", {"id": vm})
+        work = Path(diag_config["work_dir"])
+        paths = [work / f"vm_diagnostic_sidecar-{kind}.json" for kind in ("pc", "rr")]
+        deadline = time.monotonic() + 5
+        while not all(p.is_file() and p.stat().st_size for p in paths):
+            assert time.monotonic() < deadline, (
+                "workers did not publish separate results; "
+                f"files: {list(work.glob('vm_diagnostic_sidecar*.json'))}"
+            )
+            time.sleep(0.02)
+        results = [json.loads(p.read_text())["ok"] for p in paths]
+        assert results == [{"kind": "pc", "samples": 123456}, {"kind": "rr", "samples": 1}]

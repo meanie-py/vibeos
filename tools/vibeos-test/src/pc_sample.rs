@@ -187,12 +187,15 @@ fn func(s: &str) -> &str {
     s.split('+').next().unwrap_or(s)
 }
 pub fn where_pc(pc: &str, sym: &BTreeMap<String, String>) -> Result<String> {
+    if hex(pc)? == 0 {
+        return Ok("(zero PC)".into());
+    }
     if let Some(s) = sym.get(pc) {
         return Ok(func(s).into());
     }
     let n = hex(pc)?;
     Ok(if n < 0x800000000000 && (pc.len() > 8 || n < 0x80000000) {
-        "(user mode)"
+        "(below kernel address range)"
     } else {
         "(kernel, not in ntoskrnl index)"
     }
@@ -282,10 +285,21 @@ pub fn report(
     for cpu in cpus {
         let mine: Vec<_> = rows.iter().filter(|r| r["cpu"] == cpu).collect();
         let halted = mine.iter().filter(|r| r["halted"] == true).count();
+        let known = mine.iter().filter(|r| r["halted"].is_boolean()).count();
+        let state = if known == 0 {
+            "halt state unavailable".to_owned()
+        } else if known == mine.len() {
+            format!("{:.0}% halted", 100.0 * halted as f64 / known as f64)
+        } else {
+            format!(
+                "{:.0}% halted among {known} known samples; {} unknown",
+                100.0 * halted as f64 / known as f64,
+                mine.len() - known
+            )
+        };
         out.push(format!(
-            "[pc-sample] CPU#{cpu}: {} samples, {:.0}% halted",
-            mine.len(),
-            100.0 * halted as f64 / mine.len() as f64
+            "[pc-sample] CPU#{cpu}: {} samples, {state}",
+            mine.len()
         ));
     }
     let busy: Vec<_> = rows.iter().filter(|r| r["halted"] != true).collect();
@@ -296,10 +310,12 @@ pub fn report(
         .iter()
         .map(|r| where_pc(r["pc"].as_str().ok_or("missing pc")?, &sym))
         .collect::<Result<Vec<_>>>()?;
-    out.push(format!(
-        "[pc-sample] where non-halted vCPUs were found ({} samples):",
-        busy.len()
-    ));
+    let heading = if rows.iter().any(|r| !r["halted"].is_boolean()) {
+        "sampled vCPU locations, excluding known halted vCPUs"
+    } else {
+        "where non-halted vCPUs were found"
+    };
+    out.push(format!("[pc-sample] {heading} ({} samples):", busy.len()));
     for (name, n) in count_ordered(names.into_iter()).into_iter().take(top) {
         out.push(format!(
             "  {:5.1}%  {name}",
@@ -316,7 +332,7 @@ pub fn report(
     let sites = count_ordered(sites.into_iter());
     if !sites.is_empty() {
         out.push(
-            "[pc-sample] kernel PC <- likely callers (first 2 other functions found on the stack):"
+            "[pc-sample] kernel PC <- likely callers (first 2 other symbols found on the stack):"
                 .into(),
         );
         for ((name, caller), n) in sites.into_iter().take(top) {
@@ -469,5 +485,40 @@ mod tests {
         let result = run_loop(&mut host, &temp.path().join("samples.jsonl"), 0.05);
         assert!(result.unwrap_err().message.contains("no vCPU registers"));
         assert_eq!(host.commands.last().unwrap(), "diagnostic_end_sample");
+    }
+}
+
+#[cfg(test)]
+mod unknown_execution_state_tests {
+    use super::*;
+    #[test]
+    fn missing_halt_state_is_not_a_zero_percent_halted_measurement() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join("qemu")).unwrap();
+        fs::write(
+            root.path().join("qemu/symbols-arm64-mp.tsv"),
+            "fffff80000401000\tKiIdleLoop\tidle.rs:1\n",
+        )
+        .unwrap();
+        let rows = [
+            json!({"cpu":0,"pc":"fffff80000401010","halted":null}),
+            json!({"cpu":0,"pc":"000000007fd25204","halted":null}),
+            json!({"cpu":1,"pc":"0000000000000000","halted":null}),
+        ];
+        let path = root.path().join("samples.jsonl");
+        fs::write(
+            &path,
+            rows.iter().map(|r| format!("{r}\n")).collect::<String>(),
+        )
+        .unwrap();
+        let output = report(root.path(), "arm64", &path, "ntkrnlmp.exe", 15)
+            .unwrap()
+            .join("\n");
+        assert!(output.contains("CPU#0: 2 samples, halt state unavailable"));
+        assert!(!output.contains("0% halted"));
+        assert!(!output.contains("non-halted"));
+        assert!(output.contains("(below kernel address range)"));
+        assert!(output.contains("(zero PC)"));
+        assert!(output.contains("KiIdleLoop"));
     }
 }

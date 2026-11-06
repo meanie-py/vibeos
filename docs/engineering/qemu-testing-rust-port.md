@@ -38,7 +38,9 @@ Admission timeout refuses launch. It does not run a VM without a lease.
 transforms, media/shape/finalization guards, replay decoding, per-vCPU sampling,
 symbol attribution, and guest-state fingerprints. VM diagnostic workers execute
 `vibeos-test --diagnostic-worker` directly with the existing parent-death and
-sidecar-health checks. Python modules retain compatibility DTOs and QMP bindings;
+sidecar-health checks. Each sampler publishes its own result JSON; concurrent
+workers share only an append-only diagnostic log. Python modules retain
+compatibility DTOs and QMP bindings;
 there is no Python fallback. Replay events cross that compatibility API in bounded
 pages; native divergence checks stream the trace directly. RAM fingerprints stream
 through a FIFO in 1 MiB chunks and preserve Python's BLAKE2b-8/zlib artifact format.

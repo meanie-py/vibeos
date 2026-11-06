@@ -903,7 +903,23 @@ impl Vm {
         crate::config::apply_stress_knobs(&cmd, &self.config.arch, &self.config.env)
     }
     fn diagnostic_process(&self, op: &str, payload: &Value) -> Result<Child> {
-        let out = self.config.work_dir.join(format!("{op}.json"));
+        let output_name = if op == "vm_diagnostic_sidecar" {
+            let kind = payload["kind"]
+                .as_str()
+                .ok_or("missing diagnostic worker kind")?;
+            if kind.is_empty()
+                || !kind
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
+            {
+                return Err("invalid diagnostic worker kind".into());
+            }
+            format!("{op}-{kind}.json")
+        } else {
+            format!("{op}.json")
+        };
+        let out = self.config.work_dir.join(output_name);
+        // Keep the shared append-only diagnostic log; each worker owns its result file.
         let err = self.config.work_dir.join(format!("{op}.stderr.log"));
         let mut command =
             if let Some(authority) = self.config.env.get("VIBEOS_TEST_DIAGNOSTIC_AUTHORITY") {
