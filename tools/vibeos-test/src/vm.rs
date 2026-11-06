@@ -501,6 +501,7 @@ pub struct Vm {
     diagnostics: Value,
     sidecars: Vec<Child>,
     capture_restrict_network: bool,
+    retain_staging: bool,
     checkpoint: Value,
     capture_plan: Value,
     launch_ports: crate::config::LaunchPorts,
@@ -610,6 +611,7 @@ impl Vm {
             capture_plan: Value::Null,
             launch_ports: crate::config::LaunchPorts::default(),
             capture_restrict_network: value["capture_restrict_network"].as_bool().unwrap_or(false),
+            retain_staging: value["retain_staging"].as_bool().unwrap_or(false),
         })
     }
     fn env(&self, name: &str) -> Option<&str> {
@@ -1192,7 +1194,7 @@ impl Vm {
             };
             let owner = self.config.owner_pid;
             let server = std::process::id();
-            let descriptor = json!({"argv":command,"cwd":self.staging.as_ref().map(|p|p.to_string_lossy().into_owned()).unwrap_or_default(),"env":self.config.env,"owner_pid":owner,"owner_tick":tick(owner).ok_or("VM client owner is not alive")?,"server_pid":server,"server_tick":tick(server).ok_or("VM API owner is not alive")?,"deadline":now()+self.config.max_lifetime,"status":self.status,"stderr":self.stderr,"uid":self.uid,"stop":false,"detached":false,"retain_staging_until_release":self.capture_restrict_network || !self.checkpoint.is_null(),"staging":self.staging,"lease_fds":self.admission.as_ref().map(Admission::inherited_fds).unwrap_or_default()});
+            let descriptor = json!({"argv":command,"cwd":self.staging.as_ref().map(|p|p.to_string_lossy().into_owned()).unwrap_or_default(),"env":self.config.env,"owner_pid":owner,"owner_tick":tick(owner).ok_or("VM client owner is not alive")?,"server_pid":server,"server_tick":tick(server).ok_or("VM API owner is not alive")?,"deadline":now()+self.config.max_lifetime,"status":self.status,"stderr":self.stderr,"uid":self.uid,"stop":false,"detached":false,"retain_staging_until_release":self.capture_restrict_network || self.retain_staging || !self.checkpoint.is_null(),"staging":self.staging,"lease_fds":self.admission.as_ref().map(Admission::inherited_fds).unwrap_or_default()});
             atomic_json(&self.descriptor, &descriptor)?;
             let mut guard = Command::new(std::env::current_exe()?);
             guard

@@ -1186,7 +1186,10 @@ pub unsafe extern "system" fn IopParseDevice(
 
         RtlCopyUnicodeString(&mut (*FileObject).FileName, RemainingName);
 
-        KeInitializeEvent(&mut (*FileObject).Event, 1, 0);
+        // file.c: NotificationEvent. It was 1 (SynchronizationEvent), so a wait on the file
+        // handle consumed the signal: FindFirstChangeNotification's handle went unsignaled
+        // after one wait and kernel32:change's second "should be ready" failed 4 times.
+        KeInitializeEvent(&mut (*FileObject).Event, 0 /* NotificationEvent */, 0);
         (*OpenPacket).FileObject = FileObject;
 
         IopQueueIrpToThread(Irp);

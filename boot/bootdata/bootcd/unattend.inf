@@ -44,20 +44,22 @@ AutoPartition = 1
 ; 1 - BtrFS
 FsType = 0
 
-; enable this setting to disable Gecko install
-; yes - disabled
-; no  - enabled
-DisableGeckoInst = no
+; Choose if RAPPS can download optional components during setup.
+; yes - Download addons from RAPPS
+; no  - Don't download addons from RAPPS
+RappsDownload = no
 
 ; set this option to automatically
 ; specify language in 2nd mode setup
 ; see hivesys.inf for available languages
 LocaleID = 409
 
-; set product option
-; 0: ReactOS Server
-; 1: ReactOS Workstation
-ProductOption = 1
+; Set installation type (was ProductOption, same numbering for 0/1).
+; 0 - ReactOS Server
+; 1 - ReactOS Workstation
+; 2 - ReactOS Server Core
+; 3 - ReactOS Nano Server (Reserved)
+InstallationType = 1
 
 ; Enable this section to automatically launch programs
 ; after 3rd boot

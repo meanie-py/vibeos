@@ -323,6 +323,7 @@ class QemuVM:
         serial_log=None,
         checkpoint=None,
         capture_restrict_network=False,
+        retain_staging=False,
         prepared_config=None,
         max_lifetime=None,
     ):
@@ -366,6 +367,9 @@ class QemuVM:
             request["timeout_is_up"] = True
         request["owner_pid"] = os.getpid()
         request["capture_restrict_network"] = capture_restrict_network
+        # Keep the windows-host staging (the disk QEMU actually wrote) after QEMU exits,
+        # until stop(): test_install copies the installed disk out once the guest reboots.
+        request["retain_staging"] = retain_staging
         if checkpoint is not None:
             request["checkpoint"] = checkpoint
         if prepared_config is not None:
