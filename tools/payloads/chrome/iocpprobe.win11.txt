@@ -1,0 +1,35 @@
+[IOCP] server pipe: ok (err 0)
+[IOCP] port + server: ok
+[IOCP] ConnectNamedPipe before client: ret=0 err=997
+[IOCP] client open: ok (err 0)
+[IOCP] port + client: ok
+[IOCP] connect completion: ok=1 err=0 key=0x5151 ov=A bytes=0
+[IOCP] client WriteFile 5: ret=1 err=0
+[IOCP] write completion: ok=1 err=0 key=0xc1c1 ov=B bytes=5
+[IOCP] server ReadFile with data waiting: ret=1 err=0 buf=hello
+[IOCP] sync read completion: ok=1 err=0 key=0x5151 ov=A bytes=5
+[IOCP] server ReadFile, empty pipe: ret=0 err=997
+[IOCP] before the peer writes: queue empty (err 258)
+[IOCP] client WriteFile 6: ret=1 err=0
+[IOCP] completion 1 of 2: ok=1 err=0 key=0x5151 ov=A bytes=6
+[IOCP] completion 2 of 2: ok=1 err=0 key=0xc1c1 ov=B bytes=6
+[IOCP] pending read got: world!
+[IOCP] PostQueuedCompletionStatus: ret=1
+[IOCP] posted: ok=1 err=0 key=0x7777 ov=B bytes=0
+[IOCP] GetQueuedCompletionStatusEx: ret=1 got=2
+[IOCP]   entry 0: key=0x7777 ov=A bytes=3
+[IOCP]   entry 1: key=0x7777 ov=B bytes=4
+[IOCP] pipe 2: server ok, client ok
+[IOCP] ConnectNamedPipe after client: ret=0 err=535
+[IOCP] after ERROR_PIPE_CONNECTED: queue empty (err 258)
+[IOCP] server 2 ReadFile, empty: ret=0 err=997
+[IOCP] after client 2 closed: ok=0 err=109 key=0x5151 ov=A bytes=0
+[IOCP] cross: pipe ok, client ok
+[IOCP] cross: connect: ok=1 err=0 key=0x5151 ov=A bytes=0
+[IOCP] cross: WriteFile ping: ret=1 err=0
+[IOCP] cross: ping completion: ok=1 err=0 key=0x5151 ov=B bytes=4
+[IOCP] cross: ReadFile: ret=0 err=997
+[IOCP] cross: pong completion: ok=1 err=0 key=0x5151 ov=A bytes=4
+[IOCP] cross: got pong
+[IOCP] cross: child wait=0 exit=42 (42 = every step ok)
+[IOCP] done

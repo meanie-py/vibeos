@@ -7,10 +7,18 @@ pipeprobe\pipeprobe.exe
 tlsprobe\tlsprobe.exe
 # secprobe.c: a section handle as Chrome's shared memory checks it; Windows' answers in secprobe.win11.txt.
 secprobe\secprobe.exe
+# iocpprobe.c: Mojo's overlapped named pipes on a completion port; Windows' answers in iocpprobe.win11.txt.
+iocpprobe\iocpprobe.exe
 # Chrome's child processes do not write to the sweep's pipe, so the whole tree logs to a file
 # that catfile prints afterwards (it runs even when Chrome is killed at the timeout).
-timeout chrome\chrome.exe 900
-chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --log-file=C:\TEMP\chrome_debug.log --v=1 --user-data-dir=C:\TEMP\chrome-profile --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
-catfile\catfile.exe C:\TEMP\chrome_debug.log
+timeout chrome\chrome.exe 420
+# Run A: the network and storage services exited after "15 seconds with no connection" while the
+# browser idled; this lengthens that timer to tell a slow browser from a connection never made.
+chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --log-file=C:\TEMP\chrome_a.log --v=1 --ipc-connection-timeout=120 --user-data-dir=C:\TEMP\chrome-a --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
+catfile\catfile.exe C:\TEMP\chrome_a.log
 # A crash Crashpad catches never reaches the kernel's print; its minidumps land here.
-dumpinfo\dumpinfo.exe C:\TEMP\chrome-profile\Crashpad\reports
+dumpinfo\dumpinfo.exe C:\TEMP\chrome-a\Crashpad\reports
+# Run B: one process, so no cross-process IPC at all.
+chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --log-file=C:\TEMP\chrome_b.log --v=1 --single-process --user-data-dir=C:\TEMP\chrome-b --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
+catfile\catfile.exe C:\TEMP\chrome_b.log
+dumpinfo\dumpinfo.exe C:\TEMP\chrome-b\Crashpad\reports
