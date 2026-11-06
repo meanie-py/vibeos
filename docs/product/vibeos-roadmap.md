@@ -602,6 +602,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Fibers do not work on amd64 or arm64 (open, found 2026-11-05, upstream-sync lane).** Both
+  routines that a fiber switch needs are unimplemented on 64-bit: `SwitchToFiber` and
+  `BaseFiberStartup` in `dll/win32/kernel32/client/amd64/fiber.S` are `UNIMPLEMENTED` stubs (the
+  stub's print itself faults, in `vDbgPrintExWithPrefixInternal`, with 0xC0000005), and arm64's
+  are `brk #0xf000`. Only i386's `fiber.S` is real. So any 64-bit program crashes on its first
+  `SwitchToFiber`. This came with the fork, and upstream has the same TODO. Measured with
+  `--payload k32winetest` (`kernel32:fiber`): amd64 crashes in `test_FiberHandling` at RIP
+  `7ffb7008201` both with and without the 2026-11-05 FLS re-indexing (runs
+  `20261105-230606-fa6xw9dp` / `20261105-231539-j9huaaaf`), and i386 runs 180 checks with
+  0 failures (`20261105-234632-8nz45m6e`). Fix: write both routines for amd64 and arm64 (Rust
+  `global_asm!`, from the i386 version plus the x64/arm64 non-volatile register sets: the FIBER
+  CONTEXT save/restore and the TEB stack, FLS and activation-context fields). Then the same
+  payload is the oracle.
 - **setupapi file-queue copies failed on the live boot, and a NULL target name went to the
   wrong file (FIXED 2026-11-01 in setupapi-rust; the C has all three bugs).** Measured with the
   modrun setupapi probe: `%TEMP%` = `X:\reactos\TEMP` EXISTS on the x86 live boot, but `X:` is
