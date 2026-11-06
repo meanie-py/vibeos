@@ -190,6 +190,23 @@ pub fn without_local_stages(m: &Value) -> Value {
             }
         }
     }
+    // The cab's file list (reactos.dff) is `[src, dir]`, the source FIRST, unlike the CD
+    // lists' `[dest, src]`: missing that left 38 kmtests/testdata files per arch in.
+    // (get_mut, not IndexMut: indexing a manifest with no cab would CREATE one.)
+    if let Some(files) = out
+        .get_mut("cab")
+        .and_then(|c| c.get_mut("files"))
+        .and_then(Value::as_array_mut)
+    {
+        files.retain(|e| {
+            let src = e.get(0).and_then(Value::as_str).unwrap_or("");
+            let keep = !(rostest.is_match(src) || (local.is_match(src) && !arch_build.is_match(src)));
+            if !keep {
+                dropped += 1;
+            }
+            keep
+        });
+    }
     if dropped > 0 {
         eprintln!("media-manifest: left {dropped} locally-staged entries (kmtests/testdata, build-fex-hello and similar) out of the committed lists");
     }
@@ -688,7 +705,21 @@ mod local_stage_tests {
             ["reactos/bin/testdata/x", "build:modules/rostests/testdata/x"],
             ["reactos/system32/drivers/etc/hosts", "repo:boot/bootdata/hosts"]
         ]}}});
+        let mut m = m;
+        m["cab"] = json!({"files": [
+            ["build:modules/rostests/kmtests/ntos_cc/cccopyread_drv.sys", "7"],
+            ["repo:modules/rostests/testdata/test.ttf", "8"],
+            ["repo:build-fex-hello/hello64.exe", "1"],
+            ["cell:dll/win32/kernel32/kernel32.dll", "1"]
+        ]});
         let out = without_local_stages(&m);
+        let cab: Vec<_> = out["cab"]["files"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e[0].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(cab, ["cell:dll/win32/kernel32/kernel32.dll"]);
         let srcs: Vec<_> = out["cds"]["livecd"]["entries"]
             .as_array()
             .unwrap()
