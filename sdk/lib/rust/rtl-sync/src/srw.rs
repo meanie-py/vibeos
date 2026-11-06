@@ -33,6 +33,82 @@ unsafe fn SrwBackoff(spins: &mut u32) {
     YieldProcessor();
 }
 
+/// A queued waiter's `Wake` word: the releaser hands the lock over and then sets it, so a waiter
+/// owns the lock exactly when it reads `WAKE_SET`. A waiter that is going to block first moves
+/// it to `WAKE_SLEEPING`, and a releaser that finds that value wakes it with the keyed event
+/// (process-wide, key = the word's address, which keyed events require to be even).
+///
+/// srw.c only ever polls this word, and the backoff above made a long poll sleep 1 ms at a
+/// time, which in practice is a timer tick. The lock is already handed to the waiter by then,
+/// so every handoff to a waiter that happened to be asleep held the lock for a tick with nobody
+/// running it: fault64's VirtualAlloc thread against its AV storm waited ~69 ms an acquire on
+/// one vCPU (appstorm64 20261105-204820-babcf_n4). Blocking makes the handoff wake the waiter
+/// at once, as Windows does.
+const WAKE_SET: i32 = 1;
+#[cfg(not(feature = "kernel"))]
+const WAKE_SLEEPING: i32 = 2;
+
+#[inline]
+unsafe fn WakeWord<'a>(Wake: *mut LONG) -> &'a core::sync::atomic::AtomicI32 {
+    core::sync::atomic::AtomicI32::from_ptr(Wake as *mut i32)
+}
+
+/// Wait until `Wake` is set: spin and yield as `SrwBackoff` does, then block. The kernel copy
+/// keeps spinning (raised IRQL may not sleep), so it never publishes `WAKE_SLEEPING`.
+// the kernel copy only spins, so its count is never read
+#[cfg_attr(feature = "kernel", allow(unused_variables, unused_assignments))]
+unsafe fn SrwWaitForWake(Wake: *mut LONG) {
+    use core::sync::atomic::Ordering;
+    let word = WakeWord(Wake);
+    let mut spins: u32 = 0;
+    loop {
+        if word.load(Ordering::Acquire) == WAKE_SET {
+            return;
+        }
+        #[cfg(not(feature = "kernel"))]
+        if spins >= 128 {
+            if word
+                .compare_exchange(0, WAKE_SLEEPING, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                // The releaser sets the word before it releases us, so it reads WAKE_SET
+                // once this returns; loop to re-check rather than trust the status.
+                ntkrnl_sys::ddk::NtWaitForKeyedEvent(
+                    core::ptr::null_mut(),
+                    Wake as PVOID,
+                    0,
+                    core::ptr::null_mut(),
+                );
+            }
+            continue;
+        }
+        spins += 1;
+        #[cfg(not(feature = "kernel"))]
+        if spins > 64 {
+            ntkrnl_sys::ddk::NtYieldExecution();
+            continue;
+        }
+        YieldProcessor();
+    }
+}
+
+/// Set a waiter's `Wake` after the lock word already names it the owner. Nothing in its wait
+/// block is read afterwards: the waiter may return, and its stack block die, the moment the
+/// word reads `WAKE_SET`. The keyed-event key is only an address.
+unsafe fn SrwSignalWake(Wake: *mut LONG) {
+    use core::sync::atomic::Ordering;
+    let _old = WakeWord(Wake).swap(WAKE_SET, Ordering::AcqRel);
+    #[cfg(not(feature = "kernel"))]
+    if _old == WAKE_SLEEPING {
+        ntkrnl_sys::ddk::NtReleaseKeyedEvent(
+            core::ptr::null_mut(),
+            Wake as PVOID,
+            0,
+            core::ptr::null_mut(),
+        );
+    }
+}
+
 // ntdll-internal NTSTATUS (not surfaced by ntkrnl-sys::constants)
 const STATUS_RESOURCE_NOT_OWNED: NTSTATUS = 0xC0000264u32 as NTSTATUS;
 
@@ -134,28 +210,24 @@ unsafe fn RtlpReleaseWaitBlockLockExclusive(
         }
     }
 
+    // Read the waiter's block before the lock word names a new owner (see SrwSignalWake).
+    let Exclusive = (*FirstWaitBlock).Exclusive != 0;
+    let mut WakeChain: PRTLP_SRWLOCK_SHARED_WAKE =
+        (*FirstWaitBlock).__bindgen_anon_1.__bindgen_anon_1.SharedWakeChain;
+
     let _ = InterlockedExchangePointer(
         core::ptr::addr_of_mut!((*SRWLock).Ptr),
         NewValue as PVOID,
     );
 
-    if (*FirstWaitBlock).Exclusive != 0 {
-        let _ = InterlockedOr(
-            core::ptr::addr_of_mut!((*FirstWaitBlock).__bindgen_anon_1.Wake),
-            1,
-        );
+    if Exclusive {
+        SrwSignalWake(core::ptr::addr_of_mut!((*FirstWaitBlock).__bindgen_anon_1.Wake));
     } else {
-        let mut WakeChain: PRTLP_SRWLOCK_SHARED_WAKE;
         let mut NextWake: PRTLP_SRWLOCK_SHARED_WAKE;
-
-        WakeChain = (*FirstWaitBlock).__bindgen_anon_1.__bindgen_anon_1.SharedWakeChain;
         loop {
             NextWake = (*WakeChain).Next as PRTLP_SRWLOCK_SHARED_WAKE;
 
-            let _ = InterlockedOr(
-                core::ptr::addr_of_mut!((*WakeChain).Wake) as *mut LONG,
-                1,
-            );
+            SrwSignalWake(core::ptr::addr_of_mut!((*WakeChain).Wake) as *mut LONG);
 
             WakeChain = NextWake;
             if WakeChain.is_null() {
@@ -185,10 +257,7 @@ unsafe fn RtlpReleaseWaitBlockLockLastShared(
         NewValue as PVOID,
     );
 
-    InterlockedOr(
-        core::ptr::addr_of_mut!((*FirstWaitBlock).__bindgen_anon_1.Wake),
-        1 as LONG,
-    );
+    SrwSignalWake(core::ptr::addr_of_mut!((*FirstWaitBlock).__bindgen_anon_1.Wake));
 }
 unsafe fn RtlpReleaseWaitBlockLock(SRWLock: PRTL_SRWLOCK) {
     InterlockedAndPointer(
@@ -196,91 +265,60 @@ unsafe fn RtlpReleaseWaitBlockLock(SRWLock: PRTL_SRWLOCK) {
         !RTL_SRWLOCK_CONTENTION_LOCK as LONG_PTR,
     );
 }
+/// Take the contention bit (the right to edit the wait-block chain) of a contended lock, and
+/// return its first wait block; NULL if the lock is no longer contended, for the caller to retry.
+///
+/// DIVERGES from srw.c, which ORs the bit in first and looks second: on a word that turned out
+/// uncontended it then ANDs the bit back out. If another thread had meanwhile CASed in a word
+/// without the bit (it compares the value WITH the bit, and builds its new value without it),
+/// and a third took the bit legitimately, that AND clears the third thread's bit and lets a
+/// fourth in beside it: two threads editing the chain, waiters dropped with no wake.
+/// rtl-sync-difftest's spin-only (kernel) build hung that way, six waiters parked on a lock word
+/// of 0. Here the bit is only ever set by a CAS on a contended word, so whoever clears it owns it.
 unsafe fn RtlpAcquireWaitBlockLock(SRWLock: PRTL_SRWLOCK) -> PRTLP_SRWLOCK_WAITBLOCK {
-    let mut PrevValue: LONG_PTR;
-
     let mut spins: u32 = 0;
     loop {
-        PrevValue = InterlockedOrPointer(
-            core::ptr::addr_of_mut!((*SRWLock).Ptr),
-            RTL_SRWLOCK_CONTENTION_LOCK as LONG_PTR,
-        ) as LONG_PTR;
-
-        if (PrevValue & RTL_SRWLOCK_CONTENTION_LOCK as LONG_PTR) == 0 {
-            break;
+        let CurrentValue = *(core::ptr::addr_of!((*SRWLock).Ptr) as *const LONG_PTR);
+        if (CurrentValue & RTL_SRWLOCK_CONTENDED as LONG_PTR) == 0
+            || (CurrentValue & !(RTL_SRWLOCK_MASK as LONG_PTR)) == 0
+        {
+            return core::ptr::null_mut();
         }
-
+        if (CurrentValue & RTL_SRWLOCK_CONTENTION_LOCK as LONG_PTR) == 0
+            && InterlockedCompareExchangePointer(
+                core::ptr::addr_of_mut!((*SRWLock).Ptr),
+                (CurrentValue | RTL_SRWLOCK_CONTENTION_LOCK as LONG_PTR) as PVOID,
+                CurrentValue as PVOID,
+            ) as LONG_PTR
+                == CurrentValue
+        {
+            return (CurrentValue & !(RTL_SRWLOCK_MASK as LONG_PTR)) as PRTLP_SRWLOCK_WAITBLOCK;
+        }
         SrwBackoff(&mut spins);
     }
-
-    if (PrevValue & RTL_SRWLOCK_CONTENDED as LONG_PTR) == 0
-        || (PrevValue & !(RTL_SRWLOCK_MASK as LONG_PTR)) == 0
-    {
-        RtlpReleaseWaitBlockLock(SRWLock);
-        return core::ptr::null_mut();
-    }
-
-    let WaitBlock = (PrevValue & !(RTL_SRWLOCK_MASK as LONG_PTR)) as PRTLP_SRWLOCK_WAITBLOCK;
-
-    WaitBlock
 }
+/// Wait until the lock is handed to `WaitBlock`. srw.c also stopped early when the lock word
+/// read "owned, not contended", which is what the handoff writes just before it sets `Wake`;
+/// waiting for `Wake` alone gets the same answer, and the releaser's last touch of the block
+/// (that `Wake` store) can no longer land on a stack frame the waiter already left.
 unsafe fn RtlpAcquireSRWLockExclusiveWait(
-    SRWLock: PRTL_SRWLOCK,
+    _SRWLock: PRTL_SRWLOCK,
     WaitBlock: PRTLP_SRWLOCK_WAITBLOCK,
 ) {
-    let mut CurrentValue: isize;
-
-    let mut spins: u32 = 0;
-    loop {
-        CurrentValue = *(core::ptr::addr_of!((*SRWLock).Ptr) as *const isize);
-        if (CurrentValue & RTL_SRWLOCK_SHARED as isize) == 0 {
-            if (CurrentValue & RTL_SRWLOCK_CONTENDED as isize) != 0 {
-                if (*WaitBlock).__bindgen_anon_1.Wake != 0 {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
-        SrwBackoff(&mut spins);
-    }
+    SrwWaitForWake(core::ptr::addr_of_mut!((*WaitBlock).__bindgen_anon_1.Wake));
 }
 
 // Hand-translated from srw.c:265-312 (rustconv's scanner dropped this static).
-// Twin of RtlpAcquireSRWLockExclusiveWait above, for the shared-acquire path.
+// Twin of RtlpAcquireSRWLockExclusiveWait above, for the shared-acquire path. srw.c's
+// FirstWait == NULL arm also polled the lock word ("collapsed to a simple shared lock"); every
+// handoff that collapses it then wakes the whole shared chain, ours included, so `Wake` alone
+// answers both arms, for the reason given above.
 unsafe fn RtlpAcquireSRWLockSharedWait(
-    SRWLock: PRTL_SRWLOCK,
-    FirstWait: PRTLP_SRWLOCK_WAITBLOCK,
+    _SRWLock: PRTL_SRWLOCK,
+    _FirstWait: PRTLP_SRWLOCK_WAITBLOCK,
     WakeChain: PRTLP_SRWLOCK_SHARED_WAKE,
 ) {
-    if !FirstWait.is_null() {
-        let mut spins: u32 = 0;
-        while (*WakeChain).Wake == 0 {
-            SrwBackoff(&mut spins);
-        }
-    } else {
-        let mut CurrentValue: LONG_PTR;
-
-        let mut spins: u32 = 0;
-        loop {
-            CurrentValue = *(core::ptr::addr_of!((*SRWLock).Ptr) as *const LONG_PTR);
-            if (CurrentValue & RTL_SRWLOCK_SHARED as LONG_PTR) != 0 {
-                // RTL_SRWLOCK_OWNED is always set when RTL_SRWLOCK_SHARED is.
-                if (CurrentValue & RTL_SRWLOCK_CONTENDED as LONG_PTR) != 0 {
-                    if (*WakeChain).Wake != 0 {
-                        // Our wait block became first in the chain — we own it.
-                        break;
-                    }
-                } else {
-                    // Collapsed to a simple shared lock — acquired.
-                    break;
-                }
-            }
-
-            SrwBackoff(&mut spins);
-        }
-    }
+    SrwWaitForWake(core::ptr::addr_of_mut!((*WakeChain).Wake) as *mut LONG);
 }
 
 #[no_mangle]
@@ -537,7 +575,7 @@ pub unsafe extern "system" fn RtlAcquireSRWLockExclusive(SRWLock: PRTL_SRWLOCK) 
                     do_add_wait_block = true;
                 } else {
                     StackWaitBlock.Exclusive = 1u8;
-                    StackWaitBlock.SharedCount = (CurrentValue >> RTL_SRWLOCK_BITS) as core::ffi::c_long;
+                    StackWaitBlock.SharedCount = (CurrentValue >> RTL_SRWLOCK_BITS) as LONG;
                     StackWaitBlock.Next = core::ptr::null_mut();
                     StackWaitBlock.Last = core::ptr::addr_of_mut!(StackWaitBlock);
                     StackWaitBlock.__bindgen_anon_1.Wake = 0;
@@ -677,44 +715,37 @@ pub unsafe extern "system" fn RtlReleaseSRWLockExclusive(SRWLock: PRTL_SRWLOCK) 
     }
 }
 
+/// DIVERGES from srw.c, whose body is wrong two ways. It builds the new word as
+/// `((old >> BITS) + 1) | SHARED | OWNED` and never shifts the count back, so a try on a FREE
+/// lock stores 7: CONTENDED with no wait block, after which every acquire loops forever looking
+/// for one (RtlpAcquireWaitBlockLock finds a null block and backs off). And its compare value
+/// keeps OWNED, so on a lock held EXCLUSIVE it compares 1, stores 7 and returns FALSE, having
+/// corrupted the word anyway. Both found by rtl-sync-difftest, which hung within a dozen
+/// sections once try-acquires joined the mix. What it means, as Windows does: take a share of a
+/// lock that is free or held shared with no waiters, else fail without writing.
 #[no_mangle]
 pub unsafe extern "system" fn RtlTryAcquireSRWLockShared(SRWLock: PRTL_SRWLOCK) -> BOOLEAN {
-    let mut CompareValue: LONG_PTR;
-    let mut NewValue: LONG_PTR;
-    let mut GotValue: LONG_PTR;
-
     loop {
-        CompareValue = *(core::ptr::addr_of!((*SRWLock).Ptr) as *const LONG_PTR);
-        NewValue = ((CompareValue >> RTL_SRWLOCK_BITS) + 1)
-            | RTL_SRWLOCK_SHARED as LONG_PTR
-            | RTL_SRWLOCK_OWNED as LONG_PTR;
+        let CurrentValue = *(core::ptr::addr_of!((*SRWLock).Ptr) as *const LONG_PTR);
+        let NewValue = if CurrentValue == 0 {
+            (1 << RTL_SRWLOCK_BITS) | RTL_SRWLOCK_SHARED as LONG_PTR | RTL_SRWLOCK_OWNED as LONG_PTR
+        } else if (CurrentValue & RTL_SRWLOCK_MASK as LONG_PTR)
+            == (RTL_SRWLOCK_SHARED as LONG_PTR | RTL_SRWLOCK_OWNED as LONG_PTR)
+        {
+            CurrentValue + (1 << RTL_SRWLOCK_BITS)
+        } else {
+            return 0u8;
+        };
 
-        CompareValue &= !(RTL_SRWLOCK_MASK as LONG_PTR)
-            | RTL_SRWLOCK_SHARED as LONG_PTR
-            | RTL_SRWLOCK_OWNED as LONG_PTR;
-
-        GotValue = InterlockedCompareExchangePointer(
+        if InterlockedCompareExchangePointer(
             core::ptr::addr_of_mut!((*SRWLock).Ptr),
             NewValue as *mut _,
-            CompareValue as *mut _,
-        ) as LONG_PTR;
-
-        if !((GotValue != CompareValue)
-            && (((GotValue & RTL_SRWLOCK_MASK as LONG_PTR)
-                == (RTL_SRWLOCK_SHARED as LONG_PTR | RTL_SRWLOCK_OWNED as LONG_PTR))
-                || (GotValue == 0)))
+            CurrentValue as *mut _,
+        ) as LONG_PTR
+            == CurrentValue
         {
-            break;
+            return 1u8;
         }
-    }
-
-    if ((GotValue & RTL_SRWLOCK_MASK as LONG_PTR)
-        == (RTL_SRWLOCK_SHARED as LONG_PTR | RTL_SRWLOCK_OWNED as LONG_PTR))
-        || (GotValue == 0)
-    {
-        1u8
-    } else {
-        0u8
     }
 }
 

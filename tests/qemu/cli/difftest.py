@@ -118,6 +118,27 @@ def crate_target(repo: Path, name: str) -> str | None:
     return t.group(1) if t else None
 
 
+def crate_feature_sets(repo: Path, name: str) -> list[str]:
+    """Extra `--features` builds a harness declares, each graded as its own invocation:
+
+        [package.metadata.difftest]
+        feature-sets = ["kernel"]
+
+    rtl-sync-difftest compiles the shipping srw.rs twice over, because the kernel's copy is a
+    different program (it spins, never blocks) and one build cannot be both. Discovered from the
+    manifest like `target`: the crate knows which of its builds exist, a list here would not.
+    """
+    m = re.search(
+        r"^\s*\[package\.metadata\.difftest\]\s*$(.*?)(?=^\s*\[|\Z)",
+        _manifest(repo, name),
+        re.S | re.M,
+    )
+    if not m:
+        return []
+    f = re.search(r"^\s*feature-sets\s*=\s*\[([^\]]*)\]", m.group(1), re.M)
+    return re.findall(r'"([^"]+)"', f.group(1)) if f else []
+
+
 def _salient(out: str, limit: int = 6) -> list[str]:
     """The lines a human needs from a failed harness: the assertion and its two
     values, not the linker command line."""
@@ -270,11 +291,19 @@ def run_difftests(
         return False
 
     all_ok = True
-    for name in names:
+    builds = [(name, name, None) for name in names]
+    if not cases:
+        builds += [
+            (name, f"{name}[{fs}]", fs) for name in names for fs in crate_feature_sets(repo, name)
+        ]
+    builds.sort(key=lambda b: names.index(b[0]))
+    for crate, name, features in builds:
         # Separate invocation per crate — see the module docstring on feature
         # unification. Sharing one `cargo test -p a -p b` breaks the link.
-        argv = ["cargo", "test", "--release", "-p", name]
-        target = crate_target(repo, name)
+        argv = ["cargo", "test", "--release", "-p", crate]
+        if features:
+            argv += ["--features", features]
+        target = crate_target(repo, crate)
         if target:
             argv += ["--target", target]
         if cases:

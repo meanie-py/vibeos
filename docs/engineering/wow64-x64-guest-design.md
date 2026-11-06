@@ -85,9 +85,11 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    characters because it fills that map first. Then `memcmp` (22x at 256), `_memicmp` (32x) and
    the ASCII case maps (`_strlwr`, `_strupr`, `_wcslwr`, `_wcsupr`, 15x): now 1.0-1.5x. Measured
    and already near the C: `memcpy`/`memmove`/`memset` (asm since 2026-10-17), `strncpy` (1.0-1.9x
-   once the bounded helper went to asm). Still slow and owed: the parsers, `strtol`/`wcstol` at
-   ~110 ns against ~16 on the bench's fixed 10-character number (7-8x): ~11 ns a digit, a closure
-   and a `bsd_digit` call per character that nothing inlines under no LLVM passes.
+   once the bounded helper went to asm). `strtol`/`wcstol` were ~110 ns against ~16 on the
+   bench's fixed 10-character number (7-8x, ~11 ns a digit: `RangeInclusive::contains`, an
+   `Option` and a closure per character, each a real call under no LLVM passes); bare compares
+   in `radix.rs` `bsd_digit` bring them to ~47 ns, 2.7-3.1x. The rest is per call (prologue,
+   shim), not per digit.
 4. win32k callbacks: measured 2026-11-01 with `sysbench` (`20261101-195336-5ayk4877`), not
    the ~2x native once assumed. The bench process made 18,437 callbacks. Our side of each costs
    6.0 us in (save the guest state, build its frame) and 4.7 us out, against 41.2 us of guest
@@ -121,8 +123,19 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    fault 201 / 14.0 s, still ~69 ms an acquire, and still no other process contended. Inferred,
    not measured: srw.c hands the lock to the first waiter on release, so a waiter asleep in its
    1 ms `NtDelayExecution` (a timer tick in practice) already owns it, and the other thread
-   queues behind a sleeping owner, a tick per handoff. Owed: a real block (keyed event or
-   wait-on-thread-id) that the releaser wakes, instead of a waiter that polls.
+   queues behind a sleeping owner, a tick per handoff. 2026-11-06: a waiter now spins, yields,
+   then blocks on the keyed event keyed by its own `Wake` word and the releaser wakes it
+   (`srw.rs` `SrwWaitForWake`/`SrwSignalWake`), and the host stress harness written for it
+   (`rtl-sync-difftest`) found three upstream srw.c bugs that deadlock or corrupt the lock under
+   real contention (field manual, "The oracle is the C, and the C is WRONG"). **That inference
+   was wrong for fault64:** re-measured with the blocking wait (`20261106-001310-2_jgd6dh`,
+   appstorm64 green), alloc 97 contended / 7.1 s, free 97 / 7.1 s, fault 194 / 14.2 s, still
+   ~73 ms an acquire with holds this short (fault 3.4 ms over 824). The DLL imports only ntdll,
+   and libc++'s Windows `std::mutex` is an SRWLOCK, so the path is the changed one. Inferred
+   next, not measured: on one vCPU the woken waiter is only readied (ex-rust keyedevt.rs
+   releases with priority increment 0) and waits out the quanta of fault64's CPU-bound AV-storm
+   and churn threads, a scheduling cost, not a lock cost. Still no other process contends. Owed:
+   time release-to-run for one wake, then decide whether a wait boost belongs in the release.
 6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
    file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
    `MiFlushTbAndCapture` stopped flushing the whole TLB once per re-protected page on arm64:

@@ -7907,6 +7907,26 @@ def test_difftest_reads_a_crates_target_triple_from_its_manifest(tmp_path: Path)
     assert difftest_mod.crate_target(tmp_path, "msvcrt-seh-difftest") == "i686-unknown-linux-gnu"
 
 
+def test_difftest_reads_extra_feature_sets_from_the_manifest(tmp_path: Path):
+    """rtl-sync-difftest grades the kernel's spin-only srw.rs as a second build; the set comes
+    from the crate's own metadata table, and a crate without one gets only its default build."""
+    from . import difftest as difftest_mod
+
+    ws = tmp_path / "sdk" / "lib" / "rust"
+    (ws / "rtl-sync-difftest").mkdir(parents=True)
+    (ws / "rtl-sync-difftest" / "Cargo.toml").write_text(
+        '[package]\nname = "rtl-sync-difftest"\n\n'
+        '[package.metadata.difftest]\nfeature-sets = ["kernel", "other"]\n\n'
+        "[features]\nkernel = []\n"
+    )
+    (ws / "plain-difftest").mkdir(parents=True)
+    (ws / "plain-difftest" / "Cargo.toml").write_text('[package]\nname = "plain-difftest"\n')
+
+    assert difftest_mod.crate_feature_sets(tmp_path, "rtl-sync-difftest") == ["kernel", "other"]
+    assert difftest_mod.crate_feature_sets(tmp_path, "plain-difftest") == []
+    assert difftest_mod.crate_feature_sets(tmp_path, "absent-difftest") == []
+
+
 def test_difftest_covers_the_seh_layout_guardian(tmp_path: Path):
     """The i386 SEH layout header is generated from the tree's own PSDK headers, so it goes
     stale without anyone editing it — and a stale offset there regrades a structure walk

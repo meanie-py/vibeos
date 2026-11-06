@@ -379,21 +379,25 @@ fn bsd_prologue<C: Cu>(s: &[C], mut base: i32) -> (i32, bool, usize, u32) {
 /// One BSD digit step: classify `c` (ASCII digit / a-z / A-Z) → value,
 /// or `None` to stop. Faithful to `strtol.c`'s `c -= '0'` /
 /// `c -= isupper ? 'A'-10 : 'a'-10` then the `c >= base` break.
+///
+/// Written as bare compares returning -1 to stop, not `RangeInclusive::contains` and an
+/// `Option`: cnt-rust ships with no LLVM passes, so each of those is a real call, and strtol
+/// spent ~11 ns a digit (7-8x the C) mostly classifying it (`cnt-difftest --test perf`).
 #[inline]
-fn bsd_digit(c: u32, base: i32) -> Option<i64> {
-    let v: i64 = if (b'0' as u32..=b'9' as u32).contains(&c) {
+fn bsd_digit(c: u32, base: i32) -> i64 {
+    let v: i64 = if c >= b'0' as u32 && c <= b'9' as u32 {
         (c - b'0' as u32) as i64
-    } else if (b'A' as u32..=b'Z' as u32).contains(&c) {
+    } else if c >= b'A' as u32 && c <= b'Z' as u32 {
         (c - b'A' as u32) as i64 + 10
-    } else if (b'a' as u32..=b'z' as u32).contains(&c) {
+    } else if c >= b'a' as u32 && c <= b'z' as u32 {
         (c - b'a' as u32) as i64 + 10
     } else {
-        return None;
+        return -1;
     };
     if v >= base as i64 {
-        None
+        -1
     } else {
-        Some(v)
+        v
     }
 }
 
@@ -413,13 +417,6 @@ pub struct LongRes {
 /// negative non-overflow → `0u32.wrapping_sub(acc)` as i32.
 #[inline]
 pub fn parse_long_bsd<C: Cu>(s: &[C], base: i32) -> LongRes {
-    let at = |i: usize| -> u32 {
-        if i < s.len() {
-            s[i].u()
-        } else {
-            0
-        }
-    };
     let (base, neg, mut i, mut c) = bsd_prologue(s, base);
     let bm = base as i64;
     // cutoff = neg ? (unsigned long)LONG_MAX+1 : LONG_MAX  (LP32)
@@ -429,17 +426,17 @@ pub fn parse_long_bsd<C: Cu>(s: &[C], base: i32) -> LongRes {
     let mut acc: i64 = 0;
     let mut any: i32 = 0;
     loop {
-        let d = match bsd_digit(c, base) {
-            Some(d) => d,
-            None => break,
-        };
+        let d = bsd_digit(c, base);
+        if d < 0 {
+            break;
+        }
         if any < 0 || acc > cutoff || (acc == cutoff && d > cutlim) {
             any = -1;
         } else {
             any = 1;
             acc = acc * bm + d;
         }
-        c = at(i);
+        c = if i < s.len() { s[i].u() } else { 0 };
         i += 1;
     }
     let value: i32 = if any < 0 {
@@ -470,13 +467,6 @@ pub struct U64Res {
 /// `ULLONG_MAX` clamp; negative → `0 - acc` wrapping u64). ASCII only.
 #[inline]
 pub fn parse_u64_bsd<C: Cu>(s: &[C], base: i32) -> U64Res {
-    let at = |i: usize| -> u32 {
-        if i < s.len() {
-            s[i].u()
-        } else {
-            0
-        }
-    };
     let (base, neg, mut i, mut c) = bsd_prologue(s, base);
     let bm = base as u64;
     let cutoff = u64::MAX / bm;
@@ -484,17 +474,17 @@ pub fn parse_u64_bsd<C: Cu>(s: &[C], base: i32) -> U64Res {
     let mut acc: u64 = 0;
     let mut any: i32 = 0;
     loop {
-        let d = match bsd_digit(c, base) {
-            Some(d) => d,
-            None => break,
-        };
+        let d = bsd_digit(c, base);
+        if d < 0 {
+            break;
+        }
         if any < 0 || acc > cutoff || (acc == cutoff && d > cutlim) {
             any = -1;
         } else {
             any = 1;
             acc = acc * bm + d as u64;
         }
-        c = at(i);
+        c = if i < s.len() { s[i].u() } else { 0 };
         i += 1;
     }
     let value = if any < 0 {
