@@ -1,0 +1,29 @@
+# Host stress harness for rtl-sync's SRW lock: compiles the SHIPPING srw.rs (and the atomics it
+# uses) against `fake-nt`, a stand-in for the ntkrnl-sys items it touches whose keyed events are a
+# std rendezvous with the kernel's pairing rule. Then mixed shared/exclusive threads hammer one
+# lock, on every CPU and pinned to one (the arm64 smoke VM is one vCPU), checking mutual exclusion,
+# that nothing hangs (a lost wake), and that the blocking path actually ran.
+#   cargo test --release -p rtl-sync-difftest                     (user-mode ntdll copy)
+#   cargo test --release -p rtl-sync-difftest --features kernel   (the kernel's spin-only copy)
+[package]
+name = "rtl-sync-difftest"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# `vibeos-cli difftest` grades the default build and each of these as its own invocation.
+[package.metadata.difftest]
+feature-sets = ["kernel"]
+
+[features]
+# Compile srw.rs as the kernel does (no sleeping wait).
+kernel = []
+
+[dependencies]
+ntkrnl_sys = { package = "rtl-sync-fake-nt", path = "fake-nt" }
+libc = "0.2"
+
+[[test]]
+name = "srw"
+path = "tests/srw.rs"
+harness = false

@@ -574,6 +574,7 @@ members = [
     "cnt-ctype",
     "ci-thunks",
     "cnt-difftest",
+    "rtl-sync-difftest",
     "serial-acpi-difftest",
     "cnt-rust",
     "musl-math",

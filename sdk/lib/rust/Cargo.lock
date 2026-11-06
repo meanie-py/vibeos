@@ -6777,6 +6777,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rtl-sync-difftest"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rtl-sync-fake-nt",
+]
+
+[[package]]
+name = "rtl-sync-fake-nt"
+version = "0.1.0"
+
+[[package]]
 name = "rtl-sysvol"
 version = "0.1.0"
 dependencies = [

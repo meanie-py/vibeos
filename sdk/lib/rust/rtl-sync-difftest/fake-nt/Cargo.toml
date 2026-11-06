@@ -1,0 +1,6 @@
+# The ntkrnl-sys items rtl-sync's srw.rs and atomics.rs use, for the host harness beside it.
+[package]
+name = "rtl-sync-fake-nt"
+version = "0.1.0"
+edition = "2021"
+publish = false

@@ -10052,6 +10052,20 @@ so the C reads the low byte of that NULL slot and always passes FALSE; the Rust 
 level further, as the caller meant, and faulted (0x1E when setup rebooted). The value now travels
 in `SystemArgument2`, which `KeInsertQueueApc` does deliver. When a faithful port faults where the
 C "works", check whether the C works only by reading something meaningless.
+
+**Fourth instance, in a LOCK: srw.c, faithful in every process.** rtl-sync's `srw.rs` translated
+upstream's SRW lock line for line, and a host stress harness (`rtl-sync-difftest`: the shipping
+file against a fake `ntkrnl_sys` whose keyed events keep the kernel's pairing rule, mixed
+shared/exclusive threads, a no-progress watchdog) found it broken three ways the moment two
+threads really contended: (1) `RtlTryAcquireSRWLockShared` never shifts the count back, so a try
+on a free lock stores 7, CONTENDED with no wait block, and every later acquire loops forever;
+(2) `RtlpAcquireWaitBlockLock` ORs the contention bit in before checking contention and ANDs it
+back out, which can clear another thread's bit, so two threads edit the wait chain and waiters
+drop with no wake; (3) waiters stop early on a lock-word shortcut, after which the releaser
+writes `Wake` into a frame that has returned. Unmodified, the lock deadlocked or segfaulted
+inside `RtlAcquireSRWLockExclusive` in 3 of 3 contended runs. No C difftest finds this class:
+the C has the same bugs, and single-threaded rows never race. A sync primitive needs a stress
+harness with a watchdog, run both on every CPU and pinned to one.
 ### A differential harness that cannot see its two sides diverge in STATE will report state differences as BEHAVIOUR differences
 **Symptom.** A perf/conformance row fails hard and reproducibly — `towlower` 10.8x TOO SLOW,
 all 3 passes, flat 44 MiB/s across a 65536x size range, calibration twins clean at 1.01x — and
