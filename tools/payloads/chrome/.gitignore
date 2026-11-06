@@ -7,3 +7,4 @@ secprobe-*.exe
 iocpprobe-*.exe
 dupprobe-*.exe
 msgprobe-*.exe
+waitprobe-*.exe

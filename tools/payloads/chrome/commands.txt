@@ -13,6 +13,8 @@ iocpprobe\iocpprobe.exe
 dupprobe\dupprobe.exe
 # msgprobe.c: Chrome's UI message pump and its one posted kMsgHaveWork; Windows' answers in msgprobe.win11.txt.
 msgprobe\msgprobe.exe
+# waitprobe.c: UnregisterWaitEx as ObjectWatcher::StopWatching uses it; Windows' answers in waitprobe.win11.txt.
+waitprobe\waitprobe.exe
 # Chrome's child processes do not write to the sweep's pipe, so the whole tree logs to a file
 # that catfile prints afterwards (it runs even when Chrome is killed at the timeout).
 timeout chrome\chrome.exe 420
@@ -20,12 +22,11 @@ timeout chrome\chrome.exe 420
 sample chrome\chrome.exe 75
 # --ipc-connection-timeout: a child that is not connected in 15 s exits, and one CPU under TCG is slow.
 # A crash Crashpad catches never reaches the kernel's print, so dumpinfo reads its minidumps.
-# Run M: multi-process, as Chrome runs by default. Hangs with every thread blocked, whether or not
-# the network and storage services got their connection (they sometimes do not).
+# Run M: multi-process, as Chrome runs by default. Dumps the page in about 2.5 minutes under TCG.
 chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --ipc-connection-timeout=120 --log-file=C:\TEMP\chrome_m.log --v=1 --user-data-dir=C:\TEMP\chrome-m --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
 catfile\catfile.exe C:\TEMP\chrome_m.log
 dumpinfo\dumpinfo.exe C:\TEMP\chrome-m\Crashpad\reports
-# Run B: one process. Dumps the page most of the time (4 of 5 boots).
+# Run B: one process. Also dumps the page, in 4-6 minutes.
 chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --ipc-connection-timeout=120 --log-file=C:\TEMP\chrome_b.log --v=1 --single-process --user-data-dir=C:\TEMP\chrome-b --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
 catfile\catfile.exe C:\TEMP\chrome_b.log
 dumpinfo\dumpinfo.exe C:\TEMP\chrome-b\Crashpad\reports

@@ -1,0 +1,11 @@
+[WAIT] A never fired: UnregisterWaitEx(event) = 1 err 0, event signaled
+[WAIT] B fired once: calls 1, UnregisterWaitEx(event) = 1 err 0, event signaled
+[WAIT] C in callback: UnregisterWaitEx(event) = 0 err 997
+[WAIT] C event right away: NOT signaled
+[WAIT] C event once the callback returns: signaled, callback done 1
+[WAIT] D in callback: UnregisterWaitEx(INVALID) = 1 err 0, callback done at return 1
+[WAIT] E in callback: UnregisterWait = 0 err 997
+[WAIT] F never fired: UnregisterWait = 1 err 0
+[WAIT] G repeating: UnregisterWaitEx(INVALID) = 1, called back several times, none after: yes
+[WAIT] H race x300: completion event never signaled 0, unexpected failures 0
+[WAIT] done
