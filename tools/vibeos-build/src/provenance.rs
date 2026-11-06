@@ -1884,3 +1884,39 @@ mod walk_retry_controls {
         assert!(err.to_string().to_lowercase().contains("permission"));
     }
 }
+
+#[cfg(test)]
+mod index_copy_controls {
+    use super::*;
+    use std::process::Command;
+    fn git(dir: &Path, args: &[&str]) {
+        let ok = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@t")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t")
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?}");
+    }
+    #[test]
+    fn tree_hash_sees_a_same_size_edit_made_with_the_last_git_add() {
+        // The stale-media guard hashes the tree through a copy of .git/index. The edit lands in
+        // the same second as the `git add`, the hash runs in a later one: a fresh-mtime copy made
+        // git trust the stale stat data and return the old tree.
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path();
+        git(repo, &["init", "-q"]);
+        fs::create_dir_all(repo.join("sdk/lib/rust")).unwrap();
+        fs::write(repo.join("sdk/lib/rust/a.rs"), "pub fn x() {}\n").unwrap();
+        git(repo, &["add", "-A"]);
+        let before = tree_content_hash(repo, &rust_scope()).unwrap();
+        fs::write(repo.join("sdk/lib/rust/a.rs"), "pub fn y() {}\n").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        let after = tree_content_hash(repo, &rust_scope()).unwrap();
+        assert_ne!(before, after, "same-size edit missed by the tree hash");
+    }
+}
