@@ -788,8 +788,11 @@ fn diff_itow_s() {
 /// A/a/B/b/Z/z, the fold-boundary neighbours '@'(0x3F<'A') / '['(0x5B
 /// >'Z'), and >=0x80 / >0xFF values that must NEVER be folded.
 fn wcstr(rng: &mut Rng, max: usize) -> Vec<u16> {
-    const A: [u16; 12] = [
-        0x41, 0x61, 0x42, 0x62, 0x5A, 0x7A, 0x3F, 0x5B, 0x00C0, 0x0100, 0xFF21, 0x0080,
+    // 0x0141 and 0x01C0 share a low byte with 0x41 and 0x00C0: a membership map indexed by
+    // the low byte alone (the wide span scan's trap) answers them wrongly.
+    const A: [u16; 15] = [
+        0x41, 0x61, 0x42, 0x62, 0x5A, 0x7A, 0x3F, 0x5B, 0x00C0, 0x0100, 0xFF21, 0x0080, 0x0141,
+        0x01C0, 0x00FF,
     ];
     let len = rng.upto(max + 1);
     let mut v: Vec<u16> = (0..len).map(|_| A[rng.upto(A.len())]).collect();
@@ -1392,7 +1395,9 @@ fn diff_casemap() {
     let mut rng = Rng(0x4ca5_e009_u64);
     for _ in 0..6000 {
         // narrow string: letters + digits + punct + 0x80-0xFF
-        let pool = b"AZaz mM5.\x80\xC0\xDF\xE0\xFF";
+        // '@' '[' '`' '{' sit one either side of each letter range: a fold bound off by one
+        // rewrites them
+        let pool = b"AZaz mM5.@[`{\x80\xC0\xDF\xE0\xFF";
         let mut nv: Vec<u8> =
             (0..rng.upto(28)).map(|_| pool[rng.upto(pool.len())]).collect();
         nv.push(0);
@@ -1408,9 +1413,9 @@ fn diff_casemap() {
         assert_eq!(cp == c2.as_mut_ptr(), rp == r2.as_mut_ptr(), "_strupr ret");
 
         // wide string: ASCII + Latin-1 + CJK (must stay untouched)
-        let wpool: [u16; 14] = [
+        let wpool: [u16; 18] = [
             65, 90, 97, 122, 32, 0x4D, 0x35, 0xC0, 0xDF, 0xE9, 0xFF, 0x0152,
-            0x4E2D, 0x017E,
+            0x4E2D, 0x017E, 64, 91, 96, 123,
         ];
         let mut wv: Vec<u16> = (0..rng.upto(24))
             .map(|_| wpool[rng.upto(wpool.len())])
@@ -2747,10 +2752,20 @@ fn diff_memicmp() {
                 }
             })
             .collect();
-        let b: Vec<u8> = match rng.upto(3) {
+        let mut a = a;
+        let b: Vec<u8> = match rng.upto(4) {
             // case-variant: fold-equal but differs pre-fold (→ 0)
             0 => a.iter().map(|&c| if c.is_ascii_alphabetic() { c ^ 0x20 } else { c }).collect(),
             1 => a.clone(),
+            // a shared NUL, then a difference: memory compares do not stop at NUL
+            2 if n >= 2 => {
+                let k = rng.upto(n - 1);
+                a[k] = 0;
+                let mut b = a.clone();
+                let j = k + 1 + rng.upto(n - k - 1);
+                b[j] = if a[j] == b'#' { b'$' } else { b'#' };
+                b
+            }
             _ => (0..cap).map(|_| rng.byte()).collect(),
         };
         let c = unsafe { cabi::_memicmp(a.as_ptr() as *const c_void, b.as_ptr() as *const c_void, n) };

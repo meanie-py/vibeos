@@ -4,19 +4,15 @@
   "memory": "guard-pages",
   "seed": 240925,
   "random_cases": 128,
-  "validity": "Genuine ReactOS _wcslwr_nt.c and shipping cnt-rust _wcslwr shim plus wcstr_slice, wraw_mut_slice and core_rs::casemap::lower_ascii. The host adapter maps ReactOS 16-bit wchar_t to uint16_t and compiles the source's relaxed no-op invalid-parameter handler. Inputs are either NULL or NUL-terminated UTF-16 with valid Unicode scalars. The implementation folds ASCII A-Z only; BMP non-ASCII and supplementary-plane scalars must be preserved. This grades in-place mutation, NUL handling and returned-pointer behavior on the host.",
+  "validity": "Genuine ReactOS _wcslwr_nt.c and shipping cnt-rust _wcslwr shim and its memops.rs body (fast_wcslwr over the str_lower16 asm fold; str_len16 only for the read mutant). The host adapter maps ReactOS 16-bit wchar_t to uint16_t and compiles the source's relaxed no-op invalid-parameter handler. Inputs are either NULL or NUL-terminated UTF-16 with valid Unicode scalars. The implementation folds ASCII A-Z only; BMP non-ASCII and supplementary-plane scalars must be preserved. This grades in-place mutation, NUL handling and returned-pointer behavior on the host.",
   "c_source": "../../../../sdk/lib/crt/wstring/_wcslwr_nt.c",
   "c_include_dirs": ["wcslwr_include"],
   "rust_source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/generated.rs",
   "rust_items": ["m_wcslwr::_wcslwr"],
   "rust_helpers": [
     {
-      "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/mod.rs",
-      "items": ["wcstr_slice", "wraw_mut_slice"]
-    },
-    {
       "source": "../../../../sdk/lib/rust/cnt-rust/src/cabi/memops.rs",
-      "items": ["str_len16"]
+      "items": ["fast_wcslwr", "str_lower16", "str_len16"]
     }
   ],
   "rust_support": {"core_rs": "casemap_core.rs"},
@@ -65,13 +61,13 @@
   "mutants": [
     {
       "name": "skip_ascii_folding",
-      "find": "crate::core_rs::casemap::lower_ascii(s);",
+      "find": "str_lower16(s);",
       "replace": "let _ = s;"
     },
     {
       "name": "read_past_terminator",
-      "find": "let n = wcstr_slice(_String as *const u16).len();",
-      "replace": "let n = wcstr_slice(_String as *const u16).len();\n        core::ptr::read_volatile(_String.add(n + 1));",
+      "find": "str_lower16(s);",
+      "replace": "str_lower16(s);\n        core::ptr::read_volatile(s.add(str_len16(s) + 1));",
       "expect": "memory_fault"
     }
   ]

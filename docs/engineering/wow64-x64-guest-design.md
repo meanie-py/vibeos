@@ -77,7 +77,17 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    genuine libcntpr C under the shipping `-C no-prepopulate-passes`
    (`cnt-difftest --test perf`): the slice bodies were 6-10x the C at 8 characters and 20-30x at
    256 (`strcmp` 1.9 us against 63 ns); the asm scans are 1.0-1.9x, `_stricmp` 3.2x at 8
-   characters on call overhead. Still slice loops: `strrchr`, `strstr`, `strspn` and the rest.
+   characters on call overhead. The rest of the search family followed on 2026-11-05: `strrchr`,
+   `strstr`, `strspn`, `strcspn`, `strpbrk`, `memchr` and the wide twins, plus `strnlen`/`wcsnlen`
+   and every bounded shim through `cstr_slice_bounded`. They had been 5-86x the C (`wcsstr` at
+   256: 10.5 us against 121 ns); now 0.1-3.2x. The span family beats the C because its map is
+   256 bytes, where the wide C rescans the whole set for every character; `strpbrk` is 3.2x at 8
+   characters because it fills that map first. Then `memcmp` (22x at 256), `_memicmp` (32x) and
+   the ASCII case maps (`_strlwr`, `_strupr`, `_wcslwr`, `_wcsupr`, 15x): now 1.0-1.5x. Measured
+   and already near the C: `memcpy`/`memmove`/`memset` (asm since 2026-10-17), `strncpy` (1.0-1.9x
+   once the bounded helper went to asm). Still slow and owed: the parsers, `strtol`/`wcstol` at
+   ~110 ns against ~16 on the bench's fixed 10-character number (7-8x): ~11 ns a digit, a closure
+   and a `bsd_digit` call per character that nothing inlines under no LLVM passes.
 4. win32k callbacks: measured 2026-11-01 with `sysbench` (`20261101-195336-5ayk4877`), not
    the ~2x native once assumed. The bench process made 18,437 callbacks. Our side of each costs
    6.0 us in (save the guest state, build its frame) and 4.7 us out, against 41.2 us of guest
@@ -104,7 +114,8 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    in wowx64. So the apps do not queue on this lock. What fault64 shows instead is that our SRW
    lock (`rtl-sync/src/srw.rs`, upstream `srw.c`) only spins: a contended waiter loops on
    `YieldProcessor()` and never blocks, so on the one-vCPU arm64 VM it burns its quantum before
-   the holder can run again. Owed: an SRW wait that yields or blocks.
+   the holder can run again. The Chrome lane fixed the wait in `244c0422339` (`SrwBackoff`: 64
+   spins, then 64 `NtYieldExecution`, then 1 ms sleeps; user mode only).
 6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
    file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
    `MiFlushTbAndCapture` stopped flushing the whole TLB once per re-protected page on arm64:
