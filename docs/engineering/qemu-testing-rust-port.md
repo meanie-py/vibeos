@@ -164,3 +164,21 @@ bounds comparison completion, and worker failures remain diagnostic errors.
 A finished comparison loop is not proof of equivalence: uncertain, skipped,
 empty or partially compared fingerprint sets produce an inconclusive verdict and
 CLI exit 2. `all_matched` requires every requested fingerprint to match exactly.
+
+The completion/coverage fixes were exercised on `96011f9acf7` with
+`rr diverge native-diag-bulk-20261106-1634-arm64`. The replay reached both desktop
+markers; raw serial has no bugcheck or Rust panic, and its saved screenshot shows
+the desktop. Evidence: `/tmp/vibeos-cli/20261106-165507-rnywt0u4-smoke-arm64`.
+Smoke waited 32.677 seconds after desktop settling for the finite checker.
+The final verdict has `completed: true`, four exact matches, seven inconclusive
+pause-time I/O checkpoints, and one skipped checkpoint (already past its icount).
+There are no unprocessed checkpoints or definitive mismatches. CLI exit 2 and
+`all_matched: false` correctly leave full equivalence unproven. The prior run's
+false-success output is in `.cache/build-infra/diagnostics-rr-bulk-diverge.log`;
+its verdict was preserved at
+`~/vibeos-rust-staging/diagnostics-20261106/diverge-before-completion-fix.json`.
+
+Follow-up work: arm the first replay checkpoint before it can be passed, and
+make pause-time I/O checkpoints comparable without weakening the inconclusive
+classification. The Python RR command coordinator remains the next orchestration
+port; native worker and comparison ownership is already in `vibeos-test`.
