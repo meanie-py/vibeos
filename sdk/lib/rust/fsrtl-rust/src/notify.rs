@@ -230,8 +230,16 @@ unsafe fn FsRtlCheckNotifyForDelete(notify_list: PLIST_ENTRY, fs_context: PVOID)
         next_entry = (*notify_list).Flink;
         while next_entry != notify_list {
             notify_change = (next_entry as *const u8).offset(-(core::mem::offset_of!(_NOTIFY_CHANGE, NotifyList) as isize)) as PNOTIFY_CHANGE;
-            if (*notify_change).FsContext == fs_context && !IsListEmpty(core::ptr::addr_of_mut!((*notify_change).NotifyIrps) as PLIST_ENTRY) {
-                FsRtlNotifyCompleteIrpList(notify_change, STATUS_DELETE_PENDING);
+            // The C compares FsContext, but a deleting FSD passes the directory's FileObject
+            // FsContext (fastfat: the FCB, shared by every handle) while a watch is keyed by its
+            // own handle's context (fastfat: the CCB), so no watch ever matched and a watch on a
+            // removed directory never completed (kernel32 change.c:164). StreamID is the watch's
+            // FileObject->FsContext, recorded at creation for exactly this and read nowhere else.
+            if (*notify_change).StreamID == fs_context {
+                (*notify_change).Flags |= DELETE_IN_PROCESS as u16;
+                if !IsListEmpty(core::ptr::addr_of_mut!((*notify_change).NotifyIrps) as PLIST_ENTRY) {
+                    FsRtlNotifyCompleteIrpList(notify_change, STATUS_DELETE_PENDING);
+                }
             }
             next_entry = (*next_entry).Flink;
         }
@@ -264,7 +272,6 @@ unsafe fn FsRtlNotifyCompleteIrp(
 ) {
     let mut buffer: PVOID;
     let stack: PIO_STACK_LOCATION;
-
     if FsRtlNotifySetCancelRoutine(irp, notify_change) == 0 && skip_completion != 0 {
         return;
     }
@@ -341,7 +348,13 @@ unsafe fn FsRtlNotifyCompleteIrpList(notify_change: PNOTIFY_CHANGE, status: NTST
 
     data_length = (*notify_change).DataLength;
 
-    (*notify_change).Flags &= (NOTIFY_IMMEDIATELY | WATCH_TREE) as u16;
+    // The C keeps NOTIFY_IMMEDIATELY | WATCH_TREE here. Keeping NOTIFY_IMMEDIATELY means an
+    // overflow, once delivered to this IRP as STATUS_NOTIFY_ENUM_DIR, is delivered again to the
+    // next watch, which then misses the change it was posted for; that change is buffered and
+    // completes the watch after it at once (ntdll change.c:279-308). WATCH_ROOT is fixed when
+    // the watch is created, and CLEANUP_/DELETE_IN_PROCESS are terminal: the C drops all three
+    // here, so a watch posted after a cleanup or delete that left the entry alive would pend.
+    (*notify_change).Flags &= (WATCH_TREE | WATCH_ROOT | CLEANUP_IN_PROCESS | DELETE_IN_PROCESS) as u16;
     (*notify_change).DataLength = 0;
     (*notify_change).LastEntry = 0;
 
@@ -558,10 +571,14 @@ pub unsafe extern "system" fn FsRtlNotifyFilterChangeDirectory(
                 IoMarkIrpPending(notify_irp);
                 (*notify_irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOTIFY_CLEANUP;
                 IoCompleteRequest(notify_irp, IO_DISK_INCREMENT);
+                // The C falls through to the checks below, which can complete the same IRP
+                // again or queue it (goto HandleIRP) after it was completed.
+                break 'body;
             } else if ((*notify_change).Flags & DELETE_IN_PROCESS as u16) != 0 {
                 IoMarkIrpPending(notify_irp);
                 (*notify_irp).IoStatus.__bindgen_anon_1.Status = STATUS_DELETE_PENDING;
                 IoCompleteRequest(notify_irp, IO_DISK_INCREMENT);
+                break 'body;
             }
             if ((*notify_change).Flags & NOTIFY_IMMEDIATELY as u16) != 0
                 && ((*notify_change).Flags & NOTIFY_LATER as u16) == 0
@@ -784,7 +801,6 @@ pub unsafe extern "system" fn FsRtlNotifyFilterReportChange(
             is_stream = true;
             is_parent = false;
         }
-
         if !flags(NOTIFY_IMMEDIATELY) && (*notify_change).BufferLength != 0 {
             // How much room the output has: this buffer, an IRP's, or the default.
             let mut irp: PIRP = core::ptr::null_mut();
@@ -900,7 +916,6 @@ pub unsafe extern "system" fn FsRtlNotifyFilterReportChange(
                     } + 2;
                 }
             }
-
             // Records are ULONG-aligned; one that does not fit means re-enumerate.
             let aligned_data_length = ((*notify_change).DataLength + 3) & !3;
             if data_length > number_of_bytes || aligned_data_length + data_length > number_of_bytes {

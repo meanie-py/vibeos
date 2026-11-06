@@ -831,15 +831,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   shard is not locked across the `cargo build` → `retarget_cargo_depfile.py` chain, so another
   cell's cargo in the same shard can run in that window. UNVERIFIED; this is the first sighting
   in any `/tmp/vibeos-cli` log.
-- **Directory change notification: 19 Wine `change` failures left after the fsrtl fix (open,
-  found 2026-10-17, smp-bringup).** `FsRtlNotifyFilterReportChange` was an empty placeholder,
-  so no watch ever completed with data. It is now translated, along with the lost-IRP
-  `goto HandleIRP` in FilterChangeDirectory and the NOTIFY_IMMEDIATELY/WATCH_TREE bit
-  collision. Payload `changewinetest` (amd64, `20261017-222313-pck9pxts`): kernel32:change
-  333 checks / 12 failures, ntdll:change 82 / 7, no hangs. Whether the C shares them is
-  UNVERIFIED. A C-oracle swap of notify.c does not link, because the kernel's cargo cell does
-  not take ntos.cmake objects. At least ntdll 279-280 is the C's own behaviour:
-  NotifyChange->BufferLength is fixed at the first watch, which had length 0.
+- **Directory change notification: FIXED 2026-11-06 (smp-bringup).** Wine `change` is clean on
+  amd64: kernel32 333 checks / 0 failures, ntdll 82 / 0 (payload `changewinetest`,
+  `20261106-140055-_ljgcm9_`; was 12 + 7 in October). After the 2026-10-17 translation of
+  `FsRtlNotifyFilterReportChange`, two fsrtl defects shared with the C remained.
+  `FsRtlNotifyCompleteIrpList` kept NOTIFY_IMMEDIATELY. An overflow already delivered as
+  STATUS_NOTIFY_ENUM_DIR was delivered again to the next watch, and every later watch then got
+  the previous change; this was behind every failure but one. `FsRtlCheckNotifyForDelete`
+  compared the watch's FsContext (fastfat: the CCB) with the deleting FileObject's (the FCB), so
+  removing a watched directory never completed its watch. It now matches StreamID.
 - **syssetup trails upstream's C (owed, smp-bringup).** The island was regenerated on 2026-11-06,
   replacing the 11 hand-corrected ids; the crate then needed `34bf566dd91` (Server Core install type)
   and the Gecko removal ported, both done. Our bootcd unattend.inf now says `InstallationType = 1`
