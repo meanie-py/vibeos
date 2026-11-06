@@ -133,6 +133,11 @@ class Cell:
     # Per arch, `-Wl,--require-defined=SYM` operands (target_link_options): symbols the
     # link must define up front, so the body's definition wins over an import thunk.
     require_defined: dict[str, list[str]] = field(default_factory=dict)
+    # The arches an if(ARCH ...) gate in the module's own CMakeLists builds it on
+    # (wow64: amd64 + arm64). Empty means all three.
+    arches: list[str] = field(default_factory=list)
+    # rust_staticlib_variant DEPENDS (a custom command's OUTPUT), as EXTRA_DEPENDS.
+    body_depends: list[str] = field(default_factory=list)
 
 
 @dataclass

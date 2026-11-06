@@ -96,6 +96,14 @@ pub struct Cell {
     pub rc_flags: BTreeMap<String, RcFlags>,
     #[serde(default)]
     pub require_defined: BTreeMap<String, Vec<String>>,
+    /// The arches cmake builds the module on, when an `if(ARCH ...)` gate in its own
+    /// CMakeLists leaves some out (wow64.dll: amd64 and arm64). Empty means all of them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub arches: Vec<String>,
+    /// Files the body's build waits on (rust_staticlib_variant's DEPENDS), passed on as
+    /// add_cargo_module EXTRA_DEPENDS.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub body_depends: Vec<String>,
 }
 impl Default for Cell {
     fn default() -> Self {
@@ -141,6 +149,8 @@ impl Default for Cell {
             extra_cd: Default::default(),
             rc_flags: Default::default(),
             require_defined: Default::default(),
+            arches: Default::default(),
+            body_depends: Default::default(),
         }
     }
 }
@@ -269,6 +279,13 @@ pub fn default_empty_object() -> serde_json::Value {
     serde_json::json!({})
 }
 impl Cell {
+    /// The arches this cell links on, in `ARCHES` order.
+    pub fn arches(&self) -> Vec<&'static str> {
+        ARCHES
+            .into_iter()
+            .filter(|a| self.arches.is_empty() || self.arches.iter().any(|x| x == a))
+            .collect()
+    }
     pub fn crate_name(&self) -> String {
         if self
             .target

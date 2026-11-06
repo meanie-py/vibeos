@@ -235,10 +235,9 @@ What the batch added to the shared crates and tools:
    - **`port flip` drops a module's C target even when C stays** (shimlib's varargs shim,
      batt's and esent's `rust_cohab_stub.c`). `port flip` now repoints the cargo cells
      that named the old C target to BOTH `engine:c:T` and the body crate when C sources
-     remain (`_repoint_cargo_cells(.., keeps_c)`). Still owed: it does not reshape a
-     module that is itself a C-body cargo cell; batt and esent were done by hand
-     (`<m>-cargo/build.rs`: `.rust_staticlib("<m>-rust")` plus
-     `c_from_compile_db("<m>_shims", [".../rust_cohab_stub.c"])`).
+     remain (`_repoint_cargo_cells(.., keeps_c)`). batt and esent, themselves C-body
+     cargo cells, were reshaped by hand; `port flip` has done that shape itself since
+     `627312da249` (dsound, 2026-11-03: `_flip_cell_cmake` + `_flip_cell_build_rs`).
    - **`scan_bitwise_not_bool` caught a shipped-to-be bug:** devcpux's `AddFeature` came
      back as `if !*bFirst != 0`, Rust's bitwise NOT of a `BOOL`, true for every value but
      -1, so every CPU feature got a leading separator. Now `*bFirst == 0`.
@@ -328,8 +327,11 @@ What the batch added to the shared crates and tools:
    `verify_svc_numbering` and the marshalgen audit's crosscheck now read the committed
    Rust table instead of `build-*/…gen.c`. The crate is empty on i386 (wow64.dll is
    built for amd64 and arm64 only), so the i386 workspace check stays green. amd64 ladder
-   13/13 through it. Still cmake-linked: `cargo_cell_gen` refuses a module not built on
-   every arch (owed; baselined in `scan_cmake_linked_rust`).
+   13/13 through it. Cargo-linked since 2026-11-05 (`sdk/lib/rust/wow64-cargo`, PE-EQUIVALENT
+   on amd64 and arm64): the cell generator now models a module an `if(ARCH ...)` gate in its
+   own CMakeLists builds on some arches only (`graph::arch_gate`; any other absence, such as
+   a build option or a gated add_subdirectory, still refuses), and a body DEPENDS that is a
+   custom command's OUTPUT (the thunk-table drift check, now `EXTRA_DEPENDS`).
    - **Ladder bugs, both classes now lints.** (1) The C defines the BTCpu function
      pointers once in `wow64.c` and declares them `extern` elsewhere; the Rust gave
      `wow64_manual.rs` and `wow64_callback.rs` their own never-assigned `static mut`

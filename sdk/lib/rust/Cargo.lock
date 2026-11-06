@@ -9749,6 +9749,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wow64-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "wow64-rust"
 version = "0.1.0"
 dependencies = [

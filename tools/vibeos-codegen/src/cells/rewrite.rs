@@ -1,6 +1,6 @@
 //! Render the CMake rewrite for a newly converted cargo cell.
 use super::graph::{args, branches, enclosing_ifs, exclusive, inlinable_source, statements};
-use super::{constants, Cell, Error, Result, ARCHES};
+use super::{constants, Cell, Error, Result};
 use regex::Regex;
 use std::{
     collections::{BTreeSet, HashSet},
@@ -415,7 +415,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         if guarded {
             let var = format!("{}_SHIMS", cell.target.to_uppercase());
             block.push(format!("set({var} {})", names.join(" ")).replace(" )", ")"));
-            for arch in ARCHES {
+            for arch in cell.arches() {
                 let list = cell.arch_shims.get(arch).ok_or_else(|| {
                     Error::new(format!("{}: missing arch shims for {arch}", cell.target))
                 })?;
@@ -516,7 +516,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         block.extend(shim_lines)
     }
     let mut by_arch = std::collections::BTreeMap::new();
-    for arch in ARCHES {
+    for arch in cell.arches() {
         let libs = cell.static_libs.get(arch).ok_or_else(|| {
             Error::new(format!("{}: missing static libs for {arch}", cell.target))
         })?;
@@ -531,7 +531,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
     let every: BTreeSet<_> = by_arch.values().flat_map(|s| s.iter().cloned()).collect();
     let common: Vec<_> = every
         .iter()
-        .filter(|x| ARCHES.iter().all(|a| by_arch[a].contains(*x)))
+        .filter(|x| cell.arches().iter().all(|a| by_arch[a].contains(*x)))
         .cloned()
         .collect();
     if !every.is_empty() {
@@ -545,7 +545,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             }
             block.last_mut().unwrap().push(')');
         }
-        for arch in ARCHES {
+        for arch in cell.arches() {
             let only: Vec<_> = by_arch[arch]
                 .iter()
                 .filter(|l| !common.contains(*l))
@@ -609,7 +609,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
     }
     if !cell.arch_destinations.is_empty() {
         let var = format!("{}_DESTINATION", cell.target.to_uppercase());
-        for (i, arch) in ARCHES.iter().enumerate() {
+        for (i, arch) in cell.arches().iter().enumerate() {
             block.push(format!(
                 "{}(ARCH STREQUAL \"{arch}\")",
                 if i == 0 { "if" } else { "elseif" }
@@ -637,6 +637,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
     if cell.no_cab {
         call.push("    NO_CAB".into())
     }
+    extra.extend(cell.body_depends.iter().cloned());
     let mut seen = HashSet::new();
     extra.retain(|x| seen.insert(x.clone()));
     if !extra.is_empty() {
