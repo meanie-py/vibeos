@@ -1,0 +1,2 @@
+# wkssvc_shims (i386), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	@build/base/services/wkssvc/wkssvc_s.c	@build/base/services/wkssvc base/services/wkssvc @std vendor/opengl-headers/include vendor/libdxg/include sdk/include/reactos/idl	-isystem {REPO}/sdk/lib/pseh/include -std=gnu99 @core	UNICODE WINVER=0x502 _CRT_DECLARE_NONSTDC_NAMES=1 _CRT_NONSTDC_NO_DEPRECATE _DLL _UNICODE _WIN32_WINNT=0x502 __USE_CRTIMP

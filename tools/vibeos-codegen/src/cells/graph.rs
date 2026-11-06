@@ -1187,7 +1187,7 @@ pub fn custom_body(text: &str) -> Option<serde_json::Value> {
     }
     let raw = re(r"#[^\n]*").replace_all(&cmds[0].3, "").into_owned();
     let pattern = re(
-        r#"(?x)^\s*OUTPUT\s+\$\{(\w+)\}\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+env\s+CARGO_TARGET_DIR=\$\{(\w+)\}\s+RUSTFLAGS=\$\{(\w+)\}\s+cargo\s+build\s+--release\s+--target\s+\$\{(\w+)\}\s+-p\s+([\w-]+)\s+--manifest-path\s+\$\{(\w+)\}/Cargo\.toml\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+copy\s+\$\{(\w+)\}/\$\{(\w+)\}/release/(lib\w+\.a)\s+\$\{(\w+)\}\s+DEPENDS\s+\$\{(\w+)\}\s+\$\{(\w+)\}/([\w-]+)/Cargo\.toml\s+WORKING_DIRECTORY\s+\$\{(\w+)\}\s+COMMENT\s+"[^"]*"\s+VERBATIM\s*$"#,
+        r#"(?x)^\s*OUTPUT\s+\$\{(\w+)\}\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+env\s+CARGO_TARGET_DIR=\$\{(\w+)\}\s+(?:RUSTFLAGS=\$\{(\w+)\}\s+)?cargo\s+build\s+--release\s+--target\s+\$\{(\w+)\}\s+-p\s+([\w-]+)\s+--manifest-path\s+\$\{(\w+)\}/Cargo\.toml\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+copy(?:_if_different)?\s+\$\{(\w+)\}/\$\{(\w+)\}/release/(lib\w+\.a)\s+\$\{(\w+)\}\s+DEPENDS\s+\$\{(\w+)\}\s+\$\{(\w+)\}/([\w-]+)/Cargo\.toml\s+WORKING_DIRECTORY\s+\$\{(\w+)\}\s+COMMENT\s+"[^"]*"(?:\s+VERBATIM)?\s*$"#,
     );
     let c = pattern.captures(&raw)?;
     if c[2] != c[7]
@@ -1200,18 +1200,21 @@ pub fn custom_body(text: &str) -> Option<serde_json::Value> {
         return None;
     }
     let targets = arch_values(text, &c[4]);
-    let flags = arch_values(text, &c[3]);
+    // RUSTFLAGS is optional: most cohab DLLs pass none. When the command does pass a
+    // variable, every arch must set it, as before.
+    let flags_var = c.get(3).map(|m| m.as_str());
+    let flags = flags_var.map(|v| arch_values(text, v)).unwrap_or_default();
     for arch in ARCHES {
         if targets.get(arch).map(String::as_str)
             != super::constants()["TARGET"]
                 .get(arch)
                 .and_then(|v| v.as_str())
-            || !flags.contains_key(arch)
+            || (flags_var.is_some() && !flags.contains_key(arch))
         {
             return None;
         }
     }
-    if targets.len() != ARCHES.len() || flags.len() != ARCHES.len() {
+    if targets.len() != ARCHES.len() || (flags_var.is_some() && flags.len() != ARCHES.len()) {
         return None;
     }
     let output = re(&format!(
@@ -1227,8 +1230,10 @@ pub fn custom_body(text: &str) -> Option<serde_json::Value> {
         regex::escape(&c[1])
     ));
     let custom = target_re.captures(text)?;
-    let vars: Vec<_> = [&c[1], &c[2], &c[3], &c[4], &c[6], &c[11]]
+    let vars: Vec<_> = [c.get(1), c.get(2), c.get(3), c.get(4), c.get(6), c.get(11)]
         .into_iter()
+        .flatten()
+        .map(|m| m.as_str())
         .collect();
     Some(
         serde_json::json!({"crate":&c[5],"archive":&c[9],"rustflags":flags.into_iter().filter(|(_,v)|!v.is_empty()).collect::<BTreeMap<_,_>>(),"vars":vars,"custom_target":&custom[1]}),
@@ -1386,11 +1391,8 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         }
         x => return Err(Error::new(format!("{target}: link kind {x}"))),
     };
-    if !custom.is_null() && kind != "KernelDll" {
-        return Err(Error::new(format!(
-            "{target}: a custom-command body outside a kernel-mode driver"
-        )));
-    }
+    // A custom `cargo build` body is the same body whatever links it: the user-mode cohab
+    // DLLs (advapi32, user32, ws2_32, ...) build theirs exactly as the drivers do.
     let body_ar = if !custom.is_null() {
         custom["archive"].as_str().map(str::to_owned)
     } else if bodyless {
@@ -1737,10 +1739,27 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         }
         cell.arch_destinations = shipped;
     }
+    // A body-less module with no C of its own is still a module: its .def (forwarders,
+    // data exports), its .res and the static libraries it links (comcat's
+    // wine_dll_register) are the whole link. 26 such DLLs (comcat, lz32, shdoclc, ...)
+    // were refused here; --convert's pe_equiv check against cmake's link is the guard.
+    // What such a cell cannot do is link without ntdll: the Rust shell's panic path
+    // calls DbgPrint and NtTerminateProcess, so a module importing nothing (msxml3r,
+    // mycomput, tapiui, themeui) or not ntdll (comcat, security, softpub, wmi) fails
+    // ld with both undefined. Refuse it here, by name, rather than mid-wave. (Observed only
+    // for C-less cells, so scoped to them; one with C of its own would fail ld the same way.)
     if bodyless && cell.c_shims.is_empty() && cell.arch_shims.values().all(Vec::is_empty) {
-        return Err(Error::new(format!(
-            "{target}: no Rust body and no compiled C"
-        )));
+        let missing: Vec<_> = cell
+            .link_order
+            .iter()
+            .filter(|(_, order)| !order.iter().any(|x| x == "import:ntdll"))
+            .map(|(a, _)| a.clone())
+            .collect();
+        if !missing.is_empty() {
+            return Err(Error::new(format!(
+                "{target}: a body-less cell links the Rust shell, which needs ntdll (DbgPrint, NtTerminateProcess), but cmake's link imports no ntdll on {missing:?}"
+            )));
+        }
     }
     let subs: BTreeMap<_, _> = links
         .iter()

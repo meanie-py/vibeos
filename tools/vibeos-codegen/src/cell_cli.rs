@@ -81,6 +81,13 @@ fn refresh(root: &Path) -> Result<()> {
     for line in recipes.skipped {
         eprintln!("{line}");
     }
+    if !recipes.failed.is_empty() {
+        return Err(Error::new(format!(
+            "{}\n{} recipe(s) not derived",
+            recipes.failed.join("\n"),
+            recipes.failed.len()
+        )));
+    }
     Ok(())
 }
 struct Host {
@@ -341,6 +348,14 @@ fn run_inner(raw: Vec<String>) -> Result<u8> {
             }
             for n in p.skipped {
                 eprintln!("{n}")
+            }
+            if !p.failed.is_empty() {
+                return Err(format!(
+                    "{}\n{} recipe(s) not derived; the rest were written",
+                    p.failed.join("\n"),
+                    p.failed.len()
+                )
+                .into());
             }
         }
         "--apply" => {

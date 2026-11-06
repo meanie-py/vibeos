@@ -137,10 +137,28 @@ pub fn prepare_convert(root: &Path, targets: &[String], baseline: &Path) -> Resu
     if targets.is_empty() {
         return Err(Error::new("--convert needs at least one target"));
     }
-    let cells: Vec<Cell> = targets
-        .iter()
-        .map(|t| graph::model(root, t))
-        .collect::<Result<_>>()?;
+    // Model and dry-run the rewrite of EVERY target before refusing, and name all the
+    // refusals at once: stopping at the first made a 17-module wave cost one baseline
+    // build round per refused module (dbghelp, then libtirpc, ...).
+    let mut cells = Vec::new();
+    let mut refused = Vec::new();
+    for t in targets {
+        match graph::model(root, t) {
+            Ok(cell) => match plan_apply(root, std::slice::from_ref(&cell)) {
+                Ok(_) => cells.push(cell),
+                Err(e) => refused.push(e.to_string()),
+            },
+            Err(e) => refused.push(e.to_string()),
+        }
+    }
+    if !refused.is_empty() {
+        return Err(Error::new(format!(
+            "{}\n{} of {} targets refused; nothing was written",
+            refused.join("\n"),
+            refused.len(),
+            targets.len()
+        )));
+    }
     let baseline_plan = if proof::baseline_reusable(targets, baseline)? {
         let index_path = baseline.join("targets.json");
         proof::BaselinePlan {
@@ -232,7 +250,11 @@ pub fn ninja(root: &Path, arch: &str, targets: &[String]) -> Result<()> {
     let build = root.join(format!("build-{arch}"));
     local(root, &build)?;
     let script = local(root, &root.join("tools/canon-run.sh"))?;
-    for args in [vec!["build.ninja".to_owned()], targets.to_vec()] {
+    // `-k 0` on the cells: a wave's failures are independent, and stopping at the first
+    // two (fusion, msxml3r) left the rest of an 85-module wave unbuilt and unknown.
+    let mut cells = vec!["-k".to_owned(), "0".to_owned()];
+    cells.extend(targets.iter().cloned());
+    for args in [vec!["build.ninja".to_owned()], cells] {
         let output = Command::new("bash")
             .arg(&script)
             .arg("ninja")
@@ -248,12 +270,13 @@ pub fn ninja(root: &Path, arch: &str, targets: &[String]) -> Result<()> {
             );
             let lines: Vec<_> = combined.lines().collect();
             let error = Regex::new(r"^\s*(error|ld\.lld: error)\b").unwrap();
+            // Every FAILED edge, then the first errors: with -k 0 there can be many.
             let mut tail: Vec<_> = lines
                 .iter()
                 .copied()
-                .filter(|s| s.starts_with("FAILED:") || error.is_match(s))
-                .take(20)
+                .filter(|s| s.starts_with("FAILED:"))
                 .collect();
+            tail.extend(lines.iter().copied().filter(|s| error.is_match(s)).take(20));
             tail.extend(lines.iter().copied().skip(lines.len().saturating_sub(8)));
             let mut seen = BTreeSet::new();
             tail.retain(|s| seen.insert(*s));
@@ -271,6 +294,9 @@ pub fn ninja(root: &Path, arch: &str, targets: &[String]) -> Result<()> {
 pub struct RecipePlan {
     pub edits: BTreeMap<PathBuf, String>,
     pub skipped: Vec<String>,
+    /// Targets whose recipe could not be derived. The others are still written: one
+    /// unmodelled library (ole32's per-source defines) used to block every recipe.
+    pub failed: Vec<String>,
 }
 pub fn clib_recipes(root: &Path) -> Result<RecipePlan> {
     let mut plan = RecipePlan::default();
@@ -285,7 +311,7 @@ pub fn clib_recipes(root: &Path) -> Result<RecipePlan> {
                 Err(e) if e.message == format!("{t}: no sources on {a}") => {
                     plan.skipped.push(format!("{a} {t}: {e}"))
                 }
-                Err(e) => return Err(e),
+                Err(e) => plan.failed.push(format!("{a} {t}: {e}")),
             }
         }
     }

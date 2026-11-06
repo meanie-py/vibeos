@@ -128,9 +128,22 @@ impl Linker {
     ) -> Vec<String> {
         let mut head: Vec<String> = vec![t.target.clone()];
         let mut all: Vec<String> = t.defines.clone();
-        all.extend(defines.iter().map(|d| format!("-D{d}")));
+        all.extend(
+            defines
+                .iter()
+                .filter(|d| !d.starts_with('+'))
+                .map(|d| format!("-D{d}")),
+        );
         all.sort();
         head.extend(all);
+        // A recipe's `+X` is a source's own COMPILE_DEFINITIONS, which cmake appends
+        // after the sorted target set rather than sorting in.
+        head.extend(
+            defines
+                .iter()
+                .filter_map(|d| d.strip_prefix('+'))
+                .map(|d| format!("-D{d}")),
+        );
         head.extend(self.c_includes(t, includes, root));
         for f in flags {
             if f == "@core" {

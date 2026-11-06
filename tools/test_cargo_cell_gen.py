@@ -403,6 +403,17 @@ def test_a_driver_custom_command_is_its_body():
     assert g._custom_body(DRIVER.replace("-p d-rust", "-p d-rust --features x")) is None
 
 
+def test_a_custom_command_without_rustflags_is_its_body():
+    # 38 cohab DLLs (version, advapi32, user32, ...) pass no RUSTFLAGS= at all; the
+    # matcher used to require one and refused every one of them.
+    text = DRIVER.replace("        RUSTFLAGS=${D_RUST_RUSTFLAGS}\n", "")
+    assert "RUSTFLAGS=" not in text
+    body = g._custom_body(text)
+    assert body is not None and body["crate"] == "d-rust"
+    assert body["rustflags"] == {} and body["custom_target"] == "rust_d"
+    assert "D_RUST_RUSTFLAGS" not in body["vars"]
+
+
 def test_a_driver_rewrite_drops_its_body_command_and_keeps_its_inf(tmp_path):
     f = tmp_path / "CMakeLists.txt"
     # The header comment sits on the body's first set(): it outlives the statements
@@ -919,12 +930,25 @@ def test_a_c_command_is_the_template_plus_the_library_part():
     assert g.c_decode(f, CTMPL, "amd64") == C_CMD.split()[: C_CMD.split().index("-o")]
 
 
+def test_a_source_define_cmake_appends_is_kept_after_the_sorted_run():
+    # ole32's stubmanager_seh.c: set_source_files_properties(... COMPILE_DEFINITIONS
+    # _USE_NATIVE_SEH) lands after cmake's sorted target defines, not sorted in.
+    cmd = C_CMD.replace("-D__REACTOS__ ", "-D__REACTOS__ -DSEH ")
+    f = g.c_encode(cmd, CTMPL, "amd64")
+    assert f.defines == ("UNICODE", "+SEH")
+    assert g.c_decode(f, CTMPL, "amd64") == cmd.split()[: cmd.split().index("-o")]
+
+
 def test_a_c_command_out_of_rule_order_is_refused():
     import pytest
 
-    with pytest.raises(g.GenError, match="not sorted"):
+    # Disorder inside the sorted run itself is not cmake's rule (here the global define it
+    # moved no longer sits in the sorted run, so the template no longer explains it).
+    with pytest.raises(g.GenError, match=r"not sorted|lacks the global define"):
         g.c_encode(
-            C_CMD.replace("-DUNICODE -D__REACTOS__", "-D__REACTOS__ -DUNICODE"), CTMPL, "amd64"
+            C_CMD.replace("-DDBG=1 -DUNICODE -D__REACTOS__", "-DUNICODE -DDBG=1 -D__REACTOS__"),
+            CTMPL,
+            "amd64",
         )
 
 
@@ -1452,6 +1476,22 @@ def test_a_failed_build_names_the_failed_edge_not_the_lock_noise(tmp_path):
         g._ninja("i386", ["kdstub"], tmp_path)
     assert "FAILED: drivers/base/kdstub/kdstub.dll" in str(e.value)
     assert "error[E0425]" in str(e.value)
+
+
+def test_a_wave_build_keeps_going_and_names_every_failed_cell(tmp_path):
+    # An 85-module wave stopped at its first two failures; the rest went unbuilt.
+    script = tmp_path / "tools/canon-run.sh"
+    script.parent.mkdir()
+    log = tmp_path / "args"
+    failed = "".join(f"FAILED: m{i}.dll\\n" for i in range(25))
+    script.write_text(
+        f'echo "$*" >> {log}\n[ "$2" = build.ninja ] && exit 0\nprintf \'{failed}\'\nexit 1\n'
+    )
+    (tmp_path / "build-i386").mkdir()
+    with pytest.raises(g.GenError) as e:
+        g._ninja("i386", ["a", "b"], tmp_path)
+    assert log.read_text().splitlines() == ["ninja build.ninja", "ninja -k 0 a b"]
+    assert all(f"FAILED: m{i}.dll" in str(e.value) for i in range(25))
 
 
 def test_a_rewrite_refusal_writes_no_cell(tmp_path, monkeypatch):
