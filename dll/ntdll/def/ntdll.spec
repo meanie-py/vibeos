@@ -862,8 +862,12 @@
 @ stdcall RtlFindSetBitsAndClear(ptr long long)
 @ stdcall RtlFirstEntrySList(ptr)
 @ stdcall RtlFirstFreeAce(ptr ptr)
-@ stdcall -stub -version=0x600+ RtlFlsAlloc(long long long long)
-@ stdcall -stub -version=0x600+ RtlFlsFree(long)
+@ stdcall -version=0x600+ RtlFlsAlloc(ptr ptr)
+@ stdcall -version=0xA00+ RtlFlsAllocEx(ptr ptr ptr) # Windows 11
+@ stdcall -version=0x600+ RtlFlsFree(long)
+@ stdcall -version=0xA00+ RtlFlsGetValue(long ptr)
+@ stdcall -version=0xA00+ RtlFlsGetValue2(long) # Windows 11
+@ stdcall -version=0xA00+ RtlFlsSetValue(long ptr)
 @ stdcall RtlFlushSecureMemoryCache(ptr ptr)
 @ stdcall RtlFormatCurrentUserKeyPath(ptr)
 @ stdcall RtlFormatMessage(ptr long long long long ptr ptr long ptr)
@@ -965,7 +969,7 @@
 @ stdcall RtlInitializeGenericTable(ptr ptr ptr ptr ptr)
 @ stdcall RtlInitializeGenericTableAvl(ptr ptr ptr ptr ptr)
 @ stdcall RtlInitializeHandleTable(long long ptr)
-@ stdcall -stub -version=0x600+ RtlInitializeNtUserPfn(wstr long ptr long wstr ptr)
+@ stdcall -version=0x600+ RtlInitializeNtUserPfn(wstr long ptr long wstr ptr)
 @ stdcall RtlInitializeRXact(ptr long ptr)
 @ stdcall RtlInitializeResource(ptr)
 @ stdcall RtlInitializeSListHead(ptr)
@@ -1088,7 +1092,7 @@
 @ stdcall RtlPrefixString(ptr ptr long)
 @ stdcall RtlPrefixUnicodeString(ptr ptr long)
 @ stdcall -stub -version=0x600+ -arch=x86_64 RtlPrepareForProcessCloning()
-@ stdcall -stub -version=0x600+ RtlProcessFlsData(long long)
+@ stdcall -version=0x600+ RtlProcessFlsData(ptr)
 @ stdcall RtlProtectHeap(ptr long)
 @ stdcall RtlPushFrame(ptr)
 @ stdcall RtlQueryActivationContextApplicationSettings(long ptr wstr wstr ptr ptr ptr)
@@ -1147,7 +1151,7 @@
 @ stdcall RtlResetRtlTranslations(ptr)
 @ stdcall -arch=x86_64,arm64 RtlRestoreContext(ptr ptr)
 @ stdcall RtlRestoreLastWin32Error(long) RtlSetLastWin32Error
-@ stdcall -stub -version=0x600+ RtlRetrieveNtUserPfn(ptr ptr ptr)
+@ stdcall -version=0x600+ RtlRetrieveNtUserPfn(ptr ptr ptr)
 @ stdcall RtlRevertMemoryStream(ptr)
 @ stdcall RtlRunDecodeUnicodeString(long ptr)
 @ stdcall RtlRunEncodeUnicodeString(long ptr)
@@ -2257,10 +2261,6 @@
 @ stub -arch=win64 -version=0xA00+ RtlFindSetBitsAndClearEx
 @ stub -arch=win64 -version=0xA00+ RtlFindSetBitsEx
 @ stub -version=0xA00+ RtlFindUnicodeSubstring
-@ stub -version=0xA00+ RtlFlsAllocEx
-@ stub -version=0xA00+ RtlFlsGetValue
-@ stub -version=0xA00+ RtlFlsGetValue2
-@ stub -version=0xA00+ RtlFlsSetValue
 @ stub -version=0xA00+ RtlFlushHeaps
 @ stub -arch=win64 -version=0xA00+ RtlFlushNonVolatileMemory
 @ stub -arch=win64 -version=0xA00+ RtlFlushNonVolatileMemoryRanges

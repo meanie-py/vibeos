@@ -18,6 +18,9 @@
 @ stdcall RtlWaitOnAddress(ptr ptr long ptr)
 @ stdcall RtlWakeAddressAll(ptr)
 @ stdcall RtlWakeAddressSingle(ptr)
+# user32's client-callback tables (upstream rtl_vista ntuserpfn.c). Bodies: ntdll-rust rtl/ntuserpfn.rs.
+@ stdcall RtlInitializeNtUserPfn(wstr long ptr long wstr ptr)
+@ stdcall RtlRetrieveNtUserPfn(ptr ptr ptr)
 
 # The NT threadpool. Bodies: rtl-threadpool (linked through rtl-vista-rust), as upstream
 # compiles threadpool.c into rtl_vista. kernel32_vista forwards its CreateThreadpool* family here.
