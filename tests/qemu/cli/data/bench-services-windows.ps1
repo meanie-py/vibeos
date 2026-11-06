@@ -19,9 +19,10 @@ try {
         }
         $child = Start-Process -FilePath $exe -ArgumentList @($service, ('"' + $directory + '"'), '127.0.0.1', $port) -PassThru -WindowStyle Hidden -RedirectStandardOutput (Join-Path $directory "$service.log") -RedirectStandardError (Join-Path $directory "$service.err")
         $child.Refresh()
+        $null = $child.Handle
         $identity = Get-CimInstance Win32_Process -Filter "ProcessId=$($child.Id)"
         if (!$identity -or $identity.ExecutablePath -ne $exe) { throw 'wrong child identity' }
-        $children += @{pid=$child.Id; creation=$identity.CreationDate; exe=$exe}
+        $children += @{pid=$child.Id; creation=$identity.CreationDate; exe=$exe; process=$child}
         if ($service -eq 'http') {
             $deadline = [DateTime]::UtcNow.AddSeconds(10)
             do {
@@ -65,11 +66,17 @@ try {
     Write-Output 'WINDOWS_BENCH_SERVICES_OK'
 } finally {
     foreach ($owned in $children) {
-        $live = Get-CimInstance Win32_Process -Filter "ProcessId=$($owned.pid)"
-        if ($live) {
-            if ($live.CreationDate -ne $owned.creation -or $live.ExecutablePath -ne $owned.exe) { throw 'refusing changed child identity' }
-            Stop-Process -Id $owned.pid
-        }
+        $process = $owned.process
+        try {
+            if (!$process.HasExited) {
+                $live = Get-CimInstance Win32_Process -Filter "ProcessId=$($owned.pid)"
+                if (!$live -or $live.CreationDate -ne $owned.creation -or $live.ExecutablePath -ne $owned.exe) { throw 'refusing changed child identity' }
+                # Kill the opened incarnation, then await exit before deleting its image.
+                $process.Kill()
+                if (!$process.WaitForExit(10000)) { throw 'owned bench child did not exit' }
+                $process.WaitForExit()
+            }
+        } finally { $process.Dispose() }
     }
     Remove-Item -LiteralPath $directory -Recurse -Force
 }

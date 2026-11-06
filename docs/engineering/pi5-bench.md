@@ -84,15 +84,18 @@ delete that file after rebuilding a card.
 
 ## Serial, plug, Pico, capture
 
-- **Serial** comes from the 3-pin JST-SH debug connector, wired to picousb: the Pi's
-  TX to GP1 (the Pico's UART0 RX), its RX to GP0 (UART0 TX), and the middle pin to
-  GND. Crossed the other way, both directions are silent: no byte arrives and the
-  Pico counts no errors. It was, until 2026-10-06, so no boot before then had serial.
+- **Serial** comes from the 3-pin JST-SH debug connector between the micro-HDMI
+  ports, at 115200 8N1: Pi pin **3 / TX** goes to Pico **GP1 / RX**, Pi pin
+  **1 / RX** goes to Pico **GP0 / TX**, and middle pin **2 / GND** goes to Pico GND.
+  Incorrect wiring caused silent boots before 2026-10-06; moving wires can also
+  produce garbage bytes and receive errors, so verify a readable login reply or boot.
   Check it from the stager: `echo hi | sudo tee /dev/ttyAMA10` must raise the Pico's
   `console_rx` (`./vibeos-cli pi5 status`). `pico.sh serial --send` needs `--seconds`. That port is the UART UEFI's ACPI tables name, so the firmware, UEFI, the
   loader and the kernel all print there with no configuration.
   - Start the listener with `tools/pi5/serial.sh up`.
-  - **With the listener, `pi5 boot` waits for `shell ready`** like `pi4 boot`.
+  - **With the listener, `pi5 boot` requires both Explorer's `_tWinMain entered`
+    and `shell ready`**, like `pi4 boot`. The earlier win32k `shell ready` line
+    alone does not prove Explorer started.
   - **Without it, the verdict is HDMI-only and passes only as a warning:** the
     desktop background has to fill at least 20% of the frame.
   - GPIO14/15 belong to RP1, which neither UEFI nor VibeOS sets up yet.

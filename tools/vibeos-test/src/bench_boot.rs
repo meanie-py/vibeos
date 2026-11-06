@@ -234,7 +234,12 @@ fn finish_desktop(
             "desktop_s",
             json!((boot_started.elapsed().as_secs_f64() * 10.0).round() / 10.0),
         )?;
-        c.stage("desktop", "ok", h::MARKER, json!([]))?;
+        c.stage(
+            "desktop",
+            "ok",
+            &format!("{} + {}", h::EXPLORER_MARKER, h::MARKER),
+            json!([]),
+        )?;
         if flag(c.args, "ladder") {
             ladder(c, serial, start)?;
         } else {
@@ -832,7 +837,12 @@ fn pi5_await(
         };
         c.save_serial(&text)?;
         if reached {
-            c.stage("desktop", "ok", h::MARKER, json!([]))?;
+            c.stage(
+                "desktop",
+                "ok",
+                &format!("{} + {}", h::EXPLORER_MARKER, h::MARKER),
+                json!([]),
+            )?;
             if let Some(server) = medium.as_deref_mut() {
                 await_stortest(c, serial, start, server)?;
             } else {

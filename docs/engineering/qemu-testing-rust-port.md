@@ -107,6 +107,9 @@ Linux process start ticks, configured host and capture directory so a reused PID
 cannot validate another listener. Hardware validation still requires a real lease,
 fresh payload, new serial slice and HDMI evidence; host fixtures do not substitute
 for a physical boot.
+Serial desktop verdicts require both `[EXPLORER] _tWinMain entered` and `shell ready`.
+Win32k's earlier `shell ready` line alone is insufficient; panic/bugcheck output
+in the same slice takes precedence over success markers.
 
 Service mutations take the bench lease and a per-bench service lock. Windows
 launchers publish full process ownership before the controller confirms listening

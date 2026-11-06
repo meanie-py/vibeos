@@ -12,6 +12,15 @@ use std::{
 };
 
 pub const MARKER: &str = "shell ready";
+pub const EXPLORER_MARKER: &str = "[EXPLORER] _tWinMain entered";
+pub fn desktop_reached(text: &str) -> bool {
+    // Win32k emits shell ready before Explorer starts. Both are needed to
+    // establish the desktop; a crash in the same slice always takes precedence.
+    text.contains(MARKER)
+        && text.contains(EXPLORER_MARKER)
+        && !text.contains("*** BUGCHECK")
+        && !text.contains("panicked at")
+}
 pub const PI_WATTS_MAX: f64 = 20.0;
 pub const STORTEST_MARKER: &[u8] = b"vibeos usb e2e marker\r\n";
 pub const STORTEST_WROTE: &[u8] = b"vibeos wrote this through fastfat+usbstor\r\n";
@@ -85,7 +94,7 @@ pub fn wait_desktop(path: &Path, start: u64, timeout: f64) -> (String, bool) {
     let deadline = Instant::now() + Duration::from_secs_f64(timeout.max(0.0));
     loop {
         let text = serial_slice(path, start);
-        if text.contains(MARKER) {
+        if desktop_reached(&text) {
             return (text, true);
         }
         if text.contains("*** BUGCHECK") || text.contains("panicked at") {
@@ -211,6 +220,33 @@ mod tests {
         assert!(!drop_marker(
             r"PiEnumerateDevice USBSTOR\Disk&Ven_PICOUSB_: 0 children"
         ));
+    }
+    #[test]
+    fn desktop_needs_explorer_and_shell_without_a_crash() {
+        let d = tempfile::tempdir().unwrap();
+        let p = d.path().join("serial.bin");
+        for (text, expected) in [
+            ("[WIN32K] shell ready", false),
+            (EXPLORER_MARKER, false),
+            ("[WIN32K] shell ready\n[EXPLORER] _tWinMain entered", true),
+            (
+                "[EXPLORER] _tWinMain entered\nshell ready\n*** BUGCHECK: 0x1E",
+                false,
+            ),
+            (
+                "shell ready\n[EXPLORER] _tWinMain entered\npanicked at bounds check",
+                false,
+            ),
+        ] {
+            assert_eq!(desktop_reached(text), expected);
+        }
+        fs::write(&p, "[WIN32K] shell ready").unwrap();
+        assert!(!wait_desktop(&p, 0, 0.0).1);
+        assert!(!wait_desktop_with_medium(&p, 0, 0.0, None, false).unwrap().1);
+        fs::write(&p, "shell ready\n[EXPLORER] _tWinMain entered").unwrap();
+        assert!(wait_desktop(&p, 0, 0.0).1);
+        assert!(wait_desktop_with_medium(&p, 0, 0.0, None, false).unwrap().1);
+        assert!(!wait_desktop(&p, fs::metadata(&p).unwrap().len(), 0.0).1);
     }
     #[test]
     fn serial_and_verdict_are_boot_scoped() {
@@ -392,7 +428,7 @@ pub fn wait_desktop_with_medium(
                 server.drop_medium()?;
             }
         }
-        if text.contains(MARKER) {
+        if desktop_reached(&text) {
             return Ok((text, true));
         }
         if text.contains("*** BUGCHECK") || text.contains("panicked at") {
