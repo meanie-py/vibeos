@@ -3275,8 +3275,16 @@ pub unsafe extern "system" fn NtCreateMailslotFile(
     let mut Buffer: _MAILSLOT_CREATE_PARAMETERS = core::mem::zeroed();
 
     if !TimeOut.is_null() {
-        if KeGetPreviousMode() != KernelMode {
-            Buffer.ReadTimeout = core::mem::transmute(*TimeOut);
+        let PreviousMode = KeGetPreviousMode();
+        if PreviousMode != KernelMode {
+            /* The C reads it with ProbeForReadLargeInteger under SEH and returns the
+             * exception code; this read dereferenced the caller's pointer raw, so a bad one
+             * faulted the kernel. ProbeForReadGenericType checks the range only, not the
+             * alignment, hence 1. */
+            match probe_read_generic(TimeOut as *const LARGE_INTEGER, 1, PreviousMode) {
+                Ok(v) => Buffer.ReadTimeout = core::mem::transmute(v),
+                Err(status) => return status,
+            }
         } else {
             Buffer.ReadTimeout = core::mem::transmute(*TimeOut);
         }
@@ -3330,8 +3338,16 @@ pub unsafe extern "system" fn NtCreateNamedPipeFile(
     let mut Buffer: _NAMED_PIPE_CREATE_PARAMETERS = core::mem::zeroed();
 
     if !DefaultTimeout.is_null() {
-        if KeGetPreviousMode() != KernelMode {
-            Buffer.DefaultTimeout = core::mem::transmute(*DefaultTimeout);
+        let PreviousMode = KeGetPreviousMode();
+        if PreviousMode != KernelMode {
+            /* The C reads it with ProbeForReadLargeInteger under SEH and returns the
+             * exception code; this read dereferenced the caller's pointer raw, so a bad one
+             * faulted the kernel. ProbeForReadGenericType checks the range only, not the
+             * alignment, hence 1. */
+            match probe_read_generic(DefaultTimeout as *const LARGE_INTEGER, 1, PreviousMode) {
+                Ok(v) => Buffer.DefaultTimeout = core::mem::transmute(v),
+                Err(status) => return status,
+            }
         } else {
             Buffer.DefaultTimeout = core::mem::transmute(*DefaultTimeout);
         }

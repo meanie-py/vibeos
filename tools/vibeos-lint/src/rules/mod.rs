@@ -7,6 +7,7 @@ pub mod dowhile_continue;
 pub mod entry_point_cc;
 pub mod uncalled_ctor_hook;
 pub mod mingw_c_vtable;
+pub mod dead_seh_handlers;
 pub mod guid_values;
 pub mod container_ptr_read;
 pub mod fnptr_abi_transmute;
@@ -293,6 +294,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(entry_point_cc::EntryPointCc),
         Box::new(uncalled_ctor_hook::UncalledCtorHook),
         Box::new(mingw_c_vtable::MingwCVtable),
+        Box::new(dead_seh_handlers::DeadSehHandlers),
         Box::new(guid_values::GuidValues),
         Box::new(container_ptr_read::ContainerPtrRead),
     ]

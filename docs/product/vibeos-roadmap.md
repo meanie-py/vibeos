@@ -732,6 +732,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`20261105-233150-dbuff_ay`). wow64's `Wow64pVeh` now runs on amd64; the amd64 ladder is
   13/13 PASS on it (`20261105-233955-5l_obhz3`), and the arm64 FEX ladder 13/13 + x86-64
   11/11 (`20261105-234852-0qxo29e9`).
+- **One user-mode `ReleaseSemaphore` past the maximum bugchecked the kernel — FIXED 2026-11-06
+  (cpp-cluster).** `0x1E` with code `C0000047` on all three arches
+  (`20261106-153844-z1j4_6z3`, `20261106-153956-0a2bq_dj`, `20261106-154053-vv_mn6q_`). The
+  Rust Nt* layer had dropped the `__except` around callees that raise by contract: the same bug
+  in `NtReleaseMutant`, `PsSuspendThread` (a 128th SuspendThread), `NtSignalAndWaitForSingleObject`
+  and the `NtWait*` functions, plus unprobed timeout pointers in `NtCreateNamedPipeFile` /
+  `NtCreateMailslotFile`. All restored with the C's filters; `tools/payloads/sehprobe` 11/11 on
+  all three (`20261106-161407-2ai5k9hl`, `20261106-161540-003xbllo`,
+  `20261106-161829-9twosmpo`). The rest of the class is `scan_dead_seh_handlers`'s baseline
+  (`docs/engineering/dummy-pseh-verdict.md`, "Status").
 - **ntdll's `RtlDosSearchPath_Ustr` never applies SxS redirection (open, found 2026-11-05,
   rtl).** Same cause as the vectored-handler bug above: the branch (`sdk/lib/rtl/path.c`, `if
   (Flags & 1)`) is `#ifndef _NTOSKRNL_`, and the one librtl both ntoskrnl and ntdll link is

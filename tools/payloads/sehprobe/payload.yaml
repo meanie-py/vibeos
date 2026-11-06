@@ -1,0 +1,19 @@
+# sehprobe — can a user process crash the kernel through an __except the Rust port dropped?
+# Bad pointers and over-limit counts into the user-reachable rows of scan_dead_seh_handlers.
+#   tools/payloads/sehprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=sehprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload sehprobe
+name: sehprobe
+description: user-reachable kernel paths whose C caught an exception
+
+build_hint: "tools/payloads/sehprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/sehprobe/sehprobe-{arch}.exe
+    root: image
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/sehprobe.exe
+
+test:
+  launch_marker: "[SEHPROBE] done"
+  pass_marker: "[SEHPROBE] done VERDICT=PASS"
+  launch_drain_secs: 300

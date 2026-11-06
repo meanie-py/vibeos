@@ -8565,6 +8565,22 @@ Three method lessons from the hunt:
   zero-byte allocation and wrote past it. A labeled block after a try block is not a handler;
   drop the arm (nothing raises into it) rather than keep it reachable.
 
+### A callee that RAISES by contract, its `__except` dropped: one user-mode call bugchecks
+**Symptom:** `BUGCHECK 0x1E` whose first parameter is an ordinary NTSTATUS (`C0000047`
+STATUS_SEMAPHORE_LIMIT_EXCEEDED, `C0000046`, `C000004A`), from a user process doing nothing
+worse than `ReleaseSemaphore(h, 5)` on a full semaphore. On all three arches until 2026-11-06.
+**Cause:** `KeReleaseSemaphore`, `KeReleaseMutant`, `KeSuspendThread` and `KeWaitFor*` report
+those failures by RAISING, and the Nt* layer catches them (`NtReleaseSemaphore`'s
+`_SEH2_EXCEPT(ExSystemExceptionFilter())`). The DUMMY_PSEH-era port kept the try body and
+dropped the handler. Often it also put a validate-first probe on the out-parameter, so the
+function LOOKS protected: the probe answers a bad pointer, and nothing answers the raise.
+**Fix:** `ntkrnl_sys::seh::try_except` around the raising call, with the C's own filter: the
+exact code(s), or `ExSystemExceptionFilter()` (user-mode caller only, so kernel misuse still
+crashes). `ob-rust/src/obwait.rs`'s `catching(codes, f)` is the shape. `scan_dead_seh_handlers`
+lists every remaining function whose C twin had an `__except`, and it accepts only a real catch
+where the twin's try body calls a raise-by-contract callee. `tools/payloads/sehprobe` exercises the
+user-reachable ones.
+
 ### An SEH filter expression is a PREDICATE, not a value `[§9.70]`
 `GlobalLock` materialised `EXCEPTION_EXECUTE_HANDLER` into a local and branched on it, so it
 **returned NULL unconditionally** — and every edit box in the OS was dead (Notepad, every

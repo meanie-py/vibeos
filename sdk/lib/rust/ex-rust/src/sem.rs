@@ -336,17 +336,30 @@ pub unsafe extern "system" fn NtReleaseSemaphore(
     );
 
     if Status >= 0 {
-        let PrevCount = KeReleaseSemaphore(
-            Semaphore as PKSEMAPHORE,
-            IO_NO_INCREMENT as i32,
-            ReleaseCount,
-            0u8,
-        );
-
-        if !PreviousCount.is_null() {
-            if let Err(e) = write_user(PreviousCount, PrevCount, PreviousMode) {
-                Status = e;
+        /* KeReleaseSemaphore RAISES STATUS_SEMAPHORE_LIMIT_EXCEEDED by contract, and the C
+         * catches it here with ExSystemExceptionFilter. Dropping the catch let one user-mode
+         * ReleaseSemaphore past the maximum bugcheck the kernel (0x1E, tools/payloads/sehprobe). */
+        let mut PrevCount: LONG = 0;
+        match ntkrnl_sys::seh::try_except(
+            &mut PrevCount,
+            |prev| {
+                *prev = KeReleaseSemaphore(
+                    Semaphore as PKSEMAPHORE,
+                    IO_NO_INCREMENT as i32,
+                    ReleaseCount,
+                    0u8,
+                )
+            },
+            |_, _| crate::harderr::ExSystemExceptionFilter(),
+        ) {
+            Ok(()) => {
+                if !PreviousCount.is_null() {
+                    if let Err(e) = write_user(PreviousCount, PrevCount, PreviousMode) {
+                        Status = e;
+                    }
+                }
             }
+            Err(code) => Status = code,
         }
 
         ObDereferenceObject(Semaphore);

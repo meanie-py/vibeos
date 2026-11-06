@@ -1538,6 +1538,14 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # filed against the extension. Baseline is EMPTY. A Rust rule
     # (tools/vibeos-lint/src/rules/mingw_c_vtable.rs).
     specs.append(("scan_mingw_c_vtable", [rustlints.SENTINEL, "scan_mingw_c_vtable"], "stdout"))
+    # A Rust function whose C twin catches with __except while the Rust catches nothing: the
+    # DUMMY_PSEH-era port kept the try body and dropped the handler. PsSuspendThread's dropped
+    # catch let a 128th SuspendThread bugcheck the kernel. The baseline IS the SEH quest's
+    # inventory (docs/engineering/dummy-pseh-verdict.md); burn it down, never grow it.
+    # A Rust rule (tools/vibeos-lint/src/rules/dead_seh_handlers.rs).
+    specs.append(
+        ("scan_dead_seh_handlers", [rustlints.SENTINEL, "scan_dead_seh_handlers"], "stdout")
+    )
     # A Rust GUID literal the SDK's DEFINE_GUID gives a different value. stobject's model
     # wrote CGID_ShellServiceObject from memory, one digit off, and the tray never started.
     # A Rust rule (tools/vibeos-lint/src/rules/guid_values.rs).
