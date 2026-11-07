@@ -7,7 +7,7 @@ use crate::windows::message::HeapReAlloc;
 use crate::windows::draw::DrawStateW;
 use crate::windows::font::DrawTextW;
 use crate::windows::class::GetWindowLongPtrW;
-use crate::windows::rect::IsRectEmpty;
+use crate::windows::nonclient::AdjustWindowRectEx;
 use crate::windows::cursoricon::LoadCursorW;
 use core::ffi::c_void;
 
@@ -119,7 +119,9 @@ pub const HICON_GWL_OFFSET: usize = core::mem::size_of::<HFONT>();
 pub const UISTATE_GWL_OFFSET: usize = HICON_GWL_OFFSET + core::mem::size_of::<HICON>();
 pub const STATIC_EXTRA_BYTES: usize = UISTATE_GWL_OFFSET + core::mem::size_of::<LONG>();
 
-pub type pfPaint = Option<unsafe extern "system" fn(hwnd: HWND, hdc: HDC, style: DWORD)>;
+/// Wine 11.11: the caller sends WM_CTLCOLORSTATIC once and hands every painter the
+/// brush, so the message goes out on every paint, painter or not.
+pub type pfPaint = Option<unsafe extern "system" fn(hwnd: HWND, hdc: HDC, hbrush: HBRUSH, style: DWORD)>;
 
 pub static staticPaintFunc: [pfPaint; (SS_TYPEMASK + 1) as usize] =
 [
@@ -139,8 +141,8 @@ pub static staticPaintFunc: [pfPaint; (SS_TYPEMASK + 1) as usize] =
     Some(STATIC_PaintOwnerDrawfn), /* SS_OWNERDRAW */
     Some(STATIC_PaintBitmapfn),    /* SS_BITMAP */
     Some(STATIC_PaintEnhMetafn),   /* SS_ENHMETAFILE */
-    Some(STATIC_PaintEtchedfn),    /* SS_ETCHEDHORZ */
-    Some(STATIC_PaintEtchedfn),    /* SS_ETCHEDVERT */
+    None,                          /* SS_ETCHEDHORZ: a WS_EX_STATICEDGE line, see WM_NCCREATE */
+    None,                          /* SS_ETCHEDVERT */
     Some(STATIC_PaintEtchedfn),    /* SS_ETCHEDFRAME */
     // C declares the table [SS_TYPEMASK+1] (== 32); indices 19..=31 are
     // implicit NULL in the C aggregate initializer. Pad to match the
@@ -195,9 +197,6 @@ pub static STATIC_builtin_class: builtin_class_descr = builtin_class_descr {
 unsafe fn STATIC_SetIcon(hwnd: HWND, hicon: HICON, style: DWORD) -> HICON {
     let mut size: SIZE = core::mem::zeroed();
 
-    if (style & SS_TYPEMASK) != SS_ICON {
-        return core::ptr::null_mut();
-    }
     if !hicon.is_null() && get_icon_size(hicon, &mut size) == 0 {
         WARN!(b"hicon != 0, but invalid\n\0".as_ptr() as *const i8);
         return core::ptr::null_mut();
@@ -220,9 +219,6 @@ unsafe fn STATIC_SetIcon(hwnd: HWND, hicon: HICON, style: DWORD) -> HICON {
 unsafe fn STATIC_SetBitmap(hwnd: HWND, hBitmap: HBITMAP, style: DWORD) -> HBITMAP {
     let hOldBitmap: HBITMAP;
 
-    if (style & SS_TYPEMASK) != SS_BITMAP {
-        return core::ptr::null_mut();
-    }
     if !hBitmap.is_null() && GetObjectType(hBitmap as *mut core::ffi::c_void) != OBJ_BITMAP as DWORD {
         return core::ptr::null_mut();
     }
@@ -255,9 +251,6 @@ unsafe fn STATIC_SetBitmap(hwnd: HWND, hBitmap: HBITMAP, style: DWORD) -> HBITMA
 }
 
 unsafe fn STATIC_SetEnhMetaFile(hwnd: HWND, hEnhMetaFile: HENHMETAFILE, style: DWORD) -> HENHMETAFILE {
-    if (style & SS_TYPEMASK) != SS_ENHMETAFILE {
-        return core::ptr::null_mut();
-    }
     if !hEnhMetaFile.is_null() && GetObjectType(hEnhMetaFile as *mut _) != OBJ_ENHMETAFILE {
         WARN!(b"hEnhMetaFile != 0, but it's not an enhanced metafile\n\0".as_ptr() as LPCSTR);
         return core::ptr::null_mut();
@@ -325,18 +318,38 @@ unsafe fn STATIC_LoadIconW(hInstance: HINSTANCE, name: LPCWSTR, style: DWORD) ->
     hicon
 }
 
-unsafe fn STATIC_TryPaintFcn(hwnd: HWND, full_style: LONG) {
-    let style: LONG = full_style & SS_TYPEMASK as LONG;
-    let mut rc: RECT = core::mem::zeroed();
+/// A dialog template names a resource by ordinal as `0xFFFF, id` (wide) or
+/// `0xFF, lo, hi` (ANSI); CreateWindow passes that straight through as the window
+/// title. Wine 11.11 turns it into MAKEINTRESOURCE(id) before loading.
+unsafe fn resource_ordinal_name(name: LPCWSTR, unicode: BOOL) -> LPCWSTR {
+    if name.is_null() || IS_INTRESOURCE(name as *const core::ffi::c_void) != 0 {
+        return name;
+    }
+    if unicode == 0 {
+        let nameA = name as *const u8;
+        if *nameA == 0xff {
+            return (*nameA.add(1) as usize | ((*nameA.add(2) as usize) << 8)) as LPCWSTR;
+        }
+    } else if *name == 0xffff {
+        return *name.add(1) as usize as LPCWSTR;
+    }
+    name
+}
 
-    GetClientRect(hwnd, &mut rc);
-    if IsRectEmpty(&mut rc) == 0
-        && IsWindowVisible(hwnd) != 0
-        && staticPaintFunc[style as usize].is_some()
-    {
+unsafe fn STATIC_TryPaintFcn(hwnd: HWND, full_style: LONG) {
+    // Wine 11.11: no empty-rect or painter check, so WM_CTLCOLORSTATIC is sent even
+    // for a type that paints nothing.
+    if IsWindowVisible(hwnd) != 0 {
+        let mut rc: RECT = core::mem::zeroed();
+        let style: LONG = full_style & SS_TYPEMASK as LONG;
+
+        GetClientRect(hwnd, &mut rc);
         let hdc: HDC = crate::ntwrapper::GetDC(hwnd);
         let hrgn: HRGN = set_control_clipping(hdc, &mut rc);
-        (staticPaintFunc[style as usize].unwrap())(hwnd, hdc, full_style as DWORD);
+        let hbrush: HBRUSH = STATIC_SendWmCtlColorStatic(hwnd, hdc);
+        if let Some(paint) = staticPaintFunc[style as usize] {
+            paint(hwnd, hdc, hbrush, full_style as DWORD);
+        }
         SelectClipRgn(hdc, hrgn);
         if !hrgn.is_null() {
             DeleteObject(hrgn as _);
@@ -430,13 +443,14 @@ pub unsafe extern "system" fn StaticWndProc_common(hwnd: HWND, uMsg: UINT, wPara
                 crate::ntwrapper::BeginPaint(hwnd, &mut ps)
             };
             GetClientRect(hwnd, &mut rect);
-            if staticPaintFunc[style as usize].is_some() {
-                let hrgn: HRGN = set_control_clipping(hdc, &mut rect);
-                (staticPaintFunc[style as usize].unwrap())(hwnd, hdc, full_style as DWORD);
-                SelectClipRgn(hdc, hrgn);
-                if !hrgn.is_null() {
-                    DeleteObject(hrgn as HGDIOBJ);
-                }
+            let hrgn: HRGN = set_control_clipping(hdc, &mut rect);
+            let hbrush: HBRUSH = STATIC_SendWmCtlColorStatic(hwnd, hdc);
+            if let Some(paint) = staticPaintFunc[style as usize] {
+                paint(hwnd, hdc, hbrush, full_style as DWORD);
+            }
+            SelectClipRgn(hdc, hrgn);
+            if !hrgn.is_null() {
+                DeleteObject(hrgn as HGDIOBJ);
             }
             if wParam == 0 {
                 crate::ntwrapper::EndPaint(hwnd, &ps);
@@ -466,28 +480,53 @@ pub unsafe extern "system" fn StaticWndProc_common(hwnd: HWND, uMsg: UINT, wPara
         WM_NCCREATE => {
             let cs: *mut CREATESTRUCTW = lParam as *mut CREATESTRUCTW;
 
-            if full_style & SS_SUNKEN as LONG != 0 {
+            let etched = style == SS_ETCHEDHORZ as LONG || style == SS_ETCHEDVERT as LONG;
+            if full_style & SS_SUNKEN as LONG != 0 || etched {
                 SetWindowLongW(hwnd, GWL_EXSTYLE,
                     GetWindowLongW(hwnd, GWL_EXSTYLE) | WS_EX_STATICEDGE as LONG);
             }
 
+            // Wine 11.11: an etched line is its own border; collapse the client area
+            // to zero height (horizontal) or width (vertical).
+            if etched {
+                let mut rc: RECT = core::mem::zeroed();
+                GetClientRect(hwnd, &mut rc);
+                if style == SS_ETCHEDHORZ as LONG {
+                    rc.bottom = rc.top;
+                } else {
+                    rc.right = rc.left;
+                }
+                AdjustWindowRectEx(&mut rc, full_style as DWORD, 0, GetWindowLongW(hwnd, GWL_EXSTYLE) as DWORD);
+                crate::ntwrapper::SetWindowPos(
+                    hwnd,
+                    core::ptr::null_mut(),
+                    0,
+                    0,
+                    rc.right - rc.left,
+                    rc.bottom - rc.top,
+                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOZORDER,
+                );
+            }
+
             match style as u32 {
                 SS_ICON => {
+                    let name = resource_ordinal_name((*cs).lpszName, unicode);
                     let hIcon: HICON;
-                    if unicode != 0 || IS_INTRESOURCE((*cs).lpszName as *const core::ffi::c_void) != 0 {
-                        hIcon = STATIC_LoadIconW((*cs).hInstance, (*cs).lpszName, full_style as DWORD);
+                    if unicode != 0 || IS_INTRESOURCE(name as *const core::ffi::c_void) != 0 {
+                        hIcon = STATIC_LoadIconW((*cs).hInstance, name, full_style as DWORD);
                     } else {
-                        hIcon = STATIC_LoadIconA((*cs).hInstance, (*cs).lpszName as LPCSTR, full_style as DWORD);
+                        hIcon = STATIC_LoadIconA((*cs).hInstance, name as LPCSTR, full_style as DWORD);
                     }
                     STATIC_SetIcon(hwnd, hIcon, full_style as DWORD);
                 }
                 SS_BITMAP => {
                     if ((*cs).hInstance as ULONG_PTR) >> 16 != 0 {
+                        let name = resource_ordinal_name((*cs).lpszName, unicode);
                         let hBitmap: HBITMAP;
-                        if unicode != 0 || IS_INTRESOURCE((*cs).lpszName as *const core::ffi::c_void) != 0 {
-                            hBitmap = LoadBitmapW((*cs).hInstance, (*cs).lpszName);
+                        if unicode != 0 || IS_INTRESOURCE(name as *const core::ffi::c_void) != 0 {
+                            hBitmap = LoadBitmapW((*cs).hInstance, name);
                         } else {
-                            hBitmap = LoadBitmapA((*cs).hInstance, (*cs).lpszName as LPCSTR);
+                            hBitmap = LoadBitmapA((*cs).hInstance, name as LPCSTR);
                         }
                         STATIC_SetBitmap(hwnd, hBitmap, full_style as DWORD);
                     }
@@ -593,6 +632,9 @@ pub unsafe extern "system" fn StaticWndProc_common(hwnd: HWND, uMsg: UINT, wPara
         }
 
         STM_SETICON => {
+            if style != SS_ICON as LONG {
+                return 0;
+            }
             lResult = STATIC_SetIcon(hwnd, wParam as HICON, full_style as DWORD) as LRESULT;
             STATIC_TryPaintFcn(hwnd, full_style);
         }
@@ -637,7 +679,7 @@ pub unsafe extern "system" fn StaticWndProcW(hWnd: HWND, uMsg: UINT, wParam: WPA
     StaticWndProc_common(hWnd, uMsg, wParam, lParam, 1)
 }
 
-unsafe extern "system" fn STATIC_PaintOwnerDrawfn(hwnd: HWND, hdc: HDC, _style: DWORD) {
+unsafe extern "system" fn STATIC_PaintOwnerDrawfn(hwnd: HWND, hdc: HDC, _hbrush: HBRUSH, _style: DWORD) {
     let mut dis: DRAWITEMSTRUCT = core::mem::zeroed();
     let mut oldFont: HFONT = core::ptr::null_mut();
     let id = GetWindowLongPtrW(hwnd, GWLP_ID) as UINT;
@@ -656,7 +698,6 @@ unsafe extern "system" fn STATIC_PaintOwnerDrawfn(hwnd: HWND, hdc: HDC, _style: 
     if !font.is_null() {
         oldFont = SelectObject(hdc, font as *mut core::ffi::c_void) as HFONT;
     }
-    STATIC_SendWmCtlColorStatic(hwnd, hdc);
     SendMessageW(GetParent(hwnd), WM_DRAWITEM, id as WPARAM, core::ptr::addr_of_mut!(dis) as LPARAM);
     if !font.is_null() {
         SelectObject(hdc, oldFont as *mut core::ffi::c_void);
@@ -671,10 +712,9 @@ unsafe extern "system" fn STATIC_DrawTextCallback(hdc: HDC, lp: LPARAM, wp: WPAR
     1
 }
 
-unsafe extern "system" fn STATIC_PaintTextfn(hwnd: HWND, hdc: HDC, style: DWORD) {
+unsafe extern "system" fn STATIC_PaintTextfn(hwnd: HWND, hdc: HDC, hbrush: HBRUSH, style: DWORD) {
 
     let mut rc: RECT = core::mem::zeroed();
-    let hBrush: HBRUSH;
     let mut hFont: HFONT = core::ptr::null_mut();
     let mut hOldFont: HFONT = core::ptr::null_mut();
     let mut format: UINT;
@@ -738,10 +778,8 @@ unsafe extern "system" fn STATIC_PaintTextfn(hwnd: HWND, hdc: HDC, style: DWORD)
         hOldFont = SelectObject(hdc, hFont as *mut core::ffi::c_void) as HFONT;
     }
 
-    hBrush = STATIC_SendWmCtlColorStatic(hwnd, hdc);
-
     if style & SS_TYPEMASK != SS_SIMPLE {
-        FillRect(hdc, &rc, hBrush);
+        FillRect(hdc, &rc, hbrush);
         if IsWindowEnabled(hwnd) == 0 {
             SetTextColor(hdc, GetSysColor(COLOR_GRAYTEXT as i32));
         }
@@ -777,7 +815,7 @@ unsafe extern "system" fn STATIC_PaintTextfn(hwnd: HWND, hdc: HDC, style: DWORD)
             if style & WS_DISABLED != 0 {
                 flags |= DSS_DISABLED as UINT;
             }
-            DrawStateW(hdc, hBrush, Some(STATIC_DrawTextCallback),
+            DrawStateW(hdc, hbrush, Some(STATIC_DrawTextCallback),
                        text as LPARAM, format as WPARAM,
                        rc.left, rc.top,
                        rc.right - rc.left, rc.bottom - rc.top,
@@ -792,13 +830,11 @@ unsafe extern "system" fn STATIC_PaintTextfn(hwnd: HWND, hdc: HDC, style: DWORD)
     }
 }
 
-unsafe extern "system" fn STATIC_PaintRectfn(hwnd: HWND, hdc: HDC, style: DWORD) {
+unsafe extern "system" fn STATIC_PaintRectfn(hwnd: HWND, hdc: HDC, _hbrush: HBRUSH, style: DWORD) {
     let mut rc: RECT = core::mem::zeroed();
     let hBrush: HBRUSH;
 
     GetClientRect(hwnd, &mut rc);
-
-    STATIC_SendWmCtlColorStatic(hwnd, hdc);
 
     match style & SS_TYPEMASK {
         SS_BLACKRECT => {
@@ -832,16 +868,14 @@ unsafe extern "system" fn STATIC_PaintRectfn(hwnd: HWND, hdc: HDC, style: DWORD)
     DeleteObject(hBrush as _);
 }
 
-unsafe extern "system" fn STATIC_PaintIconfn(hwnd: HWND, hdc: HDC, style: DWORD) {
+unsafe extern "system" fn STATIC_PaintIconfn(hwnd: HWND, hdc: HDC, hbrush: HBRUSH, style: DWORD) {
 
     let mut rc: RECT = core::mem::zeroed();
     let mut iconRect: RECT = core::mem::zeroed();
-    let hbrush: HBRUSH;
     let hIcon: HICON;
     let mut size: SIZE = core::mem::zeroed();
 
     GetClientRect(hwnd, &mut rc);
-    hbrush = STATIC_SendWmCtlColorStatic(hwnd, hdc);
     hIcon = GetWindowLongPtrW(hwnd, HICON_GWL_OFFSET as i32) as HICON;
     if hIcon.is_null() || get_icon_size(hIcon, &mut size) == 0 {
         FillRect(hdc, &rc, hbrush);
@@ -860,13 +894,11 @@ unsafe extern "system" fn STATIC_PaintIconfn(hwnd: HWND, hdc: HDC, style: DWORD)
     }
 }
 
-unsafe extern "system" fn STATIC_PaintBitmapfn(hwnd: HWND, hdc: HDC, style: DWORD) {
+unsafe extern "system" fn STATIC_PaintBitmapfn(hwnd: HWND, hdc: HDC, _hbrush: HBRUSH, style: DWORD) {
 
     let hMemDC: HDC;
     let hBitmap: HBITMAP;
     let oldbitmap: *mut core::ffi::c_void;
-
-    STATIC_SendWmCtlColorStatic(hwnd, hdc);
 
     hBitmap = GetWindowLongPtrW(hwnd, core::mem::size_of::<HFONT>() as i32) as HBITMAP;
     if !hBitmap.is_null()
@@ -917,12 +949,10 @@ unsafe extern "system" fn STATIC_PaintBitmapfn(hwnd: HWND, hdc: HDC, style: DWOR
     }
 }
 
-unsafe extern "system" fn STATIC_PaintEnhMetafn(hwnd: HWND, hdc: HDC, _style: DWORD) {
+unsafe extern "system" fn STATIC_PaintEnhMetafn(hwnd: HWND, hdc: HDC, hbrush: HBRUSH, _style: DWORD) {
     let mut rc: RECT = core::mem::zeroed();
-    let hbrush: HBRUSH;
 
     GetClientRect(hwnd, &mut rc);
-    hbrush = STATIC_SendWmCtlColorStatic(hwnd, hdc);
     FillRect(hdc, &mut rc, hbrush);
     let hEnhMetaFile = GetWindowLongPtrW(hwnd, HICON_GWL_OFFSET as i32) as HENHMETAFILE;
     if !hEnhMetaFile.is_null() {
@@ -932,20 +962,11 @@ unsafe extern "system" fn STATIC_PaintEnhMetafn(hwnd: HWND, hdc: HDC, _style: DW
     }
 }
 
-unsafe extern "system" fn STATIC_PaintEtchedfn(hwnd: HWND, hdc: HDC, style: DWORD) {
+unsafe extern "system" fn STATIC_PaintEtchedfn(hwnd: HWND, hdc: HDC, _hbrush: HBRUSH, _style: DWORD) {
     let mut rc: RECT = core::mem::zeroed();
 
+    // Only SS_ETCHEDFRAME paints; the etched lines are zero-sized WS_EX_STATICEDGE
+    // windows whose border is the line (WM_NCCREATE).
     GetClientRect(hwnd, &mut rc);
-    match style & SS_TYPEMASK {
-        SS_ETCHEDHORZ => {
-            DrawEdge(hdc, &mut rc, EDGE_ETCHED, BF_TOP | BF_BOTTOM);
-        }
-        SS_ETCHEDVERT => {
-            DrawEdge(hdc, &mut rc, EDGE_ETCHED, BF_LEFT | BF_RIGHT);
-        }
-        SS_ETCHEDFRAME => {
-            DrawEdge(hdc, &mut rc, EDGE_ETCHED, BF_RECT);
-        }
-        _ => {}
-    }
+    DrawEdge(hdc, &mut rc, EDGE_ETCHED, BF_RECT);
 }

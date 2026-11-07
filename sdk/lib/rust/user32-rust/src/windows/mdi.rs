@@ -307,7 +307,9 @@ pub unsafe extern "C" fn WIN_ListChildren(hWndparent: HWND) -> *mut HWND {
 
 unsafe fn MDI_GetChildByID(hwnd: HWND, id: UINT, ci: *mut MDICLIENTINFO) -> HWND {
     let mut i: i32 = 0;
-    while (*ci).nActiveChildren != 0 {
+    // The C (old and Wine 11.11 alike) tests `ci->nActiveChildren`, never `i`, so an
+    // id that matches no child walks off the end of ci->child. Bound it.
+    while (i as UINT) < (*ci).nActiveChildren as UINT {
         if GetWindowLongPtrW(*(*ci).child.offset(i as isize), GWLP_ID) == id as LONG_PTR {
             return *(*ci).child.offset(i as isize);
         }
@@ -473,10 +475,12 @@ unsafe fn MDISetMenu(hwnd: HWND, hmenuFrame: HMENU, hmenuWindow: HMENU) -> LRESU
             (*ci).hWindowMenu = hmenuWindow;
 
             (*ci).nActiveChildren = nActiveChildren_old;
-            MDI_RefreshMenu(ci);
         } else {
             (*ci).hWindowMenu = hmenuWindow;
         }
+
+        // Wine 11.11: the new Window menu is filled in both cases.
+        MDI_RefreshMenu(ci);
     }
 
     if !hmenuFrame.is_null() {
@@ -590,7 +594,8 @@ unsafe fn MDI_SwitchActiveChild(ci: *mut MDICLIENTINFO, hwndTo: HWND, activate: 
     if hwndTo != hwndPrev {
         let was_zoomed = IsZoomed(hwndPrev);
 
-        if was_zoomed != 0 {
+        // Wine 11.11: only carry the maximized state to a child that can be maximized.
+        if was_zoomed != 0 && (GetWindowLongW(hwndTo, GWL_STYLE as INT) & WS_MAXIMIZEBOX as LONG) != 0 {
             SendMessageW(hwndPrev, WM_SETREDRAW, 0 as WPARAM, 0 as LPARAM);
             ShowWindow(hwndPrev, SW_RESTORE as i32);
             SendMessageW(hwndPrev, WM_SETREDRAW, 1 as WPARAM, 0 as LPARAM);
@@ -986,7 +991,7 @@ unsafe fn MDI_AugmentFrameMenu(frame: HWND, hChild: HWND) -> BOOL {
     }
     if hIcon.is_null() {
         hIcon = LoadImageW(0 as HINSTANCE, IDI_WINLOGO as LPWSTR, IMAGE_ICON,
-            GetSystemMetrics(SM_CXSMICON as i32), GetSystemMetrics(SM_CYSMICON as i32), LR_DEFAULTCOLOR) as HICON;
+            GetSystemMetrics(SM_CXSMICON as i32), GetSystemMetrics(SM_CYSMICON as i32), LR_DEFAULTCOLOR | LR_SHARED) as HICON;
     }
     if !hIcon.is_null() {
         let hMemDC: HDC;

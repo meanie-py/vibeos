@@ -351,33 +351,36 @@ unsafe fn COMBO_NCDestroy(lphc: LPHEADCOMBO) -> LRESULT {
     0
 }
 
-unsafe fn CBGetTextAreaHeight(hwnd: HWND, lphc: LPHEADCOMBO) -> INT {
+unsafe fn combo_get_text_height(lphc: LPHEADCOMBO) -> INT {
+    let hdc: HDC = GetDC((*lphc).self_);
+    let mut prev_font: HFONT = core::ptr::null_mut();
+    let mut tm: TEXTMETRICW = core::mem::zeroed();
+
+    if !(*lphc).hFont.is_null() {
+        prev_font = SelectObject(hdc, (*lphc).hFont as *mut _) as HFONT;
+    }
+    GetTextMetricsW(hdc, &mut tm);
+    if !prev_font.is_null() {
+        SelectObject(hdc, prev_font as *mut _);
+    }
+    ReleaseDC((*lphc).self_, hdc);
+
+    tm.tmHeight + 4
+}
+
+/// Wine 11.11: the height is `item_height`, kept from the font, and grown to the text
+/// height first when `clip_item_height` (COMBO_Size) for a non-owner-drawn combo.
+unsafe fn CBGetTextAreaHeight(hwnd: HWND, lphc: LPHEADCOMBO, clip_item_height: BOOL) -> INT {
     let mut iTextItemHeight: INT;
 
-    if (*lphc).editHeight != 0 {
-        iTextItemHeight = (*lphc).editHeight;
-    } else {
-        let mut tm: TEXTMETRICW = core::mem::zeroed();
-        let hDC: HDC = GetDC(hwnd);
-        let mut hPrevFont: HFONT = core::ptr::null_mut();
-        let baseUnitY: INT;
-
-        if !(*lphc).hFont.is_null() {
-            hPrevFont = SelectObject(hDC, (*lphc).hFont as *mut _) as HFONT;
+    if clip_item_height != 0 && CB_OWNERDRAWN(lphc) == 0 {
+        let text_height = combo_get_text_height(lphc);
+        if (*lphc).item_height < text_height {
+            (*lphc).item_height = text_height;
         }
-
-        GetTextMetricsW(hDC, &mut tm);
-
-        baseUnitY = tm.tmHeight;
-
-        if !hPrevFont.is_null() {
-            SelectObject(hDC, hPrevFont as *mut _);
-        }
-
-        ReleaseDC(hwnd, hDC);
-
-        iTextItemHeight = baseUnitY + 4;
     }
+
+    iTextItemHeight = (*lphc).item_height;
 
     if CB_OWNERDRAWN(lphc) != 0 && ((*lphc).wState & CBF_MEASUREITEM) != 0 {
         let mut measureItem: MEASUREITEMSTRUCT = core::mem::zeroed();
@@ -393,10 +396,10 @@ unsafe fn CBGetTextAreaHeight(hwnd: HWND, lphc: LPHEADCOMBO) -> INT {
         measureItem.CtlID = id;
         measureItem.itemID = -1i32 as UINT;
         measureItem.itemWidth = clientRect.right as UINT;
-        measureItem.itemHeight = (iTextItemHeight - 6) as UINT;
+        measureItem.itemHeight = (iTextItemHeight - 2) as UINT; /* ownerdrawn cb is taller */
         measureItem.itemData = 0;
         SendMessageW((*lphc).owner, WM_MEASUREITEM, id as WPARAM, &mut measureItem as *mut _ as LPARAM);
-        iTextItemHeight = 6 + measureItem.itemHeight as INT;
+        iTextItemHeight = 2 + measureItem.itemHeight as INT;
 
         if ((*lphc).dwStyle & CBS_OWNERDRAWFIXED) != 0 {
             measureItem.CtlType = ODT_COMBOBOX as UINT;
@@ -409,7 +412,7 @@ unsafe fn CBGetTextAreaHeight(hwnd: HWND, lphc: LPHEADCOMBO) -> INT {
             (*lphc).fixedOwnerDrawHeight = measureItem.itemHeight as INT;
         }
 
-        (*lphc).editHeight = iTextItemHeight;
+        (*lphc).item_height = iTextItemHeight;
     }
 
     iTextItemHeight
@@ -419,10 +422,12 @@ unsafe fn CBForceDummyResize(lphc: LPHEADCOMBO) {
     let mut windowRect: RECT = core::mem::zeroed();
     let newComboHeight: INT;
 
-    newComboHeight = CBGetTextAreaHeight((*lphc).self_, lphc) + 2 * COMBO_YBORDERSIZE();
+    newComboHeight = CBGetTextAreaHeight((*lphc).self_, lphc, FALSE as BOOL) + 2 * COMBO_YBORDERSIZE();
 
     GetWindowRect((*lphc).self_, &mut windowRect);
 
+    // Wine 11.11: our own resize must not re-enter COMBO_Size; lay out explicitly.
+    (*lphc).wState |= CBF_NORESIZE;
     SetWindowPos(
         (*lphc).self_,
         core::ptr::null_mut(),
@@ -431,6 +436,21 @@ unsafe fn CBForceDummyResize(lphc: LPHEADCOMBO) {
         windowRect.right - windowRect.left,
         newComboHeight,
         (SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE) as UINT,
+    );
+    (*lphc).wState &= !CBF_NORESIZE;
+
+    CBCalcPlacement(
+        (*lphc).self_,
+        lphc,
+        core::ptr::addr_of_mut!((*lphc).textRect),
+        core::ptr::addr_of_mut!((*lphc).buttonRect),
+        core::ptr::addr_of_mut!((*lphc).droppedRect),
+    );
+    CBResetPos(
+        lphc,
+        core::ptr::addr_of!((*lphc).textRect),
+        core::ptr::addr_of!((*lphc).droppedRect),
+        FALSE as BOOL,
     );
 }
 
@@ -445,7 +465,7 @@ unsafe fn CBCalcPlacement(
 
     InflateRect(lprEdit, -(COMBO_XBORDERSIZE() as INT), -(COMBO_YBORDERSIZE() as INT));
 
-    (*lprEdit).bottom = (*lprEdit).top + CBGetTextAreaHeight(hwnd, lphc);
+    (*lprEdit).bottom = (*lprEdit).top + CBGetTextAreaHeight(hwnd, lphc, FALSE as BOOL);
 
     CopyRect(lprButton, lprEdit);
 
@@ -519,7 +539,7 @@ unsafe fn COMBO_Create(
     (*lphc).owner = hwndParent;
 
     (*lphc).droppedWidth = 0;
-    (*lphc).editHeight = 0;
+    (*lphc).item_height = combo_get_text_height(lphc);
 
     (*lphc).wState |= CBF_MEASUREITEM;
 
@@ -1345,15 +1365,12 @@ unsafe fn COMBO_Command(lphc: LPHEADCOMBO, wParam: WPARAM, hWnd: HWND) -> LRESUL
                 );
 
                 if crate::internal::HIWORD(wParam as DWORD) as i32 == LBN_SELCHANGE as i32 {
+                    // Wine 11.11: CBPaintText updates the edit (and selects its text
+                    // when focused) or repaints the static field itself.
                     if (*lphc).wState & CBF_EDIT as u32 != 0 {
-                        let index = SendMessageW((*lphc).hWndLBox, LB_GETCURSEL, 0, 0) as INT;
                         (*lphc).wState |= CBF_NOLBSELECT as u32;
-                        CBUpdateEdit(lphc, index);
-                        SendMessageW((*lphc).hWndEdit, EM_SETSEL, 0, -1 as LPARAM);
-                    } else {
-                        InvalidateRect((*lphc).self_, &mut (*lphc).textRect, 1);
-                        UpdateWindow((*lphc).self_);
                     }
+                    CBPaintText(lphc, core::ptr::null_mut());
                 }
             }
             x if x == LBN_SETFOCUS as i32 || x == LBN_KILLFOCUS as i32 => {}
@@ -1548,13 +1565,17 @@ unsafe fn CBResetPos(
 }
 
 unsafe fn COMBO_Size(lphc: LPHEADCOMBO) {
+    if (*lphc).hWndLBox.is_null() || ((*lphc).wState & CBF_NORESIZE) != 0 {
+        return;
+    }
+
     if CB_GETTYPE(lphc) != CBS_SIMPLE {
         let mut rc: RECT = core::mem::zeroed();
 
         GetWindowRect((*lphc).self_, &mut rc);
         let curComboHeight = rc.bottom - rc.top;
         let curComboWidth = rc.right - rc.left;
-        let newComboHeight = CBGetTextAreaHeight((*lphc).self_, lphc) + 2 * COMBO_YBORDERSIZE();
+        let newComboHeight = CBGetTextAreaHeight((*lphc).self_, lphc, TRUE as BOOL) + 2 * COMBO_YBORDERSIZE();
 
         if curComboHeight > newComboHeight {
             (*lphc).droppedRect.bottom =
@@ -1562,6 +1583,7 @@ unsafe fn COMBO_Size(lphc: LPHEADCOMBO) {
         }
 
         if curComboHeight != newComboHeight {
+            (*lphc).wState |= CBF_NORESIZE;
             SetWindowPos(
                 (*lphc).self_,
                 0 as HWND,
@@ -1571,6 +1593,7 @@ unsafe fn COMBO_Size(lphc: LPHEADCOMBO) {
                 newComboHeight,
                 (SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOREDRAW) as UINT,
             );
+            (*lphc).wState &= !CBF_NORESIZE;
         }
     }
 
@@ -1592,6 +1615,9 @@ unsafe fn COMBO_Size(lphc: LPHEADCOMBO) {
 
 unsafe fn COMBO_Font(lphc: LPHEADCOMBO, hFont: HFONT, bRedraw: BOOL) {
     (*lphc).hFont = hFont;
+    if CB_OWNERDRAWN(lphc) == 0 {
+        (*lphc).item_height = combo_get_text_height(lphc);
+    }
 
     if (*lphc).wState & CBF_EDIT != 0 {
         SendMessageW((*lphc).hWndEdit, WM_SETFONT, hFont as WPARAM, bRedraw as LPARAM);
@@ -1623,7 +1649,7 @@ unsafe fn COMBO_SetItemHeight(lphc: LPHEADCOMBO, index: INT, height: INT) -> LRE
 
     if index == -1 {
         if height < 32768 {
-            (*lphc).editHeight = (height + 2) as _;
+            (*lphc).item_height = (height + 2) as _;
 
             if CB_GETTYPE(lphc) == CBS_SIMPLE {
                 CBCalcPlacement(
@@ -1817,6 +1843,9 @@ pub unsafe extern "system" fn ComboWndProc_common(
                 return 0;
             }
         }
+    } else {
+        // Upstream (39fee16a692): no window behind the handle, nothing to do.
+        return 0;
     }
 
     TRACE!(b"[%p]: msg %s wp %08lx lp %08lx\n\0".as_ptr() as *const i8, hwnd);
@@ -2161,7 +2190,7 @@ pub unsafe extern "system" fn ComboWndProc_common(
                     /* listbox item */
                     return SendMessageW((*lphc).hWndLBox, LB_GETITEMHEIGHT, wParam, 0);
                 }
-                return CBGetTextAreaHeight(hwnd, lphc) as LRESULT;
+                return CBGetTextAreaHeight(hwnd, lphc, FALSE as BOOL) as LRESULT;
             }
             x if x == CB_RESETCONTENT => {
                 SendMessageW((*lphc).hWndLBox, LB_RESETCONTENT, 0, 0);

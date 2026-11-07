@@ -1350,7 +1350,11 @@ unsafe fn map_W_to_A(instance: DWORD, ptr: *mut c_void, mut size: DWORD) -> HDDE
         size /= core::mem::size_of::<WCHAR>() as DWORD;
         let end = memchrW(ptr as *const WCHAR, 0, size as usize);
         if !end.is_null() {
-            size = (end as usize + 1 - ptr as usize) as DWORD / core::mem::size_of::<WCHAR>() as DWORD;
+            // C `end + 1 - ptr` counts WCHARs, terminator included. In bytes the +1
+            // has to be one WCHAR: `(end + 1 - ptr) / 2` truncated it away, so the
+            // converted command lost its NUL and the server read a stray byte
+            // (user32:dde dde.c:2510).
+            size = ((end as usize - ptr as usize) / core::mem::size_of::<WCHAR>() + 1) as DWORD;
         }
         len = WideCharToMultiByte(
             CP_ACP,
