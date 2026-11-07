@@ -230,3 +230,19 @@ def test_a_family_crate_twins_each_member_it_really_holds(tmp_path):
     assert twin == "kbdlayouts-rust"
     # A layout the crate does not hold is not twinned by the family.
     assert port_audit._twin_of("dll/keyboard/kbdxx/kbdxx.c", crates, tmp_path) is None
+
+
+def test_c_oracle_twins_are_not_live_c(tmp_path):
+    """A generated `<target>_c` twin compiles the pre-flip C and never ships. It counted
+    as live, so a flipped module (setuplib) read as untranslated."""
+    d = tmp_path / "base" / "setup" / "lib"
+    d.mkdir(parents=True)
+    (d / "c_oracle.cmake").write_text(
+        "add_library(setuplib_static_c STATIC EXCLUDE_FROM_ALL ${SOURCE_C_ORACLE})\n"
+        "add_library(setuplib_c MODULE EXCLUDE_FROM_ALL main.c setuplib.rc)\n"
+        "add_executable(setuplib_probe_c EXCLUDE_FROM_ALL modrun_probe.c)\n"
+        "target_link_libraries(setuplib_c setuplib_static_c)\n"
+    )
+    (tmp_path / "build-x" / "c_oracle.cmake").parent.mkdir()
+    (tmp_path / "build-x" / "c_oracle.cmake").write_text("add_library(notmine EXCLUDE_FROM_ALL a.c)\n")
+    assert port_audit.excluded_targets(tmp_path) == {"setuplib_static_c", "setuplib_c", "setuplib_probe_c"}
