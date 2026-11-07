@@ -126,6 +126,7 @@ fn api(root: &Path, r: &Value) -> Result<Value> {
         s if s.starts_with("build_policy_") => b::build_policy::dispatch(r),
         s if s.starts_with("trim_") => b::trim::dispatch(r),
         s if s.starts_with("prune_") => b::prune::dispatch(r),
+        s if s.starts_with("disk_") => b::diskspace::dispatch(r),
         s if s.starts_with("provenance_") => b::provenance::dispatch(root, r),
         s if s.starts_with("stage_") => b::media_stage::api(r),
         s if s.starts_with("sdk_") => b::sdk_api::dispatch(root, r),

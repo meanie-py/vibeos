@@ -124,7 +124,7 @@ def test_worker_stops_child_after_owner_exit():
         launcher = """import subprocess, sys
 p = subprocess.Popen([
     sys.argv[1], "--root", sys.argv[2], "cargo-orchestrate-worker", "/bin/sh", "-c",
-    'echo $$ > "$1"; exec sleep 30', "_", sys.argv[3],
+    'echo $$ > "$1.tmp" && mv "$1.tmp" "$1"; exec sleep 30', "_", sys.argv[3],
 ])
 open(sys.argv[4], "w").write(str(p.pid))
 p.wait()
@@ -142,6 +142,8 @@ p.wait()
         )
         try:
             limit = time.monotonic() + 10
+            # The child publishes with mv: `echo > file` makes it exist empty first, and the
+            # int() below raced it (the same flake as test_buildbench's, fixed in da65575237e).
             while time.monotonic() < limit and not child_pid_path.exists():
                 assert owner.poll() is None
                 time.sleep(0.02)

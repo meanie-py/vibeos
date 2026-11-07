@@ -21,130 +21,49 @@ Field manual: "A gate can be RED for reasons that are not in the tree at all".
 
 from __future__ import annotations
 
-import os
-import shutil
 from pathlib import Path
 
-# Headroom below which we refuse to start rather than fail somewhere unhelpful.
-# A full gate writes three ISOs plus per-arch artifact dirs; 5G is well under
-# what a green run consumes and well over the "cannot write summary.json" cliff.
-MIN_FREE_BYTES = 5 * 1024**3
+from tools import build_infra_compat as native
 
-# Kept separate and much smaller: this one is only asking "can the harness still
-# record a verdict at all", which is the failure that makes everything else
-# illegible.
+# The probe, the ENOSPC text and the admission lines are native
+# (tools/vibeos-build/src/diskspace.rs); this keeps the gate-stage glue.
+
+# Headroom below which we refuse to start rather than fail somewhere unhelpful.
+MIN_FREE_BYTES = 5 * 1024**3
+# "Can the harness still record a verdict at all" (mirrors diskspace.rs).
 CRITICAL_FREE_BYTES = 256 * 1024**2
 
 
 def human(n: int) -> str:
     """Bytes -> short human string. Exact enough to act on, short enough to log."""
-    # Separate float accumulator: dividing the int parameter in place retypes it
-    # (pyright reportAssignmentType) and loses the caller's contract.
-    v = float(n)
-    for unit in ("B", "K", "M", "G", "T"):
-        if abs(v) < 1024 or unit == "T":
-            return f"{v:.0f}{unit}" if unit == "B" else f"{v:.1f}{unit}"
-        v /= 1024.0
-    return f"{v:.1f}T"
+    return native.call("disk_human", {"n": n})
 
 
 def free_bytes(path: Path) -> int | None:
-    """Free bytes on the filesystem holding `path`, or None if unknowable.
-
-    Walks up to the nearest existing ancestor: a build dir that does not exist
-    yet still sits on a filesystem whose free space we can and should report.
-    """
-    p = Path(path).resolve()
-    while not p.exists() and p != p.parent:
-        p = p.parent
-    try:
-        return shutil.disk_usage(p).free
-    except OSError:
-        return None
+    """Free bytes on the filesystem holding `path` (nearest existing ancestor), or None."""
+    return native.call("disk_free_bytes", {"path": path})
 
 
 def probe(paths, threshold: int | None = None) -> dict:
-    """Check every distinct filesystem behind `paths`.
-
-    Returns a dict with `ok`, `critical`, and a `lines` list already carrying the
-    numbers — callers should print these verbatim rather than re-summarising,
-    because the number is the entire point.
-
-    `threshold` resolves at CALL time. It is deliberately not a default argument:
-    `threshold: int = MIN_FREE_BYTES` binds the constant once at import, so the
-    module value could never be overridden and the failure path would go untested.
-    """
-    threshold = MIN_FREE_BYTES if threshold is None else threshold
-    seen: dict[int, tuple[Path, int]] = {}
-    for raw in paths:
-        if raw is None:
-            continue
-        p = Path(raw)
-        n = free_bytes(p)
-        if n is None:
-            continue
-        try:
-            key = os.stat(_nearest_existing(p)).st_dev
-        except OSError:
-            continue
-        # One report per filesystem, attributed to the first path that named it.
-        seen.setdefault(key, (p, n))
-
-    lines: list[str] = []
-    ok = True
-    critical = False
-    for p, n in sorted(seen.values(), key=lambda t: t[1]):
-        if n < threshold:
-            ok = False
-            lines.append(f"DISK_FULL: {human(n)} free on {p} (need {human(threshold)})")
-            if n < CRITICAL_FREE_BYTES:
-                critical = True
-                lines.append(
-                    f"  CRITICAL: below {human(CRITICAL_FREE_BYTES)} — the harness may be "
-                    f"unable to write summary.json or even run `true`, so any verdict "
-                    f"from this host is unreliable rather than merely red."
-                )
-    return {
-        "ok": ok,
-        "critical": critical,
-        "lines": lines,
-        "free": {str(p): n for p, n in seen.values()},
-    }
-
-
-def _nearest_existing(p: Path) -> Path:
-    p = p.resolve()
-    while not p.exists() and p != p.parent:
-        p = p.parent
-    return p
+    """Every distinct filesystem behind `paths`: `ok`, `critical`, and `lines` already carrying
+    the numbers -- print them verbatim, because the number is the entire point. `threshold`
+    resolves at CALL time so the failure path stays testable."""
+    return native.call(
+        "disk_probe",
+        {
+            "paths": [p for p in paths if p is not None],
+            "threshold": MIN_FREE_BYTES if threshold is None else threshold,
+        },
+    )
 
 
 def gate_paths(repo: Path, arches) -> list[Path]:
-    """The filesystems a gate actually writes to: the tree, the build dirs, /tmp.
-
-    /tmp matters independently — artifact dirs and every command's stdout file
-    live under it, and it is where the 2026-09-06 ENOSPC was actually raised.
-    """
-    out = [repo, Path("/tmp")]
-    out += [repo / f"build-{a}" for a in arches]
-    return out
-
-
-# ENOSPC does not always arrive as a clean OSError: it comes back as compiler,
-# linker or python text on stderr. Matching the message is what lets a build
-# failure be classified rather than filed under a wrong cause.
-_ENOSPC_MARKERS = (
-    "no space left on device",
-    "errno 28",
-    "enospc",
-    "disk quota exceeded",
-    "write error: no space",
-)
+    """The filesystems a gate actually writes to: the tree, the build dirs, /tmp."""
+    return [Path(p) for p in native.call("disk_gate_paths", {"repo": repo, "arches": list(arches)})]
 
 
 def looks_like_enospc(blob: str) -> bool:
-    low = blob.lower()
-    return any(m in low for m in _ENOSPC_MARKERS)
+    return native.call("cli_build_check_enospc", {"text": blob})
 
 
 # This worktree, never a sibling: <repo>/tests/qemu/cli/hostdisk.py -> parents[3].
@@ -154,57 +73,22 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def enospc_detail(repo: Path | None = None) -> list[str]:
-    repo = REPO_ROOT if repo is None else repo
-    """Salient lines for an ENOSPC classification — always carrying the number."""
-    rep = probe(gate_paths(repo, ()), threshold=MIN_FREE_BYTES)
-    if rep["lines"]:
-        return rep["lines"][:3]
-    # Space was reclaimed between the failure and this probe: say so, rather than
-    # printing a reassuring "plenty free" that contradicts the error just seen.
-    return [
-        "ENOSPC reported by the toolchain but the filesystem now has headroom — "
-        "space was freed after the failure, or a different mount filled. "
-        f"now: {', '.join(f'{k}={human(v)}' for k, v in rep['free'].items())}"
-    ]
+    """Salient lines for an ENOSPC classification -- always carrying the number."""
+    return native.call("disk_enospc_detail", {"repo": REPO_ROOT if repo is None else repo})
 
 
 def admission_lines(repo: Path, arches=()) -> list[str]:
-    """The quantity that actually gates a run, which `df` cannot show.
+    """The admission headroom that actually gates a run, which `df` cannot show -- printed on
+    the GREEN path too. A failure to read it is reported, never swallowed, and never blocks
+    the free-space verdict."""
+    from . import diskspace
 
-    FULLNESS and ADMISSION HEADROOM are different numbers, and only one of them is
-    visible to the check every agent thinks to run. On 2026-09-06 six lanes stalled
-    with the host at 88% and 117G free — `df` fine, this module's own 5G threshold
-    fine — because a 3-arch gate reserves 3 x 25G of build headroom above a 20G
-    floor, and the unreserved remainder had gone under. Every conduct failed
-    DISK_ADMISSION_FAIL on its third arch, so the queue could not self-heal, and
-    nothing about the failure pointed at reservations. **"df looks fine" is a
-    documented false negative for that class**, which is why this prints on the
-    GREEN path too: the whole point is the run that looks healthy.
-
-    Reads `diskspace`, which owns the accounting; this only surfaces it. A failure
-    to read is REPORTED rather than swallowed — a missing number must not look like
-    a healthy one — but never blocks the free-space verdict, which stands alone.
-    """
+    request: dict = {"arch_count": len(list(arches))}
     try:
-        from . import diskspace
-
-        st = diskspace.status(repo)
-    except Exception as exc:  # reported below, never silently dropped
-        return [f"admission headroom unavailable ({type(exc).__name__}: {exc})"]
-    policy = st.get("policy") or {}
-    requests = policy.get("requests_gib") or {}
-    floor = policy.get("min_free_gib", 0)
-    n = len(list(arches)) or 1
-    wants = requests.get("build", 0) * n + requests.get("check-tooling", 0)
-    lines = []
-    for fs in st.get("filesystems") or []:
-        head = fs.get("unreserved_above_floor_bytes", 0)
-        mark = "" if head >= wants * 2**30 else "  << SHORT"
-        lines.append(
-            f"admission: {human(head)} unreserved above the {floor}G floor on "
-            f"{fs.get('path')} ({n}-arch run requests ~{wants}G){mark}"
-        )
-    return lines
+        request["status"] = diskspace.status(repo)
+    except Exception as exc:  # reported in the lines, never silently dropped
+        request["status_error"] = f"{type(exc).__name__}: {exc}"
+    return native.call("disk_admission_lines", request)
 
 
 def preflight(run, repo: Path, arches) -> bool:

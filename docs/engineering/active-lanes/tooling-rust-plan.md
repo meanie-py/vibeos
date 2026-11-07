@@ -97,7 +97,13 @@ Progress (`lint-rs`):
   byte-identical; only trees with live writers drifted by <0.5 G between passes.
   Validating it found that a non-finite float flag (`--retain-gib inf`) parsed as
   *no* budget. The argument grammar now refuses it.
-- Next: `diskspace`/`hostdisk`, then `warmth`/`retention`, then `hostlock` (with
+- Done: disk admission (`vibeos-build/src/diskspace.rs`): host policy, volume
+  accounting (backing mounts included), live-lease scan and orphan reaping, the
+  hopeless/contention verdicts, `disk-status`, and the `hostdisk` probe, ENOSPC and
+  admission lines. `diskspace.py` keeps only the admission flock and the lease fd,
+  which must outlive the command. Parity against HEAD on the live host covered
+  every status key, probe verdict and admission line.
+- Next: `warmth`/`retention`, then `hostlock` (with
   the maintenance interlock it owns), last. The `land`/`queue` audit is done with
   the integrator, who has offered.
 
