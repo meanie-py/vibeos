@@ -15360,6 +15360,26 @@ allocation happened to take the dangerous index is a latent bug, and removing th
 allocation is the moment it fires. Find the fixed-index users of a shared table and reserve
 them; never rely on load order.
 
+### A 32-bit app's handle stops matching once its top bit is set: compare 32 bits, never ULONG_PTR
+Symptom: a WoW64 app leaks GDI objects by thousands (stock i386 `osk.exe`: 8,300 pens, then a
+full handle table and `MsqSendMessage(): Not enough memory` 15-60 min into a boot), while the same
+create/delete pairs natively are flat. Its deletes fail only about half the time, so no single
+call looks broken.
+
+Cause: the WoW64 thunks widen a 32-bit handle by SIGN-extension (`ptr()` in
+`wow64_win32k_thunks.rs`, as Windows does), so `0x8030abcd` reaches the kernel as
+`0xFFFFFFFF8030abcd`. A GDI handle's top byte is the slot's reuse count, so half of all handles
+have that bit set. win32k-rust `GreGetObjectOwner` compared `hobj >> 16` with the entry's
+`FullUnique` at pointer width, `0xFFFFFFFF8030 != 0x8030`, and `NtGdiDeleteObjectApp` refused
+the handle as not the caller's. The C does the same, and native callers never notice because
+win32k hands out zero-extended handles.
+
+Fix: compare only the handle's 32 bits (`(h >> 16) as u16`, as `ENTRY_ReferenceEntryByHandle`
+already did). Any kernel test of a user handle's upper bits must truncate first: the 64-bit
+value of a 32-bit handle is not unique. Graded by `tools/payloads/chrome/gdiprobe.c` built for
+both bitnesses; a probe for this class must check each delete's return value and must run
+past 128 reuses of a slot (20000 pairs here).
+
 ### A 32-bit guest goes silent right after `MapViewOfFile` of a DATA section
 Symptom: under FEX on arm64 the guest's last serial line is wow64's `NtMapViewOfSection =>
 00000000 base=...` for a pagefile-backed view (`CreateFileMapping(INVALID_HANDLE_VALUE)`), and

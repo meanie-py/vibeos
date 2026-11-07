@@ -685,6 +685,15 @@ static DWORD subtest_timeout_ms(const char *suite)
     return PER_SUBTEST_TIMEOUT_MS;
 }
 
+/* A binary with no subtest list runs its whole test while being enumerated, so a `timeout` set
+ * for it bounds that too: a slow probe given 900s was otherwise killed at 60s, mid-run, with its
+ * output swallowed by the enumeration capture. */
+static DWORD enumerate_timeout_ms(const char *suite)
+{
+    DWORD ms = subtest_timeout_ms(suite);
+    return ms > ENUMERATE_TIMEOUT_MS ? ms : ENUMERATE_TIMEOUT_MS;
+}
+
 static DWORD sample_ms(const char *suite)
 {
     int i;
@@ -816,7 +825,7 @@ static void run_suite(const char *bindir, const char *suite,
      * have nothing in flight to attribute it to, so the whole sweep was a blind
      * spot between suites. */
     emit("[APITEST-SWEEP] enumerate %s\n", suite);
-    rc = run_child(bindir, suite, NULL, &ctx, ENUMERATE_TIMEOUT_MS);
+    rc = run_child(bindir, suite, NULL, &ctx, enumerate_timeout_ms(suite));
     count = ctx.NameCount;
 
     if (rc == -1)
@@ -830,8 +839,8 @@ static void run_suite(const char *bindir, const char *suite,
          * "<suite> <subtest>" to any reasonable parser, and ours duly invented a
          * subtest named "during" and banked it as a conformance identity. A
          * distinct verb costs nothing and cannot be misread. */
-        emit("[APITEST-SWEEP] ENUM-TIMEOUT %s (%us)\n",
-                 suite, ENUMERATE_TIMEOUT_MS / 1000u);
+        emit("[APITEST-SWEEP] ENUM-TIMEOUT %s (%lus)\n",
+                 suite, (unsigned long)(enumerate_timeout_ms(suite) / 1000u));
         ++*timeouts;
         return;
     }
