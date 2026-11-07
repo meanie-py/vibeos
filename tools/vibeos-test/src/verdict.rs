@@ -149,6 +149,20 @@ fn kernel_panic(raw: &str) -> Option<String> {
         .captures(raw)
         .map(|c| format!("{}:{}", &c[1], &c[2]))
 }
+/// The boot loaders' panic handlers (uefildr/freeldr/rosload-cargo main.rs) write
+/// `!!FREELDR-RUST-PANIC@<file>:<line>` to debugcon and spin. The kernel was never entered,
+/// and before this was read the boot reported HANG_TIMEOUT with kernel milestones decoded
+/// from the letters of the panic's file path.
+fn loader_panic(raw: &str) -> Option<(String, Option<String>)> {
+    re(r"FREELDR-RUST-PANIC@([^\s:]+):(\d+)(?:\s*msg: ([^\r\n]*))?")
+        .captures(raw)
+        .map(|c| {
+            (
+                format!("{}:{}", &c[1], &c[2]),
+                c.get(3).map(|m| m.as_str().trim().to_owned()),
+            )
+        })
+}
 fn bug_code(serial: &str) -> Option<String> {
     re(BUGCHECK)
         .captures(serial)
@@ -230,6 +244,20 @@ pub fn classify(
     if let Some(loc) = panic_loc(serial) {
         return add_field(
             tri("RUST_PANIC", vec![format!("RUST PANIC at {loc}")], None),
+            "panic_loc",
+            json!(loc),
+        );
+    }
+    if let Some((loc, msg)) = loader_panic(raw) {
+        let msg = msg.map(|m| format!(": {m}")).unwrap_or_default();
+        return add_field(
+            tri(
+                "RUST_PANIC",
+                vec![format!(
+                    "LOADER RUST PANIC at {loc}{msg} (debugcon; the kernel was never entered)"
+                )],
+                None,
+            ),
             "panic_loc",
             json!(loc),
         );
@@ -871,6 +899,24 @@ mod tests {
             "ke/wait.rs:99"
         );
         assert!(post_boot_check("shell ready\n", "", &c).is_null());
+    }
+    #[test]
+    fn loader_panic_on_debugcon_is_a_rust_panic_not_a_hang() {
+        let c = known_flakes();
+        let v = classify(
+            "[FLDR] load bootvid.dll\n",
+            false,
+            None,
+            None,
+            "\n!!FREELDR-RUST-PANIC@freeldr-rust/src/wlmemory.rs:120\n  msg: misaligned pointer dereference\n",
+            &c,
+        );
+        assert_eq!(v["classification"], "RUST_PANIC");
+        assert_eq!(v["panic_loc"], "freeldr-rust/src/wlmemory.rs:120");
+        assert!(v["salient"][0]
+            .as_str()
+            .unwrap()
+            .contains("wlmemory.rs:120: misaligned pointer dereference"));
     }
     #[test]
     fn no_broad_flake_matching() {
