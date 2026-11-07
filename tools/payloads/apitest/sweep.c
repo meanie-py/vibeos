@@ -429,7 +429,18 @@ static DWORD WINAPI pump(LPVOID param)
  * A second line `stage` also copies each suite exe into that directory (clearing
  * the ReadOnly attribute CopyFile carries over from CDFS -- Windows does the same)
  * and runs the copy, for suites that reopen argv[0] for writing: kernel32's
- * version test patches its own PE header in copies of itself. */
+ * version test patches its own PE header in copies of itself.
+ *
+ * The first line may be `@scratch`: the boot's writable scratch directory, which is
+ * not the same place on every arch. x86 boots get an IDE temp disk as C: (C:\TEMP);
+ * arm64 boots get no C: at all (vibeos-test config.rs temp_disk_args), but their X:
+ * is a RAM disk and writable, with X:\reactos\TEMP on it. A literal C:\TEMP there
+ * made every launch fail with ERROR_PATH_NOT_FOUND. */
+#if defined(_M_ARM64)
+#define SCRATCH_DIR "X:\\reactos\\TEMP"
+#else
+#define SCRATCH_DIR "C:\\TEMP"
+#endif
 static char g_child_cwd[MAX_PATH];
 static BOOL g_stage_exe;
 
@@ -454,6 +465,8 @@ static void load_child_cwd(const char *bindir)
             g_stage_exe = TRUE;
     }
     fclose(f);
+    if (!strcmp(g_child_cwd, "@scratch"))
+        lstrcpynA(g_child_cwd, SCRATCH_DIR, sizeof(g_child_cwd));
     if (!g_child_cwd[0])
     {
         lstrcpynA(g_child_cwd, bindir, sizeof(g_child_cwd));
