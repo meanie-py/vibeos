@@ -244,5 +244,11 @@ def test_c_oracle_twins_are_not_live_c(tmp_path):
         "target_link_libraries(setuplib_c setuplib_static_c)\n"
     )
     (tmp_path / "build-x" / "c_oracle.cmake").parent.mkdir()
-    (tmp_path / "build-x" / "c_oracle.cmake").write_text("add_library(notmine EXCLUDE_FROM_ALL a.c)\n")
-    assert port_audit.excluded_targets(tmp_path) == {"setuplib_static_c", "setuplib_c", "setuplib_probe_c"}
+    (tmp_path / "build-x" / "c_oracle.cmake").write_text(
+        "add_library(notmine EXCLUDE_FROM_ALL a.c)\n"
+    )
+    assert port_audit.excluded_targets(tmp_path) == {
+        "setuplib_static_c",
+        "setuplib_c",
+        "setuplib_probe_c",
+    }

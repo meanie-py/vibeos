@@ -303,7 +303,9 @@ def _newest_cmake_mtime(repo: Path) -> float:
     return newest
 
 
-_ORACLE_TARGET = re.compile(r"^\s*add_(?:library|executable)\(\s*([\w.+-]+)\s[^)]*\bEXCLUDE_FROM_ALL\b", re.M)
+_ORACLE_TARGET = re.compile(
+    r"^\s*add_(?:library|executable)\(\s*([\w.+-]+)\s[^)]*\bEXCLUDE_FROM_ALL\b", re.M
+)
 _OBJECT_TARGET = re.compile(r"CMakeFiles/([^/]+)\.dir/")
 
 
