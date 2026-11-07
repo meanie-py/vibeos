@@ -589,7 +589,7 @@ unsafe extern "fastcall" fn get_input_codepage() -> DWORD {
 unsafe extern "C" fn get_input_codepage() -> DWORD {
     get_input_codepage_impl()
 }
-unsafe fn get_input_codepage_impl() -> DWORD {
+pub(crate) unsafe fn get_input_codepage_impl() -> DWORD {
     let mut cp: DWORD = 0;
     let hkl: HKL = GetKeyboardLayout(0);
     let ret = GetLocaleInfoW(
