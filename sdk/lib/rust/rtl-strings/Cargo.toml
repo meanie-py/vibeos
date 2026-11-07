@@ -28,6 +28,9 @@ cabi = []
 # shim suppression (the dedicated `utf8` crate owns those in the
 # kernel). OFF for rtl-difftest (it models Nls* itself + fuzzes utf8).
 kernel = ["cabi"]
+# ntoskrnl: THIS copy runs in the kernel. `kernel` above names the export surface, which ntdll
+# also gets (rtl-rust's default features), so it cannot gate an ntdll-only path.
+ntoskrnl = ["kernel"]
 # The boot loaders' unicode.c (blrtl-rust): exactly unicode.c's exports, calling nlsboot
 # (blrtl-rust) for the NLS layer and RtlpAllocateMemory/RtlpFreeMemory (freeldr-rust)
 # for memory. Mutually exclusive with `kernel` in practice: the two supply that layer.
