@@ -425,6 +425,29 @@ fn write_json(path: &Path, value: &Value) -> Result<()> {
     fs::write(path, format!("{}\n", serde_json::to_string_pretty(value)?))?;
     Ok(())
 }
+const DRAIN_RETRIES: u32 = 20;
+const DRAIN_BACKOFF: Duration = Duration::from_millis(37);
+/// Completed block requests across every device, from `query-blockstats`. Any counter
+/// that moves while the VM is stopped means the stop itself completed a request.
+fn block_completions(fp: &mut Fingerprinter) -> Result<u64> {
+    let r = fp.qmp.execute("query-blockstats", json!({})).map_err(qerr)?;
+    let rows = r
+        .get("return")
+        .unwrap_or(&r)
+        .as_array()
+        .ok_or("query-blockstats did not return a device list")?;
+    let mut n = 0u64;
+    for row in rows {
+        if let Some(stats) = row["stats"].as_object() {
+            for (k, v) in stats {
+                if k.ends_with("_operations") {
+                    n = n.wrapping_add(v.as_u64().unwrap_or(0));
+                }
+            }
+        }
+    }
+    Ok(n)
+}
 pub fn record_loop(fp: &mut Fingerprinter, period: f64, path: &Path) -> Result<Value> {
     if !period.is_finite() || period <= 0.0 {
         return Err("RR sample period must be finite and positive".into());
@@ -433,10 +456,29 @@ pub fn record_loop(fp: &mut Fingerprinter, period: f64, path: &Path) -> Result<V
     let mut n = 0;
     loop {
         let result = (|| -> Result<Value> {
-            fp.qmp.execute("stop", json!({})).map_err(qerr)?;
-            let s = fp.fingerprint()?;
-            fp.qmp.execute("cont", json!({})).map_err(qerr)?;
-            Ok(s)
+            // QMP `stop` drains block I/O. A request it completes is logged at exactly the
+            // paused icount, but a replay's break lands BEFORE that completion is applied,
+            // so such a sample can never compare exactly (`artifact`). Prefer a pause that
+            // drained nothing: completion counters unchanged across the stop. The counters
+            // are read while the guest still runs, so a completion just before the stop
+            // also retries; that only costs a retry, never a false "clean".
+            let mut retries = 0;
+            loop {
+                let before = block_completions(fp)?;
+                fp.qmp.execute("stop", json!({})).map_err(qerr)?;
+                let drained = block_completions(fp)? != before;
+                if drained && retries < DRAIN_RETRIES {
+                    fp.qmp.execute("cont", json!({})).map_err(qerr)?;
+                    retries += 1;
+                    thread::sleep(DRAIN_BACKOFF);
+                    continue;
+                }
+                let mut s = fp.fingerprint()?;
+                fp.qmp.execute("cont", json!({})).map_err(qerr)?;
+                s["pause_retries"] = json!(retries);
+                s["io_at_pause"] = json!(drained);
+                return Ok(s);
+            }
         })();
         let mut s = match result {
             Ok(s) => s,
@@ -707,12 +749,13 @@ mod tests {
         os::unix::net::UnixListener,
     };
     fn monitor(sock: &Path, fail: bool) -> thread::JoinHandle<()> {
-        monitor_mode(sock, fail, None)
+        monitor_mode(sock, fail, None, false)
     }
     fn monitor_mode(
         sock: &Path,
         fail: bool,
         hold_after_sample: Option<bool>,
+        drain_once: bool,
     ) -> thread::JoinHandle<()> {
         let listener = UnixListener::bind(sock).unwrap();
         thread::spawn(move || {
@@ -734,7 +777,7 @@ mod tests {
                 let command = a["execute"].as_str().unwrap();
                 if command == "stop" {
                     stops += 1;
-                    if stops > 1 {
+                    if stops > 1 + u32::from(drain_once) {
                         if let Some(hold) = hold_after_sample {
                             if hold {
                                 thread::sleep(Duration::from_millis(500));
@@ -746,6 +789,11 @@ mod tests {
                 let mut result = json!({"return":{}});
                 if command == "human-monitor-command" {
                     result = json!({"return":"CPU#0\nPC=0000000040000000 X29=0000000040000100\n"});
+                }
+                if command == "query-blockstats" {
+                    // With `drain_once`, the first stop completes one request.
+                    let done = if drain_once { stops.min(1) } else { 0 };
+                    result = json!({"return":[{"device":"vda","stats":{"rd_operations":done,"rd_total_time_ns":stops}}]});
                 }
                 if command == "query-replay" {
                     result = json!({"return":{"icount":42}});
@@ -836,6 +884,23 @@ mod tests {
         server.join().unwrap();
     }
     #[test]
+    fn a_pause_that_completed_io_is_retried_and_the_clean_sample_says_so() {
+        let temp = tempfile::tempdir().unwrap();
+        let socket = temp.path().join("qmp.sock");
+        // Stops 1 (drained, retried) and 2 (clean, sampled); the mock leaves at stop 3.
+        let server = monitor_mode(&socket, false, Some(false), true);
+        let mut fp = Fingerprinter::new(vec![], temp.path(), &temp.path().join("ram")).unwrap();
+        fp.qmp.connect(&socket, Duration::from_millis(100)).unwrap();
+        let path = temp.path().join(SAMPLES_FILE);
+        let _ = record_loop(&mut fp, 0.005, &path);
+        let text = fs::read_to_string(path).unwrap();
+        let first: Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+        assert_eq!(first["pause_retries"], 1);
+        assert_eq!(first["io_at_pause"], false);
+        fp.qmp.close();
+        server.join().unwrap();
+    }
+    #[test]
     fn different_memory_layouts_are_refused_instead_of_comparing_misaligned_chunks() {
         let a = json!({"icount":10,"regs":"PC=1","mem":[{"base":0,"hashes":["0000000000000000"]}]});
         let mut b = a.clone();
@@ -850,7 +915,7 @@ mod tests {
         for hold in [false, true] {
             let temp = tempfile::tempdir().unwrap();
             let socket = temp.path().join("qmp.sock");
-            let server = monitor_mode(&socket, false, Some(hold));
+            let server = monitor_mode(&socket, false, Some(hold), false);
             let mut fp = Fingerprinter::new(vec![], temp.path(), &temp.path().join("ram")).unwrap();
             fp.qmp.connect(&socket, Duration::from_millis(100)).unwrap();
             let path = temp.path().join(SAMPLES_FILE);

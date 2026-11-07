@@ -196,6 +196,72 @@ pub(crate) fn settle(
         Ok((out, true))
     }
 }
+/// A replay must run to the end of its trace before its transcript is comparable with the
+/// recording's. The marker + wall-clock settle that ends a live boot cannot end a replay: the
+/// replay executes at a different host speed, so the same seconds cover a different stretch of
+/// the guest (an arm64 replay stopped at 84% of its trace and 2083 of 2230 serial lines). The
+/// trace's read position is the guest-time clock here, so drain until QEMU has read all of it.
+pub(crate) fn drain_replay(
+    host: &mut dyn Host,
+    id: u64,
+    trace: &Path,
+    cap: f64,
+) -> Result<(String, Value)> {
+    const POLL: Duration = Duration::from_secs(2);
+    const STALL: f64 = 60.0;
+    // QEMU reads the log through a stdio buffer, so EOF on the handle is reached slightly
+    // before the last events execute; keep reading serial briefly after it.
+    const TAIL: Duration = Duration::from_secs(3);
+    let total = fs::metadata(trace.join("replay.bin"))?.len();
+    let start = Instant::now();
+    let cap = duration(cap)?;
+    let mut out = String::new();
+    let mut next = Instant::now();
+    let (mut last, mut moved) = (None, Instant::now());
+    let mut eof_at: Option<Instant> = None;
+    let mut max_pos = 0;
+    let reason = loop {
+        if eof_at.is_some_and(|t| t.elapsed() >= TAIL) {
+            break "consumed";
+        }
+        if start.elapsed() >= cap {
+            break "deadline";
+        }
+        match serial(host, id, 0.5) {
+            Ok(chunk) => out.push_str(&chunk),
+            Err(error) if matches!(error.kind.as_deref(), Some("OSError" | "DiagnosticError")) => {
+                return Err(error)
+            }
+            // QEMU may exit on its own at the end of a replay.
+            Err(_) => break if max_pos >= total { "consumed" } else { "exited" },
+        }
+        if eof_at.is_some() || Instant::now() < next {
+            continue;
+        }
+        next = Instant::now() + POLL;
+        match crate::record_replay::trace_position(trace) {
+            Some(pos) => {
+                max_pos = max_pos.max(pos);
+                if pos >= total {
+                    eof_at = Some(Instant::now());
+                } else if last != Some(pos) {
+                    (last, moved) = (Some(pos), Instant::now());
+                } else if moved.elapsed().as_secs_f64() >= STALL {
+                    break "stalled";
+                }
+            }
+            // The handle is closed: QEMU finished with the trace.
+            None if max_pos > 0 || last.is_some() => {
+                break if max_pos >= total { "consumed" } else { "closed" }
+            }
+            None => {}
+        }
+    };
+    Ok((
+        out,
+        json!({"reason":reason,"read":max_pos,"total":total,"complete":reason == "consumed"}),
+    ))
+}
 fn debug_text(value: &Value) -> String {
     if let Some(text) = value.as_str() {
         return text.into();
@@ -520,6 +586,26 @@ pub fn one_boot(root: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
             if !more.is_empty() {
                 output.push_str(&more);
                 log(host, &format!("{label} settle serial"), tail(&more, 4000))?;
+            }
+        }
+        if outcome == "reached" {
+            if let Some(trace) = text(&env, "VIBEOS_QEMU_RR").strip_prefix("replay:") {
+                let draining = Instant::now();
+                let (more, drain) = drain_replay(
+                    host,
+                    id,
+                    Path::new(trace),
+                    number(&config, "boot_timeout", 300.0),
+                )?;
+                timings.insert(
+                    "replay_drain_seconds".into(),
+                    json!(rounded(draining.elapsed().as_secs_f64())),
+                );
+                log(host, &format!("{label} replay drain"), drain.to_string())?;
+                if !more.is_empty() {
+                    output.push_str(&more);
+                    log(host, &format!("{label} replay serial"), tail(&more, 4000))?;
+                }
             }
         }
         let optional = if flag(a, "want_ladder") {
