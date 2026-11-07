@@ -231,11 +231,11 @@ row. Each row is tagged by where the twin runs and what its try body does:
 | | `raise` (callee raises by contract) | `probe` (C probes user memory) | `other` (bare deref, or a raise further down) |
 |---|---|---|---|
 | kernel | 0 | 0 | 0 |
-| rtl (both) | 0 | 0 | 18 |
-| user | 0 | 0 | 139 |
+| rtl (both) | 0 | 0 | 0 |
+| user | 0 | 0 | 135 |
 
-157 in all (235 at the first count, 2026-11-06; 222 after the `raise` rows; every kernel row is
-now fixed or carries a reasoned `nolint(dead_seh)`). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
+135 in all (235 at the first count, 2026-11-06; 222 after the `raise` rows; 157 after the
+kernel rows, every one fixed or carrying a reasoned `nolint(dead_seh)`; 135 after rtl). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
 `RtlRaiseStatus` into `return Err` has converted the contract and needs only a probe. Burn-down order: kernel `raise` first (one call from user mode bugchecks the box:
 that is how `ReleaseSemaphore` past the maximum was found), then kernel `probe`/`other`, then
 user mode (the process dies, not the machine). `tools/payloads/sehprobe` exercises the
@@ -270,6 +270,22 @@ What already landed, which the plan below predates:
   stubs, KDBG, the bugcheck halt, the system-thread filter that only bugchecks.
 - The lint now credits catching helpers crate-wide, `try_except_all`, `KmProtectedCopyMemory`,
   and counts `IoCreateStreamFileObject*` as raisers.
+- 2026-11-07, every rtl row (and ntdll's libsupp copies). The heap's wild-pointer checks
+  (`RtlFreeHeap`, `RtlMultipleFreeHeap`, `RtlCreateHeap`'s parameter capture), DbgPrint's
+  formatting of caller strings, the frame walkers, resource lookup (an access violation becomes
+  the status, as `page_fault()` filters), `RtlCopyMappedMemory` (in-page errors only), the
+  SID/ACL/SD validators, the thread pool's work-item callbacks. `RtlInterlockedPopEntrySList` on
+  amd64/arm64 had no protection at all (only i386 has fault labels): a pop racing a free read a
+  freed entry and faulted; it now retries when the header moved, and arm64 does the guarded read
+  outside its LDAXP/STLXP window. `rtl-strings` guards only under `kernel`: the boot loader and the
+  host difftest link no SEH trampoline. Not ported: DbgPrint's `DBG_PRINTEXCEPTION_C` raise to a
+  user-mode debugger, since arm64's `RtlRaiseException` resumes a continued exception at its own
+  `RtlCaptureContext` and would raise forever.
+- The lint's function parser missed generic helpers whose bounds hold `->`
+  (`fn f<F: FnOnce() -> T>`); fixed in `twins.rs`. Caveat: a call to ANY catching function
+  credits the caller, so making a callee catch can clear its caller's row falsely —
+  `LdrpCheckForLoadedDll` cleared that way when `RtlImageNtHeaderEx` gained its catch, and was
+  then given its own.
 - Do NOT catch around `KiInitializeContextThread` for a hand-built thread: its stack is the
   one running, and the trampoline's frames overlap where the context setup writes (arm64 hung
   at boot). KeInitThread catches only when there is a user `Context`.

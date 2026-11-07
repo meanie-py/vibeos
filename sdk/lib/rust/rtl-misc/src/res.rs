@@ -44,6 +44,22 @@ pub unsafe extern "C" fn page_fault(ExceptionCode: ULONG) -> i32 {
     EXCEPTION_CONTINUE_SEARCH
 }
 
+/// `__try { f() } __except (page_fault(GetExceptionCode())) { code }`: a resource
+/// walk over a module the caller named, which may be a truncated or garbage
+/// image. An access violation becomes the status; anything else propagates.
+unsafe fn resource_try<F: FnOnce() -> NTSTATUS>(f: F) -> NTSTATUS {
+    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let caught = ntkrnl_sys::seh::try_except(
+        &mut status,
+        |st| *st = f(),
+        |_, pointers| page_fault(ntkrnl_sys::seh::exception_code(pointers) as ULONG),
+    );
+    match caught {
+        Ok(()) => status,
+        Err(code) => code,
+    }
+}
+
 unsafe fn is_data_file_module(BaseAddress: *mut core::ffi::c_void) -> i32 {
     ((BaseAddress as usize) & 1) as i32
 }
@@ -197,41 +213,43 @@ unsafe fn LdrpAccessResource(
     ptr: *mut *mut core::ffi::c_void,
     size: *mut u32,
 ) -> i32 {
-    let mut status: i32 = STATUS_SUCCESS;
+    resource_try(|| {
+        let mut status: i32 = STATUS_SUCCESS;
 
-    let mut dirsize: u32 = 0;
+        let mut dirsize: u32 = 0;
 
-    if RtlImageDirectoryEntryToData(
-        BaseAddress,
-        1u8,
-        IMAGE_DIRECTORY_ENTRY_RESOURCE as u16,
-        &mut dirsize,
-    )
-    .is_null()
-    {
-        status = STATUS_RESOURCE_DATA_NOT_FOUND;
-    } else {
-        if !ptr.is_null() {
-            if is_data_file_module(BaseAddress) != 0 {
-                let mod_: *mut core::ffi::c_void =
-                    ((BaseAddress as usize) & !1usize) as *mut core::ffi::c_void;
-                *ptr = RtlImageRvaToVa(
-                    RtlImageNtHeader(mod_),
-                    mod_,
-                    (*entry).OffsetToData,
-                    core::ptr::null_mut(),
-                );
-            } else {
-                *ptr = (BaseAddress as *mut u8).add((*entry).OffsetToData as usize)
-                    as *mut core::ffi::c_void;
+        if RtlImageDirectoryEntryToData(
+            BaseAddress,
+            1u8,
+            IMAGE_DIRECTORY_ENTRY_RESOURCE as u16,
+            &mut dirsize,
+        )
+        .is_null()
+        {
+            status = STATUS_RESOURCE_DATA_NOT_FOUND;
+        } else {
+            if !ptr.is_null() {
+                if is_data_file_module(BaseAddress) != 0 {
+                    let mod_: *mut core::ffi::c_void =
+                        ((BaseAddress as usize) & !1usize) as *mut core::ffi::c_void;
+                    *ptr = RtlImageRvaToVa(
+                        RtlImageNtHeader(mod_),
+                        mod_,
+                        (*entry).OffsetToData,
+                        core::ptr::null_mut(),
+                    );
+                } else {
+                    *ptr = (BaseAddress as *mut u8).add((*entry).OffsetToData as usize)
+                        as *mut core::ffi::c_void;
+                }
+            }
+            if !size.is_null() {
+                *size = (*entry).Size;
             }
         }
-        if !size.is_null() {
-            *size = (*entry).Size;
-        }
-    }
 
-    status
+        status
+    })
 }
 
 #[no_mangle]
@@ -242,14 +260,15 @@ pub unsafe extern "system" fn LdrFindResource_U(
     ResourceDataEntry: *mut PIMAGE_RESOURCE_DATA_ENTRY,
 ) -> NTSTATUS {
     let mut res: PVOID = core::ptr::null_mut();
-    let status: NTSTATUS;
+    let res_p = core::ptr::addr_of_mut!(res);
 
-    status = find_entry(BaseAddress, ResourceInfo, Level, &mut res, 0);
-    if NT_SUCCESS(status) {
-        core::ptr::write_volatile(ResourceDataEntry, res as PIMAGE_RESOURCE_DATA_ENTRY);
-    }
-
-    status
+    resource_try(|| {
+        let status = find_entry(BaseAddress, ResourceInfo, Level, &mut *res_p, 0);
+        if NT_SUCCESS(status) {
+            core::ptr::write_volatile(ResourceDataEntry, *res_p as PIMAGE_RESOURCE_DATA_ENTRY);
+        }
+        status
+    })
 }
 
 #[no_mangle]
@@ -270,14 +289,15 @@ pub unsafe extern "system" fn LdrFindResourceDirectory_U(
     addr: *mut PIMAGE_RESOURCE_DIRECTORY,
 ) -> NTSTATUS {
     let mut res: PVOID = core::ptr::null_mut();
-    let status: NTSTATUS;
+    let res_p = core::ptr::addr_of_mut!(res);
 
-    status = find_entry(BaseAddress, info, level, &mut res, 1);
-    if NT_SUCCESS(status) {
-        core::ptr::write_volatile(addr, res as PIMAGE_RESOURCE_DIRECTORY);
-    }
-
-    status
+    resource_try(|| {
+        let status = find_entry(BaseAddress, info, level, &mut *res_p, 1);
+        if NT_SUCCESS(status) {
+            core::ptr::write_volatile(addr, *res_p as PIMAGE_RESOURCE_DIRECTORY);
+        }
+        status
+    })
 }
 
 unsafe fn LdrpCompareResourceNames_U(

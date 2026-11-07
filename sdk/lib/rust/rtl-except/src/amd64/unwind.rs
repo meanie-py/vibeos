@@ -1029,9 +1029,9 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
 ) -> ULONG {
     // RtlWalkFrameChain(NULL, ...) writes no frames and must return 0. The C reference
     // wrapped the walk in _SEH2_TRY/_SEH2_EXCEPT{ i = 0 } so the fault from the NULL
-    // output store (`Callers.add(..).write(..)` below) returned 0; that __except is DEAD
-    // under DUMMY_PSEH (see the "translated directly" note below), so a NULL Callers AV'd
-    // at RtlWalkFrameChain+0x2b0 (the RtlStackKM/RtlStack quarantine). Guard it explicitly.
+    // output store (`Callers.add(..).write(..)` below) returned 0. The walk is caught the
+    // same way now; this check predates that (a NULL Callers AV'd at
+    // RtlWalkFrameChain+0x2b0, the RtlStackKM/RtlStack quarantine) and stays as the cheap path.
     if Callers.is_null() {
         return 0;
     }
@@ -1055,72 +1055,76 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
     let mut StackLow = StackLow as ULONG64;
     let mut StackHigh = StackHigh as ULONG64;
 
-    /* (_SEH2_TRY is dead under DUMMY_PSEH — body translated directly) */
-    let mut i: ULONG = 0;
-    while i < FramesToSkip + Count {
-        /* Lookup the FunctionEntry for the current ControlPc */
-        let FunctionEntry =
-            RtlLookupFunctionEntry(ControlPc, &mut ImageBase, core::ptr::null_mut());
+    // The walk reads stack memory and unwind data that a corrupt frame can
+    // point anywhere; a fault ends it with no frames ("Exception while getting
+    // callers"), as the C's __except has it.
+    let walked = ntkrnl_sys::seh::try_except_all(|| {
+        let mut i: ULONG = 0;
+        while i < FramesToSkip + Count {
+            /* Lookup the FunctionEntry for the current ControlPc */
+            let FunctionEntry =
+                RtlLookupFunctionEntry(ControlPc, &mut ImageBase, core::ptr::null_mut());
 
-        /* Is this a leaf function? */
-        if FunctionEntry.is_null() {
-            Context.Rip = (Context.Rsp as *const DWORD64).read();
-            Context.Rsp += core::mem::size_of::<DWORD64>() as u64;
-        } else {
-            RtlVirtualUnwind(
-                UNW_FLAG_NHANDLER,
-                ImageBase,
-                ControlPc,
-                FunctionEntry,
-                &mut Context,
-                &mut HandlerData,
-                &mut EstablisherFrame,
-                core::ptr::null_mut(),
-            );
-        }
+            /* Is this a leaf function? */
+            if FunctionEntry.is_null() {
+                Context.Rip = (Context.Rsp as *const DWORD64).read();
+                Context.Rsp += core::mem::size_of::<DWORD64>() as u64;
+            } else {
+                RtlVirtualUnwind(
+                    UNW_FLAG_NHANDLER,
+                    ImageBase,
+                    ControlPc,
+                    FunctionEntry,
+                    &mut Context,
+                    &mut HandlerData,
+                    &mut EstablisherFrame,
+                    core::ptr::null_mut(),
+                );
+            }
 
-        /* Check if we are in kernel mode */
-        if CurrentMode == KernelMode {
-            /* Check if we left the kernel range */
-            if Context.Rip < 0xFFFF800000000000 {
-                /* Bail out, unless user mode was requested */
-                if (Flags & 1) == 0 {
+            /* Check if we are in kernel mode */
+            if CurrentMode == KernelMode {
+                /* Check if we left the kernel range */
+                if Context.Rip < 0xFFFF800000000000 {
+                    /* Bail out, unless user mode was requested */
+                    if (Flags & 1) == 0 {
+                        break;
+                    }
+
+                    /* We are in user mode now, get UM stack bounds */
+                    CurrentMode = UserMode;
+                    let teb = NtCurrentTeb();
+                    StackLow = (*teb).NtTib.StackLimit as ULONG64;
+                    StackHigh = (*teb).NtTib.StackBase as ULONG64;
+                }
+            }
+
+            /* Check (again) if we are in user mode now */
+            if CurrentMode == UserMode {
+                /* Check if we left the user range */
+                if (Context.Rip < 0x10000) || (Context.Rip > 0x000007FFFFFEFFFF) {
                     break;
                 }
-
-                /* We are in user mode now, get UM stack bounds */
-                CurrentMode = UserMode;
-                let teb = NtCurrentTeb();
-                StackLow = (*teb).NtTib.StackLimit as ULONG64;
-                StackHigh = (*teb).NtTib.StackBase as ULONG64;
             }
-        }
 
-        /* Check (again) if we are in user mode now */
-        if CurrentMode == UserMode {
-            /* Check if we left the user range */
-            if (Context.Rip < 0x10000) || (Context.Rip > 0x000007FFFFFEFFFF) {
+            /* Check, if we have left our stack */
+            if (Context.Rsp <= StackLow) || (Context.Rsp >= StackHigh) {
                 break;
             }
+
+            /* Continue with new Rip */
+            ControlPc = Context.Rip;
+
+            /* Save value, if we are past the frames to skip */
+            if i >= FramesToSkip {
+                Callers.add((i - FramesToSkip) as usize).write(ControlPc as PVOID);
+            }
+
+            i += 1;
         }
-
-        /* Check, if we have left our stack */
-        if (Context.Rsp <= StackLow) || (Context.Rsp >= StackHigh) {
-            break;
-        }
-
-        /* Continue with new Rip */
-        ControlPc = Context.Rip;
-
-        /* Save value, if we are past the frames to skip */
-        if i >= FramesToSkip {
-            Callers.add((i - FramesToSkip) as usize).write(ControlPc as PVOID);
-        }
-
-        i += 1;
-    }
-
-    i
+        i
+    });
+    walked.unwrap_or(0)
 }
 
 /* RtlGetCallersAddress
