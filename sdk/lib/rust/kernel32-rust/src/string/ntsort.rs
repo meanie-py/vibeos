@@ -51,7 +51,7 @@ use crate::client::handle::CloseHandle;
 use crate::client::path::GetSystemDirectoryW;
 use crate::file::create::CreateFileW;
 use crate::file::fileinfo::GetFileSize;
-use crate::file::filemap::{CreateFileMappingW, MapViewOfFile};
+use crate::file::filemap::CreateFileMappingW;
 
 extern "system" {
     fn GetLastError() -> DWORD;
@@ -141,12 +141,29 @@ unsafe fn map_system_file(name: &[u16]) -> Option<(*const u8, u32)> {
     if mapping.is_null() {
         return None;
     }
-    let view = MapViewOfFile(mapping, FILE_MAP_READ as DWORD, 0, 0, 0) as *const u8;
+    // TOP-DOWN, like NT's own NLS views: these live for the life of the
+    // process, and a bottom-up view lands in the low hole an app may want
+    // (kmtest's ZwAllocateVirtualMemory ZeroBitsTest reserves at 0x500000 and
+    // lost two checks on amd64 when this mapped bottom-up).
+    let mut view: PVOID = core::ptr::null_mut();
+    let mut view_size: SIZE_T = 0;
+    let status = NtMapViewOfSection(
+        mapping,
+        NtCurrentProcess(),
+        &mut view,
+        0,
+        0,
+        core::ptr::null_mut(),
+        &mut view_size,
+        ViewShare,
+        MEM_TOP_DOWN as ULONG,
+        PAGE_READONLY as ULONG,
+    );
     CloseHandle(mapping);
-    if view.is_null() || size == u32::MAX {
+    if status < 0 || view.is_null() || size == u32::MAX {
         return None;
     }
-    Some((view, size))
+    Some((view as *const u8, size))
 }
 
 /// Read a `count, lcid[count]` list at `*o`.
