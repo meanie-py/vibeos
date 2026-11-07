@@ -984,7 +984,13 @@ real page through QEMU's NAT, so DNS, TCP, TLS and certificate checks all work. 
 
 **Plain `http://example.com/` still fails** with `ERR_BLOCKED_BY_CLIENT` in the guest, with or
 without `--disable-features=HttpsUpgrades`, while the same Chrome 157 binary on Windows loads it.
-Next: Chrome's net log for that run. Also seen twice and not explained: the guest running out of
+Its net log (`grepfile` over `--log-net-log`) has no failed request at all: as on Windows, the
+navigation goes out as `https://example.com/`, the certificate verifies and `GET /` goes out over
+HTTP/2. The difference is time: about 11 s from the request to its HTTP/2 session under TCG,
+against 0.1 s on Windows, and the guest never asks for the page's `/s.js`, so the navigation was
+cancelled before it committed. Inferred, not shown: Chrome's HTTPS-upgrade fallback timer gives
+up on the slow upgraded load and falls back to an `http://` it then blocks. `https://` asked for
+directly is the working path; a faster guest (KVM) would settle it. Also seen twice and not explained: the guest running out of
 memory during a Chrome run (win32k "Not enough memory to allocate a message"); the sweep's
 `memwatch SECS` now prints memory, the top pool tags and the top processes every SECS, so the next
 occurrence says what grew.

@@ -41,7 +41,10 @@ catfile\catfile.exe C:\TEMP\chrome_n.log
 # while Windows' Chrome loads it, upgrading it to https first; so I1 asks for https outright and
 # I2 asks for http with the upgrade off, to tell TLS apart from the plain fetch.
 chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --ipc-connection-timeout=120 --log-file=C:\TEMP\chrome_i1.log --user-data-dir=C:\TEMP\chrome-i1 --dump-dom https://example.com/
-chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --ipc-connection-timeout=120 --log-file=C:\TEMP\chrome_i2.log --disable-features=HttpsUpgrades --user-data-dir=C:\TEMP\chrome-i2 --dump-dom http://example.com/
+chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable-breakpad --enable-logging --ipc-connection-timeout=120 --log-file=C:\TEMP\chrome_i2.log --disable-features=HttpsUpgrades --log-net-log=C:\TEMP\net_i2.json --user-data-dir=C:\TEMP\chrome-i2 --dump-dom http://example.com/
+# The net log's events that failed ERR_BLOCKED_BY_CLIENT (-20), and every event naming the page.
+# On Windows the same binary and flags load the page and log no -20 at all.
+grepfile\grepfile.exe C:\TEMP\net_i2.json 120 :-20, :-20} example.com
 # Run S: Run M with the sandbox on. Where it first breaks is the start of the sandbox quest.
 chrome\chrome.exe --headless --disable-gpu --no-first-run --disable-breakpad --enable-logging --ipc-connection-timeout=120 --log-file=C:\TEMP\chrome_s.log --v=1 --user-data-dir=C:\TEMP\chrome-s --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
 catfile\catfile.exe C:\TEMP\chrome_s.log
