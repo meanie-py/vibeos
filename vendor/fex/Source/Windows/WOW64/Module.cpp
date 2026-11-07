@@ -36,6 +36,7 @@ $end_info$
 #include "Common/Config.h"
 #include "Common/Exception.h"
 #include "Common/TSOHandlerConfig.h"
+#include "Common/UniprocessorTSO.h" // VIBEOS PATCH (uniprocessor TSO)
 #include "Common/ImageTracker.h"
 #include "Common/InvalidationTracker.h"
 #include "Common/OvercommitTracker.h"
@@ -519,6 +520,10 @@ void BTCpuProcessInit() {
 
   FEXCore::Config::Set(FEXCore::Config::CONFIG_INTERPRETER_INSTALLED, "0");
   FEXCore::Config::Set(FEXCore::Config::CONFIG_IS64BIT_MODE, "0");
+  // VIBEOS PATCH (uniprocessor TSO): before the context reads TSOEnabled.
+  const bool TSOOff = FEX::Windows::DisableTSOOnUniprocessor();
+  DbgPrint("[WOW64FEX] pid %u TSO emulation %s\n", static_cast<unsigned>(GetCurrentProcessId()),
+           TSOOff ? "off (one processor)" : "on");
 
   FEXCore::Profiler::Init("", "");
 
