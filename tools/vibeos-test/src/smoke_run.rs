@@ -180,6 +180,22 @@ pub fn payload_build_flags(root: &Path, names: &[String]) -> Result<String> {
     }
     Ok(String::new())
 }
+/// The payload stamp is written at the build's `payloads` stage, BEFORE ninja and the media
+/// steps, because env-less rebuilds read the selection back from it. So it names what the
+/// last build was ASKED to stage, not what the media carries: a build that then fails (an
+/// arm64 ramdisk restage refusing, ninja failing) leaves a stamp naming payloads its media
+/// never got. The provenance stamp is written only once a build succeeds, so a selection
+/// newer than it was staged by a build that did not finish. Booting anyway waits out the
+/// whole drain budget for a marker nothing can print (an hour, 20261106-160817-z7q5baq2).
+fn unfinished_payload_build(build_dir: &Path) -> Option<String> {
+    let mtime = |n: &str| std::fs::metadata(build_dir.join(n)).and_then(|m| m.modified()).ok();
+    let selection = mtime("payload-selection.json")?;
+    match mtime(".vibeos-build-stamp.json") {
+        Some(built) if built >= selection => None,
+        Some(_) => Some("the payload selection was staged by a build that did not finish (payload-selection.json is newer than .vibeos-build-stamp.json), so the media predates it".into()),
+        None => Some("the payload selection was staged but no build of this dir has finished (no .vibeos-build-stamp.json)".into()),
+    }
+}
 pub fn guest_reached_desktop(results: &[Value]) -> bool {
     results.iter().any(|r| flag(r, "ok"))
         && results
@@ -760,6 +776,22 @@ pub fn smoke(root: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
                 ]),
             );
         }
+        if let Some(why) = unfinished_payload_build(&root.join(format!("build-{arch}"))) {
+            let flags = payload_build_flags(root, &wanted)?;
+            return fail_preflight(
+                &mut c,
+                "PAYLOAD_NOT_IN_MEDIA",
+                "payload-check",
+                why,
+                json!([
+                    format!(
+                        "VIBEOS_PAYLOAD={} ./vibeos-cli build --arch {arch}{flags}",
+                        wanted.join(",")
+                    ),
+                    "then re-run this smoke"
+                ]),
+            );
+        }
         c.stage("payload-check", "ok", wanted.join(","), json!([]))?
     }
     let total = options["repeat"].as_i64().unwrap_or(1).max(1) as u64;
@@ -1204,6 +1236,23 @@ mod tests {
                 _ => return Err(Error::new(format!("unexpected callback {op}"))),
             })
         }
+    }
+    #[test]
+    fn a_selection_staged_by_an_unfinished_build_is_not_in_the_media() {
+        use std::time::{Duration, SystemTime};
+        let dir = tempfile::tempdir().unwrap();
+        let set = |n: &str, t: SystemTime| {
+            let f = std::fs::File::create(dir.path().join(n)).unwrap();
+            f.set_modified(t).unwrap();
+        };
+        let t0 = SystemTime::now() - Duration::from_secs(600);
+        assert_eq!(unfinished_payload_build(dir.path()), None, "no selection: nothing to judge");
+        set("payload-selection.json", t0);
+        assert!(unfinished_payload_build(dir.path()).unwrap().contains("no build"));
+        set(".vibeos-build-stamp.json", t0 + Duration::from_secs(60));
+        assert_eq!(unfinished_payload_build(dir.path()), None, "selection then a finished build");
+        set("payload-selection.json", t0 + Duration::from_secs(120));
+        assert!(unfinished_payload_build(dir.path()).unwrap().contains("did not finish"));
     }
     #[test]
     fn missing_payload_and_stale_media_refuse_before_a_vm_exists() {

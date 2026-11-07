@@ -1,1 +1,1 @@
-C:\TEMP
+@scratch
