@@ -478,9 +478,9 @@ extends it from the boot spine to every fully-Rust module.
          handler needed ntdll (DbgPrint, NtTerminateProcess) and gave code-free DLLs a
          `.text`. pe_equiv EQUIVALENT ×3 with no allowance notes; the five resource
          DLLs (shdoclc, msxml3r, mycomput, tapiui, themeui) are byte-identical to
-         cmake's link. Owed: the 17 earlier C-less cells (cfgmgr32, icmp, regapi, ...)
-         still carry the dead handler; re-render them shell-less against a fresh cmake
-         baseline. The driver kinds should build on this (no user-mode shell there either).
+         cmake's link. **Done 2026-11-07:** the 17 earlier C-less cells (cfgmgr32, icmp,
+         regapi, ...) re-rendered shell-less; pe_equiv EQUIVALENT ×3 against their original
+         cmake builds (wave 5/6 baseline) with the i386 rsbegin `.ctors`/`.dtors` note gone. The driver kinds should build on this (no user-mode shell there either).
        - d3dwine, dinput8 (resources missing), libjpeg, libpng, libxslt (exports
          missing), mbedtls (an import missing): model clean, link not equivalent.
        - (gdi32, msxml3, wuapi, xolehlp: converted 2026-11-06 once their archives got engine
