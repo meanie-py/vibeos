@@ -1,0 +1,14 @@
+[GDI] 64-bit
+[GDI] CreateDC(DISPLAY)+DeleteDC x20000: objects flat, failures 0 (count 0 -> 0)
+[GDI] CreateIC(DISPLAY)+DeleteDC x20000: objects flat, failures 0 (count 0 -> 0)
+[GDI] GetDC+CreateCompatibleDC/Bitmap+free x20000: objects flat, failures 0 (count 0 -> 0)
+[GDI] GetIconInfo(arrow)+DeleteObject x20000: objects flat, failures 0 (count 0 -> 0)
+[GDI] button SetWindowText+repaint x20000: objects flat, failures 0 (count 7 -> 7)
+[GDI] done
+[GDI] 32-bit
+[GDI] CreateDC(DISPLAY)+DeleteDC x20000: objects flat, failures 0 (count 0 -> 0)
+[GDI] CreateIC(DISPLAY)+DeleteDC x20000: objects flat, failures 0 (count 0 -> 0)
+[GDI] GetDC+CreateCompatibleDC/Bitmap+free x20000: objects flat, failures 0 (count 0 -> 0)
+[GDI] GetIconInfo(arrow)+DeleteObject x20000: objects flat, failures 0 (count 0 -> 0)
+[GDI] button SetWindowText+repaint x20000: objects flat, failures 0 (count 7 -> 7)
+[GDI] done
