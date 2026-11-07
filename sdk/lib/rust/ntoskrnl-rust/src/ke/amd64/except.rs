@@ -445,9 +445,10 @@ unsafe fn KiDispatchExceptionToUser(
 }
 
 unsafe fn KiPageInDirectory(ImageBase: PVOID, Directory: USHORT) {
-    // DUMMY_PSEH: validate ImageBase before passing to RtlImageDirectoryEntryToData
-    // since SEH can't catch page faults
-    if ImageBase.is_null() || MmIsAddressValid(ImageBase) == 0 {
+    // Runs inside KiPrepareUserDebugData's __try: every touch of the user image
+    // may fault, and that is what pages it in. A MmIsAddressValid gate here
+    // skipped exactly the paged-out pages this exists to bring in.
+    if ImageBase.is_null() {
         return;
     }
 
@@ -462,10 +463,7 @@ unsafe fn KiPageInDirectory(ImageBase: PVOID, Directory: USHORT) {
     let mut size = Size as LONG;
 
     while size > 0 {
-        // DUMMY_PSEH: check page is accessible before touching
-        if MmIsAddressValid(ptr as PVOID) != 0 {
-            let _touch = *ptr;
-        }
+        core::ptr::read_volatile(ptr);
         ptr = ptr.add(PAGE_SIZE);
         size -= PAGE_SIZE as LONG;
     }
@@ -479,39 +477,28 @@ unsafe fn KiPrepareUserDebugData() {
 
     _enable();
 
-    // DUMMY_PSEH: The C code wraps this in __try/__except, but with DUMMY_PSEH
-    // the handler is dead code. Validate every user-mode pointer with
-    // MmIsAddressValid before dereferencing to avoid kernel-mode ACCESS_VIOLATION.
-    'done: {
-        if MmIsAddressValid(Teb as PVOID) == 0 {
-            break 'done;
-        }
-        let Peb = (*Teb).ProcessEnvironmentBlock;
-        if Peb.is_null() || MmIsAddressValid(Peb as PVOID) == 0 {
-            break 'done;
-        }
-        let PebLdr = (*Peb).Ldr;
-        if PebLdr.is_null() || MmIsAddressValid(PebLdr as PVOID) == 0 {
-            break 'done;
+    // C: the walk is one __try with an empty handler. The PEB loader list is user
+    // memory and may be paged out, bogus, or freed under us; a fault just ends
+    // the walk. (The port gated each read on MmIsAddressValid instead, which
+    // stopped at the first paged-out page — the pages this exists to bring in.)
+    let _ = ntkrnl_sys::seh::try_except_all(|| {
+        let PebLdr = (*(*Teb).ProcessEnvironmentBlock).Ldr;
+        if PebLdr.is_null() {
+            return;
         }
 
         let ListHead = core::ptr::addr_of_mut!((*PebLdr).InLoadOrderModuleList) as PLIST_ENTRY;
         let mut ListEntry = (*PebLdr).InLoadOrderModuleList.Flink;
 
         while ListEntry != ListHead {
-            if MmIsAddressValid(ListEntry as PVOID) == 0 {
-                break;
-            }
             let LdrEntry = ((ListEntry as usize) - core::mem::offset_of!(LDR_DATA_TABLE_ENTRY, InLoadOrderLinks)) as PLDR_DATA_TABLE_ENTRY;
 
-            if MmIsAddressValid(LdrEntry as PVOID) != 0 {
-                KiPageInDirectory((*LdrEntry).DllBase, IMAGE_DIRECTORY_ENTRY_DEBUG);
-                KiPageInDirectory((*LdrEntry).DllBase, IMAGE_DIRECTORY_ENTRY_EXCEPTION);
-            }
+            KiPageInDirectory((*LdrEntry).DllBase, IMAGE_DIRECTORY_ENTRY_DEBUG);
+            KiPageInDirectory((*LdrEntry).DllBase, IMAGE_DIRECTORY_ENTRY_EXCEPTION);
 
             ListEntry = (*ListEntry).Flink;
         }
-    }
+    });
 
     _disable();
 }

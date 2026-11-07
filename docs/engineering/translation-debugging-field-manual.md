@@ -8272,6 +8272,13 @@ already did. `[SEH-TRY] rust hw faults ... irqs=1/1`
 checks it on each boot, and smoke fails any `(FAIL)` self-test line (`SELFTEST_FAIL`). The
 general move for "a stack slot changed and nobody wrote it": `gdb probe` with a hardware
 `watch -l` armed at the owning function's entry names the writer on the first try.
+**Boot trap: never wrap code that writes the stack you are running on.** Symptom: arm64
+hung silently right after `[KISTART] SCTLR_EL1=...`, before `Calling ExpInitializeExecutive`;
+i386/amd64 booted. Cause: `KeInitThread` put `KiInitializeContextThread` in `try_except_all`,
+as the C's `__try` reads. For the hand-built idle thread the stack it initialises is the boot
+stack itself, and the setup writes its first frames at the top of it; the trampoline and
+closure frames shifted live return addresses into that range. Fix: catch only where a fault
+is possible (a user `Context` to copy); call directly for kernel and hand-built threads.
 Aside: in Rust `asm!` (Intel syntax) a bare `pushf` assembles to the 16-bit `pushfw` on
 i386. Paired with a 32-bit `pop`, it left ESP two bytes off, and every local printed as
 garbage. Write `pushfd`/`pushfq`.

@@ -798,17 +798,23 @@ pub unsafe extern "system" fn CmpQueryKeyName(
 
     BytesToCopy -= core::mem::size_of::<u16>() as u32;
 
-    (*ObjectNameInfo).Name.Buffer = (ObjectNameInfo.offset(1)) as *mut u16;
-    (*ObjectNameInfo).Name.MaximumLength = (*KeyName).Length;
-    (*ObjectNameInfo).Name.Length = (*KeyName).Length;
+    // C: __try around the fill-in — ObjectNameInfo can be the caller's buffer.
+    // The handler takes the exception code; the name is freed either way.
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        (*ObjectNameInfo).Name.Buffer = (ObjectNameInfo.offset(1)) as *mut u16;
+        (*ObjectNameInfo).Name.MaximumLength = (*KeyName).Length;
+        (*ObjectNameInfo).Name.Length = (*KeyName).Length;
 
-    core::ptr::copy_nonoverlapping(
-        (*KeyName).Buffer,
-        (*ObjectNameInfo).Name.Buffer,
-        BytesToCopy as usize / core::mem::size_of::<u16>(),
-    );
+        core::ptr::copy_nonoverlapping(
+            (*KeyName).Buffer,
+            (*ObjectNameInfo).Name.Buffer,
+            BytesToCopy as usize / core::mem::size_of::<u16>(),
+        );
 
-    *((*ObjectNameInfo).Name.Buffer.offset((BytesToCopy / core::mem::size_of::<u16>() as u32) as isize)) = 0u16;
+        *((*ObjectNameInfo).Name.Buffer.offset((BytesToCopy / core::mem::size_of::<u16>() as u32) as isize)) = 0u16;
+    }) {
+        Status = code;
+    }
 
     ExFreePoolWithTag(KeyName as *mut core::ffi::c_void, TAG_CM);
 

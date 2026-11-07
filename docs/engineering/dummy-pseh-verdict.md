@@ -221,7 +221,7 @@ line. On amd64, wordpad and winver died this way for as long as the spooler was 
 winspool's printer calls went to a server that was not listening. Until the class-2 `try_` work
 reaches rpcrt4, a dead RPC server means every one of its clients dies.
 
-## Status (2026-11-06) — measured, not remembered
+## Status (2026-11-07) — measured, not remembered
 
 The inventory is a lint: **`scan_dead_seh_handlers`** lists every shipping Rust function whose C
 twin has an `__except` (or `RpcExcept`) while the Rust catches nothing. Its baseline,
@@ -230,11 +230,12 @@ row. Each row is tagged by where the twin runs and what its try body does:
 
 | | `raise` (callee raises by contract) | `probe` (C probes user memory) | `other` (bare deref, or a raise further down) |
 |---|---|---|---|
-| kernel | 0 | 4 | 58 |
+| kernel | 0 | 0 | 0 |
 | rtl (both) | 0 | 0 | 18 |
-| user | 0 | 0 | 142 |
+| user | 0 | 0 | 139 |
 
-222 in all (235 at the first count, 2026-11-06; every `raise` row is fixed). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
+157 in all (235 at the first count, 2026-11-06; 222 after the `raise` rows; every kernel row is
+now fixed or carries a reasoned `nolint(dead_seh)`). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
 `RtlRaiseStatus` into `return Err` has converted the contract and needs only a probe. Burn-down order: kernel `raise` first (one call from user mode bugchecks the box:
 that is how `ReleaseSemaphore` past the maximum was found), then kernel `probe`/`other`, then
 user mode (the process dies, not the machine). `tools/payloads/sehprobe` exercises the
@@ -256,6 +257,22 @@ What already landed, which the plan below predates:
   `cached_read_race` lands faults inside it), `FsRtlInitializeLargeMcb`, mup's
   `BroadcastOpen`, kernel32's Ctrl+C under a debugger, and NULL checks where this tree's
   `ExAllocatePoolWithQuotaTag` returns NULL instead of raising (`NtWriteFile`, `NtUnlockFile`).
+- 2026-11-07, every kernel `probe`/`other` row, mostly through `ntkrnl_sys::seh::try_except_all`
+  (the plain `__except(EXECUTE_HANDLER)` shape). User-triggerable bugchecks closed on the way:
+  the amd64 and arm64 syscall argument copies off an unmapped user stack, i386's (arguments are
+  now captured into a kernel buffer, and a user `edx` aimed at kernel memory is refused),
+  `MiLockVirtualMemory` touching a NOACCESS/guard page, `NtVdmControl`'s page-0 write. Also the
+  Cm queries, `ObQueryNameString`, `MiQueryMemoryBasicInformation`, npfs, `MmCreateTeb`, the
+  token privilege copy. Bugs found beside them: `KsAllocateExtraData` wrote every header to the
+  same offset; ksecdd had stopped hashing the environment into its entropy; mup raised holding
+  its locks and double-completed a create IRP; `RawMountVolume`'s NULL check was dead (the call
+  raises). Waivers state their reason in the code: kernel-only buffers (fsrtl notify, afd),
+  stubs, KDBG, the bugcheck halt, the system-thread filter that only bugchecks.
+- The lint now credits catching helpers crate-wide, `try_except_all`, `KmProtectedCopyMemory`,
+  and counts `IoCreateStreamFileObject*` as raisers.
+- Do NOT catch around `KiInitializeContextThread` for a hand-built thread: its stack is the
+  one running, and the trampoline's frames overlap where the context setup writes (arm64 hung
+  at boot). KeInitThread catches only when there is a user `Context`.
 
 ## The program — Tier 1: convert raise contracts to `Result` (do this)
 

@@ -457,12 +457,18 @@ unsafe fn RawMountVolume(IoStackLocation: PIO_STACK_LOCATION) -> NTSTATUS {
     (*Volume).DeviceObject.Flags |= DO_DIRECT_IO;
     (*Volume).DeviceObject.Flags &= !DO_DEVICE_INITIALIZING;
 
-    FileObject = IoCreateStreamFileObjectLite(
-        core::ptr::null_mut(),
-        core::ptr::addr_of_mut!((*Volume).DeviceObject),
-    );
-    if FileObject.is_null() {
-        Status = STATUS_INSUFFICIENT_RESOURCES;
+    // C: __try — IoCreateStreamFileObjectLite RAISES on failure (it never
+    // returns NULL), and the handler takes the code so the device is deleted
+    // below. The NULL check stays as a belt for a non-raising implementation.
+    let DevObj = core::ptr::addr_of_mut!((*Volume).DeviceObject);
+    match ntkrnl_sys::seh::try_except_all(|| IoCreateStreamFileObjectLite(core::ptr::null_mut(), DevObj)) {
+        Ok(fo) => {
+            FileObject = fo;
+            if FileObject.is_null() {
+                Status = STATUS_INSUFFICIENT_RESOURCES;
+            }
+        }
+        Err(code) => Status = code,
     }
 
     if Status < 0 {

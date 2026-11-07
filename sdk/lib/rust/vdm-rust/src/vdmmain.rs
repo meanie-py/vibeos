@@ -249,11 +249,19 @@ pub unsafe extern "system" fn VdmpInitialize(control_data: PVOID) -> NTSTATUS {
     // VDM: copy physical memory to virtual address 0 (DOS conventional memory area).
     // null_address is intentionally 0 — this is the VDM DOS memory base.
     // Use write_volatile byte-by-byte to avoid the null pointer UB lint.
-    for i in 0..(view_size as usize) {
-        core::ptr::write_volatile(
-            (null_address as usize + i) as *mut u8,
-            *((base_address as *const u8).add(i)),
-        );
+    // C: __try — page 0 is the calling process's memory and may not be there;
+    // the handler closes the section, unmaps the view and returns the code.
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        for i in 0..(view_size as usize) {
+            core::ptr::write_volatile(
+                (null_address as usize + i) as *mut u8,
+                *((base_address as *const u8).add(i)),
+            );
+        }
+    }) {
+        ZwClose(phys_mem_handle);
+        ZwUnmapViewOfSection(NtCurrentProcess(), base_address);
+        return code;
     }
 
     ZwClose(phys_mem_handle);

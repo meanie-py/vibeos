@@ -1083,9 +1083,9 @@ pub unsafe extern "system" fn ObQueryNameString(
     let ReturnLength = opaque_ptr(ReturnLength);
     let mut local_info: POBJECT_HEADER_NAME_INFO;
     let object_header: POBJECT_HEADER;
-    let mut parent_directory: POBJECT_DIRECTORY;
-    let mut name_size: ULONG;
-    let mut object_name: PWCH;
+    let mut parent_directory: POBJECT_DIRECTORY = core::ptr::null_mut();
+    let mut name_size: ULONG = 0;
+    let mut object_name: PWCH = core::ptr::null_mut();
     let object_is_named: BOOLEAN;
     let mut status: NTSTATUS = STATUS_SUCCESS;
 
@@ -1095,116 +1095,136 @@ pub unsafe extern "system" fn ObQueryNameString(
     if (*(*object_header).Type).TypeInfo.QueryNameProcedure.is_some() {
         object_is_named = if !local_info.is_null() && (*local_info).Name.Length > 0 { 1 } else { 0 };
 
-        status = ((*(*object_header).Type).TypeInfo.QueryNameProcedure.unwrap())(
-            Object,
-            object_is_named,
-            ObjectNameInfo,
-            Length,
-            ReturnLength,
-            0i8,
-        );
+        // C: the procedure runs inside __try; it can write the caller's buffer.
+        status = match ntkrnl_sys::seh::try_except_all(|| {
+            ((*(*object_header).Type).TypeInfo.QueryNameProcedure.unwrap())(
+                Object,
+                object_is_named,
+                ObjectNameInfo,
+                Length,
+                ReturnLength,
+                0i8,
+            )
+        }) {
+            Ok(st) => st,
+            Err(code) => code,
+        };
 
         return status;
     }
 
     if local_info.is_null() || (*local_info).Name.Buffer.is_null() {
-        status = STATUS_SUCCESS;
+        // C: __try around the writes to the caller's buffer.
+        status = match ntkrnl_sys::seh::try_except_all(|| -> NTSTATUS {
+            status = STATUS_SUCCESS;
 
-        *ReturnLength = core::mem::size_of::<_OBJECT_NAME_INFORMATION>() as ULONG;
+            *ReturnLength = core::mem::size_of::<_OBJECT_NAME_INFORMATION>() as ULONG;
 
-        if *ReturnLength > Length {
-            status = STATUS_INFO_LENGTH_MISMATCH;
-        } else {
-            (*ObjectNameInfo).Name.Length = 0;
-            (*ObjectNameInfo).Name.MaximumLength = 0;
-            (*ObjectNameInfo).Name.Buffer = core::ptr::null_mut();
-        }
+            if *ReturnLength > Length {
+                status = STATUS_INFO_LENGTH_MISMATCH;
+            } else {
+                (*ObjectNameInfo).Name.Length = 0;
+                (*ObjectNameInfo).Name.MaximumLength = 0;
+                (*ObjectNameInfo).Name.Buffer = core::ptr::null_mut();
+            }
+            status
+        }) {
+            Ok(st) => st,
+            Err(code) => code,
+        };
 
         return status;
     }
 
-    if Object == ObpRootDirectoryObject as PVOID {
-        name_size = 2;
-    } else {
-        parent_directory = (*local_info).Directory;
-        name_size = 2 + (*local_info).Name.Length as ULONG;
+    // C: one __try from the size walk to the end — *ReturnLength and the name
+    // are written to the caller's buffer. The handler returns the code.
+    match ntkrnl_sys::seh::try_except_all(|| -> NTSTATUS {
+        if Object == ObpRootDirectoryObject as PVOID {
+            name_size = 2;
+        } else {
+            parent_directory = (*local_info).Directory;
+            name_size = 2 + (*local_info).Name.Length as ULONG;
 
-        while !parent_directory.is_null() && parent_directory != ObpRootDirectoryObject {
-            local_info = OBJECT_HEADER_TO_NAME_INFO(OBJECT_TO_OBJECT_HEADER(parent_directory as PVOID));
+            while !parent_directory.is_null() && parent_directory != ObpRootDirectoryObject {
+                local_info = OBJECT_HEADER_TO_NAME_INFO(OBJECT_TO_OBJECT_HEADER(parent_directory as PVOID));
 
-            if !local_info.is_null() && !(*local_info).Directory.is_null() {
-                name_size += 2 + (*local_info).Name.Length as ULONG;
-                parent_directory = (*local_info).Directory;
-            } else {
-                name_size += 8 + 2;
-                break;
+                if !local_info.is_null() && !(*local_info).Directory.is_null() {
+                    name_size += 2 + (*local_info).Name.Length as ULONG;
+                    parent_directory = (*local_info).Directory;
+                } else {
+                    name_size += 8 + 2;
+                    break;
+                }
             }
         }
-    }
 
-    *ReturnLength = name_size +
-                    core::mem::size_of::<_OBJECT_NAME_INFORMATION>() as ULONG +
-                    2;
+        *ReturnLength = name_size +
+                        core::mem::size_of::<_OBJECT_NAME_INFORMATION>() as ULONG +
+                        2;
 
-    if *ReturnLength > Length {
-        return STATUS_INFO_LENGTH_MISMATCH;
-    }
+        if *ReturnLength > Length {
+            return STATUS_INFO_LENGTH_MISMATCH;
+        }
 
-    local_info = OBJECT_HEADER_TO_NAME_INFO(object_header);
-    object_name = (ObjectNameInfo as usize + *ReturnLength as usize) as PWCH;
-    object_name = object_name.sub(1);
-    *object_name = 0;
-
-    if Object == ObpRootDirectoryObject as PVOID {
+        local_info = OBJECT_HEADER_TO_NAME_INFO(object_header);
+        object_name = (ObjectNameInfo as usize + *ReturnLength as usize) as PWCH;
         object_name = object_name.sub(1);
-        *object_name = b'\\' as u16;
-        (*ObjectNameInfo).Name.Length = name_size as USHORT;
-        (*ObjectNameInfo).Name.MaximumLength = (name_size + 2) as USHORT;
-        (*ObjectNameInfo).Name.Buffer = object_name;
-        status = STATUS_SUCCESS;
-    } else {
-        object_name = (object_name as usize - (*local_info).Name.Length as usize) as PWCH;
-        core::ptr::copy_nonoverlapping(
-            (*local_info).Name.Buffer as *const u8,
-            object_name as *mut u8,
-            (*local_info).Name.Length as usize,
-        );
+        *object_name = 0;
 
-        parent_directory = (*local_info).Directory;
-        while !parent_directory.is_null() && parent_directory != ObpRootDirectoryObject {
-            local_info = OBJECT_HEADER_TO_NAME_INFO(OBJECT_TO_OBJECT_HEADER(parent_directory as PVOID));
+        if Object == ObpRootDirectoryObject as PVOID {
+            object_name = object_name.sub(1);
+            *object_name = b'\\' as u16;
+            (*ObjectNameInfo).Name.Length = name_size as USHORT;
+            (*ObjectNameInfo).Name.MaximumLength = (name_size + 2) as USHORT;
+            (*ObjectNameInfo).Name.Buffer = object_name;
+            status = STATUS_SUCCESS;
+        } else {
+            object_name = (object_name as usize - (*local_info).Name.Length as usize) as PWCH;
+            core::ptr::copy_nonoverlapping(
+                (*local_info).Name.Buffer as *const u8,
+                object_name as *mut u8,
+                (*local_info).Name.Length as usize,
+            );
+
+            parent_directory = (*local_info).Directory;
+            while !parent_directory.is_null() && parent_directory != ObpRootDirectoryObject {
+                local_info = OBJECT_HEADER_TO_NAME_INFO(OBJECT_TO_OBJECT_HEADER(parent_directory as PVOID));
+
+                object_name = object_name.sub(1);
+                *object_name = b'\\' as u16;
+
+                if !local_info.is_null() && !(*local_info).Name.Buffer.is_null() {
+                    object_name = (object_name as usize - (*local_info).Name.Length as usize) as PWCH;
+                    core::ptr::copy_nonoverlapping(
+                        (*local_info).Name.Buffer as *const u8,
+                        object_name as *mut u8,
+                        (*local_info).Name.Length as usize,
+                    );
+
+                    parent_directory = (*local_info).Directory;
+                } else {
+                    object_name = (object_name as usize - 6) as PWCH;
+                    core::ptr::copy_nonoverlapping(
+                        b".\0.\0.\0".as_ptr(),
+                        object_name as *mut u8,
+                        6,
+                    );
+                    break;
+                }
+            }
 
             object_name = object_name.sub(1);
             *object_name = b'\\' as u16;
-
-            if !local_info.is_null() && !(*local_info).Name.Buffer.is_null() {
-                object_name = (object_name as usize - (*local_info).Name.Length as usize) as PWCH;
-                core::ptr::copy_nonoverlapping(
-                    (*local_info).Name.Buffer as *const u8,
-                    object_name as *mut u8,
-                    (*local_info).Name.Length as usize,
-                );
-
-                parent_directory = (*local_info).Directory;
-            } else {
-                object_name = (object_name as usize - 6) as PWCH;
-                core::ptr::copy_nonoverlapping(
-                    b".\0.\0.\0".as_ptr(),
-                    object_name as *mut u8,
-                    6,
-                );
-                break;
-            }
+            (*ObjectNameInfo).Name.Length = name_size as USHORT;
+            (*ObjectNameInfo).Name.MaximumLength = (name_size + 2) as USHORT;
+            (*ObjectNameInfo).Name.Buffer = object_name;
         }
 
-        object_name = object_name.sub(1);
-        *object_name = b'\\' as u16;
-        (*ObjectNameInfo).Name.Length = name_size as USHORT;
-        (*ObjectNameInfo).Name.MaximumLength = (name_size + 2) as USHORT;
-        (*ObjectNameInfo).Name.Buffer = object_name;
+        status
+    }) {
+        Ok(st) => st,
+        Err(code) => code,
     }
-
-    status
 }
 
 

@@ -1,5 +1,6 @@
 //! Translated from `ntoskrnl/kd64/amd64/kdx64.c` — KD support routines for AMD64.
 
+const STATUS_NO_SUCH_DEVICE: NTSTATUS = 0xC000000E_u32 as NTSTATUS;
 use ntkrnl_sys::ddk::*;
 
 // ke globals referenced across the crate boundary as link symbols
@@ -162,15 +163,26 @@ pub unsafe extern "system" fn KdpSetContextState(
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpSysReadMsr(Msr: ULONG, MsrValue: *mut u64) -> NTSTATUS {
-    // SEH wrapper in C is dead under DUMMY_PSEH; #GP from a bad MSR will trap.
-    *MsrValue = __readmsr(Msr);
-    STATUS_SUCCESS
+    // C: __try — a bad MSR number raises #GP; report STATUS_NO_SUCH_DEVICE to
+    // the debugger instead of faulting the debuggee.
+    match ntkrnl_sys::seh::try_except_all(|| __readmsr(Msr)) {
+        Ok(v) => {
+            *MsrValue = v;
+            STATUS_SUCCESS
+        }
+        Err(_) => STATUS_NO_SUCH_DEVICE,
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn KdpSysWriteMsr(Msr: ULONG, MsrValue: *const u64) -> NTSTATUS {
-    __writemsr(Msr, *MsrValue);
-    STATUS_SUCCESS
+    // C: __try — a bad MSR number raises #GP; report STATUS_NO_SUCH_DEVICE to
+    // the debugger instead of faulting the debuggee.
+    let v = *MsrValue;
+    match ntkrnl_sys::seh::try_except_all(|| __writemsr(Msr, v)) {
+        Ok(()) => STATUS_SUCCESS,
+        Err(_) => STATUS_NO_SUCH_DEVICE,
+    }
 }
 
 #[no_mangle]

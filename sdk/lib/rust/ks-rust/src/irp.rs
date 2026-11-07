@@ -829,14 +829,24 @@ pub unsafe extern "system" fn KsAllocateExtraData(
     }
     let BufferOrg = Buffer;
     let mut Status = STATUS_SUCCESS;
+    // C: __try — Type3InputBuffer is the caller's (METHOD_NEITHER) memory; the
+    // handler takes the code. Each header lands sizeof(header) + ExtraSize past
+    // the previous one (the port wrote every header to the start of the buffer).
     let Header = (*IoStack).Parameters.DeviceIoControl.Type3InputBuffer as *const KSSTREAM_HEADER;
-    let mut Index = 0;
-    while Index < Count {
-        core::ptr::copy(Header.add(Index as usize) as *const u8, Buffer as *mut u8, core::mem::size_of::<KSSTREAM_HEADER>());
-        Index += 1;
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        let mut Out = Buffer as *mut u8;
+        let mut Index = 0;
+        while Index < Count {
+            core::ptr::copy(Header.add(Index as usize) as *const u8, Out, core::mem::size_of::<KSSTREAM_HEADER>());
+            Out = Out.add(core::mem::size_of::<KSSTREAM_HEADER>() + ExtraSize as usize);
+            Index += 1;
+        }
+    }) {
+        Status = code;
     }
     if !NT_SUCCESS(Status) {
-        FreeItem(Buffer);
+        // The C frees its advanced cursor here; free the allocation itself.
+        FreeItem(BufferOrg);
         return Status;
     }
     *ExtraBuffer = BufferOrg;
