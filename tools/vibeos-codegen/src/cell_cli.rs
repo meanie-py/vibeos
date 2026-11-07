@@ -256,7 +256,8 @@ fn run_inner(raw: Vec<String>) -> Result<u8> {
                 dir = Some(PathBuf::from(args.next().ok_or("operation requires DIR")?));
             }
             "--apply" | "--survey" | "--convert" | "--own-rc" | "--own-c" | "--clib-recipes"
-            | "--clib-recipes-check" | "--c-template" | "--rc-template" | "--remap" => {
+            | "--clib-recipes-check" | "--cmake-linked" | "--c-template" | "--rc-template"
+            | "--remap" => {
                 if !mode.is_empty() {
                     return Err("choose one Cargo cell operation".into());
                 }
@@ -354,6 +355,14 @@ fn run_inner(raw: Vec<String>) -> Result<u8> {
                 .into());
             }
             eprintln!("recipes match cmake's compiles");
+        }
+        "--cmake-linked" => {
+            if !targets.is_empty() {
+                return Err("--cmake-linked does not accept targets".into());
+            }
+            for l in driver::cmake_linked(&root)? {
+                println!("{l}");
+            }
         }
         "--clib-recipes" | "--rc-template" | "--c-template" => {
             if !targets.is_empty() {
