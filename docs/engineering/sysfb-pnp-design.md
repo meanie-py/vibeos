@@ -1,6 +1,6 @@
 # sysfb as a PnP display driver — design
 
-**Status:** proposed, not started (2026-10-11). Owner: unassigned.
+**Status:** step 0 done (2026-11-07); steps 1-5 not started (proposed 2026-10-11). Owner: unassigned.
 **Scope:** `drivers/video/sysfb` (`sysfb-rust`), its registry wiring, and win32k's display
 enumeration as far as it constrains the driver. This is the work that lets sysfb sit under a
 real GPU driver instead of in place of one.
@@ -103,7 +103,7 @@ necessarily started the PCI instance, which is why sysfb is boot-start today (co
 
 | Step | Change | Proves it |
 |---|---|---|
-| 0 | Small fixes: bit counts from the pixel masks; honour `FrameBufferOffset`. | smoke ×3 |
+| 0 | **Done 2026-11-07.** Bit counts from the pixel masks (`mask_bits`, 8 when the loader gave none); `FrameBufferOffset` added to the base and taken off the size, refused past the resource. | smoke ×3 |
 | 1 | `sysfb.inf` (PCI class match + root ID), and setup creates `ROOT\SYSFB\0000`. Driver still non-PnP; the INF only binds. | install-smoke: Device Manager shows the GPU under Display adapters |
 | 2 | `AddDevice`/`START_DEVICE` with the BAR ownership check; Video*N* allocation; device-interface registration. Root instance arbitration. | smoke ×3 (QEMU std-vga is PCI on i386/amd64; arm64 virt stays on the root path) |
 | 3 | STOP/REMOVE hand-off with the open-handle refusal. | A modrun or kmtest that disables the device with no session open, then re-enables it |

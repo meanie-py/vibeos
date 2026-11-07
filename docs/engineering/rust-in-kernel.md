@@ -398,6 +398,25 @@ Builders on `Linker` (`reactos-link/src/lib.rs`) that the cutovers added/use:
   `asm_include_dirs()` are sibling primitives for per-shim codegen flags, e.g.
   freeldr's `-mno-sse`, and a minimal `-I` set for assembling a raw `.S`.)
 
+### A fully-Rust STATIC library is an INTERFACE library
+
+A cohab-flipped static library used to archive one placeholder TU and link its Rust
+archive through it. That stub archive is empty, so the honest shape is
+`add_library(<lib> INTERFACE)` + `target_link_libraries(<lib> INTERFACE ${<v>_LIB} ...)`:
+every consumer (cmake-linked or a cargo cell) gets the same archive, ninja still tracks
+it as a file dependency, and nothing of the module is linked by cmake any more.
+`tools/codegen cargo-cell --interface <lib>...` proves and does it: the archive's only
+object on every arch must be the placeholder stub, the stub must define nothing, and
+every statement on the target must be a modelled shape (a PRIVATE link becomes
+`INTERFACE $<LINK_ONLY:x>`, which is what CMake already exported for it; PRIVATE
+include/define/option scopes go, since nothing compiles). It also drops a cell's
+`engine:c:<lib>` token and the stub-only recipe. `--interface-apply` writes; refusals
+name the reason (live C in the archive, a stub that anchors a symbol, no Rust archive).
+Applied to 28 libraries 2026-11-07; consumers' PEs are byte-identical given the same
+input archives (sysdm.cpl relinked both ways). If a deleted stub was some tool's
+compile-flag carrier, give that tool a never-built OBJECT probe (`gdi32_layout_probe`,
+like `user32_layout_probe`).
+
 ### Cargo C-residue shave — what to delete vs flip
 
 Once the link is cargo-driven, eliminate the `c_from_compile_db` C-compile leaks

@@ -2,9 +2,9 @@
 # csq (Cancel-Safe IRP Queue) — Rust cohabitation flip (csq.c -> csq-rust)
 # ============================================================================
 # csq.c (the 6 IoCsq* exports) is translated to Rust (csq-rust, kept on disk per
-# the never-delete rule). libcsq_rust.a replaces the C object; the `csq` static
-# lib target is preserved (ntoskrnl links it by name) as a stub TU that PUBLIC-
-# links the Rust archive (usbdex-style cohab). csq-rust depends on ntkrnl-sys
+# the never-delete rule). libcsq_rust.a replaces the C object; the `csq` lib
+# target is preserved (ntoskrnl links it by name) as an INTERFACE library over the
+# Rust archive (`cargo-cell --interface`). csq-rust depends on ntkrnl-sys
 # (the IO_CSQ types live in the ddk bindgen). Built for all 3 arches.
 add_definitions(-D_NTOSKRNL_)
 
@@ -40,7 +40,9 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_csq DEPENDS ${CSQ_RUST_LIB})
 
+# csq is all Rust: an INTERFACE library over its Rust archive, so consumers link
+# it directly and no placeholder archive is built (`tools/codegen cargo-cell --interface`).
 # add_library(csq csq.c)  # body replaced by Rust; kept on disk
-add_library(csq rust_cohab_stub.c)
+add_library(csq INTERFACE)
 add_dependencies(csq bugcodes xdk rust_csq)
-target_link_libraries(csq PUBLIC ${CSQ_RUST_LIB})
+target_link_libraries(csq INTERFACE ${CSQ_RUST_LIB})

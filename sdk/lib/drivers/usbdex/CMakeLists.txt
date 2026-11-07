@@ -41,7 +41,9 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_usbdex DEPENDS ${USBDEX_RUST_LIB})
 
+# usbdex is all Rust: an INTERFACE library over its Rust archive, so consumers link
+# it directly and no placeholder archive is built (`tools/codegen cargo-cell --interface`).
 # add_library(usbdex usbdex.c)  # replaced by Rust (usbdex-rust); kept on disk
-add_library(usbdex rust_cohab_stub.c)
+add_library(usbdex INTERFACE)
 add_dependencies(usbdex xdk rust_usbdex)
-target_link_libraries(usbdex PUBLIC ${USBDEX_RUST_LIB})
+target_link_libraries(usbdex INTERFACE ${USBDEX_RUST_LIB})

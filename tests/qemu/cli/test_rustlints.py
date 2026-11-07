@@ -112,7 +112,11 @@ def test_native_marshal_audit_checks_layouts_and_rejects_stale_table(tmp_path):
     write("ntoskrnl/include/sysfuncs.h", "SVC_(Fixture, 1)\n")
     for name in ("manual.txt", "manual-win32k.txt", "automarshal-win32k.txt"):
         write(f"tools/wow64gen/{name}", "")
-    tus = ["user32_layout_probe.c", "gdi32/wine/rust_cohab_stub.c", "ntdll/rtl/rtl_um_rust_stub.c"]
+    tus = [
+        "user32_layout_probe.c",
+        "gdi32/wine/gdi32_layout_probe.c",
+        "ntdll/rtl/rtl_um_rust_stub.c",
+    ]
     for arch in ("i386", "amd64"):
         write(
             f"build-{arch}/compile_commands.json",

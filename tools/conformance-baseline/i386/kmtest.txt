@@ -142,6 +142,10 @@
 #   the size PTE at `(TotalPtes + 2) << 32`, a value no 32-bit non-PAE PTE can hold. We
 #   store it in u.List.NextEntry at bit 12 (0x3000), exactly as upstream's C does, so
 #   upstream ReactOS fails these same lines; the ValidateMapping FALSEs cascade from :159.
+# 2026-11-06: TcpIpConnect 27/7 -> 33/5, RAISED: netstack loopback (34e17dfff6e) opened its 127.0.0.1
+#   connection for the first time, and the TDI bound-port fix (4ac1da17ba8) let accept() see the
+#   bound port; now the win11-amd64 shape (only connect.c:233-237 fail). Measured by gate
+#   20261106-223256-6go3xcb7 on all three arches.
 CmSecurity OK pass=829 fail=12 skip=1 exit=0
     assert CmSecurity.c:378
     assert CmSecurity.c:385
@@ -330,9 +334,7 @@ RtlUtf8 OK pass=16 fail=0 skip=0 exit=0
 SeInheritance OK pass=0 fail=0 skip=1 exit=0
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
-TcpIpConnect OK pass=27 fail=7 skip=0 exit=0
-    assert TcpIp_user.c:117
-    assert connect.c:222
+TcpIpConnect OK pass=33 fail=5 skip=0 exit=0
     assert connect.c:233
     assert connect.c:234
     assert connect.c:235
