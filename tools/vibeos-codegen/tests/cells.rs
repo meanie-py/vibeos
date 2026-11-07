@@ -155,3 +155,86 @@ fn a_gated_cell_renders_only_its_own_arches() {
         assert!(serde_json::to_value(&full).unwrap().get("arches").is_none());
     }
 }
+fn interface_fixture(name: &str, cmake: &str, objs: &str, stub: &str) -> std::path::PathBuf {
+    let root = std::env::temp_dir().join(format!("cell-iface-{}-{name}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let w = |p: &str, t: &str| {
+        let p = root.join(p);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, t).unwrap();
+    };
+    for arch in ["i386", "amd64", "arm64"] {
+        w(
+            &format!("build-{arch}/build.ninja"),
+            &format!("build lib/foo/libfoo.a: C_STATIC_LIBRARY_LINKER__foo_Debug {objs} || x\n"),
+        );
+    }
+    w("lib/foo/CMakeLists.txt", cmake);
+    w("lib/foo/rust_cohab_stub.c", stub);
+    w(
+        "sdk/lib/rust/bar-cargo/build.rs",
+        "        \"x86_64\" => &[\"body\", \"engine:c:foo\", \"engine:foo_rust\"],\n",
+    );
+    w(
+        "sdk/lib/rust/reactos-link/clibs/amd64/foo.recipe",
+        "# foo (amd64)\nc\tlib/foo/rust_cohab_stub.c\t@std\t-O2\n",
+    );
+    root
+}
+#[test]
+fn a_placeholder_static_library_becomes_an_interface_library() {
+    use vibeos_codegen::cells::interface::plan;
+    let cmake = "# Every translation unit is Rust now (foo-rust); the C stays on\n\
+# disk. The target keeps a stub TU and links the Rust archive.\n\
+rust_staticlib_variant(foo_rust foo-rust \"\" TRUE)\n\
+list(APPEND SOURCE\n    # foo.c  # replaced by Rust (x)\n    rust_cohab_stub.c\n    precomp.h)\n\
+add_library(foo STATIC ${SOURCE})\n\
+add_dependencies(foo rust_foo_rust)\n\
+target_link_libraries(foo PRIVATE ${foo_rust_LIB} pseh) # a note)\n\
+add_importlibs(foo ntoskrnl)\n\
+add_pch(foo precomp.h SOURCE)\n\
+target_include_directories(foo PUBLIC inc PRIVATE priv)\n";
+    let objs = "lib/foo/CMakeFiles/foo.dir/rust_cohab_stub.c.obj";
+    let stub = "/* foo is Rust */\ntypedef int foo_placeholder;\n";
+    let root = interface_fixture("ok", cmake, objs, stub);
+    let p = plan(&root, "foo").unwrap();
+    let t = &p.text;
+    assert!(t.contains("add_library(foo INTERFACE)\n"), "{t}");
+    assert!(t.contains("# foo.c  # replaced by Rust (x)\n"), "{t}");
+    assert!(!t.contains("list(APPEND SOURCE"), "{t}");
+    assert!(t.contains(
+        "target_link_libraries(foo INTERFACE $<LINK_ONLY:${foo_rust_LIB}> $<LINK_ONLY:pseh>) # a note)\n"
+    ), "{t}");
+    assert!(t.contains("target_link_libraries(foo INTERFACE libntoskrnl)\n"), "{t}");
+    assert!(t.contains("target_include_directories(foo INTERFACE inc)\n"), "{t}");
+    assert!(!t.contains("add_pch") && !t.contains("keeps a stub TU"), "{t}");
+    assert!(t.contains("INTERFACE library over the Rust archive"), "{t}");
+    assert!(t.lines().filter(|l| l.starts_with("#")).all(|l| l.len() <= 92), "{t}");
+    // The stub and its stub-only recipe go; the cell drops the stub's token, keeps the Rust.
+    assert!(p.removed.iter().any(|r| r.ends_with("lib/foo/rust_cohab_stub.c")));
+    assert!(p.removed.iter().any(|r| r.ends_with("clibs/amd64/foo.recipe")));
+    let cell = p.cell_edits.values().next().unwrap();
+    assert!(!cell.contains("engine:c:foo") && cell.contains("\"engine:foo_rust\""), "{cell}");
+    std::fs::remove_dir_all(root).unwrap();
+}
+#[test]
+fn an_archive_with_live_code_stays_a_static_library() {
+    use vibeos_codegen::cells::interface::plan;
+    let cmake = "rust_staticlib_variant(foo_rust foo-rust \"\" TRUE)\n\
+add_library(foo STATIC rust_cohab_stub.c shim.c)\ntarget_link_libraries(foo ${foo_rust_LIB})\n";
+    let stub = "typedef int foo_placeholder;\n";
+    let live = "lib/foo/CMakeFiles/foo.dir/rust_cohab_stub.c.obj lib/foo/CMakeFiles/foo.dir/shim.c.obj";
+    let root = interface_fixture("live", cmake, live, stub);
+    assert!(plan(&root, "foo").unwrap_err().message.contains("more than the placeholder stub"));
+    std::fs::remove_dir_all(&root).unwrap();
+    // A stub that defines something is not a placeholder either (cportlib's anchor).
+    let objs = "lib/foo/CMakeFiles/foo.dir/rust_cohab_stub.c.obj";
+    let root = interface_fixture("anchor", cmake, objs, "void __foo_anchor(void) { }\n");
+    assert!(plan(&root, "foo").unwrap_err().message.contains("not a placeholder"));
+    std::fs::remove_dir_all(&root).unwrap();
+    // No Rust archive linked: nothing to forward (gdi32_vista_static was dead).
+    let none = "add_library(foo STATIC rust_cohab_stub.c)\ntarget_link_libraries(foo win32ksys)\n";
+    let root = interface_fixture("none", none, objs, "typedef int x;\n");
+    assert!(plan(&root, "foo").unwrap_err().message.contains("links no Rust archive"));
+    std::fs::remove_dir_all(&root).unwrap();
+}

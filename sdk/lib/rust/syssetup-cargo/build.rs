@@ -15,9 +15,9 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["body", "engine:uuid", "engine:wine", "engine:c:tzlib", "engine:pseh", "import:advapi32", "import:gdi32", "import:user32", "import:samlib", "import:userenv", "import:comctl32", "import:setupapi", "import:rpcrt4", "import:ole32", "import:shell32", "import:shlwapi", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:tzlib_rust", "engine:chkstk", "engine:oldnames"],
-        "x86_64" => &["body", "engine:uuid", "engine:wine", "engine:c:tzlib", "engine:pseh", "import:advapi32", "import:gdi32", "import:user32", "import:samlib", "import:userenv", "import:comctl32", "import:setupapi", "import:rpcrt4", "import:ole32", "import:shell32", "import:shlwapi", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:tzlib_rust", "engine:oldnames"],
-        "aarch64" => &["body", "engine:uuid", "engine:wine", "engine:c:tzlib", "engine:pseh", "import:advapi32", "import:gdi32", "import:user32", "import:samlib", "import:userenv", "import:comctl32", "import:setupapi", "import:rpcrt4", "import:ole32", "import:shell32", "import:shlwapi", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:tzlib_rust", "engine:chkstk", "engine:oldnames"],
+        "x86" => &["body", "engine:uuid", "engine:wine", "engine:pseh", "import:advapi32", "import:gdi32", "import:user32", "import:samlib", "import:userenv", "import:comctl32", "import:setupapi", "import:rpcrt4", "import:ole32", "import:shell32", "import:shlwapi", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:tzlib_rust", "engine:chkstk", "engine:oldnames"],
+        "x86_64" => &["body", "engine:uuid", "engine:wine", "engine:pseh", "import:advapi32", "import:gdi32", "import:user32", "import:samlib", "import:userenv", "import:comctl32", "import:setupapi", "import:rpcrt4", "import:ole32", "import:shell32", "import:shlwapi", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:tzlib_rust", "engine:oldnames"],
+        "aarch64" => &["body", "engine:uuid", "engine:wine", "engine:pseh", "import:advapi32", "import:gdi32", "import:user32", "import:samlib", "import:userenv", "import:comctl32", "import:setupapi", "import:rpcrt4", "import:ole32", "import:shell32", "import:shlwapi", "import:msvcrt", "import:kernel32", "import:ntdll", "engine:tzlib_rust", "engine:chkstk", "engine:oldnames"],
         _ => unreachable!(),
     };
 

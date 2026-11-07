@@ -1571,7 +1571,7 @@ dll/win32/propsys/CMakeLists.txt	1	# propvar.c # replaced by Rust (sdk/lib/rust/
 dll/win32/psapi/CMakeLists.txt	1	# The DLL target is all Rust too: main.c's DllMain is psapi-rust's `dllmain` feature
 dll/win32/psapi/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/main.rs)
 dll/win32/psapi/CMakeLists.txt	1	# psapi.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/psapi.rs)
-dll/win32/psapi/CMakeLists.txt	1	# psapi.c is Rust now (psapi-rust, `rustconv port`); the C stays on disk. psapi_static keeps
+dll/win32/psapi/CMakeLists.txt	1	# psapi.c is Rust now (psapi-rust, `rustconv port`); the C stays on disk. psapi_static is an
 dll/win32/qwave/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/qwave-rust/src/qwave/main.rs)
 dll/win32/rasadhlp/CMakeLists.txt	1	# add_pch dropped with precomp.h: the only remaining C is generated (rasadhlp_stubs.c)
 dll/win32/rasadhlp/CMakeLists.txt	1	# autodial.c
@@ -2826,7 +2826,7 @@ sdk/lib/drivers/csq/CMakeLists.txt	1	# csq (Cancel-Safe IRP Queue) — Rust coha
 sdk/lib/drivers/csq/CMakeLists.txt	1	# csq.c (the 6 IoCsq* exports) is translated to Rust (csq-rust, kept on disk per
 sdk/lib/drivers/hidparser/CMakeLists.txt	1	# context.c hidparser.c parser.c api.c hidp.c (+ parser.h, hidp.h)
 sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/utf8.c # replaced by Rust (sdk/lib/rust/utf8)
-sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# disk. The target keeps a stub TU and links the Rust archives. utf8.c is rtl's: it is the
+sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# (`cargo-cell --interface`). utf8.c is rtl's: it is the `utf8` crate rtl_vista
 sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# etw.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/etw.rs)
 sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# fsrtl.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/fsrtl.rs)
 sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# io.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/io.rs)

@@ -19,7 +19,7 @@
           "#include <user32.h>\n"
         ],
         [
-          "gdi32/wine/rust_cohab_stub.c",
+          "gdi32/wine/gdi32_layout_probe.c",
           "#include <precomp.h>\n"
         ]
       ]

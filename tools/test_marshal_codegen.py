@@ -45,7 +45,7 @@ def fixture(root):
             json.dumps(
                 [
                     {"file": suffix, "arguments": ["clang", f"--target={triple}"]}
-                    for suffix in ["user32_layout_probe.c", "gdi32/wine/rust_cohab_stub.c"]
+                    for suffix in ["user32_layout_probe.c", "gdi32/wine/gdi32_layout_probe.c"]
                 ]
             )
         )
