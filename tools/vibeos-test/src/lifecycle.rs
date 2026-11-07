@@ -16,6 +16,7 @@ struct Identity {
     group: u32,
     start: u64,
     cpu: u64,
+    exited: bool,
     uid: u32,
 }
 fn identity(pid: u32) -> Result<Option<Identity>> {
@@ -38,13 +39,21 @@ fn identity(pid: u32) -> Result<Option<Identity>> {
             .parse()
             .map_err(|_| "invalid proc stat".into())
     };
+    // A process found during a group scan can vanish between stat and metadata.
+    // Its disappearance must not abort termination of an unrelated owned QEMU.
+    let uid = match fs::metadata(dir) {
+        Ok(metadata) => metadata.uid(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
     Ok(Some(Identity {
         pid,
         parent: num(1)? as u32,
         group: num(2)? as u32,
         start: num(19)?,
         cpu: num(11)? + num(12)?,
-        uid: fs::metadata(dir)?.uid(),
+        exited: matches!(fields.first().copied(), Some("Z" | "X")),
+        uid,
     }))
 }
 fn ancestors() -> Result<BTreeSet<u32>> {
@@ -142,7 +151,7 @@ fn stop_linux(pid: u32, start: u64) -> Result<()> {
                 identity(id.pid)
                     .ok()
                     .flatten()
-                    .is_some_and(|v| v.start == id.start)
+                    .is_some_and(|v| v.start == id.start && !v.exited)
             })
             .count();
         if live == 0 {
@@ -154,7 +163,7 @@ fn stop_linux(pid: u32, start: u64) -> Result<()> {
         thread::sleep(Duration::from_millis(50));
     }
     for id in members.values() {
-        if identity(id.pid)?.is_some_and(|v| v.start == id.start) {
+        if identity(id.pid)?.is_some_and(|v| v.start == id.start && !v.exited) {
             signal(*id, libc::SIGKILL)?;
         }
     }
@@ -446,5 +455,26 @@ mod tests {
         assert!(child.try_wait().unwrap().is_none());
         child.kill().unwrap();
         child.wait().unwrap();
+    }
+}
+
+#[cfg(test)]
+mod terminal_process_controls {
+    use super::*;
+    #[test]
+    fn unreaped_children_are_exited_while_their_pid_still_exists() {
+        let mut child = std::process::Command::new("/bin/true").spawn().unwrap();
+        let pid = child.id();
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // Observe exit without reaping: deliberately retain the /proc zombie.
+        assert_eq!(
+            unsafe { libc::waitid(libc::P_PID, pid, &mut info, libc::WEXITED | libc::WNOWAIT) },
+            0
+        );
+        let zombie = identity(pid).unwrap().unwrap();
+        assert!(zombie.exited);
+        assert!(!identity(std::process::id()).unwrap().unwrap().exited);
+        stop_linux(pid, zombie.start).unwrap();
+        assert!(child.wait().unwrap().success());
     }
 }

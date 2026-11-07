@@ -110,19 +110,29 @@ def test_serial_eof_retains_partial_output(tmp_path):
 
 @pytest.mark.parametrize("settle_times_out", [False, True])
 def test_payload_marker_during_settle_survives_snapshot_restore(serial_config, settle_times_out):
-    serial_config["desktop_settle_seconds"] = 0.02
+    # A 20ms idle threshold races normal process/thread scheduling. Keep a
+    # full second of tolerance while still requiring the real +10s timeout.
+    serial_config["desktop_settle_seconds"] = 1 if settle_times_out else 0.02
+    serial_config["max_lifetime"] = 120
     serial_config["env"].update(
         SERIAL_INITIAL="before READY\n[UCRTDIFF] done\n",
-        SERIAL_CHATTY_SECONDS="13" if settle_times_out else "0",
+        SERIAL_CHATTY_UNTIL_STOP="1" if settle_times_out else "0",
     )
     with DedicatedSession() as session:
         vm, _ = start(session, serial_config)
+        if settle_times_out:
+            session.call(
+                "vm_qmp_execute", {"id": vm, "command": "fixture-start-chat", "arguments": {}}
+            )
         began = time.monotonic()
         session.call("vm_wait_for_boot", {"id": vm})
         # Exercise the actual idle timeout branch (settle budget + 10 seconds),
         # not a fabricated Python exception or private serial buffer.
         if settle_times_out:
             assert time.monotonic() - began >= 9
+            session.call(
+                "vm_qmp_execute", {"id": vm, "command": "fixture-stop-chat", "arguments": {}}
+            )
         session.call("vm_save_snapshot", {"id": vm, "name": "ready"})
         session.call("vm_restore_snapshot", {"id": vm, "name": "ready"})
         assert "[UCRTDIFF] done" in session.call("vm_handles", {"id": vm})["boot_output"]
