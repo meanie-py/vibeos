@@ -2629,7 +2629,14 @@ pub unsafe extern "system" fn NtUserBuildHwndList(
         Status = STATUS_SUCCESS;
     }
 
-    SetLastNtError(Status);
+    // The C ran SetLastNtError(Status) on every exit, so a SUCCESSFUL list
+    // overwrote the caller's last error with ERROR_SUCCESS. Windows never does
+    // that, and this syscall sits under GetDlgItem, EnumChildWindows and
+    // friends, so every one of them silently cleared the last error
+    // (user32:listbox caught it through DlgDirSelectEx). Set it on failure only.
+    if !NT_SUCCESS(Status) {
+        SetLastNtError(Status);
+    }
     UserLeave();
     Status
 }
