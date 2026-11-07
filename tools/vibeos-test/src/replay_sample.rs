@@ -425,8 +425,13 @@ fn write_json(path: &Path, value: &Value) -> Result<()> {
     fs::write(path, format!("{}\n", serde_json::to_string_pretty(value)?))?;
     Ok(())
 }
+// Disk-heavy phases keep a request in flight at nearly every instant, so a fixed short
+// backoff found no gap there (4 of 11 samples exhausted 20 x 37ms). Grow the wait
+// instead: ~7s at most, still under one sample period.
 const DRAIN_RETRIES: u32 = 20;
-const DRAIN_BACKOFF: Duration = Duration::from_millis(37);
+fn drain_backoff(retry: u32) -> Duration {
+    Duration::from_millis((37 * u64::from(retry)).min(500))
+}
 /// Completed block requests across every device, from `query-blockstats`. Any counter
 /// that moves while the VM is stopped means the stop itself completed a request.
 fn block_completions(fp: &mut Fingerprinter) -> Result<u64> {
@@ -470,7 +475,7 @@ pub fn record_loop(fp: &mut Fingerprinter, period: f64, path: &Path) -> Result<V
                 if drained && retries < DRAIN_RETRIES {
                     fp.qmp.execute("cont", json!({})).map_err(qerr)?;
                     retries += 1;
-                    thread::sleep(DRAIN_BACKOFF);
+                    thread::sleep(drain_backoff(retries));
                     continue;
                 }
                 let mut s = fp.fingerprint()?;
