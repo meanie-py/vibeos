@@ -102,6 +102,7 @@ import argparse
 import collections
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -302,6 +303,36 @@ def _newest_cmake_mtime(repo: Path) -> float:
     return newest
 
 
+_ORACLE_TARGET = re.compile(
+    r"^\s*add_(?:library|executable)\(\s*([\w.+-]+)\s[^)]*\bEXCLUDE_FROM_ALL\b", re.M
+)
+_OBJECT_TARGET = re.compile(r"CMakeFiles/([^/]+)\.dir/")
+
+
+def excluded_targets(repo: Path) -> set[str]:
+    """Targets declared EXCLUDE_FROM_ALL: built only on request, never shipped.
+
+    Chiefly the `<target>_c` twins `python -m rustconv.c_oracle` generates, which rebuild a
+    module's PRE-FLIP C so modrun can diff the Rust against it, and modrun's own probes
+    (`setuplib_probe`). They have compile edges; counted as live C they reported a flipped
+    module as untranslated (Setup read 21K live lines when setuplib's only shipped C was
+    main.c). Not "reachable from `all`" instead: cargo cells compile their C shims inside
+    cargo, so `all` cannot see C that does ship (setup.exe's setup.c, before its flip).
+    """
+    names: set[str] = set()
+    for dirpath, dirnames, files in os.walk(repo):
+        dirnames[:] = [d for d in dirnames if not d.startswith(("build-", ".")) and d != "target"]
+        for f in files:
+            if f == "CMakeLists.txt" or f.endswith(".cmake"):
+                try:
+                    text = (Path(dirpath) / f).read_text(errors="replace")
+                except OSError:
+                    continue
+                if "EXCLUDE_FROM_ALL" in text:
+                    names |= set(_ORACLE_TARGET.findall(text))
+    return names
+
+
 def compiled_sources(repo: Path, arches=ARCHES) -> dict[str, set[str]]:
     """Repo-relative sources with a compile edge, per arch.
 
@@ -311,6 +342,7 @@ def compiled_sources(repo: Path, arches=ARCHES) -> dict[str, set[str]]:
     siblings happen to exist is not a verdict (AGENTS.md, fleet isolation).
     """
     newest_cmake = _newest_cmake_mtime(repo)
+    oracles = excluded_targets(repo)
     out: dict[str, set[str]] = {}
     for arch in arches:
         bd = repo / f"build-{arch}"
@@ -333,6 +365,9 @@ def compiled_sources(repo: Path, arches=ARCHES) -> dict[str, set[str]]:
         for entry in json.loads(proc.stdout):
             src = entry.get("file", "")
             if not entry.get("command") or not src.endswith(SOURCE_SUFFIXES):
+                continue
+            target = _OBJECT_TARGET.search(entry.get("output", ""))
+            if target and target.group(1) in oracles:
                 continue
             path = _rebase(Path(entry["directory"], src))
             try:

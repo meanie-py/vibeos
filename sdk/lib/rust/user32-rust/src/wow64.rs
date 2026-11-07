@@ -57,6 +57,7 @@ const SNAP_WND: UINT = 1;
 const SNAP_CLS: UINT = 2;
 const SNAP_CPD: UINT = 3;
 const SNAP_PROP: UINT = 4;
+const SNAP_MENU: UINT = 5;
 
 /// `GetWin32ClientInfo()` = `NtCurrentTeb()->Win32ClientInfo` (ntuser.h macro).
 #[inline]
@@ -263,6 +264,77 @@ pub struct Property64 {
     pub fs: WORD,
 }
 
+/// `MENU` (desktop heap). user32's menu code walks it client-side (MENU_FindItem,
+/// GetMenuState, GetMenuItemInfo, the default-item search), so read natively every
+/// field past `head` lands in the wrong place, and TrackPopupMenu in a WoW64 process
+/// never got a usable menu: user32:edit's context-menu tests saw no capture change
+/// and no "Select All". `dwArrowsOn:2` is a one-DWORD bitfield.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Menu64 {
+    pub h: u64,
+    pub cLockObj: u32,
+    pub Padding0: u32,
+    pub hTaskWow: u64,
+    pub rpdesk: u64,
+    pub pSelf: u64,
+    pub fFlags: u32,
+    pub iItem: i32,
+    pub cAlloced: u32,
+    pub cItems: u32,
+    pub cxMenu: u32,
+    pub cyMenu: u32,
+    pub cxTextAlign: u32,
+    pub spwndNotify: u64,
+    pub rgItems: u64,
+    pub pParentMenus: u64,
+    pub dwContextHelpId: u32,
+    pub cyMax: u32,
+    pub dwMenuData: u64,
+    pub hbrBack: u64,
+    pub iTop: i32,
+    pub iMaxTop: i32,
+    pub Bits: u32,
+    pub ListEntry: ListEntry64,
+    pub hWnd: u64,
+    pub TimeToHide: i32,
+}
+
+/// `UNICODE_STRING` with a 64-bit `Buffer`.
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct UnicodeString64 {
+    pub Length: u16,
+    pub MaximumLength: u16,
+    pub Buffer: u64,
+}
+
+/// `ITEM`, one element of `MENU.rgItems` (desktop heap, 64-bit stride).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct Item64 {
+    pub fType: u32,
+    pub fState: u32,
+    pub wID: u32,
+    pub spSubMenu: u64,
+    pub hbmpChecked: u64,
+    pub hbmpUnchecked: u64,
+    pub Xlpstr: u64,
+    pub cch: u32,
+    pub dwItemData: u64,
+    pub xItem: u32,
+    pub yItem: u32,
+    pub cxItem: u32,
+    pub cyItem: u32,
+    pub dxTab: u32,
+    pub ulX: u32,
+    pub ulWidth: u32,
+    pub hbmp: u64,
+    pub cxBmp: i32,
+    pub cyBmp: i32,
+    pub lpstr: UnicodeString64,
+}
+
 /// Pointer-slot counts of the client proc tables. Both are arrays of fn pointers,
 /// so the division gives the same count on every target.
 const N_PFNCLIENT: usize = core::mem::size_of::<PFNCLIENT>() / core::mem::size_of::<usize>();
@@ -409,6 +481,28 @@ mod layout_guard {
         assert!(offset_of!(CallProcData64, pfnClientPrevious) == offset_of!(CALLPROCDATA, pfnClientPrevious));
     const _: () = assert!(offset_of!(CallProcData64, wType) == offset_of!(CALLPROCDATA, wType));
 
+    const _: () = assert!(size_of::<Menu64>() == size_of::<MENU>());
+    const _: () = assert!(offset_of!(Menu64, fFlags) == offset_of!(MENU, fFlags));
+    const _: () = assert!(offset_of!(Menu64, cItems) == offset_of!(MENU, cItems));
+    const _: () = assert!(offset_of!(Menu64, spwndNotify) == offset_of!(MENU, spwndNotify));
+    const _: () = assert!(offset_of!(Menu64, rgItems) == offset_of!(MENU, rgItems));
+    const _: () = assert!(offset_of!(Menu64, dwContextHelpId) == offset_of!(MENU, dwContextHelpId));
+    const _: () = assert!(offset_of!(Menu64, dwMenuData) == offset_of!(MENU, dwMenuData));
+    const _: () = assert!(offset_of!(Menu64, iMaxTop) == offset_of!(MENU, iMaxTop));
+    const _: () = assert!(offset_of!(Menu64, ListEntry) == offset_of!(MENU, ListEntry));
+    const _: () = assert!(offset_of!(Menu64, hWnd) == offset_of!(MENU, hWnd));
+    const _: () = assert!(offset_of!(Menu64, TimeToHide) == offset_of!(MENU, TimeToHide));
+
+    const _: () = assert!(size_of::<UnicodeString64>() == size_of::<UNICODE_STRING>());
+    const _: () = assert!(size_of::<Item64>() == size_of::<ITEM>());
+    const _: () = assert!(offset_of!(Item64, spSubMenu) == offset_of!(ITEM, spSubMenu));
+    const _: () = assert!(offset_of!(Item64, Xlpstr) == offset_of!(ITEM, Xlpstr));
+    const _: () = assert!(offset_of!(Item64, dwItemData) == offset_of!(ITEM, dwItemData));
+    const _: () = assert!(offset_of!(Item64, xItem) == offset_of!(ITEM, xItem));
+    const _: () = assert!(offset_of!(Item64, hbmp) == offset_of!(ITEM, hbmp));
+    const _: () = assert!(offset_of!(Item64, cyBmp) == offset_of!(ITEM, cyBmp));
+    const _: () = assert!(offset_of!(Item64, lpstr) == offset_of!(ITEM, lpstr));
+
     const _: () = assert!(size_of::<Property64>() == size_of::<PROPERTY>());
     const _: () = assert!(offset_of!(PROPERTY, PropListEntry) == 0);
     const _: () = assert!(offset_of!(Property64, Data) == offset_of!(PROPERTY, Data));
@@ -517,12 +611,17 @@ mod snap {
         pub cls: CLS,
         pub cpd: CALLPROCDATA,
         pub prop: PROPERTY,
+        pub menu: MENU,
     }
 
     pub(super) struct Snap {
         pub next: *mut Snap,
         pub key: PVOID,
         pub type_: UINT,
+        /// SNAP_MENU only: the native copy of the menu's item array, and how many
+        /// ITEMs it has room for. `obj.menu.rgItems` points at it.
+        pub items: *mut ITEM,
+        pub items_cap: UINT,
         pub obj: SnapObj,
     }
 
@@ -720,7 +819,143 @@ pub unsafe fn normalize_cls(p64: PVOID) -> PCLS {
     d
 }
 
+/// Normalize the 64-bit `MENU` at client address `p64` (and its item array) into a
+/// cached native `MENU`. Unlike every other normalized object, the copy's `rgItems`
+/// is a CLIENT address (the native item snapshot), not a desktop-heap one, so read it
+/// through `menu_items`, never `DesktopPtrToUser`. Each `ITEM.spSubMenu` stays a
+/// desktop-heap address; resolve it with `desktop_menu_to_user`. Text pointers
+/// (`Xlpstr`, `lpstr.Buffer`) stay desktop-heap too: WCHARs are the same width on both
+/// sides, so `DesktopPtrToUser` of them reads the real string.
+///
+/// Re-read on every lookup, like the other snapshots, so it is as fresh as the call
+/// that fetched it. user32 never writes through a PMENU or PITEM (changes go through
+/// NtUser calls), so nothing is lost by reading a copy.
+#[cfg(target_arch = "x86")]
+pub unsafe fn normalize_menu(p64: PVOID) -> PMENU {
+    if p64.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    let s = snap::find_or_add(p64, SNAP_MENU);
+    if s.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    let src = &*(p64 as *const Menu64);
+    let d = core::ptr::addr_of_mut!((*s).obj.menu);
+
+    (*(d as *mut _HEAD)).h = src.h as usize as HANDLE;
+    (*(d as *mut _HEAD)).cLockObj = src.cLockObj;
+    (*d).head.hTaskWow = src.hTaskWow as usize as DWORD_PTR;
+    (*d).head.rpdesk = src.rpdesk as usize as *mut _DESKTOP;
+    (*d).head.pSelf = src.pSelf as usize as PVOID;
+
+    (*d).fFlags = src.fFlags;
+    (*d).iItem = src.iItem;
+    (*d).cAlloced = src.cAlloced;
+    (*d).cxMenu = src.cxMenu;
+    (*d).cyMenu = src.cyMenu;
+    (*d).cxTextAlign = src.cxTextAlign;
+    (*d).spwndNotify = src.spwndNotify as usize as *mut _WND;
+    (*d).pParentMenus = src.pParentMenus as usize as _;
+    (*d).dwContextHelpId = src.dwContextHelpId;
+    (*d).cyMax = src.cyMax;
+    (*d).dwMenuData = src.dwMenuData as usize as DWORD_PTR;
+    (*d).hbrBack = src.hbrBack as usize as HBRUSH;
+    (*d).iTop = src.iTop;
+    (*d).iMaxTop = src.iMaxTop;
+    (*d).set_dwArrowsOn(src.Bits & 3);
+    (*d).ListEntry.Flink = src.ListEntry.Flink as usize as PLIST_ENTRY;
+    (*d).ListEntry.Blink = src.ListEntry.Blink as usize as PLIST_ENTRY;
+    (*d).hWnd = src.hWnd as usize as HWND;
+    (*d).TimeToHide = src.TimeToHide;
+
+    // The item array. A menu with items but no array (or one we cannot map) reads as
+    // empty rather than as whatever the native layout would have found.
+    let items64 = if src.rgItems != 0 {
+        desktop_ptr_to_user(src.rgItems as usize as PVOID) as *const Item64
+    } else {
+        core::ptr::null()
+    };
+    let n = if items64.is_null() { 0 } else { src.cItems };
+    if n > (*s).items_cap {
+        let bytes = n as usize * core::mem::size_of::<ITEM>();
+        // Grow by replacement; the old contents are rewritten below anyway.
+        let p = RtlAllocateHeap(RtlGetProcessHeap(), 8 /* HEAP_ZERO_MEMORY */, bytes as SIZE_T) as *mut ITEM;
+        if p.is_null() {
+            (*d).cItems = 0;
+            (*d).rgItems = core::ptr::null_mut();
+            return d;
+        }
+        if !(*s).items.is_null() {
+            crate::internal::RtlFreeHeap(RtlGetProcessHeap() as HANDLE, 0, (*s).items as PVOID);
+        }
+        (*s).items = p;
+        (*s).items_cap = n;
+    }
+    let mut i = 0;
+    while i < n {
+        let si = &*items64.add(i as usize);
+        let di = (*s).items.add(i as usize);
+        (*di).fType = si.fType;
+        (*di).fState = si.fState;
+        (*di).wID = si.wID;
+        (*di).spSubMenu = si.spSubMenu as usize as PMENU;
+        (*di).hbmpChecked = si.hbmpChecked as usize as HANDLE;
+        (*di).hbmpUnchecked = si.hbmpUnchecked as usize as HANDLE;
+        (*di).Xlpstr = si.Xlpstr as usize as *mut USHORT;
+        (*di).cch = si.cch;
+        (*di).dwItemData = si.dwItemData as usize as DWORD_PTR;
+        (*di).xItem = si.xItem;
+        (*di).yItem = si.yItem;
+        (*di).cxItem = si.cxItem;
+        (*di).cyItem = si.cyItem;
+        (*di).dxTab = si.dxTab;
+        (*di).ulX = si.ulX;
+        (*di).ulWidth = si.ulWidth;
+        (*di).hbmp = si.hbmp as usize as HBITMAP;
+        (*di).cxBmp = si.cxBmp;
+        (*di).cyBmp = si.cyBmp;
+        (*di).lpstr.Length = si.lpstr.Length;
+        (*di).lpstr.MaximumLength = si.lpstr.MaximumLength;
+        (*di).lpstr.Buffer = si.lpstr.Buffer as usize as PWSTR;
+        i += 1;
+    }
+    (*d).cItems = n;
+    (*d).rgItems = if n != 0 { (*s).items } else { core::ptr::null_mut() };
+    d
+}
+
 // ── the public API used by the translated user32 files ───────────────────────
+
+/// Typed `DesktopPtrToUser` for a `MENU` (a handle-table entry or `ITEM.spSubMenu`).
+#[inline]
+pub unsafe fn desktop_menu_to_user(kernel_menu: PVOID) -> PMENU {
+    if kernel_menu.is_null() {
+        return core::ptr::null_mut();
+    }
+    let p = desktop_ptr_to_user(kernel_menu);
+    #[cfg(target_arch = "x86")]
+    if IsWow64() {
+        return normalize_menu(p);
+    }
+    p as PMENU
+}
+
+/// A menu's item array, client-side. `menu` must come from `desktop_menu_to_user`
+/// (or ValidateHandle with TYPE_MENU): natively `rgItems` is a desktop-heap address
+/// to map, under WoW64 it is already the native snapshot.
+#[inline]
+pub unsafe fn menu_items(menu: PMENU) -> PITEM {
+    if (*menu).rgItems.is_null() {
+        return core::ptr::null_mut();
+    }
+    #[cfg(target_arch = "x86")]
+    if IsWow64() {
+        return (*menu).rgItems;
+    }
+    desktop_ptr_to_user((*menu).rgItems as PVOID) as PITEM
+}
 
 /// Base of a window's extra bytes — the `cbwndExtra` region, where
 /// `Get/SetWindowLongPtr(hwnd, >= 0)` reads and writes.
@@ -953,9 +1188,9 @@ pub unsafe fn desktop_info_shell_window(pdi: PDESKTOPINFO) -> HWND {
     (*pdi).hShellWindow
 }
 
-/// `MENU`/`ITEM`, `HOOK` and `SBINFO` are desktop-heap objects too. The first two
-/// carry pointers, so a WoW64 client misreads them exactly like it used to misread
-/// `WND`. (`SBINFO` does NOT -- it is all `INT`s, identical on both sides -- and is
+/// `HOOK` and `SBINFO` are desktop-heap objects too. `HOOK` carries pointers, so a
+/// WoW64 client misreads it exactly like it used to misread `WND` (`MENU`/`ITEM` were
+/// the same until `normalize_menu`). (`SBINFO` does NOT -- it is all `INT`s, identical on both sides -- and is
 /// listed only because nothing has proven its call sites; a scrollbar CONTROL's
 /// data is in the window's extra bytes instead, see scrollbar.rs `SBCalcOf`.) They have no normalizing view yet (nothing on the M9 path reaches them).
 /// Rather than let a 32-bit client silently walk a 64-bit `MENU`, say so — once per

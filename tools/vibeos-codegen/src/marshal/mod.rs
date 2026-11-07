@@ -10,6 +10,10 @@ pub struct Field {
     pub ctype: String,
     pub name: String,
     pub is_bitfield: bool,
+    /// A bitfield's bit range within its storage unit as clang dumps it (`0-0`);
+    /// empty for an ordinary field.
+    #[serde(default)]
+    pub bits: String,
 }
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Record {
@@ -27,6 +31,33 @@ impl Record {
     }
     pub fn top_fields(&self) -> Vec<&Field> {
         self.fields.iter().filter(|f| f.depth == 1).collect()
+    }
+    /// `top_fields` with each run of bitfields that share a storage unit (consecutive,
+    /// same byte offset) folded into ONE field of the declared type: the unit is what
+    /// gets copied, and its bits never straddle a pointer. The folded field keeps the
+    /// run's names (`a/b`) and bit ranges (`0-0,1-1`) so two layouts can be compared.
+    pub fn marshal_fields(&self) -> Vec<Field> {
+        let mut out: Vec<Field> = Vec::new();
+        for f in self.top_fields() {
+            if f.is_bitfield {
+                if let Some(last) = out.last_mut() {
+                    if !last.bits.is_empty() && last.offset == f.offset && last.ctype == f.ctype {
+                        last.name = format!("{}/{}", last.name, f.name);
+                        last.bits = format!("{},{}", last.bits, f.bits);
+                        continue;
+                    }
+                }
+                let mut unit = f.clone();
+                unit.is_bitfield = false;
+                if unit.bits.is_empty() {
+                    unit.bits = "?".into();
+                }
+                out.push(unit);
+            } else {
+                out.push(f.clone());
+            }
+        }
+        out
     }
 }
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -108,6 +139,7 @@ pub fn parse_layout_dump(text: &str) -> HashMap<String, Record> {
                 ctype,
                 name,
                 is_bitfield: m.get(2).is_some(),
+                bits: m.get(2).map_or(String::new(), |b| b.as_str()[1..].to_owned()),
             });
         }
     }
@@ -588,8 +620,43 @@ fn diff_struct_inner(
         };
     }
     seen.insert(r32.name.clone());
-    let f32 = r32.top_fields();
-    let f64 = r64.top_fields();
+    if r32.has_union() || r64.has_union() {
+        // Unchanged from before bitfield units: bitfields count as offset -1.
+        let raw = |r: &Record| {
+            (
+                r.size,
+                r.top_fields()
+                    .iter()
+                    .map(|f| (if f.is_bitfield { -1isize } else { f.offset as isize }, f.name.clone()))
+                    .collect::<Vec<_>>(),
+            )
+        };
+        let same = raw(&r32) == raw(&r64);
+        return StructVerdict {
+            cls: if same { "IDENTICAL" } else { "SEMANTIC" }.into(),
+            // Wording kept from before bitfield units: the marshalgen_audit baseline
+            // keys on it.
+            detail: if same { "same layout (union/bitfield)" } else { "union/bitfield with divergent layout" }.into(),
+            rec32: Some(r32),
+            rec64: Some(r64),
+        };
+    }
+    // Bitfields are compared as storage units (Record::marshal_fields). A unit whose
+    // bits are laid out identically on both sides is an ordinary scalar that only
+    // moved, which is what MENUBARINFO's fBarFocused/fFocused pair is.
+    let m32 = r32.marshal_fields();
+    let m64 = r64.marshal_fields();
+    let bits = |fs: &Vec<Field>| fs.iter().map(|f| f.bits.clone()).collect::<Vec<_>>();
+    if bits(&m32) != bits(&m64) || m32.iter().any(|f| f.bits.contains('?')) {
+        return StructVerdict {
+            cls: "SEMANTIC".into(),
+            detail: "bitfield units differ across widths".into(),
+            rec32: Some(r32),
+            rec64: Some(r64),
+        };
+    }
+    let f32: Vec<&Field> = m32.iter().collect();
+    let f64: Vec<&Field> = m64.iter().collect();
     let layout = |fs: &Vec<&Field>, size| {
         (
             size,
@@ -613,19 +680,6 @@ fn diff_struct_inner(
         return StructVerdict {
             cls: "SEMANTIC".into(),
             detail: "field lists differ across widths".into(),
-            rec32: Some(r32),
-            rec64: Some(r64),
-        };
-    }
-    if r32.has_bitfield() || r64.has_bitfield() || r32.has_union() || r64.has_union() {
-        return StructVerdict {
-            cls: if same { "IDENTICAL" } else { "SEMANTIC" }.into(),
-            detail: if same {
-                "same layout (union/bitfield)"
-            } else {
-                "union/bitfield with divergent layout"
-            }
-            .into(),
             rec32: Some(r32),
             rec64: Some(r64),
         };

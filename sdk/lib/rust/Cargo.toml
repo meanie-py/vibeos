@@ -1239,6 +1239,7 @@ members = [
     "wined3d-h",
     "d3d8-rust",
     "d3d9-rust",
+    "setup-rust",
 ]
 resolver = "2"
 

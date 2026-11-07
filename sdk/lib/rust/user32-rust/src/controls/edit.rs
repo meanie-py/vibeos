@@ -4600,6 +4600,10 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
         }
         WM_SIZE => {
             EDIT_WM_Size(es, wParam as UINT);
+            // Windows' edit control answers WM_SIZE with 1; Wine returns 0 and marks
+            // user32:edit test_initialization's two checks todo_wine. Nothing consumes
+            // a WM_SIZE result, so match Windows.
+            result = 1;
         }
         WM_STYLECHANGED => {
             result = EDIT_WM_StyleChanged(es, wParam, lParam as *const STYLESTRUCT);
