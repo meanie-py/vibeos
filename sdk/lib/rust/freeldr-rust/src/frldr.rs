@@ -505,12 +505,12 @@ pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0xFFFFF;
 pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0x3FFFF;
 #[cfg(target_arch = "aarch64")]
 pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0x100000;
-// x86common.h: MEMORY_MARGIN = HEX(88000), MAX_FREELDR_PE_SIZE = MEMORY_MARGIN
-// - FREELDR_PE_BASE - PAGE_SIZE = 0x77000. Earlier rustconv emitted the literal
+// x86common.h: MEMORY_MARGIN = HEX(90000) (upstream 88000), MAX_FREELDR_PE_SIZE =
+// MEMORY_MARGIN - FREELDR_PE_BASE - PAGE_SIZE = 0x7F000. Earlier rustconv emitted the literal
 // 0x70000 instead of the MEMORY_MARGIN macro, capping the PE at 0x5f000 = 380KB.
 // The Rust-integrated freeldr_pe.exe is 426KB (.eh_frame/.reloc/.buildid from
 // the Rust toolchain), bugchecking on OptionalHeader.SizeOfImage check.
-pub const MEMORY_MARGIN: usize = 0x88000;
+pub const MEMORY_MARGIN: usize = 0x90000;
 pub const MAX_FREELDR_PE_SIZE: usize = MEMORY_MARGIN - FREELDR_PE_BASE - MM_PAGE_SIZE;
 pub const REDZONE_MARK: u64 = 0xCCCCCCCCCCCCCCCC;
 pub const REDZONE_ALLOCATION: usize = 24;

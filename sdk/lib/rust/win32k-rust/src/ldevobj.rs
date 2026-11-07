@@ -377,16 +377,18 @@ unsafe fn LDEVOBJ_pvFindImageProcAddress(
         return core::ptr::null_mut();
     }
 
+    // The tables are unaligned in our images (lld packs them after the DLL name), so every
+    // entry is read with read_unaligned.
     pNames = ((pvImageBase as ULONG_PTR) + (*pExportDir).AddressOfNames as ULONG_PTR) as PULONG;
     pOrdinals = ((pvImageBase as ULONG_PTR) + (*pExportDir).AddressOfNameOrdinals as ULONG_PTR) as PUSHORT;
     pAddresses = ((pvImageBase as ULONG_PTR) + (*pExportDir).AddressOfFunctions as ULONG_PTR) as PULONG;
 
     i = 0;
     while i < (*pExportDir).NumberOfNames {
-        let pName = ((pvImageBase as ULONG_PTR) + (*pNames.add(i as usize)) as ULONG_PTR) as LPSTR;
+        let pName = ((pvImageBase as ULONG_PTR) + pNames.add(i as usize).read_unaligned() as ULONG_PTR) as LPSTR;
         if _stricmp(pszProcName, pName) == 0 {
-            let ordinal = *pOrdinals.add(i as usize);
-            pvProcAddress = ((pvImageBase as ULONG_PTR) + (*pAddresses.add(ordinal as usize)) as ULONG_PTR) as PVOID;
+            let ordinal = pOrdinals.add(i as usize).read_unaligned();
+            pvProcAddress = ((pvImageBase as ULONG_PTR) + pAddresses.add(ordinal as usize).read_unaligned() as ULONG_PTR) as PVOID;
             break;
         }
         i += 1;

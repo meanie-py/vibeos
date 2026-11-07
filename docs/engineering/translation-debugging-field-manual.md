@@ -10707,6 +10707,22 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   (uniata's `MOV_DD_SWP`/`MOV_DW_SWP`) are byte arrays too. Every reader and writer of such a
   field goes through `read_unaligned`/`write_unaligned`, including shared helpers like
   `TaLengthOfAddress` that look innocent because their usual callers pass aligned pool.
+- **A PE export table** (2026-11-06, arming freeldr-rust). lld packs the export directory, the
+  DLL name and then the address, name and ordinal tables with no alignment, so where the tables
+  land depends on the name's length: ntkrnlmp.exe's name table is at RVA 0x24deb2, and kdcom,
+  bootvid, hal, ntdll and kernel32 are odd too (shlwapi happens to be aligned). The PE format
+  allows it. Every export walker reads entries with `read_unaligned`: freeldr's peloader,
+  ntoskrnl's sysldr, win32k's ldevobj and ntdll's ldrpe. Armed, the loader's plain read halted
+  every UEFI boot before the kernel was entered.
+- **Fixed BIOS addresses and BIOS-built structures in the loader.** The BDA conventional-memory
+  word is at 0x413, an odd address (`pcmem.rs`). `ACPI_BIOS_DATA` follows one
+  `CM_PARTIAL_RESOURCE_DESCRIPTOR` in the 4-packed resource list, so its 64-bit `RSDTAddress`
+  and `Count` are only 4-aligned (`hwacpi.rs`). Both are now `read_unaligned`/`write_unaligned`.
+  A loader panic prints `!!FREELDR-RUST-PANIC@file:line` on debugcon (uefildr adds `msg:`).
+  Until 2026-11-06 the harness decoded that text's letters as kernel milestones and reported
+  "HANG_TIMEOUT, CRASHED BEFORE KiSystemStartupBootStack". It now reports `LOADER RUST PANIC at`
+  with the message. A hang whose CPU state shows a `jmp $` at a loader address with
+  RDX=0xe9 is this.
 - **A real overlap.** classpnp's `RtlMoveMemory` of READ_CAPACITY_DATA one ULONG up inside its
   own _EX had become `copy_nonoverlapping` -- memcpy on overlapping ranges, a genuine bug on
   every arch. `scan_move_vs_nonoverlapping` now pairs each Rust fn with its C twin's moves.

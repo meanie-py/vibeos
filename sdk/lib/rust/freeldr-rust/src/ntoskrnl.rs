@@ -185,9 +185,12 @@ pub unsafe extern "fastcall" fn IoReadPartitionTable(
             ReturnRecognizedPartitions,
             SectorSize,
             &mut (*MasterBootRecord).PartitionTable[i as usize],
-            &mut (*Partitions).PartitionEntry[NbPartitions as usize],
+            // PartitionEntry is the C's flexible [1] array, sized for NbPartitions: index
+            // through the pointer, since `[NbPartitions]` is bounds-checked against 1 and
+            // panics at the second partition (scan_flex_array_panic, rosload i386).
+            (*Partitions).PartitionEntry.as_mut_ptr().add(NbPartitions as usize),
         ) != 0 {
-            (*Partitions).PartitionEntry[NbPartitions as usize].PartitionNumber = NbPartitions + 1;
+            (*(*Partitions).PartitionEntry.as_mut_ptr().add(NbPartitions as usize)).PartitionNumber = NbPartitions + 1;
             NbPartitions += 1;
         }
 
@@ -276,9 +279,12 @@ pub unsafe extern "C" fn IoReadPartitionTable(
             ReturnRecognizedPartitions,
             SectorSize,
             &mut (*MasterBootRecord).PartitionTable[i as usize],
-            &mut (*Partitions).PartitionEntry[NbPartitions as usize],
+            // PartitionEntry is the C's flexible [1] array, sized for NbPartitions: index
+            // through the pointer, since `[NbPartitions]` is bounds-checked against 1 and
+            // panics at the second partition (scan_flex_array_panic, rosload i386).
+            (*Partitions).PartitionEntry.as_mut_ptr().add(NbPartitions as usize),
         ) != 0 {
-            (*Partitions).PartitionEntry[NbPartitions as usize].PartitionNumber = NbPartitions + 1;
+            (*(*Partitions).PartitionEntry.as_mut_ptr().add(NbPartitions as usize)).PartitionNumber = NbPartitions + 1;
             NbPartitions += 1;
         }
 

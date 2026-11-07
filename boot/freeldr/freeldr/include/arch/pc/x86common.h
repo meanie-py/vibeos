@@ -19,7 +19,11 @@
 #define TEMPDATA16_BASE     HEX(7000)
 #define TEMPCODE16_BASE     HEX(7400)
 #define TEMPCODE_BASE     HEX(200000)
-#define MEMORY_MARGIN      HEX(88000) /* We need this much memory */
+/* VibeOS: 88000 upstream. The Rust loader armed with debug-assertions needs more, and the
+ * margin only bounds the image: the disk read buffer is placed after the image's end
+ * (PcMemFinalizeMemoryMap), so what must fit under the EBDA (9FC00 on SeaBIOS) is the image
+ * plus up to MAX_DISKREADBUFFER_SIZE. 90000 leaves room for a 60K buffer below 9F000. */
+#define MEMORY_MARGIN      HEX(90000) /* We need this much memory */
 
 #define BIOSCALLBUFSEGMENT (BIOSCALLBUFFER/16) /* Buffer to store temporary data for any Int386() call */
 #define BIOSCALLBUFOFFSET   HEX(0000) /* Buffer to store temporary data for any Int386() call */

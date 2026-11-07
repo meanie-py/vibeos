@@ -120,10 +120,12 @@ fn main() {
         .asm_archive("blrtl_asm", blrtl_asm)
         .spec2def("boot/freeldr/freeldr/freeldr.spec", "freeldr.sys");
     // The whole image, .bss included, must fit in conventional memory below
-    // MEMORY_MARGIN (x86common.h: MAX_FREELDR_PE_SIZE = 0x77000), which leaves
+    // MEMORY_MARGIN (x86common.h: MAX_FREELDR_PE_SIZE = 0x7F000), which leaves
     // room above it for the INT 13h bounce buffer under the EBDA. At the default
     // opt-level the Rust body overflowed that; a loader is never the hot path.
-    let linker = linker.rust_build_rustflags("-C opt-level=s");
+    // `z`, not `s`, since freeldr-rust was armed (debug-assertions): armed at `s` the
+    // amd64 image was 0x7e600, 2.5 KB from the limit; at `z` it is 0x7c800.
+    let linker = linker.rust_build_rustflags("-C opt-level=z");
     linker.link(ModuleKind::BiosLoader {
         entry: "RealEntryPoint".into(),
         image_base: 0x1_0000,

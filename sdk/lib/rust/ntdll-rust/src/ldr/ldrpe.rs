@@ -540,6 +540,8 @@ pub unsafe extern "system" fn LdrpHandleOldFormatImportDescriptors(
 
     STATUS_SUCCESS
 }
+// Export tables are read with read_unaligned in this file: lld packs the export directory,
+// the DLL name and the tables with no alignment, which the PE format allows.
 #[no_mangle]
 pub unsafe extern "system" fn LdrpNameToOrdinal(
     ImportName: LPSTR,
@@ -561,7 +563,7 @@ pub unsafe extern "system" fn LdrpNameToOrdinal(
 
         CmpResult = strcmp(
             ImportName as *const _,
-            (ExportBase as ULONG_PTR + *NameTable.offset(Next as isize) as ULONG_PTR) as *const _,
+            (ExportBase as ULONG_PTR + NameTable.offset(Next as isize).read_unaligned() as ULONG_PTR) as *const _,
         );
 
         if CmpResult == 0 {
@@ -579,7 +581,7 @@ pub unsafe extern "system" fn LdrpNameToOrdinal(
         return -1i32 as USHORT;
     }
 
-    *OrdinalTable.offset(Next as isize)
+    OrdinalTable.offset(Next as isize).read_unaligned()
 }
 
 #[no_mangle]
@@ -756,10 +758,10 @@ pub unsafe extern "system" fn LdrpSnapThunk(
         if (Hint as ULONG) < (*ExportDirectory).NumberOfNames
             && strcmp(
                 ImportName,
-                ((ExportBase as ULONG_PTR) + *NameTable.offset(Hint as isize) as ULONG_PTR) as LPSTR,
+                ((ExportBase as ULONG_PTR) + NameTable.offset(Hint as isize).read_unaligned() as ULONG_PTR) as LPSTR,
             ) == 0
         {
-            Ordinal = *OrdinalTable.offset(Hint as isize);
+            Ordinal = OrdinalTable.offset(Hint as isize).read_unaligned();
         } else {
             Ordinal = LdrpNameToOrdinal(
                 ImportName,
@@ -893,7 +895,7 @@ pub unsafe extern "system" fn LdrpSnapThunk(
             as PULONG;
 
         (*Thunk).u1.Function =
-            (ExportBase as ULONG_PTR) + *AddressOfFunctions.offset(Ordinal as isize) as ULONG_PTR;
+            (ExportBase as ULONG_PTR) + AddressOfFunctions.offset(Ordinal as isize).read_unaligned() as ULONG_PTR;
 
         if (*Thunk).u1.Function > (ExportDirectory as ULONG_PTR)
             && (*Thunk).u1.Function < ((ExportDirectory as ULONG_PTR) + ExportSize as ULONG_PTR)
@@ -996,7 +998,7 @@ pub unsafe extern "system" fn LdrpSnapThunk(
                 continue 'failure;
             }
         } else {
-            if *AddressOfFunctions.offset(Ordinal as isize) == 0 {
+            if AddressOfFunctions.offset(Ordinal as isize).read_unaligned() == 0 {
                 Ordinal = (*ExportDirectory).NumberOfFunctions as USHORT;
                 continue 'failure;
             }
