@@ -10,7 +10,6 @@ import hashlib
 import io
 import json
 import os
-import re
 import shutil
 import socket
 import struct
@@ -4277,7 +4276,6 @@ def test_source_lints_run_concurrently_but_report_in_spec_order(tmp_path, monkey
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(Run, "run", fake_run)
-    monkeypatch.setattr(lints, "_baseline", lambda repo, name: [])
     run = Run("check", "amd64")
     lints.run_source_lints(run, tmp_path, strict=True)
 
@@ -4310,7 +4308,8 @@ def test_plain_check_fails_on_a_new_finding(tmp_path, monkeypatch, strict):
     exit 0, and the lane then learned about it from `land`."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "runs")
     monkeypatch.setattr(lints, "source_lint_specs", lambda repo: [("scanA", ["scanA"], "stdout")])
-    monkeypatch.setattr(lints, "_baseline", lambda *a: {"a.rs:1: old"})
+    (tmp_path / lints.BASELINE_DIR).mkdir(parents=True)
+    (tmp_path / lints.BASELINE_DIR / "scanA.txt").write_text("a.rs:1: old\n")
     monkeypatch.setattr(
         Run,
         "run",
@@ -4339,7 +4338,6 @@ def test_plain_check_still_only_warns_on_a_missing_tool(tmp_path, monkeypatch):
 def test_build_check_new_findings_stay_advisory(tmp_path, monkeypatch):
     """`build --check` keeps the old contract: new_fail defaults to strict (False)."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "runs")
-    monkeypatch.setattr(lints, "_baseline", lambda *a: set())
     run = Run("build", "amd64")
     monkeypatch.setattr(
         run, "run", lambda *a, **k: subprocess.CompletedProcess([], 1, "b.rs:2: new\n", "")
@@ -4720,30 +4718,6 @@ def test_ninja_jobs_caps_and_reserves(monkeypatch, tmp_path):
 
 
 # --- lints: summary/tally lines are not findings (merge-magnet fix) ---------
-
-
-def test_finding_lines_excludes_count_summaries():
-    out = "\n".join(
-        [
-            "Spec catalog: 1571 exports",
-            "Bindgen catalog: 2921 functions",
-            "  C_MACRO: 94",
-            "  FLEX_ARRAY: 66",
-            "  TOTAL: 160 issues across 2348 files",
-            "SUMMARY: HIGH=0  MEDIUM=0  LOW(likely-FP)=10  shown=0",
-            "  -> MISMATCH             : 0",
-            "  matched to a C array    : 25",
-            "  [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: real finding",
-            "      - ARITY: rust 0 params vs C 5",  # detail line: KEPT (real content)
-        ]
-    )
-    got = lints._finding_lines(out)
-    assert "  [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: real finding" in got
-    assert "      - ARITY: rust 0 params vs C 5" in got
-    assert len(got) == 2  # every count-bearing tally line dropped
-
-
-# --- build: isolation preflight — in-tree cargo hardlinks are benign ---------
 
 
 def _mk_cargo_tree(repo, nlinks_extra, escape_dir=None):
@@ -5728,173 +5702,8 @@ def test_gate_refuses_to_stamp_when_dirty_at_start(tmp_path, monkeypatch, tiny_r
     assert not list((tiny_repo / ".git" / "vibeos-gate-stamps").glob("*.json"))
 
 
-# --- lint baseline: line DRIFT is not a new finding, but a new OCCURRENCE is --
-
-
-def test_lint_baseline_ignores_pure_line_drift():
-    """Inserting a comment above a baselined finding moved it 90→93 and turned the gate RED
-    with '1 new' (2026-07-25). Nothing an author can do about that except re-bless the
-    baseline — which launders whatever else drifted in the same pass."""
-    base = {"qemu/lib/common.sh:90:17: warning: SLOT_INDEX appears unused. [SC2034]"}
-    cur = {"qemu/lib/common.sh:93:17: warning: SLOT_INDEX appears unused. [SC2034]"}
-    assert lints._new_findings(cur, base) == []
-
-
-def test_lint_baseline_still_flags_a_new_occurrence_of_a_baselined_message():
-    """The multiset half: the SAME message twice where the baseline recorded it once is a
-    genuinely new site and must stay red. A plain set-of-keys diff would mask it."""
-    base = {"a.sh:10:1: warning: X unused. [SC2034]"}
-    cur = {
-        "a.sh:12:1: warning: X unused. [SC2034]",
-        "a.sh:40:1: warning: X unused. [SC2034]",
-    }
-    new = lints._new_findings(cur, base)
-    assert len(new) == 1, new
-
-
-def test_lint_baseline_still_flags_a_new_file_and_a_new_message():
-    base = {"a.sh:10:1: warning: X unused. [SC2034]"}
-    assert lints._new_findings({"b.sh:10:1: warning: X unused. [SC2034]"}, base) != []
-    assert lints._new_findings({"a.sh:10:1: warning: Y unused. [SC2034]"}, base) != []
-
-
-def test_lint_baseline_ignores_drift_in_lint_kernels_embedded_line_number():
-    """lint_kernel carries the line number INSIDE the message, so the `file:line:` stripper
-    above never applied to it and it kept drifting (2026-07-25: adding 4-line banners to 12
-    files reported 35 "new" findings that were the same 35 sites). The scanner prints a file
-    header, then indented `L <n> Fn(): ...` lines."""
-    base = {"    L 309 RtlpCheckDeviceName(): *NameInvalid = ..."}
-    cur = {"    L 313 RtlpCheckDeviceName(): *NameInvalid = ..."}
-    assert lints._new_findings(cur, base) == []
-
-
-def test_lint_baseline_still_flags_an_extra_embedded_line_occurrence():
-    """The multiset half again — drift immunity must not swallow a genuinely new site."""
-    base = {"    L 309 RtlpCheckDeviceName(): *NameInvalid = ..."}
-    cur = {
-        "    L 313 RtlpCheckDeviceName(): *NameInvalid = ...",
-        "    L 480 RtlpCheckDeviceName(): *NameInvalid = ...",
-    }
-    assert len(lints._new_findings(cur, base)) == 1
-    # ...and a different function at a drifted line is still new.
-    assert lints._new_findings({"    L 313 RtlpOther(): *NameInvalid = ..."}, base) != []
-
-
-def test_lint_baseline_ignores_drift_behind_a_leading_class_tag():
-    """verify_ffi and scan_magic_offsets print `[TAG] path:line: msg`. _LOCATION is
-    start-anchored, so it never saw the path and 205 baseline lines were silently NOT
-    drift-immune — a one-line comment added to fastfat's extern block moved an unrelated
-    finding 177 -> 178 and the merge queue rejected the whole batch (2026-07-25)."""
-    base = {"  [C_MACRO] a/b.rs:177: IoGetCurrentIrpStackLocation: is a C macro"}
-    cur = {"  [C_MACRO] a/b.rs:178: IoGetCurrentIrpStackLocation: is a C macro"}
-    assert lints._new_findings(cur, base) == []
-    # The tag is part of the identity: same site, different class, is a NEW finding.
-    other_class = {"  [FLEX_ARRAY] a/b.rs:177: IoGetCurrentIrpStackLocation: is a C macro"}
-    assert lints._new_findings(other_class, base) != []
-    # ...and the multiset half still holds.
-    extra = {"  [C_MACRO] a/b.rs:900: IoGetCurrentIrpStackLocation: is a C macro"}
-    assert len(lints._new_findings(cur | extra, base)) == 1
-
-
-def test_lint_baseline_ignores_drift_in_a_trailing_parenthesized_location():
-    """verify_signatures puts the location last: `[MEDIUM] NtSetLdtEntries  (path:210)`."""
-    base = {"[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:210)"}
-    drifted = {"[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:255)"}
-    assert lints._new_findings(drifted, base) == []
-    assert lints._new_findings({"[MEDIUM] NtOther  (sdk/lib/rust/x/stubs.rs:210)"}, base) != []
-    reclassified = {"[HIGH] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:210)"}
-    assert lints._new_findings(reclassified, base) != []
-
-
-def test_lint_baseline_ignores_verify_signatures_coverage_tallies():
-    """verify_signatures prints two header tallies and a '── coverage ──' block of counters.
-    They were baselined as if they were findings, so adding ONE #[no_mangle] fn moved
-    'exported Rust fns', 'exported fns checked' and 'no C proto (internal)' by one each and
-    the merge queue rejected the batch as LINT_FAIL "3 new" (2026-07-31) — for a commit whose
-    only sin was exporting a new function, which is what a translation lane does all day."""
-
-    def keys(text: str) -> set[str]:
-        return {lints._finding_key(ln) for ln in lints._finding_lines(text)}
-
-    before = """\
-  C prototypes: 5034 FunctionDecls, 4536 typedefs
-  exported Rust fns: 3359 (deduped twins)
-
-── coverage ──
-  exported fns checked : 3359
-  matched to a C proto : 2238
-  no C proto (internal): 1121
-  signature OK         : 2229
-  mismatches           : 9  (3 shown, 6 LOW-suppressed)
-"""
-    after = before.replace("3359", "3360").replace("1121", "1122")
-    assert lints._new_findings(keys(after), keys(before)) == []
-    # Every COUNT-BEARING line must be filtered, not merely the three that moved — the
-    # others (matched to a C proto, signature OK, mismatches) drift the moment anyone
-    # fixes or adds a signature, and would bounce that lane instead. The static
-    # '── coverage ──' banner may stay: it carries no number, so it never drifts.
-    assert keys(before) == {"── coverage ──"}
-
-
-def test_lint_baseline_still_flags_a_real_verify_signatures_mismatch():
-    """The other half: the tally filter must not swallow the per-site blocks underneath it.
-    A filter broad enough to catch any '<label>: <number>' would have — which is why
-    _SUMMARY_LINE enumerates verify_signatures' labels instead of generalising."""
-    finding = """\
-[HIGH] KiThreadStartup  (sdk/lib/rust/x/thrdini.rs:98)
-    rust: fn KiThreadStartup() -> ()
-    C   : void KiThreadStartup(PKSYSTEM_ROUTINE, PKSTART_ROUTINE, PVOID, BOOLEAN, KTRAP_FRAME)
-      - ARITY: rust 0 params vs C 5
-      - param#2 u32 vs ULONG_PTR(unsigned long long): width 4 vs 8 [MEDIUM]
-"""
-    kept = {lints._finding_key(ln) for ln in lints._finding_lines(finding)}
-    assert len(kept) == 5, kept
-    assert lints._new_findings(kept, set()) != []
-
-
-def test_every_baseline_line_is_immune_to_line_drift():
-    """The GUARD over the three fixes above. Each was found the same way — a lane's unrelated
-    edit shifted a line, the gate went red, and someone had to re-bless a baseline (which
-    launders whatever else drifted in the same pass). The failure is invisible at authorship
-    time: a new scanner with a novel output shape looks fine until it costs another lane a
-    gate. So assert the PROPERTY directly over every baseline we actually ship — perturbing a
-    finding's line number must never change its key. A scanner whose format this cannot parse
-    fails check-tooling here, where its author is standing, instead of a stranger's merge."""
-    # A location we are confident is a location: a real source extension, then digits.
-    loc = re.compile(r"(?P<f>[\w./+-]+\.(?:rs|c|h|py|md|txt|cmake|spec|toml|sh)):(?P<n>\d+)")
-    baselines = sorted((_conf_repo_root() / "tools" / "lint-baseline").glob("*.txt"))
-    assert baselines, "no lint baselines found — wrong REPO root?"
-    blind: list[str] = []
-    for path in baselines:
-        for line in path.read_text().splitlines():
-            # EVERY location, one at a time: perturbing only the first let the embedded
-            # twin list of scan_dropped_asserts drift unseen behind its stripped prefix.
-            for m in loc.finditer(line):
-                n = str(int(m.group("n")) + 1000)
-                drifted = line[: m.start("n")] + n + line[m.end("n") :]
-                if lints._finding_key(line) != lints._finding_key(drifted):
-                    blind.append(f"{path.name}: {line[:110]}")
-                    break
-    assert not blind, (
-        f"{len(blind)} baseline finding(s) carry a line number that _finding_key does not "
-        f"strip, so any edit above them reads as NEW:\n  " + "\n  ".join(blind[:10])
-    )
-
-
-def test_lint_baseline_ignores_drift_in_locations_inside_the_message():
-    """scan_dropped_asserts: `h:1033: MI_UPDATE_VALID_PTE: … (a/section.rs:252, b.rs:1454)`."""
-    base = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:252, r/s.rs:14)"}
-    drifted = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:258, r/s.rs:14)"}
-    assert lints._new_findings(drifted, base) == []
-    moved = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/other.rs:252, r/s.rs:14)"}
-    assert lints._new_findings(moved, base) != []
-
-
-def test_lint_baseline_compares_prefixless_findings_verbatim():
-    """Tools that don't emit `file:line:` (verify_* MISMATCH lines) keep exact matching."""
-    base = {"MISMATCH: NtFoo stdcall vs cdecl"}
-    assert lints._new_findings({"MISMATCH: NtFoo stdcall vs cdecl"}, base) == []
-    assert lints._new_findings({"MISMATCH: NtBar stdcall vs cdecl"}, base) != []
+# --- lint baseline identity (line drift, multiset, tallies): native contract tests in
+# tools/vibeos-lint/src/verdict.rs, including the drift guard over every shipped baseline.
 
 
 # --- the merge queue: submit / batch / split-attribution / reject channel ---
@@ -10106,7 +9915,8 @@ def test_fatal_scanner_diagnostic_cannot_be_baselined(tmp_path, monkeypatch):
     cp = subprocess.CompletedProcess(
         ["scanner"], 1, "header already baselined\n", "FATAL: missing generated headers\n"
     )
-    monkeypatch.setattr(lints, "_baseline", lambda *_: {"header already baselined"})
+    (tmp_path / lints.BASELINE_DIR).mkdir(parents=True)
+    (tmp_path / lints.BASELINE_DIR / "scanner.txt").write_text("header already baselined\n")
     run = Run("check", "all")
     stage = lints._lint_stage(run, tmp_path, "scanner", ["scanner"], strict=True, cp=cp)
     assert stage.status == "fail"

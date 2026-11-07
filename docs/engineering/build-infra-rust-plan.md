@@ -14,7 +14,8 @@ provisioned by a `tools/build-infra` launcher. Keep `vibeos-cli build` as the fr
 and migrate its build mechanisms behind that interface. Reuse the existing Rust
 `tools/host-jobs` broker; do not introduce another admission scheduler. Lint logic stays
 in `vibeos-lint`, generation in `vibeos-codegen`, and compiler/linker authority in the
-existing tools. The later CLI/QEMU migrations retain their own scope.
+existing tools. Current CLI parsing/reporting and build/gate coordination are now native too;
+remaining work is tracked in the [tooling lane plan](active-lanes/tooling-rust-plan.md).
 
 ## Inventory and boundaries
 
@@ -22,7 +23,7 @@ The initial perimeter below is 23 Python files / 11,168 lines in this checkout a
 `93d5def2dfe`. These are source lines, not independent tools or a work estimate. Re-read
 callers and tests after merging current master before implementing each batch.
 
-| Area | Current files | Destination / boundary |
+| Area | Initial files | Destination / boundary |
 | --- | --- | --- |
 | Dependency and cleanup helpers | `cargo_depgraph.py`, `retarget_cargo_depfile.py`, `ninja_closure_prune.py`, `link_guard.py` | Native graph/depfile/cleanup commands; duplicate-symbol policy lives in the shared low-level library with a native linker adapter |
 | Build and SDK manifests | `cell_manifest.py`, `media_manifest.py`, `sdk_recipe.py` | Native parse/validate/emit/replay modules; reuse codegen's CMake and compile-recipe facts where contracts match |
@@ -30,7 +31,7 @@ callers and tests after merging current master before implementing each batch.
 | Immutable artifact store | `artifact_config.py`, `artifact_inputs.py`, `artifact_worker.py`, `artifact_executor.py`, `artifact_store.py`, `artifact_runtime.py` | Shared native descriptor/snapshot/store/executor/runtime modules |
 | Store analysis | `artifact_history.py`, `artifact_economics.py` | Native consumers of the same descriptors; keep report formats compatible |
 | Media staging | `strip_cd_media.py`, `ramdisk_tree.py` | Native bounded staging/copy plans; leave guest boot and hardware payload tools for their phases |
-| Build CLI adapters | `tests/qemu/cli/{build,buildpolicy,cachecfg,buildbench,hostjobs}.py` | Extract build mechanisms; retain Python argument routing, Run/Stage reporting and the host-jobs adapter until the CLI phase |
+| Build CLI adapters | `tests/qemu/cli/{build,buildpolicy,cachecfg,buildbench,hostjobs}.py` | Build coordination, argument grammar and reporting are now native; retain DTO/resource adapters and migrate remaining policy through the tooling lane plan |
 
 Related contracts: [build invalidation](build-invalidation.md),
 [immutable artifacts](immutable-build-artifacts.md),

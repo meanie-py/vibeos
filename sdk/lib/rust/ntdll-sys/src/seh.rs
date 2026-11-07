@@ -122,6 +122,16 @@ pub unsafe fn exception_code(pointers: *mut c_void) -> NTSTATUS {
     *record
 }
 
+/// `__try { return f(); } __except (EXCEPTION_EXECUTE_HANDLER) { .. }` — the plain
+/// catch-all around a touch of caller memory, as `ntkrnl_sys::seh::try_except_all`.
+/// `Err(code)` is the handler's `_SEH2_GetExceptionCode()`.
+pub unsafe fn try_except_all<T, F: FnOnce() -> T>(f: F) -> Result<T, NTSTATUS> {
+    let mut out = core::mem::MaybeUninit::<T>::uninit();
+    try_except(&mut out, |o| { o.write(f()); }, |_, _| EXCEPTION_EXECUTE_HANDLER)?;
+    // Ok means the body returned, and its last act was the write.
+    Ok(out.assume_init())
+}
+
 /// `RpcTryExcept { body } RpcExcept(EXCEPTION_EXECUTE_HANDLER) { RpcExceptionCode() }`:
 /// the body's result, or the RPC exception code (an `RPC_S_*`/`ERROR_*` value) it raised.
 /// Callers map the code exactly as their C did (`ScmRpcStatusToWinError`, `I_RpcMapWin32Status`, ...).

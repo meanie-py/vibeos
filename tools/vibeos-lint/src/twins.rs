@@ -24,7 +24,11 @@ static RS_IGNORED: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?s)//[^\n]*|/\*.*?\*/|b?"(?:\\.|[^"\\])*"|b?'(?:\\.|[^'\\\n])'"#).unwrap()
 });
 static RS_FN: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^>{]*>)?\s*\(").unwrap());
+    // The generics may hold a closure bound (`<F: FnOnce() -> T>`, whose `->` is not the
+    // closing `>`) and one level of nesting (`<T: Into<U>>`).
+    LazyLock::new(|| {
+        Regex::new(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<(?:->|[^<>{]|<[^<>{]*>)*>)?\s*\(").unwrap()
+    });
 static NAME_PAREN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b([A-Za-z_]\w*)\s*\(").unwrap());
 static C_DECOR: LazyLock<Regex> = LazyLock::new(|| {

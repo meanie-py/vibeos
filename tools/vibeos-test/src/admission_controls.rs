@@ -79,7 +79,15 @@ fn native_tcg_retains_cpu_lease_and_timeout_refuses_unadmitted_boot() {
         "a full CPU pool must never launch an unlocked VM"
     );
     drop(first);
-    assert!(Admission::acquire(root.path(), "arm64", "native", "tcg", root.path(), &env).is_ok());
+    // A sibling test forking (any `pre_exec` spawn) while `first` was held gives its child
+    // a copy of the lease's open file description, and the flock lives until that child
+    // execs and CLOEXEC closes it - milliseconds later. Real callers wait up to an hour;
+    // a 0s re-acquire lost that race 3 times in 8 full-suite runs. Allow a short wait.
+    let mut env = env;
+    env.insert("VIBEOS_HOST_LOCK_TIMEOUT".into(), "5".into());
+    if let Err(e) = Admission::acquire(root.path(), "arm64", "native", "tcg", root.path(), &env) {
+        panic!("re-acquire after release failed: {} ({:?})", e.message, e.kind);
+    }
 }
 #[test]
 fn kvm_and_explicit_broker_off_do_not_consume_tcg_leases() {

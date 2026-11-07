@@ -34,6 +34,8 @@ pub const RETRYABLE: &[&str] = &[
     "NET_FLAKE",
     "HOST_STARVED",
     "CONFORMANCE_RED",
+    // The guest was graded; the harness could not prove its VM stopped.
+    "VM_CLEANUP_FAIL",
 ];
 pub fn retryable(cls: &str, summary: &Value) -> bool {
     RETRYABLE.contains(&cls)

@@ -7631,6 +7631,7 @@ name = "rtl-strings"
 version = "0.1.0"
 dependencies = [
  "cnt-rust",
+ "ntkrnl-sys",
 ]
 
 [[package]]
@@ -8427,6 +8428,9 @@ dependencies = [
 [[package]]
 name = "slist"
 version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+]
 
 [[package]]
 name = "slist-loom"

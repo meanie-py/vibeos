@@ -323,38 +323,45 @@ unsafe fn PrintStackTrace(ExceptionInfo: *mut _EXCEPTION_POINTERS) {
     {
         DbgPrint(b"Frames:\n\0".as_ptr() as PCSTR);
 
-        let mut i: u32 = 0;
-        let mut Frame: *mut u32 = (*ContextRecord).Ebp as *mut u32;
+        // The EBP chain is whatever the faulting code left in its frames; a
+        // corrupt link faults here, and the dump reports it and stops.
+        let walked = ntkrnl_sys::seh::try_except_all(|| {
+            let mut i: u32 = 0;
+            let mut Frame: *mut u32 = (*ContextRecord).Ebp as *mut u32;
 
-        while *Frame.offset(1) != 0 && *Frame.offset(1) != 0xdeadbeef && i < 128 {
-            if *Frame.offset(1) == 0 {
-                DbgPrint(
-                    b"   %8x%9s   %s\n\0".as_ptr() as PCSTR,
-                    *Frame.offset(1),
-                    b"<invalid address>\0".as_ptr() as PCSTR,
-                    b" \0".as_ptr() as PCSTR,
-                );
-            } else {
-                _module_name_from_addr(
-                    *Frame.offset(1) as *const core::ffi::c_void,
-                    core::ptr::addr_of_mut!(StartAddr),
-                    szMod.as_mut_ptr(),
-                    core::mem::size_of::<[core::ffi::c_char; 128]>(),
-                );
-                DbgPrint(
-                    b"   %8x+%-8x   %s\n\0".as_ptr() as PCSTR,
-                    StartAddr,
-                    (*Frame.offset(1) as usize) - (StartAddr as usize),
-                    szMod.as_ptr(),
-                );
+            while *Frame.offset(1) != 0 && *Frame.offset(1) != 0xdeadbeef && i < 128 {
+                if *Frame.offset(1) == 0 {
+                    DbgPrint(
+                        b"   %8x%9s   %s\n\0".as_ptr() as PCSTR,
+                        *Frame.offset(1),
+                        b"<invalid address>\0".as_ptr() as PCSTR,
+                        b" \0".as_ptr() as PCSTR,
+                    );
+                } else {
+                    _module_name_from_addr(
+                        *Frame.offset(1) as *const core::ffi::c_void,
+                        core::ptr::addr_of_mut!(StartAddr),
+                        szMod.as_mut_ptr(),
+                        core::mem::size_of::<[core::ffi::c_char; 128]>(),
+                    );
+                    DbgPrint(
+                        b"   %8x+%-8x   %s\n\0".as_ptr() as PCSTR,
+                        StartAddr,
+                        (*Frame.offset(1) as usize) - (StartAddr as usize),
+                        szMod.as_ptr(),
+                    );
+                }
+
+                if *Frame.offset(0) == 0 {
+                    break;
+                }
+
+                Frame = *Frame.offset(0) as *mut u32;
+                i += 1;
             }
-
-            if *Frame.offset(0) == 0 {
-                break;
-            }
-
-            Frame = *Frame.offset(0) as *mut u32;
-            i += 1;
+        });
+        if let Err(code) = walked {
+            DbgPrint(b"<error dumping stack trace: 0x%x>\n\0".as_ptr() as PCSTR, code);
         }
     }
 }

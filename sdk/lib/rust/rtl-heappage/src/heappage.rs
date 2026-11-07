@@ -1216,12 +1216,14 @@ pub unsafe extern "system" fn RtlpDphReportCorruptedBlock(
     let mut SafeInfo: DPH_BLOCK_INFORMATION = core::mem::zeroed();
 
     {
+        // The block is corrupt by definition; its header may not be readable.
         let BlockInfo = (Block as PDPH_BLOCK_INFORMATION).offset(-1);
-        core::ptr::copy_nonoverlapping(
-            BlockInfo,
-            &mut SafeInfo,
-            1,
-        );
+        let safe = core::ptr::addr_of_mut!(SafeInfo);
+        if ntkrnl_sys::seh::try_except_all(|| core::ptr::copy_nonoverlapping(BlockInfo, safe, 1))
+            .is_err()
+        {
+            SafeInfo = core::mem::zeroed();
+        }
     }
 
     if ValidationInfo & DPH_VALINFO_CORRUPTED_AFTER_FREE != 0 {

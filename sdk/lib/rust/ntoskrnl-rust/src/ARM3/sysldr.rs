@@ -388,7 +388,9 @@ pub unsafe extern "system" fn RtlpFindExportedRoutineByName(
     STATUS_SUCCESS
 }
 
-unsafe fn RtlFindExportedRoutineByName(image_base: PVOID, export_name: *const i8) -> PVOID {
+/// C: a global NTAPI routine (Vista+ export; KSE resolves hook targets with it).
+#[no_mangle]
+pub unsafe extern "system" fn RtlFindExportedRoutineByName(image_base: PVOID, export_name: *const i8) -> PVOID {
     let mut is_forwarder: BOOLEAN = 0u8;
     let mut function: PVOID = core::ptr::null_mut();
 
@@ -551,6 +553,8 @@ unsafe fn MiUpdateThunks(
 }
 
 extern "system" {
+    // Kernel Shim Engine (kse/kse.rs): apply database/registry shims to a loaded driver.
+    fn KseDriverLoadImage(LdrEntry: ntkrnl_sys::ddk::PLDR_DATA_TABLE_ENTRY) -> NTSTATUS;
     fn RtlAnsiStringToUnicodeString(
         dest: *mut _UNICODE_STRING,
         src: *mut ANSI_STRING,
@@ -1557,6 +1561,9 @@ pub unsafe extern "system" fn MmLoadSystemImage(
         (*ldr_entry).DllBase,
         (*ldr_entry).SizeOfImage as ULONG_PTR,
     );
+
+    // Apply the kernel shims to the driver
+    KseDriverLoadImage(ldr_entry);
 
     MiWriteProtectSystemImage((*ldr_entry).DllBase);
     LdrpInitSecurityCookie(ldr_entry);

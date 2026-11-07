@@ -235,8 +235,12 @@ def compare(root: Path, revision: str, names: list[str]) -> dict:
         if lints._scanner_error(python, stream):
             raise RuntimeError(f"Python oracle did not complete: {python.stderr}")
         output = python.stdout if stream == "stdout" else python.stdout + "\n" + python.stderr
-        py_lines = lints._finding_lines(lints._rel(output, root))
-        rs_lines = lints._finding_lines(lints._rel(rust.stdout, root))
+        py_lines, rs_lines = (
+            set(lines)
+            for lines in lints._verdicts(
+                root, "finding_lines", [{"text": output}, {"text": rust.stdout}]
+            )
+        )
         result = {
             "python": len(py_lines),
             "rust": len(rs_lines),
@@ -381,8 +385,9 @@ def compare_binary(
             flush=True,
         )
         rs = native[name]
-        old_text = lints._rel(old.stdout + "\n" + old.stderr, root)
-        rs_text = lints._rel(rs.stdout + "\n" + rs.stderr, root)
+        # Repo-relative, exactly as stage verdicts see output.
+        old_text = (old.stdout + "\n" + old.stderr).replace(f"{root}/", "").replace(str(root), "")
+        rs_text = (rs.stdout + "\n" + rs.stderr).replace(f"{root}/", "").replace(str(root), "")
         old_lines, rs_lines = old_text.splitlines(), rs_text.splitlines()
         report["rules"][name] = {
             "python": len(old_lines),
