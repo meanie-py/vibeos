@@ -244,12 +244,13 @@ def test_killed_worker_does_not_claim_child_signal(tmp_path):
 def test_worker_stops_owned_child_when_owner_exits(tmp_path):
     import time
 
+    # Published with mv: the poll below checks exists(), and `echo > file` shows it empty first.
     child_pid_file = tmp_path / "child.pid"
     receipt = tmp_path / "worker-receipt.json"
     launcher = """import subprocess, sys
 p = subprocess.Popen([
     sys.argv[1], "--root", sys.argv[2], "build-bench-worker", sys.argv[3],
-    "/bin/sh", "-c", 'echo $$ > "$1"; exec sleep 30', "_", sys.argv[4],
+    "/bin/sh", "-c", 'echo $$ > "$1.tmp" && mv "$1.tmp" "$1"; exec sleep 30', "_", sys.argv[4],
 ])
 p.wait()
 """
