@@ -1771,15 +1771,34 @@ impl Vm {
             let mut d = read_json(&self.descriptor)?;
             d["stop"] = json!(true);
             atomic_json(&self.descriptor, &d)?;
-            let end = Instant::now() + Duration::from_secs(20);
-            while Instant::now() < end {
+            // The guardian's own stop path is longer than any one fixed budget: up to 12s of
+            // SIGTERM->SIGKILL on the QEMU group, then (windows-host) a PowerShell kill by
+            // UID retried every 2s, then staging removal on /mnt/c. A flat 20s failed a
+            // loaded gate's arm64 smoke 3s before the guardian wrote `stopped, confirmed`
+            // (batch 143+144, RUN_INTERRUPTED). Wait while the guardian is still making
+            // progress; fail on silence, or at a hard cap well past its worst case.
+            let start = Instant::now();
+            let mut last = (fs::metadata(&self.status).and_then(|m| m.modified()).ok(), start);
+            loop {
                 if self.guardian.as_mut().unwrap().try_wait()?.is_some() {
                     break;
                 }
+                let stamp = fs::metadata(&self.status).and_then(|m| m.modified()).ok();
+                if stamp != last.0 {
+                    last = (stamp, Instant::now());
+                }
+                let quiet = last.1.elapsed();
+                if start.elapsed() > Duration::from_secs(180)
+                    || (quiet > Duration::from_secs(45) && start.elapsed() > Duration::from_secs(45))
+                {
+                    let state = read_json(&self.status).unwrap_or(Value::Null);
+                    return Err(Error::new(format!(
+                        "QEMU guardian did not confirm stop after {:.0}s (status {})",
+                        start.elapsed().as_secs_f64(),
+                        state
+                    )));
+                }
                 thread::sleep(Duration::from_millis(50));
-            }
-            if self.guardian.as_mut().unwrap().try_wait()?.is_none() {
-                return Err("QEMU guardian did not confirm stop".into());
             }
             let status = read_json(&self.status)?;
             if status["confirmed"] != true {

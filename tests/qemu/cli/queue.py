@@ -1416,6 +1416,9 @@ INCONCLUSIVE = {
     # exists so that gaining a positive marker does not silently move them OUT of it
     # and start rejecting lanes for being reaped.
     "RUN_INTERRUPTED",
+    # VM_CLEANUP_FAIL: the boot finished but the harness could not prove its QEMU stopped.
+    # A host/harness condition, so it says nothing about the submission.
+    "VM_CLEANUP_FAIL",
 }
 
 

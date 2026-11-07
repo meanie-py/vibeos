@@ -858,10 +858,16 @@ pub fn one_boot(root: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
             json!(rounded(stopping.elapsed().as_secs_f64())),
         );
         if let Err(error) = cleanup {
-            return Err(Error::new(format!(
-                "boot VM cleanup failed: {}",
-                error.message
-            )));
+            // A VM that may not have stopped is a harness failure, never a pass, but it
+            // must still finalize with its cause: raising here skipped finalize() and left
+            // only an INCOMPLETE marker, which hid the cause from the gate.
+            let mut failed = body.unwrap_or_else(|e| json!({"error":e.message}));
+            failed["ok"] = json!(false);
+            failed["outcome"] = json!("cleanup");
+            failed["classification"] = json!("VM_CLEANUP_FAIL");
+            failed["salient"] = json!([format!("boot VM cleanup failed: {}", error.message)]);
+            failed["timings"] = Value::Object(timings);
+            return Ok(failed);
         }
     }
     let mut result = body?;
