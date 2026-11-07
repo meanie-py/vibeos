@@ -569,7 +569,7 @@ unsafe extern "system" fn GetNTOSInstallationName(
             b"%C:%S  \"%S\"\0".as_ptr() as *const i8,
             (*VolInfo).DriveLetter as core::ffi::c_uint,
             (*NtOsInstall).PathComponent,
-            (*NtOsInstall).InstallationName,
+            (*NtOsInstall).InstallationName.as_ptr(),
         );
     } else {
         return RtlStringCchPrintfA!(
@@ -577,7 +577,7 @@ unsafe extern "system" fn GetNTOSInstallationName(
             cchBufferSize as usize,
             b"%wZ  \"%S\"\0".as_ptr() as *const i8,
             &mut (*NtOsInstall).SystemNtPath as *mut _UNICODE_STRING,
-            (*NtOsInstall).InstallationName,
+            (*NtOsInstall).InstallationName.as_ptr(),
         );
     }
 }
@@ -1468,7 +1468,7 @@ unsafe extern "C" fn SelectPartitionPage(Ir: PINPUT_RECORD) -> PAGE_NUMBER {
                         PathBuffer.as_mut_ptr(),
                         _countof!(PathBuffer),
                         RUSTCONV_WSTR_BCF3913447D5.as_ptr(),
-                        (*(*CurrentPartition).Volume).Info.DeviceName,
+                        (*(*CurrentPartition).Volume).Info.DeviceName.as_ptr(),
                     );
                     RtlInitUnicodeString(&mut CurrentPartitionU, PathBuffer.as_mut_ptr());
 
@@ -3227,7 +3227,10 @@ unsafe extern "C" fn BootLoaderInstallPage(Ir: PINPUT_RECORD) -> PAGE_NUMBER {
         PathBuffer.as_mut_ptr(),
         _countof!(PathBuffer),
         RUSTCONV_WSTR_BCF3913447D5.as_ptr(),
-        (*SystemPartition).DeviceName,
+        // `.as_ptr()`: the C's array decays to a pointer. Passed by value, i386 pushed all
+        // 520 bytes and %s read the name's first 4 bytes as the pointer (amd64 passes a
+        // large aggregate by reference, so only i386 installs broke: "?????????\").
+        (*SystemPartition).DeviceName.as_ptr(),
     );
     RtlCreateUnicodeString(&mut USetupData.SystemRootPath, PathBuffer.as_mut_ptr());
     DPRINT1!(b"SystemRootPath: %wZ\n\0".as_ptr() as *const i8, &USetupData.SystemRootPath);
