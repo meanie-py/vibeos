@@ -54,6 +54,7 @@ from . import (
     loop_step,
     macro_authority,
     offset_restore,
+    paste_macros,
     pointer_depth,
     prelude_resolve,
     sizeof_restore,
@@ -5345,6 +5346,9 @@ def stage_integrate(stem: str) -> None:
     flex_fields, _ = flex_index.field_shapes()
     crate_types = sizeof_restore.crate_types(crate / "src")
     fn_macros = _module_fn_macros(state)
+    paste = paste_macros.member_paste_macros(
+        local_macros.module_macros(_module_sources(REPO / state["module_dir"]), REPO)[0]
+    )
     island_consts = _island_consts(crate / "src")
     unicode = _TCHAR_BEGIN in (crate / "src" / "prelude.rs").read_text(errors="replace")
     island_statics = _island_extern_statics(crate / "src")
@@ -5496,6 +5500,19 @@ def stage_integrate(stem: str) -> None:
         if tags:
             changed += 1
             print(f"integrate: {path.stem}: C struct tag(s) as the crate's type: {', '.join(tags)}")
+        text = path.read_text(errors="replace")
+        pasted, n_paste, odd = paste_macros.expand_member_paste_calls(text, paste)
+        if n_paste:
+            path.write_text(pasted)
+            changed += 1
+            print(
+                f"integrate: {path.stem}: {n_paste} member-paste macro call(s) expanded "
+                f"({', '.join(sorted(paste))})"
+            )
+        for site in odd:
+            print(
+                f"integrate: {path.stem}: member-paste macro call NOT expanded, hand-port: {site}"
+            )
         wl = _wine_list_entry(path, REPO / state["module_dir"], crate)
         if wl:
             changed += 1
