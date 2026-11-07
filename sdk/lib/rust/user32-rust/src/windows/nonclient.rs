@@ -137,6 +137,49 @@ pub unsafe extern "system" fn RealUserDrawCaption(
 
 /* PUBLIC FUNCTIONS ***********************************************************/
 
+/// Wine's `adjust_window_rect` (win32u/defwnd.c), driven by the non-client
+/// metrics it is handed so the DPI-aware entry point can scale them.
+///
+/// The C went through UserGetWindowBorders, which drops the resize border of a
+/// WS_MINIMIZE window; Windows does not (user32:win `test_AWR_flags`, 576 style
+/// combinations, all minimized). For every other style the two agree.
+pub(crate) unsafe fn adjust_window_rect(
+    rect: LPRECT,
+    style: DWORD,
+    menu: BOOL,
+    ex_style: DWORD,
+    ncm: &NONCLIENTMETRICSW,
+) {
+    let mut adjust: INT = 0;
+    if ex_style & (WS_EX_STATICEDGE | WS_EX_DLGMODALFRAME) as DWORD == WS_EX_STATICEDGE as DWORD {
+        adjust = 1; // the outer frame is always present
+    } else if ex_style & WS_EX_DLGMODALFRAME as DWORD != 0 || style & (WS_THICKFRAME | WS_DLGFRAME) as DWORD != 0 {
+        adjust = 2; // outer
+    }
+    if style & WS_THICKFRAME as DWORD != 0 {
+        // + iPaddedBorderWidth, which this SDK's (pre-Vista) struct lacks: always 0 here.
+        adjust += ncm.iBorderWidth;
+    }
+    if style & (WS_BORDER | WS_DLGFRAME) as DWORD != 0 || ex_style & WS_EX_DLGMODALFRAME as DWORD != 0 {
+        adjust += 1; // the other border
+    }
+    InflateRect(rect, adjust, adjust);
+
+    if style & WS_CAPTION as DWORD == WS_CAPTION as DWORD {
+        if ex_style & WS_EX_TOOLWINDOW as DWORD != 0 {
+            (*rect).top -= ncm.iSmCaptionHeight + 1;
+        } else {
+            (*rect).top -= ncm.iCaptionHeight + 1;
+        }
+    }
+    if menu != 0 {
+        (*rect).top -= ncm.iMenuHeight + 1;
+    }
+    if ex_style & WS_EX_CLIENTEDGE as DWORD != 0 {
+        InflateRect(rect, GetSystemMetrics(SM_CXEDGE as INT), GetSystemMetrics(SM_CYEDGE as INT));
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn RealAdjustWindowRectEx(
     lpRect: LPRECT,
@@ -144,21 +187,15 @@ pub unsafe extern "system" fn RealAdjustWindowRectEx(
     bMenu: BOOL,
     dwExStyle: DWORD,
 ) -> BOOL {
-    let mut BorderSize: SIZE = core::mem::zeroed();
-
-    if bMenu != 0 {
-        (*lpRect).top -= GetSystemMetrics(SM_CYMENU as INT);
-    }
-    if (dwStyle & WS_CAPTION as DWORD) == WS_CAPTION as DWORD {
-        if dwExStyle & WS_EX_TOOLWINDOW as DWORD != 0 {
-            (*lpRect).top -= GetSystemMetrics(SM_CYSMCAPTION as INT);
-        } else {
-            (*lpRect).top -= GetSystemMetrics(SM_CYCAPTION as INT);
-        }
-    }
-    UserGetWindowBorders(dwStyle, dwExStyle, &mut BorderSize, TRUE);
-    InflateRect(lpRect, BorderSize.cx, BorderSize.cy);
-
+    let mut ncm: NONCLIENTMETRICSW = core::mem::zeroed();
+    ncm.cbSize = core::mem::size_of::<NONCLIENTMETRICSW>() as UINT;
+    crate::misc::desktop::SystemParametersInfoW(
+        SPI_GETNONCLIENTMETRICS,
+        ncm.cbSize,
+        &mut ncm as *mut NONCLIENTMETRICSW as PVOID,
+        0,
+    );
+    adjust_window_rect(lpRect, dwStyle, bMenu, dwExStyle, &ncm);
     TRUE
 }
 
