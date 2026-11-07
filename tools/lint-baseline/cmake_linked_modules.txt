@@ -1,13 +1,10 @@
 ac97: linked by cmake, not a cargo cell
-acpi: linked by cmake, not a cargo cell
 acppage: linked by cmake, not a cargo cell
 activeds.tlb: linked by cmake, not a cargo cell
-afd: linked by cmake, not a cargo cell
 audio_test: linked by cmake, not a cargo cell
 bcryptprimitives: linked by cmake, not a cargo cell
 browseui: linked by cmake, not a cargo cell
 cabview: linked by cmake, not a cargo cell
-cdfs: linked by cmake, not a cargo cell
 cdrom: linked by cmake, not a cargo cell
 certmgr: linked by cmake, not a cargo cell
 certutil: linked by cmake, not a cargo cell
@@ -45,7 +42,6 @@ intl: linked by cmake, not a cargo cell
 kernel32_vista: linked by cmake, not a cargo cell
 l3codeca.acm: linked by cmake, not a cargo cell
 lautus.msstyles: linked by cmake, not a cargo cell
-legide: linked by cmake, not a cargo cell
 lfbbvid: linked by cmake, not a cargo cell
 libjpeg: linked by cmake, not a cargo cell
 libpng: linked by cmake, not a cargo cell
@@ -76,16 +72,12 @@ ncrypt: linked by cmake, not a cargo cell
 netkvm: linked by cmake, not a cargo cell
 netshell: linked by cmake, not a cargo cell
 ntobjshex: linked by cmake, not a cargo cell
-partmgr: linked by cmake, not a cargo cell
-pcix: linked by cmake, not a cargo cell
-pl011: linked by cmake, not a cargo cell
 portcls: linked by cmake, not a cargo cell
 rapps: linked by cmake, not a cargo cell
 rapps.com: linked by cmake, not a cargo cell
 rpcrt4: linked by cmake, not a cargo cell
 rshell: linked by cmake, not a cargo cell
 sendmail: linked by cmake, not a cargo cell
-serial: linked by cmake, not a cargo cell
 setuplib: linked by cmake, not a cargo cell
 setuplib_probe: linked by cmake, not a cargo cell
 shdocvw: linked by cmake, not a cargo cell
@@ -112,7 +104,6 @@ ufat: linked by cmake, not a cargo cell
 ufatx: linked by cmake, not a cargo cell
 uniata: linked by cmake, not a cargo cell
 usbhub3: linked by cmake, not a cargo cell
-usbxhci: linked by cmake, not a cargo cell
 uxtheme: linked by cmake, not a cargo cell
 wdf01000: linked by cmake, not a cargo cell
 wdmaud.drv: linked by cmake, not a cargo cell
