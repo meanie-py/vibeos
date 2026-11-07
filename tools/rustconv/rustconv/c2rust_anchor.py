@@ -278,6 +278,10 @@ _ATTR_NEUTRALIZERS = (
     # `__break(0xf001)` on arm64, and arm64's KeMemoryBarrier-style publishes use `__dsb`.
     # These keep their own spelling after the round trip.
     *(f"-D{name}={_INTRINSIC_PREFIX}{name}" for name in ("__int2c", "__break", "__dsb")),
+    # The spin-wait hint: winnt_old.h's `YieldProcessor` is `_mm_pause` on x86 and `__yield` on
+    # arm64. c2rust has no lowering for either ("Unimplemented builtin _mm_pause"), which made
+    # wined3d's command-stream loop `wined3d_cs_run` unanchorable.
+    *(f"-D{name}={_INTRINSIC_PREFIX}{name}" for name in ("_mm_pause", "__yield")),
 )
 
 #: PSEH overrides, tried in order. Both are behaviour-identical to the inert dummy
@@ -1014,6 +1018,12 @@ def fold_static_initializers(text: str, blocks: list[str]) -> list[str]:
                 rf"^((?:\s*#\[[^\]]*\])*\s*(?:pub\s+)?static(?:\s+mut)?\s+{a.group(1)}\s*:[^=]*=)"
             )
         hit = [k for k, b in enumerate(blocks) if sig is not None and sig.match(b)]
+        if a is not None and not hit and _dropped_header_static(a.group(1), text):
+            # A header's `static const` this TU never names (wined3d_private.h's
+            # COLOR_FIXUP_IDENTITY in 25 of 29 TUs): the preamble kept no block for it
+            # (`_is_own_data`), so there is nothing here to initialise. A TU that does name it
+            # keeps the block, and folds the initialiser below.
+            continue
         if a is None or len(hit) != 1:
             raise C2RustError(
                 "c2rust initialises a static at startup in a shape with no static spelling: "
@@ -1021,8 +1031,96 @@ def fold_static_initializers(text: str, blocks: list[str]) -> list[str]:
             )
         k = hit[0]
         head = sig.match(blocks[k]).group(1)  # type: ignore[union-attr]
-        blocks[k] = f"{head} {a.group(2).strip()};"
+        expr = a.group(2).strip()
+        if _BITFIELD_BUILDER_RE.match(expr):
+            expr = _fold_bitfield_builder(expr, text)
+        blocks[k] = f"{head} {expr};"
     return blocks
+
+
+def _dropped_header_static(name: str, text: str) -> bool:
+    """c2rust emitted `static NAME` itself (so it is real data the preamble chose to drop)."""
+    return (
+        re.search(rf"(?m)^\s*(?:pub\s+)?static(?:\s+mut)?\s+{re.escape(name)}\s*:", text)
+        is not None
+    )
+
+
+# c2rust builds a C bitfield struct's initialiser with `c2rust_bitfields` setters, which are not
+# `const fn`, so a static of one is filled at startup (wined3d_private.h's
+# `static const struct color_fixup_desc COLOR_FIXUP_IDENTITY = {0, CHANNEL_SOURCE_X, ...}`,
+# included by 26 of wined3d's 29 TUs):
+#     X = { let mut init = color_fixup_desc { x_sign_..._w_source: [0; 2], };
+#           init.set_x_source(CHANNEL_SOURCE_X as c_int as c_ushort); ...; init };
+_BITFIELD_BUILDER_RE = re.compile(
+    r"\{\s*let mut init = (\w+) \{\s*(\w+):\s*\[0;\s*(\d+)\],?\s*\};(.*)\binit\s*\}\Z", re.S
+)
+_BITFIELD_ATTR_RE = re.compile(
+    r'#\[bitfield\(name = "(\w+)", ty = "[^"]*", bits = "(\d+)\.\.=(\d+)"\)\]'
+)
+_INT_CONST_RE = (
+    r"(?m)^\s*(?:pub\s+)?const\s+{name}\s*:\s*[\w:]+\s*=\s*(-?(?:0x[0-9A-Fa-f]+|\d+))\s*;"
+)
+_INT_LIT_RE = re.compile(r"(-?)(0x[0-9A-Fa-f]+|\d+)(?:_?[iu](?:8|16|32|64|128|size))?\Z")
+
+
+def _bitfield_value(expr: str, text: str) -> int | None:
+    """An integer literal or a c2rust integer `const`, through any chain of `as` casts."""
+    expr = re.sub(r"\s+as\s+[\w:]+", "", expr).strip()
+    while expr.startswith("(") and expr.endswith(")"):
+        expr = expr[1:-1].strip()
+    m = _INT_LIT_RE.match(expr)
+    if m is None and re.fullmatch(r"[A-Za-z_]\w*", expr):
+        c = re.search(_INT_CONST_RE.format(name=re.escape(expr)), text)
+        m = _INT_LIT_RE.match(c.group(1)) if c else None
+    if m is None:
+        return None
+    return -int(m.group(2), 0) if m.group(1) else int(m.group(2), 0)
+
+
+def _fold_bitfield_builder(expr: str, text: str) -> str:
+    """Pack the setter calls into the struct's bytes at transpile time.
+
+    The bits come from the struct's own `#[bitfield(.., bits = "a..=b")]` attributes, numbered
+    LSB-first over the little-endian storage array -- c2rust_bitfields' layout and clang's on
+    all three of our targets. A value is masked to its field width, as C's bitfield store is.
+    The result is spelled `transmute::<[u8; N], T>`, which is const and which fails to COMPILE
+    if the island's type is a different size, so it is right for c2rust's struct and bindgen's
+    `_bitfield_1` alike. Any setter argument that is not an integer constant is refused.
+    """
+    m = _BITFIELD_BUILDER_RE.match(expr)
+    assert m is not None
+    ty, storage, nbytes, body = m.group(1), m.group(2), int(m.group(3)), m.group(4)
+    struct = re.search(rf"(?s)pub struct {re.escape(ty)} \{{(.*?)\n\}}", text)
+    bits = (
+        {name: (int(lo), int(hi)) for name, lo, hi in _BITFIELD_ATTR_RE.findall(struct.group(1))}
+        if struct
+        else {}
+    )
+    fields = (
+        re.findall(rf"\b{re.escape(storage)}\s*:\s*\[u8;\s*(\d+)\]", struct.group(1))
+        if struct
+        else []
+    )
+    if not bits or fields != [str(nbytes)]:
+        raise C2RustError(
+            f"bitfield static of `{ty}`: its struct is not one `{storage}: [u8; {nbytes}]` storage "
+            "unit with #[bitfield] attributes -- hand-port this initialiser"
+        )
+    word = 0
+    for stmt in _top_level_statements(body):
+        s = re.fullmatch(r"init\.set_(\w+)\((.*)\)", stmt, re.S)
+        value = _bitfield_value(s.group(2), text) if s else None
+        if s is None or s.group(1) not in bits or value is None:
+            raise C2RustError(
+                f"bitfield static of `{ty}`: `{stmt[:120]}` is not a setter with a constant "
+                "argument -- hand-port this initialiser"
+            )
+        lo, hi = bits[s.group(1)]
+        mask = (1 << (hi - lo + 1)) - 1
+        word = (word & ~(mask << lo)) | ((value & mask) << lo)
+    data = ", ".join(f"0x{b:02x}" for b in word.to_bytes(nbytes, "little"))
+    return f"unsafe {{ ::core::mem::transmute::<[u8; {nbytes}], {ty}>([{data}]) }}"
 
 
 # c2rust spells a file-scope `L"Arial,186"` as `transmute::<[u8; 20], [c_ushort; 10]>(*b"A\0r\0…")
