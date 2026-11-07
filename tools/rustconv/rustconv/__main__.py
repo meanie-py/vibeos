@@ -163,6 +163,7 @@ from .outcome_ledger import OutcomeLedger
 from .placement_audit import placement_findings
 from .postprocess import postprocess
 from .preamble_audit import audit_preamble, extern_only_names, strip_static_definitions
+from .preamble_trim import omit_c2rust_data
 from .probe_migrate import (
     build_probe_file_prompt,
     load_probe_system_prompt,
@@ -177,6 +178,7 @@ from .prompt_builder import (
     estimate_tokens,
     load_system_prompt,
 )
+from .reserved_idents import raw_reserved_keywords
 from .resolver import print_resolve_result, resolve
 from .resolver import resolve as file_resolve
 from .response_cache import (
@@ -215,6 +217,19 @@ from .wide_seal import (
 _VTBL_STATIC_RE = re.compile(
     r"^\s*(?:pub\s+)?static(?:\s+mut)?\s+[A-Za-z_]\w*\s*:\s*[A-Za-z_]\w*Vtbl\b",
 )
+
+
+def _c2rust_trimmed_preamble(preamble_src: str, c2rust_preamble: str) -> tuple[str, list[str]]:
+    """The preamble C to PROMPT with: minus the data c2rust supplies exactly (preamble_trim)."""
+    if not c2rust_preamble.strip():
+        return preamble_src, []
+    names = set(
+        re.findall(
+            r"\b(?:static(?:\s+mut)?|const)\s+([A-Za-z_]\w*)\s*:",
+            _strip_vtbl_statics(c2rust_preamble),
+        )
+    )
+    return omit_c2rust_data(preamble_src, names)
 
 
 def _strip_vtbl_statics(rust: str) -> str:
@@ -1070,6 +1085,8 @@ def _unseal_worker(
     rust = restore_requested_name(scrub_comment_token_echoes(rust), dep.name)
     # A UTF-8 C narrow literal copied into `b"..."` does not parse; its bytes do.
     rust = escape_nonascii_byte_strings(rust)
+    # wine's `priv` (a reserved Rust keyword) as a parameter or local does not parse.
+    rust = raw_reserved_keywords(rust)
     # Sealed tokens the model omitted that live only in code the build never executes
     # (`#if`-disabled arms, DUMMY_PSEH except-blocks). Accepted, but printed: relaxing a
     # guarantee silently is the failure mode sealing exists to prevent (dead_regions.py).
@@ -4674,15 +4691,46 @@ def cmd_translate(args):
                 "  [preamble] function-like macros only — nothing to translate ($0)",
                 file=sys.stderr,
             )
+        elif (
+            preamble_src
+            and not capped
+            and not _preamble_has_translatable_content(
+                _c2rust_trimmed_preamble(preamble_src, c2rust_preamble)[0], scan.raw_source
+            )
+        ):
+            # Every file-scope item is c2rust's exact data, which is prepended below.
+            _record_preamble(preamble_src, "c2rust_only", stage="skipped")
+            print("  [preamble] all file-scope data is c2rust's exact copy ($0)", file=sys.stderr)
         elif preamble_src and not capped:
+            prompt_src, omitted = _c2rust_trimmed_preamble(preamble_src, c2rust_preamble)
+            if omitted:
+                # The prompt leaves out what c2rust supplies (preamble_trim.py). The bank
+                # stays keyed by the FULL text; wide-seal names are content hashes, so the
+                # full text's seal on a later cache hit is a superset of this one.
+                print(
+                    f"  [preamble] {len(omitted)} c2rust data item(s) left out of the prompt "
+                    f"({len(preamble_src)} -> {len(prompt_src)} C chars)",
+                    file=sys.stderr,
+                )
+                preamble_wide_seal = (
+                    seal_wide_literals(
+                        prompt_src, string_literal_macros(REACTOS_ROOT, c_file.resolve())
+                    )
+                    if wide_seal_enabled
+                    else None
+                )
             print(
-                f"  [preamble] {len(preamble_src)} C chars...", file=sys.stderr, end=" ", flush=True
+                f"  [preamble] {len(prompt_src)} C chars...", file=sys.stderr, end=" ", flush=True
             )
             pre_prompt = build_preamble_prompt(
                 scan,
                 file_res,
                 target=rustconv_target,
-                sealed_c=None if preamble_wide_seal is None else preamble_wide_seal.text,
+                sealed_c=(
+                    preamble_wide_seal.text
+                    if preamble_wide_seal is not None
+                    else (prompt_src if omitted else None)
+                ),
                 extra_contract=(
                     "" if preamble_wide_seal is None else wide_contract(preamble_wide_seal)
                 ),
