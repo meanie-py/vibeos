@@ -160,7 +160,15 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         // its compile definitions was carried as one and doubled.
         let mut moved = false;
         if target && cmd == "add_importlibs" {
-            usage.extend(a.iter().skip(1).map(|x| format!("lib{x}")));
+            // `${_forward_targets}` is a list: `lib${_forward_targets}` would prefix only its
+            // first element (d3dx10's forwarders). Import libs carry no usage requirements
+            // for a list to lose, so skip variables as target_link_libraries does.
+            usage.extend(
+                a.iter()
+                    .skip(1)
+                    .filter(|x| !x.starts_with("${"))
+                    .map(|x| format!("lib{x}")),
+            );
         }
         if target && cmd == "target_link_libraries" {
             usage.extend(

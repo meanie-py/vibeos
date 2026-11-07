@@ -1621,6 +1621,22 @@ def test_a_comment_inside_a_moved_statement_is_not_carried_as_a_dead_source(tmp_
     assert "kept on disk" not in out
 
 
+def test_a_list_variable_of_import_libs_is_not_prefixed_as_one_lib(tmp_path):
+    """d3dx10's forwarders import `${_forward_targets}`, a list; `lib${_forward_targets}`
+    prefixed only its first element and left the rest naming the (now cargo) modules."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m win32dll)\n"
+        "add_importlibs(m ${_fwd} msvcrt kernel32)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "lib${_fwd}" not in out
+    assert "libmsvcrt libkernel32" in out
+
+
 def test_an_object_in_a_subdirectory_maps_to_that_subdirectorys_source():
     d = Path("/r/dll/win32/crypt32")
     obj = "dll/win32/crypt32/CMakeFiles/crypt32.dir/reactos/unixlib.c.obj"
