@@ -7742,6 +7742,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "setup-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "setup16-cargo"
 version = "0.1.0"
 dependencies = [

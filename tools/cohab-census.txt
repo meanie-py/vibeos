@@ -481,6 +481,7 @@ base/setup/lib/CMakeLists.txt	1	# bootcode.c # replaced by Rust (sdk/lib/rust/se
 base/setup/lib/CMakeLists.txt	1	# bootsup.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/bootsup.rs)
 base/setup/lib/CMakeLists.txt	1	# fsutil.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/fsutil.rs)
 base/setup/lib/CMakeLists.txt	1	# install.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/install.rs)
+base/setup/lib/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/main.rs)
 base/setup/lib/CMakeLists.txt	1	# mui.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/mui.rs)
 base/setup/lib/CMakeLists.txt	1	# registry.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/registry.rs)
 base/setup/lib/CMakeLists.txt	1	# settings.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/settings.rs)
@@ -504,6 +505,8 @@ base/setup/reactos/CMakeLists.txt	1	# drivepage.c # replaced by Rust (sdk/lib/ru
 base/setup/reactos/CMakeLists.txt	1	# reactos.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/reactos.rs)
 base/setup/reactos/CMakeLists.txt	1	# spapisup/fileqsup.c # replaced by Rust (sdk/lib/rust/spapisup-rust: usetup's cabinet.c + fileqsup.c, which it #includes)
 base/setup/reactos/CMakeLists.txt	1	# spapisup/infsupp.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/infsupp.rs)
+base/setup/setup/CMakeLists.txt	1	# The translated C stays on disk; only rust_cohab_stub.c is compiled, in the OBJECT library the cargo
+base/setup/setup/CMakeLists.txt	1	# setup.c # replaced by Rust (sdk/lib/rust/setup-rust/src/setup/setup.rs)
 base/setup/usetup/CMakeLists.txt	1	# cmdcons.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/cmdcons.rs)
 base/setup/usetup/CMakeLists.txt	1	# console.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/console.rs)
 base/setup/usetup/CMakeLists.txt	1	# consup.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/consup.rs)
