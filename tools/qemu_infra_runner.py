@@ -53,7 +53,8 @@ class Bindings:
             self.run.classification = arguments["classification"]
         if "verdict" in arguments:
             self.run.verdict = arguments["verdict"]
-        self.run.extra.update(arguments.get("extra", {}))
+        if "extra" in arguments:
+            self.run.extra.update(arguments["extra"])
         return self.state()
 
     def finalize(self, arguments):
@@ -71,8 +72,8 @@ class Bindings:
         )
         return {
             "returncode": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
+            "stdout": getattr(result, "stdout", "") or "",
+            "stderr": getattr(result, "stderr", "") or "",
             "timed_out": getattr(result, "timed_out", False),
         }
 

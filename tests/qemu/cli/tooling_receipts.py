@@ -1,452 +1,169 @@
-"""Content receipts for tooling checks with declared source/generated/tool inputs.
+"""Compatibility DTOs for the native content-receipt store.
 
-Receipts contain successful output only. The whole session holds a lock for its
-input identity, and publishes only after a second content fingerprint. Generated
-headers belong to this checkout; neither cache lookup nor publication reads a
-sibling's mutable build artifacts.
+Python supplies interpreter/package discovery facts. Rust fingerprints the bytes,
+checks declared inputs and owns locks, reuse, validation and atomic publication.
 """
 
 from __future__ import annotations
 
-import fcntl
-import hashlib
 import importlib.metadata
-import json
 import os
 import platform
 import shutil
-import stat
 import subprocess
 import sys
-import threading
-import time
-from collections.abc import Callable
 from pathlib import Path
 
-Result = tuple[str, bool, str]
-_VERSION = 1
+from tools import build_infra_compat as native
+
 _MAX_AGE = 24 * 3600
-# These exercise real runtime admission/process behavior or live object files.
-_LIVE = {
-    "pytest:tests/qemu/cli/test_portlease.py",
-    "pytest:tools/test_host_jobs.py",
-    # Native generator tests inspect local tools or mutable compiler artifacts.
-    "pytest:tools/test_gen_ctype_tables.py",
-    "pytest:tools/test_compiler_codegen.py",
-    "pytest:tools/test_marshal_codegen.py",
-    "pytest:tools/wow64gen/test_wow64gen.py",
-    "pytest:tools/test_verify_ucrtbase_cohab.py",
-    "pytest:tools/test_tooling_receipts.py",
-    # These compile temporary projects using mutable external Cargo registry/sysroot inputs.
-    "pytest:tools/test_build_invalidation.py",
-    "pytest:tools/test_cargo_link_context.py",
-    "pytest:tools/test_nested_cargo_deps.py",
-    "pytest:tools/test_bindgen_generation.py",
-}
-# Checks whose inputs include THIS checkout's generated build output (build-<arch>/
-# compile_commands.json, generated SDK headers). They cannot run in a tree without builds.
-GENERATED_INPUT_CHECKS = frozenset(
-    {"pytest:tools/rustconv/tests", "pytest:tools/test_compiler_codegen.py"}
-)
-# Audited source/fixture suites. Adding a suite to the runner does not establish
-# its input contract: new suites run live until explicitly reviewed here.
-_AUDITED_PYTEST = {
-    "pytest:tests/qemu/cli",
-    "pytest:tools/fex/test_wow64_closure.py",
-    "pytest:tools/rustconv/tests",
-    "pytest:tools/test_cargo_depgraph.py",
-    "pytest:tools/test_conformance_probe.py",
-    "pytest:tools/test_export_census.py",
-    "pytest:tools/test_gate_source_partitions.py",
-    "pytest:tools/test_hostdisk.py",
-    "pytest:tools/test_kernel_probe.py",
-    "pytest:tools/test_link_guard.py",
-    "pytest:tools/test_link_pulls.py",
-    "pytest:tools/test_ninja_closure_prune.py",
-    "pytest:tools/test_lint_facts.py",
-    "pytest:tools/test_migrate_debug_assert.py",
-    "pytest:tools/test_retarget_cargo_depfile.py",
-    "pytest:tools/test_rust_module_tree.py",
-    "pytest:tools/test_rust_warning_census.py",
-    "pytest:tools/test_scan_arg_side_effects.py",
-    "pytest:tools/test_scan_byte_step_one.py",
-    "pytest:tools/test_scan_call_literal_vs_c.py",
-    "pytest:tools/test_scan_calloc_elem_type.py",
-    "pytest:tools/test_scan_dropped_asserts.py",
-    "pytest:tools/test_scan_formatless_printf.py",
-    "pytest:tools/test_scan_fourcc_literals.py",
-    "pytest:tools/test_scan_match_arm_break.py",
-    "pytest:tools/test_scan_import_cc.py",
-    "pytest:tools/test_scan_invented_constants.py",
-    "pytest:tools/test_scan_octal_literals.py",
-    "pytest:tools/test_scan_ptr_highword_mask.py",
-    "pytest:tools/test_scan_ptr_typedef_cast_read.py",
-    "pytest:tools/test_scan_raw_uart_writes.py",
-    "pytest:tools/test_scan_res_named_types.py",
-    "pytest:tools/test_scan_bindgen_padding_index.py",
-    "pytest:tools/test_scan_extern_static_width.py",
-    "pytest:tools/test_ramdisk_tree.py",
-    "pytest:tools/test_scan_const_vs_island.py",
-    "pytest:tools/test_cohab_census.py",
-    "pytest:tools/test_scan_orphan_modules.py",
-    "pytest:tools/test_scan_varargs_spec_arity.py",
-    "pytest:tools/test_scan_assert_polarity.py",
-    "pytest:tools/test_scan_wide_literals.py",
-    "pytest:tools/test_scanner_controls.py",
-    "pytest:tools/test_source_walk.py",
-    "pytest:tools/test_vendored.py",
-    "pytest:tools/test_verify_c_signatures.py",
-    "pytest:tools/test_verify_lost_exports.py",
-    "pytest:tools/test_verify_translation_literals.py",
-}
-_TOOLS = ("git", "rustc", "cargo", "cmake", "ninja", "cc", "c++", "clang", "ar", "objdump", "node")
-_VOLATILE_ENV = {
-    "PWD",
-    "OLDPWD",
-    "SHLVL",
-    "_",
-    "VIBEOS_JOB_OWNER_PID",
-    "VIBEOS_JOB_RUN",
-    "VIBEOS_JOB_LAUNCHER_PID",
-    "VIBEOS_JOB_CLASS",
-    "VIBEOS_JOB_REPO",
-    "VIBEOS_ARTIFACT_ROOT",
-}
 
 
-def eligibility(label: str) -> bool:
-    """Only explicitly audited input contracts are eligible; new suites run live."""
-    if label in _LIVE:
-        return False
-    if label.startswith(("ruff:", "fmt:", "pyright:")) or label == "generated:ddk_enum_constants":
-        return True
-    return label in _AUDITED_PYTEST
-
-
-def _digest(value: object) -> str:
-    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
-
-
-def _file(path: Path) -> tuple[int, str]:
+def _call(op, **kwargs):
     try:
-        mode = path.lstat().st_mode
-        if stat.S_ISLNK(mode):
-            resolved = path.resolve()
-            if resolved.is_dir():
-                raise RuntimeError(
-                    f"Tooling receipt input {path} is a directory symlink. "
-                    "Use a real checkout-local input directory before caching tooling checks."
-                )
-            return mode, _digest([os.readlink(path), _file(resolved)])
-        if not stat.S_ISREG(mode):
-            return mode, "directory" if path.is_dir() else "special"
-        digest = hashlib.sha256()
-        with path.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                digest.update(chunk)
-        return mode, digest.hexdigest()
-    except FileNotFoundError:
-        return 0, "missing"
+        return native.call("tooling_receipts_" + op, kwargs)
+    except native.NativeError as error:
+        raise RuntimeError(str(error)) from error
 
 
-def _tree(root: Path) -> list[tuple[str, tuple[int, str]]]:
-    """Walk one explicitly declared generated/package tree, never build siblings."""
-    for parent in root.parents:
-        if parent.is_symlink():
-            _file(parent)  # A symlinked build root must not expose sibling headers either.
-    result = [(".", _file(root))]
-    if result[0][1][1] == "missing":
-        return result
-
-    def fail(error: OSError) -> None:
-        raise error
-
-    for directory, dirs, files in os.walk(root, onerror=fail):
-        for name in dirs:
-            path = Path(directory) / name
-            if path.is_symlink():
-                _file(path)  # Reject a directory symlink before os.walk silently skips it.
-        dirs[:] = sorted(d for d in dirs if d != "__pycache__")
-        for name in sorted(files):
-            if name.endswith((".pyc", ".pyo")):
-                continue
-            path = Path(directory) / name
-            result.append((str(path.relative_to(root)), _file(path)))
-    return result
+_POLICY = _call("policy")
+GENERATED_INPUT_CHECKS = frozenset(_POLICY["GENERATED_INPUT_CHECKS"])
 
 
-def source_identity(repo: Path) -> str:
-    tracked = subprocess.check_output(["git", "ls-files", "-z"], cwd=repo).split(b"\0")
-    untracked = subprocess.check_output(
-        ["git", "ls-files", "--others", "--exclude-standard", "-z"], cwd=repo
-    ).split(b"\0")
-    names = {os.fsdecode(name) for name in tracked if name}
-    # User handoff notes do not affect checks; untracked executable/source/config
-    # inputs do, even before git add. Tracked documentation is still included.
-    names.update(os.fsdecode(name) for name in untracked if name and not name.endswith(b".md"))
-    return _digest([(name, _file(repo / name)) for name in sorted(names)])
+def eligibility(label):
+    return _call("eligible", label=label)
 
 
-def runtime_identity(repo: Path) -> str:
-    def normalize(value: str) -> str:
-        return value.replace(str(repo), "<repo>")
+def _file(path):
+    return _call("file", path=path)
 
-    env = {key: normalize(value) for key, value in os.environ.items() if key not in _VOLATILE_ENV}
-    tools = []
-    for name in (
-        *_TOOLS,
+
+def _tree(path):
+    return _call("tree", path=path)
+
+
+def source_identity(repo):
+    return _call("source", repo=repo)
+
+
+def generated_identity(repo):
+    return _call("generated", repo=repo)
+
+
+def runtime_identity(repo):
+    # These are discovery facts provided by the interpreter being tested; all
+    # content hashing, environment filtering and normalization is native.
+    files = []
+    trees = []
+    facts = {
+        "python": sys.version,
+        "packages": [],
+        "system": [
+            platform.platform(),
+            platform.machine(),
+            os.cpu_count(),
+            sorted(os.sched_getaffinity(0)),
+        ],
+    }
+    for name in [
+        *_POLICY["_TOOLS"],
         str(Path(sys.executable).parent / "ruff"),
         str(Path(sys.executable).parent / "pyright"),
-    ):
-        found = shutil.which(name)
-        tools.append((name, _file(Path(found)) if found else None))
-    # rustup proxies do not identify the compiler; include the selected binaries.
+    ]:
+        files.append([name, shutil.which(name)])
     rustup = shutil.which("rustup")
     if rustup:
+        selected = {}
         for name in ("rustc", "cargo"):
-            proc = subprocess.run([rustup, "which", name], cwd=repo, capture_output=True, text=True)
-            tools.append(
-                (
-                    f"selected:{name}",
-                    _file(Path(proc.stdout.strip())) if proc.returncode == 0 else proc.stderr,
-                )
+            proc = subprocess.run(
+                [rustup, "which", name], cwd=repo, capture_output=True, text=True, check=False
             )
-    if rustup:
-        proc = subprocess.run([rustup, "which", "rustc"], cwd=repo, capture_output=True, text=True)
-        if proc.returncode == 0:
-            sysroot = Path(proc.stdout.strip()).parent.parent
-            # rustc itself is a small loader; its driver and host std libraries
-            # are executable test inputs too. Exclude unrelated cross targets.
-            tools.append(
-                (
-                    "rustc-shared-libraries",
-                    [
-                        (str(path.relative_to(sysroot)), _file(path))
-                        for path in sorted((sysroot / "lib").glob("*.so*"))
-                    ],
-                )
-            )
-            target = subprocess.check_output([str(sysroot / "bin/rustc"), "-vV"], text=True)
+            if proc.returncode == 0:
+                selected[name] = Path(proc.stdout.strip())
+                files.append(["selected:" + name, str(selected[name])])
+            else:
+                facts["selected:" + name] = proc.stderr
+        if "rustc" in selected:
+            sysroot = selected["rustc"].parent.parent
+            for p in sorted((sysroot / "lib").glob("*.so*")):
+                files.append(["rustc-shared:" + str(p.relative_to(sysroot)), str(p)])
+            output = subprocess.check_output([str(selected["rustc"]), "-vV"], text=True)
             host = next(
-                line.removeprefix("host: ")
-                for line in target.splitlines()
-                if line.startswith("host: ")
+                s.removeprefix("host: ") for s in output.splitlines() if s.startswith("host: ")
             )
-            tools.append(("rustc-host-sysroot", _tree(sysroot / "lib/rustlib" / host / "lib")))
+            trees.append(["rustc-host-sysroot", str(sysroot / "lib/rustlib" / host / "lib")])
     packages = []
     for dist in importlib.metadata.distributions():
-        files = []
-        for entry in dist.files or []:
-            # RECORD alone cannot detect an in-place edit of an installed module.
-            if str(entry).endswith((".pyc", ".pyo")):
-                continue
-            files.append((str(entry), _file(Path(str(dist.locate_file(entry))))))
-        packages.append((dist.metadata["Name"], dist.version, sorted(files)))
+        name = dist.metadata["Name"]
+        version = dist.version
+        packages.append([name, version])
+        for entry in sorted(dist.files or []):
+            if not str(entry).endswith((".pyc", ".pyo")):
+                files.append([f"package:{name}:{version}:{entry}", str(dist.locate_file(entry))])
+    facts["packages"] = sorted(packages)
+    files.append(["python", sys.executable])
     cargo_home = Path(os.environ.get("CARGO_HOME", str(Path.home() / ".cargo")))
-    configs = [
-        (str(cargo_home / name), _file(cargo_home / name)) for name in ("config", "config.toml")
-    ]
-    return _digest(
-        {
-            "environment": env,
-            "python": [sys.version, _file(Path(sys.executable))],
-            "packages": sorted(packages),
-            "tools": tools,
-            "configs": configs,
-            "system": [
-                platform.platform(),
-                platform.machine(),
-                os.cpu_count(),
-                sorted(os.sched_getaffinity(0)),
-            ],
-        }
-    )
-
-
-def generated_identity(repo: Path) -> str:
-    # cpp_com resolves generated WIDL interfaces and their include closure. Hash
-    # complete include trees, including absence, rather than guess leaf headers.
-    return _digest(
-        [
-            (arch, _tree(repo / f"build-{arch}" / "sdk" / "include"))
-            for arch in ("i386", "amd64", "arm64")
-        ]
-    )
+    for name in ("config", "config.toml"):
+        files.append([str(cargo_home / name), str(cargo_home / name)])
+    return _call("runtime", repo=repo, env=dict(os.environ), files=files, trees=trees, facts=facts)
 
 
 class ReceiptSession:
-    """One check-tooling invocation; call finish even when a check fails.
-
-    Use as a context manager so exceptions release the lock without publishing.
-    ``run`` is thread-safe and preserves the existing tooling result tuple.
-    """
-
-    def __init__(self, repo: Path):
+    def __init__(self, repo):
         self.repo = repo.resolve()
-        common = subprocess.check_output(
-            ["git", "rev-parse", "--git-common-dir"], cwd=repo, text=True
-        ).strip()
-        self.root = (repo / common).resolve() / "vibeos-tooling-receipts"
-        self.root.mkdir(parents=True, exist_ok=True)
-        self.before = self._identity()
-        self.generated_before = generated_identity(self.repo)
-        self.generated_checked: str | None = None
-        self.key = _digest([_VERSION, self.before])
-        self.lock = (self.root / f"{self.key}.lock").open("a")
-        fcntl.flock(self.lock, fcntl.LOCK_EX)
-        self.pending: dict[str, Result] = {}
-        self.generated_keys: set[str] = set()
-        self.hits: set[str] = set()
-        # Generated-input hits the caller re-ran because the headers moved under them.
-        self.rerun: set[str] = set()
-        self.guard = threading.Lock()
         self.closed = False
-
-    def _identity(self) -> tuple[str, str]:
-        return source_identity(self.repo), runtime_identity(self.repo)
-
-    def run(
-        self,
-        label: str,
-        cmd: list[str],
-        compute: Callable[[], Result],
-        *,
-        cwd: Path | None = None,
-        env_pp: str | None = None,
-    ) -> Result:
-        if not eligibility(label):
-            return compute()
-
-        def normalize(value: object) -> str:
-            return str(value).replace(str(self.repo), "<repo>")
-
-        generated = self.generated_before if label in GENERATED_INPUT_CHECKS else None
-        key = _digest(
-            [
-                self.key,
-                label,
-                [normalize(arg) for arg in cmd],
-                normalize(cwd or self.repo),
-                env_pp,
-                generated,
-            ]
-        )
-        if generated is not None:
-            with self.guard:
-                self.generated_keys.add(key)
-        path = self.root / f"{key}.json"
-        if path.exists():
-            try:
-                data = json.loads(path.read_text())
-                if (
-                    data["version"] != _VERSION
-                    or data["key"] != key
-                    or data["label"] != label
-                    or data["ok"] is not True
-                    or not isinstance(data["output"], str)
-                    or not isinstance(data["created"], (int, float))
-                ):
-                    raise ValueError("invalid receipt fields")
-            except (ValueError, KeyError, TypeError) as error:
-                raise RuntimeError(f"Corrupt tooling receipt {path}: {error}") from error
-            if 0 <= time.time() - data["created"] < _MAX_AGE:
-                with self.guard:
-                    self.hits.add(label)
-                return label, True, data["output"]
-        result = compute()
-        if result[1]:
-            with self.guard:
-                self.pending[key] = result
-        return result
-
-    def stale_generated_hits(self) -> set[str]:
-        """Reused results keyed on generated headers that have changed since the session
-        began. A gate's own builds regenerate `build-*/sdk/include` while check-tooling
-        runs, so a receipt that was valid at the start describes headers the gate no
-        longer has. Rerun these (and call `mark_rerun`) rather than reporting a failure:
-        a fresh run is what the same tree gets when no receipt exists, so failing here
-        rejected a lane resubmitted unchanged after a halted train (shell32-com
-        b20d7379364c) while its base-only regate, with no receipt, passed."""
-        generated = self.hits & GENERATED_INPUT_CHECKS
-        self.generated_checked = generated_identity(self.repo)
-        if generated and self.generated_checked != self.generated_before:
-            return generated
-        return set()
-
-    def mark_rerun(self, label: str) -> None:
-        with self.guard:
-            self.rerun.add(label)
-            self.hits.discard(label)
-
-    def finish(self) -> None:
+        self.rerun = set()
+        self._session = native.DedicatedSession("--api-jsonl")
         try:
-            if self._identity() != self.before:
-                # Name the usual cause, because the message alone reads as a
-                # mysterious infrastructure failure and is not one. It fires
-                # ~always for the same reason: the checks were started in the
-                # BACKGROUND and their caller kept editing (or committing) while
-                # they ran. Three aborted land submissions in one session, same
-                # cause each time, before anyone wrote this sentence down.
-                raise RuntimeError(
-                    "Tooling inputs changed during checks; no receipts published. "
-                    "Rerun check-tooling. Usual cause: files were edited or "
-                    "committed WHILE these checks ran — run `land`/`check-tooling` "
-                    "in the foreground and make no edits until it returns."
-                )
-            generated_changed = generated_identity(self.repo) != self.generated_before
-            # A hit that `stale_generated_hits` re-validated after every check had
-            # finished is as current as a live run finishing then: headers the gate's
-            # builds rewrite AFTER that moment are newer than any live result too.
-            # Raising here anyway failed a green 62-minute gate between the two
-            # hashes (integration batch 4+5, 2026-10-17). Its receipt is still not
-            # published (generated_keys below), so the cache stays strict.
-            validated = self.generated_checked == self.generated_before
-            if generated_changed and not validated and "pytest:tools/rustconv/tests" in self.hits:
-                raise RuntimeError(
-                    "Generated tooling inputs changed after receipt reuse; rerun check-tooling."
-                )
-            for key, (label, ok, output) in self.pending.items():
-                if generated_changed and key in self.generated_keys:
-                    continue
-                path = self.root / f"{key}.json"
-                temp = path.with_suffix(f".{os.getpid()}.tmp")
-                temp.write_text(
-                    json.dumps(
-                        {
-                            "version": _VERSION,
-                            "key": key,
-                            "label": label,
-                            "ok": ok,
-                            "output": output,
-                            "created": time.time(),
-                        }
-                    )
-                )
-                os.replace(temp, path)
-            self._prune()
+            result = self._request("begin", repo=self.repo, identity=self._identity())
+            self.root = Path(result["root"])
+            self.key = result["key"]
+        except BaseException:
+            self.close()
+            raise
+
+    def _request(self, op, **kwargs):
+        try:
+            return self._session.call("tooling_receipts_" + op, kwargs)
+        except native.NativeError as error:
+            raise RuntimeError(str(error)) from error
+
+    def _identity(self):
+        return [source_identity(self.repo), runtime_identity(self.repo)]
+
+    @property
+    def hits(self):
+        return self._final_hits if hasattr(self, "_final_hits") else set(self._request("hits"))
+
+    def run(self, label, cmd, compute, *, cwd=None, env_pp=None):
+        result = self._request("lookup", label=label, cmd=cmd, cwd=cwd or self.repo, env_pp=env_pp)
+        if "result" in result:
+            return tuple(result["result"])
+        value = compute()
+        if result["eligible"]:
+            self._request("put", key=result["key"], result=value)
+        return value
+
+    def stale_generated_hits(self):
+        return set(self._request("stale"))
+
+    def mark_rerun(self, label):
+        self.rerun.add(label)
+        self._request("rerun", label=label)
+
+    def finish(self):
+        try:
+            self._final_hits = set(self._request("finish", identity=self._identity())["hits"])
         finally:
             self.close()
 
-    def _prune(self) -> None:
-        """Drop receipts past _MAX_AGE. The key covers every tracked file, so each
-        commit mints a fresh set and none is ever read again; nothing removed them
-        and the store reached 90,882 files / 358 MB (2026-10-09). A stale receipt is
-        already refused on read, so this changes nothing but the directory size."""
-        cutoff = time.time() - _MAX_AGE
-        for path in self.root.glob("*.json"):
-            try:
-                if path.stat().st_mtime < cutoff:
-                    path.unlink()
-            except OSError:
-                pass
-
-    def close(self) -> None:
+    def close(self):
         if not self.closed:
-            self.lock.close()
             self.closed = True
+            self._session.close()
 
-    def __enter__(self) -> ReceiptSession:
+    def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
+    def __exit__(self, *_):
         self.close()

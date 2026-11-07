@@ -90,6 +90,11 @@ fn api(root: &Path, r: &Value) -> Result<Value> {
             request["op"] = json!(s.trim_start_matches("payload_closure_"));
             b::payload_closure::dispatch(root, &request)
         }
+        s if s.starts_with("tooling_receipts_") => b::tooling_receipts::dispatch(root, r),
+        s if s.starts_with("cli_canon_") => b::cli_canon::dispatch(root, r),
+        s if s.starts_with("cli_build_check_") => b::cli_build_checks::dispatch(root, r),
+        s if s.starts_with("cli_arguments_") => b::cli_arguments::dispatch(r),
+        s if s.starts_with("cli_artifacts_") => b::cli_artifacts::dispatch(root, r),
         s if s.starts_with("cargo_orchestrate_") => b::cargo_orchestrate::dispatch(root, r),
         "cargo_local_closure" => Ok(serde_json::to_value(b::cargo::local_closure(
             &required("metadata")?,
@@ -310,6 +315,9 @@ fn run() -> Result<u8> {
             return Err("native media owner exited before startup".into());
         }
         b::artifact_lifetime::watch_owner(parent)?;
+    }
+    if command == "cli-command-worker" {
+        return b::cli_artifacts::worker(&rest);
     }
     if command == "owned-command-fd" {
         return b::process_guard::runner(&rest);

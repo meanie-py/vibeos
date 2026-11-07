@@ -1401,6 +1401,12 @@ INCONCLUSIVE = {
     "DISK_ADMISSION_FAIL",
     "BUILD_POLICY_REFUSED",
     "SCANNER_ERROR",
+    # These name an ungraded request, preserving the former absent-verdict contract.
+    "CONFORMANCE_UNAVAILABLE",
+    "CONFORMANCE_NO_BASELINE",
+    "NET_UNAVAILABLE",
+    "GATE_ERROR",
+    "GATE_INTERRUPTED",
     # RUN_INTERRUPTED: the child was killed before it could finalize -- the host's
     # memory reaper, a broad-kill, the machine going away. It is the marker
     # `artifacts.write_interrupted_marker` seeds at run-dir creation, and it reaches

@@ -7,8 +7,10 @@ compilation refuses execution. Compiler-environment cleanup is confined to the b
 commands receive their caller's environment. No Python is needed to launch the binary.
 
 `vibeos-cli build` remains the build front door and the existing `host-jobs` broker owns
-admission. This binary supplies build mechanisms; it does not install a second scheduler
-or change concurrency. Add new build mechanisms to this library and command dispatcher,
+admission. This library also owns build preflight, reconciliation, target passes, artifact-store
+acceptance and provenance through `cli_build*`; `cli_artifacts` owns shared command
+supervision, logs and summaries. `vibeos-test::gate_*` composes builds and test lanes.
+The Python entry points retain DTOs and external lease/context/task handles. Add new build mechanisms to this library and command dispatcher,
 with output/refusal fixtures. Existing Python modules are compatibility adapters.
 
 | Command | Purpose | Former entry point |
@@ -198,3 +200,21 @@ drivers, modrun suites and verified Pi Wi-Fi firmware. New payload mechanisms
 belong in these modules; application contracts remain declarative YAML. Firmware
 hash failures preserve existing cached files, and guest-set staging still
 requires the other architecture's build receipt and complete dependency closure.
+
+Shared CLI infrastructure is native: `cli_artifacts` owns atomic run/summary
+publication, serial/failure archives, ledger writes and complete command logs.
+Each command runs through the existing pinned process-group controller, with
+stdout/stderr spooled to its own files. A command timeout is distinct from a
+program that returns 124. Parallel commands use separate resource connections;
+metadata requests cannot serialize their execution. Interrupted runs retain an
+explicit incomplete marker rather than a false green.
+
+`cli_arguments.json` is the CLI grammar and handler routing table. Add flags and
+commands there, including their help snapshots, rather than growing the legacy
+Python parser. The Python front door materializes Namespace and Path DTOs from
+the native parser. The frozen pre-port argument corpus checks every command and
+option family. `tooling_receipts` owns success-only cache lookup, source/generated
+fingerprints, locks and revalidation; interpreter/package enumeration remains a
+runtime discovery adapter. New tooling check registrations live in
+`tools/vibeos-test/src/tooling_checks.json` and need a separately audited receipt
+input contract in `tooling_policy.json` before they can be reused.

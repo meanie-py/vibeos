@@ -2758,3 +2758,50 @@ mod tests {
         }
     }
 }
+
+/// Capture an owned-command CONTROLLER to files without retaining its output in
+/// RAM. The controller/runner protocol pins the command session until all
+/// descendants close their inherited output descriptors, including on failure.
+pub fn supervised_spool(
+    command: &mut Command,
+    mut stdout: File,
+    mut stderr: File,
+    timeout: Option<Duration>,
+) -> Result<(i32, bool)> {
+    let _signals = SignalGuard::install()?;
+    let mut worker = OwnedWorker::spawn_command(command, Stdio::piped(), Stdio::piped())?;
+    let mut out = worker.child.stdout.take().ok_or("missing command stdout")?;
+    let mut err = worker.child.stderr.take().ok_or("missing command stderr")?;
+    let out_thread = std::thread::spawn(move || std::io::copy(&mut out, &mut stdout));
+    let err_thread = std::thread::spawn(move || std::io::copy(&mut err, &mut stderr));
+    let started = Instant::now();
+    let mut timed_out = false;
+    let result = (|| -> Result<i32> {
+        loop {
+            check_interrupted()?;
+            if let Some(code) = worker.code()? {
+                return Ok(code);
+            }
+            if timeout.is_some_and(|limit| started.elapsed() >= limit) {
+                timed_out = true;
+                return Ok(124);
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    })();
+    // Signal only before reaping this private controller PID. The runner in its
+    // separate pinned session receives parent death and performs group cleanup.
+    if timed_out || result.is_err() {
+        worker.signal_group(libc::SIGTERM);
+        worker.stop()?;
+    }
+    let out_result = out_thread
+        .join()
+        .map_err(|_| fail("command stdout spooler failed"))?;
+    let err_result = err_thread
+        .join()
+        .map_err(|_| fail("command stderr spooler failed"))?;
+    out_result?;
+    err_result?;
+    Ok((result?, timed_out))
+}
