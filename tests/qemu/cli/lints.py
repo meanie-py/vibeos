@@ -386,6 +386,16 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Cargo supremacy: each PE module cmake still links. The baseline is the remainder, so
+    # a NEW line is a module added outside a cargo cell; new ports aim for cargo from the
+    # start (`tools/codegen cargo-cell --convert <target>`). Deferred: reads build-<arch>.
+    specs.append(
+        (
+            "cmake_linked_modules",
+            ["bash", str(cgn), "cargo-cell", "--cmake-linked"] if cgn.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # atl_rust's CAtlList::GetNext returns the element's SLOT; casting it instead of
     # dereferencing compiles for a list of pointers and reads list-node memory as the object
     # (mmc_new, 2026-10-17). Baseline is EMPTY.

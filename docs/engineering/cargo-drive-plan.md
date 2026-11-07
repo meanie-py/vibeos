@@ -438,6 +438,13 @@ extends it from the boot spine to every fully-Rust module.
      booting that `livecd.img` (run 20261031-231043-d6i0arl5).
 6. **Modules that still have C** compile it from cargo, so cmake's last job is the C-only
    tail, then nothing.
+   - **The remainder is a command (2026-11-07):** `tools/codegen cargo-cell --cmake-linked`
+     lists every PE module cmake still links (170 across the three arches; i386 168: 44 C++,
+     45 d3dx/d3dcompiler versions, 19 drivers, ~60 C). The `cmake_linked_modules` check
+     ratchets it, so a new module must start as a cargo cell. Next, in order: the code-free
+     leftovers (message DLLs, .msstyles, .tlb, ACM codecs) as shell-less cells; the 17
+     earlier C-less cells re-rendered shell-less; the d3dx/d3dcompiler family; the driver
+     kinds; C++.
    - **RESUME HERE (2026-11-06).** Waves 1-4 (168 body-less C modules) are on master. Wave
      5/6 (`ctail-held`) converts 61 more, each `pe_equiv`-equivalent to cmake's link on all
      3 arches: 38 cmake-linked Rust DLLs (advapi32, user32, ole32, setupapi, ws2_32, ...

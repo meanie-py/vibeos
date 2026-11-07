@@ -145,6 +145,7 @@ pub mod verify_lost_exports;
 
 pub mod atl_slot_cast;
 pub mod clib_recipes_fresh;
+pub mod cmake_linked_modules;
 pub mod external_tools;
 pub mod fnclass_cc;
 pub mod gen_ctype_tables;
@@ -161,6 +162,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
     vec![
         Box::new(scan_cmake_linked_rust::ScanCmakeLinkedRust),
         Box::new(clib_recipes_fresh::ClibRecipesFresh),
+        Box::new(cmake_linked_modules::CmakeLinkedModules),
         Box::new(verify_ucrtbase_cohab::VerifyUcrtbaseCohab),
         Box::new(marshalgen_audit::MarshalgenAudit),
         Box::new(atl_slot_cast::AtlSlotCast),

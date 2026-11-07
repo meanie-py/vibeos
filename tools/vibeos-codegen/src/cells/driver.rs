@@ -321,6 +321,46 @@ pub fn orphan_recipes(root: &Path, plan: &RecipePlan) -> Vec<PathBuf> {
 }
 /// Each committed recipe that is not exactly what cmake's compile derives today, one line
 /// per file: differs, missing, or read by no cell. Empty means the recipes are current.
+/// The PE modules cmake still links, one line per target, across every configured
+/// build-<arch>: the cargo-supremacy remainder. A new module belongs in a cargo cell from
+/// its first commit (`tools/codegen cargo-cell --convert <target>`), and the
+/// cmake_linked_modules ratchet fails on any target not already listed here. The `_c`
+/// builds are excluded: rustconv's C oracles (the pre-flip C kept for difftests), never
+/// shipped. The arches are left out of the line so a tree with fewer build dirs does not
+/// read as new findings.
+pub fn cmake_linked(root: &Path) -> Result<Vec<String>> {
+    stale_configures(root)?;
+    let edge = Regex::new(
+        r"(?m)^build \S+: (?:C|CXX)_(?:SHARED_LIBRARY|EXECUTABLE|MODULE_LIBRARY)_LINKER__([\w.+-]+?)_(?:Debug|Release)\b",
+    )
+    .expect("valid link-edge regex");
+    let mut targets = BTreeSet::new();
+    let mut configured = 0;
+    for a in ARCHES {
+        let ninja = root.join(format!("build-{a}/build.ninja"));
+        if !ninja.is_file() {
+            continue;
+        }
+        configured += 1;
+        let text = read(&local(root, &ninja)?)?;
+        for c in edge.captures_iter(&text) {
+            // Ninja's rule names escape a target's `.` as `.2e` (activeds.tlb).
+            let t = c[1].replace(".2e", ".");
+            if !t.ends_with("_c") {
+                targets.insert(t);
+            }
+        }
+    }
+    if configured == 0 {
+        return Err(Error::new(
+            "no configured build-<arch>: ./vibeos-cli build --arch <a> first",
+        ));
+    }
+    Ok(targets
+        .into_iter()
+        .map(|t| format!("{t}: linked by cmake, not a cargo cell"))
+        .collect())
+}
 pub fn recipe_drift(root: &Path) -> Result<Vec<String>> {
     let p = clib_recipes(root)?;
     if !p.failed.is_empty() {
