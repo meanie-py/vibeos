@@ -619,26 +619,30 @@ pub unsafe extern "system" fn FsRtlFindInTunnelCache(
         }
     }
 
-    if !CurEntry.is_null() {
-        RtlCopyUnicodeString(ShortName, core::ptr::addr_of_mut!((*CurEntry).ShortName));
+    // C: __try around the copies out (the caller's strings and buffer), handler
+    // empty. Under a real catch a fault still reaches the mutex release below.
+    let _ = ntkrnl_sys::seh::try_except_all(|| {
+        if !CurEntry.is_null() {
+            RtlCopyUnicodeString(ShortName, core::ptr::addr_of_mut!((*CurEntry).ShortName));
 
-        if (*LongName).MaximumLength < (*CurEntry).LongName.Length {
-            (*LongName).Buffer = ExAllocatePool(PagedPool, (*CurEntry).LongName.Length as _) as LPWSTR;
-            if !(*LongName).Buffer.is_null() {
-                (*LongName).Length = (*CurEntry).LongName.Length;
-                (*LongName).MaximumLength = (*CurEntry).LongName.MaximumLength;
-                RtlMoveMemory((*LongName).Buffer as PVOID, (*CurEntry).LongName.Buffer as PVOID, (*CurEntry).LongName.Length as usize);
+            if (*LongName).MaximumLength < (*CurEntry).LongName.Length {
+                (*LongName).Buffer = ExAllocatePool(PagedPool, (*CurEntry).LongName.Length as _) as LPWSTR;
+                if !(*LongName).Buffer.is_null() {
+                    (*LongName).Length = (*CurEntry).LongName.Length;
+                    (*LongName).MaximumLength = (*CurEntry).LongName.MaximumLength;
+                    RtlMoveMemory((*LongName).Buffer as PVOID, (*CurEntry).LongName.Buffer as PVOID, (*CurEntry).LongName.Length as usize);
+                }
+            } else {
+                RtlCopyUnicodeString(LongName, core::ptr::addr_of_mut!((*CurEntry).LongName));
             }
-        } else {
-            RtlCopyUnicodeString(LongName, core::ptr::addr_of_mut!((*CurEntry).LongName));
+
+            RtlMoveMemory(Data, (*CurEntry).Data, (*CurEntry).DataLength as usize);
+
+            *DataLength = (*CurEntry).DataLength;
+
+            Ret = 1u8;
         }
-
-        RtlMoveMemory(Data, (*CurEntry).Data, (*CurEntry).DataLength as usize);
-
-        *DataLength = (*CurEntry).DataLength;
-
-        Ret = 1u8;
-    }
+    });
 
     ExReleaseFastMutex(core::ptr::addr_of_mut!((*Cache).Mutex));
 

@@ -236,7 +236,8 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
         // TEB rather than the wrong offset -- which is why scan_magic_offsets,
         // the detector added for §9.41, cannot see it.
         //
-        let GdiBatchCount: ULONG = {
+        // C: the read is in __try (the TEB is user memory); a fault reads as 0.
+        let GdiBatchCount: ULONG = ntkrnl_sys::seh::try_except_all(|| {
             let teb = NtCurrentTeb() as *const ntkrnl_sys::ddk::_TEB;
             if teb.is_null() {
                 0
@@ -245,7 +246,8 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
             } else {
                 (*teb).GdiBatchCount
             }
-        };
+        })
+        .unwrap_or(0);
 
         if GdiBatchCount != 0 {
             // GdiBatchCount > 0 implies win32k has registered the flush routine.
@@ -282,21 +284,29 @@ pub unsafe extern "system" fn KiSystemCallHandler(TrapFrame: PKTRAP_FRAME) -> PV
         }
     }
 
-    // C uses Duff's device-style fall-through: case 16 copies params 15..4,
-    // case 5 copies only param 4, etc. Rust match doesn't fall through,
-    // so use if-chain instead. First 4 params are in registers (rcx,rdx,r8,r9).
-    if Count >= 16 { *KernelParams.add(15) = *UserParams.add(15); }
-    if Count >= 15 { *KernelParams.add(14) = *UserParams.add(14); }
-    if Count >= 14 { *KernelParams.add(13) = *UserParams.add(13); }
-    if Count >= 13 { *KernelParams.add(12) = *UserParams.add(12); }
-    if Count >= 12 { *KernelParams.add(11) = *UserParams.add(11); }
-    if Count >= 11 { *KernelParams.add(10) = *UserParams.add(10); }
-    if Count >= 10 { *KernelParams.add(9) = *UserParams.add(9); }
-    if Count >= 9  { *KernelParams.add(8) = *UserParams.add(8); }
-    if Count >= 8  { *KernelParams.add(7) = *UserParams.add(7); }
-    if Count >= 7  { *KernelParams.add(6) = *UserParams.add(6); }
-    if Count >= 6  { *KernelParams.add(5) = *UserParams.add(5); }
-    if Count >= 5  { *KernelParams.add(4) = *UserParams.add(4); }
+    // C: the copy is in __try. UserParams is the caller's stack: the range check
+    // above rejects a kernel address, but an unmapped user stack still faults
+    // here, and the handler fails the call with the code instead of bugchecking.
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        // C uses Duff's device-style fall-through: case 16 copies params 15..4,
+        // case 5 copies only param 4, etc. Rust match doesn't fall through,
+        // so use if-chain instead. First 4 params are in registers (rcx,rdx,r8,r9).
+        if Count >= 16 { *KernelParams.add(15) = *UserParams.add(15); }
+        if Count >= 15 { *KernelParams.add(14) = *UserParams.add(14); }
+        if Count >= 14 { *KernelParams.add(13) = *UserParams.add(13); }
+        if Count >= 13 { *KernelParams.add(12) = *UserParams.add(12); }
+        if Count >= 12 { *KernelParams.add(11) = *UserParams.add(11); }
+        if Count >= 11 { *KernelParams.add(10) = *UserParams.add(10); }
+        if Count >= 10 { *KernelParams.add(9) = *UserParams.add(9); }
+        if Count >= 9  { *KernelParams.add(8) = *UserParams.add(8); }
+        if Count >= 8  { *KernelParams.add(7) = *UserParams.add(7); }
+        if Count >= 7  { *KernelParams.add(6) = *UserParams.add(6); }
+        if Count >= 6  { *KernelParams.add(5) = *UserParams.add(5); }
+        if Count >= 5  { *KernelParams.add(4) = *UserParams.add(4); }
+    }) {
+        (*TrapFrame).Rax = code as u64;
+        return NtSyscallFailure as PVOID;
+    }
 
     (*(*DescriptorTable).Base.add(ServiceNumber as usize)) as PVOID
 }

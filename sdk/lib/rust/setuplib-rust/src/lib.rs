@@ -40,6 +40,7 @@ pub mod setuplib {
     pub mod registry;
     pub mod settings;
     pub mod setuplib;
+    pub mod main; // main.c: DllMain, hand-ported
 }
 
 // staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.

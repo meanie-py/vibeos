@@ -6,7 +6,7 @@
 //! 32-bit argument dwords and calls the real 64-bit export. Single-dword arguments are
 //! sign-extended, which keeps guest VAs and negative pseudo-handles (-1, -2) correct.
 //! Entries left `None` need a deep marshaller (`Wow64ManualDispatch`).
-//! Count: 616 auto, 124 manual. Identical for amd64 and arm64 (the generator
+//! Count: 615 auto, 125 manual. Identical for amd64 and arm64 (the generator
 //! refuses to write it otherwise).
 
 // The exports are declared with the table's generic argument types, as the C did in
@@ -2787,12 +2787,7 @@ unsafe extern "C" fn wow64_thunk_NtUserGetListBoxInfo(a: *mut u32) -> i32 {
     NtUserGetListBoxInfo(ptr(a, 0))
 }
 
-unsafe extern "system" {
-    fn NtUserGetMenuBarInfo(_: *mut c_void, _: usize, _: usize, _: *mut c_void) -> i32;
-}
-unsafe extern "C" fn wow64_thunk_NtUserGetMenuBarInfo(a: *mut u32) -> i32 {
-    NtUserGetMenuBarInfo(ptr(a, 0), long(a, 1), long(a, 2), ptr(a, 3))
-}
+// NtUserGetMenuBarInfo: WOW64_NEEDS_MANUAL — listed in --manual-list (struct layout). Table entry left None.
 
 unsafe extern "system" {
     fn NtUserGetMenuIndex(_: *mut c_void, _: *mut c_void) -> i32;
@@ -5021,7 +5016,7 @@ pub static Wow64Win32kThunkTable: [WOW64_THUNK_ENTRY; 740] = [
     WOW64_THUNK_ENTRY { Name: c"NtUserGetKeyNameText".as_ptr(), Thunk: Some(wow64_thunk_NtUserGetKeyNameText), Slots: 3 }, // [414]
     WOW64_THUNK_ENTRY { Name: c"NtUserGetKeyState".as_ptr(), Thunk: Some(wow64_thunk_NtUserGetKeyState), Slots: 1 }, // [415]
     WOW64_THUNK_ENTRY { Name: c"NtUserGetListBoxInfo".as_ptr(), Thunk: Some(wow64_thunk_NtUserGetListBoxInfo), Slots: 1 }, // [416]
-    WOW64_THUNK_ENTRY { Name: c"NtUserGetMenuBarInfo".as_ptr(), Thunk: Some(wow64_thunk_NtUserGetMenuBarInfo), Slots: 4 }, // [417]
+    WOW64_THUNK_ENTRY { Name: c"NtUserGetMenuBarInfo".as_ptr(), Thunk: None, Slots: 4 }, // [417] MANUAL: listed in --manual-list (struct layout)
     WOW64_THUNK_ENTRY { Name: c"NtUserGetMenuIndex".as_ptr(), Thunk: Some(wow64_thunk_NtUserGetMenuIndex), Slots: 2 }, // [418]
     WOW64_THUNK_ENTRY { Name: c"NtUserGetMenuItemRect".as_ptr(), Thunk: Some(wow64_thunk_NtUserGetMenuItemRect), Slots: 4 }, // [419]
     WOW64_THUNK_ENTRY { Name: c"NtUserGetMessage".as_ptr(), Thunk: None, Slots: 4 }, // [420] MANUAL: listed in --manual-list (struct layout)

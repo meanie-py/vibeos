@@ -171,9 +171,12 @@ unsafe fn ExpRaiseHardError(
     if (*Thread).__bindgen_anon_7.__bindgen_anon_1.SystemThread() == 0 && !PortHandle.is_null() {
         let Teb = (*Thread).Tcb.Teb;
         if !Teb.is_null() {
-            let hard_error_mode = (*Teb).HardErrorMode;
-            if (hard_error_mode & RTL_SEM_FAILCRITICALERRORS) != 0 {
-                PortHandle = core::ptr::null_mut();
+            // C: __try with an empty handler — the TEB is user memory; a fault
+            // leaves the port as it is.
+            if let Ok(hard_error_mode) = ntkrnl_sys::seh::try_except_all(|| (*Teb).HardErrorMode) {
+                if (hard_error_mode & RTL_SEM_FAILCRITICALERRORS) != 0 {
+                    PortHandle = core::ptr::null_mut();
+                }
             }
         }
     }
@@ -316,35 +319,42 @@ pub unsafe extern "system" fn ExRaiseHardError(
             }
 
             let UserParams = UserData as PHARDERROR_USER_PARAMETERS;
-            let mut BufferBase = (*UserParams).Buffer.as_mut_ptr();
+            // C: __try — UserData is user memory in this process, which another
+            // thread can free first. The handler logs the code and goes on to
+            // raise the error anyway, as the C does.
+            if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+                let mut BufferBase = (*UserParams).Buffer.as_mut_ptr();
 
-            for i in 0..(NumberOfParameters as usize) {
-                if (UnicodeStringParameterMask & (1 << i)) != 0 {
-                    // ULONG_PTR field: u32 on i386, u64 on amd64/arm64. Cast via usize then `as _`.
-                    (*UserParams).Parameters[i] = core::ptr::addr_of_mut!((*UserParams).Strings[i]) as usize as _;
+                for i in 0..(NumberOfParameters as usize) {
+                    if (UnicodeStringParameterMask & (1 << i)) != 0 {
+                        // ULONG_PTR field: u32 on i386, u64 on amd64/arm64. Cast via usize then `as _`.
+                        (*UserParams).Parameters[i] = core::ptr::addr_of_mut!((*UserParams).Strings[i]) as usize as _;
 
-                    // An empty UNICODE_STRING carries Buffer == NULL: fine for the
-                    // C's RtlCopyMemory of 0 bytes, UB for copy_nonoverlapping
-                    // (kmtest ExHardError trips the armed check on it).
-                    if CapturedParams[i].MaximumLength != 0 {
+                        // An empty UNICODE_STRING carries Buffer == NULL: fine for the
+                        // C's RtlCopyMemory of 0 bytes, UB for copy_nonoverlapping
+                        // (kmtest ExHardError trips the armed check on it).
+                        if CapturedParams[i].MaximumLength != 0 {
+                            core::ptr::copy(
+                                CapturedParams[i].Buffer as *const u8,
+                                BufferBase as *mut u8,
+                                CapturedParams[i].MaximumLength as usize,
+                            );
+                        }
+
+                        CapturedParams[i].Buffer = BufferBase;
                         core::ptr::copy(
-                            CapturedParams[i].Buffer as *const u8,
-                            BufferBase as *mut u8,
-                            CapturedParams[i].MaximumLength as usize,
+                            core::ptr::addr_of!(CapturedParams[i]) as *const u8,
+                            core::ptr::addr_of_mut!((*UserParams).Strings[i]) as *mut u8,
+                            core::mem::size_of::<UNICODE_STRING>(),
                         );
+
+                        BufferBase = BufferBase.add(CapturedParams[i].MaximumLength as usize);
+                    } else {
+                        (*UserParams).Parameters[i] = *Parameters.add(i) as usize as _;
                     }
-
-                    CapturedParams[i].Buffer = BufferBase;
-                    core::ptr::copy(
-                        core::ptr::addr_of!(CapturedParams[i]) as *const u8,
-                        core::ptr::addr_of_mut!((*UserParams).Strings[i]) as *mut u8,
-                        core::mem::size_of::<UNICODE_STRING>(),
-                    );
-
-                    BufferBase = BufferBase.add(CapturedParams[i].MaximumLength as usize);
-                } else {
-                    (*UserParams).Parameters[i] = *Parameters.add(i) as usize as _;
                 }
+            }) {
+                crate::dbg_print!(b"ExRaiseHardError - Exception when writing data to user-mode, Status 0x%08lx\n\0", code);
             }
         } else {
             UserData = Parameters as PVOID;

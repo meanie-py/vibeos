@@ -441,7 +441,9 @@ pub unsafe extern "system" fn ButtonWndProc_common(
 
         WM_SETTEXT => {
             /* Clear an old text here as Windows does */
-            if (style & WS_VISIBLE as LONG) != 0 {
+            // Wine 11.11 (upstream drops ReactOS's `style & WS_VISIBLE`): a child of
+            // a hidden parent is not visible either.
+            if IsWindowVisible(hWnd) != 0 {
                 let hdc = GetDC(hWnd);
                 let hbrush: HBRUSH;
                 let mut client: RECT = core::mem::zeroed();
@@ -449,7 +451,6 @@ pub unsafe extern "system" fn ButtonWndProc_common(
                 let mut parent = GetParent(hWnd);
                 let message: UINT = if btn_type == BS_PUSHBUTTON
                     || btn_type == BS_DEFPUSHBUTTON
-                    || btn_type == BS_PUSHLIKE
                     || btn_type == BS_USERBUTTON
                     || btn_type == BS_OWNERDRAW
                 {
@@ -513,7 +514,7 @@ pub unsafe extern "system" fn ButtonWndProc_common(
                 BUTTON_NOTIFY_PARENT(hWnd, BN_SETFOCUS);
             }
             if ((btn_type == BS_RADIOBUTTON) || (btn_type == BS_AUTORADIOBUTTON))
-                && (get_button_state(hWnd) & BST_CHECKED as LONG) == 0
+                && (get_button_state(hWnd) & (BST_CHECKED | BUTTON_BTNPRESSED) as LONG) == 0
             {
                 BUTTON_NOTIFY_PARENT(hWnd, BN_CLICKED);
             }
@@ -542,6 +543,8 @@ pub unsafe extern "system" fn ButtonWndProc_common(
             btn_type = (wParam & BS_TYPEMASK as WPARAM) as UINT;
             style = (style & !(BS_TYPEMASK as LONG)) | btn_type as LONG;
             NtUserAlterWindowStyle(hWnd, GWL_STYLE as DWORD, style);
+
+            crate::windows::hook::NotifyWinEvent(EVENT_OBJECT_STATECHANGE as DWORD, hWnd, OBJID_CLIENT as LONG, 0);
 
             /* Only redraw if lParam flag is set. */
             if lParam != 0 {
@@ -611,6 +614,8 @@ pub unsafe extern "system" fn ButtonWndProc_common(
             if (state & 3) != wParam as LONG {
                 set_button_state(hWnd, (state & !3) | wParam as LONG);
                 paint_button(hWnd, btn_type as LONG, ODA_SELECT);
+
+                crate::windows::hook::NotifyWinEvent(EVENT_OBJECT_STATECHANGE as DWORD, hWnd, OBJID_CLIENT as LONG, 0);
             }
         }
 
@@ -627,6 +632,8 @@ pub unsafe extern "system" fn ButtonWndProc_common(
             }
 
             paint_button(hWnd, btn_type as LONG, ODA_SELECT);
+
+            crate::windows::hook::NotifyWinEvent(EVENT_OBJECT_STATECHANGE as DWORD, hWnd, OBJID_CLIENT as LONG, 0);
         }
 
         WM_UPDATEUISTATE => {
@@ -1125,14 +1132,16 @@ unsafe extern "system" fn CB_Paint(hwnd: HWND, hDC: HDC, action: UINT) {
 
         delta = rbox.bottom - rbox.top - checkBoxHeight;
 
-        if (style & BS_TOP as LONG) != 0 {
+        // BS_TOP/BS_BOTTOM are values of the two-bit BS_VCENTER field, not flags:
+        // BS_VCENTER itself has both bits set.
+        if (style & BS_VCENTER as LONG) == BS_TOP as LONG {
             if delta > 0 {
                 rbox.bottom = rbox.top + checkBoxHeight;
             } else {
                 rbox.top -= -delta / 2 + 1;
                 rbox.bottom = rbox.top + checkBoxHeight;
             }
-        } else if (style & BS_BOTTOM as LONG) != 0 {
+        } else if (style & BS_VCENTER as LONG) == BS_BOTTOM as LONG {
             if delta > 0 {
                 rbox.top = rbox.bottom - checkBoxHeight;
             } else {
@@ -1306,7 +1315,6 @@ unsafe extern "system" fn OB_Paint(hwnd: HWND, hDC: HDC, action: UINT) {
     let id = GetWindowLongPtrW(hwnd, GWLP_ID);
     let mut parent;
     let hFont;
-    let mut hPrevFont: HFONT = core::ptr::null_mut();
     let hrgn;
 
     dis.CtlType = ODT_BUTTON;
@@ -1322,8 +1330,9 @@ unsafe extern "system" fn OB_Paint(hwnd: HWND, hDC: HDC, action: UINT) {
     GetClientRect(hwnd, core::ptr::addr_of_mut!(dis.rcItem) as *mut RECT);
 
     hFont = get_button_font(hwnd);
+    // Wine 11.11: the font stays selected for the owner's WM_DRAWITEM and after it.
     if !hFont.is_null() {
-        hPrevFont = SelectObject(hDC, hFont as *mut core::ffi::c_void) as HFONT;
+        SelectObject(hDC, hFont as *mut core::ffi::c_void);
     }
     parent = GetParent(hwnd);
     if parent.is_null() {
@@ -1339,9 +1348,6 @@ unsafe extern "system" fn OB_Paint(hwnd: HWND, hDC: HDC, action: UINT) {
         id as WPARAM,
         core::ptr::addr_of_mut!(dis) as LPARAM,
     );
-    if !hPrevFont.is_null() {
-        SelectObject(hDC, hPrevFont as *mut core::ffi::c_void);
-    }
     SelectClipRgn(hDC, hrgn);
     if !hrgn.is_null() {
         DeleteObject(hrgn as *mut core::ffi::c_void);

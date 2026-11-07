@@ -10,5 +10,8 @@
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    panic_common::panic_common(env!("CARGO_PKG_NAME"), info)
+    // A shell-less cell: link-guard drops this bin's objects from the link
+    // (reactos-link Linker::shell_less), so this handler is never in the PE.
+    let _ = info;
+    panic_lean::panic_fastfail()
 }

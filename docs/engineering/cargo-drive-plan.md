@@ -445,6 +445,17 @@ extends it from the boot spine to every fully-Rust module.
      leftovers (message DLLs, .msstyles, .tlb, ACM codecs) as shell-less cells; the 17
      earlier C-less cells re-rendered shell-less; the d3dx/d3dcompiler family; the driver
      kinds; C++.
+     - **2026-11-07: iologmsg, netevent, netmsg converted** (shell-less, byte-identical to
+       cmake on all 3 arches). Two generator fixes on the way: ninja spells a dotted target's
+       rule name with `.2e` (`graph::ninja_rule_name`), and a dotted target's `spec2def` names
+       its own output, so it is not a statement on the target.
+     - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
+       `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
+       `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses
+       `activeds.tlb-cargo`), and add_cargo_module's custom target `activeds.tlb` is the
+       phony `<dir>/activeds.tlb`, the very path of the output (ninja: multiple rules
+       generate). The output path is what the media manifest, cab and pe_equiv key on.
+       wdmaud.drv also links two bodies (`several bodies`).
    - **RESUME HERE (2026-11-06).** Waves 1-4 (168 body-less C modules) are on master. Wave
      5/6 (`ctail-held`) converts 61 more, each `pe_equiv`-equivalent to cmake's link on all
      3 arches: 38 cmake-linked Rust DLLs (advapi32, user32, ole32, setupapi, ws2_32, ...
@@ -467,9 +478,9 @@ extends it from the boot spine to every fully-Rust module.
          handler needed ntdll (DbgPrint, NtTerminateProcess) and gave code-free DLLs a
          `.text`. pe_equiv EQUIVALENT ×3 with no allowance notes; the five resource
          DLLs (shdoclc, msxml3r, mycomput, tapiui, themeui) are byte-identical to
-         cmake's link. Owed: the 17 earlier C-less cells (cfgmgr32, icmp, regapi, ...)
-         still carry the dead handler; re-render them shell-less against a fresh cmake
-         baseline. The driver kinds should build on this (no user-mode shell there either).
+         cmake's link. **Done 2026-11-07:** the 17 earlier C-less cells (cfgmgr32, icmp,
+         regapi, ...) re-rendered shell-less; pe_equiv EQUIVALENT ×3 against their original
+         cmake builds (wave 5/6 baseline) with the i386 rsbegin `.ctors`/`.dtors` note gone. The driver kinds should build on this (no user-mode shell there either).
        - d3dwine, dinput8 (resources missing), libjpeg, libpng, libxslt (exports
          missing), mbedtls (an import missing): model clean, link not equivalent.
        - (gdi32, msxml3, wuapi, xolehlp: converted 2026-11-06 once their archives got engine

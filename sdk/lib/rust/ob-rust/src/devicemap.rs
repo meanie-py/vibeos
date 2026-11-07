@@ -525,11 +525,18 @@ pub unsafe extern "system" fn ObQueryDeviceMapInformation(
     // and NtQueryInformationProcess insists on it). The C copies the whole union, which on
     // 64-bit is 40 bytes (Set's HANDLE pads it), 4 past a 36-byte Query; special pool
     // caught it on the OptiPlex (BUGCHECK 0xC1 at the bounce buffer's free).
-    core::ptr::copy_nonoverlapping(
-        core::ptr::addr_of!(map_info.__bindgen_anon_1.Query) as *const u8,
-        core::ptr::addr_of_mut!((*DeviceMapInfo).__bindgen_anon_1.Query) as *mut u8,
-        core::mem::size_of_val(&map_info.__bindgen_anon_1.Query),
-    );
+    // C: __try around the copy back; the handler returns the exception code.
+    let src = core::ptr::addr_of!(map_info.__bindgen_anon_1.Query) as *const u8;
+    let len = core::mem::size_of_val(&map_info.__bindgen_anon_1.Query);
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        core::ptr::copy_nonoverlapping(
+            src,
+            core::ptr::addr_of_mut!((*DeviceMapInfo).__bindgen_anon_1.Query) as *mut u8,
+            len,
+        )
+    }) {
+        status = code;
+    }
 
     status
 }

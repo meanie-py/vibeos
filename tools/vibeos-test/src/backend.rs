@@ -62,16 +62,28 @@ pub fn run_capture(
         String::from_utf8_lossy(&err).into_owned(),
     ))
 }
+/// WSL interop failed to LAUNCH the Windows program (`UtilAcceptVsock: accept4 failed 110`, an
+/// accept timeout on the interop vsock under load): nothing ran on the Windows side, so trying
+/// again is safe even for a script that is not idempotent. winref.py's copy retries the same.
+pub fn interop_launch_failed(stderr: &str) -> bool {
+    stderr.contains("UtilAcceptVsock")
+}
 fn ps(script: &str) -> Result<String> {
-    let (code, out, err) = run_capture(
-        "powershell.exe",
-        &["-NoProfile".into(), "-Command".into(), script.into()],
-        Duration::from_secs(30),
-    )?;
-    if code != 0 {
-        return Err(Error::new(format!("PowerShell exited {code}: {err}")));
+    let mut attempt = 0;
+    loop {
+        let (code, out, err) = run_capture(
+            "powershell.exe",
+            &["-NoProfile".into(), "-Command".into(), script.into()],
+            Duration::from_secs(30),
+        )?;
+        if code == 0 {
+            return Ok(out);
+        }
+        attempt += 1;
+        if attempt >= 2 || !interop_launch_failed(&err) {
+            return Err(Error::new(format!("PowerShell exited {code}: {err}")));
+        }
     }
-    Ok(out)
 }
 pub fn win_path(path: &Path) -> Result<String> {
     let s = path.to_str().ok_or("non-UTF8 Windows staging path")?;
@@ -378,6 +390,17 @@ pub fn dispatch(_root: &Path, r: &Value) -> Result<Value> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_an_interop_launch_failure_is_retried() {
+        assert!(interop_launch_failed(
+            "<3>WSL (691154 - ) ERROR: UtilAcceptVsock:281: accept4 failed 110"
+        ));
+        // a script that ran and failed is not retried
+        assert!(!interop_launch_failed(
+            "Get-Item : Cannot find path 'C:\\x'"
+        ));
+    }
+
     use super::*;
     #[test]
     fn scoped_transformations() {

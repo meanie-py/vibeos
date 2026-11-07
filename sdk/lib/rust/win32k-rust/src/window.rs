@@ -5681,9 +5681,11 @@ pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_ST
         if Ret == 0 {
             return 0;
         }
-    } else {
-        return 1;
     }
+    // A NULL text clears the window text, as on Windows and in Wine
+    // (SetWindowText(hwnd, NULL); user32:static static.c:138). ReactOS's C returned
+    // TRUE here with the old text still in place; SafeText stays empty, so the code
+    // below takes the Length == 0 branch.
 
     UserEnterExclusive();
 
@@ -5793,9 +5795,11 @@ pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_ST
         if Ret == 0 {
             return 0;
         }
-    } else {
-        return 1;
     }
+    // A NULL text clears the window text, as on Windows and in Wine
+    // (SetWindowText(hwnd, NULL); user32:static static.c:138). ReactOS's C returned
+    // TRUE here with the old text still in place; SafeText stays empty, so the code
+    // below takes the Length == 0 branch.
 
     UserEnterExclusive();
 

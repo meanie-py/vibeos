@@ -235,12 +235,21 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     b.env = setup["env"].clone();
     let caching = setup["caching"] == true;
     let mut deferred = vec![];
-    if b.arch == "amd64" && !headers && args["no_wow64_stage"] != true {
+    // arm64 under VIBEOS_FEX=1 stages the same guests, so it refreshes them too: it used to
+    // stage whatever build-fex-hello/ held, and an arm64 `smoke --ladder` graded a fault32.exe
+    // two days older than Fault32.c. Its x86-64 guests link build-amd64's importlibs, which
+    // an arm64 ninja never makes, so a deferral there stays deferred (and the ladder then
+    // refuses those guests as stale, which names the fix).
+    let stages_guests = b.arch == "amd64"
+        || (b.arch == "arm64" && std::env::var("VIBEOS_FEX").as_deref() == Ok("1"));
+    if stages_guests && !headers && args["no_wow64_stage"] != true {
         let r = b.helper("refresh_guests", json!({"stage":"wow64-guests"}))?;
         if r == false {
             return b.finish();
         }
-        deferred = strings(&r);
+        if b.arch == "amd64" {
+            deferred = strings(&r);
+        }
     }
     if b.arch == "arm64" && !headers && b.helper("refresh_cpu", json!({}))? != true {
         return b.finish();

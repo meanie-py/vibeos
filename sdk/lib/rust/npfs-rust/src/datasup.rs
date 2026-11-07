@@ -397,17 +397,20 @@ pub unsafe extern "system" fn NpAddDataQueueEntry(
                 Status = STATUS_PENDING;
                 // ASSERT((DataQueue->QueueState == Empty) || (DataQueue->QueueState == Who));
             } else {
-                // _SEH2_TRY { RtlCopyMemory(DataEntry + 1, Irp ? Irp->UserBuffer : Buffer, DataSize) }
-                // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { NpFreeClientSecurityContext(ClientContext);
-                //   _SEH2_YIELD(return _SEH2_GetExceptionCode()); } _SEH2_END;
-                // Under USE_DUMMY_PSEH the EXCEPT is dead code: emit the TRY body only.
-                // DataEntry + 1 = byte-after-the-entry (the inline data area).
+                // C: __try around the copy from the writer's buffer (Irp->UserBuffer is
+                // the caller's memory); the handler frees the security context and
+                // returns the exception code. DataEntry + 1 is the inline data area.
+                // The C also leaks DataEntry on that path; it is not queued yet, so
+                // free it here.
                 let src = if !Irp.is_null() { (*Irp).UserBuffer } else { Buffer };
-                core::ptr::copy_nonoverlapping(
-                    src as *const u8,
-                    DataEntry.add(1) as *mut u8,
-                    DataSize as usize,
-                );
+                let dst = DataEntry.add(1) as *mut u8;
+                if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+                    core::ptr::copy_nonoverlapping(src as *const u8, dst, DataSize as usize)
+                }) {
+                    NpFreeClientSecurityContext(ClientContext);
+                    ExFreePool(DataEntry as PVOID);
+                    return code;
+                }
 
                 if HasSpace != 0 && !Irp.is_null() {
                     Status = STATUS_PENDING;

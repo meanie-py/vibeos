@@ -142,6 +142,49 @@ static void memwatch_line(char *line, size_t cap)
                    (unsigned long)(ULONG_PTR)top[i]->UniqueProcessId,
                    (unsigned long long)(top[i]->PrivatePageCount >> 20),
                    (unsigned long long)(top[i]->VirtualMemoryCounters.WorkingSetSize >> 20));
+        /* GDI objects per process: a process leaking DCs or bitmaps climbs here. Looked up at
+         * run time, so the sweep does not load user32 unless memwatch is on. */
+        static DWORD(WINAPI * gui_res)(HANDLE, DWORD);
+        if (!gui_res) {
+            HMODULE u = LoadLibraryA("user32.dll");
+            gui_res = u ? (DWORD(WINAPI *)(HANDLE, DWORD))(void *)GetProcAddress(u, "GetGuiResources") : NULL;
+        }
+        if (gui_res) {
+            DWORD best[3] = { 0 }, bestpid[3] = { 0 };
+            const WCHAR *bestname[3] = { 0 };
+            int bestlen[3] = { 0 };
+            p = (SYSTEM_PROCESS_INFORMATION *)g_mw_buf;
+            for (;;) {
+                DWORD pid = (DWORD)(ULONG_PTR)p->UniqueProcessId;
+                HANDLE h = pid ? OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid) : NULL;
+                if (h) {
+                    DWORD n = gui_res(h, 0 /* GR_GDIOBJECTS */);
+                    CloseHandle(h);
+                    for (int i = 0; i < 3; i++) {
+                        if (n > best[i]) {
+                            for (int j = 2; j > i; j--) {
+                                best[j] = best[j - 1];
+                                bestpid[j] = bestpid[j - 1];
+                                bestname[j] = bestname[j - 1];
+                                bestlen[j] = bestlen[j - 1];
+                            }
+                            best[i] = n;
+                            bestpid[i] = pid;
+                            bestname[i] = p->ImageName.Buffer;
+                            bestlen[i] = p->ImageName.Length / 2;
+                            break;
+                        }
+                    }
+                }
+                if (!p->NextEntryOffset)
+                    break;
+                p = (SYSTEM_PROCESS_INFORMATION *)((char *)p + p->NextEntryOffset);
+            }
+            mw_cat(line, cap, " | gdi:");
+            for (int i = 0; i < 3 && best[i]; i++)
+                mw_cat(line, cap, " %.*ls/%lu %lu", bestlen[i], bestname[i] ? bestname[i] : L"?",
+                       (unsigned long)bestpid[i], (unsigned long)best[i]);
+        }
     } else {
         mw_cat(line, cap, " | processes: %08lx", (unsigned long)st);
     }

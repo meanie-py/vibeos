@@ -58,13 +58,19 @@ pub fn link_entry(flags: &str) -> String {
         .or_else(|| last(r"-Wl,-e,(\S+)"))
         .unwrap_or_default()
 }
+/// A target as ninja's rule names spell it: cmake escapes `.` as `.2e`
+/// (`C_MODULE_LIBRARY_LINKER__msadp32.2eacm_Debug`). Matching the raw name missed every
+/// dotted target (codecs, typelibs, themes), which therefore never converted.
+pub fn ninja_rule_name(target: &str) -> String {
+    target.replace('.', ".2e")
+}
 pub fn link_edge(root: &Path, arch: &str, target: &str) -> Result<Link> {
     require_configured(root, arch)?;
     let path = local(root, &root.join(format!("build-{arch}/build.ninja")))?;
     let ninja = read(&path)?;
     let pattern = format!(
         r"(?m)^build (\S+): C(?:XX)?(_\w+?)_LINKER__{}_(?:Debug|Release|RelWithDebInfo|MinSizeRel)( .*\n|\n)((?:  .*\n)+)",
-        regex::escape(target)
+        regex::escape(&ninja_rule_name(target))
     );
     let Some(c) = re(&pattern).captures(&ninja) else {
         let why = no_edge_why(&ninja, target);
@@ -827,7 +833,11 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
         {
             defined = true;
         }
+        // spec2def names the OUTPUT file (`msadp32.dll`), which for a dotted target
+        // (`msadp32.acm`, `stdole2.tlb`) is the target's own name: it is the module's
+        // .spec, read by its own pattern, not a statement on the target.
         if a.is_empty()
+            || cmd == "spec2def"
             || (a[0] != target && !(cmd == "add_cd_file" && a.iter().any(|x| x == target)))
         {
             if re(r"\$\{(SOURCE|PCH_SKIP_SOURCE)\}").is_match(raw)

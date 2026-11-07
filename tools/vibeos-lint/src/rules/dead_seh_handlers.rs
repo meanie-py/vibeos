@@ -23,7 +23,7 @@
 //! its own chain).
 use crate::{twins, Corpus, Rule};
 use regex::Regex;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::LazyLock;
 
 pub struct DeadSehHandlers;
@@ -36,7 +36,7 @@ impl Rule for DeadSehHandlers {
     }
     fn run(&self, c: &Corpus) -> Result<Vec<String>, String> {
         let index = c.c_twins();
-        let mut out = BTreeSet::new();
+        let mut parsed = Vec::new();
         for f in c.rust_files() {
             let path = f.path.to_string_lossy();
             if SKIP.is_match(&path) || GENERATED.is_match(head(&f.text, 4096)) {
@@ -44,20 +44,29 @@ impl Rule for DeadSehHandlers {
             }
             let blank = twins::blank_rust(&f.text);
             let funs = twins::rust_functions(&blank, &f.path);
-            // Same-file helpers that catch: a body calling one is caught too (PsSuspendThread
-            // puts its try_except in `suspend_caught`, which both call sites share).
-            let strong: Vec<&str> = funs
-                .iter()
-                .filter(|h| STRONG.is_match(&h.body))
-                .map(|h| h.name.as_str())
-                .collect();
-            let any: Vec<&str> = funs
-                .iter()
-                .filter(|h| CATCH.is_match(&h.body))
-                .map(|h| h.name.as_str())
-                .collect();
-            for fun in &funs {
-                let helpers = Helpers { strong: &strong, any: &any };
+            parsed.push((f, crate_key(&path), funs));
+        }
+        // Helpers that catch, per CRATE: a body calling one is caught too. PsSuspendThread
+        // puts its try_except in `suspend_caught`, which both call sites share; cdrom's
+        // DeviceSendSrbSynchronously calls `__SEH2_ProbeAndLockPages` from ddk_shims.rs.
+        let mut strong: HashMap<String, Vec<String>> = HashMap::new();
+        let mut any: HashMap<String, Vec<String>> = HashMap::new();
+        for (_, key, funs) in &parsed {
+            for h in funs {
+                if STRONG.is_match(&h.body) {
+                    strong.entry(key.clone()).or_default().push(h.name.clone());
+                }
+                if CATCH.is_match(&h.body) {
+                    any.entry(key.clone()).or_default().push(h.name.clone());
+                }
+            }
+        }
+        let mut out = BTreeSet::new();
+        for (f, key, funs) in &parsed {
+            let s: Vec<&str> = strong.get(key).map_or(vec![], |v| v.iter().map(String::as_str).collect());
+            let a: Vec<&str> = any.get(key).map_or(vec![], |v| v.iter().map(String::as_str).collect());
+            let helpers = Helpers { strong: &s, any: &a };
+            for fun in funs {
                 if let Some(line) = check(fun, &f.text, index.get(&fun.name), &helpers) {
                     out.insert(format!("{}: {line}", f.path.display()));
                 }
@@ -65,6 +74,11 @@ impl Rule for DeadSehHandlers {
         }
         Ok(out.into_iter().collect())
     }
+}
+
+/// The crate a Rust file belongs to: its path up to `/src/` (the whole path if none).
+fn crate_key(path: &str) -> String {
+    path.find("/src/").map_or(path, |i| &path[..i]).to_string()
 }
 
 static SKIP: LazyLock<Regex> = LazyLock::new(|| {
@@ -84,17 +98,19 @@ static C_TRY: LazyLock<Regex> =
 /// Every way the Rust tree catches, or makes the catch unnecessary.
 static CATCH: LazyLock<Regex> = LazyLock::new(|| {
     crate::regexes::cached(concat!(
-        r"\bprobe::|\b(?:try_except|fat_try_except|rpc_try[a-z_]*|MmTryProbeAndLockPages|",
+        r"\bprobe::|\b(?:try_except(?:_all)?|fat_try_except|rpc_try[a-z_]*|MmTryProbeAndLockPages|",
         r"probe_[a-z_]+|Probe[A-Za-z]*Safe|safe_copy_[a-z_]+|copy_(?:from|to)_user|",
-        r"capture_user[a-z_]*|write_user(?:_nofail)?|read_user[a-z_]*|catch_unwind)\b",
+        r"capture_(?:from_)?user[a-z_]*|KmProtectedCopyMemory|write_user(?:_nofail)?|",
+        r"read_user[a-z_]*|catch_unwind)\b",
     ))
     .unwrap()
 });
 /// A real catch: the only answer to a raise-by-design callee.
 static STRONG: LazyLock<Regex> = LazyLock::new(|| {
-    crate::regexes::cached(
-        r"\b(?:try_except|fat_try_except|rpc_try[a-z_]*|MmTryProbeAndLockPages|catch_unwind)\b",
-    )
+    crate::regexes::cached(concat!(
+        r"\b(?:try_except(?:_all)?|fat_try_except|rpc_try[a-z_]*|MmTryProbeAndLockPages|",
+        r"catch_unwind)\b",
+    ))
     .unwrap()
 });
 static NOLINT: LazyLock<Regex> =
@@ -114,7 +130,7 @@ static C_RAISE: LazyLock<Regex> = LazyLock::new(|| {
         r"Cc(?:CopyRead|CopyWrite|FastCopyRead|FastCopyWrite|MapData|PinRead|PinMappedData|",
         r"PreparePinWrite|PrepareMdlWrite|MdlRead|ZeroData|SetFileSizes|InitializeCacheMap)|",
         r"FsRtlAllocatePool\w*|FsRtlInitializeBaseMcb|FsRtlAddLargeMcbEntry|\w+RaiseStatus|KeSuspendThread|KeReleaseSemaphore|KeReleaseMutant|",
-        r"KeWaitFor\w+|KeInsertQueue\w*)\s*\(",
+        r"KeWaitFor\w+|KeInsertQueue\w*|IoCreateStreamFileObject\w*)\s*\(",
     ))
     .unwrap()
 });
@@ -297,6 +313,42 @@ mod tests {
         let probe_only = "pub unsafe extern \"system\" fn IoLockIt(Mdl: PMDL) -> NTSTATUS {\n    \
             probe_user_buffer_write(Mdl, 4, 4, 1).ok();\n    MmProbeAndLockPages(Mdl, 1, 0);\n    0\n}\n";
         assert_eq!(run(C, probe_only).len(), 1, "a probe does not catch a raise");
+    }
+
+    #[test]
+    fn try_except_all_is_a_real_catch() {
+        let rs = "pub unsafe extern \"system\" fn IoLockIt(Mdl: PMDL) -> NTSTATUS {\n    \
+            match ntkrnl_sys::seh::try_except_all(|| MmProbeAndLockPages(Mdl, 1, 0)) {\n        \
+            Ok(()) => 0,\n        Err(s) => s,\n    }\n}\n";
+        assert!(run(C, rs).is_empty());
+    }
+
+    #[test]
+    fn a_catch_in_another_file_of_the_same_crate_counts() {
+        let corpus = |helper_path: &str| {
+            Corpus::new(
+                PathBuf::from("."),
+                vec![
+                    crate::SourceFile::new("ntoskrnl/io/iomgr/irp.c".into(), C.into()),
+                    crate::SourceFile::new(
+                        "sdk/lib/rust/iomgr-rust/src/irp.rs".into(),
+                        "pub unsafe extern \"system\" fn IoLockIt(Mdl: PMDL) -> NTSTATUS {\n    \
+                         lock_caught(Mdl)\n}\n"
+                            .into(),
+                    ),
+                    crate::SourceFile::new(
+                        helper_path.into(),
+                        "pub unsafe fn lock_caught(Mdl: PMDL) -> NTSTATUS {\n    \
+                         ntkrnl_sys::seh::try_except_all(|| MmProbeAndLockPages(Mdl, 1, 0)).err().unwrap_or(0)\n}\n"
+                            .into(),
+                    ),
+                ],
+            )
+        };
+        let same = corpus("sdk/lib/rust/iomgr-rust/src/shims.rs");
+        assert!(DeadSehHandlers.run(&same).unwrap().is_empty());
+        let other = corpus("sdk/lib/rust/ob-rust/src/shims.rs");
+        assert_eq!(DeadSehHandlers.run(&other).unwrap().len(), 1, "another crate's helper is not ours");
     }
 
     #[test]

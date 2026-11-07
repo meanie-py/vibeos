@@ -56,7 +56,7 @@ pub unsafe extern "system" fn KsLoadResource(
     Resource: *mut *mut core::ffi::c_void,
     ResourceSize: *mut u32,
 ) -> i32 {
-    let mut Status: i32;
+    let mut Status: i32 = STATUS_SUCCESS;
     let mut ResourceInfo: LDR_RESOURCE_INFO = core::mem::zeroed();
     let mut ResourceDataEntry: PIMAGE_RESOURCE_DATA_ENTRY = core::ptr::null_mut();
     let mut Data: *mut core::ffi::c_void = core::ptr::null_mut();
@@ -67,21 +67,27 @@ pub unsafe extern "system" fn KsLoadResource(
     ResourceInfo.Name = ResourceName as _;
     ResourceInfo.Language = MAKELANGID(0, 0) as _;
 
-    Status = LdrFindResource_U(ImageBase, &mut ResourceInfo, 3, &mut ResourceDataEntry);
-    if NT_SUCCESS(Status) {
-        Status = LdrAccessResource(ImageBase, ResourceDataEntry, &mut Data, &mut Size);
+    // C: one __try around the lookup and copy (the image may be a user mapping);
+    // the handler takes the code, and Result is freed below on failure.
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        Status = LdrFindResource_U(ImageBase, &mut ResourceInfo, 3, &mut ResourceDataEntry);
         if NT_SUCCESS(Status) {
-            Result = AllocateItem(PoolType, Size as usize);
-            if !Result.is_null() {
-                core::ptr::copy(Data, Result, Size as usize);
-                *Resource = Result;
-                if !ResourceSize.is_null() {
-                    *ResourceSize = Size;
+            Status = LdrAccessResource(ImageBase, ResourceDataEntry, &mut Data, &mut Size);
+            if NT_SUCCESS(Status) {
+                Result = AllocateItem(PoolType, Size as usize);
+                if !Result.is_null() {
+                    core::ptr::copy(Data, Result, Size as usize);
+                    *Resource = Result;
+                    if !ResourceSize.is_null() {
+                        *ResourceSize = Size;
+                    }
+                } else {
+                    Status = STATUS_INSUFFICIENT_RESOURCES;
                 }
-            } else {
-                Status = STATUS_INSUFFICIENT_RESOURCES;
             }
         }
+    }) {
+        Status = code;
     }
 
     if !NT_SUCCESS(Status) {

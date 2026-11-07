@@ -1,5 +1,8 @@
 [workspace]
 members = [
+    "netmsg-cargo",
+    "netevent-cargo",
+    "iologmsg-cargo",
     "wmi-cargo",
     "themeui-cargo",
     "tapiui-cargo",
@@ -1236,6 +1239,7 @@ members = [
     "wined3d-h",
     "d3d8-rust",
     "d3d9-rust",
+    "setup-rust",
 ]
 resolver = "2"
 

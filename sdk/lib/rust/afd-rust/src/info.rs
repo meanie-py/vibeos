@@ -13,6 +13,9 @@ pub unsafe extern "system" fn AfdGetInfo(
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
+    // nolint(dead_seh): the C's __try guards InfoReq, but LockRequest hands back
+    // the system mapping of pages it probed and locked (MmGetSystemAddressForMdl-
+    // Safe), so the accesses below cannot fault on the caller's behalf.
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let InfoReq: PAFD_INFO = LockRequest(Irp, IrpSp, 1u8, core::ptr::null_mut()) as PAFD_INFO;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
@@ -114,6 +117,9 @@ pub unsafe extern "system" fn AfdSetInfo(
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
+    // nolint(dead_seh): the C's __try guards InfoReq, but LockRequest hands back
+    // the system mapping of pages it probed and locked (MmGetSystemAddressForMdl-
+    // Safe), so the accesses below cannot fault on the caller's behalf.
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let InfoReq: PAFD_INFO = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as PAFD_INFO;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
