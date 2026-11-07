@@ -33,7 +33,10 @@ impl Fixture {
         Self(p, guard)
     }
     fn command(&self) -> Command {
-        let mut c = Command::new(env!("CARGO_BIN_EXE_host-jobs"));
+        self.command_for(env!("CARGO_BIN_EXE_host-jobs"))
+    }
+    fn command_for(&self, program: impl AsRef<std::ffi::OsStr>) -> Command {
+        let mut c = Command::new(program);
         c.process_group(self.1.id() as i32)
             .env("VIBEOS_HOSTLOCK_DIR", &self.0)
             .env("VIBEOS_HOST_JOB_SLOTS", "2")
@@ -285,7 +288,17 @@ fn smaller_limits_count_active_slots_above_the_new_prefix() {
 
 #[test]
 fn queued_compilers_fill_the_pool_and_report_run_ownership() {
+    queued_compilers_with_registration_barrier(false);
+}
+
+#[test]
+fn queued_compilers_waits_for_late_registrations() {
+    queued_compilers_with_registration_barrier(true);
+}
+
+fn queued_compilers_with_registration_barrier(delayed: bool) {
     let f = Fixture::new();
+    let registration_gate = f.0.join("register-late");
     let mut children = Vec::new();
     for n in 0..24 {
         let body = format!(
@@ -293,8 +306,24 @@ fn queued_compilers_fill_the_pool_and_report_run_ownership() {
             f.0.join(format!("started-{n}")).display(),
             f.0.join("release-all").display()
         );
-        children.push(
+        // Hold two launchers before they enter the broker. Filling the active
+        // pool cannot imply that every queued launcher has registered already.
+        let mut command = if delayed && n >= 22 {
+            let mut command = f.command_for("sh");
+            command
+                .args([
+                    "-c",
+                    "while test ! -f \"$1\"; do sleep .02; done; shift; exec \"$@\"",
+                    "delayed-registration",
+                ])
+                .arg(&registration_gate)
+                .arg(env!("CARGO_BIN_EXE_host-jobs"));
+            command
+        } else {
             f.command()
+        };
+        children.push(
+            command
                 .env("VIBEOS_HOST_JOB_SLOTS", "8")
                 .env("VIBEOS_JOB_RUN", "/artifacts/exact-run")
                 .env("VIBEOS_JOB_LAUNCHER_PID", "123")
@@ -320,14 +349,38 @@ fn queued_compilers_fill_the_pool_and_report_run_ownership() {
         assert!(Instant::now() < end, "pool did not fill");
         thread::sleep(Duration::from_millis(10));
     }
-    thread::sleep(Duration::from_millis(100));
+    let registered_deadline = Instant::now() + Duration::from_secs(10);
+    let status = loop {
+        let result = f.command().arg("--status").output().unwrap();
+        assert!(result.status.success(), "status query failed: {result:?}");
+        let status = String::from_utf8(result.stdout).unwrap();
+        let registered = status
+            .matches("\"run_dir\":\"/artifacts/exact-run\"")
+            .count();
+        assert!(registered <= 24, "unexpected registrations: {status}");
+        if delayed && registered == 22 {
+            fs::write(&registration_gate, "").unwrap();
+        }
+        if registered == 24 {
+            break status;
+        }
+        for child in &mut children {
+            assert!(
+                child.try_wait().unwrap().is_none(),
+                "launcher exited before release-all"
+            );
+        }
+        assert!(
+            Instant::now() < registered_deadline,
+            "only {registered}/24 launchers registered: {status}"
+        );
+        thread::sleep(Duration::from_millis(10));
+    };
     assert_eq!(
         count(),
         8,
         "pool exceeded capacity while all admitted compilers were blocked at barrier"
     );
-    let result = f.command().arg("--status").output().unwrap();
-    let status = String::from_utf8(result.stdout).unwrap();
     assert_eq!(status.matches("\"state\":\"active\"").count(), 8);
     assert_eq!(
         status

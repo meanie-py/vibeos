@@ -526,7 +526,11 @@ def test_a_short_replay_is_not_reported_as_a_pass(tmp_path, monkeypatch):
         gdb = False
 
     # the boot itself is not under test; monkeypatch so the stub cannot leak
-    monkeypatch.setattr(rrcmd, "cmd_replay", lambda args, repo: 0)
+    rr.write_manifest(trace, arch="arm64", argv=[], media={}, boot_cmd=["true"], finalised=True)
+    (trace / "replay.bin").write_bytes(b"x")
+    (trace / "media").mkdir()
+    rr.snapshot_pristine(trace)
+    monkeypatch.setattr(rrcmd, "_execute", lambda arguments: 0)
     assert rrcmd.cmd_verify(_Args(), tmp_path) != 0
 
 
@@ -774,11 +778,7 @@ def test_the_gdb_flag_warns_how_to_stop_a_replay_correctly(tmp_path, monkeypatch
     rr.snapshot_pristine(trace)
     # check_trace() shells out for the QEMU version; the boot itself is not under
     # test, so stub both with something that satisfies each caller.
-    monkeypatch.setattr(
-        rrcmd.subprocess,
-        "run",
-        lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
-    )
+    monkeypatch.setattr(rrcmd, "_execute", lambda _arguments: 0)
     monkeypatch.setattr(
         rr.subprocess,
         "run",
@@ -989,17 +989,54 @@ def test_a_trace_from_before_the_finalisation_fix_is_refused(tmp_path):
     assert all(rr.FATAL_MARKER in w for w in problems if "TRUNCATED" in w)
 
 
-def test_record_stamps_finalised_only_after_the_trace_settles(tmp_path):
-    """The flag must be written by the same code path that waits, or it becomes a
-    label rather than evidence."""
-    import inspect
+def test_record_stamps_finalised_only_after_the_trace_settles(tmp_path, monkeypatch):
+    """A native command must leave the flag unset while a late writer is active."""
+    import threading
+    from types import SimpleNamespace
 
     from . import rrcmd
 
-    src = inspect.getsource(rrcmd.cmd_record)
-    wait_at = src.index("await_trace_quiescence")
-    stamp_at = src.index("finalised = True")
-    assert wait_at < stamp_at, "the flag is set before the wait — it would mean nothing"
+    trace = tmp_path / "controlled-finalisation"
+    observed = []
+    writers = []
+
+    def boot(arguments):
+        (trace / "media").mkdir()
+        rr.write_manifest(trace, arch="arm64", argv=[], media={})
+        (trace / "replay.bin").write_bytes(b"initial")
+
+        def late_write():
+            time.sleep(0.2)
+            observed.append(
+                json.loads((trace / "manifest.json").read_text()).get("finalised", False)
+            )
+            with (trace / "replay.bin").open("ab") as output:
+                output.write(b"late")
+
+        writer = threading.Thread(target=late_write)
+        writer.start()
+        writers.append(writer)
+        return 0
+
+    monkeypatch.setattr(rrcmd, "_execute", boot)
+    monkeypatch.delenv("VIBEOS_QEMU_PC_SAMPLE", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_RR_SAMPLE", raising=False)
+    args = SimpleNamespace(
+        root=str(tmp_path),
+        name=trace.name,
+        arch="arm64",
+        payload="none",
+        smp=1,
+        shift=rr.DEFAULT_ICOUNT_SHIFT,
+        build=False,
+        timeout=60,
+    )
+    assert rrcmd.cmd_record(args, tmp_path) == 0
+    for writer in writers:
+        writer.join()
+    assert observed == [False]
+    assert (trace / "replay.bin").read_bytes() == b"initiallate"
+    assert json.loads((trace / "manifest.json").read_text())["finalised"]
 
 
 def test_a_non_default_shift_warns_that_the_trace_will_not_replay(tmp_path, monkeypatch, capsys):
@@ -1012,12 +1049,7 @@ def test_a_non_default_shift_warns_that_the_trace_will_not_replay(tmp_path, monk
     """
     from . import rrcmd
 
-    monkeypatch.setattr(
-        rrcmd.subprocess,
-        "run",
-        lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
-    )
-    monkeypatch.setattr(rrcmd, "await_trace_quiescence", lambda t: 0)
+    monkeypatch.setattr(rrcmd, "_execute", lambda _arguments: 0)
 
     class _Args:
         arch = "arm64"
@@ -1324,34 +1356,30 @@ def test_record_preserves_guest_crash_trace_but_fails_requested_diagnostic_error
     work.mkdir()
     (work / "serial.log").write_text("*** BUGCHECK 0xA\n")
 
-    def boot(cmd, **kwargs):
-        if "--version" in cmd:
-            return SimpleNamespace(returncode=0, stdout="QEMU emulator version 8.2.2", stderr="")
-        if "env" in kwargs:
-            (trace / "media").mkdir()
-            rr.write_manifest(trace, arch="arm64", argv=[], media={})
-            (trace / "replay.bin").write_bytes(b"useful crash recording")
-            (trace / "last-run.json").write_text(
-                json.dumps({"mode": "record", "serial_log": str(work / "serial.log")})
+    def boot(_arguments):
+        (trace / "media").mkdir()
+        rr.write_manifest(trace, arch="arm64", argv=[], media={})
+        (trace / "replay.bin").write_bytes(b"useful crash recording")
+        (trace / "last-run.json").write_text(
+            json.dumps({"mode": "record", "serial_log": str(work / "serial.log")})
+        )
+        (trace / "samples.jsonl").write_text(
+            json.dumps(
+                {
+                    "icount": 12,
+                    "regs": "CPU#0 PC=0",
+                    "mem": [{"base": 0, "hashes": ["878633aa32a3b150"]}],
+                }
             )
-            (trace / "samples.jsonl").write_text(
-                json.dumps(
-                    {
-                        "icount": 12,
-                        "regs": "CPU#0 PC=0",
-                        "mem": [{"base": 0, "hashes": ["878633aa32a3b150"]}],
-                    }
-                )
-                + "\n"
+            + "\n"
+        )
+        if sampler_error:
+            (work / "vm_diagnostic_sidecar-rr.json").write_text(
+                json.dumps({"error": {"kind": "QmpTransport", "message": "controlled timeout"}})
             )
-            if sampler_error:
-                (work / "vm_diagnostic_sidecar-rr.json").write_text(
-                    json.dumps({"error": {"kind": "QmpTransport", "message": "controlled timeout"}})
-                )
-        return SimpleNamespace(returncode=1, stdout="", stderr="")
+        return 1
 
-    monkeypatch.setattr(rrcmd.subprocess, "run", boot)
-    monkeypatch.setattr(rrcmd, "await_trace_quiescence", lambda trace: 22)
+    monkeypatch.setattr(rrcmd, "_execute", boot)
     args = SimpleNamespace(
         root=str(tmp_path),
         name=trace.name,
@@ -1367,3 +1395,33 @@ def test_record_preserves_guest_crash_trace_but_fails_requested_diagnostic_error
     assert json.loads((trace / "manifest.json").read_text())["finalised"]
     assert json.loads((trace / "record-diagnostics.json").read_text())["ok"] is (not sampler_error)
     assert (trace / "record-serial.log").read_text().startswith("*** BUGCHECK")
+
+
+@pytest.mark.parametrize("arch", ["i386-uefi", "amd64-uefi", "amd64-bios"])
+def test_record_preserves_parser_arch_alias_at_the_boot_boundary(tmp_path, monkeypatch, arch):
+    from types import SimpleNamespace
+
+    from . import rrcmd
+
+    calls = []
+
+    def boot(arguments):
+        calls.append(arguments)
+        raise RuntimeError("controlled boot boundary")
+
+    monkeypatch.setattr(rrcmd, "_execute", boot)
+    args = SimpleNamespace(
+        root=str(tmp_path),
+        name="alias",
+        arch=arch,
+        payload="none",
+        smp=1,
+        shift=rr.DEFAULT_ICOUNT_SHIFT,
+        build=False,
+        timeout=60,
+    )
+    with pytest.raises(RuntimeError, match="controlled boot boundary"):
+        rrcmd.cmd_record(args, tmp_path)
+    assert len(calls) == 1
+    command = calls[0]["argv"]
+    assert command[command.index("--arch") + 1] == arch

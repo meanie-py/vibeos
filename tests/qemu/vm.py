@@ -442,7 +442,12 @@ class QemuVM:
             self._boot_output = self._call("wait_for_boot")
             return self._boot_output
         except BaseException:
-            self._boot_output = self.serial._buf
+            try:
+                self._boot_output = self.serial._buf
+            except Exception:
+                # A canceled resource session can no longer provide its buffer.
+                # Diagnostics must not replace the original timeout or interrupt.
+                pass
             raise
 
     def wait_exit(self, timeout=20.0):

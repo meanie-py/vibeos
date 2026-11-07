@@ -1,0 +1,434 @@
+[
+  {
+    "boot": {
+      "classification": "BUGCHECK",
+      "hang_kind": "slow",
+      "salient": []
+    },
+    "expected": "BUGCHECK"
+  },
+  {
+    "boot": {
+      "classification": "BUGCHECK",
+      "hang_kind": "slow",
+      "salient": [
+        "BugCheck 0x00001e (after boot marker)",
+        "hang: CPU#0 0xffffa000 -> 12345\tKeRaiseIrql+0x14\tx:9"
+      ]
+    },
+    "expected": "BUGCHECK 0x1E post-marker @ KeRaiseIrql"
+  },
+  {
+    "boot": {
+      "classification": "BUGCHECK",
+      "hang_kind": "slow",
+      "salient": [
+        "last serial: retry 123 at 0xfffffedc"
+      ]
+    },
+    "expected": "BUGCHECK | last serial: retry # at #"
+  },
+  {
+    "boot": {
+      "classification": "BUGCHECK",
+      "hang_kind": "slow",
+      "salient": [
+        "fail marker: broken 125 at 0xff"
+      ]
+    },
+    "expected": "BUGCHECK | fail marker: broken # at #"
+  },
+  {
+    "boot": {
+      "classification": "BUGCHECK",
+      "hang_kind": "slow",
+      "salient": [
+        "hello32.exe failed",
+        "selfmod32.exe exit 18",
+        "hello32.exe failed"
+      ]
+    },
+    "expected": "BUGCHECK | hello32.exe failed"
+  },
+  {
+    "boot": {
+      "classification": "BUGCHECK",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\tCONST+314197\tfile",
+        "0xabc"
+      ]
+    },
+    "expected": "BUGCHECK | hang -> x CONST+# file"
+  },
+  {
+    "boot": {
+      "classification": "BUGCHECK",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\t(no symbol)\tfile"
+      ]
+    },
+    "expected": "BUGCHECK | hang -> x (no symbol) file"
+  },
+  {
+    "boot": {
+      "classification": "HANG_TIMEOUT",
+      "hang_kind": "slow",
+      "salient": []
+    },
+    "expected": "HANG_TIMEOUT slow"
+  },
+  {
+    "boot": {
+      "classification": "HANG_TIMEOUT",
+      "hang_kind": "slow",
+      "salient": [
+        "BugCheck 0x00001e (after boot marker)",
+        "hang: CPU#0 0xffffa000 -> 12345\tKeRaiseIrql+0x14\tx:9"
+      ]
+    },
+    "expected": "HANG_TIMEOUT 0x1E post-marker @ KeRaiseIrql"
+  },
+  {
+    "boot": {
+      "classification": "HANG_TIMEOUT",
+      "hang_kind": "slow",
+      "salient": [
+        "last serial: retry 123 at 0xfffffedc"
+      ]
+    },
+    "expected": "HANG_TIMEOUT slow | retry # at #"
+  },
+  {
+    "boot": {
+      "classification": "HANG_TIMEOUT",
+      "hang_kind": "slow",
+      "salient": [
+        "fail marker: broken 125 at 0xff"
+      ]
+    },
+    "expected": "HANG_TIMEOUT slow"
+  },
+  {
+    "boot": {
+      "classification": "HANG_TIMEOUT",
+      "hang_kind": "slow",
+      "salient": [
+        "hello32.exe failed",
+        "selfmod32.exe exit 18",
+        "hello32.exe failed"
+      ]
+    },
+    "expected": "HANG_TIMEOUT slow"
+  },
+  {
+    "boot": {
+      "classification": "HANG_TIMEOUT",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\tCONST+314197\tfile",
+        "0xabc"
+      ]
+    },
+    "expected": "HANG_TIMEOUT slow"
+  },
+  {
+    "boot": {
+      "classification": "HANG_TIMEOUT",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\t(no symbol)\tfile"
+      ]
+    },
+    "expected": "HANG_TIMEOUT slow"
+  },
+  {
+    "boot": {
+      "classification": "FAIL_MARKER",
+      "hang_kind": "slow",
+      "salient": []
+    },
+    "expected": "FAIL_MARKER "
+  },
+  {
+    "boot": {
+      "classification": "FAIL_MARKER",
+      "hang_kind": "slow",
+      "salient": [
+        "BugCheck 0x00001e (after boot marker)",
+        "hang: CPU#0 0xffffa000 -> 12345\tKeRaiseIrql+0x14\tx:9"
+      ]
+    },
+    "expected": "FAIL_MARKER 0x1E post-marker @ KeRaiseIrql"
+  },
+  {
+    "boot": {
+      "classification": "FAIL_MARKER",
+      "hang_kind": "slow",
+      "salient": [
+        "last serial: retry 123 at 0xfffffedc"
+      ]
+    },
+    "expected": "FAIL_MARKER "
+  },
+  {
+    "boot": {
+      "classification": "FAIL_MARKER",
+      "hang_kind": "slow",
+      "salient": [
+        "fail marker: broken 125 at 0xff"
+      ]
+    },
+    "expected": "FAIL_MARKER broken # at #"
+  },
+  {
+    "boot": {
+      "classification": "FAIL_MARKER",
+      "hang_kind": "slow",
+      "salient": [
+        "hello32.exe failed",
+        "selfmod32.exe exit 18",
+        "hello32.exe failed"
+      ]
+    },
+    "expected": "FAIL_MARKER "
+  },
+  {
+    "boot": {
+      "classification": "FAIL_MARKER",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\tCONST+314197\tfile",
+        "0xabc"
+      ]
+    },
+    "expected": "FAIL_MARKER "
+  },
+  {
+    "boot": {
+      "classification": "FAIL_MARKER",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\t(no symbol)\tfile"
+      ]
+    },
+    "expected": "FAIL_MARKER "
+  },
+  {
+    "boot": {
+      "classification": "LADDER_FAIL",
+      "hang_kind": "slow",
+      "salient": []
+    },
+    "expected": "LADDER_FAIL ?"
+  },
+  {
+    "boot": {
+      "classification": "LADDER_FAIL",
+      "hang_kind": "slow",
+      "salient": [
+        "BugCheck 0x00001e (after boot marker)",
+        "hang: CPU#0 0xffffa000 -> 12345\tKeRaiseIrql+0x14\tx:9"
+      ]
+    },
+    "expected": "LADDER_FAIL 0x1E post-marker @ KeRaiseIrql"
+  },
+  {
+    "boot": {
+      "classification": "LADDER_FAIL",
+      "hang_kind": "slow",
+      "salient": [
+        "last serial: retry 123 at 0xfffffedc"
+      ]
+    },
+    "expected": "LADDER_FAIL ?"
+  },
+  {
+    "boot": {
+      "classification": "LADDER_FAIL",
+      "hang_kind": "slow",
+      "salient": [
+        "fail marker: broken 125 at 0xff"
+      ]
+    },
+    "expected": "LADDER_FAIL ?"
+  },
+  {
+    "boot": {
+      "classification": "LADDER_FAIL",
+      "hang_kind": "slow",
+      "salient": [
+        "hello32.exe failed",
+        "selfmod32.exe exit 18",
+        "hello32.exe failed"
+      ]
+    },
+    "expected": "LADDER_FAIL hello32.exe,selfmod32.exe"
+  },
+  {
+    "boot": {
+      "classification": "LADDER_FAIL",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\tCONST+314197\tfile",
+        "0xabc"
+      ]
+    },
+    "expected": "LADDER_FAIL ?"
+  },
+  {
+    "boot": {
+      "classification": "LADDER_FAIL",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\t(no symbol)\tfile"
+      ]
+    },
+    "expected": "LADDER_FAIL ?"
+  },
+  {
+    "boot": {
+      "classification": "RUST_PANIC",
+      "hang_kind": "slow",
+      "salient": []
+    },
+    "expected": "RUST_PANIC"
+  },
+  {
+    "boot": {
+      "classification": "RUST_PANIC",
+      "hang_kind": "slow",
+      "salient": [
+        "BugCheck 0x00001e (after boot marker)",
+        "hang: CPU#0 0xffffa000 -> 12345\tKeRaiseIrql+0x14\tx:9"
+      ]
+    },
+    "expected": "RUST_PANIC 0x1E post-marker @ KeRaiseIrql"
+  },
+  {
+    "boot": {
+      "classification": "RUST_PANIC",
+      "hang_kind": "slow",
+      "salient": [
+        "last serial: retry 123 at 0xfffffedc"
+      ]
+    },
+    "expected": "RUST_PANIC | last serial: retry # at #"
+  },
+  {
+    "boot": {
+      "classification": "RUST_PANIC",
+      "hang_kind": "slow",
+      "salient": [
+        "fail marker: broken 125 at 0xff"
+      ]
+    },
+    "expected": "RUST_PANIC | fail marker: broken # at #"
+  },
+  {
+    "boot": {
+      "classification": "RUST_PANIC",
+      "hang_kind": "slow",
+      "salient": [
+        "hello32.exe failed",
+        "selfmod32.exe exit 18",
+        "hello32.exe failed"
+      ]
+    },
+    "expected": "RUST_PANIC | hello32.exe failed"
+  },
+  {
+    "boot": {
+      "classification": "RUST_PANIC",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\tCONST+314197\tfile",
+        "0xabc"
+      ]
+    },
+    "expected": "RUST_PANIC | hang -> x CONST+# file"
+  },
+  {
+    "boot": {
+      "classification": "RUST_PANIC",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\t(no symbol)\tfile"
+      ]
+    },
+    "expected": "RUST_PANIC | hang -> x (no symbol) file"
+  },
+  {
+    "boot": {
+      "classification": "",
+      "hang_kind": "slow",
+      "salient": []
+    },
+    "expected": "FAIL"
+  },
+  {
+    "boot": {
+      "classification": "",
+      "hang_kind": "slow",
+      "salient": [
+        "BugCheck 0x00001e (after boot marker)",
+        "hang: CPU#0 0xffffa000 -> 12345\tKeRaiseIrql+0x14\tx:9"
+      ]
+    },
+    "expected": "FAIL 0x1E post-marker @ KeRaiseIrql"
+  },
+  {
+    "boot": {
+      "classification": "",
+      "hang_kind": "slow",
+      "salient": [
+        "last serial: retry 123 at 0xfffffedc"
+      ]
+    },
+    "expected": "FAIL | last serial: retry # at #"
+  },
+  {
+    "boot": {
+      "classification": "",
+      "hang_kind": "slow",
+      "salient": [
+        "fail marker: broken 125 at 0xff"
+      ]
+    },
+    "expected": "FAIL | fail marker: broken # at #"
+  },
+  {
+    "boot": {
+      "classification": "",
+      "hang_kind": "slow",
+      "salient": [
+        "hello32.exe failed",
+        "selfmod32.exe exit 18",
+        "hello32.exe failed"
+      ]
+    },
+    "expected": "FAIL | hello32.exe failed"
+  },
+  {
+    "boot": {
+      "classification": "",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\tCONST+314197\tfile",
+        "0xabc"
+      ]
+    },
+    "expected": "FAIL | hang -> x CONST+# file"
+  },
+  {
+    "boot": {
+      "classification": "",
+      "hang_kind": "slow",
+      "salient": [
+        "hang -> x\t(no symbol)\tfile"
+      ]
+    },
+    "expected": "FAIL | hang -> x (no symbol) file"
+  }
+]
