@@ -13,7 +13,7 @@ DriverVer  = 08/25/2007,1.10
 
 [DestinationDirs]
 DefaultDestDir = 12
-VGA.Display_CopyFiles.NT = 11
+SysFb.Display_CopyFiles.NT = 11
 
 [ClassInstall32.NT]
 AddReg = DisplayClass.NT.AddReg
@@ -26,34 +26,39 @@ HKR, , Installer32,     0, "desk.cpl,DisplayClassInstaller"
 [Manufacturer]
 %StdMfg% = StdMfg
 
+; sysfb drives the framebuffer the firmware set up. It binds to the display controller
+; whose BAR holds that framebuffer (and fails start on any other), and to the root
+; instance it reports itself, which keeps the display when there is no such controller.
+; Compatible-ID matches only, so any vendor INF outranks these.
 [StdMfg]
-%VGA.DeviceDesc% = VGA_Inst,PCI\CC_0000
-%VGA.DeviceDesc% = VGA_Inst,PCI\CC_0001
-%VGA.DeviceDesc% = VGA_Inst,PCI\CC_0300
-%VGA.DeviceDesc% = VGA_Inst,PCI\CC_0301
+%VGA.DeviceDesc% = SysFb_Inst,PCI\CC_0000
+%VGA.DeviceDesc% = SysFb_Inst,PCI\CC_0001
+%VGA.DeviceDesc% = SysFb_Inst,PCI\CC_0300
+%VGA.DeviceDesc% = SysFb_Inst,PCI\CC_0301
+%VGA.DeviceDesc% = SysFb_Inst,PCI\CC_0380
+%SysFb.DeviceDesc% = SysFb_Inst,DETECTEDInternal\sysfb
 
-;---------------------------- VGA/VBE DRIVER ----------------------------
+;---------------------------- FRAMEBUFFER DRIVER ----------------------------
 
-[VGA_Inst.NT]
-CopyFiles = VGA.Miniport_CopyFiles.NT, VGA.Display_CopyFiles.NT
+[SysFb_Inst.NT]
+CopyFiles = SysFb.Miniport_CopyFiles.NT, SysFb.Display_CopyFiles.NT
 
-[VGA.Miniport_CopyFiles.NT]
-vgapnp.sys
+[SysFb.Miniport_CopyFiles.NT]
+sysfb.sys
 
-[VGA.Display_CopyFiles.NT]
-vgaddi.dll
+[SysFb.Display_CopyFiles.NT]
 framebuf.dll
 
-[VGA_Inst.NT.Services]
-AddService = , 0x00000002
-AddService = vga, 0x00000003, VBE_Service_Inst ; SPSVCINST_TAGTOFRONT + SPSVCINST_ASSOCSERVICE
+[SysFb_Inst.NT.Services]
+AddService = sysfb, 0x00000002, SysFb_Service_Inst ; SPSVCINST_ASSOCSERVICE
 
-[VBE_Service_Inst]
+; Start=1 and the group as setup and hivesys.inf have them: it must start ahead of win32k.
+[SysFb_Service_Inst]
 ServiceType   = 1
 StartType     = 1
 ErrorControl  = 0
-ServiceBinary = %12%\vgapnp.sys
-LoadOrderGroup = Video Save
+ServiceBinary = %12%\sysfb.sys
+LoadOrderGroup = Boot Bus Extender
 
 ;-------------------------------- STRINGS -------------------------------
 
@@ -66,6 +71,7 @@ DisplayClassName = "Display Adapters"
 
 StdMfg = "(Standard display adapters)"
 VGA.DeviceDesc = "VGA-compatible graphics card"
+SysFb.DeviceDesc = "Firmware framebuffer"
 
 [Strings.0404]
 DisplayClassName = "顯示介面卡"

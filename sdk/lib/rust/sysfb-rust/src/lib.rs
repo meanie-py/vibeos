@@ -18,6 +18,12 @@
 //! EngpUpdateGraphicsDeviceList reads, and services the video IOCTLs
 //! that framebuf.dll issues (mode query, MapVideoMemory, etc.).
 //!
+//! It is a PnP function driver with two ways in: a root instance it reports
+//! from DriverEntry (the fallback, started before win32k), and the PCI
+//! display controller whose BAR holds the framebuffer, which takes the
+//! display over at START_DEVICE. See the "PnP" section of `sysfb.rs` and
+//! docs/engineering/sysfb-pnp-design.md.
+//!
 //! Standalone driver — no videoprt.sys dependency. Built for all three
 //! arches (it is the live UEFI framebuffer driver on i386/amd64/arm64),
 //! so unlike arm64input-rust this crate is NOT `#[cfg(aarch64)]`-gated.
