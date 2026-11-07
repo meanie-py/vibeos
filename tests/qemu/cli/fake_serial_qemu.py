@@ -26,6 +26,8 @@ ser.connect(serial)
 serial_lock = threading.Lock()
 running = threading.Event()
 running.set()
+chat_started = threading.Event()
+chat_stopped = threading.Event()
 
 
 def send(text):
@@ -40,8 +42,10 @@ load_line = os.environ.get("SERIAL_ON_LOAD", "RESTORED\n")
 
 def chat():
     duration = float(os.environ.get("SERIAL_CHATTY_SECONDS", "0"))
+    chat_started.wait()
     end = time.monotonic() + duration
-    while time.monotonic() < end:
+    until_stop = os.environ.get("SERIAL_CHATTY_UNTIL_STOP") == "1"
+    while not chat_stopped.is_set() and (until_stop or time.monotonic() < end):
         if running.is_set():
             send("payload still running\n")
         time.sleep(0.005)
@@ -63,7 +67,12 @@ def monitor():
         with events.open("a") as f:
             f.write(op + "\n")
         result = "" if request["execute"] == "human-monitor-command" else {}
-        if op == "stop":
+        if op == "fixture-start-chat":
+            send("payload still running\n")
+            chat_started.set()
+        elif op == "fixture-stop-chat":
+            chat_stopped.set()
+        elif op == "stop":
             running.clear()
             if stop_line:
                 send(stop_line)

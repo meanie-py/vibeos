@@ -51,6 +51,19 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
             }
         }
         putc(b'\n');
+        // The message too: a location alone cannot say WHICH precondition fired (a null
+        // vs a misaligned dereference at the same line need different fixes). uefildr has
+        // no size budget; the BIOS freeldr.sys handler stays location-only.
+        struct Debugcon;
+        impl core::fmt::Write for Debugcon {
+            fn write_str(&mut self, s: &str) -> core::fmt::Result {
+                for &b in s.as_bytes() {
+                    unsafe { core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b) };
+                }
+                Ok(())
+            }
+        }
+        let _ = core::fmt::write(&mut Debugcon, format_args!("  msg: {}\n", info.message()));
     }
     #[cfg(target_arch = "aarch64")]
     unsafe {

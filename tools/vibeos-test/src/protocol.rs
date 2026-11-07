@@ -547,6 +547,17 @@ impl Default for QmpClient {
         Self::new()
     }
 }
+fn qmp_io_error(error: std::io::Error) -> Error {
+    use std::io::ErrorKind;
+    let closed = matches!(
+        error.kind(),
+        ErrorKind::BrokenPipe
+            | ErrorKind::ConnectionReset
+            | ErrorKind::ConnectionAborted
+            | ErrorKind::UnexpectedEof
+    );
+    Error::new(error.to_string()).with_kind(if closed { "QmpClosed" } else { "QmpTransport" })
+}
 impl QmpClient {
     pub fn new() -> Self {
         Self {
@@ -611,9 +622,10 @@ impl QmpClient {
                 .stream
                 .as_mut()
                 .ok_or("QMP not connected")?
-                .read(&mut buf)?;
+                .read(&mut buf)
+                .map_err(qmp_io_error)?;
             if n == 0 {
-                return Err("QMP socket closed".into());
+                return Err(Error::new("QMP socket closed").with_kind("QmpClosed"));
             }
             self.buffer.extend_from_slice(&buf[..n]);
             if self.buffer.len() > 16 * 1024 * 1024 {
@@ -637,7 +649,8 @@ impl QmpClient {
         self.stream
             .as_mut()
             .ok_or("QMP not connected")?
-            .write_all(&bytes)?;
+            .write_all(&bytes)
+            .map_err(qmp_io_error)?;
         Ok(())
     }
     fn checked(command: &str, v: Value) -> Result<Value> {
@@ -665,6 +678,32 @@ impl QmpClient {
         }
         self.send(&v)?;
         Self::checked(command, self.recv_reply()?)
+    }
+    /// Bulk transfers may need longer than interactive monitor requests. Restore
+    /// the connection's normal deadline on both success and failure.
+    pub fn execute_with_timeout(
+        &mut self,
+        command: &str,
+        args: Value,
+        timeout: Duration,
+    ) -> Result<Value> {
+        self.stream
+            .as_ref()
+            .ok_or("QMP not connected")?
+            .timeout(Some(timeout))?;
+        let result = self.execute(command, args);
+        let restored = self
+            .stream
+            .as_ref()
+            .ok_or("QMP not connected")?
+            .timeout(Some(self.timeout));
+        match result {
+            Err(error) => Err(error),
+            Ok(value) => {
+                restored?;
+                Ok(value)
+            }
+        }
     }
     pub fn hmp(&mut self, command: &str) -> Result<String> {
         let v = self.execute("human-monitor-command", json!({"command-line":command}))?;
@@ -898,5 +937,36 @@ mod serial_tee_controls {
             .message
             .contains("/dev/full"));
         serial.close();
+    }
+}
+
+#[cfg(test)]
+mod bulk_timeout_controls {
+    use super::*;
+    #[test]
+    fn bulk_timeout_restores_interactive_socket_deadline_on_success_and_error() {
+        for reply in [
+            json!({"return":{}}),
+            json!({"error":{"class":"GenericError","desc":"controlled rejection"}}),
+        ] {
+            let (client, mut server) = UnixStream::pair().unwrap();
+            let mut qmp = QmpClient::new();
+            qmp.timeout = Duration::from_millis(250);
+            client.set_read_timeout(Some(qmp.timeout)).unwrap();
+            client.set_write_timeout(Some(qmp.timeout)).unwrap();
+            let baseline = (
+                client.read_timeout().unwrap(),
+                client.write_timeout().unwrap(),
+            );
+            qmp.stream = Some(Stream::Unix(client));
+            writeln!(server, "{reply}").unwrap();
+            let result = qmp.execute_with_timeout("pmemsave", json!({}), Duration::from_secs(120));
+            assert_eq!(result.is_err(), reply.get("error").is_some());
+            let Stream::Unix(socket) = qmp.stream.as_ref().unwrap() else {
+                panic!("wrong socket");
+            };
+            assert_eq!(socket.read_timeout().unwrap(), baseline.0);
+            assert_eq!(socket.write_timeout().unwrap(), baseline.1);
+        }
     }
 }

@@ -1578,7 +1578,12 @@ unsafe extern "C" fn QSI_SystemProcessInformation(Buffer: PVOID, Size: ULONG, Re
                 (*SpiCurrent).QuotaNonPagedPoolUsage = (*Process).QuotaUsage[PsNonPagedPool];
                 (*SpiCurrent).PagefileUsage = (*Process).QuotaUsage[PsPageFile];
                 (*SpiCurrent).PeakPagefileUsage = (*Process).QuotaPeak[PsPageFile];
-                (*SpiCurrent).PrivatePageCount = (*Process).CommitCharge;
+                // DIVERGES from sysinfo.c, which stored the page count: despite its name,
+                // Windows reports PrivatePageCount in BYTES (Process Explorer's "private
+                // bytes"; memwatch on Windows 11 shows chrome.exe at 1763M), so every process
+                // here read as a few kilobytes.
+                (*SpiCurrent).PrivatePageCount =
+                    ((*Process).CommitCharge as usize).wrapping_mul(PAGE_SIZE as usize) as _;
 
                 let mut ThreadInfo = SpiCurrent.add(1) as PSYSTEM_THREAD_INFORMATION;
                 let mut entry = (*pcb_thread_list_head).Flink;

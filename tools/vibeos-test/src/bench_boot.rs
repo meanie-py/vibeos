@@ -921,6 +921,21 @@ fn await_stortest(
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(240);
     loop {
         let text = h::serial_slice(serial, start);
+        let crash = crate::verdict::post_boot_check(&text, "", &crate::verdict::known_flakes());
+        if !crash.is_null() {
+            c.save_serial(&text)?;
+            c.class(strval(&crash, "classification"))?;
+            let mut salient = crash["salient"].as_array().cloned().unwrap_or_default();
+            if let Some(symbol) = crate::verdict::symbolicate_pc(c.root, "arm64", &text) {
+                salient.push(json!(symbol));
+            }
+            return c.stage(
+                "stortest",
+                "fail",
+                "guest crashed after desktop",
+                json!(salient),
+            );
+        }
         let (verdict, lines) = h::stortest_verdict(&text);
         if drop_requested && !server.dropped && h::drop_marker(&text) && !server.poll()? {
             server.drop_medium()?;

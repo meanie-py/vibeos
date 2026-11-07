@@ -1106,6 +1106,13 @@ per-package: `tools/rustconv/pyproject.toml`
 `tools/*.py` use the repo-root `pyproject.toml`. Policy is identical across all
 four so the surface lints under one standard.
 
+Each invocation writes `/tmp/vibeos-cli/<timestamp>-<id>-check-tooling-all/summary.json`
+and `full.log`. The summary identifies the worktree, options, per-check exit codes,
+durations, executed/reused results and receipt-validation failures. Full output is
+retained beyond the console tail, with actual subprocess timings in `commands.jsonl`.
+A retry gets a separate directory; runner exceptions and interrupts retain failed
+summaries, and a killed run leaves the standard `INCOMPLETE` marker.
+
 ### `difftest [--only NAME[,NAME]] [--case NAME ... --test-target T]`
 `--case` (repeatable, needs exactly one `--only` crate) runs only those exact cases, and
 fails unless exactly that many were graded — only crates whose `main` honours `--exact`

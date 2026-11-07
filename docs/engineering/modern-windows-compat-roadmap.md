@@ -957,8 +957,60 @@ Ruled out on the way, each by a probe measured against Windows 11:
 
 Owed: `CreateProcess` accepts an extended attribute list but applies none of it (no
 `HANDLE_LIST`, so every child inherits every inheritable handle the browser holds at that
-moment; `kernel32-rust/src/proc_create.rs`). Next rung: a real page over the network, and the
-sandbox (`--no-sandbox` is still required).
+moment; `kernel32-rust/src/proc_create.rs`).
+
+### Rung 2 status (2026-11-06): pages over the network
+
+**Local HTTP passes.** `servepage` (in the guest) serves a page whose script is a second fetch;
+Chrome prints `hello over http, net js ran: 42`, the DOM Windows' Chrome prints
+(`servepage.win11.txt`). **HTTPS off the internet passes too:** `https://example.com/` dumps the
+real page through QEMU's NAT, so DNS, TCP, TLS and certificate checks all work. Fixed on the way:
+
+1. No TCP connection to this machine ever opened (`sockprobe`): smoltcp has no loopback for an
+   Ethernet interface, so a packet to our own address went out as an unanswered ARP and one to
+   127.0.0.1 to the gateway. netstack now carries 127.0.0.1/8 and loops frames for a local
+   address back as received (`netstack-rust/src/engine.rs`, `LoopDev`).
+2. And even then: smoltcp rate-limits ARP for the whole interface, and one peer that never
+   answers (the boot self-test's 10.0.2.100) took every slot, so the local lookup never ran
+   (reproduced on the host). Local addresses are now never ARPed for. The general case is still
+   owed: any second on-link peer waits behind an unanswered one, which netstack hides only by
+   resolving the gateway and DNS servers itself (`warm_neighbors`).
+3. `WSAEnumNetworkEvents` reported events nobody selected (`FD_WRITE` beside `FD_CONNECT`;
+   `afd-rust/src/select.rs`).
+4. `ReleaseMutex` on a mutex the caller did not own bugchecked the machine (0x1E, C0000046):
+   the port dropped the C's `_SEH2_TRY` round `KeReleaseMutant` in `NtReleaseMutant` and in
+   `NtSignalAndWaitForSingleObject` (`waitprobe` case M). Found when Chrome tripped it.
+5. `SYSTEM_PROCESS_INFORMATION.PrivatePageCount` was a page count; Windows reports bytes.
+
+**Plain `http://example.com/` still fails** with `ERR_BLOCKED_BY_CLIENT` in the guest, with or
+without `--disable-features=HttpsUpgrades`, while the same Chrome 157 binary on Windows loads it.
+Its net log (`grepfile` over `--log-net-log`) has no failed request at all: as on Windows, the
+navigation goes out as `https://example.com/`, the certificate verifies and `GET /` goes out over
+HTTP/2. The difference is time: about 11 s from the request to its HTTP/2 session under TCG,
+against 0.1 s on Windows, and the guest never asks for the page's `/s.js`, so the navigation was
+cancelled before it committed. Inferred, not shown: Chrome's HTTPS-upgrade fallback timer gives
+up on the slow upgraded load and falls back to an `http://` it then blocks. `https://` asked for
+directly is the working path; a faster guest (KVM) would settle it. Also seen twice and not explained: the guest running out of
+memory during a Chrome run (win32k "Not enough memory to allocate a message"); the sweep's
+`memwatch SECS` now prints memory, the top pool tags and the top processes every SECS, so the next
+occurrence says what grew.
+
+### The sandbox (rung 3): a quest, not a fix
+
+Without `--no-sandbox` the browser dies at once: `SetProcessMitigationPolicy` refuses
+`ProcessDynamicCodePolicy`, and Chrome CHECKs. That refusal is deliberate
+(`kernel32-rust/src/client/win10_misc.rs`): nothing here enforces any per-process mitigation, and
+a Set that pretended would make the sandbox a fiction. What Chrome's Windows sandbox needs, each
+to be measured against Windows by a probe before it is built:
+- per-process mitigations enforced by the kernel (dynamic code, image load, strict handles,
+  extension points, fonts, and win32k system-call lockdown for renderers), settable by the
+  process and through `PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY`;
+- the `CreateProcess` attribute list honoured (handle list, mitigation policy, child process
+  policy), owed above;
+- restricted tokens and integrity levels that the access check enforces (restricting SIDs,
+  no-write-up), job objects with UI limits, an alternate desktop;
+- the broker's patching of the child's ntdll: it recognises syscall stubs by Windows' exact bytes
+  (`4C 8B D1 B8 nn nn nn nn`), and ours are `B8 nn nn nn nn 49 89 CA`.
 
 On a timeout the sweep runner dumps the threads of the child's whole process tree and kills the
 descendants; `sample <exe> <secs>` takes the same look mid-run without killing, adding each

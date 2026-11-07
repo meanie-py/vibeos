@@ -13,13 +13,17 @@ use std::{
 
 pub const MARKER: &str = "shell ready";
 pub const EXPLORER_MARKER: &str = "[EXPLORER] _tWinMain entered";
+fn crash_seen(text: &str) -> bool {
+    // Keep the conservative raw banners too: a damaged panic location or stop
+    // code must not let an otherwise matching desktop pass.
+    text.contains("*** BUGCHECK")
+        || text.contains("panicked at")
+        || !crate::verdict::post_boot_check(text, "", &crate::verdict::known_flakes()).is_null()
+}
 pub fn desktop_reached(text: &str) -> bool {
     // Win32k emits shell ready before Explorer starts. Both are needed to
     // establish the desktop; a crash in the same slice always takes precedence.
-    text.contains(MARKER)
-        && text.contains(EXPLORER_MARKER)
-        && !text.contains("*** BUGCHECK")
-        && !text.contains("panicked at")
+    text.contains(MARKER) && text.contains(EXPLORER_MARKER) && !crash_seen(text)
 }
 pub const PI_WATTS_MAX: f64 = 20.0;
 pub const STORTEST_MARKER: &[u8] = b"vibeos usb e2e marker\r\n";
@@ -97,7 +101,7 @@ pub fn wait_desktop(path: &Path, start: u64, timeout: f64) -> (String, bool) {
         if desktop_reached(&text) {
             return (text, true);
         }
-        if text.contains("*** BUGCHECK") || text.contains("panicked at") {
+        if crash_seen(&text) {
             thread::sleep(Duration::from_secs(3));
             return (serial_slice(path, start), false);
         }
@@ -352,6 +356,10 @@ impl Drop for ImageServer {
 
 /// Grade the medium drop without conflating a lost server with a kernel result.
 pub fn grade_drop(text: &str, dropped: bool, server_lost: bool) -> Value {
+    let crash = crate::verdict::post_boot_check(text, "", &crate::verdict::known_flakes());
+    if !crash.is_null() {
+        return json!({"classification":crash["classification"],"stage":"drop-medium","status":"fail","detail":"guest crashed during medium removal","salient":crash["salient"]});
+    }
     let (verdict, lines) = stortest_verdict(text);
     let tail: Vec<_> = lines
         .iter()
@@ -431,7 +439,7 @@ pub fn wait_desktop_with_medium(
         if desktop_reached(&text) {
             return Ok((text, true));
         }
-        if text.contains("*** BUGCHECK") || text.contains("panicked at") {
+        if crash_seen(&text) {
             thread::sleep(Duration::from_secs(3));
             return Ok((serial_slice(path, start), false));
         }
@@ -832,4 +840,24 @@ pub fn stortest_readback(
         .join()
         .map_err(|_| Error::new("mtype stderr reader failed"))??;
     Ok(if status.success() { Some(bytes) } else { None })
+}
+
+#[cfg(test)]
+mod late_storage_crash_tests {
+    use super::*;
+    #[test]
+    fn crash_after_desktop_beats_storage_success_and_timeout() {
+        let crash = "[EXPLORER] _tWinMain entered\nshell ready\n***   P4 = ntoskrnl.exe+0x6F7CC\n";
+        assert!(
+            !desktop_reached(crash),
+            "a damaged crash banner must prevent desktop success"
+        );
+        for tail in ["", "[STORTEST] ALL OK drive D:\n"] {
+            assert_eq!(
+                grade_drop(&format!("{crash}{HARD_ERROR_INLINE}\n{tail}"), true, false)
+                    ["classification"],
+                "BUGCHECK"
+            );
+        }
+    }
 }

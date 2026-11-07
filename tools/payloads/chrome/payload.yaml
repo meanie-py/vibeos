@@ -41,6 +41,12 @@ binaries:
     dest: bin/msgprobe/msgprobe.exe
   - src: tools/payloads/chrome/waitprobe-{arch}.exe
     dest: bin/waitprobe/waitprobe.exe
+  - src: tools/payloads/chrome/servepage-{arch}.exe
+    dest: bin/servepage/servepage.exe
+  - src: tools/payloads/chrome/sockprobe-{arch}.exe
+    dest: bin/sockprobe/sockprobe.exe
+  - src: tools/payloads/chrome/grepfile-{arch}.exe
+    dest: bin/grepfile/grepfile.exe
   - src: tools/payloads/chrome/hello.html
     dest: bin/chrome-pages/hello.html
 binaries_from: tools/payloads/chrome/stage.py

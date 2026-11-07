@@ -183,3 +183,34 @@ fn conversion_fails_when_refresh_leaves_a_cells_own_c_without_recipes() {
     );
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// rpi-bringup reconfigured i386, then amd64, then arm64, one check run each, because
+/// the stale-configure guard stopped at the first stale build dir. It names them all.
+#[test]
+fn every_stale_configure_is_named_in_one_run() {
+    let root = std::env::temp_dir().join(format!("stale-all-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("m")).unwrap();
+    for a in ["i386", "arm64"] {
+        let b = root.join(format!("build-{a}"));
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(
+            b.join("build.ninja"),
+            "build build.ninja: RERUN_CMAKE CMakeFiles/cmake.verify_globs | \
+             /tmp/vibeos/m/CMakeLists.txt\n",
+        )
+        .unwrap();
+        // Configured at the epoch: every input is newer.
+        std::fs::write(
+            b.join(".ninja_log"),
+            "# ninja log v5\n0\t1\t1\tbuild.ninja\tabc\n",
+        )
+        .unwrap();
+    }
+    std::thread::sleep(std::time::Duration::from_millis(30));
+    std::fs::write(root.join("m/CMakeLists.txt"), "add_library(m)\n").unwrap();
+    let e = vibeos_codegen::cells::driver::clib_recipes(&root)
+        .unwrap_err()
+        .to_string();
+    std::fs::remove_dir_all(&root).unwrap();
+    assert!(e.contains("build-i386") && e.contains("build-arm64"), "{e}");
+}

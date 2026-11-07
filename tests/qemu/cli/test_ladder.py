@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -186,21 +187,44 @@ def test_native_x86_needs_no_special_case(tmp_path):
 # --- the drain ------------------------------------------------------------
 
 
+class _DrainClock:
+    def __init__(self):
+        self.elapsed = 0.0
+
+    def monotonic(self):
+        return self.elapsed
+
+    def read(self, timeout):
+        self.elapsed += min(timeout, 0.01)
+        assert self.elapsed < 10, "drain repeatedly extended its deadline"
+
+
+@pytest.fixture
+def drain_clock(monkeypatch):
+    clock = _DrainClock()
+    # Replace only the facade's clock, never the process-global time module.
+    monkeypatch.setattr(ladder, "time", SimpleNamespace(monotonic=clock.monotonic))
+    return clock
+
+
 class _FakeSerial:
     """Yields one chunk per read, then nothing."""
 
-    def __init__(self, chunks: list[str]):
+    def __init__(self, chunks: list[str], clock=None):
+        self.clock = clock
         self.chunks = list(chunks)
         self.reads = 0
 
     def read_available(self, timeout: float = 0.5) -> str:
         self.reads += 1
+        if self.clock is not None:
+            self.clock.read(timeout)
         return self.chunks.pop(0) if self.chunks else ""
 
 
 class _FakeVM:
-    def __init__(self, chunks: list[str]):
-        self.serial = _FakeSerial(chunks)
+    def __init__(self, chunks: list[str], clock=None):
+        self.serial = _FakeSerial(chunks, clock=clock)
 
 
 def test_a_guest_already_seen_is_not_waited_for_again():
@@ -299,14 +323,17 @@ def test_the_drain_waits_for_winlogon_to_say_it_is_done():
     assert vm.serial.reads == 4
 
 
-def test_program_done_ends_the_drain_even_with_guests_missing():
+def test_program_done_ends_the_drain_even_with_guests_missing(drain_clock):
     """i386 has no WoW64 guests, so their markers never arrive. Once winlogon
     says the graded program is over, waiting for them is waiting for nothing --
     the drain stops, and check() reports the absence."""
-    vm = _FakeVM(["[WT] native/user32:combo: exit = 23 failure(s)\n", ladder.PROGRAM_DONE + "\n"])
-    t0 = time.monotonic()
+    vm = _FakeVM(
+        ["[WT] native/user32:combo: exit = 23 failure(s)\n", ladder.PROGRAM_DONE + "\n"],
+        clock=drain_clock,
+    )
+    t0 = drain_clock.monotonic()
     ladder.watch(vm, seconds=5, seen="", program_done_expected=True)
-    assert time.monotonic() - t0 < 2, "should stop at PROGRAM_DONE, not the ceiling"
+    assert drain_clock.monotonic() - t0 < 2, "should stop at PROGRAM_DONE, not the ceiling"
 
 
 def test_program_done_matches_what_winlogon_prints():
@@ -339,7 +366,7 @@ def test_a_guest_that_never_reports_still_uses_the_budget():
     assert _red(out)["classification"] == "LADDER_FAIL"
 
 
-def test_each_optional_guest_earns_its_own_drain_extension(monkeypatch):
+def test_each_optional_guest_earns_its_own_drain_extension(monkeypatch, drain_clock):
     """Two optional guests must not share ONE extension.
 
     winlogon watches each optional guest for 300s independently, so a flat
@@ -353,10 +380,10 @@ def test_each_optional_guest_earns_its_own_drain_extension(monkeypatch):
     # giving up, so it outlives a budget sized for one.
     launched = f"[WINLOGON] {a}.exe (x) created\n[WINLOGON] {b}.exe (x) created\n"
     monkeypatch.setattr(ladder, "OPTIONAL_EXTRA_SECONDS", 0.25)
-    vm = _FakeVM([_all_pass() + launched])
-    started = time.monotonic()
+    vm = _FakeVM([_all_pass() + launched], clock=drain_clock)
+    started = drain_clock.monotonic()
     ladder.watch(vm, seconds=0.05, seen="")
-    waited = time.monotonic() - started
+    waited = drain_clock.monotonic() - started
     assert waited >= 0.5, (
         f"drained {waited:.2f}s — two launched optional guests must extend twice "
         "(0.05 base + 2x0.25), not once"
@@ -896,30 +923,30 @@ def test_drain_floor_is_zero_and_inert_when_unset(monkeypatch):
     assert vm.serial.reads == 0, "unset floor must not change the old fast path"
 
 
-def test_drain_floor_keeps_draining_past_the_graded_set(monkeypatch):
+def test_drain_floor_keeps_draining_past_the_graded_set(monkeypatch, drain_clock):
     """The stock applets (winmine/notepad/mspaint/wordpad) run AFTER the parity
     set and are not graded, so the drain's "every guest reported" exit throws
     their phase away. The floor is what makes it observable."""
     monkeypatch.setenv(ladder.DRAIN_FLOOR_ENV, "0.5")
-    vm = _FakeVM([_all_pass()])
-    started = time.monotonic()
+    vm = _FakeVM([_all_pass()], clock=drain_clock)
+    started = drain_clock.monotonic()
     ladder.watch(vm, seconds=0.05, seen="")
-    waited = time.monotonic() - started
+    waited = drain_clock.monotonic() - started
     assert waited >= 0.5, (
         f"drained {waited:.2f}s — a floor must hold the drain open past the "
         "graded set, which is the whole point of setting it"
     )
 
 
-def test_drain_floor_applies_even_when_nothing_is_outstanding(monkeypatch):
+def test_drain_floor_applies_even_when_nothing_is_outstanding(monkeypatch, drain_clock):
     """`seen` already carrying every verdict is exactly the investigation case:
     the graded set finished in the settle read and the applets are still to
     come. The early return must not skip the floor."""
     monkeypatch.setenv(ladder.DRAIN_FLOOR_ENV, "0.4")
-    vm = _FakeVM([])
-    started = time.monotonic()
+    vm = _FakeVM([], clock=drain_clock)
+    started = drain_clock.monotonic()
     ladder.watch(vm, seconds=0.01, seen=_all_pass())
-    assert time.monotonic() - started >= 0.4
+    assert drain_clock.monotonic() - started >= 0.4
 
 
 def test_drain_floor_never_shortens_the_budget(monkeypatch):
