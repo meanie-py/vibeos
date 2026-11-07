@@ -1589,16 +1589,24 @@ def _build_locked(
     # stage them. Only when needed: a rebuilt guest re-runs configure.
     # Deferred staging must not build guests either: they link build-i386's
     # importlibs, which is the tree a deferring caller is rebuilding right now.
+    # arm64 under VIBEOS_FEX=1 stages the same guests, so it refreshes them too: it used to
+    # stage whatever build-fex-hello/ held, and an arm64 `smoke --ladder` graded a fault32.exe
+    # two days older than Fault32.c. Its x86-64 guests link build-amd64's importlibs, which
+    # an arm64 ninja never makes, so a deferral there stays deferred (and the ladder then
+    # refuses those guests as stale, which names the fix).
+    stages_guests = arch == "amd64" or (
+        arch == "arm64" and os.environ.get("VIBEOS_FEX", "0") == "1"
+    )
     guests_deferred: list[str] = []
     if (
-        arch == "amd64"
+        stages_guests
         and not getattr(args, "headers_only", False)
         and not getattr(args, "no_wow64_stage", False)
     ):
         refreshed = _refresh_wow64_guests(run, repo)
         if refreshed is False:
             return run.finalize(repo)
-        if isinstance(refreshed, list):
+        if isinstance(refreshed, list) and arch == "amd64":
             guests_deferred = refreshed
     if (
         arch == "arm64"

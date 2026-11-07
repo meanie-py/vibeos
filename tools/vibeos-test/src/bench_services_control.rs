@@ -224,16 +224,23 @@ fn checked(command: Command, timeout: u64, what: &str) -> Result<String> {
     Ok(out.stdout.trim().to_owned())
 }
 fn powershell(script: &str) -> Result<String> {
-    let mut c = Command::new(POWERSHELL);
-    c.args([
-        "-NoLogo",
-        "-NoProfile",
-        "-NonInteractive",
-        "-Command",
-        script,
-    ])
-    .stdin(Stdio::null());
-    checked(c, 30, "PowerShell").map(|s| s.replace('\r', ""))
+    let run = || {
+        let mut c = Command::new(POWERSHELL);
+        c.args([
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            script,
+        ])
+        .stdin(Stdio::null());
+        checked(c, 30, "PowerShell").map(|s| s.replace('\r', ""))
+    };
+    // Once more only when interop never launched it (see backend::interop_launch_failed).
+    match run() {
+        Err(e) if crate::backend::interop_launch_failed(&e.to_string()) => run(),
+        r => r,
+    }
 }
 fn winpath(p: &Path) -> Result<String> {
     let mut c = Command::new("wslpath");

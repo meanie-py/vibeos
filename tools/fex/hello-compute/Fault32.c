@@ -413,6 +413,9 @@ int start(void) /* i386 symbol _start (-e _start); x64 symbol start (-e start) *
             }
         }
         g_StopChurn = 1;
+        /* How long the storm took: the churner contends with it on the CPU layer's lock,
+         * so this is what lock handoff and wake latency cost, in one number. */
+        SayHex("[FAULT32] rung3b storm ms", GetTickCount() - Start);
         WaitForSingleObject(Churner, 30000);
         CloseHandle(Churner);
         g_Recover = (void *)FaultRecover;
