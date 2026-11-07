@@ -9101,6 +9101,7 @@ def _fake_pytest(monkeypatch, rc: int, out: str = "", verdict: dict | None = Non
 
     def run(cmd, **kw):
         seen["cmd"], seen["env"] = cmd, kw["env"]
+        seen["timeout"] = kw.get("timeout")
         if verdict is not None:
             Path(kw["env"]["VIBEOS_STORTEST_RESULT"]).write_text(json.dumps(verdict))
         return _CP()
@@ -9117,6 +9118,8 @@ def test_stortest_lane_boots_the_gates_media_with_the_stick(tmp_path, monkeypatc
     assert seen["cmd"][seen["cmd"].index("--arch") + 1] == "i386-uefi"
     # Never a rebuild: the gate just built these media and the test checks staleness.
     assert "--skip-clean-build" in seen["cmd"]
+    assert "--timeout=0" in seen["cmd"]
+    assert seen["timeout"] == gate_mod.STORTEST_TIMEOUT_S
 
 
 def test_stortest_lane_names_the_failure_and_does_not_retry_a_wrong_answer(tmp_path, monkeypatch):
@@ -11911,3 +11914,36 @@ def test_gate_retry_surfaces_a_new_nonretryable_failure(tmp_path, monkeypatch):
     summary = json.loads(summaries[0].read_text())
     assert "BUGCHECK" in json.dumps(summary)
     assert "smoke-arm64-r1" in json.dumps(summary)
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_boot_failure_preserves_its_primary_exception_when_snapshot_fails(monkeypatch, closed):
+    from tests.qemu.vm import QemuVM
+
+    class PrimaryTimeout(BaseException):
+        pass
+
+    primary = PrimaryTimeout("original fixture timeout")
+
+    class Serial:
+        @property
+        def _buf(self):
+            if closed:
+                raise ConnectionError("diagnostic session already closed")
+            return "partial serial evidence"
+
+    vm = object.__new__(QemuVM)
+    vm._boot_output = "previously captured evidence"
+    monkeypatch.setattr(vm, "serial", Serial(), raising=False)
+
+    def wait(operation):
+        assert operation == "wait_for_boot"
+        raise primary
+
+    monkeypatch.setattr(vm, "_call", wait)
+    with pytest.raises(PrimaryTimeout) as caught:
+        vm.wait_for_boot()
+    assert caught.value is primary
+    assert vm._boot_output == (
+        "previously captured evidence" if closed else "partial serial evidence"
+    )

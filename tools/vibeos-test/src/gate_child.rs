@@ -227,6 +227,10 @@ pub fn stortest(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
             "--arch",
             vm_arch,
             "--skip-clean-build",
+            // This lane already owns a supervised 900s process-tree deadline.
+            // Pytest's global 300s also counts bounded fixture launch retries,
+            // so it can interrupt a healthy boot after port-lock contention.
+            "--timeout=0",
             "-q",
             "-p",
             "no:cacheprovider"

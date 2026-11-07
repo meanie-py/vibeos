@@ -188,7 +188,9 @@ summary rendering now live in `vibeos-build::{cli_arguments,cli_artifacts}`.
 `vibeos-test::tooling` plans and schedules tooling checks; the build library owns
 its locked content receipts. Python supplies interpreter/package discovery facts
 and retains Namespace/Run/Stage DTOs for existing callers. Failure-signature policy
-is shared through `vibeos-test::cli_report`. Build/gate composition now lives in Rust: `vibeos-build::cli_build*` owns build
+is shared through `vibeos-test::cli_report`.
+
+Build/gate composition now lives in Rust: `vibeos-build::cli_build*` owns build
 preflight, reconciliation, generated-header barriers, target passes, immutable-store
 acceptance and provenance. `vibeos-test::{gate_run,gate_child,gate_stamp}` owns
 pipelining, child verdicts, serial lane retries and push stamps. The existing
@@ -199,8 +201,8 @@ choose build stages or gate retries. Canonical toolchain provisioning is native.
 A gate with `--no-lint` cannot mint a push stamp. Requested conformance/network
 lanes fail visibly when their implementation, payload or baseline is unavailable;
 they are recorded as ungraded rather than silently omitted. Child consoles,
-command output and incomplete-run markers remain durable. Launch failures retain
-the OSError compatibility contract; a program returning 127 is a separate outcome.
+command output and incomplete-run markers remain durable. Gate child launch failures
+retain the OSError compatibility contract; a program returning 127 is a separate outcome.
 
 Host-job process-contract fixtures now own a private process group through an
 EOF guard. Unwinding or killing the test owner closes the ownership pipe; the
@@ -216,7 +218,35 @@ The original was supplied at
 `/tmp/claude-1000/-home-curi-Projects-os-playground-vibeos-integration/7678f5f2-0201-4aed-b78e-717263573b59/scratchpad/tool128e.out`;
 a durable copy and its SHA-256 receipt are at
 `~/vibeos-rust-staging/host-jobs-flake-20261106/batch128-tooling.out` and
-`batch128-evidence.json`. The initiating Rust test remains unidentified because
+`batch128-evidence.json`. Batch 128’s initiating Rust test remains unidentified because
 pytest truncated the captured output. Any recurrence still needs that underlying
 failure investigated; the fixture guard now lets the actual test failure reach
 the caller rather than being masked by a pipe timeout.
+
+The 2026-11-07 cold gate at
+`/tmp/vibeos-cli/20261107-035206-lPZuDY-gate-i386+amd64+arm64` exposed a later
+process-contract failure without the pipe hang:
+`queued_compilers_fill_the_pool_and_report_run_ownership` saw 22 of 24 ownership
+records. Its eight-active-worker assertion passed, but it assumed every queued
+launcher had registered after a 100 ms sleep. The fixture now waits for all 24
+registrations, preserving the eight-active-worker and ownership assertions.
+A control holds two launchers before broker entry until the other 22 are visible;
+it reproduces the old 22-versus-24 failure and passes with the registration barrier.
+All 19 unit and 17 process tests passed in the isolated control crate. The outer
+270-second timeout is unchanged. Evidence, the captured failure and SHA-256 receipt
+are under `~/vibeos-rust-staging/overnight-cli-20261107/host-jobs-registration/`.
+This identifies the later failure; the truncated batch 128 log cannot establish
+whether its initiating test was the same one.
+
+That cold gate passed all three cold builds, desktop boots on all three arches
+and amd64 BIOS, network, conformance, storage, source/artifact checks and difftests;
+only the tooling fixture failed. ARM64 storage recovered on retry. Its first
+attempt lost time to a 120-second port-handshake wait, then pytest’s global
+300-second timer interrupted the boot RPC before host readback. The raw serial
+already contained `[STORTEST] ALL OK` and both desktop markers. Storage now uses
+the gate’s existing supervised 900-second process-tree deadline instead of that
+competing pytest timer. The VM’s operation deadlines and storage assertions remain
+in force. A failed diagnostic snapshot preserves the original boot exception.
+The isolated timer control fails with the inner timer, passes with the owned
+deadline, and still terminates a hung child at the outer deadline. Results are in
+`~/vibeos-rust-staging/overnight-cli-20261107/stortest-deadline/`.
