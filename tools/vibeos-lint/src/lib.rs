@@ -26,6 +26,7 @@ pub mod syntax;
 mod syntax_cache;
 mod text_cache;
 pub mod twins;
+pub mod verdict;
 
 use rayon::prelude::*;
 use regex::Regex;
