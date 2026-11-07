@@ -616,8 +616,8 @@ unsafe extern "C" fn AddNTOSInstallation(
         DPRINT1!(
             b"An NTOS installation with name \"%S\" from vendor \"%S\" already exists on disk #%d, partition #%d, in SystemRoot '%wZ'\n\0"
                 .as_ptr() as *const i8,
-            (*NtOsInstall).InstallationName,
-            (*NtOsInstall).VendorName,
+            (*NtOsInstall).InstallationName.as_ptr(),
+            (*NtOsInstall).VendorName.as_ptr(),
             (*NtOsInstall).DiskNumber,
             (*NtOsInstall).PartitionNumber,
             &raw mut (*NtOsInstall).SystemNtPath,

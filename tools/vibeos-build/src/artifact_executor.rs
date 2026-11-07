@@ -1150,48 +1150,54 @@ pub fn prepare(
 }
 
 static INTERRUPTED: AtomicI32 = AtomicI32::new(0);
-static SIGNAL_OWNER: Mutex<()> = Mutex::new(());
+/// How many runs in this process are supervising, and the handlers the first one replaced.
+/// Concurrent runs SHARE the handler: SIGINT/SIGTERM interrupts all of them, which is what a
+/// Ctrl-C means. This used to `try_lock` one owner and refuse the rest ("another executor run
+/// owns signal supervision"), which is what made vibeos-test fail one test at random under
+/// `cargo test`'s parallel threads, whichever two shelled out at once.
+static SIGNAL_USERS: Mutex<(usize, Option<(libc::sigaction, libc::sigaction)>)> =
+    Mutex::new((0, None));
 extern "C" fn interrupted(signal: libc::c_int) {
     INTERRUPTED.store(signal, Ordering::SeqCst);
 }
-struct SignalGuard {
-    _owner: std::sync::MutexGuard<'static, ()>,
-    old_int: libc::sigaction,
-    old_term: libc::sigaction,
-}
+struct SignalGuard;
 impl SignalGuard {
     fn install() -> Result<Self> {
-        let owner = SIGNAL_OWNER
-            .try_lock()
-            .map_err(|_| fail("another executor run owns signal supervision in this process"))?;
-        INTERRUPTED.store(0, Ordering::SeqCst);
-        let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
-        action.sa_sigaction = interrupted as usize;
-        unsafe { libc::sigemptyset(&mut action.sa_mask) };
-        action.sa_flags = 0;
-        let mut old_int = unsafe { std::mem::zeroed() };
-        let mut old_term = unsafe { std::mem::zeroed() };
-        if unsafe { libc::sigaction(libc::SIGINT, &action, &mut old_int) } != 0 {
-            return Err(std::io::Error::last_os_error().into());
+        let mut users = SIGNAL_USERS.lock().unwrap_or_else(|p| p.into_inner());
+        if users.0 == 0 {
+            INTERRUPTED.store(0, Ordering::SeqCst);
+            let mut action: libc::sigaction = unsafe { std::mem::zeroed() };
+            action.sa_sigaction = interrupted as usize;
+            unsafe { libc::sigemptyset(&mut action.sa_mask) };
+            action.sa_flags = 0;
+            let mut old_int = unsafe { std::mem::zeroed() };
+            let mut old_term = unsafe { std::mem::zeroed() };
+            if unsafe { libc::sigaction(libc::SIGINT, &action, &mut old_int) } != 0 {
+                return Err(std::io::Error::last_os_error().into());
+            }
+            if unsafe { libc::sigaction(libc::SIGTERM, &action, &mut old_term) } != 0 {
+                unsafe { libc::sigaction(libc::SIGINT, &old_int, std::ptr::null_mut()) };
+                return Err(std::io::Error::last_os_error().into());
+            }
+            users.1 = Some((old_int, old_term));
         }
-        if unsafe { libc::sigaction(libc::SIGTERM, &action, &mut old_term) } != 0 {
-            unsafe { libc::sigaction(libc::SIGINT, &old_int, std::ptr::null_mut()) };
-            return Err(std::io::Error::last_os_error().into());
-        }
-        Ok(Self {
-            _owner: owner,
-            old_int,
-            old_term,
-        })
+        users.0 += 1;
+        Ok(Self)
     }
 }
 impl Drop for SignalGuard {
     fn drop(&mut self) {
-        unsafe {
-            libc::sigaction(libc::SIGINT, &self.old_int, std::ptr::null_mut());
-            libc::sigaction(libc::SIGTERM, &self.old_term, std::ptr::null_mut());
+        let mut users = SIGNAL_USERS.lock().unwrap_or_else(|p| p.into_inner());
+        users.0 -= 1;
+        if users.0 == 0 {
+            if let Some((old_int, old_term)) = users.1.take() {
+                unsafe {
+                    libc::sigaction(libc::SIGINT, &old_int, std::ptr::null_mut());
+                    libc::sigaction(libc::SIGTERM, &old_term, std::ptr::null_mut());
+                }
+            }
+            INTERRUPTED.store(0, Ordering::SeqCst);
         }
-        INTERRUPTED.store(0, Ordering::SeqCst);
     }
 }
 fn check_interrupted() -> Result<()> {
@@ -1787,6 +1793,28 @@ pub fn cli(args: &[String]) -> Result<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn concurrent_supervised_runs_share_signal_supervision() {
+        // Two runs in one process at once (cargo test's threads, or any caller with workers)
+        // both complete; the second used to be refused outright.
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let runs: Vec<_> = (0..2)
+            .map(|_| {
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let mut command = Command::new("sh");
+                    command.args(["-c", "sleep 0.3; echo ok"]);
+                    supervised_output(&mut command, Some(Duration::from_secs(20)))
+                })
+            })
+            .collect();
+        for run in runs {
+            let out = run.join().unwrap().unwrap();
+            assert_eq!((out.code, out.stdout.trim()), (0, "ok"));
+        }
+    }
+
     use super::*;
     fn write(root: &Path, relative: &str, content: &str) {
         let p = root.join(relative);

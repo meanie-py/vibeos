@@ -1618,7 +1618,16 @@ pub unsafe extern "system" fn RtlDuplicateUnicodeString(
             (*destination).Buffer = core::ptr::null_mut();
             return STATUS_NO_MEMORY;
         }
-        core::ptr::copy_nonoverlapping((*source).Buffer, buf, (*source).Length as usize / 2);
+        // The C's RtlCopyMemory of Length bytes. An empty source duplicated with
+        // ALLOCATE_NULL_STRING has a NULL Buffer (RegOpenKeyExW's NULL subkey does this),
+        // and a copy from NULL panics even at length 0 once rtl-strings is armed.
+        if (*source).Length != 0 {
+            core::ptr::copy_nonoverlapping(
+                (*source).Buffer as *const u8,
+                buf as *mut u8,
+                (*source).Length as usize,
+            );
+        }
         if (flags & RTL_DUP_NULL_TERMINATE) != 0 {
             *buf.add((*source).Length as usize / 2) = 0;
         }
@@ -9258,7 +9267,7 @@ mod path_wave {
         ) -> NTSTATUS;
         // ntdll-only SxS redirection hub (path.c guards it under #ifndef
         // _NTOSKRNL_). Declared unconditionally — only referenced from the
-        // cfg(not(feature="kernel")) branch of RtlDosSearchPath_Ustr, so the
+        // cfg(not(feature="ntoskrnl")) branch of RtlDosSearchPath_Ustr, so the
         // kernel build never emits a link reference to it.
         fn RtlDosApplyFileIsolationRedirection_Ustr(
             Flags: ULONG,
@@ -11548,7 +11557,8 @@ mod path_wave {
     /// — the DOS path/DLL search hub. Hand-translated from
     /// `sdk/lib/rtl/path.c:2565`. The SxS isolation-redirection branch is
     /// `#ifndef _NTOSKRNL_` in C (RtlDosApplyFileIsolationRedirection_Ustr is
-    /// an ntdll-only symbol), so it is cfg-gated out of the kernel build here.
+    /// an ntdll-only symbol), so it is cfg-gated out of the kernel build here
+    /// (`ntoskrnl`; `kernel` is the export surface ntdll links too).
     #[cfg_attr(not(feature = "bldr"), no_mangle)]
     pub unsafe extern "system" fn RtlDosSearchPath_Ustr(
         Flags: ULONG,
@@ -11624,7 +11634,10 @@ mod path_wave {
             /* Now check relative vs non-relative paths */
             if PathType == RtlPathTypeRelative {
                 /* Does the caller want SxS? (ntdll-only; #ifndef _NTOSKRNL_) */
-                #[cfg(not(feature = "kernel"))]
+                // `ntoskrnl`, not `kernel`: ntdll links rtl-strings WITH `kernel` (the export
+                // surface), so under `not(kernel)` this branch was in no shipping binary and
+                // SearchPathW's default-path search (Flags | 1) never consulted SxS.
+                #[cfg(not(feature = "ntoskrnl"))]
                 {
                     if (Flags & 1) != 0 {
                         const STATUS_SXS_KEY_NOT_FOUND: NTSTATUS = 0xC015_0008u32 as i32;
