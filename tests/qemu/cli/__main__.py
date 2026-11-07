@@ -229,6 +229,16 @@ def build_parser() -> argparse.ArgumentParser:
         "Build one target with ninja and stage it as a payload instead",
     )
     b.add_argument(
+        "--winetests",
+        default="",
+        metavar="SUITES",
+        help="space-separated winetest suites to build, e.g. 'kernel32 user32', WITHOUT "
+        "the rest of the test corpus (-DROSTESTS_WINETESTS). The way to grade one module's "
+        "suite in a payload: --rostests produces no media wherever any unrelated suite "
+        "fails to build, and on arm64 ntdll_winetest and a dozen apitests do. RECONCILED, "
+        "not sticky, like --rostests",
+    )
+    b.add_argument(
         "--winetest-sweep",
         action="store_true",
         help="stage the winetest SWEEP marker, so winlogon runs EVERY subtest "

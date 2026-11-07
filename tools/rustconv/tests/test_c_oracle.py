@@ -240,3 +240,19 @@ def test_the_oracle_links_the_modules_registry_object_instead_of_regenerating_it
     assert "add_idl_reg_scripts" not in out
     assert "target_sources(sti_c PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/sti_wia_r.o)" in out
     assert "add_dependencies(sti_c sti_r)" in out
+
+
+def test_a_pre_flip_oracle_is_the_one_the_flip_will_write(tmp_path):
+    # wined3d is wired before its purchase. The oracle of the unflipped CMakeLists must be
+    # byte-identical to the flipped one's, so `port flip`'s regeneration changes nothing.
+    unflipped = (
+        _CML.replace("    # active.c  # replaced by Rust (sdk/lib/rust/x-rust/src/x/active.rs)", "    active.c")
+        .replace("    # help.c  # replaced by Rust (sdk/lib/rust/x-rust/src/x/help.rs)", "    help.c")
+    )
+    (tmp_path / "CMakeLists.txt").write_text(unflipped)
+    with pytest.raises(co.OracleError, match="nothing flipped"):
+        co.write(tmp_path)
+    assert co.write(tmp_path, pre_flip=True) is False
+    assert (tmp_path / "c_oracle.cmake").read_text() == co.generate(_CML)
+    # Once included it stays a pre-flip oracle, so --check holds between wiring and flip.
+    assert co.write(tmp_path, check=True) is True

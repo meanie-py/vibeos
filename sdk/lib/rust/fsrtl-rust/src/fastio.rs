@@ -113,6 +113,26 @@ pub unsafe extern "system" fn FsRtlIncrementCcFastReadNoWait() {
     CcFastReadNoWait += 1;
 }
 
+/// `__try { f() } __except (FsRtlIsNtstatusExpected(code) ? EXECUTE_HANDLER : CONTINUE_SEARCH)`,
+/// the C's catch around every cache-manager call on the fast I/O paths. The cache manager
+/// RAISES by contract (an in-page error reading the file, a fault copying to or from the
+/// caller's buffer), and the C turns that into "fast I/O not possible" so the IRP path
+/// retries. `false` when it caught one; the caller sets `Result = FALSE` as the C's handler does.
+unsafe fn cc_caught(f: impl FnOnce()) -> bool {
+    ntkrnl_sys::seh::try_except(
+        &mut (),
+        |_| f(),
+        |_, pointers| {
+            if FsRtlIsNtstatusExpected(ntkrnl_sys::seh::exception_code(pointers)) != 0 {
+                ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER
+            } else {
+                ntkrnl_sys::seh::EXCEPTION_CONTINUE_SEARCH
+            }
+        },
+    )
+    .is_ok()
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn FsRtlCopyRead(
     FileObject: PFILE_OBJECT,
@@ -188,16 +208,21 @@ pub unsafe extern "system" fn FsRtlCopyRead(
             let Length = ((*FcbHeader).FileSize.QuadPart - (*FileOffset).QuadPart) as ULONG;
             (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
 
-            if Wait != 0 && Offset.s.HighPart == 0 && (*FcbHeader).FileSize.u.HighPart == 0 {
-                CcFastCopyRead(FileObject, (*FileOffset).u.LowPart, Length, PageCount as ULONG, Buffer, IoStatus);
-                (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
-            } else {
-                Result = CcCopyRead(FileObject, FileOffset, Length, Wait, Buffer, IoStatus);
-                (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
-            }
+            let result: *mut BOOLEAN = &mut Result;
+            if !cc_caught(|| {
+                if Wait != 0 && Offset.s.HighPart == 0 && (*FcbHeader).FileSize.u.HighPart == 0 {
+                    CcFastCopyRead(FileObject, (*FileOffset).u.LowPart, Length, PageCount as ULONG, Buffer, IoStatus);
+                    (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
+                } else {
+                    *result = CcCopyRead(FileObject, FileOffset, Length, Wait, Buffer, IoStatus);
+                    (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
+                }
 
-            if Result != 0 {
-                (*FileObject).CurrentByteOffset.QuadPart = (*FileOffset).QuadPart + (*IoStatus).Information as i64;
+                if *result != 0 {
+                    (*FileObject).CurrentByteOffset.QuadPart = (*FileOffset).QuadPart + (*IoStatus).Information as i64;
+                }
+            }) {
+                Result = 0u8;
             }
 
             (*PsGetCurrentThread()).TopLevelIrp = 0;
@@ -205,16 +230,21 @@ pub unsafe extern "system" fn FsRtlCopyRead(
     } else if Result != 0 {
         (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
 
-        if Wait != 0 && Offset.s.HighPart == 0 && (*FcbHeader).FileSize.u.HighPart == 0 {
-            CcFastCopyRead(FileObject, (*FileOffset).u.LowPart, Length, PageCount as ULONG, Buffer, IoStatus);
-            (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
-        } else {
-            Result = CcCopyRead(FileObject, FileOffset, Length, Wait, Buffer, IoStatus);
-            (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
-        }
+        let result: *mut BOOLEAN = &mut Result;
+        if !cc_caught(|| {
+            if Wait != 0 && Offset.s.HighPart == 0 && (*FcbHeader).FileSize.u.HighPart == 0 {
+                CcFastCopyRead(FileObject, (*FileOffset).u.LowPart, Length, PageCount as ULONG, Buffer, IoStatus);
+                (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
+            } else {
+                *result = CcCopyRead(FileObject, FileOffset, Length, Wait, Buffer, IoStatus);
+                (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
+            }
 
-        if Result != 0 {
-            (*FileObject).CurrentByteOffset.QuadPart = (*FileOffset).QuadPart + (*IoStatus).Information as i64;
+            if *result != 0 {
+                (*FileObject).CurrentByteOffset.QuadPart = (*FileOffset).QuadPart + (*IoStatus).Information as i64;
+            }
+        }) {
+            Result = 0u8;
         }
 
         (*PsGetCurrentThread()).TopLevelIrp = 0;
@@ -369,30 +399,48 @@ pub unsafe extern "system" fn FsRtlCopyWrite(
 
         (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
 
-        if Offset.s.LowPart > (*FcbHeader).ValidDataLength.u.LowPart {
-            let mut OffsetVar = LARGE_INTEGER { QuadPart: 0 };
-            OffsetVar.s.LowPart = Offset.s.LowPart;
-            OffsetVar.s.HighPart = 0;
-            CcZeroData(FileObject, core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength) as PLARGE_INTEGER, &mut OffsetVar as *mut LARGE_INTEGER as PLARGE_INTEGER, 1u8);
-        }
+        if !cc_caught(|| {
+            if Offset.s.LowPart > (*FcbHeader).ValidDataLength.u.LowPart {
+                let mut OffsetVar = LARGE_INTEGER { QuadPart: 0 };
+                OffsetVar.s.LowPart = Offset.s.LowPart;
+                OffsetVar.s.HighPart = 0;
+                CcZeroData(FileObject, core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength) as PLARGE_INTEGER, &mut OffsetVar as *mut LARGE_INTEGER as PLARGE_INTEGER, 1u8);
+            }
 
-        CcFastCopyWrite(FileObject, Offset.s.LowPart, Length, Buffer);
+            CcFastCopyWrite(FileObject, Offset.s.LowPart, Length, Buffer);
+        }) {
+            Result = 0u8;
+        }
 
         (*PsGetCurrentThread()).TopLevelIrp = 0;
 
-        if NewSize.s.LowPart > (*FcbHeader).ValidDataLength.u.LowPart {
-            (*FcbHeader).ValidDataLength.u.LowPart = NewSize.s.LowPart;
+        if Result != 0 {
+            if NewSize.s.LowPart > (*FcbHeader).ValidDataLength.u.LowPart {
+                (*FcbHeader).ValidDataLength.u.LowPart = NewSize.s.LowPart;
+            }
+
+            (*FileObject).Flags |= FO_FILE_MODIFIED;
+
+            if FileSizeModified != 0 {
+                SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PSHARED_CACHE_MAP;
+                (*SharedCacheMap).FileSize.u.LowPart = NewSize.s.LowPart;
+                (*FileObject).Flags |= FO_FILE_SIZE_CHANGED;
+            }
+
+            (*FileObject).CurrentByteOffset.QuadPart = NewSize.s.LowPart as i64;
+        } else if FileSizeModified != 0 {
+            /* The copy raised: put the old sizes back, as the C does (this branch was lost
+             * with the catch, since only an exception could reach it). */
+            if !(*FcbHeader).PagingIoResource.is_null() {
+                ExAcquireResourceExclusiveLite((*FcbHeader).PagingIoResource, 1u8);
+                (*FcbHeader).FileSize.u.LowPart = OldFileSize.s.LowPart;
+                (*FcbHeader).ValidDataLength.u.LowPart = OldValidDataLength.s.LowPart;
+                ExReleaseResourceLite((*FcbHeader).PagingIoResource);
+            } else {
+                (*FcbHeader).FileSize.u.LowPart = OldFileSize.s.LowPart;
+                (*FcbHeader).ValidDataLength.u.LowPart = OldValidDataLength.s.LowPart;
+            }
         }
-
-        (*FileObject).Flags |= FO_FILE_MODIFIED;
-
-        if FileSizeModified != 0 {
-            SharedCacheMap = (*(*FileObject).SectionObjectPointer).SharedCacheMap as PSHARED_CACHE_MAP;
-            (*SharedCacheMap).FileSize.u.LowPart = NewSize.s.LowPart;
-            (*FileObject).Flags |= FO_FILE_SIZE_CHANGED;
-        }
-
-        (*FileObject).CurrentByteOffset.QuadPart = NewSize.s.LowPart as i64;
 
         ExReleaseResourceLite((*FcbHeader).Resource);
         FsRtlExitFileSystem();
@@ -497,17 +545,23 @@ pub unsafe extern "system" fn FsRtlCopyWrite(
 
         (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
 
-        let mut CallCc = 1u8;
+        let result: *mut BOOLEAN = &mut Result;
+        let offset: *mut LARGE_INTEGER = &mut Offset;
+        if !cc_caught(|| {
+            let mut CallCc = 1u8;
 
-        if Offset.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
-            if CcZeroData(FileObject, core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength), &mut Offset as *mut LARGE_INTEGER as PLARGE_INTEGER, Wait) == 0 {
-                Result = 0u8;
-                CallCc = 0u8;
+            if (*offset).QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
+                if CcZeroData(FileObject, core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength), offset as PLARGE_INTEGER, Wait) == 0 {
+                    *result = 0u8;
+                    CallCc = 0u8;
+                }
             }
-        }
 
-        if CallCc != 0 {
-            Result = CcCopyWrite(FileObject, &mut Offset as *mut LARGE_INTEGER as PLARGE_INTEGER, Length, Wait, Buffer);
+            if CallCc != 0 {
+                *result = CcCopyWrite(FileObject, offset as PLARGE_INTEGER, Length, Wait, Buffer);
+            }
+        }) {
+            Result = 0u8;
         }
 
         (*PsGetCurrentThread()).TopLevelIrp = 0;
@@ -779,16 +833,24 @@ pub unsafe extern "system" fn FsRtlMdlReadDev(
 
                 (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
 
-                CcMdlRead(FileObject, FileOffset, Length, MdlChain, IoStatus);
-                (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
+                if !cc_caught(|| {
+                    CcMdlRead(FileObject, FileOffset, Length, MdlChain, IoStatus);
+                    (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
+                }) {
+                    Result = 0u8;
+                }
 
                 (*PsGetCurrentThread()).TopLevelIrp = 0;
             }
         } else {
             (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
 
-            CcMdlRead(FileObject, FileOffset, Length, MdlChain, IoStatus);
-            (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
+            if !cc_caught(|| {
+                CcMdlRead(FileObject, FileOffset, Length, MdlChain, IoStatus);
+                (*FileObject).Flags |= FO_FILE_FAST_IO_READ;
+            }) {
+                Result = 0u8;
+            }
 
             (*PsGetCurrentThread()).TopLevelIrp = 0;
         }
@@ -1012,13 +1074,19 @@ pub unsafe extern "system" fn FsRtlPrepareMdlWriteDev(
 
     (*PsGetCurrentThread()).TopLevelIrp = FSRTL_FAST_IO_TOP_LEVEL_IRP as _;
 
-    if Offset.QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
-        Result = CcZeroData(FileObject, core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength) as PLARGE_INTEGER, &mut Offset as *mut LARGE_INTEGER as PLARGE_INTEGER, 1u8);
-        if Result != 0 {
-            CcPrepareMdlWrite(FileObject, &mut Offset as *mut LARGE_INTEGER as PLARGE_INTEGER, Length, MdlChain, IoStatus);
+    let result: *mut BOOLEAN = &mut Result;
+    let offset: *mut LARGE_INTEGER = &mut Offset;
+    if !cc_caught(|| {
+        if (*offset).QuadPart > (*FcbHeader).ValidDataLength.QuadPart {
+            *result = CcZeroData(FileObject, core::ptr::addr_of_mut!((*FcbHeader).ValidDataLength) as PLARGE_INTEGER, offset as PLARGE_INTEGER, 1u8);
+            if *result != 0 {
+                CcPrepareMdlWrite(FileObject, offset as PLARGE_INTEGER, Length, MdlChain, IoStatus);
+            }
+        } else {
+            CcPrepareMdlWrite(FileObject, offset as PLARGE_INTEGER, Length, MdlChain, IoStatus);
         }
-    } else {
-        CcPrepareMdlWrite(FileObject, &mut Offset as *mut LARGE_INTEGER as PLARGE_INTEGER, Length, MdlChain, IoStatus);
+    }) {
+        Result = 0u8;
     }
 
     (*PsGetCurrentThread()).TopLevelIrp = 0;

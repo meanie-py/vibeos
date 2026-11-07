@@ -7,14 +7,43 @@
 # so the outputs must match byte for byte.
 module: ddraw
 variants:
-  c: '%SystemRoot%\bin\modrun\ddraw_c.exe'
+  c: '%SystemRoot%\bin\modrun\dx_c\ddraw_c.exe'
   rust: '%SystemRoot%\bin\modrun\ddraw_probe.exe'
-ninja: [ddraw_c]
+ninja: [ddraw_c, d3dwine_c]
+# Each variant runs on its OWN wined3d: the C one (d3dwine_c, the pre-flip oracle) is staged as
+# d3dwine.dll beside the _c.exe in dx_c\ and gl_c\, and wined3d is not a KnownDLL, so the
+# exe's directory wins; the probe exe beside no wined3d loads the system one, the Rust once
+# wined3d flips. The probe's dx_wined3d() refuses to run on the wrong one, so after the flip
+# the cases still compare the C stack with the Rust stack, not the Rust with itself.
 stage:
-  - {src: 'tools/payloads/modrun/probes/ddraw-{arch}.exe', dest: bin/modrun/ddraw_c.exe}
+  - {src: 'tools/payloads/modrun/probes/ddraw-{arch}.exe', dest: bin/modrun/dx_c/ddraw_c.exe}
+  - {src: 'build-{arch}/dll/directx/wine/ddraw/ddraw_c.dll', dest: bin/modrun/dx_c/ddraw_c.dll}
+  - {src: 'build-{arch}/dll/directx/wine/wined3d/d3dwine_c.dll', dest: bin/modrun/dx_c/d3dwine.dll}
   - {src: 'tools/payloads/modrun/probes/ddraw-{arch}.exe', dest: bin/modrun/ddraw_probe.exe}
-  - {src: 'build-{arch}/dll/directx/wine/ddraw/ddraw_c.dll', dest: bin/modrun/ddraw_c.dll}
+  # The device cases: the same pairs beside Mesa softpipe (tools/mesa/build-mesa.sh), which
+  # wined3d's GL renderer accepts. opengl32 is not a KnownDLL either.
+  - {src: 'tools/payloads/modrun/probes/ddraw-{arch}.exe', dest: bin/modrun/gl_c/ddraw_c.exe}
+  - {src: 'build-{arch}/dll/directx/wine/ddraw/ddraw_c.dll', dest: bin/modrun/gl_c/ddraw_c.dll}
+  - {src: 'build-{arch}/dll/directx/wine/wined3d/d3dwine_c.dll', dest: bin/modrun/gl_c/d3dwine.dll}
+  - {src: 'tools/payloads/modrun/probes/ddraw-{arch}.exe', dest: bin/modrun/gl/ddraw_probe.exe}
+  - {src: '.cache/mesa/{arch}/opengl32.dll', dest: bin/modrun/gl_c/opengl32.dll}
+  - {src: '.cache/mesa/{arch}/libgallium_wgl.dll', dest: bin/modrun/gl_c/libgallium_wgl.dll}
+  - {src: '.cache/mesa/{arch}/libz-1.dll', dest: bin/modrun/gl_c/libz-1.dll}
+  - {src: '.cache/mesa/{arch}/opengl32.dll', dest: bin/modrun/gl/opengl32.dll}
+  - {src: '.cache/mesa/{arch}/libgallium_wgl.dll', dest: bin/modrun/gl/libgallium_wgl.dll}
+  - {src: '.cache/mesa/{arch}/libz-1.dll', dest: bin/modrun/gl/libz-1.dll}
 cases:
   - id: logic
     expect: ['createex hr=00000000', 'surf 565 hr=00000000', 'probe done']
     timeout: 240
+  # A Direct3D7 HAL device over Mesa softpipe: ddraw's draw path into wined3d (caps,
+  # transforms, lights, a managed texture, UP and vertex-buffer draws), read back by hash.
+  # `expect` demands the device and a draw, so a renderer wined3d refuses fails here.
+  - id: device
+    arches: [amd64, arm64]  # i386: a second wined3d init runs out of address space (roadmap "Known bugs")
+    variants:
+      c: '%SystemRoot%\bin\modrun\gl_c\ddraw_c.exe'
+      rust: '%SystemRoot%\bin\modrun\gl\ddraw_probe.exe'
+    args: gl
+    expect: ['renderer gl', 'd create device hr=00000000', 'd triangle lock hr=00000000', 'probe done']
+    timeout: 900

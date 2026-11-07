@@ -8565,6 +8565,22 @@ Three method lessons from the hunt:
   zero-byte allocation and wrote past it. A labeled block after a try block is not a handler;
   drop the arm (nothing raises into it) rather than keep it reachable.
 
+### A callee that RAISES by contract, its `__except` dropped: one user-mode call bugchecks
+**Symptom:** `BUGCHECK 0x1E` whose first parameter is an ordinary NTSTATUS (`C0000047`
+STATUS_SEMAPHORE_LIMIT_EXCEEDED, `C0000046`, `C000004A`), from a user process doing nothing
+worse than `ReleaseSemaphore(h, 5)` on a full semaphore. On all three arches until 2026-11-06.
+**Cause:** `KeReleaseSemaphore`, `KeReleaseMutant`, `KeSuspendThread` and `KeWaitFor*` report
+those failures by RAISING, and the Nt* layer catches them (`NtReleaseSemaphore`'s
+`_SEH2_EXCEPT(ExSystemExceptionFilter())`). The DUMMY_PSEH-era port kept the try body and
+dropped the handler. Often it also put a validate-first probe on the out-parameter, so the
+function LOOKS protected: the probe answers a bad pointer, and nothing answers the raise.
+**Fix:** `ntkrnl_sys::seh::try_except` around the raising call, with the C's own filter: the
+exact code(s), or `ExSystemExceptionFilter()` (user-mode caller only, so kernel misuse still
+crashes). `ob-rust/src/obwait.rs`'s `catching(codes, f)` is the shape. `scan_dead_seh_handlers`
+lists every remaining function whose C twin had an `__except`, and it accepts only a real catch
+where the twin's try body calls a raise-by-contract callee. `tools/payloads/sehprobe` exercises the
+user-reachable ones.
+
 ### An SEH filter expression is a PREDICATE, not a value `[§9.70]`
 `GlobalLock` materialised `EXCEPTION_EXECUTE_HANDLER` into a local and branched on it, so it
 **returned NULL unconditionally** — and every edit box in the OS was dead (Notepad, every
@@ -10080,6 +10096,25 @@ writes `Wake` into a frame that has returned. Unmodified, the lock deadlocked or
 inside `RtlAcquireSRWLockExclusive` in 3 of 3 contended runs. No C difftest finds this class:
 the C has the same bugs, and single-threaded rows never race. A sync primitive needs a stress
 harness with a watchdog, run both on every CPU and pinned to one.
+
+### A harness-green path that never reached the binary: `feature = "kernel"` is not kernel mode
+**Symptom.** A fix that its host harness proves changes nothing in the guest, run after run.
+rtl-sync's SRW lock got a yield-and-sleep backoff (`244c0422339`) and then a keyed-event wait;
+`rtl-sync-difftest` saw hundreds of thousands of keyed waits, while fault64 still waited ~41 ms
+per contended acquire and the kernel's `KEYEDWAKE=1` probe saw zero keyed waits in the process.
+**Cause.** Both lived under `#[cfg(not(feature = "kernel"))]`, read as "user mode". In the rtl
+crates `kernel = ["cabi"]` only switches on the `#[no_mangle]` export surface, and rtl-rust's
+DEFAULT features include it, which is what `ntdll-cargo` links. So ntdll compiled the kernel's
+spin-only copy; only the harness (built without the feature) ever ran the other one. The
+disassembly says it in one look: arm64 ntdll's `RtlAcquireSRWLockExclusive` was a bare `yield`
+loop with no call in it.
+**Fix.** A feature that names the copy: `ntoskrnl` (rtl-sync, forwarded by rtl-rust), asked for
+only by the ntoskrnl/ntkrnlmp links. `scan_kernel_feature_mode` (vibeos-check) flags
+`feature = "kernel"` in any crate rtl-rust's `kernel` turns on, while ntdll gets its defaults;
+rtl-strings' existing uses, which deliberately mean "not the host difftest", are baselined.
+Before trusting a harness about shipped behaviour, disassemble the shipped symbol once.
+With the wait really in ntdll, fault64's contended acquires fell from ~41 ms to 1-3 ms and
+its alloc/free/fault throughput rose ~6x in the same storm window (`20261106-141646-a730z4ru`).
 ### A differential harness that cannot see its two sides diverge in STATE will report state differences as BEHAVIOUR differences
 **Symptom.** A perf/conformance row fails hard and reproducibly — `towlower` 10.8x TOO SLOW,
 all 3 passes, flat 44 MiB/s across a 65536x size range, calibration twins clean at 1.01x — and
@@ -10707,6 +10742,22 @@ code that has always worked. On stable the UB checks share `cfg(debug_assertions
   (uniata's `MOV_DD_SWP`/`MOV_DW_SWP`) are byte arrays too. Every reader and writer of such a
   field goes through `read_unaligned`/`write_unaligned`, including shared helpers like
   `TaLengthOfAddress` that look innocent because their usual callers pass aligned pool.
+- **A PE export table** (2026-11-06, arming freeldr-rust). lld packs the export directory, the
+  DLL name and then the address, name and ordinal tables with no alignment, so where the tables
+  land depends on the name's length: ntkrnlmp.exe's name table is at RVA 0x24deb2, and kdcom,
+  bootvid, hal, ntdll and kernel32 are odd too (shlwapi happens to be aligned). The PE format
+  allows it. Every export walker reads entries with `read_unaligned`: freeldr's peloader,
+  ntoskrnl's sysldr, win32k's ldevobj and ntdll's ldrpe. Armed, the loader's plain read halted
+  every UEFI boot before the kernel was entered.
+- **Fixed BIOS addresses and BIOS-built structures in the loader.** The BDA conventional-memory
+  word is at 0x413, an odd address (`pcmem.rs`). `ACPI_BIOS_DATA` follows one
+  `CM_PARTIAL_RESOURCE_DESCRIPTOR` in the 4-packed resource list, so its 64-bit `RSDTAddress`
+  and `Count` are only 4-aligned (`hwacpi.rs`). Both are now `read_unaligned`/`write_unaligned`.
+  A loader panic prints `!!FREELDR-RUST-PANIC@file:line` on debugcon (uefildr adds `msg:`).
+  Until 2026-11-06 the harness decoded that text's letters as kernel milestones and reported
+  "HANG_TIMEOUT, CRASHED BEFORE KiSystemStartupBootStack". It now reports `LOADER RUST PANIC at`
+  with the message. A hang whose CPU state shows a `jmp $` at a loader address with
+  RDX=0xe9 is this.
 - **A real overlap.** classpnp's `RtlMoveMemory` of READ_CAPACITY_DATA one ULONG up inside its
   own _EX had become `copy_nonoverlapping` -- memcpy on overlapping ranges, a genuine bug on
   every arch. `scan_move_vs_nonoverlapping` now pairs each Rust fn with its C twin's moves.

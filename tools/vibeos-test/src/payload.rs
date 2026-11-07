@@ -370,6 +370,9 @@ fn launch(root: &Path, h: &mut dyn Host, a: &Value) -> Result<Value> {
             .collect();
         return Err(assertion(format!("--payload {name} was passed but {marker:?} never appeared. Either the media was not built with VIBEOS_PAYLOAD={name} (fix: VIBEOS_PAYLOAD={name} ./vibeos-cli build --arch <arch>) or the launcher regressed (grep serial for CreateProcessW errors).\nserial tail: {tail:?}")));
     }
+    if let Some(problem) = sweep_problem(&out) {
+        return Err(assertion(format!("--payload {name}: {problem}")));
+    }
     if let Some(pass) = t["pass_marker"].as_str().filter(|v| !v.is_empty()) {
         if !out.contains(pass) {
             return Err(assertion(format!(
@@ -404,6 +407,42 @@ fn launch(root: &Path, h: &mut dyn Host, a: &Value) -> Result<Value> {
         }
     }
     Ok(json!({"status":"pass"}))
+}
+/// The apitest sweep's own verdict on whether it ran anything. Its completion line
+/// (`[APITEST-SWEEP] done total= launched= subtests= failstart= timeouts=`) is the launch
+/// marker of every sweep payload, so reaching it only says the RUNNER finished. A suite that
+/// could not start (`failstart`, e.g. `launch FAILED ... err=3` when the child cwd does not
+/// exist on that arch) or an empty list (`total=0`) produced no result, and passing the
+/// payload anyway is how an arm64 k32winetest run read green with nothing executed
+/// (20261106-171748-5vyvbhhu).
+fn sweep_problem(out: &str) -> Option<String> {
+    let line = out
+        .lines()
+        .rev()
+        .find(|l| l.contains("[APITEST-SWEEP] done "))?;
+    let field = |k: &str| -> Option<i64> {
+        line.split_whitespace()
+            .find_map(|w| w.strip_prefix(k)?.strip_prefix('=')?.parse().ok())
+    };
+    let (Some(total), Some(failstart)) = (field("total"), field("failstart")) else {
+        return Some(format!("unparseable sweep completion line {:?}", line.trim()));
+    };
+    if total == 0 {
+        return Some(format!("the sweep list was empty, so nothing ran: {:?}", line.trim()));
+    }
+    if failstart > 0 {
+        let failed: Vec<&str> = out
+            .lines()
+            .filter(|l| l.contains("[APITEST-SWEEP] launch FAILED"))
+            .map(str::trim)
+            .collect();
+        return Some(format!(
+            "{failstart} of {total} suite(s) never started, so they have no result:\n{}\n{}",
+            failed.join("\n"),
+            line.trim()
+        ));
+    }
+    None
 }
 fn renders(h: &mut dyn Host, a: &Value) -> Result<Value> {
     let r = &a["spec"]["test"]["renders"];
@@ -824,6 +863,18 @@ mod tests {
                 _ => Value::Null,
             })
         }
+    }
+    #[test]
+    fn sweep_that_started_nothing_is_not_a_pass() {
+        let ok = "[APITEST:k] fiber: 180 tests executed\n[APITEST-SWEEP] done total=1 launched=0 subtests=1 failstart=0 timeouts=0\n";
+        assert_eq!(sweep_problem(ok), None);
+        let failed = "[APITEST-SWEEP] launch FAILED kernel32_winetest.exe (staging to C:\\TEMP\\k.exe err=3)\n[APITEST-SWEEP] done total=1 launched=0 subtests=1 failstart=1 timeouts=0\n";
+        let p = sweep_problem(failed).unwrap();
+        assert!(p.contains("1 of 1 suite(s) never started") && p.contains("err=3"), "{p}");
+        let empty = "[APITEST-SWEEP] done total=0 launched=0 subtests=0 failstart=0 timeouts=0\n";
+        assert!(sweep_problem(empty).unwrap().contains("empty"));
+        assert_eq!(sweep_problem("no sweep here\n"), None, "non-sweep payloads are untouched");
+        assert!(sweep_problem("[APITEST-SWEEP] done garbled\n").unwrap().contains("unparseable"));
     }
     #[test]
     fn chatty_wall_clock_budget_and_idle_are_distinct() {

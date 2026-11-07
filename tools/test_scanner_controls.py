@@ -844,6 +844,54 @@ _GUID_RS = (
     "const CGID_ShellServiceObject: GUID = GUID {{ Data1: {d1}, Data2: 0x0000, Data3: 0x0000, "
     "Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46] }};\n"
 )
+# scan_dead_seh_handlers. Seeded from PsSuspendThread (2026-11-06): the C guards
+# KeSuspendThread, which RAISES STATUS_SUSPEND_COUNT_EXCEEDED, with an __except; the Rust kept
+# the call and dropped the handler, so a 128th SuspendThread from user mode bugchecked.
+_DEADSEH_C = """\
+NTSTATUS NTAPI PsSuspendThread(IN PETHREAD Thread, OUT PULONG PreviousCount OPTIONAL)
+{
+    NTSTATUS Status = STATUS_SUCCESS;
+    ULONG OldCount = 0;
+    _SEH2_TRY
+    {
+        OldCount = KeSuspendThread(&Thread->Tcb);
+    }
+    _SEH2_EXCEPT(_SEH2_GetExceptionCode() == STATUS_SUSPEND_COUNT_EXCEEDED)
+    {
+        Status = _SEH2_GetExceptionCode();
+    }
+    _SEH2_END;
+    if (PreviousCount) *PreviousCount = OldCount;
+    return Status;
+}
+"""
+_DEADSEH_BAD = """\
+#[no_mangle]
+pub unsafe extern "system" fn PsSuspendThread(
+    thread: PETHREAD,
+    previous_count: *mut ULONG,
+) -> NTSTATUS {
+    let old_count = KeSuspendThread(core::ptr::addr_of_mut!((*thread).Tcb) as PKTHREAD);
+    if !previous_count.is_null() { *previous_count = old_count; }
+    STATUS_SUCCESS
+}
+"""
+_DEADSEH_GOOD = """\
+#[no_mangle]
+pub unsafe extern "system" fn PsSuspendThread(
+    thread: PETHREAD,
+    previous_count: *mut ULONG,
+) -> NTSTATUS {
+    let mut old_count = 0u32;
+    let status = ntkrnl_sys::seh::try_except(
+        &mut old_count,
+        |c| *c = KeSuspendThread(core::ptr::addr_of_mut!((*thread).Tcb) as PKTHREAD),
+        |code| code == STATUS_SUSPEND_COUNT_EXCEEDED,
+    );
+    if !previous_count.is_null() { *previous_count = old_count; }
+    status
+}
+"""
 # scan_mingw_c_vtable. Seeded from ntobjshex's probe (2026-11-01): mingw's C-mode
 # IExtractIconW has no IUnknown slots, so lpVtbl->GetIconLocation called QueryInterface.
 _MINGWVT_HEAD = "#define COBJMACROS\n#include <windows.h>\n#include <shlobj.h>\n"
@@ -2485,6 +2533,19 @@ _SWALLOWING_DEBUG_MACRO_GOOD = """\
     ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) };
 }
 """
+_KFM_MANIFEST = """\
+[features]
+default = ["kernel", "heaplist"]
+kernel = ["rtl-sync/kernel"]
+"""
+_KFM_BAD = """\
+#[cfg(not(feature = "kernel"))]
+fn block() {}
+"""
+_KFM_GOOD = """\
+#[cfg(not(feature = "ntoskrnl"))]
+fn block() {}
+"""
 _INERT_CRATE_ALLOW_BAD = """\
 #![no_std]
 #[allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
@@ -3346,6 +3407,19 @@ CONTROLS: list[Control] = [
         good={"good.rs": _SWALLOWING_DEBUG_MACRO_GOOD},
     ),
     Control(
+        name="scan_kernel_feature_mode",
+        script="tools/scan_kernel_feature_mode.py",
+        argv=["--lint"],
+        bad={
+            "sdk/lib/rust/rtl-rust/Cargo.toml": _KFM_MANIFEST,
+            "sdk/lib/rust/rtl-sync/src/srw.rs": _KFM_BAD,
+        },
+        good={
+            "sdk/lib/rust/rtl-rust/Cargo.toml": _KFM_MANIFEST,
+            "sdk/lib/rust/rtl-sync/src/srw.rs": _KFM_GOOD,
+        },
+    ),
+    Control(
         name="scan_inert_crate_allow",
         script="tools/scan_inert_crate_allow.py",
         argv=["--lint"],
@@ -3465,6 +3539,18 @@ CONTROLS: list[Control] = [
         script="tools/vibeos-lint/src/rules/local_overlength.rs",
         bad={"vol.rs": _OVERLEN_BAD},
         good={"vol.rs": _OVERLEN_GOOD},
+    ),
+    Control(
+        name="scan_dead_seh_handlers",
+        script="tools/vibeos-lint/src/rules/dead_seh_handlers.rs",
+        bad={
+            "ntoskrnl/ps/state.c": _DEADSEH_C,
+            "sdk/lib/rust/ps-rust/src/state.rs": _DEADSEH_BAD,
+        },
+        good={
+            "ntoskrnl/ps/state.c": _DEADSEH_C,
+            "sdk/lib/rust/ps-rust/src/state.rs": _DEADSEH_GOOD,
+        },
     ),
     Control(
         name="scan_mingw_c_vtable",
@@ -3872,6 +3958,7 @@ def _run(ctl: Control, root: Path) -> tuple[int, str]:
                 "scan_export_shadows",
                 "strip_msvc_cmake",
                 "vendored_registry",
+                "scan_kernel_feature_mode",
             }
             else REPO
         )

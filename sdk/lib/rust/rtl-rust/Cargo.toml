@@ -17,6 +17,8 @@ default = ["kernel", "heaplist"]
 # libsupp.c's (rtlk-rust). ntoskrnl/ntkrnlmp ask for rtl-rust without it; before
 # that, --allow-multiple-definition picked the kernel's copy by archive order alone.
 heaplist = ["dep:rtl-heapuser"]
+# the kernel's own copy (ntoskrnl/ntkrnlmp); ntdll takes the defaults, which also say `kernel`
+ntoskrnl = ["kernel", "rtl-sync/ntoskrnl"]
 kernel = ["rtl-strings/kernel", "rtl-heap/kernel", "rtl-threadpool/kernel", "rtl-sync/kernel", "rtl-diag/kernel", "rtl-except/kernel", "rtl-misc/kernel"]
 
 [dependencies]

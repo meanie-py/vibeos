@@ -7,6 +7,7 @@ pub mod dowhile_continue;
 pub mod entry_point_cc;
 pub mod uncalled_ctor_hook;
 pub mod mingw_c_vtable;
+pub mod dead_seh_handlers;
 pub mod guid_values;
 pub mod container_ptr_read;
 pub mod fnptr_abi_transmute;
@@ -35,6 +36,7 @@ pub mod byte_step_one;
 pub mod variant_outptr;
 pub mod byteptr_stride;
 pub mod inert_crate_allow;
+pub mod kernel_feature_mode;
 pub mod swallowing_debug_macro;
 pub mod calloc_elem_type;
 pub mod cdecl_alias;
@@ -267,6 +269,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(gmem_flags::GmemFlags),
         Box::new(byteptr_stride::ByteptrStride),
         Box::new(inert_crate_allow::InertCrateAllow),
+        Box::new(kernel_feature_mode::KernelFeatureMode),
         Box::new(swallowing_debug_macro::SwallowingDebugMacro),
         Box::new(noop_goto::NoopGoto),
         Box::new(cdecl_alias::CdeclAlias),
@@ -295,6 +298,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(entry_point_cc::EntryPointCc),
         Box::new(uncalled_ctor_hook::UncalledCtorHook),
         Box::new(mingw_c_vtable::MingwCVtable),
+        Box::new(dead_seh_handlers::DeadSehHandlers),
         Box::new(guid_values::GuidValues),
         Box::new(container_ptr_read::ContainerPtrRead),
     ]

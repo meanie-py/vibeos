@@ -138,17 +138,23 @@ unsafe fn PeLdrpBindImportName(
 
         ImportData = VaToPa(ImportDataVa as *const core::ffi::c_void) as PIMAGE_IMPORT_BY_NAME;
 
+        // lld packs the export directory, DLL name and tables with no alignment, so these
+        // tables are at whatever offset the DLL name's length leaves (ntkrnlmp.exe's names
+        // at RVA 0x24deb2). The PE format allows that and x86 does not care, but a plain
+        // `*` read is UB; armed, it halted every boot here. Read every entry unaligned.
         NameTable = VaToPa(RVA(DllBase, (*ExportDirectory).AddressOfNames)) as *mut u32;
         OrdinalTable = VaToPa(RVA(DllBase, (*ExportDirectory).AddressOfNameOrdinals)) as *mut u16;
 
         Hint = (*ImportData).Hint as u32;
 
-        ExportName = VaToPa(RVA(DllBase, *NameTable.offset(Hint as isize))) as *mut i8;
-
-        if (Hint < (*ExportDirectory).NumberOfNames) &&
-            (strcmp(ExportName, (*ImportData).Name.as_ptr() as *const i8) == 0)
+        // The C reads NameTable[Hint] before testing Hint < NumberOfNames, so a stale hint
+        // reads past the name table.
+        if (Hint < (*ExportDirectory).NumberOfNames) && {
+            ExportName = VaToPa(RVA(DllBase, NameTable.offset(Hint as isize).read_unaligned())) as *mut i8;
+            strcmp(ExportName, (*ImportData).Name.as_ptr() as *const i8) == 0
+        }
         {
-            Ordinal = *OrdinalTable.offset(Hint as isize) as u32;
+            Ordinal = OrdinalTable.offset(Hint as isize).read_unaligned() as u32;
         } else {
             Low = 0;
             High = ((*ExportDirectory).NumberOfNames - 1) as i32;
@@ -156,7 +162,7 @@ unsafe fn PeLdrpBindImportName(
             while High >= Low {
                 Middle = (Low + High) / 2;
 
-                ExportName = VaToPa(RVA(DllBase, *NameTable.offset(Middle as isize))) as *mut i8;
+                ExportName = VaToPa(RVA(DllBase, NameTable.offset(Middle as isize).read_unaligned())) as *mut i8;
 
                 Result = strcmp(ExportName, (*ImportData).Name.as_ptr() as *const i8);
 
@@ -174,7 +180,7 @@ unsafe fn PeLdrpBindImportName(
                 return 0u8;
             }
 
-            Ordinal = *OrdinalTable.offset(Middle as isize) as u32;
+            Ordinal = OrdinalTable.offset(Middle as isize).read_unaligned() as u32;
         }
     }
 
@@ -185,7 +191,7 @@ unsafe fn PeLdrpBindImportName(
 
     FunctionTable = VaToPa(RVA(DllBase, (*ExportDirectory).AddressOfFunctions)) as *mut u32;
 
-    (*ThunkData).u1.Function = RVA(DllBase, *FunctionTable.offset(Ordinal as isize)) as usize as _;
+    (*ThunkData).u1.Function = RVA(DllBase, FunctionTable.offset(Ordinal as isize).read_unaligned()) as usize as _;
 
     let ForwarderName = VaToPa((*ThunkData).u1.Function as *const core::ffi::c_void) as *mut i8;
     if ((ForwarderName as usize) > (ExportDirectory as usize)) &&

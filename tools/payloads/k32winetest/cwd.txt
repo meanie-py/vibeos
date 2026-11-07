@@ -1,2 +1,2 @@
-C:\TEMP
+@scratch
 stage

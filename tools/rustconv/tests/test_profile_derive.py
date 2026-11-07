@@ -248,6 +248,19 @@ def test_ambiguous_target_fails_loudly(tmp_path):
         parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
 
 
+def test_a_c_oracle_twin_never_owns_the_island(tmp_path):
+    """wined3d's target is d3dwine (not the directory's name), and its pre-flip oracle adds
+    d3dwine_c: two targets read as ambiguous although the `_c` twin can never own it."""
+    cmake = (
+        "list(APPEND SOURCE main.c)\n"
+        "add_library(alpha MODULE ${SOURCE})\nset_module_type(alpha win32dll)\n"
+        "add_library(alpha_c MODULE EXCLUDE_FROM_ALL ${SOURCE})\nset_module_type(alpha_c win32dll)\n"
+    )
+    root = _basic_module(tmp_path, cmake=cmake)
+    dp = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+    assert dp.name == "alpha"
+
+
 def test_missing_cmakelists_fails_loudly(tmp_path):
     with pytest.raises(ProfileDeriveError, match=re.escape("no CMakeLists.txt")):
         parse_cmakelists(tmp_path / "nope/CMakeLists.txt", tmp_path)

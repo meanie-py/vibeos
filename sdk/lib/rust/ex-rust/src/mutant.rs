@@ -289,10 +289,6 @@ pub unsafe extern "system" fn NtQueryMutant(
     Status
 }
 
-/// ntstatus.h. KeReleaseMutant raises these for a caller that does not own the mutant.
-const STATUS_ABANDONED: NTSTATUS = 0x0000_0080;
-const STATUS_MUTANT_NOT_OWNED: NTSTATUS = 0xC000_0046_u32 as NTSTATUS;
-
 #[no_mangle]
 pub unsafe extern "system" fn NtReleaseMutant(
     MutantHandle: HANDLE,
@@ -314,7 +310,7 @@ pub unsafe extern "system" fn NtReleaseMutant(
         }
     }
 
-    let Status = ObReferenceObjectByHandle(
+    let mut Status = ObReferenceObjectByHandle(
         MutantHandle,
         0,
         ExMutantObjectType,
@@ -323,22 +319,22 @@ pub unsafe extern "system" fn NtReleaseMutant(
         core::ptr::null_mut(),
     );
 
-    let mut Status = Status;
     if Status >= 0 {
-        // The C wraps KeReleaseMutant in _SEH2_TRY ("This can raise an exception") and returns
-        // the code: it raises STATUS_MUTANT_NOT_OWNED / STATUS_ABANDONED for a caller that does
-        // not own the mutant. Without the try, ReleaseMutex on a mutex the caller did not own
-        // -- an ordinary error on Windows (ERROR_NOT_OWNER) -- bugchecked the machine, 0x1E
-        // (C0000046) during a Chrome run. Same answer without raising: only this thread can
-        // make itself the owner, so the check below cannot go stale before the release.
-        if (*Mutant).OwnerThread != KeGetCurrentThread() as *mut _ {
-            Status = if (*Mutant).Abandoned != 0 { STATUS_ABANDONED } else { STATUS_MUTANT_NOT_OWNED };
-        } else {
-            let Prev = KeReleaseMutant(Mutant, 1, 0u8, 0u8);
-
-            if !PreviousCount.is_null() {
-                write_user_nofail(PreviousCount, Prev, PreviousMode);
+        /* KeReleaseMutant RAISES STATUS_MUTANT_NOT_OWNED (or STATUS_ABANDONED) by contract;
+         * the C catches it here with ExSystemExceptionFilter. Without the catch, releasing a
+         * mutex another thread owns bugchecked the kernel. */
+        let mut Prev: LONG = 0;
+        match ntkrnl_sys::seh::try_except(
+            &mut Prev,
+            |prev| *prev = KeReleaseMutant(Mutant, 1, 0u8, 0u8),
+            |_, _| crate::harderr::ExSystemExceptionFilter(),
+        ) {
+            Ok(()) => {
+                if !PreviousCount.is_null() {
+                    write_user_nofail(PreviousCount, Prev, PreviousMode);
+                }
             }
+            Err(code) => Status = code,
         }
 
         ObDereferenceObject(Mutant as PVOID);

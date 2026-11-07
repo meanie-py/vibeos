@@ -545,7 +545,16 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
                 tcp::SocketBuffer::new(vec![0u8; 8192]),
             );
             let handle = sockets.add(sock);
-            let local = 50000u16.wrapping_add((conn_id & 0x3fff) as u16);
+            // Connect FROM the port the associated address object was bound to, as Windows
+            // does (kmtest TcpIpConnect binds 54321 and checks accept() sees it); only an
+            // unbound (port 0) address gets an ephemeral port, like ensure_udp.
+            let bound = state
+                .conn(conn_id)
+                .map(|c| c.addr_id)
+                .and_then(|aid| state.addrs.iter().find(|a| a.id == aid))
+                .map(|a| a.local_port)
+                .unwrap_or(0);
+            let local = if bound != 0 { bound } else { 50000u16.wrapping_add((conn_id & 0x3fff) as u16) };
             let r = sockets.get_mut::<tcp::Socket>(handle).connect(
                 iface.context(),
                 (IpAddress::v4(ip[0], ip[1], ip[2], ip[3]), port),

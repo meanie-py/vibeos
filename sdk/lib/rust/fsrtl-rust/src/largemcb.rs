@@ -326,7 +326,22 @@ pub unsafe extern "system" fn FsRtlInitializeLargeMcb(Mcb: PLARGE_MCB, PoolType:
 
     KeInitializeGuardedMutex((*Mcb).GuardedMutex as PKGUARDED_MUTEX);
 
-    FsRtlInitializeBaseMcb(&mut (*Mcb).BaseMcb, PoolType);
+    // FsRtlInitializeBaseMcb allocates from a POOL_RAISE_IF_ALLOCATION_FAILURE lookaside, so
+    // it raises when pool runs out; the C catches that, frees the mutex and leaves the MCB
+    // without one, returning normally.
+    if ntkrnl_sys::seh::try_except(
+        &mut (),
+        |_| FsRtlInitializeBaseMcb(&mut (*Mcb).BaseMcb, PoolType),
+        |_, _| ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER,
+    )
+    .is_err()
+    {
+        ExFreeToNPagedLookasideList(
+            core::ptr::addr_of_mut!(FsRtlFastMutexLookasideList),
+            (*Mcb).GuardedMutex as PVOID,
+        );
+        (*Mcb).GuardedMutex = core::ptr::null_mut();
+    }
 }
 
 #[no_mangle]

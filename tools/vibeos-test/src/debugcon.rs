@@ -21,6 +21,8 @@ pub struct DebugconResult {
     pub hex_dumps: BTreeMap<String, String>,
     #[serde(default)]
     pub hex_dump_order: Vec<String>,
+    #[serde(default)]
+    pub loader_panic: Option<String>,
 }
 impl DebugconResult {
     fn new(raw: &[u8]) -> Self {
@@ -31,6 +33,7 @@ impl DebugconResult {
             next_expected: None,
             hex_dumps: BTreeMap::new(),
             hex_dump_order: Vec::new(),
+            loader_panic: None,
         }
     }
 }
@@ -75,6 +78,22 @@ pub fn decode(raw: &[u8], catalog: &Value) -> Result<DebugconResult> {
         );
     }
     let mut r = DebugconResult::new(raw);
+    // A loader panic message is not milestones: its file path's letters would decode as
+    // kernel trace points (an armed uefildr panic once read as "CRASHED BEFORE
+    // KiSystemStartupBootStack"). Decode only what precedes it.
+    const LOADER_PANIC: &[u8] = b"FREELDR-RUST-PANIC";
+    let panic_at = raw.windows(LOADER_PANIC.len()).position(|w| w == LOADER_PANIC);
+    if let Some(p) = panic_at {
+        // `@file:line`, then (uefildr) a `  msg: <panic message>` line.
+        let tail: String = raw[p + LOADER_PANIC.len()..]
+            .iter()
+            .map(|b| if *b == b'\n' { ' ' } else { ascii(*b).unwrap_or(' ') })
+            .take(300)
+            .collect();
+        let tail = tail.split_whitespace().collect::<Vec<_>>().join(" ");
+        r.loader_panic = Some(tail.trim_start_matches('@').to_owned());
+    }
+    let raw = &raw[..panic_at.unwrap_or(raw.len())];
     let mut next = 0;
     let mut i = 0;
     while i < raw.len() {
@@ -183,6 +202,12 @@ pub fn format_report(r: &DebugconResult) -> String {
             }
         }
     }
+    // Last, so the verdict's last-three-lines salient carries it.
+    if let Some(loc) = &r.loader_panic {
+        lines.push(format!(
+            "LOADER PANIC at {loc}: the loader halted; the kernel was never entered"
+        ));
+    }
     lines.join("\n")
 }
 pub fn load_catalog(root: &Path, arch: &str) -> Result<Option<Value>> {
@@ -246,5 +271,18 @@ mod tests {
         assert!(d.next_expected.is_none());
         assert!(format_report(&d).contains("LAST REACHED: 'B' = b()"));
         assert!(format_report(&decode(&[], &c).unwrap()).contains("NO OUTPUT"));
+    }
+    #[test]
+    fn loader_panic_is_not_milestones() {
+        let c = json!({"trace_points":[{"char":"i","function":"a","file":"a.rs","line":1,"description":"first"},{"char":"j","function":"b","file":"b.rs","line":2,"description":"second"}]});
+        let d = decode(b"\n!!FREELDR-RUST-PANIC@freeldr-rust/src/heap.rs:42\n  msg: null pointer dereference occurred\n", &c).unwrap();
+        assert!(d.milestones_reached.is_empty());
+        assert_eq!(
+            d.loader_panic.as_deref(),
+            Some("freeldr-rust/src/heap.rs:42 msg: null pointer dereference occurred")
+        );
+        assert!(format_report(&d).ends_with(
+            "LOADER PANIC at freeldr-rust/src/heap.rs:42 msg: null pointer dereference occurred: the loader halted; the kernel was never entered"
+        ));
     }
 }

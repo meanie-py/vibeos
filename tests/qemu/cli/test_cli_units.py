@@ -11806,3 +11806,31 @@ def test_command_exit_124_is_distinct_from_an_owned_timeout(tmp_path, monkeypatc
     assert exited.returncode == expired.returncode == 124
     assert exited.timed_out is False and expired.timed_out is True
     assert [row["timed_out"] for row in run.command_timings] == [False, True]
+
+
+def test_winetests_flag_is_wired_from_the_real_parser_to_the_cmake_value():
+    # --winetests rides the string-instr path. A rename on either side would make
+    # getattr() return "" and the build would silently compile no suite, so parse with
+    # the REAL parser and pin the mapping in build.py.
+    from tests.qemu.cli.__main__ import build_parser
+
+    args = build_parser().parse_args(
+        ["build", "--arch", "arm64", "--winetests", "kernel32  user32"]
+    )
+    assert getattr(args, "winetests", "") == "kernel32  user32"
+    plain = build_parser().parse_args(["build", "--arch", "arm64"])
+    assert getattr(plain, "winetests", "") == ""
+    src = (Path(__file__).parent / "build.py").read_text()
+    assert '"ROSTESTS_WINETESTS": " ".join((getattr(args, "winetests", "") or "").split())' in src
+
+
+def test_winetests_value_reaches_cmake_and_clears_on_a_plain_build(monkeypatch, tmp_path):
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache="", canonical=True)
+    build_mod._maybe_canonize(
+        run, repo, bd, "arm64", {}, instr_values={"ROSTESTS_WINETESTS": "kernel32"}
+    )
+    assert any("-DROSTESTS_WINETESTS=kernel32" in c for c in cmds), cmds
+    cached = "ROSTESTS_WINETESTS:STRING=kernel32\n"
+    cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=cached, canonical=True)
+    build_mod._maybe_canonize(run, repo, bd, "arm64", {}, instr_values={"ROSTESTS_WINETESTS": ""})
+    assert any("-DROSTESTS_WINETESTS=" in c for c in cmds), cmds

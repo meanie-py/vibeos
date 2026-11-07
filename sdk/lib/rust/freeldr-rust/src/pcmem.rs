@@ -171,7 +171,9 @@ unsafe fn PcMemCheckUsableMemorySize() {
 
     TRACE!("PcMemCheckUsableMemorySize()\n");
 
-    Size = (*(0x413 as ULONG_PTR as *const USHORT) as ULONG) * 1024;
+    // BDA 0x413: conventional memory in KB. An odd address, so the USHORT read is
+    // unaligned; a plain `*` is UB and, armed, halted every BIOS boot here.
+    Size = ((0x413 as ULONG_PTR as *const USHORT).read_unaligned() as ULONG) * 1024;
     RequiredSize = (FREELDR_BASE + FrLdrImageSize + PAGE_SIZE) as u32 ;
     if Size < RequiredSize {
         FrLdrBugCheckWithMessage(

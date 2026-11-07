@@ -602,32 +602,44 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **Fibers do not work on amd64 or arm64 (open, found 2026-11-05, upstream-sync lane).** Both
-  routines that a fiber switch needs are unimplemented on 64-bit: `SwitchToFiber` and
-  `BaseFiberStartup` in `dll/win32/kernel32/client/amd64/fiber.S` are `UNIMPLEMENTED` stubs (the
-  stub's print itself faults, in `vDbgPrintExWithPrefixInternal`, with 0xC0000005), and arm64's
-  are `brk #0xf000`. Only i386's `fiber.S` is real. So any 64-bit program crashes on its first
-  `SwitchToFiber`. This came with the fork, and upstream has the same TODO. Measured with
-  `--payload k32winetest` (`kernel32:fiber`): amd64 crashes in `test_FiberHandling` at RIP
-  `7ffb7008201` both with and without the 2026-11-05 FLS re-indexing (runs
-  `20261105-230606-fa6xw9dp` / `20261105-231539-j9huaaaf`), and i386 runs 180 checks with
-  0 failures (`20261105-234632-8nz45m6e`). Fix: write both routines for amd64 and arm64 (Rust
-  `global_asm!`, from the i386 version plus the x64/arm64 non-volatile register sets: the FIBER
-  CONTEXT save/restore and the TEB stack, FLS and activation-context fields). Then the same
-  payload is the oracle.
-- **i386: wined3d's GL adapter init faults inside Mesa's `_mesa_Vertex3f` (open, found
-  2026-11-05).** Both variants of the d3d8/d3d9 `device` cases, so it is below the front ends:
-  the second `Direct3DCreate9` in a process (the probe calls it first with a bad SDK version)
-  dies in wined3d's `match_broken_arb_fog` quirk test, on `glVertex3f`, at `movss %xmm2,
-  (%edx)` with EDX = 0 -- Mesa's immediate-mode vertex buffer is unmapped. The crash PC was
-  located by matching the guest's register state against every 64K load base of an
-  unstripped build of the same libgallium. Ruled out: the loader's dynamic TLS, context
-  teardown and re-creation, and wined3d's attribs sequence (4.4, 4.4 forward-compatible,
-  3.2), all exercised by the `mesa` suite's `glsanity` probe, which passes on i386 with the
-  host's pixel hash; that sequence yields a 3.3 core context, in which `match_broken_arb_fog`
-  should not run at all, so wined3d on i386 is reaching a legacy context by some other route.
-  Next: print wined3d's selected GL version and context flags (a TRACE in
-  `wined3d_caps_gl_ctx_create_attribs`). The i386 `device` cases are scoped out meanwhile.
+- **Fibers did not work on amd64 or arm64 (FIXED 2026-11-06, upstream-sync lane).** Both
+  routines a fiber switch needs were unimplemented on 64-bit: amd64's `fiber.S` was an
+  `UNIMPLEMENTED` stub (whose own print faulted, 0xC0000005) and arm64's `brk #0xf000`; upstream
+  has the same TODO. Now SwitchToFiber and BaseFiberStartup are naked Rust functions in
+  kernel32-rust `client/fiber.rs` for both arches, with every FIBER/TEB/CONTEXT offset from
+  `offset_of!` (the .S are out of the build). Graded with `--payload k32winetest`
+  (`kernel32:fiber`, built with the new `build --winetests kernel32`): 180 checks, 0 failures,
+  1 skip (RtlFlsAlloc, unexported at 0x502) on i386, amd64 and arm64 alike; amd64 had crashed in
+  test_FiberHandling before (`20261105-230606-fa6xw9dp`). ReactOS's copy of the test skipped
+  `test_fiber_actctx`'s switch on amd64; that guard is removed. The first arm64 winetest grade
+  anywhere: `--rostests` cannot produce arm64 media (ntdll_winetest and a dozen apitests do not
+  compile there), hence `--winetests`.
+- **i386: a second wined3d in one process cannot create a GL context, and the legacy fallback
+  then faults in Mesa (open, found 2026-11-05, root-caused 2026-11-06).** Found by the d3d8/d3d9
+  `device` cases, both variants, so below the front ends. The traced i386 case
+  (`d3d9.device-i386`, `gl trace`: wined3d's TRACE on the serial line) shows the whole sequence.
+  The probe's bad-SDK `Direct3DCreate9(1)` succeeds (wined3d ignores the version) and its first
+  adapter init gets a 3.3 **core** context normally. The second `Direct3DCreate9`'s init then
+  fails `wglCreateContextAttribsARB` for 4.4, 3.2 and 1.0 alike, last error 8
+  (ERROR_NOT_ENOUGH_MEMORY), and wined3d silently keeps its bootstrap context -- a 3.3
+  *Compatibility* profile -- so the legacy-only quirk tests run, and `match_broken_arb_fog`'s
+  immediate-mode draw faults in Mesa (`movss %xmm2,(%edx)`, EDX = 0; the six wined3d return
+  addresses symbolize coherently at load base 0x830000: match_broken_arb_fog <-
+  wined3d_adapter_init_gl_caps <- wined3d_adapter_gl_init <- _create <- wined3d_init <-
+  wined3d_create). amd64 and arm64 run the same two inits and pass. Ruled out: Mesa alone
+  (glsanity runs wined3d's exact core-profile `draw_test_quad` sequence clean on the i386
+  guest, and the Windows host runs it clean in both context-delete orders) and the loader's
+  dynamic TLS, and the probe's own leak (it never released the bad-SDK object; it does now,
+  and nothing changed). **Measured** (the probe's `dx_vm`, `trace` runs only): one wined3d
+  init + release takes the process from 17M reserved / 1530M largest free region to 1530M
+  reserved / 122M largest free, in 24 new allocations, the biggest a single 512M reservation --
+  the power-of-two shape of the heap's segment doubling (`RtlpExtendHeap`:
+  `SegmentReserve += ReserveSize`, inherited from the C, `sdk/lib/rtl/heap.c:1356`). Harmless
+  in a 64-bit process, fatal in 2G. Next: confirm the 512M block is a heap segment (walk
+  `RtlWalkHeap`/`HeapWalk` segment entries) and find what drives the heap to hundreds of MB at
+  peak (Mesa softpipe's per-context allocations below the 508K virtual-block threshold are the
+  suspect); then whether wined3d should fail loudly instead of keeping a legacy context it never
+  asked for.
 - **arm64: PCI I/O-space BARs are never translated, so a port-I/O PCI device cannot work
   (open, found 2026-11-05).** The AC97 binds on arm64 (after its INF gained an NTARM64 models
   section) and then fails START: `AC97 Common: PrimaryCodecReady timed out!`. On arm64
@@ -732,6 +744,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`20261105-233150-dbuff_ay`). wow64's `Wow64pVeh` now runs on amd64; the amd64 ladder is
   13/13 PASS on it (`20261105-233955-5l_obhz3`), and the arm64 FEX ladder 13/13 + x86-64
   11/11 (`20261105-234852-0qxo29e9`).
+- **One user-mode `ReleaseSemaphore` past the maximum bugchecked the kernel — FIXED 2026-11-06
+  (cpp-cluster).** `0x1E` with code `C0000047` on all three arches
+  (`20261106-153844-z1j4_6z3`, `20261106-153956-0a2bq_dj`, `20261106-154053-vv_mn6q_`). The
+  Rust Nt* layer had dropped the `__except` around callees that raise by contract: the same bug
+  in `NtReleaseMutant`, `PsSuspendThread` (a 128th SuspendThread), `NtSignalAndWaitForSingleObject`
+  and the `NtWait*` functions, plus unprobed timeout pointers in `NtCreateNamedPipeFile` /
+  `NtCreateMailslotFile`. All restored with the C's filters; `tools/payloads/sehprobe` 11/11 on
+  all three (`20261106-161407-2ai5k9hl`, `20261106-161540-003xbllo`,
+  `20261106-161829-9twosmpo`). Same day, the cache-manager side: a fault copying to a cached
+  read's buffer left CcCopyRead as a raw access violation, which the fast I/O filter
+  rejects; sehprobe's `cached_read_race` now lands 16 such faults per run, all returned as
+  ERROR_INVALID_USER_BUFFER (`20261106-180539-bparahnf`). The rest of the class is
+  `scan_dead_seh_handlers`'s baseline (`docs/engineering/dummy-pseh-verdict.md`, "Status").
 - **ntdll's `RtlDosSearchPath_Ustr` never applies SxS redirection (open, found 2026-11-05,
   rtl).** Same cause as the vectored-handler bug above: the branch (`sdk/lib/rtl/path.c`, `if
   (Flags & 1)`) is `#ifndef _NTOSKRNL_`, and the one librtl both ntoskrnl and ntdll link is

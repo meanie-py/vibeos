@@ -340,7 +340,7 @@ fn main() {
         // archives (C-first cohab precedence) and applies the per-crate RUSTFLAGS
         // cmake gives them (i386 -sse + the class-wide -C no-prepopulate-passes;
         // see reactos-link build_rust_crate). cnt-rust-lib `float` is per-arch.
-        .rust_lib("rtl-rust", &["kernel"], false)
+        .rust_lib("rtl-rust", &["kernel", "ntoskrnl"], false)
         .rust_lib("cnt-rust-lib", cnt_feats, true)
         // cmlib hive library: flipped C→Rust (kernel cmlib is 100% Rust). The
         // cmake `libcmlib.a` in static_libs is now just the cohab placeholder —

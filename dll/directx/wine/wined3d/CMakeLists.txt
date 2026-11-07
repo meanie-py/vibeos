@@ -58,3 +58,5 @@ add_importlibs(d3dwine opengl32 user32 gdi32_vista gdi32 advapi32 kernel32_vista
 add_dependencies(d3dwine wineheaders d3d_idl_headers)
 add_cd_file(TARGET d3dwine DESTINATION reactos/system32 FOR all)
 set_wine_module(d3dwine)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

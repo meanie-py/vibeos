@@ -38,6 +38,17 @@ add_subdirectory(tests)
 add_subdirectory(unittests)
 add_subdirectory(win32)
 add_subdirectory(winetests)
+elseif(ROSTESTS_WINETESTS)
+    # Only the named suites (modules/CMakeLists.txt, ROSTESTS_WINETESTS). winetests/
+    # CMakeLists.txt is a bare add_subdirectory list, so adding one directly is the same
+    # target at the same binary path the full corpus builds.
+    string(REPLACE " " ";" _winetest_suites "${ROSTESTS_WINETESTS}")
+    foreach(_suite ${_winetest_suites})
+        if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/winetests/${_suite}/CMakeLists.txt)
+            message(FATAL_ERROR "ROSTESTS_WINETESTS: no winetest suite '${_suite}' (modules/rostests/winetests/${_suite})")
+        endif()
+        add_subdirectory(winetests/${_suite})
+    endforeach()
 endif()
 
 

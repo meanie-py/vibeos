@@ -138,6 +138,8 @@ class Cell:
     arches: list[str] = field(default_factory=list)
     # rust_staticlib_variant DEPENDS (a custom command's OUTPUT), as EXTRA_DEPENDS.
     body_depends: list[str] = field(default_factory=list)
+    # A body-less module with no C of its own links nothing from rustc's bin.
+    shell_less: bool = False
 
 
 @dataclass

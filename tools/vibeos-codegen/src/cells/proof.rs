@@ -525,6 +525,42 @@ fn txtsetup_files(root: &Path) -> Result<BTreeSet<String>> {
         .map(|c| c[1].to_lowercase())
         .collect())
 }
+/// The cargo output build-<arch>/build.ninja copies to `rel` (the cell's
+/// `cmake -E copy <target>/release/<bin>.exe <rel>`).
+pub fn cargo_source(ninja: &str, arch: &str, rel: &Path) -> Option<PathBuf> {
+    let dst = format!("/tmp/vibeos/build-{arch}/{}", rel.to_string_lossy());
+    let pat = format!(r"copy /tmp/vibeos/(\S+/release/[^/\s]+\.exe) {}(?:\s|$)", regex::escape(&dst));
+    re(&pat).captures(ninja).map(|c| PathBuf::from(&c[1]))
+}
+fn relinked_by_cargo(root: &Path, arch: &str, rel: &Path, baseline_pe: &Path) -> Result<bool> {
+    // No build.ninja: nothing built the cell, so nothing relinked it.
+    let Ok(ninja) = std::fs::read_to_string(root.join(format!("build-{arch}/build.ninja"))) else {
+        return Ok(false);
+    };
+    let Some(src) = cargo_source(&ninja, arch, rel) else {
+        return Ok(false);
+    };
+    let (Ok(exe), Ok(old)) = (
+        std::fs::metadata(root.join(src)),
+        std::fs::metadata(baseline_pe),
+    ) else {
+        return Ok(false);
+    };
+    Ok(exe.modified()? > old.modified()?)
+}
+#[cfg(test)]
+mod cargo_source_tests {
+    use super::*;
+    #[test]
+    fn the_copy_into_the_output_names_the_cargo_exe() {
+        let ninja = "  COMMAND = cd /tmp/vibeos/build-i386 && /usr/bin/cmake -E copy /tmp/vibeos/sdk/lib/rust/target/c-28/i686-pc-windows-gnu/release/shdoclc.exe /tmp/vibeos/build-i386/dll/win32/shdoclc/shdoclc.dll && x\n";
+        assert_eq!(
+            cargo_source(ninja, "i386", Path::new("dll/win32/shdoclc/shdoclc.dll")),
+            Some(PathBuf::from("sdk/lib/rust/target/c-28/i686-pc-windows-gnu/release/shdoclc.exe"))
+        );
+        assert_eq!(cargo_source(ninja, "i386", Path::new("dll/win32/shdoclc/shdoc.dll")), None);
+    }
+}
 pub fn check(root: &Path, targets: &[String], baseline: &Path) -> Result<CheckResult> {
     let index = indexed_baseline(baseline)?;
     let mut records = Vec::new();
@@ -556,7 +592,16 @@ pub fn check(root: &Path, targets: &[String], baseline: &Path) -> Result<CheckRe
             let old_data = std::fs::read(&olds[0])?;
             let new_data = std::fs::read(&new)?;
             if old_data == new_data {
-                record.status = "NOT RELINKED (still the baseline PE: did the build fail?)".into();
+                // A shell-less cell of a resource DLL (shdoclc, themeui) can link cmake's
+                // exact bytes. Tell that from a build that never ran by the cell's own
+                // cargo output: it must exist and be newer than the baseline copy.
+                if relinked_by_cargo(root, a, rel, &olds[0])? {
+                    record.status = "EQUIVALENT".into();
+                    record.note = " (byte-identical to cmake's link)".into();
+                } else {
+                    record.status =
+                        "NOT RELINKED (still the baseline PE: did the build fail?)".into();
+                }
                 records.push(record);
                 continue;
             }

@@ -1472,6 +1472,9 @@ def _build_locked(
         instr_values={
             "VIBEOS_WINETEST_SKIP": (getattr(args, "winetest_skip", "") or "").strip(),
             "VIBEOS_WINETEST_ONLY": (getattr(args, "winetest_only", "") or "").strip(),
+            # Named winetest suites without the rest of the corpus (`--winetests`).
+            # Reconciled like ENABLE_ROSTESTS: a plain build clears it.
+            "ROSTESTS_WINETESTS": " ".join((getattr(args, "winetests", "") or "").split()),
         },
     )
     if wrapped is None:

@@ -10,7 +10,7 @@
 name: k32winetest
 description: Wine kernel32 conformance suite under the apitest sweep runner
 
-build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --rostests --keep-going && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites kernel32 --only kernel32:version --register '' --out-dir tools/payloads/k32winetest"
+build_hint: "tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --winetests kernel32 && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites kernel32 --only kernel32:version --register '' --out-dir tools/payloads/k32winetest"
 
 binaries:
   - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
@@ -20,10 +20,14 @@ binaries:
     dest: bin/apitest-suites.txt
   - src: tools/payloads/k32winetest/winetest-skip-{arch}.txt
     dest: bin/apitest-skip.txt
+  # `@scratch`: the sweep's per-arch writable directory (C:\TEMP on x86, X:\reactos\TEMP on
+  # arm64, which has no C:); see load_child_cwd in tools/payloads/apitest/sweep.c.
   - src: tools/payloads/k32winetest/cwd.txt
     dest: bin/apitest-cwd.txt
-  - src: build-{arch}/modules/rostests/winetests/kernel32/kernel32_winetest.exe
-    dest: bin/kernel32_winetest.exe
+# kernel32_winetest.exe itself is NOT listed: the build stages it at reactos/bin when built
+# with `--winetests kernel32` (or `--rostests`), which build_hint asks for. Listing it here as
+# well names reactos/bin/kernel32_winetest.exe twice, and on arm64 the ramdisk carries the
+# stripped copy, so the two differ in bytes and the ramdisk restage refuses.
 
 test:
   launch_marker: "[APITEST-SWEEP] done"

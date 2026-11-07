@@ -110,11 +110,17 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
                 erException.ExceptionAddress = DefaultConsoleCtrlHandler as *mut core::ffi::c_void;
                 erException.NumberParameters = 0;
 
-                // _SEH2_TRY
-                {
-                    RtlRaiseException(&mut erException);
-                }
-                // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+                // _SEH2_TRY { RtlRaiseException } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): the
+                // debugger sees DBG_CONTROL_C first; only if it passes the exception back do the
+                // process's handlers run. The bare raise this was killed the process in that
+                // case, and ran the handlers even when the debugger had taken the event.
+                let exception: *mut EXCEPTION_RECORD = &mut erException;
+                if ntdll_sys::seh::try_except(
+                    &mut (),
+                    |_| RtlRaiseException(exception),
+                    |_, _| ntdll_sys::seh::EXCEPTION_EXECUTE_HANDLER,
+                )
+                .is_err()
                 {
                     RtlEnterCriticalSection(&raw mut ConsoleLock);
 

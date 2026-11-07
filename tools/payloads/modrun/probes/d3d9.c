@@ -135,6 +135,22 @@ static void rt_hash(IDirect3DDevice9 *dev, const char *tag)
         printf("\n");
         IDirect3DSurface9_Release(copy);
     }
+    /* The same pixels locked in place (the backbuffer is lockable): a second route, so a
+     * readback path that returns nothing cannot pass as two matching hashes of zeros. */
+    hr = IDirect3DSurface9_LockRect(rt, &lr, NULL, D3DLOCK_READONLY);
+    printf("%s lock hr=%08lx", tag, (unsigned long)hr);
+    if (SUCCEEDED(hr))
+    {
+        unsigned long h = 2166136261u;
+        int x, y;
+        for (y = 0; y < 64; y++)
+            for (x = 0; x < 64; x++)
+                h = (h ^ (((DWORD *)((BYTE *)lr.pBits + y * lr.Pitch))[x] & 0xffffff)) * 16777619u;
+        printf(" hash=%08lx raw corner=%08lx centre=%08lx", h, ((DWORD *)lr.pBits)[0],
+               ((DWORD *)((BYTE *)lr.pBits + 32 * lr.Pitch))[32]);
+        IDirect3DSurface9_UnlockRect(rt);
+    }
+    printf("\n");
     IDirect3DSurface9_Release(rt);
 }
 
@@ -157,6 +173,12 @@ static void render(IDirect3DDevice9 *dev)
     HRESULT hr;
     int x, y;
 
+    D3DVIEWPORT9 full = {0, 0, 64, 64, 0.0f, 1.0f};
+
+    /* device() left the viewport at its 30x40 test value, and a d3d9 Clear and every draw are
+     * confined to it: the corner and centre pixels were always outside, and the hashes covered
+     * a fraction of the target. */
+    HR("r viewport", IDirect3DDevice9_SetViewport(dev, &full));
     IDirect3DDevice9_SetRenderState(dev, D3DRS_ZENABLE, D3DZB_FALSE);
     IDirect3DDevice9_SetRenderState(dev, D3DRS_LIGHTING, FALSE);
     IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, D3DCULL_NONE);
@@ -200,6 +222,205 @@ static void render(IDirect3DDevice9 *dev)
     HR("r present", IDirect3DDevice9_Present(dev, NULL, NULL, NULL, NULL));
 }
 
+/* Hand-assembled shader bytecode (no d3dx here). Token layout: register type in bits 28-30
+ * plus 11-12, write mask in 16-19, swizzle in 16-23, and from SM2 on the instruction length
+ * in 24-27. Each pair is drawn and read back, so wined3d's bytecode parser (shader_sm1.c), its
+ * GLSL generator (glsl_shader.c) and the shader/constant state all reach the pixels. */
+static const DWORD vs11[] = {
+    0xfffe0101,                                     /* vs_1_1 */
+    0x0000001f, 0x80000000, 0x900f0000,             /* dcl_position v0 */
+    0x0000001f, 0x8000000a, 0x900f0001,             /* dcl_color v1 */
+    0x0000001f, 0x80000005, 0x900f0002,             /* dcl_texcoord v2 */
+    0x00000001, 0xc00f0000, 0x90e40000,             /* mov oPos, v0 */
+    0x00000005, 0xd00f0000, 0x90e40001, 0xa0e40000, /* mul oD0, v1, c0 */
+    0x00000001, 0xe00f0000, 0x90e40002,             /* mov oT0, v2 */
+    0x0000ffff};
+static const DWORD ps11[] = {
+    0xffff0101,                                     /* ps_1_1 */
+    0x00000001, 0x800f0000, 0x90e40000,             /* mov r0, v0 */
+    0x0000ffff};
+static const DWORD ps20[] = {
+    0xffff0200,                                     /* ps_2_0 */
+    0x05000051, 0xa00f0001, 0x3e800000, 0x00000000, 0x00000000, 0x00000000, /* def c1, .25, 0, 0, 0 */
+    0x0200001f, 0x80000000, 0xb0030000,             /* dcl t0.xy */
+    0x0200001f, 0x90000000, 0xa00f0800,             /* dcl_2d s0 */
+    0x03000042, 0x800f0000, 0xb0e40000, 0xa0e40800, /* texld r0, t0, s0 */
+    0x03000005, 0x800f0000, 0x80e40000, 0xa0e40000, /* mul r0, r0, c0 */
+    0x03000002, 0x800f0000, 0x80e40000, 0xa0e40001, /* add r0, r0, c1 */
+    0x02000001, 0x800f0800, 0x80e40000,             /* mov oC0, r0 */
+    0x0000ffff};
+static const DWORD vs30[] = {
+    0xfffe0300,                                     /* vs_3_0 */
+    0x0200001f, 0x80000000, 0x900f0000,             /* dcl_position v0 */
+    0x0200001f, 0x8000000a, 0x900f0001,             /* dcl_color v1 */
+    0x0200001f, 0x80000000, 0xe00f0000,             /* dcl_position o0 */
+    0x0200001f, 0x8000000a, 0xe00f0001,             /* dcl_color o1 */
+    0x02000001, 0xe00f0000, 0x90e40000,             /* mov o0, v0 */
+    0x03000005, 0xe00f0001, 0x90e40001, 0xa0e40000, /* mul o1, v1, c0 */
+    0x0000ffff};
+static const DWORD ps30[] = {
+    0xffff0300,                                     /* ps_3_0 */
+    0x0200001f, 0x8000000a, 0x900f0000,             /* dcl_color v0 */
+    0x02000001, 0x800f0800, 0x90b40000,             /* mov oC0, v0.zxyw */
+    0x0000ffff};
+static const DWORD bad_version[] = {0xfffe0401, 0x0000ffff};
+
+static void shader_pair(IDirect3DDevice9 *dev, const char *tag, const DWORD *vs_code,
+                        const DWORD *ps_code, const void *verts, UINT stride)
+{
+    IDirect3DVertexShader9 *vs = NULL;
+    IDirect3DPixelShader9 *ps = NULL;
+    DWORD buf[64];
+    UINT size;
+    HRESULT hr;
+    char t[64];
+
+    hr = IDirect3DDevice9_CreateVertexShader(dev, vs_code, &vs);
+    printf("%s vs hr=%08lx", tag, (unsigned long)hr);
+    if (SUCCEEDED(hr))
+    {
+        size = 0;
+        IDirect3DVertexShader9_GetFunction(vs, NULL, &size);
+        memset(buf, 0, sizeof(buf));
+        if (size <= sizeof(buf))
+            IDirect3DVertexShader9_GetFunction(vs, buf, &size);
+        printf(" size %u hash %08lx", size, dx_hash(buf, size <= sizeof(buf) ? size : 0));
+    }
+    if (ps_code)
+    {
+        hr = IDirect3DDevice9_CreatePixelShader(dev, ps_code, &ps);
+        printf(" ps hr=%08lx", (unsigned long)hr);
+        if (SUCCEEDED(hr))
+        {
+            size = 0;
+            IDirect3DPixelShader9_GetFunction(ps, NULL, &size);
+            printf(" size %u", size);
+        }
+    }
+    printf("\n");
+    if (!vs || (ps_code && !ps))
+        goto done;
+    IDirect3DDevice9_SetVertexShader(dev, vs);
+    IDirect3DDevice9_SetPixelShader(dev, ps);
+    IDirect3DDevice9_Clear(dev, 0, NULL, D3DCLEAR_TARGET, 0xff102030, 1.0f, 0);
+    IDirect3DDevice9_BeginScene(dev);
+    sprintf(t, "%s draw", tag);
+    HR(t, IDirect3DDevice9_DrawPrimitiveUP(dev, D3DPT_TRIANGLELIST, 1, verts, stride));
+    IDirect3DDevice9_EndScene(dev);
+    rt_hash(dev, tag);
+done:
+    IDirect3DDevice9_SetVertexShader(dev, NULL);
+    IDirect3DDevice9_SetPixelShader(dev, NULL);
+    if (vs)
+        printf("  %s vs release %lu\n", tag, IDirect3DVertexShader9_Release(vs));
+    if (ps)
+        printf("  %s ps release %lu\n", tag, IDirect3DPixelShader9_Release(ps));
+}
+
+/* Only with a real device: shader creation, the constant files, and draws through them, plus
+ * an occlusion query counting the pixels a draw covered. */
+static void shaders(IDirect3DDevice9 *dev)
+{
+    struct { float x, y, z, w; DWORD c; float u, v; } tri[3] = {
+        {-0.75f, -0.75f, 0.5f, 1.0f, 0xffff0000, 0.0f, 1.0f},
+        {0.0f, 0.75f, 0.5f, 1.0f, 0xff00ff00, 0.5f, 0.0f},
+        {0.75f, -0.75f, 0.5f, 1.0f, 0xff0000ff, 1.0f, 1.0f}};
+    static const D3DVERTEXELEMENT9 elems[] = {
+        {0, 0, D3DDECLTYPE_FLOAT4, 0, D3DDECLUSAGE_POSITION, 0},
+        {0, 16, D3DDECLTYPE_D3DCOLOR, 0, D3DDECLUSAGE_COLOR, 0},
+        {0, 20, D3DDECLTYPE_FLOAT2, 0, D3DDECLUSAGE_TEXCOORD, 0},
+        D3DDECL_END()};
+    static const float c0[4] = {1.0f, 0.5f, 0.25f, 1.0f};
+    float cf[8];
+    int ci[8], i;
+    BOOL cb[4];
+    IDirect3DVertexDeclaration9 *decl;
+    IDirect3DTexture9 *tex;
+    IDirect3DQuery9 *q;
+    IDirect3DVertexShader9 *vs;
+    D3DLOCKED_RECT lr;
+    DWORD pixels;
+    HRESULT hr;
+    int x, y;
+
+    HR("s bad version", IDirect3DDevice9_CreateVertexShader(dev, bad_version, &vs));
+    HR("s vs as ps", IDirect3DDevice9_CreatePixelShader(dev, vs11, (IDirect3DPixelShader9 **)&vs));
+    HR("s vsconst", IDirect3DDevice9_SetVertexShaderConstantF(dev, 0, c0, 1));
+    HR("s psconst", IDirect3DDevice9_SetPixelShaderConstantF(dev, 0, c0, 1));
+    HR("s vsconst far", IDirect3DDevice9_SetVertexShaderConstantF(dev, 255, c0, 2));
+    for (i = 0; i < 4; i++)
+        ci[i] = i * 3 - 1;
+    HR("s vsconst i", IDirect3DDevice9_SetVertexShaderConstantI(dev, 1, ci, 1));
+    cb[0] = TRUE; cb[1] = FALSE; cb[2] = 7; cb[3] = TRUE;
+    HR("s psconst b", IDirect3DDevice9_SetPixelShaderConstantB(dev, 2, cb, 4));
+    memset(cf, 0xcc, sizeof(cf));
+    memset(ci, 0xcc, sizeof(ci));
+    memset(cb, 0xcc, sizeof(cb));
+    HR("s get vsconst", IDirect3DDevice9_GetVertexShaderConstantF(dev, 0, cf, 2));
+    dx_words("  c", cf, sizeof(cf));
+    HR("s get vsconst i", IDirect3DDevice9_GetVertexShaderConstantI(dev, 1, ci, 1));
+    dx_words("  i", ci, 16);
+    HR("s get psconst b", IDirect3DDevice9_GetPixelShaderConstantB(dev, 2, cb, 4));
+    dx_words("  b", cb, sizeof(cb));
+
+    hr = IDirect3DDevice9_CreateVertexDeclaration(dev, elems, &decl);
+    HR("s decl", hr);
+    if (FAILED(hr))
+        return;
+    IDirect3DDevice9_SetVertexDeclaration(dev, decl);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_ZENABLE, D3DZB_FALSE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_CULLMODE, D3DCULL_NONE);
+    IDirect3DDevice9_SetRenderState(dev, D3DRS_SCISSORTESTENABLE, FALSE);
+
+    shader_pair(dev, "s vs11 ffp", vs11, NULL, tri, sizeof(tri[0]));
+    shader_pair(dev, "s vs11 ps11", vs11, ps11, tri, sizeof(tri[0]));
+    hr = IDirect3DDevice9_CreateTexture(dev, 8, 8, 1, 0, D3DFMT_A8R8G8B8, D3DPOOL_MANAGED, &tex, NULL);
+    if (SUCCEEDED(hr))
+    {
+        if (SUCCEEDED(IDirect3DTexture9_LockRect(tex, 0, &lr, NULL, 0)))
+        {
+            for (y = 0; y < 8; y++)
+                for (x = 0; x < 8; x++)
+                    ((DWORD *)((BYTE *)lr.pBits + y * lr.Pitch))[x] = ((x ^ y) & 2) ? 0xff40c0ff : 0xff802000;
+            IDirect3DTexture9_UnlockRect(tex, 0);
+        }
+        IDirect3DDevice9_SetTexture(dev, 0, (IDirect3DBaseTexture9 *)tex);
+        IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_MINFILTER, D3DTEXF_POINT);
+        IDirect3DDevice9_SetSamplerState(dev, 0, D3DSAMP_MAGFILTER, D3DTEXF_POINT);
+    }
+    shader_pair(dev, "s vs11 ps20", vs11, ps20, tri, sizeof(tri[0]));
+    IDirect3DDevice9_SetTexture(dev, 0, NULL);
+    if (SUCCEEDED(hr))
+        printf("  s tex release %lu\n", IDirect3DTexture9_Release(tex));
+    shader_pair(dev, "s vs30 ps30", vs30, ps30, tri, sizeof(tri[0]));
+
+    hr = IDirect3DDevice9_CreateQuery(dev, D3DQUERYTYPE_OCCLUSION, &q);
+    HR("s occlusion", hr);
+    if (SUCCEEDED(hr))
+    {
+        IDirect3DDevice9_BeginScene(dev);
+        HR("  q begin", IDirect3DQuery9_Issue(q, D3DISSUE_BEGIN));
+        IDirect3DDevice9_DrawPrimitiveUP(dev, D3DPT_TRIANGLELIST, 1, tri, sizeof(tri[0]));
+        HR("  q end", IDirect3DQuery9_Issue(q, D3DISSUE_END));
+        IDirect3DDevice9_EndScene(dev);
+        pixels = 0xdeadbeef;
+        for (i = 0; i < 2000; i++)
+        {
+            hr = IDirect3DQuery9_GetData(q, &pixels, sizeof(pixels), D3DGETDATA_FLUSH);
+            if (hr != S_FALSE)
+                break;
+            Sleep(1);
+        }
+        printf("  q data hr=%08lx pixels %lu size %lu\n", (unsigned long)hr, pixels,
+               (unsigned long)IDirect3DQuery9_GetDataSize(q));
+        printf("  q release %lu\n", IDirect3DQuery9_Release(q));
+    }
+    HR("s event", IDirect3DDevice9_CreateQuery(dev, D3DQUERYTYPE_EVENT, NULL));
+    HR("s timestamp", IDirect3DDevice9_CreateQuery(dev, D3DQUERYTYPE_TIMESTAMP, NULL));
+    IDirect3DDevice9_SetVertexDeclaration(dev, NULL);
+    printf("  s decl release %lu\n", IDirect3DVertexDeclaration9_Release(decl));
+}
+
 static void device(IDirect3D9 *d3d, HWND hwnd)
 {
     D3DPRESENT_PARAMETERS pp;
@@ -239,6 +460,7 @@ static void device(IDirect3D9 *d3d, HWND hwnd)
     memset(&pp, 0, sizeof(pp));
     pp.Windowed = TRUE;
     pp.SwapEffect = D3DSWAPEFFECT_DISCARD;
+    pp.Flags = D3DPRESENTFLAG_LOCKABLE_BACKBUFFER;
     pp.BackBufferFormat = D3DFMT_X8R8G8B8;
     pp.BackBufferWidth = 64;
     pp.BackBufferHeight = 64;
@@ -477,6 +699,7 @@ static void device(IDirect3D9 *d3d, HWND hwnd)
         IDirect3DSurface9_Release(surf);
     }
     render(dev);
+    shaders(dev);
     printf("device release %lu\n", IDirect3DDevice9_Release(dev));
 }
 
@@ -488,8 +711,17 @@ int main(int argc, char **argv)
 
     dx_renderer(argc, argv);
     dx_load(L"d3d9");
+    dx_wined3d();
     create = (CREATE9)dx_proc("Direct3DCreate9");
-    printf("create bad sdk %d\n", create(1) != NULL);
+    /* wined3d ignores the SDK version, so this is a whole second d3d9 with its own wined3d
+     * adapter; leaked, it left the i386 guest's next adapter init unable to create any GL
+     * context (ERROR_NOT_ENOUGH_MEMORY) -- roadmap "Known bugs". */
+    dx_vm("start");
+    d3d = create(1);
+    printf("create bad sdk %d\n", d3d != NULL);
+    if (d3d)
+        printf("bad sdk release %lu\n", IDirect3D9_Release(d3d));
+    dx_vm("after first");
     d3d = create(D3D_SDK_VERSION);
     printf("create %d\n", d3d != NULL);
     if (!d3d)

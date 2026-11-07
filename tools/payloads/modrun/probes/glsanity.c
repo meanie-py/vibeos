@@ -126,6 +126,86 @@ static int round_(int n)
  * context in which immediate mode is GL_INVALID_OPERATION (0x502); the i386 guest's wined3d
  * instead reached a context whose immediate-mode vertex buffer was unmapped
  * (_mesa_Vertex3f wrote through NULL). Each step's result is printed. */
+/* wined3d's draw_test_quad on its core path, step for step, as its first quirk test that draws
+ * (wined3d_caps_gl_ctx_test_viewport_subpixel_bits) runs it: an RGBA8 4x1 FBO, a viewport
+ * array offset, a VAO and VBO, a CURRENT generic attribute set with glVertexAttrib4f outside
+ * Begin/End, a GLSL 1.50 program, glDrawArrays, the readback. The i386 guest's wined3d faulted
+ * inside this sequence (after the rgba16 quirk test's trace, before the readback's) at a float
+ * store through NULL. Each step prints, so a fault cuts the output at the call that made it. */
+#define EXT(type, name) ((type)((GETPROC)fn("wglGetProcAddress"))(name))
+typedef void(WINAPI *GEN)(int, unsigned *);
+typedef void(WINAPI *BIND2)(unsigned, unsigned);
+typedef void(WINAPI *BUFDATA)(unsigned, ptrdiff_t, const void *, unsigned);
+typedef void(WINAPI *ATTRPTR)(unsigned, int, unsigned, unsigned char, int, const void *);
+typedef void(WINAPI *ATTR4F)(unsigned, float, float, float, float);
+typedef void(WINAPI *UINTFN)(unsigned);
+typedef unsigned(WINAPI *CREATEPROG)(void);
+typedef unsigned(WINAPI *CREATESH)(unsigned);
+typedef void(WINAPI *SHSRC)(unsigned, int, const char *const *, const int *);
+typedef void(WINAPI *BINDLOC)(unsigned, unsigned, const char *);
+typedef void(WINAPI *TEXIMG)(unsigned, int, int, int, int, int, unsigned, unsigned, const void *);
+typedef void(WINAPI *TEXPARAM)(unsigned, unsigned, int);
+typedef void(WINAPI *FBTEX)(unsigned, unsigned, unsigned, unsigned, int);
+typedef void(WINAPI *VPIF)(unsigned, float, float, float, float);
+typedef void(WINAPI *DRAWARR)(unsigned, int, int);
+typedef void(WINAPI *GETTEX)(unsigned, int, unsigned, unsigned, void *);
+static void core_quad(void)
+{
+    static const float quad[] = {-1, -1, 0, 1, -1, 0, -1, 1, 0, 1, 1, 0};
+    static const char *vs[] = {"#version 150\nin vec4 pos;\nin vec4 color;\nout vec4 out_color;\n\n",
+                               "void main()\n{\n    gl_Position = pos;\n    out_color = color;\n}\n"};
+    static const char *fs[] = {"#version 150\nin vec4 out_color;\nout vec4 fragment_color;\n\n"
+                               "void main()\n{\n    fragment_color = out_color;\n}\n"};
+    unsigned tex, fbo, vao, vbo, prog, v, f, readback[4] = {0};
+
+    ((GEN)fn("glGenTextures"))(1, &tex);
+    ((BIND2)fn("glBindTexture"))(0x0de1, tex);
+    ((TEXPARAM)fn("glTexParameteri"))(0x0de1, 0x813d /* MAX_LEVEL */, 0);
+    ((TEXIMG)fn("glTexImage2D"))(0x0de1, 0, 0x8058 /* RGBA8 */, 4, 1, 0, 0x80e1 /* BGRA */,
+                                 0x8367 /* 8_8_8_8_REV */, NULL);
+    EXT(GEN, "glGenFramebuffers")(1, &fbo);
+    EXT(BIND2, "glBindFramebuffer")(0x8d40, fbo);
+    EXT(FBTEX, "glFramebufferTexture2D")(0x8d40, 0x8ce0, 0x0de1, tex, 0);
+    printf("  cq fbo err=%x\n", ((GETERROR)fn("glGetError"))());
+    ((CLEARCOLOR)fn("glClearColor"))(1, 1, 1, 1);
+    ((CLEAR)fn("glClear"))(0x4000);
+    EXT(VPIF, "glViewportIndexedf")(0, -63.0f / 128.0f, -63.0f / 128.0f, 4.0f, 1.0f);
+    printf("  cq viewport err=%x\n", ((GETERROR)fn("glGetError"))());
+    EXT(GEN, "glGenVertexArrays")(1, &vao);
+    EXT(UINTFN, "glBindVertexArray")(vao);
+    EXT(GEN, "glGenBuffers")(1, &vbo);
+    EXT(BIND2, "glBindBuffer")(0x8892, vbo);
+    EXT(BUFDATA, "glBufferData")(0x8892, sizeof(quad), quad, 0x88e0 /* STREAM_DRAW */);
+    EXT(ATTRPTR, "glVertexAttribPointer")(0, 3, 0x1406, 0, 0, NULL);
+    printf("  cq vbo err=%x\n", ((GETERROR)fn("glGetError"))());
+    EXT(ATTR4F, "glVertexAttrib4f")(1, 1.0f, 0.0f, 0.0f, 1.0f);
+    printf("  cq attrib4f err=%x\n", ((GETERROR)fn("glGetError"))());
+    EXT(UINTFN, "glEnableVertexAttribArray")(0);
+    EXT(UINTFN, "glDisableVertexAttribArray")(1);
+    prog = EXT(CREATEPROG, "glCreateProgram")();
+    v = EXT(CREATESH, "glCreateShader")(0x8b31);
+    EXT(SHSRC, "glShaderSource")(v, 2, vs, NULL);
+    EXT(BIND2, "glAttachShader")(prog, v);
+    f = EXT(CREATESH, "glCreateShader")(0x8b30);
+    EXT(SHSRC, "glShaderSource")(f, 1, fs, NULL);
+    EXT(BIND2, "glAttachShader")(prog, f);
+    EXT(BINDLOC, "glBindAttribLocation")(prog, 0, "pos");
+    EXT(BINDLOC, "glBindAttribLocation")(prog, 1, "color");
+    EXT(BINDLOC, "glBindFragDataLocation")(prog, 0, "fragment_color");
+    EXT(UINTFN, "glCompileShader")(v);
+    EXT(UINTFN, "glCompileShader")(f);
+    EXT(UINTFN, "glLinkProgram")(prog);
+    EXT(UINTFN, "glUseProgram")(prog);
+    printf("  cq program err=%x\n", ((GETERROR)fn("glGetError"))());
+    ((DRAWARR)fn("glDrawArrays"))(5 /* TRIANGLE_STRIP */, 0, 4);
+    printf("  cq draw err=%x\n", ((GETERROR)fn("glGetError"))());
+    ((BIND2)fn("glBindTexture"))(0x0de1, tex);
+    ((GETTEX)fn("glGetTexImage"))(0x0de1, 0, 0x80e1, 0x8367, readback);
+    printf("  cq readback %08x %08x %08x %08x\n", readback[0], readback[1], readback[2], readback[3]);
+    EXT(UINTFN, "glUseProgram")(0);
+    EXT(BIND2, "glBindFramebuffer")(0x8d40, 0);
+}
+
 typedef HGLRC(WINAPI *CREATEATTRIBS)(HDC, HGLRC, const int *);
 static int attribs_round(void)
 {
@@ -172,6 +252,8 @@ static int attribs_round(void)
     ((VERTEX3F)fn("glVertex3f"))(-1.0f, 1.0f, 0.0f);
     ((VOIDFN)fn("glEnd"))();
     printf("  immediate survived err=%x\n", ((GETERROR)fn("glGetError"))());
+    if (got)
+        core_quad();
     ((MAKECURRENT)fn("wglMakeCurrent"))(NULL, NULL);
     if (got)
         ((BOOL(WINAPI *)(HGLRC))fn("wglDeleteContext"))(got);

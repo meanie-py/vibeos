@@ -70,12 +70,9 @@ if(ARCH STREQUAL "i386")
     list(APPEND ASM_SOURCE
         client/i386/fiber.S
         client/i386/thread.S)
-elseif(ARCH STREQUAL "amd64")
-    list(APPEND ASM_SOURCE
-        client/amd64/fiber.S)
-elseif(ARCH STREQUAL "arm64")
-    list(APPEND ASM_SOURCE
-        client/arm64/fiber.S)
+# client/amd64/fiber.S, client/arm64/fiber.S — replaced by Rust: SwitchToFiber and
+#   BaseFiberStartup are naked functions in kernel32-rust src/client/fiber.rs (the .S were
+#   an UNIMPLEMENTED stub and a brk, so 64-bit fibers never worked).
 endif()
 
 #
@@ -181,12 +178,6 @@ add_asm_files(kernel32_asm ${ASM_SOURCE})
 set(KERNEL32_SHIMS client/dep.c)
 if(ARCH STREQUAL "i386")
     list(APPEND KERNEL32_SHIMS client/i386/fiber.S client/i386/thread.S)
-endif()
-if(ARCH STREQUAL "amd64")
-    list(APPEND KERNEL32_SHIMS client/amd64/fiber.S)
-endif()
-if(ARCH STREQUAL "arm64")
-    list(APPEND KERNEL32_SHIMS client/arm64/fiber.S)
 endif()
 set(KERNEL32_SHIMS_TARGET)
 # Generated inputs those compiles read, ordered before them.
