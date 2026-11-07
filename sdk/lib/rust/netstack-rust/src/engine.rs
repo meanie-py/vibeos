@@ -253,6 +253,203 @@ fn connect_platform(
 
 /// One adapter: its device, its smoltcp interface, its DHCP client and lease.
 ///
+/// 127.0.0.1/8, on every link's interface after its lease address (smoltcp picks a source
+/// address in the destination's subnet, else the first: the lease stays the default).
+const LOOPBACK_CIDR: IpCidr = IpCidr::Ipv4(smoltcp::wire::Ipv4Cidr::new(
+    smoltcp::wire::Ipv4Address::new(127, 0, 0, 1),
+    8,
+));
+/// Frames looped back and not yet received; more and the newest is dropped (as a full ring).
+const LOOP_QUEUE_MAX: usize = 256;
+
+/// Set a link's addresses: its lease (if any), then loopback.
+fn set_addrs(iface: &mut Interface, lease: Option<smoltcp::wire::Ipv4Cidr>) {
+    iface.update_ip_addrs(|addrs| {
+        addrs.clear();
+        if let Some(cidr) = lease {
+            let _ = addrs.push(IpCidr::Ipv4(cidr));
+        }
+        let _ = addrs.push(LOOPBACK_CIDR);
+    });
+}
+
+/// The device a link's interface is polled with: its NIC, plus local delivery. smoltcp has no
+/// loopback for an Ethernet interface: a packet to the interface's own address went out as an
+/// ARP nobody answers, and one to 127.0.0.1 to the default gateway, so no TCP connection to
+/// this machine ever opened (Chrome's fetch of http://127.0.0.1:8000/ timed out; sockprobe).
+/// Here an outgoing frame for a local address -- an ARP request for one, an IPv4 packet to
+/// one, anything sent to our own MAC -- is queued and handed back as received instead of
+/// reaching the NIC. Local addresses are never ARPed for: `poll_link` keeps their neighbor
+/// entries filled with an ARP reply of our own (our MAC), because smoltcp rate-limits ARP for
+/// the whole interface (one request a second, any address) and one peer that never answers --
+/// the boot self-test's 10.0.2.100 -- takes every slot, so a local lookup never got its turn.
+struct LoopDev<'a> {
+    inner: &'a mut AnyPhy,
+    queue: &'a mut alloc::collections::VecDeque<Vec<u8>>,
+    /// The frame being built, reused so a transmit costs no allocation.
+    scratch: &'a mut Vec<u8>,
+    mac: [u8; 6],
+    local: [[u8; 4]; 2],
+    nlocal: usize,
+}
+
+struct LoopTx<'a> {
+    inner: Option<AnyTxToken<'a>>,
+    queue: &'a mut alloc::collections::VecDeque<Vec<u8>>,
+    scratch: &'a mut Vec<u8>,
+    mac: [u8; 6],
+    local: [[u8; 4]; 2],
+    nlocal: usize,
+}
+
+enum LoopRx {
+    Dev(AnyRxToken),
+    Looped(Vec<u8>),
+}
+
+impl smoltcp::phy::RxToken for LoopRx {
+    fn consume<R, F>(self, f: F) -> R
+    where
+        F: FnOnce(&[u8]) -> R,
+    {
+        match self {
+            LoopRx::Dev(t) => smoltcp::phy::RxToken::consume(t, f),
+            LoopRx::Looped(v) => f(&v),
+        }
+    }
+}
+
+impl LoopTx<'_> {
+    fn is_local_ip(&self, ip: &[u8]) -> bool {
+        ip[0] == 127 || self.local[..self.nlocal].iter().any(|l| l[..] == *ip)
+    }
+
+    /// Whether an Ethernet frame is for this machine.
+    fn is_local(&self, f: &[u8]) -> bool {
+        if f.len() < 14 {
+            return false;
+        }
+        if f[0..6] == self.mac {
+            return true;
+        }
+        match u16::from_be_bytes([f[12], f[13]]) {
+            // ARP request (op 1): target protocol address at 38.
+            0x0806 => f.len() >= 42 && f[20..22] == [0, 1] && self.is_local_ip(&f[38..42]),
+            // IPv4: destination at 30.
+            0x0800 => f.len() >= 34 && self.is_local_ip(&f[30..34]),
+            _ => false,
+        }
+    }
+}
+
+impl<'a> smoltcp::phy::TxToken for LoopTx<'a> {
+    fn consume<R, F>(self, len: usize, f: F) -> R
+    where
+        F: FnOnce(&mut [u8]) -> R,
+    {
+        self.scratch.clear();
+        self.scratch.resize(len, 0);
+        let r = f(&mut self.scratch[..]);
+        if self.is_local(&self.scratch[..]) {
+            if self.queue.len() < LOOP_QUEUE_MAX {
+                self.queue.push_back(self.scratch.clone());
+            }
+        } else if let Some(t) = self.inner {
+            let src = &self.scratch[..];
+            smoltcp::phy::TxToken::consume(t, len, |b| b.copy_from_slice(src));
+        }
+        r
+    }
+}
+
+impl smoltcp::phy::Device for LoopDev<'_> {
+    type RxToken<'b> = LoopRx where Self: 'b;
+    type TxToken<'b> = LoopTx<'b> where Self: 'b;
+
+    fn receive(&mut self, ts: smoltcp::time::Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
+        let (mac, local, nlocal) = (self.mac, self.local, self.nlocal);
+        let LoopDev { inner, queue, scratch, .. } = self;
+        if let Some(frame) = queue.pop_front() {
+            let tx = LoopTx { inner: inner.transmit(ts), queue, scratch, mac, local, nlocal };
+            return Some((LoopRx::Looped(frame), tx));
+        }
+        let (r, t) = inner.receive(ts)?;
+        Some((LoopRx::Dev(r), LoopTx { inner: Some(t), queue, scratch, mac, local, nlocal }))
+    }
+
+    fn transmit(&mut self, ts: smoltcp::time::Instant) -> Option<Self::TxToken<'_>> {
+        let (mac, local, nlocal) = (self.mac, self.local, self.nlocal);
+        let LoopDev { inner, queue, scratch, .. } = self;
+        let t = inner.transmit(ts)?;
+        Some(LoopTx { inner: Some(t), queue, scratch, mac, local, nlocal })
+    }
+
+    fn capabilities(&self) -> smoltcp::phy::DeviceCapabilities {
+        self.inner.capabilities()
+    }
+}
+
+/// Well inside smoltcp's 60 s neighbor-entry lifetime.
+const LOCAL_ARP_REFRESH_MS: i64 = 20_000;
+
+/// When a link last told its interface where its own addresses live.
+#[derive(Default)]
+struct LocalArp {
+    next_ms: i64,
+    for_addrs: [[u8; 4]; 2],
+}
+
+/// An ARP reply from `ip` at `mac`, to us: smoltcp fills its neighbor cache from any ARP
+/// aimed at one of its addresses.
+fn local_arp_reply(mac: [u8; 6], ip: [u8; 4]) -> Vec<u8> {
+    let mut f = Vec::with_capacity(42);
+    f.extend_from_slice(&mac); // destination
+    f.extend_from_slice(&mac); // source
+    f.extend_from_slice(&[0x08, 0x06]);
+    f.extend_from_slice(&[0, 1, 0x08, 0x00, 6, 4, 0, 2]); // Ethernet/IPv4, reply
+    f.extend_from_slice(&mac);
+    f.extend_from_slice(&ip);
+    f.extend_from_slice(&mac);
+    f.extend_from_slice(&ip);
+    f
+}
+
+/// Poll a link's interface with `set`, delivering frames for this machine locally. Takes the
+/// link's fields apart because `set` may be the link's own socket set.
+#[inline(never)]
+fn poll_link(
+    phy: &mut AnyPhy,
+    iface: &mut Interface,
+    loopq: &mut alloc::collections::VecDeque<Vec<u8>>,
+    txbuf: &mut Vec<u8>,
+    arp: &mut LocalArp,
+    ts: smoltcp::time::Instant,
+    set: &mut SocketSet<'static>,
+) {
+    let mut local = [[0u8; 4]; 2];
+    let mut nlocal = 0;
+    for c in iface.ip_addrs() {
+        let IpCidr::Ipv4(v4) = c;
+        if nlocal < local.len() {
+            local[nlocal] = v4.address().octets();
+            nlocal += 1;
+        }
+    }
+    let mac = phy.mac();
+    let ms = ts.total_millis() as i64;
+    if ms >= arp.next_ms || arp.for_addrs != local {
+        for ip in &local[..nlocal] {
+            if loopq.len() < LOOP_QUEUE_MAX {
+                loopq.push_back(local_arp_reply(mac, *ip));
+            }
+        }
+        arp.for_addrs = local;
+        arp.next_ms = ms + LOCAL_ARP_REFRESH_MS;
+    }
+    let mut dev = LoopDev { inner: phy, queue: loopq, scratch: txbuf, mac, local, nlocal };
+    iface.poll(ts, &mut dev, set);
+}
+
 /// Each link has an interface of its own, so each holds its own lease and answers
 /// ARP and ping on its own address. The stack's own sockets (TDI's, the self-tests',
 /// SNTP's) live in one shared set, polled with the PRIMARY link's interface: they
@@ -271,6 +468,10 @@ struct Link {
     warm: [[u8; 4]; WARM_MAX],
     nwarm: usize,
     warm_next_ms: i64,
+    /// Frames for this machine, waiting to be received (LoopDev).
+    loopq: alloc::collections::VecDeque<Vec<u8>>,
+    txbuf: Vec<u8>,
+    local_arp: LocalArp,
 }
 
 struct Lease {
@@ -300,7 +501,8 @@ impl Link {
         let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
         config.random_seed = (now().total_millis() as u64) ^ 0x9E37_79B9_7F4A_7C15 ^ ((slot as u64) << 56);
         // No static IP — DHCP assigns it.
-        let iface = Interface::new(config, &mut phy, now());
+        let mut iface = Interface::new(config, &mut phy, now());
+        set_addrs(&mut iface, None);
         let mut own = SocketSet::new(Vec::new());
         let mut dhcp = dhcpv4::Socket::new();
         // Ask for the NTP servers too, and keep the packet so option 42 can be read.
@@ -324,6 +526,9 @@ impl Link {
             warm: [[0; 4]; WARM_MAX],
             nwarm: 0,
             warm_next_ms: 0,
+            loopq: alloc::collections::VecDeque::new(),
+            txbuf: Vec::new(),
+            local_arp: LocalArp::default(),
         })
     }
 
@@ -347,10 +552,7 @@ fn dhcp_event(
 ) -> Option<Option<Lease>> {
     match sockets_dhcp(set, dhcp).poll()? {
         dhcpv4::Event::Configured(cfg) => {
-            iface.update_ip_addrs(|addrs| {
-                addrs.clear();
-                let _ = addrs.push(IpCidr::Ipv4(cfg.address));
-            });
+            set_addrs(iface, Some(cfg.address));
             match cfg.router {
                 Some(router) => {
                     let _ = iface.routes_mut().add_default_ipv4_route(router);
@@ -380,7 +582,7 @@ fn dhcp_event(
             }))
         }
         dhcpv4::Event::Deconfigured => {
-            iface.update_ip_addrs(|addrs| addrs.clear());
+            set_addrs(iface, None);
             let _ = iface.routes_mut().remove_default_ipv4_route();
             crate::netcfg::clear_ipv4(slot);
             Some(None)
@@ -579,7 +781,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         let mut primary_changed = false;
         for (i, link) in links.iter_mut().enumerate() {
             let set = if i == primary { &mut sockets } else { &mut link.own };
-            link.iface.poll(ts, &mut link.phy, set);
+            poll_link(&mut link.phy, &mut link.iface, &mut link.loopq, &mut link.txbuf, &mut link.local_arp, ts, set);
             if let Some(lease) = dhcp_event(&mut link.iface, set, link.dhcp, i) {
                 // A new client reports itself unconfigured once, before any lease.
                 if lease.is_none() && link.lease.is_some() {
@@ -837,6 +1039,10 @@ unsafe extern "system" fn worker(_context: PVOID) {
                 events[nevents] = link.rx_event as PVOID;
                 nevents += 1;
             }
+        }
+        if links.iter().any(|l| !l.loopq.is_empty()) {
+            // Frames looped back during this pass: receive them now.
+            continue;
         }
         if polled || nevents == 0 {
             delay_ms(pending.map(|d| d.clamp(1, 10)).unwrap_or(10));

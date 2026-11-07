@@ -463,7 +463,10 @@ pub unsafe extern "system" fn AfdEnumEvents(
         ObDereferenceObject(UserEvent as *mut core::ffi::c_void);
     }
 
-    (*EnumReq).PollEvents = (*FCB).PollState & !(*FCB).EventSelectDisabled;
+    // DIVERGES from select.c, which reported every event in PollState: Windows records only the
+    // events WSAEventSelect asked for, so a socket selected for FD_CONNECT alone saw FD_WRITE
+    // with it (sockprobe.win11.txt: 0x10 where we said 0x12).
+    (*EnumReq).PollEvents = (*FCB).PollState & !(*FCB).EventSelectDisabled & (*FCB).EventSelectTriggers;
     core::ptr::copy_nonoverlapping(
         (*FCB).PollStatus.as_ptr() as *const u8,
         (*EnumReq).EventStatus.as_mut_ptr() as *mut u8,
