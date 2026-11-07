@@ -1408,8 +1408,13 @@ pub unsafe extern "system" fn DdeCreateDataHandle(
     (*pDdh).bAppOwned = (afCmd == HDATA_APPOWNED) as WORD;
 
     let pByte = pDdh.add(1) as LPBYTE;
+    // Wine 11.11: cbOff is where the data STARTS in the new handle (the first cbOff
+    // bytes are zero), not an offset into pSrc. The allocation above is cb + cbOff.
     if !pSrc.is_null() {
-        core::ptr::copy_nonoverlapping(pSrc.offset(cbOff as isize), pByte, cb as usize);
+        if cbOff != 0 {
+            core::ptr::write_bytes(pByte, 0, cbOff as usize);
+        }
+        core::ptr::copy_nonoverlapping(pSrc, pByte.offset(cbOff as isize), cb as usize);
     }
     GlobalUnlock(hMem);
 
@@ -2205,7 +2210,9 @@ pub unsafe extern "C" fn WDML_RemoveConv(pRef: *mut WDML_CONV, side: INT) {
             } else {
                 (*pPrev).next = (*pCurrent).next;
             }
-            (*pCurrent).magic = 0;
+            // A store just before the free is dead to the optimizer; the zero is what
+            // makes a stale HCONV fail WDML_GetConv's magic check (C: SecureZeroMemory).
+            core::ptr::write_volatile(core::ptr::addr_of_mut!((*pCurrent).magic), 0);
             HeapFree(GetProcessHeap(), 0, pCurrent as LPVOID);
             break;
         }

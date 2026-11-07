@@ -57,7 +57,8 @@ extern "system" {
     // symbol, so mirror the C regcontrol.c references with a local decl block.
     fn ScrollBarWndProcA(hwnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn ScrollBarWndProcW(hwnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
-    fn IconTitleWndProc(hwnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+    fn IconTitleWndProcA(hwnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+    fn IconTitleWndProcW(hwnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn PopupMenuWndProcA(hwnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn PopupMenuWndProcW(hwnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn DesktopWndProcA(hwnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
@@ -310,8 +311,8 @@ pub unsafe extern "system" fn RegisterClientPFN() -> BOOL {
 
     pfnClientA.pfnScrollBarWndProc = wp(ScrollBarWndProcA);
     pfnClientW.pfnScrollBarWndProc = wp(ScrollBarWndProcW);
-    pfnClientA.pfnTitleWndProc = wp(IconTitleWndProc);
-    pfnClientW.pfnTitleWndProc = wp(IconTitleWndProc);
+    pfnClientA.pfnTitleWndProc = wp(IconTitleWndProcA);
+    pfnClientW.pfnTitleWndProc = wp(IconTitleWndProcW);
     pfnClientA.pfnMenuWndProc = wp(PopupMenuWndProcA);
     pfnClientW.pfnMenuWndProc = wp(PopupMenuWndProcW);
     pfnClientA.pfnDesktopWndProc = wp(DesktopWndProcA);

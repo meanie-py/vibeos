@@ -58,7 +58,7 @@ pub unsafe extern "system" fn LoadStringW(
     buffer: LPWSTR,
     buflen: INT,
 ) -> INT {
-    let hmem: HGLOBAL;
+    let mut hmem: HGLOBAL = core::ptr::null_mut();
     let hrsrc: HRSRC;
     let mut p: *mut WCHAR;
     let string_num: i32;
@@ -73,11 +73,14 @@ pub unsafe extern "system" fn LoadStringW(
         MAKEINTRESOURCEW((LOWORD(resource_id) >> 4) + 1),
         RT_STRING as LPWSTR,
     );
-    if hrsrc.is_null() {
-        return 0;
-    }
-    hmem = LoadResource(instance, hrsrc);
-    if hmem.is_null() {
+    // Wine 11.11: a missing string still leaves an empty one in the buffer.
+    if hrsrc.is_null() || {
+        hmem = LoadResource(instance, hrsrc);
+        hmem.is_null()
+    } {
+        if buflen > 0 {
+            *buffer = 0;
+        }
         return 0;
     }
 
@@ -95,19 +98,16 @@ pub unsafe extern "system" fn LoadStringW(
     }
 
     i = min((buflen - 1) as i32, *p as i32);
-    if i > 0 {
-        memcpy(
-            buffer as LPVOID,
-            p.offset(1) as LPVOID,
-            (i as usize) * core::mem::size_of::<WCHAR>(),
-        );
-        *buffer.offset(i as isize) = 0;
-    } else {
-        if buflen > 1 {
-            *buffer.offset(0) = 0;
-            return 0;
-        }
+    // A negative buflen makes this negative, and the C then memcpy's a huge size.
+    if i < 0 {
+        return 0;
     }
+    memcpy(
+        buffer as LPVOID,
+        p.offset(1) as LPVOID,
+        (i as usize) * core::mem::size_of::<WCHAR>(),
+    );
+    *buffer.offset(i as isize) = 0;
 
     i
 }
@@ -143,15 +143,13 @@ pub unsafe extern "system" fn LoadStringA(
                 p = p.add(*p as usize + 1);
             }
 
-            if buflen != 1 {
-                RtlUnicodeToMultiByteN(
-                    buffer,
-                    (buflen - 1) as ULONG,
-                    &mut retval,
-                    p.add(1) as PWSTR,
-                    (*p as ULONG) * core::mem::size_of::<WCHAR>() as ULONG,
-                );
-            }
+            RtlUnicodeToMultiByteN(
+                buffer,
+                (buflen - 1) as ULONG,
+                &mut retval,
+                p.add(1) as PWSTR,
+                (*p as ULONG) * core::mem::size_of::<WCHAR>() as ULONG,
+            );
         }
     }
 
