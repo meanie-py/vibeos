@@ -2,7 +2,6 @@
 
 import json
 import os
-import sys
 import time
 from pathlib import Path
 
@@ -21,7 +20,7 @@ def diag_config(tmp_path):
         binaries[name] = str(target)
     env = {
         **os.environ,
-        "VIBEOS_TEST_PYTHON": binaries["fake_diagnostic_authority"],
+        "VIBEOS_TEST_DIAGNOSTIC_AUTHORITY": binaries["fake_diagnostic_authority"],
         "VIBEOS_QEMU_PC_SAMPLE": "1",
         "DIAG_MODE": "none",
         "DIAG_PID": str(tmp_path / "sidecar.pid"),
@@ -161,7 +160,8 @@ def test_real_trace_guard_refuses_changed_media_before_qemu_launch(
     trace, argv, _ = recorded(tmp_path, monkeypatch)
     (tmp_path / "boot.img").write_bytes(b"rebuilt after record")
     diag_config["arch_args"] = argv[1:]
-    diag_config["env"].update(VIBEOS_TEST_PYTHON=sys.executable, **{rr.ENV_VAR: f"replay:{trace}"})
+    diag_config["env"].pop("VIBEOS_TEST_DIAGNOSTIC_AUTHORITY", None)
+    diag_config["env"][rr.ENV_VAR] = f"replay:{trace}"
     diag_config["env"].pop("VIBEOS_QEMU_PC_SAMPLE", None)
     with DedicatedSession() as session:
         vm = create(session, diag_config)
@@ -180,10 +180,89 @@ def test_real_host_shape_guard_refuses_before_qemu_launch(diag_config, tmp_path,
     # Recorded authority argv lacks native harness QMP/chardev transports. A
     # reconstructed launch cannot bypass that deliberately mismatched shape.
     diag_config["arch_args"] = argv[1:]
-    diag_config["env"].update(VIBEOS_TEST_PYTHON=sys.executable, **{rr.ENV_VAR: f"replay:{trace}"})
+    diag_config["env"].pop("VIBEOS_TEST_DIAGNOSTIC_AUTHORITY", None)
+    diag_config["env"][rr.ENV_VAR] = f"replay:{trace}"
     diag_config["env"].pop("VIBEOS_QEMU_PC_SAMPLE", None)
     with DedicatedSession() as session:
         vm = create(session, diag_config)
         with pytest.raises(NativeError, match="HOST-SIDE shape"):
             session.call("vm_start", {"id": vm})
     assert not Path(diag_config["env"]["DIAG_QEMU_PID"]).exists()
+
+
+@pytest.mark.parametrize("empty", [False, True])
+def test_shipping_native_pc_worker_samples_or_reports_failed_registers(diag_config, empty):
+    """Exercise the default executable worker, including its second real QMP socket."""
+    env = diag_config["env"]
+    env.pop("VIBEOS_TEST_DIAGNOSTIC_AUTHORITY", None)
+    # Any accidental return to the old Python worker fails before doing useful work.
+    env["VIBEOS_TEST_PYTHON"] = "/no/python/diagnostic-worker"
+    env["VIBEOS_QEMU_PC_SAMPLE"] = "0.05"
+    if empty:
+        env["DIAG_EMPTY_REGS"] = "1"
+    with DedicatedSession() as session:
+        vm = create(session, diag_config)
+        session.call("vm_start", {"id": vm})
+        work = Path(diag_config["work_dir"])
+        if not empty:
+            samples = work / "pcsamples.jsonl"
+            deadline = time.monotonic() + 10
+            while (
+                not samples.is_file() or samples.stat().st_size == 0
+            ) and time.monotonic() < deadline:
+                session.call("vm_poll_exit", {"id": vm})
+                time.sleep(0.02)
+            rows = [json.loads(line) for line in samples.read_text().splitlines()]
+            assert rows and rows[0]["pc"] == "0000000040001000"
+        else:
+            deadline = time.monotonic() + 10
+            while True:
+                try:
+                    session.call("vm_poll_exit", {"id": vm})
+                except NativeError as error:
+                    assert "requested VM diagnostic failed" in str(error)
+                    break
+                assert time.monotonic() < deadline, "empty register sampler failed silently"
+                time.sleep(0.02)
+            reply = json.loads((work / "vm_diagnostic_sidecar-pc.json").read_text())
+            assert "CPU" in reply["error"]["message"]
+
+
+def test_diagnostic_workers_publish_separate_results(diag_config):
+    diag_config["env"]["DIAG_MODE"] = "two-results"
+    with DedicatedSession() as session:
+        vm = create(session, diag_config)
+        session.call("vm_start", {"id": vm})
+        work = Path(diag_config["work_dir"])
+        paths = [work / f"vm_diagnostic_sidecar-{kind}.json" for kind in ("pc", "rr")]
+        deadline = time.monotonic() + 5
+        while not all(p.is_file() and p.stat().st_size for p in paths):
+            assert time.monotonic() < deadline, (
+                "workers did not publish separate results; "
+                f"files: {list(work.glob('vm_diagnostic_sidecar*.json'))}"
+            )
+            time.sleep(0.02)
+        results = [json.loads(p.read_text())["ok"] for p in paths]
+        assert results == [{"kind": "pc", "samples": 123456}, {"kind": "rr", "samples": 1}]
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_finite_replay_checker_finishes_before_vm_teardown(diag_config, tmp_path, failed):
+    finished = tmp_path / "comparison-finished"
+    diag_config["env"].update(
+        DIAG_MODE="finish-fail" if failed else "finish",
+        DIAG_FINISHED=str(finished),
+        VIBEOS_QEMU_RR_SAMPLE="check",
+    )
+    with DedicatedSession() as session:
+        vm = create(session, diag_config)
+        session.call("vm_start", {"id": vm})
+        if failed:
+            with pytest.raises(NativeError, match="requested replay comparison failed"):
+                session.call("vm_finish_diagnostics", {"id": vm})
+        else:
+            assert session.call("vm_finish_diagnostics", {"id": vm}) == {"checkers": 1}
+        assert finished.read_text() == "complete"
+        # The continuous PC worker must not hold up finite checker completion.
+        if not failed:
+            assert session.call("vm_poll_exit", {"id": vm}) is None

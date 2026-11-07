@@ -903,24 +903,35 @@ impl Vm {
         crate::config::apply_stress_knobs(&cmd, &self.config.arch, &self.config.env)
     }
     fn diagnostic_process(&self, op: &str, payload: &Value) -> Result<Child> {
-        let python = self
-            .config
-            .env
-            .get("VIBEOS_TEST_PYTHON")
-            .cloned()
-            .unwrap_or_else(|| {
-                let venv = self.repo.join(".venv/bin/python");
-                if venv.is_file() {
-                    venv.to_string_lossy().into_owned()
-                } else {
-                    "python3".into()
-                }
-            });
-        let out = self.config.work_dir.join(format!("{op}.json"));
+        let output_name = if op == "vm_diagnostic_sidecar" {
+            let kind = payload["kind"]
+                .as_str()
+                .ok_or("missing diagnostic worker kind")?;
+            if kind.is_empty()
+                || !kind
+                    .bytes()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-'))
+            {
+                return Err("invalid diagnostic worker kind".into());
+            }
+            format!("{op}-{kind}.json")
+        } else {
+            format!("{op}.json")
+        };
+        let out = self.config.work_dir.join(output_name);
+        // Keep the shared append-only diagnostic log; each worker owns its result file.
         let err = self.config.work_dir.join(format!("{op}.stderr.log"));
-        let mut command = Command::new(python);
+        let mut command =
+            if let Some(authority) = self.config.env.get("VIBEOS_TEST_DIAGNOSTIC_AUTHORITY") {
+                let mut c = Command::new(authority);
+                c.arg(op);
+                c
+            } else {
+                let mut c = Command::new(std::env::current_exe()?);
+                c.args(["--diagnostic-worker", op]);
+                c
+            };
         command
-            .args(["-m", "tests.qemu.native_worker", op])
             .current_dir(&self.repo)
             .envs(&self.config.env)
             .stdin(Stdio::piped())
@@ -1369,11 +1380,56 @@ impl Vm {
             json!({"argv":read_json(&self.descriptor).ok().and_then(|v|v.get("argv").cloned()).unwrap_or_else(||json!([])),"qemu_pid":self.pid,"gdb_host":self.gdb_host,"gdb_port":self.gdb_port,"net_host":self.net_host,"win_uid":self.uid,"staging":self.staging,"live_log":self.config.live_log,"launch_timings":self.launch_timings,"boot_output":self.boot_output,"config":self.config,"network":self.network,"capture_plan":self.capture_plan,"admission":self.admission.as_ref().map(Admission::receipt)}),
         )
     }
+
+    /// Continuous samplers end with the VM. A requested replay comparison has
+    /// finite work and must finish before a desktop verdict tears its VM down.
+    pub fn finish_diagnostics(&mut self) -> Result<Value> {
+        let checks: Vec<usize> = self.diagnostics["sidecars"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .enumerate()
+            .filter(|(_, p)| p["kind"] == "rr" && p["value"] == "check")
+            .map(|(i, _)| i)
+            .collect();
+        if checks.is_empty() {
+            if self.env("VIBEOS_QEMU_RR_SAMPLE") == Some("check") {
+                return Err(Error::new("requested replay comparison has no worker")
+                    .with_kind("DiagnosticError"));
+            }
+            return Ok(json!({"checkers":0}));
+        }
+        let deadline = read_json(&self.descriptor)?["deadline"]
+            .as_f64()
+            .ok_or("VM owner omitted lifetime deadline")?;
+        for &index in &checks {
+            let child = self
+                .sidecars
+                .get_mut(index)
+                .ok_or("requested replay comparison worker missing")?;
+            loop {
+                if let Some(status) = child.try_wait()? {
+                    if !status.success() {
+                        return Err(Error::new(format!("requested replay comparison failed ({status}); see vm_diagnostic_sidecar-rr.json")).with_kind("DiagnosticError"));
+                    }
+                    break;
+                }
+                if now() >= deadline {
+                    return Err(
+                        Error::new("requested replay comparison exceeded VM lifetime")
+                            .with_kind("DiagnosticError"),
+                    );
+                }
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+        Ok(json!({"checkers":checks.len()}))
+    }
     pub fn poll_exit(&mut self) -> Result<Option<i32>> {
         for child in &mut self.sidecars {
             if let Some(state) = child.try_wait()? {
                 if !state.success() {
-                    return Err(Error::new(format!("requested VM diagnostic failed ({state}); see vm_diagnostic_sidecar.stderr.log")));
+                    return Err(Error::new(format!("requested VM diagnostic failed ({state}); see vm_diagnostic_sidecar-*.json and vm_diagnostic_sidecar.stderr.log")).with_kind("DiagnosticError"));
                 }
             }
         }
@@ -2150,6 +2206,7 @@ impl VmManager {
             "vm_wait_exit" => json!(vm.wait_exit(a["timeout"].as_f64().unwrap_or(20.0))?),
             op if op.starts_with("vm_checkpoint_") => crate::checkpoint::dispatch_vm(vm, op, a)?,
             "vm_poll_exit" => json!(vm.poll_exit()?),
+            "vm_finish_diagnostics" => vm.finish_diagnostics()?,
             "vm_stderr_tail" | "vm_stderr" => json!(vm.stderr_tail()),
             "vm_stop" => {
                 vm.stop()?;

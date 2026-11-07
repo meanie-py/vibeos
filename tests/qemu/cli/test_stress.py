@@ -169,7 +169,7 @@ def test_report_ranks_only_non_halted_samples_and_resolves_through_the_index(tmp
     out = "\n".join(pcsample.report(tmp_path, "amd64", samples, "loaded ntkrnlmp.exe"))
     assert "CPU#0: 2 samples, 50% halted" in out
     assert "66.7%  KxAcquireSpinLock" in out  # 2 of the 3 non-halted samples
-    assert "33.3%  (user mode)" in out
+    assert "33.3%  (below kernel address range)" in out
     assert "KxAcquireSpinLock  <-  KiIdleLoop" in out  # no stack scan: falls back to the fp chain
 
 
