@@ -372,8 +372,6 @@ SeInheritance OK pass=0 fail=0 skip=1 exit=0
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
 TcpIpConnect OK pass=33 fail=5 skip=0 exit=0
-    assert TcpIp_user.c:117
-    assert connect.c:222
     assert connect.c:233
     assert connect.c:234
     assert connect.c:235
