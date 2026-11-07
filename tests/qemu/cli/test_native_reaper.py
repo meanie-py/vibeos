@@ -134,8 +134,11 @@ def test_reaper_kills_past_the_cap_even_with_a_live_owner(reaper):
         deadline=time.time() - 1,
     )
     actions = reaper.reap()
+    # Reap reports a failed stop as an action line, not an exception: check the actions
+    # first so a failure names its cause instead of surfacing as a wait timeout.
+    assert any("exceeded lifetime cap" in line for line in actions), actions
     assert qemu.wait_for_exit() < 0
-    assert not path.exists() and any("exceeded lifetime cap" in line for line in actions)
+    assert not path.exists()
 
 
 def test_reaper_kills_windows_host_vms_by_uid_even_when_the_shim_is_gone(reaper):

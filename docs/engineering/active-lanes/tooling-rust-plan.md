@@ -38,26 +38,27 @@ Details: [QEMU/testing ownership and evidence](../qemu-testing-rust-port.md),
 
 ### 1. RR correctness follow-ups
 
-The coordinator port is complete; replay equivalence is not established.
-Trace: `~/vibeos-rr/overnight-cli-20261107-arm64` at `51b917c7f84`.
-Durable results and independent serial normalization:
-`~/vibeos-rust-staging/overnight-cli-20261107/rr-live-evidence/results.json`
-and `serial-verification.json`.
+The coordinator port is complete. Two of the three comparability gaps are closed
+(`lint-rs` `d8dbd0ebad2`, `5def0122cf1`):
 
-- Make replay completion comparable with recording completion. The real serial
-  verification exited 1: 2,083 replay lines matched a prefix of 2,230 recorded
-  lines, with no differing shared lines. Both runs reached desktop; the tail
-  remains unproven.
-- Resolve pause-time I/O and interrupt-entry fingerprint comparability. The
-  strict checker completed all 10 requests: 3 exact, 7 inconclusive, none skipped
-  or unprocessed; it exited 2 with `all_matched: false`.
-- Keep the previously documented first-checkpoint arming problem tracked. This
-  particular run skipped none, which does not prove the startup race is solved.
+- **Replay tail — fixed.** Smoke ended a replay on the live boot's marker +
+  wall-clock settle, so a replay (slower per wall second) stopped at 84% of its
+  trace. `smoke::drain_replay` now runs a replay until QEMU has read the whole
+  trace, exits, or stalls. The overnight trace that verified PARTIAL
+  (2,083/2,230) now verifies 2,230/2,230.
+- **Pause-time I/O — fixed at the sampler.** `rr record --sample` compares
+  `query-blockstats` completion counters across each `stop` and retries, with a
+  growing backoff, until the pause drained nothing; samples carry
+  `pause_retries` / `io_at_pause`. Comparison policy is unchanged.
+  Fresh trace `~/vibeos-rr/drain-sample-20261107c-arm64`: verify VERIFIED
+  (2,552 lines), diverge **12/12 exact** (was 3/10; the intermediate run without
+  growing backoff was 7/11, with `io_at_pause` predicting every inconclusive).
+- **Open: interrupt entry at the sampled icount.** Not seen in the 12/12 run,
+  which proves nothing. Still `inconclusive` by policy. Also still tracked: the
+  first-checkpoint arming race.
 
-Acceptance: actual recordings replay through the required comparison boundary;
-complete exact coverage is required for an equivalence claim. Partial,
-inconclusive and diagnostic-error results retain their nonzero outcomes.
-Do not change markers, comparison policy or uncertainty handling to get green.
+Acceptance unchanged: complete exact coverage for an equivalence claim; partial,
+inconclusive and diagnostic-error results keep their nonzero outcomes.
 
 ### 2. Remaining CLI policy and maintenance
 
