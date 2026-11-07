@@ -1,5 +1,18 @@
 [workspace]
 members = [
+    "d3dcompiler_47-cargo",
+    "d3dcompiler_46-cargo",
+    "d3dcompiler_43-cargo",
+    "d3dcompiler_42-cargo",
+    "d3dcompiler_41-cargo",
+    "d3dcompiler_40-cargo",
+    "d3dcompiler_39-cargo",
+    "d3dcompiler_38-cargo",
+    "d3dcompiler_37-cargo",
+    "d3dcompiler_36-cargo",
+    "d3dcompiler_35-cargo",
+    "d3dcompiler_34-cargo",
+    "d3dcompiler_33-cargo",
     "d3dx10_42-cargo",
     "d3dx10_41-cargo",
     "d3dx10_40-cargo",
