@@ -694,6 +694,34 @@ pub fn smoke(root: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
                 json!(salient),
             );
         }
+        // The guests are not in git and only some builds rebuild them, so media can carry
+        // an exe older than its source and the ladder would grade code nobody wrote: an
+        // arm64 build staged a 2-day-old fault32.exe and `smoke --ladder` graded it
+        // silently. The gate already refuses this (ladder gate_decision); a direct ladder
+        // smoke refuses it too, with --allow-stale as the same escape hatch as for media.
+        let stale = c.call("ladder_stale_guests", json!({}))?;
+        let stale = stale.as_array().cloned().unwrap_or_default();
+        if !stale.is_empty() {
+            let detail = format!("{} guest(s) older than their sources", stale.len());
+            if allow {
+                c.stage(
+                    "ladder-guests",
+                    "warn",
+                    &format!("{detail} (--allow-stale)"),
+                    json!(stale),
+                )?;
+            } else {
+                let mut salient = stale;
+                salient.push(json!("rebuild them: bash tools/fex/build-hello-compute.sh, then rebuild the arch so they are restaged"));
+                return fail_preflight(
+                    &mut c,
+                    "LADDER_GUESTS_STALE",
+                    "ladder-guests",
+                    detail,
+                    json!(salient),
+                );
+            }
+        }
     }
     let require: Vec<_> = options["require_probe"]
         .as_array()
