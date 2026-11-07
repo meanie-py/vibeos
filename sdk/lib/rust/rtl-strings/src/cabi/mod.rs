@@ -1226,7 +1226,7 @@ pub unsafe extern "system" fn RtlGetDefaultCodePage(ansi_cp: *mut u16, oem_cp: *
 /// (faithful ordering); `*value` written volatile.
 #[no_mangle]
 pub unsafe extern "system" fn RtlCharToInteger(str: *const u8, base: u32, value: *mut u32) -> i32 {
-    let s = core::slice::from_raw_parts(str, strlen(str));
+    let s = rslice(str, strlen(str));
     match conv::char_to_integer(s, base) {
         conv::IntParse::InvalidBase => STATUS_INVALID_PARAMETER,
         conv::IntParse::Value(v) => {
@@ -5164,8 +5164,8 @@ pub unsafe extern "system" fn RtlQueryEnvironmentVariable(
     *return_length = 0;
 
     let env_chars = env_block_chars(env_ptr);
-    let env_slice = core::slice::from_raw_parts(env_ptr, env_chars);
-    let name_slice = core::slice::from_raw_parts(name, name_length);
+    let env_slice = rslice(env_ptr, env_chars);
+    let name_slice = rslice(name, name_length);
 
     let result = env::find_env_var(env_slice, name_slice);
 
@@ -8078,7 +8078,7 @@ pub unsafe extern "system" fn RtlDetermineDosPathNameType_Ustr(
 ) -> u32 {
     let s = &*path_string;
     let chars = (s.Length / 2) as usize;
-    let buf = core::slice::from_raw_parts(s.Buffer as *const u16, chars);
+    let buf = rslice(s.Buffer as *const u16, chars);
     path_::determine_dos_path_name_type_ustr(buf)
 }
 
@@ -8120,7 +8120,7 @@ pub unsafe extern "system" fn RtlGetLengthWithoutTrailingPathSeparators(
     }
     let s = &*path_string;
     let chars = (s.Length / 2) as usize;
-    let buf = core::slice::from_raw_parts(s.Buffer as *const u16, chars);
+    let buf = rslice(s.Buffer as *const u16, chars);
     *length = path_::length_without_trailing_separators(buf);
     path_::STATUS_SUCCESS
 }
