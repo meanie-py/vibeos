@@ -1618,7 +1618,16 @@ pub unsafe extern "system" fn RtlDuplicateUnicodeString(
             (*destination).Buffer = core::ptr::null_mut();
             return STATUS_NO_MEMORY;
         }
-        core::ptr::copy_nonoverlapping((*source).Buffer, buf, (*source).Length as usize / 2);
+        // The C's RtlCopyMemory of Length bytes. An empty source duplicated with
+        // ALLOCATE_NULL_STRING has a NULL Buffer (RegOpenKeyExW's NULL subkey does this),
+        // and a copy from NULL panics even at length 0 once rtl-strings is armed.
+        if (*source).Length != 0 {
+            core::ptr::copy_nonoverlapping(
+                (*source).Buffer as *const u8,
+                buf as *mut u8,
+                (*source).Length as usize,
+            );
+        }
         if (flags & RTL_DUP_NULL_TERMINATE) != 0 {
             *buf.add((*source).Length as usize / 2) = 0;
         }
