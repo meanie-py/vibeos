@@ -265,6 +265,7 @@ pub const NORM_IGNORESYMBOLS: DWORD = 4;
 pub const NORM_IGNOREWIDTH: DWORD = 131072;
 pub const NORM_LINGUISTIC_CASING: DWORD = 0x08000000;
 pub const LINGUISTIC_IGNORECASE: DWORD = 0x00000010;
+pub const LINGUISTIC_IGNOREDIACRITIC: DWORD = 0x00000020;
 pub const SORT_STRINGSORT: DWORD = 4096;
 
 // ===========================================================================
