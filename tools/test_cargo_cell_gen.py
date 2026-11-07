@@ -1573,6 +1573,9 @@ def test_a_target_another_cmakelists_reads_by_genex_is_found(tmp_path):
     (tmp_path / "b/CMakeLists.txt").write_text(
         "add_custom_command(TARGET rshell POST_BUILD\n"
         '  COMMAND x "$<TARGET_FILE_DIR:filebrowser>/y")\n'
+        # A target's own POST_BUILD on itself is not a consumer (legide-rust's cohab copy).
+        "add_custom_command(TARGET legide POST_BUILD\n"
+        "  COMMAND native-pefixup --section:.rsrc,!D $<TARGET_FILE:legide>)\n"
     )
     g._GENEX_REFS.pop(tmp_path, None)
     assert g._target_file_refs(tmp_path) == {"filebrowser": ["b/CMakeLists.txt"]}
@@ -1635,6 +1638,29 @@ def test_a_list_variable_of_import_libs_is_not_prefixed_as_one_lib(tmp_path):
     out = g.rewrite_cmake(f, c)
     assert "lib${_fwd}" not in out
     assert "libmsvcrt libkernel32" in out
+
+
+def test_a_post_build_pefixup_on_the_target_becomes_the_cells_pefixup(tmp_path):
+    """pcix and legide fix .rsrc's flags in a POST_BUILD on the target; left in place it
+    names a target the cell removed and the whole tree's configure fails."""
+    f = tmp_path / "CMakeLists.txt"
+    body = (
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m kernelmodedriver)\n"
+        "add_custom_command(\n"
+        "    TARGET m POST_BUILD\n"
+        "    COMMAND native-pefixup --section:.rsrc,!D $<TARGET_FILE:m>\n"
+        "    VERBATIM)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32/drivers FOR all)\n"
+    )
+    f.write_text(body)
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "TARGET m POST_BUILD" not in out
+    assert "    PEFIXUP --section:.rsrc,!D" in out
+    f.write_text(body.replace("native-pefixup --section:.rsrc,!D", "strip"))
+    with pytest.raises(g.GenError, match="other than one POST_BUILD native-pefixup"):
+        g.rewrite_cmake(f, c)
 
 
 def test_an_object_in_a_subdirectory_maps_to_that_subdirectorys_source():
