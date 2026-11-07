@@ -15,9 +15,12 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from .artifacts import Run, Stage
 from .lints import lint_jobs
 from .tooling_receipts import ReceiptSession
 
@@ -262,7 +265,13 @@ _PYTEST_SUITES = [
 
 
 def _run(
-    label: str, cmd: list[str], repo: Path, *, cwd: Path | None = None, env_pp: str | None = None
+    label: str,
+    cmd: list[str],
+    repo: Path,
+    *,
+    cwd: Path | None = None,
+    env_pp: str | None = None,
+    run: Run | None = None,
 ):
     """Run one check; return (label, ok, tail). Output captured, tail shown on fail."""
     env = None
@@ -277,25 +286,50 @@ def _run(
             ensure(repo)
         except (OSError, RuntimeError, ValueError) as error:
             return label, False, f"native lint provisioning failed: {error}"
+
+    def invoke(argv):
+        if run is not None:
+            return run.run(argv, cwd=cwd or repo, env=env, stage=label)
+        return subprocess.run(argv, cwd=cwd or repo, env=env, capture_output=True, text=True)
+
     if label.startswith("pytest:"):
         # Parallel suites must not share pytest-current or retention cleanup.
         # Add the ephemeral argument here, below the receipt's stable command key.
         # /tmp/vibeos is reserved for canonical compiler-path remapping.
         with tempfile.TemporaryDirectory(prefix="pytest-tooling-") as temporary:
-            proc = subprocess.run(
-                [*cmd, "--basetemp", str(Path(temporary) / "run")],
-                cwd=cwd or repo,
-                env=env,
-                capture_output=True,
-                text=True,
-            )
+            proc = invoke([*cmd, "--basetemp", str(Path(temporary) / "run")])
     else:
-        proc = subprocess.run(cmd, cwd=cwd or repo, env=env, capture_output=True, text=True)
+        proc = invoke(cmd)
     out = (proc.stdout + proc.stderr).strip()
     return label, proc.returncode == 0, out
 
 
 def check_tooling(args, repo: Path) -> int:
+    run = Run("check-tooling", "all")
+    run.extra["options"] = {
+        name: bool(getattr(args, name, False))
+        for name in ("no_tests", "no_types", "skip_generated")
+    }
+    try:
+        code = _check_tooling(args, repo, run)
+    except BaseException as error:
+        run.classification = (
+            "TOOLING_INTERRUPTED" if isinstance(error, KeyboardInterrupt) else "TOOLING_ERROR"
+        )
+        run.log(traceback.format_exc(), header="tooling runner failed")
+        run.add(
+            Stage(
+                "tooling-runner", exit=1, status="fail", detail=str(error) or type(error).__name__
+            )
+        )
+        run.finalize(repo)
+        raise
+    if code:
+        run.classification = "TOOLING_FAIL"
+    return run.finalize(repo)
+
+
+def _check_tooling(args, repo: Path, run: Run) -> int:
     tools_py = sorted(str(p.relative_to(repo)) for p in (repo / "tools").glob("*.py"))
     checks: list[tuple[str, list[str], dict]] = []
 
@@ -450,6 +484,7 @@ def check_tooling(args, repo: Path) -> int:
                 )
             )
 
+    skipped = []
     if getattr(args, "skip_generated", False):
         from .tooling_receipts import GENERATED_INPUT_CHECKS
 
@@ -466,11 +501,35 @@ def check_tooling(args, repo: Path) -> int:
     receipt_error = None
     with context as receipts:
 
-        def execute(label, cmd, kw):
-            def compute():
-                return _run(label, cmd, repo, **kw)
+        def execute(label, cmd, kw, *, revalidate=False):
+            started = time.monotonic()
+            executed = False
 
-            return receipts.run(label, cmd, compute, **kw) if receipts else compute()
+            def compute():
+                nonlocal executed
+                executed = True
+                return _run(label, cmd, repo, run=run, **kw)
+
+            result = (
+                receipts.run(label, cmd, compute, **kw)
+                if receipts and not revalidate
+                else compute()
+            )
+            _, ok, output = result
+            timings = [t for t in run.command_timings if t["stage"] == label]
+            if not executed or not timings:
+                run.log(output, header=f"{label}: {'reused' if not executed else 'setup failed'}")
+            run.add(
+                Stage(
+                    label + (":revalidation" if revalidate else ""),
+                    exit=timings[-1]["exit"] if executed and timings else (0 if ok else 1),
+                    seconds=round(time.monotonic() - started, 6),
+                    status="ok" if ok else "fail",
+                    detail="revalidated" if revalidate else ("executed" if executed else "reused"),
+                    salient=[] if ok else output.splitlines()[-25:],
+                )
+            )
+            return result
 
         with ThreadPoolExecutor(max_workers=min(lint_jobs(), len(checks))) as pool:
             futures = [pool.submit(execute, label, cmd, kw) for label, cmd, kw in checks]
@@ -480,7 +539,7 @@ def check_tooling(args, repo: Path) -> int:
                 i = next(i for i, (lbl, _cmd, _kw) in enumerate(checks) if lbl == label)
                 _lbl, cmd, kw = checks[i]
                 print(f"Generated headers changed under the reused {label} result; rerunning it.")
-                results[i] = _run(label, cmd, repo, **kw)
+                results[i] = execute(label, cmd, kw, revalidate=True)
                 receipts.mark_rerun(label)
             try:
                 receipts.finish()
@@ -488,9 +547,18 @@ def check_tooling(args, repo: Path) -> int:
                 receipt_error = str(error)
             print(f"Reused {len(receipts.hits)}/{len(checks)} tooling checks with matching inputs.")
 
+    run.extra["checks"] = {
+        "total": len(results),
+        "passed": sum(ok for _, ok, _ in results),
+        "failed": sum(not ok for _, ok, _ in results),
+        "skipped": skipped,
+        "reused": sorted(receipts.hits) if receipts else [],
+    }
     failed = [(lbl, tail) for lbl, ok, tail in results if not ok]
     if receipt_error:
         failed.append(("receipt-validation", receipt_error))
+        run.log(receipt_error, header="receipt-validation")
+        run.add(Stage("receipt-validation", exit=1, status="fail", detail=receipt_error))
     width = max(len(lbl) for lbl, _, _ in results)
     for lbl, ok, _ in results:
         print(f"  {'✓' if ok else '✗'} {lbl.ljust(width)}")
