@@ -230,11 +230,11 @@ row. Each row is tagged by where the twin runs and what its try body does:
 
 | | `raise` (callee raises by contract) | `probe` (C probes user memory) | `other` (bare deref, or a raise further down) |
 |---|---|---|---|
-| kernel | 14 | 4 | 56 |
+| kernel | 0 | 4 | 58 |
 | rtl (both) | 0 | 0 | 18 |
-| user | 1 | 0 | 142 |
+| user | 0 | 0 | 142 |
 
-235 in all. `raise` means a raiser the Rust still CALLS: a port that turned the C's own
+222 in all (235 at the first count, 2026-11-06; every `raise` row is fixed). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
 `RtlRaiseStatus` into `return Err` has converted the contract and needs only a probe. Burn-down order: kernel `raise` first (one call from user mode bugchecks the box:
 that is how `ReleaseSemaphore` past the maximum was found), then kernel `probe`/`other`, then
 user mode (the process dies, not the machine). `tools/payloads/sehprobe` exercises the
@@ -250,6 +250,12 @@ What already landed, which the plan below predates:
   `scan_dropped_seh_pairs` reads zero only because it matches five raisers per FILE.
 - 2026-11-06: the Nt* raise catches (semaphore, mutant, suspend, signal-and-wait, waits) and
   the pipe/mailslot timeout probes. Roadmap: "One user-mode `ReleaseSemaphore` past the maximum".
+- 2026-11-06, the rest of the `raise` rows: the fast I/O paths' catches around the cache
+  manager (`fsrtl-rust/src/fastio.rs` `cc_caught`), `CcCopyRead`/`CcCopyWrite`'s
+  invalid-user-buffer conversion (`cc-rust/src/copy.rs` `copy_or_raise`; sehprobe's
+  `cached_read_race` lands faults inside it), `FsRtlInitializeLargeMcb`, mup's
+  `BroadcastOpen`, kernel32's Ctrl+C under a debugger, and NULL checks where this tree's
+  `ExAllocatePoolWithQuotaTag` returns NULL instead of raising (`NtWriteFile`, `NtUnlockFile`).
 
 ## The program — Tier 1: convert raise contracts to `Result` (do this)
 

@@ -753,8 +753,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   and the `NtWait*` functions, plus unprobed timeout pointers in `NtCreateNamedPipeFile` /
   `NtCreateMailslotFile`. All restored with the C's filters; `tools/payloads/sehprobe` 11/11 on
   all three (`20261106-161407-2ai5k9hl`, `20261106-161540-003xbllo`,
-  `20261106-161829-9twosmpo`). The rest of the class is `scan_dead_seh_handlers`'s baseline
-  (`docs/engineering/dummy-pseh-verdict.md`, "Status").
+  `20261106-161829-9twosmpo`). Same day, the cache-manager side: a fault copying to a cached
+  read's buffer left CcCopyRead as a raw access violation, which the fast I/O filter
+  rejects; sehprobe's `cached_read_race` now lands 16 such faults per run, all returned as
+  ERROR_INVALID_USER_BUFFER (`20261106-180539-bparahnf`). The rest of the class is
+  `scan_dead_seh_handlers`'s baseline (`docs/engineering/dummy-pseh-verdict.md`, "Status").
 - **ntdll's `RtlDosSearchPath_Ustr` never applies SxS redirection (open, found 2026-11-05,
   rtl).** Same cause as the vectored-handler bug above: the branch (`sdk/lib/rtl/path.c`, `if
   (Flags & 1)`) is `#ifndef _NTOSKRNL_`, and the one librtl both ntoskrnl and ntdll link is

@@ -3538,6 +3538,13 @@ pub unsafe extern "system" fn NtUnlockFile(
         core::mem::size_of::<LARGE_INTEGER>(),
         TAG_LOCK,
     ) as PLARGE_INTEGER;
+    // The C writes through it unchecked inside a _SEH2_TRY, because Windows' allocator RAISES
+    // on failure. This tree's returns NULL (its C sets Raise = FALSE too), so check it and run
+    // what the C's handler ran.
+    if LocalLength.is_null() {
+        IopCleanupAfterException(FileObject, Irp, core::ptr::null_mut(), Event);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     *LocalLength = CapturedLength;
     (*Irp).Tail.Overlay.AuxiliaryBuffer = LocalLength as *mut i8;
     (*StackPtr).Parameters.LockControl.Length = LocalLength;
@@ -3836,6 +3843,13 @@ pub unsafe extern "system" fn NtWriteFile(
         if Length != 0 {
             (*Irp).AssociatedIrp.SystemBuffer =
                 ExAllocatePoolWithQuotaTag(NonPagedPool, Length as _, TAG_IOBUF);
+            // NULL where Windows raises (this tree's allocator returns it): the C's handler
+            // cleans up and returns the code, so do that rather than copy into address 0.
+            // Length is the caller's, so a large buffered write reaches this.
+            if (*Irp).AssociatedIrp.SystemBuffer.is_null() {
+                IopCleanupAfterException(FileObject, Irp, EventObject, core::ptr::null_mut());
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
             // Fault-tolerant capture of the caller's write buffer. The C original
             // wrapped this copy in _SEH2_TRY with an IopCleanupAfterException
             // handler (iofunc.c:295-310); under DUMMY_PSEH that handler is dead, so
