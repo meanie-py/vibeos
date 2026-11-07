@@ -27,7 +27,10 @@ cabi = []
 # machinery + Nls* globals + Rtlp{Up,Down}caseUnicodeChar) and utf8-
 # shim suppression (the dedicated `utf8` crate owns those in the
 # kernel). OFF for rtl-difftest (it models Nls* itself + fuzzes utf8).
-kernel = ["cabi"]
+kernel = ["cabi", "seh"]
+# The SEH trampolines (ntkrnl_sys::seh) behind the validators' catch-all: on with `kernel`,
+# whose two links (ntoskrnl, ntdll) both export RtlSehTryExcept.
+seh = ["dep:ntkrnl-sys"]
 # ntoskrnl: THIS copy runs in the kernel. `kernel` above names the export surface, which ntdll
 # also gets (rtl-rust's default features), so it cannot gate an ntdll-only path.
 ntoskrnl = ["kernel"]
@@ -41,3 +44,7 @@ bldr = ["cabi"]
 # default-features=false drops cnt-rust's `float` modules (floatcvt /
 # scanf) — unused here and uncompilable for the no-SSE i386 kernel.
 cnt-rust = { path = "../cnt-rust", default-features = false }
+# `kernel` only: the SEH trampolines (ntkrnl_sys::seh) behind the validators' catch-all.
+# ntoskrnl and ntdll both export RtlSehTryExcept; the boot loader and the host
+# difftest have no SEH, so they keep the unguarded read.
+ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false, optional = true }

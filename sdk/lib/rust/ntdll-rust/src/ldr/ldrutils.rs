@@ -1789,7 +1789,6 @@ pub unsafe extern "system" fn LdrpCheckForLoadedDll(
     let mut ViewBase: PVOID = core::ptr::null_mut();
     let mut ViewSize: SIZE_T = 0;
     let mut NtHeader: PIMAGE_NT_HEADERS = core::ptr::null_mut();
-    let mut NtHeader2: PIMAGE_NT_HEADERS;
 
     if (*DllName).Buffer.is_null() || *(*DllName).Buffer == 0 {
         return 0u8;
@@ -1981,24 +1980,33 @@ pub unsafe extern "system" fn LdrpCheckForLoadedDll(
             continue;
         }
 
-        // _SEH2_TRY - DUMMY_PSEH: execute body directly
-        if (*CurEntry).__bindgen_anon_2.TimeDateStamp == (*NtHeader).FileHeader.TimeDateStamp
-            && (*CurEntry).SizeOfImage == (*NtHeader).OptionalHeader.SizeOfImage
-        {
-            NtHeader2 = RtlImageNtHeader((*CurEntry).DllBase);
-            if RtlCompareMemory(
-                NtHeader2 as *const _,
-                NtHeader as *const _,
-                core::mem::size_of::<IMAGE_NT_HEADERS>() as SIZE_T,
-            ) != 0
+        // The header is untrusted (the file we just mapped), so the comparison is
+        // under the C's catch-all: a fault ends the search as "not loaded".
+        let entry = CurEntry;
+        let same = ntdll_sys::seh::try_except_all(|| {
+            if (*entry).__bindgen_anon_2.TimeDateStamp == (*NtHeader).FileHeader.TimeDateStamp
+                && (*entry).SizeOfImage == (*NtHeader).OptionalHeader.SizeOfImage
             {
-                Status = ZwAreMappedFilesTheSame((*CurEntry).DllBase, ViewBase);
-                if NT_SUCCESS(Status) {
-                    *LdrEntry = CurEntry;
-                    NtUnmapViewOfSection(NtCurrentProcess(), ViewBase);
-                    return 1u8;
+                let header2 = RtlImageNtHeader((*entry).DllBase);
+                if RtlCompareMemory(
+                    header2 as *const _,
+                    NtHeader as *const _,
+                    core::mem::size_of::<IMAGE_NT_HEADERS>() as SIZE_T,
+                ) != 0
+                {
+                    return NT_SUCCESS(ZwAreMappedFilesTheSame((*entry).DllBase, ViewBase));
                 }
             }
+            false
+        });
+        match same {
+            Ok(true) => {
+                *LdrEntry = CurEntry;
+                NtUnmapViewOfSection(NtCurrentProcess(), ViewBase);
+                return 1u8;
+            }
+            Ok(false) => {}
+            Err(_) => break,
         }
     }
 

@@ -40,6 +40,42 @@ mod atomics;
 #[no_mangle]
 pub static mut RtlpUse16ByteSLists: u8 = 0xFF;
 
+/// Read `head->Next` for Pop. Between loading the header and reading through its
+/// head, another thread can pop that entry and free it, so the read may fault.
+/// sdk/lib/rtl/slist.c catches exactly that: if the header moved since we loaded
+/// it, we lost a race and `None` says retry; if it did not, the list really
+/// points at bad memory and the fault propagates. (C compares only the head
+/// pointer; the whole header, sequence included, also catches a pop+push ABA.)
+/// i386 does this with fault labels in its global_asm Pop instead.
+#[cfg(all(not(any(test, kani)), target_os = "windows", any(target_arch = "x86_64", target_arch = "aarch64")))]
+#[inline(never)]
+unsafe fn read_next_or_retry(list_head: *const u8, seen: (u64, u64), head_ptr: u64) -> Option<u64> {
+    use ntkrnl_sys::seh::{try_except, EXCEPTION_CONTINUE_SEARCH, EXCEPTION_EXECUTE_HANDLER};
+    let mut next = 0u64;
+    let read = try_except(
+        &mut next,
+        |n| *n = core::ptr::read_volatile(head_ptr as *const u64),
+        |_, _| {
+            let now = (
+                core::ptr::read_volatile(list_head as *const u64),
+                core::ptr::read_volatile((list_head as *const u64).add(1)),
+            );
+            if now != seen {
+                EXCEPTION_EXECUTE_HANDLER
+            } else {
+                EXCEPTION_CONTINUE_SEARCH
+            }
+        },
+    );
+    read.ok().map(|()| next)
+}
+
+/// Host builds of the FFI layer (the doc-test lib build) have no SEH: plain read.
+#[cfg(all(not(any(test, kani)), not(target_os = "windows"), any(target_arch = "x86_64", target_arch = "aarch64")))]
+unsafe fn read_next_or_retry(_list_head: *const u8, _seen: (u64, u64), head_ptr: u64) -> Option<u64> {
+    Some(core::ptr::read_volatile(head_ptr as *const u64))
+}
+
 // ============================================================================
 // ARM64 FFI
 // ============================================================================
@@ -52,15 +88,31 @@ mod ffi {
     #[no_mangle]
     pub unsafe extern "C" fn RtlInterlockedPopEntrySList(list_head: *mut u8) -> *mut u8 {
         loop {
-            let (alignment, region) = unsafe { atomics::load(list_head) };
-
-            let head_ptr = header::region_to_ptr(region);
+            // Snapshot the header with plain loads and do the fault-guarded read of
+            // head->Next OUTSIDE the exclusive window: the SEH call in between an
+            // LDAXP and its STLXP could clear the monitor every time and livelock.
+            // The LDAXP below then proves the header is still the snapshot.
+            let seen = unsafe {
+                (
+                    ptr::read_volatile(list_head as *const u64),
+                    ptr::read_volatile((list_head as *const u64).add(1)),
+                )
+            };
+            let head_ptr = header::region_to_ptr(seen.1);
             if head_ptr == 0 {
-                unsafe { atomics::cancel() };
                 return ptr::null_mut();
             }
 
-            let next_of_head = unsafe { ptr::read(head_ptr as *const u64) };
+            let next_of_head = match unsafe { super::read_next_or_retry(list_head, seen, head_ptr) } {
+                Some(next) => next,
+                None => continue,
+            };
+
+            let (alignment, region) = unsafe { atomics::load(list_head) };
+            if (alignment, region) != seen {
+                unsafe { atomics::cancel() };
+                continue;
+            }
 
             let result = match algorithm::pop_transition(alignment, region, next_of_head) {
                 Some(r) => r,
@@ -221,9 +273,14 @@ mod ffi {
                 return ptr::null_mut();
             }
 
-            // Read next pointer — this can page fault if another thread freed the entry.
-            // The kernel's KiCheckForSListFault handles this on amd64 via the fault labels.
-            let next_of_head = unsafe { ptr::read(head_ptr as *const u64) };
+            // Read next pointer — this can fault if another thread popped and freed
+            // the entry. There are no fault labels on amd64 (KiCheckForSListFault is
+            // i386-only), so the read is SEH-guarded: a lost race retries.
+            let next_of_head =
+                match unsafe { super::read_next_or_retry(list_head, (alignment, region), head_ptr) } {
+                    Some(next) => next,
+                    None => continue,
+                };
 
             let result = match algorithm::pop_transition(alignment, region, next_of_head) {
                 Some(r) => r,

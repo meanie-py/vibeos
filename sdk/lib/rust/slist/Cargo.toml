@@ -5,3 +5,8 @@ edition = "2021"
 
 [lib]
 crate-type = ["rlib"]
+
+# The guest targets only: the SEH trampolines (ntkrnl_sys::seh) behind Pop's
+# freed-entry retry. Host test/Kani builds never compile the FFI layer.
+[target.'cfg(target_os = "windows")'.dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys", default-features = false }

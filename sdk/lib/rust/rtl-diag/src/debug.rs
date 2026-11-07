@@ -168,7 +168,7 @@ pub unsafe extern "system" fn vDbgPrintExWithPrefixInternal(
     let Status: NTSTATUS;
     let mut DebugString: STRING = core::mem::zeroed();
     let mut Length: SIZE_T;
-    let mut PrefixLength: SIZE_T;
+    let PrefixLength: SIZE_T;
 
     if (ComponentId != MAXULONG)
         && (NtQueryDebugFilterState(ComponentId, Level)) != (1i32 as NTSTATUS)
@@ -200,19 +200,39 @@ pub unsafe extern "system" fn vDbgPrintExWithPrefixInternal(
     let mut Buffer = core::mem::MaybeUninit::<[CHAR; DBG_BUFFER_LEN]>::uninit();
     let BufferPtr = Buffer.as_mut_ptr() as *mut CHAR;
 
-    PrefixLength = strlen(Prefix);
-    if PrefixLength > DBG_BUFFER_LEN {
-        PrefixLength = DBG_BUFFER_LEN;
+    // Guard against incorrect pointers: the prefix, the format and every %s
+    // argument are the caller's. A bad one fails the print with the fault's
+    // code instead of taking the caller (or, in kernel mode, the machine) down.
+    //
+    // The C has a second handler, around the DBG_PRINTEXCEPTION_C raise it
+    // sends a user-mode debugger. That block is not ported: it was compiled out
+    // under DUMMY_PSEH, and the arm64 RtlRaiseException resumes a continued
+    // exception at its own RtlCaptureContext rather than at its caller, so a
+    // debugger that continued the print would make it raise forever.
+    let formatted = ntkrnl_sys::seh::try_except_all(|| {
+        let mut prefix_len = strlen(Prefix);
+        if prefix_len > DBG_BUFFER_LEN {
+            prefix_len = DBG_BUFFER_LEN;
+        }
+        strncpy(BufferPtr, Prefix, prefix_len);
+        let len = rtldiag_format_va(
+            BufferPtr.add(prefix_len),
+            DBG_BUFFER_LEN - prefix_len,
+            Format,
+            ap,
+        );
+        (prefix_len, len)
+    });
+    match formatted {
+        Ok((p, l)) => {
+            PrefixLength = p;
+            Length = l;
+        }
+        Err(code) => {
+            RtlpClearInDbgPrint();
+            return code as ULONG;
+        }
     }
-
-    strncpy(BufferPtr, Prefix, PrefixLength);
-
-    Length = rtldiag_format_va(
-        BufferPtr.add(PrefixLength),
-        DBG_BUFFER_LEN - PrefixLength,
-        Format,
-        ap,
-    );
 
     if Length == MAXULONG as SIZE_T {
         *BufferPtr.add(DBG_BUFFER_LEN - 2) = b'\n' as CHAR;
