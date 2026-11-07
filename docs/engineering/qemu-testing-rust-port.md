@@ -191,6 +191,13 @@ EOF. A separate before/after probe reproduced the old failure masking: the test
 process was already a zombie with exit 101, while inherited output descriptors
 kept the outer subprocess waiting. Evidence is in
 `~/vibeos-rust-staging/host-jobs-flake-20261106/results.json` and adjacent probe logs.
-The process-contract timeout remains 270 seconds. The exact integrator-reported
-batch 128 trigger has not been reproduced; its original failing artifact is still
-needed to identify any underlying assertion or distinct compile/admission delay.
+The process-contract timeout remains 270 seconds. Batch 128's original tooling
+log confirms Cargo had already returned 101 when Python timed out on its pipes.
+The original was supplied at
+`/tmp/claude-1000/-home-curi-Projects-os-playground-vibeos-integration/7678f5f2-0201-4aed-b78e-717263573b59/scratchpad/tool128e.out`;
+a durable copy and its SHA-256 receipt are at
+`~/vibeos-rust-staging/host-jobs-flake-20261106/batch128-tooling.out` and
+`batch128-evidence.json`. The initiating Rust test remains unidentified because
+pytest truncated the captured output. Any recurrence still needs that underlying
+failure investigated; the fixture guard now lets the actual test failure reach
+the caller rather than being masked by a pipe timeout.
