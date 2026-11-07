@@ -1603,6 +1603,24 @@ def test_a_conditional_compile_setting_keeps_its_condition(tmp_path):
         g.rewrite_cmake(f, c)
 
 
+def test_a_comment_inside_a_moved_statement_is_not_carried_as_a_dead_source(tmp_path):
+    """d3dx9's `# math.c wants M_PI` sits inside its compile definitions; the statement moves
+    to the OBJECT library with it, so it must not also be listed as translated C on disk."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m win32dll)\n"
+        "target_compile_definitions(m PRIVATE\n"
+        "    # math.c wants M_PI.\n"
+        "    _USE_MATH_DEFINES)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert out.count("# math.c wants M_PI.") == 1
+    assert "kept on disk" not in out
+
+
 def test_an_object_in_a_subdirectory_maps_to_that_subdirectorys_source():
     d = Path("/r/dll/win32/crypt32")
     obj = "dll/win32/crypt32/CMakeFiles/crypt32.dir/reactos/unixlib.c.obj"
