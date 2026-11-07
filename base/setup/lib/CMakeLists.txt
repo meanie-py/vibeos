@@ -46,7 +46,7 @@ target_link_libraries(setuplib_static INTERFACE ${setuplib_rust_LIB})
 target_include_directories(setuplib_static INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 
 add_library(setuplib MODULE
-    main.c
+    # main.c  # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/main.rs)
     setuplib.rc
     ${CMAKE_CURRENT_BINARY_DIR}/setuplib.def)
 target_link_libraries(setuplib setuplib_static)
