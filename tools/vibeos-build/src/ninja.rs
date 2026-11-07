@@ -376,8 +376,22 @@ pub fn require_configured(build: &Path, canon_root: &Path) -> Result<()> {
         }
     }
     let mut newer = Vec::new();
+    let own = build.file_name().map(|n| n.to_string_lossy().into_owned());
     for raw in split(implicit) {
         let input = unescape(&raw);
+        // A SIBLING build tree's output named as a configure input (amd64's wow64cpu stages
+        // build-i386's guest exes; i386 bootdata the native user32_winetest) only re-decides
+        // what gets staged onto media. It cannot change a compile command or a cell, and
+        // counting it made each arch's rebuild mark the other's configure stale, so `check`
+        // asked for a reconfigure after every cross-arch build.
+        if let Some(top) = input
+            .strip_prefix("/tmp/vibeos/")
+            .and_then(|rel| rel.split('/').next())
+        {
+            if top.starts_with("build-") && Some(top) != own.as_deref() {
+                continue;
+            }
+        }
         let path = match input.strip_prefix("/tmp/vibeos/") {
             Some(rel) => canon_root.join(rel),
             None if Path::new(&input).is_absolute() => PathBuf::from(&input),
@@ -456,6 +470,22 @@ mod configured_tests {
             .to_string();
         assert!(e.contains("/tmp/vibeos/m/CMakeLists.txt"), "{e}");
         assert!(e.contains("canon-run.sh ninja build.ninja"), "{e}");
+    }
+
+    #[test]
+    fn a_sibling_build_trees_output_is_not_a_cmake_input() {
+        let root = tree("build-amd64");
+        let build = root.path().join("build-amd64");
+        fs::create_dir_all(root.path().join("build-i386/apps")).unwrap();
+        let text = fs::read_to_string(build.join("build.ninja")).unwrap();
+        fs::write(
+            build.join("build.ninja"),
+            text.replace(" CMakeCache.txt", " /tmp/vibeos/build-i386/apps/calc.exe CMakeCache.txt"),
+        )
+        .unwrap();
+        sleep(Duration::from_millis(20));
+        fs::write(root.path().join("build-i386/apps/calc.exe"), "MZ").unwrap();
+        require_configured(&build, root.path()).unwrap();
     }
 
     #[test]
