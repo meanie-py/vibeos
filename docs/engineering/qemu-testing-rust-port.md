@@ -182,3 +182,15 @@ Follow-up work: arm the first replay checkpoint before it can be passed, and
 make pause-time I/O checkpoints comparable without weakening the inconclusive
 classification. The Python RR command coordinator remains the next orchestration
 port; native worker and comparison ownership is already in `vibeos-test`.
+
+Host-job process-contract fixtures now own a private process group through an
+EOF guard. Unwinding or killing the test owner closes the ownership pipe; the
+guard kills only that pinned group before fixture-directory removal. A regression
+control panics with a live barrier child and requires its captured output to reach
+EOF. A separate before/after probe reproduced the old failure masking: the test
+process was already a zombie with exit 101, while inherited output descriptors
+kept the outer subprocess waiting. Evidence is in
+`~/vibeos-rust-staging/host-jobs-flake-20261106/results.json` and adjacent probe logs.
+The process-contract timeout remains 270 seconds. The exact integrator-reported
+batch 128 trigger has not been reproduced; its original failing artifact is still
+needed to identify any underlying assertion or distinct compile/admission delay.

@@ -1,11 +1,15 @@
 use std::{
     fs,
+    os::unix::process::CommandExt,
     path::PathBuf,
-    process::{Child, Command},
+    process::{Child, Command, Stdio},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-struct Fixture(PathBuf);
+// Keep a private process group alive until the fixture's ownership pipe closes.
+// A panic or a killed Cargo/test parent must not leave barrier waiters holding
+// the outer subprocess's captured stdout/stderr open.
+struct Fixture(PathBuf, Child);
 impl Fixture {
     fn new() -> Self {
         let p = std::env::temp_dir().join(format!(
@@ -17,11 +21,21 @@ impl Fixture {
                 .as_nanos()
         ));
         fs::create_dir(&p).unwrap();
-        Self(p)
+        let guard = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "fixture_process_guard", "--nocapture"])
+            .env("VIBEOS_HOST_JOBS_FIXTURE_GUARD", "1")
+            .process_group(0)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        Self(p, guard)
     }
     fn command(&self) -> Command {
         let mut c = Command::new(env!("CARGO_BIN_EXE_host-jobs"));
-        c.env("VIBEOS_HOSTLOCK_DIR", &self.0)
+        c.process_group(self.1.id() as i32)
+            .env("VIBEOS_HOSTLOCK_DIR", &self.0)
             .env("VIBEOS_HOST_JOB_SLOTS", "2")
             .env("VIBEOS_HOST_LINK_SLOTS", "1")
             .env("VIBEOS_HOST_MEMORY_MIB", "1024")
@@ -67,6 +81,8 @@ impl Fixture {
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
+        drop(self.1.stdin.take());
+        let _ = self.1.wait();
         let _ = fs::remove_dir_all(&self.0);
     }
 }
@@ -328,7 +344,6 @@ fn queued_compilers_fill_the_pool_and_report_run_ownership() {
 
 #[test]
 fn more_than_128_waiters_work_with_low_file_descriptor_limit() {
-    use std::os::unix::process::CommandExt;
     #[repr(C)]
     struct Limit {
         current: usize,
@@ -799,4 +814,83 @@ fn excessive_old_grants_do_not_deadlock_new_claimants() {
     f.release("c", &mut c);
     f.wait("d");
     f.release("d", &mut d);
+}
+
+#[test]
+fn fixture_process_guard() {
+    if std::env::var("VIBEOS_HOST_JOBS_FIXTURE_GUARD").as_deref() != Ok("1") {
+        return;
+    }
+    use std::io::Read;
+    unsafe extern "C" {
+        fn getpgrp() -> i32;
+        fn kill(pid: i32, signal: i32) -> i32;
+    }
+    let pid = std::process::id() as i32;
+    // Refuse to signal anything unless this process leads its own isolated group.
+    assert!(pid > 1 && unsafe { getpgrp() } == pid);
+    let mut byte = [0u8; 1];
+    loop {
+        match std::io::stdin().read(&mut byte) {
+            Ok(0) => break,
+            Ok(_) => continue,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => {
+                eprintln!("fixture ownership pipe failed: {error}");
+                break;
+            }
+        }
+    }
+    // Our unreaped guard PID pins this group identity; it cannot be recycled.
+    unsafe {
+        kill(-pid, 9);
+    }
+    std::process::exit(125);
+}
+
+#[test]
+fn fixture_panic_closes_descendant_output_and_removes_its_directory() {
+    use std::io::Read;
+    use std::os::unix::process::ExitStatusExt;
+    let f = Fixture::new();
+    let path = f.0.clone();
+    let mut child = f
+        .command()
+        .args([
+            "--kind",
+            "compile",
+            "--",
+            "sh",
+            "-c",
+            &format!(
+                "echo owned-output; touch '{}'; while test ! -f '{}'; do sleep .02; done",
+                f.0.join("ready").display(),
+                f.0.join("never-released").display()
+            ),
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    f.wait("ready");
+    let (send, receive) = std::sync::mpsc::channel();
+    let reader = thread::spawn(move || {
+        let mut text = String::new();
+        let result = stdout.read_to_string(&mut text).map(|_| text);
+        let _ = send.send(result);
+    });
+    assert!(std::panic::catch_unwind(move || {
+        let _owned = f;
+        panic!("controlled assertion with a live barrier waiter");
+    })
+    .is_err());
+    let text = receive
+        .recv_timeout(Duration::from_secs(10))
+        .expect("fixture descendants kept the captured output pipe open")
+        .unwrap();
+    assert_eq!(text, "owned-output\n");
+    assert_eq!(child.wait().unwrap().signal(), Some(9));
+    reader.join().unwrap();
+    assert!(!path.exists());
 }
