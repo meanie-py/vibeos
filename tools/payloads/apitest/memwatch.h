@@ -69,6 +69,41 @@ static void mw_cat(char *line, size_t cap, const char *fmt, ...)
     va_end(ap);
 }
 
+/* The top GDI process's handles by object type, from the GDI handle table every GUI process
+ * has mapped read-only (PEB->GdiSharedHandleTable): GDI_TABLE_ENTRY is {KernelData, DWORD
+ * ProcessId, USHORT FullUnique, UCHAR ObjectType, UCHAR Flags, UserData}. Says WHAT a leaking
+ * process keeps (types: 1 DC, 4 region, 5 bitmap, 8 palette, 0a font, 10 brush). */
+static void mw_gdi_types(char *line, size_t cap, DWORD pid)
+{
+#ifdef _WIN64
+    unsigned char *table = *(unsigned char **)((unsigned char *)NtCurrentTeb()->ProcessEnvironmentBlock + 0xF8);
+    const size_t entry = 24;
+#else
+    unsigned char *table = *(unsigned char **)((unsigned char *)NtCurrentTeb()->ProcessEnvironmentBlock + 0x94);
+    const size_t entry = 16;
+#endif
+    MEMORY_BASIC_INFORMATION mbi;
+    unsigned count[256] = { 0 };
+    if (!table || !VirtualQuery(table, &mbi, sizeof mbi) || mbi.State != MEM_COMMIT)
+        return;
+    size_t n = ((unsigned char *)mbi.BaseAddress + mbi.RegionSize - table) / entry;
+    if (n > 0x10000)
+        n = 0x10000;
+    for (size_t i = 0; i < n; i++) {
+        unsigned char *e = table + i * entry;
+        if (!*(void **)e)
+            continue;
+        if ((*(DWORD *)(e + sizeof(void *)) & 0xFFFF) != (pid & 0xFFFF))
+            continue;
+        count[e[sizeof(void *) + 6]]++;
+    }
+    mw_cat(line, cap, " [types:");
+    for (int t = 0; t < 256; t++)
+        if (count[t])
+            mw_cat(line, cap, " %02x=%u", t, count[t]);
+    mw_cat(line, cap, "]");
+}
+
 static void memwatch_line(char *line, size_t cap)
 {
     MEMORYSTATUSEX ms = { sizeof ms };
@@ -184,6 +219,8 @@ static void memwatch_line(char *line, size_t cap)
             for (int i = 0; i < 3 && best[i]; i++)
                 mw_cat(line, cap, " %.*ls/%lu %lu", bestlen[i], bestname[i] ? bestname[i] : L"?",
                        (unsigned long)bestpid[i], (unsigned long)best[i]);
+            if (best[0])
+                mw_gdi_types(line, cap, bestpid[0]);
         }
     } else {
         mw_cat(line, cap, " | processes: %08lx", (unsigned long)st);

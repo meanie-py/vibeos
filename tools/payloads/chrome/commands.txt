@@ -27,6 +27,12 @@ memwatch 20
 timeout gdiprobe\gdiprobe.exe 900
 timeout gdiprobe\gdiprobe32.exe 900
 gdiprobe\gdiprobe.exe
+# w32start.c: an llvm-mingw i686 exe once died in WOW64 start-up (activation context,
+# STATUS_NO_MEMORY) while the stock i386 apps started. Four builds: no CRT / CRT / + user32 / + gdi32.
+w32start\w32start-bare.exe
+w32start\w32start-crt.exe
+w32start\w32start-user32.exe
+w32start\w32start-gdi32.exe
 gdiprobe\gdiprobe32.exe
 # Chrome's child processes do not write to the sweep's pipe, so the whole tree logs to a file
 # that catfile prints afterwards (it runs even when Chrome is killed at the timeout).
