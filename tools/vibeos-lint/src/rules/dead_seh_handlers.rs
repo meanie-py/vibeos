@@ -103,14 +103,17 @@ static C_PROBE: LazyLock<Regex> = LazyLock::new(|| {
     crate::regexes::cached(r"\b(?:ProbeFor(?:Read|Write)\w*|Probe\w*AndCapture\w*|ProbeAndZeroHandle)\s*\(")
         .unwrap()
 });
-/// Callees whose CONTRACT is to raise on failure (the class validate-first cannot close).
+/// Callees whose CONTRACT is to raise on failure (the class validate-first cannot close), as
+/// THIS tree implements them. Not ExAllocatePoolWithQuotaTag: Windows' raises, but this
+/// tree's C and Rust both set Raise = FALSE and return NULL, so its callers need a NULL
+/// check, not a catch.
 static C_RAISE: LazyLock<Regex> = LazyLock::new(|| {
     crate::regexes::cached(concat!(
         r"\b(?:ExRaise\w*|RtlRaise\w*|MmProbeAndLockPages|MmProbeAndLockProcessPages|",
-        r"MmMapLockedPages(?:SpecifyCache)?|ExAllocatePool\w*Quota\w*|PsChargeProcess\w*Quota|",
+        r"MmMapLockedPages(?:SpecifyCache)?|",
         r"Cc(?:CopyRead|CopyWrite|FastCopyRead|FastCopyWrite|MapData|PinRead|PinMappedData|",
         r"PreparePinWrite|PrepareMdlWrite|MdlRead|ZeroData|SetFileSizes|InitializeCacheMap)|",
-        r"FsRtl\w*|\w+RaiseStatus|KeSuspendThread|KeReleaseSemaphore|KeReleaseMutant|",
+        r"FsRtlAllocatePool\w*|FsRtlInitializeBaseMcb|FsRtlAddLargeMcbEntry|\w+RaiseStatus|KeSuspendThread|KeReleaseSemaphore|KeReleaseMutant|",
         r"KeWaitFor\w+|KeInsertQueue\w*)\s*\(",
     ))
     .unwrap()

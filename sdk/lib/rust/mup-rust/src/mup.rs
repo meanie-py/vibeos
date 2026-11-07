@@ -1233,8 +1233,10 @@ pub unsafe fn BroadcastOpen(Irp: PIRP) -> NTSTATUS {
     LastFailed = STATUS_NO_SUCH_FILE;
     LastOrder = ULONG::MAX;
 
-    // _SEH2_TRY/_SEH2_EXCEPT (handler dead): inline the body.
-    {
+    // The C's _SEH2_TRY. Its only raise is our own allocation failure below, and its handler's
+    // `Status = code` is overwritten straight after the block, so the raise is a `break`: the
+    // bare ExRaiseStatus it was had no catcher and bugchecked.
+    'try_: {
         ExAcquireResourceExclusiveLite(addr_of_mut!(MupGlobalLock), TRUE);
         Locked = TRUE;
 
@@ -1257,7 +1259,7 @@ pub unsafe fn BroadcastOpen(Irp: PIRP) -> NTSTATUS {
                 FullPath.Buffer =
                     ExAllocatePoolWithTag(_POOL_TYPE_PagedPool, TotalLength as SIZE_T, TAG_MUP) as *mut u16;
                 if FullPath.Buffer.is_null() {
-                    ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+                    break 'try_;
                 }
 
                 FullPath.Length = TotalLength as USHORT;

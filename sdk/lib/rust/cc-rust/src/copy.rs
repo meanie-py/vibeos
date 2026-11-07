@@ -432,6 +432,37 @@ unsafe fn CcpCheckInvalidUserBuffer(
     EXCEPTION_CONTINUE_SEARCH
 }
 
+/* ntstatus.h; not in ntkrnl-sys's island. */
+const STATUS_INVALID_USER_BUFFER: NTSTATUS = 0xC00000E8u32 as NTSTATUS;
+
+/// The C's copy between a VACB and the caller's buffer: `__try { RtlCopyMemory } __except
+/// (CcpCheckInvalidUserBuffer(...)) { ExRaiseStatus(STATUS_INVALID_USER_BUFFER) }`, inside a
+/// `__finally` that releases the VACB. A fault on the caller's buffer must leave here as
+/// STATUS_INVALID_USER_BUFFER: the fast I/O and FS callers' filter (FsRtlIsNtstatusExpected)
+/// accepts that and REJECTS a raw access violation, so the bare copy this replaces turned a
+/// bad user buffer on a cached read into a bugcheck, and leaked the VACB on the way.
+/// `release` runs on any exception leaving the copy, as the C's `__finally` does.
+unsafe fn copy_or_raise<F: FnOnce()>(src: *const u8, dst: *mut u8, len: ULONG, user: PVOID, release: F) {
+    ntkrnl_sys::seh::try_finally(
+        &mut (),
+        |_| {
+            let copied = ntkrnl_sys::seh::try_except(
+                &mut (),
+                |_| core::ptr::copy_nonoverlapping(src, dst, len as usize),
+                |_, pointers| CcpCheckInvalidUserBuffer(pointers as PEXCEPTION_POINTERS, user, len),
+            );
+            if copied.is_err() {
+                ExRaiseStatus(STATUS_INVALID_USER_BUFFER);
+            }
+        },
+        |_, abnormal| {
+            if abnormal {
+                release();
+            }
+        },
+    );
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn CcCopyRead(
     file_object: PFILE_OBJECT,
@@ -472,10 +503,15 @@ pub unsafe extern "system" fn CcCopyRead(
             return 0;
         }
 
-        core::ptr::copy_nonoverlapping(
+        let user = (buffer as usize + read_length as usize) as *mut u8;
+        copy_or_raise(
             ((*vacb).BaseAddress as usize + vacb_offset as usize) as *const u8,
-            (buffer as usize + read_length as usize) as *mut u8,
-            vacb_length as usize,
+            user,
+            vacb_length,
+            user.cast(),
+            || {
+                CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
+            },
         );
 
         read_length += vacb_length;
@@ -534,10 +570,14 @@ pub unsafe extern "system" fn CcCopyWrite(
             return 0;
         }
 
-        core::ptr::copy_nonoverlapping(
+        copy_or_raise(
             buffer_ptr as *const u8,
             (((*vacb).BaseAddress as usize) + vacb_offset as usize) as *mut u8,
-            vacb_length as usize,
+            vacb_length,
+            buffer_ptr,
+            || {
+                CcRosReleaseVacb(shared_cache_map, vacb, 0u8, 0u8);
+            },
         );
 
         buffer_ptr = (buffer_ptr as usize + vacb_length as usize) as PVOID;

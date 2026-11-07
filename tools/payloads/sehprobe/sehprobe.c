@@ -227,6 +227,74 @@ static void case_query_name(void)
     RegCloseKey(k);
 }
 
+/* CcCopyRead copies the cached file into the caller's buffer; a fault there must come back
+ * as an error (the C turns it into STATUS_INVALID_USER_BUFFER), never take the kernel down.
+ * NtReadFile probes the buffer first, so the fault needs a race: one thread reads a cached
+ * system DLL in 1 MB chunks while another keeps flipping the buffer's protection. Graded on
+ * surviving; the status counts say whether the race was actually hit. */
+#define RACE_BYTES (1024 * 1024)
+static volatile LONG g_race_stop;
+static BYTE *g_race_buf;
+
+static DWORD WINAPI flipper(void *arg)
+{
+    DWORD old;
+    (void)arg;
+    while (!g_race_stop)
+    {
+        /* Only the LAST page: NtReadFile's probe then usually passes, and the 1 MB copy is
+         * well under way when it reaches the page, so the fault lands inside CcCopyRead. */
+        VirtualProtect(g_race_buf + RACE_BYTES - 4096, 4096, PAGE_NOACCESS, &old);
+        VirtualProtect(g_race_buf + RACE_BYTES - 4096, 4096, PAGE_READWRITE, &old);
+    }
+    return 0;
+}
+
+static void case_cached_read_race(void)
+{
+    WCHAR path[MAX_PATH];
+    HANDLE f, t;
+    DWORD got, start, reads = 0, ok = 0, failed = 0, last_error = 0, in_copy = 0, at_probe = 0;
+    SAY("cached_read_race begin\n");
+    GetSystemDirectoryW(path, MAX_PATH);
+    lstrcatW(path, L"\\shell32.dll");
+    f = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+    g_race_buf = VirtualAlloc(NULL, RACE_BYTES, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (f == INVALID_HANDLE_VALUE || !g_race_buf)
+    {
+        SAY("cached_read_race FAIL (setup: file %lu)\n", f == INVALID_HANDLE_VALUE ? GetLastError() : 0);
+        g_pass = 0;
+        return;
+    }
+    ReadFile(f, g_race_buf, RACE_BYTES, &got, NULL); /* warm the cache */
+    g_race_stop = 0;
+    t = CreateThread(NULL, 0, flipper, NULL, 0, NULL);
+    start = GetTickCount();
+    while (GetTickCount() - start < 5000)
+    {
+        SetFilePointer(f, 0, NULL, FILE_BEGIN);
+        reads++;
+        if (ReadFile(f, g_race_buf, RACE_BYTES, &got, NULL))
+            ok++;
+        else
+        {
+            failed++;
+            last_error = GetLastError();
+            if (last_error == ERROR_INVALID_USER_BUFFER)
+                in_copy++; /* the fault landed inside the cache manager's copy */
+            else if (last_error == ERROR_NOACCESS)
+                at_probe++;
+        }
+    }
+    g_race_stop = 1;
+    WaitForSingleObject(t, INFINITE);
+    CloseHandle(t);
+    CloseHandle(f);
+    VirtualFree(g_race_buf, 0, MEM_RELEASE);
+    SAY("cached_read_race PASS (survived %lu reads: %lu ok, %lu failed: %lu in the Cc copy, %lu at the "
+        "probe, last error %lu)\n", reads, ok, failed, in_copy, at_probe, last_error);
+}
+
 int main(void)
 {
     g_ntdll = GetModuleHandleW(L"ntdll.dll");
@@ -241,6 +309,8 @@ int main(void)
     case_mailslot_timeout();
     case_query_key();
     case_query_name();
+    /* Last: a race, so it can only end the run by crashing the kernel, never mid-sequence. */
+    case_cached_read_race();
     SAY("done VERDICT=%s\n", g_pass ? "PASS" : "FAIL");
     return g_pass ? 0 : 1;
 }
