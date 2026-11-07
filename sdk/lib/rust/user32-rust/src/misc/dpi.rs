@@ -150,11 +150,23 @@ pub unsafe extern "system" fn AdjustWindowRectExForDpi(
     dwExStyle: DWORD,
     dpi: UINT,
 ) -> BOOL {
-    // At 96 DPI (the only DPI this system has) this is exactly AdjustWindowRectEx; for
-    // other values the frame/caption/menu metrics are not re-derived, so the system
-    // metrics are used.
-    let _ = dpi;
-    crate::windows::nonclient::AdjustWindowRectEx(lpRect, dwStyle, bMenu, dwExStyle)
+    // Wine: the same frame arithmetic as AdjustWindowRectEx over the non-client
+    // metrics FOR THIS DPI. It ignored `dpi` before, so a 192-DPI caller got
+    // 96-DPI captions and borders (1440 user32:win `test_AWR_flags` checks).
+    let mut ncm: NONCLIENTMETRICSW = core::mem::zeroed();
+    ncm.cbSize = core::mem::size_of::<NONCLIENTMETRICSW>() as UINT;
+    if SystemParametersInfoForDpi(
+        SPI_GETNONCLIENTMETRICS,
+        ncm.cbSize,
+        &mut ncm as *mut NONCLIENTMETRICSW as PVOID,
+        0,
+        dpi,
+    ) == 0
+    {
+        return 0;
+    }
+    crate::windows::nonclient::adjust_window_rect(lpRect, dwStyle, bMenu, dwExStyle, &ncm);
+    1
 }
 
 #[no_mangle]
