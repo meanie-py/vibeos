@@ -10,3 +10,4 @@ msgprobe-*.exe
 waitprobe-*.exe
 servepage-*.exe
 sockprobe-*.exe
+grepfile-*.exe
