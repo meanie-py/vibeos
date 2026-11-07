@@ -17,9 +17,11 @@ use ntkrnl_sys::ddk::{
 const HAL_DISPATCH_VERSION: ULONG = 3;
 const HAL_PRIVATE_DISPATCH_VERSION: ULONG = 2;
 
-extern "system" {
-    // IoReadPartitionTable: NTAPI (= stdcall on i386); resolved in the
-    // rosload link (same provider that satisfied the C halstub).
+// IoReadPartitionTable is FASTCALL (xdk/iofuncs.h), as freeldr's own definition in
+// ntoskrnl.rs is. Declared NTAPI here it imported `_IoReadPartitionTable@16`, which nothing
+// exports. It linked until debug-assertions were armed; armed, rosload i386 failed with an
+// undefined `_IoReadPartitionTable@16`.
+extern "fastcall" {
     fn IoReadPartitionTable(
         DeviceObject: PDEVICE_OBJECT,
         SectorSize: ULONG,

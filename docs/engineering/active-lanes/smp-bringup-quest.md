@@ -13,11 +13,11 @@ the integrator (check whether it landed). Owed, in order:
 1. **The amd64-bios `-smp 2` WoW64 MM signatures** (roadmap "amd64-bios: demand-zero fault on an
    already-valid PTE"): fixed by code reading, never reproduced on demand. If either recurs on a
    tree that has 5c1bb095b90, read the x86 `MmDeleteRmap` per-VA ledger dump first.
-2. #72 remainder: freeldr-rust and what it links (cmboot-rust, va-slots-rust, ntkrnl-sys,
-   rtl-diag, rtl-strings via blrtl) are blocked on freeldr's PE size budget (0x7fc00 armed vs
-   0x77000). Every stable lever together (opt-level=z, codegen-units=1) reaches 0x7a600, still
-   14 KB over (branch smp-bringup-freeldr-arming-wip, numbers in its commit message); the rest
-   is UB-check code and strings, which stable cannot turn off separately from debug-assertions.
+2. #72 arming is DONE (2026-11-06): freeldr-rust and the crates it shares with the kernel are
+   armed, green on amd64-bios, amd64, i386 and arm64. MEMORY_MARGIN 0x88000 -> 0x90000 and
+   freeldr-cargo at opt-level=z put the armed BIOS image at 0x7ce00 of 0x7F000. Arming found
+   four loader bugs (Cargo.toml's profile comment lists them). The branch
+   smp-bringup-freeldr-arming-wip is superseded and can be deleted.
    The 78-entry `scan_move_vs_nonoverlapping` baseline is DONE (2026-11-05): all 112
    copies that came from a C `RtlMoveMemory` are `core::ptr::copy` now, baseline empty.
 3. Any armed crate the default smoke never loads can still hold a UB-check panic; conformance and

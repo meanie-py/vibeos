@@ -118,15 +118,21 @@ pub unsafe extern "C" fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA
 
         AcpiBiosData = (PartialDescriptor.offset(1)) as PACPI_BIOS_DATA;
 
+        // ACPI_BIOS_DATA follows one CM_PARTIAL_RESOURCE_DESCRIPTOR in a 4-packed resource
+        // list, so on 64-bit it is only 4-aligned (the C has the same layout, and the kernel
+        // reads it back from there). Its 64-bit fields are written unaligned: a plain store
+        // is UB and, armed, halted every amd64 BIOS boot here.
         if (*Rsdp).revision > 0 {
             TRACE!("ACPI >1.0, using XSDT address\n");
-            (*AcpiBiosData).RSDTAddress.QuadPart = ((*Rsdp).xsdt_physical_address) as i64 ;
+            core::ptr::addr_of_mut!((*AcpiBiosData).RSDTAddress.QuadPart)
+                .write_unaligned(((*Rsdp).xsdt_physical_address) as i64);
         } else {
             TRACE!("ACPI 1.0, using RSDT address\n");
-            (*AcpiBiosData).RSDTAddress.s.LowPart = (*Rsdp).rsdt_physical_address;
+            core::ptr::addr_of_mut!((*AcpiBiosData).RSDTAddress.s.LowPart)
+                .write_unaligned((*Rsdp).rsdt_physical_address);
         }
 
-        (*AcpiBiosData).Count = (PcBiosMapCount) as u64 ;
+        core::ptr::addr_of_mut!((*AcpiBiosData).Count).write_unaligned((PcBiosMapCount) as u64);
         core::ptr::copy_nonoverlapping(
             core::ptr::addr_of!(PcBiosMemoryMap) as *const u8,
             core::ptr::addr_of_mut!((*AcpiBiosData).MemoryMap[0]) as *mut u8,

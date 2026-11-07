@@ -277,6 +277,9 @@ pub unsafe extern "system" fn MiLoadImageSection(
     status
 }
 
+// Export tables are read with read_unaligned throughout this file: lld packs the export
+// directory, the DLL name and the tables with no alignment (ntkrnlmp.exe's name table is at
+// RVA 0x24deb2), which the PE format allows.
 #[no_mangle]
 pub unsafe extern "system" fn NameToOrdinal(
     export_name: *const i8,
@@ -295,7 +298,7 @@ pub unsafe extern "system" fn NameToOrdinal(
 
     while high >= low {
         mid = (low + high) >> 1;
-        let name_rva = *name_table.add(mid as usize);
+        let name_rva = name_table.add(mid as usize).read_unaligned();
         let name_ptr = ((image_base as ULONG_PTR) + (name_rva as ULONG_PTR)) as *const i8;
         let ret = strcmp(export_name, name_ptr);
         if ret < 0 {
@@ -303,7 +306,7 @@ pub unsafe extern "system" fn NameToOrdinal(
         } else if ret > 0 {
             low = mid + 1;
         } else {
-            return *ordinal_table.add(mid as usize);
+            return ordinal_table.add(mid as usize).read_unaligned();
         }
     }
 
@@ -368,7 +371,7 @@ pub unsafe extern "system" fn RtlpFindExportedRoutineByName(
     }
 
     let export_table = ((image_base as ULONG_PTR) + ((*export_directory).AddressOfFunctions as ULONG_PTR)) as *mut ULONG;
-    let function_address = (image_base as ULONG_PTR) + (*export_table.add(ordinal as usize) as ULONG_PTR);
+    let function_address = (image_base as ULONG_PTR) + (export_table.add(ordinal as usize).read_unaligned() as ULONG_PTR);
 
     if !is_forwarder.is_null() {
         *is_forwarder = 0u8;
@@ -702,10 +705,10 @@ pub unsafe extern "system" fn MiSnapThunk(
 
         let hint = (*name_import).Hint;
         if (hint as ULONG) < (*export_directory).NumberOfNames {
-            let hint_name_rva = *name_table.add(hint as usize);
+            let hint_name_rva = name_table.add(hint as usize).read_unaligned();
             let hint_name = ((dll_base as ULONG_PTR) + (hint_name_rva as ULONG_PTR)) as *const i8;
             if strcmp((*name_import).Name.as_ptr() as *const i8, hint_name) == 0 {
-                ordinal = *ordinal_table.add(hint as usize);
+                ordinal = ordinal_table.add(hint as usize).read_unaligned();
             } else {
                 ordinal = NameToOrdinal(
                     (*name_import).Name.as_ptr() as *const i8,
@@ -737,7 +740,7 @@ pub unsafe extern "system" fn MiSnapThunk(
     }
 
     let export_table = ((dll_base as ULONG_PTR) + ((*export_directory).AddressOfFunctions as ULONG_PTR)) as *mut ULONG;
-    (*address).u1.Function = ((dll_base as ULONG_PTR) + (*export_table.add(ordinal as usize) as ULONG_PTR)) as _;
+    (*address).u1.Function = ((dll_base as ULONG_PTR) + (export_table.add(ordinal as usize).read_unaligned() as ULONG_PTR)) as _;
 
     let mut status = STATUS_SUCCESS;
 
@@ -2077,7 +2080,7 @@ unsafe fn find_export_stripping_decoration(image_base: PVOID, name: *const i8) -
     let func_table = (base + (*export_dir).AddressOfFunctions as usize) as *const ULONG;
 
     for i in 0..num_names {
-        let export_name_ptr = (base + *name_table.add(i as usize) as usize) as *const u8;
+        let export_name_ptr = (base + name_table.add(i as usize).read_unaligned() as usize) as *const u8;
         let export_name = CStr::from_ptr(export_name_ptr as *const i8).to_bytes();
 
         // Check for _Name@N pattern: starts with _, ends with @digits
@@ -2087,7 +2090,7 @@ unsafe fn find_export_stripping_decoration(image_base: PVOID, name: *const i8) -
             if let Some(at_pos) = stripped.iter().rposition(|&b| b == b'@') {
                 let base_name = &stripped[..at_pos];
                 if base_name == target {
-                    let ordinal = *ordinal_table.add(i as usize);
+                    let ordinal = ordinal_table.add(i as usize).read_unaligned();
                     if (ordinal as ULONG) < (*export_dir).NumberOfFunctions {
                         let rva = *func_table.add(ordinal as usize);
                         let func_addr = base + rva as usize;
