@@ -326,12 +326,14 @@ pub fn orphan_recipes(root: &Path, plan: &RecipePlan) -> Vec<PathBuf> {
 /// its first commit (`tools/codegen cargo-cell --convert <target>`), and the
 /// cmake_linked_modules ratchet fails on any target not already listed here. The `_c`
 /// builds are excluded: rustconv's C oracles (the pre-flip C kept for difftests), never
-/// shipped. The arches are left out of the line so a tree with fewer build dirs does not
+/// shipped. So is everything under modules/rostests: test modules, configured only where
+/// ENABLE_ROSTESTS_* is on (the gate's kmtest conformance tree), so they would read as new
+/// findings there and not elsewhere. The arches are left out of the line so a tree with fewer build dirs does not
 /// read as new findings.
 pub fn cmake_linked(root: &Path) -> Result<Vec<String>> {
     stale_configures(root)?;
     let edge = Regex::new(
-        r"(?m)^build \S+: (?:C|CXX)_(?:SHARED_LIBRARY|EXECUTABLE|MODULE_LIBRARY)_LINKER__([\w.+-]+?)_(?:Debug|Release)\b",
+        r"(?m)^build (\S+): (?:C|CXX)_(?:SHARED_LIBRARY|EXECUTABLE|MODULE_LIBRARY)_LINKER__([\w.+-]+?)_(?:Debug|Release)\b",
     )
     .expect("valid link-edge regex");
     let mut targets = BTreeSet::new();
@@ -345,7 +347,10 @@ pub fn cmake_linked(root: &Path) -> Result<Vec<String>> {
         let text = read(&local(root, &ninja)?)?;
         for c in edge.captures_iter(&text) {
             // Ninja's rule names escape a target's `.` as `.2e` (activeds.tlb).
-            let t = c[1].replace(".2e", ".");
+            if c[1].starts_with("modules/rostests/") {
+                continue;
+            }
+            let t = c[2].replace(".2e", ".");
             if !t.ends_with("_c") {
                 targets.insert(t);
             }
