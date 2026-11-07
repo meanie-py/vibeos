@@ -188,8 +188,19 @@ summary rendering now live in `vibeos-build::{cli_arguments,cli_artifacts}`.
 `vibeos-test::tooling` plans and schedules tooling checks; the build library owns
 its locked content receipts. Python supplies interpreter/package discovery facts
 and retains Namespace/Run/Stage DTOs for existing callers. Failure-signature policy
-is shared through `vibeos-test::cli_report`. Build/gate composition is the next
-control-plane chunk.
+is shared through `vibeos-test::cli_report`. Build/gate composition now lives in Rust: `vibeos-build::cli_build*` owns build
+preflight, reconciliation, generated-header barriers, target passes, immutable-store
+acceptance and provenance. `vibeos-test::{gate_run,gate_child,gate_stamp}` owns
+pipelining, child verdicts, serial lane retries and push stamps. The existing
+host-jobs broker remains the admission authority. Python compatibility objects
+and adapters hold external lease/context/task handles and pass data; they do not
+choose build stages or gate retries. Canonical toolchain provisioning is native.
+
+A gate with `--no-lint` cannot mint a push stamp. Requested conformance/network
+lanes fail visibly when their implementation, payload or baseline is unavailable;
+they are recorded as ungraded rather than silently omitted. Child consoles,
+command output and incomplete-run markers remain durable. Launch failures retain
+the OSError compatibility contract; a program returning 127 is a separate outcome.
 
 Host-job process-contract fixtures now own a private process group through an
 EOF guard. Unwinding or killing the test owner closes the ownership pipe; the

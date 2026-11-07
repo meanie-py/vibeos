@@ -49,3 +49,7 @@ pub mod rr_commands;
 
 pub mod cli_report;
 pub mod tooling;
+
+pub mod gate_child;
+pub mod gate_run;
+pub mod gate_stamp;

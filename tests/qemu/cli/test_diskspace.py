@@ -107,8 +107,8 @@ def test_cli_refuses_before_build_or_artifact_creation(isolated, monkeypatch, ca
 
 def test_tooling_propagates_capacity_classification(isolated, monkeypatch):
     monkeypatch.setattr(
-        gate.subprocess,
-        "run",
+        gate,
+        "_execute",
         lambda *a, **kw: subprocess.CompletedProcess(a[0], 2, "DISK_ADMISSION_FAIL: full\n", ""),
     )
     result = gate._tooling_once(isolated, isolated / "artifacts")

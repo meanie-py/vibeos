@@ -1,4 +1,4 @@
-//! Native build mechanisms. The CLI and broker retain scheduling and reporting ownership.
+//! Native build mechanisms, CLI composition and reporting; host-jobs owns admission.
 use std::{
     fmt,
     path::{Path, PathBuf},
@@ -203,3 +203,11 @@ pub mod cli_artifacts;
 
 pub mod cli_arguments;
 pub mod tooling_receipts;
+
+pub mod cli_build;
+pub mod cli_build_checks;
+
+pub mod cli_build_helpers;
+pub mod cli_canon;
+
+pub mod cli_build_entry;

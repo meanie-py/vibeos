@@ -46,7 +46,7 @@ def test_normal_baselined_findings_remain_accepted(tmp_path, monkeypatch):
 
 def test_lint_partition_preserves_scanner_classification(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        gate.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], 1, "", TRACE)
+        gate, "_execute", lambda *a, **k: subprocess.CompletedProcess([], 1, "", TRACE)
     )
     monkeypatch.setattr(lints, "source_partition_specs", lambda *a: [("fixture", [], "stdout")])
     monkeypatch.setattr(

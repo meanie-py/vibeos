@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from tools.build_infra_compat import NativeError
+
 from . import artifacts
 
 
@@ -73,3 +75,20 @@ print(mine.name)
     rows = [json.loads(line) for line in run.commands_log.read_text().splitlines()]
     assert len(rows) == 2 and {r["stage"] for r in rows} == {"parallel-0", "parallel-1"}
     assert all(Path(r["stdout_path"]).read_text().strip() in ("0", "1") for r in rows)
+
+
+def test_external_adapter_distinguishes_failed_launch_from_program_exit_127(tmp_path):
+    from . import gate
+
+    with pytest.raises(OSError, match="cannot launch"):
+        gate._execute([str(tmp_path / "absent-command")], cwd=tmp_path)
+    result = gate._execute([sys.executable, "-c", "raise SystemExit(127)"], cwd=tmp_path)
+    assert result.returncode == 127
+
+
+def test_out_of_range_timeout_refuses_without_panicking(tmp_path, monkeypatch):
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    run = artifacts.Run("fixture", "all")
+    with pytest.raises(NativeError, match="timeout exceeds supported duration"):
+        run.run([sys.executable, "-c", "raise SystemExit(0)"], timeout=1e30)
+    assert run.run([sys.executable, "-c", "print('still alive')"]).stdout.strip() == "still alive"

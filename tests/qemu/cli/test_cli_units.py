@@ -3624,7 +3624,8 @@ def _gate_args(**kw):
         retries=2,
         no_build=True,
         clean=False,
-        no_net=False,
+        no_net=True,
+        no_conformance=True,
         no_lint=True,
         # Real stortest lanes boot QEMU; the stortest-lane tests pass no_stortest=False.
         no_stortest=True,
@@ -4128,11 +4129,38 @@ def test_gate_no_lint_skips_lint_phase(tmp_path, monkeypatch):
     monkeypatch.setattr(gate_mod, "_lint_once", lambda *a, **k: called.append(1))
     monkeypatch.setattr(gate_mod, "_tooling_once", lambda *a, **k: tooled.append(1))
     monkeypatch.setattr(gate_mod, "_difftest_once", lambda *a, **k: diffed.append(1))
+    stamped = []
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=True), tmp_path)
     assert rc == 0
     assert not called, "--no-lint must not invoke the lint subprocess"
     assert not tooled, "--no-lint must not invoke check-tooling either"
     assert not diffed, "--no-lint must not invoke the difftests either"
+
+    assert not stamped, "a gate without static checks must not mint a push credential"
+
+
+def test_requested_conformance_without_payload_cannot_become_a_green_gate(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(
+        gate_mod,
+        "_smoke_once",
+        lambda *a: pytest.fail("booted after requested provisioning failed"),
+    )
+    assert gate_mod.gate(_gate_args(arches="i386", no_conformance=False), tmp_path) == 1
+    summary = json.loads(next((tmp_path / "runs").glob("*/summary.json")).read_text())
+    assert summary["verdict"] == "FAIL" and summary["classification"] == "CONFORMANCE_UNAVAILABLE"
+    assert summary["classification"] in q_mod.INCONCLUSIVE
+    assert any(s["name"] == "conformance" and s["status"] == "fail" for s in summary["stages"])
+
+
+def test_requested_network_suite_without_implementation_fails_loudly(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(gate_mod, "_smoke_once", _fake_smoke({"amd64": ["OK"]}))
+    assert gate_mod.gate(_gate_args(arches="amd64", no_net=False), tmp_path) == 1
+    summary = json.loads(next((tmp_path / "runs").glob("*/summary.json")).read_text())
+    assert summary["matrix"]["net"]["classification"] == "NET_UNAVAILABLE"
+    assert summary["classification"] in q_mod.INCONCLUSIVE
 
 
 # --- check --update-baseline: per-tool scoping (T2 item 1b) -----------------
@@ -4434,16 +4462,18 @@ def test_gate_child_requests_explicit_strict_partition(tmp_path, monkeypatch, ar
         calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", execute)
+    monkeypatch.setattr(gate_mod, "_execute", execute)
     if arch in ("source-early", "source-deferred"):
-        monkeypatch.setattr(
-            gate_mod,
-            "_read_summary",
-            lambda root: {
-                "checked_source_checks": [
-                    s[0] for s in lints.source_partition_specs(tmp_path, arch)
-                ]
-            },
+        child = tmp_path / "logs" / "fixture"
+        child.mkdir(parents=True)
+        (child / "summary.json").write_text(
+            json.dumps(
+                {
+                    "checked_source_checks": [
+                        s[0] for s in lints.source_partition_specs(tmp_path, arch)
+                    ]
+                }
+            )
         )
     assert gate_mod._lint_once(tmp_path, arch, tmp_path / "logs")["ok"]
     suffix = [arch] if arch.startswith("source") else ["arch", "--arch", arch]
@@ -4481,11 +4511,11 @@ def test_source_partition_checks_executed_inventory(tmp_path, monkeypatch, scope
 @pytest.mark.parametrize("inventory", [None, [], ["wrong"], ["scan_octal_literals"]])
 def test_gate_rejects_missing_or_partial_source_inventory(tmp_path, monkeypatch, inventory):
     monkeypatch.setattr(
-        gate_mod.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], 0, "", "")
+        gate_mod, "_execute", lambda *a, **k: subprocess.CompletedProcess([], 0, "", "")
     )
-    monkeypatch.setattr(
-        gate_mod, "_read_summary", lambda root: {"checked_source_checks": inventory}
-    )
+    child = tmp_path / "logs" / "fixture"
+    child.mkdir(parents=True)
+    (child / "summary.json").write_text(json.dumps({"checked_source_checks": inventory}))
     assert not gate_mod._lint_once(tmp_path, "source-early", tmp_path / "logs")["ok"]
 
 
@@ -4925,7 +4955,7 @@ def test_rostests_already_on_and_asked_is_a_no_op(monkeypatch, tmp_path):
     assert cmds == [], "already ON and requested should not reconfigure"
 
 
-def test_rostests_flag_is_wired_from_the_real_parser_to_the_cmake_option():
+def test_rostests_flag_is_wired_from_the_real_parser_to_the_cmake_option(tmp_path, monkeypatch):
     # Guard the WIRING, not just the mechanism. build.py reads the arg through
     # getattr(args, "rostests", False), which silently yields False for a name
     # that does not exist -- so a rename on either side disables the flag with
@@ -4937,10 +4967,23 @@ def test_rostests_flag_is_wired_from_the_real_parser_to_the_cmake_option():
     plain = build_parser().parse_args(["build", "--arch", "i386"])
     assert bool(getattr(plain, "rostests", False)) is False
 
-    src = (Path(__file__).parent / "build.py").read_text()
-    assert '"ENABLE_ROSTESTS": bool(getattr(args, "rostests", False))' in src, (
-        "build.py no longer maps the parsed --rostests arg onto ENABLE_ROSTESTS"
-    )
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(artifacts, "ledger_append", lambda *a, **k: None)
+    monkeypatch.setattr(build_mod.warmth, "worktree_tree", lambda _: None)
+    monkeypatch.setattr(build_mod, "_isolation_preflight", lambda *a: True)
+    values = []
+
+    def canonize(*_args, **kwargs):
+        values.append(_args[4]["ENABLE_ROSTESTS"])
+        return None
+
+    monkeypatch.setattr(build_mod, "_maybe_canonize", canonize)
+    for options in (args, plain):
+        run = Run("build", "i386")
+        assert build_mod._build_locked(options, tmp_path, run, "i386", None, tmp_path, False) == 0
+    assert values == [True, False]
 
 
 # --- conformance verb (quest M4) -------------------------------------------
@@ -5634,6 +5677,9 @@ def test_gate_refuses_to_stamp_a_tree_it_did_not_gate(tmp_path, monkeypatch, tin
     time, so a commit landed during a 20-minute gate got a credential for content nothing
     had built or booted."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(True))
     monkeypatch.setattr(
         gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
     )
@@ -5643,7 +5689,7 @@ def test_gate_refuses_to_stamp_a_tree_it_did_not_gate(tmp_path, monkeypatch, tin
         return ("0" * 40, False)
 
     monkeypatch.setattr(gate_mod, "_tree_state", moved_tree)
-    rc = gate_mod.gate(_gate_args(no_net=True), tiny_repo)
+    rc = gate_mod.gate(_gate_args(no_net=True, no_lint=False), tiny_repo)
     assert rc == 0, "the gate itself is still green"
     stamps = list((tiny_repo / ".git" / "vibeos-gate-stamps").glob("*.json"))
     assert stamps == [], "stamped a tree the gate never validated"
@@ -5652,10 +5698,13 @@ def test_gate_refuses_to_stamp_a_tree_it_did_not_gate(tmp_path, monkeypatch, tin
 def test_gate_stamps_the_tree_it_gated(tmp_path, monkeypatch, tiny_repo):
     """The must-pass half: an unchanged clean checkout still mints the credential."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(True))
     monkeypatch.setattr(
         gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
     )
-    rc = gate_mod.gate(_gate_args(no_net=True), tiny_repo)
+    rc = gate_mod.gate(_gate_args(no_net=True, no_lint=False), tiny_repo)
     assert rc == 0
     tree = subprocess.run(
         ["git", "rev-parse", "HEAD^{tree}"], cwd=tiny_repo, capture_output=True, text=True
@@ -5666,12 +5715,15 @@ def test_gate_stamps_the_tree_it_gated(tmp_path, monkeypatch, tiny_repo):
 def test_gate_refuses_to_stamp_when_dirty_at_start(tmp_path, monkeypatch, tiny_repo):
     """Gating a dirty tree validates content no commit hashes to — certify nothing."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(True))
     monkeypatch.setattr(
         gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
     )
     real = gate_mod._tree_state(tiny_repo)
     monkeypatch.setattr(gate_mod, "_tree_state", lambda repo: (real[0], True))
-    gate_mod.gate(_gate_args(no_net=True), tiny_repo)
+    gate_mod.gate(_gate_args(no_net=True, no_lint=False), tiny_repo)
     assert not list((tiny_repo / ".git" / "vibeos-gate-stamps").glob("*.json"))
 
 
@@ -8122,7 +8174,7 @@ def test_smoke_stage_that_dies_before_a_verdict_keeps_its_evidence(tmp_path, mon
         stdout = "staleness: refusing to boot\n"
         stderr = "fatal: media older than the tree\n"
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(gate_mod, "_execute", lambda *a, **k: _Proc())
     root = tmp_path / "smoke-arm64-a1"
     r = gate_mod._smoke_once(tmp_path, "arm64", root, [])
 
@@ -8144,7 +8196,7 @@ def test_smoke_stage_with_a_real_verdict_is_untouched(tmp_path, monkeypatch):
         stdout = "boot failed\n"
         stderr = ""
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(gate_mod, "_execute", lambda *a, **k: _Proc())
     root = tmp_path / "smoke-amd64-a1"
     (root / "20260101-000000-smoke-amd64").mkdir(parents=True)
     (root / "20260101-000000-smoke-amd64" / "summary.json").write_text(
@@ -8173,7 +8225,7 @@ def test_tooling_and_difftest_keep_their_console_and_never_report_a_bare_exit(
         stdout = "ruff: 3 errors\nsomething went wrong\n"
         stderr = "Traceback (most recent call last):\nAssertionError: boom\n"
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(gate_mod, "_execute", lambda *a, **k: _Proc())
 
     for fn, logname in (
         (gate_mod._tooling_once, "check-tooling-console.log"),
@@ -9002,12 +9054,12 @@ def test_conformance_lane_is_retryable_so_one_bistable_cannot_reject_a_batch():
     assert "CONFORMANCE_FLAKE" not in gate_mod.RETRYABLE, "the label names a cause nobody proved"
 
 
-def test_conformance_lane_skips_loudly_when_the_arch_has_no_floor(tmp_path):
+def test_conformance_lane_refuses_when_the_arch_has_no_floor(tmp_path):
     """No baseline means nothing to ratchet against. It must SKIP, not silently
     pass — a stage that cannot fail must not read as one that held."""
     r = gate_mod._conformance_once(tmp_path, "i386", tmp_path / "conf")
-    assert r["verdict"] == "SKIP"
-    assert r["ok"] is True
+    assert r["verdict"] == "FAIL"
+    assert r["ok"] is False and r["classification"] == "CONFORMANCE_NO_BASELINE"
     assert "no baseline" in r["salient"]
 
 
@@ -9027,7 +9079,7 @@ def test_conformance_lane_reports_the_failing_identities_not_the_whole_table(tmp
         )
         stderr = ""
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _CP())
+    monkeypatch.setattr(gate_mod, "_execute", lambda *a, **k: _CP())
     r = gate_mod._conformance_once(tmp_path, "amd64", tmp_path / "conf")
     assert r["ok"] is False
     assert r["classification"] == "CONFORMANCE_RED"
@@ -9052,7 +9104,7 @@ def _fake_pytest(monkeypatch, rc: int, out: str = "", verdict: dict | None = Non
             Path(kw["env"]["VIBEOS_STORTEST_RESULT"]).write_text(json.dumps(verdict))
         return _CP()
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", run)
+    monkeypatch.setattr(gate_mod, "_execute", run)
     return seen
 
 
@@ -9154,7 +9206,7 @@ def test_kmtest_payload_is_built_when_missing_not_assumed_present(tmp_path, monk
         (sh / f"kmtest-sweep-{cmd[2]}.exe").write_text("x")
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", _fake_run)
+    monkeypatch.setattr(gate_mod, "_execute", _fake_run)
     ok, why = gate_mod._ensure_kmtest_payload(tmp_path, ["i386", "amd64"])
     assert ok and why == ""
     assert [c[2] for c in calls] == ["i386", "amd64"], "must build each missing arch"
@@ -9180,7 +9232,7 @@ def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
     def _boom(*a, **k):
         raise AssertionError("must not shell out when the payload is already there")
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", _boom)
+    monkeypatch.setattr(gate_mod, "_execute", _boom)
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
 
 
@@ -9206,7 +9258,7 @@ def test_kmtest_payload_older_than_sweep_c_is_rebuilt(tmp_path, monkeypatch):
         exe.write_text("new")
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", _fake_run)
+    monkeypatch.setattr(gate_mod, "_execute", _fake_run)
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["i386"]) == (True, "")
     assert [c[2] for c in calls] == ["i386"], "a stale exe must be rebuilt"
 
@@ -11726,7 +11778,7 @@ def test_a_build_starts_the_dedup_pass_only_where_the_service_exists(tmp_path, m
             raise subprocess.CalledProcessError(1, argv)
         return subprocess.CompletedProcess(argv, 0)
 
-    monkeypatch.setattr(build_mod.subprocess, "run", run)
+    monkeypatch.setattr(build_mod, "_execute", run)
     monkeypatch.setattr(build_mod, "DEDUP_UNIT", tmp_path / "absent.service")
     fail = False
     assert build_mod.kick_dedup().status == "skip" and not calls
@@ -11804,7 +11856,7 @@ def test_command_exit_124_is_distinct_from_an_owned_timeout(tmp_path, monkeypatc
     assert [row["timed_out"] for row in run.command_timings] == [False, True]
 
 
-def test_winetests_flag_is_wired_from_the_real_parser_to_the_cmake_value():
+def test_winetests_flag_is_wired_from_the_real_parser_to_the_cmake_value(tmp_path, monkeypatch):
     # --winetests rides the string-instr path. A rename on either side would make
     # getattr() return "" and the build would silently compile no suite, so parse with
     # the REAL parser and pin the mapping in build.py.
@@ -11816,8 +11868,23 @@ def test_winetests_flag_is_wired_from_the_real_parser_to_the_cmake_value():
     assert getattr(args, "winetests", "") == "kernel32  user32"
     plain = build_parser().parse_args(["build", "--arch", "arm64"])
     assert getattr(plain, "winetests", "") == ""
-    src = (Path(__file__).parent / "build.py").read_text()
-    assert '"ROSTESTS_WINETESTS": " ".join((getattr(args, "winetests", "") or "").split())' in src
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(artifacts, "ledger_append", lambda *a, **k: None)
+    monkeypatch.setattr(build_mod.warmth, "worktree_tree", lambda _: None)
+    monkeypatch.setattr(build_mod, "_isolation_preflight", lambda *a: True)
+    values = []
+
+    def canonize(*_args, **kwargs):
+        values.append(kwargs["instr_values"]["ROSTESTS_WINETESTS"])
+        return None
+
+    monkeypatch.setattr(build_mod, "_maybe_canonize", canonize)
+    for options in (args, plain):
+        run = Run("build", "arm64")
+        assert build_mod._build_locked(options, tmp_path, run, "arm64", None, tmp_path, False) == 0
+    assert values == ["kernel32 user32", ""]
 
 
 def test_winetests_value_reaches_cmake_and_clears_on_a_plain_build(monkeypatch, tmp_path):
@@ -11830,3 +11897,16 @@ def test_winetests_value_reaches_cmake_and_clears_on_a_plain_build(monkeypatch, 
     cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=cached, canonical=True)
     build_mod._maybe_canonize(run, repo, bd, "arm64", {}, instr_values={"ROSTESTS_WINETESTS": ""})
     assert any("-DROSTESTS_WINETESTS=" in c for c in cmds), cmds
+
+
+def test_gate_retry_surfaces_a_new_nonretryable_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"arm64": ["KNOWN_FLAKE", "BUGCHECK", "OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    assert gate_mod.gate(_gate_args(arches="arm64", retries=2), tmp_path) == 1
+    assert len(fake.calls) == 2, fake.calls
+    summaries = list(tmp_path.glob("*-gate-*/summary.json"))
+    assert len(summaries) == 1
+    summary = json.loads(summaries[0].read_text())
+    assert "BUGCHECK" in json.dumps(summary)
+    assert "smoke-arm64-r1" in json.dumps(summary)

@@ -7,8 +7,10 @@ compilation refuses execution. Compiler-environment cleanup is confined to the b
 commands receive their caller's environment. No Python is needed to launch the binary.
 
 `vibeos-cli build` remains the build front door and the existing `host-jobs` broker owns
-admission. This binary supplies build mechanisms; it does not install a second scheduler
-or change concurrency. Add new build mechanisms to this library and command dispatcher,
+admission. This library also owns build preflight, reconciliation, target passes, artifact-store
+acceptance and provenance through `cli_build*`; `cli_artifacts` owns shared command
+supervision, logs and summaries. `vibeos-test::gate_*` composes builds and test lanes.
+The Python entry points retain DTOs and external lease/context/task handles. Add new build mechanisms to this library and command dispatcher,
 with output/refusal fixtures. Existing Python modules are compatibility adapters.
 
 | Command | Purpose | Former entry point |

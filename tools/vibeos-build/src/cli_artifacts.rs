@@ -608,7 +608,11 @@ pub fn dispatch(_root: &Path, request: &Value) -> Result<Value> {
 }
 
 pub fn command(a: &Value) -> Result<Value> {
-    let dir = path(a, "dir")?;
+    let dir = a["dir"].as_str().map(PathBuf::from).unwrap_or_else(|| {
+        std::env::temp_dir()
+            .join("vibeos-cli")
+            .join("gate-commands")
+    });
     let argv: Vec<String> = serde_json::from_value(a["argv"].clone())?;
     if argv.is_empty() {
         return Err("empty CLI command".into());
@@ -642,7 +646,8 @@ pub fn command(a: &Value) -> Result<Value> {
         .as_f64()
         .map(|s| {
             if s.is_finite() && s >= 0. {
-                Ok(Duration::from_secs_f64(s))
+                Duration::try_from_secs_f64(s)
+                    .map_err(|_| Error::new("command timeout exceeds supported duration"))
             } else {
                 Err(Error::new("command timeout must be finite and nonnegative"))
             }
@@ -655,9 +660,11 @@ pub fn command(a: &Value) -> Result<Value> {
         File::create(&err_path)?,
         timeout,
     );
+    let mut launch_error = None;
     let (mut code, timed_out) = match result {
         Ok(value) => value,
         Err(error) if error.kind.as_deref() == Some("LaunchError") => {
+            launch_error = Some(error.message.clone());
             fs::write(&err_path, error.message)?;
             (127, false)
         }
@@ -667,6 +674,7 @@ pub fn command(a: &Value) -> Result<Value> {
         code = 124
     } else if let Ok(bytes) = fs::read(&receipt) {
         if let Ok(value) = serde_json::from_slice::<Value>(&bytes) {
+            launch_error = value["launch_error"].as_str().map(str::to_owned);
             if let Some(raw) = value["exit_code"].as_i64() {
                 code = i32::try_from(raw).map_err(|_| Error::new("invalid child exit code"))?;
             }
@@ -712,7 +720,7 @@ pub fn command(a: &Value) -> Result<Value> {
     drop(lock);
     let capture = a["capture"] != false;
     Ok(
-        json!({"returncode":code,"timed_out":timed_out,"stdout":if capture{crate::read(&out_path)?}else{String::new()},"stderr":if capture{crate::read(&err_path)?}else{String::new()},"stdout_path":out_path,"stderr_path":err_path,"timing":timing}),
+        json!({"returncode":code,"timed_out":timed_out,"launch_error":launch_error,"stdout":if capture{crate::read(&out_path)?}else{String::new()},"stderr":if capture{crate::read(&err_path)?}else{String::new()},"stdout_path":out_path,"stderr_path":err_path,"timing":timing}),
     )
 }
 pub fn worker(argv: &[String]) -> Result<u8> {

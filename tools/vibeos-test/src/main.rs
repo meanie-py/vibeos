@@ -56,6 +56,85 @@ impl Host for Runtime<'_> {
                 output: self.output,
             }
             .call(operation, request["kwargs"].clone()),
+            "build_arguments"
+            | "build_entry_fact"
+            | "build_resources_open"
+            | "build_source_acquire"
+            | "build_reservation_open"
+            | "build_reservation_close"
+            | "build_resources_close"
+            | "build_locked"
+            | "build_supervised"
+            | "build_supervisor_open"
+            | "build_supervisor_close"
+            | "build_supervisor_record" => Callback {
+                input: self.input,
+                output: self.output,
+            }
+            .call(operation, request["kwargs"].clone()),
+            op if op.starts_with("cli_build_entry_") => {
+                struct Adapter<'a>(&'a mut dyn Host);
+                impl vibeos_build::cli_build::Host for Adapter<'_> {
+                    fn call(&mut self, op: &str, a: Value) -> Result<Value> {
+                        self.0.call(op, a)
+                    }
+                }
+                vibeos_build::cli_build_entry::dispatch(self.root, &request, &mut Adapter(self))
+            }
+            "build_fact"
+            | "build_external"
+            | "build_helper"
+            | "gate_task_submit"
+            | "gate_task_poll"
+            | "gate_preflight"
+            | "gate_tree_state"
+            | "gate_kmtest"
+            | "gate_ladder"
+            | "gate_tooling_waits"
+            | "gate_stamp"
+            | "gate_command"
+            | "gate_triage"
+            | "gate_starved"
+            | "gate_scanner_error"
+            | "gate_source_inventory"
+            | "gate_binary_cohab" => Callback {
+                input: self.input,
+                output: self.output,
+            }
+            .call(operation, request["kwargs"].clone()),
+            op if op.starts_with("gate_child_") => {
+                vibeos_test::gate_child::dispatch(self.root, &request, self)
+            }
+            op if op.starts_with("gate_stamp_") => {
+                vibeos_test::gate_stamp::dispatch(self.root, &request)
+            }
+            op if op.starts_with("gate_") => {
+                vibeos_test::gate_run::dispatch(self.root, &request, self)
+            }
+            op if op.starts_with("cli_canon_") => {
+                Ok(vibeos_build::cli_canon::dispatch(self.root, &request)?)
+            }
+            op if op.starts_with("cli_build_helper_") => {
+                struct Adapter<'a>(&'a mut dyn Host);
+                impl vibeos_build::cli_build::Host for Adapter<'_> {
+                    fn call(&mut self, op: &str, a: Value) -> Result<Value> {
+                        self.0.call(op, a)
+                    }
+                }
+                vibeos_build::cli_build_helpers::dispatch(self.root, &request, &mut Adapter(self))
+            }
+            op if op.starts_with("cli_build_check_") => Ok(
+                vibeos_build::cli_build_checks::dispatch(self.root, &request)?,
+            ),
+            op if op.starts_with("cli_build_") => {
+                struct Adapter<'a>(&'a mut dyn Host);
+                impl vibeos_build::cli_build::Host for Adapter<'_> {
+                    fn call(&mut self, op: &str, a: Value) -> Result<Value> {
+                        self.0.call(op, a)
+                    }
+                }
+                vibeos_build::cli_build::dispatch(self.root, &request, &mut Adapter(self))
+            }
             op if op.starts_with("tooling_receipts_") => Ok(
                 vibeos_build::tooling_receipts::dispatch(self.root, &request)?,
             ),

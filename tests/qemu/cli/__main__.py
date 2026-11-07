@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from . import build as build_mod  # noqa: F401 -- compatibility export for CLI importers
 from . import diskspace, maintenance
 from . import killvm as kill_mod
 
