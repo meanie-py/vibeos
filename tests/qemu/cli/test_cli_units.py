@@ -9923,6 +9923,17 @@ def test_fatal_scanner_diagnostic_cannot_be_baselined(tmp_path, monkeypatch):
     assert run.classification == "SCANNER_ERROR"
 
 
+def test_prune_parses_including_its_self_flag():
+    """`prune --self` has dest "self"; building the Namespace with **kwargs collided with
+    __init__'s own parameter, so every `prune` invocation crashed in parse_args."""
+    from .__main__ import build_parser
+
+    parser = build_parser()
+    assert parser.parse_args(["prune"]).self is False
+    assert parser.parse_args(["prune", "--self", "--apply"]).self is True
+    assert parser.parse_args(["prune", "--trim"]).trim is True
+
+
 def test_build_source_lint_is_opt_in():
     from .__main__ import build_parser
 

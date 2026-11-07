@@ -61,41 +61,23 @@ goes whole; the next `port check` of that module rebuilds it.
 
 from __future__ import annotations
 
-import json
 import os
-import re
-import shutil
 import time
-from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Cargo target roots inside a worktree (the non-build-* half of prune.PRUNE_RELDIRS).
-TARGET_RELDIRS = ("sdk/lib/rust/target", "ntoskrnl/rust-kernel-target")
+from tools import build_infra_compat as native
 
+# The planner and the deleter are native: tools/vibeos-build/src/trim.rs. This module is the
+# Python-facing adapter for `prune --trim` and keeps the TrimPlan shape its callers print.
+
+TARGET_RELDIRS = ("sdk/lib/rust/target", "ntoskrnl/rust-kernel-target")
 # rustconv `port`'s state root (rustconv/port.py STATE_ROOT, same env override). Shared by every
 # lane, so it is planned once, not per worktree.
 PORT_STATE_ROOT = Path(
     os.environ.get("RUSTCONV_PORT_STATE", Path.home() / "vibeos-rust-staging" / "port")
 )
-
-# A target-root entry named for a rustc triple, or cargo's default dev profile, is an ad-hoc
-# `cargo check/test --target ...` tree: the CMake build gives every cargo invocation its own
-# `<pkg>-...-rustlib` / `-cargo-link` dir and builds host tools into `release/`.
-_ADHOC_TRIPLE = re.compile(
-    r"^(x86_64|i[3-6]86|aarch64|arm64ec|armv7|thumbv7a)-[a-z0-9_]+-[a-z0-9_]+(-[a-z0-9_]+)?$"
-)
-_ADHOC_NAMES = {"debug"}
-# `tools/cargo_orchestrate.py`'s private target dirs: re-created by re-running it.
-_ADHOC_ORCHESTRATE = re.compile(r"^orchestrate-(?:i386|amd64|arm64)-[0-9a-f]{12}$")
-
-_HASH = re.compile(r"-([0-9a-f]{16})(?:\.|$)")
-# The fingerprint fields that make two units DIFFERENT things rather than versions of one.
-# Left out on purpose: rustc, deps, rustflags, config, local — exactly what changes when a
-# unit is superseded.
-_IDENTITY = ("target", "path", "profile", "features", "compile_kind")
-# Subdirs of a profile dir whose entries carry a unit hash.
-_HASHED_SUBDIRS = ("deps", "build", "incremental", ".fingerprint")
+BODY_SHARD_IDLE_SECONDS = 72 * 3600
 
 
 @dataclass
@@ -111,322 +93,53 @@ class TrimPlan:
         return sum(sz for _, sz in self.paths)
 
 
-def _size(path: Path) -> int:
-    try:
-        st = path.lstat()
-    except FileNotFoundError:
-        return 0
-    if not path.is_dir() or path.is_symlink():
-        return st.st_blocks * 512
-    total = st.st_blocks * 512
-    for parent, dirs, files in os.walk(path):
-        for name in dirs + files:
-            try:
-                total += os.lstat(os.path.join(parent, name)).st_blocks * 512
-            except FileNotFoundError:
-                continue
-    return total
+def _plan(value: dict) -> TrimPlan:
+    return TrimPlan(
+        paths=[(Path(p), int(s)) for p, s in value["paths"]],
+        superseded_units=value["superseded_units"],
+        adhoc_dirs=value["adhoc_dirs"],
+        dead_targets=value["dead_targets"],
+        retired_dirs=value["retired_dirs"],
+    )
 
 
-def _newest_mtime(path: Path) -> float:
-    best = path.lstat().st_mtime
-    for parent, dirs, files in os.walk(path):
-        for name in dirs + files:
-            try:
-                best = max(best, os.lstat(os.path.join(parent, name)).st_mtime)
-            except FileNotFoundError:
-                continue
-    return best
-
-
-def unit_identity(fp_dir: Path) -> tuple | None:
-    """(pkg, unit kind/name, *identity fields) for one `.fingerprint/<pkg>-<hash>` dir, or None
-    when it holds no readable fingerprint json (cargo mid-write, or a layout we do not know —
-    either way, not ours to judge)."""
-    pkg = fp_dir.name.rsplit("-", 1)[0]
-    keys = []
-    for js in sorted(fp_dir.glob("*.json")):
-        try:
-            data = json.loads(js.read_text())
-        except (OSError, ValueError):
-            return None
-        if not isinstance(data, dict) or any(k not in data for k in _IDENTITY):
-            return None
-        keys.append((js.name, *(json.dumps(data[k], sort_keys=True) for k in _IDENTITY)))
-    return (pkg, *sorted(keys)) if keys else None
-
-
-def superseded_hashes(profile_dir: Path, *, now: float, idle_seconds: float) -> set[str]:
-    """Unit hashes in one profile dir (`.../release`, `.../<triple>/release`) that a newer unit
-    with the same identity has replaced and that are older than the idle window."""
-    groups: dict[tuple, list[tuple[float, str]]] = defaultdict(list)
-    fp_root = profile_dir / ".fingerprint"
-    for fp_dir in fp_root.iterdir():
-        m = _HASH.search(fp_dir.name)
-        if not m or not fp_dir.is_dir():
-            continue
-        ident = unit_identity(fp_dir)
-        if ident is None:
-            continue
-        try:
-            groups[ident].append((_newest_mtime(fp_dir), m.group(1)))
-        except FileNotFoundError:
-            continue
-    dead: set[str] = set()
-    for units in groups.values():
-        if len(units) < 2:
-            continue
-        units.sort()
-        newest = units[-1][0]
-        for mtime, h in units[:-1]:
-            if mtime < newest and now - mtime >= idle_seconds:
-                dead.add(h)
-    return dead
-
-
-def _profile_dirs(target_root: Path):
-    """Every dir under a cargo target root that directly holds a `.fingerprint/`."""
-    for parent, dirs, _files in os.walk(target_root):
-        if ".fingerprint" in dirs:
-            yield Path(parent)
-        dirs[:] = [d for d in dirs if d not in _HASHED_SUBDIRS]
+def _now(now: float | None) -> float:
+    return time.time() if now is None else now
 
 
 def plan_target(target_root: Path, *, now: float, idle_hours: float) -> TrimPlan:
-    plan = TrimPlan()
-    if not target_root.is_dir():
-        return plan
-    idle = idle_hours * 3600
-    adhoc: list[Path] = []
-    for entry in target_root.iterdir():
-        named_adhoc = (
-            entry.name in _ADHOC_NAMES
-            or _ADHOC_TRIPLE.match(entry.name)
-            or _ADHOC_ORCHESTRATE.match(entry.name)
-        )
-        if named_adhoc and entry.is_dir() and not entry.is_symlink():
-            try:
-                if now - _newest_mtime(entry) >= idle:
-                    adhoc.append(entry)
-            except FileNotFoundError:
-                continue
-    for d in adhoc:
-        plan.paths.append((d, _size(d)))
-        plan.adhoc_dirs += 1
-    dead_targets = _dead_custom_targets(target_root, now=now, idle_seconds=min(idle, 3600))
-    for d in dead_targets:
-        plan.paths.append((d, _size(d)))
-        plan.dead_targets += 1
-    adhoc += dead_targets
-    for prof in _profile_dirs(target_root):
-        if any(prof == d or d in prof.parents for d in adhoc):
-            continue  # already going whole
-        dead = superseded_hashes(prof, now=now, idle_seconds=idle)
-        if not dead:
-            continue
-        plan.superseded_units += len(dead)
-        for sub in _HASHED_SUBDIRS:
-            sd = prof / sub
-            if not sd.is_dir():
-                continue
-            for p in sd.iterdir():
-                m = _HASH.search(p.name)
-                if m and m.group(1) in dead:
-                    plan.paths.append((p, _size(p)))
-    return plan
-
-
-# The per-module dirs the CMake build gives each cargo invocation: `<cell>-<arch>-cargo-link`
-# (the cell's own link) and `<cell>-<body>-rustlib` (its body crate's nested build).
-_CELL_LINK = re.compile(r"^(?P<cell>.+?)-(?:i386|amd64|arm64)-cargo-link$")
-_CELL_RUSTLIB = re.compile(r"^(?P<cell>.+?-cargo)-.+-rustlib$")
-# What a per-module dir holds besides its target subdirs.
-_MODULE_DIR_OTHER = {"release", "debug", "CACHEDIR.TAG", "tmp"}
-
-
-def _dead_custom_targets(target_root: Path, *, now: float, idle_seconds: float) -> list[Path]:
-    """Custom-target subdirs (`i686-kernel`) of per-module dirs whose cell no longer has the
-    target's json. Read against THIS worktree's source only; a dir whose cell cannot be found
-    is not judged. The idle window is capped at an hour: the rule is exact, the window only
-    keeps clear of a build that started before the json went."""
-    rust = target_root.parent
-    if rust.name != "rust" or not target_root.is_dir():
-        return []
-    dead = []
-    for entry in target_root.iterdir():
-        m = _CELL_LINK.match(entry.name) or _CELL_RUSTLIB.match(entry.name)
-        if not m or not entry.is_dir() or entry.is_symlink():
-            continue
-        cell = rust / m.group("cell")
-        if not (cell / "Cargo.toml").is_file():
-            continue
-        for sub in entry.iterdir():
-            if sub.name in _MODULE_DIR_OTHER or _ADHOC_TRIPLE.match(sub.name):
-                continue
-            if not sub.is_dir() or sub.is_symlink() or (cell / f"{sub.name}.json").exists():
-                continue
-            try:
-                if now - _newest_mtime(sub) >= idle_seconds:
-                    dead.append(sub)
-            except FileNotFoundError:
-                continue
-    return dead
-
-
-_ARCHES = ("i386", "amd64", "arm64")
-
-
-def _cache_value(build: Path, name: str) -> str | None:
-    try:
-        text = (build / "CMakeCache.txt").read_text(errors="replace")
-    except OSError:
-        return None
-    m = re.search(rf"^{name}:[A-Z]+=(.*)$", text, re.M)
-    return m.group(1).strip() if m else None
-
-
-def _retired_layouts(worktree: Path, *, now: float, idle_seconds: float) -> list[Path]:
-    dead = []
-
-    def idle(path: Path) -> bool:
-        try:
-            return now - _newest_mtime(path) >= idle_seconds
-        except FileNotFoundError:
-            return False
-
-    builds = [worktree / f"build-{a}" for a in _ARCHES if (worktree / f"build-{a}").is_dir()]
-    for build in builds:
-        try:
-            ninja = (build / "build.ninja").read_text(errors="replace")
-        except OSError:
-            continue  # unconfigured: nothing says what is live
-        for parent, dirs, _files in os.walk(build):
-            for name in list(dirs):
-                if name.startswith("rust-") and name.endswith("-target"):
-                    path = Path(parent) / name
-                    dirs.remove(name)
-                    if f"/{name}" not in ninja and not path.is_symlink() and idle(path):
-                        dead.append(path)
-                elif name in ("CMakeFiles", ".git") or name.endswith("-target"):
-                    dirs.remove(name)
-    # Cells of an arch whose cache shares link dirs no longer read their own.
-    target_root = worktree / "sdk/lib/rust/target"
-    for build in builds:
-        arch = build.name.removeprefix("build-")
-        if (
-            _cache_value(build, "VIBEOS_CARGO_LINK_SHARDS") in (None, "", "0")
-            or not target_root.is_dir()
-        ):
-            continue
-        for entry in target_root.glob(f"*-{arch}-cargo-link"):
-            if entry.is_dir() and not entry.is_symlink() and idle(entry):
-                dead.append(entry)
-    dead += _idle_body_shards(worktree / "sdk/lib/rust/target", now=now)
-    shards = [_cache_value(b, "VIBEOS_RUST_BODY_SHARDS") for b in builds]
-    target = worktree / "sdk/lib/rust/target"
-    if builds and target.is_dir() and all(s not in (None, "", "0") for s in shards):
-        for entry in target.iterdir():
-            if (
-                _CELL_RUSTLIB.match(entry.name)
-                and entry.is_dir()
-                and not entry.is_symlink()
-                and idle(entry)
-            ):
-                dead.append(entry)
-    return dead
-
-
-_BODY_SHARD = re.compile(r"^body-storage-v1-(?:i386|amd64|arm64)-[0-9a-f]{16}-\d+-rustlib$")
-BODY_SHARD_IDLE_SECONDS = 72 * 3600
-
-
-def _idle_body_shards(target_root: Path, *, now: float) -> list[Path]:
-    import fcntl
-
-    dead = []
-    if not target_root.is_dir():
-        return dead
-    for entry in target_root.iterdir():
-        if not _BODY_SHARD.match(entry.name) or not entry.is_dir() or entry.is_symlink():
-            continue
-        lock = entry / ".body-storage.lock"
-        try:
-            if now - lock.stat().st_mtime < BODY_SHARD_IDLE_SECONDS:
-                continue
-            with open(lock, "rb") as handle:
-                try:
-                    fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                except BlockingIOError:
-                    continue  # a build holds it right now
-                fcntl.flock(handle, fcntl.LOCK_UN)
-        except FileNotFoundError:
-            continue  # no lock yet: being created, or not ours to judge
-        dead.append(entry)
-    return dead
+    kwargs = {"target_root": str(target_root), "now": now, "idle_hours": idle_hours}
+    return _plan(native.call("trim_plan_target", kwargs))
 
 
 def plan_worktree(worktree: Path, *, now: float | None = None, idle_hours: float = 24) -> TrimPlan:
-    now = time.time() if now is None else now
-    plan = TrimPlan()
-    for rel in TARGET_RELDIRS:
-        sub = plan_target(worktree / rel, now=now, idle_hours=idle_hours)
-        plan.paths += sub.paths
-        plan.superseded_units += sub.superseded_units
-        plan.adhoc_dirs += sub.adhoc_dirs
-        plan.dead_targets += sub.dead_targets
-    going = {p for p, _ in plan.paths}
-    for d in _retired_layouts(worktree, now=now, idle_seconds=idle_hours * 3600):
-        if d in going or any(g in d.parents for g in going):
-            continue
-        # A unit already planned inside a retired dir goes with it.
-        plan.paths = [(p, s) for p, s in plan.paths if d not in p.parents]
-        plan.paths.append((d, _size(d)))
-        plan.retired_dirs += 1
-    return plan
+    kwargs = {"worktree": str(worktree), "now": _now(now), "idle_hours": idle_hours}
+    return _plan(native.call("trim_plan_worktree", kwargs))
 
 
 def plan_port_staging(
     root: Path | None = None, *, now: float | None = None, idle_hours: float = 24
 ) -> TrimPlan:
     """Idle `<stem>/target-*` cargo dirs under the port state root, each going whole."""
-    root = PORT_STATE_ROOT if root is None else root
-    now = time.time() if now is None else now
-    plan = TrimPlan()
-    if not root.is_dir():
-        return plan
-    for stem in sorted(root.iterdir()):
-        if not stem.is_dir() or stem.is_symlink():
-            continue
-        for t in sorted(stem.glob("target-*")):
-            if not t.is_dir() or t.is_symlink():
-                continue
-            try:
-                if now - _newest_mtime(t) < idle_hours * 3600:
-                    continue
-            except FileNotFoundError:
-                continue
-            plan.paths.append((t, _size(t)))
-            plan.adhoc_dirs += 1
-    return plan
+    kwargs = {
+        "root": str(PORT_STATE_ROOT if root is None else root),
+        "now": _now(now),
+        "idle_hours": idle_hours,
+    }
+    return _plan(native.call("trim_plan_port_staging", kwargs))
 
 
 def apply(worktree: Path, plan: TrimPlan) -> tuple[int, int]:
     """Delete a plan's paths. Returns (bytes freed, failures). Never follows a symlink out
     of the worktree."""
-    root = worktree.resolve()
-    freed = failures = 0
-    for p, sz in plan.paths:
-        try:
-            if root not in p.resolve().parents:
-                raise OSError(f"resolves outside {root}")
-            if p.is_dir() and not p.is_symlink():
-                shutil.rmtree(p)
-            else:
-                p.unlink()
-            freed += sz
-        except FileNotFoundError:
-            continue
-        except OSError as exc:
-            failures += 1
-            print(f"  FAILED {p}: {exc}")
-    return freed, failures
+    plan_json = {
+        "paths": [[str(p), s] for p, s in plan.paths],
+        "superseded_units": plan.superseded_units,
+        "adhoc_dirs": plan.adhoc_dirs,
+        "dead_targets": plan.dead_targets,
+        "retired_dirs": plan.retired_dirs,
+    }
+    result = native.call("trim_apply", {"root": str(worktree), "plan": plan_json})
+    for line in result["failures"]:
+        print(f"  FAILED {line}")
+    return int(result["freed"]), len(result["failures"])
