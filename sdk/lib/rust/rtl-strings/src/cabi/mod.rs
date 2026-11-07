@@ -5267,8 +5267,20 @@ pub unsafe extern "system" fn RtlExpandEnvironmentStrings(
         let n = env_block_chars(environment);
         core::slice::from_raw_parts(environment, n)
     };
-    let src_slice = core::slice::from_raw_parts(source_buffer, source_length);
-    let dst_slice = core::slice::from_raw_parts_mut(destination, dest_max);
+    // A size query passes destination = NULL with dest_max = 0 (the C only ever indexes it
+    // under DestMax != 0). A slice may not be built from NULL even at length 0 -- armed
+    // debug-assertions panicked here in every process that called ExpandEnvironmentStrings
+    // to size its buffer -- so an empty buffer stands in for it, and likewise for the source.
+    let src_slice: &[u16] = if source_buffer.is_null() || source_length == 0 {
+        &[]
+    } else {
+        core::slice::from_raw_parts(source_buffer, source_length)
+    };
+    let dst_slice: &mut [u16] = if destination.is_null() || dest_max == 0 {
+        &mut []
+    } else {
+        core::slice::from_raw_parts_mut(destination, dest_max)
+    };
 
     let result = env::expand_env_strings(env_slice, src_slice, dst_slice);
 
