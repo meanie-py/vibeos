@@ -21,6 +21,10 @@ use ntkrnl_sys::ddk::{
 };
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
+/// ntstatus.h. KeReleaseMutant raises these for a caller that does not own the mutant.
+const STATUS_ABANDONED: NTSTATUS = 0x0000_0080;
+const STATUS_MUTANT_NOT_OWNED: NTSTATUS = 0xC000_0046_u32 as NTSTATUS;
+
 const MAXIMUM_WAIT_OBJECTS: ULONG = 64;
 const THREAD_WAIT_OBJECTS: ULONG = 3;
 const TAG_WAIT: ULONG = 0x74696157; // 'Wait'
@@ -421,8 +425,16 @@ pub unsafe extern "system" fn NtSignalAndWaitForSingleObject(
             Status = STATUS_SUCCESS;
         }
     } else if Type == ExMutantObjectType {
-        KeReleaseMutant(SignalObj as *mut _KMUTANT, MUTANT_INCREMENT, 0u8, 1u8);
-        Status = STATUS_SUCCESS;
+        // The C catches KeReleaseMutant's STATUS_ABANDONED / STATUS_MUTANT_NOT_OWNED raise and
+        // returns it; uncaught it is a bugcheck 0x1E. Only this thread can make itself the
+        // owner, so checking first gives the same answer without the raise.
+        let m = SignalObj as *mut _KMUTANT;
+        if (*m).OwnerThread != KeGetCurrentThread() as *mut _ {
+            Status = if (*m).Abandoned != 0 { STATUS_ABANDONED } else { STATUS_MUTANT_NOT_OWNED };
+        } else {
+            KeReleaseMutant(m, MUTANT_INCREMENT, 0u8, 1u8);
+            Status = STATUS_SUCCESS;
+        }
     } else if Type == ExSemaphoreObjectType {
         if (PreviousMode != 0) && ((HandleInfo.GrantedAccess & SEMAPHORE_MODIFY_STATE) == 0) {
             Status = STATUS_ACCESS_DENIED;

@@ -44,6 +44,17 @@ static HANDLE reg(HANDLE obj, DWORD ms, ULONG flags)
     return w;
 }
 
+static HANDLE g_taken, g_release;
+
+static DWORD WINAPI take_mutex(LPVOID m)
+{
+    WaitForSingleObject((HANDLE)m, INFINITE);
+    SetEvent(g_taken);
+    WaitForSingleObject(g_release, 5000);
+    ReleaseMutex((HANDLE)m);
+    return 0;
+}
+
 /* Wait until a callback has started. */
 static void until_called(void)
 {
@@ -56,6 +67,8 @@ int main(void)
     HANDLE obj = CreateEventA(NULL, TRUE, FALSE, NULL);
     HANDLE ce = CreateEventA(NULL, TRUE, FALSE, NULL);
     const ULONG chrome = WT_EXECUTEINWAITTHREAD | WT_EXECUTEONLYONCE;
+    g_taken = CreateEventA(NULL, FALSE, FALSE, NULL);
+    g_release = CreateEventA(NULL, FALSE, FALSE, NULL);
     HANDLE w;
     BOOL ok;
 
@@ -148,6 +161,26 @@ int main(void)
         }
         ResetEvent(obj);
         say("H race x300: completion event never signaled %d, unexpected failures %d", unsignaled, failed);
+    }
+    /* M: releasing a mutex the caller does not own is an error, not a crash. Our kernel
+     * bugchecked (0x1E, STATUS_MUTANT_NOT_OWNED raised and never caught) on the first. */
+    {
+        HANDLE m = CreateMutexA(NULL, FALSE, NULL);
+        SetLastError(0);
+        ok = ReleaseMutex(m);
+        say("M unowned: ReleaseMutex = %d err %lu", ok, GetLastError());
+        HANDLE t = CreateThread(NULL, 0, take_mutex, m, 0, NULL);
+        WaitForSingleObject(g_taken, 5000);
+        SetLastError(0);
+        ok = ReleaseMutex(m);
+        say("M owned by another thread: ReleaseMutex = %d err %lu", ok, GetLastError());
+        SetEvent(g_release);
+        WaitForSingleObject(t, 5000);
+        SetLastError(0);
+        DWORD r = SignalObjectAndWait(m, ce, 0, FALSE);
+        say("M SignalObjectAndWait(unowned mutex) = %#lx err %lu", r, GetLastError());
+        WaitForSingleObject(m, 0);
+        say("M owned: ReleaseMutex = %d, again = %d err %lu", ReleaseMutex(m), ReleaseMutex(m), GetLastError());
     }
     say("done");
     return 0;

@@ -8,4 +8,8 @@
 [WAIT] F never fired: UnregisterWait = 1 err 0
 [WAIT] G repeating: UnregisterWaitEx(INVALID) = 1, called back several times, none after: yes
 [WAIT] H race x300: completion event never signaled 0, unexpected failures 0
+[WAIT] M unowned: ReleaseMutex = 0 err 288
+[WAIT] M owned by another thread: ReleaseMutex = 0 err 288
+[WAIT] M SignalObjectAndWait(unowned mutex) = 0xffffffff err 288
+[WAIT] M owned: ReleaseMutex = 1, again = 0 err 288
 [WAIT] done

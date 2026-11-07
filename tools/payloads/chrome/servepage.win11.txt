@@ -1,0 +1,11 @@
+[SERVE] listening on :8732
+[SERVE] GET / -> 200
+[SERVE] GET /app.js -> 200
+[SERVE] GET /favicon.ico -> 404
+<!DOCTYPE html>
+<html><head><title>vibeos net</title></head>
+<body><p id="m">hello over http, net js ran: 42</p>
+<script src="/app.js"></script>
+
+</body></html>
+[SERVE] command exited 0

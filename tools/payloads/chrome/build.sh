@@ -18,7 +18,9 @@ bash "$ROOT/tools/payloads/apitest/build.sh" "$A"
 "$TC/x86_64-w64-mingw32-gcc" -O2 -o "$HERE/dupprobe-$A.exe" "$HERE/dupprobe.c" -lmsvcrt-os -lkernel32
 "$TC/x86_64-w64-mingw32-gcc" -O2 -o "$HERE/msgprobe-$A.exe" "$HERE/msgprobe.c" -lmsvcrt-os -lkernel32 -luser32
 "$TC/x86_64-w64-mingw32-gcc" -O2 -o "$HERE/waitprobe-$A.exe" "$HERE/waitprobe.c" -lmsvcrt-os -lkernel32
-for P in pipeprobe catfile dumpinfo tlsprobe secprobe iocpprobe dupprobe msgprobe waitprobe; do
+"$TC/x86_64-w64-mingw32-gcc" -O2 -o "$HERE/servepage-$A.exe" "$HERE/servepage.c" -lmsvcrt-os -lws2_32 -lkernel32
+"$TC/x86_64-w64-mingw32-gcc" -O2 -o "$HERE/sockprobe-$A.exe" "$HERE/sockprobe.c" -lmsvcrt-os -lws2_32 -lkernel32
+for P in pipeprobe catfile dumpinfo tlsprobe secprobe iocpprobe dupprobe msgprobe waitprobe servepage sockprobe; do
     python3 "$(dirname "$HERE")/pecheck.py" "$HERE/$P-$A.exe" --tag $P --forbid-dll api-ms-win-crt
 done
 echo "[chrome] OK"

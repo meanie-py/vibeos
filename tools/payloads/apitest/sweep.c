@@ -27,6 +27,7 @@
 #include <tlhelp32.h>
 #include <stdio.h>
 #include <string.h>
+#include "memwatch.h"
 
 ULONG __cdecl DbgPrint(const char *Format, ...);
 
@@ -293,6 +294,27 @@ static void dump_tree(DWORD pid, int kill)
 }
 
 static DWORD sample_ms(const char *suite);
+
+/* "memwatch SECS": while any later child runs, a memory line every SECS (0: off). */
+static DWORD g_memwatch_ms;
+
+/* WaitForSingleObject(h, ms), printing a memwatch line every g_memwatch_ms meanwhile. */
+static DWORD wait_watching(HANDLE h, DWORD ms)
+{
+    DWORD start = GetTickCount(), w;
+    if (!g_memwatch_ms)
+        return WaitForSingleObject(h, ms);
+    for (;;) {
+        DWORD spent = GetTickCount() - start;
+        DWORD left = spent >= ms ? 0 : ms - spent;
+        w = WaitForSingleObject(h, left < g_memwatch_ms ? left : g_memwatch_ms);
+        if (w != WAIT_TIMEOUT || left <= g_memwatch_ms)
+            return w;
+        char line[1024];
+        memwatch_line(line, sizeof line);
+        emit("[APITEST-SWEEP] mem +%lus %s\n", (unsigned long)((GetTickCount() - start) / 1000u), line);
+    }
+}
 
 #define PER_SUBTEST_TIMEOUT_MS (120u * 1000u)
 #define MAX_TIMEOUTS           32
@@ -593,7 +615,7 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
         wait = WAIT_TIMEOUT;
         if (at && at < timeout_ms)
         {
-            wait = WaitForSingleObject(pi.hProcess, at);
+            wait = wait_watching(pi.hProcess, at);
             if (wait == WAIT_TIMEOUT)
             {
                 SAY("sample at %lus\n", (unsigned long)(at / 1000u));
@@ -601,7 +623,7 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
             }
         }
         if (wait == WAIT_TIMEOUT)
-            wait = WaitForSingleObject(pi.hProcess, at && at < timeout_ms ? timeout_ms - at : timeout_ms);
+            wait = wait_watching(pi.hProcess, at && at < timeout_ms ? timeout_ms - at : timeout_ms);
     }
     if (wait == WAIT_TIMEOUT)
     {
@@ -1037,6 +1059,12 @@ int main(void)
             else
                 emit("[APITEST-SWEEP] BAD timeout line (want: timeout SUITE.exe SECONDS): %s\n",
                          line);
+            continue;
+        }
+        if (!strncmp(line, "memwatch ", 9))
+        {
+            g_memwatch_ms = (DWORD)atoi(line + 9) * 1000u;
+            emit("[APITEST-SWEEP] memwatch every %lus\n", (unsigned long)(g_memwatch_ms / 1000u));
             continue;
         }
         if (!strncmp(line, "sample ", 7))

@@ -1,0 +1,30 @@
+[SOCK] listen on :8123: ok
+[SOCK] own address: found
+[SOCK] loopback blocking connect: ok (err 0)
+[SOCK] loopback blocking reply: 4 'pong'
+[SOCK] loopback closesocket: 0
+[SOCK] loopback FIONBIO: 0
+[SOCK] loopback TCP_NODELAY: 0
+[SOCK] loopback WSAEventSelect(FD_CONNECT): 0
+[SOCK] loopback connect: -1 err 10035 (WOULDBLOCK)
+[SOCK] loopback connect event: signaled
+[SOCK] loopback WSAEnumNetworkEvents: 0 events 0x10 connect-err 0
+[SOCK] loopback WSAEventSelect(FD_READ|FD_CLOSE): 0
+[SOCK] loopback send: 4
+[SOCK] loopback read event signaled events 0x1, recv 4 'pong'
+[SOCK] loopback closesocket: 0 err 0
+[SOCK] nic blocking connect: ok (err 0)
+[SOCK] nic blocking reply: 4 'pong'
+[SOCK] nic closesocket: 0
+[SOCK] nic FIONBIO: 0
+[SOCK] nic TCP_NODELAY: 0
+[SOCK] nic WSAEventSelect(FD_CONNECT): 0
+[SOCK] nic connect: -1 err 10035 (WOULDBLOCK)
+[SOCK] nic connect event: signaled
+[SOCK] nic WSAEnumNetworkEvents: 0 events 0x10 connect-err 0
+[SOCK] nic WSAEventSelect(FD_READ|FD_CLOSE): 0
+[SOCK] nic send: 4
+[SOCK] nic read event signaled events 0x1, recv 4 'pong'
+[SOCK] nic closesocket: 0 err 0
+[SOCK] connections accepted: 4
+[SOCK] done
