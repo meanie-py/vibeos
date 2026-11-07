@@ -205,6 +205,7 @@
            *NumberOfDataEntries = (*DataInfo).NumberOfEntries;
            *NumberOfDataEntries = 0;
            *NumberOfDataEntries = di.NumberOfEntries;
+           *NumberOfShims = (*NumberOfShims).wrapping_add(1);
            *Object = core::ptr::addr_of_mut!((*Header).Body) as PVOID;
            *Object = core::ptr::null_mut();
            *Object = current_process as PVOID;
@@ -579,6 +580,7 @@
     L 202 IoCheckEaBufferValidity(): *ErrorOffset = ...
     L 202 LpcpFreeConMsg(): *message = ...
     L 202 ObSetDirectoryDeviceMap(): *DeviceMap = ...
+    L 203 KsepAddShimByName(): *NumberOfShims = ...
     L 204 RtlGetNtProductType(): *ProductType = ...
     L 209 KiComputeReciprocal(): *Shift = ...
     L 209 MmTrimUserMemory(): *NrFreedPages = ...
@@ -1124,6 +1126,7 @@
   ke/i386/patpge.rs:
   ke/krnlinit.rs:
   ke/thrdobj.rs:
+  kse/kse.rs:
   mm/balance.rs:
   mm/region.rs:
   mm/rmap.rs:
