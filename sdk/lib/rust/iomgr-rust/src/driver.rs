@@ -150,6 +150,12 @@ unsafe fn ExInterlockedRemoveHeadList(
     ExfInterlockedRemoveHeadList(ListHead, Lock)
 }
 
+// Kernel Shim Engine (ntoskrnl-rust kse/), across the kernel link like the C.
+extern "system" {
+    fn KseInitialize(BootPhase: ULONG, LoaderBlock: ntkrnl_sys::ddk::PLOADER_PARAMETER_BLOCK) -> NTSTATUS;
+    fn KseDriverLoadImage(LdrEntry: ntkrnl_sys::ddk::PLDR_DATA_TABLE_ENTRY) -> NTSTATUS;
+    fn KseShimDriverIoCallbacks(DriverObject: ntkrnl_sys::ddk::PDRIVER_OBJECT) -> NTSTATUS;
+}
 extern "system" {
     fn PipGetDriverTagPriority(ServiceHandle: HANDLE) -> ULONG;
     fn PpInitGetGroupOrderIndex(ServiceHandle: HANDLE) -> USHORT;
@@ -950,6 +956,9 @@ unsafe fn IopInitializeBuiltinDriver(BootLdrEntry: PLDR_DATA_TABLE_ENTRY) -> BOO
         NextEntry = (*NextEntry).Flink;
     }
 
+    // Apply the kernel shims to the driver
+    KseDriverLoadImage(LdrEntry);
+
     let mut driverEntryStatus: NTSTATUS = STATUS_SUCCESS;
     Status = IopInitializeDriverModule(LdrEntry, serviceHandle, &mut DriverObject as *mut PDRIVER_OBJECT, &mut driverEntryStatus as *mut NTSTATUS);
 
@@ -1660,6 +1669,9 @@ pub unsafe extern "system" fn IoCreateDriver(
         ObDereferenceObject(DriverObject as PVOID);
         return Status;
     }
+
+    // Give the Kernel Shim Engine a chance to hook the driver callbacks
+    KseShimDriverIoCallbacks(DriverObject);
 
     for j in 0..=IRP_MJ_MAXIMUM_FUNCTION {
         if (*DriverObject).MajorFunction[j as usize].is_none() {

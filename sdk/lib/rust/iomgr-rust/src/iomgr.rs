@@ -134,6 +134,12 @@ unsafe fn InitializeObjectAttributes(
     (*p).SecurityQualityOfService = core::ptr::null_mut();
 }
 
+// Kernel Shim Engine (ntoskrnl-rust kse/), across the kernel link like the C.
+extern "system" {
+    fn KseInitialize(BootPhase: ULONG, LoaderBlock: ntkrnl_sys::ddk::PLOADER_PARAMETER_BLOCK) -> NTSTATUS;
+    fn KseDriverLoadImage(LdrEntry: ntkrnl_sys::ddk::PLDR_DATA_TABLE_ENTRY) -> NTSTATUS;
+    fn KseShimDriverIoCallbacks(DriverObject: ntkrnl_sys::ddk::PDRIVER_OBJECT) -> NTSTATUS;
+}
 extern "system" {
     fn WmiInitialize() -> BOOLEAN;
     fn ApphelpCacheInitialize() -> NTSTATUS;
@@ -728,6 +734,10 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
         }
     }
 
+    // Initialize the Kernel Shim Engine
+    io_trace(b"[IO] KseInitialize(0)\r\n\0");
+    KseInitialize(0, LoaderBlock);
+
     io_trace(b"[IO] IopInitializePlugPlayServices\r\n\0");
     Status = IopInitializePlugPlayServices();
     if Status < 0 {
@@ -738,6 +748,10 @@ unsafe fn IopFinishIoInitSystem(LoaderBlock: PLOADER_PARAMETER_BLOCK) -> BOOLEAN
     ApphelpCacheInitialize();
     io_trace(b"[IO] WmiInitialize\r\n\0");
     WmiInitialize();
+
+    // Finish Kernel Shim Engine initialization
+    io_trace(b"[IO] KseInitialize(1)\r\n\0");
+    KseInitialize(1, LoaderBlock);
 
     #[cfg(target_arch = "aarch64")]
     {
