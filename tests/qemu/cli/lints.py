@@ -66,7 +66,8 @@ def _verdicts(repo: Path, op: str, items: list[dict]):
         out, err = proc.communicate(json.dumps({"op": op, "items": items}))
     if proc.returncode:
         raise RuntimeError(
-            err.strip().removeprefix("FATAL: ") or f"vibeos-lint --verdicts exited {proc.returncode}"
+            err.strip().removeprefix("FATAL: ")
+            or f"vibeos-lint --verdicts exited {proc.returncode}"
         )
     return json.loads(out)
 
