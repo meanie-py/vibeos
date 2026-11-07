@@ -182,8 +182,14 @@ its verdict was preserved at
 
 Follow-up work: arm the first replay checkpoint before it can be passed, and
 make pause-time I/O checkpoints comparable without weakening the inconclusive
-classification. The RR coordinator has since moved into `rr_commands`; shared CLI
-reporting/execution and build/gate orchestration are the next control-plane chunks.
+classification. The RR coordinator has since moved into `rr_commands`. Shared CLI
+configuration, argument parsing, subprocess ownership, artifact publication and
+summary rendering now live in `vibeos-build::{cli_arguments,cli_artifacts}`.
+`vibeos-test::tooling` plans and schedules tooling checks; the build library owns
+its locked content receipts. Python supplies interpreter/package discovery facts
+and retains Namespace/Run/Stage DTOs for existing callers. Failure-signature policy
+is shared through `vibeos-test::cli_report`. Build/gate composition is the next
+control-plane chunk.
 
 Host-job process-contract fixtures now own a private process group through an
 EOF guard. Unwinding or killing the test owner closes the ownership pipe; the

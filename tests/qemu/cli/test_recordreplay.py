@@ -778,11 +778,7 @@ def test_the_gdb_flag_warns_how_to_stop_a_replay_correctly(tmp_path, monkeypatch
     rr.snapshot_pristine(trace)
     # check_trace() shells out for the QEMU version; the boot itself is not under
     # test, so stub both with something that satisfies each caller.
-    monkeypatch.setattr(
-        rrcmd.subprocess,
-        "run",
-        lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
-    )
+    monkeypatch.setattr(rrcmd, "_execute", lambda _arguments: 0)
     monkeypatch.setattr(
         rr.subprocess,
         "run",
@@ -1053,11 +1049,7 @@ def test_a_non_default_shift_warns_that_the_trace_will_not_replay(tmp_path, monk
     """
     from . import rrcmd
 
-    monkeypatch.setattr(
-        rrcmd.subprocess,
-        "run",
-        lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
-    )
+    monkeypatch.setattr(rrcmd, "_execute", lambda _arguments: 0)
 
     class _Args:
         arch = "arm64"
@@ -1364,33 +1356,30 @@ def test_record_preserves_guest_crash_trace_but_fails_requested_diagnostic_error
     work.mkdir()
     (work / "serial.log").write_text("*** BUGCHECK 0xA\n")
 
-    def boot(cmd, **kwargs):
-        if "--version" in cmd:
-            return SimpleNamespace(returncode=0, stdout="QEMU emulator version 8.2.2", stderr="")
-        if "env" in kwargs:
-            (trace / "media").mkdir()
-            rr.write_manifest(trace, arch="arm64", argv=[], media={})
-            (trace / "replay.bin").write_bytes(b"useful crash recording")
-            (trace / "last-run.json").write_text(
-                json.dumps({"mode": "record", "serial_log": str(work / "serial.log")})
+    def boot(_arguments):
+        (trace / "media").mkdir()
+        rr.write_manifest(trace, arch="arm64", argv=[], media={})
+        (trace / "replay.bin").write_bytes(b"useful crash recording")
+        (trace / "last-run.json").write_text(
+            json.dumps({"mode": "record", "serial_log": str(work / "serial.log")})
+        )
+        (trace / "samples.jsonl").write_text(
+            json.dumps(
+                {
+                    "icount": 12,
+                    "regs": "CPU#0 PC=0",
+                    "mem": [{"base": 0, "hashes": ["878633aa32a3b150"]}],
+                }
             )
-            (trace / "samples.jsonl").write_text(
-                json.dumps(
-                    {
-                        "icount": 12,
-                        "regs": "CPU#0 PC=0",
-                        "mem": [{"base": 0, "hashes": ["878633aa32a3b150"]}],
-                    }
-                )
-                + "\n"
+            + "\n"
+        )
+        if sampler_error:
+            (work / "vm_diagnostic_sidecar-rr.json").write_text(
+                json.dumps({"error": {"kind": "QmpTransport", "message": "controlled timeout"}})
             )
-            if sampler_error:
-                (work / "vm_diagnostic_sidecar-rr.json").write_text(
-                    json.dumps({"error": {"kind": "QmpTransport", "message": "controlled timeout"}})
-                )
-        return SimpleNamespace(returncode=1, stdout="", stderr="")
+        return 1
 
-    monkeypatch.setattr(rrcmd.subprocess, "run", boot)
+    monkeypatch.setattr(rrcmd, "_execute", boot)
     args = SimpleNamespace(
         root=str(tmp_path),
         name=trace.name,

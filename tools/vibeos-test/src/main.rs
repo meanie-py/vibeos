@@ -45,7 +45,9 @@ impl Host for Runtime<'_> {
             op if op.starts_with("bench_") => {
                 vibeos_test::bench::dispatch(self.root, &request, self)
             }
-            "rr_execute"
+            "tooling_runtime"
+            | "tooling_provision_lint"
+            | "rr_execute"
             | "diagnostic_hmp"
             | "diagnostic_begin_sample"
             | "diagnostic_end_sample"
@@ -54,6 +56,19 @@ impl Host for Runtime<'_> {
                 output: self.output,
             }
             .call(operation, request["kwargs"].clone()),
+            op if op.starts_with("tooling_receipts_") => Ok(
+                vibeos_build::tooling_receipts::dispatch(self.root, &request)?,
+            ),
+            op if op.starts_with("cli_report_") => vibeos_test::cli_report::dispatch(&request),
+            op if op.starts_with("tooling_") => {
+                vibeos_test::tooling::dispatch(self.root, &request, self)
+            }
+            op if op.starts_with("cli_arguments_") => {
+                Ok(vibeos_build::cli_arguments::dispatch(&request)?)
+            }
+            op if op.starts_with("cli_artifacts_") => {
+                Ok(vibeos_build::cli_artifacts::dispatch(self.root, &request)?)
+            }
             op if op.starts_with("record_replay_") => {
                 vibeos_test::record_replay::dispatch(&request)
             }
@@ -198,6 +213,16 @@ fn run() -> Result<u8> {
             }
             "--api-jsonl" | "--resource-jsonl" => lines = true,
             "--api-json" => {}
+            "cli-command-worker" => {
+                return Ok(vibeos_build::cli_artifacts::worker(
+                    &args.collect::<Vec<_>>(),
+                )?);
+            }
+            "owned-command-fd" => {
+                return Ok(vibeos_build::process_guard::runner(
+                    &args.collect::<Vec<_>>(),
+                )?);
+            }
             "vm-guardian" => {
                 return vibeos_test::vm::guardian_worker(Path::new(
                     &args.next().ok_or("VM guardian requires descriptor")?,

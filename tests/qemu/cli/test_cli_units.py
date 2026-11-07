@@ -1908,36 +1908,35 @@ def test_Run_finalize_still_writes_its_ledger_row(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("failure", [None, "timeout", "missing"])
-def test_command_timings_survive_failures(monkeypatch, failure):
+def test_command_timings_survive_failures(monkeypatch, tmp_path, failure):
+    import sys
+
     from . import artifacts
 
-    ticks = iter([10.0, 12.0, 15.5, 16.0])
-    monkeypatch.setattr(artifacts.time, "monotonic", lambda: next(ticks))
-
-    def execute(*args, **kwargs):
-        if failure == "timeout":
-            raise subprocess.TimeoutExpired(["fixture"], 1)
-        if failure == "missing":
-            raise FileNotFoundError("fixture")
-        return subprocess.CompletedProcess(["fixture"], 0, "", "")
-
-    monkeypatch.setattr(artifacts.subprocess, "run", execute)
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    command = (
+        [str(tmp_path / "missing-command")]
+        if failure == "missing"
+        else [
+            sys.executable,
+            "-c",
+            "import time; time.sleep(10)" if failure == "timeout" else "print('witness')",
+        ]
+    )
     run = Run("build", "amd64", ts=1700000000)
-    cp = run.run(["fixture"], stage="ninja", timeout=1)
+    cp = run.run(command, stage="ninja", timeout=0.1 if failure == "timeout" else 10)
     run.finalize()
-    expected = {
-        "stage": "ninja",
-        "start_seconds": 2.0,
-        "seconds": 3.5,
-        "exit": {None: 0, "timeout": 124, "missing": 127}[failure],
-        "timed_out": failure == "timeout",
-    }
     summary = json.loads((run.dir / "summary.json").read_text())
-    assert summary["command_timings"] == [expected]
+    timing = summary["command_timings"][0]
+    assert timing["stage"] == "ninja" and timing["start_seconds"] >= 0
+    assert timing["seconds"] > 0
+    assert timing["exit"] == {None: 0, "timeout": 124, "missing": 127}[failure]
+    assert timing["timed_out"] == (failure == "timeout")
     journal = json.loads(run.commands_log.read_text())
-    assert all(journal[key] == value for key, value in expected.items())
-    assert cp.returncode == expected["exit"]
-    assert cp.timed_out == expected["timed_out"]
+    assert all(journal[key] == value for key, value in timing.items())
+    assert cp.returncode == timing["exit"] and cp.timed_out == timing["timed_out"]
+    if failure is None:
+        assert "witness" in run.full_log.read_text()
 
 
 def test_rust_source_closure_tracks_shared_dependencies(tmp_path):
@@ -9443,20 +9442,17 @@ def test_a_red_run_actually_reaches_the_preserve_path(tmp_path, monkeypatch):
 
     monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
     monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
-    seen = {}
-
-    def spy(run_dir, arch, classification, repo):
-        seen["called"] = (arch, classification)
-        return str(tmp_path / "farm" / "fails" / "auto" / "x")
-
-    monkeypatch.setattr(artifacts, "preserve_failure", spy)
-
     run = artifacts.Run("smoke", "arm64")
+    (run.dir / "arm64_serial.log").write_bytes(b"ntkrnlmp.exe\nBUGCHECK 0x1E\n")
     run.verdict = "FAIL"
     run.classification = "BUGCHECK 0x1E"
     run.finalize(None)
-    assert seen.get("called") == ("arm64", "BUGCHECK 0x1E"), "a red boot bypassed preservation"
-    assert json.loads((run.dir / "summary.json").read_text())["preserved"]
+    summary = json.loads((run.dir / "summary.json").read_text())
+    kept = Path(summary["preserved"])
+    assert (kept / "arm64_serial.log").read_bytes() == b"ntkrnlmp.exe\nBUGCHECK 0x1E\n"
+    manifest = json.loads((kept / "manifest.json").read_text())
+    assert manifest["classification"] == "BUGCHECK 0x1E" and manifest["mp_kernel"]
+    assert json.loads((kept / "summary.json").read_text())["verdict"] == "FAIL"
 
 
 def test_a_green_run_preserves_nothing(tmp_path, monkeypatch):

@@ -7,7 +7,6 @@ vibeos-test::rr_commands. This module adapts argparse and external process I/O.
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -34,7 +33,21 @@ def _root(args):
 
 
 def _execute(arguments):
-    return subprocess.run(arguments["argv"], cwd=arguments["cwd"], env=arguments["env"]).returncode
+    from .artifacts import Run, Stage
+
+    run = Run("rr-command", "all")
+    result = run.run(
+        arguments["argv"], cwd=Path(arguments["cwd"]), env=arguments["env"], stage="rr-child"
+    )
+    if result.stdout:
+        print(result.stdout, end="")
+    if result.stderr:
+        print(result.stderr, end="", file=sys.stderr)
+    run.add(
+        Stage("rr-child", exit=result.returncode, status="ok" if result.returncode == 0 else "fail")
+    )
+    run.finalize(Path(arguments["cwd"]))
+    return result.returncode
 
 
 def _display(arguments):

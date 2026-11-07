@@ -314,7 +314,7 @@ def _artifact_request(root, payload):
 def call(op: str, kwargs: dict, root: Path = REPO) -> Any:
     tool = REPO / "tools/build-infra"
     request = json.dumps({"op": op, "kwargs": _json(kwargs)}, ensure_ascii=False)
-    if op.startswith(("artifact_", "build_policy_", "provenance_")):
+    if op.startswith(("artifact_", "build_policy_", "provenance_", "cli_artifacts_", "cli_arguments_", "tooling_receipts_")):
         try:
             response = _artifact_request(root, request)
         except (OSError, ValueError) as exc:
