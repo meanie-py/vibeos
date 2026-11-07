@@ -79,6 +79,28 @@ Acceptance: public contracts and refusal behavior remain covered, native code ow
 newly migrated decisions, and deletion plans cannot touch live worktrees or paid
 translation artifacts. Retain external handle adapters until callers move.
 
+Progress (`lint-rs`):
+
+- Done: the lint verdict layer (`vibeos-lint --verdicts`: classify, baseline
+  capture, finding keys); `lints.py` is now an adapter. Every source lint was
+  already native.
+- Done: `trim` (`vibeos-build/src/trim.rs`). The post-build trim calls it
+  directly; `trim.py` is an adapter. Parity: 75 plans, 9,907 paths, 0 mismatches.
+- Done: `prune` decisions (`vibeos-build/src/prune.rs`): worktree discovery, live
+  QEMU and in-flight build attribution (including canonical bind sources),
+  protection gates, du-style sizing, idle window, retention and headroom budget.
+  `prune.py` keeps the maintenance lock, the printout and the delete loop, which
+  rechecks liveness natively before every directory. Its Python logic tests moved
+  to Rust. Parity against the Python planner on frozen live/active facts, whole
+  fleet: every keep/PRUNE decision and skip reason matched across plain,
+  retention+headroom, idle-window and refused-budget runs. Idle trees were
+  byte-identical; only trees with live writers drifted by <0.5 G between passes.
+  Validating it found that a non-finite float flag (`--retain-gib inf`) parsed as
+  *no* budget. The argument grammar now refuses it.
+- Next: `diskspace`/`hostdisk`, then `warmth`/`retention`, then `hostlock` (with
+  the maintenance interlock it owns), last. The `land`/`queue` audit is done with
+  the integrator, who has offered.
+
 ### 3. Remaining diagnostic and measurement workflows
 
 Confirmed Python implementations to split into reviewable batches:
