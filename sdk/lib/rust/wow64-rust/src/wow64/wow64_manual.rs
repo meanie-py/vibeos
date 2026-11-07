@@ -4634,7 +4634,10 @@ unsafe extern "C" fn Wow64Manual_NtUserGetClassInfo(a: *mut ULONG) -> NTSTATUS {
     let mut MenuName64: ULONGLONG = 0 as ULONGLONG;
     let mut Ret: ULONG = 0;
 
-    if !W32.is_null() {
+    // C: `if (!W32) return 0;`. The translation had the test inverted, so every
+    // WoW64 GetClassInfo(Ex) with a buffer (i.e. every real call) returned FALSE;
+    // user32:edit test_initialization then registered a garbage class and crashed.
+    if W32.is_null() {
         return 0 as NTSTATUS;
     }
     if !CN32.is_null() {

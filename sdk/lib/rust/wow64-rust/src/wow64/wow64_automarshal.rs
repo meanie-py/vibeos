@@ -150,6 +150,24 @@ unsafe fn WowAmOut_tagGUITHREADINFO(s: *const u8, d: *mut u8) {
     WowAmCpy(d.add(32), s.add(56), 16); // rcCaret
 }
 
+// struct tagMENUBARINFO: 32 -> 48 bytes
+unsafe fn WowAmIn_tagMENUBARINFO(s: *const u8, d: *mut u8) {
+    WowAmZero(d, 48);
+    WowAmSizeIn(d.add(0), s.add(0), 32, 48); // cbSize
+    WowAmCpy(d.add(4), s.add(4), 16); // rcBar
+    WowAmSx(d.add(24), s.add(20)); // hMenu
+    WowAmSx(d.add(32), s.add(24)); // hwndMenu
+    WowAmCpy(d.add(40), s.add(28), 4); // fBarFocused/fFocused
+}
+
+unsafe fn WowAmOut_tagMENUBARINFO(s: *const u8, d: *mut u8) {
+    WowAmSizeOut(d.add(0), s.add(0), 32, 48); // cbSize
+    WowAmCpy(d.add(4), s.add(4), 16); // rcBar
+    WowAmNx(d.add(20), s.add(24)); // hMenu
+    WowAmNx(d.add(24), s.add(32)); // hwndMenu
+    WowAmCpy(d.add(28), s.add(40), 4); // fBarFocused/fFocused
+}
+
 // struct tagTRACKMOUSEEVENT: 16 -> 24 bytes
 unsafe fn WowAmIn_tagTRACKMOUSEEVENT(s: *const u8, d: *mut u8) {
     WowAmZero(d, 24);
@@ -230,6 +248,22 @@ unsafe extern "C" fn WowAmThunk_NtUserGetGUIThreadInfo(a: *mut u32) -> i32 {
     r as u32 as i32
 }
 
+unsafe extern "C" fn WowAmThunk_NtUserGetMenuBarInfo(a: *mut u32) -> i32 {
+    unsafe extern "system" {
+        fn NtUserGetMenuBarInfo(_: u64, _: u64, _: u64, _: u64) -> u64;
+    }
+    let mut b3 = Aligned16([0u8; 48]);
+    let g3 = *a.add(3) as usize as *const u8;
+    if !g3.is_null() {
+        WowAmIn_tagMENUBARINFO(g3, b3.0.as_mut_ptr());
+    }
+    let r = NtUserGetMenuBarInfo(*a.add(0) as i32 as i64 as u64, *a.add(1) as i32 as i64 as u64, *a.add(2) as i32 as i64 as u64, if g3.is_null() { 0 } else { b3.0.as_mut_ptr() as u64 });
+    if !g3.is_null() {
+        WowAmOut_tagMENUBARINFO(b3.0.as_ptr(), *a.add(3) as usize as *mut u8);
+    }
+    r as u32 as i32
+}
+
 unsafe extern "C" fn WowAmThunk_NtUserTrackMouseEvent(a: *mut u32) -> i32 {
     unsafe extern "system" {
         fn NtUserTrackMouseEvent(_: u64) -> u64;
@@ -258,6 +292,9 @@ pub unsafe extern "C" fn Wow64AutoMarshalDispatch(Name: *const c_char, Arguments
     }
     if WowAmStrEq(Name, c"NtUserGetGUIThreadInfo") {
         return WowAmThunk_NtUserGetGUIThreadInfo(Arguments);
+    }
+    if WowAmStrEq(Name, c"NtUserGetMenuBarInfo") {
+        return WowAmThunk_NtUserGetMenuBarInfo(Arguments);
     }
     if WowAmStrEq(Name, c"NtUserTrackMouseEvent") {
         return WowAmThunk_NtUserTrackMouseEvent(Arguments);

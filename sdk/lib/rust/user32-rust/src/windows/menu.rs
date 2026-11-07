@@ -223,10 +223,7 @@ unsafe fn MENU_FindItem(hmenu: *mut HMENU, nPos: *mut UINT, wFlags: UINT) -> *mu
             return core::ptr::null_mut();
         }
         let mut pItem: PITEM = if !(*menu).rgItems.is_null() {
-            {
-                crate::wow64::wow64_unsupported("MENU/ITEM");
-                DesktopPtrToUser((*menu).rgItems as _) as PITEM
-            }
+            crate::wow64::menu_items(menu)
         } else {
             core::ptr::null_mut()
         };
@@ -236,14 +233,14 @@ unsafe fn MENU_FindItem(hmenu: *mut HMENU, nPos: *mut UINT, wFlags: UINT) -> *mu
         return pItem;
     } else {
         let mut item: PITEM = if !(*menu).rgItems.is_null() {
-            DesktopPtrToUser((*menu).rgItems as _) as PITEM
+            crate::wow64::menu_items(menu)
         } else {
             core::ptr::null_mut()
         };
         i = 0;
         while !item.is_null() && i < (*menu).cItems {
             if !(*item).spSubMenu.is_null() {
-                let pSubMenu: PMENU = DesktopPtrToUser((*item).spSubMenu as _) as PMENU;
+                let pSubMenu: PMENU = crate::wow64::desktop_menu_to_user((*item).spSubMenu as PVOID);
                 let mut hsubmenu: HMENU = UserHMGetHandle(pSubMenu as _) as HMENU;
                 let subitem = MENU_FindItem(core::ptr::addr_of_mut!(hsubmenu), nPos, wFlags);
                 if !subitem.is_null() {
@@ -297,7 +294,7 @@ unsafe fn IntGetMenuDefaultItemImpl(
 ) -> UINT {
     let mut i: UINT = 0;
     let mut Item: PITEM = if !(*Menu).rgItems.is_null() {
-        DesktopPtrToUser((*Menu).rgItems as *mut _) as PITEM
+        crate::wow64::menu_items(Menu)
     } else {
         core::ptr::null_mut()
     };
@@ -321,7 +318,7 @@ unsafe fn IntGetMenuDefaultItemImpl(
     if (gmdiFlags & GMDI_GOINTOPOPUPS) != 0 && !(*Item).spSubMenu.is_null() {
         *gismc += 1;
         let ret = IntGetMenuDefaultItemImpl(
-            DesktopPtrToUser((*Item).spSubMenu as *mut _) as PMENU,
+            crate::wow64::desktop_menu_to_user((*Item).spSubMenu as PVOID),
             fByPos,
             gmdiFlags,
             gismc,
@@ -458,7 +455,7 @@ unsafe fn GetMenuItemInfo_common(
     }
 
     if (*lpmii).fMask & MIIM_SUBMENU != 0 && !(*pItem).spSubMenu.is_null() {
-        let pSubMenu: PMENU = DesktopPtrToUser((*pItem).spSubMenu as PVOID) as PMENU;
+        let pSubMenu: PMENU = crate::wow64::desktop_menu_to_user((*pItem).spSubMenu as PVOID);
         let hSubMenu: HMENU = UserHMGetHandle(pSubMenu) as HMENU;
         (*lpmii).hSubMenu = hSubMenu;
     } else {
@@ -1234,7 +1231,7 @@ pub unsafe extern "system" fn GetMenuState(
     }
 
     if !(*pItem).spSubMenu.is_null() {
-        let pSubMenu: PMENU = DesktopPtrToUser((*pItem).spSubMenu as *mut _) as PMENU;
+        let pSubMenu: PMENU = crate::wow64::desktop_menu_to_user((*pItem).spSubMenu as PVOID);
         let hsubmenu: HMENU = UserHMGetHandle(pSubMenu as *mut _) as HMENU;
         Type |= MF_POPUP;
         if IsMenu(hsubmenu) == 0 {
@@ -1372,7 +1369,7 @@ pub unsafe extern "system" fn GetSubMenu(hMenu: HMENU, nPos: core::ffi::c_int) -
     }
 
     if !(*pItem).spSubMenu.is_null() {
-        let pSubMenu: PMENU = DesktopPtrToUser((*pItem).spSubMenu as *mut _) as PMENU;
+        let pSubMenu: PMENU = crate::wow64::desktop_menu_to_user((*pItem).spSubMenu as PVOID);
         let hsubmenu: HMENU = UserHMGetHandle(pSubMenu) as HMENU;
         if IsMenu(hsubmenu) != 0 {
             return hsubmenu;
