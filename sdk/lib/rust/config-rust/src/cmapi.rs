@@ -324,8 +324,16 @@ unsafe fn CmpSetValueKeyNew(
     {
         let kv = core::ptr::addr_of_mut!((*CellData).u.KeyValue);
         let name_ptr = core::ptr::addr_of_mut!((*kv).Name) as *mut u16;
-        let copied = CmpCopyName(Hive, name_ptr, ValueName);
-        core::ptr::write_unaligned(core::ptr::addr_of_mut!((*kv).NameLength), copied);
+        // C: __try — the name can come straight from the caller. On a fault the
+        // handler frees the new cell and returns the exception code.
+        match ntkrnl_sys::seh::try_except_all(|| CmpCopyName(Hive, name_ptr, ValueName)) {
+            Ok(copied) => core::ptr::write_unaligned(core::ptr::addr_of_mut!((*kv).NameLength), copied),
+            Err(code) => {
+                crate::dbg_print!(b"Invalid user data!\n\0");
+                HvFreeCell(Hive, ValueCell);
+                return code;
+            }
+        }
     }
 
     if (*CellData).u.KeyValue.NameLength < (*ValueName).Length {
@@ -816,7 +824,14 @@ pub unsafe extern "system" fn CmSetValueKey(
 
         SmallData = 0;
         if DataLength <= 4 && DataLength > 0 {
-            core::ptr::copy_nonoverlapping(Data as *const u8, core::ptr::addr_of_mut!(SmallData) as *mut u8, DataLength as usize);
+            // C: __try — the data can be the caller's; a fault fails the set.
+            let Small = core::ptr::addr_of_mut!(SmallData) as *mut u8;
+            if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+                core::ptr::copy_nonoverlapping(Data as *const u8, Small, DataLength as usize)
+            }) {
+                Status = code;
+                break 'Quickie;
+            }
         }
 
         if Found == 0 {
@@ -1068,18 +1083,29 @@ pub unsafe extern "system" fn CmQueryValueKey(
         }
 
         if Result == SearchSuccess {
-            Result = CmpQueryKeyValueData(
-                Kcb,
-                CachedValue,
-                ValueData,
-                ValueCached,
-                KeyValueInformationClass,
-                KeyValueInformation,
-                Length,
-                ResultLength,
-                core::ptr::addr_of_mut!(Status),
-            );
-            
+            // C: __try around the query — it writes the caller's buffer, which can
+            // go bad after NtQueryValueKey probed it. The handler only sets Status.
+            let StatusPtr = core::ptr::addr_of_mut!(Status);
+            Result = match ntkrnl_sys::seh::try_except_all(|| {
+                CmpQueryKeyValueData(
+                    Kcb,
+                    CachedValue,
+                    ValueData,
+                    ValueCached,
+                    KeyValueInformationClass,
+                    KeyValueInformation,
+                    Length,
+                    ResultLength,
+                    StatusPtr,
+                )
+            }) {
+                Ok(r) => r,
+                Err(code) => {
+                    Status = code;
+                    SearchSuccess
+                }
+            };
+
             if Result == SearchNeedExclusiveLock {
                 if CellToRelease != HCELL_NIL {
                     HvReleaseCell(Hive, CellToRelease);
@@ -1197,17 +1223,28 @@ pub unsafe extern "system" fn CmEnumerateValueKey(
             break 'DoAgain;
         }
 
-        Result = CmpQueryKeyValueData(
-            Kcb,
-            CachedValue,
-            ValueData,
-            ValueIsCached,
-            KeyValueInformationClass as u32,
-            KeyValueInformation,
-            Length,
-            ResultLength,
-            core::ptr::addr_of_mut!(Status),
-        );
+        // C: __try around the query — it writes the caller's buffer. The handler
+        // only sets Status and falls through to the cleanup.
+        let StatusPtr = core::ptr::addr_of_mut!(Status);
+        Result = match ntkrnl_sys::seh::try_except_all(|| {
+            CmpQueryKeyValueData(
+                Kcb,
+                CachedValue,
+                ValueData,
+                ValueIsCached,
+                KeyValueInformationClass as u32,
+                KeyValueInformation,
+                Length,
+                ResultLength,
+                StatusPtr,
+            )
+        }) {
+            Ok(r) => r,
+            Err(code) => {
+                Status = code;
+                SearchSuccess
+            }
+        };
 
         if Result == SearchNeedExclusiveLock {
             if CellToRelease2 != 0xFFFFFFFF {
@@ -1342,51 +1379,69 @@ unsafe fn CmpQueryNameInformation(
         CurrentKcb = (*CurrentKcb).ParentKcb;
     }
 
-    *ResultLength = core::mem::offset_of!(KEY_NAME_INFORMATION, Name) as ULONG + NeededLength;
-    if Length < (core::mem::offset_of!(KEY_NAME_INFORMATION, Name) as ULONG + core::mem::size_of::<ULONG>() as ULONG) {
-        return STATUS_BUFFER_TOO_SMALL;
-    }
-    if Length < *ResultLength {
-        (*KeyNameInfo).NameLength = NeededLength;
-        return STATUS_BUFFER_OVERFLOW;
-    }
-
-    /* Do the real copy: walk parents from leaf up, filling the buffer from
-     * tail toward head. C source: ntoskrnl/config/cmapi.c:1560-1601. */
-    (*KeyNameInfo).NameLength = 0;
-    CurrentKcb = Kcb;
-    let NameBuf = (*KeyNameInfo).Name.as_mut_ptr();
-    const WCHAR_SIZE: u32 = core::mem::size_of::<u16>() as u32;
-    const PATH_SEP: u16 = b'\\' as u16;
-
-    while !CurrentKcb.is_null() {
-        let NameLength: u32;
-        if (*(*CurrentKcb).NameBlock).Compressed != 0 {
-            NameLength = CmpCompressedNameSize(
-                (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.Name.as_ptr() as *mut u16,
-                (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.NameLength as u32,
-            ) as u32;
-            CmpCopyCompressedName(
-                NameBuf.add(((NeededLength - NameLength) / WCHAR_SIZE) as usize),
-                NameLength,
-                (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.Name.as_ptr() as *mut u16,
-                (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.NameLength as u32,
-            );
-        } else {
-            NameLength = (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.NameLength as u32;
-            core::ptr::copy_nonoverlapping(
-                (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.Name.as_ptr() as *const u8,
-                NameBuf.add(((NeededLength - NameLength) / WCHAR_SIZE) as usize) as *mut u8,
-                NameLength as usize,
-            );
+    // C: both touches of the caller's buffer sit in __try blocks whose handler
+    // returns the exception code; NtQueryKey probed the buffer, but it can still
+    // go bad before these writes.
+    let NeededPtr = core::ptr::addr_of_mut!(NeededLength);
+    match ntkrnl_sys::seh::try_except_all(|| -> Option<NTSTATUS> {
+        let NeededLength = *NeededPtr;
+        *ResultLength = core::mem::offset_of!(KEY_NAME_INFORMATION, Name) as ULONG + NeededLength;
+        if Length < (core::mem::offset_of!(KEY_NAME_INFORMATION, Name) as ULONG + core::mem::size_of::<ULONG>() as ULONG) {
+            return Some(STATUS_BUFFER_TOO_SMALL);
         }
+        if Length < *ResultLength {
+            (*KeyNameInfo).NameLength = NeededLength;
+            return Some(STATUS_BUFFER_OVERFLOW);
+        }
+        None
+    }) {
+        Ok(Some(early)) => return early,
+        Ok(None) => {}
+        Err(code) => return code,
+    }
 
-        NeededLength -= NameLength;
-        NeededLength -= WCHAR_SIZE;
-        *NameBuf.add((NeededLength / WCHAR_SIZE) as usize) = PATH_SEP;
-        (*KeyNameInfo).NameLength += NameLength + WCHAR_SIZE;
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        let mut NeededLength = *NeededPtr;
+        /* Do the real copy: walk parents from leaf up, filling the buffer from
+         * tail toward head. C source: ntoskrnl/config/cmapi.c:1560-1601. */
+        (*KeyNameInfo).NameLength = 0;
+        CurrentKcb = Kcb;
+        let NameBuf = (*KeyNameInfo).Name.as_mut_ptr();
+        const WCHAR_SIZE: u32 = core::mem::size_of::<u16>() as u32;
+        const PATH_SEP: u16 = b'\\' as u16;
 
-        CurrentKcb = (*CurrentKcb).ParentKcb;
+        while !CurrentKcb.is_null() {
+            let NameLength: u32;
+            if (*(*CurrentKcb).NameBlock).Compressed != 0 {
+                NameLength = CmpCompressedNameSize(
+                    (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.Name.as_ptr() as *mut u16,
+                    (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.NameLength as u32,
+                ) as u32;
+                CmpCopyCompressedName(
+                    NameBuf.add(((NeededLength - NameLength) / WCHAR_SIZE) as usize),
+                    NameLength,
+                    (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.Name.as_ptr() as *mut u16,
+                    (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.NameLength as u32,
+                );
+            } else {
+                NameLength = (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.NameLength as u32;
+                core::ptr::copy_nonoverlapping(
+                    (*(*CurrentKcb).NameBlock).__bindgen_anon_1.__bindgen_anon_1.Name.as_ptr() as *const u8,
+                    NameBuf.add(((NeededLength - NameLength) / WCHAR_SIZE) as usize) as *mut u8,
+                    NameLength as usize,
+                );
+            }
+
+            NeededLength -= NameLength;
+            NeededLength -= WCHAR_SIZE;
+            *NameBuf.add((NeededLength / WCHAR_SIZE) as usize) = PATH_SEP;
+            (*KeyNameInfo).NameLength += NameLength + WCHAR_SIZE;
+
+            CurrentKcb = (*CurrentKcb).ParentKcb;
+        }
+        *NeededPtr = NeededLength;
+    }) {
+        return code;
     }
 
     STATUS_SUCCESS
@@ -1404,8 +1459,6 @@ pub unsafe extern "system" fn CmQueryKey(
     let KeyInformation = opaque_ptr(KeyInformation);
     let ResultLength = opaque_ptr(ResultLength);
     let mut Status: i32;
-    let Hive: PHHIVE;
-    let Parent: PCM_KEY_NODE;
     let mut CellReferences: HV_TRACK_CELL_REF = core::mem::zeroed();
 
     CmpLockRegistry();
@@ -1428,49 +1481,57 @@ pub unsafe extern "system" fn CmQueryKey(
     const KEY_CACHED_INFORMATION_CLASS: u32 = 4;
     const KEY_FLAGS_INFORMATION_CLASS: u32 = 5;
 
-    Status = if KeyInformationClass == KEY_FULL_INFORMATION_CLASS
-        || KeyInformationClass == KEY_BASIC_INFORMATION_CLASS
-        || KeyInformationClass == KEY_NODE_INFORMATION_CLASS
-    {
-        Hive = (*Kcb).__bindgen_anon_2.KeyHash.KeyHive;
-        Parent = HvGetCell(Hive, (*Kcb).__bindgen_anon_2.KeyHash.KeyCell) as PCM_KEY_NODE;
+    // C: one __try around the whole class switch — every arm writes the caller's
+    // buffer. The handler takes the exception code and goes to Quickie.
+    let CellRefs = core::ptr::addr_of_mut!(CellReferences);
+    Status = match ntkrnl_sys::seh::try_except_all(|| {
+        if KeyInformationClass == KEY_FULL_INFORMATION_CLASS
+            || KeyInformationClass == KEY_BASIC_INFORMATION_CLASS
+            || KeyInformationClass == KEY_NODE_INFORMATION_CLASS
+        {
+            let Hive: PHHIVE = (*Kcb).__bindgen_anon_2.KeyHash.KeyHive;
+            let Parent: PCM_KEY_NODE = HvGetCell(Hive, (*Kcb).__bindgen_anon_2.KeyHash.KeyCell) as PCM_KEY_NODE;
 
-        if HvTrackCellRef(core::ptr::addr_of_mut!(CellReferences), Hive, (*Kcb).__bindgen_anon_2.KeyHash.KeyCell) == 0 {
-            STATUS_INSUFFICIENT_RESOURCES
-        } else {
-            CmpQueryKeyData(
-                Hive,
-                Parent,
-                KeyInformationClass,
-                KeyInformation,
+            if HvTrackCellRef(CellRefs, Hive, (*Kcb).__bindgen_anon_2.KeyHash.KeyCell) == 0 {
+                STATUS_INSUFFICIENT_RESOURCES
+            } else {
+                CmpQueryKeyData(
+                    Hive,
+                    Parent,
+                    KeyInformationClass,
+                    KeyInformation,
+                    Length,
+                    ResultLength,
+                )
+            }
+        } else if KeyInformationClass == KEY_CACHED_INFORMATION_CLASS {
+            CmpQueryKeyDataFromCache(
+                Kcb,
+                KeyInformation as PKEY_CACHED_INFORMATION,
                 Length,
                 ResultLength,
             )
+        } else if KeyInformationClass == KEY_FLAGS_INFORMATION_CLASS {
+            CmpQueryFlagsInformation(
+                Kcb,
+                KeyInformation as PKEY_USER_FLAGS_INFORMATION,
+                Length,
+                ResultLength,
+            )
+        } else if KeyInformationClass == KEY_NAME_INFORMATION_CLASS {
+            CmpQueryNameInformation(
+                Kcb,
+                KeyInformation as PKEY_NAME_INFORMATION,
+                Length,
+                ResultLength,
+            )
+        } else {
+            crate::dbg_print!(b"Unsupported class: %d!\n\0", KeyInformationClass);
+            STATUS_INVALID_INFO_CLASS
         }
-    } else if KeyInformationClass == KEY_CACHED_INFORMATION_CLASS {
-        CmpQueryKeyDataFromCache(
-            Kcb,
-            KeyInformation as PKEY_CACHED_INFORMATION,
-            Length,
-            ResultLength,
-        )
-    } else if KeyInformationClass == KEY_FLAGS_INFORMATION_CLASS {
-        CmpQueryFlagsInformation(
-            Kcb,
-            KeyInformation as PKEY_USER_FLAGS_INFORMATION,
-            Length,
-            ResultLength,
-        )
-    } else if KeyInformationClass == KEY_NAME_INFORMATION_CLASS {
-        CmpQueryNameInformation(
-            Kcb,
-            KeyInformation as PKEY_NAME_INFORMATION,
-            Length,
-            ResultLength,
-        )
-    } else {
-        crate::dbg_print!(b"Unsupported class: %d!\n\0", KeyInformationClass);
-        STATUS_INVALID_INFO_CLASS
+    }) {
+        Ok(st) => st,
+        Err(code) => code,
     };
 
     HvReleaseFreeCellRefArray(core::ptr::addr_of_mut!(CellReferences));
@@ -1527,14 +1588,13 @@ pub unsafe extern "system" fn CmEnumerateKey(
             break 'Quickie;
         }
 
-        Status = CmpQueryKeyData(
-            Hive,
-            Child,
-            KeyInformationClass,
-            KeyInformation,
-            Length,
-            ResultLength,
-        );
+        // C: __try around the query — it writes the caller's buffer.
+        Status = match ntkrnl_sys::seh::try_except_all(|| {
+            CmpQueryKeyData(Hive, Child, KeyInformationClass, KeyInformation, Length, ResultLength)
+        }) {
+            Ok(st) => st,
+            Err(code) => code,
+        };
 
         break 'Quickie;
     }

@@ -6,6 +6,13 @@ use crate::glue::*;
 use ntkrnl_sys::constants::*;
 use core::ffi::c_void;
 
+// cryptlib-rust's MD4 (NTAPI, as MD5* in crypt.rs); linked via engine:cryptlib_rust.
+extern "system" {
+    fn MD4Init(ctx: *mut MD4_CTX);
+    fn MD4Update(ctx: *mut MD4_CTX, buf: *const u8, len: u32);
+    fn MD4Final(ctx: *mut MD4_CTX);
+}
+
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut KsecRandomSeed: ULONG = 0x62b409a1 as ULONG;
@@ -100,9 +107,26 @@ pub unsafe extern "system" fn KsecGatherEntropyData(
     if !Teb.is_null() {
         Peb = (*Teb).ProcessEnvironmentBlock;
 
-        /* Skip environment hashing — with DUMMY_PSEH, faulting on
-         * invalid PEB/ProcessParameters/Environment pointers is fatal. */
-        let _ = Peb;
+        // C: hash the process environment under a catch-all __try. The PEB and
+        // its environment are user memory, and a system thread (ksecdd's own
+        // DriverEntry) may have no usable PEB at all; a fault just leaves the
+        // hash over whatever was read. This was skipped while nothing could
+        // catch the fault, which cost the entropy pool the environment hash.
+        MD4Init(core::ptr::addr_of_mut!(Md4Context));
+        let ctx = core::ptr::addr_of_mut!(Md4Context);
+        let _ = ntkrnl_sys::seh::try_except_all(|| {
+            let env = (*(*Peb).ProcessParameters).Environment as *const u16;
+            let mut p = env;
+            while core::ptr::read_volatile(p) != 0 {
+                while core::ptr::read_volatile(p) != 0 {
+                    p = p.add(1);
+                }
+                p = p.add(1);
+            }
+            MD4Update(ctx, env as *const u8, (p as usize - env as usize) as u32);
+        });
+        MD4Final(ctx);
+        (*EntropyData).EnvironmentHash = Md4Context.digest;
     }
 
     /* Read some machine specific hardware counters */
@@ -174,7 +198,6 @@ pub unsafe extern "system" fn KsecGatherEntropyData(
         return Status;
     }
 
-    let _ = Md4Context;
     let _ = String;
     return STATUS_SUCCESS;
 }

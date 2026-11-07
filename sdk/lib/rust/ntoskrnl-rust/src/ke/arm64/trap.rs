@@ -264,8 +264,11 @@ unsafe fn KiSvcDispatch(TrapFrame: PKTRAP_FRAME) {
     // DispatchCall:
     if TableIndex == 1 && ((*TrapFrame).Spsr & 0xF) == 0 {
         let Teb = (*Thread).Teb;
+        // The TEB is user memory: MmIsAddressValid then a read is a window another
+        // thread can close, so the read is caught too (a fault reads as 0, as the
+        // amd64 handler does).
         if !Teb.is_null() && MmIsAddressValid(GdiBatchCountOf(Teb as *const _) as PVOID) != 0 &&
-           *GdiBatchCountOf(Teb as *const _) != 0
+           ntkrnl_sys::seh::try_except_all(|| *GdiBatchCountOf(Teb as *const _)).unwrap_or(0) != 0
         {
             if let Some(GdiFlush) = KeGdiFlushUserBatch {
                 GdiFlush();
@@ -290,8 +293,28 @@ unsafe fn KiSvcDispatch(TrapFrame: PKTRAP_FRAME) {
         if StackArgs > 7 {
             StackArgs = 7;
         }
-        for i in 0..StackArgs as usize {
-            Args[8 + i] = *CallerStack.add(i);
+        // From user mode, SP is the caller's to choose. Do what amd64's
+        // KiSystemCallHandler does: refuse a range that reaches past the user
+        // probe address (or the args would be read from kernel memory), and copy
+        // under a catch-all so an unmapped user stack fails the call with the
+        // fault's code instead of bugchecking.
+        if ((*TrapFrame).Spsr & 0xF) == 0 {
+            let Last = (CallerStack as ULONG_PTR)
+                .wrapping_add(StackArgs as ULONG_PTR * core::mem::size_of::<ULONG_PTR>() as ULONG_PTR)
+                .wrapping_sub(1);
+            if Last < CallerStack as ULONG_PTR || Last >= MmUserProbeAddress {
+                (*TrapFrame).__bindgen_anon_3.X[0] = STATUS_ACCESS_VIOLATION as u64;
+                return;
+            }
+        }
+        let ArgsPtr = Args.as_mut_ptr();
+        if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+            for i in 0..StackArgs as usize {
+                *ArgsPtr.add(8 + i) = core::ptr::read_volatile(CallerStack.add(i));
+            }
+        }) {
+            (*TrapFrame).__bindgen_anon_3.X[0] = code as u64;
+            return;
         }
     }
 

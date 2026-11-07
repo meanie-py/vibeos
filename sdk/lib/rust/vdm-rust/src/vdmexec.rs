@@ -285,10 +285,15 @@ pub unsafe extern "system" fn VdmDispatchPageFault(TrapFrame: PKTRAP_FRAME) -> B
 
     ntkrnl_sys::ASSERT!((*TrapFrame).EFlags & EFLAGS_V86_MASK != 0);
 
-    (*VdmTib).EventInfo.Event = VdmMemAccess;
-    (*VdmTib).EventInfo.InstructionSize = 0;
-
-    VdmEndExecution(TrapFrame, VdmTib);
+    // C: __try — the VDM TIB is user memory; a fault leaves the exception
+    // unhandled (FALSE) with the code as Status.
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        (*VdmTib).EventInfo.Event = VdmMemAccess;
+        (*VdmTib).EventInfo.InstructionSize = 0;
+        VdmEndExecution(TrapFrame, VdmTib);
+    }) {
+        Status = code;
+    }
 
     if Status >= 0 { 1u8 } else { 0u8 }
 }

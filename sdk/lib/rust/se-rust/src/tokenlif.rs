@@ -315,11 +315,19 @@ pub unsafe extern "system" fn SepCreateToken(
         end_mem = (end_mem as ULONG_PTR + privileges_length as ULONG_PTR) as PVOID;
 
         if previous_mode != 0 {
-            core::ptr::copy_nonoverlapping(
-                privileges as *const u8,
-                (*access_token).Privileges as *mut u8,
-                (privilege_count * core::mem::size_of::<_LUID_AND_ATTRIBUTES>() as ULONG) as usize,
-            );
+            // C: __try — privileges is the caller's array; a fault fails the create
+            // (Quit dereferences the half-built token).
+            let dst = (*access_token).Privileges as *mut u8;
+            if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+                core::ptr::copy_nonoverlapping(
+                    privileges as *const u8,
+                    dst,
+                    (privilege_count * core::mem::size_of::<_LUID_AND_ATTRIBUTES>() as ULONG) as usize,
+                )
+            }) {
+                ObDereferenceObject(access_token as PVOID);
+                return code;
+            }
         } else {
             core::ptr::copy_nonoverlapping(
                 privileges as *const u8,

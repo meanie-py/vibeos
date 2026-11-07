@@ -765,39 +765,50 @@ unsafe fn ObQueryTypeInfo(
 ) -> NTSTATUS {
     let mut Status = STATUS_SUCCESS;
 
-    *ReturnLength += core::mem::size_of::<_OBJECT_TYPE_INFORMATION>() as ULONG
-        + (((*ObjectType).Name.Length as ULONG + core::mem::size_of::<u16>() as ULONG + core::mem::size_of::<usize>() as ULONG - 1)
-            & !(core::mem::size_of::<usize>() as ULONG - 1));
+    // C: one __try over everything, ReturnLength included (both are the caller's
+    // buffers), with ExSystemExceptionFilter: catch for a user-mode caller only.
+    if let Err(code) = ntkrnl_sys::seh::try_except(
+        &mut Status,
+        |st| {
+            *ReturnLength += core::mem::size_of::<_OBJECT_TYPE_INFORMATION>() as ULONG
+                + (((*ObjectType).Name.Length as ULONG + core::mem::size_of::<u16>() as ULONG + core::mem::size_of::<usize>() as ULONG - 1)
+                    & !(core::mem::size_of::<usize>() as ULONG - 1));
 
-    if Length < *ReturnLength {
-        return STATUS_INFO_LENGTH_MISMATCH;
+            if Length < *ReturnLength {
+                *st = STATUS_INFO_LENGTH_MISMATCH;
+                return;
+            }
+
+            (*ObjectTypeInfo).TotalNumberOfHandles = (*ObjectType).TotalNumberOfHandles;
+            (*ObjectTypeInfo).TotalNumberOfObjects = (*ObjectType).TotalNumberOfObjects;
+            (*ObjectTypeInfo).HighWaterNumberOfHandles = (*ObjectType).HighWaterNumberOfHandles;
+            (*ObjectTypeInfo).HighWaterNumberOfObjects = (*ObjectType).HighWaterNumberOfObjects;
+            (*ObjectTypeInfo).PoolType = (*ObjectType).TypeInfo.PoolType;
+            (*ObjectTypeInfo).DefaultNonPagedPoolCharge = (*ObjectType).TypeInfo.DefaultNonPagedPoolCharge;
+            (*ObjectTypeInfo).DefaultPagedPoolCharge = (*ObjectType).TypeInfo.DefaultPagedPoolCharge;
+            (*ObjectTypeInfo).ValidAccessMask = (*ObjectType).TypeInfo.ValidAccessMask;
+            (*ObjectTypeInfo).SecurityRequired = (*ObjectType).TypeInfo.SecurityRequired;
+            (*ObjectTypeInfo).InvalidAttributes = (*ObjectType).TypeInfo.InvalidAttributes;
+            (*ObjectTypeInfo).GenericMapping = (*ObjectType).TypeInfo.GenericMapping;
+            (*ObjectTypeInfo).MaintainHandleCount = (*ObjectType).TypeInfo.MaintainHandleCount;
+
+            let InfoBuffer = (ObjectTypeInfo.offset(1)) as PWSTR;
+            (*ObjectTypeInfo).TypeName.Buffer = InfoBuffer;
+            (*ObjectTypeInfo).TypeName.MaximumLength = (*ObjectType).Name.MaximumLength;
+            (*ObjectTypeInfo).TypeName.Length = (*ObjectType).Name.Length;
+
+            core::ptr::copy_nonoverlapping(
+                (*ObjectType).Name.Buffer as *const u8,
+                InfoBuffer as *mut u8,
+                (*ObjectType).Name.Length as usize,
+            );
+
+            *InfoBuffer.offset(((*ObjectType).Name.Length as usize / core::mem::size_of::<u16>()) as isize) = 0;
+        },
+        |_, _| ntkrnl_sys::ddk::ExSystemExceptionFilter(),
+    ) {
+        Status = code;
     }
-
-    (*ObjectTypeInfo).TotalNumberOfHandles = (*ObjectType).TotalNumberOfHandles;
-    (*ObjectTypeInfo).TotalNumberOfObjects = (*ObjectType).TotalNumberOfObjects;
-    (*ObjectTypeInfo).HighWaterNumberOfHandles = (*ObjectType).HighWaterNumberOfHandles;
-    (*ObjectTypeInfo).HighWaterNumberOfObjects = (*ObjectType).HighWaterNumberOfObjects;
-    (*ObjectTypeInfo).PoolType = (*ObjectType).TypeInfo.PoolType;
-    (*ObjectTypeInfo).DefaultNonPagedPoolCharge = (*ObjectType).TypeInfo.DefaultNonPagedPoolCharge;
-    (*ObjectTypeInfo).DefaultPagedPoolCharge = (*ObjectType).TypeInfo.DefaultPagedPoolCharge;
-    (*ObjectTypeInfo).ValidAccessMask = (*ObjectType).TypeInfo.ValidAccessMask;
-    (*ObjectTypeInfo).SecurityRequired = (*ObjectType).TypeInfo.SecurityRequired;
-    (*ObjectTypeInfo).InvalidAttributes = (*ObjectType).TypeInfo.InvalidAttributes;
-    (*ObjectTypeInfo).GenericMapping = (*ObjectType).TypeInfo.GenericMapping;
-    (*ObjectTypeInfo).MaintainHandleCount = (*ObjectType).TypeInfo.MaintainHandleCount;
-
-    let InfoBuffer = (ObjectTypeInfo.offset(1)) as PWSTR;
-    (*ObjectTypeInfo).TypeName.Buffer = InfoBuffer;
-    (*ObjectTypeInfo).TypeName.MaximumLength = (*ObjectType).Name.MaximumLength;
-    (*ObjectTypeInfo).TypeName.Length = (*ObjectType).Name.Length;
-
-    core::ptr::copy_nonoverlapping(
-        (*ObjectType).Name.Buffer as *const u8,
-        InfoBuffer as *mut u8,
-        (*ObjectType).Name.Length as usize,
-    );
-
-    *InfoBuffer.offset(((*ObjectType).Name.Length as usize / core::mem::size_of::<u16>()) as isize) = 0;
 
     Status
 }

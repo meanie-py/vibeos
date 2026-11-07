@@ -507,11 +507,11 @@ unsafe fn KiBugMsgRangeValid(p: *const u8, len: usize) -> bool {
 }
 
 unsafe fn KeGetBugMessageText(BugCheckCode: ULONG, OutputString: PANSI_STRING) -> BOOLEAN {
-    let mut i: ULONG;
-    let mut IdOffset: ULONG;
-    let mut MessageEntry: PMESSAGE_RESOURCE_ENTRY;
-    let mut BugCode: *mut i8;
-    let mut Length: USHORT;
+    let mut i: ULONG = 0;
+    let mut IdOffset: ULONG = 0;
+    let mut MessageEntry: PMESSAGE_RESOURCE_ENTRY = core::ptr::null_mut();
+    let mut BugCode: *mut i8 = core::ptr::null_mut();
+    let mut Length: USHORT = 0;
     let mut Result: BOOLEAN = 0u8;
 
     if KiBugCodeMessages.is_null() {
@@ -544,86 +544,93 @@ unsafe fn KeGetBugMessageText(BugCheckCode: ULONG, OutputString: PANSI_STRING) -
         return Result;
     }
 
-    MmMakeKernelResourceSectionWritable();
+    // C: the walk is one catch-all __try (handler: no text). The range checks
+    // above and below stay — they were added after measured nested 0x1Es —
+    // and the catch covers whatever still faults (an in-page error), so the
+    // crash reporter cannot crash.
+    ntkrnl_sys::seh::try_except_all(|| -> BOOLEAN {
+        MmMakeKernelResourceSectionWritable();
 
-    i = 0;
-    while i < (*KiBugCodeMessages).NumberOfBlocks {
-        // Blocks is a C flexible array member ([_MESSAGE_RESOURCE_BLOCK; 1] in bindgen).
-        // Use pointer arithmetic to avoid Rust bounds check on the [1]-length array.
-        let block = &*((*KiBugCodeMessages).Blocks.as_ptr().add(i as usize));
-        if (BugCheckCode >= block.LowId) && (BugCheckCode <= block.HighId) {
-            MessageEntry = ((KiBugCodeMessages as ULONG_PTR) + block.OffsetToEntries as ULONG_PTR) as PMESSAGE_RESOURCE_ENTRY;
-            IdOffset = BugCheckCode - block.LowId;
+        i = 0;
+        while i < (*KiBugCodeMessages).NumberOfBlocks {
+            // Blocks is a C flexible array member ([_MESSAGE_RESOURCE_BLOCK; 1] in bindgen).
+            // Use pointer arithmetic to avoid Rust bounds check on the [1]-length array.
+            let block = &*((*KiBugCodeMessages).Blocks.as_ptr().add(i as usize));
+            if (BugCheckCode >= block.LowId) && (BugCheckCode <= block.HighId) {
+                MessageEntry = ((KiBugCodeMessages as ULONG_PTR) + block.OffsetToEntries as ULONG_PTR) as PMESSAGE_RESOURCE_ENTRY;
+                IdOffset = BugCheckCode - block.LowId;
 
-            // Every hop trusts an in-section Length field. Validate BEFORE
-            // each dereference: a 2026-07-11 arm64 crash walked this into an
-            // unmapped level-1 region, and the nested 0x1E buried the real
-            // stop code (the harness then reports the mask, not the bug).
-            while IdOffset > 0 {
+                // Every hop trusts an in-section Length field. Validate BEFORE
+                // each dereference: a 2026-07-11 arm64 crash walked this into an
+                // unmapped level-1 region, and the nested 0x1E buried the real
+                // stop code (the harness then reports the mask, not the bug).
+                while IdOffset > 0 {
+                    if !KiBugMsgRangeValid(
+                        MessageEntry as *const u8,
+                        core::mem::size_of::<_MESSAGE_RESOURCE_ENTRY>(),
+                    ) {
+                        return Result;
+                    }
+                    let Hop = (*MessageEntry).Length as ULONG_PTR;
+                    if Hop == 0 {
+                        return Result;
+                    }
+                    MessageEntry = ((MessageEntry as ULONG_PTR) + Hop) as PMESSAGE_RESOURCE_ENTRY;
+                    IdOffset -= 1;
+                }
+
                 if !KiBugMsgRangeValid(
                     MessageEntry as *const u8,
                     core::mem::size_of::<_MESSAGE_RESOURCE_ENTRY>(),
                 ) {
                     return Result;
                 }
-                let Hop = (*MessageEntry).Length as ULONG_PTR;
-                if Hop == 0 {
+                let EntryLen = (*MessageEntry).Length as usize;
+                if EntryLen < core::mem::size_of::<_MESSAGE_RESOURCE_ENTRY>()
+                    || !KiBugMsgRangeValid(MessageEntry as *const u8, EntryLen)
+                {
                     return Result;
                 }
-                MessageEntry = ((MessageEntry as ULONG_PTR) + Hop) as PMESSAGE_RESOURCE_ENTRY;
-                IdOffset -= 1;
-            }
 
-            if !KiBugMsgRangeValid(
-                MessageEntry as *const u8,
-                core::mem::size_of::<_MESSAGE_RESOURCE_ENTRY>(),
-            ) {
-                return Result;
-            }
-            let EntryLen = (*MessageEntry).Length as usize;
-            if EntryLen < core::mem::size_of::<_MESSAGE_RESOURCE_ENTRY>()
-                || !KiBugMsgRangeValid(MessageEntry as *const u8, EntryLen)
-            {
-                return Result;
-            }
-
-            BugCode = (*MessageEntry).Text.as_ptr() as *mut i8;
-            // Bounded strlen: garbage text data must not scan past the
-            // validated entry span.
-            let TextCap = EntryLen - core::mem::offset_of!(_MESSAGE_RESOURCE_ENTRY, Text);
-            let mut TextLen: usize = 0;
-            while TextLen < TextCap && *BugCode.add(TextLen) != 0 {
-                TextLen += 1;
-            }
-            Length = TextLen as USHORT;
-
-            while (Length > 0) &&
-                  ((*BugCode.offset((Length - 1) as isize) == b'\n' as i8) ||
-                   (*BugCode.offset((Length - 1) as isize) == b'\r' as i8) ||
-                   (*BugCode.offset((Length - 1) as isize) == ANSI_NULL as i8))
-            {
-                if OutputString.is_null() {
-                    *BugCode.offset((Length - 1) as isize) = ANSI_NULL as i8;
+                BugCode = (*MessageEntry).Text.as_ptr() as *mut i8;
+                // Bounded strlen: garbage text data must not scan past the
+                // validated entry span.
+                let TextCap = EntryLen - core::mem::offset_of!(_MESSAGE_RESOURCE_ENTRY, Text);
+                let mut TextLen: usize = 0;
+                while TextLen < TextCap && *BugCode.add(TextLen) != 0 {
+                    TextLen += 1;
                 }
-                Length -= 1;
-            }
+                Length = TextLen as USHORT;
 
-            if !OutputString.is_null() {
-                (*OutputString).Buffer = BugCode;
-                (*OutputString).Length = Length;
-                (*OutputString).MaximumLength = Length;
-            } else {
-                InbvDisplayString(BugCode);
-                InbvDisplayString(b"\r\0".as_ptr() as *const i8);
-            }
+                while (Length > 0) &&
+                      ((*BugCode.offset((Length - 1) as isize) == b'\n' as i8) ||
+                       (*BugCode.offset((Length - 1) as isize) == b'\r' as i8) ||
+                       (*BugCode.offset((Length - 1) as isize) == ANSI_NULL as i8))
+                {
+                    if OutputString.is_null() {
+                        *BugCode.offset((Length - 1) as isize) = ANSI_NULL as i8;
+                    }
+                    Length -= 1;
+                }
 
-            Result = 1u8;
-            break;
+                if !OutputString.is_null() {
+                    (*OutputString).Buffer = BugCode;
+                    (*OutputString).Length = Length;
+                    (*OutputString).MaximumLength = Length;
+                } else {
+                    InbvDisplayString(BugCode);
+                    InbvDisplayString(b"\r\0".as_ptr() as *const i8);
+                }
+
+                Result = 1u8;
+                break;
+            }
+            i += 1;
         }
-        i += 1;
-    }
+        Result
+    })
+    .unwrap_or(0)
 
-    Result
 }
 
 unsafe fn KiDoBugCheckCallbacks() {
@@ -654,8 +661,15 @@ unsafe fn KiDoBugCheckCallbacks() {
 
         if ((*CurrentRecord).State == BufferInserted) && ((*CurrentRecord).Checksum == Checksum as _) {
             (*CurrentRecord).State = BufferStarted;
-            ((*CurrentRecord).CallbackRoutine.unwrap())((*CurrentRecord).Buffer, (*CurrentRecord).Length);
-            (*CurrentRecord).State = BufferFinished;
+            // C: __try around the driver's callback; a fault marks the buffer
+            // incomplete and the walk goes on to the next callback.
+            let Record = CurrentRecord;
+            (*CurrentRecord).State = match ntkrnl_sys::seh::try_except_all(|| {
+                ((*Record).CallbackRoutine.unwrap())((*Record).Buffer, (*Record).Length)
+            }) {
+                Ok(()) => BufferFinished,
+                Err(_) => BufferIncomplete,
+            };
         }
 
         LastEntry = NextEntry;
@@ -664,6 +678,10 @@ unsafe fn KiDoBugCheckCallbacks() {
 }
 
 unsafe fn KiBugCheckDebugBreak(StatusCode: ULONG) {
+    // nolint(dead_seh): the C halts in its handler when no debugger takes the
+    // breakpoint; this halts unconditionally after it. Same end state without a
+    // debugger, and no exception dispatch on the bugcheck path with the other
+    // processors frozen.
     loop {
         DbgBreakPointWithStatus(StatusCode);
         HalHaltSystem();

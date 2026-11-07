@@ -185,8 +185,7 @@
            *MemoryAllocated = 0;
            *MemoryAllocated = 1;
            *MsrValue = 0;
-           *MsrValue = __readmsr(Msr);
-           *MsrValue = read_msr(Msr);
+           *MsrValue = v;
            *New = 0u8;
            *New = 1u8;
            *NewDescriptor = Descriptor as PSECURITY_DESCRIPTOR;
@@ -457,6 +456,7 @@
            *ret = find_entry_by_name(
            *ret = find_first_entry(resdirptr, root, want_dir) as PVOID;
            *ret = resdirptr as PVOID;
+           *return_length = (*name).Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>();
            *return_length = module_file_name.Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>();
            *return_length = required;
            *section_object = new_section as PVOID;
