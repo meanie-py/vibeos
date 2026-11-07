@@ -3,8 +3,8 @@
 # ============================================================================
 # arbiter.c is translated to Rust (arbiter-rust, kept on disk per the never-delete
 # rule). libarbiter_rust.a replaces the C object; the `arbiter` static lib target
-# is preserved (ntoskrnl + pcix.sys link it by name) as a stub TU that PUBLIC-links
-# the Rust archive (usbdex-style cohab). arbiter-rust depends on ntkrnl-sys
+# is preserved (ntoskrnl + pcix.sys link it by name) as an INTERFACE library over
+# the Rust archive (`cargo-cell --interface`). arbiter-rust depends on ntkrnl-sys
 # (ARBITER_INSTANCE etc live in the ddk bindgen). Built for all 3 arches.
 add_definitions(-D_NTSYSTEM_)
 
@@ -40,18 +40,18 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_arbiter DEPENDS ${ARBITER_RUST_LIB})
 
+# arbiter is all Rust: an INTERFACE library over its Rust archive, so consumers link
+# it directly and no placeholder archive is built (`tools/codegen cargo-cell --interface`).
 # Upstream's arbiter engine (#9484): bodies replaced by Rust, kept on disk.
-list(APPEND SOURCE
-    # arbiter.c
-    # entry.c
-    # handler.c
-    # ordering.c
-    # range.c
-    # transaction.c
-    rust_cohab_stub.c)
-add_library(arbiter STATIC ${SOURCE})
+# arbiter.c
+# entry.c
+# handler.c
+# ordering.c
+# range.c
+# transaction.c
+add_library(arbiter INTERFACE)
 # upstream publishes arbiter.h through the target (its consumers, e.g. pcix, dropped
 # their own include_directories line in the same commit). Mirror that here.
 target_include_directories(arbiter INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 add_dependencies(arbiter bugcodes xdk rust_arbiter)
-target_link_libraries(arbiter PUBLIC ${ARBITER_RUST_LIB})
+target_link_libraries(arbiter INTERFACE ${ARBITER_RUST_LIB})

@@ -9,16 +9,13 @@ include_directories(
     ../afd/include
     ${REACTOS_SOURCE_DIR}/sdk/include/reactos/drivers)
 
-list(APPEND SOURCE
-    # tdi.c  # replaced by Rust (sdk/lib/rust/tdihelpers-rust/src/tdihelpers/tdi.rs)
-    # tdiconn.c  # replaced by Rust (sdk/lib/rust/tdihelpers-rust/src/tdihelpers/tdiconn.rs)
-    rust_cohab_stub.c
-    )
+# tdi.c  # replaced by Rust (sdk/lib/rust/tdihelpers-rust/src/tdihelpers/tdi.rs)
+# tdiconn.c  # replaced by Rust (sdk/lib/rust/tdihelpers-rust/src/tdihelpers/tdiconn.rs)
 
 # Every translation unit is Rust now (tdihelpers-rust, `rustconv port`); the C stays on
-# disk. The target keeps a stub TU and links the Rust archive.
+# disk. The target is an INTERFACE library over the Rust archive (`cargo-cell --interface`).
 rust_staticlib_variant(tdihelpers_rust tdihelpers-rust "" TRUE)
-add_library(tdihelpers STATIC ${SOURCE})
+add_library(tdihelpers INTERFACE)
 add_dependencies(tdihelpers rust_tdihelpers_rust)
-target_link_libraries(tdihelpers ${tdihelpers_rust_LIB})
+target_link_libraries(tdihelpers INTERFACE ${tdihelpers_rust_LIB})
 add_dependencies(tdihelpers bugcodes xdk psdk)
