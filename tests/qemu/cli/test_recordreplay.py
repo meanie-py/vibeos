@@ -1395,3 +1395,33 @@ def test_record_preserves_guest_crash_trace_but_fails_requested_diagnostic_error
     assert json.loads((trace / "manifest.json").read_text())["finalised"]
     assert json.loads((trace / "record-diagnostics.json").read_text())["ok"] is (not sampler_error)
     assert (trace / "record-serial.log").read_text().startswith("*** BUGCHECK")
+
+
+@pytest.mark.parametrize("arch", ["i386-uefi", "amd64-uefi", "amd64-bios"])
+def test_record_preserves_parser_arch_alias_at_the_boot_boundary(tmp_path, monkeypatch, arch):
+    from types import SimpleNamespace
+
+    from . import rrcmd
+
+    calls = []
+
+    def boot(arguments):
+        calls.append(arguments)
+        raise RuntimeError("controlled boot boundary")
+
+    monkeypatch.setattr(rrcmd, "_execute", boot)
+    args = SimpleNamespace(
+        root=str(tmp_path),
+        name="alias",
+        arch=arch,
+        payload="none",
+        smp=1,
+        shift=rr.DEFAULT_ICOUNT_SHIFT,
+        build=False,
+        timeout=60,
+    )
+    with pytest.raises(RuntimeError, match="controlled boot boundary"):
+        rrcmd.cmd_record(args, tmp_path)
+    assert len(calls) == 1
+    command = calls[0]["argv"]
+    assert command[command.index("--arch") + 1] == arch

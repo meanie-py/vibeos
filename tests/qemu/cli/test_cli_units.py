@@ -5672,7 +5672,8 @@ def test_gate_failed_build_skips_that_arch_but_others_still_smoke(tmp_path, monk
     assert any(k.startswith("amd64:") for k in fake.calls), fake.calls
 
 
-def test_gate_refuses_to_stamp_a_tree_it_did_not_gate(tmp_path, monkeypatch, tiny_repo):
+@pytest.mark.parametrize("gated_tree", ["0" * 40, ""])
+def test_gate_refuses_to_stamp_a_tree_it_did_not_gate(tmp_path, monkeypatch, tiny_repo, gated_tree):
     """The stamp is a claim about what was VALIDATED. It used to read HEAD's tree at stamp
     time, so a commit landed during a 20-minute gate got a credential for content nothing
     had built or booted."""
@@ -5686,7 +5687,7 @@ def test_gate_refuses_to_stamp_a_tree_it_did_not_gate(tmp_path, monkeypatch, tin
 
     def moved_tree(repo):
         # gate start reports one tree; the repo's real HEAD tree is a different one
-        return ("0" * 40, False)
+        return (gated_tree, False)
 
     monkeypatch.setattr(gate_mod, "_tree_state", moved_tree)
     rc = gate_mod.gate(_gate_args(no_net=True, no_lint=False), tiny_repo)

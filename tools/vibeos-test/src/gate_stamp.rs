@@ -38,6 +38,13 @@ pub fn write(repo: &Path, a: &Value) -> Result<Value> {
     }
     let tree = git(repo, &["rev-parse", "HEAD^{tree}"])?;
     if let Some(gated) = a["gated"].as_array() {
+        if gated
+            .first()
+            .and_then(Value::as_str)
+            .is_none_or(str::is_empty)
+        {
+            return Ok(warn("start tree unavailable — no push stamp", "gate green but its starting tree identity is unavailable — nothing can certify that this checkout is what ran. Re-gate after git identity is readable."));
+        }
         if gated.get(1) == Some(&json!(true)) {
             return Ok(warn("dirty at start — no push stamp","gate green but the tree was DIRTY when the gate STARTED — what ran is not what any commit hashes to. Commit first, then gate."));
         }

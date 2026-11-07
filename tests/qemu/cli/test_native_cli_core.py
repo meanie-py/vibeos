@@ -86,9 +86,17 @@ def test_external_adapter_distinguishes_failed_launch_from_program_exit_127(tmp_
     assert result.returncode == 127
 
 
-def test_out_of_range_timeout_refuses_without_panicking(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "timeout, message",
+    [
+        (1e30, "exceeds supported duration"),
+        (-1, "finite and nonnegative"),
+        ("invalid", "must be numeric"),
+    ],
+)
+def test_invalid_timeout_refuses_without_panicking(tmp_path, monkeypatch, timeout, message):
     monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
     run = artifacts.Run("fixture", "all")
-    with pytest.raises(NativeError, match="timeout exceeds supported duration"):
-        run.run([sys.executable, "-c", "raise SystemExit(0)"], timeout=1e30)
+    with pytest.raises(NativeError, match=message):
+        run.run([sys.executable, "-c", "raise SystemExit(0)"], timeout=timeout)
     assert run.run([sys.executable, "-c", "print('still alive')"]).stdout.strip() == "still alive"

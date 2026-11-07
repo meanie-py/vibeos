@@ -109,7 +109,10 @@ impl Context<'_> {
     }
     fn record(&mut self) -> Result<i32> {
         let arch = s(&self.options, "arch", "").to_owned();
-        if !["i386", "amd64", "arm64"].contains(&arch.as_str()) {
+        if !matches!(
+            arch.as_str(),
+            "i386" | "i386-uefi" | "amd64" | "amd64-uefi" | "amd64-bios" | "arm64"
+        ) {
             return Err("record requires an explicit valid architecture".into());
         }
         let payload = s(&self.options, "payload", "kmtest").to_owned();

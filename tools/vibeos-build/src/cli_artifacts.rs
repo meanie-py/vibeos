@@ -642,6 +642,9 @@ pub fn command(a: &Value) -> Result<Value> {
             cmd.env(k, v.as_str().ok_or("invalid command environment")?);
         }
     }
+    if !a["timeout"].is_null() && !a["timeout"].is_number() {
+        return Err("command timeout must be numeric".into());
+    }
     let timeout = a["timeout"]
         .as_f64()
         .map(|s| {
