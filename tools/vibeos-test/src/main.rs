@@ -45,7 +45,8 @@ impl Host for Runtime<'_> {
             op if op.starts_with("bench_") => {
                 vibeos_test::bench::dispatch(self.root, &request, self)
             }
-            "diagnostic_hmp"
+            "rr_execute"
+            | "diagnostic_hmp"
             | "diagnostic_begin_sample"
             | "diagnostic_end_sample"
             | "rr_cli_alive" => Callback {

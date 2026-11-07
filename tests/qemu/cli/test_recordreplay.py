@@ -526,7 +526,11 @@ def test_a_short_replay_is_not_reported_as_a_pass(tmp_path, monkeypatch):
         gdb = False
 
     # the boot itself is not under test; monkeypatch so the stub cannot leak
-    monkeypatch.setattr(rrcmd, "cmd_replay", lambda args, repo: 0)
+    rr.write_manifest(trace, arch="arm64", argv=[], media={}, boot_cmd=["true"], finalised=True)
+    (trace / "replay.bin").write_bytes(b"x")
+    (trace / "media").mkdir()
+    rr.snapshot_pristine(trace)
+    monkeypatch.setattr(rrcmd, "_execute", lambda arguments: 0)
     assert rrcmd.cmd_verify(_Args(), tmp_path) != 0
 
 
@@ -989,17 +993,54 @@ def test_a_trace_from_before_the_finalisation_fix_is_refused(tmp_path):
     assert all(rr.FATAL_MARKER in w for w in problems if "TRUNCATED" in w)
 
 
-def test_record_stamps_finalised_only_after_the_trace_settles(tmp_path):
-    """The flag must be written by the same code path that waits, or it becomes a
-    label rather than evidence."""
-    import inspect
+def test_record_stamps_finalised_only_after_the_trace_settles(tmp_path, monkeypatch):
+    """A native command must leave the flag unset while a late writer is active."""
+    import threading
+    from types import SimpleNamespace
 
     from . import rrcmd
 
-    src = inspect.getsource(rrcmd.cmd_record)
-    wait_at = src.index("await_trace_quiescence")
-    stamp_at = src.index("finalised = True")
-    assert wait_at < stamp_at, "the flag is set before the wait — it would mean nothing"
+    trace = tmp_path / "controlled-finalisation"
+    observed = []
+    writers = []
+
+    def boot(arguments):
+        (trace / "media").mkdir()
+        rr.write_manifest(trace, arch="arm64", argv=[], media={})
+        (trace / "replay.bin").write_bytes(b"initial")
+
+        def late_write():
+            time.sleep(0.2)
+            observed.append(
+                json.loads((trace / "manifest.json").read_text()).get("finalised", False)
+            )
+            with (trace / "replay.bin").open("ab") as output:
+                output.write(b"late")
+
+        writer = threading.Thread(target=late_write)
+        writer.start()
+        writers.append(writer)
+        return 0
+
+    monkeypatch.setattr(rrcmd, "_execute", boot)
+    monkeypatch.delenv("VIBEOS_QEMU_PC_SAMPLE", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_RR_SAMPLE", raising=False)
+    args = SimpleNamespace(
+        root=str(tmp_path),
+        name=trace.name,
+        arch="arm64",
+        payload="none",
+        smp=1,
+        shift=rr.DEFAULT_ICOUNT_SHIFT,
+        build=False,
+        timeout=60,
+    )
+    assert rrcmd.cmd_record(args, tmp_path) == 0
+    for writer in writers:
+        writer.join()
+    assert observed == [False]
+    assert (trace / "replay.bin").read_bytes() == b"initiallate"
+    assert json.loads((trace / "manifest.json").read_text())["finalised"]
 
 
 def test_a_non_default_shift_warns_that_the_trace_will_not_replay(tmp_path, monkeypatch, capsys):
@@ -1017,7 +1058,6 @@ def test_a_non_default_shift_warns_that_the_trace_will_not_replay(tmp_path, monk
         "run",
         lambda *a, **k: type("R", (), {"returncode": 0, "stdout": "", "stderr": ""})(),
     )
-    monkeypatch.setattr(rrcmd, "await_trace_quiescence", lambda t: 0)
 
     class _Args:
         arch = "arm64"
@@ -1351,7 +1391,6 @@ def test_record_preserves_guest_crash_trace_but_fails_requested_diagnostic_error
         return SimpleNamespace(returncode=1, stdout="", stderr="")
 
     monkeypatch.setattr(rrcmd.subprocess, "run", boot)
-    monkeypatch.setattr(rrcmd, "await_trace_quiescence", lambda trace: 22)
     args = SimpleNamespace(
         root=str(tmp_path),
         name=trace.name,

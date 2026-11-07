@@ -47,8 +47,10 @@ through a FIFO in 1 MiB chunks and preserve Python's BLAKE2b-8/zlib artifact for
 
 `rr_cli` owns trace lookup, retention, transcript normalization/comparison,
 quiescence, and progress monitoring. A quiescence timeout refuses finalization.
-The remaining `rrcmd.py` command composition and report presentation are the next
-control-plane chunk; they still use the same guarded smoke/conformance entry points.
+`rr_commands` now owns all nine RR command workflows and report presentation,
+including record finalisation, replay refusal, serial verification, divergence
+coverage and retention. `rrcmd.py` adapts arguments and execution/display I/O;
+commands still use the same guarded smoke/conformance entry points.
 
 Native tests run with:
 
@@ -180,8 +182,8 @@ its verdict was preserved at
 
 Follow-up work: arm the first replay checkpoint before it can be passed, and
 make pause-time I/O checkpoints comparable without weakening the inconclusive
-classification. The Python RR command coordinator remains the next orchestration
-port; native worker and comparison ownership is already in `vibeos-test`.
+classification. The RR coordinator has since moved into `rr_commands`; shared CLI
+reporting/execution and build/gate orchestration are the next control-plane chunks.
 
 Host-job process-contract fixtures now own a private process group through an
 EOF guard. Unwinding or killing the test owner closes the ownership pipe; the

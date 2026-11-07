@@ -383,6 +383,7 @@ pub fn dispatch(request: &Value, host: &mut dyn Host) -> Result<Value> {
     let op = text(request, "op")?.trim_start_matches("rr_cli_");
     let trace = Path::new(a["trace_dir"].as_str().unwrap_or(""));
     Ok(match op {
+        "command" => crate::rr_commands::dispatch(a, host)?,
         "resolve_trace" => json!(resolve_trace(
             Path::new(text(a, "trace_root")?),
             text(a, "raw")?

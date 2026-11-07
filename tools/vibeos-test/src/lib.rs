@@ -45,3 +45,4 @@ pub mod pc_sample;
 pub mod record_replay;
 pub mod replay_sample;
 pub mod rr_cli;
+pub mod rr_commands;
