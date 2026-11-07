@@ -7,10 +7,11 @@ yet landed-and-closed. When a lane closes, its doc moves **out** of here: to
 closing lane go to `docs/product/vibeos-roadmap.md` (Check-back ledger / Known-bugs
 registry), never left to rot in an archived doc.
 
-**Open lanes as of 2026-09-20** (`git worktree list` is the live source of truth):
+**Lane index** (`git worktree list` is the live source of truth; each plan carries its own status date):
 
 | Lane (worktree/branch) | Doc |
 |---|---|
+| `lint-rs` (tooling rewrites) | [tooling-rust-plan.md](tooling-rust-plan.md) — completed native ownership, RR correctness follow-ups, remaining CLI policy/workflows, native entry point, then rustconv |
 | `native-batch` (control-plane) | [control-plane-native.md](control-plane-native.md) — plain-C base tools/apps on Haiku *(cargo-drive waves 1–12 and the artifact store since 10-12; owed list in the doc; translation Wave J awaits approval)* |
 | `fex-arm` | [fex-bringup-plan.md](fex-bringup-plan.md), [wow64-plan.md](wow64-plan.md) |
 | `conformance-ratchet` | [../conformance-ratchet-quest.md](../conformance-ratchet-quest.md) *(paused 2026-10-12; resume from its last progress-log entry)* |
