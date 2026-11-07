@@ -13,8 +13,9 @@ the macro's own definition:
 The field is bindgen's `Option<fn>`; calling it is `unwrap_unchecked`, as crate-repair's
 `option_fn_call` does -- calling a NULL entry point is undefined in the C too.
 
-Only a one-parameter macro whose whole body is a member chain pasted with its parameter
-(`base->a.b.prefix_##f`, optionally parenthesised) qualifies; anything else is left alone.
+Only a one-parameter macro whose whole body is a member chain ending in its parameter --
+pasted (`base->a.b.prefix_##f`) or as the last member (`base->a.f`), optionally
+parenthesised -- qualifies; anything else is left alone.
 """
 
 from __future__ import annotations
@@ -36,12 +37,18 @@ def member_paste_macros(defs: dict[str, CMacro]) -> dict[str, str]:
         while body.startswith("(") and body.endswith(")"):
             body = body[1:-1].strip()
         p = re.escape(m.params[0])
-        hit = re.fullmatch(rf"([A-Za-z_]\w*)((?:\s*(?:->|\.)\s*[A-Za-z_]\w*)+)\s*##\s*{p}", body)
-        if hit is None:
+        # `base->a.prefix_##f` pastes onto the last member; `base->a.f` (wined3d_vk.h's
+        # `VK_CALL(f) (vk_info->vk_ops.f)`) makes the argument the last member itself.
+        hit = re.fullmatch(
+            rf"([A-Za-z_]\w*)((?:\s*(?:->|\.)\s*[A-Za-z_]\w*)*?)\s*(?:##|(->|\.))\s*{p}", body
+        )
+        if hit is None or (hit.group(3) is None and not hit.group(2)):
             continue
         expr = hit.group(1)
         for op, seg in _CHAIN.findall(hit.group(2)):
             expr = f"(*{expr}).{seg}" if op == "->" else f"{expr}.{seg}"
+        if hit.group(3) is not None:
+            expr = f"(*{expr})." if hit.group(3) == "->" else f"{expr}."
         out[name] = expr
     return out
 

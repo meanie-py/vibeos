@@ -12,18 +12,20 @@ def test_only_a_member_chain_pasted_with_the_parameter_qualifies():
     got = member_paste_macros(
         _defs(
             GL_EXTCALL=(("f",), "(gl_info->gl_ops.ext.p_##f)"),
+            VK_CALL=(("f",), "(vk_info->vk_ops.f)"),
+            BARE=(("f",), "(f)"),
             KEY=(("a",), "KEY_##a"),  # no member chain: nothing to say about the receiver
             TWO=(("a", "b"), "x->a##b"),
             OBJ=(None, "x->y"),
         )
     )
-    assert got == {"GL_EXTCALL": "(*gl_info).gl_ops.ext.p_"}
+    assert got == {"GL_EXTCALL": "(*gl_info).gl_ops.ext.p_", "VK_CALL": "(*vk_info).vk_ops."}
 
 
 def test_call_sites_expand_to_the_entry_point_field():
     m = {"GL_EXTCALL": "(*gl_info).gl_ops.ext.p_"}
     text, n, odd = expand_member_paste_calls(
-        'GL_EXTCALL(glActiveTexture(GL_TEXTURE0 + i));\nif GL_EXTCALL!(glFoo).is_some() {}\n'
+        "GL_EXTCALL(glActiveTexture(GL_TEXTURE0 + i));\nif GL_EXTCALL!(glFoo).is_some() {}\n"
         'GL_EXTCALL(glBar(f(1), "("));\nGL_EXTCALL(a + b);\n',
         m,
     )
