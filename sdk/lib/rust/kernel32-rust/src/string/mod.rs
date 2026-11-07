@@ -10,5 +10,6 @@ pub mod digitmap;
 pub mod fold;
 pub mod lstring;
 pub mod sortkey;
+pub mod ntsort;
 pub mod japanese;
 pub mod format_msg;

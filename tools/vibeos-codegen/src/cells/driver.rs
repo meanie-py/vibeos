@@ -1,5 +1,5 @@
 //! Cargo-cell conversion orchestration. Planning is read-only; execution is injected.
-use super::{graph, local, proof, read, recipes, render, rewrite, Cell, Error, Result, ARCHES};
+use super::{fncall, graph, local, proof, read, recipes, render, rewrite, Cell, Error, Result, ARCHES};
 use regex::Regex;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -14,6 +14,12 @@ pub struct ApplyPlan {
 }
 /// Plan an entire wave in memory; shared workspace and CMake files compose sequentially.
 pub fn plan_apply(root: &Path, cells: &[Cell]) -> Result<ApplyPlan> {
+    plan_cells(root, cells, true)
+}
+/// `whole_wave` is false for --convert's one-target dry runs: a function-made target's
+/// fellow callers are in the same wave but not in that dry run, so their count is checked
+/// only when the wave is planned as a whole.
+fn plan_cells(root: &Path, cells: &[Cell], whole_wave: bool) -> Result<ApplyPlan> {
     let rust = root.join("sdk/lib/rust");
     local(root, &rust)?;
     let ws = rust.join("Cargo.toml");
@@ -23,6 +29,8 @@ pub fn plan_apply(root: &Path, cells: &[Cell]) -> Result<ApplyPlan> {
     let mut report = Vec::new();
     let mut names = BTreeSet::new();
     let member_re = Regex::new(r"members = \[\n").unwrap();
+    // Function-made cells: one template per function file, and the cells that agree on it.
+    let mut templates: BTreeMap<PathBuf, (String, fncall::Expansion, Vec<String>)> = BTreeMap::new();
     for cell in cells {
         let name = cell.crate_name();
         if name.contains('/') || name.contains('\\') || name == "." || name == ".." {
@@ -56,7 +64,44 @@ pub fn plan_apply(root: &Path, cells: &[Cell]) -> Result<ApplyPlan> {
             Some(x) => x.clone(),
             None => read(&cmake)?,
         };
-        let new_cmake = rewrite::rewrite_text(&cmake, &text, cell)?;
+        let new_cmake = match fncall::expand(&cmake, &cell.target)? {
+            Some(exp) => {
+                // Every caller spells its sources from the tree root, so they agree on
+                // one template whichever directory holds the C.
+                let mut spelled = cell.clone();
+                spelled.foreign = cell
+                    .c_shims
+                    .iter()
+                    .filter(|c| !cell.generated.contains(c))
+                    .cloned()
+                    .collect();
+                let conv = rewrite::rewrite_text(&cmake, &exp.text, &spelled)?;
+                let t = fncall::template(root, &exp, &conv)?;
+                let file = exp.function_file.clone();
+                let slot = templates
+                    .entry(file.clone())
+                    .or_insert_with(|| (t.clone(), exp.clone(), Vec::new()));
+                if slot.0 != t {
+                    let first = slot
+                        .0
+                        .lines()
+                        .zip(t.lines())
+                        .find(|(a, b)| a != b)
+                        .map(|(a, b)| format!("`{a}` vs `{b}`"))
+                        .unwrap_or_else(|| "one is longer".into());
+                    return Err(Error::new(format!(
+                        "{}: {}() converts differently for {} and {} ({first}); the function cannot stay one function",
+                        file.strip_prefix(root).unwrap_or(&file).display(),
+                        exp.function,
+                        slot.2.first().map(String::as_str).unwrap_or("?"),
+                        cell.target
+                    )));
+                }
+                slot.2.push(cell.target.clone());
+                None
+            }
+            None => Some(rewrite::rewrite_text(&cmake, &text, cell)?),
+        };
         let rs = render::build_rs(cell)?;
         let toml = render::cargo_toml(cell)?;
         let main = render::main_rs(cell)?;
@@ -75,9 +120,26 @@ pub fn plan_apply(root: &Path, cells: &[Cell]) -> Result<ApplyPlan> {
         edits.insert(dest.join("Cargo.toml"), toml);
         edits.insert(dest.join("build.rs"), rs);
         edits.insert(dest.join("src/main.rs"), main);
-        edits.insert(cmake.clone(), new_cmake);
+        if let Some(new_cmake) = new_cmake {
+            edits.insert(cmake.clone(), new_cmake);
+            report.push(cmake);
+        }
         created_crates.push(dest.clone());
-        report.extend([dest, ws.clone(), cmake]);
+        report.extend([dest, ws.clone()]);
+    }
+    for (file, (t, exp, targets)) in &templates {
+        let callers = function_calls(root, &exp.function)?;
+        if whole_wave && callers > targets.len() {
+            return Err(Error::new(format!(
+                "{}: {}() is called {callers} times but only {} of its targets are in this wave ({}); converting the function converts every caller, so convert them together",
+                file.strip_prefix(root).unwrap_or(file).display(),
+                exp.function,
+                targets.len(),
+                targets.join(" ")
+            )));
+        }
+        edits.insert(file.clone(), fncall::apply_template(exp, t)?);
+        report.push(file.clone());
     }
     if !cells.is_empty() {
         edits.insert(ws, workspace);
@@ -87,6 +149,23 @@ pub fn plan_apply(root: &Path, cells: &[Cell]) -> Result<ApplyPlan> {
         created_crates,
         report,
     })
+}
+/// How many times any tracked CMakeLists calls `function`.
+fn function_calls(root: &Path, function: &str) -> Result<usize> {
+    let out = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["ls-files", "*CMakeLists.txt"])
+        .output()?;
+    let mut n = 0;
+    for rel in String::from_utf8_lossy(&out.stdout).lines() {
+        let text = read(&root.join(rel))?;
+        n += graph::statements(&text)
+            .iter()
+            .filter(|s| s.2 == function)
+            .count();
+    }
+    Ok(n)
 }
 /// Survey amd64 placeholder-stub edges; each model refusal remains a row.
 pub fn survey(root: &Path) -> Result<Vec<(String, String)>> {
@@ -144,7 +223,7 @@ pub fn prepare_convert(root: &Path, targets: &[String], baseline: &Path) -> Resu
     let mut refused = Vec::new();
     for t in targets {
         match graph::model(root, t) {
-            Ok(cell) => match plan_apply(root, std::slice::from_ref(&cell)) {
+            Ok(cell) => match plan_cells(root, std::slice::from_ref(&cell), false) {
                 Ok(_) => cells.push(cell),
                 Err(e) => refused.push(e.to_string()),
             },

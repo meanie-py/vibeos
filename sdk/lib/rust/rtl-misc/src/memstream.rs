@@ -530,7 +530,23 @@ pub unsafe extern "system" fn RtlCopyMappedMemory(
     Source: *const VOID,
     Size: SIZE_T,
 ) -> NTSTATUS {
-    let Status: NTSTATUS = STATUS_SUCCESS;
-    core::ptr::copy_nonoverlapping(Source as *const u8, Destination as *mut u8, Size as usize);
-    Status
+    // A mapped view can fail to page in (the file's media went away); that
+    // one fault becomes the return status. Any other exception is the
+    // caller's bug and keeps propagating, as the C's filter has it.
+    const STATUS_IN_PAGE_ERROR: NTSTATUS = 0xC0000006u32 as NTSTATUS;
+    let copied = ntkrnl_sys::seh::try_except(
+        &mut (),
+        |_| core::ptr::copy_nonoverlapping(Source as *const u8, Destination as *mut u8, Size as usize),
+        |_, pointers| {
+            if ntkrnl_sys::seh::exception_code(pointers) == STATUS_IN_PAGE_ERROR {
+                ntkrnl_sys::seh::EXCEPTION_EXECUTE_HANDLER
+            } else {
+                ntkrnl_sys::seh::EXCEPTION_CONTINUE_SEARCH
+            }
+        },
+    );
+    match copied {
+        Ok(()) => STATUS_SUCCESS,
+        Err(code) => code,
+    }
 }

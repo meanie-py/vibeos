@@ -69,6 +69,14 @@ HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0C0330","Cl
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#PNP0D10","Service",0x00000000,"usbxhci"
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#PNP0D10","ClassGUID",0x00000000,"{36FC9E60-C465-11CF-8056-444553540000}"
 
+; Display controllers: sysfb claims the one whose BAR holds the firmware framebuffer and
+; fails start on any other (drivers/video/sysfb, docs/engineering/sysfb-pnp-design.md).
+; Compatible-ID matches, so a vendor INF installed later outranks them.
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0300","Service",0x00000000,"sysfb"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0300","ClassGUID",0x00000000,"{4D36E968-E325-11CE-BFC1-08002BE10318}"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0380","Service",0x00000000,"sysfb"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_0380","ClassGUID",0x00000000,"{4D36E968-E325-11CE-BFC1-08002BE10318}"
+
 ; The Raspberry Pi 4's GENET Ethernet, published by the arm64 HAL from ACPI.
 ; netstack drives it directly (no NDIS miniport); see netstack-rust/src/pnp.rs.
 HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\ACPI#BCM6E4E","Service",0x00000000,"netstack"
@@ -1888,9 +1896,11 @@ HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Type",0x00010001,0x00000001
 
 ; Linear-framebuffer video device driver: the UEFI GOP framebuffer, or the VBE one the
-; BIOS loader hands over in the same form. Boot start so that \Device\Video0 exists
-; before win32k's InitVideo runs (an installed system gets Start=1 from setup, still
-; ahead of win32k). ErrorControl=0 (ignore) keeps a missing framebuffer non-fatal.
+; BIOS loader hands over in the same form. Boot start so that DriverEntry reports and
+; starts its root instance, and with it \Device\Video0, before win32k's InitVideo runs
+; (an installed system gets Start=1 from setup, still ahead of win32k).
+; The PCI display controller binds to it through the CriticalDeviceDatabase entries
+; above. ErrorControl=0 (ignore) keeps a missing framebuffer non-fatal.
 HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","ErrorControl",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","Group",0x00000000,"Boot Bus Extender"
 HKLM,"SYSTEM\CurrentControlSet\Services\sysfb","ImagePath",0x00020000,"system32\drivers\sysfb.sys"

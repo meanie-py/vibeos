@@ -439,18 +439,17 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
     Flags: ULONG,
 ) -> ULONG {
     // RtlWalkFrameChain(NULL, ...) must return 0. The C reference caught the NULL
-    // output-store fault with _SEH2_EXCEPT{ i = 0 }; that __except is dead here, so a NULL
-    // Callers would AV on the `*Callers.offset(i) = ...` store below. In user mode native
-    // SEH works, but this fn is called WITHOUT a caller __try (kmtest RtlStack.c:32), so the
-    // AV self-crashes the process (exit 128, the RtlStack UM quarantine). Guard it explicitly.
+    // output-store fault with _SEH2_EXCEPT{ i = 0 }, and the walk below is caught the same
+    // way now; the explicit check stays because it costs nothing and kmtest RtlStack.c:32
+    // calls this with no __try of its own.
     if Callers.is_null() {
         return 0;
     }
     let mut Stack: ULONG_PTR;
-    let mut NewStack: ULONG_PTR;
+    let mut NewStack: ULONG_PTR = 0;
     let mut StackBegin: ULONG_PTR;
     let mut StackEnd: ULONG_PTR = 0;
-    let mut Eip: ULONG_PTR; // the return address, pointer-wide (a ULONG truncated it on 64-bit)
+    let mut Eip: ULONG_PTR = 0; // the return address, pointer-wide (a ULONG truncated it on 64-bit)
     let Result: BOOLEAN;
     let mut StopSearch: BOOLEAN = 0u8;
     let mut i: ULONG = 0;
@@ -498,7 +497,9 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
         }
     }
 
-    {
+    // Use a SEH block for maximum protection: a frame link that points at
+    // unmapped memory ends the walk with no frames, as the C has it.
+    let walked = ntdll_sys::seh::try_except_all(|| {
         i = 0;
         while i < Count {
             if (Stack >= StackEnd)
@@ -529,7 +530,9 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
             Stack = NewStack;
             i += 1;
         }
-    }
+        i
+    });
+    i = walked.unwrap_or(0);
 
     i
 }
@@ -678,7 +681,12 @@ pub unsafe extern "system" fn RtlImageNtHeaderEx(
         *OutHeaders = core::ptr::null_mut();
     }
 
-    Status = RtlpImageNtHeaderEx(Flags, Base, Size, OutHeaders);
+    // The image is the caller's mapping, possibly truncated or garbage: a fault
+    // while parsing it is the call's status.
+    Status = match ntdll_sys::seh::try_except_all(|| RtlpImageNtHeaderEx(Flags, Base, Size, OutHeaders)) {
+        Ok(status) => status,
+        Err(code) => code,
+    };
 
     return Status;
 }
@@ -1401,15 +1409,18 @@ pub unsafe extern "system" fn RtlGetTickCount() -> ULONG {
         + UInt32x32To64((high << 8) & 0xFFFF_FFFF, mult)) as ULONG
 }
 
-/// `RtlpSafeCopyMemory` — SEH-guarded copy. Under DUMMY_PSEH the `_SEH2_EXCEPT`
-/// handler is dead code, so this reduces to a copy that always succeeds.
-/// `NTSTATUS NTAPI` in the C → `extern "system"`.
+/// `RtlpSafeCopyMemory` — SEH-guarded copy: a fault on either side is returned
+/// as the status instead of raised into the caller.
 #[no_mangle]
 pub unsafe extern "system" fn RtlpSafeCopyMemory(
     Destination: PVOID,
     Source: *const c_void,
     Length: SIZE_T,
 ) -> NTSTATUS {
-    memcpy(Destination as *mut u8, Source as *const u8, Length as usize);
-    STATUS_SUCCESS
+    match ntdll_sys::seh::try_except_all(|| {
+        memcpy(Destination as *mut u8, Source as *const u8, Length as usize);
+    }) {
+        Ok(()) => STATUS_SUCCESS,
+        Err(code) => code,
+    }
 }

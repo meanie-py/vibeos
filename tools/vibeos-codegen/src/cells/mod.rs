@@ -97,6 +97,7 @@ pub fn compile_db(root: &Path, arch: &str) -> Result<Vec<serde_json::Value>> {
 
 pub mod pe;
 
+pub mod fncall;
 pub mod graph;
 pub mod interface;
 pub mod mutate;

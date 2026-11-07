@@ -155,8 +155,20 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             && !a.is_empty()
             && (target || (cmd == "add_cd_file" && a.contains(&cell.target)));
         let mut keep_comment = false;
+        // A TRANSFERRED statement is re-emitted whole, comments included, so its inner
+        // comments are not dead sources to carry: d3dx9's `# math.c wants M_PI` inside
+        // its compile definitions was carried as one and doubled.
+        let mut moved = false;
         if target && cmd == "add_importlibs" {
-            usage.extend(a.iter().skip(1).map(|x| format!("lib{x}")));
+            // `${_forward_targets}` is a list: `lib${_forward_targets}` would prefix only its
+            // first element (d3dx10's forwarders). Import libs carry no usage requirements
+            // for a list to lose, so skip variables as target_link_libraries does.
+            usage.extend(
+                a.iter()
+                    .skip(1)
+                    .filter(|x| !x.starts_with("${"))
+                    .map(|x| format!("lib{x}")),
+            );
         }
         if target && cmd == "target_link_libraries" {
             usage.extend(
@@ -199,6 +211,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         }
         if target && list_has(&cmd.to_lowercase(), "TRANSFERRED") {
             drop = true;
+            moved = true;
             let h = home.as_deref().unwrap_or(&[]);
             if !paths[idx].starts_with(h) {
                 return Err(Error::new(format!(
@@ -320,7 +333,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         keep.push_str(&gap);
         if !drop {
             keep.push_str(&text[*s..*e]);
-        } else {
+        } else if !moved {
             carried.extend(
                 text[*s..*e]
                     .lines()

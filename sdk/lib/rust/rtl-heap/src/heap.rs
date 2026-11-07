@@ -1419,12 +1419,20 @@ pub unsafe extern "system" fn RtlCreateHeap(
 
     /* Capture parameters */
     if !Parameters.is_null() {
-        if (*Parameters).Length as usize == core::mem::size_of::<RTL_HEAP_PARAMETERS>() {
-            RtlCopyMemory(
-                core::ptr::addr_of_mut!(SafeParams) as PVOID,
-                Parameters as PVOID,
-                core::mem::size_of::<RTL_HEAP_PARAMETERS>() as SIZE_T,
-            );
+        // The caller's structure may be bad memory: a fault fails the create.
+        let safe = core::ptr::addr_of_mut!(SafeParams);
+        let params = Parameters;
+        let captured = ntkrnl_sys::seh::try_except_all(|| {
+            if (*params).Length as usize == core::mem::size_of::<RTL_HEAP_PARAMETERS>() {
+                RtlCopyMemory(
+                    safe as PVOID,
+                    params as PVOID,
+                    core::mem::size_of::<RTL_HEAP_PARAMETERS>() as SIZE_T,
+                );
+            }
+        });
+        if captured.is_err() {
+            return core::ptr::null_mut();
         }
     }
 
@@ -2167,11 +2175,15 @@ pub unsafe extern "system" fn RtlFreeHeap(
     /* Get pointer to the heap entry */
     HeapEntry = (Ptr as PHEAP_ENTRY).offset(-1);
 
-    /* Protect with SEH in case the pointer is not valid */
-    if ((*HeapEntry).Flags & HEAP_ENTRY_BUSY as UCHAR) == 0
-        || ((Ptr as ULONG_PTR) & 0x7) != 0
-        || (*HeapEntry).SegmentOffset >= HEAP_SEGMENTS as UCHAR
-    {
+    /* Protect with SEH in case the pointer is not valid: a wild pointer is
+     * STATUS_INVALID_PARAMETER, not an access violation in the caller. */
+    let entry = HeapEntry;
+    let valid = ntkrnl_sys::seh::try_except_all(|| {
+        ((*entry).Flags & HEAP_ENTRY_BUSY as UCHAR) != 0
+            && ((Ptr as ULONG_PTR) & 0x7) == 0
+            && (*entry).SegmentOffset < HEAP_SEGMENTS as UCHAR
+    });
+    if valid != Ok(true) {
         /* This is an invalid block */
         RtlSetLastWin32ErrorAndNtStatusFromNtStatus(STATUS_INVALID_PARAMETER);
         return 0u8;
@@ -3700,8 +3712,10 @@ pub unsafe extern "system" fn RtlMultipleFreeHeap(
             continue;
         }
 
-        if RtlFreeHeap(HeapHandle, Flags, *Array.offset(Index as isize)) == 0u8 {
-            /* ERROR_INVALID_PARAMETER */
+        let p = *Array.offset(Index as isize);
+        let freed = ntkrnl_sys::seh::try_except_all(|| RtlFreeHeap(HeapHandle, Flags, p));
+        if freed != Ok(1u8) {
+            /* ERROR_INVALID_PARAMETER, a failed free or a fault inside one */
             RtlSetLastWin32ErrorAndNtStatusFromNtStatus(STATUS_INVALID_PARAMETER);
             break;
         }

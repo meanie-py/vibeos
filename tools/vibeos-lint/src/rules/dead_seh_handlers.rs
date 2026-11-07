@@ -304,6 +304,19 @@ mod tests {
     }
 
     #[test]
+    fn a_generic_helper_with_a_closure_bound_counts() {
+        // rtl's validators share `valid_or_fault<F: FnOnce() -> u8>`; the `->` inside
+        // its generics used to hide the helper from the function parser.
+        let helper = "unsafe fn or_fault<F: FnOnce() -> NTSTATUS>(f: F) -> NTSTATUS {\n    \
+            ntkrnl_sys::seh::try_except_all(f).unwrap_or_else(|c| c)\n}\n";
+        let body = "pub unsafe extern \"system\" fn IoLockIt(Mdl: PMDL) -> NTSTATUS {\n    \
+            or_fault(|| { MmProbeAndLockPages(Mdl, 1, 0); 0 })\n}\n";
+        assert!(run(C, &format!("{helper}{body}")).is_empty());
+        let nested = helper.replace("<F: FnOnce() -> NTSTATUS>", "<F: FnOnce() -> Option<NTSTATUS>>");
+        assert!(run(C, &format!("{nested}{body}")).is_empty(), "one level of nesting");
+    }
+
+    #[test]
     fn a_catch_in_a_same_file_helper_counts() {
         let helper = "unsafe fn lock_caught(Mdl: PMDL) -> Result<(), NTSTATUS> {\n    \
             ntkrnl_sys::seh::try_except(&mut (), |_| MmProbeAndLockPages(Mdl, 1, 0), |_, _| 1)\n}\n\
