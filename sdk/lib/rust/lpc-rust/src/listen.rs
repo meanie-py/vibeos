@@ -27,7 +27,16 @@ pub unsafe extern "system" fn NtListenPort(
             connect_message,
         );
 
-        if status != STATUS_SUCCESS || LpcpGetMessageType(connect_message) == _LPC_TYPE_LPC_CONNECTION_REQUEST as u16 {
+        // C: __try around the message-type read — connect_message is the caller's
+        // buffer; a fault ends the wait with the exception code.
+        let done = ntkrnl_sys::seh::try_except_all(|| {
+            status != STATUS_SUCCESS
+                || LpcpGetMessageType(connect_message) == _LPC_TYPE_LPC_CONNECTION_REQUEST as u16
+        });
+        if let Err(code) = done {
+            status = code;
+        }
+        if done != Ok(false) {
             break;
         }
     }

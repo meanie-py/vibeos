@@ -114,6 +114,11 @@ pub unsafe extern "system" fn FsRtlCancelNotify(
     _device_object: PDEVICE_OBJECT,
     irp: PIRP,
 ) {
+    // nolint(dead_seh): the C's handler catches its PsChargePoolQuota and
+    // POOL_RAISE allocation; this port uses the status-returning forms instead
+    // (notify_charge_paged_quota, plain ExAllocatePoolWithTag + NULL check), and
+    // every buffer it copies is kernel memory (SystemBuffer, an MDL's system
+    // mapping, or pool).
     let _device_object = opaque_ptr(_device_object);
     let irp = opaque_ptr(irp);
     let mut buffer: PVOID;
@@ -308,7 +313,12 @@ unsafe fn FsRtlNotifyCompleteIrp(
         core::ptr::copy_nonoverlapping((*notify_change).AllocatedBuffer as *const u8, buffer as *mut u8, data_length as usize);
     } else if ((*stack).Control & SL_PENDING_RETURNED) == 0 {
         buffer = (*irp).UserBuffer;
-        core::ptr::copy_nonoverlapping((*notify_change).AllocatedBuffer as *const u8, buffer as *mut u8, data_length as usize);
+        // C: the copy is in __try with an empty handler — UserBuffer is the
+        // caller's memory, and a fault there just leaves it unfilled.
+        let src = (*notify_change).AllocatedBuffer as *const u8;
+        let _ = ntkrnl_sys::seh::try_except_all(|| {
+            core::ptr::copy_nonoverlapping(src, buffer as *mut u8, data_length as usize)
+        });
     } else {
         (*irp).Flags |= IRP_BUFFERED_IO | IRP_DEALLOCATE_BUFFER | IRP_SYNCHRONOUS_PAGING_IO;
         (*irp).AssociatedIrp.SystemBuffer = (*notify_change).AllocatedBuffer;
@@ -405,6 +415,8 @@ unsafe fn FsRtlNotifyUpdateBuffer(
     is_unicode: BOOLEAN,
     data_length: ULONG,
 ) -> BOOLEAN {
+    // nolint(dead_seh): OutputBuffer is always kernel memory (SystemBuffer, an
+    // MDL's system mapping, or our pool buffer — see FsRtlNotifyFilterReportChange).
     let mut succeed = 1u8;
     let mut already_written: ULONG = 0;
     let mut result_size: ULONG = 0;
@@ -696,6 +708,9 @@ pub unsafe extern "system" fn FsRtlNotifyFilterReportChange(
     target_context: PVOID,
     filter_context: PVOID,
 ) {
+    // nolint(dead_seh): as FsRtlCancelNotify — the raising charge/allocation are
+    // status-returning here, and the output buffer is SystemBuffer, an MDL's
+    // system mapping, or pool, never the caller's user memory.
     let notify_list = opaque_ptr(notify_list);
     let target_context = opaque_ptr(target_context);
     let filter_context = opaque_ptr(filter_context);

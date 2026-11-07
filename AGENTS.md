@@ -496,7 +496,10 @@ class the next cannot see. Rationale and measurements: field manual **§9.117**,
    width-dependent casts are applied only on cross-target agreement. It refuses rustc's
    `.try_into().unwrap()` suggestion by design — that turns C's silent truncation into a panic
    in a live service.
-4. Cohab flip → `vibeos-cli gate`.
+4. Cohab flip → link it as a cargo cell (`tools/codegen cargo-cell --convert <target>`) →
+   `vibeos-cli gate`. **New ports aim for cargo from the start**: cmake is a legacy link path,
+   and `cmake_linked_modules` (`vibeos-cli check`) fails on any module cmake links that is not
+   already in its baseline. Drop a line from that baseline when you convert one.
 5. **Grade the logic smoke never reaches** with `rustconv difftest-contract` — shipping Rust vs
    the genuine C on the host, mutants required, $0 (whole Wine TUs via
    `"c_host_profile": "reactos-amd64"`). It found shipping bugs in 4 of its first 10 new

@@ -496,11 +496,14 @@ unsafe fn FillEntries(
             Status = STATUS_UNSUCCESSFUL;
         }
     } else {
-        RtlCopyMemory(
-            (*Irp).UserBuffer,
-            DataStart as *const _ as *mut _,
-            NumberOfEntries * core::mem::size_of::<KEYBOARD_INPUT_DATA>(),
-        );
+        // C: __try — Irp->UserBuffer is the reader's memory (METHOD_NEITHER);
+        // the handler returns the exception code.
+        let Dest = (*Irp).UserBuffer;
+        if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+            RtlCopyMemory(Dest, DataStart as *const _ as *mut _, NumberOfEntries * core::mem::size_of::<KEYBOARD_INPUT_DATA>())
+        }) {
+            Status = code;
+        }
     }
 
     Status

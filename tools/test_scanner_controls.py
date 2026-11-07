@@ -3707,6 +3707,12 @@ UNCOVERED: dict[str, str] = {
         "of libraries that became Rust crates (scrnsave, dmilib, udmihelp, blrtl, aux_klib, nt) "
         "are reported `no cell links this library` until the writer removes them."
     ),
+    "cmake_linked_modules": (
+        "it lists the link edges of the configured build-<arch>/build.ninja, which a fixture "
+        "directory does not have. Driven on a real tree when it landed: the 168 i386 modules "
+        "cmake links (241 on amd64/arm64) are the baseline, and the rustconv `_c` oracle "
+        "builds are excluded."
+    ),
     "scan_cmake_linked_rust": (
         "it models modules from build-amd64/build.ninja and the tree's own CMakeLists through "
         "cargo_cell_gen.survey, so a fixture directory has nothing to survey. The labelling is "

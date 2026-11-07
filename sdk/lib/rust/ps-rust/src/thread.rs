@@ -270,6 +270,10 @@ unsafe extern "system" fn PspSystemThreadStartup(StartRoutine: PKSTART_ROUTINE, 
     let terminated = (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.Terminated();
     let dead = (*(Thread as *mut _ETHREAD)).__bindgen_anon_7.__bindgen_anon_1.DeadThread();
 
+    // nolint(dead_seh): the C's filter is PspUnhandledExceptionInSystemThread,
+    // which bugchecks 0x7E from inside the filter; it never handles anything.
+    // Left uncaught, the exception bugchecks 0x1E instead — the same outcome,
+    // on the path whose faulting PC the triage tooling already symbolicates.
     if terminated == 0 && dead == 0 {
         (StartRoutine.unwrap())(StartContext);
     }

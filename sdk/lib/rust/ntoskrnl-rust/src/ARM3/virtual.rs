@@ -1227,6 +1227,32 @@ pub unsafe extern "system" fn MiQueryAddressState(
     State
 }
 
+/// MiQueryMemoryBasicInformation's store of the answer. The C does it inside
+/// `__try` for a user-mode caller: NtQueryVirtualMemory probed the buffer, but it
+/// can go bad before this write, and the handler returns the exception code.
+unsafe fn mbi_store(
+    MemoryInformation: PVOID,
+    ReturnLength: *mut SIZE_T,
+    MemoryInfo: &MEMORY_BASIC_INFORMATION,
+    PreviousMode: KPROCESSOR_MODE,
+    Status: NTSTATUS,
+) -> NTSTATUS {
+    let store = || {
+        *(MemoryInformation as *mut MEMORY_BASIC_INFORMATION) = *MemoryInfo;
+        if !ReturnLength.is_null() {
+            *ReturnLength = core::mem::size_of::<MEMORY_BASIC_INFORMATION>();
+        }
+    };
+    if PreviousMode != KernelMode as KPROCESSOR_MODE {
+        if let Err(code) = ntkrnl_sys::seh::try_except_all(store) {
+            return code;
+        }
+    } else {
+        store();
+    }
+    Status
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn MiQueryMemoryBasicInformation(
     ProcessHandle: HANDLE,
@@ -1271,8 +1297,7 @@ pub unsafe extern "system" fn MiQueryMemoryBasicInformation(
             MemoryInfo.RegionSize = ((MM_HIGHEST_USER_ADDRESS + 1) - (Address as ULONG_PTR)) as ntkrnl_sys::ddk::SIZE_T;
         }
 
-        *(MemoryInformation as *mut MEMORY_BASIC_INFORMATION) = MemoryInfo;
-        if !ReturnLength.is_null() { *ReturnLength = core::mem::size_of::<MEMORY_BASIC_INFORMATION>(); }
+        Status = mbi_store(MemoryInformation, ReturnLength, &MemoryInfo, PreviousMode, Status);
 
         return Status;
     }
@@ -1354,8 +1379,7 @@ pub unsafe extern "system" fn MiQueryMemoryBasicInformation(
         MemoryInfo.Protect = 0;
         MemoryInfo.Type = 0;
 
-        *(MemoryInformation as *mut MEMORY_BASIC_INFORMATION) = MemoryInfo;
-        if !ReturnLength.is_null() { *ReturnLength = core::mem::size_of::<MEMORY_BASIC_INFORMATION>(); }
+        Status = mbi_store(MemoryInformation, ReturnLength, &MemoryInfo, PreviousMode, Status);
 
         return Status;
     }
@@ -1422,8 +1446,7 @@ pub unsafe extern "system" fn MiQueryMemoryBasicInformation(
         ObDereferenceObject(TargetProcess as PVOID);
     }
 
-    *(MemoryInformation as *mut MEMORY_BASIC_INFORMATION) = MemoryInfo;
-    if !ReturnLength.is_null() { *ReturnLength = core::mem::size_of::<MEMORY_BASIC_INFORMATION>(); }
+    Status = mbi_store(MemoryInformation, ReturnLength, &MemoryInfo, PreviousMode, Status);
 
     Status
 }
@@ -3734,10 +3757,19 @@ unsafe fn MiLockVirtualMemory(
         return Status;
     }
 
+    // C: the touch loop is inside __try. The range is the caller's, and a
+    // PAGE_NOACCESS or guard page in it faults here; the handler returns the code
+    // (after Cleanup unlocks the address space) instead of bugchecking.
     CurrentVa = *BaseAddress;
-    while (CurrentVa as ULONG_PTR) < (EndAddress as ULONG_PTR) {
-        core::ptr::read_volatile(CurrentVa as *const u8);
-        CurrentVa = ((CurrentVa as ULONG_PTR) + PAGE_SIZE) as PVOID;
+    let Va = core::ptr::addr_of_mut!(CurrentVa);
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        while (*Va as ULONG_PTR) < (EndAddress as ULONG_PTR) {
+            core::ptr::read_volatile(*Va as *const u8);
+            *Va = ((*Va as ULONG_PTR) + PAGE_SIZE) as PVOID;
+        }
+    }) {
+        MmUnlockAddressSpace(AddressSpace as PVOID);
+        return code;
     }
 
     Status = STATUS_SUCCESS;

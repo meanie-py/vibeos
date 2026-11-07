@@ -852,15 +852,29 @@ unsafe fn KeInitThread_impl(
     (*Thread).KernelStackResident = 1;
 
     Status = STATUS_SUCCESS;
-    let result = 'seh: {
+    // C: __try around the context setup ("to avoid crashes due to user mode");
+    // a fault takes the failure path below. Only a user thread (a Context to
+    // copy) can fault here, so only that case goes through the catch. A hand-built
+    // thread must NOT: its stack is the one we are running on, and the context
+    // setup writes its first frames there — the trampoline's extra frames moved
+    // live return addresses into that range and hung arm64 at boot.
+    let init = || {
         KiInitializeContextThread(
             Thread,
             core::mem::transmute::<*mut core::ffi::c_void, ntkrnl_sys::ddk::PKSYSTEM_ROUTINE>(SystemRoutine),
             core::mem::transmute::<*mut core::ffi::c_void, ntkrnl_sys::ddk::PKSTART_ROUTINE>(StartRoutine),
             StartContext,
             Context as ntkrnl_sys::ddk::PCONTEXT,
-        );
+        )
+    };
+    let result = if Context.is_null() {
+        init();
         STATUS_SUCCESS
+    } else {
+        match ntkrnl_sys::seh::try_except_all(init) {
+            Ok(()) => STATUS_SUCCESS,
+            Err(code) => code,
+        }
     };
 
     if result < 0 {

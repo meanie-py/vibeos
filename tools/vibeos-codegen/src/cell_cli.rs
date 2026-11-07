@@ -255,8 +255,9 @@ fn run_inner(raw: Vec<String>) -> Result<u8> {
                 mode = a;
                 dir = Some(PathBuf::from(args.next().ok_or("operation requires DIR")?));
             }
-            "--apply" | "--survey" | "--convert" | "--own-rc" | "--own-c" | "--clib-recipes"
-            | "--clib-recipes-check" | "--c-template" | "--rc-template" | "--remap" => {
+            "--interface" | "--interface-apply" | "--apply" | "--survey" | "--convert" | "--own-rc"
+            | "--own-c" | "--clib-recipes" | "--clib-recipes-check" | "--cmake-linked" | "--c-template"
+            | "--rc-template" | "--remap" => {
                 if !mode.is_empty() {
                     return Err("choose one Cargo cell operation".into());
                 }
@@ -355,6 +356,14 @@ fn run_inner(raw: Vec<String>) -> Result<u8> {
             }
             eprintln!("recipes match cmake's compiles");
         }
+        "--cmake-linked" => {
+            if !targets.is_empty() {
+                return Err("--cmake-linked does not accept targets".into());
+            }
+            for l in driver::cmake_linked(&root)? {
+                println!("{l}");
+            }
+        }
         "--clib-recipes" | "--rc-template" | "--c-template" => {
             if !targets.is_empty() {
                 return Err("template/recipe operations do not accept targets".into());
@@ -385,6 +394,46 @@ fn run_inner(raw: Vec<String>) -> Result<u8> {
                 )
                 .into());
             }
+        }
+        "--interface" | "--interface-apply" => {
+            if targets.is_empty() {
+                return Err(format!("{mode} requires targets").into());
+            }
+            // Plan the whole wave before writing anything; plans of one file compose.
+            let mut edits: BTreeMap<PathBuf, String> = BTreeMap::new();
+            let mut removed = Vec::new();
+            let mut bad = false;
+            for t in &targets {
+                match cells::interface::plan_on(&root, t, &edits) {
+                    Ok(p) => {
+                        if mode == "--interface" {
+                            println!("== {} ({t})\n{}", p.cmake.strip_prefix(&root).unwrap_or(&p.cmake).display(), p.text);
+                        }
+                        edits.insert(p.cmake, p.text);
+                        edits.extend(p.cell_edits);
+                        removed.extend(p.removed);
+                    }
+                    Err(e) => {
+                        println!("REFUSED {e}");
+                        bad = true;
+                    }
+                }
+            }
+            if mode == "--interface-apply" {
+                if bad {
+                    return Err("refusals above: nothing was written".into());
+                }
+                write_edits(&root, &edits)?;
+                for path in edits.keys() {
+                    println!("wrote {}", path.strip_prefix(&root).unwrap_or(path).display());
+                }
+                for path in removed {
+                    output_path(&root, &path)?;
+                    fs::remove_file(&path)?;
+                    println!("removed {}", path.strip_prefix(&root).unwrap_or(&path).display());
+                }
+            }
+            return Ok(u8::from(bad));
         }
         "--apply" => {
             if targets.is_empty() {

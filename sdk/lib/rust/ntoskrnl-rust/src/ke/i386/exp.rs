@@ -1148,16 +1148,13 @@ pub unsafe extern "system" fn KeRaiseUserException(ExceptionCode: NTSTATUS) -> N
     let teb = (*(KeGetCurrentThread() as *mut _ETHREAD)).Tcb.Teb as PTEB;
     let trap_frame = (*(KeGetCurrentThread() as *mut _ETHREAD)).Tcb.TrapFrame as PKTRAP_FRAME;
 
-    let set_result = 'set_exception: {
-        if !teb.is_null() {
-            (*teb).ExceptionCode = ExceptionCode;
-            break 'set_exception 0;
-        }
-        break 'set_exception 1;
-    };
-
-    if set_result != 0 {
+    // C: __try around the TEB write (user memory); the handler returns the code.
+    // A NULL TEB faults the same way in the C, so fail it the same way here.
+    if teb.is_null() {
         return STATUS_ACCESS_VIOLATION;
+    }
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| (*teb).ExceptionCode = ExceptionCode) {
+        return code;
     }
 
     let old_eip = (*trap_frame).Eip;

@@ -481,6 +481,7 @@ base/setup/lib/CMakeLists.txt	1	# bootcode.c # replaced by Rust (sdk/lib/rust/se
 base/setup/lib/CMakeLists.txt	1	# bootsup.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/bootsup.rs)
 base/setup/lib/CMakeLists.txt	1	# fsutil.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/fsutil.rs)
 base/setup/lib/CMakeLists.txt	1	# install.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/install.rs)
+base/setup/lib/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/main.rs)
 base/setup/lib/CMakeLists.txt	1	# mui.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/mui.rs)
 base/setup/lib/CMakeLists.txt	1	# registry.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/registry.rs)
 base/setup/lib/CMakeLists.txt	1	# settings.c # replaced by Rust (sdk/lib/rust/setuplib-rust/src/setuplib/settings.rs)
@@ -504,6 +505,8 @@ base/setup/reactos/CMakeLists.txt	1	# drivepage.c # replaced by Rust (sdk/lib/ru
 base/setup/reactos/CMakeLists.txt	1	# reactos.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/reactos.rs)
 base/setup/reactos/CMakeLists.txt	1	# spapisup/fileqsup.c # replaced by Rust (sdk/lib/rust/spapisup-rust: usetup's cabinet.c + fileqsup.c, which it #includes)
 base/setup/reactos/CMakeLists.txt	1	# spapisup/infsupp.c # replaced by Rust (sdk/lib/rust/reactos-rust/src/reactos/infsupp.rs)
+base/setup/setup/CMakeLists.txt	1	# The translated C stays on disk; only rust_cohab_stub.c is compiled, in the OBJECT library the cargo
+base/setup/setup/CMakeLists.txt	1	# setup.c # replaced by Rust (sdk/lib/rust/setup-rust/src/setup/setup.rs)
 base/setup/usetup/CMakeLists.txt	1	# cmdcons.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/cmdcons.rs)
 base/setup/usetup/CMakeLists.txt	1	# console.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/console.rs)
 base/setup/usetup/CMakeLists.txt	1	# consup.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/consup.rs)
@@ -1572,7 +1575,7 @@ dll/win32/propsys/CMakeLists.txt	1	# propvar.c # replaced by Rust (sdk/lib/rust/
 dll/win32/psapi/CMakeLists.txt	1	# The DLL target is all Rust too: main.c's DllMain is psapi-rust's `dllmain` feature
 dll/win32/psapi/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/main.rs)
 dll/win32/psapi/CMakeLists.txt	1	# psapi.c # replaced by Rust (sdk/lib/rust/psapi-rust/src/psapi/psapi.rs)
-dll/win32/psapi/CMakeLists.txt	1	# psapi.c is Rust now (psapi-rust, `rustconv port`); the C stays on disk. psapi_static keeps
+dll/win32/psapi/CMakeLists.txt	1	# psapi.c is Rust now (psapi-rust, `rustconv port`); the C stays on disk. psapi_static is an
 dll/win32/qwave/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/qwave-rust/src/qwave/main.rs)
 dll/win32/rasadhlp/CMakeLists.txt	1	# add_pch dropped with precomp.h: the only remaining C is generated (rasadhlp_stubs.c)
 dll/win32/rasadhlp/CMakeLists.txt	1	# autodial.c
@@ -2827,7 +2830,7 @@ sdk/lib/drivers/csq/CMakeLists.txt	1	# csq (Cancel-Safe IRP Queue) — Rust coha
 sdk/lib/drivers/csq/CMakeLists.txt	1	# csq.c (the 6 IoCsq* exports) is translated to Rust (csq-rust, kept on disk per
 sdk/lib/drivers/hidparser/CMakeLists.txt	1	# context.c hidparser.c parser.c api.c hidp.c (+ parser.h, hidp.h)
 sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# ${REACTOS_SOURCE_DIR}/sdk/lib/rtl/utf8.c # replaced by Rust (sdk/lib/rust/utf8)
-sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# disk. The target keeps a stub TU and links the Rust archives. utf8.c is rtl's: it is the
+sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# (`cargo-cell --interface`). utf8.c is rtl's: it is the `utf8` crate rtl_vista
 sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# etw.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/etw.rs)
 sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# fsrtl.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/fsrtl.rs)
 sdk/lib/drivers/ntoskrnl_vista/CMakeLists.txt	1	# io.c # replaced by Rust (sdk/lib/rust/ntoskrnl_vista-rust/src/ntoskrnl_vista/io.rs)

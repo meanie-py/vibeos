@@ -1362,6 +1362,10 @@ unsafe fn GetNextFrame(
     let mut EstablisherFrame: ULONG64 = 0;
     let mut HandlerData: PVOID = core::ptr::null_mut();
 
+    // nolint(dead_seh): this runs inside KDBG, where a fault is routed back into
+    // the debugger rather than to a frame handler. The read the C's __try was
+    // for (a leaf's return address off the stack) goes through
+    // KdbpSafeReadMemory below instead.
     FunctionEntry = RtlLookupFunctionEntry((*Context).Rip, &mut ImageBase, core::ptr::null_mut());
     if FunctionEntry == core::ptr::null_mut()
     {

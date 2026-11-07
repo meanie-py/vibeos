@@ -11,3 +11,4 @@ waitprobe-*.exe
 servepage-*.exe
 sockprobe-*.exe
 grepfile-*.exe
+gdiprobe-*.exe

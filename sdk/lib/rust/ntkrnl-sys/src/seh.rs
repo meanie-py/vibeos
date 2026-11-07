@@ -98,6 +98,17 @@ where
     }
 }
 
+/// `__try { return f(); } __except (EXCEPTION_EXECUTE_HANDLER) { .. }` — the
+/// commonest C shape, a catch-all around a touch of caller memory. `Err(code)` is
+/// the handler's `_SEH2_GetExceptionCode()`. The same capture rule applies: `f`
+/// must own nothing that needs `Drop`.
+pub unsafe fn try_except_all<T, F: FnOnce() -> T>(f: F) -> Result<T, NTSTATUS> {
+    let mut out: Option<T> = None;
+    try_except(&mut out, |o| *o = Some(f()), |_, _| EXCEPTION_EXECUTE_HANDLER)?;
+    // The body ran to completion, so it stored its result.
+    Ok(out.unwrap_unchecked())
+}
+
 /// `__try { body(state) } __finally { fin(state, AbnormalTermination()) }`.
 ///
 /// `fin` runs exactly once: after a normal return with `false`, or with `true`

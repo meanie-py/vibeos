@@ -523,6 +523,9 @@ pub unsafe extern "C" fn AcpiOsFree(Memory: *mut c_void) {
 
 #[no_mangle]
 pub unsafe extern "C" fn AcpiOsReadable(_Pointer: *mut c_void, _Length: ACPI_SIZE) -> BOOLEAN {
+    // nolint(dead_seh): the C's handler catches its own ProbeFor*, which raises
+    // for every address at or above MmUserProbeAddress — i.e. for the kernel
+    // pointers ACPICA passes. There is no fault to catch here.
     // C probed via ProbeForRead inside _SEH2_TRY, but the _SEH2_EXCEPT guard is
     // dead code under DUMMY_PSEH (an unprobed fault would bugcheck either way),
     // and ProbeForRead is a DDK macro with no kernel export. ACPICA calls these
@@ -532,6 +535,9 @@ pub unsafe extern "C" fn AcpiOsReadable(_Pointer: *mut c_void, _Length: ACPI_SIZ
 
 #[no_mangle]
 pub unsafe extern "C" fn AcpiOsWritable(_Pointer: *mut c_void, _Length: ACPI_SIZE) -> BOOLEAN {
+    // nolint(dead_seh): the C's handler catches its own ProbeFor*, which raises
+    // for every address at or above MmUserProbeAddress — i.e. for the kernel
+    // pointers ACPICA passes. There is no fault to catch here.
     TRUE as BOOLEAN
 }
 

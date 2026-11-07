@@ -602,6 +602,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **amd64: long boots wedge once osk.exe has leaked the GDI handle table (open, found
+  2026-11-07, graviton lane).** The stock i386 `osk.exe` winlogon starts on amd64 gains GDI
+  objects by thousands while it runs (memwatch's per-process GDI count: 2 -> 528 -> 1696 -> 2576
+  in one Chrome payload boot, every other process flat). The DC handle index climbs to the ~16K
+  table limit (`NtGdiOpenDCW` finally returns 0), pool allocations then fail (QSI's bounce buffer,
+  STATUS_INSUFFICIENT_RESOURCES), and win32k floods `MsqSendMessage(): Not enough memory to
+  allocate a message` until the serial line starves the guest. Hit 15-60 min into a boot, so
+  any long run is exposed (four Chrome payload boots, e.g. `20261107-004043-gxu5_aj2`); 10-15 min
+  smokes pass. osk's own code frees what it makes: every 100 ms it `SetWindowTextW`s its key
+  buttons and invalidates its LEDs, with one brush for life. **Measured clean natively**
+  (`tools/payloads/chrome/gdiprobe.c`, amd64 in the guest): 20000 create/free pairs of
+  display DCs, ICs, compatible DCs and bitmaps, `GetIconInfo` copies, and a button's
+  `SetWindowText` + repaint all stay flat, as on Windows 11. So the leak is in the 32-bit
+  (WOW64) side of one of those paths or in what osk alone does. Blocked from the direct test:
+  an llvm-mingw i686 exe dies in WOW64 start-up before main (activation context:
+  `rtl-actctx` `add_entity` -> `RtlReAllocateHeap` raising STATUS_NO_MEMORY, exit 128,
+  console and GUI subsystem alike), so `gdiprobe32.exe` cannot run yet; the stock apps, built by
+  the ReactOS i386 toolchain, start. Next: fix that start-up failure (or build the probe with
+  the i386 toolchain) and run gdiprobe32 to split WOW64 from osk.
+
 - **Fibers did not work on amd64 or arm64 (FIXED 2026-11-06, upstream-sync lane).** Both
   routines a fiber switch needs were unimplemented on 64-bit: amd64's `fiber.S` was an
   `UNIMPLEMENTED` stub (whose own print faulted, 0xC0000005) and arm64's `brk #0xf000`; upstream
