@@ -84,8 +84,11 @@ def expand_member_paste_calls(rust: str, macros: dict[str, str]) -> tuple[str, i
         close = _close(rust, open_at)
         if close is None:
             break
-        arg = rust[open_at + 1 : close].strip()
+        # rustfmt leaves a trailing comma after a lone argument; and the model sometimes
+        # pre-expands the path inside the call (`VK_CALL!((*vk_info).vk_ops.vkFoo(..))`).
+        arg = rust[open_at + 1 : close].strip().removesuffix(",").strip()
         field = macros[m.group(1)]
+        arg = arg.removeprefix(field)
         call = re.match(r"([A-Za-z_]\w*)\s*\(", arg)
         if call is not None and _close(arg, call.end() - 1) == len(arg) - 1:
             args = arg[call.end() : -1]
@@ -102,3 +105,43 @@ def expand_member_paste_calls(rust: str, macros: dict[str, str]) -> tuple[str, i
         count += 1
     out.append(rust[pos:])
     return "".join(out), count, odd
+
+
+# A hand-ported macro that reads a CALLER's local (wined3d_gl.h's `checkGLcall(A)` reads
+# `gl_info`) cannot be a prelude `macro_rules!` as written: hygiene hides the caller's locals
+# from the macro body. The hand port takes them as leading arguments instead and says so on a
+# line of its own in the prelude:
+#
+#     // port: caller-locals checkGLcall(gl_info)
+#
+# and every call site -- the model writes it as a plain call, `checkGLcall("glBindTexture")`
+# -- becomes `checkGLcall!(gl_info, "glBindTexture")`. Declared beside the port, so the rule
+# is the port's, not a guess about which identifiers are locals.
+_CALLER_LOCALS = re.compile(r"(?m)^\s*//\s*port:\s*caller-locals\s+(\w+)\(([^)]*)\)\s*$")
+
+
+def caller_locals(prelude: str) -> dict[str, list[str]]:
+    """{macro: [caller locals it takes first]} from the prelude's `port: caller-locals` lines."""
+    return {
+        m.group(1): [a.strip() for a in m.group(2).split(",") if a.strip()]
+        for m in _CALLER_LOCALS.finditer(prelude)
+    }
+
+
+def pass_caller_locals(rust: str, locals_: dict[str, list[str]]) -> tuple[str, int]:
+    """`NAME(args)` / `NAME!(args)` -> `NAME!(locals.., args)`; a site passing them is kept."""
+    count = 0
+    for name, args in locals_.items():
+        lead = ", ".join(args)
+        use = re.compile(rf"(?<![\w:.]){re.escape(name)}!?\s*\(")
+
+        def sub(m: re.Match[str], lead: str = lead, name: str = name) -> str:
+            nonlocal count
+            rest = m.string[m.end() :].lstrip()
+            if rest.startswith(lead + ",") or rest.startswith(lead + ")"):
+                return m.group(0)
+            count += 1
+            return f"{name}!({lead}, " if not rest.startswith(")") else f"{name}!({lead}"
+
+        rust = use.sub(sub, rust)
+    return rust, count

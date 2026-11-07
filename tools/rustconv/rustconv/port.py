@@ -5349,6 +5349,9 @@ def stage_integrate(stem: str) -> None:
     paste = paste_macros.member_paste_macros(
         local_macros.module_macros(_module_sources(REPO / state["module_dir"]), REPO)[0]
     )
+    caller_locals = paste_macros.caller_locals(
+        (crate / "src" / "prelude.rs").read_text(errors="replace")
+    )
     island_consts = _island_consts(crate / "src")
     unicode = _TCHAR_BEGIN in (crate / "src" / "prelude.rs").read_text(errors="replace")
     island_statics = _island_extern_statics(crate / "src")
@@ -5512,6 +5515,15 @@ def stage_integrate(stem: str) -> None:
         for site in odd:
             print(
                 f"integrate: {path.stem}: member-paste macro call NOT expanded, hand-port: {site}"
+            )
+        text = path.read_text(errors="replace")
+        passed, n_locals = paste_macros.pass_caller_locals(text, caller_locals)
+        if n_locals:
+            path.write_text(passed)
+            changed += 1
+            print(
+                f"integrate: {path.stem}: {n_locals} call(s) given their caller-locals "
+                f"({', '.join(sorted(caller_locals))})"
             )
         wl = _wine_list_entry(path, REPO / state["module_dir"], crate)
         if wl:

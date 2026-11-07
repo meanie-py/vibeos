@@ -406,3 +406,22 @@ def test_a_header_static_this_tu_does_not_keep_needs_no_initialiser():
     assert anchor.fold_static_initializers(_C2R_BITFIELD, ["static mut Other: u32 = 0;"]) == [
         "static mut Other: u32 = 0;"
     ]
+
+
+def test_a_copied_bitfield_struct_gets_its_accessors_written_out():
+    # wined3d stateblock.c's wined3d_saved_states: nothing in the tree depends on
+    # c2rust-bitfields, so its `BitfieldStruct` derive did not resolve.
+    item = (
+        "#[derive(Copy, Clone, BitfieldStruct)]\n#[repr(C)]\npub struct s {\n"
+        '    #[bitfield(name = "textures", ty = "uint32_t", bits = "0..=19")]\n'
+        '    #[bitfield(name = "neg", ty = "int32_t", bits = "20..=22")]\n'
+        "    pub textures_neg:\n        [u8; 3],\n"
+        "    #[bitfield(padding)]\n    pub c2rust_padding: [u8; 1],\n}"
+    )
+    out = anchor.plain_bitfields(item)
+    assert "BitfieldStruct" not in out and "#[bitfield" not in out
+    assert "#[derive(Copy, Clone)]" in out and "pub textures_neg:" in out
+    assert "pub fn textures(&self) -> uint32_t" in out and "pub fn set_neg(&mut self" in out
+    assert "!0u64 << 3" in out  # the signed member sign-extends from its 3 bits
+    with pytest.raises(anchor.C2RustError, match="signedness unknown"):
+        anchor.plain_bitfields(item.replace('ty = "int32_t"', 'ty = "MYSTERY"'))

@@ -637,6 +637,7 @@ members = [
     "win32macros-rust",
     "mmebuddy-macros-rust",
     "winelist-rust",
+    "winerbtree-rust",
     # Wine's ERR/FIXME/WARN/TRACE (wine/debug.h). Thirty-one Wine-derived crates carried a
     # byte-identical copy of the same 64-line module.
     "winedebug-rust",
@@ -1236,6 +1237,7 @@ members = [
     "wined3d-h",
     "d3d8-rust",
     "d3d9-rust",
+    "d3dwine-rust",
 ]
 resolver = "2"
 

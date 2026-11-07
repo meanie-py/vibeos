@@ -1253,11 +1253,11 @@ def local_types(
             item = items.get(name)
             if item is None:
                 continue
-            picked[name] = item
+            picked[name] = plain_bitfields(item)
             alias = re.fullmatch(r"(?s).*pub type \w+ = (\w+);", item)
             target = alias.group(1) if alias else None
             if target and target in items and re.search(rf"\b{re.escape(target)}\b", c_text):
-                picked.setdefault(target, items[target])
+                picked.setdefault(target, plain_bitfields(items[target]))
         per_arch[arch] = picked
     agreed: dict[str, str] = {}
     differs: dict[str, str] = {}
@@ -1395,3 +1395,96 @@ def extern_signatures(
             if len(per_arch) == len(arches) or not _WIDTH_RE.search(sig or ""):
                 out[name] = sig  # type: ignore[assignment]
     return out
+
+
+# c2rust lays a C bitfield run out as one `[u8; N]` storage field and names its members in
+# `#[bitfield(name, ty, bits)]` attributes for the `c2rust_bitfields::BitfieldStruct` derive,
+# which generates `name()` / `set_name()`. Nothing in the tree depends on c2rust-bitfields, so a
+# copied struct (wined3d stateblock.c's `wined3d_saved_states`, 23 one-bit flags and a 20-bit
+# mask) failed with "cannot find derive macro `BitfieldStruct`". The same accessors are written
+# out here from the attributes -- the names bindgen also uses, so a body reads either the same
+# way. Bits are numbered LSB-first over the little-endian storage, c2rust_bitfields' layout and
+# the C's on all three targets; a signed member is sign-extended from its width, as C reads it.
+_BF_ATTR = re.compile(
+    r'(?m)^\s*#\[bitfield\(name = "(\w+)", ty = "([^"]+)", bits = "(\d+)\.\.=(\d+)"\)\]\s*\n'
+)
+_BF_PAD = re.compile(r"(?m)^\s*#\[bitfield\(padding\)\]\s*\n")
+_BF_STORAGE = re.compile(r"(?m)^\s*pub (\w+):\s*\[u8;\s*(\d+)\],")
+_UNSIGNED = re.compile(
+    r"(?:::)?(?:core::ffi::)?(?:c_uint|c_ushort|c_uchar|c_ulong|c_ulonglong)$|^(?:u8|u16|u32|u64|usize"
+    r"|uint8_t|uint16_t|uint32_t|uint64_t|DWORD|UINT|WORD|BYTE|ULONG|USHORT|UCHAR|ULONG64|DWORD64"
+    r"|UINT8|UINT16|UINT32|UINT64|ULONGLONG|BOOLEAN)$"
+)
+_SIGNED = re.compile(
+    r"(?:::)?(?:core::ffi::)?(?:c_int|c_short|c_schar|c_long|c_longlong)$|^(?:i8|i16|i32|i64|isize"
+    r"|int8_t|int16_t|int32_t|int64_t|INT|LONG|SHORT|BOOL|LONG64|INT8|INT16|INT32|INT64|LONGLONG)$"
+)
+
+
+def plain_bitfields(item: str) -> str:
+    """A c2rust `BitfieldStruct` with its accessors written out (no c2rust-bitfields needed)."""
+    if "BitfieldStruct" not in item:
+        return item
+    head = re.match(r"(?s)(.*?)pub struct (\w+) \{\n(.*)\n\}\s*\Z", item)
+    if head is None:
+        raise C2RustError(f"bitfield struct not in c2rust's shape:\n{item[:200]}")
+    prefix, name, body = head.groups()
+    methods: list[str] = []
+    out_lines: list[str] = []
+    pending: list[tuple[str, str, int, int]] = []
+    for line in body.split("\n"):
+        if (a := _BF_ATTR.match(line + "\n")) is not None:
+            pending.append((a.group(1), a.group(2), int(a.group(3)), int(a.group(4))))
+            continue
+        if _BF_PAD.match(line + "\n"):
+            continue
+        out_lines.append(line)
+        if not pending or "pub " not in line:
+            continue
+        # The storage field follows its attributes (rustfmt may wrap `[u8; N],` to a new line).
+        field = re.match(r"\s*pub (\w+):", line)
+        assert field is not None
+        for fname, ty, lo, hi in pending:
+            width = hi - lo + 1
+            if _UNSIGNED.search(ty):
+                signed = False
+            elif _SIGNED.search(ty):
+                signed = True
+            else:
+                raise C2RustError(
+                    f"{name}.{fname}: bitfield of type `{ty}` -- signedness unknown, hand-port it"
+                )
+            ext = (
+                f"            if v & (1u64 << {width - 1}) != 0 {{ v |= !0u64 << {width}; }}\n"
+                if signed and width < 64
+                else ""
+            )
+            methods.append(
+                f"    #[inline]\n    pub fn {fname}(&self) -> {ty} {{\n"
+                f"        let s = &self.{field.group(1)};\n"
+                f"        let mut v: u64 = 0;\n"
+                f"        let mut i = 0usize;\n"
+                f"        while i < {width} {{\n"
+                f"            let b = {lo} + i;\n"
+                f"            v |= (((s[b / 8] >> (b % 8)) & 1) as u64) << i;\n"
+                f"            i += 1;\n"
+                f"        }}\n"
+                + (f"        {{\n{ext}        }}\n" if ext else "")
+                + f"        v as {ty}\n    }}\n"
+                f"    #[inline]\n    pub fn set_{fname}(&mut self, value: {ty}) {{\n"
+                f"        let v = value as u64;\n"
+                f"        let s = &mut self.{field.group(1)};\n"
+                f"        let mut i = 0usize;\n"
+                f"        while i < {width} {{\n"
+                f"            let b = {lo} + i;\n"
+                f"            let bit = (((v >> i) & 1) as u8) << (b % 8);\n"
+                f"            s[b / 8] = (s[b / 8] & !(1u8 << (b % 8))) | bit;\n"
+                f"            i += 1;\n"
+                f"        }}\n    }}\n"
+            )
+        pending = []
+    if pending:
+        raise C2RustError(f"{name}: bitfield attributes with no storage field after them")
+    prefix = re.sub(r"\s*,\s*BitfieldStruct\b|\bBitfieldStruct\s*,\s*", "", prefix)
+    struct = f"{prefix}pub struct {name} {{\n" + "\n".join(out_lines) + "\n}"
+    return struct + f"\nimpl {name} {{\n" + "".join(methods) + "}"
