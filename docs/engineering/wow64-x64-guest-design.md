@@ -145,8 +145,13 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    fault64's alloc 73 contended / 85 ms, free 67 / 191 ms, fault 143 / 205 ms, 1-3 ms an acquire
    against ~41, while the same storm window did ~6x the calls (alloc 1765 against 300). Its
    release-to-run averages 0.7-1.1 ms with no boost, so a wait boost in the keyed-event release
-   is not needed for it. fault32 (x86 guest) shows 10-17 ms phases, max ~22 ms (a quantum), which
-   a boost might shorten; not measured further.
+   is not needed for it. fault32 (the x86 guest) did need it: its waiters averaged 6-12 ms from
+   release to running, about a quantum of the CPU-bound releaser. With the NT unwait boost of 1
+   on the keyed-event release (`keyedevt.rs`, 2026-11-07), its rung-3b storm (the new `rung3b
+   storm ms` line) took ~3.4 s against ~9.7 s (3,200/3,980/3,030 ms against 9,880/8,650/10,600;
+   arm64 ladder x3 each, 27/27, `20261107-004618-3_43t4gn` and `20261107-010303-t10tuilw`
+   onward), and fault64's did not move (~5.6 s). appstorm64 with it: 55/55
+   (`20261107-020509-lepjfzru`).
 6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
    file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
    `MiFlushTbAndCapture` stopped flushing the whole TLB once per re-protected page on arm64:

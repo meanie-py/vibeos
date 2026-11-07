@@ -760,74 +760,81 @@ pub unsafe extern "system" fn MmCreateTeb(
         return Status;
     }
 
-    RtlZeroMemory(Teb as PVOID, core::mem::size_of::<TEB>());
+    // C: one __try around filling the new TEB. It is user memory in the target
+    // process, so another thread there can free or protect it first; the
+    // handler takes the exception code and we still detach.
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        RtlZeroMemory(Teb as PVOID, core::mem::size_of::<TEB>());
 
-    #[cfg(target_arch = "x86_64")]
-    {
-        (*Teb).NtTib.ExceptionList = core::ptr::null_mut();
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        (*Teb).NtTib.ExceptionList = EXCEPTION_CHAIN_END as _;
-    }
-    (*Teb).NtTib.Self_ = Teb as PNT_TIB;
+        #[cfg(target_arch = "x86_64")]
+        {
+            (*Teb).NtTib.ExceptionList = core::ptr::null_mut();
+        }
+        #[cfg(not(target_arch = "x86_64"))]
+        {
+            (*Teb).NtTib.ExceptionList = EXCEPTION_CHAIN_END as _;
+        }
+        (*Teb).NtTib.Self_ = Teb as PNT_TIB;
 
-    // (*Teb).NtTib.Version_ = 30 << 8; // NtTib.Version not in bindgen
+        // (*Teb).NtTib.Version_ = 30 << 8; // NtTib.Version not in bindgen
 
-    (*Teb).ClientId = *ClientId;
-    (*Teb).RealClientId = *ClientId;
-    (*Teb).ProcessEnvironmentBlock = (*(Process as *mut _EPROCESS)).Peb;
-    (*Teb).CurrentLocale = PsDefaultThreadLocaleId;
+        (*Teb).ClientId = *ClientId;
+        (*Teb).RealClientId = *ClientId;
+        (*Teb).ProcessEnvironmentBlock = (*(Process as *mut _EPROCESS)).Peb;
+        (*Teb).CurrentLocale = PsDefaultThreadLocaleId;
 
-    if (*InitialTeb).PreviousStackBase.is_null() && (*InitialTeb).PreviousStackLimit.is_null() {
-        (*Teb).NtTib.StackBase = (*InitialTeb).StackBase;
-        (*Teb).NtTib.StackLimit = (*InitialTeb).StackLimit;
-        (*Teb).DeallocationStack = (*InitialTeb).AllocatedStackBase;
-    } else {
-        (*Teb).NtTib.StackBase = (*InitialTeb).PreviousStackBase;
-        (*Teb).NtTib.StackLimit = (*InitialTeb).PreviousStackLimit;
-    }
+        if (*InitialTeb).PreviousStackBase.is_null() && (*InitialTeb).PreviousStackLimit.is_null() {
+            (*Teb).NtTib.StackBase = (*InitialTeb).StackBase;
+            (*Teb).NtTib.StackLimit = (*InitialTeb).StackLimit;
+            (*Teb).DeallocationStack = (*InitialTeb).AllocatedStackBase;
+        } else {
+            (*Teb).NtTib.StackBase = (*InitialTeb).PreviousStackBase;
+            (*Teb).NtTib.StackLimit = (*InitialTeb).PreviousStackLimit;
+        }
 
-    (*Teb).StaticUnicodeString.MaximumLength = core::mem::size_of_val(&(*Teb).StaticUnicodeBuffer) as USHORT;
-    (*Teb).StaticUnicodeString.Buffer = (*Teb).StaticUnicodeBuffer.as_mut_ptr();
+        (*Teb).StaticUnicodeString.MaximumLength = core::mem::size_of_val(&(*Teb).StaticUnicodeBuffer) as USHORT;
+        (*Teb).StaticUnicodeString.Buffer = (*Teb).StaticUnicodeBuffer.as_mut_ptr();
 
-    #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-    if IsWow64 {
-        use ntkrnl_sys::ddk::_TEB32;
-        let Teb32 = ntkrnl_sys::wow64::teb32_of(Teb) as *mut _TEB32;
-        debug_assert_eq!(Teb32 as usize, Teb as usize + WOW64_TEB32_OFFSET);
-        RtlZeroMemory(Teb32 as PVOID, core::mem::size_of::<_TEB32>());
+        #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+        if IsWow64 {
+            use ntkrnl_sys::ddk::_TEB32;
+            let Teb32 = ntkrnl_sys::wow64::teb32_of(Teb) as *mut _TEB32;
+            debug_assert_eq!(Teb32 as usize, Teb as usize + WOW64_TEB32_OFFSET);
+            RtlZeroMemory(Teb32 as PVOID, core::mem::size_of::<_TEB32>());
 
-        (*Teb32).NtTib.ExceptionList = 0xFFFF_FFFF; // EXCEPTION_CHAIN_END, 32-bit
-        (*Teb32).NtTib.Self_ = Teb32 as usize as u32;
-        (*Teb32).ClientId.UniqueProcess = (*ClientId).UniqueProcess as usize as u32;
-        (*Teb32).ClientId.UniqueThread = (*ClientId).UniqueThread as usize as u32;
-        (*Teb32).RealClientId = (*Teb32).ClientId;
-        (*Teb32).ProcessEnvironmentBlock =
-            (*(Process as *mut _EPROCESS)).Wow64Process as usize as u32; // = the PEB32
-        (*Teb32).CurrentLocale = PsDefaultThreadLocaleId;
-        (*Teb32).StaticUnicodeString.MaximumLength =
-            core::mem::size_of_val(&(*Teb32).StaticUnicodeBuffer) as USHORT;
-        (*Teb32).StaticUnicodeString.Buffer =
-            core::ptr::addr_of_mut!((*Teb32).StaticUnicodeBuffer) as usize as u32;
-        // Guest stack bounds are set by wow64.dll at thread init.
+            (*Teb32).NtTib.ExceptionList = 0xFFFF_FFFF; // EXCEPTION_CHAIN_END, 32-bit
+            (*Teb32).NtTib.Self_ = Teb32 as usize as u32;
+            (*Teb32).ClientId.UniqueProcess = (*ClientId).UniqueProcess as usize as u32;
+            (*Teb32).ClientId.UniqueThread = (*ClientId).UniqueThread as usize as u32;
+            (*Teb32).RealClientId = (*Teb32).ClientId;
+            (*Teb32).ProcessEnvironmentBlock =
+                (*(Process as *mut _EPROCESS)).Wow64Process as usize as u32; // = the PEB32
+            (*Teb32).CurrentLocale = PsDefaultThreadLocaleId;
+            (*Teb32).StaticUnicodeString.MaximumLength =
+                core::mem::size_of_val(&(*Teb32).StaticUnicodeBuffer) as USHORT;
+            (*Teb32).StaticUnicodeString.Buffer =
+                core::ptr::addr_of_mut!((*Teb32).StaticUnicodeBuffer) as usize as u32;
+            // Guest stack bounds are set by wow64.dll at thread init.
 
-        // WowTebOffset lives at TEB+0x180c / TEB32+0xfdc in the Win10 layout that
-        // wow64fex hardcodes (GetWowTEB). Our 5.2-era structs end before those
-        // offsets (sizeof TEB = 0x17d8, TEB32 = 0xfbc) but the pages are committed,
-        // so the slots are safe scratch — write them raw.
-        core::ptr::write_volatile(
-            (Teb as *mut u8).add(0x180c) as *mut i32, // nolint: magic-offset (Win10 TEB.WowTebOffset slot wow64fex hardcodes; past 5.2 struct end, committed scratch)
-            WOW64_TEB32_OFFSET as i32,
-        );
-        core::ptr::write_volatile(
-            (Teb32 as *mut u8).add(0xfdc) as *mut i32, // nolint: magic-offset (Win10 TEB32.WowTebOffset slot; past 5.2 struct end, committed scratch)
-            -(WOW64_TEB32_OFFSET as i32),
-        );
-        MiWow64TraceHex(
-            b"[MM] MmCreateTeb: WoW64 TEB32 at \0".as_ptr() as *const i8,
-            Teb32 as ULONG_PTR,
-        );
+            // WowTebOffset lives at TEB+0x180c / TEB32+0xfdc in the Win10 layout that
+            // wow64fex hardcodes (GetWowTEB). Our 5.2-era structs end before those
+            // offsets (sizeof TEB = 0x17d8, TEB32 = 0xfbc) but the pages are committed,
+            // so the slots are safe scratch — write them raw.
+            core::ptr::write_volatile(
+                (Teb as *mut u8).add(0x180c) as *mut i32, // nolint: magic-offset (Win10 TEB.WowTebOffset slot wow64fex hardcodes; past 5.2 struct end, committed scratch)
+                WOW64_TEB32_OFFSET as i32,
+            );
+            core::ptr::write_volatile(
+                (Teb32 as *mut u8).add(0xfdc) as *mut i32, // nolint: magic-offset (Win10 TEB32.WowTebOffset slot; past 5.2 struct end, committed scratch)
+                -(WOW64_TEB32_OFFSET as i32),
+            );
+            MiWow64TraceHex(
+                b"[MM] MmCreateTeb: WoW64 TEB32 at \0".as_ptr() as *const i8,
+                Teb32 as ULONG_PTR,
+            );
+        }
+    }) {
+        Status = code;
     }
 
     KeDetachProcess();

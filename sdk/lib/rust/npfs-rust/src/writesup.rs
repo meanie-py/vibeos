@@ -112,16 +112,17 @@ pub unsafe extern "system" fn NpWriteDataQueue(
             AllocatedBuffer = FALSE;
         }
 
-        // _SEH2_TRY { RtlCopyMemory(...) }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { free + return exception code }
-        // Under USE_DUMMY_PSEH the EXCEPT is dead code; the copy reads from OutBuffer
-        // (a kernel buffer already validated by the caller) so emit straight-line.
-        RtlCopyMemory(
-            Buffer,
-            ((OutBuffer as ULONG_PTR) + OutBufferSize as ULONG_PTR
-                - *BytesNotWritten as ULONG_PTR) as PVOID,
-            BufferSize as _,
-        );
+        // C: __try around the copy from the writer's buffer; the handler frees our
+        // buffer and returns the exception code. OutBuffer is Irp->UserBuffer — the
+        // caller's memory, not a kernel buffer — so it can fault here.
+        let src = ((OutBuffer as ULONG_PTR) + OutBufferSize as ULONG_PTR
+            - *BytesNotWritten as ULONG_PTR) as PVOID;
+        if let Err(code) = ntkrnl_sys::seh::try_except_all(|| RtlCopyMemory(Buffer, src, BufferSize as _)) {
+            if AllocatedBuffer != FALSE {
+                ExFreePool(Buffer);
+            }
+            return code;
+        }
 
         if HaveContext == FALSE {
             HaveContext = TRUE;

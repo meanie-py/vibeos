@@ -384,6 +384,16 @@ What the batch added to the shared crates and tools:
   screensavers, wuauserv, sehtest, nettest, stortest, testgui, setup16, filebrowser,
   devmgmt and rapps_com.
 
+## Static libraries off cmake's archive step (2026-11-07)
+
+28 of the 33 entries left in `scan_cmake_linked_rust`'s baseline were fully-Rust static
+libraries archiving only a placeholder stub. `tools/codegen cargo-cell --interface` turns
+each into an INTERFACE library over its Rust archive (recipe: rust-in-kernel.md, "A
+fully-Rust STATIC library is an INTERFACE library"); gdi32_vista_static, dead, was
+deleted. Still baselined, each refused for a real reason: conutils, shimlib and vfatlib
+still archive live C (variadic shims, vendored dosfstools); cportlib's stub anchors a
+symbol that kdcom/uefildr/rosload find `libcportlib.a` by.
+
 ## Owed (small)
 
 Closed 2026-10-16: the substrate-in-declared test (`_prelude_declared_fns`), the merge

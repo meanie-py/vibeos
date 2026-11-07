@@ -68,12 +68,14 @@ unsafe fn MiCacheImageSymbols(base_address: PVOID) -> PVOID {
     let mut debug_size: ULONG = 0;
     let mut debug_directory: PVOID = core::ptr::null_mut();
 
-    debug_directory = RtlImageDirectoryEntryToData(
-        base_address,
-        1,
-        IMAGE_DIRECTORY_ENTRY_DEBUG,
-        core::ptr::addr_of_mut!(debug_size),
-    );
+    // C: __try with an empty handler — the image may not be safe to read; a
+    // fault leaves the directory NULL.
+    let size = core::ptr::addr_of_mut!(debug_size);
+    if let Ok(dir) = ntkrnl_sys::seh::try_except_all(|| {
+        RtlImageDirectoryEntryToData(base_address, 1, IMAGE_DIRECTORY_ENTRY_DEBUG, size)
+    }) {
+        debug_directory = dir;
+    }
 
     debug_directory
 }

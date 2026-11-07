@@ -285,9 +285,17 @@ pub unsafe extern "system" fn ExpReleaseOrWaitForKeyedEvent(
             InitializeListHead(core::ptr::addr_of_mut!((*Thread).__bindgen_anon_1.KeyedWaitChain));
 
             wake_stamp(Thread);
-            KeReleaseSemaphore(
+            // DIVERGES from keyedevt.c, which passes IO_NO_INCREMENT: the woken thread gets
+            // the usual NT unwait boost of 1 (SEMAPHORE_INCREMENT), as a semaphore or event
+            // release does. Without it a waiter that a lock was just handed to is only
+            // readied at its own priority, and on one CPU waits out the quantum of whatever
+            // CPU-bound thread released it: fault32's rung-3b storm averaged 6-12 ms per
+            // wake and ~9.7 s overall, ~3.4 s with the boost (arm64 ladder x3 each,
+            // 20261107-004618-3_43t4gn.. against 20261107-010303-t10tuilw..). The boost
+            // decays a level per quantum (KiComputeNewPriority), so it cannot starve anyone.
+            KeReleaseSemaphore( // nolint: call-literal-vs-c (the boost above, on purpose)
                 core::ptr::addr_of_mut!((*Thread).__bindgen_anon_4.KeyedWaitSemaphore),
-                0i32,
+                1i32,
                 1,
                 0u8,
             );

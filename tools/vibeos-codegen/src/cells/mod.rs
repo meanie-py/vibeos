@@ -98,6 +98,7 @@ pub fn compile_db(root: &Path, arch: &str) -> Result<Vec<serde_json::Value>> {
 pub mod pe;
 
 pub mod graph;
+pub mod interface;
 pub mod mutate;
 pub mod proof;
 pub mod recipes;

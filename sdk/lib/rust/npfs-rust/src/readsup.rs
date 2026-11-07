@@ -94,14 +94,13 @@ pub unsafe extern "system" fn NpReadDataQueue(
                 DataLength = RemainingSize;
             }
 
-            // _SEH2_TRY { RtlCopyMemory(...) } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { ASSERT(FALSE); }
-            // USE_DUMMY_PSEH: emit the TRY body only; the EXCEPT filter+handler are dead code.
-            RtlCopyMemory(
-                ((Buffer as ULONG_PTR) + BufferSize as ULONG_PTR - RemainingSize as ULONG_PTR)
-                    as PVOID,
-                ((DataBuffer as ULONG_PTR) + DataSize as ULONG_PTR - Offset as ULONG_PTR) as PVOID,
-                DataLength as _,
-            );
+            // C: __try around the copy into the reader's buffer (the caller's memory);
+            // the handler is ASSERT(FALSE) and the read carries on, so a fault here
+            // is swallowed, not a bugcheck.
+            let dst = ((Buffer as ULONG_PTR) + BufferSize as ULONG_PTR - RemainingSize as ULONG_PTR)
+                as PVOID;
+            let src = ((DataBuffer as ULONG_PTR) + DataSize as ULONG_PTR - Offset as ULONG_PTR) as PVOID;
+            let _ = ntkrnl_sys::seh::try_except_all(|| RtlCopyMemory(dst, src, DataLength as _));
 
             RemainingSize -= DataLength;
             Offset -= DataLength;

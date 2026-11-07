@@ -3,13 +3,12 @@
 **Status: QUEST (2026-07-10, lane `smp-bringup`, worktree
 `~/Projects/os-playground/vibeos-smp`). Handoff doc — read fully before starting.**
 
-## RESUME HERE (2026-11-05)
+## RESUME HERE (2026-11-07)
 
-#72 arming is nearly done; verify with `git log origin/master` and the `[profile.release.package.*]`
-block in `sdk/lib/rust/Cargo.toml` before trusting this. Landed: win32k (cf043ab2faf); 43 driver
-crates (58d33e2f2a9, with the integrator's usb SystemTime fix); 63 more kernel crates
-(729c7ffe1b5, with its hidparser context-alignment fix); rtl-* batch 4 a9c4ee56f2e was SENT to
-the integrator (check whether it landed). Owed, in order:
+#72 arming is DONE and landed (master 4ac1da17ba8, batch 128). Verify against `git log
+origin/master` and `sdk/lib/rust/Cargo.toml`'s `[profile.release.package.*]` block. Since then:
+Wine `change` is clean (fsrtl notify, batch 119), and install-smoke is green on amd64-bios and
+i386-uefi as well as amd64-uefi (20261107-002710-p_szcnzq, 20261106-231959-pbs5qtit). Owed, in order:
 1. **The amd64-bios `-smp 2` WoW64 MM signatures** (roadmap "amd64-bios: demand-zero fault on an
    already-valid PTE"): fixed by code reading, never reproduced on demand. If either recurs on a
    tree that has 5c1bb095b90, read the x86 `MmDeleteRmap` per-VA ledger dump first.
@@ -20,10 +19,13 @@ the integrator (check whether it landed). Owed, in order:
    smp-bringup-freeldr-arming-wip is superseded and can be deleted.
    The 78-entry `scan_move_vs_nonoverlapping` baseline is DONE (2026-11-05): all 112
    copies that came from a C `RtlMoveMemory` are `core::ptr::copy` now, baseline empty.
-3. Any armed crate the default smoke never loads can still hold a UB-check panic; conformance and
-   stortest have found the two (hidparser, usb) that smoke missed. Classify a `RUST PANIC ...
+3. Any armed crate the default smoke never loads can still hold a UB-check panic; conformance,
+   stortest and install-smoke have found the ones smoke missed (hidparser, usb, rtl-strings'
+   NULL-slice entry points). Run install-smoke after arming anything user-mode. Classify a `RUST PANIC ...
    misaligned pointer dereference` by the field-manual entry "Arming `debug-assertions` also arms
    rustc's UB checks".
+4. **install-smoke on arm64** is unsupported: installsmoke.py says arm64 has no IDE bus for the
+   two-disk layout. Owed: a virtio/NVMe two-disk layout for arm64.
 
 ## Mission
 

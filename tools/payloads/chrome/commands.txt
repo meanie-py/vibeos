@@ -17,8 +17,17 @@ msgprobe\msgprobe.exe
 waitprobe\waitprobe.exe
 # sockprobe.c: a TCP connect the way Chrome's tcp_socket_win.cc makes one; Windows' answers in sockprobe.win11.txt.
 sockprobe\sockprobe.exe
-# A memory line every 20 s while each child runs: a run once wedged the guest out of memory.
+# A memory line every 20 s while each child runs (memory, pool tags, private bytes, GDI objects per
+# process): long boots wedged out of GDI handles and pool.
 memwatch 20
+# gdiprobe.c: 20000 create/free pairs of DCs, bitmaps and GetIconInfo's copies, more than the GDI
+# handle table holds, natively and through WOW64; a pair that leaks starts failing. Long boots
+# wedged once a 32-bit app's once-a-second display DC had used up the table. Windows' answers in
+# gdiprobe.win11.txt.
+timeout gdiprobe\gdiprobe.exe 900
+timeout gdiprobe\gdiprobe32.exe 900
+gdiprobe\gdiprobe.exe
+gdiprobe\gdiprobe32.exe
 # Chrome's child processes do not write to the sweep's pipe, so the whole tree logs to a file
 # that catfile prints afterwards (it runs even when Chrome is killed at the timeout).
 timeout chrome\chrome.exe 420

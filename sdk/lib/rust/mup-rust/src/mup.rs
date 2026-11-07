@@ -468,6 +468,8 @@ pub unsafe fn MupCleanupVcb(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Vcb: PMUP_V
     ExAcquireResourceExclusiveLite(addr_of_mut!(MupVcbLock), TRUE);
 
     if (*Vcb).NodeStatus != NODE_STATUS_HEALTHY || (*Vcb).NodeType != NODE_TYPE_VCB {
+        // The C raises still holding the lock; drop it first (MupCleanup catches).
+        ExReleaseResourceLite(addr_of_mut!(MupVcbLock));
         ExRaiseStatus(STATUS_INVALID_HANDLE);
     }
 
@@ -482,6 +484,8 @@ pub unsafe fn MupCleanupVcb(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Vcb: PMUP_V
 pub unsafe fn MupCleanupFcb(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Fcb: PMUP_FCB) {
     ExAcquireResourceExclusiveLite(addr_of_mut!(MupGlobalLock), TRUE);
     if (*Fcb).NodeStatus != NODE_STATUS_HEALTHY || (*Fcb).NodeType != NODE_TYPE_FCB {
+        // The C raises still holding the lock; drop it first (MupCleanup catches).
+        ExReleaseResourceLite(addr_of_mut!(MupGlobalLock));
         ExRaiseStatus(STATUS_INVALID_HANDLE);
     }
     (*Fcb).NodeStatus = NODE_STATUS_CLEANUP;
@@ -1148,24 +1152,29 @@ pub unsafe extern "system" fn MupFsControl(DeviceObject: PDEVICE_OBJECT, Irp: PI
     let mut Status: NTSTATUS = STATUS_SUCCESS;
     let Stack = IoGetCurrentIrpStackLocation(Irp);
 
-    'try_blk: {
-        if (*Stack).Parameters.FileSystemControl.FsControlCode == FSCTL_MUP_REGISTER_PROVIDER {
-            if (*Irp).RequestorMode == UserMode {
-                Status = STATUS_ACCESS_DENIED;
-                (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-                IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-                break 'try_blk;
+    // C: __try; the handler takes the exception code.
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        'try_blk: {
+            if (*Stack).Parameters.FileSystemControl.FsControlCode == FSCTL_MUP_REGISTER_PROVIDER {
+                if (*Irp).RequestorMode == UserMode {
+                    Status = STATUS_ACCESS_DENIED;
+                    (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+                    IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+                    break 'try_blk;
+                }
+                Status = RegisterUncProvider(DeviceObject, Irp);
+            } else {
+                if MupEnableDfs == 0 {
+                    Status = STATUS_INVALID_PARAMETER;
+                    (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+                    IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+                    break 'try_blk;
+                }
+                Status = DfsFsdFileSystemControl(DeviceObject, Irp);
             }
-            Status = RegisterUncProvider(DeviceObject, Irp);
-        } else {
-            if MupEnableDfs == 0 {
-                Status = STATUS_INVALID_PARAMETER;
-                (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-                IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-                break 'try_blk;
-            }
-            Status = DfsFsdFileSystemControl(DeviceObject, Irp);
         }
+    }) {
+        Status = code;
     }
 
     Status
@@ -1233,7 +1242,7 @@ pub unsafe fn BroadcastOpen(Irp: PIRP) -> NTSTATUS {
     LastFailed = STATUS_NO_SUCH_FILE;
     LastOrder = ULONG::MAX;
 
-    // The C's _SEH2_TRY. Its only raise is our own allocation failure below, and its handler's
+    // nolint(dead_seh): the C's _SEH2_TRY. Its only raise is our own allocation failure below, and its handler's
     // `Status = code` is overwritten straight after the block, so the raise is a `break`: the
     // bare ExRaiseStatus it was had no catcher and bugchecked.
     'try_: {
@@ -1797,8 +1806,13 @@ pub unsafe fn CreateRedirectedFile(
                             as SIZE_T,
                         TAG_MUP,
                     ) as PQUERY_PATH_REQUEST;
+                    // Exceeds the C, which raises here: the raise ran the finally
+                    // (dropping MasterQueryContext, which completes the pending
+                    // IRP) and then MupCreate's handler completed the same IRP a
+                    // second time. Stop querying instead; the finally below then
+                    // completes it once, with the best status any provider gave.
                     if QueryPathRequest.is_null() {
-                        ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+                        break 'try_blk;
                     }
 
                     QueryContext = ExAllocatePoolWithTag(
@@ -1808,7 +1822,7 @@ pub unsafe fn CreateRedirectedFile(
                     ) as PQUERY_PATH_CONTEXT;
                     if QueryContext.is_null() {
                         ExFreePoolWithTag(QueryPathRequest as PVOID, TAG_MUP);
-                        ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+                        break 'try_blk; // as above: no raise, no double completion
                     }
 
                     InitializeListHead(addr_of_mut!((*QueryContext).QueryPathListEntry));
@@ -1839,7 +1853,7 @@ pub unsafe fn CreateRedirectedFile(
                     if QueryIrp.is_null() {
                         ExFreePoolWithTag(QueryContext as PVOID, TAG_MUP);
                         ExFreePoolWithTag(QueryPathRequest as PVOID, TAG_MUP);
-                        ExRaiseStatus(STATUS_INSUFFICIENT_RESOURCES);
+                        break 'try_blk; // as above: no raise, no double completion
                     }
 
                     (*QueryIrp).RequestorMode = KernelMode;
@@ -1928,8 +1942,8 @@ pub unsafe extern "system" fn MupCreate(DeviceObject: PDEVICE_OBJECT, Irp: PIRP)
 
     FsRtlEnterFileSystem();
 
-    // _SEH2_TRY/_SEH2_EXCEPT
-    {
+    // C: __try; the handler completes the IRP with the exception code.
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
         if MupEnableDfs != 0
             && ((*DeviceObject).DeviceType == FILE_DEVICE_DFS
                 || (*DeviceObject).DeviceType == FILE_DEVICE_DFS_FILE_SYSTEM)
@@ -1958,6 +1972,10 @@ pub unsafe extern "system" fn MupCreate(DeviceObject: PDEVICE_OBJECT, Irp: PIRP)
                 IoCompleteRequest(Irp, IO_DISK_INCREMENT);
             }
         }
+    }) {
+        Status = code;
+        (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
     }
 
     FsRtlExitFileSystem();
@@ -1983,7 +2001,7 @@ pub unsafe fn MupCloseUncProvider(UncProvider: PMUP_UNC) {
 }
 
 pub unsafe extern "system" fn MupCleanup(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
-    let mut Type: ULONG;
+    let mut Type: ULONG = 0;
     let mut Fcb: PMUP_FCB = null_mut();
     let mut Ccb: PMUP_CCB = null_mut();
     let mut Status: NTSTATUS = STATUS_SUCCESS;
@@ -1997,8 +2015,10 @@ pub unsafe extern "system" fn MupCleanup(DeviceObject: PDEVICE_OBJECT, Irp: PIRP
 
     FsRtlEnterFileSystem();
 
-    // _SEH2_TRY/_SEH2_EXCEPT
-    {
+    // C: __try — MupCleanupVcb/MupCleanupFcb RAISE STATUS_INVALID_HANDLE on a
+    // stale node. The C handler only takes the code and so never completes the
+    // IRP (the CloseHandle behind it would hang); complete it here.
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
         let Stack = IoGetCurrentIrpStackLocation(Irp);
         Type = MupDecodeFileObject((*Stack).FileObject, addr_of_mut!(Fcb), addr_of_mut!(Ccb));
         if Type == NODE_TYPE_VCB {
@@ -2036,6 +2056,10 @@ pub unsafe extern "system" fn MupCleanup(DeviceObject: PDEVICE_OBJECT, Irp: PIRP
             (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
             IoCompleteRequest(Irp, IO_DISK_INCREMENT);
         }
+    }) {
+        Status = code;
+        (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
     }
 
     FsRtlExitFileSystem();
@@ -2083,30 +2107,35 @@ pub unsafe extern "system" fn MupClose(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) 
 
     FsRtlEnterFileSystem();
 
-    'try_blk: {
-        let Stack = IoGetCurrentIrpStackLocation(Irp);
-        MupDecodeFileObject((*Stack).FileObject, addr_of_mut!(Fcb), addr_of_mut!(Ccb));
-        if Fcb.is_null() {
-            Status = STATUS_INVALID_HANDLE;
-            (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-            IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-            break 'try_blk;
-        }
+    // C: __try; the handler takes the exception code.
+    if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+        'try_blk: {
+            let Stack = IoGetCurrentIrpStackLocation(Irp);
+            MupDecodeFileObject((*Stack).FileObject, addr_of_mut!(Fcb), addr_of_mut!(Ccb));
+            if Fcb.is_null() {
+                Status = STATUS_INVALID_HANDLE;
+                (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+                IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+                break 'try_blk;
+            }
 
-        if (*Fcb).NodeType == NODE_TYPE_VCB {
-            Status = MupCloseVcb(DeviceObject, Irp, Fcb as PMUP_VCB, (*Stack).FileObject);
-        } else if (*Fcb).NodeType == NODE_TYPE_FCB {
-            MupDereferenceFcb(Fcb);
-            Status = MupCloseFcb(DeviceObject, Irp, Fcb, (*Stack).FileObject);
-        } else {
-            Status = STATUS_INVALID_HANDLE;
-            (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-            IoCompleteRequest(Irp, IO_DISK_INCREMENT);
-            break 'try_blk;
-        }
+            if (*Fcb).NodeType == NODE_TYPE_VCB {
+                Status = MupCloseVcb(DeviceObject, Irp, Fcb as PMUP_VCB, (*Stack).FileObject);
+            } else if (*Fcb).NodeType == NODE_TYPE_FCB {
+                MupDereferenceFcb(Fcb);
+                Status = MupCloseFcb(DeviceObject, Irp, Fcb, (*Stack).FileObject);
+            } else {
+                Status = STATUS_INVALID_HANDLE;
+                (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+                IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+                break 'try_blk;
+            }
 
-        (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
-        IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+            (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+            IoCompleteRequest(Irp, IO_DISK_INCREMENT);
+        }
+    }) {
+        Status = code;
     }
 
     FsRtlExitFileSystem();

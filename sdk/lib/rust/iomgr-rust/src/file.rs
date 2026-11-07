@@ -1810,7 +1810,11 @@ pub unsafe extern "system" fn IopGetSetSecurityObject(
         if Status == STATUS_BUFFER_OVERFLOW {
             Status = STATUS_BUFFER_TOO_SMALL;
         }
-        *BufferLength = IoStatusBlock.Information as ULONG;
+        // C: __try — BufferLength can be the caller's; a fault returns its code.
+        let Information = IoStatusBlock.Information as ULONG;
+        if let Err(code) = ntkrnl_sys::seh::try_except_all(|| *BufferLength = Information) {
+            Status = code;
+        }
     }
 
     Status

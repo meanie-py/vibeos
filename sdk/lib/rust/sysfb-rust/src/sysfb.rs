@@ -518,9 +518,11 @@ unsafe extern "system" fn SysFbDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: 
                 (*pModeInfo).Frequency = 60;
                 (*pModeInfo).XMillimeter = 320;
                 (*pModeInfo).YMillimeter = 240;
-                (*pModeInfo).NumberRedBits = 8;
-                (*pModeInfo).NumberGreenBits = 8;
-                (*pModeInfo).NumberBlueBits = 8;
+                // The channel widths are the masks' bit counts: a 16bpp 5-6-5 framebuffer
+                // is 5/6/5, not 8/8/8. A mask the loader left zero keeps the old 8.
+                (*pModeInfo).NumberRedBits = mask_bits((*DevExt).RedMask);
+                (*pModeInfo).NumberGreenBits = mask_bits((*DevExt).GreenMask);
+                (*pModeInfo).NumberBlueBits = mask_bits((*DevExt).BlueMask);
                 (*pModeInfo).RedMask = (*DevExt).RedMask;
                 (*pModeInfo).GreenMask = (*DevExt).GreenMask;
                 (*pModeInfo).BlueMask = (*DevExt).BlueMask;
@@ -773,6 +775,7 @@ unsafe fn SysFbDiscoverFramebuffer(DevExt: PSYSFB_DEVICE_EXTENSION) -> NTSTATUS 
 
     DPRINT1!("[sysfb] Configuration Data: %lu partial descriptors\n", count);
 
+    let mut FrameBufferOffset: ULONG = 0;
     let mut i: u32 = 0;
     while i < count {
         // PartialDescriptors is a flexible array of CM_PARTIAL_RESOURCE_DESCRIPTOR.
@@ -787,6 +790,7 @@ unsafe fn SysFbDiscoverFramebuffer(DevExt: PSYSFB_DEVICE_EXTENSION) -> NTSTATUS 
         } else if (*PartialDesc).Type == CmResourceTypeDeviceSpecific as u8 {
             // The CM_FRAMEBUF_DEVICE_DATA follows immediately after this descriptor.
             let FramebufData = PartialDesc.add(1) as PCM_FRAMEBUF_DEVICE_DATA;
+            FrameBufferOffset = (*FramebufData).FrameBufferOffset;
             (*DevExt).ScreenWidth = (*FramebufData).ScreenWidth;
             (*DevExt).ScreenHeight = (*FramebufData).ScreenHeight;
             (*DevExt).PixelsPerScanLine = (*FramebufData).PixelsPerScanLine;
@@ -808,11 +812,36 @@ unsafe fn SysFbDiscoverFramebuffer(DevExt: PSYSFB_DEVICE_EXTENSION) -> NTSTATUS 
         return STATUS_NOT_FOUND;
     }
 
+    // The memory resource is the whole video RAM; the visible frame starts
+    // FrameBufferOffset into it (framebuf.h, and how bootvid maps it).
+    if FrameBufferOffset != 0 {
+        if (*DevExt).FrameBufferSize != 0 && FrameBufferOffset >= (*DevExt).FrameBufferSize {
+            DPRINT1!("[sysfb] FrameBufferOffset 0x%lx is past the 0x%lx-byte memory resource\n",
+                FrameBufferOffset, (*DevExt).FrameBufferSize);
+            return STATUS_INVALID_PARAMETER;
+        }
+        (*DevExt).FrameBufferPhysical.QuadPart += FrameBufferOffset as i64;
+        if (*DevExt).FrameBufferSize != 0 {
+            (*DevExt).FrameBufferSize -= FrameBufferOffset;
+        }
+        DPRINT1!("[sysfb] Visible frame at offset 0x%lx into the memory resource\n", FrameBufferOffset);
+    }
+
     if (*DevExt).FrameBufferSize == 0 {
         (*DevExt).FrameBufferSize = (*DevExt).ScreenStride * (*DevExt).ScreenHeight;
     }
 
     STATUS_SUCCESS
+}
+
+/// The width of one colour channel: the number of bits set in its mask, or 8 when the
+/// loader supplied no mask (the value every mode reported before masks were read).
+fn mask_bits(mask: ULONG) -> ULONG {
+    if mask == 0 {
+        8
+    } else {
+        mask.count_ones()
+    }
 }
 
 // ---- Write HARDWARE\DEVICEMAP\VIDEO ----

@@ -45,7 +45,9 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_ntlsalib DEPENDS ${NTLSALIB_RUST_LIB})
 
+# ntlsalib is all Rust: an INTERFACE library over its Rust archive, so consumers link
+# it directly and no placeholder archive is built (`tools/codegen cargo-cell --interface`).
 # add_library(ntlsalib lsa.c) + _NTSYSTEM_  # body replaced by Rust; kept on disk
-add_library(ntlsalib rust_cohab_stub.c)
+add_library(ntlsalib INTERFACE)
 add_dependencies(ntlsalib xdk rust_ntlsalib)
-target_link_libraries(ntlsalib PUBLIC ${NTLSALIB_RUST_LIB})
+target_link_libraries(ntlsalib INTERFACE ${NTLSALIB_RUST_LIB})

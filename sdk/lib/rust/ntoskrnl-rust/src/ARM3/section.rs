@@ -1406,14 +1406,21 @@ pub unsafe extern "system" fn MiQueryMemorySectionName(
     if status >= 0 {
         let section_name = memory_information as *mut _MEMORY_SECTION_NAME;
         if previous_mode != 0i8 {
-            RtlInitEmptyUnicodeString(
-                &mut (*section_name).SectionFileName,
-                (section_name.add(1)) as PWSTR,
-                (memory_information_length - core::mem::size_of::<_MEMORY_SECTION_NAME>()) as USHORT,
-            );
-            RtlCopyUnicodeString(&mut (*section_name).SectionFileName, &module_file_name);
-            if !return_length.is_null() {
-                *return_length = module_file_name.Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>();
+            // C: __try for a user-mode caller — the name goes into its buffer; the
+            // handler takes the exception code. The name is freed either way.
+            let name = core::ptr::addr_of!(module_file_name);
+            if let Err(code) = ntkrnl_sys::seh::try_except_all(|| {
+                RtlInitEmptyUnicodeString(
+                    &mut (*section_name).SectionFileName,
+                    (section_name.add(1)) as PWSTR,
+                    (memory_information_length - core::mem::size_of::<_MEMORY_SECTION_NAME>()) as USHORT,
+                );
+                RtlCopyUnicodeString(&mut (*section_name).SectionFileName, name);
+                if !return_length.is_null() {
+                    *return_length = (*name).Length as SIZE_T + core::mem::size_of::<_MEMORY_SECTION_NAME>();
+                }
+            }) {
+                status = code;
             }
         } else {
             RtlInitEmptyUnicodeString(
@@ -2495,6 +2502,8 @@ pub unsafe extern "system" fn NtExtendSection(  // nolint: dropped-probe (stub, 
 ) -> NTSTATUS {
     let section_handle = opaque_ptr(section_handle);
     let new_maximum_size = opaque_ptr(new_maximum_size);
+    // nolint(dead_seh): the C's two __try blocks guard its probe and write-back of
+    // *NewMaximumSize; this stub touches neither, so nothing can fault.
     STATUS_NOT_IMPLEMENTED
 }
 

@@ -1111,7 +1111,8 @@ pub unsafe extern "fastcall" fn KiSystemServiceHandler(
         }
     }
     if (offset & SERVICE_TABLE_TEST) != 0 {
-        if (*NtCurrentTeb()).GdiBatchCount != 0 {
+        // The TEB is user memory; a fault reads as 0 (amd64's C has this __try).
+        if ntkrnl_sys::seh::try_except_all(|| (*NtCurrentTeb()).GdiBatchCount).unwrap_or(0) != 0 {
             KeGdiFlushUserBatch();
         }
     }
@@ -1135,7 +1136,36 @@ pub unsafe extern "fastcall" fn KiSystemServiceHandler(
         (*(thread as *mut _ETHREAD)).Tcb.TrapFrame = (*TrapFrame).Edx as PKTRAP_FRAME;
         KiServiceExit(TrapFrame, status);
     }
-    let status = KiSystemCallTrampoline(handler, Arguments, stack_bytes as ULONG);
+    // Capture a user caller's arguments before the trampoline copies them.
+    // Exceeds the C, which hands the trampoline the caller's pointer: its
+    // `rep movsd` then faults with nothing to catch it (an unmapped user stack
+    // bugchecks the machine), and its "probe" checks only a KERNEL caller, so a
+    // user edx aimed at kernel memory was copied in as arguments. amd64 range-
+    // checks and copies under __try; do the same into a kernel buffer, which the
+    // trampoline then copies from safely. Number[] is a UCHAR, so 256 bytes fit.
+    let mut captured = [0u32; 64];
+    let mut args = Arguments;
+    if KiUserTrap(TrapFrame) != 0 && stack_bytes != 0 {
+        let n = stack_bytes as usize;
+        let last = (Arguments as usize).wrapping_add(n - 1);
+        let status = if last < Arguments as usize || last >= MmUserProbeAddress as usize {
+            STATUS_ACCESS_VIOLATION
+        } else {
+            let dst = captured.as_mut_ptr() as *mut u8;
+            match ntkrnl_sys::seh::try_except_all(|| {
+                core::ptr::copy_nonoverlapping(Arguments as *const u8, dst, n)
+            }) {
+                Ok(()) => STATUS_SUCCESS,
+                Err(code) => code,
+            }
+        };
+        if status != STATUS_SUCCESS {
+            (*(thread as *mut _ETHREAD)).Tcb.TrapFrame = (*TrapFrame).Edx as PKTRAP_FRAME;
+            KiServiceExit(TrapFrame, status);
+        }
+        args = captured.as_mut_ptr() as PVOID;
+    }
+    let status = KiSystemCallTrampoline(handler, args, stack_bytes as ULONG);
     KiExitSystemCallDebugChecks(id, TrapFrame);
     (*(thread as *mut _ETHREAD)).Tcb.TrapFrame = (*TrapFrame).Edx as PKTRAP_FRAME;
     KiServiceExit(TrapFrame, status);
