@@ -9152,6 +9152,69 @@ unsafe fn ntgdi_get_char_abc_widths_w_impl(
     1 // TRUE
 }
 
+/// The selected font's minimum left/right side bearings (gdi32's undocumented
+/// `GetCharWidthInfo`, which the edit control's EC_USEFONTINFO margins read for CJK
+/// fonts). Upstream ReactOS leaves this UNIMPLEMENTED; Wine's win32u is the reference:
+/// font_GetCharWidthInfo + freetype_get_char_width_info scale the `hhea` table's
+/// min_Left/Right_Side_Bearing by ppem/units_per_EM, report 0/0 for a bitmap font or a
+/// face with no `hhea`, and always succeed for a valid DC. `lMinD` is Wine's `unk`, 0.
+///
+/// Wine then maps both through width_to_LP. The other per-glyph width calls here
+/// (NtGdiGetCharWidthW, NtGdiGetCharABCWidthsW) return device units as they stand, so
+/// this does the same, and all three agree under a non-MM_TEXT mapping.
+#[no_mangle]
+pub unsafe extern "system" fn NtGdiGetCharWidthInfo(hdc: HDC, pChWidthInfo: PCHWIDTHINFO) -> BOOL {
+    if pChWidthInfo.is_null() {
+        EngSetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
+    let dc: PDC = DC_LockDc(hdc);
+    if dc.is_null() {
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+    let hFont: HFONT = (*(*dc).pdcattr).hlfntNew as _;
+    let TextObj: PTEXTOBJ = RealizeFontInit(hFont);
+    if TextObj.is_null() {
+        DC_UnlockDc(dc);
+        EngSetLastError(ERROR_INVALID_HANDLE);
+        return 0;
+    }
+
+    let FontGDI: PFONTGDI = ObjToGDI!((*TextObj).Font);
+    let face: FT_Face = (*(*FontGDI).SharedFace).Face;
+    let plf: *mut LOGFONTW = core::ptr::addr_of_mut!((*TextObj).logfont.elfEnumLogfontEx.elfLogFont);
+    let mut info: CHWIDTHINFO = CHWIDTHINFO { lMinA: 0, lMinC: 0, lMinD: 0 };
+
+    // ftGdiGetTextMetricsW holds the DC lock across the FreeType lock too.
+    IntLockFreeType();
+    if FT_IS_SCALABLE(face) != 0 && (*face).units_per_EM != 0 {
+        let pHori = FT_Get_Sfnt_Table(face, FT_SFNT_HHEA) as *mut TT_HoriHeader;
+        if !pHori.is_null() && IntRequestFontSize(dc, FontGDI, (*plf).lfWidth, (*plf).lfHeight) == 0 {
+            let ppem = (*(*face).size).metrics.y_ppem as FT_Long;
+            let em_scale = FT_MulDiv(ppem, 1 << 16, (*face).units_per_EM as FT_Long);
+            // Wine truncates through SHORT; a bearing that large is nonsense anyway.
+            info.lMinA = FT_MulFix((*pHori).min_Left_Side_Bearing as FT_Long, em_scale) as i16 as LONG;
+            info.lMinC = FT_MulFix((*pHori).min_Right_Side_Bearing as FT_Long, em_scale) as i16 as LONG;
+        }
+    }
+    IntUnLockFreeType();
+    w32r_TEXTOBJ_UnlockText(TextObj);
+    DC_UnlockDc(dc);
+
+    let Status = MmCopyToCaller(
+        pChWidthInfo as *mut c_void,
+        core::ptr::addr_of!(info) as *const c_void,
+        core::mem::size_of::<CHWIDTHINFO>() as ULONG,
+    );
+    if !NT_SUCCESS(Status) {
+        SetLastNtError(Status);
+        return 0;
+    }
+    1
+}
+
 // ---- the realized font as a file: dwrite's GDI interop ----------------------------------
 //
 // dwrite's IDWriteGdiInterop::CreateFontFaceFromHdc asks gdi32 for the selected font's

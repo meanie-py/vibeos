@@ -899,19 +899,7 @@ pub unsafe extern "system" fn NtGdiFullscreenControl(
     );
     0u8 as NTSTATUS
 }
-#[no_mangle]
-pub unsafe extern "system" fn NtGdiGetCharWidthInfo(
-    hdc: HDC,
-    pChWidthInfo: PCHWIDTHINFO,
-) -> BOOL {
-    DbgPrint(
-        b"(%s:%i) WIN32K: %s UNIMPLEMENTED\n\0".as_ptr() as PCHAR,
-        b"stubs.c\0".as_ptr() as PCHAR,
-        line!() as i32,
-        b"NtGdiGetCharWidthInfo\0".as_ptr() as PCHAR,
-    );
-    0
-}
+// NtGdiGetCharWidthInfo: implemented in freetype.rs.
 #[no_mangle]
 pub unsafe extern "system" fn NtGdiGetColorSpaceforBitmap(
     hsurf: HBITMAP
