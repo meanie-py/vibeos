@@ -244,6 +244,7 @@ pub mod i386;
 // Kdb*/Kdp* symbols link in via kernel-rust's cfg-gated `extern crate kdbg_rust`.
 // Deliberately NOT depended on here (severed) — cross-calls resolve at link time.
 pub mod ke;
+pub mod kse;
 // lpc extracted to its own crate (crate-split PoC) — see lpc-rust. Deliberately
 // NOT depended on here: severing the ntoskrnl-rust→lpc-rust edge is what makes
 // the split pay off (touching lpc no longer rebuilds the monolith). Cross-calls

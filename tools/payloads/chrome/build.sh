@@ -27,6 +27,12 @@ bash "$ROOT/tools/payloads/apitest/build.sh" "$A"
 # context, RtlReAllocateHeap raising STATUS_NO_MEMORY). It still writes to the std handles given.
 "$ROOT/.build-tools/llvm-mingw/bin/i686-w64-mingw32-gcc" -O2 -mwindows -o "$HERE/gdiprobe-i386.exe" "$HERE/gdiprobe.c" -lmsvcrt-os -lkernel32 -luser32 -lgdi32
 python3 "$(dirname "$HERE")/pecheck.py" "$HERE/gdiprobe-i386.exe" --tag gdiprobe32 --forbid-dll api-ms-win-crt
+# w32start: that start-up failure split four ways (no CRT / llvm-mingw CRT / + user32 / + gdi32).
+I686="$ROOT/.build-tools/llvm-mingw/bin/i686-w64-mingw32-gcc"
+"$I686" -O2 -mwindows -nostdlib -DW32START_BARE -Wl,-e,_entry@0 -o "$HERE/w32start-bare.exe" "$HERE/w32start.c" -lkernel32
+"$I686" -O2 -mwindows -o "$HERE/w32start-crt.exe" "$HERE/w32start.c" -lmsvcrt-os -lkernel32
+"$I686" -O2 -mwindows -DW32START_USER32 -o "$HERE/w32start-user32.exe" "$HERE/w32start.c" -lmsvcrt-os -lkernel32 -luser32
+"$I686" -O2 -mwindows -DW32START_GDI32 -o "$HERE/w32start-gdi32.exe" "$HERE/w32start.c" -lmsvcrt-os -lkernel32 -luser32 -lgdi32
 for P in pipeprobe catfile dumpinfo tlsprobe secprobe iocpprobe dupprobe msgprobe waitprobe servepage sockprobe grepfile gdiprobe; do
     python3 "$(dirname "$HERE")/pecheck.py" "$HERE/$P-$A.exe" --tag $P --forbid-dll api-ms-win-crt
 done

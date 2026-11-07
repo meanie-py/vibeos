@@ -51,6 +51,14 @@ binaries:
     dest: bin/gdiprobe/gdiprobe.exe
   - src: tools/payloads/chrome/gdiprobe-i386.exe
     dest: bin/gdiprobe/gdiprobe32.exe
+  - src: tools/payloads/chrome/w32start-bare.exe
+    dest: bin/w32start/w32start-bare.exe
+  - src: tools/payloads/chrome/w32start-crt.exe
+    dest: bin/w32start/w32start-crt.exe
+  - src: tools/payloads/chrome/w32start-user32.exe
+    dest: bin/w32start/w32start-user32.exe
+  - src: tools/payloads/chrome/w32start-gdi32.exe
+    dest: bin/w32start/w32start-gdi32.exe
   - src: tools/payloads/chrome/hello.html
     dest: bin/chrome-pages/hello.html
 binaries_from: tools/payloads/chrome/stage.py

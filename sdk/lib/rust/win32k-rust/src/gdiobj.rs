@@ -1289,7 +1289,14 @@ pub unsafe extern "system" fn GreGetObjectOwner(hobj: HGDIOBJ) -> ULONG {
 
     if ulIndex >= GDI_HANDLE_COUNT ||
         (*gpentHmgr.offset(ulIndex as isize)).Objt == GDIObjType_DEF_TYPE as u8 ||
-        ((hobj as ULONG_PTR) >> 16) != (*gpentHmgr.offset(ulIndex as isize)).FullUnique as ULONG_PTR
+        // A GDI handle is 32 bits wide; compare only them. The C compares the whole ULONG_PTR,
+        // which works for the zero-extended handles win32k hands out but not for a WoW64
+        // caller's: the thunk sign-extends a 32-bit handle, as Windows does, so once a slot's
+        // reuse count reaches 0x80 the upper bits are all ones and the handle never matched.
+        // NtGdiDeleteObjectApp then refused every such handle as not ours: a 32-bit app
+        // creating and deleting a pen leaked it half of the time. ENTRY_ReferenceEntryByHandle
+        // already compares 16 bits.
+        ((hobj as ULONG_PTR >> 16) as u16) != (*gpentHmgr.offset(ulIndex as isize)).FullUnique
     {
         return GDI_OBJ_HMGR_RESTRICTED;
     }

@@ -460,7 +460,10 @@ extends it from the boot spine to every fully-Rust module.
        was already a cell) converted**, EQUIVALENT ×3. The forwarders' imports come from a
        list variable computed from the spec (`${_forward_targets}`); usage now skips a
        variable rather than spelling `lib${list}`, and the dead `file(STRINGS)` block went
-       with it (cargo's spec2def reads the spec). Next: d3dcompiler (13, flex/bison sources).
+       with it (cargo's spec2def reads the spec). **d3dcompiler_33..47 (13) converted**,
+       EQUIVALENT ×3: the flex/bison outputs need nothing new, since the OBJECT library
+       compiles `${CMAKE_CURRENT_BINARY_DIR}/asmshader.{yy,tab}.c` and orders them before the
+       cargo link. The d3dx family is done (45 modules); d3dwine itself is still cmake-linked.
      - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
        `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
        `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses
