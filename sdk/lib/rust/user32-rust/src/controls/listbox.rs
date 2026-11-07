@@ -124,7 +124,6 @@ extern "system" {
     fn KillSystemTimer(hWnd: HWND, uIDEvent: UINT_PTR) -> BOOL;
 
     fn GetLastError() -> DWORD;
-    fn HeapSize(hHeap: HANDLE, dwFlags: DWORD, lpMem: *const c_void) -> usize;
     fn GetParent(hWnd: HWND) -> HWND;
     fn IsWindow(hWnd: HWND) -> BOOL;
     fn IsWindowVisible(hWnd: HWND) -> BOOL;
@@ -234,21 +233,6 @@ unsafe fn strcmpW(s1: LPCWSTR, s2: LPCWSTR) -> INT {
     }
 }
 #[inline]
-unsafe fn strncmpiW(s1: LPCWSTR, s2: LPCWSTR, mut n: INT) -> INT {
-    let mut i: isize = 0;
-    while n > 0 {
-        let mut a = *s1.offset(i);
-        let mut b = *s2.offset(i);
-        if (b'A' as u16..=b'Z' as u16).contains(&a) { a += 32; }
-        if (b'A' as u16..=b'Z' as u16).contains(&b) { b += 32; }
-        if a != b { return a as INT - b as INT; }
-        if a == 0 { return 0; }
-        i += 1;
-        n -= 1;
-    }
-    0
-}
-#[inline]
 unsafe fn strlwrW(s: LPWSTR) -> LPWSTR { CharLowerW(s) }
 #[inline]
 unsafe fn struprW(s: LPWSTR) -> LPWSTR {
@@ -318,8 +302,13 @@ pub struct LB_DESCR {
     pub style: UINT,
     pub width: INT,
     pub height: INT,
+    /// C `union { LB_ITEMDATA *items; BYTE *nodata_items; } u`: an LB_ITEMDATA array,
+    /// or for a multi-selection LBS_NODATA listbox one selection byte per item, or for a
+    /// single-selection LBS_NODATA listbox nothing at all (NULL). See get_sizeof_item.
     pub items: *mut LB_ITEMDATA,
     pub nb_items: INT,
+    /// Total number of allocated items in the array.
+    pub items_size: UINT,
     pub top_item: INT,
     pub selected_item: INT,
     pub focus_item: INT,
@@ -409,6 +398,145 @@ pub static COMBOLBOX_builtin_class: builtin_class_descr = builtin_class_descr {
     brush: 0 as HBRUSH,
 };
 
+// ---- item storage (Wine 11.11: LBS_NODATA support) ----
+//
+// Without LBS_NODATA, descr->items is an LB_ITEMDATA array. A single-selection
+// LBS_NODATA listbox stores nothing (items stays NULL); a multi-selection one stores
+// one selection byte per item in the same allocation (C's u.nodata_items).
+
+#[inline]
+unsafe fn nodata_items(descr: *const LB_DESCR) -> *mut BYTE {
+    (*descr).items as *mut BYTE
+}
+
+#[inline]
+unsafe fn get_sizeof_item(descr: *const LB_DESCR) -> usize {
+    if (*descr).style & LBS_NODATA != 0 {
+        core::mem::size_of::<BYTE>()
+    } else {
+        core::mem::size_of::<LB_ITEMDATA>()
+    }
+}
+
+unsafe fn resize_storage(descr: *mut LB_DESCR, mut items_size: UINT) -> BOOL {
+    if items_size > (*descr).items_size
+        || items_size + (LB_ARRAY_GRANULARITY as UINT) * 2 < (*descr).items_size
+    {
+        let g = LB_ARRAY_GRANULARITY as UINT;
+        items_size = (items_size + g - 1) & !(g - 1);
+        if (*descr).style & (LBS_NODATA | LBS_MULTIPLESEL | LBS_EXTENDEDSEL) != LBS_NODATA {
+            let bytes = items_size as usize * get_sizeof_item(descr);
+            // C: realloc(NULL, n) allocates; realloc(p, 0) frees. Keep a minimum of one
+            // byte so a zero-size shrink never frees under us (ResetContent frees).
+            let bytes = if bytes == 0 { 1 } else { bytes };
+            let items = if (*descr).items.is_null() {
+                HeapAlloc(GetProcessHeap(), 0, bytes as SIZE_T)
+            } else {
+                HeapReAlloc(GetProcessHeap(), 0, (*descr).items as *mut c_void, bytes as SIZE_T)
+            } as *mut LB_ITEMDATA;
+            if items.is_null() {
+                SEND_NOTIFICATION(descr, LBN_ERRSPACE as INT);
+                return FALSE;
+            }
+            (*descr).items = items;
+        }
+        (*descr).items_size = items_size;
+    }
+
+    if (*descr).style & LBS_NODATA != 0
+        && !(*descr).items.is_null()
+        && items_size as INT > (*descr).nb_items
+    {
+        core::ptr::write_bytes(
+            nodata_items(descr).add((*descr).nb_items as usize),
+            0,
+            (items_size as usize - (*descr).nb_items as usize) * get_sizeof_item(descr),
+        );
+    }
+    TRUE
+}
+
+#[inline]
+unsafe fn get_item_data(descr: *const LB_DESCR, index: INT) -> ULONG_PTR {
+    if (*descr).style & LBS_NODATA != 0 { 0 } else { (*(*descr).items.offset(index as isize)).data }
+}
+
+#[inline]
+unsafe fn set_item_data(descr: *mut LB_DESCR, index: INT, data: ULONG_PTR) {
+    if (*descr).style & LBS_NODATA == 0 {
+        (*(*descr).items.offset(index as isize)).data = data;
+    }
+}
+
+#[inline]
+unsafe fn get_item_string(descr: *const LB_DESCR, index: INT) -> LPWSTR {
+    if HAS_STRINGS(descr) != 0 { (*(*descr).items.offset(index as isize)).str_ } else { core::ptr::null_mut() }
+}
+
+#[inline]
+unsafe fn set_item_string(descr: *mut LB_DESCR, index: INT, string: LPWSTR) {
+    if (*descr).style & LBS_NODATA == 0 {
+        (*(*descr).items.offset(index as isize)).str_ = string;
+    }
+}
+
+#[inline]
+unsafe fn get_item_height(descr: *const LB_DESCR, index: INT) -> UINT {
+    if (*descr).style & LBS_NODATA != 0 { 0 } else { (*(*descr).items.offset(index as isize)).height }
+}
+
+#[inline]
+unsafe fn set_item_height(descr: *mut LB_DESCR, index: INT, height: UINT) {
+    if (*descr).style & LBS_NODATA == 0 {
+        (*(*descr).items.offset(index as isize)).height = height;
+    }
+}
+
+#[inline]
+unsafe fn is_item_selected(descr: *const LB_DESCR, index: INT) -> BOOL {
+    if (*descr).style & (LBS_MULTIPLESEL | LBS_EXTENDEDSEL) == 0 {
+        return (index == (*descr).selected_item) as BOOL;
+    }
+    if (*descr).style & LBS_NODATA != 0 {
+        *nodata_items(descr).offset(index as isize) as BOOL
+    } else {
+        (*(*descr).items.offset(index as isize)).selected
+    }
+}
+
+#[inline]
+unsafe fn set_item_selected_state(descr: *mut LB_DESCR, index: INT, state: BOOL) {
+    if (*descr).style & (LBS_MULTIPLESEL | LBS_EXTENDEDSEL) != 0 {
+        if (*descr).style & LBS_NODATA != 0 {
+            *nodata_items(descr).offset(index as isize) = state as BYTE;
+        } else {
+            (*(*descr).items.offset(index as isize)).selected = state;
+        }
+    }
+}
+
+unsafe fn insert_item_data(descr: *mut LB_DESCR, index: INT) {
+    let size = get_sizeof_item(descr);
+    if (*descr).items.is_null() {
+        return;
+    }
+    let p = nodata_items(descr).add(index as usize * size);
+    if index < (*descr).nb_items {
+        core::ptr::copy(p, p.add(size), ((*descr).nb_items - index) as usize * size);
+    }
+}
+
+unsafe fn remove_item_data(descr: *mut LB_DESCR, index: INT) {
+    let size = get_sizeof_item(descr);
+    if (*descr).items.is_null() {
+        return;
+    }
+    let p = nodata_items(descr).add(index as usize * size);
+    if index < (*descr).nb_items {
+        core::ptr::copy(p.add(size), p, ((*descr).nb_items - index) as usize * size);
+    }
+}
+
 unsafe fn LISTBOX_GetCurrentPageSize(descr: *const LB_DESCR) -> INT {
     let mut i: INT;
     let mut height: INT;
@@ -418,7 +546,7 @@ unsafe fn LISTBOX_GetCurrentPageSize(descr: *const LB_DESCR) -> INT {
     i = (*descr).top_item;
     height = 0;
     while i < (*descr).nb_items {
-        height += (*(*descr).items.offset(i as isize)).height as INT;
+        height += get_item_height(descr, i) as INT;
         if height > (*descr).height {
             break;
         }
@@ -439,7 +567,7 @@ unsafe fn LISTBOX_GetMaxTopIndex(descr: *const LB_DESCR) -> INT {
         page = (*descr).height;
         max = (*descr).nb_items - 1;
         while max >= 0 {
-            page -= (*(*descr).items.offset(max as isize)).height as INT;
+            page -= get_item_height(descr, max) as INT;
             if page < 0 {
                 break;
             }
@@ -544,13 +672,13 @@ unsafe fn LISTBOX_SetTopItem(descr: *mut LB_DESCR, mut index: INT, scroll: BOOL)
             if index > (*descr).top_item {
                 let mut i = index - 1;
                 while i >= (*descr).top_item {
-                    d -= (*(*descr).items.offset(i as isize)).height as INT;
+                    d -= get_item_height(descr, i) as INT;
                     i -= 1;
                 }
             } else {
                 let mut i = index;
                 while i < (*descr).top_item {
-                    d += (*(*descr).items.offset(i as isize)).height as INT;
+                    d += get_item_height(descr, i) as INT;
                     i += 1;
                 }
             }
@@ -606,16 +734,26 @@ unsafe fn LISTBOX_UpdateSize(descr: *mut LB_DESCR) {
     (*descr).width = rect.right - rect.left;
     (*descr).height = rect.bottom - rect.top;
     if ((*descr).style & LBS_NOINTEGRALHEIGHT) == 0 && ((*descr).style & LBS_OWNERDRAWVARIABLE) == 0 {
+        let mut height: INT = (*descr).height;
         let remaining: INT;
         let mut rect2: RECT = core::mem::zeroed();
 
+        // Wine 11.11: native ignores the horizontal scrollbar when it trims to an
+        // integral height (while honouring e.g. WS_EX_CLIENTEDGE), so partial items
+        // end up obscured anyway. Upstream keeps ReactOS's own SM_CYHSCROLL add to
+        // rect.bottom above as well, so with WS_HSCROLL it is counted twice here;
+        // ported as upstream has it and graded by the listbox winetest.
+        if GetWindowLongPtrW((*descr).self_, GWL_STYLE as i32) as LONG & (WS_HSCROLL as LONG) != 0 {
+            height += GetSystemMetrics(SM_CYHSCROLL as i32);
+        }
+
         GetWindowRect((*descr).self_, &mut rect2);
         if (*descr).item_height != 0 {
-            remaining = (*descr).height % (*descr).item_height;
+            remaining = height % (*descr).item_height;
         } else {
             remaining = 0;
         }
-        if ((*descr).height > (*descr).item_height) && remaining != 0 {
+        if (height > (*descr).item_height) && remaining != 0 {
             SetWindowPos(
                 (*descr).self_,
                 core::ptr::null_mut(),
@@ -656,17 +794,17 @@ unsafe fn LISTBOX_GetItemRect(descr: *const LB_DESCR, index: INT, rect: *mut REC
             if index < (*descr).top_item {
                 i = (*descr).top_item - 1;
                 while i >= index {
-                    (*rect).top -= (*(*descr).items.offset(i as isize)).height as INT;
+                    (*rect).top -= get_item_height(descr, i) as INT;
                     i -= 1;
                 }
             } else {
                 i = (*descr).top_item;
                 while i < index {
-                    (*rect).top += (*(*descr).items.offset(i as isize)).height as INT;
+                    (*rect).top += get_item_height(descr, i) as INT;
                     i += 1;
                 }
             }
-            (*rect).bottom = (*rect).top + (*(*descr).items.offset(index as isize)).height as INT;
+            (*rect).bottom = (*rect).top + get_item_height(descr, index) as INT;
         }
     } else {
         (*rect).top += (index - (*descr).top_item) * (*descr).item_height;
@@ -692,7 +830,7 @@ unsafe fn LISTBOX_GetItemFromPoint( descr: *const LB_DESCR, x: INT, y: INT ) -> 
         {
             while index < (*descr).nb_items
             {
-                pos += (*(*descr).items.offset(index as isize)).height as INT;
+                pos += get_item_height(descr, index) as INT;
                 if pos > y { break; }
                 index += 1;
             }
@@ -702,7 +840,7 @@ unsafe fn LISTBOX_GetItemFromPoint( descr: *const LB_DESCR, x: INT, y: INT ) -> 
             while index > 0
             {
                 index -= 1;
-                pos -= (*(*descr).items.offset(index as isize)).height as INT;
+                pos -= get_item_height(descr, index) as INT;
                 if pos <= y { break; }
             }
         }
@@ -731,17 +869,26 @@ unsafe fn LISTBOX_PaintItem(
     action: UINT,
     ignoreFocus: BOOL,
 ) {
-    let mut item: *mut LB_ITEMDATA = core::ptr::null_mut();
+    let mut selected: BOOL = FALSE;
+    let mut item_str: LPWSTR = core::ptr::null_mut();
+
     if index < (*descr).nb_items {
-        item = &mut *(*descr).items.offset(index as isize);
+        item_str = get_item_string(descr, index);
+        selected = ((*descr).style & LBS_NOSEL == 0 && is_item_selected(descr, index) != 0) as BOOL;
     }
+    // ReactOS: the focus rect also honours UISF_HIDEFOCUS (now for owner-draw too).
+    let focused: bool = ignoreFocus == 0
+        && (*descr).focus_item == index
+        && (*descr).caret_on != 0
+        && (*descr).in_focus != 0
+        && ((*descr).UIState & UISF_HIDEFOCUS as LONG) == 0;
 
     if ((*descr).style & (LBS_OWNERDRAWFIXED | LBS_OWNERDRAWVARIABLE)) != 0 {
         let mut dis: DRAWITEMSTRUCT = core::mem::zeroed();
         let mut r: RECT = core::mem::zeroed();
         let hrgn: HRGN;
 
-        if item.is_null() {
+        if index >= (*descr).nb_items {
             if action == ODA_FOCUS {
                 if ((*descr).UIState & UISF_HIDEFOCUS as LONG) == 0 {
                     DrawFocusRect(hdc, rect);
@@ -766,27 +913,23 @@ unsafe fn LISTBOX_PaintItem(
         dis.hDC = hdc;
         dis.itemID = index as UINT;
         dis.itemState = 0;
-        if (*item).selected != 0 {
+        if selected != 0 {
             dis.itemState |= ODS_SELECTED as UINT;
         }
-        if ignoreFocus == 0
-            && (*descr).focus_item == index
-            && (*descr).caret_on != 0
-            && (*descr).in_focus != 0
-        {
+        if focused {
             dis.itemState |= ODS_FOCUS as UINT;
         }
         if IsWindowEnabled((*descr).self_) == 0 {
             dis.itemState |= ODS_DISABLED as UINT;
         }
-        dis.itemData = (*item).data;
+        dis.itemData = get_item_data(descr, index);
         // DRAWITEMSTRUCT.rcItem is RECTL; `rect` is the layout-identical tagRECT.
         dis.rcItem = *(rect as *const RECTL);
         TRACE!(
             b"[%p]: drawitem %d (%s) action=%02x state=%02x rect=%s\n\0".as_ptr() as PCHAR,
             (*descr).self_,
             index,
-            debugstr_w((*item).str_),
+            debugstr_w(item_str),
             action,
             dis.itemState,
             wine_dbgstr_rect(rect),
@@ -811,7 +954,7 @@ unsafe fn LISTBOX_PaintItem(
             }
             return;
         }
-        if !item.is_null() && (*item).selected != 0 {
+        if selected != 0 {
             oldBk = SetBkColor(hdc, GetSysColor(COLOR_HIGHLIGHT as INT));
             oldText = SetTextColor(hdc, GetSysColor(COLOR_HIGHLIGHTTEXT as INT));
         } else {
@@ -825,15 +968,11 @@ unsafe fn LISTBOX_PaintItem(
             b"[%p]: painting %d (%s) action=%02x rect=%s\n\0".as_ptr() as PCHAR,
             (*descr).self_,
             index,
-            if !item.is_null() {
-                debugstr_w((*item).str_)
-            } else {
-                b"\0".as_ptr() as PCHAR
-            },
+            debugstr_w(item_str),
             action,
             wine_dbgstr_rect(rect),
         );
-        if item.is_null() {
+        if item_str.is_null() {
             ExtTextOutW(
                 hdc,
                 (*rect).left + 1,
@@ -852,9 +991,9 @@ unsafe fn LISTBOX_PaintItem(
              * rc.right < rc.left, and ETO_CLIPPED then clips the whole string away.
              * Clamp to where the text actually ends instead. */
             let mut rc: RECT = *rect;
-            if (*item).selected == 0 {
+            if selected == 0 {
                 let mut sz: SIZE = core::mem::zeroed();
-                GetTextExtentPoint32W(hdc, (*item).str_, strlenW((*item).str_) as INT, &mut sz);
+                GetTextExtentPoint32W(hdc, item_str, strlenW(item_str) as INT, &mut sz);
                 rc.right = core::cmp::min((*rect).left + 1 + sz.cx, rc.right);
             }
             ExtTextOutW(
@@ -863,8 +1002,8 @@ unsafe fn LISTBOX_PaintItem(
                 (*rect).top,
                 ETO_OPAQUE | ETO_CLIPPED,
                 &rc,
-                (*item).str_,
-                strlenW((*item).str_) as UINT,
+                item_str,
+                strlenW(item_str) as UINT,
                 core::ptr::null_mut(),
             );
         } else {
@@ -882,23 +1021,18 @@ unsafe fn LISTBOX_PaintItem(
                 hdc,
                 (*rect).left + 1,
                 (*rect).top,
-                (*item).str_,
-                strlenW((*item).str_),
+                item_str,
+                strlenW(item_str),
                 (*descr).nb_tabs,
                 (*descr).tabs,
                 0,
             );
         }
-        if !item.is_null() && (*item).selected != 0 {
+        if selected != 0 {
             SetBkColor(hdc, oldBk);
             SetTextColor(hdc, oldText);
         }
-        if ignoreFocus == 0
-            && (*descr).focus_item == index
-            && (*descr).caret_on != 0
-            && (*descr).in_focus != 0
-            && ((*descr).UIState & UISF_HIDEFOCUS as LONG) == 0
-        {
+        if focused {
             DrawFocusRect(hdc, rect);
         }
     }
@@ -1005,42 +1139,13 @@ unsafe fn LISTBOX_DrawFocusRect(descr: *mut LB_DESCR, on: BOOL) {
     ReleaseDC((*descr).self_, hdc);
 }
 
-unsafe fn LISTBOX_InitStorage(descr: *mut LB_DESCR, mut nb_items: INT) -> LRESULT {
-    let item: *mut LB_ITEMDATA;
+unsafe fn LISTBOX_InitStorage(descr: *mut LB_DESCR, nb_items: INT) -> LRESULT {
+    let new_size: UINT = ((*descr).nb_items + nb_items) as UINT;
 
-    nb_items += LB_ARRAY_GRANULARITY - 1;
-    nb_items -= nb_items % LB_ARRAY_GRANULARITY;
-    if !(*descr).items.is_null() {
-        nb_items += (HeapSize(GetProcessHeap(), 0, (*descr).items as *mut _)
-            / core::mem::size_of::<LB_ITEMDATA>()) as INT;
-        item = HeapReAlloc(
-            GetProcessHeap(),
-            0,
-            (*descr).items as *mut _,
-            (nb_items as usize * core::mem::size_of::<LB_ITEMDATA>()) as SIZE_T,
-        ) as *mut LB_ITEMDATA;
-    } else {
-        item = HeapAlloc(
-            GetProcessHeap(),
-            0,
-            (nb_items as usize * core::mem::size_of::<LB_ITEMDATA>()) as SIZE_T,
-        ) as *mut LB_ITEMDATA;
-    }
-
-    if item.is_null() {
-        SendMessageW(
-            (*descr).owner,
-            WM_COMMAND,
-            crate::internal::MAKEWPARAM(
-                GetWindowLongPtrW((*descr).self_, GWLP_ID) as u16,
-                LBN_ERRSPACE as u16,
-            ) as WPARAM,
-            (*descr).self_ as LPARAM,
-        );
+    if new_size > (*descr).items_size && resize_storage(descr, new_size) == 0 {
         return LB_ERRSPACE as LRESULT;
     }
-    (*descr).items = item;
-    LB_OKAY as LRESULT
+    (*descr).items_size as LRESULT
 }
 
 unsafe fn LISTBOX_SetTabStops(descr: *mut LB_DESCR, count: INT, tabs: LPINT) -> BOOL {
@@ -1084,36 +1189,41 @@ unsafe fn LISTBOX_SetTabStops(descr: *mut LB_DESCR, count: INT, tabs: LPINT) -> 
 }
 
 unsafe fn LISTBOX_GetText( descr: *mut LB_DESCR, index: INT, buffer: LPWSTR, unicode: BOOL ) -> LRESULT {
-    let len: DWORD;
+    let len: LRESULT;
 
     if (index < 0) || (index >= (*descr).nb_items) {
         SetLastError(ERROR_INVALID_INDEX);
         return LB_ERR as LRESULT;
     }
-    if IS_OWNERDRAW(descr) == 0 || ((*descr).style & LBS_HASSTRINGS != 0) {
+
+    if HAS_STRINGS(descr) != 0 {
+        let str: LPWSTR = get_item_string(descr, index);
+
         if buffer.is_null() {
-            let l = strlenW((*(*descr).items.offset(index as isize)).str_);
+            let l = strlenW(str);
             if unicode != 0 {
                 return l as LRESULT;
             }
-            return WideCharToMultiByte( CP_ACP, 0, (*(*descr).items.offset(index as isize)).str_, l as i32,
+            return WideCharToMultiByte( CP_ACP, 0, str, l as i32,
                                         core::ptr::null_mut(), 0, core::ptr::null_mut(), core::ptr::null_mut() ) as LRESULT;
         }
 
         if unicode != 0 {
-            strcpyW( buffer, (*(*descr).items.offset(index as isize)).str_ );
-            len = strlenW(buffer) as DWORD;
+            strcpyW( buffer, str );
+            len = strlenW(buffer) as LRESULT;
         } else {
-            len = (WideCharToMultiByte(CP_ACP, 0, (*(*descr).items.offset(index as isize)).str_, -1,
-                                      buffer as LPSTR, 0x7FFFFFFF, core::ptr::null_mut(), core::ptr::null_mut()) - 1) as DWORD;
+            len = (WideCharToMultiByte(CP_ACP, 0, str, -1,
+                                      buffer as LPSTR, 0x7FFFFFFF, core::ptr::null_mut(), core::ptr::null_mut()) - 1) as LRESULT;
         }
     } else {
+        // Wine 11.11: the whole ULONG_PTR, not its low DWORD (LB_GETTEXT on a
+        // no-strings owner-draw listbox reads back the item data).
         if !buffer.is_null() {
-            *(buffer as LPDWORD) = *(core::ptr::addr_of!((*(*descr).items.offset(index as isize)).data) as *const DWORD);
+            core::ptr::write_unaligned(buffer as *mut ULONG_PTR, get_item_data(descr, index));
         }
-        len = core::mem::size_of::<DWORD>() as DWORD;
+        len = core::mem::size_of::<ULONG_PTR>() as LRESULT;
     }
-    len as LRESULT
+    len
 }
 
 #[inline]
@@ -1121,8 +1231,14 @@ unsafe fn IS_OWNERDRAW(descr: *const LB_DESCR) -> UINT {
     (*descr).style & (LBS_OWNERDRAWFIXED | LBS_OWNERDRAWVARIABLE)
 }
 
-unsafe fn LISTBOX_lstrcmpiW(lcid: LCID, str1: LPCWSTR, str2: LPCWSTR) -> INT {
-    let ret = CompareStringW(lcid, NORM_IGNORECASE, str1, -1, str2, -1);
+/// `len` is a character count for both strings, or -1 for NUL-terminated (Wine 11.11
+/// uses it for the LB_FINDSTRING prefix match). With a count, CompareStringW reads
+/// exactly that many characters, which runs off the end of an item shorter than the
+/// prefix, so the item side is clamped to its length plus the NUL. The NUL then
+/// mismatches as the read past it would have, so the result is unchanged.
+unsafe fn LISTBOX_lstrcmpiW(lcid: LCID, str1: LPCWSTR, str2: LPCWSTR, len: INT) -> INT {
+    let len2 = if len < 0 { len } else { core::cmp::min(len, strlenW(str2) as INT + 1) };
+    let ret = CompareStringW(lcid, NORM_IGNORECASE, str1, len, str2, len2);
     if ret == CSTR_LESS_THAN {
         return -1;
     }
@@ -1141,15 +1257,16 @@ unsafe fn LISTBOX_FindStringPos(descr: *mut LB_DESCR, str: LPCWSTR, exact: BOOL)
     let mut max: INT;
     let mut res: INT;
 
-    if ((*descr).style & LBS_SORT) == 0 {
-        return -1;
+    if (*descr).nb_items == 0 || ((*descr).style & LBS_SORT) == 0 {
+        return -1; /* Add it at the end */
     }
+
     min = 0;
-    max = (*descr).nb_items;
-    while min != max {
+    max = (*descr).nb_items - 1;
+    while min <= max {
         index = (min + max) / 2;
-        if IS_OWNERDRAW(descr) == 0 || ((*descr).style & LBS_HASSTRINGS) != 0 {
-            res = LISTBOX_lstrcmpiW((*descr).locale, str, (*(*descr).items.offset(index as isize)).str_);
+        if HAS_STRINGS(descr) != 0 {
+            res = LISTBOX_lstrcmpiW((*descr).locale, get_item_string(descr, index), str, -1);
         } else {
             let mut cis: COMPAREITEMSTRUCT = core::mem::zeroed();
             let id = GetWindowLongPtrW((*descr).self_, GWLP_ID) as UINT;
@@ -1157,23 +1274,25 @@ unsafe fn LISTBOX_FindStringPos(descr: *mut LB_DESCR, str: LPCWSTR, exact: BOOL)
             cis.CtlType = ODT_LISTBOX;
             cis.CtlID = id;
             cis.hwndItem = (*descr).self_;
-            cis.itemID1 = -1i32 as UINT;
-            cis.itemData1 = str as ULONG_PTR;
-            cis.itemID2 = index as UINT;
-            cis.itemData2 = (*(*descr).items.offset(index as isize)).data;
+            /* note that some application (MetaStock) expects the second item
+             * to be in the listbox */
+            cis.itemID1 = index as UINT;
+            cis.itemData1 = get_item_data(descr, index);
+            cis.itemID2 = -1i32 as UINT;
+            cis.itemData2 = str as ULONG_PTR;
             cis.dwLocaleId = (*descr).locale;
             res = SendMessageW((*descr).owner, WM_COMPAREITEM, id as WPARAM, core::ptr::addr_of_mut!(cis) as LPARAM) as INT;
         }
         if res == 0 {
             return index;
         }
-        if res < 0 {
-            max = index;
+        if res > 0 {
+            max = index - 1;
         } else {
             min = index + 1;
         }
     }
-    if exact != 0 { -1 } else { max }
+    if exact != 0 { -1 } else { min }
 }
 
 unsafe fn LISTBOX_FindFileStrPos(descr: *mut LB_DESCR, str: LPCWSTR) -> INT {
@@ -1190,7 +1309,7 @@ unsafe fn LISTBOX_FindFileStrPos(descr: *mut LB_DESCR, str: LPCWSTR) -> INT {
     max = (*descr).nb_items;
     while min != max {
         let index = (min + max) / 2;
-        let p: LPCWSTR = (*(*descr).items.offset(index as isize)).str_;
+        let p: LPCWSTR = get_item_string(descr, index);
         if *p == '[' as u16 {
             if *str != '[' as u16 {
                 res = -1;
@@ -1204,14 +1323,14 @@ unsafe fn LISTBOX_FindFileStrPos(descr: *mut LB_DESCR, str: LPCWSTR) -> INT {
                 if *str.offset(1) == '-' as u16 {
                     res = 1;
                 } else {
-                    res = LISTBOX_lstrcmpiW((*descr).locale, str, p);
+                    res = LISTBOX_lstrcmpiW((*descr).locale, str, p, -1);
                 }
             }
         } else {
             if *str == '[' as u16 {
                 res = 1;
             } else {
-                res = LISTBOX_lstrcmpiW((*descr).locale, str, p);
+                res = LISTBOX_lstrcmpiW((*descr).locale, str, p, -1);
             }
         }
         if res == 0 {
@@ -1228,102 +1347,81 @@ unsafe fn LISTBOX_FindFileStrPos(descr: *mut LB_DESCR, str: LPCWSTR) -> INT {
 
 unsafe fn LISTBOX_FindString(descr: *mut LB_DESCR, mut start: INT, str: LPCWSTR, exact: BOOL) -> INT {
     let mut i: INT;
-    let mut item: *mut LB_ITEMDATA;
+    let mut index: INT;
 
+    if (*descr).style & LBS_NODATA != 0 {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return LB_ERR as INT;
+    }
+
+    start += 1;
     if start >= (*descr).nb_items {
-        start = -1;
+        start = 0;
     }
-    item = (*descr).items.offset((start + 1) as isize);
-
-    if !(IS_OWNERDRAW(descr) == 0) == false || ((*descr).style & LBS_HASSTRINGS) != 0 {
-    }
-
-    let has_strings = (((*descr).style & (LBS_OWNERDRAWFIXED | LBS_OWNERDRAWVARIABLE)) == 0)
-        || ((*descr).style & LBS_HASSTRINGS) != 0;
-
-    if has_strings {
+    if HAS_STRINGS(descr) != 0 {
         if str.is_null() || *str == 0 {
             return LB_ERR as INT;
         }
         if exact != 0 {
-            i = start + 1;
-            while i < (*descr).nb_items {
-                if LISTBOX_lstrcmpiW((*descr).locale, str, (*item).str_) == 0 {
-                    return i;
-                }
-                i += 1;
-                item = item.offset(1);
-            }
             i = 0;
-            item = (*descr).items;
-            while i <= start {
-                if LISTBOX_lstrcmpiW((*descr).locale, str, (*item).str_) == 0 {
-                    return i;
+            index = start;
+            while i < (*descr).nb_items {
+                if index == (*descr).nb_items {
+                    index = 0;
+                }
+                if LISTBOX_lstrcmpiW((*descr).locale, str, get_item_string(descr, index), -1) == 0 {
+                    return index;
                 }
                 i += 1;
-                item = item.offset(1);
+                index += 1;
             }
         } else {
-            let len = strlenW(str);
-            i = start + 1;
-            while i < (*descr).nb_items {
-                if strncmpiW(str, (*item).str_, len) == 0 {
-                    return i;
-                }
-                if *(*item).str_ == '[' as u16 {
-                    if strncmpiW(str, (*item).str_.offset(1), len) == 0 {
-                        return i;
-                    }
-                    if *(*item).str_.offset(1) == '-' as u16
-                        && strncmpiW(str, (*item).str_.offset(2), len) == 0
-                    {
-                        return i;
-                    }
-                }
-                i += 1;
-                item = item.offset(1);
-            }
+            /* Special case for drives and directories: ignore prefix */
+            let len = strlenW(str) as INT;
+
             i = 0;
-            item = (*descr).items;
-            while i <= start {
-                if strncmpiW(str, (*item).str_, len) == 0 {
-                    return i;
+            index = start;
+            while i < (*descr).nb_items {
+                if index == (*descr).nb_items {
+                    index = 0;
                 }
-                if *(*item).str_ == '[' as u16 {
-                    if strncmpiW(str, (*item).str_.offset(1), len) == 0 {
-                        return i;
+                let item_str = get_item_string(descr, index);
+
+                if LISTBOX_lstrcmpiW((*descr).locale, str, item_str, len) == 0 {
+                    return index;
+                }
+                if *item_str == '[' as u16 {
+                    if LISTBOX_lstrcmpiW((*descr).locale, str, item_str.offset(1), len) == 0 {
+                        return index;
                     }
-                    if *(*item).str_.offset(1) == '-' as u16
-                        && strncmpiW(str, (*item).str_.offset(2), len) == 0
+                    if *item_str.offset(1) == '-' as u16
+                        && LISTBOX_lstrcmpiW((*descr).locale, str, item_str.offset(2), len) == 0
                     {
-                        return i;
+                        return index;
                     }
                 }
                 i += 1;
-                item = item.offset(1);
+                index += 1;
             }
         }
     } else {
         if exact != 0 && ((*descr).style & LBS_SORT) != 0 {
-            return LISTBOX_FindStringPos(descr, str, 1);
+            /* If sorted, use a WM_COMPAREITEM binary search */
+            return LISTBOX_FindStringPos(descr, str, TRUE);
         }
 
-        i = start + 1;
-        while i < (*descr).nb_items {
-            if (*item).data == str as ULONG_PTR {
-                return i;
-            }
-            i += 1;
-            item = item.offset(1);
-        }
+        /* Otherwise use a linear search */
         i = 0;
-        item = (*descr).items;
-        while i <= start {
-            if (*item).data == str as ULONG_PTR {
-                return i;
+        index = start;
+        while i < (*descr).nb_items {
+            if index == (*descr).nb_items {
+                index = 0;
+            }
+            if get_item_data(descr, index) == str as ULONG_PTR {
+                return index;
             }
             i += 1;
-            item = item.offset(1);
+            index += 1;
         }
     }
     LB_ERR as INT
@@ -1331,7 +1429,6 @@ unsafe fn LISTBOX_FindString(descr: *mut LB_DESCR, mut start: INT, str: LPCWSTR,
 
 unsafe fn LISTBOX_GetSelCount(descr: *const LB_DESCR) -> LRESULT {
     let mut count: INT = 0;
-    let mut item = (*descr).items;
 
     if ((*descr).style & LBS_MULTIPLESEL) == 0 ||
         ((*descr).style & LBS_NOSEL) != 0 {
@@ -1339,30 +1436,26 @@ unsafe fn LISTBOX_GetSelCount(descr: *const LB_DESCR) -> LRESULT {
     }
     let mut i: INT = 0;
     while i < (*descr).nb_items {
-        if (*item).selected != 0 {
+        if is_item_selected(descr, i) != 0 {
             count += 1;
         }
         i += 1;
-        item = item.add(1);
     }
     count as LRESULT
 }
 
 unsafe fn LISTBOX_GetSelItems(descr: *const LB_DESCR, max: INT, array: LPINT) -> LRESULT {
-    let mut item = (*descr).items as *const LB_ITEMDATA;
-
     if ((*descr).style & LBS_MULTIPLESEL) == 0 {
         return LB_ERR as LRESULT;
     }
     let mut count: INT = 0;
     let mut i: INT = 0;
     while i < (*descr).nb_items && count < max {
-        if (*item).selected != 0 {
+        if is_item_selected(descr, i) != 0 {
             *array.offset(count as isize) = i;
             count += 1;
         }
         i += 1;
-        item = item.offset(1);
     }
     count as LRESULT
 }
@@ -1426,7 +1519,7 @@ unsafe fn LISTBOX_Paint(descr: *mut LB_DESCR, hdc: HDC) -> LRESULT {
         if (*descr).style & LBS_OWNERDRAWVARIABLE == 0 {
             rect.bottom = rect.top + (*descr).item_height;
         } else {
-            rect.bottom = rect.top + (*(*descr).items.offset(i as isize)).height as INT;
+            rect.bottom = rect.top + get_item_height(descr, i) as INT;
         }
 
         if i == (*descr).focus_item {
@@ -1459,6 +1552,9 @@ unsafe fn LISTBOX_Paint(descr: *mut LB_DESCR, hdc: HDC) -> LRESULT {
             rect.right += (*descr).column_width;
             rect.top = 0;
             col_pos = (*descr).page_size - 1;
+            if rect.left >= (*descr).width {
+                break;
+            }
         } else {
             col_pos -= 1;
             if rect.top >= (*descr).height {
@@ -1532,7 +1628,7 @@ unsafe fn LISTBOX_GetItemHeight(descr: *const LB_DESCR, index: INT) -> LRESULT {
             SetLastError(ERROR_INVALID_INDEX);
             return LB_ERR as LRESULT;
         }
-        (*(*descr).items.offset(index as isize)).height as LRESULT
+        get_item_height(descr, index) as LRESULT
     } else {
         (*descr).item_height as LRESULT
     }
@@ -1552,7 +1648,7 @@ unsafe fn LISTBOX_SetItemHeight(descr: *mut LB_DESCR, index: INT, mut height: IN
             SetLastError(ERROR_INVALID_INDEX);
             return LB_ERR as LRESULT;
         }
-        (*(*descr).items.offset(index as isize)).height = height as UINT;
+        set_item_height(descr, index, height as UINT);
         LISTBOX_UpdateScroll(descr);
         if repaint != 0 {
             LISTBOX_InvalidateItems(descr, index);
@@ -1629,12 +1725,16 @@ unsafe fn LISTBOX_SetHorizontalExtent(descr: *mut LB_DESCR, extent: INT) -> LRES
     LB_OKAY as LRESULT
 }
 
-unsafe fn LISTBOX_SetColumnWidth(descr: *mut LB_DESCR, width: INT) -> LRESULT {
-    if width == (*descr).column_width {
-        return LB_OKAY as LRESULT;
-    }
-    (*descr).column_width = width;
+unsafe fn LISTBOX_SetColumnWidth(descr: *mut LB_DESCR, column_width: INT) -> LRESULT {
+    let mut rect: RECT = core::mem::zeroed();
+
+    GetClientRect((*descr).self_, &mut rect);
+    (*descr).width = rect.right - rect.left;
+    (*descr).height = rect.bottom - rect.top;
+    (*descr).column_width = column_width;
+
     LISTBOX_UpdatePage(descr);
+    LISTBOX_UpdateScroll(descr);
     LB_OKAY as LRESULT
 }
 
@@ -1691,13 +1791,13 @@ unsafe fn LISTBOX_MakeItemVisible(descr: *mut LB_DESCR, index: INT, fully: BOOL)
         top = index - (*descr).page_size * (cols - 1);
     } else if (*descr).style & LBS_OWNERDRAWVARIABLE != 0 {
         let mut height: INT = if fully != 0 {
-            (*(*descr).items.offset(index as isize)).height as INT
+            get_item_height(descr, index) as INT
         } else {
             1
         };
         let mut t = index;
         while t > (*descr).top_item {
-            height += (*(*descr).items.offset((t - 1) as isize)).height as INT;
+            height += get_item_height(descr, t - 1) as INT;
             if height > (*descr).height {
                 break;
             }
@@ -1718,7 +1818,7 @@ unsafe fn LISTBOX_MakeItemVisible(descr: *mut LB_DESCR, index: INT, fully: BOOL)
 }
 
 unsafe fn LISTBOX_SetCaretIndex(descr: *mut LB_DESCR, index: INT, fully_visible: BOOL) -> LRESULT {
-    let oldfocus = (*descr).focus_item;
+    let focus_changed = (*descr).focus_item != index;
 
     if (*descr).style & LBS_NOSEL != 0 {
         return LB_ERR as LRESULT;
@@ -1726,15 +1826,17 @@ unsafe fn LISTBOX_SetCaretIndex(descr: *mut LB_DESCR, index: INT, fully_visible:
     if index < 0 || index >= (*descr).nb_items {
         return LB_ERR as LRESULT;
     }
-    if index == oldfocus {
-        return LB_OKAY as LRESULT;
+
+    if focus_changed {
+        LISTBOX_DrawFocusRect(descr, 0);
+        (*descr).focus_item = index;
     }
 
-    LISTBOX_DrawFocusRect(descr, 0);
-    (*descr).focus_item = index;
-
     LISTBOX_MakeItemVisible(descr, index, fully_visible);
-    LISTBOX_DrawFocusRect(descr, 1);
+
+    if focus_changed {
+        LISTBOX_DrawFocusRect(descr, 1);
+    }
 
     LB_OKAY as LRESULT
 }
@@ -1766,8 +1868,8 @@ unsafe fn LISTBOX_SelectItemRange(descr: *mut LB_DESCR, mut first: INT, mut last
     if on != 0 {
         i = first;
         while i <= last {
-            if (*(*descr).items.offset(i as isize)).selected == 0 {
-                (*(*descr).items.offset(i as isize)).selected = 1;
+            if is_item_selected(descr, i) == 0 {
+                set_item_selected_state(descr, i, 1);
                 LISTBOX_InvalidateItemRect(descr, i);
             }
             i += 1;
@@ -1775,8 +1877,8 @@ unsafe fn LISTBOX_SelectItemRange(descr: *mut LB_DESCR, mut first: INT, mut last
     } else {
         i = first;
         while i <= last {
-            if (*(*descr).items.offset(i as isize)).selected != 0 {
-                (*(*descr).items.offset(i as isize)).selected = 0;
+            if is_item_selected(descr, i) != 0 {
+                set_item_selected_state(descr, i, 0);
                 LISTBOX_InvalidateItemRect(descr, i);
             }
             i += 1;
@@ -1805,15 +1907,17 @@ unsafe fn LISTBOX_SetSelection(descr: *mut LB_DESCR, index: INT, on: BOOL, send_
             return LB_OKAY as LRESULT;
         }
         if oldsel != -1 {
-            (*(*descr).items.offset(oldsel as isize)).selected = 0;
+            set_item_selected_state(descr, oldsel, 0);
         }
         if index != -1 {
-            (*(*descr).items.offset(index as isize)).selected = 1;
+            set_item_selected_state(descr, index, 1);
         }
+        // Wine 11.11: selected_item first, so the repaint of the old item (whose
+        // selection state is_item_selected derives from it) draws it deselected.
+        (*descr).selected_item = index;
         if oldsel != -1 {
             LISTBOX_RepaintItem(descr, oldsel, ODA_SELECT);
         }
-        (*descr).selected_item = index;
         if index != -1 {
             LISTBOX_RepaintItem(descr, index, ODA_SELECT);
         }
@@ -1855,8 +1959,6 @@ unsafe fn LISTBOX_MoveCaret(descr: *mut LB_DESCR, index: INT, fully_visible: BOO
 }
 
 unsafe fn LISTBOX_InsertItem(descr: *mut LB_DESCR, mut index: INT, str: LPWSTR, data: ULONG_PTR) -> LRESULT {
-    let mut item: *mut LB_ITEMDATA;
-    let mut max_items: INT;
     let oldfocus: INT = (*descr).focus_item;
 
     if index == -1 {
@@ -1864,48 +1966,18 @@ unsafe fn LISTBOX_InsertItem(descr: *mut LB_DESCR, mut index: INT, str: LPWSTR, 
     } else if index < 0 || index > (*descr).nb_items {
         return LB_ERR as LRESULT;
     }
-    if (*descr).items.is_null() {
-        max_items = 0;
-    } else {
-        max_items = (HeapSize(GetProcessHeap(), 0, (*descr).items as *mut _)
-            / core::mem::size_of::<LB_ITEMDATA>()) as INT;
-    }
-    if (*descr).nb_items == max_items {
-        max_items += LB_ARRAY_GRANULARITY as INT;
-        if !(*descr).items.is_null() {
-            item = HeapReAlloc(
-                GetProcessHeap(),
-                0,
-                (*descr).items as *mut _,
-                (max_items as usize * core::mem::size_of::<LB_ITEMDATA>()) as SIZE_T,
-            ) as *mut LB_ITEMDATA;
-        } else {
-            item = HeapAlloc(
-                GetProcessHeap(),
-                0,
-                (max_items as usize * core::mem::size_of::<LB_ITEMDATA>()) as SIZE_T,
-            ) as *mut LB_ITEMDATA;
-        }
-        if item.is_null() {
-            SEND_NOTIFICATION(descr, LBN_ERRSPACE);
-            return LB_ERRSPACE as LRESULT;
-        }
-        (*descr).items = item;
+    if resize_storage(descr, ((*descr).nb_items + 1) as UINT) == 0 {
+        return LB_ERR as LRESULT;
     }
 
-    item = (*descr).items.offset(index as isize);
-    if index < (*descr).nb_items {
-        core::ptr::copy(
-            item,
-            item.offset(1),
-            ((*descr).nb_items - index) as usize,
-        );
-    }
-    (*item).str_ = str;
-    (*item).data = data;
-    (*item).height = 0;
-    (*item).selected = 0u8 as BOOL;
+    insert_item_data(descr, index);
     (*descr).nb_items += 1;
+    set_item_string(descr, index, str);
+    set_item_data(descr, index, if HAS_STRINGS(descr) != 0 { 0 } else { data });
+    set_item_height(descr, index, 0);
+    set_item_selected_state(descr, index, FALSE);
+
+    /* Get item height */
 
     if (*descr).style & LBS_OWNERDRAWVARIABLE != 0 {
         let mut mis: MEASUREITEMSTRUCT = core::mem::zeroed();
@@ -1914,18 +1986,22 @@ unsafe fn LISTBOX_InsertItem(descr: *mut LB_DESCR, mut index: INT, str: LPWSTR, 
         mis.CtlType = ODT_LISTBOX;
         mis.CtlID = id;
         mis.itemID = index as UINT;
-        mis.itemData = (*(*descr).items.offset(index as isize)).data;
+        mis.itemData = if !str.is_null() { str as ULONG_PTR } else { data };
         mis.itemHeight = (*descr).item_height as UINT;
         SendMessageW((*descr).owner, WM_MEASUREITEM, id as WPARAM, &mut mis as *mut _ as LPARAM);
-        (*item).height = if mis.itemHeight != 0 { mis.itemHeight } else { 1 };
+        set_item_height(descr, index, if mis.itemHeight != 0 { mis.itemHeight } else { 1 });
         TRACE!(
             b"[%p]: measure item %d (%s) = %d\n\0".as_ptr(),
             (*descr).self_,
             index,
             if !str.is_null() { debugstr_w(str) } else { b"\0".as_ptr() as *const _ },
-            (*item).height,
+            get_item_height(descr, index),
         );
     }
+
+    crate::windows::hook::NotifyWinEvent(EVENT_OBJECT_CREATE as DWORD, (*descr).self_, OBJID_CLIENT as LONG, index + 1);
+
+    /* Repaint the items */
 
     LISTBOX_UpdateScroll(descr);
     LISTBOX_InvalidateItems(descr, index);
@@ -1946,7 +2022,6 @@ unsafe fn LISTBOX_InsertItem(descr: *mut LB_DESCR, mut index: INT, str: LPWSTR, 
 
 unsafe fn LISTBOX_InsertString(descr: *mut LB_DESCR, mut index: INT, mut str: LPCWSTR) -> LRESULT {
     let mut new_str: LPWSTR = core::ptr::null_mut();
-    let mut data: ULONG_PTR = 0;
     let ret: LRESULT;
 
     if HAS_STRINGS(descr) != 0 {
@@ -1960,14 +2035,12 @@ unsafe fn LISTBOX_InsertString(descr: *mut LB_DESCR, mut index: INT, mut str: LP
             return LB_ERRSPACE as LRESULT;
         }
         strcpyW(new_str, str);
-    } else {
-        data = str as ULONG_PTR;
     }
 
     if index == -1 {
         index = (*descr).nb_items;
     }
-    ret = LISTBOX_InsertItem(descr, index, new_str, data);
+    ret = LISTBOX_InsertItem(descr, index, new_str, str as ULONG_PTR);
     if ret != 0 {
         HeapFree(GetProcessHeap(), 0, new_str as *mut core::ffi::c_void);
         return ret;
@@ -1977,14 +2050,12 @@ unsafe fn LISTBOX_InsertString(descr: *mut LB_DESCR, mut index: INT, mut str: LP
 }
 
 unsafe fn LISTBOX_DeleteItem(descr: *mut LB_DESCR, index: INT) {
-    let item_data: ULONG_PTR = (*(*descr).items.offset(index as isize)).data;
-    let item_str: LPWSTR = (*(*descr).items.offset(index as isize)).str_;
-
-    if (*descr).nb_items == 0 {
-        SendMessageW((*descr).self_, LB_RESETCONTENT as UINT, 0, 0);
-    }
-
-    if ((*descr).style & (LBS_OWNERDRAWFIXED | LBS_OWNERDRAWVARIABLE)) != 0 || item_data != 0 {
+    /* Note: Win 3.1 only sends DELETEITEM on owner-draw items,
+     *       while Win95 sends it for all items with user data.
+     *       It's probably better to send it too often than not
+     *       often enough, so this is what we do here.
+     */
+    if IS_OWNERDRAW(descr) != 0 || get_item_data(descr, index) != 0 {
         let mut dis: DELETEITEMSTRUCT = core::mem::zeroed();
         let id = GetWindowLongPtrW((*descr).self_, GWLP_ID as INT) as UINT;
 
@@ -1992,60 +2063,35 @@ unsafe fn LISTBOX_DeleteItem(descr: *mut LB_DESCR, index: INT) {
         dis.CtlID = id;
         dis.itemID = index as UINT;
         dis.hwndItem = (*descr).self_;
-        dis.itemData = item_data;
+        dis.itemData = get_item_data(descr, index);
         SendMessageW((*descr).owner, WM_DELETEITEM, id as WPARAM, core::ptr::addr_of_mut!(dis) as LPARAM);
     }
-
-    if (((*descr).style & (LBS_OWNERDRAWFIXED | LBS_OWNERDRAWVARIABLE)) == 0)
-        || ((*descr).style & LBS_HASSTRINGS) != 0
-    {
-        HeapFree(GetProcessHeap(), 0, item_str as *mut core::ffi::c_void);
-    }
+    HeapFree(GetProcessHeap(), 0, get_item_string(descr, index) as *mut core::ffi::c_void);
 }
 
 unsafe fn LISTBOX_RemoveItem(descr: *mut LB_DESCR, index: INT) -> LRESULT {
-    let mut item: *mut LB_ITEMDATA;
-    let mut max_items: INT;
-
     if (index < 0) || (index >= (*descr).nb_items) {
         return LB_ERR as LRESULT;
     }
 
+    /* We need to invalidate the original rect instead of the updated one. */
     LISTBOX_InvalidateItems(descr, index);
 
-    (*descr).nb_items -= 1;
-    LISTBOX_DeleteItem(descr, index);
+    crate::windows::hook::NotifyWinEvent(EVENT_OBJECT_DESTROY as DWORD, (*descr).self_, OBJID_CLIENT as LONG, index + 1);
 
-    if (*descr).nb_items == 0 {
+    if (*descr).nb_items == 1 {
+        SendMessageW((*descr).self_, LB_RESETCONTENT as UINT, 0, 0);
         return LB_OKAY as LRESULT;
     }
+    (*descr).nb_items -= 1;
+    LISTBOX_DeleteItem(descr, index);
+    remove_item_data(descr, index);
 
-    item = &mut *(*descr).items.offset(index as isize);
-    if index < (*descr).nb_items {
-        core::ptr::copy(
-            item.offset(1) as *const LB_ITEMDATA,
-            item,
-            ((*descr).nb_items - index) as usize,
-        );
-    }
     if (*descr).anchor_item == (*descr).nb_items {
         (*descr).anchor_item -= 1;
     }
-
-    max_items = (HeapSize(GetProcessHeap(), 0, (*descr).items as *mut _)
-        / core::mem::size_of::<LB_ITEMDATA>()) as INT;
-    if (*descr).nb_items < max_items - 2 * LB_ARRAY_GRANULARITY {
-        max_items -= LB_ARRAY_GRANULARITY;
-        item = HeapReAlloc(
-            GetProcessHeap(),
-            0,
-            (*descr).items as *mut _,
-            ((max_items as usize) * core::mem::size_of::<LB_ITEMDATA>()) as SIZE_T,
-        ) as *mut LB_ITEMDATA;
-        if !item.is_null() {
-            (*descr).items = item;
-        }
-    }
+    resize_storage(descr, (*descr).nb_items as UINT);
+    /* Repaint the items */
 
     LISTBOX_UpdateScroll(descr);
 
@@ -2074,42 +2120,62 @@ unsafe fn LISTBOX_RemoveItem(descr: *mut LB_DESCR, index: INT) -> LRESULT {
 }
 
 unsafe fn LISTBOX_ResetContent(descr: *mut LB_DESCR) {
-    let mut i: INT = (*descr).nb_items - 1;
-    while i >= 0 {
-        LISTBOX_DeleteItem(descr, i);
-        i -= 1;
+    if (*descr).style & LBS_NODATA == 0 {
+        let mut i: INT = (*descr).nb_items - 1;
+        while i >= 0 {
+            LISTBOX_DeleteItem(descr, i);
+            i -= 1;
+        }
     }
-    HeapFree(GetProcessHeap(), 0, (*descr).items as _);
+    if !(*descr).items.is_null() {
+        HeapFree(GetProcessHeap(), 0, (*descr).items as _);
+    }
     (*descr).nb_items = 0;
     (*descr).top_item = 0;
     (*descr).selected_item = -1;
     (*descr).focus_item = 0;
     (*descr).anchor_item = -1;
+    (*descr).items_size = 0;
     (*descr).items = core::ptr::null_mut();
 }
 
-unsafe fn LISTBOX_SetCount(descr: *mut LB_DESCR, count: INT) -> LRESULT {
-    let ret: LRESULT;
+unsafe fn LISTBOX_SetCount(descr: *mut LB_DESCR, count: UINT) -> LRESULT {
+    let orig_num: UINT = (*descr).nb_items as UINT;
 
-    if IS_OWNERDRAW(descr) == 0 || ((*descr).style & LBS_HASSTRINGS as UINT) != 0 {
+    if (*descr).style & LBS_NODATA == 0 {
         SetLastError(ERROR_SETCOUNT_ON_BAD_LB);
         return LB_ERR as LRESULT;
     }
 
-    if count > (*descr).nb_items {
-        while count > (*descr).nb_items {
-            let ret = LISTBOX_InsertString(descr, -1, core::ptr::null_mut());
-            if ret < 0 {
-                return ret;
+    if resize_storage(descr, count) == 0 {
+        return LB_ERRSPACE as LRESULT;
+    }
+    (*descr).nb_items = count as INT;
+    if (*descr).style & LBS_NOREDRAW != 0 {
+        (*descr).style |= LBS_DISPLAYCHANGED;
+    }
+
+    if count != 0 {
+        LISTBOX_UpdateScroll(descr);
+        if count < orig_num {
+            (*descr).anchor_item = core::cmp::min((*descr).anchor_item, count as INT - 1);
+            if (*descr).selected_item >= count as INT {
+                (*descr).selected_item = -1;
             }
-        }
-    } else if count < (*descr).nb_items {
-        while count < (*descr).nb_items {
-            let ret = LISTBOX_RemoveItem(descr, (*descr).nb_items - 1);
-            if ret < 0 {
-                return ret;
+
+            /* If we removed the scrollbar, reset the top of the list */
+            if count as INT <= (*descr).page_size && orig_num as INT > (*descr).page_size {
+                LISTBOX_SetTopItem(descr, 0, TRUE);
             }
+
+            (*descr).focus_item = core::cmp::min((*descr).focus_item, count as INT - 1);
         }
+        /* If it was empty before growing, set focus to the first item */
+        else if orig_num == 0 {
+            LISTBOX_SetCaretIndex(descr, 0, FALSE);
+        }
+    } else {
+        SendMessageW((*descr).self_, LB_RESETCONTENT as UINT, 0, 0);
     }
 
     InvalidateRect((*descr).self_, core::ptr::null_mut(), 1);
@@ -2339,9 +2405,9 @@ unsafe fn LISTBOX_HandleHScroll(descr: *mut LB_DESCR, scrollReq: WORD, pos: WORD
 }
 
 unsafe fn LISTBOX_HandleMouseWheel(descr: *mut LB_DESCR, delta: SHORT) -> LRESULT {
-    let mut pulScrollLines: UINT = 3;
+    let mut pulScrollLines: INT = 3;
 
-    SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &mut pulScrollLines as *mut UINT as *mut _, 0);
+    SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, &mut pulScrollLines as *mut INT as *mut _, 0);
 
     if (delta < 0 && (*descr).wheel_remain < 0) ||
        (delta > 0 && (*descr).wheel_remain > 0) {
@@ -2351,11 +2417,24 @@ unsafe fn LISTBOX_HandleMouseWheel(descr: *mut LB_DESCR, delta: SHORT) -> LRESUL
     }
 
     if (*descr).wheel_remain != 0 && pulScrollLines != 0 {
-        pulScrollLines = min((*descr).page_size as UINT, pulScrollLines);
-        let mut cLineScroll: INT = (pulScrollLines as f32 * (*descr).wheel_remain as f32 / WHEEL_DELTA as f32) as INT;
-        (*descr).wheel_remain -= WHEEL_DELTA as INT * cLineScroll / pulScrollLines as INT;
-        if cLineScroll < 0 {
-            cLineScroll -= (*descr).page_size;
+        let mut cLineScroll: INT;
+        if (*descr).style & LBS_MULTICOLUMN != 0 {
+            // Wine 11.11 scrolls whole columns. A zero LB_SETCOLUMNWIDTH would make the
+            // C divide by zero; treat it as one-pixel columns instead.
+            let column_width = core::cmp::max((*descr).column_width, 1);
+            pulScrollLines = core::cmp::min((*descr).width / column_width, pulScrollLines);
+            pulScrollLines = core::cmp::max(1, pulScrollLines);
+            cLineScroll = pulScrollLines * (*descr).wheel_remain / WHEEL_DELTA as INT;
+            (*descr).wheel_remain -= WHEEL_DELTA as INT * cLineScroll / pulScrollLines;
+            cLineScroll *= (*descr).page_size;
+        } else {
+            pulScrollLines = core::cmp::min((*descr).page_size, pulScrollLines);
+            cLineScroll = pulScrollLines * (*descr).wheel_remain / WHEEL_DELTA as INT;
+            (*descr).wheel_remain -= WHEEL_DELTA as INT * cLineScroll / pulScrollLines;
+            // ReactOS
+            if cLineScroll < 0 {
+                cLineScroll -= (*descr).page_size;
+            }
         }
         LISTBOX_SetTopItem(descr, (*descr).top_item - cLineScroll, 1);
     }
@@ -2397,7 +2476,7 @@ unsafe fn LISTBOX_HandleLButtonDown( descr: *mut LB_DESCR, keys: DWORD, x: INT, 
         {
             LISTBOX_SetCaretIndex( descr, index, FALSE as BOOL );
             LISTBOX_SetSelection( descr, index,
-                                  ((*(*descr).items.offset(index as isize)).selected == 0) as BOOL,
+                                  (is_item_selected(descr, index) == 0) as BOOL,
                                   ((*descr).style & LBS_NOTIFY != 0) as BOOL);
         }
         else
@@ -2407,13 +2486,13 @@ unsafe fn LISTBOX_HandleLButtonDown( descr: *mut LB_DESCR, keys: DWORD, x: INT, 
             if (*descr).style & LBS_EXTENDEDSEL != 0
             {
                 LISTBOX_SetSelection( descr, index,
-                               (*(*descr).items.offset(index as isize)).selected,
+                               is_item_selected(descr, index),
                               ((*descr).style & LBS_NOTIFY != 0) as BOOL );
             }
             else
             {
                 LISTBOX_SetSelection( descr, index,
-                               ((*(*descr).items.offset(index as isize)).selected == 0) as BOOL,
+                               (is_item_selected(descr, index) == 0) as BOOL,
                               ((*descr).style & LBS_NOTIFY != 0) as BOOL );
             }
         }
@@ -2424,6 +2503,8 @@ unsafe fn LISTBOX_HandleLButtonDown( descr: *mut LB_DESCR, keys: DWORD, x: INT, 
         LISTBOX_MoveCaret( descr, index, FALSE as BOOL );
         LISTBOX_SetSelection( descr, index,
                               TRUE as BOOL, ((*descr).style & LBS_NOTIFY != 0) as BOOL );
+        crate::windows::hook::NotifyWinEvent(EVENT_OBJECT_FOCUS as DWORD, (*descr).self_, OBJID_CLIENT as LONG, index + 1);
+        crate::windows::hook::NotifyWinEvent(EVENT_OBJECT_SELECTION as DWORD, (*descr).self_, OBJID_CLIENT as LONG, index + 1);
     }
 
     if (*descr).lphc.is_null()
@@ -2687,9 +2768,7 @@ unsafe fn LISTBOX_HandleKeyDown(descr: *mut LB_DESCR, key: DWORD) -> LRESULT {
                 VK_RIGHT => {
                     if (*descr).style & LBS_MULTICOLUMN != 0 {
                         bForceSelection = 0;
-                        if (*descr).focus_item + (*descr).page_size < (*descr).nb_items {
-                            caret = (*descr).focus_item + (*descr).page_size;
-                        }
+                        caret = core::cmp::min((*descr).focus_item + (*descr).page_size, (*descr).nb_items - 1);
                         break;
                     }
                     caret = (*descr).focus_item + 1;
@@ -2750,7 +2829,7 @@ unsafe fn LISTBOX_HandleKeyDown(descr: *mut LB_DESCR, key: DWORD) -> LRESULT {
                         LISTBOX_SetSelection(
                             descr,
                             (*descr).focus_item,
-                            ((*(*descr).items.offset((*descr).focus_item as isize)).selected == 0)
+                            (is_item_selected(descr, (*descr).focus_item) == 0)
                                 as BOOL,
                             ((*descr).style & LBS_NOTIFY != 0) as BOOL,
                         );
@@ -2821,7 +2900,7 @@ unsafe fn LISTBOX_HandleChar(descr: *mut LB_DESCR, charW: WCHAR) -> LRESULT {
             return 0;
         }
     }
-    if caret == -1 {
+    if caret == -1 && (*descr).style & LBS_NODATA == 0 {
         caret = LISTBOX_FindString(descr, (*descr).focus_item, str.as_ptr(), 0);
     }
     if caret != -1 {
@@ -2869,6 +2948,7 @@ unsafe fn LISTBOX_Create(hwnd: HWND, lphc: LPHEADCOMBO) -> BOOL {
     (*descr).width = rect.right - rect.left;
     (*descr).height = rect.bottom - rect.top;
     (*descr).items = core::ptr::null_mut();
+    (*descr).items_size = 0;
     (*descr).nb_items = 0;
     (*descr).top_item = 0;
     (*descr).selected_item = -1;
@@ -2916,16 +2996,18 @@ unsafe fn LISTBOX_Create(hwnd: HWND, lphc: LPHEADCOMBO) -> BOOL {
         (*descr).style |= LBS_NOINTEGRALHEIGHT;
     }
 
-    if (*descr).style & LBS_NODATA != 0
-        && (((*descr).style & LBS_OWNERDRAWFIXED) == 0
-            || (*descr).style & (LBS_HASSTRINGS | LBS_SORT) != 0)
-    {
+    /* A no-data list box must also have the LBS_OWNERDRAWFIXED style, but must
+       not have the LBS_SORT or LBS_HASSTRINGS style. (Upstream keeps ReactOS's
+       older spelling of this test beside Wine's; they agree, so one is kept.) */
+    if (*descr).style & (LBS_OWNERDRAWFIXED | LBS_HASSTRINGS | LBS_SORT) != LBS_OWNERDRAWFIXED {
         (*descr).style &= !LBS_NODATA;
     }
 
     (*descr).item_height = LISTBOX_SetFont(descr, 0 as HFONT);
 
     if (*descr).style & LBS_OWNERDRAWFIXED != 0 {
+        (*descr).style &= !LBS_OWNERDRAWVARIABLE;
+
         if !(*descr).lphc.is_null() && ((*(*descr).lphc).dwStyle & CBS_DROPDOWN) != 0 {
             (*descr).item_height = (*lphc).fixedOwnerDrawHeight as INT;
         } else {
@@ -3112,7 +3194,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
                 SetLastError(ERROR_INVALID_INDEX);
                 return LB_ERR as LRESULT;
             }
-            return (*(*descr).items.offset(wParam as isize)).data as LRESULT;
+            return get_item_data(descr, wParam as INT) as LRESULT;
         }
 
         LB_SETITEMDATA => {
@@ -3120,7 +3202,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
                 SetLastError(ERROR_INVALID_INDEX);
                 return LB_ERR as LRESULT;
             }
-            (*(*descr).items.offset(wParam as isize)).data = lParam as ULONG_PTR;
+            set_item_data(descr, wParam as INT, lParam as ULONG_PTR);
             return 1;
         }
 
@@ -3138,15 +3220,15 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
                 return LB_ERR as LRESULT;
             }
             if HAS_STRINGS(descr) == 0 {
-                return core::mem::size_of::<DWORD>() as LRESULT;
+                return core::mem::size_of::<ULONG_PTR>() as LRESULT;
             }
             if unicode != 0 {
-                return strlenW((*(*descr).items.offset(wParam as isize)).str_) as LRESULT;
+                return strlenW(get_item_string(descr, wParam as INT)) as LRESULT;
             }
             return WideCharToMultiByte(
                 CP_ACP, 0,
-                (*(*descr).items.offset(wParam as isize)).str_,
-                strlenW((*(*descr).items.offset(wParam as isize)).str_) as INT,
+                get_item_string(descr, wParam as INT),
+                strlenW(get_item_string(descr, wParam as INT)) as INT,
                 core::ptr::null_mut(), 0,
                 core::ptr::null(), core::ptr::null_mut(),
             ) as LRESULT;
@@ -3306,11 +3388,18 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
             if (wParam as INT) < 0 || (wParam as INT) >= (*descr).nb_items {
                 return LB_ERR as LRESULT;
             }
-            return (*(*descr).items.offset(wParam as isize)).selected as LRESULT;
+            return is_item_selected(descr, wParam as INT) as LRESULT;
         }
 
         LB_SETSEL => {
-            return LISTBOX_SetSelection(descr, lParam as INT, wParam as INT, 0);
+            ret = LISTBOX_SetSelection(descr, lParam as INT, wParam as INT, 0);
+            if ret != LB_ERR as LRESULT && wParam != 0 {
+                (*descr).anchor_item = lParam as INT;
+                if lParam as INT != -1 {
+                    LISTBOX_SetCaretIndex(descr, lParam as INT, TRUE);
+                }
+            }
+            return ret;
         }
 
         LB_SETCURSEL => {
@@ -3321,6 +3410,8 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
             ret = LISTBOX_SetSelection(descr, wParam as INT, 1, 0);
             if ret != LB_ERR as LRESULT {
                 ret = (*descr).selected_item as LRESULT;
+                crate::windows::hook::NotifyWinEvent(EVENT_OBJECT_FOCUS as DWORD, (*descr).self_, OBJID_CLIENT as LONG, ret as LONG + 1);
+                crate::windows::hook::NotifyWinEvent(EVENT_OBJECT_SELECTION as DWORD, (*descr).self_, OBJID_CLIENT as LONG, ret as LONG + 1);
             }
             return ret;
         }
@@ -3409,7 +3500,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
         }
 
         LB_SETCOUNT => {
-            return LISTBOX_SetCount(descr, wParam as INT);
+            return LISTBOX_SetCount(descr, wParam as UINT);
         }
 
         LB_SETTABSTOPS => {
@@ -3498,6 +3589,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
                 LISTBOX_DrawFocusRect(descr, 1);
             }
             SEND_NOTIFICATION(descr, LBN_SETFOCUS as INT);
+            crate::windows::hook::NotifyWinEvent(EVENT_OBJECT_FOCUS as DWORD, (*descr).self_, OBJID_CLIENT as LONG, (*descr).focus_item + 1);
             return 0;
         }
 
@@ -3538,7 +3630,7 @@ pub unsafe extern "system" fn ListBoxWndProc_common(
             if !lphc.is_null() {
                 return LISTBOX_HandleLButtonDownCombo(descr, msg, wParam as DWORD, crate::internal::LOWORD(lParam as DWORD) as i16 as INT, crate::internal::HIWORD(lParam as DWORD) as i16 as INT);
             }
-            if (*descr).style & LBS_NOTIFY != 0 {
+            if (*descr).style & LBS_NOTIFY != 0 && (*descr).nb_items != 0 {
                 SEND_NOTIFICATION(descr, LBN_DBLCLK as INT);
             }
             return 0;
