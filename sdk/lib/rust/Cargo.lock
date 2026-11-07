@@ -3560,6 +3560,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "iologmsg-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "iomgr-rust"
 version = "0.1.0"
 dependencies = [
@@ -5535,6 +5543,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "netevent-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "netid-cargo"
 version = "0.1.0"
 dependencies = [
@@ -5587,6 +5603,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "netmsg-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]

@@ -1,5 +1,8 @@
 [workspace]
 members = [
+    "netmsg-cargo",
+    "netevent-cargo",
+    "iologmsg-cargo",
     "wmi-cargo",
     "themeui-cargo",
     "tapiui-cargo",

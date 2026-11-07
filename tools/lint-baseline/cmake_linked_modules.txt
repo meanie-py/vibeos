@@ -87,7 +87,6 @@ iernonce: linked by cmake, not a cargo cell
 imaadp32.acm: linked by cmake, not a cargo cell
 installfreeldr: linked by cmake, not a cargo cell
 intl: linked by cmake, not a cargo cell
-iologmsg: linked by cmake, not a cargo cell
 kernel32_vista: linked by cmake, not a cargo cell
 l3codeca.acm: linked by cmake, not a cargo cell
 lautus.msstyles: linked by cmake, not a cargo cell
@@ -119,9 +118,7 @@ msvcrt20: linked by cmake, not a cargo cell
 msvcrt40: linked by cmake, not a cargo cell
 mydocs: linked by cmake, not a cargo cell
 ncrypt: linked by cmake, not a cargo cell
-netevent: linked by cmake, not a cargo cell
 netkvm: linked by cmake, not a cargo cell
-netmsg: linked by cmake, not a cargo cell
 netshell: linked by cmake, not a cargo cell
 ntobjshex: linked by cmake, not a cargo cell
 partmgr: linked by cmake, not a cargo cell
