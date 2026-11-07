@@ -176,7 +176,7 @@ pub fn link_edges_gated(root: &Path, target: &str) -> Result<BTreeMap<String, Li
     }
     let (arch, link) = links.iter().next().unwrap();
     let cmake = source_dir(root, arch, &link.output, target)?.join("CMakeLists.txt");
-    let gate = arch_gate(&read(&cmake)?, target).map_err(|why| {
+    let gate = arch_gate(&super::fncall::cmake_text(&cmake, target)?, target).map_err(|why| {
         Error::new(format!(
             "{}\n  and the arch set is not proven by {}: {why}",
             missing_edges_error(target, &links, &missing),
@@ -810,7 +810,7 @@ pub fn included_functions(cmake: &Path, text: &str) -> Result<std::collections::
 }
 pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_json::Value> {
     use serde_json::{json, Value};
-    let text = read(cmake)?;
+    let text = super::fncall::cmake_text(cmake, target)?;
     let stmts = statements(&text);
     let paths = branches(&stmts);
     let home = stmts
@@ -1477,7 +1477,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         )));
     }
     let facts = cmake_facts(&cmake, target, &first.libs)?;
-    let cmtext = read(&cmake)?;
+    let cmtext = super::fncall::cmake_text(&cmake, target)?;
     let custom = &facts["custom_body"];
     let bodyless = facts["body"].is_null() && custom.is_null();
     if bodyless {

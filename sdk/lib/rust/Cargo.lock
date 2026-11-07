@@ -1647,6 +1647,166 @@ dependencies = [
 ]
 
 [[package]]
+name = "d3dx9_24-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_25-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_26-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_27-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_28-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_29-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_30-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_31-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_33-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_34-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_35-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_36-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_37-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_38-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_39-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_40-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_41-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_42-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dx9_43-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "d3dxof-cargo"
 version = "0.1.0"
 dependencies = [

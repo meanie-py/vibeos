@@ -449,6 +449,15 @@ extends it from the boot spine to every fully-Rust module.
        cmake on all 3 arches). Two generator fixes on the way: ninja spells a dotted target's
        rule name with `.2e` (`graph::ninja_rule_name`), and a dotted target's `spec2def` names
        its own output, so it is not a statement on the target.
+     - **2026-11-07: function-made targets.** `cells/fncall.rs` expands a call such as
+       `add_d3dx9_target(24)` into the function body (parameters and leading single-value
+       `set()` locals substituted) for the model, and turns the rewritten body back into ONE
+       template written into the shared `.cmake`: every caller must yield the same template,
+       every caller must be in the wave, and the template must re-substitute exactly. Values
+       go back as variables only at word boundaries (VERSION=32 vs `ole32`), and sources are
+       spelled from the tree root then mapped to the directory local. **d3dx9_24..43 (20)
+       converted**, pe_equiv EQUIVALENT ×3. Next: d3dx10/d3dx11 (13), d3dcompiler (13, flex/
+       bison sources).
      - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
        `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
        `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses
