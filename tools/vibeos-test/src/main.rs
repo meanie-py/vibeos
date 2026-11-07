@@ -45,6 +45,23 @@ impl Host for Runtime<'_> {
             op if op.starts_with("bench_") => {
                 vibeos_test::bench::dispatch(self.root, &request, self)
             }
+            "diagnostic_hmp"
+            | "diagnostic_begin_sample"
+            | "diagnostic_end_sample"
+            | "rr_cli_alive" => Callback {
+                input: self.input,
+                output: self.output,
+            }
+            .call(operation, request["kwargs"].clone()),
+            op if op.starts_with("record_replay_") => {
+                vibeos_test::record_replay::dispatch(&request)
+            }
+            op if op.starts_with("pcsample_") => {
+                vibeos_test::pc_sample::dispatch(self.root, &request, self)
+            }
+            op if op.starts_with("rrsample_") => vibeos_test::replay_sample::dispatch(&request),
+            op if op.starts_with("diagnostics_") => vibeos_test::diagnostics::dispatch(&request),
+            op if op.starts_with("rr_cli_") => vibeos_test::rr_cli::dispatch(&request, self),
             "payload_download"
             | "payload_print"
             | "payload_sleep"
@@ -184,6 +201,13 @@ fn run() -> Result<u8> {
                 return vibeos_test::vm::guardian_worker(Path::new(
                     &args.next().ok_or("VM guardian requires descriptor")?,
                 ))
+            }
+            "--diagnostic-worker" => {
+                return vibeos_test::diagnostics::worker(
+                    &args
+                        .next()
+                        .ok_or("--diagnostic-worker requires operation")?,
+                )
             }
             "--help" | "-h" => {
                 println!("Usage: tools/test-infra [--root DIR] [--client-pid PID] --api-json|--api-jsonl|--resource-jsonl");

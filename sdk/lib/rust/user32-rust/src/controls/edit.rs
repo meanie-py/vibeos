@@ -102,6 +102,11 @@ extern "system" {
     fn PatBlt(hdc: HDC, x: INT, y: INT, w: INT, h: INT, rop: DWORD) -> BOOL;
     fn SetTextColor(hdc: HDC, color: COLORREF) -> COLORREF;
     fn GetTextMetricsW(hdc: HDC, lptm: *mut TEXTMETRICW) -> BOOL;
+    fn GetTextCharsetInfo(hdc: HDC, lpSig: *mut FONTSIGNATURE, dwFlags: DWORD) -> INT;
+    /// Undocumented gdi32 export (gdi32.spec: NtGdiGetCharWidthInfo).
+    fn GetCharWidthInfo(hdc: HDC, info: *mut char_width_info) -> BOOL;
+    fn GetCharABCWidthsW(hdc: HDC, first: UINT, last: UINT, abc: *mut ABC) -> BOOL;
+    fn GetCharABCWidthsA(hdc: HDC, first: UINT, last: UINT, abc: *mut ABC) -> BOOL;
     // usp10 (Uniscribe)
     fn ScriptBreak(pwcChars: *const WCHAR, cChars: INT, psa: *const SCRIPT_ANALYSIS,
                    psla: *mut SCRIPT_LOGATTR) -> HRESULT;
@@ -309,8 +314,6 @@ pub struct EDITSTATE {
     pub right_margin: INT,
     pub format_rect: RECT,
     pub text_width: INT,
-    pub region_posx: INT,
-    pub region_posy: INT,
     pub word_break_proc: *mut core::ffi::c_void,
     pub line_count: INT,
     pub y_offset: INT,
@@ -320,6 +323,10 @@ pub struct EDITSTATE {
     pub hwndParent: HWND,
     pub hwndListBox: HWND,
     pub wheelDeltaRemainder: INT,
+    /// DBCS lead byte held between two ANSI WM_CHARs (Wine 11.11).
+    pub lead_byte: BYTE,
+    /// EM_SETIMESTATUS(EMSIS_COMPOSITIONSTRING) flags (Wine 11.11).
+    pub ime_status: UINT,
     pub lock_count: INT,
     pub tabs_count: INT,
     pub tabs: LPINT,
@@ -509,17 +516,25 @@ unsafe fn EDIT_UpdateUniscribeData_linedef(es: *mut EDITSTATE, dc: HDC, line_def
         }
 
         tabdef.cTabStops = (*es).tabs_count;
-        tabdef.iScale = 0;
+        // Wine 11.11: tab stops are in dialog units of the control's font, not unscaled.
+        tabdef.iScale = GdiGetCharDimensions(udc, core::ptr::null_mut(), core::ptr::null_mut());
         tabdef.pTabStops = (*es).tabs;
         tabdef.iTabOrigin = 0;
 
+        // A password line is analysed as password_char repeated (SSA_PASSWORD), so a
+        // multi-line password edit (allowed since Wine 11.11) never shapes its real text.
+        let password = (*es).style & ES_PASSWORD != 0;
         hr = ScriptStringAnalyse(
             udc,
-            (*es).text.offset(index as isize) as *const c_void,
+            if password {
+                core::ptr::addr_of!((*es).password_char) as *const c_void
+            } else {
+                (*es).text.offset(index as isize) as *const c_void
+            },
             (*line_def).net_length,
             3 * (*line_def).net_length / 2 + 16,
             -1,
-            SSA_LINK | SSA_FALLBACK | SSA_GLYPHS | SSA_TAB,
+            SSA_LINK | SSA_FALLBACK | SSA_GLYPHS | SSA_TAB | if password { SSA_PASSWORD } else { 0 },
             -1,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -591,7 +606,13 @@ unsafe fn EDIT_UpdateUniscribeData(es: *mut EDITSTATE, dc: HDC, mut line: INT) -
 }
 
 unsafe fn get_vertical_line_count(es: *mut EDITSTATE) -> INT {
-    let vlc: INT = ((*es).format_rect.bottom - (*es).format_rect.top) / (*es).line_height;
+    // Wine 11.11 guards a zero line height (no font metrics yet); in Rust the division would
+    // panic, not just fault.
+    let vlc: INT = if (*es).line_height != 0 {
+        ((*es).format_rect.bottom - (*es).format_rect.top) / (*es).line_height
+    } else {
+        0
+    };
     core::cmp::max(1, vlc)
 }
 
@@ -1175,6 +1196,10 @@ unsafe fn EDIT_EM_PosFromChar(es: *mut EDITSTATE, mut index: INT, after_wrap: BO
 
         lw = (*line_def).width;
         w = (*es).format_rect.right - (*es).format_rect.left;
+        // Divergence from upstream's Wine 11.11 sync (39fee16a692): there the ReactOS
+        // CORE-15780 line lost its `else` and runs after ScriptStringCPtoX too, so for any
+        // non-empty line (lw > 0) x becomes x_offset and the measured position is thrown away.
+        // The fallback only belongs to a line with no Uniscribe data, as before the sync.
         if !(*line_def).ssa.is_null() {
             ScriptStringCPtoX((*line_def).ssa, (index - 1) - li, 1, &mut x);
             x -= (*es).x_offset;
@@ -1617,7 +1642,11 @@ unsafe fn EDIT_UpdateScrollInfo(es: *mut EDITSTATE) {
         si.fMask = SIF_PAGE | SIF_POS | SIF_RANGE | SIF_DISABLENOSCROLL;
         si.nMin = 0;
         si.nMax = (*es).line_count - 1;
-        si.nPage = (((*es).format_rect.bottom - (*es).format_rect.top) / (*es).line_height) as UINT;
+        si.nPage = if (*es).line_height != 0 {
+            (((*es).format_rect.bottom - (*es).format_rect.top) / (*es).line_height) as UINT
+        } else {
+            0
+        };
         si.nPos = (*es).y_offset;
         SetScrollInfo((*es).hwndSelf, SB_VERT as i32, &mut si, 1);
     }
@@ -1637,6 +1666,9 @@ unsafe fn EDIT_UpdateScrollInfo(es: *mut EDITSTATE) {
 unsafe fn EDIT_EM_LineScroll_internal(es: *mut EDITSTATE, mut dx: INT, mut dy: INT) -> BOOL {
     let nyoff: INT;
     let x_offset_in_pixels: INT;
+    if (*es).line_height == 0 || (*es).char_width == 0 {
+        return 1;
+    }
     let lines_per_page: INT = ((*es).format_rect.bottom - (*es).format_rect.top) /
         (*es).line_height;
 
@@ -1765,16 +1797,16 @@ unsafe fn EDIT_ImmSetCompositionWindow(es: *mut EDITSTATE, pt: POINT) {
 }
 
 unsafe fn EDIT_SetCaretPos(es: *mut EDITSTATE, pos: INT, after_wrap: BOOL) {
+    // Wine 11.11: nothing, not even the position lookup, unless the control has focus.
+    if ((*es).flags as u32 & EF_FOCUSED as u32) == 0 {
+        return;
+    }
     let res = EDIT_EM_PosFromChar(es, pos, after_wrap);
     let hKL = GetKeyboardLayout(0);
     let pt = POINT {
         x: (LOWORD(res as u32) as i16) as i32,
         y: (HIWORD(res as u32) as i16) as i32,
     };
-
-    if ((*es).flags as u32 & EF_FOCUSED as u32) == 0 {
-        return;
-    }
 
     SetCaretPos(pt.x, pt.y);
 
@@ -2200,12 +2232,32 @@ unsafe fn EDIT_AdjustFormatRect(es: *mut EDITSTATE) {
     EDIT_SetCaretPos(es, (*es).selection_end, ((*es).flags & EF_AFTER_WRAP) as BOOL);
 }
 
+/// Wine 11.11: a format rect that is empty, or too small for the text already laid out, is
+/// refused in favour of the client rect.
+unsafe fn EDIT_is_valid_format_rect(es: *const EDITSTATE, rc: *const RECT) -> bool {
+    if IsRectEmpty(rc) != 0 {
+        return false;
+    }
+    !((*es).text_width > (*rc).right - (*rc).left
+        || (*es).line_height * (*es).line_count > (*rc).bottom - (*rc).top)
+}
+
 unsafe fn EDIT_SetRectNP(es: *mut EDITSTATE, rc: *const RECT) {
     let ExStyle: LONG_PTR = GetWindowLongPtrW((*es).hwndSelf, GWL_EXSTYLE as i32);
+    let mut too_large = false;
 
-    CopyRect(core::ptr::addr_of_mut!((*es).format_rect), rc);
+    if EDIT_is_valid_format_rect(es, rc) {
+        let mut edit_rect: RECT = core::mem::zeroed();
+        CopyRect(core::ptr::addr_of_mut!((*es).format_rect), rc);
+        GetClientRect((*es).hwndSelf, &mut edit_rect);
+        too_large = (*rc).bottom - (*rc).top > edit_rect.bottom - edit_rect.top;
+    } else {
+        GetClientRect((*es).hwndSelf, core::ptr::addr_of_mut!((*es).format_rect));
+    }
 
-    if ExStyle & (WS_EX_CLIENTEDGE as LONG_PTR) != 0 {
+    // A rect taller than the client area gets no client-edge inset (it falls to the
+    // WS_BORDER case, as the C's else-if does).
+    if ExStyle & (WS_EX_CLIENTEDGE as LONG_PTR) != 0 && !too_large {
         (*es).format_rect.left += 1;
         (*es).format_rect.right -= 1;
 
@@ -2360,8 +2412,9 @@ unsafe fn EDIT_EM_GetSel(es: *const EDITSTATE, start: PUINT, end: PUINT) -> LRES
     (((s & 0xffff) | ((e & 0xffff) << 16)) as u32) as LRESULT
 }
 
-unsafe fn EDIT_EM_ReplaceSel(es: *mut EDITSTATE, can_undo: BOOL, lpsz_replace: LPCWSTR, send_update: BOOL, honor_limit: BOOL) {
-    let mut strl: UINT = strlenW(lpsz_replace) as UINT;
+/// Wine 11.11 takes the replacement's LENGTH rather than measuring it, so a caller can insert
+/// part of a string (WM_PASTE's single-line cut) and NULL/0 means "delete the selection".
+unsafe fn EDIT_EM_ReplaceSel(es: *mut EDITSTATE, can_undo: BOOL, lpsz_replace: LPCWSTR, mut strl: UINT, send_update: BOOL, honor_limit: BOOL) {
     let mut tl: UINT = get_text_length(es);
     let utl: UINT;
     let mut s: UINT;
@@ -2652,18 +2705,32 @@ unsafe fn EDIT_EM_SetLimitText(es: *mut EDITSTATE, mut limit: UINT) {
     (*es).buffer_limit = limit;
 }
 
-unsafe fn is_cjk(charset: UINT) -> BOOL {
-    match charset {
-        x if x == SHIFTJIS_CHARSET as UINT
-            || x == HANGUL_CHARSET as UINT
-            || x == GB2312_CHARSET as UINT
-            || x == CHINESEBIG5_CHARSET as UINT =>
-        {
-            return 1;
-        }
-        _ => {}
+// Wine 11.11 judges CJK by the DC's code page or the font's DBCS signature, not the font's
+// tmCharSet, and takes a CJK font's default margins from its side bearings.
+unsafe fn is_cjk_charset(dc: HDC) -> bool {
+    matches!(GdiGetCodePage(dc), 932 | 936 | 949 | 950 | 1361)
+}
+
+unsafe fn is_cjk_font(dc: HDC) -> bool {
+    let fs_dbcs_mask: DWORD =
+        (FS_JISJAPAN | FS_CHINESESIMP | FS_WANSUNG | FS_CHINESETRAD | FS_JOHAB) as DWORD;
+    let mut fs: FONTSIGNATURE = core::mem::zeroed();
+    GetTextCharsetInfo(dc, &mut fs, 0) != DEFAULT_CHARSET as INT && (fs.fsCsb[0] & fs_dbcs_mask) != 0
+}
+
+fn get_cjk_fontinfo_margin(width: INT, side_bearing: INT) -> INT {
+    if side_bearing < 0 {
+        core::cmp::min(-side_bearing, width / 2)
+    } else {
+        0
     }
-    0
+}
+
+#[repr(C)]
+pub struct char_width_info {
+    pub min_lsb: INT,
+    pub min_rsb: INT,
+    pub unknown: INT,
 }
 
 unsafe fn EDIT_EM_SetMargins(es: *mut EDITSTATE, action: INT, left: WORD, right: WORD, repaint: BOOL) {
@@ -2678,19 +2745,22 @@ unsafe fn EDIT_EM_SetMargins(es: *mut EDITSTATE, action: INT, left: WORD, right:
         let mut rc: RECT = core::mem::zeroed();
 
         if (tm.tmPitchAndFamily & ((TMPF_VECTOR | TMPF_TRUETYPE) as u8)) != 0 {
-            if is_cjk(tm.tmCharSet as UINT) == 0 {
-                default_left_margin = width / 2;
-                default_right_margin = width / 2;
-
-                GetClientRect((*es).hwndSelf, &mut rc);
-                if rc.right - rc.left < (width / 2 + width) * 2 &&
-                    (width >= 28 || IsRectEmpty(&rc) == 0) {
-                    default_left_margin = (*es).left_margin;
-                    default_right_margin = (*es).right_margin;
-                }
+            let mut width_info: char_width_info = core::mem::zeroed();
+            if (is_cjk_charset(dc) || is_cjk_font(dc)) && GetCharWidthInfo(dc, &mut width_info) != 0 {
+                default_left_margin = get_cjk_fontinfo_margin(width, width_info.min_lsb);
+                default_right_margin = get_cjk_fontinfo_margin(width, width_info.min_rsb);
             } else {
                 default_left_margin = width / 2;
                 default_right_margin = width / 2;
+            }
+
+            // The defaults only apply to a control wide enough for them; an empty client
+            // rect counts as 80 pixels.
+            GetClientRect((*es).hwndSelf, &mut rc);
+            let rc_width = if IsRectEmpty(&rc) == 0 { rc.right - rc.left } else { 80 };
+            if rc_width < default_left_margin + default_right_margin + width * 2 {
+                default_left_margin = (*es).left_margin;
+                default_right_margin = (*es).right_margin;
             }
         }
         SelectObject(dc, old_font);
@@ -2725,16 +2795,13 @@ unsafe fn EDIT_EM_SetMargins(es: *mut EDITSTATE, action: INT, left: WORD, right:
     }
 }
 
-unsafe fn EDIT_EM_SetPasswordChar(es: *mut EDITSTATE, c: WCHAR) {
+/// Wine 11.11 applies this to multi-line controls too, and EM_SETPASSWORDCHAR returns TRUE.
+unsafe fn EDIT_EM_SetPasswordChar(es: *mut EDITSTATE, c: WCHAR) -> BOOL {
 
     let style: LONG;
 
-    if (*es).style & ES_MULTILINE != 0 {
-        return;
-    }
-
     if (*es).password_char == c {
-        return;
+        return 1;
     }
 
     style = GetWindowLongW((*es).hwndSelf, GWL_STYLE as i32);
@@ -2748,6 +2815,7 @@ unsafe fn EDIT_EM_SetPasswordChar(es: *mut EDITSTATE, c: WCHAR) {
     }
     EDIT_InvalidateUniscribeData(es);
     EDIT_UpdateText(es, core::ptr::null_mut(), 1);
+    1
 }
 
 unsafe fn EDIT_EM_SetTabStops(es: *mut EDITSTATE, count: INT, tabs: *const INT) -> BOOL {
@@ -2806,7 +2874,7 @@ unsafe fn EDIT_EM_Undo(es: *mut EDITSTATE) -> BOOL {
 
     EDIT_EM_SetSel(es, (*es).undo_position, ((*es).undo_position as INT + (*es).undo_insert_count) as UINT, 0u8 as BOOL);
     EDIT_EM_EmptyUndoBuffer(es);
-    EDIT_EM_ReplaceSel(es, 1u8 as BOOL, utext, 1u8 as BOOL, 1u8 as BOOL);
+    EDIT_EM_ReplaceSel(es, 1u8 as BOOL, utext, ulength as UINT, 1u8 as BOOL, 1u8 as BOOL);
     EDIT_EM_SetSel(es, (*es).undo_position, ((*es).undo_position as INT + (*es).undo_insert_count) as UINT, 0u8 as BOOL);
     if notify_parent(es, EN_CHANGE as INT) == 0 {
         return 1u8 as BOOL;
@@ -2833,10 +2901,25 @@ unsafe fn EDIT_WM_Paste(es: *mut EDITSTATE) {
     hsrc = GetClipboardData(CF_UNICODETEXT);
     if !hsrc.is_null() {
         src = GlobalLock(hsrc) as LPWSTR;
-        EDIT_EM_ReplaceSel(es, 1, src, 1, 1);
+        let mut len = strlenW(src);
+        // Protect a single-line edit against pasting a newline: keep what precedes the first
+        // '\n', and a '\r' just before it.
+        if (*es).style & ES_MULTILINE == 0 {
+            let mut i: UINT = 0;
+            while i < len && *src.add(i as usize) != '\n' as WCHAR {
+                i += 1;
+            }
+            if i < len {
+                len = i;
+                if len != 0 && *src.add(len as usize - 1) == '\r' as WCHAR {
+                    len -= 1;
+                }
+            }
+        }
+        EDIT_EM_ReplaceSel(es, 1, src, len, 1, 1);
         GlobalUnlock(hsrc);
     } else if (*es).style & ES_PASSWORD != 0 {
-        EDIT_EM_ReplaceSel(es, 1, empty_stringW.as_ptr(), 1, 1);
+        EDIT_EM_ReplaceSel(es, 1, empty_stringW.as_ptr(), 0, 1, 1);
     }
     CloseClipboard();
 }
@@ -2869,7 +2952,7 @@ unsafe fn EDIT_WM_Clear(es: *mut EDITSTATE) {
         return;
     }
 
-    EDIT_EM_ReplaceSel(es, 1, empty_stringW.as_ptr(), 1, 1);
+    EDIT_EM_ReplaceSel(es, 1, empty_stringW.as_ptr(), 0, 1, 1);
 }
 
 unsafe fn EDIT_WM_Cut(es: *mut EDITSTATE) {
@@ -2880,8 +2963,9 @@ unsafe fn EDIT_WM_Cut(es: *mut EDITSTATE) {
 unsafe fn EDIT_WM_Char(es: *mut EDITSTATE, c: WCHAR) -> LRESULT {
     let control: BOOL;
 
+    // Wine 11.11: swallowed (handled) while the mouse is selecting.
     if (*es).bCaptureState != 0 {
-        return 0;
+        return 1;
     }
 
     control = ((GetKeyState(VK_CONTROL as i32) as i32) & 0x8000) as BOOL;
@@ -2901,7 +2985,7 @@ unsafe fn EDIT_WM_Char(es: *mut EDITSTATE, c: WCHAR) -> LRESULT {
                         EDIT_MoveDown_ML(es, 0);
                     } else {
                         let cr_lfW: [WCHAR; 3] = ['\r' as u16, '\n' as u16, 0];
-                        EDIT_EM_ReplaceSel(es, 1, cr_lfW.as_ptr(), 1, 1);
+                        EDIT_EM_ReplaceSel(es, 1, cr_lfW.as_ptr(), 2, 1, 1);
                     }
                 }
             }
@@ -2912,7 +2996,7 @@ unsafe fn EDIT_WM_Char(es: *mut EDITSTATE, c: WCHAR) -> LRESULT {
                         EDIT_MoveDown_ML(es, 0);
                     } else {
                         let cr_lfW: [WCHAR; 3] = ['\r' as u16, '\n' as u16, 0];
-                        EDIT_EM_ReplaceSel(es, 1, cr_lfW.as_ptr(), 1, 1);
+                        EDIT_EM_ReplaceSel(es, 1, cr_lfW.as_ptr(), 2, 1, 1);
                     }
                 }
             }
@@ -2922,7 +3006,7 @@ unsafe fn EDIT_WM_Char(es: *mut EDITSTATE, c: WCHAR) -> LRESULT {
                     if EDIT_IsInsideDialog(es) != 0 {
                         break 'sw;
                     }
-                    EDIT_EM_ReplaceSel(es, 1, tabW.as_ptr(), 1, 1);
+                    EDIT_EM_ReplaceSel(es, 1, tabW.as_ptr(), 1, 1, 1);
                 }
             }
             x if x == VK_BACK as u32 => {
@@ -2965,7 +3049,7 @@ unsafe fn EDIT_WM_Char(es: *mut EDITSTATE, c: WCHAR) -> LRESULT {
                     let mut str: [WCHAR; 2] = [0; 2];
                     str[0] = c;
                     str[1] = 0;
-                    EDIT_EM_ReplaceSel(es, 1, str.as_ptr(), 1, 1);
+                    EDIT_EM_ReplaceSel(es, 1, str.as_ptr(), 1, 1, 1);
                 }
             }
         }
@@ -3118,6 +3202,10 @@ unsafe fn EDIT_CheckCombo(es: *mut EDITSTATE, msg: UINT, mut key: INT) -> BOOL {
 unsafe fn EDIT_WM_KeyDown(es: *mut EDITSTATE, key: INT) -> LRESULT {
     let shift: BOOL;
     let control: BOOL;
+
+    if (*es).bCaptureState != 0 {
+        return 1;
+    }
 
     if GetKeyState(VK_MENU as INT) as i32 & 0x8000 != 0 {
         return 0;
@@ -3312,9 +3400,6 @@ unsafe fn EDIT_WM_LButtonDblClk(es: *mut EDITSTATE) -> LRESULT {
 	e = li + EDIT_CallWordBreakProc(es, li, e - li, ll, WB_RIGHT as INT);
 	EDIT_EM_SetSel(es, s as UINT, e as UINT, 0);
 	EDIT_EM_ScrollCaret(es);
-	(*es).region_posy = 0;
-	(*es).region_posx = (*es).region_posy;
-	SetTimer((*es).hwndSelf, 0, 100, None);
 	0
 }
 
@@ -3328,9 +3413,6 @@ unsafe fn EDIT_WM_LButtonDown(es: *mut EDITSTATE, keys: DWORD, mut x: INT, mut y
     e = EDIT_CharFromPos(es, x, y, &mut after_wrap);
     EDIT_EM_SetSel(es, if keys & MK_SHIFT != 0 { (*es).selection_start as UINT } else { e as UINT }, e as UINT, after_wrap);
     EDIT_EM_ScrollCaret(es);
-    (*es).region_posy = 0;
-    (*es).region_posx = (*es).region_posy;
-    SetTimer((*es).hwndSelf, 0, 100, None);
 
     if (*es).flags as u32 & EF_FOCUSED as u32 == 0 {
         SetFocus((*es).hwndSelf);
@@ -3341,7 +3423,6 @@ unsafe fn EDIT_WM_LButtonDown(es: *mut EDITSTATE, keys: DWORD, mut x: INT, mut y
 
 unsafe fn EDIT_WM_LButtonUp(es: *mut EDITSTATE) -> LRESULT {
     if (*es).bCaptureState != 0 {
-        KillTimer((*es).hwndSelf, 0);
         if GetCapture() == (*es).hwndSelf {
             ReleaseCapture();
         }
@@ -3358,21 +3439,17 @@ unsafe fn EDIT_WM_MButtonDown(es: *mut EDITSTATE) -> LRESULT {
 unsafe fn EDIT_WM_MouseMove(es: *mut EDITSTATE, mut x: INT, mut y: INT) -> LRESULT {
 	let e: INT;
 	let mut after_wrap: BOOL = 0;
-	let prex: INT;
-	let prey: INT;
 
 	if (*es).bCaptureState == 0 || GetCapture() != (*es).hwndSelf {
 		return 0;
 	}
 
-	prex = x;
-	prey = y;
-	EDIT_ConfinePoint(es, core::ptr::addr_of_mut!(x), core::ptr::addr_of_mut!(y));
-	(*es).region_posx = if prex < x { -1 } else if prex > x { 1 } else { 0 };
-	(*es).region_posy = if prey < y { -1 } else if prey > y { 1 } else { 0 };
+	// Wine 11.11 dropped the 100 ms drag timer (and region_posx/y): a point outside the
+	// control selects towards it directly and the caret is scrolled into view.
 	e = EDIT_CharFromPos(es, x, y, core::ptr::addr_of_mut!(after_wrap));
 	EDIT_EM_SetSel(es, (*es).selection_start as UINT, e as UINT, after_wrap);
 	EDIT_SetCaretPos(es, (*es).selection_end, ((*es).flags as u32 & EF_AFTER_WRAP as u32) as BOOL);
+	EDIT_EM_ScrollCaret(es);
 	0
 }
 
@@ -3505,6 +3582,42 @@ unsafe fn EDIT_WM_SetFocus(es: *mut EDITSTATE) {
     notify_parent(es, EN_SETFOCUS as INT);
 }
 
+/// Wine 11.11: a CJK font's margins come from the widest overhangs of its first 256 glyphs;
+/// any other TrueType/vector font keeps EC_USEFONTINFO, and a raster font gets 0 (no change).
+unsafe fn get_font_margins(hdc: HDC, tm: *const TEXTMETRICW, unicode: BOOL) -> DWORD {
+    let mut abc: [ABC; 256] = core::mem::zeroed();
+    let use_font_info = MAKELONG(EC_USEFONTINFO as WORD, EC_USEFONTINFO as WORD) as DWORD;
+
+    if ((*tm).tmPitchAndFamily & ((TMPF_VECTOR | TMPF_TRUETYPE) as u8)) == 0 {
+        return use_font_info;
+    }
+    if unicode != 0 {
+        if !is_cjk_charset(hdc) && !is_cjk_font(hdc) {
+            return use_font_info;
+        }
+        if GetCharABCWidthsW(hdc, 0, 255, abc.as_mut_ptr()) == 0 {
+            return 0;
+        }
+    } else if is_cjk_charset(hdc) {
+        if GetCharABCWidthsA(hdc, 0, 255, abc.as_mut_ptr()) == 0 {
+            return 0;
+        }
+    } else {
+        return use_font_info;
+    }
+
+    let (mut left, mut right): (i16, i16) = (0, 0);
+    for a in abc.iter() {
+        if -(a.abcA as i32) > right as i32 {
+            right = (-a.abcA) as i16;
+        }
+        if -(a.abcC as i32) > left as i32 {
+            left = (-a.abcC) as i16;
+        }
+    }
+    MAKELONG(left as WORD, right as WORD) as DWORD
+}
+
 unsafe fn EDIT_WM_SetFont(es: *mut EDITSTATE, mut font: HFONT, redraw: BOOL) {
     let mut tm: TEXTMETRICW = core::mem::zeroed();
     let dc: HDC;
@@ -3520,6 +3633,7 @@ unsafe fn EDIT_WM_SetFont(es: *mut EDITSTATE, mut font: HFONT, redraw: BOOL) {
     GetTextMetricsW(dc, &mut tm);
     (*es).line_height = tm.tmHeight;
     (*es).char_width = tm.tmAveCharWidth;
+    let margins = get_font_margins(dc, &tm, (*es).is_unicode);
     if !font.is_null() {
         SelectObject(dc, old_font as *mut core::ffi::c_void);
     }
@@ -3527,8 +3641,10 @@ unsafe fn EDIT_WM_SetFont(es: *mut EDITSTATE, mut font: HFONT, redraw: BOOL) {
 
     GetClientRect((*es).hwndSelf, &mut clientRect);
     EDIT_SetRectNP(es, &clientRect);
-    EDIT_EM_SetMargins(es, (EC_LEFTMARGIN | EC_RIGHTMARGIN) as INT,
-                       EC_USEFONTINFO as WORD, EC_USEFONTINFO as WORD, 0);
+    if margins != 0 {
+        EDIT_EM_SetMargins(es, (EC_LEFTMARGIN | EC_RIGHTMARGIN) as INT,
+                           LOWORD(margins) as WORD, HIWORD(margins) as WORD, 0);
+    }
 
     if (*es).style & ES_MULTILINE != 0 {
         EDIT_BuildLineDefs_ML(es, 0, get_text_length(es) as INT, 0, core::ptr::null_mut());
@@ -3572,12 +3688,12 @@ unsafe fn EDIT_WM_SetText(es: *mut EDITSTATE, mut text: LPCWSTR, unicode: BOOL) 
 
     EDIT_EM_SetSel(es, 0, (-1i32) as UINT, 0);
     if !text.is_null() {
-        EDIT_EM_ReplaceSel(es, 0, text, 0, 0);
+        EDIT_EM_ReplaceSel(es, 0, text, strlenW(text), 0, 0);
         if unicode == 0 {
             HeapFree(GetProcessHeap(), 0, textW as _);
         }
     } else {
-        EDIT_EM_ReplaceSel(es, 0, empty_stringW.as_ptr(), 0, 0);
+        EDIT_EM_ReplaceSel(es, 0, empty_stringW.as_ptr(), 0, 0, 0);
     }
     (*es).x_offset = 0;
     (*es).flags &= !(EF_MODIFIED as u16);
@@ -3642,13 +3758,6 @@ unsafe fn EDIT_WM_SysKeyDown(es: *mut EDITSTATE, key: INT, key_data: DWORD) -> L
     DefWindowProcW((*es).hwndSelf, WM_SYSKEYDOWN, key as WPARAM, key_data as LPARAM)
 }
 
-unsafe fn EDIT_WM_Timer(es: *mut EDITSTATE) {
-	if (*es).region_posx < 0 {
-		EDIT_MoveBackward(es, 1);
-	} else if (*es).region_posx > 0 {
-		EDIT_MoveForward(es, 1);
-	}
-}
 
 unsafe fn EDIT_WM_HScroll(es: *mut EDITSTATE, action: INT, pos: INT) -> LRESULT {
     let mut dx: INT;
@@ -3920,7 +4029,7 @@ unsafe fn EDIT_ImeComposition(hwnd: HWND, CompFlag: LPARAM, es: *mut EDITSTATE) 
     let cursor: core::ffi::c_int;
 
     if (*es).selection_start != (*es).selection_end {
-        EDIT_EM_ReplaceSel(es, 1, empty_stringW.as_ptr(), 1, 1);
+        EDIT_EM_ReplaceSel(es, 1, empty_stringW.as_ptr(), 0, 1, 1);
     }
 
     hIMC = ImmGetContext(hwnd);
@@ -4054,7 +4163,7 @@ unsafe fn EDIT_WM_Create(es: *mut EDITSTATE, name: LPCWSTR) -> LRESULT {
     EDIT_SetRectNP(es, &clientRect);
 
     if !name.is_null() && *name != 0 {
-        EDIT_EM_ReplaceSel(es, 0, name, 0, 0);
+        EDIT_EM_ReplaceSel(es, 0, name, strlenW(name), 0, 0);
         (*es).selection_end = 0;
         (*es).selection_start = 0;
         EDIT_EM_ScrollCaret(es);
@@ -4206,7 +4315,7 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
                     MultiByteToWideChar(CP_ACP, 0, textA, -1, textW, countW);
                 }
 
-                EDIT_EM_ReplaceSel(es, wParam as BOOL, textW, 1, 1);
+                EDIT_EM_ReplaceSel(es, wParam as BOOL, textW, strlenW(textW), 1, 1);
                 result = 1;
 
                 if unicode == 0 {
@@ -4243,7 +4352,7 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
                 let charA: CHAR = wParam as CHAR;
                 MultiByteToWideChar(CP_ACP, 0, core::ptr::addr_of!(charA), 1, core::ptr::addr_of_mut!(charW), 1);
             }
-            EDIT_EM_SetPasswordChar(es, charW);
+            result = EDIT_EM_SetPasswordChar(es, charW) as LRESULT;
         }
         EM_EMPTYUNDOBUFFER => {
             EDIT_EM_EmptyUndoBuffer(es);
@@ -4267,6 +4376,7 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
         }
         EM_SETWORDBREAKPROC => {
             EDIT_EM_SetWordBreakProc(es, lParam as *mut core::ffi::c_void);
+            result = 1;
         }
         EM_GETWORDBREAKPROC => {
             result = (*es).word_break_proc as LRESULT;
@@ -4296,6 +4406,15 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
             } else {
                 result = EDIT_EM_PosFromChar(es, wParam as INT, 0);
             }
+        }
+        EM_SETIMESTATUS => {
+            if wParam as u32 == EMSIS_COMPOSITIONSTRING {
+                (*es).ime_status = (lParam & 0xFFFF) as UINT;
+            }
+            result = 1;
+        }
+        EM_GETIMESTATUS => {
+            result = if wParam as u32 == EMSIS_COMPOSITIONSTRING { (*es).ime_status as LRESULT } else { 1 };
         }
         EM_CHARFROMPOS => {
             result = EDIT_EM_CharFromPos(es, LOWORD(lParam as DWORD) as i16 as INT, HIWORD(lParam as DWORD) as i16 as INT);
@@ -4339,9 +4458,23 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
                 if unicode != 0 {
                     charW = wParam as WCHAR;
                 } else {
-                    let charA: CHAR = wParam as CHAR;
+                    // Wine 11.11: an ANSI DBCS character arrives as two WM_CHARs, lead byte
+                    // first, in the INPUT code page (the keyboard layout's), not CP_ACP.
+                    let low: BYTE = wParam as BYTE;
+                    let cp: DWORD = crate::windows::message::get_input_codepage_impl();
                     let mut tmp: WCHAR = 0;
-                    MultiByteToWideChar(CP_ACP, 0, core::ptr::addr_of!(charA), 1, core::ptr::addr_of_mut!(tmp), 1);
+                    if (*es).lead_byte != 0 {
+                        let ch: [CHAR; 2] = [(*es).lead_byte as CHAR, low as CHAR];
+                        MultiByteToWideChar(cp, 0, ch.as_ptr(), 2, core::ptr::addr_of_mut!(tmp), 1);
+                    } else if crate::winbase::IsDBCSLeadByteEx(cp, low) != 0 {
+                        (*es).lead_byte = low;
+                        result = 1;
+                        break 'block;
+                    } else {
+                        let charA: CHAR = low as CHAR;
+                        MultiByteToWideChar(cp, 0, core::ptr::addr_of!(charA), 1, core::ptr::addr_of_mut!(tmp), 1);
+                    }
+                    (*es).lead_byte = 0;
                     charW = tmp;
                 }
 
@@ -4477,8 +4610,8 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
         WM_SYSKEYDOWN => {
             result = EDIT_WM_SysKeyDown(es, wParam as INT, lParam as DWORD);
         }
-        WM_TIMER => {
-            EDIT_WM_Timer(es);
+        WM_CAPTURECHANGED => {
+            (*es).bCaptureState = 0;
         }
         WM_VSCROLL => {
             /* Upstream 1dc2e6de728 (CORE-19305): wParam's HIWORD is only 16 bits, so a
@@ -4496,7 +4629,8 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
         WM_MOUSEWHEEL => {
             'block: {
                 let wheelDelta: i32;
-                let mut pulScrollLines: UINT = 3;
+                // Wine 11.11 does this in signed INT arithmetic (WHEEL_PAGESCROLL reads as -1).
+                let mut pulScrollLines: INT = 3;
                 SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, core::ptr::addr_of_mut!(pulScrollLines) as *mut core::ffi::c_void, 0);
 
                 if (wParam & (MK_SHIFT | MK_CONTROL) as WPARAM) != 0 {
@@ -4512,9 +4646,13 @@ pub unsafe extern "system" fn EditWndProc_common(hwnd: HWND, msg: UINT, mut wPar
                 }
                 if (*es).wheelDeltaRemainder != 0 && pulScrollLines != 0 {
                     let cLineScroll: i32;
-                    pulScrollLines = min((*es).line_count as UINT, pulScrollLines);
-                    cLineScroll = (pulScrollLines as f32 * (*es).wheelDeltaRemainder as f32 / WHEEL_DELTA as f32) as i32;
-                    (*es).wheelDeltaRemainder -= WHEEL_DELTA as i32 * cLineScroll / pulScrollLines as i32;
+                    pulScrollLines = min((*es).line_count, pulScrollLines);
+                    // An empty control would divide by zero below: UB in the C, a panic here.
+                    if pulScrollLines == 0 {
+                        break 'block;
+                    }
+                    cLineScroll = pulScrollLines * (*es).wheelDeltaRemainder / WHEEL_DELTA as i32;
+                    (*es).wheelDeltaRemainder -= WHEEL_DELTA as i32 * cLineScroll / pulScrollLines;
                     result = EDIT_EM_LineScroll(es, 0, -cLineScroll) as LRESULT;
                 }
             }

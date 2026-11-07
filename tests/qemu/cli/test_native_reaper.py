@@ -2,10 +2,8 @@
 
 import json
 import os
-import signal
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -26,23 +24,23 @@ class Owned:
         )
         self.pid = self.proc.pid
         self.start = tick(self.pid)
-        self.done = threading.Event()
 
-        def collect():
-            self.proc.wait()
-            self.done.set()
+    def exited(self):
+        return self.proc.poll() is not None
 
-        self.thread = threading.Thread(target=collect, daemon=True)
-        self.thread.start()
+    def wait_for_exit(self):
+        # Observe the child directly; no separately scheduled collector thread.
+        return self.proc.wait(timeout=5)
 
     def stop(self):
-        if not self.done.is_set():
-            try:
-                os.kill(self.pid, signal.SIGTERM)
-            except ProcessLookupError:
-                pass
-        assert self.done.wait(5), f"fixture process {self.pid} did not stop"
-        self.thread.join(timeout=1)
+        if not self.exited():
+            self.proc.terminate()
+        try:
+            self.wait_for_exit()
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait(timeout=5)
+            raise
 
 
 class Reaper:
@@ -121,7 +119,7 @@ def test_reaper_never_touches_a_live_owner_within_its_cap(reaper):
         deadline=time.time() + 600,
     )
     assert reaper.reap() == []
-    assert path.exists() and not qemu.done.is_set()
+    assert path.exists() and not qemu.exited()
     assert not reaper.calls.exists()
 
 
@@ -136,7 +134,7 @@ def test_reaper_kills_past_the_cap_even_with_a_live_owner(reaper):
         deadline=time.time() - 1,
     )
     actions = reaper.reap()
-    assert qemu.done.wait(5)
+    assert qemu.wait_for_exit() < 0
     assert not path.exists() and any("exceeded lifetime cap" in line for line in actions)
 
 
@@ -168,7 +166,7 @@ def test_reaper_keeps_the_lock_when_the_kill_fails(reaper, monkeypatch):
         win_uid=reaper.uid,
     )
     actions = reaper.reap()
-    assert path.exists() and not qemu.done.is_set()
+    assert path.exists() and not qemu.exited()
     assert any(line.startswith("FAILED") and "unconfirmed" in line for line in actions)
     assert reaper.calls.read_text().splitlines() == [reaper.uid]
 
@@ -178,7 +176,7 @@ def test_reaper_leaves_a_fresh_unparseable_lock_alone(reaper):
     path = reaper.locks / "torn.json"
     path.write_text("{half a lo")
     assert reaper.reap() == []
-    assert path.read_text() == "{half a lo" and not qemu.done.is_set()
+    assert path.read_text() == "{half a lo" and not qemu.exited()
     assert not reaper.calls.exists()
 
 
@@ -194,7 +192,7 @@ def test_reaper_dry_run_changes_nothing(reaper):
     before = path.read_bytes()
     actions = reaper.reap(dry=True)
     assert actions and actions[0].startswith("DRY-RUN")
-    assert path.read_bytes() == before and not qemu.done.is_set()
+    assert path.read_bytes() == before and not qemu.exited()
     assert not reaper.calls.exists()
 
 
@@ -224,10 +222,10 @@ def test_reaper_walks_debug_toolkit_manifests(reaper):
     (torn / "manifest.json").write_text("{")
     unchanged = {p: p.read_bytes() for p in (b, c, d)}
     actions = reaper.reap()
-    assert orphan.done.wait(5)
+    assert orphan.wait_for_exit() < 0
     assert json.loads(a.read_text())["stopped_at"]
     assert any("owner dead" in line for line in actions)
-    assert all(not q.done.is_set() for q in (owned, stopped, legacy))
+    assert all(not q.exited() for q in (owned, stopped, legacy))
     assert all(p.read_bytes() == text for p, text in unchanged.items())
     assert (torn / "manifest.json").read_text() == "{"
 
@@ -236,7 +234,7 @@ def test_reaper_refuses_a_live_pid_without_its_start_tick_proof(reaper):
     qemu = reaper.process()
     path = reaper.lock("unproved", launcher_pid=reaper.dead_owner(), qemu_pid=qemu.pid)
     actions = reaper.reap()
-    assert path.exists() and not qemu.done.is_set()
+    assert path.exists() and not qemu.exited()
     assert any("lacks recorded start-tick proof" in line for line in actions)
 
 
@@ -249,5 +247,5 @@ def test_reaper_refuses_a_reused_pid_incarnation(reaper):
         qemu_start_tick=qemu.start + 1,
     )
     actions = reaper.reap()
-    assert path.exists() and not qemu.done.is_set()
+    assert path.exists() and not qemu.exited()
     assert any("PID has been reused" in line for line in actions)

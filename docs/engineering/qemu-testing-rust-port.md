@@ -34,11 +34,21 @@ handoff transfers ownership. Existing host-jobs and hostlock capacity policies
 remain authoritative; the native implementation speaks their existing protocols.
 Admission timeout refuses launch. It does not run a VM without a lease.
 
-The diagnostics bridge deliberately still invokes the existing record/replay and
-sampling command authorities. It calls their trace/shape guards, and Rust owns the
-resulting sidecars and QMP lifetime. Full migration of those CLI diagnostics belongs
-with the later control-plane work. There is no Python fallback when a native
-operation fails.
+`record_replay`, `pc_sample`, `replay_sample`, and `diagnostics` own trace
+transforms, media/shape/finalization guards, replay decoding, per-vCPU sampling,
+symbol attribution, and guest-state fingerprints. VM diagnostic workers execute
+`vibeos-test --diagnostic-worker` directly with the existing parent-death and
+sidecar-health checks. Each sampler publishes its own result JSON; concurrent
+workers share only an append-only diagnostic log. Python modules retain
+compatibility DTOs and QMP bindings;
+there is no Python fallback. Replay events cross that compatibility API in bounded
+pages; native divergence checks stream the trace directly. RAM fingerprints stream
+through a FIFO in 1 MiB chunks and preserve Python's BLAKE2b-8/zlib artifact format.
+
+`rr_cli` owns trace lookup, retention, transcript normalization/comparison,
+quiescence, and progress monitoring. A quiescence timeout refuses finalization.
+The remaining `rrcmd.py` command composition and report presentation are the next
+control-plane chunk; they still use the same guarded smoke/conformance entry points.
 
 Native tests run with:
 
@@ -128,3 +138,66 @@ lease name alongside the destination board's plug/Pico configuration. This keeps
 both board names contending for one physical resource; it does not change which
 board owns the payload or logs. For the Pi 4 gear's existing conservative alias,
 that shared lease name is `optiplex`.
+
+Bulk RAM capture uses FIFO readiness polling and a bounded transfer deadline;
+interactive QMP requests recover their normal timeout after each transfer.
+`rr record` publishes `record-diagnostics.json` separately from trace finalisation.
+Requested RAM/PC sampling must produce valid rows, and a worker error fails the
+command even if earlier samples exist. A guest bugcheck can still yield a useful,
+successful recording when the requested host diagnostics completed. Host sampler
+failures propagate as diagnostic errors rather than guest-death classifications.
+
+Smoke refreshes its watch configuration from the launched VM's handles, so
+record/replay's extended watchdog budgets reach the outer watch as well as the VM.
+A control reproduces the pre-launch/post-launch configuration mismatch.
+
+On `15634cca5810`, a real ARM64 recording reached desktop with 12 RAM fingerprints
+and 108 PC samples. Independent Python zlib/BLAKE2b8 decoding verified all 883
+unique RAM chunks. Trace: `~/vibeos-rr/native-diag-bulk-20261106-1634-arm64`;
+boot evidence: `/tmp/vibeos-cli/20261106-163427-aioj3w4p-smoke-arm64`.
+Trace finalisation and recording diagnostics passed; this records evidence about
+recording, not a claim that playback reached desktop.
+
+Finite replay comparison workers finish before smoke tears down a desktop VM;
+continuous PC workers remain tied to VM lifetime. The VM lifetime watchdog still
+bounds comparison completion, and worker failures remain diagnostic errors.
+A finished comparison loop is not proof of equivalence: uncertain, skipped,
+empty or partially compared fingerprint sets produce an inconclusive verdict and
+CLI exit 2. `all_matched` requires every requested fingerprint to match exactly.
+
+The completion/coverage fixes were exercised on `96011f9acf7` with
+`rr diverge native-diag-bulk-20261106-1634-arm64`. The replay reached both desktop
+markers; raw serial has no bugcheck or Rust panic, and its saved screenshot shows
+the desktop. Evidence: `/tmp/vibeos-cli/20261106-165507-rnywt0u4-smoke-arm64`.
+Smoke waited 32.677 seconds after desktop settling for the finite checker.
+The final verdict has `completed: true`, four exact matches, seven inconclusive
+pause-time I/O checkpoints, and one skipped checkpoint (already past its icount).
+There are no unprocessed checkpoints or definitive mismatches. CLI exit 2 and
+`all_matched: false` correctly leave full equivalence unproven. The prior run's
+false-success output is in `.cache/build-infra/diagnostics-rr-bulk-diverge.log`;
+its verdict was preserved at
+`~/vibeos-rust-staging/diagnostics-20261106/diverge-before-completion-fix.json`.
+
+Follow-up work: arm the first replay checkpoint before it can be passed, and
+make pause-time I/O checkpoints comparable without weakening the inconclusive
+classification. The Python RR command coordinator remains the next orchestration
+port; native worker and comparison ownership is already in `vibeos-test`.
+
+Host-job process-contract fixtures now own a private process group through an
+EOF guard. Unwinding or killing the test owner closes the ownership pipe; the
+guard kills only that pinned group before fixture-directory removal. A regression
+control panics with a live barrier child and requires its captured output to reach
+EOF. A separate before/after probe reproduced the old failure masking: the test
+process was already a zombie with exit 101, while inherited output descriptors
+kept the outer subprocess waiting. Evidence is in
+`~/vibeos-rust-staging/host-jobs-flake-20261106/results.json` and adjacent probe logs.
+The process-contract timeout remains 270 seconds. Batch 128's original tooling
+log confirms Cargo had already returned 101 when Python timed out on its pipes.
+The original was supplied at
+`/tmp/claude-1000/-home-curi-Projects-os-playground-vibeos-integration/7678f5f2-0201-4aed-b78e-717263573b59/scratchpad/tool128e.out`;
+a durable copy and its SHA-256 receipt are at
+`~/vibeos-rust-staging/host-jobs-flake-20261106/batch128-tooling.out` and
+`batch128-evidence.json`. The initiating Rust test remains unidentified because
+pytest truncated the captured output. Any recurrence still needs that underlying
+failure investigated; the fixture guard now lets the actual test failure reach
+the caller rather than being masked by a pipe timeout.

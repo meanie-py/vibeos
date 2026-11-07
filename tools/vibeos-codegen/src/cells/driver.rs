@@ -308,7 +308,9 @@ pub fn orphan_recipes(root: &Path, plan: &RecipePlan) -> Vec<PathBuf> {
         if let Ok(rd) = std::fs::read_dir(dir.join(a)) {
             for e in rd.flatten() {
                 let path = e.path();
-                if path.extension().is_some_and(|x| x == "recipe") && !plan.edits.contains_key(&path) {
+                if path.extension().is_some_and(|x| x == "recipe")
+                    && !plan.edits.contains_key(&path)
+                {
                     out.push(path);
                 }
             }
@@ -322,9 +324,17 @@ pub fn orphan_recipes(root: &Path, plan: &RecipePlan) -> Vec<PathBuf> {
 pub fn recipe_drift(root: &Path) -> Result<Vec<String>> {
     let p = clib_recipes(root)?;
     if !p.failed.is_empty() {
-        return Err(Error::new(format!("{}\nrecipes not derivable", p.failed.join("\n"))));
+        return Err(Error::new(format!(
+            "{}\nrecipes not derivable",
+            p.failed.join("\n")
+        )));
     }
-    let rel = |path: &Path| path.strip_prefix(root).unwrap_or(path).display().to_string();
+    let rel = |path: &Path| {
+        path.strip_prefix(root)
+            .unwrap_or(path)
+            .display()
+            .to_string()
+    };
     let mut drift = Vec::new();
     for (path, text) in &p.edits {
         match std::fs::read_to_string(path) {
@@ -339,15 +349,26 @@ pub fn recipe_drift(root: &Path) -> Result<Vec<String>> {
     drift.sort();
     Ok(drift)
 }
-pub fn clib_recipes(root: &Path) -> Result<RecipePlan> {
-    // A stale configure is one fact, not one failure per library: say it once, up front.
+/// A stale configure is one fact, not one failure per library: say it once, up front,
+/// for every build-<arch> at once, so one run names all the reconfigures it needs.
+fn stale_configures(root: &Path) -> Result<()> {
+    let mut stale = Vec::new();
     for a in ARCHES {
         let build = root.join(format!("build-{a}"));
         if build.join("build.ninja").is_file() {
-            vibeos_build::ninja::require_configured(&local(root, &build)?, root)
-                .map_err(|e| Error::new(e.to_string()))?;
+            if let Err(e) = vibeos_build::ninja::require_configured(&local(root, &build)?, root) {
+                stale.push(e.to_string());
+            }
         }
     }
+    if stale.is_empty() {
+        Ok(())
+    } else {
+        Err(Error::new(stale.join("\n")))
+    }
+}
+pub fn clib_recipes(root: &Path) -> Result<RecipePlan> {
+    stale_configures(root)?;
     let mut plan = RecipePlan::default();
     let targets = recipes::engine_c_targets(root)?;
     for a in ARCHES {

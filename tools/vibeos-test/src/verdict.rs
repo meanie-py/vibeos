@@ -224,6 +224,18 @@ pub fn post_boot_check(serial: &str, raw: &str, catalog: &Value) -> Value {
             json!(code),
         );
     }
+    // The parameter sidecar is emitted only by the bugcheck path. On physical
+    // SMP UARTs another CPU can interleave the banner so its code is unreadable.
+    // Preserve the crash classification without inventing a numeric stop code.
+    if let Some((module, offset)) = faulting_module_offset(serial) {
+        return tri(
+            "BUGCHECK",
+            vec![format!(
+                "bugcheck parameter sidecar: {module}+{offset:#x}; stop banner unreadable"
+            )],
+            None,
+        );
+    }
     if let Some(m) = re(r"\[[A-Z][A-Z0-9_-]*\][^\n]*?\(FAIL\)").find(serial) {
         return tri(
             "SELFTEST_FAIL",
@@ -295,6 +307,18 @@ pub fn classify(
             ),
             "bugcheck",
             json!(code),
+        );
+    }
+    // The parameter sidecar is emitted only by the bugcheck path. On physical
+    // SMP UARTs another CPU can interleave the banner so its code is unreadable.
+    // Preserve the crash classification without inventing a numeric stop code.
+    if let Some((module, offset)) = faulting_module_offset(serial) {
+        return tri(
+            "BUGCHECK",
+            vec![format!(
+                "bugcheck parameter sidecar: {module}+{offset:#x}; stop banner unreadable"
+            )],
+            None,
         );
     }
     if let Some(fail) = fail_marker.filter(|s| !s.is_empty()) {
@@ -1003,5 +1027,24 @@ mod tests {
             &json!([{"when":null,"any":["needle"]}])
         )
         .is_none());
+    }
+}
+
+#[cfg(test)]
+mod damaged_bugcheck_tests {
+    use super::*;
+    #[test]
+    fn pi5_interleaved_bugcheck_banner_remains_a_crash_after_desktop() {
+        let serial="[EXPLORER] _tWinMain entered\n[WIN32K] shell ready\n*** BU[CME M: 0xhC0000eA ocx0sAddressSpa000\n, 0x000000000000000c, 0x0000000000000000, 0xfffff8001a91e7cc)\n***   P4 = ntoskrnl.exe+0x6F7CC\n";
+        for v in [
+            classify(serial, true, None, None, "", &json!([])),
+            post_boot_check(serial, "", &json!([])),
+        ] {
+            assert_eq!(v["classification"], "BUGCHECK");
+            assert!(
+                v.get("bugcheck").is_none(),
+                "cannot recover a numeric stop code from interleaved bytes"
+            );
+        }
     }
 }
