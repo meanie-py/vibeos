@@ -16,3 +16,4 @@ NtUserTrackMouseEvent         # TRACKMOUSEEVENT   16 -> 24 (no WM_MOUSELEAVE/HOV
 NtUserGetCursorInfo           # CURSORINFO        20 -> 24
 NtUserGetGUIThreadInfo        # GUITHREADINFO     48 -> 72
 NtUserGetComboBoxInfo         # COMBOBOXINFO      52 -> 64
+NtUserGetMenuBarInfo          # MENUBARINFO       32 -> 48 (hMenu, hwndMenu; user32:edit WM_ENTERIDLE)

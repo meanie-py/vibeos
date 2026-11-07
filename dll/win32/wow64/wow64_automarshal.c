@@ -160,6 +160,25 @@ static void WowAmOut_tagGUITHREADINFO(const unsigned char *s, unsigned char *d)
     WowAmNx(d + 28, s + 48); /* hwndCaret */
     WowAmCpy(d + 32, s + 56, 16); /* rcCaret */
 }
+/* struct tagMENUBARINFO: 32 -> 48 bytes */
+static void WowAmIn_tagMENUBARINFO(const unsigned char *s, unsigned char *d)
+{
+    WowAmZero(d, 48);
+    WowAmSizeIn(d + 0, s + 0, 32, 48); /* cbSize */
+    WowAmCpy(d + 4, s + 4, 16); /* rcBar */
+    WowAmSx(d + 24, s + 20); /* hMenu */
+    WowAmSx(d + 32, s + 24); /* hwndMenu */
+    WowAmCpy(d + 40, s + 28, 4); /* fBarFocused/fFocused */
+}
+
+static void WowAmOut_tagMENUBARINFO(const unsigned char *s, unsigned char *d)
+{
+    WowAmSizeOut(d + 0, s + 0, 32, 48); /* cbSize */
+    WowAmCpy(d + 4, s + 4, 16); /* rcBar */
+    WowAmNx(d + 20, s + 24); /* hMenu */
+    WowAmNx(d + 24, s + 32); /* hwndMenu */
+    WowAmCpy(d + 28, s + 40, 4); /* fBarFocused/fFocused */
+}
 /* struct tagTRACKMOUSEEVENT: 16 -> 24 bytes */
 static void WowAmIn_tagTRACKMOUSEEVENT(const unsigned char *s, unsigned char *d)
 {
@@ -226,6 +245,18 @@ static NTSTATUS WowAmThunk_NtUserGetGUIThreadInfo(ULONG *a)
     if (g1) WowAmOut_tagGUITHREADINFO(b1, (unsigned char *)(ULONG_PTR)a[1]);
     return (NTSTATUS)(ULONG)r;
 }
+static NTSTATUS WowAmThunk_NtUserGetMenuBarInfo(ULONG *a)
+{
+    extern ULONGLONG NtUserGetMenuBarInfo(ULONGLONG, ULONGLONG, ULONGLONG, ULONGLONG);
+    unsigned char b3[48] __attribute__((aligned(16)));
+    const unsigned char *g3 = (const unsigned char *)(ULONG_PTR)a[3];
+    ULONGLONG r;
+    (void)a;
+    if (g3) WowAmIn_tagMENUBARINFO(g3, b3);
+    r = NtUserGetMenuBarInfo((ULONGLONG)(LONGLONG)(LONG)a[0], (ULONGLONG)(LONGLONG)(LONG)a[1], (ULONGLONG)(LONGLONG)(LONG)a[2], (g3 ? (ULONGLONG)(ULONG_PTR)b3 : 0));
+    if (g3) WowAmOut_tagMENUBARINFO(b3, (unsigned char *)(ULONG_PTR)a[3]);
+    return (NTSTATUS)(ULONG)r;
+}
 static NTSTATUS WowAmThunk_NtUserTrackMouseEvent(ULONG *a)
 {
     extern ULONGLONG NtUserTrackMouseEvent(ULONGLONG);
@@ -249,6 +280,8 @@ NTSTATUS Wow64AutoMarshalDispatch(const char *Name, ULONG *Arguments)
         return WowAmThunk_NtUserGetCursorInfo(Arguments);
     if (WowAmStrEq(Name, "NtUserGetGUIThreadInfo"))
         return WowAmThunk_NtUserGetGUIThreadInfo(Arguments);
+    if (WowAmStrEq(Name, "NtUserGetMenuBarInfo"))
+        return WowAmThunk_NtUserGetMenuBarInfo(Arguments);
     if (WowAmStrEq(Name, "NtUserTrackMouseEvent"))
         return WowAmThunk_NtUserTrackMouseEvent(Arguments);
     return WOW64_AUTOMARSHAL_UNIMPL;

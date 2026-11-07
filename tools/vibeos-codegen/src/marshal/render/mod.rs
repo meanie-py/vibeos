@@ -213,8 +213,11 @@ fn pair(
         return true;
     }
     emitted.add(tag.into(), (r32.size, r64.size));
-    let f32 = r32.top_fields();
-    let f64 = r64.top_fields();
+    // Bitfield storage units fold into one field (see Record::marshal_fields).
+    let m32 = r32.marshal_fields();
+    let m64 = r64.marshal_fields();
+    let f32: Vec<&super::Field> = m32.iter().collect();
+    let f64: Vec<&super::Field> = m64.iter().collect();
     let (mut first, mut second) = (Vec::new(), Vec::new());
     for (i, (a, b)) in f32.iter().zip(f64.iter()).enumerate() {
         let (o32, mut s32) = span(&f32, i, r32.size);
