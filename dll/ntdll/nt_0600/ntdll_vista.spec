@@ -63,4 +63,7 @@
 @ stdcall RtlConnectToSm(ptr ptr long ptr) SmConnectToSm
 @ stdcall RtlSendMsgToSm(ptr ptr) SmSendMsgToSm
 @ stdcall RtlLcidToLocaleName(long ptr long long)
+@ stdcall RtlGetSystemPreferredUILanguages(long long ptr ptr ptr)
+@ stdcall RtlGetThreadPreferredUILanguages(long ptr ptr ptr)
+@ stdcall RtlGetUserPreferredUILanguages(long long ptr ptr ptr)
 @ stdcall RtlLocaleNameToLcid(wstr ptr long)

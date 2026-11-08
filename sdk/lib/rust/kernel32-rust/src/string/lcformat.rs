@@ -2399,215 +2399,54 @@ pub unsafe extern "system" fn EnumTimeFormatsEx(
 
     return NLS_EnumTimeFormats(&mut ctxt);
 }
+// The previous translation abandoned this function partway (a `loop { match }` with an
+// empty arm and no exit, the C's goto-cleanup never reached), so every EnumCalendarInfo
+// call spun forever: Wine's locale test hung there until the sweep killed it.
 unsafe fn NLS_EnumCalendarInfo(ctxt: *const enumcalendar_context) -> BOOL {
-    let mut buf: *mut WCHAR = core::ptr::null_mut();
     let mut opt: *mut WCHAR = core::ptr::null_mut();
     let mut iter: *mut WCHAR = core::ptr::null_mut();
     let mut calendar: CALID = (*ctxt).calendar;
     let mut ret: BOOL = FALSE;
-    let mut bufSz: INT = 200;
+    let mut bufSz: INT = 200; /* the size of the buffer, in bytes */
 
     if (*ctxt).u.callback.is_none() {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
 
-    buf = HeapAlloc(GetProcessHeap(), 0, bufSz as usize) as *mut WCHAR;
+    let mut buf = HeapAlloc(GetProcessHeap(), 0, bufSz as usize) as *mut WCHAR;
     if buf.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
         return FALSE;
     }
 
-    if calendar == ENUM_ALL_CALENDARS {
-        let optSz: INT = GetLocaleInfoW((*ctxt).lcid, LOCALE_IOPTIONALCALENDAR, core::ptr::null_mut(), 0);
-        if optSz > 1 {
-            opt = HeapAlloc(GetProcessHeap(), 0, (optSz as usize).wrapping_mul(core::mem::size_of::<WCHAR>())) as *mut WCHAR;
-            if opt.is_null() {
-                SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                // goto cleanup via current_block logic
-                // We'll use a loop with break to simulate goto
-                // Actually, we need to restructure to match the anchor's control flow
-                // Let's use a loop with a state variable like the anchor
-                // But for simplicity, we'll use a labeled block and break
-                // However, the anchor uses a complex loop with current_block.
-                // We'll replicate that structure.
-                // For now, let's just use the same pattern as the anchor.
-                // Actually, let's just use the same loop structure as the anchor.
-                // We'll define a current_block variable.
-                // But the function is already complex. Let's just use the anchor's structure directly.
-                // I'll rewrite the whole function to match the anchor's control flow.
-            } else {
+    'cleanup: {
+        if calendar == ENUM_ALL_CALENDARS {
+            let optSz: INT = GetLocaleInfoW((*ctxt).lcid, LOCALE_IOPTIONALCALENDAR, core::ptr::null_mut(), 0);
+            if optSz > 1 {
+                opt = HeapAlloc(GetProcessHeap(), 0, optSz as usize * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+                if opt.is_null() {
+                    SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+                    break 'cleanup;
+                }
                 if GetLocaleInfoW((*ctxt).lcid, LOCALE_IOPTIONALCALENDAR, opt, optSz) != 0 {
                     iter = opt;
                 }
             }
-        }
-        calendar = NLS_GetLocaleNumber((*ctxt).lcid, LOCALE_ICALENDARTYPE) as CALID;
-    }
-
-    // We need to replicate the anchor's loop structure exactly.
-    // Let's just use the anchor's code directly, cleaning up types.
-    // Actually, let me just write the full function matching the anchor.
-    // I'll use a loop with a state variable like the anchor.
-
-    // Actually, let me just write it cleanly with the same control flow.
-    // The anchor uses a loop with a match on current_block.
-    // I'll do the same.
-
-    let mut current_block: u64 = 0;
-
-    // Initialize current_block based on the initial logic
-    // This is getting too complex. Let me just copy the anchor's structure and clean it up.
-
-    // I'll write the function from scratch matching the anchor's logic.
-
-    // Actually, let me just use the anchor's code directly with type cleanup.
-    // That's the safest approach.
-
-    // Let me write the full function:
-
-    // Actually, I'll just write it cleanly. The key is to preserve all logic.
-
-    // Let me restart with a clean implementation that matches the anchor.
-
-    // I'll use a loop with a state variable.
-
-    let mut current_block: u64 = 0;
-
-    // Initial block: after the if (calendar == ENUM_ALL_CALENDARS) block
-    // We need to handle the goto cleanup case.
-
-    // This is getting too complicated. Let me just use the anchor's code directly.
-
-    // I'll copy the anchor and clean up types.
-
-    // Actually, let me just write it properly.
-
-    // Let me use a different approach: use a loop with break for cleanup.
-
-    // I'll write the function now.
-
-    // Actually, I realize I'm overthinking this. Let me just write the function.
-
-    // I'll use the anchor's structure but with our types.
-
-    // Let me write it now.
-
-    // I'll use a loop with a state variable like the anchor.
-
-    let mut current_block: u64 = 0;
-
-    // Initialize current_block based on the initial logic
-    if calendar == ENUM_ALL_CALENDARS {
-        let optSz: INT = GetLocaleInfoW((*ctxt).lcid, LOCALE_IOPTIONALCALENDAR, core::ptr::null_mut(), 0);
-        if optSz > 1 {
-            opt = HeapAlloc(GetProcessHeap(), 0, (optSz as usize).wrapping_mul(core::mem::size_of::<WCHAR>())) as *mut WCHAR;
-            if opt.is_null() {
-                SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                current_block = 1; // cleanup
-            } else {
-                if GetLocaleInfoW((*ctxt).lcid, LOCALE_IOPTIONALCALENDAR, opt, optSz) != 0 {
-                    iter = opt;
-                }
-                current_block = 2;
-            }
-        } else {
-            current_block = 2;
-        }
-        if current_block != 1 {
             calendar = NLS_GetLocaleNumber((*ctxt).lcid, LOCALE_ICALENDARTYPE) as CALID;
-            current_block = 3;
         }
-    } else {
-        current_block = 3;
-    }
 
-    loop {
-        match current_block {
-            1 => {
-                // cleanup
-                break;
-            }
-            3 => {
-                // main loop body
-                // This is getting too complex. Let me just use the anchor's code.
-                // I'll copy it directly.
-            }
-            _ => {}
-        }
-    }
-
-    // I give up trying to write it from scratch. Let me just use the anchor's code.
-    // I'll clean up the types and names.
-
-    // Actually, let me just write the function properly.
-
-    // I'll use the anchor's structure exactly.
-
-    // Let me write it now.
-
-    // I'll use a loop with a state variable.
-
-    let mut current_block: u64;
-    let mut buf: *mut WCHAR = core::ptr::null_mut();
-    let mut opt: *mut WCHAR = core::ptr::null_mut();
-    let mut iter: *mut WCHAR = core::ptr::null_mut();
-    let mut calendar: CALID = (*ctxt).calendar;
-    let mut ret: BOOL = FALSE;
-    let mut bufSz: INT = 200;
-
-    if (*ctxt).u.callback.is_none() {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-
-    buf = HeapAlloc(GetProcessHeap(), 0, bufSz as usize) as *mut WCHAR;
-    if buf.is_null() {
-        SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-        return FALSE;
-    }
-
-    if calendar == ENUM_ALL_CALENDARS {
-        let optSz: INT = GetLocaleInfoW((*ctxt).lcid, LOCALE_IOPTIONALCALENDAR, core::ptr::null_mut(), 0);
-        if optSz > 1 {
-            opt = HeapAlloc(GetProcessHeap(), 0, (optSz as usize).wrapping_mul(core::mem::size_of::<WCHAR>())) as *mut WCHAR;
-            if opt.is_null() {
-                SetLastError(ERROR_NOT_ENOUGH_MEMORY);
-                current_block = 10312952625476487722;
-            } else {
-                if GetLocaleInfoW((*ctxt).lcid, LOCALE_IOPTIONALCALENDAR, opt, optSz) != 0 {
-                    iter = opt;
-                }
-                current_block = 4166486009154926805;
-            }
-        } else {
-            current_block = 4166486009154926805;
-        }
-        match current_block {
-            10312952625476487722 => {}
-            _ => {
-                calendar = NLS_GetLocaleNumber((*ctxt).lcid, LOCALE_ICALENDARTYPE) as CALID;
-                current_block = 5143058163439228106;
-            }
-        }
-    } else {
-        current_block = 5143058163439228106;
-    }
-
-    loop {
-        match current_block {
-            10312952625476487722 => {
-                HeapFree(GetProcessHeap(), 0, opt as PVOID);
-                break;
-            }
-            _ => {
+        loop {
+            /* loop through calendars */
+            loop {
+                /* loop until there's no error */
                 if (*ctxt).caltype & CAL_RETURN_NUMBER != 0 {
                     ret = GetCalendarInfoW(
                         (*ctxt).lcid,
                         calendar,
                         (*ctxt).caltype,
                         core::ptr::null_mut(),
-                        (bufSz as usize).wrapping_div(core::mem::size_of::<WCHAR>()) as INT,
+                        bufSz / core::mem::size_of::<WCHAR>() as INT,
                         buf as LPDWORD,
                     ) as BOOL;
                 } else if (*ctxt).unicode != 0 {
@@ -2616,7 +2455,7 @@ unsafe fn NLS_EnumCalendarInfo(ctxt: *const enumcalendar_context) -> BOOL {
                         calendar,
                         (*ctxt).caltype,
                         buf,
-                        (bufSz as usize).wrapping_div(core::mem::size_of::<WCHAR>()) as INT,
+                        bufSz / core::mem::size_of::<WCHAR>() as INT,
                         core::ptr::null_mut(),
                     ) as BOOL;
                 } else {
@@ -2625,112 +2464,81 @@ unsafe fn NLS_EnumCalendarInfo(ctxt: *const enumcalendar_context) -> BOOL {
                         calendar,
                         (*ctxt).caltype,
                         buf as LPSTR,
-                        (bufSz as usize).wrapping_div(core::mem::size_of::<CHAR>()) as INT,
+                        bufSz / core::mem::size_of::<CHAR>() as INT,
                         core::ptr::null_mut(),
                     ) as BOOL;
                 }
 
-                if ret == 0 {
-                    if GetLastError() != ERROR_INSUFFICIENT_BUFFER {
-                        current_block = 10312952625476487722;
-                        continue;
-                    }
-
-                    let mut newSz: INT = 0;
-                    if (*ctxt).unicode != 0 {
-                        newSz = (GetCalendarInfoW(
-                            (*ctxt).lcid,
-                            calendar,
-                            (*ctxt).caltype,
-                            core::ptr::null_mut(),
-                            0,
-                            core::ptr::null_mut(),
-                        ) as usize)
-                            .wrapping_mul(core::mem::size_of::<WCHAR>())
-                            as INT;
-                    } else {
-                        newSz = (GetCalendarInfoA(
-                            (*ctxt).lcid,
-                            calendar,
-                            (*ctxt).caltype,
-                            core::ptr::null_mut::<CHAR>(),
-                            0,
-                            core::ptr::null_mut(),
-                        ) as usize)
-                            .wrapping_mul(core::mem::size_of::<CHAR>())
-                            as INT;
-                    }
-
-                    if bufSz >= newSz {
-                        ERR!("Buffer resizing disorder: was %d, requested %d.\n", bufSz, newSz);
-                        current_block = 10312952625476487722;
-                        continue;
-                    }
-
-                    bufSz = newSz;
-                    WARN!("Buffer too small; resizing to %d bytes.\n", bufSz);
-                    buf = HeapReAlloc(GetProcessHeap(), 0, buf as PVOID, bufSz as SIZE_T) as *mut WCHAR;
-                    if buf.is_null() {
-                        current_block = 10312952625476487722;
-                        continue;
-                    }
+                if ret != 0 {
+                    break;
                 }
-
-                if ret == 0 {
-                    current_block = 5143058163439228106;
-                    continue;
+                if GetLastError() != ERROR_INSUFFICIENT_BUFFER {
+                    break 'cleanup;
                 }
-
-                match (*ctxt).type_ as u32 {
-                    0 => {
-                        ret = ((*ctxt).u.callback.expect("non-null function pointer"))(buf);
-                    }
-                    1 => {
-                        ret = ((*ctxt).u.callbackex.expect("non-null function pointer"))(buf, calendar);
-                    }
-                    2 => {
-                        ret = ((*ctxt).u.callbackexex.expect("non-null function pointer"))(buf, calendar, core::ptr::null_mut(), (*ctxt).lParam);
-                    }
-                    _ => {}
-                }
-
-                if ret == 0 {
-                    ret = TRUE;
-                    current_block = 10312952625476487722;
+                /* so resize it */
+                let newSz: INT = if (*ctxt).unicode != 0 {
+                    GetCalendarInfoW((*ctxt).lcid, calendar, (*ctxt).caltype, core::ptr::null_mut(), 0, core::ptr::null_mut())
+                        * core::mem::size_of::<WCHAR>() as INT
                 } else {
-                    if iter.is_null() || *iter == 0 {
-                        current_block = 10312952625476487722;
-                        continue;
-                    }
-
-                    calendar = 0;
-                    while *iter as i32 >= '0' as i32 && *iter as i32 <= '9' as i32 {
-                        let fresh2 = iter;
-                        iter = iter.offset(1);
-                        calendar = (calendar as u32)
-                            .wrapping_mul(10)
-                            .wrapping_add(*fresh2 as u32)
-                            .wrapping_sub('0' as u32)
-                            as CALID;
-                    }
-
-                    let fresh3 = iter;
-                    iter = iter.offset(1);
-                    if *fresh3 != 0 {
-                        SetLastError(ERROR_BADDB);
-                        ret = FALSE;
-                        current_block = 10312952625476487722;
-                    } else {
-                        current_block = 5143058163439228106;
-                    }
+                    GetCalendarInfoA((*ctxt).lcid, calendar, (*ctxt).caltype, core::ptr::null_mut::<CHAR>(), 0, core::ptr::null_mut())
+                        * core::mem::size_of::<CHAR>() as INT
+                };
+                if bufSz >= newSz {
+                    ERR!("Buffer resizing disorder: was %d, requested %d.\n", bufSz, newSz);
+                    break 'cleanup;
                 }
+                bufSz = newSz;
+                WARN!("Buffer too small; resizing to %d bytes.\n", bufSz);
+                let grown = HeapReAlloc(GetProcessHeap(), 0, buf as PVOID, bufSz as SIZE_T) as *mut WCHAR;
+                if grown.is_null() {
+                    // Divergence from the C, which overwrites buf with NULL here and leaks it.
+                    break 'cleanup;
+                }
+                buf = grown;
+            }
+
+            /* Pass the buffer to the right callback; it is already in the right
+             * character set, so only the Ex variants need telling apart. */
+            ret = match (*ctxt).type_ as u32 {
+                CALLBACK_ENUMPROC => ((*ctxt).u.callback.unwrap_unchecked())(buf),
+                CALLBACK_ENUMPROCEX => ((*ctxt).u.callbackex.unwrap_unchecked())(buf, calendar),
+                CALLBACK_ENUMPROCEXEX => {
+                    ((*ctxt).u.callbackexex.unwrap_unchecked())(buf, calendar, core::ptr::null_mut(), (*ctxt).lParam)
+                }
+                _ => ret,
+            };
+
+            if ret == 0 {
+                /* the callback told to stop */
+                ret = TRUE;
+                break;
+            }
+
+            if iter.is_null() || *iter == 0 {
+                /* no more calendars */
+                break;
+            }
+
+            calendar = 0;
+            while *iter >= b'0' as WCHAR && *iter <= b'9' as WCHAR {
+                calendar = calendar * 10 + (*iter - b'0' as WCHAR) as CALID;
+                iter = iter.add(1);
+            }
+            let sep = *iter;
+            iter = iter.add(1);
+            if sep != 0 {
+                SetLastError(ERROR_BADDB);
+                ret = FALSE;
+                break;
             }
         }
     }
 
+    HeapFree(GetProcessHeap(), 0, opt as PVOID);
     HeapFree(GetProcessHeap(), 0, buf as PVOID);
-    return ret;
+    ret
 }
+
 
 #[no_mangle]
 pub unsafe extern "system" fn EnumCalendarInfoA(

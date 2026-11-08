@@ -112,6 +112,7 @@ PORTED = frozenset(
         "scan_bindgen_padding_index",
         "scan_bitwise_not_bool",
         "scan_flag_word_raw_hex",
+        "scan_abandoned_translation",
         "scan_bugcheck_codes",
         "scan_byte_step_one",
         "scan_variant_outptr",

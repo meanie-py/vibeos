@@ -696,6 +696,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A translation the model abandoned partway, recognised by its own narration ("I give
+    # up", "Let me just use the anchor's code"): kernel32's NLS_EnumCalendarInfo shipped
+    # that way with an exitless loop, and every EnumCalendarInfo call hung.
+    sat = repo / "tools" / "scan_abandoned_translation.py"
+    specs.append(
+        (
+            "scan_abandoned_translation",
+            [py, str(sat), "--lint"] if sat.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # HEAP_ZERO_MEMORY handed to GlobalAlloc: not a GMEM_ flag, so GlobalAlloc refuses it
     # outright. oleaut32's create_stream did this and no picture ever loaded from a file.
     sgf = repo / "tools" / "scan_gmem_flags.py"

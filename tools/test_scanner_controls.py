@@ -644,6 +644,29 @@ pub fn deliberate(x: u32) -> bool {
 }
 """
 
+# scan_abandoned_translation. Seeded from kernel32 NLS_EnumCalendarInfo (2026-11-08): the model
+# narrated giving up inside the function and left an exitless loop, so EnumCalendarInfo hung.
+_ABANDONED_BAD = """\
+unsafe fn enum_calendars() -> i32 {
+    loop {
+        match state {
+            3 => {
+                // This is getting too complex. Let me just use the anchor's code.
+            }
+            _ => {}
+        }
+    }
+}
+"""
+
+_ABANDONED_GOOD = """\
+unsafe fn enum_calendars() -> i32 {
+    // The C gives up after three retries, and so do we.
+    // Let the caller decide; actually returning 0 here matches Windows.
+    0
+}
+"""
+
 # scan_flag_word_raw_hex. Seeded from win32k DC_vPrepareDCsForBlit (2026-11-08): the C tests
 # DIRTY_TEXT (0x4); the translation recalled 0x8 (DIRTY_BACKGROUND), so a DC with a dirty
 # background re-realized its text brush on every blit and SetPixel painted black.
@@ -3328,6 +3351,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BITWISE_NOT_BAD},
         good={"good.rs": _BITWISE_NOT_GOOD},
+    ),
+    Control(
+        name="scan_abandoned_translation",
+        script="tools/scan_abandoned_translation.py",
+        argv=["--lint"],
+        bad={"bad.rs": _ABANDONED_BAD},
+        good={"good.rs": _ABANDONED_GOOD},
     ),
     Control(
         name="scan_flag_word_raw_hex",
