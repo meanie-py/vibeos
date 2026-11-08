@@ -1270,25 +1270,6 @@ unsafe extern "C" fn UserGetWindowBorders(Style: DWORD, ExStyle: DWORD, Size: *m
     (*Size).cy *= UserGetSystemMetrics(SM_CYBORDER);
 }
 
-unsafe fn IntGetWindowBorders(Style: DWORD, ExStyle: DWORD) -> DWORD {
-    let mut adjust: DWORD = 0;
-
-    if ExStyle & WS_EX_WINDOWEDGE != 0 {
-        adjust = 2;
-    } else if ExStyle & WS_EX_STATICEDGE != 0 {
-        adjust = 1;
-    }
-
-    if ExStyle & WS_EX_CLIENTEDGE != 0 {
-        adjust += 2;
-    }
-
-    if Style & WS_CAPTION != 0 || ExStyle & WS_EX_DLGMODALFRAME != 0 {
-        adjust += 1;
-    }
-
-    adjust
-}
 
 fastcall_fn! {
 #[no_mangle]
@@ -1307,7 +1288,6 @@ unsafe fn co_WinPosGetMinMaxInfo(
     let adjustedStyle: LONG;
     let exstyle: LONG = (*Window).ExStyle as LONG;
     let mut rc: RECT = core::mem::zeroed();
-    let mut adjust: DWORD;
 
     rc = core::mem::transmute_copy(&(*Window).rcWindow);
     MinMax.ptReserved.x = rc.left;
@@ -1323,31 +1303,46 @@ unsafe fn co_WinPosGetMinMaxInfo(
         IntGetClientRect((*Window).spwndParent, &mut rc as *mut RECT as *mut RECTL);
     }
 
-    adjust = IntGetWindowBorders(adjustedStyle as DWORD, exstyle as DWORD);
-
-    if (adjustedStyle & WS_THICKFRAME as LONG) != 0
-        && (adjustedStyle & WS_CHILD as LONG) == 0
-        && (adjustedStyle & WS_MINIMIZE as LONG) == 0
+    // The default maximized frame is AdjustWindowRectEx of the parent's client
+    // area, exactly as Wine's get_min_max_info does it (and as user32's
+    // AdjustWindowRectEx now computes it, so the two cannot drift). The C
+    // summed IntGetWindowBorders plus two special cases, which came out a
+    // pixel short per side for an MDI child (user32:win "default width of
+    // maximized child", checked against AdjustWindowRectEx).
     {
-        adjust += 1;
+        let st = adjustedStyle as DWORD;
+        let ex = exstyle as DWORD;
+        let mut a: INT = 0;
+        if ex & (WS_EX_STATICEDGE | WS_EX_DLGMODALFRAME) == WS_EX_STATICEDGE {
+            a = 1;
+        } else if ex & WS_EX_DLGMODALFRAME != 0 || st & (WS_THICKFRAME | WS_DLGFRAME) != 0 {
+            a = 2;
+        }
+        if st & WS_THICKFRAME != 0 {
+            a += gspv.ncm.iBorderWidth;
+        }
+        if st & (WS_BORDER | WS_DLGFRAME) != 0 || ex & WS_EX_DLGMODALFRAME != 0 {
+            a += 1;
+        }
+        RECTL_vInflateRect((&mut rc as *mut RECT).cast(), a, a);
+        if st & WS_CAPTION == WS_CAPTION {
+            rc.top -= if ex & WS_EX_TOOLWINDOW != 0 {
+                gspv.ncm.iSmCaptionHeight + 1
+            } else {
+                gspv.ncm.iCaptionHeight + 1
+            };
+        }
+        if st & WS_POPUP != 0 && (*Window).IDMenu != 0 {
+            rc.top -= gspv.ncm.iMenuHeight + 1;
+        }
+        if ex & WS_EX_CLIENTEDGE != 0 {
+            RECTL_vInflateRect(
+                (&mut rc as *mut RECT).cast(),
+                UserGetSystemMetrics(SM_CXEDGE as ULONG),
+                UserGetSystemMetrics(SM_CYEDGE as ULONG),
+            );
+        }
     }
-
-    xinc = adjust as INT;
-    yinc = adjust as INT;
-
-    if (adjustedStyle & WS_THICKFRAME as LONG) != 0
-        && (adjustedStyle & WS_CHILD as LONG) != 0
-        && (adjustedStyle & WS_MINIMIZE as LONG) == 0
-    {
-        xinc += UserGetSystemMetrics(SM_CXFRAME as ULONG) - UserGetSystemMetrics(SM_CXDLGFRAME as ULONG);
-        yinc += UserGetSystemMetrics(SM_CYFRAME as ULONG) - UserGetSystemMetrics(SM_CYDLGFRAME as ULONG);
-    }
-
-    RECTL_vInflateRect(
-        (&mut rc as *mut RECT).cast(),
-        xinc * UserGetSystemMetrics(SM_CXBORDER as ULONG),
-        yinc * UserGetSystemMetrics(SM_CYBORDER as ULONG),
-    );
 
     xinc = -rc.left;
     yinc = -rc.top;
