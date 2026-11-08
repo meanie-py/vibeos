@@ -38,24 +38,8 @@ class BuildBindings(Bindings):
 
         if name == "failure_hook":
             run.finalize_hooks.append(lambda: m._failure_over_moved_tree(run, repo, a["tree"]))
-        elif name == "canonize":
-            return m._maybe_canonize(
-                run,
-                repo,
-                bd,
-                arch,
-                a["flags"],
-                sticky_on=tuple(a["sticky"]),
-                instr_values=a["values"],
-            )
         elif name == "wrap":
             return m.canon.wrap(repo, a["cmd"])
-        elif name == "stage_payloads":
-            result = m._stage_payloads(run, repo, bd, arch)
-            if result is None:
-                return None
-            selection, self.payload_compile = result
-            return selection
         elif name == "retire_build_refs":
             from tools.artifact_runtime import retire_build_refs
 
@@ -89,14 +73,10 @@ class BuildBindings(Bindings):
             m.lints.run_binary_lints(run, repo, arch, strict=a["strict"])
         elif name == "source_lints":
             m.lints.run_source_lints(run, repo, strict=False)
-        elif name == "inputs_moved":
-            return m._inputs_moved(repo, a["tree"])
         elif name == "stamp":
             m.provenance.make_stamp(repo, arch, cold=a["cold"], ts=int(time.time())).write(bd)
         elif name == "staleness":
             return dataclasses.asdict(m.provenance.check_staleness(repo, arch))
-        elif name == "dedup":
-            return dataclasses.asdict(m.kick_dedup())
         else:
             raise RuntimeError("Unknown native build adapter " + name)
         return None

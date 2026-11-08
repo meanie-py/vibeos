@@ -4343,6 +4343,28 @@ def _canonize_probe(monkeypatch, tmp_path, *, cache: str | None, canonical: bool
     return cmds, run, repo, build_dir
 
 
+def _canonize_through_the_build(monkeypatch, tmp_path, options, arch, cache):
+    """The real locked build up to its canonical reconfigure, which fails so the build
+    stops there; returns that cmake's argv. Drives the parser's flags through the
+    native build's flag table, not just the canonize mechanism."""
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(artifacts, "ledger_append", lambda *a, **k: None)
+    monkeypatch.setattr(build_mod.warmth, "worktree_tree", lambda _: None)
+    cmds, _, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=cache, canonical=True)
+    run = Run("build", arch)
+
+    class _Failed:
+        returncode, stdout, stderr = 1, "", ""
+
+    monkeypatch.setattr(run, "run", lambda cmd, **kw: (cmds.append(cmd), _Failed())[1])
+    assert build_mod._build_locked(options, repo, run, arch, None, bd, False) != 0
+    assert run.classification == "CMAKE_CONFIGURE_FAIL", run.stages
+    assert len(cmds) == 1 and cmds[0][0] == "cmake", cmds
+    return cmds[0]
+
+
 def test_incomplete_canonical_configure_is_recovered(monkeypatch, tmp_path):
     cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache="", canonical=True)
     (bd / "build.ninja").unlink()
@@ -4496,22 +4518,11 @@ def test_rostests_flag_is_wired_from_the_real_parser_to_the_cmake_option(tmp_pat
     plain = build_parser().parse_args(["build", "--arch", "i386"])
     assert bool(getattr(plain, "rostests", False)) is False
 
-    from . import artifacts
-
-    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
-    monkeypatch.setattr(artifacts, "ledger_append", lambda *a, **k: None)
-    monkeypatch.setattr(build_mod.warmth, "worktree_tree", lambda _: None)
-    values = []
-
-    def canonize(*_args, **kwargs):
-        values.append(_args[4]["ENABLE_ROSTESTS"])
-        return None
-
-    monkeypatch.setattr(build_mod, "_maybe_canonize", canonize)
-    for options in (args, plain):
-        run = Run("build", "i386")
-        assert build_mod._build_locked(options, tmp_path, run, "i386", None, tmp_path, False) == 0
-    assert values == [True, False]
+    for options, cache, want in (
+        (args, "ENABLE_ROSTESTS:BOOL=OFF\n", "-DENABLE_ROSTESTS=ON"),
+        (plain, "ENABLE_ROSTESTS:BOOL=ON\n", "-DENABLE_ROSTESTS=OFF"),
+    ):
+        assert want in _canonize_through_the_build(monkeypatch, tmp_path, options, "i386", cache)
 
 
 # --- conformance verb (quest M4) -------------------------------------------
@@ -9489,22 +9500,11 @@ def test_winetests_flag_is_wired_from_the_real_parser_to_the_cmake_value(tmp_pat
     assert getattr(args, "winetests", "") == "kernel32  user32"
     plain = build_parser().parse_args(["build", "--arch", "arm64"])
     assert getattr(plain, "winetests", "") == ""
-    from . import artifacts
-
-    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
-    monkeypatch.setattr(artifacts, "ledger_append", lambda *a, **k: None)
-    monkeypatch.setattr(build_mod.warmth, "worktree_tree", lambda _: None)
-    values = []
-
-    def canonize(*_args, **kwargs):
-        values.append(kwargs["instr_values"]["ROSTESTS_WINETESTS"])
-        return None
-
-    monkeypatch.setattr(build_mod, "_maybe_canonize", canonize)
-    for options in (args, plain):
-        run = Run("build", "arm64")
-        assert build_mod._build_locked(options, tmp_path, run, "arm64", None, tmp_path, False) == 0
-    assert values == ["kernel32 user32", ""]
+    for options, cache, want in (
+        (args, "", "-DROSTESTS_WINETESTS=kernel32 user32"),
+        (plain, "ROSTESTS_WINETESTS:STRING=kernel32\n", "-DROSTESTS_WINETESTS="),
+    ):
+        assert want in _canonize_through_the_build(monkeypatch, tmp_path, options, "arm64", cache)
 
 
 def test_winetests_value_reaches_cmake_and_clears_on_a_plain_build(monkeypatch, tmp_path):
