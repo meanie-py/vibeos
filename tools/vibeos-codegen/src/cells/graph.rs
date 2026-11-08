@@ -1767,8 +1767,24 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             continue;
         }
         if name.ends_with(".rc.res") {
-            cell.rc = Some(super::recipes::rc_command(primary, obj, root)?.0);
-            rc_obj = obj.clone();
+            let rc = super::recipes::rc_command(primary, obj, root)?.0;
+            if cell.rc.is_none() {
+                cell.rc = Some(rc);
+                rc_obj = obj.clone();
+            } else {
+                // A second .rc was silently dropped before (the last one won): wined3d lost
+                // its HLSL RCDATA. Each must share the first one's flags, which the cell
+                // renders once.
+                if super::recipes::rc_flags_for(&rc, obj, root)?
+                    != super::recipes::rc_flags_for(cell.rc.as_ref().unwrap(), &rc_obj, root)?
+                {
+                    return Err(Error::new(format!(
+                        "{target}: {rc} is compiled with different flags from {}",
+                        cell.rc.as_ref().unwrap()
+                    )));
+                }
+                cell.extra_rc.push(rc);
+            }
         } else if name.ends_with("_stubs.rs.obj") || name.ends_with("_stubs.c.obj") {
             cell.spec_stubs = true;
         } else if strings(&facts["reg_objects"]).contains(&name.to_owned()) {

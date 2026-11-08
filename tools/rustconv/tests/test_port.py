@@ -2362,3 +2362,19 @@ def test_a_linked_librarys_undefined_guids_get_initguid_storage(tmp_path, monkey
     assert port.linked_library_guid_refs(tmp_path / "m" / "CMakeLists.txt") == {
         "IID_ID3D12Device"
     }
+
+
+def test_flip_refuses_a_target_already_converted_to_a_cargo_cell(tmp_path, monkeypatch):
+    mod = tmp_path / "m"
+    mod.mkdir()
+    (mod / "CMakeLists.txt").write_text("add_cargo_module(d3dwine d3dwine-cargo d3dwine.dll)\n")
+    (mod / "a.rs").write_text("")
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "_refuse_while_this_tree_builds", lambda what: None)
+    monkeypatch.setattr(
+        port,
+        "load_state",
+        lambda stem: {"stem": stem, "target": "d3dwine", "module_dir": "m", "tus": []},
+    )
+    with pytest.raises(port.PortError, match="already a cargo cell"):
+        port.stage_flip("d3dwine")

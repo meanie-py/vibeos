@@ -3100,6 +3100,14 @@ def stage_flip(stem: str) -> None:
         )
     module = REPO / state["module_dir"]
     cml = module / "CMakeLists.txt"
+    # Already converted to a cargo cell (cargo_cell_gen --convert): there is no C list left
+    # to comment out, and rewriting the converted file left a bare `rust_cohab_stub.c` line
+    # outside any command -- every arch then failed to configure (wined3d, 2026-11-08).
+    target = state.get("target") or state["stem"]
+    if re.search(rf"\badd_cargo_module\(\s*{re.escape(target)}\b", cml.read_text()):
+        raise PortError(
+            f"flip: {target} is already a cargo cell ({cml.relative_to(REPO)}); nothing to flip"
+        )
     new = flip_cmake(cml.read_text(), state)
     stub = module / _stub_name(state)
     # Rewritten while it is still only what a flip writes (an older flip's placeholder, or

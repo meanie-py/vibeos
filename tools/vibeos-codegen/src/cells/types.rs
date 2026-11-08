@@ -53,6 +53,10 @@ pub struct Cell {
     pub spec_stubs: bool,
     pub c_shims: Vec<String>,
     pub rc: Option<String>,
+    /// Further `.rc` files the target links beside `rc` (wined3d: resource.rc's HLSL RCDATA
+    /// next to version.rc). cmake links one windres object per `.rc`; so does the cell.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_rc: Vec<String>,
     pub rc_defines: Vec<String>,
     pub destinations: Vec<String>,
     pub name_on_cd: Option<String>,
@@ -132,6 +136,7 @@ impl Default for Cell {
             spec_stubs: Default::default(),
             c_shims: Default::default(),
             rc: Default::default(),
+            extra_rc: Default::default(),
             rc_defines: Default::default(),
             destinations: Default::default(),
             name_on_cd: Default::default(),
