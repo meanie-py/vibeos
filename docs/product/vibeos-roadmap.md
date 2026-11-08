@@ -602,6 +602,51 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **OptiPlex 9020: freeldr resets the board after loading the boot drivers (open, found
+  2026-11-07).** The netboot image of a current tree gets as far as `[FLDR] phase: boot
+  drivers loaded`. Then the board resets to coreboot without loading `AppPatch\drvmain.sdb`
+  or printing `phase: handoff to kernel`, every time. The same capture setup shows 38
+  desktop boots up to 2026-10-20 (`D:\home\vibeos-optiplex\serial-20261014-203830`), so this
+  is a loader regression since then on this board. `smoke --arch amd64-bios` passes the same
+  point in QEMU (`20261107-195717-KMdhG5`). Capture: `serial-20261107-190419`.
+  Next: bisect the loader between 2026-10-20 and now, or arm freeldr's debug output around
+  the drvmain.sdb load.
+
+- **No device can be disabled, removed or re-enabled from user mode (open, found
+  2026-11-07, msvcrt-homebrew lane).** The kernel's `PiControlQueryRemoveDevice`
+  (pnpmgr-rust `plugplay.rs`) looks the device up and returns `STATUS_NOT_IMPLEMENTED`, as
+  upstream's does. So `CM_Query_And_Remove_SubTree` (cr 52) and `CM_Disable_DevNode`, and with
+  them Device Manager's Disable, fail before any driver is asked. Re-enable is not there
+  either: `PiActionResetDevice` only rewinds a removed node to Uninitialized, and
+  `PiActionStartDevice` then refuses it (it wants Initialized). `IopSendRemoveDevice` also
+  drops the node's only PDO reference. The kernel's removal machinery itself exists
+  (`IopPrepareDeviceForRemoval`, `IopRemoveDevice`, and `IoRequestDeviceEject`, which runs
+  it inline); only the user-mode entry and the way back are missing. This blocks sysfb's
+  stop/remove hand-off test (`sysfb-pnp-design.md`, step 3).
+
+- **FASTFAT's verify of a hot-plug volume never settles (open, found 2026-11-07,
+  amd64-bios).** classpnp marks a removable or hot-plug disk's volume `DO_VERIFY_VOLUME` on
+  any `SET_POWER` for a sleep action, as Windows' does. The verify that follows here loops
+  forever: `FatMountVolume -> 0x0` alternating with `Assertion failed at
+  disk/geometry.c(1010): TEST_FLAG(..., FILE_REMOVABLE_MEDIA)`, 226K `RtlRaiseStatus(0x80000016)`
+  in one run, and the guest wedges (`smoke --arch amd64-bios --payload sysfbprobe`,
+  `20261107-193632-PREcUD`). Those mount and assert lines already appear earlier in a BIOS
+  boot, before any power IRP, so the verify path is broken on its own. The power IRP only
+  turns it into a livelock. Any real resume from sleep would hit it, so the power manager's
+  sleep query does not send Windows' cancelling `SET_POWER(S0)` until this is fixed.
+
+- **`SetPixel` on the display surface writes black (open, found 2026-11-07, amd64).** On a
+  `CreateDC("DISPLAY")` DC, `GetPixel` reads the real colours (wallpaper `0xa56e3a`, taskbar
+  `0xc8d0d4`) and `SetPixel` returns the colour it was given, but the pixel then reads back
+  `0x000000`, and stays black after a restore. A 1x1 `PatBlt` with a solid brush round-trips
+  correctly on the same DC. Seen in `tools/payloads/sysfbprobe` runs (`20261107-182550-reYxfy`).
+  Not the display driver: suspect win32k's SetPixel colour translation to the device format.
+
+- **`SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT)` fails with
+  error 31 (open, found 2026-11-07, amd64).** Seen once from the Startup folder, before the
+  PlugPlay service was running, so it may only be that ordering; the CM_* calls failed the
+  same way until the probe waited for the service. Not rechecked with the service up.
+
 - **amd64: long boots wedge once osk.exe has leaked the GDI handle table (open, found
   2026-11-07, graviton lane).** The stock i386 `osk.exe` winlogon starts on amd64 gains GDI
   objects by thousands while it runs (memwatch's per-process GDI count: 2 -> 528 -> 1696 -> 2576

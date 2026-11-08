@@ -29,13 +29,17 @@ use ntkrnl_sys::ddk::{
     IoReportDetectedDevice, IoRegisterDeviceInterface, IoSetDeviceInterfaceState,
     ZwDeleteValueKey,
     _INTERFACE_TYPE_InterfaceTypeUndefined as InterfaceTypeUndefined,
+    SYSTEM_POWER_STATE,
+    _POWER_STATE_TYPE_SystemPowerState as SystemPowerState,
+    _SYSTEM_POWER_STATE_PowerSystemSleeping1 as PowerSystemSleeping1,
+    _SYSTEM_POWER_STATE_PowerSystemHibernate as PowerSystemHibernate,
 };
 use ntkrnl_sys::driver_ddk::{
     IoCallDriver, PoCallDriver, PoStartNextPowerIrp,
     IRP_MJ_PNP, IRP_MJ_POWER,
     IRP_MN_START_DEVICE, IRP_MN_QUERY_REMOVE_DEVICE, IRP_MN_REMOVE_DEVICE,
     IRP_MN_CANCEL_REMOVE_DEVICE, IRP_MN_STOP_DEVICE, IRP_MN_QUERY_STOP_DEVICE,
-    IRP_MN_CANCEL_STOP_DEVICE, IRP_MN_SURPRISE_REMOVAL,
+    IRP_MN_CANCEL_STOP_DEVICE, IRP_MN_SURPRISE_REMOVAL, IRP_MN_QUERY_POWER,
     DO_DEVICE_INITIALIZING, DO_POWER_PAGABLE, FILE_DEVICE_SECURE_OPEN,
 };
 // FORCEINLINE DDK helpers — bindgen surfaces these as extern decls with no
@@ -571,6 +575,11 @@ unsafe fn SysFbCreateFdo(
 
     (*Fdo).Flags |= DO_POWER_PAGABLE;
     (*Fdo).Flags &= !DO_DEVICE_INITIALIZING;
+    if (*Ext).IsRoot != 0 {
+        // Here, not only in DriverEntry: a root instance that was disabled and enabled
+        // again comes back through PnP's AddDevice, and the fallback must find it.
+        ROOT_FDO = Fdo;
+    }
     DPRINT1!("[sysfb] AddDevice: %s instance\n", instance_kind(Fdo));
     *OutFdo = Fdo;
     STATUS_SUCCESS
@@ -724,11 +733,17 @@ unsafe extern "system" fn SysFbPnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> N
             } else {
                 STATUS_UNSUCCESSFUL
             };
-            if NT_SUCCESS(Status) && (*Ext).IsRoot == 0 {
-                Status = SysFbStartPci(
-                    DeviceObject,
-                    (*IrpSp).Parameters.StartDevice.AllocatedResourcesTranslated,
-                );
+            if NT_SUCCESS(Status) {
+                if (*Ext).IsRoot == 0 {
+                    Status = SysFbStartPci(
+                        DeviceObject,
+                        (*IrpSp).Parameters.StartDevice.AllocatedResourcesTranslated,
+                    );
+                } else if OWNER.is_null() && HAVE_DISPLAY {
+                    // The reported instance is started in DriverEntry and gets no START then;
+                    // this START is a re-enable. It takes the display only if nobody has it.
+                    Status = SysFbClaim(DeviceObject);
+                }
             }
             SysFbComplete(Irp, Status)
         }
@@ -832,12 +847,33 @@ fn memory_length(Type: u8, Flags: u16, Length: ULONG) -> u64 {
     }
 }
 
-// Power policy is the bus's: device D-states are no-ops for a framebuffer. (Refusing S3/S4
-// while sysfb drives the display is step 4 of docs/engineering/sysfb-pnp-design.md.)
+/// Would entering `State` lose the display? S1-S3 power the GPU down and S4 cuts power
+/// altogether; GOP set the mode before ExitBootServices and nothing can set it again. Shutdown
+/// (S5) is queried too and must pass: the shutdown path ignores answers, and it ends the
+/// session anyway.
+fn sleep_loses_display(State: SYSTEM_POWER_STATE) -> bool {
+    State >= PowerSystemSleeping1 && State <= PowerSystemHibernate
+}
+
+// Power policy is the bus's, and device D-states are no-ops for a framebuffer. The one
+// decision sysfb makes is to refuse a system sleep while it is the display in use: there is
+// no hardware state to save, and nothing could restore the GOP mode on resume. A vendor
+// driver that can set modes lifts the restriction by replacing sysfb.
 unsafe extern "system" fn SysFbPower(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     PoStartNextPowerIrp(Irp);
     if DeviceObject == VIDEO_DEVICE {
         return SysFbComplete(Irp, (*Irp).IoStatus.__bindgen_anon_1.Status);
+    }
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    if (*IrpSp).MinorFunction == IRP_MN_QUERY_POWER
+        && (*IrpSp).Parameters.Power.Type == SystemPowerState
+        && sleep_loses_display((*IrpSp).Parameters.Power.State.SystemState)
+        && OWNER == DeviceObject
+        && OPENS.load(Ordering::SeqCst) > 0
+    {
+        DPRINT1!("[sysfb] refusing S%lu: the firmware display mode cannot be restored on resume\n",
+            ((*IrpSp).Parameters.Power.State.SystemState - 1) as u32);
+        return SysFbComplete(Irp, STATUS_NOT_SUPPORTED);
     }
     IoSkipCurrentIrpStackLocation(Irp);
     PoCallDriver((*fdo_ext(DeviceObject)).Lower, Irp)
