@@ -109,16 +109,25 @@ Progress (`lint-rs`):
   which it shares with the pre-push hook, and hands its verdicts to native.
   Parity: identical reachable-Python set (198 files, 4.5x faster) and `missing`
   verdicts, with and without a master merge.
-- Remaining, as ONE cluster: `retention`, `maintenance` and `hostlock` share the
-  maintenance interlock (`maintenance.lock`, the owner stamp, the kill switch), and
-  retention's fleet check compares each lane's `maintenance.py` bytes. Porting one
-  without the others would change that interlock under lanes on older commits.
-  The 2026-11-07 caller audit of `hostlock.py` (1038 lines) found these live
-  surfaces: build-dir locking (`acquire_build_dir`/`build_lock`/`release`),
-  `looks_starved`, `job_class`, `status`/`host-status`, and the two dir constants.
-  The `land_lock` family serves only the held `land`/`queue` train. The Python
-  CPU/boot lease acquisition API is called only by tests: `vibeos-test/admission.rs`
-  already holds that lease protocol natively and `host-jobs` owns CPU admission.
+- Done, as ONE cluster: `retention`, `maintenance` and the live `hostlock` surface.
+  `vibeos-build/src/retention.rs` owns the owner/kill-switch decision, policy
+  validation, the systemd units and the fleet compatibility verdict; the flock, the
+  control-file transaction and systemctl stay in the facades.
+  `vibeos-test/src/hostlock.rs` owns the `host-status` snapshot (lease probes, holder
+  liveness, protocol skew, the read-only queue view, the admission shadow), its
+  renderer, `looks_starved`, the landing boot reserve and `foreign_boot_holders`.
+  Parity: 250 randomized lock directories with real held flocks and pinned clocks, plus
+  the live host, were identical; policy, unit and owner checks matched HEAD (the only
+  wording difference is a JSON `Infinity` token, refused either way). Two deliberate
+  changes. First, a lease file holding valid non-object JSON no longer crashes
+  `host-status`. Second, the fleet check no longer compares `maintenance.py` byte for
+  byte: a lane is compatible when its copy declares the same `INTERLOCK_PROTOCOL` or is
+  the exact pre-declaration file, which implements protocol 1. Under the byte rule, any
+  edit to that file (this one included) blocked enabling retention until all 24 lanes
+  merged it.
+  Untouched: `land_lock` and everything it calls (`_acquire_one`, the FIFO tickets,
+  `_self_meta`/`job_class`, `_is_held`, and Python `queue_status`, which `land_queue`
+  reads). The native snapshot carries its own read-only queue view.
   Settled with the integrator (2026-11-07): port only the live hostlock surface.
   `land.py`, `queue.py` and the `land_lock` family stay in Python. The integrator's
   `land --direct --cold --skip-lint` is the only path that pushes master, and it uses

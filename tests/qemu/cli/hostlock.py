@@ -30,6 +30,16 @@ from . import buildpolicy
 # reads this literal out of every registered worktree, so a lane still on 1 is NAMED as
 # policy-unaware instead of quietly reading the old /tmp path, finding nothing after a
 # reboot, and building uncapped while everyone assumes the cap is on.
+
+
+def _native(op: str, **kwargs):
+    from tools import qemu_infra_compat as native
+
+    return native.call(
+        "hostlock_" + op, {k: str(v) if isinstance(v, Path) else v for k, v in kwargs.items()}
+    )
+
+
 HOST_POLICY_VERSION = 2
 
 # Shared with the qemu slot locks (vm.py LOCK_DIR) so `reap.sh`/`ps` live in one tree.
@@ -168,11 +178,9 @@ ACQUIRED_ANNOUNCE = "[hostlock] lease acquired"
 
 
 def looks_starved(output: str) -> bool:
-    """True when `output` (a captured pytest/boot transcript) announced queueing on the
-    lease broker but never printed the matching acquisition line. ACQUIRED_ANNOUNCE is
-    printed ONLY after an announced wait, so the pair-absence is exact: the run's flat
-    timeouts are host starvation (another lane owns the leases), not a code regression."""
-    return WAIT_ANNOUNCE in output and ACQUIRED_ANNOUNCE not in output
+    """True when `output` queued on the lease broker and never acquired: host starvation,
+    not a code regression (native: `vibeos-test/src/hostlock.rs`)."""
+    return _native("looks_starved", text=output)
 
 
 # ── FIFO admission (fairness) ───────────────────────────────────────────────
@@ -380,16 +388,13 @@ def _boot_lease_files(leases: int) -> list[Path]:
 
 
 def land_boot_reserve(leases: int = DEFAULT_BOOT_LEASES) -> int:
-    """How many boot permits only a LANDING gate may take.
-
-    Before this, a conductor's gate boots came out of the same pool as every lane's own
-    smokes, payload runs and sweeps, so on a busy night the one job that unblocks the
-    whole fleet queued behind the fleet. Half the pool by default -- one full gate's
-    concurrent boots -- and never the whole of it, so lanes can always boot.
-    VIBEOS_LAND_BOOT_RESERVE overrides (0 disables).
-    """
-    want = int(os.environ.get("VIBEOS_LAND_BOOT_RESERVE", str(leases // 2)))
-    return max(0, min(want, leases - 1))
+    """How many boot permits only a LANDING gate may take: half the pool by default, never
+    all of it (native: `vibeos-test/src/hostlock.rs`). VIBEOS_LAND_BOOT_RESERVE overrides."""
+    return _native(
+        "land_boot_reserve",
+        leases=leases,
+        reserve_override=os.environ.get("VIBEOS_LAND_BOOT_RESERVE"),
+    )
 
 
 def is_landing_job() -> bool:
@@ -775,20 +780,9 @@ def _pid_alive(pid: int) -> bool:
 
 
 def foreign_boot_holders(own_pid: int, leases: int = DEFAULT_BOOT_LEASES) -> list[dict]:
-    """Holder metadata of every held boot permit NOT taken by `own_pid` -- what a
-    `farm --polite` worker checks before each boot so a background soak never
-    competes with another agent's smoke or gate for the pool."""
-    out = []
-    for f in _boot_lease_files(leases):
-        if not _is_held(f):
-            continue
-        try:
-            meta = json.loads(f.read_text() or "{}")
-        except (OSError, ValueError):
-            meta = {}
-        if meta.get("pid") != own_pid:
-            out.append(meta)
-    return out
+    """Holder metadata of every held boot permit NOT taken by `own_pid` (what a
+    `farm --polite` worker checks before each boot)."""
+    return _native("foreign_boot_holders", dir=HOSTLOCK_DIR, own_pid=own_pid, leases=leases)
 
 
 def _is_held(p: Path) -> bool:
@@ -809,66 +803,24 @@ def _is_held(p: Path) -> bool:
 
 
 def status() -> dict:
-    """Snapshot of the host broker for `host-status`: which cpuheavy permits + build-dir
-    locks are held, by whom (holder metadata), and whether that holder is still alive."""
-    out: dict = {
-        "dir": str(HOSTLOCK_DIR),
-        "enabled": enabled(),
-        "cpuheavy": [],
-        "bootcpu": [],
-        "builddir": [],
-        "land": [],
-        "cpu_leases_total": DEFAULT_CPU_LEASES,
-        "cpu_leases_held": 0,
-        "boot_leases_total": DEFAULT_BOOT_LEASES,
-        "boot_leases_held": 0,
-    }
-    if not HOSTLOCK_DIR.is_dir():
-        return out  # no lock dir yet → nothing held (keys above stay at their defaults)
-    for p in sorted(HOSTLOCK_DIR.glob("*")):
-        if p.is_dir():
-            continue  # queue-<pool>/ — reported separately via queue_status()
-        held = _is_held(p)
-        meta: dict = {}
-        try:
-            raw = p.read_text().strip()
-            if raw:
-                meta = json.loads(raw)
-        except (OSError, ValueError):
-            pass
-        entry = {
-            "name": p.name,
-            "held": held,
-            "holder": meta,
-            "holder_alive": _pid_alive(int(meta["pid"])) if meta.get("pid") else None,
-            # protocol-version skew (T2): a live holder speaking a different lease
-            # protocol means another lane runs divergent tooling against this
-            # shared state — cooperate anyway, but surface it loudly.
-            "protocol_skew": bool(held and meta and meta.get("v", 0) != PROTOCOL_VERSION),
-        }
-        if p.name.startswith("cpuheavy-"):
-            out["cpuheavy"].append(entry)
-        elif p.name.startswith("bootcpu-"):
-            out["bootcpu"].append(entry)
-        elif p.name.startswith("builddir-"):
-            out["builddir"].append(entry)
-        elif p.name == "land":
-            out["land"].append(entry)
-    policy = buildpolicy.read(POLICY_DIR)
-    out["build_policy"] = policy
-    out["cpu_leases_total"] = policy["leases"] if policy else DEFAULT_CPU_LEASES
-    out["cpu_leases_held"] = sum(1 for e in out["cpuheavy"] if e["held"])
-    out["boot_leases_total"] = DEFAULT_BOOT_LEASES
-    out["boot_leases_held"] = sum(1 for e in out["bootcpu"] if e["held"])
-    out["queue"] = {p: queue_status(p) for p in ("land", "cpuheavy", "bootcpu")}
-    out["admission_shadow"] = admission_shadow(out["queue"]["cpuheavy"])
-    return out
+    """Snapshot of the host broker for `host-status` (native: `vibeos-test/src/hostlock.rs`).
+    The broker check and the policy read stay here: both can refuse, and that refusal is
+    this caller's."""
+    return _native(
+        "status",
+        dir=HOSTLOCK_DIR,
+        enabled=enabled(),
+        policy=buildpolicy.read(POLICY_DIR),
+        cpu_leases=DEFAULT_CPU_LEASES,
+        boot_leases=DEFAULT_BOOT_LEASES,
+    )
 
 
 def queue_status(pool: str) -> list[dict]:
-    """Live waiters for `pool`, oldest arrival first. Read-only: unlike
-    `_permits_claimed_ahead` this never reaps, so `host-status` can't perturb the queue
-    it is reporting on. Orphan tickets (owner died) are dropped from the view."""
+    """Live waiters for `pool`, oldest arrival first. This copy serves `land_queue` (the
+    land train, which stays Python until it is retired); `host-status` reads the native
+    one. Read-only: unlike `_permits_claimed_ahead` this never reaps, so a reader can't
+    perturb the queue it is reporting on. Orphan tickets (owner died) are dropped."""
     qd = _queue_dir(pool)
     waiters: list[dict] = []
     try:
@@ -908,33 +860,9 @@ def queue_status(pool: str) -> list[dict]:
 
 
 def admission_shadow(waiters: list[dict]) -> dict:
-    """Read-only candidate: give integration a bounded 120s head start.
-
-    Older ordinary work wins once its age exceeds that head start. Unknown/legacy
-    metadata suppresses the proposal, never silently classifies another lane.
-    This is NOT admission policy; FIFO and every lock operation remain unchanged.
-    """
-    result = {"mode": "shadow", "enforced": False, "boost_s": 120, "changed": False}
-    if (HOSTLOCK_DIR / "admission-shadow.disabled").exists():
-        return dict(result, mode="disabled", reason="host-wide kill switch")
-    if any(
-        w.get("clock") != "monotonic"
-        or w.get("job_class") not in ("interactive", "integration", "background")
-        for w in waiters
-    ):
-        return dict(result, reason="unknown or legacy waiter metadata; FIFO only")
-    order = sorted(
-        range(len(waiters)),
-        key=lambda i: (
-            -(waiters[i]["waited_s"] + (120 if waiters[i]["job_class"] == "integration" else 0))
-        ),
-    )
-    return dict(
-        result,
-        fifo=[w["pid"] for w in waiters],
-        proposed=[waiters[i]["pid"] for i in order],
-        changed=order != list(range(len(waiters))),
-    )
+    """Read-only candidate giving integration a bounded 120s head start; NOT admission
+    policy (native: `vibeos-test/src/hostlock.rs`)."""
+    return _native("admission_shadow", dir=HOSTLOCK_DIR, waiters=waiters)
 
 
 def _report_shadow(pool: str | None) -> None:
@@ -945,78 +873,9 @@ def _report_shadow(pool: str | None) -> None:
 
 def render_status(st: dict) -> str:
     """Human-readable host-broker summary (the `vibeos-cli host-status` body)."""
-    lines = [
-        f"host broker: {'ON' if st['enabled'] else 'OFF (VIBEOS_HOST_BROKER=0)'}  —  "
-        f"legacy/native(cpuheavy) {st['cpu_leases_held']}/{st['cpu_leases_total']} · "
-        f"boot(windows-host) {st.get('boot_leases_held', 0)}/{st.get('boot_leases_total', 0)}"
-        + (
-            f" ({land_boot_reserve(st.get('boot_leases_total', 0))} reserved for landing)"
-            if st.get("boot_leases_total")
-            else ""
-        )
-    ]
-    held_cpu = [e for e in st["cpuheavy"] if e["held"]]
-    if not held_cpu:
-        lines.append("  cpuheavy : FREE — no legacy build / native TCG reservation")
-    else:
-        # Group permits by holder pid so an exclusive build (holds ALL K) shows one line.
-        by_pid: dict = {}
-        for e in held_cpu:
-            by_pid.setdefault(e["holder"].get("pid"), []).append(e)
-        for pid, entries in by_pid.items():
-            h = entries[0]["holder"]
-            kind = str(h.get("kind", "?"))
-            n = len(entries)
-            tag = "EXCLUSIVE" if h.get("exclusive") else f"{n} permit{'s' if n > 1 else ''}"
-            dead = "" if entries[0]["holder_alive"] else "  ⚠STALE(holder gone)"
-            lines.append(f"  cpuheavy : {kind:<14} pid={pid} ({tag}){dead}  {h.get('cwd', '')}")
-    for e in (e for e in st.get("bootcpu", []) if e["held"]):
-        h = e["holder"]
-        dead = "" if e["holder_alive"] else "  ⚠STALE(holder gone)"
-        lines.append(f"  bootcpu  : {h.get('kind', '?')!s:<14} pid={h.get('pid', '?')}{dead}")
-    for e in (e for e in st["builddir"] if e["held"]):
-        h = e["holder"]
-        lines.append(f"  builddir : {h.get('build_dir', '?')}  (pid={h.get('pid', '?')})")
-    # The land lock: exactly one lane may be inside fetch→merge→gate→push at a time, so
-    # "who is landing right now" answers most of "why is master moving under me".
-    land_held = [e for e in st.get("land", []) if e["held"]]
-    if land_held:
-        h = land_held[0]["holder"]
-        dead = "" if land_held[0]["holder_alive"] else "  ⚠STALE(holder gone)"
-        lines.append(
-            f"  LANDING  : {h.get('kind', '?')!s:<14} pid={h.get('pid', '?')}{dead}  "
-            f"{h.get('cwd', '')}"
-        )
-    # The queue, oldest first. Starvation used to be invisible — it read as "my build is
-    # slow", not "I am 3rd in line behind 20 minutes of waiting" (field manual §9.84).
-    for pool, waiters in (st.get("queue") or {}).items():
-        for i, w in enumerate(waiters):
-            head = "NEXT" if i == 0 else f"#{i + 1}  "
-            want = (
-                "to land"
-                if pool == "land"
-                else f"needs {w['need']} permit{'s' if w['need'] > 1 else ''}"
-            )
-            lines.append(
-                f"  queued   : {head} {pool:<9} pid={w['pid']} {want}, waiting {w['waited_s']:.0f}s"
-            )
-    skewed = [
-        e
-        for pool in ("cpuheavy", "bootcpu", "builddir")
-        for e in st.get(pool, [])
-        if e.get("protocol_skew")
-    ]
-    shadow = st.get("admission_shadow")
-    if shadow:
-        lines.append("  admission: FIFO active; " + json.dumps(shadow, sort_keys=True))
-    if skewed:
-        lines.append(
-            f"  ⚠ PROTOCOL SKEW: {len(skewed)} live holder(s) speak a different lease "
-            f"protocol (v{PROTOCOL_VERSION} here) — another lane runs divergent tooling; "
-            f"cooperate but expect surprises until it merges"
-        )
-    lines.append("  (QEMU boots: `vibeos-cli ps`)")
-    return "\n".join(lines)
+    return _native(
+        "render_status", status=st, reserve_override=os.environ.get("VIBEOS_LAND_BOOT_RESERVE")
+    )
 
 
 def cmd_status(args, repo: Path) -> int:

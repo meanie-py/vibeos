@@ -3,16 +3,21 @@
 Activation requires a quiet fleet whose checked-out CLIs implement the same
 maintenance interlock. Units and policy live outside all worktrees; disabling
 maintenance stops deletions without waiting for a source change to propagate.
+
+Policy validation, the unit files and the fleet compatibility verdict are native
+(`tools/vibeos-build/src/retention.rs`); the lock, the control-file transaction and
+systemctl stay here.
 """
 
 from __future__ import annotations
 
 import fcntl
 import json
-import math
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
+
+from tools import build_infra_compat as native
 
 from . import hostlock, maintenance, prune
 
@@ -24,43 +29,35 @@ def policy_path() -> Path:
 
 
 def read_policy(repo: Path) -> dict:
-    value = json.loads(policy_path().read_text())
-    if not isinstance(value, dict) or set(value) != {
-        "version",
-        "owner",
-        "retain_gib",
-        "min_free_gib",
-        "idle_hours",
-    }:
-        raise ValueError("invalid retention policy fields")
-    if value["version"] != 1 or value["owner"] != str(repo.resolve()):
-        raise ValueError("retention policy owner/version mismatch")
-    for name in ("retain_gib", "min_free_gib", "idle_hours"):
-        n = value[name]
-        if isinstance(n, bool) or not isinstance(n, (int, float)) or not math.isfinite(n) or n < 0:
-            raise ValueError(f"invalid retention {name}")
-    if value["idle_hours"] < 1:
-        raise ValueError("scheduled retention requires at least one idle hour")
-    return value
+    return native.call(
+        "retention_read_policy",
+        {"text": policy_path().read_text(), "owner": str(repo.resolve())},
+    )
 
 
 def verify_fleet(repo: Path) -> None:
     worktrees = prune.git_worktrees(repo)
     if not worktrees:
         raise ValueError("cannot enumerate fleet for maintenance cutover")
-    reference = (repo / "tests/qemu/cli/maintenance.py").read_bytes()
-    incompatible = []
-    for wt in worktrees:
-        # Source compatibility is mandatory even for lanes with no current output:
-        # they may start a build immediately after this exclusive lock releases.
+    reference = (repo / "tests/qemu/cli/maintenance.py").read_text(errors="replace")
+
+    def read(path: Path) -> str | None:
         try:
-            lock_code = (wt / "tests/qemu/cli/maintenance.py").read_bytes()
-            main = (wt / "tests/qemu/cli/__main__.py").read_text()
+            return path.read_text(errors="replace")
         except OSError:
-            incompatible.append(str(wt))
-            continue
-        if lock_code != reference or "with maintenance.activity(REPO):" not in main:
-            incompatible.append(str(wt))
+            return None
+
+    # Source compatibility is mandatory even for lanes with no current output: they may
+    # start a build immediately after this exclusive lock releases.
+    lanes = [
+        {
+            "path": str(wt),
+            "maintenance": read(wt / "tests/qemu/cli/maintenance.py"),
+            "main": read(wt / "tests/qemu/cli/__main__.py"),
+        }
+        for wt in worktrees
+    ]
+    incompatible = native.call("retention_incompatible", {"reference": reference, "lanes": lanes})
     if incompatible:
         raise ValueError("update maintenance admission before cutover: " + ", ".join(incompatible))
     if prune.live_qemu_worktrees(worktrees) or prune.active_build_worktrees(worktrees):
@@ -70,22 +67,7 @@ def verify_fleet(repo: Path) -> None:
 
 
 def units(repo: Path) -> tuple[str, str]:
-    path = str(repo.resolve())
-    # systemd expands percent specifiers even inside double quotes.
-    escaped = path.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
-    service = (
-        "[Unit]\nDescription=VibeOS idle generated-output retention\n"
-        "[Service]\nType=oneshot\n"
-        f'ExecStart="{escaped}/vibeos-cli" retention --run\n'
-        "Nice=19\nIOSchedulingClass=idle\n"
-        # Busy fleet/kill switch is an expected skipped maintenance opportunity.
-        "SuccessExitStatus=2\nTimeoutStartSec=30min\n"
-    )
-    timer = (
-        "[Unit]\nDescription=Hourly VibeOS retention opportunity\n"
-        "[Timer]\nOnBootSec=10min\nOnUnitActiveSec=1h\nRandomizedDelaySec=5min\n"
-        "[Install]\nWantedBy=timers.target\n"
-    )
+    service, timer = native.call("retention_units", {"repo": str(repo.resolve())})
     return service, timer
 
 
