@@ -147,6 +147,7 @@ pub mod cargo_orchestrate;
 pub mod build_policy;
 pub mod diskspace;
 pub mod prune;
+pub mod retention;
 pub mod repro;
 pub mod trim;
 pub mod warmth;

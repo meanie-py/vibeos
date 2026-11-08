@@ -57,3 +57,4 @@ pub mod tooling;
 pub mod gate_child;
 pub mod gate_run;
 pub mod gate_stamp;
+pub mod hostlock;

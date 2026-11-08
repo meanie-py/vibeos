@@ -126,6 +126,7 @@ fn api(root: &Path, r: &Value) -> Result<Value> {
         s if s.starts_with("build_policy_") => b::build_policy::dispatch(r),
         s if s.starts_with("trim_") => b::trim::dispatch(r),
         s if s.starts_with("prune_") => b::prune::dispatch(r),
+        s if s.starts_with("retention_") => b::retention::dispatch(r),
         s if s.starts_with("disk_") => b::diskspace::dispatch(r),
         s if s.starts_with("warmth_") => b::warmth::dispatch(r),
         s if s.starts_with("repro_") => b::repro::dispatch(r),
