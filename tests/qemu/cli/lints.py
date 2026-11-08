@@ -687,6 +687,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A win32k/user32 flag word (ulDirty_, DCXFlags, state, style, ...) masked with a raw
+    # hex literal: a recalled number, invisible to verify_constants. DC_vPrepareDCsForBlit
+    # tested DIRTY_TEXT as 0x8 (DIRTY_BACKGROUND) and SetPixel painted black.
+    sfw = repo / "tools" / "scan_flag_word_raw_hex.py"
+    specs.append(
+        (
+            "scan_flag_word_raw_hex",
+            [py, str(sfw), "--lint"] if sfw.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # HEAP_ZERO_MEMORY handed to GlobalAlloc: not a GMEM_ flag, so GlobalAlloc refuses it
     # outright. oleaut32's create_stream did this and no picture ever loaded from a file.
     sgf = repo / "tools" / "scan_gmem_flags.py"
