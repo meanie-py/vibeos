@@ -35,8 +35,19 @@ struct Build<'a> {
     /// `-j` cap and ninja timeout: host facts read once by the caller, which owns
     /// the policy dir and environment the tests point elsewhere.
     jobs: Vec<String>,
+    /// The caller's environment, which the build mechanisms read their knobs from.
+    host_env: Value,
 }
 impl Build<'_> {
+    /// A build mechanism, run in this session against the same host: facts and
+    /// external commands still cross it, the stages land on this build's run.
+    fn mechanism(&mut self, op: &str, mut kw: Value) -> Result<Value> {
+        kw["arch"] = json!(self.arch);
+        kw["build"] = json!(self.dir);
+        kw["args"] = self.args.clone();
+        kw["env"] = self.host_env.clone();
+        crate::cli_build_helpers::dispatch(self.repo, &json!({"op":op,"kwargs":kw}), self.host)
+    }
     fn helper(&mut self, name: &str, a: Value) -> Result<Value> {
         self.host
             .call("build_helper", json!({"name":name,"arguments":a}))
@@ -130,6 +141,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         wrapped: false,
         env: Value::Null,
         jobs: strings(&a["ninja_jobs"]),
+        host_env: a["host_env"].clone(),
     };
     let cfg = &a["cfg"];
     let cold = a["cold"] == true;
@@ -226,7 +238,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         }
     }
     if cold {
-        b.helper("clean", json!({}))?;
+        b.mechanism("clean", json!({}))?;
         if artifact_env.is_object() {
             b.helper(
                 "retire_build_refs",
@@ -254,7 +266,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     let stages_guests = b.arch == "amd64"
         || (b.arch == "arm64" && std::env::var("VIBEOS_FEX").as_deref() == Ok("1"));
     if stages_guests && !headers && args["no_wow64_stage"] != true {
-        let r = b.helper("refresh_guests", json!({"stage":"wow64-guests"}))?;
+        let r = b.mechanism("refresh_guests", json!({"stage":"wow64-guests"}))?;
         if r == false {
             return b.finish();
         }
@@ -262,7 +274,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
             deferred = strings(&r);
         }
     }
-    if b.arch == "arm64" && !headers && b.helper("refresh_cpu", json!({}))? != true {
+    if b.arch == "arm64" && !headers && b.mechanism("refresh_cpu", json!({}))? != true {
         return b.finish();
     }
     let cp = b.ninja(
@@ -342,7 +354,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         return b.finish();
     }
     b.stage("ninja", "ok", targets.join("+"), 0, json!([]))?;
-    if b.helper("verify_flags", json!({}))? != true {
+    if b.mechanism("verify_flags", json!({}))? != true {
         return b.finish();
     }
     for target in strings(&cfg["ninja_targets_optional"]) {
@@ -380,7 +392,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     }
     let relinked = crate::build_policy::ninja_work(s(&cp, "stdout", ""))? as u64;
     if !deferred.is_empty() {
-        let r = b.helper("refresh_guests", json!({"stage":"wow64-guests-x64"}))?;
+        let r = b.mechanism("refresh_guests", json!({"stage":"wow64-guests-x64"}))?;
         if r != true {
             let state = b.host.call("get_run", json!({}))?;
             if s(&state, "classification", "").is_empty() {

@@ -587,6 +587,9 @@ fn refresh_cpu(c: &mut Context<'_>) -> Result<Value> {
     }
     Ok(json!(true))
 }
+/// A requested build feature must PROVE itself in the output binary, and must be
+/// ABSENT when not requested: --lockdep was silently dead for 3 builds (a canonize
+/// early return) and only a manual `llvm-nm` caught it.
 fn verify_flags(c: &mut Context<'_>, a: &Value) -> Result<Value> {
     let nm = c.repo.join(".build-tools/llvm-mingw/bin/llvm-nm");
     let artifact = c.build.join("ntoskrnl/ntoskrnl.exe");

@@ -88,8 +88,6 @@ def test_headers_stops_after_prime(tmp_path, monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("full build operation reached")
 
-    monkeypatch.setattr(build, "_refresh_wow64_guests", forbidden)
-    monkeypatch.setattr(build, "_refresh_wowx64_cpu", forbidden)
     monkeypatch.setattr(build, "_stage_payloads", forbidden)
     assert build._build_locked(args, tmp_path, run, "amd64", None, tmp_path, False) == 0
     assert len(run.commands) == 1

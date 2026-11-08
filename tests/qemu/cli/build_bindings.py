@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import time
 from pathlib import Path
 
@@ -59,8 +60,6 @@ class BuildBindings(Bindings):
                 return None
             selection, self.payload_compile = result
             return selection
-        elif name == "clean":
-            m._clean(run, repo, arch)
         elif name == "retire_build_refs":
             from tools.artifact_runtime import retire_build_refs
 
@@ -79,16 +78,10 @@ class BuildBindings(Bindings):
             if result is not None:
                 self.cache = result["cache"]
             return result
-        elif name == "refresh_guests":
-            return m._refresh_wow64_guests(run, repo, stage=a["stage"])
-        elif name == "refresh_cpu":
-            return m._refresh_wowx64_cpu(run, repo)
         elif name == "classify":
             return m._classify_build_failure(a["stdout"], a["stderr"], a["rc"])
         elif name == "cohab_rels":
             return m.provenance.boot_set_cohab_rels(repo, arch)
-        elif name == "verify_flags":
-            return m._verify_flag_artifacts(run, repo, bd, args)
         elif name == "payload_roots":
             if not a["stamped"]:
                 return []
@@ -132,7 +125,11 @@ class BuildBindings(Bindings):
 
 
 def locked(args, repo, run, arch, cfg, build_dir, cold, *, artifact_env=None):
-    bindings = BuildBindings(repo, run, args, arch, cfg, build_dir)
+    # Mechanisms answers the facts and external commands the native build
+    # mechanisms ask for, so they run in this session rather than a fresh one.
+    from .build_mechanisms import Mechanisms
+
+    bindings = Mechanisms(repo, run, args, arch, cfg, build_dir)
     options = {
         k: getattr(args, k)
         for k in dir(args)
@@ -152,6 +149,12 @@ def locked(args, repo, run, arch, cfg, build_dir, cold, *, artifact_env=None):
                 "artifact_env": artifact_env,
                 "ninja_jobs": implementation._ninja_jobs(),
                 "ninja_timeout": implementation._ninja_timeout(),
+                "host_env": dict(os.environ),
             },
-            callbacks={**bindings.callbacks, "build_helper": bindings.helper},
+            callbacks={
+                **bindings.callbacks,
+                "build_helper": bindings.helper,
+                "build_fact": bindings.fact,
+                "build_external": bindings.external,
+            },
         )

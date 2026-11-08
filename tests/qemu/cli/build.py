@@ -103,10 +103,6 @@ def _classify_build_failure(out, err, rc=None):
     )
 
 
-def _clean(run, repo, arch):
-    _mechanism(run, repo, "clean", arch=arch)
-
-
 def _ccache_already_enabled(build_dir: Path) -> bool:
     return native.call(
         "build_policy_cmake_value", {"build": build_dir, "key": "ENABLE_CCACHE"}
@@ -238,14 +234,6 @@ def _stage_payloads(run, repo, build_dir, arch):
     return None if result is None else (result, bindings.payload_compile)
 
 
-# T1.2 flag→artifact verification: a requested build feature must PROVE itself
-# in the output binary, and must be ABSENT when not requested — the --lockdep
-# flag was silently dead for 3 builds (canonize early-return) and only a manual
-# `llvm-nm` caught it. Table rows: (cache flag, requested?, artifact, symbol).
-def _verify_flag_artifacts(run, repo, build_dir, args):
-    return _mechanism(run, repo, "verify_flags", build_dir=build_dir, args=args)[0]
-
-
 def _hold_wow64_source(run, repo, arch, args, reads):
     from .build_entry_bindings import call
 
@@ -273,10 +261,6 @@ WOWX64_CPU_SOURCES = tuple(_CONSTANTS["cpu_sources"])
 
 def fex_prerequisites_missing(repo, environ=os.environ):
     return _mechanism(None, repo, "fex_prerequisites", env=dict(environ))[0]
-
-
-def _refresh_wowx64_cpu(run, repo):
-    return _mechanism(run, repo, "refresh_cpu")[0]
 
 
 def default_artifact_store():
