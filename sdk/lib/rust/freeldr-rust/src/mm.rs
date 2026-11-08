@@ -12,6 +12,21 @@ extern "C" {
     fn DbgPrint(fmt: *const i8, ...) -> i32;
 }
 
+/// How many lookup-table pages an allocation may come from: the ones the loader can touch.
+/// DIVERGES from the C, which searches the whole table. The loader maps only up to
+/// MmLoaderMaxPage() (the amd64 BIOS loader: 1 GiB, or 4 GiB with 1 GiB pages) and writes
+/// everything it allocates, but the table spans all of RAM. On a 32 GiB OptiPlex an
+/// allocation that no longer fitted below 1 GiB began at 0x3ffff000: the first INT 13h copy
+/// into it page-faulted at 1 GiB with no IDT, and the board reset. Pages above stay LoaderFree
+/// in the table, so the kernel still gets them; an allocation that does not fit now fails
+/// with freeldr's own "Memory allocation failed" instead.
+unsafe fn LoaderAddressablePages() -> PFN_NUMBER {
+    // Exclusive, as MmFindLocationForPageLookupTable uses it: the constant is the last page
+    // on x86 (0x3FFFF, 0xFFFFF) but a count on arm64 (0x100000), and one page is cheap.
+    let mapped = MmLoaderMaxPage().saturating_sub(MmLowestPhysicalPage);
+    core::cmp::min(TotalPagesInLookupTable, mapped)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn MmAllocateMemoryWithType(
     MemorySize: usize,
@@ -38,7 +53,7 @@ pub unsafe extern "C" fn MmAllocateMemoryWithType(
         return core::ptr::null_mut();
     }
 
-    FirstFreePageFromEnd = MmFindAvailablePages(PageLookupTableAddress, TotalPagesInLookupTable, PagesNeeded, 0u8);
+    FirstFreePageFromEnd = MmFindAvailablePages(PageLookupTableAddress, LoaderAddressablePages(), PagesNeeded, 0u8);
 
     if FirstFreePageFromEnd == 0 {
         ERR!("Memory allocation failed in MmAllocateMemory(). Not enough free memory to allocate %d bytes.\n", MemorySize);
@@ -152,7 +167,7 @@ pub unsafe extern "C" fn MmAllocateHighestMemoryBelowAddress(
         return core::ptr::null_mut();
     }
 
-    FirstFreePageFromEnd = MmFindAvailablePagesBeforePage(PageLookupTableAddress, TotalPagesInLookupTable, PagesNeeded, DesiredAddressPageNumber);
+    FirstFreePageFromEnd = MmFindAvailablePagesBeforePage(PageLookupTableAddress, LoaderAddressablePages(), PagesNeeded, DesiredAddressPageNumber);
 
     if FirstFreePageFromEnd == 0 {
         ERR!("Memory allocation failed in MmAllocateHighestMemoryBelowAddress(). Not enough free memory to allocate %d bytes.\n", MemorySize);

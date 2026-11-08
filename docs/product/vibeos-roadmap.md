@@ -633,15 +633,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   since, and the console build has not been re-run. Next: stage the console build beside them
   to tell "console only" from "gone".
 
-- **OptiPlex 9020: freeldr resets the board after loading the boot drivers (open, found
-  2026-11-07).** The netboot image of a current tree gets as far as `[FLDR] phase: boot
-  drivers loaded`. Then the board resets to coreboot without loading `AppPatch\drvmain.sdb`
-  or printing `phase: handoff to kernel`, every time. The same capture setup shows 38
-  desktop boots up to 2026-10-20 (`D:\home\vibeos-optiplex\serial-20261014-203830`), so this
-  is a loader regression since then on this board. `smoke --arch amd64-bios` passes the same
-  point in QEMU (`20261107-195717-KMdhG5`). Capture: `serial-20261107-190419`.
-  Next: bisect the loader between 2026-10-20 and now, or arm freeldr's debug output around
-  the drvmain.sdb load.
+- **amd64 Chrome payload: the guest goes silent for good in about half the boots (open,
+  found 2026-11-07, graviton lane).** Minutes into the payload, while 32-bit GUI work runs
+  (the WoW64 ladder's `apc32`, `gdiprobe32`, osk/magnify's DC polling), the serial line stops
+  and the payload times out an hour later (`[GAP] gap=3605...`). The guest is alive: the
+  clock advances, and the hang capture shows ordinary threads Running (priorities 13 and 8)
+  and the idle thread, so it is not a real-time thread starving the rest; even the kernel's
+  census never prints again. Came in with the master merge of 2026-11-07 (`be6bcf6034a`):
+  `f011919dca6` 0 hung of 3 boots, master 5 of 9 (with or without the console probes).
+  Runs: `20261107-174229-6w1lnX`, `20261107-184949-ZjEIYG`, `20261107-220737-uYCxpH`,
+  `20261107-234657-4uReiC` (the last with the current thread in `hang-cpustate.txt`). Next:
+  bisect the merge (suspects: the user32 Wine 11.11 resync, sysfb PnP, KSE), or find what
+  blocks every DbgPrint.
+
+- **OptiPlex 9020: freeldr reset the board after loading the boot drivers (FIXED 2026-11-08,
+  graviton lane).** Every netboot reset to coreboot ~165 ms after `[FLDR] phase: boot drivers
+  loaded` (a Chrome-payload image: before the system hive). Not a code regression: the images
+  outgrew the loader's map. The amd64 BIOS loader identity-maps 1 GiB, and only the page
+  lookup table honoured it; `MmAllocateMemoryWithType` searched all of RAM, so on 32 GiB an
+  allocation began at `0x3ffff000` and its first INT 13h copy faulted at 1 GiB, a triple
+  fault with no IDT. Reproduced in QEMU at `-m 32G` (CR2=0x40000000), clean at 16 GiB. Now
+  allocations stay below the mapped limit, and the loader maps 4 GiB with 1 GiB pages when
+  the CPU has them (Haswell does, QEMU's default qemu64 does not). Its x86 panic handler also
+  prints on the serial port now (it wrote only to QEMU's debugcon). The board reaches the
+  desktop again (32686 MiB). Field manual: "The amd64 BIOS loader maps 1 GiB".
 
 - **No device could be disabled, removed or re-enabled from user mode (FIXED 2026-11-08,
   msvcrt-homebrew lane).** `PiControlQueryRemoveDevice` returned `STATUS_NOT_IMPLEMENTED` (as

@@ -505,6 +505,49 @@ pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0xFFFFF;
 pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0x3FFFF;
 #[cfg(target_arch = "aarch64")]
 pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0x100000;
+
+/// The page limit the loader can touch right now. It is MM_MAX_PAGE_LOADER everywhere but the
+/// amd64 BIOS loader, whose startup tables (realmode/amd64.S BuildPageTables) map 1 GiB with
+/// one page directory of 2 MiB pages. That loader widens it to 4 GiB in
+/// MmExtendLoaderIdentityMap when the CPU has 1 GiB pages. 1 GiB stopped being enough: on a
+/// 32 GiB OptiPlex 9020 the page lookup table alone takes 128 MB of it, and a Chrome-payload
+/// RAM disk (881 MB) then fits nowhere.
+#[cfg(not(all(target_arch = "x86_64", not(feature = "uefi"))))]
+#[inline]
+pub unsafe fn MmLoaderMaxPage() -> PFN_NUMBER {
+    MM_MAX_PAGE_LOADER
+}
+#[cfg(all(target_arch = "x86_64", not(feature = "uefi")))]
+static mut LOADER_MAX_PAGE: PFN_NUMBER = MM_MAX_PAGE_LOADER;
+#[cfg(all(target_arch = "x86_64", not(feature = "uefi")))]
+#[inline]
+pub unsafe fn MmLoaderMaxPage() -> PFN_NUMBER {
+    LOADER_MAX_PAGE
+}
+
+/// amd64 BIOS loader: map 1-4 GiB with three 1 GiB pages in the startup PDP's free entries
+/// (PDP_ADDRESS, x86common.h; entry 0 is the 1 GiB of 2 MiB pages). No new memory: there is
+/// none free below 1 MiB for three more page directories, and the image has no room for them.
+/// Without 1 GiB pages (QEMU's default qemu64 CPU) the loader keeps its 1 GiB. The kernel builds
+/// its own tables at handoff, so nothing past the loader sees these.
+#[cfg(all(target_arch = "x86_64", not(feature = "uefi")))]
+pub unsafe fn MmExtendLoaderIdentityMap() {
+    const PDP_ADDRESS: usize = 0x2000;
+    const PAGE_1GB_CPUID_BIT: u32 = 1 << 26; // CPUID 8000_0001h EDX.Page1GB
+    let ext = core::arch::x86_64::__cpuid(0x8000_0000).eax;
+    if ext < 0x8000_0001 || core::arch::x86_64::__cpuid(0x8000_0001).edx & PAGE_1GB_CPUID_BIT == 0 {
+        return;
+    }
+    let pdp = PDP_ADDRESS as *mut u64;
+    for gib in 1..4u64 {
+        // Present | Writable | PageSize.
+        pdp.add(gib as usize).write_volatile((gib << 30) | 0x83);
+    }
+    core::arch::asm!("mov {t}, cr3", "mov cr3, {t}", t = out(reg) _, options(nostack));
+    LOADER_MAX_PAGE = 0xFFFFF;
+}
+#[cfg(not(all(target_arch = "x86_64", not(feature = "uefi"))))]
+pub unsafe fn MmExtendLoaderIdentityMap() {}
 // x86common.h: MEMORY_MARGIN = HEX(90000) (upstream 88000), MAX_FREELDR_PE_SIZE =
 // MEMORY_MARGIN - FREELDR_PE_BASE - PAGE_SIZE = 0x7F000. Earlier rustconv emitted the literal
 // 0x70000 instead of the MEMORY_MARGIN macro, capping the PE at 0x5f000 = 380KB.
