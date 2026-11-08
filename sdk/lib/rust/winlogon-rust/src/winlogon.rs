@@ -2140,6 +2140,21 @@ unsafe fn TryStartWinetest(
      * amd64 the guest user32:wsprintf now runs with a console, 58 tests and 0
      * failures, matching the native control. The --ladder rungs stay green. */
     let WT_CREATE_FLAGS: DWORD = 0;
+    /* Run in the writable scratch directory when there is one, as Wine's
+     * runner does: suites write fixtures to the current directory
+     * (user32:msg's activation-context manifests, listbox's DlgDirList
+     * files), and on the CD every such CreateFile fails with error 5.
+     * msg then deactivated a context it never activated and died with
+     * 0xC0150010, taking the rest of the suite with it. */
+    let Scratch = wstr!("C:\\TEMP");
+    let ScratchAttr = GetFileAttributesW(Scratch.as_ptr());
+    let Cwd: *const u16 = if ScratchAttr != 0xFFFF_FFFF
+        && ScratchAttr & FILE_ATTRIBUTE_DIRECTORY != 0
+    {
+        Scratch.as_ptr()
+    } else {
+        null()
+    };
     if CreateProcessW(
         Path.as_ptr(),
         Line.as_mut_ptr(),
@@ -2148,7 +2163,7 @@ unsafe fn TryStartWinetest(
         1, /* bInheritHandles: required for the child to get Wr */
         WT_CREATE_FLAGS,
         null_mut(),
-        null(),
+        Cwd,
         &mut Si,
         &mut Pi,
     ) == 0
@@ -2179,6 +2194,13 @@ unsafe fn TryStartWinetest(
     let mut OutLen: usize = 0;
     let mut Total: u32 = 0;
     let mut Truncated = false;
+    /* Past the cap, keep the LAST bytes too: a suite that crashes after
+     * overrunning it (user32:msg) otherwise hides exactly the lines that
+     * led up to the crash. Printed once the child is gone. */
+    const WT_TAIL: usize = 16 * 1024;
+    let mut Tail: [u8; WT_TAIL] = [0; WT_TAIL];
+    let mut TailLen: usize = 0;
+    let mut TailPos: usize = 0;
     let Start = GetTickCount();
     const WAIT_TIMEOUT_: DWORD = 0x102;
     let mut TimedOut = false;
@@ -2213,6 +2235,13 @@ unsafe fn TryStartWinetest(
             }
             Total = Total.saturating_add(Got);
             if Total > WT_MAX_OUTPUT {
+                for i in 0..Got as usize {
+                    Tail[TailPos] = Chunk[i];
+                    TailPos = (TailPos + 1) % WT_TAIL;
+                    if TailLen < WT_TAIL {
+                        TailLen += 1;
+                    }
+                }
                 if !Truncated {
                     Truncated = true;
                     DbgPrint(
@@ -2277,6 +2306,41 @@ unsafe fn TryStartWinetest(
             Label,
             Out.as_ptr(),
         );
+    }
+
+    if Truncated && TailLen > 0 && Capture.is_null() {
+        DbgPrint(
+            b"[WT] %s: last %lu bytes of the dropped output:\n\0".as_ptr() as *const i8,
+            Label,
+            TailLen as u32,
+        );
+        /* Oldest byte first; skip the partial line the ring starts in. */
+        let first = if TailLen < WT_TAIL { 0 } else { TailPos };
+        let mut started = TailLen < WT_TAIL;
+        let mut Line: [u8; 512] = [0; 512];
+        let mut LineLen: usize = 0;
+        for k in 0..TailLen {
+            let c = Tail[(first + k) % WT_TAIL];
+            if !started {
+                if c == b'\n' {
+                    started = true;
+                }
+                continue;
+            }
+            if c == b'\n' || LineLen == Line.len() - 1 {
+                Line[LineLen] = 0;
+                DbgPrint(b"[WT] %s| %s\n\0".as_ptr() as *const i8, Label, Line.as_ptr());
+                LineLen = 0;
+            }
+            if c != b'\n' && c != b'\r' {
+                Line[LineLen] = c;
+                LineLen += 1;
+            }
+        }
+        if LineLen > 0 {
+            Line[LineLen] = 0;
+            DbgPrint(b"[WT] %s| %s\n\0".as_ptr() as *const i8, Label, Line.as_ptr());
+        }
     }
 
     /* Wall-clock per subtest. A sweep's budget is set by its slowest members,
