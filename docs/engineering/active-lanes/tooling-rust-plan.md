@@ -149,6 +149,11 @@ one-Cargo-invocation-per-difftest-crate isolation, genuine C oracles, reference-
 identity and diagnostic ownership. Embedded GDB Python may remain an external
 API adapter where GDB requires it.
 
+Progress: `repro` done (`vibeos-build/src/repro.rs`: PE parse, compare, report,
+diff-dirs). Its output matched the Python byte for byte on 15 real kernel/DLL
+images across 3 arches, plus non-PE and missing-file cases. `verify`'s two streamed
+cold builds and the optional diffoscope stay in the facade.
+
 Acceptance: compare actual outputs with the old implementation and exercise the
 external debugger/VM boundary when relevant; native fixture tests alone do not
 prove live transport behavior.
