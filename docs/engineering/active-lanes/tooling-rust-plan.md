@@ -4,6 +4,36 @@ Status checked against this checkout on 2026-11-07. This is the lane’s current
 work queue; the linked component documents retain implementation details.
 The execution order below is proposed next work, not an instruction to launch it.
 
+## RESUME HERE (parked 2026-11-08, fleet wind-down)
+
+Where it stopped: item 4. `build`'s Python helpers are down from 27 to 11 (see "Progress"
+under item 4). No uncommitted work; nothing paid; nothing only in /tmp.
+
+Owed: confirm these landed on `origin/master` (`git merge-base --is-ancestor <sha>
+origin/master`, plus the gate's summary.json). Fix anything the integrator bounced.
+- `b64894237be` and `4803b5c4892`: round-trips, in the 169+170 batch.
+- `f84bab2a10f`: in-session mechanisms plus the environment carry, batch 171, on its
+  own. Its unit tests never drive a real build through those paths, so the gate was
+  their first real test. A red points at the arm64 refresh stages, verify_flags or the
+  ccache/sccache stats stage.
+- `be4321d50db`: canonize, payloads, inputs-moved and dedup, batch 172b, after 171. A
+  red points at the instr-config/canon or payloads stage.
+- This doc: `148b7798c74` and the RESUME HERE commit.
+
+Next step (recommended, not started): stop `build`'s tail. What remains is about 25 facts.
+They are thin native wrappers, so the per-call cost is negligible, but tests monkeypatch
+the canon ones, so removing them is a test-seam rewrite. Survey `smoke` and `check` the
+same way, looking for a command that can go fully native without that rewrite. The
+native front door only pays once one command needs no Python. Alternative: item 5
+(rustconv).
+
+Hazards learned this session:
+- Never edit tools/* while check-tooling or pytest is provisioning the native binary
+  ("sources changed during provisioning").
+- `cargo fmt` in tools/vibeos-build reformats files you didn't touch. Use
+  `rustfmt --edition 2021 <file>`.
+- A bare `cargo test` there leaves a 1.5G untracked `target/`. Set `CARGO_TARGET_DIR`.
+
 ## Completed checkpoint
 
 `lint-rs` at `51b917c7f84` contains the RR command coordinator, shared CLI core,
