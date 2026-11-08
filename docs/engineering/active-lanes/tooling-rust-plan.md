@@ -109,9 +109,18 @@ Progress (`lint-rs`):
   which it shares with the pre-push hook, and hands its verdicts to native.
   Parity: identical reachable-Python set (198 files, 4.5x faster) and `missing`
   verdicts, with and without a master merge.
-- Next: `retention`, then `hostlock` (with
-  the maintenance interlock it owns), last. The `land`/`queue` audit is done with
-  the integrator, who has offered.
+- Remaining, as ONE cluster: `retention`, `maintenance` and `hostlock` share the
+  maintenance interlock (`maintenance.lock`, the owner stamp, the kill switch), and
+  retention's fleet check compares each lane's `maintenance.py` bytes. Porting one
+  without the others would change that interlock under lanes on older commits.
+  The 2026-11-07 caller audit of `hostlock.py` (1038 lines) found these live
+  surfaces: build-dir locking (`acquire_build_dir`/`build_lock`/`release`),
+  `looks_starved`, `job_class`, `status`/`host-status`, and the two dir constants.
+  The `land_lock` family serves only the held `land`/`queue` train. The Python
+  CPU/boot lease acquisition API is called only by tests: `vibeos-test/admission.rs`
+  already holds that lease protocol natively and `host-jobs` owns CPU admission.
+  Port vs retire for the train is being settled with the integrator. Keep the lease
+  file protocol unchanged either way.
 
 ### 3. Remaining diagnostic and measurement workflows
 
