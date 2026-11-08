@@ -25,8 +25,11 @@ from pathlib import Path
 
 from .spec_parser import SpecEntry, parse_spec
 
-# i386 stdcall/fastcall decoration counts argument bytes: 8 for these, 4 for the rest.
-_WIDE_PARAMS = {"int64", "double"}
+# i386 stdcall/fastcall decoration counts argument bytes, as spec2def does: 8 for these,
+# 16 for an int128 (a by-value GUID: shlwapi's `AssocCreate(int128 ptr ptr)` is
+# `_AssocCreate@24`; counted as 4, the anchor named `@12` and the i386 link failed), 4 for
+# the rest.
+_PARAM_BYTES = {"int64": 8, "double": 8, "int128": 16}
 
 # Each arch the tree builds, its preprocessor test, and how it spells a C symbol.
 _ARCHES = (
@@ -50,7 +53,7 @@ def _c_name(name: str) -> str:
 
 def _i386_symbol(entry: SpecEntry) -> str:
     name = _c_name(entry.symbol)
-    size = sum(8 if p in _WIDE_PARAMS else 4 for p in entry.params)
+    size = sum(_PARAM_BYTES.get(p, 4) for p in entry.params)
     if entry.convention == "stdcall":
         return f"_{name}@{size}"
     if entry.convention == "fastcall":

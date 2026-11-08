@@ -6253,6 +6253,7 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         k: v
         for k, v in prelude_resolve.existing_block(prelude).items()
         if not (v.kind == "fn" and (k in c_macros or k in id_aliases))
+        and not (v.kind == "static" and k in id_aliases)
         and k not in shared
         and k not in defined_elsewhere
         and not (v.kind == "fn" and k in macro_only)
@@ -6451,6 +6452,19 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         for name in sorted(own & {n for n, i in copied.items() if i.path == "island enum"}):
             copied.pop(name)
         aliases = prelude_resolve.island_enum_aliases(todo | case_enums, crate / "src", island_sys)
+        # A consensus copy made while the island LACKED the enum yields to the island once it
+        # has it. shlwapi's ordinal.c hid shlwapi.h's PATH section from the whole island
+        # (NO_SHLWAPI_PATH), so URL_SCHEME_FILE was copied from shell32 as `UINT = 9`; with the
+        # section restored its siblings aliased the island's `URL_SCHEME` (i32) and every
+        # `match nScheme as i32` arm naming the stale copy was E0308.
+        promoted = prelude_resolve.island_enum_aliases(
+            {n for n, i in copied.items() if i.path != "island enum"} - own,
+            crate / "src",
+            island_sys,
+        )
+        for name in promoted:
+            copied.pop(name, None)
+        aliases.update(promoted)
         # An enumerator the crate ALSO binds (a parameter, a `let`) cannot be a prelude const:
         # Rust reads `fn f(FdoExtension: PFDO_DEVICE_EXTENSION)` as a constant PATTERN when a
         # `const FdoExtension` is in scope, so every storport function taking its extension
@@ -6517,6 +6531,11 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
                 found = [i for i in found if i.kind != "fn"]
             if name in com_methods:
                 found = [i for i in found if i.kind != "fn"]
+            if name in id_aliases:
+                # guiddef.h's `#define CLSID_NULL GUID_NULL`: the C references GUID_NULL, and a
+                # neighbour's `extern static CLSID_NULL` (mspaint's) names a symbol nothing
+                # exports -- shlwapi compiled and failed at link. The alias pass re-exports it.
+                found = [i for i in found if i.kind != "static"]
             if not found:
                 res.undefined.append(name)
                 continue
@@ -9083,6 +9102,26 @@ def stage_check(stem: str, rendered: bool = False) -> dict:
             print(
                 f"check {arch}: CATCH-ALL -- match arm(s) binding an undefined constant: "
                 + ", ".join(sorted(catch))
+            )
+        # A cfg name nobody declared (rustc's `unexpected_cfgs`): a bought body rendered a C
+        # preprocessor arm as a cfg of its own invention, and nothing sets it. shlwapi's
+        # StrFormatByteSizeW put the LIVE `__REACTOS__` arm under `cfg(rustconv_reactos)`, so
+        # the dead Wine arm shipped -- a warning only. A crate that models a dead arm as a
+        # never-set cfg DECLARES it (classpnp's check-cfg list), which rustc does not warn on.
+        invented = sorted(
+            {
+                m.group(1)
+                for d in diags
+                if (d.get("code") or {}).get("code") == "unexpected_cfgs"
+                and (m := re.search(r"condition name: `(\w+)`", str(d.get("message"))))
+            }
+        )
+        if invented:
+            per_file["<undeclared cfg>"] = len(invented)
+            print(
+                f"check {arch}: UNDECLARED CFG -- nothing sets {', '.join(invented)}; the arm "
+                "it guards is compiled out. Keep only the live C arm (or declare it in check-cfg "
+                "if a never-set cfg is the deliberate model of a DEAD arm)"
             )
         errors = sum(per_file.values())
         result[arch] = {

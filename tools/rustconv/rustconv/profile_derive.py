@@ -1785,6 +1785,49 @@ def charset_instantiations(prologues: list[list[str]], module_unicode: bool) -> 
     return {i for i, u in enumerate(effective) if u != module_unicode}
 
 
+_VERSION_TOGGLE_RE = re.compile(
+    r"^#\s*(define|undef)\s+(_WIN32_WINNT|WINVER|NTDDI_VERSION|_WIN32_IE|_WIN32_WINDOWS)\b"
+)
+
+
+def version_overrides(prologues: list[list[str]]) -> set[int]:
+    """Indexes of the TUs whose prologue re-targets the SDK version, when not all of them do.
+
+    shlwapi's assoc.c opens `#undef _WIN32_WINNT` / `#define _WIN32_WINNT _WIN32_WINNT_VISTA`
+    (for RegGetValueW's prototype). Merged into the module wrapper, that one TU's override
+    applied to the whole island while the module's -DNTDDI_VERSION=0x05020400 stayed, and
+    sdkddkver.h's `#error NTDDI_VERSION and _WIN32_WINNT mismatch!` killed bindgen. Like a
+    charset toggle, a per-TU version is that TU's business: the island follows the module's
+    compile flags, and `port resolve` evaluates the TU's own names with its own compile. Only
+    when the TUs DISAGREE -- a module whose every TU re-targets still means it."""
+    hits = {
+        i for i, lines in enumerate(prologues) if any(_VERSION_TOGGLE_RE.match(ln) for ln in lines)
+    }
+    if not hits or len(hits) == len(prologues):
+        return set()
+    return hits
+
+
+_EXCLUSION_DEFINE_RE = re.compile(
+    r"^#\s*define\s+((?!NONAMELESS)NO_?[A-Z][A-Z0-9_]*|WIN32_LEAN_AND_MEAN|VC_EXTRALEAN)\b"
+)
+
+
+def partial_exclusions(prologues: list[list[str]]) -> set[str]:
+    """Header-EXCLUSION macros some TUs define and others do not.
+
+    shlwapi: ordinal.c defines NO_SHLWAPI_REG/PATH/STREAM/GDI/USER before shlwapi.h (it uses
+    none of them), url.c uses PARSEDURL from the PATH section. Merged, every TU's exclusions
+    applied to the whole island, and `tagPARSEDURLA` was "not found" for url.c. A define that
+    REMOVES declarations is the defining TU's business; the island keeps the union. The
+    NONAMELESS* pair is not an exclusion -- it renames union members for every TU."""
+    per_tu = [
+        {m.group(1) for ln in lines if (m := _EXCLUSION_DEFINE_RE.match(ln))} for lines in prologues
+    ]
+    every = set.intersection(*per_tu) if per_tu else set()
+    return set().union(*per_tu) - every if per_tu else set()
+
+
 def merge_prologue(merged: list[str], lines: list[str]) -> None:
     """Fold one TU's prologue into the module wrapper, keeping THAT TU's order.
 
@@ -3909,7 +3952,35 @@ def derive(
             )
         prologues.append(lines)
     flipped = charset_instantiations(prologues, module.unicode)
+    retargeted = version_overrides(prologues)
+    exclusion_defs = partial_exclusions(prologues)
+    if exclusion_defs:
+        findings.append(
+            Finding(
+                "info",
+                "PARTIAL_EXCLUSION_DEFINE",
+                f"{', '.join(sorted(exclusion_defs))}: defined by only some TUs' prologues; "
+                "left out "
+                "of the island so the declarations they hide stay visible to the TUs that use them",
+            )
+        )
     for i, (tu, lines) in enumerate(zip(tus, prologues, strict=True)):
+        if i in retargeted:
+            findings.append(
+                Finding(
+                    "info",
+                    "VERSION_OVERRIDE_TU",
+                    f"{_rel(tu, repo_root)} re-targets the SDK version in its prologue; the "
+                    "override is left out of the island (the module's compile flags win)",
+                )
+            )
+            lines = [ln for ln in lines if not _VERSION_TOGGLE_RE.match(ln)]
+        if exclusion_defs:
+            lines = [
+                ln
+                for ln in lines
+                if not ((m := _EXCLUSION_DEFINE_RE.match(ln)) and m.group(1) in exclusion_defs)
+            ]
         if i in flipped:
             findings.append(
                 Finding(
@@ -4172,7 +4243,7 @@ def _hdr_regex_dir(dirname: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-_OPAQUE_RE = re.compile(r"pub struct (\w+) \{\s*pub _address: u8,\s*\}")
+_OPAQUE_RE = re.compile(r"pub struct (\w+) \{\s*(?:pub _address: u8,|_unused: \[u8; 0\],)\s*\}")
 
 
 TCHAR_FAMILY = (
@@ -4190,36 +4261,57 @@ TCHAR_FAMILY = (
 
 
 def opaque_types_to_unblock(dp: DerivedProfile, arch: str = "amd64") -> list[str]:
-    """Struct tags the kernel -sys crate leaves opaque that this module needs WHOLE.
+    """Struct tags the -sys crate leaves opaque that this module needs WHOLE.
 
     ntkrnl-sys emits `_SCSI_REQUEST_BLOCK { _address: u8 }`, and the island blocklists every
     -sys type, so `Srb->SrbStatus` resolved to the opaque one: atapi's first check had 22
     `no field SrbStatus` and 22 `no field Cdb`. A tag is unblocked (with its plain and `P`
     typedefs) when an allowlisted closure header defines it and the module's own code names it.
+
+    User mode too, against ntdll-sys, which carries IStream/IStreamVtbl/tagSTATSTG as
+    forward-declared `{ _unused: [u8; 0] }`: rtl, hlink, oleacc, shcore and urlmon's arms each
+    hand-wrote the same UNBLOCK line, and shlwapi's first check had 80 `no field` errors on
+    them. A -sys typedef that names an unblocked type (`STATSTG`, `LPSTREAM`) goes with it, or
+    it would go on pointing at the opaque one.
     """
     root = dp.env.repo_root
-    sys_src = root / "sdk/lib/rust/ntkrnl-sys/src" / f"bindgen_{arch}.rs"
+    sys_crate = "ntdll-sys" if dp.module.is_usermode else "ntkrnl-sys"
+    sys_src = root / "sdk/lib/rust" / sys_crate / "src" / f"bindgen_{arch}.rs"
     if not sys_src.is_file():
         return []
-    opaque = set(_OPAQUE_RE.findall(_read(sys_src)))
+    sys_text = _read(sys_src)
+    opaque = set(_OPAQUE_RE.findall(sys_text))
     allow = [re.compile(a) for a in dp.allow_files]
     defined: set[str] = set()
     for path, ref in dp.closure.headers.items():
         posix = path.as_posix()
         if ref.kind != "module" and not any(a.fullmatch(posix) or a.search(posix) for a in allow):
             continue
-        for tag in re.findall(r"\bstruct\s+(\w+)\s*\{", _read(path)):
+        for tag in re.findall(r"\b(?:struct|interface)\s+(\w+)\s*\{", _read(path)):
             if tag in opaque:
                 defined.add(tag)
     own = "\n".join(_read(p) for p in dp.module.compiled_tus)
     own += "\n".join(_read(p) for p, r in dp.closure.headers.items() if r.kind == "module")
     out: list[str] = []
     for tag in sorted(defined):
-        plain = tag[1:] if tag.startswith("_") else tag
+        plain = tag[1:] if tag.startswith("_") else tag[3:] if tag.startswith("tag") else tag
         names = [tag, plain, f"P{plain}"]
         if any(re.search(rf"\b{re.escape(n)}\b", own) for n in names):
             out.extend(dict.fromkeys(names))
-    return out
+    if not out:
+        return out
+    # Typedefs over an unblocked type, to a fixed point (`LPSTREAM = *mut IStream`).
+    aliases = re.findall(r"^pub type (\w+) = ([^;]+);", sys_text, re.M)
+    while True:
+        wanted = set(out)
+        more = [
+            name
+            for name, rhs in aliases
+            if name not in wanted and any(re.search(rf"\b{re.escape(w)}\b", rhs) for w in wanted)
+        ]
+        if not more:
+            return out
+        out.extend(dict.fromkeys(more))
 
 
 CPP_SUFFIXES = (".cpp", ".cc", ".cxx")
@@ -4317,7 +4409,7 @@ def emit_profile(dp: DerivedProfile) -> str:
             out.extend("    " + line for line in _allow_files_lines(isl.allow_files, com_bases))
             out.append("        ;;")
         out.append("    esac")
-    unblock = opaque_types_to_unblock(dp) if not m.is_usermode else []
+    unblock = opaque_types_to_unblock(dp)
     if m.is_usermode and m.unicode:
         # ntdll-sys is built WITHOUT UNICODE, so its glob says `TCHAR = c_char`, and a module
         # header's `TCHAR szPath[MAX_PATH]` field inherits it: half the bytes the C has
@@ -4330,8 +4422,7 @@ def emit_profile(dp: DerivedProfile) -> str:
         unblock = []
     if unblock:
         out.append(
-            "    # OPAQUE in ntkrnl-sys ({ _address: u8 }) but defined by an allowlisted header "
-            "and named by"
+            "    # OPAQUE in the -sys crate but defined by an allowlisted header and named by"
         )
         out.append("    # this module's C, so the island emits the real layout (fields reachable).")
         out.append('    UNBLOCK="' + " ".join(unblock) + '"')

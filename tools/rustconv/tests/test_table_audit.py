@@ -250,3 +250,19 @@ def test_a_rust_width_suffix_does_not_make_an_element_symbolic():
     assert normalize_element("0x16") == 0x16
     assert normalize_element("16") == 16
     assert normalize_element("SYMBOL") is None
+
+
+def test_a_count_explained_by_an_undecidable_arm_is_not_a_divergence(tmp_path):
+    """shlwapi assoc.c: `.mp2` sits under `#if _WIN32_WINNT > 0x602`, dead in that TU."""
+    c = tmp_path / "t.c"
+    c.write_text(
+        "static const unsigned char t[] = {\n  1,\n"
+        "#if _WIN32_WINNT > 0x602\n  2,\n#endif\n  3,\n};\n"
+    )
+    (d,) = audit_tables(c, "static t: [u8; 2] = [1, 3];")
+    assert d.kind == "ok" and "undecidable" in d.detail
+    (d,) = audit_tables(c, "static t: [u8; 3] = [1, 2, 3];")
+    assert d.kind == "ok"
+    # Dropping the arm does not excuse an unrelated loss.
+    (d,) = audit_tables(c, "static t: [u8; 1] = [1];")
+    assert d.kind == "count"
