@@ -2852,21 +2852,15 @@ unsafe fn IntRegisterConsoleIME(
     }
 
     if !pdwAttachToThreadId.is_null() {
-        let __try_result: i32;
-        let __exception_code: u32;
-        __try_result = {
+        // C: __try { *pdwAttachToThreadId = .. } __except (EXECUTE_HANDLER)
+        // { BaseSetLastNTError(STATUS_ACCESS_VIOLATION); return FALSE; }
+        if ntdll_sys::seh::try_except_all(|| {
             *pdwAttachToThreadId = (*RegisterConsoleIME).dwAttachToThreadId;
-            0
-        };
-        if __try_result != 0 {
-            __exception_code = __try_result as u32;
-            loop {
-                if __exception_code == EXCEPTION_EXECUTE_HANDLER {
-                    BaseSetLastNTError(STATUS_ACCESS_VIOLATION);
-                    return 0;
-                }
-                break;
-            }
+        })
+        .is_err()
+        {
+            BaseSetLastNTError(STATUS_ACCESS_VIOLATION);
+            return 0;
         }
     }
 
@@ -2967,8 +2961,9 @@ unsafe fn IntGetConsoleKeyboardLayoutName(
         return 0;
     }
 
-    let __try_result: i32;
-    __try_result = {
+    // C: __try { copy KL_NAMELENGTH chars } __except (EXECUTE_HANDLER)
+    // { SetLastError(ERROR_INVALID_ACCESS); return FALSE; }
+    if ntdll_sys::seh::try_except_all(|| {
         if bAnsi != 0 {
             strncpy(
                 pszLayoutName as *mut i8,
@@ -2982,9 +2977,10 @@ unsafe fn IntGetConsoleKeyboardLayoutName(
                 KL_NAMELENGTH as usize,
             );
         }
-        0
-    };
-    if __try_result != 0 {
+    })
+    .is_err()
+    {
+        SetLastError(ERROR_INVALID_ACCESS);
         return 0;
     }
 

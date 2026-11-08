@@ -454,32 +454,32 @@ pub unsafe extern "system" fn LoadLibraryExW(
         return core::ptr::null_mut();
     }
 
-    /* SEH try block. `_SEH2_YIELD(goto done)` => `break 'done`
-     * (the cleanup tail follows the block). */
-    'done: {
+    /* C: __try { .. _SEH2_YIELD(goto done) .. } __except (EXECUTE_HANDLER)
+     * { Status = code; }: an exception from the loader fails this call with its code
+     * and still runs the cleanup below. */
+    Status = match ntdll_sys::seh::try_except_all(|| -> NTSTATUS {
         if (dwFlags & LOAD_LIBRARY_AS_DATAFILE) != 0 {
             /* If the image is loaded as a datafile, try to get its handle */
-            Status = LdrGetDllHandleEx(0, SearchPath, core::ptr::null_mut(), &mut DllName, &mut hInst as *mut HINSTANCE as *mut PVOID);
-            if !NT_SUCCESS(Status) {
+            let st = LdrGetDllHandleEx(0, SearchPath, core::ptr::null_mut(), &mut DllName, &mut hInst as *mut HINSTANCE as *mut PVOID);
+            if !NT_SUCCESS(st) {
                 /* It's not loaded yet - so load it up */
-                Status = BasepLoadLibraryAsDatafile(SearchPath, DllName.Buffer, &mut hInst);
+                return BasepLoadLibraryAsDatafile(SearchPath, DllName.Buffer, &mut hInst);
             }
             /* _SEH2_YIELD - jump to done, skipping the normal LdrLoadDll path */
-            break 'done;
+            return st;
         }
 
         /* Call the API Properly */
-        Status = LdrLoadDll(
+        LdrLoadDll(
             SearchPath,
             &mut DllCharacteristics,
             &mut DllName,
             &mut hInst as *mut HINSTANCE as *mut PVOID,
-        );
-    }
-
-    // _SEH2_EXCEPT handling - if exception occurred, use exception code
-    // For simplicity, we assume no exception occurred in this transliteration
-    // The actual SEH handling would need __try/__except which doesn't exist in Rust
+        )
+    }) {
+        Ok(st) => st,
+        Err(code) => code,
+    };
 
     // done:
     /* Free SearchPath buffer */
@@ -693,24 +693,22 @@ pub unsafe extern "system" fn GetModuleFileNameW(
     lpFilename: LPWSTR,
     nSize: DWORD,
 ) -> DWORD {
-    let mut ModuleListHead: PLIST_ENTRY;
-    let mut Entry: PLIST_ENTRY;
-    let mut Module: PLDR_DATA_TABLE_ENTRY;
     let mut Length: ULONG = 0;
     let mut Cookie: ULONG_PTR = 0;
-    let Peb: PPEB;
 
     let hModule = BasepMapModuleHandle(hModule, 0);
 
     /* Upscale nSize from chars to bytes */
     let mut nSize = nSize * core::mem::size_of::<WCHAR>() as DWORD;
 
-    /* SEH try block */
-    {
+    /* C: __try { .. } __except (EXECUTE_HANDLER) { BaseSetLastNTError(code); }: the
+     * copy writes the caller's lpFilename. */
+    let Length_ = &mut Length;
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| {
         /* We don't use per-thread cur dir now */
         //PRTL_PERTHREAD_CURDIR PerThreadCurdir = (PRTL_PERTHREAD_CURDIR)teb->NtTib.SubSystemTib;
 
-        Peb = NtCurrentPeb();
+        let Peb: PPEB = NtCurrentPeb();
 
         /* Acquire a loader lock */
         LdrLockLoaderLock(
@@ -720,10 +718,10 @@ pub unsafe extern "system" fn GetModuleFileNameW(
         );
 
         /* Traverse the module list */
-        ModuleListHead = &mut (*((*Peb).Ldr)).InLoadOrderModuleList;
-        Entry = (*ModuleListHead).Flink;
+        let ModuleListHead: PLIST_ENTRY = &mut (*((*Peb).Ldr)).InLoadOrderModuleList;
+        let mut Entry: PLIST_ENTRY = (*ModuleListHead).Flink;
         while Entry != ModuleListHead {
-            Module = CONTAINING_RECORD!(
+            let Module: PLDR_DATA_TABLE_ENTRY = CONTAINING_RECORD!(
                 Entry,
                 LDR_DATA_TABLE_ENTRY,
                 InLoadOrderLinks
@@ -732,7 +730,7 @@ pub unsafe extern "system" fn GetModuleFileNameW(
             /* Check if this is the requested module */
             if (*Module).DllBase == hModule {
                 /* Calculate size to copy */
-                Length = min(
+                *Length_ = min(
                     nSize,
                     (*Module).FullDllName.MaximumLength as ULONG,
                 );
@@ -741,12 +739,12 @@ pub unsafe extern "system" fn GetModuleFileNameW(
                 RtlMoveMemory(
                     lpFilename as *mut core::ffi::c_void,
                     (*Module).FullDllName.Buffer as *mut core::ffi::c_void,
-                    Length as SIZE_T,
+                    *Length_ as SIZE_T,
                 );
 
                 /* Subtract a terminating zero */
-                if Length == (*Module).FullDllName.MaximumLength as ULONG {
-                    Length -= core::mem::size_of::<WCHAR>() as ULONG;
+                if *Length_ == (*Module).FullDllName.MaximumLength as ULONG {
+                    *Length_ -= core::mem::size_of::<WCHAR>() as ULONG;
                 }
 
                 /* Break out of the loop */
@@ -756,6 +754,8 @@ pub unsafe extern "system" fn GetModuleFileNameW(
             /* Advance to the next entry */
             Entry = (*Entry).Flink;
         }
+    }) {
+        BaseSetLastNTError(code);
     }
 
     /* Release the loader lock */
@@ -794,7 +794,13 @@ pub unsafe extern "system" fn GetModuleHandleForUnicodeString(
         // tail: DllPath leaked on every miss and no last error was set, though
         // BasepGetModuleHandleExW's caller relies on it ("Last error is already set") --
         // GetModuleHandleW of an unloaded module returned NULL with a stale GetLastError.
-        Status = LdrGetDllHandle(DllPath, core::ptr::null_mut(), ModuleName, &mut Module);
+        // C: __try { LdrGetDllHandle } __except (EXECUTE_HANDLER) { Status = code; }.
+        Status = match ntdll_sys::seh::try_except_all(|| {
+            LdrGetDllHandle(DllPath, core::ptr::null_mut(), ModuleName, &mut Module)
+        }) {
+            Ok(st) => st,
+            Err(code) => code,
+        };
     }
 
     /* Free the DllPath */

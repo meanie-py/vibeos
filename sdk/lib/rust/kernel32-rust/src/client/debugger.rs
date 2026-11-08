@@ -713,14 +713,21 @@ pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
         DbgPrint("%s\0".as_ptr() as *const i8, _OutputString);
         return;
     }
-    // _SEH2_TRY
-    {
+    // C: __try { RaiseException(DBG_PRINTEXCEPTION_C) } __except (EXECUTE_HANDLER)
+    // { DBWIN monitor / kernel debugger }. A debugger that takes the string continues
+    // the raise and we are done; one that passes it on lands in the handler below.
+    // Without the catch, a pass-through killed the process.
+    if ntdll_sys::seh::try_except_all(|| {
         let mut a_nArgs: [ULONG_PTR; 2] = [0; 2];
         a_nArgs[0] = (strlen(_OutputString) + 1) as ULONG_PTR;
         a_nArgs[1] = _OutputString as ULONG_PTR;
+        /* send the string to the user-mode debugger */
         RaiseException(DBG_PRINTEXCEPTION_C, 0, 2, a_nArgs.as_ptr());
+    })
+    .is_ok()
+    {
+        return;
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
     {
         static mut s_hDBMonMutex: HANDLE = core::ptr::null_mut();
         static mut s_bDBMonMutexTriedOpen: BOOL = 0;
@@ -782,11 +789,14 @@ pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
                 }
             }
 
-            // _SEH2_TRY
-            {
+            // C: __try { output loop } __except (EXECUTE_HANDLER) { free; "faulted" }.
+            // The handler used to run after every successful write too.
+            let a_cBuffer_ = &mut a_cBuffer;
+            let OutputString_ = &mut _OutputString;
+            if ntdll_sys::seh::try_except_all(|| {
                 let mut nRoundLen: SIZE_T;
                 let mut nOutputStringLen: SIZE_T;
-                nOutputStringLen = strlen(_OutputString) as SIZE_T;
+                nOutputStringLen = strlen(*OutputString_) as SIZE_T;
 
                 loop {
                     if !hDBMonDataReady.is_null() {
@@ -800,15 +810,15 @@ pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
                             nRoundLen = nOutputStringLen;
                         }
                         core::ptr::copy_nonoverlapping(
-                            _OutputString as *const u8,
+                            (*OutputString_) as *const u8,
                             (*pDBMonBuffer).Buffer.as_mut_ptr() as *mut u8,
                             nRoundLen as usize,
                         );
                         *((*pDBMonBuffer).Buffer.as_mut_ptr().add(nRoundLen as usize)) = 0;
                         SetEvent(hDBMonDataReady);
                     } else {
-                        a_cBuffer = HeapAlloc(GetProcessHeap(), 0, 512) as *mut i8;
-                        if a_cBuffer.is_null() {
+                        *a_cBuffer_ = HeapAlloc(GetProcessHeap(), 0, 512) as *mut i8;
+                        if (*a_cBuffer_).is_null() {
                             DbgPrint(
                                 "OutputDebugStringA: Failed\0".as_ptr() as *const i8,
                             );
@@ -820,25 +830,25 @@ pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
                             nRoundLen = nOutputStringLen;
                         }
                         core::ptr::copy_nonoverlapping(
-                            _OutputString as *const u8,
-                            a_cBuffer as *mut u8,
+                            (*OutputString_) as *const u8,
+                            (*a_cBuffer_) as *mut u8,
                             nRoundLen as usize,
                         );
-                        *a_cBuffer.add(nRoundLen as usize) = 0;
-                        DbgPrint("%s\0".as_ptr() as *const i8, a_cBuffer);
-                        if !a_cBuffer.is_null() {
-                            HeapFree(GetProcessHeap(), 0, a_cBuffer as *mut core::ffi::c_void);
-                            a_cBuffer = core::ptr::null_mut();
+                        *(*a_cBuffer_).add(nRoundLen as usize) = 0;
+                        DbgPrint("%s\0".as_ptr() as *const i8, *a_cBuffer_);
+                        if !(*a_cBuffer_).is_null() {
+                            HeapFree(GetProcessHeap(), 0, (*a_cBuffer_) as *mut core::ffi::c_void);
+                            *a_cBuffer_ = core::ptr::null_mut();
                         }
                     }
-                    _OutputString = _OutputString.add(nRoundLen as usize);
+                    *OutputString_ = (*OutputString_).add(nRoundLen as usize);
                     nOutputStringLen -= nRoundLen;
                     if nOutputStringLen == 0 {
                         break;
                     }
                 }
-            }
-            // _SEH2_EXCEPT
+            })
+            .is_err()
             {
                 if !a_cBuffer.is_null() {
                     HeapFree(GetProcessHeap(), 0, a_cBuffer as *mut core::ffi::c_void);

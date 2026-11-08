@@ -254,8 +254,12 @@ unsafe fn PrintStackTrace(ExceptionInfo: PEXCEPTION_POINTERS) {
     {
         DbgPrint(b"Frames:\n\0".as_ptr() as *const i8);
 
-        // _SEH2_TRY (DUMMY_PSEH: handler body is dead code)
-        {
+        // C: __try { walk the EBP chain } __except { "<error dumping stack trace>" }: the
+        // chain is the faulting thread's, and a smashed frame must not fault the dumper.
+        let szMod = &mut szMod;
+        let StartAddr = &mut StartAddr;
+        let szModFile = &mut szModFile;
+        if let Err(code) = ntdll_sys::seh::try_except_all(|| {
             let mut i: UINT = 0;
             let mut Frame: *mut ULONG = (*ContextRecord).Ebp as *mut ULONG;
 
@@ -269,17 +273,17 @@ unsafe fn PrintStackTrace(ExceptionInfo: PEXCEPTION_POINTERS) {
                 } else {
                     _module_name_from_addr(
                         (*Frame.offset(1)) as *const core::ffi::c_void,
-                        &mut StartAddr,
+                        &mut *StartAddr,
                         szMod.as_mut_ptr(),
                         core::mem::size_of::<[i8; 128]>(),
-                        &mut szModFile,
+                        &mut *szModFile,
                     );
                     DbgPrint(
                         b"<%s:%x> (%s@%x)\n\0".as_ptr() as *const i8,
-                        szModFile,
-                        ((*Frame.offset(1)) as usize).wrapping_sub(StartAddr as usize),
+                        *szModFile,
+                        ((*Frame.offset(1)) as usize).wrapping_sub(*StartAddr as usize),
                         szMod.as_mut_ptr(),
-                        StartAddr,
+                        *StartAddr,
                     );
                 }
 
@@ -294,17 +298,19 @@ unsafe fn PrintStackTrace(ExceptionInfo: PEXCEPTION_POINTERS) {
                 Frame = (*Frame.offset(0)) as *mut ULONG;
                 i += 1;
             }
+        }) {
+            DbgPrint(
+                b"<error dumping stack trace: 0x%x>\n\0".as_ptr() as *const i8,
+                code,
+            );
         }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { DbgPrint("<error dumping...>") } _SEH2_END
     }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn BasepCheckForReadOnlyResource(Ptr: *mut core::ffi::c_void) -> LONG {
-    let mut Data: *mut core::ffi::c_void;
     let mut Size: ULONG = 0;
     let mut OldProtect: ULONG = 0;
-    let mut Size2: SIZE_T;
     let mut mbi: MEMORY_BASIC_INFORMATION = core::mem::zeroed();
     let mut Status: NTSTATUS;
     let mut Ptr = Ptr;
@@ -323,9 +329,10 @@ pub unsafe extern "system" fn BasepCheckForReadOnlyResource(Ptr: *mut core::ffi:
         /* Attempt to treat it as a resource section. We need to
            use SEH here because we don't know if it's actually a
            resource mapping */
-        // _SEH2_TRY
-        {
-            Data = RtlImageDirectoryEntryToData(
+        // C: __try { .. } __except (EXECUTE_HANDLER) {}: this runs inside
+        // UnhandledExceptionFilter, so a fault here must not escape the filter.
+        let _ = ntdll_sys::seh::try_except_all(|| {
+            let Data = RtlImageDirectoryEntryToData(
                 mbi.AllocationBase,
                 1, // TRUE
                 IMAGE_DIRECTORY_ENTRY_RESOURCE,
@@ -337,7 +344,7 @@ pub unsafe extern "system" fn BasepCheckForReadOnlyResource(Ptr: *mut core::ffi:
                 && (Ptr as usize) < (Data as usize) + (Size as usize)
             {
                 /* The user tried to write into the resources. Make the page writable... */
-                Size2 = 1;
+                let mut Size2: SIZE_T = 1;
                 Status = NtProtectVirtualMemory(
                     NtCurrentProcess(),
                     &mut Ptr,
@@ -349,8 +356,7 @@ pub unsafe extern "system" fn BasepCheckForReadOnlyResource(Ptr: *mut core::ffi:
                     Ret = EXCEPTION_CONTINUE_EXECUTION;
                 }
             }
-        }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { } _SEH2_END
+        });
     }
 
     return Ret;
@@ -953,6 +959,9 @@ unsafe fn range_is_bad(first: ULONG_PTR, last: ULONG_PTR, access: ULONG) -> BOOL
     }
 }
 
+// nolint(dead_seh): the C probes by touching each page under __try; this asks
+// NtQueryVirtualMemory instead (range_is_bad) and never dereferences lp, so there is
+// nothing to catch.
 #[no_mangle]
 pub unsafe extern "system" fn IsBadReadPtr(
     lp: LPCVOID,
@@ -994,6 +1003,9 @@ pub unsafe extern "system" fn IsBadCodePtr(
     );
 }
 
+// nolint(dead_seh): the C probes by touching each page under __try; this asks
+// NtQueryVirtualMemory instead (range_is_bad) and never dereferences lp, so there is
+// nothing to catch.
 #[no_mangle]
 pub unsafe extern "system" fn IsBadWritePtr(
     lp: LPVOID,
@@ -1068,7 +1080,10 @@ pub unsafe extern "system" fn IsBadStringPtrW(
     lpsz: LPCWSTR,
     ucchMax: UINT_PTR,
 ) -> BOOL {
-    string_is_bad::<WCHAR>(lpsz, ucchMax)
+    // C: __try { read to NUL } __except { TRUE }. string_is_bad queries each region
+    // before reading it, but the reads are real, so a page that goes away between the
+    // query and the read still faults: catch it the way the C did.
+    ntdll_sys::seh::try_except_all(|| string_is_bad::<WCHAR>(lpsz, ucchMax)).unwrap_or(TRUE as BOOL)
 }
 
 #[no_mangle]
@@ -1076,7 +1091,8 @@ pub unsafe extern "system" fn IsBadStringPtrA(
     lpsz: LPCSTR,
     ucchMax: UINT_PTR,
 ) -> BOOL {
-    string_is_bad::<CHAR>(lpsz, ucchMax)
+    // C: __try { read to NUL } __except { TRUE }; see IsBadStringPtrW.
+    ntdll_sys::seh::try_except_all(|| string_is_bad::<CHAR>(lpsz, ucchMax)).unwrap_or(TRUE as BOOL)
 }
 
 #[no_mangle]
