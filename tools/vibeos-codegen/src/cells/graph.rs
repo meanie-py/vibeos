@@ -1872,11 +1872,36 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             }
         } else if name.ends_with(".def") {
             let pat = re(r"spec2def\(\s*(\S+)\s+(\S+\.spec)");
-            let cap = pat
-                .captures(&cmtext)
-                .ok_or_else(|| Error::new(format!("{target}: a .def without a spec2def()")))?;
+            let caps: Vec<_> = pat.captures_iter(&cmtext).collect();
+            // Several spec2def() calls are if()/else() branches (uxtheme: uxtheme_vista.spec
+            // when DLL_EXPORT_VERSION >= 0x600, else uxtheme.spec). The first in the text was
+            // taken, so the cell exported a spec this configuration does not build. Keep the
+            // one this build's spec2def command reads.
+            let cap = if caps.len() > 1 {
+                let ninja = read(&local(root, &root.join(format!("build-{primary}/build.ninja")))?)?;
+                let used: Vec<_> = caps
+                    .iter()
+                    .filter(|c| {
+                        let spec = rel(root, &cmake_dir.join(&c[2])).unwrap_or_default();
+                        ninja.contains(&format!("CUSTOM_COMMAND /tmp/vibeos/{spec} "))
+                    })
+                    .collect();
+                if used.len() != 1 {
+                    return Err(Error::new(format!(
+                        "{target}: {} spec2def() calls and {} of their specs in build.ninja",
+                        caps.len(),
+                        used.len()
+                    )));
+                }
+                used[0]
+            } else {
+                caps.first()
+                    .ok_or_else(|| Error::new(format!("{target}: a .def without a spec2def()")))?
+            };
             cell.spec = Some((rel(root, &cmake_dir.join(&cap[2]))?, cap[1].into()));
-        } else if name.ends_with(".c.obj") {
+        } else if name.ends_with(".c.obj") || re(r"\.(cpp|cxx|cc)\.obj$").is_match(name) {
+            // C++ compiles the same way: the cell replays cmake's compile command through a
+            // clib recipe, whose `cxx` lines reactos-link runs with the cxx.<arch>.flags template.
             let mut src = obj_source(&cmake_dir, obj);
             if let Some(m) = re(r"\.dir/((?:__/)+.*)\.obj$").captures(obj) {
                 src = cmake_dir.join(m[1].replace("__/", "../"));

@@ -231,7 +231,15 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
                     "add_idl_reg_objects",
                     1,
                 ));
-                rc_gen_deps.push(format!("{}{suffix}", cell.target));
+                // comdlg32 registers its classes only `if(DLL_EXPORT_VERSION GREATER_EQUAL
+                // 0x600)`: under a false if() the reg target does not exist, and a plain name
+                // in the cell's DEPENDS is a missing file to ninja.
+                let reg = format!("{}{suffix}", cell.target);
+                rc_gen_deps.push(if paths[idx].is_empty() {
+                    reg
+                } else {
+                    format!("$<TARGET_NAME_IF_EXISTS:{reg}>")
+                });
                 pos = *e;
                 continue;
             }

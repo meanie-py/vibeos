@@ -1189,6 +1189,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmicontrol-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "cmicpl-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "cmlib-rust"
 version = "0.1.0"
 dependencies = [
@@ -1257,6 +1274,14 @@ dependencies = [
  "win32macros-rust",
  "winedebug-rust",
  "winelist-rust",
+]
+
+[[package]]
+name = "comdlg32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -3114,6 +3139,15 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "fltmc-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -8364,6 +8398,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "shimgvw-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "shimlib-rust"
 version = "0.1.0"
 dependencies = [
@@ -9247,6 +9289,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tftpd-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "themeui-cargo"
 version = "0.1.0"
 dependencies = [
@@ -9322,6 +9372,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "tracert-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -9898,6 +9956,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "uxtheme-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
