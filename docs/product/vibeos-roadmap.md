@@ -695,21 +695,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   since, and the console build has not been re-run. Next: stage the console build beside them
   to tell "console only" from "gone".
 
-- **amd64 Chrome payload: the sweep's GetThreadContext on a Chrome thread takes over 20 s
-  (open, found 2026-11-07, graviton lane).** In about half the boots the payload timed out
-  after an hour of silence from the sweep. The guest was alive throughout (other output goes
-  on; the hang capture shows ordinary threads running). The sweep was inside its hang
-  sampler (`tools/payloads/stackdump.h`), in `GetThreadContext` on a Chrome thread that sits
-  in `NtFlushBuffersFile` (Chrome logs with a flush per line); a context grab waits for the
-  target to take a kernel APC, which a thread inside the file system defers. Probes now have
-  a 20 s deadline (`PROBE-TIMEOUT in GetThreadContext`), and an abandoned one later finished,
-  so the wait is long, not forever. A plain flush is fast and flat in the guest
-  (`flushprobe`: ~1.5 ms at any file size; Windows ~0.3 ms), so something holds that one
-  flush. A boot can still stall: the abandoned probe leaves the thread suspended, and killing
-  Chrome then waits on it. Seen first after the 2026-11-07 merge (`f011919dca6` 0 of 3, then 5
-  of 9), but 0 of 3 at that rate happens 1 time in 11, so that is not proof. Runs:
-  `20261108-040304-sHrDB9`, `20261108-063756-eTlfoI`. Next: find what the stuck flush waits
-  for (its kernel stack), and have the probe resume its target when it gives up.
+- **amd64 Chrome payload: a Chrome thread sits Ready for 5-20 s without running (open, found
+  2026-11-07, graviton lane; parked 2026-11-08).** Seen as the sweep's hang sampler
+  (`tools/payloads/stackdump.h`) stalling in `GetThreadContext` on a Chrome thread. That stall
+  can no longer hang the payload: probes have a 20 s deadline and resume a target they left
+  suspended (landed `108be580165`); every sweep since reaches `done`. The flush the thread
+  was first seen in was a coincidence (`flushprobe`: flushes are fast and flat). What is
+  measured: at the deadline the target is **Ready** (ThreadState 1) with no CPU time accrued
+  and a handful of context switches; kernel-side, the context APC is queued and deliverable
+  (`KernelApcPending=1`, APCs not disabled, WaitIrql 0) on a thread whose NextProcessor is 0,
+  at priority 5-7, so it is not being picked to run. Unexplained: why a Ready thread on CPU 0
+  waits seconds (starvation behind busier threads until the balance manager's 300-tick boost,
+  or a ready-list/summary inconsistency). Separately, multi-process Chrome trips the §9.56
+  `[RQ5A]` drain-insert guard a few times per boot (none in the 29 single-process boots before
+  2026-11-06): always a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14,
+  the ERESOURCE owner boost, with the thread's stale links forming a short ring that reaches no
+  PRCB list head. One boot stalled with no RQ5A at all, so RQ5A is not the stall's cause; it may
+  be a false positive of the guard on stale union links. Diagnostics parked on branch
+  `graviton-diag-ctxwait` (`74f086b0488`). Next: see the RESUME HERE in
+  `docs/engineering/active-lanes/graviton-spike-plan.md`.
 
 - **OptiPlex 9020: freeldr reset the board after loading the boot drivers (FIXED 2026-11-08,
   graviton lane).** Every netboot reset to coreboot ~165 ms after `[FLDR] phase: boot drivers
