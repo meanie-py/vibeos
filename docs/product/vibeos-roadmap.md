@@ -630,9 +630,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   2026-11-08, upstream-sync lane; owner unassigned, win32k).** `test_setparent_status` runs a
   thread that calls `SetParent(hwnd, hwnd)` on the main thread's window and then exits, while
   the main thread sits in PeekMessage. The guest bugchecks right after `msg.c:20303`. Seen as
-  0x1E (an access violation at `co_MsqDispatchOneSentMessage`+0x283, msgqueue.rs, reached from
-  `co_IntPeekMessage`, with ntoskrnl+0xA1FFE on top), 0x0A (IRQL, a user address
-  0x02036220 touched at ntoskrnl+0x12934) and once 0x1A. In this lane's msg sweeps it hit 7 of
+  0x1E with EIP at `KeSetEvent+0xe`, called from `co_MsqDispatchOneSentMessage`+0x283 (the
+  receiver signalling `Message->pkCompletionEvent`, which is the KEVENT embedded in the
+  USER_SENT_MESSAGE) under `co_IntPeekMessage`; 0x0A with a user address, 0x02036220, touched in
+  `KxUnwaitThread`; and once 0x1A. These frames are resolved against `ntkrnlmp.exe`, the image
+  FreeLdr actually loads. The kernel prints them as `ntoskrnl.exe+off`, and resolving them
+  against ntoskrnl.exe names unrelated functions (`MmWorkingSetManager`). `symbolicate_pc` gets
+  this right; `resolve_in_module` called by hand does not. The fault is on KeSetEvent's first
+  touch of the event, so the event pointer itself is garbage, not just a freed lookaside entry
+  (those stay mapped). That points to a corrupt message pointer or sent-list entry rather than
+  a simple free-ordering slip. The Rust send, dispatch and cleanup paths (`co_MsqSendMessage`,
+  `co_MsqDispatchOneSentMessage`, `MsqCleanupThreadMsgs`, Alloc/FreeUserMessage) were each
+  compared with the C and match it, so the defect is inherited, or lies elsewhere. In this lane's msg sweeps it hit 7 of
   8 boots from 09:46 on and 0 of 4 before. An A/B that removed the lane's only uncommitted
   (user32) changes still gave 3 of 3 (`/tmp/vibeos-cli/20261108-102454-qWaILx-smoke-i386`),
   so it is not caused by them. The likeliest reading is a race between dispatching a
