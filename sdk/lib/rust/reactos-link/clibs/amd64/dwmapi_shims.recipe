@@ -1,0 +1,2 @@
+# dwmapi_shims (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	dll/win32/dwmapi/dwmapi_main.c	@build/dll/win32/dwmapi dll/win32/dwmapi @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	-std=gnu99 -U_X86_ -UWIN32 @core	UNICODE WINVER=0x502 _UNICODE _WIN32_WINNT=0x502 __WINESRC__

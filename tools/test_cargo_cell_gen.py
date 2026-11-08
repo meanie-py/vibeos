@@ -1736,6 +1736,22 @@ def test_a_sibling_reading_the_targets_compile_properties_reads_the_shims(tmp_pa
     assert "$<TARGET_PROPERTY:m_shims,COMPILE_DEFINITIONS>" in out
 
 
+def test_the_modules_own_target_file_genex_becomes_the_cells_output(tmp_path):
+    """sdk/include/asm runs native-geninc on $<TARGET_FILE:genincdata> in genincdata's own
+    file; a cell is a custom target that genex cannot resolve."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_custom_command(OUTPUT x.inc COMMAND gen $<TARGET_FILE:m> x.inc DEPENDS m)\n"
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m win32dll)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "$<TARGET_FILE:m>" not in out
+    assert f"${{CMAKE_CURRENT_BINARY_DIR}}/{c.output_name}" in out
+
+
 def test_an_object_in_a_subdirectory_maps_to_that_subdirectorys_source():
     d = Path("/r/dll/win32/crypt32")
     obj = "dll/win32/crypt32/CMakeFiles/crypt32.dir/reactos/unixlib.c.obj"

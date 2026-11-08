@@ -769,6 +769,18 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
     // shdocvw_sublib and shlwapi_autocomp compile with the module's own settings through
     // `$<TARGET_PROPERTY:shdocvw,COMPILE_DEFINITIONS>`. The cell's custom target carries
     // none; those settings now live on the OBJECT library.
+    // sdk/include/asm runs native-geninc on `$<TARGET_FILE:genincdata>` in genincdata's own
+    // file. A cell is a custom target, which that genex cannot resolve (the whole configure
+    // fails); add_cargo_module copies the bin to the target's binary dir under its name.
+    out = out
+        .replace(
+            &format!("$<TARGET_FILE:{}>", cell.target),
+            &format!("${{CMAKE_CURRENT_BINARY_DIR}}/{}", cell.output_name),
+        )
+        .replace(
+            &format!("$<TARGET_FILE_DIR:{}>", cell.target),
+            "${CMAKE_CURRENT_BINARY_DIR}",
+        );
     let shims = format!("{}_shims", cell.target);
     if block.iter().any(|l| l.contains(&format!("add_library({shims} OBJECT"))) {
         out = out.replace(
