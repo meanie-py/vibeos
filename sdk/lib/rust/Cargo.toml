@@ -1303,6 +1303,7 @@ members = [
     "d3d8-rust",
     "d3d9-rust",
     "setup-rust",
+    "shlwapi-rust",
 ]
 resolver = "2"
 

@@ -39,23 +39,23 @@ import json
 import os
 import re
 import shutil
-import statistics
 import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from tools import qemu_infra_compat as native
+
+from .. import backend
 from . import archcfg, pcsample, provenance
 from .artifacts import Run
 from .farm import _extract_evidence, _git_state, _preserve_failure
 from .smoke import _one_boot
 
-# Knob values. The icount shift is the only one worth arguing about: shift=3 is a
-# ~125 MIPS virtual CPU (about TCG's real pace, so the guest notices nothing);
-# shift=7 is ~8 MIPS, a 40s TCG boot during which the guest clock runs ~20 minutes.
-DEFAULT_ICOUNT_SHIFT = 7
-DEFAULT_TIMEOUT_SCALE = 0.5
+# Knob defaults live with the matrix in stress.rs. The icount shift is the only one worth
+# arguing about: shift=3 is a ~125 MIPS virtual CPU (about TCG's real pace, so the guest
+# notices nothing); shift=7 is ~8 MIPS, a 40s boot during which the guest clock runs ~20 min.
 
 
 @dataclass
@@ -75,43 +75,26 @@ class Profile:
         return ", ".join(bits) or "control"
 
 
+def _call(op: str, **kwargs):
+    return native.call("stress_" + op, kwargs)
+
+
 def profiles(args) -> list[Profile]:
-    shift = int(getattr(args, "shift", 0) or DEFAULT_ICOUNT_SHIFT)
-    scale = float(getattr(args, "timeout_scale", 0) or DEFAULT_TIMEOUT_SCALE)
-    smp = int(getattr(args, "smp", 0) or 2)
-    cores = int(getattr(args, "cores", 0) or 1)
-    table = {
-        "baseline": Profile("baseline", "control: the media on an unloaded host"),
-        "slow-cpu": Profile(
-            "slow-cpu",
-            "guest-side timeout (slow emulation)",
-            env={"VIBEOS_QEMU_ICOUNT_SHIFT": str(shift)},
-        ),
-        "lockstep": Profile(
-            "lockstep",
-            "cross-CPU race (deterministic interleaving)",
-            env={"VIBEOS_TCG_THREAD": "single"},
-            smp=smp,
-        ),
-        "starved-smp": Profile(
-            "starved-smp",
-            "cross-CPU race (host scheduler preemption)",
-            smp=smp,
-            pin_cores=cores,
-        ),
-        "tight-clock": Profile(
-            "tight-clock",
-            "harness wall clock (healthy boot, budget too small)",
-            env={"VIBEOS_BOOT_TIMEOUT_SCALE": str(scale)},
-        ),
-    }
-    want = [p.strip() for p in (getattr(args, "profile", "") or "").split(",") if p.strip()]
-    if not want or want == ["all"]:
-        want = list(table)
-    unknown = [p for p in want if p not in table]
-    if unknown:
-        raise SystemExit(f"stress: unknown profile(s) {unknown}; known: {', '.join(table)}")
-    return [table[p] for p in want]
+    """The selected one-knob profiles (the matrix lives in vibeos-test/src/stress.rs)."""
+    try:
+        table = _call(
+            "profiles",
+            selection=getattr(args, "profile", "") or "",
+            shift=int(getattr(args, "shift", 0) or 0),
+            timeout_scale=float(getattr(args, "timeout_scale", 0) or 0),
+            smp=int(getattr(args, "smp", 0) or 0),
+            cores=int(getattr(args, "cores", 0) or 0),
+        )
+    except native.NativeError as exc:
+        raise SystemExit(str(exc)) from exc
+    return [
+        Profile(p["name"], p["mechanism"], dict(p["env"]), p["smp"], p["pin_cores"]) for p in table
+    ]
 
 
 # --- host-side pinning -------------------------------------------------------
@@ -137,7 +120,7 @@ def _pin_windows(uid_prefix: str, mask: int) -> list[int]:
         f"{{ $p.ProcessorAffinity = [IntPtr]{mask}; Write-Output $_.ProcessId }} }}"
     )
     try:
-        cp = subprocess.run(
+        cp = backend.run_interop(
             ["powershell.exe", "-NoProfile", "-Command", ps],
             capture_output=True,
             text=True,
@@ -301,62 +284,12 @@ def _boot(repo: Path, arch: str, profile: Profile, idx: int, sha: str, dirty: bo
 
 def summarize(rows: list[dict]) -> list[str]:
     """One line per profile: boots, failures, failure families, median duration."""
-    by: dict[str, list[dict]] = {}
-    for r in rows:
-        by.setdefault(r["profile"], []).append(r)
-    out = [f"{'profile':12} {'boots':>5} {'fail':>4} {'median':>7}  failures"]
-    for name, rs in by.items():
-        fails = [r for r in rs if not r["ok"]]
-        fam: dict[str, int] = {}
-        for r in fails:
-            key = r.get("classification") or r.get("outcome") or "?"
-            if r.get("stop_code"):
-                key += f" stop={r['stop_code']}"
-            if r.get("top_symbol"):
-                key += f" @ {r['top_symbol']}"
-            fam[key] = fam.get(key, 0) + 1
-        med = statistics.median(r["duration_s"] for r in rs) if rs else 0.0
-        fams = "; ".join(f"{k} x{n}" for k, n in sorted(fam.items(), key=lambda kv: -kv[1]))
-        out.append(f"{name:12} {len(rs):5d} {len(fails):4d} {med:6.0f}s  {fams or '-'}")
-    return out
+    return _call("summarize", rows=rows)
 
 
 def diagnosis(rows: list[dict]) -> str:
     """Read the matrix the way the module docstring says to."""
-    fails = {
-        p
-        for p in {r["profile"] for r in rows}
-        if any(not r["ok"] for r in rows if r["profile"] == p)
-    }
-    ran = {r["profile"] for r in rows}
-    if not fails:
-        return (
-            "no profile failed: whatever this flake is, these three mechanisms are not it "
-            "at this sample size — go look for a real bug, not for host weather"
-        )
-    if "baseline" in fails:
-        return "baseline fails: this is not a load flake, it is a bug (or stale media)"
-    parts = []
-    if "slow-cpu" in fails:
-        parts.append(
-            "slow-cpu fails -> a guest-side timeout fires when the guest clock outruns the CPU"
-        )
-    if fails & {"lockstep", "starved-smp"}:
-        which = ", ".join(sorted(fails & {"lockstep", "starved-smp"}))
-        parts.append(
-            f"{which} fails -> a cross-CPU race; lockstep gives a stable interleaving to debug"
-        )
-    if "tight-clock" in fails and not (fails - {"tight-clock"}):
-        parts.append(
-            "ONLY tight-clock fails -> a healthy boot crossing the wall clock; "
-            "the budget is the bug"
-        )
-    elif "tight-clock" in fails:
-        parts.append("tight-clock also fails (expected alongside a real slowdown)")
-    missing = {"baseline", "slow-cpu", "lockstep", "starved-smp"} - ran
-    if missing:
-        parts.append(f"(profiles not run: {', '.join(sorted(missing))})")
-    return "; ".join(parts)
+    return _call("diagnosis", rows=rows)
 
 
 def stress(args, repo: Path) -> int:

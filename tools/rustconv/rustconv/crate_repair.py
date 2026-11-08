@@ -6126,9 +6126,16 @@ def propose_edits(
             narrowing = "<narrowing>" in wants
             for a_start, a_end, arm, expected in sites:
                 target_type = "_" if narrowing else expected
-                guard = "__c if " + " || ".join(
-                    f"__c == {name.strip()} as {target_type}" for name in arm.split("|")
-                )
+                alternatives = [name.strip() for name in arm.split("|")]
+                if "_" in alternatives:
+                    # shlwapi's UrlIsA: `URLIS_NOHISTORY | URLIS_APPLIABLE | URLIS_HASQUERY | _`
+                    # (C `case`s falling into `default:`) matches every value already, and
+                    # `__c == _ as u32` is a parse error that hid the crate. The arm is `_`.
+                    guard = "_"
+                else:
+                    guard = "__c if " + " || ".join(
+                        f"__c == {name} as {target_type}" for name in alternatives
+                    )
                 guard_edit = Edit(
                     file_name=key[0],
                     byte_start=a_start,
@@ -6394,6 +6401,49 @@ def merge_plans(
         skipped=tuple(item for plan in plans.values() for item in plan.skipped),
         red=tuple(item for plan in plans.values() for item in plan.red),
     )
+
+
+_IDENT_RE = re.compile(r"[A-Za-z_]\w*")
+
+
+def drop_pattern_position_casts(
+    edits: Sequence[Edit], load: FileReader
+) -> tuple[list[Edit], list[Skipped]]:
+    """Refuse a cast wrapped around a bare identifier in PATTERN position.
+
+    shlwapi: c2rust turned `#define szWebLen (sizeof(szWeb)/sizeof(WCHAR))` into a file-scope
+    `const szWebLen: usize`, and the body's `let szWebLen: DWORD = ..` became a refutable
+    constant pattern. rustc's E0308 lands on the binding NAME, and truncating_numeric_cast wrote
+    `let (szWebLen) as u32: DWORD` -- a parse error that hid the crate (9 of them, with
+    c_integer_widen doing the same to a fn parameter `Unknown` that an island constant
+    shadows). An identifier followed by a lone `:` is a `let`/parameter binding or a
+    struct-literal field name; no cast is ever valid there. local_shadows_constant owns it.
+    """
+    kept: list[Edit] = []
+    skipped: list[Skipped] = []
+    for edit in edits:
+        if _IDENT_RE.fullmatch(edit.original.strip()) and " as " in edit.replacement:
+            data = load(edit.file_name)
+            if data is not None:
+                masked = _mask_lexical(data)
+                after = _next_code_byte(masked, edit.byte_end)
+                pos = edit.byte_end
+                while pos < len(masked) and masked[pos : pos + 1].isspace():
+                    pos += 1
+                if after == b":" and masked[pos + 1 : pos + 2] != b":":
+                    skipped.append(
+                        Skipped(
+                            edit.rule,
+                            "pattern_position",
+                            edit.file_name,
+                            edit.line,
+                            f"`{edit.original}` is a binding (a `const` of that name is in "
+                            "scope): a cast cannot apply to a pattern",
+                        )
+                    )
+                    continue
+        kept.append(edit)
+    return kept, skipped
 
 
 def select_non_overlapping(edits: Sequence[Edit]) -> tuple[list[Edit], list[Skipped]]:
@@ -7504,6 +7554,8 @@ def repair_crate(
             else:
                 fresh.append(edit)
         candidates = fresh
+        candidates, pattern_skips = drop_pattern_position_casts(candidates, _file_reader(root))
+        current.skipped.extend(pattern_skips)
         selected, dropped = select_non_overlapping(candidates)
         current.skipped.extend(dropped)
         if not selected:

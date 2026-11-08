@@ -1793,8 +1793,26 @@ dll/win32/shell32/shellrecyclebin/CMakeLists.txt	1	# recyclebin_generic_enumerat
 dll/win32/shell32/shellrecyclebin/CMakeLists.txt	1	# recyclebin_v5.cpp -> RecycleBin5.rs + recyclebin_v5_free.rs
 dll/win32/shell32/shellrecyclebin/CMakeLists.txt	1	# recyclebin_v5_enumerator.cpp -> RecycleBin5Enum.rs + RecycleBin5File.rs
 dll/win32/shlwapi/CMakeLists.txt	1	# (our ordinal.c only had a guessed-prototype FIXME stub), and policy.cpp / querysrc.cpp
+dll/win32/shlwapi/CMakeLists.txt	1	# Every translation unit is Rust now (shlwapi-rust, `rustconv port`) except policy.cpp, propbag.cpp, querysrc.cpp, utils.cpp,
 dll/win32/shlwapi/CMakeLists.txt	1	# New upstream TUs taken with this merge: zonechk.c implements ZoneCheckUrlEx* for real
+dll/win32/shlwapi/CMakeLists.txt	1	# appcompat.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/appcompat.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# assoc.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/assoc.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# clist.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/clist.rs)
 dll/win32/shlwapi/CMakeLists.txt	1	# is NOT taken, so kernelbase.c stays out and the .spec stays ours.
+dll/win32/shlwapi/CMakeLists.txt	1	# istream.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/istream.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# msgbox.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/msgbox.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# ordinal.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/ordinal.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# path.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/path.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# reg.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/reg.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# regstream.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/regstream.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# rosordinal.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/rosordinal.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# shlwapi_main.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/shlwapi_main.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# stopwatch.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/stopwatch.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# string.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/string.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# thread.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/thread.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# url.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/url.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# wsprintf.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/wsprintf.rs)
+dll/win32/shlwapi/CMakeLists.txt	1	# zonechk.c # replaced by Rust (sdk/lib/rust/shlwapi-rust/src/shlwapi/zonechk.rs)
 dll/win32/sndblst/CMakeLists.txt	1	# sndblst.c # replaced by Rust (sdk/lib/rust/sndblst-rust/src/sndblst/sndblst.rs)
 dll/win32/snmpapi/CMakeLists.txt	1	# (field manual §9.112). main.c is commented out below and kept on disk per the
 dll/win32/snmpapi/CMakeLists.txt	1	# main.c → snmpapi-rust

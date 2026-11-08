@@ -39,11 +39,6 @@ class BuildBindings(Bindings):
         def wrap(cmd):
             return m.canon.wrap(repo, cmd) if a.get("wrapped", False) else cmd
 
-        if name == "snapshot":
-            try:
-                return m.warmth.worktree_tree(repo)
-            except (OSError, RuntimeError, m.subprocess.SubprocessError):
-                return None
         if name == "failure_hook":
             run.finalize_hooks.append(lambda: m._failure_over_moved_tree(run, repo, a["tree"]))
         elif name == "isolation":
@@ -141,11 +136,6 @@ class BuildBindings(Bindings):
             m.provenance.make_stamp(repo, arch, cold=a["cold"], ts=int(time.time())).write(bd)
         elif name == "staleness":
             return dataclasses.asdict(m.provenance.check_staleness(repo, arch))
-        elif name == "warm_receipt":
-            try:
-                return {"tree": m.warmth.record(repo, arch)}
-            except (OSError, RuntimeError, m.subprocess.SubprocessError) as error:
-                return {"error": str(error)}
         elif name == "dedup":
             return dataclasses.asdict(m.kick_dedup())
         else:

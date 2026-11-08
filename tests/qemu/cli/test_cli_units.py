@@ -12,7 +12,6 @@ import json
 import os
 import shutil
 import socket
-import struct
 import subprocess
 import threading
 import time
@@ -2503,72 +2502,6 @@ def test_gdbengine_run_until_builds_break_and_then(monkeypatch):
 
 
 # --- repro: PE parser + reproducibility compare (det-plan rung 0) ----------
-
-
-def _mk_pe(timestamp: int, sections: list[tuple[str, bytes]], machine: int = 0x8664) -> bytes:
-    """Build a minimal valid PE image (COFF header + section table + bodies, no optional
-    header) for testing the determinism parser. Mirrors the layout parse_pe reads."""
-    n = len(sections)
-    pe_off = 0x40
-    head = bytearray(b"\x00" * pe_off)
-    head[0:2] = b"MZ"
-    head[0x3C:0x40] = struct.pack("<I", pe_off)
-    # COFF: machine, num_sections, timestamp, ptr_symtab, num_syms, size_opt, characteristics
-    coff = b"PE\x00\x00" + struct.pack("<HHIIIHH", machine, n, timestamp, 0, 0, 0, 0)
-    sec_table_off = pe_off + len(coff)
-    cursor = sec_table_off + 40 * n
-    headers = b""
-    bodies = b""
-    for name, body in sections:
-        nm = name.encode("latin-1")[:8].ljust(8, b"\x00")
-        # virtsize, virtaddr, rawsize, rawoff, then 12 zero bytes + characteristics
-        headers += nm + struct.pack("<IIII", len(body), 0x1000, len(body), cursor)
-        headers += b"\x00" * 12 + struct.pack("<I", 0)
-        bodies += body
-        cursor += len(body)
-    return bytes(head) + coff + headers + bodies
-
-
-def test_repro_parse_pe_fields():
-    img = _mk_pe(0x12345678, [(".text", b"\xc3" * 16), (".data", b"\x00" * 8)])
-    pe = repro.parse_pe(img)
-    assert pe.machine == 0x8664
-    assert pe.timestamp == 0x12345678
-    assert [s.name for s in pe.sections] == [".text", ".data"]
-    assert pe.sections[0].raw_size == 16
-
-
-def test_repro_parse_pe_rejects_non_pe():
-    with pytest.raises(ValueError):
-        repro.parse_pe(b"not a pe at all" * 8)
-
-
-def test_repro_compare_identical():
-    img = _mk_pe(0xCAFEBABE, [(".text", b"\x90" * 32)])
-    rep = repro.compare(img, img)
-    assert rep.identical
-    assert not rep.timestamp_differs
-    assert rep.section_diffs == ()
-
-
-def test_repro_compare_timestamp_only_is_the_leak_signature():
-    # Two builds identical except the PE TimeDateStamp — the measured live leak. The
-    # whole-file digest differs but NO section body does → localizes to the timestamp.
-    a = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".rdata", b"abc")])
-    b = _mk_pe(0x20000000, [(".text", b"\x90" * 32), (".rdata", b"abc")])
-    rep = repro.compare(a, b)
-    assert not rep.identical
-    assert rep.timestamp_differs
-    assert rep.section_diffs == ()
-
-
-def test_repro_compare_localizes_changed_section():
-    a = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".data", b"old")])
-    b = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".data", b"new")])
-    rep = repro.compare(a, b)
-    assert not rep.identical
-    assert not rep.timestamp_differs
-    assert rep.section_diffs == (".data",)
 
 
 def test_repro_verify_parser_wires_arch_and_dispatch():

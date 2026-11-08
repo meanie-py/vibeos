@@ -348,6 +348,19 @@ oversized-destination and overflow behaviour differ from the HRESULT family. `po
 re-exports win32macros-rust and strsafe-rust by name through a registry, adding the Cargo
 dependency, and never copies a tree-consensus `extern` for a name a shared crate provides.
 
+### shlwapi's port (2026-11-07): what the first big Wine DLL fixed in the tools
+
+610 bodies for $0.92 (Haiku), then 3574 → 0 errors per arch, almost all of it deterministic.
+Tool defects it found, each fixed with a test: crate-repair wrapped a cast around a BINDING
+(`let (szWebLen) as u32: DWORD` -- a `let` under a c2rust `const` of the same name is a constant
+pattern), now refused at any identifier followed by a lone `:`; the match-arm guard rendered a
+`case`-into-`default:` arm `A | B | _` as `__c == _ as u32`, now `_`. The audits that called
+code unauditable now read it: the table audit accepts a count explained by an undecidable `#if`
+arm, the preamble audit re-parses with the catalog's arms (and its `EXTERN_C` expansion) instead
+of giving up, the arm audit decides `_WIN32_WINNT` guards. derive keeps per-TU version overrides
+and `NO_*` exclusions out of the island and unblocks ntdll-sys's opaque COM types. Graded by
+Wine's suite against the pre-flip C (payloads `shlwapiwinetest` / `shlwapiwinetestc`).
+
 ### `port fix`: the compiler in the loop (2026-10-05)
 
 Per-function translation is bought blind -- the model never sees rustc -- and crate-repair then

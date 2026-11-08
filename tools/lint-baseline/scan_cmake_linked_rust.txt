@@ -1,5 +1,6 @@
 conutils: fully-Rust module still linked by cmake (refused)
 cportlib: fully-Rust module still linked by cmake (refused)
-shimlib: fully-Rust module still linked by cmake (refused)
-vfatlib: fully-Rust module still linked by cmake (refused)
 freeldr-cargo: links cmake-built boot/freeldr/freeldr/libfreeldr_bios_asm.a (not engine-buildable)
+shimlib: fully-Rust module still linked by cmake (refused)
+shlwapi: fully-Rust module still linked by cmake (refused)
+vfatlib: fully-Rust module still linked by cmake (refused)

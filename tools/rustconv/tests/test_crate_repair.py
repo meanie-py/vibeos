@@ -3797,3 +3797,45 @@ def test_a_c_enum_written_as_a_rust_enum_path_becomes_its_bindgen_const():
     assert [(e.byte_start, e.replacement) for e in plan.edits] == [
         (src.index(b"eZip"), "eZipExtractError_eNoError")
     ]
+
+
+def test_a_cast_is_never_wrapped_around_a_binding_pattern():
+    """shlwapi: `let szWebLen: DWORD` under a file-scope `const szWebLen: usize` drew E0308 on
+    the NAME; truncating_numeric_cast's `(szWebLen) as u32` there was a parse error."""
+    from rustconv.crate_repair import Edit, drop_pattern_position_casts
+
+    src = b"fn f(Unknown: u32) { let szWebLen: u32 = 1; g(szWebLen); h(a::b); }"
+
+    def at(name: str, nth: int = 0) -> Edit:
+        i = -1
+        for _ in range(nth + 1):
+            i = src.index(name.encode(), i + 1)
+        return Edit(
+            "x.rs", i, i + len(name), f"({name}) as u32", "truncating_numeric_cast", "t", name
+        )
+
+    kept, skipped = drop_pattern_position_casts(
+        [at("Unknown"), at("szWebLen"), at("szWebLen", 1), at("a")], lambda _n: src
+    )
+    assert [e.original for e in kept] == ["szWebLen", "a"]  # the use site, and `a::b`
+    assert {s.reason for s in skipped} == {"pattern_position"} and len(skipped) == 2
+
+
+def test_an_arm_that_already_matches_everything_becomes_the_wildcard():
+    """shlwapi UrlIsA: C `case`s falling into `default:` lowered to `A | B | _`. The guard
+    form wrote `__c == _ as _`, a parse error; the arm is `_`."""
+    src = b"""pub unsafe fn f(wParam: WPARAM) -> i32 {
+    match wParam {
+        VK_ESCAPE => 1,
+        WMSZ_TOP | WMSZ_BOTTOM | _ => 0,
+    }
+}
+"""
+    diags = [_arm_diag(arm, "u64", "u32", src=src) for arm in (b"VK_ESCAPE", b"WMSZ_TOP")]
+    plan = propose_edits(
+        diags,
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_MATCH_SCRUTINEE, RULE_MATCH_ARM_GUARD],
+    )
+    assert sorted(e.replacement for e in plan.edits) == ["_", "__c if __c == VK_ESCAPE as _"]

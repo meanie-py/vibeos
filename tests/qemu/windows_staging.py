@@ -13,7 +13,6 @@ import json
 import os
 import re
 import shutil
-import subprocess
 import time
 from pathlib import Path
 
@@ -44,7 +43,7 @@ def windows_qemu_commands() -> list[str]:
         "ForEach-Object {if (-not $_.CommandLine) {throw 'QEMU command line unavailable'};"
         "$_.CommandLine} | ConvertTo-Json -Compress"
     )
-    result = subprocess.run(
+    result = backend.run_interop(
         ["powershell.exe", "-NoProfile", "-Command", script],
         capture_output=True,
         text=True,

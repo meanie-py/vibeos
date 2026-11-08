@@ -189,8 +189,10 @@ def _win_alive(uid: str) -> bool:
         "@(Get-CimInstance Win32_Process -Filter \"Name like 'qemu-system-%'\" "
         f"| Where-Object {{ $_.CommandLine -like '*{uid}*' }}).Count"
     )
+    from .. import backend as be
+
     try:
-        out = subprocess.run(
+        out = be.run_interop(
             ["powershell.exe", "-NoProfile", "-Command", ps],
             capture_output=True,
             text=True,
