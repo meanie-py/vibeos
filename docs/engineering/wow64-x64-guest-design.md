@@ -190,11 +190,47 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    RegisterMappedCodeBuffer", "EnableLoadedSection"). The offline compiler's Windows mode only
    builds the 32-bit guest (`Is64Bit` is ARM64EC-only). And wowx64fex's `ImageTracker` reads x64
    images as `IMAGE_NT_HEADERS32`: `SizeOfImage` happens to share the offset, but the load-config
-   read is wrong, so x64 images never get volatile metadata (harmless with TSO off). Owed, in
-   order:
-   - per-guest-bitness `ImageTracker`;
-   - an x64-guest offline compiler that runs in the guest;
-   - cache loading in wowx64fex, plus the page-finalize fault;
+   read is wrong, so x64 images never get volatile metadata (harmless with TSO off).
+
+   **State at the 2026-11-08 park (code on branch `wow64-amd64`, not landed; RESUME HERE in
+   `active-lanes/wow64-plan.md`).** Built and working:
+   - `ImageTracker` reads the load config by the image's own width.
+   - `fexcachegen64.exe` is FEXOfflineCompiler built for the x64 guest
+     (`tools/fex/wowx64fex/CMakeLists.txt`), staged to `<SystemRoot>\fex-emu\`.
+     Its `process-all` makes one cache per x86-64 binary from merged maps.
+   - The cache directory is machine-wide (`<SystemRoot>\fex-emu\`).
+   - wowx64fex loads a cache per image at map time, lazily: code is reserved, then committed,
+     relocated and made executable on first fault (`FinalizeCodePages`, Windows branch).
+   - appstorm with `--tripwire "FEX_ENABLECODECACHINGWIP=1 FEX_ENABLELAZYCODECACHINGWIP=1"`
+     runs the sweep twice and the generator in between.
+
+   Measured on the full sweep (`20261108-112830-8O8BVF`): pass 1 passed 51/51 with 297 s of
+   compile; the generator then wrote 136 caches in 124 s. Pass 2 is red: every cached process
+   dies early. Bugs found and fixed on the way:
+   - The generator compiled under FEX's Linux syscall ABI, which stores the handler's return
+     into RAX. The Windows layers return 0, so every cached syscall "succeeded" and an
+     `NtQueryDirectoryFile` loop never ended. It now uses `OS_GENERIC`, as every Windows layer
+     does.
+   - The x64 `ImageBase` was read as 32-bit, which corrupted relocations.
+   - A NULL `CreateFileMapping` result was taken as a handle.
+   - Each per-binary context committed a 128 MB code buffer, which exhausted commit (fixed
+     with commit on touch).
+   - `Allocator::VirtualProtect` passes a null old-protect pointer, so the first execution of a
+     page faulted forever.
+   - `thread_local` in libwowx64fex.dll faults: implicit TLS is not set up for a DLL loaded at
+     run time, and inside the fault handler it recursed to a stack overflow.
+
+   Where it stops (`20261108-153307-QGgJ8f`): with notepad/calc/winmine caches loaded
+   (exe, ntdll, kernel32, ntdll_vista), each thread dies on a fault whose whole user context
+   is zero (SP, PC, LR, FP and address all 0; the kernel's `[UEXC-STKBAD]` now prints them).
+   That is a thread resumed from a zero-filled CONTEXT, not a bad instruction. Suspects: a
+   path that restores `TD->EntryContext` or calls `NtContinue` before one was captured, or
+   something cached code exits through differently from JIT code (callbacks, `Simulate`
+   re-entry). Then:
+   - the vendor-patches rows ("lazy code cache on Windows", "machine-wide code cache",
+     "guest-width images", "cache generator", "cache config");
+   - remove the `VIBEOS DIAG` prints;
+   - the FEX ladder on plain media;
    - then libwow64fex.
 
 They are graded where the media carries them (`tests/qemu/cli/ladder.py` `STAGED_LADDER`): they

@@ -358,7 +358,14 @@ fn unreferenced(build: &Path, path: &str) -> Result<bool> {
     let parts: Vec<_> = path.split('/').collect();
     let needle = if parts.len() >= 5 && parts[..3] == ["sdk", "lib", "rust"] {
         format!("/{}/", parts[..4].join("/"))
-    } else if parts.len() >= 3 && parts[..2] == ["tools", "fex"] {
+    } else if parts.len() >= 3
+        && (parts[..2] == ["tools", "fex"]
+            || parts[..2] == ["tools", "payloads"]
+            || parts[..2] == ["vendor", "fex"])
+    {
+        // Each named by its own path wherever a build reads it. A payload's sources build
+        // through its own build.sh and vendored FEX is arm64's alone, so an edit to either
+        // made every arm64 payload iteration rebuild amd64 for nothing.
         format!("/{path}")
     } else {
         return Ok(false);
@@ -881,6 +888,14 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         assert!(unreferenced(tmp.path(), "tools/vibeos-test/src/smoke_run.rs").unwrap());
         assert!(unreferenced(tmp.path(), "tools/vibeos-lint/src/rules/mod.rs").unwrap());
+        // Payload sources and vendored FEX are judged by the records, as tools/fex is:
+        // with none, nothing is proven.
+        assert!(!unreferenced(tmp.path(), "tools/payloads/appstorm/appstorm.c").unwrap());
+        assert!(!unreferenced(
+            tmp.path(),
+            "vendor/fex/FEXCore/Source/Interface/Core/Core.cpp"
+        )
+        .unwrap());
         // The codegen and build crates do write what a build stages.
         assert!(!unreferenced(tmp.path(), "tools/vibeos-codegen/src/lib.rs").unwrap());
         assert!(!unreferenced(tmp.path(), "tools/vibeos-build/src/lib.rs").unwrap());
