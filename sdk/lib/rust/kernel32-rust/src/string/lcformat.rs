@@ -2421,7 +2421,7 @@ unsafe fn NLS_EnumCalendarInfo(ctxt: *const enumcalendar_context) -> BOOL {
     }
 
     // Divergence from the C, which passes the raw DWORD to the callback for
-    // CAL_RETURN_NUMBER: Windows (and Wine, `type &= ~CAL_RETURN_NUMBER`) always hands
+    // CAL_RETURN_NUMBER: Windows (and Wine, which strips that bit from the type) always hands
     // enumeration callbacks the string form; Wine's locale test parses it with strtoul.
     let caltype: CALTYPE = (*ctxt).caltype & !CAL_RETURN_NUMBER;
 
