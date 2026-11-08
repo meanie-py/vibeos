@@ -4,6 +4,36 @@ Status checked against this checkout on 2026-11-07. This is the lane’s current
 work queue; the linked component documents retain implementation details.
 The execution order below is proposed next work, not an instruction to launch it.
 
+## RESUME HERE (parked 2026-11-08, fleet wind-down)
+
+Where it stopped: item 4. `build`'s Python helpers are down from 27 to 11 (see "Progress"
+under item 4). No uncommitted work; nothing paid; nothing only in /tmp.
+
+Owed: confirm these landed on `origin/master` (`git merge-base --is-ancestor <sha>
+origin/master`, plus the gate's summary.json). Fix anything the integrator bounced.
+- `b64894237be` and `4803b5c4892`: round-trips, in the 169+170 batch.
+- `f84bab2a10f`: in-session mechanisms plus the environment carry, batch 171, on its
+  own. Its unit tests never drive a real build through those paths, so the gate was
+  their first real test. A red points at the arm64 refresh stages, verify_flags or the
+  ccache/sccache stats stage.
+- `be4321d50db`: canonize, payloads, inputs-moved and dedup, batch 172b, after 171. A
+  red points at the instr-config/canon or payloads stage.
+- This doc: `148b7798c74` and the RESUME HERE commit.
+
+Next step (recommended, not started): stop `build`'s tail. What remains is about 25 facts.
+They are thin native wrappers, so the per-call cost is negligible, but tests monkeypatch
+the canon ones, so removing them is a test-seam rewrite. Survey `smoke` and `check` the
+same way, looking for a command that can go fully native without that rewrite. The
+native front door only pays once one command needs no Python. Alternative: item 5
+(rustconv).
+
+Hazards learned this session:
+- Never edit tools/* while check-tooling or pytest is provisioning the native binary
+  ("sources changed during provisioning").
+- `cargo fmt` in tools/vibeos-build reformats files you didn't touch. Use
+  `rustfmt --edition 2021 <file>`.
+- A bare `cargo test` there leaves a 1.5G untracked `target/`. Set `CARGO_TARGET_DIR`.
+
 ## Completed checkpoint
 
 `lint-rs` at `51b917c7f84` contains the RR command coordinator, shared CLI core,
@@ -236,6 +266,25 @@ callbacks, not rewriting commands. They sort into three kinds:
 
 The front door (parse, maintenance lock, disk admission, exit line) moves last: it only
 saves a Python start-up once some command no longer needs Python at all.
+
+Progress (2026-11-08), `build`'s 27 helpers down to 11:
+
+- All six round-trips are gone (`b64894237be`, `4803b5c4892`). The `-j` cap and ninja
+  timeout are read once by Python and sent in the request.
+- A third kind turned up that the survey missed: **mechanism hops**. Native asked
+  Python, and Python opened a second native session to run a native mechanism (canonize,
+  clean, payload staging, the build environment, cache stats, wow64/CPU refresh,
+  verify_flags, inputs-moved, dedup). These now run in the build's own session
+  (`ac01f4d4a6d`, `f84bab2a10f`, `be4321d50db`). The locked bindings are a
+  `Mechanisms`, so their facts and external commands still cross to Python.
+  - Trap, fixed in `f84bab2a10f`: each hop used to see `os.environ` as it stood at that
+    moment, which includes the build environment's SOURCE_DATE_EPOCH overlay.
+    `dispatch_env` hands the environment a mechanism leaves behind to the next one.
+- Still Python helpers: `failure_hook` (a finalize hook), `wrap`, `retire_build_refs`,
+  `classify` (hostdisk ENOSPC detail), `cohab_rels`, `payload_roots`, `prune`,
+  `binary_lints`, `source_lints`, `stamp` and `staleness` (provenance).
+- The facts behind the mechanisms are next: about 25 `build_fact` kinds, mostly `canon`,
+  `provenance` and the payload compiler.
 
 Once the remaining workflows have native owners, move process entry and dispatch
 onto the shared native libraries. Argument grammar, execution, reports and

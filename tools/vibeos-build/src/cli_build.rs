@@ -180,7 +180,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     .map(|(k, _)| k)
     .collect::<Vec<_>>();
     let values = json!({"VIBEOS_WINETEST_SKIP":s(&args,"winetest_skip","").trim(),"VIBEOS_WINETEST_ONLY":s(&args,"winetest_only","").trim(),"ROSTESTS_WINETESTS":s(&args,"winetests","").split_whitespace().collect::<Vec<_>>().join(" ")});
-    let wrapped = b.helper(
+    let wrapped = b.mechanism(
         "canonize",
         json!({"flags":flags,"sticky":sticky,"values":values}),
     )?;
@@ -244,7 +244,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
                 return b.finish();
             }
         }
-        stamped = b.helper("stage_payloads", json!({}))?;
+        stamped = b.mechanism("stage_payloads", json!({}))?;
         if stamped.is_null() {
             return b.finish();
         }
@@ -597,7 +597,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     if args["check"] == true {
         b.helper("source_lints", json!({}))?;
     }
-    let moved = b.helper("inputs_moved", json!({"tree":start}))?;
+    let moved = b.mechanism("inputs_moved", json!({"tree":start}))?;
     if moved.as_array().is_some_and(|s| !s.is_empty()) {
         b.classify("BUILD_INPUTS_MOVED")?;
         let paths = strings(&moved);
@@ -655,7 +655,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
             json!([]),
         )?;
     }
-    let dedup = b.helper("dedup", json!({}))?;
+    let dedup = b.mechanism("dedup", json!({}))?;
     b.host.call("stage", dedup)?;
     if !cold {
         b.stage(

@@ -77,7 +77,7 @@ def test_headers_stops_after_prime(tmp_path, monkeypatch):
     run = FakeRun("build-headers", "amd64")
     args = SimpleNamespace(headers_only=True, no_wow64_stage=True, incremental=False)
     monkeypatch.setattr(build.warmth, "worktree_tree", lambda *a: "tree")
-    monkeypatch.setattr(build, "_maybe_canonize", lambda *a, **k: False)
+    monkeypatch.setattr(build.canon, "available", lambda: False)
     monkeypatch.setattr(build.cachecfg, "make", lambda *a: None)
     monkeypatch.setattr(build.cachecfg, "cache_enabled", lambda *a: False)
     monkeypatch.setattr(build.hostlock.buildpolicy, "read", lambda *a: None)
@@ -85,12 +85,10 @@ def test_headers_stops_after_prime(tmp_path, monkeypatch):
     monkeypatch.setattr(build.canon, "is_canonical", lambda *a: False)
     monkeypatch.setattr(build, "source_date_epoch", lambda *a: None)
 
-    def forbidden(*args, **kwargs):
-        raise AssertionError("full build operation reached")
-
-    monkeypatch.setattr(build, "_stage_payloads", forbidden)
     assert build._build_locked(args, tmp_path, run, "amd64", None, tmp_path, False) == 0
+    # the full build's own steps never ran: one ninja command, no payload or guest stage
     assert len(run.commands) == 1
+    assert not {"payloads", "wow64-guests", "storage-config"} & {s.name for s in run.stages}
     assert run.commands[0][0][-len(build._PRIME_TARGETS) :] == list(build._PRIME_TARGETS)
     assert run.commands[0][1]["stage"] == "ninja-prime"
     assert run.stages[-1].name == "headers-only"
