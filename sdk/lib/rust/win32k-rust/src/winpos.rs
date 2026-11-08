@@ -2676,8 +2676,18 @@ unsafe fn co_WinPosSetWindowPos(
     if (WinPos.flags & SWP_AGG_STATUSFLAGS) != SWP_AGG_NOPOSCHANGE
         && !((flags & SWP_AGG_NOCLIENTCHANGE) != 0 && (flags & SWP_SHOWWINDOW) != 0)
     {
+        // WINDOWPOS coordinates are relative to the parent's client area, as
+        // in the WM_WINDOWPOSCHANGING the caller supplied. The C sent the
+        // screen rect, which is only right for top-level windows (user32:win
+        // maps winpos through GetAncestor(GA_PARENT) and compares to
+        // GetWindowRect).
         WinPos.x = NewWindowRect.left;
         WinPos.y = NewWindowRect.top;
+        let changed_parent = (*Window).spwndParent;
+        if !changed_parent.is_null() && UserIsDesktopWindow(changed_parent) == 0 {
+            WinPos.x -= (*changed_parent).rcClient.left;
+            WinPos.y -= (*changed_parent).rcClient.top;
+        }
         WinPos.cx = NewWindowRect.right - NewWindowRect.left;
         WinPos.cy = NewWindowRect.bottom - NewWindowRect.top;
         co_IntSendMessageNoWait(
