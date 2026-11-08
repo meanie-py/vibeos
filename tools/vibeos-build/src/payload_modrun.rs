@@ -632,6 +632,21 @@ mod tests {
         assert_eq!(out[&k][0], txt);
         assert!(ex[&k].2.contains("LOST=1@1"));
     }
+    #[test]
+    fn exit_line_sent_twice_is_one_exit() {
+        // modrun.c sends each exit line twice, so a serial that dropped one still grades.
+        let txt = "ok";
+        let sum = checksum(txt, 0);
+        let line = "[MODRUN] exit m.a c rc=0x0 ms=3 records=1\n";
+        let both = format!("[MODRUN:m.a:c:0:{sum:04x}] {txt}\n{line}{line}");
+        let one = format!("[MODRUN:m.a:c:0:{sum:04x}] {txt}\n{line}");
+        let k: Key = ("m.a".into(), "c".into());
+        let (_, a) = parse(&both).unwrap();
+        let (_, b) = parse(&one).unwrap();
+        assert_eq!(a.len(), 1);
+        assert_eq!(a[&k], b[&k]);
+        assert!(!a[&k].2.contains("LOST"));
+    }
 }
 pub fn stage_entries(dir: &Path, arch: &str) -> Result<Vec<Value>> {
     let mut out: Vec<Value> = Vec::new();
