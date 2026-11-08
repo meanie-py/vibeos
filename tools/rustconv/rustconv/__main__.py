@@ -123,7 +123,9 @@ from .dead_regions import (
     conditional_arm_notes,
     never_compiled_lines,
     pinned_int_macros,
+    sdk_version_int_macros,
     sibling_header_int_macros,
+    tu_redefined,
 )
 from .extern_audit import run_extern_audit, run_extern_fix
 from .fact_seal import (
@@ -5245,7 +5247,16 @@ def cmd_translate(args):
         #
         # Report-only, like the free-half audit was on its first pass: a finding a reviewer
         # settles by reading two lines is worth more than a rejection that bills a retry.
-        arm_pinned = sibling_header_int_macros(c_file)
+        # Plus the module's own `-D` pins and the SDK's version names, minus anything the TU
+        # redefines itself: shlwapi's two VISTA-arm bodies were reported "undecidable" with
+        # `-D_WIN32_WINNT=0x502` on every compile command.
+        arm_pinned = {
+            **sdk_version_int_macros(REACTOS_ROOT),
+            **_module_pinned_macros(c_file, args),
+            **sibling_header_int_macros(c_file),
+        }
+        for name in tu_redefined(c_file.read_text(encoding="utf-8", errors="replace")):
+            arm_pinned.pop(name, None)
         for dep in sorted_deps:
             for note in conditional_arm_notes(dep.body_text, arm_pinned):
                 CONDITIONAL_ARM_BODIES.append(f"{c_file.name}:{dep.name}: {note}")

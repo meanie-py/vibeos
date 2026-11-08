@@ -393,7 +393,7 @@ fn eval_cond(expr: &str) -> Option<bool> {
     }
     None
 }
-fn strip_untaken_arms(src: &str) -> String {
+pub(crate) fn strip_untaken_arms(src: &str) -> String {
     let mut out = Vec::new();
     let mut stack: Vec<(bool, bool)> = Vec::new();
     for line in src.split('\n') {

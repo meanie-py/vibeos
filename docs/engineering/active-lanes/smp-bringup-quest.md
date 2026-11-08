@@ -26,6 +26,11 @@ i386-uefi as well as amd64-uefi (20261107-002710-p_szcnzq, 20261106-231959-pbs5q
    rustc's UB checks".
 4. **install-smoke on arm64** is unsupported: installsmoke.py says arm64 has no IDE bus for the
    two-disk layout. Owed: a virtio/NVMe two-disk layout for arm64.
+5. **shlwapi** (new-port lane, 2026-11-07): the 17 `.c` TUs are Rust and graded identical to
+   the pre-flip C by Wine's suite on amd64 (`shlwapiwinetest` vs `shlwapiwinetestc`). Owed: the
+   same before/after on i386 and arm64; the five `.cpp` TUs (`port cppapp`); then a cargo cell,
+   which needs the cell engine to compile real C++ TUs (`scan_cmake_linked_rust` baseline row).
+   Next candidates after it: crypt32 (42K) or msxml3 (35K), per the regroup.
 
 ## Mission
 
