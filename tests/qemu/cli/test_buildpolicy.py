@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from . import artifacts, build, buildpolicy, hostlock, queue
+from . import artifacts, build, buildpolicy, hostlock
 
 
 @pytest.fixture
@@ -94,7 +94,6 @@ def test_pause_refusal_is_infrastructure_not_a_lane_regression(trial, monkeypatc
     assert build.build(SimpleNamespace(arch="arm64", clean=False), trial) == 1
     summary = json.loads(next((trial / "runs").glob("*/summary.json")).read_text())
     assert summary["classification"] == "BUILD_POLICY_REFUSED"
-    assert summary["classification"] in queue.INCONCLUSIVE
 
 
 def test_policy_survives_the_lock_tree_being_wiped(trial, monkeypatch, tmp_path):

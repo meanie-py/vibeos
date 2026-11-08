@@ -41,26 +41,23 @@ vibeos/                          # Git repo root (renamed from reactos/)
 └── tests/qemu/                  # Smoke test framework
 ```
 
-## Landing your work — the merge queue
+## Landing your work — message the integrator
 
-`./vibeos-cli land` **submits** this lane's tip to the fleet's merge queue and returns in
-~2s. You do not merge `master`, do not run the gate, and do not wait. Whichever agent finds
-the land lock free becomes the **conductor**: it merges every queued lane onto current
-`origin/master` in a dedicated integration worktree, runs the full 3-arch gate **once**, and
-fast-forwards `master` to exactly the commit it gated. N ready lanes therefore cost ONE gate.
+Lanes do not land themselves. Commit, run `./vibeos-cli check` and the tests for what you
+touched, then message the integration session (`merge-integrator` / `vibeos-integration-*` in
+`ListAgents`) with `merge <branch> @ <sha> — <what it is, what it touches>`, and keep working.
+It merges every pending lane into one batch, resolves conflicts itself, runs the full 3-arch
+gate once, pushes, and messages you the result. Its brief:
+`docs/engineering/active-lanes/integration.md`.
 
 ```bash
-./vibeos-cli land                  # submit (and train the batch if nobody else is)
-./vibeos-cli land-status --mine    # conductor + queue + MY verdict (landed / rejected + artifact)
-./vibeos-cli land --withdraw       # take MY queued submission out of line (not ready / would gate cold)
-./vibeos-cli land --direct         # opt out: gate and push this lane alone
-./vibeos-cli land --drain          # train without submitting (orphan recovery)
+./vibeos-cli land                  # prints the merge request for your tip, filled in; pushes nothing
+./vibeos-cli land-status --tip SHA # LANDED / IN BATCH (the integrator is gating it) / NOT LANDED
+./vibeos-cli land --direct         # the integrator's merge + gate + push under the land lock
 ```
 
-A merge conflict is **bounced back to you** with the conflicting paths — the conductor never
-resolves it. A red batch **splits recursively**, so innocent lanes still land and the culprit
-is rejected with its gate classification plus its artifact dir. Full design:
-`tests/qemu/cli/README.md` → `land`, and the header of `tests/qemu/cli/queue.py`.
+The merge train (`land` submitting to a queue that some lane conducted) was retired on
+2026-11-08; `tests/qemu/cli/README.md` → `land` says why.
 
 Three files every lane appends to, `tools/rustconv/gen_driver_types.sh`,
 `tools/cohab-census.txt` and `sdk/lib/rust/Cargo.toml`, have structural merge drivers
@@ -87,7 +84,7 @@ could have caught in seconds. Every line below is a batch that actually bounced.
   unformatted dict literal bounced a batch as TOOLING_FAIL after the full queue wait.
 - **`./vibeos-cli check`** before any submission. It runs every source scanner and FAILS on a
   NEW finding with or without `--strict` (until 2026-10-16 it only warned, so it went green on
-  exactly what the conductor rejects as LINT_FAIL). `--strict` adds only the coverage rule and
+  exactly what the landing gate rejects as LINT_FAIL). `--strict` adds only the coverage rule and
   the per-arch guards. (`scan_unpruned_walk` once bounced a batch for a bare `rglob("*.rs")`
   over a crate — a crate's `target/` holds generated copies of its own modules, so an unpruned
   walk answers questions from build artifacts. Use `tools/source_walk.py source_files()`.)
@@ -97,11 +94,11 @@ could have caught in seconds. Every line below is a batch that actually bounced.
   — file.c's flip bounced DIFFTEST_FAIL on ten duplicate symbols. `check` cannot see that,
   because nothing links there.
 
-**BEFORE, never DURING.** Running any of these — or a build — while your own lane sits in the
-queue starves its smoke: one net test timed out at ~186s against ~44s passing and bounced the
+**BEFORE, never DURING.** Running any of these — or a build — while the integrator is gating your
+lane starves its smoke: one net test timed out at ~186s against ~44s passing and bounced the
 batch NET_FLAKE, and the gate's three retries all fire inside the same window, so they cannot
-rescue it. `./vibeos-cli host-status`, submit, then leave the host alone. Backgrounding `land`
-and editing while it runs fails `receipt-validation` with "Tooling inputs changed during
+rescue it. `./vibeos-cli host-status`, send the merge request, then leave the host alone. Backgrounding
+`check-tooling` and editing while it runs fails `receipt-validation` with "Tooling inputs changed during
 checks" — which reads exactly like an intermittent flake and is not one.
 
 **`receipt-validation` failing with every substantive check GREEN is infrastructure, not a
@@ -126,8 +123,8 @@ put in front of a claim.
 **The one genuine cross-worktree surface is `runtime_identity`,** which hashes the SHARED
 toolchain — `.venv/bin/ruff`, `pyright`, and the rustup-selected rustc/cargo plus sysroot
 `.so` files. So a `rustup component add`, a venv upgrade or a `pip install` mid-gate really
-does reach the conductor and will invalidate its receipts; a merge, an edit or a
-`check-tooling` in another worktree will not. Save toolchain changes for a quiet queue.
+does reach the integrator's gate and will invalidate its receipts; a merge, an edit or a
+`check-tooling` in another worktree will not. Save toolchain changes for when no gate is running.
 
 **A COMPLETION STAMP PROVES A BUILD FINISHED, NOT THAT IT BUILT EVERYTHING.** A `build-<arch>`
 that predates a new entry in a model the tooling checks is stamped and still lacks the object
@@ -150,8 +147,8 @@ rather than patching per-incident.
 
 **A green local gate is WARM unless you pass `--clean`, so it is not evidence the tree builds
 cold.** A warm gate once reported OK on a tree whose i386 build failed cold, minted a push
-stamp, and the queue rejected the lane. When a lane touches a shared `-sys` crate, gate with
-`--clean` or skip the local gate entirely and let the conductor's fresh worktree be the oracle.
+stamp, and the landing gate rejected the lane. When a lane touches a shared `-sys` crate, gate with
+`--clean` or skip the local gate entirely and let the integrator's cold gate be the oracle.
 
 **Read the summary at the TOP of a run, not the tail**, and never `| tail` a `vibeos-cli`
 command whose failure you need to understand — that hides the `FAIL — N/M checks failed` line

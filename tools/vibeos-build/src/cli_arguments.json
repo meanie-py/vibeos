@@ -1,6 +1,6 @@
 {
   "prog": "vibeos-cli",
-  "help": "usage: vibeos-cli [-h]\n                  {build-bench,checkpoint,artifact-store,host-clock,pi4,pi5,winref,build,check,lint,smoke,gate,land,land-status,farm,stress,farm-report,flake-report,boot,debug,gdb,cargo-swap,install-smoke,conformance,rr,kill,sym,ps,health,reap,host-status,host-policy,disk-status,check-tooling,difftest,prune,windows-cleanup,retention,repro}\n                  ...\n\nVibeOS build/check/smoke/debug control plane\n\npositional arguments:\n  {build-bench,checkpoint,artifact-store,host-clock,pi4,pi5,winref,build,check,lint,smoke,gate,land,land-status,farm,stress,farm-report,flake-report,boot,debug,gdb,cargo-swap,install-smoke,conformance,rr,kill,sym,ps,health,reap,host-status,host-policy,disk-status,check-tooling,difftest,prune,windows-cleanup,retention,repro}\n    build-bench         measure concurrent build and lint resource use\n    checkpoint          durable VM capture and checkpoint retries\n    artifact-store      measure immutable artifact reuse candidates\n    host-clock          measure host clock steps; diagnose WSL time conflicts\n    pi4                 Raspberry Pi 4B bench: lease, doctor, boot this tree\n    pi5                 Raspberry Pi 5 bench: lease, doctor, boot this tree\n    winref              real Windows 11 VM: the conformance oracle\n    build               ninja + binary-lints + build-index + stamp\n    check               source lints (baseline-diff gate)\n    lint                run a native artifact or standalone diagnostic check\n    smoke               staleness-gated boot verdict (front door)\n    gate                parallel pre-land verdict: build+smoke all arches,\n                        auto-retry flakes\n    land                merge queue: submit your lane; train the batch if\n                        nobody else is\n    land-status         merge queue: conductor, pending submissions, verdicts\n    farm                flake farm: soak boots into a durable corpus\n                        (~/vibeos-flake-farm)\n    stress              reproduce 'host load' as named mechanisms: boot a\n                        matrix of one-knob profiles (slow-cpu, lockstep,\n                        starved-smp, tight-clock) and report failure rate per\n                        profile \u2014 not a gate stage\n    farm-report         cluster the farm corpus into failure families\n    flake-report        the FLEET's failures (smoke + conformance, from the\n                        durable ledger and preserved evidence) clustered by\n                        signature and graded FLAKE / DETERMINISTIC / UNGRADED\n                        at the commit they were seen on\n    boot                raw fast boot (shares smoke arch-config)\n    debug               run-id scoped debug verbs (wrap shell toolkit)\n    gdb                 debug a windows-host QEMU via gdb (Python engine)\n    cargo-swap          runtime gate: boot-swap cargo-driven ntdll DLLs +\n                        ntoskrnl (x86)\n    install-smoke       install from the bootcd onto a blank disk, then boot\n                        that disk to the desktop (amd64-bios; ~1h under TCG)\n    conformance         NT test-corpus ratchet: build kmtest payload -> boot\n                        -> sweep -> parse -> compare vs baseline (quest M4)\n    rr                  QEMU record/replay: capture one boot, then re-run it\n                        deterministically\n    kill                stop a QEMU SAFELY (uid/pid-scoped; refuses to kill\n                        our own ancestors)\n    sym                 resolve an address to module!symbol+off (USER-MODE\n                        PEs, which the kernel symbol index does not cover)\n    ps                  all running VMs + slots (across worktrees)\n    health              trailing per-arch pass rates from the durable ledger\n                        (rates > point samples)\n    reap                kill orphan QEMUs (owner gone) and any past their\n                        lifetime cap\n    host-status         host CPU broker: who holds the build/boot lease\n                        (across worktrees)\n    host-policy         preview or activate a drained-fleet build trial\n    disk-status         disk headroom, live reservations, and optional\n                        footprint report\n    check-tooling       lint/type/test gate for our own Python tools\n                        (rustconv, cli, tools)\n    difftest            host differential harnesses: shipping Rust vs the\n                        genuine C it replaced\n    prune               reclaim disk: GC idle worktrees' build+target dirs\n                        (dry-run by default)\n    windows-cleanup     clean abandoned Windows QEMU staging\n    retention           configure or run hourly idle-output retention\n    repro               reproducibility gauge: byte-identity + PE-\n                        timestamp/section diff\n\noptions:\n  -h, --help            show this help message and exit\n",
+  "help": "usage: vibeos-cli [-h]\n                  {build-bench,checkpoint,artifact-store,host-clock,pi4,pi5,winref,build,check,lint,smoke,gate,land,land-status,farm,stress,farm-report,flake-report,boot,debug,gdb,cargo-swap,install-smoke,conformance,rr,kill,sym,ps,health,reap,host-status,host-policy,disk-status,check-tooling,difftest,prune,windows-cleanup,retention,repro}\n                  ...\n\nVibeOS build/check/smoke/debug control plane\n\npositional arguments:\n  {build-bench,checkpoint,artifact-store,host-clock,pi4,pi5,winref,build,check,lint,smoke,gate,land,land-status,farm,stress,farm-report,flake-report,boot,debug,gdb,cargo-swap,install-smoke,conformance,rr,kill,sym,ps,health,reap,host-status,host-policy,disk-status,check-tooling,difftest,prune,windows-cleanup,retention,repro}\n    build-bench         measure concurrent build and lint resource use\n    checkpoint          durable VM capture and checkpoint retries\n    artifact-store      measure immutable artifact reuse candidates\n    host-clock          measure host clock steps; diagnose WSL time conflicts\n    pi4                 Raspberry Pi 4B bench: lease, doctor, boot this tree\n    pi5                 Raspberry Pi 5 bench: lease, doctor, boot this tree\n    winref              real Windows 11 VM: the conformance oracle\n    build               ninja + binary-lints + build-index + stamp\n    check               source lints (baseline-diff gate)\n    lint                run a native artifact or standalone diagnostic check\n    smoke               staleness-gated boot verdict (front door)\n    gate                parallel pre-land verdict: build+smoke all arches,\n                        auto-retry flakes\n    land                --direct: the integrator's merge+gate+push; plain:\n                        print the merge request to send the integrator\n    land-status         the land lock, the integrator's batch; --tip SHA\n    farm                flake farm: soak boots into a durable corpus\n                        (~/vibeos-flake-farm)\n    stress              reproduce 'host load' as named mechanisms: boot a\n                        matrix of one-knob profiles (slow-cpu, lockstep,\n                        starved-smp, tight-clock) and report failure rate per\n                        profile \u2014 not a gate stage\n    farm-report         cluster the farm corpus into failure families\n    flake-report        the FLEET's failures (smoke + conformance, from the\n                        durable ledger and preserved evidence) clustered by\n                        signature and graded FLAKE / DETERMINISTIC / UNGRADED\n                        at the commit they were seen on\n    boot                raw fast boot (shares smoke arch-config)\n    debug               run-id scoped debug verbs (wrap shell toolkit)\n    gdb                 debug a windows-host QEMU via gdb (Python engine)\n    cargo-swap          runtime gate: boot-swap cargo-driven ntdll DLLs +\n                        ntoskrnl (x86)\n    install-smoke       install from the bootcd onto a blank disk, then boot\n                        that disk to the desktop (amd64-bios; ~1h under TCG)\n    conformance         NT test-corpus ratchet: build kmtest payload -> boot\n                        -> sweep -> parse -> compare vs baseline (quest M4)\n    rr                  QEMU record/replay: capture one boot, then re-run it\n                        deterministically\n    kill                stop a QEMU SAFELY (uid/pid-scoped; refuses to kill\n                        our own ancestors)\n    sym                 resolve an address to module!symbol+off (USER-MODE\n                        PEs, which the kernel symbol index does not cover)\n    ps                  all running VMs + slots (across worktrees)\n    health              trailing per-arch pass rates from the durable ledger\n                        (rates > point samples)\n    reap                kill orphan QEMUs (owner gone) and any past their\n                        lifetime cap\n    host-status         host CPU broker: who holds the build/boot lease\n                        (across worktrees)\n    host-policy         preview or activate a drained-fleet build trial\n    disk-status         disk headroom, live reservations, and optional\n                        footprint report\n    check-tooling       lint/type/test gate for our own Python tools\n                        (rustconv, cli, tools)\n    difftest            host differential harnesses: shipping Rust vs the\n                        genuine C it replaced\n    prune               reclaim disk: GC idle worktrees' build+target dirs\n                        (dry-run by default)\n    windows-cleanup     clean abandoned Windows QEMU staging\n    retention           configure or run hourly idle-output retention\n    repro               reproducibility gauge: byte-identity + PE-\n                        timestamp/section diff\n\noptions:\n  -h, --help            show this help message and exit\n",
   "defaults": {},
   "actions": [
     {
@@ -3689,7 +3689,7 @@
         },
         "land": {
           "prog": "vibeos-cli land",
-          "help": "usage: vibeos-cli land [-h] [--retries RETRIES] [--clean] [--direct] [--drain]\n                       [--foreground] [--wait] [--wait-timeout WAIT_TIMEOUT]\n                       [--no-push] [--skip-lint] [--dry-run] [--hold REASON]\n                       [--preempt] [--release] [--cold] [--evict REASON]\n                       [--withdraw] [--queue-timeout QUEUE_TIMEOUT]\n\noptions:\n  -h, --help            show this help message and exit\n  --retries RETRIES     gate flake-retries (passthrough; default 2)\n  --clean               cold builds in the gate\n  --direct              bypass the merge queue: merge master + gate + push\n                        this lane alone\n  --drain               don't submit; just train the queue if nobody else is\n                        (orphan recovery)\n  --foreground          conduct the batch inline instead of spawning a\n                        detached conductor\n  --wait                block until this submission's verdict\n  --wait-timeout WAIT_TIMEOUT\n                        seconds for --wait (default 3600)\n  --no-push             do everything but the push (rehearse a landing)\n  --skip-lint           skip the check-tooling preflight (the conductor still\n                        runs it; report every use)\n  --dry-run             report the plan (merge needed? gate needed? who is\n                        landing) and exit\n  --hold REASON         STOP THE LINE: no conductor starts a batch,\n                        submissions still queue, only this lane may --direct.\n                        Say why; it shows in every land/land-status\n  --preempt             with --hold: also stop a detached conductor mid-batch\n                        (its batch stays queued)\n  --release             lift the hold and wake the queue\n  --cold                submit even though no build has seen this tree (its\n                        gate compiles from scratch and can hold the queue for\n                        hours; report every use)\n  --evict REASON        under your own --hold: kick every OTHER lane's queued\n                        submissions back to them (verdict `evicted`, with\n                        REASON) so the line is clear for your fix\n  --withdraw            take THIS lane's queued submissions out of line (one\n                        already being gated is left alone); resubmit with a\n                        plain `land` when ready\n  --queue-timeout QUEUE_TIMEOUT\n                        seconds to wait for the land lock (default 10800)\n",
+          "help": "usage: vibeos-cli land [-h] [--retries RETRIES] [--clean] [--direct]\n                       [--no-push] [--skip-lint] [--dry-run] [--cold]\n                       [--queue-timeout QUEUE_TIMEOUT]\n\noptions:\n  -h, --help            show this help message and exit\n  --retries RETRIES     gate flake-retries (passthrough; default 2)\n  --clean               cold builds in the gate\n  --direct              the integrator's landing: merge master + gate + push\n                        this tree under the land lock. Without it, `land`\n                        prints the merge request to send the integrator and\n                        exits 2\n  --no-push             do everything but the push (rehearse a landing)\n  --skip-lint           skip the lint/tooling/difftest preflights (the gate\n                        still runs them)\n  --dry-run             report the plan (merge needed? gate needed? who is\n                        landing) and exit\n  --cold                land even though no build has seen this tree (its gate\n                        compiles from scratch)\n  --queue-timeout QUEUE_TIMEOUT\n                        seconds to wait for the land lock (default 10800)\n",
           "defaults": {
             "fn": {
               "callable": "tests.qemu.cli.land:land"
@@ -3737,58 +3737,6 @@
             },
             {
               "kind": "_StoreTrueAction",
-              "dest": "drain",
-              "options": [
-                "--drain"
-              ],
-              "nargs": 0,
-              "default": false,
-              "const": true,
-              "required": false,
-              "choices": null,
-              "type": "str"
-            },
-            {
-              "kind": "_StoreTrueAction",
-              "dest": "foreground",
-              "options": [
-                "--foreground"
-              ],
-              "nargs": 0,
-              "default": false,
-              "const": true,
-              "required": false,
-              "choices": null,
-              "type": "str"
-            },
-            {
-              "kind": "_StoreTrueAction",
-              "dest": "wait",
-              "options": [
-                "--wait"
-              ],
-              "nargs": 0,
-              "default": false,
-              "const": true,
-              "required": false,
-              "choices": null,
-              "type": "str"
-            },
-            {
-              "kind": "_StoreAction",
-              "dest": "wait_timeout",
-              "options": [
-                "--wait-timeout"
-              ],
-              "nargs": null,
-              "default": 3600,
-              "const": null,
-              "required": false,
-              "choices": null,
-              "type": "float"
-            },
-            {
-              "kind": "_StoreTrueAction",
               "dest": "no_push",
               "options": [
                 "--no-push"
@@ -3827,75 +3775,10 @@
               "type": "str"
             },
             {
-              "kind": "_StoreAction",
-              "dest": "hold",
-              "options": [
-                "--hold"
-              ],
-              "nargs": null,
-              "default": null,
-              "const": null,
-              "required": false,
-              "choices": null,
-              "type": "str"
-            },
-            {
-              "kind": "_StoreTrueAction",
-              "dest": "preempt",
-              "options": [
-                "--preempt"
-              ],
-              "nargs": 0,
-              "default": false,
-              "const": true,
-              "required": false,
-              "choices": null,
-              "type": "str"
-            },
-            {
-              "kind": "_StoreTrueAction",
-              "dest": "release",
-              "options": [
-                "--release"
-              ],
-              "nargs": 0,
-              "default": false,
-              "const": true,
-              "required": false,
-              "choices": null,
-              "type": "str"
-            },
-            {
               "kind": "_StoreTrueAction",
               "dest": "cold",
               "options": [
                 "--cold"
-              ],
-              "nargs": 0,
-              "default": false,
-              "const": true,
-              "required": false,
-              "choices": null,
-              "type": "str"
-            },
-            {
-              "kind": "_StoreAction",
-              "dest": "evict",
-              "options": [
-                "--evict"
-              ],
-              "nargs": null,
-              "default": null,
-              "const": null,
-              "required": false,
-              "choices": null,
-              "type": "str"
-            },
-            {
-              "kind": "_StoreTrueAction",
-              "dest": "withdraw",
-              "options": [
-                "--withdraw"
               ],
               "nargs": 0,
               "default": false,
@@ -3922,7 +3805,7 @@
         },
         "land-status": {
           "prog": "vibeos-cli land-status",
-          "help": "usage: vibeos-cli land-status [-h] [--json] [--mine] [--limit LIMIT]\n                              [--tip COMMIT]\n\noptions:\n  -h, --help     show this help message and exit\n  --json\n  --mine         only this lane's verdicts\n  --limit LIMIT  recent verdicts to show (default 8)\n  --tip COMMIT   answer about ONE commit instead of the queue: landed / queued\n                 / travelling inside a queued descendant / superseded /\n                 rejected / never queued / LOST. Use this to check a\n                 submission rather than reading a `land` OK line \u2014 `land` is\n                 honest in every failure shape, so its output cannot tell you\n                 (see land-verification-asks.md)\n",
+          "help": "usage: vibeos-cli land-status [-h] [--json] [--tip COMMIT]\n\noptions:\n  -h, --help    show this help message and exit\n  --json\n  --tip COMMIT  answer about ONE commit: LANDED (on origin/master), IN BATCH\n                (merged into the integrator's `integration` branch) or NOT\n                LANDED\n",
           "defaults": {
             "fn": {
               "callable": "tests.qemu.cli.land:cmd_land_status"
@@ -3941,32 +3824,6 @@
               "required": false,
               "choices": null,
               "type": "str"
-            },
-            {
-              "kind": "_StoreTrueAction",
-              "dest": "mine",
-              "options": [
-                "--mine"
-              ],
-              "nargs": 0,
-              "default": false,
-              "const": true,
-              "required": false,
-              "choices": null,
-              "type": "str"
-            },
-            {
-              "kind": "_StoreAction",
-              "dest": "limit",
-              "options": [
-                "--limit"
-              ],
-              "nargs": null,
-              "default": 8,
-              "const": null,
-              "required": false,
-              "choices": null,
-              "type": "int"
             },
             {
               "kind": "_StoreAction",
