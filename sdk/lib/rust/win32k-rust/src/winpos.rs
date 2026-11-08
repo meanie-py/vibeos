@@ -1712,11 +1712,12 @@ unsafe fn co_WinPosDoWinPosChanging_impl(
     }
 
     *WindowRect = (*Window).rcWindow;
-    *ClientRect = if ((*Window).style & WS_MINIMIZE as u32) != 0 {
-        (*Window).rcWindow
-    } else {
-        (*Window).rcClient
-    };
+    // Start from the current client rect, minimized or not. The C used the
+    // window rect for an iconic window, so any later SWP_NOSIZE move (an
+    // ArrangeIconicWindows, a z-order change) re-grew the client area that
+    // WM_NCCALCSIZE had emptied on minimize, and GetClientRect then disagreed
+    // with DefWindowProc(WM_NCCALCSIZE) (user32:win, Windows: empty).
+    *ClientRect = (*Window).rcClient;
 
     if ((*WinPos).flags & SWP_NOSIZE as u32) == 0 {
         if ((*Window).style & WS_MINIMIZE as u32) != 0 {
