@@ -119,10 +119,11 @@ class Cell:
     @property
     def crate(self) -> str:
         """The cell's cargo package. A package name cannot start with a digit, so a
-        target that does (3dtext) takes its body crate's stem (text3d-cargo)."""
+        target that does (3dtext) takes its body crate's stem (text3d-cargo), and one
+        cannot hold a `.` (activeds.tlb is activeds_tlb-cargo)."""
         if self.target[:1].isdigit():
             return self.body_crate.removesuffix("-rust") + "-cargo"
-        return f"{self.target}-cargo"
+        return self.target.replace(".", "_") + "-cargo"
 
     # Per arch, the C/asm compiled into the module on that arch only (on top of c_shims).
     arch_shims: dict[str, list[str]] = field(default_factory=dict)

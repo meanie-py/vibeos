@@ -543,14 +543,44 @@ extends it from the boot spine to every fully-Rust module.
        joins NAME_PROPERTIES. A rename under an if() (uniata becomes pciide
        `if(ENABLE_UNIATA)`) now leaves a `message(FATAL_ERROR ...)` in that branch instead
        of vanishing. rpcrt4's link-guard duplicate did not recur under the current generator.
-     - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
-       `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
-       `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses
-       `activeds.tlb-cargo`), and add_cargo_module's custom target `activeds.tlb` is the
-       phony `<dir>/activeds.tlb`, the very path of the output (ninja: multiple rules
-       generate). The output path is what the media manifest, cab and pe_equiv key on.
-       wdmaud.drv also links two bodies (`several bodies`).
-   - **RESUME HERE (2026-11-06).** Waves 1-4 (168 body-less C modules) are on master. Wave
+     - **2026-11-08: the 14 dotted targets converted** (activeds/mshtml/stdole2/stdole32
+       `.tlb`, the four `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`,
+       msacm32.drv), EQUIVALENT ×3.
+       - A crate name drops the `.` (`activeds_tlb-cargo`).
+       - A module named like its output gets the cmake target `<target>_cargo` from
+         add_cargo_module, since Ninja's utility phony `<dir>/<target>` would be the output
+         path itself. The CMakeLists keeps `add_cargo_module(activeds.tlb ...)` for the
+         tools that read it. add_cargo_cd_file and the codegen's ninja calls map the name.
+       - The themes' rc deps come from a foreach. Expanded, they named only the loop's last
+         file, so the rewrite now keeps such a dep as its list variable.
+       - wdmaud.drv still links two bodies (`several bodies`).
+   - **RESUME HERE (2026-11-08, fleet pause).**
+     - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
+       integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
+       cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
+       the 14 dotted targets. First check that 0fa7e73bb5c is an ancestor of origin/master.
+       If it bounced, the integrator's message names the gate dir.
+     - **Next, by size:**
+       - shdocvw and shlwapi: a sibling OBJECT library (atl_classes) whose usage the
+         rewrite does not carry;
+       - browseui: `target_link_options`;
+       - explorer and rshell: rshell reads explorer's CBandSite.cpp from no source dir;
+       - msvcrt: its custom cargo command shape;
+       - the nativedll kind (4);
+       - the wow64cpu.S / sys-stubs.S asm inputs;
+       - the CRTs, dbghelp/libtirpc (elseif branches) and wdmaud.drv (two bodies).
+       - Run `tools/codegen cargo-cell <target>` per module for its current refusal.
+     - **Owed:**
+       - Audit earlier waves for a cell proven against a stale baseline (see the 11-08
+         export-holds entry; the risk is low).
+       - mmc_new's `libmmc_uuids.a` (baselined).
+       - The git prune deferred to this fleet pause. control-plane runs it once every lane
+         reports settled.
+     - **Lesson from batch 169:** a harness that PARSES a module's CMakeLists text
+       (schannel-tls-difftest read mbedtls's `list(APPEND SOURCE`) is invisible to pe_equiv.
+       Grep `sdk/lib/rust/*/build.rs` and tools/ for the module's CMakeLists path before
+       converting it.
+   - **RESUME HERE (earlier, 2026-11-06).** Waves 1-4 (168 body-less C modules) are on master. Wave
      5/6 (`ctail-held`) converts 61 more, each `pe_equiv`-equivalent to cmake's link on all
      3 arches: 38 cmake-linked Rust DLLs (advapi32, user32, ole32, setupapi, ws2_32, ...
      their hand-written `add_custom_command(cargo build ...)` body is now modelled), 17

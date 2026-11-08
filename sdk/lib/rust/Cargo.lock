@@ -166,6 +166,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "activeds_tlb-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "actxprxy-cargo"
 version = "0.1.0"
 dependencies = [
@@ -4032,6 +4040,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "imaadp32_acm-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "imagehlp-cargo"
 version = "0.1.0"
 dependencies = [
@@ -4660,6 +4676,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "l3codeca_acm-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "label-cargo"
 version = "0.1.0"
 dependencies = [
@@ -4682,6 +4706,14 @@ dependencies = [
 [[package]]
 name = "largeint"
 version = "0.1.0"
+
+[[package]]
+name = "lautus_msstyles-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
 
 [[package]]
 name = "lazy_static"
@@ -4981,6 +5013,14 @@ name = "luid"
 version = "0.1.0"
 
 [[package]]
+name = "lunar_msstyles-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "lz32-cargo"
 version = "0.1.0"
 dependencies = [
@@ -5213,6 +5253,14 @@ name = "midl-rt"
 version = "0.1.0"
 
 [[package]]
+name = "mizu_msstyles-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "mlang-cargo"
 version = "0.1.0"
 dependencies = [
@@ -5413,6 +5461,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "modern_msstyles-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "mofcomp-cargo"
 version = "0.1.0"
 dependencies = [
@@ -5553,6 +5609,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "msacm32_drv-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "msadp32_acm-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "msafd-cargo"
 version = "0.1.0"
 dependencies = [
@@ -5686,6 +5758,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "msg711_acm-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "msgina-cargo"
 version = "0.1.0"
 dependencies = [
@@ -5701,6 +5781,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "winlogon-sys",
+]
+
+[[package]]
+name = "msgsm32_acm-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -5725,6 +5813,14 @@ dependencies = [
 
 [[package]]
 name = "mshtml-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "mshtml_tlb-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-lean",
@@ -9166,6 +9262,22 @@ name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
+
+[[package]]
+name = "stdole2_tlb-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "stdole32_tlb-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
 
 [[package]]
 name = "sti-cargo"
