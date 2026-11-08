@@ -2595,6 +2595,19 @@ impl Linker {
         if let Some(name) = lib.strip_prefix("engine:") {
             return self.engine_lib(name, clang, ar);
         }
+        // `toolchain:libc++.a`: the C++ runtime cmake links from the llvm-mingw sysroot.
+        if let Some(file) = lib.strip_prefix("toolchain:") {
+            let full = self
+                .repo_root
+                .join(".build-tools/llvm-mingw")
+                .join(self.arch.triple)
+                .join("lib")
+                .join(file);
+            if !full.exists() {
+                panic!("missing toolchain lib: {}", full.display());
+            }
+            return full;
+        }
         let full = self.build_dir.join(lib);
         if !full.exists() {
             panic!("missing static lib: {} — run ninja first", full.display());
@@ -2636,6 +2649,12 @@ impl Linker {
             "sptilib_rust" => self.engine_crate("sptilib-rust", &[], true),
             // sdk/lib/drivers/arbiter (pcix links it; ntoskrnl builds it with rust_lib).
             "arbiter_rust" => self.engine_crate("arbiter-rust", &[], true),
+            // Plain `cargo build -p <crate>` custom commands: solitaire/spider's cardlib,
+            // shell32's menuband and recyclebin, wdf01000's usbdex.
+            "cardlib_rust" => self.engine_crate("cardlib-rust", &[], true),
+            "menuband_rust" => self.engine_crate("menuband-rust", &[], true),
+            "recyclebin_rust" => self.engine_crate("recyclebin-rust", &[], true),
+            "usbdex_rust" => self.engine_crate("usbdex-rust", &[], true),
             "ntoskrnl_vista_rust" => self.engine_crate("ntoskrnl_vista-rust", &[], true),
             "ntoskrnl_vista_utf8" => self.engine_crate("utf8", &[], true),
             // libcntpr.cmake: `float` on amd64/arm64 only; the user-target build adds

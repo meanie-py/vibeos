@@ -1703,6 +1703,39 @@ def test_a_conditional_reg_script_is_a_dependency_only_where_it_exists(tmp_path)
     assert "TARGET_NAME_IF_EXISTS" not in out and " m_r" in out
 
 
+def test_a_moved_statement_ending_in_a_comment_keeps_its_closing_paren(tmp_path):
+    """wdf01000's include list ends in `dir # why` before `)`: re-emitted trimmed, the paren
+    joined the comment and the whole tree's configure failed."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m win32dll)\n"
+        "target_include_directories(m PRIVATE\n"
+        "    inc # why\n"
+        "    )\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "inc # why\n)" in out
+
+
+def test_a_sibling_reading_the_targets_compile_properties_reads_the_shims(tmp_path):
+    """shdocvw_sublib compiles with $<TARGET_PROPERTY:shdocvw,COMPILE_DEFINITIONS>; the cell's
+    custom target has none, so it lost them and failed to compile."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_library(m MODULE main.c $<TARGET_OBJECTS:m_sub>)\n"
+        "set_module_type(m win32dll)\n"
+        "add_library(m_sub OBJECT sub.cpp)\n"
+        "target_compile_definitions(m_sub PRIVATE $<TARGET_PROPERTY:m,COMPILE_DEFINITIONS>)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "$<TARGET_PROPERTY:m_shims,COMPILE_DEFINITIONS>" in out
+
+
 def test_an_object_in_a_subdirectory_maps_to_that_subdirectorys_source():
     d = Path("/r/dll/win32/crypt32")
     obj = "dll/win32/crypt32/CMakeFiles/crypt32.dir/reactos/unixlib.c.obj"

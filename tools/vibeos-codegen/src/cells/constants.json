@@ -45,7 +45,8 @@
     "target_compile_options",
     "set_wine_module_fixme",
     "set_wine_module",
-    "kmt_enable_native_seh"
+    "kmt_enable_native_seh",
+    "set_target_cpp_properties"
   ],
   "NAME_PROPERTIES": [
     "DEFINE_SYMBOL",
@@ -58,6 +59,7 @@
   "KERNEL_KINDS": [
     "kernelmodedriver",
     "kmdfdriver",
+    "wdmdriver",
     "kerneldll"
   ],
   "KEPT": [
@@ -102,6 +104,10 @@
     "sdk/lib/cryptlib/libcryptlib_rust.a": "engine:cryptlib_rust",
     "sdk/lib/drivers/sptilib/libsptilib_rust.a": "engine:sptilib_rust",
     "sdk/lib/drivers/arbiter/libarbiter_rust.a": "engine:arbiter_rust",
+    "sdk/lib/cardlib/libcardlib_rust.a": "engine:cardlib_rust",
+    "sdk/libmenuband_rust.a": "engine:menuband_rust",
+    "sdk/librecyclebin_rust.a": "engine:recyclebin_rust",
+    "sdk/lib/drivers/usbdex/libusbdex_rust.a": "engine:usbdex_rust",
     "sdk/lib/ioevent/libioevent.a": "engine:c:ioevent",
     "sdk/lib/wdmguid/libwdmguid.a": "engine:c:wdmguid",
     "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista_rust.a": "engine:ntoskrnl_vista_rust",

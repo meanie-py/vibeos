@@ -341,9 +341,12 @@ fn scan(repo: &Path) -> Result<Vec<String>, String> {
             .to_string_lossy();
         let source = read(&p)?;
         let code = COMMENT.replace_all(&source, "");
+        // `toolchain:libc++.a` is the llvm-mingw sysroot's C++ runtime (reactos-link resolves
+        // it), not a library cmake builds.
         let libs: BTreeSet<String> = BUILD_RS_LIB
             .captures_iter(&code)
             .map(|c| c[1].to_owned())
+            .filter(|l| !l.starts_with("toolchain:"))
             .collect();
         if !libs.is_empty() {
             pending.push((crate_name.into_owned(), libs));
@@ -1782,7 +1785,7 @@ add_custom_target(rust_foo DEPENDS ${{LIB}})
     fn engine_tables_are_strictly_loaded_from_converter_source() {
         let libs = engine_table().unwrap();
         let deps = engine_deps_table().unwrap();
-        assert_eq!(libs.len(), 43);
+        assert_eq!(libs.len(), 47);
         assert_eq!(deps.len(), 24);
         assert_eq!(
             libs.get("sdk/lib/conutils/libconutils.a")

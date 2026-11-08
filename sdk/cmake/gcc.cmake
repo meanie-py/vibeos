@@ -765,7 +765,7 @@ endfunction()
 ## per-target POST_BUILD would have applied):
 ##   kerneldll : native-pefixup --kerneldll  (+ i386 forwarder fix)
 ##   kernelmodedriver : native-pefixup --kernelmodedriver (+ i386 forwarder fix)  [win32k]
-##   kmdfdriver : native-pefixup --wdmdriver (+ i386 forwarder fix)  [cdrom]
+##   kmdfdriver, wdmdriver : native-pefixup --wdmdriver (+ i386 forwarder fix)  [cdrom, ac97]
 ##   win32dll  : i386 lld forwarder fix only  (user DLL — no pefixup)  [ntdll]
 ##   efi       : strip --remove-section=.rossym  +  strip --strip-all
 ##   native    : none
@@ -1002,12 +1002,13 @@ function(add_cargo_module _target _crate _output)
             list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
                 ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py __ACM_OUT__)
         endif()
-    elseif(_acm_KIND STREQUAL "kernelmodedriver" OR _acm_KIND STREQUAL "kmdfdriver")
+    elseif(_acm_KIND STREQUAL "kernelmodedriver" OR _acm_KIND STREQUAL "kmdfdriver"
+            OR _acm_KIND STREQUAL "wdmdriver")
         # Kernel-mode driver .sys (win32k.sys): set_module_type(kernelmodedriver)
         # applies native-pefixup --kernelmodedriver (same driver_fixup as
         # --kerneldll but the kernelmodedriver mode flag) + the i386 fwd fix.
         # A KMDF driver (cdrom) gets --wdmdriver, as set_module_type(kmdfdriver) maps it.
-        if(_acm_KIND STREQUAL "kmdfdriver")
+        if(_acm_KIND STREQUAL "kmdfdriver" OR _acm_KIND STREQUAL "wdmdriver")
             set(_pefixup_mode --wdmdriver)
         else()
             set(_pefixup_mode --kernelmodedriver)

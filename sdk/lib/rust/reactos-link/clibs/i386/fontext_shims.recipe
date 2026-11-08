@@ -1,0 +1,2 @@
+# fontext_shims (i386), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+cxx	dll/shellext/fontext/rust_cohab_stub.cpp	@build/dll/shellext/fontext dll/shellext/fontext @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/atl	@core -fno-exceptions	UNICODE WINVER=0x601 _ATL_NO_EXCEPTIONS _CRT_DECLARE_NONSTDC_NAMES=1 _CRT_NONSTDC_NO_DEPRECATE _DLL _UNICODE _WIN32_WINNT=0x601 __USE_CRTIMP
