@@ -1444,39 +1444,6 @@ unsafe fn IntValidateParent(Child: PWND, ValidateRgn: PREGION) -> BOOL {
 }
 
 #[cfg(target_arch = "x86")]
-unsafe extern "fastcall" fn FixClientRect(ClientRect: PRECTL, WindowRect: PRECTL) {
-    FixClientRect_impl(ClientRect, WindowRect)
-}
-
-#[cfg(not(target_arch = "x86"))]
-unsafe extern "C" fn FixClientRect(ClientRect: PRECTL, WindowRect: PRECTL) {
-    FixClientRect_impl(ClientRect, WindowRect)
-}
-
-unsafe fn FixClientRect_impl(ClientRect: PRECTL, WindowRect: PRECTL) {
-    if (*ClientRect).left < (*WindowRect).left {
-        (*ClientRect).left = (*WindowRect).left;
-    } else if (*WindowRect).right < (*ClientRect).left {
-        (*ClientRect).left = (*WindowRect).right;
-    }
-    if (*ClientRect).right < (*WindowRect).left {
-        (*ClientRect).right = (*WindowRect).left;
-    } else if (*WindowRect).right < (*ClientRect).right {
-        (*ClientRect).right = (*WindowRect).right;
-    }
-    if (*ClientRect).top < (*WindowRect).top {
-        (*ClientRect).top = (*WindowRect).top;
-    } else if (*WindowRect).bottom < (*ClientRect).top {
-        (*ClientRect).top = (*WindowRect).bottom;
-    }
-    if (*ClientRect).bottom < (*WindowRect).top {
-        (*ClientRect).bottom = (*WindowRect).top;
-    } else if (*WindowRect).bottom < (*ClientRect).bottom {
-        (*ClientRect).bottom = (*WindowRect).bottom;
-    }
-}
-
-#[cfg(target_arch = "x86")]
 unsafe extern "fastcall" fn get_valid_rects(
     old_client: *mut RECTL,
     new_client: *mut RECTL,
@@ -1609,14 +1576,13 @@ unsafe fn co_WinPosDoNCCALCSize(
             core::ptr::addr_of_mut!(params) as LPARAM,
         ) as UINT;
 
-        if params.rgrc[0].left <= params.rgrc[0].right
-            && params.rgrc[0].top <= params.rgrc[0].bottom
-        {
-            *ClientRect = params.rgrc[0];
-            if ((*Window).style & WS_CHILD) != 0 && !Parent.is_null() {
-                RECTL_vOffsetRect(ClientRect, (*Parent).rcClient.left, (*Parent).rcClient.top);
-            }
-            FixClientRect(ClientRect, WindowRect);
+        // The client rect is whatever WM_NCCALCSIZE returned, even larger than
+        // the window or inverted (Windows and Wine's calc_ncsize keep it as is;
+        // user32:win test_SetWindowPos checks both). ReactOS dropped an
+        // inverted rect and clamped the rest into the window rect.
+        *ClientRect = params.rgrc[0];
+        if ((*Window).style & WS_CHILD) != 0 && !Parent.is_null() {
+            RECTL_vOffsetRect(ClientRect, (*Parent).rcClient.left, (*Parent).rcClient.top);
         }
 
         if (*ClientRect).left != (*Window).rcClient.left
@@ -2741,7 +2707,9 @@ unsafe extern "fastcall" fn co_WinPosGetNonClientSize(
         ClientRect as LPARAM,
     );
 
-    FixClientRect(ClientRect as PRECTL, WindowRect as PRECTL);
+    // Kept as returned, like co_WinPosDoNCCALCSize (Wine's create_window does
+    // not clamp either): a zero-size bordered window's client origin is
+    // inside its border.
 
     Result
 }
@@ -2763,7 +2731,9 @@ unsafe extern "C" fn co_WinPosGetNonClientSize(
         ClientRect as LPARAM,
     );
 
-    FixClientRect(ClientRect as PRECTL, WindowRect as PRECTL);
+    // Kept as returned, like co_WinPosDoNCCALCSize (Wine's create_window does
+    // not clamp either): a zero-size bordered window's client origin is
+    // inside its border.
 
     Result
 }
