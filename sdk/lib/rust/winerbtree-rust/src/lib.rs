@@ -446,10 +446,8 @@ macro_rules! wine_rb_inlines {
             rb_init as wine_rb_init, rb_put as wine_rb_put, rb_remove as wine_rb_remove,
             rb_remove_key as wine_rb_remove_key, rb_replace as wine_rb_replace,
         };
-        #[allow(dead_code)]
-        pub type wine_rb_entry = rb_entry;
-        #[allow(dead_code)]
-        pub type wine_rb_tree = rb_tree;
+        // `wine_rb_entry`/`wine_rb_tree` are typedefs in wine/rbtree.h itself, so the
+        // consumer's island already carries them.
     };
 }
 

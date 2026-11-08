@@ -835,7 +835,11 @@ def _type_defined_in(text: str, name: str) -> bool:
 #: wine/wined3d.h is wined3d.dll's interface, which ddraw, d3d8 and d3d9 all consume; d3d9
 #: and d3d8 reached its types (wined3d_resource, wined3d_adapter, ..) only through their
 #: private headers, and resolve refused to island it ("a base header"): 89 errors in d3d9.
-_CLIENT_API_HEADERS = frozenset({"wine/wined3d.h"})
+#: wine/vulkan.h is the Vulkan API wined3d's Vulkan backend calls through `vk_ops`: no -sys
+#: crate covers it, so refusing it left wined3d's free-standing enums (VkAccessFlagBits,
+#: VkBufferUsageFlagBits, ..) defined nowhere -- the island had only what wined3d's own
+#: structs reach -- and profile_derive already allowlists it for a case label.
+_CLIENT_API_HEADERS = frozenset({"wine/wined3d.h", "wine/vulkan.h"})
 
 
 def _resolve_island_types(state: dict, names: set[str]) -> set[str]:
@@ -3445,13 +3449,17 @@ _STR_LIT = r'"(?:[^"\\\n]|\\.)*"'
 _ADJACENT_STRINGS = re.compile(rf"(?<![\w#'])({_STR_LIT})(\s+)({_STR_LIT})")
 
 
-_NAMED_CHANNEL = re.compile(r"\b(ERR|WARN|FIXME|TRACE)_!?\(\s*([A-Za-z_]\w*)\s*,")
+# Both spellings the model writes: `TRACE_(fps, ..)` and C's own curried `WARN_(d3d_perf)(..)`.
+_NAMED_CHANNEL = re.compile(
+    r"\b(ERR|WARN|FIXME|TRACE)_!?\(\s*([A-Za-z_]\w*)\s*(?:,|\)\s*\()"
+)
 
 
 def _named_channel_debug(state: dict) -> int:
     """wine/debug.h `ERR_(winediag)("..")` as `WINE_ERR_!(__wine_dbch_winediag, "..")`.
 
-    The model writes it `ERR_!(winediag, ..)` or `TRACE_(fps, ..)`; the channel name is
+    The model writes it `ERR_!(winediag, ..)`, `TRACE_(fps, ..)` or C's own curried
+    `WARN_(d3d_perf)(..)` (wined3d: 13 sites); the channel name is
     token-pasted in C, so win32macros' named forms take the channel STATIC, whose storage
     `port resolve` writes once the Rust names it (ddraw: winediag in device.c, fps in
     surface.c)."""
@@ -3464,6 +3472,39 @@ def _named_channel_debug(state: dict) -> int:
         if k:
             path.write_text(new)
             n += k
+    return n
+
+
+_C_OR_CASE = re.compile(r"\bcase\s*\(\s*([A-Za-z_]\w*(?:\s*\|\s*[A-Za-z_]\w*)+)\s*\)\s*:")
+
+
+def _or_case_values(state: dict) -> int:
+    """C's `case (A | B):` -- the OR'd VALUE -- as a guard, never a Rust alternation.
+
+    The model keeps C's parentheses, `(A | B) =>`, and in a pattern `|` means "A or B":
+    wined3d's glsl_shader.c `case (WINED3DSP_WRITEMASK_0 | WINED3DSP_WRITEMASK_1):` (.xy)
+    became an arm rustc could only flag because two earlier arms took .x and .y; with no
+    such arms the swap is silent. Only a label the module's C spells parenthesised is
+    rewritten, so a real `case A: case B:` folded to `A | B =>` is never touched."""
+    labels: set[tuple[str, ...]] = set()
+    for c in _module_sources(REPO / state["module_dir"]):
+        for m in _C_OR_CASE.finditer(c.read_text(errors="replace")):
+            labels.add(tuple(t.strip() for t in m.group(1).split("|")))
+    if not labels:
+        return 0
+    n = 0
+    for path in sorted(_stem_sources(state)):
+        text = path.read_text()
+        new = text
+        for names in labels:
+            alt = r"\s*\|\s*".join(map(re.escape, names))
+            pat = re.compile(rf"(?m)^(\s*)\(\s*({alt})\s*\)\s*=>")
+            new, k = pat.subn(
+                lambda m: f"{m.group(1)}__or_case if __or_case == ({' | '.join(names)}) =>", new
+            )
+            n += k
+        if new != text:
+            path.write_text(new)
     return n
 
 
@@ -5720,6 +5761,10 @@ def stage_integrate(stem: str) -> None:
         print(
             f"integrate: {named} named-channel debug call(s) as WINE_<CLS>_!(__wine_dbch_<ch>, ..)"
         )
+    or_cases = _or_case_values(state)
+    changed += or_cases
+    if or_cases:
+        print(f"integrate: {or_cases} C `case (A | B):` value(s) as match guards")
     joined = _join_adjacent_strings(state)
     changed += joined
     if joined:
@@ -6500,6 +6545,9 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
             _spell_enumerator_prefixed(modules_dir, name, item)
         copied.update(aliases)
         todo -= set(aliases) | bound
+        nested = prelude_resolve.island_nested_type_aliases(todo, crate / "src")
+        copied.update(nested)
+        todo -= set(nested)
         items = prelude_resolve.workspace_items(todo, workspace, crate)
         for name in types_only & set(items):
             items[name] = [i for i in items[name] if i.kind == "type"]

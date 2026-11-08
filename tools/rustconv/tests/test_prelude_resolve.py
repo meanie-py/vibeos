@@ -94,6 +94,23 @@ def test_a_struct_nested_anonymous_enumerator_is_aliased(tmp_path):
     )
 
 
+def test_a_struct_defined_inside_another_is_aliased_to_bindgens_name(tmp_path):
+    # wined3d_private.h: `struct wined3d_texture { struct wined3d_texture_sub_resource {..} *p; }`
+    island = (
+        "pub struct wined3d_texture {\n}\n"
+        "pub struct wined3d_texture_wined3d_texture_sub_resource {\n}\n"
+        "pub struct nope_wined3d_dc_info {\n}\n"  # no `nope` struct: not an enclosing one
+    )
+    for arch in ("i386", "amd64", "arm64"):
+        (tmp_path / f"types_{arch}.rs").write_text(island)
+    wanted = {"wined3d_texture_sub_resource", "wined3d_dc_info"}
+    got = pr.island_nested_type_aliases(wanted, tmp_path)
+    assert set(got) == {"wined3d_texture_sub_resource"}
+    assert got["wined3d_texture_sub_resource"].text == (
+        "type wined3d_texture_sub_resource = wined3d_texture_wined3d_texture_sub_resource;"
+    )
+
+
 def test_bare_enumerator_aliases_the_island_constant(tmp_path):
     for arch in ("i386", "amd64", "arm64"):
         (tmp_path / f"types_{arch}.rs").write_text(
@@ -339,6 +356,7 @@ def test_unresolved_keeps_the_namespace(monkeypatch, tmp_path):
         "expected type, found constant `PFOO`",
         "cannot find value `STATUS_X` in this scope",
         "cannot find struct, variant or union type `_ROOT_KEY` in this scope",
+        "expected function, found struct `wined3d_context_gl`",
     ]
     out = "\n".join(
         _json.dumps({"reason": "compiler-message", "message": {"message": m}}) for m in msgs
@@ -352,6 +370,7 @@ def test_unresolved_keeps_the_namespace(monkeypatch, tmp_path):
         "PFOO": {"type"},
         "STATUS_X": {"value"},
         "_ROOT_KEY": {"type"},
+        "wined3d_context_gl": {"value"},
     }
 
 

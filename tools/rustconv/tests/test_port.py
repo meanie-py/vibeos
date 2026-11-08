@@ -2192,11 +2192,28 @@ def test_named_channel_debug_calls_take_the_channel_static(tmp_path, monkeypatch
     monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "a.rs"])
     (tmp_path / "a.rs").write_text(
         'ERR_!(winediag, "no 3d\\n");\nTRACE_(fps, "%p\\n", d);\nTRACE!("keep\\n");\n'
+        'WARN_(d3d_perf)(\n    "slow\\n");\n'
     )
-    assert port._named_channel_debug({}) == 2
+    assert port._named_channel_debug({}) == 3
     out = (tmp_path / "a.rs").read_text()
     assert 'WINE_ERR_!(__wine_dbch_winediag, "no 3d\\n");' in out
     assert 'WINE_TRACE_!(__wine_dbch_fps, "%p\\n", d);' in out and 'TRACE!("keep\\n")' in out
+    assert 'WINE_WARN_!(__wine_dbch_d3d_perf,\n    "slow\\n");' in out
+
+
+def test_a_parenthesised_c_or_case_becomes_a_value_guard(tmp_path, monkeypatch):
+    (tmp_path / "m.c").write_text(
+        "switch (m) { case A: break; case (A | B): break; case C: case D: break; }"
+    )
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "a.rs"])
+    (tmp_path / "a.rs").write_text(
+        "match m {\n    A => {}\n    (A | B) => {}\n    (C | D) => {}\n    _ => {}\n}\n"
+    )
+    assert port._or_case_values({"module_dir": "."}) == 1
+    out = (tmp_path / "a.rs").read_text()
+    assert "    __or_case if __or_case == (A | B) => {}" in out
+    assert "    (C | D) => {}" in out  # `case C: case D:` is a real alternation
 
 
 def test_c_tag_keywords_in_type_positions_are_dropped():
