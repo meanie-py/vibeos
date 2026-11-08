@@ -217,6 +217,26 @@ admission and the exit line. Retention's fleet check greps a lane's `__main__.py
 `with maintenance.activity(REPO):`, so a native front door must declare its interlock
 another way before retention is enabled anywhere.
 
+Survey (2026-11-08). The big commands are already native-sequenced: `build` runs
+`cli_build_entry_*` in vibeos-build and calls back into Python for 33 named callbacks
+(`build_entry_bindings.py` 6 resource/fact hooks, `build_bindings.py` 27 helpers); `gate`,
+`tooling`, `ladder` and `pi5` follow the same shape. So "native whole" means retiring
+callbacks, not rewriting commands. They sort into three kinds:
+
+- **Round-trips** (Python calls straight back into native): `cache_value`,
+  `storage_options`, `ninja_work`, `isolation`, `ninja_timeout`, `ninja_jobs`. Inline
+  them, but keep injecting the facts the tests monkeypatch (`hostlock.POLICY_DIR`, the
+  environment) rather than having a long-lived native session read them itself.
+- **Python-owned facts** with a native counterpart already written: build admission
+  (`admission.rs`), disk reservation (`diskspace.rs`), staleness/stamp (provenance),
+  dedup kick.
+- **Python-only mechanisms**: the build-dir lock, `canon` (mount + wrap + toolchain),
+  `hostjobs.ensure`, `artifact_runtime.supervise`, payload staging, wow64 refresh, and
+  the lint runners. Each is its own port.
+
+The front door (parse, maintenance lock, disk admission, exit line) moves last: it only
+saves a Python start-up once some command no longer needs Python at all.
+
 Once the remaining workflows have native owners, move process entry and dispatch
 onto the shared native libraries. Argument grammar, execution, reports and
 build/gate decisions already have native owners. Audit imports and users before
