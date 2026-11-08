@@ -911,6 +911,14 @@ def _resolve_island_types(state: dict, names: set[str]) -> set[str]:
 
 def stage_island(stem: str) -> None:
     state = load_state(stem)
+    # The island lands in the crate and adds its dependencies to the crate's Cargo.toml, so
+    # the crate must exist: islanding first ran bindgen, wrote types_*.rs into a bare src/,
+    # then died on the missing manifest with a traceback (crypt32).
+    if not (_crate_dir(state) / "Cargo.toml").is_file():
+        raise PortError(
+            f"{_crate_dir(state).relative_to(REPO)} has no Cargo.toml; "
+            f"fix: rustconv port scaffold <module dir>, then port island {stem}"
+        )
     started = time.time()
     env = dict(os.environ, OUT_CRATE_DIR=str(_crate_dir(state) / "src"))
     # From a snapshot, never the file: bash reads a script AS IT RUNS, and a concurrent derive
@@ -1742,7 +1750,7 @@ def _cppapp_wire_crate(state: dict) -> None:
     block = re.search(rf"(?m)^pub mod {re.escape(stem)} \{{\n(.*?)^\}}", text, re.S)
     if block is None:
         raise PortError(f"{lib}: no `pub mod {stem} {{ .. }}` block")
-    gone = {_module_name(t) for t in state["cpp_tus"]}
+    gone = {_unit_mod(state, t) for t in state["cpp_tus"]}
     kept = [
         ln
         for ln in block.group(1).splitlines()
@@ -1806,8 +1814,20 @@ def _module_name(unit: str) -> str:
     return f"{stem}_h" if _is_header(unit) else stem
 
 
+def _unit_mod(state: dict, unit: str) -> str:
+    """`_module_name`, made unique within the module (profile_derive.unique_unit_stems, which
+    the scaffold's `pub mod` list uses too): crypt32's `reactos/store.c` is `reactos_store`."""
+    from .profile_derive import unique_unit_stems
+
+    name = _module_name(unit)
+    tus = state.get("tus", [])
+    if unit not in tus or sum(_module_name(u) == name for u in tus) < 2:
+        return name
+    return re.sub(r"\W", "_", unique_unit_stems(tus)[str(Path(unit))])
+
+
 def _tu_output(state: dict, tu: str) -> Path:
-    return _crate_dir(state) / "src" / state["stem"] / f"{_module_name(tu)}.rs"
+    return _crate_dir(state) / "src" / state["stem"] / f"{_unit_mod(state, tu)}.rs"
 
 
 def _units(state: dict) -> list[str]:
@@ -2457,7 +2477,7 @@ def stage_translate(
             out.write_text(cpp_app.assemble(out.read_text(), app))
         # One log per TU per PASS: the escalation pass used to overwrite the cheap pass's
         # log, which destroyed exactly the token counts the cheap-vs-thinking comparison needs.
-        log = STATE_ROOT / stem / f"translate-{_module_name(tu)}-thinking-{thinking}.log"
+        log = STATE_ROOT / stem / f"translate-{_unit_mod(state, tu)}-thinking-{thinking}.log"
         log.write_text(proc.stdout + proc.stderr)
         cost = _run_cost(proc.stdout + proc.stderr)
         # Keyed on the run's own report, not on the output file: a TU revisited for
@@ -2574,7 +2594,7 @@ def stage_translate(
             log = (
                 STATE_ROOT
                 / state["stem"]
-                / f"translate-{_module_name(d['tu'])}-thinking-{thinking}.log"
+                / f"translate-{_unit_mod(state, d['tu'])}-thinking-{thinking}.log"
             )
             text = log.read_text() if log.is_file() else ""
             refused = [
@@ -3303,7 +3323,7 @@ def wire_modules(state: dict) -> list[str]:
     added = [
         name
         for unit in _units(state)
-        if (name := _module_name(unit)) not in present and _has_body(_tu_output(state, unit))
+        if (name := _unit_mod(state, unit)) not in present and _has_body(_tu_output(state, unit))
     ]
     if added:
         from .profile_derive import _rust_mod_decl
@@ -3598,6 +3618,32 @@ def _join_adjacent_strings(state: dict) -> int:
             new, n = new2, n + k
         if new != text:
             path.write_text(new)
+    return n
+
+
+#: C's `offsetof(T, a.b)` kept as a call, sometimes with the type spelled `size_of::<T>()`
+#: (crypt32's decode.c item tables: 40 sites). The C macro takes a type and a member path,
+#: which is exactly core::mem::offset_of!'s grammar.
+_C_OFFSETOF_CALL = re.compile(
+    r"(?<![\w:!])offsetof\(\s*(?:(?:core::mem::)?size_of::<\s*([\w:]+)\s*>\(\)|([\w:]+))\s*,"
+    r"\s*([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)\s*\)"
+)
+
+
+def _offset_of_macro(m: re.Match) -> str:
+    ty = m.group(1) or m.group(2)
+    path = "".join(m.group(3).split())
+    return f"core::mem::offset_of!({ty}, {path})"
+
+
+def _c_offsetof_calls(state: dict) -> int:
+    n = 0
+    for path in sorted(_stem_sources(state)):
+        text = path.read_text()
+        new, k = _C_OFFSETOF_CALL.subn(_offset_of_macro, text)
+        if k:
+            path.write_text(new)
+            n += k
     return n
 
 
@@ -5840,6 +5886,10 @@ def stage_integrate(stem: str) -> None:
     changed += joined
     if joined:
         print(f"integrate: {joined} C adjacent string literal(s) joined")
+    offsetofs = _c_offsetof_calls(state)
+    changed += offsetofs
+    if offsetofs:
+        print(f"integrate: {offsetofs} C `offsetof(..)` call(s) as core::mem::offset_of!")
     nulls = _null_offsets_to_offset_of(state)
     changed += nulls
     if nulls:
@@ -8607,7 +8657,7 @@ def _c_origin(state: dict, fname: str, name: str) -> str | None:
     when there is no such definition (a class layout, a preamble constant)."""
     if "tus" not in state:
         return None
-    unit = next((u for u in _units(state) if _module_name(u) == Path(fname).stem), None)
+    unit = next((u for u in _units(state) if _unit_mod(state, u) == Path(fname).stem), None)
     if unit is None:
         return None
     path = Path(unit) if Path(unit).is_absolute() else REPO / unit
@@ -8900,7 +8950,7 @@ def stage_fix(
     crate_dir = _crate_dir(state)
     root = REPO / "sdk" / "lib" / "rust"
     bank = STATE_ROOT / stem / "fix"
-    tu_by_stem = {_module_name(t): REPO / t for t in _units(state)}
+    tu_by_stem = {_unit_mod(state, t): REPO / t for t in _units(state)}
     c_cache: dict = {}
     fact_sources = [
         crate_dir / "src" / "prelude.rs",

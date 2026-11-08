@@ -122,7 +122,27 @@ _NON_FACT_WORDS = {
 # model echoed the C shape, which does not parse. (_SEH2_EXCEPT, _SEH2_YIELD and
 # _SEH2_GetExceptionCode are call-shaped and were never sealed.) The cache key is the
 # unsealed C body, so narrowing the seal re-bills nothing.
-_C_STATEMENT_MACROS = frozenset({"_SEH2_TRY", "_SEH2_END", "_SEH2_FINALLY", "_SEH2_LEAVE"})
+# Wine's `__TRY { } __EXCEPT_PAGE_FAULT { } __ENDTRY` and rpc.h's RpcTry*/RpcEnd* are the same
+# blocks under other names (scanner.mask_seh_for_parse lists them all). Sealed, crypt32's
+# decode.c came back as `__RUSTCONV_FACT_0000__ { let .. }` (39 bodies that do not parse) and
+# encode.c as `let _ = __TRY;` (46 bodies naming a statement as a value).
+_C_STATEMENT_MACROS = frozenset(
+    {
+        "_SEH2_TRY",
+        "_SEH2_END",
+        "_SEH2_FINALLY",
+        "_SEH2_LEAVE",
+        "__TRY",
+        "__ENDTRY",
+        "__EXCEPT_PAGE_FAULT",
+        "__EXCEPT_ALL",
+        "RpcTryExcept",
+        "RpcTryFinally",
+        "RpcFinally",
+        "RpcEndExcept",
+        "RpcEndFinally",
+    }
+)
 
 
 _BLOCK_SCOPE_PROTOTYPE_RE = re.compile(r"\bextern\s+[^;{}=]*?\([^;{}]*\)\s*;")

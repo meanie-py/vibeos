@@ -86,3 +86,20 @@ def test_pseh_statement_macros_are_syntax_not_facts():
     assert {"_SEH2_TRY", "_SEH2_END"}.isdisjoint(originals)
     assert "_SEH2_TRY {" in sealed.text and "_SEH2_END;" in sealed.text
     assert "STATUS_SUCCESS" in originals
+
+
+def test_wine_seh_statement_macros_are_syntax_not_facts():
+    # crypt32 decode.c: a sealed __TRY came back as `__RUSTCONV_FACT_0000__ { let .. }`
+    from rustconv.fact_seal import seal_facts
+
+    c = (
+        "{ BOOL ret = FALSE;\n"
+        "  __TRY { ret = decode(p, n); }\n"
+        "  __EXCEPT_PAGE_FAULT { SetLastError(STATUS_ACCESS_VIOLATION); }\n"
+        "  __ENDTRY;\n  return ret; }\n"
+    )
+    sealed = seal_facts(c, dialect="c")
+    originals = {f.original for f in sealed.facts}
+    assert {"__TRY", "__EXCEPT_PAGE_FAULT", "__ENDTRY"}.isdisjoint(originals)
+    assert "__TRY {" in sealed.text and "__ENDTRY;" in sealed.text
+    assert "STATUS_ACCESS_VIOLATION" in originals

@@ -3,7 +3,34 @@
 **Status: QUEST (2026-07-10, lane `smp-bringup`, worktree
 `~/Projects/os-playground/vibeos-smp`). Handoff doc — read fully before starting.**
 
-## RESUME HERE (2026-11-07)
+## RESUME HERE (2026-11-08, fleet wind-down)
+
+**crypt32 port is PARKED mid-repair on branch `smp-bringup-crypt32-wip`** (never sent to merge;
+it does not compile yet). To resume, merge that branch into this worktree's branch, then:
+- Bought: 999 functions, Haiku, sealed, **$2.16 total** (incl. $0.003 of macros). Banks are in
+  `tools/rustconv/.responses/crypt32__*` and `~/vibeos-rust-staging/port/crypt32/`; every TU
+  has a body. Never re-buy: `port translate crypt32 --replay-only` rebuilds them for $0.
+- Done: derive, scaffold, island, translate, integrate, resolve ×3, macros, crate-repair ×3.
+  `port check crypt32` = **205 errors (i386) / 207 (amd64, arm64)**, down from 3069.
+- Next step: `port check crypt32`, then group by code (mostly E0308, E0609 bindgen anonymous
+  union paths, E0560). Re-run crate-repair. Then `port fix crypt32` for what remains (paid,
+  small), then `port hand` to bank hand fixes. Hand-port the token-pasting macros
+  `CRYPT32_CALL`/`WINE_UNIX_CALL` (`port macros` refused them). Crate-repair's passes 5 and 6
+  re-applied the same 6 edits: an oscillation worth a look.
+- Then: cohab flip, then the cargo cell (crypt32 is already `crypt32-cargo`, C via a cell).
+  Then grade with the payloads on the wip branch: `crypt32winetest` (the Rust) vs
+  `crypt32winetestc` (the pre-flip C as `crypt3c.dll`; crypt32 is a KnownDLL). The
+  `crypt32_c` oracle target (`c_oracle.cmake`) is written but NEVER BUILT: build it on one
+  arch first.
+- Landed with this note: seal/postprocess fixes for Wine's `__TRY` family, and unique module
+  names for same-stem TUs (crypt32's `store.c` + `reactos/store.c`). Two new integrate
+  passes, `TRACE_(ch)(..)` and `offsetof(..)`. `port island` now refuses before scaffold.
+  Field manual: "A sealed SEH statement macro comes back as a value or a struct".
+
+Everything below is the 2026-11-07 entry, still owed. shlwapi's item 5 is now graded on
+all three arches (landed in batch 167). Its i386/arm64 half is done; the C++ tail and cell are not.
+
+### Earlier RESUME HERE (2026-11-07)
 
 #72 arming is DONE and landed (master 4ac1da17ba8, batch 128). Verify against `git log
 origin/master` and `sdk/lib/rust/Cargo.toml`'s `[profile.release.package.*]` block. Since then:
