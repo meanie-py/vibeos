@@ -63,8 +63,9 @@ pub fn load_suites(dir: &Path) -> Result<Vec<(String, Value)>> {
         .collect::<Vec<_>>();
     paths.sort();
     let only = std::env::var("MODRUN_SUITES").unwrap_or_default();
+    // Commas or whitespace: `MODRUN_SUITES="d3d8 d3d9 ddraw"` read as ONE suite name before.
     let selected = only
-        .split(',')
+        .split(|c: char| c == ',' || c.is_whitespace())
         .filter(|x| !x.is_empty())
         .collect::<BTreeSet<_>>();
     let mut seen = BTreeSet::new();
