@@ -1,4 +1,3 @@
-activeds.tlb: linked by cmake, not a cargo cell
 audio_test: linked by cmake, not a cargo cell
 browseui: linked by cmake, not a cargo cell
 crtdll: linked by cmake, not a cargo cell
@@ -7,22 +6,11 @@ explorer: linked by cmake, not a cargo cell
 fdebug: linked by cmake, not a cargo cell
 filebrowser: linked by cmake, not a cargo cell
 glu32: linked by cmake, not a cargo cell
-imaadp32.acm: linked by cmake, not a cargo cell
 installfreeldr: linked by cmake, not a cargo cell
 kernel32_vista: linked by cmake, not a cargo cell
-l3codeca.acm: linked by cmake, not a cargo cell
-lautus.msstyles: linked by cmake, not a cargo cell
 lfbbvid: linked by cmake, not a cargo cell
 libtiff: linked by cmake, not a cargo cell
 libtirpc: linked by cmake, not a cargo cell
-lunar.msstyles: linked by cmake, not a cargo cell
-mizu.msstyles: linked by cmake, not a cargo cell
-modern.msstyles: linked by cmake, not a cargo cell
-msacm32.drv: linked by cmake, not a cargo cell
-msadp32.acm: linked by cmake, not a cargo cell
-msg711.acm: linked by cmake, not a cargo cell
-msgsm32.acm: linked by cmake, not a cargo cell
-mshtml.tlb: linked by cmake, not a cargo cell
 msvcrt: linked by cmake, not a cargo cell
 msvcrt20: linked by cmake, not a cargo cell
 msvcrt40: linked by cmake, not a cargo cell
@@ -33,8 +21,6 @@ setuplib_probe: linked by cmake, not a cargo cell
 shdocvw: linked by cmake, not a cargo cell
 shlwapi: linked by cmake, not a cargo cell
 skiplist_test: linked by cmake, not a cargo cell
-stdole2.tlb: linked by cmake, not a cargo cell
-stdole32.tlb: linked by cmake, not a cargo cell
 svchost: linked by cmake, not a cargo cell
 ucdfs: linked by cmake, not a cargo cell
 ucrtbase: linked by cmake, not a cargo cell

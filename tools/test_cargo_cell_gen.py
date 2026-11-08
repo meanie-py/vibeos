@@ -591,6 +591,17 @@ def test_stubs_a_static_library_carries_are_compiled_from_their_spec():
     assert '.spec_stubs_from("dll/win32/fusion/fusion.spec", "fusion.dll")' in g.build_rs(c)
 
 
+def test_a_dotted_target_gets_a_legal_crate_and_its_own_cmake_target(tmp_path):
+    # activeds.tlb: cargo refuses a `.` in a crate name, and add_cargo_module names the
+    # cmake target <t>_cargo, since ninja's <dir>/<t> phony would be the output's path.
+    c = cell(target="m.tlb", output_name="m.tlb")
+    assert c.crate == "m_tlb-cargo"
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE.replace("(m ", "(m.tlb ") + "add_dependencies(m.tlb xdk)\n")
+    out = g.rewrite_cmake(f, cell(target="m.tlb", output_name="m.tlb", cmake_dir=tmp_path))
+    assert "add_dependencies(m.tlb_cargo xdk)" in out
+
+
 def test_a_cell_for_a_digit_leading_target_takes_its_body_crates_name():
     c = cell(target="3dtext", body_crate="text3d-rust")
     assert c.crate == "text3d-cargo"

@@ -328,7 +328,8 @@ impl Cell {
                     .unwrap_or(&self.body_crate)
             )
         } else {
-            format!("{}-cargo", self.target)
+            // A crate name cannot hold a `.`: activeds.tlb is activeds_tlb-cargo.
+            format!("{}-cargo", self.target.replace('.', "_"))
         }
     }
 }

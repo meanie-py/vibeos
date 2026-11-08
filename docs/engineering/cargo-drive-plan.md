@@ -543,13 +543,17 @@ extends it from the boot spine to every fully-Rust module.
        joins NAME_PROPERTIES. A rename under an if() (uniata becomes pciide
        `if(ENABLE_UNIATA)`) now leaves a `message(FATAL_ERROR ...)` in that branch instead
        of vanishing. rpcrt4's link-guard duplicate did not recur under the current generator.
-     - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
-       `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
-       `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses
-       `activeds.tlb-cargo`), and add_cargo_module's custom target `activeds.tlb` is the
-       phony `<dir>/activeds.tlb`, the very path of the output (ninja: multiple rules
-       generate). The output path is what the media manifest, cab and pe_equiv key on.
-       wdmaud.drv also links two bodies (`several bodies`).
+     - **2026-11-08: the 14 dotted targets converted** (activeds/mshtml/stdole2/stdole32
+       `.tlb`, the four `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`,
+       msacm32.drv), EQUIVALENT ×3.
+       - A crate name drops the `.` (`activeds_tlb-cargo`).
+       - A module named like its output gets the cmake target `<target>_cargo` from
+         add_cargo_module, since Ninja's utility phony `<dir>/<target>` would be the output
+         path itself. The CMakeLists keeps `add_cargo_module(activeds.tlb ...)` for the
+         tools that read it. add_cargo_cd_file and the codegen's ninja calls map the name.
+       - The themes' rc deps come from a foreach. Expanded, they named only the loop's last
+         file, so the rewrite now keeps such a dep as its list variable.
+       - wdmaud.drv still links two bodies (`several bodies`).
    - **RESUME HERE (2026-11-06).** Waves 1-4 (168 body-less C modules) are on master. Wave
      5/6 (`ctail-held`) converts 61 more, each `pe_equiv`-equivalent to cmake's link on all
      3 arches: 38 cmake-linked Rust DLLs (advapi32, user32, ole32, setupapi, ws2_32, ...

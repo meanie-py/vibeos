@@ -57,6 +57,15 @@ fn rc_deps(cmd: &str, raw: &str) -> Option<Vec<String>> {
     }
     None
 }
+/// The cmake target add_cargo_module makes for a cell: `<target>_cargo` when the output is
+/// `<dir>/<target>` (activeds.tlb), whose ninja utility phony would be the output's path.
+pub fn cmake_target(cell: &Cell) -> String {
+    if cell.output_name == cell.target {
+        format!("{}_cargo", cell.target)
+    } else {
+        cell.target.clone()
+    }
+}
 fn retarget(cmd: &str, raw: &str, new: &str) -> String {
     let first = args(raw).first().cloned().unwrap_or_default();
     let body = raw.trim().replacen(&first, new, 1);
@@ -224,11 +233,28 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         if cell.rc.is_some() {
             if let Some(deps) = rc_deps(cmd, raw) {
                 drop = true;
-                rc_gen_deps.extend(
-                    super::graph::expand(&deps, &rc_lists)?
+                // A dep built in a foreach (the themes' `${_converted_files}`, each
+                // `${_subdir}/${_file_name}_utf16.INI`) expands to the loop's variables,
+                // which after the loop hold only its last value: keep such a dep as the list
+                // variable it was, which add_cargo_module, placed after the loop, reads whole.
+                let loop_var = Regex::new(r"\$\{(\w+)\}").unwrap();
+                for d in &deps {
+                    let flat = super::graph::expand(std::slice::from_ref(d), &rc_lists)?;
+                    let built: Vec<String> = flat
                         .into_iter()
-                        .filter(|d| d.contains("CMAKE_CURRENT_BINARY_DIR")),
-                );
+                        .filter(|x| x.contains("CMAKE_CURRENT_BINARY_DIR"))
+                        .collect();
+                    let unsettled = built.iter().any(|x| {
+                        loop_var
+                            .captures_iter(x)
+                            .any(|c| !c[1].starts_with("CMAKE_") && !c[1].starts_with("REACTOS_"))
+                    });
+                    if unsettled {
+                        rc_gen_deps.push(d.clone());
+                    } else {
+                        rc_gen_deps.extend(built);
+                    }
+                }
             }
         }
         if target && cmd == "add_idl_reg_scripts" && a.len() > 1 {
@@ -655,7 +681,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         .cloned()
         .collect();
     if !every.is_empty() {
-        let var = format!("{}_REUSED", cell.target.to_uppercase());
+        let var = format!("{}_REUSED", cell.target.to_uppercase().replace('.', "_"));
         if common.is_empty() {
             block.push(format!("set({var})"));
         } else {
@@ -771,7 +797,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
     if !build_deps.is_empty() && objlibs.is_empty() {
         call.push(format!(
             "add_dependencies({} {})",
-            cell.target,
+            cmake_target(cell),
             build_deps.join(" ")
         ));
     }
