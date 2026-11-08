@@ -753,7 +753,9 @@ unsafe fn DC_vUpdateDC(pdc: PDC) {
     (*pdc).flGraphicsCaps = (*ppdev).devinfo.flGraphicsCaps;
     (*pdc).flGraphicsCaps2 = (*ppdev).devinfo.flGraphicsCaps2;
 
-    (*(*pdc).pdcattr).ulDirty_ |= 0x00010000 | 0x00000004 | 0x00000008 | 0x00000010 | 0x00000020 ;
+    // The translation had invented 0x10000|0x4|0x8|0x10|0x20 here, which set
+    // DC_PRIMARY_DISPLAY/SLOW_WIDTHS and left the fill and line brushes clean.
+    (*(*pdc).pdcattr).ulDirty_ |= DIRTY_DEFAULT;
 }
 
 #[cfg(target_arch = "x86")]
@@ -770,13 +772,18 @@ pub unsafe extern "fastcall" fn DC_vPrepareDCsForBlit(
     let mut prcFirst: *const RECT;
     let mut prcSecond: *const RECT;
 
-    if (*(*pdcDest).pdcattr).ulDirty_ & (0x00000020 | 0x00000002) != 0 {
+    // The C's named DIRTY_* bits. The translation had invented literals
+    // (fill on 0x20|0x02, line on 0x10|0x01, text on 0x08 = DIRTY_BACKGROUND),
+    // so a DC with a dirty background re-realized its text brush on every blit,
+    // overwriting the solid color NtGdiSetPixel lends it: SetPixel on such a
+    // DC painted the text color (user32:win test_LockWindowUpdate, black).
+    if (*(*pdcDest).pdcattr).ulDirty_ & (DIRTY_FILL | DC_BRUSH_DIRTY) != 0 {
         DC_vUpdateFillBrush(pdcDest);
     }
-    if (*(*pdcDest).pdcattr).ulDirty_ & (0x00000010 | 0x00000001) != 0 {
+    if (*(*pdcDest).pdcattr).ulDirty_ & (DIRTY_LINE | DC_PEN_DIRTY) != 0 {
         DC_vUpdateLineBrush(pdcDest);
     }
-    if (*(*pdcDest).pdcattr).ulDirty_ & 0x00000008 != 0 {
+    if (*(*pdcDest).pdcattr).ulDirty_ & DIRTY_TEXT != 0 {
         DC_vUpdateTextBrush(pdcDest);
     }
 
@@ -873,13 +880,18 @@ pub unsafe extern "C" fn DC_vPrepareDCsForBlit(
     let mut prcFirst: *const RECT;
     let mut prcSecond: *const RECT;
 
-    if (*(*pdcDest).pdcattr).ulDirty_ & (0x00000020 | 0x00000002) != 0 {
+    // The C's named DIRTY_* bits. The translation had invented literals
+    // (fill on 0x20|0x02, line on 0x10|0x01, text on 0x08 = DIRTY_BACKGROUND),
+    // so a DC with a dirty background re-realized its text brush on every blit,
+    // overwriting the solid color NtGdiSetPixel lends it: SetPixel on such a
+    // DC painted the text color (user32:win test_LockWindowUpdate, black).
+    if (*(*pdcDest).pdcattr).ulDirty_ & (DIRTY_FILL | DC_BRUSH_DIRTY) != 0 {
         DC_vUpdateFillBrush(pdcDest);
     }
-    if (*(*pdcDest).pdcattr).ulDirty_ & (0x00000010 | 0x00000001) != 0 {
+    if (*(*pdcDest).pdcattr).ulDirty_ & (DIRTY_LINE | DC_PEN_DIRTY) != 0 {
         DC_vUpdateLineBrush(pdcDest);
     }
-    if (*(*pdcDest).pdcattr).ulDirty_ & 0x00000008 != 0 {
+    if (*(*pdcDest).pdcattr).ulDirty_ & DIRTY_TEXT != 0 {
         DC_vUpdateTextBrush(pdcDest);
     }
 
