@@ -554,7 +554,33 @@ extends it from the boot spine to every fully-Rust module.
        - The themes' rc deps come from a foreach. Expanded, they named only the loop's last
          file, so the rewrite now keeps such a dep as its list variable.
        - wdmaud.drv still links two bodies (`several bodies`).
-   - **RESUME HERE (2026-11-06).** Waves 1-4 (168 body-less C modules) are on master. Wave
+   - **RESUME HERE (2026-11-08, fleet pause).**
+     - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
+       integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
+       cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
+       the 14 dotted targets. First check that 0fa7e73bb5c is an ancestor of origin/master.
+       If it bounced, the integrator's message names the gate dir.
+     - **Next, by size:**
+       - shdocvw and shlwapi: a sibling OBJECT library (atl_classes) whose usage the
+         rewrite does not carry;
+       - browseui: `target_link_options`;
+       - explorer and rshell: rshell reads explorer's CBandSite.cpp from no source dir;
+       - msvcrt: its custom cargo command shape;
+       - the nativedll kind (4);
+       - the wow64cpu.S / sys-stubs.S asm inputs;
+       - the CRTs, dbghelp/libtirpc (elseif branches) and wdmaud.drv (two bodies).
+       - Run `tools/codegen cargo-cell <target>` per module for its current refusal.
+     - **Owed:**
+       - Audit earlier waves for a cell proven against a stale baseline (see the 11-08
+         export-holds entry; the risk is low).
+       - mmc_new's `libmmc_uuids.a` (baselined).
+       - The git prune deferred to this fleet pause. control-plane runs it once every lane
+         reports settled.
+     - **Lesson from batch 169:** a harness that PARSES a module's CMakeLists text
+       (schannel-tls-difftest read mbedtls's `list(APPEND SOURCE`) is invisible to pe_equiv.
+       Grep `sdk/lib/rust/*/build.rs` and tools/ for the module's CMakeLists path before
+       converting it.
+   - **RESUME HERE (earlier, 2026-11-06).** Waves 1-4 (168 body-less C modules) are on master. Wave
      5/6 (`ctail-held`) converts 61 more, each `pe_equiv`-equivalent to cmake's link on all
      3 arches: 38 cmake-linked Rust DLLs (advapi32, user32, ole32, setupapi, ws2_32, ...
      their hand-written `add_custom_command(cargo build ...)` body is now modelled), 17
