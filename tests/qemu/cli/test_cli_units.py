@@ -10550,6 +10550,8 @@ def test_payload_unreferenced_by_build_only_when_every_record_is_silent(tmp_path
     assert not unbuilt("sdk/lib/rust/Cargo.toml")  # the workspace, not a crate
     assert not unbuilt("dll/win32/wowx64/CMakeLists.txt")  # outside both scopes
     assert unbuilt("tools/vibeos-test/src/smoke_run.rs")  # reads builds, never feeds one
+    assert unbuilt("tools/payloads/appstorm/appstorm.c")  # its own build.sh
+    assert unbuilt("vendor/fex/FEXCore/Source/Interface/Core/Core.cpp")  # arm64's alone
 
 
 def test_payload_unreferenced_by_build_without_build_records_proves_nothing(tmp_path):
