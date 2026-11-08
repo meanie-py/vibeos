@@ -232,11 +232,11 @@ row. Each row is tagged by where the twin runs and what its try body does:
 |---|---|---|---|
 | kernel | 0 | 0 | 0 |
 | rtl (both) | 0 | 0 | 0 |
-| user | 0 | 0 | 106 |
+| user | 0 | 0 | 62 |
 
-106 in all (235 at the first count, 2026-11-06; 222 after the `raise` rows; 157 after the
+62 in all (235 at the first count, 2026-11-06; 222 after the `raise` rows; 157 after the
 kernel rows, every one fixed or carrying a reasoned `nolint(dead_seh)`; 135 after rtl; 106
-after the system processes). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
+after the system processes; 62 after kernel32). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
 `RtlRaiseStatus` into `return Err` has converted the contract and needs only a probe. Burn-down order: kernel `raise` first (one call from user mode bugchecks the box:
 that is how `ReleaseSemaphore` past the maximum was found), then kernel `probe`/`other`, then
 user mode (the process dies, not the machine). `tools/payloads/sehprobe` exercises the
@@ -287,6 +287,17 @@ What already landed, which the plan below predates:
   credits the caller, so making a callee catch can clear its caller's row falsely —
   `LdrpCheckForLoadedDll` cleared that way when `RtlImageNtHeaderEx` gained its catch, and was
   then given its own.
+- 2026-11-08, kernel32, all 44 rows: the `lstr*` family (a bad pointer gives 0 / NULL, which
+  apps rely on), `Global*`/`LocalUnlock` (a wild handle is caught with the heap lock held and
+  the lock is released), the console read/write family (`ERROR_INVALID_ACCESS` on a bad
+  caller buffer), `LoadLibraryExW`, `GetModuleFileNameW`, `FindClose` on a garbage handle,
+  `DeviceIoControl`, the APC dispatcher, and `OutputDebugStringA`, whose
+  `DBG_PRINTEXCEPTION_C` killed the process when a debugger passed it on. Its inner "faulted
+  during output" also printed after every successful write. Three rows are `nolint`:
+  `IsBadReadPtr`/`IsBadWritePtr` query memory and never touch it, and nls_subst's private
+  `lstrcpynW` works on its own buffers. Divergences from the C: `IntWriteConsoleOutput` frees
+  its capture/heap buffer on the fault path the C leaked. Found on the way: `LocalUnlock` of
+  an unlocked block stored a lock count of 1 (the C leaves 0), locking it for good.
 - 2026-11-08, the system processes, where a crash ends the session or the machine: ntdll's
   loader (DllMain and TLS callbacks for every attach/detach, `LdrpInitializeProcess`, import
   snapping, `LdrpGetProcedureAddress`, enumerate/unload, the loader lock, the verifier

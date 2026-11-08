@@ -100,16 +100,17 @@ pub unsafe extern "system" fn BaseDispatchApc(
     /* Then activate it */
     RtlActivateActivationContextUnsafeFast(&mut ActivationFrame, ActivationContext);
 
-    /* Call the routine under SEH */
-    // _SEH2_TRY
-    {
-        ApcRoutine.expect("non-null function pointer")(Data as ULONG_PTR);
+    /* Call the routine under SEH. C: __try { ApcRoutine } __except (EXECUTE_HANDLER) {}:
+     * a faulting APC is swallowed so the activation context below is still released. */
+    let Routine = ApcRoutine.expect("non-null function pointer");
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| Routine(Data as ULONG_PTR)) {
+        // The C is silent here; say what was swallowed.
+        DbgPrint(
+            b"BaseDispatchApc: APC %p raised 0x%lx\n\0".as_ptr() as *const i8,
+            Routine as *const core::ffi::c_void,
+            code,
+        );
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        // Exception handler - empty
-    }
-    // _SEH2_END;
 
     /* Now de-activate and release the activation context */
     RtlDeactivateActivationContextUnsafeFast(&mut ActivationFrame);
