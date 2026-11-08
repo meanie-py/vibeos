@@ -491,8 +491,11 @@ mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
     fn temp() -> PathBuf {
+        // A counter, not just the clock: parallel test threads can read the same instant.
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         std::env::temp_dir().join(format!(
-            "binary-warnings-{}-{}",
+            "binary-warnings-{}-{seq}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)

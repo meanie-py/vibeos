@@ -438,3 +438,240 @@ pub fn port_handshake_owned(
         .with_kind("TimeoutError")
     })
 }
+
+#[cfg(test)]
+mod tests {
+    //! Boot admission as native VM owners take it. These were the Python lease API's tests,
+    //! re-homed onto the code that actually admits boots now.
+    use super::*;
+    use std::os::unix::io::AsRawFd;
+
+    struct Host {
+        dir: tempfile::TempDir,
+    }
+    impl Host {
+        fn new() -> Self {
+            Self {
+                dir: tempfile::tempdir().unwrap(),
+            }
+        }
+        fn host(&self) -> PathBuf {
+            self.dir.path().join("host")
+        }
+        fn env(&self, extra: &[(&str, &str)]) -> BTreeMap<String, String> {
+            let p = self.dir.path();
+            let mut env: BTreeMap<String, String> = [
+                (
+                    "VIBEOS_QEMU_LOCK_DIR",
+                    p.join("qemu").to_string_lossy().into_owned(),
+                ),
+                (
+                    "VIBEOS_HOSTLOCK_DIR",
+                    self.host().to_string_lossy().into_owned(),
+                ),
+                (
+                    "VIBEOS_BUILD_POLICY_DIR",
+                    p.join("policy").to_string_lossy().into_owned(),
+                ),
+                ("VIBEOS_HOST_LOCK_TIMEOUT", "0.3".into()),
+                ("VIBEOS_QEMU_QUEUE_TIMEOUT", "0.3".into()),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v))
+            .collect();
+            for (k, v) in extra {
+                env.insert((*k).into(), (*v).into());
+            }
+            env
+        }
+        fn boot(&self, extra: &[(&str, &str)]) -> Result<Admission> {
+            self.admit("windows-host", "amd64", extra)
+        }
+        fn admit(&self, backend: &str, arch: &str, extra: &[(&str, &str)]) -> Result<Admission> {
+            let p = self.dir.path();
+            Admission::acquire(p, arch, backend, "tcg", p, &self.env(extra))
+        }
+        /// A raw holder, as any other client (native or an older lane's Python) holds one.
+        fn hold(&self, name: &str) -> File {
+            lock_file(&self.host().join(name), true, true)
+                .unwrap()
+                .unwrap()
+        }
+    }
+
+    fn lease(a: &Admission) -> String {
+        let p = a.receipt()["cpu_lease"].as_str().unwrap().to_owned();
+        Path::new(&p)
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    const LANE: (&str, &str) = ("VIBEOS_JOB_CLASS", "interactive");
+    const GATE: (&str, &str) = ("VIBEOS_JOB_CLASS", "integration");
+    const EIGHT: (&str, &str) = ("VIBEOS_BOOT_CPU_LEASES", "8");
+
+    #[test]
+    fn lane_boots_cannot_take_the_landing_reserve() {
+        // A lane's smokes fill only the unreserved share, so a landing gate never queues
+        // behind them (the night-long 17-red-to-1-green queue did).
+        let h = Host::new();
+        let lanes: Vec<_> = (0..4).map(|_| h.boot(&[EIGHT, LANE]).unwrap()).collect();
+        let full = h.boot(&[EIGHT, LANE]).err().unwrap().message;
+        assert!(full.contains("CPU admission timed out"), "{full}");
+        let gates: Vec<_> = (0..4).map(|_| h.boot(&[EIGHT, GATE]).unwrap()).collect();
+        assert_eq!(lanes.len() + gates.len(), 8);
+    }
+
+    #[test]
+    fn landing_takes_reserved_permits_first_and_can_overflow() {
+        let h = Host::new();
+        let gates: Vec<_> = (0..8).map(|_| h.boot(&[EIGHT, GATE]).unwrap()).collect();
+        let first: Vec<String> = gates[..4].iter().map(lease).collect();
+        assert_eq!(
+            first,
+            ["bootcpu-04", "bootcpu-05", "bootcpu-06", "bootcpu-07"]
+        );
+        assert_eq!(lease(&gates[4]), "bootcpu-00"); // an idle host lends landing everything
+        let meta: Value =
+            serde_json::from_str(&fs::read_to_string(h.host().join("bootcpu-04")).unwrap())
+                .unwrap();
+        assert_eq!(meta["job_class"], "integration");
+        assert_eq!(meta["landing"], true);
+    }
+
+    #[test]
+    fn the_landing_reserve_never_takes_the_whole_pool() {
+        let h = Host::new();
+        let r99 = ("VIBEOS_LAND_BOOT_RESERVE", "99");
+        let four = ("VIBEOS_BOOT_CPU_LEASES", "4");
+        let lane = h.boot(&[four, r99, LANE]).unwrap();
+        assert_eq!(lease(&lane), "bootcpu-00");
+        assert!(h.boot(&[four, r99, LANE]).is_err());
+    }
+
+    #[test]
+    fn the_boot_pool_throttles_boot_against_boot() {
+        let h = Host::new();
+        let two = [
+            ("VIBEOS_BOOT_CPU_LEASES", "2"),
+            ("VIBEOS_LAND_BOOT_RESERVE", "0"),
+            LANE,
+        ];
+        let (_a, _b) = (h.boot(&two).unwrap(), h.boot(&two).unwrap());
+        assert!(h.boot(&two).is_err());
+    }
+
+    #[test]
+    fn a_build_holding_every_cpu_permit_does_not_block_a_windows_boot() {
+        // Builds and windows-host boots draw from separate pools: the build runs on WSL
+        // cores, the boot on the Windows side.
+        let h = Host::new();
+        let _build: Vec<_> = (0..4)
+            .map(|i| h.hold(&format!("cpuheavy-{i:02}")))
+            .collect();
+        assert!(h.boot(&[LANE]).is_ok());
+    }
+
+    #[test]
+    fn native_tcg_boots_share_the_cpu_pool_with_builds() {
+        let h = Host::new();
+        let two = [("VIBEOS_HOST_CPU_LEASES", "2")];
+        let a = h.admit("native", "arm64", &two).unwrap();
+        let _b = h.admit("native", "arm64", &two).unwrap();
+        assert_eq!(lease(&a), "cpuheavy-00");
+        assert!(h.admit("native", "arm64", &two).is_err()); // pool exhausted
+        drop(a);
+        assert!(h.admit("native", "arm64", &two).is_ok()); // freed on release
+    }
+
+    fn ticket(h: &Host, pool: &str, name: &str) -> File {
+        lock_file(
+            &h.host().join(format!("queue-{pool}")).join(name),
+            true,
+            true,
+        )
+        .unwrap()
+        .unwrap()
+    }
+
+    #[test]
+    fn an_earlier_waiter_is_never_barged_and_a_dead_ones_ticket_is_reaped() {
+        let h = Host::new();
+        // Someone arrived first and is still waiting: a free pool is still theirs first.
+        let ahead = ticket(&h, "bootcpu", "00000000000000000001-999999-1");
+        assert!(h.boot(&[LANE]).is_err());
+        // The waiter dies: the kernel drops its flock, and the next acquirer reaps it.
+        drop(ahead);
+        let admitted = h.boot(&[LANE]).unwrap();
+        let queue = h.host().join("queue-bootcpu");
+        assert_eq!(
+            fs::read_dir(&queue).unwrap().count(),
+            0,
+            "orphan and own ticket gone"
+        );
+        drop(admitted);
+    }
+
+    #[test]
+    fn fifo_can_be_disabled() {
+        let h = Host::new();
+        let _ahead = ticket(&h, "bootcpu", "00000000000000000001-999999-1");
+        assert!(h.boot(&[LANE, ("VIBEOS_HOSTLOCK_FAIR", "0")]).is_ok());
+    }
+
+    #[test]
+    fn landing_waits_in_its_own_queue() {
+        let h = Host::new();
+        let _lane_waiter = ticket(&h, "bootcpu", "00000000000000000001-999999-1");
+        assert!(h.boot(&[GATE]).is_ok());
+    }
+
+    #[test]
+    fn broker_off_takes_no_cpu_lease_unless_a_policy_requires_one() {
+        let h = Host::new();
+        let off = [("VIBEOS_HOST_BROKER", "0")];
+        let a = h.admit("native", "arm64", &off).unwrap();
+        assert!(a.receipt()["cpu_lease"].is_null());
+        let policy = h.dir.path().join("policy");
+        fs::create_dir_all(&policy).unwrap();
+        fs::write(policy.join("build-policy.paused"), "").unwrap();
+        let e = h.admit("native", "arm64", &off).err().unwrap().message;
+        assert!(e.contains("requires the CPU broker"), "{e}");
+    }
+
+    #[test]
+    fn a_pause_releases_a_waiter_but_never_interrupts_a_holder() {
+        let h = Host::new();
+        let one = [
+            ("VIBEOS_HOST_CPU_LEASES", "1"),
+            ("VIBEOS_HOST_LOCK_TIMEOUT", "10"),
+        ];
+        let holder = h.admit("native", "arm64", &one).unwrap();
+        let env = h.env(&one);
+        let root = h.dir.path().to_path_buf();
+        let waiter = std::thread::spawn(move || {
+            Admission::acquire(&root, "arm64", "native", "tcg", &root, &env).err()
+        });
+        thread::sleep(Duration::from_millis(300));
+        fs::write(h.dir.path().join("policy/build-policy.paused"), "").unwrap();
+        let e = waiter
+            .join()
+            .unwrap()
+            .expect("the waiter is refused")
+            .message;
+        assert!(e.contains("paused"), "{e}");
+        assert!(holder.receipt()["cpu_lease"].is_string());
+        // The holder still owns its permit: a probe cannot take it.
+        let probe = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(h.host().join("cpuheavy-00"))
+            .unwrap();
+        assert_ne!(
+            unsafe { libc::flock(probe.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) },
+            0
+        );
+    }
+}
