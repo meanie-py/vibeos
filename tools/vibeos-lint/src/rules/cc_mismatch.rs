@@ -29,10 +29,12 @@ static DECL_FN: LazyLock<Regex> = LazyLock::new(|| {
     crate::regexes::cached(r#"(?:#\[link_name\s*=\s*"(?P<link>[^"]+)"\]\s*)?(?:(?:pub(?:\([^)]*\))?|unsafe)\s+)*\bfn\s+(?P<name>\w+)\s*\("#).unwrap()
 });
 static DEF: LazyLock<Regex> = LazyLock::new(|| {
-    crate::regexes::cached(r#"(?P<cfg>(?:#\[cfg[^\]]*\]\s*)*)(?:#\[no_mangle\]|#\[export_name\s*=\s*"(?P<export>[^"]+)"\])\s*(?:pub(?:\([^)]*\))?\s+)?unsafe\s+extern\s+"(?P<cc>\w+)"\s+fn\s+(?P<name>\w+)"#).unwrap()
+    crate::regexes::cached(r#"(?P<cfg>(?:#\[cfg[^\]]*\]\s*)*)(?:#\[(?:unsafe\()?no_mangle\)?\]|#\[(?:unsafe\()?export_name\s*=\s*"(?P<export>[^"]+)"\)?\])\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?unsafe\s+extern\s+"(?P<cc>\w+)"\s+fn\s+(?P<name>\w+)"#).unwrap()
 });
 static CFG_MOD: LazyLock<Regex> = LazyLock::new(|| {
-    crate::regexes::cached(r"#\[cfg\(([^\]]*)\)\]\s*(?:(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*)?\{")
+    // A cfg-gated mod, block or fn: hal-rust's `#[cfg(target_arch = "x86_64")] unsafe fn
+    // kf_lower_irql` holds an `extern "C" { fn KeLowerIrql }` that i386 never compiles.
+    crate::regexes::cached(r"#\[cfg\(([^\]]*)\)\]\s*(?:#\[[^\]]*\]\s*)*(?:(?:pub(?:\([^)]*\))?\s+)?(?:mod\s+\w+|(?:const\s+)?(?:unsafe\s+)?(?:extern\s+\x22\w+\x22\s+)?fn\s+\w+[^{;]*?)\s*)?\{")
         .unwrap()
 });
 static NOLINT: LazyLock<Regex> =
@@ -607,5 +609,21 @@ mod tests {
             Path::new("sdk/lib/rust/demo-rust/src/common.rs"),
             "extern \"system\" { fn X(); }"
         ));
+    }
+    #[test]
+    fn a_definition_behind_other_attributes_or_unsafe_no_mangle_counts() {
+        // ntoskrnl-rust's i386 KeRaiseIrql shim: #[inline(never)] sits between #[no_mangle]
+        // and the fn, which hid it, so the crate's own extern "C" decl read as a mismatch.
+        let src = "#[cfg(target_arch = \"x86\")]\n#[no_mangle]\n#[inline(never)]\npub unsafe extern \"C\" fn KeRaiseIrql(a: u8) {}\n#[unsafe(no_mangle)]\npub unsafe extern \"system\" fn KeLowerIrql(a: u8) {}\n";
+        let (defs, _) = convention_facts(src);
+        let names: Vec<_> = defs.iter().map(|(n, _, ex)| (n.as_str(), *ex)).collect();
+        assert_eq!(names, [("KeRaiseIrql", false), ("KeLowerIrql", false)]);
+    }
+    #[test]
+    fn a_decl_inside_a_cfg_gated_fn_is_excluded_on_i386() {
+        // hal-rust's x86_64-only kf_lower_irql declares extern "C" KeLowerIrql inside its body.
+        let src = "#[cfg(target_arch = \"x86_64\")]\nunsafe fn kf(o: u8) {\n    unsafe extern \"C\" {\n        fn KeLowerIrql(n: u8);\n    }\n    unsafe { KeLowerIrql(o) }\n}\n";
+        let (_, decls) = convention_facts(src);
+        assert!(decls.is_empty(), "{decls:?}");
     }
 }

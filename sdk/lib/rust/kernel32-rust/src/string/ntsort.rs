@@ -610,3 +610,48 @@ pub unsafe fn nt_compare_string(lcid: LCID, flags: DWORD, s1: &[u16], s2: &[u16]
         }
     }
 }
+
+/// What LCMapString(NORM_IGNORENONSPACE) does with one UTF-16 unit.
+pub enum Nonspace {
+    Keep,
+    Drop,
+    Base(u16),
+}
+
+/// First script member that is a letter (12 is digits, below are symbols).
+const SM_FIRST_LETTER: u8 = 13;
+/// The diacritic weight of an unaccented character.
+const DW_BASE: u8 = 2;
+
+/// NORM_IGNORENONSPACE for LCMapString: a nonspacing mark is dropped and an
+/// accented letter becomes its base letter.
+///
+/// Windows does this by canonical decomposition. We have no decomposition
+/// tables (the C's `wine_decompose` call is commented out), but sortkey.nls
+/// already encodes the same relation the way CompareString sees it: an
+/// accented letter has its base letter's script member, alphabetic weight and
+/// case weight, and a diacritic weight above 2 (`é` = (33,14,14,2), `e` =
+/// (33,14,2,2)). So the base is the character with the same (SM, AW, CW) and
+/// DW 2. This also strips letters NFD leaves alone because their mark is not
+/// a combining sequence (`ø`, `ı`), which is what CompareString's
+/// NORM_IGNORENONSPACE does with them too.
+pub unsafe fn nonspace(c: u16) -> Nonspace {
+    let Some(t) = tables() else { return Nonspace::Keep };
+    let k = Key::from(rd32(t.keys, c as usize * 4));
+    if k.sm == SM_NONSPACE_MARK {
+        return Nonspace::Drop;
+    }
+    if k.sm < SM_FIRST_LETTER || k.dw <= DW_BASE {
+        return Nonspace::Keep;
+    }
+    // Bases are almost all below their accented forms (Latin ones in ASCII),
+    // so a forward scan stops early; the full scan only runs for a letter with
+    // no unaccented twin, and then the letter is kept as it is.
+    for b in 0..=0xffffu32 {
+        let bk = Key::from(rd32(t.keys, b as usize * 4));
+        if bk.dw == DW_BASE && bk.sm == k.sm && bk.aw == k.aw && bk.cw == k.cw {
+            return Nonspace::Base(b as u16);
+        }
+    }
+    Nonspace::Keep
+}

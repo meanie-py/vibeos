@@ -1881,6 +1881,23 @@ def test_a_tu_that_flips_the_charset_is_an_instantiation_not_the_island():
     assert charset_instantiations([texta, texta], True) == set()
 
 
+def test_one_tu_retargeting_the_sdk_version_stays_out_of_the_island():
+    """shlwapi: assoc.c alone redefines _WIN32_WINNT to VISTA; merged module-wide it
+    contradicted -DNTDDI_VERSION and sdkddkver.h `#error`ed. A module whose TUs all
+    re-target keeps the override."""
+    from rustconv.profile_derive import version_overrides
+
+    assoc = [
+        "#undef _WIN32_WINNT",
+        "#define _WIN32_WINNT _WIN32_WINNT_VISTA",
+        "#include <windef.h>",
+    ]
+    path = ['#include "precomp.h"']
+    assert version_overrides([path, assoc, path]) == {1}
+    assert version_overrides([assoc, assoc]) == set()
+    assert version_overrides([path, path]) == set()
+
+
 def test_a_dotted_target_name_is_read_whole(tmp_path):
     from rustconv.profile_derive import _target_names
 
@@ -2000,3 +2017,47 @@ def test_a_body_less_cell_owns_its_shims_sources(tmp_path):
     m = parse_cmakelists(mod / "CMakeLists.txt", tmp_path, arch="amd64", target="ddraw")
     assert sorted(p.name for p in m.compiled_tus) == ["ddraw.c", "main.c"]
     assert m.name == "ddraw" and m.module_type == "win32dll" and m.unicode
+
+
+def test_a_usermode_module_gets_ntdll_sys_opaque_types_whole(tmp_path):
+    """shlwapi: ntdll-sys forward-declares IStream/IStreamVtbl/tagSTATSTG as
+    `{ _unused: [u8; 0] }`; five arms hand-wrote the UNBLOCK. Derived now, typedefs included."""
+    from types import SimpleNamespace
+
+    from rustconv.profile_derive import opaque_types_to_unblock
+
+    sys_dir = tmp_path / "sdk/lib/rust/ntdll-sys/src"
+    sys_dir.mkdir(parents=True)
+    (sys_dir / "bindgen_amd64.rs").write_text(
+        "pub struct IStream {\n    _unused: [u8; 0],\n}\n"
+        "pub struct tagSTATSTG {\n    _unused: [u8; 0],\n}\n"
+        "pub struct _UNUSED_HERE {\n    _unused: [u8; 0],\n}\n"
+        "pub type STATSTG = tagSTATSTG;\npub type LPSTATSTG = *mut STATSTG;\n"
+    )
+    hdr = tmp_path / "objidl.h"
+    hdr.write_text(
+        "typedef struct tagSTATSTG { int x; } STATSTG;\ninterface IStream { int y; };\n"
+        "struct _UNUSED_HERE { int z; };\n"
+    )
+    tu = tmp_path / "a.c"
+    tu.write_text("void f(IStream *s, STATSTG *st) {}\n")
+    dp = SimpleNamespace(
+        env=SimpleNamespace(repo_root=tmp_path),
+        module=SimpleNamespace(is_usermode=True, compiled_tus=[tu]),
+        closure=SimpleNamespace(headers={hdr: SimpleNamespace(kind="sdk")}),
+        allow_files=[r".*objidl\.h"],
+    )
+    got = opaque_types_to_unblock(dp)  # type: ignore[arg-type]
+    assert {"IStream", "tagSTATSTG", "STATSTG", "LPSTATSTG"} <= set(got)
+    assert "_UNUSED_HERE" not in got and "UNUSED_HERE" not in got
+
+
+def test_an_exclusion_only_some_tus_define_stays_out_of_the_island():
+    """shlwapi: ordinal.c's NO_SHLWAPI_PATH hid url.c's PARSEDURL for the whole island."""
+    from rustconv.profile_derive import partial_exclusions
+
+    ordinal = ["#define NO_SHLWAPI_PATH", "#define NONAMELESSUNION", '#include "shlwapi.h"']
+    url = ["#define NONAMELESSUNION", '#include "shlwapi.h"']
+    both = ["#define WIN32_LEAN_AND_MEAN", '#include "shlwapi.h"']
+    assert partial_exclusions([ordinal, url]) == {"NO_SHLWAPI_PATH"}
+    assert partial_exclusions([both, both]) == set()

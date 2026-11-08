@@ -30,7 +30,7 @@ _COND_RE = re.compile(r"^\s*#\s*(ifdef|ifndef|if|elif|else|endif)\b(.*)$")
 _DEFINED_RE = re.compile(r"\bdefined\s*\(?\s*([A-Za-z_]\w*)\s*\)?")
 
 
-def _blank_dead_branches(text: str) -> str:
+def _blank_dead_branches(text: str, drop_undecidable: bool = False) -> str:
     """Blank out preprocessor-dead lines, PRESERVING line structure.
 
     Without this the audit compares against code the compiler never sees. ole32's
@@ -40,11 +40,15 @@ def _blank_dead_branches(text: str) -> str:
     the dead one and reported 7 bogus "wrong character" diffs.
 
     Undecidable conditions keep BOTH branches — never blank code we can't prove dead.
+    `drop_undecidable` is the other reading, every undecidable arm blanked: the audit uses
+    it only to explain a count mismatch, never to pass a table on its own.
     """
     out: list[str] = []
     stack: list[bool | None] = []  # per-nesting: is THIS branch live? None = unknown
 
     def live() -> bool:
+        if drop_undecidable:
+            return all(s is True for s in stack)
         return all(s is not False for s in stack)
 
     for line in text.splitlines():
@@ -276,7 +280,7 @@ def normalize_element(e: str) -> int | None:
         return None
 
 
-def parse_c_tables(c_path: Path) -> dict[str, list[str]]:
+def parse_c_tables(c_path: Path, drop_undecidable: bool = False) -> dict[str, list[str]]:
     """name -> raw element list, for every FILE-SCOPE `static T name[] = {..}`.
 
     File-scope only, and deliberately so. Function-local statics are not in scope
@@ -286,7 +290,9 @@ def parse_c_tables(c_path: Path) -> dict[str, list[str]]:
     silently compared VarMul's C table against VarAdd's Rust one and reported a
     bug that did not exist. A collision here is a tool defect, so it raises.
     """
-    text = _blank_dead_branches(_strip_comments(c_path.read_text(errors="replace")))
+    text = _blank_dead_branches(
+        _strip_comments(c_path.read_text(errors="replace")), drop_undecidable
+    )
     scan = scan_file(c_path)
     in_fn: set[int] = set()
     for f in scan.functions:
@@ -398,6 +404,11 @@ def audit_tables(c_path: Path, rust: str) -> list[TableDiff]:
     (the LLM likes to SCREAMING_CASE a `static const`).
     """
     c_tables = parse_c_tables(c_path)
+    # shlwapi's assoc.c: `audio_exts` holds `.mp2` under `#if _WIN32_WINNT > 0x602`, which the
+    # TU's own VISTA makes dead. Keeping both arms of an undecidable `#if` counted 73 elements
+    # against the Rust's correct 68. A Rust table matching the C with EVERY undecidable arm
+    # dropped took one consistent reading -- reported as such, for a human to confirm the arm.
+    c_alt = parse_c_tables(c_path, drop_undecidable=True)
     r_tables, r_unparsed = parse_rust_tables(rust)
     r_by_lower = {k.lower(): k for k in r_tables}
     unparsed_by_lower = {k.lower(): k for k in r_unparsed}
@@ -437,6 +448,17 @@ def audit_tables(c_path: Path, rust: str) -> list[TableDiff]:
             if delta < best_delta:
                 best, best_delta = d, delta
         assert best is not None
+        alt = c_alt.get(name)
+        if best.kind == "count" and alt is not None and alt != c_elems:
+            for r_elems in candidates:
+                if _compare(name, rname, alt, r_elems).kind == "ok":
+                    best = TableDiff(
+                        name,
+                        "ok",
+                        f"matches the C with its undecidable #if arm(s) dropped "
+                        f"({len(alt)} of {len(c_elems)} elements) -- check that arm is dead",
+                    )
+                    break
         diffs.append(best)
     return diffs
 

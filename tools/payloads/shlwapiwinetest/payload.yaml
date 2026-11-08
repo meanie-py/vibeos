@@ -1,0 +1,29 @@
+# Wine's shlwapi conformance suite, run by the apitest sweep runner.
+#
+# shlwapi's 17 C TUs are Rust (shlwapi-rust, flipped 2026-11-07); smoke reaches a sliver of
+# its ~600 exports (paths, strings, URLs, registry, streams). Wine's own suite is the oracle.
+# Before/after: payload `shlwapiwinetestc` runs this same list against the pre-flip C; diff
+# the [APITEST:...] lines of the two runs. The list is olewinetest's gen_suites.py pointed at
+# shlwapi (see build_hint); see olewinetest/payload.yaml for why children start on C:.
+name: shlwapiwinetest
+description: Wine shlwapi conformance suite under the apitest sweep runner
+
+build_hint: "bash tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --winetests shlwapi && python3 tools/payloads/olewinetest/gen_suites.py --arch {arch} --suites shlwapi --register '' --out-dir tools/payloads/shlwapiwinetest"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe
+  - src: tools/payloads/shlwapiwinetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/shlwapiwinetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/shlwapiwinetest/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: build-{arch}/modules/rostests/winetests/shlwapi/shlwapi_winetest.exe
+    dest: bin/shlwapi_winetest.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 3600
+  launch_idle_secs: 600

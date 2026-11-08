@@ -2911,6 +2911,9 @@ unsafe fn IntCreateDesktop_impl(
             Status = STATUS_UNSUCCESSFUL;
             break 'quit;
         }
+        // No CBT hook runs for the desktop/message window; correct the style
+        // here, where IntCreateWindow used to.
+        crate::window::IntFixCreateStyles(pWnd);
 
         (*pdesk).dwSessionId = PsGetCurrentProcessSessionId();
         (*pdesk).DesktopWindow = UserHMGetHandle(pWnd) as _;
@@ -2954,6 +2957,9 @@ unsafe fn IntCreateDesktop_impl(
             Status = STATUS_UNSUCCESSFUL;
             break 'quit;
         }
+        // No CBT hook runs for the desktop/message window; correct the style
+        // here, where IntCreateWindow used to.
+        crate::window::IntFixCreateStyles(pWnd);
 
         (*pdesk).spwndMessage = pWnd;
         (*pWnd).fnid = FNID_MESSAGEWND as _;

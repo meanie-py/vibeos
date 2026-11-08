@@ -472,8 +472,15 @@ extends it from the boot spine to every fully-Rust module.
        `add_subdirectory(<dir>)` names the arches (there, an ARCH test ANDed with an option
        is accepted: the whole rewritten file stays under it); a closed `elseif` chain before
        the target no longer refuses it; a target's own POST_BUILD is not a `$<TARGET_FILE>`
-       consumer. Still held: cdrom, ucx01000, usbhub3 (`kmdfdriver` kind not modelled; the
-       last two are C++), and the C++ drivers drmk, hdaudbus, portcls, uniata.
+       consumer. Still held: the C++ drivers drmk, hdaudbus, portcls, uniata, ucx01000 and
+       usbhub3.
+     - **2026-11-07: cdrom (KMDF) converted**, EQUIVALENT ×3. `add_cargo_module(... KIND
+       kmdfdriver)` runs `native-pefixup --wdmdriver` as set_module_type(kmdfdriver) did; the
+       OBJECT library takes `wdfdriverentry`'s usage (the KMDF include dir and WDF defines
+       set_module_type brought). A `-Wl,` item in a link order is passed to the linker in
+       place (cdrom whole-archives its body), and a body linked under `--whole-archive` makes
+       the cell shell-less: the staticlib brings its own core and panic handler, which a
+       rustc bin would define again.
      - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
        `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
        `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses

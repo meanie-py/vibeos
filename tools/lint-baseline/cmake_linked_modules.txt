@@ -5,7 +5,6 @@ audio_test: linked by cmake, not a cargo cell
 bcryptprimitives: linked by cmake, not a cargo cell
 browseui: linked by cmake, not a cargo cell
 cabview: linked by cmake, not a cargo cell
-cdrom: linked by cmake, not a cargo cell
 certmgr: linked by cmake, not a cargo cell
 certutil: linked by cmake, not a cargo cell
 cleanmgr: linked by cmake, not a cargo cell
