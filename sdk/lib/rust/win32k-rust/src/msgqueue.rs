@@ -302,7 +302,6 @@ fn IS_KBD_MESSAGE(message: UINT) -> BOOLEAN {
 
 // ---- file-scope preamble (translated) ----
 static mut pgMessageLookasideList: PPAGED_LOOKASIDE_LIST = core::ptr::null_mut();
-static mut pgSendMsgLookasideList: PPAGED_LOOKASIDE_LIST = core::ptr::null_mut();
 #[no_mangle]
 pub static mut PostMsgCount: INT = 0;
 #[no_mangle]
@@ -321,10 +320,11 @@ pub static mut usmList: LIST_ENTRY = LIST_ENTRY {
     Blink: core::ptr::null_mut(),
 };
 
+// Pool tag for both message kinds (tags.h: 'Usrm').
+const TAG_USRMSG: ULONG = 0x4d525355;
+
 #[no_mangle]
 pub unsafe extern "system" fn MsqInitializeImpl() -> NTSTATUS {
-    const TAG_USRMSG: ULONG = 0x4d525355;
-
     pgMessageLookasideList = ExAllocatePoolWithTag(
         NonPagedPool,
         core::mem::size_of::<PAGED_LOOKASIDE_LIST>() as SIZE_T,
@@ -341,24 +341,6 @@ pub unsafe extern "system" fn MsqInitializeImpl() -> NTSTATUS {
         core::mem::size_of::<USER_MESSAGE>() as _,
         TAG_USRMSG,
         256,
-    );
-
-    pgSendMsgLookasideList = ExAllocatePoolWithTag(
-        NonPagedPool,
-        core::mem::size_of::<PAGED_LOOKASIDE_LIST>() as SIZE_T,
-        TAG_USRMSG,
-    ) as *mut PAGED_LOOKASIDE_LIST;
-    if pgSendMsgLookasideList.is_null() {
-        return STATUS_NO_MEMORY;
-    }
-    ExInitializePagedLookasideList(
-        pgSendMsgLookasideList as _,
-        None,
-        None,
-        0,
-        core::mem::size_of::<USER_SENT_MESSAGE>() as SIZE_T,
-        TAG_USRMSG,
-        16,
     );
 
     InitializeListHead(core::ptr::addr_of_mut!(usmList));
@@ -1313,7 +1295,18 @@ pub unsafe extern "C" fn AllocateUserMessage(KEvent: BOOL) -> PUSER_SENT_MESSAGE
 }
 
 unsafe fn AllocateUserMessage_impl(KEvent: BOOL) -> PUSER_SENT_MESSAGE {
-    let Message: PUSER_SENT_MESSAGE = ExAllocateFromPagedLookasideList(pgSendMsgLookasideList) as PUSER_SENT_MESSAGE;
+    // Divergence from the C, which takes these from a PAGED lookaside list: a
+    // USER_SENT_MESSAGE embeds the KEVENT its sender waits on and its receiver
+    // signals, and a dispatcher object must live in nonpaged memory. KeSetEvent
+    // reads and writes Header.SignalState with the dispatcher lock held, and the
+    // waiter's wait blocks are linked into Header.WaitListHead, so a paged-out
+    // message page there is a fault at DISPATCH_LEVEL. The ntoskrnl spec exports
+    // no nonpaged lookaside allocator on every ABI, so use nonpaged pool directly.
+    let Message: PUSER_SENT_MESSAGE = ExAllocatePoolWithTag(
+        NonPagedPool,
+        core::mem::size_of::<USER_SENT_MESSAGE>() as SIZE_T,
+        TAG_USRMSG,
+    ) as PUSER_SENT_MESSAGE;
 
     if Message.is_null() {
         return core::ptr::null_mut();
@@ -1347,7 +1340,7 @@ unsafe fn FreeUserMessage_impl(Message: PUSER_SENT_MESSAGE) {
 
     RemoveEntryList(core::ptr::addr_of_mut!((*Message).ListEntry));
 
-    ExFreeToPagedLookasideList(pgSendMsgLookasideList, Message as PVOID);
+    ExFreePoolWithTag(Message as PVOID, TAG_USRMSG);
     SendMsgCount -= 1;
 }
 
@@ -3094,6 +3087,47 @@ unsafe fn MsqInitializeMessageQueue_impl(
     1u8
 }
 
+// Divergence from the C, which has no equivalent: a thread that exits leaves
+// its THREADINFO named as ptiCallBackSender by every SendMessageCallback /
+// SendNotifyMessage message it queued to another thread. The receiver, after
+// running the window procedure, re-queues the message onto that dead thread's
+// SentMessagesListHead and wakes its pEventQueueServer; both live in freed
+// memory (user32:msg's SetParent thread: BUGCHECK 0x1E at
+// co_MsqDispatchOneSentMessage's InsertTailList, or in KeSetEvent from the
+// inlined MsqWakeQueue). Called from the thread-exit callout while the
+// THREADINFO is still whole, this drops the callback from every message that
+// names it, so the receiver treats it as a notify message and frees it (every
+// callback message is created with SMF_RECEIVERFREE).
+pub(crate) unsafe fn MsqDetachCallbackSender(pti: PTHREADINFO) {
+    unsafe fn detach(ListHead: PLIST_ENTRY, pti: PTHREADINFO) {
+        let mut Entry = (*ListHead).Flink;
+        while Entry != ListHead {
+            let Message = (Entry as *mut u8)
+                .offset(-(core::mem::offset_of!(USER_SENT_MESSAGE, ListEntry) as isize))
+                as PUSER_SENT_MESSAGE;
+            if (*Message).ptiCallBackSender == pti {
+                (*Message).ptiCallBackSender = core::ptr::null_mut();
+                (*Message).CompletionCallback = None;
+            }
+            Entry = (*Entry).Flink;
+        }
+    }
+
+    detach(core::ptr::addr_of_mut!(usmList), pti);
+
+    let mut ppi = crate::main::gppiList;
+    while !ppi.is_null() {
+        let mut ptiOther = (*ppi).ptiList;
+        while !ptiOther.is_null() {
+            if ptiOther != pti {
+                detach(core::ptr::addr_of_mut!((*ptiOther).SentMessagesListHead), pti);
+            }
+            ptiOther = (*ptiOther).ptiSibling;
+        }
+        ppi = (*ppi).ppiNext;
+    }
+}
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn MsqCleanupThreadMsgs(pti: PTHREADINFO) {
@@ -3164,7 +3198,21 @@ unsafe fn MsqCleanupThreadMsgs_impl(pti: PTHREADINFO) {
                 as PUSER_SENT_MESSAGE;
             CurrentEntry = (*CurrentEntry).Flink;
 
-            if pti == (*CurrentSentMessage).ptiReceiver {
+            if pti == (*CurrentSentMessage).ptiReceiver
+                && (*CurrentSentMessage).flags & SMF_RECEIVERBUSY as u32 != 0
+                && !(*CurrentSentMessage).ptiCallBackSender.is_null()
+                && (*CurrentSentMessage).ptiCallBackSender != pti
+                && (*CurrentSentMessage).QS_Flags & QS_SMRESULT != 0
+            {
+                // Divergence from the C, which frees it here too: this message
+                // was answered and is now being dispatched by its CALLBACK
+                // sender, which is inside co_IntCallSentMessageCallback's
+                // user-mode callout with the user lock released. Freeing it
+                // under that thread is a use-after-free: on return it writes
+                // CompletionCallback, reads pkCompletionEvent and frees it. Its
+                // flags already carry SMF_RECEIVERFREE, so that thread frees it.
+                (*CurrentSentMessage).ptiReceiver = core::ptr::null_mut();
+            } else if pti == (*CurrentSentMessage).ptiReceiver {
                 if (*CurrentSentMessage).HasPackedLParam != 0 {
                     if (*CurrentSentMessage).Msg.lParam != 0 {
                         ExFreePool((*CurrentSentMessage).Msg.lParam as PVOID);
