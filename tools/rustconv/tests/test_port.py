@@ -2329,3 +2329,14 @@ def test_a_fn_pointer_alias_takes_its_c_typedefs_convention(tmp_path, monkeypatc
     assert 'Notify = Option<unsafe extern "system" fn' in out
     assert 'type Vararg = unsafe extern "C" fn' in out  # WINAPIV is cdecl: already right
     assert 'Both = Option<unsafe extern "C" fn' in out  # two ways in the C: left alone
+
+
+def test_a_header_static_is_never_exported_as_an_island_extern(tmp_path, monkeypatch):
+    # wined3d_private.h: bindgen declares this `static const` as an extern, but each TU owns
+    # a private copy -- exporting every unit's copy was a duplicate symbol at link.
+    (tmp_path / "wined3d_private.h").write_text(
+        "static const struct color_fixup_desc COLOR_FIXUP_IDENTITY =\n    {0, 1, 0, 2};\n"
+        "extern const struct wined3d_vec4 wined3d_srgb_const[];\n"
+    )
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    assert port._header_internal_statics({"module_dir": "."}) == {"COLOR_FIXUP_IDENTITY"}

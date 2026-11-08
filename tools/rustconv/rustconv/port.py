@@ -1299,6 +1299,23 @@ def _module_method_calls(path: Path, globals_: list[str]) -> list[str]:
 _UNIT_STATIC = re.compile(r"^(?!#\[no_mangle\]\n)(pub )?(?:static (mut )?|(const) )(\w+):", re.M)
 
 
+_HEADER_STATIC = re.compile(
+    r"^\s*static\s+(?:const\s+)?(?:struct\s+|enum\s+|union\s+)?\w+[\s*]+(\w+)\s*(?:\[[^\]]*\])?\s*=",
+    re.M,
+)
+
+
+def _header_internal_statics(state: dict) -> set[str]:
+    """Names the module's own HEADERS define `static` (internal linkage): one private copy per
+    TU. bindgen still declares them as island externs, which made `_export_island_statics`
+    export every unit's copy -- wined3d_private.h's `static const struct color_fixup_desc
+    COLOR_FIXUP_IDENTITY` came back `#[no_mangle]` in four modules, a duplicate symbol."""
+    out: set[str] = set()
+    for h in _module_headers(REPO / state["module_dir"]):
+        out |= set(_HEADER_STATIC.findall(h.read_text(errors="replace")))
+    return out
+
+
 def _export_island_statics(path: Path, island: set[str]) -> list[str]:
     """A unit's definition of a global the island declares `extern`: the C++ gave it
     external linkage, and every OTHER unit reaches it through that extern -- so it must be
@@ -5399,7 +5416,7 @@ def stage_integrate(stem: str) -> None:
     )
     island_consts = _island_consts(crate / "src")
     unicode = _TCHAR_BEGIN in (crate / "src" / "prelude.rs").read_text(errors="replace")
-    island_statics = _island_extern_statics(crate / "src")
+    island_statics = _island_extern_statics(crate / "src") - _header_internal_statics(state)
     rendered_globals = _rendered_globals(crate / "src", stem)
     module_globals = _module_globals(state)
     spec_stubs = _spec_stubs(state)
