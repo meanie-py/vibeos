@@ -27687,7 +27687,35 @@ unsafe fn map_to_fullwidth(mut src: *const WCHAR, mut srclen: i32, dst: *mut WCH
     pos
 }
 
-unsafe fn map_to_lowercase(flags: DWORD, src: *const WCHAR, srclen: i32, dst: *mut WCHAR, dstlen: i32) -> i32 {
+extern "system" {
+    fn RtlDowncaseUnicodeChar(Source: WCHAR) -> WCHAR;
+    fn RtlUpcaseUnicodeChar(Source: WCHAR) -> WCHAR;
+}
+
+// Divergence from the C, which cased through the CRT's towlower/towupper: those leave
+// most of Unicode alone (Greek capital sigma, I/i with ogonek or tilde, every Greek
+// letter with ypogegrammeni). Windows cases with the NLS table l_intl.nls, which ntdll's
+// Rtl{Up,Down}caseUnicodeChar walk. Two exceptions, as Windows does: U+0130 and U+0131
+// map to i and I only under LCMAP_LINGUISTIC_CASING, and under it a Turkic locale (tr,
+// az) cases i <-> U+0130 and I <-> U+0131 instead.
+unsafe fn nls_lower(flags: DWORD, turkic: bool, ch: WCHAR) -> WCHAR {
+    let linguistic = flags & LCMAP_LINGUISTIC_CASING != 0;
+    match ch {
+        0x0049 if linguistic && turkic => 0x0131,
+        0x0130 | 0x0131 if !linguistic => ch,
+        _ => RtlDowncaseUnicodeChar(ch),
+    }
+}
+unsafe fn nls_upper(flags: DWORD, turkic: bool, ch: WCHAR) -> WCHAR {
+    let linguistic = flags & LCMAP_LINGUISTIC_CASING != 0;
+    match ch {
+        0x0069 if linguistic && turkic => 0x0130,
+        0x0130 | 0x0131 if !linguistic => ch,
+        _ => RtlUpcaseUnicodeChar(ch),
+    }
+}
+
+unsafe fn map_to_lowercase(flags: DWORD, turkic: bool, src: *const WCHAR, srclen: i32, dst: *mut WCHAR, dstlen: i32) -> i32 {
     let mut pos: i32 = 0;
     let mut src_ptr = src;
     let mut remaining = srclen;
@@ -27696,7 +27724,7 @@ unsafe fn map_to_lowercase(flags: DWORD, src: *const WCHAR, srclen: i32, dst: *m
         let wch = *src_ptr;
         if !((flags & NORM_IGNORESYMBOLS) != 0 && (get_char_typeW(wch) & (C1_PUNCT | C1_SPACE)) != 0) {
             if pos < dstlen {
-                *dst.offset(pos as isize) = tolowerW(wch);
+                *dst.offset(pos as isize) = nls_lower(flags, turkic, wch);
             }
             pos += 1;
         }
@@ -27706,7 +27734,7 @@ unsafe fn map_to_lowercase(flags: DWORD, src: *const WCHAR, srclen: i32, dst: *m
     pos
 }
 
-unsafe fn map_to_uppercase(flags: DWORD, src: *const WCHAR, srclen: i32, dst: *mut WCHAR, dstlen: i32) -> i32 {
+unsafe fn map_to_uppercase(flags: DWORD, turkic: bool, src: *const WCHAR, srclen: i32, dst: *mut WCHAR, dstlen: i32) -> i32 {
     let mut pos: i32 = 0;
     let mut src_ptr = src;
     let mut remaining = srclen;
@@ -27715,7 +27743,7 @@ unsafe fn map_to_uppercase(flags: DWORD, src: *const WCHAR, srclen: i32, dst: *m
         let wch: WCHAR = *src_ptr;
         if !((flags & NORM_IGNORESYMBOLS) != 0 && (get_char_typeW(wch) & (C1_PUNCT | C1_SPACE)) != 0) {
             if pos < dstlen {
-                *dst.offset(pos as isize) = toupperW(wch);
+                *dst.offset(pos as isize) = nls_upper(flags, turkic, wch);
             }
             pos += 1;
         }
@@ -27857,6 +27885,7 @@ unsafe fn map_remove_ignored(flags: DWORD, src: *const WCHAR, srclen: i32, dst: 
 }
 
 unsafe fn lcmap_string(
+    turkic: bool,
     mut flags: DWORD,
     src: *const WCHAR,
     srclen: i32,
@@ -27941,12 +27970,12 @@ unsafe fn lcmap_string(
             }
             0 => {
                 if flags & LCMAP_LOWERCASE != 0 {
-                    ret = map_to_lowercase(flags, src, srclen, dst, dstlen);
+                    ret = map_to_lowercase(flags, turkic, src, srclen, dst, dstlen);
                     flags &= !LCMAP_LOWERCASE;
                     break 'switch;
                 }
                 if flags & LCMAP_UPPERCASE != 0 {
-                    ret = map_to_uppercase(flags, src, srclen, dst, dstlen);
+                    ret = map_to_uppercase(flags, turkic, src, srclen, dst, dstlen);
                     flags &= !LCMAP_UPPERCASE;
                     break 'switch;
                 }
@@ -27971,10 +28000,10 @@ unsafe fn lcmap_string(
 
     if dstlen != 0 {
         if flags & LCMAP_LOWERCASE != 0 {
-            map_to_lowercase(flags, dst, ret, dst, dstlen);
+            map_to_lowercase(flags, turkic, dst, ret, dst, dstlen);
         }
         if flags & LCMAP_UPPERCASE != 0 {
-            map_to_uppercase(flags, dst, ret, dst, dstlen);
+            map_to_uppercase(flags, turkic, dst, ret, dst, dstlen);
         }
         if flags & LCMAP_BYTEREV != 0 {
             map_byterev(dst, core::cmp::min(ret, dstlen), dst);
@@ -28059,7 +28088,16 @@ pub unsafe extern "system" fn LCMapStringEx(
         return 0;
     }
 
-    lcmap_string(flags, src, srclen, dst, dstlen)
+    lcmap_string(is_turkic_locale(locale), flags, src, srclen, dst, dstlen)
+}
+
+// "tr-*" or "az-*", any case (the test passes "TR-TR" and "az-Latn-az").
+unsafe fn is_turkic_locale(locale: LPCWSTR) -> bool {
+    if locale.is_null() || *locale == 0 || *locale.add(1) == 0 || *locale.add(2) != b'-' as WCHAR {
+        return false;
+    }
+    let lower = |i: usize| (*locale.add(i) | 0x20) as u8;
+    matches!((lower(0), lower(1)), (b't', b'r') | (b'a', b'z'))
 }
 
 #[no_mangle]
