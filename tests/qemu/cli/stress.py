@@ -47,6 +47,7 @@ from pathlib import Path
 
 from tools import qemu_infra_compat as native
 
+from .. import backend
 from . import archcfg, pcsample, provenance
 from .artifacts import Run
 from .farm import _extract_evidence, _git_state, _preserve_failure
@@ -119,7 +120,7 @@ def _pin_windows(uid_prefix: str, mask: int) -> list[int]:
         f"{{ $p.ProcessorAffinity = [IntPtr]{mask}; Write-Output $_.ProcessId }} }}"
     )
     try:
-        cp = subprocess.run(
+        cp = backend.run_interop(
             ["powershell.exe", "-NoProfile", "-Command", ps],
             capture_output=True,
             text=True,
