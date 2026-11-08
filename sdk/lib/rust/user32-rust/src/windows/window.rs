@@ -1117,13 +1117,11 @@ pub unsafe extern "system" fn GetClientRect(hWnd: HWND, lpRect: LPRECT) -> BOOL 
     if Wnd.is_null() {
         return 0;
     }
-    if (*Wnd).style & WS_MINIMIZED != 0 {
-        (*lpRect).top = 0;
-        (*lpRect).left = 0;
-        (*lpRect).right = GetSystemMetrics(SM_CXMINIMIZED as core::ffi::c_int);
-        (*lpRect).bottom = GetSystemMetrics(SM_CYMINIMIZED as core::ffi::c_int);
-        return 1;
-    }
+    // The C reported (0,0,SM_CXMINIMIZED,SM_CYMINIMIZED) for a minimized
+    // window. Windows returns the real client rect, which DefWindowProc's
+    // WM_NCCALCSIZE makes empty for an iconic window (user32:win
+    // test_ShowWindow expects an empty rect); the fake one disagreed with
+    // WM_NCCALCSIZE and GetWindowInfo for every minimized window.
     if hWnd != GetDesktopWindow() {
         // RECTL → RECT: layout-identical; copy through pointer cast.
         *lpRect = *(core::ptr::addr_of!((*Wnd).rcClient) as *const RECT);

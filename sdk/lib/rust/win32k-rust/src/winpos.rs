@@ -998,25 +998,107 @@ unsafe fn IntSetWindowPlacement(Wnd: PWND, wpl: *mut WINDOWPLACEMENT, Flags: UIN
 }
 }
 
+// ArrangeIconicWindows, as Windows does it (and Wine's arrange_iconic_windows).
+//
+// The C stacked every minimized child along the bottom-left edge with no gap,
+// passed SM_CX/CYMINIMIZED as a SIZE (so the move re-ran WM_NCCALCSIZE),
+// ignored SPI_SETMINIMIZEDMETRICS entirely, and returned the icon height
+// instead of the number of windows arranged. user32:win's
+// test_arrange_iconic_windows checks all of these: the start corner and
+// direction come from MINIMIZEDMETRICS.iArrange, the gaps from
+// iHorzGap/iVertGap, the windows are only MOVED, and the return is the count.
+
+/// ARW_STARTRIGHT / ARW_STARTTOP are not in the bindgen island; they are the
+/// low two bits of iArrange (ARW_BOTTOMRIGHT == 1, ARW_TOPLEFT == 2).
+const ARW_STARTRIGHT: INT = ARW_BOTTOMRIGHT as INT;
+const ARW_STARTTOP: INT = ARW_TOPLEFT as INT;
+
+unsafe fn first_minimized_child_pos(parent: &RECTL, mm: &MINIMIZEDMETRICS, width: INT, height: INT) -> POINT {
+    POINT {
+        x: if mm.iArrange & ARW_STARTRIGHT != 0 {
+            parent.right - mm.iHorzGap - width
+        } else {
+            parent.left + mm.iHorzGap
+        },
+        y: if mm.iArrange & ARW_STARTTOP != 0 {
+            parent.top + mm.iVertGap
+        } else {
+            parent.bottom - mm.iVertGap - height
+        },
+    }
+}
+
+unsafe fn next_minimized_child_pos(parent: &RECTL, mm: &MINIMIZEDMETRICS, width: INT, height: INT, pos: &mut POINT) {
+    let next: bool;
+    if mm.iArrange & ARW_UP as INT != 0 {
+        // Columns: ARW_UP == ARW_DOWN, the start corner decides which.
+        if mm.iArrange & ARW_STARTTOP != 0 {
+            pos.y += height + mm.iVertGap;
+            next = pos.y + height > parent.bottom;
+            if next {
+                pos.y = parent.top + mm.iVertGap;
+            }
+        } else {
+            pos.y -= height + mm.iVertGap;
+            next = pos.y < parent.top;
+            if next {
+                pos.y = parent.bottom - mm.iVertGap - height;
+            }
+        }
+        if next {
+            if mm.iArrange & ARW_STARTRIGHT != 0 {
+                pos.x -= width + mm.iHorzGap;
+            } else {
+                pos.x += width + mm.iHorzGap;
+            }
+        }
+    } else {
+        // Rows: ARW_LEFT == ARW_RIGHT, the start corner decides which.
+        if mm.iArrange & ARW_STARTRIGHT != 0 {
+            pos.x -= width + mm.iHorzGap;
+            next = pos.x < parent.left;
+            if next {
+                pos.x = parent.right - mm.iHorzGap - width;
+            }
+        } else {
+            pos.x += width + mm.iHorzGap;
+            next = pos.x + width > parent.right;
+            if next {
+                pos.x = parent.left + mm.iHorzGap;
+            }
+        }
+        if next {
+            if mm.iArrange & ARW_STARTTOP != 0 {
+                pos.y += height + mm.iVertGap;
+            } else {
+                pos.y -= height + mm.iVertGap;
+            }
+        }
+    }
+}
+
 fastcall_fn! {
 #[no_mangle]
 unsafe fn co_WinPosArrangeIconicWindows(parent: PWND) -> UINT {
     let mut rectParent: RECTL = core::mem::zeroed();
     let mut Child: PWND;
-    let mut x: INT;
-    let mut y: INT;
-    let xspacing: INT;
-    let yspacing: INT;
-    let mut sx: INT;
-    let mut sy: INT;
+    let mut count: UINT = 0;
+    let mm: MINIMIZEDMETRICS = gspv.mm;
 
-    IntGetClientRect(parent, &mut rectParent);
+    let width = UserGetSystemMetrics(SM_CXMINIMIZED as ULONG) as INT;
+    let height = UserGetSystemMetrics(SM_CYMINIMIZED as ULONG) as INT;
 
-    x = rectParent.left;
-    y = rectParent.bottom;
+    if UserIsDesktopWindow(parent) != 0 {
+        let monitor = UserGetPrimaryMonitor();
+        if monitor.is_null() {
+            return 0;
+        }
+        rectParent = (*monitor).rcWork;
+    } else {
+        IntGetClientRect(parent, &mut rectParent);
+    }
 
-    xspacing = UserGetSystemMetrics(SM_CXMINIMIZED as ULONG) as INT;
-    yspacing = UserGetSystemMetrics(SM_CYMINIMIZED as ULONG) as INT;
+    let mut pt = first_minimized_child_pos(&rectParent, &mm, width, height);
 
     Child = (*parent).spwndChild;
     while !Child.is_null() {
@@ -1024,35 +1106,28 @@ unsafe fn co_WinPosArrangeIconicWindows(parent: PWND) -> UINT {
             let mut Ref: USER_REFERENCE_ENTRY = core::mem::zeroed();
             UserRefObjectCo(Child, &mut Ref);
 
-            sx = x + UserGetSystemMetrics(SM_CXBORDER as ULONG) as INT;
-            sy = y - yspacing - UserGetSystemMetrics(SM_CYBORDER as ULONG) as INT;
-
-            (*Child).InternalPos.IconPos.x = sx;
-            (*Child).InternalPos.IconPos.y = sy;
+            (*Child).InternalPos.IconPos.x = pt.x;
+            (*Child).InternalPos.IconPos.y = pt.y;
             (*Child).InternalPos.flags |= WPF_MININIT;
 
             co_WinPosSetWindowPos(
                 Child,
                 0 as HWND,
-                sx,
-                sy,
-                xspacing,
-                yspacing,
-                SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_ASYNCWINDOWPOS,
+                pt.x,
+                pt.y,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
             );
 
             UserDerefObjectCo(Child);
 
-            if x <= rectParent.right - xspacing {
-                x += xspacing;
-            } else {
-                x = rectParent.left;
-                y -= yspacing;
-            }
+            next_minimized_child_pos(&rectParent, &mm, width, height, &mut pt);
+            count += 1;
         }
         Child = (*Child).spwndNext;
     }
-    yspacing as UINT
+    count
 }
 }
 
@@ -2110,6 +2185,16 @@ unsafe fn co_WinPosSetWindowPos(
     let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
 
     ASSERT_REFS_CO!(Window);
+
+    // A message-only window has no Z-order band to move between: Windows
+    // ignores a HWND_TOPMOST/HWND_NOTOPMOST SetWindowPos on one outright (no
+    // move, no messages, still TRUE). user32:win test_message_window_topmost.
+    if (flags & SWP_NOZORDER) == 0
+        && (WndInsertAfter == HWND_TOPMOST || WndInsertAfter == HWND_NOTOPMOST)
+        && UserIsMessageWindow((*Window).spwndParent) != 0
+    {
+        return 1;
+    }
 
     #[cfg(DBG)]
     dump_winpos_flags(flags);

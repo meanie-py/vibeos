@@ -27796,15 +27796,28 @@ unsafe fn map_remove_ignored(flags: DWORD, src: *const WCHAR, srclen: i32, dst: 
                 continue;
             }
         }
+        let mut out = wch;
         if (flags & NORM_IGNORENONSPACE) != 0 {
             if ((wC2 & C2_OTHERNEUTRAL) != 0) && ((wC3 & (C3_NONSPACING | C3_DIACRITIC)) != 0) {
                 src = src.offset(1);
                 srclen -= 1;
                 continue;
             }
+            // The C stopped there, so a precomposed letter kept its accent
+            // (`é` stayed `é`); Windows maps it to its base letter. See
+            // ntsort::nonspace for how the base is found without NFD tables.
+            match crate::string::ntsort::nonspace(wch) {
+                crate::string::ntsort::Nonspace::Drop => {
+                    src = src.offset(1);
+                    srclen -= 1;
+                    continue;
+                }
+                crate::string::ntsort::Nonspace::Base(b) => out = b,
+                crate::string::ntsort::Nonspace::Keep => {}
+            }
         }
         if pos < dstlen {
-            *dst.offset(pos as isize) = wch;
+            *dst.offset(pos as isize) = out;
         }
         pos += 1;
 

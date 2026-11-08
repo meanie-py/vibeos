@@ -738,7 +738,9 @@ pub unsafe extern "system" fn NtUserCallHwndLock(hWnd: HWND, Routine: DWORD) -> 
 
         match Routine {
             HWNDLOCK_ROUTINE_ARRANGEICONICWINDOWS => {
-                co_WinPosArrangeIconicWindows(Window);
+                // ArrangeIconicWindows returns the number of windows arranged
+                // (the C dropped it, so the API always returned 0).
+                Ret = co_WinPosArrangeIconicWindows(Window) as BOOL;
             }
 
             HWNDLOCK_ROUTINE_DRAWMENUBAR => {
