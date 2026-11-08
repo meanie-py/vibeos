@@ -2713,6 +2713,17 @@ gates the constant case, including the parenthesized `(NAME) as u8` that hid ata
 (rebar, the winpos and tui pair) are NOT linted: they need C types, so `-Wsign-compare` on the
 oracle stays the tool for those.
 
+### `FAILED(x)` on an HRESULT kept in a DWORD became `x < 0 as DWORD`, never true
+**Symptom:** shlwapi's `UrlGetPartA` (2026-11-08) failed 82 more of Wine's url checks than the
+genuine C, on all three arches: a URL with no host (`about:blank`, `index.htm`) got size 0 where
+the C leaves the caller's size alone.
+**Cause:** the C keeps `UrlGetPartW`'s result in a `DWORD ret` and tests `FAILED(ret)`, which is
+`((HRESULT)(ret)) < 0`. The translation kept `ret: DWORD` and wrote `ret < 0 as DWORD`, false for
+every value, so the failure path never ran. rustc's `unused_comparisons` is silent because the
+`0 as DWORD` cast hides the literal; `cargo check` was clean.
+**Fix:** `(ret as HRESULT) < 0`. `scan_unsigned_vs_zero` (`vibeos-cli check`) flags the
+always-false shapes, `x < 0 as U` and `0 as U > x`, gated at zero.
+
 ### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
 **Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a
 BUGCHECK 0x1E / STATUS_DATATYPE_MISALIGNMENT out of a syscall's `ProbeForRead`, with
@@ -9771,6 +9782,20 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### A before/after payload's C half silently ran the Rust: two media entries for one path
+**Symptom:** shlwapi's Wine suite gave identical results for the Rust and for the "pre-flip C"
+(`shlwapiwinetestc`), on i386 and amd64. Real parity was 82 failures apart.
+**Cause:** `--winetests shlwapi` puts the stock `bin/shlwapi_winetest.exe` on the media, and the
+C payload puts its renamed copy (importing `shlwapc.dll`) at the same path. `strip-cd-media`
+appended the payload line beside the stock one; mkisofs kept the stock file under the name and
+renamed the payload's to `shlwapi_winetest000.exe`, which nothing ran. arm64's ramdisk stager
+refused the same pair as "named twice with different bytes", so it was the only arch that said so.
+**Fix:** `strip-cd-media` now drops a stock line whose destination a payload names (a payload
+replaces a stock file, as `mkramdisk.sh` already intended). **Check a before/after oracle by
+reading the media, not the result:** `isoinfo -f -i build-<arch>/livecd.iso | grep <name>` must
+list the path once, and the extracted exe must import the oracle DLL. Identical results from
+two builds are what you expect, so they are also exactly what a broken oracle looks like.
 
 ### A plain-C probe's COM call faults with an address like 2: mingw's C vtable has no IUnknown slots
 

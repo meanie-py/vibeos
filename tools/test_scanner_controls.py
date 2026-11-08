@@ -3832,6 +3832,13 @@ UNCOVERED: dict[str, str] = {
         "must-not cases pin the u32 rop, the version DWORD, the call-proc `== 0xFFFF0000` "
         "form, the fixed `& !0xFFFF` form and C quoted in a comment."
     ),
+    "scan_unsigned_vs_zero": (
+        "main() walks the real tree, but the decision is scan_text(), a pure function over a "
+        "string, driven directly in tools/vibeos-lint/src/rules/unsigned_vs_zero.rs. Its fire "
+        "cases are the always-false shapes (`< 0 as U`, `0 as U > x`), the first of which "
+        "shipped in shlwapi's UrlGetPartA; its must-not cases pin the signed fix, shifts, "
+        "`> 0`/`== 0`, the always-true range lower bounds, and C quoted in a comment."
+    ),
     "scan_fourcc_literals": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "
         "string, driven directly in tools/vibeos-lint/src/rules/fourcc_literals.rs. Its fire "

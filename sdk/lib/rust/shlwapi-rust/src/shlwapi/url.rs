@@ -3228,7 +3228,9 @@ pub unsafe extern "system" fn UrlGetPartA(
     len = INTERNET_MAX_URL_LENGTH as DWORD;
     ret = UrlGetPartW(in_0 as LPCWSTR, out, core::ptr::addr_of_mut!(len), dwPart, dwFlags) as DWORD;
 
-    if ret < 0 as DWORD {
+    // C: FAILED(ret), i.e. ((HRESULT)ret) < 0. `ret` is a DWORD in the C too; comparing it
+    // unsigned is never true, and a failed UrlGetPartW fell through to write a size.
+    if (ret as HRESULT) < 0 {
         HeapFree(GetProcessHeap(), 0 as DWORD, in_0 as PVOID);
         return ret as HRESULT;
     }

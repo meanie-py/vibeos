@@ -33,6 +33,7 @@ pub mod bindgen_padding_index;
 pub mod bitwise_not_bool;
 pub mod bugcheck_codes;
 pub mod byte_step_one;
+pub mod unsigned_vs_zero;
 pub mod variant_outptr;
 pub mod byteptr_stride;
 pub mod inert_crate_allow;
@@ -256,6 +257,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(sse_helpers::SseHelpers),
         Box::new(extern_arity::ExternArity),
         Box::new(byte_step_one::ByteStepOne),
+        Box::new(unsigned_vs_zero::UnsignedVsZero),
         Box::new(variant_outptr::VariantOutptr),
         Box::new(wide_byte_copy::WideByteCopy),
         Box::new(typed_byte_copy::TypedByteCopy),
