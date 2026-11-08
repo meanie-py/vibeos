@@ -9317,19 +9317,10 @@
       "retries": 2,
       "clean": false,
       "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
       "no_push": false,
       "skip_lint": false,
       "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
       "cold": false,
-      "evict": null,
-      "withdraw": false,
       "queue_timeout": 0,
       "fn": {
         "callable": "tests.qemu.cli.land:land"
@@ -9347,19 +9338,10 @@
       "retries": 2,
       "clean": false,
       "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
       "no_push": false,
       "skip_lint": false,
       "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
       "cold": false,
-      "evict": null,
-      "withdraw": false,
       "queue_timeout": 0,
       "fn": {
         "callable": "tests.qemu.cli.land:land"
@@ -9391,19 +9373,10 @@
       "retries": 2,
       "clean": true,
       "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
       "no_push": false,
       "skip_lint": false,
       "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
       "cold": false,
-      "evict": null,
-      "withdraw": false,
       "queue_timeout": 0,
       "fn": {
         "callable": "tests.qemu.cli.land:land"
@@ -9420,19 +9393,10 @@
       "retries": 2,
       "clean": false,
       "direct": true,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
       "no_push": false,
       "skip_lint": false,
       "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
       "cold": false,
-      "evict": null,
-      "withdraw": false,
       "queue_timeout": 0,
       "fn": {
         "callable": "tests.qemu.cli.land:land"
@@ -9444,87 +9408,21 @@
       "land",
       "--drain"
     ],
-    "arguments": {
-      "cmd": "land",
-      "retries": 2,
-      "clean": false,
-      "direct": false,
-      "drain": true,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
-      "no_push": false,
-      "skip_lint": false,
-      "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
-      "cold": false,
-      "evict": null,
-      "withdraw": false,
-      "queue_timeout": 0,
-      "fn": {
-        "callable": "tests.qemu.cli.land:land"
-      }
-    }
+    "code": 2
   },
   {
     "argv": [
       "land",
       "--foreground"
     ],
-    "arguments": {
-      "cmd": "land",
-      "retries": 2,
-      "clean": false,
-      "direct": false,
-      "drain": false,
-      "foreground": true,
-      "wait": false,
-      "wait_timeout": 3600,
-      "no_push": false,
-      "skip_lint": false,
-      "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
-      "cold": false,
-      "evict": null,
-      "withdraw": false,
-      "queue_timeout": 0,
-      "fn": {
-        "callable": "tests.qemu.cli.land:land"
-      }
-    }
+    "code": 2
   },
   {
     "argv": [
       "land",
       "--wait"
     ],
-    "arguments": {
-      "cmd": "land",
-      "retries": 2,
-      "clean": false,
-      "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": true,
-      "wait_timeout": 3600,
-      "no_push": false,
-      "skip_lint": false,
-      "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
-      "cold": false,
-      "evict": null,
-      "withdraw": false,
-      "queue_timeout": 0,
-      "fn": {
-        "callable": "tests.qemu.cli.land:land"
-      }
-    }
+    "code": 2
   },
   {
     "argv": [
@@ -9532,29 +9430,7 @@
       "--wait-timeout",
       "2"
     ],
-    "arguments": {
-      "cmd": "land",
-      "retries": 2,
-      "clean": false,
-      "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 2.0,
-      "no_push": false,
-      "skip_lint": false,
-      "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
-      "cold": false,
-      "evict": null,
-      "withdraw": false,
-      "queue_timeout": 0,
-      "fn": {
-        "callable": "tests.qemu.cli.land:land"
-      }
-    }
+    "code": 2
   },
   {
     "argv": [
@@ -9581,19 +9457,10 @@
       "retries": 2,
       "clean": false,
       "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
       "no_push": true,
       "skip_lint": false,
       "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
       "cold": false,
-      "evict": null,
-      "withdraw": false,
       "queue_timeout": 0,
       "fn": {
         "callable": "tests.qemu.cli.land:land"
@@ -9610,19 +9477,10 @@
       "retries": 2,
       "clean": false,
       "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
       "no_push": false,
       "skip_lint": true,
       "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
       "cold": false,
-      "evict": null,
-      "withdraw": false,
       "queue_timeout": 0,
       "fn": {
         "callable": "tests.qemu.cli.land:land"
@@ -9639,19 +9497,10 @@
       "retries": 2,
       "clean": false,
       "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
       "no_push": false,
       "skip_lint": false,
       "dry_run": true,
-      "hold": null,
-      "preempt": false,
-      "release": false,
       "cold": false,
-      "evict": null,
-      "withdraw": false,
       "queue_timeout": 0,
       "fn": {
         "callable": "tests.qemu.cli.land:land"
@@ -9664,29 +9513,7 @@
       "--hold",
       "fixture"
     ],
-    "arguments": {
-      "cmd": "land",
-      "retries": 2,
-      "clean": false,
-      "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
-      "no_push": false,
-      "skip_lint": false,
-      "dry_run": false,
-      "hold": "fixture",
-      "preempt": false,
-      "release": false,
-      "cold": false,
-      "evict": null,
-      "withdraw": false,
-      "queue_timeout": 0,
-      "fn": {
-        "callable": "tests.qemu.cli.land:land"
-      }
-    }
+    "code": 2
   },
   {
     "argv": [
@@ -9700,58 +9527,14 @@
       "land",
       "--preempt"
     ],
-    "arguments": {
-      "cmd": "land",
-      "retries": 2,
-      "clean": false,
-      "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
-      "no_push": false,
-      "skip_lint": false,
-      "dry_run": false,
-      "hold": null,
-      "preempt": true,
-      "release": false,
-      "cold": false,
-      "evict": null,
-      "withdraw": false,
-      "queue_timeout": 0,
-      "fn": {
-        "callable": "tests.qemu.cli.land:land"
-      }
-    }
+    "code": 2
   },
   {
     "argv": [
       "land",
       "--release"
     ],
-    "arguments": {
-      "cmd": "land",
-      "retries": 2,
-      "clean": false,
-      "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
-      "no_push": false,
-      "skip_lint": false,
-      "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": true,
-      "cold": false,
-      "evict": null,
-      "withdraw": false,
-      "queue_timeout": 0,
-      "fn": {
-        "callable": "tests.qemu.cli.land:land"
-      }
-    }
+    "code": 2
   },
   {
     "argv": [
@@ -9763,19 +9546,10 @@
       "retries": 2,
       "clean": false,
       "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
       "no_push": false,
       "skip_lint": false,
       "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
       "cold": true,
-      "evict": null,
-      "withdraw": false,
       "queue_timeout": 0,
       "fn": {
         "callable": "tests.qemu.cli.land:land"
@@ -9788,29 +9562,7 @@
       "--evict",
       "fixture"
     ],
-    "arguments": {
-      "cmd": "land",
-      "retries": 2,
-      "clean": false,
-      "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
-      "no_push": false,
-      "skip_lint": false,
-      "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
-      "cold": false,
-      "evict": "fixture",
-      "withdraw": false,
-      "queue_timeout": 0,
-      "fn": {
-        "callable": "tests.qemu.cli.land:land"
-      }
-    }
+    "code": 2
   },
   {
     "argv": [
@@ -9824,29 +9576,7 @@
       "land",
       "--withdraw"
     ],
-    "arguments": {
-      "cmd": "land",
-      "retries": 2,
-      "clean": false,
-      "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
-      "no_push": false,
-      "skip_lint": false,
-      "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
-      "cold": false,
-      "evict": null,
-      "withdraw": true,
-      "queue_timeout": 0,
-      "fn": {
-        "callable": "tests.qemu.cli.land:land"
-      }
-    }
+    "code": 2
   },
   {
     "argv": [
@@ -9859,19 +9589,10 @@
       "retries": 2,
       "clean": false,
       "direct": false,
-      "drain": false,
-      "foreground": false,
-      "wait": false,
-      "wait_timeout": 3600,
       "no_push": false,
       "skip_lint": false,
       "dry_run": false,
-      "hold": null,
-      "preempt": false,
-      "release": false,
       "cold": false,
-      "evict": null,
-      "withdraw": false,
       "queue_timeout": 2.0,
       "fn": {
         "callable": "tests.qemu.cli.land:land"
@@ -9907,8 +9628,6 @@
     "arguments": {
       "cmd": "land-status",
       "json": false,
-      "mine": false,
-      "limit": 8,
       "tip": null,
       "fn": {
         "callable": "tests.qemu.cli.land:cmd_land_status"
@@ -9923,8 +9642,6 @@
     "arguments": {
       "cmd": "land-status",
       "json": true,
-      "mine": false,
-      "limit": 8,
       "tip": null,
       "fn": {
         "callable": "tests.qemu.cli.land:cmd_land_status"
@@ -9936,16 +9653,7 @@
       "land-status",
       "--mine"
     ],
-    "arguments": {
-      "cmd": "land-status",
-      "json": false,
-      "mine": true,
-      "limit": 8,
-      "tip": null,
-      "fn": {
-        "callable": "tests.qemu.cli.land:cmd_land_status"
-      }
-    }
+    "code": 2
   },
   {
     "argv": [
@@ -9953,16 +9661,7 @@
       "--limit",
       "2"
     ],
-    "arguments": {
-      "cmd": "land-status",
-      "json": false,
-      "mine": false,
-      "limit": 2,
-      "tip": null,
-      "fn": {
-        "callable": "tests.qemu.cli.land:cmd_land_status"
-      }
-    }
+    "code": 2
   },
   {
     "argv": [
@@ -9988,8 +9687,6 @@
     "arguments": {
       "cmd": "land-status",
       "json": false,
-      "mine": false,
-      "limit": 8,
       "tip": "fixture",
       "fn": {
         "callable": "tests.qemu.cli.land:cmd_land_status"

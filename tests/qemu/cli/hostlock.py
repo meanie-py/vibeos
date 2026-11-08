@@ -162,7 +162,7 @@ WAIT_ANNOUNCE = "[hostlock] waiting for host CPU lease"
 #: "waiting for host CPU lease", so a conductor queued 73 minutes behind ANOTHER
 #: conductor's land lock read like boot-slot starvation -- and was diagnosed as such.
 POOL_WHAT = {
-    "land": "the fleet LAND LOCK -- another conductor is draining the queue",
+    "land": "the fleet LAND LOCK -- another landing is merging, gating and pushing",
     "bootcpu": "a QEMU boot permit (the unreserved share; landing keeps the rest)",
     "bootcpu-land": "a QEMU boot permit for a LANDING gate (reserved share first)",
     "cpuheavy": "a build / native-TCG CPU permit",
@@ -620,17 +620,13 @@ def render_status(st: dict) -> str:
 def cmd_status(args, repo: Path) -> int:
     """`vibeos-cli host-status` — who holds the CPU lease / build-dir locks. `--json`
     feeds the wait-for-quiet poll guards agents have been hand-rolling."""
-    from . import hostjobs, queue
+    from . import hostjobs
 
     st = status()
     st["jobs"] = hostjobs.status(repo)
-    # A held line explains an idle land lock with a full queue better than anything below.
-    st["hold"] = queue.effective_hold(repo)
     if getattr(args, "json", False):
         print(json.dumps(st, indent=2))
     else:
-        if st["hold"]:
-            print(queue.describe_hold(st["hold"]))
         print(render_status(st))
         print(hostjobs.render_status(st["jobs"]))
     return 0

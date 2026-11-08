@@ -72,8 +72,11 @@ count, and several of these modules already call native helpers.
   remaining admission/maintenance decisions and facade cleanup. Reuse existing
   native policy/provenance mechanisms. Host-jobs remains the CPU/memory admission
   owner; preserve cross-worktree locks, maintenance interlocks and dry-run plans.
-- Audit `land.py` and `queue.py` with the integrator before choosing migration or
-  retirement. The legacy train is held; do not reactivate it as part of a port.
+- `land.py` and `queue.py`: the user retired the merge train (2026-11-08). `queue.py`
+  is deleted, `land` keeps only `--direct` (the integrator's merge+gate+push under the
+  land lock), plain `land` prints the filled-in merge request, and `land-status` reports
+  the lock, its waiters and the integrator's `integration` batch. The train's HOLD.json
+  stays on disk to stop old-commit CLIs from conducting.
 
 Acceptance: public contracts and refusal behavior remain covered, native code owns
 newly migrated decisions, and deletion plans cannot touch live worktrees or paid
@@ -206,6 +209,13 @@ external debugger/VM boundary when relevant; native fixture tests alone do not
 prove live transport behavior.
 
 ### 4. Native CLI entry point and compatibility retirement
+
+Done so far: the merge train is retired (item 2 note above; about 3,000 lines of Python
+and ~90 tests gone). Next: decide which commands go native whole (`build`, `smoke` and
+`check` first), then a native front door for parse, the maintenance activity lock, disk
+admission and the exit line. Retention's fleet check greps a lane's `__main__.py` for
+`with maintenance.activity(REPO):`, so a native front door must declare its interlock
+another way before retention is enabled anywhere.
 
 Once the remaining workflows have native owners, move process entry and dispatch
 onto the shared native libraries. Argument grammar, execution, reports and

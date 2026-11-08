@@ -1,85 +1,95 @@
-"""`vibeos-cli land` — submit to the merge queue (default), or land one lane directly.
+"""`vibeos-cli land --direct`: the integrator's landing step. Merge origin/master into THIS
+tree, gate it, push it, all under the fleet-wide land lock.
 
-TWO PATHS, and the default is the queue:
+Lanes do not land themselves. They commit and message the integration session
+(`merge <branch> @ <sha> — <what>`; docs/engineering/active-lanes/integration.md), which
+merges a batch of lanes into its `integration` branch and runs this. Plain `land` prints
+that message, ready to send, and refuses: the merge train it used to start (a queue, and
+whichever lane found the lock conducting it) was held from 2026-10-16 and retired on
+2026-11-08, because one integrator gating N lanes per batch beat it on every measure the
+integration brief records.
 
-  * **`land`** → `queue.py`: publish this lane's tip to the merge queue and, if no other
-    agent is already the conductor, become it and drain the queue. Returns as soon as the work
-    is either done (we trained) or in someone else's hands. N ready lanes cost ONE gate and
-    nobody blocks. Read queue.py's header for the train's design.
-  * **`land --direct`** → the serialized single-lane path documented below: merge
-    origin/master into THIS tree, gate it, push it, all under the same fleet-wide land lock.
-    Right when you are the only active agent, or when the queue itself needs bypassing.
+THE RACE THIS PATH REMOVED (2026-07-25). Before it, landing was: merge origin/master →
+commit → `vibeos-cli gate` → `git push`. The gate mints a push credential keyed to an exact
+TREE HASH, so everything between "gate green" and "push accepted" was a race: a lane whose
+push lost to another landing had to merge, which changed the tree, which voided the stamp,
+which meant a whole new gate, and past a couple of active lanes that was a congestion
+collapse. So landing is mutual exclusion. The land lock (hostlock.land_lock) is held
+across the WHOLE critical section:
 
-Both hold `hostlock.land_lock`, so they can never race each other.
+    fetch → merge origin/master → gate → push HEAD:master → release
 
-THE PROBLEM THE DIRECT PATH REMOVED (2026-07-25). Before it, landing was: merge
-origin/master → commit → `vibeos-cli gate` → `git push`. The gate mints a push credential
-keyed to an exact TREE HASH, so everything between "gate green" and "push accepted" is a
-RACE:
-
-    lane A: ---- gate (6-20 min) ----> push ✓
-    lane B: ---- gate (6-20 min) ----> push ✗ non-fast-forward
-                                       → merge origin/master → tree changed
-                                       → stamp void → RE-GATE from scratch → race again
-
-B's gate wasn't merely wasted wall-clock: it was 3 builds + 4 boots of *fleet* load that
-made every other lane's gate slower, which widens the very window that voided it. Past a
-couple of active lanes that is a congestion collapse, and it is exactly what "agents are
-constantly waiting on the gate and racing to complete" is. Nothing in the system arbitrated
-landing — the hostlock broker arbitrates CPU, and the pre-push hook only *detects* the
-stale tree after the gate has already been spent.
-
-THE FIX. Landing is mutual exclusion. This command holds the fleet-wide FIFO land lock
-(hostlock.land_lock) across the WHOLE critical section:
-
-    [queue FIFO] → fetch → merge origin/master → gate → push HEAD:master → release
-
-Master therefore cannot move under a gating lane. Consequences:
-  * a green gate ALWAYS lands — no lane ever re-gates because someone else landed;
-  * the fleet spends exactly ONE gate per landing instead of one per attempt;
-  * waiting is FIFO, bounded and VISIBLE (`vibeos-cli host-status` prints the queue and
-    the current lander) instead of a lottery the most patient lane keeps losing;
-  * the gate runs on the FINAL tree — the one actually being pushed — which is strictly
-    more honest than gating a tree that a concurrent landing is about to invalidate.
+and master cannot move under a gating tree; a green gate always lands. With one integrator
+the lock is rarely contended, but it stays: it costs nothing, and it is what makes a second
+lander (a lane on an old commit, a human) safe rather than a race.
 
 Two deliberate design points:
 
-  * **Gate INSIDE the lock, don't pre-gate.** A speculative gate before queueing is the
-    thing that used to get thrown away. If you already have a fresh green full-gate stamp
-    for the exact tree being pushed (i.e. nothing moved), `land` skips the gate — so the
-    "I already gated and nobody raced me" path costs seconds.
+  * **Gate INSIDE the lock, don't pre-gate.** If a fresh green full-gate stamp already
+    covers the exact tree being pushed, or the delta is docs-only, the gate is skipped.
   * **Push `HEAD:master`, never move the local `master` ref.** Force-updating `master`
     from a worktree that doesn't have it checked out leaves that worktree's index+files at
-    the old tree, which resurfaces as a giant phantom "staged revert" — 2026-07-25 the main
-    checkout was found in exactly that state, showing 61 commits of landed work as a
-    197K-line deletion waiting to be committed. Pushing the ref straight to origin cannot
-    do that; every worktree picks it up via its own `git merge origin/master`.
+    the old tree, which resurfaces as a giant phantom "staged revert" (2026-07-25: 61
+    commits of landed work shown as a 197K-line deletion). Pushing the ref straight to
+    origin cannot do that; every worktree picks it up via its own `git merge origin/master`.
 
-The pre-push hook stays as the backstop: it still refuses a master update whose tree has no
-fresh green stamp, so a hand-rolled `git push` is no less safe than before.
+The pre-push hook stays as the backstop: it refuses a master update whose tree has no fresh
+green stamp, so a hand-rolled `git push` is no less safe than this.
 
-The direct path fixed the RACE but not the SERIALIZATION: throughput is one landing per
-gate, and every queued lane is a blocked agent. That is what the merge queue adds on top.
+The old queue's HOLD.json is deliberately left in the shared git dir: a lane on a commit
+from before the retirement still runs the old CLI, and the hold is what stops that CLI
+conducting a train. This code never reads it.
 """
 
 from __future__ import annotations
 
-import argparse
 import contextlib
 import functools
 import json
 import os
+import re
 import shutil
-import signal
 import subprocess
 import time
 from pathlib import Path
 
-from . import hostlock, queue, warmth
+from . import hostlock, warmth
 from .artifacts import Run, Stage
 
 STAMP_MAX_AGE_S = 24 * 3600
 FULL_ARCHES = {"i386", "amd64", "arm64"}
+INTEGRATION_BRANCH = "integration"
+
+# A network blip, not an answer from the remote. The router-first resolver here drops
+# lookups now and then; one `Could not resolve hostname github.com` in a fetch killed a
+# landing twice in one night (2026-10-15).
+TRANSIENT_NETWORK = re.compile(
+    r"Could not resolve hostname|Temporary failure in name resolution|"
+    r"Connection (timed out|reset|refused|closed)|Network is unreachable|"
+    r"Could not resolve host|Operation timed out|early EOF|unexpected disconnect"
+)
+NETWORK_COMMANDS = ("fetch", "push", "ls-remote", "pull")
+NETWORK_RETRY_DELAYS = (5, 15, 30, 60)
+
+
+def run_git(repo: Path, args: tuple[str, ...], timeout: float) -> subprocess.CompletedProcess:
+    """`git <args>`; a network command that fails on a TRANSIENT_NETWORK error is retried
+    after each of NETWORK_RETRY_DELAYS. Anything the remote actually said (a rejected
+    push, a missing ref) is returned at once."""
+    for delay in (*NETWORK_RETRY_DELAYS, None):
+        cp = subprocess.run(
+            ["git", *args], cwd=str(repo), capture_output=True, text=True, timeout=timeout
+        )
+        if (
+            cp.returncode == 0
+            or delay is None
+            or not args
+            or args[0] not in NETWORK_COMMANDS
+            or not TRANSIENT_NETWORK.search(cp.stderr)
+        ):
+            return cp
+        time.sleep(delay)
+    raise AssertionError("unreachable")
 
 
 class LandAbort(RuntimeError):
@@ -88,7 +98,7 @@ class LandAbort(RuntimeError):
 
 
 def _git(repo: Path, *args: str, check: bool = True) -> str:
-    cp = queue.run_git(repo, args, 600)
+    cp = run_git(repo, args, 600)
     if check and cp.returncode != 0:
         raise LandAbort(f"git {' '.join(args)} failed ({cp.returncode}): {cp.stderr.strip()}")
     return cp.stdout.strip()
@@ -192,7 +202,7 @@ def _docs_only_module(repo: Path):
 
     By PATH, not by name: a `sys.path` insert leaves `docs_only` in `sys.modules`, and a
     process that later conducts a drain would then judge the INTEGRATION tree with this
-    lane's copy of the rule. Same reason queue.py loads it this way."""
+    lane's copy of the rule."""
     import importlib.util
 
     try:
@@ -215,9 +225,9 @@ def _warm_preflight(repo: Path, run: Run, args) -> None:
     """Refuse a lane whose code no build has seen, so the gate would compile it cold.
 
     See warmth.py for the incident. Cheap (a few git calls). Skipped for a docs-only lane,
-    which the conductor does not gate at all, and overridable with `--cold` for the rare
+    which the landing gate does not gate at all, and overridable with `--cold` for the rare
     lane that means to land cold anyway -- report every use, since that lane's gate can
-    hold the whole queue for hours. Fails OPEN when the receipts cannot be read: this is a
+    hold the integrator's batch for hours. Fails OPEN when the receipts cannot be read: this is a
     courtesy to the fleet, not a correctness check, and the gate itself still judges."""
     if getattr(args, "cold", False):
         run.add(
@@ -242,9 +252,9 @@ def _warm_preflight(repo: Path, run: Run, args) -> None:
         run.add(Stage("warm", status="ok", detail="built on all three arches"))
         return
     raise LandAbort(
-        f"this tree has not been BUILT on {', '.join(cold)} — the merge queue's gate builds "
+        f"this tree has not been BUILT on {', '.join(cold)} — the landing gate builds "
         "cold and leans on the shared compiler caches, so code no build has seen compiles "
-        "from scratch there and can hold the whole queue for hours (upstream-sync, "
+        "from scratch there and can hold the whole batch for hours (upstream-sync, "
         "2026-09-26). Build first, which warms the cache for the gate:\n    "
         + "\n    ".join(f"./vibeos-cli build --arch {a}" for a in cold)
         + "\n  then `./vibeos-cli land` again. Commit exactly what you built: the receipt is "
@@ -276,20 +286,20 @@ def _premerge_worktree(repo: Path, run: Run, upstream: str = "origin/master"):
     """Yield (worktree, master_sha) holding THIS lane merged with origin/master, or None.
 
     The tip preflights below are an approximation in one direction: they lint the lane
-    tip, while the conductor lints the tip MERGED with master. Whatever master changed
+    tip, while the landing gate lints the tip MERGED with master. Whatever master changed
     since the lane last merged is invisible to them, and that is the commonest way a lane
     with a clean tip still bounces: on 2026-10-16 native-batch's tip passed check-tooling,
     then lost a 75-minute gate to `test_gen_apisets_table` because master had edited
     `apisets.table.c` and the committed generated table was now stale.
 
       * Lane already contains origin/master → None: the tip IS the merged tree.
-      * `git merge-tree` reports a conflict → LandAbort now, with the paths. The conductor
-        would bounce the same CONFLICT, but only after the queue wait.
+      * `git merge-tree` reports a conflict → LandAbort now, with the paths. The landing gate
+        would hit the same CONFLICT, but only after a merge attempt.
       * Otherwise the merged tree is checked out DETACHED into a scratch worktree under
         the shared git dir (one per lane and pid; ~1.3G, no build dirs) and removed after.
 
     Fail OPEN like every other preflight: if git cannot produce the tree, warn and let
-    the conductor be the oracle. It mutates nothing of the lane's: the merge commit is
+    the landing gate be the oracle. It mutates nothing of the lane's: the merge commit is
     an unreferenced object and the worktree is this process's own.
     """
     try:
@@ -302,7 +312,7 @@ def _premerge_worktree(repo: Path, run: Run, upstream: str = "origin/master"):
         run.add(Stage("premerge", status="skip", detail="lane already contains origin/master"))
         yield None
         return
-    cp = queue.run_git(
+    cp = run_git(
         repo, ("merge-tree", "--write-tree", "--name-only", "--no-messages", "HEAD", master), 600
     )
     lines = cp.stdout.split("\n")
@@ -310,8 +320,8 @@ def _premerge_worktree(repo: Path, run: Run, upstream: str = "origin/master"):
         paths = [ln for ln in lines[1:] if ln.strip()]
         run.classification = "CONFLICT"
         raise LandAbort(
-            f"this lane CONFLICTS with origin/master {master[:12]} — the conductor would bounce "
-            "it after the queue wait:\n    "
+            f"this lane CONFLICTS with origin/master {master[:12]} — the integrator would have to "
+            "resolve it for you:\n    "
             + "\n    ".join(paths[:20])
             + "\n  `git fetch && git merge origin/master`, resolve, rebuild, `land` again."
         )
@@ -330,7 +340,7 @@ def _premerge_worktree(repo: Path, run: Run, upstream: str = "origin/master"):
         "-m",
         "land preflight: lane merged with origin/master",
     )
-    root = queue._common_dir(repo) / "vibeos-premerge"
+    root = _stamps_dir(repo) / "vibeos-premerge"
     root.mkdir(exist_ok=True)
     _sweep_premerge(repo, root)
     wt = root / f"{repo.resolve().name}-{os.getpid()}"
@@ -343,7 +353,7 @@ def _premerge_worktree(repo: Path, run: Run, upstream: str = "origin/master"):
     try:
         _provision_premerge(repo, wt)
     except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
-        queue.run_git(repo, ("worktree", "remove", "--force", str(wt)), 600)
+        run_git(repo, ("worktree", "remove", "--force", str(wt)), 600)
         shutil.rmtree(wt, ignore_errors=True)
         run.add(Stage("premerge", status="warn", detail=f"could not provision: {exc}"[:300]))
         yield None
@@ -352,7 +362,7 @@ def _premerge_worktree(repo: Path, run: Run, upstream: str = "origin/master"):
     try:
         yield wt, master
     finally:
-        queue.run_git(repo, ("worktree", "remove", "--force", str(wt)), 600)
+        run_git(repo, ("worktree", "remove", "--force", str(wt)), 600)
         shutil.rmtree(wt, ignore_errors=True)
 
 
@@ -380,15 +390,15 @@ def _sweep_premerge(repo: Path, root: Path) -> None:
         pid = d.name.rsplit("-", 1)[-1]
         if not pid.isdigit() or Path(f"/proc/{pid}").exists():
             continue
-        queue.run_git(repo, ("worktree", "remove", "--force", str(d)), 600)
+        run_git(repo, ("worktree", "remove", "--force", str(d)), 600)
         shutil.rmtree(d, ignore_errors=True)
-    queue.run_git(repo, ("worktree", "prune"), 600)
+    run_git(repo, ("worktree", "prune"), 600)
 
 
 def _lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> None:
     """Run `check-tooling` HERE, before this lane consumes a batched gate.
 
-    The conductor already runs this exact command, so this can never block anything the
+    The landing gate already runs this exact command, so this can never block anything the
     gate would have let through — it is the same verdict, moved from the most expensive
     place in the system to the cheapest. That matters because a batched gate is 3 builds
     + 4 boots of fleet load, and a red one bounces the whole train: the lint that
@@ -401,7 +411,7 @@ def _lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> None:
       * failing here is strictly earlier than failing there — never *more* strict.
 
     It runs twice when the lane is behind master: on the tip here, and with `merged=` on
-    the lane MERGED with origin/master (`_premerge_worktree`), which is what the conductor
+    the lane MERGED with origin/master (`_premerge_worktree`), which is what the landing gate
     actually gates. The tip run alone missed every failure the merge introduces.
 
     FAIL OPEN if the check itself cannot run (missing venv, no ruff, timeout). A broken
@@ -421,7 +431,7 @@ def _lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> None:
     try:
         cp = subprocess.run(
             # The premerge tree has no build-<arch>: skip only the suites that read one
-            # (they still run on the tip, above, and in the conductor's gate).
+            # (they still run on the tip, above, and in the landing gate).
             [str(repo / "vibeos-cli"), "check-tooling", *(["--skip-generated"] if merged else [])],
             cwd=str(repo),
             capture_output=True,
@@ -453,7 +463,7 @@ def _lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> None:
         pass
     salient = [ln.strip() for ln in (cp.stdout or "").splitlines() if "✗" in ln]
     raise LandAbort(
-        f"check-tooling FAILED{where} — fix it before queueing, or the conductor bounces the whole "
+        f"check-tooling FAILED{where} — fix it first, or the landing gate goes red for the whole "
         "batch (3 builds + 4 boots of fleet load) for it:\n    "
         + ("\n    ".join(salient) if salient else f"exit {cp.returncode}")
         + f"\n  captured output: {log}"
@@ -464,7 +474,7 @@ def _lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> None:
 
 
 def _source_lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> None:
-    """Run the conductor's OWN source-lint partitions here, before the batched gate.
+    """Run the landing gate's OWN source-lint partitions here, before the batched gate.
 
     `_lint_preflight` above is named "lint" but only ever ran `check-tooling`. The gate
     runs that AND `check --strict --scope source-early|source-deferred`, and those two
@@ -475,7 +485,7 @@ def _source_lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> N
     cost is not a gate.
 
     Uses gate's `_lint_once` rather than re-deriving the command, so this cannot drift
-    from what the conductor actually runs.
+    from what the landing gate actually runs.
 
     NEVER MORE STRICT THAN THE GATE, which is the property that makes moving it sound:
     a partition that could not RUN here must not block. `source-deferred` contains
@@ -506,7 +516,7 @@ def _source_lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> N
             )
             continue
         if result["classification"] == "SCANNER_ERROR":
-            # Infrastructure, not a finding — the conductor has a built tree and we may
+            # Infrastructure, not a finding — the landing gate has a built tree and we may
             # not. Say so and let the gate be the oracle.
             #
             # BUT ONLY FOR THE SCANNER THAT CRASHED. A partition is one classification
@@ -514,7 +524,7 @@ def _source_lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> N
             # a real NEW finding from another: on 2026-09-26 msvcrt-homebrew's preflight
             # reported `scan_const_contradictions: 4 new` right beside a marshalgen crash
             # (a stale build dir), submitted three times on "could not complete", and the
-            # conductor's gate caught the finding ~80 minutes later.
+            # landing gate caught the finding ~80 minutes later.
             real = _real_findings(run.dir / f"preflight-lint-{part}{tag}")
             if real:
                 raise LandAbort(
@@ -535,8 +545,8 @@ def _source_lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> N
             )
             continue
         raise LandAbort(
-            f"check --strict --scope {part} FAILED{where} — fix it before queueing, or the "
-            "conductor bounces the whole batch (3 builds + 4 boots of fleet load) for a "
+            f"check --strict --scope {part} FAILED{where} — fix it first, or the "
+            "landing gate goes red for the whole batch (3 builds + 4 boots of fleet load) for a "
             "source lint:\n    "
             + (result["salient"] or f"exit {result['exit']}")
             + f"\n  artifact: {run.dir / f'preflight-lint-{part}{tag}'}"
@@ -547,7 +557,7 @@ def _source_lint_preflight(repo: Path, run: Run, args, *, merged: str = "") -> N
 
 
 def _arch_lint_preflight(repo: Path, run: Run, args) -> None:
-    """Run the conductor's per-arch BINARY lints here, for every arch this lane has built.
+    """Run the landing gate's per-arch BINARY lints here, for every arch this lane has built.
 
     The two source partitions above cannot see `check --scope arch`: scan_ud2,
     scan_self_recursive, scan_flex_array_panic and scan_export_thunks read the OBJECT
@@ -563,7 +573,7 @@ def _arch_lint_preflight(repo: Path, run: Run, args) -> None:
     `build-<arch>` is FRESH for this tree (provenance says so, the same oracle `smoke`
     uses to refuse stale media) — a stale build would grade a tree that is not the one
     being submitted. No build, a stale one, or a scanner crash all WARN and let the
-    conductor be the oracle; only a scanner that ran on a fresh build and reported a
+    landing gate be the oracle; only a scanner that ran on a fresh build and reported a
     finding blocks.
     """
     if getattr(args, "skip_lint", False):
@@ -603,7 +613,7 @@ def _arch_lint_preflight(repo: Path, run: Run, args) -> None:
                     + arch
                     + " not fresh for HEAD ("
                     + "; ".join(got.reasons[:2])
-                    + ") — the conductor's gate runs it",
+                    + ") — the landing gate runs it",
                 )
             )
             continue
@@ -633,7 +643,7 @@ def _arch_lint_preflight(repo: Path, run: Run, args) -> None:
             )
         raise LandAbort(
             f"check --strict --scope arch --arch {arch} FAILED on this lane's own build — "
-            "fix it before queueing, or the conductor bounces the whole batch (3 cold "
+            "fix it first, or the landing gate goes red for the whole batch (3 cold "
             "builds + the smokes) for a binary lint:\n    "
             + salient
             + f"\n  artifact: {run.dir / f'preflight-lint-{arch}'}"
@@ -678,7 +688,7 @@ def _concurrent_preflights(repo: Path, run: Run, args) -> None:
             premerge = stack.enter_context(_premerge_worktree(repo, run))
         calls = [functools.partial(step, repo, run, args) for step in steps]
         if premerge:
-            # The build-independent pair again, on what the conductor will actually gate.
+            # The build-independent pair again, on what the landing gate will actually gate.
             # Tooling receipts live in the shared git dir and are keyed on content, so
             # only the checks whose inputs the merge changed really re-run.
             wt, master = premerge
@@ -706,7 +716,7 @@ def _difftest_preflight(repo: Path, run: Run, args) -> None:
     the integration tree) poisoning batches it was not even in. ~30s here would have
     stopped it at the door.
 
-    Uses gate's `_difftest_once`, so this cannot drift from what the conductor runs. Same
+    Uses gate's `_difftest_once`, so this cannot drift from what the landing gate runs. Same
     rules as the two lint preflights: never stricter than the gate (it is the same
     command), approximate only in that it tests the lane tip rather than tip+master, and
     FAIL OPEN when the harness cannot run at all -- only a harness that ran and reported a
@@ -730,7 +740,7 @@ def _difftest_preflight(repo: Path, run: Run, args) -> None:
         run.add(Stage("difftest", status="ok", detail=f"clean ({result['seconds']:.0f}s)"))
         return
     raise LandAbort(
-        "difftest FAILED — fix it before queueing, or the conductor bounces the whole batch "
+        "difftest FAILED — fix it first, or the landing gate goes red for the whole batch "
         "(3 builds + 4 boots of fleet load) for it:\n    "
         + (result["salient"] or f"exit {result['exit']}")
         + f"\n  console: {root / 'difftest-console.log'}"
@@ -829,338 +839,47 @@ def _report_queue(run: Run) -> None:
         )
 
 
-def _wait_for_verdict(repo: Path, seq: str, timeout: float, run: Run) -> dict | None:
-    """Poll the queue's result mailbox for OUR submission. Only used by `--wait`; the whole
-    point of the queue is that you don't have to."""
-    deadline = time.monotonic() + timeout
-    while True:
-        for rec in queue.results(repo, limit=200):
-            if rec.get("seq") == seq:
-                return rec
-        if time.monotonic() >= deadline:
-            return None
-        time.sleep(5)
-
-
-def _report_prior_results(repo: Path, lane: str, run: Run) -> None:
-    """Surface this lane's most recent verdict on submit. A rejection an agent never reads is
-    the same as a silent drop, and the agent that most needs to see it is the one that just
-    came back to submit again."""
-    # Skip supersessions: "your older tip was replaced by your newer one" is bookkeeping, not
-    # news, and surfacing it as the lane's headline verdict buries a real prior rejection.
-    prior = [r for r in queue.results(repo, lane=lane, limit=8) if r.get("outcome") != "superseded"]
-    if not prior:
-        return
-    rec = prior[0]
-    if rec.get("outcome") == "rejected":
-        run.add(
-            Stage(
-                "prior",
-                status="warn",
-                detail=f"previous submission REJECTED ({rec.get('classification') or '?'})",
-                salient=[
-                    rec.get("reason", ""),
-                    f"artifact: {rec.get('artifact') or '(none)'}",
-                    f"tip: {rec.get('tip', '')[:12]}",
-                ],
-            )
-        )
-    else:
-        run.add(
-            Stage(
-                "prior",
-                status="ok",
-                detail=f"previous submission landed as {rec.get('landed_as', '')[:12]}",
-            )
-        )
-
-
-def _land_queued(args, repo: Path) -> int:
-    """The default landing path: submit to the merge queue, and become the conductor if no
-    other agent already is. Returns as soon as the work is either done (we trained) or in
-    somebody else's hands (they are training) — never blocks holding a worktree hostage."""
-    run = Run("land", "queue")
-    attempt = None
-    try:
-        _branch, head = _preflight(repo)
-        lane = queue.lane_id(repo)
-        # Marker first: everything from here to the submit is the window where a kill leaves
-        # the lane silently unregistered. See queue.begin_attempt.
-        attempt = queue.begin_attempt(repo, lane, head)
-        _report_prior_results(repo, lane, run)
-        queue.git(repo, "fetch", "origin")
-        if queue.git_ok(repo, "merge-base", "--is-ancestor", head, "origin/master"):
-            run.add(
-                Stage("submit", status="skip", detail="HEAD already in master — nothing to land")
-            )
-            return run.finalize(repo)
-        dup = next(
-            (s for s in queue.pending(repo) if s.lane == lane and s.tip == head),
-            None,
-        )
-        if getattr(args, "dry_run", False):
-            # `--dry-run` used to be honoured only on the `--direct` path, so the DEFAULT
-            # path — the one every agent reaches for — submitted for real while reporting
-            # itself as a plan. A dry run that performs the action is worse than no dry run
-            # at all: it teaches you the flag is safe right before it isn't.
-            depth = len(queue.pending(repo))
-            run.add(
-                Stage(
-                    "submit",
-                    status="skip",
-                    detail=(
-                        f"dry run: {lane} @ {head[:12]} is already queued as "
-                        f"{dup.seq[-24:]} — would NOT re-submit"
-                        if dup
-                        else f"dry run: would queue {lane} @ {head[:12]} at position {depth + 1}"
-                    ),
-                )
-            )
-            _report_queue(run)
-            return run.finalize(repo)
-        if dup:
-            sub = dup
-            run.add(
-                Stage(
-                    "submit",
-                    status="ok",
-                    detail=f"already queued as {sub.seq[-24:]} (not re-submitted)",
-                )
-            )
-        else:
-            # Only on a REAL submission: if this tip is already queued we are adding no new
-            # risk to the batch, and a --dry-run has already returned above.
-            _warm_preflight(repo, run, args)
-            _concurrent_preflights(repo, run, args)
-            sub = queue.submit(repo, tip=head, lane=lane)
-            # VERIFY the submission persisted, by RE-READING the queue from disk rather
-            # than trusting the return value. `queue.submit` returning a Submission means
-            # its writes did not raise; it is not the same claim as "a later reader will
-            # find this record". The two diverge on a full disk, a partial write, a
-            # concurrent resolve -- and every one of those ends with an agent reporting a
-            # landing on the strength of an `OK` line. This is Ask 1 of
-            # land-verification-asks.md, and it closes shape (a) ONLY: a process killed
-            # before reaching here still cannot report, which is why the
-            # RUN_INTERRUPTED marker (artifacts.write_interrupted_marker) has to exist
-            # separately. Do not read this stage as closing both.
-            landed = queue.pending(repo)
-            if not any(s.seq == sub.seq and s.tip == head for s in landed):
-                raise LandAbort(
-                    f"submit did NOT persist: {lane} @ {head[:12]} (seq {sub.seq[-24:]}) is "
-                    f"not in the queue when re-read, though queue.submit returned it. "
-                    f"{len(landed)} other submission(s) are queued, so the queue itself is "
-                    f"readable. You are NOT in the queue -- do not report this as landed. "
-                    f"Re-run `./vibeos-cli land`, and check `df -h /` first."
-                )
-            run.add(
-                Stage(
-                    "submit",
-                    status="ok",
-                    detail=f"{lane} @ {head[:12]} queued (position {len(landed)}, verified)",
-                )
-            )
-        held = queue.effective_hold(repo)
-        if held:
-            # Queued, not refused: a refusal would have every lane retry-looping against the
-            # hold, and a queued submission costs nothing while no conductor is running.
-            run.add(
-                Stage(
-                    "conduct",
-                    status="warn",
-                    detail="line is HELD — queued, no conductor started",
-                    salient=[queue.describe_hold(held), "drains on `vibeos-cli land --release`"],
-                )
-            )
-        else:
-            _conduct(repo, run, args)
-        rec = next((r for r in queue.results(repo, limit=200) if r.get("seq") == sub.seq), None)
-        if rec is None and getattr(args, "wait", False):
-            rec = _wait_for_verdict(repo, sub.seq, float(getattr(args, "wait_timeout", 3600)), run)
-        if rec is None:
-            run.add(
-                Stage(
-                    "verdict",
-                    status="ok",
-                    detail="still queued — `vibeos-cli land-status --mine` for the verdict",
-                )
-            )
-        elif rec.get("outcome") == "landed":
-            run.add(
-                Stage("verdict", status="ok", detail=f"LANDED as {rec.get('landed_as', '')[:12]}")
-            )
-        else:
-            run.classification = rec.get("classification") or "REJECTED"
-            run.add(
-                Stage(
-                    "verdict",
-                    status="fail",
-                    detail=f"REJECTED ({run.classification})",
-                    salient=[rec.get("reason", ""), f"artifact: {rec.get('artifact') or '(none)'}"],
-                )
-            )
-        run.extra["lane"] = lane
-        run.extra["seq"] = sub.seq
-        return run.finalize(repo)
-    except queue.NoVerdict as e:
-        # Our submission is still QUEUED and unjudged — say so, or the agent will assume its
-        # work was rejected and start "fixing" a bug that is on mainline.
-        #
-        # BaseRed is only ONE of the ways a train renders no verdict, and reporting them all
-        # as "mainline is red" sends the lane hunting a mainline break that does not exist —
-        # the same misattribution BaseCheck exists to prevent, committed by the reporter
-        # instead of the judge. An Inconclusive carries its own reason (dirty integration
-        # tree, starved host, gate that never wrote a verdict); pass it through as itself.
-        base_red = isinstance(e, queue.BaseRed)
-        run.classification = "BASE_RED" if base_red else "NO_VERDICT"
-        run.add(
-            Stage(
-                "train",
-                status="fail",
-                detail=(
-                    "mainline itself is red — train halted, your submission is STILL QUEUED"
-                    if base_red
-                    else "the train rendered NO VERDICT — your submission is STILL QUEUED"
-                ),
-                salient=[str(e)],
-            )
-        )
-        return run.finalize(repo)
-    except (queue.QueueError, LandAbort) as e:
-        run.classification = run.classification or "LAND_ABORT"
-        run.add(Stage("land", status="fail", detail=str(e).splitlines()[0], salient=[str(e)]))
-        return run.finalize(repo)
-    finally:
-        # Every ordinary exit clears the marker, an abort included: an abort is LOUD, and the
-        # marker exists only for the silent death. A SIGKILL skips this, which is the whole
-        # mechanism -- a surviving marker means "killed", not "failed".
-        queue.end_attempt(attempt)
-
-
-def _conductor_log(run: Run):
-    """Conductor progress goes to BOTH the run log and stdout. The conductor is doing the whole
-    fleet's work — 'batch of 3', 'gate RED', 'splitting 2/1' is exactly what a watching agent
-    needs, and it used to be buried in full.log until the drain exited."""
-
-    def _log(msg: str) -> None:
-        run.log(msg, header="train")
-        print(msg, flush=True)
-
-    return _log
-
-
-def _spawn_detached(argv: list[str], cwd: Path, log_path: Path) -> None:
-    """Start `argv` in its OWN SESSION with output to `log_path`. Its own function so it is a
-    seam a test can replace — patching `subprocess.Popen` instead would also break
-    `subprocess.run`, which uses Popen as a context manager."""
-    with open(log_path, "w") as fh:
-        subprocess.Popen(
-            argv,
-            cwd=str(cwd),
-            stdout=fh,
-            stderr=subprocess.STDOUT,
-            start_new_session=True,  # outlives this agent's turn
-            env=dict(os.environ, VIBEOS_JOB_LAUNCHER_PID=str(os.getpid())),
-        )
-
-
-def _conduct(repo: Path, run: Run, args) -> tuple[bool, str]:
-    """Drain the queue. DETACHED by default; returns (conducted_inline, note).
-
-    Why detached: the whole promise of the queue is that no agent waits on a gate, and the
-    ELECTED agent was the last one still waiting — its turn blocked for the length of a batch
-    even though its worktree was free. The tell was that every drain during development went
-    through a hand-rolled `nohup setsid drain.sh` wrapper; working around your own tool by
-    hand is a bug report against the tool (AGENTS.md). So `land` spawns the conductor in its
-    own session and returns in ~2s. `--foreground` keeps it inline when you want to watch.
-
-    A detached conductor that loses the election just exits — the lock is the election, so
-    spawning one speculatively costs a second of a subprocess and never double-conducts."""
-    if getattr(args, "foreground", False):
-        # An explicit conduct request (`--drain`, which is also how the detached child runs)
-        # WAITS for the lock: closing the orphan window is the whole point, and nothing is
-        # blocked by it waiting. The inline-from-submit path keeps 0.0 — there, the agent's own
-        # turn is on the line, so losing the election must return immediately.
-        wait = hostlock.LAND_LOCK_TIMEOUT if getattr(args, "drain", False) else 0.0
-        try:
-            trained = queue.try_become_conductor(
-                repo,
-                _conductor_log(run),
-                retries=int(getattr(args, "retries", 2)),
-                timeout=wait,
-            )
-        except queue.LineHeld as e:
-            run.add(
-                Stage(
-                    "conduct",
-                    status="warn",
-                    detail="line is HELD — nothing drained",
-                    salient=[str(e)],
-                )
-            )
-            return True, "held"
-        except queue.NoVerdict as e:
-            # Same distinction as the submit path above: "no verdict" is not "mainline is red".
-            base_red = isinstance(e, queue.BaseRed)
-            run.classification = "BASE_RED" if base_red else "NO_VERDICT"
-            run.add(
-                Stage(
-                    "conduct",
-                    status="fail",
-                    detail=(
-                        "mainline itself is red — train halted, submissions STILL QUEUED"
-                        if base_red
-                        else "the train rendered NO VERDICT — submissions STILL QUEUED"
-                    ),
-                    salient=[str(e)],
-                )
-            )
-            return True, "base-red" if base_red else "no-verdict"
-        run.add(
-            Stage(
-                "conduct",
-                status="ok" if trained else "skip",
-                detail="drained the queue" if trained else "another agent is conducting",
-            )
-        )
-        return True, "inline"
-    log_path = run.dir / "conduct.log"
-    try:
-        _spawn_detached(
-            [str(repo / "vibeos-cli"), "land", "--drain", "--foreground"], repo, log_path
-        )
-    except OSError as e:
-        run.add(Stage("conduct", status="warn", detail=f"could not spawn a conductor: {e}"))
-        return False, ""
-    run.add(
-        Stage(
-            "conduct",
-            status="ok",
-            detail="conductor spawned (detached) — this agent is free",
-            salient=[f"progress: {log_path}", "verdict: vibeos-cli land-status --mine"],
-        )
-    )
-    return False, str(log_path)
-
-
 def land(args, repo: Path) -> int:
-    """`vibeos-cli land`. Queue path by default (see _land_queued); `--direct` keeps the
-    serialized single-lane path below, which is right when you are the only active agent or
-    when the queue itself needs bypassing."""
-    if getattr(args, "release", False):
-        return _release(args, repo)
-    if getattr(args, "withdraw", False):
-        return _withdraw(args, repo)
-    if getattr(args, "evict", None) is not None:
-        return _evict(args, repo)
-    if getattr(args, "hold", None) is not None:
-        return _hold(args, repo)
-    if getattr(args, "drain", False):
-        run = Run("land", "drain")
-        _conduct(repo, run, args)
-        return run.finalize(repo)
+    """`vibeos-cli land`. `--direct` is the integrator's landing; anything else is a lane
+    that wants to land, and gets the message to send instead."""
     if not getattr(args, "direct", False):
-        return _land_queued(args, repo)
+        return _merge_request(repo)
     return _land_direct(args, repo)
+
+
+def _merge_request(repo: Path) -> int:
+    """Print the merge request for this lane's tip and refuse (exit 2).
+
+    Refuse rather than land: a lane that lands itself is the second pusher the integrator
+    exists to remove. Print the message rather than make the lane remember its shape, and
+    fill in what the lane would otherwise look up by hand (and could misquote: a sha sent
+    before the commit that prints it is how a merge request names the wrong tree)."""
+    try:
+        branch, head = _preflight(repo)
+    except LandAbort as exc:
+        print(f"LAND_REFUSED: {exc}")
+        return 2
+    run_git(repo, ("fetch", "origin"), 600)
+    if _git_ok(repo, "merge-base", "--is-ancestor", head, "origin/master"):
+        print(f"  nothing to land: {head[:12]} is already on origin/master.")
+        return 0
+    subjects = _git(repo, "log", "--format=%s", "origin/master..HEAD", check=False).splitlines()
+    paths = _git(repo, "diff", "--name-only", "origin/master...HEAD", check=False).splitlines()
+    tops = sorted(
+        {p.split("/", 2)[0] if p.count("/") < 2 else "/".join(p.split("/")[:2]) for p in paths}
+    )
+    what = subjects[0] if subjects else "(no commits ahead of origin/master)"
+    if len(subjects) > 1:
+        what += f" (+{len(subjects) - 1} more commit(s))"
+    touches = ", ".join(tops[:6]) + (", ..." if len(tops) > 6 else "")
+    print(
+        "Lanes do not land themselves: the integration session merges, gates and pushes\n"
+        "(docs/engineering/active-lanes/integration.md). Send it this, via SendMessage to\n"
+        "the integrator in ListAgents:\n\n"
+        f"    merge {branch} @ {head} — {what}; touches {touches or 'nothing'}\n\n"
+        "Then keep working. `./vibeos-cli land-status --tip <sha>` says when it is on master."
+    )
+    return 2
 
 
 def _direct_gate_skip(repo: Path, tree: str) -> str | None:
@@ -1181,7 +900,6 @@ def _direct_gate_skip(repo: Path, tree: str) -> str | None:
 
 def _land_direct(args, repo: Path) -> int:
     run = Run("land", "master")
-    pushed = False
     try:
         branch, head = _preflight(repo)
         _git(repo, "fetch", "origin")
@@ -1219,7 +937,6 @@ def _land_direct(args, repo: Path) -> int:
         _warm_preflight(repo, run, args)
         _concurrent_preflights(repo, run, args)
 
-        _check_hold_for_direct(repo)
         _report_queue(run)
         timeout = float(getattr(args, "queue_timeout", 0) or hostlock.LAND_LOCK_TIMEOUT)
         t_queue = time.monotonic()
@@ -1231,8 +948,6 @@ def _land_direct(args, repo: Path) -> int:
             # Re-fetch INSIDE the lock: whoever we queued behind just landed, so the
             # origin/master we resolved during preflight is stale by construction.
             _git(repo, "fetch", "origin")
-            # And the hold again: someone may have stopped the line while we queued.
-            _check_hold_for_direct(repo)
             head = _merge_master(repo, run)
             tree = _git(repo, "rev-parse", "HEAD^{tree}")
             skip = _direct_gate_skip(repo, tree)
@@ -1244,9 +959,6 @@ def _land_direct(args, repo: Path) -> int:
                 run.add(Stage("push", status="skip", detail="--no-push: gated but not landed"))
             else:
                 _push(repo, run, head)
-                pushed = True
-        if pushed:
-            _after_direct_landing(repo, run, args)
         run.extra["branch"] = branch
         run.extra["head"] = head
         run.extra["queued_s"] = round(queued, 1)
@@ -1264,372 +976,65 @@ def _land_direct(args, repo: Path) -> int:
 
 
 def _explain_tip(repo: Path, tip: str) -> int:
-    """`land-status --tip <sha>` — where did THIS commit get to?
+    """`land-status --tip <sha>`: where did THIS commit get to?
 
-    Ask 1's other half. `land` is honest in all four failure shapes (see
-    land-verification-asks.md), so the question an agent actually has -- "is the work I
-    just submitted lost?" -- was answerable only by remembering a two-test ancestry
-    recipe and knowing that supersessions render in a third list. A rule with no command
-    behind it is a rule that gets skipped, and this one was skipped into a wrong report
-    to a user, which is the only failure here that cannot be fixed after the fact.
-
-    Answers about a SPECIFIC commit, never "did this lane land anything recently" -- that
-    is the question both failure modes answer yes to. And it does not depend on a record
-    being inside `results()`'s recent window: on a busy morning a lane's own superseded
-    row scrolls off behind other lanes' landings, which is exactly how "my tip vanished"
-    was read as work-loss when nothing had been lost.
-    """
+    About a specific commit, never "did this lane land anything recently": a lane that
+    sent a newer sha has landed something without landing the one it is asking about. Three
+    answers, each from git alone: on origin/master; merged into the integrator's current
+    batch (the shared `integration` branch), so gating or about to; or neither."""
     try:
-        tip = queue.git(repo, "rev-parse", tip)
-    except subprocess.SubprocessError:
+        tip = _git(repo, "rev-parse", "--verify", f"{tip}^{{commit}}")
+    except LandAbort:
         print(f"  UNKNOWN COMMIT: {tip} does not resolve in this worktree.")
         return 2
     short = tip[:12]
-    queue.git(repo, "fetch", "origin")
-    if queue.git_ok(repo, "merge-base", "--is-ancestor", tip, "origin/master"):
+    run_git(repo, ("fetch", "origin"), 600)
+    if _git_ok(repo, "merge-base", "--is-ancestor", tip, "origin/master"):
         print(f"  LANDED: {short} is an ancestor of origin/master. The work is on mainline.")
         return 0
-    pend = queue.pending(repo)
-    for s in pend:
-        if s.tip == tip:
-            waited = max(0, int(time.time() - s.submitted_at))
-            print(
-                f"  QUEUED: {short} is pending as {s.lane} "
-                f"({waited // 60}m{waited % 60:02d}s). Not lost, not landed yet."
-            )
-            return 0
-    # A RECORDED outcome outranks the containment inference below, because a superseded tip
-    # is ALSO contained in the descendant that superseded it -- both statements are true and
-    # only one of them explains why the tip is not listed on its own. Carrier named anyway.
-    carrier = next(
-        (s for s in pend if queue.git_ok(repo, "merge-base", "--is-ancestor", tip, s.tip)),
-        None,
-    )
-    for rec in queue.results(repo, limit=500):
-        if rec.get("tip") != tip:
-            continue
-        outcome = rec.get("outcome") or "?"
-        if outcome == "superseded":
-            print(f"  SUPERSEDED: {short} — {rec.get('reason', '')}")
-            print("    Nothing is wrong: your newer tip contains this one. Follow that tip.")
-            if carrier:
-                print(f"    Carried by {carrier.lane} @ {carrier.tip[:12]}, still queued.")
-        elif outcome == "landed":
-            # Reachable when origin/master is behind what the queue recorded.
-            print(
-                f"  LANDED as {str(rec.get('landed_as', ''))[:12]}, but {short} is not yet "
-                f"an ancestor of THIS worktree's origin/master — run `git fetch`."
-            )
-        else:
-            print(
-                f"  {outcome.upper()}: {short} ({rec.get('classification') or '?'}) "
-                f"{str(rec.get('reason', ''))[:120]}"
-            )
-            print(f"    artifact: {rec.get('artifact') or '(none)'}")
-        return 0
-    if carrier:
+    batch = _git(repo, "rev-parse", "--verify", "-q", INTEGRATION_BRANCH, check=False)
+    if batch and _git_ok(repo, "merge-base", "--is-ancestor", tip, batch):
         print(
-            f"  TRAVELLING: {short} is not queued itself, but is contained in "
-            f"{carrier.lane} @ {carrier.tip[:12]}, which IS queued. Landing that lands this."
+            f"  IN BATCH: {short} is merged into the integrator's `{INTEGRATION_BRANCH}` @ "
+            f"{batch[:12]}, which is not on origin/master yet: gating, or about to."
         )
         return 0
-    for rec in queue.abandoned_attempts(repo):
-        if rec.get("tip") == tip:
-            print(
-                f"  NEVER QUEUED: a `land` for {short} died before enqueueing anything "
-                f"(pid {rec.get('pid')} is gone). Re-run `./vibeos-cli land`."
-            )
-            return 1
     print(
-        f"  LOST: {short} is not on origin/master, not queued, not contained in anything "
-        f"queued, and has no verdict or abandoned attempt on record. It was never "
-        f"submitted, or its submission did not persist. Re-run `./vibeos-cli land`."
+        f"  NOT LANDED: {short} is not on origin/master and not in the integrator's current "
+        "batch. If you sent it, the integrator has not merged it yet (or bounced it: read "
+        "its reply); if you did not, `./vibeos-cli land` prints the message to send."
     )
     return 1
 
 
-def _check_hold_for_direct(repo: Path) -> None:
-    """`--direct` is how a held line gets its fix in, so it is the one path a hold does not
-    simply close -- but only for the lane that holds it (or anyone, under an AUTO hold on a
-    red base). Everyone else waiting on the hold is the point of it."""
-    rec = queue.effective_hold(repo)
-    if not queue.may_land_direct(rec, queue.lane_id(repo)):
-        assert rec is not None
-        raise LandAbort(
-            f"{queue.describe_hold(rec)}. Only {rec.get('lane')} may land while it stands. "
-            "Commit and wait -- `vibeos-cli land-status` shows the hold; "
-            "`vibeos-cli land` still QUEUES your lane and it drains on release."
-        )
-
-
-def _after_direct_landing(repo: Path, run: Run, args) -> None:
-    """A direct landing leaves any queued lanes with no conductor (2026-09-26: five
-    submissions sat under `CONDUCTOR: none` after the fix landed). Wake the train -- unless
-    the line is still held, in which case say so, because a forgotten hold is a silent stop."""
-    queue.git(repo, "fetch", "origin")
-    rec = queue.effective_hold(repo)  # an AUTO hold lapses here: master just moved
-    if rec is not None:
-        run.add(
-            Stage(
-                "hold",
-                status="warn",
-                detail="the line is STILL HELD — `vibeos-cli land --release` when you are done",
-                salient=[queue.describe_hold(rec)],
-            )
-        )
-        return
-    if queue.pending(repo) and not getattr(args, "no_push", False):
-        _conduct(repo, run, argparse.Namespace(foreground=False))
-
-
-def _preempt_conductor(run: Run) -> None:
-    """Stop a conductor that is mid-batch. Its submissions stay queued -- a killed conductor
-    is the crash case the queue was built for (queue.py: 'Crash-safety is the kernel's job'),
-    and the next drain resets the integration tree hard. Only a DETACHED conductor is
-    stopped, as its whole session: that is the gate's builds and boots with it, and it can
-    never be an ancestor of ours. A `--direct` lander is someone's own landing -- that one
-    is named, never killed."""
-    h = hostlock.land_holder()
-    kind = str(h.get("kind", ""))
-    pid = int(h.get("pid") or 0)
-    if not h or not pid:
-        run.add(Stage("preempt", status="skip", detail="no conductor running"))
-        return
-    if not kind.startswith("conductor:"):
-        run.add(
-            Stage(
-                "preempt",
-                status="warn",
-                detail=f"the land lock is held by a direct landing ({kind}, pid {pid}) — not "
-                "killed; the hold takes effect when it finishes",
-            )
-        )
-        return
-    try:
-        sid, pgid = os.getsid(pid), os.getpgid(pid)
-    except OSError:
-        run.add(Stage("preempt", status="skip", detail=f"conductor pid {pid} already gone"))
-        return
-    if sid != pgid or pgid in (os.getpgid(0), os.getsid(0)):
-        run.add(
-            Stage(
-                "preempt",
-                status="warn",
-                detail=f"conductor pid {pid} is not a detached session (it runs inside "
-                "someone's shell) — not killed; it stops at its next batch boundary",
-            )
-        )
-        return
-    os.killpg(pgid, signal.SIGTERM)
-    run.add(
-        Stage(
-            "preempt",
-            status="ok",
-            detail=f"stopped conductor pid {pid} (session {pgid}); its batch stays QUEUED",
-            salient=["stray QEMUs, if any: `vibeos-cli kill --stale`"],
-        )
-    )
-
-
-def _hold(args, repo: Path) -> int:
-    run = Run("land", "hold")
-    lane = queue.lane_id(repo)
-    reason = str(args.hold or "").strip()
-    if not reason:
-        run.add(Stage("hold", status="fail", detail='say WHY: `land --hold "master red: ..."`'))
-        run.classification = "LAND_ABORT"
-        return run.finalize(repo)
-    cur = queue.read_hold(repo)
-    if cur and not cur.get("auto") and cur.get("lane") != lane:
-        run.classification = "LAND_ABORT"
-        run.add(
-            Stage(
-                "hold",
-                status="fail",
-                detail="the line is already held by someone else — not taken over",
-                salient=[queue.describe_hold(cur)],
-            )
-        )
-        return run.finalize(repo)
-    rec = queue.set_hold(repo, lane=lane, reason=reason)
-    run.add(Stage("hold", status="ok", detail=queue.describe_hold(rec)))
-    if getattr(args, "preempt", False):
-        _preempt_conductor(run)
-    else:
-        h = hostlock.land_holder()
-        if h:
-            run.add(
-                Stage(
-                    "hold",
-                    status="warn",
-                    detail=f"a landing is in flight ({h.get('kind')}, pid {h.get('pid')}) — it "
-                    "finishes its current batch first; `--preempt` stops it now",
-                )
-            )
-    return run.finalize(repo)
-
-
-def _release(args, repo: Path) -> int:
-    run = Run("land", "release")
-    rec = queue.clear_hold(repo)
-    if rec is None:
-        run.add(Stage("release", status="skip", detail="the line was not held"))
-        return run.finalize(repo)
-    run.add(Stage("release", status="ok", detail=f"released: {queue.describe_hold(rec)}"))
-    if queue.pending(repo):
-        _conduct(repo, run, argparse.Namespace(foreground=False))
-    return run.finalize(repo)
-
-
-def _withdraw(args, repo: Path) -> int:
-    """Step this lane out of line without stopping anyone else (`--hold` stops everyone)."""
-    run = Run("land", "withdraw")
-    withdrawn, busy = queue.withdraw(repo)
-    if withdrawn:
-        run.add(
-            Stage(
-                "withdraw",
-                status="ok",
-                detail=f"withdrew {len(withdrawn)} submission(s); resubmit with `vibeos-cli land`",
-                salient=[f"{s.tip[:12]} (queued {s.seq[:10]})" for s in withdrawn],
-            )
-        )
-    if busy:
-        run.add(
-            Stage(
-                "in-flight",
-                status="warn",
-                detail=(
-                    f"{len(busy)} submission(s) are being GATED right now and were left alone: "
-                    "they will land or be rejected. `vibeos-cli land --hold REASON --preempt` "
-                    "stops the batch (and holds the whole line)"
-                ),
-                salient=[s.tip[:12] for s in busy],
-            )
-        )
-    if not withdrawn and not busy:
-        run.add(Stage("withdraw", status="skip", detail="this lane has nothing queued"))
-    return run.finalize(repo)
-
-
-def _evict(args, repo: Path) -> int:
-    """Kick every other lane's queued work back to it. Only under THIS lane's own hold:
-    eviction is for clearing the line, and a line that is not held can start a batch
-    halfway through it."""
-    run = Run("land", "evict")
-    reason = str(args.evict or "").strip()
-    if not reason:
-        run.add(Stage("evict", status="fail", detail='say WHY: `land --evict "..."`'))
-        return run.finalize(repo)
-    hold = queue.effective_hold(repo)
-    lane = queue.lane_id(repo)
-    if not hold or hold.get("auto") or hold.get("lane") != lane:
-        run.add(
-            Stage(
-                "evict",
-                status="fail",
-                detail="hold the line first: `vibeos-cli land --hold REASON --preempt`, then "
-                "--evict, then land your fix, then --release",
-            )
-        )
-        return run.finalize(repo)
-    evicted, busy = queue.evict(repo, reason=reason, keep_lane=lane)
-    run.add(
-        Stage(
-            "evict",
-            status="ok" if evicted else "skip",
-            detail=f"evicted {len(evicted)} submission(s)" if evicted else "nothing to evict",
-            salient=[f"{s.lane} @ {s.tip[:12]}" for s in evicted],
-        )
-    )
-    if busy:
-        run.add(
-            Stage(
-                "in-flight",
-                status="warn",
-                detail=f"{len(busy)} submission(s) are being GATED by a live conductor and were "
-                "left alone — `land --hold ... --preempt` stops it",
-                salient=[f"{s.lane} @ {s.tip[:12]}" for s in busy],
-            )
-        )
-    return run.finalize(repo)
-
-
 def cmd_land_status(args, repo: Path) -> int:
-    """`vibeos-cli land-status` — the merge queue at a glance: who is training, what is
-    queued behind them, and recent verdicts (a rejected lane's triage pointer lives here).
-
-    With `--tip <sha>`, answers about ONE commit instead (see `_explain_tip`)."""
+    """`vibeos-cli land-status`: who holds the land lock, who waits on it, and the
+    integrator's current batch. With `--tip <sha>`, answers about ONE commit instead."""
     tip = getattr(args, "tip", None)
     if tip:
         return _explain_tip(repo, tip)
     holder = hostlock.land_holder()
-    subs = queue.pending(repo)
-    hold = queue.effective_hold(repo)
-    mine = queue.lane_id(repo) if getattr(args, "mine", False) else None
-    recent = queue.results(repo, lane=mine, limit=int(getattr(args, "limit", 8)))
-    inflight = queue.read_inflight(repo)
+    waiters = hostlock.land_queue()
+    batch = _git(repo, "rev-parse", "--verify", "-q", INTEGRATION_BRANCH, check=False)
     if getattr(args, "json", False):
         print(
             json.dumps(
-                {
-                    "conductor": holder,
-                    "pending": [s.to_json() for s in subs],
-                    "inflight": inflight,
-                    "lock_queue": hostlock.land_queue(),
-                    "hold": hold,
-                    "results": recent,
-                },
+                {"lander": holder, "lock_queue": waiters, INTEGRATION_BRANCH: batch or None},
                 indent=2,
             )
         )
         return 0
-    if hold:
-        print(queue.describe_hold(hold))
     if holder:
         print(
-            f"CONDUCTOR: pid={holder.get('pid')} {holder.get('kind', '?')} "
+            f"LANDING: pid={holder.get('pid')} {holder.get('kind', '?')} "
             f"in {holder.get('cwd', '?')}"
         )
     else:
-        print("CONDUCTOR: none" + (" — queue is NOT being drained" if subs else " (queue empty)"))
-    now = time.time()
-    for i, s in enumerate(subs):
-        waited = max(0, int(now - s.submitted_at))
-        gating = "  [GATING]" if s.seq in inflight else ""
-        print(
-            f"  queued #{i + 1}: {s.lane} @ {s.tip[:12]}  ({waited // 60}m{waited % 60:02d}s)"
-            + gating
-        )
-    if not subs:
-        print("  queue: empty")
-    # A killed submit is INVISIBLE here otherwise, and "not listed" reads as "the conductor
-    # has not reached me" -- so the agent waits on a position it never had. Say it instead.
-    for rec in queue.abandoned_attempts(repo, lane=mine):
-        ago = max(0, int(now - float(rec.get("started_at", now))))
-        print(
-            f"  NOT QUEUED: {rec.get('lane')} @ {str(rec.get('tip', ''))[:12]} — a `land` "
-            f"started {ago // 60}m{ago % 60:02d}s ago DIED before it enqueued anything "
-            f"(pid {rec.get('pid')} is gone). You are not in the queue; re-run "
-            f"`./vibeos-cli land`. If the host was full, check `df -h /` first."
-        )
-    for rec in recent:
-        # `or ""` keeps the key a str: a record with no outcome yet reads as
-        # REJECTED either way (a None key simply misses), but dict.get is typed
-        # for str keys and pyright rejects the Unknown | None that JSON gives back.
-        outcome = rec.get("outcome") or ""
-        tag = {
-            "landed": "landed ",
-            "superseded": "superseded",
-            "withdrawn": "withdrawn",
-            "evicted": "EVICTED",
-        }.get(outcome, "REJECTED")
-        extra = (
-            f" as {rec.get('landed_as', '')[:12]}"
-            if rec.get("outcome") == "landed"
-            else f" ({rec.get('classification') or '?'}) {rec.get('reason', '')[:70]}"
-        )
-        print(f"  {tag}: {rec.get('lane')} @ {rec.get('tip', '')[:12]}{extra}")
+        print("LANDING: none (the land lock is free)")
+    for i, w in enumerate(waiters):
+        print(f"  waiting #{i + 1}: pid={w.get('pid')} {w.get('kind', '?')}")
+    if batch:
+        print(f"  {INTEGRATION_BRANCH}: {batch[:12]} (the integrator's current batch)")
     return 0
 
 

@@ -441,7 +441,7 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   ~50% service wedge pass a 3-attempt gate ~87% of the time.)
 - **The build broker puts the landing gate first too.** Compiler and linker
   processes are admitted by `tools/host-jobs` (18 CPU slots on a 24-vCPU box, link
-  cap 4). A conductor's gate (`VIBEOS_JOB_CLASS=integration`) ranks ahead of a
+  cap 4). A landing gate (`VIBEOS_JOB_CLASS=integration`) ranks ahead of a
   lane's own `build` (`interactive`), and while any gate job is present the top half
   of the slots are gate-only (`VIBEOS_HOST_JOB_LAND_RESERVE`, default slots/2, 0
   disables it, and it never takes a lane's last slot);
@@ -509,7 +509,7 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap
   (16); the per-arch serialize cap is bypassed on the default windows-host TCG
   backend, so same-arch retries run in parallel too. **Half that pool is reserved
-  for landing**: boots under a conductor's gate (`VIBEOS_JOB_CLASS=integration`)
+  for landing**: boots under a landing gate (`VIBEOS_JOB_CLASS=integration`)
   queue separately and take the reserved permits first; every other boot — a lane's
   own smokes, payloads, sweeps — fills only the rest, so the job that unblocks the
   fleet never waits behind it. `VIBEOS_LAND_BOOT_RESERVE` resizes it (0 disables);
@@ -532,143 +532,35 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
 - Auto-push discipline unchanged: a ×3-clean-gate-green landing is still what
   authorizes a push — but drive it through `land` (below), not by hand.
 
-### `land [--direct] [--drain] [--hold R] [--release] [--withdraw] [--evict R] [--cold] [--wait] [--retries N] [--clean] [--no-push] [--dry-run] [--skip-lint]`
-**The way to land — it is a MERGE QUEUE.** With no flags, `land`:
+### `land` — lanes don't land themselves
+Lanes land by messaging the integration session (`merge <branch> @ <sha> — <what>`;
+`docs/engineering/active-lanes/integration.md`). Plain `land` prints that message
+with the branch, sha, subjects and touched paths filled in, and exits 2 without
+pushing anything. It refuses a dirty tree or detached HEAD first, so the sha it
+prints always holds the work it describes.
 
-1. publishes this lane's tip to the queue (`refs/vibeos/queue/<seq>` + a record
-   under `$GIT_COMMON_DIR/vibeos-queue/`) and returns in ~2s — you do **not**
-   merge master, gate, or wait;
-2. if no other agent holds the land lock, *becomes the conductor*: merges every
-   queued lane onto current `origin/master` in a dedicated integration worktree,
-   gates **once**, and fast-forwards master to exactly the commit it gated;
-3. writes a verdict per submission — `land-status --mine` (or your next `land`)
-   shows it.
+The merge train `land` used to start (a queue under `$GIT_COMMON_DIR/vibeos-queue/`,
+conducted by whichever lane found the land lock free, with batch splitting, base
+checks and pipelined cars) was held from 2026-10-16 and retired on 2026-11-08: one
+integrator gating every pending lane per batch, resolving conflicts itself, beat it
+on queueing time and bounces. Its `HOLD.json` is deliberately left in place, since it
+is what stops a lane still on an older commit from conducting with its old CLI.
+Its design lives in git history (`tests/qemu/cli/queue.py` before the retirement).
 
-**N ready lanes cost ONE gate, and no agent blocks.** The conductor is elected by
-the lock, so there is no daemon to supervise and nothing that can be "down".
-
-- **Conflicts are bounced, never resolved** — rejected with the conflicting
-  paths; the rest of the batch proceeds.
-- **A red batch splits recursively**, landing any green half immediately, until
-  the culprit is one submission — rejected with its classification + artifact
-  dir. Innocent lanes still land. Batch cap `VIBEOS_QUEUE_BATCH` (default 4)
-  bounds the worst-case bisect.
-- **Guilty or framed?** Before rejecting a lone submission, the conductor gates the
-  BASE alone (`origin/master`, nothing merged). If the base is red too, **nobody
-  is rejected**: the submissions stay queued, the train HALTS, and the verdict
-  says mainline is broken. This is not hypothetical — the very first real batch
-  hit it (mainline failed to compile `fltmgr-rust` for i386) and, without this
-  check, rejected a docs-only change for a build failure it could not have
-  caused. The base gate is lazy and memoized per drain, so a green batch never
-  pays for it. A base that fails **only** timing-sensitive stages (smoke,
-  conformance) gets one warm re-gate before it can hold the line: on 2026-10-04 a
-  spawn32 race and an arm64 BUGCHECK each held every lane on a master that later
-  gated green. If the re-gate
-  passes, the line is not held. A lone submission red only on the stages the base
-  flaked on stays queued (`FlakyBase`), neither rejected nor landed.
-- **A batch is never presumed green from its parts.** Two individually-green
-  lanes can be red *together*; the queue catches that before master, where today
-  the second lane lands on the first without ever gating the combination.
-- **Crash-safe**: a submission is a ref + a JSON record; the conductor's claim is an
-  flock that dies with it. Kill a conductor mid-batch and its submissions are still
-  queued for the next one. A submission leaves the queue only when it has landed
-  or been rejected — repeated work is possible, a silent drop is not.
-- The **integration worktree** (`$VIBEOS_ROOT/vibeos-integration`) is created on
-  first use and deliberately never auto-pruned: its warm build dirs + cargo target
-  are why a batch gates in minutes, and every landing in the fleet would otherwise
-  pay for a cold one.
-- The spawned conductor **waits its turn** for the land lock rather than giving up, so
-  a submission always gets drained even when a pre-queue lane is holding the lock via
-  `--direct`. (It gave up instantly at first, which left submissions with no conductor
-  — observed within minutes of shipping.) Nothing is blocked by it waiting, and a
-  conductor that wakes to an empty queue exits in ~1s.
-- **`check-tooling` runs in YOUR lane before the submission is published.** The
-  conductor runs the identical command inside the batched gate, so this can never
-  block anything the gate would have passed — it is the same verdict moved from the
-  most expensive place in the system to the cheapest. It has to be: a red batch is 3
-  builds + 4 boots of fleet load, and the lint that bounced a lane on 2026-07-26 was
-  one line 101 characters long. Only a check that *ran and returned nonzero* blocks;
-  if the preflight itself cannot run it warns and proceeds, because a broken
-  preflight must never be able to wedge the fleet's ability to land. `--skip-lint`
-  overrides (report every use). When the lane is behind master it also runs
-  check-tooling (`--skip-generated`) and both source partitions on the lane MERGED
-  with origin/master, in a throwaway worktree under `.git/vibeos-premerge/` — the
-  tree the conductor actually gates. The tip alone missed every failure master
-  introduces under a lane (a generated table gone stale, a new baseline entry). A
-  conflict with master aborts here too, instead of after the queue wait. The gate's
-  **source-lint partitions and host difftests** run there too, by the same rules and
-  the same override — the difftests since a lane whose own `ucrt-difftest` could not
-  link turned 17 of 18 batched gates red on 2026-09-25.
-- `--drain` conducts without submitting; `--foreground` conducts inline instead of
-  spawning; `--wait` blocks for your own verdict if you'd rather not poll.
-
-### The train: pipelined gates (`VIBEOS_QUEUE_DEPTH`, default 2)
-While one batch gates, the conductor merges the NEXT batch on top of it in a
-second integration worktree (`vibeos-integration-2`) and gates that at the same
-time. The second batch's verdict is about master + first + second, so it is
-used only if the first landed whole; otherwise it is discarded and those lanes
-stay queued, neither landed nor rejected. A second batch's merge conflict with
-the first is likewise only rejected once the first is on master. Depth 1 is the
-serial queue. Why (2026-09-26): one cold ~80-minute gate held nine lanes.
-
-### Whose code conducts, and where its log lives
-The lane that wins the election keeps the land lock but does not drain with its own
-copy of the queue: it runs the drain as a child in `vibeos-conductor`, a detached
-checkout it moves to origin/master first. A fix to the queue therefore governs the
-very next drain, whether or not the electing lane has merged it. `VIBEOS_CONDUCTOR_PIN=0`
-drains in-process (for testing queue changes before they land). Every conductor line
-is also appended to `$GIT_COMMON_DIR/vibeos-queue/journal.log` (one rotation at 8 MB),
-which survives the reboots that wipe `/tmp/vibeos-cli`.
-
-When a lone submission fails, the base check re-gates origin/master after
-`git clean -fdqx` (keeping only `.build-tools`, `.venv`, tool caches and the arm64
-firmware), so master is judged without the previous submission's build dirs.
-
-### `land --withdraw` — step out of line
-Takes THIS lane's queued submissions out of the queue (verdict: `withdrawn`),
-without touching anyone else's place. A submission already being gated —
-`[GATING]` in `land-status` — is left alone: its merge is in the tree under test.
-Resubmit with a plain `land`. Use it when you learn your lane is not ready, or
-would gate cold; `--hold` is for stopping everyone.
-
-### `land --evict REASON` — clear the line for a fix
-Only under your OWN manual hold (`land --hold REASON --preempt` first). Kicks
-every other lane's queued submissions back to them with verdict `EVICTED` and
-REASON (e.g. "merge origin/master and resubmit"); anything a live conductor is
-gating is left alone. Then land your fix with `--direct` and `--release`.
+### `land --direct [--cold] [--skip-lint] [--retries N] [--clean] [--no-push] [--dry-run] [--queue-timeout S]`
+The integrator's landing: one serialized critical section under the fleet-wide
+FIFO land lock, `fetch → merge origin/master → gate → push HEAD:master`.
+The integrator runs it as `land --direct --cold --skip-lint`: the gate builds from
+scratch and runs every lint itself, so the preflights below would only repeat it.
 
 ### Warm receipts, and `land --cold`
 Every successful `vibeos-cli build` records a receipt for the working tree's
-content on that arch. `land` refuses a lane whose tree has no receipt on all
-three arches — the queue's gate builds cold and leans on the shared compiler
-caches, so code no build has seen compiles from scratch there and can hold the
-whole queue for hours. Build the three arches, commit what you built (a
-docs-only difference is fine; a docs-only lane needs no build at all), and
-`land` again. `--cold` overrides; report every use.
+content on that arch. `land --direct` without `--cold` refuses a tree with no
+receipt on all three arches, since code no build has seen compiles from scratch
+in the gate. The integrator always passes `--cold` (its batches are new trees by
+construction); the check remains for anyone else landing directly.
 
-### `land --hold REASON [--preempt]` / `land --release` — stop the line
-While a hold stands, no conductor starts a batch, `land` still **queues** your
-lane (nobody loses their place, nobody retry-loops), and only the holding lane
-may `land --direct`. `--preempt` also stops a *detached* conductor mid-batch; its
-batch stays queued, and a `--direct` lander is never killed. `--release` lifts it
-and wakes the queue. The hold shows at the top of `land-status` and `host-status`.
-
-A red base holds the line **by itself**: when a train halts on `BASE_RED`, an
-AUTO hold is pinned to that master sha, any lane may `land --direct` the fix, and
-the hold lapses as soon as master moves. A `land --direct` that lands also wakes
-the queue, so submissions never sit under `CONDUCTOR: none` afterwards.
-
-Why (2026-09-25): mainline went red, and every new submission elected a
-conductor that re-gated the same red base, all night. The load that generated
-turned a 10 ms test-timing assumption into a second, unrelated red, and the fix
-lane's gate queued behind the churn for hours. Stopping it took killing
-conductors by hand, messaging every lane, and finally `wsl --shutdown`.
-
-### `land --direct` — the single-lane path
-One serialized critical section, under the same fleet-wide FIFO
-lock: `fetch → merge origin/master → gate → push HEAD:master`. Right when you're
-the only active agent, or to bypass the queue.
-
+### Why the land lock
 Why it exists: the gate stamp is keyed to an exact **tree hash**, so gate-then-
 push by hand is a race. Whoever pushes first wins; every other in-flight lane's
 tree is now stale, its stamp is void, and it must merge and **re-gate** — and
@@ -700,11 +592,11 @@ Details:
   would reopen the very race. `VIBEOS_LAND_LOCK=0` opts out; the `pre-push` hook
   is still the backstop either way.
 
-### `land-status [--mine] [--limit N] [--json]`
-The merge queue at a glance: who is training, what is queued behind them (with
-wait times), and recent verdicts — a rejected lane's triage pointer lives here.
-`--mine` filters verdicts to this lane. The lock holder also appears in
-`host-status` as a `LANDING :` line plus the `land` queue.
+### `land-status [--json] [--tip SHA]`
+Who holds the land lock and who waits on it, plus the integrator's current batch
+(the shared `integration` branch). `--tip SHA` answers about one commit: LANDED
+(on origin/master), IN BATCH (merged into `integration`, so gating or about to),
+or NOT LANDED. The lock holder also appears in `host-status` as a `LANDING :` line.
 
 ### `disk-status [--sizes]`
 
