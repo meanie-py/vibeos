@@ -1671,6 +1671,31 @@ impl Vm {
                 self.diagnostic_hmp(&command)
             ));
         }
+        // amd64 kernel: which thread is on the CPU. KPCR.Prcb.CurrentThread is gs:[0x188]
+        // (ketypes.h); the KTHREAD's head (state, priority, wait fields, ApcState.Process)
+        // decodes offline against the build's layout. A spinning real-time thread that
+        // starves every other one leaves no serial trace, and the PC alone does not say
+        // whose it is.
+        if self.config.arch.starts_with("amd64") {
+            for (cpu, gs) in crate::verdict::cpu_gs_bases(&registers) {
+                let Ok(base) = u64::from_str_radix(&gs, 16) else { continue };
+                if base < 0xffff_8000_0000_0000 {
+                    continue; // a user GS: the vCPU was in user mode
+                }
+                let _ = self.qmp.hmp(&format!("cpu {cpu}"));
+                let body = self.diagnostic_hmp(&format!("x /1gx 0x{:x}", base + 0x188));
+                let thread = monitor_words(&body).first().copied().unwrap_or(0);
+                let dump = if thread == 0 {
+                    format!("<unreadable: {body}>")
+                } else {
+                    self.diagnostic_hmp(&format!("x /96gx 0x{thread:x}"))
+                };
+                let _ = self.qmp.hmp("cpu 0");
+                chunks.push(format!(
+                    "=== CPU#{cpu} current thread (KPCR 0x{base:x} +0x188) = 0x{thread:x} ===\n{dump}"
+                ));
+            }
+        }
         for (cpu, fp) in crate::verdict::cpu_fps(&registers) {
             chunks.push(format!(
                 "=== CPU#{cpu} frames (frame-pointer chain) ===\n{}",
