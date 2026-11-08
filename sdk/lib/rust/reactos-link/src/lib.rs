@@ -566,7 +566,7 @@ pub struct Linker {
     /// The `.rc` compiled by the engine from cmake's rule rebuilt out of the committed
     /// per-arch template (`cflags/rc.<arch>.flags`) and the module's own includes,
     /// extra flags and defines (see `rc`). No cmake target behind it.
-    rc: Option<RcSpec>,
+    rc: Vec<RcSpec>,
     /// C libraries the engine compiles with cmake's C rule rebuilt from the committed
     /// `cflags/c.<arch>.flags` and their own part (see `c_compiled`).
     c_compiled: Vec<CSpec>,
@@ -666,7 +666,7 @@ impl Linker {
             resource: None,
             resource_built: None,
             resource_from_rc: None,
-            rc: None,
+            rc: Vec::new(),
             c_compiled: Vec::new(),
             spec: None,
             link_stubs: false,
@@ -1050,7 +1050,7 @@ impl Linker {
     /// (the xdk headers, and `version.h`/`buildno.h` from `$VIBEOS_GEN_DIR`).
     pub fn rc(mut self, rc_rel: &str, includes: &[&str], flags: &[&str], defines: &[&str]) -> Self {
         let own = |v: &[&str]| v.iter().map(|x| x.to_string()).collect();
-        self.rc = Some(RcSpec {
+        self.rc.push(RcSpec {
             rc_rel: rc_rel.to_string(),
             includes: own(includes),
             flags: own(flags),
@@ -1535,8 +1535,9 @@ impl Linker {
             link_arg!(self, "{}", dst.display());
         }
 
-        if let Some(spec) = &self.rc {
-            let res = self.compile_rc(spec);
+        // One windres object per .rc, as cmake links them (wined3d: resource.rc + version.rc).
+        for (i, spec) in self.rc.iter().enumerate() {
+            let res = self.compile_rc(spec, i);
             link_arg!(self, "{}", res.display());
         }
 

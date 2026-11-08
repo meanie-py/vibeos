@@ -1,0 +1,19 @@
+# winerbtree-rust — `sdk/include/wine/rbtree.h`, ported once. See src/lib.rs.
+[package]
+name = "winerbtree-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+# rlib, like winelist-rust: consumers are staticlib crates that take it as a path dependency.
+# Nothing here is #[no_mangle]; the functions are expanded into each consumer.
+crate-type = ["rlib"]
+
+[dependencies]
+
+[package.metadata.difftest]
+host-tests = true

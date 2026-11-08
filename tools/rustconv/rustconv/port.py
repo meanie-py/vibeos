@@ -54,6 +54,7 @@ from . import (
     loop_step,
     macro_authority,
     offset_restore,
+    paste_macros,
     pointer_depth,
     prelude_resolve,
     sizeof_restore,
@@ -834,7 +835,11 @@ def _type_defined_in(text: str, name: str) -> bool:
 #: wine/wined3d.h is wined3d.dll's interface, which ddraw, d3d8 and d3d9 all consume; d3d9
 #: and d3d8 reached its types (wined3d_resource, wined3d_adapter, ..) only through their
 #: private headers, and resolve refused to island it ("a base header"): 89 errors in d3d9.
-_CLIENT_API_HEADERS = frozenset({"wine/wined3d.h"})
+#: wine/vulkan.h is the Vulkan API wined3d's Vulkan backend calls through `vk_ops`: no -sys
+#: crate covers it, so refusing it left wined3d's free-standing enums (VkAccessFlagBits,
+#: VkBufferUsageFlagBits, ..) defined nowhere -- the island had only what wined3d's own
+#: structs reach -- and profile_derive already allowlists it for a case label.
+_CLIENT_API_HEADERS = frozenset({"wine/wined3d.h", "wine/vulkan.h"})
 
 
 def _resolve_island_types(state: dict, names: set[str]) -> set[str]:
@@ -1292,6 +1297,23 @@ def _module_method_calls(path: Path, globals_: list[str]) -> list[str]:
 
 
 _UNIT_STATIC = re.compile(r"^(?!#\[no_mangle\]\n)(pub )?(?:static (mut )?|(const) )(\w+):", re.M)
+
+
+_HEADER_STATIC = re.compile(
+    r"^\s*static\s+(?:const\s+)?(?:struct\s+|enum\s+|union\s+)?\w+[\s*]+(\w+)\s*(?:\[[^\]]*\])?\s*=",
+    re.M,
+)
+
+
+def _header_internal_statics(state: dict) -> set[str]:
+    """Names the module's own HEADERS define `static` (internal linkage): one private copy per
+    TU. bindgen still declares them as island externs, which made `_export_island_statics`
+    export every unit's copy -- wined3d_private.h's `static const struct color_fixup_desc
+    COLOR_FIXUP_IDENTITY` came back `#[no_mangle]` in four modules, a duplicate symbol."""
+    out: set[str] = set()
+    for h in _module_headers(REPO / state["module_dir"]):
+        out |= set(_HEADER_STATIC.findall(h.read_text(errors="replace")))
+    return out
 
 
 def _export_island_statics(path: Path, island: set[str]) -> list[str]:
@@ -1895,6 +1917,46 @@ def guid_library_symbols(libs: list[str]) -> set[str]:
     return out
 
 
+_GUID_NAME = re.compile(r"^(?:IID|CLSID|GUID|DIID|LIBID|CATID|FMTID|MEDIATYPE|MEDIASUBTYPE)_\w+$")
+
+
+def linked_library_guid_refs(cmakelists: Path) -> set[str]:
+    """GUIDs a static library the target links REFERENCES but does not define, by llvm-nm.
+
+    The C TU that includes <initguid.h> defines storage for every DEFINE_GUID it sees, and a
+    linked library may be what uses it: wined3d_main.c includes initguid.h before d3d12.h, and
+    vkd3d (linked into d3dwine) references IID_ID3D12Device and 19 more that nothing else
+    defines -- the Rust named none of them, so the flipped DLL failed to link.
+    """
+    if not cmakelists.is_file():
+        return set()
+    linked = " ".join(
+        re.findall(
+            r"target_link_libraries\(\s*\w+([^)]*)\)", cmakelists.read_text(errors="replace")
+        )
+    ).split()
+    build = next(iter(sorted(REPO.glob("build-amd64"))), None) or next(
+        iter(sorted(REPO.glob("build-*"))), None
+    )
+    nm = next(
+        iter(sorted((REPO / ".build-tools" / "llvm-mingw" / "bin").glob("*-w64-mingw32-nm"))), None
+    )
+    if build is None or nm is None:
+        return set()
+    out: set[str] = set()
+    for lib in dict.fromkeys(linked):
+        archive = build / "sdk" / "lib" / lib / f"lib{lib}.a"
+        if not archive.is_file():
+            continue
+        listing = subprocess.run(
+            [str(nm), "--undefined-only", str(archive)], capture_output=True, text=True, check=False
+        ).stdout
+        names = re.findall(r"^\s*U (\w+)$", listing, re.M)
+        names = [n[1:] if build.name == "build-i386" and n.startswith("_") else n for n in names]
+        out |= {n for n in names if _GUID_NAME.match(n)}
+    return out
+
+
 _GUID_STATIC = re.compile(
     r"(?m)^(?:#\[no_mangle\]\n)?pub static (?:mut )?(\w+): (?:GUID|_GUID|IID|CLSID) = "
     # Either layout: a literal on its own lines, or on one (fontext's IID_IContextMenu copy).
@@ -1971,6 +2033,8 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
             re.findall(r"^pub use crate::types::(\w+) as \w+;", prelude.read_text(), re.M)
         )
     want = {n for n in declared if re.search(rf"\b{n}\b", body)} - own
+    # ...and what a static library the target links needs the C TU's INITGUID copy for.
+    want |= linked_library_guid_refs(module_dir / "CMakeLists.txt") - own
     # A GUID uuid.lib already defines is that library's, when the target links it: the C's
     # INITGUID copy is DECLSPEC_SELECTANY and folds into uuid's at link, but a Rust
     # `#[no_mangle]` static is a strong second definition (msctfime: GUID_TFCAT_TIP_KEYBOARD,
@@ -3036,6 +3100,14 @@ def stage_flip(stem: str) -> None:
         )
     module = REPO / state["module_dir"]
     cml = module / "CMakeLists.txt"
+    # Already converted to a cargo cell (cargo_cell_gen --convert): there is no C list left
+    # to comment out, and rewriting the converted file left a bare `rust_cohab_stub.c` line
+    # outside any command -- every arch then failed to configure (wined3d, 2026-11-08).
+    target = state.get("target") or state["stem"]
+    if re.search(rf"\badd_cargo_module\(\s*{re.escape(target)}\b", cml.read_text()):
+        raise PortError(
+            f"flip: {target} is already a cargo cell ({cml.relative_to(REPO)}); nothing to flip"
+        )
     new = flip_cmake(cml.read_text(), state)
     stub = module / _stub_name(state)
     # Rewritten while it is still only what a flip writes (an older flip's placeholder, or
@@ -3444,13 +3516,20 @@ _STR_LIT = r'"(?:[^"\\\n]|\\.)*"'
 _ADJACENT_STRINGS = re.compile(rf"(?<![\w#'])({_STR_LIT})(\s+)({_STR_LIT})")
 
 
-_NAMED_CHANNEL = re.compile(r"\b(ERR|WARN|FIXME|TRACE)_!?\(\s*([A-Za-z_]\w*)\s*,")
+# Every spelling the model writes: `TRACE_(fps, ..)`, C's own curried `WARN_(d3d_perf)(..)`, and
+# the channel slipped in front of the plain macro's format, `WARN!(d3d_perf, "..")` -- a format is
+# always a string literal, so a bare lowercase name before one can only be the channel.
+_NAMED_CHANNEL = re.compile(
+    r"\b(ERR|WARN|FIXME|TRACE)(?:_!?\(\s*([A-Za-z_]\w*)\s*(?:,|\)\s*\()"
+    r"|!\(\s*([a-z_][a-z0-9_]*)\s*,(?=\s*(?:b|c)?\"))"
+)
 
 
 def _named_channel_debug(state: dict) -> int:
     """wine/debug.h `ERR_(winediag)("..")` as `WINE_ERR_!(__wine_dbch_winediag, "..")`.
 
-    The model writes it `ERR_!(winediag, ..)` or `TRACE_(fps, ..)`; the channel name is
+    The model writes it `ERR_!(winediag, ..)`, `TRACE_(fps, ..)` or C's own curried
+    `WARN_(d3d_perf)(..)` (wined3d: 13 sites); the channel name is
     token-pasted in C, so win32macros' named forms take the channel STATIC, whose storage
     `port resolve` writes once the Rust names it (ddraw: winediag in device.c, fps in
     surface.c)."""
@@ -3458,11 +3537,45 @@ def _named_channel_debug(state: dict) -> int:
     for path in sorted(_stem_sources(state)):
         text = path.read_text()
         new, k = _NAMED_CHANNEL.subn(
-            lambda m: f"WINE_{m.group(1)}_!(__wine_dbch_{m.group(2)},", text
+            lambda m: f"WINE_{m.group(1)}_!(__wine_dbch_{m.group(2) or m.group(3)},", text
         )
         if k:
             path.write_text(new)
             n += k
+    return n
+
+
+_C_OR_CASE = re.compile(r"\bcase\s*\(\s*([A-Za-z_]\w*(?:\s*\|\s*[A-Za-z_]\w*)+)\s*\)\s*:")
+
+
+def _or_case_values(state: dict) -> int:
+    """C's `case (A | B):` -- the OR'd VALUE -- as a guard, never a Rust alternation.
+
+    The model keeps C's parentheses, `(A | B) =>`, and in a pattern `|` means "A or B":
+    wined3d's glsl_shader.c `case (WINED3DSP_WRITEMASK_0 | WINED3DSP_WRITEMASK_1):` (.xy)
+    became an arm rustc could only flag because two earlier arms took .x and .y; with no
+    such arms the swap is silent. Only a label the module's C spells parenthesised is
+    rewritten, so a real `case A: case B:` folded to `A | B =>` is never touched."""
+    labels: set[tuple[str, ...]] = set()
+    for c in _module_sources(REPO / state["module_dir"]):
+        for m in _C_OR_CASE.finditer(c.read_text(errors="replace")):
+            labels.add(tuple(t.strip() for t in m.group(1).split("|")))
+    if not labels:
+        return 0
+    n = 0
+    for path in sorted(_stem_sources(state)):
+        text = path.read_text()
+        new = text
+        for names in labels:
+            alt = r"\s*\|\s*".join(map(re.escape, names))
+            pat = re.compile(rf"(?m)^(\s*)\(\s*({alt})\s*\)\s*=>")
+            new, k = pat.subn(
+                lambda m, v=" | ".join(names): f"{m.group(1)}__or_case if __or_case == ({v}) =>",
+                new,
+            )
+            n += k
+        if new != text:
+            path.write_text(new)
     return n
 
 
@@ -5345,9 +5458,15 @@ def stage_integrate(stem: str) -> None:
     flex_fields, _ = flex_index.field_shapes()
     crate_types = sizeof_restore.crate_types(crate / "src")
     fn_macros = _module_fn_macros(state)
+    paste = paste_macros.member_paste_macros(
+        local_macros.module_macros(_module_sources(REPO / state["module_dir"]), REPO)[0]
+    )
+    caller_locals = paste_macros.caller_locals(
+        (crate / "src" / "prelude.rs").read_text(errors="replace")
+    )
     island_consts = _island_consts(crate / "src")
     unicode = _TCHAR_BEGIN in (crate / "src" / "prelude.rs").read_text(errors="replace")
-    island_statics = _island_extern_statics(crate / "src")
+    island_statics = _island_extern_statics(crate / "src") - _header_internal_statics(state)
     rendered_globals = _rendered_globals(crate / "src", stem)
     module_globals = _module_globals(state)
     spec_stubs = _spec_stubs(state)
@@ -5496,6 +5615,28 @@ def stage_integrate(stem: str) -> None:
         if tags:
             changed += 1
             print(f"integrate: {path.stem}: C struct tag(s) as the crate's type: {', '.join(tags)}")
+        text = path.read_text(errors="replace")
+        pasted, n_paste, odd = paste_macros.expand_member_paste_calls(text, paste)
+        if n_paste:
+            path.write_text(pasted)
+            changed += 1
+            print(
+                f"integrate: {path.stem}: {n_paste} member-paste macro call(s) expanded "
+                f"({', '.join(sorted(paste))})"
+            )
+        for site in odd:
+            print(
+                f"integrate: {path.stem}: member-paste macro call NOT expanded, hand-port: {site}"
+            )
+        text = path.read_text(errors="replace")
+        passed, n_locals = paste_macros.pass_caller_locals(text, caller_locals)
+        if n_locals:
+            path.write_text(passed)
+            changed += 1
+            print(
+                f"integrate: {path.stem}: {n_locals} call(s) given their caller-locals "
+                f"({', '.join(sorted(caller_locals))})"
+            )
         wl = _wine_list_entry(path, REPO / state["module_dir"], crate)
         if wl:
             changed += 1
@@ -5691,6 +5832,10 @@ def stage_integrate(stem: str) -> None:
         print(
             f"integrate: {named} named-channel debug call(s) as WINE_<CLS>_!(__wine_dbch_<ch>, ..)"
         )
+    or_cases = _or_case_values(state)
+    changed += or_cases
+    if or_cases:
+        print(f"integrate: {or_cases} C `case (A | B):` value(s) as match guards")
     joined = _join_adjacent_strings(state)
     changed += joined
     if joined:
@@ -6309,6 +6454,25 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         siblings = {n: m for n, m in siblings.items() if n not in stale}
         prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
         print(f"resolve: dropped {len(stale)} stale sibling import(s): {', '.join(sorted(stale))}")
+    # An incomplete-array extern (`extern const struct wined3d_vec4 wined3d_srgb_const[];`) is
+    # `[T; 0]` in the island, so the name resolves and never reaches the unresolved list -- yet
+    # every index into it is a build-time `unconditional_panic` (cargo check never runs that
+    # lint). When a translated module defines it, the module's sized array must win.
+    zero_len = prelude_resolve.island_zero_length_statics(crate / "src") - set(siblings)
+    sized = {
+        n: sorted({m for m, _ in d})
+        for n, d in prelude_resolve.sibling_definitions(zero_len, modules_dir).items()
+    }
+    sized = {n: m[0] for n, m in sized.items() if len(m) == 1}
+    if sized:
+        for name, mod in sized.items():
+            prelude_resolve.promote_pub(modules_dir / f"{mod}.rs", name)
+        siblings.update(sized)
+        prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
+        print(
+            "resolve: island `[T; 0]` extern(s) the crate defines, imported from it: "
+            + ", ".join(sorted(sized))
+        )
     island_sys = prelude_resolve.island_substrate(crate / "src", workspace)
     kernel_sys = (
         island_sys if island_sys is not None and island_sys.parent.name == "ntkrnl-sys" else None
@@ -6485,6 +6649,9 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
             _spell_enumerator_prefixed(modules_dir, name, item)
         copied.update(aliases)
         todo -= set(aliases) | bound
+        nested = prelude_resolve.island_nested_type_aliases(todo, crate / "src")
+        copied.update(nested)
+        todo -= set(nested)
         items = prelude_resolve.workspace_items(todo, workspace, crate)
         for name in types_only & set(items):
             items[name] = [i for i in items[name] if i.kind == "type"]

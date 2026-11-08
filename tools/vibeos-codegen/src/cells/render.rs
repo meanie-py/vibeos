@@ -436,6 +436,9 @@ pub fn build_rs(cell: &Cell) -> Result<String> {
     if let Some(rc) = &cell.rc {
         l.push(rc_call(rc));
     }
+    for rc in &cell.extra_rc {
+        l.push(rc_call(rc));
+    }
     if let Some((spec, dll)) = &cell.spec {
         l.push(format!("        .spec2def(\"{spec}\", \"{dll}\")"));
     }
