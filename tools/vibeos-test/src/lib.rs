@@ -10,6 +10,7 @@ pub mod checkpoint;
 pub mod config;
 pub mod conformance;
 pub mod conformance_run;
+pub mod debugcmd;
 pub mod debugcon;
 pub mod farm;
 pub mod ladder;
@@ -31,6 +32,7 @@ pub mod stress;
 pub mod verdict;
 pub mod vm;
 pub mod wine_failures;
+pub mod winref;
 
 pub mod bench;
 pub mod bench_boot;
