@@ -687,8 +687,14 @@ pub fn smoke(root: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         // Payload media runs its payload at every boot, so a ladder on it grades the rungs
         // under the payload's load, not on their own: an appstorm64 build's ladder lost apc32
         // to the commit limit (20261108-001052-6ydze5nk) beside 86 x64 processes.
+        // Except kmtest: every full gate stages its conformance sweep and runs the amd64
+        // ladder on that media (gate_child's --kmtests), so the ladder's whole pass record is
+        // beside it. Refusing it failed every gate (batch 156).
         let staged = c.call("payload_stamp", json!({"arch":arch}))?;
-        let staged: Vec<String> = serde_json::from_value(staged)?;
+        let staged: Vec<String> = serde_json::from_value::<Vec<String>>(staged)?
+            .into_iter()
+            .filter(|p| p != "kmtest")
+            .collect();
         if !staged.is_empty() {
             return fail_preflight(
                 &mut c,
@@ -845,7 +851,19 @@ pub fn smoke(root: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
                 ]),
             );
         }
-        c.stage("payload-check", "ok", wanted.join(","), json!([]))?
+        c.stage("payload-check", "ok", wanted.join(","), json!([]))?;
+        // The smoke boot boots the payload media too, and arm64 loads its whole ramdisk into
+        // RAM: appstorm64's 769 MB image left the kernel too little contiguous memory at the
+        // default 1 GB for its PFN database (BUGCHECK 0x7D, 20261108-011848-i_16_8gj), while
+        // the payload boot, given its declared 2G, was never reached. So the payloads'
+        // memory is the smoke boot's too, unless --vm-memory says otherwise.
+        if text(options, "vm_memory").is_empty() {
+            let plan = payload_plan(root, &wanted.join(","), &arch, None, "")?;
+            if !plan.memory.is_empty() {
+                c.set_env("VIBEOS_QEMU_MEMORY", plan.memory.as_str())?;
+                c.update(json!({"extra":{"vm_memory":plan.memory}}))?;
+            }
+        }
     }
     let total = options["repeat"].as_i64().unwrap_or(1).max(1) as u64;
     let mut actual_total = total;
@@ -1333,6 +1351,15 @@ mod tests {
         assert_eq!(smoke(dir.path(), &args, &mut host).unwrap(), 1);
         assert_eq!(host.state["classification"], "LADDER_MEDIA_HAS_PAYLOAD");
         assert_eq!(host.boots, 0);
+        // The gate's media: the kmtest sweep alone is the ladder's usual company.
+        let mut host = PreflightHost {
+            state: json!({"classification":"","stages":[],"extra":{}}),
+            fresh: true,
+            boots: 0,
+            staged: vec!["kmtest".into()],
+        };
+        let _ = smoke(dir.path(), &args, &mut host);
+        assert_ne!(host.state["classification"], "LADDER_MEDIA_HAS_PAYLOAD");
     }
     #[test]
     fn missing_payload_and_stale_media_refuse_before_a_vm_exists() {
