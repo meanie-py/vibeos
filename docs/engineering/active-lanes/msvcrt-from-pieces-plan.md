@@ -1,5 +1,25 @@
 # msvcrt / ucrtbase from pieces — lane plan
 
+## RESUME HERE (parked 2026-11-08, fleet wind-down)
+
+The lane's last stretch was sysfb PnP, not the CRT: `docs/engineering/sysfb-pnp-design.md` has
+steps 0-4 done and step 5 done on the Pi 5. Landed: `6b85d99aa5b` (user-mode device
+disable/enable, batch 158). Submitted: `4815295ad8b` (bench serial guard, `pi4 services
+serial-down`, sysfbprobe prints the PlugPlay checkpoint) in batch 170, which the integrator
+fixed forward with `46c6c469327` (ruff format on `tests/qemu/cli/pi4.py`).
+Owed, in order:
+1. The Pi 5 PlugPlay START_PENDING stall (roadmap bug registry): rebuild arm64 with
+   `VIBEOS_PAYLOAD=sysfbprobe` (the checkpoint print is not built yet) and `pi5 boot` until it
+   recurs; the checkpoint names the thread start `ServiceMain` stalled before.
+2. sysfb step 5 on the OptiPlex, once rpi-bringup's freeldr 1 GiB identity-map fix is on
+   master (the bench is theirs; ask first).
+3. The kernel-initiated `IopPrepareDeviceForRemoval` ordering, a reboot test of
+   CONFIGFLAG_DISABLED, and the `SetupDiSetClassInstallParamsA` stub (roadmap, "No device
+   could be disabled").
+4. Proposed to the user, not started: ruff on changed `.py` inside `vibeos-cli check`, so a
+   Python edit cannot reach the integrator without `check-tooling` (three bounces).
+The Pi 4 sysfb check is owed but low value (same root-instance GOP path).
+
 > **Lane:** `msvcrt-homebrew` · **Status:** the DLL is done; the debt is GRADING (2026-08-07) · **Size:** M–L
 >
 > **Status, measured not asserted** (`tools/export_census.py --module msvcrt --arch amd64`):
