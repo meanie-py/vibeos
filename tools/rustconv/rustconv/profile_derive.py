@@ -4718,6 +4718,26 @@ def _rust_mod_ident(stem: str) -> str:
     return f"r#{stem}" if stem in _RUST_KEYWORDS else stem
 
 
+def unique_unit_stems(units: list) -> dict[str, str]:
+    """Each unit's Rust module stem, unique within the module (keyed by `str(unit)`).
+
+    A stem two units share goes to the one in the shallowest directory (the module's own);
+    the others are qualified by their parent directory. crypt32 compiles `store.c` and
+    `reactos/store.c`: both became `pub mod store;` and `store.rs`, and the 1-function ReactOS
+    file replaced the 54 bodies of the real one. `port._unit_mod` asks this, so the scaffold's
+    `pub mod` list and the files translate writes cannot disagree."""
+    paths = [Path(u) for u in units]
+    by_stem: dict[str, list[Path]] = {}
+    for p in paths:
+        by_stem.setdefault(p.stem, []).append(p)
+    out: dict[str, str] = {}
+    for stem, group in by_stem.items():
+        keeper = min(group, key=lambda q: len(q.parent.parts))
+        for p in group:
+            out[str(p)] = stem if p == keeper else f"{p.parent.name}_{stem}"
+    return out
+
+
 def _rust_mod_decl(stem: str) -> str:
     """`pub mod x;` for a TU, with a #[path] when the file name is not an identifier."""
     ident = _rust_mod_ident(stem)
@@ -5118,9 +5138,10 @@ crate-type = ["staticlib"]
     # (vfatlib's dosfstools check/*.c were declared as modules, and its own common.c and the
     # vendored check/common.c collided as two `pub mod common;`).
     units = m.compiled_tus if tus is None else tus
+    stems = unique_unit_stems(units)
     for tu in units:
         # `enum.c` (atapi) is a Rust keyword: a raw identifier still names enum.rs.
-        mods.append(f"    {_rust_mod_decl(tu.stem)}")
+        mods.append(f"    {_rust_mod_decl(stems[str(tu)])}")
     write(
         src / "lib.rs",
         f"""//! {m.crate_stem} — Rust translation of {m.module_dir.relative_to(dp.env.repo_root)}.

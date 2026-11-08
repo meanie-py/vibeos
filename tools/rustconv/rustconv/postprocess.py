@@ -1975,6 +1975,34 @@ def drop_pseh_macro_externs(code: str) -> str:
     )
 
 
+_WINE_SEH_MARKER = r"(?:__TRY|__ENDTRY|__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)"
+_WINE_SEH_STMT_RE = re.compile(
+    rf"^[ \t]*(?:let\s+(?:mut\s+)?\w+\s*(?::\s*[\w:]+\s*)?=\s*)?{_WINE_SEH_MARKER}\s*;[ \t]*\n",
+    re.M,
+)
+_WINE_SEH_IF_RE = re.compile(r"\bif\s+(?:__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)\s*\{")
+_WINE_SEH_EXPR_RE = re.compile(r"\b(?:__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)\b")
+
+
+def lower_wine_seh_markers(code: str) -> str:
+    """Wine's `__TRY`/`__EXCEPT_PAGE_FAULT`/`__ENDTRY` left in a body as VALUES.
+
+    These are statement macros. Under the tree's DUMMY_PSEH, `__TRY { A } __EXCEPT_PAGE_FAULT
+    { B } __ENDTRY` compiles to `A;` then `if (_SEH2_Volatile0 || ..) { B }`, a runtime-false
+    guard (sdk/lib/pseh/dummy.c never assigns it). When the fact seal hid them behind
+    placeholders (crypt32, 2026-11-08), the model kept them as marker statements
+    (`let _ = __TRY;`, `__ENDTRY;`) or as the handler's condition (`if __EXCEPT_PAGE_FAULT {`).
+    Neither compiles. A marker statement is dropped, since the C statement it stood for is
+    nothing at runtime. A handler condition becomes the guard the C compiles to. Anything else
+    is left in place so it fails to compile loudly.
+    """
+    if not re.search(rf"\b{_WINE_SEH_MARKER}\b", code):
+        return code
+    code = _WINE_SEH_STMT_RE.sub("", code)
+    code = _WINE_SEH_IF_RE.sub("if _SEH2_Volatile0 != 0 {", code)
+    return _WINE_SEH_EXPR_RE.sub("_SEH2_Volatile0", code)
+
+
 def fix_markdown_fence_leak(code: str) -> str:
     """Strip stray markdown ``` fences the LLM occasionally leaks into
     the preamble translation output (empty preambles → bare ```rust\\n```).
@@ -2502,6 +2530,7 @@ def postprocess(
         code = enforce_import_abi(code, exports)
         code = strip_user_inline_redeclarations(code)
         code = drop_pseh_macro_externs(code)
+        code = lower_wine_seh_markers(code)
         code = fix_utf16_vec_literals(code)
         code = fix_wide_byte_string_literals(code)
     return code

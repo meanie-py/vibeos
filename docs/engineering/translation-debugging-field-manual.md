@@ -6407,6 +6407,25 @@ both sides and diff the argument lists as a table. Here that is three rows and t
 immediate — `grep -c GetKeyState` gives 3 in the C and 3 live in the Rust, but the ARGUMENTS
 differ.
 
+### A sealed SEH statement macro comes back as a value or a struct
+
+**Symptom.** A Wine TU full of `__TRY { } __EXCEPT_PAGE_FAULT { } __ENDTRY` loses whole
+functions to "the Rust does not parse (expected identifier, found keyword `let`)": the reply
+reads `__RUSTCONV_FACT_0000__ { let .. }`, a struct literal. The bodies that do parse hold
+`let _ = __TRY;` and `if __EXCEPT_PAGE_FAULT {`, which fail later at `cargo check`. crypt32's
+decode.c had 66 of 158 bodies rejected on the first pass. Of the accepted bodies across four TUs, 46 held such markers.
+
+**Cause.** `--seal-facts` seals every bare uppercase name, and a statement macro is one. PSEH's
+own spellings (`_SEH2_TRY`/`_SEH2_END`, after tdihelpers) were exempt; Wine's and rpc.h's
+spellings of the same block were not. With the construct hidden, the model cannot know it is a
+try block.
+
+**Fix.** `fact_seal._C_STATEMENT_MACROS` now lists every spelling `scanner.mask_seh_for_parse`
+masks; the two lists must stay together. `postprocess.lower_wine_seh_markers` repairs bodies
+already bought ($0): a marker statement is dropped, and a handler condition becomes the DUMMY_PSEH
+guard `_SEH2_Volatile0`. The cache key is the unsealed C, so nothing accepted is re-billed. The one body still rejected after
+`--retry-rejects` was re-bought with `--rebuy-fn` ($0.01).
+
 ### A C function-pointer typedef came back as a bare `fn` type
 **Symptom:** `no method named is_none found for fn pointer`, `expected fn pointer, found
 Option<_>` at `let f: FOO = None`, `unwrap_unchecked` not found. regsvr32's `DLLREGISTER`,
