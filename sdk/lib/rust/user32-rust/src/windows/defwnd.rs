@@ -630,6 +630,11 @@ unsafe fn DefWndGetIcon_impl(pWnd: PWND, wParam: WPARAM, _lParam: LPARAM) -> LRE
         x if x == ICON_BIG as WPARAM => {
             hIconRet = UserGetProp(UserHMGetHandle(pWnd), crate::wow64::psi::atom_icon_prop(), TRUE as BOOLEAN) as HICON;
         }
+        // win32k keeps the small icon it generated from the big one in the
+        // same prop, flagged WNDS2_SMALLICONFROMWMQUERYDRAG; only ICON_SMALL2
+        // reports it.
+        x if x == ICON_SMALL as WPARAM
+            && (*pWnd).state2 & WNDS2_SMALLICONFROMWMQUERYDRAG != 0 => {}
         x if x == ICON_SMALL as WPARAM || x == ICON_SMALL2 as WPARAM => {
             hIconRet = UserGetProp(UserHMGetHandle(pWnd), crate::wow64::psi::atom_icon_sm_prop(), TRUE as BOOLEAN) as HICON;
         }

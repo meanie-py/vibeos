@@ -658,36 +658,81 @@ unsafe extern "C" fn DefWndSetIcon(pWnd: PWND, wParam: WPARAM, lParam: LPARAM) -
     DefWndSetIcon_impl(pWnd, wParam, lParam)
 }
 
-unsafe fn DefWndSetIcon_impl(pWnd: PWND, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
-    let mut hIcon: HICON;
-    let mut hIconSmall: HICON;
-    let hIconOld: HICON;
+/// Destroy the small icon the system made from the big one (Wine's
+/// hIconSmall2; Windows marks it with WNDS2_SMALLICONFROMWMQUERYDRAG and keeps
+/// it in the SysICS prop, which is what the caption painter reads).
+pub(crate) unsafe fn DefWndDestroyGeneratedSmIcon(pWnd: PWND) {
+    if (*pWnd).state2 & WNDS2_SMALLICONFROMWMQUERYDRAG == 0 {
+        return;
+    }
+    (*pWnd).state2 &= !WNDS2_SMALLICONFROMWMQUERYDRAG;
+    let h = UserGetProp(pWnd, (*gpsi).atomIconSmProp, 1u8) as HICON;
+    UserSetProp(pWnd, (*gpsi).atomIconSmProp, core::ptr::null_mut(), 1u8);
+    if !h.is_null() {
+        let obj = UserGetCurIconObject(h);
+        if !obj.is_null() {
+            UserDereferenceObject(obj as PVOID);
+            IntDestroyCurIconObject(obj as PVOID);
+        }
+    }
+}
 
+/// ICON_SMALL2 for a window with a big icon and no small one: a copy of the
+/// big icon at SM_CXSMICON x SM_CYSMICON, owned by the window.
+unsafe fn DefWndCreateGeneratedSmIcon(pWnd: PWND, hIcon: HICON) {
+    let h = co_IntCopyImage(
+        hIcon as HANDLE,
+        IMAGE_ICON,
+        UserGetSystemMetrics(SM_CXSMICON as u32),
+        UserGetSystemMetrics(SM_CYSMICON as u32),
+        0,
+    ) as HICON;
+    if !h.is_null() {
+        UserSetProp(pWnd, (*gpsi).atomIconSmProp, h as _, 1u8);
+        (*pWnd).state2 |= WNDS2_SMALLICONFROMWMQUERYDRAG;
+    }
+}
+
+// WM_SETICON, after Wine's set_window_icon: a big icon with no small one
+// generates ICON_SMALL2; an explicit small icon (or a new big one) replaces it.
+// WM_GETICON(ICON_SMALL) keeps reporting only what the app set.
+unsafe fn DefWndSetIcon_impl(pWnd: PWND, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
     if wParam > ICON_SMALL2 as WPARAM {
         EngSetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
-
-    hIconSmall = UserGetProp(pWnd, (*gpsi).atomIconSmProp, 1u8) as HICON;
-    hIcon = UserGetProp(pWnd, (*gpsi).atomIconProp, 1u8) as HICON;
-
-    hIconOld = if wParam == ICON_BIG as WPARAM { hIcon } else { hIconSmall };
+    let generated = (*pWnd).state2 & WNDS2_SMALLICONFROMWMQUERYDRAG != 0;
+    let hIcon = UserGetProp(pWnd, (*gpsi).atomIconProp, 1u8) as HICON;
+    let hIconSmall: HICON = if generated {
+        core::ptr::null_mut()
+    } else {
+        UserGetProp(pWnd, (*gpsi).atomIconSmProp, 1u8) as HICON
+    };
+    let new = lParam as HICON;
+    let hIconOld: HICON;
 
     match wParam as u32 {
         ICON_BIG => {
-            hIcon = lParam as HICON;
+            hIconOld = hIcon;
+            DefWndDestroyGeneratedSmIcon(pWnd);
+            UserSetProp(pWnd, (*gpsi).atomIconProp, new as _, 1u8);
+            if !new.is_null() && hIconSmall.is_null() {
+                DefWndCreateGeneratedSmIcon(pWnd, new);
+            }
         }
         ICON_SMALL => {
-            hIconSmall = lParam as HICON;
+            hIconOld = hIconSmall;
+            DefWndDestroyGeneratedSmIcon(pWnd);
+            UserSetProp(pWnd, (*gpsi).atomIconSmProp, new as _, 1u8);
+            if new.is_null() && !hIconSmall.is_null() && !hIcon.is_null() {
+                DefWndCreateGeneratedSmIcon(pWnd, hIcon);
+            }
         }
-        ICON_SMALL2 => {
-            ERR!("FIXME: Set ICON_SMALL2 support!\n");
+        _ => {
+            // ICON_SMALL2 is read-only on Windows: nothing changes.
+            hIconOld = core::ptr::null_mut();
         }
-        _ => {}
     }
-
-    UserSetProp(pWnd, (*gpsi).atomIconProp, hIcon as _, 1u8);
-    UserSetProp(pWnd, (*gpsi).atomIconSmProp, hIconSmall as _, 1u8);
 
     if ((*pWnd).style & WS_CAPTION as u32) == WS_CAPTION as u32 {
         UserPaintCaption(pWnd, DC_ICON as INT);
@@ -714,6 +759,11 @@ unsafe fn DefWndGetIcon_impl(pWnd: PWND, wParam: WPARAM, _lParam: LPARAM) -> LRE
     }
     if wParam == ICON_BIG as WPARAM {
         hIconRet = UserGetProp(pWnd, (*gpsi).atomIconProp, 1u8) as HICON;
+    } else if wParam == ICON_SMALL as WPARAM
+        && (*pWnd).state2 & WNDS2_SMALLICONFROMWMQUERYDRAG != 0
+    {
+        // The generated icon answers only ICON_SMALL2.
+        hIconRet = core::ptr::null_mut();
     } else {
         hIconRet = UserGetProp(pWnd, (*gpsi).atomIconSmProp, 1u8) as HICON;
     }
