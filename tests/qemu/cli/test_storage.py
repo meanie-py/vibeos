@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from . import build, provenance
+from . import provenance
 
 
 def test_clean_nested_targets_keeps_other_arch_and_host(tmp_path: Path):
@@ -42,13 +42,3 @@ def test_clean_refuses_symlinked_workspace_root(tmp_path: Path):
     root.symlink_to(foreign, target_is_directory=True)
     with pytest.raises(ValueError, match="symlinked workspace"):
         provenance.workspace_cargo_targets(tmp_path, "amd64")
-
-
-def test_repeating_storage_settings_does_not_reconfigure(tmp_path: Path):
-    (tmp_path / "CMakeCache.txt").write_text(
-        "VIBEOS_RUST_STORAGE_SHARDS:STRING=4\nVIBEOS_RUST_BODY_SHARDS:STRING=0\n"
-    )
-    assert build._storage_options(tmp_path, 4, 0) == []
-    assert build._storage_options(tmp_path, None, None) == []
-    assert build._storage_options(tmp_path, 4, 2) == ["-DVIBEOS_RUST_BODY_SHARDS=2"]
-    assert build._storage_options(tmp_path, 0, None) == ["-DVIBEOS_RUST_STORAGE_SHARDS=0"]

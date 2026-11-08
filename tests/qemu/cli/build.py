@@ -137,29 +137,6 @@ def _ninja_keep_going(args=None):
     )
 
 
-def _ninja_did_work(stdout: str) -> int:
-    """How many edges a ninja run actually executed, from its progress lines.
-
-    Used by the re-affirm pass to say whether the optional targets invalidated
-    anything. Counted rather than merely detected because "relinked 3" is the
-    interesting number: a persistently non-zero count means a cohab cell is being
-    rebuilt by two passes every single build, which is a wiring bug worth chasing,
-    not just a hiccup this pass absorbed.
-
-    Two things a naive `^\\[\\d+/\\d+\\]` count gets WRONG, both observed on a real
-    no-op re-affirm that nonetheless reported "relinked 1 target(s)":
-
-      [0/2] Re-checking globbed directories...
-      ninja: no work to do.
-
-    Nothing was rebuilt. `[0/...]` is a status pseudo-edge (the CONFIGURE_DEPENDS
-    glob re-check), not a completed edge — real edges start at [1/n]. And when
-    ninja says "no work to do" that is authoritative regardless of what it printed
-    above. An always->=1 count would have made this signal useless in exactly the
-    direction that hides the bug it exists to expose."""
-    return native.call("build_policy_ninja_work", {"text": stdout})
-
-
 def _ninja_jobs() -> list[str]:
     """`-j N` cap on ninja parallelism. DEFAULT IS NOW UNCAPPED (reserve 0).
 
@@ -243,17 +220,6 @@ def _value_in_cache(build_dir: Path, var: str) -> str:
     return native.call("build_policy_cmake_value", {"build": build_dir, "key": var})
 
 
-def _storage_options(build_dir: Path, shards: int | None, body_shards: int | None) -> list[str]:
-    return native.call(
-        "build_policy_storage_options",
-        {
-            "build": build_dir,
-            "shards": shards,
-            "body_shards": body_shards,
-        },
-    )
-
-
 def _maybe_canonize(run, repo, build_dir, arch, instr_flags, sticky_on=(), instr_values=None):
     return _mechanism(
         run,
@@ -270,15 +236,6 @@ def _maybe_canonize(run, repo, build_dir, arch, instr_flags, sticky_on=(), instr
 def _stage_payloads(run, repo, build_dir, arch):
     result, bindings = _mechanism(run, repo, "stage_payloads", arch=arch, build_dir=build_dir)
     return None if result is None else (result, bindings.payload_compile)
-
-
-def _isolation_preflight(run, repo, build_dir):
-    result = native.call("cli_build_check_isolation", {"repo": repo, "build": build_dir})
-    if result.get("stage"):
-        run.add(Stage(**result["stage"]))
-    if result.get("classification"):
-        run.classification = result["classification"]
-    return result["ok"]
 
 
 # T1.2 flag→artifact verification: a requested build feature must PROVE itself

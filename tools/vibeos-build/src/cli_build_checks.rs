@@ -253,6 +253,23 @@ pub fn isolation(repo: &Path, build: &Path) -> Vec<String> {
     }
     hits
 }
+/// The ISOLATION_FAIL preflight: `{"ok":true}`, or the refusal with the stage and
+/// classification a build records before stopping.
+pub fn isolation_verdict(repo: &Path, build: &Path) -> Value {
+    let hits = isolation(repo, build);
+    if hits.is_empty() {
+        return json!({"ok":true});
+    }
+    let mut salient = hits
+        .iter()
+        .map(|h| format!("first hit: {h}"))
+        .collect::<Vec<_>>();
+    salient.push("fix: recreate the affected private build outputs before retrying".into());
+    salient.push(
+        "cause: a cross-worktree hardlink dedup ran — see tools/dedup-build-cache.sh SAFETY".into(),
+    );
+    json!({"ok":false,"classification":"ISOLATION_FAIL","stage":{"name":"isolation","status":"fail","detail":"build tree shares inodes with another worktree — refusing to build","salient":salient}})
+}
 pub fn timeout(raw: &str) -> Result<u64> {
     let raw = raw.trim();
     if raw.is_empty() {
@@ -287,21 +304,60 @@ pub fn dispatch(_repo: &Path, r: &Value) -> Result<Value> {
             &serde_json::from_value::<Vec<String>>(a.get("disk").cloned().unwrap_or(json!([])))?,
         )),
         "cli_build_check_enospc" => Ok(json!(enospc(s("text")))),
-        "cli_build_check_isolation" => {
-            let hits = isolation(Path::new(s("repo")), Path::new(s("build")));
-            if hits.is_empty() {
-                return Ok(json!({"ok":true}));
-            }
-            let mut salient = hits
-                .iter()
-                .map(|h| format!("first hit: {h}"))
-                .collect::<Vec<_>>();
-            salient.push("fix: recreate the affected private build outputs before retrying".into());
-            salient.push("cause: a cross-worktree hardlink dedup ran — see tools/dedup-build-cache.sh SAFETY".into());
-            Ok(
-                json!({"ok":false,"classification":"ISOLATION_FAIL","stage":{"name":"isolation","status":"fail","detail":"build tree shares inodes with another worktree — refusing to build","salient":salient}}),
-            )
-        }
+        "cli_build_check_isolation" => Ok(isolation_verdict(
+            Path::new(s("repo")),
+            Path::new(s("build")),
+        )),
         op => Err(Error::new(format!("unknown build check operation {op}"))),
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    /// A worktree whose cargo deps file has `extra` in-tree hardlinks (cargo
+    /// incremental style), plus optionally one link that escapes the worktree.
+    fn cargo_tree(repo: &Path, extra: usize, escape: Option<&Path>) {
+        let ws = repo.join("sdk/lib/rust/target");
+        let deps = ws.join("x86_64-pc-windows-gnu/debug/deps");
+        fs::create_dir_all(&deps).unwrap();
+        fs::write(
+            ws.join("CACHEDIR.TAG"),
+            "Signature: 8a477f597d28d172789f06886806bc55",
+        )
+        .unwrap();
+        let f = deps.join("libfoo.rmeta");
+        fs::write(&f, "meta").unwrap();
+        for i in 0..extra {
+            let d = ws.join(format!("x86_64-pc-windows-gnu/debug/incremental/s-{i}"));
+            fs::create_dir_all(&d).unwrap();
+            fs::hard_link(&f, d.join("metadata.rmeta")).unwrap();
+        }
+        if let Some(e) = escape {
+            fs::create_dir_all(e).unwrap();
+            fs::hard_link(&f, e.join("libfoo.rmeta")).unwrap();
+        }
+    }
+    #[test]
+    fn isolation_allows_in_tree_incremental_links() {
+        // deps + 2 session dirs = 3 links, all in-tree: benign (the 2026-07-07 gate
+        // false positive: nlink>2 alone is not the dedup signature).
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("wt");
+        cargo_tree(&repo, 2, None);
+        assert_eq!(
+            isolation_verdict(&repo, &repo.join("build-amd64")),
+            json!({"ok":true})
+        );
+    }
+    #[test]
+    fn isolation_refuses_a_link_that_escapes_the_worktree() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("wt");
+        cargo_tree(&repo, 1, Some(&tmp.path().join("other-wt")));
+        let v = isolation_verdict(&repo, &repo.join("build-amd64"));
+        assert_eq!(v["ok"], false);
+        assert_eq!(v["classification"], "ISOLATION_FAIL");
+        assert_eq!(v["stage"]["name"], "isolation");
     }
 }

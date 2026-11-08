@@ -134,7 +134,12 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     // The tree `git add -A` would commit; None when git cannot say (never fatal here).
     let start = json!(crate::warmth::worktree_tree(b.repo).ok());
     b.helper("failure_hook", json!({"tree":start}))?;
-    if b.helper("isolation", json!({}))? != true {
+    let iso = crate::cli_build_checks::isolation_verdict(b.repo, &b.dir);
+    if iso["ok"] != true {
+        let st = &iso["stage"];
+        let (name, status, detail) = (s(st, "name", ""), s(st, "status", ""), s(st, "detail", ""));
+        b.stage(name, status, detail, 0, st["salient"].clone())?;
+        b.classify(s(&iso, "classification", ""))?;
         return b.finish();
     }
     let flags = json!({"VIBEOS_LOCKDEP":args["lockdep"]==true,"VIBEOS_CSWITCHDEP":args["cswitchdep"]==true,"VIBEOS_UP_DEFAULT_BOOT":args["up_kernel"]==true,"VIBEOS_PIC_HAL":args["hal_pic"]==true,"VIBEOS_ATA_STACK":args["ata_stack"]==true,"ENABLE_ROSTESTS":args["rostests"]==true,"VIBEOS_WINETEST_SWEEP":args["winetest_sweep"]==true,"VIBEOS_WOW64_NO_STAGE":args["no_wow64_stage"]==true});
@@ -157,10 +162,11 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     b.wrapped = wrapped == true;
     let mut stamped = json!([]);
     if !headers {
-        let mut options = strings(&b.helper(
-            "storage_options",
-            json!({"shards":args["rust_storage_shards"],"body_shards":args["rust_body_shards"]}),
-        )?);
+        let mut options = crate::build_policy::storage_options(
+            &b.dir,
+            &args["rust_storage_shards"],
+            &args["rust_body_shards"],
+        )?;
         let active = artifact_env.is_object();
         let state = b.host.call("get_run", json!({}))?;
         for (key, val) in [
@@ -189,7 +195,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
                 s(artifact_env, "VIBEOS_ARTIFACT_TOOLCHAIN_ID", "").into(),
             ),
         ] {
-            if b.helper("cache_value", json!({"key":key}))? != val {
+            if crate::build_policy::cmake_value(&b.dir, key) != val {
                 options.push(format!("-D{key}={val}"));
             }
         }
@@ -371,10 +377,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         )?;
         return b.finish();
     }
-    let relinked = b
-        .helper("ninja_work", json!({"text":cp["stdout"]}))?
-        .as_u64()
-        .unwrap_or(0);
+    let relinked = crate::build_policy::ninja_work(s(&cp, "stdout", ""))? as u64;
     if !deferred.is_empty() {
         let r = b.helper("refresh_guests", json!({"stage":"wow64-guests-x64"}))?;
         if r != true {

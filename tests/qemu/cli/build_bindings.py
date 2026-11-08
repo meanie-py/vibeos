@@ -41,8 +41,6 @@ class BuildBindings(Bindings):
 
         if name == "failure_hook":
             run.finalize_hooks.append(lambda: m._failure_over_moved_tree(run, repo, a["tree"]))
-        elif name == "isolation":
-            return m._isolation_preflight(run, repo, bd)
         elif name == "canonize":
             return m._maybe_canonize(
                 run,
@@ -55,10 +53,6 @@ class BuildBindings(Bindings):
             )
         elif name == "wrap":
             return m.canon.wrap(repo, a["cmd"])
-        elif name == "storage_options":
-            return m._storage_options(bd, a["shards"], a["body_shards"])
-        elif name == "cache_value":
-            return m._value_in_cache(bd, a["key"])
         elif name == "stage_payloads":
             result = m._stage_payloads(run, repo, bd, arch)
             if result is None:
@@ -99,8 +93,6 @@ class BuildBindings(Bindings):
             return m.provenance.boot_set_cohab_rels(repo, arch)
         elif name == "verify_flags":
             return m._verify_flag_artifacts(run, repo, bd, args)
-        elif name == "ninja_work":
-            return m._ninja_did_work(a["text"])
         elif name == "payload_roots":
             if not a["stamped"]:
                 return []

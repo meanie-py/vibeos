@@ -4314,45 +4314,6 @@ def test_ninja_jobs_caps_and_reserves(monkeypatch, tmp_path):
 # --- lints: summary/tally lines are not findings (merge-magnet fix) ---------
 
 
-def _mk_cargo_tree(repo, nlinks_extra, escape_dir=None):
-    """A fake worktree with a cargo target dir whose deps file has extra
-    hardlinks (cargo-incremental style). Optionally add one link OUTSIDE."""
-    ws = repo / "sdk" / "lib" / "rust" / "target"
-    deps = ws / "x86_64-pc-windows-gnu" / "debug" / "deps"
-    deps.mkdir(parents=True)
-    (ws / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55")
-    f = deps / "libfoo.rmeta"
-    f.write_text("meta")
-    for i in range(nlinks_extra):
-        d = ws / "x86_64-pc-windows-gnu" / "debug" / "incremental" / f"s-{i}"
-        d.mkdir(parents=True)
-        os.link(f, d / "metadata.rmeta")
-    if escape_dir is not None:
-        escape_dir.mkdir(parents=True, exist_ok=True)
-        os.link(f, escape_dir / "libfoo.rmeta")
-    return f
-
-
-def test_isolation_preflight_allows_in_tree_incremental_links(tmp_path):
-    # cargo incremental: deps + 2 session dirs = 3 links, ALL in-tree → benign
-    # (the 2026-07-07 gate FP: nlink>2 alone is not the dedup signature).
-    repo = tmp_path / "wt"
-    repo.mkdir()
-    _mk_cargo_tree(repo, nlinks_extra=2)
-    run = build_mod.Run("build", "amd64", ts=1700000000)
-    assert build_mod._isolation_preflight(run, repo, repo / "build-amd64") is True
-
-
-def test_isolation_preflight_blocks_cross_worktree_links(tmp_path):
-    # one link escaping the worktree = the dedup-incident signature → refuse.
-    repo = tmp_path / "wt"
-    repo.mkdir()
-    _mk_cargo_tree(repo, nlinks_extra=1, escape_dir=tmp_path / "other-wt")
-    run = build_mod.Run("build", "amd64", ts=1700000000)
-    assert build_mod._isolation_preflight(run, repo, repo / "build-amd64") is False
-    assert run.classification == "ISOLATION_FAIL"
-
-
 def _canonize_probe(monkeypatch, tmp_path, *, cache: str | None, canonical: bool):
     """Drive _maybe_canonize with cmake stubbed out, returning (cmds, build_dir).
 
@@ -4540,7 +4501,6 @@ def test_rostests_flag_is_wired_from_the_real_parser_to_the_cmake_option(tmp_pat
     monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
     monkeypatch.setattr(artifacts, "ledger_append", lambda *a, **k: None)
     monkeypatch.setattr(build_mod.warmth, "worktree_tree", lambda _: None)
-    monkeypatch.setattr(build_mod, "_isolation_preflight", lambda *a: True)
     values = []
 
     def canonize(*_args, **kwargs):
@@ -6152,21 +6112,6 @@ def test_summary_records_which_worktree_the_run_belongs_to(tmp_path):
     assert json.loads((run2.dir / "summary.json").read_text())["worktree"] is None
 
 
-def test_ninja_did_work_counts_edges_not_just_dirtiness():
-    """`relinked N` is the interesting number: a re-affirm that keeps relinking
-    the same cell every build is a wiring bug, not a hiccup it absorbed."""
-    assert build_mod._ninja_did_work("ninja: no work to do.\n") == 0
-    assert (
-        build_mod._ninja_did_work(
-            "[1/3] Building kernel-rust\n[2/3] Linking ntoskrnl.exe\n[3/3] done\n"
-        )
-        == 3
-    )
-    # progress lines only count at the start of a line -- a compiler diagnostic
-    # that happens to quote one must not inflate the count
-    assert build_mod._ninja_did_work("note: see [1/3] in the log\n") == 0
-
-
 def test_build_classifier_reports_a_timeout_as_a_timeout():
     """Exit 124 is the runner's stage timeout. A slow build's output is mostly warnings,
     and "error: c_int" inside one of them filed a 60-minute timeout as CARGO_CHECK_FAIL."""
@@ -6236,25 +6181,6 @@ def test_ninja_timeout_env_override(monkeypatch):
         monkeypatch.setenv(build_mod.NINJA_TIMEOUT_ENV, bad)
         with pytest.raises(SystemExit):
             build_mod._ninja_timeout()
-
-
-def test_ninja_did_work_does_not_count_the_glob_recheck_pseudo_edge():
-    """VERBATIM output from a real no-op re-affirm that still reported
-    "relinked 1 target(s)". `[0/n]` is the CONFIGURE_DEPENDS glob re-check, a
-    status line, not a completed edge -- real edges start at [1/n]. Counting it
-    made the number always >=1, which kills the signal in the direction that
-    HIDES the wiring bug the count exists to expose."""
-    real = "[0/2] Re-checking globbed directories...\nninja: no work to do.\n"
-    assert build_mod._ninja_did_work(real) == 0
-    # "no work to do" is authoritative even if progress lines preceded it
-    assert build_mod._ninja_did_work("[1/2] Building x\nninja: no work to do.\n") == 0
-    # a glob re-check followed by REAL work still counts only the real edges
-    assert (
-        build_mod._ninja_did_work(
-            "[0/2] Re-checking globbed directories...\n[1/1] Linking ntoskrnl.exe\n"
-        )
-        == 1
-    )
 
 
 # --- WoW64 probe-ladder verdict check (smoke --ladder) ----------------------
@@ -9568,7 +9494,6 @@ def test_winetests_flag_is_wired_from_the_real_parser_to_the_cmake_value(tmp_pat
     monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
     monkeypatch.setattr(artifacts, "ledger_append", lambda *a, **k: None)
     monkeypatch.setattr(build_mod.warmth, "worktree_tree", lambda _: None)
-    monkeypatch.setattr(build_mod, "_isolation_preflight", lambda *a: True)
     values = []
 
     def canonize(*_args, **kwargs):

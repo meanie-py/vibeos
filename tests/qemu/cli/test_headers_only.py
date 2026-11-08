@@ -77,7 +77,6 @@ def test_headers_stops_after_prime(tmp_path, monkeypatch):
     run = FakeRun("build-headers", "amd64")
     args = SimpleNamespace(headers_only=True, no_wow64_stage=True, incremental=False)
     monkeypatch.setattr(build.warmth, "worktree_tree", lambda *a: "tree")
-    monkeypatch.setattr(build, "_isolation_preflight", lambda *a: True)
     monkeypatch.setattr(build, "_maybe_canonize", lambda *a, **k: False)
     monkeypatch.setattr(build.cachecfg, "make", lambda *a: None)
     monkeypatch.setattr(build.cachecfg, "cache_enabled", lambda *a: False)
@@ -92,7 +91,6 @@ def test_headers_stops_after_prime(tmp_path, monkeypatch):
     monkeypatch.setattr(build, "_refresh_wow64_guests", forbidden)
     monkeypatch.setattr(build, "_refresh_wowx64_cpu", forbidden)
     monkeypatch.setattr(build, "_stage_payloads", forbidden)
-    monkeypatch.setattr(build, "_storage_options", forbidden)
     assert build._build_locked(args, tmp_path, run, "amd64", None, tmp_path, False) == 0
     assert len(run.commands) == 1
     assert run.commands[0][0][-len(build._PRIME_TARGETS) :] == list(build._PRIME_TARGETS)
