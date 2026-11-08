@@ -157,6 +157,9 @@ cold builds and the optional diffoscope stay in the facade.
 targets and feature sets, the one-invocation-per-crate plan, graded counts and
 verdicts. The existing Python tests now act as the native contract. Identical argv
 and stages for all 21 invocations, and a real run passed 26/26.
+`stress` decisions done (`vibeos-test/src/stress.rs`: the profile matrix, the
+per-profile summary and the diagnosis). No mismatches across 400 random matrices.
+The boots and host-core pinning stay with the smoke facade until item 4.
 
 Acceptance: compare actual outputs with the old implementation and exercise the
 external debugger/VM boundary when relevant; native fixture tests alone do not

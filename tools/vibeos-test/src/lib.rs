@@ -27,6 +27,7 @@ pub mod smoke_checks;
 pub mod smoke_evidence;
 pub mod smoke_fixtures;
 pub mod smoke_run;
+pub mod stress;
 pub mod verdict;
 pub mod vm;
 pub mod wine_failures;
