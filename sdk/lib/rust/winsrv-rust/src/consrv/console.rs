@@ -1280,19 +1280,31 @@ pub unsafe extern "C" fn ConSrvConsoleCtrlEventTimeout(
 
     let mut Thread: HANDLE = core::ptr::null_mut();
 
-    Thread = CreateRemoteThread(
-        (*(*ProcessData).Process).ProcessHandle,
-        core::ptr::null_mut(),
-        0,
-        (*ProcessData).CtrlRoutine,
-        UlongToPtr(CtrlEvent),
-        0,
-        core::ptr::null_mut(),
-    );
-    if Thread.is_null() {
-        Status = RtlGetLastNtStatus();
-    } else {
-        WaitForSingleObject(Thread, Timeout);
+    // csrss must survive whatever a client's process data does here: an exception
+    // becomes the status (the handle is still closed below, as the C's __finally).
+    let thread: *mut HANDLE = &mut Thread;
+    let status: *mut NTSTATUS = &mut Status;
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+        *thread = CreateRemoteThread(
+            (*(*ProcessData).Process).ProcessHandle,
+            core::ptr::null_mut(),
+            0,
+            (*ProcessData).CtrlRoutine,
+            UlongToPtr(CtrlEvent),
+            0,
+            core::ptr::null_mut(),
+        );
+        if (*thread).is_null() {
+            *status = RtlGetLastNtStatus();
+        } else {
+            WaitForSingleObject(*thread, Timeout);
+        }
+    }) {
+        Status = code;
+        DbgPrint(
+            b"ConSrvConsoleCtrlEventTimeout - Caught an exception, Status = 0x%08lx\n\0".as_ptr() as *const i8,
+            Status,
+        );
     }
 
     CloseHandle(Thread);

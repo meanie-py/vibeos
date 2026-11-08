@@ -8152,6 +8152,7 @@ dependencies = [
 name = "services-rust"
 version = "0.1.0"
 dependencies = [
+ "ntdll-sys",
  "panic-common",
  "win32macros-rust",
  "winsrv-sys",
@@ -10469,6 +10470,7 @@ dependencies = [
 name = "winlogon-rust"
 version = "0.1.0"
 dependencies = [
+ "ntdll-sys",
  "panic-common",
  "winedebug-rust",
  "winlogon-sys",

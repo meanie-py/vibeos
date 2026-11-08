@@ -225,16 +225,22 @@ pub unsafe extern "system" fn LdrpSnapIAT(
 
             ForwarderChain = (*FirstThunk).u1.Ordinal as ULONG;
 
-            Status = LdrpSnapThunk(
-                (*ExportLdrEntry).DllBase,
-                (*ImportLdrEntry).DllBase,
-                OriginalThunk,
-                FirstThunk,
-                ExportDirectory,
-                ExportSize,
-                1u8,
-                ImportName,
-            );
+            // A malformed image faulting the snap fails it with the exception code
+            // (as the C). Unlike the C, the thunk pointers below still advance, so
+            // arm64's tolerate-and-continue cannot spin on the faulting thunk.
+            Status = ntdll_sys::seh::try_except_all(|| {
+                LdrpSnapThunk(
+                    (*ExportLdrEntry).DllBase,
+                    (*ImportLdrEntry).DllBase,
+                    OriginalThunk,
+                    FirstThunk,
+                    ExportDirectory,
+                    ExportSize,
+                    1u8,
+                    ImportName,
+                )
+            })
+            .unwrap_or_else(|code| code);
             FirstThunk = FirstThunk.add(1);
 
             if !NT_SUCCESS(Status) {
@@ -265,16 +271,22 @@ pub unsafe extern "system" fn LdrpSnapIAT(
         ImportName = ((*ImportLdrEntry).DllBase as ULONG_PTR + (*IatEntry).Name as ULONG_PTR) as LPSTR;
 
         while (*OriginalThunk).u1.AddressOfData != 0 {
-            Status = LdrpSnapThunk(
-                (*ExportLdrEntry).DllBase,
-                (*ImportLdrEntry).DllBase,
-                OriginalThunk,
-                FirstThunk,
-                ExportDirectory,
-                ExportSize,
-                1u8,
-                ImportName,
-            );
+            // A malformed image faulting the snap fails it with the exception code
+            // (as the C). Unlike the C, the thunk pointers below still advance, so
+            // arm64's tolerate-and-continue cannot spin on the faulting thunk.
+            Status = ntdll_sys::seh::try_except_all(|| {
+                LdrpSnapThunk(
+                    (*ExportLdrEntry).DllBase,
+                    (*ImportLdrEntry).DllBase,
+                    OriginalThunk,
+                    FirstThunk,
+                    ExportDirectory,
+                    ExportSize,
+                    1u8,
+                    ImportName,
+                )
+            })
+            .unwrap_or_else(|code| code);
             OriginalThunk = OriginalThunk.add(1);
             FirstThunk = FirstThunk.add(1);
 

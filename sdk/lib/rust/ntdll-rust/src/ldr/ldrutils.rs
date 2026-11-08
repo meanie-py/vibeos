@@ -547,22 +547,33 @@ pub unsafe extern "system" fn LdrpCallTlsInitializers(
         &mut Size,
     ) as PIMAGE_TLS_DIRECTORY;
 
-    if !TlsDirectory.is_null() {
-        let mut Array: *mut PIMAGE_TLS_CALLBACK =
-            (*TlsDirectory).AddressOfCallBacks as *mut PIMAGE_TLS_CALLBACK;
-        if !Array.is_null() {
-            while !(*Array).is_none() {
-                let Callback: PIMAGE_TLS_CALLBACK = *Array;
-                Array = Array.add(1);
+    // The callback array and the callbacks are the image's: a fault in either is
+    // logged and the rest of the callbacks skipped, as the C.
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+        if !TlsDirectory.is_null() {
+            let mut Array: *mut PIMAGE_TLS_CALLBACK =
+                (*TlsDirectory).AddressOfCallBacks as *mut PIMAGE_TLS_CALLBACK;
+            if !Array.is_null() {
+                while !(*Array).is_none() {
+                    let Callback: PIMAGE_TLS_CALLBACK = *Array;
+                    Array = Array.add(1);
 
-                LdrpCallInitRoutine(
-                    core::mem::transmute::<PIMAGE_TLS_CALLBACK, PDLL_INIT_ROUTINE>(Callback),
-                    (*LdrEntry).DllBase,
-                    Reason,
-                    core::ptr::null_mut(),
-                );
+                    LdrpCallInitRoutine(
+                        core::mem::transmute::<PIMAGE_TLS_CALLBACK, PDLL_INIT_ROUTINE>(Callback),
+                        (*LdrEntry).DllBase,
+                        Reason,
+                        core::ptr::null_mut(),
+                    );
+                }
             }
         }
+    }) {
+        DbgPrint(
+            b"LDR: Exception 0x%x during Tls Callback(%u) for %wZ\n\0".as_ptr() as *const i8,
+            code,
+            Reason,
+            core::ptr::addr_of_mut!((*LdrEntry).BaseDllName),
+        );
     }
 }
 
@@ -2272,12 +2283,21 @@ pub unsafe extern "system" fn LdrpRunShimEngineInitRoutine(Reason: ULONG) {
 
         if g_pShimEngineModule == (*LdrEntry).DllBase {
             if !(*LdrEntry).EntryPoint.is_null() {
-                LdrpCallInitRoutine(
-                    core::mem::transmute((*LdrEntry).EntryPoint),
-                    (*LdrEntry).DllBase,
-                    Reason,
-                    core::ptr::null_mut(),
-                );
+                if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+                    LdrpCallInitRoutine(
+                        core::mem::transmute((*LdrEntry).EntryPoint),
+                        (*LdrEntry).DllBase,
+                        Reason,
+                        core::ptr::null_mut(),
+                    )
+                }) {
+                    DbgPrint(
+                        b"WARNING: Exception 0x%x during LdrpRunShimEngineInitRoutine(%u)\n\0".as_ptr()
+                            as *const i8,
+                        code,
+                        Reason,
+                    );
+                }
             }
             return;
         }
@@ -2346,10 +2366,8 @@ pub unsafe extern "system" fn LdrpGetProcedureAddress(
     let mut Thunk: IMAGE_THUNK_DATA = core::mem::zeroed();
     let ImageBase: PVOID;
     let mut ImportName: PIMAGE_IMPORT_BY_NAME = core::ptr::null_mut();
-    let ExportDir: PIMAGE_EXPORT_DIRECTORY;
     let mut ExportDirSize: ULONG = 0;
     let Length: ULONG;
-    let Entry: PLIST_ENTRY;
 
     if ShowSnaps != 0 {
         DbgPrint(b"LDR: LdrGetProcedureAddress by \0".as_ptr() as PCHAR);
@@ -2426,15 +2444,18 @@ pub unsafe extern "system" fn LdrpGetProcedureAddress(
         RtlEnterCriticalSection(core::ptr::addr_of_mut!(LdrpLoaderLock));
     }
 
-    'quickie: {
+    // The C ignores an exception here and returns whatever Status held, which is
+    // STATUS_SUCCESS if the fault came before the snap: the caller then trusts a
+    // *ProcedureAddress nobody wrote. Return the exception code instead.
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| {
         /* Try to find the loaded DLL */
         if LdrpCheckForLoadedDllHandle(BaseAddress, &mut LdrEntry) == 0 {
             Status = STATUS_DLL_NOT_FOUND;
-            break 'quickie;
+            return;
         }
 
         /* Get the pointer to the export directory */
-        ExportDir = RtlImageDirectoryEntryToData(
+        let ExportDir = RtlImageDirectoryEntryToData(
             (*LdrEntry).DllBase,
             1u8,
             IMAGE_DIRECTORY_ENTRY_EXPORT as USHORT,
@@ -2443,7 +2464,7 @@ pub unsafe extern "system" fn LdrpGetProcedureAddress(
 
         if ExportDir.is_null() {
             Status = STATUS_PROCEDURE_NOT_FOUND;
-            break 'quickie;
+            return;
         }
 
         /* Now get the thunk */
@@ -2482,15 +2503,16 @@ pub unsafe extern "system" fn LdrpGetProcedureAddress(
         if NT_SUCCESS(Status) && ExecuteInit != 0 {
             /* It's possible a forwarded entry had us load the DLL. Use the
              * last loaded DLL for this. */
-            Entry = (*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList.Blink;
+            let Entry = (*crate::ldr::ldrinit::LdrpLdrData()).InInitializationOrderModuleList.Blink;
             LdrEntry = (Entry as *mut u8)
                 .offset(-(core::mem::offset_of!(_LDR_DATA_TABLE_ENTRY, InInitializationOrderLinks) as isize))
                 as PLDR_DATA_TABLE_ENTRY;
 
             /* Make sure we didn't process it yet */
             if (*LdrEntry).Flags & LDRP_ENTRY_PROCESSED == 0 {
-                /* Call the init routine */
-                Status = LdrpRunInitializeRoutines(core::ptr::null_mut());
+                /* Call the init routine; a fault in a DllMain fails it */
+                Status = ntdll_sys::seh::try_except_all(|| LdrpRunInitializeRoutines(core::ptr::null_mut()))
+                    .unwrap_or_else(|code| code);
 
                 /* Failed: unload the entry, or it lingers in the loader
                  * waiting to run its init routine (upstream 4a96f375a0f) */
@@ -2509,6 +2531,8 @@ pub unsafe extern "system" fn LdrpGetProcedureAddress(
             /* Return the address */
             *ProcedureAddress = Thunk.u1.Function as PVOID;
         }
+    }) {
+        Status = code;
     }
 
     /* Cleanup: if we allocated from heap, free it */

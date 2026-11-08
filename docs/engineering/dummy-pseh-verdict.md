@@ -232,10 +232,11 @@ row. Each row is tagged by where the twin runs and what its try body does:
 |---|---|---|---|
 | kernel | 0 | 0 | 0 |
 | rtl (both) | 0 | 0 | 0 |
-| user | 0 | 0 | 135 |
+| user | 0 | 0 | 106 |
 
-135 in all (235 at the first count, 2026-11-06; 222 after the `raise` rows; 157 after the
-kernel rows, every one fixed or carrying a reasoned `nolint(dead_seh)`; 135 after rtl). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
+106 in all (235 at the first count, 2026-11-06; 222 after the `raise` rows; 157 after the
+kernel rows, every one fixed or carrying a reasoned `nolint(dead_seh)`; 135 after rtl; 106
+after the system processes). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
 `RtlRaiseStatus` into `return Err` has converted the contract and needs only a probe. Burn-down order: kernel `raise` first (one call from user mode bugchecks the box:
 that is how `ReleaseSemaphore` past the maximum was found), then kernel `probe`/`other`, then
 user mode (the process dies, not the machine). `tools/payloads/sehprobe` exercises the
@@ -286,6 +287,24 @@ What already landed, which the plan below predates:
   credits the caller, so making a callee catch can clear its caller's row falsely —
   `LdrpCheckForLoadedDll` cleared that way when `RtlImageNtHeaderEx` gained its catch, and was
   then given its own.
+- 2026-11-08, the system processes, where a crash ends the session or the machine: ntdll's
+  loader (DllMain and TLS callbacks for every attach/detach, `LdrpInitializeProcess`, import
+  snapping, `LdrpGetProcedureAddress`, enumerate/unload, the loader lock, the verifier
+  provider), services' RPC handle checks, smss's `_main` and SM API dispatch (through
+  `SmpUnhandledExceptionFilter`, so a fault names itself in the hard error), winlogon's
+  notification DLLs and logon sound, and csrss's consrv/usersrv paths that read client data
+  (the console settings section, `vgafonts.cab`, hard-error format parameters). Divergences
+  from the C: `LdrpGetProcedureAddress` returns the exception code where the C returned
+  STATUS_SUCCESS with no address written; the arm64 IAT snap advances past a faulting thunk
+  where the C would retry it forever. Two rows were lint mis-pairings, fixed in `twins.rs`:
+  csrss.rs's `_main` tied smss.c and csrss.c and took smss.c alphabetically (a same-stem C file
+  now wins the tie), and win32k's `DrawFrameControl` paired with user32's hook wrapper after
+  ntuser/draw.c retired (win32k no longer pairs with user32/gdi32 sources).
+- winsrv's TUI frontend (not built in C: `TUITERM_COMPILE` is off) declared header macros
+  (`RtlStringCbPrintfA`, `ConsoleOutputUnicodeToAnsiChar`, `CreateWindowW`) as externs that
+  nothing exports. windows-gnu objects are not function-sectioned, so dead code survives or
+  not by which codegen unit it lands in: an unrelated edit made the link fail. They are Rust
+  functions now.
 - Do NOT catch around `KiInitializeContextThread` for a hand-built thread: its stack is the
   one running, and the trampoline's frames overlap where the context setup writes (arm64 hung
   at boot). KeInitThread catches only when there is a user `Context`.
