@@ -352,3 +352,76 @@ def test_a_known_c2rust_panic_names_its_c_cause():
     )
     assert "unprototyped K&R declaration" in anchor.known_panic_causes([panic])
     assert anchor.known_panic_causes(["build-amd64: exit 1: some other failure"]) == ""
+
+
+_C2R_BITFIELD = """pub const CHANNEL_SOURCE_X: fixup_channel_source = 2;
+pub const CHANNEL_SOURCE_W: fixup_channel_source = 5;
+#[derive(Copy, Clone, BitfieldStruct)]
+#[repr(C, packed(2))]
+pub struct color_fixup_desc {
+    #[bitfield(name = "x_sign_fixup", ty = "::core::ffi::c_ushort", bits = "0..=0")]
+    #[bitfield(name = "x_source", ty = "::core::ffi::c_ushort", bits = "1..=3")]
+    #[bitfield(name = "w_source", ty = "::core::ffi::c_ushort", bits = "13..=15")]
+    pub x_sign_fixup_x_source_w_source:
+        [u8; 2],
+}
+static mut COLOR_FIXUP_IDENTITY: color_fixup_desc = color_fixup_desc {
+    x_sign_fixup_x_source_w_source: [0; 2],
+};
+unsafe extern "C" fn run_static_initializers() {
+    COLOR_FIXUP_IDENTITY = {
+        let mut init = color_fixup_desc {
+            x_sign_fixup_x_source_w_source: [0; 2],
+        };
+        init.set_x_sign_fixup(0 as ::core::ffi::c_ushort);
+        init.set_x_source(CHANNEL_SOURCE_X as ::core::ffi::c_int as ::core::ffi::c_ushort);
+        init.set_w_source(CHANNEL_SOURCE_W as ::core::ffi::c_int as ::core::ffi::c_ushort);
+        init
+    };
+}
+"""
+
+
+def test_a_bitfield_static_is_packed_at_transpile_time():
+    # wined3d_private.h's COLOR_FIXUP_IDENTITY: c2rust_bitfields setters are not const, so c2rust
+    # fills the static at startup. x_source=2 at bits 1..=3, w_source=5 at 13..=15 -> 0xA004.
+    blocks = [_C2R_BITFIELD.split("unsafe extern")[0].split("}\n", 1)[1].strip()]
+    out = anchor.fold_static_initializers(_C2R_BITFIELD, blocks)
+    assert out == [
+        "static mut COLOR_FIXUP_IDENTITY: color_fixup_desc = unsafe { ::core::mem::transmute::"
+        "<[u8; 2], color_fixup_desc>([0x04, 0xa0]) };"
+    ]
+
+
+def test_a_bitfield_setter_with_a_runtime_value_is_refused():
+    text = _C2R_BITFIELD.replace("init.set_x_sign_fixup(0 as", "init.set_x_sign_fixup(f() as")
+    blocks = [text.split("unsafe extern")[0].split("}\n", 1)[1].strip()]
+    with pytest.raises(anchor.C2RustError, match="not a setter with a constant"):
+        anchor.fold_static_initializers(text, blocks)
+
+
+def test_a_header_static_this_tu_does_not_keep_needs_no_initialiser():
+    # 25 of wined3d's 29 TUs include the header but never name COLOR_FIXUP_IDENTITY, so the
+    # preamble keeps no block for it; its startup assignment is not this TU's to fold.
+    assert anchor.fold_static_initializers(_C2R_BITFIELD, ["static mut Other: u32 = 0;"]) == [
+        "static mut Other: u32 = 0;"
+    ]
+
+
+def test_a_copied_bitfield_struct_gets_its_accessors_written_out():
+    # wined3d stateblock.c's wined3d_saved_states: nothing in the tree depends on
+    # c2rust-bitfields, so its `BitfieldStruct` derive did not resolve.
+    item = (
+        "#[derive(Copy, Clone, BitfieldStruct)]\n#[repr(C)]\npub struct s {\n"
+        '    #[bitfield(name = "textures", ty = "uint32_t", bits = "0..=19")]\n'
+        '    #[bitfield(name = "neg", ty = "int32_t", bits = "20..=22")]\n'
+        "    pub textures_neg:\n        [u8; 3],\n"
+        "    #[bitfield(padding)]\n    pub c2rust_padding: [u8; 1],\n}"
+    )
+    out = anchor.plain_bitfields(item)
+    assert "BitfieldStruct" not in out and "#[bitfield" not in out
+    assert "#[derive(Copy, Clone)]" in out and "pub textures_neg:" in out
+    assert "pub fn textures(&self) -> uint32_t" in out and "pub fn set_neg(&mut self" in out
+    assert "!0u64 << 3" in out  # the signed member sign-extends from its 3 bits
+    with pytest.raises(anchor.C2RustError, match="signedness unknown"):
+        anchor.plain_bitfields(item.replace('ty = "int32_t"', 'ty = "MYSTERY"'))

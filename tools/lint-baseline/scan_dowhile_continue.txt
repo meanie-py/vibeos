@@ -4,6 +4,7 @@ sdk/lib/rust/cdfs-rust/src/dirsup.rs: fn CdFindDirectory: loop ends in a do-whil
 sdk/lib/rust/cdfs-rust/src/dirsup.rs: fn CdFindFile: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/cmlib-rust/src/cmcheck.rs: fn CmpValidateValueListByCount: `continue` skips the while loop's trailing `list_count_index` update
 sdk/lib/rust/config-rust/src/cmkcbncb.rs: fn CmpFlushNotifiesOnKeyBodyList: `continue` skips the while loop's trailing `NextEntry` update
+sdk/lib/rust/d3dwine-rust/src/d3dwine/cs.rs: fn wined3d_cs_run: `continue` skips the while loop's trailing `run` update
 sdk/lib/rust/ex-rust/src/handle.rs: fn ExpAllocateHandleTableEntry: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/ex-rust/src/pool/expool.rs: fn ExpInsertPoolTracker: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/ex-rust/src/pool/expool.rs: fn exp_allocate_pool_unaligned: loop ends in a do-while condition that `continue` skips

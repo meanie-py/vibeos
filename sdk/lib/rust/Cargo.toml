@@ -66,6 +66,7 @@ members = [
     "netmsg-cargo",
     "netevent-cargo",
     "iologmsg-cargo",
+    "d3dwine-cargo",
     "wmi-cargo",
     "themeui-cargo",
     "tapiui-cargo",
@@ -703,6 +704,7 @@ members = [
     "win32macros-rust",
     "mmebuddy-macros-rust",
     "winelist-rust",
+    "winerbtree-rust",
     # Wine's ERR/FIXME/WARN/TRACE (wine/debug.h). Thirty-one Wine-derived crates carried a
     # byte-identical copy of the same 64-line module.
     "winedebug-rust",
@@ -1304,6 +1306,7 @@ members = [
     "d3d9-rust",
     "setup-rust",
     "shlwapi-rust",
+    "d3dwine-rust",
 ]
 resolver = "2"
 

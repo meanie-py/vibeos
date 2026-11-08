@@ -286,8 +286,13 @@ RE_UPPER_CONST = re.compile(r"\bCONST\b")
 # DATA_SEG("PAGECONS")`). tree-sitter cannot parse a call-shaped attribute in front of
 # `static const struct {...} T[] = {...}`, so the table read as an unextractable FUNCTION
 # and a function holding such a static local fell out of the plan entirely.
+# A printf-format attribute between the return type and the name -- wined3d_private.h's
+# `static void PRINTF_ATTR(4, 5) declare_in_varying(...)`, wine's `__WINE_PRINTF_ATTR(2,3)` --
+# is a call-shaped token tree-sitter reads as the declarator, and it lost glsl_shader.c's
+# scan from that line on: 218 of its 270 functions were absent from the plan.
 RE_EMPTY_ATTR = re.compile(
     r"\bDECLSPEC_HIDDEN\b|\bDATA_SEG\(\s*\"[^\"]*\"\s*\)|\b[A-Z][A-Z0-9]*_PAGED_DATA\b"
+    r"|\b(?:__WINE_)?PRINTF_ATTR\(\s*\d+\s*,\s*\d+\s*\)"
 )
 
 # `DECLSPEC_HOTPATCH` (wine/config.h: `__attribute__((__ms_hook_prologue__))`) is a hot-patch

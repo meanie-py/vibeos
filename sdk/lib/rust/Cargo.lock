@@ -1800,6 +1800,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "d3dwine-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "d3dwine-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+ "wined3d-h",
+ "winelist-rust",
+ "winerbtree-rust",
+]
+
+[[package]]
 name = "d3dx10_33-cargo"
 version = "0.1.0"
 dependencies = [
@@ -10445,6 +10468,10 @@ dependencies = [
 
 [[package]]
 name = "winelist-rust"
+version = "0.1.0"
+
+[[package]]
+name = "winerbtree-rust"
 version = "0.1.0"
 
 [[package]]

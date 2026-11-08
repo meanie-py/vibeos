@@ -1417,6 +1417,14 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 - **`git core.ignorecase`**: a `Lib.c` → `Lib.rs` module that case-folds onto `lib.rs` blocks
   `git add` ("will not add file alias"). Rename the module.
 
+### A flipped TU that included `<initguid.h>` was the definition a LINKED LIBRARY used
+**Symptom.** The Rust DLL fails to link with `IID_*` undefined, referenced from a C static
+library the target links, not from the Rust. **Cause.** The C TU defined storage for every
+`DEFINE_GUID` it saw; the translation names none of them. wined3d_main.c includes initguid.h
+before d3d12.h, and vkd3d (linked into d3dwine) needs 38 IIDs only that TU defined. **Fix.**
+`initguid_storage` now also gives storage to the GUIDs the target's linked archives leave
+undefined (`llvm-nm --undefined-only`), alongside the ones the Rust names.
+
 ### `raw-dylib` on a stdcall FUNCTION imports the decorated name on i386
 
 **Symptom:** a boot driver silently missing on i386 only — FreeLDR logs `Did not find export
@@ -2521,6 +2529,19 @@ types.
   declarations. Allowlist the FAMILY (`gdiplus[a-z]*\.h`) or the generated header by name, and
   verify with a grep for one member rather than assuming the umbrella carried it.
 - **`size_of_val` on a `__BindgenUnionField` marker returns 0** — it is a zero-sized accessor.
+- **An incomplete-array extern (`extern const T x[];`) is `[T; 0]`.** The name resolves, so no
+  resolver ever looks for the real definition, and every index into it is a build-time
+  `unconditional_panic` that `cargo check` never runs: wined3d's `wined3d_srgb_const` passed
+  `port check` clean and then failed the first real build on all three arches. When a
+  translated module defines the sized array, `port resolve` now imports it over the island's.
+- **A header `static const` is declared as an island EXTERN.** Each C TU owns a private copy
+  (internal linkage); exporting the translation's copies is a duplicate symbol at link
+  (wined3d's `COLOR_FIXUP_IDENTITY`, in four modules). integrate's island-static export now
+  skips a name the module's headers define `static`.
+- **A struct defined INSIDE another gets the outer struct's prefix** (`struct wined3d_texture
+  { struct wined3d_texture_sub_resource {..} *p; }` → `wined3d_texture_wined3d_texture_sub_resource`),
+  though in C the inner tag is file-scope. `port resolve` aliases the C name when every island
+  has exactly one such `<outer>_<name>` (69 E0412 per arch in wined3d).
 - **A C function TYPE (`typedef R (NTAPI Name)(args)` — no star) is emitted as a NAMED alias
   on amd64/arm64 but INLINED into the struct field on i386.** The two spellings share no key,
   so anything that projects one island onto another by NAME misses the slot entirely.
@@ -4482,6 +4503,12 @@ tell was 16 `unreachable pattern` warnings in a row; nothing else fired. **N con
 Prophylactic beyond the island audit: if the C guards the `case` labels with an `#ifdef` that is
 off in this build, the arms must carry that guard in Rust too — see the build-configuration
 guard entry under *Dropped, degraded & silently-rewritten translation output*.
+
+**The or-pattern trap's mirror: C's `case (A | B):` is ONE value.** The model keeps the C's
+parentheses, `(A | B) =>`, and in a pattern `|` is alternation. wined3d's GLSL `sincos` took
+`.x`, `.y`, then `(WRITEMASK_0 | WRITEMASK_1)` meaning `.xy` -- rustc flagged it only because
+the two earlier arms made it unreachable; with no such arms the swap is silent. `port
+integrate` (`_or_case_values`) now turns a label the C spells parenthesised into a value guard.
 
 ### Deterministic prevention: SEAL the facts `[§9.117]`
 `rustconv translate --seal-facts --seal-calls` takes constants and call occurrences **out of
