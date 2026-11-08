@@ -626,29 +626,24 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `farm --arches arm64` on the conformance payload to get a rate, then a tripwire on that
   path.
 
-- **i386: bugcheck during user32:msg's cross-thread SetParent (open, frequent, found
-  2026-11-08, upstream-sync lane; owner unassigned, win32k).** `test_setparent_status` runs a
-  thread that calls `SetParent(hwnd, hwnd)` on the main thread's window and then exits, while
-  the main thread sits in PeekMessage. The guest bugchecks right after `msg.c:20303`. Seen as
-  0x1E with EIP at `KeSetEvent+0xe`, called from `co_MsqDispatchOneSentMessage`+0x283 (the
-  receiver signalling `Message->pkCompletionEvent`, which is the KEVENT embedded in the
-  USER_SENT_MESSAGE) under `co_IntPeekMessage`; 0x0A with a user address, 0x02036220, touched in
-  `KxUnwaitThread`; and once 0x1A. These frames are resolved against `ntkrnlmp.exe`, the image
-  FreeLdr actually loads. The kernel prints them as `ntoskrnl.exe+off`, and resolving them
-  against ntoskrnl.exe names unrelated functions (`MmWorkingSetManager`). `symbolicate_pc` gets
-  this right; `resolve_in_module` called by hand does not. The fault is on KeSetEvent's first
-  touch of the event, so the event pointer itself is garbage, not just a freed lookaside entry
-  (those stay mapped). That points to a corrupt message pointer or sent-list entry rather than
-  a simple free-ordering slip. The Rust send, dispatch and cleanup paths (`co_MsqSendMessage`,
-  `co_MsqDispatchOneSentMessage`, `MsqCleanupThreadMsgs`, Alloc/FreeUserMessage) were each
-  compared with the C and match it, so the defect is inherited, or lies elsewhere. In this lane's msg sweeps it hit 7 of
-  8 boots from 09:46 on and 0 of 4 before. An A/B that removed the lane's only uncommitted
-  (user32) changes still gave 3 of 3 (`/tmp/vibeos-cli/20261108-102454-qWaILx-smoke-i386`),
-  so it is not caused by them. The likeliest reading is a race between dispatching a
-  message another thread sent and that sender's exit (its USER_SENT_MESSAGE, or the pti it
-  points at, freed under the receiver), made more likely by host load. That reading is not
-  verified. Repro: `./vibeos-cli build --arch i386 --winetest-sweep --winetest-only msg`, then
-  `smoke --arch i386 --until "sweep complete" --repeat 3`.
+- **i386: bugcheck during user32:msg's cross-thread SetParent (FIXED 2026-11-08,
+  upstream-sync lane, win32k).** `test_setparent_status` runs a thread that calls
+  `SetParent(hwnd, hwnd)` on the main thread's window and exits. That thread queues a message
+  with a completion callback to the main thread and is gone before the main thread answers it.
+  `co_MsqDispatchOneSentMessage` then re-queues the answered message onto the dead thread's
+  `SentMessagesListHead` and wakes its `pEventQueueServer`, both in the freed THREADINFO:
+  0x1E at `win32k+0x6A5F0` (the InsertTailList store) or at `KeSetEvent+0xe` from the inlined
+  MsqWakeQueue, 0x0A in `KxUnwaitThread`. The C has the same gap, since thread cleanup never
+  detached a dying thread from callback messages it left in other threads' queues. The fix is
+  `MsqDetachCallbackSender` in the thread-exit callout. An earlier reading, that the garbage
+  pointer was the message's own completion event, was wrong: the faulting `cmpb $0,(%edi)`
+  only showed that the event pointer was bad, and the two dispatch-site faults identify it as
+  the sender's queue event. Before the fix: 2 of 3 boots
+  (`/tmp/vibeos-cli/20261108-120954-SImu58-smoke-i386`); after it: 0 of 4
+  (`/tmp/vibeos-cli/20261108-122938-iaRCwS-smoke-i386`). The rate swung from 7 of 8 to 0 of 6
+  across the day on the same code, so it is timing-sensitive. Fixed in the same pass: sent
+  messages move from a paged lookaside list to nonpaged pool (they embed a KEVENT), and a
+  receiver that exits no longer frees a message its callback sender is still dispatching.
 
 - **amd64: magenta L-shaped block over the "My Computer" icon (open, every UEFI amd64 gate
   since at least 2026-11-07 00:22, the oldest kept).** It is identical in every amd64 gate

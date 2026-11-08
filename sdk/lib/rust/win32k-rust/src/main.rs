@@ -734,6 +734,8 @@ pub unsafe extern "system" fn ExitThreadCallback(Thread: PETHREAD) -> NTSTATUS {
 
     IsRemoveAttachThread(ptiCurrent);
 
+    crate::msgqueue::MsqDetachCallbackSender(ptiCurrent);
+
     if !gpwlList.is_null() {
         pwl = gpwlList;
         while !pwl.is_null() {

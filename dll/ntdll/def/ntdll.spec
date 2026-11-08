@@ -2759,6 +2759,9 @@
 @ stdcall -version=0x400-0x5ff RtlConnectToSm(ptr ptr long ptr) ntdll_vista.RtlConnectToSm
 @ stdcall -arch=i386,x86_64 -version=0x400-0x5ff RtlInitializeConditionVariable(ptr) ntdll_vista.RtlInitializeConditionVariable
 @ stdcall -arch=i386,x86_64 -version=0x400-0x5ff RtlInitializeSRWLock(ptr) ntdll_vista.RtlInitializeSRWLock
+@ stdcall -version=0x400-0x5ff RtlGetSystemPreferredUILanguages(long long ptr ptr ptr) ntdll_vista.RtlGetSystemPreferredUILanguages
+@ stdcall -version=0x400-0x5ff RtlGetThreadPreferredUILanguages(long ptr ptr ptr) ntdll_vista.RtlGetThreadPreferredUILanguages
+@ stdcall -version=0x400-0x5ff RtlGetUserPreferredUILanguages(long long ptr ptr ptr) ntdll_vista.RtlGetUserPreferredUILanguages
 @ stdcall -version=0x400-0x5ff RtlLcidToLocaleName(long ptr long long) ntdll_vista.RtlLcidToLocaleName
 @ stdcall -version=0x400-0x5ff RtlLocaleNameToLcid(wstr ptr long) ntdll_vista.RtlLocaleNameToLcid
 @ stdcall -arch=i386,x86_64 -version=0x400-0x5ff RtlReleaseSRWLockExclusive(ptr) ntdll_vista.RtlReleaseSRWLockExclusive

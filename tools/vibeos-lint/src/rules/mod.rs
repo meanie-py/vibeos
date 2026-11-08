@@ -32,6 +32,7 @@ pub mod assert_to_ub;
 pub mod bindgen_padding_index;
 pub mod bitwise_not_bool;
 pub mod flag_word_raw_hex;
+pub mod abandoned_translation;
 pub mod bugcheck_codes;
 pub mod byte_step_one;
 pub mod unsigned_vs_zero;
@@ -268,6 +269,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(dangling_transmute::DanglingTransmute),
         Box::new(bitwise_not_bool::BitwiseNotBool),
         Box::new(flag_word_raw_hex::FlagWordRawHex),
+        Box::new(abandoned_translation::AbandonedTranslation),
         Box::new(hkey_zero_extend::HkeyZeroExtend),
         Box::new(opaque_ptr_arith::OpaquePtrArith),
         Box::new(bugcheck_codes::BugcheckCodes),
