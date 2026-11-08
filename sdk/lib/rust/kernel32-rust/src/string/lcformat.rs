@@ -1342,16 +1342,7 @@ pub unsafe extern "system" fn GetNumberFormatW(
     if negative {
         // The number was built backwards from the end of `output`; the suffix forms
         // append into the 6 WCHARs kept free after it.
-        let append = |num: *mut WCHAR, s: *const WCHAR| {
-            let mut e = num.add(strlenW(num) as usize);
-            let mut q = s;
-            while *q != 0 {
-                *e = *q;
-                e = e.add(1);
-                q = q.add(1);
-            }
-            *e = 0;
-        };
+        let append = |num: *mut WCHAR, s: *const WCHAR| append_str(num, s);
         static OPEN: [WCHAR; 2] = [b'(' as WCHAR, 0];
         static CLOSE: [WCHAR; 2] = [b')' as WCHAR, 0];
         static SPACE: [WCHAR; 2] = [b' ' as WCHAR, 0];
@@ -1724,51 +1715,12 @@ pub unsafe extern "system" fn GetCurrencyFormatA(
 #[no_mangle]
 pub unsafe extern "system" fn GetCurrencyFormatW(
     lcid: LCID,
-    mut dwFlags: DWORD,
+    dwFlags: DWORD,
     lpszValue: LPCWSTR,
-    mut lpFormat: *const CURRENCYFMTW,
+    lpFormat: *const CURRENCYFMTW,
     lpCurrencyStr: LPWSTR,
     cchOut: INT,
 ) -> INT {
-    static NLS_NegCyFormats: [BYTE; 16] = [
-        (CF_PARENS | CF_CY_LEFT) as BYTE,
-        (CF_MINUS_LEFT | CF_MINUS_BEFORE | CF_CY_LEFT) as BYTE,
-        (CF_MINUS_LEFT | CF_CY_LEFT) as BYTE,
-        (CF_MINUS_RIGHT | CF_CY_LEFT) as BYTE,
-        (CF_PARENS | CF_CY_RIGHT) as BYTE,
-        (CF_MINUS_LEFT | CF_CY_RIGHT) as BYTE,
-        (CF_MINUS_RIGHT | CF_MINUS_BEFORE | CF_CY_RIGHT) as BYTE,
-        (CF_MINUS_RIGHT | CF_CY_RIGHT) as BYTE,
-        (CF_MINUS_LEFT | CF_CY_RIGHT | CF_CY_SPACE) as BYTE,
-        (CF_MINUS_LEFT | CF_MINUS_BEFORE | CF_CY_LEFT | CF_CY_SPACE) as BYTE,
-        (CF_MINUS_RIGHT | CF_CY_RIGHT | CF_CY_SPACE) as BYTE,
-        (CF_MINUS_RIGHT | CF_CY_LEFT | CF_CY_SPACE) as BYTE,
-        (CF_MINUS_LEFT | CF_CY_LEFT | CF_CY_SPACE) as BYTE,
-        (CF_MINUS_RIGHT | CF_MINUS_BEFORE | CF_CY_RIGHT | CF_CY_SPACE) as BYTE,
-        (CF_PARENS | CF_CY_LEFT | CF_CY_SPACE) as BYTE,
-        (CF_PARENS | CF_CY_RIGHT | CF_CY_SPACE) as BYTE,
-    ];
-    static NLS_PosCyFormats: [BYTE; 4] = [
-        CF_CY_LEFT as BYTE,
-        CF_CY_RIGHT as BYTE,
-        (CF_CY_LEFT | CF_CY_SPACE) as BYTE,
-        (CF_CY_RIGHT | CF_CY_SPACE) as BYTE,
-    ];
-    let mut szBuff: [WCHAR; 128] = [0; 128];
-    let mut szOut: *mut WCHAR = szBuff.as_mut_ptr().add(128 - 1);
-    let mut szNegBuff: [WCHAR; 8] = [0; 8];
-    let mut lpszNeg: *const WCHAR = core::ptr::null();
-    let mut lpszNegStart: *const WCHAR = core::ptr::null();
-    let mut szSrc: *const WCHAR = core::ptr::null();
-    let mut lpszCy: *const WCHAR = core::ptr::null();
-    let mut lpszCyStart: *const WCHAR = core::ptr::null();
-    let mut dwState: DWORD = 0;
-    let mut dwDecimals: DWORD = 0;
-    let mut dwGroupCount: DWORD = 0;
-    let mut dwCurrentGroupCount: DWORD = 0;
-    let mut dwFmt: DWORD = 0;
-    let mut iRet: INT = 0;
-
     TRACE!("(0x%04x,0x%08x,%s,%p,%p,%d)", lcid, dwFlags, debugstr_w(lpszValue), lpFormat, lpCurrencyStr, cchOut);
 
     if lpszValue.is_null()
@@ -1795,310 +1747,199 @@ pub unsafe extern "system" fn GetCurrencyFormatW(
         return 0;
     }
 
+    // Divergence from the C from here on: Wine's current get_currency_format over the
+    // same format_number as GetNumberFormatW (see there for why the old state machine
+    // and its NLS_GetFormats cache went).
+    let mut value = lpszValue;
+    let negative = *value == b'-' as WCHAR;
+    let flags = dwFlags & LOCALE_NOUSEROVERRIDE;
+    let mut fmt_decimal = [0 as WCHAR; 4];
+    let mut fmt_thousand = [0 as WCHAR; 4];
+    let mut fmt_symbol = [0 as WCHAR; 13];
+    let mut fmt_neg = [0 as WCHAR; 5];
+    let mut grouping = [0 as WCHAR; 20];
+    let (decimal_sep, thousand_sep, symbol): (*const WCHAR, *const WCHAR, *const WCHAR);
+    let (digits, lzero, pos_order, neg_order): (DWORD, DWORD, DWORD, DWORD);
     if lpFormat.is_null() {
-        let node: *const NLS_FORMAT_NODE = NLS_GetFormats(lcid, dwFlags);
-        if node.is_null() {
-            SetLastError(
-                if !lpFormat.is_null() && dwFlags != 0 {
-                    ERROR_INVALID_FLAGS
-                } else {
-                    ERROR_INVALID_PARAMETER
-                },
-            );
-            return 0;
-        }
-        lpFormat = &(*node).cyfmt;
-        lpszNeg = (*node).lppszStrings[0] as *const WCHAR;
-        lpszNegStart = lpszNeg;
+        let mut d: DWORD = 0;
+        let mut z: DWORD = 0;
+        let mut po: DWORD = 0;
+        let mut no: DWORD = 0;
+        GetLocaleInfoW(lcid, LOCALE_SCURRENCY | flags, fmt_symbol.as_mut_ptr(), fmt_symbol.len() as INT);
+        GetLocaleInfoW(lcid, LOCALE_SMONGROUPING | flags, grouping.as_mut_ptr(), grouping.len() as INT);
+        GetLocaleInfoW(lcid, LOCALE_SMONDECIMALSEP | flags, fmt_decimal.as_mut_ptr(), fmt_decimal.len() as INT);
+        GetLocaleInfoW(lcid, LOCALE_SMONTHOUSANDSEP | flags, fmt_thousand.as_mut_ptr(), fmt_thousand.len() as INT);
+        GetLocaleInfoW(lcid, LOCALE_ICURRDIGITS | LOCALE_RETURN_NUMBER | flags, &mut d as *mut DWORD as LPWSTR, 2);
+        GetLocaleInfoW(lcid, LOCALE_ILZERO | LOCALE_RETURN_NUMBER | flags, &mut z as *mut DWORD as LPWSTR, 2);
+        GetLocaleInfoW(lcid, LOCALE_ICURRENCY | LOCALE_RETURN_NUMBER | flags, &mut po as *mut DWORD as LPWSTR, 2);
+        GetLocaleInfoW(lcid, LOCALE_INEGCURR | LOCALE_RETURN_NUMBER | flags, &mut no as *mut DWORD as LPWSTR, 2);
+        decimal_sep = fmt_decimal.as_ptr();
+        thousand_sep = fmt_thousand.as_ptr();
+        symbol = fmt_symbol.as_ptr();
+        digits = d;
+        lzero = z;
+        pos_order = po;
+        neg_order = no;
     } else {
-        GetLocaleInfoW(
-            lcid,
-            (LOCALE_SNEGATIVESIGN as LCTYPE) | (dwFlags as LCTYPE & LOCALE_NOUSEROVERRIDE as LCTYPE),
-            szNegBuff.as_mut_ptr(),
-            (core::mem::size_of::<[WCHAR; 8]>() / core::mem::size_of::<WCHAR>()) as INT,
-        );
-        lpszNeg = szNegBuff.as_ptr();
-        lpszNegStart = lpszNeg;
+        grouping_to_string((*lpFormat).Grouping, grouping.as_mut_ptr());
+        decimal_sep = (*lpFormat).lpDecimalSep;
+        thousand_sep = (*lpFormat).lpThousandSep;
+        symbol = (*lpFormat).lpCurrencySymbol;
+        digits = (*lpFormat).NumDigits;
+        lzero = (*lpFormat).LeadingZero;
+        pos_order = (*lpFormat).PositiveOrder;
+        neg_order = (*lpFormat).NegativeOrder;
     }
 
-    dwFlags &= (LOCALE_NOUSEROVERRIDE | LOCALE_USE_CP_ACP) as DWORD;
-
-    lpszNeg = lpszNeg.add((strlenW(lpszNeg) - 1) as usize);
-    lpszCyStart = (*lpFormat).lpCurrencySymbol;
-    lpszCy = lpszCyStart.add((strlenW(lpszCyStart) - 1) as usize);
-
-    szSrc = lpszValue;
-    *szOut = 0;
-    szOut = szOut.sub(1);
-
-    while *szSrc != 0 {
-        if *szSrc >= '0' as WCHAR && *szSrc <= '9' as WCHAR {
-            dwState |= NF_DIGITS as DWORD;
-            if dwState & NF_ISREAL as DWORD != 0 {
-                dwDecimals = dwDecimals.wrapping_add(1);
-            }
-        } else if *szSrc == '-' as WCHAR {
-            if dwState != 0 {
-                SetLastError(
-                    if !lpFormat.is_null() && dwFlags != 0 {
-                        ERROR_INVALID_FLAGS
-                    } else {
-                        ERROR_INVALID_PARAMETER
-                    },
-                );
-                return 0;
-            }
-            dwState |= NF_ISNEGATIVE as DWORD;
-        } else if *szSrc == '.' as WCHAR {
-            if dwState & NF_ISREAL as DWORD != 0 {
-                SetLastError(
-                    if !lpFormat.is_null() && dwFlags != 0 {
-                        ERROR_INVALID_FLAGS
-                    } else {
-                        ERROR_INVALID_PARAMETER
-                    },
-                );
-                return 0;
-            }
-            dwState |= NF_ISREAL as DWORD;
-        } else {
-            SetLastError(
-                if !lpFormat.is_null() && dwFlags != 0 {
-                    ERROR_INVALID_FLAGS
-                } else {
-                    ERROR_INVALID_PARAMETER
-                },
-            );
-            return 0;
-        }
-        szSrc = szSrc.add(1);
+    if negative {
+        value = value.add(1);
+        GetLocaleInfoW(lcid, LOCALE_SNEGATIVESIGN | flags, fmt_neg.as_mut_ptr(), fmt_neg.len() as INT);
     }
-    szSrc = szSrc.sub(1);
 
-    if dwState & NF_DIGITS as DWORD == 0 {
-        SetLastError(
-            if !lpFormat.is_null() && dwFlags != 0 {
-                ERROR_INVALID_FLAGS
-            } else {
-                ERROR_INVALID_PARAMETER
-            },
-        );
+    let mut output = [0 as WCHAR; 256];
+    let out = output.as_mut_ptr();
+    // 20 WCHARs kept free after the number for the suffix forms below.
+    let Some(mut num) = format_number(out.add(output.len() - 20), value, decimal_sep, thousand_sep,
+                                      grouping.as_ptr(), digits, lzero != 0)
+    else {
+        SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
-    }
-
-    if dwState & NF_ISNEGATIVE as DWORD != 0 {
-        dwFmt = NLS_NegCyFormats[(*lpFormat).NegativeOrder as usize] as DWORD;
-    } else {
-        dwFmt = NLS_PosCyFormats[(*lpFormat).PositiveOrder as usize] as DWORD;
-    }
-
-    if dwFmt & CF_PARENS as DWORD != 0 {
-        *szOut = ')' as WCHAR;
-        szOut = szOut.sub(1);
-    }
-
-    while dwFmt & (CF_MINUS_RIGHT | CF_CY_RIGHT) as DWORD != 0 {
-        match dwFmt & (CF_MINUS_RIGHT | CF_MINUS_BEFORE | CF_CY_RIGHT) as DWORD {
-            4 | 36 => {
-                while lpszNeg >= lpszNegStart {
-                    *szOut = *lpszNeg;
-                    szOut = szOut.sub(1);
-                    lpszNeg = lpszNeg.sub(1);
-                }
-                dwFmt &= !CF_MINUS_RIGHT as DWORD;
-            }
-            32 | 40 | 44 => {
-                while lpszCy >= lpszCyStart {
-                    *szOut = *lpszCy;
-                    szOut = szOut.sub(1);
-                    lpszCy = lpszCy.sub(1);
-                }
-                if dwFmt & CF_CY_SPACE as DWORD != 0 {
-                    *szOut = ' ' as WCHAR;
-                    szOut = szOut.sub(1);
-                }
-                dwFmt &= !(CF_CY_RIGHT | CF_MINUS_BEFORE) as DWORD;
-            }
-            _ => {}
-        }
-    }
-
-    if (*lpFormat).NumDigits == 0 {
-        if dwState & NF_ISREAL as DWORD != 0 {
-            while *szSrc != '.' as WCHAR {
-                if *szSrc >= '5' as WCHAR
-                    || (*szSrc == '4' as WCHAR && dwState & NF_ROUND as DWORD != 0)
-                {
-                    dwState |= NF_ROUND as DWORD;
-                } else {
-                    dwState &= !NF_ROUND as DWORD;
-                }
-                szSrc = szSrc.sub(1);
-            }
-            szSrc = szSrc.sub(1);
-        }
-    } else {
-        let mut lpszDec: *const WCHAR = (*lpFormat)
-            .lpDecimalSep
-            .add((strlenW((*lpFormat).lpDecimalSep) - 1) as usize);
-
-        if dwDecimals <= (*lpFormat).NumDigits as DWORD {
-            dwDecimals = ((*lpFormat).NumDigits as DWORD).wrapping_sub(dwDecimals);
-            while dwDecimals != 0 {
-                *szOut = '0' as WCHAR;
-                szOut = szOut.sub(1);
-                dwDecimals = dwDecimals.wrapping_sub(1);
-            }
-        } else {
-            dwDecimals = dwDecimals.wrapping_sub((*lpFormat).NumDigits as DWORD);
-            while dwDecimals != 0 {
-                if *szSrc >= '5' as WCHAR
-                    || (*szSrc == '4' as WCHAR && dwState & NF_ROUND as DWORD != 0)
-                {
-                    dwState |= NF_ROUND as DWORD;
-                } else {
-                    dwState &= !NF_ROUND as DWORD;
-                }
-                szSrc = szSrc.sub(1);
-                dwDecimals = dwDecimals.wrapping_sub(1);
-            }
-        }
-
-        if dwState & NF_ISREAL as DWORD != 0 {
-            while *szSrc != '.' as WCHAR {
-                if dwState & NF_ROUND as DWORD != 0 {
-                    if *szSrc == '9' as WCHAR {
-                        *szOut = '0' as WCHAR;
-                    } else {
-                        dwState &= !NF_ROUND as DWORD;
-                        *szOut = (*szSrc as INT + 1) as WCHAR;
-                    }
-                    szOut = szOut.sub(1);
-                    szSrc = szSrc.sub(1);
-                } else {
-                    *szOut = *szSrc;
-                    szOut = szOut.sub(1);
-                    szSrc = szSrc.sub(1);
-                }
-            }
-            szSrc = szSrc.sub(1);
-        }
-
-        while lpszDec >= (*lpFormat).lpDecimalSep {
-            *szOut = *lpszDec;
-            szOut = szOut.sub(1);
-            lpszDec = lpszDec.sub(1);
-        }
-    }
-
-    dwGroupCount = if (*lpFormat).Grouping == 32 {
-        3
-    } else {
-        (*lpFormat).Grouping
     };
 
-    while szSrc >= lpszValue && *szSrc >= '0' as WCHAR && *szSrc <= '9' as WCHAR {
-        if dwState & NF_ROUND as DWORD != 0 {
-            if *szSrc == '9' as WCHAR {
-                *szOut = '0' as WCHAR;
-            } else {
-                dwState &= !NF_ROUND as DWORD;
-                *szOut = (*szSrc as INT + 1) as WCHAR;
-            }
-            szOut = szOut.sub(1);
-            szSrc = szSrc.sub(1);
-        } else {
-            *szOut = *szSrc;
-            szOut = szOut.sub(1);
-            szSrc = szSrc.sub(1);
-        }
+    static OPEN: [WCHAR; 2] = [b'(' as WCHAR, 0];
+    static CLOSE: [WCHAR; 2] = [b')' as WCHAR, 0];
+    static SPACE: [WCHAR; 2] = [b' ' as WCHAR, 0];
+    let neg = fmt_neg.as_ptr();
+    let (open, close, space) = (OPEN.as_ptr(), CLOSE.as_ptr(), SPACE.as_ptr());
+    let pre = |num: *mut WCHAR, s: *const WCHAR| prepend_str(num, s);
+    let app = |num: *mut WCHAR, s: *const WCHAR| append_str(num, s);
 
-        dwState |= NF_DIGITS_OUT as DWORD;
-        dwCurrentGroupCount = dwCurrentGroupCount.wrapping_add(1);
-
-        if szSrc >= lpszValue
-            && dwCurrentGroupCount == dwGroupCount
-            && *szSrc != '-' as WCHAR
-        {
-            let mut lpszGrp: *const WCHAR = (*lpFormat)
-                .lpThousandSep
-                .add((strlenW((*lpFormat).lpThousandSep) - 1) as usize);
-
-            while lpszGrp >= (*lpFormat).lpThousandSep {
-                *szOut = *lpszGrp;
-                szOut = szOut.sub(1);
-                lpszGrp = lpszGrp.sub(1);
-            }
-
-            dwCurrentGroupCount = 0;
-            if (*lpFormat).Grouping == 32 {
-                dwGroupCount = 2;
-            }
-        }
-    }
-
-    if dwState & NF_ROUND as DWORD != 0 {
-        *szOut = '1' as WCHAR;
-        szOut = szOut.sub(1);
-    } else if dwState & NF_DIGITS_OUT as DWORD == 0 && (*lpFormat).LeadingZero != 0 {
-        *szOut = '0' as WCHAR;
-        szOut = szOut.sub(1);
-    }
-
-    while dwFmt & (CF_MINUS_LEFT | CF_CY_LEFT) as DWORD != 0 {
-        match dwFmt & (CF_MINUS_LEFT | CF_MINUS_BEFORE | CF_CY_LEFT) as DWORD {
-            2 | 18 => {
-                while lpszNeg >= lpszNegStart {
-                    *szOut = *lpszNeg;
-                    szOut = szOut.sub(1);
-                    lpszNeg = lpszNeg.sub(1);
+    if negative {
+        match neg_order {
+            0 | 14 => {
+                /* ($1.1) / ($ 1.1) */
+                if neg_order == 14 {
+                    num = pre(num, space);
                 }
-                dwFmt &= !CF_MINUS_LEFT as DWORD;
+                num = pre(num, symbol);
+                num = pre(num, open);
+                app(num, close);
             }
-            16 | 24 | 26 => {
-                if dwFmt & CF_CY_SPACE as DWORD != 0 {
-                    *szOut = ' ' as WCHAR;
-                    szOut = szOut.sub(1);
+            1 | 9 => {
+                /* -$1.1 / -$ 1.1 */
+                if neg_order == 9 {
+                    num = pre(num, space);
                 }
-                while lpszCy >= lpszCyStart {
-                    *szOut = *lpszCy;
-                    szOut = szOut.sub(1);
-                    lpszCy = lpszCy.sub(1);
-                }
-                dwFmt &= !(CF_CY_LEFT | CF_MINUS_BEFORE) as DWORD;
+                num = pre(num, symbol);
+                num = pre(num, neg);
             }
-            _ => {}
+            2 => {
+                /* $-1.1 */
+                num = pre(num, neg);
+                num = pre(num, symbol);
+            }
+            3 | 11 => {
+                /* $1.1- / $ 1.1- */
+                if neg_order == 11 {
+                    num = pre(num, space);
+                }
+                num = pre(num, symbol);
+                app(num, neg);
+            }
+            4 | 15 => {
+                /* (1.1$) / (1.1 $) */
+                if neg_order == 15 {
+                    app(num, space);
+                }
+                app(num, symbol);
+                num = pre(num, open);
+                app(num, close);
+            }
+            5 | 8 => {
+                /* -1.1$ / -1.1 $ */
+                if neg_order == 8 {
+                    app(num, space);
+                }
+                num = pre(num, neg);
+                app(num, symbol);
+            }
+            6 => {
+                /* 1.1-$ */
+                app(num, neg);
+                app(num, symbol);
+            }
+            7 | 10 => {
+                /* 1.1$- / 1.1 $- */
+                if neg_order == 10 {
+                    app(num, space);
+                }
+                app(num, symbol);
+                app(num, neg);
+            }
+            12 => {
+                /* $ -1.1 */
+                num = pre(num, neg);
+                num = pre(num, space);
+                num = pre(num, symbol);
+            }
+            13 => {
+                /* 1.1- $ */
+                app(num, neg);
+                app(num, space);
+                app(num, symbol);
+            }
+            _ => {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return 0;
+            }
+        }
+    } else {
+        match pos_order {
+            0 | 2 => {
+                /* $1.1 / $ 1.1 */
+                if pos_order == 2 {
+                    num = pre(num, space);
+                }
+                num = pre(num, symbol);
+            }
+            1 | 3 => {
+                /* 1.1$ / 1.1 $ */
+                if pos_order == 3 {
+                    app(num, space);
+                }
+                app(num, symbol);
+            }
+            _ => {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return 0;
+            }
         }
     }
 
-    if dwFmt & CF_PARENS as DWORD != 0 {
-        *szOut = '(' as WCHAR;
-        szOut = szOut.sub(1);
+    let ret = strlenW(num) + 1;
+    if cchOut == 0 {
+        return ret;
     }
-
-    szOut = szOut.add(1);
-
-    iRet = strlenW(szOut) + 1;
-    if cchOut != 0 {
-        if iRet <= cchOut {
-            memcpy(
-                lpCurrencyStr as *mut core::ffi::c_void,
-                szOut as *const core::ffi::c_void,
-                (iRet as usize) * core::mem::size_of::<WCHAR>(),
-            );
-        } else {
-            memcpy(
-                lpCurrencyStr as *mut core::ffi::c_void,
-                szOut as *const core::ffi::c_void,
-                (cchOut as usize) * core::mem::size_of::<WCHAR>(),
-            );
-            *lpCurrencyStr.add((cchOut - 1) as usize) = 0;
-            SetLastError(ERROR_INSUFFICIENT_BUFFER);
-            iRet = 0;
-        }
+    let n = core::cmp::min(ret, cchOut) as usize;
+    core::ptr::copy_nonoverlapping(num, lpCurrencyStr, n);
+    *lpCurrencyStr.add(n - 1) = 0;
+    if ret > cchOut {
+        SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return 0;
     }
+    ret
+}
 
-    iRet
+// wcscat onto a number built by format_number (the caller keeps room after it).
+unsafe fn append_str(num: *mut WCHAR, s: *const WCHAR) {
+    let mut e = num.add(strlenW(num) as usize);
+    let mut q = s;
+    while *q != 0 {
+        *e = *q;
+        e = e.add(1);
+        q = q.add(1);
+    }
+    *e = 0;
 }
 
 #[no_mangle]
