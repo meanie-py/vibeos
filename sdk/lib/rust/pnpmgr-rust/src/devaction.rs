@@ -195,6 +195,41 @@ const CM_PROB_DRIVER_FAILED_LOAD: ULONG = 0x00000027;
 const CM_PROB_DRIVER_SERVICE_KEY_INVALID: ULONG = 0x00000028;
 const CM_PROB_FAILED_POST_START: ULONG = 0x0000002B;
 const CM_PROB_HELD_FOR_EJECT: ULONG = 0x0000002F;
+const CM_PROB_DISABLED: ULONG = 0x00000016;
+
+// regstr.h: the Enum key's ConfigFlags bit setupapi sets for DICS_DISABLE.
+const CONFIGFLAG_DISABLED: ULONG = 0x00000001;
+
+// PLUGPLAY_CONTROL_QUERY_REMOVE_DATA.Flags (ndk/cmtypes.h).
+pub const PNP_QUERY_AND_REMOVE_NO_RESTART: ULONG = 0x00000001;
+pub const PNP_QUERY_AND_REMOVE_DISABLE: ULONG = 0x00000002;
+
+// PNP_VETO_TYPE (cfg.h).
+pub const PNP_VetoLegacyDevice: ULONG = 1;
+pub const PNP_VetoDevice: ULONG = 6;
+pub const PNP_VetoNonDisableable: ULONG = 10;
+
+const STATUS_PLUGPLAY_QUERY_VETOED: NTSTATUS = 0x80000028_u32 as i32;
+const STATUS_INVALID_DEVICE_STATE: NTSTATUS = 0xC0000184_u32 as i32;
+const STATUS_NO_SUCH_DEVICE: NTSTATUS = 0xC000000E_u32 as i32;
+
+/// VibeOS-private device action, after the five of io.h's DEVICE_ACTION: query-remove a
+/// device and everything that depends on it, then remove it all (a user-mode
+/// CM_Query_And_Remove_SubTree / CM_Disable_DevNode). Context: PI_QUERY_REMOVE_CONTEXT.
+/// Not in io.h because no C queues it; it runs on the device action worker like the rest
+/// so it is serialized with enumeration and start.
+pub const PiActionQueryRemoveDevice: DEVICE_ACTION = 6;
+
+/// The longest device instance path a veto name carries back (cfgmgr32's MAX_DEVICE_ID_LEN).
+pub const VETO_NAME_CHARS: usize = 200;
+
+#[repr(C)]
+pub struct PI_QUERY_REMOVE_CONTEXT {
+    pub Flags: ULONG,
+    pub VetoType: ULONG,
+    /// NUL-terminated instance path of the device that refused.
+    pub VetoName: [u16; VETO_NAME_CHARS],
+}
 
 // VPB flags
 const VPB_MOUNTED: USHORT = 0x0001;
@@ -347,6 +382,7 @@ extern "C" {
     fn PiInsertDevNode(DeviceNode: PDEVICE_NODE, ParentNode: PDEVICE_NODE);
     fn PiSetDevNodeState(DeviceNode: PDEVICE_NODE, NewState: u32) -> u32;
     fn PiSetDevNodeProblem(DeviceNode: PDEVICE_NODE, Problem: ULONG);
+    fn PiClearDevNodeProblem(DeviceNode: PDEVICE_NODE);
 }
 // pnpirp.rs functions — these are also cdecl (no NTAPI in C)
 extern "C" {
@@ -448,6 +484,8 @@ struct DEVICE_ACTION_REQUEST {
     CompletionEvent: PKEVENT,
     CompletionStatus: *mut NTSTATUS,
     Action: DEVICE_ACTION,
+    /// Action-specific argument; only PiActionQueryRemoveDevice has one.
+    Context: PVOID,
 }
 type PDEVICE_ACTION_REQUEST = *mut DEVICE_ACTION_REQUEST;
 
@@ -923,6 +961,16 @@ unsafe fn PiCallDriverAddDevice(
     ZwClose(EnumRootKey);
     if Status < 0 {
         return Status;
+    }
+
+    // A device the user disabled stays disabled across boots, as on Windows: setupapi's
+    // DICS_DISABLE sets CONFIGFLAG_DISABLED in this Enum key, and the device gets
+    // CM_PROB_DISABLED instead of a driver. The C never read the flag, so a disable
+    // lasted only until the next boot.
+    if config_flags(SubKey) & CONFIGFLAG_DISABLED != 0 {
+        ZwClose(SubKey);
+        PiSetDevNodeProblem(DeviceNode, CM_PROB_DISABLED);
+        return STATUS_UNSUCCESSFUL;
     }
 
     Status = IopGetRegistryValue(SubKey, REGSTR_VAL_CLASSGUID.as_ptr() as PWSTR, &mut kvInfo as *mut _);
@@ -2253,6 +2301,293 @@ unsafe fn IopRemoveDevice(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
     Status
 }
 
+/// The Enum key's ConfigFlags, or 0 when it has none.
+unsafe fn config_flags(InstanceKey: HANDLE) -> ULONG {
+    let mut kvInfo: PKEY_VALUE_FULL_INFORMATION = core::ptr::null_mut();
+    let mut flags: ULONG = 0;
+    if IopGetRegistryValue(InstanceKey, w!("ConfigFlags").as_ptr() as PWSTR, &mut kvInfo) >= 0 {
+        if (*kvInfo).Type == REG_DWORD && (*kvInfo).DataLength == core::mem::size_of::<ULONG>() as ULONG {
+            flags = *((kvInfo as ULONG_PTR + (*kvInfo).DataOffset as ULONG_PTR) as *const ULONG);
+        }
+        ExFreePool(kvInfo as PVOID);
+    }
+    flags
+}
+
+/// A pool-backed list of device nodes, each holding a reference on its PDO so that a bus
+/// driver deleting a child PDO during the removal cannot free a node still in the list.
+struct NodeList {
+    items: *mut PDEVICE_NODE,
+    len: usize,
+    cap: usize,
+}
+
+impl NodeList {
+    const fn new() -> Self {
+        NodeList { items: core::ptr::null_mut(), len: 0, cap: 0 }
+    }
+
+    unsafe fn get(&self, i: usize) -> PDEVICE_NODE {
+        *self.items.add(i)
+    }
+
+    unsafe fn contains(&self, node: PDEVICE_NODE) -> bool {
+        (0..self.len).any(|i| self.get(i) == node)
+    }
+
+    /// Append `node` unless it is already listed. NonPaged, because the children are
+    /// gathered under the device tree spin lock.
+    unsafe fn push_new(&mut self, node: PDEVICE_NODE) -> NTSTATUS {
+        if self.contains(node) {
+            return STATUS_SUCCESS;
+        }
+        if self.len == self.cap {
+            let cap = if self.cap == 0 { 16 } else { self.cap * 2 };
+            let items = ExAllocatePoolWithTag(
+                NonPagedPool,
+                (cap * core::mem::size_of::<PDEVICE_NODE>()) as ULONG_PTR,
+                TAG_PNP_DEVACTION,
+            ) as *mut PDEVICE_NODE;
+            if items.is_null() {
+                return STATUS_INSUFFICIENT_RESOURCES;
+            }
+            if !self.items.is_null() {
+                core::ptr::copy_nonoverlapping(self.items, items, self.len);
+                ExFreePoolWithTag(self.items as PVOID, TAG_PNP_DEVACTION);
+            }
+            self.items = items;
+            self.cap = cap;
+        }
+        ObReferenceObject((*node).PhysicalDeviceObject as PVOID);
+        *self.items.add(self.len) = node;
+        self.len += 1;
+        STATUS_SUCCESS
+    }
+
+    unsafe fn release(&mut self) {
+        for i in 0..self.len {
+            ObDereferenceObject((*self.get(i)).PhysicalDeviceObject as PVOID);
+        }
+        if !self.items.is_null() {
+            ExFreePoolWithTag(self.items as PVOID, TAG_PNP_DEVACTION);
+        }
+        *self = NodeList::new();
+    }
+}
+
+/// Everything that goes when `Target` goes: its subtree and the removal relations of
+/// every started node in it, breadth first, so each node is listed after its parent and
+/// after the node that named it a relation. The removal walks the list backwards.
+unsafe fn PiCollectRemovalSet(Target: PDEVICE_NODE, List: &mut NodeList) -> NTSTATUS {
+    let mut Status = List.push_new(Target);
+    let mut i = 0;
+    while Status >= 0 && i < List.len {
+        let node = List.get(i);
+        i += 1;
+
+        let mut OldIrql: KIRQL = 0;
+        KeAcquireSpinLock(device_tree_lock_ptr(), &mut OldIrql);
+        let mut child = (*node).Child;
+        while Status >= 0 && !child.is_null() {
+            Status = List.push_new(child);
+            child = (*child).Sibling;
+        }
+        KeReleaseSpinLock(device_tree_lock_ptr(), OldIrql);
+
+        if Status < 0 || (*node).State != DeviceNodeStarted {
+            continue;
+        }
+
+        let mut Stack: _IO_STACK_LOCATION = core::mem::zeroed();
+        let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
+        Stack.Parameters.QueryDeviceRelations.Type = RemovalRelations;
+        if IopInitiatePnpIrp((*node).PhysicalDeviceObject, &mut IoStatusBlock, IRP_MN_QUERY_DEVICE_RELATIONS, &mut Stack) < 0 {
+            continue;
+        }
+        let Relations = IoStatusBlock.Information as PDEVICE_RELATIONS;
+        if Relations.is_null() {
+            continue;
+        }
+        for r in 0..(*Relations).Count {
+            let object = device_relations_object(Relations, r);
+            let related = IopGetDeviceNode(object);
+            if Status >= 0 && !related.is_null() {
+                Status = List.push_new(related);
+            }
+            ObDereferenceObject(object as PVOID);
+        }
+        ExFreePool(Relations as PVOID);
+    }
+    Status
+}
+
+unsafe fn set_veto(Context: *mut PI_QUERY_REMOVE_CONTEXT, VetoType: ULONG, Node: PDEVICE_NODE) {
+    (*Context).VetoType = VetoType;
+    let path = &(*Node).InstancePath;
+    let n = core::cmp::min((path.Length / 2) as usize, VETO_NAME_CHARS - 1);
+    core::ptr::copy_nonoverlapping(path.Buffer, (*Context).VetoName.as_mut_ptr(), n);
+    (*Context).VetoName[n] = 0;
+}
+
+/// PiActionQueryRemoveDevice: a user-mode request to remove or disable `Target`, which the
+/// C never implemented (PiControlQueryRemoveDevice answered STATUS_NOT_IMPLEMENTED).
+///
+/// Every started device in the removal set is asked first (IRP_MN_QUERY_REMOVE_DEVICE,
+/// leaves first); only when all of them agree is any of them removed, again leaves first.
+/// A refusal cancels the query on every device already asked, the refusing one included,
+/// and names the refusing device as the veto. This is deliberately not
+/// IopPrepareDeviceForRemoval, which REMOVEs a device's children before its siblings have
+/// been asked, so one veto there leaves part of the subtree already torn down.
+///
+/// The target node stays in the tree in DeviceNodeRemoved (its bus keeps the PDO), with
+/// CM_PROB_DISABLED for a disable, so PiActionStartDevice can bring it back.
+unsafe fn PiQueryRemoveDevice(Target: PDEVICE_NODE, Context: *mut PI_QUERY_REMOVE_CONTEXT) -> NTSTATUS {
+    let disable = (*Context).Flags & PNP_QUERY_AND_REMOVE_DISABLE != 0;
+    (*Context).VetoType = 0;
+    (*Context).VetoName[0] = 0;
+
+    if (*Target).State == DeviceNodeRemoved || (*Target).Flags & DNF_HAS_PROBLEM != 0 {
+        // Not running: nothing to ask. A disable still records itself, so a later
+        // enumeration or start leaves it alone.
+        if disable {
+            PiSetDevNodeProblem(Target, CM_PROB_DISABLED);
+        }
+        return STATUS_SUCCESS;
+    }
+    if (*Target).State != DeviceNodeStarted {
+        return STATUS_INVALID_DEVICE_STATE;
+    }
+    if disable && (*Target).UserFlags & DNUF_NOT_DISABLEABLE != 0 {
+        set_veto(Context, PNP_VetoNonDisableable, Target);
+        return STATUS_PLUGPLAY_QUERY_VETOED;
+    }
+
+    let mut List = NodeList::new();
+    let mut Status = PiCollectRemovalSet(Target, &mut List);
+    if Status < 0 {
+        List.release();
+        return Status;
+    }
+
+    // A legacy driver has no AddDevice and cannot be brought back: refuse up front.
+    for i in 0..List.len {
+        let node = List.get(i);
+        if (*node).Flags & DNF_LEGACY_DRIVER != 0 && (*node).State != DeviceNodeRemoved {
+            set_veto(Context, PNP_VetoLegacyDevice, node);
+            List.release();
+            return STATUS_PLUGPLAY_QUERY_VETOED;
+        }
+    }
+
+    // Ask, leaves first.
+    let mut asked = 0usize;
+    let mut refused: PDEVICE_NODE = core::ptr::null_mut();
+    for i in (0..List.len).rev() {
+        let node = List.get(i);
+        if (*node).State != DeviceNodeStarted {
+            continue;
+        }
+        asked = List.len - i;
+        Status = IopQueryRemoveDevice((*node).PhysicalDeviceObject);
+        if Status < 0 {
+            refused = node;
+            break;
+        }
+        PiSetDevNodeState(node, DeviceNodeQueryRemoved);
+    }
+
+    if !refused.is_null() {
+        crate::dbg_print!(
+            b"[PNP] remove of %wZ vetoed by %wZ: 0x%08lx\r\n\0",
+            core::ptr::addr_of!((*Target).InstancePath),
+            core::ptr::addr_of!((*refused).InstancePath),
+            Status as u32
+        );
+        // Cancel in the reverse order of the queries, the refusing device first.
+        for i in (List.len - asked)..List.len {
+            let node = List.get(i);
+            if node == refused || (*node).State == DeviceNodeQueryRemoved {
+                IopCancelRemoveDevice((*node).PhysicalDeviceObject);
+                if (*node).State == DeviceNodeQueryRemoved {
+                    PiSetDevNodeState(node, DeviceNodeStarted);
+                }
+            }
+        }
+        set_veto(Context, PNP_VetoDevice, refused);
+        List.release();
+        return STATUS_PLUGPLAY_QUERY_VETOED;
+    }
+
+    // Remove, leaves first. A node already removed (a failed start, an earlier disable)
+    // has no stack left to tell.
+    for i in (0..List.len).rev() {
+        let node = List.get(i);
+        if (*node).State != DeviceNodeRemoved {
+            IopSendRemoveDevice((*node).PhysicalDeviceObject);
+        }
+    }
+    if disable {
+        PiSetDevNodeProblem(Target, CM_PROB_DISABLED);
+    }
+    crate::dbg_print!(
+        b"[PNP] %s %wZ (%u device nodes)\r\n\0",
+        if disable { b"disabled\0".as_ptr() } else { b"removed\0".as_ptr() },
+        core::ptr::addr_of!((*Target).InstancePath),
+        List.len as u32
+    );
+    List.release();
+    STATUS_SUCCESS
+}
+
+/// PiActionStartDevice on a node that is not running: a user-mode enable
+/// (CM_Enable_DevNode, CM_Setup_DevNode). The C started only a node still in
+/// DeviceNodeInitialized without a problem, so nothing removed or disabled could ever
+/// come back. Here a removed node whose bus still reports it, or an initialized one held
+/// by a problem, is reset to DeviceNodeInitialized and walked through AddDevice and START
+/// again; a device still disabled in the registry gets CM_PROB_DISABLED back from
+/// PiCallDriverAddDevice.
+unsafe fn PiRestartDevice(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
+    let parent = (*DeviceNode).Parent;
+    if !parent.is_null() && (*parent).State != DeviceNodeStarted {
+        return STATUS_INVALID_DEVICE_STATE;
+    }
+    if (*DeviceNode).Flags & DNF_DEVICE_GONE != 0 {
+        return STATUS_NO_SUCH_DEVICE;
+    }
+    match (*DeviceNode).State {
+        DeviceNodeRemoved | DeviceNodeInitialized => {}
+        DeviceNodeStarted => return STATUS_SUCCESS,
+        _ => return STATUS_INVALID_DEVICE_STATE,
+    }
+
+    // IopSendRemoveDevice dropped the node's reference on its PDO; the node owns the PDO
+    // again from here on.
+    if (*DeviceNode).Flags & DNF_PDO_REFERENCE_DROPPED != 0 {
+        ObReferenceObject((*DeviceNode).PhysicalDeviceObject as PVOID);
+        (*DeviceNode).Flags &= !DNF_PDO_REFERENCE_DROPPED;
+    }
+    PiClearDevNodeProblem(DeviceNode);
+    (*DeviceNode).Flags &= !(DNF_REENUMERATE | DNF_RESOURCE_REQUIREMENTS_CHANGED | DNF_NON_STOPPED_REBALANCE);
+    (*DeviceNode).CompletionStatus = STATUS_SUCCESS;
+    PiSetDevNodeState(DeviceNode, DeviceNodeInitialized);
+
+    PiDevNodeStateMachine(DeviceNode);
+
+    crate::dbg_print!(
+        b"[PNP] restart %wZ -> state %u problem %u\r\n\0",
+        core::ptr::addr_of!((*DeviceNode).InstancePath),
+        (*DeviceNode).State as u32,
+        (*DeviceNode).Problem as u32
+    );
+    if (*DeviceNode).State == DeviceNodeStarted {
+        STATUS_SUCCESS
+    } else if (*DeviceNode).CompletionStatus < 0 {
+        (*DeviceNode).CompletionStatus
+    } else {
+        STATUS_UNSUCCESSFUL
+    }
+}
+
 unsafe fn PiEnumerateDevice(
     DeviceNode: PDEVICE_NODE,
 ) -> NTSTATUS {
@@ -2672,8 +3007,11 @@ pub unsafe extern "system" fn PipDeviceActionWorker(
                 {
                     PiDevNodeStateMachine(deviceNode);
                 } else {
-                    status = STATUS_UNSUCCESSFUL;
+                    status = PiRestartDevice(deviceNode);
                 }
+            }
+            PiActionQueryRemoveDevice => {
+                status = PiQueryRemoveDevice(deviceNode, (*Request).Context as *mut PI_QUERY_REMOVE_CONTEXT);
             }
             PiActionQueryState => {
                 if (*deviceNode).State == DeviceNodeStarted {
@@ -2724,9 +3062,22 @@ pub unsafe extern "C" fn PiQueueDeviceAction(
     CompletionEvent: PKEVENT,
     CompletionStatus: *mut NTSTATUS,
 ) {
-    let DeviceObject = opaque_ptr(DeviceObject);
-    let CompletionEvent = opaque_ptr(CompletionEvent);
-    let CompletionStatus = opaque_ptr(CompletionStatus);
+    queue_device_action(
+        opaque_ptr(DeviceObject),
+        Action,
+        core::ptr::null_mut(),
+        opaque_ptr(CompletionEvent),
+        opaque_ptr(CompletionStatus),
+    );
+}
+
+unsafe fn queue_device_action(
+    DeviceObject: PDEVICE_OBJECT,
+    Action: DEVICE_ACTION,
+    Context: PVOID,
+    CompletionEvent: PKEVENT,
+    CompletionStatus: *mut NTSTATUS,
+) {
 
     let Request = ExAllocatePoolWithTag(
         NonPagedPoolMustSucceed,
@@ -2740,6 +3091,7 @@ pub unsafe extern "C" fn PiQueueDeviceAction(
     (*Request).Action = Action;
     (*Request).CompletionEvent = CompletionEvent;
     (*Request).CompletionStatus = CompletionStatus;
+    (*Request).Context = Context;
 
     let mut OldIrql: KIRQL = 0;
     KeAcquireSpinLock(device_action_lock_ptr(), &mut OldIrql);
@@ -2783,7 +3135,17 @@ pub unsafe extern "C" fn PiPerformSyncDeviceAction(
     DeviceObject: PDEVICE_OBJECT,
     Action: DEVICE_ACTION,
 ) -> NTSTATUS {
-    let DeviceObject = opaque_ptr(DeviceObject);
+    PiPerformSyncDeviceActionWithContext(opaque_ptr(DeviceObject), Action, core::ptr::null_mut())
+}
+
+/// PiPerformSyncDeviceAction for an action that takes an argument
+/// (PiActionQueryRemoveDevice). `Context` lives on the caller's stack, which is safe
+/// because the caller waits for the worker to finish with it.
+pub unsafe fn PiPerformSyncDeviceActionWithContext(
+    DeviceObject: PDEVICE_OBJECT,
+    Action: DEVICE_ACTION,
+    Context: PVOID,
+) -> NTSTATUS {
 
     let mut opFinished: _KEVENT = core::mem::zeroed();
     let mut status: NTSTATUS = 0;
@@ -2793,9 +3155,10 @@ pub unsafe extern "C" fn PiPerformSyncDeviceAction(
         _EVENT_TYPE_SynchronizationEvent,
         0,
     );
-    PiQueueDeviceAction(
+    queue_device_action(
         DeviceObject,
         Action,
+        Context,
         &mut opFinished as PKEVENT,
         &mut status,
     );

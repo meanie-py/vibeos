@@ -1434,27 +1434,11 @@ unsafe fn PnpRootPdoPnpControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTA
             Status = PdoQueryDeviceText(DeviceObject, Irp, IrpSp);
         }
         IRP_MN_REMOVE_DEVICE => {
-            KeAcquireGuardedMutex(core::ptr::addr_of_mut!((*FdoDeviceExtension).DeviceListLock));
-            RemoveEntryList(core::ptr::addr_of_mut!((*(*DeviceExtension).DeviceInfo).ListEntry) as PLIST_ENTRY);
-            (*FdoDeviceExtension).DeviceListCount -= 1;
-            KeReleaseGuardedMutex(core::ptr::addr_of_mut!((*FdoDeviceExtension).DeviceListLock));
-
-            RtlFreeUnicodeString(core::ptr::addr_of_mut!((*(*DeviceExtension).DeviceInfo).DeviceDescription));
-            RtlFreeUnicodeString(core::ptr::addr_of_mut!((*(*DeviceExtension).DeviceInfo).DeviceID));
-            RtlFreeUnicodeString(core::ptr::addr_of_mut!((*(*DeviceExtension).DeviceInfo).InstanceID));
-
-            if !(*(*DeviceExtension).DeviceInfo).ResourceRequirementsList.is_null() {
-                ExFreePool((*(*DeviceExtension).DeviceInfo).ResourceRequirementsList as PVOID);
-            }
-
-            if !(*(*DeviceExtension).DeviceInfo).ResourceList.is_null() {
-                ExFreePool((*(*DeviceExtension).DeviceInfo).ResourceList as PVOID);
-            }
-
-            ExFreePool((*DeviceExtension).DeviceInfo as PVOID);
-
-            IoDeleteDevice(DeviceObject);
-
+            // Keep the PDO. A bus driver deletes a PDO on REMOVE only once the device has
+            // stopped being reported, and a root-enumerated device is reported for as long
+            // as its Enum\Root key exists. The C deleted it and freed its DeviceInfo here,
+            // so the device node went with it and nothing removed from the root (a disable,
+            // a failed start) could be started again until a reboot.
             Status = STATUS_SUCCESS;
         }
         IRP_MN_QUERY_ID => {

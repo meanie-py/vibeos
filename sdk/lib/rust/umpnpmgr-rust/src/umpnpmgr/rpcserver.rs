@@ -101,6 +101,7 @@ unsafe extern "system" fn NtStatusToCrError(Status: NTSTATUS) -> CONFIGRET {
         STATUS_ACCESS_DENIED => CR_ACCESS_DENIED,
         STATUS_BUFFER_TOO_SMALL => CR_BUFFER_SMALL,
         STATUS_OBJECT_NAME_NOT_FOUND => CR_NO_SUCH_VALUE,
+        STATUS_PLUGPLAY_QUERY_VETOED => CR_REMOVE_VETOED,
         _ => CR_FAILURE,
     }
 }
@@ -256,7 +257,9 @@ unsafe extern "C" fn DisableDeviceInstance(
         pszDeviceInstance,
     );
 
-    QueryRemoveData.Flags = 0;
+    // A disable, not a removal: the kernel leaves the device with CM_PROB_DISABLED. The C
+    // passed 0 here, which asked for a plain removal.
+    QueryRemoveData.Flags = PNP_QUERY_AND_REMOVE_DISABLE;
     QueryRemoveData.VetoType = 0;
     QueryRemoveData.VetoName = pszVetoName;
     QueryRemoveData.NameLength = ulNameLength;
@@ -3826,6 +3829,11 @@ pub unsafe extern "system" fn PNP_QueryRemove(
     );
     if !NT_SUCCESS(Status) {
         ret = NtStatusToCrError(Status);
+    }
+    // The kernel reports who refused in the control data; the C dropped it, so a
+    // vetoed CM_Query_And_Remove_SubTree always said PNP_VetoTypeUnknown.
+    if Status == STATUS_PLUGPLAY_QUERY_VETOED && !pVetoType.is_null() {
+        *pVetoType = PlugPlayData.VetoType;
     }
 
     ret
