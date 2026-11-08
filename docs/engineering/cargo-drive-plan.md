@@ -508,6 +508,16 @@ extends it from the boot spine to every fully-Rust module.
        recyclebin/usbdex's cmake cargo archives became `engine:*_rust` crates. **Owed:**
        mmc_new still links cmake's `libmmc_uuids.a` (an `add_iid_library` of widl `_i.c`
        the library index does not model; baselined in scan_cmake_linked_rust).
+     - **2026-11-08: 13 earlier holds converted** (bcryptprimitives certmgr cleanmgr desk
+       dinput8 dwmapi intl ncrypt netkvm sysdm tcpsvcs telnetd wlansvc), EQUIVALENT ×3: the
+       fixes above cleared what held them. A module's own `$<TARGET_FILE:t>` /
+       `$<TARGET_FILE_DIR:t>` now names the cell's output (sdk/include/asm runs geninc on
+       genincdata's). **Held, with the reason measured:** libjpeg, libpng, libxslt, mbedtls
+       and genincdata lose exports (an export mechanism the generator does not model:
+       pe_equiv DIFFERENT); fusion (its spec stubs compile in the static lib
+       fusion_common, so the cell has no stub exports); rpcrt4 (link-guard: one duplicate
+       symbol); the 14 dotted targets (crate naming, phony/output collision); shdocvw,
+       shlwapi, browseui, uniata, explorer, rshell, msvcrt (above).
      - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
        `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
        `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses

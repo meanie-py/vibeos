@@ -1,5 +1,18 @@
 [workspace]
 members = [
+    "wlansvc-cargo",
+    "telnetd-cargo",
+    "tcpsvcs-cargo",
+    "sysdm-cargo",
+    "netkvm-cargo",
+    "ncrypt-cargo",
+    "intl-cargo",
+    "dwmapi-cargo",
+    "dinput8-cargo",
+    "desk-cargo",
+    "cleanmgr-cargo",
+    "certmgr-cargo",
+    "bcryptprimitives-cargo",
     "cmipci-cargo",
     "ac97-cargo",
     "zipfldr-cargo",
