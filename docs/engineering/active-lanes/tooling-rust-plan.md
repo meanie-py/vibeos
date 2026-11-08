@@ -138,15 +138,19 @@ Progress (`lint-rs`):
   work. `land --direct` must keep working at every intermediate commit, and any
   change touching it lands in a batch of its own. Keep the lease file protocol
   unchanged.
-- Dead Python lease API (measured 2026-11-07): 12 definitions, 215 lines
-  (`acquire_cpu_lease/share/exclusive`, `cpu_*`, `release_all`, `acquire_boot_lease`,
-  `build_permits`, plus `buildpolicy.guard`/`take_guard`) are reachable only from
-  tests. They are NOT a plain delete: ~30 tests use them as a lease holder to cover
-  LIVE machinery — `_acquire_one` FIFO tickets and orphan reaping (which `land_lock`,
-  hence `land --direct`, runs on), policy-cutover refusal while a lease is held, and
-  `status` holder reporting. Retire them by re-homing those tests onto a live holder
-  (the land lock, or native `admission.rs`), in a batch of its own. The build-dir
-  lock moves with item 4, when the build entry itself goes native.
+- Done: the dead Python lease API is retired (`acquire_cpu_lease/share/exclusive`,
+  `cpu_*`, `release_all`, `acquire_boot_lease`, `build_permits`, `_max_builds`,
+  `buildpolicy.guard`; hostlock.py 897 -> 636 lines). Its tests were the only coverage
+  of boot admission semantics, so they moved onto the code that admits boots now:
+  11 Rust tests in `vibeos-test/src/admission.rs` cover the landing reserve and its
+  overflow, boot-vs-boot throttling, the build/boot pool split, native-TCG boots in
+  the CPU pool, FIFO tickets, orphan reaping, the fairness opt-out, broker-off rules,
+  and a pause releasing a waiter without touching a holder. `_acquire_one`'s FIFO,
+  orphan and announce-pair tests now run through `land_lock`, its live caller. The
+  policy-cutover tests use a raw flock holder, which is exactly what native admission
+  holds. `release`/`take_guard` stay as they are: `release` is the land lock's.
+  Native `build_policy_admission` lost its only Python caller (the guard); it can go
+  with item 4, as can the build-dir lock, when the build entry itself goes native.
 
 ### 3. Remaining diagnostic and measurement workflows
 

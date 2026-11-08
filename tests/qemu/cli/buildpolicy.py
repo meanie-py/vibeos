@@ -7,7 +7,6 @@ import json
 import os
 import subprocess
 from contextlib import ExitStack, contextmanager
-from functools import wraps
 from pathlib import Path
 
 from tools import build_infra_compat as native
@@ -124,51 +123,10 @@ def session(root: Path):
         yield read(root)
 
 
-def guard(fn):
-    """Pin capacity from ticket creation until the final permit is released."""
-
-    @wraps(fn)
-    def acquire(*args, **kwargs):
-        from . import hostlock
-
-        manager = session(hostlock.POLICY_DIR)
-        policy = manager.__enter__()
-        try:
-            if policy:
-                kind = args[0] if args else kwargs.get("kind", "")
-                try:
-                    kwargs.update(
-                        native.call(
-                            "build_policy_admission",
-                            {
-                                "policy": policy,
-                                "has_override": "leases" in kwargs,
-                                "leases_override": kwargs.get("leases"),
-                                "build_share": fn.__name__ == "acquire_cpu_share"
-                                and kind.startswith("build:"),
-                            },
-                        )
-                    )
-                except native.NativeError as error:
-                    raise PolicyError(str(error)) from error
-            result = fn(*args, **kwargs)
-            if result is None:
-                if policy:
-                    raise PolicyError("CPU admission timed out; host policy forbids unlocked work")
-                return None
-            fds = result if isinstance(result, list) else [result]
-            if fds:
-                _guards[fds[-1]] = manager
-                manager = None
-            return result
-        finally:
-            if manager is not None:
-                manager.__exit__(None, None, None)
-
-    return acquire
-
-
 def take_guard(fd: int):
+    # The Python CPU/boot acquirers that registered policy guards here are gone (native
+    # admission pins the policy itself); `release` still asks, and is the land lock's, so
+    # it stays as it is until the land train retires.
     return _guards.pop(fd, None)
 
 

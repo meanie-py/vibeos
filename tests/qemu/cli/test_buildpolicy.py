@@ -1,5 +1,5 @@
+import fcntl
 import json
-import threading
 from types import SimpleNamespace
 
 import pytest
@@ -20,29 +20,25 @@ def trial(tmp_path, monkeypatch):
     return tmp_path
 
 
-def test_three_builds_fit_and_fourth_fails_closed(trial):
-    grants = []
-    try:
-        for _ in range(3):
-            grants.append(hostlock.acquire_cpu_share("build:fixture", n=4, timeout=0))
-        assert all(g is not None and len(g) == 2 for g in grants)
-        with pytest.raises(RuntimeError, match="timed out"):
-            hostlock.acquire_cpu_share("build:fourth", n=2, timeout=0)
-        assert hostlock.status()["cpu_leases_total"] == 6
-        assert build._ninja_jobs() == ["-j", "6"]
-    finally:
-        for grant in grants:
-            hostlock.release_all(grant)
+def test_the_trial_policy_sets_capacity_and_ninja_fanout(trial):
+    # Build admission itself is host-jobs' (tools/test_host_jobs.py); what reads the
+    # policy here is host-status's capacity and ninja's job count.
+    assert hostlock.status()["cpu_leases_total"] == 6
+    assert build._ninja_jobs() == ["-j", "6"]
+
+
+def _hold(path, *, shared: bool = False):
+    """A live client as native admission holds it: a cpuheavy permit while running, the
+    policy lock shared while queued."""
+    stream = path.open("a+")
+    fcntl.flock(stream, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
+    return stream
 
 
 def test_live_holder_prevents_cutover(trial, monkeypatch):
     monkeypatch.setattr(buildpolicy, "blockers", lambda repo: [])
-    fd = hostlock.acquire_cpu_lease("boot:fixture", timeout=0)
-    try:
-        with pytest.raises(RuntimeError, match="active or queued"):
-            buildpolicy.activate(trial, trial, rollback=True)
-    finally:
-        hostlock.release(fd)
+    with _hold(trial / "cpuheavy-00"), pytest.raises(RuntimeError, match="active or queued"):
+        buildpolicy.activate(trial, trial, rollback=True)
     monkeypatch.setattr(buildpolicy.os, "cpu_count", lambda: 24)
     buildpolicy.activate(trial, trial, rollback=True)
     policy = buildpolicy.read(trial)
@@ -57,15 +53,10 @@ def test_mixed_fleet_refused_without_changing_policy(trial, monkeypatch):
     assert (trial / "build-policy.json").read_bytes() == before
 
 
-def test_explicit_conflicting_override_refused(trial):
-    with pytest.raises(RuntimeError, match="conflicts"):
-        hostlock.acquire_cpu_lease("boot:fixture", leases=4, timeout=0)
-
-
 def test_invalid_policy_fails_loudly(trial):
     (trial / "build-policy.json").write_text('{"version": 1}')
     with pytest.raises(RuntimeError, match="invalid host"):
-        hostlock.acquire_cpu_lease("boot:fixture", timeout=0)
+        hostlock.status()
 
 
 @pytest.mark.parametrize("env", [None, {"CARGO_BUILD_JOBS": "24", "RUSTC_WRAPPER": "cache"}])
@@ -79,33 +70,15 @@ def test_cargo_fanout_bound_with_or_without_cache(trial, monkeypatch, env):
 
 
 def test_queued_client_pins_policy_before_getting_a_permit(trial, monkeypatch):
-    ready, finish = threading.Event(), threading.Event()
+    # A queued native client holds the policy lock shared from before it takes a ticket
+    # until its permit is released (vibeos-test admission.rs), so a cutover cannot
+    # change the capacity it is waiting against.
     monkeypatch.setattr(buildpolicy, "blockers", lambda repo: [])
-
-    def wait(*args, **kwargs):
-        ready.set()
-        assert finish.wait(5)
-        return None
-
-    monkeypatch.setattr(hostlock, "_acquire_one", wait)
-    errors = []
-
-    def client():
-        try:
-            hostlock.acquire_cpu_lease("boot:waiting")
-        except RuntimeError as exc:
-            errors.append(str(exc))
-
-    thread = threading.Thread(target=client)
-    thread.start()
-    try:
-        assert ready.wait(5)
-        with pytest.raises(RuntimeError, match="active or queued"):
-            buildpolicy.activate(trial, trial)
-    finally:
-        finish.set()
-        thread.join(5)
-    assert not thread.is_alive() and errors
+    with (
+        _hold(trial / "build-policy.lock", shared=True),
+        pytest.raises(RuntimeError, match="active or queued"),
+    ):
+        buildpolicy.activate(trial, trial)
 
 
 def test_active_policy_cannot_disable_broker(trial, monkeypatch):
@@ -122,41 +95,6 @@ def test_pause_refusal_is_infrastructure_not_a_lane_regression(trial, monkeypatc
     summary = json.loads(next((trial / "runs").glob("*/summary.json")).read_text())
     assert summary["classification"] == "BUILD_POLICY_REFUSED"
     assert summary["classification"] in queue.INCONCLUSIVE
-
-
-def test_pause_releases_waiter_but_does_not_interrupt_holder(trial, monkeypatch):
-    monkeypatch.setattr(hostlock, "_POLL", 0.01)
-    monkeypatch.setattr(buildpolicy, "blockers", lambda repo: [])
-    monkeypatch.setattr(buildpolicy.os, "cpu_count", lambda: 24)
-    held = hostlock.acquire_cpu_exclusive("fixture", timeout=0)
-    ready = threading.Event()
-    original = hostlock._may_attempt
-
-    def attempt(*args, **kwargs):
-        ready.set()
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(hostlock, "_may_attempt", attempt)
-    errors = []
-
-    def waiter():
-        try:
-            hostlock.acquire_cpu_lease("boot:waiting", timeout=5)
-        except buildpolicy.PolicyError as exc:
-            errors.append(str(exc))
-
-    thread = threading.Thread(target=waiter)
-    thread.start()
-    try:
-        assert ready.wait(5)
-        (trial / "build-policy.paused").touch()
-        thread.join(5)
-        assert not thread.is_alive() and errors
-        assert hostlock.status()["cpu_leases_held"] == 6
-    finally:
-        hostlock.release_all(held)
-        thread.join(5)
-    buildpolicy.activate(trial, trial, rollback=True)  # no waiter guard leaked
 
 
 def test_policy_survives_the_lock_tree_being_wiped(trial, monkeypatch, tmp_path):
