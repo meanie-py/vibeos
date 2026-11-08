@@ -49,7 +49,9 @@ def create(session, config):
 def gone(pid):
     try:
         data = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
-    except FileNotFoundError:
+    # A process reaped between open() and read() fails the read with ESRCH, not ENOENT
+    # (check-tooling 20261108-084720-pzCOmQ). Either way it is gone.
+    except (FileNotFoundError, ProcessLookupError):
         return True
     return data[0] == "Z"
 
