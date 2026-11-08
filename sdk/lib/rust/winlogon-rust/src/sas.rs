@@ -516,7 +516,6 @@ pub unsafe extern "C" fn PlaySoundRoutine(
     type WAVEOUTGETNUMDEVS = unsafe extern "system" fn() -> UINT;
     let Play: Option<PLAYSOUNDW>;
     let waveOutGetNumDevs: Option<WAVEOUTGETNUMDEVS>;
-    let NumDevs: UINT;
     let hLibrary: HMODULE;
     let mut Ret: BOOL = 0;
 
@@ -532,20 +531,29 @@ pub unsafe extern "C" fn PlaySoundRoutine(
         GetProcAddress(hLibrary, b"PlaySoundW\0".as_ptr() as *const i8),
     );
 
-    'block: {
+    // winmm and the sound driver run in Winlogon's process: a fault in them is
+    // logged and the sound skipped.
+    let ret: *mut BOOL = &mut Ret;
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| {
         if let Some(waveOutGetNumDevs) = waveOutGetNumDevs {
-            NumDevs = waveOutGetNumDevs();
+            let NumDevs: UINT = waveOutGetNumDevs();
             if NumDevs == 0 {
                 if bLogon == 0 {
                     Beep(440, 125);
                 }
-                break 'block;
+                return;
             }
         }
 
         if let Some(Play) = Play {
-            Ret = Play(FileName, core::ptr::null_mut(), Flags);
+            *ret = Play(FileName, core::ptr::null_mut(), Flags);
         }
+    }) {
+        ERR!(
+            "WL: Exception while playing sound '%S', Status 0x%08lx\n",
+            if FileName.is_null() { w!("(n/a)").as_ptr() as LPCWSTR } else { FileName },
+            code,
+        );
     }
 
     FreeLibrary(hLibrary);

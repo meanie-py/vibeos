@@ -458,7 +458,7 @@ unsafe fn UserpFormatMessages(
     let mut hwndOwner: HWND;
     let mut MessageResource: PMESSAGE_RESOURCE_ENTRY = core::ptr::null_mut();
     let mut FormatString: PWSTR;
-    let mut pszBuffer: PWSTR;
+    let mut pszBuffer: PWSTR = core::ptr::null_mut();
     let mut cszBuffer: usize;
 
     core::ptr::write_bytes(core::ptr::addr_of_mut!(ObjectAttributes), 0, 1);
@@ -788,10 +788,45 @@ unsafe fn UserpFormatMessages(
         }
     }
 
+    // The format string and the string parameters were captured from the process
+    // that raised the hard error: a bad one must not take csrss (and the system)
+    // down, so a fault falls back to the default message with the raw parameters.
     cszBuffer = 0;
-    if FormatString.is_null() {
+    if ntdll_sys::seh::try_except_all(|| {
+        if FormatString.is_null() {
+            cszBuffer = _scwprintf(
+                pszUnknownHardError.as_ptr(),
+                (*Message).Status,
+                Parameters[0],
+                Parameters[1],
+                Parameters[2],
+                Parameters[3],
+            ) as usize;
+            cszBuffer *= core::mem::size_of::<u16>();
+        } else {
+            cszBuffer = _scwprintf_5(
+                FormatString,
+                CopyParameters[0],
+                CopyParameters[1],
+                CopyParameters[2],
+                CopyParameters[3],
+            ) as usize;
+            cszBuffer *= core::mem::size_of::<u16>();
+
+            if (*Message).Status == STATUS_UNHANDLED_EXCEPTION {
+                if (*Message).ValidResponseOptions == OptionOk || (*Message).ValidResponseOptions == OptionOkCancel {
+                    cszBuffer += core::mem::size_of::<u16>() + g_OKTerminateU.Length as usize;
+                }
+                if (*Message).ValidResponseOptions == OptionOkCancel {
+                    cszBuffer += core::mem::size_of::<u16>() + g_CancelDebugU.Length as usize;
+                }
+            }
+        }
+    })
+    .is_err()
+    {
         cszBuffer = _scwprintf(
-            pszUnknownHardError.as_ptr(),
+            pszExceptionHardError.as_ptr(),
             (*Message).Status,
             Parameters[0],
             Parameters[1],
@@ -799,29 +834,11 @@ unsafe fn UserpFormatMessages(
             Parameters[3],
         ) as usize;
         cszBuffer *= core::mem::size_of::<u16>();
-    } else {
-        cszBuffer = _scwprintf_5(
-            FormatString,
-            CopyParameters[0],
-            CopyParameters[1],
-            CopyParameters[2],
-            CopyParameters[3],
-        ) as usize;
-        cszBuffer *= core::mem::size_of::<u16>();
-
-        if (*Message).Status == STATUS_UNHANDLED_EXCEPTION {
-            if (*Message).ValidResponseOptions == OptionOk || (*Message).ValidResponseOptions == OptionOkCancel {
-                cszBuffer += core::mem::size_of::<u16>() + g_OKTerminateU.Length as usize;
-            }
-            if (*Message).ValidResponseOptions == OptionOkCancel {
-                cszBuffer += core::mem::size_of::<u16>() + g_CancelDebugU.Length as usize;
-            }
-        }
     }
 
     cszBuffer += SizeOfStrings as usize + core::mem::size_of::<u16>();
 
-    if (*TextStringU).MaximumLength < cszBuffer as u16 {
+    if ((*TextStringU).MaximumLength as usize) < cszBuffer {
         pszBuffer = RtlAllocateHeap(RtlGetProcessHeap(), HEAP_ZERO_MEMORY, cszBuffer as SIZE_T) as PWSTR;
         if pszBuffer.is_null() {
         } else {
@@ -831,58 +848,76 @@ unsafe fn UserpFormatMessages(
     (*TextStringU).Length = 0;
     (*TextStringU).Buffer.write(0);
 
-    pszBuffer = (*TextStringU).Buffer;
-    cszBuffer = (*TextStringU).MaximumLength as usize;
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+        pszBuffer = (*TextStringU).Buffer;
+        cszBuffer = (*TextStringU).MaximumLength as usize;
 
-    if FormatString.is_null() {
+        if FormatString.is_null() {
+            RtlStringCbPrintfW(
+                pszBuffer,
+                cszBuffer,
+                pszUnknownHardError.as_ptr(),
+                (*Message).Status,
+                Parameters[0],
+                Parameters[1],
+                Parameters[2],
+                Parameters[3],
+            );
+        } else {
+            RtlStringCbPrintfExW(
+                pszBuffer,
+                cszBuffer,
+                &mut pszBuffer,
+                &mut cszBuffer,
+                0,
+                FormatString,
+                CopyParameters[0],
+                CopyParameters[1],
+                CopyParameters[2],
+                CopyParameters[3],
+            );
+
+            if (*Message).Status == STATUS_UNHANDLED_EXCEPTION {
+                if (*Message).ValidResponseOptions == OptionOk || (*Message).ValidResponseOptions == OptionOkCancel {
+                    RtlStringCbPrintfExW(
+                        pszBuffer,
+                        cszBuffer,
+                        &mut pszBuffer,
+                        &mut cszBuffer,
+                        0,
+                        w!("\n%wZ").as_ptr() as PCWSTR,
+                        &raw const g_OKTerminateU,
+                    );
+                }
+                if (*Message).ValidResponseOptions == OptionOkCancel {
+                    RtlStringCbPrintfExW(
+                        pszBuffer,
+                        cszBuffer,
+                        &mut pszBuffer,
+                        &mut cszBuffer,
+                        0,
+                        w!("\n%wZ").as_ptr() as PCWSTR,
+                        &raw const g_CancelDebugU,
+                    );
+                }
+            }
+        }
+    }) {
+        DbgPrint(
+            b"Exception 0x%08lx occurred while building hard-error message, fall back to default message.\n\0"
+                .as_ptr() as *const i8,
+            code,
+        );
         RtlStringCbPrintfW(
-            pszBuffer,
-            cszBuffer,
-            pszUnknownHardError.as_ptr(),
+            (*TextStringU).Buffer,
+            (*TextStringU).MaximumLength as usize,
+            pszExceptionHardError.as_ptr(),
             (*Message).Status,
             Parameters[0],
             Parameters[1],
             Parameters[2],
             Parameters[3],
         );
-    } else {
-        RtlStringCbPrintfExW(
-            pszBuffer,
-            cszBuffer,
-            &mut pszBuffer,
-            &mut cszBuffer,
-            0,
-            FormatString,
-            CopyParameters[0],
-            CopyParameters[1],
-            CopyParameters[2],
-            CopyParameters[3],
-        );
-
-        if (*Message).Status == STATUS_UNHANDLED_EXCEPTION {
-            if (*Message).ValidResponseOptions == OptionOk || (*Message).ValidResponseOptions == OptionOkCancel {
-                RtlStringCbPrintfExW(
-                    pszBuffer,
-                    cszBuffer,
-                    &mut pszBuffer,
-                    &mut cszBuffer,
-                    0,
-                    w!("\n%wZ").as_ptr() as PCWSTR,
-                    &raw const g_OKTerminateU,
-                );
-            }
-            if (*Message).ValidResponseOptions == OptionOkCancel {
-                RtlStringCbPrintfExW(
-                    pszBuffer,
-                    cszBuffer,
-                    &mut pszBuffer,
-                    &mut cszBuffer,
-                    0,
-                    w!("\n%wZ").as_ptr() as PCWSTR,
-                    &raw const g_CancelDebugU,
-                );
-            }
-        }
     }
 
     (*TextStringU).Length = (wcslen((*TextStringU).Buffer) * core::mem::size_of::<u16>()) as u16;

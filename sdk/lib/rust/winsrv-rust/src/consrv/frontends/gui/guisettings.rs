@@ -182,10 +182,10 @@ pub unsafe extern "system" fn GuiConsoleShowConsoleProperties(
         ThreadParameter = (*GuiData).hWindow as PVOID;
     }
 
-    let mut exception_code: i32 = 0;
-    let _thread_result = {
-        let mut Thread: HANDLE = core::ptr::null_mut();
-        Thread = CreateRemoteThread(
+    // Start the console control panel applet in the client; an exception is
+    // reported and the section and console lock are still released below.
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+        let Thread: HANDLE = CreateRemoteThread(
             (*(*ProcessData).Process).ProcessHandle,
             core::ptr::null_mut(),
             0,
@@ -195,13 +195,17 @@ pub unsafe extern "system" fn GuiConsoleShowConsoleProperties(
             core::ptr::null_mut(),
         );
         if Thread.is_null() {
-            exception_code = GetLastError() as i32;
-        }
-        if !Thread.is_null() {
+            DbgPrint(b"Failed thread creation (Error: 0x%x)\n\0".as_ptr() as *const i8, GetLastError());
+        } else {
             CloseHandle(Thread);
         }
-        exception_code
-    };
+    }) {
+        DbgPrint(
+            b"GuiConsoleShowConsoleProperties - Caught an exception, Status = 0x%08lx\n\0".as_ptr()
+                as *const i8,
+            code,
+        );
+    }
 
     if !hSection.is_null() {
         NtClose(hSection);
@@ -261,12 +265,13 @@ pub unsafe extern "system" fn GuiApplyUserSettings(
         return;
     }
 
-    let _inner_result = 'seh: {
+    // The section is the client's: a fault reading it is reported and the view,
+    // section and console lock are still released below.
+    match ntdll_sys::seh::try_except_all(|| -> NTSTATUS {
         if (ViewSize as usize) < core::mem::size_of::<CONSOLE_STATE_INFO>() ||
            ((*pConInfo).cbSize as usize) < core::mem::size_of::<CONSOLE_STATE_INFO>()
         {
-            Status = STATUS_INVALID_VIEW_SIZE;
-            break 'seh Status;
+            return STATUS_INVALID_VIEW_SIZE;
         }
 
         RefreshTTFontCache();
@@ -293,7 +298,17 @@ pub unsafe extern "system" fn GuiApplyUserSettings(
         }
 
         STATUS_SUCCESS
-    };
+    }) {
+        Ok(st) => Status = st,
+        Err(code) => {
+            Status = code;
+            DbgPrint(
+                b"GuiApplyUserSettings - Caught an exception, Status = 0x%08lx\n\0".as_ptr() as *const i8,
+                Status,
+            );
+        }
+    }
+    let _ = Status;
 
     if !hSection.is_null() {
         NtUnmapViewOfSection(NtCurrentProcess(), pConInfo as PVOID);

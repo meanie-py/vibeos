@@ -841,18 +841,28 @@ pub unsafe extern "system" fn LdrpInitializeThread(_Context: PCONTEXT) {
                             (*LdrEntry).EntryPointActivationContext,
                         );
 
-                        if (*LdrEntry).TlsIndex != 0 {
-                            if LdrpShutdownInProgress == 0 {
-                                LdrpCallTlsInitializers(LdrEntry, DLL_THREAD_ATTACH);
+                        // A DLL faulting in its thread attach is logged, not fatal.
+                        if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+                            if (*LdrEntry).TlsIndex != 0 {
+                                if LdrpShutdownInProgress == 0 {
+                                    LdrpCallTlsInitializers(LdrEntry, DLL_THREAD_ATTACH);
+                                }
                             }
-                        }
 
-                        if LdrpShutdownInProgress == 0 {
-                            LdrpCallInitRoutine(
-                                (*LdrEntry).EntryPoint,
-                                (*LdrEntry).DllBase,
-                                DLL_THREAD_ATTACH,
-                                core::ptr::null_mut(),
+                            if LdrpShutdownInProgress == 0 {
+                                LdrpCallInitRoutine(
+                                    (*LdrEntry).EntryPoint,
+                                    (*LdrEntry).DllBase,
+                                    DLL_THREAD_ATTACH,
+                                    core::ptr::null_mut(),
+                                );
+                            }
+                        }) {
+                            DbgPrint(
+                                b"WARNING: Exception 0x%x during LdrpCallInitRoutine(DLL_THREAD_ATTACH) for %wZ\n\0"
+                                    .as_ptr() as *const i8,
+                                code,
+                                core::ptr::addr_of_mut!((*LdrEntry).BaseDllName),
                             );
                         }
 
@@ -880,7 +890,9 @@ pub unsafe extern "system" fn LdrpInitializeThread(_Context: PCONTEXT) {
                 (*LdrpImageEntry).EntryPointActivationContext,
             );
 
-            LdrpCallTlsInitializers(LdrpImageEntry, DLL_THREAD_ATTACH);
+            let _ = ntdll_sys::seh::try_except_all(|| {
+                LdrpCallTlsInitializers(LdrpImageEntry, DLL_THREAD_ATTACH)
+            });
 
             RtlDeactivateActivationContextUnsafeFast(core::ptr::addr_of_mut!(ActCtx));
         }
@@ -1026,18 +1038,31 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
                     (*LdrEntry).EntryPointActivationContext,
                 );
 
-                // _SEH2_TRY body
-                // Dynamically loaded TLS DLLs get their callbacks too, as on Vista.
-                if (*LdrEntry).TlsIndex != 0 {
-                    LdrpCallTlsInitializers(LdrEntry, DLL_PROCESS_ATTACH);
-                }
+                // A DllMain that faults fails the load (DllStatus FALSE), as the C.
+                DllStatus = match ntdll_sys::seh::try_except_all(|| {
+                    // Dynamically loaded TLS DLLs get their callbacks too, as on Vista.
+                    if (*LdrEntry).TlsIndex != 0 {
+                        LdrpCallTlsInitializers(LdrEntry, DLL_PROCESS_ATTACH);
+                    }
 
-                DllStatus = LdrpCallInitRoutine(
-                    EntryPoint,
-                    (*LdrEntry).DllBase,
-                    DLL_PROCESS_ATTACH,
-                    Context as PVOID,
-                );
+                    LdrpCallInitRoutine(
+                        EntryPoint,
+                        (*LdrEntry).DllBase,
+                        DLL_PROCESS_ATTACH,
+                        Context as PVOID,
+                    )
+                }) {
+                    Ok(ret) => ret,
+                    Err(code) => {
+                        DbgPrint(
+                            b"[LDR] EXCEPTION 0x%x during DllMain(%wZ) PID=%lu\n\0".as_ptr() as *const i8,
+                            code,
+                            core::ptr::addr_of_mut!((*LdrEntry).BaseDllName),
+                            (*NtCurrentTeb()).ClientId.UniqueProcess as ULONG,
+                        );
+                        0
+                    }
+                };
 
                 RtlDeactivateActivationContextUnsafeFast(core::ptr::addr_of_mut!(ActCtx));
 
@@ -1085,8 +1110,9 @@ pub unsafe extern "system" fn LdrpRunInitializeRoutines(Context: PCONTEXT) -> NT
                 (*LdrpImageEntry).EntryPointActivationContext,
             );
 
-            // _SEH2_TRY body
-            LdrpCallTlsInitializers(LdrpImageEntry, DLL_PROCESS_ATTACH);
+            let _ = ntdll_sys::seh::try_except_all(|| {
+                LdrpCallTlsInitializers(LdrpImageEntry, DLL_PROCESS_ATTACH)
+            });
 
             RtlDeactivateActivationContextUnsafeFast(core::ptr::addr_of_mut!(ActCtx));
         }
@@ -1161,16 +1187,26 @@ pub unsafe extern "system" fn LdrShutdownProcess() -> NTSTATUS {
                     (*LdrEntry).EntryPointActivationContext,
                 );
 
-                if (*LdrEntry).TlsIndex != 0 {
-                    LdrpCallTlsInitializers(LdrEntry, DLL_PROCESS_DETACH);
-                }
+                // A DLL faulting in its process detach is logged; shutdown goes on.
+                if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+                    if (*LdrEntry).TlsIndex != 0 {
+                        LdrpCallTlsInitializers(LdrEntry, DLL_PROCESS_DETACH);
+                    }
 
-                LdrpCallInitRoutine(
-                    EntryPoint,
-                    (*LdrEntry).DllBase,
-                    DLL_PROCESS_DETACH,
-                    1usize as PVOID,
-                );
+                    LdrpCallInitRoutine(
+                        EntryPoint,
+                        (*LdrEntry).DllBase,
+                        DLL_PROCESS_DETACH,
+                        1usize as PVOID,
+                    );
+                }) {
+                    DbgPrint(
+                        b"WARNING: Exception 0x%x during LdrpCallInitRoutine(DLL_PROCESS_DETACH) for %wZ\n\0"
+                            .as_ptr() as *const i8,
+                        code,
+                        core::ptr::addr_of_mut!((*LdrEntry).BaseDllName),
+                    );
+                }
 
                 RtlDeactivateActivationContextUnsafeFast(core::ptr::addr_of_mut!(ActCtx));
             }
@@ -1190,7 +1226,9 @@ pub unsafe extern "system" fn LdrShutdownProcess() -> NTSTATUS {
             (*LdrpImageEntry).EntryPointActivationContext,
         );
 
-        LdrpCallTlsInitializers(LdrpImageEntry, DLL_PROCESS_DETACH);
+        let _ = ntdll_sys::seh::try_except_all(|| {
+            LdrpCallTlsInitializers(LdrpImageEntry, DLL_PROCESS_DETACH)
+        });
 
         RtlDeactivateActivationContextUnsafeFast(core::ptr::addr_of_mut!(ActCtx));
     }
@@ -1243,18 +1281,28 @@ pub unsafe extern "system" fn LdrShutdownThread() -> NTSTATUS {
                         (*LdrEntry).EntryPointActivationContext,
                     );
 
-                    if (*LdrEntry).TlsIndex != 0 {
-                        if LdrpShutdownInProgress == 0 {
-                            LdrpCallTlsInitializers(LdrEntry, DLL_THREAD_DETACH);
+                    // A DLL faulting in its thread detach is logged; the thread exits anyway.
+                    if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+                        if (*LdrEntry).TlsIndex != 0 {
+                            if LdrpShutdownInProgress == 0 {
+                                LdrpCallTlsInitializers(LdrEntry, DLL_THREAD_DETACH);
+                            }
                         }
-                    }
 
-                    if LdrpShutdownInProgress == 0 {
-                        LdrpCallInitRoutine(
-                            EntryPoint,
-                            (*LdrEntry).DllBase,
-                            DLL_THREAD_DETACH,
-                            core::ptr::null_mut(),
+                        if LdrpShutdownInProgress == 0 {
+                            LdrpCallInitRoutine(
+                                EntryPoint,
+                                (*LdrEntry).DllBase,
+                                DLL_THREAD_DETACH,
+                                core::ptr::null_mut(),
+                            );
+                        }
+                    }) {
+                        DbgPrint(
+                            b"WARNING: Exception 0x%x during LdrpCallInitRoutine(DLL_THREAD_DETACH) for %wZ\n\0"
+                                .as_ptr() as *const i8,
+                            code,
+                            core::ptr::addr_of_mut!((*LdrEntry).BaseDllName),
                         );
                     }
 
@@ -1279,7 +1327,9 @@ pub unsafe extern "system" fn LdrShutdownThread() -> NTSTATUS {
             (*LdrpImageEntry).EntryPointActivationContext,
         );
 
-        LdrpCallTlsInitializers(LdrpImageEntry, DLL_THREAD_DETACH);
+        let _ = ntdll_sys::seh::try_except_all(|| {
+            LdrpCallTlsInitializers(LdrpImageEntry, DLL_THREAD_DETACH)
+        });
 
         RtlDeactivateActivationContextUnsafeFast(core::ptr::addr_of_mut!(ActCtx));
     }
@@ -2999,7 +3049,14 @@ pub unsafe extern "system" fn LdrpInit(
 
         LdrpInLdrInit = 1u8;
 
-        LoaderStatus = LdrpInitializeProcess(Context, SystemArgument1);
+        // An exception escaping process init fails it with that code (as the C)
+        // instead of dying unhandled.
+        LoaderStatus = match ntdll_sys::seh::try_except_all(|| {
+            LdrpInitializeProcess(Context, SystemArgument1)
+        }) {
+            Ok(st) => st,
+            Err(code) => code,
+        };
 
         if NT_SUCCESS(LoaderStatus) && (*Peb).MinimumStackCommit != 0 {
             // UNIMPLEMENTED

@@ -306,19 +306,32 @@ pub fn affinity(rust_path: &Path, twin: &Function) -> usize {
 pub fn same_module(rust_path: &Path, twin: &Function) -> bool {
     const EXCLUDED: &[&str] = &["", "rust", "sys", "src", "lib", "sdk"];
     let mut crate_words = words(&crate_of(rust_path), EXCLUDED);
+    let twin_words = words(&twin.path.to_string_lossy(), EXCLUDED);
     if crate_words.contains("win32k") {
+        // win32ss also holds the user-mode halves, which are their own crates. With
+        // ntuser/draw.c retired, win32k's DrawFrameControl otherwise pairs with
+        // user32's hook wrapper and inherits its __except.
+        if twin_words.contains("user32") || twin_words.contains("gdi32") {
+            return false;
+        }
         crate_words.insert("win32ss".into());
     }
     if crate_words.contains("hal") {
         crate_words.insert("halx86".into());
     }
-    !crate_words.is_disjoint(&words(&twin.path.to_string_lossy(), EXCLUDED))
+    !crate_words.is_disjoint(&twin_words)
 }
 pub fn prefer<'a>(rust_path: &Path, twins: &'a [Function]) -> Vec<&'a Function> {
+    // On an affinity tie the C file named like the Rust file wins before the path
+    // order does: smss-csrss-rust's csrss.rs ties smss.c and csrss.c one word each,
+    // and alphabetical order paired its `_main` with smss.c's.
+    let stem = rust_path.file_stem();
+    let same_stem = |f: &Function| f.path.file_stem() == stem;
     let mut out: Vec<_> = twins.iter().collect();
     out.sort_by(|a, b| {
         affinity(rust_path, b)
             .cmp(&affinity(rust_path, a))
+            .then_with(|| same_stem(b).cmp(&same_stem(a)))
             .then_with(|| a.path.cmp(&b.path))
     });
     out
@@ -491,6 +504,8 @@ mod tests {
         ];
         assert!(!same_module(rust, &twins[0]));
         assert!(same_module(rust, &twins[1]));
+        assert!(!same_module(rust, &function("win32ss/user/user32/windows/draw.c")));
+        assert!(!same_module(rust, &function("win32ss/gdi/gdi32/objects/dc.c")));
         assert!(same_module(
             Path::new("sdk/lib/rust/hal-rust/src/lib.rs"),
             &function("hal/halx86/generic.c")
@@ -502,6 +517,14 @@ mod tests {
         assert_eq!(
             prefer(Path::new("sdk/lib/rust/unknown/src/lib.rs"), &tied)[0].path,
             Path::new("dll/a.c")
+        );
+        let mains = vec![
+            function("base/system/smss/smss.c"),
+            function("subsystems/csr/csrss/csrss.c"),
+        ];
+        assert_eq!(
+            prefer(Path::new("sdk/lib/rust/smss-csrss-rust/src/csrss.rs"), &mains)[0].path,
+            Path::new("subsystems/csr/csrss/csrss.c")
         );
     }
     #[test]
