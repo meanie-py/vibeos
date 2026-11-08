@@ -1042,6 +1042,10 @@ fn launch_windows(
     let receipt = winpath(&c.receipt(kind.key()))?;
     // Publish ownership before ending the launcher. PowerShell can otherwise
     // remain alive waiting for a detached Start-Process child under WSL interop.
+    // File.Replace's backup path is [NullString]::Value, not $null: Windows PowerShell
+    // passes $null to a .NET string parameter as "", which Replace rejects ("The path is
+    // not of a legal form"). That failed every start whose receipt already existed, after
+    // the service had been launched, leaving it running unowned.
     let script = format!(
         r#"$ErrorActionPreference='Stop'
 $p=Start-Process -FilePath {exe} -ArgumentList {args} -WindowStyle Hidden -RedirectStandardOutput {out} -RedirectStandardError {errout} -PassThru
@@ -1053,7 +1057,7 @@ $r=[pscustomobject]@{{pid=[int]$p.Id;started=$t;exe=[string]$w.ExecutablePath;co
 $json=$r | ConvertTo-Json -Compress
 $receipt={receipt}; $temp=$receipt+'.'+$PID+'.tmp'
 [IO.File]::WriteAllText($temp,$json,[Text.UTF8Encoding]::new($false))
-if([IO.File]::Exists($receipt)) {{ [IO.File]::Replace($temp,$receipt,$null) }} else {{ [IO.File]::Move($temp,$receipt) }}
+if([IO.File]::Exists($receipt)) {{ [IO.File]::Replace($temp,$receipt,[NullString]::Value) }} else {{ [IO.File]::Move($temp,$receipt) }}
 [IO.File]::WriteAllText({attempt},$json,[Text.UTF8Encoding]::new($false))
 [Console]::Out.WriteLine($json); [Console]::Out.Flush()
 [Environment]::Exit(0)"#,

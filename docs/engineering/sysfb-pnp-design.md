@@ -1,6 +1,7 @@
 # sysfb as a PnP display driver — design
 
-**Status:** steps 0-2 done (2026-11-07); steps 3-4 partly in (see the plan); step 5 not started.
+**Status:** steps 0-2 and 4 done (2026-11-07). Step 3 is written but blocked on the kernel.
+Step 5 is done on the Pi 5; the Pi 4 is owed and the OptiPlex is blocked (see the plan).
 Proposed 2026-10-11. Owner: unassigned.
 **Scope:** `drivers/video/sysfb` (`sysfb-rust`), its registry wiring, and win32k's display
 enumeration as far as it constrains the driver. This is the work that lets sysfb sit under a
@@ -135,18 +136,46 @@ arm64 virt has only `ramfb`, so its root instance stays the owner.
 A PCI instance releases the display on STOP, SURPRISE_REMOVAL and REMOVE, and it falls back
 to the root instance. With no root instance, Video0 and its device-map value are deleted
 unless handles are still open on it. QUERY_STOP/QUERY_REMOVE fail with `STATUS_DEVICE_BUSY`
-while the owner has the display open. Power IRPs pass down.
+while the owner has the display open. A disabled-then-enabled root instance comes back through
+PnP's AddDevice and START, and takes the display if nobody holds it.
+
+Sleep (step 4) needed the kernel as much as the driver. `NtSetSystemPowerState` used to
+answer a sleep or hibernate request by flushing and returning success, with no device asked.
+Now `PopQuerySleepState` (po-rust) sends every device `IRP_MN_QUERY_POWER` for the state. It
+returns the first refusal, or `STATUS_NOT_IMPLEMENTED` when every device agrees, because
+entering S1-S4 is not implemented.
+
+Windows then sends `SET_POWER(S0)` to cancel. That is deliberately left out. No driver here
+prepares anything on a system query. Meanwhile classpnp marks hot-plug volumes for verify on
+any sleep-action `SET_POWER`, and FASTFAT's verify of such a volume never settles. On a
+hard-disk boot (`smoke --arch amd64-bios`) the cancel wedged the guest in 226K
+`STATUS_VERIFY_REQUIRED` raises.
+
+The first try, which did send it, also exposed ACPI's FDO: it takes any system `SET_POWER`
+as the order to enter that state. ACPI now treats S0 as no transition. The C asked
+`acpi_suspend` for `ACPI_STATE_UNKNOWN`, which powered the guest off.
+
+sysfb refuses S1-S4 with `STATUS_NOT_SUPPORTED` while it owns an open display. It passes
+shutdown (S5) through, because the shutdown path queries every device and ignores the
+answers.
+
+`tools/payloads/sysfbprobe` checks this from the Startup folder (`--payload sysfbprobe`):
+- every sysfb node is started;
+- a PCI one is in the Display class;
+- `\\.\DISPLAY1` is attached;
+- S3 and S4 come back `0xC00000BB`;
+- the screen still round-trips a pixel.
 
 ## Plan
 
 | Step | Change | Proves it |
 |---|---|---|
 | 0 | **Done 2026-11-07.** Bit counts from the pixel masks (`mask_bits`, 8 when the loader gave none); `FrameBufferOffset` added to the base and taken off the size, refused past the resource. | smoke ×3 |
-| 1 | **Done 2026-11-07** (as built above): `display.inf` binds PCI class 03 and the root ID; the root instance is reported by the driver. | install-smoke: Device Manager shows the GPU under Display adapters — *not yet run* |
+| 1 | **Done 2026-11-07** (as built above): `display.inf` binds PCI class 03 and the root ID; the root instance is reported by the driver. | sysfbprobe: the PCI node is started in the Display class, which is what Device Manager groups by |
 | 2 | **Done 2026-11-07.** `AddDevice`/`START_DEVICE` with the BAR ownership check (Memory and MemoryLarge BARs); the Video0 control device with owner hand-off; device-interface registration. | smoke ×3 |
-| 3 | **Partly in:** the hand-off and the open-handle refusal are written but no test drives them. Still owed: a modrun or kmtest that disables the device with no session open, then re-enables it. | that test |
-| 4 | Power: refuse S3/S4 while active. Today power IRPs only pass down. | `powercfg`-equivalent query, plus a kmtest |
-| 5 | Real hardware: Pi 4/5 bench (UEFI firmware, GOP) and an x86 box (the OptiPlex 9020 the ARC-tree comment came from). | screenshots at native resolution, desktop reached |
+| 3 | **Written, not testable yet.** The hand-off, the open-handle refusal and the root re-enable are in the driver. But the kernel cannot remove a device on a user-mode request (`PiControlQueryRemoveDevice` is a stub, as upstream, and re-enable is missing too; roadmap bug registry), so `CM_Query_And_Remove_SubTree`/`CM_Disable_DevNode` fail before sysfb is asked. | once the kernel supports it: sysfbprobe disables the owner (vetoed) and cycles the idle root instance |
+| 4 | **Done 2026-11-07** (as built above). | sysfbprobe: `NtSetSystemPowerState` S3 and S4 return sysfb's refusal; the kernel log names the display as the only refusing device |
+| 5 | **Pi 5 done 2026-11-07:** `pi5 boot` with sysfbprobe staged reached the desktop at the panel's native 1920x1080. The root instance owns the GOP framebuffer, because the Pi's display is not on PCI. The probe passed, with S3/S4 refused by `Root\sysfb\0000` (`/tmp/vibeos-cli/20261107-202858-hEHncJ-pi5-boot-arm64`; serial in the Pi 4 listener's capture `serial-20261107-191650`, which shares the Pico). **Pi 4:** owed, because its gear is on the Pi 5. **OptiPlex:** blocked before sysfb runs. freeldr resets the board right after "boot drivers loaded" and never loads `drvmain.sdb` or hands off; the board reached the desktop 38 times up to 2026-10-20. Not reproduced by `smoke --arch amd64-bios`, which also covers the BIOS VBE case (PCI instance takes the framebuffer over, probe PASS). | screenshots at native resolution, desktop reached |
 
 A rebalance that moves the boot GPU's BAR would leave the framebuffer base stale: the restart
 would fail the ownership check and the display would go back to the root instance at the old
