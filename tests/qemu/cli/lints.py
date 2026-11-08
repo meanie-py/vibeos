@@ -15,7 +15,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import rustlints
+from tools import build_infra_compat
+
+from . import hostlock, rustlints
 from .artifacts import Run, Stage
 
 BASELINE_DIR = "tools/lint-baseline"
@@ -1775,6 +1777,74 @@ def lint_jobs() -> int:
     return n
 
 
+def _configure_stale(repo: Path, build: Path) -> str | None:
+    """Why `build`'s build.ninja describes a previous configure, or None (ninja.rs)."""
+    return build_infra_compat.call("ninja_configure_stale", {"build": build}, root=repo)
+
+
+def _newer_count(why: str) -> str:
+    m = re.search(r"older than (\d+)", why)
+    return m.group(1) if m else "some"
+
+
+def refresh_stale_configures(run: Run, repo: Path) -> bool:
+    """Regenerate any of this tree's build.ninja that predates its cmake inputs, before a
+    scanner reads it. False when one could not be refreshed.
+
+    After a master merge that touched a CMakeLists.txt, every scanner that reads a build dir
+    (clib_recipes_fresh, the cell and media manifests) refuses the stale configure, and they
+    used to do it one by one: 143 identical FATALs over minutes, then a SCANNER_ERROR whose
+    fix was a command every lane had to remember. That is the same regeneration any build
+    runs first, so check runs it now -- once per dir, named in its own stage.
+
+    Never against a build: the dir's lock is tried WITHOUT waiting. A build that holds it is
+    reconfiguring that dir itself (the gate's early scanners run beside its builds), so the
+    dir is left to it."""
+    ok = True
+    for manifest in sorted(repo.glob("build-*/build.ninja")):
+        build = manifest.parent
+        if _configure_stale(repo, build) is None:
+            continue
+        fd = hostlock.acquire_build_dir(build, timeout=0, arch=build.name[len("build-") :])
+        if fd is None:
+            run.add(
+                Stage(f"reconfigure:{build.name}", status="ok", detail="a build owns it; skipped")
+            )
+            continue
+        try:
+            # A build may have finished reconfiguring it while we looked.
+            why = _configure_stale(repo, build)
+            if why is None:
+                continue
+            name = f"reconfigure:{build.name}"
+            cp = run.run(
+                ["bash", str(repo / "tools/canon-run.sh"), "ninja", "build.ninja"],
+                cwd=build,
+                env=dict(os.environ),
+                stage=name,
+            )
+            after = _configure_stale(repo, build)
+        finally:
+            hostlock.release(fd)
+        fresh = cp.returncode == 0 and after is None
+        ok &= fresh
+        out = (cp.stdout or "") + (cp.stderr or "")
+        run.add(
+            Stage(
+                name,
+                exit=cp.returncode,
+                status="ok" if fresh else "fail",
+                detail=f"refreshed ({_newer_count(why)} cmake inputs were newer)"
+                if fresh
+                else "still stale after regeneration",
+                salient=[]
+                if fresh
+                else [after or "", *[ln for ln in out.splitlines() if ln.strip()][-4:]],
+            )
+        )
+    return ok
+
+
 def run_source_lints(
     run: Run,
     repo: Path,
@@ -1795,6 +1865,10 @@ def run_source_lints(
     SCANNER_ERROR classification — stays serial and in `specs` order, so the
     artifact is byte-identical to the serial run and a scanner cannot win a race
     to set the verdict."""
+    if not refresh_stale_configures(run, repo):
+        # Every build-dir reader would refuse the same stale configure; say it once.
+        run.classification = "SCANNER_ERROR"
+        return
     specs = source_lint_specs(repo)
     if only is not None:
         unknown = only - {name for name, _, _ in specs}

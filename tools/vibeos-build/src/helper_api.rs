@@ -102,6 +102,14 @@ pub fn dispatch(root: &Path, request: &Value) -> Result<Value> {
             ninja::delete(&build, &plan)?;
             Ok(json!(plan.victims))
         }
+        // Why `build`'s build.ninja describes a previous configure, or null when it is current.
+        "ninja_configure_stale" => {
+            let build = path(root, string(arg(args, kw, 0, "build")?, "build")?);
+            Ok(match ninja::require_configured(&build, root) {
+                Ok(()) => Value::Null,
+                Err(e) => json!(e.to_string()),
+            })
+        }
         "ninja_parse_edges" => Ok(edge_value(&ninja::parse_edges(&path(
             root,
             string(arg(args, kw, 0, "manifest")?, "manifest")?,
