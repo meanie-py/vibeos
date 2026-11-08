@@ -3524,15 +3524,17 @@ _C_OFFSETOF_CALL = re.compile(
 )
 
 
+def _offset_of_macro(m: re.Match) -> str:
+    ty = m.group(1) or m.group(2)
+    path = "".join(m.group(3).split())
+    return f"core::mem::offset_of!({ty}, {path})"
+
+
 def _c_offsetof_calls(state: dict) -> int:
     n = 0
     for path in sorted(_stem_sources(state)):
         text = path.read_text()
-        new, k = _C_OFFSETOF_CALL.subn(
-            lambda m: "core::mem::offset_of!(%s, %s)"
-            % (m.group(1) or m.group(2), "".join(m.group(3).split())),
-            text,
-        )
+        new, k = _C_OFFSETOF_CALL.subn(_offset_of_macro, text)
         if k:
             path.write_text(new)
             n += k
