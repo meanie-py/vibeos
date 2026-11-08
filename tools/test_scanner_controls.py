@@ -644,6 +644,34 @@ pub fn deliberate(x: u32) -> bool {
 }
 """
 
+# scan_flag_word_raw_hex. Seeded from win32k DC_vPrepareDCsForBlit (2026-11-08): the C tests
+# DIRTY_TEXT (0x4); the translation recalled 0x8 (DIRTY_BACKGROUND), so a DC with a dirty
+# background re-realized its text brush on every blit and SetPixel painted black.
+_FLAG_WORD_HEX_BAD = """\
+pub unsafe fn prepare(pdc: PDC) {
+    if (*(*pdc).pdcattr).ulDirty_ & (0x00000020 | 0x00000002) != 0 {
+        DC_vUpdateFillBrush(pdc);
+    }
+    if (*(*pdc).pdcattr).ulDirty_ & 0x00000008 != 0 {
+        DC_vUpdateTextBrush(pdc);
+    }
+}
+"""
+
+# The GOOD fixture keeps a hex literal NEAR the flag word (a comparison after the mask,
+# and an unrelated `flags` field), so a scanner flagging any hex on the line fails it.
+_FLAG_WORD_HEX_GOOD = """\
+pub unsafe fn prepare(pdc: PDC, w: PWND, obj: *mut OBJ) {
+    if (*(*pdc).pdcattr).ulDirty_ & (DIRTY_FILL | DC_BRUSH_DIRTY) != 0 {
+        DC_vUpdateFillBrush(pdc);
+    }
+    if (*w).style & WS_CHILD != 0 && (*w).cx == 0x10 {
+        (*w).state2 &= !WNDS2_SMALLICONFROMWMQUERYDRAG;
+    }
+    let low = (*obj).flags & 0xff;
+}
+"""
+
 _ASSERT_UB_BAD = """\
 pub unsafe fn paged_thing() {
     // PAGED_CODE() — a DBG-only diagnostic, lowered to UB (§9.120).
@@ -3300,6 +3328,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BITWISE_NOT_BAD},
         good={"good.rs": _BITWISE_NOT_GOOD},
+    ),
+    Control(
+        name="scan_flag_word_raw_hex",
+        script="tools/scan_flag_word_raw_hex.py",
+        argv=["--lint"],
+        bad={"bad.rs": _FLAG_WORD_HEX_BAD},
+        good={"good.rs": _FLAG_WORD_HEX_GOOD},
     ),
     Control(
         name="scan_hkey_zero_extend",
