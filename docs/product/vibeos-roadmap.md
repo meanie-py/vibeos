@@ -645,6 +645,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   messages move from a paged lookaside list to nonpaged pool (they embed a KEVENT), and a
   receiver that exits no longer frees a message its callback sender is still dispatching.
 
+- **i386: 0x1E with EIP in no module during CD-ROM arrival (open, seen once 2026-11-08,
+  upstream-sync lane; owner unassigned, storage).** `BUGCHECK 0x1E (0xc0000005, 0x00210292, ...)`
+  with Ebp=8, right after `[MNTMGR] arrival` of the QEMU DVD-ROM and a scsiport "unknown ioctl
+  0x560038"; the stack words that are code point into `cdrom.sys` (+0x75A78, +0x16575) and
+  ntoskrnl+0x2F18D4. Early boot, before any user-mode process, on a k32winetest payload boot
+  (`/tmp/vibeos-cli/20261108-152013-CUO16H-smoke-i386/payload/i386-uefi_serial.log`); the
+  identical media booted clean straight after. A jump through a garbage pointer (EIP 0x210292,
+  Ebp 8), so a corrupt completion routine or dispatch pointer in the cdrom/classpnp path is the
+  first thing to look at. Not investigated.
+
 - **amd64: magenta L-shaped block over the "My Computer" icon (open, every UEFI amd64 gate
   since at least 2026-11-07 00:22, the oldest kept).** It is identical in every amd64 gate
   screenshot (1984 magenta sampled pixels at the top left), and i386 and arm64 never show it.
