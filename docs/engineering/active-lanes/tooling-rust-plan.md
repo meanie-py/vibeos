@@ -119,8 +119,16 @@ Progress (`lint-rs`):
   The `land_lock` family serves only the held `land`/`queue` train. The Python
   CPU/boot lease acquisition API is called only by tests: `vibeos-test/admission.rs`
   already holds that lease protocol natively and `host-jobs` owns CPU admission.
-  Port vs retire for the train is being settled with the integrator. Keep the lease
-  file protocol unchanged either way.
+  Settled with the integrator (2026-11-07): port only the live hostlock surface.
+  `land.py`, `queue.py` and the `land_lock` family stay in Python. The integrator's
+  `land --direct --cold --skip-lint` is the only path that pushes master, and it uses
+  just `land_lock`, `land_holder`/`land_queue` and the queue hold-file reader. The
+  rest of the train (submit/conductor/INCONCLUSIVE) is dead while it is held.
+  Retiring the train is the user's / control-plane's decision. If it is retired,
+  `--direct` collapses to merge+gate+push, so porting it first would be wasted
+  work. `land --direct` must keep working at every intermediate commit, and any
+  change touching it lands in a batch of its own. Keep the lease file protocol
+  unchanged.
 
 ### 3. Remaining diagnostic and measurement workflows
 
