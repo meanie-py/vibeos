@@ -160,15 +160,26 @@ and stages for all 21 invocations, and a real run passed 26/26.
 `stress` decisions done (`vibeos-test/src/stress.rs`: the profile matrix, the
 per-profile summary and the diagnosis). No mismatches across 400 random matrices.
 The boots and host-core pinning stay with the smoke facade until item 4.
-Next, `gdbengine`/`debugcmd`. The engine builds its own detached gdbstub QEMU from
-the legacy Python `tests/qemu/vm.py`. Port it onto native `vm.rs` rather than add a
-second launcher. `vm.rs` already emits `-gdb`/`-S` on both backends; what a debug run
-needs is (1) an ownerless guardian mode (`detached` with `owner_pid = 0`), bounded
-only by the lifetime deadline and an explicit descriptor `stop`, which `debug stop`
-writes, so the confirmed Windows-side kill, staging cleanup, `vibeos-cli kill` and
-the reaper all still apply; and (2) serial to a staged file, because the TCP
-dial-back cannot outlive the launching CLI call. Validate on a live
-`debug start` / `inspect` / `run-until` / `stop` cycle on each arch.
+`winref` decisions done (`vibeos-test/src/winref.rs`): the reference VM's QEMU line,
+the reading of its COM1 protocol (payload, install and maintenance verdicts), the
+reference column graded on the native conformance parsers (including the banked
+baseline's text), and the 7-Zip/qemu-img disk arithmetic. Parity against HEAD's
+Python: 102 `--regrade` pairs from 17 real kmtest/apitest sweep logs, with and without
+a guest floor, `--write-baseline` and `--only`; the three real `winref run` consoles
+plus edge cases through `run`/`maint`/`install`; 200 launch lines; 5000 helper inputs.
+Zero mismatches. The VM itself (console socket, QMP, the power-off watch, qemu-img,
+7-Zip, snapshots) stays in the facade until item 4. The live check found a bug in the
+OLD code as well: Windows turned the runner's shutdown into a restart, and the runner ran
+the payload again (every output line twice, 15 min). One-shot boots (`run`, `apitest`,
+`maint`) now pass `-no-reboot`; install and kmtest keep their reboots.
+`gdb start` done: it boots the smoke VM through native `vm.rs` (no second launcher)
+and hands it to the calling session with `detach_for_debug`. The lock records the
+session as owner and `gdb start` as source, so the guardian, `vibeos-cli kill` and the
+reaper all apply. Serial goes to a staged file (`VmConfig.serial_file`), because the
+TCP dial-back cannot outlive the launching CLI call. `gdb inspect` relocates from the
+`[KRNLBASE]` the kernel printed, instead of an unhinted scan that took 60 s on a
+booted guest. Verified live on all three arches (start, wait-for `shell ready`,
+inspect regs/lm/bt, stop). `debugcmd`'s remainder stays with item 4.
 
 Acceptance: compare actual outputs with the old implementation and exercise the
 external debugger/VM boundary when relevant; native fixture tests alone do not

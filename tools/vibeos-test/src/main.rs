@@ -158,6 +158,7 @@ impl Host for Runtime<'_> {
             op if op.starts_with("diagnostics_") => vibeos_test::diagnostics::dispatch(&request),
             op if op.starts_with("difftest_") => vibeos_test::difftest::dispatch(&request),
             op if op.starts_with("stress_") => vibeos_test::stress::dispatch(&request),
+            op if op.starts_with("winref_") => vibeos_test::winref::dispatch(&request),
             op if op.starts_with("rr_cli_") => vibeos_test::rr_cli::dispatch(&request, self),
             "payload_download"
             | "payload_print"

@@ -31,6 +31,7 @@ pub mod stress;
 pub mod verdict;
 pub mod vm;
 pub mod wine_failures;
+pub mod winref;
 
 pub mod bench;
 pub mod bench_boot;
