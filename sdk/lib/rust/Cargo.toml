@@ -1,5 +1,10 @@
 [workspace]
 members = [
+    "genincdata-cargo",
+    "mbedtls-cargo",
+    "libxslt-cargo",
+    "libpng-cargo",
+    "libjpeg-cargo",
     "wlansvc-cargo",
     "telnetd-cargo",
     "tcpsvcs-cargo",

@@ -594,6 +594,9 @@ pub struct Linker {
     /// cportlib) — drops the `ninja <lib>` prerequisite.
     /// (archive-basename, source rel-paths). See `c_from_compile_db`.
     c_db_libs: Vec<(String, Vec<String>)>,
+    /// c_db lib names linked whole (`-Wl,--whole-archive`): the module's own objects,
+    /// which cmake puts on the link line as objects. See `whole_c_objects`.
+    whole_c_db: Vec<String>,
     /// c_db lib names whose source list includes the 3 gendib-GENERATED DIB
     /// tables (`dib{8,16,32}gen.c`). In a cmake build they exist under
     /// `build-<arch>/` (replay handles them via the generated-source fallback);
@@ -676,6 +679,7 @@ impl Linker {
             keep_all_sections: false,
             asm_archives: Vec::new(),
             c_db_libs: Vec::new(),
+            whole_c_db: Vec::new(),
             gendib_libs: Vec::new(),
             import_libs: Vec::new(),
             force_undefined: Vec::new(),
@@ -771,7 +775,7 @@ impl Linker {
             for (name, sources) in &self.c_db_libs {
                 let rels: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
                 let lib_a = self.replay_c_archive(name, &rels, &entries, ar);
-                link_arg!(self, "{}", lib_a.display());
+                self.emit_c_db_archive(name, &lib_a);
             }
             } // end else (cmake build configured → compile_commands.json replay)
         }
@@ -1230,6 +1234,27 @@ impl Linker {
             sources.iter().map(|s| s.to_string()).collect(),
         ));
         self
+    }
+
+    /// Link a `c_from_compile_db` lib whole, as the objects cmake links rather than an
+    /// archive the link pulls members from. The difference shows when an object nothing
+    /// references carries `-export:` directives (a `__declspec(dllexport)` the .def does
+    /// not list): cmake's link exports it and an archive never loads it. libjpeg's
+    /// `jpeg_mem_src`/`jpeg_stdio_src` (jdatasrc.c) are exported that way. Chainable.
+    pub fn whole_c_objects(mut self, c_db_name: &str) -> Self {
+        self.whole_c_db.push(c_db_name.to_string());
+        self
+    }
+
+    /// One c_db archive on the link line, whole when `whole_c_objects` asked for it.
+    fn emit_c_db_archive(&self, name: &str, lib_a: &Path) {
+        if self.whole_c_db.iter().any(|n| n == name) {
+            link_arg!(self, "-Wl,--whole-archive");
+            link_arg!(self, "{}", lib_a.display());
+            link_arg!(self, "-Wl,--no-whole-archive");
+        } else {
+            link_arg!(self, "{}", lib_a.display());
+        }
     }
 
     /// Mark a `c_from_compile_db` lib whose source list includes the 3 gendib
@@ -3050,7 +3075,7 @@ impl Linker {
                 self.stage_gendib();
             }
             let lib_a = self.compile_recipe_part(name, Some(sources), ar);
-            link_arg!(self, "{}", lib_a.display());
+            self.emit_c_db_archive(name, &lib_a);
         }
     }
 

@@ -9,7 +9,6 @@ filebrowser: linked by cmake, not a cargo cell
 fusion: linked by cmake, not a cargo cell
 fusion_1_1: linked by cmake, not a cargo cell
 fusion_2_0: linked by cmake, not a cargo cell
-genincdata: linked by cmake, not a cargo cell
 glu32: linked by cmake, not a cargo cell
 imaadp32.acm: linked by cmake, not a cargo cell
 installfreeldr: linked by cmake, not a cargo cell
@@ -17,13 +16,9 @@ kernel32_vista: linked by cmake, not a cargo cell
 l3codeca.acm: linked by cmake, not a cargo cell
 lautus.msstyles: linked by cmake, not a cargo cell
 lfbbvid: linked by cmake, not a cargo cell
-libjpeg: linked by cmake, not a cargo cell
-libpng: linked by cmake, not a cargo cell
 libtiff: linked by cmake, not a cargo cell
 libtirpc: linked by cmake, not a cargo cell
-libxslt: linked by cmake, not a cargo cell
 lunar.msstyles: linked by cmake, not a cargo cell
-mbedtls: linked by cmake, not a cargo cell
 mizu.msstyles: linked by cmake, not a cargo cell
 modern.msstyles: linked by cmake, not a cargo cell
 msacm32.drv: linked by cmake, not a cargo cell

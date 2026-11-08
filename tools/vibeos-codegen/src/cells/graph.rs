@@ -141,6 +141,7 @@ pub fn link_edge(root: &Path, arch: &str, target: &str) -> Result<Link> {
         inputs,
         libs,
         require_defined,
+        os_versioned: flags.contains("--major-os-version"),
     })
 }
 type Missing = Vec<(&'static str, String)>;
@@ -1916,7 +1917,10 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             // taken, so the cell exported a spec this configuration does not build. Keep the
             // one this build's spec2def command reads.
             let cap = if caps.len() > 1 {
-                let ninja = read(&local(root, &root.join(format!("build-{primary}/build.ninja")))?)?;
+                let ninja = read(&local(
+                    root,
+                    &root.join(format!("build-{primary}/build.ninja")),
+                )?)?;
                 let used: Vec<_> = caps
                     .iter()
                     .filter(|c| {
@@ -2052,10 +2056,13 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     // (its panic handler, which calls DbgPrint and NtTerminateProcess, and i386's
     // rsbegin/rsend) stays out of the link, so a module with no code gains no `.text`
     // and one importing no ntdll (comcat, msxml3r, wmi) still links. --convert's
-    // pe_equiv check against cmake's link is the guard.
-    if bodyless && cell.c_shims.is_empty() && cell.arch_shims.values().all(Vec::is_empty) {
+    // pe_equiv check against cmake's link is the guard. A body-less module of C alone
+    // (libjpeg, genincdata) is the same: cmake linked its objects and no shell, and
+    // genincdata, importing nothing, cannot even resolve the shell's DbgPrint.
+    if bodyless {
         cell.shell_less = true;
     }
+    cell.no_module_type = links.values().all(|l| !l.os_versioned);
     // A Rust body cmake linked under -Wl,--whole-archive (cdrom) brings every member of
     // its staticlib, core and its panic handler included: rustc's bin would define all of
     // them a second time (537 duplicates, which link-guard refuses). cmake's link had no
@@ -2204,7 +2211,10 @@ pub fn target_file_refs(root: &Path) -> Result<BTreeMap<String, Vec<String>>> {
             .collect();
         for cap in pattern.captures_iter(&text) {
             let at = cap.get(0).unwrap().start();
-            if own.iter().any(|(s, e, t)| (*s..*e).contains(&at) && *t == cap[1]) {
+            if own
+                .iter()
+                .any(|(s, e, t)| (*s..*e).contains(&at) && *t == cap[1])
+            {
                 continue;
             }
             let files = out.entry(cap[1].to_owned()).or_default();
