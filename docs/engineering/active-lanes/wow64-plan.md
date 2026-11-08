@@ -18,6 +18,33 @@ backlog. Registry redirection was the third item here until E24 landed it. See
 **What is deliberately not built**.
 
 Owner: `wow64-amd64` lane.
+
+**RESUME HERE (parked 2026-11-08, fleet wind-down).** The open work is FEX's code cache for
+x64 guests: `wow64-x64-guest-design.md` item 7 has the state, the measurements, and the
+bug it stopped on. Cached processes die on an all-zero user context.
+
+The code is committed on branch `wow64-amd64`, after the last landed sha, and is not landed.
+It touches:
+- `vendor/fex` CodeCache, Config, ImageTracker and FEXOfflineCompiler;
+- `tools/fex/wowx64fex`;
+- `qemu/mkramdisk.sh`;
+- appstorm;
+- a `[UEXC-STKBAD]` PC/LR print in `ke/arm64/stubs.rs`.
+
+It is off unless the tripwire sets `FEX_ENABLECODECACHINGWIP=1`.
+
+Next step: find who resumes the thread from a zero CONTEXT. Repro:
+`APPSTORM_ONLY="notepad,calc,winmine" bash tools/payloads/appstorm/build.sh amd64`, then
+`VIBEOS_FEX=1 VIBEOS_PAYLOAD=appstorm64 ./vibeos-cli build --arch arm64`, then
+`smoke --payload appstorm64 --tripwire "FEX_ENABLECODECACHINGWIP=1 FEX_ENABLELAZYCODECACHINGWIP=1"`.
+Rebuild the default appstorm before any full run.
+
+Also owed:
+- the Pi 4 TSO A/B (design doc item 5);
+- the libwow64fex (x86) cache loader;
+- the apc32 `[UEXC-STKOVERFLOW]` seen in every appstorm64 run today (not cache-related,
+  uninvestigated);
+- the amd64-bios hang in the roadmap registry.
 Predecessor: `fex-bringup-plan.md` (rungs 0–3; this doc was its rung 4+).
 
 ## Ground rules
