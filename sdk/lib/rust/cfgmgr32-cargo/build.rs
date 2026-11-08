@@ -56,6 +56,9 @@ fn main() {
         // cargo home; `engine:` ones reactos-link builds.
         .link_order(link_order)
         .msvcrtex_crt(MsvcrtexKind::Dll)
+        // No code of its own: link nothing from rustc's bin (its panic
+        // handler, i386's rsbegin/rsend), so the PE is cmake's.
+        .shell_less()
         .link(ModuleKind::Win32Dll {
             entry: entry.into(),
             image_base,

@@ -10,10 +10,8 @@ import hashlib
 import io
 import json
 import os
-import re
 import shutil
 import socket
-import struct
 import subprocess
 import threading
 import time
@@ -1908,36 +1906,35 @@ def test_Run_finalize_still_writes_its_ledger_row(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("failure", [None, "timeout", "missing"])
-def test_command_timings_survive_failures(monkeypatch, failure):
+def test_command_timings_survive_failures(monkeypatch, tmp_path, failure):
+    import sys
+
     from . import artifacts
 
-    ticks = iter([10.0, 12.0, 15.5, 16.0])
-    monkeypatch.setattr(artifacts.time, "monotonic", lambda: next(ticks))
-
-    def execute(*args, **kwargs):
-        if failure == "timeout":
-            raise subprocess.TimeoutExpired(["fixture"], 1)
-        if failure == "missing":
-            raise FileNotFoundError("fixture")
-        return subprocess.CompletedProcess(["fixture"], 0, "", "")
-
-    monkeypatch.setattr(artifacts.subprocess, "run", execute)
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    command = (
+        [str(tmp_path / "missing-command")]
+        if failure == "missing"
+        else [
+            sys.executable,
+            "-c",
+            "import time; time.sleep(10)" if failure == "timeout" else "print('witness')",
+        ]
+    )
     run = Run("build", "amd64", ts=1700000000)
-    cp = run.run(["fixture"], stage="ninja", timeout=1)
+    cp = run.run(command, stage="ninja", timeout=0.1 if failure == "timeout" else 10)
     run.finalize()
-    expected = {
-        "stage": "ninja",
-        "start_seconds": 2.0,
-        "seconds": 3.5,
-        "exit": {None: 0, "timeout": 124, "missing": 127}[failure],
-        "timed_out": failure == "timeout",
-    }
     summary = json.loads((run.dir / "summary.json").read_text())
-    assert summary["command_timings"] == [expected]
+    timing = summary["command_timings"][0]
+    assert timing["stage"] == "ninja" and timing["start_seconds"] >= 0
+    assert timing["seconds"] > 0
+    assert timing["exit"] == {None: 0, "timeout": 124, "missing": 127}[failure]
+    assert timing["timed_out"] == (failure == "timeout")
     journal = json.loads(run.commands_log.read_text())
-    assert all(journal[key] == value for key, value in expected.items())
-    assert cp.returncode == expected["exit"]
-    assert cp.timed_out == expected["timed_out"]
+    assert all(journal[key] == value for key, value in timing.items())
+    assert cp.returncode == timing["exit"] and cp.timed_out == timing["timed_out"]
+    if failure is None:
+        assert "witness" in run.full_log.read_text()
 
 
 def test_rust_source_closure_tracks_shared_dependencies(tmp_path):
@@ -2504,133 +2501,7 @@ def test_gdbengine_run_until_builds_break_and_then(monkeypatch):
     assert out == "BREAKPOINT HIT"
 
 
-# --- prune: idle-worktree GC eligibility gates -----------------------------
-from . import prune  # noqa: E402
-
-
-def _classify(
-    wt,
-    current,
-    *,
-    live_qemu=None,
-    active_build=None,
-    allow_self=False,
-    min_age_hours=0.0,
-    now=1000.0,
-    newest_mtime=None,
-):
-    return prune.classify(
-        Path(wt),
-        current=Path(current),
-        live_qemu=live_qemu or set(),
-        active_build=active_build or set(),
-        allow_self=allow_self,
-        min_age_hours=min_age_hours,
-        now=now,
-        newest_mtime=newest_mtime,
-    )
-
-
-def test_prune_gates_current_live_and_build():
-    # current worktree is protected unless --self
-    assert _classify("/wt/a", "/wt/a") == "current worktree (use --self)"
-    assert _classify("/wt/a", "/wt/a", allow_self=True) is None
-    # live QEMU and in-flight build are hard skips
-    assert _classify("/wt/b", "/wt/a", live_qemu={Path("/wt/b")}) == "live QEMU running"
-    assert _classify("/wt/b", "/wt/a", active_build={Path("/wt/b")}) == "build in flight"
-    # otherwise prunable
-    assert _classify("/wt/b", "/wt/a") is None
-
-
-def test_prune_idle_hours_filter():
-    now = 100_000.0
-    # touched 1h ago, threshold 24h -> held
-    assert (
-        _classify("/wt/b", "/wt/a", min_age_hours=24, now=now, newest_mtime=now - 3600)
-        == "touched < 24h ago"
-    )
-    # touched 48h ago, threshold 24h -> prunable
-    assert (
-        _classify("/wt/b", "/wt/a", min_age_hours=24, now=now, newest_mtime=now - 48 * 3600) is None
-    )
-    # threshold 0 disables the age gate even with a fresh mtime
-    assert _classify("/wt/b", "/wt/a", min_age_hours=0, now=now, newest_mtime=now) is None
-
-
-def test_prune_attribute_longest_match_wins():
-    wts = [Path("/wt"), Path("/wt/nested")]
-    assert prune._attribute("/wt/nested/build-i386/x.o", wts) == Path("/wt/nested")
-    assert prune._attribute("/wt/build-i386/x.o", wts) == Path("/wt")
-    assert prune._attribute("/elsewhere/x", wts) is None
-
-
 # --- repro: PE parser + reproducibility compare (det-plan rung 0) ----------
-
-
-def _mk_pe(timestamp: int, sections: list[tuple[str, bytes]], machine: int = 0x8664) -> bytes:
-    """Build a minimal valid PE image (COFF header + section table + bodies, no optional
-    header) for testing the determinism parser. Mirrors the layout parse_pe reads."""
-    n = len(sections)
-    pe_off = 0x40
-    head = bytearray(b"\x00" * pe_off)
-    head[0:2] = b"MZ"
-    head[0x3C:0x40] = struct.pack("<I", pe_off)
-    # COFF: machine, num_sections, timestamp, ptr_symtab, num_syms, size_opt, characteristics
-    coff = b"PE\x00\x00" + struct.pack("<HHIIIHH", machine, n, timestamp, 0, 0, 0, 0)
-    sec_table_off = pe_off + len(coff)
-    cursor = sec_table_off + 40 * n
-    headers = b""
-    bodies = b""
-    for name, body in sections:
-        nm = name.encode("latin-1")[:8].ljust(8, b"\x00")
-        # virtsize, virtaddr, rawsize, rawoff, then 12 zero bytes + characteristics
-        headers += nm + struct.pack("<IIII", len(body), 0x1000, len(body), cursor)
-        headers += b"\x00" * 12 + struct.pack("<I", 0)
-        bodies += body
-        cursor += len(body)
-    return bytes(head) + coff + headers + bodies
-
-
-def test_repro_parse_pe_fields():
-    img = _mk_pe(0x12345678, [(".text", b"\xc3" * 16), (".data", b"\x00" * 8)])
-    pe = repro.parse_pe(img)
-    assert pe.machine == 0x8664
-    assert pe.timestamp == 0x12345678
-    assert [s.name for s in pe.sections] == [".text", ".data"]
-    assert pe.sections[0].raw_size == 16
-
-
-def test_repro_parse_pe_rejects_non_pe():
-    with pytest.raises(ValueError):
-        repro.parse_pe(b"not a pe at all" * 8)
-
-
-def test_repro_compare_identical():
-    img = _mk_pe(0xCAFEBABE, [(".text", b"\x90" * 32)])
-    rep = repro.compare(img, img)
-    assert rep.identical
-    assert not rep.timestamp_differs
-    assert rep.section_diffs == ()
-
-
-def test_repro_compare_timestamp_only_is_the_leak_signature():
-    # Two builds identical except the PE TimeDateStamp — the measured live leak. The
-    # whole-file digest differs but NO section body does → localizes to the timestamp.
-    a = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".rdata", b"abc")])
-    b = _mk_pe(0x20000000, [(".text", b"\x90" * 32), (".rdata", b"abc")])
-    rep = repro.compare(a, b)
-    assert not rep.identical
-    assert rep.timestamp_differs
-    assert rep.section_diffs == ()
-
-
-def test_repro_compare_localizes_changed_section():
-    a = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".data", b"old")])
-    b = _mk_pe(0x10000000, [(".text", b"\x90" * 32), (".data", b"new")])
-    rep = repro.compare(a, b)
-    assert not rep.identical
-    assert not rep.timestamp_differs
-    assert rep.section_diffs == (".data",)
 
 
 def test_repro_verify_parser_wires_arch_and_dispatch():
@@ -3625,7 +3496,8 @@ def _gate_args(**kw):
         retries=2,
         no_build=True,
         clean=False,
-        no_net=False,
+        no_net=True,
+        no_conformance=True,
         no_lint=True,
         # Real stortest lanes boot QEMU; the stortest-lane tests pass no_stortest=False.
         no_stortest=True,
@@ -4129,11 +4001,38 @@ def test_gate_no_lint_skips_lint_phase(tmp_path, monkeypatch):
     monkeypatch.setattr(gate_mod, "_lint_once", lambda *a, **k: called.append(1))
     monkeypatch.setattr(gate_mod, "_tooling_once", lambda *a, **k: tooled.append(1))
     monkeypatch.setattr(gate_mod, "_difftest_once", lambda *a, **k: diffed.append(1))
+    stamped = []
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: stamped.append(1))
     rc = gate_mod.gate(_gate_args(no_lint=True), tmp_path)
     assert rc == 0
     assert not called, "--no-lint must not invoke the lint subprocess"
     assert not tooled, "--no-lint must not invoke check-tooling either"
     assert not diffed, "--no-lint must not invoke the difftests either"
+
+    assert not stamped, "a gate without static checks must not mint a push credential"
+
+
+def test_requested_conformance_without_payload_cannot_become_a_green_gate(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(
+        gate_mod,
+        "_smoke_once",
+        lambda *a: pytest.fail("booted after requested provisioning failed"),
+    )
+    assert gate_mod.gate(_gate_args(arches="i386", no_conformance=False), tmp_path) == 1
+    summary = json.loads(next((tmp_path / "runs").glob("*/summary.json")).read_text())
+    assert summary["verdict"] == "FAIL" and summary["classification"] == "CONFORMANCE_UNAVAILABLE"
+    assert summary["classification"] in q_mod.INCONCLUSIVE
+    assert any(s["name"] == "conformance" and s["status"] == "fail" for s in summary["stages"])
+
+
+def test_requested_network_suite_without_implementation_fails_loudly(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(gate_mod, "_smoke_once", _fake_smoke({"amd64": ["OK"]}))
+    assert gate_mod.gate(_gate_args(arches="amd64", no_net=False), tmp_path) == 1
+    summary = json.loads(next((tmp_path / "runs").glob("*/summary.json")).read_text())
+    assert summary["matrix"]["net"]["classification"] == "NET_UNAVAILABLE"
+    assert summary["classification"] in q_mod.INCONCLUSIVE
 
 
 # --- check --update-baseline: per-tool scoping (T2 item 1b) -----------------
@@ -4250,7 +4149,6 @@ def test_source_lints_run_concurrently_but_report_in_spec_order(tmp_path, monkey
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
     monkeypatch.setattr(Run, "run", fake_run)
-    monkeypatch.setattr(lints, "_baseline", lambda repo, name: [])
     run = Run("check", "amd64")
     lints.run_source_lints(run, tmp_path, strict=True)
 
@@ -4283,7 +4181,8 @@ def test_plain_check_fails_on_a_new_finding(tmp_path, monkeypatch, strict):
     exit 0, and the lane then learned about it from `land`."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "runs")
     monkeypatch.setattr(lints, "source_lint_specs", lambda repo: [("scanA", ["scanA"], "stdout")])
-    monkeypatch.setattr(lints, "_baseline", lambda *a: {"a.rs:1: old"})
+    (tmp_path / lints.BASELINE_DIR).mkdir(parents=True)
+    (tmp_path / lints.BASELINE_DIR / "scanA.txt").write_text("a.rs:1: old\n")
     monkeypatch.setattr(
         Run,
         "run",
@@ -4312,7 +4211,6 @@ def test_plain_check_still_only_warns_on_a_missing_tool(tmp_path, monkeypatch):
 def test_build_check_new_findings_stay_advisory(tmp_path, monkeypatch):
     """`build --check` keeps the old contract: new_fail defaults to strict (False)."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "runs")
-    monkeypatch.setattr(lints, "_baseline", lambda *a: set())
     run = Run("build", "amd64")
     monkeypatch.setattr(
         run, "run", lambda *a, **k: subprocess.CompletedProcess([], 1, "b.rs:2: new\n", "")
@@ -4435,16 +4333,18 @@ def test_gate_child_requests_explicit_strict_partition(tmp_path, monkeypatch, ar
         calls.append(cmd)
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", execute)
+    monkeypatch.setattr(gate_mod, "_execute", execute)
     if arch in ("source-early", "source-deferred"):
-        monkeypatch.setattr(
-            gate_mod,
-            "_read_summary",
-            lambda root: {
-                "checked_source_checks": [
-                    s[0] for s in lints.source_partition_specs(tmp_path, arch)
-                ]
-            },
+        child = tmp_path / "logs" / "fixture"
+        child.mkdir(parents=True)
+        (child / "summary.json").write_text(
+            json.dumps(
+                {
+                    "checked_source_checks": [
+                        s[0] for s in lints.source_partition_specs(tmp_path, arch)
+                    ]
+                }
+            )
         )
     assert gate_mod._lint_once(tmp_path, arch, tmp_path / "logs")["ok"]
     suffix = [arch] if arch.startswith("source") else ["arch", "--arch", arch]
@@ -4482,11 +4382,11 @@ def test_source_partition_checks_executed_inventory(tmp_path, monkeypatch, scope
 @pytest.mark.parametrize("inventory", [None, [], ["wrong"], ["scan_octal_literals"]])
 def test_gate_rejects_missing_or_partial_source_inventory(tmp_path, monkeypatch, inventory):
     monkeypatch.setattr(
-        gate_mod.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], 0, "", "")
+        gate_mod, "_execute", lambda *a, **k: subprocess.CompletedProcess([], 0, "", "")
     )
-    monkeypatch.setattr(
-        gate_mod, "_read_summary", lambda root: {"checked_source_checks": inventory}
-    )
+    child = tmp_path / "logs" / "fixture"
+    child.mkdir(parents=True)
+    (child / "summary.json").write_text(json.dumps({"checked_source_checks": inventory}))
     assert not gate_mod._lint_once(tmp_path, "source-early", tmp_path / "logs")["ok"]
 
 
@@ -4691,30 +4591,6 @@ def test_ninja_jobs_caps_and_reserves(monkeypatch, tmp_path):
 
 
 # --- lints: summary/tally lines are not findings (merge-magnet fix) ---------
-
-
-def test_finding_lines_excludes_count_summaries():
-    out = "\n".join(
-        [
-            "Spec catalog: 1571 exports",
-            "Bindgen catalog: 2921 functions",
-            "  C_MACRO: 94",
-            "  FLEX_ARRAY: 66",
-            "  TOTAL: 160 issues across 2348 files",
-            "SUMMARY: HIGH=0  MEDIUM=0  LOW(likely-FP)=10  shown=0",
-            "  -> MISMATCH             : 0",
-            "  matched to a C array    : 25",
-            "  [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: real finding",
-            "      - ARITY: rust 0 params vs C 5",  # detail line: KEPT (real content)
-        ]
-    )
-    got = lints._finding_lines(out)
-    assert "  [C_MACRO] sdk/lib/rust/cc-rust/src/cacheman.rs:38: real finding" in got
-    assert "      - ARITY: rust 0 params vs C 5" in got
-    assert len(got) == 2  # every count-bearing tally line dropped
-
-
-# --- build: isolation preflight — in-tree cargo hardlinks are benign ---------
 
 
 def _mk_cargo_tree(repo, nlinks_extra, escape_dir=None):
@@ -4926,7 +4802,7 @@ def test_rostests_already_on_and_asked_is_a_no_op(monkeypatch, tmp_path):
     assert cmds == [], "already ON and requested should not reconfigure"
 
 
-def test_rostests_flag_is_wired_from_the_real_parser_to_the_cmake_option():
+def test_rostests_flag_is_wired_from_the_real_parser_to_the_cmake_option(tmp_path, monkeypatch):
     # Guard the WIRING, not just the mechanism. build.py reads the arg through
     # getattr(args, "rostests", False), which silently yields False for a name
     # that does not exist -- so a rename on either side disables the flag with
@@ -4938,10 +4814,23 @@ def test_rostests_flag_is_wired_from_the_real_parser_to_the_cmake_option():
     plain = build_parser().parse_args(["build", "--arch", "i386"])
     assert bool(getattr(plain, "rostests", False)) is False
 
-    src = (Path(__file__).parent / "build.py").read_text()
-    assert '"ENABLE_ROSTESTS": bool(getattr(args, "rostests", False))' in src, (
-        "build.py no longer maps the parsed --rostests arg onto ENABLE_ROSTESTS"
-    )
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(artifacts, "ledger_append", lambda *a, **k: None)
+    monkeypatch.setattr(build_mod.warmth, "worktree_tree", lambda _: None)
+    monkeypatch.setattr(build_mod, "_isolation_preflight", lambda *a: True)
+    values = []
+
+    def canonize(*_args, **kwargs):
+        values.append(_args[4]["ENABLE_ROSTESTS"])
+        return None
+
+    monkeypatch.setattr(build_mod, "_maybe_canonize", canonize)
+    for options in (args, plain):
+        run = Run("build", "i386")
+        assert build_mod._build_locked(options, tmp_path, run, "i386", None, tmp_path, False) == 0
+    assert values == [True, False]
 
 
 # --- conformance verb (quest M4) -------------------------------------------
@@ -5630,21 +5519,25 @@ def test_gate_failed_build_skips_that_arch_but_others_still_smoke(tmp_path, monk
     assert any(k.startswith("amd64:") for k in fake.calls), fake.calls
 
 
-def test_gate_refuses_to_stamp_a_tree_it_did_not_gate(tmp_path, monkeypatch, tiny_repo):
+@pytest.mark.parametrize("gated_tree", ["0" * 40, ""])
+def test_gate_refuses_to_stamp_a_tree_it_did_not_gate(tmp_path, monkeypatch, tiny_repo, gated_tree):
     """The stamp is a claim about what was VALIDATED. It used to read HEAD's tree at stamp
     time, so a commit landed during a 20-minute gate got a credential for content nothing
     had built or booted."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(True))
     monkeypatch.setattr(
         gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
     )
 
     def moved_tree(repo):
         # gate start reports one tree; the repo's real HEAD tree is a different one
-        return ("0" * 40, False)
+        return (gated_tree, False)
 
     monkeypatch.setattr(gate_mod, "_tree_state", moved_tree)
-    rc = gate_mod.gate(_gate_args(no_net=True), tiny_repo)
+    rc = gate_mod.gate(_gate_args(no_net=True, no_lint=False), tiny_repo)
     assert rc == 0, "the gate itself is still green"
     stamps = list((tiny_repo / ".git" / "vibeos-gate-stamps").glob("*.json"))
     assert stamps == [], "stamped a tree the gate never validated"
@@ -5653,10 +5546,13 @@ def test_gate_refuses_to_stamp_a_tree_it_did_not_gate(tmp_path, monkeypatch, tin
 def test_gate_stamps_the_tree_it_gated(tmp_path, monkeypatch, tiny_repo):
     """The must-pass half: an unchanged clean checkout still mints the credential."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(True))
     monkeypatch.setattr(
         gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
     )
-    rc = gate_mod.gate(_gate_args(no_net=True), tiny_repo)
+    rc = gate_mod.gate(_gate_args(no_net=True, no_lint=False), tiny_repo)
     assert rc == 0
     tree = subprocess.run(
         ["git", "rev-parse", "HEAD^{tree}"], cwd=tiny_repo, capture_output=True, text=True
@@ -5667,182 +5563,20 @@ def test_gate_stamps_the_tree_it_gated(tmp_path, monkeypatch, tiny_repo):
 def test_gate_refuses_to_stamp_when_dirty_at_start(tmp_path, monkeypatch, tiny_repo):
     """Gating a dirty tree validates content no commit hashes to — certify nothing."""
     monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_tooling_once", _tooling_once_stub(True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(True))
     monkeypatch.setattr(
         gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
     )
     real = gate_mod._tree_state(tiny_repo)
     monkeypatch.setattr(gate_mod, "_tree_state", lambda repo: (real[0], True))
-    gate_mod.gate(_gate_args(no_net=True), tiny_repo)
+    gate_mod.gate(_gate_args(no_net=True, no_lint=False), tiny_repo)
     assert not list((tiny_repo / ".git" / "vibeos-gate-stamps").glob("*.json"))
 
 
-# --- lint baseline: line DRIFT is not a new finding, but a new OCCURRENCE is --
-
-
-def test_lint_baseline_ignores_pure_line_drift():
-    """Inserting a comment above a baselined finding moved it 90→93 and turned the gate RED
-    with '1 new' (2026-07-25). Nothing an author can do about that except re-bless the
-    baseline — which launders whatever else drifted in the same pass."""
-    base = {"qemu/lib/common.sh:90:17: warning: SLOT_INDEX appears unused. [SC2034]"}
-    cur = {"qemu/lib/common.sh:93:17: warning: SLOT_INDEX appears unused. [SC2034]"}
-    assert lints._new_findings(cur, base) == []
-
-
-def test_lint_baseline_still_flags_a_new_occurrence_of_a_baselined_message():
-    """The multiset half: the SAME message twice where the baseline recorded it once is a
-    genuinely new site and must stay red. A plain set-of-keys diff would mask it."""
-    base = {"a.sh:10:1: warning: X unused. [SC2034]"}
-    cur = {
-        "a.sh:12:1: warning: X unused. [SC2034]",
-        "a.sh:40:1: warning: X unused. [SC2034]",
-    }
-    new = lints._new_findings(cur, base)
-    assert len(new) == 1, new
-
-
-def test_lint_baseline_still_flags_a_new_file_and_a_new_message():
-    base = {"a.sh:10:1: warning: X unused. [SC2034]"}
-    assert lints._new_findings({"b.sh:10:1: warning: X unused. [SC2034]"}, base) != []
-    assert lints._new_findings({"a.sh:10:1: warning: Y unused. [SC2034]"}, base) != []
-
-
-def test_lint_baseline_ignores_drift_in_lint_kernels_embedded_line_number():
-    """lint_kernel carries the line number INSIDE the message, so the `file:line:` stripper
-    above never applied to it and it kept drifting (2026-07-25: adding 4-line banners to 12
-    files reported 35 "new" findings that were the same 35 sites). The scanner prints a file
-    header, then indented `L <n> Fn(): ...` lines."""
-    base = {"    L 309 RtlpCheckDeviceName(): *NameInvalid = ..."}
-    cur = {"    L 313 RtlpCheckDeviceName(): *NameInvalid = ..."}
-    assert lints._new_findings(cur, base) == []
-
-
-def test_lint_baseline_still_flags_an_extra_embedded_line_occurrence():
-    """The multiset half again — drift immunity must not swallow a genuinely new site."""
-    base = {"    L 309 RtlpCheckDeviceName(): *NameInvalid = ..."}
-    cur = {
-        "    L 313 RtlpCheckDeviceName(): *NameInvalid = ...",
-        "    L 480 RtlpCheckDeviceName(): *NameInvalid = ...",
-    }
-    assert len(lints._new_findings(cur, base)) == 1
-    # ...and a different function at a drifted line is still new.
-    assert lints._new_findings({"    L 313 RtlpOther(): *NameInvalid = ..."}, base) != []
-
-
-def test_lint_baseline_ignores_drift_behind_a_leading_class_tag():
-    """verify_ffi and scan_magic_offsets print `[TAG] path:line: msg`. _LOCATION is
-    start-anchored, so it never saw the path and 205 baseline lines were silently NOT
-    drift-immune — a one-line comment added to fastfat's extern block moved an unrelated
-    finding 177 -> 178 and the merge queue rejected the whole batch (2026-07-25)."""
-    base = {"  [C_MACRO] a/b.rs:177: IoGetCurrentIrpStackLocation: is a C macro"}
-    cur = {"  [C_MACRO] a/b.rs:178: IoGetCurrentIrpStackLocation: is a C macro"}
-    assert lints._new_findings(cur, base) == []
-    # The tag is part of the identity: same site, different class, is a NEW finding.
-    other_class = {"  [FLEX_ARRAY] a/b.rs:177: IoGetCurrentIrpStackLocation: is a C macro"}
-    assert lints._new_findings(other_class, base) != []
-    # ...and the multiset half still holds.
-    extra = {"  [C_MACRO] a/b.rs:900: IoGetCurrentIrpStackLocation: is a C macro"}
-    assert len(lints._new_findings(cur | extra, base)) == 1
-
-
-def test_lint_baseline_ignores_drift_in_a_trailing_parenthesized_location():
-    """verify_signatures puts the location last: `[MEDIUM] NtSetLdtEntries  (path:210)`."""
-    base = {"[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:210)"}
-    drifted = {"[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:255)"}
-    assert lints._new_findings(drifted, base) == []
-    assert lints._new_findings({"[MEDIUM] NtOther  (sdk/lib/rust/x/stubs.rs:210)"}, base) != []
-    reclassified = {"[HIGH] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:210)"}
-    assert lints._new_findings(reclassified, base) != []
-
-
-def test_lint_baseline_ignores_verify_signatures_coverage_tallies():
-    """verify_signatures prints two header tallies and a '── coverage ──' block of counters.
-    They were baselined as if they were findings, so adding ONE #[no_mangle] fn moved
-    'exported Rust fns', 'exported fns checked' and 'no C proto (internal)' by one each and
-    the merge queue rejected the batch as LINT_FAIL "3 new" (2026-07-31) — for a commit whose
-    only sin was exporting a new function, which is what a translation lane does all day."""
-
-    def keys(text: str) -> set[str]:
-        return {lints._finding_key(ln) for ln in lints._finding_lines(text)}
-
-    before = """\
-  C prototypes: 5034 FunctionDecls, 4536 typedefs
-  exported Rust fns: 3359 (deduped twins)
-
-── coverage ──
-  exported fns checked : 3359
-  matched to a C proto : 2238
-  no C proto (internal): 1121
-  signature OK         : 2229
-  mismatches           : 9  (3 shown, 6 LOW-suppressed)
-"""
-    after = before.replace("3359", "3360").replace("1121", "1122")
-    assert lints._new_findings(keys(after), keys(before)) == []
-    # Every COUNT-BEARING line must be filtered, not merely the three that moved — the
-    # others (matched to a C proto, signature OK, mismatches) drift the moment anyone
-    # fixes or adds a signature, and would bounce that lane instead. The static
-    # '── coverage ──' banner may stay: it carries no number, so it never drifts.
-    assert keys(before) == {"── coverage ──"}
-
-
-def test_lint_baseline_still_flags_a_real_verify_signatures_mismatch():
-    """The other half: the tally filter must not swallow the per-site blocks underneath it.
-    A filter broad enough to catch any '<label>: <number>' would have — which is why
-    _SUMMARY_LINE enumerates verify_signatures' labels instead of generalising."""
-    finding = """\
-[HIGH] KiThreadStartup  (sdk/lib/rust/x/thrdini.rs:98)
-    rust: fn KiThreadStartup() -> ()
-    C   : void KiThreadStartup(PKSYSTEM_ROUTINE, PKSTART_ROUTINE, PVOID, BOOLEAN, KTRAP_FRAME)
-      - ARITY: rust 0 params vs C 5
-      - param#2 u32 vs ULONG_PTR(unsigned long long): width 4 vs 8 [MEDIUM]
-"""
-    kept = {lints._finding_key(ln) for ln in lints._finding_lines(finding)}
-    assert len(kept) == 5, kept
-    assert lints._new_findings(kept, set()) != []
-
-
-def test_every_baseline_line_is_immune_to_line_drift():
-    """The GUARD over the three fixes above. Each was found the same way — a lane's unrelated
-    edit shifted a line, the gate went red, and someone had to re-bless a baseline (which
-    launders whatever else drifted in the same pass). The failure is invisible at authorship
-    time: a new scanner with a novel output shape looks fine until it costs another lane a
-    gate. So assert the PROPERTY directly over every baseline we actually ship — perturbing a
-    finding's line number must never change its key. A scanner whose format this cannot parse
-    fails check-tooling here, where its author is standing, instead of a stranger's merge."""
-    # A location we are confident is a location: a real source extension, then digits.
-    loc = re.compile(r"(?P<f>[\w./+-]+\.(?:rs|c|h|py|md|txt|cmake|spec|toml|sh)):(?P<n>\d+)")
-    baselines = sorted((_conf_repo_root() / "tools" / "lint-baseline").glob("*.txt"))
-    assert baselines, "no lint baselines found — wrong REPO root?"
-    blind: list[str] = []
-    for path in baselines:
-        for line in path.read_text().splitlines():
-            # EVERY location, one at a time: perturbing only the first let the embedded
-            # twin list of scan_dropped_asserts drift unseen behind its stripped prefix.
-            for m in loc.finditer(line):
-                n = str(int(m.group("n")) + 1000)
-                drifted = line[: m.start("n")] + n + line[m.end("n") :]
-                if lints._finding_key(line) != lints._finding_key(drifted):
-                    blind.append(f"{path.name}: {line[:110]}")
-                    break
-    assert not blind, (
-        f"{len(blind)} baseline finding(s) carry a line number that _finding_key does not "
-        f"strip, so any edit above them reads as NEW:\n  " + "\n  ".join(blind[:10])
-    )
-
-
-def test_lint_baseline_ignores_drift_in_locations_inside_the_message():
-    """scan_dropped_asserts: `h:1033: MI_UPDATE_VALID_PTE: … (a/section.rs:252, b.rs:1454)`."""
-    base = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:252, r/s.rs:14)"}
-    drifted = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:258, r/s.rs:14)"}
-    assert lints._new_findings(drifted, base) == []
-    moved = {"x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/other.rs:252, r/s.rs:14)"}
-    assert lints._new_findings(moved, base) != []
-
-
-def test_lint_baseline_compares_prefixless_findings_verbatim():
-    """Tools that don't emit `file:line:` (verify_* MISMATCH lines) keep exact matching."""
-    base = {"MISMATCH: NtFoo stdcall vs cdecl"}
-    assert lints._new_findings({"MISMATCH: NtFoo stdcall vs cdecl"}, base) == []
-    assert lints._new_findings({"MISMATCH: NtBar stdcall vs cdecl"}, base) != []
+# --- lint baseline identity (line drift, multiset, tallies): native contract tests in
+# tools/vibeos-lint/src/verdict.rs, including the drift guard over every shipped baseline.
 
 
 # --- the merge queue: submit / batch / split-attribution / reject channel ---
@@ -6892,38 +6626,6 @@ def test_an_enqueued_lane_is_not_reported_as_abandoned(lane_repo, tmp_path, monk
     attempt.write_text(json.dumps(rec))
     q_mod.submit(lane, tip=head)
     assert q_mod.abandoned_attempts(lane) == [], "a queued lane is not an abandoned submit"
-
-
-def test_prune_never_reclaims_the_integration_tree(tmp_path):
-    """It is idle between batches — exactly prune's target shape — but its warm caches are
-    what make a batch gate in minutes, and EVERY landing in the fleet would pay for a cold
-    one."""
-    wt = tmp_path / q_mod.INTEGRATION_DIRNAME
-    reason = prune.classify(
-        wt,
-        current=tmp_path / "other",
-        live_qemu=set(),
-        active_build=set(),
-        allow_self=False,
-        min_age_hours=0,
-        now=0.0,
-        newest_mtime=None,
-    )
-    assert reason and "integration" in reason
-    # ...but --self from inside it still allows a deliberate reclaim
-    assert (
-        prune.classify(
-            wt,
-            current=wt,
-            live_qemu=set(),
-            active_build=set(),
-            allow_self=True,
-            min_age_hours=0,
-            now=0.0,
-            newest_mtime=None,
-        )
-        is None
-    )
 
 
 def _safe_git(monkeypatch):
@@ -8123,7 +7825,7 @@ def test_smoke_stage_that_dies_before_a_verdict_keeps_its_evidence(tmp_path, mon
         stdout = "staleness: refusing to boot\n"
         stderr = "fatal: media older than the tree\n"
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(gate_mod, "_execute", lambda *a, **k: _Proc())
     root = tmp_path / "smoke-arm64-a1"
     r = gate_mod._smoke_once(tmp_path, "arm64", root, [])
 
@@ -8145,7 +7847,7 @@ def test_smoke_stage_with_a_real_verdict_is_untouched(tmp_path, monkeypatch):
         stdout = "boot failed\n"
         stderr = ""
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(gate_mod, "_execute", lambda *a, **k: _Proc())
     root = tmp_path / "smoke-amd64-a1"
     (root / "20260101-000000-smoke-amd64").mkdir(parents=True)
     (root / "20260101-000000-smoke-amd64" / "summary.json").write_text(
@@ -8174,7 +7876,7 @@ def test_tooling_and_difftest_keep_their_console_and_never_report_a_bare_exit(
         stdout = "ruff: 3 errors\nsomething went wrong\n"
         stderr = "Traceback (most recent call last):\nAssertionError: boom\n"
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _Proc())
+    monkeypatch.setattr(gate_mod, "_execute", lambda *a, **k: _Proc())
 
     for fn, logname in (
         (gate_mod._tooling_once, "check-tooling-console.log"),
@@ -9003,12 +8705,12 @@ def test_conformance_lane_is_retryable_so_one_bistable_cannot_reject_a_batch():
     assert "CONFORMANCE_FLAKE" not in gate_mod.RETRYABLE, "the label names a cause nobody proved"
 
 
-def test_conformance_lane_skips_loudly_when_the_arch_has_no_floor(tmp_path):
+def test_conformance_lane_refuses_when_the_arch_has_no_floor(tmp_path):
     """No baseline means nothing to ratchet against. It must SKIP, not silently
     pass — a stage that cannot fail must not read as one that held."""
     r = gate_mod._conformance_once(tmp_path, "i386", tmp_path / "conf")
-    assert r["verdict"] == "SKIP"
-    assert r["ok"] is True
+    assert r["verdict"] == "FAIL"
+    assert r["ok"] is False and r["classification"] == "CONFORMANCE_NO_BASELINE"
     assert "no baseline" in r["salient"]
 
 
@@ -9028,7 +8730,7 @@ def test_conformance_lane_reports_the_failing_identities_not_the_whole_table(tmp
         )
         stderr = ""
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", lambda *a, **k: _CP())
+    monkeypatch.setattr(gate_mod, "_execute", lambda *a, **k: _CP())
     r = gate_mod._conformance_once(tmp_path, "amd64", tmp_path / "conf")
     assert r["ok"] is False
     assert r["classification"] == "CONFORMANCE_RED"
@@ -9049,11 +8751,12 @@ def _fake_pytest(monkeypatch, rc: int, out: str = "", verdict: dict | None = Non
 
     def run(cmd, **kw):
         seen["cmd"], seen["env"] = cmd, kw["env"]
+        seen["timeout"] = kw.get("timeout")
         if verdict is not None:
             Path(kw["env"]["VIBEOS_STORTEST_RESULT"]).write_text(json.dumps(verdict))
         return _CP()
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", run)
+    monkeypatch.setattr(gate_mod, "_execute", run)
     return seen
 
 
@@ -9065,6 +8768,8 @@ def test_stortest_lane_boots_the_gates_media_with_the_stick(tmp_path, monkeypatc
     assert seen["cmd"][seen["cmd"].index("--arch") + 1] == "i386-uefi"
     # Never a rebuild: the gate just built these media and the test checks staleness.
     assert "--skip-clean-build" in seen["cmd"]
+    assert "--timeout=0" in seen["cmd"]
+    assert seen["timeout"] == gate_mod.STORTEST_TIMEOUT_S
 
 
 def test_stortest_lane_names_the_failure_and_does_not_retry_a_wrong_answer(tmp_path, monkeypatch):
@@ -9155,7 +8860,7 @@ def test_kmtest_payload_is_built_when_missing_not_assumed_present(tmp_path, monk
         (sh / f"kmtest-sweep-{cmd[2]}.exe").write_text("x")
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", _fake_run)
+    monkeypatch.setattr(gate_mod, "_execute", _fake_run)
     ok, why = gate_mod._ensure_kmtest_payload(tmp_path, ["i386", "amd64"])
     assert ok and why == ""
     assert [c[2] for c in calls] == ["i386", "amd64"], "must build each missing arch"
@@ -9181,7 +8886,7 @@ def test_kmtest_payload_already_present_runs_nothing(tmp_path, monkeypatch):
     def _boom(*a, **k):
         raise AssertionError("must not shell out when the payload is already there")
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", _boom)
+    monkeypatch.setattr(gate_mod, "_execute", _boom)
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["arm64"]) == (True, "")
 
 
@@ -9207,7 +8912,7 @@ def test_kmtest_payload_older_than_sweep_c_is_rebuilt(tmp_path, monkeypatch):
         exe.write_text("new")
         return subprocess.CompletedProcess(cmd, 0, "", "")
 
-    monkeypatch.setattr(gate_mod.subprocess, "run", _fake_run)
+    monkeypatch.setattr(gate_mod, "_execute", _fake_run)
     assert gate_mod._ensure_kmtest_payload(tmp_path, ["i386"]) == (True, "")
     assert [c[2] for c in calls] == ["i386"], "a stale exe must be rebuilt"
 
@@ -9443,20 +9148,17 @@ def test_a_red_run_actually_reaches_the_preserve_path(tmp_path, monkeypatch):
 
     monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
     monkeypatch.setattr(artifacts, "FARM_DIR", tmp_path / "farm")
-    seen = {}
-
-    def spy(run_dir, arch, classification, repo):
-        seen["called"] = (arch, classification)
-        return str(tmp_path / "farm" / "fails" / "auto" / "x")
-
-    monkeypatch.setattr(artifacts, "preserve_failure", spy)
-
     run = artifacts.Run("smoke", "arm64")
+    (run.dir / "arm64_serial.log").write_bytes(b"ntkrnlmp.exe\nBUGCHECK 0x1E\n")
     run.verdict = "FAIL"
     run.classification = "BUGCHECK 0x1E"
     run.finalize(None)
-    assert seen.get("called") == ("arm64", "BUGCHECK 0x1E"), "a red boot bypassed preservation"
-    assert json.loads((run.dir / "summary.json").read_text())["preserved"]
+    summary = json.loads((run.dir / "summary.json").read_text())
+    kept = Path(summary["preserved"])
+    assert (kept / "arm64_serial.log").read_bytes() == b"ntkrnlmp.exe\nBUGCHECK 0x1E\n"
+    manifest = json.loads((kept / "manifest.json").read_text())
+    assert manifest["classification"] == "BUGCHECK 0x1E" and manifest["mp_kernel"]
+    assert json.loads((kept / "summary.json").read_text())["verdict"] == "FAIL"
 
 
 def test_a_green_run_preserves_nothing(tmp_path, monkeypatch):
@@ -10054,11 +9756,35 @@ def test_fatal_scanner_diagnostic_cannot_be_baselined(tmp_path, monkeypatch):
     cp = subprocess.CompletedProcess(
         ["scanner"], 1, "header already baselined\n", "FATAL: missing generated headers\n"
     )
-    monkeypatch.setattr(lints, "_baseline", lambda *_: {"header already baselined"})
+    (tmp_path / lints.BASELINE_DIR).mkdir(parents=True)
+    (tmp_path / lints.BASELINE_DIR / "scanner.txt").write_text("header already baselined\n")
     run = Run("check", "all")
     stage = lints._lint_stage(run, tmp_path, "scanner", ["scanner"], strict=True, cp=cp)
     assert stage.status == "fail"
     assert run.classification == "SCANNER_ERROR"
+
+
+def test_prune_parses_including_its_self_flag():
+    """`prune --self` has dest "self"; building the Namespace with **kwargs collided with
+    __init__'s own parameter, so every `prune` invocation crashed in parse_args."""
+    from .__main__ import build_parser
+
+    parser = build_parser()
+    assert parser.parse_args(["prune"]).self is False
+    assert parser.parse_args(["prune", "--self", "--apply"]).self is True
+    assert parser.parse_args(["prune", "--trim"]).trim is True
+
+
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "Infinity"])
+def test_a_non_finite_float_flag_is_refused_not_dropped(value):
+    """JSON has no inf/nan, so the native grammar's answer arrived as null: `--retain-gib inf`
+    parsed as "no retention budget" and the dry run planned to prune everything eligible."""
+    from .__main__ import build_parser
+
+    parser = build_parser()
+    assert parser.parse_args(["prune", "--retain-gib", "100.5"]).retain_gib == 100.5
+    with pytest.raises(SystemExit):
+        parser.parse_args(["prune", "--retain-gib", value])
 
 
 def test_build_source_lint_is_opt_in():
@@ -11731,7 +11457,7 @@ def test_a_build_starts_the_dedup_pass_only_where_the_service_exists(tmp_path, m
             raise subprocess.CalledProcessError(1, argv)
         return subprocess.CompletedProcess(argv, 0)
 
-    monkeypatch.setattr(build_mod.subprocess, "run", run)
+    monkeypatch.setattr(build_mod, "_execute", run)
     monkeypatch.setattr(build_mod, "DEDUP_UNIT", tmp_path / "absent.service")
     fail = False
     assert build_mod.kick_dedup().status == "skip" and not calls
@@ -11809,7 +11535,7 @@ def test_command_exit_124_is_distinct_from_an_owned_timeout(tmp_path, monkeypatc
     assert [row["timed_out"] for row in run.command_timings] == [False, True]
 
 
-def test_winetests_flag_is_wired_from_the_real_parser_to_the_cmake_value():
+def test_winetests_flag_is_wired_from_the_real_parser_to_the_cmake_value(tmp_path, monkeypatch):
     # --winetests rides the string-instr path. A rename on either side would make
     # getattr() return "" and the build would silently compile no suite, so parse with
     # the REAL parser and pin the mapping in build.py.
@@ -11821,8 +11547,23 @@ def test_winetests_flag_is_wired_from_the_real_parser_to_the_cmake_value():
     assert getattr(args, "winetests", "") == "kernel32  user32"
     plain = build_parser().parse_args(["build", "--arch", "arm64"])
     assert getattr(plain, "winetests", "") == ""
-    src = (Path(__file__).parent / "build.py").read_text()
-    assert '"ROSTESTS_WINETESTS": " ".join((getattr(args, "winetests", "") or "").split())' in src
+    from . import artifacts
+
+    monkeypatch.setattr(artifacts, "ARTIFACT_ROOT", tmp_path / "runs")
+    monkeypatch.setattr(artifacts, "ledger_append", lambda *a, **k: None)
+    monkeypatch.setattr(build_mod.warmth, "worktree_tree", lambda _: None)
+    monkeypatch.setattr(build_mod, "_isolation_preflight", lambda *a: True)
+    values = []
+
+    def canonize(*_args, **kwargs):
+        values.append(kwargs["instr_values"]["ROSTESTS_WINETESTS"])
+        return None
+
+    monkeypatch.setattr(build_mod, "_maybe_canonize", canonize)
+    for options in (args, plain):
+        run = Run("build", "arm64")
+        assert build_mod._build_locked(options, tmp_path, run, "arm64", None, tmp_path, False) == 0
+    assert values == ["kernel32 user32", ""]
 
 
 def test_winetests_value_reaches_cmake_and_clears_on_a_plain_build(monkeypatch, tmp_path):
@@ -11835,3 +11576,49 @@ def test_winetests_value_reaches_cmake_and_clears_on_a_plain_build(monkeypatch, 
     cmds, run, repo, bd = _canonize_probe(monkeypatch, tmp_path, cache=cached, canonical=True)
     build_mod._maybe_canonize(run, repo, bd, "arm64", {}, instr_values={"ROSTESTS_WINETESTS": ""})
     assert any("-DROSTESTS_WINETESTS=" in c for c in cmds), cmds
+
+
+def test_gate_retry_surfaces_a_new_nonretryable_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    fake = _fake_smoke({"arm64": ["KNOWN_FLAKE", "BUGCHECK", "OK"]})
+    monkeypatch.setattr(gate_mod, "_smoke_once", fake)
+    assert gate_mod.gate(_gate_args(arches="arm64", retries=2), tmp_path) == 1
+    assert len(fake.calls) == 2, fake.calls
+    summaries = list(tmp_path.glob("*-gate-*/summary.json"))
+    assert len(summaries) == 1
+    summary = json.loads(summaries[0].read_text())
+    assert "BUGCHECK" in json.dumps(summary)
+    assert "smoke-arm64-r1" in json.dumps(summary)
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_boot_failure_preserves_its_primary_exception_when_snapshot_fails(monkeypatch, closed):
+    from tests.qemu.vm import QemuVM
+
+    class PrimaryTimeout(BaseException):
+        pass
+
+    primary = PrimaryTimeout("original fixture timeout")
+
+    class Serial:
+        @property
+        def _buf(self):
+            if closed:
+                raise ConnectionError("diagnostic session already closed")
+            return "partial serial evidence"
+
+    vm = object.__new__(QemuVM)
+    vm._boot_output = "previously captured evidence"
+    monkeypatch.setattr(vm, "serial", Serial(), raising=False)
+
+    def wait(operation):
+        assert operation == "wait_for_boot"
+        raise primary
+
+    monkeypatch.setattr(vm, "_call", wait)
+    with pytest.raises(PrimaryTimeout) as caught:
+        vm.wait_for_boot()
+    assert caught.value is primary
+    assert vm._boot_output == (
+        "previously captured evidence" if closed else "partial serial evidence"
+    )

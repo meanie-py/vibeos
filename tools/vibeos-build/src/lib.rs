@@ -1,4 +1,4 @@
-//! Native build mechanisms. The CLI and broker retain scheduling and reporting ownership.
+//! Native build mechanisms, CLI composition and reporting; host-jobs owns admission.
 use std::{
     fmt,
     path::{Path, PathBuf},
@@ -145,6 +145,11 @@ pub mod media_stage;
 pub mod cargo_orchestrate;
 
 pub mod build_policy;
+pub mod diskspace;
+pub mod prune;
+pub mod repro;
+pub mod trim;
+pub mod warmth;
 
 pub mod build_bench;
 
@@ -168,7 +173,8 @@ mod index_copy_tests {
         let mut c = Command::new("git");
         c.current_dir(dir).args(args);
         c.env("GIT_AUTHOR_NAME", "t").env("GIT_AUTHOR_EMAIL", "t@t");
-        c.env("GIT_COMMITTER_NAME", "t").env("GIT_COMMITTER_EMAIL", "t@t");
+        c.env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@t");
         if let Some(i) = index {
             c.env("GIT_INDEX_FILE", i);
         }
@@ -197,3 +203,16 @@ mod index_copy_tests {
         assert_eq!(blob, want, "the scratch index kept the pre-edit blob");
     }
 }
+
+pub mod cli_artifacts;
+
+pub mod cli_arguments;
+pub mod tooling_receipts;
+
+pub mod cli_build;
+pub mod cli_build_checks;
+
+pub mod cli_build_helpers;
+pub mod cli_canon;
+
+pub mod cli_build_entry;

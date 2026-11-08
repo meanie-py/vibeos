@@ -488,6 +488,39 @@ def sibling_header_int_macros(source: Path | str) -> dict[str, int]:
     return found
 
 
+_SDK_VERSION_RE = re.compile(r"^(_WIN32_WINNT_|_WIN32_IE_|NTDDI_|WINVER_)\w*$")
+
+
+def sdk_version_int_macros(repo: Path | str) -> dict[str, int]:
+    """sdkddkver.h's version names that are integer literals (`_WIN32_WINNT_VISTA 0x0600`).
+
+    shlwapi's ordinal.c reads `#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)`: the module pins
+    `_WIN32_WINNT=0x502`, but the right-hand side is a header constant nothing pinned, so the
+    arm audit called it undecidable -- and both bodies under it had translated the dead
+    VISTA arm. The names are fixed by the SDK, not by any build; only literal ones are taken.
+    """
+    header = Path(repo) / "sdk" / "include" / "psdk" / "sdkddkver.h"
+    try:
+        text = header.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {}
+    out: dict[str, int] = {}
+    for match in _HEADER_DEFINE_RE.finditer(text):
+        name, literal = match.group(1), match.group(2)
+        if _SDK_VERSION_RE.match(name):
+            out[name] = int(literal, 16) if literal[:2].lower() == "0x" else int(literal)
+    return out
+
+
+_TU_DEFINE_RE = re.compile(r"^[ \t]*#[ \t]*(?:define|undef)[ \t]+([A-Za-z_]\w*)", re.M)
+
+
+def tu_redefined(tu_text: str) -> set[str]:
+    """Names a TU `#define`s or `#undef`s itself: a `-D` pin no longer speaks for them
+    (assoc.c's `#undef _WIN32_WINNT` / `#define _WIN32_WINNT _WIN32_WINNT_VISTA`)."""
+    return set(_TU_DEFINE_RE.findall(tu_text))
+
+
 def conditional_arm_notes(text: str, pinned: dict[str, int] | None = None) -> list[str]:
     """Notes about preprocessor conditionals in a C function body, for the audit.
 

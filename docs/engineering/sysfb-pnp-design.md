@@ -1,6 +1,8 @@
 # sysfb as a PnP display driver — design
 
-**Status:** step 0 done (2026-11-07); steps 1-5 not started (proposed 2026-10-11). Owner: unassigned.
+**Status:** steps 0-2 and 4 done (2026-11-07). Step 3 is written but blocked on the kernel.
+Step 5 is done on the Pi 5; the Pi 4 is owed and the OptiPlex is blocked (see the plan).
+Proposed 2026-10-11. Owner: unassigned.
 **Scope:** `drivers/video/sysfb` (`sysfb-rust`), its registry wiring, and win32k's display
 enumeration as far as it constrains the driver. This is the work that lets sysfb sit under a
 real GPU driver instead of in place of one.
@@ -99,19 +101,86 @@ necessarily started the PCI instance, which is why sysfb is boot-start today (co
   record every handle. Revisit when there is hardware to test it on.
 - Acceleration.
 
+## As built (steps 1-2, 2026-11-07)
+
+Three choices differ from the target design above, each for a reason found in the tree:
+
+- **The root instance is reported, not created by setup.** `DriverEntry` calls
+  `IoReportDetectedDevice` (the HAL's pattern), giving `Root\sysfb\0000` with hardware ID
+  `DETECTEDInternal\sysfb`. A reported device counts as started on the spot, so it claims the
+  display inside `DriverEntry`, exactly where the legacy driver created `\Device\Video0`. That
+  settles the boot-ordering risk below without a kernel event or a service-key flag. The PnP
+  root enumerator skips instances reported on an earlier boot but not this one
+  (`IopShouldProcessDevice`), so they do not pile up on an installed system.
+- **`\Device\Video0` is a control device, not an FDO.** It is created on the first claim and
+  attached to no stack. When the PCI instance starts and proves ownership, only the owner
+  pointer moves, and the display keeps the name win32k gave it (`\\.\DISPLAY1` comes from
+  Video0). A per-instance Video*N* would have renamed the display to DISPLAY2 whenever the
+  PCI instance won. The FDOs are unnamed. Each registers `GUID_DEVINTERFACE_DISPLAY_ADAPTER`,
+  which is enabled only on the current owner. `IOCTL_VIDEO_INIT_WIN32K_CALLBACKS` now reports
+  the owner's PDO, not Video0.
+- **`display.inf` is the INF, not a new `sysfb.inf`.** It still bound `PCI\CC_0300` to the
+  `vga` service and `vgapnp.sys`, both deleted in `bdea86df186`. It now installs sysfb for
+  `PCI\CC_0000/0001/0300/0301/0380` and `DETECTEDInternal\sysfb`. Boot-time binding is the
+  `CriticalDeviceDatabase` (`PCI#CC_0300`, `PCI#CC_0380`) in `hivesys.inf`. The device map
+  still points at `Services\sysfb\Device0`, because setup's `ProcessDisplayRegistry` writes the
+  installed mode there.
+
+Measured on smoke amd64 (`/tmp/vibeos-cli/20261107-113030-3z7c0n3p-smoke-amd64`):
+- root AddDevice and claim at serial line 352;
+- `[CDDB] MATCH PCI#CC_0300`, then the std-vga's START takes over at line 482;
+- `InitVideo()` at line 1136.
+
+arm64 virt has only `ramfb`, so its root instance stays the owner.
+
+A PCI instance releases the display on STOP, SURPRISE_REMOVAL and REMOVE, and it falls back
+to the root instance. With no root instance, Video0 and its device-map value are deleted
+unless handles are still open on it. QUERY_STOP/QUERY_REMOVE fail with `STATUS_DEVICE_BUSY`
+while the owner has the display open. A disabled-then-enabled root instance comes back through
+PnP's AddDevice and START, and takes the display if nobody holds it.
+
+Sleep (step 4) needed the kernel as much as the driver. `NtSetSystemPowerState` used to
+answer a sleep or hibernate request by flushing and returning success, with no device asked.
+Now `PopQuerySleepState` (po-rust) sends every device `IRP_MN_QUERY_POWER` for the state. It
+returns the first refusal, or `STATUS_NOT_IMPLEMENTED` when every device agrees, because
+entering S1-S4 is not implemented.
+
+Windows then sends `SET_POWER(S0)` to cancel. That is deliberately left out. No driver here
+prepares anything on a system query. Meanwhile classpnp marks hot-plug volumes for verify on
+any sleep-action `SET_POWER`, and FASTFAT's verify of such a volume never settles. On a
+hard-disk boot (`smoke --arch amd64-bios`) the cancel wedged the guest in 226K
+`STATUS_VERIFY_REQUIRED` raises.
+
+The first try, which did send it, also exposed ACPI's FDO: it takes any system `SET_POWER`
+as the order to enter that state. ACPI now treats S0 as no transition. The C asked
+`acpi_suspend` for `ACPI_STATE_UNKNOWN`, which powered the guest off.
+
+sysfb refuses S1-S4 with `STATUS_NOT_SUPPORTED` while it owns an open display. It passes
+shutdown (S5) through, because the shutdown path queries every device and ignores the
+answers.
+
+`tools/payloads/sysfbprobe` checks this from the Startup folder (`--payload sysfbprobe`):
+- every sysfb node is started;
+- a PCI one is in the Display class;
+- `\\.\DISPLAY1` is attached;
+- S3 and S4 come back `0xC00000BB`;
+- the screen still round-trips a pixel.
+
 ## Plan
 
 | Step | Change | Proves it |
 |---|---|---|
 | 0 | **Done 2026-11-07.** Bit counts from the pixel masks (`mask_bits`, 8 when the loader gave none); `FrameBufferOffset` added to the base and taken off the size, refused past the resource. | smoke ×3 |
-| 1 | `sysfb.inf` (PCI class match + root ID), and setup creates `ROOT\SYSFB\0000`. Driver still non-PnP; the INF only binds. | install-smoke: Device Manager shows the GPU under Display adapters |
-| 2 | `AddDevice`/`START_DEVICE` with the BAR ownership check; Video*N* allocation; device-interface registration. Root instance arbitration. | smoke ×3 (QEMU std-vga is PCI on i386/amd64; arm64 virt stays on the root path) |
-| 3 | STOP/REMOVE hand-off with the open-handle refusal. | A modrun or kmtest that disables the device with no session open, then re-enables it |
-| 4 | Power: refuse S3/S4 while active. | `powercfg`-equivalent query, plus a kmtest |
-| 5 | Real hardware: Pi 4/5 bench (UEFI firmware, GOP) and an x86 box (the OptiPlex 9020 the ARC-tree comment came from). | screenshots at native resolution, desktop reached |
+| 1 | **Done 2026-11-07** (as built above): `display.inf` binds PCI class 03 and the root ID; the root instance is reported by the driver. | sysfbprobe: the PCI node is started in the Display class, which is what Device Manager groups by |
+| 2 | **Done 2026-11-07.** `AddDevice`/`START_DEVICE` with the BAR ownership check (Memory and MemoryLarge BARs); the Video0 control device with owner hand-off; device-interface registration. | smoke ×3 |
+| 3 | **Written, not testable yet.** The hand-off, the open-handle refusal and the root re-enable are in the driver. But the kernel cannot remove a device on a user-mode request (`PiControlQueryRemoveDevice` is a stub, as upstream, and re-enable is missing too; roadmap bug registry), so `CM_Query_And_Remove_SubTree`/`CM_Disable_DevNode` fail before sysfb is asked. | once the kernel supports it: sysfbprobe disables the owner (vetoed) and cycles the idle root instance |
+| 4 | **Done 2026-11-07** (as built above). | sysfbprobe: `NtSetSystemPowerState` S3 and S4 return sysfb's refusal; the kernel log names the display as the only refusing device |
+| 5 | **Pi 5 done 2026-11-07:** `pi5 boot` with sysfbprobe staged reached the desktop at the panel's native 1920x1080. The root instance owns the GOP framebuffer, because the Pi's display is not on PCI. The probe passed, with S3/S4 refused by `Root\sysfb\0000` (`/tmp/vibeos-cli/20261107-202858-hEHncJ-pi5-boot-arm64`; serial in the Pi 4 listener's capture `serial-20261107-191650`, which shares the Pico). **Pi 4:** owed, because its gear is on the Pi 5. **OptiPlex:** blocked before sysfb runs. freeldr resets the board right after "boot drivers loaded" and never loads `drvmain.sdb` or hands off; the board reached the desktop 38 times up to 2026-10-20. Not reproduced by `smoke --arch amd64-bios`, which also covers the BIOS VBE case (PCI instance takes the framebuffer over, probe PASS). | screenshots at native resolution, desktop reached |
 
-Steps 0–2 are the useful core: after them, a vendor GPU driver can at least be installed
-next to sysfb. Steps 3–4 make the hand-off safe.
+A rebalance that moves the boot GPU's BAR would leave the framebuffer base stale: the restart
+would fail the ownership check and the display would go back to the root instance at the old
+address. PCI keeps a boot device's assignment, so this is not expected to happen, but nothing
+enforces it.
 
 ## Risks
 

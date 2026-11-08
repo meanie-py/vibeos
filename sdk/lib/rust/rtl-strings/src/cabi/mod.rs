@@ -2400,15 +2400,27 @@ pub struct SidAndAttributes {
     pub attributes: u32,
 }
 
+/// The validators' `__try { .. } __except (EXCEPTION_EXECUTE_HANDLER) { return FALSE; }`:
+/// a structure the caller handed in may be unmapped, and that answers "not valid"
+/// rather than faulting the caller. Live in the ntoskrnl/ntdll link only (`seh`); the boot
+/// loader and the host difftest have no SEH trampoline and read unguarded.
+#[cfg(feature = "seh")]
+unsafe fn valid_or_fault<F: FnOnce() -> u8>(f: F) -> u8 {
+    ntkrnl_sys::seh::try_except_all(f).unwrap_or(0)
+}
+#[cfg(not(feature = "seh"))]
+unsafe fn valid_or_fault<F: FnOnce() -> u8>(f: F) -> u8 {
+    f()
+}
+
 /// `BOOLEAN NTAPI RtlValidSid(PSID)`. NULL ⇒ TRUE (genuine `&&`
-/// short-circuits). A bad non-NULL pointer faults (DUMMY_PSEH dead
-/// `_SEH2_EXCEPT`) = genuine UB, never fuzzed.
+/// short-circuits); a bad non-NULL pointer is FALSE.
 #[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlValidSid(sid_: *const u8) -> u8 {
     if sid_.is_null() {
         return sid::valid(0, 0, true) as u8;
     }
-    sid::valid(*sid_, *sid_.add(1), false) as u8
+    valid_or_fault(|| sid::valid(*sid_, *sid_.add(1), false) as u8)
 }
 
 /// `ULONG NTAPI RtlLengthRequiredSid(ULONG SubAuthorityCount)`.
@@ -2685,10 +2697,12 @@ pub unsafe extern "system" fn RtlCreateAcl(acl_: *mut u8, acl_sz: u32, acl_revis
 /// `BOOLEAN NTAPI RtlValidAcl(PACL)`.
 #[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlValidAcl(acl_: *const u8) -> u8 {
-    // Need the header to know AclSize; valid_acl re-checks size>=8.
-    let sz = acl_size(acl_) as usize;
-    let view = core::slice::from_raw_parts(acl_, sz.max(acl::ACL_HDR));
-    acl::valid_acl(&view[..sz.min(view.len())]) as u8
+    valid_or_fault(|| {
+        // Need the header to know AclSize; valid_acl re-checks size>=8.
+        let sz = acl_size(acl_) as usize;
+        let view = core::slice::from_raw_parts(acl_, sz.max(acl::ACL_HDR));
+        acl::valid_acl(&view[..sz.min(view.len())]) as u8
+    })
 }
 
 /// `BOOLEAN NTAPI RtlFirstFreeAce(PACL, PACE *FirstFreeAce)`.
@@ -3781,13 +3795,14 @@ pub unsafe extern "system" fn RtlSetAttributesSecurityDescriptor(
 /// `BOOLEAN NTAPI RtlValidSecurityDescriptor(PSD)`.
 ///
 /// Verbatim port: rev check + RtlValidSid(owner/group if present) +
-/// RtlValidAcl(dacl/sacl if present). The C wraps the whole body in
-/// `_SEH2_TRY` / `_SEH2_EXCEPT(EXECUTE_HANDLER)`; under DUMMY_PSEH the
-/// handler is dead, so this faithful port matches both the live and
-/// the dead halves of the original (only valid-ish inputs are tested
-/// by the diff harness).
+/// RtlValidAcl(dacl/sacl if present), the whole body under the C's
+/// catch-all (`valid_or_fault`): an unreadable descriptor is FALSE.
 #[cfg_attr(not(feature = "bldr"), no_mangle)]
 pub unsafe extern "system" fn RtlValidSecurityDescriptor(sd_p: *const SECURITY_DESCRIPTOR) -> u8 {
+    valid_or_fault(|| valid_sd_body(sd_p))
+}
+
+unsafe fn valid_sd_body(sd_p: *const SECURITY_DESCRIPTOR) -> u8 {
     if (*sd_p).Revision as u32 != sd_::SECURITY_DESCRIPTOR_REVISION {
         return 0;
     }

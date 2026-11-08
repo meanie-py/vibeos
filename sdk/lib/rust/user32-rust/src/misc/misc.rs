@@ -322,6 +322,9 @@ unsafe fn ValidateHandle_impl(handle: HANDLE, mut uType: UINT) -> PVOID {
     } else if uType == TYPE_CALLPROC {
         // CallWindowProcA/W CALL the pfnClientPrevious read out of this.
         ret = crate::wow64::desktop_cpd_to_user((*pEntry).ptr) as PVOID;
+    } else if uType == TYPE_MENU {
+        // menu.rs walks the MENU and its ITEM array client-side.
+        ret = crate::wow64::desktop_menu_to_user((*pEntry).ptr) as PVOID;
     } else {
         ret = DesktopPtrToUser((*pEntry).ptr);
     }
@@ -364,6 +367,9 @@ unsafe fn ValidateHandleNoErr_impl(handle: HANDLE, mut uType: UINT) -> PVOID {
     } else if uType == TYPE_CALLPROC {
         // CallWindowProcA/W CALL the pfnClientPrevious read out of this.
         ret = crate::wow64::desktop_cpd_to_user((*pEntry).ptr) as PVOID;
+    } else if uType == TYPE_MENU {
+        // menu.rs walks the MENU and its ITEM array client-side.
+        ret = crate::wow64::desktop_menu_to_user((*pEntry).ptr) as PVOID;
     } else {
         ret = DesktopPtrToUser((*pEntry).ptr);
     }

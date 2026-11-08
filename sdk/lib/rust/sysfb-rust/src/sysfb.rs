@@ -22,13 +22,32 @@ use ntkrnl_sys::ddk::{
     ZwCreateKey, ZwOpenKey, ZwClose, ZwSetValueKey, ZwQueryValueKey,
     ExAllocatePoolWithTag, ExFreePoolWithTag,
     MmMapIoSpace, MmUnmapIoSpace,
-    RtlInitUnicodeString,
+    RtlInitUnicodeString, RtlFreeUnicodeString,
+    // PnP
+    GUID, PCM_RESOURCE_LIST, CM_PARTIAL_RESOURCE_DESCRIPTOR,
+    IoAttachDeviceToDeviceStack, IoDetachDevice, IoForwardIrpSynchronously,
+    IoReportDetectedDevice, IoRegisterDeviceInterface, IoSetDeviceInterfaceState,
+    ZwDeleteValueKey,
+    _INTERFACE_TYPE_InterfaceTypeUndefined as InterfaceTypeUndefined,
+    SYSTEM_POWER_STATE,
+    _POWER_STATE_TYPE_SystemPowerState as SystemPowerState,
+    _SYSTEM_POWER_STATE_PowerSystemSleeping1 as PowerSystemSleeping1,
+    _SYSTEM_POWER_STATE_PowerSystemHibernate as PowerSystemHibernate,
+};
+use ntkrnl_sys::driver_ddk::{
+    IoCallDriver, PoCallDriver, PoStartNextPowerIrp,
+    IRP_MJ_PNP, IRP_MJ_POWER,
+    IRP_MN_START_DEVICE, IRP_MN_QUERY_REMOVE_DEVICE, IRP_MN_REMOVE_DEVICE,
+    IRP_MN_CANCEL_REMOVE_DEVICE, IRP_MN_STOP_DEVICE, IRP_MN_QUERY_STOP_DEVICE,
+    IRP_MN_CANCEL_STOP_DEVICE, IRP_MN_SURPRISE_REMOVAL, IRP_MN_QUERY_POWER,
+    DO_DEVICE_INITIALIZING, DO_POWER_PAGABLE, FILE_DEVICE_SECURE_OPEN,
 };
 // FORCEINLINE DDK helpers — bindgen surfaces these as extern decls with no
 // exported symbol; use ntkrnl-sys's real inline impls (AGENTS.md gotcha).
-use ntkrnl_sys::inline::tier1::IoGetCurrentIrpStackLocation;
+use ntkrnl_sys::inline::tier1::{IoGetCurrentIrpStackLocation, IoSkipCurrentIrpStackLocation};
 use ntkrnl_sys::inline::common::InitializeObjectAttributes;
 use core::ffi::c_void;
+use core::sync::atomic::{AtomicI32, Ordering};
 
 // ---- integration shims (mechanical) ----
 extern "C" {
@@ -109,6 +128,24 @@ const TAG_SYSFB: u32 = u32::from_le_bytes(*b"SyFb"); // 'bFyS' multi-char → LE
 // RESOURCE_DESCRIPTOR.Type is a UCHAR, so the reader compares against u8.
 const CmResourceTypeMemory: u8 = 3;
 const CmResourceTypeDeviceSpecific: u8 = 5;
+// A BAR past 4 GiB: same descriptor layout as Memory, with Length scaled by the flag.
+const CmResourceTypeMemoryLarge: u8 = 7;
+const CM_RESOURCE_MEMORY_LARGE_40: u16 = 0x0200;
+const CM_RESOURCE_MEMORY_LARGE_48: u16 = 0x0400;
+const CM_RESOURCE_MEMORY_LARGE_64: u16 = 0x0800;
+
+// ntstatus.h values the shared constants do not carry.
+const STATUS_DEVICE_BUSY: NTSTATUS = 0x80000011_u32 as i32;
+const STATUS_NO_SUCH_DEVICE: NTSTATUS = 0xC000000E_u32 as i32;
+const STATUS_DEVICE_CONFIGURATION_ERROR: NTSTATUS = 0xC0000182_u32 as i32;
+
+/// GUID_DEVINTERFACE_DISPLAY_ADAPTER, {5b45201d-f2f2-4f3b-85bb-30ff1f953599} (ntddvdeo.h).
+static GUID_DEVINTERFACE_DISPLAY_ADAPTER: GUID = GUID {
+    Data1: 0x5b45201d,
+    Data2: 0xf2f2,
+    Data3: 0x4f3b,
+    Data4: [0x85, 0xbb, 0x30, 0xff, 0x1f, 0x95, 0x35, 0x99],
+};
 
 // Registry / IRP constants absent from ntkrnl-sys constants.rs (present only
 // in hal_bindgen, which isn't a dependency here). Values from xdk headers.
@@ -123,6 +160,7 @@ const IRP_MJ_DEVICE_CONTROL: usize = 0x0E; // 14
 /// `extern "system"` and transmuted to `PDRIVER_DISPATCH` at the
 /// MajorFunction store (identical codegen, established pattern in this tree).
 type DispatchFn = unsafe extern "system" fn(PDEVICE_OBJECT, PIRP) -> NTSTATUS;
+type AddDeviceFn = unsafe extern "system" fn(PDRIVER_OBJECT, PDEVICE_OBJECT) -> NTSTATUS;
 
 // ---- in-module video DDK structs (ntddvdeo.h types absent from bindgen) ----
 
@@ -329,6 +367,69 @@ unsafe fn RegCreateKey(
     )
 }
 
+// ---- PnP: two ways in, one display ----
+//
+// sysfb drives the framebuffer the firmware handed over, and binds to the device it can
+// show owns it. There are two kinds of FDO:
+//
+//  * The ROOT instance. DriverEntry reports it itself (IoReportDetectedDevice, as the HAL
+//    does). A reported device counts as started at once and gets no START_DEVICE, so it
+//    claims the display inside DriverEntry, where the legacy driver used to create
+//    \Device\Video0. win32k's InitVideo therefore cannot run ahead of it. On a machine with
+//    no PCI display (arm64 virt's ramfb, a Pi, a headless server) it stays the owner.
+//  * A PCI display controller: class 03/00 or 03/80, bound through the
+//    CriticalDeviceDatabase. At START_DEVICE it takes the display over if, and only if,
+//    the firmware framebuffer lies inside one of its memory BARs. Otherwise it fails start,
+//    because a second card is not the one the firmware drew on.
+//
+// The display itself is a CONTROL device, \Device\Video0. It is created on the first claim
+// and attached to no stack, so ownership can move between instances without renaming the
+// display: win32k names it \\.\DISPLAY1 after Video0 and caches that name. When the owning
+// PCI instance stops or goes away, the display falls back to the root instance.
+//
+// Claims and releases happen only in DriverEntry and in PnP IRPs, and the PnP manager
+// delivers those one at a time, so the ownership statics need no lock. Only the open count
+// is touched from arbitrary threads.
+
+/// The FDO extension of either instance.
+#[repr(C)]
+pub struct SYSFB_FDO_EXTENSION {
+    pub Pdo: PDEVICE_OBJECT,
+    pub Lower: PDEVICE_OBJECT,
+    /// The instance DriverEntry reported (the fallback), as opposed to a PCI one.
+    pub IsRoot: BOOLEAN,
+    /// GUID_DEVINTERFACE_DISPLAY_ADAPTER on this PDO; enabled only while it owns the display.
+    pub InterfaceName: _UNICODE_STRING,
+}
+pub type PSYSFB_FDO_EXTENSION = *mut SYSFB_FDO_EXTENSION;
+
+static mut DRIVER: PDRIVER_OBJECT = core::ptr::null_mut();
+/// The framebuffer (or headless frame) DriverEntry found. One per boot.
+static mut DISPLAY: SYSFB_DEVICE_EXTENSION = unsafe { core::mem::zeroed() };
+static mut HAVE_DISPLAY: bool = false;
+/// \Device\Video0, the control device win32k opens.
+static mut VIDEO_DEVICE: PDEVICE_OBJECT = core::ptr::null_mut();
+/// The FDO the display is attributed to, null if none.
+static mut OWNER: PDEVICE_OBJECT = core::ptr::null_mut();
+static mut ROOT_PDO: PDEVICE_OBJECT = core::ptr::null_mut();
+static mut ROOT_FDO: PDEVICE_OBJECT = core::ptr::null_mut();
+/// Handles open on the display, through Video0 or the owner's interface.
+static OPENS: AtomicI32 = AtomicI32::new(0);
+
+#[inline]
+unsafe fn fdo_ext(Fdo: PDEVICE_OBJECT) -> PSYSFB_FDO_EXTENSION {
+    (*Fdo).DeviceExtension as PSYSFB_FDO_EXTENSION
+}
+
+#[inline]
+unsafe fn instance_kind(Fdo: PDEVICE_OBJECT) -> *const i8 {
+    if (*fdo_ext(Fdo)).IsRoot != 0 {
+        b"root\0".as_ptr() as *const i8
+    } else {
+        b"PCI\0".as_ptr() as *const i8
+    }
+}
+
 // ---- DriverEntry ----
 
 #[no_mangle]
@@ -338,15 +439,9 @@ pub unsafe extern "system" fn DriverEntry(
 ) -> NTSTATUS {
     let _ = RegistryPath;
     let mut Status: NTSTATUS;
-    let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
-    let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
-    let mut SymlinkName: _UNICODE_STRING = core::mem::zeroed();
 
     DPRINT1!("[sysfb] DriverEntry\n");
-
-    // Dispatch routines
-    let dev_name = wsz!(b"\\Device\\Video0");
-    let sym_name = wsz!(b"\\??\\DISPLAY1");
+    DRIVER = DriverObject;
 
     (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] =
         core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(SysFbCreateClose);
@@ -354,16 +449,215 @@ pub unsafe extern "system" fn DriverEntry(
         core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(SysFbCreateClose);
     (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL] =
         core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(SysFbDeviceControl);
+    (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] =
+        core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(SysFbPnp);
+    (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] =
+        core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(SysFbPower);
+    (*(*DriverObject).DriverExtension).AddDevice =
+        core::mem::transmute::<AddDeviceFn, _>(SysFbAddDevice);
+
+    let DevExt = core::ptr::addr_of_mut!(DISPLAY);
+    Status = SysFbDiscoverFramebuffer(DevExt);
+    if !NT_SUCCESS(Status) {
+        // A partial read must not leave a physical base behind for the PCI check to match.
+        core::ptr::write_bytes(DevExt as *mut u8, 0, core::mem::size_of::<SYSFB_DEVICE_EXTENSION>());
+        Status = SysFbHeadless(DevExt);
+    }
+    if !NT_SUCCESS(Status) {
+        // Not even a frame in memory: there is nothing to hand win32k, which
+        // bugchecks 0xB4 without a display device.
+        DPRINT1!(
+            "[sysfb] No ARC framebuffer and no headless frame: 0x%08lx - bailing\n",
+            Status as u32
+        );
+        return Status;
+    }
+    HAVE_DISPLAY = true;
+
+    DPRINT1!(
+        "[sysfb] Framebuffer: %ldx%ld %ld BPP, size=0x%lx, stride=%ld\n",
+        (*DevExt).ScreenWidth,
+        (*DevExt).ScreenHeight,
+        (*DevExt).BitsPerPixel,
+        (*DevExt).FrameBufferSize,
+        (*DevExt).ScreenStride
+    );
+
+    // The root instance, reported and started here so the display exists before win32k.
+    let mut Pdo: PDEVICE_OBJECT = core::ptr::null_mut();
+    Status = IoReportDetectedDevice(
+        DriverObject,
+        InterfaceTypeUndefined,
+        !0u32,
+        !0u32,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        FALSE as u8,
+        &mut Pdo,
+    );
+    if NT_SUCCESS(Status) {
+        (*Pdo).Flags &= !DO_DEVICE_INITIALIZING;
+        ROOT_PDO = Pdo;
+        let mut Fdo: PDEVICE_OBJECT = core::ptr::null_mut();
+        Status = SysFbCreateFdo(DriverObject, Pdo, &mut Fdo);
+        if NT_SUCCESS(Status) {
+            ROOT_FDO = Fdo;
+        } else {
+            DPRINT1!("[sysfb] root instance: AddDevice failed: 0x%08lx\n", Status as u32);
+        }
+    } else {
+        DPRINT1!("[sysfb] IoReportDetectedDevice failed: 0x%08lx\n", Status as u32);
+    }
+    if ROOT_FDO.is_null() {
+        // Publish the display anyway, owned by no device node. Without it win32k
+        // bugchecks 0xB4, and a failed report is a PnP manager bug: chase it from
+        // the line above, not from a black screen.
+        DPRINT1!("[sysfb] *** no root instance: the display has no device node ***\n");
+    }
+
+    Status = SysFbClaim(ROOT_FDO);
+    if !NT_SUCCESS(Status) {
+        return Status;
+    }
+
+    DPRINT1!("[sysfb] DriverEntry SUCCESS\n");
+    STATUS_SUCCESS
+}
+
+// ---- AddDevice and the instances ----
+
+unsafe extern "system" fn SysFbAddDevice(DriverObject: PDRIVER_OBJECT, Pdo: PDEVICE_OBJECT) -> NTSTATUS {
+    let mut Fdo: PDEVICE_OBJECT = core::ptr::null_mut();
+    SysFbCreateFdo(DriverObject, Pdo, &mut Fdo)
+}
+
+unsafe fn SysFbCreateFdo(
+    DriverObject: PDRIVER_OBJECT,
+    Pdo: PDEVICE_OBJECT,
+    OutFdo: *mut PDEVICE_OBJECT,
+) -> NTSTATUS {
+    let mut Fdo: PDEVICE_OBJECT = core::ptr::null_mut();
+    let Status = IoCreateDevice(
+        DriverObject,
+        core::mem::size_of::<SYSFB_FDO_EXTENSION>() as ULONG,
+        core::ptr::null_mut(),
+        FILE_DEVICE_VIDEO_TYPE,
+        FILE_DEVICE_SECURE_OPEN,
+        FALSE as u8,
+        &mut Fdo,
+    );
+    if !NT_SUCCESS(Status) {
+        DPRINT1!("[sysfb] AddDevice: IoCreateDevice failed: 0x%08lx\n", Status as u32);
+        return Status;
+    }
+    let Ext = fdo_ext(Fdo);
+    core::ptr::write_bytes(Ext as *mut u8, 0, core::mem::size_of::<SYSFB_FDO_EXTENSION>());
+    (*Ext).Pdo = Pdo;
+    (*Ext).IsRoot = (Pdo == ROOT_PDO) as BOOLEAN;
+    (*Ext).Lower = IoAttachDeviceToDeviceStack(Fdo, Pdo);
+    if (*Ext).Lower.is_null() {
+        DPRINT1!("[sysfb] AddDevice: cannot attach to the PDO\n");
+        IoDeleteDevice(Fdo);
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
+    let IfStatus = IoRegisterDeviceInterface(
+        Pdo,
+        &GUID_DEVINTERFACE_DISPLAY_ADAPTER,
+        core::ptr::null_mut(),
+        &mut (*Ext).InterfaceName,
+    );
+    if !NT_SUCCESS(IfStatus) {
+        // Nothing enumerates displays by interface yet; the device map is what win32k reads.
+        DPRINT1!("[sysfb] display adapter interface not registered: 0x%08lx\n", IfStatus as u32);
+        (*Ext).InterfaceName = core::mem::zeroed();
+    }
+
+    (*Fdo).Flags |= DO_POWER_PAGABLE;
+    (*Fdo).Flags &= !DO_DEVICE_INITIALIZING;
+    if (*Ext).IsRoot != 0 {
+        // Here, not only in DriverEntry: a root instance that was disabled and enabled
+        // again comes back through PnP's AddDevice, and the fallback must find it.
+        ROOT_FDO = Fdo;
+    }
+    DPRINT1!("[sysfb] AddDevice: %s instance\n", instance_kind(Fdo));
+    *OutFdo = Fdo;
+    STATUS_SUCCESS
+}
+
+unsafe fn SysFbSetInterface(Fdo: PDEVICE_OBJECT, Enable: bool) {
+    let Ext = fdo_ext(Fdo);
+    if (*Ext).InterfaceName.Buffer.is_null() {
+        return;
+    }
+    let Status = IoSetDeviceInterfaceState(&mut (*Ext).InterfaceName, Enable as BOOLEAN);
+    if !NT_SUCCESS(Status) {
+        DPRINT1!("[sysfb] IoSetDeviceInterfaceState(%lu) failed: 0x%08lx\n", Enable as u32, Status as u32);
+    }
+}
+
+/// Make `Fdo` (null: no device node) the owner of the display, creating \Device\Video0 on
+/// the first claim. A later claim moves the ownership and keeps the device.
+unsafe fn SysFbClaim(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
+    if VIDEO_DEVICE.is_null() {
+        let Status = SysFbCreateVideoDevice();
+        if !NT_SUCCESS(Status) {
+            return Status;
+        }
+    } else if OWNER == Fdo {
+        return STATUS_SUCCESS;
+    }
+    let Previous = OWNER;
+    if !Previous.is_null() {
+        SysFbSetInterface(Previous, false);
+    }
+    OWNER = Fdo;
+    if !Fdo.is_null() {
+        SysFbSetInterface(Fdo, true);
+        DPRINT1!("[sysfb] display owned by the %s instance\n", instance_kind(Fdo));
+    }
+    STATUS_SUCCESS
+}
+
+/// `Fdo` is going away or stopping. If it owns the display, the root instance takes the
+/// display back. With no root instance, Video0 goes too, unless handles are still open on
+/// it.
+unsafe fn SysFbRelease(Fdo: PDEVICE_OBJECT) {
+    if Fdo.is_null() || OWNER != Fdo {
+        return;
+    }
+    SysFbSetInterface(Fdo, false);
+    if !ROOT_FDO.is_null() && ROOT_FDO != Fdo {
+        OWNER = ROOT_FDO;
+        SysFbSetInterface(ROOT_FDO, true);
+        DPRINT1!("[sysfb] display falls back to the root instance\n");
+        return;
+    }
+    OWNER = core::ptr::null_mut();
+    let Opens = OPENS.load(Ordering::SeqCst);
+    if Opens != 0 {
+        DPRINT1!("[sysfb] display owner gone with %ld handle(s) open; \\Device\\Video0 stays\n", Opens);
+        return;
+    }
+    SysFbDeleteVideoDevice();
+}
+
+unsafe fn SysFbCreateVideoDevice() -> NTSTATUS {
+    let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
+    let mut SymlinkName: _UNICODE_STRING = core::mem::zeroed();
+    let mut Device: PDEVICE_OBJECT = core::ptr::null_mut();
+    let dev_name = wsz!(b"\\Device\\Video0");
+    let sym_name = wsz!(b"\\??\\DISPLAY1");
 
     RtlInitUnicodeString(&mut DeviceName, dev_name.as_ptr());
-    Status = IoCreateDevice(
-        DriverObject,
-        core::mem::size_of::<SYSFB_DEVICE_EXTENSION>() as ULONG,
+    let mut Status = IoCreateDevice(
+        DRIVER,
+        0,
         &mut DeviceName,
         FILE_DEVICE_VIDEO_TYPE,
         0,
         FALSE as u8,
-        &mut DeviceObject,
+        &mut Device,
     );
     if !NT_SUCCESS(Status) {
         DPRINT1!("[sysfb] IoCreateDevice failed: 0x%08lx\n", Status as u32);
@@ -376,34 +670,9 @@ pub unsafe extern "system" fn DriverEntry(
         DPRINT1!("[sysfb] IoCreateSymbolicLink failed: 0x%08lx\n", Status as u32);
         // Non-fatal — continue
     }
-
-    let DevExt = (*DeviceObject).DeviceExtension as PSYSFB_DEVICE_EXTENSION;
-    core::ptr::write_bytes(DevExt as *mut u8, 0, core::mem::size_of::<SYSFB_DEVICE_EXTENSION>());
-
-    Status = SysFbDiscoverFramebuffer(DevExt);
-    if !NT_SUCCESS(Status) {
-        Status = SysFbHeadless(DevExt);
-    }
-    if !NT_SUCCESS(Status) {
-        // Not even a frame in memory: there is nothing to hand win32k, which
-        // bugchecks 0xB4 without a display device.
-        DPRINT1!(
-            "[sysfb] No ARC framebuffer and no headless frame: 0x%08lx - bailing\n",
-            Status as u32
-        );
-        IoDeleteSymbolicLink(&mut SymlinkName);
-        IoDeleteDevice(DeviceObject);
-        return Status;
-    }
-
-    DPRINT1!(
-        "[sysfb] Framebuffer: %ldx%ld %ld BPP, size=0x%lx, stride=%ld\n",
-        (*DevExt).ScreenWidth,
-        (*DevExt).ScreenHeight,
-        (*DevExt).BitsPerPixel,
-        (*DevExt).FrameBufferSize,
-        (*DevExt).ScreenStride
-    );
+    // Created outside DriverEntry on a PCI take-over, where the I/O manager does not clear it.
+    (*Device).Flags &= !DO_DEVICE_INITIALIZING;
+    VIDEO_DEVICE = Device;
 
     Status = SysFbWriteDeviceMap();
     if !NT_SUCCESS(Status) {
@@ -411,13 +680,203 @@ pub unsafe extern "system" fn DriverEntry(
         // Non-fatal
     }
 
-    Status = SysFbWriteServiceConfig(DevExt);
+    Status = SysFbWriteServiceConfig(core::ptr::addr_of_mut!(DISPLAY));
     if !NT_SUCCESS(Status) {
         DPRINT1!("[sysfb] Failed to write service config: 0x%08lx\n", Status as u32);
     }
-
-    DPRINT1!("[sysfb] DriverEntry SUCCESS\n");
     STATUS_SUCCESS
+}
+
+unsafe fn SysFbDeleteVideoDevice() {
+    let DevExt = core::ptr::addr_of_mut!(DISPLAY);
+    if !(*DevExt).FrameBufferMapped.is_null() && (*DevExt).Headless == 0 {
+        MmUnmapIoSpace((*DevExt).FrameBufferMapped, (*DevExt).FrameBufferMappedSize as _);
+        (*DevExt).FrameBufferMapped = core::ptr::null_mut();
+        (*DevExt).FrameBufferMappedSize = 0;
+    }
+    SysFbDeleteDeviceMap();
+    let mut SymlinkName: _UNICODE_STRING = core::mem::zeroed();
+    let sym_name = wsz!(b"\\??\\DISPLAY1");
+    RtlInitUnicodeString(&mut SymlinkName, sym_name.as_ptr());
+    IoDeleteSymbolicLink(&mut SymlinkName);
+    IoDeleteDevice(VIDEO_DEVICE);
+    VIDEO_DEVICE = core::ptr::null_mut();
+    DPRINT1!("[sysfb] \\Device\\Video0 removed\n");
+}
+
+// ---- IRP_MJ_PNP / IRP_MJ_POWER ----
+
+unsafe fn SysFbPassDown(Fdo: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+    IoSkipCurrentIrpStackLocation(Irp);
+    IoCallDriver((*fdo_ext(Fdo)).Lower, Irp)
+}
+
+unsafe fn SysFbComplete(Irp: PIRP, Status: NTSTATUS) -> NTSTATUS {
+    (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
+    Status
+}
+
+unsafe extern "system" fn SysFbPnp(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+    if DeviceObject == VIDEO_DEVICE {
+        // The control device sits on no PnP stack.
+        return SysFbComplete(Irp, (*Irp).IoStatus.__bindgen_anon_1.Status);
+    }
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    let Ext = fdo_ext(DeviceObject);
+
+    match (*IrpSp).MinorFunction {
+        IRP_MN_START_DEVICE => {
+            // The bus starts first: the BARs decode only once the PCI PDO is started.
+            let mut Status = if IoForwardIrpSynchronously((*Ext).Lower, Irp) != 0 {
+                (*Irp).IoStatus.__bindgen_anon_1.Status
+            } else {
+                STATUS_UNSUCCESSFUL
+            };
+            if NT_SUCCESS(Status) {
+                if (*Ext).IsRoot == 0 {
+                    Status = SysFbStartPci(
+                        DeviceObject,
+                        (*IrpSp).Parameters.StartDevice.AllocatedResourcesTranslated,
+                    );
+                } else if OWNER.is_null() && HAVE_DISPLAY {
+                    // The reported instance is started in DriverEntry and gets no START then;
+                    // this START is a re-enable. It takes the display only if nobody has it.
+                    Status = SysFbClaim(DeviceObject);
+                }
+            }
+            SysFbComplete(Irp, Status)
+        }
+        IRP_MN_QUERY_STOP_DEVICE | IRP_MN_QUERY_REMOVE_DEVICE => {
+            if OWNER == DeviceObject && OPENS.load(Ordering::SeqCst) > 0 {
+                // Something (win32k) is drawing through us, and the frame goes dark with the
+                // device. A vendor driver takes over only after the session lets go.
+                DPRINT1!("[sysfb] %s instance owns an open display: refusing stop/remove\n",
+                    instance_kind(DeviceObject));
+                return SysFbComplete(Irp, STATUS_DEVICE_BUSY);
+            }
+            (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+            SysFbPassDown(DeviceObject, Irp)
+        }
+        IRP_MN_CANCEL_STOP_DEVICE | IRP_MN_CANCEL_REMOVE_DEVICE => {
+            (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+            SysFbPassDown(DeviceObject, Irp)
+        }
+        IRP_MN_STOP_DEVICE | IRP_MN_SURPRISE_REMOVAL => {
+            SysFbRelease(DeviceObject);
+            (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+            SysFbPassDown(DeviceObject, Irp)
+        }
+        IRP_MN_REMOVE_DEVICE => {
+            SysFbRelease(DeviceObject);
+            (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+            let Lower = (*Ext).Lower;
+            let Status = SysFbPassDown(DeviceObject, Irp);
+            IoDetachDevice(Lower);
+            if !(*Ext).InterfaceName.Buffer.is_null() {
+                RtlFreeUnicodeString(&mut (*Ext).InterfaceName);
+            }
+            if ROOT_FDO == DeviceObject {
+                ROOT_FDO = core::ptr::null_mut();
+            }
+            IoDeleteDevice(DeviceObject);
+            Status
+        }
+        _ => SysFbPassDown(DeviceObject, Irp),
+    }
+}
+
+/// A PCI display controller is ours if the firmware framebuffer sits in one of its BARs.
+unsafe fn SysFbStartPci(Fdo: PDEVICE_OBJECT, Resources: PCM_RESOURCE_LIST) -> NTSTATUS {
+    let DevExt = core::ptr::addr_of!(DISPLAY);
+    if !HAVE_DISPLAY || (*DevExt).Headless != 0 {
+        DPRINT1!("[sysfb] PCI display controller, but the firmware handed over no framebuffer\n");
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+    let Base = (*DevExt).FrameBufferPhysical.QuadPart as u64;
+    if !SysFbResourcesContain(Resources, Base) {
+        DPRINT1!("[sysfb] PCI display controller does not decode the framebuffer at 0x%08lx%08lx\n",
+            (Base >> 32) as u32, Base as u32);
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+    SysFbClaim(Fdo)
+}
+
+/// Does a memory range in `List` contain `Address`? Walks the variable-length list:
+/// full descriptors follow one another, and a device-specific partial carries DataSize
+/// trailing bytes.
+unsafe fn SysFbResourcesContain(List: PCM_RESOURCE_LIST, Address: u64) -> bool {
+    if List.is_null() {
+        return false;
+    }
+    let mut Full = core::ptr::addr_of!((*List).List) as *const u8;
+    for _ in 0..(*List).Count {
+        let FullDesc = Full as *const CM_FULL_RESOURCE_DESCRIPTOR;
+        let Count = (*FullDesc).PartialResourceList.Count;
+        let mut Partial = core::ptr::addr_of!((*FullDesc).PartialResourceList.PartialDescriptors) as *const u8;
+        for _ in 0..Count {
+            let Desc = Partial as *const CM_PARTIAL_RESOURCE_DESCRIPTOR;
+            let Type = (*Desc).Type;
+            if Type == CmResourceTypeMemory || Type == CmResourceTypeMemoryLarge {
+                let Start = (*Desc).u.Memory.Start.QuadPart as u64;
+                let Length = memory_length(Type, (*Desc).Flags, (*Desc).u.Memory.Length);
+                if Address >= Start && Address - Start < Length {
+                    return true;
+                }
+            }
+            Partial = Partial.add(core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>());
+            if Type == CmResourceTypeDeviceSpecific {
+                Partial = Partial.add((*Desc).u.DeviceSpecificData.DataSize as usize);
+            }
+        }
+        Full = Partial;
+    }
+    false
+}
+
+/// The byte length of a memory descriptor: a large one stores it scaled down by its flag.
+fn memory_length(Type: u8, Flags: u16, Length: ULONG) -> u64 {
+    if Type != CmResourceTypeMemoryLarge {
+        return Length as u64;
+    }
+    match Flags & (CM_RESOURCE_MEMORY_LARGE_40 | CM_RESOURCE_MEMORY_LARGE_48 | CM_RESOURCE_MEMORY_LARGE_64) {
+        CM_RESOURCE_MEMORY_LARGE_40 => (Length as u64) << 8,
+        CM_RESOURCE_MEMORY_LARGE_48 => (Length as u64) << 16,
+        CM_RESOURCE_MEMORY_LARGE_64 => (Length as u64) << 32,
+        _ => Length as u64,
+    }
+}
+
+/// Would entering `State` lose the display? S1-S3 power the GPU down and S4 cuts power
+/// altogether; GOP set the mode before ExitBootServices and nothing can set it again. Shutdown
+/// (S5) is queried too and must pass: the shutdown path ignores answers, and it ends the
+/// session anyway.
+fn sleep_loses_display(State: SYSTEM_POWER_STATE) -> bool {
+    State >= PowerSystemSleeping1 && State <= PowerSystemHibernate
+}
+
+// Power policy is the bus's, and device D-states are no-ops for a framebuffer. The one
+// decision sysfb makes is to refuse a system sleep while it is the display in use: there is
+// no hardware state to save, and nothing could restore the GOP mode on resume. A vendor
+// driver that can set modes lifts the restriction by replacing sysfb.
+unsafe extern "system" fn SysFbPower(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+    PoStartNextPowerIrp(Irp);
+    if DeviceObject == VIDEO_DEVICE {
+        return SysFbComplete(Irp, (*Irp).IoStatus.__bindgen_anon_1.Status);
+    }
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    if (*IrpSp).MinorFunction == IRP_MN_QUERY_POWER
+        && (*IrpSp).Parameters.Power.Type == SystemPowerState
+        && sleep_loses_display((*IrpSp).Parameters.Power.State.SystemState)
+        && OWNER == DeviceObject
+        && OPENS.load(Ordering::SeqCst) > 0
+    {
+        DPRINT1!("[sysfb] refusing S%lu: the firmware display mode cannot be restored on resume\n",
+            ((*IrpSp).Parameters.Power.State.SystemState - 1) as u32);
+        return SysFbComplete(Irp, STATUS_NOT_SUPPORTED);
+    }
+    IoSkipCurrentIrpStackLocation(Irp);
+    PoCallDriver((*fdo_ext(DeviceObject)).Lower, Irp)
 }
 
 /// No firmware framebuffer: a server (EC2 Graviton has no display, nor does an x86 box
@@ -451,18 +910,38 @@ unsafe fn SysFbHeadless(DevExt: PSYSFB_DEVICE_EXTENSION) -> NTSTATUS {
     STATUS_SUCCESS
 }
 
-// IRP_MJ_CREATE / IRP_MJ_CLOSE — just succeed
-unsafe extern "system" fn SysFbCreateClose(_DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
-    (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
+/// Video0 and the owning instance's interface are the display; any other FDO is idle.
+#[inline]
+unsafe fn is_display(DeviceObject: PDEVICE_OBJECT) -> bool {
+    !DeviceObject.is_null() && (DeviceObject == VIDEO_DEVICE || DeviceObject == OWNER)
+}
+
+// IRP_MJ_CREATE / IRP_MJ_CLOSE — count the opens on the display; refuse an idle instance.
+unsafe extern "system" fn SysFbCreateClose(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+    let IrpSp = IoGetCurrentIrpStackLocation(Irp);
+    let mut Status = STATUS_SUCCESS;
+    if (*IrpSp).MajorFunction == IRP_MJ_CREATE as u8 {
+        if is_display(DeviceObject) {
+            OPENS.fetch_add(1, Ordering::SeqCst);
+        } else {
+            Status = STATUS_NO_SUCH_DEVICE;
+        }
+    } else {
+        // A close follows only a create that succeeded, so it is always one of ours.
+        OPENS.fetch_sub(1, Ordering::SeqCst);
+    }
     (*Irp).IoStatus.Information = 0;
-    IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
-    STATUS_SUCCESS
+    SysFbComplete(Irp, Status)
 }
 
 // IRP_MJ_DEVICE_CONTROL — handle video IOCTLs
 unsafe extern "system" fn SysFbDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+    if !is_display(DeviceObject) {
+        (*Irp).IoStatus.Information = 0;
+        return SysFbComplete(Irp, STATUS_INVALID_DEVICE_REQUEST);
+    }
     let IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    let DevExt = (*DeviceObject).DeviceExtension as PSYSFB_DEVICE_EXTENSION;
+    let DevExt = core::ptr::addr_of_mut!(DISPLAY);
     let IoControlCode = (*IrpSp).Parameters.DeviceIoControl.IoControlCode;
     let InputBuffer = (*Irp).AssociatedIrp.SystemBuffer;
     let OutputBuffer = (*Irp).AssociatedIrp.SystemBuffer;
@@ -483,7 +962,13 @@ unsafe extern "system" fn SysFbDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: 
                 (*DevExt).PhysDisp = (*pCallbacks).PhysDisp;
                 (*DevExt).Callout = (*pCallbacks).Callout as PVOID;
                 (*pCallbacks).bACPI = FALSE as ULONG;
-                (*pCallbacks).pPhysDeviceObject = DeviceObject as HANDLE;
+                // The device node behind the display, which win32k queries for the
+                // adapter's IDs and description. Video0 itself only with no node at all.
+                (*pCallbacks).pPhysDeviceObject = if OWNER.is_null() {
+                    DeviceObject as HANDLE
+                } else {
+                    (*fdo_ext(OWNER)).Pdo as HANDLE
+                };
                 (*pCallbacks).DualviewFlags = 0;
                 Information = core::mem::size_of::<VIDEO_WIN32K_CALLBACKS>() as ULONG;
             }
@@ -883,6 +1368,24 @@ unsafe fn SysFbWriteDeviceMap() -> NTSTATUS {
     ZwClose(hVideo);
     DPRINT1!("[sysfb] DEVICEMAP\\VIDEO written\n");
     STATUS_SUCCESS
+}
+
+/// Take \Device\Video0 back out of DEVICEMAP\VIDEO when the display goes away. Leaving
+/// MaxObjectNumber alone is harmless: win32k skips a missing value.
+unsafe fn SysFbDeleteDeviceMap() {
+    let mut hVideo: HANDLE = core::ptr::null_mut();
+    let video = wsz!(b"\\Registry\\Machine\\HARDWARE\\DEVICEMAP\\VIDEO");
+    let dev0_name = wsz!(b"\\Device\\Video0");
+    if !NT_SUCCESS(RegCreateKey(core::ptr::null_mut(), video.as_ptr(), &mut hVideo)) {
+        return;
+    }
+    let mut Name: _UNICODE_STRING = core::mem::zeroed();
+    RtlInitUnicodeString(&mut Name, dev0_name.as_ptr());
+    let Status = ZwDeleteValueKey(hVideo, &mut Name);
+    if !NT_SUCCESS(Status) {
+        DPRINT1!("[sysfb] Failed to delete the \\Device\\Video0 value: 0x%08lx\n", Status as u32);
+    }
+    ZwClose(hVideo);
 }
 
 // ---- Write driver service config ----

@@ -213,6 +213,11 @@ is telling you an argument's *width* disagrees — and that is a bug the 64-bit 
 see, because they have no decoration to disagree about. amd64/arm64 link it green and pass a
 wrong layout.
 
+The tool can be the one with the wrong width. `cohab_stub.py` anchored every export of a flipped
+module from the `.spec` and counted an `int128` (a by-value GUID) as 4 bytes: shlwapi's
+`AssocCreate(int128 ptr ptr)` was anchored `_AssocCreate@12` while the Rust exported the correct
+`@24` (spec2def counts 16), and only the i386 link failed. It now counts as spec2def does.
+
 Read the delta arithmetically before you touch anything. i386: every arg rounds to 4, and a
 64-bit scalar or a by-value struct takes its real size.
 
@@ -786,6 +791,10 @@ Sibling of the above and the larger half of it. That rule covers a symbol your o
 defines; this covers the commoner case — a re-declared **import** (an ntoskrnl export, an ntdll
 syscall) whose definition is not in the tree at all, so there is no Rust definition to check the
 declaration against and `scan_extern_decl_drift`'s pairing never fires.
+
+A data ALIAS is the link-time version: guiddef.h's `#define CLSID_NULL GUID_NULL` reached shlwapi
+as mspaint's `extern static CLSID_NULL` by tree consensus -- it compiled and failed at link.
+`port resolve` no longer copies a `static` for a name the module's preprocessor aliases.
 
 **Symptom.** Nothing. It compiles, it links, and it usually even works, because the value that
 happens to be passed fits. **Cause.** rustc only ever compares a call against the declaration in
@@ -1576,9 +1585,11 @@ one identity for NT types. ntdll-sys carries `IStream`, `IStreamVtbl` and `tagST
 `{ _unused: [u8; 0] }` (rtl's memory stream only needs the pointer), and the blocklist keeps
 the empty version. No vtable means `port macros` has nothing to generate wrappers from.
 
-**Fix.** `UNBLOCK="IStream IStreamVtbl tagSTATSTG STATSTG LPSTREAM"` in the module's `# >>> hand`
-block, then re-island: the island owns the full objidl definitions. Not automatic for every
-opaque name: `_TP_POOL` and friends are opaque in the real headers too, and a local copy of
+**Fix.** Re-derive: since 2026-11-07 `profile_derive` emits the `UNBLOCK` itself for a user-mode
+module (it read only ntkrnl-sys before, and five arms carried the same hand-written line) --
+any ntdll-sys opaque struct an allowlisted header defines with a body and the module's C names,
+plus the -sys typedefs over it (`STATSTG`). Then `port macros` generates the wrappers. Not
+automatic for every opaque name: `_TP_POOL` and friends are opaque in the real headers too, and a local copy of
 those would split their identity from the ntdll-sys functions that take them.
 
 ### `(base as *mut PBYTE).offset(n)` strides by a POINTER, not a byte
@@ -2190,6 +2201,11 @@ A function BODY can take the wrong arm too. fmifs's `Chkdsk` came back with the 
 `GetVolumeNameForVolumeMountPointW` lookup where the live `#ifdef __REACTOS__` arm is a plain
 `wcscpy`. The translate audit flags these (`PREPROCESSOR ARMS ... the #if arm is LIVE`), so
 read every such finding against the Rust before flipping.
+The audit could not decide the commonest one: shlwapi's `IsQSForward` and
+`SHPropertyBag_ReadGUID` took the dead `#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)` arm under a
+module pinned to `-D_WIN32_WINNT=0x502`, and both were reported "undecidable" because the RHS is
+an sdkddkver.h name nothing pinned. The arm audit now reads the module's `-D` pins and
+sdkddkver.h's literal version names, minus any name the TU itself redefines.
 
 The arm can also be the wrong TARGET's. cscript compiles wscript's three `.c` with
 `-DCSCRIPT_BUILD`, and every rustconv reader of `compile_commands.json` took the first entry
@@ -2266,6 +2282,15 @@ again wide. Merged into the module island, texta.c's toggles made the WHOLE isla
 conutils.h `#error`ed. `profile_derive` now drops the toggles of a TU whose charset disagrees
 with the module's (finding `CHARSET_INSTANTIATION`), and the Rust for the template is generic
 over the char type, one instantiation exported per TU (fc-rust's `text_h.rs`).
+
+**Two more prologue lines that belong to their TU, not the island** (shlwapi, 2026-11-07).
+assoc.c alone redefines `_WIN32_WINNT` to VISTA; merged module-wide it contradicted
+`-DNTDDI_VERSION` and sdkddkver.h `#error`ed (`VERSION_OVERRIDE_TU`). And ten TUs each
+`#define NO_SHLWAPI_PATH/REG/STREAM/...` before shlwapi.h for their own reasons; merged, the
+union hid `tagPARSEDURLA` and the URL_SCHEME enum from url.c, so resolve consensus-copied
+`URL_SCHEME_FILE` from shell32 as `UINT` (`PARTIAL_EXCLUSION_DEFINE`). An exclusion only some
+TUs set stays out of the island (NONAMELESS* are not exclusions); and a consensus copy made
+while the island lacked a name now yields to the island's enum alias once it has it.
 
 ### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
 The entry above is about shadow *structs*; this is the same disease one level down, and it is
@@ -7154,6 +7179,11 @@ Fix: decide each site against what the C build defines, never against what the n
 Fix a misspelling. Declare a gate that is off on purpose in the crate's `[features]` (or in
 `check-cfg` for a tool cfg like `kani`), with a comment naming the C define, so that the next
 misspelling still warns. The census now counts `unexpected_cfgs` as LOGIC.
+shlwapi's `StrFormatByteSizeW` (2026-11-07) put BOTH arms of `#ifdef __REACTOS__` under an
+invented `cfg(rustconv_reactos)` / `cfg(not(..))` pair, so Wine's dead arm shipped: every size
+above 1 KB printed `" ?B"` with a resource ID truncated in as the unit letter. `port check` now
+counts an undeclared cfg as an error (`UNDECLARED CFG`); a never-set cfg that models a DEAD arm
+on purpose is declared in `check-cfg` (classpnp) and does not warn.
 
 ### A `#if` on a WINDOWS VERSION comes back as `#[cfg(target_arch)]`
 
@@ -7795,6 +7825,8 @@ suspect call kept it failing; eighty made it green.
   until an arch or a caller disagrees. Diff the two signatures against each other, not just each
   against the C.
 - **`if (!Fn())` → `if !Fn() != 0`** — bitwise-NOT on an integer BOOLEAN makes the condition
+  (shlwapi 2026-11-07: `!lstrcmpW(mask, L"*.*") == 0` in PathMatchSpecW, true only when the
+  compare returned -1; caught by the gate, not by Wine's suite.)
   **always true**. Recurs wherever a C macro yields an `int`: `if(!MSVCRT_CHECK_PMT(x))` is
   `if X!(x) == 0`, never Rust's `!`. Loud when the result feeds a condition (`expected bool`),
   **silent** when it feeds an integer.
@@ -7939,6 +7971,9 @@ suspect call kept it failing; eighty made it green.
   innards (win32k clip-region 0x50).
 - **A plain Rust-ABI `unsafe fn` address handed to the kernel** (timer/dispatch callback).
 - **A hand-rolled `va_arg` walking `&last_fixed_param`** is amd64-only garbage.
+  So is one stepping a `va_list` by `size_of::<usize>()` per pull: shlwapi's `wvnsprintfA`
+  read every argument after an `%I64` four bytes early on i386. Read through
+  `varargs_rust::VaArgs` over a pointer to the frame's `va_list` copy.
 - **Kernel Rust emitting x87 (`fild`/`fistp`) for 64-bit atomics** → an imprecise 0xc0000092
   BSOD blamed on an innocent function.
 - **A predicate macro INLINED as a different predicate.** `balance.rs` rendered
@@ -15366,6 +15401,26 @@ DLL initializes (Windows does the same). Lesson: an allocator that "works" becau
 allocation happened to take the dangerous index is a latent bug, and removing the earlier
 allocation is the moment it fires. Find the fixed-index users of a shared table and reserve
 them; never rely on load order.
+
+### A 32-bit app's handle stops matching once its top bit is set: compare 32 bits, never ULONG_PTR
+Symptom: a WoW64 app leaks GDI objects by thousands (stock i386 `osk.exe`: 8,300 pens, then a
+full handle table and `MsqSendMessage(): Not enough memory` 15-60 min into a boot), while the same
+create/delete pairs natively are flat. Its deletes fail only about half the time, so no single
+call looks broken.
+
+Cause: the WoW64 thunks widen a 32-bit handle by SIGN-extension (`ptr()` in
+`wow64_win32k_thunks.rs`, as Windows does), so `0x8030abcd` reaches the kernel as
+`0xFFFFFFFF8030abcd`. A GDI handle's top byte is the slot's reuse count, so half of all handles
+have that bit set. win32k-rust `GreGetObjectOwner` compared `hobj >> 16` with the entry's
+`FullUnique` at pointer width, `0xFFFFFFFF8030 != 0x8030`, and `NtGdiDeleteObjectApp` refused
+the handle as not the caller's. The C does the same, and native callers never notice because
+win32k hands out zero-extended handles.
+
+Fix: compare only the handle's 32 bits (`(h >> 16) as u16`, as `ENTRY_ReferenceEntryByHandle`
+already did). Any kernel test of a user handle's upper bits must truncate first: the 64-bit
+value of a 32-bit handle is not unique. Graded by `tools/payloads/chrome/gdiprobe.c` built for
+both bitnesses; a probe for this class must check each delete's return value and must run
+past 128 reuses of a slot (20000 pairs here).
 
 ### A 32-bit guest goes silent right after `MapViewOfFile` of a DATA section
 Symptom: under FEX on arm64 the guest's last serial line is wow64's `NtMapViewOfSection =>

@@ -39,6 +39,7 @@ extern "system" {
     fn GetActiveWindow() -> HWND;
     fn SendMessageW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn DefWindowProcW(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
+    fn DefWindowProcA(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT;
     fn SetRect(lprc: LPRECT, xLeft: core::ffi::c_int, yTop: core::ffi::c_int, xRight: core::ffi::c_int, yBottom: core::ffi::c_int) -> BOOL;
     fn GetSystemMetrics(nIndex: core::ffi::c_int) -> core::ffi::c_int;
     fn GetSysColor(nIndex: core::ffi::c_int) -> COLORREF;
@@ -285,8 +286,10 @@ unsafe fn ICONTITLE_Paint(hwnd: HWND, owner: HWND, hDC: HDC, bActive: BOOL) -> B
     (!hPrevFont.is_null()) as BOOL
 }
 
-#[no_mangle]
-pub unsafe extern "system" fn IconTitleWndProc(hWnd: HWND, msg: UINT, wParam: WPARAM, mut lParam: LPARAM) -> LRESULT {
+/// Wine 11.11 splits the proc: the handled messages share this body, and everything
+/// else goes to the DefWindowProc matching the caller's charset (the single proc used
+/// to send ANSI clients to DefWindowProcW too).
+unsafe fn IconTitleWndProc_common(hWnd: HWND, msg: UINT, wParam: WPARAM, mut lParam: LPARAM) -> LRESULT {
     let owner = GetWindow(hWnd, GW_OWNER as _);
 
     if IsWindow(hWnd) == 0 {
@@ -329,6 +332,31 @@ pub unsafe extern "system" fn IconTitleWndProc(hWnd: HWND, msg: UINT, wParam: WP
             }
             1
         }
-        _ => DefWindowProcW(hWnd, msg, wParam, lParam),
+        _ => 0,
     }
+}
+
+#[inline]
+fn icontitle_handles(msg: UINT) -> bool {
+    matches!(
+        msg,
+        WM_CREATE | WM_NCHITTEST | WM_NCMOUSEMOVE | WM_NCLBUTTONDBLCLK | WM_ACTIVATE | WM_CLOSE
+            | WM_SHOWWINDOW | WM_ERASEBKGND
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IconTitleWndProcA(hWnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+    if icontitle_handles(msg) {
+        return IconTitleWndProc_common(hWnd, msg, wParam, lParam);
+    }
+    DefWindowProcA(hWnd, msg, wParam, lParam)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn IconTitleWndProcW(hWnd: HWND, msg: UINT, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
+    if icontitle_handles(msg) {
+        return IconTitleWndProc_common(hWnd, msg, wParam, lParam);
+    }
+    DefWindowProcW(hWnd, msg, wParam, lParam)
 }

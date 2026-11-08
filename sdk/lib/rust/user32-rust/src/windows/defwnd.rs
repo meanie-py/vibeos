@@ -630,12 +630,60 @@ unsafe fn DefWndGetIcon_impl(pWnd: PWND, wParam: WPARAM, _lParam: LPARAM) -> LRE
         x if x == ICON_BIG as WPARAM => {
             hIconRet = UserGetProp(UserHMGetHandle(pWnd), crate::wow64::psi::atom_icon_prop(), TRUE as BOOLEAN) as HICON;
         }
+        // win32k keeps the small icon it generated from the big one in the
+        // same prop, flagged WNDS2_SMALLICONFROMWMQUERYDRAG; only ICON_SMALL2
+        // reports it.
+        x if x == ICON_SMALL as WPARAM
+            && (*pWnd).state2 & WNDS2_SMALLICONFROMWMQUERYDRAG != 0 => {}
         x if x == ICON_SMALL as WPARAM || x == ICON_SMALL2 as WPARAM => {
             hIconRet = UserGetProp(UserHMGetHandle(pWnd), crate::wow64::psi::atom_icon_sm_prop(), TRUE as BOOLEAN) as HICON;
         }
         _ => {}
     }
     hIconRet as LRESULT
+}
+
+/// InternalGetWindowIcon (user32 export since Vista; Wine's
+/// NtUserInternalGetWindowIcon). The icon the shell should draw for a window,
+/// WITHOUT sending it WM_GETICON: the window's own icon, else its class's,
+/// else IDI_APPLICATION, returned as a COPY the caller owns and destroys. The
+/// spec only carried a version-gated stub, so GetProcAddress gave NULL and
+/// user32:win's test_icons called through it (EIP 0, the suite's crash).
+#[no_mangle]
+pub unsafe extern "system" fn InternalGetWindowIcon(hwnd: HWND, icon_type: UINT) -> HICON {
+    if ValidateHwnd(hwnd).is_null() {
+        return core::ptr::null_mut(); // ValidateHwnd set ERROR_INVALID_WINDOW_HANDLE
+    }
+    if gpsi.is_null() {
+        return core::ptr::null_mut();
+    }
+    let mut ret: HICON = match icon_type {
+        x if x == ICON_BIG as UINT => {
+            let mut h = UserGetProp(hwnd, crate::wow64::psi::atom_icon_prop(), TRUE as BOOLEAN) as HICON;
+            if h.is_null() {
+                h = GetClassLongPtrW(hwnd, GCLP_HICON) as HICON;
+            }
+            h
+        }
+        x if x == ICON_SMALL as UINT || x == ICON_SMALL2 as UINT => {
+            let mut h = UserGetProp(hwnd, crate::wow64::psi::atom_icon_sm_prop(), TRUE as BOOLEAN) as HICON;
+            if h.is_null() {
+                h = GetClassLongPtrW(hwnd, GCLP_HICONSM) as HICON;
+            }
+            if h.is_null() {
+                h = GetClassLongPtrW(hwnd, GCLP_HICON) as HICON;
+            }
+            h
+        }
+        _ => {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return core::ptr::null_mut();
+        }
+    };
+    if ret.is_null() {
+        ret = LoadIconW(core::ptr::null_mut(), MAKEINTRESOURCEW(IDI_APPLICATION_ID));
+    }
+    crate::windows::cursoricon::CopyImage(ret as HANDLE, IMAGE_ICON, 0, 0, 0) as HICON
 }
 
 // ===========================================================================

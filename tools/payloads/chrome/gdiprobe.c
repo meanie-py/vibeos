@@ -1,17 +1,30 @@
-/* gdiprobe: does a DC that is created and freed again stay freed?
- * Long Chrome boots wedged after about an hour: a 32-bit app polling once a second opened a
- * display DC each time (NtGdiOpenDCW), the GDI handle index climbed to the ~16K table limit and
- * never came back, and once NtGdiOpenDCW returned 0 the pool behind it ran dry too (win32k
- * "Not enough memory to allocate a message"). Each pair below runs N times, more than the
- * handle table holds, so a pair that leaks starts failing; the GDI object count is printed too.
- * Built for amd64 and, to go through WOW64 like the leaking app, i386. It runs before the Chrome
- * runs, while a guest that leaks still has handles to spare; once the leak has run for a while
- * nothing after it gets to run. One line per fact, to diff with gdiprobe.win11.txt. */
+/* gdiprobe: does a GDI object that is created and deleted again stay deleted?
+ * Long Chrome boots wedged 15-60 min in: the stock 32-bit osk.exe piled up pens until the GDI
+ * handle table was full, pool ran dry and win32k flooded "Not enough memory to allocate a
+ * message". The cause was every WOW64 delete of a handle whose reuse byte had its top bit set
+ * failing (win32k compared the sign-extended handle at pointer width). Each pair below runs N
+ * times, past 128 reuses of a slot and past the whole table, and counts failed deletes as well
+ * as the GDI object count. Built for amd64 and, through WOW64, i386. It runs before the Chrome
+ * runs, while a guest that leaks still has handles to spare. One line per fact, to diff with
+ * gdiprobe.win11.txt. */
 #include <windows.h>
 #include <stdio.h>
+#include <string.h>
 
 /* Past the whole GDI handle table (~16K) and the 10K per-process quota: a leak cannot pass. */
 #define N 20000
+
+/* GDIPROBE_TRACE: raw markers (WriteFile, no CRT formatting) between steps, to place a death
+ * whose own output never arrives. Off unless built with -DGDIPROBE_TRACE. */
+#ifdef GDIPROBE_TRACE
+static void mark(const char *m)
+{
+    DWORD n;
+    WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), m, (DWORD)strlen(m), &n, NULL);
+}
+#else
+#define mark(m) ((void)0)
+#endif
 
 static void say(const char *fmt, ...)
 {
@@ -31,7 +44,9 @@ static DWORD objs(void)
 
 static const char *grew(DWORD before, DWORD after)
 {
-    return after <= before + 4 ? "flat" : "GREW";
+    /* Some slack: Windows' gdi32 keeps up to 10 deleted solid brushes cached for reuse. A
+     * leak here is thousands. */
+    return after <= before + 32 ? "flat" : "GREW";
 }
 
 int main(void)
@@ -39,9 +54,12 @@ int main(void)
     DWORD b, a;
     int fails;
 
+    mark("[GDITRACE] main\n");
     say("%s", sizeof(void *) == 8 ? "64-bit" : "32-bit");
+    mark("[GDITRACE] said\n");
 
     b = objs();
+    mark("[GDITRACE] GetGuiResources returned\n");
     fails = 0;
     for (int i = 0; i < N; i++) {
         HDC dc = CreateDCA("DISPLAY", NULL, NULL, NULL);
@@ -49,7 +67,8 @@ int main(void)
             fails++;
             continue;
         }
-        DeleteDC(dc);
+        if (!DeleteDC(dc))
+            fails++;
     }
     a = objs();
     say("CreateDC(DISPLAY)+DeleteDC x%d: objects %s, failures %d (count %lu -> %lu)", N, grew(b, a), fails, b, a);
@@ -62,7 +81,8 @@ int main(void)
             fails++;
             continue;
         }
-        DeleteDC(dc);
+        if (!DeleteDC(dc))
+            fails++;
     }
     a = objs();
     say("CreateIC(DISPLAY)+DeleteDC x%d: objects %s, failures %d (count %lu -> %lu)", N, grew(b, a), fails, b, a);
@@ -75,10 +95,10 @@ int main(void)
         HBITMAP bm = dc ? CreateCompatibleBitmap(dc, 16, 16) : NULL;
         if (!dc || !mem || !bm)
             fails++;
-        if (bm)
-            DeleteObject(bm);
-        if (mem)
-            DeleteDC(mem);
+        if (bm && !DeleteObject(bm))
+            fails++;
+        if (mem && !DeleteDC(mem))
+            fails++;
         if (dc)
             ReleaseDC(NULL, dc);
     }
@@ -104,6 +124,48 @@ int main(void)
     }
     a = objs();
     say("GetIconInfo(arrow)+DeleteObject x%d: objects %s, failures %d (count %lu -> %lu)", N, grew(b, a), fails, b, a);
+
+    /* osk.exe's leaked objects are type 0x10 -- brushes AND pens (a pen is a brush object). */
+    b = objs();
+    fails = 0;
+    for (int i = 0; i < N; i++) {
+        HPEN p = CreatePen(PS_SOLID, 1, RGB(i & 255, 0, 0));
+        if (!p || !DeleteObject(p))
+            fails++;
+    }
+    a = objs();
+    say("CreatePen+DeleteObject x%d: objects %s, failures %d (count %lu -> %lu)", N, grew(b, a), fails, b, a);
+
+    b = objs();
+    fails = 0;
+    for (int i = 0; i < N; i++) {
+        HBRUSH br = CreateSolidBrush(RGB(0, i & 255, 0));
+        if (!br || !DeleteObject(br))
+            fails++;
+    }
+    a = objs();
+    say("CreateSolidBrush+DeleteObject x%d: objects %s, failures %d (count %lu -> %lu)", N, grew(b, a), fails, b, a);
+
+    /* A key label with a prefix: DrawText underlines the character after '&' with a pen it
+     * creates and deletes. */
+    {
+        HDC dc = GetDC(NULL);
+        HDC mem = CreateCompatibleDC(dc);
+        HBITMAP bm = CreateCompatibleBitmap(dc, 64, 32);
+        HGDIOBJ old = SelectObject(mem, bm);
+        RECT r = { 0, 0, 64, 32 };
+        b = objs();
+        fails = 0;
+        for (int i = 0; i < N; i++)
+            if (!DrawTextW(mem, L"&A", -1, &r, DT_SINGLELINE))
+                fails++;
+        a = objs();
+        say("DrawText(\"&A\") x%d: objects %s, failures %d (count %lu -> %lu)", N, grew(b, a), fails, b, a);
+        SelectObject(mem, old);
+        DeleteObject(bm);
+        DeleteDC(mem);
+        ReleaseDC(NULL, dc);
+    }
 
     /* What osk does ten times a second: set a key button's text, which repaints it. osk.exe's
      * GDI object count climbed by thousands in the guest while osk itself frees all it makes. */

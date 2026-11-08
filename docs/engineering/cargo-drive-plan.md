@@ -445,6 +445,49 @@ extends it from the boot spine to every fully-Rust module.
      leftovers (message DLLs, .msstyles, .tlb, ACM codecs) as shell-less cells; the 17
      earlier C-less cells re-rendered shell-less; the d3dx/d3dcompiler family; the driver
      kinds; C++.
+     - **2026-11-07: iologmsg, netevent, netmsg converted** (shell-less, byte-identical to
+       cmake on all 3 arches). Two generator fixes on the way: ninja spells a dotted target's
+       rule name with `.2e` (`graph::ninja_rule_name`), and a dotted target's `spec2def` names
+       its own output, so it is not a statement on the target.
+     - **2026-11-07: function-made targets.** `cells/fncall.rs` expands a call such as
+       `add_d3dx9_target(24)` into the function body (parameters and leading single-value
+       `set()` locals substituted) for the model, and turns the rewritten body back into ONE
+       template written into the shared `.cmake`: every caller must yield the same template,
+       every caller must be in the wave, and the template must re-substitute exactly. Values
+       go back as variables only at word boundaries (VERSION=32 vs `ole32`), and sources are
+       spelled from the tree root then mapped to the directory local. **d3dx9_24..43 (20)
+       converted**, pe_equiv EQUIVALENT ×3. **d3dx10_33..42 and d3dx11_42/43 (12; d3dx10_43
+       was already a cell) converted**, EQUIVALENT ×3. The forwarders' imports come from a
+       list variable computed from the spec (`${_forward_targets}`); usage now skips a
+       variable rather than spelling `lib${list}`, and the dead `file(STRINGS)` block went
+       with it (cargo's spec2def reads the spec). **d3dcompiler_33..47 (13) converted**,
+       EQUIVALENT ×3: the flex/bison outputs need nothing new, since the OBJECT library
+       compiles `${CMAKE_CURRENT_BINARY_DIR}/asmshader.{yy,tab}.c` and orders them before the
+       cargo link. The d3dx family is done (45 modules); d3dwine itself is still cmake-linked.
+     - **2026-11-07: drivers.** acpi, afd, cdfs, partmgr, pcix, serial, usbxhci, legide
+       (i386) and pl011 (arm64) converted, EQUIVALENT on every arch they build for. Generator
+       changes: a target's own `POST_BUILD native-pefixup <args>` becomes
+       `add_cargo_module(... PEFIXUP <args>)` (any other command on the target is refused,
+       since left in place it breaks configure); an `if(ARCH ...)` gate on the PARENT's
+       `add_subdirectory(<dir>)` names the arches (there, an ARCH test ANDed with an option
+       is accepted: the whole rewritten file stays under it); a closed `elseif` chain before
+       the target no longer refuses it; a target's own POST_BUILD is not a `$<TARGET_FILE>`
+       consumer. Still held: the C++ drivers drmk, hdaudbus, portcls, uniata, ucx01000 and
+       usbhub3.
+     - **2026-11-07: cdrom (KMDF) converted**, EQUIVALENT ×3. `add_cargo_module(... KIND
+       kmdfdriver)` runs `native-pefixup --wdmdriver` as set_module_type(kmdfdriver) did; the
+       OBJECT library takes `wdfdriverentry`'s usage (the KMDF include dir and WDF defines
+       set_module_type brought). A `-Wl,` item in a link order is passed to the linker in
+       place (cdrom whole-archives its body), and a body linked under `--whole-archive` makes
+       the cell shell-less: the staticlib brings its own core and panic handler, which a
+       rustc bin would define again.
+     - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
+       `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
+       `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses
+       `activeds.tlb-cargo`), and add_cargo_module's custom target `activeds.tlb` is the
+       phony `<dir>/activeds.tlb`, the very path of the output (ninja: multiple rules
+       generate). The output path is what the media manifest, cab and pe_equiv key on.
+       wdmaud.drv also links two bodies (`several bodies`).
    - **RESUME HERE (2026-11-06).** Waves 1-4 (168 body-less C modules) are on master. Wave
      5/6 (`ctail-held`) converts 61 more, each `pe_equiv`-equivalent to cmake's link on all
      3 arches: 38 cmake-linked Rust DLLs (advapi32, user32, ole32, setupapi, ws2_32, ...
@@ -467,9 +510,9 @@ extends it from the boot spine to every fully-Rust module.
          handler needed ntdll (DbgPrint, NtTerminateProcess) and gave code-free DLLs a
          `.text`. pe_equiv EQUIVALENT ×3 with no allowance notes; the five resource
          DLLs (shdoclc, msxml3r, mycomput, tapiui, themeui) are byte-identical to
-         cmake's link. Owed: the 17 earlier C-less cells (cfgmgr32, icmp, regapi, ...)
-         still carry the dead handler; re-render them shell-less against a fresh cmake
-         baseline. The driver kinds should build on this (no user-mode shell there either).
+         cmake's link. **Done 2026-11-07:** the 17 earlier C-less cells (cfgmgr32, icmp,
+         regapi, ...) re-rendered shell-less; pe_equiv EQUIVALENT ×3 against their original
+         cmake builds (wave 5/6 baseline) with the i386 rsbegin `.ctors`/`.dtors` note gone. The driver kinds should build on this (no user-mode shell there either).
        - d3dwine, dinput8 (resources missing), libjpeg, libpng, libxslt (exports
          missing), mbedtls (an import missing): model clean, link not equivalent.
        - (gdi32, msxml3, wuapi, xolehlp: converted 2026-11-06 once their archives got engine

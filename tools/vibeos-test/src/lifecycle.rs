@@ -21,9 +21,16 @@ struct Identity {
 }
 fn identity(pid: u32) -> Result<Option<Identity>> {
     let dir = PathBuf::from(format!("/proc/{pid}"));
+    // A process exiting mid-scan is gone, not an error. Its /proc entry can open and then
+    // fail the READ with ESRCH, which is not ErrorKind::NotFound: that aborted the whole
+    // group stop in reap, leaving an overdue QEMU running (test_native_reaper flake under
+    // a 1333-test pytest load).
+    let gone = |e: &std::io::Error| {
+        e.kind() == std::io::ErrorKind::NotFound || e.raw_os_error() == Some(libc::ESRCH)
+    };
     let stat = match fs::read_to_string(dir.join("stat")) {
         Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) if gone(&e) => return Ok(None),
         Err(e) => return Err(e.into()),
     };
     let fields = stat
@@ -43,7 +50,7 @@ fn identity(pid: u32) -> Result<Option<Identity>> {
     // Its disappearance must not abort termination of an unrelated owned QEMU.
     let uid = match fs::metadata(dir) {
         Ok(metadata) => metadata.uid(),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if gone(&error) => return Ok(None),
         Err(error) => return Err(error.into()),
     };
     Ok(Some(Identity {

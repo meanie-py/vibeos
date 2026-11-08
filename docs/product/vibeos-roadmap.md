@@ -602,25 +602,72 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **amd64: long boots wedge once osk.exe has leaked the GDI handle table (open, found
-  2026-11-07, graviton lane).** The stock i386 `osk.exe` winlogon starts on amd64 gains GDI
-  objects by thousands while it runs (memwatch's per-process GDI count: 2 -> 528 -> 1696 -> 2576
-  in one Chrome payload boot, every other process flat). The DC handle index climbs to the ~16K
-  table limit (`NtGdiOpenDCW` finally returns 0), pool allocations then fail (QSI's bounce buffer,
-  STATUS_INSUFFICIENT_RESOURCES), and win32k floods `MsqSendMessage(): Not enough memory to
-  allocate a message` until the serial line starves the guest. Hit 15-60 min into a boot, so
-  any long run is exposed (four Chrome payload boots, e.g. `20261107-004043-gxu5_aj2`); 10-15 min
-  smokes pass. osk's own code frees what it makes: every 100 ms it `SetWindowTextW`s its key
-  buttons and invalidates its LEDs, with one brush for life. **Measured clean natively**
-  (`tools/payloads/chrome/gdiprobe.c`, amd64 in the guest): 20000 create/free pairs of
-  display DCs, ICs, compatible DCs and bitmaps, `GetIconInfo` copies, and a button's
-  `SetWindowText` + repaint all stay flat, as on Windows 11. So the leak is in the 32-bit
-  (WOW64) side of one of those paths or in what osk alone does. Blocked from the direct test:
-  an llvm-mingw i686 exe dies in WOW64 start-up before main (activation context:
-  `rtl-actctx` `add_entity` -> `RtlReAllocateHeap` raising STATUS_NO_MEMORY, exit 128,
-  console and GUI subsystem alike), so `gdiprobe32.exe` cannot run yet; the stock apps, built by
-  the ReactOS i386 toolchain, start. Next: fix that start-up failure (or build the probe with
-  the i386 toolchain) and run gdiprobe32 to split WOW64 from osk.
+- **amd64: long boots wedged once osk.exe had leaked the GDI handle table (FIXED 2026-11-07,
+  graviton lane).** The stock i386 `osk.exe` gained thousands of pens (to 8,300+ in one Chrome
+  payload boot; magnify leaked too), the handle table filled, pool ran dry and win32k flooded
+  `MsqSendMessage(): Not enough memory` until the guest starved, 15-60 min in. Cause: every
+  32-bit `DeleteObject`/`DeleteDC` of a handle whose reuse byte had reached 0x80 failed. The
+  WOW64 thunk sign-extends a 32-bit handle (as Windows does), and win32k-rust
+  `GreGetObjectOwner` compared `hobj >> 16` with the entry's `FullUnique` at pointer width, so
+  `0xFFFFFFFF8030` never matched `0x8030` and `NtGdiDeleteObjectApp` refused the handle as not
+  the caller's. The C has the same comparison; native callers only ever hold zero-extended
+  handles. Now it compares 16 bits, as `ENTRY_ReferenceEntryByHandle` already did. Graded by
+  `tools/payloads/chrome/gdiprobe.c` built for both bitnesses (`gdiprobe32.exe` through
+  WOW64): 20000 create/delete pairs of DCs, ICs, bitmaps, pens and brushes, flat with 0
+  failed deletes, as on Windows 11; memwatch's per-process GDI line shows osk flat.
+
+- **llvm-mingw i686 console exe dies in WOW64 start-up (open, intermittent?, found 2026-11-07,
+  graviton lane).** A console-subsystem build of `gdiprobe.c` died before main: 64-bit ntdll's
+  activation context (`rtl-actctx` `add_entity` -> `RtlReAllocateHeap` for 0x2d0 bytes) raised
+  STATUS_NO_MEMORY, exit 128. The GUI-subsystem builds (`gdiprobe32.exe` and the four
+  `tools/payloads/chrome/w32start.c` variants, no CRT through gdi32) have started in every boot
+  since, and the console build has not been re-run. Next: stage the console build beside them
+  to tell "console only" from "gone".
+
+- **OptiPlex 9020: freeldr resets the board after loading the boot drivers (open, found
+  2026-11-07).** The netboot image of a current tree gets as far as `[FLDR] phase: boot
+  drivers loaded`. Then the board resets to coreboot without loading `AppPatch\drvmain.sdb`
+  or printing `phase: handoff to kernel`, every time. The same capture setup shows 38
+  desktop boots up to 2026-10-20 (`D:\home\vibeos-optiplex\serial-20261014-203830`), so this
+  is a loader regression since then on this board. `smoke --arch amd64-bios` passes the same
+  point in QEMU (`20261107-195717-KMdhG5`). Capture: `serial-20261107-190419`.
+  Next: bisect the loader between 2026-10-20 and now, or arm freeldr's debug output around
+  the drvmain.sdb load.
+
+- **No device can be disabled, removed or re-enabled from user mode (open, found
+  2026-11-07, msvcrt-homebrew lane).** The kernel's `PiControlQueryRemoveDevice`
+  (pnpmgr-rust `plugplay.rs`) looks the device up and returns `STATUS_NOT_IMPLEMENTED`, as
+  upstream's does. So `CM_Query_And_Remove_SubTree` (cr 52) and `CM_Disable_DevNode`, and with
+  them Device Manager's Disable, fail before any driver is asked. Re-enable is not there
+  either: `PiActionResetDevice` only rewinds a removed node to Uninitialized, and
+  `PiActionStartDevice` then refuses it (it wants Initialized). `IopSendRemoveDevice` also
+  drops the node's only PDO reference. The kernel's removal machinery itself exists
+  (`IopPrepareDeviceForRemoval`, `IopRemoveDevice`, and `IoRequestDeviceEject`, which runs
+  it inline); only the user-mode entry and the way back are missing. This blocks sysfb's
+  stop/remove hand-off test (`sysfb-pnp-design.md`, step 3).
+
+- **FASTFAT's verify of a hot-plug volume never settles (open, found 2026-11-07,
+  amd64-bios).** classpnp marks a removable or hot-plug disk's volume `DO_VERIFY_VOLUME` on
+  any `SET_POWER` for a sleep action, as Windows' does. The verify that follows here loops
+  forever: `FatMountVolume -> 0x0` alternating with `Assertion failed at
+  disk/geometry.c(1010): TEST_FLAG(..., FILE_REMOVABLE_MEDIA)`, 226K `RtlRaiseStatus(0x80000016)`
+  in one run, and the guest wedges (`smoke --arch amd64-bios --payload sysfbprobe`,
+  `20261107-193632-PREcUD`). Those mount and assert lines already appear earlier in a BIOS
+  boot, before any power IRP, so the verify path is broken on its own. The power IRP only
+  turns it into a livelock. Any real resume from sleep would hit it, so the power manager's
+  sleep query does not send Windows' cancelling `SET_POWER(S0)` until this is fixed.
+
+- **`SetPixel` on the display surface writes black (open, found 2026-11-07, amd64).** On a
+  `CreateDC("DISPLAY")` DC, `GetPixel` reads the real colours (wallpaper `0xa56e3a`, taskbar
+  `0xc8d0d4`) and `SetPixel` returns the colour it was given, but the pixel then reads back
+  `0x000000`, and stays black after a restore. A 1x1 `PatBlt` with a solid brush round-trips
+  correctly on the same DC. Seen in `tools/payloads/sysfbprobe` runs (`20261107-182550-reYxfy`).
+  Not the display driver: suspect win32k's SetPixel colour translation to the device format.
+
+- **`SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT)` fails with
+  error 31 (open, found 2026-11-07, amd64).** Seen once from the Startup folder, before the
+  PlugPlay service was running, so it may only be that ordering; the CM_* calls failed the
+  same way until the probe waited for the service. Not rechecked with the service up.
 
 - **Fibers did not work on amd64 or arm64 (FIXED 2026-11-06, upstream-sync lane).** Both
   routines a fiber switch needs were unimplemented on 64-bit: amd64's `fiber.S` was an

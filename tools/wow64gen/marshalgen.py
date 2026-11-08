@@ -45,6 +45,7 @@ class Field:
     ctype: str
     name: str
     is_bitfield: bool
+    bits: str = ""
 
 
 @dataclass

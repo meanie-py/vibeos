@@ -25,7 +25,8 @@ def test_crash_is_not_a_finding_or_baseline_success(tmp_path, monkeypatch, stdou
     monkeypatch.setattr(
         run, "run", lambda *a, **k: subprocess.CompletedProcess([], code, stdout, stderr)
     )
-    monkeypatch.setattr(lints, "_baseline", lambda *a: {"file.rs:1: finding"})
+    (tmp_path / lints.BASELINE_DIR).mkdir(parents=True)
+    (tmp_path / lints.BASELINE_DIR / "fixture.txt").write_text("file.rs:1: finding\n")
     stage = lints._lint_stage(run, tmp_path, "fixture", ["fixture"], strict=False)
     assert stage.status == "fail"  # even an advisory scan cannot claim completion
     assert run.classification == "SCANNER_ERROR"
@@ -39,14 +40,15 @@ def test_normal_baselined_findings_remain_accepted(tmp_path, monkeypatch):
     monkeypatch.setattr(
         run, "run", lambda *a, **k: subprocess.CompletedProcess([], 1, "a.rs:1: bug\n", "")
     )
-    monkeypatch.setattr(lints, "_baseline", lambda *a: {"a.rs:1: bug"})
+    (tmp_path / lints.BASELINE_DIR).mkdir(parents=True)
+    (tmp_path / lints.BASELINE_DIR / "fixture.txt").write_text("a.rs:1: bug\n")
     assert lints._lint_stage(run, tmp_path, "fixture", ["fixture"], strict=True).status == "ok"
     assert not run.classification
 
 
 def test_lint_partition_preserves_scanner_classification(tmp_path, monkeypatch):
     monkeypatch.setattr(
-        gate.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess([], 1, "", TRACE)
+        gate, "_execute", lambda *a, **k: subprocess.CompletedProcess([], 1, "", TRACE)
     )
     monkeypatch.setattr(lints, "source_partition_specs", lambda *a: [("fixture", [], "stdout")])
     monkeypatch.setattr(

@@ -752,6 +752,8 @@ endfunction()
 ##                    [DESTINATION <cd-dir>...] [NAME_ON_CD <name>]
 ##                    [NO_CAB]                          (not in reactos.cab:
 ##                                                       setup does not install it))
+##                    [PEFIXUP <native-pefixup args>]   (the target's own POST_BUILD
+##                                                       pefixup, after the KIND's)
 ##
 ## <crate> is the cargo bin crate whose build.rs uses reactos-link and is
 ## arch-aware (i686/x86_64/aarch64-kernel.json under the crate dir); its
@@ -763,6 +765,7 @@ endfunction()
 ## per-target POST_BUILD would have applied):
 ##   kerneldll : native-pefixup --kerneldll  (+ i386 forwarder fix)
 ##   kernelmodedriver : native-pefixup --kernelmodedriver (+ i386 forwarder fix)  [win32k]
+##   kmdfdriver : native-pefixup --wdmdriver (+ i386 forwarder fix)  [cdrom]
 ##   win32dll  : i386 lld forwarder fix only  (user DLL — no pefixup)  [ntdll]
 ##   efi       : strip --remove-section=.rossym  +  strip --strip-all
 ##   native    : none
@@ -773,7 +776,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/cargo_link_context.cmake)
 ## so the shared body crate compiles once instead of once per module (the 95 keyboard
 ## layouts). Each output gets the kind's post-link and its own cd entry.
 function(add_cargo_module _target _crate _output)
-    cmake_parse_arguments(_acm "NO_CD;NO_CAB;DELAY_IMPORTS" "KIND;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS;BINS;DESTINATION" ${ARGN})
+    cmake_parse_arguments(_acm "NO_CD;NO_CAB;DELAY_IMPORTS" "KIND;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS;BINS;DESTINATION;PEFIXUP" ${ARGN})
     if(NOT _acm_KIND)
         set(_acm_KIND kerneldll)
     endif()
@@ -999,11 +1002,17 @@ function(add_cargo_module _target _crate _output)
             list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
                 ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py __ACM_OUT__)
         endif()
-    elseif(_acm_KIND STREQUAL "kernelmodedriver")
+    elseif(_acm_KIND STREQUAL "kernelmodedriver" OR _acm_KIND STREQUAL "kmdfdriver")
         # Kernel-mode driver .sys (win32k.sys): set_module_type(kernelmodedriver)
         # applies native-pefixup --kernelmodedriver (same driver_fixup as
         # --kerneldll but the kernelmodedriver mode flag) + the i386 fwd fix.
-        set(_postlink COMMAND $<TARGET_FILE:native-pefixup> --kernelmodedriver __ACM_OUT__)
+        # A KMDF driver (cdrom) gets --wdmdriver, as set_module_type(kmdfdriver) maps it.
+        if(_acm_KIND STREQUAL "kmdfdriver")
+            set(_pefixup_mode --wdmdriver)
+        else()
+            set(_pefixup_mode --kernelmodedriver)
+        endif()
+        set(_postlink COMMAND $<TARGET_FILE:native-pefixup> ${_pefixup_mode} __ACM_OUT__)
         set(_postdep native-pefixup)
         if(USE_LLVM_MINGW AND ARCH STREQUAL "i386")
             list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
@@ -1063,6 +1072,13 @@ function(add_cargo_module _target _crate _output)
                 "links real delay-import libs, but this build has delay-load disabled")
         endif()
         list(APPEND _postlink COMMAND $<TARGET_FILE:native-pefixup> --delayimport __ACM_OUT__)
+        set(_postdep native-pefixup)
+    endif()
+    # PEFIXUP <args>: the target's own `add_custom_command(TARGET t POST_BUILD COMMAND
+    # native-pefixup <args> $<TARGET_FILE:t>)` (pcix/legide's `--section:.rsrc,!D`), which
+    # cmake ran after set_module_type's post-link; a cell has no TARGET to hang it on.
+    if(_acm_PEFIXUP)
+        list(APPEND _postlink COMMAND $<TARGET_FILE:native-pefixup> ${_acm_PEFIXUP} __ACM_OUT__)
         set(_postdep native-pefixup)
     endif()
 

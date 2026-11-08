@@ -37,81 +37,29 @@ CONF_ROUNDS = FARM_DIR / "conformance.jsonl"
 # Refusals, not boots: the harness declined to run, so nothing about the OS was sampled.
 NOT_A_BOOT = frozenset({"STALE_MEDIA", "LADDER_NOT_STAGED", "RUN_INTERRUPTED"})
 
-_HEX = re.compile(r"0x[0-9a-fA-F]+|\b[0-9a-fA-F]{8,16}\b")
-_NUM = re.compile(r"\b\d+\b")
-_BUGCHECK = re.compile(r"BugCheck (0x[0-9A-Fa-f]+)")
-_MAX_SYM_OFFSET = 0x10000
-_MASS_MIN = 3  # this many unrelated items sharing one transition = one run-level event
+_MASS_MIN = 3
+
+
+def _native_signature(operation, **arguments):
+    from tools import qemu_infra_compat as native
+
+    return native.call("cli_report_" + operation, arguments)
 
 
 def norm(s: str, width: int = 70) -> str:
-    """Strip what varies between instances of one failure: addresses, counters, seq ids."""
-    s = _HEX.sub("#", s)
-    s = _NUM.sub("#", s)
-    return " ".join(s.split())[:width]
+    return _native_signature("norm", text=s, width=width)
 
 
 def _pc_symbol(line: str) -> str | None:
-    """`hang: CPU#0 0xfff… -> 00661544<TAB>KeRaiseIrql+14<TAB>file:line` -> `KeRaiseIrql`.
-
-    None when the symbolicator had nothing (`<no symbol>`, `(no symbol: …)`): a
-    missing symbol must not become a shared cluster key of its own."""
-    parts = line.split("\t")
-    if len(parts) < 2:
-        return None
-    sym = parts[1].strip()
-    if not sym or sym.startswith("<") or sym.startswith("("):
-        return None
-    name, _, off = sym.partition("+")
-    # `XHF_NOEXECUTE+314197`, `EFLAGS_ID_MASK+148214`: a CONSTANT, hundreds of KB from
-    # the PC -- the symbolicator resolved against the wrong image. As a cluster key it
-    # would pose as a cause; a real function is never that far from its own code.
-    try:
-        if off and int(off, 0) > _MAX_SYM_OFFSET:
-            return None
-    except ValueError:
-        pass
-    return name
+    return _native_signature("pc_symbol", line=line)
 
 
 def boot_signature(boot: dict) -> str:
-    """One failed boot (a `boots[]` entry of a smoke summary) -> a stable cluster key."""
-    cls = boot.get("classification") or boot.get("outcome") or "FAIL"
-    sal = [str(x) for x in (boot.get("salient") or [])]
-    joined = "\n".join(sal)
-    pc = next((_pc_symbol(x) for x in sal if "\t" in x and "->" in x), None)
-    m = _BUGCHECK.search(joined)
-    if m:
-        code = f"0x{int(m.group(1), 16):X}"
-        post = " post-marker" if "(after boot marker)" in joined else ""
-        return f"{cls} {code}{post}" + (f" @ {pc}" if pc else "")
-    if cls in ("HANG_TIMEOUT",) or boot.get("outcome") == "timeout":
-        kind = boot.get("hang_kind") or "?"
-        if pc:
-            return f"{cls} {kind} @ {pc}"
-        last = next((x.split("last serial:", 1)[1] for x in sal if "last serial:" in x), "")
-        return f"{cls} {kind} | {norm(last, 40)}" if last else f"{cls} {kind}"
-    if cls == "FAIL_MARKER":
-        mk = next((x.split("fail marker:", 1)[1] for x in sal if "fail marker:" in x), "")
-        return f"{cls} {norm(mk, 50)}"
-    if cls == "LADDER_FAIL":
-        guests = sorted({x.split()[0] for x in sal if re.match(r"^\w+32\.exe\b", x)})
-        return f"{cls} {','.join(guests) or '?'}"
-    return f"{cls} | {norm(sal[0], 60)}" if sal else cls
+    return _native_signature("boot_signature", boot=boot)
 
 
 def run_signature(summary: dict) -> str | None:
-    """A whole smoke/gate summary -> the signature of its FIRST failure (None if green)."""
-    if summary.get("verdict") in ("OK", "WARN"):
-        return None
-    for b in summary.get("boots") or []:
-        if not b.get("ok"):
-            return boot_signature(b)
-    cls = summary.get("classification") or "FAIL"
-    st = next((s for s in summary.get("stages") or [] if s.get("status") == "fail"), None)
-    if st:
-        return f"{cls} {st.get('name', '')}: {norm(str(st.get('detail', '')), 50)}"
-    return cls
+    return _native_signature("run_signature", summary=summary)
 
 
 def conformance_signatures(rec: dict) -> list[str]:

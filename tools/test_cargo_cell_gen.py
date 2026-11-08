@@ -1573,6 +1573,9 @@ def test_a_target_another_cmakelists_reads_by_genex_is_found(tmp_path):
     (tmp_path / "b/CMakeLists.txt").write_text(
         "add_custom_command(TARGET rshell POST_BUILD\n"
         '  COMMAND x "$<TARGET_FILE_DIR:filebrowser>/y")\n'
+        # A target's own POST_BUILD on itself is not a consumer (legide-rust's cohab copy).
+        "add_custom_command(TARGET legide POST_BUILD\n"
+        "  COMMAND native-pefixup --section:.rsrc,!D $<TARGET_FILE:legide>)\n"
     )
     g._GENEX_REFS.pop(tmp_path, None)
     assert g._target_file_refs(tmp_path) == {"filebrowser": ["b/CMakeLists.txt"]}
@@ -1601,6 +1604,80 @@ def test_a_conditional_compile_setting_keeps_its_condition(tmp_path):
     f.write_text(body.replace('    if(ARCH STREQUAL "amd64")\n', "else()\n    if(1)\n"))
     with pytest.raises(g.GenError, match="elseif/else branch"):
         g.rewrite_cmake(f, c)
+
+
+def test_a_comment_inside_a_moved_statement_is_not_carried_as_a_dead_source(tmp_path):
+    """d3dx9's `# math.c wants M_PI` sits inside its compile definitions; the statement moves
+    to the OBJECT library with it, so it must not also be listed as translated C on disk."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m win32dll)\n"
+        "target_compile_definitions(m PRIVATE\n"
+        "    # math.c wants M_PI.\n"
+        "    _USE_MATH_DEFINES)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert out.count("# math.c wants M_PI.") == 1
+    assert "kept on disk" not in out
+
+
+def test_a_list_variable_of_import_libs_is_not_prefixed_as_one_lib(tmp_path):
+    """d3dx10's forwarders import `${_forward_targets}`, a list; `lib${_forward_targets}`
+    prefixed only its first element and left the rest naming the (now cargo) modules."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m win32dll)\n"
+        "add_importlibs(m ${_fwd} msvcrt kernel32)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "lib${_fwd}" not in out
+    assert "libmsvcrt libkernel32" in out
+
+
+def test_a_post_build_pefixup_on_the_target_becomes_the_cells_pefixup(tmp_path):
+    """pcix and legide fix .rsrc's flags in a POST_BUILD on the target; left in place it
+    names a target the cell removed and the whole tree's configure fails."""
+    f = tmp_path / "CMakeLists.txt"
+    body = (
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m kernelmodedriver)\n"
+        "add_custom_command(\n"
+        "    TARGET m POST_BUILD\n"
+        "    COMMAND native-pefixup --section:.rsrc,!D $<TARGET_FILE:m>\n"
+        "    VERBATIM)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32/drivers FOR all)\n"
+    )
+    f.write_text(body)
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "TARGET m POST_BUILD" not in out
+    assert "    PEFIXUP --section:.rsrc,!D" in out
+    f.write_text(body.replace("native-pefixup --section:.rsrc,!D", "strip"))
+    with pytest.raises(g.GenError, match="other than one POST_BUILD native-pefixup"):
+        g.rewrite_cmake(f, c)
+
+
+def test_a_linker_flag_is_no_usage_requirement_and_no_reused_archive(tmp_path):
+    """cdrom links its Rust body between -Wl,--whole-archive and -Wl,--no-whole-archive; the
+    flags reached the OBJECT library's target_link_libraries and the REUSED file list."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m kernelmodedriver)\n"
+        "target_link_libraries(m libcntpr\n"
+        "    -Wl,--whole-archive ${M_RUST_LIB} -Wl,--no-whole-archive)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32/drivers FOR all)\n"
+    )
+    libs = ["-Wl,--whole-archive", "-Wl,--no-whole-archive"]
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: libs for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "-Wl," not in out
 
 
 def test_an_object_in_a_subdirectory_maps_to_that_subdirectorys_source():

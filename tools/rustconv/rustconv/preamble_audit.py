@@ -50,7 +50,9 @@ from .scanner import (
     RE_CODE_SEG_BYTES,
     _blank_memmodel,
     _expand_case_macros,
+    _expand_extern_c,
     _normalize_callbacks,
+    _resolve_pp_conditionals,
     _strip_sal,
     mask_seh_for_parse,
 )
@@ -183,6 +185,10 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int], set[str
     # top-level ERROR and all six of its files skipped their file-scope checks.
     raw = RE_CODE_SEG_BYTES.sub(lambda m: b" " * len(m.group()), raw.encode()).decode()
     text = _normalize_callbacks(_blank_memmodel(_expand_case_macros(_strip_sal(raw))))
+    # A seventh, the catalog's EXTERN_C expansion: shlwapi's `EXTERN_C HRESULT WINAPI
+    # SHInvokeCommandWithFlagsAndSite(...)` read as a declaration of a variable NAMED
+    # `HRESULT`, reported missing from the Rust.
+    text = _expand_extern_c(text, Path(c_path).suffix.lower() in _CPP_SUFFIXES)
     # A fifth and sixth: the catalog also strips SAL (`_Out_writes_bytes_(DataLen)` in a
     # parameter list is a top-level ERROR) and parses with SEH/RpcTryExcept/__TRY masked
     # to same-length C (a nested RpcTryExcept ends the function early, its tail reads as a
@@ -198,6 +204,16 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int], set[str
     root = tree.root_node
 
     unparsed = [n.start_point[0] + 1 for n in root.named_children if n.type == "ERROR"]
+    if unparsed:
+        # shlwapi: `#ifndef __REACTOS__ if (a) #else if (b) #endif {` inside a body, and two
+        # signatures for SHSetDefaultDialogFont under `#ifdef __REACTOS__`, are both
+        # top-level ERRORs with every arm kept. Re-parse with the arms the function catalog
+        # itself takes (scanner._resolve_pp_conditionals, lines kept) -- dead-arm statics are
+        # not compiled, so not auditing them is right (see _file_scope). Undecidable arms stay.
+        resolved = _resolve_pp_conditionals(Path(c_path), text, keep_lines=True)
+        src = mask_seh_for_parse(resolved.encode())
+        root = Parser(language).parse(src).root_node
+        unparsed = [n.start_point[0] + 1 for n in root.named_children if n.type == "ERROR"]
     if unparsed:
         return [], {}, unparsed, set()
 

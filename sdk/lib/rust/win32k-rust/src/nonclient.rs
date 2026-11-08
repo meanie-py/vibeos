@@ -1719,7 +1719,12 @@ pub unsafe extern "C" fn NC_HandleNCCalcSize(
         if (*(*Wnd).pcls).style & CS_HREDRAW != 0 {
             Result |= WVR_HREDRAW as LRESULT;
         }
-        Result |= WVR_VALIDRECTS as LRESULT;
+        // The C also ORs in WVR_VALIDRECTS here. Windows does not: user32:win
+        // asserts DefWindowProc(WM_NCCALCSIZE, TRUE) returns 0 for a class
+        // without CS_[HV]REDRAW (Wine returns only the class redraw bits too).
+        // Nothing is lost: we leave rgrc[1]/rgrc[2] untouched, and with
+        // WVR_VALIDRECTS absent get_valid_rects aligns new/old client top-left,
+        // which is what WVR_VALIDRECTS forced anyway.
     }
 
     if (*Wnd).style & WS_MINIMIZE == 0 {

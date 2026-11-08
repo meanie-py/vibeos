@@ -12,6 +12,11 @@ from tools.artifact_runtime import supervise
 from tools.artifact_store import Store
 
 ROOT = Path(__file__).resolve().parents[1]
+# Per-request budget. These tests assert reuse (compile ONCE, then hits), not speed; a request
+# waits in the host compile broker behind whatever else is building. Unloaded, the whole test
+# takes 54-107s; during a 3-arch gate one request took over 120s (2026-11-07, stage 189.9s), so
+# 120 here tested broker contention, not the store. Still bounded, so a real hang fails.
+REQUEST_TIMEOUT = 600
 
 
 def source_tree(root):
@@ -76,7 +81,9 @@ def test_four_real_consumers_two_source_roots_compile_once_and_keep_direct_archi
                 f"fixture:{index}",
                 "--flags=",
             ]
-            result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(
+                command, cwd=ROOT, capture_output=True, text=True, timeout=REQUEST_TIMEOUT
+            )
             assert result.returncode == 0, result.stderr
             return next(
                 line.split("\t", 1)[1]
@@ -182,7 +189,12 @@ def test_real_policy_rollout_source_dependency_embedded_and_cross_root_reuse(tmp
                 ]
                 env = hostjobs.environment(lane, dict(os.environ), canonical=False)
                 child = subprocess.run(
-                    command, env=env, cwd=ROOT, capture_output=True, text=True, timeout=120
+                    command,
+                    env=env,
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                    timeout=REQUEST_TIMEOUT,
                 )
                 assert child.returncode == 0, child.stderr
                 archive = next(

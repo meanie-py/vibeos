@@ -210,7 +210,16 @@ unsafe extern "system" fn RtlpExecuteWorkItem(
     }
 
     if let Some(Function) = WorkItem.Function {
-        Function(WorkItem.Context);
+        // A faulting work item must not take the pool thread (and with it the
+        // process) down; the C reports it and carries on.
+        let context = WorkItem.Context;
+        if let Err(code) = ntkrnl_sys::seh::try_except_all(|| Function(context)) {
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"Exception 0x%x while executing work item 0x%p\n\0".as_ptr() as *const i8,
+                code,
+                Function as *const core::ffi::c_void,
+            );
+        }
     }
 
     if Impersonated != 0u8 {
@@ -300,7 +309,14 @@ unsafe extern "system" fn RtlpExecuteIoWorkItem(
     }
 
     if let Some(func) = WorkItem.Function {
-        func(WorkItem.Context);
+        let context = WorkItem.Context;
+        if let Err(code) = ntkrnl_sys::seh::try_except_all(|| func(context)) {
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"Exception 0x%x while executing IO work item 0x%p\n\0".as_ptr() as *const i8,
+                code,
+                func as *const core::ffi::c_void,
+            );
+        }
     }
 
     if Impersonated != 0 {
@@ -608,13 +624,14 @@ unsafe extern "system" fn RtlpWorkerThreadProc(Parameter: PVOID) -> ULONG {
         if Status == STATUS_SUCCESS as NTSTATUS {
             TimeoutCount = 0;
 
-            /* Call the APC routine */
+            /* Call the APC routine; an exception in it is swallowed, as the C's
+             * empty __except has it, so the worker thread survives. */
             if let Some(routine) = ApcRoutine {
-                routine(
-                    core::ptr::null_mut(),
-                    IoStatusBlock.Information as PVOID,
-                    SystemArgument2,
-                );
+                let information = IoStatusBlock.Information as PVOID;
+                let argument2 = SystemArgument2;
+                let _ = ntkrnl_sys::seh::try_except_all(|| {
+                    routine(core::ptr::null_mut(), information, argument2)
+                });
             }
         } else {
             Terminate = 0u8;

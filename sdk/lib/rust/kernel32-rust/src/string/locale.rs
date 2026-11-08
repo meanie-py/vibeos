@@ -27796,15 +27796,28 @@ unsafe fn map_remove_ignored(flags: DWORD, src: *const WCHAR, srclen: i32, dst: 
                 continue;
             }
         }
+        let mut out = wch;
         if (flags & NORM_IGNORENONSPACE) != 0 {
             if ((wC2 & C2_OTHERNEUTRAL) != 0) && ((wC3 & (C3_NONSPACING | C3_DIACRITIC)) != 0) {
                 src = src.offset(1);
                 srclen -= 1;
                 continue;
             }
+            // The C stopped there, so a precomposed letter kept its accent
+            // (`é` stayed `é`); Windows maps it to its base letter. See
+            // ntsort::nonspace for how the base is found without NFD tables.
+            match crate::string::ntsort::nonspace(wch) {
+                crate::string::ntsort::Nonspace::Drop => {
+                    src = src.offset(1);
+                    srclen -= 1;
+                    continue;
+                }
+                crate::string::ntsort::Nonspace::Base(b) => out = b,
+                crate::string::ntsort::Nonspace::Keep => {}
+            }
         }
         if pos < dstlen {
-            *dst.offset(pos as isize) = wch;
+            *dst.offset(pos as isize) = out;
         }
         pos += 1;
 
@@ -28273,17 +28286,7 @@ pub unsafe extern "system" fn CompareStringW(
     str2: PCWSTR,
     len2: INT,
 ) -> INT {
-    CompareStringEx(
-        core::ptr::null(),
-        flags,
-        str1,
-        len1,
-        str2,
-        len2,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
-        0,
-    )
+    compare_string_lcid(lcid, flags, str1, len1, str2, len2)
 }
 #[no_mangle]
 pub unsafe extern "system" fn CompareStringEx(
@@ -28297,18 +28300,11 @@ pub unsafe extern "system" fn CompareStringEx(
     reserved: LPVOID,
     lParam: LPARAM,
 ) -> INT {
-    let supported_flags: DWORD = (NORM_IGNORECASE
-        | NORM_IGNORENONSPACE
-        | NORM_IGNORESYMBOLS
-        | SORT_STRINGSORT
-        | NORM_IGNOREKANATYPE
-        | NORM_IGNOREWIDTH
-        | LOCALE_USE_CP_ACP) as DWORD;
-    let semistub_flags: DWORD = (NORM_LINGUISTIC_CASING
-        | LINGUISTIC_IGNORECASE
-        | 0x10000000) as DWORD;
-    static mut ONCE: i32 = 0;
-
+    if !locale.is_null() {
+        // kernel32 has no LocaleNameToLCID (that lives in kernel32_vista), so a
+        // named locale gets the user default's tailoring.
+        TRACE!("locale name ignored, using LOCALE_USER_DEFAULT\n");
+    }
     if !version.is_null() {
         FIXME(b"unexpected version parameter\n\0".as_ptr() as PCSTR);
     }
@@ -28318,6 +28314,31 @@ pub unsafe extern "system" fn CompareStringEx(
     if lParam != 0 {
         FIXME(b"unexpected lParam\n\0".as_ptr() as PCSTR);
     }
+    compare_string_lcid(LOCALE_USER_DEFAULT as LCID, flags, str1, len1, str2, len2)
+}
+
+/// CompareStringW/Ex/A all land here with a real LCID. The C dropped the
+/// locale before comparing, so no language tailoring could ever apply.
+unsafe fn compare_string_lcid(
+    lcid: LCID,
+    flags: DWORD,
+    str1: PCWSTR,
+    len1: INT,
+    str2: PCWSTR,
+    len2: INT,
+) -> INT {
+    let supported_flags: DWORD = (NORM_IGNORECASE
+        | NORM_IGNORENONSPACE
+        | NORM_IGNORESYMBOLS
+        | SORT_STRINGSORT
+        | NORM_IGNOREKANATYPE
+        | NORM_IGNOREWIDTH
+        | LOCALE_USE_CP_ACP) as DWORD;
+    let semistub_flags: DWORD = (NORM_LINGUISTIC_CASING
+        | LINGUISTIC_IGNORECASE
+        | LINGUISTIC_IGNOREDIACRITIC
+        | 0x10000000) as DWORD;
+    static mut ONCE: i32 = 0;
 
     if str1.is_null() || str2.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER as DWORD);
@@ -28347,7 +28368,13 @@ pub unsafe extern "system" fn CompareStringEx(
         len2 = strlenW(str2) as INT;
     }
 
-    let ret = wine_compare_string(flags as i32, str1, len1 as i32, str2, len2 as i32) as INT;
+    let s1 = core::slice::from_raw_parts(str1, len1 as usize);
+    let s2 = core::slice::from_raw_parts(str2, len2 as usize);
+    let ret = match crate::string::ntsort::nt_compare_string(ConvertDefaultLocale(lcid), flags, s1, s2) {
+        Some(r) => r,
+        // sortkey.nls/sorttbls.nls unavailable (logged once by ntsort).
+        None => wine_compare_string(flags as i32, str1, len1 as i32, str2, len2 as i32) as INT,
+    };
 
     if ret != 0 {
         return if ret < 0 { CSTR_LESS_THAN as INT } else { CSTR_GREATER_THAN as INT };
@@ -28432,7 +28459,7 @@ pub unsafe extern "system" fn CompareStringA(
         str2W = buf2W;
     }
 
-    ret = CompareStringEx(core::ptr::null(), flags, str1W, len1W, str2W, len2W, core::ptr::null_mut(), core::ptr::null_mut(), 0);
+    ret = compare_string_lcid(lcid, flags, str1W, len1W, str2W, len2W);
 
     if str1W != buf1W {
         HeapFree(GetProcessHeap(), 0, str1W as LPVOID);

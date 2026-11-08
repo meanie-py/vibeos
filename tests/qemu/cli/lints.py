@@ -7,15 +7,17 @@ never absolute zero — the tree carries known pre-existing findings. Advisory
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
 import subprocess
 import sys
-from collections import Counter
 from pathlib import Path
 
-from . import rustlints
+from tools import build_infra_compat
+
+from . import hostlock, rustlints
 from .artifacts import Run, Stage
 
 BASELINE_DIR = "tools/lint-baseline"
@@ -42,153 +44,44 @@ def _shellcheck_bin() -> str | None:
     return None
 
 
-def _baseline(repo: Path, tool: str) -> set[str]:
-    p = repo / BASELINE_DIR / f"{tool}.txt"
-    try:
-        return {ln.rstrip() for ln in p.read_text().splitlines() if ln.strip()}
-    except OSError:
-        return set()
+# Stage verdicts are native: tools/vibeos-lint/src/verdict.rs owns what a finding is
+# (summary tallies are not), finding identity (line-drift immune, multiset), scanner
+# errors, the stage status each case earns, and baseline capture. This module runs the
+# scanners and records stages; it does not judge them.
+_TOOL_REPO = Path(__file__).resolve().parents[3]
+# Bound at import: tests that fake `rustlints.ensure` for SCANNER runs must not also
+# replace the binary that judges them.
+_ensure_runner = rustlints.ensure
 
 
-# Count-bearing SUMMARY lines are not findings: they drift whenever a count
-# changes (a crate add/remove moves 'TOTAL: … across N files'; a bindgen regen
-# moves 'Bindgen catalog: N functions'), which made every cross-lane merge
-# spuriously LINT_FAIL with "1 new" — 2026-07-06 hit the same TOTAL line twice
-# in one night. Findings are the per-site lines; tallies are presentation.
-# (Stale tally lines already in baselines are harmless — they simply never
-# match anything — and the next --update-baseline drops them.)
-_SUMMARY_LINE = re.compile(
-    r"(^\s*TOTAL:"  # 'TOTAL: 160 issues across 2348 files'
-    r"|^\s*SUMMARY:"  # verify_match_consts tally
-    r"|^\s*[A-Z_]+: \d+$"  # per-category counters ('C_MACRO: 94')
-    r"|catalog: \d+"  # 'Spec/Bindgen catalog: N …'
-    r"|^\s*-> .*: *\d+$"  # verify_tables tallies
-    r"|^\s*matched to a C array\s*: *\d+$"
-    r"|^\s*no C counterpart\s*: *\d+$"  # verify_tables: moves whenever a table is added
-    r"|^\s*Rust integer tables found\s*: *\d+$"
-    r"|^\s*Found \d+ unprotected"  # lint_kernel header tally
-    r"|^\s*Total: \d+ violations"  # lint_kernel footer tally (mixed-case)
-    # verify_signatures' two header tallies and its whole '── coverage ──' block.
-    # These move by ONE whenever a commit adds a single #[no_mangle] fn, which is
-    # the most ordinary thing a translation lane does: adding CmpFreeKcbCachedSecurity
-    # bumped 'exported Rust fns', 'exported fns checked' and 'no C proto (internal)'
-    # by one each and bounced the batch as LINT_FAIL "3 new" (2026-07-31). The
-    # per-site [HIGH]/[MEDIUM] blocks below them are the real findings and are
-    # untouched by this. Enumerated rather than a generic '<label>: <number>' rule
-    # because _SUMMARY_LINE applies to EVERY tool, and a rule broad enough to catch
-    # any tally is broad enough to silently swallow some other scanner's finding.
-    r"|^\s*C prototypes: \d+"
-    r"|^\s*exported Rust fns: \d+"
-    r"|^\s*exported fns checked\s*: *\d+$"
-    r"|^\s*matched to a C proto\s*: *\d+$"
-    r"|^\s*no C proto \(internal\)\s*: *\d+$"
-    r"|^\s*signature OK\s*: *\d+$"
-    r"|^\s*mismatches\s*: *\d+)"
-)
+def _verdicts(repo: Path, op: str, items: list[dict]):
+    """One native verdict request. The binary comes from THIS checkout; `repo` is only the
+    data root (baselines, and the prefix stripped from scanner output)."""
+    runner = _ensure_runner(_TOOL_REPO)
+    with subprocess.Popen(
+        [str(runner), "--root", str(repo), "--verdicts"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    ) as proc:
+        out, err = proc.communicate(json.dumps({"op": op, "items": items}))
+    if proc.returncode:
+        raise RuntimeError(
+            err.strip().removeprefix("FATAL: ")
+            or f"vibeos-lint --verdicts exited {proc.returncode}"
+        )
+    return json.loads(out)
 
 
-def _finding_lines(out: str) -> set[str]:
-    return {ln.rstrip() for ln in out.splitlines() if ln.strip() and not _SUMMARY_LINE.search(ln)}
+def _completed(cp: subprocess.CompletedProcess) -> dict:
+    return {"returncode": cp.returncode, "stdout": cp.stdout or "", "stderr": cp.stderr or ""}
 
 
 def _scanner_error(cp: subprocess.CompletedProcess, findings_from: str) -> bool:
     """Crashes outrank partial/baselined output: the scan never completed."""
-    if cp.returncode < 0 or re.search(
-        r"^(?:Traceback \(most recent call last\):|FATAL:)", cp.stderr or "", re.M
-    ):
-        return True
-    text = cp.stdout or ""
-    if findings_from != "stdout":
-        text += "\n" + (cp.stderr or "")
-    return cp.returncode != 0 and not _finding_lines(text)
-
-
-# Finding identity WITHOUT the line/column, so LINE DRIFT is not a new finding.
-# Same disease as the count-bearing summary lines above, one level deeper: the baseline
-# stored 'qemu/lib/common.sh:90:17: … SLOT_INDEX …', a 3-line COMMENT was inserted earlier
-# in the file, and the identical finding at :93:17 read as "1 new" → gate RED (2026-07-25).
-# There is nothing an author can do about that except re-bless the baseline, which re-blesses
-# whatever ELSE drifted in the same pass — so the mechanism actively teaches people to
-# launder findings. Compare on (file, message) instead, as a MULTISET so a genuinely
-# additional occurrence still counts: 2 hits where the baseline recorded 1 is NEW, the same
-# hit at a different line is not. Lines with no `file:line:` prefix are compared verbatim,
-# exactly as before.
-_LOCATION = re.compile(r"^(?P<file>[^\s:]+):\d+(?::\d+)?:")
-# lint_kernel does not use a `file:line:` prefix — it prints a file HEADER and then indented
-# per-site lines that carry the line number INSIDE the message: `    L 309 RtlpCheckDeviceName():
-# *NameInvalid = ...`. So the prefix-stripper above cannot see it, and the drift immunity it
-# provides silently did not apply to this one scanner. Adding 4-line banners to 12 files
-# reported 35 "new" findings that were the same 35 sites (gate WARN, 2026-07-25). The function
-# name stays in the key, and _new_findings is a multiset, so two real hits still need two
-# baseline entries.
-# The number is RIGHT-ALIGNED (`L 309` at 3 digits, `L1062` at 4 — no space), so the
-# separator between `L` and the digits is optional. Requiring one matched only the
-# narrow findings and left the wide ones drifting.
-_EMBEDDED_LINE = re.compile(r"^(?P<indent>\s*)L\s*\d+\s")
-# Several scanners print a CLASS TAG before the location — `[C_MACRO] path:38: msg`
-# (verify_ffi, 159/160 baseline lines) and `[TYPED_PTR_HEX_ARITH] path:223: msg`
-# (scan_magic_offsets, 46/46). _LOCATION is start-anchored, so it never saw the path and
-# the drift immunity silently did not apply: a ONE-LINE comment added to fastfat's extern
-# block moved an unrelated finding 177 -> 178 and the merge queue rejected the batch as
-# LINT_FAIL (2026-07-25). The tag is semantic — a [C_MACRO] and a [FLEX_ARRAY] at the same
-# site are different findings — so it stays in the key; only line:col is dropped.
-_TAGGED_LOCATION = re.compile(r"^(?P<tags>\s*(?:\[[^\]]+\]\s*)+)(?P<file>[^\s:]+):\d+(?::\d+)?:")
-# verify_signatures puts the location LAST and in parens, after the symbol it is talking
-# about: `[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/.../stubs.rs:210)`.
-_TRAILING_LOCATION = re.compile(r"^(?P<head>.*)\((?P<file>[^\s:()]+):\d+(?::\d+)?\)\s*$")
-
-
-# And locations INSIDE the message: scan_dropped_asserts lists the Rust twins as
-# `… Rust has 0 (sdk/lib/rust/…/section.rs:252, …/shim_exports.rs:1454)` after its own
-# `file:line:` prefix. Only the prefix was stripped, so a 6-line fix in section.rs read as
-# "2 new" for two findings nobody touched (2026-09-26). A path with a real source extension
-# followed by `:digits` is a location wherever it sits.
-_INNER_LOCATION = re.compile(
-    r"(?P<f>[\w./+-]+\.(?:rs|c|h|cpp|hpp|py|md|txt|cmake|spec|toml|sh|S|s|asm|inc)):\d+(?::\d+)?\b"
-)
-
-
-def _finding_key(line: str) -> str:
-    return _INNER_LOCATION.sub(r"\g<f>", _finding_key_outer(line))
-
-
-def _finding_key_outer(line: str) -> str:
-    m = _LOCATION.match(line)
-    if m:
-        return f"{m.group('file')}: {line[m.end() :].strip()}"
-    m = _TAGGED_LOCATION.match(line)
-    if m:
-        return f"{m.group('tags').strip()} {m.group('file')}: {line[m.end() :].strip()}"
-    m = _TRAILING_LOCATION.match(line)
-    if m:
-        return f"{m.group('head').strip()} ({m.group('file')})"
-    m = _EMBEDDED_LINE.match(line)
-    if m:
-        return f"{m.group('indent')}L {line[m.end() :].strip()}"
-    return line
-
-
-def _new_findings(cur: set[str], base: set[str]) -> list[str]:
-    """Current finding lines whose (file, message) is not covered by the baseline, keeping
-    the real line numbers for the report. Surplus occurrences of an already-baselined key
-    are reported too (that is what makes this a multiset and not just a set of keys)."""
-    budget = Counter(_finding_key(ln) for ln in base)
-    out: list[str] = []
-    for ln in sorted(cur):
-        k = _finding_key(ln)
-        if budget.get(k, 0) > 0:
-            budget[k] -= 1
-        else:
-            out.append(ln)
-    return out
-
-
-def _rel(text: str, repo: Path) -> str:
-    """Strip the worktree's absolute repo prefix from tool output so findings
-    are repo-relative — otherwise a baseline captured in one worktree never
-    matches another (the abs path differs: vibeos vs vibeos-smoke-harness),
-    making every finding spuriously 'new'. Makes baselines cross-worktree."""
-    return text.replace(str(repo) + "/", "").replace(str(repo), "")
+    item = {**_completed(cp), "findings_from": findings_from}
+    return bool(_verdicts(_TOOL_REPO, "scanner_error", [item])[0])
 
 
 def _lint_stage(
@@ -204,102 +97,36 @@ def _lint_stage(
     cp: subprocess.CompletedProcess | None = None,
     new_fail: bool | None = None,
 ) -> Stage:
-    """Run one lint; classify NEW-vs-baseline. Advisory unless strict.
-
-    new_fail: whether a NEW finding fails the stage, separately from `strict`, which
-    then governs only COVERAGE (a missing tool, a scanner that exits without findings).
-    None means "same as strict". Plain `check` passes True: a new finding is exactly
-    what `land` and the gate refuse, so a local check that only warned about one was
-    green-lighting the submission it would bounce.
-
-    by_exit_code: judge purely on the tool's --check exit status instead of
-    line-baseline-diff. Required for BINARY lints (scan_ud2, sacred_primitives):
-    their output is ARCH-SPECIFIC (i386 ud2 lines ≠ arm64 branch-to-self spins ≠
-    amd64), so a single arch-agnostic baseline file can never match across arches
-    — every line reads as "new". These tools already encode the correct per-arch
-    pass/fail in their exit code (their own EXPECTED-site classification), so the
-    exit code is the right signal."""
-    fail_new = strict if new_fail is None else new_fail
-    if cmd[0] == "NOCHECK":
-        # Genuinely nothing to lint (no matching sources). Not a coverage loss.
-        return run.add(Stage(name, status="skip", detail="no sources to check"))
-    if cmd[0] == "MISSING":
-        # A missing TOOL is MISSING COVERAGE, not a pass. Silently skipping it
-        # means that the day shellcheck/ruff/etc falls out of the image, the gate
-        # keeps printing green while the check it advertises simply isn't running
-        # — the check most likely to vanish unnoticed is the one nobody sees fail.
-        # strict (the gate) must have the coverage it claims → fail; a casual
-        # local `check` warns, so it stays usable without every tool installed.
-        st = "fail" if strict else "warn"
-        return run.add(
-            Stage(name, status=st, detail="tool unavailable — LINT NOT RUN (no coverage)")
+    """Run one lint (unless `cp` already holds its finished process) and record the native
+    verdict. NEW findings vs baseline fail when `new_fail` (default: `strict`); `strict`
+    alone governs coverage — a missing tool, a scanner exiting without findings.
+    `by_exit_code` judges arch-specific binary lints by their own exit status."""
+    kind = {"NOCHECK": "nocheck", "MISSING": "missing"}.get(cmd[0], "run")
+    item: dict = {
+        "kind": kind,
+        "name": name,
+        "strict": strict,
+        "findings_from": findings_from,
+        "by_exit_code": by_exit_code,
+    }
+    if new_fail is not None:
+        item["new_fail"] = new_fail
+    if kind == "run":
+        if cp is None:
+            cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
+        item.update(_completed(cp))
+    verdict = _verdicts(repo, "classify", [item])[0]
+    if verdict.get("classification"):
+        run.classification = verdict["classification"]
+    return run.add(
+        Stage(
+            name,
+            exit=verdict.get("exit", 0),
+            status=verdict["status"],
+            detail=verdict["detail"],
+            salient=verdict["salient"],
         )
-    # `cp` pre-supplied means the subprocess already ran (see `run_source_lints`,
-    # which executes the scanners concurrently and then classifies them in order).
-    if cp is None:
-        cp = run.run(cmd, cwd=cwd or repo, stage=f"lint:{name}")
-    if _scanner_error(cp, "both" if by_exit_code else findings_from):
-        run.classification = "SCANNER_ERROR"
-        return run.add(
-            Stage(
-                name,
-                exit=cp.returncode,
-                status="fail",
-                detail="SCANNER_ERROR: scanner did not complete; coverage unavailable",
-                salient=_rel(
-                    (cp.stderr or cp.stdout or f"exit {cp.returncode}"), repo
-                ).splitlines()[-4:],
-            )
-        )
-    if by_exit_code:
-        text = _rel((cp.stdout or "") + "\n" + (cp.stderr or ""), repo)
-        if cp.returncode == 0:
-            return run.add(Stage(name, exit=0, status="ok"))
-        st = "fail" if fail_new else "warn"
-        salient = [ln for ln in text.splitlines() if "*** BUG" in ln or "FAIL" in ln][:3]
-        return run.add(
-            Stage(
-                name,
-                exit=cp.returncode,
-                status=st,
-                detail=f"exit {cp.returncode}",
-                salient=salient or text.splitlines()[:3],
-            )
-        )
-    text = cp.stdout if findings_from == "stdout" else (cp.stdout + "\n" + cp.stderr)
-    text = _rel(text, repo)
-    base = _baseline(repo, name)
-    cur = _finding_lines(text)
-    new = _new_findings(cur, base)
-    # The gate is NEW findings vs baseline — NOT the exit code. Tools like
-    # shellcheck/verify_* exit nonzero whenever ANY finding exists, but those
-    # are baselined/accepted; only new ones matter.
-    if new:
-        st = "fail" if fail_new else "warn"
-        return run.add(
-            Stage(
-                name,
-                exit=cp.returncode,
-                status=st,
-                detail=f"{len(new)} new",
-                salient=new[:3],
-            )
-        )
-    if cur:
-        # findings exist but all are in the baseline → accepted
-        return run.add(Stage(name, exit=cp.returncode, status="ok", detail="baselined"))
-    if cp.returncode != 0:
-        # no parseable findings yet nonzero exit → the tool itself failed to run
-        return run.add(
-            Stage(
-                name,
-                exit=cp.returncode,
-                status=("fail" if strict else "warn"),
-                detail=f"exit {cp.returncode}",
-                salient=[ln for ln in text.splitlines()[:3]],
-            )
-        )
-    return run.add(Stage(name, exit=0, status="ok"))
+    )
 
 
 def source_lint_specs(repo: Path) -> list[tuple]:
@@ -1950,6 +1777,74 @@ def lint_jobs() -> int:
     return n
 
 
+def _configure_stale(repo: Path, build: Path) -> str | None:
+    """Why `build`'s build.ninja describes a previous configure, or None (ninja.rs)."""
+    return build_infra_compat.call("ninja_configure_stale", {"build": build}, root=repo)
+
+
+def _newer_count(why: str) -> str:
+    m = re.search(r"older than (\d+)", why)
+    return m.group(1) if m else "some"
+
+
+def refresh_stale_configures(run: Run, repo: Path) -> bool:
+    """Regenerate any of this tree's build.ninja that predates its cmake inputs, before a
+    scanner reads it. False when one could not be refreshed.
+
+    After a master merge that touched a CMakeLists.txt, every scanner that reads a build dir
+    (clib_recipes_fresh, the cell and media manifests) refuses the stale configure, and they
+    used to do it one by one: 143 identical FATALs over minutes, then a SCANNER_ERROR whose
+    fix was a command every lane had to remember. That is the same regeneration any build
+    runs first, so check runs it now -- once per dir, named in its own stage.
+
+    Never against a build: the dir's lock is tried WITHOUT waiting. A build that holds it is
+    reconfiguring that dir itself (the gate's early scanners run beside its builds), so the
+    dir is left to it."""
+    ok = True
+    for manifest in sorted(repo.glob("build-*/build.ninja")):
+        build = manifest.parent
+        if _configure_stale(repo, build) is None:
+            continue
+        fd = hostlock.acquire_build_dir(build, timeout=0, arch=build.name[len("build-") :])
+        if fd is None:
+            run.add(
+                Stage(f"reconfigure:{build.name}", status="ok", detail="a build owns it; skipped")
+            )
+            continue
+        try:
+            # A build may have finished reconfiguring it while we looked.
+            why = _configure_stale(repo, build)
+            if why is None:
+                continue
+            name = f"reconfigure:{build.name}"
+            cp = run.run(
+                ["bash", str(repo / "tools/canon-run.sh"), "ninja", "build.ninja"],
+                cwd=build,
+                env=dict(os.environ),
+                stage=name,
+            )
+            after = _configure_stale(repo, build)
+        finally:
+            hostlock.release(fd)
+        fresh = cp.returncode == 0 and after is None
+        ok &= fresh
+        out = (cp.stdout or "") + (cp.stderr or "")
+        run.add(
+            Stage(
+                name,
+                exit=cp.returncode,
+                status="ok" if fresh else "fail",
+                detail=f"refreshed ({_newer_count(why)} cmake inputs were newer)"
+                if fresh
+                else "still stale after regeneration",
+                salient=[]
+                if fresh
+                else [after or "", *[ln for ln in out.splitlines() if ln.strip()][-4:]],
+            )
+        )
+    return ok
+
+
 def run_source_lints(
     run: Run,
     repo: Path,
@@ -1970,6 +1865,10 @@ def run_source_lints(
     SCANNER_ERROR classification — stays serial and in `specs` order, so the
     artifact is byte-identical to the serial run and a scanner cannot win a race
     to set the verdict."""
+    if not refresh_stale_configures(run, repo):
+        # Every build-dir reader would refuse the same stale configure; say it once.
+        run.classification = "SCANNER_ERROR"
+        return
     specs = source_lint_specs(repo)
     if only is not None:
         unknown = only - {name for name, _, _ in specs}
@@ -2035,20 +1934,16 @@ def lint_tool_names(repo: Path) -> set[str]:
 
 
 def write_baselines(repo: Path, only: set[str] | None = None) -> dict:
-    """Capture current findings into tools/lint-baseline/<name>.txt so the gate
-    becomes 'zero NEW vs baseline' (plan §20.3).
+    """Capture current findings into tools/lint-baseline/<name>.txt so the gate becomes
+    'zero NEW vs baseline' (plan §20.3).
 
-    `only` restricts the rewrite to those tool names — the per-tool update
-    (T2 item 1b). The blanket rewrite (only=None) is a footgun once the gate
-    BLOCKS on lints: re-blessing every baseline to accept ONE intended change
-    silently accepts any *unrelated* regression that drifted in at the same
-    time. Scoping to the tool you actually changed keeps the others enforcing.
+    `only` restricts the rewrite to those tool names. The blanket rewrite (only=None) is a
+    footgun once the gate BLOCKS on lints: re-blessing every baseline to accept ONE
+    intended change silently accepts any unrelated regression that drifted in alongside.
 
-    Returns {name: {"count", "added", "removed"}} so the caller can print the
-    exact delta being blessed — blessing a NEW finding is never silent."""
-    out: dict = {}
-    bdir = repo / BASELINE_DIR
-    bdir.mkdir(parents=True, exist_ok=True)
+    The native capture refuses the WHOLE update, before writing any file, if any scan did
+    not complete. Returns {name: {"count", "added", "removed"}} so the caller can print
+    the exact delta being blessed — blessing a NEW finding is never silent."""
     specs = source_lint_specs(repo)
     ported = [n for n, c, _ in specs if c[0] == rustlints.SENTINEL and (only is None or n in only)]
     shared = (
@@ -2060,14 +1955,9 @@ def write_baselines(repo: Path, only: set[str] | None = None) -> dict:
         if ported
         else {}
     )
-    # Refuse the whole update before touching any baseline if the shared scan failed.
-    for name, cp in shared.items():
-        if _scanner_error(cp, "stdout"):
-            raise RuntimeError(f"SCANNER_ERROR: {name} did not complete; refusing baseline update")
+    items = []
     for name, cmd, src in specs:
-        if only is not None and name not in only:
-            continue
-        if cmd[0] == "MISSING":
+        if (only is not None and name not in only) or cmd[0] in ("MISSING", "NOCHECK"):
             continue
         try:
             cp = (
@@ -2077,19 +1967,8 @@ def write_baselines(repo: Path, only: set[str] | None = None) -> dict:
             )
         except (OSError, subprocess.SubprocessError):
             continue
-        if _scanner_error(cp, src):
-            raise RuntimeError(f"SCANNER_ERROR: {name} did not complete; refusing baseline update")
-        text = _rel(cp.stdout if src == "stdout" else (cp.stdout + "\n" + cp.stderr), repo)
-        cur = _finding_lines(text)
-        prev = _baseline(repo, name)
-        findings = sorted(cur)
-        (bdir / f"{name}.txt").write_text("\n".join(findings) + ("\n" if findings else ""))
-        out[name] = {
-            "count": len(findings),
-            "added": len(cur - prev),
-            "removed": len(prev - cur),
-        }
-    return out
+        items.append({"name": name, "findings_from": src, **_completed(cp)})
+    return _verdicts(repo, "capture", items)
 
 
 def run_committed_drift_guard(run: Run, repo: Path, arch: str | None = None) -> None:

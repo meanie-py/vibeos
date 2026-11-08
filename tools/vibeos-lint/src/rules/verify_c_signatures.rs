@@ -458,7 +458,10 @@ impl Rule for VerifyCSignatures {
                 let Some(cf) = by_stem.get(&stem) else {
                     continue;
                 };
-                let cs = c_fns(&cf.text);
+                // Only the arms the build takes: shlwapi's ordinal.c defines MayQSForward and
+                // declares SHInvokeCommand twice, `#ifdef __REACTOS__` / `#else` (Wine's), and the
+                // dead Wine arm was compared against the Rust -- two false mismatches.
+                let cs = c_fns(&super::verify_translation_literals::strip_untaken_arms(&cf.text));
                 let rs = r_fns(&rf.text);
                 for (n, (rr, rp)) in rs {
                     let Some((cr, cp)) = cs.get(&n) else { continue };
@@ -633,6 +636,13 @@ mod tests {
         let parsed = c_fns(c);
         assert!(!parsed.contains_key("Fake"), "{parsed:?}");
         assert_eq!(parsed.get("Real").unwrap().0, "INT");
+    }
+    #[test]
+    fn only_the_reactos_arm_is_compared() {
+        let c = "#ifdef __REACTOS__\nHRESULT WINAPI F(IUnknown *u, INT n)\n{\n  return 0;\n}\n#else\nHRESULT WINAPI F(IUnknown *u, PVOID r)\n{\n  return 0;\n}\n#endif\n";
+        let cs = c_fns(&super::super::verify_translation_literals::strip_untaken_arms(c));
+        assert_eq!(cs["F"].1.len(), 2);
+        assert!(cs["F"].1[1].contains("INT"));
     }
     #[test]
     fn empty_c_return_type_is_not_compared() {

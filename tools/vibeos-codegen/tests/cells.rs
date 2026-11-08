@@ -114,6 +114,20 @@ fn an_arch_gate_in_the_modules_own_cmakelists_names_its_arches() {
     // An earlier, closed gate does not cover a later target.
     let closed = "if(ARCH STREQUAL amd64)\nset(X 1)\nendif()\nadd_library(foo MODULE foo.c)\n";
     assert!(arch_gate(closed, "foo").is_err());
+    // A closed if/elseif chain before the target does not refuse it (pl011's RUST_TARGET).
+    let chain = "if(ARCH STREQUAL i386)\nset(T a)\nelseif(ARCH STREQUAL arm64)\nset(T b)\nendif()\nif(ARCH STREQUAL arm64)\nadd_library(foo MODULE foo.c)\nendif()\n";
+    assert_eq!(arch_gate(chain, "foo").unwrap(), ["arm64"]);
+}
+#[test]
+fn a_parents_add_subdirectory_gate_names_a_modules_arches() {
+    use vibeos_codegen::cells::graph::subdirectory_gate;
+    // legide: the option keeps gating the whole subdirectory, the cell included.
+    let ide = "add_subdirectory(atapi)\nif(ARCH STREQUAL \"i386\" AND NOT ENABLE_UNIATA)\n    add_subdirectory(legide)\nendif()\n";
+    assert_eq!(subdirectory_gate(ide, "legide").unwrap(), ["i386"]);
+    assert!(subdirectory_gate(ide, "atapi").is_err());
+    let serial = "add_subdirectory(serial)\nif(ARCH STREQUAL \"arm64\")\n    add_subdirectory(pl011)\nendif()\n";
+    assert_eq!(subdirectory_gate(serial, "pl011").unwrap(), ["arm64"]);
+    assert!(subdirectory_gate("if(ENABLE_X)\nadd_subdirectory(m)\nendif()\n", "m").is_err());
 }
 #[test]
 fn a_body_depends_only_on_a_custom_commands_output() {
@@ -205,16 +219,39 @@ target_include_directories(foo PUBLIC inc PRIVATE priv)\n";
     assert!(t.contains(
         "target_link_libraries(foo INTERFACE $<LINK_ONLY:${foo_rust_LIB}> $<LINK_ONLY:pseh>) # a note)\n"
     ), "{t}");
-    assert!(t.contains("target_link_libraries(foo INTERFACE libntoskrnl)\n"), "{t}");
-    assert!(t.contains("target_include_directories(foo INTERFACE inc)\n"), "{t}");
-    assert!(!t.contains("add_pch") && !t.contains("keeps a stub TU"), "{t}");
+    assert!(
+        t.contains("target_link_libraries(foo INTERFACE libntoskrnl)\n"),
+        "{t}"
+    );
+    assert!(
+        t.contains("target_include_directories(foo INTERFACE inc)\n"),
+        "{t}"
+    );
+    assert!(
+        !t.contains("add_pch") && !t.contains("keeps a stub TU"),
+        "{t}"
+    );
     assert!(t.contains("INTERFACE library over the Rust archive"), "{t}");
-    assert!(t.lines().filter(|l| l.starts_with("#")).all(|l| l.len() <= 92), "{t}");
+    assert!(
+        t.lines()
+            .filter(|l| l.starts_with("#"))
+            .all(|l| l.len() <= 92),
+        "{t}"
+    );
     // The stub and its stub-only recipe go; the cell drops the stub's token, keeps the Rust.
-    assert!(p.removed.iter().any(|r| r.ends_with("lib/foo/rust_cohab_stub.c")));
-    assert!(p.removed.iter().any(|r| r.ends_with("clibs/amd64/foo.recipe")));
+    assert!(p
+        .removed
+        .iter()
+        .any(|r| r.ends_with("lib/foo/rust_cohab_stub.c")));
+    assert!(p
+        .removed
+        .iter()
+        .any(|r| r.ends_with("clibs/amd64/foo.recipe")));
     let cell = p.cell_edits.values().next().unwrap();
-    assert!(!cell.contains("engine:c:foo") && cell.contains("\"engine:foo_rust\""), "{cell}");
+    assert!(
+        !cell.contains("engine:c:foo") && cell.contains("\"engine:foo_rust\""),
+        "{cell}"
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 #[test]
@@ -223,18 +260,28 @@ fn an_archive_with_live_code_stays_a_static_library() {
     let cmake = "rust_staticlib_variant(foo_rust foo-rust \"\" TRUE)\n\
 add_library(foo STATIC rust_cohab_stub.c shim.c)\ntarget_link_libraries(foo ${foo_rust_LIB})\n";
     let stub = "typedef int foo_placeholder;\n";
-    let live = "lib/foo/CMakeFiles/foo.dir/rust_cohab_stub.c.obj lib/foo/CMakeFiles/foo.dir/shim.c.obj";
+    let live =
+        "lib/foo/CMakeFiles/foo.dir/rust_cohab_stub.c.obj lib/foo/CMakeFiles/foo.dir/shim.c.obj";
     let root = interface_fixture("live", cmake, live, stub);
-    assert!(plan(&root, "foo").unwrap_err().message.contains("more than the placeholder stub"));
+    assert!(plan(&root, "foo")
+        .unwrap_err()
+        .message
+        .contains("more than the placeholder stub"));
     std::fs::remove_dir_all(&root).unwrap();
     // A stub that defines something is not a placeholder either (cportlib's anchor).
     let objs = "lib/foo/CMakeFiles/foo.dir/rust_cohab_stub.c.obj";
     let root = interface_fixture("anchor", cmake, objs, "void __foo_anchor(void) { }\n");
-    assert!(plan(&root, "foo").unwrap_err().message.contains("not a placeholder"));
+    assert!(plan(&root, "foo")
+        .unwrap_err()
+        .message
+        .contains("not a placeholder"));
     std::fs::remove_dir_all(&root).unwrap();
     // No Rust archive linked: nothing to forward (gdi32_vista_static was dead).
     let none = "add_library(foo STATIC rust_cohab_stub.c)\ntarget_link_libraries(foo win32ksys)\n";
     let root = interface_fixture("none", none, objs, "typedef int x;\n");
-    assert!(plan(&root, "foo").unwrap_err().message.contains("links no Rust archive"));
+    assert!(plan(&root, "foo")
+        .unwrap_err()
+        .message
+        .contains("links no Rust archive"));
     std::fs::remove_dir_all(&root).unwrap();
 }

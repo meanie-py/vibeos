@@ -244,12 +244,13 @@ def test_killed_worker_does_not_claim_child_signal(tmp_path):
 def test_worker_stops_owned_child_when_owner_exits(tmp_path):
     import time
 
+    # Published with mv: the poll below checks exists(), and `echo > file` shows it empty first.
     child_pid_file = tmp_path / "child.pid"
     receipt = tmp_path / "worker-receipt.json"
     launcher = """import subprocess, sys
 p = subprocess.Popen([
     sys.argv[1], "--root", sys.argv[2], "build-bench-worker", sys.argv[3],
-    "/bin/sh", "-c", 'echo $$ > "$1"; exec sleep 30', "_", sys.argv[4],
+    "/bin/sh", "-c", 'echo $$ > "$1.tmp" && mv "$1.tmp" "$1"; exec sleep 30', "_", sys.argv[4],
 ])
 p.wait()
 """
@@ -330,10 +331,13 @@ def _fixture_alive(identity):
         return False
 
 
+# Identity files are published with os.replace: the waiters poll exists(), and a plain
+# open(...,"w").write() made the file visible empty first (JSONDecodeError, batch 145).
 _SLEEP_CHILD = """import os,sys,json,time,signal
 if sys.argv[2]=='stubborn': signal.signal(signal.SIGTERM,signal.SIG_IGN)
 identity={'pid':os.getpid(),'start_ticks':open('/proc/self/stat').read().rsplit(')',1)[1].split()[19]}
-open(sys.argv[1],'w').write(json.dumps(identity))
+open(sys.argv[1]+'.tmp','w').write(json.dumps(identity))
+os.replace(sys.argv[1]+'.tmp',sys.argv[1])
 time.sleep(60)
 """
 
@@ -429,7 +433,8 @@ if pid==0:
  null=os.open(os.devnull,os.O_RDWR)
  for fd in (0,1,2): os.dup2(null,fd)
  identity={'pid':os.getpid(),'start_ticks':open('/proc/self/stat').read().rsplit(')',1)[1].split()[19]}
- open(sys.argv[1],'w').write(json.dumps(identity))
+ open(sys.argv[1]+'.tmp','w').write(json.dumps(identity))
+ os.replace(sys.argv[1]+'.tmp',sys.argv[1])
  time.sleep(60)
  os._exit(0)
 while not os.path.exists(sys.argv[1]): time.sleep(.01)

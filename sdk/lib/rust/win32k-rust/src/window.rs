@@ -1594,6 +1594,7 @@ unsafe extern "C" fn co_UserFreeWindow(
 
     IntUnlinkWindow(Window);
 
+    crate::defwnd::DefWndDestroyGeneratedSmIcon(Window);
     if (*Window).PropListItems != 0 {
         UserRemoveWindowProps(Window);
     }
@@ -2629,7 +2630,14 @@ pub unsafe extern "system" fn NtUserBuildHwndList(
         Status = STATUS_SUCCESS;
     }
 
-    SetLastNtError(Status);
+    // The C ran SetLastNtError(Status) on every exit, so a SUCCESSFUL list
+    // overwrote the caller's last error with ERROR_SUCCESS. Windows never does
+    // that, and this syscall sits under GetDlgItem, EnumChildWindows and
+    // friends, so every one of them silently cleared the last error
+    // (user32:listbox caught it through DlgDirSelectEx). Set it on failure only.
+    if !NT_SUCCESS(Status) {
+        SetLastNtError(Status);
+    }
     UserLeave();
     Status
 }
@@ -2980,24 +2988,9 @@ unsafe fn IntCreateWindow(
             (*pWnd).strName.set_MaximumLength((*WindowName).Length + core::mem::size_of::<u16>() as u32);
         }
 
-        if ((*pWnd).style & (WS_CHILD | WS_POPUP)) != WS_CHILD {
-            (*pWnd).style |= WS_CLIPSIBLINGS;
-            if ((*pWnd).style & WS_POPUP) == 0 {
-                (*pWnd).style |= WS_CAPTION;
-            }
-        }
-
-        if ((*pWnd).ExStyle & WS_EX_DLGMODALFRAME) != 0 {
-            (*pWnd).ExStyle |= WS_EX_WINDOWEDGE;
-        } else if ((*pWnd).style & (WS_DLGFRAME | WS_THICKFRAME)) != 0 {
-            if !(((*pWnd).ExStyle & WS_EX_STATICEDGE) != 0
-                && ((*pWnd).style & (WS_CHILD | WS_POPUP)) != 0)
-            {
-                (*pWnd).ExStyle |= WS_EX_WINDOWEDGE;
-            }
-        } else {
-            (*pWnd).ExStyle &= !WS_EX_WINDOWEDGE;
-        }
+        // The top-level style correction (WS_CLIPSIBLINGS/WS_CAPTION and the
+        // WS_EX_WINDOWEDGE recompute) used to run here. It now runs in
+        // co_UserCreateWindowEx after the WH_CBT hook: see IntFixCreateStyles.
 
         if ((*pWnd).style & (WS_CHILD | WS_POPUP)) == 0 {
             (*pWnd).state |= WNDS_SENDSIZEMOVEMSGS;
@@ -3062,6 +3055,35 @@ unsafe fn IntCreateWindow(
 
     core::ptr::null_mut()
 }
+}
+
+/// Correct a new window's styles the way Windows does, AFTER the WH_CBT
+/// HCBT_CREATEWND hook and before WM_NCCREATE.
+///
+/// The C did this inside IntCreateWindow, i.e. before the hook, so a CBT hook
+/// saw WS_CLIPSIBLINGS|WS_CAPTION it never asked for and a WS_EX_WINDOWEDGE
+/// computed from them. user32:win's cbt_proc checks that the hook sees the
+/// requested style and the CREATESTRUCT-derived exstyle, while WM_NCCREATE
+/// sees the corrected ones.
+pub(crate) unsafe fn IntFixCreateStyles(pWnd: PWND) {
+    if ((*pWnd).style & (WS_CHILD | WS_POPUP)) != WS_CHILD {
+        (*pWnd).style |= WS_CLIPSIBLINGS;
+        if ((*pWnd).style & WS_POPUP) == 0 {
+            (*pWnd).style |= WS_CAPTION;
+        }
+    }
+
+    if ((*pWnd).ExStyle & WS_EX_DLGMODALFRAME) != 0 {
+        (*pWnd).ExStyle |= WS_EX_WINDOWEDGE;
+    } else if ((*pWnd).style & (WS_DLGFRAME | WS_THICKFRAME)) != 0 {
+        if !(((*pWnd).ExStyle & WS_EX_STATICEDGE) != 0
+            && ((*pWnd).style & (WS_CHILD | WS_POPUP)) != 0)
+        {
+            (*pWnd).ExStyle |= WS_EX_WINDOWEDGE;
+        }
+    } else {
+        (*pWnd).ExStyle &= !WS_EX_WINDOWEDGE;
+    }
 }
 
 unsafe fn alloc_error(pWnd: PWND) -> PWND {
@@ -3214,6 +3236,11 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
         (*Cs).lpszName = WindowName as LPCWSTR;
         (*Cs).lpszClass = ClassName as LPCWSTR;
 
+        // Windows applies WS_EX_LAYERED only once the CBT hook has run: the
+        // hook's GetWindowLong(GWL_EXSTYLE) does not show it (user32:win
+        // cbt_proc), though its CREATESTRUCT still carries it.
+        let cbt_hidden_layered = (*Window).ExStyle & WS_EX_LAYERED;
+        (*Window).ExStyle &= !WS_EX_LAYERED;
         if ISITHOOKED(WH_CBT as INT) != 0 || ((*(*(*pti).rpdesk).pDeskInfo).fsHooks & HOOKID_TO_FLAG(WH_CBT as INT)) != 0 {
             pCsw = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<CREATESTRUCTW>() as _, TAG_HOOK) as *mut CREATESTRUCTW;
             pCbtCreate = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<CBT_CREATEWNDW>() as _, TAG_HOOK) as *mut CBT_CREATEWNDW;
@@ -3241,6 +3268,9 @@ pub unsafe extern "fastcall" fn co_UserCreateWindowEx(
             (*Cs).y = (*pCsw).y;
             hwndInsertAfter = (*pCbtCreate).hwndInsertAfter;
         }
+
+        (*Window).ExStyle |= cbt_hidden_layered;
+        IntFixCreateStyles(Window);
 
         if (((*Cs).style as u32) & (WS_CHILD | WS_POPUP)) == WS_CHILD {
             if ParentWindow != co_GetDesktopWindow(Window) {
@@ -3605,6 +3635,11 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
         (*Cs).lpszName = WindowName as LPCWSTR;
         (*Cs).lpszClass = ClassName as LPCWSTR;
 
+        // Windows applies WS_EX_LAYERED only once the CBT hook has run: the
+        // hook's GetWindowLong(GWL_EXSTYLE) does not show it (user32:win
+        // cbt_proc), though its CREATESTRUCT still carries it.
+        let cbt_hidden_layered = (*Window).ExStyle & WS_EX_LAYERED;
+        (*Window).ExStyle &= !WS_EX_LAYERED;
         if ISITHOOKED(WH_CBT as INT) != 0 || ((*(*(*pti).rpdesk).pDeskInfo).fsHooks & HOOKID_TO_FLAG(WH_CBT as INT)) != 0 {
             pCsw = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<CREATESTRUCTW>() as _, TAG_HOOK) as *mut CREATESTRUCTW;
             pCbtCreate = ExAllocatePoolWithTag(NonPagedPool, core::mem::size_of::<CBT_CREATEWNDW>() as _, TAG_HOOK) as *mut CBT_CREATEWNDW;
@@ -3632,6 +3667,9 @@ pub unsafe extern "C" fn co_UserCreateWindowEx(
             (*Cs).y = (*pCsw).y;
             hwndInsertAfter = (*pCbtCreate).hwndInsertAfter;
         }
+
+        (*Window).ExStyle |= cbt_hidden_layered;
+        IntFixCreateStyles(Window);
 
         if (((*Cs).style as u32) & (WS_CHILD | WS_POPUP)) == WS_CHILD {
             if ParentWindow != co_GetDesktopWindow(Window) {
@@ -5681,9 +5719,11 @@ pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_ST
         if Ret == 0 {
             return 0;
         }
-    } else {
-        return 1;
     }
+    // A NULL text clears the window text, as on Windows and in Wine
+    // (SetWindowText(hwnd, NULL); user32:static static.c:138). ReactOS's C returned
+    // TRUE here with the old text still in place; SafeText stays empty, so the code
+    // below takes the Length == 0 branch.
 
     UserEnterExclusive();
 
@@ -5793,9 +5833,11 @@ pub unsafe extern "system" fn NtUserDefSetText(hWnd: HWND, WindowText: PLARGE_ST
         if Ret == 0 {
             return 0;
         }
-    } else {
-        return 1;
     }
+    // A NULL text clears the window text, as on Windows and in Wine
+    // (SetWindowText(hwnd, NULL); user32:static static.c:138). ReactOS's C returned
+    // TRUE here with the old text still in place; SafeText stays empty, so the code
+    // below takes the Length == 0 branch.
 
     UserEnterExclusive();
 

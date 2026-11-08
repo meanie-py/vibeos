@@ -68,6 +68,18 @@ fn run() -> Result<(), String> {
             "--rules" => names = Some(args.next().ok_or("--rules requires names")?),
             "--all-ported" => all = true,
             "--list-rules" => list = true,
+            // Stage verdicts vs baselines: JSON request on stdin, JSON result on stdout.
+            // The root is used verbatim, as the caller spelled it, to relativize output.
+            "--verdicts" => {
+                let mut request = String::new();
+                std::io::Read::read_to_string(&mut io::stdin(), &mut request)
+                    .map_err(|e| e.to_string())?;
+                let request: serde_json::Value =
+                    serde_json::from_str(&request).map_err(|e| e.to_string())?;
+                let result = vibeos_lint::verdict::dispatch(&root, &request)?;
+                println!("{result}");
+                return Ok(());
+            }
             "--help" | "-h" => {
                 println!("vibeos-lint [--root REPO] [--path SOURCE] (--rules a,b | --all-ported | --list-rules)");
                 println!("vibeos-lint --root REPO --binary-rules a,b --arch ARCH [--build-dir PATH] [--path INPUT]");

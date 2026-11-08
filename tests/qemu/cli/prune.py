@@ -18,43 +18,18 @@ SAFETY (manual + gated, by user policy 2026-06-20):
 from __future__ import annotations
 
 import math
-import os
 import shutil
-import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import canon, fsutil, hostlock, maintenance, queue, trim
+from tools import build_infra_compat as native
 
-# Same global lock dir vm.py / qemu/start.sh / qemu/ps use.
-LOCK_DIR = Path("/tmp/vibeos-qemu-locks")
+from . import canon, hostlock, maintenance, trim
 
-# Per-worktree dirs we treat as disposable build scratch (relative to a worktree root).
-PRUNE_RELDIRS = (
-    "build-i386",
-    "build-amd64",
-    "build-arm64",
-    "sdk/lib/rust/target",
-    "ntoskrnl/rust-kernel-target",
-)
-
-# Process names that mean "a build is in flight" — never prune their worktree.
-_BUILD_PROCS = {
-    "ninja",
-    "cargo",
-    "rustc",
-    "cc1",
-    "cc1plus",
-    "clang",
-    "clang++",
-    "lld",
-    "ld.lld",
-    "cmake",
-    "make",
-    "mcopy",
-    "mkramdisk.sh",
-}
+# The decisions are native: tools/vibeos-build/src/prune.rs (which trees are live or building,
+# the protection gates, sizes, the retention budget). This module keeps the maintenance lock,
+# the printout and the delete loop, which rechecks liveness before every directory.
 
 
 @dataclass
@@ -69,229 +44,35 @@ class Candidate:
         return sum(sz for _, sz in self.dirs)
 
 
-def _pid_alive(pid: int) -> bool:
+def _call(op: str, **kwargs):
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+        return native.call("prune_" + op, kwargs)
+    except native.NativeError as exc:
+        if exc.kind == "maintenance":
+            raise maintenance.MaintenanceError(str(exc)) from exc
+        raise
 
 
-def _is_qemu(pid: int) -> bool:
-    try:
-        return "qemu" in (Path(f"/proc/{pid}/comm").read_text())
-    except OSError:
-        return False
+def _num(value):
+    """JSON cannot spell inf/nan, and refusing them is the native validator's job."""
+    return None if value is None else repr(float(value))
 
 
 def git_worktrees(repo: Path) -> list[Path]:
     """All worktree roots from `git worktree list --porcelain`."""
-    try:
-        out = subprocess.run(
-            ["git", "worktree", "list", "--porcelain"],
-            cwd=repo,
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout
-    except (OSError, subprocess.CalledProcessError):
-        return []
-    return [
-        Path(line[len("worktree ") :]) for line in out.splitlines() if line.startswith("worktree ")
-    ]
-
-
-def _attribute(path_str: str, worktrees: list[Path]) -> Path | None:
-    """Which worktree (if any) contains this absolute path. Longest match wins so a
-    nested worktree isn't mis-attributed to its parent."""
-    try:
-        p = Path(path_str).resolve()
-    except (OSError, ValueError):
-        return None
-    best: Path | None = None
-    for wt in worktrees:
-        try:
-            wtr = wt.resolve()
-        except OSError:
-            continue
-        if (p == wtr or wtr in p.parents) and (best is None or len(str(wtr)) > len(str(best))):
-            best = wt
-    return best
+    return [Path(p) for p in _call("git_worktrees", repo=repo)]
 
 
 def live_qemu_worktrees(worktrees: list[Path]) -> set[Path]:
     """Worktrees with a live QEMU, via the global lock files (the `ps` source of truth)."""
-    import json
-
-    live: set[Path] = set()
-    if not LOCK_DIR.is_dir():
-        return live
-    for lf in LOCK_DIR.glob("*.json"):
-        try:
-            info = json.loads(lf.read_text())
-        except (OSError, ValueError):
-            continue
-        qpid = info.get("qemu_pid")
-        if not (qpid and _pid_alive(qpid) and _is_qemu(qpid)):
-            continue
-        # Any path-bearing field attributes the run to its worktree.
-        for key in ("live_log", "work_dir", "manifest_path"):
-            val = info.get(key)
-            if val and (wt := _attribute(str(val), worktrees)):
-                live.add(wt.resolve())
-                break
-    return live
-
-
-def _exited(entry: Path) -> bool:
-    """A zombie (or dead) process: its build is over, whatever its cwd said."""
-    try:
-        for line in (entry / "status").read_text().splitlines():
-            if line.startswith("State:"):
-                return line.split()[1] in ("Z", "X")
-    except OSError:
-        return not entry.exists()  # gone between reads; unreadable but present stays live
-    return False
-
-
-def _mountinfo(path: Path) -> list[list[str]]:
-    try:
-        return [line.split() for line in path.read_text().splitlines()]
-    except OSError:
-        return []
-
-
-def canonical_bind_source(
-    mountinfo: Path, canonical: Path, host_mountinfo: Path = Path("/proc/self/mountinfo")
-) -> Path | None:
-    """The host path bind-mounted at `canonical` in one process's mount namespace, or None.
-
-    mountinfo field 4 is the mount's root WITHIN its filesystem and field 3 the device, so the
-    host path is wherever the host mounts that device's root, joined with it. Every lane's
-    build runs at the one canonical path, so without this any single build made the whole
-    fleet look "in flight" and prune could reclaim nothing while the merge queue gated
-    (2026-10-12: 0 of 816 G eligible with only the integration trees building)."""
-    for f in _mountinfo(mountinfo):
-        if len(f) < 5 or f[4] != str(canonical):
-            continue
-        dev, root = f[2], f[3]
-        for h in _mountinfo(host_mountinfo):
-            if len(h) >= 5 and h[2] == dev and h[3] == "/":
-                return Path(h[4]) / root.lstrip("/")
-        return None
-    return None
+    return {Path(p) for p in _call("live_qemu", worktrees=worktrees)}
 
 
 def active_build_worktrees(worktrees: list[Path]) -> set[Path]:
-    """Worktrees with a running build process (cwd under the worktree)."""
-    active: set[Path] = set()
-    proc = Path("/proc")
-    for entry in proc.iterdir():
-        if not entry.name.isdigit():
-            continue
-        try:
-            comm = (entry / "comm").read_text().strip()
-        except OSError:
-            continue
-        if comm not in _BUILD_PROCS:
-            continue
-        try:
-            cwd = os.readlink(entry / "cwd")
-        except OSError:
-            # An unattributable live compiler is not evidence of an idle tree. A zombie is not
-            # live: mid-build, compilers exit constantly and each one's cwd stops resolving
-            # before it is reaped, which made one finished cc1 hold the whole fleet.
-            if entry.exists() and not _exited(entry):
-                active.update(wt.resolve() for wt in worktrees)
-            continue
-        # Bind-mount builds report /tmp/vibeos, not their physical worktree; the bind
-        # source in the process's own mount table names it. When that cannot be read,
-        # protect the fleet conservatively rather than misclassifying an orphan compiler
-        # as idle after its CLI parent (and shared lease) has died.
-        canonical = Path(canon.canon_path())
-        if Path(cwd) == canonical or canonical in Path(cwd).parents:
-            source = canonical_bind_source(entry / "mountinfo", canonical)
-            if source is not None:
-                # Attributed. A tree outside `worktrees` (one `--only` left out) is no
-                # evidence about the trees we were asked about.
-                if wt := _attribute(str(source), worktrees):
-                    active.add(wt.resolve())
-            elif entry.exists() and not _exited(entry):
-                active.update(wt.resolve() for wt in worktrees)
-            continue
-        if wt := _attribute(cwd, worktrees):
-            active.add(wt.resolve())
-    return active
-
-
-def classify(
-    worktree: Path,
-    *,
-    current: Path,
-    live_qemu: set[Path],
-    active_build: set[Path],
-    allow_self: bool,
-    min_age_hours: float,
-    now: float,
-    newest_mtime: float | None,
-    include_integration: bool = False,
-) -> str | None:
-    """Pure eligibility decision → skip reason string, or None if prunable. All
-    state (live sets, `now`, the tree's `newest_mtime`) is injected so this is
-    deterministic + unit-testable. Gate order = most-protective first."""
-    wtr = worktree.resolve()
-    if wtr == current.resolve() and not allow_self:
-        return "current worktree (use --self)"
-    # Preserve conductor scratch for ordinary manual pruning. Scheduled retention
-    # explicitly includes it, subject to the same idle window and activity lock.
-    if queue.is_integration_dirname(wtr.name) and not allow_self and not include_integration:
-        return "merge-queue integration tree (its warm caches gate every batch)"
-    if wtr in live_qemu:
-        return "live QEMU running"
-    if wtr in active_build:
-        return "build in flight"
-    if (
-        min_age_hours > 0
-        and newest_mtime is not None
-        and (now - newest_mtime) < min_age_hours * 3600
-    ):
-        return f"touched < {min_age_hours:g}h ago"
-    return None
-
-
-def _dir_size(path: Path) -> int:
-    try:
-        return fsutil.disk_usage_bytes(path)
-    except OSError as exc:
-        raise maintenance.MaintenanceError(f"cannot measure {path}: {exc}") from exc
-
-
-def _newest_mtime(worktree: Path) -> float | None:
-    """Newest descendant mtime: rewriting an object need not touch its root dir."""
-    best: float | None = None
-    for rel in PRUNE_RELDIRS:
-        d = worktree / rel
-        if d.exists():
-            m = d.stat().st_mtime
-            best = m if best is None else max(best, m)
-            for parent, dirs, files in os.walk(d, followlinks=False):
-                for name in dirs + files:
-                    try:
-                        m = (Path(parent) / name).lstat().st_mtime
-                    except FileNotFoundError:
-                        continue
-                    best = max(best, m)
-    return best
-
-
-def _prunable_dirs(worktree: Path) -> list[tuple[Path, int]]:
-    return [
-        (worktree / rel, _dir_size(worktree / rel))
-        for rel in PRUNE_RELDIRS
-        if (worktree / rel).exists()
-    ]
+    """Worktrees with a running build process (cwd, or canonical bind source, under it)."""
+    return {
+        Path(p) for p in _call("active_builds", worktrees=worktrees, canonical=canon.canon_path())
+    }
 
 
 def _fmt(n: int) -> str:
@@ -371,23 +152,6 @@ def _trim(args, repo: Path) -> int:
     return 1 if failures else 0
 
 
-def select_budget(candidates: list[Candidate], budget: float | None) -> list[Candidate]:
-    """Keep protected outputs even if they alone exceed the requested budget."""
-    if budget is None:
-        return candidates
-    if not math.isfinite(budget) or budget < 0:
-        raise ValueError("--retain-gib must be finite and nonnegative")
-    remaining = sum(c.total for c in candidates)
-    result = []
-    for c in sorted(candidates, key=lambda c: c.total, reverse=True):
-        if c.eligible and remaining <= budget * 1024**3:
-            c = Candidate(c.worktree, c.dirs, False, "within retention budget")
-        elif c.eligible:
-            remaining -= c.total
-        result.append(c)
-    return result
-
-
 def _prune(args, repo: Path) -> int:
     worktrees = git_worktrees(repo)
     if not worktrees:
@@ -408,56 +172,37 @@ def _prune(args, repo: Path) -> int:
             raise maintenance.MaintenanceError(
                 "host maintenance controls must be outside all worktrees"
             )
-    live = live_qemu_worktrees(worktrees)
-    active = active_build_worktrees(worktrees)
-    now = time.time()
-    min_age = float(getattr(args, "idle_hours", 0) or 0)
-    if (
-        getattr(args, "retain_gib", None) is not None
-        or getattr(args, "min_free_gib", None) is not None
-    ) and min_age == 0:
-        min_age = 24  # bounded fleet retention must not reclaim newly completed work
-    if not math.isfinite(min_age) or min_age < 0:
-        raise maintenance.MaintenanceError("--idle-hours must be finite and nonnegative")
-
-    candidates: list[Candidate] = []
-    for wt in worktrees:
-        dirs = _prunable_dirs(wt)
-        if not dirs:
-            continue  # nothing to reclaim
-        reason = classify(
-            wt,
-            current=repo,
-            live_qemu=live,
-            active_build=active,
-            allow_self=getattr(args, "self", False),
-            include_integration=getattr(args, "include_integration", False),
-            min_age_hours=min_age,
-            now=now,
-            newest_mtime=_newest_mtime(wt) if min_age > 0 else None,
-        )
-        candidates.append(Candidate(wt, dirs, eligible=reason is None, skip_reason=reason))
-
-    budget = getattr(args, "retain_gib", None)
     min_free = getattr(args, "min_free_gib", None)
-    if min_free is not None:
-        if not math.isfinite(min_free) or min_free < 0:
-            raise maintenance.MaintenanceError("--min-free-gib must be finite and nonnegative")
-        device = repo.stat().st_dev
-        if any(d.stat().st_dev != device for c in candidates for d, _ in c.dirs):
-            raise maintenance.MaintenanceError(
-                "headroom retention requires outputs on one filesystem"
-            )
-        shortfall = max(0, min_free * 1024**3 - shutil.disk_usage(repo).free)
-        headroom_budget = max(0, sum(c.total for c in candidates) - shortfall) / 1024**3
-        budget = min(budget, headroom_budget) if budget is not None else headroom_budget
-
     try:
-        candidates = select_budget(candidates, budget)
-    except ValueError as exc:
+        plan = _call(
+            "plan",
+            repo=repo,
+            worktrees=worktrees,
+            live=live_qemu_worktrees(worktrees),
+            active=active_build_worktrees(worktrees),
+            now=_num(time.time()),
+            allow_self=bool(getattr(args, "self", False)),
+            include_integration=bool(getattr(args, "include_integration", False)),
+            idle_hours=_num(getattr(args, "idle_hours", 0) or 0),
+            retain_gib=_num(getattr(args, "retain_gib", None)),
+            min_free_gib=_num(min_free),
+            free_bytes=None if min_free is None else shutil.disk_usage(repo).free,
+        )
+    except native.NativeError as exc:
+        if exc.kind != "budget":
+            raise
         print(f"PRUNE_REFUSED: {exc}")
         return 2
-    candidates.sort(key=lambda c: c.total, reverse=True)
+    budget = plan["budget"]
+    candidates = [
+        Candidate(
+            Path(c["worktree"]),
+            [(Path(d), int(sz)) for d, sz in c["dirs"]],
+            c["eligible"],
+            c["skip_reason"],
+        )
+        for c in plan["candidates"]
+    ]
     reclaim = sum(c.total for c in candidates if c.eligible)
     held = sum(c.total for c in candidates if not c.eligible)
 

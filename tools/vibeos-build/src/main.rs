@@ -90,6 +90,11 @@ fn api(root: &Path, r: &Value) -> Result<Value> {
             request["op"] = json!(s.trim_start_matches("payload_closure_"));
             b::payload_closure::dispatch(root, &request)
         }
+        s if s.starts_with("tooling_receipts_") => b::tooling_receipts::dispatch(root, r),
+        s if s.starts_with("cli_canon_") => b::cli_canon::dispatch(root, r),
+        s if s.starts_with("cli_build_check_") => b::cli_build_checks::dispatch(root, r),
+        s if s.starts_with("cli_arguments_") => b::cli_arguments::dispatch(r),
+        s if s.starts_with("cli_artifacts_") => b::cli_artifacts::dispatch(root, r),
         s if s.starts_with("cargo_orchestrate_") => b::cargo_orchestrate::dispatch(root, r),
         "cargo_local_closure" => Ok(serde_json::to_value(b::cargo::local_closure(
             &required("metadata")?,
@@ -119,6 +124,11 @@ fn api(root: &Path, r: &Value) -> Result<Value> {
         s if s.starts_with("artifact_") => b::artifact_api::dispatch(root, r),
         s if s.starts_with("build_bench_") => b::build_bench::dispatch(root, r),
         s if s.starts_with("build_policy_") => b::build_policy::dispatch(r),
+        s if s.starts_with("trim_") => b::trim::dispatch(r),
+        s if s.starts_with("prune_") => b::prune::dispatch(r),
+        s if s.starts_with("disk_") => b::diskspace::dispatch(r),
+        s if s.starts_with("warmth_") => b::warmth::dispatch(r),
+        s if s.starts_with("repro_") => b::repro::dispatch(r),
         s if s.starts_with("provenance_") => b::provenance::dispatch(root, r),
         s if s.starts_with("stage_") => b::media_stage::api(r),
         s if s.starts_with("sdk_") => b::sdk_api::dispatch(root, r),
@@ -310,6 +320,9 @@ fn run() -> Result<u8> {
             return Err("native media owner exited before startup".into());
         }
         b::artifact_lifetime::watch_owner(parent)?;
+    }
+    if command == "cli-command-worker" {
+        return b::cli_artifacts::worker(&rest);
     }
     if command == "owned-command-fd" {
         return b::process_guard::runner(&rest);

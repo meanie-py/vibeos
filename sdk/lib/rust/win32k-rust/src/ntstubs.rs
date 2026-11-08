@@ -785,7 +785,25 @@ pub unsafe extern "system" fn NtUserCtxDisplayIOCtl(
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtUserLockWindowUpdate(hWnd: HWND) -> BOOL {
-    0
+    // Wine's NtUserLockWindowUpdate: one system-wide locked window. NULL
+    // unlocks; locking while another lock is held fails. The C was a FALSE
+    // stub, so every LockWindowUpdate failed (user32:win test_LockWindowUpdate).
+    // Like Wine, drawing into the locked window is not clipped yet (the suite
+    // marks those pixel checks todo_wine).
+    static LOCKED_HWND: core::sync::atomic::AtomicPtr<core::ffi::c_void> =
+        core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
+    if hWnd.is_null() {
+        LOCKED_HWND.store(core::ptr::null_mut(), core::sync::atomic::Ordering::SeqCst);
+        return 1;
+    }
+    LOCKED_HWND
+        .compare_exchange(
+            core::ptr::null_mut(),
+            hWnd as *mut core::ffi::c_void,
+            core::sync::atomic::Ordering::SeqCst,
+            core::sync::atomic::Ordering::SeqCst,
+        )
+        .is_ok() as BOOL
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtUserQuerySendMessage(Unknown0: DWORD) -> DWORD {

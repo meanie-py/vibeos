@@ -24,7 +24,9 @@ pub struct HEADCOMBO {
     pub droppedIndex: INT,
     pub fixedOwnerDrawHeight: INT,
     pub droppedWidth: INT,
-    pub editHeight: INT,
+    /// Wine 11.11 (was `editHeight`): the selection field's item height, kept current
+    /// from the font (combo_get_text_height) instead of measured on demand.
+    pub item_height: INT,
     pub UIState: LONG,
 }
 pub type LPHEADCOMBO = *mut HEADCOMBO;

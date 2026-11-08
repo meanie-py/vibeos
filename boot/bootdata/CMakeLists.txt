@@ -144,8 +144,10 @@ add_custom_target(livecd_links DEPENDS ${LIVECD_SHORTCUTS})
 # target's OUTPUT, and naming it here (as a staged file OR as a configure
 # dependency) makes ninja refuse the whole manifest ("multiple rules generate
 # ..."), so the exe could never be rebuilt. The plain build that follows turns
-# rostests back off and stages it.
-if(ARCH STREQUAL "i386" AND NOT ENABLE_ROSTESTS)
+# rostests back off and stages it. The same holds for `--winetests user32`
+# (ROSTESTS_WINETESTS), which builds that one target without the rest.
+string(REPLACE " " ";" _named_winetests "${ROSTESTS_WINETESTS}")
+if(ARCH STREQUAL "i386" AND NOT ENABLE_ROSTESTS AND NOT "user32" IN_LIST _named_winetests)
     set(_native_winetest
         ${REACTOS_SOURCE_DIR}/build-i386/modules/rostests/winetests/user32/user32_winetest.exe)
     # Its CREATION must re-run configure, or a tree that builds it after the

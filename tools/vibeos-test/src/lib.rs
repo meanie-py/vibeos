@@ -27,6 +27,7 @@ pub mod smoke_checks;
 pub mod smoke_evidence;
 pub mod smoke_fixtures;
 pub mod smoke_run;
+pub mod stress;
 pub mod verdict;
 pub mod vm;
 pub mod wine_failures;
@@ -41,7 +42,16 @@ pub mod bench_stage;
 pub mod bench_services_control;
 
 pub mod diagnostics;
+pub mod difftest;
 pub mod pc_sample;
 pub mod record_replay;
 pub mod replay_sample;
 pub mod rr_cli;
+pub mod rr_commands;
+
+pub mod cli_report;
+pub mod tooling;
+
+pub mod gate_child;
+pub mod gate_run;
+pub mod gate_stamp;

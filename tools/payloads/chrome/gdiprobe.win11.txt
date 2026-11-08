@@ -3,12 +3,18 @@
 [GDI] CreateIC(DISPLAY)+DeleteDC x20000: objects flat, failures 0 (count 0 -> 0)
 [GDI] GetDC+CreateCompatibleDC/Bitmap+free x20000: objects flat, failures 0 (count 0 -> 0)
 [GDI] GetIconInfo(arrow)+DeleteObject x20000: objects flat, failures 0 (count 0 -> 0)
-[GDI] button SetWindowText+repaint x20000: objects flat, failures 0 (count 7 -> 7)
+[GDI] CreatePen+DeleteObject x20000: objects flat, failures 0 (count 0 -> 0)
+[GDI] CreateSolidBrush+DeleteObject x20000: objects flat, failures 0 (count 0 -> 10)
+[GDI] DrawText("&A") x20000: objects flat, failures 0 (count 13 -> 17)
+[GDI] button SetWindowText+repaint x20000: objects flat, failures 0 (count 17 -> 17)
 [GDI] done
 [GDI] 32-bit
 [GDI] CreateDC(DISPLAY)+DeleteDC x20000: objects flat, failures 0 (count 0 -> 0)
 [GDI] CreateIC(DISPLAY)+DeleteDC x20000: objects flat, failures 0 (count 0 -> 0)
 [GDI] GetDC+CreateCompatibleDC/Bitmap+free x20000: objects flat, failures 0 (count 0 -> 0)
 [GDI] GetIconInfo(arrow)+DeleteObject x20000: objects flat, failures 0 (count 0 -> 0)
-[GDI] button SetWindowText+repaint x20000: objects flat, failures 0 (count 7 -> 7)
+[GDI] CreatePen+DeleteObject x20000: objects flat, failures 0 (count 0 -> 0)
+[GDI] CreateSolidBrush+DeleteObject x20000: objects flat, failures 0 (count 0 -> 10)
+[GDI] DrawText("&A") x20000: objects flat, failures 0 (count 13 -> 17)
+[GDI] button SetWindowText+repaint x20000: objects flat, failures 0 (count 17 -> 17)
 [GDI] done
