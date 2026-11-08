@@ -160,6 +160,17 @@ static void dump_thread(DWORD pid, DWORD tid)
         LONG st = g_sd_stage;
         SAY("  stuck pid=%lu tid=%lu: PROBE-TIMEOUT in %s (20s), abandoned\n", pid, tid,
             st >= 0 && st < (LONG)(sizeof g_sd_stages / sizeof g_sd_stages[0]) ? g_sd_stages[st] : "?");
+        /* The probe stuck in GetThreadContext had suspended the target first. Left suspended,
+         * the target's process could not be killed at its timeout and the sweep waited on it
+         * for good. Undo that suspend here; when the late probe resumes too, a resume of an
+         * unsuspended thread is a no-op. */
+        if (st == 3) {
+            HANDLE th = OpenThread(THREAD_SUSPEND_RESUME, FALSE, tid);
+            if (th) {
+                ResumeThread(th);
+                CloseHandle(th);
+            }
+        }
     }
     CloseHandle(w);
 }
