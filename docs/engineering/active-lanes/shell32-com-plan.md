@@ -1,23 +1,28 @@
 # shell32 COM/ATL C++ → Rust (lane: `shell32-com`)
 
-## RESUME HERE (2026-11-01): setupapi full flip submitted to merge-integrator
+## RESUME HERE (2026-11-08, fleet wind-down): wined3d flipped, graded, fixes submitted
 
-All 18 setupapi TUs are in setupapi-rust and flipped. The full gate
-`20261101-133030-vbj0pxqz` passed smoke ×3, net, bios, conformance ×3 and stortest ×3.
-Its one red, `lint:source-deferred` SCANNER_ERROR, was a vibeos-lint race (verify_tables
-walked cargo's `target/`), fixed in the same push. Spend: **$0.92** of the $5 Haiku
-budget ($4.08 left). Every paid run is in `tools/rustconv/.responses/2026103*`, and the
-ten modules are hand-banked whole.
-- **Graded in the guest (2026-11-01):** `tools/payloads/modrun/suites/setupapi.yaml` passes on
-  i386/amd64/arm64. It found two C bugs that setupapi-rust had copied: AddReg append stores
-  heap garbage, and DelReg DELSTRING overruns its heap block, which crashed the i386 oracle.
-  Both are fixed in install.rs and submitted after af8e22bafeb.
-- **Next:** merge-integrator's verdicts on both pushes. Still open: the file-queue copy failure
-  on the live boot (roadmap registry), shared by the C.
-- **Owed:** the setupapi modrun suite against its own C (AGENTS step 6:
-  `tools/payloads/modrun/suites/setupapi.yaml`).
-- **Gotcha:** the Bash tool's `grep` is ugrep with `-I`, and it silently skips ISO-8859
-  sources: driver.c, install.c and setupapi_private.h. Use `/usr/bin/grep`.
+wined3d (d3dwine.dll) is all Rust: 29 TUs in `d3dwine-rust`, body-less `d3dwine-cargo` cell. It
+landed in master d5078535e54 (batch 161). It cost **$6.42** of the $15 Haiku budget by the
+`port status d3dwine` ledger. Every paid run is in `tools/rustconv/.responses/`, and every module
+is hand-banked (`port hand d3dwine <file>.rs:*`), so a `$0` replay reproduces the tree.
+- **Graded 2026-11-08:** modrun d3d8/d3d9/ddraw, C front ends on `d3dwine_c` against the Rust
+  ones. Every case is byte-identical on all three arches, apart from the declared XFAILs.
+  Grading found two shipping bugs: the CS wait-event `!` swallowed the wake-flag CAS (every GL
+  device hung on amd64/arm64), and the adapter description copied a pointer's bytes. Both are
+  fixed in 3e46315e391, and the field manual has entries for both classes.
+- **Submitted to merge-integrator, verdicts pending:**
+  - 3e46315e391, the two fixes, rust-port-status graded, plus 20e427282fd. Queued in batch 169.
+  - 5b2b609f732, modrun sends each exit line twice; the live capture had lost one on arm64.
+- **Next:** read both verdicts (`land-status`, or the integrator's message) and fix anything
+  bounced.
+- **Owed:** the i386 GL address-space bug ("second wined3d init finds 1.5G reserved", roadmap
+  Known bugs; the `d3d9.device-i386` XFAIL keeps its evidence in every i386 modrun log). It also
+  fails under the C oracle.
+- **Grading recipe:** `VIBEOS_PAYLOAD=modrun MODRUN_SUITES="d3d8,d3d9,ddraw" ./vibeos-cli build
+  --arch <a>` then `smoke --arch <a> --payload modrun`. If a case hangs, the probe's `trace` arg
+  puts wined3d's TRACE on the serial. Symbolize with `./vibeos-cli sym --arch <a> --rebuild` (a
+  stale index names the old C).
 
 **Status:** COMPLETE (opened 2026-07-14, closed 2026-07-18). All 33 activatable
 `shell32` object-map entries are Rust-owned. Worktree `vibeos-shell32-com`, branch
