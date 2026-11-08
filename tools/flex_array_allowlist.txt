@@ -80,7 +80,7 @@ comctl32-cargo: THEMING_ScrollbarSubclassProc
 #   placeholder; a bogus prop index is out of bounds in the C too.
 
 # ---- d3dwine-rust -------------------------------------------------------------------------
-d3dwine-rust: _ZN12d3dwine_rust7d3dwine12shader_spirv27shader_spirv_compile_shaderE
+* : _ZN12d3dwine_rust7d3dwine12shader_spirv27shader_spirv_compile_shaderE
 # NOT a flexible array: shader_spirv.c:110 `enum vkd3d_shader_spirv_extension extensions[1];`
 # is a fixed one-slot array inside the per-compile args struct (no over-allocation), and
 # the C asserts `extension_count <= ARRAY_SIZE(extensions)` right after filling it. A
