@@ -839,11 +839,12 @@ pub unsafe extern "system" fn NtGdiPolyPolyDraw(
 
     DC_vPrepareDCsForBlit(dc, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::null_mut());
 
-    if (*(*dc).pdcattr).ulDirty_ & (0x00000002 | 0x00010000) != 0 {
+    // C's named bits; the translation had invented 0x2|0x10000 / 0x4|0x20000.
+    if (*(*dc).pdcattr).ulDirty_ & (DIRTY_FILL | DC_BRUSH_DIRTY) != 0 {
         DC_vUpdateFillBrush(dc);
     }
 
-    if (*(*dc).pdcattr).ulDirty_ & (0x00000004 | 0x00020000) != 0 {
+    if (*(*dc).pdcattr).ulDirty_ & (DIRTY_LINE | DC_PEN_DIRTY) != 0 {
         DC_vUpdateLineBrush(dc);
     }
 
