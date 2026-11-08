@@ -41,8 +41,6 @@ class BuildBindings(Bindings):
 
         if name == "failure_hook":
             run.finalize_hooks.append(lambda: m._failure_over_moved_tree(run, repo, a["tree"]))
-        elif name == "isolation":
-            return m._isolation_preflight(run, repo, bd)
         elif name == "canonize":
             return m._maybe_canonize(
                 run,
@@ -55,10 +53,6 @@ class BuildBindings(Bindings):
             )
         elif name == "wrap":
             return m.canon.wrap(repo, a["cmd"])
-        elif name == "storage_options":
-            return m._storage_options(bd, a["shards"], a["body_shards"])
-        elif name == "cache_value":
-            return m._value_in_cache(bd, a["key"])
         elif name == "stage_payloads":
             result = m._stage_payloads(run, repo, bd, arch)
             if result is None:
@@ -89,18 +83,12 @@ class BuildBindings(Bindings):
             return m._refresh_wow64_guests(run, repo, stage=a["stage"])
         elif name == "refresh_cpu":
             return m._refresh_wowx64_cpu(run, repo)
-        elif name == "ninja_jobs":
-            return m._ninja_jobs()
-        elif name == "ninja_timeout":
-            return m._ninja_timeout()
         elif name == "classify":
             return m._classify_build_failure(a["stdout"], a["stderr"], a["rc"])
         elif name == "cohab_rels":
             return m.provenance.boot_set_cohab_rels(repo, arch)
         elif name == "verify_flags":
             return m._verify_flag_artifacts(run, repo, bd, args)
-        elif name == "ninja_work":
-            return m._ninja_did_work(a["text"])
         elif name == "payload_roots":
             if not a["stamped"]:
                 return []
@@ -162,6 +150,8 @@ def locked(args, repo, run, arch, cfg, build_dir, cold, *, artifact_env=None):
                 "build_dir": build_dir,
                 "cold": cold,
                 "artifact_env": artifact_env,
+                "ninja_jobs": implementation._ninja_jobs(),
+                "ninja_timeout": implementation._ninja_timeout(),
             },
             callbacks={**bindings.callbacks, "build_helper": bindings.helper},
         )

@@ -350,6 +350,40 @@ pub fn host_jobs_status_at(repo: &Path, ambient: &Environment, root: &Path) -> R
     }
     Ok(serde_json::from_str(&result.stdout)?)
 }
+/// How many edges a ninja run executed, from its progress lines. `[0/n]` is the
+/// CONFIGURE_DEPENDS glob re-check pseudo-edge, not work, and "no work to do" is
+/// authoritative over anything printed above it: an always->=1 count would hide the
+/// double-rebuilt cohab cell this number exists to expose.
+pub fn ninja_work(text: &str) -> Result<usize> {
+    Ok(if text.contains("ninja: no work to do.") {
+        0
+    } else {
+        regex::Regex::new(r"(?m)^\[([1-9]\d*)/\d+\]")?
+            .find_iter(text)
+            .count()
+    })
+}
+/// The `-D` options that move the cached Rust storage shard counts to the requested
+/// ones; a null request leaves the cached value alone.
+pub fn storage_options(build: &Path, shards: &Value, body_shards: &Value) -> Result<Vec<String>> {
+    let mut result = Vec::new();
+    for (key, number) in [
+        ("VIBEOS_RUST_STORAGE_SHARDS", shards),
+        ("VIBEOS_RUST_BODY_SHARDS", body_shards),
+    ] {
+        if number.is_null() {
+            continue;
+        }
+        let value = number
+            .as_i64()
+            .ok_or("storage shards must be integers")?
+            .to_string();
+        if cmake_value(build, key) != value {
+            result.push(format!("-D{key}={value}"));
+        }
+    }
+    Ok(result)
+}
 pub fn cmake_value(build: &Path, key: &str) -> String {
     let Ok(bytes) = fs::read(build.join("CMakeCache.txt")) else {
         return String::new();
@@ -508,16 +542,9 @@ pub fn dispatch(request: &Value) -> Result<Value> {
             a["key"].as_str().ok_or("missing CMake key")?
         ))),
         "build_policy_source_date_epoch" => Ok(json!(source_date_epoch(&path("repo")?)?)),
-        "build_policy_ninja_work" => {
-            let text = a["text"].as_str().ok_or("missing Ninja output")?;
-            Ok(json!(if text.contains("ninja: no work to do.") {
-                0
-            } else {
-                regex::Regex::new(r"(?m)^\[([1-9]\d*)/\d+\]")?
-                    .find_iter(text)
-                    .count()
-            }))
-        }
+        "build_policy_ninja_work" => Ok(json!(ninja_work(
+            a["text"].as_str().ok_or("missing Ninja output")?
+        )?)),
         "build_policy_admission" => {
             let c = capacity(&a["policy"])?;
             if a["has_override"] == true && a["leases_override"].as_u64() != Some(c.leases as u64) {
@@ -531,25 +558,11 @@ pub fn dispatch(request: &Value) -> Result<Value> {
             }
             Ok(result)
         }
-        "build_policy_storage_options" => {
-            let mut result = Vec::new();
-            let build = path("build")?;
-            for (key, field) in [
-                ("VIBEOS_RUST_STORAGE_SHARDS", "shards"),
-                ("VIBEOS_RUST_BODY_SHARDS", "body_shards"),
-            ] {
-                if let Some(number) = a.get(field).filter(|v| !v.is_null()) {
-                    let value = number
-                        .as_i64()
-                        .ok_or("storage shards must be integers")?
-                        .to_string();
-                    if cmake_value(&build, key) != value {
-                        result.push(format!("-D{key}={value}"));
-                    }
-                }
-            }
-            Ok(json!(result))
-        }
+        "build_policy_storage_options" => Ok(json!(storage_options(
+            &path("build")?,
+            &a["shards"],
+            &a["body_shards"]
+        )?)),
         "build_policy_trial" => {
             let c = Capacity::trial(a["rollback"].as_bool().unwrap_or(false));
             if c.slots() > a["cpus"].as_u64().ok_or("missing CPU count")? as usize {
@@ -605,8 +618,36 @@ mod tests {
         .unwrap();
         let req = json!({"op":"build_policy_storage_options","kwargs":{"build":root,"shards":4,"body_shards":2}});
         assert_eq!(dispatch(&req).unwrap(), json!([]));
+        // Repeating the cached settings must not reconfigure; null leaves a key alone.
+        let opts = |a: Value, b: Value| storage_options(root, &a, &b).unwrap();
+        assert_eq!(opts(json!(4), json!(2)), Vec::<String>::new());
+        assert_eq!(opts(Value::Null, Value::Null), Vec::<String>::new());
+        assert_eq!(opts(json!(4), json!(0)), ["-DVIBEOS_RUST_BODY_SHARDS=0"]);
+        assert_eq!(
+            opts(json!(0), Value::Null),
+            ["-DVIBEOS_RUST_STORAGE_SHARDS=0"]
+        );
         fs::remove_file(root.join("build-policy.json")).unwrap();
         std::os::unix::fs::symlink(root.join("missing"), root.join("build-policy.json")).unwrap();
         assert_eq!(read(root).unwrap_err().kind.as_deref(), Some("PolicyError"));
+    }
+    #[test]
+    fn ninja_work_counts_executed_edges_only() {
+        // "relinked N" is the signal: a re-affirm that relinks every build is a wiring bug.
+        assert_eq!(ninja_work("ninja: no work to do.\n").unwrap(), 0);
+        let three = "[1/3] Building kernel-rust\n[2/3] Linking ntoskrnl.exe\n[3/3] done\n";
+        assert_eq!(ninja_work(three).unwrap(), 3);
+        // only at line start: a diagnostic quoting a progress line must not count
+        assert_eq!(ninja_work("note: see [1/3] in the log\n").unwrap(), 0);
+        // VERBATIM no-op re-affirm: [0/n] is the glob re-check pseudo-edge
+        let glob = "[0/2] Re-checking globbed directories...\nninja: no work to do.\n";
+        assert_eq!(ninja_work(glob).unwrap(), 0);
+        // "no work to do" is authoritative over earlier progress lines
+        assert_eq!(
+            ninja_work("[1/2] Building x\nninja: no work to do.\n").unwrap(),
+            0
+        );
+        let real = "[0/2] Re-checking globbed directories...\n[1/1] Linking ntoskrnl.exe\n";
+        assert_eq!(ninja_work(real).unwrap(), 1);
     }
 }
