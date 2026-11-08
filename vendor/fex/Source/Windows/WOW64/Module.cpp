@@ -514,7 +514,8 @@ public:
 void BTCpuProcessInit() {
   FEX::Windows::InitCRTProcess();
   const auto ExecutableName = FEX::Windows::BaseName(FEX::Windows::GetExecutableFilePath());
-  FEX::Config::LoadConfig(fextl::string {ExecutableName}, _environ, FEX::ReadPortabilityInformation());
+  FEX::Config::LoadConfig(fextl::string {ExecutableName}, FEX::Windows::EnvironmentWithTripwireOptions(_environ), // VIBEOS PATCH (tripwire options)
+                          FEX::ReadPortabilityInformation());
   FEXCore::Config::ReloadMetaLayer();
   FEX::Windows::Logging::Init();
 

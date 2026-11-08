@@ -845,6 +845,7 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
   auto Thread = Frame->Thread;
   FEXCORE_PROFILE_SCOPED("CompileBlock");
   FEXCORE_PROFILE_ACCUMULATION(Thread, AccumulatedJITTime);
+  const uint64_t CompileBegin = FEXCore::SHMStats::GetCycleCounter(); // VIBEOS PATCH (compile hook)
 
   static_cast<ContextImpl*>(Thread->CTX)->SyscallHandler->PreCompile();
 
@@ -940,6 +941,9 @@ uintptr_t ContextImpl::CompileBlock(FEXCore::Core::CpuStateFrame* Frame, uint64_
       CodeMapWriter->AppendBlock(*Region, GuestRIP);
     }
   }
+
+  // VIBEOS PATCH (compile hook): see SyscallHandler::BlockCompiled.
+  SyscallHandler->BlockCompiled(Thread, GuestRIP, FEXCore::SHMStats::GetCycleCounter() - CompileBegin);
 
   return (uintptr_t)CodePtr;
 }

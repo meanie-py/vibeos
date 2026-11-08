@@ -680,6 +680,31 @@ pub fn smoke(root: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     } else {
         c.stage("staleness", "ok", "current", json!([]))?
     }
+    if flag(options, "ladder")
+        && text(options, "payload").trim().is_empty()
+        && !flag(options, "doom")
+    {
+        // Payload media runs its payload at every boot, so a ladder on it grades the rungs
+        // under the payload's load, not on their own: an appstorm64 build's ladder lost apc32
+        // to the commit limit (20261108-001052-6ydze5nk) beside 86 x64 processes.
+        let staged = c.call("payload_stamp", json!({"arch":arch}))?;
+        let staged: Vec<String> = serde_json::from_value(staged)?;
+        if !staged.is_empty() {
+            return fail_preflight(
+                &mut c,
+                "LADDER_MEDIA_HAS_PAYLOAD",
+                "ladder-media",
+                format!("media also runs {}", staged.join(",")),
+                json!([
+                    format!(
+                        "rebuild without VIBEOS_PAYLOAD: {}./vibeos-cli build --arch {arch}",
+                        if arch == "arm64" { "VIBEOS_FEX=1 " } else { "" }
+                    ),
+                    "or pass --payload to grade both on purpose"
+                ]),
+            );
+        }
+    }
     if flag(options, "ladder") {
         let absent = c.call("ladder_media_missing_runtime", json!({"arch":arch}))?;
         if absent.as_array().is_some_and(|a| !a.is_empty()) {
@@ -1233,6 +1258,7 @@ mod tests {
         state: Value,
         fresh: bool,
         boots: usize,
+        staged: Vec<String>,
     }
     impl Host for PreflightHost {
         fn call(&mut self, op: &str, a: Value) -> Result<Value> {
@@ -1251,7 +1277,7 @@ mod tests {
                 "provenance_check_staleness" => {
                     json!({"fresh":self.fresh,"reasons":["media is stale"],"warm":false})
                 }
-                "payload_stamp" => json!([]),
+                "payload_stamp" => json!(self.staged),
                 "finalize" => json!(if text(&self.state, "classification").is_empty() {
                     0
                 } else {
@@ -1274,13 +1300,39 @@ mod tests {
             f.set_modified(t).unwrap();
         };
         let t0 = SystemTime::now() - Duration::from_secs(600);
-        assert_eq!(unfinished_payload_build(dir.path()), None, "no selection: nothing to judge");
+        assert_eq!(
+            unfinished_payload_build(dir.path()),
+            None,
+            "no selection: nothing to judge"
+        );
         set("payload-selection.json", t0);
-        assert!(unfinished_payload_build(dir.path()).unwrap().contains("no build"));
+        assert!(unfinished_payload_build(dir.path())
+            .unwrap()
+            .contains("no build"));
         set(".vibeos-build-stamp.json", t0 + Duration::from_secs(60));
-        assert_eq!(unfinished_payload_build(dir.path()), None, "selection then a finished build");
+        assert_eq!(
+            unfinished_payload_build(dir.path()),
+            None,
+            "selection then a finished build"
+        );
         set("payload-selection.json", t0 + Duration::from_secs(120));
-        assert!(unfinished_payload_build(dir.path()).unwrap().contains("did not finish"));
+        assert!(unfinished_payload_build(dir.path())
+            .unwrap()
+            .contains("did not finish"));
+    }
+    #[test]
+    fn ladder_refuses_media_that_runs_a_payload() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut host = PreflightHost {
+            state: json!({"classification":"","stages":[],"extra":{}}),
+            fresh: true,
+            boots: 0,
+            staged: vec!["appstorm64".into()],
+        };
+        let args = json!({"run_dir":dir.path(),"args":{"arch":"arm64","ladder":true,"no_net":true},"env":{}});
+        assert_eq!(smoke(dir.path(), &args, &mut host).unwrap(), 1);
+        assert_eq!(host.state["classification"], "LADDER_MEDIA_HAS_PAYLOAD");
+        assert_eq!(host.boots, 0);
     }
     #[test]
     fn missing_payload_and_stale_media_refuse_before_a_vm_exists() {
@@ -1290,6 +1342,7 @@ mod tests {
                 state: json!({"classification":"","stages":[],"extra":{}}),
                 fresh,
                 boots: 0,
+                staged: vec![],
             };
             let args = json!({"run_dir":dir.path(),"args":{"arch":"amd64","payload":"absent","no_net":true},"env":{}});
             assert_eq!(smoke(dir.path(), &args, &mut host).unwrap(), 1);

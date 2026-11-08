@@ -39,6 +39,7 @@
 #include <FEXCore/Utils/LogManager.h>
 #include <FEXCore/Utils/Threads.h>
 #include <FEXCore/Utils/Profiler.h>
+#include <FEXCore/Utils/SHMStats.h>
 #include <FEXCore/Utils/EnumUtils.h>
 #include <FEXCore/Utils/ArchHelpers/Arm64.h>
 #include <FEXCore/Utils/TypeDefines.h>
@@ -67,10 +68,15 @@
 #include "btcpu64.h"
 
 #include <cstdint>
+#include <algorithm>
 #include <atomic>
+#include <map>
+#include <string>
+#include <vector>
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <utility>
 #include <unordered_map>
 #include <vector>
 #include <ntstatus.h>
@@ -214,6 +220,87 @@ void Report() {
   }
 }
 } // namespace LockProfile
+
+// What FEX itself spends, said at process exit beside the lock profile. Every guest thread gets a
+// FEXCore stats slot, which FEXCore fills when one exists (we have no shared-memory stats file, so
+// the slot is plain heap): `compile` is CompileBlock's whole time, including a block another thread
+// compiled first and the shared invalidation lock it takes; `blocks` the compiles; `misses` lookups
+// that missed the dispatcher's L1/L2 and went to the slow path (FEXCore's AccumulatedCacheMissCount).
+// wowx64's `before calls` is all the time in this layer between syscalls, so the rest of it is
+// compiled guest code and the dispatcher. A thread's slot is folded into the totals when it ends.
+namespace JitProfile {
+std::atomic<uint64_t> Compile, Blocks, Misses, CacheLock, Smc;
+
+void Fold(const FEXCore::SHMStats::ThreadStats& S) {
+  Compile.fetch_add(S.AccumulatedJITTime, std::memory_order_relaxed);
+  Blocks.fetch_add(S.AccumulatedJITCount, std::memory_order_relaxed);
+  Misses.fetch_add(S.AccumulatedCacheMissCount, std::memory_order_relaxed);
+  CacheLock.fetch_add(S.AccumulatedCacheReadLockTime + S.AccumulatedCacheWriteLockTime, std::memory_order_relaxed);
+  Smc.fetch_add(S.AccumulatedSMCCount, std::memory_order_relaxed);
+}
+
+// The same compiles by the guest image whose code they translated (FEXCore's BlockCompiled hook,
+// timed from CompileBlock's entry). Code outside any image (generated at run time) counts as
+// `<none>`. This is what a code cache would answer: a block from a system DLL is compiled again in
+// every process that runs it, and is the same translation each time.
+struct ImageCost {
+  uint64_t Blocks = 0, Ticks = 0;
+};
+std::mutex ImagesLock;
+std::map<std::string, ImageCost> Images;
+
+void Compiled(uint64_t GuestRIP, uint64_t Ticks) {
+  std::string Name = "<none>";
+  if (auto Section = ImageTracker->LookupExecutableFileSection(GuestRIP)) {
+    Name = std::string {FEX::Windows::BaseName(Section->FileInfo.Filename)};
+  }
+  std::scoped_lock Lock {ImagesLock};
+  auto& Cost = Images[Name];
+  Cost.Blocks++;
+  Cost.Ticks += Ticks;
+}
+
+// One line per image, the costliest first, so a log can be summed across processes.
+void ReportImages(uint64_t Freq) {
+  std::vector<std::pair<std::string, ImageCost>> Sorted;
+  {
+    std::scoped_lock Lock {ImagesLock};
+    Sorted.assign(Images.begin(), Images.end());
+  }
+  std::sort(Sorted.begin(), Sorted.end(), [](const auto& A, const auto& B) { return A.second.Ticks > B.second.Ticks; });
+  for (const auto& [Name, Cost] : Sorted) {
+    DbgPrint("[WOWX64FEX] pid %u jit image %s: %I64u blocks, %I64u us\n", static_cast<unsigned>(GetCurrentProcessId()), Name.c_str(),
+             Cost.Blocks, Cost.Ticks * 1000000 / Freq);
+  }
+}
+
+// Called with the live threads still in `Threads` (unlocked: see BTCpu64ProcessTerm).
+void Report() {
+  FEXCore::SHMStats::ThreadStats Live {};
+  uint64_t C = Compile.load(std::memory_order_relaxed), B = Blocks.load(std::memory_order_relaxed),
+           M = Misses.load(std::memory_order_relaxed), L = CacheLock.load(std::memory_order_relaxed),
+           X = Smc.load(std::memory_order_relaxed);
+  for (const auto& [TID, State] : Threads) {
+    if (const auto* S = State->ThreadStats) {
+      C += S->AccumulatedJITTime;
+      B += S->AccumulatedJITCount;
+      M += S->AccumulatedCacheMissCount;
+      L += S->AccumulatedCacheReadLockTime + S->AccumulatedCacheWriteLockTime;
+      X += S->AccumulatedSMCCount;
+    }
+  }
+  uint64_t Freq;
+  asm volatile("mrs %0, cntfrq_el0" : "=r"(Freq));
+  if (!Freq || !B) {
+    return;
+  }
+  DbgPrint("[WOWX64FEX] pid %u jit: %I64u blocks, compile %I64u us (%I64u us a block); %I64u lookup misses, "
+           "cache lock %I64u us; %I64u smc\n",
+           static_cast<unsigned>(GetCurrentProcessId()), B, C * 1000000 / Freq, C * 1000000 / Freq / B, M,
+           L * 1000000 / Freq, X);
+  ReportImages(Freq);
+}
+} // namespace JitProfile
 
 ThreadData* GetThreadData() {
   return static_cast<ThreadData*>(reinterpret_cast<__TEB*>(NtCurrentTeb())->WOW32Reserved);
@@ -496,6 +583,10 @@ public:
     return ImageTracker->LookupExecutableFileSection(Address);
   }
 
+  void BlockCompiled(FEXCore::Core::InternalThreadState*, uint64_t GuestRIP, uint64_t Ticks) override {
+    JitProfile::Compiled(GuestRIP, Ticks);
+  }
+
   void MarkGuestExecutableRange(FEXCore::Core::InternalThreadState* Thread, uint64_t Start, uint64_t Length) override {
     InvalidationTracker->ReprotectRWXIntervals(Start, Length);
   }
@@ -528,7 +619,8 @@ NTSTATUS BTCpu64ProcessInit(const WOWX64_HOST_SERVICES* Services) {
 
   FEX::Windows::InitCRTProcess();
   const auto ExecutableName = FEX::Windows::BaseName(FEX::Windows::GetExecutableFilePath());
-  FEX::Config::LoadConfig(fextl::string {ExecutableName}, _environ, FEX::ReadPortabilityInformation());
+  FEX::Config::LoadConfig(fextl::string {ExecutableName}, FEX::Windows::EnvironmentWithTripwireOptions(_environ), // VIBEOS PATCH (tripwire options)
+                          FEX::ReadPortabilityInformation());
   FEXCore::Config::ReloadMetaLayer();
   FEX::Windows::Logging::Init();
 
@@ -590,6 +682,7 @@ NTSTATUS BTCpu64ThreadInit() {
   LockProfile::Held Lock(LockProfile::ThreadInit);
   FEX::Windows::InitCRTThread();
   auto* Thread = CTX->CreateThread(0, 0);
+  Thread->ThreadStats = new FEXCore::SHMStats::ThreadStats {}; // JitProfile
 
   // Long-mode code segment at the amd64 user CS (0x33 = GDT index 6, RPL 3).
   auto Frame = Thread->CurrentFrame;
@@ -657,6 +750,10 @@ void BTCpu64ThreadTerm(HANDLE Thread, NTSTATUS ExitStatus) {
   // GDT and LDT are mirrored (ThreadInit), so only one is freed.
   delete[] ThreadState->CurrentFrame->State.segment_arrays[FEXCore::Core::CPUState::SEGMENT_ARRAY_INDEX_GDT];
   FEX::Windows::CallRetStack::DestroyThread(ThreadState);
+  if (auto* Stats = std::exchange(ThreadState->ThreadStats, nullptr)) {
+    JitProfile::Fold(*Stats);
+    delete Stats;
+  }
   CTX->DestroyThread(ThreadState);
   delete TD;
   if (Self) {
@@ -688,6 +785,7 @@ bool TermLocked = false;
 void BTCpu64ProcessTerm(HANDLE Process, BOOL After, NTSTATUS Status) {
   if (!Process && !After) {
     LockProfile::Report();
+    JitProfile::Report();
   }
   if (Process) {
     return; // only "every other thread" (NULL) kills threads that may hold our locks
