@@ -919,6 +919,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cdrom-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "cdrom-rust"
 version = "0.1.0"
 dependencies = [

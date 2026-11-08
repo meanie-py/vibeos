@@ -1619,6 +1619,10 @@ impl Linker {
                         link_arg!(self, "{}", a.display());
                         println!("cargo:rerun-if-changed={}", a.display());
                     }
+                } else if item.starts_with("-Wl,") {
+                    // A linker flag in cmake's link order, kept in place: cdrom links its Rust
+                    // body between -Wl,--whole-archive and -Wl,--no-whole-archive.
+                    link_arg!(self, "{}", item);
                 } else if let Some(base) = item.strip_prefix("import:") {
                     let lib = self.import_libs.iter().find(|l| l.2 == base);
                     let lib = lib.unwrap_or_else(|| panic!("link_order names import:{base}, which no import_lib declares"));

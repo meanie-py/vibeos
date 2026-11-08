@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "cdrom-cargo",
     "pl011-cargo",
     "legide-cargo",
     "usbxhci-cargo",

@@ -1993,6 +1993,17 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     if bodyless && cell.c_shims.is_empty() && cell.arch_shims.values().all(Vec::is_empty) {
         cell.shell_less = true;
     }
+    // A Rust body cmake linked under -Wl,--whole-archive (cdrom) brings every member of
+    // its staticlib, core and its panic handler included: rustc's bin would define all of
+    // them a second time (537 duplicates, which link-guard refuses). cmake's link had no
+    // shell, so neither does the cell.
+    if cell.link_order.values().any(|order| {
+        order
+            .windows(2)
+            .any(|w| w[0] == "-Wl,--whole-archive" && w[1] == "body")
+    }) {
+        cell.shell_less = true;
+    }
     let subs: BTreeMap<_, _> = links
         .iter()
         .map(|(a, l)| (a.clone(), l.subsystem.clone().unwrap_or_default()))
