@@ -899,6 +899,20 @@ def island_enum_aliases(
     return out
 
 
+def island_zero_length_statics(src: Path) -> set[str]:
+    """Statics some arch's island declares as a zero-length array: a C `extern T x[];`."""
+    out: set[str] = set()
+    for p in sorted(src.glob("types_*.rs")):
+        out |= set(
+            re.findall(
+                r"^\s*pub static (?:mut )?([A-Za-z_]\w*): \[[^;\]]+; 0usize\];",
+                p.read_text(errors="replace"),
+                re.M,
+            )
+        )
+    return out
+
+
 def island_nested_type_aliases(names: set[str], src: Path) -> dict[str, Item]:
     """`wined3d_texture_sub_resource` -> `type .. = wined3d_texture_wined3d_texture_sub_resource;`.
 

@@ -3503,7 +3503,8 @@ def _or_case_values(state: dict) -> int:
             alt = r"\s*\|\s*".join(map(re.escape, names))
             pat = re.compile(rf"(?m)^(\s*)\(\s*({alt})\s*\)\s*=>")
             new, k = pat.subn(
-                lambda m: f"{m.group(1)}__or_case if __or_case == ({' | '.join(names)}) =>", new
+                lambda m, v=" | ".join(names): f"{m.group(1)}__or_case if __or_case == ({v}) =>",
+                new,
             )
             n += k
         if new != text:
@@ -6385,6 +6386,25 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         siblings = {n: m for n, m in siblings.items() if n not in stale}
         prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
         print(f"resolve: dropped {len(stale)} stale sibling import(s): {', '.join(sorted(stale))}")
+    # An incomplete-array extern (`extern const struct wined3d_vec4 wined3d_srgb_const[];`) is
+    # `[T; 0]` in the island, so the name resolves and never reaches the unresolved list -- yet
+    # every index into it is a build-time `unconditional_panic` (cargo check never runs that
+    # lint). When a translated module defines it, the module's sized array must win.
+    zero_len = prelude_resolve.island_zero_length_statics(crate / "src") - set(siblings)
+    sized = {
+        n: sorted({m for m, _ in d})
+        for n, d in prelude_resolve.sibling_definitions(zero_len, modules_dir).items()
+    }
+    sized = {n: m[0] for n, m in sized.items() if len(m) == 1}
+    if sized:
+        for name, mod in sized.items():
+            prelude_resolve.promote_pub(modules_dir / f"{mod}.rs", name)
+        siblings.update(sized)
+        prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
+        print(
+            "resolve: island `[T; 0]` extern(s) the crate defines, imported from it: "
+            + ", ".join(sorted(sized))
+        )
     island_sys = prelude_resolve.island_substrate(crate / "src", workspace)
     kernel_sys = (
         island_sys if island_sys is not None and island_sys.parent.name == "ntkrnl-sys" else None

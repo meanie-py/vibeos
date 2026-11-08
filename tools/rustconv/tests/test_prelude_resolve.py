@@ -720,3 +720,12 @@ def test_a_copy_a_dependency_macro_expands_to_is_live(tmp_path):
         for n in ("ros_dbg_log", "never_expanded")
     }
     assert live_copies(copied, crate / "src", prelude) == {"ros_dbg_log"}
+
+
+def test_an_incomplete_array_extern_is_found_in_the_island(tmp_path):
+    # wined3d_private.h: `extern const struct wined3d_vec4 wined3d_srgb_const[];` -> `[T; 0]`.
+    (tmp_path / "types_amd64.rs").write_text(
+        'extern "C" {\n    pub static wined3d_srgb_const: [wined3d_vec4; 0usize];\n'
+        "    pub static sized: [u32; 4usize];\n}\n"
+    )
+    assert pr.island_zero_length_statics(tmp_path) == {"wined3d_srgb_const"}
