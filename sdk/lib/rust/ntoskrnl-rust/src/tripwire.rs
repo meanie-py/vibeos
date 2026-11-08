@@ -65,6 +65,10 @@
 //!   MEMCENSUS=1         a line splitting physical memory by what holds it at every
 //!                       process's address-space teardown (ARM3/census.rs), for a
 //!                       sweep that loses free memory the commit charge cannot see.
+//!   FEX_TSO=1           not read by the kernel: the FEX CPU layers keep x86 TSO
+//!                       emulation on although the system has one processor,
+//!                       where they otherwise turn it off (UniprocessorTSO.h).
+//!                       For timing the difference.
 //!   KEYEDWAKE=1         release-to-run time of keyed-event waiters (ex-rust
 //!                       keyedevt.rs), one line per 64 wakes in a process.
 //!   RUSTPANIC_SELFTEST=1  deliberate Rust panic!() at arm time — proves the
@@ -453,6 +457,9 @@ unsafe fn apply_token(tok: &[u8]) {
     } else if tok == b"SMMU=TRANSLATE" {
         // For the arm64 HAL, which asks VibeTripwireHasToken before the first
         // driver starts (smmu.rs): drive each SMMUv3 for real, not in bypass.
+    } else if tok == b"FEX_TSO=1" {
+        // For the FEX CPU layers (vendor/fex Common/UniprocessorTSO.h), through the
+        // registry copy, like QUIET.
     } else if tok == b"QUIET" {
         // For user mode, not the kernel: winlogon reads it back through
         // VibeTripwireRead's registry copy. Recognized here only so it doesn't

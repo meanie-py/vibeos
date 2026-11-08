@@ -97,6 +97,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "acpi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "acpi-rust"
 version = "0.1.0"
 dependencies = [
@@ -181,6 +189,14 @@ dependencies = [
 
 [[package]]
 name = "advpack-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "afd-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-common",
@@ -884,6 +900,14 @@ version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "cdfs-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -4407,6 +4431,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
+name = "legide-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "legide-rust"
 version = "0.1.0"
 dependencies = [
@@ -6632,6 +6664,14 @@ name = "panic-lean"
 version = "0.1.0"
 
 [[package]]
+name = "partmgr-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "partmgr-rust"
 version = "0.1.0"
 dependencies = [
@@ -6698,6 +6738,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pcix-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "pcix-rust"
 version = "0.1.0"
 dependencies = [
@@ -6757,6 +6805,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "pl011-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -8039,6 +8095,14 @@ dependencies = [
 [[package]]
 name = "serial-acpi-difftest"
 version = "0.1.0"
+
+[[package]]
+name = "serial-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
 
 [[package]]
 name = "serial-rust"
@@ -9635,6 +9699,14 @@ dependencies = [
  "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "usbxhci-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]

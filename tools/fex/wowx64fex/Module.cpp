@@ -51,6 +51,7 @@
 #include "Common/Config.h"
 #include "Common/Exception.h"
 #include "Common/TSOHandlerConfig.h"
+#include "Common/UniprocessorTSO.h"
 #include "Common/ImageTracker.h"
 #include "Common/InvalidationTracker.h"
 #include "Common/OvercommitTracker.h"
@@ -533,6 +534,11 @@ NTSTATUS BTCpu64ProcessInit(const WOWX64_HOST_SERVICES* Services) {
 
   FEXCore::Config::Set(FEXCore::Config::CONFIG_INTERPRETER_INSTALLED, "0");
   FEXCore::Config::Set(FEXCore::Config::CONFIG_IS64BIT_MODE, "1"); // difference 1
+  // Before the context exists: it reads TSOEnabled when constructed. `FEX_TSO=1` on
+  // the tripwire keeps the emulation on, for timing it against this.
+  const bool TSOOff = FEX::Windows::DisableTSOOnUniprocessor();
+  DbgPrint("[WOWX64FEX] pid %u TSO emulation %s\n", static_cast<unsigned>(GetCurrentProcessId()),
+           TSOOff ? "off (one processor)" : "on");
 
   FEXCore::Profiler::Init("", "");
 

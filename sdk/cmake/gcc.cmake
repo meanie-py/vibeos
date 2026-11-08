@@ -752,6 +752,8 @@ endfunction()
 ##                    [DESTINATION <cd-dir>...] [NAME_ON_CD <name>]
 ##                    [NO_CAB]                          (not in reactos.cab:
 ##                                                       setup does not install it))
+##                    [PEFIXUP <native-pefixup args>]   (the target's own POST_BUILD
+##                                                       pefixup, after the KIND's)
 ##
 ## <crate> is the cargo bin crate whose build.rs uses reactos-link and is
 ## arch-aware (i686/x86_64/aarch64-kernel.json under the crate dir); its
@@ -773,7 +775,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/cargo_link_context.cmake)
 ## so the shared body crate compiles once instead of once per module (the 95 keyboard
 ## layouts). Each output gets the kind's post-link and its own cd entry.
 function(add_cargo_module _target _crate _output)
-    cmake_parse_arguments(_acm "NO_CD;NO_CAB;DELAY_IMPORTS" "KIND;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS;BINS;DESTINATION" ${ARGN})
+    cmake_parse_arguments(_acm "NO_CD;NO_CAB;DELAY_IMPORTS" "KIND;NAME_ON_CD;BODY_CRATE" "BODY_CRATES;EXTRA_DEPENDS;BINS;DESTINATION;PEFIXUP" ${ARGN})
     if(NOT _acm_KIND)
         set(_acm_KIND kerneldll)
     endif()
@@ -1063,6 +1065,13 @@ function(add_cargo_module _target _crate _output)
                 "links real delay-import libs, but this build has delay-load disabled")
         endif()
         list(APPEND _postlink COMMAND $<TARGET_FILE:native-pefixup> --delayimport __ACM_OUT__)
+        set(_postdep native-pefixup)
+    endif()
+    # PEFIXUP <args>: the target's own `add_custom_command(TARGET t POST_BUILD COMMAND
+    # native-pefixup <args> $<TARGET_FILE:t>)` (pcix/legide's `--section:.rsrc,!D`), which
+    # cmake ran after set_module_type's post-link; a cell has no TARGET to hang it on.
+    if(_acm_PEFIXUP)
+        list(APPEND _postlink COMMAND $<TARGET_FILE:native-pefixup> ${_acm_PEFIXUP} __ACM_OUT__)
         set(_postdep native-pefixup)
     endif()
 
