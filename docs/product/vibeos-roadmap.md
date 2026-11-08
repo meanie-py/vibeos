@@ -602,6 +602,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Pi 5: PlugPlay service intermittently stuck in START_PENDING (open, found 2026-11-08,
+  msvcrt-homebrew lane).** Two `pi5 boot`s of the same staged image (`a64212cbd0f1`, sysfbprobe)
+  differed: the first had PlugPlay RUNNING when the probe asked; in the second
+  (`/tmp/vibeos-cli/20261108-141530-aXa2Ix-pi5-boot-arm64`, serial
+  `D:\home\vibeos-rpi5-setup\serial-20261108-141048`) the SCM logged `START returned=0` and
+  umpnpmgr's DeviceInstallThread was installing devices (`ACPI\BRCM5D12` failed, newdev error
+  259), yet the service still read state 2 after 300 s. umpnpmgr's `ServiceMain` reports
+  RUNNING unconditionally after creating its three threads, so it stalled between checkpoint
+  1 and that last `SetServiceStatus`. Not seen in QEMU (arm64 probe: RUNNING after 1 s). Next:
+  sysfbprobe now prints the checkpoint, which names the thread start it stalled before; boot
+  it again until the stall recurs.
+
 - **amd64: long boots wedged once osk.exe had leaked the GDI handle table (FIXED 2026-11-07,
   graviton lane).** The stock i386 `osk.exe` gained thousands of pens (to 8,300+ in one Chrome
   payload boot; magnify leaked too), the handle table filled, pool ran dry and win32k flooded

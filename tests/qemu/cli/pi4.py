@@ -156,7 +156,7 @@ def add_parser(sub) -> None:
     stage.add_argument("--freeldr-ini", action="store_true")
     services = verbs.add_parser("services", help="manage leased native bench host services")
     services.add_argument(
-        "service", choices=["status", "up", "http", "down", "serial-restart", "recover"]
+        "service", choices=["status", "up", "http", "down", "serial-restart", "serial-down", "recover"]
     )
     services.add_argument("--pid", type=int, help="recover: exact process id from failed launch")
     services.add_argument("--started", type=int, help="recover: exact CIM UTC start ticks")

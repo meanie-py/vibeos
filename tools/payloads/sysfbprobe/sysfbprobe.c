@@ -154,7 +154,10 @@ static void wait_plugplay(void)
             break;
         Sleep(500);
     }
-    SAY("PlugPlay service state %lu after %d.%d s\n", st.dwCurrentState, i / 2, (i % 2) * 5);
+    /* The checkpoint says how far umpnpmgr's ServiceMain got: 1, 2 and 3 are reported
+     * before it creates its event, RPC and device-install threads, then RUNNING. */
+    SAY("PlugPlay service state %lu checkpoint %lu after %d.%d s\n", st.dwCurrentState,
+        st.dwCheckPoint, i / 2, (i % 2) * 5);
     CHECK(st.dwCurrentState == SERVICE_RUNNING, "PlugPlay service not running\n");
     if (svc)
         CloseServiceHandle(svc);

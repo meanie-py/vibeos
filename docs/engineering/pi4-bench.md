@@ -256,7 +256,9 @@ Pi USB port. The bench has two: **`picousb` is wired to the Pi 4** (USB and UART
 since 2026-10-18) and `picousb5` to the OptiPlex. Every Pi 4 script reads
 `PI4_PICO_HOST` (default `picousb`), and `bench.sh up` restarts a serial listener
 that is reading the other Pico. Only one client can hold a Pico's console: a stale
-listener for another board keeps resetting the new one's. It presents a boot keyboard, boot mouse, mass storage and an
+listener for another board keeps resetting the new one's. As of 2026-11-07 `picousb` and its breadboard sit on the Pi 5, so a Pi 4 listener
+on it steals the Pi 5's console; `serial up` on either board refuses while the other
+bench's listener holds the same Pico (`./vibeos-cli pi4 services serial-down`). It presents a boot keyboard, boot mouse, mass storage and an
 absolute pointer, is controlled over Wi-Fi, and reports what the Pi's USB host
 did to it. `tools/pi4/pico.sh` wraps its CLI (address, token file, venv; setup
 in the script header):
