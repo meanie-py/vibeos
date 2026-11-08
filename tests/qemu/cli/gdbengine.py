@@ -27,20 +27,14 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import subprocess
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..vm import (
-    PROJECT_DIR,
-    _acpitable_relative,
-    console_uart_args,
-    get_arch_config,
-    smp_count,
-    temp_disk_args,
-)
+from ..vm import PROJECT_DIR, get_arch_config
 from . import archcfg
 
 RUNS_DIR = PROJECT_DIR / "qemu" / "runs"
@@ -203,96 +197,6 @@ def _win_alive(uid: str) -> bool:
         return False
 
 
-def _tripwire_fw_cfg() -> list[str]:
-    """VIBEOS_TRIPWIRE for a debug boot, as smoke passes it (vm.QemuVM._tripwire_args).
-    Without it a special-pool fault seen in smoke could not be caught under gdb."""
-    cfg = os.environ.get("VIBEOS_TRIPWIRE", "").strip()
-    if not cfg:
-        return []
-    if "," in cfg:
-        raise ValueError(f"VIBEOS_TRIPWIRE must not contain commas (got {cfg!r})")
-    return ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={cfg}"]
-
-
-def _build_windows_cmd(
-    arch: str, config, win_cfg: dict, work_dir: Path, staging: Path, *, gdb_wait: bool
-) -> tuple[list[str], dict]:
-    """Assemble the DETACHED windows-host qemu cmd: gdbstub bound 0.0.0.0 on the
-    Windows stack, serial -> a staged file (readable across CLI invocations), media
-    staged + accel rewritten. Mirrors vm._build_windows_cmd but swaps the TCP dial-
-    back serial/QMP (which can't outlive the launching process) for -serial file:."""
-    from .. import backend as be
-
-    is_arm64 = arch.startswith("arm64")
-    configured = win_cfg.get("accel", "tcg")
-    whpx_ok = be.whpx_available() if (configured == "whpx" and not is_arm64) else None
-    accel = be.resolve_accel(arch, configured, whpx_ok)
-
-    scratch = staging / "scratch.qcow2"
-    subprocess.run(
-        ["qemu-img", "create", "-f", "qcow2", str(scratch), "64M"],
-        check=True,
-        capture_output=True,
-    )
-    serial_log = staging / "serial.log"
-    serial_log.write_bytes(b"")  # pre-create so wait_for can poll immediately
-    debugcon = staging / "debugcon.bin"
-    gdb_port = be.windows_free_tcp_port()
-    uid = f"vibeos-dbg-{os.getpid()}-{gdb_port}"
-    win_bin = be.windows_qemu_bin(config.qemu_bin, win_cfg["qemu_dir"], accel)
-
-    raw = config.qemu_args(work_dir)
-    staged = _acpitable_relative(be.stage_media_paths(raw, staging))
-    arch_args = staged if is_arm64 else be.rewrite_accel(staged, accel, arch)
-
-    scratch_dev = [
-        "-drive",
-        f"file={scratch},format=qcow2,if=none,id=scratch",
-        *(
-            []
-            if arch.startswith("i386")
-            else [
-                "-device",
-                "virtio-blk-device,drive=scratch" if is_arm64 else "virtio-blk-pci,drive=scratch",
-            ]
-        ),
-    ]
-    scratch_dev = be.stage_media_paths(scratch_dev, staging)
-    # The same \\TEMP disk smoke attaches: a debug boot that differs from the smoke
-    # it is reproducing cannot reproduce a disk-path crash at all.
-    temp_dev = be.stage_media_paths(temp_disk_args(arch, staging), staging)
-    smp = smp_count()
-
-    cmd = [
-        win_bin,
-        "-name",
-        uid,
-        "-chardev",
-        f"file,id=dbgser,path={be.win_path(serial_log)}",
-        *console_uart_args(getattr(config, "arch", arch), "dbgser"),
-        "-monitor",
-        "none",
-        "-gdb",
-        f"tcp:0.0.0.0:{gdb_port}",
-        *(["-S"] if gdb_wait else []),
-        *([] if is_arm64 else ["-debugcon", f"file:{be.win_path(debugcon)}"]),
-        *scratch_dev,
-        *temp_dev,
-        *(["-smp", str(smp)] if smp is not None else []),
-        *_tripwire_fw_cfg(),
-        *arch_args,
-    ]
-    meta = {
-        "gdb_host": be.gateway_ip(),
-        "gdb_port": gdb_port,
-        "serial_log": str(serial_log),
-        "win_uid": uid,
-        "staging": str(staging),
-        "accel": accel,
-    }
-    return cmd, meta
-
-
 def start(
     arch: str,
     *,
@@ -300,10 +204,9 @@ def start(
     win_cfg: dict,
     gdb_wait: bool = False,
 ) -> DebugRun:
-    from ..portlease import launch_lock
-
-    with launch_lock():
-        return _start_locked(arch, backend=backend, win_cfg=win_cfg, gdb_wait=gdb_wait)
+    # No launch lock here: the native VM takes the port handshake itself, and holding it
+    # around that launch deadlocked against our own process.
+    return _start_locked(arch, backend=backend, win_cfg=win_cfg, gdb_wait=gdb_wait)
 
 
 def _start_locked(
@@ -313,16 +216,19 @@ def _start_locked(
     win_cfg: dict,
     gdb_wait: bool = False,
 ) -> DebugRun:
-    """Launch a detached debug QEMU with a gdbstub; write + return the run manifest.
-    windows-host only for now (the whole point — native breakpoints don't fire under
-    KVM; the native port reuses this shell once its accel is forced to tcg)."""
-    if backend != "windows-host":
-        raise NotImplementedError(
-            f"gdbengine backend '{backend}' not supported yet (windows-host only); "
-            "for native use the bash toolkit (qemu/start.sh) until it is ported."
-        )
-    vm_arch = archcfg.vm_arch(arch)
-    config = get_arch_config(vm_arch)
+    """Boot the SMOKE VM with a gdbstub and serial to a file, then hand it to the session that
+    ran us, and write the run manifest.
+
+    It is the smoke VM (native vm.rs), not a command line assembled here: this module used to
+    build its own, and each smoke knob it forgot was a debug boot that could not reproduce
+    the smoke -- the SMP count, then the tripwire (special pool booted without it reproduced a
+    0x19 instead of the smoke's 0x50). Detaching registers the run's lock with a live owner,
+    so `ps`, `kill` and the reaper see it, and its guardian stops QEMU and removes its staging
+    when the owner goes or `gdb stop` kills it."""
+    from ..vm import QemuVM
+    from .debugcmd import _session_owner
+
+    config = get_arch_config(archcfg.vm_arch(arch))
     run_id = f"{arch}-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
     run_dir = RUNS_DIR / run_id
     if run_dir.exists():
@@ -330,43 +236,48 @@ def _start_locked(
         run_dir = RUNS_DIR / run_id
     work_dir = run_dir / "work"
     work_dir.mkdir(parents=True, exist_ok=True)
+    declared = os.environ.get("VIBEOS_QEMU_OWNER_PID", "")
+    owner = int(declared) if declared.isdigit() else _session_owner(os.getppid())
 
-    staging_root = Path(win_cfg.get("staging_dir", "/mnt/c/temp/vibeos-qemu"))
-    from ..windows_staging import auto_cleanup_locked
-
-    auto_cleanup_locked(staging_root)
-    staging = staging_root / f"dbg-{run_id}"
-    shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir(parents=True, exist_ok=True)
-
-    cmd, meta = _build_windows_cmd(arch, config, win_cfg, work_dir, staging, gdb_wait=gdb_wait)
-
-    launch_log = (run_dir / "launch.log").open("wb")
-    proc = subprocess.Popen(
-        cmd,
-        stdout=launch_log,
-        stderr=subprocess.STDOUT,
-        stdin=subprocess.DEVNULL,
-        start_new_session=True,  # detach: survives this CLI process exiting
-        cwd=staging,  # `-acpitable` names its file relative to here (vm._acpitable_relative)
+    vm = QemuVM(
+        config,
+        work_dir,
+        backend=backend,
+        windows=win_cfg,
+        gdb=True,
+        gdb_wait=gdb_wait,
+        serial_file=True,
     )
+    try:
+        vm.start()
+        handles = vm.detach_for_debug(owner, run_id, source="gdb start")
+    except BaseException:
+        vm.stop()
+        raise
+    launch = Path(handles["live_log"]).with_name(f"{vm_arch_name(handles)}_launch.json")
+    accel = json.loads(launch.read_text()).get("accel", "tcg") if launch.is_file() else "tcg"
     run = DebugRun(
         run_id=run_id,
         arch=arch,
         backend=backend,
-        gdb_host=meta["gdb_host"],
-        gdb_port=meta["gdb_port"],
-        serial_log=meta["serial_log"],
+        gdb_host=handles["gdb_host"],
+        gdb_port=handles["gdb_port"],
+        serial_log=handles["serial_file"],
         kernel_image=str(_kernel_image(arch)),
-        win_uid=meta["win_uid"],
-        qemu_pid=proc.pid,
-        staging=meta["staging"],
+        win_uid=handles.get("win_uid") or "",
+        qemu_pid=handles.get("qemu_pid") or 0,
+        staging=str(handles.get("staging") or ""),
         start_time=_now_iso(),
-        accel=meta.get("accel", "tcg"),
+        accel=accel,
     )
     run.save()
-    (run_dir / "qemu_cmd.txt").write_text(" ".join(cmd))
+    (run_dir / "qemu_cmd.txt").write_text(" ".join(handles.get("argv") or []))
     return run
+
+
+def vm_arch_name(handles: dict) -> str:
+    """The arch name vm.rs used for the run's `<arch>_launch.json`."""
+    return (handles.get("config") or {}).get("arch", "")
 
 
 def wait_for(run: DebugRun, pattern: str, timeout: float = 120.0) -> bool:
@@ -419,7 +330,7 @@ def _run_gdb(run: DebugRun, verb_ex: list[str], *, timeout: float, relocate: boo
         *_helper_source_args(),
     ]
     if relocate:
-        kbase = run.kernel_runtime_base
+        kbase = run.kernel_runtime_base or _serial_kernel_base(run)
         ex += ["-ex", f"find-kbase {kbase}" if kbase else "find-kbase"]
     ex += verb_ex
     ex += ["-ex", "delete breakpoints", "-ex", "detach", "-ex", "quit"]
@@ -453,6 +364,28 @@ def _expand_verb(token: str) -> str:
 
 
 _KRNLBASE = r"\[KRNLBASE\] ntoskrnl runtime base=(?:0x)?([0-9a-fA-F]+)"
+
+
+def _serial_kernel_base(run: DebugRun) -> str:
+    """The base the kernel printed on serial (`[KRNLBASE]`), cached on the run; "" before it
+    has printed one.
+
+    Without a hint, `find-kbase` scans guest memory through the gdbstub, and over the
+    windows-host transport that took longer than gdb's whole 60s budget: every `gdb inspect`
+    on a booted amd64 guest hard-timed-out before running its verb. With the hint the same
+    connect + relocate + `info registers` took 0.1s (measured 2026-11-07). A file read, so it
+    never resumes the guest."""
+    import re
+
+    try:
+        found = re.findall(_KRNLBASE, Path(run.serial_log).read_text(errors="replace"))
+    except OSError:
+        return ""
+    if not found:
+        return ""
+    run.kernel_runtime_base = hex(int(found[-1], 16))
+    run.save()
+    return run.kernel_runtime_base
 
 
 def _await_kernel_base(run: DebugRun, timeout: float) -> bool:
@@ -658,6 +591,20 @@ def stop(run: DebugRun) -> None:
     # dataclass fields only, which drops "lock".
     mp = run.manifest_path()
     lock = json.loads(mp.read_text()).get("lock") if mp.is_file() else None
+    # Archive the serial FIRST: the run's guardian deletes its staging (where the windows-host
+    # serial lives) as soon as QEMU exits, and a stopped run must stay readable.
+    archived = run.dir / "serial.log"
+
+    def archive() -> None:
+        serial = Path(run.serial_log)
+        if serial.is_file() and serial.resolve() != archived.resolve():
+            run.dir.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.copy2(serial, archived)
+            except FileNotFoundError:
+                pass  # the guardian cleaned up between the check and the copy
+
+    archive()
     if run.backend == "windows-host" and run.win_uid:
         from .. import backend as be
 
@@ -670,14 +617,18 @@ def stop(run: DebugRun) -> None:
                 f"({'PowerShell gave no answer' if left is None else f'{left} still running'}); "
                 f"run left registered -- retry `vibeos-cli gdb stop {run.run_id}`"
             )
-    # Serial lives inside staging on windows-host. Preserve the experiment's
-    # evidence before deleting that directory; a stopped run must stay readable.
-    serial = Path(run.serial_log)
-    if serial.is_file():
-        archived = run.dir / "serial.log"
-        run.dir.mkdir(parents=True, exist_ok=True)
-        if serial.resolve() != archived.resolve():
-            shutil.copy2(serial, archived)
+    elif run.qemu_pid and _pid_alive(run.qemu_pid):
+        os.kill(run.qemu_pid, signal.SIGTERM)
+        deadline = time.monotonic() + 15
+        while _pid_alive(run.qemu_pid):
+            if time.monotonic() >= deadline:
+                raise RuntimeError(
+                    f"qemu pid {run.qemu_pid} survived SIGTERM; "
+                    f"retry `vibeos-cli gdb stop {run.run_id}` or `vibeos-cli kill {run.qemu_pid}`"
+                )
+            time.sleep(0.2)
+    archive()  # whatever it wrote while stopping, if the guardian has not cleaned it yet
+    if archived.is_file():
         run.serial_log = str(archived)
         run.save()
     if run.staging:
@@ -701,8 +652,20 @@ def status(run: DebugRun, *, check_alive: bool = True) -> dict:
         "serial_log": run.serial_log,
     }
     if check_alive:
-        out["alive"] = _win_alive(run.win_uid) if run.win_uid else False
+        if run.win_uid:
+            out["alive"] = _win_alive(run.win_uid)
+        else:
+            out["alive"] = bool(run.qemu_pid) and _pid_alive(run.qemu_pid)
     return out
+
+
+def _pid_alive(pid: int) -> bool:
+    """A live, non-zombie process (a native debug QEMU's guardian reaps it promptly)."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return False
+    return stat.rsplit(") ", 1)[-1].split()[0] not in ("Z", "X")
 
 
 def list_runs() -> list[str]:

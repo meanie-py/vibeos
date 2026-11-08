@@ -2198,73 +2198,68 @@ def test_gdbengine_gdb_arch_map():
     assert ge_mod._gdb_arch("arm64") == "aarch64"
 
 
-@pytest.mark.parametrize("smp", [None, "1", "4"])
-def test_gdbengine_smp_media_symbols_and_cpu_count_agree(tmp_path, monkeypatch, smp):
+def test_gdbengine_boots_the_smoke_vm_and_hands_it_to_the_session(tmp_path, monkeypatch):
+    """`gdb start` is the smoke VM plus a gdbstub, never a command line of its own: the old
+    private launcher drifted from smoke one knob at a time (the SMP count, then the tripwire,
+    whose absence reproduced a 0x19 instead of the smoke's 0x50). It detaches to the session
+    that ran us, so the run is locked, guarded and visible to `ps`/`kill`/the reaper."""
     from types import SimpleNamespace
 
-    if smp is None:
-        monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
-    else:
-        monkeypatch.setenv("VIBEOS_QEMU_SMP", smp)
-    monkeypatch.setattr(ge_mod, "PROJECT_DIR", tmp_path)
-    monkeypatch.setattr(ge_mod.subprocess, "run", lambda *a, **kw: None)
-    monkeypatch.setattr(be_mod, "stage_media_paths", lambda args, staging: args)
-    monkeypatch.setattr(be_mod, "windows_free_tcp_port", lambda: 12345)
-    monkeypatch.setattr(be_mod, "windows_qemu_bin", lambda *a: "qemu-system-aarch64.exe")
-    monkeypatch.setattr(be_mod, "win_path", str)
-    monkeypatch.setattr(be_mod, "gateway_ip", lambda: "127.0.0.1")
-    selected = []
+    from .. import vm as qemu_vm
 
-    def qemu_args(work):
-        selected.append(vm_mod.smp_count())
-        return []
+    made: dict = {}
 
-    config = SimpleNamespace(qemu_bin="qemu-system-aarch64", qemu_args=qemu_args)
-    cmd, _ = ge_mod._build_windows_cmd(
-        "arm64", config, {"qemu_dir": "qemu"}, tmp_path, tmp_path, gdb_wait=True
+    class FakeVM:
+        def __init__(self, config, work_dir, **kw):
+            made.update(kw, work_dir=work_dir)
+
+        def start(self):
+            made["started"] = True
+
+        def detach_for_debug(self, owner, run_id, source=""):
+            made["owner"], made["run_id"] = owner, run_id
+            return {
+                "gdb_host": "172.20.0.1",
+                "gdb_port": 4321,
+                "serial_file": "/mnt/c/staging/serial.log",
+                "win_uid": "vibeos-9-4321",
+                "qemu_pid": 77,
+                "staging": "/mnt/c/staging",
+                "live_log": str(tmp_path / "amd64_serial.log"),
+                "config": {"arch": "amd64"},
+                "argv": ["qemu-system-x86_64.exe", "-gdb", "tcp:0.0.0.0:4321"],
+            }
+
+        def stop(self):
+            made["stopped"] = True
+
+    (tmp_path / "amd64_launch.json").write_text('{"accel": "whpx"}')
+    monkeypatch.setattr(qemu_vm, "QemuVM", FakeVM)
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(ge_mod, "get_arch_config", lambda arch: SimpleNamespace(arch=arch))
+    monkeypatch.setenv("VIBEOS_QEMU_OWNER_PID", "4242")
+    run = ge_mod._start_locked("amd64", backend="windows-host", win_cfg={}, gdb_wait=True)
+    assert made["gdb"] is True and made["gdb_wait"] is True and made["serial_file"] is True
+    assert made["started"] and made["owner"] == 4242 and made["run_id"] == run.run_id
+    assert "stopped" not in made
+    assert (run.gdb_port, run.serial_log, run.win_uid, run.accel) == (
+        4321,
+        "/mnt/c/staging/serial.log",
+        "vibeos-9-4321",
+        "whpx",
     )
-    assert selected == [int(smp) if smp else None]
-    if smp is None:
-        assert "-smp" not in cmd
-    else:
-        assert cmd[cmd.index("-smp") + 1] == smp
-    # The media boots the MP kernel either way, so symbols come from it whenever it is built.
+    assert ge_mod.DebugRun.load(run.run_id) == run
+
+
+def test_gdbengine_kernel_image_prefers_the_mp_kernel(tmp_path, monkeypatch):
+    """The media boots the MP kernel either way, so symbols come from it whenever it is built."""
+    monkeypatch.setattr(ge_mod, "PROJECT_DIR", tmp_path)
     up = tmp_path / "build-arm64/ntoskrnl/ntoskrnl.exe"
     mp = tmp_path / "build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
     assert ge_mod._kernel_image("arm64") == up
     mp.parent.mkdir(parents=True)
     mp.write_bytes(b"MZ")
     assert ge_mod._kernel_image("arm64") == mp
-
-
-@pytest.mark.parametrize("tripwire", ["", "SPECIALPOOL=*"])
-def test_gdbengine_debug_boot_carries_the_tripwire(tmp_path, monkeypatch, tripwire):
-    """The gdb engine assembles its own QEMU command line. It used to skip the
-    tripwire, so `VIBEOS_TRIPWIRE='SPECIALPOOL=*' vibeos-cli gdb start i386` booted
-    WITHOUT special pool and reproduced the original 0x19 instead of the 0x50 the
-    smoke had caught — the one boot where the knob matters most."""
-    from types import SimpleNamespace
-
-    monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
-    monkeypatch.setenv("VIBEOS_TRIPWIRE", tripwire)
-    monkeypatch.setattr(ge_mod, "PROJECT_DIR", tmp_path)
-    monkeypatch.setattr(ge_mod.subprocess, "run", lambda *a, **kw: None)
-    monkeypatch.setattr(be_mod, "stage_media_paths", lambda args, staging: args)
-    monkeypatch.setattr(be_mod, "windows_free_tcp_port", lambda: 12345)
-    monkeypatch.setattr(be_mod, "windows_qemu_bin", lambda *a: "qemu-system-i386.exe")
-    monkeypatch.setattr(be_mod, "win_path", str)
-    monkeypatch.setattr(be_mod, "gateway_ip", lambda: "127.0.0.1")
-    monkeypatch.setattr(be_mod, "rewrite_accel", lambda args, accel, arch: args, raising=False)
-    config = SimpleNamespace(qemu_bin="qemu-system-i386", qemu_args=lambda work: [])
-    cmd, _ = ge_mod._build_windows_cmd(
-        "i386", config, {"qemu_dir": "qemu"}, tmp_path, tmp_path, gdb_wait=False
-    )
-    want = ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={tripwire}"] if tripwire else []
-    assert vm_mod.tripwire_args() == want
-    assert cmd.count("-fw_cfg") == len(want) // 2
-    if tripwire:
-        i = cmd.index("-fw_cfg")
-        assert cmd[i : i + 2] == want
 
 
 def test_gdbengine_expand_verb():
@@ -11621,3 +11616,34 @@ def test_boot_failure_preserves_its_primary_exception_when_snapshot_fails(monkey
     assert vm._boot_output == (
         "previously captured evidence" if closed else "partial serial evidence"
     )
+
+
+def test_gdbengine_relocates_from_the_base_the_kernel_printed(tmp_path, monkeypatch):
+    """An unhinted find-kbase scans guest memory through the gdbstub, which over windows-host
+    outlasted gdb's whole budget: every `gdb inspect` on a booted guest timed out. The kernel
+    prints its base on serial; read it, cache it, and never resume the guest to get it."""
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path / "runs")
+    serial = tmp_path / "serial.log"
+    serial.write_text("boot\n")
+    run = ge_mod.DebugRun(
+        run_id="r",
+        arch="amd64",
+        backend="windows-host",
+        gdb_host="h",
+        gdb_port=1,
+        serial_log=str(serial),
+        kernel_image="k",
+    )
+    assert ge_mod._serial_kernel_base(run) == ""
+    serial.write_text("[KRNLBASE] ntoskrnl runtime base=fffff80000400000\r\n")
+    assert ge_mod._serial_kernel_base(run) == "0xfffff80000400000"
+    assert ge_mod.DebugRun.load("r").kernel_runtime_base == "0xfffff80000400000"
+    seen = []
+    monkeypatch.setattr(
+        ge_mod.subprocess,
+        "run",
+        lambda argv, **kw: seen.append(argv) or ge_mod.subprocess.CompletedProcess(argv, 0, "", ""),
+    )
+    monkeypatch.setattr(ge_mod, "_gdb_bin", lambda: "gdb")
+    ge_mod._run_gdb(run, [], timeout=1)
+    assert "find-kbase 0xfffff80000400000" in seen[0]

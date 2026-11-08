@@ -326,6 +326,7 @@ class QemuVM:
         retain_staging=False,
         prepared_config=None,
         max_lifetime=None,
+        serial_file=False,
     ):
         self.config = config
         if prepared_config is None and not hasattr(config, "_up_boot_timeout"):
@@ -366,6 +367,9 @@ class QemuVM:
             request["overrides"]["hang_silence_seconds"] = config._up_hang_silence_seconds
             request["timeout_is_up"] = True
         request["owner_pid"] = os.getpid()
+        # Serial to a file rather than the dial-back socket: a VM detached for debugging keeps
+        # writing after this process (and its socket) is gone. vm.rs `Vm::serial_file`.
+        request["serial_file"] = serial_file
         request["capture_restrict_network"] = capture_restrict_network
         # Keep the windows-host staging (the disk QEMU actually wrote) after QEMU exits,
         # until stop(): test_install copies the installed disk out once the guest reboots.
@@ -410,6 +414,7 @@ class QemuVM:
             setattr(self, key, handles.get(key))
         self.live_log_path = Path(handles["live_log"])
         self._win_uid = handles.get("win_uid", "")
+        self.serial_file = Path(handles["serial_file"]) if handles.get("serial_file") else None
         self._win_staging = Path(handles["staging"]) if handles.get("staging") else None
         self.config.__dict__.update(handles.get("config", {}))
         self.config.__dict__.update(handles.get("network", {}))
@@ -492,8 +497,8 @@ class QemuVM:
         self.hang_cpu_state = self._call("save_hang_state", phase=phase)
         return self.hang_cpu_state
 
-    def detach_for_debug(self, owner_pid, run_id):
-        result = self._call("detach", owner_pid=owner_pid, run_id=run_id)
+    def detach_for_debug(self, owner_pid, run_id, source="smoke --attach-on-fail"):
+        result = self._call("detach", owner_pid=owner_pid, run_id=run_id, source=source)
         self._session.close()
         self._closed = True
         return result
