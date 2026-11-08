@@ -160,6 +160,15 @@ and stages for all 21 invocations, and a real run passed 26/26.
 `stress` decisions done (`vibeos-test/src/stress.rs`: the profile matrix, the
 per-profile summary and the diagnosis). No mismatches across 400 random matrices.
 The boots and host-core pinning stay with the smoke facade until item 4.
+Next, `gdbengine`/`debugcmd`. The engine builds its own detached gdbstub QEMU from
+the legacy Python `tests/qemu/vm.py`. Port it onto native `vm.rs` rather than add a
+second launcher. `vm.rs` already emits `-gdb`/`-S` on both backends; what a debug run
+needs is (1) an ownerless guardian mode (`detached` with `owner_pid = 0`), bounded
+only by the lifetime deadline and an explicit descriptor `stop`, which `debug stop`
+writes, so the confirmed Windows-side kill, staging cleanup, `vibeos-cli kill` and
+the reaper all still apply; and (2) serial to a staged file, because the TCP
+dial-back cannot outlive the launching CLI call. Validate on a live
+`debug start` / `inspect` / `run-until` / `stop` cycle on each arch.
 
 Acceptance: compare actual outputs with the old implementation and exercise the
 external debugger/VM boundary when relevant; native fixture tests alone do not
