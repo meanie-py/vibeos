@@ -144,6 +144,8 @@ class Cell:
     shell_less: bool = False
     # No link sets a PE OS version: lld's default image and OS versions stand.
     no_module_type: bool = False
+    # (spec, dll) whose stubs a linked static library carries (Linker::spec_stubs_from).
+    stub_specs: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass

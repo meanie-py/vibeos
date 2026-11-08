@@ -1,5 +1,10 @@
 [workspace]
 members = [
+    "uniata-cargo",
+    "rpcrt4-cargo",
+    "fusion_2_0-cargo",
+    "fusion_1_1-cargo",
+    "fusion-cargo",
     "genincdata-cargo",
     "mbedtls-cargo",
     "libxslt-cargo",

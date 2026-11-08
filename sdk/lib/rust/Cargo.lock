@@ -3539,6 +3539,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "fusion-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "fusion_1_1-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "fusion_2_0-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "gdi32-cargo"
 version = "0.1.0"
 dependencies = [
@@ -7825,6 +7849,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rpcrt4-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "rpcss-cargo"
 version = "0.1.0"
 dependencies = [
@@ -9987,6 +10019,14 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "win32macros-rust",
+]
+
+[[package]]
+name = "uniata-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]

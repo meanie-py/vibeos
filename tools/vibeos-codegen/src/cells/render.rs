@@ -462,6 +462,9 @@ pub fn build_rs(cell: &Cell) -> Result<String> {
     if cell.spec_stubs {
         l.push("        .spec_stubs()".into());
     }
+    for (spec, dll) in &cell.stub_specs {
+        l.push(format!("        .spec_stubs_from(\"{spec}\", \"{dll}\")"));
+    }
     let regular: BTreeMap<_, _> = cell.import_libs.iter().map(|x| (&x.2, x)).collect();
     let delayed: BTreeMap<_, _> = cell.delay_import_libs.iter().map(|x| (&x.2, x)).collect();
     let order = if cell.import_order.is_empty() {

@@ -572,6 +572,9 @@ pub struct Linker {
     c_compiled: Vec<CSpec>,
     spec: Option<(String, String)>,
     link_stubs: bool,
+    /// (spec, dll) whose spec2def stubs a linked static library carries: see
+    /// `spec_stubs_from`.
+    foreign_stub_specs: Vec<(String, String)>,
     static_libs: Vec<String>,
     /// cmake-built libs linked AFTER the Rust archives (see `static_libs_after_body`).
     late_static_libs: Vec<String>,
@@ -673,6 +676,7 @@ impl Linker {
             c_compiled: Vec::new(),
             spec: None,
             link_stubs: false,
+            foreign_stub_specs: Vec::new(),
             static_libs: Vec::new(),
             late_static_libs: Vec::new(),
             link_order: None,
@@ -1107,6 +1111,29 @@ impl Linker {
     pub fn spec_stubs(mut self) -> Self {
         self.link_stubs = true;
         self
+    }
+
+    /// Also compile + link the `-stub` bodies of ANOTHER spec, the ones a static library
+    /// cmake linked carries in its archive (spec2def's `<name>_stubs.rs.obj` is a
+    /// custom-command object, which an `engine:c:` replay of compile_commands.json never
+    /// sees). fusion_common holds fusion.spec's, which fusion, fusion_1_1 and fusion_2_0
+    /// all export through their own .def. Chainable.
+    pub fn spec_stubs_from(mut self, spec_rel: &str, dll_name: &str) -> Self {
+        self.foreign_stub_specs
+            .push((spec_rel.to_string(), dll_name.to_string()));
+        self
+    }
+
+    /// Compile one spec2def stubs TU (`module_stubs.c`, which only `#include <stubs.h>`).
+    fn emit_stubs(&self, clang: &Path, stubs: &Path) {
+        let mut b = cc::Build::new();
+        apply_base(&mut b, clang, AsmDefineSet::Kernel, &self.arch);
+        self.apply_prefix_map(&mut b);
+        b.file(stubs)
+            .out_dir(self.obj_dir())
+            .include(self.repo_root.join("sdk/include/reactos"))
+            .flag("-std=gnu2x");
+        self.emit_objs(&b, stubs);
     }
 
     /// cmake-built sibling static libs (build-dir-relative), in link
@@ -1607,16 +1634,22 @@ impl Linker {
                         stubs.display()
                     );
                 }
-                let mut b = cc::Build::new();
-                apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
-                self.apply_prefix_map(&mut b);
-                // module_stubs.c only `#include <stubs.h>` (self-contained).
-                b.file(&stubs)
-                    .out_dir(self.obj_dir())
-                    .include(self.repo_root.join("sdk/include/reactos"))
-                    .flag("-std=gnu2x");
-                self.emit_objs(&b, &stubs);
+                self.emit_stubs(&clang, &stubs);
             }
+        }
+        for (i, (spec_rel, dll_name)) in self.foreign_stub_specs.iter().enumerate() {
+            let (_, stubs) = self.generate_def_in(spec_rel, dll_name, &format!("spec-stubs-{i}"));
+            println!(
+                "cargo:rerun-if-changed={}",
+                self.repo_root.join(spec_rel).display()
+            );
+            if !stubs.exists() {
+                panic!(
+                    "spec_stubs_from({spec_rel}): spec2def produced no stubs at {}",
+                    stubs.display()
+                );
+            }
+            self.emit_stubs(&clang, &stubs);
         }
 
         // ---- Static-lib group ----------------------------------------
@@ -2858,10 +2891,15 @@ impl Linker {
     /// bodies TU (`module_stubs.c`). The caller links `def` always and
     /// `stubs` only when `spec_stubs()` opted in.
     fn generate_def(&self, spec_rel: &str, dll_name: &str) -> (PathBuf, PathBuf) {
+        self.generate_def_in(spec_rel, dll_name, "spec-gen")
+    }
+
+    /// `generate_def` into `OUT_DIR/<dir>[-<bin>]`.
+    fn generate_def_in(&self, spec_rel: &str, dll_name: &str, dir: &str) -> (PathBuf, PathBuf) {
         let spec2def = self.compile_host_tool("sdk/tools/spec2def/spec2def.c", "spec2def");
         let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join(match &self.bin {
-            Some(b) => format!("spec-gen-{b}"),
-            None => "spec-gen".to_string(),
+            Some(b) => format!("{dir}-{b}"),
+            None => dir.to_string(),
         });
         std::fs::create_dir_all(&out).expect("mkdir spec-gen");
         let spec = self.repo_root.join(spec_rel);

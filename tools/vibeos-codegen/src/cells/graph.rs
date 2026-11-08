@@ -597,6 +597,51 @@ pub fn engine_lib(lib: &str, index: &LibraryIndex) -> Option<(String, Vec<String
     Some((format!("engine:c:{}", a[0]), d))
 }
 
+/// The spec2def stubs an `engine:c:` library carries: cmake builds `<x>_stubs.rs.obj` with
+/// a custom command and archives it into the static library (fusion_common), so a replay of
+/// compile_commands.json never compiles it. Each is named by the spec2def command that
+/// generated its source: (spec, dll).
+fn library_stub_specs(root: &Path, arch: &str, order: &[String]) -> Result<Vec<(String, String)>> {
+    let libs: Vec<&str> = order
+        .iter()
+        .filter_map(|i| i.strip_prefix("engine:c:"))
+        .collect();
+    if libs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ninja = read(&local(
+        root,
+        &root.join(format!("build-{arch}/build.ninja")),
+    )?)?;
+    let mut out = Vec::new();
+    for lib in libs {
+        let archive = re(&format!(
+            r"(?m)^build \S*/lib{}\.a: C_STATIC_LIBRARY_LINKER\S* ([^|\n]*)",
+            regex::escape(lib)
+        ));
+        let Some(c) = archive.captures(&ninja) else {
+            continue;
+        };
+        for input in c[1].split_whitespace() {
+            let Some(stem) = input.strip_suffix("_stubs.rs.obj") else {
+                continue;
+            };
+            let gen = re(&format!(
+                r"(?m)^build {}\.def {}_stubs\.rs .*\n  COMMAND = .*spec2def -n=(\S+) .* /tmp/vibeos/(\S+\.spec)$",
+                regex::escape(stem),
+                regex::escape(stem)
+            ));
+            let g = gen.captures(&ninja).ok_or_else(|| {
+                Error::new(format!(
+                    "lib{lib}.a archives {input}, which no spec2def command generates"
+                ))
+            })?;
+            out.push((g[2].to_owned(), g[1].to_owned()));
+        }
+    }
+    Ok(out)
+}
+
 fn one_list(root: &Path, arch: &str, stem: &str) -> Result<Option<PathBuf>> {
     let dir = root.join(format!("build-{arch}/boot"));
     let mut files = Vec::new();
@@ -2063,6 +2108,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         cell.shell_less = true;
     }
     cell.no_module_type = links.values().all(|l| !l.os_versioned);
+    cell.stub_specs = library_stub_specs(root, primary, &cell.link_order[primary])?;
     // A Rust body cmake linked under -Wl,--whole-archive (cdrom) brings every member of
     // its staticlib, core and its panic handler included: rustc's bin would define all of
     // them a second time (537 duplicates, which link-guard refuses). cmake's link had no

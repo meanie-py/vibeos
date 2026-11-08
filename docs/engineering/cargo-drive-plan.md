@@ -534,6 +534,15 @@ extends it from the boot spine to every fully-Rust module.
        contradicts it having been the fix, so the risk is low but not yet audited.
        libxslt's rewrite moves msxml3's compile (libxml2's dirs now reach it as `-I` via
        liblibxslt); msxml3.dll relinked sha256-identical on all 3 arches.
+     - **2026-11-08: fusion, fusion_1_1, fusion_2_0, rpcrt4, uniata converted**,
+       EQUIVALENT ×3. fusion's `-stub` bodies are spec2def's `fusion_stubs.rs.obj`, a
+       custom-command object archived into the static lib fusion_common (so all three
+       fusion DLLs link fusion.spec's stubs). An `engine:c:` replay of compile_commands.json
+       never sees it, so the generator reads the archive's inputs in build.ninja and renders
+       `Linker::spec_stubs_from(<that spec>, <dll>)`. `PDB_OUTPUT_DIRECTORY` (MSVC-only)
+       joins NAME_PROPERTIES. A rename under an if() (uniata becomes pciide
+       `if(ENABLE_UNIATA)`) now leaves a `message(FATAL_ERROR ...)` in that branch instead
+       of vanishing. rpcrt4's link-guard duplicate did not recur under the current generator.
      - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
        `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
        `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses
