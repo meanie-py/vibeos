@@ -4574,8 +4574,12 @@ unsafe extern "C" fn wined3d_cs_wait_event(cs: *mut wined3d_cs) {
      *
      * Likewise, we can race with the main thread when resetting
      * "waiting_for_event", in which case we would need to call
-     * WaitForSingleObject() because the main thread called SetEvent(). */
-    if !((wined3d_cs_queue_is_empty(
+     * WaitForSingleObject() because the main thread called SetEvent().
+     *
+     * The `!` negates ONLY the emptiness test, as in the C. Spanning the CAS
+     * too inverted it: an empty queue reset "waiting_for_event" and then slept,
+     * so no submit ever signalled and the device hung on its first slow call. */
+    if !(wined3d_cs_queue_is_empty(
             cs,
             core::ptr::addr_of_mut!((*cs).queue[WINED3D_CS_QUEUE_DEFAULT as usize]),
         ) != 0
@@ -4587,7 +4591,7 @@ unsafe extern "C" fn wined3d_cs_wait_event(cs: *mut wined3d_cs) {
             core::ptr::addr_of_mut!((*cs).waiting_for_event) as *mut core::ffi::c_long,
             FALSE as core::ffi::c_long,
             TRUE as core::ffi::c_long,
-        ) != 0)
+        ) != 0
     {
         return;
     }
