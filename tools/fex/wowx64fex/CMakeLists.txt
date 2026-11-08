@@ -89,3 +89,43 @@ target_link_options(wowx64fex PRIVATE
   -static -static-libgcc -static-libstdc++
   -Wl,--file-alignment=4096,/mllvm:-align-loops=1
   -nostdlib -nostartfiles -nodefaultlibs -lc++ -lc++abi -lunwind)
+
+# fexcachegen64.exe: FEX's FEXOfflineCompiler, built a second time for x86-64 guests by
+# defining VIBEOS_X64_GUEST, a VIBEOS PATCH in its Main.cpp: 64-bit mode and the Wow64 host type
+# this layer runs with. It turns the code maps the CPU layer writes into code caches the
+# layer can load, so a system DLL's blocks are compiled once rather than in every process
+# (docs/engineering/wow64-x64-guest-design.md, item 7). An ordinary exe on the mingw CRT,
+# linked as FEX links its own copy (build-fex-arm64/build.ninja), without the DLL's private CRT.
+add_executable(fexcachegen64 ${FEX_SRC}/Source/Tools/FEXOfflineCompiler/Main.cpp)
+target_compile_definitions(fexcachegen64 PRIVATE
+  VIBEOS_X64_GUEST=1
+  ARCHITECTURE_arm64=1
+  FEXCORE_HAS_PRESERVE_ALL_ATTR=0 FEXCORE_PRESERVE_ALL_ATTR=
+  FEX_HAS_PRESERVE_ALL_ATTR=0 FEX_PRESERVE_ALL_ATTR=
+  GLOBAL_DATA_DIRECTORY="/usr/local/share/fex-emu/")
+target_compile_options(fexcachegen64 PRIVATE -march=armv8-a -fno-strict-aliasing -Wall
+  -Wno-deprecated-enum-enum-conversion)
+target_include_directories(fexcachegen64 PRIVATE
+  ${FEX_SRC}/Source/Tools/FEXOfflineCompiler
+  $<TARGET_PROPERTY:wowx64fex,INCLUDE_DIRECTORIES>)
+target_link_libraries(fexcachegen64 PRIVATE
+  -Wl,--start-group
+  ${FEX_BUILD}/Source/Common/libCommon.a
+  ${FEX_BUILD}/Source/Tools/CommonTools/libCommonTools.a
+  ${FEX_BUILD}/Source/Common/cpp-optparse/libcpp-optparse.a
+  ${FEX_BUILD}/FEXCore/Source/libFEXCore.a
+  ${FEX_BUILD}/FEXCore/Source/libJemallocLibs.a
+  ${FEX_BUILD}/External/fmt/libfmt.a
+  ${FEX_BUILD}/Source/Windows/Common/libCommonWindows.a
+  ${FEX_BUILD}/Source/Windows/libntdll_ex.a
+  ${FEX_BUILD}/External/tiny-json/libtiny-json.a
+  ${FEX_BUILD}/External/rpmalloc/librpmalloc.a
+  ${FEX_BUILD}/FEXCore/Source/libFEXCore_Base.a
+  ${FEX_BUILD}/External/xxhash/cmake_unofficial/libxxhash.a
+  ${FEX_BUILD}/External/cephes/libcephes_128bit.a
+  ${FEX_BUILD}/External/SoftFloat-3e/libsoftfloat_3e.a
+  -lsynchronization
+  -Wl,--end-group)
+target_link_options(fexcachegen64 PRIVATE
+  -static -static-libgcc -static-libstdc++
+  -Wl,--file-alignment=4096,/mllvm:-align-loops=1)

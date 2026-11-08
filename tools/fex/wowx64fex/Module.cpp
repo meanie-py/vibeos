@@ -71,6 +71,7 @@
 #include <algorithm>
 #include <atomic>
 #include <map>
+#include <span>
 #include <string>
 #include <vector>
 #include <memory>
@@ -276,7 +277,6 @@ void ReportImages(uint64_t Freq) {
 
 // Called with the live threads still in `Threads` (unlocked: see BTCpu64ProcessTerm).
 void Report() {
-  FEXCore::SHMStats::ThreadStats Live {};
   uint64_t C = Compile.load(std::memory_order_relaxed), B = Blocks.load(std::memory_order_relaxed),
            M = Misses.load(std::memory_order_relaxed), L = CacheLock.load(std::memory_order_relaxed),
            X = Smc.load(std::memory_order_relaxed);
@@ -301,6 +301,151 @@ void Report() {
   ReportImages(Freq);
 }
 } // namespace JitProfile
+
+// FEX's code cache, loaded per image (docs/engineering/wow64-x64-guest-design.md, item 7).
+// With EnableCodeCachingWIP, the ImageTracker writes a code map of the blocks this process
+// compiled (codemap\new under FEX's cache directory, machine-wide on vibeos), fexcachegen64.exe
+// turns maps into one cache per image (cache\<fileid>-<configid>), and this loads that cache
+// when the image maps: its blocks go into the lookup cache, so they are never compiled here.
+// FEX's Windows ImageTracker stops at TODOs for the loading half, and expects a per-executable
+// directory that the generator's `process-all` never writes, so the frontend does it, in the
+// generator's layout.
+//
+// Lazily, with EnableLazyCodeCachingWIP: the code starts reserved and inaccessible, and the
+// access violation of the first execution of a page commits, relocates and publishes it
+// (FinalizeCodePages, a vibeos patch on Windows). Eagerly, each process would hold a private,
+// relocated copy of every cached block of every image it maps.
+namespace CodeCacheFiles {
+struct Loaded {
+  std::span<std::byte> File;
+  fextl::unique_ptr<FEXCore::MappedCodeCacheFile> Code;
+};
+std::mutex Lock;            // the list, and every page finalization (one at a time, as on Linux)
+std::vector<Loaded> Caches; // never shrinks: a thread may still run cached code of an unmapped image
+std::atomic<bool> Any;      // whether an access violation need look at all
+uint64_t Images, Blocks, PagesFinalized;
+
+std::span<std::byte> MapFile(const fextl::string& Path) {
+  std::wstring NtPath = L"\\??\\";
+  for (char c : Path) {
+    NtPath.push_back(static_cast<wchar_t>(c));
+  }
+  UNICODE_STRING Name;
+  RtlInitUnicodeString(&Name, NtPath.c_str());
+  OBJECT_ATTRIBUTES Attributes;
+  InitializeObjectAttributes(&Attributes, &Name, OBJ_CASE_INSENSITIVE, nullptr, nullptr);
+  IO_STATUS_BLOCK IOSB;
+  FEX::Windows::ScopedHandle File;
+  if (NtOpenFile(&*File, GENERIC_READ | SYNCHRONIZE, &Attributes, &IOSB, FILE_SHARE_READ | FILE_SHARE_DELETE,
+                 FILE_SYNCHRONOUS_IO_NONALERT | FILE_NON_DIRECTORY_FILE)) {
+    return {};
+  }
+  FEX::Windows::ScopedHandle Section;
+  if (NtCreateSection(&*Section, SECTION_MAP_READ | SECTION_QUERY, nullptr, nullptr, PAGE_READONLY, SEC_COMMIT, *File)) {
+    return {};
+  }
+  void* View = nullptr;
+  SIZE_T Size = 0;
+  if (NtMapViewOfSection(*Section, NtCurrentProcess(), &View, 0, 0, nullptr, &Size, ViewUnmap, 0, PAGE_READONLY)) {
+    return {};
+  }
+  // The view is page-rounded; the cache's own header bounds what is read.
+  return {static_cast<std::byte*>(View), Size};
+}
+
+void OnImageMap(const FEXCore::ExecutableFileSectionInfo& Section) {
+  if (!FEXCore::Config::Get_ENABLECODECACHINGWIP()) {
+    return;
+  }
+  const auto Path = fextl::fmt::format("{}cache\\{}-{:016x}", FEX::Config::GetCacheDirectory(),
+                                       FEXCore::CodeMap::GetBaseFilename(Section.FileInfo, false), 0 /* the generator's config id */);
+  auto File = MapFile(Path);
+  if (File.empty()) {
+    return;
+  }
+  auto& CodeCache = CTX->GetCodeCache();
+  auto Code = CodeCache.LoadCache(File, Section.FileInfo, Section.FileStartVA);
+  if (!Code) {
+    NtUnmapViewOfSection(NtCurrentProcess(), File.data());
+    return;
+  }
+  // Listed before its blocks become reachable, so the first fault on one of its pages is
+  // recognized; and the list lock is not held across EnableLoadedSection, so a fault taken
+  // inside it cannot deadlock on it.
+  auto* Cache = Code.get();
+  {
+    std::scoped_lock Lk {Lock};
+    CodeCache.RegisterMappedCodeBuffer(*Code);
+    Images++;
+    Blocks += Code->NumBlocks;
+    DbgPrint("[WOWX64FEX] pid %u DIAG cache load %s: code %p+%I64x\n", static_cast<unsigned>(GetCurrentProcessId()),
+             FEXCore::CodeMap::GetBaseFilename(Section.FileInfo, false).c_str(), Code->CodeBuffer.data(),
+             static_cast<uint64_t>(Code->CodeBuffer.size_bytes())); // VIBEOS DIAG (code cache)
+    Caches.push_back({File, std::move(Code)});
+    Any.store(true, std::memory_order_release);
+  }
+  // As ImageTracker::HandleImageMap: no compile or invalidation while the blocks go in.
+  std::scoped_lock Invalidation(CTX->GetCodeInvalidationMutex());
+  CodeCache.EnableLoadedSection(nullptr /* only MarkGuestExecutableRange reads it, and ignores it */, *Cache, Section);
+}
+
+// The first execution of a cached page that is not loaded yet. Also a thread that jumped in
+// while another was loading it: by the time it has the lock the page is loaded, and nothing
+// is left to do but retry.
+// Not thread_local: implicit TLS is not set up for a DLL loaded at run time, so touching it
+// faults, inside this fault handler, recursively, until the native stack runs out.
+std::atomic<DWORD> FinalizingThread; // a fault inside finalization would wait on Lock forever
+uint64_t LastFault, Repeats;         // under Lock
+
+bool HandleAccessViolation(uint64_t FaultAddress) {
+  if (!Any.load(std::memory_order_acquire)) {
+    return false;
+  }
+  if (FinalizingThread.load(std::memory_order_relaxed) == GetCurrentThreadId()) {
+    DbgPrint("[WOWX64FEX] pid %u cache: fault at %p while finalizing a page; not handled\n",
+             static_cast<unsigned>(GetCurrentProcessId()), reinterpret_cast<void*>(FaultAddress));
+    return false;
+  }
+  std::scoped_lock Lk {Lock};
+  for (auto& [File, Code] : Caches) {
+    const auto Begin = reinterpret_cast<uint64_t>(Code->CodeBuffer.data());
+    if (FaultAddress < Begin || FaultAddress >= Begin + Code->CodeBuffer.size_bytes()) {
+      continue;
+    }
+    const size_t Page = (FaultAddress - Begin) / FEXCore::Utils::FEX_PAGE_SIZE;
+    auto Range = CTX->GetCodeCache().SelectCodeRangeToFinalize(*Code, Page, Page + 1);
+    if (!Range.empty()) {
+      FinalizingThread = GetCurrentThreadId();
+      CTX->GetCodeCache().FinalizeCodePages(*Code, Range);
+      FinalizingThread = 0;
+      PagesFinalized += Range.size_bytes() / FEXCore::Utils::FEX_PAGE_SIZE;
+      return true;
+    }
+    // Already loaded: by another thread while this one waited for the lock, which leaves the
+    // page executable and the access retryable. Anything else is a real fault in cached code,
+    // and claiming it would retry it forever.
+    MEMORY_BASIC_INFORMATION Info;
+    const bool Retry = VirtualQuery(reinterpret_cast<void*>(FaultAddress), &Info, sizeof(Info)) && Info.Protect == PAGE_EXECUTE_READWRITE;
+    Repeats = FaultAddress == LastFault ? Repeats + 1 : 0;
+    LastFault = FaultAddress;
+    if (Retry && Repeats == 1000) {
+      DbgPrint("[WOWX64FEX] pid %u cache: %p faults again on a loaded page (state %lx protect %lx); not handled\n",
+               static_cast<unsigned>(GetCurrentProcessId()), reinterpret_cast<void*>(FaultAddress), Info.State, Info.Protect);
+      return false;
+    }
+    return Retry;
+  }
+  return false;
+}
+
+void Report() {
+  std::scoped_lock Lk {Lock};
+  if (Images) {
+    DbgPrint("[WOWX64FEX] pid %u cache: %I64u images, %I64u blocks loaded, %I64u pages run\n", static_cast<unsigned>(GetCurrentProcessId()),
+             Images, Blocks, PagesFinalized);
+  }
+}
+} // namespace CodeCacheFiles
 
 ThreadData* GetThreadData() {
   return static_cast<ThreadData*>(reinterpret_cast<__TEB*>(NtCurrentTeb())->WOW32Reserved);
@@ -332,7 +477,7 @@ void HandleImageMap(uint64_t Address, bool MainImage = false) {
   fextl::string ModulePath = FEX::Windows::GetSectionFilePath(Address);
   fextl::string ModuleName = fextl::string {FEX::Windows::BaseName(ModulePath)};
   InvalidationTracker->HandleImageMap(ModuleName, Address);
-  ImageTracker->HandleImageMap(ModulePath, Address, MainImage);
+  CodeCacheFiles::OnImageMap(ImageTracker->HandleImageMap(ModulePath, Address, MainImage));
 }
 
 void HandleImageUnmap(uint64_t Address, uint64_t Size) {
@@ -786,6 +931,7 @@ void BTCpu64ProcessTerm(HANDLE Process, BOOL After, NTSTATUS Status) {
   if (!Process && !After) {
     LockProfile::Report();
     JitProfile::Report();
+    CodeCacheFiles::Report();
   }
   if (Process) {
     return; // only "every other thread" (NULL) kills threads that may hold our locks
@@ -931,6 +1077,10 @@ static bool BTCpu64ResetToConsistentStateImpl(EXCEPTION_POINTERS* Ptrs) {
       return true;
     }
 
+    if (CodeCacheFiles::HandleAccessViolation(FaultAddress)) {
+      return true;
+    }
+
     if (FEX::Windows::JITGuardPage::HandleJITGuardPage(Thread, reinterpret_cast<void*>(FaultAddress), Context->X,
                                                        reinterpret_cast<__uint128_t*>(Context->V), &Context->Pc)) {
       return true;
@@ -951,6 +1101,24 @@ static bool BTCpu64ResetToConsistentStateImpl(EXCEPTION_POINTERS* Ptrs) {
   }
 
   if (!IsAddressInJit(Thread, Context->Pc)) {
+    { // VIBEOS DIAG (code cache)
+      static std::atomic<int> Reported;
+      if (Reported++ < 4) {
+        DbgPrint("[WOWX64FEX] pid %u DIAG host fault %08lx at pc %p lr %p fp %p (address %p)\n", static_cast<unsigned>(GetCurrentProcessId()),
+                 Exception->ExceptionCode, reinterpret_cast<void*>(Context->Pc), reinterpret_cast<void*>(Context->Lr),
+                 reinterpret_cast<void*>(Context->Fp),
+                 reinterpret_cast<void*>(Exception->NumberParameters > 1 ? Exception->ExceptionInformation[1] : 0));
+        auto* Frame = reinterpret_cast<uint64_t*>(Context->Fp);
+        for (int i = 0; i < 12 && Frame && (reinterpret_cast<uint64_t>(Frame) & 7) == 0; ++i) {
+          MEMORY_BASIC_INFORMATION Info;
+          if (!VirtualQuery(Frame, &Info, sizeof(Info)) || Info.State != MEM_COMMIT) {
+            break;
+          }
+          DbgPrint("[WOWX64FEX]   DIAG frame %p\n", reinterpret_cast<void*>(Frame[1]));
+          Frame = reinterpret_cast<uint64_t*>(Frame[0]);
+        }
+      }
+    }
     return false; // a host fault: not ours to touch
   }
 
@@ -965,6 +1133,21 @@ static bool BTCpu64ResetToConsistentStateImpl(EXCEPTION_POINTERS* Ptrs) {
   }
   auto& State = Thread->CurrentFrame->State;
   uint64_t Rip = State.rip;
+  { // VIBEOS DIAG (code cache)
+    static std::atomic<int> Reported;
+    if (Reported++ < 6) {
+      DbgPrint("[WOWX64FEX] pid %u DIAG guest fault %08lx at host pc %p lr %p (address %p, cached %d), guest rip %p rsp %p\n",
+               static_cast<unsigned>(GetCurrentProcessId()), Exception->ExceptionCode, reinterpret_cast<void*>(Context->Pc),
+               reinterpret_cast<void*>(Context->Lr),
+               reinterpret_cast<void*>(Exception->NumberParameters > 1 ? Exception->ExceptionInformation[1] : 0),
+               CTX->GetCodeCache().IsAddressInMappedCodeBuffer(Context->Pc), reinterpret_cast<void*>(Rip),
+               reinterpret_cast<void*>(State.gregs[FEXCore::X86State::REG_RSP]));
+      for (auto& [File, Code] : CodeCacheFiles::Caches) {
+        DbgPrint("[WOWX64FEX]   DIAG cache %p+%I64x guest %p\n", Code->CodeBuffer.data(), static_cast<uint64_t>(Code->CodeBuffer.size_bytes()),
+                 reinterpret_cast<void*>(Code->GuestBase));
+      }
+    }
+  }
   auto& Fault = Thread->CurrentFrame->SynchronousFaultData;
   *Exception = FEX::Windows::HandleGuestException(Fault, *Exception, Rip, State.gregs[FEXCore::X86State::REG_RAX],
                                                   State.gregs[FEXCore::X86State::REG_RCX]);
