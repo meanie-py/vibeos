@@ -33,196 +33,51 @@ Two things this must keep doing, both learned the hard way:
 from __future__ import annotations
 
 import os
-import re
 import shutil
 from pathlib import Path
 
+from tools import qemu_infra_compat as native
+
 from .artifacts import Run, Stage
+
+# The decisions are native: tools/vibeos-test/src/difftest.rs (discovery, the per-crate cargo
+# plan, the graded-case count and verdict). This facade runs the plan through `Run`, which
+# owns the artifact dir and the stages.
 
 RUST_WS = ("sdk", "lib", "rust")
 
-#: A workspace member is a difftest harness iff its directory name ends in this.
-#: Naming *is* the registration — see the module docstring.
-_SUFFIX = "-difftest"
+
+def _call(op: str, **kwargs):
+    return native.call("difftest_" + op, kwargs)
 
 
 def discover(repo: Path) -> list[str]:
-    """Workspace members whose name marks them a differential harness.
-
-    Parsed out of the `[workspace] members` list rather than globbed off disk so
-    a crate that exists but was never wired into the workspace does not silently
-    look covered.
-    """
-    manifest = repo.joinpath(*RUST_WS) / "Cargo.toml"
-    if not manifest.is_file():
-        return []
-    text = manifest.read_text()
-    m = re.search(r"^\s*members\s*=\s*\[(.*?)\]", text, re.S | re.M)
-    if not m:
-        return []
-    names = [n.rsplit("/", 1)[-1] for n in re.findall(r'"([^"]+)"', m.group(1))]
-    return sorted({n for n in names if n.endswith(_SUFFIX) or _host_tests(repo, n)})
-
-
-def _host_tests(repo: Path, name: str) -> bool:
-    """A shared crate whose own `#[test]`s are known-answer checks run here too:
-
-        [package.metadata.difftest]
-        host-tests = true
-
-    win32macros-rust's 22 are computed from the C macro by hand, and they are what caught
-    RTL_CONSTANT_STRING pointing Buffer at a stack copy. Nothing ran them, so the
-    `as u8` crate-repair once wrote into IsRecognizedPartition! landed on master with two of
-    them failing. Opt-in by manifest for the same reason the suffix is the registration: a
-    shared crate's tests may need the host to build it, and the crate is the one that knows.
-    """
-    m = re.search(
-        r"^\s*\[package\.metadata\.difftest\]\s*$(.*?)(?=^\s*\[|\Z)",
-        _manifest(repo, name),
-        re.S | re.M,
-    )
-    return bool(m and re.search(r"^\s*host-tests\s*=\s*true\b", m.group(1), re.M))
-
-
-def _manifest(repo: Path, name: str) -> str:
-    path = repo.joinpath(*RUST_WS) / name / "Cargo.toml"
-    return path.read_text() if path.is_file() else ""
+    """Workspace members that are differential harnesses (see difftest.rs)."""
+    return _call("discover", repo=repo)
 
 
 def crate_target(repo: Path, name: str) -> str | None:
-    """The `--target` triple a harness declares, or None for the host.
-
-    `msvcrt-seh-difftest` grades `except_i386.c`, which is inside `#ifdef __i386__` and whose
-    Rust counterpart is `#![cfg(target_arch = "x86")]` — so it only exists in a 32-bit binary.
-    Cargo builds one crate for one target per invocation, so that crate declares its triple in
-    its own manifest:
-
-        [package.metadata.difftest]
-        target = "i686-unknown-linux-gnu"
-
-    DISCOVERED from the manifest for the same reason the crate set is: a driver that carried
-    the list would silently build the next such harness for the host, where its `#[cfg]`s
-    compile to nothing and it grades zero rows.
-    """
-    manifest = repo.joinpath(*RUST_WS) / name / "Cargo.toml"
-    if not manifest.is_file():
-        return None
-    m = re.search(
-        r"^\s*\[package\.metadata\.difftest\]\s*$(.*?)(?=^\s*\[|\Z)",
-        manifest.read_text(),
-        re.S | re.M,
-    )
-    if not m:
-        return None
-    t = re.search(r'^\s*target\s*=\s*"([^"]+)"', m.group(1), re.M)
-    return t.group(1) if t else None
+    """The `--target` triple a harness declares in its manifest, or None for the host."""
+    return _call("crate_target", repo=repo, name=name)
 
 
 def crate_feature_sets(repo: Path, name: str) -> list[str]:
-    """Extra `--features` builds a harness declares, each graded as its own invocation:
-
-        [package.metadata.difftest]
-        feature-sets = ["kernel"]
-
-    rtl-sync-difftest compiles the shipping srw.rs twice over, because the kernel's copy is a
-    different program (it spins, never blocks) and one build cannot be both. Discovered from the
-    manifest like `target`: the crate knows which of its builds exist, a list here would not.
-    """
-    m = re.search(
-        r"^\s*\[package\.metadata\.difftest\]\s*$(.*?)(?=^\s*\[|\Z)",
-        _manifest(repo, name),
-        re.S | re.M,
-    )
-    if not m:
-        return []
-    f = re.search(r"^\s*feature-sets\s*=\s*\[([^\]]*)\]", m.group(1), re.M)
-    return re.findall(r'"([^"]+)"', f.group(1)) if f else []
+    """Extra `--features` builds a harness declares, each its own invocation."""
+    return _call("crate_feature_sets", repo=repo, name=name)
 
 
 def _salient(out: str, limit: int = 6) -> list[str]:
-    """The lines a human needs from a failed harness: the assertion and its two
-    values, not the linker command line."""
-    keep: list[str] = []
-    for ln in out.splitlines():
-        s = ln.strip()
-        if not s:
-            continue
-        if (
-            s.startswith("error")
-            or "panicked at" in s
-            or s.startswith("assertion")
-            or s.startswith("left:")
-            or s.startswith("right:")
-            or "FAILED" in s
-            or "test result: FAILED" in s
-        ):
-            keep.append(s[:200])
-        if len(keep) >= limit:
-            break
-    return keep
+    return _call("salient", out=out, limit=limit)
 
 
 def graded(out: str) -> int:
-    """How many cases did this harness actually grade?
-
-    Each crate prints its count in its own dialect, and every one of them also
-    emits `test result: ok. 0 passed` for its empty lib/doc-test targets — so a
-    zero total means the harness ran, exited 0, and compared nothing. That is
-    the vacuous pass, and the caller treats it as a failure: a suite that cannot
-    fail is worse than no suite, because green stops anyone looking again.
-    """
-    pats = (
-        r"difftest result: ok\. (\d+) passed",
-        r"(\d+) mbcs cases passed",
-        r"(\d+) create_mbcinfo codepages passed",
-        r"(\d+) printf shell rows passed",
-        r"(\d+) wave16 cases passed",
-        r"(\d+) scanf cases passed",
-        # (?<![a-z]) or "difftest result: ok. 81 passed" matches TWICE — the
-        # libtest form is a literal substring of the difftest form, so cnt's 81
-        # cases would report as 162.
-        r"(?<![a-z])test result: ok\. (\d+) passed",
-    )
-    return sum(int(m.group(1)) for p in pats for m in re.finditer(p, out))
-
-
-#: Where msvcrt-difftest keeps the headers its build.rs force-includes.
-_REFSTUB = ("sdk", "lib", "rust", "msvcrt-difftest", "refstub")
+    """How many cases a harness actually graded; zero is the vacuous pass."""
+    return _call("graded", out=out)
 
 
 def generated_checks(repo: Path) -> list[tuple[str, list[str]]]:
-    """`(label, argv)` for every generated msvcrt-difftest artifact's `--check`.
-
-    DISCOVERED, not listed, for the same reason the crates are: the set has grown
-    from three artifacts to seven in two months, once per reference TU, and a
-    hardcoded list is how the eighth arrives uncovered. `refstub/msvcrt_<stem>_protos.h`
-    IS the registration — the file's existence names the source it was derived from.
-    """
-    checks: list[tuple[str, list[str]]] = [
-        # The constants and the layout guardian, in one invocation: one generator
-        # writes both, so one `--check` re-derives both.
-        (
-            "consts",
-            [str(repo / "tools" / "codegen"), "msvcrt-consts", "--check"],
-        )
-    ]
-    for h in sorted(repo.joinpath(*_REFSTUB).glob("msvcrt_*_protos.h")):
-        stem = h.name[len("msvcrt_") : -len("_protos.h")]
-        checks.append(
-            (
-                f"protos:{stem}",
-                [str(repo / "tools" / "codegen"), "ref-protos", f"{stem}.c", "--check"],
-            )
-        )
-    # The 32-bit harness's i386 layout guardian. Same argument as the two above: it is
-    # generated from headers this repo also owns, so it can go stale without anyone editing
-    # it — and a stale SEH layout does not fail, it regrades a structure walk against offsets
-    # msvcrt.dll no longer has.
-    if (repo / "sdk/lib/rust/msvcrt-seh-difftest/refstub/seh_layout.h").is_file():
-        checks.append(
-            ("layout:seh-i386", [str(repo / "tools" / "codegen"), "seh-layout", "--check"])
-        )
-    return checks
+    """`(label, argv)` for every generated msvcrt-difftest artifact's `--check`."""
+    return [(label, argv) for label, argv in _call("generated_checks", repo=repo)]
 
 
 def check_generated(repo: Path, run: Run) -> bool:
@@ -291,43 +146,20 @@ def run_difftests(
         return False
 
     all_ok = True
-    builds = [(name, name, None) for name in names]
-    if not cases:
-        builds += [
-            (name, f"{name}[{fs}]", fs) for name in names for fs in crate_feature_sets(repo, name)
-        ]
-    builds.sort(key=lambda b: names.index(b[0]))
-    for crate, name, features in builds:
-        # Separate invocation per crate — see the module docstring on feature
-        # unification. Sharing one `cargo test -p a -p b` breaks the link.
-        argv = ["cargo", "test", "--release", "-p", crate]
-        if features:
-            argv += ["--features", features]
-        target = crate_target(repo, crate)
-        if target:
-            argv += ["--target", target]
-        if cases:
-            argv += ["--test", test_target, "--", "--exact", *cases]
-        cp = run.run(argv, cwd=ws, env=dict(os.environ), stage=name)
+    plan = _call("plan", repo=repo, crates=names, cases=cases or [], test_target=test_target)
+    for build in plan:
+        name = build["name"]
+        cp = run.run(build["argv"], cwd=ws, env=dict(os.environ), stage=name)
         out = (cp.stdout or "") + (cp.stderr or "")
-        n = graded(out)
-        ok = cp.returncode == 0 and n > 0 and (not cases or n == len(cases))
-        all_ok &= ok
-        if cp.returncode != 0:
-            detail = f"exit {cp.returncode}"
-        elif cases and n != len(cases):
-            detail = f"graded {n} cases, requested exactly {len(cases)}"
-        elif n == 0:
-            detail = "graded NOTHING"
-        else:
-            detail = f"{n} cases"
+        v = _call("verdict", name=name, out=out, rc=cp.returncode, cases=len(cases or []))
+        all_ok &= v["ok"]
         run.add(
             Stage(
                 name=name,
                 exit=cp.returncode,
-                status="ok" if ok else "fail",
-                detail=detail,
-                salient=[] if ok else _salient(out) or [f"{name}: {detail}"],
+                status="ok" if v["ok"] else "fail",
+                detail=v["detail"],
+                salient=v["salient"],
             )
         )
     return all_ok

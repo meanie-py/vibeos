@@ -97,11 +97,6 @@ class Mechanisms(BuildBindings):
                 return {"ok": False, "why": why}
         if k == "payload_stamp":
             return self.module().write_stamp(bd)
-        if k == "snapshot":
-            try:
-                return m.warmth.worktree_tree(repo)
-            except (OSError, RuntimeError, m.subprocess.SubprocessError):
-                return None
         if k == "store_gc":
             from tools.artifact_runtime import scheduled_gc
 
