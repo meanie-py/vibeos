@@ -481,6 +481,15 @@ extends it from the boot spine to every fully-Rust module.
        place (cdrom whole-archives its body), and a body linked under `--whole-archive` makes
        the cell shell-less: the staticlib brings its own core and panic handler, which a
        rustc bin would define again.
+     - **2026-11-07: C++, first wave.** reactos-link already compiles C++ through `cxx` clib
+       recipe lines, so the generator's C++ refusal was stale: a `.cpp/.cxx/.cc` object is a
+       shim like a `.c`. cmicpl, shimgvw, tftpd, cmicontrol, fltmc, tracert, uxtheme and
+       comdlg32 converted, EQUIVALENT ×3. Two generator fixes on the way: with several
+       `spec2def()` calls (uxtheme's vista/else branches) the spec is the one this build's
+       spec2def command reads, not the first in the text; and an `add_idl_reg_scripts` under
+       an `if()` (comdlg32) is depended on as `$<TARGET_NAME_IF_EXISTS:...>`. Next: the
+       modules that link the C++ runtime (cpprt + the toolchain's libc++/libc++abi, whose
+       absolute host paths a cell must not carry: needs a `toolchain:` link item).
      - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
        `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
        `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses

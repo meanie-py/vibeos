@@ -1,5 +1,13 @@
 [workspace]
 members = [
+    "comdlg32-cargo",
+    "uxtheme-cargo",
+    "tracert-cargo",
+    "fltmc-cargo",
+    "cmicontrol-cargo",
+    "tftpd-cargo",
+    "shimgvw-cargo",
+    "cmicpl-cargo",
     "cdrom-cargo",
     "pl011-cargo",
     "legide-cargo",

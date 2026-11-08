@@ -1680,6 +1680,29 @@ def test_a_linker_flag_is_no_usage_requirement_and_no_reused_archive(tmp_path):
     assert "-Wl," not in out
 
 
+def test_a_conditional_reg_script_is_a_dependency_only_where_it_exists(tmp_path):
+    """comdlg32 registers its classes only if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600); with
+    the if() false, comdlg32_r does not exist and a plain name is a missing file to ninja."""
+    f = tmp_path / "CMakeLists.txt"
+    body = (
+        "add_library(m MODULE main.c rsrc.rc)\n"
+        "set_module_type(m win32dll)\n"
+        "if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)\n"
+        "    add_idl_reg_scripts(m registry m_classes.idl)\n"
+        "endif()\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    f.write_text(body)
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "$<TARGET_NAME_IF_EXISTS:m_r>" in out
+    f.write_text(
+        body.replace("if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)\n", "").replace("endif()\n", "")
+    )
+    out = g.rewrite_cmake(f, c)
+    assert "TARGET_NAME_IF_EXISTS" not in out and " m_r" in out
+
+
 def test_an_object_in_a_subdirectory_maps_to_that_subdirectorys_source():
     d = Path("/r/dll/win32/crypt32")
     obj = "dll/win32/crypt32/CMakeFiles/crypt32.dir/reactos/unixlib.c.obj"

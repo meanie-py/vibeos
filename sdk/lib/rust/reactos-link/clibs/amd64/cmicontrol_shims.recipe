@@ -1,0 +1,2 @@
+# cmicontrol_shims (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+cxx	vendor/cmidriver/cmicontrol/main.cpp	@build/drivers/wdm/audio/drivers/CMIDriver/cmicontrol vendor/cmidriver/cmicontrol @std vendor/opengl-headers/include vendor/libdxg/include vendor/cmidriver/cmicontrol/..	-isystem {REPO}/sdk/lib/pseh/include -isystem {REPO}/sdk/lib/atl @core -fno-exceptions -Wno-write-strings	WINVER=0x502 _CRT_DECLARE_NONSTDC_NAMES=1 _CRT_NONSTDC_NO_DEPRECATE _DLL _WIN32_WINNT=0x502 __USE_CRTIMP

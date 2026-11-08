@@ -1,0 +1,2 @@
+# tftpd_shims (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+cxx	base/services/tftpd/tftpd.cpp	@build/base/services/tftpd base/services/tftpd @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	@core -fno-exceptions	WINVER=0x502 _CRT_DECLARE_NONSTDC_NAMES=1 _CRT_NONSTDC_NO_DEPRECATE _DLL _WIN32_WINNT=0x502 __USE_CRTIMP strcasecmp=_stricmp

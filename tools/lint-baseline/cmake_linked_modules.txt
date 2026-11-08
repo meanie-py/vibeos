@@ -8,10 +8,7 @@ cabview: linked by cmake, not a cargo cell
 certmgr: linked by cmake, not a cargo cell
 certutil: linked by cmake, not a cargo cell
 cleanmgr: linked by cmake, not a cargo cell
-cmicontrol: linked by cmake, not a cargo cell
-cmicpl: linked by cmake, not a cargo cell
 cmipci: linked by cmake, not a cargo cell
-comdlg32: linked by cmake, not a cargo cell
 crtdll: linked by cmake, not a cargo cell
 ctfmon: linked by cmake, not a cargo cell
 d3dwine: linked by cmake, not a cargo cell
@@ -25,7 +22,6 @@ dwmapi: linked by cmake, not a cargo cell
 explorer: linked by cmake, not a cargo cell
 fdebug: linked by cmake, not a cargo cell
 filebrowser: linked by cmake, not a cargo cell
-fltmc: linked by cmake, not a cargo cell
 fontext: linked by cmake, not a cargo cell
 framedyn: linked by cmake, not a cargo cell
 fusion: linked by cmake, not a cargo cell
@@ -81,7 +77,6 @@ setuplib: linked by cmake, not a cargo cell
 setuplib_probe: linked by cmake, not a cargo cell
 shdocvw: linked by cmake, not a cargo cell
 shell32: linked by cmake, not a cargo cell
-shimgvw: linked by cmake, not a cargo cell
 shlwapi: linked by cmake, not a cargo cell
 skiplist_test: linked by cmake, not a cargo cell
 sndrec32: linked by cmake, not a cargo cell
@@ -94,8 +89,6 @@ svchost: linked by cmake, not a cargo cell
 sysdm: linked by cmake, not a cargo cell
 tcpsvcs: linked by cmake, not a cargo cell
 telnetd: linked by cmake, not a cargo cell
-tftpd: linked by cmake, not a cargo cell
-tracert: linked by cmake, not a cargo cell
 ucdfs: linked by cmake, not a cargo cell
 ucrtbase: linked by cmake, not a cargo cell
 ucx01000: linked by cmake, not a cargo cell
@@ -103,7 +96,6 @@ ufat: linked by cmake, not a cargo cell
 ufatx: linked by cmake, not a cargo cell
 uniata: linked by cmake, not a cargo cell
 usbhub3: linked by cmake, not a cargo cell
-uxtheme: linked by cmake, not a cargo cell
 wdf01000: linked by cmake, not a cargo cell
 wdmaud.drv: linked by cmake, not a cargo cell
 win32u: linked by cmake, not a cargo cell
