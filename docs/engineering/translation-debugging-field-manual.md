@@ -13239,6 +13239,24 @@ deliberate re-exports and the harmless lost-local cases).
 
 ## Mm, PFN & paging
 
+### The amd64 BIOS loader maps 1 GiB: an allocation past it resets the board
+Symptom: a real BIOS machine with lots of RAM resets to its firmware ~165 ms after some
+`[FLDR] phase:` line, every boot, no message; QEMU's `amd64-bios` smoke passes the same point.
+Where it happens moves with the image size.
+
+Cause: realmode/amd64.S builds one page directory of 2 MiB pages, 1 GiB, and freeldr in long
+mode has no IDT. Only the page lookup table's placement honoured `MM_MAX_PAGE_LOADER`; the
+allocator searched all of RAM. On 32 GiB the lookup table takes 128 MB under 1 GiB, an
+allocation spilled past it, and the first write there faulted into a triple fault. A Rust
+panic looked the same: the x86 handler wrote only to QEMU's debugcon and then `hlt`ed with
+interrupts on, so the next timer tick reset the board.
+
+Fix: allocations search below `MmLoaderMaxPage()` only, and `MmExtendLoaderIdentityMap` maps
+4 GiB with 1 GiB pages when CPUID has Page1GB. Repro without hardware: boot the netboot image in
+QEMU with `-m 32G -no-reboot -d int,cpu_reset` (the default `qemu64` has no 1 GiB pages, so it
+keeps the 1 GiB map; `-cpu max` takes the 4 GiB one). `-no-shutdown` keeps the memory after the
+triple fault, so the monitor can still read the stack.
+
 ### The `OriginalPte` / `RmapListHead` union overlay `[§9.13]`
 The amd64 service-startup wedge (~50% of boots for weeks; `DcomLaunch done: 1053` on serial ⟺
 wedge) was a **Mm working-set pushlock self-deadlock**: a page fault *inside* the

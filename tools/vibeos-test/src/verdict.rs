@@ -478,6 +478,10 @@ pub fn cpu_pcs(s: &str) -> Vec<(u64, String)> {
 pub fn cpu_sps(s: &str) -> Vec<(u64, String)> {
     cpu_registers(s, r"\b(?:SP|RSP|ESP)=([0-9A-Fa-f]{8,16})\b")
 }
+/// x86-64 `info registers` GS base per vCPU: the KPCR when the vCPU is in the kernel.
+pub fn cpu_gs_bases(s: &str) -> Vec<(u64, String)> {
+    cpu_registers(s, r"\bGS =[0-9A-Fa-f]{4} ([0-9A-Fa-f]{16})\b")
+}
 pub fn cpu_fps(s: &str) -> Vec<(u64, String)> {
     cpu_registers(s, r"\b(?:X29|RBP|EBP)=([0-9A-Fa-f]{8,16})\b")
 }

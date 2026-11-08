@@ -55,7 +55,6 @@ pub const STATUS_INVALID_BUFFER_SIZE: NTSTATUS = 0xC0000206u32 as NTSTATUS;
 extern "C" {
     pub fn wcscpy(dest: *mut u16, src: *const u16) -> *mut u16;
     pub fn wcscat(dest: *mut u16, src: *const u16) -> *mut u16;
-    pub fn RtlStringCbPrintfA(pszDest: *mut i8, cbDest: usize, pszFormat: *const i8, ...) -> NTSTATUS;
 }
 unsafe extern "system" {
     pub fn DeviceIoControl( hDevice: HANDLE, dwIoControlCode: u32, lpInBuffer: *const core::ffi::c_void, nInBufferSize: u32, lpOutBuffer: *mut core::ffi::c_void, nOutBufferSize: u32, lpBytesReturned: *mut u32, lpOverlapped: *mut core::ffi::c_void, ) -> BOOL;
@@ -70,18 +69,36 @@ extern "system" {
 extern "system" {
     pub fn ConioProcessKey(Console: PCONSRV_CONSOLE, msg: *mut tagMSG);
     pub fn ConioEffectiveCursorSize(Console: PCONSRV_CONSOLE, n: u32) -> u32;
-    pub fn ConsoleOutputUnicodeToAnsiChar(Console: PCONSRV_CONSOLE, dChar: *mut i8, sWChar: *mut u16) -> u8;
     pub fn RtlUnicodeStringToAnsiSize(SourceString: *const _UNICODE_STRING) -> u32;
 }
 
-// Win32 user32 helpers tuiterm.c relies on.
-extern "system" {
-    pub fn CreateWindowW(
-        lpClassName: LPCWSTR, lpWindowName: LPCWSTR,
-        dwStyle: u32, X: i32, Y: i32, nWidth: i32, nHeight: i32,
-        hWndParent: HWND, hMenu: HMENU, hInstance: HINSTANCE,
-        lpParam: *mut core::ffi::c_void,
-    ) -> HWND;
+// ConsoleOutputUnicodeToAnsiChar and CreateWindowW are header MACROS in the C
+// (condrv/text.c and winuser.h), so nothing exports them: declared extern, they
+// linked only while the linker happened to drop this frontend, which C does not
+// build (TUITERM_COMPILE is off) and nothing here references.
+#[inline(always)]
+unsafe fn ConsoleOutputUnicodeToAnsiChar(Console: PCONSRV_CONSOLE, dChar: *mut i8, sWChar: *mut u16) {
+    WideCharToMultiByte(
+        (*Console).OutputCodePage,
+        0,
+        sWChar,
+        1,
+        dChar,
+        1,
+        core::ptr::null(),
+        core::ptr::null_mut(),
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+#[inline(always)]
+unsafe fn CreateWindowW(
+    lpClassName: LPCWSTR, lpWindowName: LPCWSTR,
+    dwStyle: u32, X: i32, Y: i32, nWidth: i32, nHeight: i32,
+    hWndParent: HWND, hMenu: HMENU, hInstance: HINSTANCE,
+    lpParam: *mut core::ffi::c_void,
+) -> HWND {
+    CreateWindowExW(0, lpClassName, lpWindowName, dwStyle, X, Y, nWidth, nHeight, hWndParent, hMenu, hInstance, lpParam)
 }
 #[inline(always)]
 #[allow(non_snake_case)]
@@ -506,6 +523,35 @@ unsafe extern "system" fn TuiConsoleThread(Param: PVOID) -> DWORD {
     0
 }
 
+/// `RtlStringCbPrintfA(FontName, sizeof(FontName), "%u-8x8.bin", CodePage)`.
+/// That helper is inline-only in ntstrsafe.h, so no library exports it: the old
+/// extern declaration linked only while the linker dropped this path.
+fn format_font_name(out: &mut [CHAR; 20], code_page: UINT) {
+    let mut digits = [0u8; 10];
+    let mut n = code_page;
+    let mut len = 0;
+    loop {
+        digits[len] = b'0' + (n % 10) as u8;
+        len += 1;
+        n /= 10;
+        if n == 0 {
+            break;
+        }
+    }
+    let mut i = 0;
+    while len > 0 {
+        len -= 1;
+        out[i] = digits[len] as CHAR;
+        i += 1;
+    }
+    for &b in b"-8x8.bin" {
+        out[i] = b as CHAR;
+        i += 1;
+    }
+    // 10 digits + 8 + NUL fits the C's 20-byte buffer.
+    out[i] = 0;
+}
+
 pub(crate) unsafe fn TuiSetConsoleOutputCP(
     hNtConddHandle: HANDLE,
     CodePage: UINT,
@@ -527,11 +573,8 @@ pub(crate) unsafe fn TuiSetConsoleOutputCP(
     let mut FileSectionHandle: HANDLE = core::ptr::null_mut();
     let mut FileBuffer: PUCHAR = core::ptr::null_mut();
     let mut FileSize: SIZE_T = 0;
-    let CabFileHeader: PCFHEADER;
     let mut Data: _DataUnion = core::mem::zeroed();
     let mut FoundFile: PCFFILE = core::ptr::null_mut();
-    let mut FileName: PSTR;
-    let mut Index: USHORT;
 
     #[repr(C)]
     union _DataUnion {
@@ -623,8 +666,10 @@ pub(crate) unsafe fn TuiSetConsoleOutputCP(
         }
     }
 
-    {
-        CabFileHeader = FileBuffer as PCFHEADER;
+    // vgafonts.cab is parsed straight from a mapped view: an ill-formed file that
+    // faults fails the load with the exception code, and the cleanup below still runs.
+    Status = match ntdll_sys::seh::try_except_all(|| -> NTSTATUS {
+        let CabFileHeader: PCFHEADER = FileBuffer as PCFHEADER;
 
         if FileSize <= core::mem::size_of::<CFHEADER>() as SIZE_T ||
             (*CabFileHeader).Signature != CAB_SIGNATURE ||
@@ -632,37 +677,15 @@ pub(crate) unsafe fn TuiSetConsoleOutputCP(
             (*CabFileHeader).FolderCount == 0 ||
             (*CabFileHeader).FileCount == 0 ||
             (*CabFileHeader).FileTableOffset < core::mem::size_of::<CFHEADER>() as u32 {
-            Status = STATUS_UNSUCCESSFUL;
-            'Exit: {
-                if !FileBuffer.is_null() {
-                    NtUnmapViewOfSection(NtCurrentProcess(), FileBuffer as PVOID);
-                }
-
-                if !FileSectionHandle.is_null() {
-                    NtClose(FileSectionHandle);
-                }
-
-                NtClose(FileHandle);
-
-                if NT_SUCCESS(Status) {
-                    LastLoadedCodepage = CodePage;
-                }
-
-                return if NT_SUCCESS(Status) { 1u8 } else { 0u8 };
-            }
+            return STATUS_UNSUCCESSFUL;
         }
 
-        RtlStringCbPrintfA(
-            FontName.as_mut_ptr(),
-            core::mem::size_of_val(&FontName),
-            b"%u-8x8.bin\0".as_ptr() as PSTR,
-            CodePage,
-        );
+        format_font_name(&mut FontName, CodePage);
 
         Data.CabFile = (FileBuffer.offset((*CabFileHeader).FileTableOffset as isize)) as PCFFILE;
-        Index = 0;
+        let mut Index: USHORT = 0;
         while Index < (*CabFileHeader).FileCount {
-            FileName = (Data.CabFile.offset(1)) as PSTR;
+            let FileName: PSTR = (Data.CabFile.offset(1)) as PSTR;
 
             if FoundFile.is_null() {
                 if _stricmp(FontName.as_ptr(), FileName) == 0 {
@@ -675,75 +698,33 @@ pub(crate) unsafe fn TuiSetConsoleOutputCP(
         }
 
         if FoundFile.is_null() {
-            Status = STATUS_OBJECT_NAME_NOT_FOUND;
-            'Exit: {
-                if !FileBuffer.is_null() {
-                    NtUnmapViewOfSection(NtCurrentProcess(), FileBuffer as PVOID);
-                }
-
-                if !FileSectionHandle.is_null() {
-                    NtClose(FileSectionHandle);
-                }
-
-                NtClose(FileHandle);
-
-                if NT_SUCCESS(Status) {
-                    LastLoadedCodepage = CodePage;
-                }
-
-                return if NT_SUCCESS(Status) { 1u8 } else { 0u8 };
-            }
+            return STATUS_OBJECT_NAME_NOT_FOUND;
         }
 
         if (*FoundFile).FileSize != 256 * 8 {
-            Status = STATUS_INVALID_BUFFER_SIZE;
-            'Exit: {
-                if !FileBuffer.is_null() {
-                    NtUnmapViewOfSection(NtCurrentProcess(), FileBuffer as PVOID);
-                }
-
-                if !FileSectionHandle.is_null() {
-                    NtClose(FileSectionHandle);
-                }
-
-                NtClose(FileHandle);
-
-                if NT_SUCCESS(Status) {
-                    LastLoadedCodepage = CodePage;
-                }
-
-                return if NT_SUCCESS(Status) { 1u8 } else { 0u8 };
-            }
+            return STATUS_INVALID_BUFFER_SIZE;
         }
 
         FontBitField = RtlAllocateHeap(RtlGetProcessHeap(), 0, (*FoundFile).FileSize as SIZE_T) as PUCHAR;
         if FontBitField.is_null() {
-            Status = STATUS_NO_MEMORY;
-            'Exit: {
-                if !FileBuffer.is_null() {
-                    NtUnmapViewOfSection(NtCurrentProcess(), FileBuffer as PVOID);
-                }
-
-                if !FileSectionHandle.is_null() {
-                    NtClose(FileSectionHandle);
-                }
-
-                NtClose(FileHandle);
-
-                if NT_SUCCESS(Status) {
-                    LastLoadedCodepage = CodePage;
-                }
-
-                return if NT_SUCCESS(Status) { 1u8 } else { 0u8 };
-            }
+            return STATUS_NO_MEMORY;
         }
 
         Data.Buffer = (Data.Buffer as ULONG_PTR + 8) as PVOID;
         Data.Buffer = (Data.Buffer as ULONG_PTR + (*FoundFile).FileOffset as ULONG_PTR) as PVOID;
 
         core::ptr::copy_nonoverlapping(Data.Buffer as *const u8, FontBitField, (*FoundFile).FileSize as usize);
-        Status = STATUS_SUCCESS;
-    }
+        STATUS_SUCCESS
+    }) {
+        Ok(st) => st,
+        Err(code) => {
+            DbgPrint(
+                b"TuiSetConsoleOutputCP - Caught an exception, Status = 0x%08lx\n\0".as_ptr() as *const i8,
+                code,
+            );
+            code
+        }
+    };
 
     if NT_SUCCESS(Status) {
         Status = NtDeviceIoControlFile(

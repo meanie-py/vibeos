@@ -78,6 +78,24 @@ pub const DCX_CACHECOMPAREMASK: u32 = DCX_CLIPSIBLINGS | DCX_CLIPCHILDREN |
                                       DCX_LAYEREDWIN | DCX_CACHE | DCX_WINDOW |
                                       DCX_PARENTCLIP;
 
+/// The one window LockWindowUpdate has locked (NULL when none). Drawing into
+/// it or a descendant through a DC without DCX_LOCKWINDOWUPDATE is clipped
+/// away, as on Windows (user32:win test_LockWindowUpdate).
+pub(crate) static LOCKED_UPDATE_HWND: core::sync::atomic::AtomicPtr<c_void> =
+    core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
+
+unsafe fn DceLockedOut(Window: PWND, Flags: ULONG) -> bool {
+    if Window.is_null() || Flags & DCX_LOCKWINDOWUPDATE != 0 {
+        return false;
+    }
+    let h = LOCKED_UPDATE_HWND.load(core::sync::atomic::Ordering::SeqCst);
+    if h.is_null() {
+        return false;
+    }
+    let Locked = UserGetWindowObject(h as HWND);
+    !Locked.is_null() && (Locked == Window || IntIsChildWindow(Locked, Window) != 0)
+}
+
 unsafe extern "C" fn DceUpdateVisRgn_impl(Dce: *mut DCE, Window: PWND, Flags: ULONG) {
     let mut RgnVisible: PREGION = core::ptr::null_mut();
     let mut DcxFlags: ULONG;
@@ -107,6 +125,13 @@ unsafe extern "C" fn DceUpdateVisRgn_impl(Dce: *mut DCE, Window: PWND, Flags: UL
         } else {
             RgnVisible = DceGetVisRgn(Window, Flags, 0 as HWND, 0);
         }
+    }
+
+    if DceLockedOut(Window, Flags) {
+        if !RgnVisible.is_null() {
+            REGION_Delete(RgnVisible);
+        }
+        RgnVisible = IntSysCreateRectpRgn(0, 0, 0, 0);
     }
 
     if (Flags & DCX_INTERSECTRGN) != 0 {

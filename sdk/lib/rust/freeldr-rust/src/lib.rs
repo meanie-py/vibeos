@@ -321,11 +321,56 @@ pub mod video;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
+    // x86: QEMU's debugcon (port 0xe9) AND the serial debug port. Real hardware has no
+    // debugcon, so a panic on a board printed nothing at all; and the old `hlt` with
+    // interrupts on took the next timer tick through an IDT freeldr does not have in that
+    // state, so the board reset ~165 ms later (OptiPlex 9020: three 55 ms ticks, measured)
+    // and the panic looked like a firmware reboot.
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     unsafe {
+        extern "C" {
+            fn DbgPrint(fmt: *const i8, ...) -> i32;
+        }
+        core::arch::asm!("cli", options(nomem, nostack));
         for &b in b"FREELDR-RUST-PANIC\n" {
             core::arch::asm!("out dx, al", in("dx") 0xe9u16, in("al") b);
         }
+        // One NUL-terminated line, printed with a plain %s (freeldr's DbgPrint formats with
+        // its own slot printf; no precision tricks).
+        let mut line = [0u8; 200];
+        let mut n = 0usize;
+        let mut put = |c: u8| {
+            if n < line.len() - 1 {
+                line[n] = c;
+                n += 1;
+            }
+        };
+        for &b in b"\n!!FREELDR-RUST-PANIC@" {
+            put(b);
+        }
+        if let Some(loc) = info.location() {
+            for &b in loc.file().as_bytes() {
+                put(b);
+            }
+            put(b':');
+            let mut v = loc.line();
+            let mut digits = [0u8; 10];
+            let mut k = 0usize;
+            loop {
+                digits[k] = b'0' + (v % 10) as u8;
+                k += 1;
+                v /= 10;
+                if v == 0 {
+                    break;
+                }
+            }
+            while k > 0 {
+                k -= 1;
+                put(digits[k]);
+            }
+        }
+        put(b'\n');
+        DbgPrint(b"%s\0".as_ptr() as *const i8, line.as_ptr());
     }
     // arm64 had a SILENT panic handler (loop {wfe}) which made every Rust
     // panic look like an opaque boot hang. Emit the marker + file:line over

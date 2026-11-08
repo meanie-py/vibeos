@@ -2198,73 +2198,68 @@ def test_gdbengine_gdb_arch_map():
     assert ge_mod._gdb_arch("arm64") == "aarch64"
 
 
-@pytest.mark.parametrize("smp", [None, "1", "4"])
-def test_gdbengine_smp_media_symbols_and_cpu_count_agree(tmp_path, monkeypatch, smp):
+def test_gdbengine_boots_the_smoke_vm_and_hands_it_to_the_session(tmp_path, monkeypatch):
+    """`gdb start` is the smoke VM plus a gdbstub, never a command line of its own: the old
+    private launcher drifted from smoke one knob at a time (the SMP count, then the tripwire,
+    whose absence reproduced a 0x19 instead of the smoke's 0x50). It detaches to the session
+    that ran us, so the run is locked, guarded and visible to `ps`/`kill`/the reaper."""
     from types import SimpleNamespace
 
-    if smp is None:
-        monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
-    else:
-        monkeypatch.setenv("VIBEOS_QEMU_SMP", smp)
-    monkeypatch.setattr(ge_mod, "PROJECT_DIR", tmp_path)
-    monkeypatch.setattr(ge_mod.subprocess, "run", lambda *a, **kw: None)
-    monkeypatch.setattr(be_mod, "stage_media_paths", lambda args, staging: args)
-    monkeypatch.setattr(be_mod, "windows_free_tcp_port", lambda: 12345)
-    monkeypatch.setattr(be_mod, "windows_qemu_bin", lambda *a: "qemu-system-aarch64.exe")
-    monkeypatch.setattr(be_mod, "win_path", str)
-    monkeypatch.setattr(be_mod, "gateway_ip", lambda: "127.0.0.1")
-    selected = []
+    from .. import vm as qemu_vm
 
-    def qemu_args(work):
-        selected.append(vm_mod.smp_count())
-        return []
+    made: dict = {}
 
-    config = SimpleNamespace(qemu_bin="qemu-system-aarch64", qemu_args=qemu_args)
-    cmd, _ = ge_mod._build_windows_cmd(
-        "arm64", config, {"qemu_dir": "qemu"}, tmp_path, tmp_path, gdb_wait=True
+    class FakeVM:
+        def __init__(self, config, work_dir, **kw):
+            made.update(kw, work_dir=work_dir)
+
+        def start(self):
+            made["started"] = True
+
+        def detach_for_debug(self, owner, run_id, source=""):
+            made["owner"], made["run_id"] = owner, run_id
+            return {
+                "gdb_host": "172.20.0.1",
+                "gdb_port": 4321,
+                "serial_file": "/mnt/c/staging/serial.log",
+                "win_uid": "vibeos-9-4321",
+                "qemu_pid": 77,
+                "staging": "/mnt/c/staging",
+                "live_log": str(tmp_path / "amd64_serial.log"),
+                "config": {"arch": "amd64"},
+                "argv": ["qemu-system-x86_64.exe", "-gdb", "tcp:0.0.0.0:4321"],
+            }
+
+        def stop(self):
+            made["stopped"] = True
+
+    (tmp_path / "amd64_launch.json").write_text('{"accel": "whpx"}')
+    monkeypatch.setattr(qemu_vm, "QemuVM", FakeVM)
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path / "runs")
+    monkeypatch.setattr(ge_mod, "get_arch_config", lambda arch: SimpleNamespace(arch=arch))
+    monkeypatch.setenv("VIBEOS_QEMU_OWNER_PID", "4242")
+    run = ge_mod._start_locked("amd64", backend="windows-host", win_cfg={}, gdb_wait=True)
+    assert made["gdb"] is True and made["gdb_wait"] is True and made["serial_file"] is True
+    assert made["started"] and made["owner"] == 4242 and made["run_id"] == run.run_id
+    assert "stopped" not in made
+    assert (run.gdb_port, run.serial_log, run.win_uid, run.accel) == (
+        4321,
+        "/mnt/c/staging/serial.log",
+        "vibeos-9-4321",
+        "whpx",
     )
-    assert selected == [int(smp) if smp else None]
-    if smp is None:
-        assert "-smp" not in cmd
-    else:
-        assert cmd[cmd.index("-smp") + 1] == smp
-    # The media boots the MP kernel either way, so symbols come from it whenever it is built.
+    assert ge_mod.DebugRun.load(run.run_id) == run
+
+
+def test_gdbengine_kernel_image_prefers_the_mp_kernel(tmp_path, monkeypatch):
+    """The media boots the MP kernel either way, so symbols come from it whenever it is built."""
+    monkeypatch.setattr(ge_mod, "PROJECT_DIR", tmp_path)
     up = tmp_path / "build-arm64/ntoskrnl/ntoskrnl.exe"
     mp = tmp_path / "build-arm64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe"
     assert ge_mod._kernel_image("arm64") == up
     mp.parent.mkdir(parents=True)
     mp.write_bytes(b"MZ")
     assert ge_mod._kernel_image("arm64") == mp
-
-
-@pytest.mark.parametrize("tripwire", ["", "SPECIALPOOL=*"])
-def test_gdbengine_debug_boot_carries_the_tripwire(tmp_path, monkeypatch, tripwire):
-    """The gdb engine assembles its own QEMU command line. It used to skip the
-    tripwire, so `VIBEOS_TRIPWIRE='SPECIALPOOL=*' vibeos-cli gdb start i386` booted
-    WITHOUT special pool and reproduced the original 0x19 instead of the 0x50 the
-    smoke had caught — the one boot where the knob matters most."""
-    from types import SimpleNamespace
-
-    monkeypatch.delenv("VIBEOS_QEMU_SMP", raising=False)
-    monkeypatch.setenv("VIBEOS_TRIPWIRE", tripwire)
-    monkeypatch.setattr(ge_mod, "PROJECT_DIR", tmp_path)
-    monkeypatch.setattr(ge_mod.subprocess, "run", lambda *a, **kw: None)
-    monkeypatch.setattr(be_mod, "stage_media_paths", lambda args, staging: args)
-    monkeypatch.setattr(be_mod, "windows_free_tcp_port", lambda: 12345)
-    monkeypatch.setattr(be_mod, "windows_qemu_bin", lambda *a: "qemu-system-i386.exe")
-    monkeypatch.setattr(be_mod, "win_path", str)
-    monkeypatch.setattr(be_mod, "gateway_ip", lambda: "127.0.0.1")
-    monkeypatch.setattr(be_mod, "rewrite_accel", lambda args, accel, arch: args, raising=False)
-    config = SimpleNamespace(qemu_bin="qemu-system-i386", qemu_args=lambda work: [])
-    cmd, _ = ge_mod._build_windows_cmd(
-        "i386", config, {"qemu_dir": "qemu"}, tmp_path, tmp_path, gdb_wait=False
-    )
-    want = ["-fw_cfg", f"name=opt/org.vibeos.tripwire,string={tripwire}"] if tripwire else []
-    assert vm_mod.tripwire_args() == want
-    assert cmd.count("-fw_cfg") == len(want) // 2
-    if tripwire:
-        i = cmd.index("-fw_cfg")
-        assert cmd[i : i + 2] == want
 
 
 def test_gdbengine_expand_verb():
@@ -2826,47 +2821,6 @@ def _isolate_host_policy(tmp_path_factory, monkeypatch):
     monkeypatch.setattr(hl_mod, "POLICY_DIR", tmp_path_factory.mktemp("host-policy"))
 
 
-def test_hostlock_cpu_lease_serializes(tmp_path, monkeypatch):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    fd1 = hl_mod.acquire_cpu_lease("build:i386", leases=1, timeout=0.0)
-    assert fd1 is not None
-    # 1 permit held → a second CPU-heavy op (e.g. a TCG boot) is serialized
-    assert hl_mod.acquire_cpu_lease("boot:arm64", leases=1, timeout=0.3) is None
-    hl_mod.release(fd1)
-    fd3 = hl_mod.acquire_cpu_lease("build:amd64", leases=1, timeout=0.5)
-    assert fd3 is not None  # freed on release
-    hl_mod.release(fd3)
-
-
-def test_lane_boots_cannot_take_the_landing_reserve(tmp_path, monkeypatch):
-    """A lane's smokes/payloads/sweeps fill only the unreserved share, so a conductor's
-    gate never queues behind them -- the night-long 17-red-to-1-green queue did."""
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.delenv("VIBEOS_LAND_BOOT_RESERVE", raising=False)
-    monkeypatch.setenv("VIBEOS_JOB_CLASS", "interactive")
-    held = [hl_mod.acquire_boot_lease("boot:lane", leases=8, timeout=0.0) for _ in range(4)]
-    assert all(fd is not None for fd in held)
-    assert hl_mod.acquire_boot_lease("boot:lane", leases=8, timeout=0.2) is None
-    monkeypatch.setenv("VIBEOS_JOB_CLASS", "integration")
-    gate = [hl_mod.acquire_boot_lease("boot:gate", leases=8, timeout=0.0) for _ in range(4)]
-    assert all(fd is not None for fd in gate), "the reserve must be free for landing"
-    for fd in held + gate:
-        hl_mod.release(fd)
-
-
-def test_landing_takes_reserved_permits_first_and_can_overflow(tmp_path, monkeypatch):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.delenv("VIBEOS_LAND_BOOT_RESERVE", raising=False)
-    monkeypatch.setenv("VIBEOS_JOB_CLASS", "integration")
-    fds = [hl_mod.acquire_boot_lease("boot:gate", leases=8, timeout=0.0) for _ in range(8)]
-    assert all(fd is not None for fd in fds), "an idle host lends landing every permit"
-    names = [os.readlink(f"/proc/self/fd/{fd}").rsplit("/", 1)[-1] for fd in fds[:4]]
-    assert names == [f"bootcpu-{i:02d}" for i in range(4, 8)], names
-    for fd in fds:
-        hl_mod.release(fd)
-
-
 def test_the_landing_reserve_never_takes_the_whole_pool(monkeypatch):
     monkeypatch.setenv("VIBEOS_LAND_BOOT_RESERVE", "99")
     assert hl_mod.land_boot_reserve(4) == 3
@@ -2881,22 +2835,6 @@ def test_a_land_lock_wait_says_it_is_the_land_lock():
     assert line.startswith(hl_mod.WAIT_ANNOUNCE) and "LAND LOCK" in line
 
 
-def test_hostlock_cpu_lease_pool_of_two(tmp_path, monkeypatch):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    a = hl_mod.acquire_cpu_lease("x", leases=2, timeout=0.0)
-    b = hl_mod.acquire_cpu_lease("y", leases=2, timeout=0.0)
-    assert a is not None and b is not None  # both permits available
-    assert hl_mod.acquire_cpu_lease("z", leases=2, timeout=0.3) is None  # pool exhausted
-    hl_mod.release(a)
-    hl_mod.release(b)
-
-
-# --- FIFO admission (fairness) ---------------------------------------------
-# The bug these cover: permit acquisition is order-blind, so a late arrival can take the
-# permits a long-waiting lane is queued for. A build starved 23 minutes this way on
-# 2026-07-24 while the permits changed hands between two OTHER worktrees.
-
-
 def _fake_ticket(tmp_path, pool: str, *, ns: int, pid: int, need: int):
     """Plant a ticket held by a LIVE flock (a stand-in for another worktree's waiter).
     Returns the held fd — closing it makes the ticket an orphan, as a death would."""
@@ -2909,89 +2847,6 @@ def _fake_ticket(tmp_path, pool: str, *, ns: int, pid: int, need: int):
     fd = _o.open(str(p), _o.O_RDWR | _o.O_CREAT, 0o644)
     _f.flock(fd, _f.LOCK_EX | _f.LOCK_NB)
     return fd
-
-
-def test_hostlock_fifo_waiter_ahead_blocks_barging(tmp_path, monkeypatch):
-    """A free permit is NOT taken by a latecomer when an earlier arrival is owed it."""
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    # Someone arrived first (ns=1) and needs both permits of a 2-permit pool.
-    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=2)
-    try:
-        # Pool is entirely free, but we arrive second → we must not barge.
-        assert hl_mod.acquire_cpu_share("late", n=1, leases=2, timeout=0.3) is None
-    finally:
-        os.close(ahead)  # the earlier waiter goes away
-    # Its ticket is now an orphan; the next acquirer reaps it and proceeds.
-    fds = hl_mod.acquire_cpu_share("late", n=1, leases=2, timeout=1.0)
-    assert fds is not None
-    hl_mod.release_all(fds)
-
-
-def test_hostlock_fifo_head_is_never_blocked_by_itself(tmp_path, monkeypatch):
-    """Head-of-queue always attempts — the queue must not deadlock the only waiter."""
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    fds = hl_mod.acquire_cpu_share("solo", n=2, leases=2, timeout=1.0)
-    assert fds is not None
-    hl_mod.release_all(fds)
-    # Ticket cleaned up on the way out — no residue to starve the next caller.
-    assert hl_mod.queue_status("cpuheavy") == []
-
-
-def test_hostlock_fifo_respects_existing_permit_holders(tmp_path, monkeypatch):
-    """Capacity is not availability: an active build owns half the pool."""
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    held = hl_mod.acquire_cpu_share("running", n=2, leases=4, timeout=1.0)
-    assert held is not None
-    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=2)
-    late = None
-    try:
-        # The only free pair is owed to the older waiter, even though both
-        # waiters' requests fit within the pool's TOTAL capacity.
-        late = hl_mod.acquire_cpu_share("late", n=2, leases=4, timeout=0.1)
-        assert late is None
-    finally:
-        hl_mod.release_all(late)
-        os.close(ahead)
-        hl_mod.release_all(held)
-
-
-def test_hostlock_fifo_admission_does_not_serialize_running_work(tmp_path, monkeypatch):
-    """Once admitted, a holder's remaining capacity is available to the next build."""
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    first = hl_mod.acquire_cpu_share("first", n=1, leases=4, timeout=1.0)
-    assert first is not None
-    second = None
-    try:
-        second = hl_mod.acquire_cpu_share("second", n=2, leases=4, timeout=1.0)
-        assert second is not None  # first still owns its permit
-    finally:
-        hl_mod.release_all(second)
-        hl_mod.release_all(first)
-
-
-def test_hostlock_fifo_orphan_ticket_is_reaped(tmp_path, monkeypatch):
-    """A waiter that DIES must not wedge the queue forever (kernel drops its flock)."""
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    dead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=4)
-    os.close(dead)  # simulate the owner dying mid-wait
-    assert hl_mod.queue_status("cpuheavy") == []  # not counted as a live waiter
-    fds = hl_mod.acquire_cpu_share("survivor", n=2, leases=4, timeout=1.0)
-    assert fds is not None
-    hl_mod.release_all(fds)
-    assert not list((tmp_path / "queue-cpuheavy").iterdir())  # orphan actually deleted
-
-
-def test_hostlock_fifo_can_be_disabled(tmp_path, monkeypatch):
-    """VIBEOS_HOSTLOCK_FAIR=0 restores the old order-blind behavior (escape hatch)."""
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOSTLOCK_FAIR", "0")
-    ahead = _fake_ticket(tmp_path, "cpuheavy", ns=1, pid=999999, need=2)
-    try:
-        fds = hl_mod.acquire_cpu_share("barger", n=1, leases=2, timeout=0.5)
-        assert fds is not None  # barges past the earlier waiter, as before
-        hl_mod.release_all(fds)
-    finally:
-        os.close(ahead)
 
 
 def test_hostlock_queue_status_reports_waiters(tmp_path, monkeypatch):
@@ -3072,20 +2927,6 @@ def test_hostlock_shadow_malformed_ticket_is_unknown(tmp_path, monkeypatch, raw)
     assert hl_mod.queue_status("cpuheavy") == []
 
 
-def test_hostlock_acquisition_records_wait_and_class(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_JOB_CLASS", "integration")
-    fds = hl_mod.acquire_cpu_share("build:amd64", n=2, leases=2, timeout=0)
-    assert fds is not None
-    try:
-        holders = hl_mod.status()["cpuheavy"]
-        assert all(h["holder"]["job_class"] == "integration" for h in holders)
-        assert all(h["holder"]["wait_seconds"] >= 0 for h in holders)
-        assert '"enforced": false' in capsys.readouterr().out
-    finally:
-        hl_mod.release_all(fds)
-
-
 def test_hostlock_build_admission_timings(tmp_path, monkeypatch):
     from contextlib import contextmanager
 
@@ -3103,7 +2944,6 @@ def test_hostlock_build_admission_timings(tmp_path, monkeypatch):
         now[0] += 3
         yield 3
 
-    monkeypatch.setattr(hl_mod, "cpu_share", cpu)
     monkeypatch.setattr(hl_mod, "build_dir_lock", directory)
     with hl_mod.build_lock(tmp_path, "amd64") as timing:
         assert timing["cpu_wait_s"] == 0
@@ -3134,43 +2974,10 @@ def test_hostlock_disabled_is_noop(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "0")
     assert hl_mod.enabled() is False
-    with hl_mod.cpu_lease("build:i386", leases=1) as fd:
-        assert fd is None  # context manager is a no-op when disabled
-    with hl_mod.cpu_exclusive("build:i386") as fds:
-        assert fds is None
     with hl_mod.build_dir_lock(tmp_path / "build-i386") as fd:
         assert fd is not None  # correctness lock survives CPU throttling opt-out
     with hl_mod.build_lock(tmp_path / "build-i386", "i386"):
         pass  # no-op grant, must not raise
-
-
-def test_hostlock_exclusive_build_excludes_boots(tmp_path, monkeypatch):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    fds = hl_mod.acquire_cpu_exclusive("build:i386", leases=4, timeout=0.0)
-    assert fds is not None and len(fds) == 4  # a build grabs the WHOLE pool
-    assert hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.3) is None  # boots excluded
-    hl_mod.release_all(fds)
-    b = hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.3)
-    assert b is not None  # freed → a boot runs
-    hl_mod.release(b)
-
-
-def test_hostlock_boots_parallelize_but_block_a_build(tmp_path, monkeypatch):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    # pool of 2: two TCG boots run in parallel...
-    b1 = hl_mod.acquire_cpu_lease("boot:arm64", leases=2, timeout=0.0)
-    b2 = hl_mod.acquire_cpu_lease("boot:arm64", leases=2, timeout=0.0)
-    assert b1 is not None and b2 is not None
-    assert hl_mod.acquire_cpu_lease("boot:arm64", leases=2, timeout=0.2) is None  # pool full
-    # ...but a build (needs ALL permits) can't start while any boot holds one
-    assert hl_mod.acquire_cpu_exclusive("build:i386", leases=2, timeout=0.3) is None
-    hl_mod.release(b1)
-    hl_mod.release(b2)
-    fds = hl_mod.acquire_cpu_exclusive("build:i386", leases=2, timeout=0.3)
-    assert fds is not None and len(fds) == 2  # boots gone → build goes exclusive
-    hl_mod.release_all(fds)
 
 
 def test_hostlock_build_coordinator_reserves_no_cpu(tmp_path, monkeypatch):
@@ -3179,118 +2986,48 @@ def test_hostlock_build_coordinator_reserves_no_cpu(tmp_path, monkeypatch):
     bd = tmp_path / "build-i386"
     bd.mkdir()
     with hl_mod.build_lock(bd, "i386"):
-        assert not hl_mod.status()["cpu_leases_held"]
+        assert not hl_mod.status()["cpu_leases_held"]  # runnable tools take their own jobs
         assert hl_mod.acquire_build_dir(bd, timeout=0) is None
-        boot = hl_mod.acquire_cpu_lease("boot:arm64", leases=1, timeout=0)
-        assert boot is not None
-        hl_mod.release(boot)
 
 
-def test_hostlock_two_builds_coexist_third_queues(tmp_path, monkeypatch):
-    # Explicit two-build budget: each build takes ceil(4/2)=2 permits, so two
-    # builds run concurrently and a third can't get a share.
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    monkeypatch.setenv("VIBEOS_MAX_CONCURRENT_BUILDS", "2")
-    assert hl_mod.build_permits(4) == 2
-    a = hl_mod.acquire_cpu_share("build:i386", n=2, leases=4, timeout=0.0)
-    b = hl_mod.acquire_cpu_share("build:amd64", n=2, leases=4, timeout=0.0)
-    assert a is not None and b is not None  # two builds coexist
-    # pool exhausted: a third build AND a native-TCG boot are both excluded
-    assert hl_mod.acquire_cpu_share("build:arm64", n=2, leases=4, timeout=0.3) is None
-    assert hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.2) is None
-    hl_mod.release_all(a)
-    hl_mod.release_all(b)
+def _hold(path, meta: dict | None = None) -> int:
+    """A raw lease holder, as any client (native admission, another lane) holds one."""
+    import fcntl as _f
 
-
-def test_hostlock_one_build_leaves_boot_room(tmp_path, monkeypatch):
-    # One build (2 of 4 permits) leaves 2 permits: native-TCG boots run alongside.
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    a = hl_mod.acquire_cpu_share("build:i386", n=2, leases=4, timeout=0.0)
-    assert a is not None
-    b1 = hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.2)
-    b2 = hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.2)
-    assert b1 is not None and b2 is not None
-    assert hl_mod.acquire_cpu_lease("boot:arm64", leases=4, timeout=0.2) is None
-    hl_mod.release(b1)
-    hl_mod.release(b2)
-    hl_mod.release_all(a)
-
-
-def test_hostlock_share_shortfall_releases_all(tmp_path, monkeypatch):
-    # No hold-and-wait: a share acquirer that can't get its full n holds NOTHING
-    # while waiting (deadlock-freedom invariant).
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    held = [
-        hl_mod.acquire_cpu_lease("boot:a", leases=4, timeout=0.0),
-        hl_mod.acquire_cpu_lease("boot:b", leases=4, timeout=0.0),
-        hl_mod.acquire_cpu_lease("boot:c", leases=4, timeout=0.0),
-    ]
-    assert all(f is not None for f in held)
-    # only 1 free permit → a 2-share times out...
-    assert hl_mod.acquire_cpu_share("build:i386", n=2, leases=4, timeout=0.3) is None
-    # ...and held nothing while failing: the free permit is still immediately grabbable
-    b = hl_mod.acquire_cpu_lease("boot:d", leases=4, timeout=0.0)
-    assert b is not None
-    hl_mod.release(b)
-    for f in held:
-        hl_mod.release(f)
-
-
-def test_hostlock_cpu_lease_cm_acquires_and_releases(tmp_path, monkeypatch):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    with hl_mod.cpu_lease("build:i386", leases=1) as fd:
-        assert fd is not None
-        assert hl_mod.acquire_cpu_lease("other", leases=1, timeout=0.2) is None  # held
-    fd2 = hl_mod.acquire_cpu_lease("after", leases=1, timeout=0.2)
-    assert fd2 is not None  # released when the cm exited
-    hl_mod.release(fd2)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(path), os.O_RDWR | os.O_CREAT, 0o644)
+    _f.flock(fd, _f.LOCK_EX | _f.LOCK_NB)
+    if meta is not None:
+        os.write(fd, json.dumps(meta).encode())
+    return fd
 
 
 def test_hostlock_announce_pair_on_queued_acquire(tmp_path, monkeypatch, capsys):
-    # The §9.84 starvation classifier depends on this exact invariant: a queued
-    # acquire that eventually succeeds prints BOTH announce lines; one that times
-    # out prints only WAIT; an uncontended acquire prints neither.
+    # The §9.84 starvation classifier depends on this exact invariant of `_acquire_one`
+    # (the land lock's acquirer): a queued acquire that eventually succeeds prints BOTH
+    # announce lines; one that times out prints only WAIT; an uncontended one neither.
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    holder = hl_mod.acquire_cpu_lease("boot:a", leases=1, timeout=0.0)
-    assert holder is not None
+    holder = _hold(tmp_path / "land")
     # timed-out queue → WAIT only. The budget is seconds, not milliseconds, because
     # WAIT is printed AFTER the first failed attempt and AFTER the deadline check:
-    # a process descheduled past its own deadline before that print returns None
-    # having announced nothing, and the assert below fires on a lane that did
-    # nothing wrong. This test runs during a merge-queue drain -- three builds and
-    # four boots deep -- so "surely 0.8s is enough" is exactly the assumption the
-    # host is busiest disproving.
-    assert hl_mod.acquire_cpu_lease("boot:b", leases=1, timeout=3.0) is None
+    # a process descheduled past its own deadline before that print returns having
+    # announced nothing, and the assert below fires on a lane that did nothing wrong.
+    with pytest.raises(hl_mod.LandLockBusy), hl_mod.land_lock("land:b", timeout=3.0):
+        pass
     out = capsys.readouterr().out
     assert hl_mod.WAIT_ANNOUNCE in out and hl_mod.ACQUIRED_ANNOUNCE not in out
     assert hl_mod.looks_starved(out)
 
-    # queued-then-granted → WAIT + ACQUIRED.
-    #
-    # Release the holder only once the waiter has ACTUALLY announced, instead of
-    # racing it on a timer. The old form was `Timer(0.8, release, holder)` followed
-    # by the acquire, which assumed the acquire would observe the lease as held
-    # within 0.8s. Under drain load it did not: the timer fired first, the very
-    # first attempt succeeded, and the captured output was a lone admission-shadow
-    # line with no WAIT at all -- TOOLING_FAIL, and an innocent lane bounced out of
-    # the merge queue for a full gate cycle (3 builds + 4 boots).
-    #
-    # Note WAIT is not printed until an attempt has already FAILED, so waiting for
-    # the ticket to appear in queue-cpuheavy would not be enough either; the only
-    # sound signal is the announcement itself. redirect_stdout is process-wide
-    # rather than per-thread, which is fine here only because the main thread does
-    # not print inside this window.
+    # queued-then-granted → WAIT + ACQUIRED. Release the holder only once the waiter
+    # has ACTUALLY announced: racing it on a timer let the first attempt succeed under
+    # load, with no WAIT at all. redirect_stdout is process-wide rather than
+    # per-thread, which is fine only because the main thread does not print here.
     buf = io.StringIO()
-    got: dict[str, int | None] = {}
+    done = threading.Event()
 
     def _queued_acquire() -> None:
-        with contextlib.redirect_stdout(buf):
-            got["fd"] = hl_mod.acquire_cpu_lease("boot:c", leases=1, timeout=30.0)
+        with contextlib.redirect_stdout(buf), hl_mod.land_lock("land:c", timeout=30.0):
+            done.set()
 
     t = threading.Thread(target=_queued_acquire, daemon=True)
     t.start()
@@ -3298,23 +3035,18 @@ def test_hostlock_announce_pair_on_queued_acquire(tmp_path, monkeypatch, capsys)
     while hl_mod.WAIT_ANNOUNCE not in buf.getvalue():
         assert time.monotonic() < deadline, f"waiter never announced: {buf.getvalue()!r}"
         time.sleep(0.01)
-    hl_mod.release(holder)
+    os.close(holder)
     t.join(30.0)
-    assert not t.is_alive(), "queued acquire never returned after the holder released"
-    fd = got["fd"]
-    assert fd is not None
+    assert not t.is_alive() and done.is_set(), "queued acquire never returned"
     out = buf.getvalue()
     capsys.readouterr()
     assert hl_mod.WAIT_ANNOUNCE in out and hl_mod.ACQUIRED_ANNOUNCE in out
     assert not hl_mod.looks_starved(out)
-    hl_mod.release(fd)
     # uncontended → silent
-    fd2 = hl_mod.acquire_cpu_lease("boot:d", leases=1, timeout=0.5)
-    assert fd2 is not None
+    with hl_mod.land_lock("land:d", timeout=0.5):
+        pass
     out = capsys.readouterr().out
     assert hl_mod.WAIT_ANNOUNCE not in out and hl_mod.ACQUIRED_ANNOUNCE not in out
-    assert not hl_mod.looks_starved(out)
-    hl_mod.release(fd2)
 
 
 def test_hostlock_looks_starved_classifier():
@@ -3340,14 +3072,14 @@ def test_gate_host_starved_is_retryable():
 def test_hostlock_status_reports_live_holder(tmp_path, monkeypatch):
     monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
     monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    fd = hl_mod.acquire_cpu_lease("build:i386", leases=1, timeout=0.0)
+    fd = _hold(tmp_path / "cpuheavy-00", {"v": 1, "kind": "boot:arm64", "pid": os.getpid()})
     st = hl_mod.status()
     assert st["cpu_leases_held"] == 1
     held = [e for e in st["cpuheavy"] if e["held"]]
     assert len(held) == 1
-    assert held[0]["holder"]["kind"] == "build:i386"
+    assert held[0]["holder"]["kind"] == "boot:arm64"
     assert held[0]["holder_alive"] is True  # this very process holds it
-    hl_mod.release(fd)
+    os.close(fd)
     assert hl_mod.status()["cpu_leases_held"] == 0
 
 
@@ -4078,6 +3810,34 @@ def test_check_update_baseline_rejects_unknown_tool(tmp_path, monkeypatch):
     assert not called, "an unknown tool name must not rewrite any baseline"
 
 
+def test_source_partition_coverage_ignores_reconfigure_stages(tmp_path, monkeypatch):
+    """A stale build.ninja is regenerated before the scanners run, in a stage of its own; that
+    is not a check, so it must not make the executed list differ from the partition."""
+    monkeypatch.setattr(
+        lints, "source_partition_specs", lambda repo, scope: [("a", 0, 0), ("b", 0, 0)]
+    )
+    monkeypatch.setattr(lints, "lint_tool_names", lambda repo: {"a", "b", "c"})
+
+    def run_lints(run, repo, strict, only):
+        run.add(Stage("reconfigure:build-amd64", status="ok"))
+        for name in ("a", "b"):
+            run.add(Stage(name, status="ok"))
+
+    monkeypatch.setattr(lints, "run_source_lints", run_lints)
+    seen = {}
+
+    def finalize(run, repo):
+        seen["stages"] = [s.name for s in run.stages]
+        seen["checked"] = run.extra["checked_source_checks"]
+        return 0
+
+    monkeypatch.setattr(debugcmd_mod.Run, "finalize", finalize)
+    args = Namespace(scope="source-early", strict=True, update_baseline=None, only=None, arch=None)
+    assert debugcmd_mod.check(args, tmp_path) == 0
+    assert "coverage-inventory" not in seen["stages"]
+    assert seen["checked"] == ["a", "b"]
+
+
 @pytest.mark.parametrize("selection", ["", ",", "typo", "toolA,typo"])
 def test_partial_check_rejects_bad_selection(tmp_path, monkeypatch, selection):
     monkeypatch.setattr(lints, "lint_tool_names", lambda repo: {"toolA"})
@@ -4536,31 +4296,6 @@ def test_settle_watch_no_milestone_required():
 
 
 # --- hostlock: build(cpuheavy) vs boot(bootcpu) pools are DECOUPLED --------
-
-
-def test_hostlock_build_exclusive_does_not_block_windows_host_boot(tmp_path, monkeypatch):
-    # A cold build grabs the WHOLE cpuheavy pool (exclusive host). A windows-host boot
-    # draws from the SEPARATE bootcpu pool, so it must NOT be blocked by that build.
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setenv("VIBEOS_HOST_BROKER", "1")
-    build_fds = hl_mod.acquire_cpu_exclusive("build:i386", leases=4, timeout=0.0)
-    assert build_fds is not None and len(build_fds) == 4  # build owns all cpuheavy
-    boot_fd = hl_mod.acquire_boot_lease("boot:amd64", leases=4, timeout=0.3)
-    assert boot_fd is not None, "windows-host boot must run alongside an exclusive build"
-    hl_mod.release(boot_fd)
-    hl_mod.release_all(build_fds)
-
-
-def test_hostlock_boot_pool_throttles_boot_vs_boot(tmp_path, monkeypatch):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    # Pool throttling in isolation; the landing reserve has its own tests above.
-    monkeypatch.setenv("VIBEOS_LAND_BOOT_RESERVE", "0")
-    a = hl_mod.acquire_boot_lease("boot:i386", leases=2, timeout=0.0)
-    b = hl_mod.acquire_boot_lease("boot:amd64", leases=2, timeout=0.0)
-    assert a is not None and b is not None
-    assert hl_mod.acquire_boot_lease("boot:arm64", leases=2, timeout=0.3) is None  # pool full
-    hl_mod.release(a)
-    hl_mod.release(b)
 
 
 def test_hostlock_status_reports_both_pools(tmp_path, monkeypatch):
@@ -5205,8 +4940,24 @@ def test_land_lock_is_fifo(tmp_path, monkeypatch):
             pass
     finally:
         os.close(ahead)  # earlier waiter dies → its ticket is an orphan
+    assert hl_mod.queue_status("land") == []  # an orphan is not a live waiter
     with hl_mod.land_lock("land:latecomer", timeout=1.0):
         pass
+    # The orphan was reaped and the lander's own ticket removed: no residue to starve
+    # the next caller.
+    assert not list((tmp_path / "queue-land").iterdir())
+
+
+def test_land_lock_fifo_can_be_disabled(tmp_path, monkeypatch):
+    """VIBEOS_HOSTLOCK_FAIR=0 restores the old order-blind behavior (escape hatch)."""
+    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
+    monkeypatch.setenv("VIBEOS_HOSTLOCK_FAIR", "0")
+    ahead = _fake_ticket(tmp_path, "land", ns=1, pid=999999, need=1)
+    try:
+        with hl_mod.land_lock("land:barger", timeout=0.5):
+            pass  # barges past the earlier waiter, as before
+    finally:
+        os.close(ahead)
 
 
 def test_land_lock_never_silently_degrades(tmp_path, monkeypatch):
@@ -9796,13 +9547,6 @@ def test_build_source_lint_is_opt_in():
     assert not parser.parse_args(["build", "--arch", "amd64", "--no-check"]).check
 
 
-def test_hostlock_large_host_admits_the_full_arch_matrix(tmp_path, monkeypatch):
-    monkeypatch.setattr(hl_mod, "HOSTLOCK_DIR", tmp_path)
-    monkeypatch.setattr(os, "sched_getaffinity", lambda pid: set(range(24)))
-    monkeypatch.delenv("VIBEOS_MAX_CONCURRENT_BUILDS", raising=False)
-    assert hl_mod.build_permits(4) == 1
-
-
 def test_clean_discovers_isolated_cargo_links_only_for_requested_arch(tmp_path):
     root = tmp_path / "sdk/lib/rust/target"
     x86 = root / "sample-cargo-amd64-cargo-link/x86_64-pc-windows-gnu"
@@ -10521,6 +10265,7 @@ def test_payload_unreferenced_by_build_only_when_every_record_is_silent(tmp_path
     assert not unbuilt("tools/fex/shared.h")  # only the dependency log
     assert not unbuilt("sdk/lib/rust/Cargo.toml")  # the workspace, not a crate
     assert not unbuilt("dll/win32/wowx64/CMakeLists.txt")  # outside both scopes
+    assert unbuilt("tools/vibeos-test/src/smoke_run.rs")  # reads builds, never feeds one
 
 
 def test_payload_unreferenced_by_build_without_build_records_proves_nothing(tmp_path):
@@ -11621,3 +11366,34 @@ def test_boot_failure_preserves_its_primary_exception_when_snapshot_fails(monkey
     assert vm._boot_output == (
         "previously captured evidence" if closed else "partial serial evidence"
     )
+
+
+def test_gdbengine_relocates_from_the_base_the_kernel_printed(tmp_path, monkeypatch):
+    """An unhinted find-kbase scans guest memory through the gdbstub, which over windows-host
+    outlasted gdb's whole budget: every `gdb inspect` on a booted guest timed out. The kernel
+    prints its base on serial; read it, cache it, and never resume the guest to get it."""
+    monkeypatch.setattr(ge_mod, "RUNS_DIR", tmp_path / "runs")
+    serial = tmp_path / "serial.log"
+    serial.write_text("boot\n")
+    run = ge_mod.DebugRun(
+        run_id="r",
+        arch="amd64",
+        backend="windows-host",
+        gdb_host="h",
+        gdb_port=1,
+        serial_log=str(serial),
+        kernel_image="k",
+    )
+    assert ge_mod._serial_kernel_base(run) == ""
+    serial.write_text("[KRNLBASE] ntoskrnl runtime base=fffff80000400000\r\n")
+    assert ge_mod._serial_kernel_base(run) == "0xfffff80000400000"
+    assert ge_mod.DebugRun.load("r").kernel_runtime_base == "0xfffff80000400000"
+    seen = []
+    monkeypatch.setattr(
+        ge_mod.subprocess,
+        "run",
+        lambda argv, **kw: seen.append(argv) or ge_mod.subprocess.CompletedProcess(argv, 0, "", ""),
+    )
+    monkeypatch.setattr(ge_mod, "_gdb_bin", lambda: "gdb")
+    ge_mod._run_gdb(run, [], timeout=1)
+    assert "find-kbase 0xfffff80000400000" in seen[0]

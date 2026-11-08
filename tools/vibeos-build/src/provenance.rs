@@ -1498,7 +1498,7 @@ fn mtime_str(path: &Path) -> String {
     let n = unsafe { libc::strftime(out.as_mut_ptr().cast(), out.len(), fmt.as_ptr().cast(), &tm) };
     String::from_utf8_lossy(&out[..n]).into_owned()
 }
-fn py_repr(s: &str) -> String {
+pub(crate) fn py_repr(s: &str) -> String {
     let quote = if s.contains('\'') && !s.contains('"') {
         '"'
     } else {

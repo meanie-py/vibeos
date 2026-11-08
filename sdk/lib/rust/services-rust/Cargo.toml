@@ -20,3 +20,4 @@ panic-common = { path = "../panic-common", features = ["user"] }
 # and the svcctl RPC lock-status structs live in crate::types; the internal
 # Scm* helpers (database.c, cdecl) are declared there as `extern "C"`.
 winsrv-sys = { path = "../winsrv-sys" }
+ntdll-sys = { path = "../ntdll-sys" }

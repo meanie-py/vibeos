@@ -33,6 +33,9 @@ w32start\w32start-bare.exe
 w32start\w32start-crt.exe
 w32start\w32start-user32.exe
 w32start\w32start-gdi32.exe
+w32start\w32start-console.exe
+timeout gdiprobe\gdiprobe32con.exe 900
+gdiprobe\gdiprobe32con.exe
 gdiprobe\gdiprobe32.exe
 # Chrome's child processes do not write to the sweep's pipe, so the whole tree logs to a file
 # that catfile prints afterwards (it runs even when Chrome is killed at the timeout).

@@ -760,8 +760,9 @@ unsafe fn AVrfpLoadAndInitializeProvider(Provider: *mut VERIFIER_PROVIDER) -> NT
         return STATUS_PROCEDURE_NOT_FOUND;
     }
 
-    // _SEH2_TRY — DUMMY_PSEH: handler is dead code, body runs unprotected.
-    status = {
+    // The provider's entry point and descriptor are its own: a fault fails the
+    // load with the exception code, as the C.
+    status = ntdll_sys::seh::try_except_all(|| {
         if LdrpCallInitRoutine(
             (*Provider).EntryPoint,
             (*Provider).BaseAddress,
@@ -803,7 +804,8 @@ unsafe fn AVrfpLoadAndInitializeProvider(Provider: *mut VERIFIER_PROVIDER) -> NT
             );
             STATUS_DLL_INIT_FAILED
         }
-    };
+    })
+    .unwrap_or_else(|code| code);
 
     if status < 0 {
         return status;
@@ -824,7 +826,7 @@ unsafe fn AVrfpLoadAndInitializeProvider(Provider: *mut VERIFIER_PROVIDER) -> NT
     AVrfpResnapInitialModules();
 
     /* Manually call with DLL_PROCESS_ATTACH (process not done initializing) */
-    status = {
+    status = ntdll_sys::seh::try_except_all(|| {
         if LdrpCallInitRoutine(
             (*Provider).EntryPoint,
             (*Provider).BaseAddress,
@@ -840,7 +842,8 @@ unsafe fn AVrfpLoadAndInitializeProvider(Provider: *mut VERIFIER_PROVIDER) -> NT
         } else {
             STATUS_SUCCESS
         }
-    };
+    })
+    .unwrap_or_else(|code| code);
 
     status
 }

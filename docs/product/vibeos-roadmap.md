@@ -602,6 +602,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **amd64-bios: boot went silent after netstack's TDI self-test timed out (open, 1 in 7,
+  found 2026-11-08, fex lane).** In a full gate (`20261108-020815-xRELnn`, two CPUs, NVMe),
+  `smoke:amd64-bios` logged `TDI op timed out - IRP still pending`, `CONNECT FAILED
+  0xc00000b5` and a System thread exit, then nothing for 120 s (HANG_TIMEOUT). Six more
+  boots of the same media in the same configuration passed (`20261108-025836-VHHwDs`,
+  `20261108-030043-imRsDz`). Kept at
+  `~/vibeos-flake-farm/fails/auto/20261108-024954-JKt07d-smoke-amd64-bios-HANG_TIMEOUT`.
+  Next: a `farm` run of amd64-bios, to get a rate and a second sample.
+
 - **amd64: long boots wedged once osk.exe had leaked the GDI handle table (FIXED 2026-11-07,
   graviton lane).** The stock i386 `osk.exe` gained thousands of pens (to 8,300+ in one Chrome
   payload boot; magnify leaked too), the handle table filled, pool ran dry and win32k flooded
@@ -624,27 +633,54 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   since, and the console build has not been re-run. Next: stage the console build beside them
   to tell "console only" from "gone".
 
-- **OptiPlex 9020: freeldr resets the board after loading the boot drivers (open, found
-  2026-11-07).** The netboot image of a current tree gets as far as `[FLDR] phase: boot
-  drivers loaded`. Then the board resets to coreboot without loading `AppPatch\drvmain.sdb`
-  or printing `phase: handoff to kernel`, every time. The same capture setup shows 38
-  desktop boots up to 2026-10-20 (`D:\home\vibeos-optiplex\serial-20261014-203830`), so this
-  is a loader regression since then on this board. `smoke --arch amd64-bios` passes the same
-  point in QEMU (`20261107-195717-KMdhG5`). Capture: `serial-20261107-190419`.
-  Next: bisect the loader between 2026-10-20 and now, or arm freeldr's debug output around
-  the drvmain.sdb load.
+- **amd64 Chrome payload: the guest goes silent for good in about half the boots (open,
+  found 2026-11-07, graviton lane).** Minutes into the payload, while 32-bit GUI work runs
+  (the WoW64 ladder's `apc32`, `gdiprobe32`, osk/magnify's DC polling), the serial line stops
+  and the payload times out an hour later (`[GAP] gap=3605...`). The guest is alive: the
+  clock advances, and the hang capture shows ordinary threads Running (priorities 13 and 8)
+  and the idle thread, so it is not a real-time thread starving the rest; even the kernel's
+  census never prints again. Came in with the master merge of 2026-11-07 (`be6bcf6034a`):
+  `f011919dca6` 0 hung of 3 boots, master 5 of 9 (with or without the console probes).
+  Runs: `20261107-174229-6w1lnX`, `20261107-184949-ZjEIYG`, `20261107-220737-uYCxpH`,
+  `20261107-234657-4uReiC` (the last with the current thread in `hang-cpustate.txt`). Next:
+  bisect the merge (suspects: the user32 Wine 11.11 resync, sysfb PnP, KSE), or find what
+  blocks every DbgPrint.
 
-- **No device can be disabled, removed or re-enabled from user mode (open, found
-  2026-11-07, msvcrt-homebrew lane).** The kernel's `PiControlQueryRemoveDevice`
-  (pnpmgr-rust `plugplay.rs`) looks the device up and returns `STATUS_NOT_IMPLEMENTED`, as
-  upstream's does. So `CM_Query_And_Remove_SubTree` (cr 52) and `CM_Disable_DevNode`, and with
-  them Device Manager's Disable, fail before any driver is asked. Re-enable is not there
-  either: `PiActionResetDevice` only rewinds a removed node to Uninitialized, and
-  `PiActionStartDevice` then refuses it (it wants Initialized). `IopSendRemoveDevice` also
-  drops the node's only PDO reference. The kernel's removal machinery itself exists
-  (`IopPrepareDeviceForRemoval`, `IopRemoveDevice`, and `IoRequestDeviceEject`, which runs
-  it inline); only the user-mode entry and the way back are missing. This blocks sysfb's
-  stop/remove hand-off test (`sysfb-pnp-design.md`, step 3).
+- **OptiPlex 9020: freeldr reset the board after loading the boot drivers (FIXED 2026-11-08,
+  graviton lane).** Every netboot reset to coreboot ~165 ms after `[FLDR] phase: boot drivers
+  loaded` (a Chrome-payload image: before the system hive). Not a code regression: the images
+  outgrew the loader's map. The amd64 BIOS loader identity-maps 1 GiB, and only the page
+  lookup table honoured it; `MmAllocateMemoryWithType` searched all of RAM, so on 32 GiB an
+  allocation began at `0x3ffff000` and its first INT 13h copy faulted at 1 GiB, a triple
+  fault with no IDT. Reproduced in QEMU at `-m 32G` (CR2=0x40000000), clean at 16 GiB. Now
+  allocations stay below the mapped limit, and the loader maps 4 GiB with 1 GiB pages when
+  the CPU has them (Haswell does, QEMU's default qemu64 does not). Its x86 panic handler also
+  prints on the serial port now (it wrote only to QEMU's debugcon). The board reaches the
+  desktop again (32686 MiB). Field manual: "The amd64 BIOS loader maps 1 GiB".
+
+- **No device could be disabled, removed or re-enabled from user mode (FIXED 2026-11-08,
+  msvcrt-homebrew lane).** `PiControlQueryRemoveDevice` returned `STATUS_NOT_IMPLEMENTED` (as
+  upstream) and `PiActionStartDevice` refused anything not freshly initialized. Now a
+  device action (pnpmgr-rust `devaction.rs` `PiQueryRemoveDevice`) collects the subtree plus
+  removal relations. It asks every started node with QUERY_REMOVE, leaves first. Only when
+  all of them agree does it REMOVE them; a veto cancels everything it asked and comes back as
+  `CR_REMOVE_VETOED` with the vetoing device's type and name. `PiRestartDevice` brings a
+  removed or disabled node back through AddDevice and START. Supporting fixes:
+  - pnproot keeps a root PDO on REMOVE, so the node survives.
+  - The kernel honours `CONFIGFLAG_DISABLED` at AddDevice, so a disable persists.
+  - umpnpmgr's disable passes `PNP_QUERY_AND_REMOVE_DISABLE` and reports the veto.
+  - `CM_Disable_DevNode` accepts the `CM_DISABLE_*` bits.
+  - setupapi's `SetupDiChangeState` writes ConfigFlags through `CM_DRP_CONFIGFLAGS`, instead
+    of opening the driver key, which failed with error 0.
+
+  Proven by sysfbprobe step 3 on all three arches (`sysfb-pnp-design.md`). Still owed:
+  - The kernel-initiated path (`IopPrepareDeviceForRemoval`, used for failed starts and
+    ejects) still REMOVEs a node's children before its siblings are asked, so a veto there
+    leaves part of the subtree torn down.
+  - `CONFIGFLAG_DISABLED` honoured at boot is not yet proven by a reboot test.
+  - `SetupDiSetClassInstallParamsA` is still a stub (as in Wine/upstream).
+  - Failed-start root devices now stay in the tree with their problem code (Windows
+    behaviour), instead of vanishing.
 
 - **FASTFAT's verify of a hot-plug volume never settles (open, found 2026-11-07,
   amd64-bios).** classpnp marks a removable or hot-plug disk's volume `DO_VERIFY_VOLUME` on

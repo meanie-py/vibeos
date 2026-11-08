@@ -228,7 +228,7 @@ pub unsafe extern "C" fn LdrpMakeCookie() -> ULONG_PTR {
 
 #[no_mangle]
 pub unsafe extern "system" fn LdrUnlockLoaderLock(Flags: ULONG, Cookie: ULONG_PTR) -> NTSTATUS {
-    let Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     if (Flags & !LDR_UNLOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS) != 0 {
         if (Flags & LDR_UNLOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS) != 0 {
@@ -252,7 +252,12 @@ pub unsafe extern "system" fn LdrUnlockLoaderLock(Flags: ULONG, Cookie: ULONG_PT
     if (Flags & LDR_UNLOCK_LOADER_LOCK_FLAG_RAISE_ON_ERRORS) != 0 {
         RtlLeaveCriticalSection(core::ptr::addr_of_mut!(LdrpLoaderLock));
     } else {
-        RtlLeaveCriticalSection(core::ptr::addr_of_mut!(LdrpLoaderLock));
+        // Not supposed to raise: a leave that faults (a corrupt lock) becomes the status.
+        if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+            RtlLeaveCriticalSection(core::ptr::addr_of_mut!(LdrpLoaderLock));
+        }) {
+            Status = code;
+        }
     }
 
     Status
@@ -264,7 +269,7 @@ pub unsafe extern "system" fn LdrLockLoaderLock(
     Disposition: PULONG,
     Cookie: PULONG_PTR,
 ) -> NTSTATUS {
-    let Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
     let InInit: BOOLEAN = LdrpInLdrInit;
 
     if !Disposition.is_null() {
@@ -315,19 +320,25 @@ pub unsafe extern "system" fn LdrLockLoaderLock(
             *Cookie = LdrpMakeCookie();
         }
     } else {
-        if (Flags & LDR_LOCK_LOADER_LOCK_FLAG_TRY_ONLY) != 0 {
-            if RtlTryEnterCriticalSection(core::ptr::addr_of_mut!(LdrpLoaderLock)) == 0 {
-                *Disposition = LDR_LOCK_LOADER_LOCK_DISPOSITION_LOCK_NOT_ACQUIRED;
+        // Not supposed to raise: a fault on the caller's out-pointers or the lock is
+        // returned as the status instead.
+        if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+            if (Flags & LDR_LOCK_LOADER_LOCK_FLAG_TRY_ONLY) != 0 {
+                if RtlTryEnterCriticalSection(core::ptr::addr_of_mut!(LdrpLoaderLock)) == 0 {
+                    *Disposition = LDR_LOCK_LOADER_LOCK_DISPOSITION_LOCK_NOT_ACQUIRED;
+                } else {
+                    *Disposition = LDR_LOCK_LOADER_LOCK_DISPOSITION_LOCK_ACQUIRED;
+                    *Cookie = LdrpMakeCookie();
+                }
             } else {
-                *Disposition = LDR_LOCK_LOADER_LOCK_DISPOSITION_LOCK_ACQUIRED;
+                RtlEnterCriticalSection(core::ptr::addr_of_mut!(LdrpLoaderLock));
+                if !Disposition.is_null() {
+                    *Disposition = LDR_LOCK_LOADER_LOCK_DISPOSITION_LOCK_ACQUIRED;
+                }
                 *Cookie = LdrpMakeCookie();
             }
-        } else {
-            RtlEnterCriticalSection(core::ptr::addr_of_mut!(LdrpLoaderLock));
-            if !Disposition.is_null() {
-                *Disposition = LDR_LOCK_LOADER_LOCK_DISPOSITION_LOCK_ACQUIRED;
-            }
-            *Cookie = LdrpMakeCookie();
+        }) {
+            Status = code;
         }
     }
 
@@ -704,18 +715,13 @@ pub unsafe extern "system" fn LdrVerifyImageMatchesChecksum(
     ImageCharacteristics: PUSHORT,
 ) -> NTSTATUS {
     let mut FileStdInfo: FILE_STANDARD_INFORMATION = core::mem::zeroed();
-    let mut ImportData: PIMAGE_IMPORT_DESCRIPTOR;
-    let mut LastSection: PIMAGE_SECTION_HEADER = core::ptr::null_mut();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let NtHeader: PIMAGE_NT_HEADERS;
     let mut SectionHandle: HANDLE = core::ptr::null_mut();
     let mut ViewSize: SIZE_T;
     let mut ViewBase: PVOID;
     let Result: BOOLEAN;
     let NoActualCheck: BOOLEAN;
     let mut Status: NTSTATUS;
-    let mut ImportName: PVOID;
-    let mut Size: ULONG = 0;
 
     NoActualCheck = ((FileHandle as ULONG_PTR) & 1) as BOOLEAN;
 
@@ -764,25 +770,30 @@ pub unsafe extern "system" fn LdrVerifyImageMatchesChecksum(
         return Status;
     }
 
-    {
+    // The image and the callback are both untrusted: any fault fails the check
+    // (STATUS_IMAGE_CHECKSUM_MISMATCH) rather than killing the caller.
+    Result = ntdll_sys::seh::try_except_all(|| {
+        let result: BOOLEAN;
+        let mut LastSection: PIMAGE_SECTION_HEADER = core::ptr::null_mut();
+        let mut Size: ULONG = 0;
         if NoActualCheck != 0 {
-            Result = 1u8;
+            result = 1u8;
         } else {
-            Result = LdrVerifyMappedImageMatchesChecksum(
+            result = LdrVerifyMappedImageMatchesChecksum(
                 ViewBase,
                 FileStdInfo.EndOfFile.u.LowPart as SIZE_T,
                 FileStdInfo.EndOfFile.u.LowPart,
             );
         }
 
-        if Result != 0 && Callback.is_some() {
-            NtHeader = RtlImageNtHeader(ViewBase);
+        if result != 0 && Callback.is_some() {
+            let NtHeader = RtlImageNtHeader(ViewBase);
 
             if !ImageCharacteristics.is_null() {
                 *ImageCharacteristics = (*NtHeader).FileHeader.Characteristics;
             }
 
-            ImportData = RtlImageDirectoryEntryToData(
+            let mut ImportData = RtlImageDirectoryEntryToData(
                 ViewBase,
                 0u8,
                 IMAGE_DIRECTORY_ENTRY_IMPORT as USHORT,
@@ -791,7 +802,7 @@ pub unsafe extern "system" fn LdrVerifyImageMatchesChecksum(
 
             if !ImportData.is_null() {
                 while (*ImportData).Name != 0 {
-                    ImportName = RtlImageRvaToVa(
+                    let ImportName = RtlImageRvaToVa(
                         NtHeader,
                         ViewBase,
                         (*ImportData).Name,
@@ -803,7 +814,9 @@ pub unsafe extern "system" fn LdrVerifyImageMatchesChecksum(
                 }
             }
         }
-    }
+        result
+    })
+    .unwrap_or(0);
 
     NtUnmapViewOfSection(-1isize as HANDLE, ViewBase);
     NtClose(SectionHandle);
@@ -824,22 +837,24 @@ pub unsafe extern "system" fn LdrQueryProcessModuleInformationEx(
     ReturnedSize: *mut u32,
 ) -> i32 {
 
-    let ModuleListHead: PLIST_ENTRY;
-    let mut InitListHead: PLIST_ENTRY;
-    let mut Entry: PLIST_ENTRY;
-    let mut InitEntry: PLIST_ENTRY;
-    let mut Module: PLDR_DATA_TABLE_ENTRY;
-    let mut InitModule: PLDR_DATA_TABLE_ENTRY;
+    let mut ModuleListHead: PLIST_ENTRY = core::ptr::null_mut();
+    let mut InitListHead: PLIST_ENTRY = core::ptr::null_mut();
+    let mut Entry: PLIST_ENTRY = core::ptr::null_mut();
+    let mut InitEntry: PLIST_ENTRY = core::ptr::null_mut();
+    let mut Module: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+    let mut InitModule: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
     let mut ModulePtr: PRTL_PROCESS_MODULE_INFORMATION = core::ptr::null_mut();
     let mut Status: i32 = STATUS_SUCCESS;
     let mut UsedSize: u32 =
         core::mem::offset_of!(RTL_PROCESS_MODULES, Modules) as u32;
     let mut AnsiString: ANSI_STRING = core::mem::zeroed();
-    let mut p: *mut i8;
+    let mut p: *mut i8 = core::ptr::null_mut();
 
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(crate::ldr::ldrinit::LdrpLoaderLock));
 
-    {
+    // The caller's buffer is untrusted; a fault is ignored (as the C) so the loader
+    // lock below is still released.
+    let _ = ntdll_sys::seh::try_except_all(|| {
         if Size < UsedSize {
             Status = 0xC0000004u32 as i32; // STATUS_INFO_LENGTH_MISMATCH
         } else {
@@ -920,7 +935,7 @@ pub unsafe extern "system" fn LdrQueryProcessModuleInformationEx(
         if !ReturnedSize.is_null() {
             *ReturnedSize = UsedSize;
         }
-    }
+    });
 
     RtlLeaveCriticalSection(core::ptr::addr_of_mut!(crate::ldr::ldrinit::LdrpLoaderLock));
 
@@ -998,7 +1013,9 @@ pub unsafe extern "system" fn LdrEnumerateLoadedModules(
             - core::mem::offset_of!(_LDR_DATA_TABLE_ENTRY, InLoadOrderLinks))
             as PLDR_DATA_TABLE_ENTRY;
 
-        (EnumProc.unwrap())(LdrEntry, Context, &mut Stop);
+        // A faulting callback is ignored (as the C); the loader lock is still released.
+        let stop: *mut BOOLEAN = &mut Stop;
+        let _ = ntdll_sys::seh::try_except_all(|| (EnumProc.unwrap())(LdrEntry, Context, stop));
 
         if Stop != 0 {
             break;
@@ -1260,13 +1277,21 @@ pub unsafe extern "system" fn LdrUnloadDll(BaseAddress: PVOID) -> NTSTATUS {
                 /* Activate the ActCtx */
                 RtlActivateActivationContextUnsafeFast(&mut ActCtx, (*LdrEntry).EntryPointActivationContext);
 
-                /* Call the entrypoint */
-                LdrpCallInitRoutine(
-                    (*LdrEntry).EntryPoint,
-                    (*LdrEntry).DllBase,
-                    DLL_PROCESS_DETACH,
-                    core::ptr::null_mut(),
-                );
+                /* Call the entrypoint; a DLL that faults in its detach is logged, not fatal */
+                if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+                    LdrpCallInitRoutine(
+                        (*LdrEntry).EntryPoint,
+                        (*LdrEntry).DllBase,
+                        DLL_PROCESS_DETACH,
+                        core::ptr::null_mut(),
+                    )
+                }) {
+                    DbgPrint(
+                        b"WARNING: Exception 0x%x during LdrpCallInitRoutine(DLL_PROCESS_DETACH) for %wZ\n\0".as_ptr() as *const i8,
+                        code,
+                        core::ptr::addr_of_mut!((*LdrEntry).BaseDllName),
+                    );
+                }
 
                 /* Release the context */
                 RtlDeactivateActivationContextUnsafeFast(&mut ActCtx);

@@ -405,6 +405,11 @@ pub struct VmConfig {
     pub gdb_wait: bool,
     #[serde(default)]
     pub gdb_port: u16,
+    /// Serial to a file instead of the dial-back socket, for a VM that outlives this process
+    /// (`vibeos-cli gdb start`): the socket closes when the VM is detached, and a debugger
+    /// polls the log long after. See [`Vm::serial_file`].
+    #[serde(default)]
+    pub serial_file: bool,
     #[serde(default)]
     pub memory: String,
     #[serde(default)]
@@ -778,15 +783,24 @@ impl Vm {
         }
         let is_arm = self.config.arch.starts_with("arm64");
         if self.config.backend == "native" {
-            let ser = self.sock_dir.path().join("serial.sock");
-            self.serial.listen(&ser)?;
             let qmp = self.sock_dir.path().join("qmp.sock");
+            let chardev = match self.serial_file() {
+                Some(file) => {
+                    fs::write(&file, b"")?; // exists from launch, so a poller never misses it
+                    format!("file,id=ser0,path={}", file.display())
+                }
+                None => {
+                    let ser = self.sock_dir.path().join("serial.sock");
+                    self.serial.listen(&ser)?;
+                    format!("socket,id=ser0,path={},server=off", ser.display())
+                }
+            };
             let mut cmd = vec![
                 self.config.qemu_bin.clone(),
                 "-qmp".into(),
                 format!("unix:{},server,nowait", qmp.display()),
                 "-chardev".into(),
-                format!("socket,id=ser0,path={},server=off", ser.display()),
+                chardev,
             ];
             cmd.extend(serial);
             cmd.extend(self.config.disk_args.clone());
@@ -824,13 +838,20 @@ impl Vm {
             .as_str()
             .unwrap_or("127.0.0.1")
             .to_owned();
-        let ser = self
-            .launch_ports
-            .choose(|| self.serial.listen_tcp("0.0.0.0", 0))?;
+        let ser = if self.config.serial_file {
+            0 // no listener: the uid below takes the QMP port instead
+        } else {
+            self.launch_ports
+                .choose(|| self.serial.listen_tcp("0.0.0.0", 0))?
+        };
         let qmp = self
             .launch_ports
             .choose(|| self.qmp.listen_tcp("0.0.0.0", 0))?;
-        self.uid = format!("vibeos-{}-{ser}", std::process::id());
+        self.uid = format!(
+            "vibeos-{}-{}",
+            std::process::id(),
+            if ser != 0 { ser } else { qmp }
+        );
         let dir = PathBuf::from(
             self.config.windows["qemu_dir"]
                 .as_str()
@@ -872,7 +893,13 @@ impl Vm {
             "-mon".into(),
             "chardev=qmp0,mode=control".into(),
             "-chardev".into(),
-            format!("socket,id=ser0,host={host},port={ser},server=off"),
+            match self.serial_file() {
+                Some(file) => {
+                    fs::write(&file, b"")?;
+                    format!("file,id=ser0,path={}", backend::win_path(&file)?)
+                }
+                None => format!("socket,id=ser0,host={host},port={ser},server=off"),
+            },
         ];
         cmd.extend(serial);
         cmd.extend(disks);
@@ -1294,7 +1321,7 @@ impl Vm {
                 )));
             }
             let serial_deadline = Instant::now() + Duration::from_secs(15);
-            loop {
+            while self.serial_file().is_none() {
                 match self.serial.accept(Duration::from_millis(100)) {
                     Ok(()) => break,
                     Err(e) => {
@@ -1375,9 +1402,20 @@ impl Vm {
         self.lock = Some(path);
         Ok(())
     }
+    /// Where a `serial_file` VM's serial goes: beside the staged media on windows-host (a path
+    /// both QEMU and this side can open), in the work dir natively.
+    pub fn serial_file(&self) -> Option<PathBuf> {
+        if !self.config.serial_file {
+            return None;
+        }
+        Some(match &self.staging {
+            Some(staging) if self.config.backend == "windows-host" => staging.join("serial.log"),
+            _ => self.config.work_dir.join("serial.log"),
+        })
+    }
     pub fn handles(&self) -> Result<Value> {
         Ok(
-            json!({"argv":read_json(&self.descriptor).ok().and_then(|v|v.get("argv").cloned()).unwrap_or_else(||json!([])),"qemu_pid":self.pid,"gdb_host":self.gdb_host,"gdb_port":self.gdb_port,"net_host":self.net_host,"win_uid":self.uid,"staging":self.staging,"live_log":self.config.live_log,"launch_timings":self.launch_timings,"boot_output":self.boot_output,"config":self.config,"network":self.network,"capture_plan":self.capture_plan,"admission":self.admission.as_ref().map(Admission::receipt)}),
+            json!({"serial_file":self.serial_file(),"argv":read_json(&self.descriptor).ok().and_then(|v|v.get("argv").cloned()).unwrap_or_else(||json!([])),"qemu_pid":self.pid,"gdb_host":self.gdb_host,"gdb_port":self.gdb_port,"net_host":self.net_host,"win_uid":self.uid,"staging":self.staging,"live_log":self.config.live_log,"launch_timings":self.launch_timings,"boot_output":self.boot_output,"config":self.config,"network":self.network,"capture_plan":self.capture_plan,"admission":self.admission.as_ref().map(Admission::receipt)}),
         )
     }
 
@@ -1671,6 +1709,31 @@ impl Vm {
                 self.diagnostic_hmp(&command)
             ));
         }
+        // amd64 kernel: which thread is on the CPU. KPCR.Prcb.CurrentThread is gs:[0x188]
+        // (ketypes.h); the KTHREAD's head (state, priority, wait fields, ApcState.Process)
+        // decodes offline against the build's layout. A spinning real-time thread that
+        // starves every other one leaves no serial trace, and the PC alone does not say
+        // whose it is.
+        if self.config.arch.starts_with("amd64") {
+            for (cpu, gs) in crate::verdict::cpu_gs_bases(&registers) {
+                let Ok(base) = u64::from_str_radix(&gs, 16) else { continue };
+                if base < 0xffff_8000_0000_0000 {
+                    continue; // a user GS: the vCPU was in user mode
+                }
+                let _ = self.qmp.hmp(&format!("cpu {cpu}"));
+                let body = self.diagnostic_hmp(&format!("x /1gx 0x{:x}", base + 0x188));
+                let thread = monitor_words(&body).first().copied().unwrap_or(0);
+                let dump = if thread == 0 {
+                    format!("<unreadable: {body}>")
+                } else {
+                    self.diagnostic_hmp(&format!("x /96gx 0x{thread:x}"))
+                };
+                let _ = self.qmp.hmp("cpu 0");
+                chunks.push(format!(
+                    "=== CPU#{cpu} current thread (KPCR 0x{base:x} +0x188) = 0x{thread:x} ===\n{dump}"
+                ));
+            }
+        }
         for (cpu, fp) in crate::verdict::cpu_fps(&registers) {
             chunks.push(format!(
                 "=== CPU#{cpu} frames (frame-pointer chain) ===\n{}",
@@ -1778,7 +1841,10 @@ impl Vm {
             // (batch 143+144, RUN_INTERRUPTED). Wait while the guardian is still making
             // progress; fail on silence, or at a hard cap well past its worst case.
             let start = Instant::now();
-            let mut last = (fs::metadata(&self.status).and_then(|m| m.modified()).ok(), start);
+            let mut last = (
+                fs::metadata(&self.status).and_then(|m| m.modified()).ok(),
+                start,
+            );
             loop {
                 if self.guardian.as_mut().unwrap().try_wait()?.is_some() {
                     break;
@@ -1789,7 +1855,8 @@ impl Vm {
                 }
                 let quiet = last.1.elapsed();
                 if start.elapsed() > Duration::from_secs(180)
-                    || (quiet > Duration::from_secs(45) && start.elapsed() > Duration::from_secs(45))
+                    || (quiet > Duration::from_secs(45)
+                        && start.elapsed() > Duration::from_secs(45))
                 {
                     let state = read_json(&self.status).unwrap_or(Value::Null);
                     return Err(Error::new(format!(
@@ -1841,7 +1908,12 @@ impl Vm {
         self.admission = None;
         result
     }
-    pub fn detach_for_debug(&mut self, owner_pid: u32, run_id: &str) -> Result<Value> {
+    pub fn detach_for_debug(
+        &mut self,
+        owner_pid: u32,
+        run_id: &str,
+        source: &str,
+    ) -> Result<Value> {
         if self.poll_exit()?.is_some() || self.pid.is_none() {
             return Err("cannot keep a VM whose QEMU has already exited".into());
         }
@@ -1869,7 +1941,10 @@ impl Vm {
             info["launcher_start_tick"] = json!(start);
             info["deadline"] = json!((now() + self.config.max_lifetime) as u64);
             info["run_id"] = json!(run_id);
-            info["source"] = json!("smoke --attach-on-fail");
+            info["source"] = json!(source);
+            if let Some(file) = self.serial_file() {
+                info["live_log"] = json!(file); // what `ps` shows as the run's WATCH path
+            }
             let new = old
                 .parent()
                 .unwrap()
@@ -2234,6 +2309,7 @@ impl VmManager {
             "vm_detach" => vm.detach_for_debug(
                 a["owner_pid"].as_u64().ok_or("missing debug owner")? as u32,
                 text("run_id")?,
+                a["source"].as_str().unwrap_or("smoke --attach-on-fail"),
             )?,
             _ => return Err(Error::new(format!("unknown VM operation {op}"))),
         })

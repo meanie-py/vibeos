@@ -1642,12 +1642,19 @@ add_custom_target(rust_foo DEPENDS ${{LIB}})
     struct Temp(PathBuf);
     impl Temp {
         fn new() -> Self {
+            // Tests run as threads of one process, and two of them read the same clock
+            // instant often enough to share a fixture dir and swap each other's findings
+            // (check-tooling 20261108-032455-GMPCgZ). The counter makes the name unique.
+            static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let id = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            let p = std::env::temp_dir()
-                .join(format!("vibeos-cmake-model-{}-{id}", std::process::id()));
+            let p = std::env::temp_dir().join(format!(
+                "vibeos-cmake-model-{}-{id}-{seq}",
+                std::process::id()
+            ));
             fs::create_dir_all(&p).unwrap();
             Self(p)
         }
