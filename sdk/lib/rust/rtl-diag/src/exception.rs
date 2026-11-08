@@ -14,31 +14,91 @@ extern "system" {
 pub static mut RtlpUnhandledExceptionFilter: PRTLP_UNHANDLED_EXCEPTION_FILTER = None;
 
 // exception.c guards this `#if !defined(_M_IX86) && !defined(_M_AMD64)`:
-// i386 + amd64 provide RtlRaiseException in arch asm/except.c; Rust = arm64.
+// i386 + amd64 provide RtlRaiseException in arch asm/except.c; arm64 is this asm.
+//
+// The dispatcher must see the CALLER's state, as amd64's except_asm.S hands it: Pc and
+// Lr = the return address, Sp = the caller's sp, and every nonvolatile register as the
+// caller holds it. The old Rust body captured mid-function, so a handler that returned
+// EXCEPTION_CONTINUE_EXECUTION resumed INSIDE RtlRaiseException, which dispatched again,
+// forever; ExceptionAddress was NULL too. In asm the capture comes before any
+// nonvolatile register is touched (x29 is never moved), so only Pc/Lr/Sp need patching,
+// and the .seh_* directives give the unwinder this frame's real shape.
+//
+// ContextFlags is CONTROL|INTEGER: RtlCaptureContext saves no FP state, and claiming
+// CONTEXT_FULL over a zeroed FP area made a continue zero d8-d15.
 #[cfg(target_arch = "aarch64")]
-#[no_mangle]
-pub unsafe extern "system" fn RtlRaiseException(ExceptionRecord: PEXCEPTION_RECORD) {
-    let mut Context: CONTEXT = core::mem::zeroed();
-    let Status: NTSTATUS;
-
-    RtlCaptureContext(&mut Context);
-
-    (*ExceptionRecord).ExceptionAddress = core::ptr::null_mut(); // _ReturnAddress() N/A in stable Rust (matches ntoskrnl-rust)
-
-    Context.ContextFlags = CONTEXT_FULL;
-
-    if RtlpCheckForActiveDebugger() != 0 {
-        Status = ZwRaiseException(ExceptionRecord, &mut Context, 1u8);
-    } else {
-        if RtlDispatchException(ExceptionRecord, &mut Context) == 0 {
-            Status = ZwRaiseException(ExceptionRecord, &mut Context, 0u8);
-        } else {
-            Status = ZwContinue(&mut Context, 0u8);
-        }
-    }
-
-    RtlRaiseStatus(Status);
-}
+const RAISE_CONTEXT_FLAGS: u32 = 0x0040_0003; // CONTEXT_ARM64 | CONTROL | INTEGER
+#[cfg(target_arch = "aarch64")]
+core::arch::global_asm!(
+    ".globl RtlRaiseException",
+    ".p2align 2",
+    ".seh_proc RtlRaiseException",
+    "RtlRaiseException:",
+    // Frame: [sp+ctx]: x29, x30, ExceptionRecord, pad; below it the CONTEXT.
+    "    stp x29, x30, [sp, #-32]!",
+    "    .seh_save_fplr_x 32",
+    "    sub sp, sp, #{ctx}",
+    "    .seh_stackalloc {ctx}",
+    "    .seh_endprologue",
+    "    str x0, [sp, #({ctx} + 16)]",
+    "    mov x0, sp",
+    "    bl {capture}",
+    // Caller's view: Pc = Lr = return address, Sp = sp on entry.
+    "    ldr x1, [sp, #({ctx} + 8)]",
+    "    str x1, [sp, #{off_lr}]",
+    "    str x1, [sp, #{off_pc}]",
+    "    add x2, sp, #({ctx} + 32)",
+    "    str x2, [sp, #{off_sp}]",
+    "    movz w3, #({flags} >> 16), lsl #16",
+    "    movk w3, #({flags} & 0xffff)",
+    "    str w3, [sp, #{off_flags}]",
+    "    ldr x0, [sp, #({ctx} + 16)]",
+    "    str x1, [x0, #{off_addr}]",
+    // if (RtlpCheckForActiveDebugger()) ZwRaiseException(rec, ctx, TRUE)
+    "    bl {debugger}",
+    "    tst w0, #0xff",
+    "    b.ne 2f",
+    // else if (RtlDispatchException(rec, ctx)) ZwContinue(ctx, FALSE)
+    "    ldr x0, [sp, #({ctx} + 16)]",
+    "    mov x1, sp",
+    "    bl {dispatch}",
+    "    tst w0, #0xff",
+    "    b.eq 3f",
+    "    mov x0, sp",
+    "    mov w1, #0",
+    "    bl {cont}",
+    "    b 4f",
+    "2:  mov w2, #1",
+    "    b 5f",
+    "3:  mov w2, #0",
+    "5:  ldr x0, [sp, #({ctx} + 16)]",
+    "    mov x1, sp",
+    "    bl {raise}",
+    // Only a failed continue/raise gets here: raise its status (the C's tail).
+    "4:  bl {status}",
+    "    brk #0xf000",
+    ".seh_endproc",
+    ctx = const core::mem::size_of::<CONTEXT>(),
+    off_flags = const core::mem::offset_of!(CONTEXT, ContextFlags),
+    off_lr = const core::mem::offset_of!(CONTEXT, __bindgen_anon_1) + 30 * 8,
+    off_sp = const core::mem::offset_of!(CONTEXT, Sp),
+    off_pc = const core::mem::offset_of!(CONTEXT, Pc),
+    off_addr = const core::mem::offset_of!(EXCEPTION_RECORD, ExceptionAddress),
+    flags = const RAISE_CONTEXT_FLAGS,
+    capture = sym RtlCaptureContext,
+    debugger = sym RtlpCheckForActiveDebugger,
+    dispatch = sym RtlDispatchException,
+    cont = sym ZwContinue,
+    raise = sym ZwRaiseException,
+    status = sym RtlRaiseStatus,
+);
+// The X array starts at the anonymous union and X30 is its 31st slot; the asm's
+// offsets lean on that, so pin it.
+#[cfg(target_arch = "aarch64")]
+const _: () = assert!(
+    core::mem::offset_of!(CONTEXT, Sp) == core::mem::offset_of!(CONTEXT, __bindgen_anon_1) + 31 * 8
+        && core::mem::size_of::<CONTEXT>() % 16 == 0
+);
 
 // exception.c guards this `#if !defined(_M_IX86)`: i386 provides RtlRaiseStatus
 // in i386/except.c. Rust = amd64 + arm64.
