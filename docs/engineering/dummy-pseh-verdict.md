@@ -280,8 +280,8 @@ What already landed, which the plan below predates:
   freed entry and faulted; it now retries when the header moved, and arm64 does the guarded read
   outside its LDAXP/STLXP window. `rtl-strings` guards only under `kernel`: the boot loader and the
   host difftest link no SEH trampoline. Not ported: DbgPrint's `DBG_PRINTEXCEPTION_C` raise to a
-  user-mode debugger, since arm64's `RtlRaiseException` resumes a continued exception at its own
-  `RtlCaptureContext` and would raise forever.
+  user-mode debugger; its arm64 blocker (`RtlRaiseException` resuming a continued exception
+  inside itself) was fixed 2026-11-08, so it is owed, not blocked.
 - The lint's function parser missed generic helpers whose bounds hold `->`
   (`fn f<F: FnOnce() -> T>`); fixed in `twins.rs`. Caveat: a call to ANY catching function
   credits the caller, so making a callee catch can clear its caller's row falsely —

@@ -917,8 +917,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   runs the continue handlers too, as the C does. Graded by `tools/payloads/vehprobe` (fault,
   order, continue, remove, continued raise): all PASS on i386 and amd64
   (`20261105-232703-488lty8l`, `20261105-232853-gqxpxny4`); arm64 passes the four fault cases
-  and HANGs the raise, the open arm64 `RtlRaiseException` bug below
-  (`20261105-233150-dbuff_ay`). wow64's `Wow64pVeh` now runs on amd64; the amd64 ladder is
+  and HANGed the raise, the arm64 `RtlRaiseException` bug below
+  (`20261105-233150-dbuff_ay`; fixed 2026-11-08, raise PASS on arm64 in `20261108-143038-nfvwfE`). wow64's `Wow64pVeh` now runs on amd64; the amd64 ladder is
   13/13 PASS on it (`20261105-233955-5l_obhz3`), and the arm64 FEX ladder 13/13 + x86-64
   11/11 (`20261105-234852-0qxo29e9`).
 - **One user-mode `ReleaseSemaphore` past the maximum bugchecked the kernel — FIXED 2026-11-06
@@ -1463,26 +1463,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `usercall.rs`) checked TEB64's GDI batch count, so a 32-bit guest's batched PatBlt was still
   unflushed when GetPixel ran (the C `KiWow64GdiBatchCount` fix was in the cohab-flipped
   `trap.c`). gui32 is graded on its full pass (`0x600D`) on both hosts now.
-- **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
-  lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
-  captured mid-body of itself, so `ZwContinue` after a vectored handler's
-  `EXCEPTION_CONTINUE_EXECUTION` resumes inside `RtlRaiseException` and dispatches again,
-  forever (found when a VEH probe hung an x86-64 guest process's thread for 30 s; amd64's asm
-  version rewrites Rip/Rsp to the caller and does not have it). `ExceptionAddress` is also NULL.
-  Masked today because, under DUMMY_PSEH, nothing continues a raise. **Two fixes were tried and
-  both reverted**, because each made smss's `seh_poc_user.c` probe 1 (a raise caught by
-  `__except`) print `CORRUPT x21: 00007FFFFFFEF000 -> 000000000012FAE8` on an otherwise green
-  boot: (1) one `RtlVirtualUnwind` of our own frame after the capture; (2) an asm
-  `RtlRaiseException` that captures before touching any nonvolatile register and patches
-  fp/lr/sp/pc to the caller's, as amd64 does (run `20261006-021810-kpujl93s-smoke-arm64`). Since
-  (2) hands the dispatcher exactly the caller's state, the x21 corruption is downstream:
-  probably the arm64 `RtlUnwindEx` / `__C_specific_handler` path when the dispatch context's
-  first frame is the `__try` function itself rather than `RtlRaiseException` (the old shape
-  always had one extra frame to unwind first). Start there, with (2) and a probe that continues
-  a raise (`fired == 1 && returned`). That probe now exists: `tools/payloads/vehprobe`'s `raise`
-  case, which PASSes on i386 and amd64 and on arm64 reports `raise HANG (... trace
-  'FFFFFFFFFFFFFFF')`, the handler re-entered until the timeout (`20261105-233150-dbuff_ay`).
-  It is excluded from arm64's verdict only until this is fixed; drop that `#if` with the fix.
+- **arm64: a software raise that a handler CONTINUES never returns — FIXED 2026-11-08.** The
+  arm64 `RtlRaiseException` (rtl-diag `exception.rs`) handed the dispatcher a context captured
+  mid-body of itself, so `ZwContinue` after `EXCEPTION_CONTINUE_EXECUTION` resumed inside it and
+  dispatched again, forever, with `ExceptionAddress` NULL. It is now a `global_asm!` routine like
+  amd64's except_asm.S: capture before any nonvolatile register is touched, then Pc = Lr = the
+  return address and Sp = the caller's. The two reverted attempts (2026-10-06) tripped smss's
+  `seh_poc_user.c` probe 1 with `CORRUPT x21`; this one carries `.seh_save_fplr_x` /
+  `.seh_stackalloc` unwind codes for its own frame, and probe 1 passes clean, so the earlier
+  asm's missing unwind data is the likely culprit (not re-proven: that code was never
+  committed). `vehprobe`'s raise case now returns on arm64 and is graded there
+  (`20261108-143038-nfvwfE`). Also: ContextFlags is CONTROL|INTEGER; the old `CONTEXT_FULL` over a
+  zeroed FP area made a continue zero d8-d15.
 - **arm64: synchronous IRP completions ran late, into dead stack frames** (FIXED 2026-10-06).
   The HAL drained APCs under a per-CPU flag that stayed set across a thread switch inside a
   normal kernel APC, so other threads' `IopCompleteRequest` APCs waited for a later IRQL drop

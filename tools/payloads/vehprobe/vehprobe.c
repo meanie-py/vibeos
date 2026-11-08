@@ -15,9 +15,9 @@
  *   raise    RaiseException returns when a handler continues it
  *
  * Each case runs on its own thread with a timeout, so a wedged dispatch is a HANG row rather
- * than a wedged probe. The raise case is known to hang on arm64 (roadmap: "arm64: a software
- * raise that a handler CONTINUES never returns"), so arm64 reports it but leaves it out of
- * the verdict until that is fixed.
+ * than a wedged probe. The raise case is graded on every arch: arm64's RtlRaiseException
+ * used to hand the dispatcher a context captured inside itself, so a continued raise
+ * re-dispatched forever (fixed 2026-11-08, rtl-diag exception.rs).
  * Verdict: "[VEHPROBE] done VERDICT=PASS". */
 #define _WIN32_WINNT 0x0601
 #include <windows.h>
@@ -240,20 +240,13 @@ static int run_case(const char *name, case_fn fn)
 
 int main(void)
 {
-    int pass = 1, r;
+    int pass = 1;
     SAY("begin\n");
     pass &= run_case("fault", case_fault) == 1;
     pass &= run_case("order", case_order) == 1;
     pass &= run_case("continue", case_continue) == 1;
     pass &= run_case("remove", case_remove) == 1;
-    r = run_case("raise", case_raise);
-#if defined(__aarch64__) || defined(_M_ARM64)
-    if (r != 1)
-        SAY("raise: known open on arm64 (RtlRaiseException hands the dispatcher its own "
-            "context), not graded\n");
-#else
-    pass &= r == 1;
-#endif
+    pass &= run_case("raise", case_raise) == 1;
     SAY("done VERDICT=%s\n", pass ? "PASS" : "FAIL");
     return pass ? 0 : 1;
 }

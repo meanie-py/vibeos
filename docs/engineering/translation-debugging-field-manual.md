@@ -14092,8 +14092,12 @@ never shows it.
   returned 0 frames (RtlStackKM 13/27, user-mode RtlStack 16/24, in rtlk and ntdll alike). Two
   more x86-isms rode along: the return address was read as a 32-bit `ULONG`, and the kernel
   walk's "stop at user mode" test was `Eip & 0x80000000`; on 64-bit it is the top bit.
-- **arm64 user-mode SEH never delivers first-chance** — `RtlRaiseException` is unimplemented for
-  arm64 (OPEN; needs a `#[naked]` capture stub).
+- **A raise stub must hand the dispatcher its CALLER's context** — arm64's `RtlRaiseException`
+  captured mid-body, so a continued raise resumed inside itself and re-raised forever. Fix
+  (2026-11-08): capture before touching a nonvolatile register, patch Pc/Lr/Sp to the caller's,
+  and give a hand-written asm frame real `.seh_*` unwind codes; without them the unwinder
+  mis-steps through it and a callee-saved register comes back wrong at the `__except` (the
+  `CORRUPT x21` that sank two earlier attempts).
 
 ### arm64 raised every refused page fault as ACCESS_VIOLATION
 **Symptom.** arm64 user-mode RtlException got `0xc0000005` where it expects
@@ -17190,7 +17194,7 @@ authoritative registry.
 |---|---|
 | **`-smp` `0xF4` boot-phase flake** (~2/20 soak), described as §9.56-class | Separate from the ready-list tear, which is **fixed** — see `active-lanes/smp-bringup-quest.md`. |
 | **arm64 physical-page reuse** — a frame backing a still-mapped user page is freed and re-handed-out `[§9.98]` | **FIXED** (`MiPurgeStaleUserPtes`, 2026-08-01): recycled FreeLDR identity PTEs in user page tables. Absent in 639 rounds + a probe-verified sweep (2026-10-03). |
-| **arm64 user-mode SEH first-chance** — `RtlRaiseException` unimplemented | Needs a `#[naked]` capture stub. |
+| **arm64 user-mode SEH first-chance** — `RtlRaiseException` resumed a continue inside itself | **FIXED** 2026-11-08: SEH-annotated `global_asm!` stub; vehprobe raise graded on arm64. |
 | **`ExHardError`** pool illegal-instruction; **`MmSection`** in-kernel wedge `[§9.92]` | Distinct from the arm64 kernel-SEH cluster; both open. |
 | **arm64 exception-dispatch recursion** under a dropped probe `[§9.104]` | Layer 1 fixed; layer 2 is the deep root. |
 | **WoW64 async IOSB** — the host IOSB is a stack temporary `[§9.62]` | Proper fix is kernel-side and owed. |
