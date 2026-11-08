@@ -64,20 +64,32 @@ fn main() {
 
     // The source list, parsed rather than restated.
     let cmake = fs::read_to_string(mbedtls_dir.join("CMakeLists.txt")).unwrap();
-    let block = {
-        let s = cmake.find("list(APPEND SOURCE").expect("mbedtls CMakeLists lost its SOURCE list");
-        let e = cmake[s..].find(')').unwrap() + s;
-        &cmake[s..e]
+    // Two shapes: the cmake-linked `list(APPEND SOURCE` block (one file per line), and the
+    // cargo cell's `add_library(mbedtls_shims OBJECT a.c b.c ...)` (one line), which the
+    // cells conversion (cells-exports) moved the list into.
+    let block = if let Some(s) = cmake.find("list(APPEND SOURCE") {
+        &cmake[s + "list(APPEND SOURCE".len()..cmake[s..].find(')').unwrap() + s]
+    } else {
+        let s = cmake
+            .find("add_library(mbedtls_shims OBJECT")
+            .expect("mbedtls CMakeLists lost its source list (neither list(APPEND SOURCE nor add_library(mbedtls_shims OBJECT)");
+        &cmake[s + "add_library(mbedtls_shims OBJECT".len()..cmake[s..].find(')').unwrap() + s]
     };
     let mut mbedtls_sources: Vec<PathBuf> = Vec::new();
-    for line in block.lines().skip(1) {
+    for line in block.lines() {
         let line = line.trim();
-        // `#` is upstream-disabled, `${...}` are the two ReactOS adapters which are
-        // Win32-only (strsafe, QueryPerformanceCounter) and have no host meaning.
-        if line.starts_with('#') || line.contains("${") || !line.ends_with(".c") {
+        // `#` is upstream-disabled.
+        if line.starts_with('#') {
             continue;
         }
-        mbedtls_sources.push(mbedtls_dir.join(line));
+        for tok in line.split_whitespace() {
+            // `${...}` are the two ReactOS adapters which are Win32-only (strsafe,
+            // QueryPerformanceCounter) and have no host meaning.
+            if tok.contains("${") || !tok.ends_with(".c") {
+                continue;
+            }
+            mbedtls_sources.push(mbedtls_dir.join(tok));
+        }
     }
     assert!(
         mbedtls_sources.len() > 40,
