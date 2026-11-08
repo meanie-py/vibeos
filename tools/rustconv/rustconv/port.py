@@ -3449,9 +3449,12 @@ _STR_LIT = r'"(?:[^"\\\n]|\\.)*"'
 _ADJACENT_STRINGS = re.compile(rf"(?<![\w#'])({_STR_LIT})(\s+)({_STR_LIT})")
 
 
-# Both spellings the model writes: `TRACE_(fps, ..)` and C's own curried `WARN_(d3d_perf)(..)`.
+# Every spelling the model writes: `TRACE_(fps, ..)`, C's own curried `WARN_(d3d_perf)(..)`, and
+# the channel slipped in front of the plain macro's format, `WARN!(d3d_perf, "..")` -- a format is
+# always a string literal, so a bare lowercase name before one can only be the channel.
 _NAMED_CHANNEL = re.compile(
-    r"\b(ERR|WARN|FIXME|TRACE)_!?\(\s*([A-Za-z_]\w*)\s*(?:,|\)\s*\()"
+    r"\b(ERR|WARN|FIXME|TRACE)(?:_!?\(\s*([A-Za-z_]\w*)\s*(?:,|\)\s*\()"
+    r"|!\(\s*([a-z_][a-z0-9_]*)\s*,(?=\s*(?:b|c)?\"))"
 )
 
 
@@ -3467,7 +3470,7 @@ def _named_channel_debug(state: dict) -> int:
     for path in sorted(_stem_sources(state)):
         text = path.read_text()
         new, k = _NAMED_CHANNEL.subn(
-            lambda m: f"WINE_{m.group(1)}_!(__wine_dbch_{m.group(2)},", text
+            lambda m: f"WINE_{m.group(1)}_!(__wine_dbch_{m.group(2) or m.group(3)},", text
         )
         if k:
             path.write_text(new)

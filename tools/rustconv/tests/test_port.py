@@ -2193,12 +2193,15 @@ def test_named_channel_debug_calls_take_the_channel_static(tmp_path, monkeypatch
     (tmp_path / "a.rs").write_text(
         'ERR_!(winediag, "no 3d\\n");\nTRACE_(fps, "%p\\n", d);\nTRACE!("keep\\n");\n'
         'WARN_(d3d_perf)(\n    "slow\\n");\n'
+        'WARN!(\n    d3d_perf,\n    "BO %p\\n", bo);\nWARN!(fmt, x);\n'
     )
-    assert port._named_channel_debug({}) == 3
+    assert port._named_channel_debug({}) == 4
     out = (tmp_path / "a.rs").read_text()
     assert 'WINE_ERR_!(__wine_dbch_winediag, "no 3d\\n");' in out
     assert 'WINE_TRACE_!(__wine_dbch_fps, "%p\\n", d);' in out and 'TRACE!("keep\\n")' in out
     assert 'WINE_WARN_!(__wine_dbch_d3d_perf,\n    "slow\\n");' in out
+    assert 'WINE_WARN_!(__wine_dbch_d3d_perf,\n    "BO %p\\n", bo);' in out
+    assert "WARN!(fmt, x);" in out  # a non-literal format is not a channel
 
 
 def test_a_parenthesised_c_or_case_becomes_a_value_guard(tmp_path, monkeypatch):
