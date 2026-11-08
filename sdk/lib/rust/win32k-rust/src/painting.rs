@@ -1665,11 +1665,38 @@ unsafe fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC {
         ERR!("BP: Another thread invalidated this window\n");
     }
 
-    (*Ps).hdc = UserGetDCEx(
-        Window,
-        (*Window).hrgnUpdate as _ ,
-        DCX_INTERSECTRGN | DCX_USESTYLE,
-    );
+    // A CS_PARENTDC child whose whole client area needs painting is not
+    // clipped to its update region: the DC keeps the parent's visible region
+    // (user32:win test_csparentdc; GetClipBox reports the parent's client) and
+    // rcPaint is still just the child's client. A partial update clips as usual.
+    let mut parentdc_whole = false;
+    if (*(*Window).pcls).style & CS_PARENTDC != 0
+        && !(*Window).hrgnUpdate.is_null()
+        && (*Window).hrgnUpdate != HRGN_WINDOW
+    {
+        let rgn = REGION_LockRgn((*Window).hrgnUpdate);
+        if !rgn.is_null() {
+            let mut box_: RECTL = core::mem::zeroed();
+            let cplx = crate::region::REGION_GetRgnBox(rgn, &mut box_);
+            REGION_UnlockRgn(rgn);
+            let rc = (*Window).rcClient;
+            parentdc_whole = cplx == SIMPLEREGION as INT
+                && box_.left <= rc.left
+                && box_.top <= rc.top
+                && box_.right >= rc.right
+                && box_.bottom >= rc.bottom;
+        }
+    }
+
+    (*Ps).hdc = if parentdc_whole {
+        UserGetDCEx(Window, core::ptr::null_mut(), DCX_USESTYLE)
+    } else {
+        UserGetDCEx(
+            Window,
+            (*Window).hrgnUpdate as _ ,
+            DCX_INTERSECTRGN | DCX_USESTYLE,
+        )
+    };
     if (*Ps).hdc.is_null() {
         return core::ptr::null_mut();
     }
@@ -1682,8 +1709,13 @@ unsafe fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC {
 
     if !(*Window).hrgnUpdate.is_null() {
         MsqDecPaintCountQueue(head_pti(Window));
-        IntGdiSetRegionOwner((*Window).hrgnUpdate, GDI_OBJ_HMGR_POWNED as _);
-        /* The region is part of the dc now and belongs to the process! */
+        if parentdc_whole {
+            // Not handed to the DC, so it is still ours to free.
+            GreDeleteObject((*Window).hrgnUpdate as _ );
+        } else {
+            IntGdiSetRegionOwner((*Window).hrgnUpdate, GDI_OBJ_HMGR_POWNED as _);
+            /* The region is part of the dc now and belongs to the process! */
+        }
         (*Window).hrgnUpdate = core::ptr::null_mut();
     } else {
         if (*Window).state & WNDS_INTERNALPAINT != 0 {
@@ -1694,6 +1726,13 @@ unsafe fn IntBeginPaint(Window: PWND, Ps: PPAINTSTRUCT) -> HDC {
     type_ = GdiGetClipBox((*Ps).hdc, core::ptr::addr_of_mut!((*Ps).rcPaint) as *mut _);
 
     IntGetClientRect(Window, core::ptr::addr_of_mut!(Rect) as *mut _);
+    if parentdc_whole {
+        RECTL_bIntersectRect(
+            core::ptr::addr_of_mut!((*Ps).rcPaint) as *mut _,
+            core::ptr::addr_of_mut!((*Ps).rcPaint) as *mut _,
+            core::ptr::addr_of_mut!(Rect) as *mut _,
+        );
+    }
 
     // Diagnostic (arm64 black-desktop hunt): the desktop window's erase
     // decision inputs — Erase flag (was WNDS_SENDERASEBACKGROUND set?) and
