@@ -437,6 +437,16 @@ worked; `CreateFreeLoaderIniForReactOS` passed `BootStoreHandle` itself, its NUL
 and the compiler had nothing to object to: both are `*mut c_void`. **Fix:** declare the
 out-parameter as `*mut *mut c_void` (`*mut PVOID`), so a by-value argument is a type error.
 Then drop the `.cast()` at the callers that were right.
+### `addr_of!` of a field that is a POINTER, cast to the pointee — the string is the pointer's bytes
+**Symptom:** a copied string comes out as 4–8 bytes of garbage (d3d8/d3d9's adapter description
+read `öα#v` where the C says `WineD3D DirectDraw Emulation`). **Cause:** the same field name is an
+array in one struct and a `const char *` in another (`wined3d_driver_info.description[128]` vs
+`wined3d_gpu_description.description`). The model wrote `addr_of!((*gpu_desc).description) as
+*const c_char` for both, which is right for the array and copies the pointer itself for the
+pointer. `*const *const c_char as *const c_char` compiles without a word. **Fix:** pass the
+field's value. To audit a crate, intersect every `addr_of!((*p).f) as *T` with the fields its
+bindgen island declares as `*`. On d3dwine only 1 of 70 hits was wrong; the others were
+`wined3d_array_reserve` out-params and embedded arrays.
 ### A typedef that is ALREADY a pointer, given a second star
 The star lives in a header, so the model sees `_locale_t locale` as a bare type name and adds
 the indirection the parameter appears to lack — `locale: *mut _locale_t`, i.e. a
@@ -6305,6 +6315,19 @@ already been met the note is describing a bug, not a plan.
   hand-write). Every other `.partial` in the bank belongs to a call that was retried
   successfully, which is the case that makes the rule look unnecessary right up until it isn't.
 
+### A `!` widened over a trailing `&&` operand — wined3d's CS thread slept with the doorbell off
+**Symptom:** `IDirect3D9::CreateDevice` (GL) hung forever on amd64 and arm64. The main thread was
+in `NtDelayExecution` (`wined3d_cs_finish`), the CS thread in `NtWaitForSingleObject`, and the
+trace said `Queuing op` with no `Executing` after it. Fast paths (`logic`) passed. A slow main
+thread made it hang anywhere, even at teardown. **Cause:** the C
+`if (!(empty(DEFAULT) && empty(MAP)) && InterlockedCompareExchange(&waiting, FALSE, TRUE)) return;`
+came back as `if !((empty && empty) && CAS != 0) { return; }`. With an empty queue the CAS now
+cleared `waiting_for_event` and the thread then slept, so no submit ever called `SetEvent`.
+Reading the source missed it twice. The disassembly showed it at once: the CAS ran only on the
+empty-queue path. **Fix:** close the `!(` around the emptiness test alone. To audit a crate, list
+every `if !(( … ) && …)` / `|| …`, find where the negation's paren closes, and compare against
+the C. On d3dwine, 10 such sites were equivalent `continue` → `if !(…) {…}` rewrites and only
+this one was wrong.
 ### A function whose body straddles a preprocessor conditional vanishes from the worklist
 
 **Symptom.** The translation calls a function it never defined; the only signal is rustc's

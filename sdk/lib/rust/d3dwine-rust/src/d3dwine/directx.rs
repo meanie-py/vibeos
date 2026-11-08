@@ -4676,7 +4676,9 @@ pub unsafe extern "C" fn wined3d_driver_info_init(driver_info: *mut wined3d_driv
     (*driver_info).device = (*gpu_desc).device;
     wined3d_copy_name(
         core::ptr::addr_of_mut!((*driver_info).description) as *mut ::core::ffi::c_char,
-        core::ptr::addr_of!((*gpu_desc).description) as *const ::core::ffi::c_char,
+        // `description` is a `const char *` here (an array only in driver_info):
+        // pass the pointer, not its address, or the copy reads the pointer's bytes.
+        (*gpu_desc).description,
         ARRAY_SIZE!((*driver_info).description) as ::core::ffi::c_uint,
     );
     (*driver_info).vram_bytes = if vram_bytes != 0 {

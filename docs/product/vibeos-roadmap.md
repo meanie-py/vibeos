@@ -666,6 +666,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `NtCreateSection`/`LdrLoadDll` with the status. Repro: drop `vm_memory: 1536M` from
   `tools/payloads/modrun/payload.yaml`, `MODRUN_SUITES=d3d8`, boot amd64. Artifact:
   `/tmp/vibeos-cli/20261105-195149-61405khw-smoke-amd64`. modrun now boots with 1.5G.
+- **The modrun grader can lose a case's single `[MODRUN] exit` line (open, found 2026-11-08).**
+  The smoke failed `d3d8.logic: rust: never finished (no exit line)`, but QEMU's serial log for
+  the same run has the line intact (`[MODRUN] exit d3d8.logic rust rc=0x00000000 ms=690
+  records=74`). `modrun.py grade` on that file passes all 8 d3d cases. The harness grades the
+  text it built from live `payload_read` chunks (`tools/vibeos-test/src/payload.rs` `drain`), not
+  that file, so the live stream dropped the line. Records go out twice and get checksums against
+  exactly this loss; the exit line goes out once. Fix: have `modrun.c` send the exit line twice
+  (`parse` already keeps the last copy per key), or grade from the durable serial file.
+  Artifact: `/tmp/vibeos-cli/20261108-121724-jbjnb78t-smoke-arm64`.
 - **setupapi file-queue copies failed on the live boot, and a NULL target name went to the
   wrong file (FIXED 2026-11-01 in setupapi-rust; the C has all three bugs).** Measured with the
   modrun setupapi probe: `%TEMP%` = `X:\reactos\TEMP` EXISTS on the x86 live boot, but `X:` is
