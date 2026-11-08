@@ -580,6 +580,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bcryptprimitives-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "beep-cargo"
 version = "0.1.0"
 dependencies = [
@@ -960,6 +968,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "certmgr-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "certmgr-rust"
 version = "0.1.0"
 dependencies = [
@@ -1113,6 +1130,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "cleanmgr-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -2331,6 +2356,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "desk-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "desk-rust"
 version = "0.1.0"
 dependencies = [
@@ -2467,6 +2500,14 @@ dependencies = [
  "strsafe-rust",
  "win32macros-rust",
  "winelist-rust",
+]
+
+[[package]]
+name = "dinput8-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -2762,6 +2803,14 @@ dependencies = [
  "strsafe-rust",
  "win32macros-rust",
  "winelist-rust",
+]
+
+[[package]]
+name = "dwmapi-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -4103,6 +4152,14 @@ dependencies = [
 [[package]]
 name = "interlck"
 version = "0.1.0"
+
+[[package]]
+name = "intl-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
 
 [[package]]
 name = "intl-rust"
@@ -6042,6 +6099,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ncrypt-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "nddeapi-cargo"
 version = "0.1.0"
 dependencies = [
@@ -6210,6 +6275,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "netkvm-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]
@@ -9280,6 +9353,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "sysdm-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "sysdm-rust"
 version = "0.1.0"
 dependencies = [
@@ -9427,6 +9508,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tcpsvcs-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "tcpsvcs-rust"
 version = "0.1.0"
 dependencies = [
@@ -9492,6 +9581,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "telnetd-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
 ]
 
 [[package]]
@@ -10097,6 +10194,7 @@ dependencies = [
 name = "user32-rust"
 version = "0.1.0"
 dependencies = [
+ "ntdll-sys",
  "panic-common",
  "win32k-sys",
  "win32macros-rust",
@@ -11057,6 +11155,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "wlansvc-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]

@@ -1116,6 +1116,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # `x < 0 as DWORD`: C's FAILED() on an HRESULT kept in a DWORD, translated without the
+    # signed cast, so the test is constant and the failure path never runs. shlwapi's
+    # UrlGetPartA shipped it (82 Wine url-suite failures the C does not have); rustc's
+    # unused_comparisons misses it because the cast hides the literal. Gated at zero.
+    suz = repo / "tools" / "scan_unsigned_vs_zero.py"
+    specs.append(
+        (
+            "scan_unsigned_vs_zero",
+            [py, str(suz), "--lint"] if suz.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # `V_DISPATCH!(v) as *mut *mut c_void` for the C's `(void**)&V_DISPATCH(v)`: the VARIANT
     # accessor's VALUE passed as an out-pointer. oleacc's Client_EnumVARIANT_Next corrupted
     # the heap that way (the callee stored its interface through garbage). Gated at zero.

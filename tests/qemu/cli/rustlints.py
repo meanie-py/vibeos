@@ -114,6 +114,7 @@ PORTED = frozenset(
         "scan_flag_word_raw_hex",
         "scan_bugcheck_codes",
         "scan_byte_step_one",
+        "scan_unsigned_vs_zero",
         "scan_variant_outptr",
         "scan_inert_crate_allow",
         "scan_kernel_feature_mode",
