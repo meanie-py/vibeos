@@ -410,3 +410,32 @@ def test_extern_only_names_and_their_invented_definitions_are_dropped(tmp_path):
     assert "#[no_mangle]" not in out, "an orphaned attribute would bind to the next item"
     assert "pub static mut Owned: DWORD = 0;" in out
     assert "    pub static mut hInstance: HINSTANCE;" in out, "an extern block is not a definition"
+
+
+def test_a_body_split_by_a_dead_arm_still_parses(tmp_path):
+    """shlwapi path.c: two `if (` heads sharing one body across `#ifndef __REACTOS__ .. #else`
+    were a top-level ERROR, and every file-scope check was skipped. The fallback parse takes
+    the arms the function catalog takes; a static only the dead arm declares is not compiled."""
+    c = tmp_path / "t.c"
+    c.write_text(
+        "static const int table[] = { 1, 2 };\n"
+        "#ifndef __REACTOS__\n"
+        "static int wine_only;\n"
+        "#endif\n"
+        "int f(int a)\n"
+        "{\n"
+        "#ifndef __REACTOS__\n"
+        "    if (a & 0x40)\n"
+        "#else\n"
+        "    if (a & 0x80)\n"
+        "#endif\n"
+        "    {\n"
+        "        return 1;\n"
+        "    }\n"
+        "    return 0;\n"
+        "}\n"
+    )
+    findings = audit_preamble(c, "// nothing")
+    assert not any("INCOMPLETE" in f for f in findings)
+    assert any("table" in f for f in findings)
+    assert not any("wine_only" in f for f in findings)

@@ -1619,6 +1619,10 @@ impl Linker {
                         link_arg!(self, "{}", a.display());
                         println!("cargo:rerun-if-changed={}", a.display());
                     }
+                } else if item.starts_with("-Wl,") {
+                    // A linker flag in cmake's link order, kept in place: cdrom links its Rust
+                    // body between -Wl,--whole-archive and -Wl,--no-whole-archive.
+                    link_arg!(self, "{}", item);
                 } else if let Some(base) = item.strip_prefix("import:") {
                     let lib = self.import_libs.iter().find(|l| l.2 == base);
                     let lib = lib.unwrap_or_else(|| panic!("link_order names import:{base}, which no import_lib declares"));
@@ -2630,6 +2634,8 @@ impl Linker {
             "inflib_rust" => self.engine_crate("inflib-rust", &[], true),
             "cryptlib_rust" => self.engine_crate("cryptlib-rust", &[], true),
             "sptilib_rust" => self.engine_crate("sptilib-rust", &[], true),
+            // sdk/lib/drivers/arbiter (pcix links it; ntoskrnl builds it with rust_lib).
+            "arbiter_rust" => self.engine_crate("arbiter-rust", &[], true),
             "ntoskrnl_vista_rust" => self.engine_crate("ntoskrnl_vista-rust", &[], true),
             "ntoskrnl_vista_utf8" => self.engine_crate("utf8", &[], true),
             // libcntpr.cmake: `float` on amd64/arm64 only; the user-target build adds

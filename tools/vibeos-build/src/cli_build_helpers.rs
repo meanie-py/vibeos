@@ -765,7 +765,7 @@ fn inputs_moved(c: &mut Context<'_>, a: &Value) -> Result<Value> {
     let Some(start) = a["tree"].as_str() else {
         return Ok(json!([]));
     };
-    let end = c.fact("snapshot", json!({}))?;
+    let end = json!(crate::warmth::worktree_tree(c.repo).ok());
     let Some(end) = end.as_str() else {
         return Ok(json!([]));
     };
@@ -835,19 +835,34 @@ fn trim(c: &mut Context<'_>) -> Result<Value> {
     if c.env["VIBEOS_TRIM"] == "0" {
         return Ok(Value::Null);
     }
-    let plan = c.fact("trim_plan", json!({}))?;
-    if let Some(error) = plan["error"].as_str() {
-        c.host
-            .call("print", json!({"text":format!("[trim] skipped: {error}")}))?;
+    // A trim that cannot plan or delete never fails the build: everything it would remove
+    // is unreachable by the current configuration, so skipping it only costs disk.
+    let plan = match crate::trim::plan_worktree(c.repo, crate::trim::now(), 24.0) {
+        Ok(plan) => plan,
+        Err(error) => {
+            c.host.call(
+                "print",
+                json!({"text":format!("[trim] skipped: {}", error.message)}),
+            )?;
+            return Ok(Value::Null);
+        }
+    };
+    if plan.paths.is_empty() {
         return Ok(Value::Null);
     }
-    if plan["paths"].as_array().is_some_and(|v| !v.is_empty()) {
-        let applied = c.fact("trim_apply", json!({}))?;
-        if let Some(error) = applied["error"].as_str() {
-            c.host
-                .call("print", json!({"text":format!("[trim] skipped: {error}")}))?;
-        } else {
-            c.host.call("print",json!({"text":format!("[trim] freed {:.1} G of superseded cargo output ({} units, {} idle ad-hoc dirs)",applied["freed"].as_f64().unwrap_or(0.)/1024f64.powi(3),plan["superseded_units"],plan["adhoc_dirs"])}))?;
+    match crate::trim::apply(c.repo, &plan) {
+        Err(error) => {
+            c.host.call(
+                "print",
+                json!({"text":format!("[trim] skipped: {}", error.message)}),
+            )?;
+        }
+        Ok((freed, failures)) => {
+            for line in &failures {
+                c.host
+                    .call("print", json!({"text":format!("  FAILED {line}")}))?;
+            }
+            c.host.call("print",json!({"text":format!("[trim] freed {:.1} G of superseded cargo output ({} units, {} idle ad-hoc dirs)",freed as f64/1024f64.powi(3),plan.superseded_units,plan.adhoc_dirs)}))?;
         }
     }
     Ok(Value::Null)

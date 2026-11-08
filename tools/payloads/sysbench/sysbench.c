@@ -59,6 +59,18 @@ static __attribute__((noinline)) void op_loop(void)
     for (int i = 0; i < 100; i++) x = x * 1103515245u + 12345u;
     Sink = x;
 }
+/* 256 dependent loads and 256 stores through memory. Under FEX with TSO emulation on,
+ * every one of them is compiled as an ordered access; this is the op that shows it. */
+static volatile ULONG MemWords[256];
+static __attribute__((noinline)) void op_mem(void)
+{
+    ULONG x = Sink;
+    for (int i = 0; i < 256; i++) {
+        x += MemWords[i];
+        MemWords[i] = x;
+    }
+    Sink = x;
+}
 static void op_nt_cpu(void) { Sink += NtGetCurrentProcessorNumber(); }
 static void op_nt_qip(void)
 {
@@ -204,6 +216,7 @@ static int bench(void)
     Page = VirtualAlloc(NULL, 0x1000, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
 
     run("loop", op_loop);
+    run("mem", op_mem);
     run("nt_cpu", op_nt_cpu);
     run("nt_qip", op_nt_qip);
     run("nt_vm", op_nt_vm);

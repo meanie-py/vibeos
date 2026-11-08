@@ -1,0 +1,20 @@
+# sysfbprobe — sysfb as a PnP display driver: its device nodes, the display-adapter class,
+# the sleep refusal (through the kernel's new sleep query) and the stop/remove hand-off.
+#   tools/payloads/sysfbprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=sysfbprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload sysfbprobe
+# Design and what each check proves: docs/engineering/sysfb-pnp-design.md.
+name: sysfbprobe
+description: sysfb PnP device nodes, S3/S4 refusal and the owner's stop/remove veto
+
+build_hint: "tools/payloads/sysfbprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/sysfbprobe/sysfbprobe-{arch}.exe
+    root: image
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/sysfbprobe.exe
+
+test:
+  launch_marker: "[SYSFBPROBE] done"
+  pass_marker: "[SYSFBPROBE] done VERDICT=PASS"
+  launch_drain_secs: 300

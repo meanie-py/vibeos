@@ -42,6 +42,7 @@ use ntkrnl_sys::ddk::{
     _SYSTEM_POWER_STATE_PowerSystemSleeping2 as PowerSystemSleeping2,
     _SYSTEM_POWER_STATE_PowerSystemSleeping3 as PowerSystemSleeping3,
     _SYSTEM_POWER_STATE_PowerSystemHibernate as PowerSystemHibernate,
+    _SYSTEM_POWER_STATE_PowerSystemWorking as PowerSystemWorking,
     _SYSTEM_POWER_STATE_PowerSystemShutdown as PowerSystemShutdown,
     _DEVICE_POWER_STATE_PowerDeviceD0 as PowerDeviceD0,
     _DEVICE_POWER_STATE_PowerDeviceD1 as PowerDeviceD1,
@@ -161,7 +162,13 @@ pub unsafe extern "C" fn Bus_FDO_Power(
     if (*stack).MinorFunction == IRP_MN_SET_POWER {
         DPRINT!("\tRequest to set ... state to ...\n");
 
-        if powerType == SystemPowerState {
+        // S0 is no transition: it is how a power manager cancels a queried sleep, and how it
+        // reports the wake. The C sends it into the switch below, where it hits the default
+        // arm's ASSERT and asks acpi_suspend for ACPI_STATE_UNKNOWN, which powered a QEMU
+        // guest off when a cancelled S3 request sent it.
+        if powerType == SystemPowerState && powerState.SystemState == PowerSystemWorking {
+            (*Data).Common.SystemPowerState = PowerSystemWorking;
+        } else if powerType == SystemPowerState {
             // POWER_STATE is a union; .SystemState reads SYSTEM_POWER_STATE.
             AcpiState = match powerState.SystemState {
                 x if x == PowerSystemSleeping1 => ACPI_STATE_S1,

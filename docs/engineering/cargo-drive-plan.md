@@ -464,6 +464,23 @@ extends it from the boot spine to every fully-Rust module.
        EQUIVALENT ×3: the flex/bison outputs need nothing new, since the OBJECT library
        compiles `${CMAKE_CURRENT_BINARY_DIR}/asmshader.{yy,tab}.c` and orders them before the
        cargo link. The d3dx family is done (45 modules); d3dwine itself is still cmake-linked.
+     - **2026-11-07: drivers.** acpi, afd, cdfs, partmgr, pcix, serial, usbxhci, legide
+       (i386) and pl011 (arm64) converted, EQUIVALENT on every arch they build for. Generator
+       changes: a target's own `POST_BUILD native-pefixup <args>` becomes
+       `add_cargo_module(... PEFIXUP <args>)` (any other command on the target is refused,
+       since left in place it breaks configure); an `if(ARCH ...)` gate on the PARENT's
+       `add_subdirectory(<dir>)` names the arches (there, an ARCH test ANDed with an option
+       is accepted: the whole rewritten file stays under it); a closed `elseif` chain before
+       the target no longer refuses it; a target's own POST_BUILD is not a `$<TARGET_FILE>`
+       consumer. Still held: the C++ drivers drmk, hdaudbus, portcls, uniata, ucx01000 and
+       usbhub3.
+     - **2026-11-07: cdrom (KMDF) converted**, EQUIVALENT ×3. `add_cargo_module(... KIND
+       kmdfdriver)` runs `native-pefixup --wdmdriver` as set_module_type(kmdfdriver) did; the
+       OBJECT library takes `wdfdriverentry`'s usage (the KMDF include dir and WDF defines
+       set_module_type brought). A `-Wl,` item in a link order is passed to the linker in
+       place (cdrom whole-archives its body), and a body linked under `--whole-archive` makes
+       the cell shell-less: the staticlib brings its own core and panic handler, which a
+       rustc bin would define again.
      - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
        `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
        `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses

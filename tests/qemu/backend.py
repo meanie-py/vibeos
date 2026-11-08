@@ -3,9 +3,30 @@
 from __future__ import annotations
 
 import os
+import subprocess
 from contextlib import contextmanager
 
 from tools.qemu_infra_compat import DedicatedSession, call
+
+# WSL interop failed to LAUNCH the Windows program: an accept timeout on the interop vsock
+# under load (`UtilAcceptVsock: accept4 failed 110`). Nothing ran on the Windows side. The
+# same rule as backend.rs `interop_launch_failed`, which the native launchers use.
+INTEROP_LAUNCH_FAILURE = "UtilAcceptVsock"
+
+
+def run_interop(cmd, **kwargs) -> subprocess.CompletedProcess:
+    """`subprocess.run` a Windows program through WSL interop, once more when interop failed
+    to launch it. Safe even for a non-idempotent script, because the failed attempt never
+    started; any other failure is returned (or raised, with check=True) after one attempt.
+    Needs captured stderr to see the signature; without it this is one plain run."""
+    check = kwargs.pop("check", False)
+    cp = subprocess.run(cmd, **kwargs)
+    err = cp.stderr.decode(errors="replace") if isinstance(cp.stderr, bytes) else cp.stderr
+    if cp.returncode != 0 and INTEROP_LAUNCH_FAILURE in (err or ""):
+        cp = subprocess.run(cmd, **kwargs)
+    if check and cp.returncode != 0:
+        raise subprocess.CalledProcessError(cp.returncode, cmd, cp.stdout, cp.stderr)
+    return cp
 
 
 def _call(name, **kwargs):

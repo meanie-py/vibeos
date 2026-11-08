@@ -115,7 +115,8 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             raw.contains(&used)
                 && a.first() != Some(&cell.target)
                 && !(cmd == "add_custom_command" && re(r"\bcargo build\b").is_match(raw))
-                && !(cmd == "add_custom_target" && a.first().map(String::as_str) == Some(own_target))
+                && !(cmd == "add_custom_target"
+                    && a.first().map(String::as_str) == Some(own_target))
                 && !(["set", "rust_storage_target", "rust_crate_sources"].contains(&cmd.as_str())
                     && a.first().map(String::as_str) == Some(v))
         })
@@ -147,6 +148,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         re(r"^\s*#.*?[A-Za-z0-9_${}/.+-]*[A-Za-z0-9_+-]\.(?:c|cpp|cxx|cc|S|s|asm|inc)\b");
     let (mut carried, mut transferred, mut build_deps, mut rc_gen_deps, mut usage) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut pefixup: Vec<String> = Vec::new();
     for (idx, (s, e, cmd, raw)) in stmts.iter().enumerate() {
         let a = args(raw);
         let target = a.first() == Some(&cell.target);
@@ -159,6 +161,28 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         // comments are not dead sources to carry: d3dx9's `# math.c wants M_PI` inside
         // its compile definitions was carried as one and doubled.
         let mut moved = false;
+        // `add_custom_command(TARGET t POST_BUILD COMMAND native-pefixup <args>
+        // $<TARGET_FILE:t>)` (pcix, legide) becomes add_cargo_module's PEFIXUP. Any other
+        // command on the target is refused: left in place it names a target the cell
+        // removed, and the whole tree's configure fails.
+        if cmd == "add_custom_command" && a.len() > 1 && a[0] == "TARGET" && a[1] == cell.target {
+            let file = format!("$<TARGET_FILE:{}>", cell.target);
+            let rest: Vec<&String> = a.iter().skip(5).filter(|x| *x != "VERBATIM").collect();
+            if !(a.len() > 5
+                && a[2] == "POST_BUILD"
+                && a[3] == "COMMAND"
+                && a[4] == "native-pefixup"
+                && rest.last() == Some(&&file)
+                && rest.iter().filter(|x| ***x == file).count() == 1)
+            {
+                return Err(Error::new(format!(
+                    "{}: add_custom_command(TARGET {} ...) other than one POST_BUILD native-pefixup is not modelled",
+                    cell.target, cell.target
+                )));
+            }
+            pefixup.extend(rest[..rest.len() - 1].iter().map(|x| (*x).clone()));
+            drop = true;
+        }
         if target && cmd == "add_importlibs" {
             // `${_forward_targets}` is a list: `lib${_forward_targets}` would prefix only its
             // first element (d3dx10's forwarders). Import libs carry no usage requirements
@@ -174,7 +198,10 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             usage.extend(
                 a.iter()
                     .skip(1)
-                    .filter(|x| !x.starts_with("${") && *x != "PRIVATE" && *x != "PUBLIC")
+                    .filter(|x| {
+                        // Linker flags (cdrom's -Wl,--whole-archive) are no usage requirement.
+                        !x.starts_with("${") && !x.starts_with('-') && *x != "PRIVATE" && *x != "PUBLIC"
+                    })
                     .cloned(),
             );
         }
@@ -485,6 +512,12 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         } else {
             shim_lines.push(format!("add_library({shims} OBJECT {})", names.join(" ")));
         }
+        // set_module_type(kmdfdriver) linked the wdfdriverentry INTERFACE library, whose usage
+        // (the KMDF include dir and WDF defines) cdrom's sources compiled with; the cell drops
+        // set_module_type, so the OBJECT library takes that usage itself.
+        if cell.kernel_kind == "kmdfdriver" {
+            usage.push("wdfdriverentry".into());
+        }
         if !usage.is_empty() {
             let mut seen = HashSet::new();
             let vals: Vec<_> = usage
@@ -569,7 +602,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         by_arch.insert(
             arch,
             libs.iter()
-                .filter(|x| !x.starts_with("engine:"))
+                .filter(|x| !x.starts_with("engine:") && !x.starts_with('-'))
                 .cloned()
                 .collect::<BTreeSet<_>>(),
         );
@@ -682,6 +715,9 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
     }
     if cell.no_cab {
         call.push("    NO_CAB".into())
+    }
+    if !pefixup.is_empty() {
+        call.push(format!("    PEFIXUP {}", pefixup.join(" ")));
     }
     extra.extend(cell.body_depends.iter().cloned());
     let mut seen = HashSet::new();

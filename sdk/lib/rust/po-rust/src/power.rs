@@ -194,6 +194,9 @@ struct POWER_STATE_TRAVERSE_CONTEXT {
     SystemPowerState: SYSTEM_POWER_STATE,
     PowerAction: POWER_ACTION,
     PowerDevice: PDEVICE_OBJECT,
+    /// The first failed IRP_MN_QUERY_POWER of a traversal, success if none. The traversal
+    /// itself carries on past a failure (as the C does), so every refusal gets logged.
+    QueryStatus: NTSTATUS,
 }
 
 #[repr(C)]
@@ -479,6 +482,16 @@ pub unsafe extern "C" fn PopQuerySystemPowerStateTraverse(
         (*PowerStateContext).SystemPowerState,
         (*PowerStateContext).PowerAction,
     );
+    if Status < 0 {
+        DbgPrint(
+            b"Device '%wZ' failed IRP_MN_QUERY_POWER: 0x%08lx\n\0".as_ptr() as *const i8,
+            core::ptr::addr_of!((*DeviceNode).InstancePath),
+            Status as u32,
+        );
+        if (*PowerStateContext).QueryStatus >= 0 {
+            (*PowerStateContext).QueryStatus = Status;
+        }
+    }
 
     ObDereferenceObject(TopDeviceObject as PVOID);
 
@@ -518,6 +531,13 @@ pub unsafe extern "C" fn PopSetSystemPowerStateTraverse(
         (*PowerStateContext).SystemPowerState,
         (*PowerStateContext).PowerAction,
     );
+    if Status < 0 {
+        DbgPrint(
+            b"Device '%wZ' failed IRP_MN_SET_POWER: 0x%08lx\n\0".as_ptr() as *const i8,
+            core::ptr::addr_of!((*DeviceNode).InstancePath),
+            Status as u32,
+        );
+    }
 
     ObDereferenceObject(TopDeviceObject as PVOID);
 
@@ -582,6 +602,48 @@ pub unsafe extern "system" fn PopSetSystemPowerState(
     }
 
     status
+}
+
+/// A sleep (S1-S3) or hibernate (S4) request. Entering those states is not implemented, but
+/// the request is no longer answered with a silent success: every device is asked
+/// (IRP_MN_QUERY_POWER), and a device that refuses (sysfb, while it drives the display)
+/// gets its refusal returned. With no refusal the answer is STATUS_NOT_IMPLEMENTED, which is
+/// the truth. The C had no sleep path at all: NtSetSystemPowerState flushed and returned
+/// success.
+///
+/// Windows follows a refused query with SET_POWER(S0) to every device, and a driver that
+/// prepared for the sleep undoes it there. That is deliberately not sent: no driver here
+/// prepares anything on a system QUERY_POWER (they all succeed and pass it down), while
+/// classpnp answers any SET_POWER for a sleep action by marking hot-plug volumes for
+/// verify, and FASTFAT's verify of such a volume never settles here (roadmap bug
+/// registry). Sent on a hard-disk boot, that S0 wedged the machine in a verify storm. Add
+/// the cancel once a driver needs it and the verify path is fixed.
+unsafe fn PopQuerySleepState(PowerState: SYSTEM_POWER_STATE, PowerAction: POWER_ACTION) -> NTSTATUS {
+    let mut Context: _DEVICETREE_TRAVERSE_CONTEXT = core::mem::zeroed();
+    let mut PowerContext: POWER_STATE_TRAVERSE_CONTEXT = core::mem::zeroed();
+    PowerContext.PowerAction = PowerAction;
+    PowerContext.SystemPowerState = PowerState;
+    PowerContext.PowerDevice = core::ptr::null_mut();
+    PowerContext.QueryStatus = STATUS_SUCCESS;
+
+    IopInitDeviceTreeTraverseContext(
+        core::ptr::addr_of_mut!(Context),
+        IopRootDeviceNode,
+        Some(PopQuerySystemPowerStateTraverse),
+        core::ptr::addr_of_mut!(PowerContext) as PVOID,
+    );
+    IopTraverseDeviceTree(core::ptr::addr_of_mut!(Context));
+    let Veto = PowerContext.QueryStatus;
+
+    if Veto < 0 {
+        DbgPrint(b"[PO] S%lu refused: 0x%08lx\n\0".as_ptr() as *const i8, (PowerState - 1) as u32, Veto as u32);
+        return Veto;
+    }
+    DbgPrint(
+        b"[PO] S%lu: every device agreed, but entering it is not implemented\n\0".as_ptr() as *const i8,
+        (PowerState - 1) as u32,
+    );
+    STATUS_NOT_IMPLEMENTED
 }
 
 #[no_mangle]
@@ -1297,8 +1359,16 @@ pub unsafe extern "system" fn NtSetSystemPowerState(
         }
 
         PopFlushVolumes(PopAction.Shutdown);
-
         CcRosFlushDirtyPages(MAXULONG, core::ptr::addr_of_mut!(Dummy), 1, 0);
+        if PopAction.Action == PowerActionSleep || PopAction.Action == PowerActionHibernate {
+            let State = if PopAction.Action == PowerActionHibernate {
+                PowerSystemHibernate
+            } else {
+                MinSystemState
+            };
+            Status = PopQuerySleepState(State, PopAction.Action);
+            break;
+        }
 
         PopAction.IrpMinor = IRP_MN_SET_POWER;
         if PopAction.Shutdown != 0 {
@@ -1331,6 +1401,7 @@ pub unsafe extern "system" fn NtSetSystemPowerState(
 extern "C" {
     fn _strupr(s: PCHAR) -> PCHAR;
     fn strstr(haystack: PCHAR, needle: PCHAR) -> PCHAR;
+    fn DbgPrint(Format: *const i8, ...) -> ULONG;
 }
 
 
@@ -1349,6 +1420,9 @@ const PolicyDeviceBattery: ULONG = 2; // header value; the hand copy said 1
 const PowerSystemWorking: SYSTEM_POWER_STATE = 1; // header value; the hand copy said 0
 const PowerDeviceD0: DEVICE_POWER_STATE = 1;
 const PowerActionNone: POWER_ACTION = 0;
+const PowerActionSleep: POWER_ACTION = 2;
+const PowerActionHibernate: POWER_ACTION = 3;
+const PowerSystemHibernate: SYSTEM_POWER_STATE = 5;
 const PowerActionShutdown: POWER_ACTION = 4;
 const PowerActionShutdownReset: POWER_ACTION = 5;
 const PowerActionShutdownOff: POWER_ACTION = 6;

@@ -376,3 +376,18 @@ def test_a_bare_pinned_macro_is_a_truth_test():
     assert never_compiled_lines(src) == set()
     assert never_compiled_lines("#if !DBG\nint a;\n#endif\n", {"DBG": 1}) == {2}
     assert never_compiled_lines("#ifdef DBG\nint a;\n#endif\n", {"DBG": 0}) == set()
+
+
+def test_an_sdk_version_guard_is_decided_by_the_modules_pin():
+    """shlwapi ordinal.c: `#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)` under -D_WIN32_WINNT=0x502
+    was reported undecidable, and both bodies under it had taken the dead VISTA arm."""
+    from rustconv.config import REACTOS_ROOT
+    from rustconv.dead_regions import conditional_arm_notes, sdk_version_int_macros, tu_redefined
+
+    sdk = sdk_version_int_macros(REACTOS_ROOT)
+    assert sdk["_WIN32_WINNT_VISTA"] == 0x600 and sdk["_WIN32_WINNT_WS03"] == 0x502
+    body = "{\n#if (_WIN32_WINNT >= _WIN32_WINNT_VISTA)\n  a;\n#else\n  b;\n#endif\n}\n"
+    (note, _) = conditional_arm_notes(body, {**sdk, "_WIN32_WINNT": 0x502})
+    assert "the #else arm is LIVE" in note
+    # A TU that redefines the name itself is not speaking through the -D pin any more.
+    assert tu_redefined("#undef _WIN32_WINNT\n#define _WIN32_WINNT 0x600\n") == {"_WIN32_WINNT"}

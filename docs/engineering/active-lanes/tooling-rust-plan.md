@@ -79,6 +79,66 @@ Acceptance: public contracts and refusal behavior remain covered, native code ow
 newly migrated decisions, and deletion plans cannot touch live worktrees or paid
 translation artifacts. Retain external handle adapters until callers move.
 
+Progress (`lint-rs`):
+
+- Done: the lint verdict layer (`vibeos-lint --verdicts`: classify, baseline
+  capture, finding keys); `lints.py` is now an adapter. Every source lint was
+  already native.
+- Done: `trim` (`vibeos-build/src/trim.rs`). The post-build trim calls it
+  directly; `trim.py` is an adapter. Parity: 75 plans, 9,907 paths, 0 mismatches.
+- Done: `prune` decisions (`vibeos-build/src/prune.rs`): worktree discovery, live
+  QEMU and in-flight build attribution (including canonical bind sources),
+  protection gates, du-style sizing, idle window, retention and headroom budget.
+  `prune.py` keeps the maintenance lock, the printout and the delete loop, which
+  rechecks liveness natively before every directory. Its Python logic tests moved
+  to Rust. Parity against the Python planner on frozen live/active facts, whole
+  fleet: every keep/PRUNE decision and skip reason matched across plain,
+  retention+headroom, idle-window and refused-budget runs. Idle trees were
+  byte-identical; only trees with live writers drifted by <0.5 G between passes.
+  Validating it found that a non-finite float flag (`--retain-gib inf`) parsed as
+  *no* budget. The argument grammar now refuses it.
+- Done: disk admission (`vibeos-build/src/diskspace.rs`): host policy, volume
+  accounting (backing mounts included), live-lease scan and orphan reaping, the
+  hopeless/contention verdicts, `disk-status`, and the `hostdisk` probe, ENOSPC and
+  admission lines. `diskspace.py` keeps only the admission flock and the lease fd,
+  which must outlive the command. Parity against HEAD on the live host covered
+  every status key, probe verdict and admission line.
+- Done: `warmth` build receipts (`vibeos-build/src/warmth.rs`). The native build
+  records its receipt and snapshots its tree directly, with no Python callback.
+  `land`'s close-enough check keeps its inert predicate in `tools/docs_only.py`,
+  which it shares with the pre-push hook, and hands its verdicts to native.
+  Parity: identical reachable-Python set (198 files, 4.5x faster) and `missing`
+  verdicts, with and without a master merge.
+- Remaining, as ONE cluster: `retention`, `maintenance` and `hostlock` share the
+  maintenance interlock (`maintenance.lock`, the owner stamp, the kill switch), and
+  retention's fleet check compares each lane's `maintenance.py` bytes. Porting one
+  without the others would change that interlock under lanes on older commits.
+  The 2026-11-07 caller audit of `hostlock.py` (1038 lines) found these live
+  surfaces: build-dir locking (`acquire_build_dir`/`build_lock`/`release`),
+  `looks_starved`, `job_class`, `status`/`host-status`, and the two dir constants.
+  The `land_lock` family serves only the held `land`/`queue` train. The Python
+  CPU/boot lease acquisition API is called only by tests: `vibeos-test/admission.rs`
+  already holds that lease protocol natively and `host-jobs` owns CPU admission.
+  Settled with the integrator (2026-11-07): port only the live hostlock surface.
+  `land.py`, `queue.py` and the `land_lock` family stay in Python. The integrator's
+  `land --direct --cold --skip-lint` is the only path that pushes master, and it uses
+  just `land_lock`, `land_holder`/`land_queue` and the queue hold-file reader. The
+  rest of the train (submit/conductor/INCONCLUSIVE) is dead while it is held.
+  Retiring the train is the user's / control-plane's decision. If it is retired,
+  `--direct` collapses to merge+gate+push, so porting it first would be wasted
+  work. `land --direct` must keep working at every intermediate commit, and any
+  change touching it lands in a batch of its own. Keep the lease file protocol
+  unchanged.
+- Dead Python lease API (measured 2026-11-07): 12 definitions, 215 lines
+  (`acquire_cpu_lease/share/exclusive`, `cpu_*`, `release_all`, `acquire_boot_lease`,
+  `build_permits`, plus `buildpolicy.guard`/`take_guard`) are reachable only from
+  tests. They are NOT a plain delete: ~30 tests use them as a lease holder to cover
+  LIVE machinery — `_acquire_one` FIFO tickets and orphan reaping (which `land_lock`,
+  hence `land --direct`, runs on), policy-cutover refusal while a lease is held, and
+  `status` holder reporting. Retire them by re-homing those tests onto a live holder
+  (the land lock, or native `admission.rs`), in a batch of its own. The build-dir
+  lock moves with item 4, when the build entry itself goes native.
+
 ### 3. Remaining diagnostic and measurement workflows
 
 Confirmed Python implementations to split into reviewable batches:
@@ -88,6 +148,27 @@ Reuse existing Rust PE, symbol, VM, farm and reporting mechanisms. Preserve
 one-Cargo-invocation-per-difftest-crate isolation, genuine C oracles, reference-VM
 identity and diagnostic ownership. Embedded GDB Python may remain an external
 API adapter where GDB requires it.
+
+Progress: `repro` done (`vibeos-build/src/repro.rs`: PE parse, compare, report,
+diff-dirs). Its output matched the Python byte for byte on 15 real kernel/DLL
+images across 3 arches, plus non-PE and missing-file cases. `verify`'s two streamed
+cold builds and the optional diffoscope stay in the facade.
+`difftest` done (`vibeos-test/src/difftest.rs`): discovery, manifest-declared
+targets and feature sets, the one-invocation-per-crate plan, graded counts and
+verdicts. The existing Python tests now act as the native contract. Identical argv
+and stages for all 21 invocations, and a real run passed 26/26.
+`stress` decisions done (`vibeos-test/src/stress.rs`: the profile matrix, the
+per-profile summary and the diagnosis). No mismatches across 400 random matrices.
+The boots and host-core pinning stay with the smoke facade until item 4.
+Next, `gdbengine`/`debugcmd`. The engine builds its own detached gdbstub QEMU from
+the legacy Python `tests/qemu/vm.py`. Port it onto native `vm.rs` rather than add a
+second launcher. `vm.rs` already emits `-gdb`/`-S` on both backends; what a debug run
+needs is (1) an ownerless guardian mode (`detached` with `owner_pid = 0`), bounded
+only by the lifetime deadline and an explicit descriptor `stop`, which `debug stop`
+writes, so the confirmed Windows-side kill, staging cleanup, `vibeos-cli kill` and
+the reaper all still apply; and (2) serial to a staged file, because the TCP
+dial-back cannot outlive the launching CLI call. Validate on a live
+`debug start` / `inspect` / `run-until` / `stop` cycle on each arch.
 
 Acceptance: compare actual outputs with the old implementation and exercise the
 external debugger/VM boundary when relevant; native fixture tests alone do not

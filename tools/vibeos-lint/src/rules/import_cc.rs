@@ -25,6 +25,10 @@ static SOURCES: &[SourceSet] = &[
         "build-amd64",
         "build-arm64",
     ]),
+    // A cargo cell's imports live in its crate's build.rs (`.import_lib(spec, dll, name)`),
+    // not in an add_importlibs line: see cell_importlibs.
+    SourceSet::tree("abi_cells", &["sdk/lib/rust"], &[], &["build.rs"])
+        .with_pruning(&[".git", "target"]),
     SourceSet::tree("abi_module_c", &[""], &["c", "h"], &[]).with_pruning(&[
         ".git",
         "target",
@@ -40,6 +44,13 @@ static SPEC_LINE: LazyLock<Regex> = LazyLock::new(|| {
 static ARCH: LazyLock<Regex> = LazyLock::new(|| crate::regexes::cached(r"-arch=(\S+)").unwrap());
 static ADD_IMPORTLIBS: LazyLock<Regex> =
     LazyLock::new(|| crate::regexes::cached(r"(?s)add_importlibs\s*\(([^)]*)\)").unwrap());
+static ADD_CARGO_MODULE: LazyLock<Regex> = LazyLock::new(|| {
+    crate::regexes::cached(r"add_cargo_module\s*\(\s*([\w.+-]+)\s+([\w.+-]+)").unwrap()
+});
+static CELL_IMPORT: LazyLock<Regex> = LazyLock::new(|| {
+    crate::regexes::cached(r#"\.(?:delay_)?import_lib\(\s*"[^"]*",\s*"[^"]*",\s*"([^"]+)""#)
+        .unwrap()
+});
 static C_DEFINE: LazyLock<Regex> = LazyLock::new(|| {
     crate::regexes::cached(r"(?m)^[A-Za-z_][\w\s*]*?\bNAME\s*\([^;{}]*\)\s*\{").unwrap()
 });
@@ -116,6 +127,40 @@ struct SourceFileRef<'a> {
     text: &'a str,
 }
 
+/// A module converted to a cargo cell keeps no add_importlibs line: its imports are its
+/// crate's `.import_lib(...)` calls. Count them as the CMakeLists' own, or each conversion
+/// shrinks the link set this rule reads, and findings that the module's C (or a second
+/// exporter's convention) used to settle reappear: acpi/partmgr/pcix's conversion surfaced
+/// four ntkrnl-sys islands that way.
+fn cell_importlibs<'a>(
+    files: impl Iterator<Item = SourceFileRef<'a>>,
+    builds: &[(String, &str)],
+    target: &mut BTreeMap<String, BTreeSet<String>>,
+    byfile: &mut BTreeMap<String, BTreeSet<String>>,
+) {
+    for f in files {
+        let path = f.path.to_string_lossy().replace('\\', "/");
+        for m in ADD_CARGO_MODULE.captures_iter(f.text) {
+            let suffix = format!("{}/build.rs", &m[2]);
+            let Some((_, text)) = builds
+                .iter()
+                .find(|(p, _)| p.ends_with(&format!("/{suffix}")) || *p == suffix)
+            else {
+                continue;
+            };
+            for lib in CELL_IMPORT.captures_iter(text) {
+                target
+                    .entry(m[1].to_owned())
+                    .or_default()
+                    .insert(lib[1].to_owned());
+                byfile
+                    .entry(path.clone())
+                    .or_default()
+                    .insert(lib[1].to_owned());
+            }
+        }
+    }
+}
 fn importlibs<'a>(
     files: impl Iterator<Item = SourceFileRef<'a>>,
 ) -> (
@@ -423,10 +468,23 @@ impl Rule for ImportCc {
             .filter(|f| f.path.file_name().is_some_and(|n| n == "CMakeLists.txt"))
             .collect::<Vec<_>>();
         let cmake_refs = cmake.iter().copied().collect::<Vec<_>>();
-        let (targets, byfile) = importlibs(cmake.iter().map(|f| SourceFileRef {
+        let (mut targets, mut byfile) = importlibs(cmake.iter().map(|f| SourceFileRef {
             path: &f.path,
             text: &f.text,
         }));
+        let builds = c
+            .sources("abi_cells")
+            .map(|f| (f.path.to_string_lossy().replace('\\', "/"), f.text.as_str()))
+            .collect::<Vec<_>>();
+        cell_importlibs(
+            cmake.iter().map(|f| SourceFileRef {
+                path: &f.path,
+                text: &f.text,
+            }),
+            &builds,
+            &mut targets,
+            &mut byfile,
+        );
         let crate_names = c
             .rust_files()
             .filter_map(|f| crate_root(&f.path))
@@ -681,5 +739,24 @@ mod tests {
                 "{path}"
             );
         }
+    }
+    #[test]
+    fn a_cargo_cells_build_rs_imports_count_as_its_cmakelists_own() {
+        let cmake = "add_library(m_shims OBJECT m.c)\nadd_cargo_module(m m-cargo m.sys\n    KIND kernelmodedriver)\n";
+        let build = r#".import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
+        .delay_import_lib("hal/halx86/hal.spec", "hal.dll", "hal")"#;
+        let path = Path::new("drivers/m/CMakeLists.txt");
+        let (mut targets, mut byfile) =
+            importlibs(std::iter::once(SourceFileRef { path, text: cmake }));
+        assert!(targets.is_empty());
+        cell_importlibs(
+            std::iter::once(SourceFileRef { path, text: cmake }),
+            &[("sdk/lib/rust/m-cargo/build.rs".to_owned(), build)],
+            &mut targets,
+            &mut byfile,
+        );
+        let want: BTreeSet<String> = ["hal".to_owned(), "ntoskrnl".to_owned()].into();
+        assert_eq!(targets["m"], want);
+        assert_eq!(byfile["drivers/m/CMakeLists.txt"], want);
     }
 }

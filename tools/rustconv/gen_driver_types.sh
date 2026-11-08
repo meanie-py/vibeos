@@ -10745,6 +10745,62 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_UNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  shlwapi)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-11-07 from dll/win32/shlwapi/CMakeLists.txt
+    # (17 compiled TU(s), 186 headers in the include closure, 126 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 285 external prototype(s) declared by the include closure, 22 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/shlwapi"
+    WRAPPER_INC=$'#include <windef.h>\n#include <urlmon.h>\n#include "config.h"\n#include "wine/port.h"\n#include <math.h>\n#include <stdarg.h>\n#include <assert.h>\n#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n#define COBJMACROS\n#define NONAMELESSUNION\n#include "windef.h"\n#include "winbase.h"\n#include "winerror.h"\n#include "winnls.h"\n#include "shlwapi.h"\n#include "winuser.h"\n#include "winreg.h"\n#include "wingdi.h"\n#include "winver.h"\n#include "winnetwk.h"\n#include "mmsystem.h"\n#include "wine/unicode.h"\n#include "wininet.h"\n#include "winternl.h"\n#include "intshcut.h"\n#include "objbase.h"\n#include "shlguid.h"\n#include "exdisp.h"\n#include "shdeprecated.h"\n#include "shlobj.h"\n#include "shlwapi_undoc.h"\n#include "shellapi.h"\n#include "commdlg.h"\n#include "mlang.h"\n#include "ddeml.h"\n#include "mshtmhst.h"\n#include "wine/debug.h"\n#include <shlobj.h>\n#include <shlwapi.h>\n#include "resource.h"\n#include "precomp.h"\n#include <winreg.h>\n#include <winver.h>\n#include <commctrl.h>\n#include <shlwapi_undoc.h>\n#include <wine/debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]commdlg\.h'
+                  --allowlist-file '.*[/\\]ddeml\.h'
+                  --allowlist-file '.*[/\\]docobj\.h'
+                  --allowlist-file '.*[/\\]exdisp\.h'
+                  --allowlist-file '.*[/\\]intshcut\.h'
+                  --allowlist-file '.*[/\\]mlang\.h'
+                  --allowlist-file '.*[/\\]mmsystem\.h'
+                  --allowlist-file '.*[/\\]mshtmhst\.h'
+                  --allowlist-file '.*[/\\]oaidl\.h'
+                  --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*[/\\]objidl\.h'
+                  --allowlist-file '.*[/\\]ocidl\.h'
+                  --allowlist-file '.*[/\\]oleidl\.h'
+                  --allowlist-file '.*[/\\]servprov\.h'
+                  --allowlist-file '.*[/\\]shdeprecated\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shlguid\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]shlwapi_undoc\.h'
+                  --allowlist-file '.*[/\\]shobjidl\.h'
+                  --allowlist-file '.*[/\\]unknwn\.h'
+                  --allowlist-file '.*[/\\]urlmon\.h'
+                  --allowlist-file '.*[/\\]winerror\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]wininet\.h'
+                  --allowlist-file '.*[/\\]winnetwk\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*[/\\]winternl\.h'
+                  --allowlist-file '.*[/\\]winver\.h'
+                  --allowlist-file '.*shlwapi[/\\].*\.h'
+                  --allowlist-file '.*[/\\]shtypes\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="IStream PIStream IStreamVtbl PIStreamVtbl tagSTATSTG STATSTG PSTATSTG TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    # wine/winternl.h's BOOL prototypes for what ntdll returns as BOOLEAN.
+    EXTRA_BL_ITEMS=( RtlEqualPrefixSid RtlEqualSid RtlQueryPerformanceCounter RtlQueryPerformanceFrequency )
+    EXTRA_INC=( -I"${SRC}/dll/win32/shlwapi" -I"${SRC}/build-i386/dll/win32/shlwapi" -I"${SRC}/sdk/include/wine" -I"${SRC}/sdk/lib/atl" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D__WINESRC__ -D_SHLWAPI_ -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

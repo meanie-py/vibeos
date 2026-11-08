@@ -53,7 +53,12 @@ fn obj_key(obj: &str) -> String {
 /// `-entry,<sym>` after the module type's default (ws2help: `-entry,_DllMainCRTStartup@12
 /// ... -entry,_Ws2HelpDllMain@12`), and reading the first gave ws2help the wrong entry.
 pub fn link_entry(flags: &str) -> String {
-    let last = |pattern: &str| re(pattern).captures_iter(flags).last().map(|x| x[1].to_owned());
+    let last = |pattern: &str| {
+        re(pattern)
+            .captures_iter(flags)
+            .last()
+            .map(|x| x[1].to_owned())
+    };
     last(r"-entry,(\S+)")
         .or_else(|| last(r"-Wl,-e,(\S+)"))
         .unwrap_or_default()
@@ -176,7 +181,22 @@ pub fn link_edges_gated(root: &Path, target: &str) -> Result<BTreeMap<String, Li
     }
     let (arch, link) = links.iter().next().unwrap();
     let cmake = source_dir(root, arch, &link.output, target)?.join("CMakeLists.txt");
-    let gate = arch_gate(&super::fncall::cmake_text(&cmake, target)?, target).map_err(|why| {
+    let own = arch_gate(&super::fncall::cmake_text(&cmake, target)?, target);
+    // Not gated in its own file: the parent's add_subdirectory(<dir>) may be.
+    let gate = match own {
+        Err(why) if why.ends_with("is not inside an if()") => {
+            let dir = cmake.parent().unwrap_or(Path::new("."));
+            let parent = dir.parent().map(|p| p.join("CMakeLists.txt"));
+            let name = dir.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            match parent.filter(|p| p.is_file()) {
+                Some(p) => subdirectory_gate(&std::fs::read_to_string(&p)?, name)
+                    .map_err(|w| format!("{why}, and in {}: {w}", p.display())),
+                None => Err(why),
+            }
+        }
+        other => other,
+    };
+    let gate = gate.map_err(|why| {
         Error::new(format!(
             "{}\n  and the arch set is not proven by {}: {why}",
             missing_edges_error(target, &links, &missing),
@@ -197,31 +217,69 @@ pub fn link_edges_gated(root: &Path, target: &str) -> Result<BTreeMap<String, Li
 }
 /// The arch set an `if(ARCH STREQUAL ...)` nest grants `target`'s add_library/add_executable.
 pub fn arch_gate(text: &str, target: &str) -> std::result::Result<Vec<String>, String> {
+    gate_of(text, &["add_library", "add_executable"], target, false)
+}
+/// The arch set an `if(ARCH ...)` nest grants `add_subdirectory(<dir>)` in a parent
+/// CMakeLists: legide (i386) and pl011 (arm64) are gated there, not in their own file.
+pub fn subdirectory_gate(text: &str, dir: &str) -> std::result::Result<Vec<String>, String> {
+    gate_of(text, &["add_subdirectory"], dir, true)
+}
+/// An `if()` condition's arch set: `ARCH STREQUAL "a" [OR ...]`, or (`and`, a parent's
+/// add_subdirectory only) ARCH tests ANDed with build options (`ARCH STREQUAL "i386" AND NOT
+/// ENABLE_UNIATA`). The whole rewritten CMakeLists stays under that parent condition, so the
+/// options keep gating the cell. In a module's own file they would not: the cell block
+/// re-emits only the arch part.
+fn condition_arches(raw: &str, and: bool) -> Option<BTreeMap<String, ()>> {
     let term = re(r#"^ARCH\s+STREQUAL\s+"?(\w+)"?$"#);
+    let raw = raw.trim();
+    if and && raw.contains(" AND ") && !raw.contains(" OR ") && !raw.contains('(') {
+        let mut out: Option<BTreeMap<String, ()>> = None;
+        for t in raw.split(" AND ") {
+            if let Some(c) = term.captures(t.trim()) {
+                let one: BTreeMap<String, ()> = [(c[1].to_owned(), ())].into();
+                out = Some(match out {
+                    None => one,
+                    Some(prev) => prev
+                        .into_iter()
+                        .filter(|(k, _)| one.contains_key(k))
+                        .collect(),
+                });
+            }
+        }
+        return out;
+    }
+    raw.split(" OR ")
+        .map(|t| term.captures(t.trim()).map(|c| (c[1].to_owned(), ())))
+        .collect()
+}
+fn gate_of(
+    text: &str,
+    cmds: &[&str],
+    target: &str,
+    and: bool,
+) -> std::result::Result<Vec<String>, String> {
     let mut stack: Vec<Option<BTreeMap<String, ()>>> = Vec::new();
     for (_, _, cmd, raw) in statements(text) {
         match cmd.as_str() {
-            "if" => {
-                let parsed: Option<BTreeMap<String, ()>> = raw
-                    .split(" OR ")
-                    .map(|t| term.captures(t.trim()).map(|c| (c[1].to_owned(), ())))
-                    .collect();
-                stack.push(parsed);
+            "if" => stack.push(condition_arches(&raw, and)),
+            // A later branch is only refused when it encloses the target: pl011's
+            // `if(ARCH ...) elseif(...)` RUST_TARGET chain closes before its add_library.
+            "elseif" | "else" => {
+                if let Some(top) = stack.last_mut() {
+                    *top = None;
+                }
             }
-            "elseif" | "else" => return Err(format!("an {cmd}() in an enclosing block is not modelled")),
             "endif" => {
                 stack.pop();
             }
-            "add_library" | "add_executable"
-                if args(&raw).first().map(String::as_str) == Some(target) =>
-            {
+            c if cmds.contains(&c) && args(&raw).first().map(String::as_str) == Some(target) => {
                 if stack.is_empty() {
                     return Err(format!("its {cmd}({target} ...) is not inside an if()"));
                 }
                 let mut out: Option<Vec<String>> = None;
                 for cond in &stack {
                     let set = cond.as_ref().ok_or_else(|| {
-                        "an enclosing if() is not a pure ARCH STREQUAL test".to_owned()
+                        "an enclosing if() is not a pure ARCH STREQUAL test (or is an elseif/else branch)".to_owned()
                     })?;
                     let names: Vec<String> = set.keys().cloned().collect();
                     if let Some(n) = names.iter().find(|n| !ARCHES.contains(&n.as_str())) {
@@ -237,7 +295,7 @@ pub fn arch_gate(text: &str, target: &str) -> std::result::Result<Vec<String>, S
             _ => {}
         }
     }
-    Err(format!("no add_library/add_executable({target} ...)"))
+    Err(format!("no {}({target} ...)", cmds.join("/")))
 }
 fn missing_edges_error(target: &str, links: &BTreeMap<String, Link>, missing: &Missing) -> Error {
     let have: Vec<_> = links.keys().map(String::as_str).collect();
@@ -1073,10 +1131,15 @@ pub fn body_depends(text: &str, extras: &[String]) -> Option<Vec<String>> {
         .filter(|(_, _, cmd, _)| cmd == "add_custom_command")
         .map(|(_, _, _, raw)| {
             let a = args(&raw);
-            let start = a.iter().position(|x| x == "OUTPUT").map_or(a.len(), |i| i + 1);
+            let start = a
+                .iter()
+                .position(|x| x == "OUTPUT")
+                .map_or(a.len(), |i| i + 1);
             a[start..]
                 .iter()
-                .take_while(|x| x.chars().any(|c| c.is_ascii_lowercase()) || x.contains('$') || x.contains('/'))
+                .take_while(|x| {
+                    x.chars().any(|c| c.is_ascii_lowercase()) || x.contains('$') || x.contains('/')
+                })
                 .cloned()
                 .collect()
         })
@@ -1086,7 +1149,9 @@ pub fn body_depends(text: &str, extras: &[String]) -> Option<Vec<String>> {
         let var = &var_re.captures(extra)?[1];
         let sets: Vec<_> = statements(text)
             .into_iter()
-            .filter(|(_, _, cmd, raw)| cmd == "set" && args(raw).first().map(String::as_str) == Some(var))
+            .filter(|(_, _, cmd, raw)| {
+                cmd == "set" && args(raw).first().map(String::as_str) == Some(var)
+            })
             .collect();
         if sets.len() != 1 || args(&sets[0].3).len() != 2 {
             return None;
@@ -1256,7 +1321,8 @@ pub fn custom_body_for(text: &str, target: &str) -> Option<serde_json::Value> {
     let mut extra = Vec::new();
     let mut deps = Vec::new();
     for raw in &rest {
-        if raw.contains("RUSTFLAGS=") || raw.contains("--features") || raw.contains("--no-default") {
+        if raw.contains("RUSTFLAGS=") || raw.contains("--features") || raw.contains("--no-default")
+        {
             return None;
         }
         let krate = re(r"\s-p\s+([\w-]+)").captures(raw)?[1].to_owned();
@@ -1267,7 +1333,12 @@ pub fn custom_body_for(text: &str, target: &str) -> Option<serde_json::Value> {
     // Keep every variable a remaining command still reads.
     let used: Vec<String> = rest
         .iter()
-        .flat_map(|r| re(r"\$\{(\w+)\}").captures_iter(r).map(|c| c[1].to_owned()).collect::<Vec<_>>())
+        .flat_map(|r| {
+            re(r"\$\{(\w+)\}")
+                .captures_iter(r)
+                .map(|c| c[1].to_owned())
+                .collect::<Vec<_>>()
+        })
         .collect();
     let vars: Vec<serde_json::Value> = v["vars"]
         .as_array()
@@ -1280,7 +1351,11 @@ pub fn custom_body_for(text: &str, target: &str) -> Option<serde_json::Value> {
     v["extra"] = serde_json::json!(extra);
     let mut all: Vec<String> = v["depends"]
         .as_array()
-        .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_owned)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(str::to_owned))
+                .collect()
+        })
         .unwrap_or_default();
     for d in deps {
         if !all.contains(&d) {
@@ -1309,7 +1384,9 @@ fn depends_targets(raw: &str) -> Vec<String> {
 fn env_list(text: &str, raw: &str) -> Option<(String, String, BTreeMap<String, String>)> {
     let var = re(r"-E\s+env\s+\$\{(\w+)\}\s+cargo\s+build").captures(raw)?[1].to_owned();
     let v = regex::escape(&var);
-    let set = re(&format!(r"(?m)^[ \t]*set\(\s*{v}\s+CARGO_TARGET_DIR=\$\{{(\w+)\}}\s*\)[ \t]*$"));
+    let set = re(&format!(
+        r"(?m)^[ \t]*set\(\s*{v}\s+CARGO_TARGET_DIR=\$\{{(\w+)\}}\s*\)[ \t]*$"
+    ));
     let dir = set.captures(text)?[1].to_owned();
     let append = re(&format!(
         r#"(?m)^[ \t]*if\(ARCH STREQUAL "(\w+)"\)\n[ \t]*list\(APPEND {v} "RUSTFLAGS=([^"]*)"\)\n[ \t]*endif\(\)"#
@@ -1324,7 +1401,11 @@ fn env_list(text: &str, raw: &str) -> Option<(String, String, BTreeMap<String, S
     if uses != 1 + flags.len() + 1 {
         return None;
     }
-    let expanded = raw.replacen(&format!("${{{var}}}"), &format!("CARGO_TARGET_DIR=${{{dir}}}"), 1);
+    let expanded = raw.replacen(
+        &format!("${{{var}}}"),
+        &format!("CARGO_TARGET_DIR=${{{dir}}}"),
+        1,
+    );
     Some((var, expanded, flags))
 }
 fn custom_body_command(text: &str, raw: &str) -> Option<serde_json::Value> {
@@ -1332,7 +1413,10 @@ fn custom_body_command(text: &str, raw: &str) -> Option<serde_json::Value> {
     if env.is_none() && re(r"-E\s+env\s+\$\{").is_match(raw) {
         return None;
     }
-    let raw = env.as_ref().map(|e| e.1.clone()).unwrap_or_else(|| raw.to_owned());
+    let raw = env
+        .as_ref()
+        .map(|e| e.1.clone())
+        .unwrap_or_else(|| raw.to_owned());
     let pattern = re(
         r#"(?x)^\s*OUTPUT\s+\$\{(\w+)\}\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+env\s+CARGO_TARGET_DIR=\$\{(\w+)\}\s+(?:RUSTFLAGS=\$\{(\w+)\}\s+)?cargo\s+build\s+--release\s+--target\s+\$\{(\w+)\}\s+-p\s+([\w-]+)\s+--manifest-path\s+\$\{(\w+)\}/Cargo\.toml\s+COMMAND\s+\$\{CMAKE_COMMAND\}\s+-E\s+copy(?:_if_different)?\s+\$\{(\w+)\}/\$\{(\w+)\}/release/(lib\w+\.a)\s+\$\{(\w+)\}\s+DEPENDS\s+\$\{(\w+)\}\s+\$\{(\w+)\}/([\w-]+)/Cargo\.toml(?P<more>(?:\s+[^\s]+?)*?)\s+WORKING_DIRECTORY\s+\$\{(\w+)\}\s+COMMENT\s+"[^"]*"(?:\s+VERBATIM)?\s*$"#,
     );
@@ -1453,7 +1537,11 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         .filter(|a| links.contains_key(*a))
         .collect();
     // amd64 is the reference arch whenever the module is built there.
-    let primary = if links.contains_key("amd64") { "amd64" } else { arches[0] };
+    let primary = if links.contains_key("amd64") {
+        "amd64"
+    } else {
+        arches[0]
+    };
     let first = &links[primary];
     let cmake_dir = source_dir(root, primary, &first.output, target)?;
     for a in arches.iter().copied() {
@@ -1646,8 +1734,9 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             let extra_crate = custom["extra"].as_array().and_then(|xs| {
                 xs.iter().find_map(|x| {
                     let ar = x["archive"].as_str()?;
-                    (raw.rsplit('/').next() == Some(ar))
-                        .then(|| format!("engine:crate:{}::TRUE", x["crate"].as_str().unwrap_or("")))
+                    (raw.rsplit('/').next() == Some(ar)).then(|| {
+                        format!("engine:crate:{}::TRUE", x["crate"].as_str().unwrap_or(""))
+                    })
                 })
             });
             let lib = extra_crate.unwrap_or_else(|| {
@@ -1740,12 +1829,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     };
     let by_arch: BTreeMap<_, Vec<_>> = links
         .iter()
-        .map(|(a, l)| {
-            (
-                a.clone(),
-                l.inputs.iter().map(|o| obj_key(o)).collect(),
-            )
-        })
+        .map(|(a, l)| (a.clone(), l.inputs.iter().map(|o| obj_key(o)).collect()))
         .collect();
     let common: BTreeSet<String> = by_arch[primary]
         .iter()
@@ -1909,6 +1993,17 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     if bodyless && cell.c_shims.is_empty() && cell.arch_shims.values().all(Vec::is_empty) {
         cell.shell_less = true;
     }
+    // A Rust body cmake linked under -Wl,--whole-archive (cdrom) brings every member of
+    // its staticlib, core and its panic handler included: rustc's bin would define all of
+    // them a second time (537 duplicates, which link-guard refuses). cmake's link had no
+    // shell, so neither does the cell.
+    if cell.link_order.values().any(|order| {
+        order
+            .windows(2)
+            .any(|w| w[0] == "-Wl,--whole-archive" && w[1] == "body")
+    }) {
+        cell.shell_less = true;
+    }
     let subs: BTreeMap<_, _> = links
         .iter()
         .map(|(a, l)| (a.clone(), l.subsystem.clone().unwrap_or_default()))
@@ -2032,7 +2127,23 @@ pub fn target_file_refs(root: &Path) -> Result<BTreeMap<String, Vec<String>>> {
     let mut out: BTreeMap<String, Vec<String>> = BTreeMap::new();
     for path in cmake_files(root)? {
         let text = read(&path)?;
+        // A target's own `add_custom_command(TARGET t POST_BUILD ... $<TARGET_FILE:t>)` is
+        // not a consumer: a file holding one defines `t` itself. legide-rust's stale
+        // cohab/CMakeLists.txt, which nothing includes, kept legide from converting.
+        let own: Vec<(usize, usize, String)> = statements(&text)
+            .into_iter()
+            .filter(|(_, _, cmd, _)| cmd == "add_custom_command")
+            .filter_map(|(s, e, _, raw)| {
+                let a = args(&raw);
+                (a.len() > 2 && a[0] == "TARGET" && a[2] == "POST_BUILD")
+                    .then(|| (s, e, a[1].clone()))
+            })
+            .collect();
         for cap in pattern.captures_iter(&text) {
+            let at = cap.get(0).unwrap().start();
+            if own.iter().any(|(s, e, t)| (*s..*e).contains(&at) && *t == cap[1]) {
+                continue;
+            }
             let files = out.entry(cap[1].to_owned()).or_default();
             let relative = path
                 .strip_prefix(root)
@@ -2114,8 +2225,18 @@ mod multi_body_tests {
              elseif(ARCH STREQUAL \"amd64\")\n    set(M_TARGET \"x86_64-pc-windows-gnu\")\n\
              elseif(ARCH STREQUAL \"arm64\")\n    set(M_TARGET \"aarch64-pc-windows-gnullvm\")\nendif()\n",
         );
-        t += &cmd("STUB", "m-stub", "libm_stub.a", "\n            native-widl\n            m_c");
-        t += &cmd("MRUST", "m-rust", "libm_rust.a", "\n            ${M_WS}/m-sys/Cargo.toml");
+        t += &cmd(
+            "STUB",
+            "m-stub",
+            "libm_stub.a",
+            "\n            native-widl\n            m_c",
+        );
+        t += &cmd(
+            "MRUST",
+            "m-rust",
+            "libm_rust.a",
+            "\n            ${M_WS}/m-sys/Cargo.toml",
+        );
         t
     }
 
@@ -2126,12 +2247,28 @@ mod multi_body_tests {
         assert_eq!(v["archive"], "libm_rust.a");
         assert_eq!(v["extra"][0]["crate"], "m-stub");
         assert_eq!(v["extra"][0]["archive"], "libm_stub.a");
-        let deps: Vec<_> = v["depends"].as_array().unwrap().iter().map(|d| d.as_str().unwrap()).collect();
+        let deps: Vec<_> = v["depends"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d.as_str().unwrap())
+            .collect();
         assert_eq!(deps, ["native-widl", "m_c"]);
         // Variables the stub's command still reads stay in the CMakeLists.
-        let vars: Vec<_> = v["vars"].as_array().unwrap().iter().map(|d| d.as_str().unwrap()).collect();
-        assert!(!vars.contains(&"M_WS") && !vars.contains(&"M_TARGET"), "{vars:?}");
-        assert!(vars.contains(&"MRUST_LIB") && vars.contains(&"MRUST_DIR"), "{vars:?}");
+        let vars: Vec<_> = v["vars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d.as_str().unwrap())
+            .collect();
+        assert!(
+            !vars.contains(&"M_WS") && !vars.contains(&"M_TARGET"),
+            "{vars:?}"
+        );
+        assert!(
+            vars.contains(&"MRUST_LIB") && vars.contains(&"MRUST_DIR"),
+            "{vars:?}"
+        );
     }
 
     #[test]
@@ -2161,9 +2298,16 @@ mod multi_body_tests {
         assert_eq!(v["crate"], "m-rust");
         assert_eq!(v["rustflags"]["i386"], "-C target-feature=+sse,+sse2");
         assert!(v["rustflags"].get("amd64").is_none());
-        assert!(v["vars"].as_array().unwrap().iter().any(|x| x == "MRUST_ENV"));
+        assert!(v["vars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|x| x == "MRUST_ENV"));
         // Any other use of the env variable is unmodelled.
-        let extra = text.replace("endif()\nrust_storage", "endif()\nmessage(${MRUST_ENV})\nrust_storage");
+        let extra = text.replace(
+            "endif()\nrust_storage",
+            "endif()\nmessage(${MRUST_ENV})\nrust_storage",
+        );
         assert!(super::custom_body(&extra).is_none());
     }
 
@@ -2172,7 +2316,10 @@ mod multi_body_tests {
         let flags = "-nostdlib -Wl,-entry,_DllMainCRTStartup@12 -Wl,--image-base,0x7bdc0000 \
                      -Wl,-entry,_Ws2HelpDllMain@12 dll/win32/ws2help/ws2help.def";
         assert_eq!(super::link_entry(flags), "_Ws2HelpDllMain@12");
-        assert_eq!(super::link_entry("-Wl,-entry,DllMainCRTStartup"), "DllMainCRTStartup");
+        assert_eq!(
+            super::link_entry("-Wl,-entry,DllMainCRTStartup"),
+            "DllMainCRTStartup"
+        );
         assert_eq!(super::link_entry("-nostdlib"), "");
     }
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import dataclasses
 import importlib.util
 import io
 import os
@@ -18,7 +17,6 @@ from .build_bindings import BuildBindings
 
 
 class Mechanisms(BuildBindings):
-    trim_plan = None
     wrapper: Callable[[list[str]], list[str]] | None = None
 
     def module(self):
@@ -99,25 +97,6 @@ class Mechanisms(BuildBindings):
                 return {"ok": False, "why": why}
         if k == "payload_stamp":
             return self.module().write_stamp(bd)
-        if k == "snapshot":
-            try:
-                return m.warmth.worktree_tree(repo)
-            except (OSError, RuntimeError, m.subprocess.SubprocessError):
-                return None
-        if k == "trim_plan":
-            try:
-                self.trim_plan = m.trim.plan_worktree(repo)
-                return dataclasses.asdict(self.trim_plan)
-            except OSError as error:
-                return {"error": str(error)}
-        if k == "trim_apply":
-            if self.trim_plan is None:
-                raise RuntimeError("trim plan is not owned")
-            try:
-                freed, _ = m.trim.apply(repo, self.trim_plan)
-                return {"freed": freed}
-            except OSError as error:
-                return {"error": str(error)}
         if k == "store_gc":
             from tools.artifact_runtime import scheduled_gc
 

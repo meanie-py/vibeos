@@ -1,5 +1,15 @@
 [workspace]
 members = [
+    "cdrom-cargo",
+    "pl011-cargo",
+    "legide-cargo",
+    "usbxhci-cargo",
+    "serial-cargo",
+    "pcix-cargo",
+    "partmgr-cargo",
+    "cdfs-cargo",
+    "afd-cargo",
+    "acpi-cargo",
     "d3dcompiler_47-cargo",
     "d3dcompiler_46-cargo",
     "d3dcompiler_43-cargo",
@@ -1285,6 +1295,7 @@ members = [
     "d3d8-rust",
     "d3d9-rust",
     "setup-rust",
+    "shlwapi-rust",
 ]
 resolver = "2"
 

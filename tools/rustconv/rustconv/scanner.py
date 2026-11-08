@@ -1573,8 +1573,11 @@ def _eval_c_const_expr(expr: str, symbols: dict[str, str]):
         return None
 
 
-def _resolve_pp_conditionals(path: Path, text: str) -> str:
-    """Drop dead #if/#ifdef branches; keep live ones + all macro invocations."""
+def _resolve_pp_conditionals(path: Path, text: str, keep_lines: bool = False) -> str:
+    """Drop dead #if/#ifdef branches; keep live ones + all macro invocations.
+
+    `keep_lines`: blank dead lines and the directives instead of dropping them, so line
+    numbers stay true (preamble_audit's fallback parse)."""
     symbols = dict(_DEFAULT_PP_DEFINES)
     symbols.update(_harvest_local_defines(path))
     out: list[str] = []
@@ -1596,7 +1599,11 @@ def _resolve_pp_conditionals(path: Path, text: str) -> str:
                 if um:
                     symbols.pop(um.group(1), None)
                 out.append(line)
+            elif keep_lines:
+                out.append("")
             continue
+        if keep_lines:
+            out.append("")
         kw, rest = cm.group(1), cm.group(2).strip()
         if kw in ("ifdef", "ifndef", "if"):
             parent = emitting()

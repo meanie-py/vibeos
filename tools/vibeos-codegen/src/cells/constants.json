@@ -57,6 +57,7 @@
   ],
   "KERNEL_KINDS": [
     "kernelmodedriver",
+    "kmdfdriver",
     "kerneldll"
   ],
   "KEPT": [
@@ -100,6 +101,7 @@
     "sdk/lib/crt/libcntpr_rust.a": "engine:cntpr_rust",
     "sdk/lib/cryptlib/libcryptlib_rust.a": "engine:cryptlib_rust",
     "sdk/lib/drivers/sptilib/libsptilib_rust.a": "engine:sptilib_rust",
+    "sdk/lib/drivers/arbiter/libarbiter_rust.a": "engine:arbiter_rust",
     "sdk/lib/ioevent/libioevent.a": "engine:c:ioevent",
     "sdk/lib/wdmguid/libwdmguid.a": "engine:c:wdmguid",
     "sdk/lib/drivers/ntoskrnl_vista/libntoskrnl_vista_rust.a": "engine:ntoskrnl_vista_rust",

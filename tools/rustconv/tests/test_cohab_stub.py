@@ -55,3 +55,12 @@ def test_a_pre_decorated_spec_name_anchors_the_c_symbol(tmp_path):
     assert '__asm__("_DxApi@20")' in i386 and '__asm__("_Plain@4")' in i386
     assert '__asm__("DxApi")' in rest and '__asm__("Plain")' in rest
     assert "@20@20" not in text and '"_DxApi@20"' not in rest
+
+
+def test_an_int128_argument_is_sixteen_bytes_on_i386(tmp_path):
+    """shlwapi's `AssocCreate(int128 ptr ptr)` (a by-value CLSID) is `_AssocCreate@24`, as
+    spec2def counts it; anchored `@12`, the i386 link failed."""
+    p = tmp_path / "s.spec"
+    p.write_text("@ stdcall AssocCreate(int128 ptr ptr)\n")
+    i386 = export_anchors("s", p).split("#elif")[0]
+    assert '"_AssocCreate@24"' in i386
