@@ -765,7 +765,7 @@ fn inputs_moved(c: &mut Context<'_>, a: &Value) -> Result<Value> {
     let Some(start) = a["tree"].as_str() else {
         return Ok(json!([]));
     };
-    let end = c.fact("snapshot", json!({}))?;
+    let end = json!(crate::warmth::worktree_tree(c.repo).ok());
     let Some(end) = end.as_str() else {
         return Ok(json!([]));
     };

@@ -103,7 +103,13 @@ Progress (`lint-rs`):
   admission lines. `diskspace.py` keeps only the admission flock and the lease fd,
   which must outlive the command. Parity against HEAD on the live host covered
   every status key, probe verdict and admission line.
-- Next: `warmth`/`retention`, then `hostlock` (with
+- Done: `warmth` build receipts (`vibeos-build/src/warmth.rs`). The native build
+  records its receipt and snapshots its tree directly, with no Python callback.
+  `land`'s close-enough check keeps its inert predicate in `tools/docs_only.py`,
+  which it shares with the pre-push hook, and hands its verdicts to native.
+  Parity: identical reachable-Python set (198 files, 4.5x faster) and `missing`
+  verdicts, with and without a master merge.
+- Next: `retention`, then `hostlock` (with
   the maintenance interlock it owns), last. The `land`/`queue` audit is done with
   the integrator, who has offered.
 

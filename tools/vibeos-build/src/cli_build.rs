@@ -131,7 +131,8 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     let cold = a["cold"] == true;
     let headers = args["headers_only"] == true;
     let artifact_env = &a["artifact_env"];
-    let start = b.helper("snapshot", json!({}))?;
+    // The tree `git add -A` would commit; None when git cannot say (never fatal here).
+    let start = json!(crate::warmth::worktree_tree(b.repo).ok());
     b.helper("failure_hook", json!({"tree":start}))?;
     if b.helper("isolation", json!({}))? != true {
         return b.finish();
@@ -600,7 +601,10 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         0,
         json!([]),
     )?;
-    let receipt = b.helper("warm_receipt", json!({}))?;
+    let receipt = match crate::warmth::record(b.repo, &b.arch, crate::trim::now()) {
+        Ok(tree) => json!({"tree": tree}),
+        Err(error) => json!({"error": error.to_string()}),
+    };
     if let Some(tree) = receipt["tree"].as_str() {
         b.stage(
             "warm-receipt",
