@@ -119,7 +119,14 @@ def check(args, repo: Path) -> int:
         if scope in ("source-early", "source-deferred"):
             expected = [name for name, _, _ in lints.source_partition_specs(repo, scope)]
             lints.run_source_lints(run, repo, strict=True, only=set(expected))
-            actual = [stage.name for stage in run.stages if stage.name != "partial"]
+            # Not the reconfigure stages: run_source_lints regenerates a stale build.ninja first
+            # (a merge that touched cmake input), and counting those as checks failed a gate
+            # whose every required check had run (20261108-020815-xRELnn).
+            actual = [
+                stage.name
+                for stage in run.stages
+                if stage.name != "partial" and not stage.name.startswith("reconfigure:")
+            ]
             run.extra.update(
                 checked_source_checks=actual,
                 unchecked_source_checks=sorted(lints.lint_tool_names(repo) - set(expected)),

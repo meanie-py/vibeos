@@ -156,8 +156,18 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    (256 loads and stores) did not move (1007-1217 ns both ways). On our VMs it cannot:
    QEMU's x86 backend emits nothing for an acquire or release barrier. The gain is real
    hardware's. Owed: the same sysbench A/B (`--tripwire FEX_TSO=1` against the default) on the
-   Pi, whose desktop has soaked 13 days, once its bench is free. What the guest time IS (JIT
-   compile against compiled code) is not split yet.
+   Pi, whose desktop has soaked 13 days, once its bench is free. What the guest time IS: mostly
+   the JIT. wowx64fex now prints, at each process's exit, FEXCore's compile totals (`jit:`) and
+   the same compiles by guest image (`jit image <dll>: N blocks, T us`, through a FEXCore hook,
+   vendor-patches/fex.md "compile hook"). appstorm64 (`20261107-231100-9uiqsjts`, 55/55, 86
+   x64 processes): 189k blocks and 265 s of compile, against the ~304 s of guest time
+   (`before calls`) an earlier run had. 95% of the compile time is in image code, and 98% of
+   that is in images more than one process loaded: ntdll 90 s (36%, in 80 processes), user32
+   24 s, kernel32 22 s, comctl32 and msvcrt 20 s each. Each process compiles the same system
+   DLL blocks again, which is exactly what FEX's code cache answers (owed: wiring it into the
+   Windows CPU layers, item 7). Multiblock off (`--tripwire FEX_MULTIBLOCK=0`, any FEX option
+   now goes through the tripwire this way) is a loss: 6.5x the blocks (1.23M), 422 s of compile,
+   1801 s of run against 1524 s (`20261107-233627-nkqxvuvk`, 55/55). Keep multiblock.
 6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
    file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
    `MiFlushTbAndCapture` stopped flushing the whole TLB once per re-protected page on arm64:
@@ -170,6 +180,22 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    two 1152M appstorm64 runs on 2026-11-01 (`20261101-164629-bykd7liv`, 55/55 each), nor in three
    at 1088M on 2026-11-03 (`20261103-194817-ll97ya56`, 55/55, ~11 repurposes each). Those runs
    bottomed at ~18k available pages against October's 10-14k, so they pressed reclaim less.
+7. Code cache (in progress, 2026-11-08). Item 5 puts ~93% of x64 guest compile time in system
+   DLL blocks that every process compiles again. FEX has the machinery for this:
+   - it writes a code map of the blocks a process compiled (`EnableCodeCachingWIP`, `ImageTracker`);
+   - `FEXOfflineCompiler` turns a map into a cache file;
+   - `CodeCache::LoadCache` / `EnableLoadedSection` / `FinalizeCodePages` load one.
+
+   But the Windows load side in this snapshot stops at TODOs (`ImageTracker.cpp`: "CodeCache::LoadCache,
+   RegisterMappedCodeBuffer", "EnableLoadedSection"). The offline compiler's Windows mode only
+   builds the 32-bit guest (`Is64Bit` is ARM64EC-only). And wowx64fex's `ImageTracker` reads x64
+   images as `IMAGE_NT_HEADERS32`: `SizeOfImage` happens to share the offset, but the load-config
+   read is wrong, so x64 images never get volatile metadata (harmless with TSO off). Owed, in
+   order:
+   - per-guest-bitness `ImageTracker`;
+   - an x64-guest offline compiler that runs in the guest;
+   - cache loading in wowx64fex, plus the page-finalize fault;
+   - then libwow64fex.
 
 They are graded where the media carries them (`tests/qemu/cli/ladder.py` `STAGED_LADDER`): they
 need build-amd64 to exist at all, so an arm64-only tree does not owe them. `hello64` (no

@@ -3810,6 +3810,34 @@ def test_check_update_baseline_rejects_unknown_tool(tmp_path, monkeypatch):
     assert not called, "an unknown tool name must not rewrite any baseline"
 
 
+def test_source_partition_coverage_ignores_reconfigure_stages(tmp_path, monkeypatch):
+    """A stale build.ninja is regenerated before the scanners run, in a stage of its own; that
+    is not a check, so it must not make the executed list differ from the partition."""
+    monkeypatch.setattr(
+        lints, "source_partition_specs", lambda repo, scope: [("a", 0, 0), ("b", 0, 0)]
+    )
+    monkeypatch.setattr(lints, "lint_tool_names", lambda repo: {"a", "b", "c"})
+
+    def run_lints(run, repo, strict, only):
+        run.add(Stage("reconfigure:build-amd64", status="ok"))
+        for name in ("a", "b"):
+            run.add(Stage(name, status="ok"))
+
+    monkeypatch.setattr(lints, "run_source_lints", run_lints)
+    seen = {}
+
+    def finalize(run, repo):
+        seen["stages"] = [s.name for s in run.stages]
+        seen["checked"] = run.extra["checked_source_checks"]
+        return 0
+
+    monkeypatch.setattr(debugcmd_mod.Run, "finalize", finalize)
+    args = Namespace(scope="source-early", strict=True, update_baseline=None, only=None, arch=None)
+    assert debugcmd_mod.check(args, tmp_path) == 0
+    assert "coverage-inventory" not in seen["stages"]
+    assert seen["checked"] == ["a", "b"]
+
+
 @pytest.mark.parametrize("selection", ["", ",", "typo", "toolA,typo"])
 def test_partial_check_rejects_bad_selection(tmp_path, monkeypatch, selection):
     monkeypatch.setattr(lints, "lint_tool_names", lambda repo: {"toolA"})
@@ -10237,6 +10265,7 @@ def test_payload_unreferenced_by_build_only_when_every_record_is_silent(tmp_path
     assert not unbuilt("tools/fex/shared.h")  # only the dependency log
     assert not unbuilt("sdk/lib/rust/Cargo.toml")  # the workspace, not a crate
     assert not unbuilt("dll/win32/wowx64/CMakeLists.txt")  # outside both scopes
+    assert unbuilt("tools/vibeos-test/src/smoke_run.rs")  # reads builds, never feeds one
 
 
 def test_payload_unreferenced_by_build_without_build_records_proves_nothing(tmp_path):

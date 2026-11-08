@@ -602,6 +602,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **amd64-bios: boot went silent after netstack's TDI self-test timed out (open, 1 in 7,
+  found 2026-11-08, fex lane).** In a full gate (`20261108-020815-xRELnn`, two CPUs, NVMe),
+  `smoke:amd64-bios` logged `TDI op timed out - IRP still pending`, `CONNECT FAILED
+  0xc00000b5` and a System thread exit, then nothing for 120 s (HANG_TIMEOUT). Six more
+  boots of the same media in the same configuration passed (`20261108-025836-VHHwDs`,
+  `20261108-030043-imRsDz`). Kept at
+  `~/vibeos-flake-farm/fails/auto/20261108-024954-JKt07d-smoke-amd64-bios-HANG_TIMEOUT`.
+  Next: a `farm` run of amd64-bios, to get a rate and a second sample.
+
 - **amd64: long boots wedged once osk.exe had leaked the GDI handle table (FIXED 2026-11-07,
   graviton lane).** The stock i386 `osk.exe` gained thousands of pens (to 8,300+ in one Chrome
   payload boot; magnify leaked too), the handle table filled, pool ran dry and win32k flooded

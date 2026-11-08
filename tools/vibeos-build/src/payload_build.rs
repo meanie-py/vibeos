@@ -339,7 +339,22 @@ fn walk_depfiles(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     }
     Ok(())
 }
+/// The tool crates that only ever read a finished build: the smoke and payload harness, the
+/// lint gate (its build-time scans report, they write nothing the media carries) and the bench
+/// driver. An edit to one cannot change what a build-<arch> stages, so it never makes that
+/// build stale; counting them did, and made every harness edit force a full amd64 rebuild
+/// before an arm64 payload could stage (smoke_run.rs, 2026-11-08). Unlike the scopes below,
+/// this needs no build record: it is a fact about the tool, not about one build.
+const NEVER_BUILD_INPUTS: [&str; 3] = [
+    "tools/vibeos-test/",
+    "tools/vibeos-lint/",
+    "tools/vibeos-bench/",
+];
+
 fn unreferenced(build: &Path, path: &str) -> Result<bool> {
+    if NEVER_BUILD_INPUTS.iter().any(|dir| path.starts_with(dir)) {
+        return Ok(true);
+    }
     let parts: Vec<_> = path.split('/').collect();
     let needle = if parts.len() >= 5 && parts[..3] == ["sdk", "lib", "rust"] {
         format!("/{}/", parts[..4].join("/"))
@@ -860,6 +875,15 @@ mod tests {
     fn no_build_records_prove_nothing() {
         let tmp = tempfile::tempdir().unwrap();
         assert!(!unreferenced(tmp.path(), "sdk/lib/rust/foo/src/lib.rs").unwrap());
+    }
+    #[test]
+    fn harness_crates_are_never_build_inputs() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(unreferenced(tmp.path(), "tools/vibeos-test/src/smoke_run.rs").unwrap());
+        assert!(unreferenced(tmp.path(), "tools/vibeos-lint/src/rules/mod.rs").unwrap());
+        // The codegen and build crates do write what a build stages.
+        assert!(!unreferenced(tmp.path(), "tools/vibeos-codegen/src/lib.rs").unwrap());
+        assert!(!unreferenced(tmp.path(), "tools/vibeos-build/src/lib.rs").unwrap());
     }
     #[test]
     fn unsupported_arch_rejected() {

@@ -67,6 +67,11 @@ public:
 
   virtual void PreCompile() {}
 
+  // VIBEOS PATCH (compile hook): CompileBlock calls this once for each block it compiled itself
+  // (not one another thread raced it to), with the cycle-counter ticks the whole call took. A
+  // frontend can attribute compile work to the guest image it came from; the default ignores it.
+  virtual void BlockCompiled(FEXCore::Core::InternalThreadState* Thread, uint64_t GuestRIP, uint64_t Ticks) {}
+
   virtual SourcecodeResolver* GetSourcecodeResolver() {
     return nullptr;
   }
