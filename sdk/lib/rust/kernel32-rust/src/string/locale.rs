@@ -852,6 +852,13 @@ static mut sYearMonthW: [WCHAR; 11] = [
     0 as ::core::ffi::c_int as WCHAR,
 ];
 
+// Windows' Control Panel\International value for LOCALE_SSHORTTIME (Vista+); the
+// old Wine table this came from predates it, so SetLocaleInfoW refused the type.
+static mut sShortTimeW: [WCHAR; 11] = [
+    b's' as WCHAR, b'S' as WCHAR, b'h' as WCHAR, b'o' as WCHAR, b'r' as WCHAR, b't' as WCHAR,
+    b'T' as WCHAR, b'i' as WCHAR, b'm' as WCHAR, b'e' as WCHAR, 0,
+];
+
 static mut NumShapeW: [WCHAR; 9] = [
     'N' as i32 as WCHAR,
     'u' as i32 as WCHAR,
@@ -864,7 +871,7 @@ static mut NumShapeW: [WCHAR; 9] = [
     0 as ::core::ffi::c_int as WCHAR,
 ];
 
-static mut registry_values: [registry_value; 39] = {
+static mut registry_values: [registry_value; 40] = {
     [
         registry_value {
             lctype: LOCALE_ICALENDARTYPE as DWORD,
@@ -1014,6 +1021,11 @@ static mut registry_values: [registry_value; 39] = {
         registry_value {
             lctype: LOCALE_SYEARMONTH as DWORD,
             name: &raw const sYearMonthW as *const WCHAR,
+            cached_value: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
+        },
+        registry_value {
+            lctype: LOCALE_SSHORTTIME as DWORD,
+            name: &raw const sShortTimeW as *const WCHAR,
             cached_value: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
         },
         registry_value {
@@ -26479,7 +26491,7 @@ pub unsafe extern "system" fn GetSystemDefaultUILanguage() -> LANGID {
 
 unsafe fn get_locale_registry_value(lctype: DWORD) -> *mut registry_value {
     let mut i: i32 = 0;
-    while (i as usize) < (core::mem::size_of::<[registry_value; 39]>()).wrapping_div(core::mem::size_of::<registry_value>()) {
+    while (i as usize) < (core::mem::size_of::<[registry_value; 40]>()).wrapping_div(core::mem::size_of::<registry_value>()) {
         if registry_values[i as usize].lctype == lctype {
             return core::ptr::addr_of_mut!(registry_values).cast::<registry_value>().offset(i as isize);
         }
@@ -26932,14 +26944,31 @@ pub unsafe extern "system" fn SetLocaleInfoW(
     let mut status: NTSTATUS;
 
     lctype &= 0xffff;
-    let value = get_locale_registry_value(lctype);
 
-    if data.is_null() || value.is_null() {
+    if data.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
 
-    if lctype == LOCALE_IDATE || lctype == LOCALE_ILDATE {
+    // Divergence from the C, which answered every type it keeps no registry value for
+    // with ERROR_INVALID_PARAMETER and let any type in its table be set (iCountry,
+    // sAbbrevLangName...). Windows (and Wine's SetLocaleInfoW) accept exactly these and
+    // fail every other type with ERROR_INVALID_FLAGS.
+    let settable = matches!(
+        lctype,
+        LOCALE_ICALENDARTYPE | LOCALE_ICURRDIGITS | LOCALE_ICURRENCY | LOCALE_IDIGITS
+            | LOCALE_IDIGITSUBSTITUTION | LOCALE_IFIRSTDAYOFWEEK | LOCALE_IFIRSTWEEKOFYEAR
+            | LOCALE_ILZERO | LOCALE_IMEASURE | LOCALE_INEGCURR | LOCALE_INEGNUMBER
+            | LOCALE_IPAPERSIZE | LOCALE_S1159 | LOCALE_S2359 | LOCALE_SCURRENCY
+            | LOCALE_SDECIMAL | LOCALE_SGROUPING | LOCALE_SLIST | LOCALE_SLONGDATE
+            | LOCALE_SMONDECIMALSEP | LOCALE_SMONGROUPING | LOCALE_SMONTHOUSANDSEP
+            | LOCALE_SNATIVEDIGITS | LOCALE_SNEGATIVESIGN | LOCALE_SPOSITIVESIGN
+            | LOCALE_SSHORTTIME | LOCALE_STHOUSAND | LOCALE_SYEARMONTH | LOCALE_SDATE
+            | LOCALE_SSHORTDATE | LOCALE_STIME | LOCALE_STIMEFORMAT | LOCALE_ITIME
+            | LOCALE_SINTLSYMBOL
+    );
+    let value = get_locale_registry_value(lctype);
+    if !settable || value.is_null() {
         SetLastError(ERROR_INVALID_FLAGS);
         return 0;
     }

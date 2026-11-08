@@ -2420,40 +2420,41 @@ unsafe fn NLS_EnumCalendarInfo(ctxt: *const enumcalendar_context) -> BOOL {
         return FALSE;
     }
 
+    // Divergence from the C, which passes the raw DWORD to the callback for
+    // CAL_RETURN_NUMBER: Windows (and Wine, `type &= ~CAL_RETURN_NUMBER`) always hands
+    // enumeration callbacks the string form; Wine's locale test parses it with strtoul.
+    let caltype: CALTYPE = (*ctxt).caltype & !CAL_RETURN_NUMBER;
+
     'cleanup: {
         if calendar == ENUM_ALL_CALENDARS {
             let optSz: INT = GetLocaleInfoW((*ctxt).lcid, LOCALE_IOPTIONALCALENDAR, core::ptr::null_mut(), 0);
             if optSz > 1 {
-                opt = HeapAlloc(GetProcessHeap(), 0, optSz as usize * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+                // One WCHAR more than asked for: the walk below expects a list ending in
+                // an empty entry, but the locale data holds one number ("6", or "0" for
+                // none), so the C read past the buffer and failed with ERROR_BADDB.
+                opt = HeapAlloc(GetProcessHeap(), 0, (optSz as usize + 1) * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
                 if opt.is_null() {
                     SetLastError(ERROR_NOT_ENOUGH_MEMORY);
                     break 'cleanup;
                 }
                 if GetLocaleInfoW((*ctxt).lcid, LOCALE_IOPTIONALCALENDAR, opt, optSz) != 0 {
+                    *opt.add(optSz as usize) = 0;
                     iter = opt;
                 }
             }
             calendar = NLS_GetLocaleNumber((*ctxt).lcid, LOCALE_ICALENDARTYPE) as CALID;
         }
+        let primary = calendar;
 
         loop {
             /* loop through calendars */
             loop {
                 /* loop until there's no error */
-                if (*ctxt).caltype & CAL_RETURN_NUMBER != 0 {
+                if (*ctxt).unicode != 0 {
                     ret = GetCalendarInfoW(
                         (*ctxt).lcid,
                         calendar,
-                        (*ctxt).caltype,
-                        core::ptr::null_mut(),
-                        bufSz / core::mem::size_of::<WCHAR>() as INT,
-                        buf as LPDWORD,
-                    ) as BOOL;
-                } else if (*ctxt).unicode != 0 {
-                    ret = GetCalendarInfoW(
-                        (*ctxt).lcid,
-                        calendar,
-                        (*ctxt).caltype,
+                        caltype,
                         buf,
                         bufSz / core::mem::size_of::<WCHAR>() as INT,
                         core::ptr::null_mut(),
@@ -2462,7 +2463,7 @@ unsafe fn NLS_EnumCalendarInfo(ctxt: *const enumcalendar_context) -> BOOL {
                     ret = GetCalendarInfoA(
                         (*ctxt).lcid,
                         calendar,
-                        (*ctxt).caltype,
+                        caltype,
                         buf as LPSTR,
                         bufSz / core::mem::size_of::<CHAR>() as INT,
                         core::ptr::null_mut(),
@@ -2477,10 +2478,10 @@ unsafe fn NLS_EnumCalendarInfo(ctxt: *const enumcalendar_context) -> BOOL {
                 }
                 /* so resize it */
                 let newSz: INT = if (*ctxt).unicode != 0 {
-                    GetCalendarInfoW((*ctxt).lcid, calendar, (*ctxt).caltype, core::ptr::null_mut(), 0, core::ptr::null_mut())
+                    GetCalendarInfoW((*ctxt).lcid, calendar, caltype, core::ptr::null_mut(), 0, core::ptr::null_mut())
                         * core::mem::size_of::<WCHAR>() as INT
                 } else {
-                    GetCalendarInfoA((*ctxt).lcid, calendar, (*ctxt).caltype, core::ptr::null_mut::<CHAR>(), 0, core::ptr::null_mut())
+                    GetCalendarInfoA((*ctxt).lcid, calendar, caltype, core::ptr::null_mut::<CHAR>(), 0, core::ptr::null_mut())
                         * core::mem::size_of::<CHAR>() as INT
                 };
                 if bufSz >= newSz {
@@ -2514,23 +2515,36 @@ unsafe fn NLS_EnumCalendarInfo(ctxt: *const enumcalendar_context) -> BOOL {
                 break;
             }
 
-            if iter.is_null() || *iter == 0 {
-                /* no more calendars */
-                break;
-            }
-
-            calendar = 0;
-            while *iter >= b'0' as WCHAR && *iter <= b'9' as WCHAR {
-                calendar = calendar * 10 + (*iter - b'0' as WCHAR) as CALID;
+            // Next optional calendar. "0" means none, and the primary calendar is
+            // often listed again; neither is enumerated a second time.
+            let mut next: CALID = 0;
+            let mut bad = false;
+            while next == 0 || next == primary {
+                if iter.is_null() || *iter == 0 {
+                    break;
+                }
+                next = 0;
+                while *iter >= b'0' as WCHAR && *iter <= b'9' as WCHAR {
+                    next = next * 10 + (*iter - b'0' as WCHAR) as CALID;
+                    iter = iter.add(1);
+                }
+                let sep = *iter;
                 iter = iter.add(1);
+                if sep != 0 {
+                    bad = true;
+                    break;
+                }
             }
-            let sep = *iter;
-            iter = iter.add(1);
-            if sep != 0 {
+            if bad {
                 SetLastError(ERROR_BADDB);
                 ret = FALSE;
                 break;
             }
+            if next == 0 || next == primary {
+                /* no more calendars */
+                break;
+            }
+            calendar = next;
         }
     }
 
