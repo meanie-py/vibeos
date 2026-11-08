@@ -530,6 +530,18 @@ fn read_manifest(cache: &Path) -> Result<Value> {
         Err(e) => Err(e.into()),
     }
 }
+/// Drop every `dest=src` line whose destination (case-insensitively, as the guest's FAT/ISO
+/// sees it) a payload also names; returns how many were dropped.
+fn payload_overrides<'a>(lines: &mut Vec<String>, payload: impl Iterator<Item = &'a str>) -> usize {
+    let names: std::collections::HashSet<String> = payload.map(str::to_lowercase).collect();
+    let before = lines.len();
+    lines.retain(|line| {
+        line.split_once('=')
+            .is_none_or(|(dest, _)| !names.contains(&dest.to_lowercase()))
+    });
+    before - lines.len()
+}
+
 pub fn strip_cli(repo: &Path, args: &[String]) -> Result<u8> {
     if args.iter().any(|s| s == "--help" || s == "-h") {
         println!("Usage: strip-cd-media (--file FILE | --lst FILE --out FILE) --cache DIR --objcopy TOOL");
@@ -599,10 +611,18 @@ pub fn strip_cli(repo: &Path, args: &[String]) -> Result<u8> {
     let env: serde_json::Value =
         serde_json::to_value(std::env::vars().collect::<BTreeMap<_, _>>())?;
     let payload = crate::payload_build::media_manifest(repo, out, &env)?;
-    for (destination, source) in payload
+    let payload = payload
         .as_object()
-        .ok_or("payload manifest is not a mapping")?
-    {
+        .ok_or("payload manifest is not a mapping")?;
+    // A payload REPLACES a stock file at its destination. Appending it beside the stock line
+    // left two entries for one path: mkisofs kept the stock file under the name and renamed
+    // the payload's to `<name>000.exe`, so shlwapiwinetestc's C-bound exe never ran and its
+    // "before" run silently tested the Rust; the arm64 ramdisk refused the pair outright.
+    let replaced = payload_overrides(&mut lines, payload.keys().map(String::as_str));
+    if replaced > 0 {
+        println!("strip_cd_media: {replaced} stock entries replaced by payload files");
+    }
+    for (destination, source) in payload {
         lines.push(format!(
             "{destination}={}",
             source.as_str().ok_or("payload source is not a path")?
@@ -714,5 +734,35 @@ pub fn api(request: &Value) -> Result<Value> {
             Ok(json!({"twin":twin,"manifest":manifest}))
         }
         _ => Err("unknown media stage operation".into()),
+    }
+}
+
+#[cfg(test)]
+mod payload_override_tests {
+    use super::payload_overrides;
+
+    #[test]
+    fn a_payload_replaces_the_stock_line_at_its_destination() {
+        let mut lines = vec![
+            "/tmp/empty".to_owned(),
+            "reactos/bin/shlwapi_winetest.exe=/b/stripped/1-shlwapi_winetest.exe".to_owned(),
+            "reactos/system32/shlwapi.dll=/b/stripped/2-shlwapi.dll".to_owned(),
+        ];
+        let n = payload_overrides(
+            &mut lines,
+            [
+                "reactos/bin/SHLWAPI_WINETEST.exe",
+                "reactos/bin/shlwapc.dll",
+            ]
+            .into_iter(),
+        );
+        assert_eq!(n, 1);
+        assert_eq!(
+            lines,
+            vec![
+                "/tmp/empty",
+                "reactos/system32/shlwapi.dll=/b/stripped/2-shlwapi.dll"
+            ]
+        );
     }
 }
