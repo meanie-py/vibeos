@@ -895,6 +895,13 @@ fn store_gc(c: &mut Context<'_>, a: &Value) -> Result<Value> {
 }
 
 pub fn dispatch(repo: &Path, r: &Value, host: &mut dyn Host) -> Result<Value> {
+    Ok(dispatch_env(repo, r, host)?.0)
+}
+/// [`dispatch`], also returning the environment as the mechanism left it: the
+/// build environment overlays SOURCE_DATE_EPOCH, and a caller that runs later
+/// mechanisms in the same session must hand them that, as a Python caller's
+/// `os.environ` would.
+pub fn dispatch_env(repo: &Path, r: &Value, host: &mut dyn Host) -> Result<(Value, Value)> {
     let a = &r["kwargs"];
     let arch = s(a, "arch", "").to_string();
     let build = a["build"]
@@ -907,7 +914,7 @@ pub fn dispatch(repo: &Path, r: &Value, host: &mut dyn Host) -> Result<Value> {
         build,
         env: a.get("env").cloned().unwrap_or(json!({})),
     };
-    match r["op"]
+    let result = match r["op"]
         .as_str()
         .unwrap_or("")
         .trim_start_matches("cli_build_helper_")
@@ -932,5 +939,6 @@ pub fn dispatch(repo: &Path, r: &Value, host: &mut dyn Host) -> Result<Value> {
             json!({"fex_out_of_tree":FEX_OUT_OF_TREE,"cpu_dll":CPU_DLL,"cpu_sources":CPU_SOURCES}),
         ),
         op => Err(Error::new(format!("unknown build helper operation {op}"))),
-    }
+    }?;
+    Ok((result, c.env))
 }

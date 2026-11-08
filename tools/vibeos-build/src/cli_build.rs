@@ -45,8 +45,20 @@ impl Build<'_> {
         kw["arch"] = json!(self.arch);
         kw["build"] = json!(self.dir);
         kw["args"] = self.args.clone();
-        kw["env"] = self.host_env.clone();
-        crate::cli_build_helpers::dispatch(self.repo, &json!({"op":op,"kwargs":kw}), self.host)
+        // An explicit env (cache stats takes the build's) is that call's alone.
+        let own = kw.get("env").is_none();
+        if own {
+            kw["env"] = self.host_env.clone();
+        }
+        let (result, env) = crate::cli_build_helpers::dispatch_env(
+            self.repo,
+            &json!({"op":op,"kwargs":kw}),
+            self.host,
+        )?;
+        if own {
+            self.host_env = env;
+        }
+        Ok(result)
     }
     fn helper(&mut self, name: &str, a: Value) -> Result<Value> {
         self.host
@@ -248,14 +260,15 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     }
     // The adapter returns a complete environment. It reuses the existing native
     // cache policy and broker; the broker remains the only admission authority.
-    let setup = b.helper(
-        "build_environment",
+    let setup = b.mechanism(
+        "environment",
         json!({"wrapped":b.wrapped,"artifact_env":artifact_env}),
     )?;
     if setup.is_null() {
         return b.finish();
     }
     b.env = setup["env"].clone();
+    let cache = setup["cache"].clone();
     let caching = setup["caching"] == true;
     let mut deferred = vec![];
     // arm64 under VIBEOS_FEX=1 stages the same guests, so it refreshes them too: it used to
@@ -472,7 +485,11 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         json!([]),
     )?;
     if caching {
-        b.helper("cache_stats", json!({"env":b.env,"wrapped":b.wrapped}))?;
+        let env = b.env.clone();
+        b.mechanism(
+            "cache_stats",
+            json!({"cache":cache,"env":env,"wrapped":b.wrapped}),
+        )?;
     }
     if cfg["needs_mkramdisk"] == true {
         let ramdisk = repo.join("qemu/ramdisk.img");
