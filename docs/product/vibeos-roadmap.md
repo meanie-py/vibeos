@@ -618,11 +618,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   faulted with 0xC0000005 both writing it (`.c:90`) and reading it back (`.c:76`, `Match = 0`
   at `.c:93`). Seen once, in conformance:arm64 during batch 161's gate
   (`/tmp/vibeos-cli/20261108-074334-c9UMvk-conformance-arm64`); the retry passed, and the
-  batch (shell32 d3dwine) touches no MM. The signature points to a race between concurrent
+  batch (shell32 d3dwine) touches no MM. Seen again in batch 165's gate
+  (`/tmp/vibeos-cli/20261108-095623-oBpdmQ-conformance-arm64`, same three lines, passed on
+  retry): 2 of 5 gates. The signature points to a race between concurrent
   commits in one process (PTE or page-table population, or the VAD), not to address-space
   layout. It is unrelated to 56755a2a231 (kernel32's user-mode sort-table mapping). Next:
   `farm --arches arm64` on the conformance payload to get a rate, then a tripwire on that
   path.
+
+- **i386: bugcheck during user32:msg's cross-thread SetParent (open, frequent, found
+  2026-11-08, upstream-sync lane; owner unassigned, win32k).** `test_setparent_status` runs a
+  thread that calls `SetParent(hwnd, hwnd)` on the main thread's window and then exits, while
+  the main thread sits in PeekMessage. The guest bugchecks right after `msg.c:20303`. Seen as
+  0x1E (an access violation at `co_MsqDispatchOneSentMessage`+0x283, msgqueue.rs, reached from
+  `co_IntPeekMessage`, with ntoskrnl+0xA1FFE on top), 0x0A (IRQL, a user address
+  0x02036220 touched at ntoskrnl+0x12934) and once 0x1A. In this lane's msg sweeps it hit 7 of
+  8 boots from 09:46 on and 0 of 4 before. An A/B that removed the lane's only uncommitted
+  (user32) changes still gave 3 of 3 (`/tmp/vibeos-cli/20261108-102454-qWaILx-smoke-i386`),
+  so it is not caused by them. The likeliest reading is a race between dispatching a
+  message another thread sent and that sender's exit (its USER_SENT_MESSAGE, or the pti it
+  points at, freed under the receiver), made more likely by host load. That reading is not
+  verified. Repro: `./vibeos-cli build --arch i386 --winetest-sweep --winetest-only msg`, then
+  `smoke --arch i386 --until "sweep complete" --repeat 3`.
 
 - **amd64: magenta L-shaped block over the "My Computer" icon (open, every UEFI amd64 gate
   since at least 2026-11-07 00:22, the oldest kept).** It is identical in every amd64 gate

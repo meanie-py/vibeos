@@ -10097,6 +10097,7 @@ dependencies = [
 name = "user32-rust"
 version = "0.1.0"
 dependencies = [
+ "ntdll-sys",
  "panic-common",
  "win32k-sys",
  "win32macros-rust",
