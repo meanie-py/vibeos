@@ -153,6 +153,10 @@ Progress: `repro` done (`vibeos-build/src/repro.rs`: PE parse, compare, report,
 diff-dirs). Its output matched the Python byte for byte on 15 real kernel/DLL
 images across 3 arches, plus non-PE and missing-file cases. `verify`'s two streamed
 cold builds and the optional diffoscope stay in the facade.
+`difftest` done (`vibeos-test/src/difftest.rs`): discovery, manifest-declared
+targets and feature sets, the one-invocation-per-crate plan, graded counts and
+verdicts. The existing Python tests now act as the native contract. Identical argv
+and stages for all 21 invocations, and a real run passed 26/26.
 
 Acceptance: compare actual outputs with the old implementation and exercise the
 external debugger/VM boundary when relevant; native fixture tests alone do not
