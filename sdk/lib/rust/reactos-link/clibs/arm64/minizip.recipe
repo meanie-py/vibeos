@@ -1,0 +1,5 @@
+# minizip (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	vendor/zlib/contrib/minizip/ioapi.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/zlib/contrib/minizip/iowin32.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/zlib/contrib/minizip/unzip.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 _WIN32_WINNT=0x502
+c	vendor/zlib/contrib/minizip/zip.c	@build/sdk/lib/3rdparty/zlib vendor/zlib @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/zlib/include	-std=gnu99 @core	NO_VIZ WINVER=0x502 _WIN32_WINNT=0x502

@@ -1,0 +1,2 @@
+# cpprt (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+cxx	sdk/lib/cpprt/__cxa_pure_virtual.cpp	@build/sdk/lib/cpprt sdk/lib/cpprt @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/crt/include sdk/include/c++	@core -fexceptions	WINVER=0x502 _CRT_DECLARE_NONSTDC_NAMES=1 _CRT_NONSTDC_NO_DEPRECATE _DLL _WIN32_WINNT=0x502 __USE_CRTIMP

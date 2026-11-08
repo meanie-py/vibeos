@@ -488,8 +488,26 @@ extends it from the boot spine to every fully-Rust module.
        `spec2def()` calls (uxtheme's vista/else branches) the spec is the one this build's
        spec2def command reads, not the first in the text; and an `add_idl_reg_scripts` under
        an `if()` (comdlg32) is depended on as `$<TARGET_NAME_IF_EXISTS:...>`. Next: the
-       modules that link the C++ runtime (cpprt + the toolchain's libc++/libc++abi, whose
-       absolute host paths a cell must not carry: needs a `toolchain:` link item).
+       modules that link the C++ runtime.
+     - **2026-11-08: C++, second wave (35).** acppage cabview certutil ctfmon devmgr drmk
+       drwtsn32 fontext framedyn hdaudbus iernonce mmc_new mmcshext msctf msctfime msgina
+       mspaint msutb mydocs netshell ntobjshex portcls rapps sendmail shell32 sndrec32 sol
+       spider stobject ucx01000 usbhub3 wdf01000 zipfldr ac97 cmipci, EQUIVALENT ×3. New:
+       `toolchain:<file>` link items (cmake links libc++/libc++abi/libunwind from the
+       llvm-mingw sysroot by absolute host path; reactos-link resolves them under its own
+       `.build-tools/llvm-mingw/<triple>/lib`); `KIND wdmdriver` (--wdmdriver pefixup);
+       `set_target_cpp_properties` moves to the OBJECT library (WITH_CXX_EXCEPTIONS/RTTI are
+       target properties the compile flags read) instead of being dropped; a moved statement
+       whose last argument line ends in a comment keeps its `)` on its own line (wdf01000);
+       `$<TARGET_PROPERTY:<t>,...>` in the module's file reads `<t>_shims`.
+       **Held:** shdocvw, shlwapi (their `$<TARGET_OBJECTS:<sibling>>` sources compile in
+       `_shims` without the sibling OBJECT library's own usage, atl_classes: needs sibling
+       OBJECT libraries modelled); browseui (`target_link_options`), uniata
+       (`set_target_properties`), explorer (rshell reads its file), rshell (a C++ source
+       in no source dir), msvcrt (its custom cargo command shape). cardlib/menuband/
+       recyclebin/usbdex's cmake cargo archives became `engine:*_rust` crates. **Owed:**
+       mmc_new still links cmake's `libmmc_uuids.a` (an `add_iid_library` of widl `_i.c`
+       the library index does not model; baselined in scan_cmake_linked_rust).
      - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
        `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
        `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses

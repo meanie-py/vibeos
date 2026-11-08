@@ -523,6 +523,26 @@ pub fn library_index(root: &Path) -> Result<LibraryIndex> {
         })
         .collect())
 }
+/// A library from the llvm-mingw sysroot (`<llvm-mingw>/<triple>/lib/libc++.a`, which cmake
+/// links into the C++ modules by absolute path) as `toolchain:libc++.a`: reactos-link finds
+/// it under its own `.build-tools/llvm-mingw`, so the cell carries no host path.
+pub fn toolchain_item(root: &Path, raw: &str) -> Option<String> {
+    let path = Path::new(raw);
+    if !path.is_absolute() {
+        return None;
+    }
+    let tc = std::fs::canonicalize(root.join(".build-tools/llvm-mingw")).ok()?;
+    let rest: Vec<_> = path
+        .strip_prefix(&tc)
+        .ok()?
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    match rest.as_slice() {
+        [_triple, lib, file] if lib == "lib" => Some(format!("toolchain:{file}")),
+        _ => None,
+    }
+}
 pub fn engine_lib(lib: &str, index: &LibraryIndex) -> Option<(String, Vec<String>)> {
     let constants = super::constants();
     if let Some(name) = constants["ENGINE_LIBS"].get(lib).and_then(|v| v.as_str()) {
@@ -1739,11 +1759,13 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
                     })
                 })
             });
-            let lib = extra_crate.unwrap_or_else(|| {
-                engine_lib(raw, &index)
-                    .map(|x| x.0)
-                    .unwrap_or_else(|| raw.clone())
-            });
+            let lib = extra_crate
+                .or_else(|| toolchain_item(root, raw))
+                .unwrap_or_else(|| {
+                    engine_lib(raw, &index)
+                        .map(|x| x.0)
+                        .unwrap_or_else(|| raw.clone())
+                });
             if !static_libs.contains(&lib) {
                 static_libs.push(lib.clone());
                 seq.push(lib.clone());

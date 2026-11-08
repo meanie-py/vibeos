@@ -59,7 +59,15 @@ fn rc_deps(cmd: &str, raw: &str) -> Option<Vec<String>> {
 }
 fn retarget(cmd: &str, raw: &str, new: &str) -> String {
     let first = args(raw).first().cloned().unwrap_or_default();
-    format!("{cmd}({})", raw.trim().replacen(&first, new, 1))
+    let body = raw.trim().replacen(&first, new, 1);
+    // wdf01000's include list ends `shared/irphandlers/pnp/km # pnpprivkm.hpp` on its own line
+    // before `)`: trimmed, the paren joined the comment and the CMakeLists stopped parsing.
+    let last = body.rsplit('\n').next().unwrap_or("");
+    if last.contains('#') && !last.contains('"') {
+        format!("{cmd}({body}\n)")
+    } else {
+        format!("{cmd}({body})")
+    }
 }
 fn basename(s: &str) -> String {
     Path::new(s)
@@ -270,9 +278,6 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             ));
         }
         if target && cmd == "set_target_properties" && names_only(&a) {
-            drop = true
-        }
-        if target && cmd == "set_target_cpp_properties" {
             drop = true
         }
         if target
@@ -610,7 +615,10 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         by_arch.insert(
             arch,
             libs.iter()
-                .filter(|x| !x.starts_with("engine:") && !x.starts_with('-'))
+                .filter(|x| {
+                    // engine:/toolchain: items are resolved by reactos-link, not built by cmake.
+                    !x.starts_with("engine:") && !x.starts_with("toolchain:") && !x.starts_with('-')
+                })
                 .cloned()
                 .collect::<BTreeSet<_>>(),
         );
@@ -757,6 +765,16 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         }));
         lines.push("endif()".into());
         block = lines;
+    }
+    // shdocvw_sublib and shlwapi_autocomp compile with the module's own settings through
+    // `$<TARGET_PROPERTY:shdocvw,COMPILE_DEFINITIONS>`. The cell's custom target carries
+    // none; those settings now live on the OBJECT library.
+    let shims = format!("{}_shims", cell.target);
+    if block.iter().any(|l| l.contains(&format!("add_library({shims} OBJECT"))) {
+        out = out.replace(
+            &format!("$<TARGET_PROPERTY:{},", cell.target),
+            &format!("$<TARGET_PROPERTY:{shims},"),
+        );
     }
     Ok(out + &block.join("\n") + "\n")
 }
