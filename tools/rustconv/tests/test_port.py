@@ -2340,3 +2340,25 @@ def test_a_header_static_is_never_exported_as_an_island_extern(tmp_path, monkeyp
     )
     monkeypatch.setattr(port, "REPO", tmp_path)
     assert port._header_internal_statics({"module_dir": "."}) == {"COLOR_FIXUP_IDENTITY"}
+
+
+def test_a_linked_librarys_undefined_guids_get_initguid_storage(tmp_path, monkeypatch):
+    # wined3d_main.c includes <initguid.h> before d3d12.h; vkd3d, linked into d3dwine,
+    # references IID_ID3D12Device -- the C TU was its only definition.
+    (tmp_path / "m").mkdir()
+    (tmp_path / "m" / "CMakeLists.txt").write_text("target_link_libraries(d3dwine wine vkd3d)\n")
+    lib = tmp_path / "build-amd64" / "sdk" / "lib" / "vkd3d"
+    lib.mkdir(parents=True)
+    (lib / "libvkd3d.a").write_bytes(b"")
+    nm = tmp_path / ".build-tools" / "llvm-mingw" / "bin" / "x86_64-w64-mingw32-nm"
+    nm.parent.mkdir(parents=True)
+    nm.write_text("")
+    monkeypatch.setattr(port, "REPO", tmp_path)
+
+    class R:
+        stdout = "device.c.obj:\n                 U IID_ID3D12Device\n                 U memcpy\n"
+
+    monkeypatch.setattr(port.subprocess, "run", lambda *a, **k: R())
+    assert port.linked_library_guid_refs(tmp_path / "m" / "CMakeLists.txt") == {
+        "IID_ID3D12Device"
+    }

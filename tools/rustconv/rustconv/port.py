@@ -1917,6 +1917,46 @@ def guid_library_symbols(libs: list[str]) -> set[str]:
     return out
 
 
+_GUID_NAME = re.compile(r"^(?:IID|CLSID|GUID|DIID|LIBID|CATID|FMTID|MEDIATYPE|MEDIASUBTYPE)_\w+$")
+
+
+def linked_library_guid_refs(cmakelists: Path) -> set[str]:
+    """GUIDs a static library the target links REFERENCES but does not define, by llvm-nm.
+
+    The C TU that includes <initguid.h> defines storage for every DEFINE_GUID it sees, and a
+    linked library may be what uses it: wined3d_main.c includes initguid.h before d3d12.h, and
+    vkd3d (linked into d3dwine) references IID_ID3D12Device and 19 more that nothing else
+    defines -- the Rust named none of them, so the flipped DLL failed to link.
+    """
+    if not cmakelists.is_file():
+        return set()
+    linked = " ".join(
+        re.findall(
+            r"target_link_libraries\(\s*\w+([^)]*)\)", cmakelists.read_text(errors="replace")
+        )
+    ).split()
+    build = next(iter(sorted(REPO.glob("build-amd64"))), None) or next(
+        iter(sorted(REPO.glob("build-*"))), None
+    )
+    nm = next(
+        iter(sorted((REPO / ".build-tools" / "llvm-mingw" / "bin").glob("*-w64-mingw32-nm"))), None
+    )
+    if build is None or nm is None:
+        return set()
+    out: set[str] = set()
+    for lib in dict.fromkeys(linked):
+        archive = build / "sdk" / "lib" / lib / f"lib{lib}.a"
+        if not archive.is_file():
+            continue
+        listing = subprocess.run(
+            [str(nm), "--undefined-only", str(archive)], capture_output=True, text=True, check=False
+        ).stdout
+        names = re.findall(r"^\s*U (\w+)$", listing, re.M)
+        names = [n[1:] if build.name == "build-i386" and n.startswith("_") else n for n in names]
+        out |= {n for n in names if _GUID_NAME.match(n)}
+    return out
+
+
 _GUID_STATIC = re.compile(
     r"(?m)^(?:#\[no_mangle\]\n)?pub static (?:mut )?(\w+): (?:GUID|_GUID|IID|CLSID) = "
     # Either layout: a literal on its own lines, or on one (fontext's IID_IContextMenu copy).
@@ -1993,6 +2033,8 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
             re.findall(r"^pub use crate::types::(\w+) as \w+;", prelude.read_text(), re.M)
         )
     want = {n for n in declared if re.search(rf"\b{n}\b", body)} - own
+    # ...and what a static library the target links needs the C TU's INITGUID copy for.
+    want |= linked_library_guid_refs(module_dir / "CMakeLists.txt") - own
     # A GUID uuid.lib already defines is that library's, when the target links it: the C's
     # INITGUID copy is DECLSPEC_SELECTANY and folds into uuid's at link, but a Rust
     # `#[no_mangle]` static is a strong second definition (msctfime: GUID_TFCAT_TIP_KEYBOARD,
