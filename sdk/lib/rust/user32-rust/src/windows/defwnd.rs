@@ -1252,6 +1252,13 @@ pub unsafe extern "system" fn RealDefWindowProcA(
             }
 
             WM_SETTEXT => {
+                // A non-NULL lParam with a zero high word is not a string:
+                // Windows fails it (returns 0) and leaves the text alone
+                // (user32:msg test_defwinproc passes 0x1234). We read it.
+                if lParam != 0 && (lParam as usize) >> 16 == 0 {
+                    Result = 0;
+                    break 'arm;
+                }
                 DefSetText(hWnd, lParam as PCWSTR, TRUE);
 
                 if (GetWindowLongPtrW(hWnd, GWL_STYLE) & WS_CAPTION as LONG_PTR)
@@ -1496,6 +1503,13 @@ pub unsafe extern "system" fn RealDefWindowProcW(
             }
 
             WM_SETTEXT => {
+                // A non-NULL lParam with a zero high word is not a string:
+                // Windows fails it (returns 0) and leaves the text alone
+                // (user32:msg test_defwinproc passes 0x1234). We read it.
+                if lParam != 0 && (lParam as usize) >> 16 == 0 {
+                    Result = 0;
+                    break 'outer;
+                }
                 DefSetText(hWnd, lParam as PCWSTR, FALSE);
 
                 if (GetWindowLongPtrW(hWnd, GWL_STYLE) & WS_CAPTION as LONG_PTR)
