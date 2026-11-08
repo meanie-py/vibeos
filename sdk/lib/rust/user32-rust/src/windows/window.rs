@@ -560,7 +560,7 @@ pub unsafe extern "system" fn CreateWindowExA(
         RegisterSystemControls();
     }
 
-    'skip_mdi: {
+    {
         if (dwExStyle & WS_EX_MDICHILD) != 0 {
             let mut mPos: [POINT; 2] = core::mem::zeroed();
             let mut id: UINT = 0;
@@ -575,7 +575,10 @@ pub unsafe extern "system" fn CreateWindowExA(
 
             if (*pWndParent).fnid != FNID_MDICLIENT {
                 WARN!("WS_EX_MDICHILD, but parent %p is not MDIClient\n", hWndParent);
-                break 'skip_mdi;
+                // The C fell through to an ordinary CreateWindowEx here.
+                // Windows (and Wine) fail the call: user32:win asserts
+                // "WS_EX_MDICHILD with a not MDIClient parent should fail".
+                return core::ptr::null_mut();
             }
 
             // lpParams of WM_[NC]CREATE is different for MDI children.
@@ -689,7 +692,7 @@ pub unsafe extern "system" fn CreateWindowExW(
         RegisterSystemControls();
     }
 
-    'skip_mdi: {
+    {
         if (dwExStyle & WS_EX_MDICHILD) != 0 {
             let mut mPos: [POINT; 2] = core::mem::zeroed();
             let mut id: UINT = 0;
@@ -704,7 +707,10 @@ pub unsafe extern "system" fn CreateWindowExW(
 
             if (*pWndParent).fnid != FNID_MDICLIENT {
                 WARN!("WS_EX_MDICHILD, but parent %p is not MDIClient\n", hWndParent);
-                break 'skip_mdi;
+                // The C fell through to an ordinary CreateWindowEx here.
+                // Windows (and Wine) fail the call: user32:win asserts
+                // "WS_EX_MDICHILD with a not MDIClient parent should fail".
+                return core::ptr::null_mut();
             }
 
             mdi.szClass = lpClassName;
