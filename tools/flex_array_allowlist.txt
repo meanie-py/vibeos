@@ -78,3 +78,10 @@ comctl32-cargo: THEMING_ScrollbarSubclassProc
 # Test 1 (does the C over-allocate?): NO -- `static const` / `static WNDPROC[...]`, nothing allocated.
 # Test 2 (is the length a literal 1?): it is ARRAY_SIZE of a one-element initializer, not a `[1]`
 #   placeholder; a bogus prop index is out of bounds in the C too.
+
+# ---- d3dwine-rust -------------------------------------------------------------------------
+d3dwine-rust: _ZN12d3dwine_rust7d3dwine12shader_spirv27shader_spirv_compile_shaderE
+# NOT a flexible array: shader_spirv.c:110 `enum vkd3d_shader_spirv_extension extensions[1];`
+# is a fixed one-slot array inside the per-compile args struct (no over-allocation), and
+# the C asserts `extension_count <= ARRAY_SIZE(extensions)` right after filling it. A
+# second extension would overflow in C; here it panics. Correct check; it stays.
