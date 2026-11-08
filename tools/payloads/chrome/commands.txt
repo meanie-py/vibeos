@@ -24,6 +24,8 @@ memwatch 20
 # handle table holds, natively and through WOW64; a pair that leaks starts failing. Long boots
 # wedged once a 32-bit app's once-a-second display DC had used up the table. Windows' answers in
 # gdiprobe.win11.txt.
+timeout flushprobe\flushprobe.exe 600
+flushprobe\flushprobe.exe
 timeout gdiprobe\gdiprobe.exe 900
 timeout gdiprobe\gdiprobe32.exe 900
 gdiprobe\gdiprobe.exe

@@ -49,6 +49,8 @@ binaries:
     dest: bin/grepfile/grepfile.exe
   - src: tools/payloads/chrome/gdiprobe-{arch}.exe
     dest: bin/gdiprobe/gdiprobe.exe
+  - src: tools/payloads/chrome/flushprobe-amd64.exe
+    dest: bin/flushprobe/flushprobe.exe
   - src: tools/payloads/chrome/gdiprobe-i386.exe
     dest: bin/gdiprobe/gdiprobe32.exe
   - src: tools/payloads/chrome/w32start-bare.exe
