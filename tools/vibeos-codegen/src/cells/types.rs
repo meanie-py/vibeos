@@ -15,6 +15,10 @@ pub struct Link {
     pub libs: Vec<String>,
     #[serde(default)]
     pub require_defined: Vec<String>,
+    /// The link sets a PE OS version (set_module_type_toolchain's 5.01); without one lld
+    /// writes its default (6.0).
+    #[serde(default)]
+    pub os_versioned: bool,
 }
 impl Default for Link {
     fn default() -> Self {
@@ -29,6 +33,7 @@ impl Default for Link {
             inputs: Default::default(),
             libs: Default::default(),
             require_defined: Default::default(),
+            os_versioned: false,
         }
     }
 }
@@ -114,6 +119,15 @@ pub struct Cell {
     /// (reactos-link `Linker::shell_less`).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub shell_less: bool,
+    /// A module with no set_module_type (genincdata, a data DLL native-geninc reads): no
+    /// link of it sets set_module_type_toolchain's 5.01 image/OS versions, so lld's
+    /// defaults (image 0.0, OS 6.0) stand.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub no_module_type: bool,
+    /// (spec, dll) whose spec2def stubs a linked static library carries in its archive
+    /// (fusion_common holds fusion.spec's): reactos-link `Linker::spec_stubs_from`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stub_specs: Vec<(String, String)>,
 }
 impl Default for Cell {
     fn default() -> Self {
@@ -163,6 +177,8 @@ impl Default for Cell {
             arches: Default::default(),
             body_depends: Default::default(),
             shell_less: false,
+            no_module_type: false,
+            stub_specs: Vec::new(),
         }
     }
 }

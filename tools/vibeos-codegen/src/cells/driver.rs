@@ -1,5 +1,7 @@
 //! Cargo-cell conversion orchestration. Planning is read-only; execution is injected.
-use super::{fncall, graph, local, proof, read, recipes, render, rewrite, Cell, Error, Result, ARCHES};
+use super::{
+    fncall, graph, local, proof, read, recipes, render, rewrite, Cell, Error, Result, ARCHES,
+};
 use regex::Regex;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -30,7 +32,8 @@ fn plan_cells(root: &Path, cells: &[Cell], whole_wave: bool) -> Result<ApplyPlan
     let mut names = BTreeSet::new();
     let member_re = Regex::new(r"members = \[\n").unwrap();
     // Function-made cells: one template per function file, and the cells that agree on it.
-    let mut templates: BTreeMap<PathBuf, (String, fncall::Expansion, Vec<String>)> = BTreeMap::new();
+    let mut templates: BTreeMap<PathBuf, (String, fncall::Expansion, Vec<String>)> =
+        BTreeMap::new();
     for cell in cells {
         let name = cell.crate_name();
         if name.contains('/') || name.contains('\\') || name == "." || name == ".." {
@@ -289,6 +292,22 @@ pub fn run_convert<H: ConvertHost>(
     plan: &ConvertPlan,
     host: &mut H,
 ) -> Result<proof::CheckResult> {
+    // A fresh baseline is cmake's link, so build it first: the file on disk may be a cell's,
+    // left by a convert whose rewrite was then stashed. Reconfiguring changes the link
+    // command, which ninja sees, but nothing asked ninja to relink before the copy, and a
+    // libjpeg proof once compared a new cell against the previous one.
+    if !plan.baseline.copies.is_empty() {
+        for arch in ARCHES {
+            let on = plan.targets_by_arch.get(arch).cloned().unwrap_or_default();
+            if !on.is_empty() {
+                host.ninja(root, arch, &on)?;
+                host.log(&format!(
+                    "built cmake's {} target(s) on {arch} for the baseline",
+                    on.len()
+                ));
+            }
+        }
+    }
     host.baseline(&plan.baseline)?;
     host.log(&format!("baseline: {}", plan.baseline_dir.display()));
     host.apply(&plan.apply)?;

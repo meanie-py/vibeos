@@ -1,0 +1,17 @@
+//! Empty bin shell: the PE's entry (the CRT startup, DllMain, DriverEntry) is in the
+//! linked body, and nothing here runs. Cargo needs a `main.rs` to drive the link.
+//!
+//! The handler is panic_common only where cmake's link carried the body's handler;
+//! elsewhere panic-lean, which keeps all of `core` out of a module that cannot panic.
+
+#![no_std]
+#![no_main]
+#![allow(internal_features)]
+
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    // A shell-less cell: link-guard drops this bin's objects from the link
+    // (reactos-link Linker::shell_less), so this handler is never in the PE.
+    let _ = info;
+    panic_lean::panic_fastfail()
+}

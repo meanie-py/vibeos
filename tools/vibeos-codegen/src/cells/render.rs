@@ -37,7 +37,10 @@ fn binding(
     let mut out: Vec<String> = comments.iter().map(|s| (*s).into()).collect();
     for (name, vals) in tables {
         // The arches the table carries: all of them, or a gated cell's own.
-        let arches: Vec<&str> = ARCHES.into_iter().filter(|a| vals.contains_key(*a)).collect();
+        let arches: Vec<&str> = ARCHES
+            .into_iter()
+            .filter(|a| vals.contains_key(*a))
+            .collect();
         let reference = &vals[arches[0]];
         if arches.iter().all(|a| &vals[*a] == reference) {
             out.push(format!(
@@ -433,6 +436,20 @@ pub fn build_rs(cell: &Cell) -> Result<String> {
             quoted(&cell.c_shims)
         ));
     }
+    // The module's own objects are on cmake's link line as objects, every one loaded:
+    // an archive loads only the members something references, and one that nothing
+    // does can still carry `-export:` directives (libjpeg's jdatasrc.c exports
+    // jpeg_mem_src by __declspec(dllexport), not by its .def). Only a body-less cell:
+    // a Rust body that takes over some of the C's symbols relies on the archive leaving
+    // the C definitions unloaded.
+    if cell.body_crate.is_empty()
+        && (!cell.c_shims.is_empty() || cell.arch_shims.values().any(|v| !v.is_empty()))
+    {
+        l.push(format!(
+            "        .whole_c_objects(\"{}_shims\")",
+            cell.target
+        ));
+    }
     if let Some(rc) = &cell.rc {
         l.push(rc_call(rc));
     }
@@ -444,6 +461,9 @@ pub fn build_rs(cell: &Cell) -> Result<String> {
     }
     if cell.spec_stubs {
         l.push("        .spec_stubs()".into());
+    }
+    for (spec, dll) in &cell.stub_specs {
+        l.push(format!("        .spec_stubs_from(\"{spec}\", \"{dll}\")"));
     }
     let regular: BTreeMap<_, _> = cell.import_libs.iter().map(|x| (&x.2, x)).collect();
     let delayed: BTreeMap<_, _> = cell.delay_import_libs.iter().map(|x| (&x.2, x)).collect();
@@ -519,6 +539,12 @@ pub fn build_rs(cell: &Cell) -> Result<String> {
     }
     if !cell.require_defined.is_empty() {
         l.push("        .link_args(require_defined)".into());
+    }
+    if cell.no_module_type {
+        l.extend([
+            "        // No set_module_type in cmake: lld's default image and OS versions.".into(),
+            "        .link_args(&[\"-Wl,--major-image-version,0\", \"-Wl,--minor-image-version,0\", \"-Wl,--major-os-version,6\", \"-Wl,--minor-os-version,0\"])".into(),
+        ]);
     }
     if kernel {
         l.extend([

@@ -52,6 +52,8 @@ class Link:
     libs: list[str]
     # `--require-defined=SYM` operands, in link order (ole32's target_link_options).
     require_defined: tuple[str, ...] = ()
+    # The link sets a PE OS version (set_module_type's 5.01); without one lld writes 6.0.
+    os_versioned: bool = False
 
 
 @dataclass
@@ -138,8 +140,12 @@ class Cell:
     arches: list[str] = field(default_factory=list)
     # rust_staticlib_variant DEPENDS (a custom command's OUTPUT), as EXTRA_DEPENDS.
     body_depends: list[str] = field(default_factory=list)
-    # A body-less module with no C of its own links nothing from rustc's bin.
+    # A body-less module links nothing from rustc's bin.
     shell_less: bool = False
+    # No link sets a PE OS version: lld's default image and OS versions stand.
+    no_module_type: bool = False
+    # (spec, dll) whose stubs a linked static library carries (Linker::spec_stubs_from).
+    stub_specs: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass

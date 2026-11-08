@@ -53,6 +53,7 @@
     "ENABLE_EXPORTS",
     "LINKER_LANGUAGE",
     "OUTPUT_NAME",
+    "PDB_OUTPUT_DIRECTORY",
     "PREFIX",
     "SUFFIX"
   ],

@@ -572,6 +572,9 @@ pub struct Linker {
     c_compiled: Vec<CSpec>,
     spec: Option<(String, String)>,
     link_stubs: bool,
+    /// (spec, dll) whose spec2def stubs a linked static library carries: see
+    /// `spec_stubs_from`.
+    foreign_stub_specs: Vec<(String, String)>,
     static_libs: Vec<String>,
     /// cmake-built libs linked AFTER the Rust archives (see `static_libs_after_body`).
     late_static_libs: Vec<String>,
@@ -594,6 +597,9 @@ pub struct Linker {
     /// cportlib) — drops the `ninja <lib>` prerequisite.
     /// (archive-basename, source rel-paths). See `c_from_compile_db`.
     c_db_libs: Vec<(String, Vec<String>)>,
+    /// c_db lib names linked whole (`-Wl,--whole-archive`): the module's own objects,
+    /// which cmake puts on the link line as objects. See `whole_c_objects`.
+    whole_c_db: Vec<String>,
     /// c_db lib names whose source list includes the 3 gendib-GENERATED DIB
     /// tables (`dib{8,16,32}gen.c`). In a cmake build they exist under
     /// `build-<arch>/` (replay handles them via the generated-source fallback);
@@ -670,12 +676,14 @@ impl Linker {
             c_compiled: Vec::new(),
             spec: None,
             link_stubs: false,
+            foreign_stub_specs: Vec::new(),
             static_libs: Vec::new(),
             late_static_libs: Vec::new(),
             link_order: None,
             keep_all_sections: false,
             asm_archives: Vec::new(),
             c_db_libs: Vec::new(),
+            whole_c_db: Vec::new(),
             gendib_libs: Vec::new(),
             import_libs: Vec::new(),
             force_undefined: Vec::new(),
@@ -771,7 +779,7 @@ impl Linker {
             for (name, sources) in &self.c_db_libs {
                 let rels: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
                 let lib_a = self.replay_c_archive(name, &rels, &entries, ar);
-                link_arg!(self, "{}", lib_a.display());
+                self.emit_c_db_archive(name, &lib_a);
             }
             } // end else (cmake build configured → compile_commands.json replay)
         }
@@ -1105,6 +1113,29 @@ impl Linker {
         self
     }
 
+    /// Also compile + link the `-stub` bodies of ANOTHER spec, the ones a static library
+    /// cmake linked carries in its archive (spec2def's `<name>_stubs.rs.obj` is a
+    /// custom-command object, which an `engine:c:` replay of compile_commands.json never
+    /// sees). fusion_common holds fusion.spec's, which fusion, fusion_1_1 and fusion_2_0
+    /// all export through their own .def. Chainable.
+    pub fn spec_stubs_from(mut self, spec_rel: &str, dll_name: &str) -> Self {
+        self.foreign_stub_specs
+            .push((spec_rel.to_string(), dll_name.to_string()));
+        self
+    }
+
+    /// Compile one spec2def stubs TU (`module_stubs.c`, which only `#include <stubs.h>`).
+    fn emit_stubs(&self, clang: &Path, stubs: &Path) {
+        let mut b = cc::Build::new();
+        apply_base(&mut b, clang, AsmDefineSet::Kernel, &self.arch);
+        self.apply_prefix_map(&mut b);
+        b.file(stubs)
+            .out_dir(self.obj_dir())
+            .include(self.repo_root.join("sdk/include/reactos"))
+            .flag("-std=gnu2x");
+        self.emit_objs(&b, stubs);
+    }
+
     /// cmake-built sibling static libs (build-dir-relative), in link
     /// order, inside the `--start-group`/`--end-group` ahead of the Rust
     /// archives. An entry `engine:<name>` is a library cmake used to build that
@@ -1230,6 +1261,27 @@ impl Linker {
             sources.iter().map(|s| s.to_string()).collect(),
         ));
         self
+    }
+
+    /// Link a `c_from_compile_db` lib whole, as the objects cmake links rather than an
+    /// archive the link pulls members from. The difference shows when an object nothing
+    /// references carries `-export:` directives (a `__declspec(dllexport)` the .def does
+    /// not list): cmake's link exports it and an archive never loads it. libjpeg's
+    /// `jpeg_mem_src`/`jpeg_stdio_src` (jdatasrc.c) are exported that way. Chainable.
+    pub fn whole_c_objects(mut self, c_db_name: &str) -> Self {
+        self.whole_c_db.push(c_db_name.to_string());
+        self
+    }
+
+    /// One c_db archive on the link line, whole when `whole_c_objects` asked for it.
+    fn emit_c_db_archive(&self, name: &str, lib_a: &Path) {
+        if self.whole_c_db.iter().any(|n| n == name) {
+            link_arg!(self, "-Wl,--whole-archive");
+            link_arg!(self, "{}", lib_a.display());
+            link_arg!(self, "-Wl,--no-whole-archive");
+        } else {
+            link_arg!(self, "{}", lib_a.display());
+        }
     }
 
     /// Mark a `c_from_compile_db` lib whose source list includes the 3 gendib
@@ -1582,16 +1634,22 @@ impl Linker {
                         stubs.display()
                     );
                 }
-                let mut b = cc::Build::new();
-                apply_base(&mut b, &clang, AsmDefineSet::Kernel, &self.arch);
-                self.apply_prefix_map(&mut b);
-                // module_stubs.c only `#include <stubs.h>` (self-contained).
-                b.file(&stubs)
-                    .out_dir(self.obj_dir())
-                    .include(self.repo_root.join("sdk/include/reactos"))
-                    .flag("-std=gnu2x");
-                self.emit_objs(&b, &stubs);
+                self.emit_stubs(&clang, &stubs);
             }
+        }
+        for (i, (spec_rel, dll_name)) in self.foreign_stub_specs.iter().enumerate() {
+            let (_, stubs) = self.generate_def_in(spec_rel, dll_name, &format!("spec-stubs-{i}"));
+            println!(
+                "cargo:rerun-if-changed={}",
+                self.repo_root.join(spec_rel).display()
+            );
+            if !stubs.exists() {
+                panic!(
+                    "spec_stubs_from({spec_rel}): spec2def produced no stubs at {}",
+                    stubs.display()
+                );
+            }
+            self.emit_stubs(&clang, &stubs);
         }
 
         // ---- Static-lib group ----------------------------------------
@@ -2833,10 +2891,15 @@ impl Linker {
     /// bodies TU (`module_stubs.c`). The caller links `def` always and
     /// `stubs` only when `spec_stubs()` opted in.
     fn generate_def(&self, spec_rel: &str, dll_name: &str) -> (PathBuf, PathBuf) {
+        self.generate_def_in(spec_rel, dll_name, "spec-gen")
+    }
+
+    /// `generate_def` into `OUT_DIR/<dir>[-<bin>]`.
+    fn generate_def_in(&self, spec_rel: &str, dll_name: &str, dir: &str) -> (PathBuf, PathBuf) {
         let spec2def = self.compile_host_tool("sdk/tools/spec2def/spec2def.c", "spec2def");
         let out = PathBuf::from(env::var("OUT_DIR").unwrap()).join(match &self.bin {
-            Some(b) => format!("spec-gen-{b}"),
-            None => "spec-gen".to_string(),
+            Some(b) => format!("{dir}-{b}"),
+            None => dir.to_string(),
         });
         std::fs::create_dir_all(&out).expect("mkdir spec-gen");
         let spec = self.repo_root.join(spec_rel);
@@ -3050,7 +3113,7 @@ impl Linker {
                 self.stage_gendib();
             }
             let lib_a = self.compile_recipe_part(name, Some(sources), ar);
-            link_arg!(self, "{}", lib_a.display());
+            self.emit_c_db_archive(name, &lib_a);
         }
     }
 

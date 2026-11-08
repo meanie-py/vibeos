@@ -141,6 +141,7 @@ pub fn link_edge(root: &Path, arch: &str, target: &str) -> Result<Link> {
         inputs,
         libs,
         require_defined,
+        os_versioned: flags.contains("--major-os-version"),
     })
 }
 type Missing = Vec<(&'static str, String)>;
@@ -594,6 +595,51 @@ pub fn engine_lib(lib: &str, index: &LibraryIndex) -> Option<(String, Vec<String
         d.push("psdk".into());
     }
     Some((format!("engine:c:{}", a[0]), d))
+}
+
+/// The spec2def stubs an `engine:c:` library carries: cmake builds `<x>_stubs.rs.obj` with
+/// a custom command and archives it into the static library (fusion_common), so a replay of
+/// compile_commands.json never compiles it. Each is named by the spec2def command that
+/// generated its source: (spec, dll).
+fn library_stub_specs(root: &Path, arch: &str, order: &[String]) -> Result<Vec<(String, String)>> {
+    let libs: Vec<&str> = order
+        .iter()
+        .filter_map(|i| i.strip_prefix("engine:c:"))
+        .collect();
+    if libs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ninja = read(&local(
+        root,
+        &root.join(format!("build-{arch}/build.ninja")),
+    )?)?;
+    let mut out = Vec::new();
+    for lib in libs {
+        let archive = re(&format!(
+            r"(?m)^build \S*/lib{}\.a: C_STATIC_LIBRARY_LINKER\S* ([^|\n]*)",
+            regex::escape(lib)
+        ));
+        let Some(c) = archive.captures(&ninja) else {
+            continue;
+        };
+        for input in c[1].split_whitespace() {
+            let Some(stem) = input.strip_suffix("_stubs.rs.obj") else {
+                continue;
+            };
+            let gen = re(&format!(
+                r"(?m)^build {}\.def {}_stubs\.rs .*\n  COMMAND = .*spec2def -n=(\S+) .* /tmp/vibeos/(\S+\.spec)$",
+                regex::escape(stem),
+                regex::escape(stem)
+            ));
+            let g = gen.captures(&ninja).ok_or_else(|| {
+                Error::new(format!(
+                    "lib{lib}.a archives {input}, which no spec2def command generates"
+                ))
+            })?;
+            out.push((g[2].to_owned(), g[1].to_owned()));
+        }
+    }
+    Ok(out)
 }
 
 fn one_list(root: &Path, arch: &str, stem: &str) -> Result<Option<PathBuf>> {
@@ -1916,7 +1962,10 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             // taken, so the cell exported a spec this configuration does not build. Keep the
             // one this build's spec2def command reads.
             let cap = if caps.len() > 1 {
-                let ninja = read(&local(root, &root.join(format!("build-{primary}/build.ninja")))?)?;
+                let ninja = read(&local(
+                    root,
+                    &root.join(format!("build-{primary}/build.ninja")),
+                )?)?;
                 let used: Vec<_> = caps
                     .iter()
                     .filter(|c| {
@@ -2052,10 +2101,14 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     // (its panic handler, which calls DbgPrint and NtTerminateProcess, and i386's
     // rsbegin/rsend) stays out of the link, so a module with no code gains no `.text`
     // and one importing no ntdll (comcat, msxml3r, wmi) still links. --convert's
-    // pe_equiv check against cmake's link is the guard.
-    if bodyless && cell.c_shims.is_empty() && cell.arch_shims.values().all(Vec::is_empty) {
+    // pe_equiv check against cmake's link is the guard. A body-less module of C alone
+    // (libjpeg, genincdata) is the same: cmake linked its objects and no shell, and
+    // genincdata, importing nothing, cannot even resolve the shell's DbgPrint.
+    if bodyless {
         cell.shell_less = true;
     }
+    cell.no_module_type = links.values().all(|l| !l.os_versioned);
+    cell.stub_specs = library_stub_specs(root, primary, &cell.link_order[primary])?;
     // A Rust body cmake linked under -Wl,--whole-archive (cdrom) brings every member of
     // its staticlib, core and its panic handler included: rustc's bin would define all of
     // them a second time (537 duplicates, which link-guard refuses). cmake's link had no
@@ -2204,7 +2257,10 @@ pub fn target_file_refs(root: &Path) -> Result<BTreeMap<String, Vec<String>>> {
             .collect();
         for cap in pattern.captures_iter(&text) {
             let at = cap.get(0).unwrap().start();
-            if own.iter().any(|(s, e, t)| (*s..*e).contains(&at) && *t == cap[1]) {
+            if own
+                .iter()
+                .any(|(s, e, t)| (*s..*e).contains(&at) && *t == cap[1])
+            {
                 continue;
             }
             let files = out.entry(cap[1].to_owned()).or_default();

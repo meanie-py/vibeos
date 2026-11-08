@@ -518,6 +518,31 @@ extends it from the boot spine to every fully-Rust module.
        fusion_common, so the cell has no stub exports); rpcrt4 (link-guard: one duplicate
        symbol); the 14 dotted targets (crate naming, phony/output collision); shdocvw,
        shlwapi, browseui, uniata, explorer, rshell, msvcrt (above).
+     - **2026-11-08: the five export holds converted** (libjpeg libpng libxslt mbedtls
+       genincdata), EQUIVALENT ×3. The "unmodelled export mechanism" was archive
+       semantics: an object nothing references (libjpeg's jdatasrc.c) still carries
+       `-export:` directives from `__declspec(dllexport)`, and cmake links objects while the
+       cell linked an archive that never loaded it. A body-less cell's own objects now link
+       whole (`Linker::whole_c_objects`), and a body-less cell of C is shell-less too
+       (genincdata imports nothing, so the shell's DbgPrint cannot resolve). A module with
+       no set_module_type keeps lld's default PE versions (`no_module_type`). **Tool bug
+       found on the way:** `--convert` copied the baseline from whatever was on disk, which
+       after a failed convert, a stash and a reconfigure is the PREVIOUS CELL's output: a
+       libjpeg run proved a cell against a cell. It now builds cmake's targets before it
+       copies a fresh baseline. Earlier waves re-ran after stashing the same way. A false
+       EQUIVALENT there needs a fix that left the held module's bytes unchanged, which
+       contradicts it having been the fix, so the risk is low but not yet audited.
+       libxslt's rewrite moves msxml3's compile (libxml2's dirs now reach it as `-I` via
+       liblibxslt); msxml3.dll relinked sha256-identical on all 3 arches.
+     - **2026-11-08: fusion, fusion_1_1, fusion_2_0, rpcrt4, uniata converted**,
+       EQUIVALENT ×3. fusion's `-stub` bodies are spec2def's `fusion_stubs.rs.obj`, a
+       custom-command object archived into the static lib fusion_common (so all three
+       fusion DLLs link fusion.spec's stubs). An `engine:c:` replay of compile_commands.json
+       never sees it, so the generator reads the archive's inputs in build.ninja and renders
+       `Linker::spec_stubs_from(<that spec>, <dll>)`. `PDB_OUTPUT_DIRECTORY` (MSVC-only)
+       joins NAME_PROPERTIES. A rename under an if() (uniata becomes pciide
+       `if(ENABLE_UNIATA)`) now leaves a `message(FATAL_ERROR ...)` in that branch instead
+       of vanishing. rpcrt4's link-guard duplicate did not recur under the current generator.
      - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
        `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
        `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses

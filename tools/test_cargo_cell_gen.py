@@ -571,6 +571,26 @@ def test_a_stack_protector_object_becomes_a_configure_error(tmp_path):
     assert 'message(FATAL_ERROR "m is linked by cargo' in out and "if(STACK_PROTECTOR)" in out
 
 
+def test_a_rename_under_an_if_fails_loud_instead_of_vanishing(tmp_path):
+    # uniata is pciide `if(ENABLE_UNIATA)`: the cell's output name is this
+    # configuration's, so the branch stays, failing.
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        CMAKE
+        + "if(ENABLE_X)\n"
+        + '    set_target_properties(m PROPERTIES OUTPUT_NAME "x")\n'
+        + "endif()\n"
+    )
+    out = g.rewrite_cmake(f, cell(cmake_dir=tmp_path))
+    assert 'message(FATAL_ERROR "m is linked by cargo' in out and "if(ENABLE_X)" in out
+    assert "OUTPUT_NAME" not in out
+
+
+def test_stubs_a_static_library_carries_are_compiled_from_their_spec():
+    c = cell(stub_specs=[("dll/win32/fusion/fusion.spec", "fusion.dll")])
+    assert '.spec_stubs_from("dll/win32/fusion/fusion.spec", "fusion.dll")' in g.build_rs(c)
+
+
 def test_a_cell_for_a_digit_leading_target_takes_its_body_crates_name():
     c = cell(target="3dtext", body_crate="text3d-rust")
     assert c.crate == "text3d-cargo"

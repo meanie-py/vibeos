@@ -208,7 +208,10 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
                     .skip(1)
                     .filter(|x| {
                         // Linker flags (cdrom's -Wl,--whole-archive) are no usage requirement.
-                        !x.starts_with("${") && !x.starts_with('-') && *x != "PRIVATE" && *x != "PUBLIC"
+                        !x.starts_with("${")
+                            && !x.starts_with('-')
+                            && *x != "PRIVATE"
+                            && *x != "PUBLIC"
                     })
                     .cloned(),
             );
@@ -278,6 +281,28 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             ));
         }
         if target && cmd == "set_target_properties" && names_only(&a) {
+            // The cell's output name is the link edge's, read from this configuration. A
+            // rename under an if() this configuration leaves false (uniata becomes pciide
+            // `if(ENABLE_UNIATA)`) would vanish with the statement: keep the branch, failing.
+            let h = home.as_deref().unwrap_or(&[]);
+            let renames = a[2..]
+                .iter()
+                .step_by(2)
+                .any(|k| ["OUTPUT_NAME", "PREFIX", "SUFFIX"].contains(&k.as_str()));
+            if renames && paths[idx].len() > h.len() {
+                keep.push_str(&text[pos..*s]);
+                let old = &text[*s..*e];
+                keep.push_str(&old.replacen(
+                    old.trim(),
+                    &format!(
+                        "message(FATAL_ERROR \"{} is linked by cargo, whose output name does not follow this rename\")",
+                        cell.target
+                    ),
+                    1,
+                ));
+                pos = *e;
+                continue;
+            }
             drop = true
         }
         if target
@@ -782,7 +807,10 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             "${CMAKE_CURRENT_BINARY_DIR}",
         );
     let shims = format!("{}_shims", cell.target);
-    if block.iter().any(|l| l.contains(&format!("add_library({shims} OBJECT"))) {
+    if block
+        .iter()
+        .any(|l| l.contains(&format!("add_library({shims} OBJECT")))
+    {
         out = out.replace(
             &format!("$<TARGET_PROPERTY:{},", cell.target),
             &format!("$<TARGET_PROPERTY:{shims},"),
