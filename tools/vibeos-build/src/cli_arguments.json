@@ -1126,7 +1126,7 @@
                 },
                 "services": {
                   "prog": "vibeos-cli pi4 services",
-                  "help": "usage: vibeos-cli pi4 services [-h] [--pid PID] [--started STARTED]\n                               {status,up,http,down,serial-restart,recover}\n\npositional arguments:\n  {status,up,http,down,serial-restart,recover}\n\noptions:\n  -h, --help            show this help message and exit\n  --pid PID             recover: exact process id from failed launch\n  --started STARTED     recover: exact CIM UTC start ticks\n",
+                  "help": "usage: vibeos-cli pi4 services [-h] [--pid PID] [--started STARTED]\n                               {status,up,http,down,serial-restart,serial-down,recover}\n\npositional arguments:\n  {status,up,http,down,serial-restart,serial-down,recover}\n\noptions:\n  -h, --help            show this help message and exit\n  --pid PID             recover: exact process id from failed launch\n  --started STARTED     recover: exact CIM UTC start ticks\n",
                   "defaults": {},
                   "actions": [
                     {
@@ -1143,6 +1143,7 @@
                         "http",
                         "down",
                         "serial-restart",
+                        "serial-down",
                         "recover"
                       ],
                       "type": "str"

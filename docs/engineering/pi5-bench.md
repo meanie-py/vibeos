@@ -94,6 +94,12 @@ delete that file after rebuilding a card.
   `console_rx` (`./vibeos-cli pi5 status`). `pico.sh serial --send` needs `--seconds`. That port is the UART UEFI's ACPI tables name, so the firmware, UEFI, the
   loader and the kernel all print there with no configuration.
   - Start the listener with `tools/pi5/serial.sh up`.
+  - **The Pi 4 and the Pi 5 share `picousb`**: one breadboard that moves between
+    them, and the Pico serves one console client. A Pi 4 listener left running
+    keeps the console, and the Pi 5's is turned away as "console authentication
+    failed", leaving `pi5 boot` with an HDMI-only verdict. `serial up` now refuses
+    while the other bench's listener holds the same Pico and names the stop command
+    (`./vibeos-cli pi4 services serial-down`, which leaves the Windows HTTP running).
   - **With the listener, `pi5 boot` requires both Explorer's `_tWinMain entered`
     and `shell ready`**, like `pi4 boot`. The earlier win32k `shell ready` line
     alone does not prove Explorer started.
