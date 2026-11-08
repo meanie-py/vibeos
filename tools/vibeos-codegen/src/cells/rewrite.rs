@@ -198,7 +198,10 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             usage.extend(
                 a.iter()
                     .skip(1)
-                    .filter(|x| !x.starts_with("${") && *x != "PRIVATE" && *x != "PUBLIC")
+                    .filter(|x| {
+                        // Linker flags (cdrom's -Wl,--whole-archive) are no usage requirement.
+                        !x.starts_with("${") && !x.starts_with('-') && *x != "PRIVATE" && *x != "PUBLIC"
+                    })
                     .cloned(),
             );
         }
@@ -509,6 +512,12 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         } else {
             shim_lines.push(format!("add_library({shims} OBJECT {})", names.join(" ")));
         }
+        // set_module_type(kmdfdriver) linked the wdfdriverentry INTERFACE library, whose usage
+        // (the KMDF include dir and WDF defines) cdrom's sources compiled with; the cell drops
+        // set_module_type, so the OBJECT library takes that usage itself.
+        if cell.kernel_kind == "kmdfdriver" {
+            usage.push("wdfdriverentry".into());
+        }
         if !usage.is_empty() {
             let mut seen = HashSet::new();
             let vals: Vec<_> = usage
@@ -593,7 +602,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         by_arch.insert(
             arch,
             libs.iter()
-                .filter(|x| !x.starts_with("engine:"))
+                .filter(|x| !x.starts_with("engine:") && !x.starts_with('-'))
                 .cloned()
                 .collect::<BTreeSet<_>>(),
         );

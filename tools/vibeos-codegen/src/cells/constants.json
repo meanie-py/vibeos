@@ -57,6 +57,7 @@
   ],
   "KERNEL_KINDS": [
     "kernelmodedriver",
+    "kmdfdriver",
     "kerneldll"
   ],
   "KEPT": [

@@ -1663,6 +1663,23 @@ def test_a_post_build_pefixup_on_the_target_becomes_the_cells_pefixup(tmp_path):
         g.rewrite_cmake(f, c)
 
 
+def test_a_linker_flag_is_no_usage_requirement_and_no_reused_archive(tmp_path):
+    """cdrom links its Rust body between -Wl,--whole-archive and -Wl,--no-whole-archive; the
+    flags reached the OBJECT library's target_link_libraries and the REUSED file list."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m kernelmodedriver)\n"
+        "target_link_libraries(m libcntpr\n"
+        "    -Wl,--whole-archive ${M_RUST_LIB} -Wl,--no-whole-archive)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32/drivers FOR all)\n"
+    )
+    libs = ["-Wl,--whole-archive", "-Wl,--no-whole-archive"]
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: libs for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "-Wl," not in out
+
+
 def test_an_object_in_a_subdirectory_maps_to_that_subdirectorys_source():
     d = Path("/r/dll/win32/crypt32")
     obj = "dll/win32/crypt32/CMakeFiles/crypt32.dir/reactos/unixlib.c.obj"
