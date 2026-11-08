@@ -611,6 +611,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `~/vibeos-flake-farm/fails/auto/20261108-024954-JKt07d-smoke-amd64-bios-HANG_TIMEOUT`.
   Next: a `farm` run of amd64-bios, to get a rate and a second sample.
 
+- **arm64: committed memory faults under concurrent system-process allocation (open,
+  intermittent, found 2026-11-08, upstream-sync lane; owner unassigned, MM).** kmtest
+  ZwAllocateVirtualMemory's `SystemProcessTestWorker` runs two system threads that allocate in
+  the system process at the same time. One of them got STATUS_SUCCESS committing a chunk, then
+  faulted with 0xC0000005 both writing it (`.c:90`) and reading it back (`.c:76`, `Match = 0`
+  at `.c:93`). Seen once, in conformance:arm64 during batch 161's gate
+  (`/tmp/vibeos-cli/20261108-074334-c9UMvk-conformance-arm64`); the retry passed, and the
+  batch (shell32 d3dwine) touches no MM. The signature points to a race between concurrent
+  commits in one process (PTE or page-table population, or the VAD), not to address-space
+  layout. It is unrelated to 56755a2a231 (kernel32's user-mode sort-table mapping). Next:
+  `farm --arches arm64` on the conformance payload to get a rate, then a tripwire on that
+  path.
+
+- **amd64: magenta L-shaped block over the "My Computer" icon (open, every UEFI amd64 gate
+  since at least 2026-11-07 00:22, the oldest kept).** It is identical in every amd64 gate
+  screenshot (1984 magenta sampled pixels at the top left), and i386 and arm64 never show it.
+  Magenta is the usual transparency key colour in icon bitmaps, so icon or imagelist
+  transparency failing on amd64 is the leading guess. That is a hypothesis, not yet checked.
+
 - **amd64: long boots wedged once osk.exe had leaked the GDI handle table (FIXED 2026-11-07,
   graviton lane).** The stock i386 `osk.exe` gained thousands of pens (to 8,300+ in one Chrome
   payload boot; magnify leaked too), the handle table filled, pool ran dry and win32k flooded
