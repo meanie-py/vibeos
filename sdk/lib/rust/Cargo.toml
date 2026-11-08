@@ -1295,6 +1295,7 @@ members = [
     "d3d9-rust",
     "setup-rust",
     "shlwapi-rust",
+    "crypt32-rust",
 ]
 resolver = "2"
 

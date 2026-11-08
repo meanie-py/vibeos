@@ -1,0 +1,29 @@
+# Wine's crypt32 conformance suite, run by the apitest sweep runner.
+#
+# crypt32's 27 C TUs are being ported to Rust (crypt32-rust); smoke reaches almost none of
+# its ASN.1 encoders/decoders, stores, chains or messages. Wine's own suite is the oracle.
+# Before/after: payload `crypt32winetestc` runs this same list against the pre-flip C; diff
+# the [APITEST:...] lines of the two runs. The list is olewinetest's gen_suites.py pointed at
+# crypt32 (build.sh); see olewinetest/payload.yaml for why children start on C:.
+name: crypt32winetest
+description: Wine crypt32 conformance suite under the apitest sweep runner
+
+build_hint: "bash tools/payloads/apitest/build.sh {arch} && ./vibeos-cli build --arch {arch} --winetests crypt32 && bash tools/payloads/crypt32winetest/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe
+  - src: tools/payloads/crypt32winetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/crypt32winetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/crypt32winetest/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: build-{arch}/modules/rostests/winetests/crypt32/crypt32_winetest.exe
+    dest: bin/crypt32_winetest.exe
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 3600
+  launch_idle_secs: 600

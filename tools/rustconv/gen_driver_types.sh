@@ -10801,6 +10801,40 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D__WINESRC__ -D_SHLWAPI_ -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  crypt32)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-11-08 from dll/win32/crypt32/CMakeLists.txt
+    # (27 compiled TU(s), 159 headers in the include closure, 268 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 119 external prototype(s) declared by the include closure, 55 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/crypt32"
+    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <wincrypt.h>\n#include <wine/debug.h>\n#include <crypt32_private.h>\n#include <assert.h>\n#include <winreg.h>\n#include <stdarg.h>\n#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n#include <wchar.h>\n#include "ntstatus.h"\n#define WIN32_NO_STATUS\n#include "windef.h"\n#include "winbase.h"\n#include "winternl.h"\n#define CRYPT_OID_INFO_HAS_EXTRA_FIELDS\n#include "winerror.h"\n#include "wincrypt.h"\n#include <winnls.h>\n#include "mssip.h"\n#include "winreg.h"\n#include "winuser.h"\n#include "wintrust.h"\n#include "i_cryptasn1tls.h"\n#include "snmp.h"\n#include <winternl.h>\n#include "bcrypt.h"\n#include "winnls.h"\n#define CERT_CHAIN_PARA_HAS_EXTRA_FIELDS\n#define CERT_REVOCATION_PARA_HAS_EXTRA_FIELDS\n#include "wininet.h"\n#include "rpc.h"\n#include "wine/debug.h"\n#include "wine/list.h"\n#include "wine/exception.h"\n#include "crypt32_private.h"\n#include "cryptres.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]bcrypt\.h' --allowlist-file '.*[/\\]i_cryptasn1tls\.h'
+                  --allowlist-file '.*[/\\]mssip\.h'
+                  --allowlist-file '.*[/\\]rpc\.h'
+                  --allowlist-file '.*[/\\]snmp\.h'
+                  --allowlist-file '.*[/\\]wincrypt\.h'
+                  --allowlist-file '.*[/\\]winerror\.h'
+                  --allowlist-file '.*[/\\]wininet\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*[/\\]winternl\.h'
+                  --allowlist-file '.*[/\\]wintrust\.h'
+                  --allowlist-file '.*crypt32[/\\].*\.h' )
+    # wine/list.h: `struct list` and its helpers are winelist-rust's.
+    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )
+    # wine/winternl.h's BOOL prototypes for what ntdll returns as BOOLEAN.
+    EXTRA_BL_ITEMS=( list RtlEqualPrefixSid RtlEqualSid RtlQueryPerformanceCounter RtlQueryPerformanceFrequency )
+    EXTRA_INC=( -I"${SRC}/dll/win32/crypt32" -I"${SRC}/build-i386/dll/win32/crypt32" -I"${SRC}/dll/win32/crypt32/reactos" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_WINE -D_CRYPT32_ -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D__WINESRC__ -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

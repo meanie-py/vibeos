@@ -1,0 +1,30 @@
+# crypt32's runtime oracle: Wine's crypt32 suite (crypt32winetest's list) against the
+# pre-flip C. build.sh builds crypt32_c.dll (`python -m rustconv.c_oracle --pre-flip
+# dll/win32/crypt32`) and a copy of the test exe that imports it as crypt3c.dll; crypt32 is
+# a KnownDLL, so the same-length rename is the only way in (see shlwapiwinetestc). Other
+# DLLs the suite loads (wintrust, cryptnet, ...) still bind the shipping crypt32: only the
+# exe's own calls reach the C. Diff the [APITEST:...] lines of the two runs.
+name: crypt32winetestc
+description: Wine crypt32 conformance suite against crypt32's pre-flip C (the Rust port's oracle)
+
+build_hint: "generate crypt32winetest's list first (its build.sh); bash tools/payloads/crypt32winetestc/build.sh {arch} does the rest"
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe
+  - src: tools/payloads/crypt32winetest/winetest-suites-{arch}.txt
+    dest: bin/apitest-suites.txt
+  - src: tools/payloads/crypt32winetest/winetest-skip-{arch}.txt
+    dest: bin/apitest-skip.txt
+  - src: tools/payloads/crypt32winetest/cwd.txt
+    dest: bin/apitest-cwd.txt
+  - src: tools/payloads/crypt32winetestc/crypt32_winetest_c-{arch}.exe
+    dest: bin/crypt32_winetest.exe
+  - src: tools/payloads/crypt32winetestc/crypt32_c-{arch}.dll
+    dest: bin/crypt3c.dll
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 3600
+  launch_idle_secs: 600
