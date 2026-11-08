@@ -1594,6 +1594,7 @@ unsafe extern "C" fn co_UserFreeWindow(
 
     IntUnlinkWindow(Window);
 
+    crate::defwnd::DefWndDestroyGeneratedSmIcon(Window);
     if (*Window).PropListItems != 0 {
         UserRemoveWindowProps(Window);
     }

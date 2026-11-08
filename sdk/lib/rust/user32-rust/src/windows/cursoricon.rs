@@ -2773,6 +2773,68 @@ unsafe fn CURSORICON_CopyImage(
         return core::ptr::null_mut();
     }
 
+    // A size request applies to an in-memory icon too (Wine's CopyImage
+    // stretches it): 0 keeps the source dimension, or takes the system
+    // metric under LR_DEFAULTSIZE. win32k relies on this to build the
+    // SM_CXSMICON copies for a class's hIconSm and WM_SETICON's ICON_SMALL2.
+    {
+        let mut bm: BITMAP = core::mem::zeroed();
+        let src = if !ii.hbmColor.is_null() { ii.hbmColor } else { ii.hbmMask };
+        if GetObjectW(
+            src as HGDIOBJ,
+            core::mem::size_of::<BITMAP>() as core::ffi::c_int,
+            core::ptr::addr_of_mut!(bm) as LPVOID,
+        ) != 0
+        {
+            let src_cx = bm.bmWidth;
+            let src_cy = if ii.hbmColor.is_null() { bm.bmHeight / 2 } else { bm.bmHeight };
+            let default_size = fuFlags & LR_DEFAULTSIZE != 0;
+            let cx = if cxDesired != 0 {
+                cxDesired
+            } else if default_size {
+                GetSystemMetrics(if bIcon != 0 { SM_CXICON } else { SM_CXCURSOR } as core::ffi::c_int)
+            } else {
+                src_cx
+            };
+            let cy = if cyDesired != 0 {
+                cyDesired
+            } else if default_size {
+                GetSystemMetrics(if bIcon != 0 { SM_CYICON } else { SM_CYCURSOR } as core::ffi::c_int)
+            } else {
+                src_cy
+            };
+            if cx > 0 && cy > 0 && (cx != src_cx || cy != src_cy) {
+                let mask_cy = if ii.hbmColor.is_null() { cy * 2 } else { cy };
+                let mask = BITMAP_CopyImage(ii.hbmMask, cx, mask_cy, 0);
+                let color = if ii.hbmColor.is_null() {
+                    core::ptr::null_mut()
+                } else {
+                    BITMAP_CopyImage(ii.hbmColor, cx, cy, 0)
+                };
+                if !mask.is_null() && (ii.hbmColor.is_null() || !color.is_null()) {
+                    DeleteObject(ii.hbmMask as HGDIOBJ);
+                    if !ii.hbmColor.is_null() {
+                        DeleteObject(ii.hbmColor as HGDIOBJ);
+                    }
+                    ii.hbmMask = mask;
+                    ii.hbmColor = color;
+                    if bIcon == 0 {
+                        // Keep a cursor's hotspot proportional.
+                        ii.xHotspot = (ii.xHotspot as i64 * cx as i64 / src_cx as i64) as DWORD;
+                        ii.yHotspot = (ii.yHotspot as i64 * cy as i64 / src_cy as i64) as DWORD;
+                    }
+                } else {
+                    if !mask.is_null() {
+                        DeleteObject(mask as HGDIOBJ);
+                    }
+                    if !color.is_null() {
+                        DeleteObject(color as HGDIOBJ);
+                    }
+                }
+            }
+        }
+    }
+
     'leave: {
         if CURSORICON_GetCursorDataFromIconInfo(&mut CursorData, &mut ii) == 0 {
             break 'leave;
