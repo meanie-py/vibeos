@@ -181,12 +181,17 @@ mod tests {
 
     impl Fixture {
         fn new() -> Self {
+            // A counter, not just the clock: parallel test threads can read the same instant.
+            static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             let unique = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos();
-            let path =
-                env::temp_dir().join(format!("memory-profile-{}-{unique}", std::process::id()));
+            let path = env::temp_dir().join(format!(
+                "memory-profile-{}-{unique}-{seq}",
+                std::process::id()
+            ));
             fs::create_dir_all(&path).unwrap();
             Self(path)
         }
