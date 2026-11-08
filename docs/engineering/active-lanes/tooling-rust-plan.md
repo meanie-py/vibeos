@@ -179,7 +179,14 @@ reaper all apply. Serial goes to a staged file (`VmConfig.serial_file`), because
 TCP dial-back cannot outlive the launching CLI call. `gdb inspect` relocates from the
 `[KRNLBASE]` the kernel printed, instead of an unhinted scan that took 60 s on a
 booted guest. Verified live on all three arches (start, wait-for `shell ready`,
-inspect regs/lm/bt, stop). `debugcmd`'s remainder stays with item 4.
+inspect regs/lm/bt, stop). `debugcmd` decisions done (`vibeos-test/src/debugcmd.rs`):
+the verb table, the session-owner walk, `debug diff`'s normalization and `check`'s
+option plan. Parity: the owner walk on 406 live processes, 29k serial lines and 3000
+random `check` invocations (output, exit code, run identity and lint calls) were all
+identical. One intended difference: the pid/tid rule now normalizes `pid=N` and
+`pid: N`, which it used to leave numbered (2436 of 2548 pid lines in the corpus).
+That closes item 3 apart from the qemu/*.sh debug toolkit the verbs wrap, which goes
+with item 4.
 
 Acceptance: compare actual outputs with the old implementation and exercise the
 external debugger/VM boundary when relevant; native fixture tests alone do not
