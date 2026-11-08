@@ -83,10 +83,6 @@ class BuildBindings(Bindings):
             return m._refresh_wow64_guests(run, repo, stage=a["stage"])
         elif name == "refresh_cpu":
             return m._refresh_wowx64_cpu(run, repo)
-        elif name == "ninja_jobs":
-            return m._ninja_jobs()
-        elif name == "ninja_timeout":
-            return m._ninja_timeout()
         elif name == "classify":
             return m._classify_build_failure(a["stdout"], a["stderr"], a["rc"])
         elif name == "cohab_rels":
@@ -154,6 +150,8 @@ def locked(args, repo, run, arch, cfg, build_dir, cold, *, artifact_env=None):
                 "build_dir": build_dir,
                 "cold": cold,
                 "artifact_env": artifact_env,
+                "ninja_jobs": implementation._ninja_jobs(),
+                "ninja_timeout": implementation._ninja_timeout(),
             },
             callbacks={**bindings.callbacks, "build_helper": bindings.helper},
         )

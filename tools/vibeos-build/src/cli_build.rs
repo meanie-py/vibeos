@@ -32,6 +32,9 @@ struct Build<'a> {
     args: Value,
     wrapped: bool,
     env: Value,
+    /// `-j` cap and ninja timeout: host facts read once by the caller, which owns
+    /// the policy dir and environment the tests point elsewhere.
+    jobs: Vec<String>,
 }
 impl Build<'_> {
     fn helper(&mut self, name: &str, a: Value) -> Result<Value> {
@@ -102,7 +105,7 @@ impl Build<'_> {
         keep: bool,
     ) -> Result<Value> {
         let mut cmd = vec!["ninja".into()];
-        cmd.extend(strings(&self.helper("ninja_jobs", json!({}))?));
+        cmd.extend(self.jobs.iter().cloned());
         if keep {
             cmd.extend(keep_going(&self.args));
         }
@@ -126,6 +129,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         args: args.clone(),
         wrapped: false,
         env: Value::Null,
+        jobs: strings(&a["ninja_jobs"]),
     };
     let cfg = &a["cfg"];
     let cold = a["cold"] == true;
@@ -331,10 +335,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     }
     let mut full_targets = targets.clone();
     full_targets.extend(cohab.clone());
-    let timeout = b
-        .helper("ninja_timeout", json!({}))?
-        .as_u64()
-        .ok_or("invalid ninja timeout")?;
+    let timeout = a["ninja_timeout"].as_u64().ok_or("invalid ninja timeout")?;
     let cp = b.ninja(full_targets.clone(), "ninja", timeout, true)?;
     if cp["returncode"] != 0 {
         b.fail_command("ninja", &cp, "")?;
