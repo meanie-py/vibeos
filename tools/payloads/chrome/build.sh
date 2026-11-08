@@ -21,6 +21,7 @@ bash "$ROOT/tools/payloads/apitest/build.sh" "$A"
 "$TC/x86_64-w64-mingw32-gcc" -O2 -o "$HERE/servepage-$A.exe" "$HERE/servepage.c" -lmsvcrt-os -lws2_32 -lkernel32
 "$TC/x86_64-w64-mingw32-gcc" -O2 -o "$HERE/sockprobe-$A.exe" "$HERE/sockprobe.c" -lmsvcrt-os -lws2_32 -lkernel32
 "$TC/x86_64-w64-mingw32-gcc" -O2 -o "$HERE/grepfile-$A.exe" "$HERE/grepfile.c" -lmsvcrt-os -lkernel32
+"$TC/x86_64-w64-mingw32-gcc" -O2 -o "$HERE/flushprobe-$A.exe" "$HERE/flushprobe.c" -lmsvcrt-os -lkernel32
 "$TC/x86_64-w64-mingw32-gcc" -O2 -o "$HERE/gdiprobe-$A.exe" "$HERE/gdiprobe.c" -lmsvcrt-os -lkernel32 -luser32 -lgdi32
 # And 32-bit, to go through WOW64 like the app whose DC leak wedged long boots.
 # A GUI-subsystem image like the stock apps: a console one died in WOW64 start-up (activation
@@ -36,7 +37,7 @@ I686="$ROOT/.build-tools/llvm-mingw/bin/i686-w64-mingw32-gcc"
 # The console-subsystem build is the one that died: everything above is GUI.
 "$I686" -O2 -o "$HERE/w32start-console.exe" "$HERE/w32start.c" -lmsvcrt-os -lkernel32
 "$I686" -O2 -o "$HERE/gdiprobe-console-i386.exe" "$HERE/gdiprobe.c" -lmsvcrt-os -lkernel32 -luser32 -lgdi32
-for P in pipeprobe catfile dumpinfo tlsprobe secprobe iocpprobe dupprobe msgprobe waitprobe servepage sockprobe grepfile gdiprobe; do
+for P in pipeprobe catfile dumpinfo tlsprobe secprobe iocpprobe dupprobe msgprobe waitprobe servepage sockprobe grepfile gdiprobe flushprobe; do
     python3 "$(dirname "$HERE")/pecheck.py" "$HERE/$P-$A.exe" --tag $P --forbid-dll api-ms-win-crt
 done
 echo "[chrome] OK"

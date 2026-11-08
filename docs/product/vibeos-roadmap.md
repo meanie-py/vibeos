@@ -611,6 +611,25 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `~/vibeos-flake-farm/fails/auto/20261108-024954-JKt07d-smoke-amd64-bios-HANG_TIMEOUT`.
   Next: a `farm` run of amd64-bios, to get a rate and a second sample.
 
+- **arm64: committed memory faults under concurrent system-process allocation (open,
+  intermittent, found 2026-11-08, upstream-sync lane; owner unassigned, MM).** kmtest
+  ZwAllocateVirtualMemory's `SystemProcessTestWorker` runs two system threads that allocate in
+  the system process at the same time. One of them got STATUS_SUCCESS committing a chunk, then
+  faulted with 0xC0000005 both writing it (`.c:90`) and reading it back (`.c:76`, `Match = 0`
+  at `.c:93`). Seen once, in conformance:arm64 during batch 161's gate
+  (`/tmp/vibeos-cli/20261108-074334-c9UMvk-conformance-arm64`); the retry passed, and the
+  batch (shell32 d3dwine) touches no MM. The signature points to a race between concurrent
+  commits in one process (PTE or page-table population, or the VAD), not to address-space
+  layout. It is unrelated to 56755a2a231 (kernel32's user-mode sort-table mapping). Next:
+  `farm --arches arm64` on the conformance payload to get a rate, then a tripwire on that
+  path.
+
+- **amd64: magenta L-shaped block over the "My Computer" icon (open, every UEFI amd64 gate
+  since at least 2026-11-07 00:22, the oldest kept).** It is identical in every amd64 gate
+  screenshot (1984 magenta sampled pixels at the top left), and i386 and arm64 never show it.
+  Magenta is the usual transparency key colour in icon bitmaps, so icon or imagelist
+  transparency failing on amd64 is the leading guess. That is a hypothesis, not yet checked.
+
 - **amd64: long boots wedged once osk.exe had leaked the GDI handle table (FIXED 2026-11-07,
   graviton lane).** The stock i386 `osk.exe` gained thousands of pens (to 8,300+ in one Chrome
   payload boot; magnify leaked too), the handle table filled, pool ran dry and win32k flooded
@@ -633,18 +652,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   since, and the console build has not been re-run. Next: stage the console build beside them
   to tell "console only" from "gone".
 
-- **amd64 Chrome payload: the guest goes silent for good in about half the boots (open,
-  found 2026-11-07, graviton lane).** Minutes into the payload, while 32-bit GUI work runs
-  (the WoW64 ladder's `apc32`, `gdiprobe32`, osk/magnify's DC polling), the serial line stops
-  and the payload times out an hour later (`[GAP] gap=3605...`). The guest is alive: the
-  clock advances, and the hang capture shows ordinary threads Running (priorities 13 and 8)
-  and the idle thread, so it is not a real-time thread starving the rest; even the kernel's
-  census never prints again. Came in with the master merge of 2026-11-07 (`be6bcf6034a`):
-  `f011919dca6` 0 hung of 3 boots, master 5 of 9 (with or without the console probes).
-  Runs: `20261107-174229-6w1lnX`, `20261107-184949-ZjEIYG`, `20261107-220737-uYCxpH`,
-  `20261107-234657-4uReiC` (the last with the current thread in `hang-cpustate.txt`). Next:
-  bisect the merge (suspects: the user32 Wine 11.11 resync, sysfb PnP, KSE), or find what
-  blocks every DbgPrint.
+- **amd64 Chrome payload: the sweep's GetThreadContext on a Chrome thread takes over 20 s
+  (open, found 2026-11-07, graviton lane).** In about half the boots the payload timed out
+  after an hour of silence from the sweep. The guest was alive throughout (other output goes
+  on; the hang capture shows ordinary threads running). The sweep was inside its hang
+  sampler (`tools/payloads/stackdump.h`), in `GetThreadContext` on a Chrome thread that sits
+  in `NtFlushBuffersFile` (Chrome logs with a flush per line); a context grab waits for the
+  target to take a kernel APC, which a thread inside the file system defers. Probes now have
+  a 20 s deadline (`PROBE-TIMEOUT in GetThreadContext`), and an abandoned one later finished,
+  so the wait is long, not forever. A plain flush is fast and flat in the guest
+  (`flushprobe`: ~1.5 ms at any file size; Windows ~0.3 ms), so something holds that one
+  flush. A boot can still stall: the abandoned probe leaves the thread suspended, and killing
+  Chrome then waits on it. Seen first after the 2026-11-07 merge (`f011919dca6` 0 of 3, then 5
+  of 9), but 0 of 3 at that rate happens 1 time in 11, so that is not proof. Runs:
+  `20261108-040304-sHrDB9`, `20261108-063756-eTlfoI`. Next: find what the stuck flush waits
+  for (its kernel stack), and have the probe resume its target when it gives up.
 
 - **OptiPlex 9020: freeldr reset the board after loading the boot drivers (FIXED 2026-11-08,
   graviton lane).** Every netboot reset to coreboot ~165 ms after `[FLDR] phase: boot drivers

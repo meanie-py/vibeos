@@ -16,10 +16,18 @@ static void stackdump_ascii(const WCHAR *w, char *o, size_t n)
     o[i] = 0;
 }
 
-static void dump_thread(DWORD pid, DWORD tid)
+/* Which call a probe is in, for the deadline report: a probe that never returns names its stage. */
+static volatile LONG g_sd_stage;
+static const char *const g_sd_stages[] = {
+    "snapshot", "open", "SuspendThread", "GetThreadContext", "ResumeThread", "ReadProcessMemory",
+};
+#define SD_STAGE(n) InterlockedExchange(&g_sd_stage, (n))
+
+static void dump_thread_body(DWORD pid, DWORD tid)
 {
     MODULEENTRY32W me[128];
     int nm = 0;
+    SD_STAGE(0);
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE, pid);
     if (snap != INVALID_HANDLE_VALUE) {
         me[0].dwSize = sizeof me[0];
@@ -30,6 +38,7 @@ static void dump_thread(DWORD pid, DWORD tid)
         }
         CloseHandle(snap);
     }
+    SD_STAGE(1);
     HANDLE th = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, tid);
     HANDLE ph = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
     if (!th || !ph) {
@@ -44,7 +53,9 @@ static void dump_thread(DWORD pid, DWORD tid)
     char pcs[8 * 20] = "";
     for (int k = 0; k < 8; k++) {
         ctx.ContextFlags = CONTEXT_CONTROL;
+        SD_STAGE(2);
         SuspendThread(th);
+        SD_STAGE(3);
         if (GetThreadContext(th, &ctx)) {
 #if defined(_M_X64) || defined(__x86_64__)
             ULONG_PTR p = ctx.Rip;
@@ -55,12 +66,15 @@ static void dump_thread(DWORD pid, DWORD tid)
 #endif
             wsprintfA(pcs + lstrlenA(pcs), " %p", (void *)p);
         }
+        SD_STAGE(4);
         ResumeThread(th);
         Sleep(100);
     }
     SAY("  pc samples:%s\n", pcs);
     ctx.ContextFlags = CONTEXT_CONTROL;
+    SD_STAGE(2);
     SuspendThread(th);
+    SD_STAGE(3);
     BOOL got = GetThreadContext(th, &ctx);
 #if defined(_M_X64) || defined(__x86_64__)
     ULONG_PTR pc = ctx.Rip, sp = ctx.Rsp;
@@ -69,21 +83,26 @@ static void dump_thread(DWORD pid, DWORD tid)
 #else
     ULONG_PTR pc = ctx.Eip, sp = ctx.Esp;
 #endif
-    static ULONG_PTR stack[1024];
+    /* Not static: a probe abandoned at its deadline may still write here later. */
+    ULONG_PTR *stack = HeapAlloc(GetProcessHeap(), 0, 1024 * sizeof(ULONG_PTR));
+    const SIZE_T stack_bytes = stack ? 1024 * sizeof(ULONG_PTR) : 0;
     SIZE_T got_bytes = 0;
     /* In 512-byte steps, keeping what reads: one read of the whole buffer fails outright when
      * the stack's top is nearer than sizeof stack, which hid every frame of a thread parked
      * near the top of a small stack (an x86-64 guest thread's, under wowx64). */
-    while (got && got_bytes < sizeof stack) {
+    SD_STAGE(5);
+    while (got && got_bytes < stack_bytes) {
         SIZE_T n = 0;
         if (!ReadProcessMemory(ph, (LPCVOID)(sp + got_bytes), (char *)stack + got_bytes, 512, &n) || n != 512)
             break;
         got_bytes += 512;
     }
+    SD_STAGE(4);
     ResumeThread(th);
     CloseHandle(th);
     CloseHandle(ph);
     if (!got) {
+        HeapFree(GetProcessHeap(), 0, stack);
         SAY("  stuck pid=%lu tid=%lu: GetThreadContext failed %lu\n", pid, tid, GetLastError());
         return;
     }
@@ -104,5 +123,44 @@ static void dump_thread(DWORD pid, DWORD tid)
             }
         }
     }
+    HeapFree(GetProcessHeap(), 0, stack);
+}
+
+struct sd_args {
+    DWORD pid, tid;
+};
+
+static DWORD WINAPI dump_thread_worker(LPVOID p)
+{
+    struct sd_args *a = p;
+    dump_thread_body(a->pid, a->tid);
+    HeapFree(GetProcessHeap(), 0, a);
+    return 0;
+}
+
+/* The probe runs on its own thread with a deadline. Getting another thread's context makes the
+ * kernel queue an APC to it and wait, so a target that never takes the APC used to block the
+ * whole sweep for good: the payload then stalled silently for an hour (registry: "amd64 Chrome
+ * payload: the guest goes silent"). Now it says which call did not return and moves on; the
+ * stuck worker is abandoned. */
+static void dump_thread(DWORD pid, DWORD tid)
+{
+    struct sd_args *a = HeapAlloc(GetProcessHeap(), 0, sizeof *a);
+    if (!a)
+        return;
+    a->pid = pid;
+    a->tid = tid;
+    SD_STAGE(0);
+    HANDLE w = CreateThread(NULL, 0, dump_thread_worker, a, 0, NULL);
+    if (!w) {
+        HeapFree(GetProcessHeap(), 0, a);
+        return;
+    }
+    if (WaitForSingleObject(w, 20000) == WAIT_TIMEOUT) {
+        LONG st = g_sd_stage;
+        SAY("  stuck pid=%lu tid=%lu: PROBE-TIMEOUT in %s (20s), abandoned\n", pid, tid,
+            st >= 0 && st < (LONG)(sizeof g_sd_stages / sizeof g_sd_stages[0]) ? g_sd_stages[st] : "?");
+    }
+    CloseHandle(w);
 }
 #endif
