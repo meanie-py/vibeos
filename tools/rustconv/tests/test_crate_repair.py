@@ -3797,3 +3797,88 @@ def test_a_c_enum_written_as_a_rust_enum_path_becomes_its_bindgen_const():
     assert [(e.byte_start, e.replacement) for e in plan.edits] == [
         (src.index(b"eZip"), "eZipExtractError_eNoError")
     ]
+
+
+def _e0268(src: bytes, at: int) -> dict:
+    return _diag(
+        "`break` outside of a loop or labeled block",
+        code="E0268",
+        spans=[_span("src/s.rs", at, at + 5, is_primary=True)],
+    )
+
+
+def test_a_c_switch_break_closing_a_match_arm_is_dropped():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    # wined3d cs.c: `case OP: ...; break;` -> `OP => { ...; break; }` (no loop around it).
+    src = (
+        b"fn f(o: u32) {\n"
+        b"    match o {\n"
+        b"        A => {\n"
+        b"            g();\n"
+        b"            break;\n"
+        b"        }\n"
+        b"        _ => {}\n"
+        b"    }\n"
+        b"}\n"
+    )
+    plan = propose_edits(
+        [_e0268(src, src.index(b"break"))],
+        _reader({"src/s.rs": src}),
+        target="amd64",
+        rules=[RULE_OBJECT_DEREF],
+    )
+    assert len(plan.edits) == 1
+    e = plan.edits[0]
+    assert src[: e.byte_start] + src[e.byte_end :] == (
+        b"fn f(o: u32) {\n"
+        b"    match o {\n"
+        b"        A => {\n"
+        b"            g();\n"
+        b"        }\n"
+        b"        _ => {}\n"
+        b"    }\n"
+        b"}\n"
+    )
+
+
+def test_a_break_deeper_in_the_arm_stays_red():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    # `if x { break; }` leaves the switch early: that needs a labelled block, not a deletion.
+    src = (
+        b"fn f(o: u32) {\n"
+        b"    match o {\n"
+        b"        A => {\n"
+        b"            if x { break; }\n"
+        b"            g();\n"
+        b"        }\n"
+        b"    }\n"
+        b"}\n"
+    )
+    plan = propose_edits(
+        [_e0268(src, src.index(b"break"))],
+        _reader({"src/s.rs": src}),
+        target="amd64",
+        rules=[RULE_OBJECT_DEREF],
+    )
+    assert not plan.edits
+
+
+def test_is_null_on_an_integer_vulkan_handle_compares_with_zero():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    # wine/vulkan.h: VkPipeline is uint64_t on every target.
+    src = b"if !(*p).pipeline.is_null() { g(); }"
+    at = src.index(b"is_null")
+    d = _diag(
+        "no method named `is_null` found for type `u64` in the current scope",
+        code="E0599",
+        spans=[_span("src/a.rs", at, at + len(b"is_null"), is_primary=True)],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert len(plan.edits) == 1
+    e = plan.edits[0]
+    assert src[: e.byte_start] + e.replacement.encode() + src[e.byte_end :] == (
+        b"if !((*p).pipeline == 0) { g(); }"
+    )

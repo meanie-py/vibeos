@@ -2639,6 +2639,97 @@ def _object_deref_rule(
     )
 
 
+def _switch_break_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0268: C's `break;` closing a `switch` case, kept as the LAST statement of a match arm.
+
+    A Rust arm never falls through, so the C `break` is already what the arm does; deleting
+    it is exact. wined3d's cs.c packet dispatchers kept 22. Only a `break;` whose next token
+    closes a block opened by `=> {` qualifies -- a `break` deeper in the arm (`if x { break; }`,
+    leave the switch early) needs a labelled block and stays red."""
+    if (diagnostic.get("code") or {}).get("code") != "E0268":
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, masked, start, end = got
+    if data[start:end] != b"break":
+        return [], [], False
+    m = re.compile(rb"\s*;\s*\}").match(masked, end)
+    if m is None:
+        return [], [], False
+    close = m.end() - 1
+    depth, i = 0, close
+    while i >= 0:
+        c = masked[i : i + 1]
+        if c == b"}":
+            depth += 1
+        elif c == b"{":
+            depth -= 1
+            if depth == 0:
+                break
+        i -= 1
+    if i < 0 or not masked[:i].rstrip().endswith(b"=>"):
+        return [], [], False
+    line_start = data.rfind(b"\n", 0, start) + 1
+    cut = line_start if not data[line_start:start].strip() else start
+    stmt_end = masked.index(b";", end) + 1
+    if data[stmt_end:].startswith(b"\n"):
+        stmt_end += 1
+    note = "rustc E0268: a match arm never falls through, so C's closing `break;` is implicit"
+    return (
+        [_simple_edit(RULE_OBJECT_DEREF, file_name, data, cut, stmt_end, "", note, span, ctx)],
+        [],
+        True,
+    )
+
+
+def _integer_handle_is_null_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0599 `no method named is_null found for type u64`: a handle C declares as an
+    INTEGER. wine/vulkan.h makes every non-dispatchable Vulkan handle (VkPipeline,
+    VkBuffer, ..) `uint64_t` on every target, and the model tested them like pointers;
+    C's `!pipeline` / `pipeline == VK_NULL_HANDLE` is a compare with 0."""
+    if (diagnostic.get("code") or {}).get("code") != "E0599":
+        return [], [], False
+    if not re.match(
+        r"no method named `is_null` found for type `[iu](?:8|16|32|64|size)`",
+        str(diagnostic.get("message") or ""),
+    ):
+        return [], [], False
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, masked, start, end = got
+    call = re.compile(rb"\s*\(\s*\)").match(masked, end)
+    if data[start:end] != b"is_null" or call is None or masked[start - 1 : start] != b".":
+        return [], [], False
+    recv = _receiver_start(masked, start - 1)
+    if recv is None:
+        return [], [], False
+    text = data[recv : start - 1].decode("utf-8", "replace")
+    note = "rustc E0599: the handle is a C integer, so C's null test is a compare with 0"
+    return (
+        [
+            _simple_edit(
+                RULE_OBJECT_DEREF,
+                file_name,
+                data,
+                recv,
+                call.end(),
+                f"({text} == 0)",
+                note,
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
 def _guid_eq_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -6024,6 +6115,8 @@ _RULE_TABLE: dict[
         _zero_constant_pointer_rule,
         _int_float_arith_rule,
         _guid_eq_rule,
+        _switch_break_rule,
+        _integer_handle_is_null_rule,
         _ptr_int_arith_rule,
         _heap_ptr_conversion_rule,
         _com_ptr_receiver_rule,
