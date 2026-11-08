@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import time
 from pathlib import Path
 
@@ -16,7 +17,6 @@ class BuildBindings(Bindings):
     def __init__(self, repo, run, args, arch, cfg, build_dir):
         super().__init__(repo, run)
         self.args, self.arch, self.cfg, self.build_dir = args, arch, cfg, build_dir
-        self.cache = None
         self.payload_compile = None
 
     def state(self, _arguments=None):
@@ -34,10 +34,7 @@ class BuildBindings(Bindings):
         m = implementation
         a = request["arguments"]
         name = request["name"]
-        repo, run, args, arch, bd = self.repo, self.run, self.args, self.arch, self.build_dir
-
-        def wrap(cmd):
-            return m.canon.wrap(repo, cmd) if a.get("wrapped", False) else cmd
+        repo, run, arch, bd = self.repo, self.run, self.arch, self.build_dir
 
         if name == "failure_hook":
             run.finalize_hooks.append(lambda: m._failure_over_moved_tree(run, repo, a["tree"]))
@@ -59,36 +56,14 @@ class BuildBindings(Bindings):
                 return None
             selection, self.payload_compile = result
             return selection
-        elif name == "clean":
-            m._clean(run, repo, arch)
         elif name == "retire_build_refs":
             from tools.artifact_runtime import retire_build_refs
 
             retire_build_refs(Path(a["supervisor"]))
-        elif name == "build_environment":
-            result = m._mechanism(
-                run,
-                repo,
-                "environment",
-                build_dir=bd,
-                args=args,
-                wrapped=a["wrapped"],
-                artifact_env=a["artifact_env"],
-                wrap=wrap,
-            )[0]
-            if result is not None:
-                self.cache = result["cache"]
-            return result
-        elif name == "refresh_guests":
-            return m._refresh_wow64_guests(run, repo, stage=a["stage"])
-        elif name == "refresh_cpu":
-            return m._refresh_wowx64_cpu(run, repo)
         elif name == "classify":
             return m._classify_build_failure(a["stdout"], a["stderr"], a["rc"])
         elif name == "cohab_rels":
             return m.provenance.boot_set_cohab_rels(repo, arch)
-        elif name == "verify_flags":
-            return m._verify_flag_artifacts(run, repo, bd, args)
         elif name == "payload_roots":
             if not a["stamped"]:
                 return []
@@ -110,10 +85,6 @@ class BuildBindings(Bindings):
                 return {"victims": victims}
             except (OSError, m.native.NativeError) as error:
                 return {"error": f"<{error}>"}
-        elif name == "cache_stats":
-            if self.cache is None:
-                raise RuntimeError("cache adapter missing")
-            m._collect_cache_stats(run, self.cache, a["env"], repo=repo, wrap=wrap)
         elif name == "binary_lints":
             m.lints.run_binary_lints(run, repo, arch, strict=a["strict"])
         elif name == "source_lints":
@@ -132,7 +103,11 @@ class BuildBindings(Bindings):
 
 
 def locked(args, repo, run, arch, cfg, build_dir, cold, *, artifact_env=None):
-    bindings = BuildBindings(repo, run, args, arch, cfg, build_dir)
+    # Mechanisms answers the facts and external commands the native build
+    # mechanisms ask for, so they run in this session rather than a fresh one.
+    from .build_mechanisms import Mechanisms
+
+    bindings = Mechanisms(repo, run, args, arch, cfg, build_dir)
     options = {
         k: getattr(args, k)
         for k in dir(args)
@@ -152,6 +127,12 @@ def locked(args, repo, run, arch, cfg, build_dir, cold, *, artifact_env=None):
                 "artifact_env": artifact_env,
                 "ninja_jobs": implementation._ninja_jobs(),
                 "ninja_timeout": implementation._ninja_timeout(),
+                "host_env": dict(os.environ),
             },
-            callbacks={**bindings.callbacks, "build_helper": bindings.helper},
+            callbacks={
+                **bindings.callbacks,
+                "build_helper": bindings.helper,
+                "build_fact": bindings.fact,
+                "build_external": bindings.external,
+            },
         )
