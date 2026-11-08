@@ -2876,12 +2876,18 @@ unsafe fn co_WinPosMinMaximize(
                 IntShowOwnedPopups(Wnd, 0);
             }
 
+            // NewPos is (x, y, cx, cy), not a rect: every caller passes
+            // right/bottom straight to SetWindowPos as the size, and the
+            // maximize/restore branches fill it that way. The C made this one
+            // (and restore-to-maximized below) a real rect, so a top-level
+            // window minimized to (-32000,-32000) was asked for a size of
+            // (-31834,-31976) (user32:win, bad winpos->cx/cy).
             RECTL_vSetRect(
                 NewPos as *mut RECT,
                 wpl.ptMinPosition.x,
                 wpl.ptMinPosition.y,
-                wpl.ptMinPosition.x + UserGetSystemMetrics(SM_CXMINIMIZED as ULONG),
-                wpl.ptMinPosition.y + UserGetSystemMetrics(SM_CYMINIMIZED as ULONG),
+                UserGetSystemMetrics(SM_CXMINIMIZED as ULONG),
+                UserGetSystemMetrics(SM_CYMINIMIZED as ULONG),
             );
             SwpFlags |= SWP_NOCOPYBITS;
         }
@@ -2937,8 +2943,8 @@ unsafe fn co_WinPosMinMaximize(
                         NewPos as *mut RECT,
                         wpl.ptMaxPosition.x,
                         wpl.ptMaxPosition.y,
-                        wpl.ptMaxPosition.x + Size.x,
-                        wpl.ptMaxPosition.y + Size.y,
+                        Size.x, // (x, y, cx, cy): see the minimize branch
+                        Size.y,
                     );
                 } else {
                     *NewPos = core::mem::transmute_copy(&wpl.rcNormalPosition);
