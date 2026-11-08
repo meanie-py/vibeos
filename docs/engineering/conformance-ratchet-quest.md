@@ -24,12 +24,25 @@ Rust-translated subsystem is a **pre-packaged mistranslation repro** with a name
 an assertion message — no crash forensics needed. And it executes translated code the
 boot path never touches (see `tools/coverage/` — the never-executed-rust registry).
 
-## Resume here (2026-10-17)
+## Resume here (2026-11-08, fleet wind-down)
 
-The survey below is history. The current state and the ordered owed queue are the LAST
-progress-log entry, "2026-10-17b — the overnight queue". Re-derive every number in
-it from `tools/conformance-baseline/<arch>/kmtest.txt` and a fresh sweep before trusting it.
-Windows 11's own results for these suites are `tools/conformance-baseline/win11-amd64/kmtest.txt`.
+Parked clean: nothing unlanded, nothing in /tmp. The last landings were the mixed-sign/narrowing
+`min`/`max` audit (f702ef72441), `scan_minmax_narrowing` (8e3fb97cca5), the scanner `;` fix with the
+bank_drift triage and setupapi's i386 before/after (fa600031834), and the CcZeroData 4 GiB+
+kmtest (337f69a56f9, baselined on all three arches). The older owed queue is the
+"2026-10-17b — the overnight queue" progress entry; its items (a) and (b) are closed.
+
+Owed, in order:
+1. CcZeroData's CACHED path (the VACB loop, same narrowing fix) has no test: a 4 GiB cached
+   range maps and zeroes 4 GiB of views. Needs a cheaper shape, or accept the gap.
+2. The SIGN-flip half of the min/max class is not linted (rebar, winpos, tui were that shape):
+   it needs C types. `-Wsign-compare` on a module's C oracle finds it; modules with no oracle
+   were covered only by the 2026-11-01 grep audit (field manual, "A mixed-sign min/max").
+3. bank_drift residue: 18 moved hashes no historical master scanner reproduces, all bought in
+   sibling worktrees with branch-local scanners (cpp-cluster, gicv3, research,
+   rustconv-speedrun, shell32-com). The 357 upstream-moved bodies are upstream-sync's queue.
+Next step on resume: item 1 or 2, after `git fetch && git merge origin/master` and a fresh
+`./vibeos-cli conformance --arch <a>` per arch to re-derive the floor.
 
 ## Survey findings (2026-07-10 — verified, start from here)
 
