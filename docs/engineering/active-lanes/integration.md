@@ -34,6 +34,31 @@ CLI, and that hold is what stops it conducting a train. Do not release it; curre
 never reads it. If a lane on an old commit says its `land` "queued", treat that as a merge
 request and tell it to merge master.
 
+## RESUME HERE (fleet pause, 2026-11-08)
+
+Paused clean. At the pause **master was `020f3e9d249`**, and its last full gate was green on all
+3 arches: `/tmp/vibeos-cli/20261108-181437-bmysf3-gate-i386+amd64+arm64` (/tmp does not
+survive a reboot; re-gate master if you need a fresh artifact). The queue was empty, and every
+lane's RESUME HERE is on master. On restart:
+
+- **Not submitted on purpose; do not merge unless the lane asks:** `graviton-diag-ctxwait`
+  (rpi-bringup's TEMP kernel diagnostics), `smp-bringup-crypt32-wip` (does not compile), and
+  fex's WIP `522f99989a3` (breaks `cohab_census`).
+- **Host load stretches builds.** Fleet load near 50 put the gate's ninja stage past its
+  3600 s budget (i386 reached [790/837]); the last batches used
+  `VIBEOS_BUILD_TIMEOUT=7200 ./vibeos-cli land --direct --cold --skip-lint`. A quiet host
+  builds in ~30-36 min and needs no override.
+- **Seen in gates, not yet fixed** (each one is in the roadmap registry or noted below):
+  - the arm64 ZwAllocateVirtualMemory concurrent-commit race (failed the first attempt in 2 of
+    ~8 gates, green on retry);
+  - `test_artifact_runtime_real` exceeding pytest's 300 s timeout under load (reported by two
+    lanes; never hit my runs);
+  - the WSL vsock `accept4 failed 110` in `test_bench_windows`.
+  - Fixed forward this session: `test_native_vm` treated ESRCH as alive (`957a48e2784`), and
+    the depfile self-edge on dotted cells (`4a261ce2e98`).
+- `check` already reconfigures a stale `build.ninja` itself, so a CMake-touching batch needs
+  no manual `ninja build.ninja` first.
+
 ## A merge request
 
 A lane sends you a peer message along the lines of
