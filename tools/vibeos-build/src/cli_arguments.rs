@@ -27,10 +27,15 @@ fn convert(p: &Value, a: &Value, s: &str) -> Result<Value> {
             }
             json!(n)
         }
-        "float" => json!(s.parse::<f64>().map_err(|_| failure(
-            p,
-            format!("{}: invalid float value: '{s}'", text(a, "dest"))
-        ))?),
+        // Finite only: JSON cannot carry inf/nan, so serde wrote them as null and
+        // `--retain-gib inf` arrived as "no budget at all" — prune everything eligible.
+        "float" => match s.parse::<f64>() {
+            Ok(f) if f.is_finite() => json!(f),
+            _ => {
+                let why = format!("{}: invalid float value: '{s}'", text(a, "dest"));
+                return Err(failure(p, why));
+            }
+        },
         "Path" => json!({"path":s}),
         _ => json!(s),
     };

@@ -51,22 +51,22 @@ static SUMMARY_LINE: LazyLock<Regex> = LazyLock::new(|| {
 // (2026-07-25), teaching people to re-bless baselines wholesale, which launders whatever
 // else drifted. Keys are compared as a MULTISET, so a genuinely additional occurrence
 // still counts.
-static LOCATION: LazyLock<Regex> =
-    LazyLock::new(|| re(r"^(?P<file>[^\s:]+):\d+(?::\d+)?:"));
+static LOCATION: LazyLock<Regex> = LazyLock::new(|| re(r"^(?P<file>[^\s:]+):\d+(?::\d+)?:"));
 // lint_kernel prints a file header, then `    L 309 Fn(): ...` (or `L1062`, the number
 // right-aligned with no space), with the line inside the message.
 static EMBEDDED_LINE: LazyLock<Regex> = LazyLock::new(|| re(r"^(?P<indent>\s*)L\s*\d+\s"));
 // `[C_MACRO] path:38: msg`: the tag is semantic and stays in the key; only line:col goes.
-static TAGGED_LOCATION: LazyLock<Regex> = LazyLock::new(|| {
-    re(r"^(?P<tags>\s*(?:\[[^\]]+\]\s*)+)(?P<file>[^\s:]+):\d+(?::\d+)?:")
-});
+static TAGGED_LOCATION: LazyLock<Regex> =
+    LazyLock::new(|| re(r"^(?P<tags>\s*(?:\[[^\]]+\]\s*)+)(?P<file>[^\s:]+):\d+(?::\d+)?:"));
 // verify_signatures: `[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/.../stubs.rs:210)`.
 static TRAILING_LOCATION: LazyLock<Regex> =
     LazyLock::new(|| re(r"^(?P<head>.*)\((?P<file>[^\s:()]+):\d+(?::\d+)?\)\s*$"));
 // Locations INSIDE the message (scan_dropped_asserts lists Rust twins as
 // `(…/section.rs:252, …)`): a 6-line fix there read as "2 new" (2026-09-26).
 static INNER_LOCATION: LazyLock<Regex> = LazyLock::new(|| {
-    re(r"(?P<f>[\w./+-]+\.(?:rs|c|h|cpp|hpp|py|md|txt|cmake|spec|toml|sh|S|s|asm|inc)):\d+(?::\d+)?\b")
+    re(
+        r"(?P<f>[\w./+-]+\.(?:rs|c|h|cpp|hpp|py|md|txt|cmake|spec|toml|sh|S|s|asm|inc)):\d+(?::\d+)?\b",
+    )
 });
 static CRASH: LazyLock<Regex> =
     LazyLock::new(|| re(r"(?m)^(?:Traceback \(most recent call last\):|FATAL:)"));
@@ -142,7 +142,12 @@ fn finding_key_outer(line: &str) -> String {
     }
     if let Some(m) = TAGGED_LOCATION.captures(line) {
         let end = m.get(0).unwrap().end();
-        return format!("{} {}: {}", py_strip(&m["tags"]), &m["file"], py_strip(&line[end..]));
+        return format!(
+            "{} {}: {}",
+            py_strip(&m["tags"]),
+            &m["file"],
+            py_strip(&line[end..])
+        );
     }
     if let Some(m) = TRAILING_LOCATION.captures(line) {
         return format!("{} ({})", py_strip(&m["head"]), &m["file"]);
@@ -179,7 +184,8 @@ pub fn new_findings(cur: &BTreeSet<String>, base: &BTreeSet<String>) -> Vec<Stri
 /// Repo-relative output, so a baseline captured in one worktree matches another.
 pub fn rel(text: &str, repo: &Path) -> String {
     let root = repo.to_string_lossy();
-    text.replace(&format!("{root}/"), "").replace(root.as_ref(), "")
+    text.replace(&format!("{root}/"), "")
+        .replace(root.as_ref(), "")
 }
 
 pub fn baseline(repo: &Path, tool: &str) -> Result<BTreeSet<String>, String> {
@@ -426,7 +432,11 @@ mod tests {
     #[test]
     fn line_drift_is_not_new_but_an_extra_occurrence_is() {
         let base = set(&["qemu/lib/common.sh:90:17: SC2034 SLOT_INDEX unused"]);
-        assert!(new_findings(&set(&["qemu/lib/common.sh:93:17: SC2034 SLOT_INDEX unused"]), &base).is_empty());
+        assert!(new_findings(
+            &set(&["qemu/lib/common.sh:93:17: SC2034 SLOT_INDEX unused"]),
+            &base
+        )
+        .is_empty());
         let two = set(&[
             "qemu/lib/common.sh:93:17: SC2034 SLOT_INDEX unused",
             "qemu/lib/common.sh:120:3: SC2034 SLOT_INDEX unused",
@@ -447,7 +457,10 @@ mod tests {
             finding_key("[MEDIUM] NtSetLdtEntries  (x/stubs.rs:210)"),
             "[MEDIUM] NtSetLdtEntries (x/stubs.rs)"
         );
-        assert_eq!(finding_key("    L 309 F(): x"), finding_key("    L1062 F(): x"));
+        assert_eq!(
+            finding_key("    L 309 F(): x"),
+            finding_key("    L1062 F(): x")
+        );
         assert_eq!(
             finding_key("a.c:1: Rust has 0 (s/section.rs:252, t/shim.rs:1454)"),
             "a.c: Rust has 0 (s/section.rs, t/shim.rs)"
@@ -471,7 +484,8 @@ mod tests {
         fs::create_dir_all(repo.join(BASELINE_DIR)).unwrap();
         fs::write(repo.join(BASELINE_DIR).join("t.txt"), "a.rs:1: bug\n").unwrap();
         let run = |rc: i64, out: &str, strict: bool, new_fail: Option<bool>| {
-            let mut i = json!({"name":"t","returncode":rc,"stdout":out,"stderr":"","strict":strict});
+            let mut i =
+                json!({"name":"t","returncode":rc,"stdout":out,"stderr":"","strict":strict});
             if let Some(n) = new_fail {
                 i["new_fail"] = json!(n);
             }
@@ -481,11 +495,20 @@ mod tests {
         assert_eq!(run(1, "b.rs:1: bug\n", false, None)["status"], "warn");
         assert_eq!(run(1, "b.rs:1: bug\n", false, Some(true))["status"], "fail");
         assert_eq!(run(0, "", true, None)["status"], "ok");
-        let crash = classify(repo, &json!({"name":"t","returncode":1,"stdout":"a.rs:1: bug","stderr":"FATAL: x"})).unwrap();
+        let crash = classify(
+            repo,
+            &json!({"name":"t","returncode":1,"stdout":"a.rs:1: bug","stderr":"FATAL: x"}),
+        )
+        .unwrap();
         assert_eq!(crash["classification"], "SCANNER_ERROR");
         assert_eq!(crash["status"], "fail");
-        let missing = |strict| classify(repo, &json!({"kind":"missing","strict":strict})).unwrap()["status"].clone();
-        assert_eq!((missing(true), missing(false)), (json!("fail"), json!("warn")));
+        let missing = |strict| {
+            classify(repo, &json!({"kind":"missing","strict":strict})).unwrap()["status"].clone()
+        };
+        assert_eq!(
+            (missing(true), missing(false)),
+            (json!("fail"), json!("warn"))
+        );
         let by_exit = classify(repo, &json!({"name":"t","returncode":1,"stdout":"x\n*** BUG here","stderr":"","by_exit_code":true})).unwrap();
         assert_eq!(by_exit["salient"], json!(["*** BUG here"]));
         let mut absolute = json!({"name":"t","returncode":1,"stdout":format!("{}/a.rs:4: bug\n", repo.display()),"stderr":""});
@@ -500,15 +523,23 @@ mod tests {
             json!({"name":"good","returncode":1,"stdout":"a.rs:1: bug\n","stderr":""}),
             json!({"name":"bad","returncode":1,"stdout":"a.rs:1: bug\n","stderr":"Traceback (most recent call last):\n"}),
         ];
-        assert!(capture(repo, &items).unwrap_err().contains("refusing baseline"));
+        assert!(capture(repo, &items)
+            .unwrap_err()
+            .contains("refusing baseline"));
         assert!(!repo.join(BASELINE_DIR).join("good.txt").exists());
         let out = capture(repo, &items[..1]).unwrap();
         assert_eq!(out["good"], json!({"count":1,"added":1,"removed":0}));
-        assert_eq!(fs::read_to_string(repo.join(BASELINE_DIR).join("good.txt")).unwrap(), "a.rs:1: bug\n");
+        assert_eq!(
+            fs::read_to_string(repo.join(BASELINE_DIR).join("good.txt")).unwrap(),
+            "a.rs:1: bug\n"
+        );
     }
     #[test]
     fn splitlines_matches_python() {
-        assert_eq!(splitlines("a\r\nb\rc\x0cd\u{2028}e\n"), vec!["a", "b", "c", "d", "e"]);
+        assert_eq!(
+            splitlines("a\r\nb\rc\x0cd\u{2028}e\n"),
+            vec!["a", "b", "c", "d", "e"]
+        );
         assert_eq!(splitlines("a\n\nb"), vec!["a", "", "b"]);
         assert!(splitlines("").is_empty());
     }
@@ -522,7 +553,6 @@ mod tests {
         fs::create_dir_all(&p).unwrap();
         p
     }
-
 }
 
 /// The baseline identity contract, ported from the Python suite with its incidents.
@@ -544,13 +574,19 @@ mod contract {
     #[test]
     fn lint_kernel_embedded_lines_drift_but_extra_sites_count() {
         let base = set(&["    L 309 RtlpCheckDeviceName(): *NameInvalid = ..."]);
-        assert!(new_findings(&set(&["    L 313 RtlpCheckDeviceName(): *NameInvalid = ..."]), &base).is_empty());
+        assert!(new_findings(
+            &set(&["    L 313 RtlpCheckDeviceName(): *NameInvalid = ..."]),
+            &base
+        )
+        .is_empty());
         let cur = set(&[
             "    L 313 RtlpCheckDeviceName(): *NameInvalid = ...",
             "    L 480 RtlpCheckDeviceName(): *NameInvalid = ...",
         ]);
         assert_eq!(new_findings(&cur, &base).len(), 1);
-        assert!(!new_findings(&set(&["    L 313 RtlpOther(): *NameInvalid = ..."]), &base).is_empty());
+        assert!(
+            !new_findings(&set(&["    L 313 RtlpOther(): *NameInvalid = ..."]), &base).is_empty()
+        );
     }
     #[test]
     fn tagged_locations_drift_and_tags_are_identity() {
@@ -566,9 +602,21 @@ mod contract {
     #[test]
     fn trailing_parenthesized_locations_drift() {
         let base = set(&["[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:210)"]);
-        assert!(new_findings(&set(&["[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:255)"]), &base).is_empty());
-        assert!(!new_findings(&set(&["[MEDIUM] NtOther  (sdk/lib/rust/x/stubs.rs:210)"]), &base).is_empty());
-        assert!(!new_findings(&set(&["[HIGH] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:210)"]), &base).is_empty());
+        assert!(new_findings(
+            &set(&["[MEDIUM] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:255)"]),
+            &base
+        )
+        .is_empty());
+        assert!(!new_findings(
+            &set(&["[MEDIUM] NtOther  (sdk/lib/rust/x/stubs.rs:210)"]),
+            &base
+        )
+        .is_empty());
+        assert!(!new_findings(
+            &set(&["[HIGH] NtSetLdtEntries  (sdk/lib/rust/x/stubs.rs:210)"]),
+            &base
+        )
+        .is_empty());
     }
     #[test]
     fn verify_signatures_tallies_never_drift() {
@@ -587,9 +635,23 @@ mod contract {
     }
     #[test]
     fn locations_inside_the_message_drift() {
-        let base = set(&["x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:252, r/s.rs:14)"]);
-        assert!(new_findings(&set(&["x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:258, r/s.rs:14)"]), &base).is_empty());
-        assert!(!new_findings(&set(&["x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/other.rs:252, r/s.rs:14)"]), &base).is_empty());
+        let base = set(&[
+            "x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:252, r/s.rs:14)",
+        ]);
+        assert!(new_findings(
+            &set(&[
+                "x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/section.rs:258, r/s.rs:14)"
+            ]),
+            &base
+        )
+        .is_empty());
+        assert!(!new_findings(
+            &set(&[
+                "x/miarm.h:1033: MI_X: C has 3 assert(s), Rust has 0 (r/other.rs:252, r/s.rs:14)"
+            ]),
+            &base
+        )
+        .is_empty());
     }
     #[test]
     fn prefixless_findings_compare_verbatim() {
@@ -603,11 +665,21 @@ mod contract {
     #[test]
     fn every_shipped_baseline_line_is_immune_to_line_drift() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../lint-baseline");
-        let loc = Regex::new(r"(?P<f>[\w./+-]+\.(?:rs|c|h|py|md|txt|cmake|spec|toml|sh)):(?P<n>\d+)").unwrap();
-        let mut files: Vec<_> = fs::read_dir(&dir).unwrap().flatten().map(|e| e.path())
-            .filter(|p| p.extension().is_some_and(|x| x == "txt")).collect();
+        let loc =
+            Regex::new(r"(?P<f>[\w./+-]+\.(?:rs|c|h|py|md|txt|cmake|spec|toml|sh)):(?P<n>\d+)")
+                .unwrap();
+        let mut files: Vec<_> = fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| p.extension().is_some_and(|x| x == "txt"))
+            .collect();
         files.sort();
-        assert!(!files.is_empty(), "no lint baselines under {}", dir.display());
+        assert!(
+            !files.is_empty(),
+            "no lint baselines under {}",
+            dir.display()
+        );
         let mut blind = Vec::new();
         for path in files {
             for line in splitlines(&fs::read_to_string(&path).unwrap()) {
@@ -616,12 +688,21 @@ mod contract {
                     let bumped = (n.as_str().parse::<u64>().unwrap() + 1000).to_string();
                     let drifted = format!("{}{}{}", &line[..n.start()], bumped, &line[n.end()..]);
                     if finding_key(line) != finding_key(&drifted) {
-                        blind.push(format!("{}: {}", path.file_name().unwrap().to_string_lossy(), line.chars().take(110).collect::<String>()));
+                        blind.push(format!(
+                            "{}: {}",
+                            path.file_name().unwrap().to_string_lossy(),
+                            line.chars().take(110).collect::<String>()
+                        ));
                         break;
                     }
                 }
             }
         }
-        assert!(blind.is_empty(), "{} baseline finding(s) are not drift-immune:\n  {}", blind.len(), blind[..blind.len().min(10)].join("\n  "));
+        assert!(
+            blind.is_empty(),
+            "{} baseline finding(s) are not drift-immune:\n  {}",
+            blind.len(),
+            blind[..blind.len().min(10)].join("\n  ")
+        );
     }
 }

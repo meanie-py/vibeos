@@ -2502,66 +2502,6 @@ def test_gdbengine_run_until_builds_break_and_then(monkeypatch):
     assert out == "BREAKPOINT HIT"
 
 
-# --- prune: idle-worktree GC eligibility gates -----------------------------
-from . import prune  # noqa: E402
-
-
-def _classify(
-    wt,
-    current,
-    *,
-    live_qemu=None,
-    active_build=None,
-    allow_self=False,
-    min_age_hours=0.0,
-    now=1000.0,
-    newest_mtime=None,
-):
-    return prune.classify(
-        Path(wt),
-        current=Path(current),
-        live_qemu=live_qemu or set(),
-        active_build=active_build or set(),
-        allow_self=allow_self,
-        min_age_hours=min_age_hours,
-        now=now,
-        newest_mtime=newest_mtime,
-    )
-
-
-def test_prune_gates_current_live_and_build():
-    # current worktree is protected unless --self
-    assert _classify("/wt/a", "/wt/a") == "current worktree (use --self)"
-    assert _classify("/wt/a", "/wt/a", allow_self=True) is None
-    # live QEMU and in-flight build are hard skips
-    assert _classify("/wt/b", "/wt/a", live_qemu={Path("/wt/b")}) == "live QEMU running"
-    assert _classify("/wt/b", "/wt/a", active_build={Path("/wt/b")}) == "build in flight"
-    # otherwise prunable
-    assert _classify("/wt/b", "/wt/a") is None
-
-
-def test_prune_idle_hours_filter():
-    now = 100_000.0
-    # touched 1h ago, threshold 24h -> held
-    assert (
-        _classify("/wt/b", "/wt/a", min_age_hours=24, now=now, newest_mtime=now - 3600)
-        == "touched < 24h ago"
-    )
-    # touched 48h ago, threshold 24h -> prunable
-    assert (
-        _classify("/wt/b", "/wt/a", min_age_hours=24, now=now, newest_mtime=now - 48 * 3600) is None
-    )
-    # threshold 0 disables the age gate even with a fresh mtime
-    assert _classify("/wt/b", "/wt/a", min_age_hours=0, now=now, newest_mtime=now) is None
-
-
-def test_prune_attribute_longest_match_wins():
-    wts = [Path("/wt"), Path("/wt/nested")]
-    assert prune._attribute("/wt/nested/build-i386/x.o", wts) == Path("/wt/nested")
-    assert prune._attribute("/wt/build-i386/x.o", wts) == Path("/wt")
-    assert prune._attribute("/elsewhere/x", wts) is None
-
-
 # --- repro: PE parser + reproducibility compare (det-plan rung 0) ----------
 
 
@@ -6755,38 +6695,6 @@ def test_an_enqueued_lane_is_not_reported_as_abandoned(lane_repo, tmp_path, monk
     assert q_mod.abandoned_attempts(lane) == [], "a queued lane is not an abandoned submit"
 
 
-def test_prune_never_reclaims_the_integration_tree(tmp_path):
-    """It is idle between batches — exactly prune's target shape — but its warm caches are
-    what make a batch gate in minutes, and EVERY landing in the fleet would pay for a cold
-    one."""
-    wt = tmp_path / q_mod.INTEGRATION_DIRNAME
-    reason = prune.classify(
-        wt,
-        current=tmp_path / "other",
-        live_qemu=set(),
-        active_build=set(),
-        allow_self=False,
-        min_age_hours=0,
-        now=0.0,
-        newest_mtime=None,
-    )
-    assert reason and "integration" in reason
-    # ...but --self from inside it still allows a deliberate reclaim
-    assert (
-        prune.classify(
-            wt,
-            current=wt,
-            live_qemu=set(),
-            active_build=set(),
-            allow_self=True,
-            min_age_hours=0,
-            now=0.0,
-            newest_mtime=None,
-        )
-        is None
-    )
-
-
 def _safe_git(monkeypatch):
     """Patch out only the MUTATING git verbs. Blanket-patching `queue.git` also breaks
     `queue_dir()` (it resolves --git-common-dir), which silently points pending/results at
@@ -9921,6 +9829,29 @@ def test_fatal_scanner_diagnostic_cannot_be_baselined(tmp_path, monkeypatch):
     stage = lints._lint_stage(run, tmp_path, "scanner", ["scanner"], strict=True, cp=cp)
     assert stage.status == "fail"
     assert run.classification == "SCANNER_ERROR"
+
+
+def test_prune_parses_including_its_self_flag():
+    """`prune --self` has dest "self"; building the Namespace with **kwargs collided with
+    __init__'s own parameter, so every `prune` invocation crashed in parse_args."""
+    from .__main__ import build_parser
+
+    parser = build_parser()
+    assert parser.parse_args(["prune"]).self is False
+    assert parser.parse_args(["prune", "--self", "--apply"]).self is True
+    assert parser.parse_args(["prune", "--trim"]).trim is True
+
+
+@pytest.mark.parametrize("value", ["inf", "-inf", "nan", "Infinity"])
+def test_a_non_finite_float_flag_is_refused_not_dropped(value):
+    """JSON has no inf/nan, so the native grammar's answer arrived as null: `--retain-gib inf`
+    parsed as "no retention budget" and the dry run planned to prune everything eligible."""
+    from .__main__ import build_parser
+
+    parser = build_parser()
+    assert parser.parse_args(["prune", "--retain-gib", "100.5"]).retain_gib == 100.5
+    with pytest.raises(SystemExit):
+        parser.parse_args(["prune", "--retain-gib", value])
 
 
 def test_build_source_lint_is_opt_in():

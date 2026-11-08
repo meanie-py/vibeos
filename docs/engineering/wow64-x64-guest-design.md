@@ -151,7 +151,13 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    storm ms` line) took ~3.4 s against ~9.7 s (3,200/3,980/3,030 ms against 9,880/8,650/10,600;
    arm64 ladder x3 each, 27/27, `20261107-004618-3_43t4gn` and `20261107-010303-t10tuilw`
    onward), and fault64's did not move (~5.6 s). appstorm64 with it: 55/55
-   (`20261107-020509-lepjfzru`).
+   (`20261107-020509-lepjfzru`). Not the 241 s of guest code either: x86 TSO emulation is now off on a
+   uniprocessor (vendor-patches/fex.md, "uniprocessor TSO"), and sysbench's new `mem` op
+   (256 loads and stores) did not move (1007-1217 ns both ways). On our VMs it cannot:
+   QEMU's x86 backend emits nothing for an acquire or release barrier. The gain is real
+   hardware's. Owed: the same sysbench A/B (`--tripwire FEX_TSO=1` against the default) on the
+   Pi, whose desktop has soaked 13 days, once its bench is free. What the guest time IS (JIT
+   compile against compiled code) is not split yet.
 6. Fixed 2026-10-17: `notepad-save` (appstorm read the size before notepad had written the
    file; it now waits for EM_GETMODIFY to clear) and `cpl-console` (86 s and PASS after
    `MiFlushTbAndCapture` stopped flushing the whole TLB once per re-protected page on arm64:

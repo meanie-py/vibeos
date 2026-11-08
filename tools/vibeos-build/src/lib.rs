@@ -145,6 +145,8 @@ pub mod media_stage;
 pub mod cargo_orchestrate;
 
 pub mod build_policy;
+pub mod prune;
+pub mod trim;
 
 pub mod build_bench;
 

@@ -96,9 +96,9 @@ def test_headroom_selects_extra_outputs_but_recent_outputs_survive(fleet, monkey
         d.mkdir(parents=True)
         (d / "obj").write_text("disposable")
     monkeypatch.setattr(prune, "git_worktrees", lambda _: [old, recent])
-    monkeypatch.setattr(prune, "_newest_mtime", lambda p: 0 if p == old else float("inf"))
+    os.utime(old / "build-amd64/obj", (0, 0))
+    os.utime(old / "build-amd64", (0, 0))
     monkeypatch.setattr(prune.shutil, "disk_usage", lambda _: SimpleNamespace(free=149 * 1024**3))
-    monkeypatch.setattr(prune, "_dir_size", lambda _: 2 * 1024**3)
     hostlock.HOSTLOCK_DIR.mkdir()
     (hostlock.HOSTLOCK_DIR / "maintenance-owner").write_text(str(fleet))
     request = SimpleNamespace(
@@ -122,24 +122,3 @@ def test_policy_rejects_bad_budgets(fleet):
         retention.policy_path().write_text(json.dumps(dict(policy, **{key: value})))
         with pytest.raises(ValueError):
             retention.read_policy(fleet)
-
-
-def test_integration_requires_explicit_opt_in(fleet):
-    integration = fleet.parent / prune.queue.INTEGRATION_DIRNAME
-
-    def reason(include=False, active=False):
-        return prune.classify(
-            integration,
-            current=fleet,
-            live_qemu=set(),
-            active_build={integration} if active else set(),
-            allow_self=False,
-            min_age_hours=24,
-            now=1000000,
-            newest_mtime=0,
-            include_integration=include,
-        )
-
-    assert reason()
-    assert reason(include=True) is None
-    assert reason(include=True, active=True) == "build in flight"

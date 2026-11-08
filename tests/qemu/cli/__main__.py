@@ -98,7 +98,9 @@ class NativeParser:
 
         arguments = decode(result["arguments"])
         if namespace is None:
-            return argparse.Namespace(**arguments)
+            # setattr, as argparse itself does: Namespace(**arguments) collides with
+            # __init__'s own `self` for `prune --self` (dest "self").
+            namespace = argparse.Namespace()
         for key, value in arguments.items():
             setattr(namespace, key, value)
         return namespace
