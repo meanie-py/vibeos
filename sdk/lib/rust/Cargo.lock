@@ -1576,6 +1576,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "crypt32-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
+]
+
+[[package]]
 name = "cryptdlg-cargo"
 version = "0.1.0"
 dependencies = [
