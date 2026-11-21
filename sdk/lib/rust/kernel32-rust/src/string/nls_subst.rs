@@ -761,7 +761,14 @@ extern "C" {
 pub unsafe fn get_char_typeW(ch: WCHAR) -> u16 {
     let base = wine_wctype_table.as_ptr();
     let hi = *base.offset((ch >> 8) as isize) as isize;
-    *base.offset(hi + (ch & 0xff) as isize)
+    let t = *base.offset(hi + (ch & 0xff) as isize);
+    // Windows types these Thai and Mongolian combining marks C1_ALPHA as well, though
+    // Unicode calls them nonspacing marks (Wine's make_unicode special-cases the same
+    // list). Patched here, not in the table: the CRT's iswalpha shares wine_wctype_table.
+    match ch {
+        0x0e31 | 0x0e34..=0x0e3a | 0x0e47..=0x0e4e | 0x1885 | 0x1886 => t | C1_ALPHA,
+        _ => t,
+    }
 }
 
 // strcmpiW / strncmpiW — Wine case-insensitive compares (unicode.h forwards to
