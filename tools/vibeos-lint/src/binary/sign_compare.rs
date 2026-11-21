@@ -15,8 +15,9 @@
 //! ./vibeos-cli lint --arch amd64 --rules scan_sign_compare_minmax
 //! ```
 //!
-//! `#ERR n file` marks a TU that only partly parsed under borrowed flags and
-//! `#NODONOR file` one with no live TU to borrow from: reduced coverage.
+//! A TU the nearest donor cannot parse is retried under a driver and a
+//! user-mode donor, keeping the parse with the fewest errors; `#ERR n file`
+//! marks one that still only partly parsed: reduced coverage.
 use super::{BinaryContext, CheckOutput};
 use rayon::prelude::*;
 use regex::Regex;
@@ -228,13 +229,31 @@ fn command(ctx: &BinaryContext, p: &Path, e: &Entry) -> Vec<String> {
             _ => break,
         }
     }
-    if p.strip_prefix(&ctx.root)
-        .is_ok_and(|r| r.starts_with("ntoskrnl"))
-    {
+    let rel = p.strip_prefix(&ctx.root).unwrap_or(p);
+    if rel.starts_with("ntoskrnl") || rel.starts_with("hal") {
+        // no live TU of their own: ntoskrnl/ntos.cmake's include set
+        for d in [
+            "ntoskrnl",
+            "ntoskrnl/include",
+            "sdk/lib/cmlib",
+            "sdk/lib/drivers/arbiter",
+            "sdk/lib/pseh/include",
+            "sdk/include/reactos/libs",
+            "sdk/include/reactos/drivers",
+            "sdk/lib/rtl",
+        ] {
+            out.push(format!("-I{}", ctx.root.join(d).display()));
+        }
+        for d in ["ntoskrnl", "ntoskrnl/include", "ntoskrnl/include/internal"] {
+            out.push(format!("-I{}", ctx.build_dir.join(d).display()));
+        }
+    }
+    if rel.starts_with("ntoskrnl") {
         for d in [
             "-D_NTOSKRNL_",
             "-D__NTOSKRNL__",
             "-D_NTSYSTEM_",
+            "-DNTDDI_VERSION=0x05020400",
             "-include",
             "ntoskrnl.h",
         ] {
@@ -300,8 +319,20 @@ pub fn run(ctx: &BinaryContext) -> Result<CheckOutput, String> {
     for area in AREAS {
         walk(&ctx.root.join(area), &mut files);
     }
+    // Fallbacks for a TU the nearest donor cannot parse (a user-mode file
+    // beside kernel code, or ntoskrnl/hal, which have no live C left at all).
+    let area_donor = |pre: &str| {
+        let pre = ctx.root.join(pre);
+        by_dir
+            .iter()
+            .find(|(d, _)| d.starts_with(&pre))
+            .map(|(_, e)| e)
+    };
+    let fallbacks: Vec<&Entry> = [area_donor("drivers"), area_donor("dll/win32")]
+        .into_iter()
+        .flatten()
+        .collect();
     let mut scan = Vec::new();
-    let mut no_donor = Vec::new();
     for p in files {
         if live.contains(&p) {
             continue;
@@ -314,32 +345,46 @@ pub fn run(ctx: &BinaryContext) -> Result<CheckOutput, String> {
         if !minmax().is_match(&src) {
             continue;
         }
-        match p.parent().and_then(|d| donor(&ctx.root, d, &by_dir)) {
-            Some(e) => scan.push((p, src, e)),
-            None => no_donor.push(p),
+        let mut donors: Vec<&Entry> = p
+            .parent()
+            .and_then(|d| donor(&ctx.root, d, &by_dir))
+            .into_iter()
+            .collect();
+        for f in &fallbacks {
+            if !donors.iter().any(|d| std::ptr::eq(*d, *f)) {
+                donors.push(f);
+            }
         }
+        scan.push((p, src, donors));
     }
     let results: Vec<_> = scan
         .par_iter()
-        .map(|(p, src, e)| {
+        .map(|(p, src, donors)| {
             let rel = p.strip_prefix(&ctx.root).unwrap_or(p).display().to_string();
-            let args = command(ctx, p, e);
-            let out = Command::new(&args[0])
-                .args(&args[1..])
-                .current_dir(&e.dir)
-                .output();
-            match out {
-                Ok(o) => {
-                    let (h, errs, first) = hits(
-                        &p.display().to_string(),
-                        &rel,
-                        src,
-                        &String::from_utf8_lossy(&o.stderr),
-                    );
-                    Ok((rel, h, errs, first))
+            let mut best: Option<(Vec<String>, usize, String)> = None;
+            for e in donors {
+                let args = command(ctx, p, e);
+                let o = Command::new(&args[0])
+                    .args(&args[1..])
+                    .current_dir(&e.dir)
+                    .output()
+                    .map_err(|err| format!("{}: {err}", args[0]))?;
+                let r = hits(
+                    &p.display().to_string(),
+                    &rel,
+                    src,
+                    &String::from_utf8_lossy(&o.stderr),
+                );
+                let clean = r.1 == 0;
+                if best.as_ref().is_none_or(|b| r.1 < b.1) {
+                    best = Some(r);
                 }
-                Err(err) => Err(format!("{}: {err}", args[0])),
+                if clean {
+                    break;
+                }
             }
+            let (h, errs, first) = best.unwrap_or_default();
+            Ok((rel, h, errs, first))
         })
         .collect::<Result<_, String>>()?;
     let mut stdout = String::new();
@@ -355,18 +400,11 @@ pub fn run(ctx: &BinaryContext) -> Result<CheckOutput, String> {
             stdout.push('\n');
         }
     }
-    for p in &no_donor {
-        stdout.push_str(&format!(
-            "#NODONOR {}\n",
-            p.strip_prefix(&ctx.root).unwrap_or(p).display()
-        ));
-    }
     stdout.push_str(&format!(
-        "# {}: {} flipped .c scanned ({n_err} partly parsed), {} without a donor TU, \
+        "# {}: {} flipped .c scanned ({n_err} partly parsed), \
          {n_hits} mixed-sign min/max sites (review list, not a gate)\n",
         ctx.arch,
         results.len(),
-        no_donor.len()
     ));
     Ok(CheckOutput::new(stdout, 0))
 }

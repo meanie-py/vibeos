@@ -2744,7 +2744,7 @@ gates the constant case, including the parenthesized `(NAME) as u8` that hid ata
 (rebar, the winpos and tui pair) are NOT linted: they need C types, so `-Wsign-compare` on the
 oracle stays the tool for those. For modules with NO oracle, the on-demand (never gated)
 `./vibeos-cli lint --arch <a> --rules scan_sign_compare_minmax` parses every flipped `.c` that
-calls min/max under the flags of the nearest live TU. Its first run (2026-11-21; 305 of 356 such files, all three arches) gave 20
+calls min/max under the flags of the nearest live TU. Its first run (2026-11-21; all 356 such files, all three arches) gave 21
 sites and one bug: user32 listbox's `LB_SETCOUNT` shrink, `min(anchor_item, count - 1)`, where
 the unsigned compare turns "no anchor" (-1) into the last item and the Rust kept -1. comctl32's
 twin listbox already had it right. Run all three arches, because widths decide which compares
