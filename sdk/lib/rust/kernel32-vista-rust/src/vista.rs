@@ -640,7 +640,9 @@ unsafe fn write_ui_language_list(
     // with no languages of its own).
     let need = if len == 0 { 2 } else { len + 2 } as ULONG;
     *count = if len == 0 { 0 } else { 1 };
-    if buffer.is_null() || *size == 0 {
+    // Only a NULL buffer is a size query. A real buffer with *size == 0 is too small like any
+    // other and fails with ERROR_INSUFFICIENT_BUFFER, as on Windows (Wine's test checks it).
+    if buffer.is_null() {
         *size = need;
         return 1;
     }
