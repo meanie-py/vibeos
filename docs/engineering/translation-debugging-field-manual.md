@@ -13548,6 +13548,34 @@ the crash; when memory runs out on arm64 only, grep for them first.
   dropped probe **masked** the deeper arm64 exception-dispatch recursion beneath it. **A missing
   guard can hide the bug it would have exposed.**
 
+### A user-mode heap that reserves a new segment for space it already freed
+
+**Symptom.** An i386 process runs out of address space (`ERROR_NOT_ENOUGH_MEMORY`, last error
+8) while its commit is small: after one wined3d init and release, 1.5G was reserved, 55M
+committed, and the largest free region was 124M. The reservations are the process heap's
+segments, doubling 8M, 16M … 512M. The giveaway is a repeat of the same workload growing the
+heap again. glsanity's round 2 makes the same single softpipe context as round 1, and it
+reserved a fresh 256M segment while round 1's 248M sat decommitted.
+
+**Cause.** This is inherited from the C (`sdk/lib/rtl/heap.c` `RtlpDeCommitFreeBlock`), so
+the C oracle fails identically. Decommitting a freed block leaves its committed tail as a free
+entry starting exactly at the new uncommitted range's end: page-aligned, with
+`PreviousSize = 0`. Freeing the next block coalesces into that tail, giving
+`PrecedingSize == 0`, and the C then skips a whole page to make room for a guard entry. The
+range before it already has a guard. So a run of equal blocks freed in order becomes ranges
+one page smaller than the blocks, each split from the next by a committed page. An allocation
+of the same size never fits one again, and every burst reserves a new segment. Mesa softpipe
+was the trigger: about 768 tile caches of 262K per context.
+
+**Fix.** When a free entry begins exactly where an uncommitted range ends (`RtlpUcrEndsAt`),
+decommit it from its first byte with no new guard. `RtlpInsertUnCommittedPages` then merges
+it into the range. After the fix, round 2 reuses round 1's segments, so 272M stays 272M.
+
+**Measuring it.** `RtlWalkHeap` is a stub in the C too, so walk `VirtualQuery` and read each
+allocation base. A heap segment has `0xffeeffee` at `2*sizeof(void*)`, its owning `Heap` at
+`4*sizeof(void*)+8`, and `NumberOfPages` at `6*sizeof(void*)+8`. See `dx_vm` in
+`tools/payloads/modrun/probes/dx_probe.h`.
+
 ---
 
 ## SMP: what a second CPU unmasks

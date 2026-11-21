@@ -8,6 +8,7 @@
 #include <windows.h>
 #include <stdio.h>
 #include <string.h>
+#include "dx_probe.h" /* dx_vm: the heap segments behind the i386 second-init failure */
 
 #define GL_RENDERER 0x1F01
 #define GL_VERSION 0x1F02
@@ -114,6 +115,7 @@ static int round_(int n)
     }
     else
         draw(NULL);
+    dx_vm(n == 1 ? "round 1 live" : "round 2 live");
     printf("delete context %d\n", ((BOOL(WINAPI *)(HGLRC))fn("wglDeleteContext"))(rc));
     ReleaseDC(w, dc);
     printf("destroy window %d\n", DestroyWindow(w));
@@ -254,6 +256,7 @@ static int attribs_round(void)
     printf("  immediate survived err=%x\n", ((GETERROR)fn("glGetError"))());
     if (got)
         core_quad();
+    dx_vm("attribs live");
     ((MAKECURRENT)fn("wglMakeCurrent"))(NULL, NULL);
     if (got)
         ((BOOL(WINAPI *)(HGLRC))fn("wglDeleteContext"))(got);
@@ -272,8 +275,17 @@ int main(void)
         printf("LoadLibrary opengl32 failed %lu\n", GetLastError());
         return 2;
     }
-    if (round_(1) || round_(2) || attribs_round())
+    dx_trace = 1;
+    dx_vm("start");
+    if (round_(1))
         return 1;
+    dx_vm("after round 1");
+    if (round_(2))
+        return 1;
+    dx_vm("after round 2");
+    if (attribs_round())
+        return 1;
+    dx_vm("after attribs");
     printf("probe done\n");
     return 0;
 }
