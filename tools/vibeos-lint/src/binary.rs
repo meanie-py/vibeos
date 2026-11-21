@@ -20,6 +20,7 @@ mod i386_abi;
 mod imports;
 mod ir;
 mod sacred;
+mod sign_compare;
 mod simple;
 mod ud2;
 mod unwind;
@@ -45,6 +46,7 @@ pub const RULES: &[&str] = &[
     "scan_bind_all_matches",
     "scan_captures",
     "scan_ir_mismatch",
+    "scan_sign_compare_minmax",
 ];
 pub const STAGING: &[&str] = &[
     "boot/stripped",
@@ -431,6 +433,7 @@ pub fn run(ctx: &BinaryContext, names: &[String]) -> Result<Value, String> {
             "scan_bind_all_matches" => bindall::run(ctx),
             "scan_captures" => ir::captures(ctx, &ctx.inputs),
             "scan_ir_mismatch" => ir::mismatch(ctx, &ctx.inputs, ctx.include_declarations),
+            "scan_sign_compare_minmax" => sign_compare::run(ctx),
             _ => unreachable!(),
         }
         .unwrap_or_else(|e| CheckOutput {
