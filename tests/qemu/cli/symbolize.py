@@ -98,6 +98,38 @@ def resolve(
     )
 
 
+def is_kernel_va(repo: Path, arch: str, addr: int) -> bool:
+    return native.call("verdict_symbol_is_kernel_va", {"arch": arch, "addr": addr}, root=repo)
+
+
+def kernel_resolve(
+    repo: Path,
+    arch: str,
+    addr: int,
+    *,
+    module: str | None,
+    offset: bool,
+    serial: str | None,
+    kernel_base: str | None,
+    image: str | None,
+) -> str:
+    """A kernel address goes to the kernel index (qemu/addr2sym.sh), relocated by the
+    base its boot printed; `--image` indexes a saved kernel (an evidence dir's)."""
+    return native.call(
+        "verdict_symbol_kernel_resolve",
+        {
+            "arch": arch,
+            "addr": addr,
+            "module": module,
+            "offset": offset,
+            "serial": str(Path(serial).resolve()) if serial else None,
+            "kernel_base": kernel_base,
+            "image": str(Path(image).resolve()) if image else None,
+        },
+        root=repo,
+    )
+
+
 def run(args, repo: Path) -> int:
     arch = args.arch
     if index_is_stale(repo, arch) or args.rebuild:
@@ -119,5 +151,22 @@ def run(args, repo: Path) -> int:
             print(f"{raw} -> (not a hex address)")
             rc = 1
             continue
-        print(resolve(repo, arch, addr, module, offset))
+        kernel = (module and module.lower() in ("ntoskrnl.exe", "ntkrnlmp.exe")) or (
+            not module and is_kernel_va(repo, arch, addr)
+        )
+        if kernel:
+            print(
+                kernel_resolve(
+                    repo,
+                    arch,
+                    addr,
+                    module=module,
+                    offset=offset,
+                    serial=args.serial,
+                    kernel_base=args.kernel_base,
+                    image=args.image,
+                )
+            )
+        else:
+            print(resolve(repo, arch, addr, module, offset))
     return rc
