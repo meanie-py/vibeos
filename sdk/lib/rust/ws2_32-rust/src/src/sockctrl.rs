@@ -147,36 +147,49 @@ pub unsafe extern "system" fn getsockopt(
     ErrorCode = WsApiProlog(&mut Process, &mut Thread);
     if ErrorCode == (ERROR_SUCCESS as i32) {
         if level == (SOL_SOCKET as i32) && optname == (SO_OPENTYPE as i32) {
-            Status = (ERROR_SUCCESS as i32);
-            if optlen.is_null() || *optlen < core::mem::size_of::<DWORD>() as INT {
-                Status = SOCKET_ERROR;
-                SetLastError(WSAEFAULT);
-            } else {
-                *(optval as LPDWORD) = (*Thread).OpenType;
+            // optval/optlen are the caller's; a bad one is WSAEFAULT, as in the C.
+            let open_type = (*Thread).OpenType;
+            Status = match ntdll_sys::seh::try_except_all(|| -> bool {
+                if optlen.is_null() || *optlen < core::mem::size_of::<DWORD>() as INT {
+                    return false;
+                }
+                *(optval as LPDWORD) = open_type;
                 *optlen = core::mem::size_of::<DWORD>() as INT;
-            }
+                true
+            }) {
+                Ok(true) => ERROR_SUCCESS as i32,
+                Ok(false) | Err(_) => {
+                    SetLastError(WSAEFAULT);
+                    SOCKET_ERROR
+                }
+            };
             return Status;
         }
 
         Socket = WsSockGetSocket(s);
         if !Socket.is_null() {
             if level == (SOL_SOCKET as i32) && optname == (SO_PROTOCOL_INFOA as i32) {
-                ErrorCode = (NO_ERROR as i32);
-                if optval.is_null()
-                    || optlen.is_null()
-                    || *optlen < core::mem::size_of::<WSAPROTOCOL_INFOA>() as INT
-                {
-                    if !optlen.is_null() {
-                        *optlen = core::mem::size_of::<WSAPROTOCOL_INFOA>() as INT;
+                // Validate and swap in our W buffer; a faulting optlen is WSAEFAULT.
+                let info_w = core::ptr::addr_of_mut!(ProtocolInfo) as PCHAR;
+                let (old_len, old_val, val, name) = (&mut OldOptLen, &mut OldOptVal, &mut optval, &mut optname);
+                ErrorCode = ntdll_sys::seh::try_except_all(|| -> INT {
+                    if val.is_null()
+                        || optlen.is_null()
+                        || *optlen < core::mem::size_of::<WSAPROTOCOL_INFOA>() as INT
+                    {
+                        if !optlen.is_null() {
+                            *optlen = core::mem::size_of::<WSAPROTOCOL_INFOA>() as INT;
+                        }
+                        return WSAEFAULT as i32;
                     }
-                    ErrorCode = (WSAEFAULT as i32);
-                } else {
-                    OldOptLen = *optlen;
-                    OldOptVal = optval;
+                    *old_len = *optlen;
+                    *old_val = *val;
                     *optlen = core::mem::size_of::<WSAPROTOCOL_INFOW>() as INT;
-                    optval = core::ptr::addr_of_mut!(ProtocolInfo) as PCHAR;
-                    optname = (SO_PROTOCOL_INFOW as i32);
-                }
+                    *val = info_w;
+                    *name = SO_PROTOCOL_INFOW as i32;
+                    NO_ERROR as i32
+                })
+                .unwrap_or(WSAEFAULT as i32);
 
                 if ErrorCode != (NO_ERROR as i32) {
                     WsSockDereference(Socket);
@@ -206,8 +219,10 @@ pub unsafe extern "system" fn getsockopt(
                     OldOptVal as LPWSAPROTOCOL_INFOA,
                 );
 
-                if !optlen.is_null() {
-                    *optlen = OldOptLen;
+                if !optlen.is_null()
+                    && ntdll_sys::seh::try_except_all(|| *optlen = OldOptLen).is_err()
+                {
+                    ErrorCode = WSAEFAULT as i32;
                 }
 
                 if ErrorCode == (ERROR_SUCCESS as i32) {
@@ -253,10 +268,18 @@ pub unsafe extern "system" fn setsockopt(
                 return SOCKET_ERROR;
             }
 
-            let Status = ERROR_SUCCESS;
-            (*Thread).OpenType = *(optval as *const DWORD);
+            // optval is the caller's; reading it may fault (WSAEFAULT in the C).
+            let thread = Thread;
+            if ntdll_sys::seh::try_except_all(|| {
+                (*thread).OpenType = *(optval as *const DWORD);
+            })
+            .is_err()
+            {
+                SetLastError(WSAEFAULT);
+                return SOCKET_ERROR;
+            }
 
-            return (Status as i32);
+            return ERROR_SUCCESS as i32;
         }
 
         if optval.is_null() && optlen > 0 {

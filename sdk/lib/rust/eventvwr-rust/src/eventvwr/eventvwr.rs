@@ -1199,7 +1199,6 @@ pub unsafe extern "C" fn GetMessageStringFromDll(
     let mut hLibrary: HMODULE = core::ptr::null_mut();
     let mut dwLength: DWORD = 0;
     let mut lpMsgBuf: LPWSTR = core::ptr::null_mut();
-    let mut _SEH2_Volatile0_local: i32 = 0;
 
     hLibrary = LoadLibraryExW(
         lpMessageDll,
@@ -1223,22 +1222,23 @@ pub unsafe extern "C" fn GetMessageStringFromDll(
          * Retrieve the message string without appending extra newlines.
          * Wrap in SEH to protect from invalid string parameters.
          */
-        /* _SEH2_TRY */
-        {
-            dwLength = FormatMessageW(
+        let msg_buf = core::ptr::addr_of_mut!(lpMsgBuf);
+        let first = ntdll_sys::seh::try_except_all(|| {
+            FormatMessageW(
                 dwFlags,
                 hLibrary as LPCVOID,
                 dwMessageId,
                 (LANG_USER_DEFAULT) as DWORD,
-                core::ptr::addr_of_mut!(lpMsgBuf) as LPWSTR,
+                msg_buf as LPWSTR,
                 nSize,
                 (Arguments).cast(),
-            );
+            )
+        });
+        if let Ok(n) = first {
+            dwLength = n;
         }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): lowered as the tree's dummy PSEH does
-        // (`if (_SEH2_Volatile0)`): Rust cannot catch a fault raised inside FormatMessageW,
-        // so the handler is guarded by a flag that is never set and a fault propagates.
-        if core::ptr::read_volatile(core::ptr::addr_of!(_SEH2_Volatile0_local)) != 0 {
+        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+        if first.is_err() {
             /*
              * An exception occurred while calling FormatMessage, this is usually
              * the sign that a parameter was invalid, either 'lpMsgBuf' was NULL

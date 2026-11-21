@@ -2660,8 +2660,15 @@ pub unsafe extern "system" fn AddFontResourceExA(
     let FilenameW: PWSTR;
     let mut szBuff: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
-    // _SEH2_TRY: under USE_DUMMY_PSEH the except body is dead code.
-    FilenameW = HEAP_strdupA2W_buf(lpszFilename, szBuff.as_mut_ptr(), szBuff.len() as SIZE_T);
+    // A bad lpszFilename faults in the conversion; the C answers 0 without
+    // touching the last error.
+    let buf = szBuff.as_mut_ptr();
+    FilenameW = match ntdll_sys::seh::try_except_all(|| {
+        HEAP_strdupA2W_buf(lpszFilename, buf, MAX_PATH as SIZE_T)
+    }) {
+        Ok(p) => p,
+        Err(_) => return 0,
+    };
 
     if FilenameW.is_null() {
         SetLastError(ERROR_OUTOFMEMORY);
@@ -2716,8 +2723,13 @@ pub unsafe extern "system" fn RemoveFontResourceExA(
     let mut szBuff: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let FilenameW: PWSTR;
 
-    // _SEH2_TRY: under USE_DUMMY_PSEH the except body is dead code.
-    FilenameW = HEAP_strdupA2W_buf(lpFileName, szBuff.as_mut_ptr(), szBuff.len() as SIZE_T);
+    // A bad lpFileName faults in the conversion; the C treats that like an
+    // allocation failure (FilenameW = NULL, ERROR_OUTOFMEMORY below).
+    let buf = szBuff.as_mut_ptr();
+    FilenameW = ntdll_sys::seh::try_except_all(|| {
+        HEAP_strdupA2W_buf(lpFileName, buf, MAX_PATH as SIZE_T)
+    })
+    .unwrap_or(core::ptr::null_mut());
 
     if FilenameW.is_null() {
         SetLastError(ERROR_OUTOFMEMORY);

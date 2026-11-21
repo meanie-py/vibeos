@@ -275,7 +275,6 @@ pub unsafe extern "system" fn WSCGetProviderPath(
     let mut Process: PWSPROCESS = core::ptr::null_mut();
     let Catalog: PNSCATALOG;
     let mut ErrorCode: INT;
-    let PathLen: INT;
     let mut Context: PROVIDER_ENUM_CONTEXT = core::mem::zeroed();
 
     ErrorCode = WsApiProlog(&mut Process, &mut Thread);
@@ -286,33 +285,42 @@ pub unsafe extern "system" fn WSCGetProviderPath(
 
     Catalog = WsProcGetNsCatalog(Process);
 
-    Context.ProviderId = *lpProviderId;
-    Context.ProviderDllPath = lpszProviderDllPath;
-    Context.ProviderDllPathLen = *lpProviderDllPathLen;
-    Context.FoundPathLen = 0;
-    Context.Found = 0;
-    Context.ErrorCode = ERROR_SUCCESS as INT;
+    // Every caller pointer (lpProviderId, lpProviderDllPathLen, the path buffer the
+    // enumeration fills) is read or written in here; a bad one is WSAEFAULT, as in the C.
+    let context = &mut Context;
+    ErrorCode = ntdll_sys::seh::try_except_all(|| -> INT {
+        let mut ErrorCode: INT;
+        let PathLen: INT;
+        context.ProviderId = *lpProviderId;
+        context.ProviderDllPath = lpszProviderDllPath;
+        context.ProviderDllPathLen = *lpProviderDllPathLen;
+        context.FoundPathLen = 0;
+        context.Found = 0;
+        context.ErrorCode = ERROR_SUCCESS as INT;
 
-    ErrorCode = ERROR_SUCCESS as INT;
+        ErrorCode = ERROR_SUCCESS as INT;
 
-    WsNcEnumerateCatalogItems(Catalog, Some(ProviderEnumerationProc), &mut Context as *mut _ as *mut core::ffi::c_void);
+        WsNcEnumerateCatalogItems(Catalog, Some(ProviderEnumerationProc), &mut *context as *mut _ as *mut core::ffi::c_void);
 
-    if Context.ErrorCode == ERROR_SUCCESS as INT {
-        if Context.Found != 0 {
-            PathLen = (Context.FoundPathLen as i32);
+        if context.ErrorCode == ERROR_SUCCESS as INT {
+            if context.Found != 0 {
+                PathLen = (context.FoundPathLen as i32);
 
-            if Context.FoundPathLen <= (*lpProviderDllPathLen as u32) {
-                *lpProviderDllPathLen = ((Context.FoundPathLen - (1 as i32 as u32)) as i32);
+                if context.FoundPathLen <= (*lpProviderDllPathLen as u32) {
+                    *lpProviderDllPathLen = ((context.FoundPathLen - (1 as i32 as u32)) as i32);
+                } else {
+                    ErrorCode = (WSAEFAULT as i32);
+                    *lpProviderDllPathLen = PathLen;
+                }
             } else {
-                ErrorCode = (WSAEFAULT as i32);
-                *lpProviderDllPathLen = PathLen;
+                ErrorCode = (WSAEINVAL as i32);
             }
         } else {
-            ErrorCode = (WSAEINVAL as i32);
+            ErrorCode = context.ErrorCode;
         }
-    } else {
-        ErrorCode = Context.ErrorCode;
-    }
+        ErrorCode
+    })
+    .unwrap_or(WSAEFAULT as INT);
 
     if ErrorCode != ERROR_SUCCESS as INT {
         *lpErrno = ErrorCode;

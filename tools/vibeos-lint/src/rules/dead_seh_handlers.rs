@@ -51,8 +51,19 @@ impl Rule for DeadSehHandlers {
         // DeviceSendSrbSynchronously calls `__SEH2_ProbeAndLockPages` from ddk_shims.rs.
         let mut strong: HashMap<String, Vec<String>> = HashMap::new();
         let mut any: HashMap<String, Vec<String>> = HashMap::new();
-        for (_, key, funs) in &parsed {
+        for (f, key, funs) in &parsed {
             for h in funs {
+                // A ported, exported API catches for its OWN body: user32's GetSystemMetrics
+                // guards a themed hook, and calling it covers nothing in the caller
+                // (LookupIconIdFromDirectoryEx went quiet that way). Every other catcher is
+                // a helper its callers share: KiContinuePreviousModeUser (static in
+                // except.c, not exported) holds KiContinue's probe-copy, and cdrom's
+                // `__SEH2_ProbeAndLockPages` shim is exported for C but ports nothing.
+                if is_entry_point(&f.text, h)
+                    && index.get(&h.name).iter().any(|t| twins::same_module(&h.path, t))
+                {
+                    continue;
+                }
                 if STRONG.is_match(&h.body) {
                     strong.entry(key.clone()).or_default().push(h.name.clone());
                 }
@@ -74,6 +85,25 @@ impl Rule for DeadSehHandlers {
         }
         Ok(out.into_iter().collect())
     }
+}
+
+/// Is `fun` an exported entry point (`extern "…" fn` or `#[no_mangle]`), as opposed to a
+/// crate-internal helper? Reads the signature and the attribute lines above it.
+fn is_entry_point(raw: &str, fun: &twins::Function) -> bool {
+    let upto = &raw[..fun.body_start.min(raw.len())];
+    let needle = format!("fn {}", fun.name);
+    let Some(at) = upto.rfind(&needle) else { return false };
+    let sig = &upto[at..];
+    let line_start = upto[..at].rfind('\n').map_or(0, |i| i + 1);
+    let lead = &upto[line_start..at];
+    let above_from = upto[..line_start].char_indices().rev().nth(199).map_or(0, |(i, _)| i);
+    let above = &upto[above_from..line_start];
+    lead.contains("extern \"")
+        || sig.contains("extern \"")
+        || above.lines().rev().take_while(|l| {
+            let t = l.trim_start();
+            t.starts_with("#[") || t.starts_with("//")
+        }).any(|l| l.contains("no_mangle"))
 }
 
 /// The crate a Rust file belongs to: its path up to `/src/` (the whole path if none).
@@ -162,11 +192,12 @@ fn check(
     let twin = twins::prefer(&fun.path, twins_for_name)
         .into_iter()
         .find(|t| twins::same_module(&fun.path, t))?;
-    let handlers = C_EXCEPT.find_iter(&twin.body).count();
+    let live = blank_if0(&twin.body);
+    let handlers = C_EXCEPT.find_iter(&live).count();
     if handlers == 0 {
         return None;
     }
-    let tried = try_bodies(&twin.body);
+    let tried = try_bodies(&live);
     // Only a raiser the Rust STILL calls needs a real catch. A port that turned the C's own
     // `RtlRaiseStatus(s)` into `return Err(s)` (NtSetUuidSeed) has converted the contract,
     // which is the Tier-1 fix, and a probe then covers what is left.
@@ -233,6 +264,51 @@ fn head(s: &str, n: usize) -> &str {
         end -= 1;
     }
     &s[..end]
+}
+
+/// `body` with every `#if 0` branch blanked (up to its `#else`/`#elif`/`#endif`), so a
+/// handler the preprocessor never compiles is not counted. epsapi's
+/// PsaEnumerateProcessModules has its `__try`/`__except` parked under `#if 0`.
+fn blank_if0(body: &str) -> String {
+    let mut out = String::with_capacity(body.len());
+    // Depth of nested `#if`s inside the dead branch; None while live.
+    let mut dead: Option<usize> = None;
+    for line in body.split_inclusive('\n') {
+        let t = line.trim_start();
+        let d = t.strip_prefix('#').map(str::trim_start);
+        let kw = |k: &str| d.is_some_and(|d| d.starts_with(k));
+        let blank = match dead {
+            None => {
+                if kw("if") && d.is_some_and(|d| {
+                    d.strip_prefix("if").is_some_and(|r| r.trim_start().starts_with('0')
+                        && !r.trim_start()[1..].starts_with(|c: char| c.is_ascii_alphanumeric()))
+                }) {
+                    dead = Some(0);
+                    true
+                } else {
+                    false
+                }
+            }
+            Some(n) => {
+                if kw("if") {
+                    dead = Some(n + 1);
+                } else if kw("endif") || (n == 0 && (kw("else") || kw("elif"))) {
+                    if n == 0 {
+                        dead = None;
+                    } else {
+                        dead = Some(n - 1);
+                    }
+                }
+                true
+            }
+        };
+        if blank {
+            out.extend(line.chars().map(|c| if c == '\n' { c } else { ' ' }));
+        } else {
+            out.push_str(line);
+        }
+    }
+    out
 }
 
 /// The text of every `try` body in a C function (up to its `except`/`finally`), for tagging.
@@ -370,6 +446,36 @@ mod tests {
         assert!(DeadSehHandlers.run(&same).unwrap().is_empty());
         let other = corpus("sdk/lib/rust/ob-rust/src/shims.rs");
         assert_eq!(DeadSehHandlers.run(&other).unwrap().len(), 1, "another crate's helper is not ours");
+    }
+
+    #[test]
+    fn a_ported_api_that_catches_for_itself_is_not_a_helper() {
+        let c = "NTSTATUS NTAPI IoLockIt(PMDL Mdl)\n{\n    _SEH2_TRY { f(); } _SEH2_EXCEPT(1) { } _SEH2_END;\n    \
+            return 0;\n}\nINT NTAPI IoMetric(INT i)\n{\n    _SEH2_TRY { g(); } _SEH2_EXCEPT(1) { } _SEH2_END;\n    \
+            return 0;\n}\n";
+        let rs = "pub unsafe extern \"system\" fn IoMetric(i: INT) -> INT {\n    \
+            ntdll_sys::seh::try_except_all(|| g()).unwrap_or(0)\n}\n\
+            pub unsafe extern \"system\" fn IoLockIt(Mdl: PMDL) -> NTSTATUS {\n    IoMetric(1);\n    f();\n    0\n}\n";
+        let rows = run(c, rs);
+        assert_eq!(rows.len(), 1, "{rows:?}");
+        assert!(rows[0].contains("IoLockIt"));
+        // An exported shim with no C twin is still a helper (cdrom's __SEH2_ProbeAndLockPages).
+        let shim = rs.replace("fn IoMetric(", "fn __shim_probe(").replace("IoMetric(1)", "__shim_probe(1)");
+        assert!(run(c, &shim).is_empty(), "{:?}", run(c, &shim));
+    }
+
+    #[test]
+    fn an_if0_handler_is_not_a_handler() {
+        let c = "NTSTATUS NTAPI IoLockIt(PMDL Mdl)\n{\n#if 0\n    __try {\n#endif\n    f();\n\
+            #if 0\n    } __except(1) { return 1; }\n#endif\n    return 0;\n}\n";
+        let rs = "pub unsafe extern \"system\" fn IoLockIt(Mdl: PMDL) -> NTSTATUS { 0 }\n";
+        assert!(run(c, rs).is_empty());
+        // twins keeps only an #if's first arm, so test the #else handling on the helper.
+        assert!(blank_if0("#if 0\ndead\n#else\nlive\n#endif\n").contains("live"));
+        assert!(!blank_if0("#if 0\ndead\n#else\nlive\n#endif\n").contains("dead"));
+        assert!(blank_if0("#if 0\n#if X\n__except\n#endif\n__except\n#endif\nkeep\n")
+            .trim() == "keep");
+        assert!(blank_if0("#if 0x\nlive\n#endif\n").contains("live"));
     }
 
     #[test]

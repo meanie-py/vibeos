@@ -6568,7 +6568,10 @@ in the fleet by body hash (`python -m rustconv.bank_drift --fleet` is the genera
 were bought from the cut body, and only winspool's `GetMonitorUI` shipped without its tail
 (no MONITORUIDATA, no monitor UI DLL, leaked handle); the other six came out whole because
 c2rust anchors on the whole TU. **Check what was bought, not what the scanner says now: the
-bank's per-function C hash is the record.**
+bank's per-function C hash is the record.** The hand-completion that followed (`32733e7baf6`) deleted
+GetMonitorUI's body instead of finishing it, and still compiled: `if p.is_null() { return }`
+followed by a stray `else { … }` is valid Rust. The commit message said "completed"; found
+2026-11-21 by `scan_dead_seh_handlers` and restored. Read a hand fix's diff, not its message.
 
 The two fixes compose, and the order matters: expanding is what lets `--seal-facts` see the arms
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and

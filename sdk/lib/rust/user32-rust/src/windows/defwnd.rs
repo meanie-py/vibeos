@@ -1630,10 +1630,8 @@ unsafe fn ime_msg_handling(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM
 
 // ===========================================================================
 // DefWindowProcA / DefWindowProcW — public exports.
-// SEH NOTE: the C wraps `guah.DefWindowProcX(...)` in _SEH2_TRY/_SEH2_EXCEPT.
-// Under USE_DUMMY_PSEH the _SEH2_EXCEPT body (an ERR diagnostic, no mutation) is
-// DEAD CODE, so we drop it entirely and call the hook directly — matching the
-// dummy-PSEH semantics. The _SEH2_TRY body runs unchanged.
+// The C wraps `guah.DefWindowProcX(...)` in _SEH2_TRY; a faulting hook is logged
+// and the call returns 0.
 // ===========================================================================
 #[no_mangle]
 pub unsafe extern "system" fn DefWindowProcA(
@@ -1643,7 +1641,7 @@ pub unsafe extern "system" fn DefWindowProcA(
     lParam: LPARAM,
 ) -> LRESULT {
     let mut msgOverride: BOOL = FALSE;
-    let Result: LRESULT;
+    let mut Result: LRESULT = 0;
 
     LoadUserApiHook();
 
@@ -1660,7 +1658,13 @@ pub unsafe extern "system" fn DefWindowProcA(
         return RealDefWindowProcA(hWnd, Msg, wParam, lParam);
     }
 
-    Result = guah.DefWindowProcA.unwrap()(hWnd, Msg, wParam, lParam);
+    // A themed hook (uxtheme) that faults is logged and skipped, as in the C.
+    match ntdll_sys::seh::try_except_all(|| guah.DefWindowProcA.unwrap()(hWnd, Msg, wParam, lParam)) {
+        Ok(r) => Result = r,
+        Err(_) => {
+        ERR!("Got exception in hooked DefWindowProcA\n");
+    }
+    }
 
     EndUserApiHook();
 
@@ -1675,7 +1679,7 @@ pub unsafe extern "system" fn DefWindowProcW(
     lParam: LPARAM,
 ) -> LRESULT {
     let mut msgOverride: BOOL = FALSE;
-    let Result: LRESULT;
+    let mut Result: LRESULT = 0;
 
     LoadUserApiHook();
 
@@ -1692,7 +1696,13 @@ pub unsafe extern "system" fn DefWindowProcW(
         return RealDefWindowProcW(hWnd, Msg, wParam, lParam);
     }
 
-    Result = guah.DefWindowProcW.unwrap()(hWnd, Msg, wParam, lParam);
+    // A themed hook (uxtheme) that faults is logged and skipped, as in the C.
+    match ntdll_sys::seh::try_except_all(|| guah.DefWindowProcW.unwrap()(hWnd, Msg, wParam, lParam)) {
+        Ok(r) => Result = r,
+        Err(_) => {
+        ERR!("Got exception in hooked DefWindowProcW\n");
+    }
+    }
 
     EndUserApiHook();
 
