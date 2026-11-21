@@ -2742,7 +2742,13 @@ at the width the C compares at, THEN narrow the result: `min(a, b as T_wide) as 
 it can see the operand's declared width (locals, params, struct fields); `scan_const_narrowing_cast`
 gates the constant case, including the parenthesized `(NAME) as u8` that hid atapi's. Sign flips
 (rebar, the winpos and tui pair) are NOT linted: they need C types, so `-Wsign-compare` on the
-oracle stays the tool for those.
+oracle stays the tool for those, and `python3 tools/sign_compare_audit.py --arch <a>` covers
+modules with NO oracle: it parses every flipped `.c` that calls min/max under the flags of the
+nearest live TU. Its first run (2026-11-21; 305 of 356 such files, all three arches) gave 20
+sites and one bug: user32 listbox's `LB_SETCOUNT` shrink, `min(anchor_item, count - 1)`, where
+the unsigned compare turns "no anchor" (-1) into the last item and the Rust kept -1. comctl32's
+twin listbox already had it right. Run all three arches, because widths decide which compares
+are mixed-sign at all: evtlib's `min(SIZE_T, LONGLONG)` is unsigned on 64-bit and signed on i386.
 
 ### `FAILED(x)` on an HRESULT kept in a DWORD became `x < 0 as DWORD`, never true
 **Symptom:** shlwapi's `UrlGetPartA` (2026-11-08) failed 82 more of Wine's url checks than the

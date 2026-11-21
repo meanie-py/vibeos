@@ -35,9 +35,11 @@ kmtest (337f69a56f9, baselined on all three arches). The older owed queue is the
 Owed, in order:
 1. CcZeroData's CACHED path (the VACB loop, same narrowing fix) has no test: a 4 GiB cached
    range maps and zeroes 4 GiB of views. Needs a cheaper shape, or accept the gap.
-2. The SIGN-flip half of the min/max class is not linted (rebar, winpos, tui were that shape):
-   it needs C types. `-Wsign-compare` on a module's C oracle finds it; modules with no oracle
-   were covered only by the 2026-11-01 grep audit (field manual, "A mixed-sign min/max").
+2. ~~The SIGN-flip half of the min/max class is not linted.~~ Closed 2026-11-21:
+   `tools/sign_compare_audit.py` runs `-Wsign-compare` over the flipped C of modules with no
+   oracle. It found one bug, user32 listbox's `LB_SETCOUNT` clamp, which is now fixed. Still
+   open: the 51 files that have no donor TU, and the 106 that only partly parse under borrowed
+   flags (both listed by the tool as `#NODONOR` / `#ERR`).
 3. bank_drift residue: 18 moved hashes no historical master scanner reproduces, all bought in
    sibling worktrees with branch-local scanners (cpp-cluster, gicv3, research,
    rustconv-speedrun, shell32-com). The 357 upstream-moved bodies are upstream-sync's queue.
