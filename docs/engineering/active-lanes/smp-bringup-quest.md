@@ -15,8 +15,9 @@ Next (all builds, so after the 2026-11-21 disk hold lifts):
 1. Cohab flip, then the cargo cell, then `vibeos-cli gate`.
 2. Build the `crypt32_c` oracle on one arch (`c_oracle.cmake`, never built yet).
 3. Grade `crypt32winetest` (the Rust) against `crypt32winetestc` (the C as `crypt3c.dll`).
-Still owed from before: crate-repair handles a `transmute::<Option<extern "C" fn>>` whose
-value is a `system` fn by hand only (47 sites here). A rule should flip the turbofish ABI.
+Done since: crate-repair's `transmute_source_abi` rule now flips a transmute source type's
+`extern "C"` to `"system"` when the function handed to it is `system`. Here that was 47 sites,
+fixed by hand before the rule existed.
 
 ### Earlier RESUME HERE (2026-11-08, fleet wind-down)
 
