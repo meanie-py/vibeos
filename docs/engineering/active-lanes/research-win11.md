@@ -11,29 +11,24 @@ from live in the docs below; this file holds only the lane's state.
 - [../winref.md](../winref.md): the Windows 11 reference VM. Every contract on this lane is
   measured there first, and the probe and its Windows output are committed beside the code.
 
-## RESUME HERE (parked 2026-11-08, fleet token-budget wind-down)
+## RESUME HERE (2026-11-21, fleet resumed)
 
-**State:** nothing unlanded. The lane's branch (`fsaudit-2`) is master plus this note. Landed
-this week: win11-flip; Windows' storage/alignment queries on fastfat and cdfs
-(`6dc85e47444`); and a line-by-line audit of both drivers' translations, with fixes in
-`6dc85e47444` and `9c4f8342cc1`. The second round includes cdfs device IOCTLs on volume
-handles, which had all been failing; the FAT32 BPB check; LBO truncation in
-FatLookupLastMcbEntry; and the FSCTL_FILESYSTEM_GET_STATISTICS counters, which C stubs had
-left at zero. The audit's leftovers are in the roadmap's fastfat/cdfs entry.
+**Done this session:** RESUME items 1 and 2.
+- The CD alignment query's err=87 came from scsiport (UniATA's port), not cdrom or CDFS: its
+  LUN PDO answered unknown properties with STATUS_INVALID_PARAMETER_1. It now answers
+  STATUS_INVALID_DEVICE_REQUEST, which gives Win32 1 like Windows 11 (`e701132fc12`, integrator
+  batch 177).
+- cdfs refuses `FILE_OPEN_REQUIRING_OPLOCK`, as measured on Windows 11 (fsquery's new
+  `oplockopen` line), and fastfat's `FatCommonCreateCallout` has its try/except.
 
 **Next, in order:**
-1. The CD volume's `IOCTL_STORAGE_QUERY_PROPERTY` alignment query returns err=87, where
-   Windows returns err=1 (`fsquery.win11.txt`, "===CD D:==="). This comes from cdrom/classpnp,
-   not CDFS.
-2. The audit's two open decisions (roadmap): cdfs's `FILE_OPEN_REQUIRING_OPLOCK` block is
-   `#[cfg(any())]`, and FatCommonCreateCallout has no try/except.
-3. gpg-agent cannot start because of CreateProcess's `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. It
+1. gpg-agent cannot start because of CreateProcess's `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. It
    is the one red line in hostapps.
-4. SVCFAIL tripwire on i386 and arm64 (amd64 only today).
-5. Soak candidate, never run: the amd64 `STATUS_NONEXISTENT_SECTOR` in-page 0x1E. It was seen
+2. SVCFAIL tripwire on i386 and arm64 (amd64 only today).
+3. Soak candidate, never run: the amd64 `STATUS_NONEXISTENT_SECTOR` in-page 0x1E. It was seen
    once (hostapps `20261101-123017-7ue7skcb`) and has been clean since; see the roadmap
    registry. Run `./vibeos-cli farm --arches amd64 --minutes 480`, then `farm-report`.
-6. Registry open questions: the i386 `SPECIALPOOL=*` 0x0F (deterministic, so debug it rather
+4. Registry open questions: the i386 `SPECIALPOOL=*` 0x0F (deterministic, so debug it rather
    than soak it), and arm64 ZwAllocateVirtualMemory's thread order (benign).
 
 **Scratch worktree:** `../vibeos-spbase` (detached, holds nothing unique). Leave it for

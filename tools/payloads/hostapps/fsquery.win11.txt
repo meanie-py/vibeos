@@ -386,3 +386,11 @@ NtQVIF 12 st=c000000d n=  0:
 NtQVIF 13 st=c000000d n=  0:
 NtQVIF 14 st=c000000d n=  0:
 fsquery done
+# oplock_open, added later (winref 20261121-173426-fIMkD3-winref-run-x64): NtCreateFile with
+# FILE_OPEN_REQUIRING_OPLOCK on each named file. FAT32 and NTFS open the file; CDFS refuses.
+oplockopen F:\probe.txt st=00000000
+oplockopen F:\ st=00000000
+oplockopen C:\winref\payload\fsquery.exe st=00000000
+oplockopen C:\ st=00000000
+oplockopen D:\fsquery.exe st=c000000d
+oplockopen D:\ st=c000000d

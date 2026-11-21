@@ -307,7 +307,15 @@ pub unsafe extern "system" fn FatFsdCreate(
 #[no_mangle]
 pub unsafe extern "system" fn FatCommonCreateCallout(CalloutParameters: *mut FAT_CALLOUT_PARAMETERS) {
     PAGED_CODE!();
-    (*CalloutParameters).IrpStatus = FatCommonCreate((*CalloutParameters).__bindgen_anon_1.Create.IrpContext, (*CalloutParameters).__bindgen_anon_1.Create.Irp);
+    // Exceptions cannot cross the stack switch, so catch them here and hand the code back
+    // in ExceptionStatus; FatCommonCreateOnNewStack re-raises it on the original stack.
+    let create = core::ptr::addr_of_mut!((*CalloutParameters).__bindgen_anon_1.Create);
+    let p_ic = core::ptr::addr_of!((*create).IrpContext);
+    if let Err(code) = crate::seh::fat_try_except(p_ic, || {
+        (*CalloutParameters).IrpStatus = FatCommonCreate((*create).IrpContext, (*create).Irp);
+    }) {
+        (*CalloutParameters).ExceptionStatus = code;
+    }
 }
 
 #[no_mangle]
