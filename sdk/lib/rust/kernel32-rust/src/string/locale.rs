@@ -27559,14 +27559,19 @@ unsafe fn map_to_halfwidth(
                     if pos < dstlen {
                         *dst.offset(pos as isize) = (*table1.offset(i as isize))[1];
                     }
-                } else if dstlen == 0 {
-                    pos += 1;
-                } else if pos + 1 < dstlen {
-                    *dst.offset(pos as isize) = (*table1.offset(i as isize))[1];
-                    pos += 1;
-                    *dst.offset(pos as isize) = (*table1.offset(i as isize))[2];
                 } else {
-                    *dst.offset(pos as isize) = ch;
+                    // A two-unit mapping (KATAKANA GA -> KA + voiced mark) always counts
+                    // both units and writes only what fits, so a short buffer ends in the
+                    // caller's ERROR_INSUFFICIENT_BUFFER. The C wrote the unmapped char at
+                    // dst[pos] instead and counted one unit: a truncated "success", and a
+                    // write one past the buffer when pos == dstlen.
+                    if pos < dstlen {
+                        *dst.offset(pos as isize) = (*table1.offset(i as isize))[1];
+                    }
+                    pos += 1;
+                    if pos < dstlen {
+                        *dst.offset(pos as isize) = (*table1.offset(i as isize))[2];
+                    }
                 }
                 break;
             }
@@ -28050,6 +28055,22 @@ pub unsafe extern "system" fn LCMapStringEx(
         return 0;
     }
 
+    // An unknown locale name fails a mapping that depends on the locale (casing, sort
+    // keys), as on Windows; kana and width mappings do not consult it and succeed under any
+    // name (Wine's test checks both). The C never checked. NULL is the user default, "" the
+    // invariant locale, and "!x-sys-default-locale" the system default; IsValidLocaleName
+    // accepts the first two, not the reserved '!' names.
+    let locale_dependent =
+        LCMAP_LOWERCASE | LCMAP_UPPERCASE | LCMAP_LINGUISTIC_CASING | LCMAP_SORTKEY;
+    if flags & locale_dependent != 0
+        && !locale.is_null()
+        && *locale != b'!' as WCHAR
+        && IsValidLocaleName(locale) == 0
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
     if srclen < 0 {
         srclen = lstrlenW(src) + 1;
     }
@@ -28091,6 +28112,11 @@ pub unsafe extern "system" fn LCMapStringEx(
     lcmap_string(is_turkic_locale(locale), flags, src, srclen, dst, dstlen)
 }
 
+extern "system" {
+    fn IsValidLocaleName(lpLocaleName: LPCWSTR) -> BOOL;
+    fn LCIDToLocaleName(Locale: LCID, lpName: LPWSTR, cchName: INT, dwFlags: DWORD) -> INT;
+}
+
 // "tr-*" or "az-*", any case (the test passes "TR-TR" and "az-Latn-az").
 unsafe fn is_turkic_locale(locale: LPCWSTR) -> bool {
     if locale.is_null() || *locale == 0 || *locale.add(1) == 0 || *locale.add(2) != b'-' as WCHAR {
@@ -28111,8 +28137,16 @@ pub unsafe extern "system" fn LCMapStringW(
 ) -> INT {
     TRACE!("(0x%04x,0x%08x,%s,%d,%p,%d)\n", lcid, flags, debugstr_wn(src, srclen), srclen, dst, dstlen);
 
+    // The LCID selects the locale, as on Windows: an invalid one fails, and a Turkic one
+    // gets Turkic casing. The C ignored it and always mapped as the user default.
+    let mut name: [WCHAR; 85] = [0; 85]; // LOCALE_NAME_MAX_LENGTH
+    if LCIDToLocaleName(lcid, name.as_mut_ptr(), name.len() as INT, 0) == 0 {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
     LCMapStringEx(
-        core::ptr::null(),
+        name.as_ptr(),
         flags,
         src,
         srclen,
