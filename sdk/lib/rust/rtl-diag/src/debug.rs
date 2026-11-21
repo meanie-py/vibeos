@@ -1,7 +1,7 @@
 use crate::shim::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{KD_SYMBOLS_INFO, NtQueryDebugFilterState, NtSetDebugFilterState, PCCH, PCH, PSTRING, PTEB_ACTIVE_FRAME, RtlImageNtHeader, STRING, va_list};
+use ntkrnl_sys::ddk::{EXCEPTION_RECORD, RtlRaiseException, KD_SYMBOLS_INFO, NtQueryDebugFilterState, NtSetDebugFilterState, PCCH, PCH, PSTRING, PTEB_ACTIVE_FRAME, RtlImageNtHeader, STRING, va_list};
 
 extern "C" {
     fn strlen(s: PCCH) -> usize;
@@ -203,11 +203,6 @@ pub unsafe extern "system" fn vDbgPrintExWithPrefixInternal(
     // Guard against incorrect pointers: the prefix, the format and every %s
     // argument are the caller's. A bad one fails the print with the fault's
     // code instead of taking the caller (or, in kernel mode, the machine) down.
-    //
-    // The C has a second handler, around the DBG_PRINTEXCEPTION_C raise it
-    // sends a user-mode debugger. That block is not ported yet: it was compiled
-    // out under DUMMY_PSEH. Its arm64 blocker (RtlRaiseException resuming a
-    // continued raise inside itself) is fixed, so it is now just owed work.
     let formatted = ntkrnl_sys::seh::try_except_all(|| {
         let mut prefix_len = strlen(Prefix);
         if prefix_len > DBG_BUFFER_LEN {
@@ -244,6 +239,27 @@ pub unsafe extern "system" fn vDbgPrintExWithPrefixInternal(
 
     DebugString.Length = Length as USHORT;
     DebugString.Buffer = BufferPtr;
+
+    // First, let a user-mode debugger see it, as DBG_PRINTEXCEPTION_C. If none
+    // handles the raise it comes back to our own frame; the C catches it there
+    // and falls through to DebugPrint, so a process without a willing debugger
+    // is not killed by its own DbgPrint. RtlpCheckForActiveDebugger is FALSE in
+    // kernel mode, so this is ntdll's path only. (The C compiled the block out
+    // under _USE_DUMMY_PSEH; with a real catch it is live, as upstream intends.)
+    if RtlpCheckForActiveDebugger() != 0 {
+        let mut ExceptionRecord: EXCEPTION_RECORD = core::mem::zeroed();
+        ExceptionRecord.ExceptionCode = DBG_PRINTEXCEPTION_C as _;
+        ExceptionRecord.ExceptionRecord = core::ptr::null_mut();
+        ExceptionRecord.NumberParameters = 2;
+        ExceptionRecord.ExceptionFlags = 0;
+        ExceptionRecord.ExceptionInformation[0] = DebugString.Length as ntkrnl_sys::ddk::ULONG_PTR + 1;
+        ExceptionRecord.ExceptionInformation[1] = DebugString.Buffer as ntkrnl_sys::ddk::ULONG_PTR;
+        let record = core::ptr::addr_of_mut!(ExceptionRecord);
+        if ntkrnl_sys::seh::try_except_all(|| RtlRaiseException(record)).is_ok() {
+            RtlpClearInDbgPrint();
+            return STATUS_SUCCESS as ULONG;
+        }
+    }
 
     Status = DebugPrint(&mut DebugString, ComponentId, Level) as NTSTATUS;
 
