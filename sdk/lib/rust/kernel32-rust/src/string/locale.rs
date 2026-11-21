@@ -26196,6 +26196,11 @@ unsafe fn get_default_sublang(mut lang: LANGID) -> LANGID {
             return ((SUBLANG_CHINESE_HONGKONG as u16 as i32) << 10
                 | LANG_CHINESE as u16 as i32) as LANGID;
         }
+        // Irish: SUBLANG_DEFAULT would give 0x043c, which is gd-GB (Scottish Gaelic, a
+        // different language); Windows' neutral "ga" is ga-IE, 0x083c (Wine's locale test).
+        0x003c => {
+            return 0x083c; // MAKELANGID(LANG_IRISH, SUBLANG_IRISH_IRELAND)
+        }
         _ => {}
     }
     if (lang as i32) >> 10 == SUBLANG_NEUTRAL as i32 {
@@ -27092,7 +27097,10 @@ pub unsafe extern "system" fn ConvertDefaultLocale(mut lcid: LCID) -> LCID {
         }
         _ => {
             langid = LANGIDFROMLCID(lcid);
-            if SUBLANGID(langid) == SUBLANG_NEUTRAL {
+            // A neutral LCID with a non-default sort (ja/ga + SORT_JAPANESE_UNICODE) comes
+            // back unchanged on Windows 7 and later; only SORT_DEFAULT ones resolve to the
+            // language's default locale. The C resolved both (the <= Vista answer).
+            if SUBLANGID(langid) == SUBLANG_NEUTRAL && SORTIDFROMLCID(lcid) == SORT_DEFAULT {
                 langid = get_default_sublang(langid);
                 lcid = MAKELCID(langid, SORTIDFROMLCID(lcid));
             }
@@ -29604,6 +29612,12 @@ pub unsafe extern "system" fn GetGeoInfoW(
             return NLS_GetGeoFriendlyName(geoid, data, data_len, lang);
         }
         1 => {
+            // GEO_NATION: the id as a string, for a nation only. A region (39070, "World")
+            // has no nation, so Windows returns 0 and writes nothing; the C answered with
+            // the region's own id.
+            if (*ptr).kind != LOCATION_NATION {
+                return 0;
+            }
             val = geoid as i32;
         }
         12 => {
