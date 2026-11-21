@@ -205,10 +205,9 @@ pub unsafe extern "system" fn vDbgPrintExWithPrefixInternal(
     // code instead of taking the caller (or, in kernel mode, the machine) down.
     //
     // The C has a second handler, around the DBG_PRINTEXCEPTION_C raise it
-    // sends a user-mode debugger. That block is not ported: it was compiled out
-    // under DUMMY_PSEH, and the arm64 RtlRaiseException resumes a continued
-    // exception at its own RtlCaptureContext rather than at its caller, so a
-    // debugger that continued the print would make it raise forever.
+    // sends a user-mode debugger. That block is not ported yet: it was compiled
+    // out under DUMMY_PSEH. Its arm64 blocker (RtlRaiseException resuming a
+    // continued raise inside itself) is fixed, so it is now just owed work.
     let formatted = ntkrnl_sys::seh::try_except_all(|| {
         let mut prefix_len = strlen(Prefix);
         if prefix_len > DBG_BUFFER_LEN {

@@ -571,6 +571,37 @@ def test_a_stack_protector_object_becomes_a_configure_error(tmp_path):
     assert 'message(FATAL_ERROR "m is linked by cargo' in out and "if(STACK_PROTECTOR)" in out
 
 
+def test_a_rename_under_an_if_fails_loud_instead_of_vanishing(tmp_path):
+    # uniata is pciide `if(ENABLE_UNIATA)`: the cell's output name is this
+    # configuration's, so the branch stays, failing.
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        CMAKE
+        + "if(ENABLE_X)\n"
+        + '    set_target_properties(m PROPERTIES OUTPUT_NAME "x")\n'
+        + "endif()\n"
+    )
+    out = g.rewrite_cmake(f, cell(cmake_dir=tmp_path))
+    assert 'message(FATAL_ERROR "m is linked by cargo' in out and "if(ENABLE_X)" in out
+    assert "OUTPUT_NAME" not in out
+
+
+def test_stubs_a_static_library_carries_are_compiled_from_their_spec():
+    c = cell(stub_specs=[("dll/win32/fusion/fusion.spec", "fusion.dll")])
+    assert '.spec_stubs_from("dll/win32/fusion/fusion.spec", "fusion.dll")' in g.build_rs(c)
+
+
+def test_a_dotted_target_gets_a_legal_crate_and_its_own_cmake_target(tmp_path):
+    # activeds.tlb: cargo refuses a `.` in a crate name, and add_cargo_module names the
+    # cmake target <t>_cargo, since ninja's <dir>/<t> phony would be the output's path.
+    c = cell(target="m.tlb", output_name="m.tlb")
+    assert c.crate == "m_tlb-cargo"
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(CMAKE.replace("(m ", "(m.tlb ") + "add_dependencies(m.tlb xdk)\n")
+    out = g.rewrite_cmake(f, cell(target="m.tlb", output_name="m.tlb", cmake_dir=tmp_path))
+    assert "add_dependencies(m.tlb_cargo xdk)" in out
+
+
 def test_a_cell_for_a_digit_leading_target_takes_its_body_crates_name():
     c = cell(target="3dtext", body_crate="text3d-rust")
     assert c.crate == "text3d-cargo"
@@ -1678,6 +1709,78 @@ def test_a_linker_flag_is_no_usage_requirement_and_no_reused_archive(tmp_path):
     c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: libs for a in g.ARCHES})
     out = g.rewrite_cmake(f, c)
     assert "-Wl," not in out
+
+
+def test_a_conditional_reg_script_is_a_dependency_only_where_it_exists(tmp_path):
+    """comdlg32 registers its classes only if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600); with
+    the if() false, comdlg32_r does not exist and a plain name is a missing file to ninja."""
+    f = tmp_path / "CMakeLists.txt"
+    body = (
+        "add_library(m MODULE main.c rsrc.rc)\n"
+        "set_module_type(m win32dll)\n"
+        "if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)\n"
+        "    add_idl_reg_scripts(m registry m_classes.idl)\n"
+        "endif()\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    f.write_text(body)
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "$<TARGET_NAME_IF_EXISTS:m_r>" in out
+    f.write_text(
+        body.replace("if(DLL_EXPORT_VERSION GREATER_EQUAL 0x600)\n", "").replace("endif()\n", "")
+    )
+    out = g.rewrite_cmake(f, c)
+    assert "TARGET_NAME_IF_EXISTS" not in out and " m_r" in out
+
+
+def test_a_moved_statement_ending_in_a_comment_keeps_its_closing_paren(tmp_path):
+    """wdf01000's include list ends in `dir # why` before `)`: re-emitted trimmed, the paren
+    joined the comment and the whole tree's configure failed."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m win32dll)\n"
+        "target_include_directories(m PRIVATE\n"
+        "    inc # why\n"
+        "    )\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "inc # why\n)" in out
+
+
+def test_a_sibling_reading_the_targets_compile_properties_reads_the_shims(tmp_path):
+    """shdocvw_sublib compiles with $<TARGET_PROPERTY:shdocvw,COMPILE_DEFINITIONS>; the cell's
+    custom target has none, so it lost them and failed to compile."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_library(m MODULE main.c $<TARGET_OBJECTS:m_sub>)\n"
+        "set_module_type(m win32dll)\n"
+        "add_library(m_sub OBJECT sub.cpp)\n"
+        "target_compile_definitions(m_sub PRIVATE $<TARGET_PROPERTY:m,COMPILE_DEFINITIONS>)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "$<TARGET_PROPERTY:m_shims,COMPILE_DEFINITIONS>" in out
+
+
+def test_the_modules_own_target_file_genex_becomes_the_cells_output(tmp_path):
+    """sdk/include/asm runs native-geninc on $<TARGET_FILE:genincdata> in genincdata's own
+    file; a cell is a custom target that genex cannot resolve."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_custom_command(OUTPUT x.inc COMMAND gen $<TARGET_FILE:m> x.inc DEPENDS m)\n"
+        "add_library(m MODULE main.c)\n"
+        "set_module_type(m win32dll)\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    assert "$<TARGET_FILE:m>" not in out
+    assert f"${{CMAKE_CURRENT_BINARY_DIR}}/{c.output_name}" in out
 
 
 def test_an_object_in_a_subdirectory_maps_to_that_subdirectorys_source():

@@ -470,11 +470,30 @@ pub unsafe extern "system" fn SmpApiLoop(Parameter: PVOID) -> ULONG {
                 {
                     Status = STATUS_INVALID_PARAMETER;
                 } else {
-                    Status = (SmpApiDispatch[RequestMsg.ApiNumber as usize].unwrap())(
-                        &mut RequestMsg,
-                        ClientContext,
-                        SmApiPort,
-                    );
+                    // A handler that faults reaches SmpUnhandledExceptionFilter, which
+                    // raises the "Unhandled Exception in Session Manager" hard error
+                    // naming the code and address, as the C.
+                    let msg: *mut SM_API_MSG = &mut RequestMsg;
+                    let mut dispatched: NTSTATUS = STATUS_PENDING;
+                    if ntdll_sys::seh::try_except(
+                        &mut dispatched,
+                        |st| {
+                            *st = (SmpApiDispatch[(*msg).ApiNumber as usize].unwrap())(
+                                msg,
+                                ClientContext,
+                                SmApiPort,
+                            )
+                        },
+                        |_, pointers| {
+                            crate::smss::smss::SmpUnhandledExceptionFilter(pointers as PEXCEPTION_POINTERS)
+                        },
+                    )
+                    .is_err()
+                    {
+                        ReplyMsg = core::ptr::null_mut();
+                        continue;
+                    }
+                    Status = dispatched;
                 }
 
                 RequestMsg.ReturnValue = Status;

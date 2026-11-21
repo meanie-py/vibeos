@@ -765,7 +765,7 @@ endfunction()
 ## per-target POST_BUILD would have applied):
 ##   kerneldll : native-pefixup --kerneldll  (+ i386 forwarder fix)
 ##   kernelmodedriver : native-pefixup --kernelmodedriver (+ i386 forwarder fix)  [win32k]
-##   kmdfdriver : native-pefixup --wdmdriver (+ i386 forwarder fix)  [cdrom]
+##   kmdfdriver, wdmdriver : native-pefixup --wdmdriver (+ i386 forwarder fix)  [cdrom, ac97]
 ##   win32dll  : i386 lld forwarder fix only  (user DLL — no pefixup)  [ntdll]
 ##   efi       : strip --remove-section=.rossym  +  strip --strip-all
 ##   native    : none
@@ -880,6 +880,20 @@ function(add_cargo_module _target _crate _output)
     endif()
     list(GET _bins 0 _bin)
     list(GET _outs 0 _out)
+    # A module named like its output (activeds.tlb, msacm32.drv, lautus.msstyles) would
+    # get Ninja's utility phony <dir>/<target>, which is the output's own path ("multiple
+    # rules generate"). Its cmake target is <target>_cargo; add_cargo_module(<target> ...)
+    # in the CMakeLists keeps the module's name for every tool that reads it.
+    # Its depfile is <out>.cargo.d: the first one these cells wrote listed the output as
+    # its own prerequisite (fixed in vibeos-build's retarget), and Ninja reads a DEPFILE on
+    # every run, so a tree holding that file stopped on `dependency cycle` before the edge
+    # could rewrite it. A new name is a new CMakeFiles/d path.
+    set(_tgt ${_target})
+    set(_depfile "${_out}.d")
+    if("${CMAKE_CURRENT_BINARY_DIR}/${_target}" IN_LIST _outs)
+        set(_tgt ${_target}_cargo)
+        set(_depfile "${_out}.cargo.d")
+    endif()
     set(_cargo_exe "${_cargo_target_dir}/${_stem}/release/${_bin}.exe")
 
     # sync-instrumentation §4 lockdep (Tier-2 opt-in): -DVIBEOS_LOCKDEP=ON lights
@@ -1002,12 +1016,13 @@ function(add_cargo_module _target _crate _output)
             list(APPEND _postlink COMMAND ${CMAKE_COMMAND} -E env python3
                 ${REACTOS_SOURCE_DIR}/sdk/tools/fix_lld_forwarding.py __ACM_OUT__)
         endif()
-    elseif(_acm_KIND STREQUAL "kernelmodedriver" OR _acm_KIND STREQUAL "kmdfdriver")
+    elseif(_acm_KIND STREQUAL "kernelmodedriver" OR _acm_KIND STREQUAL "kmdfdriver"
+            OR _acm_KIND STREQUAL "wdmdriver")
         # Kernel-mode driver .sys (win32k.sys): set_module_type(kernelmodedriver)
         # applies native-pefixup --kernelmodedriver (same driver_fixup as
         # --kerneldll but the kernelmodedriver mode flag) + the i386 fwd fix.
         # A KMDF driver (cdrom) gets --wdmdriver, as set_module_type(kmdfdriver) maps it.
-        if(_acm_KIND STREQUAL "kmdfdriver")
+        if(_acm_KIND STREQUAL "kmdfdriver" OR _acm_KIND STREQUAL "wdmdriver")
             set(_pefixup_mode --wdmdriver)
         else()
             set(_pefixup_mode --kernelmodedriver)
@@ -1168,11 +1183,11 @@ function(add_cargo_module _target _crate _output)
         ${_per_out}
         COMMAND "${_retarget_depfile}" retarget-depfile
             --source "${_cargo_depfile}" --cargo-output "${_cargo_exe}"
-            --target "${_dep_target}" --output "${_out}.d"
+            --target "${_dep_target}" --output "${_depfile}"
             --dependency-source "${CMAKE_BINARY_DIR}/compile_commands.json"
             --dependency-snapshot "${CMAKE_BINARY_DIR}/reactos-link-compile-commands.json"
         DEPENDS ${_srcs} ${_postdep} ${_acm_EXTRA_DEPENDS} ${_retarget_depfile_inputs}
-        DEPFILE "${_out}.d"
+        DEPFILE "${_depfile}"
         JOB_POOL vibeos_cargo_links
         WORKING_DIRECTORY ${_ws}
         COMMENT "Cargo-linking ${_output} (${_stem}) [reactos-link]"
@@ -1180,9 +1195,9 @@ function(add_cargo_module _target _crate _output)
     if(POLICY CMP0116)
         cmake_policy(POP)
     endif()
-    add_custom_target(${_target} ALL DEPENDS ${_outs})
-    add_dependencies(${_target} reactos_cargo_compile_db)
-    set_property(TARGET ${_target} PROPERTY CARGO_OUTPUTS ${_outs})
+    add_custom_target(${_tgt} ALL DEPENDS ${_outs})
+    add_dependencies(${_tgt} reactos_cargo_compile_db)
+    set_property(TARGET ${_tgt} PROPERTY CARGO_OUTPUTS ${_outs})
 
     if(NOT _acm_NO_CD)
         if(NOT _acm_DESTINATION)
@@ -1193,7 +1208,7 @@ function(add_cargo_module _target _crate _output)
         # before drivers/, so livecd/bootcd already exist at the call site.
         foreach(_cd bootcd livecd bootcdregtest)
             if(TARGET ${_cd})
-                add_dependencies(${_cd} ${_target})
+                add_dependencies(${_cd} ${_tgt})
             endif()
         endforeach()
         get_property(_acm_txtsetup GLOBAL PROPERTY VIBEOS_TXTSETUP_FILES)
@@ -1239,7 +1254,7 @@ function(add_cargo_module _target _crate _output)
                    AND _acm_dest MATCHES "^reactos(/|$)" AND NOT _acm_NO_CAB)
                     add_cd_file(FILE ${_out} DESTINATION ${_acm_dest} FOR bootcd)
                     if(TARGET reactos_cab_inf)
-                        add_dependencies(reactos_cab_inf ${_target})
+                        add_dependencies(reactos_cab_inf ${_tgt})
                     endif()
                 endif()
             endforeach()
@@ -1254,6 +1269,10 @@ endfunction()
 ## add_cargo_module's own DESTINATION does not cover: usetup ships only on the boot CD
 ## (as smss.exe), welcome also as the boot CD's root setup.exe.
 function(add_cargo_cd_file _target)
+    # add_cargo_module names a module whose output is <dir>/<target> `<target>_cargo`.
+    if(NOT TARGET ${_target} AND TARGET ${_target}_cargo)
+        set(_target ${_target}_cargo)
+    endif()
     get_property(_outs TARGET ${_target} PROPERTY CARGO_OUTPUTS)
     list(LENGTH _outs _n)
     if(NOT _n EQUAL 1)

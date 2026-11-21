@@ -103,10 +103,6 @@ def _classify_build_failure(out, err, rc=None):
     )
 
 
-def _clean(run, repo, arch):
-    _mechanism(run, repo, "clean", arch=arch)
-
-
 def _ccache_already_enabled(build_dir: Path) -> bool:
     return native.call(
         "build_policy_cmake_value", {"build": build_dir, "key": "ENABLE_CCACHE"}
@@ -135,29 +131,6 @@ def _ninja_keep_going(args=None):
     return native.call(
         "cli_build_check_keep", {"args": {"keep_going": bool(getattr(args, "keep_going", False))}}
     )
-
-
-def _ninja_did_work(stdout: str) -> int:
-    """How many edges a ninja run actually executed, from its progress lines.
-
-    Used by the re-affirm pass to say whether the optional targets invalidated
-    anything. Counted rather than merely detected because "relinked 3" is the
-    interesting number: a persistently non-zero count means a cohab cell is being
-    rebuilt by two passes every single build, which is a wiring bug worth chasing,
-    not just a hiccup this pass absorbed.
-
-    Two things a naive `^\\[\\d+/\\d+\\]` count gets WRONG, both observed on a real
-    no-op re-affirm that nonetheless reported "relinked 1 target(s)":
-
-      [0/2] Re-checking globbed directories...
-      ninja: no work to do.
-
-    Nothing was rebuilt. `[0/...]` is a status pseudo-edge (the CONFIGURE_DEPENDS
-    glob re-check), not a completed edge — real edges start at [1/n]. And when
-    ninja says "no work to do" that is authoritative regardless of what it printed
-    above. An always->=1 count would have made this signal useless in exactly the
-    direction that hides the bug it exists to expose."""
-    return native.call("build_policy_ninja_work", {"text": stdout})
 
 
 def _ninja_jobs() -> list[str]:
@@ -243,17 +216,6 @@ def _value_in_cache(build_dir: Path, var: str) -> str:
     return native.call("build_policy_cmake_value", {"build": build_dir, "key": var})
 
 
-def _storage_options(build_dir: Path, shards: int | None, body_shards: int | None) -> list[str]:
-    return native.call(
-        "build_policy_storage_options",
-        {
-            "build": build_dir,
-            "shards": shards,
-            "body_shards": body_shards,
-        },
-    )
-
-
 def _maybe_canonize(run, repo, build_dir, arch, instr_flags, sticky_on=(), instr_values=None):
     return _mechanism(
         run,
@@ -270,23 +232,6 @@ def _maybe_canonize(run, repo, build_dir, arch, instr_flags, sticky_on=(), instr
 def _stage_payloads(run, repo, build_dir, arch):
     result, bindings = _mechanism(run, repo, "stage_payloads", arch=arch, build_dir=build_dir)
     return None if result is None else (result, bindings.payload_compile)
-
-
-def _isolation_preflight(run, repo, build_dir):
-    result = native.call("cli_build_check_isolation", {"repo": repo, "build": build_dir})
-    if result.get("stage"):
-        run.add(Stage(**result["stage"]))
-    if result.get("classification"):
-        run.classification = result["classification"]
-    return result["ok"]
-
-
-# T1.2 flag→artifact verification: a requested build feature must PROVE itself
-# in the output binary, and must be ABSENT when not requested — the --lockdep
-# flag was silently dead for 3 builds (canonize early-return) and only a manual
-# `llvm-nm` caught it. Table rows: (cache flag, requested?, artifact, symbol).
-def _verify_flag_artifacts(run, repo, build_dir, args):
-    return _mechanism(run, repo, "verify_flags", build_dir=build_dir, args=args)[0]
 
 
 def _hold_wow64_source(run, repo, arch, args, reads):
@@ -316,10 +261,6 @@ WOWX64_CPU_SOURCES = tuple(_CONSTANTS["cpu_sources"])
 
 def fex_prerequisites_missing(repo, environ=os.environ):
     return _mechanism(None, repo, "fex_prerequisites", env=dict(environ))[0]
-
-
-def _refresh_wowx64_cpu(run, repo):
-    return _mechanism(run, repo, "refresh_cpu")[0]
 
 
 def default_artifact_store():

@@ -1557,18 +1557,18 @@ pub unsafe extern "system" fn RegisterConsoleVDM(
     /* Retrieve the results */
     if Success != 0 {
         if dwRegisterFlags != 0 {
-            // _SEH2_TRY
-            {
+            // C: __try { write the caller's out-params } __except (EXECUTE_HANDLER)
+            // { SetLastError(ERROR_INVALID_ACCESS); Success = FALSE; }
+            if ntdll_sys::seh::try_except_all(|| {
                 *lpVideoStateLength = (*RegisterVDMRequest).VideoStateLength;
                 *lpVideoState = (*RegisterVDMRequest).VideoState;
                 *lpVDMBuffer = (*RegisterVDMRequest).VDMBuffer;
+            })
+            .is_err()
+            {
+                SetLastError(ERROR_INVALID_ACCESS);
+                Success = 0;
             }
-            // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            // {
-            //     SetLastError(ERROR_INVALID_ACCESS);
-            //     Success = FALSE;
-            // }
-            // _SEH2_END;
         }
     } else {
         BaseSetLastNTError(ApiMessage.Status);

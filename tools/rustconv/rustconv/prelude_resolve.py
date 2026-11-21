@@ -69,6 +69,14 @@ class Resolution:
 #: `line` type reads "expected type, found macro" and was never requested (E0573).
 _VALUE_FOR_TYPE = re.compile(r"^expected type, found (?:constant|static|function|macro) `(\w+)`")
 _TYPE_WORDS = ("cannot find type ", "cannot find struct, variant or union type ")
+#: ...and the converse: a missing FUNCTION or value whose name a TYPE already has. wine names
+#: its container-of helpers after their struct (wined3d_gl.h's `struct wined3d_context_gl`
+#: and `wined3d_context_gl(context)`), so a missing helper reads "expected function, found
+#: struct `wined3d_context_gl`" (E0423) and was never requested: 500-odd wined3d errors.
+_TYPE_FOR_VALUE = re.compile(
+    r"^expected (?:function|value)(?:, tuple struct or tuple variant)?, found "
+    r"(?:struct|union|enum|type alias|builtin type) `(\w+)`"
+)
 
 
 def unresolved_names(crate: str, triple: str, workspace: Path, target_dir: Path) -> set[str]:
@@ -147,6 +155,9 @@ def unresolved(crate: str, triple: str, workspace: Path, target_dir: Path) -> di
         m = _VALUE_FOR_TYPE.match(text)
         if m:
             names.setdefault(m.group(1), set()).add("type")
+        m = _TYPE_FOR_VALUE.match(text)
+        if m:
+            names.setdefault(m.group(1), set()).add("value")
         for name in pattern_bindings(msg.get("message") or {}):
             names.setdefault(name, set()).add("value")
         suspects |= _shared_value_patterns(msg.get("message") or {})
@@ -885,6 +896,54 @@ def island_enum_aliases(
         if ok and len(enums) == 1:
             prefix, ty = enums.pop()
             out[name] = Item("const", f"const {name}: {ty} = {prefix}_{name};", None, "island enum")
+    return out
+
+
+def island_zero_length_statics(src: Path) -> set[str]:
+    """Statics some arch's island declares as a zero-length array: a C `extern T x[];`."""
+    out: set[str] = set()
+    for p in sorted(src.glob("types_*.rs")):
+        out |= set(
+            re.findall(
+                r"^\s*pub static (?:mut )?([A-Za-z_]\w*): \[[^;\]]+; 0usize\];",
+                p.read_text(errors="replace"),
+                re.M,
+            )
+        )
+    return out
+
+
+def island_nested_type_aliases(names: set[str], src: Path) -> dict[str, Item]:
+    """`wined3d_texture_sub_resource` -> `type .. = wined3d_texture_wined3d_texture_sub_resource;`.
+
+    A struct DEFINED inside another (wined3d_private.h's `struct wined3d_texture { ..
+    struct wined3d_texture_sub_resource { .. } *sub_resources; }`) is a file-scope name in C,
+    but bindgen prefixes the enclosing struct's: 69 E0412 per arch in wined3d. Exact, as for
+    enums: every arch's island must have exactly one `<outer>_<name>` struct/union whose
+    `<outer>` is itself a struct/union there, and the same one.
+    """
+    islands = sorted(src.glob("types_*.rs"))
+    if not islands or not names:
+        return {}
+    texts = [p.read_text(errors="replace") for p in islands]
+    out: dict[str, Item] = {}
+    for name in sorted(names):
+        pat = re.compile(rf"^pub (?:struct|union) ([A-Za-z_]\w*?)_{re.escape(name)} \{{", re.M)
+        outers: set[str] = set()
+        ok = True
+        for text in texts:
+            hits = {
+                m.group(1)
+                for m in pat.finditer(text)
+                if re.search(rf"^pub (?:struct|union) {re.escape(m.group(1))} \{{", text, re.M)
+            }
+            if len(hits) != 1:
+                ok = False
+                break
+            outers |= hits
+        if ok and len(outers) == 1:
+            outer = outers.pop()
+            out[name] = Item("type", f"type {name} = {outer}_{name};", None, "island nested")
     return out
 
 

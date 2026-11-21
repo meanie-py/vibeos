@@ -32,8 +32,34 @@ struct Build<'a> {
     args: Value,
     wrapped: bool,
     env: Value,
+    /// `-j` cap and ninja timeout: host facts read once by the caller, which owns
+    /// the policy dir and environment the tests point elsewhere.
+    jobs: Vec<String>,
+    /// The caller's environment, which the build mechanisms read their knobs from.
+    host_env: Value,
 }
 impl Build<'_> {
+    /// A build mechanism, run in this session against the same host: facts and
+    /// external commands still cross it, the stages land on this build's run.
+    fn mechanism(&mut self, op: &str, mut kw: Value) -> Result<Value> {
+        kw["arch"] = json!(self.arch);
+        kw["build"] = json!(self.dir);
+        kw["args"] = self.args.clone();
+        // An explicit env (cache stats takes the build's) is that call's alone.
+        let own = kw.get("env").is_none();
+        if own {
+            kw["env"] = self.host_env.clone();
+        }
+        let (result, env) = crate::cli_build_helpers::dispatch_env(
+            self.repo,
+            &json!({"op":op,"kwargs":kw}),
+            self.host,
+        )?;
+        if own {
+            self.host_env = env;
+        }
+        Ok(result)
+    }
     fn helper(&mut self, name: &str, a: Value) -> Result<Value> {
         self.host
             .call("build_helper", json!({"name":name,"arguments":a}))
@@ -102,7 +128,7 @@ impl Build<'_> {
         keep: bool,
     ) -> Result<Value> {
         let mut cmd = vec!["ninja".into()];
-        cmd.extend(strings(&self.helper("ninja_jobs", json!({}))?));
+        cmd.extend(self.jobs.iter().cloned());
         if keep {
             cmd.extend(keep_going(&self.args));
         }
@@ -126,6 +152,8 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         args: args.clone(),
         wrapped: false,
         env: Value::Null,
+        jobs: strings(&a["ninja_jobs"]),
+        host_env: a["host_env"].clone(),
     };
     let cfg = &a["cfg"];
     let cold = a["cold"] == true;
@@ -134,7 +162,12 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     // The tree `git add -A` would commit; None when git cannot say (never fatal here).
     let start = json!(crate::warmth::worktree_tree(b.repo).ok());
     b.helper("failure_hook", json!({"tree":start}))?;
-    if b.helper("isolation", json!({}))? != true {
+    let iso = crate::cli_build_checks::isolation_verdict(b.repo, &b.dir);
+    if iso["ok"] != true {
+        let st = &iso["stage"];
+        let (name, status, detail) = (s(st, "name", ""), s(st, "status", ""), s(st, "detail", ""));
+        b.stage(name, status, detail, 0, st["salient"].clone())?;
+        b.classify(s(&iso, "classification", ""))?;
         return b.finish();
     }
     let flags = json!({"VIBEOS_LOCKDEP":args["lockdep"]==true,"VIBEOS_CSWITCHDEP":args["cswitchdep"]==true,"VIBEOS_UP_DEFAULT_BOOT":args["up_kernel"]==true,"VIBEOS_PIC_HAL":args["hal_pic"]==true,"VIBEOS_ATA_STACK":args["ata_stack"]==true,"ENABLE_ROSTESTS":args["rostests"]==true,"VIBEOS_WINETEST_SWEEP":args["winetest_sweep"]==true,"VIBEOS_WOW64_NO_STAGE":args["no_wow64_stage"]==true});
@@ -147,7 +180,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     .map(|(k, _)| k)
     .collect::<Vec<_>>();
     let values = json!({"VIBEOS_WINETEST_SKIP":s(&args,"winetest_skip","").trim(),"VIBEOS_WINETEST_ONLY":s(&args,"winetest_only","").trim(),"ROSTESTS_WINETESTS":s(&args,"winetests","").split_whitespace().collect::<Vec<_>>().join(" ")});
-    let wrapped = b.helper(
+    let wrapped = b.mechanism(
         "canonize",
         json!({"flags":flags,"sticky":sticky,"values":values}),
     )?;
@@ -157,10 +190,11 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     b.wrapped = wrapped == true;
     let mut stamped = json!([]);
     if !headers {
-        let mut options = strings(&b.helper(
-            "storage_options",
-            json!({"shards":args["rust_storage_shards"],"body_shards":args["rust_body_shards"]}),
-        )?);
+        let mut options = crate::build_policy::storage_options(
+            &b.dir,
+            &args["rust_storage_shards"],
+            &args["rust_body_shards"],
+        )?;
         let active = artifact_env.is_object();
         let state = b.host.call("get_run", json!({}))?;
         for (key, val) in [
@@ -189,7 +223,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
                 s(artifact_env, "VIBEOS_ARTIFACT_TOOLCHAIN_ID", "").into(),
             ),
         ] {
-            if b.helper("cache_value", json!({"key":key}))? != val {
+            if crate::build_policy::cmake_value(&b.dir, key) != val {
                 options.push(format!("-D{key}={val}"));
             }
         }
@@ -210,13 +244,13 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
                 return b.finish();
             }
         }
-        stamped = b.helper("stage_payloads", json!({}))?;
+        stamped = b.mechanism("stage_payloads", json!({}))?;
         if stamped.is_null() {
             return b.finish();
         }
     }
     if cold {
-        b.helper("clean", json!({}))?;
+        b.mechanism("clean", json!({}))?;
         if artifact_env.is_object() {
             b.helper(
                 "retire_build_refs",
@@ -226,14 +260,15 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     }
     // The adapter returns a complete environment. It reuses the existing native
     // cache policy and broker; the broker remains the only admission authority.
-    let setup = b.helper(
-        "build_environment",
+    let setup = b.mechanism(
+        "environment",
         json!({"wrapped":b.wrapped,"artifact_env":artifact_env}),
     )?;
     if setup.is_null() {
         return b.finish();
     }
     b.env = setup["env"].clone();
+    let cache = setup["cache"].clone();
     let caching = setup["caching"] == true;
     let mut deferred = vec![];
     // arm64 under VIBEOS_FEX=1 stages the same guests, so it refreshes them too: it used to
@@ -244,7 +279,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     let stages_guests = b.arch == "amd64"
         || (b.arch == "arm64" && std::env::var("VIBEOS_FEX").as_deref() == Ok("1"));
     if stages_guests && !headers && args["no_wow64_stage"] != true {
-        let r = b.helper("refresh_guests", json!({"stage":"wow64-guests"}))?;
+        let r = b.mechanism("refresh_guests", json!({"stage":"wow64-guests"}))?;
         if r == false {
             return b.finish();
         }
@@ -252,7 +287,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
             deferred = strings(&r);
         }
     }
-    if b.arch == "arm64" && !headers && b.helper("refresh_cpu", json!({}))? != true {
+    if b.arch == "arm64" && !headers && b.mechanism("refresh_cpu", json!({}))? != true {
         return b.finish();
     }
     let cp = b.ninja(
@@ -325,17 +360,14 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     }
     let mut full_targets = targets.clone();
     full_targets.extend(cohab.clone());
-    let timeout = b
-        .helper("ninja_timeout", json!({}))?
-        .as_u64()
-        .ok_or("invalid ninja timeout")?;
+    let timeout = a["ninja_timeout"].as_u64().ok_or("invalid ninja timeout")?;
     let cp = b.ninja(full_targets.clone(), "ninja", timeout, true)?;
     if cp["returncode"] != 0 {
         b.fail_command("ninja", &cp, "")?;
         return b.finish();
     }
     b.stage("ninja", "ok", targets.join("+"), 0, json!([]))?;
-    if b.helper("verify_flags", json!({}))? != true {
+    if b.mechanism("verify_flags", json!({}))? != true {
         return b.finish();
     }
     for target in strings(&cfg["ninja_targets_optional"]) {
@@ -371,12 +403,9 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         )?;
         return b.finish();
     }
-    let relinked = b
-        .helper("ninja_work", json!({"text":cp["stdout"]}))?
-        .as_u64()
-        .unwrap_or(0);
+    let relinked = crate::build_policy::ninja_work(s(&cp, "stdout", ""))? as u64;
     if !deferred.is_empty() {
-        let r = b.helper("refresh_guests", json!({"stage":"wow64-guests-x64"}))?;
+        let r = b.mechanism("refresh_guests", json!({"stage":"wow64-guests-x64"}))?;
         if r != true {
             let state = b.host.call("get_run", json!({}))?;
             if s(&state, "classification", "").is_empty() {
@@ -456,7 +485,11 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         json!([]),
     )?;
     if caching {
-        b.helper("cache_stats", json!({"env":b.env,"wrapped":b.wrapped}))?;
+        let env = b.env.clone();
+        b.mechanism(
+            "cache_stats",
+            json!({"cache":cache,"env":env,"wrapped":b.wrapped}),
+        )?;
     }
     if cfg["needs_mkramdisk"] == true {
         let ramdisk = repo.join("qemu/ramdisk.img");
@@ -564,7 +597,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
     if args["check"] == true {
         b.helper("source_lints", json!({}))?;
     }
-    let moved = b.helper("inputs_moved", json!({"tree":start}))?;
+    let moved = b.mechanism("inputs_moved", json!({"tree":start}))?;
     if moved.as_array().is_some_and(|s| !s.is_empty()) {
         b.classify("BUILD_INPUTS_MOVED")?;
         let paths = strings(&moved);
@@ -622,7 +655,7 @@ pub fn locked(repo: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
             json!([]),
         )?;
     }
-    let dedup = b.helper("dedup", json!({}))?;
+    let dedup = b.mechanism("dedup", json!({}))?;
     b.host.call("stage", dedup)?;
     if !cold {
         b.stage(

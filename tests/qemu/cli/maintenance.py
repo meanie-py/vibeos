@@ -2,6 +2,9 @@
 
 Rollout requires draining older CLI processes before creating maintenance-owner.
 The lock is cooperative, not protection against raw tools or older CLI copies.
+
+The flock lives here because it must be held for the life of the command; the owner and
+kill-switch decision is native (`tools/vibeos-build/src/retention.rs`).
 """
 
 from __future__ import annotations
@@ -11,7 +14,16 @@ import fcntl
 from collections.abc import Iterator
 from pathlib import Path
 
+from tools import build_infra_compat as native
+
 from . import hostlock
+
+# The interlock protocol this file implements: shared flock on maintenance.lock for every
+# command, exclusive for cleanup, plus the owner pin and the kill switch. Scheduled
+# retention accepts a lane only if its copy of this file declares the same protocol (or is
+# byte-identical), so editing this file no longer blocks retention until every lane merges.
+# Bump it ONLY when the protocol itself changes.
+INTERLOCK_PROTOCOL = 1
 
 # Default new commands to protected, including generated-artifact readers.
 UNLOCKED = {"prune", "host-status", "disk-status", "land-status", "ps", "kill"}
@@ -22,17 +34,12 @@ class MaintenanceError(RuntimeError):
 
 
 def check_owner(repo: Path) -> None:
-    root = hostlock.HOSTLOCK_DIR
-    if (root / "maintenance-disabled").exists():
-        raise MaintenanceError("host maintenance-disabled kill switch is present")
-    try:
-        owner = (root / "maintenance-owner").read_text().strip()
-    except OSError as exc:
-        raise MaintenanceError(
-            "prune disabled: drain old clients, then pin maintenance-owner"
-        ) from exc
-    if not owner or Path(owner) != repo.resolve():
-        raise MaintenanceError(f"prune must run from pinned owner {owner!r}")
+    refusal = native.call(
+        "retention_owner_refusal",
+        {"dir": str(hostlock.HOSTLOCK_DIR), "repo": str(repo.resolve())},
+    )
+    if refusal:
+        raise MaintenanceError(refusal)
 
 
 @contextlib.contextmanager

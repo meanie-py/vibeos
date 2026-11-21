@@ -787,23 +787,42 @@ pub unsafe extern "system" fn NtUserCtxDisplayIOCtl(
 pub unsafe extern "system" fn NtUserLockWindowUpdate(hWnd: HWND) -> BOOL {
     // Wine's NtUserLockWindowUpdate: one system-wide locked window. NULL
     // unlocks; locking while another lock is held fails. The C was a FALSE
-    // stub, so every LockWindowUpdate failed (user32:win test_LockWindowUpdate).
-    // Like Wine, drawing into the locked window is not clipped yet (the suite
-    // marks those pixel checks todo_wine).
-    static LOCKED_HWND: core::sync::atomic::AtomicPtr<core::ffi::c_void> =
-        core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
+    // stub. While a window is locked, its DCs and its descendants' (unless
+    // opened with DCX_LOCKWINDOWUPDATE) get an empty visible region
+    // (DceUpdateVisRgn); unlocking invalidates it so the app repaints.
+    use core::sync::atomic::Ordering::SeqCst;
+    let slot = &crate::windc::LOCKED_UPDATE_HWND;
+    UserEnterExclusive();
+    let ret: BOOL;
     if hWnd.is_null() {
-        LOCKED_HWND.store(core::ptr::null_mut(), core::sync::atomic::Ordering::SeqCst);
-        return 1;
+        let old = slot.swap(core::ptr::null_mut(), SeqCst) as HWND;
+        let pOld = if old.is_null() { core::ptr::null_mut() } else { UserGetWindowObject(old) };
+        if !pOld.is_null() {
+            crate::windc::DceResetActiveDCEs(pOld);
+            co_UserRedrawWindow(
+                pOld,
+                core::ptr::null(),
+                core::ptr::null_mut(),
+                RDW_INVALIDATE | RDW_ERASE | RDW_FRAME | RDW_ALLCHILDREN,
+            );
+        }
+        ret = 1;
+    } else {
+        let pWnd = UserGetWindowObject(hWnd);
+        if pWnd.is_null() {
+            ret = 0;
+        } else if slot
+            .compare_exchange(core::ptr::null_mut(), hWnd as *mut core::ffi::c_void, SeqCst, SeqCst)
+            .is_ok()
+        {
+            crate::windc::DceResetActiveDCEs(pWnd);
+            ret = 1;
+        } else {
+            ret = 0;
+        }
     }
-    LOCKED_HWND
-        .compare_exchange(
-            core::ptr::null_mut(),
-            hWnd as *mut core::ffi::c_void,
-            core::sync::atomic::Ordering::SeqCst,
-            core::sync::atomic::Ordering::SeqCst,
-        )
-        .is_ok() as BOOL
+    UserLeave();
+    ret
 }
 #[no_mangle]
 pub unsafe extern "system" fn NtUserQuerySendMessage(Unknown0: DWORD) -> DWORD {

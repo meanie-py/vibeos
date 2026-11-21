@@ -10801,6 +10801,41 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D__WINESRC__ -D_SHLWAPI_ -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  d3dwine)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-11-08 from dll/directx/wine/wined3d/CMakeLists.txt
+    # (29 compiled TU(s), 177 headers in the include closure, 1041 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 337 external prototype(s) declared by the include closure, 513 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/directx/wine/wined3d"
+    WRAPPER_INC=$'#define VKD3D_NO_VULKAN_H\n#define VKD3D_NO_WIN32_TYPES\n#include "initguid.h"\n#include <limits.h>\n#include <stdio.h>\n#include <string.h>\n#include "wined3d_private.h"\n#define LIBVKD3D_SHADER_SOURCE\n#include <vkd3d_shader.h>\n#include "wined3d_vk.h"\n#include "wined3d_gl.h"\n#include "d3d12.h"\n#define VK_NO_PROTOTYPES\n#include "wine/vulkan.h"\n#include <vkd3d.h>\n#include "winternl.h"\n#include "wine/list.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]d3d12\.h' --allowlist-file '.*[/\\]ddk[/\\]d3dkmthk\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*[/\\]vkd3d\.h'
+                  --allowlist-file '.*[/\\]vkd3d_shader\.h'
+                  --allowlist-file '.*[/\\]wine[/\\]wgl\.h'
+                  --allowlist-file '.*[/\\]wine[/\\]wined3d\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*[/\\]winternl\.h'
+                  --allowlist-file '.*wined3d[/\\].*\.h'
+                  --allowlist-file '.*[/\\]wine[/\\]vulkan\.h'
+                  --allowlist-file '.*[/\\]wined3d_private\.h' )
+    # wine/list.h: `struct list` and its helpers are winelist-rust's.
+    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )
+    # wine/winternl.h's BOOL prototypes for what ntdll returns as BOOLEAN.
+    EXTRA_BL_ITEMS=( list RtlEqualPrefixSid RtlEqualSid RtlQueryPerformanceCounter RtlQueryPerformanceFrequency )
+    EXTRA_INC=( -I"${SRC}/dll/directx/wine/wined3d" -I"${SRC}/build-i386/dll/directx/wine/wined3d" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/vendor/vkd3d/include" -I"${SRC}/vendor/vkd3d/include/private" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x0600 -D_WIN32_WINNT=0x0600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D__WINESRC__ -D_USE_MATH_DEFINES -D__ROS_LONG64__ -DWINE_NO_NAMELESS_EXTENSION -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

@@ -1585,14 +1585,22 @@ unsafe fn PiControlSyncDeviceAction(
     Status
 }
 
+/// PlugPlayControlQueryAndRemoveDevice: umpnpmgr's CM_Query_And_Remove_SubTree and
+/// CM_Disable_DevNode. The C captured the instance and returned STATUS_NOT_IMPLEMENTED;
+/// the work runs on the device action worker (devaction.rs PiQueryRemoveDevice) and a
+/// refusal comes back as STATUS_PLUGPLAY_QUERY_VETOED with the veto type and the refusing
+/// device's instance path written to the caller's VetoType/VetoName.
 unsafe fn PiControlQueryRemoveDevice(
     ControlData: PPLUGPLAY_CONTROL_QUERY_REMOVE_DATA,
 ) -> NTSTATUS {
-    let mut DeviceObject: PDEVICE_OBJECT;
-    let mut Status: NTSTATUS;
-    let mut DeviceInstance: _UNICODE_STRING = core::mem::zeroed();
+    let mode = KeGetPreviousMode();
+    let cd = match probe_read_user::<_PLUGPLAY_CONTROL_QUERY_REMOVE_DATA>(ControlData, mode) {
+        Ok(v) => v,
+        Err(e) => return e,
+    };
 
-    Status = IopCaptureUnicodeString(
+    let mut DeviceInstance: _UNICODE_STRING = core::mem::zeroed();
+    let mut Status = IopCaptureUnicodeString(
         &mut DeviceInstance,
         core::ptr::addr_of_mut!((*ControlData).DeviceInstance) as PUNICODE_STRING,
     );
@@ -1600,7 +1608,7 @@ unsafe fn PiControlQueryRemoveDevice(
         return Status;
     }
 
-    DeviceObject = IopGetDeviceObjectFromDeviceInstance(&mut DeviceInstance);
+    let DeviceObject = IopGetDeviceObjectFromDeviceInstance(&mut DeviceInstance);
     if !DeviceInstance.Buffer.is_null() {
         ExFreePool(DeviceInstance.Buffer as PVOID);
     }
@@ -1608,9 +1616,41 @@ unsafe fn PiControlQueryRemoveDevice(
         return STATUS_NO_SUCH_DEVICE;
     }
 
-    Status = STATUS_NOT_IMPLEMENTED;
-
+    let mut Context: crate::devaction::PI_QUERY_REMOVE_CONTEXT = core::mem::zeroed();
+    Context.Flags = cd.Flags;
+    Status = crate::devaction::PiPerformSyncDeviceActionWithContext(
+        DeviceObject,
+        crate::devaction::PiActionQueryRemoveDevice,
+        &mut Context as *mut _ as PVOID,
+    );
     ObDereferenceObject(DeviceObject as PVOID);
+
+    if Context.VetoType != 0 {
+        if let Err(e) = write_user(
+            core::ptr::addr_of_mut!((*ControlData).VetoType) as *mut ULONG,
+            Context.VetoType,
+            mode,
+        ) {
+            return e;
+        }
+        // NameLength is in WCHARs, terminator included; a name that does not fit is cut.
+        if !cd.VetoName.is_null() && cd.NameLength > 0 {
+            let len = Context.VetoName.iter().position(|&c| c == 0).unwrap_or(0);
+            let n = core::cmp::min(len, cd.NameLength as usize - 1);
+            if let Err(e) = safe_copy_to_user(
+                cd.VetoName as *mut core::ffi::c_void,
+                Context.VetoName.as_ptr() as *const core::ffi::c_void,
+                n * core::mem::size_of::<u16>(),
+                1,
+                mode,
+            ) {
+                return e;
+            }
+            if let Err(e) = write_user(cd.VetoName.add(n), 0u16, mode) {
+                return e;
+            }
+        }
+    }
 
     Status
 }

@@ -243,10 +243,18 @@ pub(super) fn blank_c_noise(text: &str) -> String {
                     j += 1
                 }
             }
-            for k in i + 1..j.min(n) {
+            // A C literal cannot span a line, so a quote left open at the newline is
+            // prose (`the caller's buffer }`), not a literal: blanking it would eat the
+            // `}` after it, leave the brace walk one level deep, and swallow every C
+            // function below it in the file -- which silently hid real rows.
+            if !(j < n && b[j] == c) {
+                i += 1;
+                continue;
+            }
+            for k in i + 1..j {
                 out[k] = b' '
             }
-            i = if j < n && b[j] == c { j + 1 } else { j };
+            i = j + 1;
         } else {
             i += 1
         }
@@ -475,6 +483,17 @@ mod tests {
     #[test]
     fn actual_c_comment_control_reports_all() {
         let x=c("pub unsafe extern \"system\" fn Foo() { return; }\n// VOID Foo()\n// {\n//  DbgPrint(\"x\");\n// }");
+        assert!(DroppedPrints
+            .run(&x)
+            .unwrap()
+            .iter()
+            .any(|x| x == "sdk/lib/rust/t.rs: Foo [ALL]"));
+    }
+    #[test]
+    fn apostrophe_in_prose_comment_does_not_swallow_later_c() {
+        // `caller's` used to open a char literal that blanked the `}` after it, so the
+        // brace walk never closed and Foo's C (below) was never seen.
+        let x = c("pub unsafe extern \"system\" fn Bar() {\n    // C: __try { write the caller's out-params } __except (H)\n    // { SetLastError(E); }\n}\npub unsafe extern \"system\" fn Foo() { return; }\n// VOID Foo()\n// {\n//  DbgPrint(\"x\");\n// }");
         assert!(DroppedPrints
             .run(&x)
             .unwrap()

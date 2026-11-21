@@ -14,9 +14,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../../.." && pwd)"
 A="${1:?usage: build.sh <arch>}"
 EXE="$ROOT/build-$A/modules/rostests/winetests/shlwapi/shlwapi_winetest.exe"
-[ -f "$EXE" ] || { echo "[shlwapiwinetestc] $EXE missing; fix: ./vibeos-cli build --arch $A --winetests shlwapi" >&2; exit 1; }
-
-(cd "$ROOT/build-$A" && bash ../tools/canon-run.sh ninja shlwapi_c)
+# Both are built here: the payload compiler runs before the main ninja pass.
+(cd "$ROOT/build-$A" && bash ../tools/canon-run.sh ninja shlwapi_winetest shlwapi_c) >&2 \
+  || { echo "[shlwapiwinetestc] ninja failed; fix: ./vibeos-cli build --arch $A --winetests shlwapi" >&2; exit 1; }
+[ -f "$EXE" ] || { echo "[shlwapiwinetestc] $EXE still missing after ninja" >&2; exit 1; }
 cp "$ROOT/build-$A/dll/win32/shlwapi/shlwapi_c.dll" "$HERE/shlwapi_c-$A.dll"
 python3 - "$EXE" "$HERE/shlwapi_winetest_c-$A.exe" <<'PY'
 import re, sys

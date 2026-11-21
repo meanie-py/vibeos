@@ -35,23 +35,11 @@ def _artifact_root_is_never_the_real_one(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _conductors_drain_in_process(monkeypatch):
-    """No unit test may pin a conductor checkout or spawn a drain child from one.
-
-    An elected conductor hands its drain to a checkout of origin/master
-    (`queue._conduct_pinned`): a `git worktree add` beside the repo plus a real
-    `vibeos-cli land --drain` child. While it was being written, a land test that only
-    meant to check `--foreground` did exactly that (inside its tmp dir, luckily).
-    Tests that exercise the handoff unset this themselves."""
-    monkeypatch.setenv("VIBEOS_CONDUCTOR_PIN", "0")
-
-
-@pytest.fixture(autouse=True)
 def _land_lock_opt_out_does_not_leak_in(monkeypatch):
     """The land-lock tests assert the lock EXCLUDES; they must not inherit the opt-out.
 
     VIBEOS_LAND_LOCK=0 is the documented single-agent/rescue switch, and it reaches every
     child of a land run with it -- including the gate's own check-tooling. There it made
-    land_lock() a no-op, six "must raise LandLockBusy" tests failed, and the queue declared
-    origin/master red (TOOLING_FAIL, 2026-10-03) and held the line on a tree that passes."""
+    land_lock() a no-op, six "must raise LandLockBusy" tests failed, and the merge train
+    declared origin/master red (TOOLING_FAIL, 2026-10-03) on a tree that passes."""
     monkeypatch.delenv("VIBEOS_LAND_LOCK", raising=False)

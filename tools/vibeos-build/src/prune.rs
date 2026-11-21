@@ -88,7 +88,7 @@ pub fn resolve(path: &Path) -> PathBuf {
     }
 }
 
-/// The merge queue's integration tree: `vibeos-integration` or `vibeos-integration-<n>`.
+/// The integrator's tree: `vibeos-integration` or `vibeos-integration-<n>`.
 pub fn is_integration_dirname(name: &str) -> bool {
     name == INTEGRATION_DIRNAME
         || name

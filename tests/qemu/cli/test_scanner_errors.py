@@ -3,7 +3,7 @@ import subprocess
 
 import pytest
 
-from . import artifacts, gate, lints, queue
+from . import artifacts, gate, lints
 from .test_cli_units import _difftest_once_stub, _fake_smoke, _gate_args, _tooling_once_stub
 
 TRACE = "Traceback (most recent call last):\nFileNotFoundError: vanished\n"
@@ -31,7 +31,6 @@ def test_crash_is_not_a_finding_or_baseline_success(tmp_path, monkeypatch, stdou
     assert stage.status == "fail"  # even an advisory scan cannot claim completion
     assert run.classification == "SCANNER_ERROR"
     assert "coverage unavailable" in stage.detail
-    assert "SCANNER_ERROR" in queue.INCONCLUSIVE
 
 
 def test_normal_baselined_findings_remain_accepted(tmp_path, monkeypatch):

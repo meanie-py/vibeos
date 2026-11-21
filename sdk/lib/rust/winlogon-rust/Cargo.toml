@@ -10,3 +10,4 @@ crate-type = ["staticlib"]
 winedebug-rust = { path = "../winedebug-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 winlogon-sys = { path = "../winlogon-sys" }
+ntdll-sys = { path = "../ntdll-sys" }

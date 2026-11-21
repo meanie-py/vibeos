@@ -687,6 +687,28 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A win32k/user32 flag word (ulDirty_, DCXFlags, state, style, ...) masked with a raw
+    # hex literal: a recalled number, invisible to verify_constants. DC_vPrepareDCsForBlit
+    # tested DIRTY_TEXT as 0x8 (DIRTY_BACKGROUND) and SetPixel painted black.
+    sfw = repo / "tools" / "scan_flag_word_raw_hex.py"
+    specs.append(
+        (
+            "scan_flag_word_raw_hex",
+            [py, str(sfw), "--lint"] if sfw.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A translation the model abandoned partway, recognised by its own narration ("I give
+    # up", "Let me just use the anchor's code"): kernel32's NLS_EnumCalendarInfo shipped
+    # that way with an exitless loop, and every EnumCalendarInfo call hung.
+    sat = repo / "tools" / "scan_abandoned_translation.py"
+    specs.append(
+        (
+            "scan_abandoned_translation",
+            [py, str(sat), "--lint"] if sat.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # HEAP_ZERO_MEMORY handed to GlobalAlloc: not a GMEM_ flag, so GlobalAlloc refuses it
     # outright. oleaut32's create_stream did this and no picture ever loaded from a file.
     sgf = repo / "tools" / "scan_gmem_flags.py"
@@ -1102,6 +1124,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
         (
             "scan_byte_step_one",
             [py, str(sbs), "--lint"] if sbs.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # `x < 0 as DWORD`: C's FAILED() on an HRESULT kept in a DWORD, translated without the
+    # signed cast, so the test is constant and the failure path never runs. shlwapi's
+    # UrlGetPartA shipped it (82 Wine url-suite failures the C does not have); rustc's
+    # unused_comparisons misses it because the cast hides the literal. Gated at zero.
+    suz = repo / "tools" / "scan_unsigned_vs_zero.py"
+    specs.append(
+        (
+            "scan_unsigned_vs_zero",
+            [py, str(suz), "--lint"] if suz.is_file() else ["MISSING"],
             "stdout",
         )
     )

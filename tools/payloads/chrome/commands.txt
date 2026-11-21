@@ -24,6 +24,8 @@ memwatch 20
 # handle table holds, natively and through WOW64; a pair that leaks starts failing. Long boots
 # wedged once a 32-bit app's once-a-second display DC had used up the table. Windows' answers in
 # gdiprobe.win11.txt.
+timeout flushprobe\flushprobe.exe 600
+flushprobe\flushprobe.exe
 timeout gdiprobe\gdiprobe.exe 900
 timeout gdiprobe\gdiprobe32.exe 900
 gdiprobe\gdiprobe.exe
@@ -33,6 +35,9 @@ w32start\w32start-bare.exe
 w32start\w32start-crt.exe
 w32start\w32start-user32.exe
 w32start\w32start-gdi32.exe
+w32start\w32start-console.exe
+timeout gdiprobe\gdiprobe32con.exe 900
+gdiprobe\gdiprobe32con.exe
 gdiprobe\gdiprobe32.exe
 # Chrome's child processes do not write to the sweep's pipe, so the whole tree logs to a file
 # that catfile prints afterwards (it runs even when Chrome is killed at the timeout).

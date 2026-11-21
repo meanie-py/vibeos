@@ -57,9 +57,26 @@ fn rc_deps(cmd: &str, raw: &str) -> Option<Vec<String>> {
     }
     None
 }
+/// The cmake target add_cargo_module makes for a cell: `<target>_cargo` when the output is
+/// `<dir>/<target>` (activeds.tlb), whose ninja utility phony would be the output's path.
+pub fn cmake_target(cell: &Cell) -> String {
+    if cell.output_name == cell.target {
+        format!("{}_cargo", cell.target)
+    } else {
+        cell.target.clone()
+    }
+}
 fn retarget(cmd: &str, raw: &str, new: &str) -> String {
     let first = args(raw).first().cloned().unwrap_or_default();
-    format!("{cmd}({})", raw.trim().replacen(&first, new, 1))
+    let body = raw.trim().replacen(&first, new, 1);
+    // wdf01000's include list ends `shared/irphandlers/pnp/km # pnpprivkm.hpp` on its own line
+    // before `)`: trimmed, the paren joined the comment and the CMakeLists stopped parsing.
+    let last = body.rsplit('\n').next().unwrap_or("");
+    if last.contains('#') && !last.contains('"') {
+        format!("{cmd}({body}\n)")
+    } else {
+        format!("{cmd}({body})")
+    }
 }
 fn basename(s: &str) -> String {
     Path::new(s)
@@ -200,7 +217,10 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
                     .skip(1)
                     .filter(|x| {
                         // Linker flags (cdrom's -Wl,--whole-archive) are no usage requirement.
-                        !x.starts_with("${") && !x.starts_with('-') && *x != "PRIVATE" && *x != "PUBLIC"
+                        !x.starts_with("${")
+                            && !x.starts_with('-')
+                            && *x != "PRIVATE"
+                            && *x != "PUBLIC"
                     })
                     .cloned(),
             );
@@ -213,11 +233,28 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         if cell.rc.is_some() {
             if let Some(deps) = rc_deps(cmd, raw) {
                 drop = true;
-                rc_gen_deps.extend(
-                    super::graph::expand(&deps, &rc_lists)?
+                // A dep built in a foreach (the themes' `${_converted_files}`, each
+                // `${_subdir}/${_file_name}_utf16.INI`) expands to the loop's variables,
+                // which after the loop hold only its last value: keep such a dep as the list
+                // variable it was, which add_cargo_module, placed after the loop, reads whole.
+                let loop_var = Regex::new(r"\$\{(\w+)\}").unwrap();
+                for d in &deps {
+                    let flat = super::graph::expand(std::slice::from_ref(d), &rc_lists)?;
+                    let built: Vec<String> = flat
                         .into_iter()
-                        .filter(|d| d.contains("CMAKE_CURRENT_BINARY_DIR")),
-                );
+                        .filter(|x| x.contains("CMAKE_CURRENT_BINARY_DIR"))
+                        .collect();
+                    let unsettled = built.iter().any(|x| {
+                        loop_var
+                            .captures_iter(x)
+                            .any(|c| !c[1].starts_with("CMAKE_") && !c[1].starts_with("REACTOS_"))
+                    });
+                    if unsettled {
+                        rc_gen_deps.push(d.clone());
+                    } else {
+                        rc_gen_deps.extend(built);
+                    }
+                }
             }
         }
         if target && cmd == "add_idl_reg_scripts" && a.len() > 1 {
@@ -231,7 +268,15 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
                     "add_idl_reg_objects",
                     1,
                 ));
-                rc_gen_deps.push(format!("{}{suffix}", cell.target));
+                // comdlg32 registers its classes only `if(DLL_EXPORT_VERSION GREATER_EQUAL
+                // 0x600)`: under a false if() the reg target does not exist, and a plain name
+                // in the cell's DEPENDS is a missing file to ninja.
+                let reg = format!("{}{suffix}", cell.target);
+                rc_gen_deps.push(if paths[idx].is_empty() {
+                    reg
+                } else {
+                    format!("$<TARGET_NAME_IF_EXISTS:{reg}>")
+                });
                 pos = *e;
                 continue;
             }
@@ -262,9 +307,28 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             ));
         }
         if target && cmd == "set_target_properties" && names_only(&a) {
-            drop = true
-        }
-        if target && cmd == "set_target_cpp_properties" {
+            // The cell's output name is the link edge's, read from this configuration. A
+            // rename under an if() this configuration leaves false (uniata becomes pciide
+            // `if(ENABLE_UNIATA)`) would vanish with the statement: keep the branch, failing.
+            let h = home.as_deref().unwrap_or(&[]);
+            let renames = a[2..]
+                .iter()
+                .step_by(2)
+                .any(|k| ["OUTPUT_NAME", "PREFIX", "SUFFIX"].contains(&k.as_str()));
+            if renames && paths[idx].len() > h.len() {
+                keep.push_str(&text[pos..*s]);
+                let old = &text[*s..*e];
+                keep.push_str(&old.replacen(
+                    old.trim(),
+                    &format!(
+                        "message(FATAL_ERROR \"{} is linked by cargo, whose output name does not follow this rename\")",
+                        cell.target
+                    ),
+                    1,
+                ));
+                pos = *e;
+                continue;
+            }
             drop = true
         }
         if target
@@ -602,7 +666,10 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         by_arch.insert(
             arch,
             libs.iter()
-                .filter(|x| !x.starts_with("engine:") && !x.starts_with('-'))
+                .filter(|x| {
+                    // engine:/toolchain: items are resolved by reactos-link, not built by cmake.
+                    !x.starts_with("engine:") && !x.starts_with("toolchain:") && !x.starts_with('-')
+                })
                 .cloned()
                 .collect::<BTreeSet<_>>(),
         );
@@ -614,7 +681,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         .cloned()
         .collect();
     if !every.is_empty() {
-        let var = format!("{}_REUSED", cell.target.to_uppercase());
+        let var = format!("{}_REUSED", cell.target.to_uppercase().replace('.', "_"));
         if common.is_empty() {
             block.push(format!("set({var})"));
         } else {
@@ -730,7 +797,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
     if !build_deps.is_empty() && objlibs.is_empty() {
         call.push(format!(
             "add_dependencies({} {})",
-            cell.target,
+            cmake_target(cell),
             build_deps.join(" ")
         ));
     }
@@ -749,6 +816,31 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         }));
         lines.push("endif()".into());
         block = lines;
+    }
+    // shdocvw_sublib and shlwapi_autocomp compile with the module's own settings through
+    // `$<TARGET_PROPERTY:shdocvw,COMPILE_DEFINITIONS>`. The cell's custom target carries
+    // none; those settings now live on the OBJECT library.
+    // sdk/include/asm runs native-geninc on `$<TARGET_FILE:genincdata>` in genincdata's own
+    // file. A cell is a custom target, which that genex cannot resolve (the whole configure
+    // fails); add_cargo_module copies the bin to the target's binary dir under its name.
+    out = out
+        .replace(
+            &format!("$<TARGET_FILE:{}>", cell.target),
+            &format!("${{CMAKE_CURRENT_BINARY_DIR}}/{}", cell.output_name),
+        )
+        .replace(
+            &format!("$<TARGET_FILE_DIR:{}>", cell.target),
+            "${CMAKE_CURRENT_BINARY_DIR}",
+        );
+    let shims = format!("{}_shims", cell.target);
+    if block
+        .iter()
+        .any(|l| l.contains(&format!("add_library({shims} OBJECT")))
+    {
+        out = out.replace(
+            &format!("$<TARGET_PROPERTY:{},", cell.target),
+            &format!("$<TARGET_PROPERTY:{shims},"),
+        );
     }
     Ok(out + &block.join("\n") + "\n")
 }

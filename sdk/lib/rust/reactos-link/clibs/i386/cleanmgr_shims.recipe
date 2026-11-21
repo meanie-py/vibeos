@@ -1,0 +1,2 @@
+# cleanmgr_shims (i386), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+cxx	base/applications/cleanmgr/cleanmgr/rust_cohab_stub.cpp	@build/base/applications/cleanmgr/cleanmgr base/applications/cleanmgr/cleanmgr @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/atl	@core -fno-exceptions	UNICODE WINVER=0x502 _ATL_NO_EXCEPTIONS _CRT_DECLARE_NONSTDC_NAMES=1 _CRT_NONSTDC_NO_DEPRECATE _DLL _UNICODE _WIN32_WINNT=0x502 __USE_CRTIMP

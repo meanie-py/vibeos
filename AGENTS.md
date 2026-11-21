@@ -275,21 +275,22 @@ substance, don't pad with filler sections, redundant summaries, or boilerplate.
   just to submit, no waiting for the verdict. It does an ordinary merge, resolves conflicts
   itself, gates the batch with the full gate, pushes, and messages you the result (or a fix
   it made, or the classification + artifact dir). Its brief:
-  `docs/engineering/active-lanes/integration.md`. The old merge train piled up 13 lane-hours
-  of queueing in one afternoon, gating one lane at a time; it is held, not used.
+  `docs/engineering/active-lanes/integration.md`. `./vibeos-cli land` prints that message
+  for your tip, filled in, and pushes nothing. (The old merge train piled up 13 lane-hours of
+  queueing in one afternoon, gating one lane at a time; it was retired 2026-11-08.)
   Hand-rolling gate-then-push stays forbidden: with one pusher there is no race.
 - **Never move the local `master` ref from a worktree that doesn't have it checked out** — no
   `branch -f master`, no `update-ref`, no `fetch origin master:master`. That leaves the OTHER
   worktree's index+files at the old tree, which resurfaces as a giant phantom staged revert — a
   checkout has shown 61 commits of landed work as a 197K-line staged deletion this way. Push
-  the ref straight to origin (`git push origin HEAD:master`, which is what `land`
+  the ref straight to origin (`git push origin HEAD:master`, which is what `land --direct`
   does); every worktree then picks it up with its own `git fetch && git merge origin/master`.
 
 **Landing is mechanized:** a green FULL `vibeos-cli gate` on a clean tree mints a push stamp
 (`$GIT_COMMON_DIR/vibeos-gate-stamps/<tree>.json`); the `pre-push` hook refuses `master` updates
 whose tree doesn't match a fresh (<24h) stamp. Docs-only deltas pass automatically. Emergency
 override `VIBEOS_SKIP_GATE_CHECK=1 git push` is loud — report every use. Partial-arch or
-dirty-tree gates never stamp. The hook is the *backstop*; `land` is the front door.
+dirty-tree gates never stamp. The hook is the *backstop*; the integrator is the front door.
 
 ### Smoke tests are the north star
 
@@ -390,8 +391,8 @@ guide: `tests/qemu/cli/README.md`.
 ./vibeos-cli check-tooling                  # ruff+pyright+pytest for OUR python
 ./vibeos-cli difftest                       # host harnesses: shipping Rust vs the genuine C
 ./vibeos-cli gate                           # submit builds concurrently; broker admits; smoke each ready arch
-./vibeos-cli land                           # THE way to land: submit to the merge queue (train it if free)
-./vibeos-cli land-status --mine             # conductor + queue + MY verdict (landed / rejected + artifact)
+./vibeos-cli land                           # prints the `merge <branch> @ <sha>` request for the integrator
+./vibeos-cli land-status --tip <sha>        # LANDED / IN BATCH (integrator gating it) / NOT LANDED
 ./vibeos-cli ps                             # every QEMU across all worktrees + slot usage
 ./vibeos-cli host-status                    # build/boot CPU leases + the land lock, across worktrees
 ./vibeos-cli debug  start amd64 --gdb       # GDB over the real (UEFI) boot

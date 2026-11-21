@@ -481,14 +481,106 @@ extends it from the boot spine to every fully-Rust module.
        place (cdrom whole-archives its body), and a body linked under `--whole-archive` makes
        the cell shell-less: the staticlib brings its own core and panic handler, which a
        rustc bin would define again.
-     - **Held: the 14 dotted targets** (activeds/mshtml/stdole2/stdole32 `.tlb`, the four
-       `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`, msacm32.drv), stash
-       `ctail-dotted: ...`. Two blockers: the crate name keeps the `.` (cargo refuses
-       `activeds.tlb-cargo`), and add_cargo_module's custom target `activeds.tlb` is the
-       phony `<dir>/activeds.tlb`, the very path of the output (ninja: multiple rules
-       generate). The output path is what the media manifest, cab and pe_equiv key on.
-       wdmaud.drv also links two bodies (`several bodies`).
-   - **RESUME HERE (2026-11-06).** Waves 1-4 (168 body-less C modules) are on master. Wave
+     - **2026-11-07: C++, first wave.** reactos-link already compiles C++ through `cxx` clib
+       recipe lines, so the generator's C++ refusal was stale: a `.cpp/.cxx/.cc` object is a
+       shim like a `.c`. cmicpl, shimgvw, tftpd, cmicontrol, fltmc, tracert, uxtheme and
+       comdlg32 converted, EQUIVALENT ×3. Two generator fixes on the way: with several
+       `spec2def()` calls (uxtheme's vista/else branches) the spec is the one this build's
+       spec2def command reads, not the first in the text; and an `add_idl_reg_scripts` under
+       an `if()` (comdlg32) is depended on as `$<TARGET_NAME_IF_EXISTS:...>`. Next: the
+       modules that link the C++ runtime.
+     - **2026-11-08: C++, second wave (35).** acppage cabview certutil ctfmon devmgr drmk
+       drwtsn32 fontext framedyn hdaudbus iernonce mmc_new mmcshext msctf msctfime msgina
+       mspaint msutb mydocs netshell ntobjshex portcls rapps sendmail shell32 sndrec32 sol
+       spider stobject ucx01000 usbhub3 wdf01000 zipfldr ac97 cmipci, EQUIVALENT ×3. New:
+       `toolchain:<file>` link items (cmake links libc++/libc++abi/libunwind from the
+       llvm-mingw sysroot by absolute host path; reactos-link resolves them under its own
+       `.build-tools/llvm-mingw/<triple>/lib`); `KIND wdmdriver` (--wdmdriver pefixup);
+       `set_target_cpp_properties` moves to the OBJECT library (WITH_CXX_EXCEPTIONS/RTTI are
+       target properties the compile flags read) instead of being dropped; a moved statement
+       whose last argument line ends in a comment keeps its `)` on its own line (wdf01000);
+       `$<TARGET_PROPERTY:<t>,...>` in the module's file reads `<t>_shims`.
+       **Held:** shdocvw, shlwapi (their `$<TARGET_OBJECTS:<sibling>>` sources compile in
+       `_shims` without the sibling OBJECT library's own usage, atl_classes: needs sibling
+       OBJECT libraries modelled); browseui (`target_link_options`), uniata
+       (`set_target_properties`), explorer (rshell reads its file), rshell (a C++ source
+       in no source dir), msvcrt (its custom cargo command shape). cardlib/menuband/
+       recyclebin/usbdex's cmake cargo archives became `engine:*_rust` crates. **Owed:**
+       mmc_new still links cmake's `libmmc_uuids.a` (an `add_iid_library` of widl `_i.c`
+       the library index does not model; baselined in scan_cmake_linked_rust).
+     - **2026-11-08: 13 earlier holds converted** (bcryptprimitives certmgr cleanmgr desk
+       dinput8 dwmapi intl ncrypt netkvm sysdm tcpsvcs telnetd wlansvc), EQUIVALENT ×3: the
+       fixes above cleared what held them. A module's own `$<TARGET_FILE:t>` /
+       `$<TARGET_FILE_DIR:t>` now names the cell's output (sdk/include/asm runs geninc on
+       genincdata's). **Held, with the reason measured:** libjpeg, libpng, libxslt, mbedtls
+       and genincdata lose exports (an export mechanism the generator does not model:
+       pe_equiv DIFFERENT); fusion (its spec stubs compile in the static lib
+       fusion_common, so the cell has no stub exports); rpcrt4 (link-guard: one duplicate
+       symbol); the 14 dotted targets (crate naming, phony/output collision); shdocvw,
+       shlwapi, browseui, uniata, explorer, rshell, msvcrt (above).
+     - **2026-11-08: the five export holds converted** (libjpeg libpng libxslt mbedtls
+       genincdata), EQUIVALENT ×3. The "unmodelled export mechanism" was archive
+       semantics: an object nothing references (libjpeg's jdatasrc.c) still carries
+       `-export:` directives from `__declspec(dllexport)`, and cmake links objects while the
+       cell linked an archive that never loaded it. A body-less cell's own objects now link
+       whole (`Linker::whole_c_objects`), and a body-less cell of C is shell-less too
+       (genincdata imports nothing, so the shell's DbgPrint cannot resolve). A module with
+       no set_module_type keeps lld's default PE versions (`no_module_type`). **Tool bug
+       found on the way:** `--convert` copied the baseline from whatever was on disk, which
+       after a failed convert, a stash and a reconfigure is the PREVIOUS CELL's output: a
+       libjpeg run proved a cell against a cell. It now builds cmake's targets before it
+       copies a fresh baseline. Earlier waves re-ran after stashing the same way. A false
+       EQUIVALENT there needs a fix that left the held module's bytes unchanged, which
+       contradicts it having been the fix, so the risk is low but not yet audited.
+       libxslt's rewrite moves msxml3's compile (libxml2's dirs now reach it as `-I` via
+       liblibxslt); msxml3.dll relinked sha256-identical on all 3 arches.
+     - **2026-11-08: fusion, fusion_1_1, fusion_2_0, rpcrt4, uniata converted**,
+       EQUIVALENT ×3. fusion's `-stub` bodies are spec2def's `fusion_stubs.rs.obj`, a
+       custom-command object archived into the static lib fusion_common (so all three
+       fusion DLLs link fusion.spec's stubs). An `engine:c:` replay of compile_commands.json
+       never sees it, so the generator reads the archive's inputs in build.ninja and renders
+       `Linker::spec_stubs_from(<that spec>, <dll>)`. `PDB_OUTPUT_DIRECTORY` (MSVC-only)
+       joins NAME_PROPERTIES. A rename under an if() (uniata becomes pciide
+       `if(ENABLE_UNIATA)`) now leaves a `message(FATAL_ERROR ...)` in that branch instead
+       of vanishing. rpcrt4's link-guard duplicate did not recur under the current generator.
+     - **2026-11-08: the 14 dotted targets converted** (activeds/mshtml/stdole2/stdole32
+       `.tlb`, the four `.msstyles`, imaadp32/l3codeca/msadp32/msg711/msgsm32 `.acm`,
+       msacm32.drv), EQUIVALENT ×3.
+       - A crate name drops the `.` (`activeds_tlb-cargo`).
+       - A module named like its output gets the cmake target `<target>_cargo` from
+         add_cargo_module, since Ninja's utility phony `<dir>/<target>` would be the output
+         path itself. The CMakeLists keeps `add_cargo_module(activeds.tlb ...)` for the
+         tools that read it. add_cargo_cd_file and the codegen's ninja calls map the name.
+       - The themes' rc deps come from a foreach. Expanded, they named only the loop's last
+         file, so the rewrite now keeps such a dep as its list variable.
+       - wdmaud.drv still links two bodies (`several bodies`).
+   - **RESUME HERE (2026-11-08, fleet pause).**
+     - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
+       integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
+       cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
+       the 14 dotted targets. First check that 0fa7e73bb5c is an ancestor of origin/master.
+       If it bounced, the integrator's message names the gate dir.
+     - **Next, by size:**
+       - shdocvw and shlwapi: a sibling OBJECT library (atl_classes) whose usage the
+         rewrite does not carry;
+       - browseui: `target_link_options`;
+       - explorer and rshell: rshell reads explorer's CBandSite.cpp from no source dir;
+       - msvcrt: its custom cargo command shape;
+       - the nativedll kind (4);
+       - the wow64cpu.S / sys-stubs.S asm inputs;
+       - the CRTs, dbghelp/libtirpc (elseif branches) and wdmaud.drv (two bodies).
+       - Run `tools/codegen cargo-cell <target>` per module for its current refusal.
+     - **Owed:**
+       - Audit earlier waves for a cell proven against a stale baseline (see the 11-08
+         export-holds entry; the risk is low).
+       - mmc_new's `libmmc_uuids.a` (baselined).
+       - The git prune deferred to this fleet pause. control-plane runs it once every lane
+         reports settled.
+     - **Lesson from batch 169:** a harness that PARSES a module's CMakeLists text
+       (schannel-tls-difftest read mbedtls's `list(APPEND SOURCE`) is invisible to pe_equiv.
+       Grep `sdk/lib/rust/*/build.rs` and tools/ for the module's CMakeLists path before
+       converting it.
+   - **RESUME HERE (earlier, 2026-11-06).** Waves 1-4 (168 body-less C modules) are on master. Wave
      5/6 (`ctail-held`) converts 61 more, each `pe_equiv`-equivalent to cmake's link on all
      3 arches: 38 cmake-linked Rust DLLs (advapi32, user32, ole32, setupapi, ws2_32, ...
      their hand-written `add_custom_command(cargo build ...)` body is now modelled), 17

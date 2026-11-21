@@ -49,6 +49,8 @@ binaries:
     dest: bin/grepfile/grepfile.exe
   - src: tools/payloads/chrome/gdiprobe-{arch}.exe
     dest: bin/gdiprobe/gdiprobe.exe
+  - src: tools/payloads/chrome/flushprobe-amd64.exe
+    dest: bin/flushprobe/flushprobe.exe
   - src: tools/payloads/chrome/gdiprobe-i386.exe
     dest: bin/gdiprobe/gdiprobe32.exe
   - src: tools/payloads/chrome/w32start-bare.exe
@@ -59,6 +61,10 @@ binaries:
     dest: bin/w32start/w32start-user32.exe
   - src: tools/payloads/chrome/w32start-gdi32.exe
     dest: bin/w32start/w32start-gdi32.exe
+  - src: tools/payloads/chrome/w32start-console.exe
+    dest: bin/w32start/w32start-console.exe
+  - src: tools/payloads/chrome/gdiprobe-console-i386.exe
+    dest: bin/gdiprobe/gdiprobe32con.exe
   - src: tools/payloads/chrome/hello.html
     dest: bin/chrome-pages/hello.html
 binaries_from: tools/payloads/chrome/stage.py

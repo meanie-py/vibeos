@@ -2222,6 +2222,13 @@ _SDK_MACRO_ALIAS_CACHE: dict[tuple[str, bool | None], dict[str, str]] = {}
 _MODULE_UNICODE_CACHE: dict[str, bool | None] = {}
 
 
+def _repo_root_of(path: Path) -> Path:
+    for parent in [path, *path.parents]:
+        if (parent / "sdk/lib/rust").is_dir():
+            return parent
+    return path
+
+
 def module_is_unicode(source: Path) -> bool | None:
     """Whether the module owning ``source`` compiles with UNICODE, per its CMakeLists.
 
@@ -2247,6 +2254,14 @@ def module_is_unicode(source: Path) -> bool | None:
         if match is not None:
             verdict = "UNICODE" in match.group("args").split()
             break
+        # A cargo cell has no set_module_type(): its build.rs keeps the defines cmake's
+        # windres command had, UNICODE among them for a UNICODE module (shell32).
+        cell = re.search(r"add_cargo_module\s*\(\s*\S+\s+(?P<crate>[\w.+-]+)", text)
+        if cell is not None:
+            build = _repo_root_of(parent) / "sdk/lib/rust" / cell.group("crate") / "build.rs"
+            if build.is_file():
+                verdict = '"UNICODE"' in build.read_text(encoding="utf-8", errors="replace")
+                break
     _MODULE_UNICODE_CACHE[key] = verdict
     return verdict
 

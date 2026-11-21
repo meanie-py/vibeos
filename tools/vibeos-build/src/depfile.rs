@@ -17,7 +17,49 @@ pub fn retarget(text: &str, cargo_output: &str, copied_output: &str) -> Result<S
     else {
         return Err("Cargo depfile does not start with the expected output rule".into());
     };
-    Ok(format!("{}:{body}", escaped_output(copied_output)?))
+    let target = escaped_output(copied_output)?;
+    Ok(format!("{target}:{}", drop_self(body, &target)))
+}
+
+/// The first rule's prerequisites without the rule's own target: the one prerequisite
+/// retargeting drops. A cell whose output sits where its build script watches generated
+/// files (mshtml.tlb: reactos-link's rc step watches every `.tlb` in the module's build
+/// dir, its own output among them) gets itself as a prerequisite, and every ninja run
+/// after the first stops on `dependency cycle: x -> x`.
+fn drop_self(body: &str, target: &str) -> String {
+    let bytes = body.as_bytes();
+    let mut out = String::with_capacity(body.len());
+    let mut at = 0;
+    while at < bytes.len() {
+        if bytes[at] == b'\n' {
+            out.push_str(&body[at..]);
+            return out;
+        }
+        if bytes[at] == b'\\' && bytes.get(at + 1) == Some(&b'\n') {
+            out.push_str("\\\n");
+            at += 2;
+            continue;
+        }
+        if bytes[at..].starts_with(b"\\\r\n") {
+            out.push_str("\\\r\n");
+            at += 3;
+            continue;
+        }
+        if bytes[at].is_ascii_whitespace() {
+            out.push(bytes[at] as char);
+            at += 1;
+            continue;
+        }
+        let start = at;
+        while at < bytes.len() && !bytes[at].is_ascii_whitespace() {
+            at += if bytes[at] == b'\\' && at + 1 < bytes.len() { 2 } else { 1 };
+        }
+        let token = &body[start..at];
+        if token != target {
+            out.push_str(token);
+        }
+    }
+    out
 }
 
 /// Replace an explicitly declared prerequisite with a byte-identical snapshot.
@@ -91,6 +133,18 @@ pub fn check_compile_snapshot(build: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retarget_drops_only_the_rules_own_target() {
+        // mshtml.tlb's cargo depfile lists the cell's own output: ninja's second run
+        // stopped on `dependency cycle: dll/win32/mshtml.tlb/mshtml.tlb -> itself`.
+        let out = "/b/dll/x.tlb/x.tlb";
+        let input = format!("/t/x_tlb.exe: \\\n  {out} \\\n  /b/dll/x.tlb/x_tlb.tlb {out}.spec\n{out}:\n");
+        let got = retarget(&input, "/t/x_tlb.exe", out).unwrap();
+        assert_eq!(
+            got,
+            format!("{out}: \\\n   \\\n  /b/dll/x.tlb/x_tlb.tlb {out}.spec\n{out}:\n")
+        );
+    }
     #[test]
     fn snapshot_is_checked_and_only_exact_prerequisites_change() {
         let root = std::env::temp_dir().join(format!("dep-snapshot-é-{}", std::process::id()));

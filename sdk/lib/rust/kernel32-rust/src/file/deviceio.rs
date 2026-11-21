@@ -184,10 +184,17 @@ pub unsafe extern "system" fn DeviceIoControl(
         }
 
         if !(NT_ERROR(Status)) && !lpBytesReturned.is_null() {
-            // _SEH2_TRY { *lpBytesReturned = lpOverlapped->InternalHigh; }
-            // (DUMMY_PSEH: handler is dead code)
-            *lpBytesReturned = (*lpOverlapped).InternalHigh as DWORD;
-            // _SEH2_END
+            // C: __try { *lpBytesReturned = InternalHigh; } __except (EXECUTE_HANDLER)
+            // { *lpBytesReturned = 0; }
+            if ntdll_sys::seh::try_except_all(|| {
+                /* Return the bytes */
+                *lpBytesReturned = (*lpOverlapped).InternalHigh as DWORD;
+            })
+            .is_err()
+            {
+                /* Return zero bytes */
+                *lpBytesReturned = 0;
+            }
         }
 
         if !(NT_SUCCESS(Status)) || (Status == STATUS_PENDING) {

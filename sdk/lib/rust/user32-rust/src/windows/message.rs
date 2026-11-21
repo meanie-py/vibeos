@@ -2267,6 +2267,7 @@ pub unsafe extern "system" fn DispatchMessageA(lpmsg: *const MSG) -> LRESULT {
     let mut Ret: LRESULT = 0;
     let mut UnicodeMsg: MSG = core::mem::zeroed();
     let Wnd: PWND;
+    let mut Hit: BOOL = 0;
 
     if ((*lpmsg).message & !WM_MAXIMUM) != 0 {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -2296,12 +2297,18 @@ pub unsafe extern "system" fn DispatchMessageA(lpmsg: *const MSG) -> LRESULT {
             WARN!("Validating Timer Callback failed!\n");
             return 0;
         }
-        Ret = (WndProc.unwrap())(
-            (*lpmsg).hwnd,
-            (*lpmsg).message,
-            (*lpmsg).wParam,
-            GetTickCount() as LPARAM,
-        );
+        // The C's _SEH2_TRY/_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): an
+        // exception in a timer callback is swallowed, not fatal (Windows and
+        // Wine do the same; user32:msg test_timers_exceptions raises each
+        // kind from one). The translation had dropped the frame, so the
+        // first such callback killed the process.
+        let (hwnd, message, wparam) = ((*lpmsg).hwnd, (*lpmsg).message, (*lpmsg).wParam);
+        match ntdll_sys::seh::try_except_all(|| {
+            (WndProc.unwrap())(hwnd, message, wparam, GetTickCount() as LPARAM)
+        }) {
+            Ok(r) => Ret = r,
+            Err(_) => Hit = 1,
+        }
     } else if !Wnd.is_null() {
         if (*lpmsg).message != WM_PAINT && ((*Wnd).state & WNDS_SERVERSIDEWINDOWPROC) == 0 {
             Ret = IntCallMessageProc(
@@ -2322,6 +2329,9 @@ pub unsafe extern "system" fn DispatchMessageA(lpmsg: *const MSG) -> LRESULT {
             }
         }
     }
+    if Hit != 0 {
+        WARN!("Exception in Timer Callback!\n");
+    }
     Ret
 }
 
@@ -2329,7 +2339,7 @@ pub unsafe extern "system" fn DispatchMessageA(lpmsg: *const MSG) -> LRESULT {
 pub unsafe extern "system" fn DispatchMessageW(lpmsg: *const MSG) -> LRESULT {
     let mut Ret: LRESULT = 0;
     let Wnd: PWND;
-    let Hit: BOOL = 0;
+    let mut Hit: BOOL = 0;
 
     if (*lpmsg).message & !WM_MAXIMUM != 0 {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -2359,12 +2369,18 @@ pub unsafe extern "system" fn DispatchMessageW(lpmsg: *const MSG) -> LRESULT {
             WARN!("Validating Timer Callback failed!\n");
             return 0;
         }
-        Ret = (WndProc.unwrap())(
-            (*lpmsg).hwnd,
-            (*lpmsg).message,
-            (*lpmsg).wParam,
-            GetTickCount() as LPARAM,
-        );
+        // The C's _SEH2_TRY/_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): an
+        // exception in a timer callback is swallowed, not fatal (Windows and
+        // Wine do the same; user32:msg test_timers_exceptions raises each
+        // kind from one). The translation had dropped the frame, so the
+        // first such callback killed the process.
+        let (hwnd, message, wparam) = ((*lpmsg).hwnd, (*lpmsg).message, (*lpmsg).wParam);
+        match ntdll_sys::seh::try_except_all(|| {
+            (WndProc.unwrap())(hwnd, message, wparam, GetTickCount() as LPARAM)
+        }) {
+            Ok(r) => Ret = r,
+            Err(_) => Hit = 1,
+        }
     } else if !Wnd.is_null() {
         if (*lpmsg).message != WM_PAINT && ((*Wnd).state & WNDS_SERVERSIDEWINDOWPROC) == 0 {
             Ret = IntCallMessageProc(

@@ -26,3 +26,5 @@ panic-common = { path = "../panic-common", features = ["user"] }
 # rustconv opus output targets `win32k_sys::win32k::*` directly, so the translated
 # windows/ bodies integrate against this near-verbatim. Imports resolve via win32ksys.
 win32k-sys = { path = "../win32k-sys" }
+# RtlSehTryExcept: the C's _SEH2_TRY frames (timer callbacks in DispatchMessage).
+ntdll-sys = { path = "../ntdll-sys" }

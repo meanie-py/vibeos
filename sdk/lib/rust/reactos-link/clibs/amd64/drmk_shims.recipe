@@ -1,0 +1,2 @@
+# drmk_shims (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+cxx	drivers/wdm/audio/drm/drmk/stubs.cpp	@build/drivers/wdm/audio/drm/drmk drivers/wdm/audio/drm/drmk @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	@core -fno-exceptions	BUILDING_DRMK WINVER=0x502 _WIN32_WINNT=0x502

@@ -1657,7 +1657,9 @@ pub unsafe extern "system" fn CM_Disable_DevNode_Ex(dnDevInst: DEVINST, ulFlags:
         return CR_INVALID_DEVINST;
     }
 
-    if ulFlags != 0 {
+    // The CM_DISABLE_* bits are valid; the C refused every flag, CM_DISABLE_UI_NOT_OK
+    // included. PNP_DisableDevInst checks them against CM_DISABLE_BITS itself.
+    if ulFlags & !CM_DISABLE_BITS != 0 {
         return CR_INVALID_FLAG;
     }
 

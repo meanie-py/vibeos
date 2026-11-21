@@ -1,0 +1,2 @@
+# msctf_shims (i386), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+cxx	base/ctf/msctf/rust_cohab_stub.cpp	@build/base/ctf/msctf base/ctf/msctf @build/sdk/include/wine sdk/include/wine @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include base/ctf/cicero	@core -fno-exceptions	UNICODE WINVER=0x502 _CRT_DECLARE_NONSTDC_NAMES=1 _CRT_NONSTDC_NO_DEPRECATE _DLL _UNICODE _WIN32_WINNT=0x600 __USE_CRTIMP __WINESRC__

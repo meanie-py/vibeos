@@ -954,7 +954,14 @@ fn dep_words(input: &str) -> Result<Vec<String>> {
     Ok(out)
 }
 fn cargo_link_inputs(repo: &Path, build: &Path, artifact: &Path) -> Result<Vec<PathBuf>> {
-    let depfile = PathBuf::from(format!("{}.d", artifact.display()));
+    // add_cargo_module writes `<out>.cargo.d` for a module named like its output
+    // (activeds.tlb), `<out>.d` otherwise.
+    let cargo_d = PathBuf::from(format!("{}.cargo.d", artifact.display()));
+    let depfile = if cargo_d.is_file() {
+        cargo_d
+    } else {
+        PathBuf::from(format!("{}.d", artifact.display()))
+    };
     let result = (|| -> Result<Vec<PathBuf>> {
         let txt = text(&depfile)?.replace("\\\n", " ");
         let rule = txt.lines().next().ok_or("empty dependency file")?;
@@ -1498,7 +1505,7 @@ fn mtime_str(path: &Path) -> String {
     let n = unsafe { libc::strftime(out.as_mut_ptr().cast(), out.len(), fmt.as_ptr().cast(), &tm) };
     String::from_utf8_lossy(&out[..n]).into_owned()
 }
-fn py_repr(s: &str) -> String {
+pub(crate) fn py_repr(s: &str) -> String {
     let quote = if s.contains('\'') && !s.contains('"') {
         '"'
     } else {

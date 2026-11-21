@@ -726,6 +726,8 @@ pub unsafe fn toupperW(ch: WCHAR) -> WCHAR {
 
 // Wine `lstrcpynW`-style bounded copy used by parse_locale_name
 // (strncpyW + explicit NUL terminate; matches Wine's lstrcpynW semantics).
+// nolint(dead_seh): an internal helper over parse_locale_name's own fixed buffers, not
+// the exported lstrcpynW, whose catch (lstring.rs) answers a caller's bad pointer.
 #[inline]
 pub unsafe fn lstrcpynW(dst: *mut WCHAR, src: *const WCHAR, n: i32) -> *mut WCHAR {
     if n <= 0 {

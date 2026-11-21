@@ -631,7 +631,16 @@ unsafe fn CallNotificationDll(
     /* Call the notification handler. (The i386 CORE-20279 ESP-restore belt
      * for non-conformant cdecl 3rd-party handlers is omitted — see module
      * doc; the handler ABI is the correct WINAPI/stdcall here.) */
-    (pNotifyHandler.unwrap())(&mut Info);
+    // In SEH, so a third-party notification DLL cannot crash Winlogon.
+    let info: *mut WLX_NOTIFICATION_INFO = &mut Info;
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| (pNotifyHandler.unwrap())(info)) {
+        ERR!(
+            "WL: Exception 0x%08lx hit by notification DLL %ws while executing %s notify function\n",
+            code,
+            (*NotificationDll).pszDllName,
+            FuncNames[Type as usize].as_ptr(),
+        );
+    }
 
     /* Revert impersonation */
     if !UserToken.is_null() {

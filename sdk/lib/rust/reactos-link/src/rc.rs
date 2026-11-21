@@ -118,7 +118,7 @@ impl Linker {
         }
     }
 
-    pub(crate) fn compile_rc(&self, spec: &RcSpec) -> PathBuf {
+    pub(crate) fn compile_rc(&self, spec: &RcSpec, index: usize) -> PathBuf {
         let tmpl_path = self
             .repo_root
             .join(format!("sdk/lib/rust/reactos-link/cflags/rc.{}.flags", self.arch.name));
@@ -127,7 +127,10 @@ impl Linker {
         let sub = |s: &str| s.replace("{REPO}", repo);
         let root = self.rc_build_root();
         let rc_abs = self.repo_root.join(&spec.rc_rel);
-        let dst = self.obj_dir().join("module.rc.res");
+        let dst = match index {
+            0 => self.obj_dir().join("module.rc.res"),
+            n => self.obj_dir().join(format!("module{n}.rc.res")),
+        };
 
         let mut args: Vec<String> = vec!["-O".into(), "coff".into(), "--codepage=65001".into()];
         for inc in &spec.includes {

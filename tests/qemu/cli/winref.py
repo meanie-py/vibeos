@@ -21,6 +21,11 @@ Guest protocol, all on COM1 (captured here over a socket, as vm.py does):
     WINREF: exit=<n>         the payload's exit code
 The console log is `guest-console.log`, deliberately not `*serial*.log`: a reference-VM
 failure is not a vibeos boot failure and must not reach the flake farm.
+
+Every decision lives in native vibeos-test (`tools/vibeos-test/src/winref.rs`): the QEMU
+command line, the reading of the protocol above, the reference column and its grading, and
+the disk arithmetic `logs` needs. What stays here is the VM itself (the console socket, QMP,
+the power-off watch) and the file work around it, until the CLI entry is native.
 """
 
 from __future__ import annotations
@@ -35,6 +40,9 @@ import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
+
+from tools import qemu_infra_compat as native
 
 from .. import backend as be
 from ..qmp_client import QmpClient
@@ -60,6 +68,20 @@ DEFAULT_ACCEL = "tcg"
 INSTALL_TIMEOUT = 3 * 3600.0
 RUN_TIMEOUT = 1800.0
 SHOT_INTERVAL = float(os.environ.get("VIBEOS_WINREF_SHOT", "30"))
+
+
+def _json(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _json(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_json(v) for v in value]
+    if isinstance(value, Path):
+        return str(value)
+    return value
+
+
+def _native(op: str, **kwargs):
+    return native.call("winref_" + op, _json(kwargs))
 
 
 def _paths() -> dict[str, Path]:
@@ -145,56 +167,27 @@ def _launch(
     irqchip: str,
     accel: str,
     show: bool,
+    no_reboot: bool = False,
 ) -> subprocess.Popen:
     p = _paths()
-    args = [
-        str(QEMU_DIR / "qemu-system-x86_64.exe"),
-        "-name",
-        uid,
-        "-machine",
-        "q35",
-        "-accel",
-        f"whpx,kernel-irqchip={irqchip}" if accel == "whpx" else "tcg,thread=multi",
-        "-cpu",
-        cpu,
-        "-smp",
-        str(cpus),
-        "-m",
-        mem,
-        "-drive",
-        f"if=pflash,format=raw,readonly=on,file={be.win_path(p['code'])}",
-        "-drive",
-        f"if=pflash,format=raw,file={be.win_path(vars_fd)}",
-        "-drive",
-        f"file={be.win_path(disk)},if=none,id=hd0,format=qcow2",
-        "-device",
-        "ide-hd,drive=hd0,bus=ide.0",
-        "-nic",
-        "none",
-        # No USB controller: every crash so far (`WHPX: Unexpected VP exit code 4`) came
-        # right after `Ignoring request for interrupt vector 0`, an MSI fired before its
-        # vector was programmed. The tablet's controller was the only optional MSI source.
-        "-chardev",
-        f"socket,id=qmp0,host=127.0.0.1,port={qmp_port},server=off",
-        "-mon",
-        "chardev=qmp0,mode=control",
-        "-chardev",
-        f"socket,id=ser0,host=127.0.0.1,port={console.port},server=off",
-        "-serial",
-        "chardev:ser0",
-        "-monitor",
-        "none",
-        "-display",
-        "sdl" if show else "none",
-    ]
-    # q35's ICH9 AHCI has six ports, ide.0..ide.5; the disk holds ide.0.
-    for i, iso in enumerate(cds, start=1):
-        args += [
-            "-drive",
-            f"file={iso},if=none,id=cd{i},media=cdrom,readonly=on",
-            "-device",
-            f"ide-cd,drive=cd{i},bus=ide.{i}",
-        ]
+    args = _native(
+        "launch_argv",
+        qemu=str(QEMU_DIR / "qemu-system-x86_64.exe"),
+        uid=uid,
+        code=be.win_path(p["code"]),
+        vars=be.win_path(vars_fd),
+        disk=be.win_path(disk),
+        cds=cds,
+        qmp_port=qmp_port,
+        console_port=console.port,
+        cpus=cpus,
+        mem=mem,
+        cpu=cpu,
+        irqchip=irqchip,
+        accel=accel,
+        show=show,
+        no_reboot=no_reboot,
+    )
     return subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
 
@@ -248,11 +241,13 @@ def _boot(
     args,
     finish: str | None = None,
     actions: list[tuple[float, Callable[[QmpClient], None]]] | None = None,
+    no_reboot: bool = False,
 ) -> tuple[str, list[str]]:
     """Boot, wait for QEMU to exit (the guest powers itself off), return (outcome, lines).
 
     outcome: "exited" | "timeout" | "launch-failed". `press_keys` seconds of Enter presses
     get past the Windows ISO's "Press any key to boot from CD" prompt on the first boot.
+    `no_reboot`: a guest restart ends QEMU instead of booting the payload a second time.
     """
     console = _Console(run.dir / "guest-console.log")
     qmp = QmpClient()
@@ -271,6 +266,7 @@ def _boot(
         irqchip=args.irqchip,
         accel=args.accel,
         show=args.show,
+        no_reboot=no_reboot,
     )
     try:
         try:
@@ -399,33 +395,30 @@ def cmd_install(args, repo: Path) -> int:
         args=args,
         finish="WINREF-SETUP: done",
     )
-    setup = [ln for ln in lines if ln.startswith("WINREF-SETUP:")]
-    done = next((ln for ln in setup if ln.startswith("WINREF-SETUP: done")), None)
-    run.extra["setup_lines"] = setup
-    if outcome != "exited" or not done:
-        run.classification = "WINREF_INSTALL_FAIL"
-        run.add(
-            artifacts.Stage(
-                "install",
-                status="fail",
-                detail=f"{outcome}; last setup line: {setup[-1] if setup else '(none)'}",
-                salient=setup[-8:],
-            )
-        )
+    got = _native("install_result", lines=lines, outcome=outcome)
+    run.extra["setup_lines"] = got["setup_lines"]
+    if got["stage"]:
+        run.classification = got["classification"]
+        run.add(_stage(got["stage"]))
         return run.finalize(repo)
-    _promote(run, disk, work_vars, done, str(iso), args.cpu)
+    _promote(run, disk, work_vars, got["build"], str(iso), args.cpu)
     return run.finalize(repo)
 
 
-def _promote(run: artifacts.Run, disk: Path, vars_fd: Path, done: str, iso: str, cpu: str) -> None:
-    """Make a finished install the base image, record it, and keep a pristine copy."""
+def _stage(s: dict) -> artifacts.Stage:
+    return artifacts.Stage(s["name"], status=s["status"], detail=s["detail"], salient=s["salient"])
+
+
+def _promote(run: artifacts.Run, disk: Path, vars_fd: Path, build: str, iso: str, cpu: str) -> None:
+    """Make a finished install the base image, record it, and keep a pristine copy.
+    `build` is what the guest's `WINREF-SETUP: done` line said after the prefix."""
     p = _paths()
     os.replace(disk, p["base"])
     os.replace(vars_fd, p["vars"])
     state = {
         "installed": time.strftime("%Y-%m-%d %H:%M:%S"),
         "iso": iso,
-        "setup": done.removeprefix("WINREF-SETUP: done ").strip(),
+        "setup": build,
         "cpu": cpu,
     }
     p["state"].write_text(json.dumps(state, indent=2))
@@ -443,10 +436,10 @@ def _adopt(run: artifacts.Run, install_run: Path, repo: Path) -> int:
     setup completed is that run's console, not anyone's say-so."""
     console = install_run / "guest-console.log"
     lines = console.read_text(errors="replace").splitlines() if console.is_file() else []
-    done = next((ln for ln in lines if ln.startswith("WINREF-SETUP: done")), None)
+    got = _native("install_result", lines=lines, outcome="exited")
     disk = WINREF_DIR / "install.qcow2"
     vars_fd = WINREF_DIR / "install-vars.fd"
-    if not done or not disk.is_file() or not vars_fd.is_file():
+    if not got["done"] or not disk.is_file() or not vars_fd.is_file():
         run.add(
             artifacts.Stage(
                 "adopt",
@@ -455,7 +448,7 @@ def _adopt(run: artifacts.Run, install_run: Path, repo: Path) -> int:
             )
         )
         return run.finalize(repo)
-    _promote(run, disk, vars_fd, done, f"adopted from {install_run.name}", DEFAULT_CPU)
+    _promote(run, disk, vars_fd, got["build"], f"adopted from {install_run.name}", DEFAULT_CPU)
     return run.finalize(repo)
 
 
@@ -612,6 +605,9 @@ def _run_payload(run: artifacts.Run, payload: Path, args, *, relaunch: int = 0) 
                 press_keys=0,
                 args=args,
                 finish="WINREF: poweroff",
+                # Only a resumable payload (kmtest) may live through a reboot; anything
+                # else would run again from the top on the next boot.
+                no_reboot=relaunch == 0,
             )
             lines += got
             powered_off = any(ln.startswith("WINREF: poweroff") for ln in got)
@@ -627,77 +623,39 @@ def _run_payload(run: artifacts.Run, payload: Path, args, *, relaunch: int = 0) 
     finally:
         if not args.keep:
             shutil.rmtree(rd, ignore_errors=True)
-    out = [ln[5:] for ln in lines if ln.startswith("OUT: ")]
+    got = _native("payload_result", lines=lines, outcome=outcome)
+    out = got["output"]
     (run.dir / "output.txt").write_text("\n".join(out) + ("\n" if out else ""))
-    ready = next((ln for ln in lines if ln.startswith("WINREF: ready")), None)
-    exit_line = next((ln for ln in lines if ln.startswith("WINREF: exit=")), None)
     run.extra.update(
         {
-            "windows": ready.removeprefix("WINREF: ready ").strip() if ready else None,
+            "windows": got["windows"],
             "payload": str(payload),
-            "payload_exit": int(exit_line.split("=", 1)[1]) if exit_line else None,
+            "payload_exit": got["payload_exit"],
             "output": str(run.dir / "output.txt"),
             "output_lines": len(out),
         }
     )
-    if outcome != "exited" or exit_line is None:
-        run.classification = "WINREF_RUN_FAIL"
-        run.add(
-            artifacts.Stage(
-                "run",
-                status="fail",
-                detail=f"{outcome}; ready={'yes' if ready else 'no'}; no exit line"
-                if exit_line is None
-                else outcome,
-                salient=lines[-8:],
-            )
-        )
-    else:
-        run.add(
-            artifacts.Stage(
-                "run",
-                detail=f"{exit_line.removeprefix('WINREF: ')}, {len(out)} output lines",
-                salient=out[-8:],
-            )
-        )
-        return out
-    return None
+    run.add(_stage(got["stage"]))
+    if not got["ok"]:
+        run.classification = got["classification"]
+        return None
+    return out
 
 
 # The reference column: the conformance lane's suites, graded by Windows 11 itself. Each
 # suite runs the guest's own binaries from this tree's build-amd64, with the same markers,
 # and is parsed by the same parser the guest's serial log is.
 WIN_BASELINE = "win11-amd64"
-CANON = "/tmp/vibeos/"  # build paths in the CD manifests are canonical (tools/canon-run.sh)
 
 
 def staged_bin(manifest: str, repo: Path) -> dict[str, Path]:
-    """Every file a livecd manifest puts in reactos/bin: what add_rostests_file staged.
-
-    The guest's sweeps find their binaries there, and kmtest_.exe loads its drivers from
-    its own directory, so the Windows run gets exactly that set, laid out the same way.
-    """
-    out: dict[str, Path] = {}
-    for line in manifest.splitlines():
-        dst, sep, src = line.partition("=")
-        if sep and dst.startswith("reactos/bin/"):
-            src = src.strip()
-            if src.startswith(CANON):
-                src = str(repo / src[len(CANON) :])
-            out[dst[len("reactos/bin/") :]] = Path(src)
-    return out
+    """Every file a livecd manifest puts in reactos/bin: what add_rostests_file staged."""
+    return {name: Path(src) for name, src in _native("staged_bin", manifest=manifest, repo=repo)}
 
 
 def kmtest_order(listed: list[str], built: set[str]) -> list[str]:
-    """The tests the Windows column runs, in order: the guest sweep's own list first (so
-    tests meet the same predecessors as in the guest), then every other visible test.
-
-    The rest are mostly the guest's QUARANTINES, and they are the point: a test the guest
-    cannot survive says nothing on the guest, but what Windows does with it is exactly
-    the expected result. Hidden (`-Name`) tests stay out, as they do in the guest.
-    """
-    seen = set(listed)
-    return [*listed, *sorted(t for t in built if t not in seen and not t.startswith("-"))]
+    """The tests the Windows column runs, in order: the guest sweep's list, then the rest."""
+    return _native("kmtest_order", listed=listed, built=built)
 
 
 def _load(path: Path, name: str):
@@ -712,75 +670,14 @@ def _load(path: Path, name: str):
     return mod
 
 
-# Exit codes of a process the loader killed before main(): the suite never ran.
-LOAD_FAILURES = {
-    0xC0000135: "STATUS_DLL_NOT_FOUND",
-    0xC0000139: "STATUS_ENTRYPOINT_NOT_FOUND",
-    0xC0000142: "STATUS_DLL_INIT_FAILED",
-}
-
-
 def not_run(r: dict) -> bool:
-    """The harness could not run this row (a driver that will not load, a binary that
-    will not start): its result is about the rig, not about Windows."""
-    return r["status"] == "FAILSTART" or (r["status"] == "NO-END" and r.get("errors", 0) > 0)
+    """The harness could not run this row: its result is about the rig, not Windows."""
+    return _native("not_run", row=r)
 
 
 def column_report(win: list[dict], guest: dict[str, dict]) -> list[str]:
-    """One line per row where Windows and the guest floor disagree, sorted by kind.
-
-    It says what was OBSERVED, not why: "Windows clean, guest fails" is where to look
-    for a guest bug first, and "fails on Windows 11 too" is a test whose expectation
-    Windows does not meet, or one that is timing-sensitive in a VM (KeMutex fails 517
-    there), or one our toolchain builds differently from the test's author.
-    """
-    rows: list[tuple[int, str]] = []
-    for r in win:
-        g = guest.get(r["name"])
-        w_ok = r["status"] == "OK" and r["fail"] == 0
-        if not_run(r):
-            # Says nothing about the test: Windows never got to run it.
-            rows.append(
-                (
-                    -1,
-                    f"{r['name']}: NOT RUN on Windows ({r['status']}, "
-                    f"{r.get('errors', 0)} harness error(s))",
-                )
-            )
-            continue
-        if g is None:
-            if guest:
-                rows.append(
-                    (
-                        0 if w_ok else 2,
-                        f"{r['name']}: not in the guest floor; "
-                        f"Windows {r['status']} pass={r['pass']} fail={r['fail']}",
-                    )
-                )
-            continue
-        g_ok = g["status"] == "OK" and g.get("fail", 0) == 0
-        if w_ok and not g_ok:
-            rows.append(
-                (1, f"{r['name']}: Windows clean, guest {g['status']} fail={g.get('fail', 0)}")
-            )
-        elif not w_ok:
-            shared = len(set(r.get("asserts") or ()) & set(g.get("asserts") or ()))
-            rows.append(
-                (
-                    3,
-                    f"{r['name']}: fails on Windows 11 too: Windows {r['status']} "
-                    f"fail={r['fail']}, guest fail={g.get('fail', 0)}, "
-                    f"{shared} failing assertion(s) shared",
-                )
-            )
-    return [line for _, line in sorted(rows)]
-
-
-SUITES = {
-    # suite: (parser, sweep marker prefix)
-    "kmtest": ("parse_kmtest_serial.py", "[KMTEST-SWEEP]"),
-    "apitest": ("parse_apitest_serial.py", "[APITEST-SWEEP]"),
-}
+    """One line per row where Windows and the guest floor disagree, sorted by kind."""
+    return _native("column_report", win=win, guest=guest)
 
 
 def _stage_kmtest(stage: Path, repo: Path, only: list[str] | None = None) -> int:
@@ -890,90 +787,31 @@ def cmd_suite(args, repo: Path) -> int:
 
 
 def _grade(run: artifacts.Run, suite: str, out: list[str], args, repo: Path) -> int:
-    parser_file, marker = SUITES[suite]
-    parser = _load(repo / "tools/conformance" / parser_file, parser_file[:-3])
-    parsed = parser.parse("\n".join(out))
-    results, done = (parsed[0], parsed[1]) if suite == "kmtest" else (parsed[0], parsed[1]["done"])
-    table = "\n".join(parser.fmt(r) for r in results) + "\n"
-    (run.dir / f"{suite}.txt").write_text(table)
     guest_path = repo / "tools/conformance-baseline/amd64" / f"{suite}.txt"
-    guest = parser.load_baseline(guest_path) if guest_path.is_file() else {}
-    report = column_report(results, guest)
-    clean = sum(1 for r in results if r["status"] == "OK" and r["fail"] == 0)
-    # A test the VM died under twice (kmtest-sweep.ps1) says nothing about Windows.
-    lost = {ln.split()[2] for ln in out if ln.startswith("[KMTEST-SWEEP] VM-LOST ")}
-    unrun = [
-        f"{r['name']} (VM lost under it twice)"
-        if r["name"] in lost
-        else f"{r['name']} ({r['status']}, {r.get('errors', 0)} harness error(s))"
-        for r in results
-        if not_run(r) or r["name"] in lost
-    ]
-    if suite == "apitest":
-        # A suite whose binary Windows will not even load enumerates no subtests, so it
-        # has no rows at all; without this it would vanish from the column silently.
-        for name, (code, _first) in sorted(parsed[1]["nosubtests"].items()):
-            why = LOAD_FAILURES.get(int(code) & 0xFFFFFFFF)
-            if why:
-                unrun.append(f"{name} (whole suite: {why})")
-    report = [*(f"NOT RUN on Windows: {u}" for u in unrun if "whole suite" in u), *report]
-    (run.dir / "column.txt").write_text("\n".join(report) + "\n")
-    ran = [r for r in results if r["status"] in ("OK", "FAIL-EXIT")]
-    nothing_ran = not ran
-    notes = [ln.split("] ", 1)[1] for ln in out if ln.startswith(marker) and " signed " in ln]
-    run.extra.update(
-        {
-            "signed": notes[0] if notes else None,
-            "sweep": done,
-            "rows": len(results),
-            "not_run": unrun,
-            "clean": clean,
-            "guest_floor": str(guest_path) if guest else None,
-            "disagreements": len(report),
-            "table": str(run.dir / f"{suite}.txt"),
-            "column": str(run.dir / "column.txt"),
-        }
+    got = _native(
+        "grade",
+        suite=suite,
+        out=out,
+        guest=guest_path.read_text() if guest_path.is_file() else None,
+        guest_path=str(guest_path),
+        run_dir=str(run.dir),
+        windows=run.extra.get("windows"),
+        corpus_built=run.extra.get("corpus_built"),
+        regraded=run.extra.get("regraded"),
+        write_baseline=bool(args.write_baseline),
+        only=bool(getattr(args, "only", None)),
     )
-    run.add(
-        artifacts.Stage(
-            "column",
-            status="fail" if not done or nothing_ran else "warn" if unrun else "ok",
-            detail=f"{len(results)} rows, {clean} clean on Windows"
-            + (f", {len(unrun)} NOT RUN (harness)" if unrun else "")
-            + (f", {len(report)} disagree with the guest floor" if guest else ", no guest floor")
-            + ("" if done else "; SWEEP DID NOT FINISH"),
-            salient=report[:12],
-        )
-    )
-    if not done:
-        run.classification = f"WINREF_{suite.upper()}_INCOMPLETE"
-    elif nothing_ran:
-        # Every row is a harness failure (the first kmtest column: a driver that would not
-        # load). That is a broken rig, not a reference: refuse to bank it.
-        run.classification = f"WINREF_{suite.upper()}_NOT_RUN"
-    elif args.write_baseline and getattr(args, "only", None):
-        # A subset is not the column: banking it would drop every row it did not run.
-        run.add(
-            artifacts.Stage(
-                "baseline", status="fail", detail="--write-baseline refused with --only"
-            )
-        )
-    elif args.write_baseline:
+    (run.dir / f"{suite}.txt").write_text(got["table"])
+    (run.dir / "column.txt").write_text("\n".join(got["column"]) + "\n")
+    run.extra.update(got["extra"])
+    for s in got["stages"]:
+        run.add(_stage(s))
+    if got["classification"]:
+        run.classification = got["classification"]
+    if got["baseline"] is not None:
         dst = repo / "tools/conformance-baseline" / WIN_BASELINE / f"{suite}.txt"
         dst.parent.mkdir(parents=True, exist_ok=True)
-        dst.write_text(
-            f"# {suite} REFERENCE column: what Windows 11 itself does with each test.\n"
-            f"# `vibeos-cli winref {suite} --write-baseline`, {run.extra.get('windows')}, "
-            f"corpus built {run.extra['corpus_built']}"
-            + (f", from {Path(run.extra['regraded']).name}" if run.extra.get("regraded") else "")
-            + ".\n"
-            "# Not a floor the guest must match row for row. A row failing here fails on\n"
-            "# Windows 11 itself: an expectation Windows does not meet (often 2003-era\n"
-            "# behaviour), a test that is timing-sensitive in a VM, or one our toolchain\n"
-            "# builds differently from its author's.\n"
-            + "".join(f"# NOT RUN on Windows: {u}\n" for u in unrun)
-            + table
-        )
+        dst.write_text(got["baseline"])
         run.extra["baseline"] = str(dst)
     return run.finalize(repo)
 
@@ -992,33 +830,15 @@ LOG_PATHS = [
 
 def largest_ntfs(listing: str) -> tuple[int, int]:
     """(offset, size) in bytes of the largest NTFS partition in a `7z l -slt` listing."""
-    best: tuple[int, int] = (0, 0)
-    entry: dict[str, str] = {}
-    for line in [*listing.replace("\r", "").splitlines(), ""]:
-        if " = " in line:
-            k, v = line.split(" = ", 1)
-            entry[k] = v
-            continue
-        if entry.get("Path", "").endswith(".ntfs") and "Offset" in entry:
-            off, size = int(entry["Offset"]), int(entry["Size"])
-            if size > best[1]:
-                best = (off, size)
-        entry = {}
-    return best
+    off, size = _native("largest_ntfs", listing=listing)
+    return off, size
 
 
 def dd_window(offset: int, size: int) -> tuple[int, int]:
-    """(skip, count) in MiB for `qemu-img dd bs=1M` to copy exactly one partition.
-
-    qemu-img's dd counts the SKIPPED blocks in `count` (unlike coreutils dd): a count of the
-    partition's length alone copied 317 MiB short, dropped NTFS's backup boot sector off the
-    end, and 7-Zip refused the result as "not an archive".
-    """
-    mib = 1 << 20
-    if offset % mib:
-        raise ValueError(f"partition at {offset} is not MiB-aligned")
-    skip = offset // mib
-    return skip, skip + -(-size // mib)
+    """(skip, count) in MiB for `qemu-img dd bs=1M` to copy exactly one partition (qemu-img's
+    dd counts the skipped blocks in `count`)."""
+    skip, count = _native("dd_window", offset=offset, size=size)
+    return skip, count
 
 
 def _ntfs_partition(image: Path) -> tuple[int, int]:
@@ -1086,35 +906,9 @@ def cmd_logs(args, repo: Path) -> int:
     return 0 if got else 1
 
 
-_QCODE_PLAIN = {
-    " ": "spc",
-    "-": "minus",
-    "\\": "backslash",
-    ".": "dot",
-    "/": "slash",
-    "=": "equal",
-    ";": "semicolon",
-    "'": "apostrophe",
-    ",": "comma",
-}
-_QCODE_SHIFT = {":": "semicolon", "_": "minus", '"': "apostrophe", "+": "equal", "?": "slash"}
-
-
 def keys_for(text: str) -> list[list[str]]:
     """QMP send-key chords that type `text` on a US layout: one chord per character."""
-    out: list[list[str]] = []
-    for ch in text:
-        if ch.isascii() and (ch.islower() or ch.isdigit()):
-            out.append([ch])
-        elif ch.isascii() and ch.isupper():
-            out.append(["shift", ch.lower()])
-        elif ch in _QCODE_PLAIN:
-            out.append([_QCODE_PLAIN[ch]])
-        elif ch in _QCODE_SHIFT:
-            out.append(["shift", _QCODE_SHIFT[ch]])
-        else:
-            raise ValueError(f"cannot type {ch!r}")
-    return out
+    return _native("keys_for", text=text)
 
 
 def _press(qmp: QmpClient, *chords: list[str], gap: float = 0.15) -> None:
@@ -1181,26 +975,11 @@ def cmd_maint(args, repo: Path) -> int:
         args=args,
         finish="WINREF: poweroff",
         actions=[(settle, type_command), (settle + 30, consent)] if args.keys else None,
+        no_reboot=True,
     )
-    maint = [
-        ln.removeprefix("OUT: ")
-        for ln in lines
-        if ln.startswith(("WINREF-MAINT:", "WINREF:", "OUT: WINREF-MAINT:"))
-    ]
-    run.extra["maint_lines"] = maint
-    ok = (
-        outcome == "exited"
-        and not any("FAILED" in ln for ln in maint)
-        and "WINREF-MAINT: done" in maint
-    )
-    run.add(
-        artifacts.Stage(
-            "maint",
-            status="ok" if ok else "fail",
-            detail=f"{outcome}; {maint[-1] if maint else 'no maintenance output'}",
-            salient=maint[-10:],
-        )
-    )
+    got = _native("maint_result", lines=lines, outcome=outcome)
+    run.extra["maint_lines"] = got["maint_lines"]
+    run.add(_stage(got["stage"]))
     return run.finalize(repo)
 
 

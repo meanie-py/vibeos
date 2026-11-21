@@ -66,98 +66,50 @@ pub unsafe extern "system" fn lstrcpynA(
     lpString2: LPCSTR,
     iMaxLength: i32,
 ) -> LPSTR {
-    let mut d: LPSTR = lpString1;
-    let mut s: LPCSTR = lpString2;
-    let mut count: u32 = iMaxLength as u32;
-    let mut ret: LPSTR = core::ptr::null_mut();
-
-    // _SEH2_TRY
-    {
+    // C: __try { copy } __except (EXECUTE_HANDLER) {}: a bad pointer returns NULL.
+    ntdll_sys::seh::try_except_all(|| {
+        let mut d: LPSTR = lpString1;
+        let mut s: LPCSTR = lpString2;
+        let mut count: u32 = iMaxLength as u32;
         while (count > 1) && (*s != 0) {
             count -= 1;
             *d = *s;
             d = d.offset(1);
             s = s.offset(1);
         }
-
         if count != 0 {
             *d = 0;
         }
-
-        ret = lpString1;
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        // Exception handler body is empty
-    }
-    // _SEH2_END
-
-    ret
+        lpString1
+    })
+    .unwrap_or(core::ptr::null_mut())
 }
 #[no_mangle]
 pub unsafe extern "system" fn lstrcpyA(lpString1: LPSTR, lpString2: LPCSTR) -> LPSTR {
-    let mut Ret: LPSTR = core::ptr::null_mut();
-
-    // _SEH2_TRY
-    {
+    // C: __try { memmove } __except (EXECUTE_HANDLER) {}: a bad pointer returns NULL.
+    ntdll_sys::seh::try_except_all(|| {
         memmove(
             lpString1 as *mut core::ffi::c_void,
             lpString2 as *const core::ffi::c_void,
             strlen(lpString2) + 1,
         );
-        Ret = lpString1;
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        // Exception handler body is empty
-    }
-    // _SEH2_END;
-
-    Ret
+        lpString1
+    })
+    .unwrap_or(core::ptr::null_mut())
 }
 #[no_mangle]
 pub unsafe extern "system" fn lstrcatA(lpString1: LPSTR, lpString2: LPCSTR) -> LPSTR {
-    let mut Ret: LPSTR = core::ptr::null_mut();
-
-    // _SEH2_TRY
-    {
-        Ret = strcat(lpString1, lpString2);
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        // Exception handler body is empty
-    }
-    // _SEH2_END;
-
-    Ret
+    // C: __try { strcat } __except (EXECUTE_HANDLER) {}: a bad pointer returns NULL.
+    ntdll_sys::seh::try_except_all(|| strcat(lpString1, lpString2)).unwrap_or(core::ptr::null_mut())
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn lstrlenA(lpString: LPCSTR) -> i32 {
-    let mut Ret: i32 = 0;
-
     if lpString.is_null() {
         return 0;
     }
-
-    // _SEH2_TRY
-    {
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        let __exception_code: i32;
-        // _SEH2_TRY expansion
-        {
-            // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            // We need to use __try/__except simulation
-            // For now, we'll just call strlen directly without SEH
-            // since Rust doesn't have SEH
-            Ret = strlen(lpString) as i32;
-        }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) - empty handler
-        // _SEH2_END
-    }
-    // _SEH2_END
-
-    return Ret;
+    // C: __try { strlen } __except (EXECUTE_HANDLER) {}: an unreadable string is length 0.
+    ntdll_sys::seh::try_except_all(|| strlen(lpString) as i32).unwrap_or(0)
 }
 #[no_mangle]
 pub unsafe extern "system" fn lstrcmpW(lpString1: LPCWSTR, lpString2: LPCWSTR) -> i32 {
@@ -208,88 +160,45 @@ pub unsafe extern "system" fn lstrcpynW(
     lpString2: LPCWSTR,
     iMaxLength: i32,
 ) -> LPWSTR {
-    let mut d: LPWSTR = lpString1;
-    let mut s: LPCWSTR = lpString2;
-    let mut count: u32 = iMaxLength as u32;
-    let mut Ret: LPWSTR = core::ptr::null_mut();
-
-    // _SEH2_TRY
-    {
+    // C: __try { copy } __except (EXECUTE_HANDLER) {}: a bad pointer returns NULL.
+    ntdll_sys::seh::try_except_all(|| {
+        let mut d: LPWSTR = lpString1;
+        let mut s: LPCWSTR = lpString2;
+        let mut count: u32 = iMaxLength as u32;
         while (count > 1) && (*s != 0) {
             count -= 1;
             *d = *s;
             d = d.offset(1);
             s = s.offset(1);
         }
-
         if count != 0 {
             *d = 0;
         }
-
-        Ret = lpString1;
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        // Exception handler body is empty
-    }
-    // _SEH2_END;
-
-    return Ret;
+        lpString1
+    })
+    .unwrap_or(core::ptr::null_mut())
 }
 #[no_mangle]
 pub unsafe extern "system" fn lstrcpyW(lpString1: LPWSTR, lpString2: LPCWSTR) -> LPWSTR {
-    let mut Ret: LPWSTR = core::ptr::null_mut();
-
-    // _SEH2_TRY
-    {
-        Ret = wcscpy(lpString1, lpString2);
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        // Exception handler body is empty
-    }
-    // _SEH2_END
-
-    return Ret;
+    // C: __try { wcscpy } __except (EXECUTE_HANDLER) {}: a bad pointer returns NULL.
+    ntdll_sys::seh::try_except_all(|| wcscpy(lpString1, lpString2)).unwrap_or(core::ptr::null_mut())
 }
 #[no_mangle]
 pub unsafe extern "system" fn lstrcatW(
     lpString1: LPWSTR,
     lpString2: LPCWSTR,
 ) -> LPWSTR {
-    let mut Ret: LPWSTR = core::ptr::null_mut();
-
-    // _SEH2_TRY
-    {
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        {
-            Ret = wcscat(lpString1, lpString2);
-        }
-    }
-    // _SEH2_END
-
-    return Ret;
+    // C: __try { wcscat } __except (EXECUTE_HANDLER) {}: a bad pointer returns NULL.
+    ntdll_sys::seh::try_except_all(|| wcscat(lpString1, lpString2)).unwrap_or(core::ptr::null_mut())
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn lstrlenW(lpString: LPCWSTR) -> i32 {
-    let mut ret: i32 = 0;
-
     if lpString.is_null() {
         return 0;
     }
-
-    // _SEH2_TRY
-    {
-        ret = wcslen(lpString) as i32;
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        // empty handler
-    }
-    // _SEH2_END
-
-    ret
+    // C: __try { wcslen } __except (EXECUTE_HANDLER) {}: an unreadable string is length 0.
+    ntdll_sys::seh::try_except_all(|| wcslen(lpString) as i32).unwrap_or(0)
 }
 
 

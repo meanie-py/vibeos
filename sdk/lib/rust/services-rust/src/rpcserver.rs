@@ -382,23 +382,29 @@ unsafe fn ScmCreateServiceHandle(lpServiceEntry: PSERVICE, Handle: *mut SC_HANDL
 }
 
 unsafe fn ScmGetServiceManagerFromHandle(Handle: SC_RPC_HANDLE) -> PMANAGER_HANDLE {
-    let mut pManager: PMANAGER_HANDLE = core::ptr::null_mut();
-
-    if (*(Handle as PMANAGER_HANDLE)).Handle.Tag == MANAGER_TAG {
-        pManager = Handle as PMANAGER_HANDLE;
+    // The handle comes from an RPC client: a wild one must be refused, not
+    // allowed to take services.exe down.
+    match ntdll_sys::seh::try_except_all(|| (*(Handle as PMANAGER_HANDLE)).Handle.Tag == MANAGER_TAG) {
+        Ok(true) => Handle as PMANAGER_HANDLE,
+        Ok(false) => core::ptr::null_mut(),
+        Err(_) => {
+            DbgPrint(b"Exception: Invalid Service Manager handle\n\0".as_ptr() as *const i8);
+            core::ptr::null_mut()
+        }
     }
-
-    pManager
 }
 
 unsafe fn ScmGetServiceFromHandle(Handle: SC_RPC_HANDLE) -> PSERVICE_HANDLE {
-    let mut pService: PSERVICE_HANDLE = core::ptr::null_mut();
-
-    if (*(Handle as PSERVICE_HANDLE)).Handle.Tag == SERVICE_TAG {
-        pService = Handle as PSERVICE_HANDLE;
+    // The handle comes from an RPC client: a wild one must be refused, not
+    // allowed to take services.exe down.
+    match ntdll_sys::seh::try_except_all(|| (*(Handle as PSERVICE_HANDLE)).Handle.Tag == SERVICE_TAG) {
+        Ok(true) => Handle as PSERVICE_HANDLE,
+        Ok(false) => core::ptr::null_mut(),
+        Err(_) => {
+            DbgPrint(b"Exception: Invalid Service handle\n\0".as_ptr() as *const i8);
+            core::ptr::null_mut()
+        }
     }
-
-    pService
 }
 
 unsafe fn ScmCheckAccess(Handle: SC_HANDLE, mut dwDesiredAccess: DWORD) -> DWORD {

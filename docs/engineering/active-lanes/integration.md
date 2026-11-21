@@ -24,22 +24,40 @@ You replace the conductor, the bounces and the lane-side waiting. The gates them
 (`vibeos-cli gate`: builds ×3, lints, tooling, difftest, smoke, conformance) stay exactly
 as strict.
 
-## Starting up (once)
+## Starting up
 
-1. **Wait for the old train to drain.** Until `./vibeos-cli land-status` shows
-   `CONDUCTOR: none`, a conductor may be resetting this worktree as a merge car: do not
-   edit files here or switch branches. Read, plan, answer messages.
-2. **Take the line** (on branch `integration`): `./vibeos-cli land --hold "integrator owns landing: message the
-   integration session to merge"`. No train conductor starts while the hold is up, so this
-   worktree is yours; `land --direct` from this worktree (the holder) still lands.
-3. Submissions the train **bounced** (rejected, any classification) are yours now:
-   `land-status` lists them with their tips and artifact dirs. Treat each as a merge
-   request; for a CONFLICT, resolve it yourself.
-   (Same for `vibeos-integration-2`: it was the train's second car. Leave it alone.)
-4. Anything a lane submits to the old queue afterwards also counts as a request: merge its
-   tip, then `./vibeos-cli land --evict "merged by the integrator"` (under your hold) to
-   clear the queue record, and
-   tell the lane to message you next time.
+The merge train this replaced was retired on 2026-11-08: `land` no longer queues anything,
+and plain `land` prints a lane's merge request instead of submitting it. One relic stays on
+purpose: the train's hold record (`$GIT_COMMON_DIR/vibeos-queue/HOLD.json`, taken by the
+first integrator session). A lane still on a commit from before the retirement runs the old
+CLI, and that hold is what stops it conducting a train. Do not release it; current code
+never reads it. If a lane on an old commit says its `land` "queued", treat that as a merge
+request and tell it to merge master.
+
+## RESUME HERE (fleet pause, 2026-11-08)
+
+Paused clean. At the pause **master was `020f3e9d249`**, and its last full gate was green on all
+3 arches: `/tmp/vibeos-cli/20261108-181437-bmysf3-gate-i386+amd64+arm64` (/tmp does not
+survive a reboot; re-gate master if you need a fresh artifact). The queue was empty, and every
+lane's RESUME HERE is on master. On restart:
+
+- **Not submitted on purpose; do not merge unless the lane asks:** `graviton-diag-ctxwait`
+  (rpi-bringup's TEMP kernel diagnostics), `smp-bringup-crypt32-wip` (does not compile), and
+  fex's WIP `522f99989a3` (breaks `cohab_census`).
+- **Host load stretches builds.** Fleet load near 50 put the gate's ninja stage past its
+  3600 s budget (i386 reached [790/837]); the last batches used
+  `VIBEOS_BUILD_TIMEOUT=7200 ./vibeos-cli land --direct --cold --skip-lint`. A quiet host
+  builds in ~30-36 min and needs no override.
+- **Seen in gates, not yet fixed** (each one is in the roadmap registry or noted below):
+  - the arm64 ZwAllocateVirtualMemory concurrent-commit race (failed the first attempt in 2 of
+    ~8 gates, green on retry);
+  - `test_artifact_runtime_real` exceeding pytest's 300 s timeout under load (reported by two
+    lanes; never hit my runs);
+  - the WSL vsock `accept4 failed 110` in `test_bench_windows`.
+  - Fixed forward this session: `test_native_vm` treated ESRCH as alive (`957a48e2784`), and
+    the depfile self-edge on dotted cells (`4a261ce2e98`).
+- `check` already reconfigures a stale `build.ninja` itself, so a CMake-touching batch needs
+  no manual `ninja build.ninja` first.
 
 ## A merge request
 
@@ -73,9 +91,9 @@ git merge --no-edit <sha-2>
   here (and only here): the gate builds from scratch and runs every lint itself, so the
   lane-side receipt and preflight would only repeat it. Say "integrator --cold
   --skip-lint" in the landing report rather than reporting each use.
-- **Every batch is the branch `integration`, re-created from fresh `origin/master`.** The
-  hold belongs to `integration@vibeos-integration`; a batch on any other branch name is a
-  different lane and `land --direct` refuses it under your own hold. `switch -C` only on a
+- **Every batch is the branch `integration`, re-created from fresh `origin/master`.** Lanes
+  read it: `land-status --tip <sha>` answers IN BATCH when their sha is merged into
+  `integration`, so a batch on another branch name is invisible to them. `switch -C` only on a
   clean tree, after the previous batch landed or was abandoned on purpose: it moves this
   branch, nothing else. Never `reset --hard`, never `checkout`/`restore` to discard, never
   move `master` locally. Dropping a lane from a batch means re-creating `integration` and
@@ -143,8 +161,9 @@ the user.
   every batch takes the full gate.
 - **Merge drivers / `.gitattributes`** for the append-only and generated files above, so
   even you never see those conflicts.
-- **`land` as submit-to-integrator:** lanes currently message you by hand; the CLI should
-  do it, and the warm-receipt rule should go.
+- **`land` as submit-to-integrator:** plain `land` prints the filled-in merge request
+  (2026-11-08); sending it is still the lane's SendMessage, since the CLI has no channel
+  to a session.
 - **`vibeos-lint`:** the lint suite is being rewritten in Rust as one binary (worktree
   `vibeos-lint`, `docs/engineering/vibeos-lint-design.md`); the gate's lint stage switches
   to it when it reaches parity.

@@ -56,7 +56,8 @@ fn rel_output(s: &str) -> Result<&Path> {
 }
 pub fn cell_crate(root: &Path, target: &str) -> Result<String> {
     if !target.as_bytes().first().is_some_and(u8::is_ascii_digit) {
-        return Ok(format!("{target}-cargo"));
+        // Cell::crate_name: a crate name cannot hold a `.` (activeds_tlb-cargo).
+        return Ok(format!("{}-cargo", target.replace('.', "_")));
     }
     let pat = re(&format!(
         r"add_cargo_module\({} (\S+)",
@@ -529,7 +530,10 @@ fn txtsetup_files(root: &Path) -> Result<BTreeSet<String>> {
 /// `cmake -E copy <target>/release/<bin>.exe <rel>`).
 pub fn cargo_source(ninja: &str, arch: &str, rel: &Path) -> Option<PathBuf> {
     let dst = format!("/tmp/vibeos/build-{arch}/{}", rel.to_string_lossy());
-    let pat = format!(r"copy /tmp/vibeos/(\S+/release/[^/\s]+\.exe) {}(?:\s|$)", regex::escape(&dst));
+    let pat = format!(
+        r"copy /tmp/vibeos/(\S+/release/[^/\s]+\.exe) {}(?:\s|$)",
+        regex::escape(&dst)
+    );
     re(&pat).captures(ninja).map(|c| PathBuf::from(&c[1]))
 }
 fn relinked_by_cargo(root: &Path, arch: &str, rel: &Path, baseline_pe: &Path) -> Result<bool> {
@@ -556,9 +560,14 @@ mod cargo_source_tests {
         let ninja = "  COMMAND = cd /tmp/vibeos/build-i386 && /usr/bin/cmake -E copy /tmp/vibeos/sdk/lib/rust/target/c-28/i686-pc-windows-gnu/release/shdoclc.exe /tmp/vibeos/build-i386/dll/win32/shdoclc/shdoclc.dll && x\n";
         assert_eq!(
             cargo_source(ninja, "i386", Path::new("dll/win32/shdoclc/shdoclc.dll")),
-            Some(PathBuf::from("sdk/lib/rust/target/c-28/i686-pc-windows-gnu/release/shdoclc.exe"))
+            Some(PathBuf::from(
+                "sdk/lib/rust/target/c-28/i686-pc-windows-gnu/release/shdoclc.exe"
+            ))
         );
-        assert_eq!(cargo_source(ninja, "i386", Path::new("dll/win32/shdoclc/shdoc.dll")), None);
+        assert_eq!(
+            cargo_source(ninja, "i386", Path::new("dll/win32/shdoclc/shdoc.dll")),
+            None
+        );
     }
 }
 pub fn check(root: &Path, targets: &[String], baseline: &Path) -> Result<CheckResult> {

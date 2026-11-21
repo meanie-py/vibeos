@@ -271,6 +271,7 @@ pub unsafe extern "C" fn MmInitializeMemoryManager() -> BOOLEAN {
     MmCheckFreeldrImageFile();
     dbgcon(b'C');
 
+    MmExtendLoaderIdentityMap();
     BiosMemoryMap = (MachVtbl.GetMemoryMap.unwrap())(core::ptr::addr_of_mut!(BiosMemoryMapEntryCount));
     dbgcon(b'1');
 
@@ -382,7 +383,7 @@ pub unsafe extern "C" fn MmFindLocationForPageLookupTable(TotalPageCount: PFN_NU
             continue;
         }
 
-        if (*MemoryDescriptor).BasePage + RequiredPages >= MM_MAX_PAGE_LOADER {
+        if (*MemoryDescriptor).BasePage + RequiredPages >= MmLoaderMaxPage() {
             continue;
         }
 
@@ -390,7 +391,7 @@ pub unsafe extern "C" fn MmFindLocationForPageLookupTable(TotalPageCount: PFN_NU
         CandidatePageCount = (*MemoryDescriptor).PageCount;
     }
 
-    PageLookupTableEndPage = min(CandidateBasePage + CandidatePageCount, MM_MAX_PAGE_LOADER);
+    PageLookupTableEndPage = min(CandidateBasePage + CandidatePageCount, MmLoaderMaxPage());
 
     PageLookupTableMemAddress = ((PageLookupTableEndPage as usize * PAGE_SIZE as usize) - PageLookupTableSize) as PVOID;
 

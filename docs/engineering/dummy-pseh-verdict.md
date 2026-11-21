@@ -232,10 +232,11 @@ row. Each row is tagged by where the twin runs and what its try body does:
 |---|---|---|---|
 | kernel | 0 | 0 | 0 |
 | rtl (both) | 0 | 0 | 0 |
-| user | 0 | 0 | 135 |
+| user | 0 | 0 | 62 |
 
-135 in all (235 at the first count, 2026-11-06; 222 after the `raise` rows; 157 after the
-kernel rows, every one fixed or carrying a reasoned `nolint(dead_seh)`; 135 after rtl). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
+62 in all (235 at the first count, 2026-11-06; 222 after the `raise` rows; 157 after the
+kernel rows, every one fixed or carrying a reasoned `nolint(dead_seh)`; 135 after rtl; 106
+after the system processes; 62 after kernel32). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
 `RtlRaiseStatus` into `return Err` has converted the contract and needs only a probe. Burn-down order: kernel `raise` first (one call from user mode bugchecks the box:
 that is how `ReleaseSemaphore` past the maximum was found), then kernel `probe`/`other`, then
 user mode (the process dies, not the machine). `tools/payloads/sehprobe` exercises the
@@ -279,13 +280,42 @@ What already landed, which the plan below predates:
   freed entry and faulted; it now retries when the header moved, and arm64 does the guarded read
   outside its LDAXP/STLXP window. `rtl-strings` guards only under `kernel`: the boot loader and the
   host difftest link no SEH trampoline. Not ported: DbgPrint's `DBG_PRINTEXCEPTION_C` raise to a
-  user-mode debugger, since arm64's `RtlRaiseException` resumes a continued exception at its own
-  `RtlCaptureContext` and would raise forever.
+  user-mode debugger; its arm64 blocker (`RtlRaiseException` resuming a continued exception
+  inside itself) was fixed 2026-11-08, so it is owed, not blocked.
 - The lint's function parser missed generic helpers whose bounds hold `->`
   (`fn f<F: FnOnce() -> T>`); fixed in `twins.rs`. Caveat: a call to ANY catching function
   credits the caller, so making a callee catch can clear its caller's row falsely —
   `LdrpCheckForLoadedDll` cleared that way when `RtlImageNtHeaderEx` gained its catch, and was
   then given its own.
+- 2026-11-08, kernel32, all 44 rows: the `lstr*` family (a bad pointer gives 0 / NULL, which
+  apps rely on), `Global*`/`LocalUnlock` (a wild handle is caught with the heap lock held and
+  the lock is released), the console read/write family (`ERROR_INVALID_ACCESS` on a bad
+  caller buffer), `LoadLibraryExW`, `GetModuleFileNameW`, `FindClose` on a garbage handle,
+  `DeviceIoControl`, the APC dispatcher, and `OutputDebugStringA`, whose
+  `DBG_PRINTEXCEPTION_C` killed the process when a debugger passed it on. Its inner "faulted
+  during output" also printed after every successful write. Three rows are `nolint`:
+  `IsBadReadPtr`/`IsBadWritePtr` query memory and never touch it, and nls_subst's private
+  `lstrcpynW` works on its own buffers. Divergences from the C: `IntWriteConsoleOutput` frees
+  its capture/heap buffer on the fault path the C leaked. Found on the way: `LocalUnlock` of
+  an unlocked block stored a lock count of 1 (the C leaves 0), locking it for good.
+- 2026-11-08, the system processes, where a crash ends the session or the machine: ntdll's
+  loader (DllMain and TLS callbacks for every attach/detach, `LdrpInitializeProcess`, import
+  snapping, `LdrpGetProcedureAddress`, enumerate/unload, the loader lock, the verifier
+  provider), services' RPC handle checks, smss's `_main` and SM API dispatch (through
+  `SmpUnhandledExceptionFilter`, so a fault names itself in the hard error), winlogon's
+  notification DLLs and logon sound, and csrss's consrv/usersrv paths that read client data
+  (the console settings section, `vgafonts.cab`, hard-error format parameters). Divergences
+  from the C: `LdrpGetProcedureAddress` returns the exception code where the C returned
+  STATUS_SUCCESS with no address written; the arm64 IAT snap advances past a faulting thunk
+  where the C would retry it forever. Two rows were lint mis-pairings, fixed in `twins.rs`:
+  csrss.rs's `_main` tied smss.c and csrss.c and took smss.c alphabetically (a same-stem C file
+  now wins the tie), and win32k's `DrawFrameControl` paired with user32's hook wrapper after
+  ntuser/draw.c retired (win32k no longer pairs with user32/gdi32 sources).
+- winsrv's TUI frontend (not built in C: `TUITERM_COMPILE` is off) declared header macros
+  (`RtlStringCbPrintfA`, `ConsoleOutputUnicodeToAnsiChar`, `CreateWindowW`) as externs that
+  nothing exports. windows-gnu objects are not function-sectioned, so dead code survives or
+  not by which codegen unit it lands in: an unrelated edit made the link fail. They are Rust
+  functions now.
 - Do NOT catch around `KiInitializeContextThread` for a hand-built thread: its stack is the
   one running, and the trampoline's frames overlap where the context setup writes (arm64 hung
   at boot). KeInitThread catches only when there is a user `Context`.

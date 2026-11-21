@@ -511,7 +511,19 @@ unsafe fn CBGetDroppedControlRect(lphc: LPHEADCOMBO, lpRect: LPRECT) {
     GetWindowRect((*lphc).self_, lpRect);
 
     (*lpRect).right = (*lpRect).left + (*lphc).droppedRect.right - (*lphc).droppedRect.left;
-    (*lpRect).bottom = (*lpRect).top + (*lphc).droppedRect.bottom - (*lphc).droppedRect.top;
+    // Windows reports the combo's top down to the listbox's bottom: the
+    // selection field plus the list, so a combo created 100 high reports 100
+    // and a smaller font shrinks it by the field's change only. Wine (and the
+    // C) report the list's height alone from the combo's top (user32:combo
+    // todo_wine). droppedRect keeps the list's size, not a current position.
+    let list_height = (*lphc).droppedRect.bottom - (*lphc).droppedRect.top;
+    if CB_GETTYPE(lphc) != CBS_SIMPLE {
+        // The list hangs from textRect.bottom + the border (CBCalcPlacement),
+        // which for a drop-down list is 1px above the window's bottom.
+        (*lpRect).bottom = (*lpRect).top + (*lphc).textRect.bottom + COMBO_YBORDERSIZE() + list_height;
+    } else {
+        (*lpRect).bottom = (*lpRect).top + list_height;
+    }
 }
 
 unsafe fn COMBO_Create(
@@ -1122,7 +1134,23 @@ unsafe fn CBDropDown(lphc: LPHEADCOMBO) {
 
         nHeight = nIHeight * nItems;
 
-        if nHeight < nDroppedHeight - COMBO_YBORDERSIZE() {
+        if ((*lphc).dwStyle & CBS_NOINTEGRALHEIGHT) == 0 && nIHeight > 0 {
+            // Windows shows whole items only, and one pixel of the space is
+            // not available to them: a combo 41 high (field 23, list border
+            // 2) drops an empty list, 89 high shows three 16px items, not
+            // four (user32:combo test_listbox_size, todo_wine). Our listbox
+            // never trims below one item, so the count is settled here.
+            let mut lr: RECT = core::mem::zeroed();
+            let mut lc: RECT = core::mem::zeroed();
+            GetWindowRect((*lphc).hWndLBox, &mut lr);
+            GetClientRect((*lphc).hWndLBox, &mut lc);
+            let nonclient = (lr.bottom - lr.top) - (lc.bottom - lc.top);
+            let count = core::cmp::min(
+                core::cmp::max((nDroppedHeight - nonclient - 1) / nIHeight, 0),
+                nItems,
+            );
+            nDroppedHeight = count * nIHeight + nonclient;
+        } else if nHeight < nDroppedHeight - COMBO_YBORDERSIZE() {
             nDroppedHeight = nHeight + COMBO_YBORDERSIZE();
         }
     }
@@ -1568,6 +1596,9 @@ unsafe fn COMBO_Size(lphc: LPHEADCOMBO) {
     if (*lphc).hWndLBox.is_null() || ((*lphc).wState & CBF_NORESIZE) != 0 {
         return;
     }
+    // The height asked for, when it exceeds the field: the dropped control
+    // (field + list) spans exactly that, as on Windows.
+    let mut requested_total: INT = 0;
 
     if CB_GETTYPE(lphc) != CBS_SIMPLE {
         let mut rc: RECT = core::mem::zeroed();
@@ -1580,6 +1611,7 @@ unsafe fn COMBO_Size(lphc: LPHEADCOMBO) {
         if curComboHeight > newComboHeight {
             (*lphc).droppedRect.bottom =
                 (*lphc).droppedRect.top + curComboHeight - newComboHeight;
+            requested_total = curComboHeight;
         }
 
         if curComboHeight != newComboHeight {
@@ -1604,6 +1636,16 @@ unsafe fn COMBO_Size(lphc: LPHEADCOMBO) {
         core::ptr::addr_of_mut!((*lphc).buttonRect),
         core::ptr::addr_of_mut!((*lphc).droppedRect),
     );
+
+    // The list hangs from textRect.bottom + the border, which is not the
+    // window's bottom for every style (a drop-down list's is 1px higher), so
+    // size it from there now that textRect is current: a combo moved to 26
+    // high reports a 26-high dropped control (user32:combo, todo_wine).
+    if requested_total > 0 {
+        let list_top = (*lphc).textRect.bottom + COMBO_YBORDERSIZE();
+        (*lphc).droppedRect.bottom =
+            (*lphc).droppedRect.top + core::cmp::max(requested_total - list_top, 0);
+    }
 
     CBResetPos(
         lphc,
@@ -1916,8 +1958,11 @@ pub unsafe extern "system" fn ComboWndProc_common(
                 if (*lphc).wState & CBF_EDIT != 0 {
                     SetFocus((*lphc).hWndEdit);
                     /* The first time focus is received, select all the text */
+                    // Windows sends EM_SETSEL(0, INT_MAX), not (0, -1)
+                    // (user32:combo, todo_wine). WM_CBLOSTTEXTFOCUS clears
+                    // CBF_BEENFOCUSED, so focus that comes back reselects.
                     if ((*lphc).wState & CBF_BEENFOCUSED) == 0 {
-                        SendMessageW((*lphc).hWndEdit, EM_SETSEL, 0, -1i32 as LPARAM);
+                        SendMessageW((*lphc).hWndEdit, EM_SETSEL, 0, MAXLONG as LPARAM);
                         (*lphc).wState |= CBF_BEENFOCUSED;
                     }
                 } else {
@@ -2190,7 +2235,12 @@ pub unsafe extern "system" fn ComboWndProc_common(
                     /* listbox item */
                     return SendMessageW((*lphc).hWndLBox, LB_GETITEMHEIGHT, wParam, 0);
                 }
-                return CBGetTextAreaHeight(hwnd, lphc, FALSE as BOOL) as LRESULT;
+                // item_height carries the 2px the field adds around the item
+                // (COMBO_SetItemHeight stores height + 2). Windows reports the
+                // item itself: CB_SETITEMHEIGHT(-1, 8) reads back 8, and the
+                // field's client height is that value + 6 (user32:combo;
+                // Wine returns the padded value, todo_wine).
+                return (CBGetTextAreaHeight(hwnd, lphc, FALSE as BOOL) - 2) as LRESULT;
             }
             x if x == CB_RESETCONTENT => {
                 SendMessageW((*lphc).hWndLBox, LB_RESETCONTENT, 0, 0);

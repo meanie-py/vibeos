@@ -56,6 +56,36 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
   matches itself forever (an integrator lost 3 hours to this). Run long stages in the
   foreground with a long timeout.
 
+## SEH quest: dead `__except` handlers (from 2026-11-06)
+
+**RESUME HERE (2026-11-08, fleet wind-down):** `scan_dead_seh_handlers` is down from 235 to 62.
+Kernel, rtl, the system processes and kernel32 are done; the history and per-batch notes are in
+`dummy-pseh-verdict.md`. The kernel32 batch (`e9167593bd7`) was queued with merge-integrator
+for batch 170. The arm64 `RtlRaiseException` resume fix (roadmap registry: FIXED 2026-11-08)
+went to the integrator after it. Before resuming, check both are ancestors of `origin/master`.
+
+- **Next step:** the 25 non-user32 rows first, because they are scattered and quick: gdi32 4,
+  ws2_32 3, conutils 3, syssetup 2, ddraw 2, advapi32 2, and one each in setupapi, samsrv,
+  netapi32, msgina, lsasrv, eventvwr, epsapi, dhcpcsvc and conime. lsasrv, samsrv and msgina
+  run inside lsass/winlogon, so do them first. Then user32's 37 rows.
+- **Recipe:** `tools/vibeos-lint/target/release/vibeos-lint --root . --rules scan_dead_seh_handlers`
+  lists the rows. For each, read the C's `_SEH2_EXCEPT` body and wrap the try region in
+  `ntdll_sys::seh::try_except_all` (or `try_except` when the C has a filter), then run the
+  C's handler on `Err`. Closures must not capture anything that needs `Drop`, and an
+  uninitialised outer `let` must be initialised first. A function that needs no handler
+  gets `// nolint(dead_seh): <reason>`. Rewrite both baselines from the lint's output.
+- **Gate used per batch:** check, check-tooling, `lint --rules rust_ub_deny` ×3, sehprobe ×3,
+  vehprobe ×3 and plain smoke ×3. The sehprobe and vehprobe VERDICT lines are in the
+  payload's own serial log, not full.log.
+- **Owed:**
+  - DbgPrint's `DBG_PRINTEXCEPTION_C` raise to a user-mode debugger (rtl-diag `debug.rs`).
+    Its arm64 blocker is fixed, so it can be done now.
+  - 7 shell32 `iconcache.rs` dropped `ERR`/`FIXME` rows. They existed before the quest;
+    a `scan_dropped_prints` lexer bug hid them, and fixing it in this batch made them
+    visible. They are baselined.
+  - Whether `OutputDebugStringA` should drop its `!BeingDebugged` DbgPrint bypass, now that
+    the catch is real.
+
 ## Shell extensions (from 2026-10-17)
 
 **RESUME HERE (2026-11-01):** mmcshext, sendmail, mydocs, acppage, cabview, stobject,

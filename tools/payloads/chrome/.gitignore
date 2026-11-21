@@ -13,3 +13,4 @@ sockprobe-*.exe
 grepfile-*.exe
 gdiprobe-*.exe
 w32start-*.exe
+flushprobe-*.exe

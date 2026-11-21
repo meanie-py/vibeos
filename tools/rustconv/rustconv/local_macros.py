@@ -143,7 +143,15 @@ def header_functions(headers: list[Path], root: Path) -> dict[str, CMacro]:
             # then `typedef struct ETHI_FILTER {` read to the scanner as one "function"
             # ETHI_FILTER with no return type, and the macros stage then tried to BUY a port
             # of a struct. C has no function without a return type; a struct is not one.
-            if not fn.return_type or re.search(rf"\bstruct\s+{re.escape(fn.name)}\s*\{{", text):
+            # But a struct of the same name ELSEWHERE in the header is no evidence: wine names
+            # its container-of helpers after their struct (wined3d_gl.h's
+            # `struct wined3d_context_gl *wined3d_context_gl(struct wined3d_context *)`), and
+            # skipping those left wined3d 500-odd "expected function, found struct" errors.
+            # Only a struct definition inside the scanned "function" itself is the misread.
+            if not fn.return_type or any(
+                fn.line_start <= text.count("\n", 0, s.start()) + 1 <= fn.line_end
+                for s in re.finditer(rf"\bstruct\s+{re.escape(fn.name)}\s*\{{", text)
+            ):
                 continue
             out[fn.name] = CMacro(fn.name, None, fn.body_text, f"{rel}:{fn.line_start}", "fn")
     return out

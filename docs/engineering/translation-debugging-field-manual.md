@@ -442,6 +442,16 @@ worked; `CreateFreeLoaderIniForReactOS` passed `BootStoreHandle` itself, its NUL
 and the compiler had nothing to object to: both are `*mut c_void`. **Fix:** declare the
 out-parameter as `*mut *mut c_void` (`*mut PVOID`), so a by-value argument is a type error.
 Then drop the `.cast()` at the callers that were right.
+### `addr_of!` of a field that is a POINTER, cast to the pointee — the string is the pointer's bytes
+**Symptom:** a copied string comes out as 4–8 bytes of garbage (d3d8/d3d9's adapter description
+read `öα#v` where the C says `WineD3D DirectDraw Emulation`). **Cause:** the same field name is an
+array in one struct and a `const char *` in another (`wined3d_driver_info.description[128]` vs
+`wined3d_gpu_description.description`). The model wrote `addr_of!((*gpu_desc).description) as
+*const c_char` for both, which is right for the array and copies the pointer itself for the
+pointer. `*const *const c_char as *const c_char` compiles without a word. **Fix:** pass the
+field's value. To audit a crate, intersect every `addr_of!((*p).f) as *T` with the fields its
+bindgen island declares as `*`. On d3dwine only 1 of 70 hits was wrong; the others were
+`wined3d_array_reserve` out-params and embedded arrays.
 ### A typedef that is ALREADY a pointer, given a second star
 The star lives in a header, so the model sees `_locale_t locale` as a bare type name and adds
 the indirection the parameter appears to lack — `locale: *mut _locale_t`, i.e. a
@@ -1416,6 +1426,14 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   before chasing the weird ones.
 - **`git core.ignorecase`**: a `Lib.c` → `Lib.rs` module that case-folds onto `lib.rs` blocks
   `git add` ("will not add file alias"). Rename the module.
+
+### A flipped TU that included `<initguid.h>` was the definition a LINKED LIBRARY used
+**Symptom.** The Rust DLL fails to link with `IID_*` undefined, referenced from a C static
+library the target links, not from the Rust. **Cause.** The C TU defined storage for every
+`DEFINE_GUID` it saw; the translation names none of them. wined3d_main.c includes initguid.h
+before d3d12.h, and vkd3d (linked into d3dwine) needs 38 IIDs only that TU defined. **Fix.**
+`initguid_storage` now also gives storage to the GUIDs the target's linked archives leave
+undefined (`llvm-nm --undefined-only`), alongside the ones the Rust names.
 
 ### `raw-dylib` on a stdcall FUNCTION imports the decorated name on i386
 
@@ -2521,6 +2539,19 @@ types.
   declarations. Allowlist the FAMILY (`gdiplus[a-z]*\.h`) or the generated header by name, and
   verify with a grep for one member rather than assuming the umbrella carried it.
 - **`size_of_val` on a `__BindgenUnionField` marker returns 0** — it is a zero-sized accessor.
+- **An incomplete-array extern (`extern const T x[];`) is `[T; 0]`.** The name resolves, so no
+  resolver ever looks for the real definition, and every index into it is a build-time
+  `unconditional_panic` that `cargo check` never runs: wined3d's `wined3d_srgb_const` passed
+  `port check` clean and then failed the first real build on all three arches. When a
+  translated module defines the sized array, `port resolve` now imports it over the island's.
+- **A header `static const` is declared as an island EXTERN.** Each C TU owns a private copy
+  (internal linkage); exporting the translation's copies is a duplicate symbol at link
+  (wined3d's `COLOR_FIXUP_IDENTITY`, in four modules). integrate's island-static export now
+  skips a name the module's headers define `static`.
+- **A struct defined INSIDE another gets the outer struct's prefix** (`struct wined3d_texture
+  { struct wined3d_texture_sub_resource {..} *p; }` → `wined3d_texture_wined3d_texture_sub_resource`),
+  though in C the inner tag is file-scope. `port resolve` aliases the C name when every island
+  has exactly one such `<outer>_<name>` (69 E0412 per arch in wined3d).
 - **A C function TYPE (`typedef R (NTAPI Name)(args)` — no star) is emitted as a NAMED alias
   on amd64/arm64 but INLINED into the struct field on i386.** The two spellings share no key,
   so anything that projects one island onto another by NAME misses the slot entirely.
@@ -2712,6 +2743,17 @@ it can see the operand's declared width (locals, params, struct fields); `scan_c
 gates the constant case, including the parenthesized `(NAME) as u8` that hid atapi's. Sign flips
 (rebar, the winpos and tui pair) are NOT linted: they need C types, so `-Wsign-compare` on the
 oracle stays the tool for those.
+
+### `FAILED(x)` on an HRESULT kept in a DWORD became `x < 0 as DWORD`, never true
+**Symptom:** shlwapi's `UrlGetPartA` (2026-11-08) failed 82 more of Wine's url checks than the
+genuine C, on all three arches: a URL with no host (`about:blank`, `index.htm`) got size 0 where
+the C leaves the caller's size alone.
+**Cause:** the C keeps `UrlGetPartW`'s result in a `DWORD ret` and tests `FAILED(ret)`, which is
+`((HRESULT)(ret)) < 0`. The translation kept `ret: DWORD` and wrote `ret < 0 as DWORD`, false for
+every value, so the failure path never ran. rustc's `unused_comparisons` is silent because the
+`0 as DWORD` cast hides the literal; `cargo check` was clean.
+**Fix:** `(ret as HRESULT) < 0`. `scan_unsigned_vs_zero` (`vibeos-cli check`) flags the
+always-false shapes, `x < 0 as U` and `0 as U > x`, gated at zero.
 
 ### A UTF-16 literal spelled as bytes has alignment 1, and the kernel rejects odd addresses
 **Symptom:** an unrelated link change (here msvcrtex becoming Rust, 2026-10-04) and then a
@@ -4482,6 +4524,12 @@ tell was 16 `unreachable pattern` warnings in a row; nothing else fired. **N con
 Prophylactic beyond the island audit: if the C guards the `case` labels with an `#ifdef` that is
 off in this build, the arms must carry that guard in Rust too — see the build-configuration
 guard entry under *Dropped, degraded & silently-rewritten translation output*.
+
+**The or-pattern trap's mirror: C's `case (A | B):` is ONE value.** The model keeps the C's
+parentheses, `(A | B) =>`, and in a pattern `|` is alternation. wined3d's GLSL `sincos` took
+`.x`, `.y`, then `(WRITEMASK_0 | WRITEMASK_1)` meaning `.xy` -- rustc flagged it only because
+the two earlier arms made it unreachable; with no such arms the swap is silent. `port
+integrate` (`_or_case_values`) now turns a label the C spells parenthesised into a value guard.
 
 ### Deterministic prevention: SEAL the facts `[§9.117]`
 `rustconv translate --seal-facts --seal-calls` takes constants and call occurrences **out of
@@ -6303,6 +6351,19 @@ already been met the note is describing a bug, not a plan.
   hand-write). Every other `.partial` in the bank belongs to a call that was retried
   successfully, which is the case that makes the rule look unnecessary right up until it isn't.
 
+### A `!` widened over a trailing `&&` operand — wined3d's CS thread slept with the doorbell off
+**Symptom:** `IDirect3D9::CreateDevice` (GL) hung forever on amd64 and arm64. The main thread was
+in `NtDelayExecution` (`wined3d_cs_finish`), the CS thread in `NtWaitForSingleObject`, and the
+trace said `Queuing op` with no `Executing` after it. Fast paths (`logic`) passed. A slow main
+thread made it hang anywhere, even at teardown. **Cause:** the C
+`if (!(empty(DEFAULT) && empty(MAP)) && InterlockedCompareExchange(&waiting, FALSE, TRUE)) return;`
+came back as `if !((empty && empty) && CAS != 0) { return; }`. With an empty queue the CAS now
+cleared `waiting_for_event` and the thread then slept, so no submit ever called `SetEvent`.
+Reading the source missed it twice. The disassembly showed it at once: the CAS ran only on the
+empty-queue path. **Fix:** close the `!(` around the emptiness test alone. To audit a crate, list
+every `if !(( … ) && …)` / `|| …`, find where the negation's paren closes, and compare against
+the C. On d3dwine, 10 such sites were equivalent `continue` → `if !(…) {…}` rewrites and only
+this one was wrong.
 ### A function whose body straddles a preprocessor conditional vanishes from the worklist
 
 **Symptom.** The translation calls a function it never defined; the only signal is rustc's
@@ -6395,6 +6456,25 @@ is the one §9.117 already prescribes for shared helpers: enumerate every call t
 both sides and diff the argument lists as a table. Here that is three rows and the odd one out is
 immediate — `grep -c GetKeyState` gives 3 in the C and 3 live in the Rust, but the ARGUMENTS
 differ.
+
+### A sealed SEH statement macro comes back as a value or a struct
+
+**Symptom.** A Wine TU full of `__TRY { } __EXCEPT_PAGE_FAULT { } __ENDTRY` loses whole
+functions to "the Rust does not parse (expected identifier, found keyword `let`)": the reply
+reads `__RUSTCONV_FACT_0000__ { let .. }`, a struct literal. The bodies that do parse hold
+`let _ = __TRY;` and `if __EXCEPT_PAGE_FAULT {`, which fail later at `cargo check`. crypt32's
+decode.c had 66 of 158 bodies rejected on the first pass. Of the accepted bodies across four TUs, 46 held such markers.
+
+**Cause.** `--seal-facts` seals every bare uppercase name, and a statement macro is one. PSEH's
+own spellings (`_SEH2_TRY`/`_SEH2_END`, after tdihelpers) were exempt; Wine's and rpc.h's
+spellings of the same block were not. With the construct hidden, the model cannot know it is a
+try block.
+
+**Fix.** `fact_seal._C_STATEMENT_MACROS` now lists every spelling `scanner.mask_seh_for_parse`
+masks; the two lists must stay together. `postprocess.lower_wine_seh_markers` repairs bodies
+already bought ($0): a marker statement is dropped, and a handler condition becomes the DUMMY_PSEH
+guard `_SEH2_Volatile0`. The cache key is the unsealed C, so nothing accepted is re-billed. The one body still rejected after
+`--retry-rejects` was re-bought with `--rebuy-fn` ($0.01).
 
 ### A C function-pointer typedef came back as a bare `fn` type
 **Symptom:** `no method named is_none found for fn pointer`, `expected fn pointer, found
@@ -9771,6 +9851,20 @@ MSVC *intrinsic*).
 
 A whole family of bugs where the *verification* is wrong, so the code looks correct. These cost
 more than ordinary bugs because their output is trusted.
+
+### A before/after payload's C half silently ran the Rust: two media entries for one path
+**Symptom:** shlwapi's Wine suite gave identical results for the Rust and for the "pre-flip C"
+(`shlwapiwinetestc`), on i386 and amd64. Real parity was 82 failures apart.
+**Cause:** `--winetests shlwapi` puts the stock `bin/shlwapi_winetest.exe` on the media, and the
+C payload puts its renamed copy (importing `shlwapc.dll`) at the same path. `strip-cd-media`
+appended the payload line beside the stock one; mkisofs kept the stock file under the name and
+renamed the payload's to `shlwapi_winetest000.exe`, which nothing ran. arm64's ramdisk stager
+refused the same pair as "named twice with different bytes", so it was the only arch that said so.
+**Fix:** `strip-cd-media` now drops a stock line whose destination a payload names (a payload
+replaces a stock file, as `mkramdisk.sh` already intended). **Check a before/after oracle by
+reading the media, not the result:** `isoinfo -f -i build-<arch>/livecd.iso | grep <name>` must
+list the path once, and the extracted exe must import the oracle DLL. Identical results from
+two builds are what you expect, so they are also exactly what a broken oracle looks like.
 
 ### A plain-C probe's COM call faults with an address like 2: mingw's C vtable has no IUnknown slots
 
@@ -13239,6 +13333,24 @@ deliberate re-exports and the harmless lost-local cases).
 
 ## Mm, PFN & paging
 
+### The amd64 BIOS loader maps 1 GiB: an allocation past it resets the board
+Symptom: a real BIOS machine with lots of RAM resets to its firmware ~165 ms after some
+`[FLDR] phase:` line, every boot, no message; QEMU's `amd64-bios` smoke passes the same point.
+Where it happens moves with the image size.
+
+Cause: realmode/amd64.S builds one page directory of 2 MiB pages, 1 GiB, and freeldr in long
+mode has no IDT. Only the page lookup table's placement honoured `MM_MAX_PAGE_LOADER`; the
+allocator searched all of RAM. On 32 GiB the lookup table takes 128 MB under 1 GiB, an
+allocation spilled past it, and the first write there faulted into a triple fault. A Rust
+panic looked the same: the x86 handler wrote only to QEMU's debugcon and then `hlt`ed with
+interrupts on, so the next timer tick reset the board.
+
+Fix: allocations search below `MmLoaderMaxPage()` only, and `MmExtendLoaderIdentityMap` maps
+4 GiB with 1 GiB pages when CPUID has Page1GB. Repro without hardware: boot the netboot image in
+QEMU with `-m 32G -no-reboot -d int,cpu_reset` (the default `qemu64` has no 1 GiB pages, so it
+keeps the 1 GiB map; `-cpu max` takes the 4 GiB one). `-no-shutdown` keeps the memory after the
+triple fault, so the monitor can still read the stack.
+
 ### The `OriginalPte` / `RmapListHead` union overlay `[§9.13]`
 The amd64 service-startup wedge (~50% of boots for weeks; `DcomLaunch done: 1053` on serial ⟺
 wedge) was a **Mm working-set pushlock self-deadlock**: a page fault *inside* the
@@ -13999,8 +14111,12 @@ never shows it.
   returned 0 frames (RtlStackKM 13/27, user-mode RtlStack 16/24, in rtlk and ntdll alike). Two
   more x86-isms rode along: the return address was read as a 32-bit `ULONG`, and the kernel
   walk's "stop at user mode" test was `Eip & 0x80000000`; on 64-bit it is the top bit.
-- **arm64 user-mode SEH never delivers first-chance** — `RtlRaiseException` is unimplemented for
-  arm64 (OPEN; needs a `#[naked]` capture stub).
+- **A raise stub must hand the dispatcher its CALLER's context** — arm64's `RtlRaiseException`
+  captured mid-body, so a continued raise resumed inside itself and re-raised forever. Fix
+  (2026-11-08): capture before touching a nonvolatile register, patch Pc/Lr/Sp to the caller's,
+  and give a hand-written asm frame real `.seh_*` unwind codes; without them the unwinder
+  mis-steps through it and a callee-saved register comes back wrong at the `__except` (the
+  `CORRUPT x21` that sank two earlier attempts).
 
 ### arm64 raised every refused page fault as ACCESS_VIOLATION
 **Symptom.** arm64 user-mode RtlException got `0xc0000005` where it expects
@@ -17097,7 +17213,7 @@ authoritative registry.
 |---|---|
 | **`-smp` `0xF4` boot-phase flake** (~2/20 soak), described as §9.56-class | Separate from the ready-list tear, which is **fixed** — see `active-lanes/smp-bringup-quest.md`. |
 | **arm64 physical-page reuse** — a frame backing a still-mapped user page is freed and re-handed-out `[§9.98]` | **FIXED** (`MiPurgeStaleUserPtes`, 2026-08-01): recycled FreeLDR identity PTEs in user page tables. Absent in 639 rounds + a probe-verified sweep (2026-10-03). |
-| **arm64 user-mode SEH first-chance** — `RtlRaiseException` unimplemented | Needs a `#[naked]` capture stub. |
+| **arm64 user-mode SEH first-chance** — `RtlRaiseException` resumed a continue inside itself | **FIXED** 2026-11-08: SEH-annotated `global_asm!` stub; vehprobe raise graded on arm64. |
 | **`ExHardError`** pool illegal-instruction; **`MmSection`** in-kernel wedge `[§9.92]` | Distinct from the arm64 kernel-SEH cluster; both open. |
 | **arm64 exception-dispatch recursion** under a dropped probe `[§9.104]` | Layer 1 fixed; layer 2 is the deep root. |
 | **WoW64 async IOSB** — the host IOSB is a stack temporary `[§9.62]` | Proper fix is kernel-side and owed. |

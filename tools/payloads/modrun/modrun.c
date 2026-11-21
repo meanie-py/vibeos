@@ -225,8 +225,12 @@ static void run(const char *id, const struct variant *v, const char *in, DWORD i
             start = i + 1;
         }
     }
-    SAY("exit %s %s rc=0x%08lx ms=%lu records=%u%s%s\n", id, v->name, rc, ms, seq,
-        timed_out ? " TIMEOUT" : "", cap.Truncated ? " TRUNCATED" : "");
+    /* Twice, like the records: the serial is lossy, and a lost exit line grades the whole
+     * case "never finished" (arm64 d3d8.logic, 2026-11-08). The grader keys exits by
+     * (case, variant), so the second copy is a no-op when the first arrives. */
+    for (i = 0; i < 2; ++i)
+        SAY("exit %s %s rc=0x%08lx ms=%lu records=%u%s%s\n", id, v->name, rc, ms, seq,
+            timed_out ? " TIMEOUT" : "", cap.Truncated ? " TRUNCATED" : "");
     if (text != cap.Buf)
         free(text);
     free(cap.Buf);

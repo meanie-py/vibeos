@@ -2192,11 +2192,31 @@ def test_named_channel_debug_calls_take_the_channel_static(tmp_path, monkeypatch
     monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "a.rs"])
     (tmp_path / "a.rs").write_text(
         'ERR_!(winediag, "no 3d\\n");\nTRACE_(fps, "%p\\n", d);\nTRACE!("keep\\n");\n'
+        'WARN_(d3d_perf)(\n    "slow\\n");\n'
+        'WARN!(\n    d3d_perf,\n    "BO %p\\n", bo);\nWARN!(fmt, x);\n'
     )
-    assert port._named_channel_debug({}) == 2
+    assert port._named_channel_debug({}) == 4
     out = (tmp_path / "a.rs").read_text()
     assert 'WINE_ERR_!(__wine_dbch_winediag, "no 3d\\n");' in out
     assert 'WINE_TRACE_!(__wine_dbch_fps, "%p\\n", d);' in out and 'TRACE!("keep\\n")' in out
+    assert 'WINE_WARN_!(__wine_dbch_d3d_perf,\n    "slow\\n");' in out
+    assert 'WINE_WARN_!(__wine_dbch_d3d_perf,\n    "BO %p\\n", bo);' in out
+    assert "WARN!(fmt, x);" in out  # a non-literal format is not a channel
+
+
+def test_a_parenthesised_c_or_case_becomes_a_value_guard(tmp_path, monkeypatch):
+    (tmp_path / "m.c").write_text(
+        "switch (m) { case A: break; case (A | B): break; case C: case D: break; }"
+    )
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "a.rs"])
+    (tmp_path / "a.rs").write_text(
+        "match m {\n    A => {}\n    (A | B) => {}\n    (C | D) => {}\n    _ => {}\n}\n"
+    )
+    assert port._or_case_values({"module_dir": "."}) == 1
+    out = (tmp_path / "a.rs").read_text()
+    assert "    __or_case if __or_case == (A | B) => {}" in out
+    assert "    (C | D) => {}" in out  # `case C: case D:` is a real alternation
 
 
 def test_c_tag_keywords_in_type_positions_are_dropped():
@@ -2309,3 +2329,52 @@ def test_a_fn_pointer_alias_takes_its_c_typedefs_convention(tmp_path, monkeypatc
     assert 'Notify = Option<unsafe extern "system" fn' in out
     assert 'type Vararg = unsafe extern "C" fn' in out  # WINAPIV is cdecl: already right
     assert 'Both = Option<unsafe extern "C" fn' in out  # two ways in the C: left alone
+
+
+def test_a_header_static_is_never_exported_as_an_island_extern(tmp_path, monkeypatch):
+    # wined3d_private.h: bindgen declares this `static const` as an extern, but each TU owns
+    # a private copy -- exporting every unit's copy was a duplicate symbol at link.
+    (tmp_path / "wined3d_private.h").write_text(
+        "static const struct color_fixup_desc COLOR_FIXUP_IDENTITY =\n    {0, 1, 0, 2};\n"
+        "extern const struct wined3d_vec4 wined3d_srgb_const[];\n"
+    )
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    assert port._header_internal_statics({"module_dir": "."}) == {"COLOR_FIXUP_IDENTITY"}
+
+
+def test_a_linked_librarys_undefined_guids_get_initguid_storage(tmp_path, monkeypatch):
+    # wined3d_main.c includes <initguid.h> before d3d12.h; vkd3d, linked into d3dwine,
+    # references IID_ID3D12Device -- the C TU was its only definition.
+    (tmp_path / "m").mkdir()
+    (tmp_path / "m" / "CMakeLists.txt").write_text("target_link_libraries(d3dwine wine vkd3d)\n")
+    lib = tmp_path / "build-amd64" / "sdk" / "lib" / "vkd3d"
+    lib.mkdir(parents=True)
+    (lib / "libvkd3d.a").write_bytes(b"")
+    nm = tmp_path / ".build-tools" / "llvm-mingw" / "bin" / "x86_64-w64-mingw32-nm"
+    nm.parent.mkdir(parents=True)
+    nm.write_text("")
+    monkeypatch.setattr(port, "REPO", tmp_path)
+
+    class R:
+        stdout = "device.c.obj:\n                 U IID_ID3D12Device\n                 U memcpy\n"
+
+    monkeypatch.setattr(port.subprocess, "run", lambda *a, **k: R())
+    assert port.linked_library_guid_refs(tmp_path / "m" / "CMakeLists.txt") == {
+        "IID_ID3D12Device"
+    }
+
+
+def test_flip_refuses_a_target_already_converted_to_a_cargo_cell(tmp_path, monkeypatch):
+    mod = tmp_path / "m"
+    mod.mkdir()
+    (mod / "CMakeLists.txt").write_text("add_cargo_module(d3dwine d3dwine-cargo d3dwine.dll)\n")
+    (mod / "a.rs").write_text("")
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "_refuse_while_this_tree_builds", lambda what: None)
+    monkeypatch.setattr(
+        port,
+        "load_state",
+        lambda stem: {"stem": stem, "target": "d3dwine", "module_dir": "m", "tus": []},
+    )
+    with pytest.raises(port.PortError, match="already a cargo cell"):
+        port.stage_flip("d3dwine")

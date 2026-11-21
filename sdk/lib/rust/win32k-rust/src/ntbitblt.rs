@@ -2162,6 +2162,22 @@ pub unsafe extern "system" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORRE
         /* Prepare DC for blit */
         DC_vPrepareDCsForBlit(pdc, (core::ptr::addr_of_mut!(rcDest) as _), core::ptr::null_mut(), core::ptr::null_mut());
 
+        // Windows: a pixel outside the DC's clipping region reads CLR_INVALID
+        // (a locked or covered window, user32:win test_LockWindowUpdate). The
+        // Rao/Vis regions are DC-relative between blits.
+        {
+            let rgn = if !(*pdc).prgnRao.is_null() { (*pdc).prgnRao } else { (*pdc).prgnVis };
+            if !rgn.is_null()
+                && crate::region::REGION_PtInRegion(
+                    rgn,
+                    ptlSrc.x - (*pdc).ptlDCOrig.x,
+                    ptlSrc.y - (*pdc).ptlDCOrig.y,
+                ) == 0
+            {
+                break 'leave;
+            }
+        }
+
         /* Check if the pixel is outside the surface */
         psurfSrc = (*pdc).dclevel.pSurface;
         if (ptlSrc.x >= (*psurfSrc).SurfObj.sizlBitmap.cx)
@@ -2268,6 +2284,22 @@ pub unsafe extern "system" fn NtGdiGetPixel(hdc: HDC, x: INT, y: INT) -> COLORRE
 
         /* Prepare DC for blit */
         DC_vPrepareDCsForBlit(pdc, core::ptr::addr_of_mut!(rcDest) as _ , core::ptr::null_mut(), core::ptr::null_mut());
+
+        // Windows: a pixel outside the DC's clipping region reads CLR_INVALID
+        // (a locked or covered window, user32:win test_LockWindowUpdate). The
+        // Rao/Vis regions are DC-relative between blits.
+        {
+            let rgn = if !(*pdc).prgnRao.is_null() { (*pdc).prgnRao } else { (*pdc).prgnVis };
+            if !rgn.is_null()
+                && crate::region::REGION_PtInRegion(
+                    rgn,
+                    ptlSrc.x - (*pdc).ptlDCOrig.x,
+                    ptlSrc.y - (*pdc).ptlDCOrig.y,
+                ) == 0
+            {
+                break 'leave;
+            }
+        }
 
         /* Check if the pixel is outside the surface */
         psurfSrc = (*pdc).dclevel.pSurface;

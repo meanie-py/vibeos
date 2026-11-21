@@ -81,3 +81,17 @@ def test_declspec_hotpatch_does_not_hide_the_function(tmp_path: Path):
     )
     assert [f.name for f in scan.functions] == ["Direct3DCreate8"]
     assert "DECLSPEC_HOTPATCH" not in scan.functions[0].return_type
+
+
+def test_a_printf_attribute_does_not_hide_the_rest_of_the_file(tmp_path: Path):
+    """wined3d glsl_shader.c: `static void PRINTF_ATTR(4, 5) declare_in_varying(...)` lost every
+    function from that line on (52 of 318 scanned)."""
+    scan = _scan(
+        tmp_path,
+        "static void PRINTF_ATTR(4, 5) declare_in_varying(int a, const char *format, ...)\n"
+        "{\n    return;\n}\n\n"
+        "static void WINAPIV __WINE_PRINTF_ATTR(2,3) child(int c, const char *msg, ...)\n"
+        "{\n    return;\n}\n\n"
+        "static int after(void)\n{\n    return 1;\n}\n",
+    )
+    assert [f.name for f in scan.functions] == ["declare_in_varying", "child", "after"]

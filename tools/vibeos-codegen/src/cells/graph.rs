@@ -141,6 +141,7 @@ pub fn link_edge(root: &Path, arch: &str, target: &str) -> Result<Link> {
         inputs,
         libs,
         require_defined,
+        os_versioned: flags.contains("--major-os-version"),
     })
 }
 type Missing = Vec<(&'static str, String)>;
@@ -523,6 +524,26 @@ pub fn library_index(root: &Path) -> Result<LibraryIndex> {
         })
         .collect())
 }
+/// A library from the llvm-mingw sysroot (`<llvm-mingw>/<triple>/lib/libc++.a`, which cmake
+/// links into the C++ modules by absolute path) as `toolchain:libc++.a`: reactos-link finds
+/// it under its own `.build-tools/llvm-mingw`, so the cell carries no host path.
+pub fn toolchain_item(root: &Path, raw: &str) -> Option<String> {
+    let path = Path::new(raw);
+    if !path.is_absolute() {
+        return None;
+    }
+    let tc = std::fs::canonicalize(root.join(".build-tools/llvm-mingw")).ok()?;
+    let rest: Vec<_> = path
+        .strip_prefix(&tc)
+        .ok()?
+        .components()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .collect();
+    match rest.as_slice() {
+        [_triple, lib, file] if lib == "lib" => Some(format!("toolchain:{file}")),
+        _ => None,
+    }
+}
 pub fn engine_lib(lib: &str, index: &LibraryIndex) -> Option<(String, Vec<String>)> {
     let constants = super::constants();
     if let Some(name) = constants["ENGINE_LIBS"].get(lib).and_then(|v| v.as_str()) {
@@ -574,6 +595,51 @@ pub fn engine_lib(lib: &str, index: &LibraryIndex) -> Option<(String, Vec<String
         d.push("psdk".into());
     }
     Some((format!("engine:c:{}", a[0]), d))
+}
+
+/// The spec2def stubs an `engine:c:` library carries: cmake builds `<x>_stubs.rs.obj` with
+/// a custom command and archives it into the static library (fusion_common), so a replay of
+/// compile_commands.json never compiles it. Each is named by the spec2def command that
+/// generated its source: (spec, dll).
+fn library_stub_specs(root: &Path, arch: &str, order: &[String]) -> Result<Vec<(String, String)>> {
+    let libs: Vec<&str> = order
+        .iter()
+        .filter_map(|i| i.strip_prefix("engine:c:"))
+        .collect();
+    if libs.is_empty() {
+        return Ok(Vec::new());
+    }
+    let ninja = read(&local(
+        root,
+        &root.join(format!("build-{arch}/build.ninja")),
+    )?)?;
+    let mut out = Vec::new();
+    for lib in libs {
+        let archive = re(&format!(
+            r"(?m)^build \S*/lib{}\.a: C_STATIC_LIBRARY_LINKER\S* ([^|\n]*)",
+            regex::escape(lib)
+        ));
+        let Some(c) = archive.captures(&ninja) else {
+            continue;
+        };
+        for input in c[1].split_whitespace() {
+            let Some(stem) = input.strip_suffix("_stubs.rs.obj") else {
+                continue;
+            };
+            let gen = re(&format!(
+                r"(?m)^build {}\.def {}_stubs\.rs .*\n  COMMAND = .*spec2def -n=(\S+) .* /tmp/vibeos/(\S+\.spec)$",
+                regex::escape(stem),
+                regex::escape(stem)
+            ));
+            let g = gen.captures(&ninja).ok_or_else(|| {
+                Error::new(format!(
+                    "lib{lib}.a archives {input}, which no spec2def command generates"
+                ))
+            })?;
+            out.push((g[2].to_owned(), g[1].to_owned()));
+        }
+    }
+    Ok(out)
 }
 
 fn one_list(root: &Path, arch: &str, stem: &str) -> Result<Option<PathBuf>> {
@@ -1739,11 +1805,13 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
                     })
                 })
             });
-            let lib = extra_crate.unwrap_or_else(|| {
-                engine_lib(raw, &index)
-                    .map(|x| x.0)
-                    .unwrap_or_else(|| raw.clone())
-            });
+            let lib = extra_crate
+                .or_else(|| toolchain_item(root, raw))
+                .unwrap_or_else(|| {
+                    engine_lib(raw, &index)
+                        .map(|x| x.0)
+                        .unwrap_or_else(|| raw.clone())
+                });
             if !static_libs.contains(&lib) {
                 static_libs.push(lib.clone());
                 seq.push(lib.clone());
@@ -1861,8 +1929,24 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             continue;
         }
         if name.ends_with(".rc.res") {
-            cell.rc = Some(super::recipes::rc_command(primary, obj, root)?.0);
-            rc_obj = obj.clone();
+            let rc = super::recipes::rc_command(primary, obj, root)?.0;
+            if cell.rc.is_none() {
+                cell.rc = Some(rc);
+                rc_obj = obj.clone();
+            } else {
+                // A second .rc was silently dropped before (the last one won): wined3d lost
+                // its HLSL RCDATA. Each must share the first one's flags, which the cell
+                // renders once.
+                if super::recipes::rc_flags_for(&rc, obj, root)?
+                    != super::recipes::rc_flags_for(cell.rc.as_ref().unwrap(), &rc_obj, root)?
+                {
+                    return Err(Error::new(format!(
+                        "{target}: {rc} is compiled with different flags from {}",
+                        cell.rc.as_ref().unwrap()
+                    )));
+                }
+                cell.extra_rc.push(rc);
+            }
         } else if name.ends_with("_stubs.rs.obj") || name.ends_with("_stubs.c.obj") {
             cell.spec_stubs = true;
         } else if strings(&facts["reg_objects"]).contains(&name.to_owned()) {
@@ -1872,11 +1956,39 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             }
         } else if name.ends_with(".def") {
             let pat = re(r"spec2def\(\s*(\S+)\s+(\S+\.spec)");
-            let cap = pat
-                .captures(&cmtext)
-                .ok_or_else(|| Error::new(format!("{target}: a .def without a spec2def()")))?;
+            let caps: Vec<_> = pat.captures_iter(&cmtext).collect();
+            // Several spec2def() calls are if()/else() branches (uxtheme: uxtheme_vista.spec
+            // when DLL_EXPORT_VERSION >= 0x600, else uxtheme.spec). The first in the text was
+            // taken, so the cell exported a spec this configuration does not build. Keep the
+            // one this build's spec2def command reads.
+            let cap = if caps.len() > 1 {
+                let ninja = read(&local(
+                    root,
+                    &root.join(format!("build-{primary}/build.ninja")),
+                )?)?;
+                let used: Vec<_> = caps
+                    .iter()
+                    .filter(|c| {
+                        let spec = rel(root, &cmake_dir.join(&c[2])).unwrap_or_default();
+                        ninja.contains(&format!("CUSTOM_COMMAND /tmp/vibeos/{spec} "))
+                    })
+                    .collect();
+                if used.len() != 1 {
+                    return Err(Error::new(format!(
+                        "{target}: {} spec2def() calls and {} of their specs in build.ninja",
+                        caps.len(),
+                        used.len()
+                    )));
+                }
+                used[0]
+            } else {
+                caps.first()
+                    .ok_or_else(|| Error::new(format!("{target}: a .def without a spec2def()")))?
+            };
             cell.spec = Some((rel(root, &cmake_dir.join(&cap[2]))?, cap[1].into()));
-        } else if name.ends_with(".c.obj") {
+        } else if name.ends_with(".c.obj") || re(r"\.(cpp|cxx|cc)\.obj$").is_match(name) {
+            // C++ compiles the same way: the cell replays cmake's compile command through a
+            // clib recipe, whose `cxx` lines reactos-link runs with the cxx.<arch>.flags template.
             let mut src = obj_source(&cmake_dir, obj);
             if let Some(m) = re(r"\.dir/((?:__/)+.*)\.obj$").captures(obj) {
                 src = cmake_dir.join(m[1].replace("__/", "../"));
@@ -1989,10 +2101,14 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     // (its panic handler, which calls DbgPrint and NtTerminateProcess, and i386's
     // rsbegin/rsend) stays out of the link, so a module with no code gains no `.text`
     // and one importing no ntdll (comcat, msxml3r, wmi) still links. --convert's
-    // pe_equiv check against cmake's link is the guard.
-    if bodyless && cell.c_shims.is_empty() && cell.arch_shims.values().all(Vec::is_empty) {
+    // pe_equiv check against cmake's link is the guard. A body-less module of C alone
+    // (libjpeg, genincdata) is the same: cmake linked its objects and no shell, and
+    // genincdata, importing nothing, cannot even resolve the shell's DbgPrint.
+    if bodyless {
         cell.shell_less = true;
     }
+    cell.no_module_type = links.values().all(|l| !l.os_versioned);
+    cell.stub_specs = library_stub_specs(root, primary, &cell.link_order[primary])?;
     // A Rust body cmake linked under -Wl,--whole-archive (cdrom) brings every member of
     // its staticlib, core and its panic handler included: rustc's bin would define all of
     // them a second time (537 duplicates, which link-guard refuses). cmake's link had no
@@ -2141,7 +2257,10 @@ pub fn target_file_refs(root: &Path) -> Result<BTreeMap<String, Vec<String>>> {
             .collect();
         for cap in pattern.captures_iter(&text) {
             let at = cap.get(0).unwrap().start();
-            if own.iter().any(|(s, e, t)| (*s..*e).contains(&at) && *t == cap[1]) {
+            if own
+                .iter()
+                .any(|(s, e, t)| (*s..*e).contains(&at) && *t == cap[1])
+            {
                 continue;
             }
             let files = out.entry(cap[1].to_owned()).or_default();

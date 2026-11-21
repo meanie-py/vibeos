@@ -78,7 +78,9 @@
       "subsystems": {},
       "extra_cd": [],
       "rc_flags": {},
-      "require_defined": {}
+      "require_defined": {},
+      "no_module_type": true,
+      "shell_less": true
     }
   },
   {
@@ -167,7 +169,8 @@
       "subsystems": {},
       "extra_cd": [],
       "rc_flags": {},
-      "require_defined": {}
+      "require_defined": {},
+      "no_module_type": true
     }
   }
 ]

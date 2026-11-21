@@ -31,8 +31,11 @@ pub mod variadic_array_arg;
 pub mod assert_to_ub;
 pub mod bindgen_padding_index;
 pub mod bitwise_not_bool;
+pub mod flag_word_raw_hex;
+pub mod abandoned_translation;
 pub mod bugcheck_codes;
 pub mod byte_step_one;
+pub mod unsigned_vs_zero;
 pub mod variant_outptr;
 pub mod byteptr_stride;
 pub mod inert_crate_allow;
@@ -256,6 +259,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(sse_helpers::SseHelpers),
         Box::new(extern_arity::ExternArity),
         Box::new(byte_step_one::ByteStepOne),
+        Box::new(unsigned_vs_zero::UnsignedVsZero),
         Box::new(variant_outptr::VariantOutptr),
         Box::new(wide_byte_copy::WideByteCopy),
         Box::new(typed_byte_copy::TypedByteCopy),
@@ -264,6 +268,8 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(containing_record_null::ContainingRecordNull),
         Box::new(dangling_transmute::DanglingTransmute),
         Box::new(bitwise_not_bool::BitwiseNotBool),
+        Box::new(flag_word_raw_hex::FlagWordRawHex),
+        Box::new(abandoned_translation::AbandonedTranslation),
         Box::new(hkey_zero_extend::HkeyZeroExtend),
         Box::new(opaque_ptr_arith::OpaquePtrArith),
         Box::new(bugcheck_codes::BugcheckCodes),

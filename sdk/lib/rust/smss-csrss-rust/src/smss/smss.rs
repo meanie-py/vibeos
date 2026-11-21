@@ -598,6 +598,22 @@ pub unsafe extern "C" fn _main(
     _envp: *const *const i8,
     DebugFlag: ULONG,
 ) -> NTSTATUS {
+    // An exception anywhere in SMSS goes through SmpUnhandledExceptionFilter, which
+    // raises the "Unhandled Exception in Session Manager" hard error with the code,
+    // address and context, instead of a bare critical-process death.
+    let mut Status: NTSTATUS = STATUS_UNSUCCESSFUL;
+    if let Err(code) = ntdll_sys::seh::try_except(
+        &mut Status,
+        |st| *st = smss_main(DebugFlag),
+        |_, pointers| SmpUnhandledExceptionFilter(pointers as PEXCEPTION_POINTERS),
+    ) {
+        Status = code;
+    }
+    Status
+}
+
+#[cfg_attr(not(feature = "smss_exe_only"), allow(dead_code))]
+unsafe fn smss_main(DebugFlag: ULONG) -> NTSTATUS {
     let mut SetBasePriority: KPRIORITY = 11;
     let mut Parameters: [ULONG_PTR; 4] = [0; 4];
     let mut Handles: [HANDLE; 2] = [core::ptr::null_mut(); 2];

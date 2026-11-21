@@ -852,6 +852,13 @@ static mut sYearMonthW: [WCHAR; 11] = [
     0 as ::core::ffi::c_int as WCHAR,
 ];
 
+// Windows' Control Panel\International value for LOCALE_SSHORTTIME (Vista+); the
+// old Wine table this came from predates it, so SetLocaleInfoW refused the type.
+static mut sShortTimeW: [WCHAR; 11] = [
+    b's' as WCHAR, b'S' as WCHAR, b'h' as WCHAR, b'o' as WCHAR, b'r' as WCHAR, b't' as WCHAR,
+    b'T' as WCHAR, b'i' as WCHAR, b'm' as WCHAR, b'e' as WCHAR, 0,
+];
+
 static mut NumShapeW: [WCHAR; 9] = [
     'N' as i32 as WCHAR,
     'u' as i32 as WCHAR,
@@ -864,7 +871,7 @@ static mut NumShapeW: [WCHAR; 9] = [
     0 as ::core::ffi::c_int as WCHAR,
 ];
 
-static mut registry_values: [registry_value; 39] = {
+static mut registry_values: [registry_value; 40] = {
     [
         registry_value {
             lctype: LOCALE_ICALENDARTYPE as DWORD,
@@ -1014,6 +1021,11 @@ static mut registry_values: [registry_value; 39] = {
         registry_value {
             lctype: LOCALE_SYEARMONTH as DWORD,
             name: &raw const sYearMonthW as *const WCHAR,
+            cached_value: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
+        },
+        registry_value {
+            lctype: LOCALE_SSHORTTIME as DWORD,
+            name: &raw const sShortTimeW as *const WCHAR,
             cached_value: ::core::ptr::null::<WCHAR>() as *mut WCHAR,
         },
         registry_value {
@@ -26479,7 +26491,7 @@ pub unsafe extern "system" fn GetSystemDefaultUILanguage() -> LANGID {
 
 unsafe fn get_locale_registry_value(lctype: DWORD) -> *mut registry_value {
     let mut i: i32 = 0;
-    while (i as usize) < (core::mem::size_of::<[registry_value; 39]>()).wrapping_div(core::mem::size_of::<registry_value>()) {
+    while (i as usize) < (core::mem::size_of::<[registry_value; 40]>()).wrapping_div(core::mem::size_of::<registry_value>()) {
         if registry_values[i as usize].lctype == lctype {
             return core::ptr::addr_of_mut!(registry_values).cast::<registry_value>().offset(i as isize);
         }
@@ -26932,14 +26944,31 @@ pub unsafe extern "system" fn SetLocaleInfoW(
     let mut status: NTSTATUS;
 
     lctype &= 0xffff;
-    let value = get_locale_registry_value(lctype);
 
-    if data.is_null() || value.is_null() {
+    if data.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
 
-    if lctype == LOCALE_IDATE || lctype == LOCALE_ILDATE {
+    // Divergence from the C, which answered every type it keeps no registry value for
+    // with ERROR_INVALID_PARAMETER and let any type in its table be set (iCountry,
+    // sAbbrevLangName...). Windows (and Wine's SetLocaleInfoW) accept exactly these and
+    // fail every other type with ERROR_INVALID_FLAGS.
+    let settable = matches!(
+        lctype,
+        LOCALE_ICALENDARTYPE | LOCALE_ICURRDIGITS | LOCALE_ICURRENCY | LOCALE_IDIGITS
+            | LOCALE_IDIGITSUBSTITUTION | LOCALE_IFIRSTDAYOFWEEK | LOCALE_IFIRSTWEEKOFYEAR
+            | LOCALE_ILZERO | LOCALE_IMEASURE | LOCALE_INEGCURR | LOCALE_INEGNUMBER
+            | LOCALE_IPAPERSIZE | LOCALE_S1159 | LOCALE_S2359 | LOCALE_SCURRENCY
+            | LOCALE_SDECIMAL | LOCALE_SGROUPING | LOCALE_SLIST | LOCALE_SLONGDATE
+            | LOCALE_SMONDECIMALSEP | LOCALE_SMONGROUPING | LOCALE_SMONTHOUSANDSEP
+            | LOCALE_SNATIVEDIGITS | LOCALE_SNEGATIVESIGN | LOCALE_SPOSITIVESIGN
+            | LOCALE_SSHORTTIME | LOCALE_STHOUSAND | LOCALE_SYEARMONTH | LOCALE_SDATE
+            | LOCALE_SSHORTDATE | LOCALE_STIME | LOCALE_STIMEFORMAT | LOCALE_ITIME
+            | LOCALE_SINTLSYMBOL
+    );
+    let value = get_locale_registry_value(lctype);
+    if !settable || value.is_null() {
         SetLastError(ERROR_INVALID_FLAGS);
         return 0;
     }
@@ -27658,7 +27687,35 @@ unsafe fn map_to_fullwidth(mut src: *const WCHAR, mut srclen: i32, dst: *mut WCH
     pos
 }
 
-unsafe fn map_to_lowercase(flags: DWORD, src: *const WCHAR, srclen: i32, dst: *mut WCHAR, dstlen: i32) -> i32 {
+extern "system" {
+    fn RtlDowncaseUnicodeChar(Source: WCHAR) -> WCHAR;
+    fn RtlUpcaseUnicodeChar(Source: WCHAR) -> WCHAR;
+}
+
+// Divergence from the C, which cased through the CRT's towlower/towupper: those leave
+// most of Unicode alone (Greek capital sigma, I/i with ogonek or tilde, every Greek
+// letter with ypogegrammeni). Windows cases with the NLS table l_intl.nls, which ntdll's
+// Rtl{Up,Down}caseUnicodeChar walk. Two exceptions, as Windows does: U+0130 and U+0131
+// map to i and I only under LCMAP_LINGUISTIC_CASING, and under it a Turkic locale (tr,
+// az) cases i <-> U+0130 and I <-> U+0131 instead.
+unsafe fn nls_lower(flags: DWORD, turkic: bool, ch: WCHAR) -> WCHAR {
+    let linguistic = flags & LCMAP_LINGUISTIC_CASING != 0;
+    match ch {
+        0x0049 if linguistic && turkic => 0x0131,
+        0x0130 | 0x0131 if !linguistic => ch,
+        _ => RtlDowncaseUnicodeChar(ch),
+    }
+}
+unsafe fn nls_upper(flags: DWORD, turkic: bool, ch: WCHAR) -> WCHAR {
+    let linguistic = flags & LCMAP_LINGUISTIC_CASING != 0;
+    match ch {
+        0x0069 if linguistic && turkic => 0x0130,
+        0x0130 | 0x0131 if !linguistic => ch,
+        _ => RtlUpcaseUnicodeChar(ch),
+    }
+}
+
+unsafe fn map_to_lowercase(flags: DWORD, turkic: bool, src: *const WCHAR, srclen: i32, dst: *mut WCHAR, dstlen: i32) -> i32 {
     let mut pos: i32 = 0;
     let mut src_ptr = src;
     let mut remaining = srclen;
@@ -27667,7 +27724,7 @@ unsafe fn map_to_lowercase(flags: DWORD, src: *const WCHAR, srclen: i32, dst: *m
         let wch = *src_ptr;
         if !((flags & NORM_IGNORESYMBOLS) != 0 && (get_char_typeW(wch) & (C1_PUNCT | C1_SPACE)) != 0) {
             if pos < dstlen {
-                *dst.offset(pos as isize) = tolowerW(wch);
+                *dst.offset(pos as isize) = nls_lower(flags, turkic, wch);
             }
             pos += 1;
         }
@@ -27677,7 +27734,7 @@ unsafe fn map_to_lowercase(flags: DWORD, src: *const WCHAR, srclen: i32, dst: *m
     pos
 }
 
-unsafe fn map_to_uppercase(flags: DWORD, src: *const WCHAR, srclen: i32, dst: *mut WCHAR, dstlen: i32) -> i32 {
+unsafe fn map_to_uppercase(flags: DWORD, turkic: bool, src: *const WCHAR, srclen: i32, dst: *mut WCHAR, dstlen: i32) -> i32 {
     let mut pos: i32 = 0;
     let mut src_ptr = src;
     let mut remaining = srclen;
@@ -27686,7 +27743,7 @@ unsafe fn map_to_uppercase(flags: DWORD, src: *const WCHAR, srclen: i32, dst: *m
         let wch: WCHAR = *src_ptr;
         if !((flags & NORM_IGNORESYMBOLS) != 0 && (get_char_typeW(wch) & (C1_PUNCT | C1_SPACE)) != 0) {
             if pos < dstlen {
-                *dst.offset(pos as isize) = toupperW(wch);
+                *dst.offset(pos as isize) = nls_upper(flags, turkic, wch);
             }
             pos += 1;
         }
@@ -27828,6 +27885,7 @@ unsafe fn map_remove_ignored(flags: DWORD, src: *const WCHAR, srclen: i32, dst: 
 }
 
 unsafe fn lcmap_string(
+    turkic: bool,
     mut flags: DWORD,
     src: *const WCHAR,
     srclen: i32,
@@ -27912,12 +27970,12 @@ unsafe fn lcmap_string(
             }
             0 => {
                 if flags & LCMAP_LOWERCASE != 0 {
-                    ret = map_to_lowercase(flags, src, srclen, dst, dstlen);
+                    ret = map_to_lowercase(flags, turkic, src, srclen, dst, dstlen);
                     flags &= !LCMAP_LOWERCASE;
                     break 'switch;
                 }
                 if flags & LCMAP_UPPERCASE != 0 {
-                    ret = map_to_uppercase(flags, src, srclen, dst, dstlen);
+                    ret = map_to_uppercase(flags, turkic, src, srclen, dst, dstlen);
                     flags &= !LCMAP_UPPERCASE;
                     break 'switch;
                 }
@@ -27942,10 +28000,10 @@ unsafe fn lcmap_string(
 
     if dstlen != 0 {
         if flags & LCMAP_LOWERCASE != 0 {
-            map_to_lowercase(flags, dst, ret, dst, dstlen);
+            map_to_lowercase(flags, turkic, dst, ret, dst, dstlen);
         }
         if flags & LCMAP_UPPERCASE != 0 {
-            map_to_uppercase(flags, dst, ret, dst, dstlen);
+            map_to_uppercase(flags, turkic, dst, ret, dst, dstlen);
         }
         if flags & LCMAP_BYTEREV != 0 {
             map_byterev(dst, core::cmp::min(ret, dstlen), dst);
@@ -28030,7 +28088,16 @@ pub unsafe extern "system" fn LCMapStringEx(
         return 0;
     }
 
-    lcmap_string(flags, src, srclen, dst, dstlen)
+    lcmap_string(is_turkic_locale(locale), flags, src, srclen, dst, dstlen)
+}
+
+// "tr-*" or "az-*", any case (the test passes "TR-TR" and "az-Latn-az").
+unsafe fn is_turkic_locale(locale: LPCWSTR) -> bool {
+    if locale.is_null() || *locale == 0 || *locale.add(1) == 0 || *locale.add(2) != b'-' as WCHAR {
+        return false;
+    }
+    let lower = |i: usize| (*locale.add(i) | 0x20) as u8;
+    matches!((lower(0), lower(1)), (b't', b'r') | (b'a', b'z'))
 }
 
 #[no_mangle]

@@ -79,14 +79,11 @@ unsafe fn CopyDeviceFindData(
     lpFileName: LPCWSTR,
     DeviceNameInfo: ULONG,
 ) {
-    let DeviceName: LPCWSTR;
-    let Length: SIZE_T;
-
-    // _SEH2_TRY
-    {
+    // C: __try { fill the caller's buffer } __except (EXECUTE_HANDLER) {}.
+    let _ = ntdll_sys::seh::try_except_all(|| {
         /* DeviceNameInfo == { USHORT Offset; USHORT Length } */
-        Length = (DeviceNameInfo & 0xFFFF) as SIZE_T;
-        DeviceName = ((lpFileName as ULONG_PTR) + ((DeviceNameInfo >> 16) & 0xFFFF) as ULONG_PTR) as LPCWSTR;
+        let Length: SIZE_T = (DeviceNameInfo & 0xFFFF) as SIZE_T;
+        let DeviceName: LPCWSTR = ((lpFileName as ULONG_PTR) + ((DeviceNameInfo >> 16) & 0xFFFF) as ULONG_PTR) as LPCWSTR;
 
         /* Return the data */
         RtlZeroMemory(lpFindFileData as *mut _, core::mem::size_of::<WIN32_FIND_DATAW>() as SIZE_T);
@@ -97,14 +94,7 @@ unsafe fn CopyDeviceFindData(
             DeviceName,
             Length as usize,
         );
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-        // Exception handler - empty
-    }
-    // _SEH2_END
-
-    return;
+    });
 }
 unsafe fn CopyFindData(
     lpFindFileData: LPWIN32_FIND_DATAW,
@@ -119,8 +109,8 @@ unsafe fn CopyFindData(
         };
     }
 
-    // _SEH2_TRY block
-    {
+    // C: __try { fill the caller's buffer } __except (EXECUTE_HANDLER) {}.
+    let _ = ntdll_sys::seh::try_except_all(|| {
         RtlZeroMemory(
             lpFindFileData as *mut _,
             core::mem::size_of::<WIN32_FIND_DATAW>() as SIZE_T,
@@ -179,14 +169,14 @@ unsafe fn CopyFindData(
             // ASSERT(FALSE) - invalid InfoLevelId
             // In release builds this is a no-op
         }
-    }
+    });
 }
 unsafe fn CopyStreamData(
     FindStreamData: *mut FIND_STREAM_DATA,
     lpFindStreamData: *mut WIN32_FIND_STREAM_DATA,
 ) {
-    // _SEH2_TRY
-    {
+    // C: __try { fill the caller's buffer } __except (EXECUTE_HANDLER) {}.
+    let _ = ntdll_sys::seh::try_except_all(|| {
         // ASSERT(FindStreamData->CurrentInfo);
         match (*FindStreamData).InfoLevel {
             FindStreamInfoStandard => {
@@ -213,13 +203,7 @@ unsafe fn CopyStreamData(
                 // ASSERT(FALSE);
             }
         }
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    {
-    }
-    // _SEH2_END
-
-    return;
+    });
 }
 
 #[no_mangle]
@@ -485,15 +469,9 @@ pub unsafe extern "system" fn FindClose(hFindFile: HANDLE) -> BOOL {
         return 0;
     }
 
-    /* Protect with SEH against closing attempts on invalid handles. */
-    let mut __try_result: i32 = 0;
-    let mut __except_code: NTSTATUS = 0;
-    let mut __try_entered: bool = false;
-    let mut __except_entered: bool = false;
-
-    // _SEH2_TRY
-    __try_entered = true;
-    {
+    /* Protect with SEH against closing attempts on invalid handles.
+     * C: __try { .. } __except (EXECUTE_HANDLER) { BaseSetLastNTError(code); return FALSE; } */
+    match ntdll_sys::seh::try_except_all(|| -> BOOL {
         let FindDataHandle: PFIND_DATA_HANDLE = hFindFile as PFIND_DATA_HANDLE;
 
         match (*FindDataHandle).Type {
@@ -519,30 +497,19 @@ pub unsafe extern "system" fn FindClose(hFindFile: HANDLE) -> BOOL {
 
             _ => {
                 SetLastError(ERROR_INVALID_HANDLE);
-                // _SEH2_YIELD(return FALSE);
-                __try_result = 0;
-                __try_entered = false;
                 return 0;
             }
         }
 
         RtlFreeHeap(RtlGetProcessHeap(), 0, FindDataHandle as PVOID);
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    if __try_entered {
-        // No exception occurred
-    } else {
-        __except_entered = true;
-        __except_code = _SEH2_GetExceptionCode();
-        {
-            BaseSetLastNTError(__except_code);
-            // _SEH2_YIELD(return FALSE);
-            return 0;
+        1
+    }) {
+        Ok(ret) => ret,
+        Err(code) => {
+            BaseSetLastNTError(code);
+            0
         }
     }
-    // _SEH2_END
-
-    return 1;
 }
 
 #[no_mangle]

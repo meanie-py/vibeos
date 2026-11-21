@@ -1197,9 +1197,49 @@ fn ensure_server(c: &Config, kind: Kind) -> Result<u32> {
     }
     Ok(start_windows(c, kind)?.pid)
 }
+/// The other board's live listener on this same Pico, if any. The Pi 4 and Pi 5
+/// benches share one breadboard Pico that moves between them, and the Pico serves one
+/// console client: a listener left running under the other bench directory keeps
+/// the console, and ours is turned away with what reads as an authentication failure.
+/// Two Pi 5 runs lost their serial verdict to a Pi 4 listener started the day before.
+fn foreign_serial(c: &Config) -> Result<Option<(String, u32)>> {
+    let (other, key, default) = if c.board == "pi5" {
+        ("pi4", "PI4_BENCH", "/mnt/d/home/vibeos-rpi4-setup")
+    } else {
+        ("pi5", "PI5_BENCH", "/mnt/d/home/vibeos-rpi5-setup")
+    };
+    let bench = PathBuf::from(setting(&c.env, key, default));
+    if bench == c.bench {
+        return Ok(None);
+    }
+    let Some(state) = read_json(&bench.join("serial-current.json"))? else {
+        return Ok(None);
+    };
+    let endpoint = format!("{}:{} ", c.host, c.serial_port);
+    let Some(pid) = state["pid"].as_u64().and_then(|n| u32::try_from(n).ok()) else {
+        return Ok(None);
+    };
+    let live = proc_stat(pid).is_some_and(|(_, s)| s != 'Z');
+    if live && value(&state, "status") == "LISTENING" && value(&state, "port").starts_with(&endpoint)
+    {
+        return Ok(Some((other.into(), pid)));
+    }
+    Ok(None)
+}
 fn ensure_serial(c: &Config) -> Result<u32> {
     match c.mode.as_str() {
         "pico" => {
+            if let Some((other, pid)) = foreign_serial(c)? {
+                let stop = if other == "pi4" {
+                    "./vibeos-cli pi4 services serial-down"
+                } else {
+                    "./vibeos-cli pi5 serial down"
+                };
+                return Err(Error::new(format!(
+                    "the {other} bench's serial listener (pid {pid}) holds Pico {}:{}, which serves one console client; stop it first: {stop}",
+                    c.host, c.serial_port
+                )));
+            }
             if let Some(pid) = serial_process(c)? {
                 let state = read_json(&c.bench.join("serial-current.json"))?
                     .ok_or("missing serial state")?;

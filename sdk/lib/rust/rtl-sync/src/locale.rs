@@ -687,8 +687,10 @@ pub unsafe extern "system" fn RtlLcidToLocaleName(
         return STATUS_INVALID_PARAMETER_3;
     }
 
-    /* Check if the LocaleName buffer is valid */
-    if LocaleName.is_null() || (*LocaleName).Buffer.is_null() {
+    /* Check if the LocaleName buffer is valid. With AllocateDestinationString
+       the buffer is an output: Wine's locale test hands in a string filled with
+       0xCC and frees the result with RtlFreeUnicodeString. */
+    if LocaleName.is_null() || (AllocateDestinationString == 0 && (*LocaleName).Buffer.is_null()) {
         return STATUS_INVALID_PARAMETER_2;
     }
 
@@ -725,25 +727,45 @@ pub unsafe extern "system" fn RtlLcidToLocaleName(
         // An LCID whose printed name already names another LCID in the table.
         for &(OnlyLcid, Name) in LCID_ONLY_NAMES.iter() {
             if OnlyLcid == Lcid {
-                if CopyAsciizToUnicodeString(LocaleName, Name.as_ptr() as PCSTR) == 0 {
-                    return STATUS_BUFFER_TOO_SMALL;
-                }
-                return STATUS_SUCCESS;
+                return EmitLocaleName(LocaleName, Name.as_ptr() as PCSTR, AllocateDestinationString);
             }
         }
         return STATUS_INVALID_PARAMETER_1;
     }
 
     /* Copy the locale name to the buffer */
-    if CopyAsciizToUnicodeString(
+    EmitLocaleName(
         LocaleName,
         RtlpLocaleTable[LocaleIndex as usize].Locale.as_ptr() as PCSTR,
-    ) == 0
-    {
+        AllocateDestinationString,
+    )
+}
+
+// Divergence from the C, which ignores AllocateDestinationString and writes
+// through whatever Buffer the caller left in the string (Wine's locale test:
+// 0xCCCCCCCC, an access violation). As on Windows, allocate exactly the name
+// plus its NUL from the string allocator RtlFreeUnicodeString releases.
+unsafe fn EmitLocaleName(LocaleName: PUNICODE_STRING, Name: PCSTR, Allocate: u8) -> NTSTATUS {
+    if Allocate != 0 {
+        let Bytes = (strlen(Name) as usize + 1) * core::mem::size_of::<u16>();
+        let Buffer = RtlpAllocateMemory(Bytes as u32, TAG_USTR) as *mut u16;
+        if Buffer.is_null() {
+            return STATUS_NO_MEMORY;
+        }
+        (*LocaleName).Buffer = Buffer;
+        (*LocaleName).MaximumLength = Bytes as u16;
+    }
+    if CopyAsciizToUnicodeString(LocaleName, Name) == 0 {
         return STATUS_BUFFER_TOO_SMALL;
     }
-
     STATUS_SUCCESS
+}
+
+// rtlp.h: TAG_USTR 'RTSU', the tag RtlFreeUnicodeString frees string buffers with.
+const TAG_USTR: u32 = u32::from_be_bytes(*b"RTSU");
+
+extern "system" {
+    fn RtlpAllocateMemory(Bytes: u32, Tag: u32) -> *mut core::ffi::c_void;
 }
 
 unsafe fn RtlpLocaleNameToLcidInternal(
@@ -901,4 +923,116 @@ pub unsafe extern "system" fn RtlConvertLCIDToString(
         return STATUS_UNSUCCESSFUL;
     }
     STATUS_SUCCESS
+}
+
+// ---- Rtl*PreferredUILanguages (Vista+; Wine dlls/ntdll/locale.c) --------------------
+// Wine's locale test resolves these from ntdll and calls the Rtl ones without a NULL
+// check, so a missing export was an access violation that ended the whole suite. Like
+// Wine, every list holds one language: the install language for the system list, the
+// default UI language for the user and thread lists. kernel32's Get*PreferredUILanguages
+// answer the same way (kernel32-vista vista.rs).
+#[cfg(feature = "vista")]
+mod preferred_ui {
+    use super::*;
+    use ntkrnl_sys::ddk::{NtQueryDefaultUILanguage, NtQueryInstallUILanguage};
+
+    // winnls.h
+    const MUI_LANGUAGE_ID: ULONG = 0x0004;
+    const MUI_LANGUAGE_NAME: ULONG = 0x0008;
+    const MUI_MACHINE_LANGUAGE_SETTINGS: ULONG = 0x0400;
+    // winnt.h: LOCALE_NAME_MAX_LENGTH
+    const LOCALE_NAME_MAX_LENGTH: usize = 85;
+
+    // Wine's get_dummy_preferred_ui_language: "0409\0\0" or "en-US\0\0", sizes in WCHARs.
+    unsafe fn one_language(flags: ULONG, lang: u16, count: *mut ULONG, buffer: *mut u16, size: *mut ULONG) -> NTSTATUS {
+        let mut name = [0u16; LOCALE_NAME_MAX_LENGTH + 2];
+        let mut len: usize;
+        if flags & MUI_LANGUAGE_ID != 0 {
+            const HEX: &[u8; 16] = b"0123456789ABCDEF";
+            for i in 0..4 {
+                name[i] = HEX[((lang >> (12 - 4 * i)) & 0xF) as usize] as u16;
+            }
+            len = 4;
+        } else {
+            let mut str: _UNICODE_STRING = core::mem::zeroed();
+            str.Buffer = name.as_mut_ptr();
+            str.MaximumLength = core::mem::size_of_val(&name) as u16;
+            let status = RtlLcidToLocaleName(lang as LCID, &mut str, 0, 0);
+            if status != STATUS_SUCCESS {
+                return status;
+            }
+            len = (str.Length / 2) as usize;
+        }
+        len += 2;
+        name[len - 2] = 0;
+        name[len - 1] = 0;
+        if !buffer.is_null() {
+            if len as ULONG > *size {
+                *size = len as ULONG;
+                return STATUS_BUFFER_TOO_SMALL;
+            }
+            core::ptr::copy_nonoverlapping(name.as_ptr(), buffer, len);
+        }
+        *size = len as ULONG;
+        *count = 1;
+        STATUS_SUCCESS
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn RtlGetSystemPreferredUILanguages(
+        flags: ULONG,
+        unknown: ULONG,
+        count: *mut ULONG,
+        buffer: *mut u16,
+        size: *mut ULONG,
+    ) -> NTSTATUS {
+        if flags & !(MUI_LANGUAGE_NAME | MUI_LANGUAGE_ID | MUI_MACHINE_LANGUAGE_SETTINGS) != 0
+            || (flags & MUI_LANGUAGE_NAME != 0 && flags & MUI_LANGUAGE_ID != 0)
+            || unknown != 0
+            || count.is_null()
+            || size.is_null()
+            || (*size != 0 && buffer.is_null())
+        {
+            return STATUS_INVALID_PARAMETER;
+        }
+        let mut lang: u16 = 0;
+        NtQueryInstallUILanguage(&mut lang);
+        one_language(flags, lang, count, buffer, size)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn RtlGetUserPreferredUILanguages(
+        flags: ULONG,
+        _unknown: ULONG,
+        count: *mut ULONG,
+        buffer: *mut u16,
+        size: *mut ULONG,
+    ) -> NTSTATUS {
+        if flags & !(MUI_LANGUAGE_NAME | MUI_LANGUAGE_ID) != 0
+            || (flags & MUI_LANGUAGE_NAME != 0 && flags & MUI_LANGUAGE_ID != 0)
+            || count.is_null()
+            || size.is_null()
+            || (*size != 0 && buffer.is_null())
+        {
+            return STATUS_INVALID_PARAMETER;
+        }
+        let mut lang: u16 = 0;
+        NtQueryDefaultUILanguage(&mut lang);
+        one_language(flags, lang, count, buffer, size)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "system" fn RtlGetThreadPreferredUILanguages(
+        flags: ULONG,
+        count: *mut ULONG,
+        buffer: *mut u16,
+        size: *mut ULONG,
+    ) -> NTSTATUS {
+        if count.is_null() || size.is_null() {
+            return STATUS_INVALID_PARAMETER;
+        }
+        let mut lang: u16 = 0;
+        NtQueryDefaultUILanguage(&mut lang);
+        one_language(flags, lang, count, buffer, size)
+    }
 }

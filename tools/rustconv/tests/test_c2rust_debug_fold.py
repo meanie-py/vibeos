@@ -188,3 +188,11 @@ def test_as_ptr_spelt_strings_fold():
     )
     out, n = fold(text)
     assert n == 1 and out.strip() == 'WINE_TRACE!("(%p)\\n", This);'
+
+
+def test_a_block_that_was_an_else_body_keeps_its_braces():
+    # wined3d: C's `else TRACE("PBO test successful.\n");` came back `else if <on> {..}`, and
+    # the fold left `} else WINE_TRACE!(..);`, which does not parse.
+    first = SRC.index("if (*__wine_dbch___default)")
+    out, n = fold(SRC[:first] + "if x {} else " + SRC[first:])
+    assert n == 2 and 'else { WINE_WARN!("header too small\\n"); }' in out

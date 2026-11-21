@@ -5,6 +5,7 @@ use crate::setupapi::cfgmgr::CM_Enable_DevNode_Ex;
 use crate::setupapi::cfgmgr::CM_Enumerate_Classes_Ex;
 use crate::setupapi::cfgmgr::CM_Get_DevNode_Registry_Property_ExW;
 use crate::setupapi::cfgmgr::CM_Get_Parent_Ex;
+use crate::setupapi::cfgmgr::CM_Set_DevNode_Registry_Property_ExW;
 use crate::setupapi::cfgmgr::CM_Locate_DevNode_ExW;
 use crate::setupapi::cfgmgr::CM_Open_Class_Key_ExW;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
@@ -6615,9 +6616,57 @@ pub unsafe extern "system" fn SetupDiChangeState(
         'sw: {
             match (*PropChange).StateChange {
                 DICS_ENABLE | DICS_DISABLE => {
+                    let enable = (*PropChange).StateChange == DICS_ENABLE as DWORD;
                     if (*PropChange).Scope == DICS_FLAG_GLOBAL as DWORD {
-                        hRootKey = (*set).HKLM;
-                    } else {
+                        // The global ConfigFlags live in the device's Enum key, which only the
+                        // PnP service may write, so they go through it as on Windows
+                        // (CM_DRP_CONFIGFLAGS). The C opened the key itself, read access
+                        // only for a caller that is not SYSTEM, and when that failed it left
+                        // the switch with FALSE and no error set: Device Manager's Disable
+                        // and Enable failed with error 0.
+                        let dnDevInst = (*deviceInfo).dnDevInst;
+                        let mut flags: DWORD = 0;
+                        let mut len: ULONG = core::mem::size_of::<DWORD>() as ULONG;
+                        let mut cr = CM_Get_DevNode_Registry_Property_ExW(
+                            dnDevInst,
+                            CM_DRP_CONFIGFLAGS as ULONG,
+                            core::ptr::null_mut(),
+                            &raw mut flags as PVOID,
+                            &raw mut len,
+                            0,
+                            (*set).hMachine,
+                        );
+                        if cr == CR_NO_SUCH_VALUE {
+                            flags = 0;
+                            cr = CR_SUCCESS;
+                        }
+                        if cr == CR_SUCCESS {
+                            if enable {
+                                flags &= !(CONFIGFLAG_DISABLED as DWORD);
+                            } else {
+                                flags |= CONFIGFLAG_DISABLED as DWORD;
+                            }
+                            cr = CM_Set_DevNode_Registry_Property_ExW(
+                                dnDevInst,
+                                CM_DRP_CONFIGFLAGS as ULONG,
+                                &raw const flags as PCVOID,
+                                core::mem::size_of::<DWORD>() as ULONG,
+                                0,
+                                (*set).hMachine,
+                            );
+                        }
+                        if cr != CR_SUCCESS {
+                            SetLastError(GetErrorCodeFromCrCode(cr));
+                            break 'quit;
+                        }
+                        ret = if enable {
+                            ResetDevice(DeviceInfoSet, DeviceInfoData)
+                        } else {
+                            StopDevice(DeviceInfoSet, DeviceInfoData)
+                        };
+                        break 'sw;
+                    }
+                    {
                         hRootKey = OpenHardwareProfileKey(
                             (*set).HKLM,
                             (*PropChange).HwProfile,
@@ -6629,7 +6678,10 @@ pub unsafe extern "system" fn SetupDiChangeState(
                     }
 
                     /* Enable/disable device in registry */
-                    hKey = SETUPDI_OpenDrvKey(
+                    // The per-profile CSConfigFlags live in the profile's copy of the
+                    // device key; the C opened the DRIVER key here and fell back to
+                    // creating the device key.
+                    hKey = SETUPDI_OpenDevKey(
                         hRootKey,
                         deviceInfo,
                         (KEY_QUERY_VALUE | KEY_SET_VALUE) as REGSAM,
@@ -6644,6 +6696,10 @@ pub unsafe extern "system" fn SetupDiChangeState(
                         );
                     }
                     if hKey == (INVALID_HANDLE_VALUE).cast() {
+                        // SETUPDI_*DevKey set the error; never fail with it cleared.
+                        if GetLastError() == 0 {
+                            SetLastError(ERROR_ACCESS_DENIED as DWORD);
+                        }
                         break 'sw;
                     }
                     dwLength = core::mem::size_of::<DWORD>() as DWORD;

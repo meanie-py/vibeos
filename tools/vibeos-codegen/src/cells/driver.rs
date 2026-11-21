@@ -1,5 +1,7 @@
 //! Cargo-cell conversion orchestration. Planning is read-only; execution is injected.
-use super::{fncall, graph, local, proof, read, recipes, render, rewrite, Cell, Error, Result, ARCHES};
+use super::{
+    fncall, graph, local, proof, read, recipes, render, rewrite, Cell, Error, Result, ARCHES,
+};
 use regex::Regex;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -30,7 +32,8 @@ fn plan_cells(root: &Path, cells: &[Cell], whole_wave: bool) -> Result<ApplyPlan
     let mut names = BTreeSet::new();
     let member_re = Regex::new(r"members = \[\n").unwrap();
     // Function-made cells: one template per function file, and the cells that agree on it.
-    let mut templates: BTreeMap<PathBuf, (String, fncall::Expansion, Vec<String>)> = BTreeMap::new();
+    let mut templates: BTreeMap<PathBuf, (String, fncall::Expansion, Vec<String>)> =
+        BTreeMap::new();
     for cell in cells {
         let name = cell.crate_name();
         if name.contains('/') || name.contains('\\') || name == "." || name == ".." {
@@ -289,6 +292,22 @@ pub fn run_convert<H: ConvertHost>(
     plan: &ConvertPlan,
     host: &mut H,
 ) -> Result<proof::CheckResult> {
+    // A fresh baseline is cmake's link, so build it first: the file on disk may be a cell's,
+    // left by a convert whose rewrite was then stashed. Reconfiguring changes the link
+    // command, which ninja sees, but nothing asked ninja to relink before the copy, and a
+    // libjpeg proof once compared a new cell against the previous one.
+    if !plan.baseline.copies.is_empty() {
+        for arch in ARCHES {
+            let on = plan.targets_by_arch.get(arch).cloned().unwrap_or_default();
+            if !on.is_empty() {
+                host.ninja(root, arch, &on)?;
+                host.log(&format!(
+                    "built cmake's {} target(s) on {arch} for the baseline",
+                    on.len()
+                ));
+            }
+        }
+    }
     host.baseline(&plan.baseline)?;
     host.log(&format!("baseline: {}", plan.baseline_dir.display()));
     host.apply(&plan.apply)?;
@@ -325,15 +344,40 @@ pub fn run_convert<H: ConvertHost>(
     Ok(result)
 }
 /// Run the same configured-graph build entry point as Python; no shell interpolation.
+/// Each target's ninja name. add_cargo_module names a module whose output is
+/// `<dir>/<target>` (activeds.tlb) `<target>_cargo`: ninja's utility phony for the plain
+/// name would be the output's own path.
+pub fn ninja_names(build_ninja: &str, targets: &[String]) -> Vec<String> {
+    targets
+        .iter()
+        .map(|t| {
+            let renamed = format!("{t}_cargo");
+            if !build_ninja.contains(&format!("\nbuild {t}: phony"))
+                && build_ninja.contains(&format!("\nbuild {renamed}: phony"))
+            {
+                renamed
+            } else {
+                t.clone()
+            }
+        })
+        .collect()
+}
 pub fn ninja(root: &Path, arch: &str, targets: &[String]) -> Result<()> {
     let build = root.join(format!("build-{arch}"));
     local(root, &build)?;
     let script = local(root, &root.join("tools/canon-run.sh"))?;
     // `-k 0` on the cells: a wave's failures are independent, and stopping at the first
     // two (fusion, msxml3r) left the rest of an 85-module wave unbuilt and unknown.
-    let mut cells = vec!["-k".to_owned(), "0".to_owned()];
-    cells.extend(targets.iter().cloned());
-    for args in [vec!["build.ninja".to_owned()], cells] {
+    for step in 0..2 {
+        let args = if step == 0 {
+            vec!["build.ninja".to_owned()]
+        } else {
+            let mut cells = vec!["-k".to_owned(), "0".to_owned()];
+            // No build.ninja to read (a test's fake build dir): the names as given.
+            let text = std::fs::read_to_string(build.join("build.ninja")).unwrap_or_default();
+            cells.extend(ninja_names(&text, targets));
+            cells
+        };
         let output = Command::new("bash")
             .arg(&script)
             .arg("ninja")

@@ -892,6 +892,7 @@ fn resolve_inner(root: &Path, request: &Value, prepare: bool) -> Result<VmConfig
         gdb_wait: request["gdb_wait"].as_bool().unwrap_or(false)
             || text(&env, "VIBEOS_QEMU_GDB") == "wait",
         gdb_port: request["gdb_port"].as_u64().unwrap_or(0) as u16,
+        serial_file: request["serial_file"].as_bool().unwrap_or(false),
         memory,
         required_milestones: if arm {
             vec![

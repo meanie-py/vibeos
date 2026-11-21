@@ -1,0 +1,3 @@
+# usbhub3_shims (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+cxx	drivers/usb/usbhub3/driver.cpp	@build/drivers/usb/usbhub3 drivers/usb/usbhub3 @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/wdf/include/kmdf/1.17	@core -fno-exceptions -Wno-write-strings	NTDDI_VERSION=0x06030000 NTKRNLVISTA WDF_DEVICE_NO_WDMSEC_H WINVER=0x502 _WIN32_WINNT=0x603
+cxx	drivers/usb/usbhub3/hub.cpp	@build/drivers/usb/usbhub3 drivers/usb/usbhub3 @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include vendor/wdf/include/kmdf/1.17	@core -fno-exceptions -Wno-write-strings	NTDDI_VERSION=0x06030000 NTKRNLVISTA WDF_DEVICE_NO_WDMSEC_H WINVER=0x502 _WIN32_WINNT=0x603

@@ -119,8 +119,8 @@ unsafe fn IntReadConsole(
      * "This parameter requires Unicode input by default.
      * For ANSI mode, set this parameter to NULL."
      */
-    // _SEH2_TRY
-    {
+    // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); return FALSE; }
+    match ntdll_sys::seh::try_except_all(|| -> bool {
         if bUnicode != 0
             && !pInputControl.is_null()
             && (*pInputControl).nLength == core::mem::size_of::<CONSOLE_READCONSOLE_CONTROL>() as u32
@@ -155,16 +155,19 @@ unsafe fn IntReadConsole(
             /* We are in a situation where pInputControl has no meaning */
             // pInputControl = core::ptr::null_mut();
         }
+        true
+    }) {
+        Ok(true) => {}
+        Ok(false) => return 0,
+        Err(_) => {
+            // C HACK: the capture buffer is freed on this path
+            if !CaptureBuffer.is_null() {
+                CsrFreeCaptureBuffer(CaptureBuffer);
+            }
+            SetLastError(ERROR_INVALID_ACCESS);
+            return 0;
+        }
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    // {
-    //     // HACK
-    //     if (!CaptureBuffer.is_null()) CsrFreeCaptureBuffer(CaptureBuffer);
-    //     SetLastError(ERROR_INVALID_ACCESS);
-    //     // _SEH2_YIELD(return FALSE);
-    //     return 0;
-    // }
-    // _SEH2_END;
 
     /* FIXME: Check for sanity */
     /*
@@ -189,8 +192,8 @@ unsafe fn IntReadConsole(
 
     /* Retrieve the results */
     if Success != 0 {
-        // _SEH2_TRY
-        {
+        // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); Success = FALSE; }
+        if ntdll_sys::seh::try_except_all(|| {
             *lpNumberOfCharsRead = (*ReadConsoleRequest).NumBytes / CharSize;
 
             if bUnicode != 0 && !pInputControl.is_null() {
@@ -202,13 +205,12 @@ unsafe fn IntReadConsole(
                 (*ReadConsoleRequest).Buffer as *const core::ffi::c_void,
                 (*ReadConsoleRequest).NumBytes as SIZE_T,
             );
+        })
+        .is_err()
+        {
+            SetLastError(ERROR_INVALID_ACCESS);
+            Success = 0;
         }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        // {
-        //     SetLastError(ERROR_INVALID_ACCESS);
-        //     Success = 0;
-        // }
-        // _SEH2_END;
     } else {
         BaseSetLastNTError(ApiMessage.Status);
     }
@@ -244,14 +246,15 @@ unsafe fn IntGetConsoleInput(
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
 
     if !IsConsoleHandle(hConsoleInput) {
-        // _SEH2_TRY
-        {
+        // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); }
+        if ntdll_sys::seh::try_except_all(|| {
             *lpNumberOfEventsRead = 0;
             SetLastError(ERROR_INVALID_HANDLE);
+        })
+        .is_err()
+        {
+            SetLastError(ERROR_INVALID_ACCESS);
         }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
-        //     SetLastError(ERROR_INVALID_ACCESS);
-        // _SEH2_END
 
         return 0;
     }
@@ -308,8 +311,8 @@ unsafe fn IntGetConsoleInput(
     Success = NT_SUCCESS(ApiMessage.Status) as BOOL;
 
     /* Retrieve the results */
-    // _SEH2_TRY
-    {
+    // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); Success = FALSE; }
+    if ntdll_sys::seh::try_except_all(|| {
         // DPRINT("Events read: %lx\n", GetInputRequest->NumRecords);
         *lpNumberOfEventsRead = (*GetInputRequest).NumRecords;
 
@@ -322,9 +325,12 @@ unsafe fn IntGetConsoleInput(
         } else {
             BaseSetLastNTError(ApiMessage.Status);
         }
+    })
+    .is_err()
+    {
+        SetLastError(ERROR_INVALID_ACCESS);
+        Success = 0;
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
-    // _SEH2_END
 
     /* Release the capture buffer if needed */
     if !CaptureBuffer.is_null() {
@@ -347,30 +353,35 @@ unsafe fn IntReadConsoleOutput(
     let ReadOutputRequest: *mut CONSOLE_READOUTPUT = &mut ApiMessage.Data.ReadOutputRequest;
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
 
-    let mut SizeX: SHORT;
-    let mut SizeY: SHORT;
+    let mut SizeX: SHORT = 0;
+    let mut SizeY: SHORT = 0;
     let mut NumCells: ULONG;
 
     (*ReadOutputRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*ReadOutputRequest).OutputHandle = hConsoleOutput;
     (*ReadOutputRequest).Unicode = bUnicode;
 
-    // _SEH2_TRY
-    {
+    // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); return FALSE; }
+    match ntdll_sys::seh::try_except_all(|| -> bool {
         SizeX = min(dwBufferSize.X - dwBufferCoord.X, ConioRectWidth(lpReadRegion));
         SizeY = min(dwBufferSize.Y - dwBufferCoord.Y, ConioRectHeight(lpReadRegion));
         if SizeX <= 0 || SizeY <= 0 {
             SetLastError(ERROR_INVALID_PARAMETER);
-            // _SEH2_YIELD(return FALSE)
-            return 0;
+            return false;
         }
         (*lpReadRegion).Right = (*lpReadRegion).Left + SizeX - 1;
         (*lpReadRegion).Bottom = (*lpReadRegion).Top + SizeY - 1;
 
         (*ReadOutputRequest).ReadRegion = *lpReadRegion;
+        true
+    }) {
+        Ok(true) => {}
+        Ok(false) => return 0,
+        Err(_) => {
+            SetLastError(ERROR_INVALID_ACCESS);
+            return 0;
+        }
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
-    // _SEH2_END
 
     NumCells = (SizeX as ULONG) * (SizeY as ULONG);
     // DPRINT("IntReadConsoleOutput: (%d x %d)\n", SizeX, SizeY);
@@ -415,8 +426,8 @@ unsafe fn IntReadConsoleOutput(
     Success = NT_SUCCESS(ApiMessage.Status) as BOOL;
 
     /* Retrieve the results */
-    // _SEH2_TRY
-    {
+    // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); Success = FALSE; }
+    if ntdll_sys::seh::try_except_all(|| {
         *lpReadRegion = (*ReadOutputRequest).ReadRegion;
 
         if Success != 0 {
@@ -441,9 +452,12 @@ unsafe fn IntReadConsoleOutput(
         } else {
             BaseSetLastNTError(ApiMessage.Status);
         }
+    })
+    .is_err()
+    {
+        SetLastError(ERROR_INVALID_ACCESS);
+        Success = 0;
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
-    // _SEH2_END
 
     /* Release the capture buffer if needed */
     if !CaptureBuffer.is_null() {
@@ -530,43 +544,26 @@ unsafe fn IntReadConsoleOutputCode(
     /* Check for success */
     Success = if NT_SUCCESS(ApiMessage.Status) { 1 } else { 0 };
 
-    /* Retrieve the results */
-    let seh2_result: BOOL;
-    {
-        let mut seh2_except_triggered = false;
-        // _SEH2_TRY
-        {
-            *lpNumberOfCodesRead = (*ReadOutputCodeRequest).NumCodes;
+    /* Retrieve the results.
+     * C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); Success = FALSE; } */
+    if ntdll_sys::seh::try_except_all(|| {
+        *lpNumberOfCodesRead = (*ReadOutputCodeRequest).NumCodes;
 
-            if Success != 0 {
-                RtlCopyMemory(
-                    pCode,
-                    (*ReadOutputCodeRequest).pCode,
-                    ((*ReadOutputCodeRequest).NumCodes * CodeSize) as SIZE_T,
-                );
-            } else {
-                BaseSetLastNTError(ApiMessage.Status);
-            }
+        if Success != 0 {
+            RtlCopyMemory(
+                pCode,
+                (*ReadOutputCodeRequest).pCode,
+                ((*ReadOutputCodeRequest).NumCodes * CodeSize) as SIZE_T,
+            );
+        } else {
+            BaseSetLastNTError(ApiMessage.Status);
         }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        // In mechanical mode, we simulate the exception handler
-        // by checking if the above code would have faulted.
-        // Since we can't actually catch exceptions in safe Rust,
-        // we assume no exception occurs for the mechanical translation.
-        // The exception handler is preserved as a comment/placeholder.
-        // _SEH2_END
-        seh2_result = Success;
+    })
+    .is_err()
+    {
+        SetLastError(ERROR_INVALID_ACCESS);
+        Success = 0;
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    // {
-    //     SetLastError(ERROR_INVALID_ACCESS);
-    //     Success = FALSE;
-    // }
-    // _SEH2_END;
-    // For mechanical faithfulness, we keep the exception handler logic
-    // but it cannot be triggered in safe Rust. We'll keep the original
-    // Success value from the try block.
-    Success = seh2_result;
 
     /* Release the capture buffer if needed */
     if !CaptureBuffer.is_null() {
@@ -623,20 +620,22 @@ unsafe fn IntWriteConsole(
         // CaptureBuffer = NULL;
         (*WriteConsoleRequest).UsingStaticBuffer = 1;
 
-        // _SEH2_TRY
-        {
+        // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); return FALSE; }
+        match ntdll_sys::seh::try_except_all(|| -> bool {
             RtlCopyMemory(
                 (*WriteConsoleRequest).Buffer,
                 lpBuffer,
                 SizeBytes as SIZE_T,
             );
+            true
+        }) {
+            Ok(true) => {}
+            Ok(false) => return 0,
+            Err(_) => {
+                SetLastError(ERROR_INVALID_ACCESS);
+                return 0;
+            }
         }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        // {
-        //     SetLastError(ERROR_INVALID_ACCESS);
-        //     _SEH2_YIELD(return FALSE);
-        // }
-        // _SEH2_END;
     } else {
         /* Allocate a Capture Buffer */
         CaptureBuffer = CsrAllocateCaptureBuffer(1, SizeBytes);
@@ -674,16 +673,15 @@ unsafe fn IntWriteConsole(
 
     /* Retrieve the results. NOTE: lpNumberOfCharsWritten optional since Vista+ */
     if Success != 0 && !lpNumberOfCharsWritten.is_null() {
-        // _SEH2_TRY
-        {
+        // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); Success = FALSE; }
+        if ntdll_sys::seh::try_except_all(|| {
             *lpNumberOfCharsWritten = ((*WriteConsoleRequest).NumBytes).wrapping_div(CharSize);
+        })
+        .is_err()
+        {
+            SetLastError(ERROR_INVALID_ACCESS);
+            Success = 0;
         }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        // {
-        //     SetLastError(ERROR_INVALID_ACCESS);
-        //     Success = 0;
-        // }
-        // _SEH2_END;
     } else if Success == 0 {
         BaseSetLastNTError(ApiMessage.Status);
     }
@@ -723,29 +721,19 @@ unsafe fn IntWriteConsoleInput(
         (*WriteInputRequest).RecordBufPtr = (*WriteInputRequest).RecordStaticBuffer.as_mut_ptr();
         // CaptureBuffer = NULL;
 
-        // _SEH2_TRY
+        // C: __try { copy } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); return FALSE; }
+        if ntdll_sys::seh::try_except_all(|| {
+            core::ptr::copy_nonoverlapping(
+                lpBuffer as *const u8,
+                (*WriteInputRequest).RecordBufPtr as *mut u8,
+                (nLength as usize) * core::mem::size_of::<INPUT_RECORD>(),
+            );
+        })
+        .is_err()
         {
-            let __try_result = {
-                core::ptr::copy_nonoverlapping(
-                    lpBuffer as *const u8,
-                    (*WriteInputRequest).RecordBufPtr as *mut u8,
-                    (nLength as usize) * core::mem::size_of::<INPUT_RECORD>(),
-                );
-                Ok::<_, ()>(())
-            };
-            match __try_result {
-                Ok(_) => {}
-                Err(_) => {
-                    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                    {
-                        SetLastError(ERROR_INVALID_ACCESS);
-                        // _SEH2_YIELD(return FALSE);
-                        return 0;
-                    }
-                }
-            }
+            SetLastError(ERROR_INVALID_ACCESS);
+            return 0;
         }
-        // _SEH2_END;
     } else {
         let Size: ULONG = (nLength as usize * core::mem::size_of::<INPUT_RECORD>()) as ULONG;
 
@@ -783,29 +771,19 @@ unsafe fn IntWriteConsoleInput(
     }
 
     /* Retrieve the results */
-    // _SEH2_TRY
-    {
-        let __try_result = {
-            // DPRINT("Events written: %lx\n", WriteInputRequest->NumRecords);
-            *lpNumberOfEventsWritten = (*WriteInputRequest).NumRecords;
+    // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); Success = FALSE; }
+    if ntdll_sys::seh::try_except_all(|| {
+        *lpNumberOfEventsWritten = (*WriteInputRequest).NumRecords;
 
-            if Success == 0 {
-                BaseSetLastNTError(ApiMessage.Status);
-            }
-            Ok::<_, ()>(())
-        };
-        match __try_result {
-            Ok(_) => {}
-            Err(_) => {
-                // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-                {
-                    SetLastError(ERROR_INVALID_ACCESS);
-                    Success = 0;
-                }
-            }
+        if Success == 0 {
+            BaseSetLastNTError(ApiMessage.Status);
         }
+    })
+    .is_err()
+    {
+        SetLastError(ERROR_INVALID_ACCESS);
+        Success = 0;
     }
-    // _SEH2_END;
 
     /* Return success status */
     Success
@@ -823,30 +801,35 @@ unsafe fn IntWriteConsoleOutput(
     let WriteOutputRequest: *mut CONSOLE_WRITEOUTPUT = &mut (*core::ptr::addr_of_mut!(ApiMessage)).Data.WriteOutputRequest;
     let mut CaptureBuffer: PCSR_CAPTURE_BUFFER = core::ptr::null_mut();
 
-    let mut SizeX: SHORT;
-    let mut SizeY: SHORT;
+    let mut SizeX: SHORT = 0;
+    let mut SizeY: SHORT = 0;
     let mut NumCells: ULONG;
 
     (*WriteOutputRequest).ConsoleHandle = (*(*NtCurrentPeb()).ProcessParameters).ConsoleHandle;
     (*WriteOutputRequest).OutputHandle = hConsoleOutput;
     (*WriteOutputRequest).Unicode = bUnicode;
 
-    // _SEH2_TRY
-    {
+    // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); return FALSE; }
+    match ntdll_sys::seh::try_except_all(|| -> bool {
         SizeX = min(dwBufferSize.X - dwBufferCoord.X, ConioRectWidth(lpWriteRegion));
         SizeY = min(dwBufferSize.Y - dwBufferCoord.Y, ConioRectHeight(lpWriteRegion));
         if SizeX <= 0 || SizeY <= 0 {
             SetLastError(ERROR_INVALID_PARAMETER);
-            // _SEH2_YIELD(return FALSE)
-            return 0;
+            return false;
         }
         (*lpWriteRegion).Right = (*lpWriteRegion).Left + SizeX - 1;
         (*lpWriteRegion).Bottom = (*lpWriteRegion).Top + SizeY - 1;
 
         (*WriteOutputRequest).WriteRegion = *lpWriteRegion;
+        true
+    }) {
+        Ok(true) => {}
+        Ok(false) => return 0,
+        Err(_) => {
+            SetLastError(ERROR_INVALID_ACCESS);
+            return 0;
+        }
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
-    // _SEH2_END
 
     NumCells = (SizeX as ULONG) * (SizeY as ULONG);
     // DPRINT("IntWriteConsoleOutput: (%d x %d)\n", SizeX, SizeY);
@@ -898,8 +881,8 @@ unsafe fn IntWriteConsoleOutput(
     }
 
     /* Capture the user buffer contents */
-    // _SEH2_TRY
-    {
+    // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); return FALSE; }
+    match ntdll_sys::seh::try_except_all(|| -> bool {
         let mut y: SHORT;
         let mut Y: SHORT;
 
@@ -918,9 +901,21 @@ unsafe fn IntWriteConsoleOutput(
             y += 1;
             Y += 1;
         }
+        true
+    }) {
+        Ok(true) => {}
+        Ok(false) => return 0,
+        Err(_) => {
+            // The C returns here and leaks the capture or heap buffer; free it.
+            if !CaptureBuffer.is_null() {
+                CsrFreeCaptureBuffer(CaptureBuffer);
+            } else if (*WriteOutputRequest).UseVirtualMemory != 0 {
+                RtlFreeHeap(RtlGetProcessHeap(), 0, (*WriteOutputRequest).CharInfo as *mut core::ffi::c_void);
+            }
+            SetLastError(ERROR_INVALID_ACCESS);
+            return 0;
+        }
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
-    // _SEH2_END
 
     /* Call the server */
     CsrClientCallServer(
@@ -948,16 +943,19 @@ unsafe fn IntWriteConsoleOutput(
     }
 
     /* Retrieve the results */
-    // _SEH2_TRY
-    {
+    // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); Success = FALSE; }
+    if ntdll_sys::seh::try_except_all(|| {
         *lpWriteRegion = (*WriteOutputRequest).WriteRegion;
 
         if Success == 0 {
             BaseSetLastNTError(ApiMessage.Status);
         }
+    })
+    .is_err()
+    {
+        SetLastError(ERROR_INVALID_ACCESS);
+        Success = 0;
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER): DUMMY_PSEH dead code
-    // _SEH2_END
 
     /* Return success status */
     return Success;
@@ -1018,20 +1016,22 @@ unsafe fn IntWriteConsoleOutputCode(
         (*WriteOutputCodeRequest).pCode = (*WriteOutputCodeRequest).CodeStaticBuffer.as_mut_ptr() as *mut VOID;
         // CaptureBuffer = NULL;
 
-        // _SEH2_TRY
-        {
+        // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); return FALSE; }
+        match ntdll_sys::seh::try_except_all(|| -> bool {
             RtlCopyMemory(
                 (*WriteOutputCodeRequest).pCode as *mut core::ffi::c_void,
                 pCode as *const core::ffi::c_void,
                 SizeBytes as SIZE_T,
             );
+            true
+        }) {
+            Ok(true) => {}
+            Ok(false) => return 0,
+            Err(_) => {
+                SetLastError(ERROR_INVALID_ACCESS);
+                return 0;
+            }
         }
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-        // {
-        //     SetLastError(ERROR_INVALID_ACCESS);
-        //     _SEH2_YIELD(return FALSE);
-        // }
-        // _SEH2_END;
     } else {
         /* Allocate a Capture Buffer */
         CaptureBuffer = CsrAllocateCaptureBuffer(1, SizeBytes);
@@ -1067,20 +1067,19 @@ unsafe fn IntWriteConsoleOutputCode(
     }
 
     /* Retrieve the results */
-    // _SEH2_TRY
-    {
+    // C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); Success = FALSE; }
+    if ntdll_sys::seh::try_except_all(|| {
         *lpNumberOfCodesWritten = (*WriteOutputCodeRequest).NumCodes;
 
         if Success == 0 {
             BaseSetLastNTError(ApiMessage.Status);
         }
+    })
+    .is_err()
+    {
+        SetLastError(ERROR_INVALID_ACCESS);
+        Success = 0;
     }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    // {
-    //     SetLastError(ERROR_INVALID_ACCESS);
-    //     Success = FALSE;
-    // }
-    // _SEH2_END;
 
     /* Return success status */
     return Success;
@@ -1123,21 +1122,19 @@ unsafe fn IntFillConsoleOutputCode(
     /* Check for success */
     Success = if NT_SUCCESS(ApiMessage.Status) { 1 } else { 0 };
 
-    /* Retrieve the results */
-    {
-        let __try_result: i32;
-        __try_result = {
-            *lpNumberOfCodesWritten = (*FillOutputRequest).NumCodes;
+    /* Retrieve the results.
+     * C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_ACCESS); Success = FALSE; } */
+    if ntdll_sys::seh::try_except_all(|| {
+        *lpNumberOfCodesWritten = (*FillOutputRequest).NumCodes;
 
-            if Success == 0 {
-                BaseSetLastNTError(ApiMessage.Status);
-            }
-            0
-        };
-        if __try_result != 0 {
-            SetLastError(ERROR_INVALID_ACCESS);
-            Success = 0;
+        if Success == 0 {
+            BaseSetLastNTError(ApiMessage.Status);
         }
+    })
+    .is_err()
+    {
+        SetLastError(ERROR_INVALID_ACCESS);
+        Success = 0;
     }
 
     /* Return success status */

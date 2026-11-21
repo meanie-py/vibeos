@@ -92,6 +92,8 @@ pub const PROCESS_ALL_ACCESS: DWORD = STANDARD_RIGHTS_REQUIRED | SYNCHRONIZE | 0
 pub const SECURITY_NT_AUTHORITY: [BYTE; 6] = [0, 0, 0, 0, 0, 5];
 // ntstatus.h:299 `#define STATUS_PLUGPLAY_QUERY_VETOED ((NTSTATUS)0x80000028)`
 pub const STATUS_PLUGPLAY_QUERY_VETOED: NTSTATUS = 0x80000028u32 as NTSTATUS;
+// ndk/cmtypes.h PlugPlayControlQueryAndRemoveDevice flags.
+pub const PNP_QUERY_AND_REMOVE_DISABLE: ULONG = 0x00000002;
 
 // ================= wide literals ==============================================================
 // This replaces the byte-string-as-wide-pointer form, which is wrong twice over: `b"..."` has

@@ -1,0 +1,10 @@
+[FLUSH] lines 1-500 (file 97 KB): 153 ms
+[FLUSH] lines 501-1000 (file 195 KB): 147 ms
+[FLUSH] lines 1001-1500 (file 292 KB): 154 ms
+[FLUSH] lines 1501-2000 (file 390 KB): 152 ms
+[FLUSH] lines 2001-2500 (file 488 KB): 153 ms
+[FLUSH] lines 2501-3000 (file 585 KB): 153 ms
+[FLUSH] lines 3001-3500 (file 683 KB): 147 ms
+[FLUSH] lines 3501-4000 (file 781 KB): 148 ms
+[FLUSH] last block / first block: flat (x0.9), failures 0
+[FLUSH] done

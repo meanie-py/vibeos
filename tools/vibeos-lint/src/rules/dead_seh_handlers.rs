@@ -81,9 +81,11 @@ fn crate_key(path: &str) -> String {
     path.find("/src/").map_or(path, |i| &path[..i]).to_string()
 }
 
+/// Generated and test code, and cargo build scripts: a build.rs is a host program, never a
+/// translation, and its `fn main` once twinned with a rostest's `main` (rpcrt4-cargo).
 static SKIP: LazyLock<Regex> = LazyLock::new(|| {
     crate::regexes::cached(
-        r"(bindgen_[a-z0-9_]+\.rs$|types_[a-z0-9_]+\.rs$|/\.responses/|-sys/src/|difftest|/tests?/)",
+        r"(bindgen_[a-z0-9_]+\.rs$|types_[a-z0-9_]+\.rs$|/\.responses/|-sys/src/|difftest|/tests?/|/build\.rs$)",
     )
     .unwrap()
 });
@@ -252,6 +254,12 @@ fn try_bodies(body: &str) -> String {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    #[test]
+    fn a_cargo_build_script_is_not_a_translation() {
+        assert!(SKIP.is_match("sdk/lib/rust/rpcrt4-cargo/build.rs"));
+        assert!(!SKIP.is_match("sdk/lib/rust/rpcrt4-rust/src/build.rs.bak"));
+    }
 
     fn run(c_text: &str, rs: &str) -> Vec<String> {
         let corpus = Corpus::new(

@@ -80,7 +80,12 @@ def fold(text: str) -> tuple[str, int]:
         args = m.group("args").strip().rstrip(",").strip()
         args = re.sub(r"\s*\n\s*", " ", args)
         tail = f", {args}" if args else ""
-        return f'WINE_{m.group("cls")}!("{m.group("fmt")}"{tail});'
+        call = f'WINE_{m.group("cls")}!("{m.group("fmt")}"{tail});'
+        # C's `else TRACE(..);` expands to `else if <channel on> {..}`: the `if` was the
+        # else's whole body, so the call needs the braces Rust's `else` requires.
+        if re.search(r"\belse\s*$", m.string[: m.start()]):
+            return "{ " + call + " }"
+        return call
 
     return _BLOCK.sub(one, text), count
 

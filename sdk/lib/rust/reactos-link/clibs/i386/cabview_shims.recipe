@@ -1,0 +1,2 @@
+# cabview_shims (i386), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+cxx	dll/shellext/cabview/rust_cohab_stub.cpp	@build/dll/shellext/cabview dll/shellext/cabview @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/atl	@core -fexceptions	UNICODE WINVER=0x502 _CRT_DECLARE_NONSTDC_NAMES=1 _CRT_NONSTDC_NO_DEPRECATE _DLL _UNICODE _WIN32_WINNT=0x502 __USE_CRTIMP

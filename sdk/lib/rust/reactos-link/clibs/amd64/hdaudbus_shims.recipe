@@ -1,0 +1,5 @@
+# hdaudbus_shims (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+cxx	drivers/wdm/audio/hdaudbus/hdaudbus.cpp	@build/drivers/wdm/audio/hdaudbus drivers/wdm/audio/hdaudbus @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	@core -fno-exceptions	WINVER=0x502 _WIN32_WINNT=0x600
+cxx	drivers/wdm/audio/hdaudbus/fdo.cpp	@build/drivers/wdm/audio/hdaudbus drivers/wdm/audio/hdaudbus @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	@core -fno-exceptions	WINVER=0x502 _WIN32_WINNT=0x600
+cxx	drivers/wdm/audio/hdaudbus/pdo.cpp	@build/drivers/wdm/audio/hdaudbus drivers/wdm/audio/hdaudbus @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	@core -fno-exceptions	WINVER=0x502 _WIN32_WINNT=0x600
+cxx	drivers/wdm/audio/hdaudbus/businterface.cpp	@build/drivers/wdm/audio/hdaudbus drivers/wdm/audio/hdaudbus @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include	@core -fno-exceptions	WINVER=0x502 _WIN32_WINNT=0x600

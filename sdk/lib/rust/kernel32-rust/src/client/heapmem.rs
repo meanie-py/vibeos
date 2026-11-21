@@ -473,19 +473,18 @@ pub unsafe extern "system" fn GlobalFix(hMem: HGLOBAL) {
 #[no_mangle]
 pub unsafe extern "system" fn GlobalFlags(hMem: HGLOBAL) -> UINT {
     let mut hMem = hMem;
-    let HandleEntry: PBASE_HEAP_HANDLE_ENTRY;
     let mut Handle: HANDLE = core::ptr::null_mut();
     let mut Flags: ULONG = 0;
     let mut uFlags: UINT = GMEM_INVALID_HANDLE;
 
     /* Start by locking the heap */
     RtlLockHeap(BaseHeap);
-    /* _SEH2_TRY */
-    {
+    let Flags = &mut Flags;
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| {
         /* Check if this is a simple RTL Heap Managed block */
         if ((hMem as ULONG_PTR) & BASE_HEAP_IS_HANDLE_ENTRY) == 0 {
             /* Then we'll query RTL Heap */
-            RtlGetUserInfoHeap(BaseHeap, Flags, hMem, &mut Handle, &mut Flags);
+            RtlGetUserInfoHeap(BaseHeap, *Flags, hMem, &mut Handle, Flags);
             BASE_TRACE_PTR(Handle, hMem);
 
             /*
@@ -493,7 +492,7 @@ pub unsafe extern "system" fn GlobalFlags(hMem: HGLOBAL) -> UINT {
              * said that this heap isn't movable, which means something we're
              * really not a handle-based heap.
              */
-            if Handle.is_null() || (Flags & BASE_HEAP_FLAG_MOVABLE) == 0 {
+            if Handle.is_null() || (*Flags & BASE_HEAP_FLAG_MOVABLE) == 0 {
                 /* Then set the flags to 0 */
                 uFlags = 0;
             } else {
@@ -505,7 +504,7 @@ pub unsafe extern "system" fn GlobalFlags(hMem: HGLOBAL) -> UINT {
         /* Check if the handle is actually an entry in our table */
         if ((hMem as ULONG_PTR) & BASE_HEAP_IS_HANDLE_ENTRY) != 0 {
             /* Then get the entry */
-            HandleEntry = BaseHeapGetEntry(hMem);
+            let HandleEntry = BaseHeapGetEntry(hMem);
             BASE_TRACE_HANDLE(HandleEntry, hMem);
 
             /* Make sure it's a valid handle */
@@ -537,13 +536,10 @@ pub unsafe extern "system" fn GlobalFlags(hMem: HGLOBAL) -> UINT {
         if uFlags == GMEM_INVALID_HANDLE {
             SetLastError(ERROR_INVALID_HANDLE);
         }
-    }
-    /* _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) */
-    {
+    }) {
         /* Set the exception code */
-        BaseSetLastNTError(_SEH2_GetExceptionCode());
+        BaseSetLastNTError(code);
     }
-    /* _SEH2_END */
 
     /* All done! Unlock heap and return Win32 Flags */
     RtlUnlockHeap(BaseHeap);
@@ -553,8 +549,6 @@ pub unsafe extern "system" fn GlobalFlags(hMem: HGLOBAL) -> UINT {
 #[no_mangle]
 pub unsafe extern "system" fn GlobalFree(hMem: HGLOBAL) -> HGLOBAL {
     let mut hMem = hMem;
-    let HandleEntry: PBASE_HEAP_HANDLE_ENTRY;
-    let Ptr: LPVOID;
     BASE_TRACE_DEALLOC(hMem);
 
     /* Check if this was a simple allocated heap entry */
@@ -573,14 +567,12 @@ pub unsafe extern "system" fn GlobalFree(hMem: HGLOBAL) -> HGLOBAL {
 
     /* It's a handle probably, so lock the heap */
     RtlLockHeap(BaseHeap);
-    let mut __exception_code: u32 = 0;
-    let mut __try_result: i32 = 0;
-    loop {
-        __try_result = 1;
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+        let Ptr: LPVOID;
         /* Make sure that this is an entry in our handle database */
         if (hMem as ULONG_PTR) & BASE_HEAP_IS_HANDLE_ENTRY != 0 {
             /* Get the entry */
-            HandleEntry = BaseHeapGetEntry(hMem);
+            let HandleEntry = BaseHeapGetEntry(hMem);
             BASE_TRACE_HANDLE(HandleEntry, hMem);
 
             /* Make sure the handle is valid */
@@ -617,7 +609,9 @@ pub unsafe extern "system" fn GlobalFree(hMem: HGLOBAL) -> HGLOBAL {
                 SetLastError(ERROR_INVALID_HANDLE);
             }
         }
-        break;
+    }) {
+        /* Set the exception code */
+        BaseSetLastNTError(code);
     }
     /* We're done, so unlock the heap and return the handle */
     RtlUnlockHeap(BaseHeap);
@@ -630,33 +624,26 @@ pub unsafe extern "system" fn GlobalHandle(pMem: LPCVOID) -> HGLOBAL {
     let mut Flags: ULONG = 0;
 
     RtlLockHeap(BaseHeap);
-    let __exception_code: ULONG;
-    let mut __try_result: i32;
-    __try_result = 0;
-    __exception_code = 0;
-    loop {
-        if __try_result == 0 {
-            if RtlGetUserInfoHeap(
-                BaseHeap,
-                HEAP_NO_SERIALIZE,
-                pMem as *mut core::ffi::c_void,
-                &mut Handle as *mut HANDLE,
-                &mut Flags as *mut ULONG,
-            ) == 0 {
-                SetLastError(ERROR_INVALID_HANDLE);
-            } else {
-                BASE_TRACE_PTR(Handle, pMem);
-                if Handle.is_null() || (Flags & BASE_HEAP_FLAG_MOVABLE) == 0 {
-                    Handle = pMem as HANDLE;
-                }
-            }
-            __try_result = 1;
+    // C: __try { .. } __except (EXECUTE_HANDLER) { BaseSetLastNTError(code) }:
+    // RtlGetUserInfoHeap reads the block header in front of a caller's pointer.
+    let Handle_ = &mut Handle;
+    if let Err(code) = ntdll_sys::seh::try_except_all(|| {
+        if RtlGetUserInfoHeap(
+            BaseHeap,
+            HEAP_NO_SERIALIZE,
+            pMem as *mut core::ffi::c_void,
+            Handle_ as *mut HANDLE,
+            &mut Flags as *mut ULONG,
+        ) == 0 {
+            SetLastError(ERROR_INVALID_HANDLE);
         } else {
-            break;
+            BASE_TRACE_PTR(*Handle_, pMem);
+            if Handle_.is_null() || (Flags & BASE_HEAP_FLAG_MOVABLE) == 0 {
+                *Handle_ = pMem as HANDLE;
+            }
         }
-        if __try_result == 1 {
-            break;
-        }
+    }) {
+        BaseSetLastNTError(code);
     }
 
     RtlUnlockHeap(BaseHeap);
@@ -664,8 +651,6 @@ pub unsafe extern "system" fn GlobalHandle(pMem: LPCVOID) -> HGLOBAL {
 }
 #[no_mangle]
 pub unsafe extern "system" fn GlobalLock(hMem: HGLOBAL) -> LPVOID {
-    let mut HandleEntry: PBASE_HEAP_HANDLE_ENTRY;
-    let mut Ptr: LPVOID;
 
     /* Check if this was a simple allocated heap entry */
     if ((hMem as ULONG_PTR) & BASE_HEAP_IS_HANDLE_ENTRY) == 0 {
@@ -682,31 +667,18 @@ pub unsafe extern "system" fn GlobalLock(hMem: HGLOBAL) -> LPVOID {
 
     /* Otherwise, lock the heap.
      *
-     * The C wraps the body in _SEH2_TRY/_SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-     * purely to survive a wild `hMem`. Do NOT reintroduce that as a runtime
-     * branch: the original translation of this function did
-     *
-     *     let __except_val = EXCEPTION_EXECUTE_HANDLER;   // == 1, a CONSTANT
-     *     let Ptr = if __except_val != 0 { SetLastError(..); null_mut() }
-     *              else { __try_result };                 // <- dead code
-     *
-     * i.e. it turned the SEH *filter expression* into a value and then read
-     * "filter != 0" as "an exception happened", so the HANDLER ran every time
-     * and the real result was discarded. GlobalLock therefore returned NULL
-     * unconditionally — and LocalLock forwards straight to it, so every
-     * moveable Local/Global lock in the OS was broken. user32's EDIT control
-     * gets its text buffer exactly that way (LocalAlloc(LMEM_MOVEABLE) then
-     * LocalLock), so every edit box in the OS came up with a NULL buffer and
-     * the first keystroke/SetText dereferenced it (M11 §9.67).
-     *
-     * No handler is needed: BaseHeapGetEntry is pure pointer arithmetic, and
-     * BaseHeapValidateEntry bounds-checks the entry against the handle table
-     * BEFORE touching its fields (Rust's && short-circuits), so a bogus handle
-     * returns ERROR_INVALID_HANDLE instead of faulting. */
+     * C: __try { .. } __except (EXECUTE_HANDLER) { SetLastError(ERROR_INVALID_HANDLE);
+     * Ptr = NULL; }. The handler must run only when the body faults: the first
+     * translation read the filter's constant verdict as "an exception happened", ran
+     * the handler every time, and made every moveable LocalLock return NULL -- every
+     * edit box in the OS came up with no text buffer (M11 §9.67). A real catch has no
+     * such branch. BaseHeapValidateEntry bounds-checks the entry before touching it, so
+     * a bogus handle is answered without a fault; the catch is for the rest. */
     RtlLockHeap(BaseHeap);
-    let Ptr = {
+    let Ptr = match ntdll_sys::seh::try_except_all(|| {
+        let Ptr: LPVOID;
         /* Get the handle entry */
-        HandleEntry = BaseHeapGetEntry(hMem);
+        let HandleEntry = BaseHeapGetEntry(hMem);
         BASE_TRACE_HANDLE(HandleEntry, hMem);
 
         /* Make sure it's valid */
@@ -732,6 +704,12 @@ pub unsafe extern "system" fn GlobalLock(hMem: HGLOBAL) -> LPVOID {
             }
         }
         Ptr
+    }) {
+        Ok(p) => p,
+        Err(_) => {
+            SetLastError(ERROR_INVALID_HANDLE);
+            core::ptr::null_mut()
+        }
     };
 
     /* All done. Unlock the heap and return the pointer */
@@ -957,7 +935,8 @@ pub unsafe extern "system" fn GlobalSize(hMem: HGLOBAL) -> SIZE_T {
     let mut dwSize: SIZE_T = MAXULONG_PTR;
 
     RtlLockHeap(BaseHeap);
-    {
+    let dwSize_ = &mut dwSize;
+    if ntdll_sys::seh::try_except_all(|| {
         // Check if this is a simple RTL Heap Managed block
         if (hMem as ULONG_PTR) & BASE_HEAP_IS_HANDLE_ENTRY == 0 {
             // Then we'll query RTL Heap
@@ -967,7 +946,7 @@ pub unsafe extern "system" fn GlobalSize(hMem: HGLOBAL) -> SIZE_T {
                 // heap isn't movable.
                 if Handle.is_null() || (Flags & BASE_HEAP_FLAG_MOVABLE) == 0 {
                     // We're not a handle heap, so use the generic call
-                    dwSize = RtlSizeHeap(BaseHeap, HEAP_NO_SERIALIZE, hMem);
+                    *dwSize_ = RtlSizeHeap(BaseHeap, HEAP_NO_SERIALIZE, hMem);
                 } else {
                     // We're a handle heap so get the internal handle
                     hMem = Handle;
@@ -989,19 +968,21 @@ pub unsafe extern "system" fn GlobalSize(hMem: HGLOBAL) -> SIZE_T {
             } else if (HandleEntry.as_ref().unwrap().Flags & BASE_HEAP_ENTRY_FLAG_REUSE) != 0 {
                 // We've reused this block, but we've saved the size for you
                 // (OldSize overlays Object's low ULONG in the C anon union).
-                dwSize = HandleEntry.as_ref().unwrap().Object as ULONG as SIZE_T;
+                *dwSize_ = HandleEntry.as_ref().unwrap().Object as ULONG as SIZE_T;
             } else {
                 // Otherwise, query RTL about it
-                dwSize = RtlSizeHeap(BaseHeap, HEAP_NO_SERIALIZE, HandleEntry.as_ref().unwrap().Object);
+                *dwSize_ = RtlSizeHeap(BaseHeap, HEAP_NO_SERIALIZE, HandleEntry.as_ref().unwrap().Object);
             }
         }
+    })
+    .is_err()
+    {
+        // C: __except (EXECUTE_HANDLER) { dwSize = MAXULONG_PTR; } -- only when the body
+        // faults. Translated as a block after the try, it once ran EVERY time and made
+        // GlobalSize/LocalSize return 0 for every block (dxdiag's heap corruption, via
+        // the edit control's LocalSize(..)/2 - 1 undo buffer).
+        dwSize = MAXULONG_PTR;
     }
-    // The C's _SEH2_EXCEPT arm (`dwSize = MAXULONG_PTR`) runs only if the try body faults.
-    // Translated as a labeled block right after the try, it ran EVERY time: GlobalSize and
-    // LocalSize returned 0 with ERROR_INVALID_HANDLE for every block. The edit control sizes
-    // its undo buffer from LocalSize(...)/2 - 1, which wrapped to a 0-byte allocation it then
-    // wrote into -- dxdiag's heap corruption on amd64. Nothing raises into this frame here,
-    // so the arm is dropped rather than made conditional on a flag nothing can set.
 
     // Check if by now, we still haven't gotten any useful size
     if dwSize == MAXULONG_PTR {
@@ -1040,14 +1021,14 @@ pub unsafe extern "system" fn GlobalUnlock(hMem: HGLOBAL) -> BOOL {
     HandleEntry = BaseHeapGetEntry(hMem);
     BASE_TRACE_HANDLE(HandleEntry, hMem);
 
-    /* SEH2_TRY */
-    {
+    let RetVal_ = &mut RetVal;
+    if ntdll_sys::seh::try_except_all(|| {
         /* Make sure it's valid */
         if BaseHeapValidateEntry(HandleEntry) == 0 {
             /* It's not, fail */
             BASE_TRACE_FAILURE();
             SetLastError(ERROR_INVALID_HANDLE);
-            RetVal = 0i32;
+            *RetVal_ = 0i32;
         } else {
             /* Otherwise, decrement lock count, unless we're already at 0*/
             let lock_count = (*HandleEntry).LockCount;
@@ -1056,13 +1037,18 @@ pub unsafe extern "system" fn GlobalUnlock(hMem: HGLOBAL) -> BOOL {
                 /* In which case we simply lock it back and fail */
                 (*HandleEntry).LockCount = (*HandleEntry).LockCount.wrapping_add(1);
                 SetLastError(ERROR_NOT_LOCKED);
-                RetVal = 0i32;
+                *RetVal_ = 0i32;
             } else if (*HandleEntry).LockCount == 0 {
                 /* Nothing to unlock */
                 SetLastError(NO_ERROR);
-                RetVal = 0i32;
+                *RetVal_ = 0i32;
             }
         }
+    })
+    .is_err()
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        RetVal = 0i32;
     }
 
     /* All done. Unlock the heap and return the pointer */
@@ -1538,53 +1524,52 @@ pub unsafe extern "system" fn LocalSize(hMem: HLOCAL) -> SIZE_T {
 }
 #[no_mangle]
 pub unsafe extern "system" fn LocalUnlock(hMem: HLOCAL) -> BOOL {
-    let mut HandleEntry: PBASE_HEAP_HANDLE_ENTRY;
     let mut RetVal: BOOL = 1i32;
 
+    /* Check if this was a simple allocated heap entry */
     if ((hMem as ULONG_PTR) & BASE_HEAP_IS_HANDLE_ENTRY) == 0 {
+        /* Fail, because LocalUnlock is not supported on LMEM_FIXED allocations */
         SetLastError(ERROR_NOT_LOCKED);
         return 0i32;
     }
 
+    /* Otherwise, lock the heap */
     RtlLockHeap(BaseHeap);
 
-    HandleEntry = BaseHeapGetEntry(hMem);
+    /* Get the handle entry */
+    let HandleEntry: PBASE_HEAP_HANDLE_ENTRY = BaseHeapGetEntry(hMem);
     BASE_TRACE_HANDLE(HandleEntry, hMem);
 
-    let __exception_code: u32;
-    let __retval_2: i32;
-    __retval_2 = 0i32;
-    let mut __try_result: i32;
-    __try_result = 0i32;
-    unsafe {
-        __try_result = {
-            if BaseHeapValidateEntry(HandleEntry) == 0 {
-                BASE_TRACE_FAILURE();
-                SetLastError(ERROR_INVALID_HANDLE);
-                RetVal = 0i32;
-            } else {
-                let lock_count = &mut (*HandleEntry).LockCount;
-                if *lock_count == 0 {
-                    *lock_count = 1;
-                    SetLastError(ERROR_NOT_LOCKED);
-                    RetVal = 0i32;
-                } else {
-                    *lock_count -= 1;
-                    if *lock_count == 0 {
-                        SetLastError(NO_ERROR);
-                        RetVal = 0i32;
-                    }
-                }
+    let RetVal_ = &mut RetVal;
+    if ntdll_sys::seh::try_except_all(|| {
+        /* Make sure it's valid */
+        if BaseHeapValidateEntry(HandleEntry) == 0 {
+            /* It's not, fail */
+            BASE_TRACE_FAILURE();
+            SetLastError(ERROR_INVALID_HANDLE);
+            *RetVal_ = 0i32;
+        } else if (*HandleEntry).LockCount == 0 {
+            /* C: `if (!LockCount--) { LockCount++; ..fail }` -- the count stays 0. The
+             * first translation stored 1 here, so unlocking an unlocked block LOCKED it,
+             * and every later GlobalReAlloc of it was forced in place. */
+            SetLastError(ERROR_NOT_LOCKED);
+            *RetVal_ = 0i32;
+        } else {
+            (*HandleEntry).LockCount -= 1;
+            if (*HandleEntry).LockCount == 0 {
+                /* Nothing to unlock */
+                SetLastError(NO_ERROR);
+                *RetVal_ = 0i32;
             }
-            0i32
-        };
-    }
-    __exception_code = EXCEPTION_EXECUTE_HANDLER;
-    if __retval_2 != 0i32 {
+        }
+    })
+    .is_err()
+    {
         SetLastError(ERROR_INVALID_PARAMETER);
         RetVal = 0i32;
     }
 
+    /* All done. Unlock the heap and return the pointer */
     RtlUnlockHeap(BaseHeap);
     return RetVal;
 }

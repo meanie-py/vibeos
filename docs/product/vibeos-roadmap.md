@@ -611,6 +611,68 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `~/vibeos-flake-farm/fails/auto/20261108-024954-JKt07d-smoke-amd64-bios-HANG_TIMEOUT`.
   Next: a `farm` run of amd64-bios, to get a rate and a second sample.
 
+- **arm64: committed memory faults under concurrent system-process allocation (open,
+  intermittent, found 2026-11-08, upstream-sync lane; owner unassigned, MM).** kmtest
+  ZwAllocateVirtualMemory's `SystemProcessTestWorker` runs two system threads that allocate in
+  the system process at the same time. One of them got STATUS_SUCCESS committing a chunk, then
+  faulted with 0xC0000005 both writing it (`.c:90`) and reading it back (`.c:76`, `Match = 0`
+  at `.c:93`). Seen once, in conformance:arm64 during batch 161's gate
+  (`/tmp/vibeos-cli/20261108-074334-c9UMvk-conformance-arm64`); the retry passed, and the
+  batch (shell32 d3dwine) touches no MM. Seen again in batch 165's gate
+  (`/tmp/vibeos-cli/20261108-095623-oBpdmQ-conformance-arm64`, same three lines, passed on
+  retry): 2 of 5 gates. The signature points to a race between concurrent
+  commits in one process (PTE or page-table population, or the VAD), not to address-space
+  layout. It is unrelated to 56755a2a231 (kernel32's user-mode sort-table mapping). Next:
+  `farm --arches arm64` on the conformance payload to get a rate, then a tripwire on that
+  path.
+
+- **i386: bugcheck during user32:msg's cross-thread SetParent (FIXED 2026-11-08,
+  upstream-sync lane, win32k).** `test_setparent_status` runs a thread that calls
+  `SetParent(hwnd, hwnd)` on the main thread's window and exits. That thread queues a message
+  with a completion callback to the main thread and is gone before the main thread answers it.
+  `co_MsqDispatchOneSentMessage` then re-queues the answered message onto the dead thread's
+  `SentMessagesListHead` and wakes its `pEventQueueServer`, both in the freed THREADINFO:
+  0x1E at `win32k+0x6A5F0` (the InsertTailList store) or at `KeSetEvent+0xe` from the inlined
+  MsqWakeQueue, 0x0A in `KxUnwaitThread`. The C has the same gap, since thread cleanup never
+  detached a dying thread from callback messages it left in other threads' queues. The fix is
+  `MsqDetachCallbackSender` in the thread-exit callout. An earlier reading, that the garbage
+  pointer was the message's own completion event, was wrong: the faulting `cmpb $0,(%edi)`
+  only showed that the event pointer was bad, and the two dispatch-site faults identify it as
+  the sender's queue event. Before the fix: 2 of 3 boots
+  (`/tmp/vibeos-cli/20261108-120954-SImu58-smoke-i386`); after it: 0 of 4
+  (`/tmp/vibeos-cli/20261108-122938-iaRCwS-smoke-i386`). The rate swung from 7 of 8 to 0 of 6
+  across the day on the same code, so it is timing-sensitive. Fixed in the same pass: sent
+  messages move from a paged lookaside list to nonpaged pool (they embed a KEVENT), and a
+  receiver that exits no longer frees a message its callback sender is still dispatching.
+
+- **i386: 0x1E with EIP in no module during CD-ROM arrival (open, seen once 2026-11-08,
+  upstream-sync lane; owner unassigned, storage).** `BUGCHECK 0x1E (0xc0000005, 0x00210292, ...)`
+  with Ebp=8, right after `[MNTMGR] arrival` of the QEMU DVD-ROM and a scsiport "unknown ioctl
+  0x560038"; the stack words that are code point into `cdrom.sys` (+0x75A78, +0x16575) and
+  ntoskrnl+0x2F18D4. Early boot, before any user-mode process, on a k32winetest payload boot
+  (`/tmp/vibeos-cli/20261108-152013-CUO16H-smoke-i386/payload/i386-uefi_serial.log`); the
+  identical media booted clean straight after. A jump through a garbage pointer (EIP 0x210292,
+  Ebp 8), so a corrupt completion routine or dispatch pointer in the cdrom/classpnp path is the
+  first thing to look at. Not investigated.
+
+- **amd64: magenta L-shaped block over the "My Computer" icon (open, every UEFI amd64 gate
+  since at least 2026-11-07 00:22, the oldest kept).** It is identical in every amd64 gate
+  screenshot (1984 magenta sampled pixels at the top left), and i386 and arm64 never show it.
+  Magenta is the usual transparency key colour in icon bitmaps, so icon or imagelist
+  transparency failing on amd64 is the leading guess. That is a hypothesis, not yet checked.
+
+- **Pi 5: PlugPlay service intermittently stuck in START_PENDING (open, found 2026-11-08,
+  msvcrt-homebrew lane).** Two `pi5 boot`s of the same staged image (`a64212cbd0f1`, sysfbprobe)
+  differed: the first had PlugPlay RUNNING when the probe asked; in the second
+  (`/tmp/vibeos-cli/20261108-141530-aXa2Ix-pi5-boot-arm64`, serial
+  `D:\home\vibeos-rpi5-setup\serial-20261108-141048`) the SCM logged `START returned=0` and
+  umpnpmgr's DeviceInstallThread was installing devices (`ACPI\BRCM5D12` failed, newdev error
+  259), yet the service still read state 2 after 300 s. umpnpmgr's `ServiceMain` reports
+  RUNNING unconditionally after creating its three threads, so it stalled between checkpoint
+  1 and that last `SetServiceStatus`. Not seen in QEMU (arm64 probe: RUNNING after 1 s). Next:
+  sysfbprobe now prints the checkpoint, which names the thread start it stalled before; boot
+  it again until the stall recurs.
+
 - **amd64: long boots wedged once osk.exe had leaked the GDI handle table (FIXED 2026-11-07,
   graviton lane).** The stock i386 `osk.exe` gained thousands of pens (to 8,300+ in one Chrome
   payload boot; magnify leaked too), the handle table filled, pool ran dry and win32k flooded
@@ -633,27 +695,61 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   since, and the console build has not been re-run. Next: stage the console build beside them
   to tell "console only" from "gone".
 
-- **OptiPlex 9020: freeldr resets the board after loading the boot drivers (open, found
-  2026-11-07).** The netboot image of a current tree gets as far as `[FLDR] phase: boot
-  drivers loaded`. Then the board resets to coreboot without loading `AppPatch\drvmain.sdb`
-  or printing `phase: handoff to kernel`, every time. The same capture setup shows 38
-  desktop boots up to 2026-10-20 (`D:\home\vibeos-optiplex\serial-20261014-203830`), so this
-  is a loader regression since then on this board. `smoke --arch amd64-bios` passes the same
-  point in QEMU (`20261107-195717-KMdhG5`). Capture: `serial-20261107-190419`.
-  Next: bisect the loader between 2026-10-20 and now, or arm freeldr's debug output around
-  the drvmain.sdb load.
+- **amd64 Chrome payload: a Chrome thread sits Ready for 5-20 s without running (open, found
+  2026-11-07, graviton lane; parked 2026-11-08).** Seen as the sweep's hang sampler
+  (`tools/payloads/stackdump.h`) stalling in `GetThreadContext` on a Chrome thread. That stall
+  can no longer hang the payload: probes have a 20 s deadline and resume a target they left
+  suspended (landed `108be580165`); every sweep since reaches `done`. The flush the thread
+  was first seen in was a coincidence (`flushprobe`: flushes are fast and flat). What is
+  measured: at the deadline the target is **Ready** (ThreadState 1) with no CPU time accrued
+  and a handful of context switches; kernel-side, the context APC is queued and deliverable
+  (`KernelApcPending=1`, APCs not disabled, WaitIrql 0) on a thread whose NextProcessor is 0,
+  at priority 5-7, so it is not being picked to run. Unexplained: why a Ready thread on CPU 0
+  waits seconds (starvation behind busier threads until the balance manager's 300-tick boost,
+  or a ready-list/summary inconsistency). Separately, multi-process Chrome trips the §9.56
+  `[RQ5A]` drain-insert guard a few times per boot (none in the 29 single-process boots before
+  2026-11-06): always a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14,
+  the ERESOURCE owner boost, with the thread's stale links forming a short ring that reaches no
+  PRCB list head. One boot stalled with no RQ5A at all, so RQ5A is not the stall's cause; it may
+  be a false positive of the guard on stale union links. Diagnostics parked on branch
+  `graviton-diag-ctxwait` (`74f086b0488`). Next: see the RESUME HERE in
+  `docs/engineering/active-lanes/graviton-spike-plan.md`.
 
-- **No device can be disabled, removed or re-enabled from user mode (open, found
-  2026-11-07, msvcrt-homebrew lane).** The kernel's `PiControlQueryRemoveDevice`
-  (pnpmgr-rust `plugplay.rs`) looks the device up and returns `STATUS_NOT_IMPLEMENTED`, as
-  upstream's does. So `CM_Query_And_Remove_SubTree` (cr 52) and `CM_Disable_DevNode`, and with
-  them Device Manager's Disable, fail before any driver is asked. Re-enable is not there
-  either: `PiActionResetDevice` only rewinds a removed node to Uninitialized, and
-  `PiActionStartDevice` then refuses it (it wants Initialized). `IopSendRemoveDevice` also
-  drops the node's only PDO reference. The kernel's removal machinery itself exists
-  (`IopPrepareDeviceForRemoval`, `IopRemoveDevice`, and `IoRequestDeviceEject`, which runs
-  it inline); only the user-mode entry and the way back are missing. This blocks sysfb's
-  stop/remove hand-off test (`sysfb-pnp-design.md`, step 3).
+- **OptiPlex 9020: freeldr reset the board after loading the boot drivers (FIXED 2026-11-08,
+  graviton lane).** Every netboot reset to coreboot ~165 ms after `[FLDR] phase: boot drivers
+  loaded` (a Chrome-payload image: before the system hive). Not a code regression: the images
+  outgrew the loader's map. The amd64 BIOS loader identity-maps 1 GiB, and only the page
+  lookup table honoured it; `MmAllocateMemoryWithType` searched all of RAM, so on 32 GiB an
+  allocation began at `0x3ffff000` and its first INT 13h copy faulted at 1 GiB, a triple
+  fault with no IDT. Reproduced in QEMU at `-m 32G` (CR2=0x40000000), clean at 16 GiB. Now
+  allocations stay below the mapped limit, and the loader maps 4 GiB with 1 GiB pages when
+  the CPU has them (Haswell does, QEMU's default qemu64 does not). Its x86 panic handler also
+  prints on the serial port now (it wrote only to QEMU's debugcon). The board reaches the
+  desktop again (32686 MiB). Field manual: "The amd64 BIOS loader maps 1 GiB".
+
+- **No device could be disabled, removed or re-enabled from user mode (FIXED 2026-11-08,
+  msvcrt-homebrew lane).** `PiControlQueryRemoveDevice` returned `STATUS_NOT_IMPLEMENTED` (as
+  upstream) and `PiActionStartDevice` refused anything not freshly initialized. Now a
+  device action (pnpmgr-rust `devaction.rs` `PiQueryRemoveDevice`) collects the subtree plus
+  removal relations. It asks every started node with QUERY_REMOVE, leaves first. Only when
+  all of them agree does it REMOVE them; a veto cancels everything it asked and comes back as
+  `CR_REMOVE_VETOED` with the vetoing device's type and name. `PiRestartDevice` brings a
+  removed or disabled node back through AddDevice and START. Supporting fixes:
+  - pnproot keeps a root PDO on REMOVE, so the node survives.
+  - The kernel honours `CONFIGFLAG_DISABLED` at AddDevice, so a disable persists.
+  - umpnpmgr's disable passes `PNP_QUERY_AND_REMOVE_DISABLE` and reports the veto.
+  - `CM_Disable_DevNode` accepts the `CM_DISABLE_*` bits.
+  - setupapi's `SetupDiChangeState` writes ConfigFlags through `CM_DRP_CONFIGFLAGS`, instead
+    of opening the driver key, which failed with error 0.
+
+  Proven by sysfbprobe step 3 on all three arches (`sysfb-pnp-design.md`). Still owed:
+  - The kernel-initiated path (`IopPrepareDeviceForRemoval`, used for failed starts and
+    ejects) still REMOVEs a node's children before its siblings are asked, so a veto there
+    leaves part of the subtree torn down.
+  - `CONFIGFLAG_DISABLED` honoured at boot is not yet proven by a reboot test.
+  - `SetupDiSetClassInstallParamsA` is still a stub (as in Wine/upstream).
+  - Failed-start root devices now stay in the tree with their problem code (Windows
+    behaviour), instead of vanishing.
 
 - **FASTFAT's verify of a hot-plug volume never settles (open, found 2026-11-07,
   amd64-bios).** classpnp marks a removable or hot-plug disk's volume `DO_VERIFY_VOLUME` on
@@ -742,6 +838,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `NtCreateSection`/`LdrLoadDll` with the status. Repro: drop `vm_memory: 1536M` from
   `tools/payloads/modrun/payload.yaml`, `MODRUN_SUITES=d3d8`, boot amd64. Artifact:
   `/tmp/vibeos-cli/20261105-195149-61405khw-smoke-amd64`. modrun now boots with 1.5G.
+- **The modrun grader could lose a case's single `[MODRUN] exit` line (FIXED 2026-11-08: `modrun.c` now sends it twice).**
+  The smoke failed `d3d8.logic: rust: never finished (no exit line)`, but QEMU's serial log for
+  the same run has the line intact (`[MODRUN] exit d3d8.logic rust rc=0x00000000 ms=690
+  records=74`). `modrun.py grade` on that file passes all 8 d3d cases. The harness grades the
+  text it built from live `payload_read` chunks (`tools/vibeos-test/src/payload.rs` `drain`), not
+  that file, so the live stream dropped the line. Records go out twice and get checksums against
+  exactly this loss; the exit line went out once. Now it goes out twice, and `parse` keys exits
+  by (case, variant), so the copy is a no-op (test `exit_line_sent_twice_is_one_exit`).
+  Artifact: `/tmp/vibeos-cli/20261108-121724-jbjnb78t-smoke-arm64`.
 - **setupapi file-queue copies failed on the live boot, and a NULL target name went to the
   wrong file (FIXED 2026-11-01 in setupapi-rust; the C has all three bugs).** Measured with the
   modrun setupapi probe: `%TEMP%` = `X:\reactos\TEMP` EXISTS on the x86 live boot, but `X:` is
@@ -816,8 +921,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   runs the continue handlers too, as the C does. Graded by `tools/payloads/vehprobe` (fault,
   order, continue, remove, continued raise): all PASS on i386 and amd64
   (`20261105-232703-488lty8l`, `20261105-232853-gqxpxny4`); arm64 passes the four fault cases
-  and HANGs the raise, the open arm64 `RtlRaiseException` bug below
-  (`20261105-233150-dbuff_ay`). wow64's `Wow64pVeh` now runs on amd64; the amd64 ladder is
+  and HANGed the raise, the arm64 `RtlRaiseException` bug below
+  (`20261105-233150-dbuff_ay`; fixed 2026-11-08, raise PASS on arm64 in `20261108-143038-nfvwfE`). wow64's `Wow64pVeh` now runs on amd64; the amd64 ladder is
   13/13 PASS on it (`20261105-233955-5l_obhz3`), and the arm64 FEX ladder 13/13 + x86-64
   11/11 (`20261105-234852-0qxo29e9`).
 - **One user-mode `ReleaseSemaphore` past the maximum bugchecked the kernel — FIXED 2026-11-06
@@ -1362,26 +1467,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `usercall.rs`) checked TEB64's GDI batch count, so a 32-bit guest's batched PatBlt was still
   unflushed when GetPixel ran (the C `KiWow64GdiBatchCount` fix was in the cohab-flipped
   `trap.c`). gui32 is graded on its full pass (`0x600D`) on both hosts now.
-- **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
-  lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
-  captured mid-body of itself, so `ZwContinue` after a vectored handler's
-  `EXCEPTION_CONTINUE_EXECUTION` resumes inside `RtlRaiseException` and dispatches again,
-  forever (found when a VEH probe hung an x86-64 guest process's thread for 30 s; amd64's asm
-  version rewrites Rip/Rsp to the caller and does not have it). `ExceptionAddress` is also NULL.
-  Masked today because, under DUMMY_PSEH, nothing continues a raise. **Two fixes were tried and
-  both reverted**, because each made smss's `seh_poc_user.c` probe 1 (a raise caught by
-  `__except`) print `CORRUPT x21: 00007FFFFFFEF000 -> 000000000012FAE8` on an otherwise green
-  boot: (1) one `RtlVirtualUnwind` of our own frame after the capture; (2) an asm
-  `RtlRaiseException` that captures before touching any nonvolatile register and patches
-  fp/lr/sp/pc to the caller's, as amd64 does (run `20261006-021810-kpujl93s-smoke-arm64`). Since
-  (2) hands the dispatcher exactly the caller's state, the x21 corruption is downstream:
-  probably the arm64 `RtlUnwindEx` / `__C_specific_handler` path when the dispatch context's
-  first frame is the `__try` function itself rather than `RtlRaiseException` (the old shape
-  always had one extra frame to unwind first). Start there, with (2) and a probe that continues
-  a raise (`fired == 1 && returned`). That probe now exists: `tools/payloads/vehprobe`'s `raise`
-  case, which PASSes on i386 and amd64 and on arm64 reports `raise HANG (... trace
-  'FFFFFFFFFFFFFFF')`, the handler re-entered until the timeout (`20261105-233150-dbuff_ay`).
-  It is excluded from arm64's verdict only until this is fixed; drop that `#if` with the fix.
+- **arm64: a software raise that a handler CONTINUES never returns — FIXED 2026-11-08.** The
+  arm64 `RtlRaiseException` (rtl-diag `exception.rs`) handed the dispatcher a context captured
+  mid-body of itself, so `ZwContinue` after `EXCEPTION_CONTINUE_EXECUTION` resumed inside it and
+  dispatched again, forever, with `ExceptionAddress` NULL. It is now a `global_asm!` routine like
+  amd64's except_asm.S: capture before any nonvolatile register is touched, then Pc = Lr = the
+  return address and Sp = the caller's. The two reverted attempts (2026-10-06) tripped smss's
+  `seh_poc_user.c` probe 1 with `CORRUPT x21`; this one carries `.seh_save_fplr_x` /
+  `.seh_stackalloc` unwind codes for its own frame, and probe 1 passes clean, so the earlier
+  asm's missing unwind data is the likely culprit (not re-proven: that code was never
+  committed). `vehprobe`'s raise case now returns on arm64 and is graded there
+  (`20261108-143038-nfvwfE`). Also: ContextFlags is CONTROL|INTEGER; the old `CONTEXT_FULL` over a
+  zeroed FP area made a continue zero d8-d15.
 - **arm64: synchronous IRP completions ran late, into dead stack frames** (FIXED 2026-10-06).
   The HAL drained APCs under a per-CPU flag that stayed set across a thread switch inside a
   normal kernel APC, so other threads' `IopCompleteRequest` APCs waited for a later IRQL drop

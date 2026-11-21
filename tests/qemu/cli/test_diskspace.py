@@ -10,7 +10,7 @@ import pytest
 
 from . import __main__ as cli
 from . import diskspace as disk
-from . import gate, hostlock, land, queue
+from . import gate, hostlock, land
 from .artifacts import Run
 
 #: Room for exactly ONE build (plus the check-tooling job these tests nest inside it) and
@@ -102,7 +102,6 @@ def test_cli_refuses_before_build_or_artifact_creation(isolated, monkeypatch, ca
     assert cli.main(["build", "--arch", "arm64"]) == 2
     message = capsys.readouterr().out
     assert gate._child_classification(message) == disk.FAILURE
-    assert disk.FAILURE in queue.INCONCLUSIVE
 
 
 def test_tooling_propagates_capacity_classification(isolated, monkeypatch):
