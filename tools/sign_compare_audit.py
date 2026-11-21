@@ -75,7 +75,9 @@ def _donor(d: str, by_dir: dict[str, dict]) -> dict | None:
     return None
 
 
-def _candidates(live: set[str], by_dir: dict[str, dict]) -> tuple[list[tuple[str, dict]], list[str]]:
+def _candidates(
+    live: set[str], by_dir: dict[str, dict]
+) -> tuple[list[tuple[str, dict]], list[str]]:
     found: list[tuple[str, dict]] = []
     no_donor: list[str] = []
     for area in AREAS:
@@ -113,7 +115,12 @@ def _command(p: str, donor: dict, arch: str) -> list[str]:
     x = os.path.dirname(p)
     for _ in range(4):
         rel = os.path.relpath(x, ROOT)
-        inc += [f"-I{x}", f"-I{x}/include", f"-I{x}/include/internal", f"-I{ROOT / f'build-{arch}' / rel}"]
+        inc += [
+            f"-I{x}",
+            f"-I{x}/include",
+            f"-I{x}/include/internal",
+            f"-I{ROOT / f'build-{arch}' / rel}",
+        ]
         x = os.path.dirname(x)
         if x == str(ROOT):
             break
@@ -123,8 +130,13 @@ def _command(p: str, donor: dict, arch: str) -> list[str]:
 
 
 def _scan(p: str, donor: dict, arch: str) -> tuple[str, list[str], int]:
-    r = subprocess.run(_command(p, donor, arch), cwd=_real(donor["directory"]),
-                       capture_output=True, text=True, check=False)
+    r = subprocess.run(
+        _command(p, donor, arch),
+        cwd=_real(donor["directory"]),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     lines = r.stderr.splitlines()
     src = Path(p).read_text(errors="replace").splitlines()
     rel = os.path.relpath(p, ROOT)
@@ -132,10 +144,10 @@ def _scan(p: str, donor: dict, arch: str) -> tuple[str, list[str], int]:
     for i, line in enumerate(lines):
         if "-Wsign-compare" not in line or not line.startswith(p + ":"):
             continue
-        ln = int(line[len(p) + 1:].split(":", 1)[0])
+        ln = int(line[len(p) + 1 :].split(":", 1)[0])
         text = src[ln - 1].strip() if ln <= len(src) else ""
         notes: list[str] = []  # this diagnostic's own "expanded from" notes, up to the next one
-        for nxt in lines[i + 1:]:
+        for nxt in lines[i + 1 :]:
             if ": warning: " in nxt or ": error: " in nxt:
                 break
             notes.append(nxt)
@@ -146,7 +158,7 @@ def _scan(p: str, donor: dict, arch: str) -> tuple[str, list[str], int]:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap = argparse.ArgumentParser(description="Audit flipped C for mixed-sign min/max.")
     ap.add_argument("--arch", required=True, choices=["i386", "amd64", "arm64"])
     ap.add_argument("--jobs", type=int, default=8)
     a = ap.parse_args()
@@ -163,8 +175,11 @@ def main() -> int:
                 print(h)
     for p in no_donor:
         print(f"#NODONOR {os.path.relpath(p, ROOT)}")
-    print(f"# {a.arch}: {len(found)} flipped .c scanned ({n_err} partly parsed), "
-          f"{len(no_donor)} without a donor TU, {n_hits} mixed-sign min/max sites", file=sys.stderr)
+    print(
+        f"# {a.arch}: {len(found)} flipped .c scanned ({n_err} partly parsed), "
+        f"{len(no_donor)} without a donor TU, {n_hits} mixed-sign min/max sites",
+        file=sys.stderr,
+    )
     return 0
 
 
