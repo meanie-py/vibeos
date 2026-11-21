@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "shlwapi-cargo",
+    "shdocvw-cargo",
     "msacm32_drv-cargo",
     "msgsm32_acm-cargo",
     "msg711_acm-cargo",

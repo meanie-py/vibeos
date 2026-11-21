@@ -554,15 +554,25 @@ extends it from the boot spine to every fully-Rust module.
        - The themes' rc deps come from a foreach. Expanded, they named only the loop's last
          file, so the rewrite now keeps such a dep as its list variable.
        - wdmaud.drv still links two bodies (`several bodies`).
+   - **2026-11-21: shdocvw and shlwapi converted**, EQUIVALENT ×3. Both link a sibling
+     OBJECT library by `$<TARGET_OBJECTS:>` (shdocvw_sublib, shlwapi_autocomp) whose C++
+     compiles with `atl_classes`' usage. The generator folded those objects into
+     `<t>_shims`, which compiled them without ATL's include dirs. A link input from
+     `CMakeFiles/<lib>.dir/`, where `<lib>` is an OBJECT library the module's own
+     CMakeLists defines, is now `Cell::sibling_shims`: the library stays as written and
+     the cell replays its compile as its own `c_from_compile_db("<lib>")`. It links whole
+     only in a body-less cell. Loading shlwapi_autocomp whole, ahead of the Rust body,
+     pulled shell32's monolithic delay object first, and link-guard caught shell32's
+     `StrChrA` thunk (shell32 exports the Str* family) winning over shlwapi's own Rust
+     `StrChrA`.
    - **RESUME HERE (2026-11-08, fleet pause).**
+     - *(2026-11-21: the 11-08 batch landed; shdocvw + shlwapi followed, ratchet 29.)*
      - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
        integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
        cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
        the 14 dotted targets. First check that 0fa7e73bb5c is an ancestor of origin/master.
        If it bounced, the integrator's message names the gate dir.
      - **Next, by size:**
-       - shdocvw and shlwapi: a sibling OBJECT library (atl_classes) whose usage the
-         rewrite does not carry;
        - browseui: `target_link_options`;
        - explorer and rshell: rshell reads explorer's CBandSite.cpp from no source dir;
        - msvcrt: its custom cargo command shape;
