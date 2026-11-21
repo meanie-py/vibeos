@@ -980,10 +980,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `FatVerifyVolume`, and counted no create/read/disk statistics (empty C stand-ins, now
   `stats.rs`). Findings the agents raised that are NOT bugs here: open-coded asserts and
   `DbgBreakPoint`s that mirror `NT_ASSERT` -- this build is `DBG=1`, so the C's asserts are
-  live too. Still open, as decisions rather than bugs: cdfs's `FILE_OPEN_REQUIRING_OPLOCK`
-  block is `#[cfg(any())]` although the crate builds `ntddi_win8` (its FCB oplock layout is
-  the pre-WIN8 one); fastfat's `FatCommonCreateCallout` lacks the C's try/except but is dead
-  below WINTHRESHOLD. Known left as-is: fastfat's oplock stand-ins (`FsRtlOplockBreakH`
+  live too. The two open decisions were settled 2026-11-21: cdfs now refuses
+  `FILE_OPEN_REQUIRING_OPLOCK` with STATUS_INVALID_PARAMETER, as Windows 11's CDFS does while
+  FAT32 and NTFS open the file (fsquery `oplockopen`, winref `20261121-173426-fIMkD3`), and
+  fastfat's `FatCommonCreateCallout` has the C's try/except (still unreachable below
+  WINTHRESHOLD). Known left as-is: fastfat's oplock stand-ins (`FsRtlOplockBreakH`
   SUCCESS, `FsRtlCheckOplockEx` ignoring Flags: ntoskrnl stubs them at 0xA00+),
   `KeAcquireSpinLockRaiseToDpc` in `rust_cohab_fat.c` (raises IRQL, takes no lock: UP-only),
   cdfs's `FsRtlIsLeadDbcsCharacter` stand-in (always FALSE, DBCS OEM code pages),

@@ -1256,7 +1256,7 @@ const MAXULONG: u32 = 0xffffffff;
 const TAG_FILE_NAME: u32 = 0x6e466443;
 
 #[no_mangle]
-pub unsafe extern "C" fn CdCommonCreate(
+pub unsafe extern "C" fn CdCommonCreate( // nolint: version-vs-c -- its FILE_OPEN_REQUIRING_OPLOCK refusal (feature ntddi_win8, on) is NTDDI_WIN7 in the C and enforced on purpose, as Windows 11 CDFS does
     mut IrpContext: *mut IRP_CONTEXT,
     mut Irp: PIRP,
 ) -> NTSTATUS {
@@ -1329,9 +1329,10 @@ pub unsafe extern "C" fn CdCommonCreate(
     //
     //  CDFS does not support FILE_OPEN_REQUIRING_OPLOCK
     //
-    // dead: C is #if (NTDDI_VERSION >= NTDDI_WIN7), cdfs builds at WS03, where the option is
-    // ignored rather than refused.
-    #[cfg(any())]
+    // C is #if (NTDDI_VERSION >= NTDDI_WIN7); this crate builds ntddi_win8. Windows 11 refuses
+    // the option here with STATUS_INVALID_PARAMETER while FAT32 and NTFS open the file
+    // (fsquery.win11.txt, "oplockopen").
+    #[cfg(feature = "ntddi_win8")]
     if FlagOn((*IrpSp).Parameters.Create.Options, FILE_OPEN_REQUIRING_OPLOCK) != 0 {
         CdCompleteRequest(IrpContext as *mut core::ffi::c_void, Irp, STATUS_INVALID_PARAMETER);
         return STATUS_INVALID_PARAMETER;
