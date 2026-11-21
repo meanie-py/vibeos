@@ -450,6 +450,20 @@ pub fn build_rs(cell: &Cell) -> Result<String> {
             cell.target
         ));
     }
+    // A sibling OBJECT library the module linked by $<TARGET_OBJECTS>: objects on cmake's
+    // link line, after the module's own, so whole as well in a body-less cell. With a Rust
+    // body, an archive like `<t>_shims`: loading shlwapi_autocomp whole, ahead of the
+    // body, pulled shell32's monolithic delay object first, and its StrChrA thunk (shell32
+    // exports the Str* family) won over shlwapi's own Rust StrChrA.
+    for (lib, srcs) in &cell.sibling_shims {
+        l.push(format!(
+            "        .c_from_compile_db(\"{lib}\", &[{}])",
+            quoted(srcs)
+        ));
+        if cell.body_crate.is_empty() {
+            l.push(format!("        .whole_c_objects(\"{lib}\")"));
+        }
+    }
     if let Some(rc) = &cell.rc {
         l.push(rc_call(rc));
     }
