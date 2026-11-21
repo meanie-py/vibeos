@@ -96,14 +96,14 @@ pub static CERT_GROUP_POLICY_SYSTEM_STORE_REGPATH: [::core::ffi::c_ushort; 47] =
 static mut gCertInterface: WINE_CONTEXT_INTERFACE = unsafe {
     _WINE_CONTEXT_INTERFACE {
         create: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(DWORD, *const BYTE, DWORD) -> PCCERT_CONTEXT>,
+            Option<unsafe extern "system" fn(DWORD, *const BYTE, DWORD) -> PCCERT_CONTEXT>,
             CreateContextFunc,
         >(Some(
             CertCreateCertificateContext,
         )),
         addContextToStore: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(
+                unsafe extern "system" fn(
                     HCERTSTORE,
                     PCCERT_CONTEXT,
                     DWORD,
@@ -116,7 +116,7 @@ static mut gCertInterface: WINE_CONTEXT_INTERFACE = unsafe {
         )),
         addEncodedToStore: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(
+                unsafe extern "system" fn(
                     HCERTSTORE,
                     DWORD,
                     *const BYTE,
@@ -130,20 +130,20 @@ static mut gCertInterface: WINE_CONTEXT_INTERFACE = unsafe {
             CertAddEncodedCertificateToStore,
         )),
         enumContextsInStore: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCERT_CONTEXT) -> PCCERT_CONTEXT>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCERT_CONTEXT) -> PCCERT_CONTEXT>,
             EnumContextsInStoreFunc,
         >(Some(
             CertEnumCertificatesInStore,
         )),
         enumProps: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCERT_CONTEXT, DWORD) -> DWORD>,
+            Option<unsafe extern "system" fn(PCCERT_CONTEXT, DWORD) -> DWORD>,
             EnumPropertiesFunc,
         >(Some(
             CertEnumCertificateContextProperties,
         )),
         getProp: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(
+                unsafe extern "system" fn(
                     PCCERT_CONTEXT,
                     DWORD,
                     *mut ::core::ffi::c_void,
@@ -156,7 +156,7 @@ static mut gCertInterface: WINE_CONTEXT_INTERFACE = unsafe {
         )),
         setProp: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(
+                unsafe extern "system" fn(
                     PCCERT_CONTEXT,
                     DWORD,
                     DWORD,
@@ -168,13 +168,13 @@ static mut gCertInterface: WINE_CONTEXT_INTERFACE = unsafe {
             CertSetCertificateContextProperty,
         )),
         serialize: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCERT_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(PCCERT_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
             SerializeElementFunc,
         >(Some(
             CertSerializeCertificateStoreElement,
         )),
         deleteFromStore: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCERT_CONTEXT) -> BOOL>,
+            Option<unsafe extern "system" fn(PCCERT_CONTEXT) -> BOOL>,
             DeleteContextFunc,
         >(Some(
             CertDeleteCertificateFromStore,
@@ -188,14 +188,14 @@ pub static mut pCertInterface: *const WINE_CONTEXT_INTERFACE = unsafe { &raw con
 static mut gCRLInterface: WINE_CONTEXT_INTERFACE = unsafe {
     _WINE_CONTEXT_INTERFACE {
         create: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(DWORD, *const BYTE, DWORD) -> PCCRL_CONTEXT>,
+            Option<unsafe extern "system" fn(DWORD, *const BYTE, DWORD) -> PCCRL_CONTEXT>,
             CreateContextFunc,
         >(Some(
             CertCreateCRLContext,
         )),
         addContextToStore: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(HCERTSTORE, PCCRL_CONTEXT, DWORD, *mut PCCRL_CONTEXT) -> BOOL,
+                unsafe extern "system" fn(HCERTSTORE, PCCRL_CONTEXT, DWORD, *mut PCCRL_CONTEXT) -> BOOL,
             >,
             AddContextToStoreFunc,
         >(Some(
@@ -203,7 +203,7 @@ static mut gCRLInterface: WINE_CONTEXT_INTERFACE = unsafe {
         )),
         addEncodedToStore: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(
+                unsafe extern "system" fn(
                     HCERTSTORE,
                     DWORD,
                     *const BYTE,
@@ -217,20 +217,20 @@ static mut gCRLInterface: WINE_CONTEXT_INTERFACE = unsafe {
             CertAddEncodedCRLToStore,
         )),
         enumContextsInStore: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCRL_CONTEXT) -> PCCRL_CONTEXT>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCRL_CONTEXT) -> PCCRL_CONTEXT>,
             EnumContextsInStoreFunc,
         >(Some(
             CertEnumCRLsInStore,
         )),
         enumProps: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCRL_CONTEXT, DWORD) -> DWORD>,
+            Option<unsafe extern "system" fn(PCCRL_CONTEXT, DWORD) -> DWORD>,
             EnumPropertiesFunc,
         >(Some(
             CertEnumCRLContextProperties,
         )),
         getProp: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(
+                unsafe extern "system" fn(
                     PCCRL_CONTEXT,
                     DWORD,
                     *mut ::core::ffi::c_void,
@@ -243,7 +243,7 @@ static mut gCRLInterface: WINE_CONTEXT_INTERFACE = unsafe {
         )),
         setProp: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(
+                unsafe extern "system" fn(
                     PCCRL_CONTEXT,
                     DWORD,
                     DWORD,
@@ -255,13 +255,13 @@ static mut gCRLInterface: WINE_CONTEXT_INTERFACE = unsafe {
             CertSetCRLContextProperty,
         )),
         serialize: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCRL_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(PCCRL_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
             SerializeElementFunc,
         >(Some(
             CertSerializeCRLStoreElement,
         )),
         deleteFromStore: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCRL_CONTEXT) -> BOOL>,
+            Option<unsafe extern "system" fn(PCCRL_CONTEXT) -> BOOL>,
             DeleteContextFunc,
         >(Some(
             CertDeleteCRLFromStore,
@@ -275,14 +275,14 @@ pub static mut pCRLInterface: *const WINE_CONTEXT_INTERFACE = unsafe { &raw cons
 static mut gCTLInterface: WINE_CONTEXT_INTERFACE = unsafe {
     _WINE_CONTEXT_INTERFACE {
         create: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(DWORD, *const BYTE, DWORD) -> PCCTL_CONTEXT>,
+            Option<unsafe extern "system" fn(DWORD, *const BYTE, DWORD) -> PCCTL_CONTEXT>,
             CreateContextFunc,
         >(Some(
             CertCreateCTLContext,
         )),
         addContextToStore: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(HCERTSTORE, PCCTL_CONTEXT, DWORD, *mut PCCTL_CONTEXT) -> BOOL,
+                unsafe extern "system" fn(HCERTSTORE, PCCTL_CONTEXT, DWORD, *mut PCCTL_CONTEXT) -> BOOL,
             >,
             AddContextToStoreFunc,
         >(Some(
@@ -290,7 +290,7 @@ static mut gCTLInterface: WINE_CONTEXT_INTERFACE = unsafe {
         )),
         addEncodedToStore: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(
+                unsafe extern "system" fn(
                     HCERTSTORE,
                     DWORD,
                     *const BYTE,
@@ -304,20 +304,20 @@ static mut gCTLInterface: WINE_CONTEXT_INTERFACE = unsafe {
             CertAddEncodedCTLToStore,
         )),
         enumContextsInStore: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCTL_CONTEXT) -> PCCTL_CONTEXT>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCTL_CONTEXT) -> PCCTL_CONTEXT>,
             EnumContextsInStoreFunc,
         >(Some(
             CertEnumCTLsInStore,
         )),
         enumProps: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCTL_CONTEXT, DWORD) -> DWORD>,
+            Option<unsafe extern "system" fn(PCCTL_CONTEXT, DWORD) -> DWORD>,
             EnumPropertiesFunc,
         >(Some(
             CertEnumCTLContextProperties,
         )),
         getProp: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(
+                unsafe extern "system" fn(
                     PCCTL_CONTEXT,
                     DWORD,
                     *mut ::core::ffi::c_void,
@@ -330,7 +330,7 @@ static mut gCTLInterface: WINE_CONTEXT_INTERFACE = unsafe {
         )),
         setProp: ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(
+                unsafe extern "system" fn(
                     PCCTL_CONTEXT,
                     DWORD,
                     DWORD,
@@ -342,13 +342,13 @@ static mut gCTLInterface: WINE_CONTEXT_INTERFACE = unsafe {
             CertSetCTLContextProperty,
         )),
         serialize: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCTL_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(PCCTL_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
             SerializeElementFunc,
         >(Some(
             CertSerializeCTLStoreElement,
         )),
         deleteFromStore: ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCTL_CONTEXT) -> BOOL>,
+            Option<unsafe extern "system" fn(PCCTL_CONTEXT) -> BOOL>,
             DeleteContextFunc,
         >(Some(
             CertDeleteCTLFromStore,
@@ -452,7 +452,7 @@ static mut MemStoreVtbl: store_vtbl_t = unsafe {
 
 static mut msgProvFuncs: [*mut ::core::ffi::c_void; 1] = unsafe {
     [::core::mem::transmute::<
-        Option<unsafe extern "C" fn(HCERTSTORE, DWORD) -> ()>,
+        Option<unsafe extern "system" fn(HCERTSTORE, DWORD) -> ()>,
         *mut ::core::ffi::c_void,
     >(Some(
         CRYPT_MsgCloseStore,
@@ -602,7 +602,7 @@ pub unsafe extern "system" fn I_CertUpdateStore(
     let mut i: DWORD;
 
     TRACE!("(%p, %p, %08lx, %08lx)\n", store1, store2, unk0, unk1);
-    if !warned == 0 {
+    if warned == 0 {
         FIXME!("semi-stub\n");
         warned = (TRUE as i32);
     }

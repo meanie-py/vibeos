@@ -943,7 +943,7 @@ unsafe extern "C" fn binary_to_hexW(
     }
 
     i = 0 as DWORD;
-    while i < nbin {
+    'bytes: while i < nbin {
         'body: {
             *str = hex[((*bin.add(i as usize) as DWORD >> (4 as DWORD))
                 & (0xf as DWORD)) as usize];
@@ -953,7 +953,7 @@ unsafe extern "C" fn binary_to_hexW(
             str = str.add(1);
 
             if i >= nbin.wrapping_sub(1 as DWORD) {
-                break;
+                break 'bytes;
             }
 
             if i != 0 && (flags & (CRYPT_STRING_NOCRLF as DWORD)) == 0 {

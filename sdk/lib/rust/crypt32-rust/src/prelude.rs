@@ -34,6 +34,28 @@ pub use core::ptr::{addr_of, addr_of_mut};
 #[macro_export] macro_rules! WARN  { ($($arg:tt)*) => { win32macros_rust::WINE_WARN!($($arg)*) }; }
 #[macro_export] macro_rules! FIXME { ($($arg:tt)*) => { win32macros_rust::WINE_FIXME!($($arg)*) }; }
 pub use crate::{ERR, FIXME, TRACE, WARN};
+// A Wine module's ReactOS-only TUs use reactos/debug.h too (crypt32's unixlib.c:
+// `UNIMPLEMENTED;`), so the Wine prelude carries the ReactOS no-ops as well.
+#[macro_export] macro_rules! DPRINT {
+    ($($arg:tt)*) => { ::win32macros_rust::DBG_TYPECHECK!($($arg)*) };
+}
+#[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
+pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};
+
+// <wchar.h> wmemchr: clang expands it as a builtin, so no CRT this tree links exports it
+// (the C crypt32.dll imports none) -- chain.c's match_common_name calls it.
+#[inline]
+pub unsafe fn wmemchr(s: *const WCHAR, c: WCHAR, n: size_t) -> *mut WCHAR {
+    let mut i = 0;
+    while i < n {
+        if *s.add(i) == c {
+            return s.add(i) as *mut WCHAR;
+        }
+        i += 1;
+    }
+    core::ptr::null_mut()
+}
 
 // ================= CRT ========================================================================
 // NEVER hand-write memcpy/memset/memmove/memcmp in Rust: LLVM folds any byte-copy loop back into
@@ -78,10 +100,11 @@ pub use crate::{CONTAINING_RECORD, NT_SUCCESS};
 pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, CopyMemory, DBG_TYPECHECK, DBG_UNREFERENCED_LOCAL_VARIABLE, DPRINT1, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, ERR_ON, FAILED_UNEXPECTEDLY, FD_SET, FD_ZERO, FIELD_OFFSET, FIXME_ON, GET_WHEEL_DELTA_WPARAM, GET_X_LPARAM, GET_Y_LPARAM, GetAValue, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, HRESULT_FROM_WIN32, HandleToUlong, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, IS_INTRESOURCE, InitializeObjectAttributes, IntToPtr, InterlockedCompareExchange, InterlockedCompareExchangePointer, InterlockedDecrement, InterlockedDecrement64, InterlockedExchange, InterlockedExchangePointer, InterlockedIncrement, InterlockedIncrement64, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, LongToHandle, LongToPtr, MAKEINTATOM, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToInt, PtrToLong, PtrToUint, PtrToUlong, RGB, RGBA, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlSecureZeroMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, SecureZeroMemory, TRACE_ON, UIntToPtr, ULongToHandle, ULongToPtr, UNICODE_NULL, UNIMPLEMENTED_DBGBREAK, UNREACHABLE, UNREFERENCED_PARAMETER, UintToPtr, UlongToHandle, UlongToPtr, WARN_ON, WINE_ERR, WINE_ERR_, WINE_FIXME, WINE_FIXME_, WINE_TRACE, WINE_TRACE_, WINE_WARN, WINE_WARN_, ZeroMemory, __HRESULT_FROM_WIN32, __debugbreak, __p___argc, __p___argv, __p___wargv, __p__environ, __p__pgmptr, __p__wenviron, __p__wpgmptr, __wine_dprintf, __wine_is_debug_on, _byteswap_uint64, _byteswap_ulong, _byteswap_ushort, _countof, debugstr_a, debugstr_an, debugstr_fourcc, debugstr_guid, debugstr_variant, debugstr_vt, debugstr_w, debugstr_wn, heap_alloc, heap_alloc_zero, heap_calloc, heap_free, heap_realloc, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, lrintf, strlenW, tolowerW, wide_bytes, wine_dbgstr_a, wine_dbgstr_fourcc, wine_dbgstr_guid, wine_dbgstr_longlong, wine_dbgstr_rect, wine_dbgstr_variant, wine_dbgstr_vt, wine_dbgstr_w};
 
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
+// winreg.h's predefined keys: `(HKEY)(ULONG_PTR)((LONG)0x8000000x)`, sign-extended on 64-bit.
+pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001u32 as i32 as isize as HKEY;
+pub const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
-pub const HKEY_CURRENT_USER: usize = 0x8000_0001; // dsound-rust/src/prelude.rs // gen:99a780fd7c30
-pub const HKEY_LOCAL_MACHINE: usize = 0x8000_0002; // rapps-rust/src/rapps/appdb_cpp_h.rs // gen:ad21a30e6fac
 pub const RPC_S_OK: RPC_STATUS = 0; // advapi32-rust/src/prelude.rs // gen:2cf5bd2da631
 pub const StoreTypeCollection: _CertStoreType = _CertStoreType_StoreTypeCollection; // island enum // gen:c7c0fbdc68ce
 pub const StoreTypeEmpty: _CertStoreType = _CertStoreType_StoreTypeEmpty; // island enum // gen:ef3141915ccc
@@ -89,7 +112,6 @@ pub const StoreTypeMem: _CertStoreType = _CertStoreType_StoreTypeMem; // island 
 pub const StoreTypeProvider: _CertStoreType = _CertStoreType_StoreTypeProvider; // island enum // gen:b5e9cd1148e8
 pub const __WINE_DBCL_TRACE: __wine_debug_class = 3; // activeds-rust/src/prelude.rs // gen:845fcd2ce5ae
 extern "C" {
-    pub fn RtlUlongByteSwap(source: u32) -> u32; // byteswap/src/lib.rs // gen:4e0b04336ad8
     pub fn free(p: *mut c_void); // activeds-rust/src/prelude.rs // gen:0ad441c3c230
     pub fn isspace(c: i32) -> i32; // cnt-ctype/src/lib.rs // gen:bd320cdfba63
     pub fn malloc(size: usize) -> *mut c_void; // activeds-rust/src/prelude.rs // gen:86a212c6fd14
@@ -216,23 +238,6 @@ pub use conutils_h::{AnsiText, Binary, CON_STREAM, CON_STREAM_MODE, CON_WRITE_FU
 pub use winelist_rust::{list_add_after, list_add_before, list_add_head, list_add_tail, list_count, list_empty, list_head, list_init, list_move_head, list_move_tail, list_next, list_prev, list_remove, list_tail};
 
 // ==== port facts: constants evaluated by clang from the C headers (generated -- `rustconv port resolve`) ====
-pub const ASN_BITSTRING: i32 = 3; // clang, decode.c
-pub const ASN_BMPSTRING: i32 = 0x1E; // clang, decode.c
-pub const ASN_BOOL: i32 = 1; // clang, decode.c
-pub const ASN_ENUMERATED: i32 = 0xA; // clang, decode.c
-pub const ASN_GENERALSTRING: i32 = 0x1B; // clang, decode.c
-pub const ASN_GENERALTIME: i32 = 0x18; // clang, decode.c
-pub const ASN_GRAPHICSTRING: i32 = 0x19; // clang, decode.c
-pub const ASN_IA5STRING: i32 = 0x16; // clang, decode.c
-pub const ASN_NUMERICSTRING: i32 = 0x12; // clang, decode.c
-pub const ASN_PRINTABLESTRING: i32 = 0x13; // clang, decode.c
-pub const ASN_SETOF: i32 = 0x11; // clang, decode.c
-pub const ASN_T61STRING: i32 = 0x14; // clang, decode.c
-pub const ASN_UNIVERSALSTRING: i32 = 0x1C; // clang, decode.c
-pub const ASN_UTCTIME: i32 = 0x17; // clang, decode.c
-pub const ASN_UTF8STRING: i32 = 0xC; // clang, decode.c
-pub const ASN_VIDEOTEXSTRING: i32 = 0x15; // clang, decode.c
-pub const ASN_VISIBLESTRING: i32 = 0x1A; // clang, decode.c
 pub const CRYPT_E_NOT_IN_REVOCATION_DATABASE: HRESULT = 0x80092014_u32 as HRESULT; // clang, chain.c
 pub const CRYPT_E_NO_REVOCATION_CHECK: HRESULT = 0x80092012_u32 as HRESULT; // clang, chain.c
 pub const CRYPT_E_NO_REVOCATION_DLL: HRESULT = 0x80092011_u32 as HRESULT; // clang, cert.c
@@ -583,7 +588,7 @@ pub(crate) use MEMBERSIZE;
 #[allow(unused_macros)]
 macro_rules! POINTER_ALIGN_DWORD_PTR {
     ($p:expr $(,)?) => {
-        (ALIGN_DWORD_PTR!(($p) as DWORD_PTR) as LPVOID)
+        (ALIGN_DWORD_PTR!(($p) as usize) as LPVOID)
     };
 }
 #[allow(unused_imports)]
@@ -597,7 +602,7 @@ macro_rules! TRACE_DATA_BLOB {
             "{} pbData @ {:p}:{}\n",
             stringify!($blob),
             (*($blob)).pbData,
-            hex_str((*($blob)).pbData, (*($blob)).cbData)
+            hex_str((*($blob)).pbData, (*($blob)).cbData as c_int)
         );
     }};
 }

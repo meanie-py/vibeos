@@ -200,6 +200,7 @@ pub struct CSignerHandles {
 }
 pub type PCSignerHandles = *mut CSignerHandles;
 
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct CSignedMsgData {
     pub info: *mut CRYPT_SIGNED_INFO,
@@ -253,6 +254,7 @@ pub struct CEnvelopedEncodeMsg {
 }
 pub type PCEnvelopedEncodeMsg = *mut CEnvelopedEncodeMsg;
 
+#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct CEnvelopedDecodeMsg {
     pub data: *mut CRYPT_ENVELOPED_DATA,
@@ -1096,7 +1098,7 @@ unsafe extern "C" fn CRYPT_IsValidSigner(signer: *const CMSG_SIGNER_ENCODE_INFO_
             CERT_ID_KEY_IDENTIFIER => {
                 if (*signer).SignerId.__bindgen_anon_1.KeyId.cbData == 0 {
                     SetLastError((E_INVALIDARG) as DWORD);
-                    return FALSE;
+                    return (FALSE) as BOOL;
                 }
             }
             _ => {
@@ -1104,18 +1106,18 @@ unsafe extern "C" fn CRYPT_IsValidSigner(signer: *const CMSG_SIGNER_ENCODE_INFO_
             }
         }
         if !(*signer).HashEncryptionAlgorithm.pszObjId.is_null() {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
     }
     if (*signer).hCryptProv == 0 {
         SetLastError((E_INVALIDARG) as DWORD);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
     if CertOIDToAlgId((*signer).HashAlgorithm.pszObjId as LPCSTR) == 0 {
         SetLastError((CRYPT_E_UNKNOWN_ALGO) as DWORD);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 unsafe extern "C" fn CRYPT_ConstructBlob(out: *mut CRYPT_DATA_BLOB, in_: *const CRYPT_DATA_BLOB) -> BOOL {
@@ -1464,10 +1466,10 @@ unsafe extern "C" fn CSignedMsgData_AllocateHandles(msg_data: *mut CSignedMsgDat
 unsafe extern "C" fn CSignedMsgData_CloseHandles(msg_data: *mut CSignedMsgData) {
     let mut i: DWORD = 0;
     while i < (*msg_data).cSignerHandle {
-        if !(*(*msg_data).signerHandles.offset(i as isize)).contentHash.is_null() {
+        if !((*(*msg_data).signerHandles.offset(i as isize)).contentHash == 0) {
             CryptDestroyHash((*(*msg_data).signerHandles.offset(i as isize)).contentHash);
         }
-        if !(*(*msg_data).signerHandles.offset(i as isize)).authAttrHash.is_null() {
+        if !((*(*msg_data).signerHandles.offset(i as isize)).authAttrHash == 0) {
             CryptDestroyHash((*(*msg_data).signerHandles.offset(i as isize)).authAttrHash);
         }
         i = i.wrapping_add(1);
@@ -3213,7 +3215,7 @@ unsafe extern "C" fn CDecodeMsg_DecodeContent(
             let mut size: DWORD = 0;
             ret = CryptDecodeObjectEx(
                 X509_ASN_ENCODING as DWORD,
-                PKCS_CONTENT_INFO as DWORD,
+                PKCS_CONTENT_INFO,
                 (*msg).msg_data.pbData,
                 (*msg).msg_data.cbData,
                 CRYPT_DECODE_ALLOC_FLAG as DWORD,
@@ -3653,7 +3655,7 @@ unsafe extern "C" fn CRYPT_CopyAttributes(
     if (*in_).cAttr != 0 {
         let mut i: DWORD = 0;
 
-        *nextData = POINTER_ALIGN_DWORD_PTR!(*nextData);
+        *nextData = POINTER_ALIGN_DWORD_PTR!(*nextData) as LPBYTE;
         (*out).rgAttr = *nextData as *mut CRYPT_ATTRIBUTE;
         *nextData = (*nextData).offset(
             ((*in_).cAttr as usize)
@@ -3679,7 +3681,7 @@ unsafe extern "C" fn CRYPT_CopyAttributes(
                 let mut j: DWORD = 0;
                 (*(*out).rgAttr.add(i as usize)).cValue =
                     (*(*in_).rgAttr.add(i as usize)).cValue;
-                *nextData = POINTER_ALIGN_DWORD_PTR!(*nextData);
+                *nextData = POINTER_ALIGN_DWORD_PTR!(*nextData) as LPBYTE;
                 (*(*out).rgAttr.add(i as usize)).rgValue = *nextData as PCRYPT_DATA_BLOB;
                 *nextData = (*nextData).offset(
                     ((*(*in_).rgAttr.add(i as usize)).cValue as usize)
@@ -3715,7 +3717,7 @@ unsafe extern "C" fn CRYPT_SizeOfAttributes(attr: *const CRYPT_ATTRIBUTES) -> DW
             );
         }
         /* align pointer */
-        size = ALIGN_DWORD_PTR!(size);
+        size = ALIGN_DWORD_PTR!(size as usize) as DWORD;
         size = size.wrapping_add(
             (*(*attr).rgAttr.offset(i as isize))
                 .cValue
@@ -3731,7 +3733,7 @@ unsafe extern "C" fn CRYPT_SizeOfAttributes(attr: *const CRYPT_ATTRIBUTES) -> DW
         i = i.wrapping_add(1);
     }
     /* align pointer again to be conservative */
-    size = ALIGN_DWORD_PTR!(size);
+    size = ALIGN_DWORD_PTR!(size as usize) as DWORD;
     return size;
 }
 
@@ -3864,7 +3866,7 @@ unsafe extern "C" fn CRYPT_CopySignerInfo(
     size = size.wrapping_add((*in_).HashEncryptionAlgorithm.Parameters.cbData);
     size = size.wrapping_add((*in_).EncryptedHash.cbData);
     /* align pointer */
-    size = ALIGN_DWORD_PTR!(size) as DWORD;
+    size = ALIGN_DWORD_PTR!(size as usize) as DWORD;
     size = size.wrapping_add(CRYPT_SizeOfAttributes(&raw const (*in_).AuthAttrs));
     size = size.wrapping_add(CRYPT_SizeOfAttributes(&raw const (*in_).UnauthAttrs));
     if pvData.is_null() {
@@ -3965,7 +3967,7 @@ unsafe extern "C" fn CRYPT_CopyCMSSignerInfo(
     size = size.wrapping_add((*in_0).HashEncryptionAlgorithm.Parameters.cbData);
     size = size.wrapping_add((*in_0).EncryptedHash.cbData);
     /* align pointer */
-    size = ALIGN_DWORD_PTR!(size);
+    size = ALIGN_DWORD_PTR!(size as usize) as DWORD;
     size = size.wrapping_add(CRYPT_SizeOfAttributes(core::ptr::addr_of!((*in_0).AuthAttrs)));
     size = size.wrapping_add(CRYPT_SizeOfAttributes(core::ptr::addr_of!((*in_0).UnauthAttrs)));
     if pvData.is_null() {
@@ -4015,7 +4017,7 @@ unsafe extern "C" fn CRYPT_CopyCMSSignerInfo(
             core::ptr::addr_of!((*in_0).EncryptedHash),
             core::ptr::addr_of_mut!(nextData),
         );
-        nextData = POINTER_ALIGN_DWORD_PTR!(nextData);
+        nextData = POINTER_ALIGN_DWORD_PTR!(nextData) as LPBYTE;
         CRYPT_CopyAttributes(
             core::ptr::addr_of_mut!((*out).AuthAttrs),
             core::ptr::addr_of!((*in_0).AuthAttrs),

@@ -10837,7 +10837,7 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x0600 -D_WIN32_WINNT=0x0600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D__WINESRC__ -D_USE_MATH_DEFINES -D__ROS_LONG64__ -DWINE_NO_NAMELESS_EXTENSION -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   crypt32)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-11-08 from dll/win32/crypt32/CMakeLists.txt
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-11-21 from dll/win32/crypt32/CMakeLists.txt
     # (27 compiled TU(s), 159 headers in the include closure, 268 switch constant(s)).
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
@@ -10847,7 +10847,7 @@ case "$DRIVER" in
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
     BLOCKLIST_FUNCS=1
     DRIVER_DIR="${SRC}/dll/win32/crypt32"
-    WRAPPER_INC=$'#include <windef.h>\n#include <winbase.h>\n#include <wincrypt.h>\n#include <wine/debug.h>\n#include <crypt32_private.h>\n#include <assert.h>\n#include <winreg.h>\n#include <stdarg.h>\n#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n#include <wchar.h>\n#include "ntstatus.h"\n#define WIN32_NO_STATUS\n#include "windef.h"\n#include "winbase.h"\n#include "winternl.h"\n#define CRYPT_OID_INFO_HAS_EXTRA_FIELDS\n#include "winerror.h"\n#include "wincrypt.h"\n#include <winnls.h>\n#include "mssip.h"\n#include "winreg.h"\n#include "winuser.h"\n#include "wintrust.h"\n#include "i_cryptasn1tls.h"\n#include "snmp.h"\n#include <winternl.h>\n#include "bcrypt.h"\n#include "winnls.h"\n#define CERT_CHAIN_PARA_HAS_EXTRA_FIELDS\n#define CERT_REVOCATION_PARA_HAS_EXTRA_FIELDS\n#include "wininet.h"\n#include "rpc.h"\n#include "wine/debug.h"\n#include "wine/list.h"\n#include "wine/exception.h"\n#include "crypt32_private.h"\n#include "cryptres.h"'
+    WRAPPER_INC=$'#include <assert.h>\n#include <stdarg.h>\n#include <stdio.h>\n#include <string.h>\n#include <stdlib.h>\n#include <wchar.h>\n#include "ntstatus.h"\n#define WIN32_NO_STATUS\n#include "windef.h"\n#include "winbase.h"\n#include "winternl.h"\n#define CRYPT_OID_INFO_HAS_EXTRA_FIELDS\n#include "winerror.h"\n#define CERT_CHAIN_PARA_HAS_EXTRA_FIELDS\n#define CERT_REVOCATION_PARA_HAS_EXTRA_FIELDS\n#include "wincrypt.h"\n#include "mssip.h"\n#include "winreg.h"\n#include "winuser.h"\n#include "wintrust.h"\n#include "i_cryptasn1tls.h"\n#include "snmp.h"\n#include "bcrypt.h"\n#include "winnls.h"\n#include "wininet.h"\n#include "rpc.h"\n#include "wine/debug.h"\n#include "wine/list.h"\n#include "wine/exception.h"\n#include "crypt32_private.h"\n#include "cryptres.h"'
     ALLOW_FILES=( --allowlist-file '.*[/\\]bcrypt\.h' --allowlist-file '.*[/\\]i_cryptasn1tls\.h'
                   --allowlist-file '.*[/\\]mssip\.h'
                   --allowlist-file '.*[/\\]rpc\.h'

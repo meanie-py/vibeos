@@ -578,9 +578,9 @@ unsafe extern "C" fn Collection_control(
     ret = TRUE as BOOL;
     EnterCriticalSection(core::ptr::addr_of_mut!((*store).cs));
     entry = ((*store).stores.next as *mut u8).offset(
-        -(core::mem::offset_of!(WINE_STORE_LIST_ENTRY, WINE_STORE_LIST_ENTRY) as isize),
+        -(core::mem::offset_of!(WINE_STORE_LIST_ENTRY, entry) as isize),
     ) as *mut WINE_STORE_LIST_ENTRY;
-    while core::ptr::addr_of_mut!((*entry).WINE_STORE_LIST_ENTRY)
+    while core::ptr::addr_of_mut!((*entry).entry)
         != core::ptr::addr_of_mut!((*store).stores)
     {
         if (*(*(*entry).store).vtbl).control.is_some() {
@@ -596,8 +596,8 @@ unsafe extern "C" fn Collection_control(
                 break;
             }
         }
-        entry = ((*entry).WINE_STORE_LIST_ENTRY.next as *mut u8).offset(
-            -(core::mem::offset_of!(WINE_STORE_LIST_ENTRY, WINE_STORE_LIST_ENTRY) as isize),
+        entry = ((*entry).entry.next as *mut u8).offset(
+            -(core::mem::offset_of!(WINE_STORE_LIST_ENTRY, entry) as isize),
         ) as *mut WINE_STORE_LIST_ENTRY;
     }
     LeaveCriticalSection(core::ptr::addr_of_mut!((*store).cs));

@@ -7,6 +7,7 @@ use crate::crypt32::main::CryptMemFree;
 use crate::crypt32::unixlib::__reactos_call_unix_close_cert_store;
 use crate::crypt32::unixlib::__reactos_call_unix_import_store_cert;
 use crate::crypt32::unixlib::__reactos_call_unix_open_cert_store;
+use crate::crypt32::unixlib::__reactos_call_unix_import_store_key;
 use crate::prelude::*;
 use core::ffi::c_void;
 
@@ -33,7 +34,7 @@ unsafe extern "C" fn import_key(mut data: cert_store_data_t, mut flags: DWORD) -
         buf_size: core::ptr::addr_of_mut!(size),
     };
 
-    if CRYPT32_CALL(import_store_key, core::ptr::addr_of_mut!(params) as *mut ::core::ffi::c_void) != STATUS_BUFFER_TOO_SMALL {
+    if __reactos_call_unix_import_store_key(core::ptr::addr_of_mut!(params) as *mut ::core::ffi::c_void) != STATUS_BUFFER_TOO_SMALL {
         return 0;
     }
 
@@ -66,7 +67,7 @@ unsafe extern "C" fn import_key(mut data: cert_store_data_t, mut flags: DWORD) -
 
     key = CryptMemAlloc(size) as *mut ::core::ffi::c_void;
     params.buf = key;
-    if CRYPT32_CALL(import_store_key, core::ptr::addr_of_mut!(params) as *mut ::core::ffi::c_void) != 0
+    if __reactos_call_unix_import_store_key(core::ptr::addr_of_mut!(params) as *mut ::core::ffi::c_void) != 0
         || CryptImportKey(
             prov,
             key as *const BYTE,

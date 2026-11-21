@@ -887,7 +887,7 @@ unsafe extern "C" fn CRYPT_EncodeValueWithType(
     }
     ret = CryptEncodeObjectEx(
         dwCertEncodingType,
-        X509_UNICODE_NAME_VALUE as DWORD,
+        X509_UNICODE_NAME_VALUE,
         core::ptr::addr_of_mut!(nameValue) as *const core::ffi::c_void,
         CRYPT_ENCODE_ALLOC_FLAG as DWORD,
         (::core::ptr::null_mut::<core::ffi::c_void>()).cast(),
@@ -1137,7 +1137,7 @@ pub unsafe extern "system" fn CertStrToNameW(
         }
         ret = CryptEncodeObjectEx(
             dwCertEncodingType,
-            X509_NAME as DWORD,
+            X509_NAME,
             core::ptr::addr_of_mut!(info) as *const core::ffi::c_void,
             0 as DWORD,
             core::ptr::null_mut(),
@@ -1283,7 +1283,7 @@ unsafe extern "C" fn cert_get_alt_name_info(
     }
     return CryptDecodeObjectEx(
         (*cert).dwCertEncodingType,
-        X509_ALTERNATE_NAME as DWORD,
+        X509_ALTERNATE_NAME,
         (*ext).Value.pbData,
         (*ext).Value.cbData,
         CRYPT_DECODE_ALLOC_FLAG as DWORD,

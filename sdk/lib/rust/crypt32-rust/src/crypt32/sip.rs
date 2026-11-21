@@ -845,13 +845,13 @@ unsafe extern "C" fn CRYPT_LoadSIP(pgSubject: *const GUID) -> BOOL {
     let mut lib: HMODULE = core::ptr::null_mut();
     let mut temp: HMODULE = core::ptr::null_mut();
     'error: {
-        sip.pfGet = core::mem::transmute::<*mut core::ffi::c_void, Option<pCryptSIPGetSignedDataMsg>>(
+        sip.pfGet = core::mem::transmute::<*mut core::ffi::c_void, pCryptSIPGetSignedDataMsg>(
             CRYPT_LoadSIPFunc(pgSubject, RUSTCONV_WSTR_6FB3BB38F1CD.as_ptr(), core::ptr::addr_of_mut!(lib)),
         );
         if sip.pfGet.is_none() {
             break 'error;
         }
-        sip.pfPut = core::mem::transmute::<*mut core::ffi::c_void, Option<pCryptSIPPutSignedDataMsg>>(
+        sip.pfPut = core::mem::transmute::<*mut core::ffi::c_void, pCryptSIPPutSignedDataMsg>(
             CRYPT_LoadSIPFunc(pgSubject, RUSTCONV_WSTR_1FF4217A2E88.as_ptr(), core::ptr::addr_of_mut!(temp)),
         );
         if sip.pfPut.is_none() || temp != lib {
@@ -859,7 +859,7 @@ unsafe extern "C" fn CRYPT_LoadSIP(pgSubject: *const GUID) -> BOOL {
         }
         FreeLibrary(temp);
         temp = core::ptr::null_mut();
-        sip.pfCreate = core::mem::transmute::<*mut core::ffi::c_void, Option<pCryptSIPCreateIndirectData>>(
+        sip.pfCreate = core::mem::transmute::<*mut core::ffi::c_void, pCryptSIPCreateIndirectData>(
             CRYPT_LoadSIPFunc(pgSubject, RUSTCONV_WSTR_71A628F66082.as_ptr(), core::ptr::addr_of_mut!(temp)),
         );
         if sip.pfCreate.is_none() || temp != lib {
@@ -867,7 +867,7 @@ unsafe extern "C" fn CRYPT_LoadSIP(pgSubject: *const GUID) -> BOOL {
         }
         FreeLibrary(temp);
         temp = core::ptr::null_mut();
-        sip.pfVerify = core::mem::transmute::<*mut core::ffi::c_void, Option<pCryptSIPVerifyIndirectData>>(
+        sip.pfVerify = core::mem::transmute::<*mut core::ffi::c_void, pCryptSIPVerifyIndirectData>(
             CRYPT_LoadSIPFunc(pgSubject, RUSTCONV_WSTR_5FCBA2C2CE88.as_ptr(), core::ptr::addr_of_mut!(temp)),
         );
         if sip.pfVerify.is_none() || temp != lib {
@@ -875,7 +875,7 @@ unsafe extern "C" fn CRYPT_LoadSIP(pgSubject: *const GUID) -> BOOL {
         }
         FreeLibrary(temp);
         temp = core::ptr::null_mut();
-        sip.pfRemove = core::mem::transmute::<*mut core::ffi::c_void, Option<pCryptSIPRemoveSignedDataMsg>>(
+        sip.pfRemove = core::mem::transmute::<*mut core::ffi::c_void, pCryptSIPRemoveSignedDataMsg>(
             CRYPT_LoadSIPFunc(pgSubject, RUSTCONV_WSTR_8759990C0E16.as_ptr(), core::ptr::addr_of_mut!(temp)),
         );
         if sip.pfRemove.is_none() || temp != lib {

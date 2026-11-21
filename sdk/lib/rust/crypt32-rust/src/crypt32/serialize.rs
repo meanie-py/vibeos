@@ -1166,7 +1166,7 @@ unsafe extern "C" fn CRYPT_WriteSerializedStoreToStream(
     if ret != 0 {
         interface = *pCertInterface;
         interface.serialize = ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCERT_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(PCCERT_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
             SerializeElementFunc,
         >(Some(
             CRYPT_SerializeCertNoHash,
@@ -1176,7 +1176,7 @@ unsafe extern "C" fn CRYPT_WriteSerializedStoreToStream(
     if ret != 0 {
         interface = *pCRLInterface;
         interface.serialize = ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCRL_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(PCCRL_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
             SerializeElementFunc,
         >(Some(
             CRYPT_SerializeCRLNoHash,
@@ -1186,7 +1186,7 @@ unsafe extern "C" fn CRYPT_WriteSerializedStoreToStream(
     if ret != 0 {
         interface = *pCTLInterface;
         interface.serialize = ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(PCCTL_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(PCCTL_CONTEXT, DWORD, *mut BYTE, *mut DWORD) -> BOOL>,
             SerializeElementFunc,
         >(Some(
             CRYPT_SerializeCTLNoHash,
@@ -1504,7 +1504,7 @@ pub unsafe extern "system" fn CertSaveStore(
         }
         CERT_STORE_SAVE_TO_FILENAME_A => {
             handle = CreateFileA(
-                pvSaveToPara,
+                pvSaveToPara as LPCSTR,
                 GENERIC_WRITE,
                 0,
                 core::ptr::null_mut(),
@@ -1515,7 +1515,7 @@ pub unsafe extern "system" fn CertSaveStore(
         }
         CERT_STORE_SAVE_TO_FILENAME_W => {
             handle = CreateFileW(
-                pvSaveToPara,
+                pvSaveToPara as LPCWSTR,
                 GENERIC_WRITE,
                 0,
                 core::ptr::null_mut(),

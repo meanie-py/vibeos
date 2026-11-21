@@ -5380,13 +5380,13 @@ unsafe extern "C" fn CRYPT_FindIssuer(
             WINE_TRACE!("Trying URL %s\n", debugstr_w(*(*urls).rgwszUrl.offset(i as isize) as *const WCHAR));
             res = CryptRetrieveObjectByUrlW(
                 *(*urls).rgwszUrl.offset(i as isize) as LPCWSTR,
-                0,
+                CONTEXT_OID_CERTIFICATE,
                 (if (flags & (CERT_CHAIN_CACHE_ONLY_URL_RETRIEVAL as DWORD)) != 0 {
                     CRYPT_CACHE_ONLY_RETRIEVAL
                 } else {
                     CRYPT_AIA_RETRIEVAL
                 }) as DWORD,
-                CONTEXT_OID_CERTIFICATE,
+                0,
                 &raw mut new_cert as *mut LPVOID,
                 NULL,
                 ::core::ptr::null_mut::<_CRYPT_CREDENTIALS>(),
@@ -5736,7 +5736,7 @@ unsafe extern "C" fn CRYPT_BuildCandidateChainFromCert(
     let mut world: HCERTSTORE = ::core::ptr::null_mut::<::core::ffi::c_void>();
     let mut ret: BOOL = 0;
     world = CertOpenStore(
-        CERT_STORE_PROV_COLLECTION as DWORD,
+        CERT_STORE_PROV_COLLECTION,
         0 as DWORD,
         0 as HCRYPTPROV_LEGACY,
         CERT_STORE_CREATE_NEW_FLAG as DWORD,
@@ -6658,7 +6658,7 @@ pub unsafe extern "system" fn CertFindChainInStore(
     prevChainContext: PCCERT_CHAIN_CONTEXT,
 ) -> PCCERT_CHAIN_CONTEXT {
     // FIXME("(%p, %08lx, %08lx, %ld, %p, %p): stub\n", store, certEncodingType, findFlags, findType, findPara, prevChainContext);
-    NULL
+    core::ptr::null()
 }
 
 unsafe extern "C" fn find_element_with_error(
@@ -6776,9 +6776,9 @@ unsafe extern "C" fn dump_authenticode_extra_chain_policy_para(
     mut extraPara: *mut AUTHENTICODE_EXTRA_CERT_CHAIN_POLICY_PARA,
 ) {
     if !extraPara.is_null() {
-        TRACE_!(chain)("cbSize = %ld\n", (*extraPara).cbSize);
-        TRACE_!(chain)("dwRegPolicySettings = %08lx\n", (*extraPara).dwRegPolicySettings);
-        TRACE_!(chain)("pSignerInfo = %p\n", (*extraPara).pSignerInfo);
+        WINE_TRACE_!(__wine_dbch_chain,"cbSize = %ld\n", (*extraPara).cbSize);
+        WINE_TRACE_!(__wine_dbch_chain,"dwRegPolicySettings = %08lx\n", (*extraPara).dwRegPolicySettings);
+        WINE_TRACE_!(__wine_dbch_chain,"pSignerInfo = %p\n", (*extraPara).pSignerInfo);
     }
 }
 
@@ -6802,7 +6802,7 @@ unsafe extern "system" fn verify_authenticode_policy(
         let mut msPubKey: CERT_PUBLIC_KEY_INFO = CERT_PUBLIC_KEY_INFO {
             Algorithm: CRYPT_ALGORITHM_IDENTIFIER {
                 pszObjId: core::ptr::null_mut(),
-                Parameters: CRYPTOAPI_BLOB {
+                Parameters: _CRYPTOAPI_BLOB {
                     cbData: 0,
                     pbData: core::ptr::null_mut(),
                 },
@@ -6822,11 +6822,11 @@ unsafe extern "system" fn verify_authenticode_policy(
             .pCertContext;
         let mut i: DWORD;
         let mut keyBlobs: [CRYPT_DATA_BLOB; 2] = [
-            CRYPTOAPI_BLOB {
+            _CRYPTOAPI_BLOB {
                 cbData: core::mem::size_of::<[BYTE; 73]>() as DWORD,
                 pbData: core::ptr::addr_of_mut!(msTestPubKey1) as *mut BYTE,
             },
-            CRYPTOAPI_BLOB {
+            _CRYPTOAPI_BLOB {
                 cbData: core::mem::size_of::<[BYTE; 73]>() as DWORD,
                 pbData: core::ptr::addr_of_mut!(msTestPubKey2) as *mut BYTE,
             },
@@ -7002,7 +7002,7 @@ unsafe extern "C" fn match_domain_component(
     *see_wildcard = (FALSE as i32);
 
     if server_len < allowed_len {
-        WARN!(chain, "domain component %s too short for %s\n",
+        WINE_WARN_!(__wine_dbch_chain, "domain component %s too short for %s\n",
             debugstr_wn(server_component, server_len as i32),
             debugstr_wn(allowed_component, allowed_len as i32));
         /* A domain component can't contain a wildcard character, so a domain
@@ -7019,10 +7019,10 @@ unsafe extern "C" fn match_domain_component(
             if (allowed_ptr.offset_from(allowed_component) as i64)
                 < allowed_len.wrapping_sub(1) as i64
             {
-                WARN!(chain, "non-wildcard characters after wildcard not supported\n");
+                WINE_WARN_!(__wine_dbch_chain, "non-wildcard characters after wildcard not supported\n");
                 matches = (FALSE as i32);
             } else if allow_wildcards == 0 {
-                WARN!(chain, "wildcard after non-wildcard component\n");
+                WINE_WARN_!(__wine_dbch_chain, "wildcard after non-wildcard component\n");
                 matches = (FALSE as i32);
             } else {
                 /* the preceding characters must have matched, so the rest of
@@ -7263,11 +7263,10 @@ unsafe extern "C" fn match_dns_to_subject_dn(mut cert: PCCERT_CONTEXT, mut serve
 
 unsafe extern "C" fn dump_ssl_extra_chain_policy_para(sslPara: *mut HTTPSPolicyCallbackData) {
     if !sslPara.is_null() {
-        TRACE_("chain", "cbSize = %ld\n", (*sslPara).__bindgen_anon_1.cbSize);
-        TRACE_("chain", "dwAuthType = %ld\n", (*sslPara).dwAuthType);
-        TRACE_("chain", "fdwChecks = %08lx\n", (*sslPara).fdwChecks);
-        TRACE_(
-            "chain",
+        WINE_TRACE_!(__wine_dbch_chain, "cbSize = %ld\n", (*sslPara).__bindgen_anon_1.cbSize);
+        WINE_TRACE_!(__wine_dbch_chain, "dwAuthType = %ld\n", (*sslPara).dwAuthType);
+        WINE_TRACE_!(__wine_dbch_chain, "fdwChecks = %08lx\n", (*sslPara).fdwChecks);
+        WINE_TRACE_!(__wine_dbch_chain,
             "pwszServerName = %s\n",
             debugstr_w((*sslPara).pwszServerName),
         );
@@ -7560,7 +7559,7 @@ pub unsafe extern "system" fn CertVerifyCertificateChainPolicy(
                 verifyPolicy = Some(verify_ms_root_policy);
             }
             _ => {
-                FIXME!("unimplemented for %d\n", LOWORD!(szPolicyOID));
+                FIXME!("unimplemented for %d\n", LOWORD!(szPolicyOID) as c_uint);
             }
         }
     }

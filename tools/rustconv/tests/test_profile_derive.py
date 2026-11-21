@@ -1211,6 +1211,37 @@ class TestPrologueFidelity:
             '#include "gdi_private.h"',
         ]
 
+    def test_a_merged_define_lands_before_the_header_it_configures(self, tmp_path: Path):
+        """crypt32: base64.c put wincrypt.h first; oid.c defines the extra-fields switch
+        before it. The define must precede wincrypt.h, not trail oid.c's previous line."""
+        merged: list[str] = []
+        merge_prologue(merged, ["#include <windef.h>", "#include <wincrypt.h>"])
+        merge_prologue(
+            merged,
+            [
+                "#include <windef.h>",
+                "#include <winternl.h>",
+                "#define CRYPT_OID_INFO_HAS_EXTRA_FIELDS",
+                '#include "wincrypt.h"',  # the other spelling of the same header
+            ],
+        )
+        assert merged.index("#define CRYPT_OID_INFO_HAS_EXTRA_FIELDS") < merged.index(
+            "#include <wincrypt.h>"
+        )
+        assert merged.index("#include <windef.h>") < merged.index(
+            "#define CRYPT_OID_INFO_HAS_EXTRA_FIELDS"
+        )
+
+    def test_a_late_tu_cannot_respell_a_header_ahead_of_its_define(self, tmp_path: Path):
+        merged: list[str] = []
+        merge_prologue(merged, ["#define CRYPT_OID_INFO_HAS_EXTRA_FIELDS", '#include "wincrypt.h"'])
+        merge_prologue(merged, ["#include <windef.h>", "#include <wincrypt.h>"])
+        assert merged == [
+            "#include <windef.h>",
+            "#define CRYPT_OID_INFO_HAS_EXTRA_FIELDS",
+            '#include "wincrypt.h"',
+        ]
+
     def test_a_reactos_guard_drops_the_wine_arm(self, tmp_path: Path):
         """user32_vista's win.c keeps wine's user_private.h under `#else` of
         `#ifdef __REACTOS__`; that header does not exist here."""

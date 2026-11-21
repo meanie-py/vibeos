@@ -16,20 +16,20 @@ use core::ffi::c_void;
 static mut fileProvFuncs: [*mut ::core::ffi::c_void; 14] = unsafe {
     [
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, DWORD) -> ()>,
+            Option<unsafe extern "system" fn(HCERTSTORE, DWORD) -> ()>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_FileCloseStore,
         )),
         NULL,
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCERT_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCERT_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_FileWriteCert,
         )),
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCERT_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCERT_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_FileDeleteCert,
@@ -37,13 +37,13 @@ static mut fileProvFuncs: [*mut ::core::ffi::c_void; 14] = unsafe {
         NULL,
         NULL,
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCRL_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCRL_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_FileWriteCRL,
         )),
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCRL_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCRL_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_FileDeleteCRL,
@@ -51,13 +51,13 @@ static mut fileProvFuncs: [*mut ::core::ffi::c_void; 14] = unsafe {
         NULL,
         NULL,
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCTL_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCTL_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_FileWriteCTL,
         )),
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCTL_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCTL_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_FileDeleteCTL,
@@ -65,7 +65,7 @@ static mut fileProvFuncs: [*mut ::core::ffi::c_void; 14] = unsafe {
         NULL,
         ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(HCERTSTORE, DWORD, DWORD, *const ::core::ffi::c_void) -> BOOL,
+                unsafe extern "system" fn(HCERTSTORE, DWORD, DWORD, *const ::core::ffi::c_void) -> BOOL,
             >,
             *mut ::core::ffi::c_void,
         >(Some(

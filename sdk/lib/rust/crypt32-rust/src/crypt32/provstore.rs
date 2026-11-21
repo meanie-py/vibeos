@@ -161,7 +161,7 @@ unsafe extern "C" fn ProvStore_release(cert_store: *mut WINECRYPT_CERTSTORE, fla
 unsafe extern "C" fn ProvStore_releaseContext(store: *mut WINECRYPT_CERTSTORE, context: *mut context_t) {
     let _ = store;
     let _ = context;
-    assert!(0);
+    assert!(false);
 }
 
 unsafe extern "C" fn ProvStore_addCert(

@@ -181,6 +181,7 @@ pub struct AsnArrayDescriptor {
     pub pointerOffset: DWORD,
 }
 
+#[derive(Copy, Clone)]
 #[repr(C)]
 #[allow(non_snake_case)]
 pub struct AsnArrayItemSize {
@@ -2334,7 +2335,6 @@ unsafe extern "C" fn CRYPT_AsnDecodeNameValueInternal(pbEncoded: *const BYTE, cb
                                 ) as i32)) as WCHAR;
                             i = i.wrapping_add(1);
                         }
-                        break;
                     }
                     __c if __c == ASN_UTF8STRING as u32 => {
                         let mut str: LPWSTR = (*value).Value.pbData as LPWSTR;
@@ -2347,7 +2347,6 @@ unsafe extern "C" fn CRYPT_AsnDecodeNameValueInternal(pbEncoded: *const BYTE, cb
                             str,
                             (bytesNeeded as usize).wrapping_sub(core::mem::size_of::<CERT_NAME_VALUE>() as usize) as i32,
                         ) * (2 as i32)) as DWORD;
-                        break;
                     }
                     _ => {}
                 }
@@ -2444,7 +2443,7 @@ unsafe extern "C" fn CRYPT_AsnDecodeUnicodeNameValueInternal(
         let mut bytesNeeded: DWORD = core::mem::size_of::<CERT_NAME_VALUE>() as DWORD;
         let mut valueType: DWORD = 0;
 
-        match *pbEncoded.offset(0 as isize) as c_int {
+        match (*pbEncoded.offset(0 as isize) as c_int) as u32 {
             ASN_NUMERICSTRING => {
                 valueType = CERT_RDN_NUMERIC_STRING as DWORD;
                 if dataLen != 0 {
@@ -2577,7 +2576,7 @@ unsafe extern "C" fn CRYPT_AsnDecodeUnicodeNameValueInternal(
 
                 assert!(!(*value).Value.pbData.is_null());
 
-                match *pbEncoded.offset(0 as isize) as c_int {
+                match (*pbEncoded.offset(0 as isize) as c_int) as u32 {
                     ASN_NUMERICSTRING
                     | ASN_PRINTABLESTRING
                     | ASN_IA5STRING
@@ -2665,6 +2664,7 @@ unsafe extern "C" fn CRYPT_AsnDecodeUnicodeNameValueInternal(
                             .cbData
                             .wrapping_add(core::mem::size_of::<WCHAR>() as DWORD);
                     }
+                    _ => {}
                 }
             } else {
                 (*value).Value.cbData = 0 as DWORD;
@@ -3913,7 +3913,7 @@ unsafe extern "C" fn CRYPT_AsnDecodeUnicodeString(
             GET_LEN_BYTES!(*pbEncoded.offset(1 as isize)) as BYTE;
         let mut bytesNeeded: DWORD = core::mem::size_of::<LPWSTR>() as DWORD;
 
-        match *pbEncoded.offset(0 as isize) as ::core::ffi::c_int {
+        match (*pbEncoded.offset(0 as isize) as ::core::ffi::c_int) as u32 {
             ASN_NUMERICSTRING => {
                 if dataLen != 0 {
                     bytesNeeded = bytesNeeded.wrapping_add(
@@ -4045,8 +4045,8 @@ unsafe extern "C" fn CRYPT_AsnDecodeUnicodeString(
                 let mut i: DWORD = 0;
                 let mut str: LPWSTR = *pStr;
 
-                assert!(str);
-                match *pbEncoded.offset(0 as isize) as ::core::ffi::c_int {
+                assert!(!str.is_null());
+                match (*pbEncoded.offset(0 as isize) as ::core::ffi::c_int) as u32 {
                     ASN_NUMERICSTRING
                     | ASN_PRINTABLESTRING
                     | ASN_IA5STRING
@@ -6972,9 +6972,7 @@ unsafe extern "C" fn CRYPT_AsnDecodeOctets(
             blob = pvStructInfo as *mut CRYPT_DATA_BLOB;
             (*blob).cbData = dataLen;
             if (dwFlags & (CRYPT_DECODE_NOCOPY_FLAG as DWORD)) != 0 {
-                (*blob).pbData = (pbEncoded as *mut BYTE)
-                    .add(1 as usize)
-                    .add(lenBytes as usize);
+                (*blob).pbData = pbEncoded.add(1 as usize).add(lenBytes as usize) as *mut BYTE;
             } else {
                 assert!(!(*blob).pbData.is_null());
                 if (*blob).cbData != 0 {
@@ -7093,7 +7091,7 @@ unsafe extern "C" fn CRYPT_AsnDecodeOctetStringInternal(
     if *buf_size < bytes_needed {
         SetLastError(ERROR_MORE_DATA as DWORD);
         *buf_size = bytes_needed;
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     *buf_size = bytes_needed;
@@ -7112,7 +7110,7 @@ unsafe extern "C" fn CRYPT_AsnDecodeOctetStringInternal(
     if !ret_decoded.is_null() {
         *ret_decoded = decoded;
     }
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 unsafe extern "system" fn CRYPT_AsnDecodeOctetString(
     mut dwCertEncodingType: DWORD,
@@ -7722,7 +7720,7 @@ unsafe extern "system" fn CRYPT_AsnDecodeEnumerated(
     }
     {
         if (*pbEncoded.offset(0 as isize) as ::core::ffi::c_int)
-            == ASN_ENUMERATED
+            == (ASN_ENUMERATED as i32)
         {
             let mut val: ::core::ffi::c_uint = 0 as ::core::ffi::c_uint;
             let mut i: ::core::ffi::c_uint = 0;
@@ -7877,7 +7875,7 @@ unsafe extern "C" fn CRYPT_AsnDecodeUtcTimeInternal(
 ) -> BOOL {
     let mut ret: BOOL = (FALSE as i32);
 
-    if *pbEncoded.offset(0 as isize) as i32 == ASN_UTCTIME {
+    if *pbEncoded.offset(0 as isize) as i32 == (ASN_UTCTIME as i32) {
         if cbEncoded <= 1 as DWORD {
             SetLastError(CRYPT_E_ASN1_EOD as DWORD);
         } else if *pbEncoded.offset(1 as isize) as i32 > 0x7f {
@@ -8155,7 +8153,7 @@ unsafe extern "C" fn CRYPT_AsnDecodeGeneralizedTime(
 ) -> BOOL {
     let mut ret: BOOL = FALSE as BOOL;
 
-    if (*pbEncoded.add(0 as usize) as ::core::ffi::c_int) == ASN_GENERALTIME {
+    if (*pbEncoded.add(0 as usize) as ::core::ffi::c_int) == (ASN_GENERALTIME as i32) {
         if cbEncoded <= 1 as DWORD {
             SetLastError(CRYPT_E_ASN1_EOD as DWORD);
         } else if (*pbEncoded.add(1 as usize) as ::core::ffi::c_int) > 0x7f {
@@ -9076,7 +9074,7 @@ unsafe extern "system" fn CRYPT_AsnDecodeIssuingDistPoint(
 
         ret = CRYPT_AsnDecodeSequence(
             &raw mut items as *mut AsnDecodeSequenceItem,
-            ARRAY_SIZE!(&raw mut items) as DWORD,
+            ARRAY_SIZE!(items) as DWORD,
             pbEncoded,
             cbEncoded,
             dwFlags,
@@ -9365,7 +9363,7 @@ unsafe extern "system" fn CRYPT_AsnDecodeNameConstraints(
             core::ptr::null_mut(),
         );
     }
-    if _seh_except != 0 {
+    if _SEH2_Volatile0 != 0 {
         SetLastError((STATUS_ACCESS_VIOLATION) as DWORD);
     }
     return ret;
@@ -10656,7 +10654,7 @@ unsafe extern "system" fn CRYPT_AsnDecodeOCSPResponse(
         ::core::ptr::null_mut::<DWORD>(),
         ::core::ptr::null_mut::<::core::ffi::c_void>(),
     );
-    if _seh_except_guard != 0 {
+    if _SEH2_Volatile0 != 0 {
         SetLastError((STATUS_ACCESS_VIOLATION) as DWORD);
         ret = FALSE as BOOL;
     }
@@ -11040,7 +11038,7 @@ unsafe extern "C" fn CRYPT_AsnDecodeOCSPBasicResponseEntry(pbEncoded: *const BYT
             minSize: core::mem::size_of::<DWORD>() as DWORD,
             optional: (FALSE as i32),
             hasPointer: (TRUE as i32),
-            pointerOffset: core::mem::offset_of!(OCSP_BASIC_RESPONSE_ENTRY, pRevokedInfo) as DWORD,
+            pointerOffset: core::mem::offset_of!(OCSP_BASIC_RESPONSE_ENTRY, __bindgen_anon_1.pRevokedInfo) as DWORD,
             size: 0,
         },
         AsnDecodeSequenceItem {
@@ -11615,7 +11613,7 @@ pub unsafe extern "system" fn CryptDecodeObjectEx(
             core::ptr::addr_of_mut!(hFunc));
         if decodeFunc.is_none() {
             if IS_INTOID!(lpszStructType) {
-                FIXME!("Unimplemented decoder for lpszStructType OID %d\n", LOWORD!(lpszStructType));
+                FIXME!("Unimplemented decoder for lpszStructType OID %d\n", LOWORD!(lpszStructType) as c_uint);
             } else {
                 FIXME!("Unsupported decoder for lpszStructType %s\n", lpszStructType);
             }

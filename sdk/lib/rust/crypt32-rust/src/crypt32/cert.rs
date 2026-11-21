@@ -2674,7 +2674,7 @@ pub unsafe extern "system" fn CertVerifySubjectCertificateContext(
                 (*pSubject).dwCertEncodingType,
                 (*pSubject).pCertInfo,
                 1 as DWORD,
-                core::ptr::addr_of_mut!((*crl).pCrlInfo) as *mut PCRL_INFO,
+                core::ptr::addr_of!((*crl).pCrlInfo) as *mut PCRL_INFO,
             ) != 0
             {
                 *pdwFlags &= CERT_STORE_REVOCATION_FLAG as DWORD;
@@ -3843,7 +3843,7 @@ unsafe extern "C" fn CNG_ImportRSAPubKey(
     d = rsakey.offset(1 as isize) as *mut BYTE;
     /* According to MSDN modulus and pubexp are in LE while
      * BCRYPT_RSAKEY_BLOB is supposed to have them in BE format */
-    *(d as *mut ULONG) = RtlUlongByteSwap((*rsapubkey).pubexp as ULONG);
+    *(d as *mut ULONG) = ((*rsapubkey).pubexp as ULONG).swap_bytes();
     d = d.offset(core::mem::size_of::<ULONG>() as usize as isize);
     s = rsapubkey.offset(1 as isize) as *mut BYTE;
     i = 0 as DWORD;
@@ -4027,9 +4027,9 @@ unsafe extern "C" fn CNG_PrepareCertSignature(
 unsafe extern "C" fn CNG_VerifySignature(hCryptProv: HCRYPTPROV_LEGACY, dwCertEncodingType: DWORD, pubKeyInfo: *mut CERT_PUBLIC_KEY_INFO, signedCert: *const CERT_SIGNED_CONTENT_INFO, info: *const CRYPT_OID_INFO) -> BOOL {
     let mut key: BCRYPT_KEY_HANDLE = core::ptr::null_mut();
     let mut hash_value: *mut BYTE = core::ptr::null_mut();
-    let mut sig_value: *mut BYTE;
-    let mut hash_len: DWORD;
-    let mut sig_len: DWORD;
+    let mut sig_value: *mut BYTE = core::mem::zeroed();
+    let mut hash_len: DWORD = core::mem::zeroed();
+    let mut sig_len: DWORD = core::mem::zeroed();
     let mut status: NTSTATUS;
     let mut ret: BOOL;
 
@@ -5090,7 +5090,7 @@ unsafe extern "C" fn CRYPT_MakeCertInfo(
     pubKey: *const CERT_PUBLIC_KEY_INFO,
     pExtensions: *const CERT_EXTENSIONS,
 ) {
-    static mut oid: [CHAR; 21] = *b"1.2.840.113549.1.1.5\0";
+    static mut oid: [CHAR; 21] = unsafe { core::mem::transmute::<[u8; 21], [CHAR; 21]>(*b"1.2.840.113549.1.1.5\0") };
 
     assert!(!info.is_null());
     assert!(!pSerialNumber.is_null());

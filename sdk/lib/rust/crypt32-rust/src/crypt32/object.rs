@@ -326,7 +326,7 @@ pub const MAX_STRING_RESOURCE_LEN: usize = 128;
 pub struct BitToString {
     pub bit: BYTE,
     pub id: i32,
-    pub str: [WCHAR; MAX_STRING_RESOURCE_LEN],
+    pub str_: [WCHAR; MAX_STRING_RESOURCE_LEN],
 }
 
 #[repr(C)]
@@ -1608,7 +1608,7 @@ unsafe extern "C" fn CRYPT_FormatBits(
             }
             localFirst = (FALSE as i32);
             bytesNeeded = bytesNeeded.wrapping_add(
-                (lstrlenW(core::ptr::addr_of!((*map.offset(i as isize)).str) as LPCWSTR) as DWORD)
+                (lstrlenW(core::ptr::addr_of!((*map.offset(i as isize)).str_) as LPCWSTR) as DWORD)
                     .wrapping_mul(core::mem::size_of::<WCHAR>() as DWORD),
             );
         }
@@ -1634,9 +1634,9 @@ unsafe extern "C" fn CRYPT_FormatBits(
                     str = str.offset(lstrlenW(core::ptr::addr_of!(commaSpace) as LPCWSTR) as isize);
                 }
                 localFirst = (FALSE as i32);
-                lstrcpyW(str, core::ptr::addr_of!((*map.offset(i as isize)).str) as LPCWSTR);
+                lstrcpyW(str, core::ptr::addr_of!((*map.offset(i as isize)).str_) as LPCWSTR);
                 str = str.offset(
-                    lstrlenW(core::ptr::addr_of!((*map.offset(i as isize)).str) as LPCWSTR) as isize,
+                    lstrlenW(core::ptr::addr_of!((*map.offset(i as isize)).str_) as LPCWSTR) as isize,
                 );
             }
             i = i.wrapping_add(1);
@@ -2364,7 +2364,7 @@ unsafe extern "system" fn CRYPT_FormatAltName(
 
 unsafe extern "C" fn CRYPT_FormatCertIssuer(
     dwFormatStrType: DWORD,
-    issuer: *const CERT_ALT_NAME_INFO,
+    issuer_local: *const CERT_ALT_NAME_INFO,
     str: LPWSTR,
     pcbStr: *mut DWORD,
 ) -> BOOL {
@@ -3630,7 +3630,7 @@ unsafe extern "system" fn CRYPT_FormatNetscapeCertType(
                     LoadStringW(
                         hInstance,
                         netscapeCertTypeMap[i as usize].id as UINT,
-                        core::ptr::addr_of_mut!(netscapeCertTypeMap[i as usize].str) as LPWSTR,
+                        core::ptr::addr_of_mut!(netscapeCertTypeMap[i as usize].str_) as LPWSTR,
                         MAX_STRING_RESOURCE_LEN as ::core::ffi::c_int,
                     );
                     i = i.wrapping_add(1);

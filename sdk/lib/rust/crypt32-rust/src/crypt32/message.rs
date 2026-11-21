@@ -181,7 +181,7 @@ pub unsafe extern "system" fn CryptVerifyDetachedMessageSignature(
                             msg,
                             0,
                             CMSG_CTRL_VERIFY_SIGNATURE,
-                            (*cert).pCertInfo,
+                            (*cert).pCertInfo as *const c_void,
                         );
                         if ret != 0 && !ppSignerCert.is_null() {
                             *ppSignerCert = cert;

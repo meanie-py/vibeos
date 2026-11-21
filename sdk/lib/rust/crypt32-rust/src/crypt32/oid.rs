@@ -3523,7 +3523,7 @@ unsafe extern "C" fn CRYPT_GetFuncFromReg(
                      */
                     lib = LoadLibraryW(dllName as LPCWSTR) as HMODULE;
                     if !lib.is_null() {
-                        *ppvFuncAddr = GetProcAddress(lib as HINSTANCE, funcName as LPCSTR) as LPVOID;
+                        *ppvFuncAddr = core::mem::transmute::<_, LPVOID>(GetProcAddress(lib as HINSTANCE, funcName as LPCSTR));
                         if !(*ppvFuncAddr).is_null() {
                             let addr: *mut FuncAddr =
                                 CryptMemAlloc(core::mem::size_of::<FuncAddr>() as ULONG) as *mut FuncAddr;

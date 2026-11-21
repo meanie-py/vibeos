@@ -449,13 +449,13 @@ unsafe extern "C" fn unserialize(pSerial: *const DATA_BLOB, pInfo: *mut protect_
     ) == 0
     {
         ERR!("reading cipher_alg failed!\n");
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* cipher_key_len */
     if unserialize_dword(ptr, core::ptr::addr_of_mut!(index), size, core::ptr::addr_of_mut!((*pInfo).cipher_key_len)) == 0 {
         ERR!("reading cipher_key_len failed!\n");
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* data0 */
@@ -471,13 +471,13 @@ unsafe extern "C" fn unserialize(pSerial: *const DATA_BLOB, pInfo: *mut protect_
     ) == 0
     {
         ERR!("reading data0 failed!\n");
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* null1 */
     if unserialize_dword(ptr, core::ptr::addr_of_mut!(index), size, core::ptr::addr_of_mut!((*pInfo).null1)) == 0 {
         ERR!("reading null1 failed!\n");
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* hash_alg */
@@ -489,13 +489,13 @@ unsafe extern "C" fn unserialize(pSerial: *const DATA_BLOB, pInfo: *mut protect_
     ) == 0
     {
         ERR!("reading hash_alg failed!\n");
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* hash_len */
     if unserialize_dword(ptr, core::ptr::addr_of_mut!(index), size, core::ptr::addr_of_mut!((*pInfo).hash_len)) == 0 {
         ERR!("reading hash_len failed!\n");
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* salt */
@@ -511,7 +511,7 @@ unsafe extern "C" fn unserialize(pSerial: *const DATA_BLOB, pInfo: *mut protect_
     ) == 0
     {
         ERR!("reading salt failed!\n");
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* cipher */
@@ -527,7 +527,7 @@ unsafe extern "C" fn unserialize(pSerial: *const DATA_BLOB, pInfo: *mut protect_
     ) == 0
     {
         ERR!("reading cipher failed!\n");
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* fingerprint */
@@ -543,7 +543,7 @@ unsafe extern "C" fn unserialize(pSerial: *const DATA_BLOB, pInfo: *mut protect_
     ) == 0
     {
         ERR!("reading fingerprint failed!\n");
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* allow structure size to be too big (since some applications

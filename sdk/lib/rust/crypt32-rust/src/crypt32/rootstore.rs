@@ -6815,6 +6815,7 @@ unsafe extern "C" fn check_and_store_certs(
                             rgpszUsageIdentifier: ::core::ptr::null_mut::<LPSTR>(),
                         },
                     },
+                    ..core::mem::zeroed()
                 };
                 let mut chain: PCCERT_CHAIN_CONTEXT = ::core::ptr::null::<CERT_CHAIN_CONTEXT>();
                 let mut ret: BOOL = 0;
@@ -6986,7 +6987,8 @@ unsafe extern "C" fn read_trusted_roots_from_known_locations(
         CRYPT_VERIFYCONTEXT as DWORD,
     );
     params.buffer = CryptMemAlloc(params.size as ULONG) as *mut ::core::ffi::c_void;
-    while __reactos_call_unix_enum_root_certs(core::ptr::addr_of_mut!(params) as *mut ::core::ffi::c_void) == 0 {
+    // The C is a while: its `continue` skips ++new_count on purpose (a cached cert is not new).
+    while __reactos_call_unix_enum_root_certs(core::ptr::addr_of_mut!(params) as *mut ::core::ffi::c_void) == 0 { // nolint: dowhile-continue
         if needed > params.size {
             CryptMemFree(params.buffer as LPVOID);
             params.buffer = CryptMemAlloc(needed as ULONG) as *mut ::core::ffi::c_void;

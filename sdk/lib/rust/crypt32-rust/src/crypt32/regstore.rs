@@ -21,20 +21,20 @@ use core::ffi::c_void;
 static mut regProvFuncs: [*mut ::core::ffi::c_void; 14] = unsafe {
     [
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, DWORD) -> ()>,
+            Option<unsafe extern "system" fn(HCERTSTORE, DWORD) -> ()>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_RegCloseStore,
         )),
         NULL,
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCERT_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCERT_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_RegWriteCert,
         )),
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCERT_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCERT_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_RegDeleteCert,
@@ -42,13 +42,13 @@ static mut regProvFuncs: [*mut ::core::ffi::c_void; 14] = unsafe {
         NULL,
         NULL,
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCRL_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCRL_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_RegWriteCRL,
         )),
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCRL_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCRL_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_RegDeleteCRL,
@@ -56,13 +56,13 @@ static mut regProvFuncs: [*mut ::core::ffi::c_void; 14] = unsafe {
         NULL,
         NULL,
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCTL_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCTL_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_RegWriteCTL,
         )),
         ::core::mem::transmute::<
-            Option<unsafe extern "C" fn(HCERTSTORE, PCCTL_CONTEXT, DWORD) -> BOOL>,
+            Option<unsafe extern "system" fn(HCERTSTORE, PCCTL_CONTEXT, DWORD) -> BOOL>,
             *mut ::core::ffi::c_void,
         >(Some(
             CRYPT_RegDeleteCTL,
@@ -70,7 +70,7 @@ static mut regProvFuncs: [*mut ::core::ffi::c_void; 14] = unsafe {
         NULL,
         ::core::mem::transmute::<
             Option<
-                unsafe extern "C" fn(HCERTSTORE, DWORD, DWORD, *const ::core::ffi::c_void) -> BOOL,
+                unsafe extern "system" fn(HCERTSTORE, DWORD, DWORD, *const ::core::ffi::c_void) -> BOOL,
             >,
             *mut ::core::ffi::c_void,
         >(Some(

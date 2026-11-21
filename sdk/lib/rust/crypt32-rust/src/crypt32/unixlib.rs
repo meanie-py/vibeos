@@ -331,7 +331,7 @@ unsafe extern "C" fn ImportStoreKey(
     return -1;
 }
 #[no_mangle]
-pub unsafe extern "C" fn __reactos_call_unix_import_store_key(Args: *mut core::ffi::c_void) -> core::ffi::c_int {
+pub unsafe extern "C" fn __reactos_call_unix_import_store_key(Args: *mut ::core::ffi::c_void) -> ::core::ffi::c_int {
     let params: *mut import_store_key_params = Args as *mut import_store_key_params;
     return ImportStoreKey((*params).data, (*params).buf, (*params).buf_size);
 }

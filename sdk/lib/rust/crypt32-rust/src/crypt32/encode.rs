@@ -679,7 +679,7 @@ unsafe extern "system" fn CRYPT_AsnEncodePubKeyInfo(mut dwCertEncodingType: DWOR
             pcbEncoded,
         );
     }
-    if _seh2_except_marker != 0 {
+    if _SEH2_Volatile0 != 0 {
         SetLastError((STATUS_ACCESS_VIOLATION) as DWORD);
         ret = (FALSE as i32);
     }
@@ -978,7 +978,7 @@ unsafe extern "system" fn CRYPT_AsnEncodeCRLEntries(
     pvStructInfo: *const core::ffi::c_void,
     dwFlags: DWORD,
     pEncodePara: PCRYPT_ENCODE_PARA,
-    pbEncoded: *mut BYTE,
+    mut pbEncoded: *mut BYTE,
     pcbEncoded: *mut DWORD,
 ) -> BOOL {
     let mut bytesNeeded: DWORD;
@@ -1006,7 +1006,7 @@ unsafe extern "system" fn CRYPT_AsnEncodeCRLEntries(
     }
     if ret != 0 {
         CRYPT_EncodeLen(dataLen, core::ptr::null_mut::<BYTE>(), core::ptr::addr_of_mut!(lenBytes));
-        bytesNeeded = 1.wrapping_add(lenBytes).wrapping_add(dataLen);
+        bytesNeeded = (1 as DWORD).wrapping_add(lenBytes).wrapping_add(dataLen);
         if pbEncoded.is_null() {
             *pcbEncoded = bytesNeeded;
         } else {
@@ -2057,7 +2057,7 @@ unsafe extern "system" fn CRYPT_DEREncodeItemsAsSet(
     }
     if ret != 0 {
         let mut bytesNeeded: DWORD = 0;
-        let mut lenBytes: DWORD;
+        let mut lenBytes: DWORD = 0;
 
         i = 0;
         while i < setOf.cBlob {
@@ -2069,7 +2069,7 @@ unsafe extern "system" fn CRYPT_DEREncodeItemsAsSet(
             core::ptr::null_mut(),
             &raw mut lenBytes,
         );
-        bytesNeeded = bytesNeeded.wrapping_add(1.wrapping_add(lenBytes));
+        bytesNeeded = bytesNeeded.wrapping_add((1 as DWORD).wrapping_add(lenBytes));
         if pbEncoded.is_null() {
             *pcbEncoded = bytesNeeded;
         } else {
@@ -2268,7 +2268,7 @@ unsafe extern "system" fn CRYPT_AsnEncodeUnicodeName(
     pvStructInfo: *const core::ffi::c_void,
     dwFlags: DWORD,
     pEncodePara: PCRYPT_ENCODE_PARA,
-    pbEncoded: *mut BYTE,
+    mut pbEncoded: *mut BYTE,
     pcbEncoded: *mut DWORD,
 ) -> BOOL {
     let mut ret: BOOL = (TRUE as i32);
@@ -2298,7 +2298,7 @@ unsafe extern "system" fn CRYPT_AsnEncodeUnicodeName(
             i = i.wrapping_add(1);
         }
         CRYPT_EncodeLen(bytesNeeded, core::ptr::null_mut::<BYTE>(), &raw mut lenBytes);
-        bytesNeeded = bytesNeeded.wrapping_add(1.wrapping_add(lenBytes));
+        bytesNeeded = bytesNeeded.wrapping_add((1 as DWORD).wrapping_add(lenBytes));
         if ret != 0 {
             if pbEncoded.is_null() {
                 *pcbEncoded = bytesNeeded;
@@ -3225,7 +3225,7 @@ unsafe extern "C" fn CRYPT_AsnEncodeUnicodeStringCoerce(value: *const CERT_NAME_
         encodedLen = 0;
     }
     CRYPT_EncodeLen(encodedLen, core::ptr::null_mut(), core::ptr::addr_of_mut!(lenBytes));
-    bytesNeeded = (1).wrapping_add(lenBytes).wrapping_add(encodedLen);
+    bytesNeeded = (1 as DWORD).wrapping_add(lenBytes).wrapping_add(encodedLen);
     if pbEncoded.is_null() {
         *pcbEncoded = bytesNeeded;
     } else {
@@ -4080,7 +4080,7 @@ unsafe extern "system" fn CRYPT_AsnEncodeAltName(
         }
         if ret != 0 {
             CRYPT_EncodeLen(dataLen, core::ptr::null_mut(), core::ptr::addr_of_mut!(lenBytes));
-            bytesNeeded = 1
+            bytesNeeded = (1 as DWORD)
                 .wrapping_add(lenBytes)
                 .wrapping_add(dataLen);
             if pbEncoded.is_null() {
@@ -5759,7 +5759,7 @@ unsafe extern "system" fn CRYPT_AsnEncodeSequenceOfAny(
             core::ptr::null_mut::<BYTE>(),
             core::ptr::addr_of_mut!(lenBytes),
         );
-        bytesNeeded = 1
+        bytesNeeded = (1 as DWORD)
             .wrapping_add(lenBytes)
             .wrapping_add(dataLen);
         if pbEncoded.is_null() {
@@ -7483,7 +7483,7 @@ unsafe extern "C" fn CRYPT_GetBuiltinEncoder(
                 encodeFunc = Some(CRYPT_AsnEncodeOCSPSignedRequest);
             }
             _ => {
-                FIXME!("Unimplemented encoder for lpszStructType OID %d\n", LOWORD!(lpszStructType));
+                FIXME!("Unimplemented encoder for lpszStructType OID %d\n", LOWORD!(lpszStructType) as c_uint);
             }
         }
     } else if strcmp(lpszStructType as *const ::core::ffi::c_char, szOID_CERT_EXTENSIONS.as_ptr()) == 0 {
@@ -8148,7 +8148,7 @@ unsafe extern "system" fn CRYPT_ImportPublicKeyInfoEx(
     let mut convertFunc: ConvertPublicKeyInfoFunc = None;
     let mut hFunc: HCRYPTOIDFUNCADDR = core::ptr::null_mut();
     let mut ret: BOOL;
-    let mut pubKeySize: DWORD;
+    let mut pubKeySize: DWORD = core::mem::zeroed();
     let mut pubKey: LPBYTE;
 
     WINE_TRACE_!(__wine_dbch_crypt, "(%08Ix, %08lx, %p, %08x, %08lx, %p, %p)\n", hCryptProv,
