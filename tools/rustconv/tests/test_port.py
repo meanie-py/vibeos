@@ -2204,6 +2204,15 @@ def test_named_channel_debug_calls_take_the_channel_static(tmp_path, monkeypatch
     assert "WARN!(fmt, x);" in out  # a non-literal format is not a channel
 
 
+def test_a_quoted_named_channel_takes_the_channel_static(tmp_path, monkeypatch):
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [tmp_path / "a.rs"])
+    (tmp_path / "a.rs").write_text('TRACE_("chain", "cbSize = %ld\\n", n);\n')
+    assert port._named_channel_debug({}) == 1
+    assert (tmp_path / "a.rs").read_text() == (
+        'WINE_TRACE_!(__wine_dbch_chain, "cbSize = %ld\\n", n);\n'
+    )
+
+
 def test_a_parenthesised_c_or_case_becomes_a_value_guard(tmp_path, monkeypatch):
     (tmp_path / "m.c").write_text(
         "switch (m) { case A: break; case (A | B): break; case C: case D: break; }"

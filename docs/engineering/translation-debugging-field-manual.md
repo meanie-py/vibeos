@@ -2493,6 +2493,19 @@ types.
   island, preprocess a probe with the REAL flags (`-E -dM` with a TU's command from
   `compile_commands.json`, under `tools/canon-run.sh`); never reason from the target triple.
 
+### A struct's optional tail fields are missing from the island (E0609 on `pwszCNGAlgid`)
+- **Symptom:** `no field X on type _Y` for a field the header declares under a TU-set switch
+  (crypt32: `CRYPT_OID_INFO_HAS_EXTRA_FIELDS`, `CERT_CHAIN_PARA_HAS_EXTRA_FIELDS`), though
+  the TU that uses it `#define`s the switch before the include.
+- **Cause:** the island wrapper merges every TU's prologue into one. A TU merged earlier
+  had already included the header, under the other spelling (`<wincrypt.h>` vs
+  `"wincrypt.h"`), so the define landed after it and the header's include guard skipped the
+  fields.
+- **Fix:** `merge_prologue` now matches includes by header and puts a new
+  `#define`/`#undef` before every already-merged line it configures. Re-derive, re-run
+  `port island`, then re-run `port resolve`: a regenerated island brings back the opaque
+  stubs that resolve swaps for the TU's completed structs.
+
 ### bindgen drops things silently — know what
 - **`__attribute__((aligned(N)))`.** Losing `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK` `[§9.24]` broke
   the pushlock word's 4 flag bits (which live in the low bits of the block *pointer*) → i386

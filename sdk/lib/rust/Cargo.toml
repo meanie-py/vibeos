@@ -1381,6 +1381,7 @@ members = [
     "setup-rust",
     "shlwapi-rust",
     "d3dwine-rust",
+    "crypt32-rust",
 ]
 resolver = "2"
 

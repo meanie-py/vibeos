@@ -79,6 +79,7 @@ RULE_OPTION_IS_NULL = "option_fn_is_null"
 RULE_SHADOWED_CONST = "local_shadows_constant"
 RULE_SIZEOF_CONST = "sizeof_constant"
 RULE_FN_ITEM_CAST = "fn_item_cast"
+RULE_TRANSMUTE_SOURCE_ABI = "transmute_source_abi"
 RULE_VARIADIC_PROMOTION = "variadic_promotion"
 RULE_LOCAL_STATIC_MUT = "c_local_static_mut"
 RULE_POINTER_NOT_NOT = "pointer_double_negation"
@@ -136,6 +137,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_SHADOWED_CONST,
     RULE_SIZEOF_CONST,
     RULE_FN_ITEM_CAST,
+    RULE_TRANSMUTE_SOURCE_ABI,
     RULE_VARIADIC_PROMOTION,
     RULE_LOCAL_STATIC_MUT,
     RULE_POINTER_NOT_NOT,
@@ -5231,6 +5233,84 @@ def _fn_item_cast_rule(
     )
 
 
+_TRANSMUTE_TURBOFISH = re.compile(rb"transmute::<")
+
+
+def _transmute_source_abi_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`transmute::<Option<unsafe extern "C" fn(..)>, T>(Some(f))` where `f` is `system`.
+
+    C's `(AddContextToStoreFunc)CertAddCRLContextToStore` cast: the model spells the
+    transmute's SOURCE type itself, and wrote `extern "C"` for WINAPI functions (crypt32:
+    47 provider and interface table entries). The source type describes the value, so it
+    takes the function's real ABI; the target type is left alone. rustc says so as E0308
+    with the label `expected "C" fn, found "system" fn` on the function item.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0308":
+        return [], [], False
+    span = _primary(diagnostic)
+    if span is None or 'expected "C" fn, found "system" fn' not in str(span.get("label") or ""):
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    start = int(span.get("byte_start") or 0)
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start):
+        return [], [], False
+    head = None
+    for m in _TRANSMUTE_TURBOFISH.finditer(masked, 0, start):
+        head = m
+    if head is None or b";" in masked[head.end() : start]:
+        return [], [], False
+    # The turbofish's first argument: up to the depth-0 comma.
+    depth, i, comma, close = 1, head.end(), None, None
+    while i < start:
+        c = masked[i : i + 1]
+        if c in (b"<", b"(", b"["):
+            depth += 1
+        elif c in (b">", b")", b"]") and not (c == b">" and masked[i - 1 : i] == b"-"):
+            depth -= 1
+            if depth == 0:
+                close = i
+                break
+        elif c == b"," and depth == 1 and comma is None:
+            comma = i
+        i += 1
+    if comma is None or close is None:
+        return [], [], False
+    # The diagnostic's item must BE the transmute's argument, `(f)` or `(Some(f))`.
+    if not re.fullmatch(rb"\s*\(\s*(?:Some\(\s*)?", masked[close + 1 : start]):
+        return [], [], False
+    source = data[head.end() : comma]
+    hits = [m.start() for m in re.finditer(rb'extern\s+"C"\s+fn\b', source)]
+    if len(hits) != 1:
+        return [], [], False
+    at = head.end() + hits[0]
+    abi = re.match(rb'extern\s+"C"', data[at:])
+    assert abi is not None
+    return (
+        [
+            _simple_edit(
+                RULE_TRANSMUTE_SOURCE_ABI,
+                file_name,
+                data,
+                at,
+                at + abi.end(),
+                'extern "system"',
+                "rustc E0308: the transmute's source type describes the function it is handed, "
+                "and that function is `system`",
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
 def _simple_edit(rule, file_name, data, start, end, replacement, authority, span, ctx) -> Edit:
     return Edit(
         file_name=file_name,
@@ -6090,6 +6170,7 @@ _RULE_TABLE: dict[
     RULE_SHADOWED_CONST: _shadowed_const_rule,
     RULE_SIZEOF_CONST: _sizeof_const_rule,
     RULE_FN_ITEM_CAST: _fn_item_cast_rule,
+    RULE_TRANSMUTE_SOURCE_ABI: _transmute_source_abi_rule,
     RULE_VARIADIC_PROMOTION: _variadic_promotion_rule,
     RULE_LOCAL_STATIC_MUT: _local_static_mut_rule,
     RULE_POINTER_NOT_NOT: _pointer_not_not_rule,
