@@ -2194,7 +2194,8 @@ body) reached from csrss. The sweep after it was clean and identical to the firs
    68/18, ...; Rust 20261101-210519-b9rix5jx, C 20261101-211155-tuk5675o, the C exe imports only
    setupapc.dll). The serial is in the run's `payload/i386-uefi_serial.log`, not its top-level
    serial.log, which is the smoke boot. (b) DONE 2026-10-17: the scanner-cut audit. 7 functions were bought from a cut body;
-   winspool's GetMonitorUI really shipped without its tail and is hand-completed, and the
+   winspool's GetMonitorUI really shipped without its tail (the commit meant to hand-complete
+   it but deleted its body instead; restored 2026-11-21), and the
    other six were whole. The same pass found 15 RPC calls the 2026-10-17 sweep missed
    (dhcpcsvc 4, advapi32 shutdown 3, netapi32 misc/schedule/wksta_new 7, dnsapi 1), now
    under rpc_try, and made five dead page-fault guards real via ntdll_sys::seh::

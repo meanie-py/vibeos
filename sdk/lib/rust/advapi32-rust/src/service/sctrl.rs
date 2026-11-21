@@ -567,7 +567,11 @@ unsafe fn ScControlService(lpService: PACTIVE_SERVICE,
     if let Some(handler) = (*lpService).HandlerFunction {
         if ((dwControl >= SERVICE_CONTROL_STOP) && (dwControl <= SERVICE_CONTROL_NETBINDDISABLE)) ||
            ((dwControl >= 128) && (dwControl <= 255)) {
-            handler(dwControl);
+            // A faulting service handler must not take the dispatcher down;
+            // the C reports it to the SCM as ERROR_EXCEPTION_IN_SERVICE.
+            if ntdll_sys::seh::try_except_all(|| handler(dwControl)).is_err() {
+                dwError = ERROR_EXCEPTION_IN_SERVICE;
+            }
         } else {
             dwError = ERROR_INVALID_SERVICE_CONTROL;
         }
@@ -577,10 +581,14 @@ unsafe fn ScControlService(lpService: PACTIVE_SERVICE,
             pEventData = (ControlPacket as ULONG_PTR + core::mem::size_of::<SCM_CONTROL_PACKET>() as ULONG_PTR + core::mem::size_of::<DWORD>() as ULONG_PTR) as PVOID;
         }
 
-        handler_ex(dwControl,
-                   dwEventType,
-                   pEventData,
-                   (*lpService).HandlerContext);
+        let context = (*lpService).HandlerContext;
+        if ntdll_sys::seh::try_except_all(|| {
+            handler_ex(dwControl, dwEventType, pEventData, context);
+        })
+        .is_err()
+        {
+            dwError = ERROR_EXCEPTION_IN_SERVICE;
+        }
     } else {
         dwError = ERROR_SERVICE_CANNOT_ACCEPT_CTRL;
     }

@@ -318,20 +318,25 @@ pub unsafe extern "C" fn SampValidateDbObject(
     DbObject: *mut PSAM_DB_OBJECT,
 ) -> NTSTATUS {
     let LocalObject: PSAM_DB_OBJECT = Handle as PSAM_DB_OBJECT;
-    let mut bValid: BOOLEAN = 0u8;
+    // The handle comes straight off the RPC wire, so a bogus one faults here;
+    // the C catches that and answers STATUS_INVALID_HANDLE.
+    let bValid: bool = ntdll_sys::seh::try_except_all(|| {
+        (*LocalObject).Signature == SAMP_DB_SIGNATURE
+            && (ObjectType == SamDbIgnoreObject || (*LocalObject).ObjectType == ObjectType)
+    })
+    .unwrap_or(false);
 
-    if (*LocalObject).Signature == SAMP_DB_SIGNATURE {
-        if ObjectType == SamDbIgnoreObject || (*LocalObject).ObjectType == ObjectType {
-            bValid = 1u8;
-        }
-    }
-
-    if bValid == 0u8 {
+    if !bValid {
         return STATUS_INVALID_HANDLE;
     }
 
     if DesiredAccess != 0 {
         if ((*LocalObject).Access & DesiredAccess) != DesiredAccess {
+            ERR!(
+                "SampValidateDbObject access check failed %08lx  %08lx\n",
+                (*LocalObject).Access,
+                DesiredAccess,
+            );
             return STATUS_ACCESS_DENIED;
         }
     }

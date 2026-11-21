@@ -1172,14 +1172,19 @@ pub unsafe extern "system" fn SetDIBitsToDevice(
 
     pvSafeBits = RtlAllocateHeap(GetProcessHeap() as PVOID, 0, cjBmpScanSize as SIZE_T);
     if !pvSafeBits.is_null() {
-        // _SEH2_TRY
-        core::ptr::copy_nonoverlapping(
-            Bits as *const u8,
-            pvSafeBits as *mut u8,
-            cjBmpScanSize as usize,
-        );
-        // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Hit = TRUE; } — dead under DUMMY_PSEH
-        let _ = &mut Hit;
+        // The caller's bits may be shorter than the header claims; the C copies under
+        // _SEH2_TRY and carries on with the safe copy (Hit) rather than crash.
+        if ntdll_sys::seh::try_except_all(|| {
+            core::ptr::copy_nonoverlapping(
+                Bits as *const u8,
+                pvSafeBits as *mut u8,
+                cjBmpScanSize as usize,
+            );
+        })
+        .is_err()
+        {
+            Hit = TRUE;
+        }
 
         if Hit != 0 {
             // We don't die, we continue on with a allocated safe pointer to kernel
@@ -1405,14 +1410,19 @@ pub unsafe extern "system" fn StretchDIBits(
     if !lpBits.is_null() {
         pvSafeBits = RtlAllocateHeap(GetProcessHeap() as PVOID, 0, cjBmpScanSize as SIZE_T);
         if !pvSafeBits.is_null() {
-            // _SEH2_TRY
-            core::ptr::copy_nonoverlapping(
-                lpBits as *const u8,
-                pvSafeBits as *mut u8,
-                cjBmpScanSize as usize,
-            );
-            // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) { Hit = TRUE; } — dead under DUMMY_PSEH
-            let _ = &mut Hit;
+            // The caller's bits may be shorter than the header claims; the C copies under
+            // _SEH2_TRY and carries on with the safe copy (Hit) rather than crash.
+            if ntdll_sys::seh::try_except_all(|| {
+                core::ptr::copy_nonoverlapping(
+                    lpBits as *const u8,
+                    pvSafeBits as *mut u8,
+                    cjBmpScanSize as usize,
+                );
+            })
+            .is_err()
+            {
+                Hit = TRUE;
+            }
 
             if Hit != 0 {
                 // We don't die, we continue on with a allocated safe pointer to kernel

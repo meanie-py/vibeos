@@ -325,10 +325,102 @@ pub unsafe extern "system" fn GetMonitorUI(pName: PWSTR, pMonitorPortName: PWSTR
         return GetLastError();
     }
 
- else {
+    // 32733e7baf6 meant to hand-complete this function's tail and instead deleted
+    // everything between here and Cleanup, so GetMonitorUI returned without opening
+    // the Xcv handle or loading the monitor UI. Restored from ports.c.
+    FIXME!("GMUI : XcvName : %S\n", pDevice);
+
+    'cleanup: {
+        if OpenPrinterW(pDevice as LPWSTR, core::ptr::addr_of_mut!(hPrinter), core::ptr::addr_of_mut!(wDefault)) != 0 {
+            pHandle = hPrinter as PSPOOLER_HANDLE;
+
+            // Do the RPC call
+            dwErrorCode = match rpc_try(|| _RpcXcvData(
+                (*pHandle).hPrinter,
+                RUSTCONV_WSTR_657B9E92C1BA.as_ptr(),
+                core::ptr::addr_of_mut!(InputData) as PBYTE,
+                0,
+                core::ptr::addr_of_mut!(OutputData) as PBYTE,
+                1024,
+                core::ptr::addr_of_mut!(cbOutputNeeded),
+                core::ptr::addr_of_mut!(dwStatus),
+            )) {
+                Ok(e) => e,
+                Err(code) => {
+                    ERR!("GMUI : _RpcXcvData failed with exception code %lu!\n", code as DWORD);
+                    code as DWORD
+                }
+            };
+
+            if dwErrorCode == ERROR_INSUFFICIENT_BUFFER {
+                pOutputString = DllAllocSplMem(cbOutputNeeded) as PWSTR;
+
+                // Do the RPC call
+                dwErrorCode = match rpc_try(|| _RpcXcvData(
+                    (*pHandle).hPrinter,
+                    RUSTCONV_WSTR_657B9E92C1BA.as_ptr(),
+                    core::ptr::addr_of_mut!(InputData) as PBYTE,
+                    0,
+                    pOutputString as PBYTE,
+                    cbOutputNeeded,
+                    core::ptr::addr_of_mut!(cbOutputNeeded),
+                    core::ptr::addr_of_mut!(dwStatus),
+                )) {
+                    Ok(e) => e,
+                    Err(code) => {
+                        ERR!("GMUI : _RpcXcvData failed with exception code %lu!\n", code as DWORD);
+                        code as DWORD
+                    }
+                };
+            }
+
+            if dwErrorCode != ERROR_SUCCESS || dwStatus != ERROR_SUCCESS {
+                break 'cleanup;
+            }
+
+            pmuid = DllAllocSplMem(core::mem::size_of::<MONITORUIDATA>() as DWORD) as PMONITORUIDATA;
+            if !pmuid.is_null() {
+                core::ptr::write_bytes(pmuid as *mut u8, 0, core::mem::size_of::<MONITORUIDATA>());
+                (*pmuid).hActCtx = INVALID_HANDLE_VALUE;
+            } else {
+                ERR!("GMUI : Memory error\n");
+                dwErrorCode = GetLastError();
+                break 'cleanup;
+            }
+
+            let names = if pOutputString.is_null() {
+                core::ptr::addr_of_mut!(OutputData) as PWSTR
+            } else {
+                pOutputString
+            };
+            if GetMonitorUIActivationContext(names, pmuid) != 0 {
+                FIXME!("GMUI : MonitorUI Path : %S\n", (*pmuid).pModuleName);
+
+                hModule = LoadLibraryW((*pmuid).pModuleName) as HMODULE;
+                if !hModule.is_null() {
+                    let fpInitializePrintMonitorUI =
+                        GetProcAddress(hModule as HINSTANCE, b"InitializePrintMonitorUI\0".as_ptr() as LPCSTR);
+                    if let Some(init) = fpInitializePrintMonitorUI {
+                        (*pmuid).hLibrary = hModule;
+                        let init: unsafe extern "system" fn() -> PMONITORUI = core::mem::transmute(init);
+                        *pmui = init();
+                        *ppmuid = pmuid;
+                    } else {
+                        ERR!("GMUI : Failed to get MUI %S\n", (*pmuid).pModuleName);
+                        FreeMonitorUI(pmuid);
+                    }
+                } else {
+                    ERR!("GMUI : Failed to load library %S\n", (*pmuid).pModuleName);
+                }
+            }
+        } else {
+            ERR!("GMUI : Failed to open printer handle\n");
+        }
+
         dwErrorCode = GetLastError();
     }
 
+    // Cleanup:
     if !hPrinter.is_null() {
         ClosePrinter(hPrinter);
     }
@@ -338,6 +430,8 @@ pub unsafe extern "system" fn GetMonitorUI(pName: PWSTR, pMonitorPortName: PWSTR
     if !pDevice.is_null() {
         DllFreeSplMem(pDevice as PVOID);
     }
+
+    FIXME!("GMUI : Error Code Exit %d\n", dwErrorCode);
 
     dwErrorCode
 }

@@ -1208,13 +1208,24 @@ unsafe fn LISTBOX_GetText( descr: *mut LB_DESCR, index: INT, buffer: LPWSTR, uni
                                         core::ptr::null_mut(), 0, core::ptr::null_mut(), core::ptr::null_mut() ) as LRESULT;
         }
 
-        if unicode != 0 {
-            strcpyW( buffer, str );
-            len = strlenW(buffer) as LRESULT;
-        } else {
-            len = (WideCharToMultiByte(CP_ACP, 0, str, -1,
-                                      buffer as LPSTR, 0x7FFFFFFF, core::ptr::null_mut(), core::ptr::null_mut()) - 1) as LRESULT;
-        }
+        // The C's guard "hides a Delphi bug that passes a read-only buffer": the app
+        // gets LB_ERR instead of crashing.
+        len = match ntdll_sys::seh::try_except_all(|| {
+            if unicode != 0 {
+                strcpyW( buffer, str );
+                strlenW(buffer) as LRESULT
+            } else {
+                (WideCharToMultiByte(CP_ACP, 0, str, -1,
+                                     buffer as LPSTR, 0x7FFFFFFF, core::ptr::null_mut(), core::ptr::null_mut()) - 1) as LRESULT
+            }
+        }) {
+            Ok(n) => n,
+            Err(_) => {
+                ERR!("got an invalid buffer (Delphi bug?)\n");
+                SetLastError(ERROR_INVALID_PARAMETER);
+                LB_ERR as LRESULT
+            }
+        };
     } else {
         // Wine 11.11: the whole ULONG_PTR, not its low DWORD (LB_GETTEXT on a
         // no-strings owner-draw listbox reads back the item data).
