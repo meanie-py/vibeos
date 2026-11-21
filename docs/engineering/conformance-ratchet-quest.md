@@ -39,8 +39,8 @@ Owed, in order:
    `./vibeos-cli lint --arch <a> --rules scan_sign_compare_minmax` runs `-Wsign-compare` over
    the flipped C of modules with no oracle. It found one bug, user32 listbox's `LB_SETCOUNT` clamp, which is now fixed. It now reaches
    all 356 flipped files that call min/max, ntoskrnl and hal included (ntos.cmake's include
-   set); still open are the ~106 per arch that only partly parse under borrowed flags, listed
-   as `#ERR` with clang's first error. ntoskrnl's one hit (`mm/balance.c`) is already right.
+   set); missing headers are resolved from a tree-wide header index, so only ~70 per arch still
+   partly parse (listed as `#ERR` with clang's first error). ntoskrnl's one hit (`mm/balance.c`) is already right.
 3. bank_drift residue: 18 moved hashes no historical master scanner reproduces, all bought in
    sibling worktrees with branch-local scanners (cpp-cluster, gicv3, research,
    rustconv-speedrun, shell32-com). The 357 upstream-moved bodies are upstream-sync's queue.

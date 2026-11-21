@@ -23,7 +23,7 @@ use rayon::prelude::*;
 use regex::Regex;
 use serde_json::Value;
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
     process::Command,
@@ -313,8 +313,56 @@ pub(crate) fn hits(path: &str, rel: &str, src: &str, stderr: &str) -> (Vec<Strin
     (found, errors.len(), first)
 }
 
+fn missing_header() -> &'static Regex {
+    static R: OnceLock<Regex> = OnceLock::new();
+    R.get_or_init(|| Regex::new(r"fatal error: '([^']+)' file not found").unwrap())
+}
+
+/// Every header in the tree (and this build's generated ones), by file name.
+fn header_index(ctx: &BinaryContext) -> HashMap<String, Vec<PathBuf>> {
+    fn go(dir: &Path, idx: &mut HashMap<String, Vec<PathBuf>>) {
+        let Ok(rd) = fs::read_dir(dir) else { return };
+        for p in rd.flatten().map(|e| e.path()) {
+            let name = p.file_name().map(|n| n.to_string_lossy().into_owned());
+            let Some(name) = name else { continue };
+            if p.is_dir() && !p.is_symlink() {
+                if !(name.starts_with('.') || name == "target" || name == "CMakeFiles") {
+                    go(&p, idx);
+                }
+            } else if name.ends_with(".h") {
+                idx.entry(name).or_default().push(p);
+            }
+        }
+    }
+    let mut idx = HashMap::new();
+    for d in AREAS.iter().copied().chain(["sdk/include", "modules"]) {
+        go(&ctx.root.join(d), &mut idx);
+    }
+    go(&ctx.build_dir, &mut idx);
+    idx
+}
+
+/// The include dir that supplies `missing` (e.g. `afd/shared.h`), choosing the
+/// candidate sharing the longest path prefix with the TU being parsed.
+fn resolve(idx: &HashMap<String, Vec<PathBuf>>, missing: &str, tu: &Path) -> Option<PathBuf> {
+    let want = Path::new(missing);
+    let name = want.file_name()?.to_string_lossy();
+    let depth = want.components().count();
+    idx.get(name.as_ref())?
+        .iter()
+        .filter(|c| c.ends_with(want))
+        .max_by_key(|c| {
+            c.components()
+                .zip(tu.components())
+                .take_while(|(a, b)| a == b)
+                .count()
+        })
+        .and_then(|c| c.ancestors().nth(depth).map(Path::to_path_buf))
+}
+
 pub fn run(ctx: &BinaryContext) -> Result<CheckOutput, String> {
     let (live, by_dir) = load(ctx)?;
+    let headers = header_index(ctx);
     let mut files = Vec::new();
     for area in AREAS {
         walk(&ctx.root.join(area), &mut files);
@@ -363,18 +411,31 @@ pub fn run(ctx: &BinaryContext) -> Result<CheckOutput, String> {
             let rel = p.strip_prefix(&ctx.root).unwrap_or(p).display().to_string();
             let mut best: Option<(Vec<String>, usize, String)> = None;
             for e in donors {
-                let args = command(ctx, p, e);
-                let o = Command::new(&args[0])
-                    .args(&args[1..])
-                    .current_dir(&e.dir)
-                    .output()
-                    .map_err(|err| format!("{}: {err}", args[0]))?;
-                let r = hits(
-                    &p.display().to_string(),
-                    &rel,
-                    src,
-                    &String::from_utf8_lossy(&o.stderr),
-                );
+                // a borrowed flag set lacks the module's own include dirs: add
+                // the dir that supplies each missing header and parse again
+                let mut extra: Vec<String> = Vec::new();
+                let mut stderr = String::new();
+                for _ in 0..8 {
+                    let mut args = command(ctx, p, e);
+                    let tu = args.pop().unwrap_or_default();
+                    args.extend(extra.iter().cloned());
+                    args.push(tu);
+                    let o = Command::new(&args[0])
+                        .args(&args[1..])
+                        .current_dir(&e.dir)
+                        .output()
+                        .map_err(|err| format!("{}: {err}", args[0]))?;
+                    stderr = String::from_utf8_lossy(&o.stderr).into_owned();
+                    let add = missing_header()
+                        .captures(&stderr)
+                        .and_then(|c| resolve(&headers, &c[1], p))
+                        .map(|d| format!("-I{}", d.display()));
+                    match add {
+                        Some(flag) if !extra.contains(&flag) => extra.push(flag),
+                        _ => break,
+                    }
+                }
+                let r = hits(&p.display().to_string(), &rel, src, &stderr);
                 let clean = r.1 == 0;
                 if best.as_ref().is_none_or(|b| r.1 < b.1) {
                     best = Some(r);
@@ -439,5 +500,23 @@ mod tests {
             h[1].starts_with("x.c:4: "),
             "macro note attributes line 4: {h:?}"
         );
+    }
+    #[test]
+    fn resolve_picks_the_candidate_nearest_the_tu() {
+        let mut idx = HashMap::new();
+        idx.insert(
+            "shared.h".to_string(),
+            vec![
+                PathBuf::from("/r/sdk/include/reactos/drivers/afd/shared.h"),
+                PathBuf::from("/r/drivers/network/afd/include/afd/shared.h"),
+                PathBuf::from("/r/dll/other/shared.h"),
+            ],
+        );
+        let tu = Path::new("/r/drivers/network/afd/afd/main.c");
+        assert_eq!(
+            resolve(&idx, "afd/shared.h", tu),
+            Some(PathBuf::from("/r/drivers/network/afd/include"))
+        );
+        assert_eq!(resolve(&idx, "nope.h", tu), None);
     }
 }
