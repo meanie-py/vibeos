@@ -570,7 +570,8 @@ pub unsafe extern "system" fn ShellDimScreen(
     // answers E_INVALIDARG and tears the window down (AddRef, then Release to
     // zero). A null check alone missed non-null garbage, so catch for real.
     let wrote = ntdll_sys::seh::try_except_all(|| {
-        let _hr = CDimmedWindow_QueryInterface(pWindow as *mut c_void, &IID_IUnknown, pUnknown);
+        // The C stores this into hr and overwrites it with S_OK on the next line.
+        let _ = CDimmedWindow_QueryInterface(pWindow as *mut c_void, &IID_IUnknown, pUnknown);
         *hWindow = (*pWindow).m_hwnd;
     });
     if wrote.is_err() {
