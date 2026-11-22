@@ -55,9 +55,19 @@ payload: `VIBEOS_PAYLOAD=k32winetest ./vibeos-cli build --arch i386 --winetests 
 
 **Owed, next step first.**
 - kernel32:locale **167** (2026-11-21, `/tmp/vibeos-cli/20261121-192224-JXpF4C-smoke-i386`):
-  `test_unicode_sorting` (locale.c:3892) 145 needs a Windows-10-era sort table plus Wine's
-  newer compare (design first, not a quick fix); the rest are 1-3 per line (GetDateFormat,
-  GEO_NATION, PreferredUILanguages buffer errors, lcmapstring). Owed and sized:
+  every small cluster is done; what is left is three projects, largest first:
+  1. **Sorting, 145 + sort keys ~10**: `test_unicode_sorting` (locale.c:3892) wants a
+     Windows-10-era sort table plus Wine's newer compare; LCMAP_SORTKEY's partial fill on a
+     short buffer (2790-2801), key length (2469) and the short-buffer diacritic case (3913)
+     belong to the same rewrite. Design first.
+  2. **Unicode normalization, ~4**: no NFC/NFKC data in the tree and no Rust
+     RtlNormalizeString (stub). Blocks IdnToNameprepUnicode item 8 (5767: NFKC + B.2 case
+     fold), IdnToUnicode's unassigned check (5864/5869: RFC 3454 A.1) and
+     FoldString(MAP_COMPOSITE) (4065/4066). Tables should be generated from UnicodeData
+     by a tools/vibeos-codegen command, not hand-written; idn.rs's header lists exactly
+     what it approximates today.
+  3. **SetThreadUILanguage, 2** (below).
+  Owed and sized:
   SetThreadUILanguage (locale.c:7392/7396) needs a per-thread UI language that both
   kernel32 (setter) and kernel32_vista (GetThreadUILanguage at 0x502) see, i.e. a TEB
   field (Vista's MuiImpersonation/PreferredLanguages area), not a crate static. The NLSVersion,
