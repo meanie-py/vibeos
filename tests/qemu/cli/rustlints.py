@@ -68,6 +68,7 @@ PORTED = frozenset(
         "scan_ptr_typedef_indirection",
         "scan_unaligned_wide",
         "scan_unpruned_walk",
+        "scan_proc_esrch",
         "scan_varargs_shim_parity",
         "scan_version_vs_c",
         "scan_arg_side_effects",

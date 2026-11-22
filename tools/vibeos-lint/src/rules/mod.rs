@@ -111,6 +111,7 @@ pub mod extern_decl_drift;
 pub mod irql_balance;
 pub mod ob_refcount;
 pub mod unaligned_wide;
+pub mod proc_esrch;
 pub mod unpruned_walk;
 pub mod varargs_shim_parity;
 
@@ -212,6 +213,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(ob_refcount::ObRefcount),
         Box::new(com_double_release::ComDoubleRelease),
         Box::new(unpruned_walk::UnprunedWalk),
+        Box::new(proc_esrch::ProcEsrch),
         Box::new(extern_decl_drift::ExternDeclDrift),
         Box::new(duplicate_symbols::DuplicateSymbols),
         Box::new(export_shadows::ExportShadows),

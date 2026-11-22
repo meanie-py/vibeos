@@ -329,7 +329,8 @@ def _fixture_alive(identity):
     try:
         fields = Path(f"/proc/{identity['pid']}/stat").read_text().rsplit(")", 1)[1].split()
         return fields[19] == identity["start_ticks"] and fields[0] not in ("Z", "X")
-    except FileNotFoundError:
+    # A process reaped between the open and the read raises ESRCH, not ENOENT.
+    except (FileNotFoundError, ProcessLookupError):
         return False
 
 

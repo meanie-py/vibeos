@@ -895,6 +895,22 @@ _GUID_RS = (
     "const CGID_ShellServiceObject: GUID = GUID {{ Data1: {d1}, Data2: 0x0000, Data3: 0x0000, "
     "Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46] }};\n"
 )
+# scan_proc_esrch. Seeded from test_buildbench._fixture_alive (2026-11-22): a process
+# reaped between the /proc/<pid>/stat open and read raises ProcessLookupError, which an
+# `except FileNotFoundError` alone lets escape.
+_PROCESRCH_BAD = """\
+from pathlib import Path
+
+
+def alive(pid):
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().split()[2] not in ("Z", "X")
+    except FileNotFoundError:
+        return False
+"""
+_PROCESRCH_GOOD = _PROCESRCH_BAD.replace(
+    "except FileNotFoundError:", "except (FileNotFoundError, ProcessLookupError):"
+)
 # scan_dead_seh_handlers. Seeded from PsSuspendThread (2026-11-06): the C guards
 # KeSuspendThread, which RAISES STATUS_SUSPEND_COUNT_EXCEEDED, with an __except; the Rust kept
 # the call and dropped the handler, so a 128th SuspendThread from user mode bugchecked.
@@ -3604,6 +3620,12 @@ CONTROLS: list[Control] = [
         script="tools/vibeos-lint/src/rules/local_overlength.rs",
         bad={"vol.rs": _OVERLEN_BAD},
         good={"vol.rs": _OVERLEN_GOOD},
+    ),
+    Control(
+        name="scan_proc_esrch",
+        script="tools/vibeos-lint/src/rules/proc_esrch.rs",
+        bad={"tools/alive.py": _PROCESRCH_BAD},
+        good={"tools/alive.py": _PROCESRCH_GOOD},
     ),
     Control(
         name="scan_dead_seh_handlers",

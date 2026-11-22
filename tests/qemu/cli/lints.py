@@ -1429,6 +1429,11 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_dead_seh_handlers", [rustlints.SENTINEL, "scan_dead_seh_handlers"], "stdout")
     )
+    # A /proc/<pid> read guarded by `except FileNotFoundError` alone: a process reaped
+    # between open() and read() raises ProcessLookupError (ESRCH) and crashes the "it is
+    # gone" path. Hand-patched four times in one night before it became a rule. Baseline
+    # is EMPTY. A Rust rule (tools/vibeos-lint/src/rules/proc_esrch.rs).
+    specs.append(("scan_proc_esrch", [rustlints.SENTINEL, "scan_proc_esrch"], "stdout"))
     # A Rust GUID literal the SDK's DEFINE_GUID gives a different value. stobject's model
     # wrote CGID_ShellServiceObject from memory, one digit off, and the tray never started.
     # A Rust rule (tools/vibeos-lint/src/rules/guid_values.rs).
