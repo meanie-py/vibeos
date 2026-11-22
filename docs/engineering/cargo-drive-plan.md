@@ -596,8 +596,20 @@ extends it from the boot spine to every fully-Rust module.
      `if(NOT (NOT CMAKE_CROSSCOMPILING))`, beside the untouched host `dbghelphost`
      branch, and libtirpc's `-w` sits under `if(NOT (MSVC))`. This is plain CMake
      logic, not a table of conditions assumed constant. rapps.com needed nothing new.
+   - **2026-11-22: libtiff and glu32 converted**, EQUIVALENT ×3.
+     - `remove_target_compile_option` (libtiff, under `if(MSVC)`) is TRANSFERRED onto the
+       OBJECT library with its condition, like `target_compile_options`.
+     - `list(APPEND PCH_SKIP_SOURCE ... ${SOURCE})` (glu32) builds one of the module's
+       own source lists from the other, so it no longer counts as another consumer
+       of `${SOURCE}`.
+     - libtiff links `sdk/lib/crt/libgetopt.a`, a library defined in
+       `sdk/lib/crt/misc/misc.cmake`. The library index reads only CMakeLists.txt, so it is
+       now `engine:c:getopt` in ENGINE_LIBS, with its recipes.
+     - windowscodecs' recipe reorders an include after libtiff's rewrite. Its DLL is
+       sha256-identical with and without it on all 3 arches, as are drwtsn32 and mscoree
+       after dbghelp's rewrite.
    - **RESUME HERE (2026-11-08, fleet pause).**
-     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc and rapps.com followed, ratchet 22.)*
+     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff and glu32 followed, ratchet 20.)*
      - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
        integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
        cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and

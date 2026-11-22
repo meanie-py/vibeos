@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "glu32-cargo",
+    "libtiff-cargo",
     "libtirpc-cargo",
     "dbghelp-cargo",
     "rapps_com-cargo",
