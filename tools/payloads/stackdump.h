@@ -96,6 +96,79 @@ static void sd_sample_thread(DWORD pid, DWORD tid, struct sd_thread_view *v)
     HeapFree(GetProcessHeap(), 0, buf);
 }
 
+/* Every process's CPU time so far against its age, most CPU first: says which processes
+ * kept the (by default single) vCPU busy during a run. A process that should idle (osk,
+ * an x64 test window) showing CPU close to its age is spinning. Same SystemProcessInformation
+ * walk as above: UserTime 0x28, KernelTime 0x30, CreateTime 0x20, ImageName UNICODE_STRING
+ * at 0x38 on both, UniqueProcessId 0x50 (x64) / 0x44 (x86). Returns the busiest pid that
+ * is not idle, System or the caller, so the caller can sample its threads (0 if none). */
+static __inline DWORD sd_report_process_cpu(const char *tag, int top)
+{
+    typedef LONG (NTAPI *qsi_fn)(ULONG, PVOID, ULONG, PULONG);
+    qsi_fn qsi = (qsi_fn)GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQuerySystemInformation");
+    if (!qsi)
+        return 0;
+    ULONG size = 256 * 1024, need = 0;
+    BYTE *buf = NULL;
+    for (int tries = 0; tries < 4; tries++) {
+        buf = HeapAlloc(GetProcessHeap(), 0, size);
+        if (!buf)
+            return 0;
+        LONG st = qsi(5, buf, size, &need);
+        if (st >= 0)
+            break;
+        HeapFree(GetProcessHeap(), 0, buf);
+        buf = NULL;
+        if (st != (LONG)0xC0000004)
+            return 0;
+        size = need > size ? need + 64 * 1024 : size * 2;
+    }
+    if (!buf)
+        return 0;
+    const size_t pid_off = sizeof(void *) == 8 ? 0x50 : 0x44;
+    const size_t name_buf_off = sizeof(void *) == 8 ? 0x40 : 0x3C;
+    FILETIME now_ft;
+    GetSystemTimeAsFileTime(&now_ft);
+    LONGLONG now = ((LONGLONG)now_ft.dwHighDateTime << 32) | now_ft.dwLowDateTime;
+    DWORD hog = 0;
+    struct { BYTE *p; LONGLONG cpu; } rows[512];
+    int n = 0;
+    for (BYTE *p = buf; n < 512;) {
+        ULONG next = *(ULONG *)p;
+        rows[n].p = p;
+        rows[n].cpu = *(LONGLONG *)(p + 0x28) + *(LONGLONG *)(p + 0x30);
+        n++;
+        if (!next)
+            break;
+        p += next;
+    }
+    for (int i = 0; i < n && i < top; i++) {
+        int best = i;
+        for (int j = i + 1; j < n; j++)
+            if (rows[j].cpu > rows[best].cpu)
+                best = j;
+        if (best != i) {
+            BYTE *tp = rows[i].p; LONGLONG tc = rows[i].cpu;
+            rows[i] = rows[best];
+            rows[best].p = tp; rows[best].cpu = tc;
+        }
+        BYTE *p = rows[i].p;
+        USHORT len = *(USHORT *)(p + 0x38);
+        const WCHAR *name = *(const WCHAR **)(p + name_buf_off);
+        DWORD pid = (DWORD)(ULONG_PTR)*(HANDLE *)(p + pid_off);
+        if (!hog && pid > 4 && pid != GetCurrentProcessId())
+            hog = pid;
+        LONGLONG created = *(LONGLONG *)(p + 0x20);
+        LONGLONG age_ms = created ? (now - created) / 10000 : 0;
+        SAY("cputime %s pid=%lu %-.*ls kernel=%lld ms user=%lld ms age=%lld ms\n", tag,
+            (unsigned long)pid, name ? (int)(len / 2) : 6,
+            name ? name : L"(idle)", *(LONGLONG *)(p + 0x30) / 10000,
+            *(LONGLONG *)(p + 0x28) / 10000, age_ms);
+    }
+    HeapFree(GetProcessHeap(), 0, buf);
+    return hog;
+}
+
 static void dump_thread_body(DWORD pid, DWORD tid)
 {
     MODULEENTRY32W me[128];

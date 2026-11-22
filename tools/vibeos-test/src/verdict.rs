@@ -806,6 +806,17 @@ fn image_index(
     }
     Ok(out)
 }
+/// The module a runtime kernel-mode address falls in, from the boot's `[MODBASE] <name>
+/// base=<hex> size=<hex>` lines (sysldr.rs). The last line covering it wins, so a
+/// module unloaded and another loaded at the same base resolves to the later one.
+fn module_at(serial: &str, addr: u64) -> Option<(String, u64)> {
+    re(r"(?m)^\[MODBASE\] (\S+) base=(?:0x)?([0-9a-fA-F]+) size=(?:0x)?([0-9a-fA-F]+)")
+        .captures_iter(serial)
+        .filter_map(|c| Some((c[1].to_string(), hex(&c[2])?, hex(&c[3])?)))
+        .filter(|(_, base, size)| (*base..base.saturating_add(*size)).contains(&addr))
+        .last()
+        .map(|(name, base, _)| (name, base))
+}
 /// SizeOfImage from a PE's optional header (same offset in PE32 and PE32+).
 fn pe_size_of_image(path: &Path) -> Option<u64> {
     let b = fs::read(path).ok()?;
@@ -917,6 +928,13 @@ pub fn kernel_resolve(
         },
     };
     let Some(file_va) = file_va.filter(|v| (PE_BASE..PE_BASE + size).contains(v)) else {
+        // Another kernel-mode module: the boot printed where each one landed.
+        if let Some((name, base)) = serial_text.as_deref().and_then(|t| module_at(t, addr)) {
+            return format!(
+                "{shown} = {}",
+                symbol_resolve(repo, arch, addr - base, Some(&name), true)
+            );
+        }
         return format!(
             "{shown} -> (outside {} [file va {PE_BASE:#x}+{size:#x}]: another kernel-mode module, e.g. the HAL or a driver)",
             if mp { "ntkrnlmp.exe" } else { "ntoskrnl.exe" }
@@ -1253,6 +1271,21 @@ mod tests {
             None,
         );
         assert!(out.contains("built after that serial log"), "{out}");
+    }
+    #[test]
+    fn module_at_reads_modbase_lines_last_wins() {
+        let log = "[MODBASE] hal.dll base=FFFFF80000200000 size=df000\n\
+                   [MODBASE] old.sys base=FFFFF88075600000 size=100000\n\
+                   [MODBASE] win32k.sys base=FFFFF88075600000 size=200000\n";
+        assert_eq!(
+            module_at(log, 0xfffff8000024afd6),
+            Some(("hal.dll".into(), 0xfffff80000200000))
+        );
+        assert_eq!(
+            module_at(log, 0xfffff88075684b20),
+            Some(("win32k.sys".into(), 0xfffff88075600000))
+        );
+        assert_eq!(module_at(log, 0xfffff88090000000), None);
     }
     #[test]
     fn sym_routes_kernel_addresses_and_declines_without_a_base() {

@@ -188,7 +188,11 @@ pub fn payload_build_flags(root: &Path, names: &[String]) -> Result<String> {
 /// newer than it was staged by a build that did not finish. Booting anyway waits out the
 /// whole drain budget for a marker nothing can print (an hour, 20261106-160817-z7q5baq2).
 fn unfinished_payload_build(build_dir: &Path) -> Option<String> {
-    let mtime = |n: &str| std::fs::metadata(build_dir.join(n)).and_then(|m| m.modified()).ok();
+    let mtime = |n: &str| {
+        std::fs::metadata(build_dir.join(n))
+            .and_then(|m| m.modified())
+            .ok()
+    };
     let selection = mtime("payload-selection.json")?;
     match mtime(".vibeos-build-stamp.json") {
         Some(built) if built >= selection => None,
@@ -288,6 +292,7 @@ struct PayloadPlan {
     memory: String,
     extra: Vec<String>,
     refusal: Option<String>,
+    quiet: bool,
 }
 fn spec_number(v: &Value) -> Result<f64> {
     v.as_f64()
@@ -328,6 +333,7 @@ fn payload_plan(
         memory: String::new(),
         extra: Vec::new(),
         refusal: None,
+        quiet: false,
     };
     for name in payloads.split(',') {
         let name = name.trim();
@@ -361,6 +367,11 @@ fn payload_plan(
         if smoke_checks::mem_mb(&memory)? > smoke_checks::mem_mb(&p.memory)? {
             p.memory = memory
         }
+        // `quiet: true` boots with the QUIET tripwire token, so winlogon skips its test
+        // ladder (WoW64 guests, stock i386 applets left running, native winetests). On the
+        // smoke's one vCPU those applets take most of the CPU for the whole boot (osk and
+        // magnify blitting in win32k), which a long payload measures as its own slowness.
+        p.quiet |= spec_truthy(&test["quiet"]);
         if spec_truthy(&test["qemu_extra_args"]) {
             p.extra.push(spec_string(&test["qemu_extra_args"]))
         }
@@ -874,6 +885,15 @@ pub fn smoke(root: &Path, a: &Value, host: &mut dyn Host) -> Result<Value> {
         c.set_env("VIBEOS_TRIPWIRE", tripwire)?;
         c.stage("tripwire", "warn", tripwire, json!([]))?
     }
+    if !wanted.is_empty() && payload_plan(root, &wanted.join(","), &arch, None, "")?.quiet {
+        c.token("QUIET")?;
+        c.stage(
+            "quiet",
+            "warn",
+            "payload asked for QUIET: winlogon's test ladder is skipped",
+            json!([]),
+        )?
+    }
     let smp = options["smp"].as_i64().unwrap_or(0);
     if smp != 0 {
         c.set_env("VIBEOS_QEMU_SMP", smp.to_string())?;
@@ -1271,6 +1291,33 @@ mod tests {
         assert_eq!(plan.memory, "768M");
         assert_eq!(plan.pytest_arch, "amd64-uefi-net");
         assert_eq!(plan.extra, vec!["-device e1000"]);
+    }
+    #[test]
+    fn payload_quiet_reaches_the_plan() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, yaml) in [
+            ("loud", "test:\n  vm_memory: 2G\n"),
+            ("calm", "test:\n  quiet: true\n"),
+        ] {
+            let p = dir.path().join("tools/payloads").join(name);
+            fs::create_dir_all(&p).unwrap();
+            fs::write(p.join("payload.yaml"), yaml).unwrap();
+        }
+        assert!(
+            !payload_plan(dir.path(), "loud", "amd64", None, "")
+                .unwrap()
+                .quiet
+        );
+        assert!(
+            payload_plan(dir.path(), "calm", "amd64", None, "")
+                .unwrap()
+                .quiet
+        );
+        assert!(
+            payload_plan(dir.path(), "loud,calm", "amd64", None, "")
+                .unwrap()
+                .quiet
+        );
     }
     struct PreflightHost {
         state: Value,

@@ -14,8 +14,9 @@
 >    image, and a `--serial` log older than the tree's kernel unless `--image` is passed.
 > 2. RQ5A (smp-bringup's §9.56 guard): settle false positive vs. real double-link with a
 >    pre-`RemoveEntryList` neighbour check at the 9002 site; hand them a tested diff.
-> 3. Are the companion apps busier than they should be on one vCPU? (Magnifier and Task
->    Manager poll by design; osk and the x64 guests should idle.)
+> 3. osk.exe uses 27% of a one-vCPU boot with nobody typing (registry entry). Not a generic
+>    paint loop (`paintprobe` is clean); find what osk does: sample its threads with the
+>    sweep's end-of-run report on a NON-quiet payload (the Chrome payload is quiet now).
 > 4. The sandbox quest (the user asked to dip a toe in; not started).
 > Loading over the network is done (Chrome rung 2, `34e17dfff6e`).
 
