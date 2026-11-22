@@ -408,6 +408,61 @@ pub fn branches(stmts: &[Statement]) -> Vec<Vec<(usize, usize)>> {
     }
     out
 }
+/// The condition under which branch `branch` of the `nth` if() (in text order) runs, as one
+/// CMake expression: `C0` for the if(), `NOT (C0) AND (C1)` for its first elseif(),
+/// `NOT (C0) AND NOT (C1)` for an else() after one elseif(). dbghelp's target lives in the
+/// else() of `if(NOT CMAKE_CROSSCOMPILING)`, libtirpc's flags in the else() of `if(MSVC)`.
+pub fn branch_condition(stmts: &[Statement], nth: usize, branch: usize) -> Option<String> {
+    let norm = |raw: &str| raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut seen = 0;
+    let mut depth = 0usize;
+    let mut chain: Vec<String> = Vec::new();
+    let mut inside = false;
+    for (_, _, cmd, raw) in stmts {
+        match cmd.as_str() {
+            "if" if !inside => {
+                if seen == nth {
+                    inside = true;
+                    depth = 0;
+                    chain.push(norm(raw));
+                }
+                seen += 1;
+            }
+            "if" => {
+                depth += 1;
+                seen += 1;
+            }
+            "elseif" | "else" if inside && depth == 0 => {
+                chain.push(if cmd == "elseif" {
+                    norm(raw)
+                } else {
+                    String::new()
+                });
+                if chain.len() > branch {
+                    break;
+                }
+            }
+            "endif" if inside && depth == 0 => break,
+            "endif" if inside => depth -= 1,
+            _ => {}
+        }
+    }
+    if !inside || chain.len() <= branch {
+        return None;
+    }
+    let mut parts: Vec<String> = chain[..branch]
+        .iter()
+        .map(|c| format!("NOT ({c})"))
+        .collect();
+    if !chain[branch].is_empty() {
+        parts.push(if branch == 0 {
+            chain[0].clone()
+        } else {
+            format!("({})", chain[branch])
+        });
+    }
+    Some(parts.join(" AND "))
+}
 pub fn exclusive(p: &[(usize, usize)], q: &[(usize, usize)]) -> bool {
     for (a, b) in p.iter().zip(q) {
         if a != b {
@@ -1258,27 +1313,21 @@ pub fn body_env(text: &str, extras: &[String]) -> Option<(BTreeMap<String, Strin
     Some((flags, c[0].into()))
 }
 pub fn enclosing_ifs(text: &str, target: &str) -> Result<Vec<String>> {
-    let mut stack: Vec<Option<String>> = Vec::new();
-    for (_, _, cmd, raw) in statements(text) {
-        match cmd.as_str() {
-            "if" => stack.push(Some(raw.split_whitespace().collect::<Vec<_>>().join(" "))),
-            "elseif" | "else" => {
-                if let Some(last) = stack.last_mut() {
-                    *last = None
-                }
-            }
-            "endif" => {
-                stack.pop();
-            }
-            "add_library" | "add_executable" if args(&raw).first().is_some_and(|a| a == target) => {
-                if stack.iter().any(Option::is_none) {
-                    return Err(Error::new(format!(
-                        "{target}: its link is in an elseif/else branch"
-                    )));
-                }
-                return Ok(stack.into_iter().flatten().collect());
-            }
-            _ => {}
+    let stmts = statements(text);
+    let paths = branches(&stmts);
+    for (i, (_, _, cmd, raw)) in stmts.iter().enumerate() {
+        if ["add_library", "add_executable"].contains(&cmd.as_str())
+            && args(raw).first().is_some_and(|a| a == target)
+        {
+            // An elseif()/else() branch becomes the negation of the branches before it.
+            return paths[i]
+                .iter()
+                .map(|(nth, branch)| {
+                    branch_condition(&stmts, *nth, *branch).ok_or_else(|| {
+                        Error::new(format!("{target}: its link's if() branch is unreadable"))
+                    })
+                })
+                .collect();
         }
     }
     Ok(Vec::new())
@@ -2537,5 +2586,39 @@ mod sibling_tests {
         let other = "sdk/lib/x/CMakeFiles/gcc_ssp_x.dir/ssp.c.obj";
         assert_eq!(sibling_object_lib(&root, other, "shdocvw", text), None);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod branch_condition_tests {
+    use super::{branch_condition, statements};
+
+    #[test]
+    fn an_else_branch_is_the_negation_of_the_branches_before_it() {
+        let text = "if(NOT CMAKE_CROSSCOMPILING)\n  add_library(h x.c)\n  if(ARCH STREQUAL \"i386\")\n  endif()\nelseif(MSVC)\n  set(a b)\nelse()\n  add_library(t MODULE y.c)\nendif()\nif(Z)\nendif()\n";
+        let s = statements(text);
+        assert_eq!(
+            branch_condition(&s, 0, 0).as_deref(),
+            Some("NOT CMAKE_CROSSCOMPILING")
+        );
+        assert_eq!(
+            branch_condition(&s, 0, 1).as_deref(),
+            Some("NOT (NOT CMAKE_CROSSCOMPILING) AND (MSVC)")
+        );
+        assert_eq!(
+            branch_condition(&s, 0, 2).as_deref(),
+            Some("NOT (NOT CMAKE_CROSSCOMPILING) AND NOT (MSVC)")
+        );
+        // The nested if() is the 2nd in text order; the trailing one the 3rd.
+        assert_eq!(
+            branch_condition(&s, 1, 0).as_deref(),
+            Some("ARCH STREQUAL \"i386\"")
+        );
+        assert_eq!(branch_condition(&s, 2, 0).as_deref(), Some("Z"));
+        assert_eq!(branch_condition(&s, 0, 3), None);
+        assert_eq!(
+            super::enclosing_ifs(text, "t").unwrap(),
+            vec!["NOT (NOT CMAKE_CROSSCOMPILING) AND NOT (MSVC)".to_string()]
+        );
     }
 }

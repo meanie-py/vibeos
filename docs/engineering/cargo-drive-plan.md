@@ -590,8 +590,14 @@ extends it from the boot spine to every fully-Rust module.
        the cell's archive dropped both. A shim that duplicates a body symbol is
        link-guard's "two local definitions" error, never a silent pick. The rule applies
        to new conversions; committed build.rs files are unchanged.
+   - **2026-11-22: dbghelp, libtirpc and rapps.com converted**, EQUIVALENT ×3. An
+     elseif()/else() branch is no longer refused. It is carried as the negation of the
+     branches before it (`graph::branch_condition`): dbghelp's cell sits under
+     `if(NOT (NOT CMAKE_CROSSCOMPILING))`, beside the untouched host `dbghelphost`
+     branch, and libtirpc's `-w` sits under `if(NOT (MSVC))`. This is plain CMake
+     logic, not a table of conditions assumed constant. rapps.com needed nothing new.
    - **RESUME HERE (2026-11-08, fleet pause).**
-     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer and filebrowser followed, ratchet 25.)*
+     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc and rapps.com followed, ratchet 22.)*
      - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
        integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
        cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
@@ -601,7 +607,7 @@ extends it from the boot spine to every fully-Rust module.
        - msvcrt: its custom cargo command shape;
        - the nativedll kind (4);
        - the wow64cpu.S / sys-stubs.S asm inputs;
-       - the CRTs, dbghelp/libtirpc (elseif branches) and wdmaud.drv (two bodies).
+       - the CRTs and wdmaud.drv (two bodies).
        - Run `tools/codegen cargo-cell <target>` per module for its current refusal.
      - **Owed (2026-11-21):** audit the committed Rust-body cells against cmake for the
        explorer class (an unreferenced shim object that cmake loads and the archive
