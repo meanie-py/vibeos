@@ -18,7 +18,16 @@ Owed:
 - Done: `scan_sizeof_vs_c` and `scan_compare_const_vs_c` (vibeos-lint) gate the sizeof-swap
   and permuted-constant classes from crypt32 (10 and 11 reviewed findings baselined). The
   constant rule found one real divergence on its first run (concfg's REG_SZ retry, fixed).
-- shlwapi's C++ tail and cell (below).
+- **msxml3 port IN FLIGHT (2026-11-22):** derive/scaffold/island done (the `VT_*` switch
+  constants that derive flagged were resolved by clang at scaffold). `port translate msxml3
+  -m haiku --cost-cap 5`, 1775 functions, log `~/vibeos-rust-staging/port/msxml3/translate-run1.log`.
+  It is a paid run, so never interrupt it. If it was cut off, re-run the same command: the banks
+  resume it. Then integrate → resolve → macros → crate-repair ×3, grade with Wine's msxml3
+  suite against a C oracle (crypt32's recipe), flip, cell.
+- shlwapi's C++ tail (5 `.cpp`, 3.6K lines of ATL/COM: CAutoComplete, the property bags):
+  not started. `port cppapp` assumes a pure C++ module, and shlwapi's crate already holds
+  the C port, so running it here is a tool-design question rather than a recipe. shell32's
+  C++ tail lane is the precedent to read first.
 - The older smp items (below).
 
 ### Earlier RESUME HERE (2026-11-08, fleet wind-down)
