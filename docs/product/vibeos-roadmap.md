@@ -746,6 +746,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   3 one-vCPU boots, 0 in 3 four-vCPU boots). Still owed to smp-bringup: settle whether that guard is a false positive on
   stale union links. Under `--smp 4` the payload wedged on a different bug, fixed below.
 
+- **Chrome payload: the sweep never finishes after a Chrome hang; dhcpcsvc ApiCriticalSection
+  deadlock (open, found 2026-11-22, graviton lane).** Chrome's Run M sometimes leaves a
+  thread stuck on a critical section (`[CENSUS] STUCK chrome.exe ... WrKeyedEvent`); before
+  2026-11-22 the sweep's 420 s timeout dumped it, killed the tree and went on (runs
+  qsFxNa, E1HUIJ: 49 sightings each, sweep `done`). Since kernel32 loads kernelbase.dll
+  (`9e9ad9261f8`), 2 of 3 one-vCPU `--no-net` boots with that hang then raised
+  `STATUS_POSSIBLE_DEADLOCK` about 20 times (RtlpWaitForCriticalSection timing out on
+  `dhcpcsvc_rust::dhcp::api::ApiCriticalSection`, in a process that outlives Chrome) and
+  the sweep stopped after killing Chrome (runs 20261122-080847-vtJV0Y,
+  20261122-110401-oILhqO). Observed: the correlation and the lock. Inferred, unproven: that
+  kernelbase's presence changes what Chrome calls, and that dhcpcsvc's dispatch thread,
+  which holds ApiLock while it runs DHCP timeouts (as upstream does), blocks inside it while
+  DHCP retries with no network. With the network on, the same media passed 3/3 with no
+  deadlock raise (run 20261122-120932-HrBSDJ), so it needs `--no-net`.
+
 - **netstack: BUGCHECK 0xA writing a TCP receive into an unmapped buffer (open, found
   2026-11-22, graviton lane).** One Chrome payload boot (`--no-net`, one vCPU; run
   20261122-094733-aQAAcc) in about twenty that day: `memcpy` at DISPATCH_LEVEL writing
