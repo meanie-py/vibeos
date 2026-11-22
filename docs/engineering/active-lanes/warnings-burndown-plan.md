@@ -18,11 +18,17 @@ final binaries were artifact-store hits, so cargo never ran for them and their f
 still date from 2026-11-02 while their sources were edited on 11-07/11-08. That is a census
 coverage gap, not stale source. Closing it means either a cold rebuild of those cells or teaching
 the census to get diagnostics without a store-hit build.
-**Owed:** 1b66b757ce5 (on this branch, NOT yet sent to the integrator) moves the
+**Sent to the integrator (2026-11-21), with msvcrt-homebrew's OK:** 1b66b757ce5 moves the
 mmixer/wdmaud/wdmaud_drv `DPRINT!` to `DBG_TYPECHECK!`, fixes the 7 rotted arguments it surfaced
 (union fields bindgen nests in `__bindgen_anon_N`), and empties the scan_swallowing_debug_macro
-baseline. Those crates belong to msvcrt-homebrew, so it is waiting for that lane's OK (asked
-2026-11-21). The same message offered a tested diff for the 6 CRT LOGIC warnings.
+baseline. a0cf3f25638 clears 6 of the 7 LOGIC sites (2 dead `ctype-tables` cfgs in crt-shared,
+an unread init in crt-startup, the `__iob_func` clashing extern in msvcrt-crt, 2 dead
+`usermode_mixer` cfgs in wdmaud_drv).
+**Left:** the 7th LOGIC site, mmixer controls.rs:2699
+`unpredictable_function_pointer_comparisons`, mirrors the C's `MixerEventRoutine ==` compare.
+`core::ptr::fn_addr_eq` is the explicit spelling with the same semantics; that needs an OK from
+msvcrt-homebrew first. The owner asked that the non_snake_case/non_upper_case NOISE stay as it
+is, since the names mirror the C. The 54-unit store-hit coverage gap above is also still open.
 
 **State.** The 2026-10-17 census read **2,349 sites (48 UB, 1,072 LOGIC, 1,229 NOISE)**,
 down from 7,215. It covered 695 fresh units; the only stale one was reactos-link, a host tool
