@@ -285,6 +285,19 @@ unsafe fn IsReconnectHackNeeded(Adapter: PDHCP_ADAPTER, IfEntry: *const MIB_IFRO
     result
 }
 
+// ---- FreeAdapter ----
+/// Frees an adapter together with the alternate configuration LoadAlternateConfiguration
+/// attached to it.
+pub unsafe fn FreeAdapter(Adapter: PDHCP_ADAPTER) {
+    if Adapter.is_null() {
+        return;
+    }
+    if !(*Adapter).AlternateConfiguration.is_null() {
+        free((*Adapter).AlternateConfiguration as *mut c_void);
+    }
+    free(Adapter as *mut c_void);
+}
+
 // ---- StartAdapterDiscovery ----
 #[no_mangle]
 pub unsafe extern "system" fn StartAdapterDiscovery(hStopEvent: HANDLE) -> HANDLE {
@@ -298,7 +311,7 @@ unsafe fn AdapterStop() {
         let listEntry = RemoveHeadList(core::ptr::addr_of_mut!(AdapterList));
         let listEntryOffset = core::mem::offset_of!(DHCP_ADAPTER, ListEntry);
         let adapter = (listEntry as *mut u8).sub(listEntryOffset) as *mut DHCP_ADAPTER;
-        free(adapter as *mut core::ffi::c_void);
+        FreeAdapter(adapter);
     }
     ApiUnlock();
     WSACleanup();
@@ -361,6 +374,8 @@ pub unsafe extern "system" fn AdapterFindInfo(ip: *mut interface_info) -> PDHCP_
 }
 
 // ---- AdapterFindByHardwareAddress ----
+// Upstream changed the C parameter from `u_int8_t haddr[16]` to `u_int8_t *haddr` (same ABI);
+// this was already a pointer here.
 pub unsafe fn AdapterFindByHardwareAddress(haddr: *const u8, hlen: u8) -> *mut DHCP_ADAPTER {
     let mut ListEntry: PLIST_ENTRY = AdapterList.Flink;
     while ListEntry != core::ptr::addr_of_mut!(AdapterList) {
@@ -472,6 +487,183 @@ pub unsafe fn FindAdapterKey(Adapter: PDHCP_ADAPTER) -> HKEY {
     OutKey
 }
 
+// ---- LoadAlternateConfiguration ----
+// Wide registry names (the C uses L"..." literals). Built at compile time by zero-extending each
+// ASCII byte; the trailing NUL is part of the literal.
+const fn ascii_wide<const N: usize>(s: &[u8; N]) -> [u16; N] {
+    let mut out = [0u16; N];
+    let mut i = 0;
+    while i < N {
+        out[i] = s[i] as u16;
+        i += 1;
+    }
+    out
+}
+static W_ACTIVE_CONFIGURATIONS: [u16; 21] = ascii_wide(b"ActiveConfigurations\0");
+static W_DHCP_CONFIGURATIONS_KEY: [u16; 54] =
+    ascii_wide(b"System\\CurrentControlSet\\Services\\DHCP\\Configurations\0");
+static W_OPTIONS: [u16; 8] = ascii_wide(b"Options\0");
+
+/// Reads the adapter's alternate (fallback) configuration, named by the adapter key's
+/// `ActiveConfigurations` value, from `...\Services\DHCP\Configurations\<name>\Options`, and
+/// attaches it to `Adapter->AlternateConfiguration`. Called from PrepareAdapterForService and
+/// from Server_FallbackRefreshParams (api.rs), which frees any previous configuration first.
+pub unsafe fn LoadAlternateConfiguration(Adapter: PDHCP_ADAPTER, hAdapterKey: HKEY) -> DWORD {
+    let mut pszConfigName: *mut u16 = core::ptr::null_mut();
+    let mut hConfigsKey: HKEY = core::ptr::null_mut();
+    let mut hConfigKey: HKEY = core::ptr::null_mut();
+    let mut pAltConfig: PALTERNATE_CONFIGURATION = core::ptr::null_mut();
+    let mut dwSize: DWORD;
+    let mut dwError: DWORD;
+
+    DPRINT!(b"LoadAlternateConfiguration()\n\0".as_ptr() as PCHAR);
+
+    dwSize = 0;
+    RegQueryValueExW(
+        hAdapterKey,
+        W_ACTIVE_CONFIGURATIONS.as_ptr(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        &mut dwSize,
+    );
+    if dwSize == 0 {
+        DPRINT1!("There is no active configuration!\n");
+        return ERROR_SUCCESS;
+    }
+
+    // DIVERGENCE: the C mallocs exactly dwSize and hands the result to RegOpenKeyExW as a
+    // NUL-terminated name, but RegQueryValueExW does not terminate data that was stored without
+    // its terminator, so the open would read past the allocation. We allocate one extra WCHAR
+    // (zeroed by calloc) so the name is always terminated; dwSize passed to the query is unchanged.
+    pszConfigName = calloc(1, dwSize as usize + core::mem::size_of::<u16>()) as *mut u16;
+    if pszConfigName.is_null() {
+        DPRINT1!("Failed to allocate memory!\n");
+        return ERROR_NOT_ENOUGH_MEMORY;
+    }
+
+    'done: {
+        dwError = RegQueryValueExW(
+            hAdapterKey,
+            W_ACTIVE_CONFIGURATIONS.as_ptr(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            pszConfigName as *mut BYTE,
+            &mut dwSize,
+        );
+        if dwError != ERROR_SUCCESS {
+            DPRINT1!("Failed to read the ActiveConfigurations value!\n");
+            break 'done;
+        }
+
+        DPRINT!(b"ActiveConfigurations: %S\n\0".as_ptr() as PCHAR, pszConfigName);
+
+        dwError = RegOpenKeyExW(
+            HKEY_LOCAL_MACHINE,
+            W_DHCP_CONFIGURATIONS_KEY.as_ptr(),
+            0,
+            KEY_READ,
+            &mut hConfigsKey,
+        );
+        if dwError != ERROR_SUCCESS {
+            DPRINT1!("Failed to open configurations key!\n");
+            break 'done;
+        }
+
+        dwError = RegOpenKeyExW(hConfigsKey, pszConfigName, 0, KEY_READ, &mut hConfigKey);
+        if dwError != ERROR_SUCCESS {
+            DPRINT1!("Failed to open configuration key %S!\n", pszConfigName);
+            break 'done;
+        }
+
+        dwSize = 0;
+        // DIVERGENCE: the C ignores this query's result and mallocs whatever size came back,
+        // including 0. We propagate a failed query (a missing `Options` value: the C reaches the
+        // same error one call later, from the second query).
+        dwError = RegQueryValueExW(
+            hConfigKey,
+            W_OPTIONS.as_ptr(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            &mut dwSize,
+        );
+        if dwError != ERROR_SUCCESS {
+            DPRINT1!("Failed to query the alternate configuration size!\n");
+            break 'done;
+        }
+
+        DbgPrint(
+            b"Found alternate configuration: Size %lu\n\0".as_ptr() as *const i8,
+            dwSize,
+        );
+
+        // DIVERGENCE: the C mallocs a blob of whatever size the registry holds (0 included) and
+        // then reads it as a whole ALTERNATE_CONFIGURATION, so a short `Options` value makes
+        // state_panic read past the allocation. A blob smaller than the structure is invalid
+        // data: reject it and leave the adapter with no alternate configuration.
+        if (dwSize as usize) < core::mem::size_of::<ALTERNATE_CONFIGURATION>() {
+            DPRINT1!("Alternate configuration is too small (%lu bytes)!\n", dwSize);
+            dwError = ERROR_INVALID_DATA;
+            break 'done;
+        }
+
+        pAltConfig = malloc(dwSize as usize) as PALTERNATE_CONFIGURATION;
+        if pAltConfig.is_null() {
+            DPRINT1!("Failed to allocate memory!\n");
+            dwError = ERROR_NOT_ENOUGH_MEMORY;
+            break 'done;
+        }
+
+        dwError = RegQueryValueExW(
+            hConfigKey,
+            W_OPTIONS.as_ptr(),
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+            pAltConfig as *mut BYTE,
+            &mut dwSize,
+        );
+        if dwError != ERROR_SUCCESS {
+            DPRINT1!("Failed to read the alternate configuration!\n");
+            break 'done;
+        }
+
+        // The value can shrink between the two queries; re-check what was actually read.
+        if (dwSize as usize) < core::mem::size_of::<ALTERNATE_CONFIGURATION>() {
+            DPRINT1!("Alternate configuration is too small (%lu bytes)!\n", dwSize);
+            dwError = ERROR_INVALID_DATA;
+            break 'done;
+        }
+
+        DPRINT!(b"IpAddress:  %08lx\n\0".as_ptr() as PCHAR, (*pAltConfig).IpAddress);
+        DPRINT!(b"SubnetMask: %08lx\n\0".as_ptr() as PCHAR, (*pAltConfig).SubnetMask);
+
+        (*Adapter).AlternateConfiguration = pAltConfig;
+        DPRINT!(b"Success!\n\0".as_ptr() as PCHAR);
+    }
+
+    // done:
+    if dwError != ERROR_SUCCESS {
+        if !pAltConfig.is_null() {
+            free(pAltConfig as *mut c_void);
+        }
+    }
+
+    if !hConfigKey.is_null() {
+        RegCloseKey(hConfigKey);
+    }
+
+    if !hConfigsKey.is_null() {
+        RegCloseKey(hConfigsKey);
+    }
+
+    if !pszConfigName.is_null() {
+        free(pszConfigName as *mut c_void);
+    }
+
+    dwError
+}
+
 // ---- PrepareAdapterForService ----
 #[no_mangle]
 pub unsafe extern "system" fn PrepareAdapterForService(Adapter: *mut DHCP_ADAPTER) -> i32 {
@@ -510,6 +702,10 @@ pub unsafe extern "system" fn PrepareAdapterForService(Adapter: *mut DHCP_ADAPTE
             DhcpEnabled = 1;
         }
 
+        LoadAlternateConfiguration(Adapter, AdapterKey);
+
+        // (The C closed this HKEY with CloseHandle until upstream switched it to RegCloseKey;
+        //  the Rust already used RegCloseKey.)
         RegCloseKey(AdapterKey);
     } else {
         DhcpEnabled = 1;
@@ -628,7 +824,10 @@ pub unsafe extern "system" fn AdapterDiscoveryThread(Context: LPVOID) -> DWORD {
 
                     /* We've lost our link so out we go */
                     RemoveEntryList(&mut (*Adapter).ListEntry);
-                    free(Adapter as *mut core::ffi::c_void);
+                    // DIVERGENCE: upstream still calls plain free() here, leaking the adapter's
+                    // AlternateConfiguration every time a link drops. FreeAdapter exists to free
+                    // both, and the other three adapter-free sites use it.
+                    FreeAdapter(Adapter);
                 }
 
                 ApiUnlock();
@@ -740,11 +939,11 @@ pub unsafe extern "system" fn AdapterDiscoveryThread(Context: LPVOID) -> DWORD {
                     SetEvent(hAdapterStateChangedEvent);
                     ApiUnlock();
                 } else {
-                    free(Adapter as *mut core::ffi::c_void);
+                    FreeAdapter(Adapter);
                     Adapter = core::ptr::null_mut();
                 }
             } else {
-                free(Adapter as *mut core::ffi::c_void);
+                FreeAdapter(Adapter);
                 Adapter = core::ptr::null_mut();
             }
 

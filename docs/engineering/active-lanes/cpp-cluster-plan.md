@@ -68,9 +68,18 @@ is ported, OutputDebugStringA's `!BeingDebugged` bypass is dropped, and shell32 
 - **Gate used per batch:** check, check-tooling, `lint --rules rust_ub_deny` ×3, sehprobe ×3,
   vehprobe ×3 and plain smoke ×3. The sehprobe and vehprobe VERDICT lines are in the
   payload's own serial log, not full.log.
-- **Owed:**
-  - `DhcpRequestParams` is a stub: the upstream-sync kept the old dhcpcsvc.idl, so its RPC
-    (and its `nolint(dead_seh)`) wait on that re-port (roadmap, upstream-sync owed list).
+- **Next (taken over from upstream-sync 2026-11-22, by agreement):** netcfgx's alternate
+  TCP/IP configuration dialog (upstream 7139e57ff89) and the undocumented `ITcpipProperties`
+  interface (c04c092a3e6, afbc9224052), on top of the dhcpcsvc re-port below.
+- **dhcpcsvc upstream re-port (2026-11-22):** the ~20 upstream dhcpcsvc commits since the
+  2026-07-18 translation. Upstream's dhcpcsvc.idl/spec/rosdhcp.h/dhcpcsdk.h are restored
+  (842b5458588 had rolled them back to fit the old Rust); the island is regenerated (now also
+  from dhcpcapi.h); Server_EnableDhcp / AcquireParametersByBroadcast / FallbackRefreshParams /
+  RequestParams and the client DhcpRequestParams, NotifyConfigChangeEx, HandlePnPEvent
+  (SetBinaryClassId), Register/DeRegisterParamChange, UndoRequestParams are ported; dhclient
+  and adapter gain alternate configuration, AddressType and the option checks. Divergences
+  from the C are commented at each site (RPC-supplied option ids bounded, vendor-option walk
+  bounded, leaks on allocation failure, the client calling Server_EnableDhcp directly).
 
 ## Shell extensions (from 2026-10-17)
 
