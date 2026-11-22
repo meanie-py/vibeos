@@ -279,7 +279,9 @@ p.wait()
         while time.monotonic() < deadline:
             try:
                 state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
+                # A process reaped while its stat file is being read fails the read
+                # with ESRCH rather than ENOENT.
                 break
             if state == "Z":
                 break

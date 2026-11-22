@@ -16,7 +16,8 @@ from . import artifacts
 def alive(pid):
     try:
         return Path(f"/proc/{pid}/stat").read_text().split(") ")[1].split()[0] not in ("Z", "X")
-    except FileNotFoundError:
+    # A process reaped mid-read fails with ESRCH, not ENOENT.
+    except (FileNotFoundError, ProcessLookupError):
         return False
 
 
