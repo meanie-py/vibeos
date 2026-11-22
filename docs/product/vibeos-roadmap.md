@@ -1051,7 +1051,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `[MM] Failed to page data in! st=c0000015 off=10000` while `apc32.exe` created threads,
   then BUGCHECK 0x1E (0xC0000006). The rerun of the same media was clean
   (`20261101-123345-09ibq5oq`), as were five hostapps runs after it. First boot on the new
-  XFS volume; most likely the CD through uniata. Not reproduced.
+  XFS volume; most likely the CD through uniata. Not reproduced. Overnight soak 2026-11-22
+  (`farm --arches amd64 --minutes 480 --polite`, run `20261122-002255-hmEvEu`): 180/180 boots
+  clean on master `b895e8fddbf`'s amd64 media. The farm-report corpus is 230 amd64 boots, 0
+  failures. Those boots used the plain smoke payload, which runs the same boot WoW64
+  self-tests but not hostapps. The failing run was a hostapps boot, so this lowers the
+  estimated rate without proving it gone.
 - **arm64 kmtest ZwAllocateVirtualMemory: its two system threads now finish in the other order
   (open question, found 2026-10-19, research; benign for the ratchet).** The pass count moved
   576/579/582 on the version-flip + handle-biasing branch, where master reads 581. Thread 1's

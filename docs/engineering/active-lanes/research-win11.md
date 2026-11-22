@@ -30,9 +30,9 @@ from live in the docs below; this file holds only the lane's state.
   `MmDeleteSectionAssociation`. `SPECIALPOOL=*` now boots on all three arches.
 
 **Next, in order:**
-1. Soak candidate, never run: the amd64 `STATUS_NONEXISTENT_SECTOR` in-page 0x1E. It was seen
-   once (hostapps `20261101-123017-7ue7skcb`) and has been clean since; see the roadmap
-   registry. Run `./vibeos-cli farm --arches amd64 --minutes 480`, then `farm-report`.
+1. The amd64 in-page 0x1E (registry): an overnight soak gave 180/180 clean
+   (`20261122-002255-hmEvEu`). If it is worth more, soak with the hostapps payload, which is
+   where it was seen, rather than plain smoke.
 2. Registry open question: arm64 ZwAllocateVirtualMemory's thread order (benign).
 
 **Scratch worktree:** `../vibeos-spbase` (detached, holds nothing unique). Leave it for
