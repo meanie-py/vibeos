@@ -15,7 +15,7 @@
 #include <windef.h>
 #include <winbase.h>
 #include <ndk/rtlfuncs.h>
-#include <ndk/ldrfuncs.h>
+#include <ndk/umfuncs.h>
 
 /* Not yet in the psdk rtl headers — declared here (implemented in ntdll, Rust). */
 NTSYSAPI
