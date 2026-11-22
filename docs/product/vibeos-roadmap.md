@@ -770,7 +770,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   kernelbase's presence changes what Chrome calls, and that dhcpcsvc's dispatch thread,
   which holds ApiLock while it runs DHCP timeouts (as upstream does), blocks inside it while
   DHCP retries with no network. With the network on, the same media passed 3/3 with no
-  deadlock raise (run 20261122-120932-HrBSDJ), so it needs `--no-net`.
+  deadlock raise (run 20261122-120932-HrBSDJ), so it needs `--no-net`. Not reproduced after
+  cpp-cluster's dhcpcsvc upstream re-port (master `721fb70af35`, which also restored the
+  critical section's "Deadlock: 0x... (owner thread ...)" report): 3/3 `--no-net` boots
+  clean, Chrome's hang still occurring and recovered from (run 20261122-145506-oOy0eZ).
+  Kept open on watch: those hangs were shorter than the failing ones. If it returns, the
+  Deadlock line names the owner; send the run to cpp-cluster.
 
 - **netstack: BUGCHECK 0xA writing a TCP receive into an unmapped buffer (open, found
   2026-11-22, graviton lane).** One Chrome payload boot (`--no-net`, one vCPU; run
