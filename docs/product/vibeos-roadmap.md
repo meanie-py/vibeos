@@ -830,15 +830,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   held or a create path waits instead of failing; the stack is ks-rust / portcls / ac97.
   Repro: `dsound_probe.exe ks` from `tools/payloads/modrun/probes/dsound.c` (no suite case
   runs it). Artifact: `/tmp/vibeos-cli/20261105-204803-oonv142k-smoke-amd64`.
-- **Running out of memory while creating an image section BUGCHECKs 0x1E instead of failing
-  the load (open, found 2026-11-05).** At the default 512M, the first modrun process to load
-  Mesa's 18 MB `libgallium_wgl.dll` (the d3d8 `device` case) died with an uncaught
-  `STATUS_NO_MEMORY` (0xC0000017) raised in kernel mode; the raise logger's frames name
-  `PeFmtCreateSection`, `MiAllocatePagesForMdl` and `NtReadFile`, but they are stack-scanned and
-  the reported raise site is not a call, so the raising frame is unconfirmed. Windows fails the
-  `NtCreateSection`/`LdrLoadDll` with the status. Repro: drop `vm_memory: 1536M` from
-  `tools/payloads/modrun/payload.yaml`, `MODRUN_SUITES=d3d8`, boot amd64. Artifact:
-  `/tmp/vibeos-cli/20261105-195149-61405khw-smoke-amd64`. modrun now boots with 1.5G.
+- **Running out of memory while loading Mesa BUGCHECKed 0x1E (FIXED by 2026-11-22; found
+  2026-11-05). What remains is a stall: at 512M the guest runs out of physical pages and waits
+  instead of failing the allocation (open).** On 2026-11-05 the first modrun process to load
+  Mesa's 18 MB `libgallium_wgl.dll` (the d3d8 `device` case, default 512M) died on an
+  uncaught `STATUS_NO_MEMORY`. Re-run 2026-11-22 on the same recipe (drop `vm_memory: 1536M`
+  from `tools/payloads/modrun/payload.yaml`, `MODRUN_SUITES=d3d8`, boot amd64): 32 kernel
+  raises of 0xC0000017, every one caught and none bugchecked. They come from `CcMapData`
+  (`cc-rust/src/pin.rs:312`) under cdfs's `CdMapPathTableBlock` ← `CdLookupPathEntry` ←
+  `CdFindPathEntry`, and cdfs's dispatch `try_except` handles them. The likely fix is the
+  2026-11-06 SEH quest batch 2 (6cea71b5e6c), which restored the dead raise-class handlers,
+  `FsRtlCopyRead`'s among them. That is inferred: the November 5 binary, and with it the
+  original raise path, is gone. **Still open:** with `[MM] ... avail 0`, the C d3d8 process
+  never finishes and one thread sits in `WrFreePage` until the 50-minute harness timeout.
+  The live CD has no pagefile, and Windows would refuse the commit (`STATUS_COMMITMENT_LIMIT`)
+  long before physical pages ran out. This belongs with "MM: reserving charges no commit for
+  page tables" (commit accounting). Artifact: `/tmp/vibeos-cli/20261122-112536-sYri3V-smoke-amd64`.
+  modrun keeps 1.5G.
 - **The modrun grader could lose a case's single `[MODRUN] exit` line (FIXED 2026-11-08: `modrun.c` now sends it twice).**
   The smoke failed `d3d8.logic: rust: never finished (no exit line)`, but QEMU's serial log for
   the same run has the line intact (`[MODRUN] exit d3d8.logic rust rc=0x00000000 ms=690
