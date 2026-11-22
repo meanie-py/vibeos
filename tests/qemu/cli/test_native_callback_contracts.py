@@ -14,7 +14,7 @@ import pytest
 from tests.qemu import test_stortest
 from tests.qemu.vm import QemuVM, make_usb_stick_image
 from tools.qemu_infra_compat import DedicatedSession, call
-from tools.qemu_infra_runner import Bindings
+from tools.qemu_infra_runner import Bindings, failure_reasons
 
 
 def _git(repo, *args):
@@ -128,3 +128,38 @@ def test_stortest_grades_the_image_from_the_native_staging_handle(tmp_path, arch
     classification, _, _ = test_stortest._grade(vm)
     assert classification == ""
     assert vm.scratch_path.parent == (staging if backend == "windows-host" else work)
+
+
+def test_a_failing_controller_names_why_from_its_rounds():
+    # The 2026-11-21 gate red: "native controller exited 1" while summary.json's rounds
+    # held three ratchet regressions nobody read.
+    rounds = [
+        {
+            "arch": "arm64",
+            "bad": 0,
+            "bugcheck": None,
+            "rust_panics": 0,
+            "regressions": [
+                "ZwAllocateVirtualMemory: NEW failing assertion ZwAllocateVirtualMemory.c:76",
+                "ZwAllocateVirtualMemory: NEW failing assertion ZwAllocateVirtualMemory.c:90",
+            ],
+        }
+    ]
+    classification, reasons = failure_reasons(rounds)
+    assert classification == "RATCHET_REGRESSION"
+    assert reasons == [
+        "arm64: ratchet regression: ZwAllocateVirtualMemory: NEW failing assertion"
+        " ZwAllocateVirtualMemory.c:76",
+        "arm64: ratchet regression: ZwAllocateVirtualMemory: NEW failing assertion"
+        " ZwAllocateVirtualMemory.c:90",
+    ]
+
+
+def test_failure_reasons_ranks_a_bugcheck_first_and_tolerates_junk():
+    rounds = [{"arch": "i386", "bad": 2, "bugcheck": "0x1E", "regressions": ["X: OK -> NO-END"]}]
+    classification, reasons = failure_reasons(rounds)
+    assert classification == "BUGCHECK"
+    assert reasons[0] == "i386: bugcheck 0x1E"
+    assert "i386: 2 test(s) failed to run cleanly" in reasons
+    assert failure_reasons(None) == ("", [])
+    assert failure_reasons(["junk", {}]) == ("", [])

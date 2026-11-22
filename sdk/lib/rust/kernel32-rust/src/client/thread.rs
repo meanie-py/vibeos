@@ -905,19 +905,77 @@ pub unsafe extern "system" fn GetThreadId(Thread: HANDLE) -> DWORD {
     return HandleToUlong(ThreadBasic.ClientId.UniqueThread);
 }
 
+extern "system" {
+    fn IsValidLocale(Locale: LCID, dwFlags: DWORD) -> BOOL;
+    fn GetUserDefaultUILanguage() -> u16;
+}  // TlsAlloc/TlsFree/TlsGetValue/TlsSetValue are this file's own.
+
+// The thread UI language SetThreadUILanguage chose, in a TLS slot (0 = none chosen). The
+// NT 5.2 TEB has no field for it (Vista's MuiImpersonation area is past our TEB's end).
+// GetThreadUILanguage is exported by kernel32 at every version and kernel32_vista.spec
+// forwards its export here, so every caller reads the slot this setter writes.
+const TLS_OUT_OF_INDEXES_: DWORD = 0xFFFF_FFFF;
+// TLS_OUT_OF_INDEXES until the first SetThreadUILanguage allocates it.
+static UI_LANGUAGE_SLOT: core::sync::atomic::AtomicU32 =
+    core::sync::atomic::AtomicU32::new(TLS_OUT_OF_INDEXES_);
+
+unsafe fn ui_language_slot(allocate: bool) -> Option<DWORD> {
+    use core::sync::atomic::Ordering;
+    let slot = UI_LANGUAGE_SLOT.load(Ordering::Acquire);
+    if slot != TLS_OUT_OF_INDEXES_ || !allocate {
+        return (slot != TLS_OUT_OF_INDEXES_).then_some(slot);
+    }
+    let fresh = TlsAlloc();
+    if fresh == TLS_OUT_OF_INDEXES_ {
+        return None;
+    }
+    match UI_LANGUAGE_SLOT.compare_exchange(TLS_OUT_OF_INDEXES_, fresh, Ordering::AcqRel, Ordering::Acquire) {
+        Ok(_) => Some(fresh),
+        Err(winner) => {
+            // Another thread allocated first; use its slot and give ours back.
+            TlsFree(fresh);
+            Some(winner)
+        }
+    }
+}
+
+/// The language SetThreadUILanguage chose for this thread, else the user's, as Windows and
+/// Wine answer. (Returning 0 once made every caller that asks "is the UI English?" skip,
+/// pdh's whole winetest among them.)
+#[no_mangle]
+pub unsafe extern "system" fn GetThreadUILanguage() -> u16 {
+    if let Some(slot) = ui_language_slot(false) {
+        let chosen = TlsGetValue(slot) as usize as u16;
+        if chosen != 0 {
+            return chosen;
+        }
+    }
+    GetUserDefaultUILanguage()
+}
+
+/// Sets the calling thread's UI language and returns it; 0 keeps the current choice and
+/// returns it (Windows: "the language that best supports the console", which for a thread
+/// that chose one is that one). The C supported only 0 and answered with the thread
+/// locale, so Wine's test saw 0 for MAKELANGID(LANG_DUTCH, SUBLANG_DUTCH_BELGIAN).
 #[no_mangle]
 pub unsafe extern "system" fn SetThreadUILanguage(LangId: u32) -> u32 {
-    // We only support LangId == 0, for selecting a language
-    // identifier that best supports the NT Console.
-    if LangId != 0 {
-        BaseSetLastNTError(STATUS_NOT_SUPPORTED);
+    let LangId = LangId as u16;
+    if LangId == 0 {
+        return GetThreadUILanguage() as u32;
+    }
+    if IsValidLocale(LangId as LCID, 2 /* LCID_SUPPORTED */) == 0 {
+        BaseSetLastNTError(STATUS_INVALID_PARAMETER);
         return 0;
     }
-
-    // UNIMPLEMENTED - placeholder for future implementation
-    // This is a mechanical transliteration; the original C had UNIMPLEMENTED here
-
-    return LANGIDFROMLCID((*NtCurrentTeb()).CurrentLocale);
+    let stored = match ui_language_slot(true) {
+        Some(slot) => TlsSetValue(slot, LangId as usize as *mut c_void),
+        None => 0,
+    };
+    if stored == 0 {
+        BaseSetLastNTError(STATUS_NO_MEMORY);
+        return 0;
+    }
+    LangId as u32
 }
 
 #[no_mangle]

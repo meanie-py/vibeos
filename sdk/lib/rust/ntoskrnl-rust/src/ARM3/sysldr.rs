@@ -522,6 +522,22 @@ unsafe fn MiClearImports(_ldr_entry: *mut LDR_DATA_TABLE_ENTRY) {
     // LoadedImports field not in bindgen _LDR_DATA_TABLE_ENTRY, entire function elided
 }
 
+/// Publish a loaded module's runtime base and size on serial, as `[KRNLBASE]` does for
+/// the kernel. A hang report's CPU state is a bare runtime address, and for anything
+/// outside ntoskrnl (the HAL, win32k, a driver) nothing else in the log says which module
+/// it is in; `vibeos-cli sym --serial` reads these lines to turn it into module+offset.
+unsafe fn mi_print_modbase(ldr_entry: *mut LDR_DATA_TABLE_ENTRY) {
+    extern "C" {
+        fn DbgPrint(Format: *const i8, ...) -> u32;
+    }
+    DbgPrint(
+        b"[MODBASE] %wZ base=%p size=%lx\n\0".as_ptr() as *const i8,
+        core::ptr::addr_of!((*ldr_entry).BaseDllName),
+        (*ldr_entry).DllBase,
+        (*ldr_entry).SizeOfImage as u32,
+    );
+}
+
 unsafe fn MiProcessLoaderEntry(ldr_entry: *mut LDR_DATA_TABLE_ENTRY, insert: BOOLEAN) {
     let old_irql: KIRQL;
 
@@ -542,6 +558,10 @@ unsafe fn MiProcessLoaderEntry(ldr_entry: *mut LDR_DATA_TABLE_ENTRY, insert: BOO
     KeReleaseSpinLock(core::ptr::addr_of_mut!(PsLoadedModuleSpinLock), old_irql);
     ExReleaseResourceLite(core::ptr::addr_of_mut!(PsLoadedModuleResource));
     KeLeaveCriticalRegion();
+
+    if insert != 0 {
+        mi_print_modbase(ldr_entry);
+    }
 }
 
 unsafe fn MiUpdateThunks(
@@ -1098,6 +1118,10 @@ pub unsafe extern "system" fn MiInitializeLoadedModuleList(loader_block: *mut LO
             core::ptr::addr_of_mut!(PsLoadedModuleList),
             core::ptr::addr_of_mut!((*new_entry).InLoadOrderLinks),
         );
+        // arm64 is left out here for the reason [KRNLBASE] above uses the UART trace there:
+        // DbgPrint is not dependable this early. Its later loads print in MiProcessLoaderEntry.
+        #[cfg(not(target_arch = "aarch64"))]
+        mi_print_modbase(new_entry);
 
         next_entry = (*next_entry).Flink;
     }

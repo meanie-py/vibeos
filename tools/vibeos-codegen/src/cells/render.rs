@@ -439,12 +439,12 @@ pub fn build_rs(cell: &Cell) -> Result<String> {
     // The module's own objects are on cmake's link line as objects, every one loaded:
     // an archive loads only the members something references, and one that nothing
     // does can still carry `-export:` directives (libjpeg's jdatasrc.c exports
-    // jpeg_mem_src by __declspec(dllexport), not by its .def). Only a body-less cell:
-    // a Rust body that takes over some of the C's symbols relies on the archive leaving
-    // the C definitions unloaded.
-    if cell.body_crate.is_empty()
-        && (!cell.c_shims.is_empty() || cell.arch_shims.values().any(|v| !v.is_empty()))
-    {
+    // jpeg_mem_src by __declspec(dllexport), not by its .def). A cell with a Rust body
+    // too: explorer's mediabtns.cpp, which nothing references, still pulls libwine's
+    // debug_ros.c through ros_dbg_log, and as an archive member the cell dropped both.
+    // A shim that duplicates a body symbol is link-guard's "two local definitions"
+    // error, never a silent pick.
+    if !cell.c_shims.is_empty() || cell.arch_shims.values().any(|v| !v.is_empty()) {
         l.push(format!(
             "        .whole_c_objects(\"{}_shims\")",
             cell.target

@@ -13,6 +13,10 @@ iocpprobe\iocpprobe.exe
 dupprobe\dupprobe.exe
 # msgprobe.c: Chrome's UI message pump and its one posted kMsgHaveWork; Windows' answers in msgprobe.win11.txt.
 msgprobe\msgprobe.exe
+# paintprobe.c: does an untouched window with 30 buttons keep getting WM_PAINT, natively and
+# through WOW64? osk.exe used 27% of the one vCPU for whole boots, sampled painting its buttons.
+paintprobe\paintprobe.exe
+paintprobe\paintprobe32.exe
 # waitprobe.c: UnregisterWaitEx as ObjectWatcher::StopWatching uses it; Windows' answers in waitprobe.win11.txt.
 waitprobe\waitprobe.exe
 # sockprobe.c: a TCP connect the way Chrome's tcp_socket_win.cc makes one; Windows' answers in sockprobe.win11.txt.
@@ -65,6 +69,12 @@ chrome\chrome.exe --headless --no-sandbox --disable-gpu --no-first-run --disable
 # The net log's events that failed ERR_BLOCKED_BY_CLIENT (-20), and every event naming the page.
 # On Windows the same binary and flags load the page and log no -20 at all.
 grepfile\grepfile.exe C:\TEMP\net_i2.json 120 :-20, :-20} example.com
+# acgprobe.c: the dynamic-code policy (ACG) as Chrome's browser process turns it on: what
+# it must block (executable allocation, adding execute) and must not (loads, an opted-out thread).
+acgprobe\acgprobe.exe
+# tokprobe.c: the restricted token Chrome's sandbox builds for a locked-down child (its GPU
+# process launch failed with SBOX_ERROR_CANNOT_CREATE_RESTRICTED_TOKEN).
+tokprobe\tokprobe.exe
 # Run S: Run M with the sandbox on. Where it first breaks is the start of the sandbox quest.
 chrome\chrome.exe --headless --disable-gpu --no-first-run --disable-breakpad --enable-logging --ipc-connection-timeout=120 --log-file=C:\TEMP\chrome_s.log --v=1 --user-data-dir=C:\TEMP\chrome-s --dump-dom file:///X:/reactos/bin/chrome-pages/hello.html
 catfile\catfile.exe C:\TEMP\chrome_s.log

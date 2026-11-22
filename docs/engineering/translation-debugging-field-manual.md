@@ -6498,9 +6498,35 @@ try block.
 
 **Fix.** `fact_seal._C_STATEMENT_MACROS` now lists every spelling `scanner.mask_seh_for_parse`
 masks; the two lists must stay together. `postprocess.lower_wine_seh_markers` repairs bodies
-already bought ($0): a marker statement is dropped, and a handler condition becomes the DUMMY_PSEH
-guard `_SEH2_Volatile0`. The cache key is the unsealed C, so nothing accepted is re-billed. The one body still rejected after
+already bought ($0): a `__TRY`/`__ENDTRY` statement is dropped, and a handler becomes the DUMMY_PSEH
+guard `if _SEH2_Volatile0 != 0`: both `if __EXCEPT_PAGE_FAULT {` and the statement form
+`__EXCEPT_PAGE_FAULT;` followed by a bare block. The first version dropped the statement form too,
+which left its handler block running EVERY time. 11 crypt32 functions then always failed with
+STATUS_ACCESS_VIOLATION, which compiles cleanly and only Wine's suite caught. The cache key is the unsealed C, so nothing accepted is re-billed. The one body still rejected after
 `--retry-rejects` was re-bought with `--rebuy-fn` ($0.01).
+
+### A C-oracle run that agrees with the Rust because it IS the Rust
+**Symptom:** a `*winetestc` payload (the pre-flip C under a same-length name, for a KnownDLL)
+reports a suite identical to the Rust run, but some of what it exercised never reached the C.
+**Cause:** the test exe looks the module up by a name the rename missed. Wine's crypt32
+`store.c` calls `GetModuleHandleA("crypt32")` and shlwapi `string.c` calls
+`GetModuleHandleA("shlwapi")`, both without `.dll`. The old rename only matched `name.dll`, so
+those `GetProcAddress` lookups bound the shipping Rust in both runs.
+**Fix:** `tools/payloads/rename_module_refs.py` renames `name.dll` anywhere, plus the bare name as
+a whole NUL-terminated string, in ASCII and UTF-16LE. Every `*winetestc` build.sh calls it. To
+prove an oracle reaches the C, check the patched exe for the bare name
+(`b"\x00crypt3c\x00"`), not only its import table.
+
+### A user-mode heap overrun surfaces as a crash in ntdll's heap code
+**Symptom:** a test process dies in `RemoveEntryList` inside ntdll (a heap free-list unlink)
+reading `0xFFFF...`, far from the code that did the damage.
+**Fix:** run it under page heap. The apitest sweep runs any `bin\<exe> <args>` line, so a
+debug list (payload `dest: bin/apitest-suites.txt` pointing at your own file, plus reg.exe in
+`bin`) whose first line is `reg.exe add "HKLM\Software\Microsoft\Windows NT\CurrentVersion\Image
+File Execution Options\<test>.exe" /v GlobalFlag /t REG_DWORD /d 0x02000000 /f`. ntdll's loader
+reads it and turns on page heap, so the overrun faults at the culprit store (crypt32's
+`CRYPT_CopyChainToElement`, which allocated the wrong struct). Point the list at a separate file:
+the payload compiler regenerates the generated suite list whenever the manifest is newer.
 
 ### A C function-pointer typedef came back as a bare `fn` type
 **Symptom:** `no method named is_none found for fn pointer`, `expected fn pointer, found
@@ -13745,6 +13771,22 @@ struct's lock fields with no acquirer is a cheap sweep for more of these.
 port of an upstream fix that missed half of it) — a livelock no smoke boot had shown except as
 an unexplained HANG_TIMEOUT. A new hot lock exercises the lock primitive's slow paths far more
 than boot ever did.
+
+### One lock word, two protocols: a plain spinlock on a QUEUED lock wedges a CPU in the release
+**Symptom:** at `-smp 4` the amd64 Chrome payload wedged 3 of 3 boots shortly after chrome.exe
+spawned; desktop boots at `-smp 4` passed. Serial stopped mid-line. `hang-cpustate.txt`: one CPU
+at `KiReleaseApcLockFromSynchLevel+0x5a` (the in-stack queued release's wait-for-successor
+`pause` loop) with RDX = a thread's `ApcQueueLock` (`KTHREAD+0x78`), the other three halted in
+the HAL idle.
+**Cause:** `KTHREAD.ApcQueueLock` is an in-stack QUEUED lock everywhere the kernel takes it
+(`KiAcquireApcLock*`). A Rust-only iomgr diagnostic (`iop_check_stranded_completion`) took it
+with a plain `SpinLockGuard`. The plain release writes 0 over a queued waiter's tail, so that
+waiter's release finds a tail that is not its own and waits forever for a successor. On one CPU
+both protocols only raise IRQL, so it never showed.
+**Fix:** take it with the queued helpers (`KiAcquireApcLockRaiseToDpc` / `KiReleaseApcLock`).
+`scan_queued_lock_plain_acquire` (`./vibeos-cli check`) rejects a plain spinlock call on
+`ApcQueueLock` or `ProcessLock`. Note that no `[CENSUS]`, `[RQRUNNING]` or watchdog line names
+this: disassemble at the stuck RIP and read which loop it is (`vibeos-cli sym` resolves it).
 
 ### An object linked into a shared list before it is initialized
 **Symptom:** amd64 `-smp 2`, about 1 boot in 5 at worst: BUGCHECK 0x1E reading NULL+0x90 in

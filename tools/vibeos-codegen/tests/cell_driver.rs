@@ -29,14 +29,21 @@ fn frozen_apply_and_refusal() {
     }
     // A late rewrite refusal must not write an earlier valid cell or its CMakeLists.
     std::fs::create_dir_all(root.join("base/n")).unwrap();
-    std::fs::write(root.join("base/n/CMakeLists.txt"),
-        "add_library(n MODULE n.c)\nif(MSVC)\nelse()\n target_compile_options(n PRIVATE /wd4267)\nendif()\n").unwrap();
+    std::fs::write(
+        root.join("base/n/CMakeLists.txt"),
+        "add_library(n MODULE n.c)\nadd_custom_command(TARGET n POST_BUILD COMMAND touch x)\n",
+    )
+    .unwrap();
     let mut refused = c.clone();
     refused.target = "n".into();
     refused.cmake_dir = root.join("base/n");
     refused.body_crate.clear();
     let error = driver::plan_apply(&root, &[c.clone(), refused]).unwrap_err();
-    assert!(error.message.contains("elseif/else branch"));
+    assert!(
+        error.message.contains("is not modelled"),
+        "{}",
+        error.message
+    );
     assert_eq!(
         std::fs::read_to_string(root.join("base/m/CMakeLists.txt")).unwrap(),
         f["cmake"].as_str().unwrap()

@@ -487,6 +487,13 @@ fn newer(repo: &Path) -> Vec<String> {
     let Ok(built) = fs::metadata(dll).and_then(|m| m.modified()) else {
         return vec![];
     };
+    // A CMake input is consumed by RECONFIGURING, which rewrites build.ninja,
+    // not by relinking: a comment-only CMakeLists.txt edit regenerates and
+    // leaves the DLL alone, so judging it against the DLL fails forever.
+    let configured = repo
+        .join(CPU_DLL)
+        .parent()
+        .and_then(|d| fs::metadata(d.join("build.ninja")).and_then(|m| m.modified()).ok());
     let mut newer = vec![];
     let mut stack = CPU_SOURCES.iter().map(|s| repo.join(s)).collect::<Vec<_>>();
     while let Some(p) = stack.pop() {
@@ -495,9 +502,15 @@ fn newer(repo: &Path) -> Vec<String> {
                 stack.extend(entries.flatten().map(|e| e.path()))
             }
         } else if p.is_file()
-            && fs::metadata(&p)
-                .and_then(|m| m.modified())
-                .is_ok_and(|t| t > built)
+            && fs::metadata(&p).and_then(|m| m.modified()).is_ok_and(|t| {
+                let cmake_input = p.file_name().is_some_and(|n| n == "CMakeLists.txt")
+                    || p.extension().is_some_and(|e| e == "cmake");
+                let reference = match configured {
+                    Some(c) if cmake_input => c,
+                    _ => built,
+                };
+                t > reference
+            })
         {
             newer.push(p.strip_prefix(repo).unwrap().to_string_lossy().into_owned())
         }

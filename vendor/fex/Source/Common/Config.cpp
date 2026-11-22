@@ -719,8 +719,17 @@ fextl::string GetCacheDirectory() {
   const char* CacheXDG = getenv("XDG_CACHE_HOME");
   return (CacheXDG ? fextl::string {CacheXDG} : (fextl::string {HomeDir} + "/.cache")) + "/fex-emu/";
 #else
-  const char* PrefixAppData = getenv("LOCALAPPDATA");
-  return PrefixAppData ? (fextl::string {PrefixAppData} + "\\fex-emu\\") : fextl::string {".\\"};
+  // VIBEOS PATCH (machine-wide code cache): one cache for every process, under the system
+  // root, rather than one per %LOCALAPPDATA%. The point of the cache is that each process
+  // reuses the system DLL code every other process compiled, and services have no
+  // LOCALAPPDATA at all (this fell back to the current directory). The system root comes from
+  // KUSER_SHARED_DATA.NtSystemRoot (0x7FFE0030), which every process maps.
+  const auto* SystemRoot = reinterpret_cast<const wchar_t*>(0x7FFE0030);
+  fextl::string Root;
+  for (size_t i = 0; i < 260 && SystemRoot[i]; i++) {
+    Root.push_back(static_cast<char>(SystemRoot[i]));
+  }
+  return Root + "\\fex-emu\\";
 #endif
 }
 

@@ -19,12 +19,4 @@ EXE="$ROOT/build-$A/modules/rostests/winetests/crypt32/crypt32_winetest.exe"
   || { echo "[crypt32winetestc] ninja failed; fix: ./vibeos-cli build --arch $A --winetests crypt32" >&2; exit 1; }
 [ -f "$EXE" ] || { echo "[crypt32winetestc] $EXE still missing after ninja" >&2; exit 1; }
 cp "$ROOT/build-$A/dll/win32/crypt32/crypt32_c.dll" "$HERE/crypt32_c-$A.dll"
-python3 - "$EXE" "$HERE/crypt32_winetest_c-$A.exe" <<'PY'
-import re, sys
-data = open(sys.argv[1], "rb").read()
-hits = len(re.findall(rb"(?i)crypt32\.dll", data))
-if hits == 0:
-    sys.exit("[crypt32winetestc] no crypt32.dll string to rename; the oracle would test the Rust")
-open(sys.argv[2], "wb").write(re.sub(rb"(?i)crypt32\.dll", b"crypt3c.dll", data))
-print(f"[crypt32winetestc] renamed {hits} crypt32.dll string(s)")
-PY
+python3 "$ROOT/tools/payloads/rename_module_refs.py" "$EXE" "$HERE/crypt32_winetest_c-$A.exe" crypt32 crypt3c

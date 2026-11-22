@@ -1195,10 +1195,22 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # tools/vibeos-lint/src/rules/assert_negated_vs_c.rs). fastfat's FatCommonRead wrapped the
     # C's VerifyThread assert in `!( )`, so it fired on every legitimate I/O failure once armed.
     specs.append(("scan_assert_negated_vs_c", ["MISSING"], "stdout"))
+    # A size_of::<X>() where the same-module C twin sizes a different type (native Rust rule,
+    # tools/vibeos-lint/src/rules/sizeof_vs_c.rs). crypt32's CRYPT_CopyChainToElement sized the
+    # embedded CERT_CHAIN_CONTEXT for a CertificateChain: a heap overrun.
+    specs.append(("scan_sizeof_vs_c", ["MISSING"], "stdout"))
+    # A ==/!= against a different named constant than the C twin's (native Rust rule,
+    # tools/vibeos-lint/src/rules/compare_const_vs_c.rs): crypt32's CertAddStoreToCollection
+    # compared the store type with E_INVALIDARG for StoreTypeCollection.
+    specs.append(("scan_compare_const_vs_c", ["MISSING"], "stdout"))
     # A DEVICE_OBJECT pointer cast to a device-extension type for the C's ->DeviceExtension
     # (native Rust rule, tools/vibeos-lint/src/rules/devobj_as_extension.rs): six classpnp sites
     # wrote the release-queue spinlock into the device object. Gated at zero.
     specs.append(("scan_devobj_as_extension", ["MISSING"], "stdout"))
+    # A `// [guard-drop] <C release>` marker followed by more work before the guard's scope ends
+    # (native Rust rule, tools/vibeos-lint/src/rules/guard_drop_late.rs): rmap.rs freed pool
+    # under the PFN lock the C had released, an i386 SPECIALPOOL=* 0x0F. Gated at zero.
+    specs.append(("scan_guard_drop_late", ["MISSING"], "stdout"))
     # KeQuerySystemTime expanded as a typed u64 read of KUSER_SHARED_DATA.SystemTime (+0x14,
     # 4-aligned), or through an invented zeroed `SharedSystemTime` global (native Rust rule,
     # tools/vibeos-lint/src/rules/shared_system_time.rs). Armed usb/ksecdd bugchecked on it.
@@ -1425,6 +1437,11 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_dead_seh_handlers", [rustlints.SENTINEL, "scan_dead_seh_handlers"], "stdout")
     )
+    # A /proc/<pid> read guarded by `except FileNotFoundError` alone: a process reaped
+    # between open() and read() raises ProcessLookupError (ESRCH) and crashes the "it is
+    # gone" path. Hand-patched four times in one night before it became a rule. Baseline
+    # is EMPTY. A Rust rule (tools/vibeos-lint/src/rules/proc_esrch.rs).
+    specs.append(("scan_proc_esrch", [rustlints.SENTINEL, "scan_proc_esrch"], "stdout"))
     # A Rust GUID literal the SDK's DEFINE_GUID gives a different value. stobject's model
     # wrote CGID_ShellServiceObject from memory, one digit off, and the tray never started.
     # A Rust rule (tools/vibeos-lint/src/rules/guid_values.rs).
@@ -1567,6 +1584,12 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A plain spinlock call (SpinLockGuard, KeAcquireSpinLock...) on a lock the kernel takes
+    # as an in-stack QUEUED lock (KTHREAD.ApcQueueLock, KPROCESS.ProcessLock). Harmless on
+    # one CPU; on several the plain release zeroes a queued waiter's tail and its release
+    # spins forever. iomgr's stranded-completion check wedged the -smp 4 Chrome payload 3/3.
+    # Rust-only (tools/vibeos-lint); baseline is EMPTY.
+    specs.append(("scan_queued_lock_plain_acquire", ["MISSING"], "stdout"))
     # A `++`/`--` inside a CALL ARGUMENT whose effect a later operand of the same expression
     # observes. Rust has no `++`, so the translation must split it, and where the second
     # statement lands is the whole meaning — msvcrt's demangler hoisted one out of an `if`

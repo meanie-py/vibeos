@@ -46,7 +46,8 @@
     "set_wine_module_fixme",
     "set_wine_module",
     "kmt_enable_native_seh",
-    "set_target_cpp_properties"
+    "set_target_cpp_properties",
+    "remove_target_compile_option"
   ],
   "NAME_PROPERTIES": [
     "DEFINE_SYMBOL",
@@ -85,6 +86,7 @@
     "sdk/lib/skiplist/libskiplist_rust.a": "engine:skiplist_rust",
     "dll/win32/hid/libhid_hidparser_rust.a": "engine:hid_hidparser_rust",
     "sdk/lib/evtlib/libevtlib.a": "engine:c:evtlib",
+    "sdk/lib/crt/libgetopt.a": "engine:c:getopt",
     "sdk/lib/skiplist/libskiplist16.a": "engine:c:skiplist16",
     "sdk/lib/udmihelp/libudmihelp.a": "engine:c:udmihelp",
     "sdk/lib/dmilib/libdmilib.a": "engine:c:dmilib",

@@ -806,6 +806,27 @@ fn image_index(
     }
     Ok(out)
 }
+/// The module a runtime kernel-mode address falls in, from the boot's `[MODBASE] <name>
+/// base=<hex> size=<hex>` lines (sysldr.rs). The last line covering it wins, so a
+/// module unloaded and another loaded at the same base resolves to the later one.
+fn module_at(serial: &str, addr: u64) -> Option<(String, u64)> {
+    re(r"(?m)^\[MODBASE\] (\S+) base=(?:0x)?([0-9a-fA-F]+) size=(?:0x)?([0-9a-fA-F]+)")
+        .captures_iter(serial)
+        .filter_map(|c| Some((c[1].to_string(), hex(&c[2])?, hex(&c[3])?)))
+        .filter(|(_, base, size)| (*base..base.saturating_add(*size)).contains(&addr))
+        .last()
+        .map(|(name, base, _)| (name, base))
+}
+/// SizeOfImage from a PE's optional header (same offset in PE32 and PE32+).
+fn pe_size_of_image(path: &Path) -> Option<u64> {
+    let b = fs::read(path).ok()?;
+    let lfanew = u32::from_le_bytes(b.get(0x3c..0x40)?.try_into().ok()?) as usize;
+    if b.get(lfanew..lfanew + 4)? != b"PE\0\0" {
+        return None;
+    }
+    let opt = lfanew + 24;
+    Some(u32::from_le_bytes(b.get(opt + 56..opt + 60)?.try_into().ok()?) as u64)
+}
 /// Resolve a kernel address. The kernel is relocated at boot, so a runtime VA needs
 /// the base that boot printed (`[KRNLBASE]` in its serial log, or `--kernel-base`);
 /// without one this declines instead of guessing. `offset` means `addr` is an RVA
@@ -869,6 +890,57 @@ pub fn kernel_resolve(
     } else {
         format!("{addr:#x}")
     };
+    // Bound the lookup by the image itself: a kernel-half address in the HAL or a
+    // driver otherwise lands before or past ntoskrnl's file VAs, and the nearest symbol
+    // below it is an absolute constant (`fffff8000024afd6` came back as
+    // `ntkrnlmp.exe!EFLAGS_ID_MASK+0x4afd6`).
+    let image_path = image.map(Path::to_path_buf).unwrap_or_else(|| {
+        repo.join(if mp {
+            format!("build-{arch}/ntoskrnl/ntkrnlmp/ntkrnlmp.exe")
+        } else {
+            format!("build-{arch}/ntoskrnl/ntoskrnl.exe")
+        })
+    });
+    // A log from an earlier build read against this tree's newer kernel names some
+    // unrelated function at every address, and reads exactly like a right answer.
+    if let (None, Some(log)) = (image, serial) {
+        let mtime = |p: &Path| fs::metadata(p).and_then(|m| m.modified()).ok();
+        if let (Some(k), Some(l)) = (mtime(&image_path), mtime(log)) {
+            if k > l {
+                return format!(
+                    "{shown} -> (this tree's {} was built after that serial log was written: pass --image <the kernel that booted>)",
+                    image_path.display()
+                );
+            }
+        }
+    }
+    let Some(size) = pe_size_of_image(&image_path) else {
+        return format!(
+            "{shown} -> (cannot read {} to bound the lookup; pass --image)",
+            image_path.display()
+        );
+    };
+    let file_va = match reloc.as_deref() {
+        None => Some(pc),
+        Some(r) => match r.strip_prefix('-') {
+            Some(neg) => hex(neg.trim_start_matches("0x")).and_then(|d| pc.checked_add(d)),
+            None => hex(r.trim_start_matches("0x")).and_then(|d| pc.checked_sub(d)),
+        },
+    };
+    let Some(file_va) = file_va.filter(|v| (PE_BASE..PE_BASE + size).contains(v)) else {
+        // Another kernel-mode module: the boot printed where each one landed.
+        if let Some((name, base)) = serial_text.as_deref().and_then(|t| module_at(t, addr)) {
+            return format!(
+                "{shown} = {}",
+                symbol_resolve(repo, arch, addr - base, Some(&name), true)
+            );
+        }
+        return format!(
+            "{shown} -> (outside {} [file va {PE_BASE:#x}+{size:#x}]: another kernel-mode module, e.g. the HAL or a driver)",
+            if mp { "ntkrnlmp.exe" } else { "ntoskrnl.exe" }
+        );
+    };
+    let _ = file_va;
     let pc_text = format!("{pc:#x}");
     match resolve_addr_in(repo, arch, &pc_text, mp, reloc.as_deref(), index.as_deref()) {
         Some(line) => {
@@ -1171,6 +1243,49 @@ mod tests {
         let resolved = symbolicate_pc(root.path(), "amd64", serial).unwrap();
         assert!(resolved.contains("ndis.sys!DriverFault+0x0"), "{resolved}");
         assert!(!resolved.contains("ntoskrnl"));
+    }
+    #[test]
+    fn sym_bounds_by_size_of_image_and_declines_a_stale_log() {
+        let root = tempfile::tempdir().unwrap();
+        let mut pe = vec![0u8; 0x200];
+        pe[0x3c..0x40].copy_from_slice(&0x80u32.to_le_bytes());
+        pe[0x80..0x84].copy_from_slice(b"PE\0\0");
+        pe[0x80 + 24 + 56..0x80 + 24 + 60].copy_from_slice(&0xa72000u32.to_le_bytes());
+        let log = root.path().join("serial.log");
+        fs::write(&log, "[KRNLBASE] ntoskrnl runtime base=fffff80000400000\n").unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        let img = root
+            .path()
+            .join("build-amd64/ntoskrnl/ntkrnlmp/ntkrnlmp.exe");
+        fs::create_dir_all(img.parent().unwrap()).unwrap();
+        fs::write(&img, &pe).unwrap();
+        assert_eq!(pe_size_of_image(&img), Some(0xa72000));
+        let out = kernel_resolve(
+            root.path(),
+            "amd64",
+            0xfffff8000046c5ea,
+            Some("ntkrnlmp.exe"),
+            false,
+            Some(&log),
+            None,
+            None,
+        );
+        assert!(out.contains("built after that serial log"), "{out}");
+    }
+    #[test]
+    fn module_at_reads_modbase_lines_last_wins() {
+        let log = "[MODBASE] hal.dll base=FFFFF80000200000 size=df000\n\
+                   [MODBASE] old.sys base=FFFFF88075600000 size=100000\n\
+                   [MODBASE] win32k.sys base=FFFFF88075600000 size=200000\n";
+        assert_eq!(
+            module_at(log, 0xfffff8000024afd6),
+            Some(("hal.dll".into(), 0xfffff80000200000))
+        );
+        assert_eq!(
+            module_at(log, 0xfffff88075684b20),
+            Some(("win32k.sys".into(), 0xfffff88075600000))
+        );
+        assert_eq!(module_at(log, 0xfffff88090000000), None);
     }
     #[test]
     fn sym_routes_kernel_addresses_and_declines_without_a_base() {

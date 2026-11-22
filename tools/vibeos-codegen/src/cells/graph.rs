@@ -408,6 +408,61 @@ pub fn branches(stmts: &[Statement]) -> Vec<Vec<(usize, usize)>> {
     }
     out
 }
+/// The condition under which branch `branch` of the `nth` if() (in text order) runs, as one
+/// CMake expression: `C0` for the if(), `NOT (C0) AND (C1)` for its first elseif(),
+/// `NOT (C0) AND NOT (C1)` for an else() after one elseif(). dbghelp's target lives in the
+/// else() of `if(NOT CMAKE_CROSSCOMPILING)`, libtirpc's flags in the else() of `if(MSVC)`.
+pub fn branch_condition(stmts: &[Statement], nth: usize, branch: usize) -> Option<String> {
+    let norm = |raw: &str| raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut seen = 0;
+    let mut depth = 0usize;
+    let mut chain: Vec<String> = Vec::new();
+    let mut inside = false;
+    for (_, _, cmd, raw) in stmts {
+        match cmd.as_str() {
+            "if" if !inside => {
+                if seen == nth {
+                    inside = true;
+                    depth = 0;
+                    chain.push(norm(raw));
+                }
+                seen += 1;
+            }
+            "if" => {
+                depth += 1;
+                seen += 1;
+            }
+            "elseif" | "else" if inside && depth == 0 => {
+                chain.push(if cmd == "elseif" {
+                    norm(raw)
+                } else {
+                    String::new()
+                });
+                if chain.len() > branch {
+                    break;
+                }
+            }
+            "endif" if inside && depth == 0 => break,
+            "endif" if inside => depth -= 1,
+            _ => {}
+        }
+    }
+    if !inside || chain.len() <= branch {
+        return None;
+    }
+    let mut parts: Vec<String> = chain[..branch]
+        .iter()
+        .map(|c| format!("NOT ({c})"))
+        .collect();
+    if !chain[branch].is_empty() {
+        parts.push(if branch == 0 {
+            chain[0].clone()
+        } else {
+            format!("({})", chain[branch])
+        });
+    }
+    Some(parts.join(" AND "))
+}
 pub fn exclusive(p: &[(usize, usize)], q: &[(usize, usize)]) -> bool {
     for (a, b) in p.iter().zip(q) {
         if a != b {
@@ -964,7 +1019,14 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
             || cmd == "spec2def"
             || (a[0] != target && !(cmd == "add_cd_file" && a.iter().any(|x| x == target)))
         {
-            if re(r"\$\{(SOURCE|PCH_SKIP_SOURCE)\}").is_match(raw)
+            // `list(APPEND PCH_SKIP_SOURCE ... ${SOURCE})` (glu32) builds one of the
+            // module's own source lists from the other: not another consumer of either.
+            let own_list = cmd == "list"
+                && a.len() > 1
+                && a[0] == "APPEND"
+                && ["SOURCE", "PCH_SKIP_SOURCE"].contains(&a[1].as_str());
+            if !own_list
+                && re(r"\$\{(SOURCE|PCH_SKIP_SOURCE)\}").is_match(raw)
                 && !home.as_ref().is_some_and(|p| exclusive(&paths[i], p))
                 && inlinable_source(&text, cmake.parent().unwrap())?.is_none()
             {
@@ -1046,7 +1108,10 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
                 .filter(|v| *v != "PRIVATE" && *v != "PUBLIC")
                 .map(|v| v.trim_matches('"'))
                 .collect();
-            if !opts.is_empty()&&opts.iter().all(|o|re(r"^-Wl,--subsystem,[\w:.]+$").is_match(o)) {} else if !opts.is_empty()&&opts.iter().all(|o|re(r"^(?:LINKER:|-Wl,)--require-defined=[^,\s]+(?:,--require-defined=[^,\s]+)*$").is_match(o)){f["require_defined"]=json!(true);}else {f["unknown"].as_array_mut().unwrap().push(json!(cmd));}
+            // `-Wl,--allow-multiple-definition` (browseui, under if(LTCG)) is on every link
+            // already: the toolchain's LINK_FLAGS and every cell's (reactos-link), so it is a
+            // no-op wherever it sits.
+            if !opts.is_empty()&&opts.iter().all(|o|re(r"^-Wl,--subsystem,[\w:.]+$|^-Wl,--allow-multiple-definition$").is_match(o)) {} else if !opts.is_empty()&&opts.iter().all(|o|re(r"^(?:LINKER:|-Wl,)--require-defined=[^,\s]+(?:,--require-defined=[^,\s]+)*$").is_match(o)){f["require_defined"]=json!(true);}else {f["unknown"].as_array_mut().unwrap().push(json!(cmd));}
         } else if cmd == "set_subsystem" && a.len() == 2 {
             f["set_subsystem"] = json!(subsystem_flag(&a[1]));
         } else if cmd == "set_entrypoint" && (a.len() == 2 || a.len() == 3) {
@@ -1121,9 +1186,16 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
         .cloned()
         .collect();
     if named.len() != 1 {
+        // The module's own variant, by name: `<target>_rust`, with a dotted target's `.` as
+        // `_` (wdmaud.drv's is wdmaud_drv_rust; its wdmaud_drv_mmixer_rust is a static lib).
+        let stem = target.replace('.', "_");
         named = variants
             .keys()
-            .filter(|n| *n == &format!("{target}_rust") || n.strip_suffix("_rust") == Some(target))
+            .filter(|n| {
+                *n == &format!("{target}_rust")
+                    || n.strip_suffix("_rust") == Some(target)
+                    || n.strip_suffix("_rust") == Some(stem.as_str())
+            })
             .cloned()
             .collect();
         if named.is_empty() {
@@ -1255,27 +1327,21 @@ pub fn body_env(text: &str, extras: &[String]) -> Option<(BTreeMap<String, Strin
     Some((flags, c[0].into()))
 }
 pub fn enclosing_ifs(text: &str, target: &str) -> Result<Vec<String>> {
-    let mut stack: Vec<Option<String>> = Vec::new();
-    for (_, _, cmd, raw) in statements(text) {
-        match cmd.as_str() {
-            "if" => stack.push(Some(raw.split_whitespace().collect::<Vec<_>>().join(" "))),
-            "elseif" | "else" => {
-                if let Some(last) = stack.last_mut() {
-                    *last = None
-                }
-            }
-            "endif" => {
-                stack.pop();
-            }
-            "add_library" | "add_executable" if args(&raw).first().is_some_and(|a| a == target) => {
-                if stack.iter().any(Option::is_none) {
-                    return Err(Error::new(format!(
-                        "{target}: its link is in an elseif/else branch"
-                    )));
-                }
-                return Ok(stack.into_iter().flatten().collect());
-            }
-            _ => {}
+    let stmts = statements(text);
+    let paths = branches(&stmts);
+    for (i, (_, _, cmd, raw)) in stmts.iter().enumerate() {
+        if ["add_library", "add_executable"].contains(&cmd.as_str())
+            && args(raw).first().is_some_and(|a| a == target)
+        {
+            // An elseif()/else() branch becomes the negation of the branches before it.
+            return paths[i]
+                .iter()
+                .map(|(nth, branch)| {
+                    branch_condition(&stmts, *nth, *branch).ok_or_else(|| {
+                        Error::new(format!("{target}: its link's if() branch is unreadable"))
+                    })
+                })
+                .collect();
         }
     }
     Ok(Vec::new())
@@ -1625,6 +1691,21 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         .flatten()
         .filter(|p| root.join(p) != cmake)
         .collect();
+    // A file that names only the output's directory is rewritten with the cell; one that
+    // reads the file itself would need the cell's build ordered before it, so is refused.
+    let dir_only = |p: &String| -> bool {
+        let text = std::fs::read_to_string(root.join(p)).unwrap_or_default();
+        let t = regex::escape(target);
+        let any = re(&format!(r"\$<TARGET_(?:LINKER_)?FILE(?:_DIR|_NAME)?:{t}>"));
+        let dir = re(&format!(r"\$<TARGET_FILE_DIR:{t}>"));
+        any.find_iter(&text).count() == dir.find_iter(&text).count()
+    };
+    let dir_refs: Vec<String> = others
+        .iter()
+        .filter(|p| dir_only(p))
+        .map(|p| (*p).clone())
+        .collect();
+    let others: Vec<_> = others.into_iter().filter(|p| !dir_only(p)).collect();
     if !others.is_empty() {
         return Err(Error::new(format!(
             "{target}: other CMakeLists read its file via $<TARGET_FILE...>: {others:?}"
@@ -1683,8 +1764,11 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             "Win32Exe"
         }
         "C_MODULE_LIBRARY" | "C_SHARED_LIBRARY" => {
-            if subsys.starts_with("native") {
-                let typ = facts["module_type"].as_str().unwrap_or("");
+            let typ = facts["module_type"].as_str().unwrap_or("");
+            // nativedll (ufat, ucdfs: user-mode DLLs on the native subsystem, for autochk) is
+            // cmake's win32dll link with `--subsystem,native:5.01` and entry DllMain: exports
+            // from the .def, default alignment, no image base, no gc.
+            if subsys.starts_with("native") && typ != "nativedll" {
                 if !const_contains("KERNEL_KINDS", typ) {
                     return Err(Error::new(format!(
                         "{target}: kernel-mode module type {typ} is not modelled"
@@ -1846,6 +1930,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     }
     let mut cell = super::Cell::default();
     cell.target = target.into();
+    cell.dir_refs = dir_refs;
     cell.cmake_dir = cmake_dir.clone();
     cell.output_name = Path::new(&first.output)
         .file_name()
@@ -1986,11 +2071,15 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
                     .ok_or_else(|| Error::new(format!("{target}: a .def without a spec2def()")))?
             };
             cell.spec = Some((rel(root, &cmake_dir.join(&cap[2]))?, cap[1].into()));
-        } else if name.ends_with(".c.obj") || re(r"\.(cpp|cxx|cc)\.obj$").is_match(name) {
+        } else if name.ends_with(".c.obj")
+            || re(r"\.(cpp|cxx|cc)\.obj$").is_match(name)
+            // A source `.S` (win32u's sys-stubs.S) replays like C: its recipe line is `asm`.
+            || re(r"\.[sS]\.obj$").is_match(name)
+        {
             // C++ compiles the same way: the cell replays cmake's compile command through a
             // clib recipe, whose `cxx` lines reactos-link runs with the cxx.<arch>.flags template.
             let mut src = obj_source(&cmake_dir, obj);
-            if let Some(lib) = sibling_object_lib(obj, target, &cmtext) {
+            if let Some((lib, src)) = sibling_object_lib(root, obj, target, &cmtext) {
                 if !src.exists() {
                     return Err(Error::new(format!(
                         "{target}: {lib}'s {name} has no source"
@@ -2044,7 +2133,17 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     if facts["unicode"] == true {
         cell.rc_defines = vec!["UNICODE".into(), "_UNICODE".into()];
     }
-    if kind == "Win32Exe" && cell.msvcrtex.is_none() && !subsys.starts_with("native") {
+    // An exe whose cmake link carries no msvcrtex at all takes its entry from the body
+    // (svchost: svchost-rust defines wmainCRTStartup). Refused only when cmake linked a CRT
+    // startup the cell did not recognise.
+    if kind == "Win32Exe"
+        && cell.msvcrtex.is_none()
+        && !subsys.starts_with("native")
+        && links
+            .values()
+            .flat_map(|l| &l.libs)
+            .any(|l| l.contains("msvcrtex"))
+    {
         return Err(Error::new(format!(
             "{target}: exe without a msvcrtex CRT startup"
         )));
@@ -2226,20 +2325,28 @@ pub fn spec_imported_exports(path: &Path) -> Result<std::collections::BTreeSet<S
 }
 
 /// Resolve the object path under its target directory, preserving source subdirectories.
-/// The OBJECT library, other than the target itself, whose object dir `obj` is in, when
-/// the module's own CMakeLists defines it (`add_library(shdocvw_sublib OBJECT`).
-fn sibling_object_lib(obj: &str, target: &str, cmtext: &str) -> Option<String> {
-    let lib = re(r"/CMakeFiles/([^/]+)\.dir/").captures(obj)?[1].to_owned();
-    if lib == target
-        || !re(&format!(
-            r"add_library\(\s*{}\s+OBJECT\b",
-            regex::escape(&lib)
-        ))
-        .is_match(cmtext)
-    {
+/// The OBJECT library, other than the target itself, whose object dir `obj` is in, and the
+/// source it compiled: one the module's own CMakeLists defines (`add_library(shdocvw_sublib
+/// OBJECT`) or the CMakeLists of the object's own directory does (browseui's shellbars and
+/// shellfind, in subdirectories, which rshell links too).
+fn sibling_object_lib(
+    root: &Path,
+    obj: &str,
+    target: &str,
+    cmtext: &str,
+) -> Option<(String, PathBuf)> {
+    let m = re(r"^(?:(.*)/)?CMakeFiles/([^/]+)\.dir/(.+)\.obj$").captures(obj)?;
+    let dir = m.get(1).map_or("", |d| d.as_str());
+    let (lib, rest) = (m[2].to_owned(), m[3].replace("__/", "../"));
+    if lib == target {
         return None;
     }
-    Some(lib)
+    let pattern = format!(r"add_library\(\s*{}\s+OBJECT\b", regex::escape(&lib));
+    let theirs = std::fs::read_to_string(root.join(dir).join("CMakeLists.txt")).unwrap_or_default();
+    if !re(&pattern).is_match(cmtext) && !re(&pattern).is_match(&theirs) {
+        return None;
+    }
+    Some((lib, root.join(dir).join(rest)))
 }
 pub fn obj_source(cmake_dir: &Path, obj: &str) -> PathBuf {
     let path = re(r"/CMakeFiles/[^/]+\.dir/(.+)\.obj$")
@@ -2485,17 +2592,64 @@ mod sibling_tests {
     use super::sibling_object_lib;
 
     #[test]
-    fn a_sibling_object_library_is_named_only_when_this_cmakelists_defines_it() {
+    fn a_sibling_object_library_is_named_only_where_a_cmakelists_defines_it() {
+        let root = std::env::temp_dir().join(format!("sibling-{}", std::process::id()));
+        let sub = root.join("dll/win32/browseui/shellbars");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(
+            sub.join("CMakeLists.txt"),
+            "add_library(shellbars OBJECT ${SOURCE})\n",
+        )
+        .unwrap();
         let text = "add_library(shdocvw_sublib OBJECT\n    CFavBand.cpp)\n";
         let obj = "dll/win32/shdocvw/CMakeFiles/shdocvw_sublib.dir/CFavBand.cpp.obj";
-        assert_eq!(
-            sibling_object_lib(obj, "shdocvw", text).as_deref(),
-            Some("shdocvw_sublib")
-        );
-        // The target's own objects, and an object library defined elsewhere, are not.
+        let (lib, src) = sibling_object_lib(&root, obj, "shdocvw", text).unwrap();
+        assert_eq!(lib, "shdocvw_sublib");
+        assert_eq!(src, root.join("dll/win32/shdocvw/CFavBand.cpp"));
+        // Defined in the object's own (sub)directory, its source is read from there.
+        let bars = "dll/win32/browseui/shellbars/CMakeFiles/shellbars.dir/CBandSite.cpp.obj";
+        let (lib, src) = sibling_object_lib(&root, bars, "browseui", "").unwrap();
+        assert_eq!(lib, "shellbars");
+        assert_eq!(src, sub.join("CBandSite.cpp"));
+        // The target's own objects, and an object library no CMakeLists defines, are not.
         let own = "dll/win32/shdocvw/CMakeFiles/shdocvw.dir/shdocvw_main.c.obj";
-        assert_eq!(sibling_object_lib(own, "shdocvw", text), None);
+        assert_eq!(sibling_object_lib(&root, own, "shdocvw", text), None);
         let other = "sdk/lib/x/CMakeFiles/gcc_ssp_x.dir/ssp.c.obj";
-        assert_eq!(sibling_object_lib(other, "shdocvw", text), None);
+        assert_eq!(sibling_object_lib(&root, other, "shdocvw", text), None);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod branch_condition_tests {
+    use super::{branch_condition, statements};
+
+    #[test]
+    fn an_else_branch_is_the_negation_of_the_branches_before_it() {
+        let text = "if(NOT CMAKE_CROSSCOMPILING)\n  add_library(h x.c)\n  if(ARCH STREQUAL \"i386\")\n  endif()\nelseif(MSVC)\n  set(a b)\nelse()\n  add_library(t MODULE y.c)\nendif()\nif(Z)\nendif()\n";
+        let s = statements(text);
+        assert_eq!(
+            branch_condition(&s, 0, 0).as_deref(),
+            Some("NOT CMAKE_CROSSCOMPILING")
+        );
+        assert_eq!(
+            branch_condition(&s, 0, 1).as_deref(),
+            Some("NOT (NOT CMAKE_CROSSCOMPILING) AND (MSVC)")
+        );
+        assert_eq!(
+            branch_condition(&s, 0, 2).as_deref(),
+            Some("NOT (NOT CMAKE_CROSSCOMPILING) AND NOT (MSVC)")
+        );
+        // The nested if() is the 2nd in text order; the trailing one the 3rd.
+        assert_eq!(
+            branch_condition(&s, 1, 0).as_deref(),
+            Some("ARCH STREQUAL \"i386\"")
+        );
+        assert_eq!(branch_condition(&s, 2, 0).as_deref(), Some("Z"));
+        assert_eq!(branch_condition(&s, 0, 3), None);
+        assert_eq!(
+            super::enclosing_ifs(text, "t").unwrap(),
+            vec!["NOT (NOT CMAKE_CROSSCOMPILING) AND NOT (MSVC)".to_string()]
+        );
     }
 }

@@ -241,7 +241,7 @@ pub unsafe extern "system" fn pSetupMultiByteToUnicode(lpMultiByteStr: LPCSTR, u
     let mut lpUnicodeStr: LPWSTR = core::ptr::null_mut();
     let mut nLength: i32 = 0;
 
-    DPRINT1!("%s %d\n", debugstr_a(lpMultiByteStr as *const i8), uCodePage);
+    TRACE!("%s %d\n", debugstr_a(lpMultiByteStr as *const i8), uCodePage);
 
     nLength = MultiByteToWideChar(uCodePage, 0, lpMultiByteStr,
                                   -1, core::ptr::null_mut(), 0);
@@ -667,7 +667,7 @@ pub unsafe extern "system" fn pSetupGetGlobalFlags() -> DWORD {
 #[no_mangle]
 pub unsafe extern "system" fn pSetupModifyGlobalFlags(mask: DWORD, flags: DWORD) {
     if false {
-        DPRINT1!("stub\n");
+        FIXME!("stub\n");
     }
     GlobalSetupFlags = (GlobalSetupFlags & !mask) | (flags & mask);
 }

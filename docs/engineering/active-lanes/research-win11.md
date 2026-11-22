@@ -13,7 +13,7 @@ from live in the docs below; this file holds only the lane's state.
 
 ## RESUME HERE (2026-11-21, fleet resumed)
 
-**Done this session:** RESUME items 1-3.
+**Done this session:** RESUME items 1-4, and the i386 `SPECIALPOOL=*` 0x0F.
 - The CD alignment query's err=87 came from scsiport (UniATA's port), not cdrom or CDFS: its
   LUN PDO answered unknown properties with STATUS_INVALID_PARAMETER_1. It now answers
   STATUS_INVALID_DEVICE_REQUEST, which gives Win32 1 like Windows 11 (`e701132fc12`, integrator
@@ -24,13 +24,16 @@ from live in the docs below; this file holds only the lane's state.
   `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` (still unapplied, but harmless here): netstack left a
   port-0 bind at port 0, so getsockname gave libassuan port 0. The `w32sock` probe grades it.
 
+- `--tripwire SVCFAIL=<image|*>` logs failing system calls on i386 and arm64 too
+  (`svcfail_log` in tripwire.rs, called from each arch's dispatcher).
+- The i386 `SPECIALPOOL=*` 0x0F was the PFN lock held across a pool free in
+  `MmDeleteSectionAssociation`. `SPECIALPOOL=*` now boots on all three arches.
+
 **Next, in order:**
-1. SVCFAIL tripwire on i386 and arm64 (amd64 only today).
-2. Soak candidate, never run: the amd64 `STATUS_NONEXISTENT_SECTOR` in-page 0x1E. It was seen
-   once (hostapps `20261101-123017-7ue7skcb`) and has been clean since; see the roadmap
-   registry. Run `./vibeos-cli farm --arches amd64 --minutes 480`, then `farm-report`.
-3. Registry open questions: the i386 `SPECIALPOOL=*` 0x0F (deterministic, so debug it rather
-   than soak it), and arm64 ZwAllocateVirtualMemory's thread order (benign).
+1. The amd64 in-page 0x1E (registry): an overnight soak gave 180/180 clean
+   (`20261122-002255-hmEvEu`). If it is worth more, soak with the hostapps payload, which is
+   where it was seen, rather than plain smoke.
+2. Registry open question: arm64 ZwAllocateVirtualMemory's thread order (benign).
 
 **Scratch worktree:** `../vibeos-spbase` (detached, holds nothing unique). Leave it for
 control-plane's prune.

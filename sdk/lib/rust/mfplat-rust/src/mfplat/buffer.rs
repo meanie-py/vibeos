@@ -2688,7 +2688,7 @@ pub unsafe extern "system" fn MFCreate2DMediaBuffer(
 
 #[no_mangle]
 pub unsafe extern "system" fn MFCreateDXSurfaceBuffer(riid: REFIID, surface: *mut IUnknown, bottom_up: BOOL, buffer: *mut *mut IMFMediaBuffer) -> HRESULT {
-    DPRINT1!("%s, %p, %d, %p.\n", debugstr_guid(riid), surface, bottom_up, buffer);
+    TRACE!("%s, %p, %d, %p.\n", debugstr_guid(riid), surface, bottom_up, buffer);
 
     if ((IsEqualIID!(riid, core::ptr::addr_of!(IID_IDirect3DSurface9))) == 0) {
         return E_INVALIDARG;

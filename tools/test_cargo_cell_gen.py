@@ -502,15 +502,14 @@ def test_a_driver_built_under_a_condition_is_a_cell_under_the_same_condition(tmp
     assert guarded.rstrip().endswith("endif()")
 
 
-def test_a_driver_in_an_else_branch_is_refused(tmp_path):
+def test_a_driver_in_an_else_branch_keeps_the_negated_condition(tmp_path):
+    # dbghelp's target is in the else() of `if(NOT CMAKE_CROSSCOMPILING)`: the cell is
+    # guarded by the negation of the branch before it, not refused.
     f = tmp_path / "CMakeLists.txt"
     f.write_text("if(X)\nelse()\n" + DRIVER + "endif()\n")
-    try:
-        g.rewrite_cmake(f, _driver_cell(tmp_path))
-    except g.GenError as exc:
-        assert "else" in str(exc)
-    else:
-        raise AssertionError("an else-branch link was rewritten")
+    out = g.rewrite_cmake(f, _driver_cell(tmp_path))
+    guard = out.index("if(NOT (X))")
+    assert guard < out.index("add_cargo_module(")
 
 
 def test_a_kernel_cell_builds_its_body_on_the_user_triple_and_keeps_every_section():
@@ -1632,9 +1631,31 @@ def test_a_conditional_compile_setting_keeps_its_condition(tmp_path):
     i = out.index("target_compile_options(m_shims PRIVATE /wd4267)")
     assert out.rfind("if(MSVC)", 0, i) != -1
     assert out.rfind('if(ARCH STREQUAL "amd64")', 0, i) > out.rfind("if(MSVC)", 0, i)
+    # In an else() branch, the setting keeps the negation of the branch before it.
     f.write_text(body.replace('    if(ARCH STREQUAL "amd64")\n', "else()\n    if(1)\n"))
-    with pytest.raises(g.GenError, match="elseif/else branch"):
-        g.rewrite_cmake(f, c)
+    out = g.rewrite_cmake(f, c)
+    i = out.index("target_compile_options(m_shims PRIVATE /wd4267)")
+    assert out.rfind("if(NOT (MSVC))", 0, i) != -1
+    assert out.rfind("if(1)", 0, i) > out.rfind("if(NOT (MSVC))", 0, i)
+
+
+def test_remove_target_compile_option_moves_to_the_object_library_with_its_if(tmp_path):
+    """libtiff's MSVC-only remove_target_compile_option edits the target's COMPILE_OPTIONS:
+    it moves onto the OBJECT library that now compiles, under the if() it sat in."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_executable(m main.c rsrc.rc)\n"
+        "set_module_type(m win32gui UNICODE)\n"
+        "if(MSVC)\n"
+        '    remove_target_compile_option(m "/we4311")\n'
+        "endif()\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    i = out.index('remove_target_compile_option(m_shims "/we4311")')
+    assert out.rfind("if(MSVC)", 0, i) != -1
+    assert out.index("add_library(m_shims OBJECT") < i
 
 
 def test_a_comment_inside_a_moved_statement_is_not_carried_as_a_dead_source(tmp_path):
@@ -1802,7 +1823,7 @@ def test_a_generated_rc_input_behind_a_list_variable_orders_the_cell():
     assert deps == ["${CMAKE_CURRENT_SOURCE_DIR}/m.rgs", "${CMAKE_CURRENT_BINARY_DIR}/m_v1.tlb"]
 
 
-@pytest.mark.parametrize("kind", ["FILE", "FILE_DIR", "LINKER_FILE_NAME"])
+@pytest.mark.parametrize("kind", ["FILE", "LINKER_FILE_NAME"])
 def test_model_refuses_another_cmake_consumer_before_conversion(tmp_path, kind):
     _ratchet_fixture(tmp_path)
     assert g.model("foo", tmp_path).target == "foo"
@@ -1810,6 +1831,23 @@ def test_model_refuses_another_cmake_consumer_before_conversion(tmp_path, kind):
     with pytest.raises(g.GenError, match="other CMakeLists read its file"):
         g.model("foo", tmp_path)
     assert (tmp_path / "sdk/lib/rust/foo-cargo/build.rs").read_text() == "fn main() {}\n"
+
+
+def test_a_consumer_naming_only_the_output_dir_is_carried_not_refused(tmp_path):
+    # rshell copies itself beside explorer.exe via $<TARGET_FILE_DIR:explorer>: a path the
+    # cell's binary dir answers, so the consumer is rewritten with the cell.
+    _ratchet_fixture(tmp_path)
+    _cml(tmp_path, "consumer", 'add_custom_target(copy COMMAND x "$<TARGET_FILE_DIR:foo>/y")\n')
+    c = g.model("foo", tmp_path)
+    assert c.dir_refs == ["consumer/CMakeLists.txt"]
+    # A file that also reads the output itself stays refused.
+    _cml(
+        tmp_path,
+        "consumer",
+        'add_custom_target(copy COMMAND x "$<TARGET_FILE_DIR:foo>" "$<TARGET_FILE:foo>")\n',
+    )
+    with pytest.raises(g.GenError, match="other CMakeLists read its file"):
+        g.model("foo", tmp_path)
 
 
 def test_model_and_rewrite_preserve_nested_sources_with_colliding_basenames(tmp_path):

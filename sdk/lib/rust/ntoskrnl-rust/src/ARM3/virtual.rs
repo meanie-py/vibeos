@@ -2009,6 +2009,15 @@ pub unsafe extern "system" fn MiProtectVirtualMemory(
         return Status;
     }
 
+    // ACG: execute may be added only to image pages (see mi_vad_is_image).
+    if (NewAccessProtection & PAGE_ANY_EXECUTE) != 0
+        && !mi_vad_is_image(Vad)
+        && PsVibeDynamicCodeBlocked(Process as PVOID) != 0
+    {
+        MmUnlockAddressSpace(AddressSpace as PVOID);
+        return STATUS_DYNAMIC_CODE_BLOCKED;
+    }
+
     // Check if this is a ROSMM VAD
     if MI_IS_ROSMM_VAD(Vad as PVOID) {
         // Not too shabby hack
@@ -2246,6 +2255,29 @@ pub unsafe extern "system" fn MmUnsecureVirtualMemory(
     let _SecureMem = opaque_ptr(_SecureMem);
 }
 
+extern "C" {
+    /// ps-rust mitigation.rs: is dynamic code forbidden for the current thread's change to
+    /// this process's memory (the process's ACG policy, minus a thread opt-out)?
+    fn PsVibeDynamicCodeBlocked(Process: PVOID) -> u8;
+}
+const STATUS_DYNAMIC_CODE_BLOCKED: NTSTATUS = 0xC000_0604_u32 as NTSTATUS;
+const PAGE_ANY_EXECUTE: ULONG = 0xF0; // PAGE_EXECUTE | _READ | _READWRITE | _WRITECOPY
+
+/// May a protection change on `Vad` gain execute under ACG? Only image views: their pages
+/// are code the loader mapped, which our user-mode relocator re-protects (Windows relocates
+/// in the kernel). Private memory and data views may not.
+unsafe fn mi_vad_is_image(Vad: PMMVAD) -> bool {
+    if MI_IS_ROSMM_VAD(Vad as PVOID) {
+        let seg = (*(Vad as PMEMORY_AREA)).SectionData.Segment;
+        if seg.is_null() || (*seg).Flags.is_null() {
+            return false;
+        }
+        // Data-file and physical-memory segments flag themselves; image segments do not.
+        return *(*seg).Flags & (0x1 | 0x2) == 0; // MM_PHYSICALMEMORY_SEGMENT | MM_DATAFILE_SEGMENT
+    }
+    (*Vad).u.VadFlags.VadType() as u32 == VadImageMap
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn NtAllocateVirtualMemory(
     ProcessHandle: HANDLE,
@@ -2399,6 +2431,16 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
             );
             Attached = 1;
         }
+    }
+
+    /* ACG: a process with ProhibitDynamicCode may not allocate executable memory for itself.
+     * It never attached (ACG only binds a process's own address space), so only a real
+     * handle to itself needs dereferencing. */
+    if (Protect & PAGE_ANY_EXECUTE) != 0 && PsVibeDynamicCodeBlocked(Process as PVOID) != 0 {
+        if ProcessHandle != NtCurrentProcess() as HANDLE {
+            ObDereferenceObject(Process as PVOID);
+        }
+        return STATUS_DYNAMIC_CODE_BLOCKED;
     }
 
     /* MEM_LARGE_PAGES requires SeLockMemoryPrivilege */

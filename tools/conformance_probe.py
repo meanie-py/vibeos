@@ -101,7 +101,7 @@ def quarantined(arch: str) -> list[str]:
 def run_sweep(arch: str) -> tuple[dict[str, str], str]:
     """Boot the probe list. Returns {test: status} and the raw verdict string."""
     p = subprocess.run(
-        [str(REPO / "vibeos-cli"), "conformance", "--arch", arch],
+        [str(REPO / "vibeos-cli"), "conformance", "--arch", arch, "--report-only"],
         cwd=REPO,
         capture_output=True,
         text=True,

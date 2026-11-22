@@ -40,21 +40,36 @@ FEXCore::CodeMapFileId ComputeCodeMapId(std::string_view FileName, uint32_t Time
   return XXH3_64bits(Norm.data(), Norm.size()) ^ (static_cast<uint64_t>(SizeOfImage) << 32 | TimeDateStamp);
 }
 
+// VIBEOS PATCH (guest-width images): the load config's layout follows the image, not the build.
+// vibeos's x64-guest CPU layer links this file as built for the x86 guest, so it maps PE32+
+// images here too; read with the 32-bit struct, their VolatileMetadataPointer is the wrong field.
+// Everything else this file reads is laid out alike in both (FileHeader, and SizeOfImage at the
+// same OptionalHeader offset) or goes through RtlImageDirectoryEntryToData, which checks Magic.
+template<typename LoadConfigDirectory>
+static uint64_t ImageVolatileMetadataPointer(HMODULE Module) {
+  ULONG Size;
+  const auto* LoadConfig =
+    reinterpret_cast<LoadConfigDirectory*>(RtlImageDirectoryEntryToData(Module, true, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, &Size));
+  if (!LoadConfig || LoadConfig->Size <= offsetof(LoadConfigDirectory, VolatileMetadataPointer)) {
+    return 0;
+  }
+  return LoadConfig->VolatileMetadataPointer;
+}
+
 static void LoadImageVolatileMetadata(fextl::set<uint64_t>& VolatileInstructions, FEXCore::IntervalList<uint64_t>& VolatileValidRanges,
                                       HMODULE Module, ArchImageNtHeaders* Nt, uint64_t Address, uint64_t EndAddress) {
-  ULONG Size;
-
-  const auto* LoadConfig =
-    reinterpret_cast<ArchImageLoadConfigDirectory*>(RtlImageDirectoryEntryToData(Module, true, IMAGE_DIRECTORY_ENTRY_LOAD_CONFIG, &Size));
-  if (!LoadConfig || LoadConfig->Size <= offsetof(ArchImageLoadConfigDirectory, VolatileMetadataPointer)) {
+  const uint64_t VolatileMetadataPointer = Nt->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC ?
+                                             ImageVolatileMetadataPointer<_IMAGE_LOAD_CONFIG_DIRECTORY64>(Module) :
+                                             ImageVolatileMetadataPointer<_IMAGE_LOAD_CONFIG_DIRECTORY32>(Module);
+  if (!VolatileMetadataPointer) {
     return;
   }
 
-  if (LoadConfig->VolatileMetadataPointer < Address || LoadConfig->VolatileMetadataPointer + sizeof(IMAGE_VOLATILE_METADATA) >= EndAddress) {
+  if (VolatileMetadataPointer < Address || VolatileMetadataPointer + sizeof(IMAGE_VOLATILE_METADATA) >= EndAddress) {
     return;
   }
 
-  const auto* VolatileMetadata = reinterpret_cast<IMAGE_VOLATILE_METADATA*>(LoadConfig->VolatileMetadataPointer);
+  const auto* VolatileMetadata = reinterpret_cast<IMAGE_VOLATILE_METADATA*>(VolatileMetadataPointer);
   if (!VolatileMetadata || Address + VolatileMetadata->VolatileAccessTable + VolatileMetadata->VolatileAccessTableSize >= EndAddress ||
       Address + VolatileMetadata->VolatileInfoRangeTable + VolatileMetadata->VolatileInfoRangeTableSize >= EndAddress) {
     return;

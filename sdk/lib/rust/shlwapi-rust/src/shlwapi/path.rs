@@ -1668,14 +1668,14 @@ pub unsafe extern "system" fn PathIsDirectoryA(lpszPath: LPCSTR) -> BOOL {
 pub unsafe extern "system" fn PathIsDirectoryW(lpszPath: LPCWSTR) -> BOOL {
     let mut dwAttr: DWORD;
 
-    DPRINT1!("(%s)\n", debugstr_w(lpszPath as *const WCHAR));
+    TRACE!("(%s)\n", debugstr_w(lpszPath as *const WCHAR));
 
     if lpszPath.is_null() || PathIsUNCServerW(lpszPath) != 0 {
         return (FALSE) as BOOL;
     }
 
     if PathIsUNCServerShareW(lpszPath) != 0 {
-        DPRINT1!("UNC Server Share not yet supported - FAILING\n");
+        FIXME!("UNC Server Share not yet supported - FAILING\n");
         return (FALSE) as BOOL;
     }
 

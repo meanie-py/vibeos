@@ -1792,7 +1792,7 @@ add_custom_target(rust_foo DEPENDS ${{LIB}})
     fn engine_tables_are_strictly_loaded_from_converter_source() {
         let libs = engine_table().unwrap();
         let deps = engine_deps_table().unwrap();
-        assert_eq!(libs.len(), 47);
+        assert_eq!(libs.len(), 48);
         assert_eq!(deps.len(), 24);
         assert_eq!(
             libs.get("sdk/lib/conutils/libconutils.a")

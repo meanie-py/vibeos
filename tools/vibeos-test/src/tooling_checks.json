@@ -76,6 +76,11 @@
     [
       ".",
       ".",
+      "tools/payloads/test_rename_module_refs.py"
+    ],
+    [
+      ".",
+      ".",
       "tools/payloads/olewinetest/test_classify_failures.py"
     ],
     [

@@ -2387,3 +2387,29 @@ def test_flip_refuses_a_target_already_converted_to_a_cargo_cell(tmp_path, monke
     )
     with pytest.raises(port.PortError, match="already a cargo cell"):
         port.stage_flip("d3dwine")
+
+
+def test_dprint1_goes_back_to_the_c_macro(tmp_path, monkeypatch):
+    """crypt32's CertOpenStore TRACE came back as DPRINT1!, which always prints."""
+    c = tmp_path / "store.c"
+    c.write_text(
+        'TRACE("(%s, %08lx)\\n", debugstr_w(p), f);\n'
+        'FIXME("unimplemented type %d\\n", t);\n'
+        'TRACE("both\\n"); WARN("both\\n");\n'
+        'DPRINT1("kept\\n");\n'
+    )
+    rs = tmp_path / "store.rs"
+    rs.write_text(
+        'DPRINT1!("(%s, %08lx)\\n", debugstr_w(p), f);\n'
+        'DPRINT1!(\n    "unimplemented type %d\\n",\n    t,\n);\n'
+        'DPRINT1!("both\\n");\n'
+        'DPRINT1!("kept\\n");\n'
+        'DPRINT1!("not in the C\\n");\n'
+    )
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "_stem_sources", lambda state: [rs])
+    assert port._dprint1_as_c_macro({"tus": ["store.c"]}) == 2
+    out = rs.read_text()
+    assert 'TRACE!("(%s, %08lx)\\n"' in out
+    assert 'FIXME!(\n    "unimplemented type %d\\n"' in out
+    assert 'DPRINT1!("both' in out and 'DPRINT1!("kept' in out and 'DPRINT1!("not in' in out
