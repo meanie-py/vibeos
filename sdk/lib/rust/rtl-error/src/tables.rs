@@ -1051,6 +1051,10 @@ pub static table_c0000202: [DWORD; 396] = [
     SEC_E_SMARTCARD_CERT_EXPIRED,
 ];
 
+pub static table_c0000604: [DWORD; 1] = [
+    ERROR_DYNAMIC_CODE_BLOCKED,
+];
+
 pub static table_c0020001: [DWORD; 99] = [
     RPC_S_INVALID_STRING_BINDING,
     RPC_S_WRONG_KIND_OF_BINDING,
@@ -1304,7 +1308,7 @@ pub static table_c0150001: [DWORD; 39] = [
     ERROR_SXS_FILE_HASH_MISSING,
 ];
 
-pub static ERROR_TABLE: [error_table; 21] = [
+pub static ERROR_TABLE: [error_table; 22] = [
     error_table { start: 0x00000102, end: 0x00000122, table: table_00000102.as_ptr() },
     error_table { start: 0x40000002, end: 0x40000026, table: table_40000002.as_ptr() },
     error_table { start: 0x40000370, end: 0x40000371, table: table_40000370.as_ptr() },
@@ -1319,6 +1323,7 @@ pub static ERROR_TABLE: [error_table; 21] = [
     error_table { start: 0xc0000001, end: 0xc000019c, table: table_c0000001.as_ptr() },
     error_table { start: 0xc00001ac, end: 0xc00001ad, table: table_c00001ac.as_ptr() },
     error_table { start: 0xc0000202, end: 0xc000038e, table: table_c0000202.as_ptr() },
+    error_table { start: 0xc0000604, end: 0xc0000605, table: table_c0000604.as_ptr() },
     error_table { start: 0xc0020001, end: 0xc0020064, table: table_c0020001.as_ptr() },
     error_table { start: 0xc0030001, end: 0xc003000d, table: table_c0030001.as_ptr() },
     error_table { start: 0xc0030059, end: 0xc0030062, table: table_c0030059.as_ptr() },

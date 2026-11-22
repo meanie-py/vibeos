@@ -2398,6 +2398,21 @@ pub unsafe extern "system" fn NtMapViewOfSection(
         return status;
     }
 
+    // ACG: a process with ProhibitDynamicCode may map only IMAGE sections executable.
+    {
+        extern "C" {
+            fn PsVibeDynamicCodeBlocked(Process: PVOID) -> u8; // ps-rust mitigation.rs
+        }
+        if (protect & 0xF0) != 0 // any PAGE_EXECUTE*
+            && (*section).u.Flags.Image() == 0
+            && PsVibeDynamicCodeBlocked(process as PVOID) != 0
+        {
+            ObDereferenceObject(section as *mut c_void);
+            ObDereferenceObject(process as *mut c_void);
+            return 0xC000_0604_u32 as NTSTATUS; // STATUS_DYNAMIC_CODE_BLOCKED
+        }
+    }
+
     // \Device\PhysicalMemory has no alignment rule. NT 6.x also refused a user-mode view of
     // it reaching past the highest physical page (STATUS_INVALID_PARAMETER_6); Windows 10
     // maps that from either mode (kmtest MmSection, the two "fails for user" cases). Opening

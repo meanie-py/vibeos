@@ -15,9 +15,9 @@ fn main() {
     };
 
     let link_order: &[&str] = match arch.as_str() {
-        "x86" => &["import:kernel32", "import:ntdll_vista", "import:ntdll"],
-        "x86_64" => &["import:kernel32", "import:ntdll_vista", "import:ntdll"],
-        "aarch64" => &["import:kernel32", "import:ntdll_vista", "import:ntdll"],
+        "x86" => &["import:ntdll_vista", "import:ntdll"],
+        "x86_64" => &["import:ntdll_vista", "import:ntdll"],
+        "aarch64" => &["import:ntdll_vista", "import:ntdll"],
         _ => unreachable!(),
     };
 
@@ -38,7 +38,6 @@ fn main() {
         .c_from_compile_db("kernelbase_shims", &["dll/win32/kernelbase/dllmain.c"])
         .rc("dll/win32/kernelbase/kernelbase.rc", rc_includes, rc_flags, rc_defines)
         .spec2def("dll/win32/kernelbase/kernelbase.spec", "kernelbase.dll")
-        .import_lib("dll/win32/kernel32/kernel32.spec", "kernel32.dll", "kernel32")
         .import_lib("dll/ntdll/nt_0600/ntdll_vista.spec", "ntdll_vista.dll", "ntdll_vista")
         .import_lib("dll/ntdll/def/ntdll.spec", "ntdll.dll", "ntdll")
         // The body, import libs and static libs in cmake's link order: the first
