@@ -1844,7 +1844,9 @@ pub unsafe extern "C" fn SetClassId(mut pszAdapterName: PWSTR, mut pszClassId: P
                 0,
                 1,
                 core::ptr::addr_of_mut!(szUnicodeAdapterName) as PWSTR,
-                core::ptr::addr_of_mut!(PnpEvent) as DWORD,
+                // A pointer: dhcpcsdk.h's PDHCP_PNP_EVENT. The rolled-back header had DWORD,
+                // and this cast truncated the address on amd64/arm64.
+                core::ptr::addr_of_mut!(PnpEvent),
                 0,
             ) as ULONG;
             if ret != ERROR_SUCCESS {

@@ -181,6 +181,16 @@ extern "system" {
     #[link_name = "GetComputerNameA"]
     pub fn GetComputerName(lpBuffer: *mut c_char, nSize: *mut DWORD) -> BOOL;
     pub fn SetEvent(hEvent: HANDLE) -> BOOL;
+    pub fn WideCharToMultiByte(
+        CodePage: UINT,
+        dwFlags: DWORD,
+        lpWideCharStr: *const u16,
+        cchWideChar: c_int,
+        lpMultiByteStr: *mut c_char,
+        cbMultiByte: c_int,
+        lpDefaultChar: *const c_char,
+        lpUsedDefaultChar: *mut BOOL,
+    ) -> c_int;
     pub fn Sleep(dwMilliseconds: DWORD);
     pub fn WaitForSingleObject(hHandle: HANDLE, dwMilliseconds: DWORD) -> DWORD;
     pub fn WaitForMultipleObjects(
@@ -228,6 +238,29 @@ extern "system" {
         lpType: *mut DWORD,
         lpData: *mut BYTE,
         lpcbData: *mut DWORD,
+    ) -> DWORD;
+    pub fn RegOpenKeyExW(
+        hKey: HKEY,
+        lpSubKey: *const u16,
+        ulOptions: DWORD,
+        samDesired: DWORD,
+        phkResult: *mut HKEY,
+    ) -> DWORD;
+    pub fn RegQueryValueExW(
+        hKey: HKEY,
+        lpValueName: *const u16,
+        lpReserved: *mut DWORD,
+        lpType: *mut DWORD,
+        lpData: *mut BYTE,
+        lpcbData: *mut DWORD,
+    ) -> DWORD;
+    pub fn RegSetValueExW(
+        hKey: HKEY,
+        lpValueName: *const u16,
+        Reserved: DWORD,
+        dwType: DWORD,
+        lpData: *const BYTE,
+        cbData: DWORD,
     ) -> DWORD;
     pub fn RegDeleteValueA(hKey: HKEY, lpValueName: *const c_char) -> DWORD;
     pub fn RegDeleteValueW(hKey: HKEY, lpValueName: *const u16) -> DWORD;
@@ -310,15 +343,11 @@ extern "system" {
 //     in dhcpcsvc.rs. PDHCP_SERVER_NAME = wchar_t* (bindgen supplies it). Signatures verbatim from
 //     build-*/base/services/dhcpcsvc/dhcpcsvc_c.h.
 extern "system" {
+    pub fn Client_EnableDhcp(ServerName: PDHCP_SERVER_NAME, AdapterName: LPWSTR, Enable: BOOL) -> DWORD;
     pub fn Client_AcquireParameters(ServerName: PDHCP_SERVER_NAME, AdapterName: LPWSTR) -> DWORD;
+    pub fn Client_AcquireParametersByBroadcast(ServerName: PDHCP_SERVER_NAME, AdapterName: LPWSTR) -> DWORD;
     pub fn Client_ReleaseParameters(ServerName: PDHCP_SERVER_NAME, AdapterName: LPWSTR) -> DWORD;
-    pub fn Client_QueryHWInfo(
-        ServerName: PDHCP_SERVER_NAME,
-        AdapterIndex: DWORD,
-        MediaType: PDWORD,
-        Mtu: PDWORD,
-        Speed: PDWORD,
-    ) -> DWORD;
+    pub fn Client_FallbackRefreshParams(ServerName: PDHCP_SERVER_NAME, AdapterName: LPWSTR) -> DWORD;
     pub fn Client_StaticRefreshParams(
         ServerName: PDHCP_SERVER_NAME,
         AdapterIndex: DWORD,
@@ -326,6 +355,14 @@ extern "system" {
         Netmask: DWORD,
     ) -> DWORD;
     pub fn Client_RemoveDNSRegistrations(ServerName: PDHCP_SERVER_NAME) -> DWORD;
+    pub fn Client_RequestParams(
+        ServerName: PDHCP_SERVER_NAME,
+        AdapterName: LPWSTR,
+        ClassId: *mut DHCPCAPI_CLASSID,
+        SendParams: *mut DHCPCAPI_PARAMS_ARRAY,
+        RecdParams: *mut DHCPCAPI_PARAMS_ARRAY,
+        RecdResults: *mut LPDHCPCAPI_RESULT_ARRAY,
+    ) -> DWORD;
     // RPC interface handles (extern data from the generated stubs).
     pub static Client_dhcpcsvc_v0_0_c_ifspec: *mut c_void;
     pub static Server_dhcpcsvc_v0_0_s_ifspec: *mut c_void;
