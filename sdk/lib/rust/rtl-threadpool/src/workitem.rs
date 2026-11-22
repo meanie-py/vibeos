@@ -255,7 +255,7 @@ unsafe fn RtlpQueueWorkerThread(WorkItem: PRTLP_WORKITEM) -> NTSTATUS {
         if NT_SUCCESS(Status) {
             Status = NtQueueApcThread(
                 TimerThreadHandle,
-                core::mem::transmute::<_, PKNORMAL_ROUTINE>(RtlpExecuteWorkItem as usize),
+                core::mem::transmute::<_, PKNORMAL_ROUTINE>(RtlpExecuteWorkItem as *const () as usize),
                 core::ptr::null_mut(),
                 core::ptr::null_mut(),
                 WorkItem as PVOID,
@@ -264,7 +264,7 @@ unsafe fn RtlpQueueWorkerThread(WorkItem: PRTLP_WORKITEM) -> NTSTATUS {
     } else {
         Status = NtSetIoCompletion(
             ThreadPoolCompletionPort,
-            RtlpExecuteWorkItem as usize as PVOID,
+            RtlpExecuteWorkItem as *const () as usize as PVOID,
             WorkItem as PVOID,
             STATUS_SUCCESS,
             0,
@@ -422,7 +422,7 @@ unsafe fn RtlpQueueIoWorkerThread(WorkItem: PRTLP_WORKITEM) -> NTSTATUS {
 
     Status = NtQueueApcThread(
         (*IoThread).ThreadHandle,
-        core::mem::transmute::<_, PKNORMAL_ROUTINE>(RtlpExecuteIoWorkItem as usize),
+        core::mem::transmute::<_, PKNORMAL_ROUTINE>(RtlpExecuteIoWorkItem as *const () as usize),
         IoThread as PVOID,
         core::ptr::null_mut(),
         WorkItem as PVOID,
@@ -736,7 +736,7 @@ pub unsafe extern "system" fn RtlQueueWorkItem(
                         || ThreadPoolIOWorkerThreads - ThreadPoolIOWorkerThreadsRequests
                             < WORKERTHREAD_CREATION_THRESHOLD)
                 {
-                    Status = RtlpStartWorkerThread(core::mem::transmute::<_, PTHREAD_START_ROUTINE>(RtlpIoWorkerThreadProc as usize));
+                    Status = RtlpStartWorkerThread(core::mem::transmute::<_, PTHREAD_START_ROUTINE>(RtlpIoWorkerThreadProc as *const () as usize));
 
                     if !NT_SUCCESS(Status)
                         && core::ptr::read_volatile(core::ptr::addr_of!(ThreadPoolIOWorkerThreads))
@@ -757,7 +757,7 @@ pub unsafe extern "system" fn RtlQueueWorkItem(
                         || ThreadPoolWorkerThreads - ThreadPoolWorkerThreadsRequests
                             < WORKERTHREAD_CREATION_THRESHOLD)
                 {
-                    Status = RtlpStartWorkerThread(core::mem::transmute::<_, PTHREAD_START_ROUTINE>(RtlpWorkerThreadProc as usize));
+                    Status = RtlpStartWorkerThread(core::mem::transmute::<_, PTHREAD_START_ROUTINE>(RtlpWorkerThreadProc as *const () as usize));
 
                     if !NT_SUCCESS(Status)
                         && core::ptr::read_volatile(core::ptr::addr_of!(ThreadPoolWorkerThreads))

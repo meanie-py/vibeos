@@ -79,8 +79,8 @@ fn round_down(value: i64, align: i64) -> i64 {
 /* ============================== Generic-table glue =========================
  * The three callbacks register with `RtlInitializeGenericTable`. Their
  * bindgen signatures use `extern "C"` (DDK callback ABI); the original C
- * declares them `NTAPI`. `abi_cast!` bridges the type-system difference; on
- * each target the two ABIs are identical at the machine-code level.
+ * declares them `NTAPI`. They are stored as plain `Some(f)`, which rustc
+ * type-checks against the slot (the old `abi_cast!` usize round trip checked nothing).
  */
 
 extern "system" fn MiSectionPageTableAllocate(
@@ -174,9 +174,9 @@ pub unsafe extern "system" fn MiInitializeSectionPageTable(Segment: PMM_SECTION_
     let table_ptr = core::ptr::addr_of_mut!((*Segment).PageTable) as PRTL_GENERIC_TABLE;
     RtlInitializeGenericTable(
         table_ptr,
-        Some(abi_cast!(MiSectionPageTableCompare)),
-        Some(abi_cast!(MiSectionPageTableAllocate)),
-        Some(abi_cast!(MiSectionPageTableFree)),
+        Some(MiSectionPageTableCompare),
+        Some(MiSectionPageTableAllocate),
+        Some(MiSectionPageTableFree),
         core::ptr::null_mut(),
     );
 }

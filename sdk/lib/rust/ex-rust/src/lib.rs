@@ -60,14 +60,6 @@ macro_rules! uart_trace_hex {
     }};
 }
 
-// abi_cast! — cast an extern fn to the target callback ABI (crate-local copy).
-#[allow(unused_macros)]
-macro_rules! abi_cast {
-    ($func:expr) => {
-        unsafe { core::mem::transmute($func as usize) }
-    };
-}
-
 pub mod atom;
 pub mod callback;
 pub mod dbgctrl;

@@ -742,7 +742,7 @@ pub unsafe extern "fastcall" fn Ki386InitializeTss(
     };
     (*DfTss).Esp0 = KiDoubleFaultStack as ULONG;
     (*DfTss).Esp = KiDoubleFaultStack as ULONG;
-    (*DfTss).Eip = KiTrap08 as ULONG;
+    (*DfTss).Eip = KiTrap08 as *const () as ULONG;
     (*DfTss).Cs = KGDT_R0_CODE;
     (*DfTss).Fs = KGDT_R0_PCR;
     (*DfTss).Ss = {
@@ -778,7 +778,7 @@ pub unsafe extern "fastcall" fn Ki386InitializeTss(
     };
     (*NmiTss).Esp0 = KiDoubleFaultStack as ULONG;
     (*NmiTss).Esp = KiDoubleFaultStack as ULONG;
-    (*NmiTss).Eip = KiTrap02 as ULONG;
+    (*NmiTss).Eip = KiTrap02 as *const () as ULONG;
     (*NmiTss).Cs = KGDT_R0_CODE;
     (*NmiTss).Fs = KGDT_R0_PCR;
     (*NmiTss).Ss = {
@@ -1083,7 +1083,7 @@ unsafe extern "system" fn KiLoadFastSyscallMachineSpecificRegisters(_Context: UL
             in("edx") 0u32,
             options(nostack, preserves_flags)
         );
-        let entry = KiFastCallEntry as u32;
+        let entry = KiFastCallEntry as *const () as u32;
         core::arch::asm!(
             "wrmsr",
             in("ecx") 0x176u32,
@@ -1159,8 +1159,8 @@ pub unsafe extern "system" fn Ki386EnableXMMIExceptions(_Context: ULONG_PTR) -> 
     let IdtEntry = &mut *(*(KeGetPcr() as PKIPCR)).IDT.add(0x13);
 
     (*IdtEntry).Selector = KGDT_R0_CODE;
-    (*IdtEntry).Offset = (KiTrap13 as ULONG_PTR & 0xFFFF) as USHORT;
-    (*IdtEntry).ExtendedOffset = ((KiTrap13 as ULONG_PTR >> 16) & 0xFFFF) as USHORT;
+    (*IdtEntry).Offset = (KiTrap13 as *const () as ULONG_PTR & 0xFFFF) as USHORT;
+    (*IdtEntry).ExtendedOffset = ((KiTrap13 as *const () as ULONG_PTR >> 16) & 0xFFFF) as USHORT;
     (*IdtEntry).Access = 0;
     core::ptr::write_bytes(&mut (*IdtEntry).Access as *mut _ as *mut u8, 0, 1);
     let access_ptr = &mut (*IdtEntry).Access as *mut USHORT as *mut u8;

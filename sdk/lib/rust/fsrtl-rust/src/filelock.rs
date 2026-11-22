@@ -364,9 +364,9 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
 
         RtlInitializeGenericTable(
             core::ptr::addr_of_mut!((*LockInfo).RangeTable),
-            Some(abi_cast!(LockCompare)),
-            Some(abi_cast!(LockAllocate)),
-            Some(abi_cast!(LockFree)),
+            Some(LockCompare),
+            Some(LockAllocate),
+            Some(LockFree),
             core::ptr::null_mut(),
         );
 
@@ -375,12 +375,12 @@ pub unsafe extern "system" fn FsRtlPrivateLock(
 
         IoCsqInitializeEx(
             core::ptr::addr_of_mut!((*LockInfo).Csq),
-            Some(abi_cast!(LockInsertIrpEx)),
-            Some(abi_cast!(LockRemoveIrp)),
-            Some(abi_cast!(LockPeekNextIrp)),
-            Some(abi_cast!(LockAcquireQueueLock)),
-            Some(abi_cast!(LockReleaseQueueLock)),
-            Some(abi_cast!(LockCompleteCanceledIrp)),
+            Some(LockInsertIrpEx),
+            Some(LockRemoveIrp),
+            Some(LockPeekNextIrp),
+            Some(LockAcquireQueueLock),
+            Some(LockReleaseQueueLock),
+            Some(LockCompleteCanceledIrp),
         );
     }
 

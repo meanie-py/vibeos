@@ -59,16 +59,6 @@ macro_rules! SET_FLAG { ($f:expr, $b:expr) => { $f = (($f as u64) | (($b) as u64
 #[macro_export]
 macro_rules! CLEAR_FLAG { ($f:expr, $b:expr) => { $f = (($f as u64) & !(($b) as u64)) as _; } }
 
-/// abi_cast! — coerce a classpnp callback fn-item (defined `extern "system"`/`"stdcall"`)
-/// into a bindgen DDK fn-pointer field type. On i386 DDK callbacks are `extern "stdcall"`,
-/// on amd64/arm64 `extern "C"`; Rust treats these as distinct nominal types even though the
-/// machine code is identical. The `$func as usize` → `transmute` round-trip bridges them.
-/// Mirrors `ntoskrnl-rust`'s `abi_cast!`.
-#[macro_export]
-macro_rules! abi_cast {
-    ($func:expr) => { unsafe { ::core::mem::transmute($func as usize) } };
-}
-
 /// NT_ASSERTMSG(Msg, Expr) — checked-build assertion with a message, `nt_assertmsg!`'s
 /// debug_assert: type-checked, evaluated only under debug-assertions, like NT_ASSERT.
 #[macro_export]

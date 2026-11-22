@@ -1595,7 +1595,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
             PoRegisterPowerSettingCallback(
                 device_object,
                 &raw const GUID_CONSOLE_DISPLAY_STATE,
-                abi_cast!(ClasspPowerSettingCallback),
+                ClasspPowerSettingCallback,
                 core::ptr::null_mut(),
                 &raw mut ScreenStateNotificationHandle,
             );

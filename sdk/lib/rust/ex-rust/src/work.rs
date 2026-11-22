@@ -34,12 +34,9 @@ extern "system" {
     static mut ExpDebuggerWorkItem: WORK_QUEUE_ITEM;
 }
 
-// ExpDebuggerWorker is a C function; calling convention differs by arch.
-#[cfg(target_arch = "x86")]
-extern "stdcall" {
-    fn ExpDebuggerWorker(Context: PVOID);
-}
-#[cfg(not(target_arch = "x86"))]
+// ExpDebuggerWorker is a C function. `extern "system"` IS stdcall on i386 (and the C ABI
+// elsewhere), so one declaration covers every arch; a separate `extern "stdcall"` on x86
+// was a different Rust TYPE, which kept it out of its `system` WorkerRoutine slot.
 extern "system" {
     fn ExpDebuggerWorker(Context: PVOID);
 }
@@ -235,12 +232,7 @@ unsafe fn ExpWorkerThreadEntryPoint_impl(Context: PVOID) {
     }
 }
 
-#[cfg(target_arch = "x86")]
-unsafe extern "stdcall" fn ExpWorkerThreadEntryPoint(Context: PVOID) {
-    ExpWorkerThreadEntryPoint_impl(Context)
-}
-
-#[cfg(not(target_arch = "x86"))]
+// `system` is stdcall on i386, so one definition serves every arch (see ExpDebuggerWorker).
 unsafe extern "system" fn ExpWorkerThreadEntryPoint(Context: PVOID) {
     ExpWorkerThreadEntryPoint_impl(Context)
 }
@@ -264,7 +256,7 @@ unsafe fn ExpCreateWorkerThread(WorkQueueType: WORK_QUEUE_TYPE, Dynamic: BOOLEAN
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        Some(abi_cast!(ExpWorkerThreadEntryPoint)),
+        Some(ExpWorkerThreadEntryPoint),
         Context as PVOID,
     );
 
@@ -389,7 +381,7 @@ unsafe extern "system" fn ExpWorkerThreadBalanceManager(Context: PVOID) {
 
         if ExpDebuggerWork == WinKdWorkerStart {
             core::ptr::write_bytes(&raw mut ExpDebuggerWorkItem as *mut WORK_QUEUE_ITEM as *mut u8, 0, core::mem::size_of::<WORK_QUEUE_ITEM>());
-            ExpDebuggerWorkItem.WorkerRoutine = Some(abi_cast!(ExpDebuggerWorker));
+            ExpDebuggerWorkItem.WorkerRoutine = Some(ExpDebuggerWorker);
             ExpDebuggerWorkItem.Parameter = core::ptr::null_mut();
             ExpDebuggerWork = WinKdWorkerInitialized;
             ExQueueWorkItem(&raw mut ExpDebuggerWorkItem, DelayedWorkQueue);
@@ -452,7 +444,7 @@ pub unsafe extern "system" fn ExpInitializeWorkerThreads() {
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        Some(abi_cast!(ExpWorkerThreadBalanceManager)),
+        Some(ExpWorkerThreadBalanceManager),
         core::ptr::null_mut(),
     );
 
@@ -523,7 +515,7 @@ pub unsafe extern "system" fn ExSwapinWorkerThreads(AllowSwap: BOOLEAN) {
                 &mut Apc,
                 &mut (*(Thread as *mut _ETHREAD)).Tcb,
                 InsertApcEnvironment as KAPC_ENVIRONMENT,
-                Some(abi_cast!(ExpSetSwappingKernelApc)),
+                Some(ExpSetSwappingKernelApc),
                 None,
                 None,
                 0i8,

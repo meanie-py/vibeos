@@ -220,19 +220,19 @@ pub unsafe extern "system" fn xHalGetInterruptTranslator(
      * as distinct types — so we need `transmute` to convert. */
     (*Translator).InterfaceReference =
         core::mem::transmute::<usize, PINTERFACE_REFERENCE>(
-            FstubTranslatorNull as usize,
+            FstubTranslatorNull as *const () as usize,
         );
     (*Translator).InterfaceDereference =
         core::mem::transmute::<usize, PINTERFACE_DEREFERENCE>(
-            FstubTranslatorNull as usize,
+            FstubTranslatorNull as *const () as usize,
         );
     (*Translator).TranslateResources =
         core::mem::transmute::<usize, PTRANSLATE_RESOURCE_HANDLER>(
-            FstubTranslateResource as usize,
+            FstubTranslateResource as *const () as usize,
         );
     (*Translator).TranslateResourceRequirements =
         core::mem::transmute::<usize, PTRANSLATE_RESOURCE_REQUIREMENTS_HANDLER>(
-            FstubTranslateRequirement as usize,
+            FstubTranslateRequirement as *const () as usize,
         );
 
     STATUS_SUCCESS

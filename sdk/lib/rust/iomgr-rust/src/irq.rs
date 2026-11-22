@@ -516,7 +516,7 @@ fn passive_block_layout(count: usize) -> (usize, usize, usize) {
 /// The passive connection a KINTERRUPT belongs to, if it is one.
 unsafe fn passive_of(Interrupt: PKINTERRUPT) -> Option<*mut Passive> {
     if Interrupt.is_null()
-        || (*Interrupt).ServiceRoutine.map(|f| f as usize) != Some(IopPassiveInterruptService as usize)
+        || (*Interrupt).ServiceRoutine.map(|f| f as usize) != Some(IopPassiveInterruptService as *const () as usize)
     {
         return None;
     }

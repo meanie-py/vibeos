@@ -160,7 +160,7 @@ unsafe fn FsRtlWaitOnIrp(
         (*wait_ctx).CompletionRoutine = completion_routine;
         (*wait_ctx).CompletionContext = completion_context;
     } else {
-        (*wait_ctx).CompletionRoutine = Some(abi_cast!(FsRtlCompletionRoutinePriv));
+        (*wait_ctx).CompletionRoutine = Some(FsRtlCompletionRoutinePriv);
         (*wait_ctx).CompletionContext = wait_event as PVOID;
         KeInitializeEvent(wait_event, 0, 0u8);
     }
@@ -188,7 +188,7 @@ unsafe fn FsRtlWaitOnIrp(
         }
         FsRtlCancelWaitIrp(core::ptr::null_mut(), irp);
     } else {
-        IoSetCancelRoutine(irp, Some(abi_cast!(FsRtlCancelWaitIrp)));
+        IoSetCancelRoutine(irp, Some(FsRtlCancelWaitIrp));
         IoReleaseCancelSpinLock((*irp).CancelIrql);
         if completion_routine.is_some() {
             IoMarkIrpPending(irp);
@@ -243,7 +243,7 @@ unsafe fn FsRtlOplockBreakNotify(
         oplock,
         irp,
         core::ptr::null_mut(),
-        Some(abi_cast!(FsRtlNotifyCompletion)),
+        Some(FsRtlNotifyCompletion),
         None,
         core::ptr::null_mut(),
     );
@@ -338,7 +338,7 @@ unsafe fn FsRtlAcknowledgeOplockBreak(
             locked = false;
             FsRtlCancelOplockIIIrp(core::ptr::null_mut(), irp);
         } else {
-            IoSetCancelRoutine(irp, Some(abi_cast!(FsRtlCancelOplockIIIrp)));
+            IoSetCancelRoutine(irp, Some(FsRtlCancelOplockIIIrp));
             IoReleaseCancelSpinLock((*irp).CancelIrql);
         }
     } else if ((*oplock).Flags & (BROKEN_TO_NONE | BROKEN_TO_LEVEL_2)) != 0 {
@@ -512,7 +512,7 @@ unsafe fn FsRtlRequestExclusiveOplock(
                 FsRtlCancelExclusiveIrp(core::ptr::null_mut(), irp);
                 status = STATUS_CANCELLED;
             } else {
-                IoSetCancelRoutine(irp, Some(abi_cast!(FsRtlCancelExclusiveIrp)));
+                IoSetCancelRoutine(irp, Some(FsRtlCancelExclusiveIrp));
                 IoReleaseCancelSpinLock((*irp).CancelIrql);
             }
         } else {
@@ -566,7 +566,7 @@ unsafe fn FsRtlRequestOplockII(oplock: POPLOCK, stack: PIO_STACK_LOCATION, irp: 
             FsRtlCancelOplockIIIrp(core::ptr::null_mut(), irp);
             status = STATUS_CANCELLED;
         } else {
-            IoSetCancelRoutine(irp, Some(abi_cast!(FsRtlCancelOplockIIIrp)));
+            IoSetCancelRoutine(irp, Some(FsRtlCancelOplockIIIrp));
             IoReleaseCancelSpinLock((*irp).CancelIrql);
         }
     } else {

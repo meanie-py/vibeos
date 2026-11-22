@@ -156,7 +156,7 @@ pub unsafe extern "system" fn FsRtlInitializeWorkerThread() -> NTSTATUS {
             core::ptr::addr_of_mut!(object_attributes),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            Some(abi_cast!(FsRtlWorkerThread)),
+            Some(FsRtlWorkerThread),
             i as PVOID,
         );
         if status < 0 {

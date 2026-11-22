@@ -212,7 +212,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     TracePrint(TRACE_LEVEL_INFORMATION, TRACE_FLAG_POWER, b"(%p)\tSrb status was %lx\n\0".as_ptr() as PCCHAR, Irp, (*srbHeader).SrbStatus as i32);
                     IoSetCompletionRoutine(
                         OriginalIrp,
-                        Some(abi_cast!(ClasspDeviceLockFailurePowerIrpCompletion)),
+                        Some(ClasspDeviceLockFailurePowerIrpCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
@@ -227,7 +227,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                 (*PowerContext).PowerChangeState.PowerUp = CLASS_POWER_UP_STATE_PowerUpDeviceLocked;
                 IoSetCompletionRoutine(
                     OriginalIrp,
-                    Some(abi_cast!(ClasspPowerUpCompletion)),
+                    Some(ClasspPowerUpCompletion),
                     PowerContext as PVOID,
                     TRUE,
                     TRUE,
@@ -324,7 +324,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     (*PowerContext).PowerChangeState.PowerUp = CLASS_POWER_UP_STATE_PowerUpDeviceOn;
                     IoSetCompletionRoutine(
                         (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
-                        Some(abi_cast!(ClasspPowerUpCompletion)),
+                        Some(ClasspPowerUpCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
@@ -494,7 +494,7 @@ pub unsafe extern "system" fn ClasspPowerUpCompletion(
                     (*PowerContext).PowerChangeState.PowerUp = CLASS_POWER_UP_STATE_PowerUpDeviceStarted;
                     IoSetCompletionRoutine(
                         (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
-                        Some(abi_cast!(ClasspPowerUpCompletion)),
+                        Some(ClasspPowerUpCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
@@ -652,7 +652,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     IoCopyCurrentIrpStackLocationToNext(OriginalIrp);
                     IoSetCompletionRoutine(
                         OriginalIrp,
-                        Some(abi_cast!(ClasspStartNextPowerIrpCompletion)),
+                        Some(ClasspStartNextPowerIrpCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
@@ -711,7 +711,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
 
                     IoSetCompletionRoutine(
                         (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
-                        Some(abi_cast!(ClasspPowerDownCompletion)),
+                        Some(ClasspPowerDownCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
@@ -797,7 +797,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
 
                     IoSetCompletionRoutine(
                         (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
-                        Some(abi_cast!(ClasspPowerDownCompletion)),
+                        Some(ClasspPowerDownCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
@@ -986,7 +986,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
 
                     IoSetCompletionRoutine(
                         (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
-                        Some(abi_cast!(ClasspPowerDownCompletion)),
+                        Some(ClasspPowerDownCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
@@ -1096,7 +1096,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
                     IoCopyCurrentIrpStackLocationToNext(OriginalIrp);
                     IoSetCompletionRoutine(
                         OriginalIrp,
-                        Some(abi_cast!(ClasspPowerDownCompletion)),
+                        Some(ClasspPowerDownCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
@@ -1169,7 +1169,7 @@ pub unsafe extern "system" fn ClasspPowerDownCompletion(
 
                     IoSetCompletionRoutine(
                         (*(*fdoExtension).PrivateFdoData).PowerProcessIrp,
-                        Some(abi_cast!(ClasspPowerDownCompletion)),
+                        Some(ClasspPowerDownCompletion),
                         PowerContext as PVOID,
                         TRUE,
                         TRUE,
@@ -1542,7 +1542,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
             );
             (*context).Options.set_PowerDown(0u32);
             (*context).PowerChangeState.PowerUp = CLASS_POWER_UP_STATE_PowerUpDeviceInitial;
-            (*context).CompletionRoutine = Some(abi_cast!(ClasspPowerUpCompletion));
+            (*context).CompletionRoutine = Some(ClasspPowerUpCompletion);
         } else {
             // NT_ASSERT(Options.HandleSpinDown)
             if (*context).Options.HandleSpinDown() == 0 {
@@ -1573,7 +1573,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
             );
             (*context).Options.set_PowerDown(1u32);
             (*context).PowerChangeState.PowerDown3 = CLASS_POWER_DOWN_STATE3_PowerDownDeviceInitial3;
-            (*context).CompletionRoutine = Some(abi_cast!(ClasspPowerDownCompletion));
+            (*context).CompletionRoutine = Some(ClasspPowerDownCompletion);
         }
 
         srb_flags = SrbGetSrbFlags(srb_header as PVOID);
@@ -1636,7 +1636,7 @@ pub unsafe extern "C" fn ClasspPowerHandler(
     IoCopyCurrentIrpStackLocationToNext(Irp);
     IoSetCompletionRoutine(
         Irp,
-        Some(abi_cast!(ClasspStartNextPowerIrpCompletion)),
+        Some(ClasspStartNextPowerIrpCompletion),
         core::ptr::null_mut::<c_void>(),
         1u8,
         1u8,
@@ -2154,7 +2154,7 @@ pub unsafe extern "C" fn ClasspEnableIdlePower(DeviceObject: PDEVICE_OBJECT) -> 
                 PoRegisterPowerSettingCallback(
                     DeviceObject,
                     &raw const GUID_DISK_IDLE_TIMEOUT as LPCGUID,
-                    Some(abi_cast!(ClasspPowerSettingCallback)),
+                    Some(ClasspPowerSettingCallback),
                     core::ptr::null_mut(),
                     &raw mut PowerSettingNotificationHandle,
                 );

@@ -387,9 +387,9 @@ pub unsafe extern "fastcall" fn KiTrap00Handler(TrapFrame: PKTRAP_FRAME) -> ! {
 #[no_mangle]
 pub unsafe extern "fastcall" fn KiTrap01Handler(TrapFrame: PKTRAP_FRAME) -> ! {
     KiEnterTrap(TrapFrame);
-    if (*TrapFrame).Eip == KiFastCallEntry as ULONG {
+    if (*TrapFrame).Eip == KiFastCallEntry as *const () as ULONG {
         (*TrapFrame).EFlags &= !EFLAGS_TF;
-        (*TrapFrame).Eip = KiFastCallEntryWithSingleStep as ULONG;
+        (*TrapFrame).Eip = KiFastCallEntryWithSingleStep as *const () as ULONG;
         KiEoiHelper(TrapFrame);
     }
     if KiUserTrap(TrapFrame) != 0 {
@@ -775,7 +775,7 @@ pub unsafe extern "fastcall" fn KiTrap0DHandler(TrapFrame: PKTRAP_FRAME) -> ! {
     }
     let instructions = (*TrapFrame).Eip as *const UCHAR;
     if *instructions == 0xCF {
-        if (*TrapFrame).HardwareEsp == Ki386BiosCallReturnAddress as ULONG
+        if (*TrapFrame).HardwareEsp == Ki386BiosCallReturnAddress as *const () as ULONG
             && (*TrapFrame).HardwareSegSs == (KGDT_R0_CODE | RPL_MASK as USHORT) as ULONG
         {
             Ki386BiosCallReturnAddress(TrapFrame);
@@ -801,7 +801,7 @@ pub unsafe extern "fastcall" fn KiCheckForSListFault(TrapFrame: PKTRAP_FRAME) ->
     // Guard: skip KeUserPopEntrySListFault comparison when it's NULL (uninitialized).
     // Before PsInitializeSystemDlls sets it, KeUserPopEntrySListFault is 0, and any
     // EIP=0 fault (null function pointer call) would spuriously match the SList check.
-    let is_kernel_slist_fault = (*TrapFrame).Eip == ExpInterlockedPopEntrySListFault as u32;
+    let is_kernel_slist_fault = (*TrapFrame).Eip == ExpInterlockedPopEntrySListFault as *const () as u32;
     let is_user_slist_fault = !KeUserPopEntrySListFault.is_null()
         && (*TrapFrame).Eip == KeUserPopEntrySListFault as u32;
 
