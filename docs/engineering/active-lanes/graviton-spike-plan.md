@@ -22,8 +22,10 @@
 >    pointer and ULONG_PTR fields (`WowCbSx`), which is right for handles but turns a
 >    large-address-aware guest's buffer at or above 2 GiB into a kernel-half address.
 > 4. The sandbox quest: started 2026-11-22, see
->    [chrome-sandbox-quest.md](../chrome-sandbox-quest.md) (step 3, the restricted token, is next).
+>    [chrome-sandbox-quest.md](../chrome-sandbox-quest.md). Steps 1-3 done; step 4, token
+>    integrity levels, is next. Boot the Chrome payload WITH network.
 > 5. netstack BUGCHECK 0xA in the TCP receive bridge (registry entry).
+> 6. dhcpcsvc ApiCriticalSection deadlock after a Chrome hang, `--no-net` only (registry entry).
 > Loading over the network is done (Chrome rung 2, `34e17dfff6e`).
 
 > **2026-09-20: superseded for active work.** The owner chose direct bare-metal

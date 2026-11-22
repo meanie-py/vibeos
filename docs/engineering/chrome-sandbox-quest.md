@@ -34,9 +34,22 @@ Probes beside it pin each step down on its own: `acgprobe`, `tokprobe`.
    as "no AppContainer". kernelbase was not loaded at all, so kernel32 now loads it into
    every Win32 process, by full path from its own directory (a WoW64 process's 64-bit
    kernel32 otherwise found the 32-bit one in syswow64).
-3. **Restricted token** (open). The browser now starts its Network Service process; the
-   GPU process (software, even with `--disable-gpu`) fails to launch three times with
-   ResultCode 49, `SBOX_ERROR_CANNOT_CREATE_RESTRICTED_TOKEN`, and the browser exits
-   ("GPU process isn't usable"). `tokprobe` makes the sandbox's token calls one by one.
+3. **Restricted token: handle access** (fixed 2026-11-22). The browser now starts its
+   Network Service process; the GPU process (software, even with `--disable-gpu`) failed
+   to launch three times with ResultCode 49, `SBOX_ERROR_CANNOT_CREATE_RESTRICTED_TOKEN`.
+   `tokprobe`: every `CreateRestrictedToken` shape succeeded, but the new handle could not
+   be queried or duplicated. NtFilterToken (and NtDuplicateToken) passed a null
+   `OBJECT_HANDLE_INFORMATION` where the C passes a stack struct, so the handle had access
+   0. Fixed; lint rule `scan_null_out_param`.
+4. **Integrity levels** (open, next). Still ResultCode 49: `tokprobe` shows
+   `TokenIntegrityLevel` query and set, and `TokenLogonSid`, return
+   ERROR_INVALID_PARAMETER. Our TOKEN has no label at all (no `SE_GROUP_INTEGRITY` group,
+   no `IntegrityLevelIndex`). Needed: logon tokens carry Medium and SYSTEM carries System as
+   an integrity group, query/set of the label (a set grows the token's variable part), and
+   then the access check's no-write-up rule. Per the roadmap, until the access check
+   enforces it a set label must say so loudly, never read as a working sandbox.
+
+Running the payload: use the network (no `--no-net`). Without it the sweep can deadlock
+after a Chrome hang (registry: "dhcpcsvc ApiCriticalSection deadlock").
 
 Also seen, not yet a blocker: `windows_version.cc: Unsupported version: 42.4.17`.
