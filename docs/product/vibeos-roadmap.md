@@ -824,14 +824,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   it untranslated (`0xc000`-style port numbers). Windows on ARM translates port resources to
   memory (`CM_RESOURCE_PORT_MEMORY`) in HalTranslateBusAddress / the PCI arbiter. Until then
   the modrun dsound suite grades only its device-free half on arm64 (`logic-nodevice`).
-- **A second KS pin create on the AC97's render pin never completes (open, found 2026-11-05).**
-  After winmm's `waveOutOpen`/`waveOutClose` creates and closes pin 0 (portcls logs
-  `CPortPinWaveCyclic::Init Status 0 PinId 0`), a direct `KsCreatePin` on the same pin blocks in
-  `NtCreateFile` indefinitely; nothing spins (the vCPU samples are elsewhere). A
-  single-instance pin should FAIL the second create, so either the close left the instance
-  held or a create path waits instead of failing; the stack is ks-rust / portcls / ac97.
-  Repro: `dsound_probe.exe ks` from `tools/payloads/modrun/probes/dsound.c` (no suite case
-  runs it). Artifact: `/tmp/vibeos-cli/20261105-204803-oonv142k-smoke-amd64`.
+- **A KS pin create that the miniport refuses never returns to its caller (open, found
+  2026-11-05, narrowed 2026-11-22, amd64).** First filed as "a second create on the AC97's
+  render pin never completes". It was the probe's own bug that made that create fail: it
+  packed `KSPIN_CONNECT` with `pack(1)`, so on 64-bit the kernel read the data format 4 bytes
+  late. With the struct fixed, a second create on pin 0 after winmm's succeeds. A
+  deliberately bad one (zeroed `MajorFormat`) is refused: AC97 `TestDataFormat` "Invalid
+  format type", `CPortPinWaveCyclic::Init Status c000000d`. Then the caller stays in
+  `NtCreateFile` (`ksuser!KsCreatePin` ← `KsiCreateObjectType`) for the whole 180 s timeout.
+  The source path back returns the error with no wait at each step: AC97
+  `NewStream`/`ValidateFormat`, portcls `CPortFilterWaveCyclic::NewIrpTarget`
+  (`Pin->Release()`, then return) and `PcCreatePinDispatch` (completes the IRP), ks-rust
+  `KspCreate`, and iomgr-rust `IopParseDevice`'s failed-create branch. So the next step is a
+  kernel stack of the stuck thread (GDB). Repro: `dsound_probe.exe ks` from
+  `tools/payloads/modrun/probes/dsound.c`. It is not a suite case, because modrun cannot reap
+  a process stuck in the kernel. Artifact: `/tmp/vibeos-cli/20261122-140435-Zsju6z-smoke-amd64`.
 - **Running out of memory while loading Mesa BUGCHECKed 0x1E (FIXED by 2026-11-22; found
   2026-11-05). What remains is a stall: at 512M the guest runs out of physical pages and waits
   instead of failing the allocation (open).** On 2026-11-05 the first modrun process to load
