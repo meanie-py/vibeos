@@ -1117,6 +1117,14 @@ int main(void)
     }
     fclose(f);
 
+    {
+        /* Which processes kept the CPU busy, and what the busiest one is doing. */
+        DWORD hog = sd_report_process_cpu("end", 12);
+        if (hog) {
+            SAY("cputime: sampling the busiest process, pid=%lu\n", (unsigned long)hog);
+            dump_process_threads(hog);
+        }
+    }
     emit("[APITEST-SWEEP] done total=%d launched=%d subtests=%d failstart=%d timeouts=%d\n",
              total, launched, subtests, failstart, timeouts);
     return 0;
