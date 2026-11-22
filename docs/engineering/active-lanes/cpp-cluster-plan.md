@@ -58,20 +58,36 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
 
 ## SEH quest: dead `__except` handlers (from 2026-11-06)
 
-**RESUME HERE (2026-11-21):** `scan_dead_seh_handlers` is at **0** (235 at the first count) and
-its baseline is empty, so `check` fails on any new dead handler. The last batch (the scattered
-DLLs and user32) is described in `dummy-pseh-verdict.md`. The dead-handler burn-down is done;
-what is left is the owed list below. Done since: DbgPrint's `DBG_PRINTEXCEPTION_C` raise
-is ported, OutputDebugStringA's `!BeingDebugged` bypass is dropped, and shell32 iconcache's
-7 dropped `ERR`/`FIXME` prints are restored (all 2026-11-21).
+**RESUME HERE (2026-11-22, Sunday wind-down):** nothing in flight; everything below is on
+master (last: 721fb70af35). `scan_dead_seh_handlers` is at 0 with an empty baseline.
+
+- **Waiting on the owner's decision: netcfgx alternate configuration.** Upstream rewrote
+  `dll/win32/netcfgx/tcpipconf_notify.c` by ~3,200 diff lines since our translation (the
+  alternate TCP/IP dialog 7139e57ff89, `ITcpipProperties` c04c092a3e6/afbc9224052, the
+  DhcpFallbackRefreshParams call b2e9439a538); the C on disk is current upstream. Options put
+  to the owner: re-translate the file on Haiku 5.5 (`rustconv estimate`: $0.02 sync floor,
+  ~$0.10 at 5x) and carry the existing 7,129-line translation's hand fixes across, or hand-port
+  the changed functions. A re-buy of a translated file needs explicit approval; none given yet.
+  Taken over from upstream-sync by agreement (2026-11-22); its dhcpcsvc half is done.
+- **Watching: dhcpcsvc ApiCriticalSection deadlock** (rpi-bringup's registry entry, --no-net
+  chrome boots, 20261122-110401-oILhqO / 080847-vtJV0Y). Did not reproduce 3/3 after the
+  dhcpcsvc re-port (20261122-145506-oOy0eZ); root cause never identified. Evidence so far:
+  SendARP is not the blocker (netstack answers 0x0012003c at once); the last dhcpcsvc activity
+  before the hang was a SEND_DATAGRAM to :67. If it recurs, rtl-sync now prints
+  "Deadlock: 0x... (owner thread 0x..., waiter thread 0x...)" before each c0000194 -- start
+  from the owner tid. rpi-bringup will send the run dir.
+- **Done 2026-11-21/22:** the last 57 dead SEH rows (user32 + scattered DLLs) and three
+  dead_seh lint fixes; winspool GetMonitorUI restored; DbgPrint's DBG_PRINTEXCEPTION_C raise;
+  OutputDebugStringA's bypass dropped; shell32 iconcache prints; FAILED_UNEXPECTEDLY!'s trace;
+  the dhcpcsvc upstream re-port (+ ipconfig's 64-bit PnP-event pointer); the CS deadlock print.
+  Reusable recipe from the user32 pass: wrapping a `// _SEH2_TRY { ... } // _SEH2_EXCEPT` block
+  is mechanical (closure over the block, uninitialised outer `let`s initialised first, handler
+  statements on `.is_err()`); it was a throwaway script, not worth a tool now the count is 0.
 
 - **Gate used per batch:** check, check-tooling, `lint --rules rust_ub_deny` ×3, sehprobe ×3,
   vehprobe ×3 and plain smoke ×3. The sehprobe and vehprobe VERDICT lines are in the
   payload's own serial log, not full.log.
-- **Next (taken over from upstream-sync 2026-11-22, by agreement):** netcfgx's alternate
-  TCP/IP configuration dialog (upstream 7139e57ff89) and the undocumented `ITcpipProperties`
-  interface (c04c092a3e6, afbc9224052), on top of the dhcpcsvc re-port below.
-- **dhcpcsvc upstream re-port (2026-11-22):** the ~20 upstream dhcpcsvc commits since the
+- **dhcpcsvc upstream re-port (landed 2026-11-22, 721fb70af35):** the ~20 upstream dhcpcsvc commits since the
   2026-07-18 translation. Upstream's dhcpcsvc.idl/spec/rosdhcp.h/dhcpcsdk.h are restored
   (842b5458588 had rolled them back to fit the old Rust); the island is regenerated (now also
   from dhcpcapi.h); Server_EnableDhcp / AcquireParametersByBroadcast / FallbackRefreshParams /
