@@ -1605,24 +1605,6 @@ unsafe fn i386_trap_frame_backtrace(TrapFrame: ULONG_PTR) {
     crate::dbg_print!(b"***   TrapFrame Eip=%p Ebp=%p Esp=%p\n\0",
         eip as ULONG_PTR as PVOID, ebp as ULONG_PTR as PVOID,
         core::ptr::addr_of!((*tf).HardwareEsp) as PVOID);
-    unsafe fn ksym(pc: u32) -> bool {
-        let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
-        let mut in_kernel: BOOLEAN = 0;
-        let base = KiPcToFileHeader(pc as ULONG_PTR as PVOID, &mut le, 0u8, &mut in_kernel);
-        if !base.is_null() && !le.is_null() {
-            let mut ansi = [0i8; 64];
-            KeBugCheckUnicodeToAnsi(
-                &(*le).BaseDllName as *const _ as PUNICODE_STRING,
-                ansi.as_mut_ptr(), 64);
-            crate::dbg_print!(b"***     %p = %s+0x%lX\n\0",
-                pc as ULONG_PTR as PVOID, ansi.as_ptr(),
-                (pc as ULONG_PTR - base as ULONG_PTR) as ULONG);
-            true
-        } else {
-            crate::dbg_print!(b"***     %p = <no module>\n\0", pc as ULONG_PTR as PVOID);
-            false
-        }
-    }
     if !ksym(eip) {
         // EIP outside every module means a call through a bad pointer, and then
         // EBP is whatever the garbage "function" left -- the chain below walks
@@ -1649,7 +1631,34 @@ unsafe fn i386_trap_frame_backtrace(TrapFrame: ULONG_PTR) {
             i += 1;
         }
     }
-    // EBP-chain backtrace (frame-pointer builds; bail on bad links)
+    i386_ebp_chain(ebp);
+}
+
+/// i386: print a module+offset line for `pc`; false when it is in no loaded image.
+#[cfg(target_arch = "x86")]
+unsafe fn ksym(pc: u32) -> bool {
+    let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+    let mut in_kernel: BOOLEAN = 0;
+    let base = KiPcToFileHeader(pc as ULONG_PTR as PVOID, &mut le, 0u8, &mut in_kernel);
+    if !base.is_null() && !le.is_null() {
+        let mut ansi = [0i8; 64];
+        KeBugCheckUnicodeToAnsi(
+            &(*le).BaseDllName as *const _ as PUNICODE_STRING,
+            ansi.as_mut_ptr(), 64);
+        crate::dbg_print!(b"***     %p = %s+0x%lX\n\0",
+            pc as ULONG_PTR as PVOID, ansi.as_ptr(),
+            (pc as ULONG_PTR - base as ULONG_PTR) as ULONG);
+        true
+    } else {
+        crate::dbg_print!(b"***     %p = <no module>\n\0", pc as ULONG_PTR as PVOID);
+        false
+    }
+}
+
+/// i386: walk an EBP chain from `ebp`, one ksym line per return address (frame-pointer
+/// builds; bails on a bad link).
+#[cfg(target_arch = "x86")]
+unsafe fn i386_ebp_chain(ebp: u32) {
     let mut bp = ebp;
     let mut n = 0;
     while n < 16 && bp > 0x1000 {
@@ -1665,7 +1674,6 @@ unsafe fn i386_trap_frame_backtrace(TrapFrame: ULONG_PTR) {
         bp = next;
         n += 1;
     }
-
 }
 
 #[no_mangle]
@@ -1698,6 +1706,14 @@ pub unsafe extern "system" fn KeBugCheckEx(
     #[cfg(target_arch = "x86")] // nolint: cfg-vs-c (bugcheck backtrace diagnostic, Rust-only)
     if matches!(BugCheckCode, 0x1E | 0x50 | 0xBE) && BugCheckParameter3 > 0x80000000 {
         i386_trap_frame_backtrace(BugCheckParameter3);
+    } else {
+        // No trap frame to start from (0x0F SPIN_LOCK_ALREADY_OWNED and the like): walk the
+        // caller's own chain. The i386 SPECIALPOOL=* 0x0F printed only the lock, and the
+        // stack it did print came from a second 0x0F raised while unwinding the first.
+        let ebp: u32;
+        core::arch::asm!("mov {}, ebp", out(reg) ebp, options(nomem, nostack));
+        crate::dbg_print!(b"***   caller stack:\n\0");
+        i386_ebp_chain(ebp);
     }
     // Self-symbolicate: any parameter that lands inside a loaded image prints
     // module+offset right in the banner, so post-boot-marker crashes are
