@@ -935,8 +935,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   The source path back returns the error with no wait at each step: AC97
   `NewStream`/`ValidateFormat`, portcls `CPortFilterWaveCyclic::NewIrpTarget`
   (`Pin->Release()`, then return) and `PcCreatePinDispatch` (completes the IRP), ks-rust
-  `KspCreate`, and iomgr-rust `IopParseDevice`'s failed-create branch. So the next step is a
-  kernel stack of the stuck thread (GDB). Repro: `dsound_probe.exe ks` from
+  `KspCreate`, and iomgr-rust `IopParseDevice`'s failed-create branch. Temporary prints
+  confirmed it at run time (2026-11-22, `20261122-154631-zl485J-smoke-amd64`): the refused
+  create is completed in `PcCreatePinDispatch` and returns `c000000d` out of `KspCreate`.
+  After that, nothing from the process reaches portcls again, while its thread stays in
+  `NtCreateFile`. So the block is either (A) after `KspCreate`, in `IopParseDevice`'s
+  failed-create cleanup (file object and related-file-object dereference), or (B) in the
+  probe's next create (pin 1) before it reaches portcls. The probe's records are lost on a
+  timeout, so which create is stuck is unknown. The next step is to print around those two
+  points, or get a GDB stack. Repro: `dsound_probe.exe ks` from
   `tools/payloads/modrun/probes/dsound.c`. It is not a suite case, because modrun cannot reap
   a process stuck in the kernel. Artifact: `/tmp/vibeos-cli/20261122-140435-Zsju6z-smoke-amd64`.
 - **Running out of memory while loading Mesa BUGCHECKed 0x1E (FIXED by 2026-11-22; found
