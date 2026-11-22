@@ -154,8 +154,6 @@ unsafe extern "system" {
     fn HalpReadPCIConfig(BusHandler: PBUS_HANDLER, Slot: PCI_SLOT_NUMBER, Buffer: PVOID, Offset: ULONG, Length: ULONG);
     fn HalpWritePCIConfig(BusHandler: PBUS_HANDLER, Slot: PCI_SLOT_NUMBER, Buffer: PVOID, Offset: ULONG, Length: ULONG);
     fn HalpQueryPciRegistryInfo() -> PPCI_REGISTRY_INFO_INTERNAL;
-    fn HalpGetPCIData(BusHandler: PBUS_HANDLER, RootHandler: PBUS_HANDLER, Slot: PCI_SLOT_NUMBER, Buffer: PVOID, Offset: ULONG, Length: ULONG) -> ULONG;
-    fn HalpSetPCIData(BusHandler: PBUS_HANDLER, RootHandler: PBUS_HANDLER, Slot: PCI_SLOT_NUMBER, Buffer: PVOID, Offset: ULONG, Length: ULONG) -> ULONG;
     fn HalpAdjustPCIResourceList(BusHandler: PBUS_HANDLER, RootHandler: PBUS_HANDLER, pResourceList: *mut PIO_RESOURCE_REQUIREMENTS_LIST) -> NTSTATUS;
     fn HalpAssignPCISlotResources(BusHandler: PBUS_HANDLER, RootHandler: PBUS_HANDLER, RegistryPath: PUNICODE_STRING, DriverClassName: PUNICODE_STRING, DriverObject: PDRIVER_OBJECT, DeviceObject: PDEVICE_OBJECT, SlotNumber: ULONG, AllocatedResources: *mut PCM_RESOURCE_LIST) -> NTSTATUS;
     fn HalpGetISAFixedPCIIrq(BusHandler: PBUS_HANDLER, RootHandler: PBUS_HANDLER, PciSlot: PCI_SLOT_NUMBER, Range: *mut ntkrnl_sys::hal_ddk::PSUPPORTED_RANGE) -> NTSTATUS;
@@ -409,8 +407,11 @@ pub unsafe extern "system" fn HalpAllocateAndInitPciBusHandler(
         core::mem::size_of::<PCIPBUSDATA>() as ULONG,
     );
 
-    (*Bus).GetBusData = Some(core::mem::transmute(HalpGetPCIData as usize));
-    (*Bus).SetBusData = Some(core::mem::transmute(HalpSetPCIData as usize));
+    // pcibus.rs's own definitions, not the extern re-declarations this file used to carry:
+    // those said `Slot: PCI_SLOT_NUMBER` where the definitions (and the slot) say ULONG,
+    // and a `transmute(f as usize)` hid the difference. As `Some(f)`, rustc checks it.
+    (*Bus).GetBusData = Some(crate::x86::pcibus::HalpGetPCIData);
+    (*Bus).SetBusData = Some(crate::x86::pcibus::HalpSetPCIData);
     (*Bus).GetInterruptVector = Some(HalpGetPCIIntOnISABus);
     (*Bus).AdjustResourceList = Some(HalpAdjustPCIResourceList);
     (*Bus).AssignSlotResources = Some(HalpAssignPCISlotResources);
@@ -422,8 +423,8 @@ pub unsafe extern "system" fn HalpAllocateAndInitPciBusHandler(
     (*BusData).CommonData.Version = PCI_DATA_VERSION;
     (*BusData).CommonData.ReadConfig = Some(HalpReadPCIConfig);
     (*BusData).CommonData.WriteConfig = Some(HalpWritePCIConfig);
-    (*BusData).CommonData.Pin2Line = Some(core::mem::transmute(HalpPCIPin2ISALine as usize));
-    (*BusData).CommonData.Line2Pin = Some(core::mem::transmute(HalpPCIISALine2Pin as usize));
+    (*BusData).CommonData.Pin2Line = Some(core::mem::transmute::<unsafe extern "system" fn(PBUS_HANDLER, PBUS_HANDLER, PCI_SLOT_NUMBER, PPCI_COMMON_CONFIG), _>(HalpPCIPin2ISALine));
+    (*BusData).CommonData.Line2Pin = Some(core::mem::transmute::<unsafe extern "system" fn(PBUS_HANDLER, PBUS_HANDLER, PCI_SLOT_NUMBER, PPCI_COMMON_CONFIG, PPCI_COMMON_CONFIG), _>(HalpPCIISALine2Pin));
     (*BusData).MaxDevice = PCI_MAX_DEVICES;
     (*BusData).GetIrqRange = Some(HalpGetISAFixedPCIIrq);
 
