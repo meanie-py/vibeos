@@ -59,8 +59,13 @@ def wait_file(path):
 def wait_gone(pid):
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        path = Path(f"/proc/{pid}/stat")
-        if not path.exists() or path.read_text().rsplit(")", 1)[1].split()[0] == "Z":
+        # Read, don't check-then-read: the process can be reaped between an exists() and
+        # the read, which raised FileNotFoundError out of a passing test.
+        try:
+            stat = Path(f"/proc/{pid}/stat").read_text()
+        except (FileNotFoundError, ProcessLookupError):
+            return
+        if stat.rsplit(")", 1)[1].split()[0] == "Z":
             return
         time.sleep(0.02)
     pytest.fail(f"owned diagnostic fixture {pid} survived owner cleanup")

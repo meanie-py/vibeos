@@ -33,6 +33,8 @@ cmake\cmake.exe -E tar tfz C:\TEMP\cm.tgz
 cmake\cmake.exe -E environment
 cmake\cmake.exe -E capabilities
 cmake\cmake.exe -E make_directory C:\TEMP\gpghome
+# w32sock.c: libassuan's Windows socket setup step by step (gpg-agent's bind fails); Windows' answers in w32sock.win11.txt.
+w32sock\w32sock.exe C:\TEMP\w32sock.sock
 gnupg\gpg.exe --version
 gnupg\gpg.exe --homedir C:\TEMP\gpghome --print-md SHA256 X:\reactos\system32\ntdll.dll
 gnupg\gpg.exe --batch --homedir C:\TEMP\gpghome --symmetric --passphrase vibeos --pinentry-mode loopback -o C:\TEMP\ntdll.gpg X:\reactos\system32\ntdll.dll
