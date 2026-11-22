@@ -133,6 +133,7 @@ PORTED = frozenset(
         "scan_noop_goto",
         "scan_opaque_ptr_arith",
         "scan_ptr_highword_mask",
+        "scan_queued_lock_plain_acquire",
         "scan_raw_bitfield",
         "scan_raw_uart_writes",
         "scan_typed_byte_copy",

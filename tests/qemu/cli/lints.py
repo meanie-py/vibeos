@@ -1571,6 +1571,12 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A plain spinlock call (SpinLockGuard, KeAcquireSpinLock...) on a lock the kernel takes
+    # as an in-stack QUEUED lock (KTHREAD.ApcQueueLock, KPROCESS.ProcessLock). Harmless on
+    # one CPU; on several the plain release zeroes a queued waiter's tail and its release
+    # spins forever. iomgr's stranded-completion check wedged the -smp 4 Chrome payload 3/3.
+    # Rust-only (tools/vibeos-lint); baseline is EMPTY.
+    specs.append(("scan_queued_lock_plain_acquire", ["MISSING"], "stdout"))
     # A `++`/`--` inside a CALL ARGUMENT whose effect a later operand of the same expression
     # observes. Rust has no `++`, so the translation must split it, and where the second
     # statement lands is the whole meaning — msvcrt's demangler hoisted one out of an `if`

@@ -1,28 +1,30 @@
 # shell32 COM/ATL C++ → Rust (lane: `shell32-com`)
 
-## RESUME HERE (2026-11-08, fleet wind-down): wined3d flipped, graded, fixes submitted
+## RESUME HERE (2026-11-21): i386 DirectX on a real GL, both fixes landed
 
-wined3d (d3dwine.dll) is all Rust: 29 TUs in `d3dwine-rust`, body-less `d3dwine-cargo` cell. It
-landed in master d5078535e54 (batch 161). It cost **$6.42** of the $15 Haiku budget by the
-`port status d3dwine` ledger. Every paid run is in `tools/rustconv/.responses/`, and every module
-is hand-banked (`port hand d3dwine <file>.rs:*`), so a `$0` replay reproduces the tree.
-- **Graded 2026-11-08:** modrun d3d8/d3d9/ddraw, C front ends on `d3dwine_c` against the Rust
-  ones. Every case is byte-identical on all three arches, apart from the declared XFAILs.
-  Grading found two shipping bugs: the CS wait-event `!` swallowed the wake-flag CAS (every GL
-  device hung on amd64/arm64), and the adapter description copied a pointer's bytes. Both are
-  fixed in 3e46315e391, and the field manual has entries for both classes.
-- **Submitted to merge-integrator, verdicts pending:**
-  - 3e46315e391, the two fixes, rust-port-status graded, plus 20e427282fd. Queued in batch 169.
-  - 5b2b609f732, modrun sends each exit line twice; the live capture had lost one on arm64.
-- **Next:** read both verdicts (`land-status`, or the integrator's message) and fix anything
-  bounced.
-- **Owed:** the i386 GL address-space bug ("second wined3d init finds 1.5G reserved", roadmap
-  Known bugs; the `d3d9.device-i386` XFAIL keeps its evidence in every i386 modrun log). It also
-  fails under the C oracle.
-- **Grading recipe:** `VIBEOS_PAYLOAD=modrun MODRUN_SUITES="d3d8,d3d9,ddraw" ./vibeos-cli build
-  --arch <a>` then `smoke --arch <a> --payload modrun`. If a case hangs, the probe's `trace` arg
-  puts wined3d's TRACE on the serial. Symbolize with `./vibeos-cli sym --arch <a> --rebuild` (a
-  stale index names the old C).
+wined3d (d3dwine.dll) has been all Rust since master d5078535e54 ($6.42 of a $15 Haiku budget,
+every module hand-banked so a `$0` replay reproduces it). On 2026-11-21 the i386 GL cases
+came up:
+- **0607914401c, landed as 6f395eed157:** the user-mode heap (`rtl-heap` `RtlpDeCommitFreeBlock`,
+  inherited C bug) left freed blocks' decommitted ranges a page too small to reuse. Every
+  Mesa softpipe context therefore reserved a fresh doubling segment, and a second wined3d
+  init in one i386 process ran out of address space. Roadmap Known bugs entry: FIXED.
+- **d90bbcff656, landed as a3d73c0af8b:** c2rust's amd64 `offsetof` folds in wined3d's light walks (232,
+  where i386 needs 228), in ddraw's `DDSURFACEDESC2` compare table and in a depth-stencil
+  compare. `scan_magic_offsets` now flags both shapes.
+- **Grades:** i386 modrun (mesa, d3d8, d3d9, ddraw) passes 9/9, so every d3d case is
+  byte-identical to the C on all three arches. The exceptions are the C oracle's own XFAIL
+  (`d3d8.device-invalid`) and one declared divergence.
+- **Next:** the owed item below.
+- **Owed:** when every attribs request fails, wined3d silently keeps a compatibility-profile
+  bootstrap context and then faults in Mesa's legacy path. It should fail the adapter init
+  loudly (roadmap, under the FIXED heap entry).
+- **Recipe:** `VIBEOS_PAYLOAD=modrun MODRUN_SUITES="mesa,d3d8,d3d9,ddraw" ./vibeos-cli build
+  --arch <a>`, then `smoke --arch <a> --payload modrun`. Then re-grade with the same
+  `MODRUN_SUITES` set: `python3 tools/payloads/modrun/modrun.py grade <serial> --arch <a>`.
+  The smoke's own grade counts suites that are not on the media. The probe arg `trace` gives
+  wined3d's `+d3d` trace plus the `dx_vm` address-space and heap-segment report; `shader`
+  gives only the generated GLSL.
 
 **Status:** COMPLETE (opened 2026-07-14, closed 2026-07-18). All 33 activatable
 `shell32` object-map entries are Rust-owned. Worktree `vibeos-shell32-com`, branch

@@ -612,7 +612,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Next: a `farm` run of amd64-bios, to get a rate and a second sample.
 
 - **arm64: committed memory faults under concurrent system-process allocation (open,
-  intermittent, found 2026-11-08, upstream-sync lane; owner unassigned, MM).** kmtest
+  intermittent, found 2026-11-08; owner: conformance lane since 2026-11-21, MM).** kmtest
   ZwAllocateVirtualMemory's `SystemProcessTestWorker` runs two system threads that allocate in
   the system process at the same time. One of them got STATUS_SUCCESS committing a chunk, then
   faulted with 0xC0000005 both writing it (`.c:90`) and reading it back (`.c:76`, `Match = 0`
@@ -620,7 +620,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`/tmp/vibeos-cli/20261108-074334-c9UMvk-conformance-arm64`); the retry passed, and the
   batch (shell32 d3dwine) touches no MM. Seen again in batch 165's gate
   (`/tmp/vibeos-cli/20261108-095623-oBpdmQ-conformance-arm64`, same three lines, passed on
-  retry): 2 of 5 gates. The signature points to a race between concurrent
+  retry): 2 of 5 gates. Third sighting in batch 178's gate (2026-11-21,
+  `/tmp/vibeos-cli/20261121-204507-E0MV1s-conformance-arm64`, same `.c:76/90/93`, passed on
+  retry), preserved at
+  `~/vibeos-flake-farm/fails/auto/20261121-204507-DGwlpE-conformance-arm64-clean-but-ratchet-regression`.
+  That red read only "native controller exited 1" until the runner learned to name the
+  regression from the rounds. **Not reproduced on an idle host (2026-11-21): 0 of 20** runs
+  of the test alone on a fresh boot (`20261121-213950-cpoLef-conformance-arm64`, each fails
+  only the baselined `.c:145/246`), and **0 of 6** full sweeps
+  (`conformance --arch arm64 --repeat 6`, `20261121-214937-c1A6Nr`). Same config as the gate
+  (smp 0, MP kernel); the difference is load: the gate's failing sweep took 105 s against
+  69-89 s idle, because the gate boots three arches at once. A 6-round soak beside a
+  live gate (`20261121-221311-moK2xM`, load average 24.6 falling to 7.6) was also clean, but
+  only its first round (125 s) ran under gate-like load: 0 of 32 samples overall. So it is
+  timing-dependent; the next repro is a soak under SUSTAINED host load (run the arm64 repeat beside the other arches'
+  sweeps), then a tripwire on the commit/fault path. The signature points to a race between concurrent
   commits in one process (PTE or page-table population, or the VAD), not to address-space
   layout. It is unrelated to 56755a2a231 (kernel32's user-mode sort-table mapping). Next:
   `farm --arches arm64` on the conformance payload to get a rate, then a tripwire on that
@@ -700,25 +714,35 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   since, and the console build has not been re-run. Next: stage the console build beside them
   to tell "console only" from "gone".
 
-- **amd64 Chrome payload: a Chrome thread sits Ready for 5-20 s without running (open, found
-  2026-11-07, graviton lane; parked 2026-11-08).** Seen as the sweep's hang sampler
-  (`tools/payloads/stackdump.h`) stalling in `GetThreadContext` on a Chrome thread. That stall
-  can no longer hang the payload: probes have a 20 s deadline and resume a target they left
-  suspended (landed `108be580165`); every sweep since reaches `done`. The flush the thread
-  was first seen in was a coincidence (`flushprobe`: flushes are fast and flat). What is
-  measured: at the deadline the target is **Ready** (ThreadState 1) with no CPU time accrued
-  and a handful of context switches; kernel-side, the context APC is queued and deliverable
-  (`KernelApcPending=1`, APCs not disabled, WaitIrql 0) on a thread whose NextProcessor is 0,
-  at priority 5-7, so it is not being picked to run. Unexplained: why a Ready thread on CPU 0
-  waits seconds (starvation behind busier threads until the balance manager's 300-tick boost,
-  or a ready-list/summary inconsistency). Separately, multi-process Chrome trips the §9.56
-  `[RQ5A]` drain-insert guard a few times per boot (none in the 29 single-process boots before
-  2026-11-06): always a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14,
-  the ERESOURCE owner boost, with the thread's stale links forming a short ring that reaches no
-  PRCB list head. One boot stalled with no RQ5A at all, so RQ5A is not the stall's cause; it may
-  be a false positive of the guard on stale union links. Diagnostics parked on branch
-  `graviton-diag-ctxwait` (`74f086b0488`). Next: see the RESUME HERE in
-  `docs/engineering/active-lanes/graviton-spike-plan.md`.
+- **amd64 Chrome payload: a Chrome thread sits Ready for 5-20 s without running (EXPLAINED
+  2026-11-21, graviton lane: CPU saturation on the smoke's one vCPU, not a scheduler bug).**
+  Seen as the sweep's hang sampler (`tools/payloads/stackdump.h`) stalling in
+  `GetThreadContext` on a Chrome thread; probes have a 20 s deadline and resume a target they
+  left suspended (`108be580165`), so it no longer hangs the payload. The smoke boots ONE vCPU
+  unless `--smp N` is passed, so the November "Ready on CPU 0" evidence was the only CPU. A
+  `[STARVE]` print at every balance-set starvation boost (TEMP branch `graviton-diag-ctxwait`
+  @ `a09f763602a`; run 20261121-180654-HgHYdp, 3/3 payloads pass) shows 200-270 boosts per
+  boot: priority 6-7 Chrome threads Ready for 304-363 ticks while the CPU runs priority 8-13
+  threads of the boot's companion apps (`gui64.exe`/`win64.exe` x64 guests, `osk.exe`,
+  `magnify.exe`, `taskmgr.exe` under WOW64), then rescued by the 300-tick boost as on Windows.
+  The probe's own helper thread starves the same way, which is why a probe could time out
+  after the kernel's context wait had already completed. Untested: whether any of those apps
+  is busier than it should be (Magnifier and Task Manager poll by design). Separately,
+  multi-process Chrome trips the §9.56 `[RQ5A]` drain-insert guard a few times per boot, always
+  a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14 (the ERESOURCE owner
+  boost) whose stale links form a short ring reaching no PRCB list head (2026-11-21: 2 hits in 1 of
+  3 one-vCPU boots, 0 in 3 four-vCPU boots). Still owed to smp-bringup: settle whether that guard is a false positive on
+  stale union links. Under `--smp 4` the payload wedged on a different bug, fixed below.
+
+- **amd64 `-smp 4` Chrome payload: a CPU spins forever releasing a thread's ApcQueueLock
+  (FIXED 2026-11-21, graviton lane).** 3 of 3 boots wedged right after chrome.exe spawned
+  (run 20261121-190024-EhsfzY; desktop boots passed): one CPU in
+  `KiReleaseApcLockFromSynchLevel`'s wait-for-successor loop, three halted. iomgr's
+  stranded-completion check took `KTHREAD.ApcQueueLock`, a queued lock, with a plain
+  `SpinLockGuard`; on SMP the two protocols corrupt each other. Fixed in `iomgr-rust`
+  `irp.rs`; new source rule `scan_queued_lock_plain_acquire`. Verified: 3/3 `-smp 4` Chrome
+  payloads reach `done` (run 20261121-221337-UwSqhY, 36 min against 158). Field manual: "One
+  lock word, two protocols".
 
 - **OptiPlex 9020: freeldr reset the board after loading the boot drivers (FIXED 2026-11-08,
   graviton lane).** Every netboot reset to coreboot ~165 ms after `[FLDR] phase: boot drivers
@@ -3807,8 +3831,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   them**, so `vibeos-cli check` covers them continuously and the staticlib never sees their
   symbols. Deliberately not invented inside the change repairing the incident.
 
-- **`vibeos-cli conformance` exits 0 on media that launched ZERO tests. UNOWNED**
-  (2026-09-19). Verified in an artifact: `launched: 0`, `sweep_rc: 1`, and every baseline row
+- **`vibeos-cli conformance` exits 0 on media that launched ZERO tests. FIXED 2026-11-21
+  (conformance lane):** a hand run now fails by default on any regression, bad launch or
+  kernel assertion, and a zero-launch sweep reports every row as "never launched", which is
+  a regression. `--report-only` restores exit 0 but records verdict WARN. Original report
+  (2026-09-19): Verified in an artifact: `launched: 0`, `sweep_rc: 1`, and every baseline row
   reported as the literal string **`in baseline (OK) but never launched`**. A test that never
   ran is scored **OK**, so zero launches means zero regressions means
   `ratchet holds: no regressions vs baseline`, exit 0. Two guards exist and neither covers

@@ -3904,6 +3904,13 @@ UNCOVERED: dict[str, str] = {
         "must-not cases pin the u32 rop, the version DWORD, the call-proc `== 0xFFFF0000` "
         "form, the fixed `& !0xFFFF` form and C quoted in a comment."
     ),
+    "scan_queued_lock_plain_acquire": (
+        "main() walks the real tree, but the decision is scan_code(), a pure function over a "
+        "string, driven directly in tools/vibeos-lint/src/rules/queued_lock_plain_acquire.rs. "
+        "Its fire cases are the line that shipped (iomgr's SpinLockGuard on ApcQueueLock) and "
+        "a multi-line KeAcquireSpinLock on ProcessLock; its must-not cases pin the queued "
+        "helpers, plain locks on other fields, a comment and a function definition."
+    ),
     "scan_unsigned_vs_zero": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "
         "string, driven directly in tools/vibeos-lint/src/rules/unsigned_vs_zero.rs. Its fire "

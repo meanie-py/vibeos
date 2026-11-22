@@ -52,6 +52,7 @@ pub mod narrow_vs_wide_literal;
 pub mod noop_goto;
 pub mod opaque_ptr_arith;
 pub mod ptr_highword_mask;
+pub mod queued_lock_plain_acquire;
 pub mod raw_bitfield;
 pub mod raw_uart_writes;
 pub mod typed_byte_copy;
@@ -285,6 +286,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(cdecl_alias::CdeclAlias),
         Box::new(narrow_vs_wide_literal::NarrowVsWideLiteral),
         Box::new(ptr_highword_mask::PtrHighwordMask),
+        Box::new(queued_lock_plain_acquire::QueuedLockPlainAcquire),
         Box::new(bindgen_padding_index::BindgenPaddingIndex),
         Box::new(raw_uart_writes::RawUartWrites),
         Box::new(fourcc_literals::FourccLiterals),

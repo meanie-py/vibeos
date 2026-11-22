@@ -13746,6 +13746,22 @@ port of an upstream fix that missed half of it) — a livelock no smoke boot had
 an unexplained HANG_TIMEOUT. A new hot lock exercises the lock primitive's slow paths far more
 than boot ever did.
 
+### One lock word, two protocols: a plain spinlock on a QUEUED lock wedges a CPU in the release
+**Symptom:** at `-smp 4` the amd64 Chrome payload wedged 3 of 3 boots shortly after chrome.exe
+spawned; desktop boots at `-smp 4` passed. Serial stopped mid-line. `hang-cpustate.txt`: one CPU
+at `KiReleaseApcLockFromSynchLevel+0x5a` (the in-stack queued release's wait-for-successor
+`pause` loop) with RDX = a thread's `ApcQueueLock` (`KTHREAD+0x78`), the other three halted in
+the HAL idle.
+**Cause:** `KTHREAD.ApcQueueLock` is an in-stack QUEUED lock everywhere the kernel takes it
+(`KiAcquireApcLock*`). A Rust-only iomgr diagnostic (`iop_check_stranded_completion`) took it
+with a plain `SpinLockGuard`. The plain release writes 0 over a queued waiter's tail, so that
+waiter's release finds a tail that is not its own and waits forever for a successor. On one CPU
+both protocols only raise IRQL, so it never showed.
+**Fix:** take it with the queued helpers (`KiAcquireApcLockRaiseToDpc` / `KiReleaseApcLock`).
+`scan_queued_lock_plain_acquire` (`./vibeos-cli check`) rejects a plain spinlock call on
+`ApcQueueLock` or `ProcessLock`. Note that no `[CENSUS]`, `[RQRUNNING]` or watchdog line names
+this: disassemble at the stuck RIP and read which loop it is (`vibeos-cli sym` resolves it).
+
 ### An object linked into a shared list before it is initialized
 **Symptom:** amd64 `-smp 2`, about 1 boot in 5 at worst: BUGCHECK 0x1E reading NULL+0x90 in
 win32k `ProcessTimers`, on the raw input thread, after the desktop is up.
