@@ -10927,6 +10927,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wdmaud_drv-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "wdmaud_drv-rust"
 version = "0.1.0"
 dependencies = [

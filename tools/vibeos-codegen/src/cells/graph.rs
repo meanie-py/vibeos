@@ -1186,9 +1186,16 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
         .cloned()
         .collect();
     if named.len() != 1 {
+        // The module's own variant, by name: `<target>_rust`, with a dotted target's `.` as
+        // `_` (wdmaud.drv's is wdmaud_drv_rust; its wdmaud_drv_mmixer_rust is a static lib).
+        let stem = target.replace('.', "_");
         named = variants
             .keys()
-            .filter(|n| *n == &format!("{target}_rust") || n.strip_suffix("_rust") == Some(target))
+            .filter(|n| {
+                *n == &format!("{target}_rust")
+                    || n.strip_suffix("_rust") == Some(target)
+                    || n.strip_suffix("_rust") == Some(stem.as_str())
+            })
             .cloned()
             .collect();
         if named.is_empty() {
