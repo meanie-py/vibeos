@@ -196,9 +196,9 @@ static void check_owner_veto(DEVINST owner, const char *what)
     CHECK(node_started(owner, NULL), "the %s stopped after refusing\n", what);
 }
 
-/* Device Manager's Disable/Enable: the class installer's DIF_PROPERTYCHANGE, global scope,
- * through the W entry points devmgr uses (SetupDiSetClassInstallParamsA is a stub, as in
- * Wine and upstream). */
+/* Device Manager's Disable/Enable: the class installer's DIF_PROPERTYCHANGE, global scope.
+ * Disable goes through the W entry points devmgr uses; enable through the A ones, which
+ * upstream and Wine never implemented (SetupDiSetClassInstallParamsA returned FALSE). */
 static BOOL change_state(const char *id, DWORD state)
 {
     WCHAR wid[MAX_DEVICE_ID_LEN];
@@ -208,11 +208,24 @@ static BOOL change_state(const char *id, DWORD state)
     SP_PROPCHANGE_PARAMS pc = { { sizeof(SP_CLASSINSTALL_HEADER), DIF_PROPERTYCHANGE }, state, DICS_FLAG_GLOBAL, 0 };
     const char *step = "SetupDiCreateDeviceInfoList";
     BOOL ok = set != INVALID_HANDLE_VALUE;
-    if (ok && !(step = "SetupDiOpenDeviceInfo", SetupDiOpenDeviceInfoW(set, wid, NULL, 0, &data)))
+    BOOL ansi = state == DICS_ENABLE;
+    if (ok && !(step = "SetupDiOpenDeviceInfo",
+                ansi ? SetupDiOpenDeviceInfoA(set, id, NULL, 0, &data)
+                     : SetupDiOpenDeviceInfoW(set, wid, NULL, 0, &data)))
         ok = FALSE;
-    if (ok && !(step = "SetupDiSetClassInstallParams",
-                SetupDiSetClassInstallParamsW(set, &data, &pc.ClassInstallHeader, sizeof(pc))))
+    if (ok && !(step = ansi ? "SetupDiSetClassInstallParamsA" : "SetupDiSetClassInstallParamsW",
+                ansi ? SetupDiSetClassInstallParamsA(set, &data, &pc.ClassInstallHeader, sizeof(pc))
+                     : SetupDiSetClassInstallParamsW(set, &data, &pc.ClassInstallHeader, sizeof(pc))))
         ok = FALSE;
+    if (ok && ansi) {
+        /* What the A entry point stored is what the W side reads back. */
+        SP_PROPCHANGE_PARAMS back = { { sizeof(SP_CLASSINSTALL_HEADER) } };
+        DWORD need = 0;
+        step = "SetupDiGetClassInstallParamsW";
+        ok = SetupDiGetClassInstallParamsW(set, &data, &back.ClassInstallHeader, sizeof(back), &need) &&
+             back.ClassInstallHeader.InstallFunction == DIF_PROPERTYCHANGE && back.StateChange == state &&
+             back.Scope == DICS_FLAG_GLOBAL;
+    }
     if (ok && !(step = "SetupDiCallClassInstaller", SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, set, &data)))
         ok = FALSE;
     if (!ok)

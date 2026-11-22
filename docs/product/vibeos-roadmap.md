@@ -673,7 +673,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `CreateThread` had returned, so the likelier stall is the final `SetServiceStatus(RUNNING)`
   or the SCM's handling of it: expect checkpoint 3. Not seen in QEMU (arm64 probe: RUNNING
   after 1 s). 2026-11-21: seven more `pi5 boot`s of one image (`20261121-171521-CbZh5c` through
-  `20261121-174647-oTgu0G`) all had PlugPlay RUNNING within 1 s, so the rate so far is 1 in 9.
+  `20261121-174647-oTgu0G`), and eight more that evening (`20261121-193315-9JgnTk` through
+  `20261121-202832-mKfexG`), all had PlugPlay RUNNING within 1 s, so the rate so far is 1 in 17.
   sysfbprobe prints the checkpoint (state 4 checkpoint 0 on those boots); the next stall names
   where it stopped.
 
@@ -751,7 +752,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     ejects) still REMOVEs a node's children before its siblings are asked, so a veto there
     leaves part of the subtree torn down.
   - `CONFIGFLAG_DISABLED` honoured at boot is not yet proven by a reboot test.
-  - `SetupDiSetClassInstallParamsA` is still a stub (as in Wine/upstream).
+  - `SetupDiSetClassInstallParamsA` and `SetupDiGetClassInstallParamsA/W` were stubs (as in
+    Wine/upstream); implemented 2026-11-21, and sysfbprobe's root enable now goes through the
+    A entry point with a W readback (amd64 `20261121-202950-RndahK`, i386 `20261121-203902-TYmBQB`).
   - Failed-start root devices now stay in the tree with their problem code (Windows
     behaviour), instead of vanishing.
 
