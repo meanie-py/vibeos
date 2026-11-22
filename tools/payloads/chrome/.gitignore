@@ -14,3 +14,4 @@ grepfile-*.exe
 gdiprobe-*.exe
 w32start-*.exe
 flushprobe-*.exe
+paintprobe-*.exe

@@ -53,6 +53,10 @@ binaries:
     dest: bin/flushprobe/flushprobe.exe
   - src: tools/payloads/chrome/gdiprobe-i386.exe
     dest: bin/gdiprobe/gdiprobe32.exe
+  - src: tools/payloads/chrome/paintprobe-{arch}.exe
+    dest: bin/paintprobe/paintprobe.exe
+  - src: tools/payloads/chrome/paintprobe-i386.exe
+    dest: bin/paintprobe/paintprobe32.exe
   - src: tools/payloads/chrome/w32start-bare.exe
     dest: bin/w32start/w32start-bare.exe
   - src: tools/payloads/chrome/w32start-crt.exe

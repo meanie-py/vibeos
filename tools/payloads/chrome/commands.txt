@@ -13,6 +13,10 @@ iocpprobe\iocpprobe.exe
 dupprobe\dupprobe.exe
 # msgprobe.c: Chrome's UI message pump and its one posted kMsgHaveWork; Windows' answers in msgprobe.win11.txt.
 msgprobe\msgprobe.exe
+# paintprobe.c: does an untouched window with 30 buttons keep getting WM_PAINT, natively and
+# through WOW64? osk.exe used 27% of the one vCPU for whole boots, sampled painting its buttons.
+paintprobe\paintprobe.exe
+paintprobe\paintprobe32.exe
 # waitprobe.c: UnregisterWaitEx as ObjectWatcher::StopWatching uses it; Windows' answers in waitprobe.win11.txt.
 waitprobe\waitprobe.exe
 # sockprobe.c: a TCP connect the way Chrome's tcp_socket_win.cc makes one; Windows' answers in sockprobe.win11.txt.
