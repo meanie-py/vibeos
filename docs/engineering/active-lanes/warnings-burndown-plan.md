@@ -36,27 +36,20 @@ unexpected_cfgs 71, clashing_extern 67, unused_assignments 62, function_casts_as
 159, unreachable_code 11, forgetting_copy_types 11. The casts are worth a static check of
 their own (fn signature vs callback slot type). Control-plane owes the root fix: the store
 publishes diagnostics.jsonl per action, in a cold-rebuild window.
-**function_casts_as_integer probe (2026-11-22, not landed).** The `Some(F)` probe compiled
-`Some(core::mem::transmute(F as usize))` (102 sites, 12 files) as `Some(F)`, so rustc checks
-each function against its slot. Patch:
-`~/vibeos-rust-staging/warnings-burndown/fcai-some-probe.patch`. arm64 clean. Findings on
-x86, in hal-rust:
-- REAL but latent: KdMapPhysicalMemory64 / KdUnmapVirtualAddress get the 3-arg
-  `HalpMapPhysicalMemory64Vista` / `HalpUnmapVirtualAddressVista` (busemul.rs:50/52,
-  bussupp.rs:1554/1556), while our island's slot type is the 2-arg pre-VISTASP1 typedef
-  (xdk/kdtypes.h:147-169). On i386 stdcall a caller would underpay the callee's pop. No
-  caller goes through the table today; fstub-rust's halstub.rs:367 already wraps a 2-arg
-  stub. Fix: settle the HAL's NTDDI against the island, then either the island's typedef
-  or a 2-arg shim like fstub's.
-- Nominal (same ABI, and the C casts the same way): dma.rs `*mut _ADAPTER_OBJECT` vs
-  `*mut _DMA_ADAPTER` (x14); bussupp.rs/bushndlr.rs `_PCI_SLOT_NUMBER` (4-byte union) vs
-  ULONG. They want a typed fn-pointer cast instead of the usize round trip, so the next
-  real mismatch cannot hide among them.
-- pic_pic.rs's 32 "system vs stdcall" errors on i686-pc-windows-gnu are present without the
-  probe too. That is an artifact of checking a kernel body on the user-mode triple (the
-  real i386 kernel cell is i686-kernel).
-Next: land the typed casts for the nominal ones, fix the Kd pair, then probe the
-non-`Some` shapes (`F as ULONG` into TSS Eip etc. are deliberate address uses).
+**function_casts_as_integer (2026-11-22): hal-rust done, 62 -> 0.**
+- fbd8609ed87: KdMap/KdUnmap slots take the 2-arg wrappers, not the 3-arg Vista routines.
+- 41af4775376: 86 `Some(transmute(f as usize))` -> `Some(f)` (hal 58, uniata 22,
+  usbaudio 6), kept only where they compile on every target.
+- 096af492bbe: the last 12 hal slots. DMA ones get typed transmutes. Two extern
+  re-declarations with wrong parameter lists were removed (bussupp's PCI get/set; bushndlr's
+  HalpAssignSlotResources, which used the bus-handler params for the dispatch routine).
+**Recipe for the rest** (ntoskrnl 27, iomgr 15, wmi 12, rtl-threadpool 10, ex 10, ps 9,
+fstub 4, others 1-2): rewrite to `Some(f)` -> compile every target and feature combination
+-> restore the lines that fail -> inspect each failure. It is either a nominal pointer type
+(typed `transmute::<real fn type, _>`) or a WRONG declaration (remove it, use the real
+definition). Check that `function_casts_as_integer` is gone by counting JSON codes.
+Non-`Some` shapes (`KiTrap08 as ULONG` into a TSS Eip, `_force_link() -> usize`) are
+deliberate address uses: they want `f as *const () as usize`, not a type check.
 
 **Use JSON, not `--message-format short`, to count a lint:** short format names the
 lint only on its first note per crate, so grepping it for a lint name reads 0.

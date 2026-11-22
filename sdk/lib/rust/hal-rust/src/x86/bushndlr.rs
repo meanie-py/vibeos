@@ -127,20 +127,10 @@ unsafe extern "fastcall" {
     fn KfReleaseSpinLock(SpinLock: *mut KSPIN_LOCK, OldIrql: KIRQL);
 }
 
-// HalpAssignSlotResources / HaliTranslateBusAddress / HaliFindBusAddressTranslation
-// are still in C (legacy/bussupp.c + pcibus.c).  Need full NTAPI signatures so
+// HaliTranslateBusAddress / HaliFindBusAddressTranslation are declared here
+// (legacy/bussupp.c + pcibus.c lineage); HalpAssignSlotResources is bussupp.rs's.  Need full NTAPI signatures so
 // the linker emits the right `_Name@N` stdcall decoration.
 unsafe extern "system" {
-    fn HalpAssignSlotResources(
-        BusHandler: PBUS_HANDLER,
-        RootHandler: PBUS_HANDLER,
-        RegistryPath: PUNICODE_STRING,
-        DriverClassName: PUNICODE_STRING,
-        DriverObject: PDRIVER_OBJECT,
-        DeviceObject: PDEVICE_OBJECT,
-        SlotNumber: ULONG,
-        AllocatedResources: *mut PCM_RESOURCE_LIST,
-    ) -> NTSTATUS;
     fn HaliTranslateBusAddress(
         InterfaceType: INTERFACE_TYPE,
         BusNumber: ULONG,
@@ -704,7 +694,12 @@ pub unsafe extern "system" fn HalpInitBusHandler() {
 
         // Three more dispatchers — common region in C (always compiled).
         HalPrivateDispatchTable.HalPciAssignSlotResources =
-            Some(core::mem::transmute(HalpAssignSlotResources as usize));
+            Some(crate::x86::bussupp::HalpAssignSlotResources);
+        // ^ bussupp.rs's definition. This file used to carry an extern declaration that gave
+        // it the BUS-HANDLER parameter list (BusHandler, RootHandler, RegistryPath, ..). That
+        // is wrong: the dispatch routine takes (RegistryPath, DriverClassName, .., BusType,
+        // BusNumber, SlotNumber, ..). Both total 32 bytes, so `@32` linked, and a
+        // `transmute(f as usize)` hid it. Nothing called through the lying declaration.
         HalPrivateDispatchTable.HalPciTranslateBusAddress =
             Some(HaliTranslateBusAddress);
         // C: `if (!HalFindBusAddressTranslation) HalFindBusAddressTranslation = ...`

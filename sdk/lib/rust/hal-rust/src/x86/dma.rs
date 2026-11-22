@@ -336,24 +336,29 @@ pub static mut HalpDmaOperations: DMA_OPERATIONS = unsafe {
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn HalpInitDma() {
     unsafe {
-        HalpDmaOperations.PutDmaAdapter = Some(core::mem::transmute(HalPutDmaAdapter as usize));
+        // The DMA_OPERATIONS slots take `*mut DMA_ADAPTER`; these routines take
+        // `PADAPTER_OBJECT`, whose first member is that DMA_ADAPTER (the C casts the same
+        // way). The typed transmute names each routine's real signature, so rustc checks it
+        // and a changed signature stops compiling, where `transmute(f as usize)` checked
+        // nothing.
+        HalpDmaOperations.PutDmaAdapter = Some(core::mem::transmute::<unsafe extern "system" fn(PADAPTER_OBJECT), _>(HalPutDmaAdapter));
         HalpDmaOperations.AllocateCommonBuffer =
             Some(HalAllocateCommonBuffer);
         HalpDmaOperations.FreeCommonBuffer =
             Some(HalFreeCommonBuffer);
         HalpDmaOperations.AllocateAdapterChannel =
-            Some(core::mem::transmute(IoAllocateAdapterChannel as usize));
+            Some(core::mem::transmute::<unsafe extern "system" fn(PADAPTER_OBJECT, PDEVICE_OBJECT, ULONG, PDRIVER_CONTROL, PVOID) -> NTSTATUS, _>(IoAllocateAdapterChannel));
         HalpDmaOperations.FlushAdapterBuffers =
-            Some(core::mem::transmute(IoFlushAdapterBuffers as usize));
+            Some(core::mem::transmute::<unsafe extern "system" fn(PADAPTER_OBJECT, PMDL, PVOID, PVOID, ULONG, BOOLEAN) -> BOOLEAN, _>(IoFlushAdapterBuffers));
         HalpDmaOperations.FreeAdapterChannel =
-            Some(core::mem::transmute(IoFreeAdapterChannel as usize));
+            Some(core::mem::transmute::<unsafe extern "system" fn(PADAPTER_OBJECT), _>(IoFreeAdapterChannel));
         HalpDmaOperations.FreeMapRegisters =
-            Some(core::mem::transmute(IoFreeMapRegisters as usize));
-        HalpDmaOperations.MapTransfer = Some(core::mem::transmute(IoMapTransfer as usize));
+            Some(core::mem::transmute::<unsafe extern "system" fn(PADAPTER_OBJECT, PVOID, ULONG), _>(IoFreeMapRegisters));
+        HalpDmaOperations.MapTransfer = Some(core::mem::transmute::<unsafe extern "system" fn(PADAPTER_OBJECT, PMDL, PVOID, PVOID, *mut ULONG, BOOLEAN) -> PHYSICAL_ADDRESS, _>(IoMapTransfer));
         HalpDmaOperations.GetDmaAlignment =
             Some(HalpDmaGetDmaAlignment);
         HalpDmaOperations.ReadDmaCounter =
-            Some(core::mem::transmute(HalReadDmaCounter as usize));
+            Some(core::mem::transmute::<unsafe extern "system" fn(PADAPTER_OBJECT) -> ULONG, _>(HalReadDmaCounter));
         HalpDmaOperations.GetScatterGatherList =
             Some(HalGetScatterGatherList);
         HalpDmaOperations.PutScatterGatherList =
