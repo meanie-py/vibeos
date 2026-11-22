@@ -1591,14 +1591,9 @@ pub extern "C" fn setlocale(_category: i32, _locale: *const i8) -> *mut i8 {
     core::ptr::null_mut()
 }
 
-// nameprep_char_type / nameprep_mapping — IDN/StringPrep tables (generated in
-// wine). Referenced only from the `#ifndef __REACTOS__` IDN nameprep path in
-// locale.c. Provide minimal symbols so the dead branch links; locale.rs's own
-// extern declares them as zero-length arrays, so any non-empty array works.
-#[no_mangle]
-pub static nameprep_char_type: [u16; 1] = [0];
-#[no_mangle]
-pub static nameprep_mapping: [WCHAR; 1] = [0];
+// nameprep_char_type / nameprep_mapping (RFC 3454 StringPrep tables, generated in Wine) are
+// the real tables now: client/idn.rs includes normaliz-rust's generated copy, which defines
+// both symbols, so locale.rs's extern declarations resolve to them too.
 
 // LCIDToLocaleName is kernel32-vista-rust's (locale.rs), which kernel32.dll also
 // links. A failing stub here was a duplicate symbol that only lost by link order;
