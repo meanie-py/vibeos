@@ -68,7 +68,11 @@ payload: `VIBEOS_PAYLOAD=k32winetest ./vibeos-cli build --arch i386 --winetests 
      Ethiopic, Yi a0xx, dingbats 27xx), and Windows 10's handling of combining marks
      (26/27, 72/74, 230-239, 253-255). That is the Windows-10-era table plus Wine's newer
      compare; design first. Building the CompareString half at 0x600 would show how many
-     of the same pairs ntsort's compare gets right.
+     of the same pairs ntsort's compare gets right. **Blocked on the owner**: the tree has only XP's
+     sortkey.nls/sorttbls.nls (media/nls); Wine builds its sortdefault.nls from Microsoft's
+     published "Windows Sorting Weight Table" files, so this needs that data downloaded
+     and committed, which is the owner's call (asked 2026-11-22, same question as item 2's
+     Unicode data).
   2. **Unicode normalization, ~4**: no NFC/NFKC data in the tree and no Rust
      RtlNormalizeString (stub). Blocks IdnToNameprepUnicode item 8 (5767: NFKC + B.2 case
      fold), IdnToUnicode's unassigned check (5864/5869: RFC 3454 A.1) and
