@@ -619,15 +619,10 @@ pub unsafe extern "C" fn WdmAudSetWaveDeviceFormatByLegacy(
     DeviceInfo.DeviceIndex = DeviceId as ULONG_PTR;
     DeviceInfo.u.WaveFormatEx.cbSize = (*WaveFormat).cbSize;
     DeviceInfo.u.WaveFormatEx.wFormatTag = (*WaveFormat).wFormatTag;
-    #[cfg(usermode_mixer)]
-    {
-        DeviceInfo.u.WaveFormatEx.nChannels = 2;
-        DeviceInfo.u.WaveFormatEx.nSamplesPerSec = 44100;
-        DeviceInfo.u.WaveFormatEx.nBlockAlign = 4;
-        DeviceInfo.u.WaveFormatEx.nAvgBytesPerSec = 176400;
-        DeviceInfo.u.WaveFormatEx.wBitsPerSample = 16;
-    }
-    #[cfg(not(usermode_mixer))]
+    // legacy.c:511 `#ifdef USERMODE_MIXER` forces 2ch/44100/16-bit here. Nothing in this tree
+    // defines USERMODE_MIXER (no CMake define, no header), so only the `#else` arm below is
+    // ported. A `cfg(usermode_mixer)` was always false: rustc flagged it `unexpected_cfgs`,
+    // as nothing declares that cfg either.
     {
         DeviceInfo.u.WaveFormatEx.nChannels = (*WaveFormat).nChannels;
         DeviceInfo.u.WaveFormatEx.nSamplesPerSec = (*WaveFormat).nSamplesPerSec;

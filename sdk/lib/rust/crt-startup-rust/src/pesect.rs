@@ -188,7 +188,9 @@ pub unsafe extern "C" fn __mingw_enum_import_library_names(mut i: i32) -> *const
 pub unsafe extern "C" fn __mingw_get_msvcrt_handle() -> HMODULE {
     static mut MSVCRT_HANDLE: HANDLE = core::ptr::null_mut();
     if MSVCRT_HANDLE.is_null() {
-        let mut lib_name: *const u8 = core::ptr::null();
+        // Assigned on every iteration before any `break`, so no initial value (an unread
+        // `= null()` is what `unused_assignments` flagged).
+        let mut lib_name: *const u8;
         let mut i = 0i32;
         loop {
             lib_name = __mingw_enum_import_library_names(i);

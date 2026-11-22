@@ -511,7 +511,7 @@ pub unsafe extern "system" fn IoCompletion(
     DPRINT!(
         "IoCompletion Irp %p IoStatus %lx Information %lx\n",
         Irp,
-        (*Irp).IoStatus.Status,
+        (*Irp).IoStatus.__bindgen_anon_1.Status,
         (*Irp).IoStatus.Information
     );
 

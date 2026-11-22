@@ -4194,11 +4194,11 @@ unsafe extern "C" fn init_transformed_lights(
     index = 0 as ::core::ffi::c_uint;
     let mut current_block_28: u64;
     light_iter = (rb_head((*(*state).light_state).lights_tree.root) as *mut ::core::ffi::c_char)
-        .offset(-(232 as ::core::ffi::c_ulonglong as isize))
+        .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize))
         as *mut wined3d_light_info;
     while light_iter
         != ::core::ptr::null_mut::<::core::ffi::c_char>()
-            .offset(-(232 as ::core::ffi::c_ulonglong as isize))
+            .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize))
             as *mut wined3d_light_info
     {
         if !((*light_iter).enabled == 0) {
@@ -4244,7 +4244,7 @@ unsafe extern "C" fn init_transformed_lights(
             }
         }
         light_iter = (rb_next(&raw mut (*light_iter).entry) as *mut ::core::ffi::c_char)
-            .offset(-(232 as ::core::ffi::c_ulonglong as isize))
+            .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize))
             as *mut wined3d_light_info;
     }
     light_count = index;
@@ -7546,7 +7546,7 @@ unsafe extern "C" fn wined3d_blend_state_compare(key: *const core::ffi::c_void, 
 }
 
 unsafe extern "C" fn wined3d_depth_stencil_state_compare(key: *const c_void, entry: *const wine_rb_entry) -> c_int {
-    let state: *const wined3d_depth_stencil_state = (entry as *mut u8).offset(-(88 as isize)) as *mut wined3d_depth_stencil_state;
+    let state: *const wined3d_depth_stencil_state = (entry as *mut u8).offset(-(core::mem::offset_of!(wined3d_depth_stencil_state, entry) as isize)) as *mut wined3d_depth_stencil_state;
     return memcmp(
         core::ptr::addr_of!((*state).desc) as *const c_void,
         key,

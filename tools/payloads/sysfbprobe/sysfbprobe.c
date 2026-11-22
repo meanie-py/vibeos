@@ -1,8 +1,9 @@
 /* sysfbprobe — sysfb as a PnP display driver (docs/engineering/sysfb-pnp-design.md).
  *
  * Runs from the Startup folder, i.e. with win32k drawing through sysfb, and checks:
- *   step 1  every sysfb device node is started; a PCI one sits in the Display class (what
- *           Device Manager groups by); \\.\DISPLAY1 is attached to the desktop.
+ *   step 1  every sysfb device node is started and, once umpnpmgr has no install pending,
+ *           sits in the Display class (what Device Manager groups by); \\.\DISPLAY1 is
+ *           attached to the desktop.
  *   step 3  the instance driving the display refuses removal and disable (the desktop has
  *           it open), naming itself as the veto; the idle root instance, when the PCI one
  *           owns the display, goes through Device Manager's own disable and enable
@@ -130,6 +131,8 @@ static void visit(DEVINST dev)
             root = dev;
             strcpy(root_id, id);
             CHECK(up, "root instance %s not started (problem %lu)\n", id, problem);
+            CHECK(_stricmp(klass, DISPLAY_CLASS) == 0, "root instance %s is in class %s, not Display\n",
+                  id, klass[0] ? klass : "(none)");
         } else if (_strnicmp(id, "PCI\\", 4) == 0) {
             /* A second display controller fails start by design; the probe expects the one
              * QEMU has, which holds the GOP framebuffer. */
@@ -165,6 +168,17 @@ static void wait_plugplay(void)
         CloseServiceHandle(scm);
 }
 
+/* A freshly staged image installs its devices while the Startup folder runs: ClassGUID is
+ * written by the install, so read a node's class only once umpnpmgr reports none pending.
+ * On the Pi 5 the probe used to read the root instance first and saw no class at all. */
+static void wait_installs(void)
+{
+    DWORD t0 = GetTickCount();
+    DWORD ret = CMP_WaitNoPendingInstallEvents(300000);
+    SAY("pending device installs: wait -> %lu after %lu ms\n", ret, GetTickCount() - t0);
+    CHECK(ret == WAIT_OBJECT_0, "device installs still pending (wait -> %lu)\n", ret);
+}
+
 /* The owner refuses both ways in: a removal names it as the veto, a disable is vetoed. */
 static void check_owner_veto(DEVINST owner, const char *what)
 {
@@ -182,9 +196,9 @@ static void check_owner_veto(DEVINST owner, const char *what)
     CHECK(node_started(owner, NULL), "the %s stopped after refusing\n", what);
 }
 
-/* Device Manager's Disable/Enable: the class installer's DIF_PROPERTYCHANGE, global scope,
- * through the W entry points devmgr uses (SetupDiSetClassInstallParamsA is a stub, as in
- * Wine and upstream). */
+/* Device Manager's Disable/Enable: the class installer's DIF_PROPERTYCHANGE, global scope.
+ * Disable goes through the W entry points devmgr uses; enable through the A ones, which
+ * upstream and Wine never implemented (SetupDiSetClassInstallParamsA returned FALSE). */
 static BOOL change_state(const char *id, DWORD state)
 {
     WCHAR wid[MAX_DEVICE_ID_LEN];
@@ -194,11 +208,24 @@ static BOOL change_state(const char *id, DWORD state)
     SP_PROPCHANGE_PARAMS pc = { { sizeof(SP_CLASSINSTALL_HEADER), DIF_PROPERTYCHANGE }, state, DICS_FLAG_GLOBAL, 0 };
     const char *step = "SetupDiCreateDeviceInfoList";
     BOOL ok = set != INVALID_HANDLE_VALUE;
-    if (ok && !(step = "SetupDiOpenDeviceInfo", SetupDiOpenDeviceInfoW(set, wid, NULL, 0, &data)))
+    BOOL ansi = state == DICS_ENABLE;
+    if (ok && !(step = "SetupDiOpenDeviceInfo",
+                ansi ? SetupDiOpenDeviceInfoA(set, id, NULL, 0, &data)
+                     : SetupDiOpenDeviceInfoW(set, wid, NULL, 0, &data)))
         ok = FALSE;
-    if (ok && !(step = "SetupDiSetClassInstallParams",
-                SetupDiSetClassInstallParamsW(set, &data, &pc.ClassInstallHeader, sizeof(pc))))
+    if (ok && !(step = ansi ? "SetupDiSetClassInstallParamsA" : "SetupDiSetClassInstallParamsW",
+                ansi ? SetupDiSetClassInstallParamsA(set, &data, &pc.ClassInstallHeader, sizeof(pc))
+                     : SetupDiSetClassInstallParamsW(set, &data, &pc.ClassInstallHeader, sizeof(pc))))
         ok = FALSE;
+    if (ok && ansi) {
+        /* What the A entry point stored is what the W side reads back. */
+        SP_PROPCHANGE_PARAMS back = { { sizeof(SP_CLASSINSTALL_HEADER) } };
+        DWORD need = 0;
+        step = "SetupDiGetClassInstallParamsW";
+        ok = SetupDiGetClassInstallParamsW(set, &data, &back.ClassInstallHeader, sizeof(back), &need) &&
+             back.ClassInstallHeader.InstallFunction == DIF_PROPERTYCHANGE && back.StateChange == state &&
+             back.Scope == DICS_FLAG_GLOBAL;
+    }
     if (ok && !(step = "SetupDiCallClassInstaller", SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, set, &data)))
         ok = FALSE;
     if (!ok)
@@ -241,6 +268,7 @@ static void cycle_root(void)
 int main(void)
 {
     wait_plugplay();
+    wait_installs();
 
     /* ---- step 1: the device nodes ---- */
     DEVINST top;

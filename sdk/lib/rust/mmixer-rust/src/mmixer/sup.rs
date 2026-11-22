@@ -800,7 +800,7 @@ pub unsafe extern "C" fn MMixerSetGetMuxControlDetails(
     DPRINT!("NodeId %lu\n", (*MixerControl).NodeID);
     DPRINT!("MixerControlDetails dwControlID %lu\n", (*MixerControlDetails).dwControlID);
     DPRINT!("MixerControlDetails cChannels %lu\n", (*MixerControlDetails).cChannels);
-    DPRINT!("MixerControlDetails cMultipleItems %lu\n", (*MixerControlDetails).cMultipleItems);
+    DPRINT!("MixerControlDetails cMultipleItems %lu\n", (*MixerControlDetails).__bindgen_anon_1.cMultipleItems);
     DPRINT!("MixerControlDetails cbDetails %lu\n", (*MixerControlDetails).cbDetails);
     DPRINT!("MixerControlDetails paDetails %p\n", (*MixerControlDetails).paDetails);
 

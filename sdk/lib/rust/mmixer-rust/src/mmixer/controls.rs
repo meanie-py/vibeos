@@ -555,7 +555,7 @@ pub unsafe extern "C" fn MMixerAddMixerControl(
             Range = Members.offset((1) as isize)
                 as PKSPROPERTY_STEPPING_LONG;
 
-            DPRINT!("NodeIndex %u Range Min %d Max %d Steps %x UMin %x UMax %x\n", NodeIndex, (*Range).Bounds.SignedMinimum, (*Range).Bounds.SignedMaximum, (*Range).SteppingDelta, (*Range).Bounds.UnsignedMinimum, (*Range).Bounds.UnsignedMaximum);
+            DPRINT!("NodeIndex %u Range Min %d Max %d Steps %x UMin %x UMax %x\n", NodeIndex, (*Range).Bounds.__bindgen_anon_1.SignedMinimum, (*Range).Bounds.__bindgen_anon_1.SignedMaximum, (*Range).SteppingDelta, (*Range).Bounds.__bindgen_anon_2.UnsignedMinimum, (*Range).Bounds.__bindgen_anon_2.UnsignedMaximum);
 
             /* Store mixer control info there */
             (*VolumeData).Header.dwControlID = (*MixerControl).Control.dwControlID;
@@ -2696,7 +2696,16 @@ pub unsafe extern "C" fn MMixerRemoveEvent(
         NotificationEntry = CONTAINING_RECORD!(EventList, EVENT_NOTIFICATION_ENTRY, Entry);
         EventList = (*EventList).Flink;
         /* TODO: find a better way to identify an event ? */
-        if (*NotificationEntry).MixerEventRoutine == MixerEventRoutine
+        // C compares the two routine pointers by address. `fn_addr_eq` is that compare spelled
+        // the way rustc accepts (a bare `==` on fn pointers is
+        // `unpredictable_function_pointer_comparisons`). The fields are `Option<fn>`: None
+        // matches None (C's NULL == NULL) and never matches a real routine.
+        let same_routine = match ((*NotificationEntry).MixerEventRoutine, MixerEventRoutine) {
+            (Some(a), Some(b)) => core::ptr::fn_addr_eq(a, b),
+            (None, None) => true,
+            _ => false,
+        };
+        if same_routine
             && (*NotificationEntry).MixerEventContext == MixerEventContext
         {
             DPRINT1!("Freeing entry %p\n", NotificationEntry);
