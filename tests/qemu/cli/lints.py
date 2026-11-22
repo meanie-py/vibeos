@@ -1199,6 +1199,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # tools/vibeos-lint/src/rules/sizeof_vs_c.rs). crypt32's CRYPT_CopyChainToElement sized the
     # embedded CERT_CHAIN_CONTEXT for a CertificateChain: a heap overrun.
     specs.append(("scan_sizeof_vs_c", ["MISSING"], "stdout"))
+    # A ==/!= against a different named constant than the C twin's (native Rust rule,
+    # tools/vibeos-lint/src/rules/compare_const_vs_c.rs): crypt32's CertAddStoreToCollection
+    # compared the store type with E_INVALIDARG for StoreTypeCollection.
+    specs.append(("scan_compare_const_vs_c", ["MISSING"], "stdout"))
     # A DEVICE_OBJECT pointer cast to a device-extension type for the C's ->DeviceExtension
     # (native Rust rule, tools/vibeos-lint/src/rules/devobj_as_extension.rs): six classpnp sites
     # wrote the release-queue spinlock into the device object. Gated at zero.
