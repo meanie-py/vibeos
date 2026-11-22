@@ -515,6 +515,29 @@ pub unsafe extern "system" fn DllMain(
 
             DllInitialized = TRUE as BOOL;
 
+            // Windows has kernelbase.dll in every Win32 process (kernel32 imports it), and
+            // software finds APIs with GetModuleHandle(L"kernelbase.dll") + GetProcAddress:
+            // Chrome's sandbox CHECKs AppContainerRegisterSid that way. Ours forwards into
+            // kernel32, so it is loaded here, once kernel32 is initialised, instead of
+            // imported. Not in the C. A failure is said, never fatal: nothing before needed it.
+            {
+                // L"kernelbase.dll\0"
+                static KERNELBASE: [u16; 15] = [
+                    0x6B, 0x65, 0x72, 0x6E, 0x65, 0x6C, 0x62, 0x61, 0x73, 0x65, 0x2E, 0x64, 0x6C,
+                    0x6C, 0x00,
+                ];
+                let mut Name: UNICODE_STRING = core::mem::zeroed();
+                RtlInitUnicodeString(&mut Name, KERNELBASE.as_ptr() as PCWSTR);
+                let mut Base: PVOID = core::ptr::null_mut();
+                let St = LdrLoadDll(core::ptr::null_mut(), core::ptr::null_mut(), &mut Name, &mut Base);
+                if !NT_SUCCESS(St) {
+                    DbgPrint(
+                        b"[kernel32] loading kernelbase.dll failed: 0x%lx\n\0".as_ptr() as *const i8,
+                        St as ULONG,
+                    );
+                }
+            }
+
             DbgPrint(
                 b"[kernel32] DllMain PROCESS_ATTACH done OK PID=%lu\n\0".as_ptr() as *const i8,
                 (*NtCurrentTeb()).ClientId.UniqueProcess as ULONG,

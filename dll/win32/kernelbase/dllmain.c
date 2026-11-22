@@ -15,6 +15,7 @@
 #include <windef.h>
 #include <winbase.h>
 #include <ndk/rtlfuncs.h>
+#include <ndk/ldrfuncs.h>
 
 /* Not yet in the psdk rtl headers — declared here (implemented in ntdll, Rust). */
 NTSYSAPI
@@ -37,8 +38,9 @@ DllMain(
 
     if (dwReason == DLL_PROCESS_ATTACH)
     {
-        /* Pure synchronization shim — no per-thread work. */
-        DisableThreadLibraryCalls(hDll);
+        /* Pure synchronization shim — no per-thread work. ntdll, not kernel32's
+         * DisableThreadLibraryCalls: kernelbase must not import kernel32 (kernel32 loads it). */
+        LdrDisableThreadCalloutsForDll(hDll);
     }
     return TRUE;
 }
@@ -65,7 +67,7 @@ WaitOnAddress(
     Status = RtlWaitOnAddress(Address, CompareAddress, AddressSize, pTimeout);
     if (!NT_SUCCESS(Status) || Status == STATUS_TIMEOUT)
     {
-        SetLastError(RtlNtStatusToDosError(Status));
+        RtlSetLastWin32Error(RtlNtStatusToDosError(Status));
         return FALSE;
     }
     return TRUE;
