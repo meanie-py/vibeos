@@ -378,7 +378,7 @@ pub unsafe extern "C" fn WinLdrInitializePhase1(
             (*Extension).HeadlessLoaderBlock = core::ptr::addr_of_mut!((*WinLdrSystemBlock).HeadlessLoaderBlock) as ntkrnl_sys::ddk::PHEADLESS_LOADER_BLOCK;
             RtlCopyMemory(
                 (*Extension).HeadlessLoaderBlock as *mut core::ffi::c_void,
-                &LoaderRedirectionInformation as *const _ as *const core::ffi::c_void,
+                &raw const LoaderRedirectionInformation as *const _ as *const core::ffi::c_void,
                 core::mem::size_of::<HEADLESS_LOADER_BLOCK>(),
             );
             (*Extension).HeadlessLoaderBlock = PaToVa((*Extension).HeadlessLoaderBlock as *mut core::ffi::c_void) as ntkrnl_sys::ddk::PHEADLESS_LOADER_BLOCK;

@@ -344,7 +344,7 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
             ERR!("PcMemoryMap is already full! (PcBiosMapCount = %lu, PcMapCount = %lu (>= %lu))\n", (PcBiosMapCount) as usize, (PcMapCount) as usize, (MaxMemoryMapSize) as usize);
         } else {
             PcMapCount = AddMemoryDescriptor(
-                PcMemoryMap.as_mut_ptr(),
+                (*&raw mut PcMemoryMap).as_mut_ptr(),
                 (MAX_BIOS_DESCRIPTORS) as u32 ,
                 (RealBaseAddress / MM_PAGE_SIZE as ULONGLONG) as PFN_NUMBER,
                 (RealSize / MM_PAGE_SIZE as ULONGLONG) as PFN_NUMBER,
@@ -488,26 +488,26 @@ pub unsafe extern "C" fn PcMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREELD
 
     PcMemCheckUsableMemorySize();
 
-    EntryCount = PcMemGetBiosMemoryMap(PcMemoryMap.as_mut_ptr(), (MAX_BIOS_DESCRIPTORS) as u32 );
+    EntryCount = PcMemGetBiosMemoryMap((*&raw mut PcMemoryMap).as_mut_ptr(), (MAX_BIOS_DESCRIPTORS) as u32 );
 
     if EntryCount == 0 {
         GetExtendedMemoryConfiguration(&mut ExtendedMemorySizeAtOneMB,
                                        &mut ExtendedMemorySizeAtSixteenMB);
 
-        AddMemoryDescriptor(PcMemoryMap.as_mut_ptr(),
+        AddMemoryDescriptor((*&raw mut PcMemoryMap).as_mut_ptr(),
                             MAX_BIOS_DESCRIPTORS as ULONG,
                             0,
                             (PcMemGetConventionalMemorySize() as ULONG_PTR * 1024) / (PAGE_SIZE as ULONG_PTR),
                             LoaderFree);
 
-        PcMapCount = AddMemoryDescriptor(PcMemoryMap.as_mut_ptr(),
+        PcMapCount = AddMemoryDescriptor((*&raw mut PcMemoryMap).as_mut_ptr(),
                                          MAX_BIOS_DESCRIPTORS as ULONG,
                                          1024 * 1024 / PAGE_SIZE as ULONG_PTR,
                                          (ExtendedMemorySizeAtOneMB as ULONG_PTR * 1024) / (PAGE_SIZE as ULONG_PTR),
                                          LoaderFree);
 
         if ExtendedMemorySizeAtSixteenMB != 0 {
-            PcMapCount = AddMemoryDescriptor(PcMemoryMap.as_mut_ptr(),
+            PcMapCount = AddMemoryDescriptor((*&raw mut PcMemoryMap).as_mut_ptr(),
                                              MAX_BIOS_DESCRIPTORS as ULONG,
                                              0x1000000 / PAGE_SIZE as ULONG_PTR,
                                              (ExtendedMemorySizeAtSixteenMB as ULONG_PTR * 64 * 1024) / (PAGE_SIZE as ULONG_PTR),
@@ -515,7 +515,7 @@ pub unsafe extern "C" fn PcMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREELD
         }
 
         if GetEbdaLocation(&mut EbdaBase, &mut EbdaSize) != 0 {
-            PcMapCount = AddMemoryDescriptor(PcMemoryMap.as_mut_ptr(),
+            PcMapCount = AddMemoryDescriptor((*&raw mut PcMemoryMap).as_mut_ptr(),
                                              MAX_BIOS_DESCRIPTORS as ULONG,
                                              EbdaBase as ULONG_PTR / (PAGE_SIZE as ULONG_PTR) ,
                                              ADDRESS_AND_SIZE_TO_SPAN_PAGES!(EbdaBase, EbdaSize),
@@ -523,13 +523,13 @@ pub unsafe extern "C" fn PcMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREELD
         }
     }
 
-    SetMemory(PcMemoryMap.as_mut_ptr(), 0x000000, 0x01000, LoaderFirmwarePermanent);
-    SetMemory(PcMemoryMap.as_mut_ptr(), 0x0A0000, 0x50000, LoaderFirmwarePermanent);
-    SetMemory(PcMemoryMap.as_mut_ptr(), 0x0F0000, 0x10000, LoaderSpecialMemory);
-    SetMemory(PcMemoryMap.as_mut_ptr(), 0xFFF000, 0x01000, LoaderSpecialMemory);
+    SetMemory((*&raw mut PcMemoryMap).as_mut_ptr(), 0x000000, 0x01000, LoaderFirmwarePermanent);
+    SetMemory((*&raw mut PcMemoryMap).as_mut_ptr(), 0x0A0000, 0x50000, LoaderFirmwarePermanent);
+    SetMemory((*&raw mut PcMemoryMap).as_mut_ptr(), 0x0F0000, 0x10000, LoaderSpecialMemory);
+    SetMemory((*&raw mut PcMemoryMap).as_mut_ptr(), 0xFFF000, 0x01000, LoaderSpecialMemory);
 
-    *MemoryMapSize = PcMemFinalizeMemoryMap(PcMemoryMap.as_mut_ptr());
-    PcMemoryMap.as_mut_ptr()
+    *MemoryMapSize = PcMemFinalizeMemoryMap((*&raw mut PcMemoryMap).as_mut_ptr());
+    (*&raw mut PcMemoryMap).as_mut_ptr()
 }
 
 

@@ -269,14 +269,14 @@ pub unsafe extern "C" fn TuiInitialize() -> BOOLEAN {
     UiUseSpecialEffects = 0u8;
 
     RtlStringCbCopyA(
-        UiTitleBoxTitleText.as_mut_ptr(),
-        core::mem::size_of_val(&UiTitleBoxTitleText),
+        (*&raw mut UiTitleBoxTitleText).as_mut_ptr(),
+        core::mem::size_of_val(&*&raw const UiTitleBoxTitleText),
         (b"Boot Menu\0".as_ptr()) as *const i8 ,
     );
 
     RtlStringCbCopyA(
-        UiTimeText.as_mut_ptr(),
-        core::mem::size_of_val(&UiTimeText),
+        (*&raw mut UiTimeText).as_mut_ptr(),
+        core::mem::size_of_val(&*&raw const UiTimeText),
         (b"[Time Remaining: %d]\0".as_ptr()) as *const i8 ,
     );
 
@@ -356,9 +356,9 @@ pub unsafe extern "C" fn TuiDrawBackdrop(DrawHeight: ULONG) {
     );
 
     TuiDrawText(
-        (UiScreenWidth - strlen((UiTitleBoxTitleText).as_ptr() as *const i8) as ULONG) / 2,
+        (UiScreenWidth - strlen((*&raw const UiTitleBoxTitleText).as_ptr() as *const i8) as ULONG) / 2,
         2,
-        (UiTitleBoxTitleText).as_ptr() as *const i8,
+        (*&raw const UiTitleBoxTitleText).as_ptr() as *const i8,
         ATTR(UiTitleBoxFgColor, UiTitleBoxBgColor),
     );
 

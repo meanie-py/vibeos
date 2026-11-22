@@ -15,6 +15,45 @@ const DENIED: &[&str] = &[
     "improper_ctypes",
 ];
 const CANON: &str = "/tmp/vibeos/";
+/// The cargo target dirs beyond build-<arch> that hold this arch's units, shared with
+/// tools/rust_warning_census.py so the deny gate and the census read the same tree.
+/// Privately built bodies compile in body-storage-v1-<arch>-*: before this, the gate read
+/// only build-<arch> and passed while freeldr-rust carried 132 static_mut_refs.
+const UNIT_DIRS_JSON: &str = include_str!("cargo_unit_dirs.json");
+
+/// Every existing dir matching the shared patterns for `arch`, sorted.
+pub fn unit_dirs(repo: &Path, arch: &str) -> Result<Vec<PathBuf>, String> {
+    let spec: Value =
+        serde_json::from_str(UNIT_DIRS_JSON).map_err(|e| format!("cargo_unit_dirs.json: {e}"))?;
+    let patterns = spec["patterns"]
+        .as_array()
+        .ok_or("cargo_unit_dirs.json: no `patterns` array")?;
+    let mut dirs = Vec::new();
+    for pattern in patterns {
+        let pattern = pattern
+            .as_str()
+            .ok_or("cargo_unit_dirs.json: a pattern is not a string")?
+            .replace("{arch}", arch);
+        let prefix = pattern
+            .strip_suffix('*')
+            .ok_or_else(|| format!("cargo_unit_dirs.json: `{pattern}` must end in `*`"))?;
+        let full = repo.join(prefix);
+        let (Some(parent), Some(stem)) = (full.parent(), full.file_name()) else {
+            return Err(format!("cargo_unit_dirs.json: bad pattern `{pattern}`"));
+        };
+        let stem = stem.to_string_lossy().into_owned();
+        let Ok(entries) = fs::read_dir(parent) else {
+            continue; // no workspace target dir yet: nothing built privately
+        };
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().starts_with(&stem) && entry.path().is_dir() {
+                dirs.push(entry.path());
+            }
+        }
+    }
+    dirs.sort();
+    Ok(dirs)
+}
 
 #[derive(Clone, Debug)]
 struct Site {
@@ -439,7 +478,11 @@ fn merge_sites(units: &[Unit]) -> Vec<Site> {
 }
 pub fn run(ctx: &BinaryContext) -> Result<CheckOutput, String> {
     let packages = package_dirs(&ctx.root);
-    let units = read_units(&ctx.build_dir, &ctx.root, &packages)?;
+    let mut units = read_units(&ctx.build_dir, &ctx.root, &packages)?;
+    let extra = unit_dirs(&ctx.root, &ctx.arch)?;
+    for dir in &extra {
+        units.extend(read_units(dir, &ctx.root, &packages)?);
+    }
     if units.is_empty() {
         return Ok(CheckOutput {
             stdout: String::new(),
@@ -474,10 +517,12 @@ pub fn run(ctx: &BinaryContext) -> Result<CheckOutput, String> {
     let mut deny = DENIED.iter().copied().collect::<Vec<_>>();
     deny.sort();
     stderr.push_str(&format!(
-        "{} site(s) of a denied lint ({}); {} fresh unit(s) read\n",
+        "{} site(s) of a denied lint ({}); {} fresh unit(s) read from {} and {} cell target dir(s)\n",
         hits.len(),
         deny.join(", "),
-        fresh.len()
+        fresh.len(),
+        ctx.build_dir.display(),
+        extra.len()
     ));
     Ok(CheckOutput {
         stdout,
@@ -684,6 +729,34 @@ mod tests {
         let units = read_units(&root.join("build-i386"), &root, &packages).unwrap();
         let (_, stale) = coverage(&units);
         assert_eq!(stale.get("old-crate").unwrap(), "source gone: gone.rs");
+        let _ = fs::remove_dir_all(root);
+    }
+    #[test]
+    fn unit_dirs_are_this_arch_body_storage_and_cell_link_dirs() {
+        let root = temp();
+        let target = root.join("sdk/lib/rust/target");
+        for d in [
+            "body-storage-v1-amd64-64aded1bfa14ba8d-0-rustlib",
+            "body-storage-v1-arm64-04a757b179417883-3-rustlib",
+            "cell-link-v1-amd64-14",
+            "cell-link-v1-amd64x-1",
+            "release",
+        ] {
+            fs::create_dir_all(target.join(d)).unwrap();
+        }
+        write(&target.join("body-storage-v1-amd64-file"), "");
+        let got = unit_dirs(&root, "amd64").unwrap();
+        let names: Vec<String> = got
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        // `cell-link-v1-amd64x-1` is the prefix's only false friend; no arch is a prefix
+        // of another, so the pattern's trailing `-` keeps it out.
+        assert_eq!(
+            names,
+            ["body-storage-v1-amd64-64aded1bfa14ba8d-0-rustlib", "cell-link-v1-amd64-14"]
+        );
+        assert!(unit_dirs(&temp(), "amd64").unwrap().is_empty());
         let _ = fs::remove_dir_all(root);
     }
 }

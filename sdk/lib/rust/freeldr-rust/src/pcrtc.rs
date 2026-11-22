@@ -52,7 +52,7 @@ pub unsafe extern "C" fn PcGetTime() -> *mut TIMEINFO {
 
         break;
     }
-    &mut TimeInfo
+    &raw mut TimeInfo
 }
 
 

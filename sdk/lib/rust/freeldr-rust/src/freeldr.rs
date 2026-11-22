@@ -87,7 +87,7 @@ unsafe fn LoadRosload(
         FullPath.as_mut_ptr(),
         core::mem::size_of_val(&FullPath),
         b"%s\\%s\0".as_ptr() as PCSTR,
-        FrLdrBootPath.as_ptr(),
+        (*&raw const FrLdrBootPath).as_ptr(),
         RosloadPath,
     );
 
@@ -278,7 +278,7 @@ pub unsafe extern "C" fn log10(_x: f64) -> f64 {
 
 #[no_mangle]
 pub unsafe extern "C" fn FrLdrGetBootPath() -> PCCHAR {
-    FrLdrBootPath.as_ptr() as PCCHAR
+    (*&raw const FrLdrBootPath).as_ptr() as PCCHAR
 }
 
 #[no_mangle]

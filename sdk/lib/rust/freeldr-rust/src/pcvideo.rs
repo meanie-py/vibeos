@@ -291,7 +291,7 @@ unsafe fn PcVideoGetDisplayMode() {
     // VESA start mode was never recognised, and a BIOS that answers 4F01h for
     // a legacy mode number got taken for a VESA graphics mode.)
     if PcVideoVesaGetCurrentSVGAMode(&mut Mode) != 0 &&
-       PcVideoVesaGetSVGAModeInformation(Mode, &mut VesaVideoModeInformation) != 0
+       PcVideoVesaGetSVGAModeInformation(Mode, &raw mut VesaVideoModeInformation) != 0
     {
         TRACE!("VESA mode detected\n");
         ScreenWidth = (VesaVideoModeInformation.WidthInPixels) as u32 ;
