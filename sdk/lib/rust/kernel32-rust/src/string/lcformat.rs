@@ -968,12 +968,19 @@ unsafe fn NLS_GetDateTimeFormatA(
         );
     }
 
-    if cchOut > (core::mem::size_of::<[WCHAR; 128]>() / core::mem::size_of::<WCHAR>()) as INT {
-        cchOut = (core::mem::size_of::<[WCHAR; 128]>() / core::mem::size_of::<WCHAR>()) as INT;
+    // The W call below always gets our own buffer, so the caller's buffer/size pair is
+    // checked here (Wine's A forms: a negative size or a size without a buffer).
+    if cchOut < 0 || (cchOut != 0 && lpStr.is_null()) {
+        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+        return 0;
     }
 
-    szOut[0] = '\0' as WCHAR;
-
+    // Format the whole string in UTF-16, then let the conversion size the result in
+    // bytes, as Wine does: in a DBCS code page the ANSI string is longer than the UTF-16
+    // one ("12\x93\xfa" is 5 bytes from 4 WCHARs), and the C returned the WCHAR count, so
+    // an exactly-sized buffer failed and a size query came back one short. With
+    // cchOut == 0 WideCharToMultiByte returns the size and touches no buffer; too small
+    // a buffer is its ERROR_INSUFFICIENT_BUFFER.
     iRet = NLS_GetDateTimeFormatW(
         lcid,
         dwFlags,
@@ -983,29 +990,20 @@ unsafe fn NLS_GetDateTimeFormatA(
         } else {
             core::ptr::null_mut()
         },
-        if !lpStr.is_null() {
-            szOut.as_mut_ptr() as LPWSTR
-        } else {
-            core::ptr::null_mut()
-        },
-        cchOut,
+        szOut.as_mut_ptr() as LPWSTR,
+        szOut.len() as INT,
     );
-
-    if !lpStr.is_null() {
-        if szOut[0] != 0 {
-            WideCharToMultiByte(
-                cp as UINT,
-                0,
-                szOut.as_mut_ptr() as LPCWSTR,
-                if iRet != 0 { -1 } else { cchOut },
-                lpStr,
-                cchOut,
-                core::ptr::null(),
-                core::ptr::null_mut(),
-            );
-        } else if cchOut != 0 && iRet != 0 {
-            *lpStr = '\0' as CHAR;
-        }
+    if iRet != 0 {
+        iRet = WideCharToMultiByte(
+            cp as UINT,
+            0,
+            szOut.as_ptr() as LPCWSTR,
+            -1,
+            if cchOut != 0 { lpStr } else { core::ptr::null_mut() },
+            cchOut,
+            core::ptr::null(),
+            core::ptr::null_mut(),
+        );
     }
 
     iRet

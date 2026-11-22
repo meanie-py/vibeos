@@ -19,6 +19,7 @@ const FALSE: BOOL = 0;
 // ---- kernel32 / NT externs nls.c calls (real stdcall @N exports / forwarders) ----
 extern "system" {
     fn SetLastError(dwErrCode: DWORD);
+    fn GetLastError() -> DWORD;
     fn GetLocaleInfoW(Locale: LCID, LCType: LCTYPE, lpLCData: LPWSTR, cchData: INT) -> INT;
     fn GetThreadLocale() -> LCID;
     fn ConvertDefaultLocale(Locale: LCID) -> LCID;
@@ -628,6 +629,11 @@ pub unsafe extern "fastcall" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODE
     let mut FileName: [WCHAR; MAX_PATH as usize + 1] = [0; MAX_PATH as usize + 1];
     let mut FileNamePos: UINT = 0;
     let mut CodePageEntry: PCODEPAGE_ENTRY = core::ptr::null_mut();
+    // Loading a code page's table is internal: on success the caller's last error is left
+    // as it was. The C let the CreateFileW fallback below clear it to 0, so the first
+    // MultiByteToWideChar/WideCharToMultiByte in a non-default code page (1251, 932)
+    // reset the error of a successful GetDateFormatA (Wine's locale test checks it).
+    let SavedLastError: DWORD = GetLastError();
 
     if CodePage == CP_ACP {
         return &raw mut AnsiCodePage;
@@ -792,6 +798,7 @@ pub unsafe extern "fastcall" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODE
     InsertTailList(&raw mut CodePageListHead, &mut (*CodePageEntry).Entry);
     RtlLeaveCriticalSection(&raw mut CodePageListLock);
 
+    SetLastError(SavedLastError);
     return CodePageEntry;
 }
 
@@ -817,6 +824,11 @@ pub unsafe extern "C" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODEPAGE_EN
     let mut FileName: [WCHAR; MAX_PATH as usize + 1] = [0; MAX_PATH as usize + 1];
     let mut FileNamePos: UINT = 0;
     let mut CodePageEntry: PCODEPAGE_ENTRY = core::ptr::null_mut();
+    // Loading a code page's table is internal: on success the caller's last error is left
+    // as it was. The C let the CreateFileW fallback below clear it to 0, so the first
+    // MultiByteToWideChar/WideCharToMultiByte in a non-default code page (1251, 932)
+    // reset the error of a successful GetDateFormatA (Wine's locale test checks it).
+    let SavedLastError: DWORD = GetLastError();
 
     if CodePage == CP_ACP {
         return &raw mut AnsiCodePage;
@@ -981,6 +993,7 @@ pub unsafe extern "C" fn IntGetCodePageEntry(mut CodePage: UINT) -> PCODEPAGE_EN
     InsertTailList(&raw mut CodePageListHead, &mut (*CodePageEntry).Entry);
     RtlLeaveCriticalSection(&raw mut CodePageListLock);
 
+    SetLastError(SavedLastError);
     return CodePageEntry;
 }
 unsafe fn IntMultiByteToWideCharUTF8(
