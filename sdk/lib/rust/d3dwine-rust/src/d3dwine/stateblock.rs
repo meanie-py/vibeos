@@ -356,10 +356,10 @@ pub unsafe extern "C" fn wined3d_stateblock_primary_dirtify_all_states(
 
     list_init(core::ptr::addr_of_mut!((*stateblock).changed.changed_lights));
     light = (rb_head((*lights_tree).root) as *mut core::ffi::c_char)
-        .offset(-(232 as core::ffi::c_ulonglong as isize)) as *mut wined3d_light_info;
+        .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize)) as *mut wined3d_light_info;
     while light
         != (core::ptr::null_mut::<core::ffi::c_char>()
-            .offset(-(232 as core::ffi::c_ulonglong as isize))) as *mut wined3d_light_info
+            .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize))) as *mut wined3d_light_info
     {
         (*light).changed = true;
         list_add_tail(
@@ -367,7 +367,7 @@ pub unsafe extern "C" fn wined3d_stateblock_primary_dirtify_all_states(
             core::ptr::addr_of_mut!((*light).changed_entry),
         );
         light = (rb_next(core::ptr::addr_of_mut!((*light).entry)) as *mut core::ffi::c_char)
-            .offset(-(232 as core::ffi::c_ulonglong as isize)) as *mut wined3d_light_info;
+            .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize)) as *mut wined3d_light_info;
     }
 }
 
@@ -559,11 +559,11 @@ unsafe extern "C" fn stateblock_init_lights(stateblock: *mut wined3d_stateblock,
     let dst_tree: *mut rb_tree = core::ptr::addr_of_mut!((*(*stateblock).stateblock_state.light_state).lights_tree);
     let mut src_light: *mut wined3d_light_info = core::ptr::null_mut::<wined3d_light_info>();
     src_light = (rb_head((*src_tree).root) as *mut core::ffi::c_char)
-        .offset(-(232 as core::ffi::c_ulonglong as isize))
+        .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize))
         as *mut wined3d_light_info;
     while src_light
         != core::ptr::null_mut::<core::ffi::c_char>()
-            .offset(-(232 as core::ffi::c_ulonglong as isize))
+            .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize))
             as *mut wined3d_light_info
     {
         let dst_light: *mut wined3d_light_info =
@@ -581,7 +581,7 @@ unsafe extern "C" fn stateblock_init_lights(stateblock: *mut wined3d_stateblock,
             core::ptr::addr_of_mut!((*dst_light).changed_entry),
         );
         src_light = (rb_next(core::ptr::addr_of_mut!((*src_light).entry)) as *mut core::ffi::c_char)
-            .offset(-(232 as core::ffi::c_ulonglong as isize))
+            .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize))
             as *mut wined3d_light_info;
     }
 }
@@ -764,14 +764,14 @@ unsafe extern "C" fn wined3d_stateblock_state_cleanup(mut state: *mut wined3d_st
     }
     light = (rb_postorder_head((*(*state).light_state).lights_tree.root)
         as *mut ::core::ffi::c_char)
-        .offset(-(232 as ::core::ffi::c_ulonglong as isize)) as *mut wined3d_light_info;
+        .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize)) as *mut wined3d_light_info;
     while light
         != ::core::ptr::null_mut::<::core::ffi::c_char>()
-            .offset(-(232 as ::core::ffi::c_ulonglong as isize))
+            .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize))
             as *mut wined3d_light_info
         && {
             cursor = (rb_postorder_next(&raw mut (*light).entry) as *mut ::core::ffi::c_char)
-                .offset(-(232 as ::core::ffi::c_ulonglong as isize))
+                .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize))
                 as *mut wined3d_light_info;
             !cursor.is_null() || 1 as ::core::ffi::c_int != 0
         }
@@ -804,13 +804,13 @@ pub unsafe extern "C" fn state_cleanup(mut state: *mut wined3d_state) {
     }
 
     light = (rb_postorder_head((*state).light_state.lights_tree.root) as *mut core::ffi::c_char)
-        .offset(-(232 as isize)) as *mut wined3d_light_info;
+        .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize)) as *mut wined3d_light_info;
     while light
-        != (core::ptr::null_mut::<core::ffi::c_char>().offset(-(232 as isize)))
+        != (core::ptr::null_mut::<core::ffi::c_char>().offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize)))
             as *mut wined3d_light_info
     {
         cursor = (rb_postorder_next(&raw mut (*light).entry) as *mut core::ffi::c_char)
-            .offset(-(232 as isize)) as *mut wined3d_light_info;
+            .offset(-(core::mem::offset_of!(wined3d_light_info, entry) as isize)) as *mut wined3d_light_info;
 
         if (*light).changed {
             list_remove(&raw mut (*light).changed_entry);

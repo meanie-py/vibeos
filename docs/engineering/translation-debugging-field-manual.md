@@ -3749,6 +3749,13 @@ with `grep -rnE '[0-9]+ as ::core::ffi::c_ulonglong as '`. Only a struct with a
 pointer-width member before the field is wrong. On 2026-10-31, inetmib1's MIB rows,
 winspool's `DEVMODE` sizes and kernel32's `ACCESS_ALLOWED_ACE.SidStart` all hit this
 grep, and none of them hold a pointer, so all are correct.
+**It is not only tables.** In wined3d, `RB_ENTRY_VALUE`/`LIST_ENTRY`-style container-of walks
+folded the same way, as `.offset(-(232 as ::core::ffi::c_ulonglong as isize))` and
+`.offset(-(88 as isize))`. Every light pointer on i386 landed 4 bytes early. The settings
+then counted no lights, and ddraw's lit draws on i386 came back with only the ambient term
+(modrun `ddraw.device`). ddraw's `DDSURFACEDESC2` compare table had the same bug behind
+`lpSurface`. `scan_magic_offsets` now flags both shapes (`C2RUST_FOLDED_OFFSETOF`,
+`NEG_LITERAL_CONTAINER_OF`), so this grep is mechanized.
 
 ### A C `0` handle sentinel translated as `INVALID_HANDLE_VALUE`
 `StgCreateDocfileOnILockBytes` calls `Storage_Construct(0, 0, plkbyt, ...)`; the translation
