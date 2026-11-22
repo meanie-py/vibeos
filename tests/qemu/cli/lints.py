@@ -1195,6 +1195,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # tools/vibeos-lint/src/rules/assert_negated_vs_c.rs). fastfat's FatCommonRead wrapped the
     # C's VerifyThread assert in `!( )`, so it fired on every legitimate I/O failure once armed.
     specs.append(("scan_assert_negated_vs_c", ["MISSING"], "stdout"))
+    # A size_of::<X>() where the same-module C twin sizes a different type (native Rust rule,
+    # tools/vibeos-lint/src/rules/sizeof_vs_c.rs). crypt32's CRYPT_CopyChainToElement sized the
+    # embedded CERT_CHAIN_CONTEXT for a CertificateChain: a heap overrun.
+    specs.append(("scan_sizeof_vs_c", ["MISSING"], "stdout"))
     # A DEVICE_OBJECT pointer cast to a device-extension type for the C's ->DeviceExtension
     # (native Rust rule, tools/vibeos-lint/src/rules/devobj_as_extension.rs): six classpnp sites
     # wrote the release-queue spinlock into the device object. Gated at zero.
@@ -1429,6 +1433,11 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     specs.append(
         ("scan_dead_seh_handlers", [rustlints.SENTINEL, "scan_dead_seh_handlers"], "stdout")
     )
+    # A /proc/<pid> read guarded by `except FileNotFoundError` alone: a process reaped
+    # between open() and read() raises ProcessLookupError (ESRCH) and crashes the "it is
+    # gone" path. Hand-patched four times in one night before it became a rule. Baseline
+    # is EMPTY. A Rust rule (tools/vibeos-lint/src/rules/proc_esrch.rs).
+    specs.append(("scan_proc_esrch", [rustlints.SENTINEL, "scan_proc_esrch"], "stdout"))
     # A Rust GUID literal the SDK's DEFINE_GUID gives a different value. stobject's model
     # wrote CGID_ShellServiceObject from memory, one digit off, and the tray never started.
     # A Rust rule (tools/vibeos-lint/src/rules/guid_values.rs).

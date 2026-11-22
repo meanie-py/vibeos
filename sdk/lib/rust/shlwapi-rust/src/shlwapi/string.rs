@@ -1997,7 +1997,7 @@ pub unsafe extern "system" fn StrCpyNXW(
     mut lpszSrc: LPCWSTR,
     mut iLen: ::core::ffi::c_int,
 ) -> LPWSTR {
-    DPRINT1!(
+    TRACE!(
         "(%p,%s,%i)\n",
         lpszDest,
         debugstr_w(lpszSrc as *const WCHAR),

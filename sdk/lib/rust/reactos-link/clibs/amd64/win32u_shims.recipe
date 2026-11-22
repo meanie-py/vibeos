@@ -1,0 +1,3 @@
+# win32u_shims (amd64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+c	win32ss/win32u/main.c	@build/win32ss/win32u win32ss/win32u @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include win32ss	-std=gnu99 -U_X86_ -UWIN32 @core	WINVER=0x502 _WIN32_WINNT=0x502
+asm	win32ss/win32u/sys-stubs.S	sdk/include/asm @build/sdk/include/asm @build/win32ss/win32u win32ss/win32u @std win32ss	@core	

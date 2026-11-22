@@ -7175,7 +7175,7 @@ unsafe extern "system" fn CRYPT_AsnDecodeOctetString(
             }
         }
     }
-    {
+    if _SEH2_Volatile0 != 0 {
         SetLastError((STATUS_ACCESS_VIOLATION) as DWORD);
         ret = (FALSE as i32);
     }
@@ -8131,7 +8131,7 @@ unsafe extern "system" fn CRYPT_AsnDecodeUtcTime(
             }
         }
     }
-    {
+    if _SEH2_Volatile0 != 0 {
         SetLastError((STATUS_ACCESS_VIOLATION) as DWORD);
     }
     if _SEH2_Volatile0 != 0
@@ -10392,7 +10392,7 @@ unsafe extern "system" fn CRYPT_AsnDecodeObjectIdentifier(
                     }
 
                     info = pvStructInfo as *mut LPSTR;
-                    *info = (info as *mut BYTE).add(core::mem::size_of::<CHAR>()) as LPSTR;
+                    *info = (info as *mut BYTE).add(core::mem::size_of::<LPSTR>()) as LPSTR;
                     ret = CRYPT_AsnDecodeOidInternal(
                         pbEncoded,
                         cbEncoded,
@@ -10772,7 +10772,7 @@ unsafe extern "system" fn CRYPT_AsnDecodeOCSPBasicSignedResponse(
             core::ptr::null_mut::<::core::ffi::c_void>(),
         );
     }
-    {
+    if _SEH2_Volatile0 != 0 {
         SetLastError((STATUS_ACCESS_VIOLATION) as DWORD);
         ret = (FALSE as i32);
     }

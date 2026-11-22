@@ -1579,7 +1579,7 @@ dependencies = [
 name = "crypt32-cargo"
 version = "0.1.0"
 dependencies = [
- "panic-lean",
+ "panic-common",
  "reactos-link",
 ]
 
@@ -2201,6 +2201,14 @@ name = "dbgeng-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "dbghelp-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
  "reactos-link",
 ]
 
@@ -3688,6 +3696,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "glu32-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "guids-rust"
 version = "0.1.0"
 dependencies = [
@@ -4798,6 +4814,22 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 
 [[package]]
 name = "libpng-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "libtiff-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "libtirpc-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-lean",
@@ -7682,6 +7714,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "rapps_com-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "rapps_com-rust"
 version = "0.1.0"
 dependencies = [
@@ -9513,6 +9553,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "svchost-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "svchost-rust"
 version = "0.1.0"
 dependencies = [
@@ -10115,6 +10163,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucdfs-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "ucrt-difftest"
 version = "0.1.0"
 dependencies = [
@@ -10155,6 +10211,22 @@ dependencies = [
 name = "uefildr-cargo"
 version = "0.1.0"
 dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "ufat-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "ufatx-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
  "reactos-link",
 ]
 
@@ -10855,6 +10927,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "wdmaud_drv-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "wdmaud_drv-rust"
 version = "0.1.0"
 dependencies = [
@@ -11013,6 +11093,14 @@ version = "0.1.0"
 [[package]]
 name = "win32macros-rust"
 version = "0.1.0"
+
+[[package]]
+name = "win32u-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
 
 [[package]]
 name = "windows-link"
@@ -11596,6 +11684,14 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+]
+
+[[package]]
+name = "wow64cpu-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
 ]
 
 [[package]]

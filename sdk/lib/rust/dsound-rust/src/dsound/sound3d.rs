@@ -591,7 +591,7 @@ unsafe extern "system" fn IDirectSound3DListenerImpl_QueryInterface(
 ) -> HRESULT {
     let This: *mut IDirectSound3DListenerImpl = iface as *mut IDirectSound3DListenerImpl;
 
-    DPRINT1!("(%p,%s,%p)\n", This, debugstr_guid(riid as *const _), ppobj);
+    TRACE!("(%p,%s,%p)\n", This, debugstr_guid(riid as *const _), ppobj);
 
     if ppobj.is_null() {
         WARN!("invalid parameter\n");

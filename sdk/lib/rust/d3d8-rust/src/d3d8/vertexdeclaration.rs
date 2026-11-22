@@ -350,7 +350,7 @@ unsafe extern "system" fn d3d8_vertexdeclaration_wined3d_object_destroyed(parent
 }
 #[no_mangle]
 pub unsafe extern "C" fn d3d8_vertex_declaration_destroy(declaration: *mut d3d8_vertex_declaration) {
-    DPRINT1!("declaration %p.\n", declaration);
+    TRACE!("declaration %p.\n", declaration);
     wined3d_vertex_declaration_decref((*declaration).wined3d_vertex_declaration);
 }
 #[no_mangle]

@@ -408,6 +408,61 @@ pub fn branches(stmts: &[Statement]) -> Vec<Vec<(usize, usize)>> {
     }
     out
 }
+/// The condition under which branch `branch` of the `nth` if() (in text order) runs, as one
+/// CMake expression: `C0` for the if(), `NOT (C0) AND (C1)` for its first elseif(),
+/// `NOT (C0) AND NOT (C1)` for an else() after one elseif(). dbghelp's target lives in the
+/// else() of `if(NOT CMAKE_CROSSCOMPILING)`, libtirpc's flags in the else() of `if(MSVC)`.
+pub fn branch_condition(stmts: &[Statement], nth: usize, branch: usize) -> Option<String> {
+    let norm = |raw: &str| raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut seen = 0;
+    let mut depth = 0usize;
+    let mut chain: Vec<String> = Vec::new();
+    let mut inside = false;
+    for (_, _, cmd, raw) in stmts {
+        match cmd.as_str() {
+            "if" if !inside => {
+                if seen == nth {
+                    inside = true;
+                    depth = 0;
+                    chain.push(norm(raw));
+                }
+                seen += 1;
+            }
+            "if" => {
+                depth += 1;
+                seen += 1;
+            }
+            "elseif" | "else" if inside && depth == 0 => {
+                chain.push(if cmd == "elseif" {
+                    norm(raw)
+                } else {
+                    String::new()
+                });
+                if chain.len() > branch {
+                    break;
+                }
+            }
+            "endif" if inside && depth == 0 => break,
+            "endif" if inside => depth -= 1,
+            _ => {}
+        }
+    }
+    if !inside || chain.len() <= branch {
+        return None;
+    }
+    let mut parts: Vec<String> = chain[..branch]
+        .iter()
+        .map(|c| format!("NOT ({c})"))
+        .collect();
+    if !chain[branch].is_empty() {
+        parts.push(if branch == 0 {
+            chain[0].clone()
+        } else {
+            format!("({})", chain[branch])
+        });
+    }
+    Some(parts.join(" AND "))
+}
 pub fn exclusive(p: &[(usize, usize)], q: &[(usize, usize)]) -> bool {
     for (a, b) in p.iter().zip(q) {
         if a != b {
@@ -964,7 +1019,14 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
             || cmd == "spec2def"
             || (a[0] != target && !(cmd == "add_cd_file" && a.iter().any(|x| x == target)))
         {
-            if re(r"\$\{(SOURCE|PCH_SKIP_SOURCE)\}").is_match(raw)
+            // `list(APPEND PCH_SKIP_SOURCE ... ${SOURCE})` (glu32) builds one of the
+            // module's own source lists from the other: not another consumer of either.
+            let own_list = cmd == "list"
+                && a.len() > 1
+                && a[0] == "APPEND"
+                && ["SOURCE", "PCH_SKIP_SOURCE"].contains(&a[1].as_str());
+            if !own_list
+                && re(r"\$\{(SOURCE|PCH_SKIP_SOURCE)\}").is_match(raw)
                 && !home.as_ref().is_some_and(|p| exclusive(&paths[i], p))
                 && inlinable_source(&text, cmake.parent().unwrap())?.is_none()
             {
@@ -1124,9 +1186,16 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
         .cloned()
         .collect();
     if named.len() != 1 {
+        // The module's own variant, by name: `<target>_rust`, with a dotted target's `.` as
+        // `_` (wdmaud.drv's is wdmaud_drv_rust; its wdmaud_drv_mmixer_rust is a static lib).
+        let stem = target.replace('.', "_");
         named = variants
             .keys()
-            .filter(|n| *n == &format!("{target}_rust") || n.strip_suffix("_rust") == Some(target))
+            .filter(|n| {
+                *n == &format!("{target}_rust")
+                    || n.strip_suffix("_rust") == Some(target)
+                    || n.strip_suffix("_rust") == Some(stem.as_str())
+            })
             .cloned()
             .collect();
         if named.is_empty() {
@@ -1258,27 +1327,21 @@ pub fn body_env(text: &str, extras: &[String]) -> Option<(BTreeMap<String, Strin
     Some((flags, c[0].into()))
 }
 pub fn enclosing_ifs(text: &str, target: &str) -> Result<Vec<String>> {
-    let mut stack: Vec<Option<String>> = Vec::new();
-    for (_, _, cmd, raw) in statements(text) {
-        match cmd.as_str() {
-            "if" => stack.push(Some(raw.split_whitespace().collect::<Vec<_>>().join(" "))),
-            "elseif" | "else" => {
-                if let Some(last) = stack.last_mut() {
-                    *last = None
-                }
-            }
-            "endif" => {
-                stack.pop();
-            }
-            "add_library" | "add_executable" if args(&raw).first().is_some_and(|a| a == target) => {
-                if stack.iter().any(Option::is_none) {
-                    return Err(Error::new(format!(
-                        "{target}: its link is in an elseif/else branch"
-                    )));
-                }
-                return Ok(stack.into_iter().flatten().collect());
-            }
-            _ => {}
+    let stmts = statements(text);
+    let paths = branches(&stmts);
+    for (i, (_, _, cmd, raw)) in stmts.iter().enumerate() {
+        if ["add_library", "add_executable"].contains(&cmd.as_str())
+            && args(raw).first().is_some_and(|a| a == target)
+        {
+            // An elseif()/else() branch becomes the negation of the branches before it.
+            return paths[i]
+                .iter()
+                .map(|(nth, branch)| {
+                    branch_condition(&stmts, *nth, *branch).ok_or_else(|| {
+                        Error::new(format!("{target}: its link's if() branch is unreadable"))
+                    })
+                })
+                .collect();
         }
     }
     Ok(Vec::new())
@@ -1701,8 +1764,11 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             "Win32Exe"
         }
         "C_MODULE_LIBRARY" | "C_SHARED_LIBRARY" => {
-            if subsys.starts_with("native") {
-                let typ = facts["module_type"].as_str().unwrap_or("");
+            let typ = facts["module_type"].as_str().unwrap_or("");
+            // nativedll (ufat, ucdfs: user-mode DLLs on the native subsystem, for autochk) is
+            // cmake's win32dll link with `--subsystem,native:5.01` and entry DllMain: exports
+            // from the .def, default alignment, no image base, no gc.
+            if subsys.starts_with("native") && typ != "nativedll" {
                 if !const_contains("KERNEL_KINDS", typ) {
                     return Err(Error::new(format!(
                         "{target}: kernel-mode module type {typ} is not modelled"
@@ -2005,7 +2071,11 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
                     .ok_or_else(|| Error::new(format!("{target}: a .def without a spec2def()")))?
             };
             cell.spec = Some((rel(root, &cmake_dir.join(&cap[2]))?, cap[1].into()));
-        } else if name.ends_with(".c.obj") || re(r"\.(cpp|cxx|cc)\.obj$").is_match(name) {
+        } else if name.ends_with(".c.obj")
+            || re(r"\.(cpp|cxx|cc)\.obj$").is_match(name)
+            // A source `.S` (win32u's sys-stubs.S) replays like C: its recipe line is `asm`.
+            || re(r"\.[sS]\.obj$").is_match(name)
+        {
             // C++ compiles the same way: the cell replays cmake's compile command through a
             // clib recipe, whose `cxx` lines reactos-link runs with the cxx.<arch>.flags template.
             let mut src = obj_source(&cmake_dir, obj);
@@ -2063,7 +2133,17 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     if facts["unicode"] == true {
         cell.rc_defines = vec!["UNICODE".into(), "_UNICODE".into()];
     }
-    if kind == "Win32Exe" && cell.msvcrtex.is_none() && !subsys.starts_with("native") {
+    // An exe whose cmake link carries no msvcrtex at all takes its entry from the body
+    // (svchost: svchost-rust defines wmainCRTStartup). Refused only when cmake linked a CRT
+    // startup the cell did not recognise.
+    if kind == "Win32Exe"
+        && cell.msvcrtex.is_none()
+        && !subsys.starts_with("native")
+        && links
+            .values()
+            .flat_map(|l| &l.libs)
+            .any(|l| l.contains("msvcrtex"))
+    {
         return Err(Error::new(format!(
             "{target}: exe without a msvcrtex CRT startup"
         )));
@@ -2537,5 +2617,39 @@ mod sibling_tests {
         let other = "sdk/lib/x/CMakeFiles/gcc_ssp_x.dir/ssp.c.obj";
         assert_eq!(sibling_object_lib(&root, other, "shdocvw", text), None);
         std::fs::remove_dir_all(&root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod branch_condition_tests {
+    use super::{branch_condition, statements};
+
+    #[test]
+    fn an_else_branch_is_the_negation_of_the_branches_before_it() {
+        let text = "if(NOT CMAKE_CROSSCOMPILING)\n  add_library(h x.c)\n  if(ARCH STREQUAL \"i386\")\n  endif()\nelseif(MSVC)\n  set(a b)\nelse()\n  add_library(t MODULE y.c)\nendif()\nif(Z)\nendif()\n";
+        let s = statements(text);
+        assert_eq!(
+            branch_condition(&s, 0, 0).as_deref(),
+            Some("NOT CMAKE_CROSSCOMPILING")
+        );
+        assert_eq!(
+            branch_condition(&s, 0, 1).as_deref(),
+            Some("NOT (NOT CMAKE_CROSSCOMPILING) AND (MSVC)")
+        );
+        assert_eq!(
+            branch_condition(&s, 0, 2).as_deref(),
+            Some("NOT (NOT CMAKE_CROSSCOMPILING) AND NOT (MSVC)")
+        );
+        // The nested if() is the 2nd in text order; the trailing one the 3rd.
+        assert_eq!(
+            branch_condition(&s, 1, 0).as_deref(),
+            Some("ARCH STREQUAL \"i386\"")
+        );
+        assert_eq!(branch_condition(&s, 2, 0).as_deref(), Some("Z"));
+        assert_eq!(branch_condition(&s, 0, 3), None);
+        assert_eq!(
+            super::enclosing_ifs(text, "t").unwrap(),
+            vec!["NOT (NOT CMAKE_CROSSCOMPILING) AND NOT (MSVC)".to_string()]
+        );
     }
 }

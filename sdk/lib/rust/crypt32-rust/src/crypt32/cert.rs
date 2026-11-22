@@ -1141,7 +1141,7 @@ unsafe extern "C" fn CertContext_SetProperty(
                 );
             }
             _ => {
-                DPRINT1!("%ld: stub\n", dwPropId);
+                FIXME!("%ld: stub\n", dwPropId);
                 ret = (FALSE as i32);
             }
         }

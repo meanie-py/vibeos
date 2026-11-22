@@ -2555,7 +2555,7 @@ unsafe extern "system" fn video_renderer_attributes_Release(iface: *mut IMFAttri
 }
 unsafe extern "system" fn video_renderer_attributes_GetItem(iface: *mut IMFAttributes, key: *const GUID, value: *mut PROPVARIANT) -> HRESULT {
     let mut renderer: *mut video_renderer = impl_from_IMFAttributes(iface);
-    DPRINT1!("%p, %s, %p.\n", iface, debugstr_guid(key), value);
+    TRACE!("%p, %s, %p.\n", iface, debugstr_guid(key), value);
     return IMFAttributes_GetItem((*renderer).attributes, key, value);
 }
 
