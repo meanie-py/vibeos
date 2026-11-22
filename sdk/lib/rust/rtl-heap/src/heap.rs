@@ -835,6 +835,25 @@ unsafe fn RtlpFindAndCommitPages(
     core::ptr::null_mut()
 }
 
+/// Whether an uncommitted range of `Segment` ends exactly at `Address`.
+unsafe fn RtlpUcrEndsAt(Segment: PHEAP_SEGMENT, Address: ULONG_PTR) -> bool {
+    let Head = core::ptr::addr_of_mut!((*Segment).UCRSegmentList);
+    let mut Current = (*Head).Flink;
+    while Current != Head {
+        let Ucr = (Current as PCHAR)
+            .offset(-(core::mem::offset_of!(_HEAP_UCR_DESCRIPTOR, SegmentEntry) as isize))
+            as PHEAP_UCR_DESCRIPTOR;
+        if (*Ucr).Address as ULONG_PTR + (*Ucr).Size == Address {
+            return true;
+        }
+        if (*Ucr).Address as ULONG_PTR > Address {
+            return false; /* sorted by address */
+        }
+        Current = (*Current).Flink;
+    }
+    false
+}
+
 unsafe fn RtlpDeCommitFreeBlock(Heap: PHEAP, FreeEntry: PHEAP_FREE_ENTRY, Size: SIZE_T) {
     let Segment: PHEAP_SEGMENT;
     let NextEntry: PHEAP_ENTRY;
@@ -860,7 +879,18 @@ unsafe fn RtlpDeCommitFreeBlock(Heap: PHEAP, FreeEntry: PHEAP_FREE_ENTRY, Size: 
     DecommitBase = ROUND_UP(FreeEntry as ULONG_PTR, PAGE_SIZE as ULONG_PTR);
     PrecedingSize = ((DecommitBase as PHEAP_ENTRY).offset_from(FreeEntry as PHEAP_ENTRY)) as SIZE_T;
 
-    if PrecedingSize == 0 {
+    /* DIVERGES FROM THE C, which always keeps a page here for a new guard entry. A
+     * page-aligned free entry is usually the tail this function left after an earlier
+     * decommit (PreviousSize 0, starting exactly where that UCR ends), and the UCR already
+     * has its guard entry on the far side. Keeping a page anyway leaves every freed block's
+     * range one committed page short of the block, separated from its neighbour's: a run of
+     * equal-sized blocks freed in order can then never be allocated again from the ranges it
+     * left, and each new burst of them reserves a fresh (doubling) segment. Mesa softpipe's
+     * ~262K tile caches exhausted the i386 address space that way in two GL contexts. Here
+     * the entry is decommitted from its first byte, and RtlpInsertUnCommittedPages merges
+     * it into the range before it. */
+    let MergeIntoPrecedingUcr = PrecedingSize == 0 && RtlpUcrEndsAt(Segment, DecommitBase);
+    if PrecedingSize == 0 && !MergeIntoPrecedingUcr {
         /* We need some space in order to insert our guard entry */
         DecommitBase += PAGE_SIZE as ULONG_PTR;
         PrecedingSize += (PAGE_SIZE >> HEAP_ENTRY_SHIFT) as SIZE_T;
@@ -882,13 +912,14 @@ unsafe fn RtlpDeCommitFreeBlock(Heap: PHEAP, FreeEntry: PHEAP_FREE_ENTRY, Size: 
             /* Nope. Let's keep one page before this */
             return RtlpDeCommitFreeBlockTail(
                 Heap, FreeEntry, Size, Segment, NextEntry, DecommitBase, PrecedingSize,
-                DecommitEnd - PAGE_SIZE as ULONG_PTR,
+                DecommitEnd - PAGE_SIZE as ULONG_PTR, MergeIntoPrecedingUcr,
             );
         }
     }
 
     RtlpDeCommitFreeBlockTail(
         Heap, FreeEntry, Size, Segment, NextEntry, DecommitBase, PrecedingSize, DecommitEnd,
+        MergeIntoPrecedingUcr,
     )
 }
 
@@ -901,6 +932,7 @@ unsafe fn RtlpDeCommitFreeBlockTail(
     mut DecommitBase: ULONG_PTR,
     mut PrecedingSize: SIZE_T,
     DecommitEnd: ULONG_PTR,
+    MergeIntoPrecedingUcr: bool,
 ) {
     let UcrDescriptor: PHEAP_UCR_DESCRIPTOR;
     let mut DecommitSize: SIZE_T;
@@ -942,6 +974,13 @@ unsafe fn RtlpDeCommitFreeBlockTail(
     RtlpInsertUnCommittedPages(Segment, DecommitBase, DecommitSize);
     (*Segment).NumberOfUnCommittedPages += (DecommitSize / PAGE_SIZE as SIZE_T) as ULONG;
 
+    /* Merged into the range before it: that range's guard entry already ends the
+     * committed run, and nothing of this entry is left before DecommitBase. */
+    if MergeIntoPrecedingUcr {
+        RtlpDeCommitFreeBlockNext(Heap, Segment, NextEntry, DecommitEnd);
+        return;
+    }
+
     /* Insert our guard entry before this */
     GuardEntry = (DecommitBase as PHEAP_ENTRY).offset(-1);
     (*GuardEntry).Size = 1;
@@ -980,6 +1019,17 @@ unsafe fn RtlpDeCommitFreeBlockTail(
         }
     }
 
+    RtlpDeCommitFreeBlockNext(Heap, Segment, NextEntry, DecommitEnd);
+}
+
+/// The committed remainder between a decommitted range and the entry after it becomes a free
+/// entry (or, when there is none, that entry now follows the range directly).
+unsafe fn RtlpDeCommitFreeBlockNext(
+    Heap: PHEAP,
+    Segment: PHEAP_SEGMENT,
+    NextEntry: PHEAP_ENTRY,
+    DecommitEnd: ULONG_PTR,
+) {
     /* Now the next one */
     if !NextEntry.is_null() {
         let mut NextSize: SIZE_T = NextEntry.offset_from(DecommitEnd as PHEAP_ENTRY) as SIZE_T;

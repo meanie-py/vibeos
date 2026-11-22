@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "shlwapi-cargo",
+    "shdocvw-cargo",
     "msacm32_drv-cargo",
     "msgsm32_acm-cargo",
     "msg711_acm-cargo",
@@ -1379,6 +1381,7 @@ members = [
     "setup-rust",
     "shlwapi-rust",
     "d3dwine-rust",
+    "crypt32-rust",
 ]
 resolver = "2"
 

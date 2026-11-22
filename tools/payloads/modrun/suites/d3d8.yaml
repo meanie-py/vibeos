@@ -39,7 +39,6 @@ cases:
   # A real device: state, resources and draws, read back. `expect` demands the device and a
   # draw, so a GL that wined3d refuses (falling back to no3d) fails here, not passes vacuously.
   - id: device
-    arches: [amd64, arm64]  # i386: a second wined3d init runs out of address space (roadmap "Known bugs")
     variants:
       c: '%SystemRoot%\bin\modrun\gl_c\d3d8_c.exe'
       rust: '%SystemRoot%\bin\modrun\gl\d3d8_probe.exe'
@@ -51,7 +50,6 @@ cases:
   # the Rust rejects all four and leaves the value alone. (Before that fix it panicked:
   # index out of bounds, len 18, index 4294967295.)
   - id: device-invalid
-    arches: [amd64, arm64]  # i386: a second wined3d init runs out of address space (roadmap "Known bugs")
     variants:
       c: '%SystemRoot%\bin\modrun\gl_c\d3d8_c.exe'
       rust: '%SystemRoot%\bin\modrun\gl\d3d8_probe.exe'

@@ -456,14 +456,16 @@ extern "C" {
     pub fn _snwprintf(buf: *mut WCHAR, count: usize, format: *const WCHAR, ...) -> c_int;
     pub fn fwprintf(file: *mut FILE, format: *const WCHAR, ...) -> c_int;
 
-    // ctype.c's exported table when the HOST HARNESS is the consumer — there, the
-    // reference TU's C copy is the one and only (see the `ctype-tables` feature). In every
-    // build that produces msvcrt.dll the feature is on and `crate::msvcrt::ctype` defines
-    // it in Rust, which is the `pub use` just below this block.
+    // ctype.c's exported table, declared unconditionally and bound at link time. Its
+    // definition is msvcrt-crt-rust's: with that crate's `ctype-tables` feature (on in every
+    // build that produces msvcrt.dll) `msvcrt::ctype` defines it `#[no_mangle]` in Rust; with
+    // the feature off (the host harnesses) the reference TU's C copy is the one and only.
+    // The feature is msvcrt-crt-rust's, NOT this crate's, so it must not gate anything here:
+    // a `cfg(feature = "ctype-tables")` in this file was always false, and the `pub use
+    // crate::msvcrt::ctype` it guarded named a module this crate has never had.
     //
     // locale.c points `locinfo->pctype` at `MSVCRT__ctype + 1` — the +1 is the EOF slot at
     // index 0, which is why the array is 257 wide and not 256.
-    #[cfg(not(feature = "ctype-tables"))]
     pub static mut MSVCRT__ctype: [WORD; 257];
 
     // NO `swprintf` here, deliberately. `corecrt_wstdio.h:387` makes it a `static inline`
@@ -484,12 +486,6 @@ extern "C" {
     // reaches it the same way any other TU would.
     pub fn _cprintf(format: *const c_char, ...) -> c_int;
 }
-
-// The Rust definition of the narrow ctype table, re-exported under the same path the
-// `extern` above occupies when the feature is off, so every consumer (locale.rs's two
-// `pctype` assignments) spells it one way regardless of which build it is in.
-#[cfg(feature = "ctype-tables")]
-pub use crate::msvcrt::ctype::MSVCRT__ctype;
 
 /// `RtlGenRandom` — misc.c's `rand_s` entropy source, and the name is the point.
 ///

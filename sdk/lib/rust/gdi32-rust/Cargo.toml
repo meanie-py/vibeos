@@ -25,3 +25,5 @@ panic-common = { path = "../panic-common", features = ["user"] }
 # bodies marshal into win32k via this; Wave 0 (LineDDA, pure algorithm) does not use it
 # yet but the dependency is wired so later waves integrate without a Cargo.toml churn.
 win32k-sys = { path = "../win32k-sys" }
+# seh only: the real catch for the C's _SEH2_TRY around caller-supplied bits and strings.
+ntdll-sys = { path = "../ntdll-sys" }

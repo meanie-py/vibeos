@@ -2493,6 +2493,19 @@ types.
   island, preprocess a probe with the REAL flags (`-E -dM` with a TU's command from
   `compile_commands.json`, under `tools/canon-run.sh`); never reason from the target triple.
 
+### A struct's optional tail fields are missing from the island (E0609 on `pwszCNGAlgid`)
+- **Symptom:** `no field X on type _Y` for a field the header declares under a TU-set switch
+  (crypt32: `CRYPT_OID_INFO_HAS_EXTRA_FIELDS`, `CERT_CHAIN_PARA_HAS_EXTRA_FIELDS`), though
+  the TU that uses it `#define`s the switch before the include.
+- **Cause:** the island wrapper merges every TU's prologue into one. A TU merged earlier
+  had already included the header, under the other spelling (`<wincrypt.h>` vs
+  `"wincrypt.h"`), so the define landed after it and the header's include guard skipped the
+  fields.
+- **Fix:** `merge_prologue` now matches includes by header and puts a new
+  `#define`/`#undef` before every already-merged line it configures. Re-derive, re-run
+  `port island`, then re-run `port resolve`: a regenerated island brings back the opaque
+  stubs that resolve swaps for the TU's completed structs.
+
 ### bindgen drops things silently — know what
 - **`__attribute__((aligned(N)))`.** Losing `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK` `[§9.24]` broke
   the pushlock word's 4 flag bits (which live in the low bits of the block *pointer*) → i386
@@ -3755,6 +3768,13 @@ with `grep -rnE '[0-9]+ as ::core::ffi::c_ulonglong as '`. Only a struct with a
 pointer-width member before the field is wrong. On 2026-10-31, inetmib1's MIB rows,
 winspool's `DEVMODE` sizes and kernel32's `ACCESS_ALLOWED_ACE.SidStart` all hit this
 grep, and none of them hold a pointer, so all are correct.
+**It is not only tables.** In wined3d, `RB_ENTRY_VALUE`/`LIST_ENTRY`-style container-of walks
+folded the same way, as `.offset(-(232 as ::core::ffi::c_ulonglong as isize))` and
+`.offset(-(88 as isize))`. Every light pointer on i386 landed 4 bytes early. The settings
+then counted no lights, and ddraw's lit draws on i386 came back with only the ambient term
+(modrun `ddraw.device`). ddraw's `DDSURFACEDESC2` compare table had the same bug behind
+`lpSurface`. `scan_magic_offsets` now flags both shapes (`C2RUST_FOLDED_OFFSETOF`,
+`NEG_LITERAL_CONTAINER_OF`), so this grep is mechanized.
 
 ### A C `0` handle sentinel translated as `INVALID_HANDLE_VALUE`
 `StgCreateDocfileOnILockBytes` calls `Storage_Construct(0, 0, plkbyt, ...)`; the translation
@@ -6574,7 +6594,10 @@ in the fleet by body hash (`python -m rustconv.bank_drift --fleet` is the genera
 were bought from the cut body, and only winspool's `GetMonitorUI` shipped without its tail
 (no MONITORUIDATA, no monitor UI DLL, leaked handle); the other six came out whole because
 c2rust anchors on the whole TU. **Check what was bought, not what the scanner says now: the
-bank's per-function C hash is the record.**
+bank's per-function C hash is the record.** The hand-completion that followed (`32733e7baf6`) deleted
+GetMonitorUI's body instead of finishing it, and still compiled: `if p.is_null() { return }`
+followed by a stray `else { … }` is valid Rust. The commit message said "completed"; found
+2026-11-21 by `scan_dead_seh_handlers` and restored. Read a hand fix's diff, not its message.
 
 The two fixes compose, and the order matters: expanding is what lets `--seal-facts` see the arms
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
@@ -13553,6 +13576,34 @@ the crash; when memory runs out on arm64 only, grep for them first.
 - **`NtCreateSection` 0x50 is a dropped `ProbeForRead`, not a deep-MM bug** `[§9.104]` — and the
   dropped probe **masked** the deeper arm64 exception-dispatch recursion beneath it. **A missing
   guard can hide the bug it would have exposed.**
+
+### A user-mode heap that reserves a new segment for space it already freed
+
+**Symptom.** An i386 process runs out of address space (`ERROR_NOT_ENOUGH_MEMORY`, last error
+8) while its commit is small: after one wined3d init and release, 1.5G was reserved, 55M
+committed, and the largest free region was 124M. The reservations are the process heap's
+segments, doubling 8M, 16M … 512M. The giveaway is a repeat of the same workload growing the
+heap again. glsanity's round 2 makes the same single softpipe context as round 1, and it
+reserved a fresh 256M segment while round 1's 248M sat decommitted.
+
+**Cause.** This is inherited from the C (`sdk/lib/rtl/heap.c` `RtlpDeCommitFreeBlock`), so
+the C oracle fails identically. Decommitting a freed block leaves its committed tail as a free
+entry starting exactly at the new uncommitted range's end: page-aligned, with
+`PreviousSize = 0`. Freeing the next block coalesces into that tail, giving
+`PrecedingSize == 0`, and the C then skips a whole page to make room for a guard entry. The
+range before it already has a guard. So a run of equal blocks freed in order becomes ranges
+one page smaller than the blocks, each split from the next by a committed page. An allocation
+of the same size never fits one again, and every burst reserves a new segment. Mesa softpipe
+was the trigger: about 768 tile caches of 262K per context.
+
+**Fix.** When a free entry begins exactly where an uncommitted range ends (`RtlpUcrEndsAt`),
+decommit it from its first byte with no new guard. `RtlpInsertUnCommittedPages` then merges
+it into the range. After the fix, round 2 reuses round 1's segments, so 272M stays 272M.
+
+**Measuring it.** `RtlWalkHeap` is a stub in the C too, so walk `VirtualQuery` and read each
+allocation base. A heap segment has `0xffeeffee` at `2*sizeof(void*)`, its owning `Heap` at
+`4*sizeof(void*)+8`, and `NumberOfPages` at `6*sizeof(void*)+8`. See `dx_vm` in
+`tools/payloads/modrun/probes/dx_probe.h`.
 
 ---
 

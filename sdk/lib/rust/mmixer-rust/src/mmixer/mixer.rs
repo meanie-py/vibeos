@@ -500,7 +500,7 @@ pub unsafe extern "C" fn MMixerGetLineControls(
 
         DPRINT!(
             "DeviceInfo->u.MixControls.dwControlType %x not found in Line %x cControls %u \n",
-            (*MixerLineControls).dwControlType,
+            (*MixerLineControls).__bindgen_anon_1.dwControlType,
             (*MixerLineControls).dwLineID,
             (*MixerLineSrc).Line.cControls
         );

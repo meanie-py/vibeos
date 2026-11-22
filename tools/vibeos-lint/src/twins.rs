@@ -5,7 +5,7 @@ use rayon::prelude::*;
 use regex::Regex;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, Mutex, OnceLock};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Function {
@@ -321,16 +321,48 @@ pub fn same_module(rust_path: &Path, twin: &Function) -> bool {
     }
     !crate_words.is_disjoint(&twin_words)
 }
+/// The repo root the corpus was loaded from, for reading a twin's CMakeLists.txt.
+static ROOT: OnceLock<PathBuf> = OnceLock::new();
+pub fn set_root(root: &Path) {
+    let _ = ROOT.set(root.to_path_buf());
+}
+/// Does the CMakeLists.txt beside `c_path` name `krate` (`ddraw-rust`)? A cohab flip writes
+/// "replaced by Rust (sdk/lib/rust/<crate>/...)" there, which settles a tie between two C
+/// trees defining the same names: ddraw-rust ports dll/directx/wine/ddraw, not the
+/// never-built dll/directx/ddraw that sorts first and carries __except handlers Wine's lacks.
+fn cmake_names(c_path: &Path, krate: &str) -> bool {
+    static SEEN: LazyLock<Mutex<HashMap<PathBuf, String>>> = LazyLock::new(Default::default);
+    if krate.is_empty() {
+        return false;
+    }
+    let Some(dir) = c_path.parent() else { return false };
+    let mut seen = SEEN.lock().unwrap();
+    let text = seen.entry(dir.to_path_buf()).or_insert_with(|| {
+        let root = ROOT.get().map_or(Path::new("."), PathBuf::as_path);
+        std::fs::read_to_string(root.join(dir).join("CMakeLists.txt")).unwrap_or_default()
+    });
+    names_crate(text, krate)
+}
+/// `krate` appears in `text` as a whole name: `ddraw-rust` not inside `myddraw-rust`.
+fn names_crate(text: &str, krate: &str) -> bool {
+    text.match_indices(krate).any(|(i, m)| {
+        let word = |c: char| c.is_ascii_alphanumeric() || c == '-' || c == '_';
+        !text[..i].ends_with(word) && !text[i + m.len()..].starts_with(word)
+    })
+}
 pub fn prefer<'a>(rust_path: &Path, twins: &'a [Function]) -> Vec<&'a Function> {
     // On an affinity tie the C file named like the Rust file wins before the path
     // order does: smss-csrss-rust's csrss.rs ties smss.c and csrss.c one word each,
     // and alphabetical order paired its `_main` with smss.c's.
     let stem = rust_path.file_stem();
     let same_stem = |f: &Function| f.path.file_stem() == stem;
+    let krate = crate_of(rust_path);
+    let owned = |f: &Function| cmake_names(&f.path, &krate);
     let mut out: Vec<_> = twins.iter().collect();
     out.sort_by(|a, b| {
         affinity(rust_path, b)
             .cmp(&affinity(rust_path, a))
+            .then_with(|| owned(b).cmp(&owned(a)))
             .then_with(|| same_stem(b).cmp(&same_stem(a)))
             .then_with(|| a.path.cmp(&b.path))
     });
@@ -417,6 +449,15 @@ impl CIndex {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_cmake_naming_the_crate_owns_the_twin() {
+        let cm = "# ddraw.c  # replaced by Rust (sdk/lib/rust/ddraw-rust/src/ddraw/ddraw.rs)\n";
+        assert!(names_crate(cm, "ddraw-rust"));
+        assert!(!names_crate(cm, "draw-rust"));
+        assert!(!names_crate("myddraw-rust-x\n", "ddraw-rust"));
+        assert!(!names_crate("", "ddraw-rust"));
+    }
+
     use super::*;
     fn function(path: &str) -> Function {
         Function {

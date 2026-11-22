@@ -18,8 +18,6 @@ rapps.com: linked by cmake, not a cargo cell
 rshell: linked by cmake, not a cargo cell
 setuplib: linked by cmake, not a cargo cell
 setuplib_probe: linked by cmake, not a cargo cell
-shdocvw: linked by cmake, not a cargo cell
-shlwapi: linked by cmake, not a cargo cell
 skiplist_test: linked by cmake, not a cargo cell
 svchost: linked by cmake, not a cargo cell
 ucdfs: linked by cmake, not a cargo cell

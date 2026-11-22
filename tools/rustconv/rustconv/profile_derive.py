@@ -1837,14 +1837,37 @@ def merge_prologue(merged: list[str], lines: list[str]) -> None:
     `#define sigsetjmp(buf,sigs) setjmp(buf)` -- port.h's sigsetjmp prototype then expanded
     to a second `_setjmp` declaration on amd64. An unseen line goes right after the nearest
     line that precedes it in its own TU.
+
+    Lines match by HEADER, not spelling: `<wincrypt.h>` and `"wincrypt.h"` are one include.
+    crypt32's cert.c/oid.c put ``#define CRYPT_OID_INFO_HAS_EXTRA_FIELDS`` before their
+    ``"wincrypt.h"``. A TU merged later spells it ``<wincrypt.h>``, so it was counted as a new
+    line and inserted at the top, ahead of the define. The island's CRYPT_OID_INFO then had no
+    CNG fields, which cost 18 errors. For the same reason a new ``#define``/``#undef`` lands
+    before every line that follows it in its own TU and is already merged: it configures them.
     """
     anchor = -1
-    for line in lines:
-        if line in merged:
-            anchor = max(anchor, merged.index(line))
+    for i, line in enumerate(lines):
+        keys = [_include_key(m) for m in merged]
+        if (k := _include_key(line)) in keys:
+            anchor = max(anchor, keys.index(k))
             continue
-        anchor += 1
-        merged.insert(anchor, line)
+        at = anchor + 1
+        if _CONFIG_DIRECTIVE_RE.match(line):
+            later = [keys.index(k) for ln in lines[i + 1 :] if (k := _include_key(ln)) in keys]
+            if later:
+                at = min(at, min(later))
+        merged.insert(at, line)
+        anchor += 1  # the previous anchor line shifted by one, or this line sits right after it
+
+
+_CONFIG_DIRECTIVE_RE = re.compile(r"^\s*#\s*(define|undef)\b")
+_INCLUDE_TARGET_RE = re.compile(r"^\s*#\s*include\s*[<\"]([^>\"]+)[>\"]")
+
+
+def _include_key(line: str) -> str:
+    """An include line by its header (case-folded, either delimiter); any other line as is."""
+    m = _INCLUDE_TARGET_RE.match(line)
+    return f"#include {m.group(1).lower()}" if m else line
 
 
 _DEFINE_DIRECTIVE_RE = r"^\s*#\s*define\s+{}\b"
@@ -5190,19 +5213,7 @@ pub extern "C" fn rust_eh_personality() {{}}
         "pub use ntkrnl_sys::ddk::*;"
     )
     uses_wine = any("wine/debug.h" in w for w in dp.wrapper_inc)
-    debug_block = (
-        """// The wine/debug.h channel (TRACE/ERR/WARN/FIXME): wine's own flag test on the default
-// channel, then ros_dbg_log -- win32macros-rust's WINE_*! macros, which expand HERE (the
-// channel storage and the ros_dbg_log extern are this crate's; `port resolve` writes them).
-// MACROS, never out-of-line fns: an out-of-line wrapper is an optimization barrier that
-// uncloaks latent ABI mismatches into ud2 (field manual §9.65).
-#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => { win32macros_rust::WINE_TRACE!($($arg)*) }; }
-#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => { win32macros_rust::WINE_ERR!($($arg)*) }; }
-#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => { win32macros_rust::WINE_WARN!($($arg)*) }; }
-#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => { win32macros_rust::WINE_FIXME!($($arg)*) }; }
-pub use crate::{ERR, FIXME, TRACE, WARN};"""
-        if uses_wine
-        else """// reactos/debug.h DPRINT/UNIMPLEMENTED — no-op MACROS, never out-of-line fns
+    reactos_debug = """// reactos/debug.h DPRINT/UNIMPLEMENTED — no-op MACROS, never out-of-line fns
 // (field manual §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py
 // rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
 // DPRINT1 PRINTS in this DBG=1 tree, kernel and user mode alike: it comes from
@@ -5215,6 +5226,23 @@ pub use crate::{ERR, FIXME, TRACE, WARN};"""
 #[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
 pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};"""
+    debug_block = (
+        """// The wine/debug.h channel (TRACE/ERR/WARN/FIXME): wine's own flag test on the default
+// channel, then ros_dbg_log -- win32macros-rust's WINE_*! macros, which expand HERE (the
+// channel storage and the ros_dbg_log extern are this crate's; `port resolve` writes them).
+// MACROS, never out-of-line fns: an out-of-line wrapper is an optimization barrier that
+// uncloaks latent ABI mismatches into ud2 (field manual §9.65).
+#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => { win32macros_rust::WINE_TRACE!($($arg)*) }; }
+#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => { win32macros_rust::WINE_ERR!($($arg)*) }; }
+#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => { win32macros_rust::WINE_WARN!($($arg)*) }; }
+#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => { win32macros_rust::WINE_FIXME!($($arg)*) }; }
+pub use crate::{ERR, FIXME, TRACE, WARN};
+// A Wine module's ReactOS-only TUs use reactos/debug.h too (crypt32's unixlib.c:
+// `UNIMPLEMENTED;`), so the Wine prelude carries the ReactOS no-ops as well.
+"""
+        + reactos_debug
+        if uses_wine
+        else reactos_debug
     )
     write(
         src / "prelude.rs",

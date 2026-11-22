@@ -433,7 +433,13 @@ pub unsafe extern "system" fn MDIRedrawFrame(hWnd: HWND, flags: DWORD) -> BOOL {
         return RealMDIRedrawFrame(hWnd, flags);
     }
 
-    Ret = (guah.MDIRedrawFrame.unwrap())(hWnd, flags);
+    // A themed hook (uxtheme) that faults is logged and skipped, as in the C.
+    match ntdll_sys::seh::try_except_all(|| guah.MDIRedrawFrame.unwrap()(hWnd, flags)) {
+        Ok(r) => Ret = r,
+        Err(_) => {
+        ERR!("Got exception in hooked MDIRedrawFrame!\n");
+    }
+    }
 
     EndUserApiHook();
 

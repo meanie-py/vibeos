@@ -692,7 +692,14 @@ pub unsafe extern "system" fn User32CallHookProcFromKernel(
             }
 
             if let Some(p) = Proc {
-                Result = p((*Common).Code, wParam, lParam);
+                // A hook procedure that faults is caught; the callback returns
+                // STATUS_UNSUCCESSFUL (Hit), as in the C.
+                match ntdll_sys::seh::try_except_all(|| p((*Common).Code, wParam, lParam)) {
+                    Ok(r) => Result = r,
+                    Err(_) => Hit = 1,
+                }
+            } else {
+                ERR!("Null Proc! Common = 0x%x, Proc = 0x%x\n", Common, core::ptr::null::<core::ffi::c_void>());
             }
 
             if (*Common).Code == HCBT_CREATEWND as INT {
@@ -725,7 +732,12 @@ pub unsafe extern "system" fn User32CallHookProcFromKernel(
         }
         WH_MOUSE => {
             pMHook = (Common as *mut u8).offset((*Common).lParam as isize) as PMOUSEHOOKSTRUCT;
-            Result = (Proc.unwrap())((*Common).Code, (*Common).wParam, pMHook as LPARAM);
+            // A hook procedure that faults is caught; the callback returns
+            // STATUS_UNSUCCESSFUL (Hit), as in the C.
+            match ntdll_sys::seh::try_except_all(|| (Proc.unwrap())((*Common).Code, (*Common).wParam, pMHook as LPARAM)) {
+                Ok(r) => Result = r,
+                Err(_) => Hit = 1,
+            }
         }
         WH_CALLWNDPROC => {
             let pcwps = Common as PCWP_Struct;
@@ -785,7 +797,12 @@ pub unsafe extern "system" fn User32CallHookProcFromKernel(
                 pcMsg as *mut u8,
                 core::mem::size_of::<MSG>(),
             );
-            Result = (Proc.unwrap())((*Common).Code, (*Common).wParam, pcMsg as LPARAM);
+            // A hook procedure that faults is caught; the callback returns
+            // STATUS_UNSUCCESSFUL (Hit), as in the C.
+            match ntdll_sys::seh::try_except_all(|| (Proc.unwrap())((*Common).Code, (*Common).wParam, pcMsg as LPARAM)) {
+                Ok(r) => Result = r,
+                Err(_) => Hit = 1,
+            }
 
             if Hit == 0 && (*Common).HookId as u32 == WH_GETMESSAGE {
                 core::ptr::copy_nonoverlapping(
@@ -800,7 +817,12 @@ pub unsafe extern "system" fn User32CallHookProcFromKernel(
             Result = (Proc.unwrap())((*Common).Code, (*Common).wParam, (*Common).lParam);
         }
         WH_FOREGROUNDIDLE => {
-            Result = (Proc.unwrap())((*Common).Code, (*Common).wParam, (*Common).lParam);
+            // A hook procedure that faults is caught; the callback returns
+            // STATUS_UNSUCCESSFUL (Hit), as in the C.
+            match ntdll_sys::seh::try_except_all(|| (Proc.unwrap())((*Common).Code, (*Common).wParam, (*Common).lParam)) {
+                Ok(r) => Result = r,
+                Err(_) => Hit = 1,
+            }
         }
         _ => {
             if Loaded != 0 {
@@ -811,6 +833,12 @@ pub unsafe extern "system" fn User32CallHookProcFromKernel(
     }
 
     if Hit != 0 {
+        ERR!(
+            "Hook Exception! Id: %d, Code %d, Proc 0x%x\n",
+            (*Common).HookId,
+            (*Common).Code,
+            Proc.map_or(core::ptr::null(), |p| p as *const core::ffi::c_void),
+        );
         Status = STATUS_UNSUCCESSFUL;
     }
     if Loaded != 0 {

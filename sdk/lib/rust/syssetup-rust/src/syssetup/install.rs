@@ -1555,7 +1555,9 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
     }
     DPRINT1!("[SYSSETUP] InstallLiveCD: network started, registering components\n");
 
-    {
+    // A registration DLL that faults must not stop the LiveCD coming up; the C
+    // logs it and carries on to the shell.
+    if ntdll_sys::seh::try_except_all(|| {
         if SetupInstallFromInfSectionW(
             core::ptr::null_mut(),
             hSysSetupInf,
@@ -1570,7 +1572,7 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
             core::ptr::null_mut(),
         ) == 0
         {
-            // DPRINT removed
+            DPRINT1!("SetupInstallFromInfSectionW failed!\n");
         }
 
         RegisterTypeLibraries(
@@ -1579,6 +1581,10 @@ unsafe extern "C" fn InstallLiveCD() -> u32 {
             hSysSetupInf,
             w!("TypeLibraries") as LPCWSTR,
         );
+    })
+    .is_err()
+    {
+        DPRINT1!("Catching exception\n");
     }
 
     DPRINT1!("[SYSSETUP] InstallLiveCD: registration done\n");

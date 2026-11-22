@@ -786,6 +786,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
     if !pefixup.is_empty() {
         call.push(format!("    PEFIXUP {}", pefixup.join(" ")));
     }
+    extra.extend(cell.sibling_shims.iter().map(|(lib, _)| lib.clone()));
     extra.extend(cell.body_depends.iter().cloned());
     let mut seen = HashSet::new();
     extra.retain(|x| seen.insert(x.clone()));

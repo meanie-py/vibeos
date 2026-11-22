@@ -208,7 +208,13 @@ pub unsafe extern "system" fn GetSystemMetrics(nIndex: core::ffi::c_int) -> core
         return RealGetSystemMetrics(nIndex);
     }
 
-    Ret = guah.GetSystemMetrics.unwrap()(nIndex);
+    // A themed hook (uxtheme) that faults is logged and skipped, as in the C.
+    match ntdll_sys::seh::try_except_all(|| guah.GetSystemMetrics.unwrap()(nIndex)) {
+        Ok(r) => Ret = r,
+        Err(_) => {
+        ERR!("Got exception in hooked GetSystemMetrics!\n");
+    }
+    }
 
     EndUserApiHook();
 
@@ -506,7 +512,13 @@ pub unsafe extern "system" fn SystemParametersInfoA(
         return RealSystemParametersInfoA(uiAction, uiParam, pvParam, fWinIni);
     }
 
-    Ret = guah.SystemParametersInfoA.unwrap()(uiAction, uiParam, pvParam, fWinIni);
+    // A themed hook (uxtheme) that faults is logged and skipped, as in the C.
+    match ntdll_sys::seh::try_except_all(|| guah.SystemParametersInfoA.unwrap()(uiAction, uiParam, pvParam, fWinIni)) {
+        Ok(r) => Ret = r,
+        Err(_) => {
+        ERR!("Got exception in hooked SystemParametersInfoA!\n");
+    }
+    }
 
     EndUserApiHook();
 
@@ -531,7 +543,13 @@ pub unsafe extern "system" fn SystemParametersInfoW(
         return RealSystemParametersInfoW(uiAction, uiParam, pvParam, fWinIni);
     }
 
-    Ret = guah.SystemParametersInfoW.unwrap()(uiAction, uiParam, pvParam, fWinIni);
+    // A themed hook (uxtheme) that faults is logged and skipped, as in the C.
+    match ntdll_sys::seh::try_except_all(|| guah.SystemParametersInfoW.unwrap()(uiAction, uiParam, pvParam, fWinIni)) {
+        Ok(r) => Ret = r,
+        Err(_) => {
+        ERR!("Got exception in hooked SystemParametersInfoW!\n");
+    }
+    }
 
     EndUserApiHook();
 

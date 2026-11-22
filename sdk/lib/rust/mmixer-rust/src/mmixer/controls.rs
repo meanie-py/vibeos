@@ -555,7 +555,7 @@ pub unsafe extern "C" fn MMixerAddMixerControl(
             Range = Members.offset((1) as isize)
                 as PKSPROPERTY_STEPPING_LONG;
 
-            DPRINT!("NodeIndex %u Range Min %d Max %d Steps %x UMin %x UMax %x\n", NodeIndex, (*Range).Bounds.SignedMinimum, (*Range).Bounds.SignedMaximum, (*Range).SteppingDelta, (*Range).Bounds.UnsignedMinimum, (*Range).Bounds.UnsignedMaximum);
+            DPRINT!("NodeIndex %u Range Min %d Max %d Steps %x UMin %x UMax %x\n", NodeIndex, (*Range).Bounds.__bindgen_anon_1.SignedMinimum, (*Range).Bounds.__bindgen_anon_1.SignedMaximum, (*Range).SteppingDelta, (*Range).Bounds.__bindgen_anon_2.UnsignedMinimum, (*Range).Bounds.__bindgen_anon_2.UnsignedMaximum);
 
             /* Store mixer control info there */
             (*VolumeData).Header.dwControlID = (*MixerControl).Control.dwControlID;

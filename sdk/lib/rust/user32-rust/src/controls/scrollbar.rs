@@ -1654,7 +1654,13 @@ pub unsafe extern "system" fn EnableScrollBar(hwnd: HWND, nBar: UINT, flags: UIN
         return Ret;
     }
 
-    Ret = guah.EnableScrollBar.unwrap()(hwnd, nBar, flags);
+    // A themed hook (uxtheme) that faults is logged and skipped, as in the C.
+    match ntdll_sys::seh::try_except_all(|| guah.EnableScrollBar.unwrap()(hwnd, nBar, flags)) {
+        Ok(r) => Ret = r,
+        Err(_) => {
+        ERR!("Got exception in hooked EnableScrollBar!\n");
+    }
+    }
 
     EndUserApiHook();
 
@@ -1718,7 +1724,13 @@ pub unsafe extern "system" fn GetScrollInfo(Wnd: HWND, SBType: INT, Info: LPSCRO
         return RealGetScrollInfo(Wnd, SBType, Info);
     }
 
-    Ret = guah.GetScrollInfo.unwrap()(Wnd, SBType, Info);
+    // A themed hook (uxtheme) that faults is logged and skipped, as in the C.
+    match ntdll_sys::seh::try_except_all(|| guah.GetScrollInfo.unwrap()(Wnd, SBType, Info)) {
+        Ok(r) => Ret = r,
+        Err(_) => {
+        ERR!("Got exception in hooked GetScrollInfo!\n");
+    }
+    }
 
     EndUserApiHook();
 
@@ -1837,7 +1849,13 @@ pub unsafe extern "system" fn SetScrollInfo(
         return RealSetScrollInfo(Wnd, SBType, Info, bRedraw);
     }
 
-    Ret = guah.SetScrollInfo.unwrap()(Wnd, SBType, Info, bRedraw);
+    // A themed hook (uxtheme) that faults is logged and skipped, as in the C.
+    match ntdll_sys::seh::try_except_all(|| guah.SetScrollInfo.unwrap()(Wnd, SBType, Info, bRedraw)) {
+        Ok(r) => Ret = r,
+        Err(_) => {
+        ERR!("Got exception in hooked SetScrollInfo!\n");
+    }
+    }
 
     EndUserApiHook();
 

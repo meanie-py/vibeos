@@ -669,9 +669,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   umpnpmgr's DeviceInstallThread was installing devices (`ACPI\BRCM5D12` failed, newdev error
   259), yet the service still read state 2 after 300 s. umpnpmgr's `ServiceMain` reports
   RUNNING unconditionally after creating its three threads, so it stalled between checkpoint
-  1 and that last `SetServiceStatus`. Not seen in QEMU (arm64 probe: RUNNING after 1 s). Next:
-  sysfbprobe now prints the checkpoint, which names the thread start it stalled before; boot
-  it again until the stall recurs.
+  1 and that last `SetServiceStatus`. Since DeviceInstallThread was already running, its
+  `CreateThread` had returned, so the likelier stall is the final `SetServiceStatus(RUNNING)`
+  or the SCM's handling of it: expect checkpoint 3. Not seen in QEMU (arm64 probe: RUNNING
+  after 1 s). 2026-11-21: seven more `pi5 boot`s of one image (`20261121-171521-CbZh5c` through
+  `20261121-174647-oTgu0G`) all had PlugPlay RUNNING within 1 s, so the rate so far is 1 in 9.
+  sysfbprobe prints the checkpoint (state 4 checkpoint 0 on those boots); the next stall names
+  where it stopped.
 
 - **amd64: long boots wedged once osk.exe had leaked the GDI handle table (FIXED 2026-11-07,
   graviton lane).** The stock i386 `osk.exe` gained thousands of pens (to 8,300+ in one Chrome
@@ -786,32 +790,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `test_fiber_actctx`'s switch on amd64; that guard is removed. The first arm64 winetest grade
   anywhere: `--rostests` cannot produce arm64 media (ntdll_winetest and a dozen apitests do not
   compile there), hence `--winetests`.
-- **i386: a second wined3d in one process cannot create a GL context, and the legacy fallback
-  then faults in Mesa (open, found 2026-11-05, root-caused 2026-11-06).** Found by the d3d8/d3d9
-  `device` cases, both variants, so below the front ends. The traced i386 case
-  (`d3d9.device-i386`, `gl trace`: wined3d's TRACE on the serial line) shows the whole sequence.
-  The probe's bad-SDK `Direct3DCreate9(1)` succeeds (wined3d ignores the version) and its first
-  adapter init gets a 3.3 **core** context normally. The second `Direct3DCreate9`'s init then
-  fails `wglCreateContextAttribsARB` for 4.4, 3.2 and 1.0 alike, last error 8
-  (ERROR_NOT_ENOUGH_MEMORY), and wined3d silently keeps its bootstrap context -- a 3.3
-  *Compatibility* profile -- so the legacy-only quirk tests run, and `match_broken_arb_fog`'s
-  immediate-mode draw faults in Mesa (`movss %xmm2,(%edx)`, EDX = 0; the six wined3d return
-  addresses symbolize coherently at load base 0x830000: match_broken_arb_fog <-
-  wined3d_adapter_init_gl_caps <- wined3d_adapter_gl_init <- _create <- wined3d_init <-
-  wined3d_create). amd64 and arm64 run the same two inits and pass. Ruled out: Mesa alone
-  (glsanity runs wined3d's exact core-profile `draw_test_quad` sequence clean on the i386
-  guest, and the Windows host runs it clean in both context-delete orders) and the loader's
-  dynamic TLS, and the probe's own leak (it never released the bad-SDK object; it does now,
-  and nothing changed). **Measured** (the probe's `dx_vm`, `trace` runs only): one wined3d
-  init + release takes the process from 17M reserved / 1530M largest free region to 1530M
-  reserved / 122M largest free, in 24 new allocations, the biggest a single 512M reservation --
-  the power-of-two shape of the heap's segment doubling (`RtlpExtendHeap`:
-  `SegmentReserve += ReserveSize`, inherited from the C, `sdk/lib/rtl/heap.c:1356`). Harmless
-  in a 64-bit process, fatal in 2G. Next: confirm the 512M block is a heap segment (walk
-  `RtlWalkHeap`/`HeapWalk` segment entries) and find what drives the heap to hundreds of MB at
-  peak (Mesa softpipe's per-context allocations below the 508K virtual-block threshold are the
-  suspect); then whether wined3d should fail loudly instead of keeping a legacy context it never
-  asked for.
+- **i386: a second wined3d in one process could not create a GL context (FIXED 2026-11-21,
+  shell32-com lane; found 2026-11-05).** Both the C and Rust d3d8/d3d9 `device` cases failed,
+  and the cause was the user-mode heap, inherited from `sdk/lib/rtl/heap.c`.
+  `RtlpDeCommitFreeBlock` kept a committed page between consecutive freed blocks, so their
+  decommitted ranges were each one page too small to hold a block of the same size again.
+  Mesa softpipe allocates about 200M of 262K tile caches per context. Every new context
+  therefore reserved a fresh doubling heap segment, and two adapter inits used up the 2G
+  address space. The second init's `wglCreateContextAttribsARB` then failed with error 8, and
+  wined3d's legacy fallback faulted in Mesa. Fix in `rtl-heap`: a free entry that starts at an
+  existing uncommitted range's end merges into that range. glsanity's identical second round
+  now reuses round 1's 272M instead of reserving 256M more. The d3d8/d3d9/ddraw `device` cases
+  now also run on i386. Field manual: "A user-mode heap that reserves a new segment for space
+  it already freed". **Still owed:** when every attribs request fails, wined3d silently keeps
+  a compatibility-profile bootstrap context it never asked for, and its legacy-only quirk
+  tests then fault in Mesa. It should fail the adapter init loudly instead.
 - **arm64: PCI I/O-space BARs are never translated, so a port-I/O PCI device cannot work
   (open, found 2026-11-05).** The AC97 binds on arm64 (after its INF gained an NTARM64 models
   section) and then fails START: `AC97 Common: PrimaryCodecReady timed out!`. On arm64
@@ -980,10 +973,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `FatVerifyVolume`, and counted no create/read/disk statistics (empty C stand-ins, now
   `stats.rs`). Findings the agents raised that are NOT bugs here: open-coded asserts and
   `DbgBreakPoint`s that mirror `NT_ASSERT` -- this build is `DBG=1`, so the C's asserts are
-  live too. Still open, as decisions rather than bugs: cdfs's `FILE_OPEN_REQUIRING_OPLOCK`
-  block is `#[cfg(any())]` although the crate builds `ntddi_win8` (its FCB oplock layout is
-  the pre-WIN8 one); fastfat's `FatCommonCreateCallout` lacks the C's try/except but is dead
-  below WINTHRESHOLD. Known left as-is: fastfat's oplock stand-ins (`FsRtlOplockBreakH`
+  live too. The two open decisions were settled 2026-11-21: cdfs now refuses
+  `FILE_OPEN_REQUIRING_OPLOCK` with STATUS_INVALID_PARAMETER, as Windows 11's CDFS does while
+  FAT32 and NTFS open the file (fsquery `oplockopen`, winref `20261121-173426-fIMkD3`), and
+  fastfat's `FatCommonCreateCallout` has the C's try/except (still unreachable below
+  WINTHRESHOLD). Known left as-is: fastfat's oplock stand-ins (`FsRtlOplockBreakH`
   SUCCESS, `FsRtlCheckOplockEx` ignoring Flags: ntoskrnl stubs them at 0xA00+),
   `KeAcquireSpinLockRaiseToDpc` in `rust_cohab_fat.c` (raises IRQL, takes no lock: UP-only),
   cdfs's `FsRtlIsLeadDbcsCharacter` stand-in (always FALSE, DBCS OEM code pages),
@@ -2384,7 +2378,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   inactive adapters, serial's PnP queries, comctl32 TB_SETMETRICS, dhcpcsvc RegCloseKey,
   kbd103 generated. Already ours: TrimWsList's flush, NtRemoveIoCompletion's zeroed status,
   AmILastThread on ActiveThreads, the fiber checks. Then translated sealed on Haiku and integrated ($0.10): DeviceProperty (`pnpprop.c` -> ntoskrnl-rust pnpmgr/pnpprop.rs, plus its hooks: the property-change event, interface keys, release on IopDeleteDevice, kernel-mode Rtl locale table) and x86/x64 cache enumeration (`cacheinfo.c` -> ke/x86x64, with both KiGetCacheInformation rewritten onto it; amd64 cpu.rs had Intel/AMD swapped against ketypes.h since 0e95a343b33). Storport re-ported over its old crate with `rustconv port` (owner's call, 2026-10-16; all 8 TUs incl. upstream's new `ioctl.c`/`srb.c`, plus inline.h; $0.25 Haiku, 0/0/0 from a $0 `port replay`). Done since (2026-10-16): IoGet/SetDeviceInterfacePropertyData exported from pnpprop.rs, and ntoskrnl_vista's NOT_IMPLEMENTED copies removed so drivers import them (upstream's copies forward through MmGetSystemRoutineAddress for kernels without them, 3cc9aa99292; ours always has them; cdrom's extern was cdecl), with upstream's `IoDeviceProperty` kmtest added to the sweep (653/0 on all three arches); shell32's RegenerateUserEnvironment ported (c25e4fd7dec; its apitest 8/0 on amd64). Then (2026-10-17, owner approved the re-buy) mmc_new's views (c0f01460800, 857f521a704) and CActionWnd.cpp (88da81d9b8b): 37 functions re-bought on Haiku ($0.34), the rest replayed from banks; the stale banks fixed by hand, CActionWnd on the module's own ATL window machinery, and five list-slot casts, a swapped icon-mode pair and two C bugs (a never-set selected node, a VARIANT leak) fixed after review. Owed, by cluster (upstream-sync): pciidex rewrite
-  (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, freeldr
+  (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, dhcpcsvc RequestParams (the sync kept the old IDL, so `DhcpRequestParams` is a Rust stub returning 0 with no RPC behind it), freeldr
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
   so every logon, status and shutdown dialog shows no banner today: visible, on the boot
