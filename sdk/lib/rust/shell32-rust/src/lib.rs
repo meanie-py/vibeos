@@ -11,6 +11,7 @@
 #![allow(private_interfaces)]
 #![allow(clippy::all)]
 
+
 //! shell32.dll — Rust translation of dll/win32/shell32 (the usermode Shell client DLL).
 //! staticlib → libshell32_rust.a, cohab-linked into the cmake shell32.dll with the
 //! translated .c commented out. The wine-derived pure-C half of the Shell API (registry
@@ -20,6 +21,11 @@
 //! `exe_drop_handler` are the first Rust-owned activated objects.
 //! Most bodies forward to other usermode DLLs (advapi32/shlwapi/ole32/kernel32) resolved
 //! via shell32's existing import libs. See docs/engineering/shell32-translation-audit.md.
+
+// FAILED_UNEXPECTEDLY! (#[macro_export]) reaches the shared port through $crate, so a crate
+// that expands it need not depend on win32macros-rust itself.
+#[doc(hidden)]
+pub use win32macros_rust as __win32macros;
 
 // Wine debug calls are macros in the C++ source. Keep them as macros in Rust too: an
 // out-of-line no-op function is an optimization/ABI barrier and is not equivalent.

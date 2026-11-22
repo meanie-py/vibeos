@@ -86,11 +86,12 @@ pub const SHGDN_INFOLDER: crate::shellcom::SHGDNF = 0x0001;
 // have). They are three lines each and their definitions are fixed by the C headers.
 // ---------------------------------------------------------------------------------------------
 
-/// shellutils.h:88 `#define FAILED_UNEXPECTEDLY(hr) FAILED(hr)` in a non-debug build.
+/// shellutils.h:88 `FAILED_UNEXPECTEDLY(hr)`: the shared port, which keeps the C's
+/// "Unexpected failure" trace (the header's `#if 1` arm, so shipping behaviour).
 #[macro_export]
 macro_rules! FAILED_UNEXPECTEDLY {
     ($hr:expr) => {
-        (($hr) as $crate::island::HRESULT) < 0
+        $crate::__win32macros::FAILED_UNEXPECTEDLY!(($hr) as $crate::island::HRESULT)
     };
 }
 

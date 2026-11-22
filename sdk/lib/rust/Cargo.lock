@@ -5166,6 +5166,7 @@ dependencies = [
  "com-sys",
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
  "winedebug-rust",
 ]
 
