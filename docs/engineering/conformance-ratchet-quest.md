@@ -46,11 +46,19 @@ Owed, in order:
 1. The ~50 per arch TUs the sign-compare audit still only partly parses (freeldr fixed
    2026-11-22: its own include dirs must come BEFORE the donor's). What is left is a long
    tail: wine kernelbase (9, not compiled anywhere), gdi32 (6), crt (6), scattered others.
-2. bank_drift residue: 18 moved hashes no historical master scanner reproduces, all bought in
-   sibling worktrees with branch-local scanners (cpp-cluster, gicv3, research,
-   rustconv-speedrun, shell32-com). The 357 upstream-moved bodies are upstream-sync's queue.
+2. ~~bank_drift residue: 18 moved hashes.~~ Closed 2026-11-22, no shipping bug. Replaying the
+   36 scanner.py versions committed on the buying branches (cpp-cluster, cells-wdmaud/gicv3,
+   msvcrt-homebrew, rustconv-speedrun, shell32-com; blob-deduped against the 26 master
+   versions) over today's C reproduces none of them, and neither does each worktree's own
+   current scanner over its own C. The sibling C is byte-identical to ours for all but
+   diskpart's partlist.c, so the bodies were bought from today's C under scanner state that
+   was never committed; the 6 fltmc.cpp functions are C++, hashed by cpp-cluster's own path.
+   partlist.c differs only in volume code, from upstream ac1ab9e3043/b6f74c0360a merged here
+   after speedrun branched: upstream-sync's queue, not a cut. The 357 upstream-moved bodies
+   are upstream-sync's queue too.
 Next step on resume: `git fetch && git merge origin/master`, a fresh
-`./vibeos-cli conformance --arch <a>` per arch (it now fails loud), then item 1.
+`./vibeos-cli conformance --arch <a>` per arch (it now fails loud), then item 1 if anything
+in that tail is worth it; otherwise this lane's owed queue is empty.
 
 ## Survey findings (2026-07-10 — verified, start from here)
 
