@@ -1195,6 +1195,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # tools/vibeos-lint/src/rules/assert_negated_vs_c.rs). fastfat's FatCommonRead wrapped the
     # C's VerifyThread assert in `!( )`, so it fired on every legitimate I/O failure once armed.
     specs.append(("scan_assert_negated_vs_c", ["MISSING"], "stdout"))
+    # A size_of::<X>() where the same-module C twin sizes a different type (native Rust rule,
+    # tools/vibeos-lint/src/rules/sizeof_vs_c.rs). crypt32's CRYPT_CopyChainToElement sized the
+    # embedded CERT_CHAIN_CONTEXT for a CertificateChain: a heap overrun.
+    specs.append(("scan_sizeof_vs_c", ["MISSING"], "stdout"))
     # A DEVICE_OBJECT pointer cast to a device-extension type for the C's ->DeviceExtension
     # (native Rust rule, tools/vibeos-lint/src/rules/devobj_as_extension.rs): six classpnp sites
     # wrote the release-queue spinlock into the device object. Gated at zero.
