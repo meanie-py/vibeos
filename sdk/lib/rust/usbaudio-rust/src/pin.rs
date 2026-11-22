@@ -681,7 +681,7 @@ pub unsafe extern "C" fn InitCapturePin(
     KsAddItemToObjectBag(
         (*Pin).Bag,
         (*PinContext).Buffer as PVOID,
-        Some(core::mem::transmute(ExFreePool as usize)),
+        Some(ExFreePool),
     );
 
     Index = 0;
@@ -725,7 +725,7 @@ pub unsafe extern "C" fn InitCapturePin(
         KsAddItemToObjectBag(
             (*Pin).Bag,
             Irp as PVOID,
-            Some(core::mem::transmute(ExFreePool as usize)),
+            Some(ExFreePool),
         );
 
         Status = UsbAudioAllocCaptureUrbIso(
@@ -815,7 +815,7 @@ pub unsafe extern "C" fn InitStreamPin(
         KsAddItemToObjectBag(
             (*Pin).Bag,
             Irp as PVOID,
-            Some(core::mem::transmute(ExFreePool as usize)),
+            Some(ExFreePool),
         );
 
         Index += 1;

@@ -60,7 +60,7 @@ use crate::x86::sysbus::{HalpGetSystemInterruptVector, HalpTranslateSystemBusAdd
 use crate::x86::isabus::HalpTranslateIsaBusAddress;
 use crate::x86::cmosbus::{HalpcGetCmosData, HalpcSetCmosData};
 #[cfg(not(feature = "minihal"))]
-use crate::x86::memory::{HalpMapPhysicalMemory64Vista, HalpUnmapVirtualAddressVista};
+use crate::x86::memory::{HalpMapPhysicalMemory64, HalpUnmapVirtualAddress};
 use crate::x86::pcr::KeGetCurrentPrcb;
 
 // HalDispatchTable / HalPrivateDispatchTable:
@@ -253,8 +253,8 @@ pub unsafe extern "system" fn HalpRegisterInternalBusHandlers() {
             0,
         );
         if !bus.is_null() {
-            (*bus).GetInterruptVector = Some(core::mem::transmute(HalpGetSystemInterruptVector as usize));
-            (*bus).TranslateBusAddress = Some(core::mem::transmute(HalpTranslateSystemBusAddress as usize));
+            (*bus).GetInterruptVector = Some(HalpGetSystemInterruptVector);
+            (*bus).TranslateBusAddress = Some(HalpTranslateSystemBusAddress);
         }
 
         bus = HalpAllocateBusHandler(
@@ -266,8 +266,8 @@ pub unsafe extern "system" fn HalpRegisterInternalBusHandlers() {
             0,
         );
         if !bus.is_null() {
-            (*bus).GetBusData = Some(core::mem::transmute(HalpcGetCmosData as usize));
-            (*bus).SetBusData = Some(core::mem::transmute(HalpcSetCmosData as usize));
+            (*bus).GetBusData = Some(HalpcGetCmosData);
+            (*bus).SetBusData = Some(HalpcSetCmosData);
         }
 
         bus = HalpAllocateBusHandler(
@@ -279,8 +279,8 @@ pub unsafe extern "system" fn HalpRegisterInternalBusHandlers() {
             0,
         );
         if !bus.is_null() {
-            (*bus).GetBusData = Some(core::mem::transmute(HalpcGetCmosData as usize));
-            (*bus).SetBusData = Some(core::mem::transmute(HalpcSetCmosData as usize));
+            (*bus).GetBusData = Some(HalpcGetCmosData);
+            (*bus).SetBusData = Some(HalpcSetCmosData);
         }
 
         bus = HalpAllocateBusHandler(
@@ -292,9 +292,9 @@ pub unsafe extern "system" fn HalpRegisterInternalBusHandlers() {
             0,
         );
         if !bus.is_null() {
-            (*bus).GetBusData = Some(core::mem::transmute(HalpNoBusData as usize));
+            (*bus).GetBusData = Some(HalpNoBusData);
             (*(*bus).BusAddresses).Memory.Limit = 0xFFFFFF;
-            (*bus).TranslateBusAddress = Some(core::mem::transmute(HalpTranslateIsaBusAddress as usize));
+            (*bus).TranslateBusAddress = Some(HalpTranslateIsaBusAddress);
         }
     }
 }
@@ -411,21 +411,21 @@ pub unsafe extern "system" fn HalpAllocateAndInitPciBusHandler(
 
     (*Bus).GetBusData = Some(core::mem::transmute(HalpGetPCIData as usize));
     (*Bus).SetBusData = Some(core::mem::transmute(HalpSetPCIData as usize));
-    (*Bus).GetInterruptVector = Some(core::mem::transmute(HalpGetPCIIntOnISABus as usize));
-    (*Bus).AdjustResourceList = Some(core::mem::transmute(HalpAdjustPCIResourceList as usize));
-    (*Bus).AssignSlotResources = Some(core::mem::transmute(HalpAssignPCISlotResources as usize));
+    (*Bus).GetInterruptVector = Some(HalpGetPCIIntOnISABus);
+    (*Bus).AdjustResourceList = Some(HalpAdjustPCIResourceList);
+    (*Bus).AssignSlotResources = Some(HalpAssignPCISlotResources);
     (*(*Bus).BusAddresses).Dma.Limit = 0;
 
     BusData = (*Bus).BusData as PPCIPBUSDATA;
 
     (*BusData).CommonData.Tag = PCI_DATA_TAG;
     (*BusData).CommonData.Version = PCI_DATA_VERSION;
-    (*BusData).CommonData.ReadConfig = Some(core::mem::transmute(HalpReadPCIConfig as usize));
-    (*BusData).CommonData.WriteConfig = Some(core::mem::transmute(HalpWritePCIConfig as usize));
+    (*BusData).CommonData.ReadConfig = Some(HalpReadPCIConfig);
+    (*BusData).CommonData.WriteConfig = Some(HalpWritePCIConfig);
     (*BusData).CommonData.Pin2Line = Some(core::mem::transmute(HalpPCIPin2ISALine as usize));
     (*BusData).CommonData.Line2Pin = Some(core::mem::transmute(HalpPCIISALine2Pin as usize));
     (*BusData).MaxDevice = PCI_MAX_DEVICES;
-    (*BusData).GetIrqRange = Some(core::mem::transmute(HalpGetISAFixedPCIIrq as usize));
+    (*BusData).GetIrqRange = Some(HalpGetISAFixedPCIIrq);
 
     RtlInitializeBitMap(
         &raw mut (*BusData).DeviceConfigured as PVOID,
@@ -1547,15 +1547,22 @@ pub unsafe extern "system" fn HalpInitBusHandlers() {
 pub unsafe extern "system" fn HalpRegisterKdSupportFunctions() {
     unsafe {
         HalPrivateDispatchTable.KdSetupPciDeviceForDebugging =
-            Some(core::mem::transmute(HalpSetupPciDeviceForDebugging as usize));
+            Some(HalpSetupPciDeviceForDebugging);
         HalPrivateDispatchTable.KdReleasePciDeviceforDebugging =
-            Some(core::mem::transmute(HalpReleasePciDeviceForDebugging as usize));
-        HalPrivateDispatchTable.KdMapPhysicalMemory64 =
-            Some(core::mem::transmute(HalpMapPhysicalMemory64Vista as usize));
-        HalPrivateDispatchTable.KdUnmapVirtualAddress =
-            Some(core::mem::transmute(HalpUnmapVirtualAddressVista as usize));
+            Some(HalpReleasePciDeviceForDebugging);
+        // Divergence from the C (busemul.c / bussupp.c `#if NTDDI_VERSION >= NTDDI_VISTA`),
+        // which installs the 3-arg Vista routines here. The slot's type in the same
+        // compilation is the 2-arg one: xdk/kdtypes.h gives pKdMapPhysicalMemory64 and
+        // pKdUnmapVirtualAddress `FlushCurrentTLB` only at NTDDI_VISTASP1, and our island has
+        // the 2-arg typedef. A 2-arg caller of a 3-arg stdcall routine underpays its pop on
+        // i386 and leaves the BOOLEAN as garbage elsewhere. The C's own pre-Vista branch
+        // installs these 2-arg wrappers (memory.c: Vista(.., TRUE)), which match the slot.
+        // As plain `Some(f)`, rustc checks the signature, where the old
+        // `transmute(f as usize)` checked nothing.
+        HalPrivateDispatchTable.KdMapPhysicalMemory64 = Some(HalpMapPhysicalMemory64);
+        HalPrivateDispatchTable.KdUnmapVirtualAddress = Some(HalpUnmapVirtualAddress);
         HalPrivateDispatchTable.KdCheckPowerButton =
-            Some(core::mem::transmute(HalpCheckPowerButton as usize));
+            Some(HalpCheckPowerButton);
     }
 }
 

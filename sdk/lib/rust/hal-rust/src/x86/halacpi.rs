@@ -1280,11 +1280,11 @@ pub unsafe extern "system" fn HalpInitNonBusHandler() {
     use ntkrnl_sys::hal_ddk::HalPrivateDispatchTable;
     let dispatch = &raw mut HalPrivateDispatchTable;
     (*dispatch).HalPciTranslateBusAddress =
-        Some(core::mem::transmute(HalpTranslateBusAddress as usize));
+        Some(HalpTranslateBusAddress);
     (*dispatch).HalPciAssignSlotResources =
-        Some(core::mem::transmute(HalpAssignSlotResources as usize));
+        Some(HalpAssignSlotResources);
     (*dispatch).HalFindBusAddressTranslation =
-        Some(core::mem::transmute(HalpFindBusAddressTranslation as usize));
+        Some(HalpFindBusAddressTranslation);
 }
 
 #[cfg(target_arch = "x86_64")]
