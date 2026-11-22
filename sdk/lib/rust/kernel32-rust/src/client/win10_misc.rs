@@ -712,6 +712,20 @@ const MEM_EXECUTE_OPTION_PERMANENT: u32 = 0x8;
 /// Struct size for a policy class (PROCESS_MITIGATION_DEP_POLICY is {DWORD flags;
 /// BOOLEAN Permanent} = 8, every other class is one DWORD of flags = 4; measured with
 /// llvm-mingw on x64 and i386). None = not a class this API accepts.
+/// `AppContainerRegisterSid` (kernelbase, undocumented): register an AppContainer SID under a
+/// moniker. vibeos has no AppContainer (lowbox) tokens, so nothing can be registered and it
+/// says so rather than succeed: HRESULT_FROM_WIN32(ERROR_NOT_SUPPORTED). Chrome's sandbox
+/// CHECKs only that the export exists (its absence was the sandboxed browser's second crash)
+/// and treats a failed HRESULT as "no AppContainer profile".
+#[no_mangle]
+pub unsafe extern "system" fn AppContainerRegisterSid(
+    _Sid: PVOID,
+    _Moniker: *const u16,
+    _DisplayName: *const u16,
+) -> i32 {
+    0x8007_0032_u32 as i32
+}
+
 /// PROCESS_MITIGATION_POLICY_INFORMATION for ProcessMitigationPolicy (52).
 #[repr(C)]
 struct MitigationPolicyInformation {
