@@ -49,6 +49,7 @@ fn main() {
         .rust_staticlib("pcix-rust")
         .rust_user_target()
         .c_from_compile_db("pcix_shims", &["drivers/bus/pcix/rust_varargs_shim.c", "drivers/bus/pcix/usage.c", "drivers/bus/pcix/intrface/ideintrf.c", "drivers/bus/pcix/pci/devhere.c", "drivers/bus/pcix/pci/romimage.c", "drivers/bus/pcix/guid.c"])
+        .whole_c_objects("pcix_shims")
         .rc("drivers/bus/pcix/pci.rc", rc_includes, rc_flags, rc_defines)
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")

@@ -24,6 +24,7 @@ fn main() {
     Linker::new(target_json)
         .rust_staticlib("netapi32-rust")
         .c_from_compile_db("netapi32_shims", &["dll/win32/netapi32/atsvc_c.c", "dll/win32/netapi32/browser_c.c", "dll/win32/netapi32/dssetup_c.c", "dll/win32/netapi32/netdfs_c.c", "dll/win32/netapi32/netlogon_c.c", "dll/win32/netapi32/srvsvc_c.c", "dll/win32/netapi32/wkssvc_c.c"])
+        .whole_c_objects("netapi32_shims")
         .spec2def("dll/win32/netapi32/netapi32.spec", "netapi32.dll")
         .spec_stubs()
         .delay_import_lib("dll/win32/samlib/samlib.spec", "samlib.dll", "samlib")
