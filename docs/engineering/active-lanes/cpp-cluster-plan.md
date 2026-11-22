@@ -106,10 +106,10 @@ Owed (tracked, not done):
   tree consensus; cabview's commctrl.h `DPA_DestroyCallback`, declared by nobody in the tree,
   was hand-declared. Promotion is GUID-only now because promoting for functions pulled in
   winreg.h/objbase.h/mmsystem.h for names resolve already handles.
-- **Dropped failure traces.** `FAILED_UNEXPECTEDLY!` is a bare `< 0`; shellutils.h's
-  `_ROS_FAILED_HELPER` also prints in this DBG=1 tree. Same class as the 88 dropped ERR prints;
-  stobject dropped its TRACE/ERR prints too (Volume_FindMixerControl's ERRs among them).
 - Function-local enums are now lowered to `const int` before translation (cabview's case).
+- Closed 2026-11-22: `FAILED_UNEXPECTEDLY!` prints the C's "Unexpected failure (expr)=hr" trace
+  (shellutils.h selects it with `#if 1`, so it ships); one port in win32macros-rust, with
+  shell32's and menuband's copies delegating to it. stobject's dropped prints were already back.
 
 ## rapps (FLIPPED 2026-10-15)
 
