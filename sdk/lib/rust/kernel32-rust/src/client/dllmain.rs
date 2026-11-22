@@ -518,18 +518,35 @@ pub unsafe extern "system" fn DllMain(
             // Windows has kernelbase.dll in every Win32 process (kernel32 imports it), and
             // software finds APIs with GetModuleHandle(L"kernelbase.dll") + GetProcAddress:
             // Chrome's sandbox CHECKs AppContainerRegisterSid that way. Ours forwards into
-            // kernel32, so it is loaded here, once kernel32 is initialised, instead of
-            // imported. Not in the C. A failure is said, never fatal: nothing before needed it.
+            // kernel32, so it is loaded here, once kernel32 is initialised. Not in the C.
+            // By FULL PATH from kernel32's own directory, never by bare name: a WoW64
+            // process's 64-bit kernel32 runs with the 32-bit guest's directory (syswow64)
+            // first in the search order, and found the 32-bit kernelbase there (every
+            // 32-bit app: LdrLoadDll 0xc0000005). A failure is said, never fatal.
             {
-                // L"kernelbase.dll\0"
-                static KERNELBASE: [u16; 15] = [
+                let mut Path: [u16; MAX_PATH as usize + 16] = [0; MAX_PATH as usize + 16];
+                let n = crate::client::loader::GetModuleFileNameW(
+                    hDll as HINSTANCE,
+                    Path.as_mut_ptr(),
+                    MAX_PATH as DWORD,
+                ) as usize;
+                let dir = Path[..n].iter().rposition(|&c| c == b'\\' as u16).map(|i| i + 1);
+                // L"kernelbase.dll"
+                const KERNELBASE: [u16; 14] = [
                     0x6B, 0x65, 0x72, 0x6E, 0x65, 0x6C, 0x62, 0x61, 0x73, 0x65, 0x2E, 0x64, 0x6C,
-                    0x6C, 0x00,
+                    0x6C,
                 ];
-                let mut Name: UNICODE_STRING = core::mem::zeroed();
-                RtlInitUnicodeString(&mut Name, KERNELBASE.as_ptr() as PCWSTR);
-                let mut Base: PVOID = core::ptr::null_mut();
-                let St = LdrLoadDll(core::ptr::null_mut(), core::ptr::null_mut(), &mut Name, &mut Base);
+                let St = match dir {
+                    Some(d) if n > 0 && d + KERNELBASE.len() < Path.len() => {
+                        Path[d..d + KERNELBASE.len()].copy_from_slice(&KERNELBASE);
+                        Path[d + KERNELBASE.len()] = 0;
+                        let mut Name: UNICODE_STRING = core::mem::zeroed();
+                        RtlInitUnicodeString(&mut Name, Path.as_ptr() as PCWSTR);
+                        let mut Base: PVOID = core::ptr::null_mut();
+                        LdrLoadDll(core::ptr::null_mut(), core::ptr::null_mut(), &mut Name, &mut Base)
+                    }
+                    _ => 0xC000_0135_u32 as NTSTATUS, // STATUS_DLL_NOT_FOUND: no own path
+                };
                 if !NT_SUCCESS(St) {
                     DbgPrint(
                         b"[kernel32] loading kernelbase.dll failed: 0x%lx\n\0".as_ptr() as *const i8,
