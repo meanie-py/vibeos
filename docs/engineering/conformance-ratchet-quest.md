@@ -24,28 +24,32 @@ Rust-translated subsystem is a **pre-packaged mistranslation repro** with a name
 an assertion message — no crash forensics needed. And it executes translated code the
 boot path never touches (see `tools/coverage/` — the never-executed-rust registry).
 
-## Resume here (2026-11-08, fleet wind-down)
+## Resume here (2026-11-22, weekend run)
 
-Parked clean: nothing unlanded, nothing in /tmp. The last landings were the mixed-sign/narrowing
-`min`/`max` audit (f702ef72441), `scan_minmax_narrowing` (8e3fb97cca5), the scanner `;` fix with the
-bank_drift triage and setupapi's i386 before/after (fa600031834), and the CcZeroData 4 GiB+
-kmtest (337f69a56f9, baselined on all three arches). The older owed queue is the
-"2026-10-17b — the overnight queue" progress entry; its items (a) and (b) are closed.
+Everything below is landed unless marked. Weekend landings (2026-11-21/22):
+- user32 listbox `LB_SETCOUNT` clamp compares unsigned, as the C does (d15fc810cc7), found by
+  the new on-demand audit `./vibeos-cli lint --arch <a> --rules scan_sign_compare_minmax`
+  (`-Wsign-compare` over flipped C with no oracle; reaches all 356 flipped min/max files,
+  ntoskrnl/hal included; ~70 per arch still only partly parse, listed as `#ERR`).
+- CcZeroData's CACHED path test (1beb2dc4d6e): Wait=FALSE on a fresh 8 GiB stream file keeps
+  it cheap; baselined pass=44 on all three arches; the narrowed `min` makes it TIMEOUT.
+- `conformance` fails loud by default (1deb5f551f0): exit 1 on a regression, bad launch or
+  kernel assertion; `--report-only` opts out and records verdict WARN. The runner names why
+  a controller exited non-zero, from its rounds (8960f14ea52).
+- The arm64 ZwAllocateVirtualMemory `.c:76/90/93` "intermittent" was a TEST bug: the worker
+  checked the NULL base of the allocation that hit the commit limit (5d426a3dcaa, sent to the
+  integrator 2026-11-22; check `land-status --tip 5d426a3dcaa`). Roadmap entry marked FIXED.
+  The soak that verified it never reached the fixed branch (thread 2 ran out past the 50
+  checked chunks), so if it ever recurs, read thread 2's "Chunks allocated" first.
 
 Owed, in order:
-1. CcZeroData's CACHED path (the VACB loop, same narrowing fix) has no test: a 4 GiB cached
-   range maps and zeroes 4 GiB of views. Needs a cheaper shape, or accept the gap.
-2. ~~The SIGN-flip half of the min/max class is not linted.~~ Closed 2026-11-21:
-   `./vibeos-cli lint --arch <a> --rules scan_sign_compare_minmax` runs `-Wsign-compare` over
-   the flipped C of modules with no oracle. It found one bug, user32 listbox's `LB_SETCOUNT` clamp, which is now fixed. It now reaches
-   all 356 flipped files that call min/max, ntoskrnl and hal included (ntos.cmake's include
-   set); missing headers are resolved from a tree-wide header index, so only ~70 per arch still
-   partly parse (listed as `#ERR` with clang's first error). ntoskrnl's one hit (`mm/balance.c`) is already right.
-3. bank_drift residue: 18 moved hashes no historical master scanner reproduces, all bought in
+1. The ~70 per arch TUs the sign-compare audit only partly parses: the top first error is
+   "a parameter list without types" (a missing calling-convention macro under borrowed flags).
+2. bank_drift residue: 18 moved hashes no historical master scanner reproduces, all bought in
    sibling worktrees with branch-local scanners (cpp-cluster, gicv3, research,
    rustconv-speedrun, shell32-com). The 357 upstream-moved bodies are upstream-sync's queue.
-Next step on resume: item 1 or 2, after `git fetch && git merge origin/master` and a fresh
-`./vibeos-cli conformance --arch <a>` per arch to re-derive the floor.
+Next step on resume: `git fetch && git merge origin/master`, a fresh
+`./vibeos-cli conformance --arch <a>` per arch (it now fails loud), then item 1.
 
 ## Survey findings (2026-07-10 — verified, start from here)
 
