@@ -59,6 +59,29 @@ fn rc_deps(cmd: &str, raw: &str) -> Option<Vec<String>> {
 }
 /// The cmake target add_cargo_module makes for a cell: `<target>_cargo` when the output is
 /// `<dir>/<target>` (activeds.tlb), whose ninja utility phony would be the output's path.
+/// `TARGET t POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:t> <dest>`, with at
+/// most a COMMENT and VERBATIM besides: a copy of the module's own output.
+fn copies_own_file(a: &[String], target: &str) -> bool {
+    let unq: Vec<&str> = a.iter().map(|x| x.trim_matches('"')).collect();
+    let mut rest: Vec<&str> = unq
+        .iter()
+        .skip(9)
+        .copied()
+        .filter(|x| *x != "VERBATIM")
+        .collect();
+    if rest.first() == Some(&"COMMENT") && rest.len() == 2 {
+        rest.clear();
+    }
+    unq.len() >= 9
+        && unq[2] == "POST_BUILD"
+        && unq[3] == "COMMAND"
+        && unq[4] == "${CMAKE_COMMAND}"
+        && unq[5] == "-E"
+        && unq[6] == "copy"
+        && unq[7] == format!("$<TARGET_FILE:{target}>")
+        && !unq[8].contains(&format!("$<TARGET_FILE:{target}>"))
+        && rest.is_empty()
+}
 pub fn cmake_target(cell: &Cell) -> String {
     if cell.output_name == cell.target {
         format!("{}_cargo", cell.target)
@@ -166,6 +189,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
     let (mut carried, mut transferred, mut build_deps, mut rc_gen_deps, mut usage) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let mut pefixup: Vec<String> = Vec::new();
+    let mut post_build: Vec<String> = Vec::new();
     for (idx, (s, e, cmd, raw)) in stmts.iter().enumerate() {
         let a = args(raw);
         let target = a.first() == Some(&cell.target);
@@ -182,7 +206,40 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         // $<TARGET_FILE:t>)` (pcix, legide) becomes add_cargo_module's PEFIXUP. Any other
         // command on the target is refused: left in place it names a target the cell
         // removed, and the whole tree's configure fails.
-        if cmd == "add_custom_command" && a.len() > 1 && a[0] == "TARGET" && a[1] == cell.target {
+        if cmd == "add_custom_command"
+            && a.len() > 1
+            && a[0] == "TARGET"
+            && a[1] == cell.target
+            && copies_own_file(&a, &cell.target)
+        {
+            // browseui copies its DLL beside filebrowser.exe: `POST_BUILD COMMAND
+            // ${CMAKE_COMMAND} -E copy $<TARGET_FILE:t> <dest>`. Kept, on the cell's custom
+            // target, after add_cargo_module defines it (add_custom_command(TARGET) needs the
+            // target to exist), with the cell's output for the file genexes.
+            let out_file = format!("${{CMAKE_CURRENT_BINARY_DIR}}/{}", cell.output_name);
+            post_build.push(
+                // `raw` is the argument text: `TARGET browseui POST_BUILD ...`.
+                format!(
+                    "add_custom_command({})",
+                    re(&format!(r"^\s*TARGET\s+{}\b", regex::escape(&cell.target)))
+                        .replace(
+                            raw.trim(),
+                            format!("TARGET {}", cmake_target(cell)).as_str()
+                        )
+                        .trim()
+                )
+                .replace(&format!("$<TARGET_FILE:{}>", cell.target), &out_file)
+                .replace(
+                    &format!("$<TARGET_FILE_NAME:{}>", cell.target),
+                    &cell.output_name,
+                ),
+            );
+            drop = true;
+        } else if cmd == "add_custom_command"
+            && a.len() > 1
+            && a[0] == "TARGET"
+            && a[1] == cell.target
+        {
             let file = format!("$<TARGET_FILE:{}>", cell.target);
             let rest: Vec<&String> = a.iter().skip(5).filter(|x| *x != "VERBATIM").collect();
             if !(a.len() > 5
@@ -292,13 +349,23 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
                 )));
             }
             let extra = &paths[idx][h.len()..];
-            if extra.iter().any(|(_, branch)| *branch != 0) {
-                return Err(Error::new(format!(
-                    "{}: `{cmd}` on the target is in an elseif/else branch",
-                    cell.target
-                )));
-            }
-            let conditions: Vec<String> = extra.iter().map(|(i, _)| if_raw[*i].clone()).collect();
+            // An elseif()/else() branch is carried as the negation of the branches before it
+            // (libtirpc's `-w` in the else() of `if(MSVC)`).
+            let conditions: Vec<String> = extra
+                .iter()
+                .map(|(i, branch)| {
+                    if *branch == 0 {
+                        Ok(if_raw[*i].clone())
+                    } else {
+                        super::graph::branch_condition(&stmts, *i, *branch).ok_or_else(|| {
+                            Error::new(format!(
+                                "{}: `{cmd}` on the target is in an unreadable if() branch",
+                                cell.target
+                            ))
+                        })
+                    }
+                })
+                .collect::<Result<_>>()?;
             transferred.push((
                 cmd.clone(),
                 raw.clone(),
@@ -333,11 +400,13 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
         }
         if target
             && cmd == "target_link_options"
-            && (link_only(&a, r"^-Wl,--subsystem,[\w:.]+$")
-                || link_only(
-                    &a,
-                    r"^(?:LINKER:|-Wl,)--require-defined=[^,\s]+(?:,--require-defined=[^,\s]+)*$",
-                ))
+            && (link_only(
+                &a,
+                r"^-Wl,--subsystem,[\w:.]+$|^-Wl,--allow-multiple-definition$",
+            ) || link_only(
+                &a,
+                r"^(?:LINKER:|-Wl,)--require-defined=[^,\s]+(?:,--require-defined=[^,\s]+)*$",
+            ))
         {
             drop = true
         }
@@ -843,6 +912,7 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
             &format!("$<TARGET_PROPERTY:{shims},"),
         );
     }
+    block.extend(post_build);
     Ok(out + &block.join("\n") + "\n")
 }
 
@@ -866,5 +936,29 @@ mod tests {
         assert_eq!(same_line_comment(t, 20).as_deref(), Some("#x"));
         assert_eq!(same_line_comment(t, 16), None); // g(b)'s span took its newline
         assert_eq!(same_line_comment("f(a) g(b) # no\n", 4), None);
+    }
+}
+
+#[cfg(test)]
+mod post_build_copy_tests {
+    use super::copies_own_file;
+
+    fn a(raw: &str) -> Vec<String> {
+        crate::cells::graph::args(raw)
+    }
+
+    #[test]
+    fn only_a_plain_copy_of_the_targets_own_file_is_modelled() {
+        let copy = "TARGET browseui POST_BUILD\n  COMMAND \"${CMAKE_COMMAND}\" -E copy\n     \"$<TARGET_FILE:browseui>\"\n     \"$<TARGET_FILE_DIR:filebrowser>/$<TARGET_FILE_NAME:browseui>\"\n  COMMENT \"Copying to output directory\"";
+        assert!(copies_own_file(&a(copy), "browseui"));
+        // Another target's file, a second command, or a different tool are not.
+        assert!(!copies_own_file(
+            &a(&copy.replace("TARGET_FILE:browseui", "TARGET_FILE:x")),
+            "browseui"
+        ));
+        let two = format!("{copy}\n  COMMAND touch y");
+        assert!(!copies_own_file(&a(&two), "browseui"));
+        let pefixup = "TARGET pcix POST_BUILD COMMAND native-pefixup --x $<TARGET_FILE:pcix>";
+        assert!(!copies_own_file(&a(pefixup), "pcix"));
     }
 }

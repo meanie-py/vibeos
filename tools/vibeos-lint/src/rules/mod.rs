@@ -24,6 +24,7 @@ pub mod read_after_clear;
 pub mod shadowed_c_define;
 pub mod move_vs_nonoverlapping;
 pub mod assert_negated_vs_c;
+pub mod sizeof_vs_c;
 pub mod devobj_as_extension;
 pub mod shared_system_time;
 pub mod variadic_array_arg;
@@ -52,6 +53,7 @@ pub mod narrow_vs_wide_literal;
 pub mod noop_goto;
 pub mod opaque_ptr_arith;
 pub mod ptr_highword_mask;
+pub mod queued_lock_plain_acquire;
 pub mod raw_bitfield;
 pub mod raw_uart_writes;
 pub mod typed_byte_copy;
@@ -60,6 +62,7 @@ pub mod wide_byte_copy;
 
 pub mod call_arg_swap;
 pub mod comment_swallowed_code;
+pub mod guard_drop_late;
 pub mod extern_arity;
 pub mod formatless_printf;
 pub mod ptr_typedef_cast_read;
@@ -109,6 +112,7 @@ pub mod extern_decl_drift;
 pub mod irql_balance;
 pub mod ob_refcount;
 pub mod unaligned_wide;
+pub mod proc_esrch;
 pub mod unpruned_walk;
 pub mod varargs_shim_parity;
 
@@ -210,6 +214,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(ob_refcount::ObRefcount),
         Box::new(com_double_release::ComDoubleRelease),
         Box::new(unpruned_walk::UnprunedWalk),
+        Box::new(proc_esrch::ProcEsrch),
         Box::new(extern_decl_drift::ExternDeclDrift),
         Box::new(duplicate_symbols::DuplicateSymbols),
         Box::new(export_shadows::ExportShadows),
@@ -245,6 +250,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(shadowed_c_define::ShadowedCDefine),
         Box::new(move_vs_nonoverlapping::MoveVsNonoverlapping),
         Box::new(assert_negated_vs_c::AssertNegatedVsC),
+        Box::new(sizeof_vs_c::SizeofVsC),
         Box::new(devobj_as_extension::DevobjAsExtension),
         Box::new(shared_system_time::SharedSystemTime),
         Box::new(store_on_failure::StoreOnFailure),
@@ -253,6 +259,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(constant_placement::ConstantPlacement),
         Box::new(raising_probes::RaisingProbes),
         Box::new(comment_swallowed_code::CommentSwallowedCode),
+        Box::new(guard_drop_late::GuardDropLate),
         Box::new(formatless_printf::FormatlessPrintf),
         Box::new(ptr_typedef_cast_read::PtrTypedefCastRead),
         Box::new(call_arg_swap::CallArgSwap),
@@ -283,6 +290,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(cdecl_alias::CdeclAlias),
         Box::new(narrow_vs_wide_literal::NarrowVsWideLiteral),
         Box::new(ptr_highword_mask::PtrHighwordMask),
+        Box::new(queued_lock_plain_acquire::QueuedLockPlainAcquire),
         Box::new(bindgen_padding_index::BindgenPaddingIndex),
         Box::new(raw_uart_writes::RawUartWrites),
         Box::new(fourcc_literals::FourccLiterals),

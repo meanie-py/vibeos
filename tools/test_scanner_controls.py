@@ -895,6 +895,22 @@ _GUID_RS = (
     "const CGID_ShellServiceObject: GUID = GUID {{ Data1: {d1}, Data2: 0x0000, Data3: 0x0000, "
     "Data4: [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46] }};\n"
 )
+# scan_proc_esrch. Seeded from test_buildbench._fixture_alive (2026-11-22): a process
+# reaped between the /proc/<pid>/stat open and read raises ProcessLookupError, which an
+# `except FileNotFoundError` alone lets escape.
+_PROCESRCH_BAD = """\
+from pathlib import Path
+
+
+def alive(pid):
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().split()[2] not in ("Z", "X")
+    except FileNotFoundError:
+        return False
+"""
+_PROCESRCH_GOOD = _PROCESRCH_BAD.replace(
+    "except FileNotFoundError:", "except (FileNotFoundError, ProcessLookupError):"
+)
 # scan_dead_seh_handlers. Seeded from PsSuspendThread (2026-11-06): the C guards
 # KeSuspendThread, which RAISES STATUS_SUSPEND_COUNT_EXCEEDED, with an __except; the Rust kept
 # the call and dropped the handler, so a 128th SuspendThread from user mode bugchecked.
@@ -3606,6 +3622,12 @@ CONTROLS: list[Control] = [
         good={"vol.rs": _OVERLEN_GOOD},
     ),
     Control(
+        name="scan_proc_esrch",
+        script="tools/vibeos-lint/src/rules/proc_esrch.rs",
+        bad={"tools/alive.py": _PROCESRCH_BAD},
+        good={"tools/alive.py": _PROCESRCH_GOOD},
+    ),
+    Control(
         name="scan_dead_seh_handlers",
         script="tools/vibeos-lint/src/rules/dead_seh_handlers.rs",
         bad={
@@ -3721,6 +3743,13 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_guard_drop_late": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/guard_drop_late.rs: rmap.rs's pool free and pagfault.rs's "
+        "rebalance wait after a [guard-drop] marker must be flagged; a drop(), a return/"
+        "continue, a macro statement, a tail expression and the block's end must not."
+    ),
     "scan_inf_unbuilt_dlls": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "
@@ -3749,6 +3778,13 @@ UNCOVERED: dict[str, str] = {
         "tools/vibeos-lint/src/rules/assert_negated_vs_c.rs: fastfat's negated VerifyThread "
         "NT_ASSERT must be flagged, the faithful one must not, and neither must another "
         "module's same-named C function."
+    ),
+    "scan_sizeof_vs_c": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/sizeof_vs_c.rs: crypt32's CRYPT_CopyChainToElement sizing "
+        "CERT_CHAIN_CONTEXT for a CertificateChain must be flagged, the faithful body must not, "
+        "and neither must a C sizeof(var) the Rust spells as the variable's type."
     ),
     "scan_move_vs_nonoverlapping": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
@@ -3896,6 +3932,13 @@ UNCOVERED: dict[str, str] = {
         "the two shapes that shipped (a declared-usize identifier, an `as usize` cast); its "
         "must-not cases pin the u32 rop, the version DWORD, the call-proc `== 0xFFFF0000` "
         "form, the fixed `& !0xFFFF` form and C quoted in a comment."
+    ),
+    "scan_queued_lock_plain_acquire": (
+        "main() walks the real tree, but the decision is scan_code(), a pure function over a "
+        "string, driven directly in tools/vibeos-lint/src/rules/queued_lock_plain_acquire.rs. "
+        "Its fire cases are the line that shipped (iomgr's SpinLockGuard on ApcQueueLock) and "
+        "a multi-line KeAcquireSpinLock on ProcessLock; its must-not cases pin the queued "
+        "helpers, plain locks on other fields, a comment and a function definition."
     ),
     "scan_unsigned_vs_zero": (
         "main() walks the real tree, but the decision is scan_text(), a pure function over a "

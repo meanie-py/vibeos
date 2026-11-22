@@ -1907,7 +1907,7 @@ pub unsafe extern "C" fn cpu_blitter_clear_texture(texture: *mut wined3d_texture
     let mut level: c_uint = 0;
     let mut map_binding: DWORD = 0;
 
-    DPRINT1!(
+    TRACE!(
         "texture %p, sub_resource_idx %u, box %s, colour %s.\n",
         texture,
         sub_resource_idx,
@@ -1916,7 +1916,7 @@ pub unsafe extern "C" fn cpu_blitter_clear_texture(texture: *mut wined3d_texture
     );
 
     if ((*texture).resource.format_attrs & WINED3D_FORMAT_ATTR_BLOCKS) != 0 {
-        DPRINT1!(
+        FIXME!(
             "Not implemented for format %s.\n",
             debug_d3dformat((*(*texture).resource.format).id)
         );

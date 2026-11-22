@@ -725,25 +725,56 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   since, and the console build has not been re-run. Next: stage the console build beside them
   to tell "console only" from "gone".
 
-- **amd64 Chrome payload: a Chrome thread sits Ready for 5-20 s without running (open, found
-  2026-11-07, graviton lane; parked 2026-11-08).** Seen as the sweep's hang sampler
-  (`tools/payloads/stackdump.h`) stalling in `GetThreadContext` on a Chrome thread. That stall
-  can no longer hang the payload: probes have a 20 s deadline and resume a target they left
-  suspended (landed `108be580165`); every sweep since reaches `done`. The flush the thread
-  was first seen in was a coincidence (`flushprobe`: flushes are fast and flat). What is
-  measured: at the deadline the target is **Ready** (ThreadState 1) with no CPU time accrued
-  and a handful of context switches; kernel-side, the context APC is queued and deliverable
-  (`KernelApcPending=1`, APCs not disabled, WaitIrql 0) on a thread whose NextProcessor is 0,
-  at priority 5-7, so it is not being picked to run. Unexplained: why a Ready thread on CPU 0
-  waits seconds (starvation behind busier threads until the balance manager's 300-tick boost,
-  or a ready-list/summary inconsistency). Separately, multi-process Chrome trips the §9.56
-  `[RQ5A]` drain-insert guard a few times per boot (none in the 29 single-process boots before
-  2026-11-06): always a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14,
-  the ERESOURCE owner boost, with the thread's stale links forming a short ring that reaches no
-  PRCB list head. One boot stalled with no RQ5A at all, so RQ5A is not the stall's cause; it may
-  be a false positive of the guard on stale union links. Diagnostics parked on branch
-  `graviton-diag-ctxwait` (`74f086b0488`). Next: see the RESUME HERE in
-  `docs/engineering/active-lanes/graviton-spike-plan.md`.
+- **amd64 Chrome payload: a Chrome thread sits Ready for 5-20 s without running (EXPLAINED
+  2026-11-21, graviton lane: CPU saturation on the smoke's one vCPU, not a scheduler bug).**
+  Seen as the sweep's hang sampler (`tools/payloads/stackdump.h`) stalling in
+  `GetThreadContext` on a Chrome thread; probes have a 20 s deadline and resume a target they
+  left suspended (`108be580165`), so it no longer hangs the payload. The smoke boots ONE vCPU
+  unless `--smp N` is passed, so the November "Ready on CPU 0" evidence was the only CPU. A
+  `[STARVE]` print at every balance-set starvation boost (TEMP branch `graviton-diag-ctxwait`
+  @ `a09f763602a`; run 20261121-180654-HgHYdp, 3/3 payloads pass) shows 200-270 boosts per
+  boot: priority 6-7 Chrome threads Ready for 304-363 ticks while the CPU runs priority 8-13
+  threads of the boot's companion apps (`gui64.exe`/`win64.exe` x64 guests, `osk.exe`,
+  `magnify.exe`, `taskmgr.exe` under WOW64), then rescued by the 300-tick boost as on Windows.
+  The probe's own helper thread starves the same way, which is why a probe could time out
+  after the kernel's context wait had already completed. Measured since by the sweep's
+  end-of-run CPU table: osk.exe 27% of the boot (two thirds kernel), magnify.exe 19% (all
+  kernel), idle ~2%; the stalled boots' CPU sat in win32k.sys `DIB_DoRop` (resolved from the
+  new `[MODBASE]` lines). On that load 3 of 8 Chrome boots missed the sweep's deadline. The
+  Chrome payload now boots QUIET (`quiet: true`; winlogon skips its test ladder): 3/3 pass,
+  40 min against 93-98, no starvation boosts (run 20261122-044146-4XMySS). Why osk and
+  magnify are that busy (`idlewatch` payload, untouched desktop): both are timer-driven by
+  design. osk's dialog thread wakes 37/s at ~4 ms a wake (x86 frames: blocked in
+  `NtUserGetMessage` under `DialogBoxParamW` in 7 of 8 samples), magnify's 55/s at 3-4 ms of
+  kernel blitting; software GDI under TCG makes each tick cost milliseconds. Not a
+  correctness bug. Part of osk's load was a WOW64 gap, fixed 2026-11-22: every guest
+  `WM_COPYDATA` send failed ("divergent lParam payload ... no marshaller", 61 in two idle
+  minutes, taskmgr's 2 s refresh); with the send-path marshaller osk's CPU fell from 144 s to
+  89 s over a comparable boot and idle rose from 276 s to 364 s. Separately,
+  multi-process Chrome trips the §9.56 `[RQ5A]` drain-insert guard a few times per boot, always
+  a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14 (the ERESOURCE owner
+  boost) whose stale links form a short ring reaching no PRCB list head (2026-11-21: 2 hits in 1 of
+  3 one-vCPU boots, 0 in 3 four-vCPU boots). Still owed to smp-bringup: settle whether that guard is a false positive on
+  stale union links. Under `--smp 4` the payload wedged on a different bug, fixed below.
+
+- **netstack: BUGCHECK 0xA writing a TCP receive into an unmapped buffer (open, found
+  2026-11-22, graviton lane).** One Chrome payload boot (`--no-net`, one vCPU; run
+  20261122-094733-aQAAcc) in about twenty that day: `memcpy` at DISPATCH_LEVEL writing
+  `fffff8807406815c` (Param1), from smoltcp `tcp::Socket::recv_slice` called by
+  netstack-rust `tditrans.rs` `bridge` (the legacy receive-IRP path, `buf` captured when
+  the IRP was queued), with afd.sys `DisconnectComplete` on the same stack. Suspected: a
+  queued receive whose buffer AFD released on disconnect is still filled by the bridge.
+  Resolve driver frames with `vibeos-cli sym --serial <log> netstack.sys+0x...`.
+
+- **amd64 `-smp 4` Chrome payload: a CPU spins forever releasing a thread's ApcQueueLock
+  (FIXED 2026-11-21, graviton lane).** 3 of 3 boots wedged right after chrome.exe spawned
+  (run 20261121-190024-EhsfzY; desktop boots passed): one CPU in
+  `KiReleaseApcLockFromSynchLevel`'s wait-for-successor loop, three halted. iomgr's
+  stranded-completion check took `KTHREAD.ApcQueueLock`, a queued lock, with a plain
+  `SpinLockGuard`; on SMP the two protocols corrupt each other. Fixed in `iomgr-rust`
+  `irp.rs`; new source rule `scan_queued_lock_plain_acquire`. Verified: 3/3 `-smp 4` Chrome
+  payloads reach `done` (run 20261121-221337-UwSqhY, 36 min against 158). Field manual: "One
+  lock word, two protocols".
 
 - **OptiPlex 9020: freeldr reset the board after loading the boot drivers (FIXED 2026-11-08,
   graviton lane).** Every netboot reset to coreboot ~165 ms after `[FLDR] phase: boot drivers
@@ -1016,7 +1047,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `[MM] Failed to page data in! st=c0000015 off=10000` while `apc32.exe` created threads,
   then BUGCHECK 0x1E (0xC0000006). The rerun of the same media was clean
   (`20261101-123345-09ibq5oq`), as were five hostapps runs after it. First boot on the new
-  XFS volume; most likely the CD through uniata. Not reproduced.
+  XFS volume; most likely the CD through uniata. Not reproduced. Overnight soak 2026-11-22
+  (`farm --arches amd64 --minutes 480 --polite`, run `20261122-002255-hmEvEu`): 180/180 boots
+  clean on master `b895e8fddbf`'s amd64 media. The farm-report corpus is 230 amd64 boots, 0
+  failures. Those boots used the plain smoke payload, which runs the same boot WoW64
+  self-tests but not hostapps. The failing run was a hostapps boot, so this lowers the
+  estimated rate without proving it gone.
 - **arm64 kmtest ZwAllocateVirtualMemory: its two system threads now finish in the other order
   (open question, found 2026-10-19, research; benign for the ratchet).** The pass count moved
   576/579/582 on the version-flip + handle-biasing branch, where master reads 581. Thread 1's
@@ -1025,19 +1061,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   at 29-54, below `COMMIT_CHECKED_CHUNKS` (3 passes per checked chunk). The arm64 floor is 570,
   the most that race can cost (`a5f44ee4fcd`, header note). Why the order flipped is NOT
   explained; a scheduling change from the NT 10.0 client-scheduler move is the first suspect.
-- **i386 under `SPECIALPOOL=*` bugchecks `0x0F` SPIN_LOCK_ALREADY_OWNED in boot (open, found
-  2026-10-19, research).** Every allocation routed to special pool; i386 stops right after
-  `IopInitializeSystemDrivers` / `PiEnumerateDevice HTREE\ROOT\0`. Parameter 1 is lock
-  `0x80741810` (`ntoskrnl.exe+0x286810`, which the symbolizer puts inside kdbg-rust's
-  `KdbStack`, so an unnamed lock in .data next to it). Then a second `0x1E` (0xC0000028), and the
-  `[DBLFAULT]` EBP walk recurses through `_SehExceptHandler`/`RemoveFromWsList`, which looks
-  like the fault handler re-entering, not the original fault. amd64 and arm64 boot to the
-  desktop with the same tripwire. NOT handle biasing: the branch's pre-biasing tree
-  (`f759caa734a` + the self-test fix) fails identically, the same lock address included
-  (`20261031-221917-yzvuu66y` base, `20261031-221917-vxinhkgd` branch), and neither the NT 10.0
-  flip: master `a319085fd99` plus only that self-test fix fails the same way, same lock
-  (`20261031-225210-_q82pnkv`). No i386 `SPECIALPOOL=*` run existed before these; until
-  `74ba9bd59e4` the boot self-test failed every `*` run first, so this has been latent on master.
+- **i386 under `SPECIALPOOL=*` bugchecked `0x0F` SPIN_LOCK_ALREADY_OWNED in boot (FIXED
+  2026-11-21, research; found 2026-10-19).** `MmDeleteSectionAssociation` freed its rmap entry
+  under the PFN lock. rmap.c releases the lock first, but the Rust's lock-guard conversion had
+  kept it until return. A lookaside spill goes to `MmFreeSpecialPool`, which takes the PFN lock
+  itself. The `[DBLFAULT]` stack that pointed at cdfs came from a second 0x0F raised while
+  unwinding the first. i386 `KeBugCheckEx` now walks the caller's EBP chain for bugchecks
+  without a trap frame, and that walk showed the real path. A tree-wide scan found one more of
+  the class: MmAccessFault waited at APC_LEVEL. `scan_guard_drop_late` now gates it. Also
+  fixed: `SPECIALPOOL=*` on amd64 and arm64 had panicked in classpnp since `78bbf7aae1a`,
+  because special pool ignored the device-extension cache alignment; it is now sized so the
+  extension lands aligned. All three arches reach the desktop under `SPECIALPOOL=*` (amd64
+  `20261121-231032-gbO7DV`, arm64 `20261121-231558-zGbeTn`, i386 `20261121-232125-cN2TdS`).
 - **i386 double fault `0x7F/8` after netstack comes up (FIXED 2026-10-18, upstream-sync; was
   ~7% of i386 boots).** A kernel stack overflow, not the emulator: 1/20 on QEMU 11.0.50 and 2/20
   on 11.1.0 from the same media. netstack's `engine::worker` reserves a 7.3 KB frame (0x1c80) of

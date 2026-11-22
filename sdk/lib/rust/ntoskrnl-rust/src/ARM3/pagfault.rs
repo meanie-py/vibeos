@@ -2181,7 +2181,9 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
         ASSERT!(KeAreAllApcsDisabled() != 0);
         MiUnlockWorkingSet(CurrentThread, WorkingSet);
-        // [guard-drop] KeLowerIrql(LockIrql);
+        // KeLowerIrql(LockIrql), before the rebalance wait as in the C; the guard alone
+        // would have lowered it only at the `continue`.
+        drop(irql_guard);
 
         if Status == STATUS_NO_MEMORY {
             MmRebalanceMemoryConsumersAndWait();

@@ -846,6 +846,8 @@ ntoskrnl work, and it's mostly the sandbox.
 
 ### The sandbox: the contract, not Windows' internals
 
+Progress, step by step: [chrome-sandbox-quest.md](chrome-sandbox-quest.md).
+
 Chrome's sandbox has the same shape on Windows and Linux: a privileged **broker** plus a
 restricted **target**, with blocked calls forwarded to the broker. **Chrome writes the
 broker on both platforms.** Our share is four kernel primitives, and three of them have a

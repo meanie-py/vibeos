@@ -1,0 +1,10 @@
+sdk/lib/rust/dbgk-rust/src/dbgkobj.rs:1520: sizeof-vs-c NtDebugContinue: Rust sizes DEBUG_EVENT where the C (ntoskrnl/dbgk/dbgkobj.c:1665) sizes CLIENT_ID
+sdk/lib/rust/iphlpapi-rust/src/iphlpapi/ipstats_reactos.rs:550: sizeof-vs-c getRouteTable: Rust sizes RouteTable where the C (dll/win32/iphlpapi/ipstats_reactos.c:534) sizes IPRouteEntry
+sdk/lib/rust/ntoskrnl-rust/src/ARM3/section.rs:1603: sizeof-vs-c MmCreateArm3Section: Rust sizes DDK_MMPTE where the C (ntoskrnl/mm/ARM3/section.c:2146) sizes SECTION
+sdk/lib/rust/oleaut32-rust/src/olepropframe.rs:246: sizeof-vs-c OleCreatePropertyFrameIndirect: Rust sizes DialogTemplate, PROPSHEETHEADERW where the C (dll/win32/oleaut32/olepropframe.c:153) sizes LOGFONTW, PROPSHEETPAGEW
+sdk/lib/rust/pciidex-legacy-rust/src/pdo.rs:1164: sizeof-vs-c PciIdeXPdoQueryResourceRequirements: Rust sizes IO_RESOURCE_REQUIREMENTS_LIST where the C (drivers/storage/ide/pciidex/pdo.c:456) sizes IO_RESOURCE_DESCRIPTOR
+sdk/lib/rust/scsiport-rust/src/scsiport.rs:680: sizeof-vs-c ScsiPortInitialize: Rust sizes SCSI_BUS_INFO where the C (drivers/storage/port/scsiport/scsiport.c:836) sizes ACCESS_RANGE
+sdk/lib/rust/services-rust/src/driver.rs:162: sizeof-vs-c ScmGetDriverStatus: Rust sizes OBJECT_ATTRIBUTES where the C (base/system/services/driver.c:136) sizes SERVICE_STATUS
+sdk/lib/rust/shcore-rust/src/shcore/main.rs:3149: sizeof-vs-c IsOS: Rust sizes OSVERSIONINFOEXA where the C (dll/win32/shcore/main.c:2392) sizes OSVERSIONINFOA
+sdk/lib/rust/shlwapi-rust/src/shlwapi/ordinal.rs:3825: sizeof-vs-c IsOS: Rust sizes OSVERSIONINFOEXA where the C (dll/win32/shlwapi/ordinal.c:4230) sizes OSVERSIONINFOA
+sdk/lib/rust/winsrv-rust/src/consrv/frontends/tui/tuiterm.rs:765: sizeof-vs-c TuiInit: Rust sizes CONSOLE_SCREEN_BUFFER_INFO where the C (win32ss/user/winsrv/consrv/frontends/tui/tuiterm.c:626) sizes WNDCLASSEXW

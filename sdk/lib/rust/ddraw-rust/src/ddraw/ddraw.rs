@@ -2980,7 +2980,7 @@ unsafe extern "system" fn ddraw4_RestoreAllSurfaces(iface: *mut IDirectDraw4) ->
     return ddraw7_RestoreAllSurfaces(core::ptr::addr_of_mut!((*ddraw).IDirectDraw7_iface));
 }
 unsafe extern "system" fn ddraw7_StartModeTest(iface: *mut IDirectDraw7, Modes: *mut SIZE, NumModes: DWORD, Flags: DWORD) -> HRESULT {
-    DPRINT1!("iface %p, modes %p, mode_count %lu, flags %#lx partial stub!\n", iface, Modes, NumModes, Flags);
+    FIXME!("iface %p, modes %p, mode_count %lu, flags %#lx partial stub!\n", iface, Modes, NumModes, Flags);
 
     /* This looks sane */
     if Modes.is_null() || NumModes == 0 {

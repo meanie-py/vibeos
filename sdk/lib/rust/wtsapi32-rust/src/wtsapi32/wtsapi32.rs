@@ -228,7 +228,7 @@ pub unsafe extern "system" fn WTSEnumerateSessionsExW(
     info: *mut WTS_SESSION_INFO_1W,
     count: *mut DWORD,
 ) -> BOOL {
-    DPRINT1!("Stub %p %p %d %p %p\n", server, level, filter, info, count);
+    FIXME!("Stub %p %p %d %p %p\n", server, level, filter, info, count);
     if !count.is_null() {
         *count = 0;
     }

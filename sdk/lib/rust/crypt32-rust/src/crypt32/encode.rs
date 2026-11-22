@@ -2213,7 +2213,7 @@ unsafe extern "C" fn CRYPT_AsnEncodeRdn(
             i = i.wrapping_add(1);
         }
     }
-    {
+    if _SEH2_Volatile0 != 0 {
         SetLastError((STATUS_ACCESS_VIOLATION) as DWORD);
         ret = (FALSE as i32);
     }
@@ -2353,7 +2353,7 @@ unsafe extern "system" fn CRYPT_AsnEncodeUnicodeName(
             }
         }
     }
-    {
+    if _SEH2_Volatile0 != 0 {
         SetLastError((STATUS_ACCESS_VIOLATION) as DWORD);
         ret = (FALSE as i32);
     }
@@ -2709,7 +2709,7 @@ unsafe extern "C" fn CRYPT_AsnEncodeSMIMECapability(mut dwCertEncodingType: DWOR
             );
         }
     }
-    {
+    if _SEH2_Volatile0 != 0 {
         SetLastError((STATUS_ACCESS_VIOLATION) as DWORD);
     }
     return ret;
@@ -4903,7 +4903,7 @@ unsafe extern "system" fn CRYPT_AsnEncodeCertPolicyConstraints(
             pcbEncoded,
         );
     }
-    {
+    if _SEH2_Volatile0 != 0 {
         SetLastError((STATUS_ACCESS_VIOLATION) as DWORD);
     }
     if _SEH2_Volatile0_local != 0
@@ -5675,7 +5675,7 @@ unsafe extern "C" fn CRYPT_AsnEncodeGeneralizedTime(
             }
         }
     }
-    {
+    if _SEH2_Volatile0 != 0 {
         SetLastError(STATUS_ACCESS_VIOLATION as DWORD);
         ret = FALSE as BOOL;
     }
@@ -6196,7 +6196,7 @@ unsafe extern "system" fn CRYPT_AsnEncodeIssuingDistPoint(
             );
         }
     }
-    {
+    if _SEH2_Volatile0 != 0 {
         SetLastError(STATUS_ACCESS_VIOLATION as DWORD);
         ret = FALSE as BOOL;
     }
@@ -6733,7 +6733,7 @@ unsafe extern "system" fn CRYPT_AsnEncodeCMSSignerInfo(
             );
         }
     }
-    {
+    if _SEH2_Volatile0 != 0 {
         SetLastError((STATUS_ACCESS_VIOLATION) as DWORD);
     }
     return ret;

@@ -1219,6 +1219,33 @@ dll/win32/comctl32/CMakeLists.txt	1	# updown.c # replaced by Rust (sdk/lib/rust/
 dll/win32/credui/CMakeLists.txt	1	# credui_main.c # replaced by Rust (sdk/lib/rust/credui-rust/src/credui/credui_main.rs)
 dll/win32/crtdll/CMakeLists.txt	1	# advapi32: the shared CRT's rand_s calls SystemFunction036 (RtlGenRandom). dllmain.c used to
 dll/win32/crtdll/CMakeLists.txt	1	# dllmain.c is msvcrt-crt-rust src/legacy.rs (CRTDLL_* names, which crtdll.spec maps).
+dll/win32/crypt32/CMakeLists.txt	1	# base64.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/base64.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# cert.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/cert.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# chain.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/chain.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# collectionstore.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/collectionstore.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# context.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/context.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# crl.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/crl.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# ctl.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/ctl.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# decode.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/decode.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# encode.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/encode.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# filestore.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/filestore.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/main.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# message.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/message.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# msg.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/msg.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# object.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/object.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# oid.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/oid.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# pfx.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/pfx.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# proplist.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/proplist.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# protectdata.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/protectdata.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# provstore.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/provstore.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# reactos/store.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/reactos_store.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# reactos/unixlib.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/unixlib.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# regstore.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/regstore.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# rootstore.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/rootstore.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# serialize.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/serialize.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# sip.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/sip.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# store.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/store.rs)
+dll/win32/crypt32/CMakeLists.txt	1	# str.c # replaced by Rust (sdk/lib/rust/crypt32-rust/src/crypt32/str.rs)
 dll/win32/cryptnet/CMakeLists.txt	1	# cryptnet_main.c # replaced by Rust (sdk/lib/rust/cryptnet-rust/src/cryptnet/cryptnet_main.rs)
 dll/win32/dbghelp/CMakeLists.txt	1	# elf_module.c
 dll/win32/dbghelp/CMakeLists.txt	1	# macho_module.c
@@ -1370,7 +1397,7 @@ dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# NT6 console support (client
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# built in the parent CMakeLists). DllMain.c stays C (the module entrypoint).
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# firmware.c EnumSystemLocalesEx.c GetLocaleInfoEx.c GetFileInformationByHandleEx.c
 dll/win32/kernel32/kernel32_vista/CMakeLists.txt	1	# threadpool.c (upstream, post-fork) — replaced by Rust (kernel32-vista-rust threadpool.rs):
-dll/win32/kernelbase/CMakeLists.txt	1	# Import libs for the local C in dllmain.c (SetLastError -> kernel32;
+dll/win32/kernelbase/CMakeLists.txt	1	# Import libs for the local C in dllmain.c (RtlWaitOnAddress -> ntdll_vista, the 0x600
 dll/win32/kernelbase/CMakeLists.txt	1	# dllmain.c + docs/engineering/fex-bringup-plan.md rung 2.
 dll/win32/kernelbase/wine/CMakeLists.txt	1	# path.c
 dll/win32/kernelbase/wine/CMakeLists.txt	1	#console.c #looks like ReactOS console.c is nothing like wine.

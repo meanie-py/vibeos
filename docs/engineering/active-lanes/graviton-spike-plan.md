@@ -1,28 +1,30 @@
 # Lane: graviton-spike — our ARM64 on real ARM64
 
-> **RESUME HERE (2026-11-08, fleet pause).** This worktree has carried the Chrome-on-vibeos
-> work since early November (amd64, `--payload chrome`, staged via `VIBEOS_CHROME_DIR`).
-> Landed this stretch: the WOW64 GDI-handle owner fix (osk leak), the OptiPlex 1 GiB loader
-> map, probe deadlines + resume-on-timeout in `stackdump.h`, and the thread-state view on a
-> probe timeout. **Open, where I stopped:** a Chrome thread sits Ready for 5-20 s without
-> running (registry: "amd64 Chrome payload: a Chrome thread sits Ready ..."). Evidence is
-> saved in `~/vibeos-graviton-artifacts/20261108-143537-ctxwait/` (three serial logs plus
-> the `ntkrnlmp.exe` they ran), built from branch `graviton-diag-ctxwait` @ `74f086b0488`,
-> which holds the TEMP diagnostics: per-site requeue stamps 9001-9005, the `[RQ5A]` list-head
-> walk, and `[CTXWAIT]` (the kernel's GetThreadContext wait in 5 s slices, printing the
-> target's state, APC flags and kernel-image addresses on its saved stack). Next steps:
-> 1. Symbolicate the `[CTXWAIT]` stacks. `vibeos-cli sym --module ntkrnlmp.exe` subtracts the
->    wrong base for kernel addresses (it printed `+0xfffff800000f8e5e`); fix the tool first.
-> 2. At a `[CTXWAIT]` slice, also print CPU 0's `ReadySummary`, its ready list at the target's
->    priority (is the target on it?), and the running thread on each CPU with its priority.
->    That splits "starved behind busier threads" from "Ready but not on the list it claims".
-> 3. RQ5A: add a pre-`RemoveEntryList` neighbour check at the 9002 site
->    (`KiSetPriorityThread` Ready branch) to settle whether the guard is a false positive on
->    stale union links or a real double-link. Owner of §9.56 is smp-bringup; hand a tested
->    diff, do not just report it.
-> Owed after this: the sandbox quest (the user asked to dip a toe in; not started). Loading
-> over the network is done (Chrome rung 2, HTTP/HTTPS from `servepage`, `34e17dfff6e`).
-> Pending from the CRT lane, not mine: the Pi 4 sysfb check once the gear moves back.
+> **RESUME HERE (2026-11-21).** This worktree carries the Chrome-on-vibeos work (amd64,
+> `--payload chrome`, staged via `VIBEOS_CHROME_DIR`; build the media with
+> `VIBEOS_PAYLOAD=chrome` too or the smoke refuses it). Landed 2026-11-21: `vibeos-cli sym`
+> resolves kernel addresses (`--serial`/`--kernel-base`/`--image`), and the `-smp 4` Chrome
+> wedge fix (iomgr took `ApcQueueLock` with a plain spinlock; new rule
+> `scan_queued_lock_plain_acquire`). The November "Ready for 5-20 s" stall is explained: the
+> smoke has ONE vCPU and the boot's companion apps (gui64/win64, osk, magnify, taskmgr) keep
+> it busy, so priority 6-7 Chrome threads wait for the 300-tick starvation boost (registry
+> entry). TEMP diagnostics (`[STARVE]`, `[CTXWAIT]`, RQ5A stamps) stay parked on branch
+> `graviton-diag-ctxwait` @ `a09f763602a`, not for landing. Owed:
+> 1. (done 2026-11-21) `vibeos-cli sym` declines a kernel-half address outside the kernel
+>    image, and a `--serial` log older than the tree's kernel unless `--image` is passed.
+> 2. RQ5A (smp-bringup's §9.56 guard): settle false positive vs. real double-link with a
+>    pre-`RemoveEntryList` neighbour check at the 9002 site; hand them a tested diff.
+> 3. (done 2026-11-22) osk/magnify load: timer polling by design, made costly by software
+>    GDI under TCG; the Chrome payload boots QUIET. Found and fixed on the way: WOW64
+>    `WM_COPYDATA` sends, `Wow64GetThreadContext` on another thread. Tools: `idlewatch`
+>    payload, x86 frames in the sweep's thread dump, `[MODBASE]` + `sym` for driver addresses.
+>    OWED: the generated WOW64 struct marshallers (tools/vibeos-codegen `marshal`) SIGN-extend
+>    pointer and ULONG_PTR fields (`WowCbSx`), which is right for handles but turns a
+>    large-address-aware guest's buffer at or above 2 GiB into a kernel-half address.
+> 4. The sandbox quest: started 2026-11-22, see
+>    [chrome-sandbox-quest.md](../chrome-sandbox-quest.md) (step 3, the restricted token, is next).
+> 5. netstack BUGCHECK 0xA in the TCP receive bridge (registry entry).
+> Loading over the network is done (Chrome rung 2, `34e17dfff6e`).
 
 > **2026-09-20: superseded for active work.** The owner chose direct bare-metal
 > boot on their Raspberry Pi 4B. Resume from [Pi 4B bring-up](pi4-bringup.md).

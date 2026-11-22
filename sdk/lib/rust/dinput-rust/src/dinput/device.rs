@@ -2339,7 +2339,7 @@ pub unsafe extern "system" fn IDirectInputDevice2AImpl_GetDeviceData(iface: LPDI
 pub unsafe extern "system" fn IDirectInputDevice2WImpl_RunControlPanel(mut iface: LPDIRECTINPUTDEVICE8W, mut hwndOwner: HWND, mut dwFlags: DWORD) -> HRESULT {
     let mut This: *mut IDirectInputDeviceImpl =
         impl_from_IDirectInputDevice8W(iface as *mut IDirectInputDevice8W);
-    DPRINT1!(
+    FIXME!(
         "%p)->(%p,0x%08x): stub!\n",
         This,
         hwndOwner,
@@ -2417,7 +2417,7 @@ pub unsafe extern "system" fn IDirectInputDevice2WImpl_GetEffectInfo(mut iface: 
 #[no_mangle]
 pub unsafe extern "system" fn IDirectInputDevice2WImpl_GetForceFeedbackState(iface: LPDIRECTINPUTDEVICE8W, pdwOut: LPDWORD) -> HRESULT {
     let mut This: *mut IDirectInputDeviceImpl = impl_from_IDirectInputDevice8W(iface as *mut IDirectInputDevice8W);
-    DPRINT1!("(%p)->(%p): stub!\n", This, pdwOut);
+    FIXME!("(%p)->(%p): stub!\n", This, pdwOut);
     return DI_OK;
 }
 #[no_mangle]
@@ -2443,7 +2443,7 @@ pub unsafe extern "system" fn IDirectInputDevice2AImpl_SendForceFeedbackCommand(
 pub unsafe extern "system" fn IDirectInputDevice2WImpl_EnumCreatedEffectObjects(mut iface: LPDIRECTINPUTDEVICE8W, mut lpCallback: LPDIENUMCREATEDEFFECTOBJECTSCALLBACK, mut lpvRef: LPVOID, mut dwFlags: DWORD) -> HRESULT {
     let mut This: *mut IDirectInputDeviceImpl =
         impl_from_IDirectInputDevice8W(iface as *mut IDirectInputDevice8W);
-    DPRINT1!(
+    FIXME!(
         "(%p)0>(%p,%p,0x%08x): stub!\n",
         This,
         lpCallback,
@@ -2534,7 +2534,7 @@ pub unsafe extern "system" fn IDirectInputDevice7WImpl_EnumEffectsInFile(iface: 
 #[no_mangle]
 pub unsafe extern "system" fn IDirectInputDevice7AImpl_WriteEffectToFile(iface: LPDIRECTINPUTDEVICE8A, lpszFileName: LPCSTR, dwEntries: DWORD, rgDiFileEft: LPDIFILEEFFECT, dwFlags: DWORD) -> HRESULT {
     let This: *mut IDirectInputDeviceImpl = impl_from_IDirectInputDevice8A(iface);
-    DPRINT1!(
+    FIXME!(
         "(%p)->(%s,%08x,%p,%08x): stub !\n",
         This,
         lpszFileName,
@@ -2584,7 +2584,7 @@ pub unsafe extern "system" fn IDirectInputDevice8AImpl_GetImageInfo(iface: LPDIR
 #[no_mangle]
 pub unsafe extern "system" fn IDirectInputDevice8WImpl_GetImageInfo(iface: LPDIRECTINPUTDEVICE8W, lpdiDevImageInfoHeader: LPDIDEVICEIMAGEINFOHEADERW) -> HRESULT {
     let mut This: *mut IDirectInputDeviceImpl = impl_from_IDirectInputDevice8W(iface as *mut IDirectInputDevice8W);
-    DPRINT1!(
+    FIXME!(
         "(%p)->(%p): stub !\n",
         This,
         lpdiDevImageInfoHeader

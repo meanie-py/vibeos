@@ -428,6 +428,16 @@ impl Walker<'_> {
         if !self.dynamic_seen.insert(n.to_string()) {
             return Ok(());
         }
+        // A load declared in CODE, not in an INF: kernel32's DLL_PROCESS_ATTACH loads
+        // kernelbase.dll (kernel32-rust client/dllmain.rs), so a guest that has kernel32
+        // needs kernelbase staged beside it.
+        if n == "kernel32.dll" {
+            self.admit(
+                "kernelbase.dll",
+                "kernel32.dll DllMain (kernel32-rust client/dllmain.rs)".to_string(),
+            );
+            self.follow("kernelbase.dll")?;
+        }
         let spec: Option<(&str, &[&str])> = match n {
             "ws2_32.dll" => Some((
                 "media/inf/nettcpip.inf",

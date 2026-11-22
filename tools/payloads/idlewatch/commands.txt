@@ -1,0 +1,5 @@
+# idlewatch sweep list: the ladder's applets start minutes after the desktop, so wait for
+# them, then twice more to see whether a process's load is steady.
+idle 300
+idle 120
+idle 120
