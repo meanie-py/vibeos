@@ -565,16 +565,27 @@ extends it from the boot spine to every fully-Rust module.
      pulled shell32's monolithic delay object first, and link-guard caught shell32's
      `StrChrA` thunk (shell32 exports the Str* family) winning over shlwapi's own Rust
      `StrChrA`.
+   - **2026-11-21: browseui and rshell converted**, EQUIVALENT ×3.
+     - Their shared `shellbars` (and browseui's `shellfind`) are OBJECT libraries defined
+       in browseui's subdirectories. A sibling OBJECT library is now found by the
+       CMakeLists of the object's own directory, not only the module's, and its sources
+       are read from that directory (rshell's "CBandSite.cpp in no source dir").
+     - `target_link_options(... -Wl,--allow-multiple-definition)` (browseui, `if(LTCG)`)
+       is dropped: every link already carries it.
+     - `add_custom_command(TARGET t POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
+       $<TARGET_FILE:t> <dest>)` (browseui beside filebrowser.exe, rshell beside
+       explorer.exe and filebrowser.exe) is kept on the cell's custom target, after
+       add_cargo_module defines it, with the cell's output for the file genexes. The copies
+       are sha256-identical to the cell's output.
    - **RESUME HERE (2026-11-08, fleet pause).**
-     - *(2026-11-21: the 11-08 batch landed; shdocvw + shlwapi followed, ratchet 29.)*
+     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui and rshell followed, ratchet 27.)*
      - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
        integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
        cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
        the 14 dotted targets. First check that 0fa7e73bb5c is an ancestor of origin/master.
        If it bounced, the integrator's message names the gate dir.
      - **Next, by size:**
-       - browseui: `target_link_options`;
-       - explorer and rshell: rshell reads explorer's CBandSite.cpp from no source dir;
+       - explorer: rshell's POST_BUILD copy reads `$<TARGET_FILE_DIR:explorer>`;
        - msvcrt: its custom cargo command shape;
        - the nativedll kind (4);
        - the wow64cpu.S / sys-stubs.S asm inputs;
