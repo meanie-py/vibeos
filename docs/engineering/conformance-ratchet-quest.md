@@ -24,9 +24,9 @@ Rust-translated subsystem is a **pre-packaged mistranslation repro** with a name
 an assertion message — no crash forensics needed. And it executes translated code the
 boot path never touches (see `tools/coverage/` — the never-executed-rust registry).
 
-## Resume here (2026-11-22, weekend run)
+## Resume here (2026-11-22, Sunday wind-down: parked clean)
 
-Everything below is landed unless marked. Weekend landings (2026-11-21/22):
+Everything below is LANDED (master d6de9cac1d2); nothing unlanded, nothing in /tmp. Weekend landings (2026-11-21/22):
 - user32 listbox `LB_SETCOUNT` clamp compares unsigned, as the C does (d15fc810cc7), found by
   the new on-demand audit `./vibeos-cli lint --arch <a> --rules scan_sign_compare_minmax`
   (`-Wsign-compare` over flipped C with no oracle; reaches all 356 flipped min/max files,
@@ -37,21 +37,23 @@ Everything below is landed unless marked. Weekend landings (2026-11-21/22):
   kernel assertion; `--report-only` opts out and records verdict WARN. The runner names why
   a controller exited non-zero, from its rounds (8960f14ea52).
 - The arm64 ZwAllocateVirtualMemory `.c:76/90/93` "intermittent" was a TEST bug: the worker
-  checked the NULL base of the allocation that hit the commit limit (5d426a3dcaa, sent to the
-  integrator 2026-11-22; check `land-status --tip 5d426a3dcaa`). Roadmap entry marked FIXED.
+  checked the NULL base of the allocation that hit the commit limit (5d426a3dcaa). Roadmap entry marked FIXED.
   The soak that verified it never reached the fixed branch (thread 2 ran out past the 50
   checked chunks), so if it ever recurs, read thread 2's "Chunks allocated" first.
 - Control-plane's explorer-class audit of the 87 Rust-body cells that link `<t>_shims` as
   an archive: only netapi32 (netdfs_c.o) and pcix (usage.o) dropped a member, on all three
-  arches, and neither changed the PE contract. Both now link whole (5ad25d4ae81, batch 202).
-- test_ladder's two 0.01 s drain tests run on the `drain_clock` fixture (afd0d2b91f6,
-  batch 202): batch 196's tooling flake.
+  arches, and neither changed the PE contract. Both now link whole (5ad25d4ae81). Method, in that commit message: a shim member was
+  loaded iff one of its defined globals is in the linked PE's COFF symbol table, read from
+  `sdk/lib/rust/target/cell-link-v1-<arch>-*/<triple>/release/build/<crate>-*/out/objs/`.
+- test_ladder's two 0.01 s drain tests run on the `drain_clock` fixture (afd0d2b91f6): batch 196's tooling flake.
 
 Owed, in order:
 1. The ~50 per arch TUs the sign-compare audit still only partly parses (freeldr fixed
    2026-11-22: its own include dirs must come BEFORE the donor's). What is left is a long
    tail: wine kernelbase (9, not compiled anywhere), gdi32 (6), crt (6), scattered others.
-2. ~~bank_drift residue: 18 moved hashes.~~ Closed 2026-11-22, no shipping bug. Replaying the
+2. Optional: the shim-member audit was a scratch script; if it is ever re-run, make it a
+   vibeos-lint binary rule (it needs a built tree, like scan_sign_compare_minmax), not Python.
+3. ~~bank_drift residue: 18 moved hashes.~~ Closed 2026-11-22, no shipping bug. Replaying the
    36 scanner.py versions committed on the buying branches (cpp-cluster, cells-wdmaud/gicv3,
    msvcrt-homebrew, rustconv-speedrun, shell32-com; blob-deduped against the 26 master
    versions) over today's C reproduces none of them, and neither does each worktree's own
