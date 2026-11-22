@@ -630,8 +630,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   only the baselined `.c:145/246`), and **0 of 6** full sweeps
   (`conformance --arch arm64 --repeat 6`, `20261121-214937-c1A6Nr`). Same config as the gate
   (smp 0, MP kernel); the difference is load: the gate's failing sweep took 105 s against
-  69-89 s idle, because the gate boots three arches at once. So it is timing-dependent; the
-  next repro is a soak under host load (run the arm64 repeat beside the other arches'
+  69-89 s idle, because the gate boots three arches at once. A 6-round soak beside a
+  live gate (`20261121-221311-moK2xM`, load average 24.6 falling to 7.6) was also clean, but
+  only its first round (125 s) ran under gate-like load: 0 of 32 samples overall. So it is
+  timing-dependent; the next repro is a soak under SUSTAINED host load (run the arm64 repeat beside the other arches'
   sweeps), then a tripwire on the commit/fault path. The signature points to a race between concurrent
   commits in one process (PTE or page-table population, or the VAD), not to address-space
   layout. It is unrelated to 56755a2a231 (kernel32's user-mode sort-table mapping). Next:
