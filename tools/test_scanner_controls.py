@@ -3933,6 +3933,12 @@ UNCOVERED: dict[str, str] = {
         "must-not cases pin the u32 rop, the version DWORD, the call-proc `== 0xFFFF0000` "
         "form, the fixed `& !0xFFFF` form and C quoted in a comment."
     ),
+    "scan_null_out_param": (
+        "main() walks the real tree, but the decision is scan_code(), a pure function over a "
+        "string, driven directly in tools/vibeos-lint/src/rules/null_out_param.rs. Its fire "
+        "case is the shape that shipped (NtFilterToken's HandleInfo); its must-not cases pin "
+        "assignment, a &mut borrow, a macro cursor, an is_null-only use and function scope."
+    ),
     "scan_queued_lock_plain_acquire": (
         "main() walks the real tree, but the decision is scan_code(), a pure function over a "
         "string, driven directly in tools/vibeos-lint/src/rules/queued_lock_plain_acquire.rs. "
