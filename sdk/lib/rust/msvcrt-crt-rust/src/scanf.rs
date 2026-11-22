@@ -92,13 +92,14 @@ use crate::printf::va_next;
 // with whatever width the declaration happened to claim — exactly the silent mismatch
 // prelude.rs records for the `_isw*_l` family. They are called through `crate::`.
 
-/// `FILE` is opaque here: the engine only ever hands the pointer straight back to
-/// `fgetc`/`ungetc`/`_lock_file`. Never dereferenced, so its layout is not this
-/// module's business.
-#[repr(C)]
-pub struct FILE {
-    _opaque: [u8; 0],
-}
+/// The engine never dereferences a `FILE`; it only hands the pointer straight back to
+/// `fgetc`/`ungetc`/`_lock_file`. It is still the island's real `FILE` rather than a local
+/// opaque struct, because `__iob_func` is also declared in `msvcrt/exit.rs` (which needs
+/// the real layout for `stderr`'s `.add(2)`). Two `extern` declarations of one symbol
+/// must agree on their types, or the second is a `clashing_extern_declarations` warning.
+/// Both already matched `stdio.h:89` (`FILE *__iob_func(void)`); only the nominal
+/// pointee differed.
+pub type FILE = sys::FILE;
 
 extern "C" {
     // include/stdio.h:116/:147/:93/:94
