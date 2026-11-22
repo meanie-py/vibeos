@@ -242,7 +242,9 @@ pub unsafe extern "C" fn ConCfgReadUserSettings(
         );
 
         if result != ERROR_SUCCESS as i32 {
-            if dwType == REG_DWORD {
+            // The C retries ONLY a string value and stops on every other type; this read
+            // `== REG_DWORD`, which retried REG_BINARY/REG_EXPAND_SZ as strings.
+            if dwType != REG_SZ {
                 break;
             }
 

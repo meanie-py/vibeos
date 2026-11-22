@@ -15,10 +15,9 @@ Also landed with it: shlwapi re-graded with the fixed oracle (`rename_module_ref
 `DPRINT1`→Wine-macro integrate pass, applied to 15 more crates; crate-repair's
 `transmute_source_abi`; profile_derive's define ordering.
 Owed:
-- Done: `scan_sizeof_vs_c` (vibeos-lint) gates the sizeof-swap class; 10 reviewed
-  restructurings are baselined. Still owed: the same per-function idea for sealed CONSTANTS
-  (crypt32's permuted `E_INVALIDARG`/`StoreTypeCollection`). The scratch multiset diff had too
-  many macro-expansion false positives to land as is.
+- Done: `scan_sizeof_vs_c` and `scan_compare_const_vs_c` (vibeos-lint) gate the sizeof-swap
+  and permuted-constant classes from crypt32 (10 and 11 reviewed findings baselined). The
+  constant rule found one real divergence on its first run (concfg's REG_SZ retry, fixed).
 - shlwapi's C++ tail and cell (below).
 - The older smp items (below).
 

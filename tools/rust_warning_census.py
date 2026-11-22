@@ -34,6 +34,12 @@ unit's `invoked.timestamp`, which is cargo's own freshness rule. A crate whose e
 is stale was edited since that build and is refused (exit 3; `--allow-stale` reports the
 rest and names it). A fresh unit with no output file compiled clean.
 
+Bodies a cell builds privately compile in `sdk/lib/rust/target/body-storage-v1-<arch>-*`,
+not build-<arch>, and are read from there too. A body the ARTIFACT STORE served never ran
+cargo in this lane at all: its fingerprint is whatever the last private compile left, and
+the store keeps no diagnostics. `--recheck-store-hits` re-derives them with `cargo check`,
+using the store action's exact argv and RUSTFLAGS (see "crates the artifact store served").
+
 WHY THE LINT NAME IS INFERRED. rustc attaches the `#[warn(lint)]` note to the FIRST
 occurrence of each lint per crate only, so most blocks carry no name. The name is
 recovered from the message: every annotated block teaches its message TEMPLATE (backticked
@@ -73,6 +79,11 @@ UB = {
     "undefined_naked_function_abi",
 }
 LOGIC = {
+    # `transmute(f as usize)` into a callback slot (ObjectTypeInitializer.DeleteProcedure,
+    # 2026-11-22 sample: 159 sites, nearly all this shape). The usize round trip means
+    # rustc never compares `f`'s signature or ABI with the slot's type: an ABI smell,
+    # not style.
+    "function_casts_as_integer",
     "path_statements",
     "unused_comparisons",
     "unused_must_use",
@@ -454,6 +465,260 @@ def coverage(units: list[Unit]) -> tuple[set[str], dict[str, str]]:
     return fresh, stale
 
 
+# --- crates the artifact store served ---------------------------------------------------
+#
+# A body the immutable artifact store already holds is linked from its archive, and cargo
+# never runs for it in the lane. Its fingerprint keeps whatever the last private compile
+# left, which the staleness rule above then (correctly) refuses. The store keeps only
+# `body.a`, never rustc's diagnostics, so the census re-derives them itself:
+# `--recheck-store-hits` runs `cargo check` with the EXACT argv and RUSTFLAGS the store's
+# action recorded for this lane's build, into sdk/lib/rust/target/census-check-<arch>. That
+# dir is deliberately in NEITHER build-<arch> nor cargo_unit_dirs.json: rust_ub_deny judges
+# what the build compiled, and a gate whose verdict changed with whether someone had run
+# the census would not be a gate.
+# It refuses rather than guesses: an unreadable ref or action is a hard error, never a
+# fallback to default features. A check misses the few lints rustc emits only during
+# codegen, so the coverage line says which crates were checked rather than built.
+
+TRIPLE_ARCH = {
+    "i686-pc-windows-gnu": "i386",
+    "x86_64-pc-windows-gnu": "amd64",
+    "aarch64-pc-windows-gnullvm": "arm64",
+}
+
+
+LIB_KINDS = {"lib", "rlib", "staticlib", "cdylib", "dylib"}
+
+
+class StoreError(Exception):
+    """A store ref or action the recheck needs could not be read. Never degraded."""
+
+
+def store_root() -> Path:
+    # Same default as tests/qemu/cli/provenance.py and vibeos-build's cargo_orchestrate.
+    env = os.environ.get("VIBEOS_ARTIFACT_STORE_ROOT")
+    return Path(env) if env else Path.home() / "vibeos-artifact-store"
+
+
+def lane_actions(store: Path, lane: Path) -> dict[tuple[str, str], set[str]]:
+    """{(arch, body): {action key}} for the refs this lane's builds recorded. A ref is
+    keyed by its consumer (cell OUT_DIR, body, features), and is rewritten each time that
+    consumer is served, so every live ref names what the lane's latest build linked."""
+    refs = store / "v1" / "refs"
+    if not refs.is_dir():
+        raise StoreError(f"no artifact store refs at {refs}")
+    lane_s = str(lane.resolve())
+    out: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for f in refs.glob("*.json"):
+        try:
+            ref = json.loads(f.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            raise StoreError(f"unreadable store ref {f}: {e}") from e
+        if ref.get("lane") != lane_s:
+            continue
+        fields = str(ref.get("consumer", "")).split("|")
+        key = ref.get("action_key")
+        if len(fields) < 3 or not key:
+            raise StoreError(f"malformed store ref {f}: {ref!r}")
+        # The arch is the consuming cell's (`target/cell-link-v1-<arch>-N/`). Its triple
+        # is no use: a kernel cell links on `i686-kernel` while the store built the body
+        # on the builtin `i686-pc-windows-gnu`.
+        m = re.search(r"/cell-link-v1-(i386|amd64|arm64)-\d+/", fields[1])
+        if m is None:
+            raise StoreError(f"store ref {f} names no cell-link arch dir: {fields[1]}")
+        arch = m.group(1)
+        out[(arch, fields[2])].add(key)
+    return out
+
+
+def check_command(action: dict, manifest: Path) -> tuple[list[str], str]:
+    """The action's recorded `cargo build` argv as a `cargo check` emitting rustc JSON,
+    and its recorded RUSTFLAGS. Only the verb, the manifest path (the worker's canonical
+    mount), the output format and the worker's `-vv --jobs 1` change; package, target,
+    profile, features and default-features are the action's own."""
+    try:
+        argv = list(action["descriptor"]["context"]["effective_config"]["argv"])
+        flags = action["configuration"]["environment"]["RUSTFLAGS"]
+    except (KeyError, TypeError) as e:
+        raise StoreError(f"action {action.get('action_key')} has no argv/RUSTFLAGS: {e}") from e
+    if len(argv) < 2 or not argv[0].endswith("cargo") or argv[1] != "build":
+        raise StoreError(f"action {action.get('action_key')} is not a cargo build: {argv}")
+    out = ["cargo", "check"]
+    rest = iter(argv[2:])
+    for a in rest:
+        if a == "--manifest-path":
+            next(rest, None)
+            out += ["--manifest-path", str(manifest)]
+        elif a == "--jobs":
+            next(rest, None)
+        elif a == "-vv":
+            continue
+        else:
+            out.append(a)
+    if "--manifest-path" not in out:
+        raise StoreError(f"action {action.get('action_key')} argv has no --manifest-path")
+    return [*out, "--message-format=json"], flags
+
+
+def _pkg_name(package_id: str) -> str:
+    # "path+file:///…/acpi-rust#0.1.0" or "…#acpi-rust@0.1.0"
+    tail = package_id.rsplit("#", 1)[-1]
+    if "@" in tail:
+        return tail.split("@", 1)[0]
+    return package_id.rsplit("#", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+
+
+def recheck(
+    build_dir: Path, repo: Path, arch: str, stale: set[str], store: Path
+) -> tuple[dict[str, list[Site]], int]:
+    """({crate: sites} for the stale crates a store-action check compiled, actions run)."""
+    actions = lane_actions(store, repo)
+    keys = sorted(
+        {k for (a, body), ks in actions.items() if a == arch and body in stale for k in ks}
+    )
+    target_dir = repo / "sdk" / "lib" / "rust" / "target" / f"census-check-{arch}"
+    manifest = repo / "sdk" / "lib" / "rust" / "Cargo.toml"
+    found: dict[str, list[Site]] = defaultdict(list)
+    compiled: set[str] = set()
+    for key in keys:
+        path = store / "v1" / "actions" / f"{key}.json"
+        try:
+            action = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            raise StoreError(f"unreadable store action {path}: {e}") from e
+        argv, flags = check_command(action, manifest)
+        env = dict(
+            os.environ, RUSTFLAGS=flags, CARGO_TARGET_DIR=str(target_dir), CARGO_INCREMENTAL="0"
+        )
+        env.pop("CARGO_ENCODED_RUSTFLAGS", None)
+        # cwd = the build dir: inside the worktree (its rust-toolchain.toml pins rustc) but
+        # outside sdk/lib/rust, whose .cargo/config.toml the store's worker never read.
+        cp = subprocess.run(argv, cwd=build_dir, env=env, capture_output=True, text=True)
+        if cp.returncode != 0:
+            tail = "\n".join(cp.stderr.splitlines()[-15:])
+            raise StoreError(
+                f"cargo check for store action {key} failed (rc={cp.returncode}):\n{tail}"
+            )
+        c_found, c_compiled = parse_check_output(cp.stdout, stale)
+        compiled |= c_compiled
+        for crate, sites in c_found.items():
+            found[crate].extend(sites)
+    # Only a crate cargo reported compiling counts as covered; the same site from two
+    # feature configurations of one body is one site (merge() dedupes per arch anyway).
+    return {c: found.get(c, []) for c in compiled}, len(keys)
+
+
+def parse_check_output(stdout: str, wanted: set[str]) -> tuple[dict[str, list[Site]], set[str]]:
+    """`cargo check --message-format=json` lines → ({crate: sites}, {crates compiled}),
+    restricted to `wanted`. Cargo replays a fresh unit's diagnostics, so a warm second run
+    reports the same sites."""
+    found: dict[str, list[Site]] = defaultdict(list)
+    compiled: set[str] = set()
+    for line in stdout.splitlines():
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        name = _pkg_name(str(msg.get("package_id", "")))
+        if name not in wanted:
+            continue
+        kinds = set(msg.get("target", {}).get("kind", []))
+        # Store bodies are `staticlib` crates; a build script's artifact is not the crate.
+        if msg.get("reason") == "compiler-artifact" and kinds & LIB_KINDS:
+            compiled.add(name)
+        elif msg.get("reason") == "compiler-message":
+            site = _site_of(msg.get("message", {}))
+            if site:
+                found[name].append(site)
+    return found, compiled
+
+
+UNIT_DIRS_JSON = Path(__file__).resolve().parent / "vibeos-lint/src/binary/cargo_unit_dirs.json"
+
+
+def cell_target_dirs(repo: Path, arch: str) -> list[Path]:
+    """This worktree's per-arch cargo target dirs outside build-<arch>: the SAME list
+    vibeos-lint's rust_ub_deny reads (`unit_dirs`), from one shared JSON, so the census
+    and the deny gate cannot disagree about which units exist."""
+    spec = json.loads(UNIT_DIRS_JSON.read_text())
+    dirs = []
+    for pattern in spec["patterns"]:
+        pattern = pattern.replace("{arch}", arch)
+        if not pattern.endswith("*"):
+            raise ValueError(f"{UNIT_DIRS_JSON.name}: {pattern!r} must end in '*'")
+        full = repo / pattern[:-1]
+        if full.parent.is_dir():
+            dirs += [
+                d for d in full.parent.iterdir() if d.name.startswith(full.name) and d.is_dir()
+            ]
+    return sorted(dirs)
+
+
+# --- which rustc could have emitted a lint ---------------------------------------------
+#
+# A lint exists only in the rustc versions that have it. function_casts_as_integer is in
+# the nightly the i386 kernel cells build with (.rust-nightly, `-Z build-std`,
+# i686-kernel) and NOT in the pinned stable (rust-toolchain.toml) every other cell uses,
+# so a count of it over stable units is a vacuous 0. A count reported as "0 sites"
+# from `cargo check` on stable once went out as a verified result
+# (2026-11-22). `--lint` therefore asks each toolchain whose units it read whether it
+# knows the lint, reports N/A for those that do not, and refuses outright when none do.
+
+
+class LintListError(Exception):
+    """A toolchain's lint list could not be read. Never treated as "lint unknown"."""
+
+
+def toolchain_names(repo: Path) -> dict[str, str]:
+    """{"stable": <rust-toolchain.toml channel>, "nightly": <.rust-nightly>} for this tree."""
+    out = {}
+    tc = repo / "rust-toolchain.toml"
+    m = re.search(r'(?m)^channel\s*=\s*"([^"]+)"', tc.read_text()) if tc.is_file() else None
+    if m:
+        out["stable"] = m.group(1)
+    nightly = repo / ".rust-nightly"
+    if nightly.is_file() and nightly.read_text().strip():
+        out["nightly"] = nightly.read_text().strip()
+    return out
+
+
+def unit_toolchain(fpdir: Path) -> str:
+    """`nightly` for a unit built on a custom target JSON, `stable` otherwise. A unit sits at
+    `<target dir>/<triple>/release/.fingerprint/<unit>`, or `<target dir>/release/..` for
+    the host. Only the build-std kernel cells use a non-builtin triple (i686-kernel), and
+    they run the nightly."""
+    triple = fpdir.parents[2].name
+    builtin = set(TRIPLE_ARCH) | {"x86_64-unknown-linux-gnu", "i686-unknown-linux-gnu"}
+    if triple not in builtin and re.match(r"(i686|x86_64|aarch64)-", triple):
+        return "nightly"
+    return "stable"
+
+
+_LINT_ROW = re.compile(r"^\s+([a-z0-9][a-z0-9-]*)\s+(allow|warn|deny|forbid)\s")
+
+
+@functools.lru_cache(maxsize=8)
+def known_lints(toolchain: str) -> frozenset[str]:
+    """The lint names `rustc -W help` lists under RUSTUP_TOOLCHAIN=<toolchain>."""
+    try:
+        cp = subprocess.run(
+            ["rustc", "-W", "help"],
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, RUSTUP_TOOLCHAIN=toolchain),
+        )
+    except OSError as e:
+        raise LintListError(f"rustc for {toolchain}: {e}") from e
+    names = {
+        m.group(1).replace("-", "_") for m in map(_LINT_ROW.match, cp.stdout.splitlines()) if m
+    }
+    if cp.returncode != 0 or not names:
+        raise LintListError(
+            f"`rustc -W help` under {toolchain} failed (rc={cp.returncode}): {cp.stderr[-300:]}"
+        )
+    return frozenset(names)
+
+
 def arch_of_build_dir(d: Path) -> str:
     m = re.search(r"build-(i386|amd64|arm64)$", str(d.resolve()))
     return m.group(1) if m else d.name
@@ -480,6 +745,13 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="report even when a build dir has crates edited since it was built",
     )
+    ap.add_argument(
+        "--recheck-store-hits",
+        action="store_true",
+        help="for crates refused as stale because the artifact store served them, run "
+        "`cargo check` with the store action's exact argv/RUSTFLAGS (target dir "
+        "sdk/lib/rust/target/census-check-<arch>) and count its diagnostics",
+    )
     ap.add_argument("--tier", choices=TIERS, help="list the sites of one tier")
     ap.add_argument("--lint", help="list the sites of one lint")
     ap.add_argument("--crate", help="restrict to one crate (path prefix, e.g. kernel32-rust)")
@@ -497,17 +769,42 @@ def main(argv: list[str]) -> int:
     claimed_all: dict[str, int] = {}
     stale_all: dict[str, str] = {}
     fresh_all: set[str] = set()
+    checked_all: set[str] = set()
+    actions_run = 0
+    units_by_toolchain: dict[str, int] = defaultdict(int)
+    lint_repo: Path | None = None
     from_logs = False
     for log in args.logs:
         if log.is_dir():
             # build-<arch> sits at its worktree's root; its sources are that tree's.
             repo = log.resolve().parent
+            arch = arch_of_build_dir(log)
             units = read_build_dir(log, repo)
+            # Bodies a cell builds privately (store-ineligible, or the store off) compile
+            # in the workspace's per-arch body-storage target dirs, not build-<arch>; the
+            # cells' own link crates in cell-link-v1-<arch>-N. Both are this worktree's.
+            for extra in sorted(cell_target_dirs(repo, arch)):
+                units += read_build_dir(extra, repo)
             if not units:
                 print(f"NO CARGO UNITS under {log}: not a build dir?", file=sys.stderr)
                 return 2
             fresh, stale = coverage(units)
-            arch = arch_of_build_dir(log)
+            lint_repo = repo
+            for u in units:
+                if not u.stale:
+                    units_by_toolchain[unit_toolchain(u.fpdir)] += 1
+            if args.recheck_store_hits and stale:
+                try:
+                    rechecked, n = recheck(log, repo, arch, set(stale), store_root())
+                except StoreError as e:
+                    print(f"STORE RECHECK FAILED ({arch}): {e}", file=sys.stderr)
+                    return 2
+                actions_run += n
+                units_by_toolchain["stable"] += len(rechecked)
+                for crate, crate_sites in rechecked.items():
+                    stale.pop(crate, None)
+                    checked_all.add(f"{arch}:{crate}")
+                    per_arch[arch].extend(crate_sites)
             fresh_all |= {f"{arch}:{c}" for c in fresh}
             stale_all.update({f"{arch}:{c}": why for c, why in stale.items()})
             for u in units:
@@ -565,6 +862,30 @@ def main(argv: list[str]) -> int:
         print()
         return 0
 
+    if args.lint and lint_repo is not None:
+        names = toolchain_names(lint_repo)
+        knows: dict[str, bool] = {}
+        try:
+            for tc in sorted(units_by_toolchain):
+                knows[tc] = args.lint in known_lints(names.get(tc, tc))
+        except LintListError as e:
+            print(f"LINT LIST FAILED: {e}", file=sys.stderr)
+            return 2
+        if not any(knows.values()):
+            print(
+                f"`{args.lint}` is unknown to every toolchain these units were built with "
+                f"({', '.join(f'{tc}={names.get(tc, tc)}' for tc in sorted(knows))}): "
+                "any count would be a vacuous 0. Check the lint's name.",
+                file=sys.stderr,
+            )
+            return 2
+        for tc, known in sorted(knows.items()):
+            if not known:
+                print(
+                    f"N/A (lint `{args.lint}` unknown to {tc} {names.get(tc, tc)}): its "
+                    f"{units_by_toolchain[tc]} unit(s) cannot report it; the sites below are "
+                    "from the others only."
+                )
     if args.tier or args.lint:
         for s in sites:
             t = tier_of(s.lint) if s.lint else "UNCLASSIFIED"
@@ -590,9 +911,21 @@ def main(argv: list[str]) -> int:
             more = f" +{len(crates) - 4}" if len(crates) > 4 else ""
             print(f"   {len(ss):6d}  {lint:44s} {', '.join(crates[:4])}{more}")
         print()
+    if checked_all:
+        print(
+            f"GAP: {len(checked_all)} arch:crate unit(s) were seen ONLY via --recheck-store-hits "
+            "(the artifact store served them, so no build compiled them here). rust_ub_deny "
+            "does not see these; the gap closes when the store publishes diagnostics per action."
+        )
     if fresh_all:
         print(
             f"coverage (cargo cache): {len(fresh_all)} fresh arch:crate unit(s) read"
+            + (
+                f", {len(checked_all)} store-served unit(s) re-derived by `cargo check` "
+                f"({actions_run} store action(s); codegen-time lints not covered)"
+                if checked_all
+                else ""
+            )
             + (f", {len(stale_all)} STALE and left out" if stale_all else "")
             + ".",
             file=sys.stderr,

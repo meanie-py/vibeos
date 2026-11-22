@@ -25,6 +25,7 @@ panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 winelist-rust = { path = "../winelist-rust" }
 winsrv-sys = { path = "../winsrv-sys" }
+unorm-rust = { path = "../unorm-rust" }
 
 [features]
 # Never enabled. rtl-version's lib.rs is #[path]-included by client/version.rs for its

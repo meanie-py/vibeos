@@ -684,7 +684,7 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
         &mut object_attributes,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        core::mem::transmute(Phase1Initialization as usize),
+        Some(Phase1Initialization),
         loader_block as PVOID,
     );
 

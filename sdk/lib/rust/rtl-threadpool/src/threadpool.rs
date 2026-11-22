@@ -519,7 +519,7 @@ unsafe fn tp_new_worker_thread(pool: *mut threadpool) -> NTSTATUS {
         0,
         (*pool).stack_info.StackReserve as _,
         (*pool).stack_info.StackCommit as _,
-        core::mem::transmute::<_, PTHREAD_START_ROUTINE>(threadpool_worker_proc as usize),
+        core::mem::transmute::<_, PTHREAD_START_ROUTINE>(threadpool_worker_proc as *const () as usize),
         pool as *mut core::ffi::c_void,
         &mut thread,
         core::ptr::null_mut(),
@@ -554,7 +554,7 @@ unsafe fn tp_timerqueue_lock(timer: *mut threadpool_object) -> NTSTATUS {
             0,
             0,
             0,
-            core::mem::transmute::<_, PTHREAD_START_ROUTINE>(timerqueue_thread_proc as usize),
+            core::mem::transmute::<_, PTHREAD_START_ROUTINE>(timerqueue_thread_proc as *const () as usize),
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(thread),
             core::ptr::null_mut(),
@@ -872,7 +872,7 @@ unsafe fn tp_waitqueue_lock(wait: *mut threadpool_object) -> NTSTATUS {
         }
 
         status = RtlCreateUserThread(GetCurrentProcess(), core::ptr::null_mut(), 0, 0, 0, 0,
-                                     core::mem::transmute::<_, PTHREAD_START_ROUTINE>(waitqueue_thread_proc as usize), bucket as PVOID,
+                                     core::mem::transmute::<_, PTHREAD_START_ROUTINE>(waitqueue_thread_proc as *const () as usize), bucket as PVOID,
                                      core::ptr::addr_of_mut!(thread), core::ptr::null_mut());
         if status == STATUS_SUCCESS {
             list_add_tail(core::ptr::addr_of_mut!(waitqueue.buckets), core::ptr::addr_of_mut!((*bucket).bucket_entry));
@@ -1039,7 +1039,7 @@ unsafe fn tp_ioqueue_lock(io: *mut threadpool_object, file: HANDLE) -> NTSTATUS 
             0,
             0,
             0,
-            core::mem::transmute::<_, PTHREAD_START_ROUTINE>(ioqueue_thread_proc as usize),
+            core::mem::transmute::<_, PTHREAD_START_ROUTINE>(ioqueue_thread_proc as *const () as usize),
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(thread),
             core::ptr::null_mut(),

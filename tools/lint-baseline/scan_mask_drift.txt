@@ -17,6 +17,7 @@ sdk/lib/rust/kernel32-rust/src/string/lcformat.rs: dwFmt &= ~CF_MINUS_BEFORE [DR
 sdk/lib/rust/kernel32-rust/src/string/lcformat.rs: dwFmt &= ~CF_MINUS_LEFT [DROPPED]
 sdk/lib/rust/kernel32-rust/src/string/lcformat.rs: dwFmt &= ~CF_MINUS_RIGHT [DROPPED]
 sdk/lib/rust/kernel32-rust/src/string/lcformat.rs: dwState &= ~NF_ROUND [DROPPED]
+sdk/lib/rust/kernel32-rust/src/string/locale.rs: dwFlags &= ~MAP_PRECOMPOSED [DROPPED]
 sdk/lib/rust/msvcrt-crt-rust/src/scanf.rs: options &= ~MASK [DROPPED]
 sdk/lib/rust/netapi32-rust/src/netapi32/user.rs: flags &= ~LG_INCLUDE_INDIRECT [DROPPED]
 sdk/lib/rust/ntkrnl-sys/src/inline/ke_i386.rs: Dr7 &= ~DR7_RESERVED_MASK [DROPPED]

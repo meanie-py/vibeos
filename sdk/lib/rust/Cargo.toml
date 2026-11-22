@@ -778,6 +778,9 @@ members = [
     # defines them, so every flipped module used to port the header again — four divergent
     # copies, one of which had dropped its bound (roadmap: msgina's stack overrun).
     "strsafe-rust",
+    # Unicode normalization (NFC/NFD/NFKC/NFKD) from the vendored UCD, shared by kernel32's
+    # FoldString, IDN and NormalizeString. Tables: `tools/codegen unorm`.
+    "unorm-rust",
     "wcwidth-rust",
     "conutils-h",
     "atlclasses-rust",

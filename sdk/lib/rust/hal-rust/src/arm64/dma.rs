@@ -76,26 +76,26 @@ unsafe fn arm64_dma_ops() -> *mut ddk::DMA_OPERATIONS {
     let ops = core::ptr::addr_of_mut!(ARM64_DMA_OPERATIONS);
     if !ARM64_DMA_OPS_READY.load(Ordering::Acquire) {
         (*ops).Size = core::mem::size_of::<ddk::DMA_OPERATIONS>() as ddk::ULONG;
-        (*ops).PutDmaAdapter = Some(core::mem::transmute(Arm64DmaPutDmaAdapter as usize));
+        (*ops).PutDmaAdapter = Some(Arm64DmaPutDmaAdapter);
         (*ops).AllocateCommonBuffer =
-            Some(core::mem::transmute(Arm64DmaAllocateCommonBuffer as usize));
-        (*ops).FreeCommonBuffer = Some(core::mem::transmute(Arm64DmaFreeCommonBuffer as usize));
+            Some(Arm64DmaAllocateCommonBuffer);
+        (*ops).FreeCommonBuffer = Some(Arm64DmaFreeCommonBuffer);
         (*ops).AllocateAdapterChannel =
-            Some(core::mem::transmute(Arm64DmaAllocateAdapterChannel as usize));
+            Some(Arm64DmaAllocateAdapterChannel);
         (*ops).FlushAdapterBuffers =
-            Some(core::mem::transmute(Arm64DmaFlushAdapterBuffers as usize));
-        (*ops).FreeAdapterChannel = Some(core::mem::transmute(Arm64DmaFreeAdapterChannel as usize));
-        (*ops).FreeMapRegisters = Some(core::mem::transmute(Arm64DmaFreeMapRegisters as usize));
-        (*ops).MapTransfer = Some(core::mem::transmute(Arm64DmaMapTransfer as usize));
-        (*ops).GetDmaAlignment = Some(core::mem::transmute(Arm64DmaGetDmaAlignment as usize));
-        (*ops).ReadDmaCounter = Some(core::mem::transmute(Arm64DmaReadDmaCounter as usize));
+            Some(Arm64DmaFlushAdapterBuffers);
+        (*ops).FreeAdapterChannel = Some(Arm64DmaFreeAdapterChannel);
+        (*ops).FreeMapRegisters = Some(Arm64DmaFreeMapRegisters);
+        (*ops).MapTransfer = Some(Arm64DmaMapTransfer);
+        (*ops).GetDmaAlignment = Some(Arm64DmaGetDmaAlignment);
+        (*ops).ReadDmaCounter = Some(Arm64DmaReadDmaCounter);
         // ndis's ProSend calls GetScatterGatherList for every bus-master miniport (e1000)
         // through this table from C, so a None here was a call to address 0 -- a 0x1E
         // naming nothing -- not a loud unwrap.
         (*ops).GetScatterGatherList =
-            Some(core::mem::transmute(Arm64DmaGetScatterGatherList as usize));
+            Some(Arm64DmaGetScatterGatherList);
         (*ops).PutScatterGatherList =
-            Some(core::mem::transmute(Arm64DmaPutScatterGatherList as usize));
+            Some(Arm64DmaPutScatterGatherList);
         ARM64_DMA_OPS_READY.store(true, Ordering::Release);
     }
     ops

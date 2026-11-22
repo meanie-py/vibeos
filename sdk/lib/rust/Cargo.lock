@@ -4620,6 +4620,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "unorm-rust",
  "winedebug-rust",
  "winelist-rust",
  "winetrace-shim",
@@ -5222,6 +5223,7 @@ dependencies = [
  "com-sys",
  "ntdll-sys",
  "panic-common",
+ "win32macros-rust",
  "winedebug-rust",
 ]
 
@@ -10294,6 +10296,10 @@ version = "0.1.0"
 dependencies = [
  "splaytree",
 ]
+
+[[package]]
+name = "unorm-rust"
+version = "0.1.0"
 
 [[package]]
 name = "updspapi-cargo"

@@ -25,6 +25,7 @@ pub mod shadowed_c_define;
 pub mod move_vs_nonoverlapping;
 pub mod assert_negated_vs_c;
 pub mod sizeof_vs_c;
+pub mod compare_const_vs_c;
 pub mod devobj_as_extension;
 pub mod shared_system_time;
 pub mod variadic_array_arg;
@@ -54,6 +55,7 @@ pub mod noop_goto;
 pub mod opaque_ptr_arith;
 pub mod ptr_highword_mask;
 pub mod queued_lock_plain_acquire;
+pub mod null_out_param;
 pub mod raw_bitfield;
 pub mod raw_uart_writes;
 pub mod typed_byte_copy;
@@ -251,6 +253,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(move_vs_nonoverlapping::MoveVsNonoverlapping),
         Box::new(assert_negated_vs_c::AssertNegatedVsC),
         Box::new(sizeof_vs_c::SizeofVsC),
+        Box::new(compare_const_vs_c::CompareConstVsC),
         Box::new(devobj_as_extension::DevobjAsExtension),
         Box::new(shared_system_time::SharedSystemTime),
         Box::new(store_on_failure::StoreOnFailure),
@@ -291,6 +294,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(narrow_vs_wide_literal::NarrowVsWideLiteral),
         Box::new(ptr_highword_mask::PtrHighwordMask),
         Box::new(queued_lock_plain_acquire::QueuedLockPlainAcquire),
+        Box::new(null_out_param::NullOutParam),
         Box::new(bindgen_padding_index::BindgenPaddingIndex),
         Box::new(raw_uart_writes::RawUartWrites),
         Box::new(fourcc_literals::FourccLiterals),

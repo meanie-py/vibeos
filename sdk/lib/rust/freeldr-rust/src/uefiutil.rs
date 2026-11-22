@@ -44,7 +44,7 @@ pub unsafe extern "C" fn UefiGetTime() -> *mut TIMEINFO {
     TimeInfo.Hour = time.Hour as u16;
     TimeInfo.Minute = time.Minute as u16;
     TimeInfo.Second = time.Second as u16;
-    &mut TimeInfo as *mut TIMEINFO
+    &raw mut TimeInfo as *mut TIMEINFO
 }
 
 

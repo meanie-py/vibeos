@@ -986,7 +986,7 @@ pub unsafe extern "system" fn KdSendPacket(
 
             if ((*ExceptionRecord).ExceptionCode as i32) == STATUS_BREAKPOINT
                 && ((*ExceptionRecord).ExceptionAddress as usize)
-                    == (RtlpBreakWithStatusInstruction as usize)
+                    == (RtlpBreakWithStatusInstruction as *const () as usize)
             {
                 let ContextRecord: PCONTEXT =
                     core::ptr::addr_of_mut!((*KeGetCurrentPrcb()).ProcessorState.ContextFrame);

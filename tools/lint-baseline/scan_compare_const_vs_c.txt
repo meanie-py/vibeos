@@ -1,0 +1,11 @@
+sdk/lib/rust/arp-rust/src/arp/arp.rs:317: compare-const-vs-c Addhost: Rust compares with SEPARATOR where the C (base/applications/network/arp/arp.c:349) compares with EOF
+sdk/lib/rust/cdrom-rust/src/sense.rs:260: compare-const-vs-c DeviceErrorHandlerForMmc: Rust compares with SCSI_SENSE_NOT_READY, SCSI_SENSE_UNIT_ATTENTION where the C (drivers/storage/class/cdrom/sense.c:87) compares with DvdSetRpcKey, STATUS_MEDIA_CHANGED
+sdk/lib/rust/comctl32-rust/src/comctl32/button.rs:706: compare-const-vs-c BUTTON_WindowProc: Rust compares with WM_KEYUP where the C (dll/win32/comctl32/button.c:602) compares with BST_CHECKED
+sdk/lib/rust/fastfat-rust/src/verfysup.rs:530: compare-const-vs-c FatVerifyFcb: Rust compares with FcbGood, FcbNeedsToBeVerified where the C (drivers/filesystems/fastfat/verfysup.c:362) compares with FAT_NTC_ROOT_DCB
+sdk/lib/rust/freeldr-rust/src/partition.rs:265: compare-const-vs-c DiskGetBrfrPartitionEntry: Rust compares with XBOX_SIGNATURE where the C (boot/freeldr/freeldr/disk/part_brfr.c:47) compares with FATX_DATA_PARTITION
+sdk/lib/rust/ftp-rust/src/ftp/fake.rs:56: compare-const-vs-c fgetcSocket: Rust compares with SOCKET_ERROR where the C (base/applications/network/ftp/fake.c:65) compares with INVALID_SOCKET
+sdk/lib/rust/kernel32-rust/src/string/locale.rs:29603: compare-const-vs-c GetGeoInfoW: Rust compares with LOCATION_NATION where the C (dll/win32/kernel32/winnls/string/locale.c:5401) compares with GEO_ISO2
+sdk/lib/rust/lpc-rust/src/create.rs:78: compare-const-vs-c LpcpCreatePort: Rust compares with KernelMode where the C (ntoskrnl/lpc/create.c:43) compares with UserMode
+sdk/lib/rust/ntoskrnl-rust/src/ARM3/sysldr.rs:1210: compare-const-vs-c MmLoadSystemImage: Rust compares with OBJ_NAME_PATH_SEPARATOR where the C (ntoskrnl/mm/ARM3/sysldr.c:3164) compares with STATUS_ALREADY_COMMITTED
+sdk/lib/rust/rtl-strings/src/cabi/mod.rs:1589: compare-const-vs-c RtlDuplicateUnicodeString: Rust compares with RTL_DUP_ALLOCATE_NULL_STRING, RTL_DUP_NULL_TERMINATE where the C (sdk/lib/rtl/unicode.c:2506) compares with RTL_DUPLICATE_UNICODE_STRING_ALLOCATE_NULL_STRING, RTL_DUPLICATE_UNICODE_STRING_NULL_TERMINATE
+sdk/lib/rust/user32-rust/src/controls/listbox.rs:3062: compare-const-vs-c ListBoxWndProc_common: Rust compares with FNID_LISTBOX where the C (win32ss/user/user32/controls/listbox.c:2810) compares with WM_NCCREATE

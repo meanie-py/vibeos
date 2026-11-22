@@ -19,20 +19,38 @@ backlog. Registry redirection was the third item here until E24 landed it. See
 
 Owner: `wow64-amd64` lane.
 
-**RESUME HERE (2026-11-21).** FEX's code cache for x64 guests is fixed and in landing.
-Cached notepad, calc and winmine now pass; `wow64-x64-guest-design.md` item 7 has the bug
-(the JIT guard-page check claimed null-page faults) and the timings. The cache is off unless
-the tripwire sets `FEX_ENABLECODECACHINGWIP=1`.
+**RESUME HERE (parked 2026-11-22, Sunday wind-down).** Everything is landed; the branch is
+master (`d6de9cac1d2`). Landed this weekend:
+- FEX's code cache for x64 guests (`881c3e29e6f`). It is off unless the tripwire sets
+  `FEX_ENABLECODECACHINGWIP=1`. Cached notepad/calc/winmine pass; `wow64-x64-guest-design.md`
+  item 7 has the guard-page bug and the timings.
+- arm64 `KiFaultInUserFrame` (apc32 rung 5), and FEX 64-bit FS/GS selector loads (every x64
+  guest that caught an exception jumped to pc 0). Both are in `d6de9cac1d2` and in the
+  roadmap registry. The plain arm64 FEX ladder was fully green twice
+  (`20261122-144724-TawWz5`, `-145047-N0BF2o`).
+
+Handoff, owed by merge-integrator: the `ladder:arm64-fex` gate stage. It gets its own
+`build-arm64-fex` (VIBEOS_FEX=1) and runs `smoke --arch arm64 --ladder` unconditionally, so it
+never skips; smoke:arm64 stays on plain media. It provisions `build-fex-arm64` itself. Measured
+cold `tools/fex/build-fex.sh`: 57 s wall, 25M, on 24 CPUs at load average ~30
+(2026-11-22). Until that stage lands, the FEX ladder is run by hand:
+`VIBEOS_FEX=1 ./vibeos-cli build --arch arm64` then `VIBEOS_FEX=1 ./vibeos-cli smoke --arch
+arm64 --ladder`.
 
 Next:
-- the full 51-app appstorm64 sweep with the cache. The tripwire is
-  `"FEX_ENABLECODECACHINGWIP=1 FEX_ENABLELAZYCODECACHINGWIP=1"`. Measure it against pass 1's
-  297 s of compile, then decide whether the cache becomes the default.
-- libwow64fex (x86) cache loader. It needs the same `JITGuardPage` guard in upstream's
+- The full 51-app appstorm64 sweep with the cache. It has NOT run: this weekend's attempt was
+  aborted when a master merge changed tools/ sources under the running smoke. Recipe:
+  `bash tools/payloads/appstorm/build.sh amd64`, then
+  `VIBEOS_FEX=1 VIBEOS_PAYLOAD=appstorm64 ./vibeos-cli build --arch arm64`, then the same env
+  with `smoke --arch arm64 --payload appstorm64 --tripwire "FEX_ENABLECODECACHINGWIP=1
+  FEX_ENABLELAZYCODECACHINGWIP=1"`. Measure it against pass 1's 297 s of compile, then decide
+  whether the cache becomes the default.
+- The libwow64fex (x86) cache loader. It needs the same `JITGuardPage` guard in upstream's
   `WOW64/Module.cpp`, as a vendor patch.
 - Pi 4 TSO A/B (design doc item 5).
-- apc32 `[UEXC-STKOVERFLOW]`, seen in every appstorm64 run; not cache-related, uninvestigated.
-- the amd64-bios hang in the roadmap registry.
+- The amd64-bios hang in the roadmap registry.
+- gui32's GetPixel readback mismatched once (0x600e, 1 in 15 arm64 runs,
+  `20261122-142936-4WjeDg`). Watch it.
 
 Predecessor: `fex-bringup-plan.md` (rungs 0–3; this doc was its rung 4+).
 

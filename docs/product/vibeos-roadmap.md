@@ -602,6 +602,35 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 FEX: every x64 guest that catches an exception jumped to pc 0 (FIXED on branch
+  wow64-amd64 2026-11-22, landing; fex lane).** Since `536a9761765` (OutputDebugStringA raises
+  `DBG_PRINTEXCEPTION_C` for real, which is correct), every arm64 FEX x64 ladder guest that
+  imports a DLL exited 0xc0000005. Red: `20261122-133824-aJpIbv`. Green at `37bf0962f85`,
+  before that merge: `20261121-210705-XwfSZ7`. Every catch ends in ReactOS's amd64
+  `RtlpRestoreContextInternal`, which reloads DS/ES/FS. FEX refused `mov fs` in 64-bit mode
+  (DecodeFailure), so no block was compiled, and the block linker handed the dispatcher host
+  address 0. Fixed in FEX's OpcodeDispatcher: the selector is stored and the base left alone,
+  as FEX's own hardware note says (vendor patch "64-bit segment selector loads"). **Gate gap,
+  owed (merge-integrator):** the gate builds arm64 without `VIBEOS_FEX=1`, so `ladder:arm64`
+  skipped and this landed green. A `ladder:arm64-fex` stage on its own `build-arm64-fex`, which
+  never skips, is agreed and owed; the integrator writes it after this fix lands.
+- **arm64: a new thread was killed as a stack overflow with its stack barely used (FIXED on
+  branch wow64-amd64 2026-11-22, landing; fex lane).** apc32 rung 5 under FEX, red since
+  2026-11-08. Building an exception or APC frame, KiDispatchException and KiInitializeUserApc
+  faulted the user frame in with one MmAccessFault per page, bottom first. A guard-page hit
+  commits the page but does not map it, so a frame landing on the guard page failed the
+  following MmIsAddressValid. Now `KiFaultInUserFrame` goes top down, retrying after a guard
+  hit (`20261122-121707-bQJnhZ` red, `20261122-130337-mKp7Sw` green).
+- **Installed system booted with no services: services.exe exited on the first boot after setup
+  (FIXED 2026-11-22, msvcrt-homebrew lane).** `ScmCreateLastKnownGoodControlSet` copies the
+  current control set with `RegCopyTreeW`, which failed with 998 (ERROR_NOACCESS) for every
+  key with a subkey, and services.exe logged `CreateLastKnownGood failed: 998` and exited, so
+  PlugPlay, RPC services and the rest never started. Cause: `probe_user_buffer` checked the
+  alignment of a ZERO-length buffer (NtCreateKey's empty class), which `ProbeForRead` never
+  does (field manual, "Restoring a dropped probe, do not TIGHTEN it"). Found by the install
+  smoke's new persist stage; `install-smoke` had passed throughout because it only waited for
+  Explorer. Reproduced and graded on the livecd by `--payload regcopyprobe`.
+
 - **amd64-bios: boot went silent after netstack's TDI self-test timed out (open, 1 in 7,
   found 2026-11-08, fex lane).** In a full gate (`20261108-020815-xRELnn`, two CPUs, NVMe),
   `smoke:amd64-bios` logged `TDI op timed out - IRP still pending`, `CONNECT FAILED
@@ -611,8 +640,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `~/vibeos-flake-farm/fails/auto/20261108-024954-JKt07d-smoke-amd64-bios-HANG_TIMEOUT`.
   Next: a `farm` run of amd64-bios, to get a rate and a second sample.
 
-- **arm64: committed memory faults under concurrent system-process allocation (open,
-  intermittent, found 2026-11-08; owner: conformance lane since 2026-11-21, MM).** kmtest
+- **arm64: committed memory faults under concurrent system-process allocation (FIXED
+  2026-11-22, conformance lane: a TEST bug, not MM).** Root cause: `SystemProcessTestWorker`
+  tests the allocation status only in its `while` condition, after the loop body has already
+  run `CheckBufferReadWrite(Base, ...)` on every 10th index expecting success. The
+  allocation that hits `STATUS_COMMITMENT_LIMIT` (0xC000012D, how both workers end) left
+  `Base` NULL, so when it landed on a multiple of 10 the test wrote to and read from NULL:
+  exactly `.c:90`, `.c:76` and `Match = 0` at `.c:93`. All three failing serials show the
+  3 MiB thread ending at "Chunks allocated: 41" or 31 (failed at index 40 or 30); a passing
+  one shows 40 (failed at 39). Which index runs out depends on how the two threads
+  interleave their commit charges, hence the load dependence. It is arm64-only because
+  arm64's commit limit ends that thread inside the 50 checked chunks. The fix checks a
+  failed commit the way `StressTesting` already does, expecting the access violation.
+  Original entry: kmtest
   ZwAllocateVirtualMemory's `SystemProcessTestWorker` runs two system threads that allocate in
   the system process at the same time. One of them got STATUS_SUCCESS committing a chunk, then
   faulted with 0xC0000005 both writing it (`.c:90`) and reading it back (`.c:76`, `Match = 0`
@@ -746,6 +786,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   3 one-vCPU boots, 0 in 3 four-vCPU boots). Still owed to smp-bringup: settle whether that guard is a false positive on
   stale union links. Under `--smp 4` the payload wedged on a different bug, fixed below.
 
+- **Chrome payload: the sweep never finishes after a Chrome hang; dhcpcsvc ApiCriticalSection
+  deadlock (open, found 2026-11-22, graviton lane).** Chrome's Run M sometimes leaves a
+  thread stuck on a critical section (`[CENSUS] STUCK chrome.exe ... WrKeyedEvent`); before
+  2026-11-22 the sweep's 420 s timeout dumped it, killed the tree and went on (runs
+  qsFxNa, E1HUIJ: 49 sightings each, sweep `done`). Since kernel32 loads kernelbase.dll
+  (`9e9ad9261f8`), 2 of 3 one-vCPU `--no-net` boots with that hang then raised
+  `STATUS_POSSIBLE_DEADLOCK` about 20 times (RtlpWaitForCriticalSection timing out on
+  `dhcpcsvc_rust::dhcp::api::ApiCriticalSection`, in a process that outlives Chrome) and
+  the sweep stopped after killing Chrome (runs 20261122-080847-vtJV0Y,
+  20261122-110401-oILhqO). Observed: the correlation and the lock. Inferred, unproven: that
+  kernelbase's presence changes what Chrome calls, and that dhcpcsvc's dispatch thread,
+  which holds ApiLock while it runs DHCP timeouts (as upstream does), blocks inside it while
+  DHCP retries with no network. With the network on, the same media passed 3/3 with no
+  deadlock raise (run 20261122-120932-HrBSDJ), so it needs `--no-net`. Not reproduced after
+  cpp-cluster's dhcpcsvc upstream re-port (master `721fb70af35`, which also restored the
+  critical section's "Deadlock: 0x... (owner thread ...)" report): 3/3 `--no-net` boots
+  clean, Chrome's hang still occurring and recovered from (run 20261122-145506-oOy0eZ).
+  Kept open on watch: those hangs were shorter than the failing ones. If it returns, the
+  Deadlock line names the owner; send the run to cpp-cluster.
+
 - **netstack: BUGCHECK 0xA writing a TCP receive into an unmapped buffer (open, found
   2026-11-22, graviton lane).** One Chrome payload boot (`--no-net`, one vCPU; run
   20261122-094733-aQAAcc) in about twenty that day: `memcpy` at DISPATCH_LEVEL writing
@@ -814,17 +874,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   turns it into a livelock. Any real resume from sleep would hit it, so the power manager's
   sleep query does not send Windows' cancelling `SET_POWER(S0)` until this is fixed.
 
-- **`SetPixel` on the display surface writes black (open, found 2026-11-07, amd64).** On a
-  `CreateDC("DISPLAY")` DC, `GetPixel` reads the real colours (wallpaper `0xa56e3a`, taskbar
-  `0xc8d0d4`) and `SetPixel` returns the colour it was given, but the pixel then reads back
-  `0x000000`, and stays black after a restore. A 1x1 `PatBlt` with a solid brush round-trips
-  correctly on the same DC. Seen in `tools/payloads/sysfbprobe` runs (`20261107-182550-reYxfy`).
-  Not the display driver: suspect win32k's SetPixel colour translation to the device format.
+- **`SetPixel` on the display surface wrote black (FIXED 2026-11-08 by ccacb417164, verified
+  2026-11-22; found 2026-11-07, amd64).** `SetPixel` lends its colour to the DC's text brush
+  and clears `DIRTY_TEXT` so the blit keeps it. But `DC_vPrepareDCsForBlit` tested an invented
+  `0x08` (`DIRTY_BACKGROUND`) for text, so a DC with a dirty background re-realized the text
+  brush, black, over it. sysfbprobe now round-trips a `SetPixel` on a `CreateDC("DISPLAY")` DC
+  at every screen check, and passes (`20261122-125149-qUYyoT-smoke-amd64`).
 
-- **`SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT)` fails with
-  error 31 (open, found 2026-11-07, amd64).** Seen once from the Startup folder, before the
-  PlugPlay service was running, so it may only be that ordering; the CM_* calls failed the
-  same way until the probe waited for the service. Not rechecked with the service up.
+- **`SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT)` failed with
+  error 31 (NOT REPRODUCED with PlugPlay up, 2026-11-22; found 2026-11-07, amd64).** It was
+  seen once, from the Startup folder, before the PlugPlay service was running. sysfbprobe now
+  makes the call after waiting for the service and gets 40 present devices
+  (`20261122-125149-qUYyoT-smoke-amd64`). Whether Windows also fails the call before its
+  PnP service is up is unchecked.
 
 - **Fibers did not work on amd64 or arm64 (FIXED 2026-11-06, upstream-sync lane).** Both
   routines a fiber switch needs were unimplemented on 64-bit: amd64's `fiber.S` was an
@@ -862,23 +924,38 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   it untranslated (`0xc000`-style port numbers). Windows on ARM translates port resources to
   memory (`CM_RESOURCE_PORT_MEMORY`) in HalTranslateBusAddress / the PCI arbiter. Until then
   the modrun dsound suite grades only its device-free half on arm64 (`logic-nodevice`).
-- **A second KS pin create on the AC97's render pin never completes (open, found 2026-11-05).**
-  After winmm's `waveOutOpen`/`waveOutClose` creates and closes pin 0 (portcls logs
-  `CPortPinWaveCyclic::Init Status 0 PinId 0`), a direct `KsCreatePin` on the same pin blocks in
-  `NtCreateFile` indefinitely; nothing spins (the vCPU samples are elsewhere). A
-  single-instance pin should FAIL the second create, so either the close left the instance
-  held or a create path waits instead of failing; the stack is ks-rust / portcls / ac97.
-  Repro: `dsound_probe.exe ks` from `tools/payloads/modrun/probes/dsound.c` (no suite case
-  runs it). Artifact: `/tmp/vibeos-cli/20261105-204803-oonv142k-smoke-amd64`.
-- **Running out of memory while creating an image section BUGCHECKs 0x1E instead of failing
-  the load (open, found 2026-11-05).** At the default 512M, the first modrun process to load
-  Mesa's 18 MB `libgallium_wgl.dll` (the d3d8 `device` case) died with an uncaught
-  `STATUS_NO_MEMORY` (0xC0000017) raised in kernel mode; the raise logger's frames name
-  `PeFmtCreateSection`, `MiAllocatePagesForMdl` and `NtReadFile`, but they are stack-scanned and
-  the reported raise site is not a call, so the raising frame is unconfirmed. Windows fails the
-  `NtCreateSection`/`LdrLoadDll` with the status. Repro: drop `vm_memory: 1536M` from
-  `tools/payloads/modrun/payload.yaml`, `MODRUN_SUITES=d3d8`, boot amd64. Artifact:
-  `/tmp/vibeos-cli/20261105-195149-61405khw-smoke-amd64`. modrun now boots with 1.5G.
+- **A KS pin create that the miniport refuses never returns to its caller (open, found
+  2026-11-05, narrowed 2026-11-22, amd64).** First filed as "a second create on the AC97's
+  render pin never completes". It was the probe's own bug that made that create fail: it
+  packed `KSPIN_CONNECT` with `pack(1)`, so on 64-bit the kernel read the data format 4 bytes
+  late. With the struct fixed, a second create on pin 0 after winmm's succeeds. A
+  deliberately bad one (zeroed `MajorFormat`) is refused: AC97 `TestDataFormat` "Invalid
+  format type", `CPortPinWaveCyclic::Init Status c000000d`. Then the caller stays in
+  `NtCreateFile` (`ksuser!KsCreatePin` ← `KsiCreateObjectType`) for the whole 180 s timeout.
+  The source path back returns the error with no wait at each step: AC97
+  `NewStream`/`ValidateFormat`, portcls `CPortFilterWaveCyclic::NewIrpTarget`
+  (`Pin->Release()`, then return) and `PcCreatePinDispatch` (completes the IRP), ks-rust
+  `KspCreate`, and iomgr-rust `IopParseDevice`'s failed-create branch. So the next step is a
+  kernel stack of the stuck thread (GDB). Repro: `dsound_probe.exe ks` from
+  `tools/payloads/modrun/probes/dsound.c`. It is not a suite case, because modrun cannot reap
+  a process stuck in the kernel. Artifact: `/tmp/vibeos-cli/20261122-140435-Zsju6z-smoke-amd64`.
+- **Running out of memory while loading Mesa BUGCHECKed 0x1E (FIXED by 2026-11-22; found
+  2026-11-05). What remains is a stall: at 512M the guest runs out of physical pages and waits
+  instead of failing the allocation (open).** On 2026-11-05 the first modrun process to load
+  Mesa's 18 MB `libgallium_wgl.dll` (the d3d8 `device` case, default 512M) died on an
+  uncaught `STATUS_NO_MEMORY`. Re-run 2026-11-22 on the same recipe (drop `vm_memory: 1536M`
+  from `tools/payloads/modrun/payload.yaml`, `MODRUN_SUITES=d3d8`, boot amd64): 32 kernel
+  raises of 0xC0000017, every one caught and none bugchecked. They come from `CcMapData`
+  (`cc-rust/src/pin.rs:312`) under cdfs's `CdMapPathTableBlock` ← `CdLookupPathEntry` ←
+  `CdFindPathEntry`, and cdfs's dispatch `try_except` handles them. The likely fix is the
+  2026-11-06 SEH quest batch 2 (6cea71b5e6c), which restored the dead raise-class handlers,
+  `FsRtlCopyRead`'s among them. That is inferred: the November 5 binary, and with it the
+  original raise path, is gone. **Still open:** with `[MM] ... avail 0`, the C d3d8 process
+  never finishes and one thread sits in `WrFreePage` until the 50-minute harness timeout.
+  The live CD has no pagefile, and Windows would refuse the commit (`STATUS_COMMITMENT_LIMIT`)
+  long before physical pages ran out. This belongs with "MM: reserving charges no commit for
+  page tables" (commit accounting). Artifact: `/tmp/vibeos-cli/20261122-112536-sYri3V-smoke-amd64`.
+  modrun keeps 1.5G.
 - **The modrun grader could lose a case's single `[MODRUN] exit` line (FIXED 2026-11-08: `modrun.c` now sends it twice).**
   The smoke failed `d3d8.logic: rust: never finished (no exit line)`, but QEMU's serial log for
   the same run has the line intact (`[MODRUN] exit d3d8.logic rust rc=0x00000000 ms=690
@@ -2432,7 +2509,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   inactive adapters, serial's PnP queries, comctl32 TB_SETMETRICS, dhcpcsvc RegCloseKey,
   kbd103 generated. Already ours: TrimWsList's flush, NtRemoveIoCompletion's zeroed status,
   AmILastThread on ActiveThreads, the fiber checks. Then translated sealed on Haiku and integrated ($0.10): DeviceProperty (`pnpprop.c` -> ntoskrnl-rust pnpmgr/pnpprop.rs, plus its hooks: the property-change event, interface keys, release on IopDeleteDevice, kernel-mode Rtl locale table) and x86/x64 cache enumeration (`cacheinfo.c` -> ke/x86x64, with both KiGetCacheInformation rewritten onto it; amd64 cpu.rs had Intel/AMD swapped against ketypes.h since 0e95a343b33). Storport re-ported over its old crate with `rustconv port` (owner's call, 2026-10-16; all 8 TUs incl. upstream's new `ioctl.c`/`srb.c`, plus inline.h; $0.25 Haiku, 0/0/0 from a $0 `port replay`). Done since (2026-10-16): IoGet/SetDeviceInterfacePropertyData exported from pnpprop.rs, and ntoskrnl_vista's NOT_IMPLEMENTED copies removed so drivers import them (upstream's copies forward through MmGetSystemRoutineAddress for kernels without them, 3cc9aa99292; ours always has them; cdrom's extern was cdecl), with upstream's `IoDeviceProperty` kmtest added to the sweep (653/0 on all three arches); shell32's RegenerateUserEnvironment ported (c25e4fd7dec; its apitest 8/0 on amd64). Then (2026-10-17, owner approved the re-buy) mmc_new's views (c0f01460800, 857f521a704) and CActionWnd.cpp (88da81d9b8b): 37 functions re-bought on Haiku ($0.34), the rest replayed from banks; the stale banks fixed by hand, CActionWnd on the module's own ATL window machinery, and five list-slot casts, a swapped icon-mode pair and two C bugs (a never-set selected node, a VARIANT leak) fixed after review. Owed, by cluster (upstream-sync): pciidex rewrite
-  (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, dhcpcsvc RequestParams (the sync kept the old IDL, so `DhcpRequestParams` is a Rust stub returning 0 with no RPC behind it), freeldr
+  (~15K lines), PCIX arbiters/ECAM, netcfgx alternate configuration (dhcpcsvc half done 2026-11-22: upstream IDL restored, RequestParams/EnableDhcp/FallbackRefresh/alternate config ported; netcfgx's dialog and ITcpipProperties are cpp-cluster's next), freeldr
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
   so every logon, status and shutdown dialog shows no banner today: visible, on the boot

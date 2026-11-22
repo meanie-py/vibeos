@@ -2099,7 +2099,12 @@ pub unsafe extern "system" fn LoadUserProfileW(
     mut hToken: HANDLE,
     mut lpProfileInfo: *mut core::ffi::c_void,
 ) -> BOOL {
-    let lpProfileInfo = lpProfileInfo as *mut core::ffi::c_void;
+    // The translation took the parameter as `void *` and reached every field by slot
+    // arithmetic -- `*(p as *mut *mut u16)` for lpUserName read dwSize:dwFlags as a pointer
+    // (0x0000000100000038 on amd64, faulting in services.exe the first time the SCM logged a
+    // service account on), and the other slots named the wrong field on both widths. Every
+    // field is now read through the real PROFILEINFOW layout.
+    let lpProfileInfo = lpProfileInfo as *mut crate::types::PROFILEINFOW;
     
     let mut szUserHivePath: [u16; 260] = [0; 260];
     let mut dwLength: DWORD = 0;
@@ -2114,9 +2119,9 @@ pub unsafe extern "system" fn LoadUserProfileW(
     let mut ret: BOOL = 0;
 
     if lpProfileInfo.is_null()
-        || (*(lpProfileInfo as *mut core::ffi::c_void as *const u32)).wrapping_add(1) == 0
-        || (*(lpProfileInfo as *mut *mut u16)).is_null()
-        || **(lpProfileInfo as *mut *mut u16) == 0
+        || (*lpProfileInfo).dwSize as usize != core::mem::size_of::<crate::types::PROFILEINFOW>()
+        || (*lpProfileInfo).lpUserName.is_null()
+        || *(*lpProfileInfo).lpUserName == 0
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
@@ -2142,7 +2147,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
 
     if CheckForLoadedProfile(hToken) != 0 {
     } else {
-        let lpProfilePath = *(lpProfileInfo as *mut *mut u16).add(4);
+        let lpProfilePath = (*lpProfileInfo).lpProfilePath;
 
         if !lpProfilePath.is_null() {
             StringCbCopyW(
@@ -2165,7 +2170,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
             StringCbCatW(
                 szUserHivePath.as_mut_ptr(),
                 core::mem::size_of::<[u16; 260]>(),
-                *(lpProfileInfo as *mut *mut u16).add(3),
+                (*lpProfileInfo).lpUserName,
             );
         }
 
@@ -2200,7 +2205,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
 
             ret = CreateUserProfileW(
                 *(UserSid as *mut *mut core::ffi::c_void),
-                *(lpProfileInfo as *mut *mut u16).add(3),
+                (*lpProfileInfo).lpUserName,
             );
             if ret == 0 {
                 loop {
@@ -2233,7 +2238,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
             }
         }
 
-        SetProfileData(SidString.Buffer, *(lpProfileInfo as *mut u32).add(6), hToken);
+        SetProfileData(SidString.Buffer, (*lpProfileInfo).dwFlags, hToken);
     }
 
     dwError = (RegOpenKeyExW(
@@ -2241,7 +2246,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
         SidString.Buffer,
         0,
         MAXIMUM_ALLOWED,
-        &mut *(lpProfileInfo as *mut HKEY).add(5),
+        &mut (*lpProfileInfo).hProfile as *mut HANDLE as *mut HKEY,
     )) as u32;
     if dwError != ERROR_SUCCESS {
         loop {
@@ -2276,7 +2281,7 @@ pub unsafe extern "system" fn LoadUserProfileW(
 
     if ret == 0 {
         ReportError(
-            *(lpProfileInfo as *mut u32).add(6),
+            (*lpProfileInfo).dwFlags,
             ERR_PROFILE_LOAD_FAILED.as_ptr() as LPCWSTR,
             dwError,
         );

@@ -246,7 +246,9 @@ static const GUID type_audio = {0x73647561, 0, 0x10, {0x80, 0, 0, 0xaa, 0, 0x38,
 static const GUID spec_wfx = {0x05589f81, 0xc356, 0x11ce, {0xbf, 0x01, 0x00, 0xaa, 0x00, 0x55, 0x59, 0x5a}};
 struct ksid { GUID set; ULONG id, flags; };
 struct ksp_pin { struct ksid prop; ULONG pin, reserved; };
-#pragma pack(push, 1)
+/* KSPIN_CONNECT is naturally aligned (ks.h has no pack pragma): PinToHandle sits at 56 on
+ * 64-bit, not 52. Packed, the kernel read the data format 4 bytes late and refused every
+ * create (AC97 TestDataFormat "Invalid format type"). */
 struct pin_connect {
     struct ksid iface, medium;
     ULONG pin;
@@ -255,7 +257,6 @@ struct pin_connect {
     struct { ULONG size, flags, sample, reserved; GUID major, sub, spec; } fmt;
     WAVEFORMATEX wfx;
 };
-#pragma pack(pop)
 typedef void *(WINAPI *GETCLASSDEVS)(const GUID *, const WCHAR *, HWND, DWORD);
 typedef BOOL(WINAPI *ENUMIFACES)(void *, void *, const GUID *, DWORD, SP_DEVICE_INTERFACE_DATA *);
 typedef BOOL(WINAPI *IFACEDETAIL)(void *, SP_DEVICE_INTERFACE_DATA *, SP_DEVICE_INTERFACE_DETAIL_DATA_W *, DWORD, DWORD *, void *);
@@ -328,6 +329,17 @@ static void ks_direct(void)
             printf("  pin %lu flow=%lu comm=%lu create=%08lx\n", i, flow, comm, r);
             if (!r && pin)
                 CloseHandle(pin);
+            if (i == 0)
+            {
+                /* A create the miniport must refuse: the caller should get the error back. */
+                memset(&pc.fmt.major, 0, sizeof(pc.fmt.major));
+                pin = NULL;
+                printf("  pin 0 bad-format create...\n");
+                r = ((CREATEPIN)GetProcAddress(ku, "KsCreatePin"))(f, &pc, GENERIC_WRITE, &pin);
+                printf("  pin 0 bad-format create=%08lx\n", r);
+                if (!r && pin)
+                    CloseHandle(pin);
+            }
         }
         CloseHandle(f);
     }
@@ -534,8 +546,9 @@ int main(int argc, char **argv)
     HWND hwnd;
     HRESULT hr;
 
-    /* `ks`: only the direct KsCreatePin diagnostic (no suite case runs it: a second create on
-     * the AC97's render pin hangs in the kernel -- roadmap "Known bugs"). */
+    /* `ks`: only the direct KsCreatePin diagnostic. No suite case runs it: its deliberately
+     * refused create never returns, and modrun cannot reap a process stuck in the kernel, so
+     * every later case would go unrun (roadmap "Known bugs"). */
     if (argc > 1 && !strcmp(argv[1], "ks"))
     {
         setvbuf(stdout, NULL, _IONBF, 0);

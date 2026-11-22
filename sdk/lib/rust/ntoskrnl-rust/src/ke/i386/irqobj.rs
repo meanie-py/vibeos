@@ -77,12 +77,12 @@ unsafe fn KiGetVectorDispatch(Vector: ULONG, Dispatch: PDISPATCH_INFO) {
     Entry = HalVectorToIDTEntry(Vector);
 
     (*Dispatch).NoDispatch = core::mem::transmute::<ULONG_PTR, PKINTERRUPT_ROUTINE>(
-        (KiStartUnexpectedRange as ULONG_PTR)
+        (KiStartUnexpectedRange as *const () as ULONG_PTR)
         + ((Entry as ULONG - PRIMARY_VECTOR_BASE) * KiUnexpectedEntrySize) as ULONG_PTR);
 
-    (*Dispatch).InterruptDispatch = core::mem::transmute(KiInterruptDispatch as usize);
+    (*Dispatch).InterruptDispatch = Some(core::mem::transmute::<unsafe extern "fastcall" fn(PKTRAP_FRAME, PKINTERRUPT) -> !, _>(KiInterruptDispatch));
     (*Dispatch).FloatingDispatch = None;
-    (*Dispatch).ChainedDispatch = core::mem::transmute(KiChainedDispatch as usize);
+    (*Dispatch).ChainedDispatch = Some(core::mem::transmute::<unsafe extern "fastcall" fn(PKTRAP_FRAME, PKINTERRUPT) -> !, _>(KiChainedDispatch));
     (*Dispatch).FlatDispatch = core::ptr::null_mut();
 
     Current = KeQueryInterruptHandler(Vector);
@@ -440,7 +440,7 @@ pub unsafe extern "system" fn KeInitializeInterrupt(
     }
 
     Patch = ((Patch as ULONG_PTR)
-        + ((core::ptr::addr_of!(KiInterruptTemplateObject) as ULONG_PTR) - (KiInterruptTemplate as ULONG_PTR))
+        + ((core::ptr::addr_of!(KiInterruptTemplateObject) as ULONG_PTR) - (KiInterruptTemplate as *const () as ULONG_PTR))
         - 4) as *mut ULONG;
 
     *Patch = Interrupt as ULONG;

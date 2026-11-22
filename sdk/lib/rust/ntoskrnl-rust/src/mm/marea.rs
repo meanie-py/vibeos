@@ -264,22 +264,22 @@ pub unsafe extern "system" fn MmFreeMemoryArea(
         // The usize intermediate avoids calling convention type mismatches between
         // bindgen's extern "stdcall"/"C" and our extern "system" type aliases.
         let is_swap_fn: IsSwapFn = {
-            let mut p = MmIsPageSwapEntry as usize;
+            let mut p = MmIsPageSwapEntry as *const () as usize;
             p = core::ptr::read_volatile(&p);
             core::mem::transmute(p)
         };
         let pagefile_fn: PageFileFn = {
-            let mut p = MmDeletePageFileMapping as usize;
+            let mut p = MmDeletePageFileMapping as *const () as usize;
             p = core::ptr::read_volatile(&p);
             core::mem::transmute(p)
         };
         let phys_fn: PhysFn = {
-            let mut p = MmDeletePhysicalMapping as usize;
+            let mut p = MmDeletePhysicalMapping as *const () as usize;
             p = core::ptr::read_volatile(&p);
             core::mem::transmute(p)
         };
         let virt_fn: VirtFn = {
-            let mut p = MmDeleteVirtualMapping as usize;
+            let mut p = MmDeleteVirtualMapping as *const () as usize;
             p = core::ptr::read_volatile(&p);
             core::mem::transmute(p)
         };

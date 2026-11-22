@@ -488,6 +488,26 @@ trees:
       to catch what a copyright grep cannot. The blind spot is still there for any
       individually-authored drop that nothing compiles.
 
+  - path: vendor/unicode-ucd
+    name: Unicode Character Database (normalization subset)
+    translate: keep  # data, not code: the input of `tools/codegen unorm`
+    upstream: https://www.unicode.org/Public/15.0.0/ucd/
+    license: Unicode-3.0
+    license_file: vendor/unicode-ucd/LICENSE.txt
+    modified: no
+    version:
+      literal: UCD 15.0.0 (UnicodeData.txt sha256 806e9aed65037197f1ec85e12be6e8cd870fc5608b4de0fffd990f689f376a73, CompositionExclusions.txt sha256 3b019c0a33c3140cbc920c078f4f9af2680ba4f71869c8d4de5190667c70b6a3)
+    reason: >
+      Unicode normalization (NFC/NFD/NFKC/NFKD) for kernel32's FoldString, IDN nameprep
+      and NormalizeString, which had no normalization data at all (RtlNormalizeString was a
+      stub, idn.rs approximated NFKC away). Only the two files the composition and
+      decomposition tables need are vendored, unmodified; `tools/codegen unorm` turns them
+      into sdk/lib/rust/unorm-rust/src/tables.rs. Pinned to 15.0.0 because the host Python's
+      unicodedata is 15.0.0, an independent implementation to cross-check the generated
+      tables against. Added 2026-11-22 with the owner's approval (relayed by control-plane).
+      Unicode License v3 asks that the copyright and permission notice travel with the data:
+      LICENSE.txt is that notice, verbatim from https://www.unicode.org/license.txt.
+
   - path: vendor/glu
     name: SGI GLU (OpenGL Utility Library)
     translate: planned

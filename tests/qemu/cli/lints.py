@@ -1199,6 +1199,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # tools/vibeos-lint/src/rules/sizeof_vs_c.rs). crypt32's CRYPT_CopyChainToElement sized the
     # embedded CERT_CHAIN_CONTEXT for a CertificateChain: a heap overrun.
     specs.append(("scan_sizeof_vs_c", ["MISSING"], "stdout"))
+    # A ==/!= against a different named constant than the C twin's (native Rust rule,
+    # tools/vibeos-lint/src/rules/compare_const_vs_c.rs): crypt32's CertAddStoreToCollection
+    # compared the store type with E_INVALIDARG for StoreTypeCollection.
+    specs.append(("scan_compare_const_vs_c", ["MISSING"], "stdout"))
     # A DEVICE_OBJECT pointer cast to a device-extension type for the C's ->DeviceExtension
     # (native Rust rule, tools/vibeos-lint/src/rules/devobj_as_extension.rs): six classpnp sites
     # wrote the release-queue spinlock into the device object. Gated at zero.
@@ -1586,6 +1590,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # spins forever. iomgr's stranded-completion check wedged the -smp 4 Chrome payload 3/3.
     # Rust-only (tools/vibeos-lint); baseline is EMPTY.
     specs.append(("scan_queued_lock_plain_acquire", ["MISSING"], "stdout"))
+    # A null pointer local, never given a value, dereferenced: the C's stack struct whose
+    # address a call fills (NtFilterToken's HandleInfo: every restricted token had access 0).
+    # Rust-only (tools/vibeos-lint); baseline is EMPTY.
+    specs.append(("scan_null_out_param", ["MISSING"], "stdout"))
     # A `++`/`--` inside a CALL ARGUMENT whose effect a later operand of the same expression
     # observes. Rust has no `++`, so the translation must split it, and where the second
     # statement lands is the whole meaning — msvcrt's demangler hoisted one out of an `if`

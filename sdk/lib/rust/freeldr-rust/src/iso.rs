@@ -615,7 +615,7 @@ pub unsafe extern "C" fn IsoMount(DeviceId: u32) -> *const DEVVTBL {
     (*Volume).PvdDirectorySector = (*Pvd).RootDirRecord.ExtentLocationL;
     (*Volume).PvdDirectoryLength = (*Pvd).RootDirRecord.DataLengthL;
 
-    *IsoVolumes.as_mut_ptr().add(DeviceId as usize) = Volume;
+    *(*&raw mut IsoVolumes).as_mut_ptr().add(DeviceId as usize) = Volume;
 
     &Iso9660FuncTable as *const DEVVTBL
 }

@@ -1715,7 +1715,7 @@ unsafe fn AtaReadLogicalSectors(
 }
 
 unsafe fn AtaGetDevice(UnitNumber: UCHAR) -> PDEVICE_UNIT {
-    if (UnitNumber as usize) < (core::mem::size_of_val(&AtapUnits) / core::mem::size_of::<ATA_UNIT>()) {
+    if (UnitNumber as usize) < (core::mem::size_of_val(&*&raw const AtapUnits) / core::mem::size_of::<ATA_UNIT>()) {
         return core::ptr::addr_of_mut!(AtapUnits[UnitNumber as usize]) as PDEVICE_UNIT;
     }
     

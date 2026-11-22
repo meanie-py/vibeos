@@ -411,7 +411,7 @@ unsafe fn CreateBSMThread() -> NTSTATUS {
         0,
         0,
         0,
-        core::mem::transmute(BaseSrvBSMThread as usize),
+        Some(BaseSrvBSMThread),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),

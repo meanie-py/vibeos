@@ -1057,8 +1057,11 @@ pub unsafe extern "system" fn DbgkpCloseObject(
     _owner_process: PEPROCESS,
     object_body: PVOID,
     _granted_access: ACCESS_MASK,
-    _handle_count: ULONG,
-    system_handle_count: ULONG,
+    // OB_CLOSE_METHOD (ndk/obtypes.h:194) passes both counts as ULONG_PTR (bindgen's, which is
+    // u64 on 64-bit; the crate-local ULONG_PTR is usize, a different type), as does the C
+    // definition; this was ULONG, hidden behind a `transmute(f as usize)` into the slot.
+    _handle_count: ntkrnl_sys::ddk::ULONG_PTR,
+    system_handle_count: ntkrnl_sys::ddk::ULONG_PTR,
 ) {
     let _owner_process = opaque_ptr(_owner_process);
     let object_body = opaque_ptr(object_body);
@@ -1390,8 +1393,8 @@ pub unsafe extern "system" fn DbgkInitialize() {
     object_type_initializer.PoolType = NonPagedPool;
     object_type_initializer.ValidAccessMask = DEBUG_OBJECT_ALL_ACCESS;
     object_type_initializer.SecurityRequired = 1;
-    object_type_initializer.CloseProcedure = core::mem::transmute(DbgkpCloseObject as usize);
-    object_type_initializer.DeleteProcedure = core::mem::transmute(DbgkpDeleteObject as usize);
+    object_type_initializer.CloseProcedure = Some(DbgkpCloseObject);
+    object_type_initializer.DeleteProcedure = Some(DbgkpDeleteObject);
     ObCreateObjectType(
         &mut name,
         &mut object_type_initializer,

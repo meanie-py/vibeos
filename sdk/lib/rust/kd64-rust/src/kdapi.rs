@@ -1853,7 +1853,7 @@ pub unsafe extern "system" fn KdDisableDebuggerWithLock(need_lock: BOOLEAN) -> N
 
         if KdDebuggerEnabled != 0 {
             KdpSuspendAllBreakPoints();
-            KiDebugRoutine = Some(abi_cast!(KdpStub));
+            KiDebugRoutine = Some(KdpStub);
 
             KdDebuggerEnabled = 0u8;
             // C: SharedUserData->KdDebuggerEnabled = FALSE. Was a raw +0x2d8 poke —

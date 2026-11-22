@@ -405,33 +405,33 @@ unsafe fn EnumerateHarddisks(BootDriveReported: PBOOLEAN) -> u8 {
 
 unsafe fn DiskGetBootPath(IsPxe: BOOLEAN) -> BOOLEAN {
 
-    if *FrLdrBootPath.as_ptr() != 0 {
+    if *(*&raw const FrLdrBootPath).as_ptr() != 0 {
         return 1u8;
     }
 
     if IsPxe != 0 {
         RtlStringCbCopyA(
-            FrLdrBootPath.as_mut_ptr(),
-            core::mem::size_of_val(&FrLdrBootPath),
+            (*&raw mut FrLdrBootPath).as_mut_ptr(),
+            core::mem::size_of_val(&*&raw const FrLdrBootPath),
             b"net(0)\0".as_ptr() as *const i8,
         );
     } else if FrldrBootDrive == 0x49 {
         RtlStringCbCopyA(
-            FrLdrBootPath.as_mut_ptr(),
-            core::mem::size_of_val(&FrLdrBootPath),
+            (*&raw mut FrLdrBootPath).as_mut_ptr(),
+            core::mem::size_of_val(&*&raw const FrLdrBootPath),
             b"ramdisk(0)\0".as_ptr() as *const i8,
         );
     } else if FrldrBootDrive < FIRST_BIOS_DISK {
         RtlStringCbPrintfA(
-            FrLdrBootPath.as_mut_ptr(),
-            core::mem::size_of_val(&FrLdrBootPath),
+            (*&raw mut FrLdrBootPath).as_mut_ptr(),
+            core::mem::size_of_val(&*&raw const FrLdrBootPath),
             b"multi(0)disk(0)fdisk(%u)\0".as_ptr() as *const i8,
             FrldrBootDrive as u32,
         );
     } else if FrldrBootPartition == 0xFF {
         RtlStringCbPrintfA(
-            FrLdrBootPath.as_mut_ptr(),
-            core::mem::size_of_val(&FrLdrBootPath),
+            (*&raw mut FrLdrBootPath).as_mut_ptr(),
+            core::mem::size_of_val(&*&raw const FrLdrBootPath),
             b"multi(0)disk(0)cdrom(%u)\0".as_ptr() as *const i8,
             (FrldrBootDrive - FIRST_BIOS_DISK) as u32,
         );
@@ -447,8 +447,8 @@ unsafe fn DiskGetBootPath(IsPxe: BOOLEAN) -> BOOLEAN {
         FrldrBootPartition = BootPartition;
 
         RtlStringCbPrintfA(
-            FrLdrBootPath.as_mut_ptr(),
-            core::mem::size_of_val(&FrLdrBootPath),
+            (*&raw mut FrLdrBootPath).as_mut_ptr(),
+            core::mem::size_of_val(&*&raw const FrLdrBootPath),
             b"multi(0)disk(0)rdisk(%u)partition(%lu)\0".as_ptr() as *const i8,
             (FrldrBootDrive - FIRST_BIOS_DISK) as u32,
             FrldrBootPartition,
@@ -505,10 +505,10 @@ pub unsafe extern "C" fn PcInitializeBootDevices() -> BOOLEAN {
         TRACE!("Checksum: %x\n", (Checksum) as usize);
         crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'7');
 
-        AddReactOSArcDiskInfo(FrLdrBootPath.as_ptr() as PCHAR, core::ptr::null(), Signature, Checksum, 1u8);
+        AddReactOSArcDiskInfo((*&raw const FrLdrBootPath).as_ptr() as PCHAR, core::ptr::null(), Signature, Checksum, 1u8);
         crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'8');
 
-        FsRegisterDevice(FrLdrBootPath.as_ptr() as PCHAR, &DiskVtbl as *const _ as *const core::ffi::c_void);
+        FsRegisterDevice((*&raw const FrLdrBootPath).as_ptr() as PCHAR, &DiskVtbl as *const _ as *const core::ffi::c_void);
         crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'9');
         DiskCount = DiskCount.wrapping_add(1);
         TRACE!("Additional boot drive detected: 0x%02X\n", (FrldrBootDrive as i32) as usize);

@@ -13,15 +13,6 @@
 
 pub use dbgprint_rust::kdp_dprintf;
 
-// abi_cast! — cast an extern "system" fn to the target callback ABI (i386 stdcall /
-// amd64+arm64 C). Crate-local copy of ntoskrnl-rust's (not exported).
-#[allow(unused_macros)]
-macro_rules! abi_cast {
-    ($func:expr) => {
-        unsafe { core::mem::transmute($func as usize) }
-    };
-}
-
 #[cfg(target_arch = "x86")]
 pub mod i386;
 #[cfg(target_arch = "x86_64")]

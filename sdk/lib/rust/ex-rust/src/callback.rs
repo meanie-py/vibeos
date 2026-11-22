@@ -324,7 +324,7 @@ pub unsafe extern "system" fn ExpInitializeCallbacks() -> BOOLEAN {
     ObjectTypeInitializer.InvalidAttributes = OBJ_OPENLINK;
     ObjectTypeInitializer.GenericMapping = ExpCallbackMapping;
     ObjectTypeInitializer.PoolType = NonPagedPool;
-    ObjectTypeInitializer.DeleteProcedure = Some(abi_cast!(ExpDeleteCallback));
+    ObjectTypeInitializer.DeleteProcedure = Some(ExpDeleteCallback);
     ObjectTypeInitializer.ValidAccessMask = CALLBACK_ALL_ACCESS;
     let Status = ObCreateObjectType(
         core::ptr::addr_of_mut!(Name),

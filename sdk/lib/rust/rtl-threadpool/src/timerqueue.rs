@@ -265,7 +265,7 @@ pub unsafe extern "system" fn RtlCreateTimerQueue(NewTimerQueue: PHANDLE) -> NTS
         return status;
     }
     status = (RtlpStartThreadFunc.unwrap())(
-        core::mem::transmute::<_, PTHREAD_START_ROUTINE>(timer_queue_thread_proc as usize),
+        core::mem::transmute::<_, PTHREAD_START_ROUTINE>(timer_queue_thread_proc as *const () as usize),
         q as PVOID,
         core::ptr::addr_of_mut!((*q).thread),
     );

@@ -11,11 +11,12 @@
 
 #![cfg(target_arch = "x86_64")]
 
+use crate::x86::memory::{HalpMapPhysicalMemory64, HalpUnmapVirtualAddress};
 use ntkrnl_sys::hal_ddk::{
     HalPrivateDispatchTable, HalpAssignPCISlotResources, HalpCheckPowerButton, HalpFakePciBusHandler,
-    HalpGetCmosData, HalpGetPCIData, HalpGetRootInterruptVector, HalpMapPhysicalMemory64Vista,
+    HalpGetCmosData, HalpGetPCIData, HalpGetRootInterruptVector,
     HalpMaxPciBus, HalpMinPciBus, HalpPCIConfigInitialized, HalpReleasePciDeviceForDebugging,
-    HalpSetCmosData, HalpSetPCIData, HalpSetupPciDeviceForDebugging, HalpUnmapVirtualAddressVista,
+    HalpSetCmosData, HalpSetPCIData, HalpSetupPciDeviceForDebugging,
     BOOLEAN, BUS_DATA_TYPE, BUS_HANDLER, INTERFACE_TYPE, NTSTATUS, PCM_RESOURCE_LIST,
     PDEVICE_OBJECT, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_RESOURCE_REQUIREMENTS_LIST, PKAFFINITY,
     PKIRQL, PPHYSICAL_ADDRESS, PULONG, PULONG_PTR, PUNICODE_STRING, PVOID, ULONG,
@@ -40,19 +41,26 @@ const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002u32 as NTSTATUS;
 pub unsafe extern "system" fn HalpRegisterKdSupportFunctions() {
     unsafe {
         HalPrivateDispatchTable.KdSetupPciDeviceForDebugging =
-            Some(core::mem::transmute(HalpSetupPciDeviceForDebugging as usize));
+            Some(HalpSetupPciDeviceForDebugging);
         HalPrivateDispatchTable.KdReleasePciDeviceforDebugging =
-            Some(core::mem::transmute(HalpReleasePciDeviceForDebugging as usize));
+            Some(HalpReleasePciDeviceForDebugging);
 
         // Vista+ map/unmap entry points.  Our HAL targets >= NTDDI_VISTA
         // (matches the C #if NTDDI_VERSION >= NTDDI_VISTA branch).
-        HalPrivateDispatchTable.KdMapPhysicalMemory64 =
-            Some(core::mem::transmute(HalpMapPhysicalMemory64Vista as usize));
-        HalPrivateDispatchTable.KdUnmapVirtualAddress =
-            Some(core::mem::transmute(HalpUnmapVirtualAddressVista as usize));
+        // Divergence from the C (busemul.c / bussupp.c `#if NTDDI_VERSION >= NTDDI_VISTA`),
+        // which installs the 3-arg Vista routines here. The slot's type in the same
+        // compilation is the 2-arg one: xdk/kdtypes.h gives pKdMapPhysicalMemory64 and
+        // pKdUnmapVirtualAddress `FlushCurrentTLB` only at NTDDI_VISTASP1, and our island has
+        // the 2-arg typedef. A 2-arg caller of a 3-arg stdcall routine underpays its pop on
+        // i386 and leaves the BOOLEAN as garbage elsewhere. The C's own pre-Vista branch
+        // installs these 2-arg wrappers (memory.c: Vista(.., TRUE)), which match the slot.
+        // As plain `Some(f)`, rustc checks the signature, where the old
+        // `transmute(f as usize)` checked nothing.
+        HalPrivateDispatchTable.KdMapPhysicalMemory64 = Some(HalpMapPhysicalMemory64);
+        HalPrivateDispatchTable.KdUnmapVirtualAddress = Some(HalpUnmapVirtualAddress);
 
         HalPrivateDispatchTable.KdCheckPowerButton =
-            Some(core::mem::transmute(HalpCheckPowerButton as usize));
+            Some(HalpCheckPowerButton);
     }
 }
 

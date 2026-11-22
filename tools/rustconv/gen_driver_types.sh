@@ -1012,11 +1012,13 @@ case "$DRIVER" in
     # rosdhcp.h is the master private header — it sets up the BSD typedefs (ssize_t/u_int8_t/
     # u_int16_t/u_int32_t/caddr_t) THEN includes dhcpcsdk/rpc/dhcpcsvc_c/_s/dhcpd.h. Including
     # dhcpd.h directly fails (its ssize_t/u_int*_t are undefined), so mirror the .c's PCH include.
-    WRAPPER_INC=$'#include <rosdhcp.h>'
+    # dhcpcapi.h: the DhcpHandlePnPEvent event struct (DHCP_PNP_EVENT), which dhcpcsvc.c includes
+    # after rosdhcp.h.
+    WRAPPER_INC=$'#include <rosdhcp.h>\n#include <dhcpcapi.h>'
     ALLOW_FILES=( --allowlist-file '.*dhcpcsvc[/\\].*\.h' --allowlist-file '.*[/\\]dhcpd\.h'
                   --allowlist-file '.*[/\\]dhcp\.h' --allowlist-file '.*[/\\]tree\.h'
                   --allowlist-file '.*[/\\]hash\.h' --allowlist-file '.*[/\\]rosdhcp\.h'
-                  --allowlist-file '.*[/\\]dhcpcsdk\.h' --allowlist-file '.*[/\\]dhcpcsvc_c\.h'
+                  --allowlist-file '.*[/\\]dhcpcsdk\.h' --allowlist-file '.*[/\\]dhcpcapi\.h' --allowlist-file '.*[/\\]dhcpcsvc_c\.h'
                   --allowlist-file '.*[/\\]dhcpcsvc_s\.h' )
     EXTRA_INC=( -I"${SRC}/base/services/dhcpcsvc/include" -I"${SRC}/base/services/dhcpcsvc/dhcp"
                 -I"${SRC}/build-i386/base/services/dhcpcsvc" )

@@ -385,15 +385,15 @@ unsafe fn PcDiskDriveNumberToDrive(DriveNumber: UCHAR) -> PPC_DISK_DRIVE {
         static mut NewDiskDrive: _PC_DISK_DRIVE = unsafe { core::mem::zeroed() };
 
         if DriveNumber as USHORT != LastDriveNumber {
-            core::ptr::write_bytes(&mut NewDiskDrive as *mut _, 0u8, 1);
-            if PcDiskDriveInit(DriveNumber, &mut NewDiskDrive) == 0 {
+            core::ptr::write_bytes(&raw mut NewDiskDrive as *mut _, 0u8, 1);
+            if PcDiskDriveInit(DriveNumber, &raw mut NewDiskDrive) == 0 {
                 return core::ptr::null_mut();
             }
             PcDiskDrive = NewDiskDrive;
             LastDriveNumber = DriveNumber as USHORT;
         }
 
-        return &mut PcDiskDrive;
+        return &raw mut PcDiskDrive;
     }
 }
 

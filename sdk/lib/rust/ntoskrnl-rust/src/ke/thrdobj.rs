@@ -4,6 +4,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::macros::*;
 use ntkrnl_sys::ke::*;
+use ntkrnl_sys::ddk::PKNORMAL_ROUTINE;
 use ntkrnl_sys::interlocked::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
@@ -618,7 +619,9 @@ unsafe extern "system" fn KiSuspendRundown(Apc: PKAPC) {
 
 unsafe extern "system" fn KiSuspendNop(
     Apc: PKAPC,
-    NormalRoutine: *mut *mut core::ffi::c_void,
+    // PKKERNEL_ROUTINE's own type (was `*mut *mut c_void`, a nominal mismatch only a
+    // `transmute(f as usize)` into the APC could accept).
+    NormalRoutine: *mut PKNORMAL_ROUTINE,
     NormalContext: *mut PVOID,
     SystemArgument1: *mut PVOID,
     SystemArgument2: *mut PVOID,
@@ -806,9 +809,9 @@ unsafe fn KeInitThread_impl(
         kt_SuspendApc(Thread) as *mut _KAPC,
         Thread,
         OriginalApcEnvironment as u32,
-        core::mem::transmute(KiSuspendNop as usize),
-        core::mem::transmute(KiSuspendRundown as usize),
-        core::mem::transmute(KiSuspendThread as usize),
+        Some(KiSuspendNop),
+        Some(KiSuspendRundown),
+        Some(KiSuspendThread),
         0i8,
         core::ptr::null_mut(),
     );

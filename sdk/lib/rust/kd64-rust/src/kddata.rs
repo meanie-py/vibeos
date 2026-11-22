@@ -257,7 +257,7 @@ pub static mut KdpControlCPressed: BOOLEAN = 0;
 #[no_mangle]
 pub static mut KdpContextSent: BOOLEAN = 0;
 
-// Initialized to KdpStub at runtime by KdInitSystem (abi_cast! can't run in const).
+// Initialized to KdpStub at runtime by KdInitSystem.
 #[no_mangle]
 pub static mut KiDebugRoutine: PKDEBUG_ROUTINE = None;
 
@@ -1379,7 +1379,7 @@ pub static mut KdDebuggerDataBlock: KDDEBUGGER_DATA64_FULL = unsafe { core::mem:
 #[no_mangle]
 pub unsafe extern "system" fn KdpInitDebuggerDataBlock() {
     let d = &mut *(&raw mut KdDebuggerDataBlock);
-    d.BreakpointWithStatus = RtlpBreakWithStatusInstruction as u64;
+    d.BreakpointWithStatus = RtlpBreakWithStatusInstruction as *const () as u64;
     d.ThCallbackStack = core::mem::offset_of!(KTHREAD, CallbackStack) as u16;
     #[cfg(not(any(target_arch = "arm", target_arch = "x86_64", target_arch = "aarch64")))]
     { d.NextCallback = core::mem::offset_of!(KCALLOUT_FRAME, CallbackStack) as u16; }

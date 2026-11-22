@@ -477,7 +477,7 @@ unsafe fn PspCreateThread(
             Status = KeInitThread(
                 &mut (*Thread).Tcb,
                 core::ptr::null_mut(),
-                core::mem::transmute(PspUserThreadStartup as usize),
+                Some(PspUserThreadStartup),
                 None,
                 core::mem::transmute((*(Thread as *mut _ETHREAD)).__bindgen_anon_6.StartAddress),
                 ThreadContext,
@@ -497,7 +497,7 @@ unsafe fn PspCreateThread(
         Status = KeInitThread(
             &mut (*Thread).Tcb,
             core::ptr::null_mut(),
-            core::mem::transmute(PspSystemThreadStartup as usize),
+            Some(PspSystemThreadStartup),
             StartRoutine,
             StartContext,
             core::ptr::null_mut(),

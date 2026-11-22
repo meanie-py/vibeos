@@ -134,7 +134,7 @@ pub unsafe extern "system" fn MiSimpleRead(
     let IrpSp: PIO_STACK_LOCATION = IoGetNextIrpStackLocation(Irp);
     (*IrpSp).Control |= SL_INVOKE_ON_SUCCESS | SL_INVOKE_ON_ERROR;
     (*IrpSp).FileObject = FileObject;
-    (*IrpSp).CompletionRoutine = Some(abi_cast!(MiSimpleReadComplete));
+    (*IrpSp).CompletionRoutine = Some(MiSimpleReadComplete);
 
     // Non-paging case: the file object will be dereferenced at completion.
     if Paging == 0 {
