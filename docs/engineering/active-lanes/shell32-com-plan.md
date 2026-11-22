@@ -1,21 +1,21 @@
 # shell32 COM/ATL C++ → Rust (lane: `shell32-com`)
 
-## RESUME HERE (2026-11-21): i386 DirectX on a real GL, two fixes in the integrator's gate
+## RESUME HERE (2026-11-21): i386 DirectX on a real GL, both fixes landed
 
 wined3d (d3dwine.dll) has been all Rust since master d5078535e54 ($6.42 of a $15 Haiku budget,
 every module hand-banked so a `$0` replay reproduces it). On 2026-11-21 the i386 GL cases
 came up:
-- **0607914401c (batch 177):** the user-mode heap (`rtl-heap` `RtlpDeCommitFreeBlock`,
+- **0607914401c, landed as 6f395eed157:** the user-mode heap (`rtl-heap` `RtlpDeCommitFreeBlock`,
   inherited C bug) left freed blocks' decommitted ranges a page too small to reuse. Every
   Mesa softpipe context therefore reserved a fresh doubling segment, and a second wined3d
   init in one i386 process ran out of address space. Roadmap Known bugs entry: FIXED.
-- **d90bbcff656 (batch 178):** c2rust's amd64 `offsetof` folds in wined3d's light walks (232,
+- **d90bbcff656, landed as a3d73c0af8b:** c2rust's amd64 `offsetof` folds in wined3d's light walks (232,
   where i386 needs 228), in ddraw's `DDSURFACEDESC2` compare table and in a depth-stencil
   compare. `scan_magic_offsets` now flags both shapes.
 - **Grades:** i386 modrun (mesa, d3d8, d3d9, ddraw) passes 9/9, so every d3d case is
   byte-identical to the C on all three arches. The exceptions are the C oracle's own XFAIL
   (`d3d8.device-invalid`) and one declared divergence.
-- **Next:** read both batch verdicts and fix anything bounced.
+- **Next:** the owed item below.
 - **Owed:** when every attribs request fails, wined3d silently keeps a compatibility-profile
   bootstrap context and then faults in Mesa's legacy path. It should fail the adapter init
   loudly (roadmap, under the FIXED heap entry).
