@@ -79,6 +79,11 @@ UB = {
     "undefined_naked_function_abi",
 }
 LOGIC = {
+    # `transmute(f as usize)` into a callback slot (ObjectTypeInitializer.DeleteProcedure,
+    # 2026-11-22 sample: 159 sites, nearly all this shape). The usize round trip means
+    # rustc never compares `f`'s signature or ABI with the slot's type: an ABI smell,
+    # not style.
+    "function_casts_as_integer",
     "path_statements",
     "unused_comparisons",
     "unused_must_use",
