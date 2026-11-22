@@ -522,11 +522,21 @@ fn once(
     } else {
         json!({})
     };
-    let regress = if have {
+    let mut regress = if have {
         parse(root, "compare", json!({"results":results,"base":base}))?
     } else {
         json!([])
     };
+    if write {
+        // rows this run writes are accepted, not regressions: a reseed must not
+        // fail on the very change it banks (an --only run still fails on the rest)
+        if let Some(list) = regress.as_array_mut() {
+            list.retain(|line| {
+                let name = line.as_str().unwrap_or("").split(':').next().unwrap_or("");
+                !only.is_empty() && !only.iter().any(|o| o.as_str() == Some(name))
+            });
+        }
+    }
     let newpasses: Vec<Value> = results
         .iter()
         .filter(|r| {
@@ -633,22 +643,36 @@ fn once(
             false,
         )?;
     }
+    // Fail loud by default: a red ratchet used to exit 0 unless --gate was passed,
+    // and recorded verdict OK on a sweep with 105 of 105 tests bad. --report-only
+    // keeps exit 0 for probes that read summary.json themselves; the runner still
+    // writes a WARN verdict naming every reason.
+    let fail = i64::from(!flag(args, "report_only"));
+    let mut code = 0;
     if !asserts.is_empty() {
         emit(
             h,
             format!("  KERNEL ASSERTIONS FAILED: {}", asserts.join("\n    ")),
             false,
         )?;
-        if flag(args, "gate") {
-            return Ok(1);
-        }
+        code = fail;
+    }
+    if bad > 0 {
+        emit(
+            h,
+            format!("  BAD LAUNCHES: {bad} test(s) did not end cleanly"),
+            false,
+        )?;
+        code = fail;
     }
     if !regress.as_array().is_none_or(Vec::is_empty) {
         emit(h, format!("  RATCHET REGRESSIONS: {regress}"), false)?;
-        return Ok(i64::from(flag(args, "gate")));
+        return Ok(fail);
     }
-    emit(h, "  ratchet holds: no regressions vs baseline.", false)?;
-    Ok(0)
+    if code == 0 {
+        emit(h, "  ratchet holds: no regressions vs baseline.", false)?;
+    }
+    Ok(code)
 }
 fn seed(root: &Path, a: &Value, args: &Value, rounds: &[Value], h: &mut dyn Host) -> Result<i64> {
     let bp = baseline(root, a, args);
@@ -1155,6 +1179,64 @@ mod controller_fixture_tests {
         f.run();
         assert!(f.host.printed.join("\n").contains("pass 10 -> 9"));
         assert!(txt(&f.baseline).unwrap().contains("assert? Example.c:12"));
+    }
+    #[test]
+    fn a_regression_fails_by_default_and_report_only_opts_out() {
+        // 2026-11-21: a sweep with 105/105 bad recorded verdict OK and exit 0
+        // because only --gate made a red ratchet exit nonzero.
+        let floor = "A OK pass=10 fail=0 skip=0\n";
+        let mut f = Fixture::new(Some(floor), vec![serial("A", 9, 1)]);
+        f.options["args"]["gate"] = json!(false);
+        let r = f.run();
+        assert_eq!(r["code"], 1);
+        assert!(!r["rounds"][0]["regressions"].as_array().unwrap().is_empty());
+        let mut quiet = Fixture::new(Some(floor), vec![serial("A", 9, 1)]);
+        quiet.options["args"]["gate"] = json!(false);
+        quiet.options["args"]["report_only"] = json!(true);
+        assert_eq!(quiet.run()["code"], 0);
+        assert!(quiet
+            .host
+            .printed
+            .join("\n")
+            .contains("RATCHET REGRESSIONS"));
+    }
+    #[test]
+    fn media_that_launched_nothing_fails_a_hand_run() {
+        // roadmap 2026-09-19: zero launches scored every row OK and exited 0 by hand
+        let mut f = Fixture::new(
+            Some("A OK pass=10 fail=0 skip=0\n"),
+            vec!["guest progress\n".into()],
+        );
+        f.options["args"]["gate"] = json!(false);
+        let r = f.run();
+        assert_eq!(r["code"], 1);
+        assert_eq!(r["rounds"][0]["launched"], 0);
+    }
+    #[test]
+    fn a_reseed_accepts_the_rows_it_writes_but_not_the_others() {
+        let floor = "A OK pass=10 fail=0 skip=0\nB OK pass=10 fail=0 skip=0\n";
+        let two = || {
+            vec![format!(
+                "{}{}",
+                serial("A", 9, 1).replace("[KMTEST-SWEEP] done total=1\n", ""),
+                serial("B", 9, 1)
+            )]
+        };
+        let mut all = Fixture::new(Some(floor), two());
+        all.options["args"]["gate"] = json!(false);
+        all.options["args"]["write_baseline"] = json!(true);
+        assert_eq!(all.run()["code"], 0);
+        let mut only_a = Fixture::new(Some(floor), two());
+        only_a.options["args"]["gate"] = json!(false);
+        only_a.options["args"]["write_baseline"] = json!(true);
+        only_a.options["args"]["only"] = json!(["A"]);
+        let r = only_a.run();
+        assert_eq!(
+            r["code"], 1,
+            "B's regression was not written, so it still fails"
+        );
+        let left = r["rounds"][0]["regressions"].to_string();
+        assert!(left.contains("B") && !left.contains("\"A:"), "{left}");
     }
     #[test]
     fn stale_source_media_never_reaches_pytest_or_ledger() {

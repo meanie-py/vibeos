@@ -456,8 +456,9 @@ a fix on the test it was aimed at.
   One front door: (optional) `VIBEOS_PAYLOAD=kmtest` build → boot → in-guest sweep (drains
   `test_payload.py::test_payload_launched` up to `launch_drain_secs`) → parse the serial log
   → compare vs `tools/conformance-baseline/<arch>/kmtest.txt` → `summary.json`
-  (`{launched, ok, bad, regressions, new_passes, sweep_done, bugcheck}`). Report-only by
-  default; `--gate` exits nonzero on ratchet regression; `--write-baseline` seeds/updates the
+  (`{launched, ok, bad, regressions, new_passes, sweep_done, bugcheck}`). Fails by default
+  (since 2026-11-21) on a ratchet regression, bad launch or kernel assertion; `--report-only`
+  exits 0 but records verdict WARN; `--gate` is kept as a no-op alias for callers; `--write-baseline` seeds/updates the
   floor; `--smp N` passes `VIBEOS_QEMU_SMP` (+ `--smp-kernel` build) — the hook the UP→SMP/AP
   lane will use to run guest loads under `-smp`. Fail-loud rostests preflight (no silent
   degradation). Unit-tested (arch-norm, parser regression detect, rostests preflight);

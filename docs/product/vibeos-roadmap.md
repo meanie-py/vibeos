@@ -612,7 +612,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Next: a `farm` run of amd64-bios, to get a rate and a second sample.
 
 - **arm64: committed memory faults under concurrent system-process allocation (open,
-  intermittent, found 2026-11-08, upstream-sync lane; owner unassigned, MM).** kmtest
+  intermittent, found 2026-11-08; owner: conformance lane since 2026-11-21, MM).** kmtest
   ZwAllocateVirtualMemory's `SystemProcessTestWorker` runs two system threads that allocate in
   the system process at the same time. One of them got STATUS_SUCCESS committing a chunk, then
   faulted with 0xC0000005 both writing it (`.c:90`) and reading it back (`.c:76`, `Match = 0`
@@ -620,7 +620,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`/tmp/vibeos-cli/20261108-074334-c9UMvk-conformance-arm64`); the retry passed, and the
   batch (shell32 d3dwine) touches no MM. Seen again in batch 165's gate
   (`/tmp/vibeos-cli/20261108-095623-oBpdmQ-conformance-arm64`, same three lines, passed on
-  retry): 2 of 5 gates. The signature points to a race between concurrent
+  retry): 2 of 5 gates. Third sighting in batch 178's gate (2026-11-21,
+  `/tmp/vibeos-cli/20261121-204507-E0MV1s-conformance-arm64`, same `.c:76/90/93`, passed on
+  retry), preserved at
+  `~/vibeos-flake-farm/fails/auto/20261121-204507-DGwlpE-conformance-arm64-clean-but-ratchet-regression`.
+  That red read only "native controller exited 1" until the runner learned to name the
+  regression from the rounds. The signature points to a race between concurrent
   commits in one process (PTE or page-table population, or the VAD), not to address-space
   layout. It is unrelated to 56755a2a231 (kernel32's user-mode sort-table mapping). Next:
   `farm --arches arm64` on the conformance payload to get a rate, then a tripwire on that
@@ -3805,8 +3810,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   them**, so `vibeos-cli check` covers them continuously and the staticlib never sees their
   symbols. Deliberately not invented inside the change repairing the incident.
 
-- **`vibeos-cli conformance` exits 0 on media that launched ZERO tests. UNOWNED**
-  (2026-09-19). Verified in an artifact: `launched: 0`, `sweep_rc: 1`, and every baseline row
+- **`vibeos-cli conformance` exits 0 on media that launched ZERO tests. FIXED 2026-11-21
+  (conformance lane):** a hand run now fails by default on any regression, bad launch or
+  kernel assertion, and a zero-launch sweep reports every row as "never launched", which is
+  a regression. `--report-only` restores exit 0 but records verdict WARN. Original report
+  (2026-09-19): Verified in an artifact: `launched: 0`, `sweep_rc: 1`, and every baseline row
   reported as the literal string **`in baseline (OK) but never launched`**. A test that never
   ran is scored **OK**, so zero launches means zero regressions means
   `ratchet holds: no regressions vs baseline`, exit 0. Two guards exist and neither covers

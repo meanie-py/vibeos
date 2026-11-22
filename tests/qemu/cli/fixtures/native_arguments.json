@@ -11822,7 +11822,8 @@
       "repeat": 0,
       "fn": {
         "callable": "tests.qemu.cli.conformance:conformance"
-      }
+      },
+      "report_only": false
     }
   },
   {
@@ -11847,7 +11848,8 @@
       "repeat": 0,
       "fn": {
         "callable": "tests.qemu.cli.conformance:conformance"
-      }
+      },
+      "report_only": false
     }
   },
   {
@@ -11880,7 +11882,8 @@
       "repeat": 0,
       "fn": {
         "callable": "tests.qemu.cli.conformance:conformance"
-      }
+      },
+      "report_only": false
     }
   },
   {
@@ -11904,7 +11907,8 @@
       "repeat": 0,
       "fn": {
         "callable": "tests.qemu.cli.conformance:conformance"
-      }
+      },
+      "report_only": false
     }
   },
   {
@@ -11928,7 +11932,8 @@
       "repeat": 0,
       "fn": {
         "callable": "tests.qemu.cli.conformance:conformance"
-      }
+      },
+      "report_only": false
     }
   },
   {
@@ -11955,7 +11960,8 @@
       "repeat": 0,
       "fn": {
         "callable": "tests.qemu.cli.conformance:conformance"
-      }
+      },
+      "report_only": false
     }
   },
   {
@@ -11988,7 +11994,33 @@
       "repeat": 0,
       "fn": {
         "callable": "tests.qemu.cli.conformance:conformance"
-      }
+      },
+      "report_only": false
+    }
+  },
+  {
+    "argv": [
+      "conformance",
+      "--arch",
+      "i386",
+      "--report-only"
+    ],
+    "arguments": {
+      "cmd": "conformance",
+      "arch": "i386",
+      "no_build": false,
+      "write_baseline": false,
+      "force_baseline": false,
+      "only": null,
+      "gate": false,
+      "seed_asserts": false,
+      "smp": 0,
+      "timeout": 6000,
+      "repeat": 0,
+      "fn": {
+        "callable": "tests.qemu.cli.conformance:conformance"
+      },
+      "report_only": true
     }
   },
   {
@@ -12012,7 +12044,8 @@
       "repeat": 0,
       "fn": {
         "callable": "tests.qemu.cli.conformance:conformance"
-      }
+      },
+      "report_only": false
     }
   },
   {
@@ -12037,7 +12070,8 @@
       "repeat": 0,
       "fn": {
         "callable": "tests.qemu.cli.conformance:conformance"
-      }
+      },
+      "report_only": false
     }
   },
   {
@@ -12081,7 +12115,8 @@
       "repeat": 0,
       "fn": {
         "callable": "tests.qemu.cli.conformance:conformance"
-      }
+      },
+      "report_only": false
     }
   },
   {
@@ -12125,7 +12160,8 @@
       "repeat": 2,
       "fn": {
         "callable": "tests.qemu.cli.conformance:conformance"
-      }
+      },
+      "report_only": false
     }
   },
   {

@@ -210,5 +210,19 @@ def run_controller(op, args, repo, *, command, arch, extra=None):
                 run.log("\n".join(reasons) + "\n", header=f"{command}: why it exited {code}")
                 run.classification = run.classification or classification
             run.add(Stage(command, status="fail", exit=code, detail=detail, salient=reasons[:10]))
+        else:
+            # exit 0 with reasons is a report-only run: never let it read as a clean OK
+            classification, reasons = failure_reasons(run.extra.get("rounds"))
+            if reasons:
+                run.log("\n".join(reasons) + "\n", header=f"{command}: report-only, not clean")
+                run.classification = run.classification or classification
+                run.add(
+                    Stage(
+                        command,
+                        status="warn",
+                        detail=f"report-only: {reasons[0]}",
+                        salient=reasons[:10],
+                    )
+                )
         run.finalize(repo)
     return code
