@@ -91,7 +91,7 @@ target_link_options(wowx64fex PRIVATE
   -nostdlib -nostartfiles -nodefaultlibs -lc++ -lc++abi -lunwind)
 
 # fexcachegen64.exe: FEX's FEXOfflineCompiler, built a second time for x86-64 guests by
-# defining VIBEOS_X64_GUEST, a VIBEOS PATCH in its Main.cpp: 64-bit mode and the Wow64 host type
+# defining VIBEOS_X64_GUEST, which the tool's own VIBEOS PATCH reads: 64-bit mode and the Wow64 host type
 # this layer runs with. It turns the code maps the CPU layer writes into code caches the
 # layer can load, so a system DLL's blocks are compiled once rather than in every process
 # (docs/engineering/wow64-x64-guest-design.md, item 7). An ordinary exe on the mingw CRT,

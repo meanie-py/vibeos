@@ -378,9 +378,6 @@ void OnImageMap(const FEXCore::ExecutableFileSectionInfo& Section) {
     CodeCache.RegisterMappedCodeBuffer(*Code);
     Images++;
     Blocks += Code->NumBlocks;
-    DbgPrint("[WOWX64FEX] pid %u DIAG cache load %s: code %p+%I64x\n", static_cast<unsigned>(GetCurrentProcessId()),
-             FEXCore::CodeMap::GetBaseFilename(Section.FileInfo, false).c_str(), Code->CodeBuffer.data(),
-             static_cast<uint64_t>(Code->CodeBuffer.size_bytes())); // VIBEOS DIAG (code cache)
     Caches.push_back({File, std::move(Code)});
     Any.store(true, std::memory_order_release);
   }
@@ -1081,7 +1078,12 @@ static bool BTCpu64ResetToConsistentStateImpl(EXCEPTION_POINTERS* Ptrs) {
       return true;
     }
 
-    if (FEX::Windows::JITGuardPage::HandleJITGuardPage(Thread, reinterpret_cast<void*>(FaultAddress), Context->X,
+    // Only once this thread has compiled: JITGuardPage is 0 until its first compile, which
+    // makes the null page "the guard page", and claiming a null dereference there loads
+    // RestartJump -- never set, all zero -- as the context. With the code cache a thread
+    // can run on cached blocks alone, and its first null-page fault resumed at pc 0, sp 0.
+    if (Thread->JITGuardPage &&
+        FEX::Windows::JITGuardPage::HandleJITGuardPage(Thread, reinterpret_cast<void*>(FaultAddress), Context->X,
                                                        reinterpret_cast<__uint128_t*>(Context->V), &Context->Pc)) {
       return true;
     }
@@ -1101,24 +1103,6 @@ static bool BTCpu64ResetToConsistentStateImpl(EXCEPTION_POINTERS* Ptrs) {
   }
 
   if (!IsAddressInJit(Thread, Context->Pc)) {
-    { // VIBEOS DIAG (code cache)
-      static std::atomic<int> Reported;
-      if (Reported++ < 4) {
-        DbgPrint("[WOWX64FEX] pid %u DIAG host fault %08lx at pc %p lr %p fp %p (address %p)\n", static_cast<unsigned>(GetCurrentProcessId()),
-                 Exception->ExceptionCode, reinterpret_cast<void*>(Context->Pc), reinterpret_cast<void*>(Context->Lr),
-                 reinterpret_cast<void*>(Context->Fp),
-                 reinterpret_cast<void*>(Exception->NumberParameters > 1 ? Exception->ExceptionInformation[1] : 0));
-        auto* Frame = reinterpret_cast<uint64_t*>(Context->Fp);
-        for (int i = 0; i < 12 && Frame && (reinterpret_cast<uint64_t>(Frame) & 7) == 0; ++i) {
-          MEMORY_BASIC_INFORMATION Info;
-          if (!VirtualQuery(Frame, &Info, sizeof(Info)) || Info.State != MEM_COMMIT) {
-            break;
-          }
-          DbgPrint("[WOWX64FEX]   DIAG frame %p\n", reinterpret_cast<void*>(Frame[1]));
-          Frame = reinterpret_cast<uint64_t*>(Frame[0]);
-        }
-      }
-    }
     return false; // a host fault: not ours to touch
   }
 
@@ -1133,21 +1117,6 @@ static bool BTCpu64ResetToConsistentStateImpl(EXCEPTION_POINTERS* Ptrs) {
   }
   auto& State = Thread->CurrentFrame->State;
   uint64_t Rip = State.rip;
-  { // VIBEOS DIAG (code cache)
-    static std::atomic<int> Reported;
-    if (Reported++ < 6) {
-      DbgPrint("[WOWX64FEX] pid %u DIAG guest fault %08lx at host pc %p lr %p (address %p, cached %d), guest rip %p rsp %p\n",
-               static_cast<unsigned>(GetCurrentProcessId()), Exception->ExceptionCode, reinterpret_cast<void*>(Context->Pc),
-               reinterpret_cast<void*>(Context->Lr),
-               reinterpret_cast<void*>(Exception->NumberParameters > 1 ? Exception->ExceptionInformation[1] : 0),
-               CTX->GetCodeCache().IsAddressInMappedCodeBuffer(Context->Pc), reinterpret_cast<void*>(Rip),
-               reinterpret_cast<void*>(State.gregs[FEXCore::X86State::REG_RSP]));
-      for (auto& [File, Code] : CodeCacheFiles::Caches) {
-        DbgPrint("[WOWX64FEX]   DIAG cache %p+%I64x guest %p\n", Code->CodeBuffer.data(), static_cast<uint64_t>(Code->CodeBuffer.size_bytes()),
-                 reinterpret_cast<void*>(Code->GuestBase));
-      }
-    }
-  }
   auto& Fault = Thread->CurrentFrame->SynchronousFaultData;
   *Exception = FEX::Windows::HandleGuestException(Fault, *Exception, Rip, State.gregs[FEXCore::X86State::REG_RAX],
                                                   State.gregs[FEXCore::X86State::REG_RCX]);
