@@ -625,7 +625,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   retry), preserved at
   `~/vibeos-flake-farm/fails/auto/20261121-204507-DGwlpE-conformance-arm64-clean-but-ratchet-regression`.
   That red read only "native controller exited 1" until the runner learned to name the
-  regression from the rounds. The signature points to a race between concurrent
+  regression from the rounds. **Not reproduced on an idle host (2026-11-21): 0 of 20** runs
+  of the test alone on a fresh boot (`20261121-213950-cpoLef-conformance-arm64`, each fails
+  only the baselined `.c:145/246`), and **0 of 6** full sweeps
+  (`conformance --arch arm64 --repeat 6`, `20261121-214937-c1A6Nr`). Same config as the gate
+  (smp 0, MP kernel); the difference is load: the gate's failing sweep took 105 s against
+  69-89 s idle, because the gate boots three arches at once. So it is timing-dependent; the
+  next repro is a soak under host load (run the arm64 repeat beside the other arches'
+  sweeps), then a tripwire on the commit/fault path. The signature points to a race between concurrent
   commits in one process (PTE or page-table population, or the VAD), not to address-space
   layout. It is unrelated to 56755a2a231 (kernel32's user-mode sort-table mapping). Next:
   `farm --arches arm64` on the conformance payload to get a rate, then a tripwire on that
