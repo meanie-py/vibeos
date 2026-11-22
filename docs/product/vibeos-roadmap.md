@@ -621,6 +621,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   commits the page but does not map it, so a frame landing on the guard page failed the
   following MmIsAddressValid. Now `KiFaultInUserFrame` goes top down, retrying after a guard
   hit (`20261122-121707-bQJnhZ` red, `20261122-130337-mKp7Sw` green).
+- **Installed system booted with no services: services.exe exited on the first boot after setup
+  (FIXED 2026-11-22, msvcrt-homebrew lane).** `ScmCreateLastKnownGoodControlSet` copies the
+  current control set with `RegCopyTreeW`, which failed with 998 (ERROR_NOACCESS) for every
+  key with a subkey, and services.exe logged `CreateLastKnownGood failed: 998` and exited, so
+  PlugPlay, RPC services and the rest never started. Cause: `probe_user_buffer` checked the
+  alignment of a ZERO-length buffer (NtCreateKey's empty class), which `ProbeForRead` never
+  does (field manual, "Restoring a dropped probe, do not TIGHTEN it"). Found by the install
+  smoke's new persist stage; `install-smoke` had passed throughout because it only waited for
+  Explorer. Reproduced and graded on the livecd by `--payload regcopyprobe`.
 
 - **amd64-bios: boot went silent after netstack's TDI self-test timed out (open, 1 in 7,
   found 2026-11-08, fex lane).** In a full gate (`20261108-020815-xRELnn`, two CPUs, NVMe),

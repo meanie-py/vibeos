@@ -1,0 +1,22 @@
+# regcopyprobe — RegCopyTreeW over a whole control set, as services.exe does on the first boot
+# after setup (ScmCreateLastKnownGoodControlSet). On an installed disk that copy failed with
+# 998 (ERROR_NOACCESS) and services.exe exited, so the installed system ran with no services.
+# The livecd never takes that path (CheckForLiveCD), so this runs the same copy there. On a
+# failure it bisects: it recurses into whichever subkey still fails, and names the deepest one.
+#   tools/payloads/regcopyprobe/build.sh {arch}
+#   VIBEOS_PAYLOAD=regcopyprobe ./vibeos-cli build --arch {arch}
+#   ./vibeos-cli smoke --arch {arch} --payload regcopyprobe
+name: regcopyprobe
+description: RegCopyTreeW of SYSTEM\ControlSet001, bisected to the failing key on error
+
+build_hint: "tools/payloads/regcopyprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/regcopyprobe/regcopyprobe-{arch}.exe
+    root: image
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/regcopyprobe.exe
+
+test:
+  launch_marker: "[REGCOPYPROBE] done"
+  pass_marker: "[REGCOPYPROBE] done PASS"
+  launch_drain_secs: 300

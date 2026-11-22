@@ -152,8 +152,15 @@ pub unsafe fn probe_user_buffer(
     alignment: usize,
     previous_mode: KPROCESSOR_MODE,
 ) -> Result<(), NTSTATUS> {
-    // KernelMode callers are trusted
-    if previous_mode == 0 {
+    // KernelMode callers are trusted. A zero-length buffer is not probed AT ALL, alignment
+    // included -- `ProbeForRead`/`ProbeForWrite` check nothing unless `Length != 0`
+    // (ntoskrnl/ex/exintrin.c), and callers rely on it: a key with no class reports
+    // ClassOffset 0xFFFFFFFF, so advapi32's RegCopyTreeW hands NtCreateKey an empty class
+    // whose Buffer is odd. Checking its alignment returned STATUS_DATATYPE_MISALIGNMENT
+    // (ERROR_NOACCESS, 998) for every key with a subkey, and services.exe exited on the first
+    // boot after setup (ScmCreateLastKnownGoodControlSet), leaving an installed system with
+    // no services.
+    if previous_mode == 0 || length == 0 {
         return Ok(());
     }
 
@@ -163,12 +170,10 @@ pub unsafe fn probe_user_buffer(
     }
 
     // Range check: buffer..buffer+length must be below MmUserProbeAddress
-    if length > 0 {
-        let addr = buffer as usize;
-        let end = addr.wrapping_add(length);
-        if end < addr || end > mm_user_probe_address() {
-            return Err(STATUS_ACCESS_VIOLATION);
-        }
+    let addr = buffer as usize;
+    let end = addr.wrapping_add(length);
+    if end < addr || end > mm_user_probe_address() {
+        return Err(STATUS_ACCESS_VIOLATION);
     }
 
     Ok(())
