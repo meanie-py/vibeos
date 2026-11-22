@@ -2534,10 +2534,10 @@ pub unsafe extern "system" fn GetCalendarInfoA(
         return 0;
     }
 
-    if NLS_IsUnicodeOnlyLcid(lcid) != 0 {
-        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
-        return 0;
-    }
+    // No Unicode-only refusal here (the C failed every call for a locale like dv-MV with
+    // ERROR_INVALID_PARAMETER). On Windows the A form works for those locales too: their
+    // ANSI code page is 0, which is CP_ACP, so the text converts through the system code
+    // page, and a CAL_RETURN_NUMBER query converts nothing at all.
 
     if cchData == 0 && CalType as u32 & CAL_RETURN_NUMBER as u32 == 0 {
         cchDataW = GetCalendarInfoW(
