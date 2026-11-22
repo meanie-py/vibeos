@@ -10,9 +10,8 @@
 > it busy, so priority 6-7 Chrome threads wait for the 300-tick starvation boost (registry
 > entry). TEMP diagnostics (`[STARVE]`, `[CTXWAIT]`, RQ5A stamps) stay parked on branch
 > `graviton-diag-ctxwait` @ `a09f763602a`, not for landing. Owed:
-> 1. `vibeos-cli sym` names a symbol for a kernel-half address outside the kernel image
->    (`fffff8000024afd6`, in the HAL, came back as `ntkrnlmp.exe!EFLAGS_ID_MASK+0x4afd6`): it
->    must decline outside the image's bounds.
+> 1. (done 2026-11-21) `vibeos-cli sym` declines a kernel-half address outside the kernel
+>    image, and a `--serial` log older than the tree's kernel unless `--image` is passed.
 > 2. RQ5A (smp-bringup's §9.56 guard): settle false positive vs. real double-link with a
 >    pre-`RemoveEntryList` neighbour check at the 9002 site; hand them a tested diff.
 > 3. Are the companion apps busier than they should be on one vCPU? (Magnifier and Task
