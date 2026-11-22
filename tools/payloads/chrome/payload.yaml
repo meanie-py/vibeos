@@ -79,3 +79,7 @@ test:
   launch_drain_secs: 3600
   # Chrome's browser + renderer + utility processes want far more than the 512M default.
   vm_memory: 4G
+  # Skip winlogon's test ladder: its stock i386 applets stay up all boot and on the one vCPU
+  # osk and magnify took most of it (blitting in win32k DIB_DoRop), so Chrome's later steps
+  # sometimes missed the sweep's deadline (3 of 8 boots, 2026-11-21/22).
+  quiet: true
