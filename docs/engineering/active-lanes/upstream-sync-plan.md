@@ -92,6 +92,59 @@ payload: `VIBEOS_PAYLOAD=k32winetest ./vibeos-cli build --arch i386 --winetests 
 - test_csparentdc's last 10; edit's IME rework; the amd64 magenta icon block, the arm64 MM
   concurrent-commit fault and the i386 cdrom 0x1E one-off (roadmap registry).
 
+## Design: Windows-10 sort weights for ntsort (2026-11-22, before any code)
+
+**Why.** kernel32:locale's last big group (90 at locale.c:3892) is sort keys for characters
+and rules XP's sortkey.nls/sorttbls.nls do not have: CJK ideograph order, kana/halfwidth,
+scripts newer than XP, Windows 10's combining-mark weights. ntsort.rs already implements
+the NT weight model (SM/AW/DW/CW, nonspace marks adding DW, expansions, per-locale
+compressions and exceptions, reverse diacritics), so the job is Windows-10 DATA plus the
+few rules the data needs, not a new algorithm.
+
+**Source and licence** (owner-approved 2026-11-22 via control-plane, Wine's route):
+Microsoft's "Windows 10 Sorting Weight Table.txt",
+`https://download.microsoft.com/download/C/F/7/CF713A5E-9FBC-4FD6-9246-275F65C0E498/Windows%2010%20Sorting%20Weight%20Table.txt`,
+21,156,033 bytes, Last-Modified 2025-02-14, sha256
+`81fcfa1e5ed3e3a94d329959ff7d97d522ddf9d653d2c4d6ddcccc5cd4df663f`. No open licence, so the
+raw file is **never committed**: fetched at generation time into `~/.cache/vibeos-nls/`
+(outside every worktree), checksum-pinned in the generator, and only our generated output
+is committed, with the URL, checksum and "generated; raw not redistributed" in its header
+and in vendor.yaml.
+
+**What the file holds** (UTF-8 with BOM, CRLF): `SORTKEY` DEFAULT, 60,536 BMP code points
+as `0xXXXX SM AW DW CW`, then `SORTTABLES`: NLSVERSION; 131 SORTGUIDs, which 453
+LOCALENAMEs map onto; shared EXPANSION and COMPATIBILITY; per-GUID COMPRESSION (TWO..EIGHT
+code points), EXCEPTION, DOUBLECOMPRESSION (Hungarian), REVERSEDIACRITICS,
+MULTIPLEWEIGHTS, INVERSECASING, JAMOSORT. The header documents the key layout (UW 01 DW 01
+CW 01 01 00) and the rules: SM 1 nonspace marks add DW; East Asian "3-byte weights" when
+192 <= SM <= 239 (DW folds into the primary); CW bits (0x01 full width, 0x10 upper).
+
+**Generator: `tools/codegen sortdefault`** (tools/vibeos-codegen/src/sortdefault.rs). Fetch
+if not cached; refuse on a failed fetch or checksum mismatch, with no silent fallback to the
+XP tables. Parse every section; refuse unknown section names, so a format change fails loudly.
+Emit `media/nls/sortdefault.nls` in OUR documented binary layout (version word, BMP key
+array, GUID table with locale-name index, per-GUID slices, shared expansion table): a
+runtime file like sortkey.nls, loaded by mapping, so kernel32 does not grow by megabytes.
+**Not in `--all`**: `tools/codegen sortdefault --check` verifies the committed file
+against a fresh generation when the cache is present (exit 0/1). Without the cache and no
+network it prints `UNVERIFIED: <url> not cached and not fetchable` and exits 3, never 0,
+so offline check-tooling is not made red by a network dependency. Fixtures are a few
+hand-written lines in each section shape.
+
+**Runtime (ntsort.rs).** Prefer sortdefault.nls when present, else today's XP tables
+(the existing fallback chain, logged once). Locale to sort GUID by LOCALENAME
+(LCIDToLocaleName, already linked from kernel32-vista-rust). New rules, each behind the
+data that needs it: 3-byte weights (SM 192..239); COMPRESSION up to 8 code points (today
+2-3); DOUBLECOMPRESSION (owed item (c), Hungarian); MULTIPLEWEIGHTS; INVERSECASING; JAMOSORT
+(Korean Jamo). Supplementary code points: the DEFAULT table is BMP-only, so a surrogate
+pair keeps today's handling unless the file says otherwise; check before deciding.
+
+**Order and measure.** (1) generator + fixtures + cached-run determinism (two runs
+byte-identical); (2) ntsort reads the new layout with the XP rules only: locale.c:3892 A/B
+must not rise; (3) the new rules one at a time, each A/B'd on 3892 plus the full locale
+count; (4) build the CompareString half of test_unicode_sorting at 0x600 as a second
+measure (it never ran here). Stop and report if any step raises a line that was passing.
+
 ## Earlier RESUME HERE (2026-10-31: the 2026-10-31 sync, 127 commits to upstream `80dec44f649`; superseded, kept for its history)
 
 Merge `cd5f05edbc1` (upstream c25e4fd7dec..80dec44f649, 2026-10-15..10-31; 63 conflicts, each
