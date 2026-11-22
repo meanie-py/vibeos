@@ -380,6 +380,13 @@ def _initializer_values(node, src: bytes) -> list[tuple[str | None, str]]:
     for child in node.named_children:
         if child.type == "comment":
             continue
+        if child.type == "ERROR" or child.type.startswith("preproc"):
+            # A preprocessor branch inside the table that _resolve_reactos_conditionals could
+            # not decide: which slots exist is the compiler's call, so refuse rather than count.
+            raise VtblArityError(
+                "a preprocessor conditional inside a vtbl initializer this tool cannot decide: "
+                + src[child.start_byte : child.end_byte].decode("utf-8", "replace").strip()
+            )
         if child.type == "initializer_pair":
             desig = None
             for d in child.children_by_field_name("designator"):
@@ -402,6 +409,54 @@ def _is_null(value: str) -> bool:
     v = re.sub(r"\s+", "", value)
     v = re.sub(r"^\((?:void|VOID)\s*\*\)", "", v)  # (void*)0
     return v in ("NULL", "0", "nullptr", "(void*)0")
+
+
+_PP_LINE = re.compile(r"^\s*#\s*(if|ifdef|ifndef|elif|else|endif)\b(.*)$")
+_REACTOS_IF = re.compile(
+    r"^\s*(?:(?P<neg>!)\s*)?(?:defined\s*\(\s*__REACTOS__\s*\)|defined\s+__REACTOS__)\s*$"
+)
+
+
+def _resolve_reactos_conditionals(text: str) -> str:
+    """Decide `__REACTOS__` conditionals, the one macro every compile in the tree defines.
+
+    A Wine source keeps ReactOS's local changes under `#ifdef __REACTOS__`. Inside a vtbl
+    initializer (msxml3's MXAttributesVtbl gains its missing setType slot that way)
+    tree-sitter cannot model the directive, and each directive line became an ERROR node,
+    which counted as an extra slot. Live arms keep their text; dead arms and the directives
+    themselves become blank lines, so line numbers are unchanged. A conditional on anything
+    else is left as it is (and refused below, if it sits inside a table).
+    """
+    out: list[str] = []
+    stack: list[bool | None] = []  # True: this arm is live; False: dead; None: undecided
+    for line in text.split("\n"):
+        m = _PP_LINE.match(line)
+        dead = any(a is False for a in stack)
+        if m:
+            kind, rest = m.group(1), m.group(2).strip()
+            decided: bool | None = None
+            if kind == "ifdef" and rest == "__REACTOS__":
+                decided = True
+            elif kind == "ifndef" and rest == "__REACTOS__":
+                decided = False
+            elif kind == "if" and (r := _REACTOS_IF.match(rest)):
+                decided = not r.group("neg")
+            if kind in ("if", "ifdef", "ifndef"):
+                stack.append(decided)
+                out.append("" if decided is not None else line)
+                continue
+            if kind == "else" and stack and stack[-1] is not None:
+                stack[-1] = not stack[-1]
+                out.append("")
+                continue
+            if kind == "endif" and stack:
+                top = stack.pop()
+                out.append("" if top is not None else line)
+                continue
+            out.append("" if dead else line)
+            continue
+        out.append("" if dead else line)
+    return "\n".join(out)
 
 
 def find_vtbl_tables(
@@ -432,7 +487,7 @@ def find_vtbl_tables(
         arch=arch, rust_sources=rust_sources, c_headers=c_headers
     )
 
-    text = _read(c_path)
+    text = _resolve_reactos_conditionals(_read(c_path))
     src = text.encode()
     tree = _ts_parse(src)
     tables: list[VtblTable] = []

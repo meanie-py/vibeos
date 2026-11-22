@@ -3,7 +3,7 @@
 **Status: QUEST (2026-07-10, lane `smp-bringup`, worktree
 `~/Projects/os-playground/vibeos-smp`). Handoff doc — read fully before starting.**
 
-## RESUME HERE (2026-11-22)
+## RESUME HERE (2026-11-22, Sunday wind-down)
 
 **crypt32 is Rust and graded.** All 27 TUs are flipped to crypt32-rust and cargo-linked
 (`crypt32-cargo`, BODY_CRATE). Wine's suite matches the pre-flip C in all 15 suites on i386,
@@ -18,7 +18,34 @@ Owed:
 - Done: `scan_sizeof_vs_c` and `scan_compare_const_vs_c` (vibeos-lint) gate the sizeof-swap
   and permuted-constant classes from crypt32 (10 and 11 reviewed findings baselined). The
   constant rule found one real divergence on its first run (concfg's REG_SZ retry, fixed).
-- shlwapi's C++ tail and cell (below).
+- **msxml3 port PARKED (2026-11-22 wind-down)** on branch `smp-bringup-msxml3-wip` @
+  f01362efb0a, never merged; it does not compile yet. To resume, merge that branch here.
+  - **Bought:** 1776 bodies, Haiku, sealed, **≈ $1.71** in all (translate $1.70,
+    `MXAttributes_setType` $0.0023, macros $0.0035). Banks are
+    `tools/rustconv/.responses/msxml3__*` (33 dirs) and `~/vibeos-rust-staging/port/msxml3/`.
+    `port translate msxml3 --replay-only` rebuilds the crate for $0.
+  - **Done:** derive, scaffold, island, translate, integrate, resolve, macros, integrate,
+    resolve, crate-repair. `port check` = **264 (i386) / 276 (amd64, arm64)**, from 3500.
+    crate-repair hit 20 passes still applying one edit a pass with the count unchanged, which
+    looks like an oscillation: read the last passes' edits in its log.
+  - **Next, known roots:**
+    - `xmlFree`/`xmlMalloc` are libxml2 thread-alloc globals. `xmlversion.h` defines
+      LIBXML_THREAD_ALLOC_ENABLED, so `xmlFree(p)` is `(*__xmlFree())(p)`. Hand-port an
+      `#[inline]` fn over `extern "C" fn __xmlFree() -> *mut xmlFreeFunc` in the prelude's
+      hand part.
+    - The IStream_* COM wrappers are missing: IStream is UNBLOCKed from the island, so
+      `port macros` generated no wrappers for it.
+    - `BAD_CAST` and `xmlXPathSetArityError` were refused by macros: hand-port them.
+    - `__WINE_DBCL_*`: resolve saw 3 different values for WINE_DBG_DEFAULT_FLAGS.
+    - Then `port fix` (paid, small) and `port hand`. Then grade with Wine's msxml3 suite
+      against a C oracle (crypt32's recipe: payloads + `rename_module_refs.py`), flip, and
+      `cargo-cell --convert` (msxml3 is already `msxml3-cargo`).
+  - **Landed separately:** the C fix for MXAttributesVtbl's missing setType slot (the
+    shipping C was shifted by one), and vtbl_gen deciding `__REACTOS__` conditionals.
+- shlwapi's C++ tail (5 `.cpp`, 3.6K lines of ATL/COM: CAutoComplete, the property bags):
+  not started. `port cppapp` assumes a pure C++ module, and shlwapi's crate already holds
+  the C port, so running it here is a tool-design question rather than a recipe. shell32's
+  C++ tail lane is the precedent to read first.
 - The older smp items (below).
 
 ### Earlier RESUME HERE (2026-11-08, fleet wind-down)
