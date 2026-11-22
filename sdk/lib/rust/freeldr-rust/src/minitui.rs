@@ -40,11 +40,11 @@ pub unsafe extern "C" fn MiniTuiInitialize() -> BOOLEAN {
     UiCenterMenu = 0u8;
     UiUseSpecialEffects = 0u8;
 
-    *UiTitleBoxTitleText.as_mut_ptr() = (0u8) as i8 ;
+    *(*&raw mut UiTitleBoxTitleText).as_mut_ptr() = (0u8) as i8 ;
 
     RtlStringCbCopyA(
-        UiTimeText.as_mut_ptr(),
-        core::mem::size_of_val(&UiTimeText),
+        (*&raw mut UiTimeText).as_mut_ptr(),
+        core::mem::size_of_val(&*&raw const UiTimeText),
         (b"Seconds until highlighted choice will be started automatically:\0".as_ptr()) as *const i8 ,
     );
 

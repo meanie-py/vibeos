@@ -180,7 +180,7 @@ unsafe extern "C" fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
     let mut MenuLineText: [CHAR; 80] = [0; 80];
 
     if (*MenuInfo).MenuTimeRemaining >= 0 {
-        let mut ptr: PCHAR = (UiTimeText).as_mut_ptr() as *mut i8;
+        let mut ptr: PCHAR = (*&raw mut UiTimeText).as_mut_ptr() as *mut i8;
         while {
             ptr = strchr(ptr, '%' as i32);
             !ptr.is_null() && *ptr.offset(1) != 'd' as i8
@@ -196,8 +196,8 @@ unsafe extern "C" fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
                 MenuLineText.as_mut_ptr(),
                 core::mem::size_of_val(&MenuLineText),
                 b"%.*s%d%s\0".as_ptr() as PCHAR,
-                ptr.offset_from((UiTimeText).as_ptr() as *const i8) as i32,
-                UiTimeText.as_ptr(),
+                ptr.offset_from((*&raw const UiTimeText).as_ptr() as *const i8) as i32,
+                (*&raw const UiTimeText).as_ptr(),
                 (*MenuInfo).MenuTimeRemaining,
                 ptr.offset(2),
             );
@@ -206,7 +206,7 @@ unsafe extern "C" fn TuiDrawMenuTimeout(MenuInfo: PUI_MENU_INFO) {
                 MenuLineText.as_mut_ptr(),
                 core::mem::size_of_val(&MenuLineText),
                 b"%s %d\0".as_ptr() as PCHAR,
-                UiTimeText.as_ptr(),
+                (*&raw const UiTimeText).as_ptr(),
                 (*MenuInfo).MenuTimeRemaining,
             );
         }

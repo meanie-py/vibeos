@@ -1962,7 +1962,7 @@ unsafe fn _vga_dbg(slot: u32, c: u8) {
 #[no_mangle]
 pub unsafe extern "C" fn MachInit(_CmdLine: *const i8) {
     _vga_dbg(0, b'A');
-    RtlZeroMemory(&mut MachVtbl as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&MachVtbl));
+    RtlZeroMemory(&raw mut MachVtbl as *mut _ as *mut core::ffi::c_void, core::mem::size_of_val(&*&raw const MachVtbl));
     _vga_dbg(1, b'B');
     MachVtbl.ConsPutChar = Some(PcConsPutChar);
     MachVtbl.ConsKbHit = Some(PcConsKbHit);

@@ -136,7 +136,7 @@ pub unsafe extern "C" fn UefiInitializeVideo() -> EFI_STATUS {
     let BitsPerPixel: ULONG;
 
     Status = ((*(*GlobalSystemTable).BootServices).LocateProtocol).unwrap()(
-        &EfiGraphicsOutputProtocol as *const _ as *mut _,
+        &raw const EfiGraphicsOutputProtocol as *const _ as *mut _,
         core::ptr::null_mut(),
         &mut gop as *mut _ as *mut *mut core::ffi::c_void,
     );
@@ -174,7 +174,7 @@ pub unsafe extern "C" fn UefiInitializeVideo() -> EFI_STATUS {
     VramAddress = (*(*gop).Mode).FrameBufferBase as ULONG_PTR;
     VramSize = (*(*gop).Mode).FrameBufferSize as ULONG;
     if VidFbInitializeVideo(
-        &mut FrameBufferData,
+        &raw mut FrameBufferData,
         VramAddress,
         VramSize,
         (*(*(*gop).Mode).Info).HorizontalResolution,
