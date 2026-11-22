@@ -242,6 +242,10 @@ pub unsafe extern "system" fn DhcpRequestParams(
     pSize: *mut u32,
     RequestIdStr: *mut u16,
 ) -> u32 {
+    // nolint(dead_seh): the C's RpcTryExcept wraps Client_RequestParams, which
+    // our IDL does not declare; upstream-sync 842b5458588 kept the pre-2026-05
+    // dhcpcsvc.idl, so there is no RPC call here to guard. Owed with the
+    // dhcpcsvc RequestParams re-port (roadmap, upstream-sync owed list).
     0
 }
 

@@ -35,9 +35,12 @@ kmtest (337f69a56f9, baselined on all three arches). The older owed queue is the
 Owed, in order:
 1. CcZeroData's CACHED path (the VACB loop, same narrowing fix) has no test: a 4 GiB cached
    range maps and zeroes 4 GiB of views. Needs a cheaper shape, or accept the gap.
-2. The SIGN-flip half of the min/max class is not linted (rebar, winpos, tui were that shape):
-   it needs C types. `-Wsign-compare` on a module's C oracle finds it; modules with no oracle
-   were covered only by the 2026-11-01 grep audit (field manual, "A mixed-sign min/max").
+2. ~~The SIGN-flip half of the min/max class is not linted.~~ Closed 2026-11-21:
+   `./vibeos-cli lint --arch <a> --rules scan_sign_compare_minmax` runs `-Wsign-compare` over
+   the flipped C of modules with no oracle. It found one bug, user32 listbox's `LB_SETCOUNT` clamp, which is now fixed. It now reaches
+   all 356 flipped files that call min/max, ntoskrnl and hal included (ntos.cmake's include
+   set); missing headers are resolved from a tree-wide header index, so only ~70 per arch still
+   partly parse (listed as `#ERR` with clang's first error). ntoskrnl's one hit (`mm/balance.c`) is already right.
 3. bank_drift residue: 18 moved hashes no historical master scanner reproduces, all bought in
    sibling worktrees with branch-local scanners (cpp-cluster, gicv3, research,
    rustconv-speedrun, shell32-com). The 357 upstream-moved bodies are upstream-sync's queue.
@@ -2191,7 +2194,8 @@ body) reached from csrss. The sweep after it was clean and identical to the firs
    68/18, ...; Rust 20261101-210519-b9rix5jx, C 20261101-211155-tuk5675o, the C exe imports only
    setupapc.dll). The serial is in the run's `payload/i386-uefi_serial.log`, not its top-level
    serial.log, which is the smoke boot. (b) DONE 2026-10-17: the scanner-cut audit. 7 functions were bought from a cut body;
-   winspool's GetMonitorUI really shipped without its tail and is hand-completed, and the
+   winspool's GetMonitorUI really shipped without its tail (the commit meant to hand-complete
+   it but deleted its body instead; restored 2026-11-21), and the
    other six were whole. The same pass found 15 RPC calls the 2026-10-17 sweep missed
    (dhcpcsvc 4, advapi32 shutdown 3, netapi32 misc/schedule/wksta_new 7, dnsapi 1), now
    under rpc_try, and made five dead page-fault guards real via ntdll_sys::seh::

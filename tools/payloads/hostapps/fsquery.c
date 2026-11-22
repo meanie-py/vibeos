@@ -91,6 +91,28 @@ static void volume_ioctls(wchar_t letter)
         printf("volume open err=%lu\n", GetLastError());
 }
 
+/* An open that asks for FILE_OPEN_REQUIRING_OPLOCK. CDFS refuses the option outright
+ * (create.c, NTDDI_WIN7 and later); a file system that supports it opens the file. */
+static void oplock_open(const wchar_t *path)
+{
+    UNICODE_STRING nt;
+    OBJECT_ATTRIBUTES oa;
+    IO_STATUS_BLOCK io;
+    HANDLE h = NULL;
+    if (!RtlDosPathNameToNtPathName_U(path, &nt, NULL, NULL)) {
+        printf("oplockopen %ls: bad path\n", path);
+        return;
+    }
+    InitializeObjectAttributes(&oa, &nt, OBJ_CASE_INSENSITIVE, NULL, NULL);
+    NTSTATUS st = NtCreateFile(&h, FILE_READ_ATTRIBUTES | SYNCHRONIZE, &oa, &io, NULL, 0,
+                               FILE_SHARE_READ | FILE_SHARE_WRITE, FILE_OPEN,
+                               0x00010000 /* FILE_OPEN_REQUIRING_OPLOCK */, NULL, 0);
+    printf("oplockopen %ls st=%08lx\n", path, (ULONG)st);
+    if (st >= 0)
+        CloseHandle(h);
+    RtlFreeUnicodeString(&nt);
+}
+
 int wmain(int argc, wchar_t **argv)
 {
     MEMORYSTATUSEX ms = { sizeof(ms) };
@@ -173,6 +195,7 @@ int wmain(int argc, wchar_t **argv)
             file_queries(argv[i], h);
             CloseHandle(h);
         }
+        oplock_open(argv[i]);
     }
     printf("fsquery done\n");
     return 0;

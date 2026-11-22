@@ -1990,6 +1990,19 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             // C++ compiles the same way: the cell replays cmake's compile command through a
             // clib recipe, whose `cxx` lines reactos-link runs with the cxx.<arch>.flags template.
             let mut src = obj_source(&cmake_dir, obj);
+            if let Some(lib) = sibling_object_lib(obj, target, &cmtext) {
+                if !src.exists() {
+                    return Err(Error::new(format!(
+                        "{target}: {lib}'s {name} has no source"
+                    )));
+                }
+                let s = rel(root, &src)?;
+                match cell.sibling_shims.iter_mut().find(|(l, _)| *l == lib) {
+                    Some((_, v)) => v.push(s),
+                    None => cell.sibling_shims.push((lib, vec![s])),
+                }
+                continue;
+            }
             if let Some(m) = re(r"\.dir/((?:__/)+.*)\.obj$").captures(obj) {
                 src = cmake_dir.join(m[1].replace("__/", "../"));
                 cell.foreign.push(rel(root, &src)?);
@@ -2213,6 +2226,21 @@ pub fn spec_imported_exports(path: &Path) -> Result<std::collections::BTreeSet<S
 }
 
 /// Resolve the object path under its target directory, preserving source subdirectories.
+/// The OBJECT library, other than the target itself, whose object dir `obj` is in, when
+/// the module's own CMakeLists defines it (`add_library(shdocvw_sublib OBJECT`).
+fn sibling_object_lib(obj: &str, target: &str, cmtext: &str) -> Option<String> {
+    let lib = re(r"/CMakeFiles/([^/]+)\.dir/").captures(obj)?[1].to_owned();
+    if lib == target
+        || !re(&format!(
+            r"add_library\(\s*{}\s+OBJECT\b",
+            regex::escape(&lib)
+        ))
+        .is_match(cmtext)
+    {
+        return None;
+    }
+    Some(lib)
+}
 pub fn obj_source(cmake_dir: &Path, obj: &str) -> PathBuf {
     let path = re(r"/CMakeFiles/[^/]+\.dir/(.+)\.obj$")
         .captures(obj)
@@ -2449,5 +2477,25 @@ mod multi_body_tests {
         assert_ne!(obj_key(a), obj_key(b));
         assert_eq!(obj_key(a), "client/i386/fiber.S.obj");
         assert_eq!(obj_key("x/libfoo.a"), "libfoo.a");
+    }
+}
+
+#[cfg(test)]
+mod sibling_tests {
+    use super::sibling_object_lib;
+
+    #[test]
+    fn a_sibling_object_library_is_named_only_when_this_cmakelists_defines_it() {
+        let text = "add_library(shdocvw_sublib OBJECT\n    CFavBand.cpp)\n";
+        let obj = "dll/win32/shdocvw/CMakeFiles/shdocvw_sublib.dir/CFavBand.cpp.obj";
+        assert_eq!(
+            sibling_object_lib(obj, "shdocvw", text).as_deref(),
+            Some("shdocvw_sublib")
+        );
+        // The target's own objects, and an object library defined elsewhere, are not.
+        let own = "dll/win32/shdocvw/CMakeFiles/shdocvw.dir/shdocvw_main.c.obj";
+        assert_eq!(sibling_object_lib(own, "shdocvw", text), None);
+        let other = "sdk/lib/x/CMakeFiles/gcc_ssp_x.dir/ssp.c.obj";
+        assert_eq!(sibling_object_lib(other, "shdocvw", text), None);
     }
 }

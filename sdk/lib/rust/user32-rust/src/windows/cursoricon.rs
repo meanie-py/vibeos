@@ -3239,6 +3239,27 @@ pub unsafe extern "system" fn LookupIconIdFromDirectory(
 pub unsafe extern "system" fn LookupIconIdFromDirectoryEx(
     presbits: PBYTE,
     fIcon: BOOL,
+    cxDesired: core::ffi::c_int,
+    cyDesired: core::ffi::c_int,
+    Flags: UINT,
+) -> core::ffi::c_int {
+    // The C wraps the whole implementation in SEH "to gracefully handle any PE
+    // resource corruption case in a simple way".
+    match ntdll_sys::seh::try_except_all(|| {
+        lookup_icon_id_from_directory(presbits, fIcon, cxDesired, cyDesired, Flags)
+    }) {
+        Ok(id) => id,
+        Err(_) => {
+            ERR!("Invalid resource (0x%p)\n", presbits);
+            0
+        }
+    }
+}
+
+/// LookupIconIdFromDirectoryEx's body, run under its catch.
+unsafe fn lookup_icon_id_from_directory(
+    presbits: PBYTE,
+    fIcon: BOOL,
     mut cxDesired: core::ffi::c_int,
     mut cyDesired: core::ffi::c_int,
     Flags: UINT,

@@ -4115,7 +4115,14 @@ pub unsafe extern "system" fn RegSetValueExW(
         let pwsData = lpData as PWSTR;
 
         let idx = (cbData as usize) / core::mem::size_of::<u16>();
-        if *pwsData.add(idx - 1) != 0 && *pwsData.add(idx) == 0 {
+        // Peeking one WCHAR past cbData may fault; the C catches that and
+        // keeps cbData as given ("do not fail if we fault where we were told
+        // not to go").
+        let grow = ntdll_sys::seh::try_except_all(|| {
+            *pwsData.add(idx - 1) != 0 && *pwsData.add(idx) == 0
+        })
+        .unwrap_or(false);
+        if grow {
             cbData += core::mem::size_of::<u16>() as DWORD;
         }
     }

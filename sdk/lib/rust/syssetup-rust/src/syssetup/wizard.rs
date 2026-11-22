@@ -3098,7 +3098,7 @@ unsafe extern "C" fn RegisterDlls(
         &mut Context,
     ) == 0
     {
-        // DPRINT removed
+        DPRINT1!("No RegistrationPhase2 section found\n");
         return GetLastError();
     }
 
@@ -3110,12 +3110,12 @@ unsafe extern "C" fn RegisterDlls(
         core::ptr::null_mut(),
     ) == 0
     {
-        // DPRINT removed
+        DPRINT1!("Unable to retrieve section name\n");
         return GetLastError();
     }
 
     DllCount = SetupGetLineCountW(hSysSetupInf, SectionName.as_ptr());
-    // DPRINT removed
+    DPRINT!("SectionName %S DllCount %ld\n", SectionName.as_ptr(), DllCount);
     if DllCount < 0 {
         return (STATUS_NOT_FOUND) as u32;
     }
@@ -3128,22 +3128,35 @@ unsafe extern "C" fn RegisterDlls(
     // IFilterMapper2 -- and this worker thread never initialised it, so each one failed
     // with CO_E_NOTINITIALIZED (upstream 588c5df465e). regsvr32 brackets the call the same way.
     let HrCoInit = CoInitialize(core::ptr::null_mut());
+    if HrCoInit < 0 {
+        DPRINT1!("CoInitialize failed with 0x%08lx; COM-based registration will fail\n", HrCoInit);
+    }
 
-    if SetupInstallFromInfSectionW(
-        GetParent(RegistrationData.hwndDlg),
-        hSysSetupInf,
-        w!("RegistrationPhase2") as PCWSTR,
-        (SPINST_REGISTRY | ((SPINST_REGISTERCALLBACKAWARE) as i32) as u32 | SPINST_REGSVR) as u32,
-        core::ptr::null_mut(),
-        core::ptr::null(),
-        0,
-        Some(RegistrationNotificationProc),
-        &mut RegistrationData as *mut _ as PVOID,
-        core::ptr::null_mut(),
-        core::ptr::null_mut(),
-    ) == 0
-    {
-        Error = GetLastError();
+    // A DLL's DllRegisterServer that faults is caught and reported as the
+    // exception's Win32 error, as the C's _SEH2_EXCEPT does.
+    let data = &mut RegistrationData as *mut _ as PVOID;
+    let parent = GetParent(RegistrationData.hwndDlg);
+    match ntdll_sys::seh::try_except_all(|| {
+        SetupInstallFromInfSectionW(
+            parent,
+            hSysSetupInf,
+            w!("RegistrationPhase2") as PCWSTR,
+            (SPINST_REGISTRY | ((SPINST_REGISTERCALLBACKAWARE) as i32) as u32 | SPINST_REGSVR) as u32,
+            core::ptr::null_mut(),
+            core::ptr::null(),
+            0,
+            Some(RegistrationNotificationProc),
+            data,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        )
+    }) {
+        Ok(0) => Error = GetLastError(),
+        Ok(_) => {}
+        Err(code) => {
+            DPRINT!("Catching exception\n");
+            Error = RtlNtStatusToDosError(code) as DWORD;
+        }
     }
 
     if HrCoInit >= 0 {

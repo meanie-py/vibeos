@@ -566,18 +566,20 @@ pub unsafe extern "system" fn ShellDimScreen(
         return E_FAIL;
     }
 
-    // _SEH2_TRY around the out-pointer writes: under USE_DUMMY_PSEH the C
-    // handler was dead code; validate the pointers instead (the handler's hr
-    // was E_INVALIDARG, with the same AddRef/Release-to-zero teardown).
-    if pUnknown.is_null() || hWindow.is_null() {
+    // The C writes the caller's out-pointers under _SEH2_TRY; a bad pointer
+    // answers E_INVALIDARG and tears the window down (AddRef, then Release to
+    // zero). A null check alone missed non-null garbage, so catch for real.
+    let wrote = ntdll_sys::seh::try_except_all(|| {
+        // The C stores this into hr and overwrites it with S_OK on the next line.
+        let _ = CDimmedWindow_QueryInterface(pWindow as *mut c_void, &IID_IUnknown, pUnknown);
+        *hWindow = (*pWindow).m_hwnd;
+    });
+    if wrote.is_err() {
         let mut refcount = CDimmedWindow_AddRef(pWindow as *mut c_void);
         while refcount != 0 {
             refcount = CDimmedWindow_Release(pWindow as *mut c_void);
         }
         return E_INVALIDARG;
     }
-
-    let _hr = CDimmedWindow_QueryInterface(pWindow as *mut c_void, &IID_IUnknown, pUnknown);
-    *hWindow = (*pWindow).m_hwnd;
     S_OK
 }

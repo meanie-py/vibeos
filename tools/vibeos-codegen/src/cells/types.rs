@@ -128,6 +128,12 @@ pub struct Cell {
     /// (fusion_common holds fusion.spec's): reactos-link `Linker::spec_stubs_from`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub stub_specs: Vec<(String, String)>,
+    /// (OBJECT library, sources) a module links by `$<TARGET_OBJECTS:<lib>>` from its own
+    /// CMakeLists (shdocvw_sublib). The library stays, with its own usage (atl_classes) and
+    /// flags, and the cell replays ITS compile: folded into `<t>_shims`, its C++ compiled
+    /// without ATL's include dirs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sibling_shims: Vec<(String, Vec<String>)>,
 }
 impl Default for Cell {
     fn default() -> Self {
@@ -179,6 +185,7 @@ impl Default for Cell {
             shell_less: false,
             no_module_type: false,
             stub_specs: Vec::new(),
+            sibling_shims: Vec::new(),
         }
     }
 }

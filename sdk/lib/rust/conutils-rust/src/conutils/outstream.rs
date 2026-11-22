@@ -438,15 +438,20 @@ pub unsafe extern "C" fn ConMsgPuts(
     dwFlags |= FORMAT_MESSAGE_IGNORE_INSERTS;
     dwFlags &= !FORMAT_MESSAGE_ARGUMENT_ARRAY;
 
-    dwLength = FormatMessageW(
-        dwFlags,
-        lpSource,
-        dwMessageId,
-        dwLanguageId,
-        core::ptr::addr_of_mut!(lpMsgBuf) as *mut u16,
-        0,
-        core::ptr::null_mut(),
-    );
+    // An invalid lpSource faults inside FormatMessage; the C swallows it and
+    // prints nothing (dwLength stays 0).
+    dwLength = ntdll_sys::seh::try_except_all(|| {
+        FormatMessageW(
+            dwFlags,
+            lpSource,
+            dwMessageId,
+            dwLanguageId,
+            core::ptr::addr_of_mut!(lpMsgBuf) as *mut u16,
+            0,
+            core::ptr::null_mut(),
+        )
+    })
+    .unwrap_or(0);
 
     Len = dwLength as i32;
 
@@ -485,15 +490,20 @@ pub unsafe extern "C" fn ConMsgPrintf2V(
     dwFlags |= FORMAT_MESSAGE_IGNORE_INSERTS;
     dwFlags &= !FORMAT_MESSAGE_ARGUMENT_ARRAY;
 
-    dwLength = FormatMessageW(
-        dwFlags,
-        lpSource,
-        dwMessageId,
-        dwLanguageId,
-        core::ptr::addr_of_mut!(lpMsgBuf) as *mut u16,
-        0,
-        core::ptr::null_mut(),
-    );
+    // An invalid lpSource faults inside FormatMessage; the C swallows it and
+    // prints nothing (dwLength stays 0).
+    dwLength = ntdll_sys::seh::try_except_all(|| {
+        FormatMessageW(
+            dwFlags,
+            lpSource,
+            dwMessageId,
+            dwLanguageId,
+            core::ptr::addr_of_mut!(lpMsgBuf) as *mut u16,
+            0,
+            core::ptr::null_mut(),
+        )
+    })
+    .unwrap_or(0);
 
     Len = dwLength as i32;
 

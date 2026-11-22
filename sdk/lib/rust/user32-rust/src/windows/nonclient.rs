@@ -220,9 +220,11 @@ pub unsafe extern "system" fn AdjustWindowRectEx(
         return RealAdjustWindowRectEx(lpRect, dwStyle, bMenu, dwExStyle);
     }
 
-    // _SEH2_TRY { ... } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {} — DUMMY_PSEH: direct call.
+    // The C catches a faulting themed hook and returns what Ret held.
     if let Some(f) = guah.AdjustWindowRectEx {
-        Ret = f(lpRect as LPRECTL, dwStyle, bMenu, dwExStyle);
+        if let Ok(r) = ntdll_sys::seh::try_except_all(|| f(lpRect as LPRECTL, dwStyle, bMenu, dwExStyle)) {
+            Ret = r;
+        }
     }
 
     EndUserApiHook();
@@ -263,9 +265,11 @@ pub unsafe extern "system" fn DrawCaption(
         return NtUserDrawCaption(hWnd, hDC, lprc as LPCRECTL, uFlags);
     }
 
-    // _SEH2_TRY { ... } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {} — DUMMY_PSEH: direct call.
+    // The C catches a faulting themed hook and returns what Ret held.
     if let Some(f) = guah.DrawCaption {
-        Ret = f(hWnd, hDC, lprc as LPCRECTL, uFlags);
+        if let Ok(r) = ntdll_sys::seh::try_except_all(|| f(hWnd, hDC, lprc as LPCRECTL, uFlags)) {
+            Ret = r;
+        }
     }
 
     EndUserApiHook();
