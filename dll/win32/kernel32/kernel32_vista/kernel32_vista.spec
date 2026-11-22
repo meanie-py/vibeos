@@ -45,7 +45,7 @@
 @ stdcall GetSystemDefaultLocaleName(ptr long)
 @ stdcall GetSystemPreferredUILanguages(long ptr wstr ptr)
 @ stdcall GetThreadPreferredUILanguages(long ptr wstr ptr)
-@ stdcall GetThreadUILanguage()
+@ stdcall GetThreadUILanguage() kernel32.GetThreadUILanguage
 @ stdcall GetUILanguageInfo(long wstr wstr ptr ptr)
 @ stdcall GetUserDefaultLocaleName(wstr long)
 @ stdcall GetUserPreferredUILanguages(long ptr wstr ptr)

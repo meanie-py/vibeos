@@ -553,7 +553,7 @@ unsafe extern "system" fn Window_accHitTest(iface: *mut IAccessible, x: LONG, y:
     let mut hr: HRESULT;
     let mut rect: RECT = core::mem::zeroed();
 
-    DPRINT1!("(%p)->(%ld %ld %p)\n", This, x, y, v);
+    TRACE!("(%p)->(%ld %ld %p)\n", This, x, y, v);
 
     (*v).n1.n2.vt = VT_EMPTY as VARTYPE;
     if GetClientRect((*This).hwnd, &raw mut rect) == 0 {

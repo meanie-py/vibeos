@@ -765,14 +765,14 @@ pub unsafe extern "system" fn HalpDriverEntry(
         // C: DriverObject->DriverExtension->AddDevice = HalpAddDevice;
         // bindgen's AddDevice is Option<unsafe extern "stdcall" fn(...)> — i386 NTAPI.
         (*(*DriverObject).DriverExtension).AddDevice =
-            Some(core::mem::transmute(HalpAddDevice as usize));
+            Some(HalpAddDevice);
 
         (*DriverObject).MajorFunction[IRP_MJ_PNP as usize] =
-            Some(core::mem::transmute(HalpDispatchPnp as usize));
+            Some(HalpDispatchPnp);
         (*DriverObject).MajorFunction[IRP_MJ_POWER as usize] =
-            Some(core::mem::transmute(HalpDispatchPower as usize));
+            Some(HalpDispatchPower);
         (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL as usize] =
-            Some(core::mem::transmute(HalpDispatchWmi as usize));
+            Some(HalpDispatchWmi);
 
         let mut target_device: PDEVICE_OBJECT = core::ptr::null_mut();
         let status = IoReportDetectedDevice(

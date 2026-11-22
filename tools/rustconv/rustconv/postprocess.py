@@ -1976,12 +1976,30 @@ def drop_pseh_macro_externs(code: str) -> str:
 
 
 _WINE_SEH_MARKER = r"(?:__TRY|__ENDTRY|__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)"
+_WINE_SEH_LET = r"(?:let\s+(?:mut\s+)?\w+\s*(?::\s*[\w:]+\s*)?=\s*)?"
+# The try-side markers are nothing at runtime: dropped.
 _WINE_SEH_STMT_RE = re.compile(
-    rf"^[ \t]*(?:let\s+(?:mut\s+)?\w+\s*(?::\s*[\w:]+\s*)?=\s*)?{_WINE_SEH_MARKER}\s*;[ \t]*\n",
+    rf"^[ \t]*{_WINE_SEH_LET}(?:__TRY|__ENDTRY)\s*;[ \t]*\n",
+    re.M,
+)
+# A HANDLER marker statement followed by a bare block: that block IS the handler, so it takes
+# the guard the C compiles to. Dropping the marker instead ran every handler unconditionally:
+# crypt32 shipped 11 functions that always failed with STATUS_ACCESS_VIOLATION.
+_WINE_SEH_HANDLER_STMT = rf"^[ \t]*{_WINE_SEH_LET}(?:__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)\s*;[ \t]*\n"
+_WINE_SEH_HANDLER_BLOCK_RE = re.compile(
+    rf"{_WINE_SEH_HANDLER_STMT}(?:[ \t]*\n)*([ \t]*)\{{",
+    re.M,
+)
+# ...or by a handler the model already guarded (`if __EXCEPT_PAGE_FAULT {`): the statement is
+# redundant. Followed by anything else, it is left in place and fails to compile.
+_WINE_SEH_HANDLER_BEFORE_IF_RE = re.compile(
+    rf"{_WINE_SEH_HANDLER_STMT}(?=(?:[ \t]*\n)*[ \t]*if\b)",
     re.M,
 )
 _WINE_SEH_IF_RE = re.compile(r"\bif\s+(?:__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)\s*\{")
-_WINE_SEH_EXPR_RE = re.compile(r"\b(?:__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)\b")
+# An operand (`|| __EXCEPT_PAGE_FAULT as c_int != 0`), never a leftover statement: that one
+# must stay a compile error, not become `_SEH2_Volatile0;`.
+_WINE_SEH_EXPR_RE = re.compile(r"\b(?:__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)\b(?!\s*;)")
 
 
 def lower_wine_seh_markers(code: str) -> str:
@@ -1992,13 +2010,16 @@ def lower_wine_seh_markers(code: str) -> str:
     guard (sdk/lib/pseh/dummy.c never assigns it). When the fact seal hid them behind
     placeholders (crypt32, 2026-11-08), the model kept them as marker statements
     (`let _ = __TRY;`, `__ENDTRY;`) or as the handler's condition (`if __EXCEPT_PAGE_FAULT {`).
-    Neither compiles. A marker statement is dropped, since the C statement it stood for is
-    nothing at runtime. A handler condition becomes the guard the C compiles to. Anything else
-    is left in place so it fails to compile loudly.
+    Neither compiles. A `__TRY`/`__ENDTRY` statement is dropped: it is nothing at runtime. A
+    handler marker GUARDS what follows it: a following bare block, or the model's own
+    `if __EXCEPT_PAGE_FAULT {`, becomes `if _SEH2_Volatile0 != 0 {`. Anything else is left in
+    place so it fails to compile loudly.
     """
     if not re.search(rf"\b{_WINE_SEH_MARKER}\b", code):
         return code
     code = _WINE_SEH_STMT_RE.sub("", code)
+    code = _WINE_SEH_HANDLER_BLOCK_RE.sub(r"\1if _SEH2_Volatile0 != 0 {", code)
+    code = _WINE_SEH_HANDLER_BEFORE_IF_RE.sub("", code)
     code = _WINE_SEH_IF_RE.sub("if _SEH2_Volatile0 != 0 {", code)
     return _WINE_SEH_EXPR_RE.sub("_SEH2_Volatile0", code)
 

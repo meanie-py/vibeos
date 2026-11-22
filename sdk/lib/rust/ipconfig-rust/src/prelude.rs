@@ -89,7 +89,7 @@ extern "system" {
     pub fn DhcpAcquireParameters(Name: PWSTR) -> DWORD; // iphlpapi-rust/src/prelude.rs
     pub fn DhcpCApiCleanup(); // dhcpcsvc-rust/src/dhcpcsvc/dhcpcsvc.rs
     pub fn DhcpCApiInitialize(Version: LPDWORD) -> DWORD; // dhcpcsvc-rust/src/dhcpcsvc/dhcpcsvc.rs
-    pub fn DhcpHandlePnPEvent(Unknown1: DWORD, Unknown2: DWORD, AdapterName: PWSTR, Unknown4: DWORD, Unknown5: DWORD,) -> DWORD; // dhcpcsvc-rust/src/dhcpcsvc/dhcpcsvc.rs
+    pub fn DhcpHandlePnPEvent(Unknown1: DWORD, Unknown2: DWORD, AdapterName: PWSTR, PnpEvent: *mut DHCP_PNP_EVENT, Unknown5: DWORD,) -> DWORD; // dhcpcsvc-rust/src/dhcpcsvc/dhcpcsvc.rs
     pub fn DhcpReleaseParameters(AdapterName: PWSTR) -> u32; // dhcpcsvc-rust/src/dhcpcsvc/dhcpcsvc.rs
     pub fn DnsFlushResolverCache() -> i32; // dnsapi-rust/src/dnsapi/query.rs
     pub fn DnsGetCacheDataTable(DnsCache: *mut *mut DNS_CACHE_ENTRY,) -> i32; // dnsapi-rust/src/dnsapi/query.rs

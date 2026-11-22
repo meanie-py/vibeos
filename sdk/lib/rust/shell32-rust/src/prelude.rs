@@ -526,12 +526,12 @@ macro_rules! ARRAY_SIZE {
         (($a).len()) as u32
     };
 }
-/// shellutils.h:88 `#define FAILED_UNEXPECTEDLY(hr) FAILED(hr)` in a non-debug build — the
-/// debug spelling only adds a trace, so the VALUE is `FAILED`.
+/// shellutils.h:88 `FAILED_UNEXPECTEDLY(hr)`: the shared port, which keeps the C's
+/// "Unexpected failure" trace (the header's `#if 1` arm, so shipping behaviour).
 #[macro_export]
 macro_rules! FAILED_UNEXPECTEDLY {
     ($hr:expr) => {
-        (($hr) as $crate::island::HRESULT) < 0
+        $crate::__win32macros::FAILED_UNEXPECTEDLY!(($hr) as $crate::island::HRESULT)
     };
 }
 /// minwindef.h:188 `#define MAKELONG(wLow, wHigh) ((LONG)(((WORD)((DWORD_PTR)(wLow) & 0xffff)) |

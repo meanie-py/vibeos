@@ -3,21 +3,23 @@
 **Status: QUEST (2026-07-10, lane `smp-bringup`, worktree
 `~/Projects/os-playground/vibeos-smp`). Handoff doc — read fully before starting.**
 
-## RESUME HERE (2026-11-21)
+## RESUME HERE (2026-11-22)
 
-**crypt32-rust compiles on all three arches: `port check crypt32` = 0 errors (was 205)**, with
-no further spend (still $2.16 total). The wip branch is merged into this one and sent to land.
-Hand fixes are banked (`~/vibeos-rust-staging/port/crypt32/hand/`, 69 items), so
-`port replay` keeps them. Two edits sit inside the generated `port macros` block of
-`prelude.rs`: `POINTER_ALIGN_DWORD_PTR` casts to `usize`, and `TRACE_DATA_BLOB` casts
-`cbData` to `c_int`. A `port macros` re-run would revert them, so re-apply them by hand.
-Next (all builds, so after the 2026-11-21 disk hold lifts):
-1. Cohab flip, then the cargo cell, then `vibeos-cli gate`.
-2. Build the `crypt32_c` oracle on one arch (`c_oracle.cmake`, never built yet).
-3. Grade `crypt32winetest` (the Rust) against `crypt32winetestc` (the C as `crypt3c.dll`).
-Done since: crate-repair's `transmute_source_abi` rule now flips a transmute source type's
-`extern "C"` to `"system"` when the function handed to it is `system`. Here that was 47 sites,
-fixed by hand before the rule existed.
+**crypt32 is Rust and graded.** All 27 TUs are flipped to crypt32-rust and cargo-linked
+(`crypt32-cargo`, BODY_CRATE). Wine's suite matches the pre-flip C in all 15 suites on i386,
+amd64 and arm64 (rust-port-status.md has the row). Still $2.16 total; hand fixes are banked in
+`~/vibeos-rust-staging/port/crypt32/hand/`. Two edits sit inside prelude.rs's generated
+`port macros` block (`POINTER_ALIGN_DWORD_PTR` casts to `usize`; `TRACE_DATA_BLOB` casts
+`cbData` to `c_int`), and a `port macros` re-run would revert them.
+Also landed with it: shlwapi re-graded with the fixed oracle (`rename_module_refs.py`); the
+`DPRINT1`→Wine-macro integrate pass, applied to 15 more crates; crate-repair's
+`transmute_source_abi`; profile_derive's define ordering.
+Owed:
+- Done: `scan_sizeof_vs_c` and `scan_compare_const_vs_c` (vibeos-lint) gate the sizeof-swap
+  and permuted-constant classes from crypt32 (10 and 11 reviewed findings baselined). The
+  constant rule found one real divergence on its first run (concfg's REG_SZ retry, fixed).
+- shlwapi's C++ tail and cell (below).
+- The older smp items (below).
 
 ### Earlier RESUME HERE (2026-11-08, fleet wind-down)
 

@@ -77,6 +77,37 @@ static void dump_process_threads(DWORD pid)
         SAY("  no threads of %lu in the thread snapshot\n", (unsigned long)pid);
 }
 
+/* Each thread of `pid`: context switches and CPU per second over `ms`. A thread that is
+ * blocked in GetMessage in every PC sample yet costs CPU is being woken often; this says
+ * how often, and which thread. */
+static void report_thread_rates(DWORD pid, DWORD ms)
+{
+    DWORD tids[64];
+    struct sd_thread_view a[64], b;
+    int n = 0;
+    THREADENTRY32 te = { sizeof te };
+    HANDLE s = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+    if (s == INVALID_HANDLE_VALUE)
+        return;
+    for (BOOL k = Thread32First(s, &te); k && n < 64; k = Thread32Next(s, &te))
+        if (te.th32OwnerProcessID == pid)
+            tids[n++] = te.th32ThreadID;
+    CloseHandle(s);
+    for (int i = 0; i < n; i++)
+        sd_sample_thread(pid, tids[i], &a[i]);
+    Sleep(ms);
+    for (int i = 0; i < n; i++) {
+        sd_sample_thread(pid, tids[i], &b);
+        if (!a[i].found || !b.found)
+            continue;
+        SAY("  rate pid=%lu tid=%lu: %lu switches/s, kernel %lld ms/s, user %lld ms/s, state=%lu wait=%lu\n",
+            (unsigned long)pid, (unsigned long)tids[i],
+            (unsigned long)((b.switches - a[i].switches) * 1000ull / ms),
+            (b.ktime - a[i].ktime) / 10 / (LONGLONG)ms, (b.utime - a[i].utime) / 10 / (LONGLONG)ms,
+            b.state, b.wait);
+    }
+}
+
 #define MAX_TREE 64
 
 /* The child and every process it started, transitively. A multi-process program (Chrome's
@@ -1083,6 +1114,22 @@ int main(void)
                          line);
             continue;
         }
+        /* "idle SECS": do nothing for SECS, then report who used the CPU meanwhile and
+         * sample the busiest process (idlewatch: what an untouched desktop runs). */
+        if (!strncmp(line, "idle ", 5))
+        {
+            DWORD secs = (DWORD)atoi(line + 5);
+            ++total; /* an entry that ran: a list of only idles is not an empty list */
+            emit("[APITEST-SWEEP] idle %lus\n", (unsigned long)secs);
+            Sleep(secs * 1000u);
+            DWORD hog = sd_report_process_cpu("idle", 12);
+            if (hog) {
+                SAY("cputime: sampling the busiest process, pid=%lu\n", (unsigned long)hog);
+                report_thread_rates(hog, 5000);
+                dump_process_threads(hog);
+            }
+            continue;
+        }
         if (!strncmp(line, "memwatch ", 9))
         {
             g_memwatch_ms = (DWORD)atoi(line + 9) * 1000u;
@@ -1117,6 +1164,14 @@ int main(void)
     }
     fclose(f);
 
+    {
+        /* Which processes kept the CPU busy, and what the busiest one is doing. */
+        DWORD hog = sd_report_process_cpu("end", 12);
+        if (hog) {
+            SAY("cputime: sampling the busiest process, pid=%lu\n", (unsigned long)hog);
+            dump_process_threads(hog);
+        }
+    }
     emit("[APITEST-SWEEP] done total=%d launched=%d subtests=%d failstart=%d timeouts=%d\n",
              total, launched, subtests, failstart, timeouts);
     return 0;

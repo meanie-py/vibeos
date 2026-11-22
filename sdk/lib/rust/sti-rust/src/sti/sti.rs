@@ -191,7 +191,7 @@ unsafe extern "system" fn stillimagew_SetDeviceValue(
 
 unsafe extern "system" fn stillimagew_GetSTILaunchInformation(iface: *mut IStillImageW, pwszDeviceName: LPWSTR, pdwEventCode: *mut DWORD, pwszEventName: LPWSTR) -> HRESULT {
     let mut This: *mut stillimage = impl_from_IStillImageW(iface);
-    DPRINT1!("(%p, %p, %p, %p): stub\n", This, pwszDeviceName, pdwEventCode, pwszEventName);
+    FIXME!("(%p, %p, %p, %p): stub\n", This, pwszDeviceName, pdwEventCode, pwszEventName);
     return E_NOTIMPL;
 }
 
@@ -337,7 +337,7 @@ unsafe extern "system" fn stillimagew_LaunchApplicationForDevice(
 
 unsafe extern "system" fn stillimagew_SetupDeviceParameters(iface: *mut IStillImageW, pDevInfo: PSTI_DEVICE_INFORMATIONW) -> HRESULT {
     let This: *mut stillimage = impl_from_IStillImageW(iface);
-    DPRINT1!("(%p, %p): stub\n", This, pDevInfo);
+    FIXME!("(%p, %p): stub\n", This, pDevInfo);
     return E_NOTIMPL;
 }
 

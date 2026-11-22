@@ -7800,6 +7800,23 @@ unsafe extern "C" fn Wow64Manual_NtUserMessageCall(a: *mut ULONG) -> NTSTATUS {
             );
             lParamArg = core::ptr::addr_of_mut!(Payload64) as *mut u8 as PVOID;
         }
+        else if Msg == WOW64_MC_WM_COPYDATA
+        {
+            /* COPYDATASTRUCT { ULONG_PTR dwData; DWORD cbData; PVOID lpData; } is 12 bytes
+             * on the guest and 24 on the host; win32k sizes the copy from the host struct
+             * and then copies cbData bytes from lpData, a guest address that is valid as
+             * is in this process. Both ULONG_PTR and the pointer ZERO-extend: the generated
+             * WowCbUp_tagCOPYDATASTRUCT sign-extends them, which turns a large-address-aware
+             * guest's buffer at or above 2 GiB into a kernel-half address. taskmgr.exe lost
+             * a WM_COPYDATA every refresh (every 2 s) to the failure below. */
+            let g = lp32 as ULONG_PTR as *const u32;
+            let h = core::ptr::addr_of_mut!(Payload64) as *mut u8;
+            core::ptr::write_bytes(h, 0, 24);
+            (h as *mut u64).write_unaligned(g.read_unaligned() as u64); // dwData
+            (h.add(8) as *mut u32).write_unaligned(g.add(1).read_unaligned()); // cbData
+            (h.add(16) as *mut u64).write_unaligned(g.add(2).read_unaligned() as u64); // lpData
+            lParamArg = h as PVOID;
+        }
         else if Wow64pMcPayloadNeedsPointee(Msg) != 0
             && Wow64pMcGoesThroughMsgMemory(FNID) != 0
         {

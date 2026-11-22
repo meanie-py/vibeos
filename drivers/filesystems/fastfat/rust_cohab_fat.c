@@ -408,15 +408,21 @@ const LONG  __c_UserVolumeOpen __asm__(FF_SYM("UserVolumeOpen")) = (LONG)(UserVo
  * straight back into this function. The compiler folded the infinite tail-recursion
  * to `b .` (branch-to-self), so the FIRST real fastfat spinlock acquire
  * (FatPrepareWriteDirectoryFile during FatCreateNewFile, reached once smss starts
- * creating files) spun forever at 100% CPU. On this UP build acquiring a spinlock is
- * just a raise to DISPATCH_LEVEL — exactly what ntoskrnl's own arm64
- * KeAcquireSpinLockRaiseToDpc (ke/arm64/stubs.c) does. */
+ * creating files) spun forever at 100% CPU.
+ *
+ * It used to take no lock at all (raise to DISPATCH_LEVEL only), on every arch. On amd64 and
+ * arm64 that also captured the DDK's KeAcquireSpinLock macro, which expands to this function,
+ * so every fastfat spinlock was a raise and nothing more: FatData.GeneralSpinLock and the
+ * overflow-queue lock did not exclude another CPU. Only i386 needs a definition (there
+ * KeAcquireSpinLockRaiseToDpc is a macro, not an export), and the HAL's KfAcquireSpinLock is
+ * the real acquire. amd64 and arm64 link ntoskrnl's real KeAcquireSpinLockRaiseToDpc. */
+#if defined(_M_IX86)
 #undef KeAcquireSpinLockRaiseToDpc
 KIRQL KeAcquireSpinLockRaiseToDpc(PKSPIN_LOCK SpinLock)
 {
-    (void)SpinLock;
-    return KfRaiseIrql(DISPATCH_LEVEL);
+    return KfAcquireSpinLock(SpinLock);
 }
+#endif
 
 /* RtlCopyMemory is a #define for memcpy; the Rust translation referenced it as a
  * stdcall import (@12 on i386). Provide it (-mrtd decorates on i386; bare elsewhere). */

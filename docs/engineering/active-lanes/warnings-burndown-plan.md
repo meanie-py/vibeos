@@ -9,26 +9,57 @@ the genuine-signal warnings are audited and fixed, and — critically — the fi
 **stay** fixed (no blanket re-suppression). Incremental, per-crate, each cluster gated ×3
 and landed on its own so conflicts stay localized and every step is revertible.
 
-## RESUME HERE (updated 2026-11-21 — active again after the fleet resume)
+## RESUME HERE (updated 2026-11-22)
 
-**Where it is.** Merged master c7749b5e75f and warm-built all three arches. Census
-(`--allow-stale`): **471 sites, 0 UB, 7 LOGIC (all 7 in msvcrt-homebrew/audio crates), 464
-NOISE** over 548 fresh arch:crate units. **54 units (18 crates x 3 arches) are uncovered**: their
-final binaries were artifact-store hits, so cargo never ran for them and their fingerprints
-still date from 2026-11-02 while their sources were edited on 11-07/11-08. That is a census
-coverage gap, not stale source. Closing it means either a cold rebuild of those cells or teaching
-the census to get diagnostics without a store-hit build.
-**Sent to the integrator (2026-11-21), with msvcrt-homebrew's OK:** 1b66b757ce5 moves the
-mmixer/wdmaud/wdmaud_drv `DPRINT!` to `DBG_TYPECHECK!`, fixes the 7 rotted arguments it surfaced
-(union fields bindgen nests in `__bindgen_anon_N`), and empties the scan_swallowing_debug_macro
-baseline. a0cf3f25638 clears 6 of the 7 LOGIC sites (2 dead `ctype-tables` cfgs in crt-shared,
-an unread init in crt-startup, the `__iob_func` clashing extern in msvcrt-crt, 2 dead
-`usermode_mixer` cfgs in wdmaud_drv).
-**Left:** the 7th LOGIC site, mmixer controls.rs:2699
-`unpredictable_function_pointer_comparisons`, mirrors the C's `MixerEventRoutine ==` compare.
-`core::ptr::fn_addr_eq` is the explicit spelling with the same semantics; that needs an OK from
-msvcrt-homebrew first. The owner asked that the non_snake_case/non_upper_case NOISE stay as it
-is, since the names mirror the C. The 54-unit store-hit coverage gap above is also still open.
+**The census was reading only part of the tree, and so was the UB deny gate.** Both read
+only build-<arch> fingerprints. Bodies a cell builds privately compile in
+`sdk/lib/rust/target/body-storage-v1-<arch>-*` (cell links in `cell-link-v1-<arch>-*`). The
+artifact store serves other bodies without cargo ever running in the lane, and it keeps no
+diagnostics. Fixed:
+- 38e8ab37488: the census reads the cell dirs. `--recheck-store-hits` re-derives
+  store-served bodies with `cargo check`, using the action's exact argv/RUSTFLAGS
+  (target `sdk/lib/rust/target/census-check-<arch>`, outside every dir the gate reads; hard
+  error on an unreadable ref/action; the census prints a GAP line counting those units).
+- a7da0e4b5c5: rust_ub_deny reads the same dirs from one shared list,
+  `tools/vibeos-lint/src/binary/cargo_unit_dirs.json`.
+- c85b740529a + 2d8387398a7: the UB tier that surfaced, freeldr-rust's 145
+  static_mut_refs (BIOS 132, uefi/rosload 13), fixed to 0 in all 7 real configs.
+- c9ce3fb107d: function_casts_as_integer ranked LOGIC.
+**Full census (warm 3-arch, 2026-11-22, before the freeldr fixes):** 1717 sites, UB 132
+(all freeldr, now fixed), LOGIC 233, NOISE 1193, UNCLASSIFIED 159 (function_casts_as_integer,
+now LOGIC). The earlier "0 UB / 7 LOGIC" was the visible slice only.
+**Next:** re-run `python3 tools/rust_warning_census.py --recheck-store-hits build-i386
+build-amd64 build-arm64` on a warm build, then work the LOGIC tier. It is roughly 260 sites:
+the 233 above minus freeldr's static_mut_refs, which counted as UB, not LOGIC, plus the 159
+casts. They are mostly kernel bodies (freeldr, hal, ntoskrnl, ex, fsrtl, iomgr):
+unexpected_cfgs 71, clashing_extern 67, unused_assignments 62, function_casts_as_integer
+159, unreachable_code 11, forgetting_copy_types 11. The casts are worth a static check of
+their own (fn signature vs callback slot type). Control-plane owes the root fix: the store
+publishes diagnostics.jsonl per action, in a cold-rebuild window.
+**function_casts_as_integer probe (2026-11-22, not landed).** The `Some(F)` probe compiled
+`Some(core::mem::transmute(F as usize))` (102 sites, 12 files) as `Some(F)`, so rustc checks
+each function against its slot. Patch:
+`~/vibeos-rust-staging/warnings-burndown/fcai-some-probe.patch`. arm64 clean. Findings on
+x86, in hal-rust:
+- REAL but latent: KdMapPhysicalMemory64 / KdUnmapVirtualAddress get the 3-arg
+  `HalpMapPhysicalMemory64Vista` / `HalpUnmapVirtualAddressVista` (busemul.rs:50/52,
+  bussupp.rs:1554/1556), while our island's slot type is the 2-arg pre-VISTASP1 typedef
+  (xdk/kdtypes.h:147-169). On i386 stdcall a caller would underpay the callee's pop. No
+  caller goes through the table today; fstub-rust's halstub.rs:367 already wraps a 2-arg
+  stub. Fix: settle the HAL's NTDDI against the island, then either the island's typedef
+  or a 2-arg shim like fstub's.
+- Nominal (same ABI, and the C casts the same way): dma.rs `*mut _ADAPTER_OBJECT` vs
+  `*mut _DMA_ADAPTER` (x14); bussupp.rs/bushndlr.rs `_PCI_SLOT_NUMBER` (4-byte union) vs
+  ULONG. They want a typed fn-pointer cast instead of the usize round trip, so the next
+  real mismatch cannot hide among them.
+- pic_pic.rs's 32 "system vs stdcall" errors on i686-pc-windows-gnu are present without the
+  probe too. That is an artifact of checking a kernel body on the user-mode triple (the
+  real i386 kernel cell is i686-kernel).
+Next: land the typed casts for the nominal ones, fix the Kd pair, then probe the
+non-`Some` shapes (`F as ULONG` into TSS Eip etc. are deliberate address uses).
+
+**Use JSON, not `--message-format short`, to count a lint:** short format names the
+lint only on its first note per crate, so grepping it for a lint name reads 0.
 
 **State.** The 2026-10-17 census read **2,349 sites (48 UB, 1,072 LOGIC, 1,229 NOISE)**,
 down from 7,215. It covered 695 fresh units; the only stale one was reactos-link, a host tool

@@ -3642,10 +3642,10 @@ pub unsafe extern "system" fn DriverEntry(
 
     // Set entry points (siblings are extern "system"; wrap with transmute to satisfy
     // the bindgen fn-ptr Option types — ABI is identical per arch).
-    hwInitializationData.comm.HwInitialize = Some(core::mem::transmute(AtapiHwInitialize as usize));
-    hwInitializationData.comm.HwResetBus = Some(core::mem::transmute(AtapiResetController as usize));
-    hwInitializationData.comm.HwStartIo = Some(core::mem::transmute(AtapiStartIo as usize));
-    hwInitializationData.comm.HwInterrupt = Some(core::mem::transmute(AtapiInterrupt as usize));
+    hwInitializationData.comm.HwInitialize = Some(AtapiHwInitialize);
+    hwInitializationData.comm.HwResetBus = Some(AtapiResetController);
+    hwInitializationData.comm.HwStartIo = Some(AtapiStartIo);
+    hwInitializationData.comm.HwInterrupt = Some(AtapiInterrupt);
 
     hwInitializationData.comm.DeviceExtensionSize = core::mem::size_of::<HW_DEVICE_EXTENSION>() as ULONG;
     hwInitializationData.comm.SpecificLuExtensionSize = core::mem::size_of::<HW_LU_EXTENSION>() as ULONG;
@@ -3654,7 +3654,7 @@ pub unsafe extern "system" fn DriverEntry(
     hwInitializationData.comm.MapBuffers = TRUE as BOOLEAN;
 
     hwInitializationData.comm.NumberOfAccessRanges = 2;
-    hwInitializationData.comm.HwFindAdapter = Some(core::mem::transmute(AtapiReadArgumentString as usize));
+    hwInitializationData.comm.HwFindAdapter = Some(AtapiReadArgumentString);
     ScsiPortInitialize(
         DriverObject,
         RegistryPath as PVOID,
@@ -3754,7 +3754,7 @@ pub unsafe extern "system" fn DriverEntry(
     // Set PnP-specific API
     if WinVer_Id() > WinVer_NT {
         hwInitializationData.comm.NeedPhysicalAddresses = TRUE as BOOLEAN;
-        hwInitializationData.w2k.HwAdapterControl = Some(core::mem::transmute(AtapiAdapterControl as usize));
+        hwInitializationData.w2k.HwAdapterControl = Some(AtapiAdapterControl);
     }
 
     if ReEnter == 0 {
@@ -3915,12 +3915,12 @@ pub unsafe extern "system" fn DriverEntry(
                     }
                 }
                 if WinVer_WDM_Model == 0 {
-                    hwInitializationData.comm.HwFindAdapter = Some(core::mem::transmute(UniataFindBusMasterController as usize));
+                    hwInitializationData.comm.HwFindAdapter = Some(UniataFindBusMasterController);
                 } else {
                     hwInitializationData.comm.HwFindAdapter = if c == 0 {
-                        Some(core::mem::transmute(UniataFindCompatBusMasterController1 as usize))
+                        Some(UniataFindCompatBusMasterController1)
                     } else {
-                        Some(core::mem::transmute(UniataFindCompatBusMasterController2 as usize))
+                        Some(UniataFindCompatBusMasterController2)
                     };
                 }
                 hwInitializationData.comm.NumberOfAccessRanges = 6;
@@ -3968,7 +3968,7 @@ pub unsafe extern "system" fn DriverEntry(
         if IgnoreNativePci != 0 {
             break;
         }
-        hwInitializationData.comm.HwFindAdapter = Some(core::mem::transmute(UniataFindBusMasterController as usize));
+        hwInitializationData.comm.HwFindAdapter = Some(UniataFindBusMasterController);
         hwInitializationData.comm.NumberOfAccessRanges = 6;
         hwInitializationData.comm.AdapterInterfaceType = _INTERFACE_TYPE_PCIBus as INTERFACE_TYPE;
 
@@ -4024,7 +4024,7 @@ pub unsafe extern "system" fn DriverEntry(
     }
 
     hwInitializationData.comm.NumberOfAccessRanges = 2;
-    hwInitializationData.comm.HwFindAdapter = Some(core::mem::transmute(AtapiFindIsaController as usize));
+    hwInitializationData.comm.HwFindAdapter = Some(AtapiFindIsaController);
 
     static L_IGNOREISA: [u16; 10] = wlit::<10>(b"IgnoreIsa");
     static L_IGNOREMCA: [u16; 10] = wlit::<10>(b"IgnoreMca");

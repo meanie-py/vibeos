@@ -223,14 +223,14 @@ unsafe extern "C" fn read_file_to_bstr(file_name: *const WCHAR) -> BSTR {
         core::ptr::null_mut(),
     );
     if file == INVALID_HANDLE_VALUE {
-        DPRINT1!("Could not open file\n");
+        FIXME!("Could not open file\n");
         return core::ptr::null_mut();
     }
 
     if GetFileSizeEx(file, core::ptr::addr_of_mut!(file_size)) == 0
         || file_size.QuadPart == 0
     {
-        DPRINT1!("Empty file\n");
+        FIXME!("Empty file\n");
         CloseHandle(file);
         return core::ptr::null_mut();
     }
@@ -251,7 +251,7 @@ unsafe extern "C" fn read_file_to_bstr(file_name: *const WCHAR) -> BSTR {
     }
     CloseHandle(file);
     if r == 0 {
-        DPRINT1!("Read filed\n");
+        FIXME!("Read filed\n");
         HeapFree(
             GetProcessHeap(),
             0,

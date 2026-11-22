@@ -460,7 +460,13 @@ SystemProcessTestWorker(PVOID StartContext)
         Context->Bases[Index] = Base;
         if ((Index % 10) == 0 && (Context->AllocationType != MEM_COMMIT || Index < COMMIT_CHECKED_CHUNKS))
         {
-            if (Context->AllocationType == MEM_COMMIT)
+            /* As StressTesting does: a FAILED commit left Base NULL, so expect the
+             * access violation. The loop's Status test comes after this body, so the
+             * allocation that hits STATUS_COMMITMENT_LIMIT is checked here too; when
+             * that landed on a multiple of 10 the test wrote to NULL expecting success
+             * (.c:90/.c:76/.c:93, an arm64 "intermittent": its commit limit ends the
+             * 3 MiB thread within the 50 checked chunks). */
+            if (Context->AllocationType == MEM_COMMIT && NT_SUCCESS(Status))
             {
                 CheckBufferReadWrite(Base, TestString, TestStringSize, STATUS_SUCCESS);
             }

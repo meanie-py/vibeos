@@ -168,7 +168,7 @@ unsafe fn WinLdrPortPutByte(PortId: ULONG, Byte: UCHAR) {
 }
 
 unsafe fn WinLdrPortGetByte(PortId: u32, Byte: *mut u8) -> u8 {
-    (CpGetByte(Port.as_mut_ptr().add(PortId as usize), Byte, 1u8, 0u8) == CP_GET_SUCCESS) as u8
+    (CpGetByte((*&raw mut Port).as_mut_ptr().add(PortId as usize), Byte, 1u8, 0u8) == CP_GET_SUCCESS) as u8
 }
 
 unsafe fn WinLdrPortPollOnly(PortId: u32) -> u8 {
@@ -184,7 +184,7 @@ unsafe fn WinLdrPortPollOnly(PortId: u32) -> u8 {
 
 #[no_mangle]
 pub unsafe extern "C" fn WinLdrEnableFifo(PortId: ULONG, Enable: BOOLEAN) {
-    CpEnableFifo((*Port.as_ptr().add(PortId as usize)).Address, Enable);
+    CpEnableFifo((*(*&raw const Port).as_ptr().add(PortId as usize)).Address, Enable);
 }
 
 #[no_mangle]

@@ -2780,7 +2780,7 @@ pub unsafe extern "C" fn CRYPT_IsCertificateSelfSigned(cert: *const CERT_CONTEXT
                         status = CERT_TRUST_HAS_NAME_MATCH_ISSUER;
                     }
                 } else {
-                    DPRINT1!("no supported name type in authority key id2\n");
+                    FIXME!("no supported name type in authority key id2\n");
                     ret = (FALSE as i32);
                 }
             } else if (*info).KeyId.cbData != 0 {
@@ -5899,7 +5899,7 @@ unsafe extern "C" fn CRYPT_CopyChainToElement(
     mut iElement: DWORD,
 ) -> *mut CertificateChain {
     let mut copy: *mut CertificateChain = CryptMemAlloc(
-        ::core::mem::size_of::<CERT_CHAIN_CONTEXT>() as ULONG,
+        ::core::mem::size_of::<CertificateChain>() as ULONG,
     ) as *mut CertificateChain;
     if !copy.is_null() {
         (*copy).ref_ = 1 as LONG;

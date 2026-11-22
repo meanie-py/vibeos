@@ -775,14 +775,28 @@ macro_rules! DBG_TYPECHECK {
     }};
 }
 
-/// shellutils.h:88 `FAILED_UNEXPECTEDLY(hr)` -- `_ROS_FAILED_HELPER`, i.e. `FAILED(hr)` plus a
-/// debug trace of the failing expression. The VALUE is `FAILED`; the trace is not carried.
+/// shellutils.h:88 `FAILED_UNEXPECTEDLY(hr)` -- `_ROS_FAILED_HELPER`: `FAILED(hr)`, and on
+/// failure the trace `<file>:<line>: Unexpected failure (<expr>)=<hr>.` The header selects this
+/// arm with `#if 1`, so it is the shipping behaviour, not a debug extra; every port of it as a
+/// bare `< 0` dropped the one line that says which shell call failed. The C sends it through
+/// OutputDebugStringA; DbgPrint is where that lands without a debugger, and this crate links
+/// no kernel32. The file is the Rust one.
 /// C also calls it as a bare statement for the trace alone (fontext, stobject), so the value
 /// goes through a binding: a bare `<` in statement position is an `unused_must_use`.
 #[macro_export]
 macro_rules! FAILED_UNEXPECTEDLY {
     ($hr:expr $(,)?) => {{
-        let failed: bool = (($hr) as i32) < 0;
+        let __hr: i32 = ($hr) as i32;
+        let failed: bool = __hr < 0;
+        if failed {
+            $crate::dprint::DbgPrint(
+                b"%s:%d: Unexpected failure (%s)=%08x.\n\0".as_ptr() as *const core::ffi::c_char,
+                concat!(file!(), "\0").as_ptr() as *const core::ffi::c_char,
+                line!(),
+                concat!(stringify!($hr), "\0").as_ptr() as *const core::ffi::c_char,
+                __hr,
+            );
+        }
         failed
     }};
 }

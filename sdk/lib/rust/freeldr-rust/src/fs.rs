@@ -203,7 +203,7 @@ unsafe fn DumpFileTable() {
     DbgPrint(b"\n== Dumping ARC files table ==\n\0".as_ptr() as PCHAR);
 
     i = 0;
-    while i < (core::mem::size_of_val(&FileData) / core::mem::size_of::<FILEDATA>()) as ULONG {
+    while i < (core::mem::size_of_val(&*&raw const FileData) / core::mem::size_of::<FILEDATA>()) as ULONG {
         let pFileData: *mut FILEDATA = &mut FileData[i as usize];
         let FuncTable: *const DEVVTBL;
 
@@ -433,7 +433,7 @@ pub unsafe extern "C" fn ArcOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: PULONG
 unsafe fn FsGetDeviceById(DeviceId: ULONG) -> *mut DEVICE {
     let mut pEntry: PLIST_ENTRY = DeviceListHead.Flink;
     
-    while pEntry != &DeviceListHead as *const _ as *mut _ {
+    while pEntry != &raw const DeviceListHead as *const _ as *mut _ {
         let pDevice = (pEntry as *mut u8).offset(-(core::mem::offset_of!(DEVICE, ListEntry) as isize)) as *mut DEVICE;
         if (*pDevice).DeviceId == DeviceId {
             return pDevice;
@@ -493,7 +493,7 @@ pub unsafe extern "C" fn ArcRead(
     if IS_VALID_FILEID(FileId) == 0 {
         return EBADF;
     }
-    ((*(*FileData.as_ptr().add(FileId as usize)).FuncTable).Read.unwrap())(FileId, Buffer, N, Count)
+    ((*(*(*&raw const FileData).as_ptr().add(FileId as usize)).FuncTable).Read.unwrap())(FileId, Buffer, N, Count)
 }
 
 #[no_mangle]
@@ -501,7 +501,7 @@ pub unsafe extern "C" fn ArcSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, Se
     if IS_VALID_FILEID(FileId) == 0 {
         return EBADF;
     }
-    ((*(*FileData.as_mut_ptr().add(FileId as usize)).FuncTable).Seek.unwrap())(FileId, Position, SeekMode)
+    ((*(*(*&raw mut FileData).as_mut_ptr().add(FileId as usize)).FuncTable).Seek.unwrap())(FileId, Position, SeekMode)
 }
 
 #[no_mangle]
@@ -513,7 +513,7 @@ pub unsafe extern "C" fn ArcGetFileInformation(
     if IS_VALID_FILEID(FileId) == 0 {
         return EBADF;
     }
-    ((*(*FileData.as_ptr().add(FileId as usize)).FuncTable).GetFileInformation.unwrap())(
+    ((*(*(*&raw const FileData).as_ptr().add(FileId as usize)).FuncTable).GetFileInformation.unwrap())(
         FileId,
         Information,
     )
@@ -688,7 +688,7 @@ pub unsafe extern "C" fn FsGetServiceName(FileId: u32) -> PCWSTR {
     if IS_VALID_FILEID(FileId) == 0 {
         return core::ptr::null();
     }
-    (*(*FileData.as_ptr().add(FileId as usize)).FuncTable).ServiceName
+    (*(*(*&raw const FileData).as_ptr().add(FileId as usize)).FuncTable).ServiceName
 }
 
 #[no_mangle]
@@ -709,7 +709,7 @@ pub unsafe extern "C" fn FsGetDeviceSpecific(FileId: ULONG) -> PVOID {
 
 #[no_mangle]
 pub unsafe extern "C" fn FsGetDeviceId(FileId: ULONG) -> ULONG {
-    if FileId >= (core::mem::size_of_val(&FileData) / core::mem::size_of::<FILEDATA>()) as ULONG {
+    if FileId >= (core::mem::size_of_val(&*&raw const FileData) / core::mem::size_of::<FILEDATA>()) as ULONG {
         return INVALID_FILE_ID;
     }
     FileData[FileId as usize].DeviceId
@@ -729,17 +729,17 @@ pub unsafe extern "C" fn FsInit() {
     // FrLdrHeapAlloc to read back NULL and hang the freelist walker.
     // See feedback_write_bytes_element_count.md.
     core::ptr::write_bytes(
-        FileData.as_mut_ptr() as *mut u8,
+        (*&raw mut FileData).as_mut_ptr() as *mut u8,
         0,
-        core::mem::size_of_val(&FileData),
+        core::mem::size_of_val(&*&raw const FileData),
     );
     i = 0;
-    while i < FileData.len() as u32 {
+    while i < (*&raw const FileData).len() as u32 {
         FileData[i as usize].DeviceId = INVALID_FILE_ID;
         i += 1;
     }
 
-    InitializeListHead(&mut DeviceListHead);
+    InitializeListHead(&raw mut DeviceListHead);
 }
 
 
