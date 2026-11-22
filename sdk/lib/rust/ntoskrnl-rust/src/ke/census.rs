@@ -629,7 +629,7 @@ pub unsafe extern "system" fn KiStartSyncCensus() {
         // Same transmute-by-address pattern psmgr.rs uses for Phase1Initialization:
         // bindgen's PKSTART_ROUTINE spelling differs per arch; the symbol's real
         // convention is extern "system" (NTAPI) on all three.
-        core::mem::transmute(CensusThread as usize),
+        Some(CensusThread),
         core::ptr::null_mut(),
     );
     if status < 0 {
@@ -688,7 +688,7 @@ unsafe fn freeze_selftest() {
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        core::mem::transmute(FreezeSelftestTicker as usize),
+        Some(FreezeSelftestTicker),
         core::ptr::null_mut(),
     );
     if status < 0 {

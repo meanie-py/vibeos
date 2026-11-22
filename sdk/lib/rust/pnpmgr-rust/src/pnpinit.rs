@@ -525,7 +525,7 @@ pub unsafe extern "system" fn IopInitializePlugPlayServices() -> NTSTATUS {
         &mut PnpManagerDriverName,
         PNP_MANAGER_NAME.as_ptr() as *mut u16,
     );
-    Status = IoCreateDriver(&mut PnpManagerDriverName, core::mem::transmute(PnpRootDriverEntry as usize));
+    Status = IoCreateDriver(&mut PnpManagerDriverName, Some(PnpRootDriverEntry));
     if Status < 0 {
         KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, Status as ULONG_PTR, 0, 0, 0);
     }

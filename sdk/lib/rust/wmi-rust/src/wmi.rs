@@ -101,7 +101,7 @@ pub unsafe extern "system" fn WmiInitialize() -> BOOLEAN {
         return 0u8;
     }
 
-    let status = IoCreateDriver(&mut driver_name as *mut _ as *mut _UNICODE_STRING, core::mem::transmute(WmipDriverEntry as usize));
+    let status = IoCreateDriver(&mut driver_name as *mut _ as *mut _UNICODE_STRING, Some(WmipDriverEntry));
     if status < 0 {
         return 0u8;
     }

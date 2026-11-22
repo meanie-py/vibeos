@@ -405,7 +405,7 @@ unsafe fn RawReadWriteDeviceControl(
 
     (*IoGetNextIrpStackLocation(Irp)).Flags |= SL_OVERRIDE_VERIFY_VOLUME as u8;
 
-    IoSetCompletionRoutine(Irp, core::mem::transmute(RawCompletionRoutine as usize), core::ptr::null_mut(), 1u8, 1u8, 1u8);
+    IoSetCompletionRoutine(Irp, Some(RawCompletionRoutine), core::ptr::null_mut(), 1u8, 1u8, 1u8);
 
     Status = IoCallDriver((*Vcb).TargetDeviceObject, Irp);
     Status
@@ -1117,19 +1117,19 @@ pub unsafe extern "system" fn RawFsDriverEntry(
     (*RawCdromDeviceObject).Flags |= DO_DIRECT_IO;
     (*RawTapeDeviceObject).Flags |= DO_DIRECT_IO;
 
-    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = core::mem::transmute(RawDispatch as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_CLEANUP as usize] = core::mem::transmute(RawDispatch as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = core::mem::transmute(RawDispatch as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_READ as usize] = core::mem::transmute(RawDispatch as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_WRITE as usize] = core::mem::transmute(RawDispatch as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_QUERY_INFORMATION as usize] = core::mem::transmute(RawDispatch as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_SET_INFORMATION as usize] = core::mem::transmute(RawDispatch as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION as usize] = core::mem::transmute(RawDispatch as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_FILE_SYSTEM_CONTROL as usize] = core::mem::transmute(RawDispatch as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = core::mem::transmute(RawDispatch as usize);
+    (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] = Some(RawDispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_CLEANUP as usize] = Some(RawDispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] = Some(RawDispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_READ as usize] = Some(RawDispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_WRITE as usize] = Some(RawDispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_QUERY_INFORMATION as usize] = Some(RawDispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_SET_INFORMATION as usize] = Some(RawDispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_QUERY_VOLUME_INFORMATION as usize] = Some(RawDispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_FILE_SYSTEM_CONTROL as usize] = Some(RawDispatch);
+    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL as usize] = Some(RawDispatch);
 
-    (*DriverObject).MajorFunction[IRP_MJ_SHUTDOWN as usize] = core::mem::transmute(RawShutdown as usize);
-    (*DriverObject).DriverUnload = core::mem::transmute(RawUnload as usize);
+    (*DriverObject).MajorFunction[IRP_MJ_SHUTDOWN as usize] = Some(RawShutdown);
+    (*DriverObject).DriverUnload = Some(RawUnload);
 
     IoRegisterFileSystem(RawDiskDeviceObject);
     IoRegisterFileSystem(RawCdromDeviceObject);

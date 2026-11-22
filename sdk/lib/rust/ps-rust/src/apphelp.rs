@@ -408,9 +408,9 @@ pub unsafe extern "system" fn ApphelpCacheInitialize() -> NTSTATUS {
         ExInitializeResourceLite(core::ptr::addr_of_mut!(ApphelpCacheLock));
         RtlInitializeGenericTableAvl(
             core::ptr::addr_of_mut!(ApphelpShimCache),
-            core::mem::transmute(ApphelpShimCacheCompareRoutine as usize),
-            core::mem::transmute(ApphelpShimCacheAllocateRoutine as usize),
-            core::mem::transmute(ApphelpShimCacheFreeRoutine as usize),
+            Some(ApphelpShimCacheCompareRoutine),
+            Some(ApphelpShimCacheAllocateRoutine),
+            Some(ApphelpShimCacheFreeRoutine),
             core::ptr::null_mut(),
         );
         InitializeListHead(core::ptr::addr_of_mut!(ApphelpShimCacheAge) as PLIST_ENTRY);

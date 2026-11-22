@@ -147,8 +147,11 @@ pub unsafe extern "system" fn WmipCloseMethod(
     _Process: PEPROCESS,
     _Object: PVOID,
     _GrantedAccess: ACCESS_MASK,
-    _ProcessHandleCount: ULONG,
-    _SystemHandleCount: ULONG,
+    // OB_CLOSE_METHOD (ndk/obtypes.h:194) passes both counts as ULONG_PTR (bindgen's, which is
+    // u64 on 64-bit; the crate-local ULONG_PTR is usize, a different type), as does the C
+    // definition; this was ULONG, hidden behind a `transmute(f as usize)` into the slot.
+    _ProcessHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
+    _SystemHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
 ) {
     let _Process = opaque_ptr(_Process);
     let _Object = opaque_ptr(_Object);
@@ -174,9 +177,9 @@ pub unsafe extern "system" fn WmipInitializeGuidObjectType() -> NTSTATUS {
     object_type_initializer.SecurityRequired = 1u8;
     object_type_initializer.DefaultNonPagedPoolCharge = core::mem::size_of::<WMIP_GUID_OBJECT>() as ULONG;
     // SAFETY: transmute needed because extern "system" != extern "stdcall"/"C" in Rust's type system
-    object_type_initializer.SecurityProcedure = core::mem::transmute(WmipSecurityMethod as usize);
-    object_type_initializer.DeleteProcedure = core::mem::transmute(WmipDeleteMethod as usize);
-    object_type_initializer.CloseProcedure = core::mem::transmute(WmipCloseMethod as usize);
+    object_type_initializer.SecurityProcedure = Some(WmipSecurityMethod);
+    object_type_initializer.DeleteProcedure = Some(WmipDeleteMethod);
+    object_type_initializer.CloseProcedure = Some(WmipCloseMethod);
 
     let status = ObCreateObjectType(
         &raw mut GUID_OBJECT_NAME,

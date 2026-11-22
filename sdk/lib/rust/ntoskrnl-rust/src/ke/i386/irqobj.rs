@@ -80,9 +80,9 @@ unsafe fn KiGetVectorDispatch(Vector: ULONG, Dispatch: PDISPATCH_INFO) {
         (KiStartUnexpectedRange as ULONG_PTR)
         + ((Entry as ULONG - PRIMARY_VECTOR_BASE) * KiUnexpectedEntrySize) as ULONG_PTR);
 
-    (*Dispatch).InterruptDispatch = core::mem::transmute(KiInterruptDispatch as usize);
+    (*Dispatch).InterruptDispatch = Some(core::mem::transmute::<unsafe extern "fastcall" fn(PKTRAP_FRAME, PKINTERRUPT) -> !, _>(KiInterruptDispatch));
     (*Dispatch).FloatingDispatch = None;
-    (*Dispatch).ChainedDispatch = core::mem::transmute(KiChainedDispatch as usize);
+    (*Dispatch).ChainedDispatch = Some(core::mem::transmute::<unsafe extern "fastcall" fn(PKTRAP_FRAME, PKINTERRUPT) -> !, _>(KiChainedDispatch));
     (*Dispatch).FlatDispatch = core::ptr::null_mut();
 
     Current = KeQueryInterruptHandler(Vector);
