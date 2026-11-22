@@ -654,6 +654,71 @@ def cell_target_dirs(repo: Path, arch: str) -> list[Path]:
     return sorted(dirs)
 
 
+# --- which rustc could have emitted a lint ---------------------------------------------
+#
+# A lint exists only in the rustc versions that have it. function_casts_as_integer is in
+# the nightly the i386 kernel cells build with (.rust-nightly, `-Z build-std`,
+# i686-kernel) and NOT in the pinned stable (rust-toolchain.toml) every other cell uses,
+# so a count of it over stable units is a vacuous 0. A count reported as "0 sites"
+# from `cargo check` on stable once went out as a verified result
+# (2026-11-22). `--lint` therefore asks each toolchain whose units it read whether it
+# knows the lint, reports N/A for those that do not, and refuses outright when none do.
+
+
+class LintListError(Exception):
+    """A toolchain's lint list could not be read. Never treated as "lint unknown"."""
+
+
+def toolchain_names(repo: Path) -> dict[str, str]:
+    """{"stable": <rust-toolchain.toml channel>, "nightly": <.rust-nightly>} for this tree."""
+    out = {}
+    tc = repo / "rust-toolchain.toml"
+    m = re.search(r'(?m)^channel\s*=\s*"([^"]+)"', tc.read_text()) if tc.is_file() else None
+    if m:
+        out["stable"] = m.group(1)
+    nightly = repo / ".rust-nightly"
+    if nightly.is_file() and nightly.read_text().strip():
+        out["nightly"] = nightly.read_text().strip()
+    return out
+
+
+def unit_toolchain(fpdir: Path) -> str:
+    """`nightly` for a unit built on a custom target JSON, `stable` otherwise. A unit sits at
+    `<target dir>/<triple>/release/.fingerprint/<unit>`, or `<target dir>/release/..` for
+    the host. Only the build-std kernel cells use a non-builtin triple (i686-kernel), and
+    they run the nightly."""
+    triple = fpdir.parents[2].name
+    builtin = set(TRIPLE_ARCH) | {"x86_64-unknown-linux-gnu", "i686-unknown-linux-gnu"}
+    if triple not in builtin and re.match(r"(i686|x86_64|aarch64)-", triple):
+        return "nightly"
+    return "stable"
+
+
+_LINT_ROW = re.compile(r"^\s+([a-z0-9][a-z0-9-]*)\s+(allow|warn|deny|forbid)\s")
+
+
+@functools.lru_cache(maxsize=8)
+def known_lints(toolchain: str) -> frozenset[str]:
+    """The lint names `rustc -W help` lists under RUSTUP_TOOLCHAIN=<toolchain>."""
+    try:
+        cp = subprocess.run(
+            ["rustc", "-W", "help"],
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, RUSTUP_TOOLCHAIN=toolchain),
+        )
+    except OSError as e:
+        raise LintListError(f"rustc for {toolchain}: {e}") from e
+    names = {
+        m.group(1).replace("-", "_") for m in map(_LINT_ROW.match, cp.stdout.splitlines()) if m
+    }
+    if cp.returncode != 0 or not names:
+        raise LintListError(
+            f"`rustc -W help` under {toolchain} failed (rc={cp.returncode}): {cp.stderr[-300:]}"
+        )
+    return frozenset(names)
+
+
 def arch_of_build_dir(d: Path) -> str:
     m = re.search(r"build-(i386|amd64|arm64)$", str(d.resolve()))
     return m.group(1) if m else d.name
@@ -706,6 +771,8 @@ def main(argv: list[str]) -> int:
     fresh_all: set[str] = set()
     checked_all: set[str] = set()
     actions_run = 0
+    units_by_toolchain: dict[str, int] = defaultdict(int)
+    lint_repo: Path | None = None
     from_logs = False
     for log in args.logs:
         if log.is_dir():
@@ -722,6 +789,10 @@ def main(argv: list[str]) -> int:
                 print(f"NO CARGO UNITS under {log}: not a build dir?", file=sys.stderr)
                 return 2
             fresh, stale = coverage(units)
+            lint_repo = repo
+            for u in units:
+                if not u.stale:
+                    units_by_toolchain[unit_toolchain(u.fpdir)] += 1
             if args.recheck_store_hits and stale:
                 try:
                     rechecked, n = recheck(log, repo, arch, set(stale), store_root())
@@ -729,6 +800,7 @@ def main(argv: list[str]) -> int:
                     print(f"STORE RECHECK FAILED ({arch}): {e}", file=sys.stderr)
                     return 2
                 actions_run += n
+                units_by_toolchain["stable"] += len(rechecked)
                 for crate, crate_sites in rechecked.items():
                     stale.pop(crate, None)
                     checked_all.add(f"{arch}:{crate}")
@@ -790,6 +862,30 @@ def main(argv: list[str]) -> int:
         print()
         return 0
 
+    if args.lint and lint_repo is not None:
+        names = toolchain_names(lint_repo)
+        knows: dict[str, bool] = {}
+        try:
+            for tc in sorted(units_by_toolchain):
+                knows[tc] = args.lint in known_lints(names.get(tc, tc))
+        except LintListError as e:
+            print(f"LINT LIST FAILED: {e}", file=sys.stderr)
+            return 2
+        if not any(knows.values()):
+            print(
+                f"`{args.lint}` is unknown to every toolchain these units were built with "
+                f"({', '.join(f'{tc}={names.get(tc, tc)}' for tc in sorted(knows))}): "
+                "any count would be a vacuous 0. Check the lint's name.",
+                file=sys.stderr,
+            )
+            return 2
+        for tc, known in sorted(knows.items()):
+            if not known:
+                print(
+                    f"N/A (lint `{args.lint}` unknown to {tc} {names.get(tc, tc)}): its "
+                    f"{units_by_toolchain[tc]} unit(s) cannot report it; the sites below are "
+                    "from the others only."
+                )
     if args.tier or args.lint:
         for s in sites:
             t = tier_of(s.lint) if s.lint else "UNCLASSIFIED"
