@@ -13,7 +13,7 @@ from live in the docs below; this file holds only the lane's state.
 
 ## RESUME HERE (2026-11-21, fleet resumed)
 
-**Done this session:** RESUME items 1-4.
+**Done this session:** RESUME items 1-4, and the i386 `SPECIALPOOL=*` 0x0F.
 - The CD alignment query's err=87 came from scsiport (UniATA's port), not cdrom or CDFS: its
   LUN PDO answered unknown properties with STATUS_INVALID_PARAMETER_1. It now answers
   STATUS_INVALID_DEVICE_REQUEST, which gives Win32 1 like Windows 11 (`e701132fc12`, integrator
@@ -26,13 +26,14 @@ from live in the docs below; this file holds only the lane's state.
 
 - `--tripwire SVCFAIL=<image|*>` logs failing system calls on i386 and arm64 too
   (`svcfail_log` in tripwire.rs, called from each arch's dispatcher).
+- The i386 `SPECIALPOOL=*` 0x0F was the PFN lock held across a pool free in
+  `MmDeleteSectionAssociation`. `SPECIALPOOL=*` now boots on all three arches.
 
 **Next, in order:**
 1. Soak candidate, never run: the amd64 `STATUS_NONEXISTENT_SECTOR` in-page 0x1E. It was seen
    once (hostapps `20261101-123017-7ue7skcb`) and has been clean since; see the roadmap
    registry. Run `./vibeos-cli farm --arches amd64 --minutes 480`, then `farm-report`.
-2. Registry open questions: the i386 `SPECIALPOOL=*` 0x0F (deterministic, so debug it rather
-   than soak it), and arm64 ZwAllocateVirtualMemory's thread order (benign).
+2. Registry open question: arm64 ZwAllocateVirtualMemory's thread order (benign).
 
 **Scratch worktree:** `../vibeos-spbase` (detached, holds nothing unique). Leave it for
 control-plane's prune.

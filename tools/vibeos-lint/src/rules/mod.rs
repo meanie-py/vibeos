@@ -60,6 +60,7 @@ pub mod wide_byte_copy;
 
 pub mod call_arg_swap;
 pub mod comment_swallowed_code;
+pub mod guard_drop_late;
 pub mod extern_arity;
 pub mod formatless_printf;
 pub mod ptr_typedef_cast_read;
@@ -253,6 +254,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(constant_placement::ConstantPlacement),
         Box::new(raising_probes::RaisingProbes),
         Box::new(comment_swallowed_code::CommentSwallowedCode),
+        Box::new(guard_drop_late::GuardDropLate),
         Box::new(formatless_printf::FormatlessPrintf),
         Box::new(ptr_typedef_cast_read::PtrTypedefCastRead),
         Box::new(call_arg_swap::CallArgSwap),
