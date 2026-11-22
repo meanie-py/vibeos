@@ -712,6 +712,15 @@ const MEM_EXECUTE_OPTION_PERMANENT: u32 = 0x8;
 /// Struct size for a policy class (PROCESS_MITIGATION_DEP_POLICY is {DWORD flags;
 /// BOOLEAN Permanent} = 8, every other class is one DWORD of flags = 4; measured with
 /// llvm-mingw on x64 and i386). None = not a class this API accepts.
+/// PROCESS_MITIGATION_POLICY_INFORMATION for ProcessMitigationPolicy (52).
+#[repr(C)]
+struct MitigationPolicyInformation {
+    Policy: i32,
+    Flags: u32,
+}
+const PROCESS_MITIGATION_POLICY_CLASS: u32 = 52;
+const PROCESS_DYNAMIC_CODE_POLICY: i32 = 2;
+
 fn mitigation_policy_size(policy: i32) -> Option<usize> {
     match policy {
         0 => Some(8),
@@ -757,6 +766,21 @@ pub unsafe extern "system" fn GetProcessMitigationPolicy(
     }
 
     ptr::write_bytes(lpBuffer as *mut u8, 0, size);
+    if Policy == PROCESS_DYNAMIC_CODE_POLICY {
+        let mut info = MitigationPolicyInformation { Policy, Flags: 0 };
+        let status = NtQueryInformationProcess(
+            hProcess,
+            PROCESS_MITIGATION_POLICY_CLASS as _,
+            &mut info as *mut _ as PVOID,
+            size_of::<MitigationPolicyInformation>() as ULONG,
+            ptr::null_mut(),
+        );
+        if !NT_SUCCESS(status) {
+            BaseSetLastNTError(status);
+            return FALSE;
+        }
+        ptr::write(lpBuffer as *mut u32, info.Flags);
+    }
     if Policy == 0 {
         let mut exec_flags: ULONG = 0;
         let status = NtQueryInformationProcess(
@@ -806,6 +830,21 @@ pub unsafe extern "system" fn SetProcessMitigationPolicy(
     if Policy == 0 {
         SetLastError(ERROR_NOT_SUPPORTED_);
         return FALSE;
+    }
+    // The dynamic-code policy (ACG) is enforced by the kernel (ps-rust mitigation.rs).
+    if Policy == PROCESS_DYNAMIC_CODE_POLICY {
+        let mut info = MitigationPolicyInformation { Policy, Flags: ptr::read(lpBuffer as *const u32) };
+        let status = NtSetInformationProcess(
+            NtCurrentProcess(),
+            PROCESS_MITIGATION_POLICY_CLASS as _,
+            &mut info as *mut _ as PVOID,
+            size_of::<MitigationPolicyInformation>() as ULONG,
+        );
+        if !NT_SUCCESS(status) {
+            BaseSetLastNTError(status);
+            return FALSE;
+        }
+        return TRUE;
     }
     // Every other class is a one-DWORD flag set that turns restrictions on. A request that
     // turns nothing on matches the state Get reports, so it is accepted as a no-op; a

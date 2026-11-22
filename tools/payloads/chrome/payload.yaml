@@ -53,6 +53,8 @@ binaries:
     dest: bin/flushprobe/flushprobe.exe
   - src: tools/payloads/chrome/gdiprobe-i386.exe
     dest: bin/gdiprobe/gdiprobe32.exe
+  - src: tools/payloads/chrome/acgprobe-{arch}.exe
+    dest: bin/acgprobe/acgprobe.exe
   - src: tools/payloads/chrome/paintprobe-{arch}.exe
     dest: bin/paintprobe/paintprobe.exe
   - src: tools/payloads/chrome/paintprobe-i386.exe
