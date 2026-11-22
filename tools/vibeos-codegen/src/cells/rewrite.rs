@@ -349,13 +349,23 @@ pub fn rewrite_text(cmake: &Path, input: &str, cell: &Cell) -> Result<String> {
                 )));
             }
             let extra = &paths[idx][h.len()..];
-            if extra.iter().any(|(_, branch)| *branch != 0) {
-                return Err(Error::new(format!(
-                    "{}: `{cmd}` on the target is in an elseif/else branch",
-                    cell.target
-                )));
-            }
-            let conditions: Vec<String> = extra.iter().map(|(i, _)| if_raw[*i].clone()).collect();
+            // An elseif()/else() branch is carried as the negation of the branches before it
+            // (libtirpc's `-w` in the else() of `if(MSVC)`).
+            let conditions: Vec<String> = extra
+                .iter()
+                .map(|(i, branch)| {
+                    if *branch == 0 {
+                        Ok(if_raw[*i].clone())
+                    } else {
+                        super::graph::branch_condition(&stmts, *i, *branch).ok_or_else(|| {
+                            Error::new(format!(
+                                "{}: `{cmd}` on the target is in an unreadable if() branch",
+                                cell.target
+                            ))
+                        })
+                    }
+                })
+                .collect::<Result<_>>()?;
             transferred.push((
                 cmd.clone(),
                 raw.clone(),

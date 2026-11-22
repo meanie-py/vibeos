@@ -502,15 +502,14 @@ def test_a_driver_built_under_a_condition_is_a_cell_under_the_same_condition(tmp
     assert guarded.rstrip().endswith("endif()")
 
 
-def test_a_driver_in_an_else_branch_is_refused(tmp_path):
+def test_a_driver_in_an_else_branch_keeps_the_negated_condition(tmp_path):
+    # dbghelp's target is in the else() of `if(NOT CMAKE_CROSSCOMPILING)`: the cell is
+    # guarded by the negation of the branch before it, not refused.
     f = tmp_path / "CMakeLists.txt"
     f.write_text("if(X)\nelse()\n" + DRIVER + "endif()\n")
-    try:
-        g.rewrite_cmake(f, _driver_cell(tmp_path))
-    except g.GenError as exc:
-        assert "else" in str(exc)
-    else:
-        raise AssertionError("an else-branch link was rewritten")
+    out = g.rewrite_cmake(f, _driver_cell(tmp_path))
+    guard = out.index("if(NOT (X))")
+    assert guard < out.index("add_cargo_module(")
 
 
 def test_a_kernel_cell_builds_its_body_on_the_user_triple_and_keeps_every_section():
@@ -1632,9 +1631,12 @@ def test_a_conditional_compile_setting_keeps_its_condition(tmp_path):
     i = out.index("target_compile_options(m_shims PRIVATE /wd4267)")
     assert out.rfind("if(MSVC)", 0, i) != -1
     assert out.rfind('if(ARCH STREQUAL "amd64")', 0, i) > out.rfind("if(MSVC)", 0, i)
+    # In an else() branch, the setting keeps the negation of the branch before it.
     f.write_text(body.replace('    if(ARCH STREQUAL "amd64")\n', "else()\n    if(1)\n"))
-    with pytest.raises(g.GenError, match="elseif/else branch"):
-        g.rewrite_cmake(f, c)
+    out = g.rewrite_cmake(f, c)
+    i = out.index("target_compile_options(m_shims PRIVATE /wd4267)")
+    assert out.rfind("if(NOT (MSVC))", 0, i) != -1
+    assert out.rfind("if(1)", 0, i) > out.rfind("if(NOT (MSVC))", 0, i)
 
 
 def test_a_comment_inside_a_moved_statement_is_not_carried_as_a_dead_source(tmp_path):

@@ -1,5 +1,8 @@
 [workspace]
 members = [
+    "libtirpc-cargo",
+    "dbghelp-cargo",
+    "rapps_com-cargo",
     "filebrowser-cargo",
     "explorer-cargo",
     "rshell-cargo",
