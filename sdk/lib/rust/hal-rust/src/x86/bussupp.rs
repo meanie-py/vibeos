@@ -60,7 +60,7 @@ use crate::x86::sysbus::{HalpGetSystemInterruptVector, HalpTranslateSystemBusAdd
 use crate::x86::isabus::HalpTranslateIsaBusAddress;
 use crate::x86::cmosbus::{HalpcGetCmosData, HalpcSetCmosData};
 #[cfg(not(feature = "minihal"))]
-use crate::x86::memory::{HalpMapPhysicalMemory64Vista, HalpUnmapVirtualAddressVista};
+use crate::x86::memory::{HalpMapPhysicalMemory64, HalpUnmapVirtualAddress};
 use crate::x86::pcr::KeGetCurrentPrcb;
 
 // HalDispatchTable / HalPrivateDispatchTable:
@@ -1550,10 +1550,17 @@ pub unsafe extern "system" fn HalpRegisterKdSupportFunctions() {
             Some(core::mem::transmute(HalpSetupPciDeviceForDebugging as usize));
         HalPrivateDispatchTable.KdReleasePciDeviceforDebugging =
             Some(core::mem::transmute(HalpReleasePciDeviceForDebugging as usize));
-        HalPrivateDispatchTable.KdMapPhysicalMemory64 =
-            Some(core::mem::transmute(HalpMapPhysicalMemory64Vista as usize));
-        HalPrivateDispatchTable.KdUnmapVirtualAddress =
-            Some(core::mem::transmute(HalpUnmapVirtualAddressVista as usize));
+        // Divergence from the C (busemul.c / bussupp.c `#if NTDDI_VERSION >= NTDDI_VISTA`),
+        // which installs the 3-arg Vista routines here. The slot's type in the same
+        // compilation is the 2-arg one: xdk/kdtypes.h gives pKdMapPhysicalMemory64 and
+        // pKdUnmapVirtualAddress `FlushCurrentTLB` only at NTDDI_VISTASP1, and our island has
+        // the 2-arg typedef. A 2-arg caller of a 3-arg stdcall routine underpays its pop on
+        // i386 and leaves the BOOLEAN as garbage elsewhere. The C's own pre-Vista branch
+        // installs these 2-arg wrappers (memory.c: Vista(.., TRUE)), which match the slot.
+        // As plain `Some(f)`, rustc checks the signature, where the old
+        // `transmute(f as usize)` checked nothing.
+        HalPrivateDispatchTable.KdMapPhysicalMemory64 = Some(HalpMapPhysicalMemory64);
+        HalPrivateDispatchTable.KdUnmapVirtualAddress = Some(HalpUnmapVirtualAddress);
         HalPrivateDispatchTable.KdCheckPowerButton =
             Some(core::mem::transmute(HalpCheckPowerButton as usize));
     }
