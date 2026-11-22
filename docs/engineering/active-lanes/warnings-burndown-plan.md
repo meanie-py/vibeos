@@ -9,20 +9,20 @@ the genuine-signal warnings are audited and fixed, and — critically — the fi
 **stay** fixed (no blanket re-suppression). Incremental, per-crate, each cluster gated ×3
 and landed on its own so conflicts stay localized and every step is revertible.
 
-## RESUME HERE (updated 2026-11-08 — PARKED for the fleet wind-down)
+## RESUME HERE (updated 2026-11-21 — active again after the fleet resume)
 
-**Where it stopped.** Everything is landed; the branch has no unlanded commits and the worktree is
-clean. The last landing was the DBG_TYPECHECK work (4deb895455c, master fa600031834, gate
-`/tmp/vibeos-cli/20261102-025324-y6tqx1bl-gate-i386+amd64+arm64` OK on all three arches);
-`scan_swallowing_debug_macro` is live with a 3-entry baseline (mmixer, wdmaud, wdmaud_drv).
-Census after it: **539 sites, 0 UB, 7 LOGIC (all 7 in hot crates: msvcrt-homebrew and audio).**
-About 170 non-hot sites remain, none with a mechanical fix (see "Owed" below).
-**Next step on resume:** merge origin/master, rebuild all three arches, re-run the census, then
-(1) offer the audio lane a tested diff moving mmebuddy-macros-rust and its own macro definitions
-to `DBG_TYPECHECK!` (shrinks the baseline to 0), and (2) coordinate with msvcrt-homebrew on its
-naming warnings, which are most of the hot-crate remainder. Both touch other lanes' crates, so
-ask first.
-
+**Where it is.** Merged master c7749b5e75f and warm-built all three arches. Census
+(`--allow-stale`): **471 sites, 0 UB, 7 LOGIC (all 7 in msvcrt-homebrew/audio crates), 464
+NOISE** over 548 fresh arch:crate units. **54 units (18 crates x 3 arches) are uncovered**: their
+final binaries were artifact-store hits, so cargo never ran for them and their fingerprints
+still date from 2026-11-02 while their sources were edited on 11-07/11-08. That is a census
+coverage gap, not stale source. Closing it means either a cold rebuild of those cells or teaching
+the census to get diagnostics without a store-hit build.
+**Owed:** 1b66b757ce5 (on this branch, NOT yet sent to the integrator) moves the
+mmixer/wdmaud/wdmaud_drv `DPRINT!` to `DBG_TYPECHECK!`, fixes the 7 rotted arguments it surfaced
+(union fields bindgen nests in `__bindgen_anon_N`), and empties the scan_swallowing_debug_macro
+baseline. Those crates belong to msvcrt-homebrew, so it is waiting for that lane's OK (asked
+2026-11-21). The same message offered a tested diff for the 6 CRT LOGIC warnings.
 
 **State.** The 2026-10-17 census read **2,349 sites (48 UB, 1,072 LOGIC, 1,229 NOISE)**,
 down from 7,215. It covered 695 fresh units; the only stale one was reactos-link, a host tool
