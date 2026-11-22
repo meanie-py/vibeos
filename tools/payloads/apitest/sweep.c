@@ -1083,6 +1083,20 @@ int main(void)
                          line);
             continue;
         }
+        /* "idle SECS": do nothing for SECS, then report who used the CPU meanwhile and
+         * sample the busiest process (idlewatch: what an untouched desktop runs). */
+        if (!strncmp(line, "idle ", 5))
+        {
+            DWORD secs = (DWORD)atoi(line + 5);
+            emit("[APITEST-SWEEP] idle %lus\n", (unsigned long)secs);
+            Sleep(secs * 1000u);
+            DWORD hog = sd_report_process_cpu("idle", 12);
+            if (hog) {
+                SAY("cputime: sampling the busiest process, pid=%lu\n", (unsigned long)hog);
+                dump_process_threads(hog);
+            }
+            continue;
+        }
         if (!strncmp(line, "memwatch ", 9))
         {
             g_memwatch_ms = (DWORD)atoi(line + 9) * 1000u;

@@ -169,6 +169,109 @@ static __inline DWORD sd_report_process_cpu(const char *tag, int top)
     return hog;
 }
 
+#if defined(_M_X64) || defined(__x86_64__)
+/* A 32-bit thread under WOW64: its 64-bit context is the WOW64 layer (wow64.dll, win32u
+ * thunks), which says only "in a syscall". Its x86 context (Wow64GetThreadContext, current
+ * at a syscall boundary) and 32-bit stack say which guest code made the call. Modules come
+ * from the guest loader's own list: ProcessWow64Information is the PEB32; PEB32.Ldr 0x0c,
+ * PEB_LDR_DATA32.InLoadOrderModuleList 0x0c, LDR_DATA_TABLE_ENTRY32 DllBase 0x18,
+ * SizeOfImage 0x20, BaseDllName 0x2c (Buffer at 0x30). */
+struct sd_mod32 { DWORD base, size; char name[32]; };
+static int sd_wow64_modules(HANDLE ph, struct sd_mod32 *mods, int max)
+{
+    typedef LONG (NTAPI *qip_fn)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+    qip_fn qip = (qip_fn)GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQueryInformationProcess");
+    ULONG_PTR peb32 = 0;
+    if (!qip || qip(ph, 26 /* ProcessWow64Information */, &peb32, sizeof peb32, NULL) < 0 || !peb32)
+        return 0;
+    DWORD ldr = 0, head, link;
+    SIZE_T n;
+    if (!ReadProcessMemory(ph, (LPCVOID)(peb32 + 0x0c), &ldr, 4, &n) || !ldr)
+        return 0;
+    head = ldr + 0x0c;
+    if (!ReadProcessMemory(ph, (LPCVOID)(ULONG_PTR)head, &link, 4, &n))
+        return 0;
+    int count = 0;
+    while (link && link != head && count < max) {
+        BYTE e[0x34];
+        if (!ReadProcessMemory(ph, (LPCVOID)(ULONG_PTR)link, e, sizeof e, &n))
+            break;
+        WCHAR w[32] = { 0 };
+        USHORT len = *(USHORT *)(e + 0x2c);
+        DWORD buf = *(DWORD *)(e + 0x30);
+        if (len > sizeof w - 2)
+            len = sizeof w - 2;
+        if (buf)
+            ReadProcessMemory(ph, (LPCVOID)(ULONG_PTR)buf, w, len, &n);
+        mods[count].base = *(DWORD *)(e + 0x18);
+        mods[count].size = *(DWORD *)(e + 0x20);
+        stackdump_ascii(w, mods[count].name, sizeof mods[count].name);
+        count++;
+        link = *(DWORD *)e;
+    }
+    return count;
+}
+static void sd_wow64_where(const struct sd_mod32 *mods, int nm, DWORD v, char *out, size_t cap)
+{
+    for (int m = 0; m < nm; m++)
+        if (v >= mods[m].base && v - mods[m].base < mods[m].size) {
+            wsprintfA(out, "%s+0x%lx", mods[m].name, (unsigned long)(v - mods[m].base));
+            return;
+        }
+    (void)cap;
+    out[0] = 0;
+}
+static void sd_wow64_dump(HANDLE ph, HANDLE th, DWORD pid, DWORD tid)
+{
+    typedef BOOL (WINAPI *w64ctx_fn)(HANDLE, PWOW64_CONTEXT);
+    w64ctx_fn get = (w64ctx_fn)GetProcAddress(GetModuleHandleA("kernel32.dll"), "Wow64GetThreadContext");
+    BOOL wow = FALSE;
+    if (!get || !IsWow64Process(ph, &wow) || !wow)
+        return;
+    static struct sd_mod32 mods[96];
+    int nm = sd_wow64_modules(ph, mods, 96);
+    WOW64_CONTEXT c;
+    char pcs[8 * 40] = "", where[64];
+    for (int k = 0; k < 8; k++) {
+        memset(&c, 0, sizeof c);
+        c.ContextFlags = WOW64_CONTEXT_CONTROL;
+        SuspendThread(th);
+        BOOL ok = get(th, &c);
+        ResumeThread(th);
+        if (ok) {
+            sd_wow64_where(mods, nm, c.Eip, where, sizeof where);
+            wsprintfA(pcs + lstrlenA(pcs), " %08lx%s%s", (unsigned long)c.Eip, where[0] ? ":" : "", where);
+        } else {
+            wsprintfA(pcs + lstrlenA(pcs), " (err %lu)", GetLastError());
+        }
+        Sleep(100);
+    }
+    SAY("  x86 pc samples pid=%lu tid=%lu (%d guest modules):%s\n", pid, tid, nm, pcs);
+    memset(&c, 0, sizeof c);
+    c.ContextFlags = WOW64_CONTEXT_CONTROL;
+    SuspendThread(th);
+    BOOL ok = get(th, &c);
+    DWORD stack[256];
+    SIZE_T got = 0;
+    if (ok)
+        for (SIZE_T off = 0; off < sizeof stack; off += 256) {
+            SIZE_T n = 0;
+            if (!ReadProcessMemory(ph, (LPCVOID)(ULONG_PTR)(c.Esp + off), (char *)stack + off, 256, &n) || n != 256)
+                break;
+            got += 256;
+        }
+    ResumeThread(th);
+    int shown = 0;
+    for (SIZE_T i = 0; i < got / 4 && shown < 30; i++) {
+        sd_wow64_where(mods, nm, stack[i], where, sizeof where);
+        if (where[0]) {
+            SAY("  x86 stack +0x%x %08lx %s\n", (unsigned)(i * 4), (unsigned long)stack[i], where);
+            shown++;
+        }
+    }
+}
+#endif
+
 static void dump_thread_body(DWORD pid, DWORD tid)
 {
     MODULEENTRY32W me[128];
@@ -217,6 +320,9 @@ static void dump_thread_body(DWORD pid, DWORD tid)
         Sleep(100);
     }
     SAY("  pc samples:%s\n", pcs);
+#if defined(_M_X64) || defined(__x86_64__)
+    sd_wow64_dump(ph, th, pid, tid);
+#endif
     ctx.ContextFlags = CONTEXT_CONTROL;
     SD_STAGE(2);
     SuspendThread(th);
