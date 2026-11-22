@@ -1448,7 +1448,13 @@ pub unsafe extern "system" fn DrawFrameControl(hDC: HDC, rc: LPRECT, uType: UINT
         return RealDrawFrameControl(hDC, rc, uType, uState);
     }
 
-    Ret = guah.DrawFrameControl.unwrap()(hDC, rc as LPRECTL, uType, uState);
+    // A themed hook (uxtheme) that faults is logged and skipped, as in the C.
+    match ntdll_sys::seh::try_except_all(|| guah.DrawFrameControl.unwrap()(hDC, rc as LPRECTL, uType, uState)) {
+        Ok(r) => Ret = r,
+        Err(_) => {
+        ERR!("Got exception in hooked DrawFrameControl!\n");
+    }
+    }
 
     EndUserApiHook();
 

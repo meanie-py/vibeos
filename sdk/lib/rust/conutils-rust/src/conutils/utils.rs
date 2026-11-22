@@ -132,23 +132,35 @@ pub unsafe extern "system" fn FormatMessageSafeW(
     nSize: u32,
     Arguments: *const va_list,
 ) -> u32 {
-    let dwLength: u32;
-    let dwFlags_mut = dwFlags;
-
-    // SEH_TRY — direct call (DUMMY_PSEH: SEH handlers are dead code)
-    // inner SEH_TRY
-    dwLength = FormatMessageW(
-        dwFlags_mut,
-        lpSource,
-        dwMessageId,
-        dwLanguageId,
-        lpBuffer,
-        nSize,
-        Arguments,
-    );
-    // inner SEH_EXCEPT handler is dead in DUMMY_PSEH — no need for catch block
-
-    dwLength
+    // FormatMessage faults on a NULL lpBuffer without ALLOCATE_BUFFER, or on
+    // an Arguments array too short for the message's inserts. In the second
+    // case the C retries once with the inserts ignored, unformatted.
+    match ntdll_sys::seh::try_except_all(|| {
+        FormatMessageW(dwFlags, lpSource, dwMessageId, dwLanguageId, lpBuffer, nSize, Arguments)
+    }) {
+        Ok(dwLength) => dwLength,
+        Err(_) => {
+            if ((dwFlags & FORMAT_MESSAGE_ALLOCATE_BUFFER) != 0 || !lpBuffer.is_null())
+                && (dwFlags & FORMAT_MESSAGE_IGNORE_INSERTS) == 0
+            {
+                let dwFlags =
+                    (dwFlags & !FORMAT_MESSAGE_ARGUMENT_ARRAY) | FORMAT_MESSAGE_IGNORE_INSERTS;
+                // If this call also faults we are really dead, as in the C:
+                // its outer frame is a _SEH2_FINALLY that catches nothing.
+                FormatMessageW(
+                    dwFlags,
+                    lpSource,
+                    dwMessageId,
+                    dwLanguageId,
+                    lpBuffer,
+                    nSize,
+                    core::ptr::null(),
+                )
+            } else {
+                0
+            }
+        }
+    }
 }
 
 #[no_mangle]

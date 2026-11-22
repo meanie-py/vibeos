@@ -22,3 +22,5 @@ add_cargo_module(crypt32 crypt32-cargo crypt32.dll
     DESTINATION reactos/system32
     DELAY_IMPORTS
     EXTRA_DEPENDS crypt32_shims psdk)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

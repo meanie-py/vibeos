@@ -814,17 +814,17 @@ pub unsafe extern "system" fn EndDeferWindowPos(hWinPosInfo: HDWP) -> BOOL {
 
 #[no_mangle]
 pub unsafe extern "system" fn GetDesktopWindow() -> HWND {
-    let Wnd: PWND;
+    let mut Wnd: PWND = core::ptr::null_mut();
     let mut Ret: HWND = core::ptr::null_mut();
 
-    // _SEH2_TRY
-    {
+    // The window's desktop-heap links are read without the user lock; a window
+    // destroyed under us faults, and the C catches that and keeps what it had.
+    let _ = ntdll_sys::seh::try_except_all(|| {
         Wnd = GetThreadDesktopWnd();
         if !Wnd.is_null() {
             Ret = UserHMGetHandle(Wnd);
         }
-    }
-    // _SEH2_EXCEPT: DUMMY_PSEH → handler is dead code.
+    });
 
     Ret
 }
@@ -1099,16 +1099,16 @@ pub unsafe extern "system" fn GetAncestor(hwnd: HWND, uType: UINT) -> HWND {
     if uType == GA_PARENT {
         let mut hwndAncestor: HWND = core::ptr::null_mut();
 
-        // _SEH2_TRY
-        {
+        // The window's desktop-heap links are read without the user lock; a window
+        // destroyed under us faults, and the C catches that and keeps what it had.
+        let _ = ntdll_sys::seh::try_except_all(|| {
             if !(*pWnd).spwndParent.is_null() && (*pWnd).fnid != FNID_MESSAGEWND {
                 let pwndAncestor: PWND = crate::wow64::desktop_wnd_to_user((*pWnd).spwndParent as PVOID);
                 if !pwndAncestor.is_null() {
                     hwndAncestor = UserHMGetHandle(pwndAncestor);
                 }
             }
-        }
-        // _SEH2_EXCEPT: DUMMY_PSEH → dead code.
+        });
 
         return hwndAncestor;
     }
@@ -1148,27 +1148,28 @@ pub unsafe extern "system" fn GetLastActivePopup(hWnd: HWND) -> HWND {
 
     Wnd = ValidateHwnd(hWnd);
     if !Wnd.is_null() {
-        // _SEH2_TRY
-        {
+        // The window's desktop-heap links are read without the user lock; a window
+        // destroyed under us faults, and the C catches that and keeps what it had.
+        let _ = ntdll_sys::seh::try_except_all(|| {
             if !(*Wnd).spwndLastActive.is_null() {
                 let LastActive: PWND = crate::wow64::desktop_wnd_to_user((*Wnd).spwndLastActive as PVOID);
                 Ret = UserHMGetHandle(LastActive);
             }
-        }
-        // _SEH2_EXCEPT: DUMMY_PSEH → dead code.
+        });
     }
     Ret
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn GetParent(hWnd: HWND) -> HWND {
-    let mut WndParent: PWND;
+    let mut WndParent: PWND = core::ptr::null_mut();
     let mut Ret: HWND = core::ptr::null_mut();
 
     let Wnd: PWND = ValidateHwnd(hWnd);
     if !Wnd.is_null() {
-        // _SEH2_TRY
-        {
+        // The window's desktop-heap links are read without the user lock; a window
+        // destroyed under us faults, and the C catches that and keeps what it had.
+        let _ = ntdll_sys::seh::try_except_all(|| {
             WndParent = core::ptr::null_mut();
             if (*Wnd).style & WS_POPUP != 0 {
                 if !(*Wnd).spwndOwner.is_null() {
@@ -1183,8 +1184,7 @@ pub unsafe extern "system" fn GetParent(hWnd: HWND) -> HWND {
             if !WndParent.is_null() {
                 Ret = UserHMGetHandle(WndParent);
             }
-        }
-        // _SEH2_EXCEPT: DUMMY_PSEH → dead code.
+        });
     }
 
     Ret
@@ -1201,7 +1201,7 @@ pub unsafe extern "system" fn GetProcessDefaultLayout(pdwDefaultLayout: *mut DWO
 #[no_mangle]
 pub unsafe extern "system" fn GetWindow(hWnd: HWND, uCmd: UINT) -> HWND {
     let Wnd: PWND;
-    let mut FoundWnd: PWND;
+    let mut FoundWnd: PWND = core::ptr::null_mut();
     let mut Ret: HWND = core::ptr::null_mut();
 
     Wnd = ValidateHwnd(hWnd);
@@ -1209,8 +1209,9 @@ pub unsafe extern "system" fn GetWindow(hWnd: HWND, uCmd: UINT) -> HWND {
         return core::ptr::null_mut();
     }
 
-    // _SEH2_TRY
-    {
+    // The window's desktop-heap links are read without the user lock; a window
+    // destroyed under us faults, and the C catches that and keeps what it had.
+    let _ = ntdll_sys::seh::try_except_all(|| {
         FoundWnd = core::ptr::null_mut();
         match uCmd {
             GW_OWNER => {
@@ -1269,8 +1270,7 @@ pub unsafe extern "system" fn GetWindow(hWnd: HWND, uCmd: UINT) -> HWND {
         if !FoundWnd.is_null() {
             Ret = UserHMGetHandle(FoundWnd);
         }
-    }
-    // _SEH2_EXCEPT: DUMMY_PSEH → dead code.
+    });
 
     Ret
 }
@@ -1286,7 +1286,7 @@ pub unsafe extern "system" fn GetTopWindow(mut hWnd: HWND) -> HWND {
 #[no_mangle]
 pub unsafe extern "system" fn GetWindowInfo(hWnd: HWND, pwi: PWINDOWINFO) -> BOOL {
     let pWnd: PWND;
-    let mut pCls: PCLS;
+    let mut pCls: PCLS = core::ptr::null_mut();
     let mut Size: SIZE = SIZE { cx: 0, cy: 0 };
     let mut Ret: BOOL = 0;
 
@@ -1301,8 +1301,9 @@ pub unsafe extern "system" fn GetWindowInfo(hWnd: HWND, pwi: PWINDOWINFO) -> BOO
 
     UserGetWindowBorders((*pWnd).style, (*pWnd).ExStyle, &mut Size, 0);
 
-    // _SEH2_TRY
-    {
+    // The window's desktop-heap links are read without the user lock; a window
+    // destroyed under us faults, and the C catches that and keeps what it had.
+    let _ = ntdll_sys::seh::try_except_all(|| {
         pCls = crate::wow64::desktop_cls_to_user((*pWnd).pcls as PVOID);
         (*pwi).rcWindow = (*pWnd).rcWindow;
         (*pwi).rcClient = (*pWnd).rcClient;
@@ -1327,8 +1328,7 @@ pub unsafe extern "system" fn GetWindowInfo(hWnd: HWND, pwi: PWINDOWINFO) -> BOO
         }
 
         Ret = 1;
-    }
-    // _SEH2_EXCEPT: DUMMY_PSEH → dead code.
+    });
 
     Ret
 }
@@ -1403,9 +1403,12 @@ pub unsafe extern "system" fn GetWindowTextA(
     *lpString = 0;
 
     if TestWindowProcess(Wnd) == 0 {
-        // _SEH2_TRY
-        Length = DefWindowProcA(hWnd, WM_GETTEXT, nMaxCount as WPARAM, lpString as LPARAM) as INT;
-        // _SEH2_EXCEPT → Length = 0 (dead code under DUMMY_PSEH).
+        // The window belongs to another process, so DefWindowProc reads its text
+        // straight from the desktop heap; a fault there answers 0, as in the C.
+        Length = ntdll_sys::seh::try_except_all(|| {
+            DefWindowProcA(hWnd, WM_GETTEXT, nMaxCount as WPARAM, lpString as LPARAM) as INT
+        })
+        .unwrap_or(0);
     } else {
         Length = SendMessageA(hWnd, WM_GETTEXT, nMaxCount as WPARAM, lpString as LPARAM) as INT;
     }
@@ -1462,9 +1465,12 @@ pub unsafe extern "system" fn GetWindowTextW(
     *lpString.offset(0) = 0u16;
 
     if TestWindowProcess(Wnd) == 0 {
-        // _SEH2_TRY
-        Length = DefWindowProcW(hWnd, WM_GETTEXT, nMaxCount as WPARAM, lpString as LPARAM) as INT;
-        // _SEH2_EXCEPT → Length = 0 (dead code under DUMMY_PSEH).
+        // The window belongs to another process, so DefWindowProc reads its text
+        // straight from the desktop heap; a fault there answers 0, as in the C.
+        Length = ntdll_sys::seh::try_except_all(|| {
+            DefWindowProcW(hWnd, WM_GETTEXT, nMaxCount as WPARAM, lpString as LPARAM) as INT
+        })
+        .unwrap_or(0);
     } else {
         Length = SendMessageW(hWnd, WM_GETTEXT, nMaxCount as WPARAM, lpString as LPARAM) as INT;
     }
@@ -1527,8 +1533,9 @@ pub unsafe extern "system" fn IsChild(hWndParent: HWND, hWnd: HWND) -> BOOL {
         return 0;
     }
 
-    // _SEH2_TRY
-    {
+    // The window's desktop-heap links are read without the user lock; a window
+    // destroyed under us faults, and the C catches that and keeps what it had.
+    let _ = ntdll_sys::seh::try_except_all(|| {
         while !Wnd.is_null() && ((*Wnd).style & (WS_POPUP | WS_CHILD)) == WS_CHILD {
             if !(*Wnd).spwndParent.is_null() {
                 Wnd = crate::wow64::desktop_wnd_to_user((*Wnd).spwndParent as PVOID);
@@ -1541,8 +1548,7 @@ pub unsafe extern "system" fn IsChild(hWndParent: HWND, hWnd: HWND) -> BOOL {
                 break;
             }
         }
-    }
-    // _SEH2_EXCEPT: DUMMY_PSEH → dead code.
+    });
 
     Ret
 }
@@ -1588,8 +1594,9 @@ pub unsafe extern "system" fn IsWindowVisible(hWnd: HWND) -> BOOL {
     let mut Wnd: PWND = ValidateHwnd(hWnd);
 
     if !Wnd.is_null() {
-        // _SEH2_TRY
-        {
+        // The window's desktop-heap links are read without the user lock; a window
+        // destroyed under us faults; the C answers FALSE.
+        if ntdll_sys::seh::try_except_all(|| {
             Ret = 1;
 
             loop {
@@ -1608,8 +1615,11 @@ pub unsafe extern "system" fn IsWindowVisible(hWnd: HWND) -> BOOL {
                     break;
                 }
             }
+        })
+        .is_err()
+        {
+            Ret = 0;
         }
-        // _SEH2_EXCEPT → Ret = FALSE (dead code under DUMMY_PSEH).
     }
 
     Ret

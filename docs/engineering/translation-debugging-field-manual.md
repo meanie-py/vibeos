@@ -2493,6 +2493,19 @@ types.
   island, preprocess a probe with the REAL flags (`-E -dM` with a TU's command from
   `compile_commands.json`, under `tools/canon-run.sh`); never reason from the target triple.
 
+### A struct's optional tail fields are missing from the island (E0609 on `pwszCNGAlgid`)
+- **Symptom:** `no field X on type _Y` for a field the header declares under a TU-set switch
+  (crypt32: `CRYPT_OID_INFO_HAS_EXTRA_FIELDS`, `CERT_CHAIN_PARA_HAS_EXTRA_FIELDS`), though
+  the TU that uses it `#define`s the switch before the include.
+- **Cause:** the island wrapper merges every TU's prologue into one. A TU merged earlier
+  had already included the header, under the other spelling (`<wincrypt.h>` vs
+  `"wincrypt.h"`), so the define landed after it and the header's include guard skipped the
+  fields.
+- **Fix:** `merge_prologue` now matches includes by header and puts a new
+  `#define`/`#undef` before every already-merged line it configures. Re-derive, re-run
+  `port island`, then re-run `port resolve`: a regenerated island brings back the opaque
+  stubs that resolve swaps for the TU's completed structs.
+
 ### bindgen drops things silently — know what
 - **`__attribute__((aligned(N)))`.** Losing `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK` `[§9.24]` broke
   the pushlock word's 4 flag bits (which live in the low bits of the block *pointer*) → i386
@@ -2742,7 +2755,13 @@ at the width the C compares at, THEN narrow the result: `min(a, b as T_wide) as 
 it can see the operand's declared width (locals, params, struct fields); `scan_const_narrowing_cast`
 gates the constant case, including the parenthesized `(NAME) as u8` that hid atapi's. Sign flips
 (rebar, the winpos and tui pair) are NOT linted: they need C types, so `-Wsign-compare` on the
-oracle stays the tool for those.
+oracle stays the tool for those. For modules with NO oracle, the on-demand (never gated)
+`./vibeos-cli lint --arch <a> --rules scan_sign_compare_minmax` parses every flipped `.c` that
+calls min/max under the flags of the nearest live TU. Its first run (2026-11-21; all 356 such files, all three arches) gave 35
+sites and one bug: user32 listbox's `LB_SETCOUNT` shrink, `min(anchor_item, count - 1)`, where
+the unsigned compare turns "no anchor" (-1) into the last item and the Rust kept -1. comctl32's
+twin listbox already had it right. Run all three arches, because widths decide which compares
+are mixed-sign at all: evtlib's `min(SIZE_T, LONGLONG)` is unsigned on 64-bit and signed on i386.
 
 ### `FAILED(x)` on an HRESULT kept in a DWORD became `x < 0 as DWORD`, never true
 **Symptom:** shlwapi's `UrlGetPartA` (2026-11-08) failed 82 more of Wine's url checks than the
@@ -6568,7 +6587,10 @@ in the fleet by body hash (`python -m rustconv.bank_drift --fleet` is the genera
 were bought from the cut body, and only winspool's `GetMonitorUI` shipped without its tail
 (no MONITORUIDATA, no monitor UI DLL, leaked handle); the other six came out whole because
 c2rust anchors on the whole TU. **Check what was bought, not what the scanner says now: the
-bank's per-function C hash is the record.**
+bank's per-function C hash is the record.** The hand-completion that followed (`32733e7baf6`) deleted
+GetMonitorUI's body instead of finishing it, and still compiled: `if p.is_null() { return }`
+followed by a stray `else { … }` is valid Rust. The commit message said "completed"; found
+2026-11-21 by `scan_dead_seh_handlers` and restored. Read a hand fix's diff, not its message.
 
 The two fixes compose, and the order matters: expanding is what lets `--seal-facts` see the arms
 at all. Sealed, `msvcrt_set_errno`'s 60 constants go to the model as `__RUSTCONV_FACT_00NN__` and
@@ -13547,6 +13569,34 @@ the crash; when memory runs out on arm64 only, grep for them first.
 - **`NtCreateSection` 0x50 is a dropped `ProbeForRead`, not a deep-MM bug** `[§9.104]` — and the
   dropped probe **masked** the deeper arm64 exception-dispatch recursion beneath it. **A missing
   guard can hide the bug it would have exposed.**
+
+### A user-mode heap that reserves a new segment for space it already freed
+
+**Symptom.** An i386 process runs out of address space (`ERROR_NOT_ENOUGH_MEMORY`, last error
+8) while its commit is small: after one wined3d init and release, 1.5G was reserved, 55M
+committed, and the largest free region was 124M. The reservations are the process heap's
+segments, doubling 8M, 16M … 512M. The giveaway is a repeat of the same workload growing the
+heap again. glsanity's round 2 makes the same single softpipe context as round 1, and it
+reserved a fresh 256M segment while round 1's 248M sat decommitted.
+
+**Cause.** This is inherited from the C (`sdk/lib/rtl/heap.c` `RtlpDeCommitFreeBlock`), so
+the C oracle fails identically. Decommitting a freed block leaves its committed tail as a free
+entry starting exactly at the new uncommitted range's end: page-aligned, with
+`PreviousSize = 0`. Freeing the next block coalesces into that tail, giving
+`PrecedingSize == 0`, and the C then skips a whole page to make room for a guard entry. The
+range before it already has a guard. So a run of equal blocks freed in order becomes ranges
+one page smaller than the blocks, each split from the next by a committed page. An allocation
+of the same size never fits one again, and every burst reserves a new segment. Mesa softpipe
+was the trigger: about 768 tile caches of 262K per context.
+
+**Fix.** When a free entry begins exactly where an uncommitted range ends (`RtlpUcrEndsAt`),
+decommit it from its first byte with no new guard. `RtlpInsertUnCommittedPages` then merges
+it into the range. After the fix, round 2 reuses round 1's segments, so 272M stays 272M.
+
+**Measuring it.** `RtlWalkHeap` is a stub in the C too, so walk `VirtualQuery` and read each
+allocation base. A heap segment has `0xffeeffee` at `2*sizeof(void*)`, its owning `Heap` at
+`4*sizeof(void*)+8`, and `NumberOfPages` at `6*sizeof(void*)+8`. See `dx_vm` in
+`tools/payloads/modrun/probes/dx_probe.h`.
 
 ---
 

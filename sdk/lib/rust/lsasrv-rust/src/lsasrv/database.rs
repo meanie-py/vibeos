@@ -885,16 +885,15 @@ pub unsafe extern "C" fn LsapValidateDbObject(
     DesiredAccess: ACCESS_MASK,
     DbObject: *mut PLSA_DB_OBJECT,
 ) -> NTSTATUS {
-    let mut bValid: u8 = 0; // FALSE
+    // The handle comes straight off the RPC wire, so a bogus one faults here;
+    // the C catches that and answers STATUS_INVALID_HANDLE.
+    let bValid: bool = ntdll_sys::seh::try_except_all(|| {
+        (*Handle).Signature == LSAP_DB_SIGNATURE
+            && ((ObjectType == LsaDbIgnoreObject) || ((*Handle).ObjectType == ObjectType))
+    })
+    .unwrap_or(false);
 
-    // DUMMY_PSEH: execute TRY body directly, omit exception handler
-    if (*Handle).Signature == LSAP_DB_SIGNATURE {
-        if (ObjectType == LsaDbIgnoreObject) || ((*Handle).ObjectType == ObjectType) {
-            bValid = 1; // TRUE
-        }
-    }
-
-    if bValid == 0 {
+    if !bValid {
         return STATUS_INVALID_HANDLE;
     }
 

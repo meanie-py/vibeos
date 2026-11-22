@@ -3077,6 +3077,62 @@ def test_fn_item_cast_drops_the_cast_off_some_f():
     assert handled and edits[0].replacement == "Some(MainUnload)"
 
 
+def _abi_diag(src: bytes, item: bytes) -> dict:
+    start = src.index(item, src.index(b">("))
+    return {
+        "code": {"code": "E0308"},
+        "message": "mismatched types",
+        "spans": [
+            {
+                "file_name": "x.rs",
+                "byte_start": start,
+                "byte_end": start + len(item),
+                "is_primary": True,
+                "label": 'expected "C" fn, found "system" fn',
+                "line_start": 1,
+                "column_start": start + 1,
+            }
+        ],
+    }
+
+
+def test_transmute_source_abi_takes_the_functions_abi():
+    """crypt32: `(AddContextToStoreFunc)CertAddCRLContextToStore` with a `C` source type."""
+    from rustconv.crate_repair import _Ctx, _transmute_source_abi_rule
+
+    src = (
+        b"    add: ::core::mem::transmute::<\n"
+        b'        Option<unsafe extern "C" fn(HCERTSTORE, DWORD) -> BOOL>,\n'
+        b"        AddContextToStoreFunc,\n"
+        b"    >(Some(\n        CertAddCRLContextToStore,\n    )),\n"
+    )
+    diag = _abi_diag(src, b"CertAddCRLContextToStore")
+    edits, _, handled = _transmute_source_abi_rule(
+        diag, lambda f: src, _Ctx(target="i386", width=32)
+    )
+    assert handled and len(edits) == 1
+    e = edits[0]
+    assert e.replacement == 'extern "system"'
+    out = src[: e.byte_start] + e.replacement.encode() + src[e.byte_end :]
+    assert b'Option<unsafe extern "system" fn(HCERTSTORE, DWORD) -> BOOL>' in out
+    assert b"AddContextToStoreFunc" in out
+
+
+def test_transmute_source_abi_leaves_a_non_argument_alone():
+    """The item must be the transmute's own argument, not something later in the statement."""
+    from rustconv.crate_repair import _Ctx, _transmute_source_abi_rule
+
+    src = (
+        b'let x = core::mem::transmute::<Option<unsafe extern "C" fn()>, P>(None);'
+        b" call(g, CertFoo);\n"
+    )
+    diag = _abi_diag(src, b"CertFoo")
+    edits, _, handled = _transmute_source_abi_rule(
+        diag, lambda f: src, _Ctx(target="i386", width=32)
+    )
+    assert not handled and not edits
+
+
 def test_c2rust_anon_member_segment_is_deleted():
     """ndis: `Chars\n    .c2rust_unnamed\n    .ReceiveCompleteHandler` -> C's flattened spelling."""
     from rustconv.crate_repair import _c2rust_anon_rule, _Ctx

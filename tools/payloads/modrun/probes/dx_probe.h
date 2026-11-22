@@ -130,7 +130,8 @@ static inline void dx_vm(const char *tag)
     SIZE_T commit = 0, reserve = 0, free_max = 0, alloc_size = 0, big = 0;
     void *alloc = NULL, *big_base = NULL;
     HANDLE heaps[64];
-    DWORD nheaps, i, regions = 0, in_heap = 0;
+    SIZE_T seg_bytes = 0;
+    DWORD nheaps, i, regions = 0, in_heap = 0, segs = 0;
     char *p = NULL;
 
     if (!dx_trace)
@@ -140,6 +141,30 @@ static inline void dx_vm(const char *tag)
         /* The largest single reservation (an allocation's regions summed), and its base. */
         if (mbi.State != MEM_FREE)
         {
+            /* A heap segment (HEAP_SEGMENT_MEMBERS, sdk/lib/rtl/heap.h) starts with a
+             * HEAP_ENTRY, then SegmentSignature; Heap sits after the LIST_ENTRY and
+             * NumberOfPages after Heap and BaseAddress. RtlWalkHeap is a stub (in the C
+             * too), so this is how a segment is told from any other reservation. */
+            if (mbi.AllocationBase != alloc && mbi.BaseAddress == mbi.AllocationBase &&
+                mbi.State == MEM_COMMIT)
+            {
+                const char *b = (const char *)mbi.BaseAddress;
+                if (*(const ULONG *)(b + 2 * sizeof(void *)) == 0xffeeffee)
+                {
+                    void *owner = *(void *const *)(b + 4 * sizeof(void *) + 8);
+                    ULONG pages = *(const ULONG *)(b + 6 * sizeof(void *) + 8);
+                    DWORD h, idx = 0;
+                    nheaps = GetProcessHeaps(64, heaps);
+                    for (h = 0; h < nheaps && h < 64; h++)
+                        if ((void *)heaps[h] == owner)
+                            idx = h + 1;
+                    segs++;
+                    seg_bytes += (SIZE_T)pages << 12;
+                    if (((SIZE_T)pages << 12) >= (8u << 20))
+                        printf("vm %s segment %p %luM heap %p heap#%lu\n", tag, (void *)b,
+                               (unsigned long)(((SIZE_T)pages << 12) >> 20), owner, idx);
+                }
+            }
             if (mbi.AllocationBase != alloc)
             {
                 alloc = mbi.AllocationBase;
@@ -168,9 +193,10 @@ static inline void dx_vm(const char *tag)
         if ((void *)heaps[i] == big_base)
             in_heap = i + 1;
     printf("vm %s commit %luM reserve %luM largest free %luM allocations %lu heaps %lu"
-           " biggest %luM at %p heap#%lu\n", tag, (unsigned long)(commit >> 20),
-           (unsigned long)(reserve >> 20), (unsigned long)(free_max >> 20), regions, nheaps,
-           (unsigned long)(big >> 20), big_base, in_heap);
+           " biggest %luM at %p heap#%lu heap segments %lu totalling %luM\n", tag,
+           (unsigned long)(commit >> 20), (unsigned long)(reserve >> 20),
+           (unsigned long)(free_max >> 20), regions, nheaps, (unsigned long)(big >> 20),
+           big_base, in_heap, segs, (unsigned long)(seg_bytes >> 20));
 }
 
 static inline void dx_renderer(int argc, char **argv)
@@ -179,10 +205,16 @@ static inline void dx_renderer(int argc, char **argv)
     dx_invalid = argc > 2 && !strcmp(argv[2], "invalid");
     /* `trace` (any position): wined3d's own TRACE/WARN on the serial line, through libwine's
      * DEBUGCHANNEL, which each module reads from this process's environment at its first
-     * debug call. A diagnosis switch only; no graded case passes it. */
+     * debug call. A diagnosis switch only; no graded case passes it. `shader` is the
+     * narrower one: only the generated GLSL and its compile logs, to diff one variant's
+     * fixed-function shaders against the other's. */
     for (int i = 1; i < argc; i++)
+    {
         if (!strcmp(argv[i], "trace") && (dx_trace = 1))
             SetEnvironmentVariableA("DEBUGCHANNEL", "+d3d,+d3d_caps,+wgl,+opengl");
+        else if (!strcmp(argv[i], "shader"))
+            SetEnvironmentVariableA("DEBUGCHANNEL", "+d3d_shader");
+    }
     _putenv(gl ? "WINE_D3D_CONFIG=renderer=gl" : "WINE_D3D_CONFIG=renderer=no3d");
     printf("renderer %s\n", gl ? "gl" : "no3d");
 }
