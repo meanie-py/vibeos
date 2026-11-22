@@ -1132,23 +1132,7 @@ pub unsafe extern "system" fn KiInitializeUserApc(
         // ARM64 runs with DUMMY_PSEH, so a faulting probe/copy can be skipped
         // by the generic kernel exception workaround instead of being handled
         // locally. Explicitly fault in the user stack pages before copying.
-        let page_mask = !(PAGE_SIZE as u64 - 1);
-        let page_start = Stack & page_mask;
-        let page_end = (Stack + context_size + PAGE_SIZE as u64 - 1) & page_mask;
-        let mut page = page_start;
-
-        while page < page_end {
-            if MmIsAddressValid(page as PVOID) == 0 {
-                let status = MmAccessFault(0x02, page as PVOID, 1i8, TrapFrame as PVOID);
-                if status < 0 {
-                    ARM64_UART_TRACE_HEX(
-                        b"[APC] FaultIn=\0".as_ptr() as PCSTR,
-                        status as ULONG_PTR,
-                    );
-                }
-            }
-            page += PAGE_SIZE as u64;
-        }
+        KiFaultInUserFrame(Stack, context_size, TrapFrame);
 
         if MmIsAddressValid(Stack as PVOID) == 0
             || MmIsAddressValid((Stack + context_size - 1) as PVOID) == 0
@@ -1411,6 +1395,35 @@ pub unsafe extern "system" fn KdbRegisterCliCallback(
 ) -> BOOLEAN {
     let Callback = opaque_ptr(Callback);
     0u8
+}
+
+/// Make a user-stack frame at `Low..Low+Size` present before the kernel writes it: the
+/// exception and APC frames KiDispatchException and KiInitializeUserApc push.
+///
+/// A page at a time from the TOP down, touching each again after a guard-page hit. A hit
+/// commits the page and moves the guard one page down (MiCheckForUserStackOverflow) but
+/// does not map it: a user access gets that on its retry, and this probe has none of its
+/// own. Probing each page once, bottom first, left a frame whose low end landed on the
+/// guard page committed but unmapped; MmIsAddressValid then said no and the thread was
+/// killed as a stack overflow with its 1 MB reserve barely used (apc32 rung 5 under FEX: a
+/// new thread's first compile took a commit-on-touch fault, 20261122-121707-bQJnhZ). Top-down
+/// keeps a frame spanning two pages walking the guard down in order. The caller still
+/// checks MmIsAddressValid at both ends: this reports nothing.
+unsafe fn KiFaultInUserFrame(Low: u64, Size: u64, TrapFrame: PKTRAP_FRAME) {
+    let mut Page = (Low + Size - 1) & !(PAGE_SIZE as u64 - 1);
+    loop {
+        let Touch = if Page < Low { Low } else { Page };
+        for _ in 0..2 {
+            if MmIsAddressValid(Touch as PVOID) != 0 {
+                break;
+            }
+            MmAccessFault(0x02, Touch as PVOID, 1i8, TrapFrame as PVOID);
+        }
+        if Page <= Low {
+            break;
+        }
+        Page -= PAGE_SIZE as u64;
+    }
 }
 
 #[repr(C)]
@@ -1740,13 +1753,7 @@ pub unsafe extern "system" fn KiDispatchException(
                 );
             }
 
-            MmAccessFault(0x02, UserRsp as PVOID, 1i8, TrapFrame as PVOID);
-            MmAccessFault(
-                0x02,
-                (UserRsp + core::mem::size_of::<KUSER_EXCEPTION_STACK_ARM64>() as u64 - 1) as PVOID,
-                1i8,
-                TrapFrame as PVOID,
-            );
+            KiFaultInUserFrame(UserRsp, core::mem::size_of::<KUSER_EXCEPTION_STACK_ARM64>() as u64, TrapFrame);
 
             if MmIsAddressValid(UserStack as PVOID) == 0
                 || MmIsAddressValid(
@@ -1759,6 +1766,17 @@ pub unsafe extern "system" fn KiDispatchException(
                         b"[UEXC-STKOVERFLOW] SP=\0".as_ptr() as PCSTR,
                         Context.Sp as ULONG_PTR,
                     );
+                    // Which fault ran out of stack, as [UEXC-STKBAD] says: no user
+                    // handler will ever see this one either.
+                    ARM64_UART_TRACE_HEX(b"[UEXC-STKOVERFLOW] PC=\0".as_ptr() as PCSTR, Context.Pc as ULONG_PTR);
+                    ARM64_UART_TRACE_HEX(b"[UEXC-STKOVERFLOW] LR=\0".as_ptr() as PCSTR, Context.__bindgen_anon_1.__bindgen_anon_1.Lr as ULONG_PTR);
+                    ARM64_UART_TRACE_HEX(b"[UEXC-STKOVERFLOW] FP=\0".as_ptr() as PCSTR, Context.__bindgen_anon_1.__bindgen_anon_1.Fp as ULONG_PTR);
+                    if (*ExceptionRecord).NumberParameters >= 2 {
+                        ARM64_UART_TRACE_HEX(
+                            b"[UEXC-STKOVERFLOW] address=\0".as_ptr() as PCSTR,
+                            (*ExceptionRecord).ExceptionInformation[1] as ULONG_PTR,
+                        );
+                    }
                 }
                 ZwTerminateProcess(NtCurrentProcess(), (*ExceptionRecord).ExceptionCode);
                 KeBugCheckEx(

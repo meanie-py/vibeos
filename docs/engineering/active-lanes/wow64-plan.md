@@ -19,7 +19,7 @@ backlog. Registry redirection was the third item here until E24 landed it. See
 
 Owner: `wow64-amd64` lane.
 
-**RESUME HERE (2026-11-21).** FEX's code cache for x64 guests is fixed and in landing.
+**RESUME HERE (2026-11-22).** FEX's code cache for x64 guests is fixed and in landing.
 Cached notepad, calc and winmine now pass; `wow64-x64-guest-design.md` item 7 has the bug
 (the JIT guard-page check claimed null-page faults) and the timings. The cache is off unless
 the tripwire sets `FEX_ENABLECODECACHINGWIP=1`.
@@ -31,7 +31,11 @@ Next:
 - libwow64fex (x86) cache loader. It needs the same `JITGuardPage` guard in upstream's
   `WOW64/Module.cpp`, as a vendor patch.
 - Pi 4 TSO A/B (design doc item 5).
-- apc32 `[UEXC-STKOVERFLOW]`, seen in every appstorm64 run; not cache-related, uninvestigated.
+- (done 2026-11-22) apc32 `[UEXC-STKOVERFLOW]` was the arm64 kernel's exception/APC frame
+  fault-in, bottom-up with no retry after a guard-page hit (`KiFaultInUserFrame`). In the same
+  landing: FEX refused `mov fs` in 64-bit mode, which crashed every x64 guest that caught an
+  exception once `536a9761765` made OutputDebugStringA raise. Both are in the roadmap registry.
+- the `ladder:arm64-fex` gate stage is owed by merge-integrator, after this landing.
 - the amd64-bios hang in the roadmap registry.
 
 Predecessor: `fex-bringup-plan.md` (rungs 0–3; this doc was its rung 4+).
