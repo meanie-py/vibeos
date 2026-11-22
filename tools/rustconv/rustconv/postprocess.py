@@ -1985,14 +1985,15 @@ _WINE_SEH_STMT_RE = re.compile(
 # A HANDLER marker statement followed by a bare block: that block IS the handler, so it takes
 # the guard the C compiles to. Dropping the marker instead ran every handler unconditionally:
 # crypt32 shipped 11 functions that always failed with STATUS_ACCESS_VIOLATION.
+_WINE_SEH_HANDLER_STMT = rf"^[ \t]*{_WINE_SEH_LET}(?:__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)\s*;[ \t]*\n"
 _WINE_SEH_HANDLER_BLOCK_RE = re.compile(
-    rf"^[ \t]*{_WINE_SEH_LET}(?:__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)\s*;[ \t]*\n(?:[ \t]*\n)*([ \t]*)\{{",
+    rf"{_WINE_SEH_HANDLER_STMT}(?:[ \t]*\n)*([ \t]*)\{{",
     re.M,
 )
 # ...or by a handler the model already guarded (`if __EXCEPT_PAGE_FAULT {`): the statement is
 # redundant. Followed by anything else, it is left in place and fails to compile.
 _WINE_SEH_HANDLER_BEFORE_IF_RE = re.compile(
-    rf"^[ \t]*{_WINE_SEH_LET}(?:__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)\s*;[ \t]*\n(?=(?:[ \t]*\n)*[ \t]*if\b)",
+    rf"{_WINE_SEH_HANDLER_STMT}(?=(?:[ \t]*\n)*[ \t]*if\b)",
     re.M,
 )
 _WINE_SEH_IF_RE = re.compile(r"\bif\s+(?:__EXCEPT_PAGE_FAULT|__EXCEPT_ALL)\s*\{")
